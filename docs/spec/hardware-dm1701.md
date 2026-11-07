@@ -667,7 +667,7 @@ Ordering:
     from RX to DMR TX, HR_C6000 4:0x04 (MOD1 offset) = calibrated value + 42, both RX supplies off, then the PA. Back to
     RX: the PA enables low, 4:0x04 = calibrated value, the RX supply, reg 0x30 RX on. RX straight to TX puts the
     carrier about 3.07 kHz low, and a frequency write can't correct it (the AT1846S applies one only coming out of
-    idle); 42 steps of about 75 Hz put it back (measured at 461.1375 MHz: +16..+60 Hz). The idle step that the other
+    idle); 42 steps of about 75 Hz put it back (measured near 461 MHz: +16..+60 Hz). The idle step that the other
     sequence takes every slot makes the synthesizer settle again, and an SFR lost the first and last frames of its
     inbound bursts to it: about 190 bit errors and 5-10 lost frames per 72 repeated frames, against about 60 and none
     direct (SDR bench, 2026-10-19).
@@ -1132,7 +1132,7 @@ sign-extended to 10 bits, so receive and transmit sit at the same level.
 
 The user's reference trim ([radio-features.md](radio-features.md) 6.1) adds to this offset at every tune:
 `uvf_ref_trimmed` turns ppb into steps at 160 ppb a step and clamps to -128..127. The scale comes from the direct
-keying measurement in section 6 (41 and 43 steps put the carrier 149 Hz apart at 461.1375 MHz, about 74 Hz a step).
+keying measurement in section 6 (41 and 43 steps put the carrier 149 Hz apart near 461 MHz, about 74 Hz a step).
 A step is 0.16 ppm, so the 0.1 ppm trim steps round to it. With a blank band (12.1) the offset is 0 and the trim still
 applies.
 
@@ -1254,6 +1254,33 @@ Hold **PTT + side key 1 (the key just above PTT)** while turning the power switc
 device, VID 0x0483 PID 0xDF11 (ST's DFU IDs, but the TYT/AnyRoad bootloader, not ST's ROM loader). The device string at
 index 1 reads "AnyRoad Technology". The screen stays dark. The interface string describes the memory layout in the
 usual DfuSe "@name/0xADDR/NN*SSKg,..." form.
+
+**Normal mode is a DFU device too.** The original firmware, switched on normally (the mode the vendor's programming
+software uses), also enumerates as 0483:DF11. On an MD-9600, a radio with the same bootloader, it shows the
+bootloader's manufacturer, product and serial strings as well. Only the layout of alt 0 tells the two apart:
+
+| Mode | Alt 0 | Alt 1 |
+|---|---|---|
+| Switched on normally | `@Internal Flash   /0x08000000/03*016Kg` | `@SPI Flash Memory /0x00000000/16*064Kg` |
+| Bootloader | `@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg` (the application area only) | the same |
+
+Measured on an MD-9600, 2026-11-02. In normal mode the requests of 15.2 don't do what they do in the bootloader. 0x91
+0x31 enters a programming mode whose erase and write don't protect the bootloader sectors, so running 15.2 against
+it can erase the bootloader. Both flashers (rfoundry, the web flasher, and `tools/stm32_dfu.py`) refuse such a device
+before any DFU request. A board whose bootloader layout was read on a radio declares it (`[flash.dfu] layout`, see
+[board-registry.md](../dev/board-registry.md)), and then only that alt 0 string is accepted. Without a declaration,
+the flashers refuse a layout that shows only the bootloader's sectors: from 0x08000000, at most 48 KB. A bootloader
+that listed the whole flash rather than the application area would still be accepted.
+
+An MD-380 shows the same alt 0 strings as the MD-9600 in both modes (measured; [hardware-md380.md](hardware-md380.md) 14.3).
+The DM-1701's and the MD-UV380's original firmware images hold the same normal-mode alt 0 string,
+`@Internal Flash   /0x08000000/03*016Kg` (every DM-1701 build examined).
+
+The DM-1701's bootloader, read on a radio (2026-11-02, standard descriptors only): manufacturer and string 1 "AnyRoad
+Technology", product "Digital Radio in USB mode", serial "00000000010C", bcdDevice 0x0200, alt 0
+`@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg`, alt 1 `@SPI Flash Memory /0x00000000/16*064Kg`: the
+bootloader row of the table. `boards/dm1701/board.toml` declares alt 0, so the flashers accept only that device. The
+MD-UV380's bootloader strings have not been read on a radio (?).
 
 ### 15.2 Flashing protocol (DfuSe-style, as the loader drives it)
 
@@ -1503,12 +1530,12 @@ Verified on one radio with the new firmware; they override the unverified notes 
   until it is cleared (RAM only). The knob has no analog path around the gain, so the override fully takes its place (HW,
   not yet run on a radio).
 - **HR_C6000**: 4:0x10 reads back 0x80 after FM RX set-up (the config port works with the 4.2 timing).
-- **FM TX** (VFO 461.8625 MHz, 12.5 kHz, 1 W, measured with an RTL-SDR, 2026-10-09): with the TX sequence of
+- **FM TX** (VFO on a UHF test frequency, 12.5 kHz, 1 W, measured with an RTL-SDR, 2026-10-09): with the TX sequence of
   `radio_dm1701.c` (frequency written with the receiver off, straight to TX) the carrier is within about 50 Hz of the
   channel, so no TX offset is added. Unmodulated carrier residual FM 41 Hz RMS, no hum or tone. Voice at normal level:
   2.5 kHz peak deviation (99.5th percentile), 636 Hz RMS, about 7 kHz occupied at -26 dB. The FM I calibration row of 0
   (Mod2 amplitude) does not stop voice modulation.
-- **DMR TX** (Ch 1 467.375 MHz, cc 2, 1 W, SDR bench + an MMDVM_HS receiver, 2026-10-10): switching per burst from
+- **DMR TX** (a UHF test channel, cc 2, 1 W, SDR bench + an MMDVM_HS receiver, 2026-10-10): switching per burst from
   RX on straight to TX on the already-tuned frequency put the carrier 3.07 kHz low (an ADF7021-based receiver
   decoded nothing; a wide-AFC SDR decoder still did). Retuning with the receiver off before every burst (as FM TX
   does) brings it to about +65 Hz, and the MMDVM_HS receiver decodes headers, all superframes with the embedded LC
@@ -1604,7 +1631,7 @@ What the HR_C6000 manual says:
 
 ### 21.3.1 Bench results (2026-10-12)
 
-Probe firmware, `tests/hil/test_audio_probe.py`, NOAA WX3 (162.475 MHz) for receive, 467.375 MHz into the SDR bench
+Probe firmware, `tests/hil/test_audio_probe.py`, a NOAA station for receive, a UHF test frequency into the SDR bench
 for transmit.
 
 | Question | Result |
@@ -1719,7 +1746,7 @@ is well above the "mic muted, no tone" row.
 - On air since 2026-10-10: receiver sleep (`test_battery_save*`: cycles when idle, monitor and a call wake it), the
   1750 Hz burst, the roger beep and APRS AFSK (HIL). VOX was checked in silence only (`test_vox_quiet`).
 - AFSK TX retunes the AT1846S tone generator per symbol. The AFSK RX audio comes from the HR_C6000 FM audio on I2S
-  (squelch gated, 8 kHz, de-emphasized). DMR LRRP and UDT passed on air at 467.375 MHz, CC 2, 50 mW. An AFSK tone level
+  (squelch gated, 8 kHz, de-emphasized). DMR LRRP and UDT passed on air on a UHF test frequency, CC 2, 50 mW. An AFSK tone level
   of 0x1C gives about 3.1 kHz peak deviation (0x40 gave 7.2 kHz).
 - `REBOOT` mode 1 enters the ROM DFU with a flag in an RTC backup register (15.4). The spare beep PWM pin is PC8
   (TIM8 CH3, 72 MHz carrier, DMA2 stream 2), used by AUDIO_PROBE PIN_TONE / PIN_PWM at about 37,000 MOD writes a second.

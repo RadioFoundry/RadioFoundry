@@ -87,6 +87,12 @@ function joined(ranges) {
 	return out;
 }
 
+// Whether the chip's flash size register (the loader's HELLO, the debug link's INFO_CHIP: the same register) reads less
+// than the flash the firmware owns. Some radios' chips read 512 KB while the board's flash reaches 1 MB (the codec sits
+// in the top sectors): the loader refuses everything past the register's size, so their install goes through the
+// bootloader. owned: [[lo, hi)] (data/f4-stub.json). An unknown size (null, 0) is not short
+export const registerShort = (flashKb, owned) => !!flashKb && owned.some(([, hi]) => hi > FLASH_BASE + flashKb * 1024);
+
 export class F4Stub extends Stub {
 	// reopen: async () => a new stream, for a stub that enumerated again (the old port is gone), or null.
 	// chip: the target (F4, or k22stub.js's). board: the radio's profile with its board record ({name, stub_id, record}
@@ -327,9 +333,12 @@ export class F4Stub extends Stub {
 		return this.request(OP.RESET, be32(this.chip.magic), { retries: 0 });
 	}
 
-	checkChip() {
+	// owned: the firmware's flash ([[lo, hi)]); the loader refuses everything past the register's size. More than 1 MB
+	// is a part with another sector map
+	checkChip(owned) {
 		const c = this.chip;
-		if (this.info.flashKb !== c.flashKb) throw new StubError(`the chip reports ${this.info.flashKb} KB of flash; the ${c.title} radios here have ${c.flashKb}`);
+		if (!this.info.flashKb || this.info.flashKb > c.flashKb) throw new StubError(`the chip reports ${this.info.flashKb} KB of flash; the ${c.title} radios here have ${c.flashKb} at most`);
+		if (registerShort(this.info.flashKb, owned)) throw new StubError(`the chip's flash size register reads ${this.info.flashKb} KB, less than the flash the firmware owns, so the loader cannot write it: install in update mode instead`);
 	}
 
 	// The sector indexes of want (Map index => {index, addr, size, data}: a sector's whole new content) whose flash
@@ -412,7 +421,7 @@ export class F4Stub extends Stub {
 	// unit (the commit), verify it. onKept(sector) runs before anything is erased, for each sector to be rewritten that
 	// holds bytes that are not the firmware's (keep a copy). progress(done, total, sector). Returns {written, same}.
 	async writeImage(owned, segs, { onKept = async () => {}, progress = () => {}, plan = null } = {}) {
-		this.checkChip();
+		this.checkChip(owned);
 		this.needConfigured();
 		const c = this.chip, unit = c.progUnit;
 		const p = plan || await this.plan(owned, segs);

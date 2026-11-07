@@ -2,7 +2,8 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Codeplug editing on a simulated NOR flash with the DM-1701 map: the open-firmware record encoder against the decoder,
 // bytes the model doesn't own kept, the built-in set turned into a stored codeplug by the first edit, zones,
-// contacts and RX group lists, and the round trip read -> write -> read (model and image), with power cuts.
+// contacts and RX group lists, and the round trip read -> write -> read (model and image), with power cuts. Another
+// firmware's codeplug in the open-firmware area: left alone, the first edit starts a clean codeplug.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,7 +45,8 @@ static bool same_channel(const channel_t *a, const channel_t *b)
 	       a->bw == b->bw && a->rx_tone.type == b->rx_tone.type && a->rx_tone.value == b->rx_tone.value &&
 	       a->tx_tone.type == b->tx_tone.type && a->tx_tone.value == b->tx_tone.value && a->power == b->power &&
 	       a->rx_only == b->rx_only && a->color_code == b->color_code && a->timeslot == b->timeslot &&
-	       a->contact == b->contact && a->listen_list == b->listen_list && a->dmr_id == b->dmr_id && a->dmo == b->dmo;
+	       a->contact == b->contact && a->listen_list == b->listen_list && a->dmr_id == b->dmr_id && a->dmo == b->dmo &&
+	       a->vox == b->vox && a->scan_skip == b->scan_skip && a->no_beep == b->no_beep && a->no_eco == b->no_eco;
 }
 
 static channel_t make(const char *name, uint32_t rx, uint32_t tx)
@@ -82,9 +84,13 @@ static void test_encode(void)
 	v[2].power = 8;
 	v[3] = make("ID+DMO", 145500000, 145100000);
 	v[3].mode = RADIO_MODE_DMR;
-	v[3].dmr_id = 3101276;
+	v[3].dmr_id = 9996543;
 	v[3].dmo = true;
 	v[3].rx_only = true;
+	v[3].no_beep = true;	// the channel editor's flags (#321: the encoder kept the bits as read)
+	v[3].no_eco = true;
+	v[3].vox = true;
+	v[3].scan_skip = true;
 	v[4] = make("", 136000000, 174000000);
 	v[5] = make("Lo", 400012500, 479987500);
 	for (unsigned i = 0; i < 6; i++) {
@@ -124,6 +130,13 @@ static void test_encode(void)
 	codeplug_openfw_encode(&d, r);
 	CHECK(r[0x31] == ((old[0x31] & ~0x40) | 0x00) && (r[0x33] & 0x02) && (r[0x33] & 0x60) == 0x60 && r[0x26] == old[0x26]);
 	CHECK(r[0x1B] == 0x08 && r[0x25] == 0x0B && r[0x2A] == 0x85 && r[0x37] == 12 && r[0x36] == 0x50);
+	// The editor's flags reach the record: VOX and zone scan skip (0x33 bits 6, 5), no beep (0x26 bit 6), no eco
+	// (bit 5). The SFR bit (0x26 bit 1) is still kept
+	d.vox = d.scan_skip = d.no_beep = false;
+	d.no_eco = true;
+	codeplug_openfw_encode(&d, r);
+	CHECK((r[0x33] & 0x60) == 0 && (r[0x26] & 0x62) == 0x22);
+	CHECK(codeplug_openfw_decode(r, &d) && !d.vox && !d.scan_skip && !d.no_beep && d.no_eco);
 }
 
 static void test_materialize(void)
@@ -158,6 +171,75 @@ static void test_materialize(void)
 	c.rx_hz = 0;
 	CHECK(!codeplug_set_channel(5, &c));
 	CHECK(!codeplug_set_channel(0, &c) && !codeplug_set_channel(1025, &c));
+	CHECK(sim_flash_violations() == 0);
+}
+
+// A read that fails at the index (and works again after it) is no free slot (codeplug-native.md 2). Bank 0: in-use
+// bitmap EE+0x3780, records from EE+0x3790; bank 1: bitmap FL+0x7B1B0. Records are 56 bytes
+static void test_unread(void)
+{
+	channel_t c = make("Kept", 433000000, 433000000), back;
+	fresh();
+	CHECK(codeplug_set_channel(2, &c) && codeplug_set_channel(129, &c));	// with the built-in 1-6
+	// Record 2 unreadable: hidden, its bank unknown. No slot there is offered or taken and nothing deleted, a channel
+	// shown is still saved, and no bitmap is written: it is back at the next index
+	sim_flash_bad_read(EE + 0x3790u + 56u, 56u);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
+	sim_flash_bad_read(0, 0);
+	CHECK(!codeplug_channel(2, &back));
+	CHECK(codeplug_free_channel() == 130);
+	c = make("Other", 433100000, 433100000);
+	CHECK(!codeplug_set_channel(7, &c) && !codeplug_delete_channel(3));
+	CHECK(codeplug_set_channel(3, &c));
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && codeplug_channel(2, &back) && strcmp(back.name, "Kept") == 0);
+	CHECK(codeplug_channel(3, &back) && strcmp(back.name, "Other") == 0);
+	// Bank 1's bitmap unreadable: its channels unknown, nothing written there
+	uint8_t bits[16];
+	memcpy(bits, &sim_flash_data[FL + 0x7B1B0u], sizeof bits);
+	sim_flash_bad_read(FL + 0x7B1B0u, 16u);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
+	sim_flash_bad_read(0, 0);
+	CHECK(!codeplug_set_channel(130, &c));
+	CHECK(!codeplug_delete_channel(129));
+	CHECK(memcmp(bits, &sim_flash_data[FL + 0x7B1B0u], sizeof bits) == 0);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && codeplug_channel(129, &back) && strcmp(back.name, "Kept") == 0);
+	// A zone read without bank 1's channels isn't written back without them
+	zone_t z, zb;
+	memset(&z, 0, sizeof z);
+	strcpy(z.name, "Both");
+	z.count = 2;
+	z.channels[0] = 2;
+	z.channels[1] = 129;
+	sim_flash_bad_read(FL + 0x7B1B0u, 16u);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
+	sim_flash_bad_read(0, 0);
+	CHECK(codeplug_zone(0, &zb) && zb.count >= 2);		// the virtual zone, read without 129
+	CHECK(!codeplug_set_zone(0, &zb));			// storing it would drop 129
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && codeplug_set_zone(0, &z));
+	sim_flash_bad_read(FL + 0x7B1B0u, 16u);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW);
+	sim_flash_bad_read(0, 0);
+	CHECK(codeplug_zone(0, &zb) && zb.count == 1);
+	CHECK(!codeplug_set_zone(0, &zb));
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && codeplug_zone(0, &zb) && zb.count == 2 && zb.channels[1] == 129);
+	CHECK(codeplug_delete_zone(0));
+	// The only bank in use unreadable looks blank: the first edit doesn't materialize over it
+	for (uint16_t n = 1; n <= 7; n++) {
+		CHECK(codeplug_delete_channel(n));
+	}
+	sim_flash_bad_read(FL + 0x7B1B0u, 16u);
+	CHECK(codeplug_init() == CODEPLUG_BUILTIN);
+	sim_flash_bad_read(0, 0);
+	CHECK(!codeplug_set_channel(1, &c));
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && codeplug_channel(129, &back) && strcmp(back.name, "Kept") == 0);
+	CHECK(sim_flash_violations() == 0);
+	// Blank flash (every bitmap bit set, every record erased): a record that can't be read makes no codeplug of it
+	fresh();
+	sim_flash_bad_read(EE + 0x3790u, 56u);
+	CHECK(codeplug_init() == CODEPLUG_BUILTIN && codeplug_channel_count() == 6);
+	sim_flash_bad_read(0, 0);
+	CHECK(!codeplug_set_channel(10, &c));
+	CHECK(codeplug_init() == CODEPLUG_BUILTIN && codeplug_set_channel(10, &c));
 	CHECK(sim_flash_violations() == 0);
 }
 
@@ -218,7 +300,7 @@ static void test_dmr(void)
 	c.type = CONTACT_GROUP;
 	CHECK(codeplug_set_contact(1, &c));
 	strcpy(c.name, "Joe");
-	c.id = 3101234;
+	c.id = 9991234;
 	c.type = CONTACT_PRIVATE;
 	c.timeslot = 2;
 	CHECK(codeplug_set_contact(1024, &c));
@@ -228,7 +310,7 @@ static void test_dmr(void)
 	c.id = 0;
 	CHECK(codeplug_set_contact(3, &c));
 	CHECK(codeplug_contact(1, &back) && back.id == 91 && back.type == CONTACT_GROUP && back.timeslot == 0);
-	CHECK(codeplug_contact(1024, &back) && back.id == 3101234 && back.timeslot == 2 && strcmp(back.name, "Joe") == 0);
+	CHECK(codeplug_contact(1024, &back) && back.id == 9991234 && back.timeslot == 2 && strcmp(back.name, "Joe") == 0);
 	CHECK(codeplug_contact(3, &back) && back.id == 0xFFFFFF && back.timeslot == 1);
 	CHECK(codeplug_delete_contact(3) && !codeplug_contact(3, &back));
 	c.id = 0;
@@ -250,16 +332,16 @@ static void test_dmr(void)
 	CHECK(codeplug_delete_listen_list(1) && !codeplug_listen_list(1, &lb));
 	CHECK(!codeplug_listen_list(2, &lb));		// cleared by the materialize
 
-	CHECK(codeplug_set_dmr_id(3101276) && codeplug_dmr_id() == 3101276);
-	CHECK(sim_flash_data[EE + 0xE8] == 0x03 && sim_flash_data[EE + 0xEB] == 0x76);
+	CHECK(codeplug_set_dmr_id(9996543) && codeplug_dmr_id() == 9996543);
+	CHECK(sim_flash_data[EE + 0xE8] == 0x09 && sim_flash_data[EE + 0xEB] == 0x43);
 	CHECK(codeplug_set_dmr_id(0) && codeplug_dmr_id() == 0);
-	CHECK(codeplug_set_radio_name("N0CALL-LONGER"));
+	CHECK(codeplug_set_radio_name("Q0TEST-LONGER"));
 	codeplug_radio_name(name);
-	CHECK(strcmp(name, "N0CALL-L") == 0);
+	CHECK(strcmp(name, "Q0TEST-L") == 0);
 	char l1[CODEPLUG_NAME_LEN + 1], l2[CODEPLUG_NAME_LEN + 1];
-	CHECK(codeplug_set_boot_text("Spencer Fowler", "N0CALL and more text"));
+	CHECK(codeplug_set_boot_text("Charlie Harper", "Q0TEST and more text"));
 	codeplug_boot_text(l1, l2);
-	CHECK(strcmp(l1, "Spencer Fowler") == 0 && strcmp(l2, "N0CALL and more ") == 0);
+	CHECK(strcmp(l1, "Charlie Harper") == 0 && strcmp(l2, "Q0TEST and more ") == 0);
 	CHECK(codeplug_set_boot_text("", "Line two"));
 	codeplug_boot_text(l1, l2);
 	CHECK(l1[0] == 0 && strcmp(l2, "Line two") == 0);
@@ -379,7 +461,7 @@ static void populate(void)
 		contact_t c;
 		memset(&c, 0, sizeof(c));
 		snprintf(c.name, sizeof(c.name), "Contact %u", i);
-		c.id = 1000000u + i;
+		c.id = 9990000u + i;
 		c.type = i % 2 ? CONTACT_GROUP : CONTACT_PRIVATE;
 		c.timeslot = (uint8_t)(i % 3);
 		CHECK(codeplug_set_contact(i, &c));
@@ -394,7 +476,7 @@ static void populate(void)
 		}
 		CHECK(codeplug_set_listen_list(i, &l));
 	}
-	CHECK(codeplug_set_dmr_id(2345678));
+	CHECK(codeplug_set_dmr_id(9997030));
 }
 
 static void test_round_trip(void)
@@ -490,7 +572,7 @@ static void test_aprs_path(void)
 {
 	codeplug_aprs_t a;
 	fresh();
-	CHECK(codeplug_set_radio_name("N0CALL"));	// a stored codeplug
+	CHECK(codeplug_set_radio_name("Q0TEST"));	// a stored codeplug
 	uint8_t r[0x40];
 	memset(r, 0, sizeof(r));
 	memcpy(r, "APRS1", 5);
@@ -533,10 +615,129 @@ static void test_quick_keys(void)
 	CHECK(sim_flash_data[EE + 0x7523] == 0xFF && sim_flash_data[EE + 0x7538] == 0xFF);	// nothing around them
 }
 
+// Another firmware's codeplug where the open-firmware images go (codeplug-stock-tyt.md 2): pseudo-random bytes over
+// both images, clear of the settings, the journal and the calibration. Its first 16 channels are stock-style: in use,
+// valid BCD frequencies (438.5 MHz), UTF-16 names, which the radio reads as channels once the owner accepts them
+static void foreign_image(void)
+{
+	uint32_t x = 99;
+	for (uint32_t a = 0; a < 0xB0000u; a++) {
+		x = x * 1103515245u + 12345u;
+		if (a < 0x10000u || a >= FL) {
+			sim_flash_data[a] = (uint8_t)(x >> 24);
+		}
+	}
+	sim_flash_data[EE + 0x3780] = sim_flash_data[EE + 0x3781] = 0xFF;	// channels 1..16 in use
+	for (unsigned n = 0; n < 16; n++) {
+		uint8_t *r = &sim_flash_data[EE + 0x3790 + 56u * n];
+		memset(r, 0, 56);
+		memcpy(r, "C\0h\0a\0n\0", 8);
+		static const uint8_t f[4] = { 0x00, 0x00, 0x85, 0x43 };	// 438.5 MHz: BCD in 10 Hz, little endian
+		memcpy(r + 0x10, f, 4);
+		memcpy(r + 0x14, f, 4);
+		r[0x18] = 1;
+	}
+}
+
+// Both open-firmware images as they were (the settings ring, the journal and the calibration aren't compared)
+static bool images_same(const uint8_t *before)
+{
+	return memcmp(before, sim_flash_data, 0x10000u) == 0 && memcmp(before + FL, sim_flash_data + FL, 0x90000u) == 0;
+}
+
+static void test_foreign(void)
+{
+	channel_t c = make("Added", 145550000, 145550000), back;
+	uint16_t good, bad;
+	zone_t z;
+
+	sim_flash_create(FLASH_SIZE, &map);
+	foreign_image();
+	uint8_t *before = malloc(FLASH_SIZE);
+	memcpy(before, sim_flash_data, FLASH_SIZE);
+	CHECK(storage_init());
+	codeplug_accept(false);
+	CHECK(codeplug_init() == CODEPLUG_BUILTIN && codeplug_foreign() && codeplug_channel_count() == 6);
+	// Reading writes nothing, and no edit starts on its own (Cancel: nothing changes)
+	CHECK(codeplug_channel(1, &back) && codeplug_reload() == CODEPLUG_BUILTIN);
+	CHECK(!codeplug_set_channel(10, &c) && !codeplug_set_dmr_id(9996543) && !codeplug_set_radio_name("Q0TEST"));
+	CHECK(!codeplug_set_zone(0, &(zone_t){ .name = "Zone", .count = 1, .channels = { 1 } }));
+	CHECK(codeplug_source() == CODEPLUG_BUILTIN && codeplug_foreign() && images_same(before));
+
+	// Use anyway: the verdict off, the old records shown, nothing erased; an edit writes only what it changes
+	codeplug_accept(true);
+	CHECK(codeplug_acceptance() == CODEPLUG_ACCEPT_YES);
+	codeplug_reload();
+	CHECK(!codeplug_foreign() && images_same(before));
+	codeplug_evidence(&good, &bad);
+	CHECK(bad > 0 && (uint32_t)bad * 4u > good);	// still counted: the view shows why it was asked
+	CHECK(codeplug_source() == CODEPLUG_OPENFW && codeplug_channel_count() >= 16);
+	CHECK(codeplug_channel(16, &back) && back.rx_hz == 438500000u);
+	uint16_t n = codeplug_free_channel();
+	CHECK(n > 16 && codeplug_set_channel(n, &c) && codeplug_channel(n, &back) && same_channel(&c, &back));
+	CHECK(codeplug_channel(1, &back) && back.rx_hz == 438500000u);	// the old channels stay
+	CHECK(memcmp(before + 0x7524u, sim_flash_data + 0x7524u, 0x7538u - 0x7524u) == 0);	// the quick keys
+	CHECK(memcmp(before + FL + 0x87620u, sim_flash_data + FL + 0x87620u, 24u * 1024u) == 0);	// the contacts
+	CHECK(memcmp(before + 0xE0u, sim_flash_data + 0xE0u, 0x1Au) == 0);	// the callsign, the DMR ID
+	// A codeplug written by a CPS drops the acceptance: judged again
+	memcpy(sim_flash_data, before, FLASH_SIZE);
+	sim_flash_power_on();
+	CHECK(storage_init());
+	CHECK(codeplug_written() == CODEPLUG_BUILTIN && codeplug_foreign());
+	CHECK(codeplug_acceptance() == CODEPLUG_ACCEPT_DROPPED);
+	codeplug_accept(false);
+
+	// Start new: what the radio reads of the old bytes cleared, the built-in set stored; then the edit
+	CHECK(codeplug_start_new() && codeplug_set_channel(10, &c));
+	CHECK(codeplug_source() == CODEPLUG_OPENFW && !codeplug_foreign() && codeplug_channel_count() == 10);
+	CHECK(codeplug_init() == CODEPLUG_OPENFW && !codeplug_foreign());
+	codeplug_evidence(&good, &bad);
+	CHECK(good == 7 && bad == 0);
+	CHECK(codeplug_channel(10, &back) && same_channel(&c, &back) && !back.roam && back.sfr_flag1 == 0);
+	CHECK(codeplug_zone_count() == 1 && !codeplug_zones_stored() && codeplug_zone(0, &z));
+	char name[CODEPLUG_NAME_LEN + 1], l2[CODEPLUG_NAME_LEN + 1];
+	codeplug_radio_name(name);
+	CHECK(name[0] == '\0');
+	codeplug_boot_text(name, l2);
+	CHECK(name[0] == '\0' && l2[0] == '\0');
+	uint16_t keys[CODEPLUG_QUICK_KEYS];
+	CHECK(codeplug_quick_keys(keys) && keys[0] == 0 && keys[9] == 0);
+	// Only what the radio reads is cleared: the general settings past the hang times and the bytes between the quick
+	// keys and the boot text keep the old bytes
+	CHECK(memcmp(&sim_flash_data[EE + 0xE0 + 0x1A], &before[EE + 0xE0 + 0x1A], 0x28 - 0x1A) == 0);
+	CHECK(memcmp(&sim_flash_data[EE + 0x7538], &before[EE + 0x7538], 8) == 0);
+#if CONFIG_DMR
+	contact_t ct;
+	listen_list_t ll;
+	codeplug_dmr_settings_t ds;
+	CHECK(codeplug_dmr_settings(&ds) && ds.group_hang_ms == 0 && ds.private_hang_ms == 0);	// not the old bytes
+	CHECK(codeplug_dmr_id() == 0 && !codeplug_contact(1, &ct) && !codeplug_contact(1024, &ct));
+	CHECK(!codeplug_listen_list(1, &ll) && !codeplug_listen_list(76, &ll));
+#endif
+	CHECK(codeplug_start_new());	// ours now: nothing to clear
+	CHECK(sim_flash_violations() == 0);
+
+	// A CPS write over the foreign bytes (here, the image of a fresh codeplug put underneath) flips it on reload
+	uint8_t *ours = malloc(FLASH_SIZE);
+	memcpy(ours, sim_flash_data, FLASH_SIZE);
+	memcpy(sim_flash_data, before, FLASH_SIZE);
+	sim_flash_power_on();
+	CHECK(storage_init() && codeplug_init() == CODEPLUG_BUILTIN && codeplug_foreign());
+	uint32_t ser = codeplug_serial();
+	memcpy(sim_flash_data, ours, 0x10000u);
+	memcpy(sim_flash_data + FL, ours + FL, 0x90000u);
+	CHECK(codeplug_written() == CODEPLUG_OPENFW && !codeplug_foreign() && codeplug_serial() != ser);
+	CHECK(codeplug_channel(10, &back) && same_channel(&c, &back));
+	codeplug_accept(false);
+	free(ours);
+	free(before);
+}
+
 int main(void)
 {
 	test_encode();
 	test_materialize();
+	test_unread();
 	test_zones();
 #if CONFIG_DMR
 	test_dmr();
@@ -545,6 +746,7 @@ int main(void)
 	test_aprs_path();
 #endif
 	test_quick_keys();
+	test_foreign();
 	test_round_trip();
 	test_edit_cuts();
 	sim_flash_free();

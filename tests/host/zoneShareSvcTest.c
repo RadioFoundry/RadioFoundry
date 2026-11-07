@@ -15,10 +15,10 @@
 static int failures, checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
 
-#define OUR_ID		3100001u
-#define RADIO_A		3100002u
-#define RADIO_B		3100003u
-#define SERVICE		9990001u
+#define OUR_ID		9990001u
+#define RADIO_A		9990002u
+#define RADIO_B		9990003u
+#define SERVICE		9997060u
 
 // ---- fake data service ----
 static bool pending;

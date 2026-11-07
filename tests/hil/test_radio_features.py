@@ -38,11 +38,16 @@ Pass criteria:
   zone_pos the new B.
 - test_tx_inhibit (radio_tx): set.tx_inhibit=1, PTT: tx_deny=inhibit, the state never shows tx; input.ptt_downs
   counts the press and the debug log has "input: PTT down (host".
+- test_tx_limit (radio_tx): the test TX limit (RADIO op 35) set to block, then to a list without the VFO's
+  frequency: each time PTT is refused (the state never shows tx, tx_deny=inhibit), txlim.refused grows by 1 and
+  txlim.last_hz is the VFO's tx_hz. The harness's own limit is put back.
 - test_tot_warning (radio_tx): tot_s 6, tot_warn_s 3: tot_warning=1 between 2.5 and 4.5 s after key-up, then
   tx_deny=timeout and the state leaves tx between 5.4 and 7.5 s.
 - test_roger_beep (radio_tx): roger_beep 1, 1.5 s over: roger=1 is seen after PTT release while still transmitting,
   then the state returns to rx within 1 s.
 - test_tone_burst (radio_tx): TONE_BURST 1: state tx and tone_burst=1 within 1 s; TONE_BURST 0: rx within 1 s.
+- test_tone_burst_time_limit (radio_tx): TONE_BURST 1 with a 1.5 s limit and no 0: once the link answers, the state
+  has left tx and the over (tx_elapsed_ms) lasted 1.0-2.5 s.
 - test_scan_stops_on_dmr_call (rf): the zone holding the DMR test channel scans while the bench sends a 20 superframe
   group call there: the scan holds on that channel (scan_phase hold, rx_hz the test frequency) while the call runs.
 - test_vfo_scan_stops_on_signal (rf): the FM VFO scans the DMR test frequency +- 5 steps while the bench sends a 20
@@ -77,6 +82,7 @@ import pytest
 
 from rfoundry_hil import skip
 from rfoundry_debug import DebugLinkError, as_int
+from hil_config import rig
 
 FEATURE_KEYS = ("scan.built", "scan", "scan_phase", "scan_skipped", "tot_warning", "tone_burst", "roger", "vox_keyed",
                 "vox.mic", "vox.level", "rx_sleeping", "battery", "battery_pct", "battery_mv", "power_off", "beep.built", "set.tot_s",
@@ -95,6 +101,14 @@ def features(radio):
 
 def wait_features(radio, pred, timeout=3.0, what="features"):
     return radio.wait_for(pred, timeout, sections=("features",), what=what)
+
+
+def wait_ui_dual(radio):
+    """Wait for the UI to run the dual watch the debug link started (ui.dual); a build before that key: wait it out."""
+    if "ui.dual" not in radio.link.view(["link"]):
+        time.sleep(1.0)
+        return
+    radio.wait_for(lambda v: v.get("ui.dual") == "1", 2.0, sections=("link",), what="the UI to take over the watch")
 
 
 @contextlib.contextmanager
@@ -352,6 +366,9 @@ def test_dual_watch_debug_link(radio):
     radio.link.scan("dual", b)
     try:
         wait_features(radio, lambda v: v.get("scan") == "dual", 1.0, "scan=dual")
+        # The UI takes the watch over only 0.5 s after the last one stopped (the test before may have just stopped one).
+        # A channel change before then ends the watch, with nobody to start it again
+        wait_ui_dual(radio)
         radio.link.scan("select", 1)
         wait_features(radio, lambda v: v.get("dual.sel") == "b", 1.0, "B selected")
         radio.link.zone_pos(c)
@@ -379,7 +396,7 @@ def fm_tx(radio, pytestconfig):
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
     with radio.vfo_session():
-        radio.link.vfo_set(round(pytestconfig.getoption("--fm-mhz") * 1e6))
+        radio.link.vfo_set(round(rig(pytestconfig, "fm-mhz") * 1e6))
         radio.wait_for(lambda v: v.get("mode") == "fm", what="FM VFO")
         radio.lowest_power()
         try:
@@ -408,6 +425,34 @@ def test_tx_inhibit(fm_tx):
     assert v.get("tx_deny") == "inhibit", v
     assert after == downs + 1, (downs, after)
     assert "input: PTT down (host" in log, log
+
+
+@pytest.mark.feature("debuglink")
+@pytest.mark.radio_tx
+def test_tx_limit(fm_tx):
+    """PTT under the test TX limit: if the limit failed, the radio keys on the FM VFO at its lowest power."""
+    core = fm_tx.core()
+    if "txlim" not in core:
+        skip("not_built", "firmware without the test TX limit")
+    tx_hz = int(core["tx_hz"])
+    try:
+        for limit in ({"block": True}, {"mhz": [(tx_hz + 25000) / 1e6]}):
+            fm_tx.link.tx_limit(**limit)
+            refused = int(fm_tx.core()["txlim.refused"])
+            fm_tx.link.ptt(True)
+            try:
+                seen, _ = collect(fm_tx, "state", 1.0)
+                v = fm_tx.core()
+            finally:
+                fm_tx.link.ptt(False)
+            # The next press must be a new one: the input task samples PTT, so a quick up-down could go unseen
+            fm_tx.wait_for(lambda x: x.get("state") != "tx_denied", 2.0, what="PTT released")
+            assert "tx" not in seen, (limit, seen)
+            assert v.get("tx_deny") == "inhibit", (limit, v)
+            assert int(v["txlim.refused"]) == refused + 1, (limit, v)
+            assert int(v["txlim.last_hz"]) == tx_hz, (limit, v)
+    finally:
+        fm_tx.tx_gate(True)
 
 
 @pytest.mark.feature("radio_controls")
@@ -459,7 +504,7 @@ def test_roger_beep(fm_tx):
 def test_tone_burst(fm_tx):
     if "FM_TX_TONES" not in fm_tx.features():
         skip("not_built", "built without CONFIG_FM_TX_TONES")
-    fm_tx.link.tone_burst(True)
+    fm_tx.link.tone_burst(True, 3000)
     try:
         fm_tx.wait_for(lambda v: v.get("state") == "tx" and v.get("tone_burst") == "1", 1.0,
                        sections=("core", "features"), what="burst keyed")
@@ -467,6 +512,40 @@ def test_tone_burst(fm_tx):
     finally:
         fm_tx.link.tone_burst(False)
     fm_tx.wait_for(lambda v: v.get("state") != "tx", 1.0, what="burst over")
+
+
+@pytest.mark.feature("fm_tx_tones")
+@pytest.mark.radio_tx
+def test_tone_burst_time_limit(fm_tx):
+    """A burst whose "off" never comes (the host went away) ends by itself at its time limit. The radio's own
+    transmission may jam the link while it is keyed, so the over is read once the link answers again."""
+    if "FM_TX_TONES" not in fm_tx.features():
+        skip("not_built", "built without CONFIG_FM_TX_TONES")
+    if "tone_burst_max_ms" not in fm_tx.link.version():
+        skip("not_built", "firmware without the tone burst's time limit")
+    fm_tx.link.tone_burst(True, 1500)
+    try:
+        deadline = time.monotonic() + 8.0
+        time.sleep(1.5)
+        v = None
+        while time.monotonic() < deadline:
+            try:
+                v = fm_tx.view(["core", "features"])
+            except DebugLinkError:
+                v = None	# jammed while keyed: ask again
+            if v is not None and v.get("state") != "tx":
+                break
+            time.sleep(0.2)
+        assert v is not None and v.get("state") != "tx", f"still keyed (or no answer) 8 s after a 1.5 s burst: {v}"
+        assert v.get("tone_burst") == "0", v
+        elapsed = int(v.get("tx_elapsed_ms") or 0)
+        print(f"burst over after {elapsed} ms (limit 1500)")
+        assert 1000 <= elapsed <= 2500, f"the over lasted {elapsed} ms, limit 1500"
+    finally:
+        try:
+            fm_tx.link.tone_burst(False)
+        except DebugLinkError:
+            pass
 
 
 # ── the SDR bench transmits ───────────────────────────────────────────────
@@ -563,7 +642,7 @@ def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
         skip("not_built", "built without the FM VFO")
     if features(radio).get("rx_save.hw") == "0":
         skip("no_hw", "this radio's driver can't switch the receiver off (no rx_sleep)")
-    hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
+    hz = round(rig(pytestconfig, "dmr-freq") * 1e6)
     radio.go_home()
     with radio.vfo_session():
         radio.link.vfo_set(hz)
@@ -588,7 +667,7 @@ def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
 @pytest.mark.bench_modem
 def test_dual_watch_stops_on_call(radio, sdr_bench, pytestconfig):
     need_scan(radio)
-    hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
+    hz = round(rig(pytestconfig, "dmr-freq") * 1e6)
     radio.go_home()
     pos = radio.find_channel(hz, "dmr")
     size = as_int(radio.core().get("zone_size"), 0)
@@ -621,7 +700,7 @@ def _battery_save(radio, pytestconfig):
         skip("not_built", "built without the FM VFO")
     if features(radio).get("rx_save.hw") == "0":
         skip("no_hw", "this radio's driver can't switch the receiver off (no rx_sleep)")
-    hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
+    hz = round(rig(pytestconfig, "dmr-freq") * 1e6)
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")

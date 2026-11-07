@@ -145,6 +145,16 @@ one without a label.
      - the vendor's download as the owner gets it (a zip or a `.bin`);
      - a readout of the radio;
      - an update of a radio already running RadioFoundry.
+9. The stock codeplug, so the install keeps the owner's channels. Map the vendor layout clean room
+   ([CLEANROOM.md](../CLEANROOM.md)), from data only: compare reads of the radio's memory with `dmrconf decode` of the
+   same codeplug, then confirm each field with reads taken before and after one change in the stock menu. Write it up
+   as the radio's `<id>-stock-codeplug.md` and convert it in `site/static/js/codeplug/`. The Codeplug Editor, the
+   Tools page and the install's channel step share the converter.
+   - If a channel record holds no talkgroup or TX contact, look for a separate table indexed by channel number: a
+     few bytes per channel, in channel order, holding the contact's number in the contact table. One supported radio
+     keeps its TX contacts this way, and dmrconf 0.15 doesn't decode that table, so an empty TX contact in its output
+     doesn't mean the codeplug has none. Change one channel's talkgroup on the radio and diff the reads to find it.
+     Other vendors' radios (AnyTone's among them) likely do the same.
 
 A bring-up page under [docs/testing/](../testing/README.md) is this list made concrete for one radio.
 

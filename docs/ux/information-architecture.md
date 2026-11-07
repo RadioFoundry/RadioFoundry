@@ -94,8 +94,8 @@ Large-text mode (accessibility, or chosen by the user) shows only the status str
 
 ### Banners and interruptions
 
-- Group call heard: Activity region shows it; no focus change on any screen. Outside Home, the status strip shows `RX TG 91 · K1ABC`.
-- Text message: tone, banner "Message from K1ABC: first words…", `CONTEXT` while the banner is visible opens it; the banner goes away after 8 s and the message waits in Messages with an unread count on the status strip.
+- Group call heard: Activity region shows it; no focus change on any screen. Outside Home, the status strip shows `RX TG 91 · Q1AAA`.
+- Text message: tone, banner "Message from Q1AAA: first words…", `CONTEXT` while the banner is visible opens it; the banner goes away after 8 s and the message waits in Messages with an unread count on the status strip.
 - Private call to me, call alert, radio check request: banner with tone; Home shows the caller with "PTT to reply". A private call does not take over a screen the user is editing; it shows in the status strip and the reply is one `CONTEXT` away.
 - Zone or channel share offered: banner with tone; it has no timer and stays until `CONTEXT` opens the offer, `BACK` hides it (on any screen) or the offer ends. The offer also waits under Tools.
 - Emergency received: full-screen, alert tone, repeated until acknowledged with `SELECT` or dismissed with `BACK`.

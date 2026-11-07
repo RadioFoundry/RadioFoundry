@@ -34,9 +34,15 @@
 //   zoneexpire          the offer is gone (not opened in time)
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
+//   timeout             the TX timeout cuts the transmission off while PTT is still held (shows the timeout deny)
+//   pttlocked:on|off    turns Settings > Privacy > PTT when locked on or off
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
+//   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
 //   supply:<mv>         no battery, and the board measures its DC input, which reads mv (hal_power_t.supply_mv)
+//   contacts:full       every contact number holds a talkgroup ("Long 31" ...), but every third: a list past 128
+//   contacts:<n>        the same up to contact n (a list just past 128 at 220)
+//   channels:full       every channel number past the 40 holds one ("Far 41" ...), but every third: a list past 128
 //   color:<name>        the highlight color (sim_color_find); strip:on|off  the filled status bar (Settings > Display)
 //   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast)
 //   splash              draw the boot screen (put it last: nothing redraws over it)
@@ -93,6 +99,8 @@ void gfx_fit_trace(const char *src, const char *out)
 // them read as one word. Marks of 6 px or less (scroll marks, ellipsis dots) and lines (one pixel thick) are left out.
 
 static bool worst;	// sim_worst: worst-case codeplug content
+static uint16_t full_contacts;	// contacts:full / :<n>: every contact number up to it used, but every third
+static bool full_channels;	// channels:full: every channel number used, but every third past 40
 
 #define LIVE_MAX	160
 static struct { int x0, y0, x1, y1; char s[40]; } live[LIVE_MAX];
@@ -412,7 +420,7 @@ bool ui_svc_aprs_view(aprs_view_t *v)
 	if (aprs_sim.off)
 		return false;
 	if (!aprs_sim.no_call)
-		strcpy(v->call, "N0SIM-7");
+		strcpy(v->call, "Q0SIM-7");
 	v->block = aprs_sim.no_call ? APRS_NO_CALL : APRS_OK;
 	v->freq_hz = aprs_sim.cfg.region == APRS_REGION_CUSTOM ? aprs_sim.cfg.freq_hz : hz[aprs_sim.cfg.region % APRS_REGION_COUNT];
 	v->pos_valid = !aprs_sim.no_call;
@@ -436,7 +444,7 @@ bool ui_svc_aprs_send_now(void)
 uint8_t ui_svc_aprs_station_count(void) { return aprs_sim.off ? 0 : 2; }
 bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out)
 {
-	static const char *const calls[] = { "W4ABC-9", "KJ4XYZ" };
+	static const char *const calls[] = { "Q4WAB-9", "QJ4XYZ" };
 	if (aprs_sim.off || i >= 2)
 		return false;
 	memset(out, 0, sizeof *out);
@@ -455,7 +463,7 @@ void hotspot_get_view(hotspot_view_t *v)
 	v->running = true;
 	v->rx_hz = v->tx_hz = 438800000;
 	v->cc = 1;
-	v->src = 3101234;
+	v->src = 9991234;
 	v->dst = 91;
 	v->group = true;
 	v->from_net = true;
@@ -471,7 +479,7 @@ void ui_crit_exit(void) {}
 typedef struct { const char *name; uint32_t hz; uint8_t mode; } sim_ch_t;
 static const sim_ch_t chans[40] = {
 	{ "Base repeater", 146940000, RADIO_MODE_FM }, { "Valley rpt", 147060000, RADIO_MODE_FM },
-	{ "COUNTY DMR", 467375000, RADIO_MODE_DMR }, { "County fire", 154250000, RADIO_MODE_FM },
+	{ "COUNTY DMR", 453625000, RADIO_MODE_DMR }, { "County fire", 154250000, RADIO_MODE_FM },
 	{ "Metro DMR", 444500000, RADIO_MODE_DMR }, { "Hill top", 442100000, RADIO_MODE_DMR },
 	{ "North link", 443450000, RADIO_MODE_DMR }, { "Harbor", 145230000, RADIO_MODE_FM },
 	{ "Airport DMR", 441000000, RADIO_MODE_DMR }, { "Lake rpt", 146820000, RADIO_MODE_FM },
@@ -481,14 +489,14 @@ static const sim_ch_t chans[40] = {
 	// Simplex (FM)
 	{ "2M CALLING", 146520000, RADIO_MODE_FM }, { "70CM CALLING", 446000000, RADIO_MODE_FM },
 	{ "2M SPX 1", 146550000, RADIO_MODE_FM }, { "2M SPX 2", 146580000, RADIO_MODE_FM },
-	{ "70CM SPX 1", 446025000, RADIO_MODE_FM }, { "70CM SPX 2", 446050000, RADIO_MODE_FM },
+	{ "70CM SPX 1", 446025000, RADIO_MODE_FM }, { "70CM SPX 2", 446225000, RADIO_MODE_FM },
 	{ "MURS 1", 151820000, RADIO_MODE_FM }, { "MURS 2", 151880000, RADIO_MODE_FM },
 	{ "NOAA 1", 162550000, RADIO_MODE_FM }, { "NOAA 2", 162400000, RADIO_MODE_FM },
 	{ "Marine 16", 156800000, RADIO_MODE_FM }, { "SAR", 155160000, RADIO_MODE_FM },
 	// Hotspots (DMR)
 	{ "HS 438.8", 438800000, RADIO_MODE_DMR }, { "HS 433.5", 433500000, RADIO_MODE_DMR },
 	{ "HS 430.1", 430100000, RADIO_MODE_DMR }, { "DMR SPX 1", 441000000, RADIO_MODE_DMR },
-	{ "DMR SPX 2", 446500000, RADIO_MODE_DMR }, { "DMR SPX 3", 446075000, RADIO_MODE_DMR },
+	{ "DMR SPX 2", 446500000, RADIO_MODE_DMR }, { "DMR SPX 3", 446275000, RADIO_MODE_DMR },
 	{ "DMR SPX 4", 433450000, RADIO_MODE_DMR }, { "DMR SPX 5", 145510000, RADIO_MODE_DMR },
 	{ "Parrot", 438800000, RADIO_MODE_DMR }, { "Brandmeister", 438800000, RADIO_MODE_DMR },
 	{ "TGIF", 438800000, RADIO_MODE_DMR }, { "Local TS2", 438800000, RADIO_MODE_DMR },
@@ -505,11 +513,11 @@ static const sim_contact_t contacts[] = {
 	{ "SKYWARN", 3133, CONTACT_GROUP }, { "ARES", 31064, CONTACT_GROUP }, { "UK", 235, CONTACT_GROUP },
 	{ "Germany", 262, CONTACT_GROUP }, { "Canada", 302, CONTACT_GROUP }, { "Mexico", 334, CONTACT_GROUP },
 	{ "Main Ops", 201, CONTACT_GROUP }, { "Regional", 8, CONTACT_GROUP },
-	{ "K1ABC Joe", 3101234, CONTACT_PRIVATE }, { "W1XYZ Jodi", 3105678, CONTACT_PRIVATE },
-	{ "KD9ABC Ann", 3102222, CONTACT_PRIVATE }, { "K9XYZ Bob", 3103333, CONTACT_PRIVATE },
-	{ "N2ABC Carl", 3104444, CONTACT_PRIVATE }, { "N3XYZ Dana", 3106666, CONTACT_PRIVATE },
-	{ "W4ABC Eve", 3107777, CONTACT_PRIVATE }, { "W5XYZ Fred", 3108888, CONTACT_PRIVATE },
-	{ "K6ABC Gail", 3109090, CONTACT_PRIVATE }, { "All call", 0xFFFFFF, CONTACT_ALL_CALL },
+	{ "Q1ABC Joe", 9991234, CONTACT_PRIVATE }, { "Q1XYZ Jodi", 9995678, CONTACT_PRIVATE },
+	{ "QD9ABC Ann", 9992222, CONTACT_PRIVATE }, { "Q9XYZ Bob", 9993333, CONTACT_PRIVATE },
+	{ "Q2ABC Carl", 9994444, CONTACT_PRIVATE }, { "Q3XYZ Dana", 9996666, CONTACT_PRIVATE },
+	{ "Q4WAB Eve", 9997777, CONTACT_PRIVATE }, { "Q5XYZ Fred", 9998888, CONTACT_PRIVATE },
+	{ "Q6ABC Gail", 9999090, CONTACT_PRIVATE }, { "All call", 0xFFFFFF, CONTACT_ALL_CALL },
 };
 #define N_CONTACTS	(sizeof contacts / sizeof contacts[0])
 
@@ -524,13 +532,41 @@ static const char *const worst_ch[16] = {
 static const char *const worst_zone[3] = { "Northeast Region", "Simplex & Call 2", "Hotspots & Links" };
 static const sim_contact_t worst_contacts[] = {
 	{ "North America TG", 16776415, CONTACT_GROUP }, { "Worldwide Englsh", 9100091, CONTACT_GROUP },
-	{ "Christopher Wood", 3109999, CONTACT_PRIVATE }, { "Alexandra Nguyen", 3108765, CONTACT_PRIVATE },
+	{ "Christopher Wood", 9999999, CONTACT_PRIVATE }, { "Alexandra Nguyen", 9998765, CONTACT_PRIVATE },
 	{ "Massachusetts St", 3125000, CONTACT_GROUP }, { "TAC 310 Tactical", 31010, CONTACT_GROUP },
 };
 #define N_WORST	(sizeof worst_contacts / sizeof worst_contacts[0])
 #define WORST_FIRST	985u
 
 codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
+
+// Another firmware's codeplug ("foreign"): a channel write is held and the UI asked, as ui_svc_storage.c does
+static bool sim_foreign, sim_held;
+bool codeplug_foreign(void) { return sim_foreign; }
+
+static bool sim_hold(void)
+{
+	if (!sim_foreign)
+		return false;
+	ui_event_t ev;
+	memset(&ev, 0, sizeof ev);
+	ev.kind = UI_EV_CODEPLUG_FOREIGN;
+	sim_held = ui_notify(&ev);
+	return true;
+}
+
+// Start new makes the write (counted), Use anyway drops it; both make the codeplug the radio's own
+bool ui_svc_codeplug_answer(uint8_t answer)
+{
+	if (!sim_held)
+		return false;
+	sim_held = false;
+	if (answer == UI_CP_NEW)
+		sim_rec.codeplug_writes++;
+	if (answer != UI_CP_CANCEL)
+		sim_foreign = false;
+	return true;
+}
 
 // Channels the channel editor saved (ui_svc_write_channel): they shadow the built-in ones and fill numbers past 40
 #define SIM_EDITS	8
@@ -547,6 +583,8 @@ static const channel_t *sim_edit(uint16_t number)
 
 bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
 {
+	if (sim_hold())
+		return sim_held;
 	uint8_t i = 0;
 	while (i < n_edits && sim_edits[i].number != number)
 		i++;
@@ -563,7 +601,7 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
 uint16_t codeplug_free_channel(void)
 {
 	for (uint16_t n = worst ? 1 : 41; n <= CODEPLUG_CHANNELS_MAX; n++) {
-		if (worst && n >= WORST_FIRST && n < WORST_FIRST + 40u)
+		if ((worst && n >= WORST_FIRST && n < WORST_FIRST + 40u) || (full_channels && n % 3u != 0))
 			continue;
 		if (sim_edit(n) == NULL)
 			return n;
@@ -573,7 +611,7 @@ uint16_t codeplug_free_channel(void)
 
 uint16_t codeplug_channel_count(void)
 {
-	uint16_t top = worst ? CODEPLUG_CHANNELS_MAX : 40;
+	uint16_t top = worst || full_channels ? CODEPLUG_CHANNELS_MAX : 40;
 	for (uint8_t i = 0; i < n_edits; i++)
 		if (sim_edits[i].number > top)
 			top = sim_edits[i].number;
@@ -585,6 +623,13 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 	const channel_t *e = sim_edit(number);
 	if (e != NULL) {
 		*out = *e;
+		return true;
+	}
+	if (full_channels && number > 40 && number <= CODEPLUG_CHANNELS_MAX) {
+		// "Far 41" ...: channel 1's settings at each number, none at 42, 45, 48 ...
+		if (number % 3u == 0 || !codeplug_channel(1, out))
+			return false;
+		snprintf(out->name, sizeof out->name, "Far %u", (unsigned)number);
 		return true;
 	}
 	if (worst) {
@@ -764,7 +809,7 @@ bool ui_svc_zone_edit(const zone_op_t *op)
 	return true;
 }
 
-uint32_t codeplug_dmr_id(void) { return 3101276; }
+uint32_t codeplug_dmr_id(void) { return 9996543; }
 
 // Contacts the contact editor saved (ui_svc_write_contact): at the numbers past the built-in ones
 #define SIM_CONTACT_EDITS	4
@@ -792,6 +837,17 @@ bool codeplug_contact(uint16_t index, contact_t *out)
 			return true;
 		}
 	}
+	if (full_contacts != 0) {
+		// "TG 100001" ... a talkgroup at each number, none at 3, 6, 9 ...; past the built-in ones
+		if (index <= N_CONTACTS || index > full_contacts || index % 3u == 0)
+			goto builtin;
+		memset(out, 0, sizeof *out);
+		out->id = 100000u + index;
+		snprintf(out->name, sizeof out->name, "Long %u", (unsigned)index);
+		out->type = CONTACT_GROUP;
+		return true;
+	}
+builtin:
 	if (worst) {
 		if (index < 1 || index > N_WORST)
 			return false;
@@ -807,6 +863,66 @@ bool codeplug_contact(uint16_t index, contact_t *out)
 	strncpy(out->name, contacts[index - 1].name, CODEPLUG_NAME_LEN);
 	out->id = contacts[index - 1].id;
 	out->type = contacts[index - 1].type;
+	return true;
+}
+
+bool codeplug_contacts_each(codeplug_contact_fn fn, void *ctx)
+{
+	contact_t c;
+	for (uint16_t i = 1; i <= CODEPLUG_CONTACTS_MAX; i++) {
+		if (!fn(i, codeplug_contact(i, &c) ? &c : NULL, ctx))
+			break;
+	}
+	return true;
+}
+
+uint16_t codeplug_contact_find_index(uint32_t id, bool group, contact_t *out)
+{
+	for (uint16_t i = 1; id != 0 && i <= CODEPLUG_CONTACTS_MAX; i++) {
+		if (codeplug_contact(i, out) && out->id == id && (out->type != CONTACT_PRIVATE) == group)
+			return i;
+	}
+	return 0;
+}
+
+bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
+{
+	return codeplug_contact_find_index(id, group, out) != 0;
+}
+
+bool codeplug_channel_name(uint16_t number, char out[CODEPLUG_NAME_LEN + 1])
+{
+	channel_t ch;
+	if (!codeplug_channel(number, &ch))
+		return false;
+	memcpy(out, ch.name, CODEPLUG_NAME_LEN + 1);
+	return true;
+}
+
+bool codeplug_channel_used(uint16_t number)
+{
+	channel_t ch;
+	return codeplug_channel(number, &ch);
+}
+
+bool codeplug_channel_names_each(codeplug_name_fn fn, void *ctx, bool names)
+{
+	char name[CODEPLUG_NAME_LEN + 1];
+	uint16_t top = codeplug_channel_count();
+	for (uint16_t n = 1; n <= top; n++) {
+		bool used = codeplug_channel_name(n, name);
+		if (!fn(n, !used ? NULL : names ? name : "", ctx))
+			break;
+	}
+	return true;
+}
+
+bool codeplug_zone_name(uint16_t index, char out[CODEPLUG_NAME_LEN + 1])
+{
+	zone_t z;
+	if (!codeplug_zone(index, &z))
+		return false;
+	memcpy(out, z.name, CODEPLUG_NAME_LEN + 1);
 	return true;
 }
 
@@ -1269,8 +1385,8 @@ uint32_t ui_svc_features(void)
 static char sim_names[UI_NAME_COUNT][17];
 static void sim_names_reset(void)
 {
-	strcpy(sim_names[UI_NAME_RADIO], "N0CALL");
-	strcpy(sim_names[UI_NAME_BOOT1], "N0CALL");
+	strcpy(sim_names[UI_NAME_RADIO], "Q0TEST");
+	strcpy(sim_names[UI_NAME_BOOT1], "Q0TEST");
 	strcpy(sim_names[UI_NAME_BOOT2], "Jamie Thompson");
 }
 void ui_svc_name_get(uint8_t which, char out[17])
@@ -1302,7 +1418,7 @@ static struct {
 static const struct { const char *name; uint32_t hz; bool dmr; bool in_band; } zs_chans[] = {
 	{ "Club rpt", 146760000, false, true }, { "Club DMR", 442375000, true, true },
 	{ "Simplex", 146520000, false, true }, { "Club TG 2", 442375000, true, true },
-	{ "Field day", 446100000, true, true }, { "Club 900", 927500000, true, false },
+	{ "Field day", 446350000, true, true }, { "Club 900", 927500000, true, false },
 };
 #define ZS_SIM_CHANNELS	(sizeof zs_chans / sizeof zs_chans[0])
 uint8_t ui_svc_zone_send(uint16_t zone, uint16_t pos, bool one, uint32_t dst, bool group, uint8_t *total)
@@ -1470,6 +1586,8 @@ bool ui_svc_vox(bool on)
 }
 bool ui_svc_save_channel(void)
 {
+	if (sim_hold())
+		return sim_held;
 	sim_rec.codeplug_writes++;
 	ch_saved = view.ch;
 	view.temp = 0;
@@ -1517,7 +1635,15 @@ bool ui_svc_roam(uint8_t cmd)
 	return false;
 #endif
 }
-void ui_svc_beep(uint8_t beep) { sim_rec.beeps++; sim_rec.last_beep = beep; }
+static void (*beep_hook)(uint8_t beep, uint32_t now_ms);
+void sim_set_beep_hook(void (*hook)(uint8_t beep, uint32_t now_ms)) { beep_hook = hook; }
+void ui_svc_beep(uint8_t beep)
+{
+	sim_rec.beeps++;
+	sim_rec.last_beep = beep;
+	if (beep_hook != NULL)
+		beep_hook(beep, now_ms);
+}
 void ui_svc_vibrate(uint8_t vibe) { sim_rec.vibes++; sim_rec.last_vibe = vibe; }
 static bool ptt_blocked;	// ui_svc_ptt_block: the input layer keeps PTT presses from the radio
 void ui_svc_ptt_block(bool blocked) { ptt_blocked = blocked; }
@@ -1808,6 +1934,8 @@ static const char *shot_dir, *shot_prefix;
 int sim_presses(void) { return presses; }
 void sim_count_reset(void) { presses = 0; }
 void sim_set_shot_dir(const char *dir, const char *prefix) { shot_dir = dir; shot_prefix = prefix; }
+static void (*tick_hook)(uint32_t now_ms);
+void sim_set_tick_hook(void (*hook)(uint32_t now_ms)) { tick_hook = hook; }
 
 static void step(void)
 {
@@ -1848,6 +1976,8 @@ static void step(void)
 	view.hotspot = hotspot_on;
 	if (ui_app_tick(&view, now_ms))
 		ui_app_draw();
+	if (tick_hook != NULL)
+		tick_hook(now_ms);
 }
 
 static void advance(uint32_t ms)
@@ -1859,6 +1989,7 @@ static void advance(uint32_t ms)
 void sim_reset(const sim_geom_t *g, sim_map_t map)
 {
 	emergency_on = false;
+	sim_foreign = sim_held = false;
 	disp.width = g->w;
 	disp.height = g->h;
 	disp.bpp = g->bpp;
@@ -1867,6 +1998,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	font_aa_on = g->aa;
 	font_big_on = g->big;
 	worst = false;
+	full_contacts = 0;
+	full_channels = false;
 	layout_reset();
 	board.keymap = maps[map].m;
 	board.keymap_len = maps[map].n;
@@ -1896,7 +2029,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	view.tot_s = 180;
 	view.rssi_dbm = -95;
 	view.source = CODEPLUG_OPENFW;
-	view.dmr.own_id = 3101276;
+	view.dmr.own_id = 9996543;
 	view.zone_index = 0;
 	view.zone_pos = 2;	// 3 COUNTY DMR
 	n_inbox = 0;
@@ -2294,6 +2427,27 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+	if (strcmp(t, "timeout") == 0) {	// the TX timeout cuts the transmission off while PTT is still held
+		if (view.state == RS_TX) {
+			view.state = RS_TX_DENIED;
+			view.tx_deny = TXDENY_TIMEOUT;
+			view.dmr.state = RDMR_IDLE;
+			changed();
+		}
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "pttlocked") == 0 && arg != NULL) {	// Settings > Privacy > PTT when locked
+		bool on = strcmp(arg, "on") == 0;
+		if (!on && strcmp(arg, "off") != 0) {
+			snprintf(err, len, "pttlocked: expected on or off, got %s", arg);
+			return false;
+		}
+		ui_svc_setting_set(UI_SET_PTT_LOCKED, on);
+		ui_apply_setting(UI_SET_PTT_LOCKED, on);
+		advance(200);
+		return true;
+	}
 	if (strcmp(t, "autotx") == 0) {		// the radio keys by itself (an APRS beacon): TX without a PTT event
 		ptt(true);
 		advance(500);
@@ -2570,6 +2724,10 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+	if (strcmp(t, "foreign") == 0) {	// the codeplug is another firmware's: the first edit asks
+		sim_foreign = true;
+		return true;
+	}
 	if (strcmp(t, "nobattery") == 0) {
 		board.caps |= CAP_NO_BATTERY;
 		advance(1100);
@@ -2625,6 +2783,23 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "trim") == 0) {		// this radio has a reference trim (hal_radio_t.ref_trim)
 		ref_trim = true;
+		return true;
+	}
+	if (strcmp(t, "contacts") == 0 && arg != NULL) {	// contacts:full, contacts:<n>
+		unsigned long n = strcmp(arg, "full") == 0 ? CODEPLUG_CONTACTS_MAX : strtoul(arg, NULL, 10);
+		if (n == 0 || n > CODEPLUG_CONTACTS_MAX) {
+			snprintf(err, len, "contacts: full or 1..%u", (unsigned)CODEPLUG_CONTACTS_MAX);
+			return false;
+		}
+		full_contacts = (uint16_t)n;
+		changed();
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "channels") == 0 && arg != NULL && strcmp(arg, "full") == 0) {
+		full_channels = true;
+		changed();
+		advance(200);
 		return true;
 	}
 	if (strcmp(t, "worst") == 0) {		// worst-case codeplug content from here on (sim_worst)

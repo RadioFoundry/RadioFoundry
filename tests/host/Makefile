@@ -165,7 +165,7 @@ TESTS   += radioCoreTest inputTest quadratureTest serialmicTest
 RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
            $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/radio/ref_trim.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c \
            $(CORE)/codeplug/zone_settle.c \
-           $(CORE)/radio/radio_sfr.c $(CORE)/radio/radio_cwid.c
+           $(CORE)/radio/radio_sfr.c $(CORE)/radio/radio_cwid.c $(CORE)/radio/tx_limit.c
 RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
            $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \
@@ -227,7 +227,7 @@ roamTest: $(ROAMT) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h
 TESTS   += aprsRadioTest
 FMONLY  := -DCONFIG_DMR=0 -DCONFIG_DMR_PRIVACY=0 -DCONFIG_DMR_TALKER_ALIAS=0 -DCONFIG_DMR_SMS=0 -DCONFIG_DMR_ARS=0 \
            -DCONFIG_DMR_LRRP=0 -DCONFIG_DMR_SIGNALING=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=0 -DCONFIG_HOTSPOT=0
-APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c \
+APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(CORE)/radio/tx_limit.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c \
            $(CORE)/radio/vibe.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c \
            $(CORE)/radio/battery.c $(CORE)/radio/morse.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
            $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
@@ -306,13 +306,13 @@ FLASH_HAL := -I$(ROOT)/hal -Wshadow
 TESTS   += codeplugTest
 
 codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
-	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
+	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c -lm
 
 # The same without format C (CONFIG_IDDB_COMPACT=0): a format C database is no database (iddb-compact.md 3.1)
 TESTS   += codeplugNoCompactTest
 
 codeplugNoCompactTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
-	$(CC) $(CFLAGS) $(FLASH_HAL) -DCONFIG_IDDB_COMPACT=0 -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
+	$(CC) $(CFLAGS) $(FLASH_HAL) -DCONFIG_IDDB_COMPACT=0 -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c -lm
 
 # The power byte on 2-, 3- and 9-level radios
 TESTS   += codeplugPower2Test codeplugPower3Test codeplugPower9Test
@@ -470,6 +470,27 @@ uiFlowTestNoColor: uiFlowTest.c $(UIDEPS)
 uiSim: uiSim.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -o $@ uiSim.c $(UIAPP) -lz
 
+# The beep reel (tools/beep_reel.py). BEEP_DIR picks the beep.c and beep.h to build with, so CI can build the base
+# commit's beeps for a before and after comparison. We copy that beep.h into out/beep/radio/ and put out/beep first on
+# the include path, so beep.c and beepReel.c both use it instead of core/radio/beep.h, and beep_names.awk makes the
+# list of beep names from it. The beep_dir file holds the last BEEP_DIR built and only changes when BEEP_DIR does, so
+# switching to another directory forces a rebuild.
+BEEP_DIR ?= $(CORE)/radio
+BEEPINC := out/beep
+TESTS   += beepReel
+
+$(BEEPINC)/beep_dir: FORCE
+	@mkdir -p $(BEEPINC)
+	@echo '$(BEEP_DIR)' | cmp -s - $@ || echo '$(BEEP_DIR)' > $@
+FORCE:
+.PHONY: FORCE
+
+beepReel: beepReel.c beep_names.awk $(UIDEPS) $(BEEP_DIR)/beep.c $(BEEP_DIR)/beep.h $(BEEPINC)/beep_dir
+	mkdir -p $(BEEPINC)/radio
+	cp $(BEEP_DIR)/beep.h $(BEEPINC)/radio/beep.h
+	awk -f beep_names.awk $(BEEP_DIR)/beep.h > $(BEEPINC)/beep_names.h
+	$(CC) -I$(BEEPINC) $(UIFLAGS) -o $@ beepReel.c $(UIAPP) $(BEEP_DIR)/beep.c -lz
+
 # The highlight colors the gallery shows its color pages in: the list in .github/workflows/ui-gallery.yml, so the
 # committed gallery and a pull request's before / after pictures show the same colors
 UI_GALLERY_COLORS ?= $(shell sed -n 's/^ *UI_GALLERY_COLORS: *"\([^"]*\)".*/\1/p' $(ROOT)/.github/workflows/ui-gallery.yml)
@@ -483,7 +504,7 @@ ui-sheets: uiSim
 	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: gfxTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiSim
+run-ui: gfxTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiSim beepReel
 	./gfxTest
 	./i18nTest
 	./i18nTestNoLang
@@ -491,6 +512,7 @@ run-ui: gfxTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoC
 	./uiFlowTest
 	./uiFlowTestNoColor
 	./uiSim --layout
+	./beepReel --out out/beep-reel --no-frames > /dev/null	# checks every beep has a scene and the scenes still run
 .PHONY: run-ui ui-gallery ui-sheets
 
 # AMBE+2 3600x2450 air frame FEC and interleaving (core/dmr/ambe), with vectors from the stock DM-1701 codec's FEC
@@ -768,6 +790,19 @@ run-debuglinkRx2: debuglinkRx2Test
 	./debuglinkRx2Test
 .PHONY: run-debuglinkRx2
 
+# DL_CMD_CHIP_REG, RF chip and SoC registers on the debug link (core/debuglink/debuglink_chipreg.c): the board's hooks
+# and the transmit check are faked
+CHIPREG := debuglinkChipRegTest.c $(CORE)/debuglink/debuglink_chipreg.c
+TESTS   += debuglinkChipRegTest
+debuglinkChipRegTest: $(CHIPREG) $(ROOT)/hal/board.h $(ROOT)/hal/hal_system.h $(CORE)/debuglink/debuglink.h \
+		$(CORE)/debuglink/debuglink_proto.h
+	$(CC) $(CFLAGS) -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -o $@ $(CHIPREG)
+
+run: run-debuglinkChipReg
+run-debuglinkChipReg: debuglinkChipRegTest
+	./debuglinkChipRegTest
+.PHONY: run-debuglinkChipReg
+
 # DL_CMD_DMR_DATA's IP operations (core/debuglink/debuglink_dmr_data.c): the settings' gateway ID and IP_SEND's parsing
 DLDATA  := debuglinkDmrDataTest.c $(CORE)/debuglink/debuglink_dmr_data.c $(CORE)/debuglink/dl_fmt.c $(DATA)
 TESTS   += debuglinkDmrDataTest
@@ -954,6 +989,17 @@ run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest h
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin
 	./hrc7000CodecSlotTest hrc7000_test_slot.bin
 .PHONY: run-platform
+
+# The HR_C7000 interrupt stack's fill, canary and high-water count (platform/hrc7000/irq_stack.h)
+TESTS   += hrc7000IrqStackTest
+
+hrc7000IrqStackTest: hrc7000IrqStackTest.c $(ROOT)/platform/hrc7000/irq_stack.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000IrqStackTest.c
+
+run: run-irqstack
+run-irqstack: hrc7000IrqStackTest
+	./hrc7000IrqStackTest
+.PHONY: run-irqstack
 
 # The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the
 # radio's own services are mdnsTest's and tftpTest's)

@@ -20,7 +20,7 @@ repeatable and skips cleanly what it can't reach. What each level is for and whe
 
 ```
 tools/ci.sh                    # everything below
-tools/ci.sh --quick            # each board's default build only (no feature matrix)
+tools/ci.sh --quick            # each board's default and maximal builds (no feature matrix)
 tools/ci.sh --board <b>        # one board, for example dm1701
 tools/ci.sh --matrix           # only the feature matrix (no default builds)
 tools/ci.sh --steps host,python   # only some steps: host, python, firmware, licenses, similarity
@@ -150,7 +150,7 @@ python3 -m pytest tests/hil -v -rs -s --allow-rf --ambe SPEECH.ambe --dmr-freq M
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop                  # DMR RX / voice, DMR TX, FM TX
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k "dmr_tx or fm_tx"
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k dmr_data   # DMR data services
-python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k aprs --aprs-call CALL   # APRS, 446.050 MHz
+python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k aprs   # APRS on --aprs-test-mhz, as --callsign
 RFOUNDRY_SPLIT_VARIANT=0 python3 -m pytest tests/hil/test_split_duplex.py -v -rs -s --allow-rf --allow-service-stop
 ```
 
@@ -160,7 +160,7 @@ RFOUNDRY_SPLIT_VARIANT=0 python3 -m pytest tests/hil/test_split_duplex.py -v -rs
 | `test_dmr_audio_smoke` | DMR audio both ways, which no counter shows: the bench's speech decodes to audio on the radio, frames not repeated; the radio's test signal reaches the air as distinct, non-silent frames that decode to audio when played back. Part of every bench pass on every radio with DMR (`tests/hil/README.md`, Default bench pass); a run without it prints `DMR AUDIO NOT CHECKED` |
 | `test_dmr_tx` | the radio keys 3 s; an SDR capture (`sdrmon.py`) and the bench modem's listener check source ID, talkgroup, color code, headers / voice / terminator, slot timing, ramps, carrier offset |
 | `test_fm_tx` | the radio's FM VFO keys with CTCSS 100.0 Hz, DCS D023N, at 12.5 and 25 kHz, the 1750 Hz burst, the roger beep, three power levels; `tools/sdr_fm_check.py` decodes the tones (`--tones`: audio tones) and compares the deviations |
-| `test_aprs` | APRS at the lowest power on a 70 cm simplex frequency (446.050 MHz by default, never an APRS frequency, no path): position, status and message decoded off air by `tools/aprs_afsk_check.py` (Bell 202 / AX.25 from the RTL-SDR's I/Q), with the deviation, twist, phase continuity and TX delay; positions over DMR (LRRP, UDT) decoded from the bench modem |
+| `test_aprs` | APRS at the lowest power on the rig's amateur simplex test frequency (`--aprs-test-mhz`, never an APRS frequency, no path): position, status and message decoded off air by `tools/aprs_afsk_check.py` (Bell 202 / AX.25 from the RTL-SDR's I/Q), with the deviation, twist, phase continuity and TX delay; positions over DMR (LRRP, UDT) decoded from the bench modem |
 | `test_dmr_data` | the bench sends data, a text message, a call alert and radio checks to the radio, which answers (its `dmr_data` counters, the answers heard by the bench modem); the radio sends a call alert, a radio check and a text message the bench modem hears (`docs/spec/dmr-data.md`) |
 | `test_split_duplex` | a `CONFIG_HOTSPOT_SPLIT=y` build: the 0xD6 protocol (no RF); the TX half's continuous BS outbound at the lowest power checked off air with the CACH decode of the BS framing experiment (variant from `RFOUNDRY_SPLIT_VARIANT`); the RX half labeling bench calls, the label flipping with the epoch (`docs/spec/split-duplex.md` 10) |
 | `test_hotspot_voice` | the hotspot on air both ways: bench calls and data up the USB link, host calls and data heard on air |

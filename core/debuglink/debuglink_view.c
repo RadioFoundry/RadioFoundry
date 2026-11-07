@@ -14,6 +14,7 @@
 #include "codeplug/zone_edit.h"
 #include "settings/settings.h"
 #include "radio/ref_trim.h"
+#include "radio/tx_limit.h"
 #include "storage/storage.h"
 #if CONFIG_APRS
 #include "aprs/aprs.h"
@@ -73,6 +74,12 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "view=%u\n", DL_VIEW_VERSION);
 	dl_text(t, "state=%s\n", state_key((uint8_t)v->state));
 	dl_text(t, "tx_deny=%s\n", deny_key(v->tx_deny));
+	{
+		tx_limit_info_t l;
+		tx_limit_get(&l, NULL, 0);
+		dl_text(t, "txlim=%s\ntxlim.n=%u\ntxlim.refused=%u\ntxlim.last_hz=%u\n",
+			l.block ? "block" : l.n != 0 ? "list" : "off", l.n, (unsigned)l.refused, (unsigned)l.last_hz);
+	}
 	dl_text(t, "mode=%s\n", v->ch.mode == RADIO_MODE_DMR ? "dmr" : "fm");
 	dl_text(t, "am=%u\nbcast=%u\nbcast_fault=%u\nbcast_khz=%u\n", v->am, v->bcast, v->bcast_fault, (unsigned)v->bcast_khz);
 	dl_text(t, "vfo=%u\nvfo_index=%u\n", v->vfo, v->vfo_index);
@@ -299,8 +306,8 @@ static void link_section(dl_text_t *t)
 	ui_get_status(&u);
 	dl_text(t, "ui.depth=%u\nui.focus=%u\nui.count=%u\nui.locked=%u\n", (unsigned)u.depth, (unsigned)u.focus,
 		(unsigned)u.count, (unsigned)u.locked);
-	dl_text(t, "ui.banner=%s\nui.toast=%s\nui.query=%s\nui.draws=%u\n", u.banner, u.toast, u.query,
-		(unsigned)u.draws);
+	dl_text(t, "ui.banner=%s\nui.toast=%s\nui.query=%s\nui.draws=%u\nui.dual=%u\n", u.banner, u.toast, u.query,
+		(unsigned)u.draws, u.dual);
 	dl_text(t, "input.idle_ms=%u\nui.backlight=%u\n", (unsigned)input_idle_ms(), ui_backlight());
 	if (board.display != NULL && board.display->panel != NULL) {
 		hal_display_panel_t pi;
@@ -423,23 +430,33 @@ static void storage_section(dl_text_t *t)
 		st.foreign_slots, (unsigned)st.foreign_refusals, st.claim_pending);
 	dl_text(t, "codeplug.source=%s\ncodeplug.serial=%u\n", (unsigned)src < 3 ? sources[src] : "?",
 		(unsigned)codeplug_serial());
+	uint16_t ev_good, ev_bad;
+	codeplug_evidence(&ev_good, &ev_bad);
+	dl_text(t, "codeplug.foreign=%u\ncodeplug.accepted=%u\ncodeplug.evidence=%u,%u\n", codeplug_foreign(),
+		codeplug_acceptance() == CODEPLUG_ACCEPT_YES, ev_good, ev_bad);
 	uint32_t zone_edits;
 	uint8_t zone_last;
 	zone_edit_stats(&zone_edits, &zone_last);
 	dl_text(t, "zone.edits=%u\nzone.edit_last=%u\n", (unsigned)zone_edits, zone_last);
+}
+
+// The CPS shims' counters (were in the storage section until view version 5: with the codeplug keys it outgrew a
+// reply)
+static void cps_section(dl_text_t *t)
+{
 #if CONFIG_CPS_OPENFW
 	cps_stats_t c;
 
 	cps_get_stats(&c);
-	dl_text(t, "cps.built=1\ncps.requests=%u\ncps.reads=%u\ncps.commits=%u\n", (unsigned)c.requests,
-		(unsigned)c.reads, (unsigned)c.commits);
+	// Where the image starts in the flash: what a CPS client adds to its addresses (0 on the STM32 radios)
+	const hal_flash_map_t *fm = storage_map();
+	dl_text(t, "cps.built=1\ncps.openfw_eeprom=0x%x\n", fm != NULL ? (unsigned)fm->openfw_eeprom : 0u);
+	dl_text(t, "cps.requests=%u\ncps.reads=%u\ncps.commits=%u\n", (unsigned)c.requests, (unsigned)c.reads,
+		(unsigned)c.commits);
 	dl_text(t, "cps.refused=%u\ncps.overflows=%u\ncps.last=0x%02x\n", (unsigned)c.refused, (unsigned)c.overflows,
 		c.last);
 	dl_text(t, "cps.session=%u\ncps.pending=%u\ncps.junk=%u\n", c.session, c.pending, (unsigned)c.junk);
 	dl_text(t, "cps.reboots_ignored=%u\n", (unsigned)c.reboots_ignored);
-	// Where the image starts in the flash: what a CPS client adds to its addresses (0 on the STM32 radios)
-	const hal_flash_map_t *fm = storage_map();
-	dl_text(t, "cps.openfw_eeprom=0x%x\n", fm != NULL ? (unsigned)fm->openfw_eeprom : 0u);
 #else
 	dl_text(t, "cps.built=0\n");
 #endif
@@ -456,7 +473,7 @@ static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dm
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
 						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc",
-						  "net_link", "board" };
+						  "net_link", "cps", "board" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -552,6 +569,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_NET_LINK:
 		net_link_section(t);
+		break;
+	case DL_VIEW_CPS:
+		cps_section(t);
 		break;
 	case DL_VIEW_BOARD:
 		debuglink_view_board(t);

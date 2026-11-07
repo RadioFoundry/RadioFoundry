@@ -2,7 +2,8 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Codeplug files for the editor: what a file holds and the image in it (a codeplug image, a radio backup bundle, the
 // USB network codeplug.bin), and the draft the page keeps in the browser between visits. A file in another layout (a
-// stock TYT-family codeplug, docs/spec/codeplug-stock-tyt.md) is converted, or reported as foreign.
+// stock TYT-family codeplug, docs/spec/codeplug-stock-tyt.md, or a stock DM-32UV one, dm32-stock-codeplug.md) is
+// converted, or reported as foreign.
 
 import { CodeplugImage, CODEPLUG_SPAN, TFTP_SIZE } from "../codeplug/image.js";
 import { recordSize, extent, convert, readHeader } from "../codeplug/iddb.js";
@@ -11,6 +12,7 @@ import { unzip } from "../flasher/zip.js";
 import { startsWith, toHex } from "../flasher/bytes.js";
 import { classify } from "../codeplug/detect.js";
 import { importStock, STOCK, RDT_MD380 } from "../codeplug/stock_tyt.js";
+import { DM32_STOCK, importStock as importDm32 } from "../codeplug/stock_baofeng.js";
 import { empty, encode } from "../codeplug/model.js";
 
 // code: the editor.err.* text; params: what the file was, for the error report (never its contents)
@@ -44,9 +46,9 @@ export function imageFrom(bytes) {
 export function fromBytes(bytes, board = null) {
 	const { layout } = classify(bytes);
 	if (layout === "openfw" || layout === "blank") return { kind: "image", image: imageFrom(bytes), board };
-	if (STOCK[layout]) {
+	if (STOCK[layout] || layout === DM32_STOCK) {
 		const model = empty();
-		const { counts, notes } = importStock(model, bytes, layout);
+		const { counts, notes } = STOCK[layout] ? importStock(model, bytes, layout) : importDm32(model, bytes);
 		return { kind: "converted", from: layout, model, image: encode(model), counts, notes, board };
 	}
 	return { kind: "foreign", format: layout, board };
@@ -66,7 +68,16 @@ export async function openFile(name, bytes) {
 		}
 		const { meta, parts } = await openBundle(bytes);
 		const spi = parts.get("spi-flash");
-		if (!spi || spi.data.length < TFTP_SIZE) throw new FileError("backup_no_codeplug");
+		// an HR_C7000 radio's backup taken on its stock firmware: its data flash holds the stock codeplug
+		const data = parts.get("c7000-data") || parts.get("c7000-data-start");
+		if (!spi && data && meta?.firmware_now?.kind !== "rfoundry") {
+			const f = fromBytes(data.data, meta?.radio?.board || null);
+			if (f.kind === "converted") return f;
+		}
+		// a firmware or calibration backup, or one whose radio keeps its channels elsewhere: the report names its parts
+		if (!spi || spi.data.length < TFTP_SIZE) {
+			throw new FileError("backup_no_codeplug", { board: meta?.radio?.board || null, parts: [...parts.keys()].slice(0, 10), spi: spi?.data.length ?? 0 });
+		}
 		return fromBytes(spi.data, meta?.radio?.board || null);
 	}
 	if (/\.ya?ml$/i.test(name)) return { kind: "yaml", text: new TextDecoder().decode(bytes) };

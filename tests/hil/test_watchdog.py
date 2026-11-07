@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from rfoundry_hil import DebugLink, DebugLinkError, as_int, find_ports, skip
+from rfoundry_hil import DebugLinkError, as_int, skip
 
 
 def _view(radio):
@@ -25,22 +25,6 @@ def _cause(radio):
     return c if c.get("reset.built") == "1" else None
 
 
-def _reconnect(radio, timeout=60.0):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        for port in [radio.port] + find_ports():
-            link = None
-            try:
-                link = DebugLink(port, timeout=1.5)
-                link.ping()
-                radio.link, radio.port = link, port
-                return
-            except (DebugLinkError, OSError):
-                # A serial hub takes one client per port: a link left open would lock out every later try.
-                if link is not None:
-                    link.close()
-                time.sleep(0.5)
-    raise AssertionError("the radio did not come back after the watchdog reset")
 
 
 @pytest.mark.feature("watchdog")
@@ -76,7 +60,7 @@ def test_watchdog_resets(radio, kind):
     radio.link.watchdog_test(kind)
     radio.link.close()
     time.sleep(timeout_s)
-    _reconnect(radio, timeout=timeout_s + 30.0)
+    radio.reconnect(timeout_s + 30.0, "the watchdog reset")
     back_s = time.monotonic() - t0
     up_after = as_int(radio.view(["link"])["uptime_ms"])
     # Up for less than the time since the test started: it restarted. (Against up_before alone, a test run right after
@@ -104,7 +88,7 @@ def test_reset_cause_reboot(radio):
     radio.link.reboot(0, radio.link.chip()["token"])
     radio.link.close()
     time.sleep(2.0)
-    _reconnect(radio)
+    radio.reconnect()
     c = _cause(radio)
     assert c["reset.cause"] == "software", c
     assert as_int(c["reset.uptime_ms"]) >= up_before, (c, up_before)

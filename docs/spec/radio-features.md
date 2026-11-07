@@ -37,7 +37,7 @@ quick changes therefore never reads back a value from before its own last change
 | `dual_delay_ms` | 1000 | dual watch on one receiver: its wait after a signal ends, in place of `scan_delay_ms` (0-10000; section 2.1) |
 | `beep_level` | 50 | 0 (silent) to 100: the loudest a beep gets (section 4) |
 | `key_beep` | on | `radio_req_beep(BEEP_KEY)` sounds |
-| `talk_permit` | on | DMR: the talk permit tone when the voice goes on air (stored as `SETTINGS_RS_NO_TALK_PERMIT` in `rs_flags`, 0 = on) |
+| `talk_permit` | on | DMR: the talk permit tone when the voice goes on air, or just before on boards with `CAP_BEEP_NOT_ON_AIR` (4) (stored as `SETTINGS_RS_NO_TALK_PERMIT` in `rs_flags`, 0 = on) |
 | `vox` | off | off, on channels whose codeplug entry allows it, on every FM channel (CONFIG_VOX) |
 | `vox_level` | 5 | sensitivity 1 (loud voice needed) to 10 |
 | `vox_tail_ms` | 1500 | stays keyed this long after the voice stops |
@@ -69,13 +69,17 @@ tuned channel or frequency is the core view's as usual.
 Each stop: 50 ms settle (readings from the previous frequency are ignored), then `scan_dwell_ms` listening. A signal
 is "active" when FM squelch opens (with the RX tone if the channel needs one) or DMR plays a call (`dmr.state` rx).
 A carrier that isn't active yet earns a probe: 350 ms on FM channels that need a tone (CTCSS detection takes 100 to
-250 ms), 700 ms on DMR; other FM channels move on at once. On DMR a carrier seen in the last 150 ms still counts (direct
+250 ms), 700 ms on DMR; other FM channels move on at once. On DMR a carrier is the noise reading at the squelch level
+or the signal strength at the DMR scale (level 1 above -112 dBm, 3 dB a level: -100 dBm at the default level; some
+receivers' noise reading doesn't follow a DMR signal, [gotchas](gotchas.md) 17.3). A carrier seen in the last 150 ms still counts (direct
 mode is on air 30 ms in every 60, and the noise reading drops between bursts), and once the modem delivers bursts with
 the channel's color code since the stop's settle ("sync", from `dmr_call_last_activity`, a late entry still waiting for
 its LC included) the probe lasts up to 1.5 s: a call already in progress is taken from its embedded LC, which needs the
 next complete superframe at best and the one after it when the modem's sticky LC equals this call's (about 1.1 s from
-the retune). A call known not to be for us (another talkgroup) ends the probe. Empty channels still move on after the
-dwell. The view counts the stops probed (`scan_probes`) and those with sync (`scan_synced`) for each scan. Active: the scan holds
+the retune). Each DMR stop on a new frequency restarts the modem's receiver, so it searches from the retune and not on the
+last transmitter's slot timing ([gotchas](gotchas.md) 17.2). A call known not to be for us (another talkgroup) ends
+the probe. Empty channels still move on after the dwell.
+The view counts the stops probed (`scan_probes`) and those with sync (`scan_synced`) for each scan. Active: the scan holds
 (`scan_phase=hold`), then follows `scan_resume`; after the signal ends it waits `scan_delay_ms` (`resume`) and picks
 up again if the signal comes back. MONITOR held pauses the scan (`paused`).
 
@@ -113,7 +117,7 @@ VFO during the watch copies into a VFO the other channel isn't on: the one last 
 | Each hop | The channel the receiver leaves keeps its changes for now (power, squelch, bandwidth, mode, color code, timeslot, tones, the manual talk target, hear all; `dual_keep[]`), and the channel it tunes gets its own back. A pair with a new channel drops that channel's; a stop drops both |
 | A channel, zone, VFO, tone, bandwidth, mode, timeslot or color code change | Ends the watch on the selected channel, then applies the change there. The UI then asks for the watch again with the new channel (dual-watch.md 5) |
 | Hotspot mode | Ends it where the receiver is |
-| `radio_req_scan` stop, cancel or toggle (the debug link) | Ends it on the selected channel and counts it in the view's `dual_stops`: the UI takes it as the user's stop and doesn't start the watch again |
+| `radio_req_scan` stop, cancel or toggle (the debug link) | Ends it on the selected channel and counts it in the view's `dual_stops`: the UI takes it as the user's stop and doesn't start the watch again. The radio has stopped already, so the UI asks for nothing and takes on a watch started right after it at once |
 | `radio_req_dual` with the same pair and the other selected (the debug link's select) | The view's `dual_sel` changes; the UI follows a change it didn't ask for, so the next channel, zone or VFO request changes that channel |
 | A VFO request, a frequency or Copy to VFO with a channel selected | The selected channel goes into a VFO the other channel isn't on: the one last used, else the other one |
 | Power off | The saved position is the selected channel's, wherever the receiver is: the radio powers up there |
@@ -149,6 +153,15 @@ second one has its channel: the dual watch screens then show a call on each pane
 lockout (`busy`; carrier = squelch open or noise below the open threshold; wrong tone = that, while the channel's RX
 tone is not decoded). The deny beep sounds; the state is `tx_denied` until PTT is released.
 
+The test TX limit (`core/radio/tx_limit.h`, built with `CONFIG_DEBUGLINK`) is a limit a test harness sets over the
+debug link (RADIO op 35, [debuglink.md](debuglink.md) 3.8): block every transmission, or allow only a list of up to 10
+frequencies. It lives in RAM and is never saved, so a restart clears it; the TX inhibit setting is saved and is left
+alone. The radio core checks it wherever it keys the transmitter (`key_tx`: PTT, DMR data and replies, roaming probes,
+APRS beacons, the SFR repeater role, the hotspot, the CW ID), against the frequency it is about to key on. PTT is denied
+as by the TX inhibit (`inhibit`); what the radio sends by itself is not keyed and counted (`txlim.refused`). A
+transmission already on air when the limit is set goes on until it ends. The HIL harness uses it to keep each test on
+the rig's transmit frequencies (`tests/hil/README.md`, "Transmit frequencies").
+
 ### 3.2 Time-out warning
 
 `tot_warn_s` before the time-out the TOT warning beep sounds once in the speaker (FM and DMR; the view's
@@ -158,8 +171,10 @@ tone is not decoded). The deny beep sounds; the state is `tx_denied` until PTT i
 
 Both go out over the air through the board's `tx_tone(hz)` hook: an audio tone into the modulator in place of the
 microphone. Roger beep: at PTT release the radio stays keyed for 1200 Hz then 900 Hz, 100 ms each (`roger=1`), then
-unkeys; PTT again during the beep cancels it and the transmission goes on. Tone burst: `radio_req_tone_burst(true)`
-keys up if needed and sends 1750 Hz until `false` (repeater access); `tone_burst=1` in the view. A board without
+unkeys; PTT again during the beep cancels it and the transmission goes on. Tone burst: `radio_req_tone_burst(true, max_ms)`
+keys up if needed and sends 1750 Hz until `false` or until `max_ms` has passed (repeater access); `tone_burst=1` in
+the view. The debug link always gives a limit (at most `INPUT_INJECT_MAX_MS`), so a lost "off" unkeys as the "off"
+would; 0 means no limit but the TX time-out. A board without
 `tx_tone` gets neither.
 
 The board restores the microphone path on `tx_tone(0)` and on every return to receive. An AT1846S board makes the
@@ -305,6 +320,7 @@ None of them needs a correction in the driver. The HIL test (`test_fm_tx_dtmf`) 
 | key | 1000 Hz 25 ms | `radio_req_beep(BEEP_KEY)` from the UI, if `key_beep` |
 | error | 400 Hz 150 ms | UI errors |
 | TX permit | 1600 Hz 50 ms twice | DMR: the channel is granted (unless the codeplug channel has "no beep", or `talk_permit` is off: Settings > Sound > Talk permit tone) |
+| TX permit, before keying | 1600 Hz 80 ms | The TX permit on boards with `CAP_BEEP_NOT_ON_AIR`, whose beeps can't sound while DMR transmits: once the call is admitted, the stack holds the key-up (`dmr_call_config_t.permit_hold_ms`, `permit_busy`) while the radio still receives and this tone plays. It keys once the tone and the driver's buffers have played out (`hal_audio_t.spk_pending`): at least 40 ms, at most 400 ms (`DMR_CALL_PERMIT_MAX_MS`). The same conditions as the TX permit |
 | TX deny | 300 Hz 400 ms | any TX refusal |
 | call end | 1200 Hz 50 ms, 900 Hz 70 ms | DMR: a played call ended (unless "no beep") |
 | TOT warning | 1000 Hz 100 ms twice | 3.2 |
@@ -327,6 +343,12 @@ clock) is stopped the same way, in case a block already ran. Counters in the vie
 `beep.played` (started), `beep.no_stream` (no audio stream could be started: on a board that can't stream PCM in FM
 mode this counts instead), `beep.blocks` (audio blocks with beep in them), `beep.stalls` (streams given up that way),
 `beep.busy`.
+
+To hear the beeps in context, `tools/beep_reel.py` makes a video of the UI simulator's screen in which every beep sounds
+in a scene that sounds it on a radio, captioned (`build/beep-reel/beep_reel.mp4`; needs ffmpeg built with libass). It
+uses `beep.c` only through `beep_init`, `beep_play` and `beep_service`, so the patterns and their synthesis can change
+freely. The scenes are in `tests/host/beepReel.c`; a new beep needs one there, or the host tests fail. A pull request
+that changes the beeps gets the reel before and after (`beep-reel.yml`, [ci.md](../dev/ci.md) "Beep reel").
 
 ### 4.1 Vibration (CONFIG_VIBRATE)
 

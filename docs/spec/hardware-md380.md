@@ -105,7 +105,7 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 | PC4 | RF_APC_SW, PA power loop on | (unverified) |
 | PC5 | 5TC, transmitter supply | (unverified) |
 | PC6 | LAMP, LCD backlight (TIM8 CH1 PWM, AF3) | (unverified); PWM is our choice |
-| PC7 | CTC/DCS_OUT, sub-audio tone output (PWM) | (unverified); TIM3 CH2 (AF2) with `CONFIG_SUBTONE` (section 6.4), otherwise a low output |
+| PC7 | CTC/DCS_OUT, sub-audio tone output (PWM) | (unverified); TIM3 CH2 (AF2) with `CONFIG_SUBTONE` (section 6.4), otherwise released (open drain, high): it tunes the reference (5.2) |
 | PC8 | BEEP (TIM8 CH3) | (unverified); unused |
 | PC9 | 5RC, receiver supply | (unverified) |
 | PC13 | HR_C5000 configuration clock, idles low (section 4.2) | the bus pin (not PE3) |
@@ -264,8 +264,8 @@ row (the HR_C6000 layout, `core/dmr/ambe/ambeFec.h`), but only while the decoder
 
 The calibration's reference tune byte t (section 11) sets regs 0x47 = 0x04 = 0x7F - t, 0x48 = 0x00 if t < 0x80
 else 0x03, and DAC2 = t x 4 + 0x600 bench. `hrc5000_set_ref()` and `hrc5000_ref_dac()`; the stored tune is
-re-applied by every full mode set-up. The user's reference trim adds to DAC2 (5.2, "Carrier offset"). This mapping
-leaves two radios 2-2.5 kHz high (5.2), so it is not right yet (unverified).
+re-applied by every full mode set-up. The user's reference trim adds to DAC2 (5.2, "Carrier offset"). The 2-2.5 kHz
+error two radios showed was not this mapping but PC7 held low (5.2) (unverified until a radio confirms the fix).
 
 ### 4.6 Power and start-up
 
@@ -362,6 +362,43 @@ go to the stack as bursts A to F. A read that hasn't changed, or has no frame th
 row end the reception (0x22 = 0x17). The chip's voice class reports are ignored, and its 25 ms report delay doesn't
 count as out of step.
 
+A burst is in the port one tick after its slot's report, so the read at a tick holds the burst of the slot that
+started two ticks before. The engine takes this as fixed: the read is named, and given its slot counter, from the
+tick before it. It used to learn the relation from the first read that checked after a header, which with traffic on
+both slots can be the other call's (issue 279). With traffic on both slots both phases hold bursts that check, so the
+search for the call's phase is limited:
+
+| Rule | Detail |
+|---|---|
+| A header started the read | Lock only the header's phase. A late entry report while searching drops that limit |
+| Repeater channel (`rx_lock_slot` 1 or 2) | Lock only a phase the CACH TC names as the channel's slot, never one with the slot unknown. A header is kept unless the TC names its phase the other slot |
+| A lock whose phase the TC names the other slot | Search again, without the header's phase. The burst index goes on counting one per frame, so a lock back on the same phase keeps A-F |
+| The slot unknown while locked (a receiver restart) | The lock stays; its bursts carry no slot number until the TC locks again |
+| The call's own bursts skipped while its slot is unknown | Counted, so the index stays A-F. After a quiet-period restart that costs the first bursts of a call (two in the host test, about 150 ms until the TC locks) |
+
+All of these are host-tested (`hrc5000Test` `test_two_slots`: a call on each slot, a restart mid-call, a TC wrong
+from the start, both slots heard with `rx_lock_slot` 0). On air (2026-11-04, the SDR bench sending repeater bursts
+with the CACH on both slots): the reads alternate as above (phase 0 TS1's frames, phase 1 TS2's), and the wanted call
+plays with the other slot already talking (77 of 78 bursts; 0 before the fix).
+
+The embedded LC isn't per slot (page 2, [modem-hrc6000.md](modem-hrc6000.md) 5.2). On the same bench run, the other
+call's LC was in page 2 at the wanted call's F: the core took it for a new call, and the wanted call went quiet with
+the other call's source shown (23 of 78 bursts when the wanted call started first). The engine keeps each slot's
+call LC and holds back an embedded LC that is the other slot's call's (the rules are in modem-hrc6000.md 5.2).
+Host-tested (`test_two_slots`, the `LC`, `alias` and `mixed LC` cases: page 2 gets a call's LC or alias block the
+tick after its F). On air (2026-11-04, the SDR bench, a call on each slot, 78 bursts sent to the wanted slot, two
+runs each):
+
+| Case | Before | After |
+|---|---|---|
+| Wanted call first, the other starts beside it | 23 | 78, 78 (both slots) |
+| Other call first, wanted call with its headers | 75-77, TS2 once 13-19 | 73-77 (both slots) |
+| Wanted call joined mid-stream (no header) beside the other, TS1 | 0 played | 56-57 |
+| Single call: headers, late entry, no header | 77-78, 38, 68 | the same |
+
+Left as they were: both calls joined at once after a channel switch (0-20 bursts) and TS2 joined mid-stream beside a
+call (0) play as before.
+
 On air with this (2026-10-18): calls are taken with the caller and talk group, and 393 frames reached the codec with
 2 bit errors in all. The decoded audio is speech (peak 3521 of 32767) and streams to the chip (`aud blk` climbing),
 but the speaker plays only a faint buzz (4.8). Leads, not checked: 0x0E (HPoutEn, bit 7; RadioFoundry writes 0x44, which
@@ -407,7 +444,7 @@ pull request. Each test started from a power-on, and register reads confirmed th
 while a call played. `hrc5000_speaker_voice()` now writes, when a DMR PCM stream opens the route: 0x0D = 0x9C, 0x0E = 0x4C
 (HPMute stays set, HPoutEn stays off, Mic1En on) and 0x37 = 0xC2, with 0x36 = 0x00 already written; it writes 0x0D = 0x8C and
 0x0E = 0x44 back when the route closes, which should also end the buzz after a call. `-DHRC5000_SPK_VOICE=0` leaves it out.
-On an MD-380 (UHF, D002.032 codec) against an AT-D878UV on 446.075 TS1, with the build at 17d89001 plus the codec
+On an MD-380 (UHF, D002.032 codec) against an AT-D878UV on a 70 cm test frequency, TS1, with the build at 17d89001 plus the codec
 move: received speech plays clear from the speaker and transmit is clear (one 10 s call: 498 frames, 10 bit errors, 3
 concealed, 0 lost). Why both bits are needed together isn't in the manual (unverified). Not yet checked with it: the buzz after
 a call or after our own transmit, the key beep in DMR and FM, and FM receive.
@@ -434,7 +471,7 @@ Skyworks SKY72310-11 (unverified as the part fitted to this radio). From the dat
 - **The driver uses the signed mode** (register 14 bit 5): N_reg = round(N) - 32 and a two's complement dividend for a
   fraction of -0.5..+0.5. Sent unsigned, every channel whose fraction was over one half came out one phase detector
   step (8.4 MHz) low with lock detect high: at 443.7, 444.0-444.5, 435 and 450 MHz the radio received nothing, at
-  440, 445 and 446.075 it did (DM-32UV as the sender, 2026-10-20, issue 108). Either the unsigned-mode write doesn't
+  440, 445 and 446 MHz it did (DM-32UV as the sender, 2026-10-20, issue 108). Either the unsigned-mode write doesn't
   take or the part runs signed; signed encoding is right in both cases on air.
 - A new ratio takes effect on the dividend MSB write: order divider, LSB, MSB.
 - Lock detect high = locked (on the Mux_out / LD pin, wired to PD10 (unverified)). The pin is the PS output, open collector
@@ -465,11 +502,29 @@ transmit error is from the hotspot's MMDVMCal BER test:
   not in the synthesizer's divide ratios.
 - DAC2 moves the reference about 16.2 Hz a count at 448.7 MHz (36.1 ppb), higher = higher. The HR_C5000 register
   moves it about 31 Hz a step.
-- The mapping in 4.5 lands this radio 2 kHz high, and flipping the register's sign overshoots to about -1 kHz. Which
-  of the two (the DAC2 base or the register rule) is wrong needs a second radio with a different tune byte measured
-  the same way (unverified).
+- The mapping in 4.5 lands this radio 2 kHz high, and flipping the register's sign overshoots to about -1 kHz.
 
-Until then the user's trim corrects it: `hal_radio_t.ref_trim` (radio-features.md 6.1) adds ppb / 36.1 counts to
+**Cause: CTC/DCS_OUT (PC7) held low** [schematic, page 6]. The 16.8 MHz VCTCXO X601 clocks the SKY72310 and, through
+the Q605 tripler, the second LO, so receive and transmit share it. Its VC pin is driven by U603 (NJM2904) amplifier B:
+
+| U603 B input | Signal | Path |
+|---|---|---|
+| Inverting (pin 6) | MOD2, from the HR_C5000 | R645 100K |
+| Inverting (pin 6) | CTC/DCS_OUT, PC7 | R641 560K |
+| Non-inverting (pin 5) | MOD2_BIAS, DAC2 (PA5) | R605 15K, R615 22K |
+| Feedback | | R644 100K, C678 100 pF |
+| Output (pin 7) | X601 VC (pin 1) | R646 4K7, C640 3.3 nF to ground |
+
+Any DC on PC7 moves the reference, at -100K / 560K = -0.18 V per volt at the amplifier's output. RadioFoundry used to
+drive PC7 push-pull low whenever no tone was sent, which raises the non-inverting gain from 2 to 2.18: the same as
+DAC2 about 0.18 / 2.18 x 0x744 = 150 counts high, about +2.5 kHz at 448.7 MHz, in receive and transmit alike. That fits
+both radios (+2.0 and +2-2.5 kHz) in size and sign (this is an estimate: the bias divider past R615 isn't fully
+traced). PC7 now idles released (open drain, high), so the branch carries no current (unverified on a radio).
+
+While a tone is sent the PWM drives PC7 push-pull around 50 % duty (about 1.65 V mean), so a channel with CTCSS or
+DCS may still transmit off by some hundreds of Hz (unverified; 6.4).
+
+Before that fix, the user's trim corrected it: `hal_radio_t.ref_trim` (radio-features.md 6.1) adds ppb / 36.1 counts to
 DAC2 (rounded), at once and at every rx(). A trim of -2000 Hz at 448.7 MHz (-4.5 ppm) put the first radio's transmit
 within about 150 Hz (hotspot BER 0.05 %, four cold wake-ups on alternating slots). `MD380_TX_OFFSET_HZ` (`radio_md380.c`, a build define, default 0)
 still shifts the transmit frequency alone; with the trim it isn't needed.
@@ -587,8 +642,10 @@ Bias from MICPWR_SW (PA14), on whenever the radio runs (section 2.6). Mic level 
 
 CTCSS / DCS are decoded in software from QT_DQT_IN (PA2) and generated as PWM on
 CTC/DCS_OUT (PC7) (unverified). RadioFoundry does the same behind `CONFIG_SUBTONE` (on by default, 3.3 KB of
-flash). CTCSS 100.0 Hz works on air both ways (tester, 2026-10-19); DCS and the deviation aren't checked yet. Without
-the switch, channels with a tone open on carrier and send no tone.
+flash). CTCSS 100.0 Hz works on air both ways (tester, 2026-10-19). DCS receive works on air (D023N, 2026-11-02). DCS
+transmit went out inverted (D023N decoded as D023I by another radio, 2026-11-02), so `MD380_SUBTONE_TX_INVERT` is on
+by default. At `MD380_SUBTONE_PERCENT` 30 the deviation is 0.60 kHz peak for CTCSS 100.0 Hz and about 0.72 kHz for DCS
+(SDR, 2026-11-02), inside the usual 0.5 to 0.75 kHz. Without `CONFIG_SUBTONE`, channels with a tone open on carrier and send no tone.
 The FM TX tones (1750 Hz, roger beep) and APRS AFSK are not written (`CONFIG_FM_TX_TONES`, `CONFIG_APRS_RX` in
 `config.mk`).
 
@@ -616,7 +673,8 @@ the waveform, `MD380_SUBTONE_RX_INVERT` flips it back.
 interrupt (priority 6, running only while a tone is sent) computes a new duty every fourth period, 4.4 kHz: a sine
 from a 65-point table for CTCSS, the 23-bit word at 134.4 baud with a light smoothing for DCS. The level ramps up over
 20 ms; `MD380_SUBTONE_PERCENT` (default 30) sets the swing as a share of the duty range. `tx()` starts it after the PA is
-on, `tx_off()` stops it, and the pin returns to its idle low output. TIM3 and DMA2 Stream4's interrupt are the only
+on, `tx_off()` stops it, and the pin is released again (open drain, high): PC7 sums into the reference
+oscillator's tuning, so a low there pulls the carrier (5.2). TIM3 and DMA2 Stream4's interrupt are the only
 resources added (section 3). The DCS turn-off tail (`radio-features.md` 3.3a) switches the generator to a 134.4 Hz
 sine at the same swing (`subaudio_tx_tail`, with the interrupt held off for the switch); not yet checked on a radio.
 
@@ -759,7 +817,7 @@ RadioFoundry reads exactly two. Read only: RadioFoundry never writes them.
 
 ### 11.2 Layout
 
-Assumed to follow the MD-UV380 family's first rows (the same factory tool), single band, 9 points per row (unverified):
+Single band, 9 points per row:
 
 | Offset | Content |
 |---|---|
@@ -769,15 +827,29 @@ Assumed to follow the MD-UV380 family's first rows (the same factory tool), sing
 | 0x030-0x038 | Receiver front-end tuning, per point |
 | 0x130-0x138 / 0x140-0x148 | DMR modulation pair (0x45 / 0x46) |
 | 0x170-0x178 / 0x180-0x188 | FM modulation pair |
-| 0x1B0-0x1D3 | The 9 calibration frequencies, 4-byte BCD, least significant byte first, 10 Hz units |
+| 0x1B0-0x1F7 | Frequency list: 9 entries of 8 bytes, two 4-byte BCD frequencies each, least significant byte first, 10 Hz units |
+| 0x1B2-0x1B3 | Band low end: the upper half of the first frequency, 4 BCD digits in 100 kHz units (0x4010 = 401.0 MHz) |
+| 0x1F2-0x1F3 | Band high end, the same from the last entry (0x4799 = 479.9 MHz) |
 
-Byte values are taken x 16 to the 12-bit DACs (unverified). `calibration_md380.c` accepts the table when the power rows are
-neither erased nor zero and low < high at every point, and no tuning or modulation row is erased. If the frequency list
-is not BCD, ascending and in band, it uses an even grid over the band instead and says so ("factory/grid").
+Only the even points (0, 2, 4, 6, 8) of a row are used. Each odd point is the mean of its neighbors, rounded down,
+whatever the flash holds there. That holds for every row from 0x010 to 0x180 except 0x0E0. The rest of the frequency
+list is not used: on the radios seen, the first frequencies run 401.035, 411.035 ... 471.035, 479.995 MHz, close to
+the points below but not the same.
+
+`calibration_md380.c` accepts the table when the power rows are neither erased nor zero and low < high at every point,
+and no tuning or modulation row is erased. If the band ends are not BCD, out of band or not ascending, it uses
+400.0-470.0 MHz (UHF) or 136.0-174.0 MHz (VHF) instead and says so ("factory/grid").
 
 ### 11.3 Interpolation
 
-Linear between the two neighboring points, clamped at the ends.
+The nine points split the band by halving, in 100 kHz units with integer halves: point 0 and 8 are the band ends,
+point 4 the middle of those, points 2 and 6 the middles of the halves, and the odd points the middles between. For
+401.0-479.9 MHz: 4010, 4108, 4207, 4305, 4404, 4502, 4601, 4700, 4799.
+
+The channel frequency is taken in 100 kHz units, truncated (TX frequency for the power rows, RX frequency for the
+tuning row). The value is linear between the two neighboring points, truncated toward the lower point's value, and
+clamped to the first and last point outside them. Power and tuning bytes go to the 12-bit DAC as (b x 255) >> 4
+(b x 255 in its left-aligned register).
 
 ---
 
@@ -794,7 +866,9 @@ size.
 On a 16 MB part RadioFoundry uses the DM-1701's map (settings 0x011000, journal 0x019000, open-firmware codeplug 0x000000 and
 0x020000-0xE00000, native area 0xE00000, TFTP staging 0xF00000), so the open-firmware CPS works the same. The TYT codeplug at 0 is overwritten
 by the first open-firmware write: read it out with the manufacturer's CPS first if it matters ([md380-migration.md](md380-migration.md) does that, converts it with qdmr and writes it back). There is no calibration window in the
-main array (11.1). On a smaller part the core gets no areas: settings live in RAM and nothing is written.
+main array (11.1). On a smaller part the core gets no areas: settings live in RAM and nothing is written. The CPS still
+reads the chip (area 1, up to its end) and the radio info gives its size, so a backup saves all of it; the Codeplug
+Editor and the flasher's channel step say that the radio stores no codeplug.
 
 ---
 
@@ -849,6 +923,24 @@ non-standard commands; the same erase-by-sector and block-write protocol as the 
 image with `tools/stm32_dfu.py --model md380 --key KEY rfoundry_md380.bin`. The image is plain, starts at 0x0800C000, and the
 tool encrypts it for the loader. rfoundry knows the board (`boards/md380/board.toml`: release `stable`, an update writes
 sectors 3-7 and keeps the codec).
+
+Switched on normally, the original firmware is also a DFU device with the same IDs. The flashers tell it from the
+bootloader by alt 0's layout and refuse it ([hardware-dm1701.md](hardware-dm1701.md) 15.1). The MD-380's bootloader,
+read on a radio (2026-11-02): manufacturer and string 1 "AnyRoad Technology", product "Digital Radio in USB mode", serial
+"00000000010C", bcdDevice 0x0200, one DFU interface with two alternate settings:
+
+| Alt | Layout |
+|---|---|
+| 0 | `@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg` (the application area only) |
+| 1 | `@SPI Flash Memory /0x00000000/16*064Kg` |
+
+`boards/md380/board.toml` declares alt 0 (`[flash.dfu] layout`), so the flashers accept only that device.
+
+The same radio switched on normally, running a patched build of the original firmware (2026-11-02): 0483:DF11,
+bcdDevice 0x0200, serial "00000000010C", alt 0 `@Internal Flash   /0x08000000/03*016Kg`, alt 1 as in the bootloader.
+String 1 and the manufacturer read "@00000004 : ffffffff" and the product "Patched MD380", which the patch may have
+changed; the unpatched firmware's strings are not known (?). Alt 0 is the MD-9600's normal-mode layout, so either rule
+refuses it.
 
 ### 14.4 The codec
 

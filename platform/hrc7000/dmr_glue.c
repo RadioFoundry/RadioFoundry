@@ -5,7 +5,7 @@
 // 6, modem-hrc7000.md 3, hardware-dm32.md 8.5, 8.6).
 //
 // What runs where (all interrupts at one level, never nested; this file and the engine run from RAM,
-// the board's linker script):
+// the board's linker script, but for the task-side code marked HRC_FLASHFUNC):
 //   PIC 29 (system)      received bursts, late entry, slot abnormal; clears the chip's flags
 //   PIC 30 / 31 (TS)     decide the coming slot (TX burst, receive, nothing), PA off after a burst, slot tick event
 //   PIC 32 (RF TX)       FD6818 idle -> TX for our burst
@@ -24,6 +24,8 @@
 #include "modem/hrc7000/hrc7000_bs.h"
 #include "dmr/bsOutbound.h"
 #endif
+#include "audio_pcm.h"
+#include "hal_time.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -127,9 +129,52 @@ static void irqs_enable(bool on)
 	}
 }
 
+// --- Lost interrupts (hal_dmr_modem_t.health) ---
+
+static uint32_t lost_seen;	// stalls + stuck requests at the last check
+static uint32_t lost_ms;	// the first one's time (never 0 once set) and the PIC's words just before it was handled
+static uint32_t lost_regs[4];
+
+// The PIC's mask and request words, read before each poll: after it, the poll's recovery has dropped the requests
+HRC_FLASHFUNC static void pic_words(uint32_t w[4])
+{
+	w[0] = PIC_MASK;
+	w[1] = PIC_MASK_1;
+	w[2] = PIC_INT_ST;
+	w[3] = PIC_INT_ST_1;
+}
+
+// The poll found a lost interrupt (a stalled transmission or a request pending with no handler run): keep the first
+// one's PIC words, and unmask the modem sources again unless a task is inside the engine
+HRC_FLASHFUNC static void lost_check(const uint32_t before[4])
+{
+	uint32_t n = eng.st.stalls + eng.st.sys_stuck;
+	if (n == lost_seen) {
+		return;
+	}
+	lost_seen = n;
+	if (lost_ms == 0) {
+		memcpy(lost_regs, before, sizeof lost_regs);
+		lost_ms = hal_millis() | 1u;
+	}
+	uint32_t s = hrc_irq_save();
+	if (active && lock_depth == 0) {
+		irqs_enable(true);
+	}
+	hrc_irq_restore(s);
+}
+
+HRC_FLASHFUNC static void health(dmr_modem_health_t *h)
+{
+	h->stalls = eng.st.stalls;
+	h->stuck = eng.st.sys_stuck;
+	h->first_ms = lost_ms;
+	memcpy(h->first_regs, lost_regs, sizeof h->first_regs);
+}
+
 // --- Deferred event task ---
 
-static void dmr_task(void *arg)
+HRC_FLASHFUNC static void dmr_task(void *arg)
 {
 	(void)arg;
 	dmr_event_t ev;
@@ -137,7 +182,10 @@ static void dmr_task(void *arg)
 	for (;;) {
 		ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(DMR_POLL_MS));
 		if (active) {
+			uint32_t pic[4];
+			pic_words(pic);
 			hrc7000_dmr_poll(&eng);
+			lost_check(pic);
 		}
 		while (hrc7000_dmr_pop(&eng, &ev, &burst)) {
 			dmr_event_cb_t cb = stack_cb;
@@ -150,7 +198,7 @@ static void dmr_task(void *arg)
 
 // --- The radio's interface ---
 
-void hrc_dmr_board_init(hrc7000_t *modem, const hrc_dmr_board_t *hooks)
+HRC_FLASHFUNC void hrc_dmr_board_init(hrc7000_t *modem, const hrc_dmr_board_t *hooks)
 {
 	brd = hooks;
 	hrc7000_dmr_init(&eng, modem, &ops);
@@ -234,8 +282,11 @@ static void configure(const dmr_config_t *cfg) { hrc7000_dmr_configure(&eng, cfg
 static void rx_restart(void) { hrc7000_dmr_rx_restart(&eng); }
 static void rx_lock_slot(int8_t ts) { hrc7000_dmr_rx_lock_slot(&eng, ts); }
 
+// The prompt FIFO also feeds the modulator: its gate closes before the first burst can be armed, and audio_pcm.c opens
+// it once the engine has stopped transmitting
 static bool tx_begin(dmr_timing_t timing, int8_t ts, dmr_access_t access)
 {
+	hrc_audio_pcm_tx_gate();
 	return active && hrc7000_dmr_tx_begin(&eng, timing, ts, access);
 }
 
@@ -269,7 +320,13 @@ static bool bs_start(const dmr_bs_config_t *cfg)
 	return active && hrc7000_bs_start(&bs, &eng, cfg, bsOutboundRawSlot);
 }
 
-static void bs_key(bool on) { hrc7000_bs_key(&eng, on); }
+static void bs_key(bool on)
+{
+	if (on) {
+		hrc_audio_pcm_tx_gate();	// as tx_begin
+	}
+	hrc7000_bs_key(&eng, on);
+}
 
 static bool bs_queue(int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach, const uint8_t *emb_lc)
 {
@@ -307,32 +364,36 @@ const hal_dmr_modem_t hrc_dmr = {
 	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
 	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_listen = tx_listen, .tx_end = tx_end,
 	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
-	.is_transmitting = is_transmitting, .tx_fill = tx_fill,
+	.is_transmitting = is_transmitting, .tx_fill = tx_fill, .health = health,
 	SPLIT_OPS
 };
 
 // --- Bring-up counters (the board's diagnostics page shows these lines first) ---
 
-void hrc_dmr_stats_reset(void)
+HRC_FLASHFUNC void hrc_dmr_stats_reset(void)
 {
 	// Every field before last_rx_type_info is a uint32_t counter (hrc7000_dmr.h); the ISRs update them
 	lock(NULL);
 	memset(&eng.st, 0, offsetof(hrc7000_dmr_stats_t, last_rx_type_info));
+	lost_seen = 0;	// the loss record goes with its counters: health() would show a first loss from before the reset
+	lost_ms = 0;
+	memset(lost_regs, 0, sizeof lost_regs);
 	unlock(NULL);
+	hrc_audio_pcm_gate_reset();	// its line is one of ours
 }
 
 typedef struct {
 	char *p, *end;
 } out_t;
 
-static void put(out_t *o, const char *s)
+HRC_FLASHFUNC static void put(out_t *o, const char *s)
 {
 	while (*s && o->p < o->end) {
 		*o->p++ = *s++;
 	}
 }
 
-static void put_u(out_t *o, uint32_t v)
+HRC_FLASHFUNC static void put_u(out_t *o, uint32_t v)
 {
 	char t[11];
 	int n = 0;
@@ -345,21 +406,21 @@ static void put_u(out_t *o, uint32_t v)
 	}
 }
 
-static void put_x(out_t *o, uint32_t v, int digits)
+HRC_FLASHFUNC static void put_x(out_t *o, uint32_t v, int digits)
 {
 	for (int i = digits - 1; i >= 0 && o->p < o->end; i--) {
 		*o->p++ = "0123456789ABCDEF"[(v >> (4 * i)) & 0xFu];
 	}
 }
 
-static void put_kv(out_t *o, const char *k, uint32_t v)
+HRC_FLASHFUNC static void put_kv(out_t *o, const char *k, uint32_t v)
 {
 	put(o, k);
 	put_u(o, v);
 }
 
 // Lines of at most about 20 characters (the 120-pixel-wide diagnostics page)
-bool hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
+HRC_FLASHFUNC bool hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 {
 	if (len == 0) {
 		return false;
@@ -410,6 +471,7 @@ bool hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_x(&o, m.last_sys_list, 5);
 		put(&o, " ");
 		put_x(&o, m.last_l2_status, 8);
+		put_kv(&o, " k", m.sys_stuck);
 		break;
 	case 7:
 		put_kv(&o, "tx", m.tx_bursts);
@@ -467,6 +529,15 @@ bool hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " mg", bs.st.max_gap_us);
 		break;
 #endif
+	case HRC_DMR_DIAG_LINES - 1: {	// the prompt FIFO's TX gate (audio_pcm.c): closings, late (a beep still
+					// sounding, its tail cut), ring play on while closed (never)
+		uint32_t g, l, ra;
+		hrc_audio_pcm_gate_stats(&g, &l, &ra);
+		put_kv(&o, "pg g", g);
+		put_kv(&o, " l", l);
+		put_kv(&o, " ra", ra);
+		break;
+	}
 	default:
 		return false;
 	}

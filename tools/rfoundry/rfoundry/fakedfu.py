@@ -33,7 +33,7 @@ class FakeAnyRoad:
         self.exited = False
         self.strings = strings or {"string1": board.dfu_string1, "manufacturer": "STMicroelectronics",
                                    "product": "STM32  BOOTLOADER", "serial": "FAKE0001",
-                                   "interfaces": ["@Internal Flash  /0x08000000/03*016Kg,01*016Kg,01*064Kg,07*128Kg"]}
+                                   "interfaces": ["@Internal Flash  /0x0800C000/01*016Kg,01*064Kg,07*128Kg"]}
 
     # flash helpers
     def read(self, addr, n):

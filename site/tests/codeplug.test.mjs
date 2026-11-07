@@ -130,10 +130,10 @@ test("an unedited codeplug encodes to the same bytes", () => {
 // A codeplug using every field the radio reads, built in the editor's model
 function rich() {
 	const m = empty();
-	m.general = { ...m.general, radioName: "RD0FDY", dmrId: 3101276, bootLine1: "Radio", bootLine2: "Foundry" };
+	m.general = { ...m.general, radioName: "Q0RFDY", dmrId: 9991234, bootLine1: "Radio", bootLine2: "Foundry" };
 	const tg91 = newContact({ name: "Worldwide", id: 91, type: "group" });
 	const tg3100 = newContact({ name: "USA", id: 3100, type: "group", timeslot: 1 });
-	const priv = newContact({ name: "N4NQV", id: 3101276, type: "private", timeslot: 2 });
+	const priv = newContact({ name: "Q0TST", id: 9991234, type: "private", timeslot: 2 });
 	const all = newContact({ name: "All Call", type: "all" });
 	m.contacts.push(tg91, tg3100, priv, all);
 	const list = { number: null, name: "Local", contacts: [tg91, tg3100] };
@@ -142,7 +142,7 @@ function rich() {
 		newChannel({ name: "Simplex", rxHz: 146520000, txHz: 146520000, bw: 25, rxTone: "100.0", txTone: "D023I", power: 9 }),
 		newChannel({ name: "Repeater", rxHz: 442100000, txHz: 447100000, txTone: "88.5", tot: 180, vox: true, zoneSkip: true }),
 		newChannel({ name: "DMR TG91", rxHz: 438500000, txHz: 438500000, mode: "dmr", colorCode: 7, timeslot: 2,
-			contact: tg91, rxList: list, dmrId: 3101277, dmo: true, noBeep: true, noEco: true, aliasTs1: 2, aliasTs2: 3 }),
+			contact: tg91, rxList: list, dmrId: 9991277, dmo: true, noBeep: true, noEco: true, aliasTs1: 2, aliasTs2: 3 }),
 		newChannel({ name: "RX only", rxHz: 162550000, txHz: 162550000, rxOnly: true, power: 1 }),
 	];
 	m.channels.push(...chs);
@@ -208,24 +208,24 @@ test("the air band and broadcast FM are receive only: a TX frequency there witho
 test("the DMR ID database is found by the radio across both areas", () => {
 	const img = CodeplugImage.blank();
 	const records = [];
-	for (let i = 0; i < 17500; i++) records.push({ id: 1000000 + 7 * i, text: `K${String(i).padStart(5, "0")} Op${i % 10}` });
-	records.push({ id: 3101276, text: "N4NQV Spencer Fowler Atlanta GA" }, { id: 3101276, text: "duplicate" });
+	for (let i = 0; i < 17500; i++) records.push({ id: 9870000 + 7 * i, text: `K${String(i).padStart(5, "0")} Op${i % 10}` });
+	records.push({ id: 9991234, text: "Q0TST Charlie Lawson Atlanta GA" }, { id: 9991234, text: "duplicate" });
 	records.push({ id: 2, text: "Ünïcode/Ä-test" });
 	const r = iddb.write(img, records, { textLen: 16 });
 	assert.equal(r.count, 17502);
 	assert.equal(r.rec, 15);
 	assert.ok(img.size > CODEPLUG_SPAN || r.top <= CODEPLUG_SPAN);
-	const ids = [2, 1000000, 1000000 + 7 * 17474, 1000000 + 7 * 17475, 1000000 + 7 * 17499, 3101276, 1000001];
+	const ids = [2, 9870000, 9870000 + 7 * 17474, 9870000 + 7 * 17475, 9870000 + 7 * 17499, 9991234, 9870001];
 	const got = simDetail(img, ids).split("\n").filter((l) => l.startsWith("iddb"));
 	assert.deepEqual(got, [
 		"iddb count 17502",
 		'iddb 2 "Unicode A test"',
-		'iddb 1000000 "K00000 Op0"',
-		`iddb ${1000000 + 7 * 17474} "K17474 Op4"`,
-		`iddb ${1000000 + 7 * 17475} "K17475 Op5"`,
-		`iddb ${1000000 + 7 * 17499} "K17499 Op9"`,
-		'iddb 3101276 "N4NQV Spencer Fo"',
-		"iddb 1000001 -",
+		'iddb 9870000 "K00000 Op0"',
+		`iddb ${9870000 + 7 * 17474} "K17474 Op4"`,
+		`iddb ${9870000 + 7 * 17475} "K17475 Op5"`,
+		`iddb ${9870000 + 7 * 17499} "K17499 Op9"`,
+		'iddb 9991234 "Q0TST Charlie La"',
+		"iddb 9870001 -",
 	]);
 	const back = iddb.read(img.bytes);
 	assert.equal(back.length, 17502);
@@ -253,9 +253,9 @@ test("the DMR ID database is found by the radio across both areas", () => {
 
 test("longer database text is kept up to 48 characters", () => {
 	const img = CodeplugImage.blank();
-	iddb.write(img, [{ id: 3101276, text: "N4NQV Spencer Fowler Atlanta Georgia United States" }], { textLen: 48 });
-	const got = simDetail(img, [3101276]).split("\n").filter((l) => l.startsWith("iddb 3"));
-	assert.deepEqual(got, ['iddb 3101276 "N4NQV Spencer Fowler Atlanta Georgia United Stat"']);
+	iddb.write(img, [{ id: 9991234, text: "Q0TST Charlie Lawson Atlanta Georgia United States" }], { textLen: 48 });
+	const got = simDetail(img, [9991234]).split("\n").filter((l) => l.startsWith("iddb 9"));
+	assert.deepEqual(got, ['iddb 9991234 "Q0TST Charlie Lawson Atlanta Georgia United Stat"']);
 });
 
 // --- Reaching the radio (transport.js) against a simulated radio ---
@@ -263,6 +263,10 @@ test("longer database text is kept up to 48 characters", () => {
 import { CpsSerial, changes, writeRanges, TransportError, keepIdentity } from "../static/js/codeplug/transport.js";
 import { concat } from "../static/js/flasher/bytes.js";
 import { FakeCpsRadio } from "../static/js/codeplug/fakecps.js";
+import { makeBundle } from "../static/js/flasher/backup.js";
+import { CONVERTERS } from "../static/js/flasher/codeplug.js";
+import { FastLink, FastError } from "../static/js/codeplug/fastlink.js";
+import { Link, browserErrorKey } from "../static/js/flasher/link.js";
 import { updateFor } from "../static/js/flasher/version.js";
 
 const RADIOS = [
@@ -351,7 +355,7 @@ test("an ID database goes to the radio and nothing past its room", async () => {
 	const tr = new CpsSerial(radio.stream());
 	await tr.identify(RADIOS);
 	const img = encode(rich());
-	const recs = Array.from({ length: 20000 }, (_, i) => ({ id: 3100000 + i, text: `W${i} Name` }));
+	const recs = Array.from({ length: 20000 }, (_, i) => ({ id: 9900000 + i, text: `W${i} Name` }));
 	iddb.write(img, recs, { textLen: 32 });
 	await tr.write(img, null, { iddb: true });
 	// its header erased before anything else of it and its sector written last (iddb-compact.md 4.3): a write cut
@@ -364,7 +368,7 @@ test("an ID database goes to the radio and nothing past its room", async () => {
 	assert.ok(steps.every(([n, t], i) => t === steps[0][1] && (!i || n >= steps[i - 1][0])), "CPS read progress");
 	assert.equal(steps.at(-1)[0], steps[0][1]);
 	assert.equal(iddb.read(back.bytes).length, 20000);
-	assert.deepEqual(iddb.read(back.bytes)[19999], { id: 3119999, text: "W19999 Name" });
+	assert.deepEqual(iddb.read(back.bytes)[19999], { id: 9919999, text: "W19999 Name" });
 	// the codeplug first, the database after it (a read that offers the database): the same bytes
 	const part = await tr.read({ iddb: false });
 	assert.ok(tr.iddbBytes(part) > 20000 * 24, `database bytes ${tr.iddbBytes(part)}`);
@@ -407,13 +411,13 @@ test("a radio swapped on the cable is told apart by its chip UID", async () => {
 
 test("one codeplug into several radios keeps each radio's name, DMR ID and boot text", async () => {
 	const own = rich();
-	Object.assign(own.general, { radioName: "N0CALL", dmrId: 3101234, bootLine1: "Unit 7", bootLine2: "Fleet" });
+	Object.assign(own.general, { radioName: "Q1AAA", dmrId: 9991234, bootLine1: "Unit 7", bootLine2: "Fleet" });
 	const radio = new FakeCpsRadio({ board: "DM-1701", image: encode(own).bytes });
 	const tr = new CpsSerial(radio.stream());
 	await tr.identify(RADIOS);
 	const have = await tr.read({ iddb: false });
 	const fleet = rich();
-	Object.assign(fleet.general, { radioName: "BASE", dmrId: 3100001, bootLine1: "Base", bootLine2: "" });
+	Object.assign(fleet.general, { radioName: "BASE", dmrId: 9990001, bootLine1: "Base", bootLine2: "" });
 	fleet.channels[0].name = "Fleet ch 1";
 	const file = encode(fleet), want = keepIdentity(file, have);
 	assert.ok((await tr.plan(want, have)).bytes < (await tr.plan(file, have)).bytes);
@@ -421,7 +425,7 @@ test("one codeplug into several radios keeps each radio's name, DMR ID and boot 
 	await tr.verify(want, res.plan);
 	const back = decode(await tr.read({ iddb: false }));
 	assert.deepEqual([back.general.radioName, back.general.dmrId, back.general.bootLine1, back.general.bootLine2],
-		["N0CALL", 3101234, "Unit 7", "Fleet"]);
+		["Q1AAA", 9991234, "Unit 7", "Fleet"]);
 	assert.equal(back.channels[0].name, "Fleet ch 1");
 	assert.equal(back.general.groupHang, fleet.general.groupHang);
 });
@@ -453,6 +457,16 @@ test("the fast protocol reads what the CPS reads, and writes only the blocks tha
 	assert.equal(simDetailFlash(await s.close()), detail(m));
 });
 
+test("a fast request to a radio that went away is a lost connection, not a radio that won't answer", async () => {
+	// a stream nobody answers on; lost as SerialStream's pump sets it when the USB device disappears
+	const s = { buf: new Uint8Array(0), lost: false, clear() {}, take() {}, async write() {} };
+	const fl = new FastLink(new Link(s, { timeout: 20 }));
+	fl.limits = { sums: 16 };
+	await assert.rejects(fl.sums(0, 1), (e) => e instanceof FastError && e.status === "no answer");
+	s.lost = true;
+	await assert.rejects(fl.sums(0, 1), (e) => e.name === "NetworkError" && browserErrorKey(e) === "flash.err.connection_lost");
+});
+
 test("a DATA frame lost in a window sends the block again", async () => {
 	let lost = 0;
 	const s = simRadio(["--populate"], { drop: (f) => f.length > 64 * 3 && lost++ === 0 });	// a window of DATA frames
@@ -470,7 +484,7 @@ test("a DATA frame lost in a window sends the block again", async () => {
 });
 
 test("a format C database written fast is read by the radio; an older radio gets the CPS", async () => {
-	const recs = Array.from({ length: 30000 }, (_, i) => ({ id: 3100000 + 3 * i, text: `K${i} ${["Bob", "Ann", "Joe"][i % 3]} Atlanta GA` }));
+	const recs = Array.from({ length: 30000 }, (_, i) => ({ id: 9900000 + 3 * i, text: `K${i} ${["Bob", "Ann", "Joe"][i % 3]} Atlanta GA` }));
 	const s = simRadio(["--populate"]);
 	const tr = new CpsSerial(s);
 	await tr.identify(RADIOS);
@@ -481,9 +495,9 @@ test("a format C database written fast is read by the radio; an older radio gets
 	await tr.verify(want, res.plan);
 	await tr.finish();
 	const flash = await s.close();
-	const ids = [3100000, 3100000 + 3 * 29999, 3100001];
+	const ids = [9900000, 9900000 + 3 * 29999, 9900001];
 	const got = simDetailFlash(flash, ids).split("\n").filter((l) => l.startsWith("iddb"));
-	assert.deepEqual(got, ["iddb count 30000", 'iddb 3100000 "K0 Bob Atlanta GA"', `iddb ${3100000 + 3 * 29999} "K29999 Joe Atlanta GA"`, "iddb 3100001 -"]);
+	assert.deepEqual(got, ["iddb count 30000", 'iddb 9900000 "K0 Bob Atlanta GA"', `iddb ${9900000 + 3 * 29999} "K29999 Joe Atlanta GA"`, "iddb 9900001 -"]);
 
 	// the codeplug first, the database after it, fast: the same bytes as one read
 	const s4 = simRadioFrom(flash);
@@ -503,7 +517,7 @@ test("a format C database written fast is read by the radio; an older radio gets
 	// refreshed: one record more near the start changes few pages
 	const again = flashImage(flash);
 	const more = again.clone();
-	iddb.write(more, [...recs, { id: 3100001, text: "N0NEW New" }], { format: "C" });
+	iddb.write(more, [...recs, { id: 9900001, text: "Q5NEW New" }], { format: "C" });
 	const s3 = simRadioFrom(flash);
 	const tr3 = new CpsSerial(s3);
 	await tr3.identify(RADIOS);
@@ -564,12 +578,60 @@ test("a sector left pending by an interrupted write is retried; verify skips the
 	await assert.rejects(tr.verify(want, res.plan), (e) => e.code === "verify_failed" && e.params.addr === 0x7600);
 });
 
+test("a read-back the radio refuses part way is reported as such, not as a mismatch", async () => {
+	const radio = new FakeCpsRadio({ board: "DM-1701" });
+	const tr = new CpsSerial(radio.stream());
+	await tr.identify(RADIOS);
+	const want = encode(rich());
+	const res = await tr.write(want, null);
+	const answer = radio.answer.bind(radio);
+	radio.answer = (req) => (req[0] === 0x52 ? new Uint8Array([0x2D]) : answer(req));
+	await assert.rejects(tr.verify(want, res.plan), (e) => e.code === "verify_incomplete" && e.params.addr === res.plan[0][1][0][0]);
+});
+
 test("a backup's codeplug is offered for restore only in RadioFoundry's layout", () => {
 	const bundle = (data) => ({ meta: { firmware_now: { kind: "rfoundry" } }, parts: new Map([["spi-flash", { data }]]) });
 	assert.deepEqual(targets(bundle(encode(rich()).bytes)), ["codeplug"]);
 	const noise = new Uint8Array(CODEPLUG_SPAN);
 	for (let i = 0; i < noise.length; i++) noise[i] = (i * 7919 + (i >> 5)) & 0xFF;
 	assert.deepEqual(targets(bundle(noise)), []);
+});
+
+test("a backup of a smaller memory chip is offered for restore when it covers the codeplug's regions", () => {
+	const bundle = (data) => ({ meta: { firmware_now: { kind: "rfoundry" } }, parts: new Map([["spi-flash", { data }]]) });
+	const img = encode(rich()).bytes;
+	assert.deepEqual(targets(bundle(img.slice(0, 0x100000))), ["codeplug"], "a 1 MB chip");
+	assert.deepEqual(targets(bundle(img.slice(0, TFTP_SIZE - 1))), [], "short of the codeplug's end");
+});
+
+test("the codeplug editor turns a radio without a settings region away before reading, and sizes the room by its chip", async () => {
+	const none = new FakeCpsRadio({ board: "DM-1701", size: 0x100000, noMap: true, radioInfo: true });
+	await assert.rejects(new CpsSerial(none.stream()).identify(RADIOS), (e) => e.code === "no_storage" && e.params.flash === 0x100000);
+	assert.equal(none.readBytes, 0, "nothing read");
+	// a map whose flash didn't start answers INFO with region 0: not a small chip
+	const dead = new CpsSerial(new FakeCpsRadio({ board: "DM-1701", region: 0 }).stream());
+	await dead.identify(RADIOS);
+	assert.equal((await dead.storage()).region, "none");
+	// a chip with a map, smaller than the board's usual one: the room ends with the chip
+	const small = new FakeCpsRadio({ board: "DM-1701", size: 0x100000, end: 0x100000, radioInfo: true });
+	const tr = new CpsSerial(small.stream());
+	await tr.identify(RADIOS);
+	assert.equal(tr.end, 0x100000);
+	const img = await tr.read();
+	assert.equal(decode(img).channels.length, 0);
+	// without radio info: the board's room, as before
+	const plain = new CpsSerial(new FakeCpsRadio({ board: "DM-1701" }).stream());
+	await plain.identify(RADIOS);
+	assert.equal(plain.end, 0xE00000);
+});
+
+test("a backup of a 1 MB memory chip converts to a codeplug image", async () => {
+	const img = encode(rich()).bytes;
+	const parts = [{ file: "spi-flash.bin", what: "spi-flash", addr: 0, data: img.slice(0, 0x100000), complete: true }];
+	const zip = await makeBundle({ radio: { board: "md380", name: "MD-380" }, firmware_now: { kind: "rfoundry" } }, parts);
+	const out = await CONVERTERS.find((c) => c.id === "backup-to-image").convert(zip);
+	assert.equal(out.data.length, CODEPLUG_SPAN);
+	assert.equal(decode(CodeplugImage.from(out.data)).channels.length, decode(CodeplugImage.from(img)).channels.length);
 });
 
 test("changed runs stay inside their ranges and sectors", () => {
@@ -590,13 +652,13 @@ test("codeplug.bin for USB network mode carries the ID database when there is on
 	const plain = CodeplugImage.from(new Uint8Array(0));
 	assert.equal(tftpBytes(plain).length, TFTP_SIZE);
 	const withDb = CodeplugImage.from(new Uint8Array(0));
-	const recs = Array.from({ length: 40000 }, (_, i) => ({ id: 3100000 + i, text: `W${i} Name` }));
+	const recs = Array.from({ length: 40000 }, (_, i) => ({ id: 9900000 + i, text: `W${i} Name` }));
 	const r = iddb.write(withDb, recs, { textLen: 16 });
 	assert.ok(r.top > CODEPLUG_SPAN);	// area 2 in use: past the cps_client image size
 	const out = tftpBytes(withDb);
 	assert.equal(out.length, r.top);
 	assert.deepEqual(iddb.readHeader(out), { format: "N", rec: 15, count: 40000, textLen: 16 });
-	assert.deepEqual(iddb.read(out)[39999], { id: 3139999, text: "W39999 Name" });
+	assert.deepEqual(iddb.read(out)[39999], { id: 9939999, text: "W39999 Name" });
 	assert.deepEqual(out.subarray(0, TFTP_SIZE), withDb.bytes.subarray(0, TFTP_SIZE));
 	// a small database (area 1 only, inside the plain size) keeps the plain size
 	const small = CodeplugImage.from(new Uint8Array(0));
@@ -607,8 +669,8 @@ test("codeplug.bin for USB network mode carries the ID database when there is on
 test("a format C database is read by the radio's lookup: codes, literals, empty tokens, both areas", () => {
 	const first = ["Bob", "Ann", "Joe", "Sue"], cities = Array.from({ length: 300 }, (_, k) => `City${k} GA`);
 	const recs = [];
-	for (let i = 0; i < 90000; i++) recs.push({ id: 1000000 + 11 * i, text: `K${i} ${first[i % 4]} ${cities[i % 300]}` });
-	recs.push({ id: 7, text: "W1AW" }, { id: 8, text: "N0CALL  Spaced" }, { id: 9, text: "X".repeat(60) }, { id: 10, text: "" });
+	for (let i = 0; i < 90000; i++) recs.push({ id: 9800000 + 2 * i, text: `K${i} ${first[i % 4]} ${cities[i % 300]}` });
+	recs.push({ id: 7, text: "W1AW" }, { id: 8, text: "Q0TST  Spaced" }, { id: 9, text: "X".repeat(60) }, { id: 10, text: "" });
 	const img = CodeplugImage.blank();
 	const r = iddb.write(img, recs, { format: "C" });
 	assert.equal(r.format, "C");
@@ -617,28 +679,28 @@ test("a format C database is read by the radio's lookup: codes, literals, empty 
 	const h = iddb.readHeader(img.bytes);
 	assert.equal(h.format, "C");
 	assert.ok(h.dict > 128, "2-byte codes in use");
-	const last = 1000000 + 11 * 89999;
-	const ids = [7, 8, 9, 10, 1000000, 1000000 + 11 * 45000, last, 1000001, last + 1];
+	const last = 9800000 + 2 * 89999;
+	const ids = [7, 8, 9, 10, 9800000, 9800000 + 2 * 45000, last, 9800001, last + 1];
 	const got = simDetail(img, ids).split("\n").filter((l) => l.startsWith("iddb"));
 	assert.deepEqual(got, [
-		"iddb count 90004", 'iddb 7 "W1AW"', 'iddb 8 "N0CALL Spaced"', `iddb 9 "${"X".repeat(48)}"`, 'iddb 10 ""',
-		'iddb 1000000 "K0 Bob City0 GA"', `iddb ${1000000 + 11 * 45000} "K45000 Bob City0 GA"`,
-		`iddb ${last} "K89999 Sue City299 GA"`, "iddb 1000001 -", `iddb ${last + 1} -`,
+		"iddb count 90004", 'iddb 7 "W1AW"', 'iddb 8 "Q0TST Spaced"', `iddb 9 "${"X".repeat(48)}"`, 'iddb 10 ""',
+		'iddb 9800000 "K0 Bob City0 GA"', `iddb ${9800000 + 2 * 45000} "K45000 Bob City0 GA"`,
+		`iddb ${last} "K89999 Sue City299 GA"`, "iddb 9800001 -", `iddb ${last + 1} -`,
 	]);
 	const back = iddb.read(img.bytes);
 	assert.equal(back.length, 90004);
-	assert.deepEqual(back.find((x) => x.id === 8), { id: 8, text: "N0CALL Spaced" });
+	assert.deepEqual(back.find((x) => x.id === 8), { id: 8, text: "Q0TST Spaced" });
 
 	// written again against itself with one record more: the dictionary and most pages stay as they were
 	const again = img.clone();
-	iddb.write(again, [...recs, { id: 1000001, text: "N0NEW Bob City5 GA" }], { format: "C" });
+	iddb.write(again, [...recs, { id: 9800001, text: "Q5NEW Bob City5 GA" }], { format: "C" });
 	let pages = 0;
 	for (let a = iddb.AREA1; a < iddb.extent(again.bytes); a += 4096) {
 		if (a >= iddb.AREA1 + iddb.AREA1_SIZE && a < iddb.AREA2) continue;
 		if (!again.bytes.subarray(a, a + 4096).every((x, k) => x === img.bytes[a + k])) pages++;
 	}
 	assert.ok(pages <= 4, `pages changed by one record: ${pages}`);
-	assert.deepEqual(simDetail(again, [1000001]).split("\n").filter((l) => l.startsWith("iddb 1")), ['iddb 1000001 "N0NEW Bob City5 GA"']);
+	assert.deepEqual(simDetail(again, [9800001]).split("\n").filter((l) => l.startsWith("iddb 9")), ['iddb 9800001 "Q5NEW Bob City5 GA"']);
 
 	// the size estimate is close to the size written
 	const est = iddb.estimateCompact(recs);
@@ -647,7 +709,7 @@ test("a format C database is read by the radio's lookup: codes, literals, empty 
 });
 
 test("a format C database goes to an older radio as format N, and to TFTP as format N", () => {
-	const recs = Array.from({ length: 300000 }, (_, i) => ({ id: 1000000 + i, text: `K${i} Name ${i % 7 ? "Short" : "A much longer city name here"}` }));
+	const recs = Array.from({ length: 300000 }, (_, i) => ({ id: 9600000 + i, text: `K${i} Name ${i % 7 ? "Short" : "A much longer city name here"}` }));
 	const img = CodeplugImage.blank();
 	iddb.write(img, recs, { format: "C" });
 	const end = 0xE00000;	// a radio's room

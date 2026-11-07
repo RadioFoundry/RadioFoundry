@@ -152,8 +152,10 @@ Registers at base +: RBR/THR/DLL 0x00, DLH/IER 0x04, IIR/FCR 0x08, LCR 0x0C, LSR
 | Divisor | APB / 16 / baud, APB = 84 MHz (115200 → 45, 1.3 % fast; 9600 → 546) |
 | Divisor latch | LCR bit 7 set, write DLL then DLH, clear bit 7 |
 | Format | LCR \|= 0x03 (8N1) |
-| FIFO | FCR = 0x67: FIFOs enabled and reset, RX trigger 1 char (bits 7:6 = 01), TX trigger code 2 |
+| FIFO | FCR = 0x67: FIFOs enabled and reset, RX trigger 4 characters (bits 7:6 = 01; fewer arrive by the character time-out), TX trigger 4 characters (bits 5:4 = 10) |
+| FIFOs | 16 bytes each (the FCR trigger levels: RX 1, 4, 8, 14; TX empty, 2, 4, 8). TFL (0x80) and RFL (0x84) count what each holds |
 | TX ready | USR bit 1 (TX FIFO not full) |
+| TX interrupt | IER bit 1 (ETBEI) with bit 7 (PTIME): IIR ID 0010 while the TX FIFO holds the FCR TX trigger level or less; cleared by filling it above that, or by reading IIR. The host port sends this way: the host link task hands its buffer to the interrupt and sleeps until it is sent (`platform/hrc7000/uart.c`). Sent by polling at the host task's priority, a long reply during a DMR transmission kept the idle task out until the hang check reset the radio, and ran at a third of the line's speed |
 | RX ready | LSR bit 0 |
 | Interrupts | GPS uses IER = 0x05 (RX data + line status); on stop, IER = 0 and FCR bits 1, 2 to flush |
 | UART0 | 115200 8N1: programming cable (Baofeng CPS, open-firmware CPS, hotspot). RadioFoundry's host port, where a CPU fault's trace lines appear ([crash-log.md](crash-log.md) 2.3) |
@@ -402,6 +404,11 @@ Init used: MODE = 0 (level), PO = 0xFFFFFFFF (high active), MASK = 0xFFFFFFFF, t
 INT_ST = INT_ST_1 = 0xFFFFFFFF. (Both masks must be written at init; the reset value is all masked.) Enabling vector v: clear bit (v − 32) in PIC_MASK for v < 64, bit (v − 64) in
 PIC_MASK_1 for v ≥ 64.
 
+Level mode still acts on the line rising (measured with timer 6, source 6, through the debug link's SoC register
+access, debuglink.md 3.24): a rise while the source is masked sets its INT_ST bit and is delivered when it is unmasked;
+after the request is taken, a line still high does not interrupt again, unmasked and with the INT_ST bit still set,
+until it falls and rises. A handler must clear its device's cause, or the source stays silent (gotchas 2.9).
+
 Dispatch: all 64 user vectors (32–95) point at one common entry; it saves context, writes 0x04 to PIC_COW1, takes the
 vector number from PSR bits 23:16, subtracts 32 and calls through a 64-entry software table.
 
@@ -558,6 +565,16 @@ two scans in the same millisecond, 65 ms after the last host byte, with the pin 
 a new host byte, not yet received (2026-10-22, RADIO). Before the hold, 2 such presses came in 100 s, each a short
 DMR voice transmission; no line errors (`ue 0`) and no overruns.
 
+**The radio's own RF on the cable (measured, 2026-11-05).** With the programming cable coiled near the antenna, a
+1750 Hz burst at the lowest power (FM, UHF) started by the debug link kept the radio keyed for a minute. The link went
+silent 0.5 s in, so the burst's "off" never arrived. The burst's own time limit ended it at 2 s, but the key scan had
+reported PTT down 174 ms after keying with nothing touched, and that press held the radio keyed. A hand near the cable
+ended it. In that minute UART0 received 350 flagged characters and no good byte. The quiet-time gate takes exactly
+that for a press. A real press held 3 s gave one flagged character, its break, and nothing more: the key grounds the
+line. So, as `drivers/input/sharedptt` describes, no new press starts while the radio transmits, and a held press ends
+at a flagged character after its own break and bounce (`SHARED_PTT_SETTLE_MS`). The diag line `ue N` counts the
+flagged characters.
+
 ### 6.3 Rotary encoder
 
 A = GPIO 0x27, B = 0x26, inputs with GPIO B interrupts (vector 46). On every change of B: direction = −1 if A == B
@@ -655,6 +672,9 @@ Three-wire serial, bit-banged on GPIO: CS = 0x18 (active low), clock = 0x07, dat
 | Read sampling | MCU reads data while clock is high |
 
 Registers 0x65 / 0x67 are not read by the radio's own firmware (unverified: its S-meter may be fake).
+
+The debug link's CHIP_REG ([debuglink.md 3.24](debuglink.md#324-chip_reg)) reaches the FD6818 as chip 0, page 0,
+registers 0x00-0x7F: `rfoundry_debug.py reg 0 0x67` reads the RSSI word.
 
 ### 8.2 Register tables (address: high byte, low byte)
 
@@ -791,6 +811,9 @@ the switch timing.
 
 Band for PA/LNA purposes: VHF below 280 MHz, UHF from 280 MHz (the 220 MHz range shares the VHF path).
 
+TX data advance (`hrc7000_t.tx_pre_on`, RF_CONTROL b20:16): the chip's 0.4 ms. The inbound burst's offset against the
+outbound through a repeater is not measured on this radio yet ([modem-hrc7000.md](modem-hrc7000.md) 2.1).
+
 ### 8.6 DMR PA timer
 
 | Item | Value |
@@ -837,17 +860,47 @@ audio fed into the C7000's audio path. Bring-up check 11 decides between them.
 |---|---|---|
 | A1 | Is 0x47 AF type 7 the FD6818's AM output? | 11: a second receiver on ATIS for reference; RadioFoundry with `rx_am`, compare audio |
 | A2 | Which speaker source (0x2F level) carries FD6818 AF? | answered: 0x2F = 1 (measured, FM receive) |
-| A3 | AM filter bandwidth (0x43) and AGC (0x13, 0x09 table) for AM | 11: listen to a strong and a weak station; BK4819-class chips may need AGC changes for AM (unverified) |
-| A4 | RSSI offset in AM (the squelch's dBm) | 11: signal generator at -100 dBm, read `rssi` on the debug link |
+| A3 | AM filter bandwidth (0x43) and AGC (0x13) for AM | the radio's own set-up (below) gives them; 11 checks a strong and a weak station with it. Open: what 0x4A and the fields of 0x13 are, and the gain loop's tick |
+| A4 | The 0x67 reading in AM on an empty channel and on a carrier, with the AM set-up (the squelch's scale) | 11: signal generator at -100 and -60 dBm, read 0x67, 0x13 and `rssi` on the debug link |
 | B1 | Is the RDA5807M really at PTA25 / PTA26, and does it answer at 0x11? | 11: chip ID 0x58xx over the debug link probe |
 | B2 | Its reference clock (32.768 kHz crystal or a clock signal; 0x02 CLK_MODE, RCLK_DIRECT) | 11: tune a known station with each setting |
 | B3 | Pull-up on SDA (or the pin's own pull) | 11: the chip ID read fails without one |
 | B4 | Where its audio goes (into the amplifier directly, through 0x2F, or into the codec) and whether its supply is switched by a GPIO | 11: listen with each speaker path set |
 | B5 | Antenna for broadcast (the main antenna through the VHF path, or the headset cable) | 11: compare stations with and without a headset |
 
-What RadioFoundry does (unverified until bring-up): `rx_am` in `boards/dm32/radio_dm32.c` is the FM receive path (VHF LNA, speaker
-source to the FD6818, A2) with the AF output word 0x47 = 0x0740 (AF type 7, A1); `rx()` writes 0x0140 back. The AGC
-and filter are the FM ones (A3). The RDA5807M runs through the shared HR_C7000 glue (`platform/hrc7000/bcast_hrc.c`)
+#### The radio's own air band set-up
+
+From the radio's firmware (code read, not measured):
+
+| Item | Value |
+|---|---|
+| When | the RX frequency is in 108.000 to 136.000 MHz (exclusive). AM is chosen by the frequency alone; no channel field |
+| 0x43 | 0x0048: receive filter 14:12 = 0 (about 1.7 kHz), weak-signal bandwidth 0, narrow |
+| 0x47 | 0x6740 (AF type 7), written at the set-up and again when the audio is unmuted |
+| 0x13 | 0x03FF, then a gain loop rewrites it (below) |
+| 0x4A | 0x5450, written only here and never restored |
+| Not written | 0x04 (the AM demodulator enable bit: AM is 0x47 type 7 alone), 0x7E, 0x2B, 0x48, sub-audio |
+| Leaving AM | 0x13 = 0x037E, then the FM or DMR set-up |
+| Gain loop | each tick: the 0x67 reading (bits 8:0) averaged with the one before; dB = (average - 142) / 2. 10 dB or more: down at once to the table entry about (dB - 8) below the current one. Under -6 dB and 30 ticks since the last change: up one entry. Any change, or -6 dB and over, starts the 30 ticks again. The table holds 42 0x13 words from 0x000 (-93 dB) to 0x03FF (0 dB). The RSSI isn't corrected for the gain |
+| Squelch | 0x78 = n << 8 \| (n - 1) on the raw 0x67 scale, n from the factory page's air band rows (11.2: 0x80 level 9, 0x85 level 1, at five points over 108-136 MHz), interpolated by level and frequency. One radio's rows: 61 (level 9) and 71 (level 1), about 30-40 below its FM rows |
+
+On the bench (radio on a dummy load, an AM carrier from the SDR bench, a desk with a raised noise floor):
+
+| Reading | Empty channel | Carrier |
+|---|---|---|
+| 0x67 at full gain (0x13 = 0x03FF) | 133-158 over the band, higher than the factory rows by 60-90 | the gain loop takes 0x13 down and holds 0x67 near 142-150 |
+| 0x65 bits 7:0 (noise_sq) | 59-72 at every frequency | falls as the carrier rises: about 61, 53, 45 and 31 for carriers 5 dB apart (the weakest barely over the floor); 14-19 for a strong one |
+| 0x0C bit 1 (the chip's squelch, 0x78 = 0x6968, 0x4F = 0x302F) | 0 | 1 once noise_sq is under 47 |
+
+So with the gain loop the RSSI half of the chip's squelch always passes (0x67 is over any factory row), and noise_sq
+decides; the factory rows can't be compared with 0x67 as it reads here.
+
+What RadioFoundry does: `rx_am` in `boards/dm32/radio_dm32.c` is the FM receive path (VHF LNA, speaker source to the
+FD6818, A2) with that set-up: 0x43 = 0x0048, 0x47 = 0x6740, 0x13 = 0x03FF and its gain loop at every status poll, 0x4A
+= 0x5450, each AM tune (`fd6818_set_am`, `fd6818_am_status`). Leaving AM writes 0x13 = 0x037E, 0x47 = 0x0140 and 0x4A as
+it read before. The squelch works on noise_sq plus 17 (`fd6818_am_noise`): level 1 opens under 47, as the chip's own
+squelch does, and each level is 3 dB tighter; the factory rows are not read. The RSSI shown adds the gain the loop took
+off back. The RDA5807M runs through the shared HR_C7000 glue (`platform/hrc7000/bcast_hrc.c`)
 on PTA25 / PTA26 with no enable pin; its audio path turns the amplifier on and leaves the speaker source alone (B4).
 The air band is an RX-only band of 108-136 MHz and the broadcast range 65-108 MHz in `boards/dm32/board.c`.
 
@@ -868,8 +921,8 @@ The radio's sleep lengths are 12, 18 or 30 ticks of its receive service by the b
 
 ### 8.9 SFR on air (SDR bench, 2026-10-19)
 
-As a standalone repeater (`sfr.md`) at 461.1375 MHz, CC 2: after a user's call the CW ID came 2 s after the hang,
-"N4NQV" at 20 wpm, 800 Hz, about 1.8 kHz deviation; the next one 5 min later after new traffic (interval 5 min). The
+As a standalone repeater (`sfr.md`) on a UHF test frequency, CC 2: after a user's call the CW ID came 2 s after the hang,
+the call sign at 20 wpm, 800 Hz, about 1.8 kHz deviation; the next one 5 min later after new traffic (interval 5 min). The
 repeat of a call sat 90.2 ms after the original on every voice burst (72 of 72). 212 of 216 repeated voice frames needed
 Golay corrections and 4 were uncorrectable, where the direct copy was clean: the receiver takes bit errors while it
 switches per burst. As a user it reports both copies of a call (gotchas 14.15).
@@ -910,7 +963,7 @@ Values written at init; field meanings from the datasheet:
 | 0x30 | DR_ADC_AGC | 0x34 | AGC data byte |
 | modem 0x088 | LINEOUT_CTRL | 0x01 | line out 2 enabled |
 
-APRS AFSK transmit (measured on the SDR bench, 2026-10-16, 467.375 MHz, 25 kHz, lowest power, a canned frame through
+APRS AFSK transmit (measured on the SDR bench, 2026-10-16, a UHF test frequency, 25 kHz, lowest power, a canned frame through
 `hal_afsk_t.tx_start`): a valid FCS at every level tried, 29 flags of TX delay, twist about -1.1 dB, 14-15 degrees phase
 residual. Level 50 (PCM amplitude 2750) gives 3.1 kHz peak with 2.2 / 2.5 kHz mark / space deviation; level 75 gives
 4.5 kHz peak; PCM 5850 and up is limited at 5.1 kHz peak. Receive decodes off air. While AFSK receive runs, the

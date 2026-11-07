@@ -147,29 +147,44 @@ void ui_push(uint8_t scr, uint16_t arg)
 	}
 	if (ui_scr[scr]->enter != NULL)
 		ui_scr[scr]->enter();	// may focus a row (the current zone in Channels)
-	// Else the first row that can be focused
+	// Else the first row that is available, or failing that the first that can be focused: a dimmed row is still
+	// reachable to explain itself, a text row never is
 	const ui_scr_def_t *d = ui_scr[scr];
 	if ((d->flags & SF_LIST) && d->count != NULL && d->item != NULL && stack[sp].focus == 0) {
 		uint16_t n = d->count();
+		uint16_t dim = n;
 		while (stack[sp].focus < n) {
 			ui_item_t it;
 			it.flags = 0;
 			it.label[0] = it.value[0] = 0;
 			it.num = 0;
 			d->item(stack[sp].focus, &it);
-			if (!(it.flags & UI_ITEM_INFO))
+			if (!(it.flags & (UI_ITEM_INFO | UI_ITEM_DIM)))
 				break;
+			if (!(it.flags & UI_ITEM_INFO) && dim == n)
+				dim = stack[sp].focus;
 			stack[sp].focus++;
 		}
 		if (stack[sp].focus >= n)
-			stack[sp].focus = 0;
+			stack[sp].focus = dim < n ? dim : 0;
 	}
 	update_focus_target();
 	dirty = true;
 }
 
+// The foreign codeplug question leaves the stack unanswered (BACK, Home): the write it holds is dropped. After an
+// answer it fails harmlessly (nothing held, or the answer's job is pending)
+static void cp_question_gone(uint8_t from)
+{
+	for (uint8_t i = from; i <= sp; i++) {
+		if (stack[i].scr == SCR_CP_FOREIGN && ui_svc_codeplug_answer(UI_CP_CANCEL))
+			ui_toast(TR("Not saved"));
+	}
+}
+
 void ui_pop(void)
 {
+	cp_question_gone(sp);
 	if (sp > 0)
 		sp--;
 	if (ui_scr[stack[sp].scr]->flags & SF_FILTER)
@@ -184,6 +199,7 @@ void ui_pop(void)
 
 void ui_go_home(void)
 {
+	cp_question_gone(1);
 	sp = 0;
 	ui_st.quick_edit = false;
 	entry_cancel();
@@ -193,13 +209,67 @@ void ui_go_home(void)
 
 // --- filtered lists (SF_FILTER): the rows whose label matches the T9 keys typed ---
 
+// With keys typed the list is the first UI_FILTER_MAX matches. With none it is every row, so a long list (1024
+// contacts) scrolls to its end without the RAM for its index: the first UI_FILTER_MAX - 2 rows are in filter_idx, and
+// in a longer list its last two slots are a cursor, row WALK_I at raw row WALK_RAW, moved by stepping raw rows.
+// Scrolling and drawing move it a few rows at a time; a jump from the top to the end steps through every raw row once,
+// as typing a key does. RAM is short (no static of its own), and the list's screen is the one on top (only it calls
+// this)
 static uint16_t filter_idx[UI_FILTER_MAX];
-static uint16_t filter_n;
+static uint16_t filter_n;		// the rows in the list
+#define WALK_I		filter_idx[UI_FILTER_MAX - 2]	// past UI_FILTER_MAX: the cursor's row
+#define WALK_RAW	filter_idx[UI_FILTER_MAX - 1]	// and its raw row
 static char filter_keys[UI_FILTER_KEYS + 1];
 
 uint16_t ui_filter_count(void) { return filter_n; }
-uint16_t ui_filter_raw(uint16_t i) { return i < filter_n ? filter_idx[i] : 0; }
 const char *ui_filter_text(void) { return filter_keys; }
+
+uint16_t ui_filter_raw(uint16_t i)
+{
+	if (i >= filter_n)
+		return 0;
+	if (filter_n <= UI_FILTER_MAX || i < UI_FILTER_MAX - 2u)
+		return filter_idx[i];
+	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
+	if (!(d->flags & SF_FILTER) || d->raw_count == NULL || d->raw_label == NULL)
+		return 0;
+	uint16_t n = d->raw_count();
+	uint16_t raw = WALK_RAW;
+	char label[40];
+	while (WALK_I != i) {	// never below UI_FILTER_MAX - 2, one under where the cursor started
+		bool up = i > WALK_I;
+		do {
+			if (up ? raw + 1u >= n : raw == 0)
+				return 0;	// the rows changed under the list: the next rebuild puts it right
+			raw = up ? (uint16_t)(raw + 1u) : (uint16_t)(raw - 1u);
+		} while (d->raw_used != NULL ? !d->raw_used(raw) : !d->raw_label(raw, label, sizeof label));
+		WALK_RAW = raw;
+		WALK_I = up ? (uint16_t)(WALK_I + 1u) : (uint16_t)(WALK_I - 1u);
+	}
+	return raw;
+}
+
+static bool filter_row(uint16_t raw, const char *label, void *ctx)
+{
+	(void)ctx;
+	if (label == NULL || (filter_keys[0] != 0 && !ui_t9_match(label, filter_keys)))
+		return true;
+	if (filter_n < UI_FILTER_MAX)
+		filter_idx[filter_n] = raw;
+	filter_n++;
+	return filter_keys[0] == 0 || filter_n < UI_FILTER_MAX;	// typed: the first matches
+}
+
+// A row at a time, for a list without raw_each. Its own frame: the label stays off the stack of raw_each's pass
+static void __attribute__((noinline)) filter_rows(const ui_scr_def_t *d)
+{
+	uint16_t n = d->raw_count();
+	char label[40];
+	for (uint16_t i = 0; i < n; i++) {
+		if (!filter_row(i, d->raw_label(i, label, sizeof label) ? label : NULL, NULL))
+			break;
+	}
+}
 
 void ui_filter_rebuild(void)
 {
@@ -207,14 +277,12 @@ void ui_filter_rebuild(void)
 	filter_n = 0;
 	if (d->raw_count == NULL || d->raw_label == NULL)
 		return;
-	uint16_t n = d->raw_count();
-	char label[40];
-	for (uint16_t i = 0; i < n && filter_n < UI_FILTER_MAX; i++) {
-		if (!d->raw_label(i, label, sizeof label))
-			continue;
-		if (filter_keys[0] == 0 || ui_t9_match(label, filter_keys))
-			filter_idx[filter_n++] = i;
-	}
+	if (d->raw_each != NULL)
+		d->raw_each(filter_row, NULL, filter_keys[0] != 0);
+	else
+		filter_rows(d);
+	if (filter_n > UI_FILTER_MAX)
+		WALK_I = UI_FILTER_MAX - 1u;	// the cursor starts on that row, its raw row already in WALK_RAW
 }
 
 void ui_filter_reset(void)
@@ -337,13 +405,9 @@ bool ui_contact_name(uint32_t id, bool group, char *out)
 	out[0] = 0;
 #if CONFIG_DMR
 	contact_t c;
-	for (uint16_t i = 1; i <= CODEPLUG_CONTACTS_MAX; i++) {
-		if (!codeplug_contact(i, &c))
-			continue;
-		if (c.id == id && (c.type == CONTACT_GROUP) == group) {
-			strcpy(out, c.name);
-			return true;
-		}
+	if (codeplug_contact_find(id, group, &c)) {
+		strcpy(out, c.name);
+		return true;
 	}
 #else
 	(void)id;
@@ -603,6 +667,12 @@ static void handle_event(const ui_event_t *ev)
 		ui_menus_save_failed();
 		break;
 	}
+	case UI_EV_CODEPLUG_FOREIGN:
+		ui_st.toast = NULL;	// the screen that asked may have said "Saved": the question says what happens
+		if (stack[sp].scr != SCR_CP_FOREIGN)
+			ui_push(SCR_CP_FOREIGN, 0);
+		wake_req = true;
+		break;
 	case UI_EV_CALL_ALERT_RESULT:
 		if (ev->ok) {
 			station(&b, ev);
@@ -814,15 +884,25 @@ static int digit_of(const input_event_t *ev)
 	return ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 ? ev->action - ACT_DIGIT_0 : -1;
 }
 
-static void save_channel(void)
+bool ui_try_save_channel(void)
 {
-	if (!view->temporary && !ui_st.privacy) {
+	if (view->vfo) {
+		ui_toast(TR("VFO settings save automatically"));
+	} else if (view->hotspot) {
+		ui_toast(TR("Stop hotspot to save"));
+	} else if (!view->temporary && !ui_st.privacy) {
 		ui_toast(TR("Nothing to save"));
+	} else if (view->channel_number == 0) {
+		ui_toast(TR("Pick a saved channel"));
+	} else if (!(ui_svc_features() & UI_FEAT_SAVE_CHANNEL)) {
+		ui_toast(TR("Channel saving unavailable"));
 	} else if (ui_svc_save_channel()) {
 		ui_toast(TR("Saved to channel"));
+		return true;
 	} else {
-		ui_toast(TR("Can't save here: use qdmr"));
+		ui_toast(TR("Save busy: try again"));
 	}
+	return false;
 }
 
 // --- Home (information-architecture.md 3) ---
@@ -1024,7 +1104,7 @@ bool ui_home_key(const input_event_t *ev)
 			if (!has_quick_key)
 				ui_push(SCR_QUICK, 0);	// few-key boards: long SELECT is QUICK
 			else
-				save_channel();
+				ui_try_save_channel();
 			return true;
 		}
 		return false;
@@ -1415,7 +1495,7 @@ bool ui_quick_key(const input_event_t *ev)
 			if (ui_st.quick_edit)
 				quick_close_editor();
 			if (!ui_st.quick_edit)	// a value the editor refused (Split's TX) keeps it open, unsaved
-				save_channel();
+				ui_try_save_channel();
 		} else if (press && ui_st.quick_edit) {
 			quick_close_editor();
 		} else if (press) {
@@ -2027,8 +2107,8 @@ void ui_app_key(const input_event_t *ev)
 		ui_toast(TR("Not used here"));
 }
 
-// Auto power off (Settings > Power): after auto_off_min without a key press, a call, a scan or the hotspot, a banner
-// a minute before, then the housekeeping task switches off (ui_app_power_off_due)
+// Auto power off (Settings > Power saving): after auto_off_min without a key press, a call, a scan or the hotspot, a
+// banner a minute before, then the housekeeping task switches off (ui_app_power_off_due)
 static void use_tick(const radio_view_t *v)
 {
 	if (v->state != RS_IDLE || v->scan != 0 || v->hotspot) {
@@ -2047,8 +2127,8 @@ static void use_tick(const radio_view_t *v)
 		power_off_due = true;
 }
 
-// Low battery warning (Settings > Power): a banner when the battery falls to the level, again every 5 min while it
-// stays there, with the low battery tone unless the radio core's own voltage warning has sounded (view.battery)
+// Low battery warning (Settings > Power saving): a banner when the battery falls to the level, again every 5 min while
+// it stays there, with the low battery tone unless the radio core's own voltage warning has sounded (view.battery)
 static void battery_tick(const radio_view_t *v)
 {
 	static char text[UI_BANNER_TEXT];
@@ -2392,4 +2472,9 @@ void ui_app_status(ui_app_status_t *s)
 	s->query = stack[sp].scr == SCR_FIND ? ui_find_query() : (d->flags & SF_FILTER) ? filter_keys : "";
 	s->draws = draws;
 	s->strip_drawn = strip_ok;
+#if CONFIG_DUAL_WATCH
+	s->dual = ui_st.dual.on;
+#else
+	s->dual = false;
+#endif
 }
