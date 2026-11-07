@@ -23,8 +23,8 @@ that layer with cps_client.py. The codeplug steps are shared with the other radi
 docs/user/18-moving-from-stock-md380.md the user guide.
 
 Needs Python 3.8+, dmrconf (qdmr 0.12 or newer) on PATH, pyusb with libusb (flashing) and pyserial (talking to the
-radio once it runs RadioFoundry). The flash and debug link helpers (stm32_dfu.py, rfoundry_debug.py, rfoundry's stockfw.py) are
-loaded from this script's directory or the repository layout, as are codeplug_port.py and cps_client.py.
+radio once it runs RadioFoundry). The flash and debug link helpers (stm32_dfu.py, rfoundry_debug.py), codeplug_port.py and
+cps_client.py are loaded from this script's directory, and the rfoundry package from rfoundry/ beside it, as in a kit.
 """
 import argparse
 import csv
@@ -238,7 +238,9 @@ def stm32_dfu():
 
 
 def stockfw():
-    return load_module("stockfw", ["stockfw.py", os.path.join("rfoundry", "rfoundry", "stockfw.py")])
+    sys.path.insert(0, os.path.join(HERE, "rfoundry"))
+    from rfoundry import stockfw as sfw  # a module of the package, as in stm32_dfu.py: it imports codecmap relatively
+    return sfw
 
 
 def rfoundry_debug_path():
@@ -861,10 +863,7 @@ def cmd_package(sess, args):
              os.path.join(HERE, "rfoundry_debug.py"): "rfoundry_debug.py",
              os.path.join(HERE, "codeplug_port.py"): "codeplug_port.py",
              os.path.join(HERE, "cps_client.py"): "cps_client.py"}
-    sfw = next((p for p in (os.path.join(HERE, "stockfw.py"), os.path.join(HERE, "rfoundry", "rfoundry", "stockfw.py"))
-                if os.path.isfile(p)), None)
-    if sfw:
-        files[sfw] = "stockfw.py"
+    files.update(cp.kit_package_files())
     for img in args.image:
         files[os.path.abspath(img)] = os.path.basename(img)
     for extra in args.include or []:
@@ -879,6 +878,7 @@ def cmd_package(sess, args):
         return True
     os.makedirs(out, exist_ok=True)
     for src, dst in files.items():
+        os.makedirs(os.path.dirname(os.path.join(out, dst)), exist_ok=True)
         shutil.copyfile(src, os.path.join(out, dst))
     keyarg = ' --stock "MD-380-D2.32(AD).bin"'
     if any(os.path.basename(x).endswith(".key") for x in args.include or []):
@@ -1059,6 +1059,11 @@ zones:
                 check(want is not None and want in str(e), "pick_port: %s (got %r)" % (want, str(e)))
     finally:
         globals()["load_module"] = real
+
+    # What --stock and the flash load, here and from a kit. None of it needs the stock file
+    check(stockfw().codecmap.load_maps(), "stockfw loads, with the codec maps")
+    err = cp.kit_error(__file__, b"\x01" * 64, "import md380_migrate as m\nm.stockfw()\nm.stm32_dfu()\nimport cps_client")
+    check(not err, "a kit runs on its own: %s" % err)
 
     print("self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                           "" if len(fails) == 1 else "s"))
