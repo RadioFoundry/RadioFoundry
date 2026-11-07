@@ -124,6 +124,7 @@ error beep on DMR channels or hardware without transmit tones. Availability is i
 [feature matrix](../feature-matrix.md).
 PTT when locked also controls the Tone burst key; power-off ends the burst immediately without a roger beep.
 During VOX, the burst runs to completion before the full VOX quiet tail begins.
+Pressing and releasing the key during a debug-link burst leaves that burst running until its own limit or stop.
 
 | Setting | Values | Default | What it does | Status |
 |---|---|---|---|---|

@@ -296,6 +296,7 @@ typedef struct {
 	uint32_t tx_end_ms;		// end of the last transmission (battery readings wait)
 #if CONFIG_FM_TX_TONES
 	bool burst_timed, burst_held;
+	bool burst_key_owned;		// side-key release owns the burst or its TX denial
 	uint32_t burst_ms;		// start of the side-key burst
 	bool burst_keyed;		// the 1750 Hz burst keyed the transmitter (not PTT)
 	uint32_t burst_end_ms;		// the burst ends by itself at this time (RREQ_TONE_BURST arg2), 0 = no limit
