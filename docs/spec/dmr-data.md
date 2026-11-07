@@ -687,8 +687,6 @@ waits for the link ACK and the TMS ACK start when the transmission ends, so they
 
 - A MOTOTRBO radio refuses our rate 1/2 confirmed packets (12.9), although our CRC-9 and CRC-32 follow the standard
   and match its own rate 3/4 blocks. Not explained.
-- On simplex the radio rarely decodes the response to our confirmed packet (12.9): the SDR decodes it with a valid
-  CRC, the radio counts a receive CRC error (`data.rx_crc_errors`). Delivery then shows only in the TMS ACK.
 - The sliding window (TS 102 361-3 5.4.4) is not used.
 - Fragmentation (FSN chains) is not built: one packet per datagram, so a datagram longer than the air MTU (12.8)
   doesn't go. The gateway drops IP fragments from the host too ([usb-network.md](usb-network.md) 3.2).
@@ -755,6 +753,9 @@ portable (confirmed: also its TMS ACK back). Each failing case was sent at least
   CRC-9 nor the CRC-9's MSB and the serial number swapped in octet 0 was taken either.
 - Rate 3/4 unconfirmed: nothing comes back (none is due), and the portable shows nothing.
 - One portable on one firmware version: more radios and versions are needed before calling this MOTOTRBO behavior.
+- The portable's link response comes in the next frame, 30 ms after our data terminator. A radio still switching
+  back from transmit misses it: one that returned to receive only from the radio task decoded it 1 time in about 30
+  (a receive CRC error instead); returning at the slot engine's TX done, 4 of 4 on the first try.
 
 ## 13. Tests
 
