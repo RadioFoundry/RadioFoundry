@@ -765,6 +765,9 @@ static void test_iddb_compact(void)
 	CHECK(dmr_iddb_init());
 	m.openfw_end--;
 	CHECK(!dmr_iddb_init());
+	m.openfw_end = FL + 0x30000 + 31;	// room for the plain header, not format C's: only the plain one is read
+	unsigned before = reads;
+	CHECK(!dmr_iddb_init() && reads == before + 1);
 	flash.map = NULL;
 	CHECK(dmr_iddb_init());
 #else

@@ -3155,10 +3155,10 @@ def main(argv=None):
                 lo, hi = regions[mem] = ok[0]
                 radio.check_write_range(mem, lo, hi)
                 radio.check_id(mem, hi)                     # the chip's size, before anything is read there
-            for mem, (lo, hi) in regions.items():
                 before = b"".join(radio.read_flash(mem, x, CHUNK) for x in range(lo, hi, CHUNK))
                 if before != b"\xff" * (hi - lo):
                     raise DumpError("%s 0x%X-0x%X is not blank any more: something else uses it, pick another region" % (MEM[mem][4], lo, hi))
+            for mem, (lo, hi) in regions.items():
                 pattern = bytes((i * 131 + (i >> 8) * 7 + 5) & 0xFF for i in range(hi - lo))
                 radio.write_flash(mem, lo, pattern)
                 back = b"".join(radio.read_flash(mem, x, CHUNK) for x in range(lo, hi, CHUNK))
