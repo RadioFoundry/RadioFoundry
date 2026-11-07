@@ -21,6 +21,7 @@
 
 #define DMR_DATA_INBOX_SIZE			4
 #define DMR_DATA_SMS_PREAMBLES		2		// preamble CSBKs before an SMS, gives receivers time to sync
+#define DMR_DATA_TX_PREAMBLES		16		// as many before a text or IP packet where it fits (docs/spec/dmr-data.md 12.6)
 #define DMR_DATA_TEXT_MAX			(sizeof(((dmrDataTMS_t *)0)->text) - 1)
 
 typedef struct

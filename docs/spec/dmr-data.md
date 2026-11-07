@@ -136,7 +136,7 @@ All three are read whatever the setting.
   bits 5-6, 00 04 BF 00 9E 60 for s/n 126), as a MOTOTRBO radio and BrandMeister send it. An ACK with header 0x9F
   (0x20 clear, seen from other MOTOTRBO gear) is still taken. Radio IDs map to 12.x.x.x, groups to 225.x.x.x (the CAI addresses; a packet from the host may carry
   others, 11.1).
-- Ours (`sms_send`): rate 1/2 blocks (gotcha 5.3), 2 preamble CSBKs. With an ACK requested: waits 8 s for the TMS
+- Ours (`sms_send`): rate 1/2 blocks (gotcha 5.3), 16 preamble CSBKs (12.6.4). With an ACK requested: waits 8 s for the TMS
   ACK with our sequence number, 2 tries, then `SMS_FAILED`. To a group or without an ACK: `SMS_SENT` once on air.
   One message at a time, at most 140 characters.
 - Built without `CONFIG_DMR_TMS` (the TMS builder, decoder and ACK are left out): a TMS heard is not decoded, so it
@@ -151,7 +151,9 @@ BrandMeister's SMS service (ID 262993, through a hotspot) speaks TMS on UDP 4007
 
 | | BrandMeister | MOTOTRBO radio | RadioFoundry |
 |---|---|---|---|
-| Data | confirmed (A=1), rate 3/4 | confirmed (A=1), rate 3/4 | TMS and TMS ACK unconfirmed, rate 1/2, 2 preambles |
+| Data | confirmed (A=1), rate 3/4 | confirmed (A=1), rate 3/4 | TMS and TMS ACK unconfirmed, rate 1/2 |
+| Preamble CSBKs | 1 | 15 or 16 | 16 (12.6.4) |
+| Takes a packet with | 12 or more preambles; 1 or 2: no answer at all | | |
 | N(S) | 0 on every packet | steps | steps (12.2) |
 | Link ACK | about 0.5 s after the last block, 1 preamble | | straight after (3) |
 | TMS ACK | about 5.7 s after the message | sent after its link ACK | queued after the link ACK (3) |
@@ -161,9 +163,15 @@ BrandMeister's SMS service (ID 262993, through a hotspot) speaks TMS on UDP 4007
 What follows for us: N(S) can't tell BrandMeister's packets apart, so a repeat is a repeat only when the data is the
 same too (12.3), and its resent text with a new sequence number is kept once (gotcha 5.8).
 
-Not known yet: whether BrandMeister takes unconfirmed rate 1/2 TMS, and ETSI IP text on 5016, from a radio. In the
-capture it ignored two TMS ACKs the radio sent 0.5 s after its link ACK with one preamble and took both retries sent
-with 12-17 preambles (one sample each, a hypothesis only). The defaults stay until an on-air check says otherwise.
+BrandMeister answers only packets with many preamble CSBKs. A MOTOTRBO radio sent the same confirmed TMS twice
+through one hotspot, identical but for the preambles: with 1 there was no answer; with 16 the link ACK came 0.72 s
+later, the TMS ACK 6 s later and the reply 30 s later. Every packet BrandMeister answered in both captures had 12 or
+more; none had 1 or 2. It sends nothing back, not even a NACK, so a short preamble looks like a lost packet. We send
+16 (12.6.4).
+
+Not known yet: whether BrandMeister takes unconfirmed rate 1/2 TMS, and ETSI IP text on 5016, from a radio, now that
+the preambles match. A MOTOTRBO radio's text starts with CR LF (`0d 00 0a 00`); ours doesn't, and whether
+BrandMeister needs it is open.
 
 That check is run by hand, once, to settle the formats, and its results are recorded here. It is never part of
 `tests/hil` or any automated or repeated test: no test reaches the real BrandMeister network. Host tests use the
@@ -182,6 +190,18 @@ registered with BrandMeister (not one another radio on the check uses, or each t
 
 Record for each, in this section: the link ACK class, BrandMeister's TMS ACK time, and whether a resend came.
 
+Results, first pass (2 preambles, before 12.6.4):
+
+| Case | Result |
+|---|---|
+| 1 | no TMS ACK and no reply on either try |
+| 2 | no link ACK on any of 4 tries |
+| 3 | no link ACK on any of 4 tries |
+| 4-7 | not run |
+
+The hotspot's network capture showed every packet reach BrandMeister intact (header CRC, CRC-9, CRC-32, IP and UDP
+checksums good) and nothing come back. That led to the preamble finding above. Cases 1-7 with 16 preambles: open.
+
 #### 5.1.2 Simulated BrandMeister text service (HIL)
 
 A HIL test that involves BrandMeister talks to a local stand-in for the master that the hotspot connects to, never
@@ -190,6 +210,7 @@ to the real network. The stand-in answers as 262993 did in the capture. It is no
 | Event | The stand-in sends | When |
 |---|---|---|
 | Any packet it sends | confirmed (A=1), rate 3/4, N(S) 0, F=1, FSN 1000, from 262993, UDP 4007 to 4007 | |
+| Our packet with fewer than 12 preamble CSBKs | nothing | |
 | Our confirmed packet, every block good | link ACK: response class 0 type 1, status our N(S) | about 0.5 s after the last block, 1 preamble |
 | Our confirmed packet, CRC-32 wrong | NACK: class 1 type 1 | as the link ACK |
 | Our TMS with an ACK requested | TMS ACK `00 03 BF 00 <s/n>` (`00 04 BF 00 ...` past 31) | about 5.7 s after our message |
@@ -219,7 +240,7 @@ with N(S) 0 within 20 s.
 - Received to us: into the inbox with format ETSI (`dmrDataMessage_t.format`); with the response bit set the ETSI
   response (ACK: class 0, type 1, SAP 10) goes back. Duplicates: the same source, format and text within the TMS
   window.
-- Ours: ISO 8859-1, response requested when individual (`ack`), 2 preamble CSBKs. Done (`SMS_SENT`) when the
+- Ours: ISO 8859-1, response requested when individual (`ack`), 16 preamble CSBKs (12.6.4). Done (`SMS_SENT`) when the
   response ACK from the destination arrives, waiting 4 s per try, 2 tries, then `SMS_FAILED` (a NACK response is not acted on: the message
   fails when the tries run out).
   To a group: `SMS_SENT` once on air.
@@ -239,7 +260,7 @@ The compressed UDP/IPv4 header (5.6, 7.2.4) has a port index for it: SPID / DPID
   (`SMS_SENT`, the UI says "Delivered to", `sms_send_confirmed()` true); no response after the tries, or a NACK that
   ends the packet: `SMS_FAILED`. It shares the service's one IP packet slot with the gateway (one at a time; the
   gateway's packet waits, as for any busy slot). Unconfirmed, done once on air ("Sent to"): to a group, and with the
-  confirmed IP setting off (`ip.confirmed` off, or a build without `CONFIG_DMR_CONFIRMED`); 2 preamble CSBKs then.
+  confirmed IP setting off (`ip.confirmed` off, or a build without `CONFIG_DMR_CONFIRMED`).
 - Received (SAP 4 or SAP 3, destination port 5016): the payload decoded as UTF-16BE (`dmrDataDecodeIPText`; a byte
   order mark first is honored, either way), into the inbox with format `ETSI_IP`. No reply of its own; confirmed
   data gets its ETSI response (3). Duplicates as in 5.2.
@@ -422,8 +443,8 @@ capture above shows MOTOTRBO sending TMS that way).
 
 ### 11.3 Air time
 
-Unconfirmed rate 1/2 packets with 2 preamble CSBKs (as we send them): one burst per 60 ms frame. Bursts = 2 + 1 header +
-blocks, blocks = (user data + 4 CRC octets) / 12 rounded up (confirmed: / 10). `testAirtime` in `dmrDataTest` prints
+Unconfirmed rate 1/2 packets with 2 preamble CSBKs: one burst per 60 ms frame. Bursts = 2 + 1 header + blocks
+(we send up to 14 more preambles where they fit, 12.6.4: add 0.84 s), blocks = (user data + 4 CRC octets) / 12 rounded up (confirmed: / 10). `testAirtime` in `dmrDataTest` prints
 and checks these.
 
 | Packet | UDP payload | SAP 4 bursts | SAP 3 bursts | Saved | Confirmed SAP 4 / SAP 3 |
@@ -598,6 +619,18 @@ For finding the cause, the debug link's DMR_DATA op 11 TX_SPACING sets the guard
 (`rfoundry_debug.py data tx-spacing MS [chain|no-chain]`). `tests/hil/test_dmr_tx_spacing.py` (opt-in RF) measures
 delivery chained, separate with no gap, and separate with 250 ms.
 
+#### 12.6.4 Preamble count
+
+A text or IP packet of ours goes with `DMR_DATA_TX_PREAMBLES` (16) preamble CSBKs where the burst list has room for
+them, fewer for the longest packets, never fewer than `DMR_DATA_IP_PREAMBLES` (2, what the air MTU counts on, 12.8).
+A confirmed packet of the air MTU gets 2. Each try sends them again. ACKs, ETSI responses and CSBK answers keep their
+own counts. The service builds the packet with 2, then moves its bursts up and rebuilds the preambles
+(`widenPreambles`), so no buffer grows.
+
+Why 16: BrandMeister ignores data with 1 or 2 preambles and answers the same packet with 15 or 16, the count MOTOTRBO
+radios send (5.1.1). The standard sets no count (TS 102 361-2 7.1.2.5). The cost is 0.84 s more on air per try; the
+waits for the link ACK and the TMS ACK start when the transmission ends, so they don't shrink.
+
 ### 12.7 Open
 
 - No commercial radio has answered our confirmed packets yet, nor sent us a selective retry: the CRC-9 and the
@@ -617,7 +650,7 @@ The longest IP datagram we send in one transmission. It is not below the USB lin
 |---|---|---|
 | `DMR_DATA_MAX_PACKET` | 612 | the packet buffer: 51 rate 1/2 blocks |
 | `DMR_DATA_IP_MTU` | 596 | confirmed delivery: 60 blocks of 10 octets less the 4-octet CRC-32 (612 - 16; unconfirmed, 51 blocks would carry 608) |
-| `DMR_DATA_IP_PREAMBLES` | 2 | preamble CSBKs before an IP packet (also SMS) |
+| `DMR_DATA_IP_PREAMBLES` | 2 | the fewest preamble CSBKs before an IP packet (also SMS); 16 where they fit (12.6.4) |
 | `DMR_DATA_MAX_BURSTS` | 64 | the burst list of one transmission: a confirmed packet of 596 octets |
 
 | A packet of 596 octets | Blocks | Bursts | Air time (60 ms a burst) |

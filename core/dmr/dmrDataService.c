@@ -54,6 +54,11 @@ _Static_assert(DMR_DATA_IP_PREAMBLES == DMR_DATA_SMS_PREAMBLES, "IP packets keep
 // The preambles, the header, the blocks of a confirmed packet of the air MTU (10 octets each) and the terminator
 _Static_assert(IP_PREAMBLES + 1 + ((DMR_DATA_IP_MTU + 4 + 9) / 10) + 1 <= DMR_DATA_MAX_BURSTS,
 				"a confirmed packet of the air MTU goes in one transmission");
+// DMR_DATA_TX_PREAMBLES preamble CSBKs ahead of a text or IP packet where the buffer has room (fewer, down to
+// IP_PREAMBLES, for the longest). BrandMeister's data services ignore packets with 1 or 2 and answer the same packet
+// with 15 or 16, as MOTOTRBO radios send them (docs/spec/dmr-data.md 5.1.1). About 0.8 s more on air per try; the ACK
+// waits start when it has gone
+_Static_assert(DMR_DATA_TX_PREAMBLES >= IP_PREAMBLES, "more preambles where they fit, never fewer");
 // Confirmed data to us whose blocks stopped coming before the count in its header: lost bursts, asked for again
 #define CNF_RX_STALL_MS			300
 // A confirmed packet again from the same radio with the N(S) and the data we last ACKed this soon is a retry (our ACK
@@ -269,6 +274,25 @@ static bool queueTx(int count, uint8_t kind)
 	txPending = true;
 	txGuardCounted = false;
 	return true;
+}
+
+// txBursts holds count bursts, the first `have` of them preambles: moves the rest up for more preambles
+// (DMR_DATA_TX_PREAMBLES, or what room leaves) and returns the new count. Blocks to Follow count the bursts after them
+static int widenPreambles(bool group, uint32_t dst, int count, int have, int room)
+{
+	int add = DMR_DATA_TX_PREAMBLES - have;
+
+	if (add > room - count)
+	{
+		add = room - count;
+	}
+	if ((count <= have) || (add <= 0))
+	{
+		return count;
+	}
+	memmove(&txBursts[have + add], &txBursts[have], (size_t)(count - have) * sizeof(dmrBurst_t));
+	dmrDataBuildPreambles(group, dst, channel.ownId, have + add, count - have, txBursts);
+	return count + add;
 }
 
 // ACKs and CSBK answers: only worth sending for REPLY_TIMEOUT_MS
@@ -590,7 +614,8 @@ static void ipTransmit(void)
 			stats.ipCnfTooLong++;// longer than one confirmed packet can carry: as it would go without the setting
 			ipx.confirmed = false;
 		}
-		else if ((count > 0) && !channel.rmo)
+		count = widenPreambles(false, ipx.dst, count, IP_PREAMBLES, DMR_DATA_MAX_BURSTS - 1);
+		if ((count > 0) && !channel.rmo)
 		{
 			terminatorLC(ipx.dst, channel.ownId, ipx.firstTry, ipx.ns, &txBursts[count++]);
 		}
@@ -627,6 +652,7 @@ static void ipTransmit(void)
 		if (count > 0)
 		{
 			dmrDataBuildPreambles(ipx.group, ipx.dst, channel.ownId, IP_PREAMBLES, count - IP_PREAMBLES, txBursts);
+			count = widenPreambles(ipx.group, ipx.dst, count, IP_PREAMBLES, DMR_DATA_MAX_BURSTS);
 			if ((ipx.more > 0) && (ipx.tries == 0))
 			{
 				stats.ipChains++;
@@ -1018,6 +1044,7 @@ static bool smsTransmit(void)
 		default:
 			break;
 	}
+	count = widenPreambles(sms.group, sms.dst, count, DMR_DATA_SMS_PREAMBLES, DMR_DATA_MAX_BURSTS);
 	if (!queueTx(count, TXK_SMS))
 	{
 		return false;

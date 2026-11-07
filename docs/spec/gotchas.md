@@ -305,6 +305,10 @@ free, entries older than 5 s dropped), with compiler barriers so the entry is wr
 when radio and text match within 60 s. Not the sequence number: BrandMeister resends an unacknowledged text with a
 new one.
 
+**5.9 BrandMeister ignores data with few preambles.** Confirmed TMS sent with 2 preamble CSBKs reached BrandMeister
+intact and got nothing back: no link ACK, no NACK. The same packet with 16 got its link ACK in under a second. Text and
+IP packets go with 16 where the burst list has room ([dmr-data.md](dmr-data.md) 12.6.4).
+
 ## 6. Privacy
 
 **6.1 Apply the keystream where the burst position is known.** Static keystream schemes (Motorola BP, Anytone 16-bit

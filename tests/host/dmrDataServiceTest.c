@@ -713,6 +713,8 @@ static void testSignaling(void)
 	CHECK(events[DMR_DATA_EV_CALL_ALERT_ACKED] == 1);
 }
 
+static const dmrBurst_t *txHeader(void);
+
 #if CONFIG_DMR_TMS
 // Our text messages: to a radio with an ACK, to a group, and unanswered
 static void testOurSms(void)
@@ -723,6 +725,13 @@ static void testOurSms(void)
 	runMainTask(200);
 	CHECK((sentCount == 1) && (sent[0].kind == 'S') && (sent[0].dst == RADIO_A));
 	CHECK(sms_send_state() == DMR_REQ_SENDING);
+	// DMR_DATA_TX_PREAMBLES preambles, each counting the bursts after it: BrandMeister ignores a text with 2
+	CHECK(txHeader() == &lastTx[DMR_DATA_TX_PREAMBLES]);
+	for (int i = 0; i < DMR_DATA_TX_PREAMBLES; i++)
+	{
+		CHECK(lastTx[i].dataType == DT_CSBK && (lastTx[i].payload[0] & 0x3F) == DMR_CSBKO_PREAMBLE &&
+		      lastTx[i].payload[3] == lastTxCount - 1 - i);
+	}
 	uint8_t seq = sent[0].seq;
 	// The ACK from A, as A's radio sends it
 	{
@@ -1072,7 +1081,7 @@ static void testIpTx(void)
 	CHECK(dmrDataServiceIpBusy());
 	runMainTask(SEND_MS);
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
-	CHECK(lastTxCount == 2 + 1 + 7 && txHeader() != NULL && (txHeader()->payload[0] & 0x0F) == DMR_DPF_UNCONFIRMED &&
+	CHECK(lastTxCount == DMR_DATA_TX_PREAMBLES + 1 + 7 && txHeader() != NULL && (txHeader()->payload[0] & 0x0F) == DMR_DPF_UNCONFIRMED &&
 	      (txHeader()->payload[1] >> 4) == DMR_SAP_UDPIP_COMPRESSION);
 
 	// Confirmed for UDP port 161: C_HEAD with F and N(S), the blocks, the data terminator (direct mode); the ACK ends it
@@ -1084,7 +1093,7 @@ static void testIpTx(void)
 	      (h->payload[8] & 0x7F) == 8 && (h->payload[9] & 0x0F) == 0x08);// 73 octets in 10: 8 blocks
 	uint8_t ns = (h->payload[9] >> 4) & 7;
 	CHECK(lastTx[lastTxCount - 1].dataType == DT_TERMINATOR_WITH_LC && (lastTx[lastTxCount - 1].payload[8] & 0x67) == (0x60 | ns));
-	CHECK(lastTxCount == 2 + 1 + 8 + 1);
+	CHECK(lastTxCount == DMR_DATA_TX_PREAMBLES + 1 + 8 + 1);
 	CHECK(dmrDataServiceIpBusy());
 	respond(RADIO_B, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK(ns), NULL);// another radio's: not ours
 	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK((ns + 1) & 7), NULL);// another packet's
@@ -1102,7 +1111,7 @@ static void testIpTx(void)
 	runMainTask(SEND_MS);
 	h = txHeader();
 	CHECK(h != NULL && !(h->payload[8] & 0x80) && (h->payload[8] & 0x7F) == 2 && ((h->payload[9] >> 4) & 7) == ns);
-	CHECK(lastTx[3].dataType == DT_RATE_12_DATA && (lastTx[3].payload[0] >> 1) == 1 && (lastTx[4].payload[0] >> 1) == 6);
+	CHECK(h != NULL && h[1].dataType == DT_RATE_12_DATA && (h[1].payload[0] >> 1) == 1 && (h[2].payload[0] >> 1) == 6);
 	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK(ns), NULL);
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
 
@@ -1242,7 +1251,9 @@ static void testIpAirMtu(void)
 				dmrDataServiceGetStats(&st);
 				CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK && st.ipSent - st0.ipSent == 1);
 				CHECK(h != NULL && (h->payload[0] & 0x0F) == DMR_DPF_UNCONFIRMED && (h->payload[8] & 0x7F) == blocks);
-				CHECK(lastTxCount == DMR_DATA_IP_PREAMBLES + 1 + blocks);
+				// As many preambles as fit: fewer than DMR_DATA_TX_PREAMBLES at the MTU
+				CHECK(lastTxCount == ((DMR_DATA_TX_PREAMBLES + 1 + blocks < DMR_DATA_MAX_BURSTS) ?
+				      (DMR_DATA_TX_PREAMBLES + 1 + blocks) : DMR_DATA_MAX_BURSTS));
 				const dmrDataPacket_t *p = txPacket();
 				CHECK(p != NULL && p->length == DMR_DATA_IP_MTU && p->sap == cases[c].sap);
 				CHECK(p != NULL && memcmp(&p->data[cases[c].header], &l4[8], payload) == 0);
@@ -1793,7 +1804,8 @@ static void testChain(void)
 	CHECK(dmrDataServiceIpBusy());
 	runMainTask(SEND_MS);
 	CHECK(txLists == lists + 1 && !dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
-	CHECK(lastTx[0].dataType == DT_CSBK && lastTx[1].dataType == DT_CSBK && lastTx[2].dataType == DT_DATA_HEADER);
+	CHECK(lastTx[0].dataType == DT_CSBK && lastTx[DMR_DATA_TX_PREAMBLES - 1].dataType == DT_CSBK &&
+	      lastTx[DMR_DATA_TX_PREAMBLES].dataType == DT_DATA_HEADER);
 	CHECK(lastTx[lastTxCount - 1].dataType == DT_RATE_12_DATA);		// unconfirmed: no terminator
 	CHECK(chainRead(first, &group, &dst, &cbfOk) == 3 && cbfOk && !group && dst == RADIO_A);
 	CHECK(first[0] == 0 && first[1] == 16 && first[2] == 32);
