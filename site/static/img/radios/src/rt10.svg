@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 1090" data-undrawn="sk1 sk2">
+<defs>
+<linearGradient id="body" x1="0" x2="1"><stop offset="0" stop-color="#121314"/><stop offset=".5" stop-color="#26292b"/><stop offset="1" stop-color="#101112"/></linearGradient>
+<linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#232628"/><stop offset="1" stop-color="#16181a"/></linearGradient>
+<linearGradient id="band" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2c3033"/><stop offset="1" stop-color="#1a1c1e"/></linearGradient>
+<linearGradient id="knob" x1="0" x2="1"><stop offset="0" stop-color="#0b0c0d"/><stop offset=".4" stop-color="#474b4f"/><stop offset="1" stop-color="#0a0b0c"/></linearGradient>
+<linearGradient id="ant" x1="0" x2="1"><stop offset="0" stop-color="#0a0a0b"/><stop offset=".35" stop-color="#383c3f"/><stop offset="1" stop-color="#0a0a0b"/></linearGradient>
+<linearGradient id="slot" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#050506"/><stop offset="1" stop-color="#202325"/></linearGradient>
+<linearGradient id="key" x1="0" x2="1"><stop offset="0" stop-color="#1a1c1e"/><stop offset="1" stop-color="#3a3e41"/></linearGradient>
+</defs>
+<!-- antenna: whip and its collar -->
+<path d="M 98 16 Q 110 2 122 16 L 128 182 L 92 182 Z" fill="url(#ant)" stroke="#000" stroke-width="2"/>
+<rect x="72" y="178" width="76" height="80" rx="10" fill="url(#ant)" stroke="#000" stroke-width="2"/>
+<path d="M 76 202 H 144 M 76 220 H 144 M 76 238 H 144" stroke="#000" stroke-width="2" opacity=".5"/>
+<!-- the channel knob and the volume / power knob -->
+<g id="encoder">
+<rect x="200" y="146" width="70" height="108" rx="8" fill="url(#knob)" stroke="#000" stroke-width="2"/>
+<path d="M 210 154 V 246 M 222 154 V 246 M 235 154 V 246 M 248 154 V 246 M 260 154 V 246" stroke="#000" stroke-width="2" opacity=".55"/>
+</g>
+<rect x="320" y="170" width="60" height="84" rx="8" fill="url(#knob)" stroke="#000" stroke-width="2"/>
+<path d="M 330 178 V 246 M 342 178 V 246 M 355 178 V 246 M 368 178 V 246" stroke="#000" stroke-width="2" opacity=".55"/>
+<!-- PTT on the left edge -->
+<rect id="key-ptt" data-edge="left" x="12" y="370" width="20" height="210" rx="8" fill="url(#key)" stroke="#000" stroke-width="2"/>
+<!-- body -->
+<rect x="25" y="246" width="430" height="830" rx="44" fill="url(#body)" stroke="#000" stroke-width="3"/>
+<rect x="40" y="262" width="400" height="104" rx="30" fill="url(#band)"/>
+<!-- the front panel, its slots and the microphone hole -->
+<rect x="55" y="386" width="370" height="666" rx="34" fill="url(#face)" stroke="#0a0b0c" stroke-width="3"/>
+<rect x="88" y="422" width="304" height="26" rx="13" fill="url(#slot)"/>
+<rect x="88" y="518" width="304" height="26" rx="13" fill="url(#slot)"/>
+<rect x="88" y="614" width="304" height="26" rx="13" fill="url(#slot)"/>
+<path d="M 100 447 H 380 M 100 543 H 380 M 100 639 H 380" stroke="#3653c9" stroke-width="3" stroke-linecap="round"/>
+<circle cx="322" cy="694" r="6" fill="#050506"/>
+</svg>
