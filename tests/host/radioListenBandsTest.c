@@ -110,7 +110,7 @@ static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 static void r_tx_off(void) {}
 static void r_status(radio_status_t *st)
 {
-	st->noise = 120;	// the FM squelch never opens here: AM must use the RSSI
+	st->noise = 120;	// the FM squelch never opens here: AM uses the signal level (below)
 	st->rssi_dbm = -130;
 	st->carrier = false;
 	st->tone_ok = false;	// a board in AM may report anything: the core ignores sub-audio there
@@ -120,6 +120,12 @@ static void r_status(radio_status_t *st)
 			st->noise = 20;	// an FM receiver hears it too
 			st->tone_ok = true;
 		}
+	}
+	if (hw.am) {
+		// AM: noise from the signal level (hal_radio.h rx_am), on this board -18 dBm = 0 and 1 dB per step, so
+		// level 5 (opens below 52) opens above -70 dBm
+		int32_t n = -18 - (int32_t)st->rssi_dbm;
+		st->noise = n < 0 ? 0 : n > 255 ? 255 : (uint8_t)n;
 	}
 }
 static void r_audio(bool on) { hw.audio = on; }
@@ -300,11 +306,6 @@ static void test_helpers(void)
 	CHECK(radio_am_channel(&ch));
 	ch.mode = RADIO_MODE_DMR;
 	CHECK(!radio_am_channel(&ch));
-	// The squelch scale: -18 dBm and stronger is 0, every dB weaker adds one
-	CHECK(radio_am_noise(-10) == 0 && radio_am_noise(-18) == 0 && radio_am_noise(-70) == 52);
-	CHECK(radio_am_noise(-400) == 255);
-	// Level 5 opens above -70 dBm: noise 52 < 52 is false, 51 (-69 dBm) opens
-	CHECK(radio_am_noise(-69) < radio_sm_squelch_open_below(5) && !(radio_am_noise(-70) < radio_sm_squelch_open_below(5)));
 	// 8.33 kHz: the exact 25/3 kHz grid, snapping first; other steps add
 	CHECK(radio_am_step(118000000, 1, RADIO_AM_STEP_833) == 118008333);
 	CHECK(radio_am_step(118008333, 1, RADIO_AM_STEP_833) == 118016667);
@@ -350,13 +351,13 @@ static void test_am_channel(void)
 	CHECK(hw.am_calls >= 1);
 	CHECK(sm.view.ch.mode == RADIO_MODE_FM);	// the channel itself stays as stored
 
-	// Squelch on the signal strength: noise stays 120 (closed for FM), a -50 dBm signal opens
+	// Squelch on the signal strength, as the board reports it in AM: a -50 dBm signal opens
 	CHECK(sm.view.state == RS_IDLE && !hw.audio);
 	hw.sig_hz = 118100000;
 	hw.sig_rssi = -50;
 	run(100);
 	CHECK(sm.view.state == RS_RX && hw.audio);
-	CHECK(sm.view.noise == 32);	// the AM squelch value: -18 - (-50)
+	CHECK(sm.view.noise == 32);	// the board's AM squelch value: -18 - (-50)
 	hw.sig_rssi = -76;	// below level 5's -70 dBm (with its hysteresis)
 	run(100);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio);
