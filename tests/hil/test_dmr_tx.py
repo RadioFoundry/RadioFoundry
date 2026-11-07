@@ -31,10 +31,11 @@ dmr.tx_alias = the radio name; a 4 s over: the alias the SDR decodes from the em
 modem's listener assembles equal dmr.tx_alias (at least one of the two must have heard it complete; both, when they
 did, must agree), call.tx_alias_lcs grew.
 
-test_dmr_tx_permit_before_key: on a board that holds its beeps off the air (the HR_C7000 TX gate, its "pg" diagnostics
-line; others skip), a 3 s over: beep.played grew (the talk permit played before the key-up), the gate closed (g + 1)
-and never found the beep still sounding (l) or ring play on (ra), and on air the over starts with three voice LC
-headers from us that decode, each within 1.5 dB of the over's median burst level, with no burst 2 dB or more under it.
+test_dmr_tx_permit_before_key: a 3 s over plays the talk permit (beep.played grew), and on air the over starts with
+three voice LC headers from us that decode, each within 1.5 dB of the over's median burst level, with no burst 2 dB or
+more under it. On a board that holds its beeps off the air (the HR_C7000 TX gate, its "pg" diagnostics line) the
+permit plays before the key-up, and the gate closed (g + 1) and never found the beep still sounding (l) or ring play
+on (ra). Other boards play it once the voice is on air (radio-features.md 4), so the over must be whole around it.
 
 test_dmr_privacy_tx: Motorola basic privacy key 1 loaded (RADIO op 19), a 3 s over: every voice LC header and
 terminator from us that the SDR or the bench modem decoded carries the privacy service option (so & 0x40), every
@@ -323,13 +324,12 @@ PERMIT_LEVEL_DB = 1.5     # a header's level against the over's median (a beep o
 @pytest.mark.bench_service
 @pytest.mark.sdr_or_modem
 def test_dmr_tx_permit_before_key(radio, sdr_bench, pytestconfig):
-    """A board that holds its beeps off the air (CAP_BEEP_NOT_ON_AIR, the HR_C7000 TX gate) plays the talk permit
-    before it keys (docs/spec/dmr-modem.md): the beep plays once, the gate closes once and never finds the beep still
-    sounding or ring play on, and the over is whole from its first burst: three voice LC headers from us that decode,
-    each at the over's level (within PERMIT_LEVEL_DB of the median burst), and no burst more than 2 dB below it."""
+    """The talk permit plays for the over, and the over is whole from its first burst: three voice LC headers from us
+    that decode, each at the over's level (within PERMIT_LEVEL_DB of the median burst), and no burst more than 2 dB
+    below it. A board that holds its beeps off the air (CAP_BEEP_NOT_ON_AIR, the HR_C7000 TX gate) plays it before it
+    keys (docs/spec/dmr-modem.md): the gate closes once and never finds the beep still sounding or ring play on. A
+    board without the gate (no "pg" line) plays it with the voice on air."""
     gate = _gate(radio)
-    if gate is None:
-        skip("other_board", "no TX gate (pg) line: this board's beeps may sound on air, so it plays the permit on air")
     freq, cc, _, d = _dmr_tx_setup(radio, pytestconfig)
     own = int(d["dmr.own_id"])
     played = int(radio.view().get("beep.played", 0))
@@ -338,9 +338,10 @@ def test_dmr_tx_permit_before_key(radio, sdr_bench, pytestconfig):
     played = int(radio.view().get("beep.played", 0)) - played
     print(f"beep.played +{played}; gate {gate} -> {after}")
     assert played >= 1, "no beep played for the over: is Settings > Talk permit off?"
-    assert after["g"] - gate["g"] >= 1, "the TX gate never closed for the over"
-    assert after["l"] == gate["l"], f"the key-up found the beep still sounding ({gate['l']} -> {after['l']})"
-    assert after["ra"] == gate["ra"], f"ring play was on while the gate was closed ({gate['ra']} -> {after['ra']})"
+    if gate is not None:
+        assert after["g"] - gate["g"] >= 1, "the TX gate never closed for the over"
+        assert after["l"] == gate["l"], f"the key-up found the beep still sounding ({gate['l']} -> {after['l']})"
+        assert after["ra"] == gate["ra"], f"ring play was on while the gate was closed ({gate['ra']} -> {after['ra']})"
 
     bursts = sdr.get("bursts", [])
     ours = [b for b in bursts if (b.get("lc") or {}).get("src") == own]
