@@ -645,6 +645,51 @@ static void test_tx_refused(void)
 	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
 }
 
+// The end of a transmission wakes the poll's owner (dmr_call_set_wake) with the event already queued: one poll at the
+// same time ends the call, without waiting for the next tick. Nothing else wakes it
+static unsigned wakes;
+static void on_wake(void) { wakes++; }
+
+static void test_tx_done_wake(void)
+{
+	dmr_call_config_t c = base_cfg();
+
+	setup(&c);
+	dmr_call_set_wake(on_wake);
+	wakes = 0;
+	dmr_call_ptt(true);
+	run_ms(500);
+	CHECK(V()->state == DMR_CALL_STATE_TX && wakes == 0);	// slot ticks, bursts, the start: no wake
+	dmr_call_ptt(false);
+	// The slots alone until the modem says it is done, polling as run_ms does until then
+	for (unsigned t = 0; t < 1000 && wakes == 0; t += 10) {
+		now += 10;
+		sub_ms += 10;
+		if (sub_ms >= 30) {
+			sub_ms = 0;
+			sim_slot();
+		}
+		if (wakes == 0)
+			dmr_call_poll(now);
+	}
+	CHECK(wakes == 1 && sim.tx_ends == 1);
+	CHECK(V()->state == DMR_CALL_STATE_TX);
+	dmr_call_poll(now);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && V()->phase == DMR_CALL_PHASE_IDLE);
+	run_ms(300);
+	CHECK(wakes == 1);
+
+	// A refusal mid call wakes it too
+	dmr_call_ptt(true);
+	run_ms(100);
+	sim.reject_next = true;
+	run_ms(100);
+	CHECK(V()->tx_error == DMR_TX_ERR_REJECTED && wakes == 2);
+	dmr_call_ptt(false);
+	run_ms(30);
+	dmr_call_set_wake(NULL);
+}
+
 // A modem that takes the transmission but never sends a burst (no slot timing: a modem not answering).
 // The call must end on its own, PTT held or released, not wait for a superframe boundary that never comes
 static void test_tx_modem_stalled(void)
@@ -2341,6 +2386,7 @@ int main(void)
 	test_tx_permit_hold();
 	test_tx_timeout_and_starve();
 	test_tx_refused();
+	test_tx_done_wake();
 	test_tx_modem_stalled();
 	test_rmo_wakeup();
 	test_rmo_air_slot_alignment();

@@ -13,6 +13,9 @@
 #include "hotspot/hotspot.h"
 #include "radio/radio_hotspot.h"
 #endif
+#if CONFIG_DMR
+#include "dmr/call/dmr_call.h"
+#endif
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmrDataService.h"
 #endif
@@ -75,6 +78,24 @@ static void send(const radio_req_t *req, TickType_t wait)
 	}
 }
 
+#if CONFIG_DMR
+// The DMR stack's wake (dmr_call_set_wake): the end of a transmission is acted on at once, not at the next tick up to
+// RADIO_TICK_MS later, so the receiver is back for a reply 30 ms after the last burst. One in the queue at a time.
+// Only the modem's event callback posts it, from one task, so the flag needs no atomics
+static volatile bool wake_posted;
+
+static void wake(void)
+{
+	if (!wake_posted) {
+		wake_posted = true;
+		radio_req_t req = { .type = RREQ_WAKE };
+		if (xQueueSend(requests, &req, 0) != pdTRUE) {
+			wake_posted = false;	// the queue was full: the tick comes anyway
+		}
+	}
+}
+#endif
+
 #if CONFIG_HOTSPOT
 // radio_hotspot.c's way into the queue: from the host link task, never waiting except for a request that must not be
 // lost (the leave: the channel comes back with it)
@@ -131,10 +152,16 @@ static void radio_task(void *arg)
 		TickType_t due = (int32_t)(next_tick - next_poll) < 0 ? next_tick : next_poll;
 		int32_t left = (int32_t)(due - xTaskGetTickCount());
 		radio_req_t req;
+		bool woken = false;
 		if (xQueueReceive(requests, &req, left > 0 ? (TickType_t)left : 0) == pdTRUE) {
 			do {
 				req_handled++;
-				if (req.type == RREQ_SETTINGS) {
+				if (req.type == RREQ_WAKE) {
+#if CONFIG_DMR
+					wake_posted = false;
+#endif
+					woken = true;
+				} else if (req.type == RREQ_SETTINGS) {
 					radio_settings_t set;
 					xSemaphoreTake(view_lock, portMAX_DELAY);
 					set = pending_settings;
@@ -147,11 +174,11 @@ static void radio_task(void *arg)
 			} while (xQueueReceive(requests, &req, 0) == pdTRUE);
 		}
 		TickType_t now = xTaskGetTickCount();
-		if ((int32_t)(now - next_tick) >= 0) {
+		if (woken || (int32_t)(now - next_tick) >= 0) {
 			radio_sm_tick(&sm, hal_millis());
 			next_tick += tick_period;
-			if ((int32_t)(now - next_tick) >= 0) {
-				next_tick = now + tick_period;
+			if (woken || (int32_t)(now - next_tick) >= 0) {
+				next_tick = now + tick_period;	// a wake's tick counts as the next one
 			}
 		}
 		if ((int32_t)(now - next_poll) >= 0) {
@@ -201,6 +228,9 @@ void radio_core_start(void)
 	zone_edit_settle();
 #endif
 	radio_sm_init(&sm, hal_millis());
+#if CONFIG_DMR
+	dmr_call_set_wake(wake);
+#endif
 	shared_view = sm.view;
 	shared_serial = sm.serial;
 	shared_settings = sm.set;
