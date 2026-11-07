@@ -110,9 +110,9 @@ is `tools/bringup.py list --radio <id>`.
 | `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `mdns` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `tftp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
-| `tftp_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
+| `tftp_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `dmr_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
-| `iddb_compact` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
+| `iddb_compact` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `net_ppp` | not recorded | off | pass (seed) | pass (seed) | off | off | off |
 | `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
@@ -190,8 +190,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `NET_USRP` | ● | ● | ● | … | ● | ● | … |
 | `MDNS` | ● | ● | ● | ● | ● | ● | ○ |
 | `TFTP` | ● | ● | ● | ● | ● | ● | ○ |
-| `TFTP_IDDB` | ● | ● | ● | ● | ● | ● | ✕ |
-| `IDDB_COMPACT` | ● | ● | ● | ● | ● | ● | ✕ |
+| `TFTP_IDDB` | ● | ● | ● | ● | ● | ● | ○ |
+| `IDDB_COMPACT` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_CONTROL_STATION` | ● | ● | ● | ● | ● | ● | ○ |
 | `SNMP` | ● | ● | ● | ● | ● | ● | ○ |
 | `SFR` | ● | ● | ● | ● | ✕ | ● | ● |
