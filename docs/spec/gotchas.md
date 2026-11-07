@@ -111,7 +111,7 @@ burst. A silent talker's bursts are the same bytes every time (the bench sends o
 each looked like a port that had stopped, and six ended the reception. Bit errors made a few reads differ, which is
 why some got through. Speech never showed it, and a pause in speech can. Rule: read the port at every tick and compare
 with the last tick's read; only a port that stopped moving is a lost burst. Test with bursts that repeat, not only
-with varied ones. The host test reproduces it (1 of 36 bursts before, 36 after), and on the MD-380 on air a silent
+with varied ones. The host test reproduces it (1 of 36 bursts before, 36 after), and on the radio on air a silent
 call played 94 of 120 bursts, up from 2-10.
 Radios: HR_C5000.
 
