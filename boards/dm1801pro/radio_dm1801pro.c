@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // DM-1801 Pro radio: FD6818 RF transceiver (bit-banged, its own register set), the HR_C7000 baseband for analog FM,
 // separate RX and TX band paths and the PA drive on DAC channel B (docs/spec/hardware-dm1801pro.md 5; modem-hrc7000.md
-// 4, 5.1, 8) for analog FM and DMR. The DMR slot engine, PA one-shot and PCM audio are the shared HR_C7000 glue
+// 4, 5.1, 8) for analog FM and DMR. The DMR slot engine, RF-burst task and PCM audio are the shared HR_C7000 glue
 // (platform/hrc7000/dmr_glue.c, audio_pcm.c); this file supplies the per-burst RF switch and the PA key.
 //
 // Transmit needs the factory calibration (the PA drive comes from it): without it tx() refuses.
@@ -36,13 +36,17 @@
 #define PA_RAMP_STEP_US		50u
 #define FD_REG_TX_AUX		0x50u		// 3B18 after the TX state, before the TX path comes on (5.4)
 #define FD_REG40_BASE		0x3480u		// FM transmit: 0x40 = this + the calibration byte (5.2, 6.4)
-// The other HR_C7000 boards' "DMR PA" default. The radio has no PA timer: its ramp starts about 2 ms after the RF TX interrupt
-// (5.4). This delay puts the drive 1.0-2.1 ms after it (1.0 ms before the burst to 0.1 ms into it, 5.6)
-#define DMR_PA_DELAY_US		28000u
-// RF TX interrupt 0.6 ms before our burst, not the other HR_C7000 boards' 3.1 ms: earlier, the switch cut off the tail of the
-// inbound burst before ours (a clipped SFR header lost the next superframe; at 2.0 ms the frame before ours still
-// carried most of the voice bit errors). Swept 0.4-3.1 ms in hardware-dm1801pro.md 5.6.
-#define RF_TX_LEAD		6u
+// DMR bursts on the shared RF-burst task (dmr_rfburst.h), timed from the RF TX interrupt. The RF leaves receive 0.6 ms
+// ahead of the lead point, not earlier: an earlier switch cut off the tail of the inbound burst before ours (a clipped
+// SFR header lost the next superframe; at 2.0 ms the frame before ours still carried most of the voice bit errors).
+// Swept 0.4-3.1 ms in hardware-dm1801pro.md 5.6. The interrupt comes 0.5 ms before that, so a late wake of the task
+// (up to 0.42 ms) doesn't make the switch late. The drive is keyed 0.5 ms before the first symbol (one step; it was
+// 0.45 ms before to 0.65 ms after with the glue's PA one-shot, 5.6)
+#define RF_TX_LEAD		11u		// 100 us steps (RF_CONTROL b13:8)
+#define RF_SWITCH_LEAD_US	600u		// the RF to TX this long before the lead point
+#define PA_AHEAD_US		500u		// the drive keyed this long before the first symbol
+#define BURST_SWITCH_AT_US	(RF_TX_LEAD * 100u - RF_SWITCH_LEAD_US)
+#define BURST_PA_AT_US		(RF_TX_LEAD * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US - PA_AHEAD_US)
 // TX data advance (hrc7000_t.tx_pre_on) 1.1 ms, not the chip's 0.4 ms: at 0.4 ms the inbound burst came 0.71 ms late
 // against the outbound, about 0.11 ms less per step (hardware-dm1801pro.md 5.6)
 #define TX_PRE_ON		11u
@@ -79,7 +83,7 @@ static bool aprs_listen;	// APRS takes the HR_C7000's FM audio (aprs_listen_rout
 static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modulator (afsk_tx_route)
 
 static void speaker_source(void);
-static volatile bool dmr_keyed;		// DMR transmission on: the PA timer may key the PA
+static volatile bool dmr_keyed;		// DMR transmission on: the burst sequence may key the drive
 static volatile uint16_t tx_drive;	// DAC B value at the top of the ramp (FM) or while keyed (DMR)
 static uint16_t last_rssi_raw, last_noise_raw;
 static volatile int8_t mic_offset_db;	// hal_radio_t.mic_gain: taken at the next transmission start
@@ -196,39 +200,57 @@ static bool ref_trim(int16_t ppb)
 
 // ---- From the DMR interrupts ----
 
-// RF TX interrupt (tx): RX path off, FD6818 straight to TX (no idle) and the TX aux word, TX path on. After the burst:
-// PA drive off, TX path off, FD6818 straight back to receive, RX path on. Each path is on only while the FD6818 is in
-// its state, as in the radio's own handlers (5.4). The TX path switches per burst: a hotspot stays keyed while it
-// listens, and with the TX path on it heard nothing
-static void dmr_rf_switch(bool tx)
+// One burst's TX on, from the RF task (dmr_rfburst.h), at the switch point: RX path off, FD6818 straight to TX (no
+// idle) and the TX aux word, TX path on; then the drive ahead of the first symbol (one write: a burst is 27.5 ms long,
+// there is no time for the 2 ms ramp of the analog path). Each path is on only while the FD6818 is in its state, as in
+// the radio's own handlers (5.4). Both points count from the RF TX interrupt, elapsed_us ago
+static void burst_on(hrc_rfburst_wait_fn wait, uint32_t elapsed_us)
 {
-	if (tx) {
-		rx_path(rx_hz, false);
-		fd6818_dmr_burst_at(&fd, true, fd.variant->bw_dmr, synth_hz(tx_hz));
-		fd6818_write(&fd, FD_REG_TX_AUX, 0x3B18);
-		tx_path(tx_hz, true);
-	} else {
-		DAC_DATA_B = 0;
-		tx_path(tx_hz, false);
-		fd6818_dmr_burst_at(&fd, false, fd.variant->bw_dmr, synth_hz(rx_hz));
-		rx_path(rx_hz, true);
-	}
-}
-
-// The PA one-shot expired: key the drive if the transmission is still on (one write: a burst is 27.5 ms long, there is
-// no time for the 2 ms ramp of the analog path)
-static void dmr_pa_on(void)
-{
+	uint32_t t0 = hrc_micros() - elapsed_us;
+	wait(BURST_SWITCH_AT_US > elapsed_us ? BURST_SWITCH_AT_US - elapsed_us : 0);
+	rx_path(rx_hz, false);
+	fd6818_dmr_burst_at(&fd, true, fd.variant->bw_dmr, synth_hz(tx_hz));
+	fd6818_write(&fd, FD_REG_TX_AUX, 0x3B18);
+	tx_path(tx_hz, true);
+	uint32_t e = hrc_micros() - t0;
+	wait(BURST_PA_AT_US > e ? BURST_PA_AT_US - e : 0);
 	if (dmr_keyed) {
 		DAC_DATA_B = tx_drive;
 	}
 }
 
+// The burst's TX off with its last symbol (now: at once): drive off, TX path off, FD6818 straight back to receive, RX
+// path on. The TX path switches per burst: a hotspot stays keyed while it listens, and with the TX path on it heard
+// nothing
+static uint32_t burst_off(hrc_rfburst_wait_fn wait, uint32_t elapsed_us, bool now)
+{
+	uint32_t late = now ? 0 : hrc_rfburst_late_us(elapsed_us, RF_TX_LEAD);
+	if (!now) {
+		wait(hrc_rfburst_hold_us(elapsed_us, RF_TX_LEAD));
+	}
+	DAC_DATA_B = 0;
+	tx_path(tx_hz, false);
+	fd6818_dmr_burst_at(&fd, false, fd.variant->bw_dmr, synth_hz(rx_hz));
+	rx_path(rx_hz, true);
+	return late;
+}
+
+static const hrc_rfburst_board_t rf_board = { .on = burst_on, .off = burst_off };
+
 static void dmr_tx_end(void);
 
-static const hrc_dmr_board_t dmr_board = {
-	.rf_switch = dmr_rf_switch, .pa_on = dmr_pa_on, .pa_delay_us = DMR_PA_DELAY_US, .tx_end = dmr_tx_end,
-};
+static const hrc_dmr_board_t dmr_board = { .burst = &rf_board, .tx_end = dmr_tx_end };
+
+// Per-burst keying off (task level): waits for the RF task to finish the burst it is in and leave the RF receiving
+static void dmr_disarm(void)
+{
+	dmr_keyed = false;
+#if CONFIG_DMR
+	if (hrc_rfburst_armed()) {
+		hrc_rfburst_disarm();
+	}
+#endif
+}
 
 #if CONFIG_APRS
 static bool afsk_tx_route(bool on);
@@ -283,8 +305,8 @@ static void set_mode(radio_mode_t m)
 		mode = RADIO_MODE_DMR;
 		hrc_dmr_enter();
 	} else {
+		dmr_disarm();
 		hrc_dmr_leave();
-		dmr_keyed = false;
 		DAC_DATA_B = 0;
 		fd6818_set_mode(&fd, FD6818_MODE_FM);
 		hrc7000_fm_idle(&modem);
@@ -300,6 +322,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, 
 	if (!board_in_band(hz, false) || (am && mode != RADIO_MODE_FM)) {
 		return false;
 	}
+	dmr_disarm();	// a retune ends DMR TX (the hotspot's rx() disarms too)
 	bool back = keep && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && !asleep;
 	DAC_DATA_B = 0;
 	tx_path(hz, false);
@@ -377,14 +400,14 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	rx_path(hz, false);
 	hal_delay_ms(1);
 	write_mod_bias(hz);
-	// DMR keeps listening on the RX frequency until a burst (dmr_rf_switch retunes per burst); on a split channel the
+	// DMR keeps listening on the RX frequency until a burst (burst_on retunes per burst); on a split channel the
 	// synthesizer on the TX frequency here left the radio deaf to the repeater's downlink
 	fd6818_set_freq(&fd, synth_hz(mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz));
 	fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);	// 0x51's enable would add the FD6818's tone to the HR_C7000's
 	hrc_dac_b_power(true);
 	if (mode == RADIO_MODE_DMR) {
-		// The FD6818 and the RX path receive until our first burst and between bursts; dmr_rf_switch keys each burst
-		// with the TX path, and the drive waits for the PA one-shot. A hotspot stays keyed like this while it listens,
+		// The FD6818 and the RX path receive until our first burst and between bursts; burst_on keys each burst
+		// with the TX path and the drive. A hotspot stays keyed like this while it listens,
 		// so receive must work while keyed (set_freq left the FD6818 idle)
 		// The microphone reaches the codec ADC with PTB14 high, the same as for FM (audio_route.h); the other HR_C7000 boards' DMR
 		// level (low) cut it
@@ -393,9 +416,12 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		fd6818_set_bandwidth(&fd, fd.variant->bw_dmr);
 		fd6818_set_state(&fd, FD6818_STATE_RX);
 		hal_delay_ms(1);
-		tx_hz = hz;	// for dmr_rf_switch's TX path
+		tx_hz = hz;	// for burst_on's TX path
 		rx_path(rx_hz, true);
 		dmr_keyed = true;
+#if CONFIG_DMR
+		hrc_rfburst_arm();
+#endif
 	} else {
 		fd6818_fm_tx_prepare(&fd);
 		// The radio's FM key-up writes 0x40 from the band's three calibration bytes; the next rx() puts the power-on
@@ -429,7 +455,7 @@ static void tx_end(bool keep)
 	if (!transmitting) {
 		return;
 	}
-	dmr_keyed = false;
+	dmr_disarm();
 #if CONFIG_APRS
 	if (afsk_tx) {
 		hrc_afsk.tx_stop();	// the core stops the tones first; this is the safety net

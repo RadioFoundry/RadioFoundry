@@ -796,9 +796,11 @@ switch after the burst moves it back (`fd6818_dmr_burst_at`). A simplex channel 
 this (issue 72), `tx` tuned the synthesizer to the TX frequency at key-up and left it there: the radio was deaf to the
 hotspot's downlink, never aligned to it, and its bursts were not taken. The radio's own firmware retunes at every burst end too. The PLL lock time after each retune is not measured yet (HIL check open).
 
-RadioFoundry raises the RF TX interrupt **0.4 ms** before each burst (`hrc7000_t.rf_tx_lead` = 4), not the driver's 3.1 ms. At
-the interrupt the switch above leaves receive, and with a long lead it cut off the end of the inbound burst before
-ours. The same fault shows on other HR_C7000 boards. An SFR repeat sweep (SDR bench,
+RadioFoundry switches to TX **0.4 ms** before the lead point of each burst, not at the driver's 3.1 ms. The switch
+leaves receive, and earlier it cut off the end of the inbound burst before ours. The sweep below moved the RF TX
+interrupt itself (`hrc7000_t.rf_tx_lead`), with the switch in the interrupt. The switch now runs on the shared
+per-burst RF task ([modem-hrc7000.md](modem-hrc7000.md) 3.1a): the interrupt comes 0.9 ms ahead (`rf_tx_lead` = 9)
+and the task waits until 0.4 ms, so its wake (up to 0.42 ms) doesn't make the switch late. Untested on the radio. The same fault shows on other HR_C7000 boards. An SFR repeat sweep (SDR bench,
 2026-10-20, 72 inbound frames per call, the radio in another room from the bench, so with a weak signal):
 
 | Lead | Frames lost per call | Bits corrected per call in the frames before ours |
@@ -818,6 +820,10 @@ TX data advance (`hrc7000_t.tx_pre_on`, RF_CONTROL b20:16): the chip's 0.4 ms. T
 outbound through a repeater is not measured on this radio yet ([modem-hrc7000.md](modem-hrc7000.md) 2.1).
 
 ### 8.6 DMR PA timer
+
+The original firmware's PA timing. RadioFoundry keys the PA from the per-burst RF task instead: PA select and DAC B
+0.5 ms before the burst's first symbol, timed from the RF TX interrupt, and both off with its last symbol (8.5,
+[modem-hrc7000.md](modem-hrc7000.md) 3.1a). Untested on the radio.
 
 | Item | Value |
 |---|---|
