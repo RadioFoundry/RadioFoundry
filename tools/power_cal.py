@@ -83,11 +83,21 @@ class Radio:
         try:
             self.link.ptt(False)
             self.link.tx_drive(0)
+            # The transmit arm refuses a change while the radio transmits (an FM tail runs on after PTT)
+            self.wait(lambda v: v.get("state") not in ("tx", "tx_tail"), "the end of the transmission")
             self.set_level(0)
         finally:
             if self.arm:
                 i, choices = self.arm
-                self.link.hwopt_set(i, choices.index("Off") if "Off" in choices else 0)
+                off = choices.index("Off") if "Off" in choices else 0
+                for _ in range(10):
+                    try:
+                        self.link.hwopt_set(i, off)
+                        break
+                    except dl.DebugLinkError:
+                        time.sleep(0.5)
+                else:
+                    print("power_cal: transmit still ARMED: disarm it by hand", file=sys.stderr)
             self.link.tx_limit()
 
     def levels(self):
