@@ -3667,6 +3667,10 @@ static inline void dtmf_cancel(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (voi
 // keyed: DMR per-burst keying is still armed (dmr_follow releases it), so no tx_off here
 static void fm_tx_end(radio_sm_t *sm, bool keyed, uint32_t now_ms)
 {
+#if CONFIG_FM_TX_TONES
+	sm->burst_timed = sm->burst_held = false;
+	sm->burst_ms = sm->burst_end_ms = 0;
+#endif
 	dtmf_cancel(sm, now_ms);
 #if CONFIG_DTMF
 	sm->view.dtmf_digits[0] = 0;
@@ -3888,7 +3892,10 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 #endif
 	dtmf_cancel(sm, now_ms);	// before the roger beep: the board never mixes the two
 #if CONFIG_FM_TX_TONES
+	sm->burst_timed = sm->burst_held = false;
+	sm->burst_ms = sm->burst_end_ms = 0;
 	if (sm->view.tone_burst) {
+		roger = false;	// releasing PTT during a burst ends the transmission
 		tx_tone(0);
 		sm->view.tone_burst = false;
 	}
@@ -4911,11 +4918,16 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 static void tone_burst(radio_sm_t *sm, bool on, uint32_t max_ms, uint32_t now_ms)
 {
 	if (on) {
-		if (sm->view.tone_burst || sm->view.ch.mode != RADIO_MODE_FM || sm->hotspot ||
-				board.radio->tx_tone == NULL) {
+		if (sm->view.tone_burst) {
 			return;
 		}
-		if (sm->view.state != RS_TX) {
+		sm->burst_timed = sm->burst_held = false;
+		sm->burst_ms = sm->burst_end_ms = 0;
+		if (sm->view.ch.mode != RADIO_MODE_FM || sm->hotspot || board.radio->tx_tone == NULL) {
+			beep(sm, BEEP_ERROR);
+			return;
+		}
+		if (sm->view.state != RS_TX || !sm->ptt) {
 			ptt_down(sm, now_ms);
 			sm->burst_keyed = sm->ptt;	// held by the burst, even when refused (the deny shows until release)
 			if (sm->view.state != RS_TX) {
@@ -4928,10 +4940,16 @@ static void tone_burst(radio_sm_t *sm, bool on, uint32_t max_ms, uint32_t now_ms
 			sm->view.tone_burst = true;
 			sm->burst_end_ms = max_ms != 0 ? (now_ms + max_ms) | 1u : 0;	// | 1: never 0, "no limit"
 			changed(sm);
+		} else {
+			beep(sm, BEEP_ERROR);
+			if (sm->burst_keyed) {
+				ptt_release(sm, false, now_ms);
+			}
 		}
 		return;
 	}
-	sm->burst_end_ms = 0;
+	sm->burst_timed = sm->burst_held = false;
+	sm->burst_ms = sm->burst_end_ms = 0;
 	if (sm->view.tone_burst) {
 		tx_tone(0);
 		sm->view.tone_burst = false;
@@ -5389,6 +5407,15 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 #endif
 			break;
 		}
+#if CONFIG_FM_TX_TONES
+		if (sm->view.tone_burst || sm->burst_keyed) {
+#if CONFIG_VOX
+			sm->vox_keyed = sm->view.vox_keyed = false;
+#endif
+			ptt_release(sm, false, now_ms);
+			fm_tx_end(sm, false, now_ms);	// shutdown does not wait for a sub-audio tail
+		}
+#endif
 		sm->power_off_req = true;
 		sm->power_off_busy = CONFIG_DMR_DATA_CORE;	// data_tick clears it once the deregistration is out
 		break;
@@ -5437,6 +5464,21 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		break;
 #endif
 #if CONFIG_FM_TX_TONES
+	case RREQ_TONE_BURST_KEY:
+		if (req->arg != 0) {
+			if (!sm->view.tone_burst) {
+				tone_burst(sm, true, 0, now_ms);
+				sm->burst_timed = sm->view.tone_burst;
+				sm->burst_ms = sm->burst_timed ? now_ms : 0;
+			}
+			sm->burst_held = sm->burst_timed;
+		} else {
+			sm->burst_held = false;
+			if (!sm->burst_timed || now_ms - sm->burst_ms >= RADIO_BURST_MIN_MS) {
+				tone_burst(sm, false, 0, now_ms);
+			}
+		}
+		break;
 	case RREQ_TONE_BURST:
 		tone_burst(sm, req->arg != 0, req->arg2, now_ms);
 		break;
@@ -5695,6 +5737,12 @@ static void vox_poll(radio_sm_t *sm, uint32_t now_ms)
 		changed(sm);
 		return;
 	}
+#if CONFIG_FM_TX_TONES
+	if (sm->view.tone_burst) {
+		sm->vox_quiet_ms = 0;	// the quiet tail starts after the burst restores the microphone
+		return;
+	}
+#endif
 	uint8_t level = vox_enabled(sm) ? board.power->mic_level() : 0;
 	if (level >= 100u - 8u * sm->set.vox_level) {
 		sm->vox_quiet_ms = 0;
@@ -5918,6 +5966,8 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		if (sm->view.tot_s != 0 && sm->view.tx_elapsed_ms >= (uint32_t)sm->view.tot_s * 1000) {
 			dtmf_cancel(sm, now_ms);
 #if CONFIG_FM_TX_TONES
+			sm->burst_timed = sm->burst_held = false;
+			sm->burst_ms = sm->burst_end_ms = 0;
 			if (sm->roger_ms != 0 || sm->view.tone_burst) {
 				tx_tone(0);
 				sm->roger_ms = 0;
@@ -6008,6 +6058,11 @@ static void sfr_rpt_tick(radio_sm_t *sm, uint32_t now_ms)
 void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 {
 	sm->led_now = now_ms;
+#if CONFIG_FM_TX_TONES
+	if (sm->burst_timed && !sm->burst_held && now_ms - sm->burst_ms >= RADIO_BURST_MIN_MS) {
+		tone_burst(sm, false, 0, now_ms);
+	}
+#endif
 #if RADIO_SM_CW
 	cw_service(sm, now_ms);
 #endif

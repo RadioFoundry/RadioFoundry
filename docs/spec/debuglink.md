@@ -396,6 +396,11 @@ At most one per 20 ms (busy otherwise; the radio core's queue holds 16).
 | 35 | flags u8, n u8, hz u32 × n | the test TX limit (`tx_limit_set`, [radio-features.md](radio-features.md) 3.1), RAM only: a restart clears it. Flags bit 0 blocks every transmission; else the radio keys only on the n frequencies (Hz, n ≤ 10); no block and n 0: off. Set before the reply. The `core` view shows it (`txlim`). A flag bit other than 0, n over 10 or a length that isn't 2 + 4n answers BAD_ARG. `rfoundry_debug.py radio tx-limit off\|block\|MHZ[,MHZ...]` |
 | 36 | drive u16 | the PA drive of the next transmission (`hal_radio_t.tx_drive`), for power calibration with a wattmeter ([power-calibration.md](../testing/power-calibration.md)): in the board's own units (its power control DAC counts), in place of the power level's drive, from the next key-up until that transmission ends; 0 = the level's drive again. Set it before key-up: a change during a transmission takes effect at the next one. Every transmit rule still applies (the arm, the test TX limit, a level the radio can key at that frequency). RAM only. A drive over the board's limit or a short argument answers BAD_ARG, a radio without the hook UNAVAILABLE. The `core` view's `tx_drive` lists each level's drive. `rfoundry_debug.py radio tx-drive N\|off` |
 
+Op 23 (`DL_OP_TONE_BURST`) now gives the error beep when refused on a DMR channel, in hotspot mode or without
+`tx_tone`, instead of silently doing nothing.
+A burst requested during the roger beep tail after PTT release now re-keys, cancels the roger beep and owns the
+transmission until burst off, `max_ms` or the TX time-out (see [radio-features.md 3.3](radio-features.md#33-roger-beep-and-1750-hz-burst-config_fm_tx_tones)).
+
 Ops 15-18 last until the channel changes (`dmr.target_manual`); in the DMR VFO ops 15 and 16 set the VFO's own target, which is kept. Unavailable ops answer UNAVAILABLE.
 
 ### 3.9 INFO_CHIP

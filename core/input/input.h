@@ -12,7 +12,7 @@
 #define INPUT_REPEAT_MS		120
 
 void input_start(void);
-// Wait up to wait_ms for the next event (0 = don't wait). PTT and MONITOR edges also go straight to the radio core
+// Wait up to wait_ms for the next event (0 = don't wait). PTT, MONITOR and TONE_BURST edges also go straight to the radio core
 bool input_next(input_event_t *ev, uint32_t wait_ms);
 // An event is waiting (the UI leaves a redraw for after it)
 bool input_pending(void);

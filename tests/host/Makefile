@@ -254,9 +254,9 @@ inputTest: inputTest.c $(CORE)/input/input_engine.c $(CORE)/input/input_engine.h
 TESTS   += keyassignTest
 # It reads every board's board.c key map: BOARD_IDS lists them, from boards/ (a new board is checked with no edit here)
 KEYASSIGN_BOARDS := $(wildcard $(ROOT)/boards/*/board.c)
-keyassignTest: keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/keyassign.h $(CORE)/input/input_engine.c $(KEYASSIGN_BOARDS)
+keyassignTest: $(CORE)/input/input_forward.c $(CORE)/input/input_forward.h keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/keyassign.h $(CORE)/input/input_engine.c $(KEYASSIGN_BOARDS)
 	$(CC) $(CFLAGS) $(CORE_HAL) '-DBOARD_IDS=$(foreach f,$(KEYASSIGN_BOARDS),"$(notdir $(patsubst %/,%,$(dir $(f))))",)' \
-		-o $@ keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/input_engine.c
+		-o $@ keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/input_engine.c $(CORE)/input/input_forward.c
 
 # The rotary encoder's quadrature decoder (drivers/input/quadrature), shared by the boards
 quadratureTest: quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c $(ROOT)/drivers/input/quadrature/quadrature.h

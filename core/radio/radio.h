@@ -440,6 +440,8 @@ void radio_req_vibrate(uint8_t pattern);
 // FM 1750 Hz tone burst while on (CONFIG_FM_TX_TONES): keys up if not transmitting, stops when off or max_ms after
 // it started (0: no limit but the TX time-out), so a host that goes away can't leave the radio keyed
 void radio_req_tone_burst(bool on, uint32_t max_ms);
+// Side-key edges: send for at least RADIO_BURST_MIN_MS, then until released.
+void radio_req_tone_burst_key(bool down);
 // A DTMF key down / up (CONFIG_DTMF; radio-features.md 3.7): digit '0'-'9', '*', '#', 'A'-'D'. Ignored unless the
 // view's dtmf_ready; the tone lasts at least RADIO_DTMF_MIN_MS. The input task sends the keypad's edges (any task)
 void radio_req_dtmf(char digit, bool down);
