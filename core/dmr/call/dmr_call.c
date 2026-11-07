@@ -54,6 +54,7 @@ static uint32_t evq_drops_base, tx_underruns_base;	// at the last dmr_call_reset
 static uint32_t tick_count;	// slot ticks, counted by the producer
 static uint8_t tick_alt;	// consecutive ticks with the slot number alternating 1 / 2
 static int8_t tick_ts;
+static void (*wake_fn)(void);	// dmr_call_set_wake; outlives dmr_call_init
 
 // --- Stack state ---
 
@@ -441,6 +442,10 @@ static void on_event(const dmr_event_t *ev, void *ctx)
 	if (it->has_burst)
 		it->burst = *ev->burst;
 	__atomic_store_n(&evq_head, (uint8_t)(head + 1), __ATOMIC_RELEASE);
+	// The end of a transmission: the receiver goes back at the next poll, and a reply can start 30 ms after the last
+	// burst. Queued first, so the poll the wake brings sees it
+	if ((ev->kind == DMR_EV_TX_DONE || ev->kind == DMR_EV_TX_REJECTED) && wake_fn != NULL)
+		wake_fn();
 }
 
 static void evq_reset(void)
@@ -1898,6 +1903,11 @@ void dmr_call_reset_stats(void)
 	memset(&stats, 0, sizeof(stats));
 	tx_underruns_base = s.view.tx_underruns;
 	evq_drops_base = evq_drops;
+}
+
+void dmr_call_set_wake(void (*fn)(void))
+{
+	wake_fn = fn;
 }
 
 void dmr_call_set_data_rx(dmr_data_rx_fn fn, void *ctx)
