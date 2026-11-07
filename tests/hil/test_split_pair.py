@@ -24,7 +24,6 @@ The bench is a simplex station: its slots have no fixed phase against the outbou
 label (and the outbound slot the call lands on) is whichever half of the outbound frame the call falls in, and the
 residual is that phase. Only a subscriber synced to the outbound, as in test_split_pair_handheld, checks the labels.
 """
-import json
 import os
 import sys
 import threading
@@ -42,12 +41,9 @@ SRC = 9990301
 
 
 def analyze(sdr_bench, cap, freq, cc):
-    """sdrmon.py analyze into its own file (FILE.json is the capture's metadata) and the capture's start time"""
-    out = f"{cap}.an.json"
-    txt = sdr_bench.ssh(f"cd ~/{sdr_bench.dir} && {sdr_bench.py} sdrmon.py analyze {cap} --freq {freq} --cc {cc} "
-                        f"--cach --json {out} > {cap}.txt 2>&1; cat {out}", timeout=600)
-    meta = sdr_bench.capture_meta(cap)
-    return json.loads(txt), meta.get("t0")
+    """sdrmon.py analyze with the CACH decode (on the bench host, or here on a bench board's channel I/Q) and the
+    capture's start time"""
+    return sdr_bench.analyze_dmr(cap, freq, cc, cach=True), sdr_bench.capture_meta(cap).get("t0")
 
 
 def call_bursts(bursts):
@@ -72,7 +68,9 @@ def test_split_pair_repeat(radio, sdr_bench, pytestconfig):
     rdir = sdr_bench.run_dir("hil_split_pair")
     log = []
     with sdr_bench.lease():
-        cap_in = sdr_bench.capture_start(rdir, fin, seconds=30, name="in")
+        # The input needs only the call's bursts: decoded on the bench when it can (no I/Q). The output's CACH
+        # comes from the waveform, which the burst records lack
+        watch_in = sdr_bench.dmr_watch_start(rdir, fin, 30, cc=cc, name="in")
         cap_out = sdr_bench.capture_start(rdir, fout, seconds=30, name="out")
         with radio.released() as port:
             p = sdh.Pair(port, rx_port, repeat=True, log=log.append)
@@ -113,7 +111,8 @@ def test_split_pair_repeat(radio, sdr_bench, pytestconfig):
     ts = 1 if labels == {sdh.DMR_DATA1} else 2
 
     # Input and output off air
-    sdr_in, t0_in = analyze(sdr_bench, cap_in, fin, cc)
+    sdr_in = sdr_bench.dmr_watch_result(watch_in)
+    t0_in = sdr_in["t0"] if sdr_in.get("source") == "bursts" else sdr_bench.capture_meta(watch_in["cap"]).get("t0")
     sdr_out, t0_out = analyze(sdr_bench, cap_out, fout, cc)
     inb = call_bursts(sdr_in["bursts"])
     bs = [b for b in sdr_out["bursts"] if b["family"] in ("bs", "emb")]

@@ -1977,7 +1977,8 @@ class SdrBench:
                            "cach_ts": r["slot"] if fam == "bs" else None, "level_dbfs": r["level_dbfs"],
                            "dev_hz": r["dev_hz"], "fec_ok": r["fec"]["fec_ok"]})
         return {"bursts": bursts, "edges": [], "summary": {}, "meta": {"clip_pct": summary.get("clip_pct", 0)},
-                "source": "bursts", "bursts_summary": summary}
+                "source": "bursts", "bursts_summary": summary,
+                "t0": records[0].get("t") if records else None}     # UTC s of t_ms 0, as a capture's meta t0
 
     def dmr_watch_start(self, rdir, freq, seconds, cc=None, name="cap0"):
         """Watch freq for DMR bursts for `seconds`, started before the transmitter keys up: bursts decoded on the
