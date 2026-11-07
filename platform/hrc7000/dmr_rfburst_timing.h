@@ -18,7 +18,7 @@
 static inline uint8_t hrc_rfburst_lead(uint32_t up_us)
 {
 	if (up_us <= HRC_RFBURST_SYMBOL_AFTER_LEAD_US) {
-		return 0;	// up before the first symbol even with no lead
+		return 1;	// up even with the shortest lead (0 is the driver's default, 3.1 ms)
 	}
 	return (uint8_t)((up_us - HRC_RFBURST_SYMBOL_AFTER_LEAD_US + 99u) / 100u);
 }
