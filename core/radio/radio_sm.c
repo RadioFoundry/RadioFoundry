@@ -37,6 +37,7 @@
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"	// dmr_sms_format_t
 #include "codeplug/codeplug_kv.h"
+#include "radio/radio_keys.h"
 #endif
 #if CONFIG_DMR_EMERGENCY
 #include "dmr/dmr_emergency.h"
@@ -1860,17 +1861,7 @@ static dmrDataSettings_t data_saved;
 // changes nothing. Nothing kept in RAM: a read is a few bytes of flash, and only on those events
 static bool data_kv_apply(dmrDataSettings_t *set)
 {
-	uint32_t id;
-	bool changed = false;
-	if (CONFIG_DMR_ARS && codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && set->arsServer != id) {
-		set->arsServer = id;
-		changed = true;
-	}
-	if (CONFIG_DMR_IP_GATEWAY && codeplug_kv_get_id(CODEPLUG_KEY_IP_GATEWAY, &id) && set->ipGatewayId != id) {
-		set->ipGatewayId = id;
-		changed = true;
-	}
-	return changed;
+	return radio_keys_apply(set);	// the table of the keys (radio_keys.h)
 }
 
 static void data_kv_load(void)

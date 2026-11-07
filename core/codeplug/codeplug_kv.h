@@ -17,6 +17,18 @@
 #define CODEPLUG_KEY_ARS_SERVER	0x0001u		// u32: the ARS presence server's DMR ID, 0 = ARS off
 #define CODEPLUG_KEY_IP_GATEWAY	0x0002u		// u32: the off-net IP gateway radio's DMR ID, 0 = none
 
+// How a key's value is encoded (docs/spec/codeplug-settings.md 3.1): the encoding, never a width. A type is never
+// redefined, only grown by appending bytes
+enum {
+	CODEPLUG_T_UINT,	// little endian, 1-8 bytes, a shorter value zero-extends
+	CODEPLUG_T_INT,		// the same, sign-extending from the stored length
+	CODEPLUG_T_BOOL,
+	CODEPLUG_T_ENUM,	// a small uint, values only appended
+	CODEPLUG_T_ID,		// a uint DMR ID, above CODEPLUG_DMR_ID_MAX reads as absent
+	CODEPLUG_T_STRING,	// the bytes of the value, no terminator
+	CODEPLUG_T_LIST,	// a key family: one key per record (3)
+};
+
 typedef enum {
 	CODEPLUG_KV_EMPTY,	// no area (erased, or no flash map): no key is present
 	CODEPLUG_KV_VALID,

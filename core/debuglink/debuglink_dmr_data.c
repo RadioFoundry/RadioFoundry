@@ -10,7 +10,7 @@
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmr_data_api.h"
 #include "dmr/dmr_emergency.h"
-#include "codeplug/codeplug_kv.h"
+#include "radio/radio_keys.h"
 #endif
 #if CONFIG_DMR_IP_GATEWAY
 #include "dmr/ipGateway.h"
@@ -22,21 +22,6 @@ static const char *req_key(uint8_t s)
 {
 	static const char *const names[] = { "idle", "queued", "sending", "ok", "failed" };
 	return s < sizeof(names) / sizeof(names[0]) ? names[s] : "?";
-}
-
-// The ARS server and the IP gateway are the codeplug's (its settings area, docs/spec/codeplug-settings.md 5): a change
-// writes the key first, else the radio core would put the codeplug's value back. False when it couldn't (a CPS session
-// holds the flash) while the codeplug has the key; with no key the change is the radio's own, as before
-static bool id_to_codeplug(uint16_t key, uint32_t was, uint32_t id)
-{
-	uint32_t held;
-	return id == was || codeplug_kv_set_u32(key, id) || !codeplug_kv_get_id(key, &held);
-}
-
-static bool ids_to_codeplug(const dmrDataSettings_t *was, const dmrDataSettings_t *set)
-{
-	return (!CONFIG_DMR_ARS || id_to_codeplug(CODEPLUG_KEY_ARS_SERVER, was->arsServer, set->arsServer)) &&
-	       (!CONFIG_DMR_IP_GATEWAY || id_to_codeplug(CODEPLUG_KEY_IP_GATEWAY, was->ipGatewayId, set->ipGatewayId));
 }
 
 static const char *ars_key(uint8_t s)
@@ -225,7 +210,7 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		set.lrrpReply = (a[4] & 4u) != 0;
 		set.smsFormat = (a[4] & 32u) ? DMR_SMS_FORMAT_ETSI_IP : (a[4] & 8u) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
 		set.radioCheckEtsi = (a[4] & 16u) != 0;
-		if (!ids_to_codeplug(&was, &set)) {
+		if (!radio_keys_to_codeplug(&was, &set)) {
 			st = DL_ST_BUSY;
 			break;
 		}
@@ -315,7 +300,7 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		if (n >= 15) {	// the off-net route's gateway ID, appended (an older request leaves it)
 			set.ipGatewayId = get32(a + 11) & 0xFFFFFFu;
 		}
-		if (!ids_to_codeplug(&was, &set)) {
+		if (!radio_keys_to_codeplug(&was, &set)) {
 			st = DL_ST_BUSY;
 			break;
 		}

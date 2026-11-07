@@ -92,6 +92,11 @@ TESTS   += airQueueTest
 airQueueTest: airQueueTest.c fuzz.h $(CORE)/dmr/dmrAirQueue.c $(CORE)/dmr/dmrAirQueue.h $(DATA) $(FRAME)
 	$(CC) $(CFLAGS) -Wshadow -o $@ airQueueTest.c $(CORE)/dmr/dmrAirQueue.c $(DATA) $(FRAME)
 
+# The radio core's table of settings-area keys (core/radio/radio_keys.h): lookup, apply, write-back
+TESTS   += radioKeysTest
+radioKeysTest: radioKeysTest.c $(CORE)/radio/radio_keys.h $(CORE)/codeplug/codeplug_kv.h $(CORE)/dmr/dmrDataService.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ radioKeysTest.c
+
 # The zone share record and messages (docs/spec/zone-share.md): round trip, malformed input, fragments, fuzzing
 TESTS   += zoneShareSvcTest
 zoneShareSvcTest: zoneShareSvcTest.c $(CORE)/dmr/zoneShareSvc.c $(CORE)/dmr/zone_share_api.h $(CORE)/dmr/zoneShare.c \
@@ -130,6 +135,7 @@ run: $(TESTS)
 	./dmrPrivacyTest
 	./lrrpTest
 	./airQueueTest
+	./radioKeysTest
 	./zoneShareTest
 	./zoneShareSvcTest
 	./ipGatewayTest

@@ -21,6 +21,7 @@
 #include "storage/storage.h"
 #include "codeplug/codeplug.h"
 #include "codeplug/codeplug_kv.h"
+#include "radio/radio_keys.h"
 #include "hal_time.h"
 #include "config.h"
 #if CONFIG_HOSTLINK
@@ -113,6 +114,11 @@ static bool key_set(uint8_t id, int32_t value);
 static bool dmr_id_post(uint32_t id);	// a job: the codeplug write is the housekeeping task's
 #endif
 #if CONFIG_DMR_DATA_CORE
+// The menu row of a setting kept as a key of the settings area (radio_keys.h), else 0
+static uint16_t data_row_key(uint8_t id)
+{
+	return id == UI_SET_ARS_SERVER ? CODEPLUG_KEY_ARS_SERVER : id == UI_SET_IP_GATEWAY ? CODEPLUG_KEY_IP_GATEWAY : 0;
+}
 static bool data_id_post(uint16_t key, uint32_t id);	// the same, for a key of the codeplug's settings area
 #endif
 
@@ -296,8 +302,10 @@ int32_t ui_svc_setting_get(uint8_t id)
 		dmr_data_get_settings(&ds);
 		if (id == UI_SET_MSG_FORMAT)
 			return ds.smsFormat;
-		if (id == UI_SET_ARS_SERVER || id == UI_SET_IP_GATEWAY)
-			return (int32_t)(id == UI_SET_ARS_SERVER ? ds.arsServer : ds.ipGatewayId);
+		if (data_row_key(id) != 0) {
+			const radio_key_t *k = radio_key_find(data_row_key(id));
+			return k != NULL ? (int32_t)radio_key_value(k, &ds) : 0;
+		}
 		return id == UI_SET_CHECK_REPLY ? ds.radioCheckReply : id == UI_SET_ALERT_ANSWER ? ds.callAlertAck :
 			ds.lrrpReply;
 	}
@@ -536,8 +544,7 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	}
 	case UI_SET_ARS_SERVER:
 	case UI_SET_IP_GATEWAY:
-		return data_id_post(id == UI_SET_ARS_SERVER ? CODEPLUG_KEY_ARS_SERVER : CODEPLUG_KEY_IP_GATEWAY,
-				    (uint32_t)value);
+		return data_id_post(data_row_key(id), (uint32_t)value);
 	case UI_SET_MSG_FORMAT: {
 		dmrDataSettings_t ds;
 		if ((value != DMR_SMS_FORMAT_ETSI_IP) && (value != DMR_SMS_FORMAT_ETSI) &&
@@ -774,7 +781,7 @@ static void data_id_job(void *ctx)
 
 static bool data_id_post(uint16_t key, uint32_t id)
 {
-	if (id > CODEPLUG_DMR_ID_MAX || job_busy())
+	if (radio_key_find(key) == NULL || id > CODEPLUG_DMR_ID_MAX || job_busy())
 		return false;
 	job.channel = key;
 	job.id = id;
