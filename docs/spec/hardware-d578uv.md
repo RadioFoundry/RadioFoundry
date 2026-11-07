@@ -537,6 +537,14 @@ outbound as the reference, both sides decoded on a second board (`test_dmr_repea
 The core keys the radio before its call stack starts the modem's transmission, so the RF is keyed before
 `DMR_CALL_SLOT` with the transmit bit in every DMR transmission, and released after `TX_DONE`.
 
+Back to receive, from the last burst's PD0 fall: `TX_DONE` and `tx_off()` at 17-18 ms, the RF chips in receive at
+23-25 ms (`diag` line 5, `rx`). A confirmed data response can start 30 ms after the last burst, about 34.5 ms after
+the fall. The baseband reports that response's carrier about 20 ms after `tx_off()` but delivers no frame for its
+first burst: the first frame comes from its second burst, about 60 ms later. A one-burst response that soon (a link
+ACK) is therefore not heard yet. A response 190 ms after the transmission is heard. With `DMR_CALL_OPTION` byte 0 bit 6
+clear (carrier detection by the MCU) and `CARRIER_READY` held at 2, the baseband found sync sooner but still delivered
+no first frame, and decoded noise as frames; the radio keeps the stock value 0x41.
+
 ### 5.2 Side B
 
 Side B is chips 1 (receiver) and 3 (LO), set up after side A when dual receive is on; either side can transmit. Shift
