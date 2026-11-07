@@ -221,22 +221,28 @@ The original starts the key-down at its RF RX interrupt plus the calibration's k
 the TX until the burst's last symbol instead.
 
 RadioFoundry's lead is not the stock's fixed 2.6 ms: it is the shortest 100 us step that has the PA up for the first
-symbol, 0.85 ms after the lead (`rt10_dmr_rf_tx_lead`, `boards/rt10/rt10.h`). The TX on sequence has the PA fully up
-(1 dB below the plateau) 2.6-2.65 ms after the RF TX interrupt plus the calibration's key-up delay on steady bursts;
-the model takes 2.7 ms. With the low set's 450 us key-up delay at 927.5 MHz the lead is 2.3 ms, and the receiver goes
-off 2.7-2.8 ms before the first symbol whatever the key-up delay. The ramp's 180 steps of 2 us take 0.36 ms plus the
-level's arithmetic, which is 32-bit (`core/radio/apc_ramp.h`); a 64-bit divide per step made it 0.7 ms.
+symbol, 0.85 ms after the lead (`rt10_dmr_rf_tx_lead`, `boards/rt10/rt10.h`). After the RF TX interrupt plus the
+calibration's key-up delay, the TX on sequence has the PA within 1 dB of the plateau at 2.53-2.66 ms and its ramp done
+at 3.0-3.12 ms; the model takes 2.9 ms, which puts the 1 dB point at least 0.24 ms ahead of the first symbol. With the
+low set's 450 us key-up delay at 927.5 MHz the lead is 2.5 ms, and the receiver goes off 2.9-3.0 ms before the first
+symbol whatever the key-up delay. The ramp's 180 steps of 2 us take about 0.5 ms with the level's arithmetic, which
+is 32-bit (`core/radio/apc_ramp.h`); a 64-bit divide per step made it 0.7 ms.
 
-Measured (927.5 MHz, lowest power, 2 s key-ups, against the first symbol):
+The key-up delay counts from the RF TX interrupt, not from the RF task's wake (up to 0.42 ms later), and a burst
+whose interrupt came late (up to 0.32 ms: the modem's interrupts are masked while the slot engine holds its lock) is
+timed from the 60 ms frame grid of the burst before (modem-hrc7000.md 3.1a). Before both, one or two bursts in 35
+started their TX on 0.3-0.5 ms late, with the PA coming up in their first symbols. The first burst of a transmission
+has no grid yet: its interrupt comes about 0.25 ms late, which the lead's margin covers.
 
-| Build | PA fully up | Carrier gone after the last symbol |
+Measured (927.5 MHz, lowest power, 2 s key-ups, against the first symbol; PA within 1 dB of the plateau):
+
+| Build | PA up | Carrier gone after the last symbol |
 | --- | --- | --- |
 | 64-bit ramp, lead 2.6 ms | -0.31..-0.27 ms | +0.62..+0.69 ms |
 | 32-bit ramp, lead 2.6 ms | -0.48..-0.40 ms | +0.23..+0.40 ms |
-| 32-bit ramp, lead 2.3 ms | -0.12..+0.02 ms | +0.12..+0.40 ms |
-
-A burst or two in 35 has its TX on started 0.3-0.5 ms late in every build, so its PA comes up in its first symbols
-(up to +0.35 ms); the bursts still decode.
+| 32-bit ramp, lead 2.3 ms | -0.12..+0.02 ms, late bursts to +0.35 ms | +0.12..+0.40 ms |
+| Timed from the interrupt and the grid, lead 2.3 ms (3 key-ups, 114 bursts) | -0.23..-0.04 ms | median +0.41 ms |
+| Timed from the interrupt and the grid, lead 2.5 ms (5 key-ups, 190 bursts) | -0.48..-0.30 ms; the first burst of a key-up -0.06..-0.02 ms | median +0.40 ms; the first burst of a key-up up to +0.73 ms |
 
 Measured on the SDR bench (927.5 MHz, lowest power):
 

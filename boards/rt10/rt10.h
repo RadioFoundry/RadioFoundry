@@ -62,9 +62,11 @@ uint8_t rt10_cal_tx_center(void);
 uint8_t rt10_cal_mod(uint32_t hz);
 
 // --- DMR burst timing (hardware-rt10.md 7.1; the arithmetic is platform/hrc7000/dmr_rfburst_timing.h) ---
-// The TX on sequence has the PA fully up 2.7 ms after the RF TX interrupt plus the plan's key-up delay (measured
-// 2.6-2.65 ms on steady bursts)
-#define RT10_DMR_PA_UP_US	2700u
+// After the RF TX interrupt plus the plan's key-up delay, the TX on sequence has the PA within 1 dB at 2.53-2.66 ms and
+// its ramp done at 3.0-3.12 ms (SDR bench and the radio's own count). 2.9 ms puts the 1 dB point at least 0.24 ms
+// ahead of the first symbol: margin for the first burst of a transmission, whose interrupt can come late (later
+// bursts are timed from the frame grid, dmr_rfburst.c)
+#define RT10_DMR_PA_UP_US	2900u
 static inline uint8_t rt10_dmr_rf_tx_lead(uint16_t on_us)
 {
 	return hrc_rfburst_lead(RT10_DMR_PA_UP_US + on_us);

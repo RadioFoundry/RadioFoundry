@@ -136,9 +136,9 @@ static void test_no_calibration(void)
 // when the first symbol goes out 0.85 ms after the lead
 static void test_dmr_lead(void)
 {
-	CHECK(rt10_dmr_rf_tx_lead(450) == 23);		// the low set's 450 us key-up delay: 2.3 ms, not the stock's 2.6
-	CHECK(rt10_dmr_rf_tx_lead(100) == 20);
-	CHECK(rt10_dmr_rf_tx_lead(1000) == 29);
+	CHECK(rt10_dmr_rf_tx_lead(450) == 25);		// the low set's 450 us key-up delay: 2.5 ms, not the stock's 2.6
+	CHECK(rt10_dmr_rf_tx_lead(100) == 22);
+	CHECK(rt10_dmr_rf_tx_lead(1000) == 31);
 	for (uint16_t on = 0; on <= 2550; on += 10) {	// the calibration's byte x 10 us
 		uint8_t lead = rt10_dmr_rf_tx_lead(on);
 		CHECK(lead * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US >= RT10_DMR_PA_UP_US + on);	// PA up in time
