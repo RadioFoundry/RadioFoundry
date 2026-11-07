@@ -53,8 +53,13 @@ int main(void)
 	CHECK(!switch_follow_check(&f, 1, 5, 8, true));
 	CHECK(switch_follow_step(&f, 15, 9000 + 2 * R) == SWITCH_CHECK);
 	CHECK(!switch_follow_check(&f, 1, 5, 8, true));
-	// ... and back to a longer zone: the knob's position is taken there
+	// A codeplug write makes the same zone longer: the position fits now and is asked for
 	CHECK(switch_follow_step(&f, 15, 9000 + 3 * R) == SWITCH_CHECK);
+	CHECK(switch_follow_check(&f, 1, 5, 16, true));
+	CHECK(switch_follow_step(&f, 15, 9000 + 4 * R) == SWITCH_CHECK);
+	CHECK(!switch_follow_check(&f, 1, 15, 16, true));
+	// ... and back to a longer zone: the knob's position is taken there
+	CHECK(switch_follow_step(&f, 15, 9000 + 5 * R) == SWITCH_CHECK);
 	CHECK(switch_follow_check(&f, 0, 0, 19, true));
 	// Across the clock's wrap
 	CHECK(switch_follow_step(&f, 2, 0xFFFFFF00u) == SWITCH_ASK);

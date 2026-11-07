@@ -5,7 +5,8 @@
 // link), since a new zone starts on its first channel. The radio may not take it (transmitting, a hotspot, the
 // codeplug not loaded yet), so every SWITCH_FOLLOW_RETRY_MS the task reads the radio's zone and position and asks
 // again when the radio would take it, until the radio is on it or the zone is too short for it. Then it leaves the
-// radio alone until the knob moves or the zone changes, so a scan stands. Pure, for the host test.
+// radio alone until the knob moves or the zone changes (another zone, or the same one with another size after a
+// codeplug write), so a scan stands. Pure, for the host test.
 #ifndef INPUT_SWITCH_FOLLOW_H
 #define INPUT_SWITCH_FOLLOW_H
 
@@ -23,8 +24,9 @@ typedef enum {
 typedef struct {
 	int8_t want;		// the switch's position, -1 none yet
 	bool pending;		// asked for, and the radio not seen on it yet
-	bool zone_known;	// zone holds the zone last seen loaded
+	bool zone_known;	// zone and size hold the zone last seen loaded
 	uint16_t zone;
+	uint16_t size;
 	uint32_t checked_ms;
 } switch_follow_t;
 
@@ -34,6 +36,7 @@ static inline void switch_follow_init(switch_follow_t *f)
 	f->pending = false;
 	f->zone_known = false;
 	f->zone = 0;
+	f->size = 0;
 	f->checked_ms = 0;
 }
 
@@ -64,10 +67,11 @@ static inline bool switch_follow_check(switch_follow_t *f, uint16_t zone, uint16
 	if (zone_size == 0) {
 		return false;	// nothing loaded yet: pending stays as it is
 	}
-	if (f->zone_known && zone != f->zone) {
-		f->pending = true;
+	if (f->zone_known && (zone != f->zone || zone_size != f->size)) {
+		f->pending = true;	// a position given up as past the end may fit now
 	}
 	f->zone = zone;
+	f->size = zone_size;
 	f->zone_known = true;
 	if (!f->pending || !ready) {
 		return false;
