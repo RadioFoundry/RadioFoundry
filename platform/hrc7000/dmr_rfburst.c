@@ -20,7 +20,7 @@
 
 #define EV_ON		0x01u	// RF TX interrupt: the burst's TX on
 #define EV_OFF_TICK	0x02u	// the engine ends the burst (slot tick 20 ms on, or a halt)
-#define EV_OFF_RFRX	0x04u	// RF RX interrupt after the burst: the stock firmware's TX-off point
+#define EV_OFF_RFRX	0x04u	// RF RX interrupt after the burst: the original firmware's TX-off point
 #define EV_ABORT	0x08u	// disarm: TX off without the hold
 #define EV_TIMER	0x10u	// TIMER_BOARD expired
 
@@ -63,7 +63,7 @@ void hrc_rfburst_switch(bool tx)
 	}
 }
 
-// RF RX interrupt (ISR). The stock firmware ends each burst here; RadioFoundry's engine ends it at the next slot tick too, so
+// RF RX interrupt (ISR). The original firmware ends each burst here; RadioFoundry's engine ends it at the next slot tick too, so
 // whichever comes first wakes the TX-off, and the board's hold in it keeps the stock timing either way
 static void isr_rfrx(void)
 {

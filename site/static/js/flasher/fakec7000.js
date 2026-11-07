@@ -220,8 +220,8 @@ export class FakeBfLoader {
 
 // A synthetic stock program flash for a board: bootloader, firmware, the codec at made-up addresses, and the c7000
 // config changed so its profile matches them. A board the boot ROM starts directly (rom_entry) has no bootloader: the
-// boot ROM's flag at 0 names STOCK_ENTRY, where its stock firmware starts (0x1000 to 0x78000, over the start of the
-// application area). radio (its radios.json entry, optional) adds what its stock firmware starts with: the first
+// boot ROM's flag at 0 names STOCK_ENTRY, where its original firmware starts (0x1000 to 0x78000, over the start of the
+// application area). radio (its radios.json entry, optional) adds what its original firmware starts with: the first
 // stage signature the vendor loader checks, and a stock console's version string. Returns
 // {c, progmem, codec: {code, tables}}.
 export const STOCK_ENTRY = 0x03001000;
@@ -275,7 +275,7 @@ export class FakeC7000 {
 		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null, loaderId = null, nand = null,
 		stubWrite = true, variant = "DBB", romEntry = null } = {}) {
 		// a radio the boot ROM starts directly: it runs what the flag at flash 0 names (RadioFoundry's entry: the
-		// application area; any other: the stock firmware; no flag: nothing), and the flag sector may be written
+		// application area; any other: the original firmware; no flag: nothing), and the flag sector may be written
 		this.romEntry = romEntry;
 		this.stubWrite = stubWrite;		// the universal stub is protocol 7, with op 0x0E (WRITE); false: protocol 6
 		this.usmart = usmart;			// a stock firmware build with the USMART console ("018")

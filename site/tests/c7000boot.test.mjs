@@ -28,14 +28,14 @@ const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
 // the boards the boot ROM starts directly, from the data: none named here
 const DIRECT = Object.keys(C.boards).filter((id) => romEntry(C, id) !== null);
 
-// The radio switched on with its stock firmware, the stub loaded through the boot ROM and configured for the board
+// The radio switched on with its original firmware, the stub loaded through the boot ROM and configured for the board
 async function connect(t, id) {
 	const radio = radios.find((r) => r.id === id);
 	const sim = await c7000Simulation(C, id, 7000, radio);
 	const r = new FakeC7000({ progmem: sim.progmem.slice(), dataSize: 0x200000, speed: 200, romWindow: 400, bootTime: 200,
 		...fakeC7000Options(radio, FB) });
 	t.after(() => r.stop());
-	assert.equal(r.firmware(), "stock", "the boot ROM starts the stock firmware its flag names");
+	assert.equal(r.firmware(), "stock", "the boot ROM starts the original firmware its flag names");
 	const s = new Stub(r.stream, { log: quiet });
 	s.size.progmem = c7.totalSize(C, id);
 	setTimeout(() => r.powerOn(), 50);
@@ -105,7 +105,7 @@ for (const id of DIRECT) {
 		assert.ok(p, "RadioFoundry answers after the restart");
 	});
 
-	test(`${id}: an install stopped before the flag sector leaves the radio starting its stock firmware; run again, it completes`, async (t) => {
+	test(`${id}: an install stopped before the flag sector leaves the radio starting its original firmware; run again, it completes`, async (t) => {
 		const { sim, r, s } = await connect(t, id);
 		const backup = await s.dump("progmem", 0, c7.totalSize(C, id));
 		const { target: [start, data] } = await installData(sim, id, backup);
@@ -116,7 +116,7 @@ for (const id of DIRECT) {
 			return writeSector(addr, sec);
 		};
 		await assert.rejects(installWrite(s, sim.c, id, start, data), /cable was pulled/);
-		assert.deepEqual(flagOf(r.progmem), [[...ROM_FLAG], STOCK_ENTRY], "the flag still names the stock firmware");
+		assert.deepEqual(flagOf(r.progmem), [[...ROM_FLAG], STOCK_ENTRY], "the flag still names the original firmware");
 		r.fwKind = null;
 		assert.equal(r.firmware(), "stock");
 		s.writeSector = writeSector;
@@ -125,7 +125,7 @@ for (const id of DIRECT) {
 		assert.equal(u32le(r.progmem, 4), C.boards[id].rom_entry);
 	});
 
-	test(`${id}: the restore of the whole backup puts the stock firmware and its flag back; a backup without the flag is refused`, async (t) => {
+	test(`${id}: the restore of the whole backup puts the original firmware and its flag back; a backup without the flag is refused`, async (t) => {
 		const { sim, r, s } = await connect(t, id);
 		const backup = await s.dump("progmem", 0, c7.totalSize(C, id));
 		const { target: [start, data] } = await installData(sim, id, backup);
@@ -148,7 +148,7 @@ for (const id of DIRECT) {
 		assert.ok(equal(r.progmem, sim.progmem), "the whole program flash is the backup's again");
 		assert.deepEqual(flagOf(r.progmem), [[...ROM_FLAG], STOCK_ENTRY]);
 		r.fwKind = null;
-		assert.equal(r.firmware(), "stock", "the boot ROM starts the stock firmware again");
+		assert.equal(r.firmware(), "stock", "the boot ROM starts the original firmware again");
 	});
 }
 

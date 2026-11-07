@@ -5,7 +5,7 @@
 // RF TX interrupt, raised the RF TX lead before our burst, wakes a task that runs the board's TX-on sequence; the end
 // of the burst (the slot engine's tick or the RF RX interrupt after it) wakes it for the TX-off sequence. The
 // sequences take a few milliseconds with waits in them, so they run in a task of their own at the highest priority,
-// as the stock firmware's "rfint" task does; the interrupts only wake it.
+// as the original firmware's "rfint" task does; the interrupts only wake it.
 //
 // The board gives the two sequences and passes hrc_rfburst_switch to the glue as its rf_switch hook. The burst timing
 // is in dmr_rfburst_timing.h, plain arithmetic for the host tests.

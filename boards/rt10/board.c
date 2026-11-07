@@ -121,7 +121,7 @@ void board_early_init(void)
 	io_init();
 }
 
-// Everything the core stores lives in the upper half of the data flash, above the stock firmware's data (0x1300 up)
+// Everything the core stores lives in the upper half of the data flash, above the original firmware's data (0x1300 up)
 // and below the activation block (0x1FE000) and the factory calibration (0x1FF000), which are never written
 // (hardware-rt10.md 4)
 static const hal_flash_map_t flash_map = {

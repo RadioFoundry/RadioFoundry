@@ -7,7 +7,7 @@
 //
 // DMR (CONFIG_DMR, hardware-rt10.md 7.1): the FD6818's digital set, the modem on the shared glue (dmr_rt10.c). tx()
 // only arms the transmitter; each burst then runs the FM key-up and key-down from the RF task (rt10_burst_on /
-// rt10_burst_off), as the stock firmware does
+// rt10_burst_off), as the original firmware does
 //
 // APRS (CONFIG_APRS, hardware-rt10.md 7.2): the tones take DMR's path onto the reference, the modem's FM transmitter
 // playing them on MOD1 with the FD6818's microphone off; receive takes the FD6818's FM audio through the modem
