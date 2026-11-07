@@ -73,8 +73,9 @@ static bool init(void)
 	ready = ok;
 	hrc_flash_spi0.size = ok ? nor.size : 0;
 	// The board's map assumes its chip's size: on a smaller part the core gets no areas and stores nothing, rather
-	// than areas that end past the chip
-	hrc_flash_spi0.map = ok && cfg->map != NULL && hal_flash_map_end(cfg->map, SPI_NOR_SECTOR_SIZE) <= nor.size ? cfg->map : NULL;
+	// than areas that end past the chip. A chip that didn't answer keeps the map with size 0 (the debug link tells
+	// "didn't start" from "too small" by it)
+	hrc_flash_spi0.map = !ok || hal_flash_map_end(cfg->map, SPI_NOR_SECTOR_SIZE) <= nor.size ? cfg->map : NULL;
 	return ok;
 }
 

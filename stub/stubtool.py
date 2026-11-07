@@ -3146,16 +3146,16 @@ def main(argv=None):
             if not a.boot:
                 print("run again with --attach --boot reset (or power-cycle) to start the new firmware")
         if a.write_test:
-            mems = ("progmem", "q128") if a.write_test == "both" else (a.write_test,)
-            for mem in mems:                    # every memory's region before the first write, so "both" writes all or none
-                if not radio.write_ok(mem):
+            regions = {}
+            for mem in (("progmem", "q128") if a.write_test == "both" else (a.write_test,)):
+                ok = radio.write_ok(mem)        # every memory's region before the first write, so "both" writes all or none
+                if not ok:
                     raise DumpError("the %s has no %s test region (board.toml [flash.stub] write_test; --board names the "
                                     "radio): nothing written" % (radio.profile["name"], MEM[mem][4]))
-                lo, hi = radio.write_ok(mem)[0]
+                lo, hi = regions[mem] = ok[0]
                 radio.check_write_range(mem, lo, hi)
                 radio.check_id(mem, hi)                     # the chip's size, before anything is read there
-            for mem in mems:
-                lo, hi = radio.write_ok(mem)[0]
+            for mem, (lo, hi) in regions.items():
                 before = b"".join(radio.read_flash(mem, x, CHUNK) for x in range(lo, hi, CHUNK))
                 if before != b"\xff" * (hi - lo):
                     raise DumpError("%s 0x%X-0x%X is not blank any more: something else uses it, pick another region" % (MEM[mem][4], lo, hi))

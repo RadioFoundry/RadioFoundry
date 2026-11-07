@@ -133,7 +133,7 @@ static bool c_read(uint32_t off, uint8_t *buf, uint32_t len)
 static bool compact_init(void)
 {
 	uint8_t h[C_HEADER];
-	if (!rd(IDDB_AREA1, h, sizeof(h)) || h[4] != 1u) {
+	if (room(IDDB_AREA2) < C_HEADER || !rd(IDDB_AREA1, h, sizeof(h)) || h[4] != 1u) {
 		return false;
 	}
 	uint32_t count = le(h + 8, 4), size = le(h + 12, 4), index = le(h + 16, 4), table = le(h + 24, 4);
@@ -346,7 +346,9 @@ bool dmr_iddb_init(void)
 	memset(&db, 0, sizeof(db));
 	db.checked = true;
 	db.serial = codeplug_serial();
-	if (!rd(IDDB_AREA1, h, sizeof(h)) || h[0] != 'I' || h[1] != 'd') {
+	// not even the header fits: nothing past the area is read (format C's is longer: compact_init checks its own)
+	if (board.flash == NULL || board.flash->size == 0 || room(IDDB_AREA2) < IDDB_HEADER ||
+	    !rd(IDDB_AREA1, h, sizeof(h)) || h[0] != 'I' || h[1] != 'd') {
 		return false;
 	}
 	db.format = (char)h[2];
