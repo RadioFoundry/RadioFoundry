@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include "board.h"
 #include "hal_flash.h"
+#include "dmr_rfburst_timing.h"
 
 // The data flash is the shared SPI0 one (platform/hrc7000/flash_spi0.c, configured in board.c)
 extern hal_flash_t hrc_flash_spi0;
@@ -59,5 +60,14 @@ typedef struct {
 bool rt10_cal_tx_plan(uint32_t hz, bool high, rt10_tx_plan_t *p);
 uint8_t rt10_cal_tx_center(void);
 uint8_t rt10_cal_mod(uint32_t hz);
+
+// --- DMR burst timing (hardware-rt10.md 7.1; the arithmetic is platform/hrc7000/dmr_rfburst_timing.h) ---
+// The TX on sequence has the PA fully up 2.7 ms after the RF TX interrupt plus the plan's key-up delay (measured
+// 2.6-2.65 ms on steady bursts)
+#define RT10_DMR_PA_UP_US	2700u
+static inline uint8_t rt10_dmr_rf_tx_lead(uint16_t on_us)
+{
+	return hrc_rfburst_lead(RT10_DMR_PA_UP_US + on_us);
+}
 
 #endif

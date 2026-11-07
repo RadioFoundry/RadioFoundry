@@ -74,7 +74,6 @@ void rt10_dmr_enter(uint32_t mod_bias)
 {
 	hrc7000_dmr_enter(modem, mod_bias, RT10_DMR_MIC_DB);
 	hrc7000_wr(modem, C7_RF_MODE, RT10_DMR_RF_MODE);
-	hrc7000_set_rf_tx_lead(modem, RT10_DMR_RF_TX_LEAD);
 	hrc_dmr_enter();
 }
 

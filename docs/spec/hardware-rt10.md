@@ -220,6 +220,24 @@ ramp down, PTB0 and PTB3 low, 100 us, the FD6818 back to the receive frequency (
 The original starts the key-down at its RF RX interrupt plus the calibration's key-down delay; RadioFoundry holds
 the TX until the burst's last symbol instead.
 
+RadioFoundry's lead is not the stock's fixed 2.6 ms: it is the shortest 100 us step that has the PA up for the first
+symbol, 0.85 ms after the lead (`rt10_dmr_rf_tx_lead`, `boards/rt10/rt10.h`). The TX on sequence has the PA fully up
+(1 dB below the plateau) 2.6-2.65 ms after the RF TX interrupt plus the calibration's key-up delay on steady bursts;
+the model takes 2.7 ms. With the low set's 450 us key-up delay at 927.5 MHz the lead is 2.3 ms, and the receiver goes
+off 2.7-2.8 ms before the first symbol whatever the key-up delay. The ramp's 180 steps of 2 us take 0.36 ms plus the
+level's arithmetic, which is 32-bit (`core/radio/apc_ramp.h`); a 64-bit divide per step made it 0.7 ms.
+
+Measured (927.5 MHz, lowest power, 2 s key-ups, against the first symbol):
+
+| Build | PA fully up | Carrier gone after the last symbol |
+| --- | --- | --- |
+| 64-bit ramp, lead 2.6 ms | -0.31..-0.27 ms | +0.62..+0.69 ms |
+| 32-bit ramp, lead 2.6 ms | -0.48..-0.40 ms | +0.23..+0.40 ms |
+| 32-bit ramp, lead 2.3 ms | -0.12..+0.02 ms | +0.12..+0.40 ms |
+
+A burst or two in 35 has its TX on started 0.3-0.5 ms late in every build, so its PA comes up in its first symbols
+(up to +0.35 ms); the bursts still decode.
+
 Measured on the SDR bench (927.5 MHz, lowest power):
 
 | Test | Result |

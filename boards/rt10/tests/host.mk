@@ -6,8 +6,8 @@ HERE := $(dir $(lastword $(MAKEFILE_LIST)))
 
 # The factory calibration sector (hardware-rt10.md 4)
 TESTS   += rt10CalTest
-rt10CalTest: $(HERE)rt10CalTest.c $(HERE)../calibration_rt10.c $(HERE)../rt10.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(dir $<).. -Wshadow -o $@ $(filter %.c,$^)
+rt10CalTest: $(HERE)rt10CalTest.c $(HERE)../calibration_rt10.c $(HERE)../rt10.h $(ROOT)/platform/hrc7000/dmr_rfburst_timing.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(ROOT)/platform/hrc7000 -I$(dir $<).. -Wshadow -o $@ $(filter %.c,$^)
 
 run-boards:: rt10CalTest
 	./rt10CalTest

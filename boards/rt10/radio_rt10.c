@@ -143,6 +143,7 @@ static volatile bool dmr_armed;	// DMR TX armed by tx(): the bursts key the RF
 static bool tx_wide;		// the FM transmission is at 25 kHz (the modem's deviation for APRS)
 #if CONFIG_DMR
 static uint32_t tx_hz;		// the armed transmission's frequency
+static uint8_t tx_lead;		// the RF TX interrupt's lead, 100 us steps (rt10_dmr_rf_tx_lead)
 static void dmr_disarm(void);
 #endif
 #if CONFIG_APRS
@@ -387,8 +388,10 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	}
 	dmr_disarm();
 	plan = p;
+	tx_lead = rt10_dmr_rf_tx_lead(p.on_us);
 	tx_hz = hz;
 	write_bias(hz);
+	hrc7000_set_rf_tx_lead(&modem, tx_lead);
 	fd6818sh_dmr_tx_prepare(&fd, p.pa_gain);
 	DAC_DATA_B = 0;
 	hrc_dac_b_power(true);
@@ -426,9 +429,9 @@ void rt10_burst_on(hrc_rfburst_wait_fn wait)
 // its RF RX interrupt; the hold to the burst's end takes its place. Returns how late the ramp down started, in us
 uint32_t rt10_burst_off(hrc_rfburst_wait_fn wait, uint32_t elapsed_us, bool now)
 {
-	uint32_t late = now ? 0 : hrc_rfburst_late_us(elapsed_us, RT10_DMR_RF_TX_LEAD);
+	uint32_t late = now ? 0 : hrc_rfburst_late_us(elapsed_us, tx_lead);
 	if (!now) {
-		wait(hrc_rfburst_hold_us(elapsed_us, RT10_DMR_RF_TX_LEAD));
+		wait(hrc_rfburst_hold_us(elapsed_us, tx_lead));
 	}
 	apc_ramp(plan.dac, false);
 	DAC_DATA_B = 0;

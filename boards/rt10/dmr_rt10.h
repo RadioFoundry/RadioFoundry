@@ -8,8 +8,6 @@
 #include <stdbool.h>
 #include "config.h"
 
-// The RF TX interrupt's lead, 100 us steps (RF_CONTROL b13:8), the stock firmware's: 2.6 ms for the burst's key-up
-#define RT10_DMR_RF_TX_LEAD	26u
 // The modem's ADC gain in DMR (GCR_ADCL, dB): above the stock's 11 dB, as listened to through a parrot.
 // make RT10_DMR_MIC_DB=N replaces it on the bench
 #ifndef RT10_DMR_MIC_DB
