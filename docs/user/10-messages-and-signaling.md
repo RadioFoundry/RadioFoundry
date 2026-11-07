@@ -2,9 +2,10 @@
 
 # Messages, Call Alert and Radio Check
 
-Text messages, call alert and radio check work on DMR channels. The [Radio reference](23-radios.md) says which radios
-have them verified. None of them needs the codec. Sending needs a DMR channel you may transmit on
-and your DMR ID.
+DMR text messages, call alert and radio check work on DMR channels. APRS text messages can also be sent over FM on
+builds with an AFSK transmit path. The [Radio reference](23-radios.md) says which radios have each path verified.
+None of them needs the codec. DMR sending needs a DMR channel you may transmit on and your DMR ID; APRS sending
+needs a valid callsign in **Settings > My radio**, an amateur APRS frequency and a board with AFSK transmit.
 
 ## Receiving a message
 
@@ -43,8 +44,8 @@ The radio keeps the last 4 messages received, in memory. They are lost when the 
 
 1. Open the actions for the person or talkgroup. Press **#** on Home for the last caller, or **#** on a contact.
 2. Press **3** (Message).
-3. Pick a text ("OK", "On my way", "Call me" or "Can't talk now"). Press **OK** to send. The texts are sent in the
-   radio's language (Settings > Display > Language).
+3. Pick a preset ("OK", "On my way", "Call me" or "Can't talk now"), or choose **Write...** to type your own text.
+   Press **OK** to send. Presets are sent in the radio's language (Settings > Display > Language).
 
 <img src="../ux/screens/160x120i5/compose.png" width="200" alt="The message composer">
 
@@ -60,18 +61,39 @@ comes as a banner:
 With confirmed IP data turned off (`tools/rfoundry_debug.py data ip-settings auto off`), ETSI messages to a person also go
 once, with "Sent to".
 
-Typing your own text isn't built yet. "Write..." is dimmed. Messages you send aren't stored in the radio.
+In **Write...**, use the number keys to enter letters, **#** to switch between ABC, 123 and abc, and **Back** to
+delete. A DMR message can hold up to 143 characters. Messages you send aren't stored in the radio.
+
+### Sending over APRS
+
+1. Set **Settings > Connections > Message format** to **APRS**.
+2. Open **Messages > New APRS message**. Select **To callsign** and enter the recipient's callsign, with an optional
+   SSID (for example, `K1ABC-9`). Press **OK** to keep it.
+3. Choose **Request acknowledgment** and **Include position** if needed, then pick a preset or **Write...** and press
+   **OK** to send. Both choices apply only to this message. APRS messages hold up to 67 characters. Presets use the
+   radio's language; accented letters are sent without accents to keep the AX.25 text printable. The radio queues
+   the APRS message on the configured FM frequency. "Sending to ..." means queued, not delivered.
+
+**Request acknowledgment** starts on. The radio retries while waiting for a reply. Turn it off for a one-shot message
+that needs no delivery confirmation. **Include position** starts off. When on, the radio adds the current GPS, computer
+or fixed position as decimal coordinates to the message text. It refuses to send if no position is available or the
+text plus coordinates exceeds 67 characters. The position is part of the message body, not a separate position beacon.
+
+The APRS destination is a callsign, not a DMR ID. Sending is refused if the callsign or text is invalid, another
+APRS message is still waiting, or the APRS RF path is unavailable. **Tools > APRS** shows the configured frequency
+and any blocking reason. APRS reception and APRS messages in the shared inbox are not available in this flow.
 
 ## Message formats
 
-**Settings > Connections > Message format** picks the format of the messages you send. The radio reads all three
-formats, whatever the setting. A reply goes in the format of the message it answers.
+**Settings > Connections > Message format** picks the format of new messages you send. The radio reads all three DMR
+formats, whatever the setting. A reply to a DMR inbox message still uses DMR.
 
 | Format | Use it for |
 |---|---|
 | ETSI (default) | The standard DMR text message (ETSI IP text). Radios and dispatch software set to "DMR standard" text read it. Delivery to a person is confirmed |
 | ETSI short | Radios that only show ETSI short data messages. Delivery is confirmed |
 | Motorola | MOTOTRBO radios and dispatch software set to Motorola text messages (TMS). Delivery is confirmed. Not in builds made without Motorola TMS support |
+| APRS | Addressed AX.25 text over FM to a callsign. Shown only in builds with APRS; selection requires an AFSK transmit path. The APRS engine retries while waiting for an acknowledgment |
 
 If your radio was set up before ETSI became the default and its data settings were saved, it keeps sending Motorola
 messages until you change the setting.

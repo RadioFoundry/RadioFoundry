@@ -1229,8 +1229,24 @@ msgid "Can't talk now"
 msgstr "Non posso parlare"
 
 #: core/ui/ui_menus.c
+msgid "To callsign"
+msgstr "Al nominativo"
+
+#: core/ui/ui_menus.c
+msgid "Enter"
+msgstr "Inserisci"
+
+#: core/ui/ui_menus.c
 msgid "Write..."
 msgstr "Scrivi..."
+
+#: core/ui/ui_menus.c
+msgid "Request acknowledgment"
+msgstr "Richiedi conferma"
+
+#: core/ui/ui_menus.c
+msgid "Include position"
+msgstr "Includi posizione"
 
 #: core/ui/ui_menus.c
 msgid "Couldn't send: try again"
@@ -1241,8 +1257,8 @@ msgid "Sending to "
 msgstr "Invio a "
 
 #: core/ui/ui_menus.c
-msgid "Typing: not in this build"
-msgstr "Digitazione: non in questa build"
+msgid "Callsign"
+msgstr "Nominativo"
 
 #: core/ui/ui_menus.c
 msgid "To"
@@ -1275,6 +1291,10 @@ msgstr "Nessun contatto: aggiungili in qdmr"
 #: core/ui/ui_menus.c
 msgid "Contacts: not in this build"
 msgstr "Contatti: non in questa build"
+
+#: core/ui/ui_menus.c
+msgid "New APRS message"
+msgstr "Nuovo messaggio APRS"
 
 #: core/ui/ui_menus.c
 msgid "OK open  # reply  Back"
@@ -1533,6 +1553,22 @@ msgid "Empty zone"
 msgstr "Zona vuota"
 
 #: core/ui/ui_menus.c
+msgid "That's the most it can hold"
+msgstr "Non ne entrano di più"
+
+#: core/ui/ui_menus.c
+msgid "Name"
+msgstr "Nome"
+
+#: core/ui/ui_menus.c
+msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
+msgstr "{Indietro canc.  # ABC/123/abc  OK tieni|Indietro canc  # modo  OK}"
+
+#: core/ui/ui_menus.c
+msgid "{Back delete  # ABC/123/abc  OK send|Back del  # mode  OK}"
+msgstr "{Indietro canc.  # ABC/123/abc  OK invia|Indietro canc  # modo  OK}"
+
+#: core/ui/ui_menus.c
 msgid "New from current"
 msgstr "Nuova da attuale"
 
@@ -1567,10 +1603,6 @@ msgstr " zone"
 #: core/ui/ui_menus.c
 msgid "Radio's"
 msgstr "Della radio"
-
-#: core/ui/ui_menus.c
-msgid "Name"
-msgstr "Nome"
 
 #: core/ui/ui_menus.c
 msgid "Number"
@@ -1775,14 +1807,6 @@ msgstr "Modifiche non salvate"
 #: core/ui/ui_menus.c
 msgid "{OK choose  Back keep editing|OK choose  Back}"
 msgstr "{OK scegli  Indietro continua|OK scegli  Indietro}"
-
-#: core/ui/ui_menus.c
-msgid "That's the most it can hold"
-msgstr "Non ne entrano di più"
-
-#: core/ui/ui_menus.c
-msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
-msgstr "{Indietro canc.  # ABC/123/abc  OK tieni|Indietro canc  # modo  OK}"
 
 #: core/ui/ui_menus.c
 msgid "Type"
@@ -2195,6 +2219,10 @@ msgstr "Gli ID partono da 1"
 #: core/ui/ui_menus.c
 msgid "DMR ID saved"
 msgstr "ID DMR salvato"
+
+#: core/ui/ui_menus.c
+msgid "Typing: not in this build"
+msgstr "Digitazione: non in questa build"
 
 #: core/ui/ui_menus.c
 msgid "My Radio"

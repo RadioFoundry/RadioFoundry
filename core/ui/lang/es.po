@@ -1229,8 +1229,24 @@ msgid "Can't talk now"
 msgstr "No puedo hablar"
 
 #: core/ui/ui_menus.c
+msgid "To callsign"
+msgstr "Al indicativo"
+
+#: core/ui/ui_menus.c
+msgid "Enter"
+msgstr "Introducir"
+
+#: core/ui/ui_menus.c
 msgid "Write..."
 msgstr "Escribir..."
+
+#: core/ui/ui_menus.c
+msgid "Request acknowledgment"
+msgstr "Pedir confirmación"
+
+#: core/ui/ui_menus.c
+msgid "Include position"
+msgstr "Incluir posición"
 
 #: core/ui/ui_menus.c
 msgid "Couldn't send: try again"
@@ -1241,8 +1257,8 @@ msgid "Sending to "
 msgstr "Enviando a "
 
 #: core/ui/ui_menus.c
-msgid "Typing: not in this build"
-msgstr "Teclado: no disponible"
+msgid "Callsign"
+msgstr "Indicativo"
 
 #: core/ui/ui_menus.c
 msgid "To"
@@ -1275,6 +1291,10 @@ msgstr "Sin contactos: añádelos en qdmr"
 #: core/ui/ui_menus.c
 msgid "Contacts: not in this build"
 msgstr "Contactos: no disponible"
+
+#: core/ui/ui_menus.c
+msgid "New APRS message"
+msgstr "Nuevo mensaje APRS"
 
 #: core/ui/ui_menus.c
 msgid "OK open  # reply  Back"
@@ -1533,6 +1553,22 @@ msgid "Empty zone"
 msgstr "Zona vacía"
 
 #: core/ui/ui_menus.c
+msgid "That's the most it can hold"
+msgstr "Máximo alcanzado"
+
+#: core/ui/ui_menus.c
+msgid "Name"
+msgstr "Nombre"
+
+#: core/ui/ui_menus.c
+msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
+msgstr "{Atrás borrar  # ABC/123/abc  OK listo|Atrás borr.  # modo  OK}"
+
+#: core/ui/ui_menus.c
+msgid "{Back delete  # ABC/123/abc  OK send|Back del  # mode  OK}"
+msgstr "{Atrás borrar  # ABC/123/abc  OK enviar|Atrás borr.  # modo  OK}"
+
+#: core/ui/ui_menus.c
 msgid "New from current"
 msgstr "Nuevo desde actual"
 
@@ -1567,10 +1603,6 @@ msgstr " zonas"
 #: core/ui/ui_menus.c
 msgid "Radio's"
 msgstr "De radio"
-
-#: core/ui/ui_menus.c
-msgid "Name"
-msgstr "Nombre"
 
 #: core/ui/ui_menus.c
 msgid "Number"
@@ -1775,14 +1807,6 @@ msgstr "Cambios sin guardar"
 #: core/ui/ui_menus.c
 msgid "{OK choose  Back keep editing|OK choose  Back}"
 msgstr "{OK elegir  Atrás seguir editando|OK elegir  Atrás}"
-
-#: core/ui/ui_menus.c
-msgid "That's the most it can hold"
-msgstr "Máximo alcanzado"
-
-#: core/ui/ui_menus.c
-msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
-msgstr "{Atrás borrar  # ABC/123/abc  OK listo|Atrás borr.  # modo  OK}"
 
 #: core/ui/ui_menus.c
 msgid "Type"
@@ -2195,6 +2219,10 @@ msgstr "ID desde 1"
 #: core/ui/ui_menus.c
 msgid "DMR ID saved"
 msgstr "ID DMR guardado"
+
+#: core/ui/ui_menus.c
+msgid "Typing: not in this build"
+msgstr "Teclado: no disponible"
 
 #: core/ui/ui_menus.c
 msgid "My Radio"

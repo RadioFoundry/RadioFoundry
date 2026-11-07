@@ -137,6 +137,7 @@ void ui_svc_dtmf_block(bool blocked);
 
 // --- Messages and signaling (dmr-data) ---
 #define UI_MSG_TEXT_MAX	143
+#define UI_MSG_FORMAT_APRS	3	// distinct from dmr_sms_format_t's 0..2
 typedef struct {
 	uint32_t src;		// sender (or, for sent ones, recipient)
 	bool group;		// sent to a talkgroup
