@@ -190,6 +190,7 @@ burst stops the tone and unkeys, without a roger beep. PTT pressed during a burs
 There is no duration setting or host deadline for the side key; the TX time-out still applies.
 The debug link's explicit on/off request keeps its `max_ms` limit. A new burst starts with only its own timing;
 an on/down request while a burst is already sounding does not restart it or change its deadline.
+A side-key up releases only its own burst or TX denial; down/up during a host burst leaves that burst running.
 Power-off cancels a held or timed burst and unkeys without a roger beep before shutdown waits.
 VOX cannot release during a burst; its full quiet tail starts after the burst ends.
 

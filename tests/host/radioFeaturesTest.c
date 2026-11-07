@@ -2781,6 +2781,37 @@ static void test_burst_deadlines(void)
 	CHECK(sm.view.state == RS_IDLE && !sm.view.tone_burst);
 }
 
+static void test_burst_key_host_overlap(void)
+{
+	start();
+	req2(RREQ_TONE_BURST, 1, 500);
+	run(100);
+	uint32_t deadline = sm.burst_end_ms;
+	req(RREQ_TONE_BURST_KEY, 1);
+	run(100);
+	req(RREQ_TONE_BURST_KEY, 0);
+	CHECK(sm.view.state == RS_TX && sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+	CHECK(sm.ptt && sm.burst_keyed && sm.burst_end_ms == deadline && hw.tx_off_calls == 0);
+	run(275);
+	CHECK(sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+	run(50);
+	CHECK(sm.view.state == RS_IDLE && !sm.view.tone_burst && hw.tone_hz == 0);
+	CHECK(!sm.ptt && hw.tx_off_calls == 1);
+}
+
+static void test_burst_key_denied(void)
+{
+	start();
+	settings(set_inhibit);
+	req(RREQ_TONE_BURST_KEY, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_INHIBIT);
+	CHECK(sm.ptt && sm.burst_keyed && !sm.view.tone_burst && !sm.burst_timed);
+	CHECK(hw.tx_calls == 0 && hw.tone_hz == 0);
+	req(RREQ_TONE_BURST_KEY, 0);
+	CHECK(sm.view.state == RS_IDLE && sm.view.tx_deny == TXDENY_NONE);
+	CHECK(!sm.ptt && !sm.burst_keyed && hw.tx_calls == 0);
+}
+
 static void test_burst_power_off(void)
 {
 	for (unsigned held = 0; held <= 1; held++) {
@@ -3472,6 +3503,8 @@ int main(void)
 	test_roger_burst();
 	test_burst_key();
 	test_burst_deadlines();
+	test_burst_key_host_overlap();
+	test_burst_key_denied();
 	test_burst_power_off();
 	test_burst_stray_up();
 	test_dtmf();

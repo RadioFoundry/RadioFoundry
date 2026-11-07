@@ -3668,7 +3668,7 @@ static inline void dtmf_cancel(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (voi
 static void fm_tx_end(radio_sm_t *sm, bool keyed, uint32_t now_ms)
 {
 #if CONFIG_FM_TX_TONES
-	sm->burst_timed = sm->burst_held = false;
+	sm->burst_timed = sm->burst_held = sm->burst_key_owned = false;
 	sm->burst_ms = sm->burst_end_ms = 0;
 #endif
 	dtmf_cancel(sm, now_ms);
@@ -3892,7 +3892,7 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 #endif
 	dtmf_cancel(sm, now_ms);	// before the roger beep: the board never mixes the two
 #if CONFIG_FM_TX_TONES
-	sm->burst_timed = sm->burst_held = false;
+	sm->burst_timed = sm->burst_held = sm->burst_key_owned = false;
 	sm->burst_ms = sm->burst_end_ms = 0;
 	if (sm->view.tone_burst) {
 		roger = false;	// releasing PTT during a burst ends the transmission
@@ -4921,7 +4921,7 @@ static void tone_burst(radio_sm_t *sm, bool on, uint32_t max_ms, uint32_t now_ms
 		if (sm->view.tone_burst) {
 			return;
 		}
-		sm->burst_timed = sm->burst_held = false;
+		sm->burst_timed = sm->burst_held = sm->burst_key_owned = false;
 		sm->burst_ms = sm->burst_end_ms = 0;
 		if (sm->view.ch.mode != RADIO_MODE_FM || sm->hotspot || board.radio->tx_tone == NULL) {
 			beep(sm, BEEP_ERROR);
@@ -4948,7 +4948,7 @@ static void tone_burst(radio_sm_t *sm, bool on, uint32_t max_ms, uint32_t now_ms
 		}
 		return;
 	}
-	sm->burst_timed = sm->burst_held = false;
+	sm->burst_timed = sm->burst_held = sm->burst_key_owned = false;
 	sm->burst_ms = sm->burst_end_ms = 0;
 	if (sm->view.tone_burst) {
 		tx_tone(0);
@@ -5469,10 +5469,11 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 			if (!sm->view.tone_burst) {
 				tone_burst(sm, true, 0, now_ms);
 				sm->burst_timed = sm->view.tone_burst;
+				sm->burst_key_owned = sm->burst_timed || sm->burst_keyed;
 				sm->burst_ms = sm->burst_timed ? now_ms : 0;
 			}
 			sm->burst_held = sm->burst_timed;
-		} else {
+		} else if (sm->burst_key_owned) {
 			sm->burst_held = false;
 			if (!sm->burst_timed || now_ms - sm->burst_ms >= RADIO_BURST_MIN_MS) {
 				tone_burst(sm, false, 0, now_ms);
@@ -5966,6 +5967,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		if (sm->view.tot_s != 0 && sm->view.tx_elapsed_ms >= (uint32_t)sm->view.tot_s * 1000) {
 			dtmf_cancel(sm, now_ms);
 #if CONFIG_FM_TX_TONES
+			// Keep side-key ownership so its release clears the time-out denial.
 			sm->burst_timed = sm->burst_held = false;
 			sm->burst_ms = sm->burst_end_ms = 0;
 			if (sm->roger_ms != 0 || sm->view.tone_burst) {
