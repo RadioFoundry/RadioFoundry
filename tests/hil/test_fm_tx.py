@@ -409,6 +409,8 @@ def _power_levels_wattmeter(radio, pytestconfig):
         bands.append(pytestconfig.getoption("--vhf-fm-mhz"))
     print("\n>>> A wattmeter (averaging) between the radio and a dummy load rated for its top power. Each power level "
           "keys 2 s; type the reading at the end of each key-up.", flush=True)
+    # The first key-up follows at once: nothing keys until the person says the meter is on this radio
+    input(f"\n>>> Press Enter when the wattmeter is on {radio.version().get('board', 'the radio')} and ready: ")
     rows, bad = [], []
     for mhz in bands:
         hz = round(mhz * 1e6)
