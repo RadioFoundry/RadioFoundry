@@ -13,7 +13,7 @@
 #define RF_TASK_STACK		256		// words
 #define RF_GUARD_US		20000u		// an RF RX interrupt ends the burst only this long after its RF TX interrupt
 #define WAIT_SPIN_US		50u		// shorter waits spin, as the original firmware's delay routine does
-#define WAIT_TIMEOUT_MS		10u		// the timer never fired: go on
+#define WAIT_TIMEOUT_MS		10u		// the timer never fired this long after it should have: go on
 #define DISARM_WAIT_MS		20u
 #define FRAME_US		60000u		// one RF TX interrupt per TDMA frame while transmitting
 #define GRID_SLACK_US		30u		// an RF TX interrupt later than this off the frame grid was held up
@@ -94,7 +94,9 @@ static void rf_wait(uint32_t us)
 	}
 	hrc_timer_oneshot(TIMER_BOARD, us);
 	uint32_t v;
-	while (xTaskNotifyWait(0, UINT32_MAX, &v, pdMS_TO_TICKS(WAIT_TIMEOUT_MS) + 1u) == pdTRUE) {
+	// The time-out is the wait plus WAIT_TIMEOUT_MS: a hold to a burst's last symbol can be longer than 10 ms
+	TickType_t limit = pdMS_TO_TICKS(us / 1000u + WAIT_TIMEOUT_MS) + 1u;
+	while (xTaskNotifyWait(0, UINT32_MAX, &v, limit) == pdTRUE) {
 		pending |= v & ~EV_TIMER;
 		if ((v & EV_TIMER) != 0) {
 			return;
