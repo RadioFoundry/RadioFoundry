@@ -616,7 +616,9 @@ Header (12 bytes):
 | 8 | 4 | Record count, LE |
 
 Records follow the header in area 1, sorted by ascending ID, with no gaps. Area 1 holds as many whole records as fit
-in 256 KB minus the header. The rest continue at the start of area 2. Each record is:
+in 256 KB minus the header. The rest continue at the start of area 2. The radio reads only the records that end before
+the flash image's end (the board's `openfw_end`): on a board with a smaller data flash, records a header counts past
+it are not read. Each record is:
 - An ID: 3 bytes LE binary (formats `N` and `n`) or 4 bytes BCD.
 - The text. With `N` and `n`, the text is packed at 6 bits per character, 4 characters in 3 bytes, most
   significant first. The 64-character alphabet is, in order: space, `0`-`9`, `A`-`Z`, `a`-`z`, `.` (codes 0-63).
