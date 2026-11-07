@@ -333,7 +333,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Minimal TCP | `NET_TCP` | 16,240 | 15,656 | Includes KISS, HTTP, rigctld, APRS-IS. About 4.5 KB RAM |
 | KISS over TCP, port 8001 | `NET_KISS` | 700 | 752 |  |
 | HTTP status page and JSON, port 80 | `NET_HTTP` | 4,796 | 4,860 |  |
-| HTTP static files stored and served gzip compressed | `NET_HTTP_GZIP` | -64 | -96 | Negative: saves flash |
+| HTTP static files stored and served gzip compressed | `NET_HTTP_GZIP` | -19,456 | -18,572 | Negative: saves flash, nearly all of it on web control's files; re-measured 2026-11-07. MD-380: web control follows this switch ([hardware-md380.md](spec/hardware-md380.md) 19) |
 | Web control: the front panel page, keys, status and receive audio over `/ws` | `NET_WEBCTL` | 9,620 | 9,332 | The page and the radio's drawing included (about 6 KB gzip compressed); 1 KB RAM ([tcp-services.md](spec/tcp-services.md) 5.1) |
 | rigctld, port 4532 | `NET_RIGCTL` | 3,852 | 3,728 |  |
 | Audio linking (USRP over UDP, port 34001) | `NET_USRP` | 4,552 | 4,888 | DM-1701: DMR and FM both ways. MD-380: DMR only (FM audio doesn't reach the processor yet). DM-32UV: DMR only until its board code has the FM audio paths |
