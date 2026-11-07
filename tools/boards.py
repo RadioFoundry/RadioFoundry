@@ -73,10 +73,12 @@ FAMILIES = {
 STOCK_CONSOLES = ("usmart",)
 CODEC_TOOLS = ("codec_extract", "hrc7000_codec")
 RFOUNDRY_JSON = "tools/rfoundry/rfoundry/registry.json"	# the flashing tools' view, generated and committed
-# hal_flash_map_t fields the site reads (the codeplug editor): the open-firmware image's data flash address, the end of
-# the room for it and the DMR ID database, the TFTP staging area. The open-firmware flash image follows the EEPROM image
-# at a fixed offset (docs/spec/cps-fast.md)
-FLASH_MAP_FIELDS = ("openfw_eeprom", "openfw_flash", "openfw_end", "staging_addr")
+# hal_flash_map_t fields (hal/hal_flash.h). The site reads the open-firmware image's data flash address, the end of the
+# room for it and the DMR ID database, and the TFTP staging area (the codeplug editor); the check reads every area, to
+# keep a stub write test out of them. The open-firmware flash image follows the EEPROM image at a fixed offset
+# (docs/spec/cps-fast.md)
+FLASH_MAP_FIELDS = ("settings_addr", "settings_size", "journal_addr", "openfw_eeprom", "openfw_flash", "openfw_end",
+                    "calibration_addr", "calibration_size", "native_addr", "native_size", "staging_addr", "staging_size")
 OPENFW_FLASH_OFFSET = 0x20000
 APP_SLOT = "app+slot"		# [flash] sectors: one sector for the application, one for the codec slot (no geometry)
 NAND_DRIVER = "drivers/flash/spi_nand"	# in BOARD_DIRS: the board's data memory is SPI NAND (the stub's nand flag)
@@ -88,6 +90,7 @@ PROTECT_MEMS = {"progmem": "program flash", "data": "data flash", "nand": "NAND"
 SECREG_LEN, SECREG_COUNT = 256, 3
 PROGMEM_SECTOR = 0x1000		# the erase sector of a program flash without a platform geometry (an SPI NOR chip)
 DATA_SECTOR = 0x1000		# an SPI NOR data flash's smallest erase (sector erase 0x20)
+STUB_WRITE_TEST = 0x4000	# [flash.stub] write_test: the data flash bytes stubtool --write-test erases and programs
 NO_PIN = 255			# the universal stub's "no pin"
 # board.mk values the registry reads, through make (conditionals and config.mk included)
 MAKE_VARS = ("PLATFORM", "APP_BASE", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS",
@@ -204,6 +207,9 @@ BOARD_SCHEMA = {
         "stub": _opt({"id": _req(int), "tested": _req(bool),
                       "hold_power": _opt(bool), "progmem": _opt(int),	# the HR_C7000 universal stub
                       "stock_console": _opt(STOCK_CONSOLES), "read_rate": _opt(int),
+                      # the data flash offset of STUB_WRITE_TEST bytes no area of the flash map, no protected region
+                      # and no other firmware's known data uses: stubtool --write-test erases and programs only there
+                      "write_test": _opt(int),
                       # where the factory calibration is, for a backup: in a data flash, the 4 KB page of the stock
                       # codeplug area [0, area) whose last byte is page_id; on a radio whose data memory is a NAND,
                       # the 4 KB sectors of the program flash (progmem) and the NAND (nand) that each hold a copy
@@ -436,6 +442,27 @@ def flash_map(board_dir):
     return out
 
 
+def write_floor(board_dir):
+    """The data flash's write floor a board gives its driver (hrc_flash_cfg_t .write_floor: below it the firmware only
+    reads, the radio's own data), 0 without one."""
+    for _, text in _c_sources(board_dir):
+        for m in re.finditer(r"\bhrc_flash_cfg_t\s+\w+\s*=\s*\{", text):
+            v = re.search(r"\.write_floor\s*=\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*", _braced(text, m.end()))
+            if v:
+                return int(v.group(1), 0)
+    return 0
+
+
+def openfw_bases(mcu_defs):
+    """(EEPROM image, flash image) data flash addresses the code builds in (core/codeplug: the no-map defaults and the
+    DMR ID database's areas), from board.mk MCU_DEFS -DCODEPLUG_OPENFW_EEPROM_BASE / _FLASH_BASE, else 0 and 0x20000."""
+    out = []
+    for name, dflt in (("EEPROM", 0), ("FLASH", OPENFW_FLASH_OFFSET)):
+        v = re.search(r"-DCODEPLUG_OPENFW_%s_BASE=(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*" % name, mcu_defs or "")
+        out.append(int(v.group(1), 0) if v else dflt)
+    return tuple(out)
+
+
 NAND_FIELDS = ("page_size", "pages_per_block", "blocks")
 
 
@@ -551,6 +578,7 @@ class Board:
         self.source_names = names		# board_t .name: [(literal, macro)]
         self.pins = pins			# pins.h integer defines
         self.flash_map = fmap or {}		# hal_flash_map_t: FLASH_MAP_FIELDS
+        self.write_floor = 0			# hrc_flash_cfg_t .write_floor (write_floor()), set by the loader
         # config.mk BOARD_UNSUPPORTED: {switch: reason}, in the build's order (make's value decides the set)
         reasons = unsupported or {}
         self.unsupported = {s: reasons.get(s, "") for s in mk.get("BOARD_UNSUPPORTED", "").split()}
@@ -655,6 +683,27 @@ class Board:
                        progmem=s["progmem"], stock_console=s.get("stock_console"))
             if "calibration" in s:
                 out["calibration"] = s["calibration"]
+            if "write_test" in s:		# start and end: the length is the registry's alone
+                out["write_test"] = [s["write_test"], s["write_test"] + STUB_WRITE_TEST]
+        return out
+
+    def map_areas(self):
+        """[(start, end, name)] of the hal_flash_map_t areas the firmware stores in (empty ones left out). A field the
+        C initializer leaves out is 0 there, as hal_flash_map_end reads it; openfw_flash, which the check lets a board
+        leave out, is openfw_eeprom + OPENFW_FLASH_OFFSET."""
+        m, out = self.flash_map, []
+        if "openfw_eeprom" not in m:
+            return out
+        fl = m.get("openfw_flash", m["openfw_eeprom"] + OPENFW_FLASH_OFFSET)
+        for name, lo, n in (("settings", m.get("settings_addr", 0), m.get("settings_size", 0)),
+                            ("journal", m.get("journal_addr", 0), 2 * DATA_SECTOR),
+                            ("open-firmware EEPROM image", m["openfw_eeprom"], 0x10000),
+                            ("open-firmware flash image", fl, m.get("openfw_end", 0) - fl),
+                            ("calibration", m.get("calibration_addr", 0), m.get("calibration_size", 0)),
+                            ("native codeplug", m.get("native_addr", 0), m.get("native_size", 0)),
+                            ("staging", m.get("staging_addr", 0), m.get("staging_size", 0))):
+            if n > 0:
+                out.append((lo, lo + n, name))
         return out
 
     def codeplug(self):
@@ -818,6 +867,7 @@ def load(root=ROOT, only=None):
                          # board's reason wins for a switch both list
                          {**unsupported_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
                           **unsupported_reasons(os.path.join(bdir, "config.mk"))}, flash_map(srcs))
+        out[bid].write_floor = write_floor(srcs)
         out[bid].volts = source_volts(srcs)
         out[bid].nand_geo = nand_geometry(srcs) if out[bid].nand else None
         nw = {**not_written_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
@@ -910,6 +960,29 @@ def hardware_problems(bid, unsupported, unconfirmed, built, hw):
     for s in sorted(set(unconfirmed) - set(hw)):
         out.append("boards/%s/board.toml: hardware.unconfirmed %s is not a hardware switch (tests/hil/features.toml)"
                    % (bid, s))
+    return out
+
+
+def write_test_problems(start, nand, spi_size, areas, protect, floor=0):
+    """Why [flash.stub] write_test can't be the stub's data flash test region [start, start + STUB_WRITE_TEST): a NAND
+    (never written by the stub tool), a negative offset, below the board's write floor (the radio's own data), off the
+    sector boundaries, past the chip (an address past it wraps to a low one), or over an area of the flash map or a
+    protected region. areas: Board.map_areas(); protect: the data entries; floor: write_floor()."""
+    end = start + STUB_WRITE_TEST
+    if nand:
+        return ["the data memory is a NAND, which the stub tool never writes"]
+    out = []
+    if start < 0:
+        out.append("a negative offset")
+    elif start < floor:
+        out.append("below the write floor 0x%X (the radio's own data)" % floor)
+    if start % DATA_SECTOR:
+        out.append("not on a 0x%X sector boundary" % DATA_SECTOR)
+    if end > spi_size:
+        out.append("ends past the data flash ([flash] backup spi_size 0x%X)" % spi_size)
+    for lo, hi, what in areas + [(p["start"], p["end"], "the protected region " + p["what"]) for p in protect]:
+        if lo < end and start < hi:
+            out.append("overlaps %s (0x%X-0x%X)" % (what, lo, hi))
     return out
 
 
@@ -1059,6 +1132,12 @@ def check(root=ROOT):
                 != OPENFW_FLASH_OFFSET:
             bad("hal_flash_map_t openfw_flash isn't openfw_eeprom + 0x%X (the codeplug editor assumes it)"
                 % OPENFW_FLASH_OFFSET)
+        else:
+            # the code builds these in where it has no map (core/codeplug), and the DMR ID database's areas always
+            built = openfw_bases(b.mk.get("MCU_DEFS"))
+            if built != (fm["openfw_eeprom"], fm.get("openfw_flash", fm["openfw_eeprom"] + OPENFW_FLASH_OFFSET)):
+                bad("board.mk CODEPLUG_OPENFW_EEPROM_BASE / _FLASH_BASE (0x%X, 0x%X; 0 and 0x20000 when not set) aren't "
+                    "the flash map's openfw_eeprom / openfw_flash" % built)
         for lit, macro in b.source_names:
             if macro and not d.get("build_options"):
                 bad("board_t .name is the macro %s: name its values in [[build_options]] board_name" % macro)
@@ -1136,6 +1215,11 @@ def check(root=ROOT):
                         bad("flash.stub needs %s on platform %s (platform.toml board_stub.keys)" % (k, b.platform.id))
                 for k in set(stub) - {"id", "tested"} - set(bs["keys"]) - set(bs["optional"]):
                     bad("flash.stub %s is not a key of the %s stub (platform.toml board_stub)" % (k, bs["tool"]))
+                wt = stub.get("write_test")
+                if wt is not None:
+                    for why in write_test_problems(wt, b.nand, b.data["flash"]["backup"]["spi_size"], b.map_areas(),
+                                                   [p for p in b.protect if p["mem"] == "data"], b.write_floor):
+                        bad("flash.stub write_test 0x%X: %s" % (wt, why))
                 cal = stub.get("calibration")
                 if cal is not None and set(cal) not in ({"area", "page_id"}, {"progmem", "nand", "magic"}):
                     bad("flash.stub calibration is either {area, page_id} (a data flash) or {progmem, nand, magic} (a NAND)")
@@ -1552,7 +1636,26 @@ def self_test():
                 "static const hal_flash_map_t fmap = {\n\t.openfw_eeprom = 0x00700000u,\t/* { */\n"
                 "\t.openfw_end = 0x00800000UL, .other = 5, .regions = { 1, 2 },\n\t.staging_addr = 0,\n};\n")
     ok(flash_map(tmpc) == {"openfw_eeprom": 0x700000, "openfw_end": 0x800000, "staging_addr": 0},
-       "flash_map: the fields the site reads, suffixes and comments skipped %r" % flash_map(tmpc))
+       "flash_map: the map's fields, suffixes and comments skipped %r" % flash_map(tmpc))
+    areas = [(0x700000, 0x710000, "EEPROM"), (0x711000, 0x719000, "settings"), (0x719000, 0x71B000, "journal"),
+             (0x720000, 0xF00000, "flash image")]
+    prot = [{"start": 0x1000, "end": 0xC9000, "what": "cal"}]
+    ok(write_test_problems(0x71C000, False, 0x1000000, areas, prot) == [], "write_test: a free gap of the map")
+    ok(len(write_test_problems(0xC00000, False, 0x1000000, areas, prot)) == 1, "write_test: inside the flash image")
+    ok(len(write_test_problems(0x71A000, False, 0x1000000, areas, prot)) == 1, "write_test: over the journal's end")
+    ok(len(write_test_problems(0x2000, False, 0x1000000, areas, prot)) == 1, "write_test: over a protected region")
+    ok(any("past the data flash" in w for w in write_test_problems(0x71C000, False, 0x200000, areas, prot)),
+       "write_test: past a smaller chip")
+    ok(write_test_problems(0x71B800, False, 0x1000000, areas, prot) == ["not on a 0x1000 sector boundary"],
+       "write_test: off a sector boundary")
+    ok(write_test_problems(0x71C000, True, 0x1000000, [], []) != [], "write_test: never on a NAND")
+    ok(write_test_problems(-0x4000, False, 0x1000000, areas, []) == ["a negative offset"], "write_test: not below 0")
+    ok(write_test_problems(0x500000, False, 0x1000000, areas, prot, 0x700000) == ["below the write floor 0x700000 (the "
+       "radio's own data)"] and write_test_problems(0x71C000, False, 0x1000000, areas, prot, 0x700000) == [],
+       "write_test: not below the board's write floor")
+    ok(openfw_bases("-DX=1 -DCODEPLUG_OPENFW_EEPROM_BASE=0x700000u -DCODEPLUG_OPENFW_FLASH_BASE=0x720000u") ==
+       (0x700000, 0x720000) and openfw_bases("-DX=1") == (0, 0x20000) and openfw_bases(None) == (0, 0x20000),
+       "openfw_bases: board.mk's, else the STM32 defaults")
     with open(os.path.join(tmpc, "flash2.c"), "w", encoding="utf-8") as f:
         f.write("const hal_flash_map_t m2 = { .openfw_eeprom = 0x600000 };\n")
     try:

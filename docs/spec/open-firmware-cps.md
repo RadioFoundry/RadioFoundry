@@ -626,6 +626,10 @@ in 256 KB minus the header. The rest continue at the start of area 2. Each recor
 
 The radio looks IDs up by binary search, using a cache of 14 evenly spaced IDs once there are more than 40 records.
 
+RadioFoundry takes a header only if its records end inside the open-firmware area (`openfw_end`, or the data
+flash's end on a board without a flash map). A larger count or record size is no database, so a lookup never reads
+what follows the area.
+
 RadioFoundry also reads format `C` (header bytes 2-3 `C`, 0): a dictionary-coded database about half the size of
 `N`, laid out so a refresh changes few 4 KB blocks ([iddb-compact.md](iddb-compact.md)). Byte 3 is 0, so firmware
 that doesn't read it sees no database.
