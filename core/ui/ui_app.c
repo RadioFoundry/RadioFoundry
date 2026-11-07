@@ -147,22 +147,26 @@ void ui_push(uint8_t scr, uint16_t arg)
 	}
 	if (ui_scr[scr]->enter != NULL)
 		ui_scr[scr]->enter();	// may focus a row (the current zone in Channels)
-	// Else the first row that can be focused
+	// Else the first row that is available, or failing that the first that can be focused: a dimmed row is still
+	// reachable to explain itself, a text row never is
 	const ui_scr_def_t *d = ui_scr[scr];
 	if ((d->flags & SF_LIST) && d->count != NULL && d->item != NULL && stack[sp].focus == 0) {
 		uint16_t n = d->count();
+		uint16_t dim = n;
 		while (stack[sp].focus < n) {
 			ui_item_t it;
 			it.flags = 0;
 			it.label[0] = it.value[0] = 0;
 			it.num = 0;
 			d->item(stack[sp].focus, &it);
-			if (!(it.flags & UI_ITEM_INFO))
+			if (!(it.flags & (UI_ITEM_INFO | UI_ITEM_DIM)))
 				break;
+			if (!(it.flags & UI_ITEM_INFO) && dim == n)
+				dim = stack[sp].focus;
 			stack[sp].focus++;
 		}
 		if (stack[sp].focus >= n)
-			stack[sp].focus = 0;
+			stack[sp].focus = dim < n ? dim : 0;
 	}
 	update_focus_target();
 	dirty = true;
@@ -2105,8 +2109,8 @@ void ui_app_key(const input_event_t *ev)
 		ui_toast(TR("Not used here"));
 }
 
-// Auto power off (Settings > Power): after auto_off_min without a key press, a call, a scan or the hotspot, a banner
-// a minute before, then the housekeeping task switches off (ui_app_power_off_due)
+// Auto power off (Settings > Power saving): after auto_off_min without a key press, a call, a scan or the hotspot, a
+// banner a minute before, then the housekeeping task switches off (ui_app_power_off_due)
 static void use_tick(const radio_view_t *v)
 {
 	if (v->state != RS_IDLE || v->scan != 0 || v->hotspot) {
@@ -2125,8 +2129,8 @@ static void use_tick(const radio_view_t *v)
 		power_off_due = true;
 }
 
-// Low battery warning (Settings > Power): a banner when the battery falls to the level, again every 5 min while it
-// stays there, with the low battery tone unless the radio core's own voltage warning has sounded (view.battery)
+// Low battery warning (Settings > Power saving): a banner when the battery falls to the level, again every 5 min while
+// it stays there, with the low battery tone unless the radio core's own voltage warning has sounded (view.battery)
 static void battery_tick(const radio_view_t *v)
 {
 	static char text[UI_BANNER_TEXT];

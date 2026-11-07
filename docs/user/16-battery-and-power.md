@@ -11,7 +11,7 @@ battery warnings.
 
 The status line shows the battery as an icon and a percentage. On a small screen a page's title takes over the
 status line, so the battery shows on Home and on the larger screens' pages. The percentage turns to the warning color at the low
-battery warning level and below. The level is set in **Settings > Power > Low battery warning** (15 % by default).
+battery warning level and below. The level is set in **Settings > Power saving > Low battery warning** (15 % by default).
 
 **OK**, **6**, **9** opens Tools > Battery, which shows the level. At the warning level and below it also shows "charge
 soon".
@@ -67,7 +67,7 @@ The backlight also comes on for what needs you:
 
 ## Battery saver
 
-**Settings > Power > Battery saver** puts the receiver to sleep on an idle FM channel. After 10 s without activity the
+**Settings > Power saving > Battery saver** puts the receiver to sleep on an idle FM channel. After 10 s without activity the
 receiver sleeps and wakes for 100 ms at a time to listen. Any signal in a listening window wakes it fully. It is off
 by default.
 
@@ -79,7 +79,7 @@ These stop the battery saver:
 
 ## Auto power off
 
-**Settings > Power > Auto power off** switches the radio off after a time without use: Off, 30 min, 1 h or 2 h (Off by
+**Settings > Power saving > Auto power off** switches the radio off after a time without use: Off, 30 min, 1 h or 2 h (Off by
 default). A key press, a call received or sent, a scan and hotspot mode count as use. One minute before, the radio
 beeps and shows "Switching off in 1 min / Any key keeps it on". Any key cancels it.
 

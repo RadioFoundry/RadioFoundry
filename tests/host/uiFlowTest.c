@@ -30,6 +30,10 @@ typedef struct {
 #define TALK_BACK	"ok 7 3 down down down down down down down down down ok long:back quick 7 ctx 3 5 ok "	// on, and A 3 / B 5
 
 static const flow_t flows[] = {
+	{ "menu entry keeps an available first row", "", "ok", "screen=hub focus=Contacts", 1, false },
+	{ "menu disabled row still explains why", "ok 7 5", "up ok", "focus=Send_position toast=No_GPS_on_this_radio", 2, false },
+	{ "menu return preserves focus", "ok 7 down down ok", "back", "screen=settings focus=Talk_&_listen", 1, false },
+	{ "menu entry skips unavailable GPS", "", "ok 7 5", "screen=group focus=Answer_GPS_requests", 3, false },
 	{ "1 next channel", "", "up", "pos=4", 1, false },
 	{ "1 channel 12 by number", "", "1 2 ok", "pos=12 screen=home", 3, false },
 	// The status strip's USB word (#58): IP as a network adapter, with the link arrows once the computer has it up,

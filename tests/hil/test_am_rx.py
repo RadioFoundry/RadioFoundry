@@ -4,7 +4,7 @@
 --am-mhz). The bench sends a full-carrier AM signal (the line protocol's tx op, mode am: a 1 kHz tone at depth 0.3 on a
 bare carrier lead and tail) on --am-mhz; the radio's VFO is tuned there and received in AM (docs/spec/airband-and-
 broadcast.md). The view shows AM receive by the state (rx when the squelch is open, idle when closed) and by
-rssi_dbm, which the squelch works on (there is no noise reading in AM).
+rssi_dbm (the board's squelch value is its own, 3.3; rssi_dbm is the one level every board reports).
 
 test_am_rx_squelch: the carrier opens the squelch (state rx, or rssi_dbm 10 dB over the floor read just before) and
 the squelch closes after the carrier ends. The radio never transmits.
