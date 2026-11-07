@@ -32,11 +32,15 @@ typedef struct {
 	// blocks) switches RF to TX: at tx_begin for own timing, at the engine's tx_slot_found for an aligned start, and
 	// from stm32_hrc_dmr_tx_prepare. tx_wait_lock (task level, optional) waits for the synthesizer after it. tx_done
 	// (under the lock, optional) at TX done: the receiver back on the RX frequency, true when it is
-	// (stm32_hrc_dmr_rf_on_rx). Without tx_prepare an aligned start switches at its first burst and the other two are
+	// (stm32_hrc_dmr_tx_end). Without tx_prepare an aligned start switches at its first burst and the other two are
 	// not called
 	void (*tx_prepare)(void);
 	void (*tx_wait_lock)(void);
 	bool (*tx_done)(void);
+	// Optional (task level, stm32_hrc_dmr_tx_end): the end of our DMR transmission with the RF back on receive. End it
+	// as tx_off() does, but leave the RF receiving as it is when it is on the last rx() settings; else set receive up
+	// again as tx_off() does. NULL: the glue leaves it to tx_off()
+	void (*tx_end)(void);
 } stm32_hrc_dmr_board_t;
 
 typedef struct {
@@ -57,12 +61,10 @@ void stm32_hrc_dmr_init(hrc_t *modem, const stm32_hrc_dmr_board_t *b);
 void stm32_hrc_dmr_enter(void);		// the chip has just been put in DMR (hrc6000_dmr_enter): engine on, interrupts on
 void stm32_hrc_dmr_leave(void);		// leaving DMR: transmission dropped, interrupts off, engine off
 void stm32_hrc_dmr_rx_restart(void);	// new channel in DMR
-// True after our transmission when the RF is back to receive: the last burst switch put it back (the rf_switch
-// result), or tx_done did on a board with tx_prepare. A board's rx() for the same DMR channel then skips its retune:
-// the other side's reply (a confirmed data response) comes in the next frame, 30 ms after our last burst, and a
-// retune then misses it. It stays true for a second rx() and is cleared by the next burst, tx_prepare, a new channel
-// (stm32_hrc_dmr_rx_restart) and entering or leaving DMR. The board checks the frequency and sleep itself
-bool stm32_hrc_dmr_rf_on_rx(void);
+// hal_radio_t.dmr_tx_end: when the RF is back to receive after our transmission (the last burst switch put it back,
+// the rf_switch result, or tx_done did on a board with tx_prepare; no burst, tx_prepare, new channel or DMR entered or
+// left since), the board's tx_end ends the transmission and true; else false (the core calls tx_off())
+bool stm32_hrc_dmr_tx_end(void);
 bool stm32_hrc_dmr_tx_active(void);	// the engine's slot state says a transmission is in progress
 void stm32_hrc_dmr_tx_drop(void);	// abort a transmission now (radio retune or tx_off while one runs)
 // The transmit side ready ahead of the first burst (a board with tx_prepare): from radio tx() when it arms DMR, from
@@ -85,7 +87,7 @@ static inline void stm32_hrc_dmr_init(hrc_t *modem, const stm32_hrc_dmr_board_t 
 static inline void stm32_hrc_dmr_enter(void) {}
 static inline void stm32_hrc_dmr_leave(void) {}
 static inline void stm32_hrc_dmr_rx_restart(void) {}
-static inline bool stm32_hrc_dmr_rf_on_rx(void) { return false; }
+static inline bool stm32_hrc_dmr_tx_end(void) { return false; }
 static inline bool stm32_hrc_dmr_tx_active(void) { return false; }
 static inline void stm32_hrc_dmr_tx_drop(void) {}
 static inline void stm32_hrc_dmr_tx_prepare(void) {}

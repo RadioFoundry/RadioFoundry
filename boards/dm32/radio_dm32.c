@@ -182,8 +182,10 @@ static void dmr_pa_on(void)
 	}
 }
 
+static void dmr_tx_end(void);
+
 static const hrc_dmr_board_t dmr_board = {
-	.rf_switch = dmr_rf_switch, .pa_on = dmr_pa_on, .pa_delay_us = DMR_PA_DELAY_US,
+	.rf_switch = dmr_rf_switch, .pa_on = dmr_pa_on, .pa_delay_us = DMR_PA_DELAY_US, .tx_end = dmr_tx_end,
 };
 
 #if CONFIG_APRS
@@ -259,14 +261,14 @@ static void set_mode(radio_mode_t m)
 	have_rx = false;	// the next rx() retunes everything
 }
 
-// FM (or DMR) receive, or AM in FM mode: the same set-up, only the FD6818's AF output differs
-static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am)
+// FM (or DMR) receive, or AM in FM mode: the same set-up, only the FD6818's AF output differs. keep (the end of a DMR
+// transmission, dmr_tx_end): the burst switch already put the FD6818 in RX; on the same channel it stays as it is
+static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, bool keep)
 {
 	if (!board_in_band(hz, false) || (am && mode != RADIO_MODE_FM)) {
 		return false;
 	}
-	// Back from our DMR transmission on the same channel: the burst switch already put the FD6818 in RX on hz
-	bool back = hrc_dmr_rf_on_rx() && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && !asleep;
+	bool back = keep && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && !asleep;
 	wake();
 	pa_off();
 	lna(hz, true);
@@ -306,7 +308,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am)
 
 static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 {
-	return rx_tune(hz, bw, tone, false);
+	return rx_tune(hz, bw, tone, false, false);
 }
 
 #if CONFIG_AM_RX
@@ -315,15 +317,16 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 // as in FM receive (speaker_source); no sub-audio. The 108-136 MHz signal comes in through the VHF LNA
 static bool rx_am(uint32_t hz, radio_bw_t bw)
 {
-	return rx_tune(hz, bw, NULL, true);
+	return rx_tune(hz, bw, NULL, true, false);
 }
 #endif
 
-// Back on the frequency, mode and demodulator the receiver had (after a transmission or the receiver's sleep)
-static void retune(void)
+// Back on the frequency, mode and demodulator the receiver had (after a transmission or the receiver's sleep); keep as
+// in rx_tune
+static void retune(bool keep)
 {
 	subtone_t t = rx_tone;
-	rx_tune(rx_hz, rx_bw, &t, fd6818_am_on(&fd));
+	rx_tune(rx_hz, rx_bw, &t, fd6818_am_on(&fd), keep);
 }
 
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
@@ -367,7 +370,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	return true;
 }
 
-static void tx_off(void)
+static void tx_end(bool keep)
 {
 	dmr_keyed = false;
 	pa_off();
@@ -382,8 +385,19 @@ static void tx_off(void)
 	transmitting = false;
 	ring_play();
 	if (have_rx) {
-		retune();
+		retune(keep);
 	}
+}
+
+static void tx_off(void)
+{
+	tx_end(false);
+}
+
+// hrc_dmr_board_t.tx_end: the burst switch left the FD6818 receiving
+static void dmr_tx_end(void)
+{
+	tx_end(true);
 }
 
 // FM TX tone (1750 Hz burst, roger beep, Morse): the modem's DTMF sender as a single tone (modem-hrc7000.md 8.3).
@@ -581,7 +595,7 @@ static void rx_sleep(bool sleep)
 		lna(rx_hz, false);
 		asleep = true;
 	} else {
-		retune();
+		retune(false);
 	}
 }
 
@@ -607,6 +621,7 @@ const hal_radio_t dm32_radio = {
 	.rx = rx,
 	.tx = tx,
 	.tx_off = tx_off,
+	.dmr_tx_end = hrc_dmr_tx_end,
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,

@@ -37,7 +37,7 @@ static hrc7000_dmr_t eng;
 static const hrc_dmr_board_t *brd;
 static TaskHandle_t task;
 static volatile bool active;
-static volatile bool rf_on_rx;	// the last burst switch put the RF back to receive (hrc_dmr_rf_on_rx)
+static volatile bool rf_on_rx;	// the last burst switch put the RF back to receive (hrc_dmr_tx_end)
 static dmr_event_cb_t volatile stack_cb;
 static void *volatile stack_ctx;
 
@@ -241,9 +241,14 @@ bool hrc_dmr_fm_rx_hook(void (*fn)(void))
 	return true;
 }
 
-bool hrc_dmr_rf_on_rx(void)
+bool hrc_dmr_tx_end(void)
 {
-	return rf_on_rx;
+	if (!rf_on_rx || brd == NULL || brd->tx_end == NULL) {
+		return false;
+	}
+	rf_on_rx = false;	// once: a later rx() is a full set-up
+	brd->tx_end();
+	return true;
 }
 
 void hrc_dmr_rx_restart(void)

@@ -853,6 +853,7 @@ const hal_radio_t md380_radio = {
 	.rx = rx,
 	.tx = tx,
 	.tx_off = tx_off,
+	.dmr_tx_end = stm32_hrc_dmr_tx_end,	// no tx_end hook yet: tx_off() as before
 #if CONFIG_SUBTONE
 	.tx_tail = tx_tail,
 #endif

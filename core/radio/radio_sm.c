@@ -1558,7 +1558,11 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 
 	if (sm->dmr_keyed && !tx) {
 		sm->dmr_keyed = false;
-		board.radio->tx_off();
+		// The stack is off the air: the receiver stays as the last burst left it when it can (a reply in our own
+		// timeslot comes 30 ms after our terminator; a receive set-up then misses it)
+		if (board.radio->dmr_tx_end == NULL || !board.radio->dmr_tx_end()) {
+			board.radio->tx_off();
+		}
 	}
 	if (sm->ptt) {
 		sm->tx_no_ptt = false;	// the user keyed: that transmission counts

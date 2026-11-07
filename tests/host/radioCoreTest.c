@@ -1239,6 +1239,30 @@ static void test_dmr_tx(void)
 	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == 2);
 }
 
+// The end of a DMR transmission goes through the board's dmr_tx_end (the glue: the last burst left the receiver on):
+// handled, no tx_off() and no receive set-up, so a reply 30 ms after our terminator is heard; refused, tx_off() as before
+static int tx_end_calls;
+static bool tx_end_ok;
+static bool r_dmr_tx_end(void) { tx_end_calls++; return tx_end_ok; }
+
+static void test_dmr_tx_end(void)
+{
+	dmr_start(true);
+	fake_radio.dmr_tx_end = r_dmr_tx_end;
+	for (int pass = 0; pass < 2; pass++) {
+		tx_end_ok = pass == 0;
+		int ends = tx_end_calls, offs = hw.tx_off_calls, rxs = hw.rx_calls;
+		req(RREQ_PTT, 1);
+		run(600);
+		req(RREQ_PTT, 0);
+		CHECK(tx_end_calls == ends);	// on air until the modem's TX done
+		run(1000);
+		CHECK(sm.view.state == RS_IDLE && !sm.dmr_keyed && tx_end_calls == ends + 1);
+		CHECK(hw.tx_off_calls == offs + (tx_end_ok ? 0 : 1) && hw.rx_calls == rxs);
+	}
+	fake_radio.dmr_tx_end = NULL;
+}
+
 // A modem with no slot timing takes the transmission and never sends (MD-380, HR_C5000 not answering): the radio must
 // not stay keyed. Released: back to receive with the arming dropped; held: refused until release
 static void test_dmr_stalled(void)
@@ -4753,6 +4777,7 @@ int main(void)
 	test_dmr_rssi_hold();
 	test_fm_rssi_raw();
 	test_dmr_tx();
+	test_dmr_tx_end();
 	test_dmr_stalled();
 	test_dmr_list_talk_target();
 #if CONFIG_VFO_DMR

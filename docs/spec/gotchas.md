@@ -156,7 +156,7 @@ transmission; drop a system request pending for 50 ms with no handler run; count
 state (`modem-hrc7000.md` 3.3). Radios: the HR_C7000 boards; one report.
 
 **2.10 A receiver restart in the middle of a burst.**
-Symptom: an answer 30 ms after our terminator (a confirmed data ACK) was lost: decoded but with BS sync, its timeslot
+Symptom: a direct answer in the other timeslot, right after our terminator (30 ms after its start), was lost: decoded but with BS sync, its timeslot
 taken from a TC bit there is none of in direct mode and so often the wrong one, and on some radios with a header CRC
 error. Answers 60 and 90 ms after, and the same bursts sent unsolicited, were taken. Cause: the end of a
 transmission comes on the TX tick a slot after the terminator, about 25 ms into the answer's slot, and the full
@@ -246,6 +246,14 @@ until a power cycle (2026-10-21). Neither the fault path nor the reset turned th
 pin set-up ran after the clock set-up. Rule: every fault handler, crash hook, software reset and stub jump calls
 `board_rf_safe()` first, and so does `main()` before the clocks ([crash-log.md](crash-log.md) 8). A new board must
 provide it, and a new reset or jump path must call it.
+
+**3.14 No receive set-up at the end of a DMR transmission.** Symptom: a MOTOTRBO portable's link ACK to our confirmed
+data, which comes one frame after our terminator in our own timeslot, was missed on every try on several radios. Cause: the board's `tx_off()` set the receiver up again
+(idle, synthesizer, receive) just as the answer came in; the per-burst switch had already left the receiver on the
+channel. Each radio that had fixed it did so with its own check in `rx()`. Rule: the radio core ends a DMR
+transmission through `hal_radio_t.dmr_tx_end`; the modem glue implements it once and has the board's `tx_end` keep the
+RF when the last burst's switch left it on the last `rx()` settings ([modem-hrc7000.md](modem-hrc7000.md) 5.2a).
+`rx()` is always a full set-up. Radios: the boards on both DMR modem glues. Test: `test_dmr_tx_end` (radioCoreTest).
 
 ## 4. AMBE codec calling
 

@@ -40,7 +40,7 @@ static hrc6000_dmr_t eng RFOUNDRY_CPU_RAM;	// the slot ISRs' state: CCM, off the
 static TaskHandle_t task;
 static const stm32_hrc_dmr_board_t *hooks;
 static volatile bool active;
-static volatile bool rf_on_rx;	// the RF is back to receive after our transmission (stm32_hrc_dmr_rf_on_rx)
+static volatile bool rf_on_rx;	// the RF is back to receive after our transmission (stm32_hrc_dmr_tx_end)
 static dmr_event_cb_t volatile stack_cb;
 static void *volatile stack_ctx;
 
@@ -422,9 +422,14 @@ void stm32_hrc_dmr_leave(void)
 	rf_on_rx = false;	// after the halt: its switch back to RX doesn't count outside DMR
 }
 
-bool stm32_hrc_dmr_rf_on_rx(void)
+bool stm32_hrc_dmr_tx_end(void)
 {
-	return rf_on_rx;
+	if (!rf_on_rx || hooks == NULL || hooks->tx_end == NULL) {
+		return false;
+	}
+	rf_on_rx = false;	// once: a later rx() is a full set-up
+	hooks->tx_end();
+	return true;
 }
 
 void stm32_hrc_dmr_rx_restart(void)

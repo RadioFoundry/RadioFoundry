@@ -622,7 +622,7 @@ A restart also forgets what was heard: the polite-access busy window (`dmr-modem
 ### 5.2a End of a direct transmission: the hold
 
 The end of a transmission comes on the TX tick a slot after our terminator, about 25 ms into the next slot. A direct
-answer (a confirmed data ACK, 30 ms after the start of our terminator) is then already being received, and a 5.2
+answer in the other timeslot, right after our terminator (30 ms after its start), is then already being received, and a 5.2
 restart there makes the chip report it with BS sync and, on some radios, a header CRC error (`gotchas.md` 2.10). So
 a direct transmission ends without the restart:
 
@@ -635,6 +635,13 @@ The software state is reset as at a restart (the polite busy window too). A burs
 reception does; with none, the 5.2 restart comes once 5 slots (150 ms) have passed with nothing taken, so a station
 on a timing of its own is taken after that. Through a repeater the restart stays at once: the next transmission
 needs a new TC lock (issue 72). Diagnostics: `rs restarts/lost/stale h holds`.
+
+The RF has the same window. An answer in our own timeslot comes one frame later, 60 ms after the start of our
+terminator (a MOTOTRBO portable's link ACK to confirmed data), and a receive set-up by the board then (idle,
+synthesizer, receive) misses it. The radio core ends a DMR transmission through `hal_radio_t.dmr_tx_end`, which the
+glue implements (`hrc_dmr_tx_end`): when the last burst's switch put the RF back to receive, the board's `tx_end`
+(`hrc_dmr_board_t`) ends the transmission and leaves the RF as it is if it is on the last `rx()` settings (frequency,
+trim, awake). Otherwise, and on a board without `tx_end`, the core calls `tx_off()` (`gotchas.md` 3.14).
 
 On the SDR bench (an MS simulator answering a confirmed packet with MS sync, 4-6 sends per case):
 

@@ -256,21 +256,23 @@ static void set_mode(radio_mode_t m)
 
 static bool tx_stop(void);
 
-static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
+// keep (the end of a DMR transmission, db25d_dmr_tx_end): the last burst's TX off already set the receiver up; on the
+// same channel and trim it stays as it is (dmr_disarm() has waited for the RF task)
+static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in, bool keep)
 {
 	if (!supported || !board_in_band(hz, false)) {
 		return false;
 	}
 #if CONFIG_DMR && DB25D_DMR_TX
 	dmr_disarm();	// a retune ends DMR TX (the hotspot's rx() disarms too)
-	// Back from our DMR transmission on the same channel: the last burst's TX off already set the receiver up on hz
-	// (the glue's flag; dmr_disarm() above waited for the RF task)
-	bool back = hrc_dmr_rf_on_rx() && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && tuned_ppb == trim_ppb;
+	bool back = keep && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && tuned_ppb == trim_ppb;
 	if (back) {
 		rx_bw = bw;
 		rx_tone = rx_tone_in != NULL ? *rx_tone_in : (subtone_t){ TONE_NONE, 0 };
 		return true;
 	}
+#else
+	(void)keep;
 #endif
 	bool from_tx = tx_stop();
 	rx_hz = hz;
@@ -300,6 +302,11 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 		hal_delay_us(TX_END_RX_US);
 	}
 	return true;
+}
+
+static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
+{
+	return rx_set(hz, bw, rx_tone_in, false);
 }
 
 static void audio(bool on);
@@ -466,17 +473,31 @@ static bool tx_stop(void)
 	return true;
 }
 
-static void tx_off(void)
+// keep: as in rx_set
+static void tx_end(bool keep)
 {
 #if CONFIG_DMR && DB25D_DMR_TX
-	dmr_disarm();	// the RF task finishes the burst it is in; rx() then sets the receiver up again
+	dmr_disarm();	// the RF task finishes the burst it is in; rx_set() then sets the receiver up again
 #endif
 	if (have_rx) {
-		rx(rx_hz, rx_bw, &rx_tone);	// stops the transmission first
+		rx_set(rx_hz, rx_bw, &rx_tone, keep);	// stops the transmission first
 	} else {
 		tx_stop();
 	}
 }
+
+static void tx_off(void)
+{
+	tx_end(false);
+}
+
+#if CONFIG_DMR && DB25D_DMR_TX
+// hrc_dmr_board_t.tx_end (dmr_db25d.c): the last burst's TX off left the receiver on
+void db25d_dmr_tx_end(void)
+{
+	tx_end(true);
+}
+#endif
 
 // FM TX tone (1750 Hz burst, roger beep, CW ID): the chip's tone generator instead of the microphone (0xC3FA). The chip
 // drops it at the end of the transmission (db25d_main_tx_end)
@@ -618,6 +639,9 @@ const hal_radio_t db25d_radio = {
 	.rx = rx,
 	.tx = tx,
 	.tx_off = tx_off,
+#if CONFIG_DMR
+	.dmr_tx_end = hrc_dmr_tx_end,
+#endif
 	.status = status,
 	.audio = audio,
 	.volume = volume,
