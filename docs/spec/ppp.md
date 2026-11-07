@@ -224,5 +224,5 @@ PPP itself is about 3.9 KB flash (`ppp.o` 3,386, `hostlink_ppp.o` 480) and 90 B 
   link answers again with `ppp.running=0`. Over the same link: HTTP `/status` and a 404 (the client's own minimal
   TCP), an SNMP get of `sysName.0` and `sysDescr.0`, a TFTP read of `info.txt` (`test_ppp_http`, `test_ppp_snmp`,
   `test_ppp_tftp_read`). The tests share one link and send nothing on the serial port while it runs: a debug link
-  frame there ends PPP. All pass on a board without USB (2026-10-27).
+  frame there ends PPP. All pass on a board without USB.
 - Not tried yet: macOS pppd (it needs root).

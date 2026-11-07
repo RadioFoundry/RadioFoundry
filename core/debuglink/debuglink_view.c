@@ -74,6 +74,7 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "view=%u\n", DL_VIEW_VERSION);
 	dl_text(t, "state=%s\n", state_key((uint8_t)v->state));
 	dl_text(t, "tx_deny=%s\n", deny_key(v->tx_deny));
+	dl_text(t, "can_tx=%u\n", board_can_tx() ? 1u : 0u);
 	{
 		tx_limit_info_t l;
 		tx_limit_get(&l, NULL, 0);
