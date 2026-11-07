@@ -376,7 +376,7 @@ RadioFoundry (`boards/db25d/dmr_db25d.c`, `radio_db25d.c` on the shared RF-burst
 
 | Step | RadioFoundry |
 |---|---|
-| `tx()` in DMR mode | Checks band and page as FM does, keeps the TX plan (PA drive, TX-on and TX-off delays), writes RF_MOD_BIAS_CTRL with the modulation byte for the TX frequency, main chip 0x40 = 0 and 0x51 = 0 (`bk4819_dmr_tx_prepare`), powers DAC B at 0, clears RF_MODE bit 7 (`make DB25D_DMR_TX_INVERT=1` sets it, to try the other 4FSK polarity), sets the RF TX interrupt's lead (RF_CONTROL b13:8, `db25d_dmr_rf_tx_lead`: 1.3 ms with the UHF page, below) and arms. The RF stays receiving until the first burst |
+| `tx()` in DMR mode | Checks band and page as FM does, keeps the TX plan (PA drive, TX-on and TX-off delays), writes RF_MOD_BIAS_CTRL with the modulation byte for the TX frequency, main chip 0x40 = 0 and 0x51 = 0 (`bk4819_dmr_tx_prepare`), powers DAC B at 0, clears RF_MODE bit 7 (`make DB25D_DMR_TX_INVERT=1` sets it, to try the other 4FSK polarity), sets the RF TX interrupt's lead (RF_CONTROL b13:8, `db25d_dmr_rf_tx_lead`: 1.5 ms with the UHF page, below) and arms. The RF stays receiving until the first burst |
 | RF TX interrupt | The glue's `rf_switch(true)` (`hrc_rfburst_switch`) records the time and wakes the RF task (priority above every other task), which runs the TX on sequence (`db25d_burst_on`). The page's TX-on delay counts from the interrupt, and a late interrupt is timed from the frame grid (modem-hrc7000.md 3.1a) |
 | End of a burst | Woken by the modem's RF RX interrupt (enabled while armed) or by the engine's `rf_switch(false)` at the first slot tick 20 ms after the RF TX interrupt, whichever comes first. The task then waits for the burst's last symbol, lead + 0.85 ms + 27.5 ms after the RF TX interrupt (`hrc_rfburst_hold_us`), and runs the TX off sequence (`db25d_burst_off`) without the stock's 300, 300 and 200 us waits. A wake-up after that point ramps down at once and counts as late |
 | Waits | Below 50 us a spin; from 50 us TIMER_BOARD (timer 5) while the task sleeps |
@@ -397,22 +397,25 @@ before our burst's first symbol to 1 ms or more into the next slot's burst: an S
 inbound call's 72 voice frames. Measured on the SDR bench (a UHF test frequency, low power, into a dummy load), against
 our first symbol:
 
-| Point | Stock timing (lead 3.1 ms) | RadioFoundry (lead 1.3 ms) |
+| Point | Stock timing (lead 3.1 ms) | RadioFoundry (lead 1.5 ms) |
 |---|---|---|
-| RF TX interrupt, receiver off | -3.95 ms | -2.15 ms |
-| First carrier (main chip in TX, PA supply off) | -3.0 ms | -1.7..-1.3 ms |
-| PA fully up (1 dB below the plateau) | -1.5 ms | -0.5..-0.1 ms |
+| RF TX interrupt, receiver off | -3.95 ms | -2.35 ms |
+| First carrier (main chip in TX, PA supply off) | -3.0 ms | -2.0..-1.45 ms |
+| PA fully up (1 dB below the plateau) | -1.5 ms | -0.58..-0.25 ms (117 bursts) |
 | Ramp down starts | +28.25 ms | +27.5 ms (the last symbol) |
-| Carrier gone | +30.0 ms | +28.65..28.7 ms (a few to +29.2 ms) |
+| Carrier gone | +30.0 ms | +28.55..28.95 ms (median +28.67) |
 | Receiver back (from the sequence: the 0.72 ms ramp, the waits, the register writes) | about +29.6 ms | about +28.0 ms |
 
 The inbound bursts lie from -32.5 to -2.5 ms and from +30.0 ms on (about 0.2 ms later in practice: our bursts sit
-0.15-0.24 ms behind the inbound grid). The first symbol comes 0.85 ms after the lead and the PA is up 2.1 ms after the
-RF TX interrupt with the UHF page's 1 us TX-on delay, so the lead is the shortest 100 us step that has the PA up for
-the first symbol: `db25d_dmr_rf_tx_lead` = (2.1 ms + the page's TX-on delay - 0.85 ms), rounded up (1.3 ms UHF; 2.3 ms
-with the VHF page's 1000 us, not measured). The ramp's 180 steps of 4 us take 0.72 ms plus the level's arithmetic,
-which is 32-bit (`core/radio/apc_ramp.h`): a 64-bit divide per step made the ramp 0.3 ms longer, and the lead was 1.6 ms
-with it. The SFR counts below were measured with the 1.6 ms lead. The same timing serves every DMR transmission (simplex, split, hotspot,
+0.15-0.24 ms behind the inbound grid). The first symbol comes 0.85 ms after the lead. After the RF TX interrupt plus
+the page's TX-on delay the PA is within 1 dB at 1.7-2.1 ms (the analog ramp varies from burst to burst; 0.94-1.6 ms
+from the first carrier), so the lead is the shortest 100 us step that has the PA up 0.2 ms ahead of the first symbol:
+`db25d_dmr_rf_tx_lead` = (2.3 ms + the page's TX-on delay - 0.85 ms), rounded up (1.5 ms UHF; 2.5 ms with the VHF
+page's 1000 us, not measured). At 1.3 ms (a 2.1 ms model) one burst in 114 had the 1 dB point only 0.04 ms ahead. The
+ramp's 180 steps of 4 us take 0.72 ms plus the level's arithmetic, which is 32-bit (`core/radio/apc_ramp.h`): a 64-bit
+divide per step made the ramp 0.3 ms longer, and the lead was 1.6 ms with it. The page's TX-on delay counts from the
+RF TX interrupt, and a late interrupt (up to 0.12 ms, a few bursts per key-up) is timed from the frame grid
+(modem-hrc7000.md 3.1a). The SFR counts below were measured with the 1.6 ms lead. The same timing serves every DMR transmission (simplex, split, hotspot,
 SFR).
 
 | Measurement (SDR bench, bench talker at low level, 4-superframe call) | Stock timing | RadioFoundry |
