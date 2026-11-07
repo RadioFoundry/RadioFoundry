@@ -67,6 +67,8 @@ const screenShot = (radio, sc) => (radio?.gallery && SCREEN_SHOTS[sc] ? `${ROOT}
 export function radioTop(radio, initial = {}) {
 	const src = pictureSrc(radio);
 	const pct = radio?.frame_geometry?.screen_pct;
+	// a radio without a display: no screen line in the caption, no shot over the picture
+	const noScreen = radio?.display === "none";
 	const shot = h("img", { alt: "", class: "rt-shot", hidden: true });
 	// what the screen shows, laid over the picture's screen where the data says it is
 	const screen = src && pct ? h("div", { class: "rt-screen", style: `left:${pct.left}%;top:${pct.top}%;width:${pct.width}%;height:${pct.height}%` }, shot) : null;
@@ -82,11 +84,11 @@ export function radioTop(radio, initial = {}) {
 		el.dataset.screen = sc;
 		el.dataset.knob = knob || "";
 		label.textContent = l === "off" ? "" : t(`flash.c7.visual.tag_${l}`);
-		const url = screenShot(radio, sc);
+		const url = noScreen ? null : screenShot(radio, sc);
 		shot.hidden = !url;
 		if (url && shot.getAttribute("src") !== url) shot.setAttribute("src", url);
 		const words = [knob === "cycle" ? t("flash.c7.visual.cycle") : knob === "on" ? t("flash.c7.visual.on") : null,
-			note || t(`flash.c7.visual.led_${l}`), sc === "any" ? null : t(`flash.c7.visual.screen_${sc}`)].filter(Boolean);
+			note || t(`flash.c7.visual.led_${l}`), sc === "any" || noScreen ? null : t(`flash.c7.visual.screen_${sc}`)].filter(Boolean);
 		caption.replaceChildren(...words.map((w) => h("span", {}, w)));
 		pic.setAttribute("aria-label", [radio?.name, ...words].filter(Boolean).join(" "));
 		// restart the animation on every change, so "done" plays its three flashes from the start

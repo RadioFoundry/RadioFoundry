@@ -405,7 +405,7 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 			h("ol", { class: "steps c7-big" },
 				on ? h("li", {}, t("flash.c7.connect.step_off")) : null,
 				h("li", {}, t("flash.c7.connect.step_on"))),
-			h("p", {}, t("flash.c7.connect.no_keys")), simPower(), h("p", { class: "small" }, clock), hints, slowNote());
+			h("p", {}, t(S().radio?.display === "none" ? "flash.c7.connect.no_keys_dark" : "flash.c7.connect.no_keys")), simPower(), h("p", { class: "small" }, clock), hints, slowNote());
 		act(button(t("flash.c7.connect.cancel"), () => { ac.abort(); clearInterval(tick); cableStep(); }, { quiet: true }));
 		const stub = mkStub();
 		try {

@@ -48,3 +48,15 @@ test("every update mode step list marks the keys to hold", () => {
 	assert.ok(lists >= 1);
 	assert.equal([...iap.matchAll(/withPicture\(h\("ol", \{ class: "steps[^"]*" \},[^\n]*\.\.\.steps\.map\(/g)].length, lists);
 });
+
+// A radio without a display (board.toml display = "none"): the caption has no screen line, no shot goes over the
+// picture, and the connect step doesn't describe a screen
+test("a radio without a display gets no screen line", () => {
+	const top = readFileSync(new URL("../static/js/flasher/radiotop.js", import.meta.url), "utf8");
+	assert.match(top, /const noScreen = radio\?\.display === "none";/);
+	assert.match(top, /const url = noScreen \? null : screenShot\(radio, sc\);/);
+	assert.match(top, /sc === "any" \|\| noScreen \? null : t\(`flash\.c7\.visual\.screen_\$\{sc\}`\)/);
+	const ui = readFileSync(new URL("../static/js/flasher/c7000ui.js", import.meta.url), "utf8");
+	assert.match(ui, /S\(\)\.radio\?\.display === "none" \? "flash\.c7\.connect\.no_keys_dark" : "flash\.c7\.connect\.no_keys"/);
+	assert.ok(en["flash.c7.connect.no_keys_dark"] && !/screen/i.test(en["flash.c7.connect.no_keys_dark"]));
+});
