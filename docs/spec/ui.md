@@ -66,6 +66,9 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
   short form before it would go below the medium font. The short form of a talkgroup is its number ("TG 91 World"
   becomes "TG 91"); of a private contact, its name ("Joe Smith 9991234" becomes "Joe Smith"). A contact's ID alone
   says nothing at a glance, so it is what goes. An ID without a contact is shown as the ID.
+- While a VFO frequency is being typed in dual watch, its selected pane shows the digits and blanks for the remaining
+  places in place of the old frequency, including on Large text Home. The other pane keeps its frequency. Back removes
+  a digit; OK or # tunes the selected pane.
 - The RX and TX screens put the number in the title ("TG 91") and the talkgroup's or contact's name on a line of its
   own; a talker alias takes two lines when it needs them. A private call's title says "Private" where a group call's
   says "TG": "Private 9991234" while transmitting (just "Private" where that doesn't fit), "Private to you" or

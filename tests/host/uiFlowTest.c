@@ -168,6 +168,12 @@ static const flow_t flows[] = {
 	  "dual=1 sel=B bvfo=1 bfreq=146550000 screen=home", 8, false },
 	{ "11 dual watch: # sets B VFO frequency", "quick 7 ctx 1 vfokey tune:a expect:sel=B expect:screen=home expect:bvfo=1", "1 4 6 5 5 0 0 expect:entry=1465500 ctx wait:1000",
 	  "dual=1 sel=B bvfo=1 bfreq=146550000 screen=home entry=none", 8, false },
+	{ "11 dual watch: B VFO shows typed frequency", "quick 7 ctx 1 vfokey tune:a", "1 4 6 5",
+	  "dual=1 sel=B entry=1465 showsraw=146.5__", 4, false },
+	{ "11 dual watch: B VFO shows a deleted digit", "quick 7 ctx 1 vfokey tune:a", "1 4 6 5 back",
+	  "dual=1 sel=B entry=146 showsraw=146.___", 5, false },
+	{ "11 dual watch: Large text shows typed B VFO frequency", "ok 7 2 down down down down down ok long:back quick 7 ctx 1 vfokey",
+	  "1 4 6 5", "dual=1 sel=B entry=1465 showsraw=146.5__", 4, false },
 	// Up / Down with nothing to step to says why
 	{ "11 dual watch: one channel in the zone", "zonesize:1,1 quick 7 ctx 1 zone+", "up",
 	  "dual=1 sel=B toast=Only_one_channel", 1, false },

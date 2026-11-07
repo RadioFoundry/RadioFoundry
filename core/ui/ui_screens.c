@@ -794,6 +794,20 @@ void ui_draw_splash(const char *board_name, const char *version, const char *lin
 
 // --- Home ---
 
+// The frequency being typed on Home: MHz digits, then decimals, with blanks for the next digits.
+static void home_entry_text(const ui_state_t *s, char *buf, size_t len)
+{
+	sbuf_t b;
+	sb_init(&b, buf, len);
+	int dec = s->entry_len > UI_ENTRY_MHZ ? s->entry_len - UI_ENTRY_MHZ : 0;
+	int show = dec < 3 ? 3 : dec;
+	for (int i = 0; i < UI_ENTRY_MHZ + show; i++) {
+		if (i == UI_ENTRY_MHZ)
+			sb_chr(&b, '.');
+		sb_chr(&b, i < s->entry_len ? s->entry_digits[i] : '_');
+	}
+}
+
 #if CONFIG_DMR
 static void draw_talk_dmr(const radio_view_t *v);
 static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s);
@@ -853,17 +867,10 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 		// blanks for the rest
 		bool tx = v->state == RS_TX && v->vfo;
 		sb_init(&b, buf, sizeof buf);
-		if (s->entry) {
-			int dec = s->entry_len > UI_ENTRY_MHZ ? s->entry_len - UI_ENTRY_MHZ : 0;
-			int show = dec < 3 ? 3 : dec;
-			for (int i = 0; i < UI_ENTRY_MHZ + show; i++) {
-				if (i == UI_ENTRY_MHZ)
-					sb_chr(&b, '.');
-				sb_chr(&b, i < s->entry_len ? s->entry_digits[i] : '_');
-			}
-		} else {
+		if (s->entry)
+			home_entry_text(s, buf, sizeof buf);
+		else
 			sb_freq(&b, tx ? v->ch.tx_hz : v->ch.rx_hz);
-		}
 		int x = gfx_text(L->large, 0, y, buf, s->entry ? ui_col.warn : tx ? ui_col.tx : ui_col.fg);
 		if (x + L->small->w / 2 + gfx_text_width(L->small, "MHz") <= w)	// 5 decimals leave no room on 120 px
 			gfx_text(L->small, x + L->small->w / 2, base - L->small->ascent, "MHz", ui_col.dim);
@@ -1740,9 +1747,14 @@ static int dual_pill_w(const char *word)
 // The channel number's font next to a name in f: medium beside the large font, else the name's
 static const font_t *dual_num_font(const font_t *f) { return f == ui_layout.large ? ui_layout.medium : f; }
 
-// The pane's first-row text: the channel name, or the VFO's frequency
-static void dual_name(const ui_dual_pane_t *p, char *buf, size_t len)
+// The pane's first-row text: the channel name, the VFO's frequency, or the selected VFO's typed digits
+static void dual_name(const ui_state_t *s, int i, char *buf, size_t len)
 {
+	const ui_dual_pane_t *p = &s->dual.pane[i];
+	if (p->vfo && s->entry && s->dual.sel == i) {
+		home_entry_text(s, buf, len);
+		return;
+	}
 	sbuf_t b;
 	sb_init(&b, buf, len);
 	if (p->vfo)
@@ -1753,16 +1765,16 @@ static void dual_name(const ui_dual_pane_t *p, char *buf, size_t len)
 
 // The largest font up to the layout's name font in which pane i's name fits whole next to its number and the
 // widest pill (PTT)
-static const font_t *dual_name_font(const ui_dual_t *d, int i, const font_t *nf)
+static const font_t *dual_name_font(const ui_state_t *s, int i, const font_t *nf)
 {
 	const ui_layout_t *L = &ui_layout;
-	const ui_dual_pane_t *p = &d->pane[i];
+	const ui_dual_pane_t *p = &s->dual.pane[i];
 	const font_t *order[] = { L->large, L->medium, L->small };
 	char buf[40], num[8];
 	sbuf_t nb;
 	sb_init(&nb, num, sizeof num);
 	sb_u32(&nb, p->number, 1);
-	dual_name(p, buf, sizeof buf);
+	dual_name(s, i, buf, sizeof buf);
 	int room = gfx_width() - dual_x0(nf) - dual_pill_w("PTT") - L->small->w / 2 - 1;
 	for (unsigned k = 0; k < 3; k++) {
 		const font_t *f = order[k];
@@ -1795,6 +1807,7 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 	const font_t *nf = ft->name, *sm = L->small;
 	int w = gfx_width();
 	bool tx = v->state == RS_TX && d->sel == i, rx = !tx && p->rx, sel = d->sel == i;
+	bool entry = s->entry && sel && p->vfo;
 	bool quiet = !rx && d->pane[!i].rx;	// the other pane has a call: this one steps back
 	color_t fg = quiet ? ui_col.dim : ui_col.fg;
 	char buf[48], fit[48];
@@ -1850,7 +1863,7 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 	const char *word = tx ? "TX" : "PTT";
 	bool pill3 = false;
 	if ((tx || sel) && ft->detail != NULL) {
-		dual_name(p, buf, sizeof buf);
+		dual_name(s, i, buf, sizeof buf);
 		int need = gfx_text_width(f, buf);
 		if (!p->vfo) {
 			sb_init(&b, fit, sizeof fit);
@@ -1887,13 +1900,13 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 		x = gfx_text(mf, x, base - mf->ascent, num, quiet || gfx_bpp() == 1 ? ui_col.dim : ui_col.chnum) +
 			mf->w / 2;
 	}
-	dual_name(p, buf, sizeof buf);
-	if (tx && p->vfo) {	// the VFO transmitting: its TX frequency (the view's channel is the selected pane's)
+	dual_name(s, i, buf, sizeof buf);
+	if (tx && p->vfo && !entry) {	// the VFO transmitting: its TX frequency (the view's channel is the selected pane's)
 		sb_init(&b, buf, sizeof buf);
 		sb_freq(&b, v->ch.tx_hz);
 	}
 	gfx_text_fit(f, buf, rx_end - x, fit, sizeof fit);
-	x = gfx_text(f, x, base - f->ascent, fit, tx && p->vfo ? ui_col.tx : rx ? ui_col.rx : fg);
+	x = gfx_text(f, x, base - f->ascent, fit, entry ? ui_col.warn : tx && p->vfo ? ui_col.tx : rx ? ui_col.rx : fg);
 	if (p->vfo && x + sm->w / 2 + gfx_text_width(sm, "MHz") <= rx_end) {
 		gfx_text(sm, x + sm->w / 2, base - sm->ascent, "MHz", ui_col.dim);
 		x += sm->w / 2 + gfx_text_width(sm, "MHz");
@@ -2013,13 +2026,24 @@ static void dual_large(const radio_view_t *v, const ui_state_t *s)
 		sbuf_t b;
 		sb_init(&b, buf, sizeof buf);
 		sb_str(&b, i ? "B " : "A ");
-		if (p->vfo)
-			sb_freq(&b, p->rx_hz);
-		else
+		if (p->vfo) {
+			char name[24];
+			dual_name(s, i, name, sizeof name);
+			sb_str(&b, name);
+		} else
 			sb_str(&b, p->name);
 		const font_t *f = large_font(buf, room, form, sizeof form);
+		if (gfx_text_width(f, form) + (d->sel == i ? f->w / 3 + 2 : 0) > w) {
+			const font_t *smaller[] = { L->large, L->medium, L->small };
+			for (unsigned k = 0; k < sizeof smaller / sizeof smaller[0]; k++) {
+				f = smaller[k];
+				if (f->h <= room && gfx_text_width(f, form) + (d->sel == i ? f->w / 3 + 2 : 0) <= w)
+					break;
+			}
+		}
 		bool tx = v->state == RS_TX && d->sel == i, rx = !tx && p->rx;
-		color_t c = tx ? ui_col.tx : rx ? ui_col.rx : d->sel == i ? ui_col.fg : ui_col.dim;
+		color_t c = s->entry && d->sel == i && p->vfo ? ui_col.warn :
+			    tx ? ui_col.tx : rx ? ui_col.rx : d->sel == i ? ui_col.fg : ui_col.dim;
 		// The arrow in the room a selection bar would take: f->w / 3 wide, half the letter high, a 2 px gap; the
 		// other line starts at 0
 		int aw = d->sel == i ? f->w / 3 + 2 : 0, ah = (f->h / 2) | 1;
@@ -2111,6 +2135,8 @@ static const char *dual_hint(const radio_view_t *v, const ui_state_t *s)
 	const ui_dual_t *d = &s->dual;
 	if (v->state == RS_TX_DENIED)
 		return deny_action(v);
+	if (s->entry)
+		return TR("OK tune  Back delete");
 	if (s->locked)
 		return TR(TEXT_ALT_OPEN "Keys locked: hold * to unlock" TEXT_ALT_NEXT "Locked: hold * to unlock" TEXT_ALT_CLOSE);
 	// Talk back on the channel a call came in on: the way back now
@@ -2168,7 +2194,7 @@ void ui_draw_home_dual(const radio_view_t *v, const ui_state_t *s)
 		const dual_fit_t *ft = &fit;
 		const font_t *sm = L->small;
 		int ph = dual_pane_h(ft) + 2 * pad;
-		const font_t *f0 = dual_name_font(&s->dual, 0, ft->name), *f1 = dual_name_font(&s->dual, 1, ft->name);
+		const font_t *f0 = dual_name_font(s, 0, ft->name), *f1 = dual_name_font(s, 1, ft->name);
 		dual_nf = f0->h < f1->h ? f0 : f1;
 		if (dual_nf->h < ft->target->h)
 			dual_nf = ft->target;	// never smaller than the row under it: a long name is shortened instead
