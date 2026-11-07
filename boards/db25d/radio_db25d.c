@@ -335,7 +335,7 @@ static void dmr_disarm(void)
 
 // One burst, the stock TX on (3.2, 4.4 steps 2-7 without the audio): RX paths off, 50 us, main chip to f and the LO
 // off, the page's TX-on delay, PA select and the RX supply off, 200 us, the band's TX supply, the ramp up
-void db25d_burst_on(hrc_rfburst_wait_fn wait)
+void db25d_burst_on(hrc_rfburst_wait_fn wait, uint32_t elapsed_us)
 {
 	hrc_pin_write(PIN_RX_FRONT_END, false);
 	hrc_pin_write(PIN_UHF_RX, false);
@@ -343,7 +343,7 @@ void db25d_burst_on(hrc_rfburst_wait_fn wait)
 	wait(TX_RX_OFF_US);
 	db25d_main_burst(synth_hz(tx_hz), true);
 	db25d_lo_off();
-	wait(tx_on_us);
+	wait(tx_on_us > elapsed_us ? tx_on_us - elapsed_us : 0);	// the key-up delay counts from the RF TX interrupt
 	DAC_DATA_B = 0;
 	hrc_pin_write(tx_uhf ? PIN_VHF_TX : PIN_UHF_TX, false);
 	hrc_pin_write(tx_uhf ? PIN_UHF_TX : PIN_VHF_TX, true);

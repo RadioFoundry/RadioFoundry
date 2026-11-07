@@ -23,8 +23,10 @@
 typedef void (*hrc_rfburst_wait_fn)(uint32_t us);
 
 typedef struct {
-	// One burst's TX on, from the RF task: the RF to the TX frequency and the PA up
-	void (*on)(hrc_rfburst_wait_fn wait);
+	// One burst's TX on, from the RF task, elapsed_us after its RF TX interrupt: the RF to the TX frequency and the
+	// PA up. The board's key-up wait counts from the interrupt (less elapsed_us), so a late wake doesn't make the
+	// PA late
+	void (*on)(hrc_rfburst_wait_fn wait, uint32_t elapsed_us);
 	// The burst's TX off, from the RF task, elapsed_us after its RF TX interrupt; now: at once, no hold (an aborted
 	// transmission). Returns how late the ramp down started against its point (hrc_rfburst_late_us), in us
 	uint32_t (*off)(hrc_rfburst_wait_fn wait, uint32_t elapsed_us, bool now);
@@ -37,6 +39,14 @@ typedef struct {
 	uint32_t late;		// TX-offs whose ramp down started after their point
 	uint32_t last_late_us;
 	char last_by;		// what woke the last TX-off: 'R' RF RX interrupt, 'T' the engine (slot tick), 'A' abort
+	// Since the last arm, in us: the RF TX interrupt to the task running the TX-on (largest), the interrupt to the end
+	// of the TX-on, the PA up (smallest, largest), and how far an RF TX interrupt was off 60 ms after the one before
+	// (largest, before the correction: a late interrupt, as when the modem's interrupts were masked)
+	uint32_t wake_max_us;
+	uint32_t up_min_us;
+	uint32_t up_max_us;
+	uint32_t grid_max_us;
+	uint32_t regridded;	// bursts whose RF TX interrupt came late and were timed from the grid instead
 } hrc_rfburst_stats_t;
 
 #if CONFIG_DMR

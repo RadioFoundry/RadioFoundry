@@ -15,6 +15,8 @@
 #define WAIT_SPIN_US		50u		// shorter waits spin, as the stock delay routine does
 #define WAIT_TIMEOUT_MS		10u		// the timer never fired: go on
 #define DISARM_WAIT_MS		20u
+#define FRAME_US		60000u		// one RF TX interrupt per TDMA frame while transmitting
+#define GRID_SLACK_US		30u		// an RF TX interrupt later than this off the frame grid was held up
 
 #define EV_ON		0x01u	// RF TX interrupt: the burst's TX on
 #define EV_OFF_TICK	0x02u	// the engine ends the burst (slot tick 20 ms on, or a halt)
@@ -30,6 +32,7 @@ static volatile bool rf_tx;		// the RF is in its TX state (written by the task)
 static volatile bool rf_busy;		// the task is running a sequence
 static volatile uint32_t t_on;		// hrc_micros() at the burst's RF TX interrupt
 static uint32_t pending;		// events that came while the task waited for its timer
+static uint32_t t_on_prev;		// the burst before's t_on, for the grid check (0: none since the arm)
 static hrc_rfburst_stats_t stats;
 
 static void rf_post(uint32_t ev)
@@ -98,6 +101,42 @@ static void rf_wait(uint32_t us)
 	hrc_timer_stop(TIMER_BOARD);
 }
 
+// The TX-on timing (hrc_rfburst_stats_t)
+static void note_burst(uint32_t t0, uint32_t wake, uint32_t up)
+{
+	if (wake > stats.wake_max_us) {
+		stats.wake_max_us = wake;
+	}
+	if (stats.up_min_us == 0 || up < stats.up_min_us) {
+		stats.up_min_us = up;
+	}
+	if (up > stats.up_max_us) {
+		stats.up_max_us = up;
+	}
+	t_on_prev = t0;
+}
+
+// The burst's RF TX interrupt time. The modem's interrupts are masked while the slot engine holds its lock, so the
+// interrupt can come a few hundred us late, and the key-up and the hold to the burst's end with it. The bursts keep
+// the frame grid (on the SDR bench: 60 ms, sd 25 us), so a stamp later than the grid's point by more than the slack is
+// taken back to it. The first burst after the arm has no grid yet
+static uint32_t on_time(uint32_t stamp)
+{
+	uint32_t d = stamp - t_on_prev;
+	if (t_on_prev == 0 || d <= FRAME_US / 2 || d >= FRAME_US * 3 / 2) {
+		return stamp;
+	}
+	uint32_t off = d > FRAME_US ? d - FRAME_US : FRAME_US - d;
+	if (off > stats.grid_max_us) {
+		stats.grid_max_us = off;
+	}
+	if (d > FRAME_US + GRID_SLACK_US) {
+		stats.regridded++;
+		return t_on_prev + FRAME_US;
+	}
+	return stamp;
+}
+
 static void rf_task_fn(void *arg)
 {
 	(void)arg;
@@ -109,9 +148,14 @@ static void rf_task_fn(void *arg)
 		}
 		rf_busy = true;
 		if ((v & EV_ON) != 0 && keyed && !rf_tx) {
-			board->on(rf_wait);
+			uint32_t t0 = on_time(t_on);
+			t_on = t0;
+			uint32_t wake = hrc_micros() - t0;
+			board->on(rf_wait, wake);
+			uint32_t up = hrc_micros() - t0;
 			rf_tx = true;
 			stats.bursts++;
+			note_burst(t0, wake, up);
 		}
 		if ((v & (EV_OFF_TICK | EV_OFF_RFRX | EV_ABORT)) != 0 && rf_tx) {
 			bool now = (v & EV_ABORT) != 0;
@@ -143,6 +187,8 @@ void hrc_rfburst_init(hrc7000_t *m, const hrc_rfburst_board_t *b)
 void hrc_rfburst_arm(void)
 {
 	hrc7000_wr(modem, C7_INTERP_CLEAR, C7_INT_RF_RX);
+	t_on_prev = 0;
+	stats.wake_max_us = stats.up_min_us = stats.up_max_us = stats.grid_max_us = stats.regridded = 0;
 	keyed = true;
 	hrc_irq_enable(IRQ_MODEM_RF_RX, true);
 }
