@@ -685,8 +685,8 @@ waits for the link ACK and the TMS ACK start when the transmission ends, so they
 
 ### 12.7 Open
 
-- A MOTOTRBO radio refuses our rate 1/2 confirmed packets (12.9), although our CRC-9 and CRC-32 follow the standard
-  and match its own rate 3/4 blocks. Not explained.
+- A MOTOTRBO radio refuses our rate 1/2 confirmed packets (12.9), whatever their blocks hold. Whether other firmware
+  versions do is not known.
 - The sliding window (TS 102 361-3 5.4.4) is not used.
 - Fragmentation (FSN chains) is not built: one packet per datagram, so a datagram longer than the air MTU (12.8)
   doesn't go. The gateway drops IP fragments from the host too ([usb-network.md](usb-network.md) 3.2).
@@ -749,8 +749,17 @@ portable (confirmed: also its TMS ACK back). Each failing case was sent at least
   `IP_UNCONFIRMED_RATE` in `dmrDataService.c`). Text and other packets outside the IP path stay at rate 1/2.
 - Rate 1/2 confirmed: the portable answers the first try with a NACK (class 1, type 1, packet CRC failed), each retry
   with a selective ACK that has only block 0. Our blocks follow B.3.9 and B.3.10, and both CRCs, computed the same
-  way, check on the portable's own rate 3/4 blocks. Neither the serial number least significant bit first in the
-  CRC-9 nor the CRC-9's MSB and the serial number swapped in octet 0 was taken either.
+  way, check on the portable's own rate 3/4 blocks. 14 other block forms got the same answer, block 0 always taken:
+
+  | Changed | Forms |
+  |---|---|
+  | CRC-9 | serial number least significant bit first; serial number before the data; serial number 0 in every block; the 2006 edition's form (serial number first, no mask); a wrong CRC-9 on block 0 |
+  | Octet 0 | the CRC-9's MSB and the serial number swapped |
+  | Block | 12 octets with no serial number or CRC-9 |
+  | CRC-32 | the 2006 edition's form (no octet-pair swap, inverted, most significant octet first); without the swap only; over each block's serial number and CRC-9 octets too |
+
+  Block 0 taken with a wrong CRC-9 means the portable doesn't check the blocks at this rate. Rate 1/2 confirmed has
+  been in the standard since V1.2.1 (2006), and the portable never sends it itself: likely its firmware.
 - Rate 3/4 unconfirmed: nothing comes back (none is due), and the portable shows nothing.
 - One portable on one firmware version: more radios and versions are needed before calling this MOTOTRBO behavior.
 - The portable's link response comes in the next frame, 30 ms after our data terminator. A radio still switching
