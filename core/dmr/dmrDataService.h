@@ -125,6 +125,8 @@ typedef struct
 	void (*notify)(const dmrDataEvent_t *event, void *ctx);
 	// Every packet received (to us or not), for the IP gateway when it is ported (may be NULL)
 	void (*packet)(const dmrDataPacket_t *packet, void *ctx);
+	// An NMEA sentence heard on UDP DMR_UDP_PORT_NMEA, to us or a group we listen to: a position report (may be NULL)
+	void (*position)(uint32_t src, const uint8_t *nmea, int length, uint32_t nowMs, void *ctx);
 	void *ctx;
 } dmrDataEnv_t;
 
