@@ -895,8 +895,11 @@ static void message_in(const ax25_frame_t *f, const aprs_parsed_t *p)
 	}
 	if (p->ack || p->rej) {
 		if (a.out.active && strcmp(a.out.to, from) == 0 && strcmp(a.out.msgno, p->msgno) == 0) {
-			a.out.acked = true;
-			a.out.next_ms = a.now;
+			a.out.acked = p->ack;
+			if (p->rej)
+				a.out.active = false;
+			else
+				a.out.next_ms = a.now;
 			changed();
 		}
 		return;
@@ -1448,11 +1451,17 @@ static char *message_coord(char *p, int32_t value, bool lon)
 
 bool aprs_send_message_opts(const char *to, const char *text, uint8_t flags)
 {
+	if (to == NULL || text == NULL)
+		return false;
 	ax25_addr_t x;
 	size_t tl = strlen(to), xl = strlen(text);
 	if (!ax25_addr_parse(to, tl, &x) || xl == 0 || xl > APRS_MSG_TEXT_MAX ||
 	    (flags & ~(APRS_MSG_ACK | APRS_MSG_POSITION)) != 0) {
 		return false;
+	}
+	for (size_t i = 0; i < xl; i++) {
+		if ((uint8_t)text[i] < 0x20u || (uint8_t)text[i] > 0x7eu)
+			return false;
 	}
 	char composed[APRS_MSG_TEXT_MAX + 1];
 	if (flags & APRS_MSG_POSITION) {

@@ -99,6 +99,8 @@ fake board whose AFSK output is demodulated back to frames.
   and append a position snapshot as ` @DD.DDDDN DDD.DDDDW` in the message text. Both are per-message choices; requesting
   an acknowledgment is on and including position is off when the composer opens. A position needs a current GPS, host
   or fixed source. Its text counts toward the 67-character limit; a message that cannot fit is refused.
+  The send API accepts printable ASCII text and rejects control bytes. An incoming `rej` stops retries without
+  reporting the message as acknowledged.
 - Settings > Connections > Message format can select APRS on a board with an AFSK transmit path. Messages > New APRS
   message asks for an AX.25 callsign with optional SSID, then sends a localized preset or a typed message through
   `aprs_send_message`. Presets fold accented letters to printable ASCII; typed text uses the keypad editor and holds

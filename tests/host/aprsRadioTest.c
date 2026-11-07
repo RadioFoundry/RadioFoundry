@@ -678,6 +678,8 @@ static void test_messages(void)
 	configure(0, false);
 	CHECK(!aprs_send_message("Q1ABC-9", ""));
 	CHECK(!aprs_send_message("not a call", "Hello"));
+	CHECK(!aprs_send_message("Q1ABC-9", "Line\nTwo"));
+	CHECK(!aprs_send_message(NULL, "Hello"));
 	aprs_cfg_t cfg;
 	aprs_get_cfg(&cfg);
 	aprs_cfg_t bad = cfg;
@@ -758,6 +760,29 @@ static void test_message_options(void)
 	CHECK(wait_start(2, 5000));
 	CHECK(strstr(frames[1], "::K1ABC-9  :Ack me{") != NULL);
 }
+
+#if CONFIG_APRS_RX
+static void test_message_rejection(void)
+{
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	CHECK(aprs_send_message("Q1ABC-9", "Hello"));
+	CHECK(wait_start(1, 5000));
+	const char *brace = strchr(frames[0], '{');
+	CHECK(brace != NULL);
+	char rej[64];
+	snprintf(rej, sizeof(rej), "Q1ABC-9>APRS::Q1TST-7  :rej%s", brace != NULL ? brace + 1 : "");
+	wait_idle();
+	rx_line(rej);
+	run(200u * 1000u);
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(!v.msg_pending && !v.msg_acked);
+	CHECK(hw.starts == 1);
+	CHECK(aprs_send_message("Q1ABC-9", "Another"));
+}
+#endif
 
 #if CONFIG_APRS_RX
 static void test_stations_digi_igate(void)
@@ -1239,6 +1264,9 @@ int main(void)
 	test_host_kiss_nmea();
 	test_messages();
 	test_message_options();
+#if CONFIG_APRS_RX
+	test_message_rejection();
+#endif
 	test_dmr_position();
 	test_gps_setting();
 	test_gps_status();
