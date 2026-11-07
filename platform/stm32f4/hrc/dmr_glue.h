@@ -48,7 +48,7 @@ typedef struct {
 } stm32_hrc_dmr_stats_t;
 
 // Lines stm32_hrc_dmr_stats_line formats (at most about 26 characters each, the diagnostics page)
-#define STM32_HRC_DMR_DIAG_LINES	22
+#define STM32_HRC_DMR_DIAG_LINES	23
 
 #if CONFIG_DMR
 // Once, from the radio init, after the chip is attached: interrupt lines (left off), task

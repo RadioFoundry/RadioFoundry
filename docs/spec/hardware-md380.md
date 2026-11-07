@@ -358,9 +358,26 @@ frames checked at any bit offset); with it, the read at the tick after the call'
 The slot engine does this for chips with `rx_voice_read` (`hrc_chip_t`): a header, late entry or information report
 starts the decoder (0x22 = 0x27, bits 2-0 keeping the 0x11 block's 0x07), the voice port is read at every tick, the
 first read whose frames check (two of three C0 words with at most one error) locks the slot, and that slot's reads
-go to the stack as bursts A to F. A read that hasn't changed, or has no frame that checks, is a lost burst; six in a
-row end the reception (0x22 = 0x17). The chip's voice class reports are ignored, and its 25 ms report delay doesn't
-count as out of step.
+go to the stack as bursts A to F. A read that hasn't changed since the last tick, or has no frame that checks, is a
+lost burst; six in a row end the reception (0x22 = 0x17). The port is read at every tick, the other slot's too: a
+silent talker's bursts are the same bytes every time, so only a port that stopped moving is a lost burst. A read
+compared with this slot's last burst lost every burst of a silent call after the first ([gotchas 1.11](gotchas.md)).
+That the port moves at the other slot's tick on a direct channel with nothing on that slot comes from the on-air
+table above; if it doesn't, the same bytes stay lost bursts. The diagnostics line `tr c b same bad` counts receptions,
+bursts and lost reads by cause. The chip's voice class reports are ignored, and its 25 ms report delay doesn't count
+as out of step.
+
+So on this chip an empty `drx` trace shows only that no read was taken. It doesn't show that the chip went quiet.
+
+A reception lost mid-call costs more than its gap (`drx` and log times of a bench run, 2026-11-07, two gaps alike;
+[gotchas 1.12](gotchas.md)):
+
+| Step | Time after the last burst | What happens |
+|---|---|---|
+| Six lost reads | 360 ms | DecodeStop. Nothing is read until the next chip interrupt |
+| 13 ticks without a burst | 420 ms | `rs l`: the receiver restarts, which drops the chip's sync |
+| Hunting for sync | about 660 ms | The timeslot interrupts stop for about 240 ms, so the tick count falls behind the air |
+| Late entry report | about 1 s | The chip has assembled the LC. The first read after it is burst F (the trace's slot counts fit that, and the bursts are numbered from A, so they stay one off until the call ends) |
 
 A burst is in the port one tick after its slot's report, so the read at a tick holds the burst of the slot that
 started two ticks before. The engine takes this as fixed: the read is named, and given its slot counter, from the

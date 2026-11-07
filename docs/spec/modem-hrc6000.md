@@ -334,9 +334,9 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
   `dle <ev><res> @<ticks> v<voice> <src>` (ev: `F` burst F, `f` F's repeated report, `A` the next burst A, `P`
   post-access, `p` post-access just before the reception, `H` header; res: `n` differs from the capture, taken; `s`
   same, held back; `v` same, taken after more than one superframe; `k` differs, kept for the next voice burst; `c` CRC
-  error flagged; `o` the other slot's call's, held back). Diagnostics lines `lc n= s= v= c=` (at F),
-  `lc2 a= f= p= k= o=` (found at A, at F's repeat, at post-access; kept LCs handed over; held back as the other slot's
-  call's) and `lt <how><capture src> <ev><res><ticks>...` (the last reception).
+  error flagged; `o` the other slot's call's, held back; `r` an interrupted call's, read twice, kept, 5.6). Diagnostics
+  lines `lc n= s= v= c=` (at F), `lc2 a= f= p= k= o= r=` (found at A, at F's repeat, at post-access; kept LCs handed
+  over; held back as the other slot's call's; interrupted calls taken back) and `lt <how><capture src> <ev><res><ticks>...` (the last reception).
 - Talker alias and GPS embedded data (FLCO 4-8) appear in the same page 2 location as the embedded LC.
 
 ### 5.3 Timeslot tracking (repeater signals)
@@ -380,7 +380,7 @@ the CC is held. Release the hold after 5 s of no received audio while idle.
 | Signal | Rule |
 |---|---|
 | Terminator with LC, good CRC | ends the call in **direct mode**. Through a repeater, ignore it: the repeater echoes our own terminators, which would end our next reception |
-| no valid burst for 13 timeslot interrupts while receiving (about 390 ms) | call over; restart the receiver |
+| no valid burst for 13 timeslot interrupts while receiving (about 390 ms) | call over; restart the receiver. The restart drops the chip's sync, so it costs more than the wait ([gotchas 1.12](gotchas.md)) |
 | no valid burst for 20 timeslot interrupts while idle | restart the receiver |
 | no timeslot interrupt for 200 ms while not idle | the modem has stopped: re-initialize the DMR state and the receiver |
 | slot captured but silent for the "capture timeout" (user setting, seconds) through a repeater, no slot filter | switch to the other slot |
@@ -392,8 +392,27 @@ The post-access interrupt (0x82 bit 4) comes when the chip acquires a voice call
 signaling. If idle, with the CC held and matching: write 0x41=0x50 and start receiving as for a header. Skip voice
 until two bursts A have passed, unless the source ID is already known and isn't our own. The LC comes from page 2 once
 the embedded LC is complete (subject to the sticky-LC rule above). The driver reads page 2 at the interrupt and keeps an
-LC that differs from the capture for the next voice burst (counted as `lc2 p=`, traced as `P`); whether the interrupt
-comes on a late entry, and when relative to burst F, is what the trace shows.
+LC that differs from the capture for the next voice burst (counted as `lc2 p=`, traced as `P`). On the HR_C5000 the
+interrupt comes once per superframe, just after burst E (bench trace 2026-11-07), and starts the decoder, so it comes
+before the reception. An LC read then that differs from the last capture is kept for the reception's first burst
+(traced `pk`): the capture that follows holds that same LC, and the sticky rule would make it wait for the second F.
+Whether the HR_C6000 raises it the same way is unknown.
+
+**Resuming a call.** A call that stopped with no terminator and comes back has the sticky LC problem in its worst
+form: the LC in page 2 is the call's own, so the sticky rule waits for the second F (22 ticks). That page 2 still
+shows the call's LC proves nothing: it would show the same if another caller had started. The post-access interrupt
+does prove it, read twice:
+
+| Rule | Why |
+|---|---|
+| Two post-access reads, 8-13 ticks apart, both show the LC of a slot's call that is open (no terminator) with voice in the last 50 ticks (1.5 s) | Each read is an LC the chip assembled from what is on air. One read isn't enough: nothing on air shows page 2 is written by the time the interrupt comes, and gotchas 1.4a shows it can lag |
+| Any read showing another LC clears the count | That LC follows the normal rules, so another caller is never played or named as the old call |
+| A terminator closes the call | The same LC after it is a new call, with the sticky rule |
+| An identical LC from a new transmission | Treated as the same call. Same source and destination, so the name shown is right |
+
+This takes back about one superframe of the wait, not all of it (traced `Pr`, counted as `lc2 r=`). Taking the first
+read would save another 300 ms, but needs an on-air run with a second caller in the gap. The call stack counts the
+call once (`rx_calls_resumed`, [dmr-modem.md](dmr-modem.md) 2.4).
 
 ### 5.7 Audio buffering
 

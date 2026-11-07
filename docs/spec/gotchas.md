@@ -104,6 +104,27 @@ the same weakness in another form: its TC stops changing while a slot is closed 
 when the slot that ended and the one before it were both opened for receive; after our own transmission, a closed
 slot or a lock, skip the first read. Radios: HR_C6000, HR_C5000.
 
+**1.11 The HR_C5000 lost every silent burst.**
+Symptom: bench calls played 2-17 of 120 voice bursts, in a trace with the headers, one burst A, then nothing. Cause: a
+burst on this chip is a change in the voice port, read at the ticks, and the read was compared with this slot's last
+burst. A silent talker's bursts are the same bytes every time (the bench sends one AMBE+2 silence frame throughout), so
+each looked like a port that had stopped, and six ended the reception. Bit errors made a few reads differ, which is
+why some got through. Speech never showed it, and a pause in speech can. Rule: read the port at every tick and compare
+with the last tick's read; only a port that stopped moving is a lost burst. Test with bursts that repeat, not only
+with varied ones. The host test reproduces it (1 of 36 bursts before, 36 after); not yet confirmed on the radio.
+Radios: HR_C5000.
+
+**1.12 A short dropout costs a second, and the restart is most of it.**
+Symptom: bursts stop mid-call, and voice plays again about 1.7 s later, on a stream the radio otherwise took
+whole. Cause: the wait for the loss (420 ms) is the smaller part. The restart drops the chip's sync: it needs the next
+voice sync (up to 360 ms) and a superframe of embedded LC before its late entry report. Then the sticky rule (1.4)
+waited 22 more ticks for an LC the radio already knew. What starts the gap isn't known: neither the driver nor the chip
+reports it. Rule: count lost reads by cause (`tr same bad`), don't read an empty trace as a quiet chip on a chip that
+doesn't report voice (1.11), and take a call back only on proof it's the same call
+([modem-hrc6000.md](modem-hrc6000.md) 5.6). The LC wait is shorter now. The restart still costs what it did: holding
+it off helps only if the chip keeps its sync through a gap, which isn't known. Radios: HR_C5000 measured; the LC rule
+applies to any chip with a post-access interrupt.
+
 ## 2. DMR modem timing: HR_C7000
 
 **2.1 The TX interrupts must be hooked.** Without the TX timeslot interrupt (vector 62) and the RF TX interrupt (vector 64) connected, the TX handler is never called and DMR TX never starts. TX states must run on the
