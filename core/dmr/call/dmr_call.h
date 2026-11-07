@@ -229,6 +229,11 @@ void dmr_call_set_tx_gps(const dmr_gps_t *gps);
 void dmr_call_reply_cancel(void);
 // The whole stack runs here: queued modem events, PTT, timeouts, TX queue filling. Call every 10-25 ms with the time
 void dmr_call_poll(uint32_t now_ms);
+// Called when a transmission ends (the modem's DMR_EV_TX_DONE or DMR_EV_TX_REJECTED, already queued): poll now rather
+// than at the next tick, so the receiver is back before a reply 30 ms after the last burst (a confirmed data ACK). From
+// the modem's event callback, at task level (hal_dmr_modem.h): post, never poll or block. NULL: none. Kept across
+// dmr_call_init
+void dmr_call_set_wake(void (*fn)(void));
 
 const dmr_call_view_t *dmr_call_view(void);
 
