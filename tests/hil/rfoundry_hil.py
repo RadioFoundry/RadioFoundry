@@ -1048,6 +1048,53 @@ class SdrBench:
         """fm_tx_start, then its done record once the last sample went out"""
         return self.fm_tx_start(freq, program, max_s, **fields).wait(max_s + 15)
 
+    # ── a bench board's confirmed data responder (the line protocol's mssim op, the gateway's bench-api.md 14.2) ──
+    def mssim_arm(self, freq, cc, profile, seconds=120):
+        """The TX board answers individual confirmed data packets on freq (MHz) as a radio would, per profile (answer,
+        slots: the answer's first burst this many 30 ms slots after the end burst's start, end: terminator or block,
+        to, from: bench-api.md). It holds the board's transmitter until mssim_disarm() or `seconds`. Needs the lease and
+        --allow-rf; a board without the responder skips."""
+        if not self.allow_rf:
+            raise RuntimeError("the bench board's confirmed data responder keys up: needs --allow-rf")
+        self._tx_check(freq)
+        if not self.api:
+            skip("bench", "the SDR bench host has no confirmed data responder: needs a bench board (--bench-api)")
+        self._need_lease()
+        L = self._line()
+        self._api_claim(freq)
+        req = {"op": "mssim", "action": "arm", "session": self._api_session, "freq": freq, "cc": cc,
+               "seconds": int(seconds)}
+        if self.api_level is not None:
+            req["power"] = self.api_level
+        req.update(profile)
+        try:
+            r = L.request(L.address(self.api), req, timeout=60)
+        except L.BenchLineError as e:
+            self._api_fail(e, f"the confirmed data responder on {freq} MHz")
+        self._mssim_since = 0
+        return r.get("mssim", r)
+
+    def mssim_log(self):
+        """The responder's log entries since the last call: one per confirmed packet it heard (src, dst, ns, heard,
+        terminator, answer, sent, failed, turnaround_us, gap_us ...)"""
+        L = self._line()
+        try:
+            r = L.request(L.address(self.api), {"op": "mssim", "action": "status", "session": self._api_session,
+                                                "since": getattr(self, "_mssim_since", 0)})
+        except L.BenchLineError as e:
+            self._api_fail(e, "the confirmed data responder's log")
+        m = r.get("mssim", {})
+        self._mssim_since = m.get("next", self._mssim_since)
+        return m.get("log", [])
+
+    def mssim_disarm(self):
+        """Gives the board's transmitter back (errors ignored: the session's end frees it too)"""
+        L = self._line()
+        try:
+            L.request(L.address(self.api), {"op": "mssim", "action": "disarm", "session": self._api_session})
+        except L.BenchLineError:
+            pass
+
     def can_fm_rx(self):
         """True when the receive board demodulates FM itself (the rx op, mode fm): a second measurement of what the
         radio sends, beside the analysis of the board's I/Q"""
