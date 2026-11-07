@@ -188,6 +188,10 @@ transmitting in the slot after the next one, in phase with the bursts being rece
   (for example against the previous call's LC): the same talker calling again then costs a superframe more for
   each layer (HIL 2026-10-10: a late entry joined at burst 9 of 36 played 7 bursts instead of 13).
 - Skip the first two bursts A of a late entry before playing audio, unless the source is already known and isn't us.
+- A call that faded (no terminator) and comes back within 1.5 s (`DMR_CALL_RESUME_MS`) with the same LC, on the same
+  slot, is one call with a hole in it: the sink sees it end and begin, `rx_calls` counts it once and
+  `rx_calls_resumed` counts the return. The LC reaching the stack is still the driver's to prove: an LC in a sticky
+  buffer doesn't show the same call is on air ([modem-hrc6000.md](modem-hrc6000.md) 5.6).
 - A lone voice burst (noise, a stray) must not start a call: require a B 60 ms after an A (SFR practice). An LC that
   comes with the first burst is held with that burst until the next burst makes the pair, then both are played. The
   HR_C7000 reports voice only once it has the LC, so its first burst carries it (HIL 2026-10-15: dropping that LC cost a

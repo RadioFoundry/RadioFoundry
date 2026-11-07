@@ -520,6 +520,16 @@ static void rx_end(uint32_t now)
 	s.dirty = true;
 }
 
+// The call that faded a moment ago, back by late entry with its own LC: one call with a hole in it, not two (a
+// terminator did end it). Only the books: it plays as any late entry does
+static bool rx_resuming(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, uint32_t now)
+{
+	return !elapsed(now, s.last_call_end_ms, s.call_end_seen, DMR_CALL_RESUME_MS) && b->ts == s.call_ts &&
+	       memcmp(lc, s.call_lc, DMR_LC_BYTES) == 0 &&
+	       (!s.term_seen || elapsed(now, s.term_ms, true, DMR_CALL_RESUME_MS) ||
+		memcmp(lc, s.term_lc, DMR_LC_BYTES) != 0);
+}
+
 // A voice LC (header, or embedded) for our slot: a new call, or a new talker on the call being heard
 static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool late, uint32_t now)
 {
@@ -533,6 +543,7 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 
 	bool continuing = s.rx != RXC_NONE;
 	bool new_talker = !continuing || l.src != s.view.caller.src;
+	bool resumed = late && !continuing && rx_resuming(lc, b, now);
 
 	if (s.rx == RXC_PLAY) {
 		dual_flush();
@@ -571,19 +582,23 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 			c->pi_key = s.pi_pending_key;
 			c->encrypted = true;
 		}
-		s.view.call_start_ms = now;
 #if CONFIG_SFR
 		sfrDedupReset(&s.sfr_dd);
 #endif
-		stats.rx_calls++;
-		if (late)
-			stats.rx_late_entries++;
-		if (!c->group)
-			stats.rx_private_calls++;
-		if (c->emergency)
-			stats.rx_emergency_calls++;
-		if (c->encrypted)
-			stats.rx_encrypted_calls++;
+		if (resumed) {
+			stats.rx_calls_resumed++;
+		} else {
+			s.view.call_start_ms = now;
+			stats.rx_calls++;
+			if (late)
+				stats.rx_late_entries++;
+			if (!c->group)
+				stats.rx_private_calls++;
+			if (c->emergency)
+				stats.rx_emergency_calls++;
+			if (c->encrypted)
+				stats.rx_encrypted_calls++;
+		}
 	} else if (c->encrypted && !was_encrypted) {
 		stats.rx_encrypted_calls++;
 	}
@@ -592,7 +607,7 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 		s.view.cc = b->cc;
 
 	s.rx = rx_accept(&l, now) ? RXC_PLAY : RXC_OTHER;
-	if (s.rx == RXC_PLAY && !continuing)
+	if (s.rx == RXC_PLAY && !continuing && !resumed)
 		stats.rx_calls_played++;
 	if (s.rx == RXC_PLAY && s.sink && s.sink->begin)
 		s.sink->begin(c, s.sink->ctx);
