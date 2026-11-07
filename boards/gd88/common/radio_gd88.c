@@ -343,6 +343,10 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	dmr_disarm();	// a retune ends DMR TX
 #endif
 	bool from_tx = tx_stop();
+	// Back from our DMR transmission on the same channel: the last burst's TX off already put the main chip on the IF
+	// in RX, the LO on and the RX path on (the glue's flag; dmr_disarm() above waited for the RF task). Set up again
+	// now, the receiver would miss a reply that comes in the next frame, 30 ms after our last burst
+	bool back = hrc_dmr_rf_on_rx() && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && !asleep && !from_tx;
 	rx_hz = hz;
 	rx_bw = bw;
 	rx_tone = rx_tone_in != NULL ? *rx_tone_in : (subtone_t){ TONE_NONE, 0 };
@@ -350,6 +354,9 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	asleep = false;
 
 	ref_trim(hz);
+	if (back) {
+		return true;
+	}
 	tx_paths_off();
 	bk4819_set_state(&rf_main, BK4819_STATE_IDLE);
 	lo_tune(hz);
