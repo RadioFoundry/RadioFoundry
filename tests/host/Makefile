@@ -1037,6 +1037,12 @@ TESTS   += hrc7000IrqStallTest
 hrc7000IrqStallTest: hrc7000IrqStallTest.c $(ROOT)/platform/hrc7000/irq_stall.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000IrqStallTest.c
 
+# The 3-wire bit-banged bus (drivers/rf/rfbus): frames on a model chip, normal and fast timing
+TESTS   += rfbus3wTest
+
+rfbus3wTest: rfbus3wTest.c $(RFBUS) $(ROOT)/drivers/rf/rfbus/rfbus.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ rfbus3wTest.c $(RFBUS)
+
 # The GD32F30x clocks' fold (platform/gd32f30x/time_fold.h): 32-bit running counts against a 64-bit reference
 TESTS   += gd32TimeFoldTest
 
@@ -1052,7 +1058,7 @@ hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot
 
 run: run-platform
 run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest \
-		hrc7000IrqStallTest gd32TimeFoldTest
+		hrc7000IrqStallTest gd32TimeFoldTest rfbus3wTest
 	./bk4819Test
 	./at1141Test
 	./fd6818shTest
@@ -1061,6 +1067,7 @@ run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest h
 	./hrc7000UartFormatTest
 	./hrc7000IrqStallTest
 	./gd32TimeFoldTest
+	./rfbus3wTest
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin
 	./hrc7000CodecSlotTest hrc7000_test_slot.bin
 .PHONY: run-platform

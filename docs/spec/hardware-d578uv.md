@@ -441,6 +441,11 @@ kHz). The calibration's MODU (modulation) bytes feed it.
 The debug link's CHIP_REG ([debuglink.md](debuglink.md) 3.24) uses these numbers: chips 0-3 on pages 0 and 1, every
 register but 0x7F (the page itself); chip 4 is the PA5 trims device (5.5), page 0, registers 0-0xF, write-only.
 
+RadioFoundry clocks the bus as fast as the pin writes go, with one 1 us wait between the register byte and the data
+(the BK4819's limits: clock to 8 MHz, 1 us from the register byte's last falling edge to the next rising one), and
+sets the data pin's direction only when it changes. With a 1 us wait per half bit and the direction set on every bit
+the receive set-up after a DMR transmission (65 register writes) took about 15 ms; now about 6 ms.
+
 | Item | Value |
 | --- | --- |
 | Frequency | registers 0x38 (low) / 0x39 (high), 10 Hz units |
