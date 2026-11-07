@@ -31,8 +31,8 @@ summary = """\
 Builds for every board revision (SKY72310, "PLL1590" and LMX2571 synthesizers) and is offered to testers through the \
 bootloader and the flash stub. On a V1-V3 radio, the display, keys and encoder, debug link, programming, FM and DMR receive on both \
 bands with CTCSS / DCS, and transmit on both bands (FM and DMR; the MMDVM hotspot on UHF) work. SFR repeats calls but loses about 18% of the \
-inbound voice frames, so it is not fully supported yet. Transmit is in the build and armed per power cycle. Open: power per level, FM receive \
-audio level and squelch tail, SFR inbound frame loss."""
+inbound voice frames, so it is not fully supported yet. Transmit is in the build and armed per power cycle; every power level checked on a \
+wattmeter on both bands. Open: SFR inbound frame loss."""
 release = "testing"
 
 # This board's own switches (config.mk, config_md9600.h) aren't feature switches, so ci's per-switch builds don't cover
