@@ -22,7 +22,10 @@ test_rx_tone_decode_bench (rf, bench_service): the other side, with the bench bo
 the line protocol's tx op): the VFO on --fm-mhz with an RX tone of CTCSS 100.0 Hz or DCS D023N, the bench sends a
 1 kHz tone for 3 s with that sub-audio tone, and the audio opens (state rx, tone_ok=1); then with another one
 (CTCSS 131.8 Hz, DCS D025N), and then with none, and the audio stays muted the whole time of each. Skips on the
-SDR bench host (no FM transmitter there)."""
+SDR bench host (no FM transmitter there).
+
+test_wide_squelch_opens_like_narrow (optional): at level 1, whatever opens a 12.5 kHz channel opens a 25 kHz one, and
+a quiet 25 kHz channel stays shut. NOAA on an antenna, with --allow-rf also the bench's FM at several levels."""
 import time
 
 import pytest
@@ -93,6 +96,107 @@ def test_noaa_receive(radio, pytestconfig, request):
                 print(f"bench FM: opened {opened}, best RSSI {best} dBm; bench {tx.wait(5)}")
         assert opened or best > floor, (f"no signal on {hz / 1e6:.3f} MHz in 10 s: best RSSI {best} dBm "
                                         f"(floor {floor}); squelch {radio.core()['squelch']}")
+
+
+WIDE_LEVELS = (128, 180, 255)    # the bench's FM levels: a signal only weak ones leave near the squelch's threshold
+
+
+def _squelch_to(radio, level):
+    for _ in range(12):
+        now = int(radio.core()["squelch"])
+        if now == level:
+            return
+        radio.link.squelch_step(1 if now < level else -1)
+        time.sleep(0.15)
+    raise AssertionError(f"squelch stuck at {radio.core()['squelch']}, wanted {level}")
+
+
+def _listen(radio, seconds, tx=None):
+    """(opened, best RSSI) over `seconds`, or while the bench's transmission `tx` lasts"""
+    opened, best = False, -999
+    end = time.monotonic() + seconds
+    while tx.poll() is None if tx else time.monotonic() < end:
+        v = radio.core()
+        best = max(best, int(v["rssi_dbm"]))
+        opened = opened or v["state"] == "rx"
+        time.sleep(0.1)
+    return opened, best
+
+
+@pytest.mark.feature("fm", optional=True)
+def test_wide_squelch_opens_like_narrow(radio, pytestconfig, request):
+    """The squelch thresholds must suit both filters: at level 1, a signal that opens the 12.5 kHz channel opens the
+    25 kHz one, and a quiet 25 kHz channel stays shut. Weak signals are what tell them apart, so a strong one proves
+    nothing: NOAA (--noaa-mhz) on an antenna, and with --allow-rf the bench's FM at WIDE_LEVELS. A signal the narrow
+    filter doesn't open on is left out; none left: skip."""
+    if "VFO_FM" not in radio.features():
+        skip("not_built", "built without the FM VFO")
+    radio.go_home()
+    if radio.screen() == "hotspot":
+        skip("state", "the radio is in hotspot mode")
+    L = radio.link
+
+    def filter_(wide):
+        L.bandwidth(wide)
+        radio.wait_for(lambda v: v.get("ch.bw") == ("25k" if wide else "12k5"), sections=("channel",), what="bandwidth")
+        time.sleep(0.5)     # the squelch's noise window
+
+    signals = []
+    noaa = rig(pytestconfig, "noaa-mhz")
+    if radio.in_band(round(noaa * 1e6)):
+        signals.append((f"NOAA {noaa:g} MHz", noaa, None))
+    bench, fm = None, None
+    if pytestconfig.getoption("--allow-rf"):
+        fm = rig(pytestconfig, "fm-mhz", "the bench's signal needs")
+        bench = request.getfixturevalue("sdr_bench")
+        signals += [(f"bench level {p} on {fm:g} MHz", fm, p) for p in WIDE_LEVELS]
+    if not signals:
+        skip("opt_in", "no NOAA in the radio's bands, and the bench's signal transmits: run with --allow-rf")
+    program = [{"kind": "tone", "hz": 1000, "s": BENCH_FM_S, "level": 0.6}]
+
+    def receive(mhz, power):
+        if power is None:
+            return _listen(radio, 8)
+        with bench.lease():
+            tx = bench.fm_tx_start(mhz, program, power=power)
+            got = _listen(radio, 0, tx)
+            tx.wait(5)
+        return got
+
+    with radio.vfo_session():
+        level0 = int(radio.core()["squelch"])
+        problems, compared = [], 0
+        try:
+            _squelch_to(radio, 1)
+            for name, mhz, power in signals:
+                L.vfo_set(round(mhz * 1e6))
+                radio.wait_for(lambda v: v.get("rx_hz") == str(round(mhz * 1e6)), 3, what="VFO tuned")
+                filter_(False)
+                narrow, rssi = receive(mhz, power)
+                print(f"{name}: 12.5 kHz {'open' if narrow else 'shut'}, best RSSI {rssi} dBm")
+                if not narrow:
+                    continue
+                compared += 1
+                filter_(True)
+                wide, rssi = receive(mhz, power)
+                print(f"{name}: 25 kHz {'open' if wide else 'shut'}, best RSSI {rssi} dBm")
+                if not wide:
+                    problems.append(f"{name} opens level 1 at 12.5 kHz but not at 25 kHz (best RSSI {rssi} dBm)")
+            if bench:
+                L.vfo_set(round(fm * 1e6))
+                radio.wait_for(lambda v: v.get("rx_hz") == str(round(fm * 1e6)), 3, what="VFO tuned")
+                filter_(True)
+                with bench.lease():         # nothing of ours on the channel
+                    quiet, rssi = _listen(radio, 3)
+                print(f"{fm:g} MHz, nothing sent, 25 kHz: {'open' if quiet else 'shut'}, best RSSI {rssi} dBm")
+                if quiet:
+                    problems.append(f"{fm:g} MHz with nothing sent opened level 1 at 25 kHz ({rssi} dBm)")
+        finally:
+            filter_(False)
+            _squelch_to(radio, level0)
+        if not compared:
+            skip("bench", "no signal opened the 12.5 kHz channel, so nothing to compare (an antenna, or --allow-rf)")
+        assert not problems, "; ".join(problems)
 
 
 RX_TONES = (("ctcss", 1000, "CTCSS 100.0"), ("dcs", 0o23, "DCS D023N"))
