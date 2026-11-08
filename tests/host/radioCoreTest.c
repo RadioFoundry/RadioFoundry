@@ -264,6 +264,18 @@ bool codeplug_kv_set_u32(uint16_t key, uint32_t value)
 	cp_serial++;
 	return true;
 }
+bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n)
+{
+	// each op a u32 set, through the one-key fake
+	for (uint8_t i = 0; i < n; i++) {
+		const uint8_t *v = ops[i].value;
+		if (ops[i].len != 4 ||
+		    !codeplug_kv_set_u32(ops[i].key, v[0] | (uint32_t)v[1] << 8 | (uint32_t)v[2] << 16 | (uint32_t)v[3] << 24)) {
+			return false;
+		}
+	}
+	return true;
+}
 bool codeplug_set_dmr_id(uint32_t id)
 {
 	own_dmr_id = id;

@@ -61,21 +61,32 @@ static inline bool radio_keys_apply(dmrDataSettings_t *set)
 	return changed;
 }
 
-// Write a change of one setting to its key, else radio_keys_apply would put the codeplug's value back. False when it
-// couldn't (a CPS session holds the flash) while the codeplug has the key; with no key the change is the radio's own
-static inline bool radio_key_to_codeplug(const radio_key_t *k, uint32_t was, uint32_t id)
-{
-	uint32_t held;
-	return id == was || codeplug_kv_set_u32(k->key, id) || !codeplug_kv_get_id(k->key, &held);
-}
-
-// The same for every setting of the table that differs between was and set
+// Write every setting of the table that differs between was and set to its key, else radio_keys_apply would put the
+// codeplug's value back. One batch, so a change of several keys is written whole or not at all. False when it couldn't
+// (a CPS session holds the flash) while the codeplug has one of the keys; with none of them the change is the radio's
+// own
 static inline bool radio_keys_to_codeplug(const dmrDataSettings_t *was, const dmrDataSettings_t *set)
 {
+	codeplug_kv_op_t ops[RADIO_KEYS_N];
+	uint8_t v[RADIO_KEYS_N][4];
+	uint8_t n = 0;
 	for (size_t i = 0; i < RADIO_KEYS_N; i++) {
-		if (radio_keys[i].built &&
-		    !radio_key_to_codeplug(&radio_keys[i], radio_key_value(&radio_keys[i], was),
-					   radio_key_value(&radio_keys[i], set))) {
+		uint32_t id = radio_key_value(&radio_keys[i], set);
+		if (!radio_keys[i].built || id == radio_key_value(&radio_keys[i], was)) {
+			continue;
+		}
+		for (int b = 0; b < 4; b++) {
+			v[n][b] = (uint8_t)(id >> (8 * b));	// a u32, little endian (docs/spec/codeplug-settings.md 3.1)
+		}
+		ops[n] = (codeplug_kv_op_t){ radio_keys[i].key, sizeof(v[n]), v[n] };
+		n++;
+	}
+	if (n == 0 || codeplug_kv_write(ops, n)) {
+		return true;
+	}
+	for (uint8_t i = 0; i < n; i++) {
+		uint32_t held;
+		if (codeplug_kv_get_id(ops[i].key, &held)) {
 			return false;
 		}
 	}

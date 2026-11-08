@@ -33,6 +33,25 @@ bool codeplug_kv_set_u32(uint16_t key, uint32_t value)
 	return true;
 }
 
+static int kv_writes;	// batches written
+
+bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n)
+{
+	// all or nothing, as the real one: every op checked before any is applied
+	for (uint8_t i = 0; i < n; i++) {
+		if (kv_held || ops[i].key >= 4 || ops[i].len != 4) {
+			return false;
+		}
+	}
+	for (uint8_t i = 0; i < n; i++) {
+		const uint8_t *v = ops[i].value;
+		kv[ops[i].key].present = true;
+		kv[ops[i].key].id = v[0] | (uint32_t)v[1] << 8 | (uint32_t)v[2] << 16 | (uint32_t)v[3] << 24;
+	}
+	kv_writes++;
+	return true;
+}
+
 int main(void)
 {
 	// the rows are unique, known keys of the assigned range, and an unknown key is not found
@@ -84,6 +103,14 @@ int main(void)
 	memset(&kv, 0, sizeof(kv));
 	CHECK(radio_keys_to_codeplug(&was, &set));
 	kv_held = false;
+
+	// two settings changed at once: one batch, both keys
+	was = set;
+	set.arsServer = 3100444;
+	set.ipGatewayId = 3100555;
+	kv_writes = 0;
+	CHECK(radio_keys_to_codeplug(&was, &set) && kv_writes == 1 && kv[CODEPLUG_KEY_ARS_SERVER].id == 3100444 &&
+	      kv[CODEPLUG_KEY_IP_GATEWAY].id == 3100555);
 
 	printf("%d checks, %d failed\n", checks, failures);
 	return failures != 0;
