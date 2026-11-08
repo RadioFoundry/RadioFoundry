@@ -154,3 +154,15 @@ def test_another_pitch_or_a_pause_is_a_new_run():
     assert fm_measure.merge_tone_runs(beep) == beep
     apart = [(1750.0, 0.5, 0.8, 1250), (1750.0, 1.0, 1.3, 1250)]
     assert fm_measure.merge_tone_runs(apart) == apart
+
+
+def test_pieces_of_one_digit_are_joined():
+    got = fm_measure.merge_dtmf([("#", 1.203, 1.238, 763, 5.6, 1.8), ("#", 1.248, 1.333, 735, 5.4, 1.6)])
+    assert len(got) == 1 and got[0][:3] == ("#", 1.203, 1.333) and 735 <= got[0][3] <= 763
+
+
+def test_another_digit_or_a_new_press_stays_apart():
+    two = [("1", 0.9, 1.0, 700, 5.0, 1.0), ("2", 1.01, 1.1, 700, 5.0, 1.0)]
+    assert fm_measure.merge_dtmf(two) == two
+    again = [("7", 0.9, 1.0, 700, 5.0, 1.0), ("7", 1.04, 1.14, 700, 5.0, 1.0)]
+    assert fm_measure.merge_dtmf(again) == again

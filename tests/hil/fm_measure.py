@@ -22,6 +22,7 @@ AUDIO_DELAY_S = 0.01     # the board's squelch gate looks this far ahead, so its
 EDGE_S = 0.05            # left out of the voice figures at each end of a segment: the key-up and key-down transients
 MIN_SEGMENT_S = 0.3      # a shorter run of carrier blocks isn't a segment
 BRIDGE_S = 0.05          # a drop-out shorter than this doesn't end a segment
+DTMF_BRIDGE_S = 0.03     # a break in one digit shorter than this is a click, not a new key press
 SAME_TONE_HZ = 15.0      # two runs this close in pitch can be one tone
 LEVEL_STEP_S = 0.05
 
@@ -71,6 +72,21 @@ def merge_tone_runs(runs):
             out[-1] = ((f0 * n0 + f * n) / (n0 + n), a0, max(b0, b), (d0 * n0 + d * n) / (n0 + n))
         else:
             out.append((f, a, b, d))
+    return out
+
+
+def merge_dtmf(digits):
+    """The board's digits, in time order, with the pieces of one key press joined: on a weak signal a click splits a
+    digit. The same digit after a pause longer than DTMF_BRIDGE_S is a new press (the radios leave at least 40 ms)."""
+    out = []
+    for d in digits:
+        if out and out[-1][0] == d[0] and d[1] - out[-1][2] <= DTMF_BRIDGE_S:
+            p = out[-1]
+            np, nd = p[2] - p[1], d[2] - d[1]
+            out[-1] = (p[0], p[1], d[2], round((p[3] * np + d[3] * nd) / (np + nd)),
+                       round((p[4] * np + d[4] * nd) / (np + nd), 1), round((p[5] * np + d[5] * nd) / (np + nd), 1))
+        else:
+            out.append(d)
     return out
 
 
@@ -150,6 +166,7 @@ def measure(done, records, header=None, audio=None):
             r["dtmf"].append((d["digit"], round(float(d["t0"]), 3), round(float(d["t1"]), 3),
                               round(float(d.get("dev_hz", 0))), twist,
                               round(float(received_twist(twist, d["digit"])), 1)))
+        r["dtmf"] = merge_dtmf(r["dtmf"])
 
     # The carrier every 50 ms of the first segment: a slow change of it shows here
     r["track"] = []
