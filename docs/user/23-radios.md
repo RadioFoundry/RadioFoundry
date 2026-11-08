@@ -566,7 +566,7 @@ python3 tools/cps_client.py --port /dev/ttyUSB1 verify cp.bin
 ```
 
 `test-channels` makes channel 1 an FM channel (12.5 kHz, simplex, no tones), channel 2 a DMR channel on the same
-frequency (color code 1, timeslot 1, talk target group 91), and zone 1 holding both. With `--repeater MHz` it adds channel 3 to the zone: the same DMR channel as a repeater pair, receiving that frequency and transmitting on `--rx`. With `--watch MHz` it adds channel 4, last in the zone: FM, receive only, on that frequency (a channel off the test frequency for dual watch). `--zone2` adds zone 2, holding channel 1. It replaces those channels,
+frequency (color code 1, timeslot 1, talk target group 91), and zone 1 holding both. With `--repeater MHz` it adds channel 3 to the zone: the same DMR channel as a repeater pair, receiving that frequency and transmitting on `--rx`; a second frequency after `--repeater` adds channel 5 the same way, a second roaming site. With `--watch MHz` it adds channel 4, last in the zone: FM, receive only, on that frequency (a channel off the test frequency for dual watch). `--zone2` adds zone 2, holding channel 1. It replaces those channels,
 the first contact and the first zone and leaves everything else in the file. A DMR channel needs a build with
 `CONFIG_DMR=y` (the default); without it the radio lists only its FM channels. `verify` compares the regions the tool
 transfers. The write replaces whole 4 KB sectors, each in one step: a

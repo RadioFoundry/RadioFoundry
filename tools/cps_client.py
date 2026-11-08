@@ -412,21 +412,26 @@ def make_test_codeplug(img, rx_mhz, tg, cc, ts=1, dmr_id=None, callsign=None, re
     """Edit img (a flat image, file offset = flash address) so the radio has channel 1 (FM, 12.5 kHz, simplex), channel
     2 (DMR on the same frequency, color code cc, timeslot ts, talk target group tg = contact 1) and zone 1 holding both.
     With repeater_mhz also channel 3, in the zone too: DMR as channel 2 but duplex, receiving repeater_mhz (a repeater's
-    output) and transmitting on rx_mhz. With watch_mhz also channel 4, last in the zone: FM, receive only, on watch_mhz
+    output) and transmitting on rx_mhz; a second frequency there (a list) adds channel 5, last in the zone, the same
+    on that one (a second roaming site). With watch_mhz also channel 4, last in the zone: FM, receive only, on watch_mhz
     (dual watch's other channel off the test frequency). With zone2 also zone 2, holding channel 1 (zone changes).
     Everything else in img stays; zone slots 0 (and 1) and contact 1 are replaced. dmr_id and callsign set the radio's
     own."""
     hz = round(rx_mhz * 1e6)
     channels = [(1, _channel_record(f"Test FM {rx_mhz:.4f}", hz, hz, False)),
                 (2, _channel_record(f"Test DMR TG{tg}", hz, hz, True, cc, ts, contact=1))]
-    if repeater_mhz:
-        channels.append((3, _channel_record(f"DMR RPT {repeater_mhz:.4f}", round(repeater_mhz * 1e6), hz, True, cc, ts,
+    repeaters = [repeater_mhz] if isinstance(repeater_mhz, (int, float)) else list(repeater_mhz or [])
+    if repeaters:
+        channels.append((3, _channel_record(f"DMR RPT {repeaters[0]:.4f}", round(repeaters[0] * 1e6), hz, True, cc, ts,
                                             contact=1)))
     if watch_mhz:
         whz = round(watch_mhz * 1e6)
         rec = _channel_record(f"Watch {watch_mhz:.4f}", whz, whz, False)
         rec[0x33] |= 0x04                   # receive only (open-firmware-cps.md 7.3.3, flag byte 4)
         channels.append((4, rec))
+    if len(repeaters) > 1:
+        channels.append((5, _channel_record(f"DMR RPT {repeaters[1]:.4f}", round(repeaters[1] * 1e6), hz, True, cc, ts,
+                                            contact=1)))
     for number, rec in channels:
         _, a = channel_addr(number)
         img[a:a + CHANNEL_SIZE] = rec
@@ -515,8 +520,10 @@ def main(argv=None):
     t.add_argument("--ts", type=int, choices=(1, 2), default=1)
     t.add_argument("--id", type=int, help="the radio's DMR ID")
     t.add_argument("--call", help="the radio's name / callsign")
-    t.add_argument("--repeater", type=float, help="MHz: channel 3, a duplex DMR channel receiving this (a repeater's "
-                   "output, as test_dmr_outbound_voice needs) and transmitting on --rx")
+    t.add_argument("--repeater", type=float, nargs="+", metavar="MHz",
+                   help="MHz: channel 3, a duplex DMR channel receiving this (a repeater's output, as "
+                   "test_dmr_outbound_voice needs) and transmitting on --rx; a second MHz adds channel 5 the same "
+                   "(a second roaming site)")
     t.add_argument("--watch", type=float, help="MHz: channel 4, last in the zone, FM receive only on this (dual watch's "
                    "other channel, off the test frequency)")
     t.add_argument("--zone2", action="store_true", help="also zone 2, holding channel 1 (the zone change tests)")
@@ -528,7 +535,7 @@ def main(argv=None):
         with open(a.image, "wb") as f:
             f.write(img)
         print(f"{a.image}: channel 1 FM and channel 2 DMR (TG {a.tg}, CC {a.cc}, TS {a.ts}) on {a.rx:.4f} MHz" +
-              (f", channel 3 DMR receiving {a.repeater:.4f} MHz" if a.repeater else "") +
+              "".join(f", channel {n} DMR receiving {f:.4f} MHz" for n, f in zip((3, 5), a.repeater or [])) +
               (f", channel 4 FM receiving {a.watch:.4f} MHz" if a.watch else "") + ", zone 1" +
               (" and zone 2" if a.zone2 else ""))
         return 0
