@@ -58,8 +58,7 @@ static void ip_section(const dmrDataStats_t *s, const dmrDataSettings_t *set, dl
 	dmrDataIpTxStats_t x;
 
 	dmrDataGetIpTxStats(&x);
-	dl_text(t, "ip.built=1\nip.compress_built=%u\nip.confirmed_built=%u\n", CONFIG_DMR_UDP_COMPRESS,
-		CONFIG_DMR_CONFIRMED);
+	dl_text(t, "ip.built=1\nip.compress_built=%u\nip.confirmed_built=1\n", CONFIG_DMR_UDP_COMPRESS);
 	dl_text(t, "ip.compress=%s\nip.confirmed=%s\nip.tries=%u\n", set->udpCompress <= 2 ? compress[set->udpCompress] : "?",
 		set->ipConfirmed <= 2 ? confirmed[set->ipConfirmed] : "?",
 		(set->ipConfirmedTries >= 1 && set->ipConfirmedTries <= DMR_IPC_TRIES_MAX) ? set->ipConfirmedTries
@@ -78,6 +77,7 @@ static void ip_section(const dmrDataStats_t *s, const dmrDataSettings_t *set, dl
 		(unsigned)s->ipCnfAcks, (unsigned)s->ipCnfSacks, (unsigned)s->ipCnfNacks);
 	dl_text(t, "ip.cnf_resyncs=%u\nip.cnf_timeouts=%u\nip.cnf_failed=%u\nip.cnf_too_long=%u\n",
 		(unsigned)s->ipCnfResyncs, (unsigned)s->ipCnfTimeouts, (unsigned)s->ipCnfFailed, (unsigned)s->ipCnfTooLong);
+	dl_text(t, "ip.cnf_other=%u\nip.cnf_other_last=0x%06x\n", (unsigned)s->ipCnfOther, (unsigned)s->ipCnfOtherLast);
 	dl_text(t, "ip.rx_sacks_sent=%u\nip.rx_nacks_sent=%u\nip.rx_duplicates=%u\nip.rx_crc9_mismatch=%u\n",
 		(unsigned)s->rxSacksSent, (unsigned)s->rxNacksSent, (unsigned)s->rxConfirmedDuplicates,
 		(unsigned)dmrDataRxCrc9Mismatches());

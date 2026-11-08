@@ -122,11 +122,12 @@ def skip_reason(kind, reason):
     return f"[{kind}] {reason}"
 
 
-def skip(kind, reason):
-    """Skip the running test (or fixture) as pytest.skip does, with its kind."""
+def skip(kind, reason, module=False):
+    """Skip the running test (or fixture) as pytest.skip does, with its kind. module=True skips the whole module from
+    its top level, as pytest.skip(allow_module_level=True)."""
     __tracebackhide__ = True        # pytest reports the caller's line, not this one
     import pytest
-    e = pytest.skip.Exception(skip_reason(kind, reason))  # hil-skip: the helper
+    e = pytest.skip.Exception(skip_reason(kind, reason), allow_module_level=module)  # hil-skip: the helper
     e.kind = kind
     raise e
 
@@ -612,10 +613,11 @@ class Radio:
             if self.core().get("mode") != mode:
                 self._req_until(lambda: L.dmr_fields(mode=mode), lambda v: v.get("mode") == mode, "VFO mode back")
 
-    def find_channel(self, rx_hz, mode=None):
-        """Select the first channel receiving on rx_hz (and in mode 'fm' / 'dmr'): the current zone first, then the
-        others in order, so a test doesn't depend on the zone the radio was left in (restore() puts the zone back).
-        Returns the channel's position in the zone it selected. AssertionError if no zone has one."""
+    def find_channel(self, rx_hz, mode=None, simplex=False):
+        """Select the first channel receiving on rx_hz (and in mode 'fm' / 'dmr'; with simplex, also transmitting on
+        rx_hz, not a repeater pair): the current zone first, then the others in order, so a test doesn't depend on the
+        zone the radio was left in (restore() puts the zone back). Returns the channel's position in the zone it
+        selected. AssertionError if no zone has one."""
         L = self.link
         if self.core().get("vfo") == "1":
             self._req_until(lambda: L.vfo(False), lambda v: v.get("vfo") == "0", "VFO off")
@@ -628,7 +630,8 @@ class Radio:
             size = int(self.core().get("zone_size") or 0)
             for pos in range(size):
                 v = self._req_until(lambda: L.zone_pos(pos), lambda x: x.get("zone_pos") == str(pos), f"position {pos}")
-                if int(v["rx_hz"]) == int(rx_hz) and (mode is None or v.get("mode") == mode):
+                if int(v["rx_hz"]) == int(rx_hz) and (mode is None or v.get("mode") == mode) and \
+                        (not simplex or int(v.get("tx_hz") or 0) == int(rx_hz)):
                     return pos
             searched.append(f"{self.core().get('zone_name')!r} ({size})")
         raise AssertionError(f"no channel on {rx_hz / 1e6:.5f} MHz{' ' + mode if mode else ''} in any zone: "
@@ -1047,6 +1050,53 @@ class SdrBench:
     def fm_transmit(self, freq, program, max_s=10.0, **fields):
         """fm_tx_start, then its done record once the last sample went out"""
         return self.fm_tx_start(freq, program, max_s, **fields).wait(max_s + 15)
+
+    # ── a bench board's confirmed data responder (the line protocol's mssim op, the gateway's bench-api.md 14.2) ──
+    def mssim_arm(self, freq, cc, profile, seconds=120):
+        """The TX board answers individual confirmed data packets on freq (MHz) as a radio would, per profile (answer,
+        slots: the answer's first burst this many 30 ms slots after the end burst's start, end: terminator or block,
+        to, from: bench-api.md). It holds the board's transmitter until mssim_disarm() or `seconds`. Needs the lease and
+        --allow-rf; a board without the responder skips."""
+        if not self.allow_rf:
+            raise RuntimeError("the bench board's confirmed data responder keys up: needs --allow-rf")
+        self._tx_check(freq)
+        if not self.api:
+            skip("bench", "the SDR bench host has no confirmed data responder: needs a bench board (--bench-api)")
+        self._need_lease()
+        L = self._line()
+        self._api_claim(freq)
+        req = {"op": "mssim", "action": "arm", "session": self._api_session, "freq": freq, "cc": cc,
+               "seconds": int(seconds)}
+        if self.api_level is not None:
+            req["power"] = self.api_level
+        req.update(profile)
+        try:
+            r = L.request(L.address(self.api), req, timeout=60)
+        except L.BenchLineError as e:
+            self._api_fail(e, f"the confirmed data responder on {freq} MHz")
+        self._mssim_since = 0
+        return r.get("mssim", r)
+
+    def mssim_log(self):
+        """The responder's log entries since the last call: one per confirmed packet it heard (src, dst, ns, heard,
+        terminator, answer, sent, failed, turnaround_us, gap_us ...)"""
+        L = self._line()
+        try:
+            r = L.request(L.address(self.api), {"op": "mssim", "action": "status", "session": self._api_session,
+                                                "since": getattr(self, "_mssim_since", 0)})
+        except L.BenchLineError as e:
+            self._api_fail(e, "the confirmed data responder's log")
+        m = r.get("mssim", {})
+        self._mssim_since = m.get("next", self._mssim_since)
+        return m.get("log", [])
+
+    def mssim_disarm(self):
+        """Gives the board's transmitter back (errors ignored: the session's end frees it too)"""
+        L = self._line()
+        try:
+            L.request(L.address(self.api), {"op": "mssim", "action": "disarm", "session": self._api_session})
+        except L.BenchLineError:
+            pass
 
     def can_fm_rx(self):
         """True when the receive board demodulates FM itself (the rx op, mode fm): a second measurement of what the

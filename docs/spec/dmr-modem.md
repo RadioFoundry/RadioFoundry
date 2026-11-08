@@ -188,6 +188,10 @@ transmitting in the slot after the next one, in phase with the bursts being rece
   (for example against the previous call's LC): the same talker calling again then costs a superframe more for
   each layer (HIL 2026-10-10: a late entry joined at burst 9 of 36 played 7 bursts instead of 13).
 - Skip the first two bursts A of a late entry before playing audio, unless the source is already known and isn't us.
+- A call that faded (no terminator) and comes back within 1.5 s (`DMR_CALL_RESUME_MS`) with the same LC, on the same
+  slot, is one call with a hole in it: the sink sees it end and begin, `rx_calls` counts it once and
+  `rx_calls_resumed` counts the return. The LC reaching the stack is still the driver's to prove: an LC in a sticky
+  buffer doesn't show the same call is on air ([modem-hrc6000.md](modem-hrc6000.md) 5.6).
 - A lone voice burst (noise, a stray) must not start a call: require a B 60 ms after an A (SFR practice). An LC that
   comes with the first burst is held with that burst until the next burst makes the pair, then both are played. The
   HR_C7000 reports voice only once it has the LC, so its first burst carries it (HIL 2026-10-15: dropping that LC cost a
@@ -353,6 +357,11 @@ interrupt.
   air about 27.5-31 ms with sub-millisecond ramps.
 - A `burst_rx` event for every burst heard on a slot being received, within 10 ms of its slot.
 - `tx_done` only once the final burst (terminator, last data block) has left the antenna.
+- Receiving again within a few milliseconds of the last burst: a confirmed data response comes in the next frame,
+  30 ms after our terminator ([dmr-data.md](dmr-data.md) 12.9). The glue keeps a back-to-receive flag
+  (`hrc_dmr_rf_on_rx`, `stm32_hrc_dmr_rf_on_rx`): set when the last burst switch, or `tx_done` on a board that keeps
+  the synthesizer on TX between bursts, put the receiver back; cleared by the next burst, a new channel and entering
+  or leaving DMR. A board's `rx()` for the same DMR channel leaves the receiver as it is while the flag is set.
 - Recovery: a stalled modem (no tick for 200 ms) re-initialized by the driver, reported as `sync_lost`.
 
 ### 6.5 What the stack must not assume

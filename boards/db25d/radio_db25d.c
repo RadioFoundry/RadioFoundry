@@ -263,6 +263,14 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	}
 #if CONFIG_DMR && DB25D_DMR_TX
 	dmr_disarm();	// a retune ends DMR TX (the hotspot's rx() disarms too)
+	// Back from our DMR transmission on the same channel: the last burst's TX off already set the receiver up on hz
+	// (the glue's flag; dmr_disarm() above waited for the RF task)
+	bool back = hrc_dmr_rf_on_rx() && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && tuned_ppb == trim_ppb;
+	if (back) {
+		rx_bw = bw;
+		rx_tone = rx_tone_in != NULL ? *rx_tone_in : (subtone_t){ TONE_NONE, 0 };
+		return true;
+	}
 #endif
 	bool from_tx = tx_stop();
 	rx_hz = hz;

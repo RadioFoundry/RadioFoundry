@@ -14,9 +14,8 @@
 //
 // DMR (modem-hrc6000.md 4.3 with the HR_C5000 notes of hardware-md380.md 4): the synthesizer is moved to the TX
 // frequency at the first burst of a transmission (from the RF TX interrupt, without waiting for lock: the interrupt
-// comes some milliseconds before the burst). On simplex it goes back with tx_off() and between bursts only the PA
-// supply and loop are switched; on a split channel (repeater, duplex hotspot) every burst's end puts the receiver back
-// on the RX frequency, so the radio hears the repeater between its bursts (dmr_rx_back). Each burst's PA is dropped
+// comes some milliseconds before the burst). Between bursts only the PA supply and loop are switched; the end of the
+// transmission puts the receiver back on the RX frequency at once (rf_dmr_tx_done), simplex too. Each burst's PA is dropped
 // 30 ms after its RF TX interrupt by a TIM7 one-shot (gotchas 3.4: the phase of the HR_C5000's timeslot interrupt
 // against the burst is unknown); the slot engine's own PA-off at the next timeslot interrupt is the fallback.
 #include <stddef.h>
@@ -411,14 +410,17 @@ static void rf_dmr_wait_lock(void)
 	r.diag.pll_locked = PIN_READ(PIN_PLL_LD);
 }
 
-// A transmission is over (the slot engine's TX done, task level, the modem interrupts masked by the caller): on a
-// split channel (repeater, duplex hotspot) the receiver back on the RX frequency, so the radio hears the repeater's
-// answer to its wake-up. Left on the TX side, every key-up there ended in no_repeater (issue 108). Not per burst: the
-// switch there caught the burst on air. Simplex stays on TX until tx_off() (RX = TX)
-static void rf_dmr_tx_done(void)
+// A transmission is over (the slot engine's TX done, task level, the modem interrupts masked by the caller): the
+// receiver back on the RX frequency. On a split channel (repeater, duplex hotspot) the radio hears the repeater's
+// answer to its wake-up: left on the TX side, every key-up there ended in no_repeater (issue 108). On simplex too: the
+// receive LO is an IF away from the carrier, and a confirmed data response comes in the next frame, 30 ms after our
+// last burst, before tx_off() (the radio task) gets here. Left on the TX side until then, the radio missed nearly every
+// one (a receive CRC error instead), and the TX VCO kept leaking the carrier. Not per burst: the switch there caught
+// the burst on air
+static bool rf_dmr_tx_done(void)
 {
-	if (!r.dmr_armed || !r.dmr_tx_tuned || !r.rx_valid || r.dmr_tx_hz == r.rx_hz) {
-		return;
+	if (!r.dmr_armed || !r.dmr_tx_tuned || !r.rx_valid) {
+		return false;
 	}
 	pa_timer_stop();
 	pa_off();
@@ -428,6 +430,7 @@ static void rf_dmr_tx_done(void)
 	rx_path(true);
 	r.dmr_tx_tuned = false;
 	r.rf_rx_back++;
+	return true;
 }
 
 static void rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_back)
@@ -701,6 +704,8 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	(void)rx_tone;
 #endif
 	bool from_tx = r.dmr_tx_tuned;
+	// On rx_hz since the TX done (the glue's flag): a retune now would hit a reply
+	bool back = stm32_hrc_dmr_rf_on_rx() && r.mode == RADIO_MODE_DMR && same && !r.asleep;
 	if (r.mode == RADIO_MODE_DMR) {
 		dmr_disarm();
 	}
@@ -712,7 +717,9 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 
 	pa_off();
 	set_wide(bw == RADIO_BW_25K);
-	(void)pll_tune(rx_vco_hz(hz), false, true);	// a failure shows on the diagnostics page
+	if (!back) {
+		(void)pll_tune(rx_vco_hz(hz), false, true);	// a failure shows on the diagnostics page
+	}
 	rx_path(true);
 
 	md380_cal_point_t cal;

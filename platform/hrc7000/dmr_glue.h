@@ -28,6 +28,12 @@ void hrc_dmr_board_init(hrc7000_t *modem, const hrc_dmr_board_t *hooks);
 void hrc_dmr_enter(void);		// the modem has just entered DMR: engine on, interrupts on
 void hrc_dmr_leave(void);
 void hrc_dmr_rx_restart(void);
+// True after our transmission when the last burst switch put the RF back to receive (a board whose switch runs in a
+// task of its own: once its disarm has waited for the task). A board's rx() for the same DMR channel then skips its
+// retune: the other side's reply (a confirmed data response) comes in the next frame, 30 ms after our last burst, and
+// a retune then misses it. It stays true for a second rx() and is cleared by the next burst, a new channel
+// (hrc_dmr_rx_restart) and entering or leaving DMR. The board checks the frequency, trim and sleep itself
+bool hrc_dmr_rf_on_rx(void);
 bool hrc_dmr_tx_active(void);
 void hrc_dmr_tx_drop(void);
 // FM receive audio (fm_rx_audio.c): fn runs from the modem's system interrupt for each half the modem fills; NULL
@@ -49,6 +55,7 @@ static inline void hrc_dmr_board_init(hrc7000_t *modem, const hrc_dmr_board_t *h
 static inline void hrc_dmr_enter(void) {}
 static inline void hrc_dmr_leave(void) {}
 static inline void hrc_dmr_rx_restart(void) {}
+static inline bool hrc_dmr_rf_on_rx(void) { return false; }
 static inline bool hrc_dmr_tx_active(void) { return false; }
 static inline void hrc_dmr_tx_drop(void) {}
 static inline bool hrc_dmr_fm_rx_hook(void (*fn)(void)) { (void)fn; return false; }

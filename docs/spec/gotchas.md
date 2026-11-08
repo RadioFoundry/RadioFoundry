@@ -104,6 +104,28 @@ the same weakness in another form: its TC stops changing while a slot is closed 
 when the slot that ended and the one before it were both opened for receive; after our own transmission, a closed
 slot or a lock, skip the first read. Radios: HR_C6000, HR_C5000.
 
+**1.11 The HR_C5000 lost every silent burst.**
+Symptom: bench calls played 2-17 of 120 voice bursts, in a trace with the headers, one burst A, then nothing. Cause: a
+burst on this chip is a change in the voice port, read at the ticks, and the read was compared with this slot's last
+burst. A silent talker's bursts are the same bytes every time (the bench sends one AMBE+2 silence frame throughout), so
+each looked like a port that had stopped, and six ended the reception. Bit errors made a few reads differ, which is
+why some got through. Speech never showed it, and a pause in speech can. Rule: read the port at every tick and compare
+with the last tick's read; only a port that stopped moving is a lost burst. Test with bursts that repeat, not only
+with varied ones. The host test reproduces it (1 of 36 bursts before, 36 after), and on the radio on air a silent
+call played 94 of 120 bursts, up from 2-10.
+Radios: HR_C5000.
+
+**1.12 A short dropout costs a second, and the restart is most of it.**
+Symptom: bursts stop mid-call, and voice plays again about 1.7 s later, on a stream the radio otherwise took
+whole. Cause: the wait for the loss (420 ms) is the smaller part. The restart drops the chip's sync: it needs the next
+voice sync (up to 360 ms) and a superframe of embedded LC before its late entry report. Then the sticky rule (1.4)
+waited 22 more ticks for an LC the radio already knew. What starts the gap isn't known: neither the driver nor the chip
+reports it. Rule: count lost reads by cause (`tr same bad`), don't read an empty trace as a quiet chip on a chip that
+doesn't report voice (1.11), and take a call back only on proof it's the same call
+([modem-hrc6000.md](modem-hrc6000.md) 5.6). The LC wait is shorter now. The restart still costs what it did: holding
+it off helps only if the chip keeps its sync through a gap, which isn't known. Radios: HR_C5000 measured; the LC rule
+applies to any chip with a post-access interrupt.
+
 ## 2. DMR modem timing: HR_C7000
 
 **2.1 The TX interrupts must be hooked.** Without the TX timeslot interrupt (vector 62) and the RF TX interrupt (vector 64) connected, the TX handler is never called and DMR TX never starts. TX states must run on the
@@ -293,15 +315,24 @@ old code compared with the preamble's count and stopped after the header (blocks
 complete or 180 ms after its last frame, max 64 bursts (`DMR_DATA_MAX_BURSTS`); frames that can't be sent are NAKed, not silently ACKed.
 
 **5.6 TMS ACK sequence number is 7 bits.** The ACK carried only the low 5 bits, so senders numbering past 31 never
-matched. Bytes must equal a MOTOTRBO capture (example 00 04 9F 00 95 20 for s/n 53), sent as its own transmission after
-the ETSI response, with preambles.
+matched. Bytes must equal what MOTOTRBO radios and BrandMeister send (00 04 BF 00 9E 60 for s/n 126; header 0xBF,
+not 0x9F: the 0x20 bit is set in every TMS header), sent as its own transmission after the ETSI response, with
+preambles. Confirmed data from BrandMeister has N(S) 0 every time: a repeat must match the data too, not only N(S).
 
 **5.7 Reply queue, not a single slot.** ACKs written by the modem task and read by the main task in one slot were
 overwritten by a second message. Use a single-producer / single-consumer queue (4 entries usable with one slot kept
 free, entries older than 5 s dropped), with compiler barriers so the entry is written before the index store.
 
 **5.8 Duplicate message suppression.** A sender that missed our ACK resends: ACK again but don't store or ring again
-when radio, sequence number and text match within 60 s.
+when radio and text match within 60 s. Not the sequence number: BrandMeister resends an unacknowledged text with a
+new one.
+
+**5.9 BrandMeister ignores data with few preambles.** Confirmed TMS sent with 2 preamble CSBKs reached BrandMeister
+intact and got nothing back: no link ACK, no NACK. The same packet with 16 got its link ACK in under a second. Text and
+IP packets go with 16 where the burst list has room ([dmr-data.md](dmr-data.md) 12.6.4). The hotspot reaches
+BrandMeister over UDP, often on Wi-Fi, so a single unanswered packet may just be lost; the preamble rule rests on 10
+unanswered sends in a row and one identical pair. The TMS ACK goes with 16 too, 1.5 s after our link ACK, and confirmed,
+as MOTOTRBO radios send it: BrandMeister ignored an unconfirmed one with 16 preambles twice ([dmr-data.md](dmr-data.md) 5.1).
 
 ## 6. Privacy
 
