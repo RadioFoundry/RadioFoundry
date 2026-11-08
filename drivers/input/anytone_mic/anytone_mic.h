@@ -173,6 +173,37 @@ static inline void anytone_mic_status(uint8_t out[ANYTONE_MIC_STATUS_LEN], uint8
 	out[ANYTONE_MIC_STATUS_LEN - 1u] = 0x06;
 }
 
+// What the lights show. Sides are the radio's A and B as the user selects them, not its receivers: the channel receiver
+// follows the selected side, or alternates in dual watch on one receiver, and the second receiver has the other side
+typedef struct {
+	bool dual;			// dual watch is on: sel and at count, else everything is side A
+	uint8_t sel;			// the selected (main) side, 0 A, 1 B; transmissions go out on it
+	uint8_t at;			// the side the channel receiver is on
+	bool rx, tx;			// the channel receiver hears a call that plays; the radio transmits
+	bool rx2_busy, rx2_audio;	// the second receiver: squelch open; it has the speaker
+} anytone_mic_radio_t;
+
+static inline uint8_t anytone_mic_lights(const anytone_mic_radio_t *r)
+{
+	uint8_t sel = r->dual ? r->sel & 1u : 0u;
+	uint8_t at = r->dual ? r->at & 1u : 0u;
+	uint8_t l = sel != 0u ? ANYTONE_MIC_LIGHT_MAIN_B : 0u;
+	if (r->rx) {
+		l |= at != 0u ? ANYTONE_MIC_LIGHT_B_BUSY : ANYTONE_MIC_LIGHT_A_BUSY;
+		l |= at == sel ? ANYTONE_MIC_LIGHT_MAIN_AUDIO : ANYTONE_MIC_LIGHT_OTHER_AUDIO;
+	}
+	if (r->tx) {
+		l |= sel != 0u ? ANYTONE_MIC_LIGHT_B_TX : ANYTONE_MIC_LIGHT_A_TX;
+	}
+	if (r->rx2_busy) {
+		l |= sel != 0u ? ANYTONE_MIC_LIGHT_A_BUSY : ANYTONE_MIC_LIGHT_B_BUSY;
+	}
+	if (r->rx2_audio) {
+		l |= ANYTONE_MIC_LIGHT_OTHER_AUDIO;
+	}
+	return l;
+}
+
 // The bytes to send the microphone at now_ms, into out (cap: room for the answers owed and a status frame): the answers
 // first, then a status frame when a presence frame asked for one, lights (ANYTONE_MIC_LIGHT_*) changed or a poll is due.
 // Their count; 0 while it isn't present

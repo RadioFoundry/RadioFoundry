@@ -203,9 +203,9 @@ too, keeps it present, so PTT held for minutes stays on. After 3 s without a byt
 its PTT and key, and PA9 is an input again: a microphone pulled out mid-transmission unkeys within 3 s. For 50 ms
 after any byte the two lines aren't read as keys, so a frame's bits never look like PTT; a plain microphone's PTT is a
 break to the USART, which counts as no byte. The core debounces all of them as the other keys. The status frame carries the
-microphone's lights (a change goes out within 200 ms): side A busy and audio open follow the core's green LED, side A
-transmitting its red, side B busy and audio open come from side B, and the main side stays A. Not checked on a
-microphone. The diagnostics line `hmic` shows whether a serial microphone is
+microphone's lights (a change goes out within 200 ms). The sides are the ones the user selects: the main side is the selected one,
+transmit lights it, a playing reception lights the side the channel receiver is on, and side B's receiver lights the
+side not selected (`anytone_mic_lights`). Not checked on a microphone. The diagnostics line `hmic` shows whether a serial microphone is
 present, its frames and dropped bytes and the key code held.
 
 RadioFoundry's key names (`d578uv.h`): `KEY_UP`, `KEY_DOWN`, `KEY_MENU`, `KEY_EXIT` for 0x14, 0x16, 0x0E and 0x0F,
