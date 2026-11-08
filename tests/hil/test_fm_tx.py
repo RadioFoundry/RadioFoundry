@@ -30,8 +30,9 @@ Pass criteria:
   5 kHz (25 kHz) peak, twist (high tone over low, after a receiver's 750 us de-emphasis, worked out from the twist the
   board reports on the carrier) -8 to +4 dB; the view's dtmf_digits and dtmf_sent agree.
 - test_fm_tx_dtmf_stop: a digit held down when PTT is released, then when a 3 s time-out ends the transmission: one
-  keyed segment, the digit decoded for at least 0.8 s and ending within 0.15 s of the carrier, the view's dtmf back
-  to '-' at once, one digit counted (the key's late release sends nothing).
+  keyed segment, the digit decoded for at least 0.8 s (breaks up to 150 ms allowed: the board can lose a weak digit)
+  and ending within 0.15 s of the carrier, the view's dtmf back to '-' at once, one digit counted (the key's late
+  release sends nothing).
 - test_fm_tx_power_levels: 1.5 s overs at the three lowest power levels, one measurement
   per key-up from the board's own power reading: each level's carrier is at least 1 dB stronger than the one below,
   and the lowest to the third differs by 5-15 dB (nominally 10). Relative only: the receiver isn't calibrated, and the
@@ -233,6 +234,7 @@ def test_fm_tx_roger_beep(fm_vfo, sdr_bench, pytestconfig):
         f"roger_beep 0 still ends with a tone: {results[0]['tones']}"
 
 
+HELD_BREAK_S = 0.15     # the longest moment a held digit may go unheard by the bench board
 DTMF_SENT = "1#5D0"     # the last a 20 ms tap: the radio holds it to its shortest tone
 
 
@@ -321,9 +323,13 @@ def test_fm_tx_dtmf_stop(fm_vfo, sdr_bench, pytestconfig):
             r = key_and_check(fm_vfo, sdr_bench, pytestconfig, 12.5, key=held(digit, end), seconds=7, dtmf=True)
         print(f"{name}: segment {r['spans']}, dtmf {r['dtmf']}")
         assert len(r["spans"]) == 1, f"{name}: {len(r['spans'])} keyed segments"
-        assert [d[0] for d in r["dtmf"]] == [digit], f"{name}: decoded {r['dtmf']}"
-        seg_end, tone_end = r["spans"][0][1], r["dtmf"][0][2]
-        assert r["dtmf"][0][2] - r["dtmf"][0][1] >= 0.8, f"{name}: the held digit lasted {r['dtmf'][0]}"
+        # One key held down: on a weak signal the board can lose a held digit for a moment. The radio sent it once
+        # (dtmf_sent below); a longer break would be the tone really stopping
+        assert r["dtmf"] and {d[0] for d in r["dtmf"]} == {digit}, f"{name}: decoded {r['dtmf']}"
+        for a, b in zip(r["dtmf"], r["dtmf"][1:]):
+            assert b[1] - a[2] <= HELD_BREAK_S, f"{name}: the held digit stopped for {b[1] - a[2]:.3f} s: {r['dtmf']}"
+        seg_end, tone_end = r["spans"][0][1], r["dtmf"][-1][2]
+        assert tone_end - r["dtmf"][0][1] >= 0.8, f"{name}: the held digit lasted {r['dtmf']}"
         assert abs(seg_end - tone_end) <= 0.15, f"{name}: tone ends {tone_end:.3f} s, carrier {seg_end:.3f} s"
         assert int(fm_vfo.view(["features"]).get("dtmf_sent", "0")) == sent0 + 1
 
