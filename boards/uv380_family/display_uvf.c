@@ -159,13 +159,13 @@ static void bl_stream_stop(DMA_Stream_TypeDef *st)
 	}
 }
 
-static void bl_stream_start(DMA_Stream_TypeDef *st, uint32_t *word)
+static void bl_stream_start(DMA_Stream_TypeDef *st, uint32_t *word, uint32_t prio)
 {
 	st->PAR = (uint32_t)&PIN_PORT(PIN_LCD_BACKLIGHT)->BSRR;
 	st->M0AR = (uint32_t)word;
 	st->NDTR = 1;
 	st->FCR = 0;	// direct mode
-	st->CR = (6u << DMA_SxCR_CHSEL_Pos) | DMA_SxCR_PL_1 | DMA_SxCR_MSIZE_1 | DMA_SxCR_PSIZE_1 | DMA_SxCR_CIRC |
+	st->CR = (6u << DMA_SxCR_CHSEL_Pos) | prio | DMA_SxCR_MSIZE_1 | DMA_SxCR_PSIZE_1 | DMA_SxCR_CIRC |
 		DMA_SxCR_DIR_0;
 	st->CR |= DMA_SxCR_EN;
 }
@@ -183,8 +183,9 @@ static void bl_dma_start(void)
 {
 	DMA_RAM_OK(&bl_set);
 	DMA_RAM_OK(&bl_clear);
-	bl_stream_start(DMA2_Stream1, &bl_clear);
-	bl_stream_start(DMA2_Stream5, &bl_set);
+	// Set above clear: on a priority tie the lower stream (1, the clear) wins, which could land it first at a low duty
+	bl_stream_start(DMA2_Stream1, &bl_clear, DMA_SxCR_PL_1);
+	bl_stream_start(DMA2_Stream5, &bl_set, DMA_SxCR_PL);
 	bl_running = true;
 }
 

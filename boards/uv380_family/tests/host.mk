@@ -14,7 +14,7 @@ calibrationTestMduv380: $(HERE)calibrationTest.c $(HERE)../calibration_uvf.c $(H
 # The backlight PWM steps (#330)
 TESTS   += backlightTest
 backlightTest: $(HERE)backlightTest.c $(HERE)../backlight_uvf.h $(ROOT)/tests/host/fuzz.h
-	$(CC) $(CFLAGS) -I$(dir $<).. -I$(ROOT)/tests/host -o $@ $(filter %.c,$^)
+	$(CC) $(CFLAGS) -I$(dir $<).. -I$(ROOT)/tests/host -Wshadow -o $@ $(filter %.c,$^)
 
 run-boards:: calibrationTest calibrationTestMduv380 backlightTest
 	./calibrationTest
