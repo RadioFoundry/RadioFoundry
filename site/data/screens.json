@@ -236,6 +236,18 @@
     "DMR_EMERGENCY"
    ]
   },
+  "emergency_hold": {
+   "group": "calls",
+   "needs": [
+    "DMR_EMERGENCY"
+   ]
+  },
+  "emergency_sent": {
+   "group": "calls",
+   "needs": [
+    "DMR_EMERGENCY"
+   ]
+  },
   "banner_call_alert": {
    "group": "calls",
    "needs": [
@@ -715,6 +727,13 @@
    "group": "settings",
    "needs": [
     "UI_SETTINGS"
+   ]
+  },
+  "settings_emergency": {
+   "group": "settings",
+   "needs": [
+    "UI_SETTINGS",
+    "DMR_EMERGENCY"
    ]
   },
   "settings_editor": {

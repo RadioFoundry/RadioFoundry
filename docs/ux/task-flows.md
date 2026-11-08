@@ -258,7 +258,7 @@ No presses: on RX the Activity region shows, in order of what's known: name (con
 
 ## 17. Emergency (if enabled in the codeplug)
 
-Hold `EMERGENCY` (top/orange key) 1.5 s. A rising tone during the hold, then "EMERGENCY" full screen in red with a word label, the radio sends the alarm and (per codeplug) opens the mic. Cancel: hold the same key 1.5 s. If emergency is not configured, the hold gives a hint "Emergency is not set up on this radio" instead of nothing. On radios without a top key it is an assignable long press only, never on `PTT` or a key used for typing.
+Hold `EMERGENCY` (top/orange key) to the end of the countdown (3 s by default; from 0.3 s the screen shows the seconds left, a bar and the target, with a beep and a pulse each second; letting go stops it). Then "Emergency sent" full screen in red, the radio sends the alarm and (per its settings) opens the mic. Cancel: the same hold. If emergency is not configured, the hold gives a hint "Emergency is not set up on this radio" instead of nothing. On radios without a top key it is an assignable long press only, never on `PTT` or a key used for typing.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|

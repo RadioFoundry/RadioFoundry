@@ -39,7 +39,7 @@ a key the radio doesn't have.
 | **Previous zone**, **Next zone** | Home: previous or next zone | |
 | **Monitor** | FM: opens the squelch while held. DMR: digital monitor (every talkgroup) on or off | |
 | **Talk target** | Talk target picker (DMR channels) | Dual watch on or off |
-| **Power level** | Home: next power level | Hold 1.5 s: emergency ([Emergency](11-emergency.md)) |
+| **Power level** | Home: next power level | Hold: emergency, after a countdown ([Emergency](11-emergency.md)) |
 | **PTT** | Transmit | |
 | Channel knob | Each click is one step. Clockwise: the next channel on Home (as **Up**), the next row down in a list or menu, a higher value in an editor. Counterclockwise: the opposite | |
 

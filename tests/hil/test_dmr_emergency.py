@@ -161,17 +161,22 @@ def test_emergency_call_tx(radio, sdr_bench, pytestconfig, em_settings):
 @pytest.mark.feature("dmr_emergency")
 @pytest.mark.radio_tx
 def test_emergency_key_hold(radio, pytestconfig, em_settings):
-    """The EMERGENCY key action (the DM-1701's SK3 held 1.5 s; injected as the action, held for the
-    hold-to-activate time): alarm-only, one try; the UI says "EMERGENCY sent", em.state leaves idle; a second hold
-    cancels ("Emergency canceled", em.state idle). No bench: the alarm goes out at the lowest power."""
+    """The EMERGENCY key action (the DM-1701's SK3 held; injected as the action's long press with no release, so the
+    UI's countdown runs to the end of the hold, 3 s by default, docs/spec/dmr-emergency.md 5.1): alarm-only, one try;
+    the outcome screen says "Emergency sent", em.state leaves idle; a second hold cancels (em.state idle). No bench:
+    the alarm goes out at the lowest power."""
     from rfoundry_hil import LONG
     _emergency_setup(radio, pytestconfig, tx=True)
     radio.link.emergency_settings("alarm", 0, tries=1, hot_mic_s=0)
     radio.wait_for(lambda x: x.get("em.mode") == "alarm", sections=("dmr_ext",), what="alarm mode")
     radio.press("emergency", LONG)
-    radio.wait_for(lambda x: x.get("em.state") in ("alarm", "active") and "EMERGENCY sent" in x.get("ui.toast", ""),
-                   timeout=5.0, sections=("dmr_ext", "link"), what="emergency started by the key")
+    radio.wait_for(lambda x: x.get("ui.screen") == "emergency-hold", timeout=2.0, sections=("link",),
+                   what="the countdown")
+    radio.wait_for(lambda x: x.get("em.state") in ("alarm", "active"), timeout=8.0, sections=("dmr_ext",),
+                   what="emergency started at the end of the hold")
     radio.wait_for(lambda x: x.get("em.state") == "active", timeout=8.0, sections=("dmr_ext",), what="alarm sent")
+    radio.wait_for(lambda x: x.get("ui.screen") != "emergency-hold", timeout=5.0, sections=("link",),
+                   what="the outcome closed")
     radio.press("emergency", LONG)
-    radio.wait_for(lambda x: x.get("em.state") == "idle" and "canceled" in x.get("ui.toast", ""),
+    radio.wait_for(lambda x: x.get("em.state") == "idle", timeout=8.0,
                    sections=("dmr_ext", "link"), what="canceled by the key")

@@ -34,7 +34,7 @@ The manual names keys by the job they do. Each radio puts those jobs on its own 
 | **Monitor** | FM: squelch open while held. DMR: digital monitor on / off | SK1 | SK1 | SK1 | SK1 | P3 | SK1 |
 | **Talk target** | Talk target picker | Hold **#** | Hold **#** | Hold **#** | Hold **#** | Hold **P2** | Hold **#** |
 | **A/B** | Dual watch: the other channel / dual watch on or off | SK2 | SK2 | SK2 | SK2 | TONE/T.SEL | A/B key, SK2 |
-| **Power level** | Next power level / emergency (held 1.5 s) | SK3 | None | None | None | None | None |
+| **Power level** | Next power level / emergency (held, 3 s countdown) | SK3 | None | None | None | None | None |
 | **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | None | Left, Right | None | Left, Right |
 | **VFO** | Between the channel and the VFO / copy the channel to the VFO | None | None | None | None | None | VFO/MR key |
 | **Volume** | Open the volume editor. Radios without a volume knob only | None: the knob | None: the knob | None: the knob | None: the knob | VOL/SQL | None: the knob |
@@ -157,7 +157,7 @@ Follow [Installing](02-installing.md) with these values:
 | P1, P2 | The two front function keys | **Previous zone**, **Next zone** |
 | SK1 | The top side key, above **PTT** | **Monitor**. Held with **PTT** at power-on, it starts the bootloader |
 | SK2 | The side key below **PTT** | **A/B**: press to switch A / B in dual watch, hold for dual watch on or off. The talk target picker is on hold **#** |
-| SK3 | The lowest side key | **Power level**. Press: the next power level. Hold 1.5 s: emergency. A build without emergency says "Voice prompts: not in this build" on a hold |
+| SK3 | The lowest side key | **Power level**. Press: the next power level. Hold: emergency, after a countdown (3 s by default). A build without emergency says "Voice prompts: not in this build" on a hold |
 | **PTT** | | **PTT** |
 | Channel knob | | Channel knob |
 

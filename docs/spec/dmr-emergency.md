@@ -44,7 +44,8 @@ assumption.
 
 ## 3. The emergency key
 
-`dmr_emergency_start()` (UI: hold the emergency key, `ui_svc_emergency(true)`; debug link DMR_DATA op 7). Per the
+`dmr_emergency_start()` (UI: hold the emergency key to the end of its countdown, 5.1, `ui_svc_emergency(true)`;
+debug link DMR_DATA op 7). Per the
 mode:
 
 | Mode | What happens |
@@ -93,6 +94,37 @@ Kept in the settings store (`settings_t em_*`, `settings-store.md` 3); the radio
 The hot mic default (10 s) and keying it at all are owner decisions (`docs/ux/principles.md`: no transmission the
 user didn't ask for; holding the emergency key is that request).
 
+### 5.1 The key's hold
+
+The emergency key (a key map entry or side key whose long action is `ACT_EMERGENCY`) is held to start or cancel, with
+a countdown on the screen. Hold time counts from the press.
+
+| Step | Input layer (`core/input/input_engine.c`) | UI (`core/ui/ui_app.c`, screen `emergency-hold`) |
+|---|---|---|
+| Released before `INPUT_EMERGENCY_SHOW_MS` (0.3 s) | the key's short action (`GESTURE_PRESS`) | the key's own role, no countdown |
+| Held 0.3 s | `GESTURE_LONG` of `ACT_EMERGENCY` (`input_long_threshold`, whatever the long press time) | the countdown: "Hold for emergency" (or "Hold to cancel" while ours runs), the seconds left in large digits, a bar, the target ("Alarm to" / "Call to" and `dst`, else the channel's talk target), "Let go to stop" |
+| Each second of the hold | | `UI_BEEP_COUNTDOWN` and a vibration pulse (`UI_VIBE_CALL`; Settings > Sound > Vibrate applies) |
+| Released before the end | `GESTURE_UP`, value 1, of `ACT_EMERGENCY` (`input_long_up`) | nothing sent; the previous screen. BACK, long BACK or another screen pushed over the countdown do the same |
+| The end of the hold | | `ui_svc_emergency(true)` (or `false` to cancel); "Emergency sent" (red on color screens) with `UI_BEEP_EM_SENT`, `UI_VIBE_EMERGENCY`, or "Emergency canceled" with `UI_BEEP_EM_CANCELED`; up 2.5 s or until OK / BACK |
+
+A raw-edge key (monitor press, emergency hold) sends its own `GESTURE_UP` and then the emergency's. The beeps are not
+gated by Key tones (the radio core drops only `BEEP_KEY`) and are never `BEEP_EMERGENCY` (someone else's emergency).
+The red LED is the transmit LED of the alarm and the hot mic; there is no LED of its own.
+
+Settings > Keys > Emergency (`UI_SET_EM_*`, shown with `UI_FEAT_EMERGENCY`):
+
+| Setting | Default | Range | Kept in |
+|---|---|---|---|
+| Hold | 3 s | 1-10 s | `em_alarm_tries` bits 4-7 (`settings_em_hold_s`; 0 = 3 s) |
+| Emergency key | on | on, off (the hold does nothing; the short press keeps its role) | `em_flags` `SETTINGS_EM_KEY_OFF` |
+| Alert | beep and vibrate | beep and vibrate, silent (no beep, vibration or red screen) | `em_flags` `SETTINGS_EM_SILENT` |
+| Open mic | 10 s | off, 5-60 s | `hot_mic_s` above (`dmr_emergency_set_settings`) |
+
+These bits are the UI's: the radio core keeps them when it saves its own settings (`emergency_save`) and masks
+`em_alarm_tries` to bits 0-3 when it loads them. A record from before reads as hold 3 s, key on, beep on. An older
+firmware reads the tries out of range and uses the default 3. The target is `dst` as set over the debug link, else the
+channel's talk target; there is no picker on the radio.
+
 ## 6. Observing it
 
 Debug link view section `dmr_ext` (`debuglink.md` 3.7): `em.state em.mode em.dst ...`, the newest alert
@@ -109,4 +141,12 @@ Debug link view section `dmr_ext` (`debuglink.md` 3.7): `em.state em.mode em.dst
 - `radioCoreTest` `test_dmr_emergency`: the hot mic keys a call with the option to the talk target, released after
   the hot mic, the user's own calls keep the option until canceled, PTT takes the hot mic over, a set target, an
   emergency call heard raises one alert and one tone, `UI_EV_EMERGENCY`, the UI's key.
+- `inputTest` `test_emergency_hold`: the LONG at 0.3 s for every long press time and the UP at the release, plain and
+  raw-edge keys, one scan either side; a seeded run of random holds (`fuzz.h`).
+- `uiFlowTest` (`flows_em`, every display class, and `em_hold_checks`): 0.29 / 0.3 s, one tick before the end / at
+  the end for every hold 1-10 s, start and cancel, BACK and long BACK, Key off, Silent (no countdown or outcome beeps
+  or vibrations), the settings page; a seeded run of random holds, settings and display classes counting the beeps by
+  kind and the vibrations.
+- `radioCoreTest` `test_emergency_key_settings`: an older record's defaults, every hold and the clamped edges, the
+  radio core keeping the UI's bits, open mic through the module, the flash round trip.
 - HIL (opt-in RF): `tests/hil/test_dmr_emergency.py`, pass criteria in `tests/hil/README.md`.

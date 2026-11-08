@@ -29,13 +29,44 @@ alarm 3 times. Then it keys the transmitter for 10 s, so the people listening he
 call you make until you cancel carries the emergency flag and goes to the channel's talk target. Pressing **PTT**
 during the hot mic takes over the transmission.
 
-Hold the **Power level** key for 1.5 s. The screen says "EMERGENCY sent: hold
-again to cancel". Hold it again for 1.5 s to cancel ("Emergency canceled"). A short press of the same key still
-changes the power level. Letting go before 1.5 s never starts an emergency. Where it can't start (see below) the
-radio says "Emergency needs a DMR channel and ID".
+Hold the **Power level** key (or a side key set to **Emergency** as its hold, [Settings](17-settings.md#keys-key-8)).
+After 0.3 s the screen counts down: "Hold for emergency", the seconds left in large digits, a bar that fills, where the
+alarm goes ("Alarm to TG 3100 USA") and "Let go to stop". Each second the radio beeps and, if it has a vibration
+motor, pulses. Keep holding to the end (3 s from the press by default) and the radio starts the emergency: "Emergency
+sent" with its own two-tone sound, then hold again to cancel.
 
-Only radios with a **Power level** key can declare an emergency from the keys. The [Radio
-reference](23-radios.md#key-roles) says which radios have one.
+| You | The radio |
+|---|---|
+| Press the key shortly (under 0.3 s) | The key's own role: the next power level. No countdown |
+| Hold, then let go before the end | Nothing is sent. The previous screen comes back |
+| Hold, then press **Back** | The same: nothing is sent |
+| Hold to the end | The emergency starts: "Emergency sent" |
+| Hold again, during an emergency | "Hold to cancel" counts down; at the end "Emergency canceled". Let go early and it stays on |
+
+<img src="../ux/screens/160x120i5/emergency_hold.png" width="200" alt="The countdown while the emergency key is held">
+<img src="../ux/screens/160x120i5/emergency_sent.png" width="200" alt="Emergency sent">
+
+Where it can't start (see below) the radio says "Emergency needs a DMR channel and ID". The red LED lights while the
+alarm and the hot mic transmit, as for any transmission.
+
+### Emergency settings
+
+**Settings > Keys > Emergency** (only in builds with emergency):
+
+| Setting | Values | Default | Does |
+|---|---|---|---|
+| Hold | 1-10 s | 3 s | How long the key is held, from the press, to start or cancel |
+| Emergency key | On, Off | On | Off: holding the key does nothing emergency-related (its short press still works) |
+| Alert | Beep+vibrate, Silent | Beep+vibrate | Silent: the countdown and "Emergency sent" stay on the screen, with no beep, no vibration and no red screen |
+| Open mic | Off, 5 s ... 1 min | 10 s | How long the radio keys itself after the alarm (the hot mic). Off: you key the emergency call with **PTT** |
+
+<img src="../ux/screens/160x120i5/settings_emergency.png" width="200" alt="Settings > Keys > Emergency">
+
+The alarm goes to the channel's talk target, or to the target set over the debug link (below). The countdown shows
+which.
+
+Radios with a **Power level** or **SOS** key, or a side key set to Emergency, can declare an emergency from the keys.
+The [Radio reference](23-radios.md#key-roles) says which radios have one.
 
 Developers can also start and cancel it over the debug link:
 
