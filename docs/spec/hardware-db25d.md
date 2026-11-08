@@ -412,7 +412,7 @@ The inbound bursts lie from -32.5 to -2.5 ms and from +30.0 ms on (about 0.2 ms 
 the page's TX-on delay the PA is within 1 dB at 1.7-2.1 ms (the analog ramp varies from burst to burst; 0.94-1.6 ms
 from the first carrier), so the lead is the shortest 100 us step that has the PA up 0.2 ms ahead of the first symbol:
 `db25d_dmr_rf_tx_lead` = (2.3 ms + the page's TX-on delay - 0.85 ms), rounded up (1.5 ms UHF; 2.5 ms with the VHF
-page's 1000 us, not measured). At 1.3 ms (a 2.1 ms model) one burst in 114 had the 1 dB point only 0.04 ms ahead. The
+page's 1000 us, which gives the VHF figures in the table below). At 1.3 ms (a 2.1 ms model) one burst in 114 had the 1 dB point only 0.04 ms ahead. The
 ramp's 180 steps of 4 us take 0.72 ms plus the level's arithmetic, which is 32-bit (`core/radio/apc_ramp.h`): a 64-bit
 divide per step made the ramp 0.3 ms longer, and the lead was 1.6 ms with it. The page's TX-on delay counts from the
 RF TX interrupt, and a late interrupt (up to 0.12 ms, a few bursts per key-up) is timed from the frame grid
@@ -426,11 +426,12 @@ SFR).
 | The same call received without transmitting (TX inhibit, plain receive) | 29-37 | - |
 | Our idle bursts: symbol error, sync errors, carrier vs the bench | 0.10, 0, +15..20 Hz | 0.05-0.12, 0, +13 Hz |
 | Plain simplex call (`test_dmr_tx_off_air`): burst on-time, ramps up / down | 32.76-33.27 ms, 1.62 / 1.65 ms, carrier after the call | 29.67-30.12 ms, 1.31-1.54 / 1.02-1.15 ms (5 calls, 1.5 ms lead, the 32-bit ramp), none |
+| The same on the VHF page (2 m, lowest power, 2.5 ms lead) | - | 29.58-30.09 ms, 0.77 / 0.73 ms (52 bursts), none |
 
 The key-up ramp (1.31-1.54 ms; 1.56-1.62 ms before the ramp's 32-bit math) is at the edge of the 1.5 ms ramp regions of
 the ETSI power mask (TS 102 361-1 clause 10.2.3.1.1, figure 10.3), and over it in some calls; it comes from the TX on
 sequence, not the burst timing. `board.toml` `[hil.limits]` holds this radio to 1.75 ms in the bench's check until the
-ramp stays under 1.5 ms.
+ramp stays under 1.5 ms. The VHF page's key-up ramp is about half as long (0.77 ms, table above), inside the mask.
 
 Tried and dropped (no change in the inbound counts): keeping the LO chip running through TX, a ramp down 0.45 ms before
 the last symbol (16 bits fewer per 72 frames, our last symbols at reduced power), and shorter waits in the TX on
