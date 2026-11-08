@@ -143,6 +143,8 @@ static bool send_tx_fields(void)
 	return send(&p);
 }
 
+static void rx_voice_clear(void);
+
 // CARRIER_READY when the board's value differs from the chip's, in receive only. After a transmission, nothing until
 // the receiver has settled, then the port's rx_ready (the chip calibrates on what it hears from there)
 static void carrier_step(void)
@@ -172,6 +174,14 @@ static void carrier_step(void)
 		s.cr_sent = s.cr_want;
 		s.st.carrier = s.cr_want;
 		s.st.carrier_sent++;
+		// The board's carrier gone for the hold ends a call the chip plays: on a weak signal the chip can miss the
+		// terminators and say SYNC_LOST only seconds later, and the stack would hold the call that long. A call that
+		// comes back is a late entry (the chip's next LC)
+		if (s.cr_want == 0 && (s.rv[0].on || s.rv[1].on)) {
+			rx_voice_clear();
+			emit(DMR_EV_SYNC_LOST, s.ts, next_counter(), NULL);
+			s.sync = DMR_SYNC_NONE;
+		}
 	}
 }
 
