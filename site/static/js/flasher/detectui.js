@@ -44,8 +44,8 @@ export function detectControl({ radio, board, fb, ids, open, onFound, nextHint =
 						h("ul", {}, tried.map((x) => h("li", {}, `${t(`flash.detect.probe.${key(x.id)}`)}: ${t(`flash.detect.outcome.${x.outcome}`)}${x.error ? ` (${x.error})` : ""}`)))));
 			}
 		} catch (e) {
-			// the user closed the port chooser, or the port couldn't be opened
-			fill(notice(t("flash.detect.failed", { why: String(e?.message || e) }), "bad"));
+			// the user closed the port chooser (the browser's NotFoundError), or the port couldn't be opened
+			fill(notice(e?.name === "NotFoundError" ? t("flash.err.no_device") : t("flash.detect.failed", { why: String(e?.message || e) }), "bad"));
 		} finally {
 			busy = false;
 			go.disabled = false;
