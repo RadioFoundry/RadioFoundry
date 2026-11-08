@@ -52,6 +52,6 @@ export function detectControl({ radio, board, fb, ids, open, onFound, nextHint =
 		}
 	};
 	const go = button(t("flash.detect.go"), run);
-	const all = showAllPorts && h("a", { href: "#", onclick: (e) => { e.preventDefault(); showAllPorts(); run(); } }, t("flash.c7.connect.all_ports"));
+	const all = showAllPorts && h("a", { href: "#", onclick: (e) => { e.preventDefault(); showAllPorts(); run(); } }, t("flash.detect.all_ports"));
 	return { go, hint: h("p", { class: "small muted" }, t("flash.detect.hint"), all && " ", all && t("flash.c7.connect.no_cable"), all && " ", all), say };
 }

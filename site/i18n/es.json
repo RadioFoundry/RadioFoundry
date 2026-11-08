@@ -1921,6 +1921,7 @@
  "flash.detect.no_variant": "{via} respondió ({version}), pero eso no indica qué variante es la radio. Compruébalo en la radio:",
  "flash.detect.none": "Ninguna radio respondió en ese puerto. Comprueba que la radio esté conectada y encendida y pulsa Detectar ahora de nuevo. También puedes ver la variante en la propia radio:",
  "flash.detect.failed": "No se pudo abrir el puerto de la radio ({why}).",
+ "flash.detect.all_ports": "Mostrar todos los dispositivos USB",
  "flash.detect.then_update": "Ahora pon la radio en su modo de actualización y pulsa Conectar. La página vuelve a comprobar el modelo allí, y otra vez justo antes de escribir.",
  "flash.detect.blocked": "RadioFoundry todavía no se puede instalar en esta variante: {why}. Su firmware original aún se puede volver a escribir.",
  "flash.detect.via.update_mode": "su modo de actualización",
