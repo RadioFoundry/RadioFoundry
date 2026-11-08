@@ -19,7 +19,8 @@ They also show that the speaker plays with the programming cable in, on a radio 
 - test_speaker_fm_noise: the FM VFO on --fm-mhz with the squelch held open (monitor): the receiver's noise.
 - test_speaker_dmr_voice (--allow-rf, the bench modem; --ambe for speech): a bench group call on the DMR test channel.
 - test_speaker_second_receiver (the same): dual watch with the main receiver on another channel, so the call comes
-  out of the second receiver (radio-features.md 2.2). Skips on a radio with one receiver."""
+  out of the second receiver (radio-features.md 2.2). On a radio with one receiver, dual watch alternates it and
+  stops on the call: the call comes out of the one receiver after that stop."""
 import contextlib
 import threading
 import time
@@ -223,8 +224,7 @@ def test_speaker_dmr_voice(ready, ear, sdr_bench, pytestconfig):
 def test_speaker_second_receiver(ready, ear, sdr_bench, pytestconfig):
     from test_radio_features import features, need_scan, scan_off, settings, wait_features
     need_scan(ready)
-    if features(ready).get("dual.receivers") != "2":
-        skip("not_built", "one receiver: dual watch alternates it")
+    two = features(ready).get("dual.receivers") == "2"
     hz = round(rig(pytestconfig, "dmr-freq") * 1e6)
     pos = ready.find_channel(hz, "dmr")
     size = as_int(ready.core().get("zone_size"), 0)
@@ -238,8 +238,13 @@ def test_speaker_second_receiver(ready, ear, sdr_bench, pytestconfig):
     with settings(ready, scan_resume=1):
         ready.link.scan("dual", pos)
         try:
-            wait_features(ready, lambda v: v.get("dual.both") == "1", 12.0, "the second receiver on the test channel")
-            heard = _call_heard(ready, ear, sdr_bench, pytestconfig, "a DMR call through the second receiver")
+            if two:
+                wait_features(ready, lambda v: v.get("dual.both") == "1", 12.0,
+                              "the second receiver on the test channel")
+            else:
+                wait_features(ready, lambda v: v.get("scan") == "dual", 1.0, "scan=dual")
+            heard = _call_heard(ready, ear, sdr_bench, pytestconfig,
+                                "a DMR call through the second receiver" if two else "a DMR call dual watch stops on")
         finally:
             scan_off(ready)
-    assert heard, "the call on the second receiver wasn't heard"
+    assert heard, f"the call {'on the second receiver' if two else 'dual watch stopped on'} wasn't heard"
