@@ -296,6 +296,12 @@ with N(S) 0 within 20 s.
   computed from those clauses apart from this code (`dmrDataChainTest`, "ETSI TXT 541"); a commercial radio is still
   to be tried (open point). HIL 2026-10-10: the bench tool sent ISO 8859-1 text marked 0x02 (its bug, fixed), and the
   radio showed it, correctly for that code, as 7-bit characters.
+- Cleared CRC-9 bits: a modem that takes every block after a header with A set for a confirmed one clears octet 0
+  bit 0 and octet 1 of each block (`modem-sct.md` 6), and the CRC-32 fails. When it fails on a rate 1/2 packet with
+  A set whose blocks all read zero there, the receiver solves those bits from the CRC-32, which is affine in the
+  data: 9 unknown bits a block against its 32 bits, Gaussian elimination over GF(2). It keeps the result only when
+  the solution is unique and the spare equations agree, so up to 3 blocks (27 bits; 32 octets of text). A longer
+  packet stays a CRC error (`dmrDataTest`, `testClearedBits`).
 - Also read: UDT text (TS 102 361-4, UDT header formats 3 ISO 7-bit, 4 ISO 8-bit, 7 UTF-16BE; CRC-CCITT
   unmasked, the pad nibbles in octet 8).
 - Received to us: into the inbox with format ETSI (`dmrDataMessage_t.format`); with the response bit set the ETSI
