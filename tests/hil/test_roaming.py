@@ -172,7 +172,15 @@ def test_roam_now_passive(roaming):
     L.setting("roam_probe", 0)
     v = zone_on(roaming)
     if v["roam.state"] == "off":
-        skip("state", "the current channel is not a repeater site with a second site (same talkgroup) in its zone")
+        # Not on a site (a simplex channel, say): the first zone position that is one, with a second site
+        for pos in range(as_int(roaming.core().get("zone_size") or "0")):
+            L.zone_pos(pos)
+            wait_roam(roaming, lambda x: x.get("zone_pos") == str(pos), 2.0, f"position {pos}")
+            v = zone_on(roaming)
+            if v["roam.state"] != "off":
+                break
+    if v["roam.state"] == "off":
+        skip("state", "no channel of the zone is a repeater site with a second site (same talkgroup)")
     sites = as_int(v["roam.sites"])
     numbers = {roam(roaming)[f"site.{i}"].split(":")[0] for i in range(sites)}
     s0, p0, a0 = as_int(v["roam.searches"]), as_int(v["roam.probes"]), as_int(v["roam.aborts"])

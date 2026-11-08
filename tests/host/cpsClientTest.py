@@ -66,6 +66,16 @@ def test_channels(sim):
               {"name": "Watch 433.5000", "rx_hz": 433500000, "tx_hz": 433500000}, "watch channel in the image")
         _, a4 = cps_client.channel_addr(4)
         check(img4[a4 + 0x33] & 0x04, "watch channel receive only")
+
+        # --repeater with two frequencies: channel 5, the second site, after channel 4
+        path5 = os.path.join(d, "cp5.bin")
+        rc = cps_client.main(["test-channels", path5, "--rx", "433.45", "--tg", "91", "--cc", "1", "--repeater", "438.5",
+                              "438.6", "--watch", "433.5"])
+        img5 = cps_client.load_image(path5)
+        check(rc == 0 and cps_client.decode_channel(img5, 5) ==
+              {"name": "DMR RPT 438.6000", "rx_hz": 438600000, "tx_hz": 433450000}, "second site in the image")
+        zone = img5[cps_client.ZONE_DATA + 16:cps_client.ZONE_DATA + 28]
+        check(zone == bytes([1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 0, 0]), f"zone holds channels 1-5: {zone.hex()}")
         zone = img4[cps_client.ZONE_DATA + 16:cps_client.ZONE_DATA + 24]
         check(zone == bytes([1, 0, 2, 0, 4, 0, 0, 0]), f"zone holds channels 1, 2, 4: {zone.hex()}")
         z2 = img4[cps_client.ZONE_DATA + 176:cps_client.ZONE_DATA + 176 + 20]
