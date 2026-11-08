@@ -123,7 +123,8 @@ write is in progress, it says "Save busy: try again"; wait a moment and hold **O
 ## Key lock
 
 On Home, hold **\*** to lock the keys. The screen shows "Keys locked: hold * to unlock" and an "L" in the status line.
-While locked, **PTT** and **Monitor** still work. Any other key shows the unlock hint. Hold **\*** again to unlock.
+While locked, **PTT** and **Monitor** still work. Any other key, and the channel knob, shows the unlock hint. Hold
+**\*** again to unlock. With **Settings > Sound > Lock volume** on, the volume knob is locked too.
 In menus holding **\*** doesn't lock, so a slow press can't lock the keys in the middle of a task.
 
 **Settings > Privacy > Auto lock** locks the keys by itself after a time without a key press.

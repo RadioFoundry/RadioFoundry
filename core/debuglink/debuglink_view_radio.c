@@ -99,9 +99,9 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	else
 		dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n",
 			board_has_battery() ? word(v->battery, batt, 3) : "none", v->battery_pct, v->battery_mv, v->power_off);
-	static const char *const vsrc[] = { "none", "knob", "soft", "override" };
+	static const char *const vsrc[] = { "none", "knob", "soft", "override", "hold" };
 	dl_text(t, "volume.soft=%u\nvolume.sent=%d\nvolume.src=%s\nvolume.max=%u\nvolume.step=%u\nvolume.override=%d\n",
-		radio_volume_soft(), v->volume, word(v->volume_src, vsrc, 4), RADIO_VOLUME_MAX, v->volume_step, v->volume_override);
+		radio_volume_soft(), v->volume, word(v->volume_src, vsrc, 5), RADIO_VOLUME_MAX, v->volume_step, v->volume_override);
 #if CONFIG_BEEP
 	beep_stats_t b;
 	beep_get_stats(&b);

@@ -2662,6 +2662,7 @@ void radio_req_monitor(bool down) { req(RREQ_MONITOR, down); }
 void radio_req_reload(void) { req(RREQ_RELOAD, 0); }
 void radio_req_volume(uint8_t step) { req(RREQ_VOLUME, step); }
 void radio_req_volume_override(int8_t step) { req(RREQ_VOLUME_OVERRIDE, step); }
+void radio_req_volume_hold(bool hold) { req(RREQ_VOLUME_HOLD, hold); }
 void radio_req_clear_temporary(void) { req(RREQ_CLEAR_TEMP, 0); }
 void radio_req_retune(void) { req(RREQ_RETUNE, 0); }
 // Not under test here: debuglink_view_radio.c, linked for the volume operation, refers to them
@@ -3759,6 +3760,24 @@ static void test_soft_volume(void)
 	CHECK(debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ RADIO_VOLUME_KNOB }, 1) == DL_ST_OK);
 	run(100);
 	CHECK(vol_last == 90 && sm.view.volume_src == RVOL_KNOB && sm.view.volume_override == -1);
+	// The knob lock (keys locked, Settings > Sound > Lock volume): the level stays while the knob moves, the view
+	// still tracks the knob, and letting go takes the knob's level at once
+	CHECK(radio_volume_knob() && (ui_svc_feat_radio() & UI_FEAT_VOLUME_KNOB) && sm.view.volume_knob == 90);
+	radio_req_volume_hold(true);
+	run(100);
+	vol_calls = 0;
+	vol_knob = 30;
+	run(100);
+	CHECK(vol_calls == 0 && vol_last == 90 && sm.view.volume_src == RVOL_HOLD && sm.view.volume_knob == 30);
+	radio_req_volume_hold(false);
+	run(100);
+	CHECK(vol_calls == 1 && vol_last == 30 && sm.view.volume_src == RVOL_KNOB);
+	// A 1 % wobble is not a move
+	vol_knob = 31;
+	run(100);
+	CHECK(sm.view.volume_knob == 30);
+	vol_knob = 90;
+	run(100);
 	CHECK(debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ 0 }, 1) == DL_ST_OK);
 	run(100);
 	CHECK(vol_last == 0);
@@ -4295,7 +4314,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(432);	// the settings records (page 1: 172 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
+	sim_flash_cut_after(436);	// the settings records (page 1: 176 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);

@@ -387,6 +387,7 @@ hook; `hal_power_t.volume()` says where the level comes from (`radio_volume_src_
 | `knob` | A hook and a knob the MCU reads | The knob's 0..100 % |
 | `soft` | A hook and no knob (`hal_power_t.volume()` = -1); `radio_volume_soft()`, reported to the UI as `UI_FEAT_VOLUME` | The stored step |
 | `override` | As `knob`, with the debug link's level in force | The step the debug link set, whatever the knob does |
+| `hold` | As `knob`, with the keys locked and Settings > Sound > Lock volume on | The level in force when the hold began, whatever the knob does |
 
 | Item | Value |
 |---|---|
@@ -396,6 +397,8 @@ hook; `hal_power_t.volume()` says where the level comes from (`radio_volume_src_
 | To the board | `follow_volume` (radio poll) calls `hal_radio_t.volume(percent)` at start-up and after each change (the knob's changes of 2 % or more, and its ends); the same level twice calls nothing |
 | A change | `ui_svc_setting_set(UI_SET_VOLUME)` saves the step and posts `RREQ_VOLUME` (`radio_req_volume`), so it is in force at once. The request counts as neither user activity nor an interruption: a transmission or a roaming search goes on |
 | Override | `radio_req_volume_override(step)` (`RREQ_VOLUME_OVERRIDE`) holds a level over the knob until `-1`; RAM only, so a restart gives the knob back. Without a knob there is nothing to override, and the request changes nothing |
+| Hold | `radio_req_volume_hold(true)` (`RREQ_VOLUME_HOLD`, from the UI's key lock through `ui_svc_volume_hold`) keeps the level in force and ignores the knob; `false` follows the knob again, and its level goes out at once. RAM only; ignored without a knob or under an override |
+| Knob position | `radio_view_t.volume_knob`: the knob's 0..100 % with the same 2 % filter, in force or not (also while held), -1 without a knob the MCU reads. The UI shows it when it changes (Settings > Sound > Show volume, `UI_SET_KNOB_SHOW`), or the unlock hint while held. `radio_volume_knob()` (`UI_FEAT_VOLUME_KNOB`) says whether the board has such a knob; the two options are shown only then |
 | Beeps | Key and status tones keep their own level (Tone volume, 4) and are mixed at the board's speaker path as before |
 
 **Debug link.** RADIO op 30 (`debuglink.md` 3.8) sets a step 0..16, or `0xFF` for "back to the knob". On a `soft` radio

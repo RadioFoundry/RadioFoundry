@@ -148,6 +148,7 @@ typedef enum {
 	RREQ_DUAL,		// dual watch (CONFIG_DUAL_WATCH): arg channel A, arg2 channel B, radio_dual_arg()
 	RREQ_RETUNE,		// tune the current frequency again (the reference trim changed: radio/ref_trim.h)
 	RREQ_VFO_TX,		// arg: the VFO's TX Hz, 0 = simplex (its RX frequency)
+	RREQ_VOLUME_HOLD,	// arg: 1 hold the level and ignore the knob (keys locked), 0 follow the knob again
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -239,6 +240,8 @@ typedef struct {
 	uint8_t vol_step;		// the volume step of a radio without a knob
 	int8_t vol_override;		// the debug link's step over the knob, -1 = none
 	int16_t volume_sent;		// last level given to board.radio->volume, -1 = none yet
+	int16_t knob_seen;		// the knob's position last put in view.volume_knob, -1 = none yet
+	bool vol_hold;			// RREQ_VOLUME_HOLD: the level stays, the knob is ignored
 
 	bool ptt;			// PTT held
 	bool host_audio;		// this PTT is a host audio session's (USRP): its audio, not the microphone

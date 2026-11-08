@@ -1376,10 +1376,14 @@ static bool soft_volume;
 static bool bcast_rx;
 // A reference trim (Settings > Advanced > Freq trim) only with the "trim" token, the same way
 static bool ref_trim;
+// A volume knob the MCU reads (Settings > Sound > Show volume, Lock volume) only with a "knob:<percent>" token
+static bool knob_radio;
+static bool vol_held;		// ui_svc_volume_hold: the radio ignores the volume knob
 uint32_t ui_svc_features(void)
 {
 	return 0xFFFFFFFFu & ~(soft_volume ? 0 : UI_FEAT_VOLUME) & ~(bcast_rx ? 0 : UI_FEAT_BCAST) &
-	       ~(ref_trim ? 0 : UI_FEAT_REF_TRIM);
+	       ~(ref_trim ? 0 : UI_FEAT_REF_TRIM) &
+	       ~(knob_radio ? 0 : UI_FEAT_VOLUME_KNOB);
 }
 // My radio's names (ui_svc_name_*): placeholders, as the user's own would be; a save writes at once
 static char sim_names[UI_NAME_COUNT][17];
@@ -1647,6 +1651,7 @@ void ui_svc_beep(uint8_t beep)
 void ui_svc_vibrate(uint8_t vibe) { sim_rec.vibes++; sim_rec.last_vibe = vibe; }
 static bool ptt_blocked;	// ui_svc_ptt_block: the input layer keeps PTT presses from the radio
 void ui_svc_ptt_block(bool blocked) { ptt_blocked = blocked; }
+void ui_svc_volume_hold(bool hold) { vol_held = hold; }
 void ui_svc_apply(uint8_t id, int32_t value)
 {
 	if (id == UI_SET_LONG_PRESS_MS)
@@ -2054,6 +2059,10 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	soft_volume = false;
 	bcast_rx = false;
 	ref_trim = false;
+	knob_radio = false;
+	vol_held = false;
+	ui_svc_setting_set(UI_SET_KNOB_SHOW, 0);
+	ui_svc_setting_set(UI_SET_KNOB_LOCK, 0);
 	ui_svc_setting_set(UI_SET_VOLUME, RADIO_VOLUME_DEFAULT);
 	ui_svc_setting_set(UI_SET_HINTS, 1);
 	ui_svc_setting_set(UI_SET_LARGE_TEXT, 0);
@@ -2235,6 +2244,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "talk") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.dmr.target_id);
 	else if (strcmp(key, "vol") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_VOLUME));
 	else if (strcmp(key, "locked") == 0) snprintf(got, sizeof got, "%u", s.locked);
+	else if (strcmp(key, "volhold") == 0) snprintf(got, sizeof got, "%u", vol_held);
 	else if (strcmp(key, "query") == 0) snprintf(got, sizeof got, "%s", s.query);
 	else if (strcmp(key, "banner") == 0) { snprintf(got, sizeof got, "%s", s.banner[0] ? s.banner : "none"); prefix = true; }
 	else if (strcmp(key, "toast") == 0) { snprintf(got, sizeof got, "%s", s.toast[0] ? s.toast : "none"); prefix = true; }
@@ -2779,6 +2789,12 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "bcast") == 0) {		// this radio has a broadcast FM receiver
 		bcast_rx = true;
+		return true;
+	}
+	if (strcmp(t, "knob") == 0 && arg != NULL) {	// knob:<percent>: this radio's MCU reads the volume knob, now there
+		knob_radio = true;
+		view.volume_knob = (int8_t)strtol(arg, NULL, 10);
+		advance(200);
 		return true;
 	}
 	if (strcmp(t, "trim") == 0) {		// this radio has a reference trim (hal_radio_t.ref_trim)

@@ -504,6 +504,14 @@ msgstr "Batería "
 msgid "%: charge soon"
 msgstr "%: cargar pronto"
 
+#: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Volume"
+msgstr "Volumen"
+
+#: core/ui/ui_app.c core/ui/ui_screens.c
+msgid "Muted"
+msgstr "Silenciado"
+
 #: core/ui/ui_app.c
 msgid "That zone was deleted"
 msgstr "Esa zona fue borrada"
@@ -2668,9 +2676,13 @@ msgstr "Primera copia"
 msgid "Dual-path RX"
 msgstr "RX doble vía"
 
-#: core/ui/ui_menus.c core/ui/ui_screens.c
-msgid "Volume"
-msgstr "Volumen"
+#: core/ui/ui_menus.c
+msgid "Show volume"
+msgstr "Mostrar volumen"
+
+#: core/ui/ui_menus.c
+msgid "Lock volume"
+msgstr "Bloquear volumen"
 
 #: core/ui/ui_menus.c
 msgid "Key tones"
@@ -3519,10 +3531,6 @@ msgstr "EMERGENCIA"
 #: core/ui/ui_screens.c
 msgid "OK acknowledge  Back hide"
 msgstr "OK aceptar  Atrás"
-
-#: core/ui/ui_screens.c
-msgid "Muted"
-msgstr "Silenciado"
 
 #: core/ui/ui_screens.c
 msgid "Up Down change  OK done"

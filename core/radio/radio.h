@@ -285,6 +285,7 @@ typedef struct {
 	uint8_t volume_src;	// radio_volume_src_t: where that level comes from
 	uint8_t volume_step;	// the stored step (0..RADIO_VOLUME_MAX); in force when volume_src is RVOL_SOFT
 	int8_t volume_override;	// the debug link's step in force over the knob (RVOL_OVERRIDE), -1 = none
+	int8_t volume_knob;	// the volume knob's position 0..100 % whether or not it is in force, -1 = no knob read
 	// Air band (CONFIG_AM_RX; docs/spec/airband-and-broadcast.md 3): the receiver demodulates AM on this channel or
 	// VFO frequency (an FM channel in 108-137 MHz on a radio that can); receive only. noise then holds the AM
 	// squelch's value from the RSSI (radio/radio_am.h)
@@ -455,10 +456,16 @@ typedef enum {
 	RVOL_KNOB,		// the MCU reads the knob and passes it on
 	RVOL_SOFT,		// no knob: the stored step
 	RVOL_OVERRIDE,		// a knob radio with the debug link's level in force
+	RVOL_HOLD,		// a knob radio holding its level while the keys are locked (radio_req_volume_hold)
 } radio_volume_src_t;
 void radio_req_volume(uint8_t step);
 // The level over the knob (step 0..RADIO_VOLUME_MAX), or -1 to give it back; RAM only. Does nothing without a knob
 void radio_req_volume_override(int8_t step);
+// Hold the level in force and ignore the knob (the keys are locked), or follow the knob again: it takes the knob's
+// level at once. RAM only. Does nothing without a knob
+void radio_req_volume_hold(bool hold);
+// Whether the MCU reads a volume knob (the level follows it): the knob's options in Settings > Sound
+bool radio_volume_knob(void);
 bool radio_volume_soft(void);
 // Whether the MCU can set the speaker level at all (the board has the hook): knob radios accept an override
 bool radio_volume_settable(void);

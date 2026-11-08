@@ -121,6 +121,8 @@ typedef struct {
 	uint8_t updown;		// what Up / Down change on Home: 0 channel, 1 zone, 2 talk target (Settings > Keys)
 	uint8_t low_batt_pct;	// warn at this battery percent, 0 = never (Settings > Power saving)
 	uint8_t volume;		// speaker volume step 0..RADIO_VOLUME_MAX of a radio without a knob (the volume screen, Settings > Sound)
+	bool knob_show;		// show the level when the volume knob turns (Settings > Sound, UI_FEAT_VOLUME_KNOB)
+	bool knob_lock;		// the volume knob does nothing while the keys are locked (Settings > Sound)
 	uint16_t auto_off_min;	// switch off after this long without use, 0 = never (Settings > Power saving)
 	uint16_t unread;	// unread messages
 	const char *home_hint;	// the hint for Home's idle state, built from the board's keys ("OK Menu *Quick #Joe")
