@@ -115,7 +115,7 @@ typedef struct {
 	uint32_t em_dst;		// emergency target, 0 = the channel's talk target
 	uint8_t em_mode;		// dmr_emergency_mode_t
 	uint8_t em_flags;		// SETTINGS_EM_* bits
-	uint8_t em_alarm_tries;
+	uint8_t em_alarm_tries;		// bits 0-3; bits 4-7 the emergency key's hold (settings_em_hold_s)
 	uint8_t em_hot_mic_s;
 	uint8_t em_stored;		// 1 = the em_ fields hold the emergency settings
 	// The hotspot's CW ID (docs/spec/mmdvm-protocol.md 2.11): 0 = the default
@@ -373,6 +373,26 @@ static inline void settings_set_crash_contact(settings_t *s, uint16_t num)
 #define SETTINGS_EM_DST_PRIVATE		0x01u
 #define SETTINGS_EM_ETSI_FID		0x02u
 #define SETTINGS_EM_NO_TONE		0x04u
+// The emergency key's own settings (Settings > Keys > Emergency, the UI's), in bits the radio core leaves as they are
+// and taken whatever em_stored says: 0 in an older record = the key on, the countdown beeps and vibrates
+#define SETTINGS_EM_KEY_OFF		0x08u	// the hold does nothing emergency-related
+#define SETTINGS_EM_SILENT		0x10u	// the countdown and the confirmation only on the screen
+#define SETTINGS_EM_UI_FLAGS		(SETTINGS_EM_KEY_OFF | SETTINGS_EM_SILENT)
+// settings_t.em_alarm_tries: the tries in bits 0-3 (1..10); bits 4-7 the key's hold, 1..10 s, 0 = 3 s (an older record).
+// An older firmware reads such a byte as out of range and sends the default tries
+#define SETTINGS_EM_TRIES_MASK		0x0Fu
+#define SETTINGS_EM_HOLD_DEFAULT_S	3u
+#define SETTINGS_EM_HOLD_MAX_S		10u
+static inline uint8_t settings_em_hold_s(const settings_t *s)
+{
+	uint8_t h = (uint8_t)(s->em_alarm_tries >> 4);
+	return h >= 1u && h <= SETTINGS_EM_HOLD_MAX_S ? h : (uint8_t)SETTINGS_EM_HOLD_DEFAULT_S;
+}
+static inline void settings_set_em_hold_s(settings_t *s, uint8_t sec)
+{
+	sec = sec < 1u ? 1u : sec > SETTINGS_EM_HOLD_MAX_S ? (uint8_t)SETTINGS_EM_HOLD_MAX_S : sec;
+	s->em_alarm_tries = (uint8_t)((s->em_alarm_tries & SETTINGS_EM_TRIES_MASK) | (sec << 4));
+}
 
 // settings_t.aprs_flags / aprs_flags2
 #define SETTINGS_APRS_TX		0x01u	// automatic beacons

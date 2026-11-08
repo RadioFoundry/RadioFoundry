@@ -28,6 +28,14 @@ bool ui_app_take_wake(void);
 // the supply stays on, it queues UI_EV_POWER_OFF_FAILED (ui_notify) and the UI waits a whole period again. Any task
 bool ui_app_power_off_due(void);
 
+// The emergency key's hold (docs/spec/dmr-emergency.md 5.1): the time left, elapsed_ms after the key went down, of a
+// hold of hold_s seconds; 0 = the hold is over and the emergency starts (or ends)
+static inline uint32_t ui_em_left_ms(uint32_t elapsed_ms, uint8_t hold_s)
+{
+	uint32_t h = (uint32_t)hold_s * 1000u;
+	return elapsed_ms < h ? h - elapsed_ms : 0;
+}
+
 // For the debug link and the simulator: what is on screen
 typedef struct {
 	const char *screen;	// "home", "quick", "hub", "find", ...

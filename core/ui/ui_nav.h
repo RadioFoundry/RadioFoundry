@@ -35,6 +35,7 @@ typedef enum {
 	SCR_CONTACT_EDIT,		// the contact editor (CONFIG_CONTACT_EDIT): a new contact, from ui_target
 	SCR_LANGUAGE,			// Settings > Display > Language: every language, those not built dimmed
 	SCR_CP_FOREIGN,			// another firmware's codeplug: what the first edit does with it (ui_svc_codeplug_answer)
+	SCR_EM_HOLD,			// the emergency key held: the countdown, then the outcome (ui_app.c)
 	SCR_COUNT
 } ui_scr_t;
 
@@ -77,6 +78,7 @@ typedef struct {
 	bool (*target)(uint16_t i, ui_target_t *t);	// what PTT talks to with this row focused (one-shot)
 	const char *(*title)(void);			// title name part (NULL: none)
 	const char *(*body)(void);			// text above the rows (NULL: none)
+	const char *(*footer)(void);			// dim text under the rows where there is room (NULL: none)
 	bool (*key)(const input_event_t *ev);		// screen keys before the list's own (true: used)
 	void (*draw)(void);				// own drawing instead of the list
 	void (*enter)(void);				// on push
@@ -202,6 +204,8 @@ bool ui_quick_key(const input_event_t *ev);
 void ui_quick_enter(void);
 void ui_volume_draw(void);
 bool ui_volume_key(const input_event_t *ev);
+void ui_em_hold_draw(void);
+bool ui_em_hold_key(const input_event_t *ev);
 
 // The crash log after the restart (ui_menus.c, CONFIG_CRASH_SCREEN): the prompt or the automatic report, and the
 // report's end as a toast. reset at ui_app_init, tick every UI tick

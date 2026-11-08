@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "input/input_engine.h"
+#include "fuzz.h"
 
 static int failures;
 static int checks;
@@ -110,27 +111,121 @@ static void test_long(void)
 	CHECK(nev == 0);
 }
 
-// Emergency is hold to activate: its key's long action needs INPUT_HOLD_MS, not the long press time
+// The time from the first scan that sees the key held to the given gesture's first event of action (-1: none)
+static int32_t first_at(uint32_t down_at, uint8_t action, uint8_t gesture, const uint32_t *at)
+{
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].action == action && evs[i].gesture == gesture) {
+			return (int32_t)(at[i] - down_at);
+		}
+	}
+	return -1;
+}
+
+// Emergency's long press comes at INPUT_EMERGENCY_SHOW_MS whatever the long press time, and its release after it is an
+// UP of ACT_EMERGENCY (value 1) for the UI's countdown; a shorter press is the key's own press, never emergency.
+// Partitions: release before the threshold / at or after it; long press time below / equal / above the threshold;
+// plain and raw-edge keys. Boundaries: one scan either side of the threshold. Then a seeded run of random holds
+static uint32_t ev_at[MAXEV];
+static void emit_at(const input_event_t *ev, void *ctx)
+{
+	(void)ctx;
+	if (nev < MAXEV) {
+		ev_at[nev] = now;
+		evs[nev++] = *ev;
+	}
+}
+
+// Hold the top key ms (counted from the scan that debounces it), then let go: the events are in evs
+static void hold_top(const keymap_entry_t *map, uint8_t n, uint16_t long_ms, uint32_t ms, uint8_t bit)
+{
+	nev = 0;
+	now = 5000;
+	input_engine_init(&e, map, n, now);
+	input_engine_set_timing(&e, long_ms, 0);
+	input_engine_step(&e, 0, 0, now, emit_at, NULL);
+	now += INPUT_SCAN_MS;
+	input_engine_step(&e, 1u << bit, 0, now, emit_at, NULL);	// first sample
+	for (uint32_t t = 0; t < ms; t += INPUT_SCAN_MS) {		// debounced at the first of these
+		now += INPUT_SCAN_MS;
+		input_engine_step(&e, 1u << bit, 0, now, emit_at, NULL);
+	}
+	for (int i = 0; i < 3; i++) {
+		now += INPUT_SCAN_MS;
+		input_engine_step(&e, 0, 0, now, emit_at, NULL);
+	}
+}
+
+static int emergency_checks;
+#define ECHECK(c) do { emergency_checks++; CHECK(c); } while (0)
+
 static void test_emergency_hold(void)
 {
-	reset(0);
-	keys = 1u << K_TOP;
-	run(INPUT_HOLD_MS - 20, 0);
-	CHECK(nev == 0);
-	run(40, 0);
-	CHECK(nev == 1 && evs[0].action == ACT_EMERGENCY && evs[0].gesture == GESTURE_LONG);
-	keys = 0;
-	run(30, 0);
-	CHECK(nev == 1);
+	static const keymap_entry_t map[] = { { K_TOP, ACT_USER_3, ACT_EMERGENCY, false, false, 0 } };
+	// A monitor key whose hold is emergency (keyassign.c): raw edges, and the long press marked value 1
+	static const keymap_entry_t raw[] = { { K_TOP, ACT_MONITOR, ACT_EMERGENCY, true, false, 0 } };
+	static const uint16_t long_ms[] = { 200, INPUT_EMERGENCY_SHOW_MS, INPUT_LONG_MS, 1200 };
+	const uint32_t edge = INPUT_EMERGENCY_SHOW_MS - INPUT_SCAN_MS;	// held this long after the debounce: one scan short
 
-	// Let go between the long press time and the hold: the short action, never emergency
-	reset(0);
-	keys = 1u << K_TOP;
-	run(INPUT_LONG_MS + 100, 0);
-	keys = 0;
-	run(30, 0);
-	CHECK(count(ACT_EMERGENCY, GESTURE_LONG) == 0);
-	CHECK(input_long_threshold(ACT_EMERGENCY, 2000) == 2000 && input_long_threshold(ACT_QUICK, 700) == 700);
+	for (size_t l = 0; l < sizeof long_ms / sizeof long_ms[0]; l++) {
+		// One scan short of the threshold: the press, nothing of emergency
+		hold_top(map, 1, long_ms[l], edge, K_TOP);
+		ECHECK(nev == 1 && evs[0].action == ACT_USER_3 && evs[0].gesture == GESTURE_PRESS);
+		// At the threshold: LONG there; let go within the press window: UP value 2, then the key's press
+		uint32_t win = input_press_window(ACT_EMERGENCY, long_ms[l]);
+		hold_top(map, 1, long_ms[l], edge + INPUT_SCAN_MS, K_TOP);
+		ECHECK(nev == 3 && evs[0].action == ACT_EMERGENCY && evs[0].gesture == GESTURE_LONG && evs[0].value == 0);
+		ECHECK(evs[1].action == ACT_EMERGENCY && evs[1].gesture == GESTURE_UP && evs[1].value == 2);
+		ECHECK(evs[2].action == ACT_USER_3 && evs[2].gesture == GESTURE_PRESS);
+		// The window's edges (the release is debounced one scan after the last held one): one scan short, the press;
+		// at the window, UP value 1 and no press
+		hold_top(map, 1, long_ms[l], win - 2 * INPUT_SCAN_MS, K_TOP);
+		ECHECK(nev == 3 && evs[1].value == 2 && count(ACT_USER_3, GESTURE_PRESS) == 1);
+		hold_top(map, 1, long_ms[l], win - INPUT_SCAN_MS, K_TOP);
+		ECHECK(nev == 2 && evs[1].gesture == GESTURE_UP && evs[1].value == 1 && count(ACT_USER_3, GESTURE_PRESS) == 0);
+		// The raw-edge key: DOWN, the LONG (value 1), and at the release the monitor's UP and the emergency's UP (value
+		// 1 always: its press is the raw edges themselves)
+		hold_top(raw, 1, long_ms[l], edge + INPUT_SCAN_MS, K_TOP);
+		ECHECK(nev == 4 && evs[0].action == ACT_MONITOR && evs[0].gesture == GESTURE_DOWN);
+		ECHECK(evs[1].action == ACT_EMERGENCY && evs[1].gesture == GESTURE_LONG && evs[1].value == 1);
+		ECHECK(evs[2].action == ACT_MONITOR && evs[2].gesture == GESTURE_UP && evs[2].value == 1);
+		ECHECK(evs[3].action == ACT_EMERGENCY && evs[3].gesture == GESTURE_UP && evs[3].value == 1);
+		hold_top(raw, 1, long_ms[l], edge, K_TOP);
+		ECHECK(count(ACT_EMERGENCY, GESTURE_LONG) == 0 && count(ACT_EMERGENCY, GESTURE_UP) == 0);
+	}
+	ECHECK(input_long_threshold(ACT_EMERGENCY, 2000) == INPUT_EMERGENCY_SHOW_MS &&
+	       input_long_threshold(ACT_QUICK, 700) == 700);
+	ECHECK(input_long_up(ACT_EMERGENCY) && !input_long_up(ACT_QUICK) && !input_long_up(ACT_NONE));
+	ECHECK(input_press_window(ACT_EMERGENCY, 600) == INPUT_EMERGENCY_PRESS_MS &&
+	       input_press_window(ACT_EMERGENCY, 2000) == 2000);
+	// Another long action keeps its silence at the release (the OK key's QUICK)
+	static const keymap_entry_t ok[] = { { K_OK, ACT_SELECT, ACT_QUICK, false, false, 0 } };
+	hold_top(ok, 1, 0, 1000, K_OK);
+	ECHECK(nev == 1 && evs[0].action == ACT_QUICK && evs[0].gesture == GESTURE_LONG);
+
+	// Property: for any hold and long press time, LONG comes exactly once at the threshold (to the scan) when the hold
+	// reaches it, followed by one UP at the release: value 2 and the key's PRESS when let go within the press window,
+	// value 1 and no PRESS after it; otherwise exactly one PRESS and no emergency event
+	fuzz_t f;
+	fuzz_init(&f, 0xE3E7u);
+	long iters = fuzz_iters(500);
+	for (long i = 0; i < iters; i++) {
+		uint16_t lm = (uint16_t)(200 + fuzz_below(&f, 2801));
+		uint32_t ms = INPUT_SCAN_MS * (1 + fuzz_below(&f, 400));	// at least the scan that debounces it (to 4 s)
+		hold_top(map, 1, lm, ms, K_TOP);
+		uint32_t down = 5000 + 2 * INPUT_SCAN_MS;	// the scan that debounces the key (the second sample)
+		if (ms > edge) {
+			bool press = ms + INPUT_SCAN_MS < input_press_window(ACT_EMERGENCY, lm);	// the release, debounced
+			ECHECK(nev == (press ? 3 : 2) && count(ACT_EMERGENCY, GESTURE_LONG) == 1 &&
+			       count(ACT_EMERGENCY, GESTURE_UP) == 1 && count(ACT_USER_3, GESTURE_PRESS) == (press ? 1 : 0));
+			ECHECK(evs[1].value == (press ? 2 : 1));
+			ECHECK(first_at(down, ACT_EMERGENCY, GESTURE_LONG, ev_at) == INPUT_EMERGENCY_SHOW_MS);
+			ECHECK(first_at(down, ACT_EMERGENCY, GESTURE_UP, ev_at) == (int32_t)(ms + INPUT_SCAN_MS));	// the release debounced
+		} else {
+			ECHECK(nev == 1 && evs[0].action == ACT_USER_3 && evs[0].gesture == GESTURE_PRESS);
+		}
+	}
+	printf("# inputTest emergency hold: %d checks (%ld random holds)\n", emergency_checks, iters);
 }
 
 static void test_repeat(void)

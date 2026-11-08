@@ -4882,7 +4882,7 @@ static const ui_scr_def_t tools_screen = {
 #if CONFIG_UI_SETTINGS
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
-enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE };
+enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_EMERGENCY };
 
 typedef struct {
 	const char *name;
@@ -5163,7 +5163,23 @@ static const set_item_t s_keys[] = {
 	KEY_ROWS(0), KEY_ROWS(1), KEY_ROWS(2), KEY_ROWS(3), KEY_ROWS(4), KEY_ROWS(5), KEY_ROWS(6), KEY_ROWS(7),
 	KEY_ROWS(8),
 #endif
+#if CONFIG_DMR_EMERGENCY
+	ACTION(TRN("Emergency"), "emergency key hold countdown silent", SA_EMERGENCY),	// last: the rows above keep their places
+#endif
 };
+#if CONFIG_DMR_EMERGENCY
+// Settings > Keys > Emergency (docs/spec/dmr-emergency.md 5.1): a page of its own, not in the Settings list
+static const int16_t v_em_alert[] = { UI_EM_ALERT_BEEP, UI_EM_ALERT_SILENT };
+static const char *const n_em_alert[] = { TRN("Beep+vibrate"), TRN("Silent") };
+static const int16_t v_em_mic[] = { 0, 5, 10, 15, 20, 30, 60 };
+static const char *const n_em_mic[] = { TRN("Off"), "5 s", "10 s", "15 s", "20 s", "30 s", TRN("1 min") };
+static const set_item_t s_emergency[] = {
+	NUMBER(TRN("Hold"), "emergency key delay countdown", UI_SET_EM_HOLD_S, 1, 10, 1, " s"),
+	TOGGLE(TRN("Emergency key"), "button", UI_SET_EM_KEY),
+	LIST(TRN("Alert"), "emergency silent beep vibrate", UI_SET_EM_ALERT, v_em_alert, n_em_alert),
+	LIST(TRN("Open mic"), "emergency hot mic", UI_SET_EM_HOT_MIC_S, v_em_mic, n_em_mic),
+};
+#endif
 static const set_item_t s_my_radio[] = {
 	ACTION(TRN("DMR ID and name"), "callsign", SA_MY_RADIO),
 	// Also in Advanced, where users didn't look for it
@@ -5192,10 +5208,15 @@ static const set_group_t groups[] = {
 	GROUP(TRN("Location"), s_location), GROUP(TRN("Connections"), s_connections),
 	GROUP_T(TRN("Power saving"), TRN("Power Saving"), s_power),
 	GROUP(TRN("Keys"), s_keys), GROUP_T(TRN("My radio"), TRN("My Radio"), s_my_radio), GROUP(TRN("Advanced"), s_advanced),
+#if CONFIG_DMR_EMERGENCY
+	GROUP(TRN("Emergency"), s_emergency),	// opened from Keys only (GROUPS_TOP leaves it out of the list and Find)
+#endif
 };
 #define GROUPS	(sizeof groups / sizeof groups[0])
+#define GROUPS_TOP	(GROUPS - (CONFIG_DMR_EMERGENCY ? 1u : 0u))
+#define GROUP_EMERGENCY	(GROUPS - 1u)
 
-uint8_t ui_set_group_count(void) { return GROUPS; }
+uint8_t ui_set_group_count(void) { return GROUPS_TOP; }
 // In English, as Find matches the name in the language in use and in English (it calls tr() on it)
 const char *ui_set_group_name(uint8_t g) { return g < GROUPS ? groups[g].name : ""; }
 
@@ -5209,6 +5230,8 @@ static bool set_hidden(const set_item_t *s)
 		return (s->id - UI_SET_KEY_FIRST) / 2 >= board.side_key_count;	// a key this radio doesn't have
 	}
 #endif
+	if (s->type == ST_ACTION && s->id == SA_EMERGENCY)
+		return !(feats() & UI_FEAT_EMERGENCY);
 	if (s->type != ST_ACTION && s->id == UI_SET_VOLUME)
 		return !(feats() & UI_FEAT_VOLUME);	// a knob sets the volume on the other radios
 	if (s->type != ST_ACTION && s->id == UI_SET_BCAST_STEP)
@@ -5257,7 +5280,7 @@ void ui_open_setting(uint8_t g, uint8_t i)
 	ui_frame()->focus = i;
 }
 
-static uint16_t settings_count(void) { return GROUPS; }
+static uint16_t settings_count(void) { return GROUPS_TOP; }
 
 static void settings_item(uint16_t i, ui_item_t *it)
 {
@@ -5480,6 +5503,9 @@ static void group_select(uint16_t i, bool hold)
 		case SA_MY_RADIO: ui_push(SCR_DMR_ID, 0); break;
 		case SA_RESET: ui_push(SCR_CONFIRM, 0); break;
 		case SA_LANGUAGE: ui_push(SCR_LANGUAGE, 0); break;
+#if CONFIG_DMR_EMERGENCY
+		case SA_EMERGENCY: ui_push(SCR_GROUP, GROUP_EMERGENCY); break;
+#endif
 #if CONFIG_CRASH_SCREEN
 		case SA_CRASH: ui_push(SCR_CRASH, 0); break;
 #endif
@@ -5556,6 +5582,16 @@ static bool group_key(const input_event_t *ev)
 
 static void group_enter(void) { set_editing = false; }
 
+// Settings > Keys > Emergency: the ranges under the rows
+static const char *group_footer(void)
+{
+#if CONFIG_DMR_EMERGENCY
+	if (ui_frame()->arg == GROUP_EMERGENCY)
+		return TR("Hold 1-10 s, Emergency key On/Off, Alert Beep+vibrate/Silent");
+#endif
+	return NULL;
+}
+
 static const char *group_title(void)
 {
 	uint8_t g = (uint8_t)ui_frame()->arg;
@@ -5565,7 +5601,7 @@ static const char *group_title(void)
 static const ui_scr_def_t group_screen = {
 	.name = "group", .flags = SF_LIST, .hint = TRN("OK change  Back"),
 	.count = group_count, .item = group_item, .select = group_select, .key = group_key, .enter = group_enter,
-	.title = group_title,
+	.footer = group_footer, .title = group_title,
 };
 
 // ======================= Confirmation (destructive only, defaults to No; P7) =======================
@@ -5826,6 +5862,11 @@ static const ui_scr_def_t volume_screen = {
 static const ui_scr_def_t emergency_screen = {
 	.name = "emergency", .flags = SF_FIELD, .key = ui_emergency_key, .draw = ui_emergency_draw,
 };
+#if CONFIG_DMR_EMERGENCY
+static const ui_scr_def_t em_hold_screen = {
+	.name = "emergency-hold", .flags = SF_FIELD, .key = ui_em_hold_key, .draw = ui_em_hold_draw,
+};
+#endif
 
 // ======================= Settings > Display > Language =======================
 // Every language a catalog exists for, each in its own name; one this image was built without is dimmed and says so
@@ -5913,6 +5954,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
 	[SCR_APRS_POS] = &ui_aprs_pos_screen, [SCR_ABOUT] = &about_screen,
 	[SCR_VOLUME] = &volume_screen, [SCR_LANGUAGE] = &lang_screen,
+#if CONFIG_DMR_EMERGENCY
+	[SCR_EM_HOLD] = &em_hold_screen,
+#endif
 	[SCR_DMR_ID] = &dmr_id_screen,
 	[SCR_CP_FOREIGN] = &cpf_screen,
 #if CONFIG_REF_TRIM

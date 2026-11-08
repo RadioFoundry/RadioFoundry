@@ -13,7 +13,10 @@
 #include "sim/ui_sim.h"
 #include "ui/ui_app.h"
 #include "ui/ui_screens.h"
+#include "ui/ui_nav.h"
 #include "config.h"
+#include "fuzz.h"
+#include "input/input_engine.h"
 
 static int fails, flows_run;
 
@@ -788,8 +791,6 @@ static const flow_t flows_k[] = {
 	{ "E TX tone spinner, the knob", "ok 5 up up ok down down down down down down down down down", "ok enc+ enc+ ok",
 	  "shows=107.2", 4, false },
 #endif
-	{ "E emergency: hold the top key", "", "long:emerg", "toast=EMERGENCY_sent", 1, false },
-	{ "E emergency: hold again cancels", "long:emerg", "long:emerg", "toast=Emergency_canceled", 1, false },
 	{ "E top key short: power", "", "user3", "power=5", 1, false },
 	// Side keys (Settings > Keys rows 4-9, core/input/keyassign.h; set42 = side key 1 ... set47 = top key hold)
 	{ "K side key 1: the next choice", "ok 7 8", "down down down ok", "set42=1 shows=Nothing", 4, false },
@@ -797,11 +798,11 @@ static const flow_t flows_k[] = {
 	{ "K side key 1 hold while it monitors (DMR)", "ok 7 8", "down down down down ok", "set43=1", 5, false },
 	{ "K side key 1 hold once it doesn't", "ok 7 8 down down down ok down", "ok", "set43=1", 1, false },
 	{ "K side key 2 hold", "ok 7 8", "down down down down down down ok", "set45=1", 7, false },
-	{ "K top key hold: emergency after scan", "ok 7 8 up ok ok ok ok ok ok", "ok", "set47=8 shows=Emergency", 1,
+	{ "K top key hold: emergency after scan", "ok 7 8 up up ok ok ok ok ok ok", "ok", "set47=8 shows=Emergency", 1,
 	  false },
-	{ "K top key hold: copy to VFO", "ok 7 8 up ok ok ok ok ok ok ok ok ok", "ok", "set47=14 shows=Copy_to_VFO", 1,
+	{ "K top key hold: copy to VFO", "ok 7 8 up up ok ok ok ok ok ok ok ok ok", "ok", "set47=14 shows=Copy_to_VFO", 1,
 	  false },
-	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back", 1,
+	{ "K top key hold: call back last", "ok 7 8 up up ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back", 1,
 	  false },
 	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1, false },
 	{ "K a key set to power", "", "powerkey", "power=5", 1, false },
@@ -903,6 +904,91 @@ static const flow_t flows_k[] = {
 };
 
 // Few-key radios (7.5): fallbacks
+// The emergency key's hold and its settings (docs/spec/dmr-emergency.md 5.1), on the key map with the key (SK3), at
+// every display class
+static const flow_t flows_em[] = {
+	// The emergency hold (dmr-emergency.md 5.1; set79 Hold, set80 Key, set81 Alert, set82 Open mic): the countdown from
+	// 0.3 s, sent at the end of the hold (3 s), nothing when let go before it
+	{ "E emergency: hold the top key", "", "hold:emerg,3000", "emerg=1 screen=emergency-hold shows=SENT", 1,
+	  false },
+	{ "E emergency: the outcome closes by itself", "", "hold:emerg,3000 wait:3000", "emerg=1 screen=home", 1, false },
+	{ "E emergency: let go one tick before the end", "", "hold:emerg,2950", "emerg=0 screen=home", 1, false },
+	{ "E emergency: 0.29 s is the key's press, no countdown", "", "hold:emerg,290,held", "emerg=0 screen=home", 1,
+	  false },
+	{ "E emergency: 0.3 s shows the countdown", "", "hold:emerg,300,held",
+	  "screen=emergency-hold shows=HOLD_FOR_EMERGENCY shows=Let_go_to_stop shows=Alarm_to_TG emerg=0", 1, false },
+	{ "E emergency: the seconds count down", "", "hold:emerg,1500,held", "shows=2 emerg=0", 1, false },
+	{ "E emergency: BACK stops the countdown", "hold:emerg,1000,held", "back wait:3000 release:emerg",
+	  "emerg=0 screen=home", 1, false },
+	{ "E emergency: long BACK stops it too", "hold:emerg,1000,held", "long:back wait:3000 release:emerg",
+	  "emerg=0 screen=home", 1, false },
+	// A screen over the countdown stops it; when it closes, the screen from before the hold, not a frozen countdown
+	{ "E emergency: the talk target picker over it", "hold:emerg,1000,held", "long:ctx back wait:3000 release:emerg",
+	  "emerg=0 screen=home", 2, false },
+	{ "E emergency: an emergency heard over it", "hold:emerg,1000,held", "emergency:9991234 ok wait:3000 release:emerg",
+	  "emerg=0 screen=home", 1, false },
+	{ "E emergency: an emergency heard over the outcome", "hold:emerg,3000", "emergency:9991234 ok wait:500",
+	  "emerg=1 screen=home", 1, false },
+	{ "E emergency: hold again cancels", "hold:emerg,3000 wait:3000", "hold:emerg,3000",
+	  "emerg=0 shows=CANCELED", 1, false },
+	{ "E emergency: the cancel says so while held", "hold:emerg,3000 wait:3000", "hold:emerg,500,held",
+	  "shows=HOLD_TO_CANCEL emerg=1", 1, false },
+	{ "E emergency: let go early keeps it on", "hold:emerg,3000 wait:3000", "hold:emerg,2950", "emerg=1 screen=home", 1,
+	  false },
+	// After the outcome, Home's red bar says the radio is still in emergency and how to end it: BACK turns the hot mic
+	// off; once in emergency, the key that holds Emergency ends it, or with none (Key Off, moved) BACK twice
+#define EM_SENT "hold:emerg,3000 wait:3000 "
+	{ "E emergency: Home shows it's on, mic on", EM_SENT, "", "screen=home emphase=1 shows=EMERG shows=mic_off", 0,
+	  false },
+	{ "E emergency: BACK turns the mic off, still on", EM_SENT, "back",
+	  "micoffs=1 emphase=2 emerg=1 toast=Mic_off:_still_in_emergency", 1, false },
+	{ "E emergency: in emergency, the key is named", EM_SENT "emphase:on wait:2000", "",
+	  "screen=home emphase=2 shows=Hold_SK3_to_end hides=PTT", 0, false },
+	{ "E emergency: the key moved, its new name", EM_SENT "emphase:on emkey:P2 wait:2000", "", "shows=Hold_P2_to_end", 0,
+	  false },
+	{ "E emergency: with the key, BACK doesn't end it", EM_SENT "emphase:on wait:2000", "back back",
+	  "emerg=1 micoffs=0", 2, false },
+	{ "E emergency: no key, BACK twice ends it", EM_SENT "emphase:on emkey:none wait:2000", "back back",
+	  "emerg=0 toast=Emergency_ended", 2, false },
+	{ "E emergency: no key, one BACK asks again", EM_SENT "emphase:on emkey:none wait:2000", "back",
+	  "emerg=1 toast=Back_again_to_end_emergency", 1, false },
+	{ "E emergency: no key, BACK twice too slow", EM_SENT "emphase:on emkey:none wait:2000", "back wait:2500 back",
+	  "emerg=1 toast=Back_again_to_end_emergency", 2, false },
+	{ "E emergency: Key Off, BACK twice ends it", "ok 7 8 up ok down ok long:back emstart emphase:on wait:2000",
+	  "back back", "emerg=0", 2, false },
+	{ "E emergency: canceled, the bar goes", EM_SENT "emphase:on wait:2000", "hold:emerg,3000 wait:3000",
+	  "emerg=0 emphase=0 hides=EMERG shows=PTT", 1, false },
+#undef EM_SENT
+	{ "E emergency: let go at 1.45 s is still the key's press", "", "hold:emerg,1450", "power=5 emerg=0 screen=home", 1,
+	  false },
+	{ "E emergency: let go at 1.5 s, no press", "", "hold:emerg,1500", "power=4 emerg=0 screen=home", 1, false },
+	{ "E emergency: a long press of 0.7 s sends nothing", "", "long:emerg wait:5000", "emerg=0 screen=home", 1, false },
+	// Settings > Keys > Emergency, the last row of Keys
+	{ "E emergency settings page", "", "ok 7 8 up ok",
+	  "screen=group shows=Hold shows=3_s shows=Emergency_key shows=Alert shows=Beep+vibrate shows=Open_mic shows=10_s", 5,
+	  false },
+	{ "E emergency: Hold 5 s", "", "ok 7 8 up ok ok 5 ok", "set79=5 shows=5_s", 8, false },
+	{ "E emergency: Hold 5 s, 4.95 s sends nothing", "ok 7 8 up ok ok 5 ok long:back", "hold:emerg,4950",
+	  "emerg=0", 1, false },
+	{ "E emergency: Hold 5 s, sent at 5 s", "ok 7 8 up ok ok 5 ok long:back", "hold:emerg,5000", "emerg=1", 1,
+	  false },
+	{ "E emergency: Hold kept at power off", "ok 7 8 up ok ok 5 ok long:back reboot", "hold:emerg,4950", "emerg=0 set79=5",
+	  1, false },
+	{ "E emergency: Hold 0 is refused", "ok 7 8 up ok ok 0", "ok", "set79=3 toast=Not_changed:_1_to_10", 1, false },
+	{ "E emergency: Hold stops at 10", "ok 7 8 up ok ok", "up up up up up up up up ok", "set79=10", 9, false },
+	{ "E emergency: Hold stops at 1", "ok 7 8 up ok ok", "down down down ok", "set79=1", 4, false },
+	{ "E emergency: Key Off", "", "ok 7 8 up ok down ok", "set80=0 shows=Off", 7, false },
+	{ "E emergency: Key Off, the hold does nothing", "ok 7 8 up ok down ok long:back", "hold:emerg,5000",
+	  "emerg=0 screen=home", 1, false },
+	{ "E emergency: Alert Silent", "", "ok 7 8 up ok down down ok", "set81=1 shows=Silent", 8, false },
+	{ "E emergency: the beep cue beside the seconds", "", "hold:emerg,1000,held", "shows=beep shows=vibrate", 1, false },
+	{ "E emergency: Silent, no cue", "ok 7 8 up ok down down ok long:back", "hold:emerg,1000,held",
+	  "hides=beep hides=vibrate screen=emergency-hold", 1, false },
+	{ "E emergency: Silent still sends and shows", "ok 7 8 up ok down down ok long:back", "hold:emerg,3000",
+	  "emerg=1 shows=SENT", 1, false },
+	{ "E emergency: Open mic 15 s", "", "ok 7 8 up ok down down down ok", "set82=15 shows=15_s", 9, false },
+};
+
 static const flow_t flows_f[] = {
 	{ "F next channel", "", "up", "pos=4", 1, false },
 	{ "F quick settings (long OK)", "", "long:ok", "screen=quick", 1, false },
@@ -924,7 +1010,7 @@ static const flow_t flows_f[] = {
 	  "writes=1 toast=Saved_channel_3", 1, true },
 #endif
 	// No programmable keys: the Keys group ends at its three general rows (ui.md 3.1)
-	{ "F no key rows without keys", "ok up ok up up up ok", "down down down", "focus=Long hides=Key_1", 3, false },
+	{ "F no key rows without keys", "ok up ok up up up ok", "down down down", "focus=Emergency hides=Key_1", 3, false },
 #if CONFIG_ZONE_EDIT
 	// No CONTEXT: long OK opens a zone's list in Zones and Channel actions in the list (information-architecture 7.5)
 	{ "F 23 move the channel in use down", "", "ok down down down down ok long:ok long:ok down ok",
@@ -1301,6 +1387,147 @@ static void title_row_checks(void)
 	}
 }
 
+// The emergency hold, counted: the beeps by kind (ui_beep_t) and the vibrations of one hold
+static unsigned em_beeps[8];
+static void em_beep(uint8_t beep, uint32_t now_ms)
+{
+	(void)now_ms;
+	if (beep < 8)
+		em_beeps[beep]++;
+}
+
+typedef struct {
+	uint8_t hold_s;
+	bool key_off, silent, active;	// active: our emergency is on before the hold (the hold cancels it)
+	unsigned ms;			// the key held, a multiple of the sim's 50 ms tick
+} em_case_t;
+
+// One hold from Home on the DM-1701's key map; false (and why) when it doesn't do what dmr-emergency.md 5.1 says
+static bool em_run(const sim_geom_t *g, const em_case_t *c, char *why, size_t len)
+{
+	char err[300], script[64];
+	sim_reset(g, SIM_MAP_K);
+	const int32_t set[][2] = { { UI_SET_EM_HOLD_S, c->hold_s }, { UI_SET_EM_KEY, !c->key_off },
+				   { UI_SET_EM_ALERT, c->silent ? UI_EM_ALERT_SILENT : UI_EM_ALERT_BEEP } };
+	for (size_t i = 0; i < sizeof set / sizeof set[0]; i++) {
+		ui_svc_setting_set((uint8_t)set[i][0], set[i][1]);
+		ui_apply_setting((uint8_t)set[i][0], set[i][1]);
+	}
+	if (c->active) {
+		snprintf(script, sizeof script, "hold:emerg,%u wait:3000", c->hold_s * 1000u);
+		bool was_off = c->key_off;
+		if (was_off)
+			ui_apply_setting(UI_SET_EM_KEY, 1);
+		if (!sim_run(script, err, sizeof err) || !sim_run("expect:emerg=1", err, sizeof err)) {
+			snprintf(why, len, "start: %s", err);
+			return false;
+		}
+		if (was_off)
+			ui_apply_setting(UI_SET_EM_KEY, 0);
+	}
+	memset(em_beeps, 0, sizeof em_beeps);
+	uint32_t vibes0 = sim_rec.vibes;
+	uint8_t power0 = sim_view()->power;
+	sim_set_beep_hook(em_beep);
+	snprintf(script, sizeof script, "hold:emerg,%u", c->ms);
+	bool ok = sim_run(script, err, sizeof err);
+	sim_set_beep_hook(NULL);
+	if (!ok) {
+		snprintf(why, len, "%s", err);
+		return false;
+	}
+	bool shown = !c->key_off && c->ms >= 300;
+	bool done = shown && c->ms >= c->hold_s * 1000u;
+	unsigned ticks = 0;
+	if (shown && !c->silent) {
+		ticks = 1;	// at 0.3 s, then at each whole second of the hold up to the release
+		for (unsigned k = 1; k < c->hold_s; k++)
+			ticks += k * 1000u <= c->ms;
+	}
+	unsigned outcome = done && !c->silent;
+	// Let go within the press window (input_press_window: 1.5 s) the key's press steps the power, unless the hold
+	// already acted (a 1 s hold)
+	bool stepped = c->ms < input_press_window(ACT_EMERGENCY, 700) && !done;
+	if ((sim_view()->power != power0) != stepped) {
+		snprintf(why, len, "power %u -> %u: the key's press %s", power0, sim_view()->power,
+			 stepped ? "missing" : "not expected");
+		return false;
+	}
+	bool on = c->active != done;
+	// The outcome stays up 2.5 s from the end of the hold (held or not); the sim's last tick is 50 ms after the release
+	bool up = done && c->ms + 50u - c->hold_s * 1000u < 2500u;
+	snprintf(script, sizeof script, "expect:emerg=%u expect:screen=%s", on, up ? "emergency-hold" : "home");
+	if (!sim_run(script, err, sizeof err)) {
+		snprintf(why, len, "%s", err);
+		return false;
+	}
+	if (em_beeps[UI_BEEP_COUNTDOWN] != ticks || em_beeps[UI_BEEP_EM_SENT] != (c->active ? 0 : outcome) ||
+	    em_beeps[UI_BEEP_EM_CANCELED] != (c->active ? outcome : 0) || sim_rec.vibes - vibes0 != ticks + outcome) {
+		snprintf(why, len, "ticks %u (want %u), sent %u canceled %u (want %u), vibrations %u", em_beeps[UI_BEEP_COUNTDOWN],
+			 ticks, em_beeps[UI_BEEP_EM_SENT], em_beeps[UI_BEEP_EM_CANCELED], outcome,
+			 (unsigned)(sim_rec.vibes - vibes0));
+		return false;
+	}
+	return true;
+}
+
+static void em_fail(const sim_geom_t *g, const em_case_t *c, const char *why)
+{
+	printf("FAIL emergency hold [%s] hold %u s key %s %s%s held %u ms: %s\n", g->name, c->hold_s,
+	       c->key_off ? "off" : "on", c->silent ? "silent" : "beep", c->active ? " (cancel)" : "", c->ms, why);
+	fails++;
+}
+
+// Every hold setting at every display class, at its two boundaries (one tick before the end: nothing; at the end:
+// sent), the show threshold (0.29 / 0.3 s), then a seeded run of random holds, settings and display classes
+static void em_hold_checks(void)
+{
+	char why[300];
+	int runs = 0;
+	for (int g = 0; g < sim_geom_count; g++) {
+		for (uint8_t h = 1; h <= 10; h++) {
+			const em_case_t c[] = {
+				{ h, false, false, false, h * 1000u - 50 }, { h, false, false, false, h * 1000u },
+				{ h, false, false, true, h * 1000u - 50 }, { h, false, false, true, h * 1000u },
+			};
+			for (size_t i = 0; i < sizeof c / sizeof c[0]; i++, runs++)
+				if (!em_run(&sim_geoms[g], &c[i], why, sizeof why))
+					em_fail(&sim_geoms[g], &c[i], why);
+		}
+		// The show edge (0.25 / 0.3 s) and the press window's (1.45 / 1.5 s), each start and cancel, a 1 s hold that
+		// acts inside the window (no press after it)
+		const em_case_t edge[] = {
+			{ 3, false, false, false, 250 }, { 3, false, false, false, 300 },
+			{ 3, false, false, false, 1450 }, { 3, false, false, false, 1500 },
+			{ 3, false, false, true, 1450 }, { 3, false, false, true, 1500 }, { 3, true, false, false, 1450 },
+			{ 1, false, false, false, 1450 }, { 1, false, false, false, 950 },
+			{ 3, true, false, false, 3000 }, { 3, false, true, false, 3000 }, { 3, true, false, true, 3000 },
+			{ 3, false, true, true, 3000 },
+		};
+		for (size_t i = 0; i < sizeof edge / sizeof edge[0]; i++, runs++)
+			if (!em_run(&sim_geoms[g], &edge[i], why, sizeof why))
+				em_fail(&sim_geoms[g], &edge[i], why);
+	}
+	// The 0.29 s press on the DM-1701 is the key's own (Power level), with no countdown drawn
+	char err[300];
+	sim_reset(sim_geom_find("160x120i5"), SIM_MAP_K);
+	if (!sim_run("hold:emerg,290 expect:power=5 expect:screen=home expect:hides=HOLD_FOR_EMERGENCY", err, sizeof err)) {
+		printf("FAIL emergency hold 0.29 s: %s\n", err);
+		fails++;
+	}
+	fuzz_t f;
+	fuzz_init(&f, 0xE3E6u);
+	long iters = fuzz_iters(300);
+	for (long i = 0; i < iters; i++, runs++) {
+		const sim_geom_t *g = &sim_geoms[fuzz_below(&f, (uint32_t)sim_geom_count)];
+		em_case_t c = { (uint8_t)(1 + fuzz_below(&f, 10)), fuzz_below(&f, 4) == 0, fuzz_below(&f, 3) == 0,
+				fuzz_below(&f, 3) == 0, 50u * (1 + fuzz_below(&f, 240)) };
+		if (!em_run(g, &c, why, sizeof why))
+			em_fail(g, &c, why);
+	}
+	printf("# emergency hold: %d holds checked (%ld random)\n", runs, iters);
+}
+
 // Home's talk target line drops a contact name that only repeats the ID ("TG 201 TG 201" on the DB25-D, 2026-10-17)
 static int check_name_is_id(void)
 {
@@ -1339,12 +1566,16 @@ int main(void)
 		run_flow(&flows_mono[i], sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");
 	for (size_t i = 0; i < sizeof flows_k / sizeof flows_k[0]; i++)
 		run_flow(&flows_k[i], sim_geom_find("160x120i5"), SIM_MAP_K, "K DM-1701");
+	for (int g = 0; g < sim_geom_count; g++)
+		for (size_t i = 0; i < sizeof flows_em / sizeof flows_em[0]; i++)
+			run_flow(&flows_em[i], &sim_geoms[g], SIM_MAP_K, sim_geoms[g].name);
 	const sim_geom_t *gf = sim_geom_find("160x128");
 	for (size_t i = 0; i < sizeof flows_f / sizeof flows_f[0]; i++)
 		run_flow(&flows_f[i], gf, SIM_MAP_F, "F few keys");
 	for (size_t i = 0; i < sizeof flows_s / sizeof flows_s[0]; i++)
 		run_flow(&flows_s[i], sim_geom_find("128x64"), SIM_MAP_S, "S side keys");
 	printf("# %d flows run\n", flows_run);
+	em_hold_checks();
 	about_checks();
 	call_screen_checks();
 	vfo_split_dmr_checks();

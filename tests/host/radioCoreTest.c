@@ -2516,6 +2516,30 @@ static void test_dmr_emergency(void)
 	dmr_emergency_cancel();
 	run(20);
 
+	// Mic off (Home's BACK, ui_svc_emergency_mic_off): the hot mic unkeys at once, the radio stays in emergency. In
+	// any other state it changes nothing
+	es.hot_mic_s = 10;
+	dmr_emergency_set_settings(&es);
+	run(20);
+	CHECK(ui_svc_emergency_phase() == UI_EM_OFF);
+	ui_svc_emergency_mic_off();
+	run(20);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_IDLE);
+	CHECK(dmr_emergency_start());
+	run(300);
+	CHECK(sm.em_keyed && sm.view.state == RS_TX && ui_svc_emergency_phase() == UI_EM_TX);
+	ui_svc_emergency_mic_off();
+	run(20);
+	CHECK(!sm.em_keyed && dmr_emergency_state() == DMR_EMERGENCY_ACTIVE && ui_svc_emergency_phase() == UI_EM_ON);
+	run(1000);
+	CHECK(sm.view.state == RS_IDLE);
+	ui_svc_emergency_mic_off();
+	run(20);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_ACTIVE && !sm.em_keyed);
+	dmr_emergency_cancel();
+	run(20);
+	CHECK(ui_svc_emergency_phase() == UI_EM_OFF);
+
 	// Heard: an emergency call on a group we listen to raises the alert and its tone once
 	dmr_emergency_stats_t s0, s1;
 	dmr_emergency_get_stats(&s0);
@@ -4439,6 +4463,71 @@ static void test_factory_reset(void)
 	sim_flash_free();
 }
 
+// Settings > Keys > Emergency (dmr-emergency.md 5.1): Hold in em_alarm_tries bits 4-7, Key and Alert in em_flags bits
+// 3-4, Open mic the emergency module's own. An older record (those bits 0) reads as hold 3 s, key on, beep on; the
+// radio core keeps the UI's bits when it saves its own; all of them survive a power cycle (the flash round trip)
+static void test_emergency_key_settings(void)
+{
+	settings_t sv;
+	sim_flash_create(0x40000u, &reset_map);
+	CHECK(storage_init());
+	settings_init();
+	dmr_start(true);
+	settings_t *st = settings_begin();
+	st->em_flags = SETTINGS_EM_ETSI_FID;	// an older record: the radio core's bits only
+	st->em_alarm_tries = 5;
+	settings_end(now);
+	CHECK(ui_svc_setting_get(UI_SET_EM_HOLD_S) == 3 && ui_svc_setting_get(UI_SET_EM_KEY) == 1 &&
+	      ui_svc_setting_get(UI_SET_EM_ALERT) == UI_EM_ALERT_BEEP);
+	// Every hold, and the edges past them clamped; the tries beside it untouched
+	for (int32_t h = 1; h <= 10; h++) {
+		CHECK(ui_svc_setting_set(UI_SET_EM_HOLD_S, h) && ui_svc_setting_get(UI_SET_EM_HOLD_S) == h);
+		settings_read(&sv);
+		CHECK((sv.em_alarm_tries & SETTINGS_EM_TRIES_MASK) == 5 && (sv.em_flags & ~SETTINGS_EM_UI_FLAGS) == SETTINGS_EM_ETSI_FID);
+	}
+	static const int32_t clamp_in[] = { 0, -5, 11, 99 }, clamp_out[] = { 1, 1, 10, 10 };
+	for (size_t i = 0; i < sizeof clamp_in / sizeof clamp_in[0]; i++)
+		CHECK(ui_svc_setting_set(UI_SET_EM_HOLD_S, clamp_in[i]) && ui_svc_setting_get(UI_SET_EM_HOLD_S) == clamp_out[i]);
+	CHECK(ui_svc_setting_set(UI_SET_EM_HOLD_S, 7) && ui_svc_setting_set(UI_SET_EM_KEY, 0) &&
+	      ui_svc_setting_set(UI_SET_EM_ALERT, UI_EM_ALERT_SILENT));
+	CHECK(ui_svc_setting_get(UI_SET_EM_KEY) == 0 && ui_svc_setting_get(UI_SET_EM_ALERT) == UI_EM_ALERT_SILENT);
+	// Open mic goes to the emergency module, which the radio core saves; 0 is off, past the maximum clamped
+	CHECK(ui_svc_setting_set(UI_SET_EM_HOT_MIC_S, 0));
+	run(20);
+	settings_read(&sv);
+	CHECK(ui_svc_setting_get(UI_SET_EM_HOT_MIC_S) == 0 && sv.em_stored == 1 && sv.em_hot_mic_s == 0);
+	CHECK(ui_svc_setting_set(UI_SET_EM_HOT_MIC_S, 70));
+	run(20);
+	CHECK(ui_svc_setting_get(UI_SET_EM_HOT_MIC_S) == DMR_EMERGENCY_HOT_MIC_MAX_S);
+	// The radio core saves its own settings (here the tries, over the debug link): the UI's bits stay
+	dmr_emergency_settings_t es;
+	dmr_emergency_get_settings(&es);
+	es.alarm_tries = 9;
+	es.rx_tone = false;
+	dmr_emergency_set_settings(&es);
+	run(20);
+	settings_read(&sv);
+	CHECK((sv.em_alarm_tries & SETTINGS_EM_TRIES_MASK) == 9 && settings_em_hold_s(&sv) == 7);
+	CHECK((sv.em_flags & SETTINGS_EM_UI_FLAGS) == SETTINGS_EM_UI_FLAGS && (sv.em_flags & SETTINGS_EM_NO_TONE));
+	// The power cycle: the record read back from the flash, the module started from it with the tries alone
+	CHECK(settings_flush());
+	settings_init();
+	CHECK(ui_svc_setting_get(UI_SET_EM_HOLD_S) == 7 && ui_svc_setting_get(UI_SET_EM_KEY) == 0 &&
+	      ui_svc_setting_get(UI_SET_EM_ALERT) == UI_EM_ALERT_SILENT);
+	boot();
+	run(50);
+	dmr_emergency_get_settings_now(&es);
+	CHECK(es.alarm_tries == 9 && es.hot_mic_s == DMR_EMERGENCY_HOT_MIC_MAX_S && !es.rx_tone);
+	// Back on: the bits clear again
+	CHECK(ui_svc_setting_set(UI_SET_EM_KEY, 1) && ui_svc_setting_set(UI_SET_EM_ALERT, UI_EM_ALERT_BEEP));
+	settings_read(&sv);
+	CHECK((sv.em_flags & SETTINGS_EM_UI_FLAGS) == 0);
+	sim_flash.map = NULL;
+	storage_init();			// back to no flash for anything after
+	settings_init();
+	sim_flash_free();
+}
+
 // DMR is TDMA: the radio's reading alternates between the signal and the floor. The published level holds the peak
 static void test_dmr_rssi_hold(void)
 {
@@ -4855,6 +4944,7 @@ int main(void)
 #endif
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();
+	test_emergency_key_settings();
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

@@ -355,11 +355,13 @@ and the VFO, "VFO" and "Back to channels". Its long press, COPY_VFO, copies the 
 and `keyassignTest` checks every board's key map for it. The key is a key map entry with fixed meanings (not one of the
 `board.side_keys`), so Settings > Keys doesn't change it.
 
-EMERGENCY is hold-to-activate (principles P2): a key whose long action is EMERGENCY needs `INPUT_HOLD_MS` (1.5 s)
-whatever the long press time (`input_long_threshold`, core/input). Which key carries it is the board's key map
-(`board.keymap`): for example a side key's long action in builds with `CONFIG_DMR_EMERGENCY` (else long USER_3 as above), or a dedicated SOS key; the short press stays USER_3. A hold toggles:
-"EMERGENCY sent: hold again to cancel", "Emergency canceled" (`ui_svc_emergency_active` reads the radio core's state,
-so a cancel from elsewhere counts). A board whose key map has no EMERGENCY entry has no emergency key (for example a board whose third side key isn't located yet).
+EMERGENCY is hold-to-activate (principles P2): a key whose long action is EMERGENCY gives it at `INPUT_EMERGENCY_SHOW_MS`
+(0.3 s) whatever the long press time (`input_long_threshold`, core/input), and its release after that as `GESTURE_UP`
+value 1 (`input_long_up`; value 2 and the key's short press after it when let go within 1.5 s, `input_press_window`); the UI counts the hold down on the `emergency-hold` screen and acts at its end (Settings >
+Keys > Emergency > Hold, 3 s by default; `dmr-emergency.md` 5.1). Which key carries it is the board's key map
+(`board.keymap`): for example a side key's long action in builds with `CONFIG_DMR_EMERGENCY` (else long USER_3 as above), or a dedicated SOS key; the short press stays USER_3. A hold to the end toggles:
+SENT (then hold again to cancel), CANCELED (`ui_svc_emergency_active` reads the radio core's
+state, so a cancel from elsewhere counts). A board whose key map has no EMERGENCY entry has no emergency key (for example a board whose third side key isn't located yet).
 
 PTT while the keys are locked works unless Settings > Privacy > PTT when locked is off: the UI then tells the input
 layer (`ui_svc_ptt_block`, `input_set_ptt_block`), which keeps PTT DOWN from the radio core (UP always passes), and the
@@ -399,7 +401,7 @@ position in the list is its role. Each role has a press and a long press, and ea
 | Power level (4) | POWER: the next level | yes | yes |
 | Next zone (5), Previous zone (6) | ZONE_UP, ZONE_DOWN | yes | yes |
 | Scan (7) | SCAN: on / off | yes | yes |
-| Emergency (8) | EMERGENCY, hold to activate (1.5 s) | no: P2 | yes |
+| Emergency (8) | EMERGENCY, hold to activate (a countdown, 3 s by default) | no: P2 | yes |
 | (9) | retired (was Hear all / Digital monitor): reads as Default. The Monitor function toggles digital monitor on DMR (#19) | no | no |
 | (10) | retired (was Monitor on/off): reads as Default. The Monitor function does both jobs (#19) | no | no |
 | Key lock (11) | LOCK: lock, and unlock while locked (as long QUICK) | yes | yes |

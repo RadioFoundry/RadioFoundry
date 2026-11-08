@@ -124,6 +124,8 @@ typedef struct {
 	uint16_t auto_off_min;	// switch off after this long without use, 0 = never (Settings > Power saving)
 	uint16_t unread;	// unread messages
 	const char *home_hint;	// the hint for Home's idle state, built from the board's keys ("OK Menu *Quick #Joe")
+	const char *em_bar;	// our emergency is on: Home's hint row is a red bar saying so and how to end it, else NULL
+	bool em_quiet;		// Alert Silent: the bar in the hint row's colors, not red
 	ui_banner_t banner;
 #if CONFIG_DUAL_WATCH
 	ui_dual_t dual;
@@ -219,6 +221,7 @@ typedef struct {
 	ui_item_fn item;
 	const char *empty;		// shown when count is 0
 	const char *hint;
+	const char *footer;		// dim word-wrapped text under the rows where there is room (the ranges), NULL = none
 } ui_list_t;
 
 void ui_draw_list(const radio_view_t *v, const ui_state_t *s, const ui_list_t *l);
@@ -244,6 +247,24 @@ void ui_draw_hotspot(const radio_view_t *v, const hotspot_view_t *h, const ui_st
 #endif
 // Received emergency: full screen, the caller, how to acknowledge
 void ui_draw_emergency(const radio_view_t *v, const ui_state_t *s, uint32_t id, const char *name);
+// The emergency key held (docs/spec/dmr-emergency.md 5.1): the seconds left large, a bar filling, the target, how to
+// stop; then the outcome
+typedef struct {
+	uint16_t left_ms;	// to the end of the hold
+	uint16_t hold_ms;	// the whole hold
+	bool cancel;		// the hold cancels our emergency
+	uint8_t done;		// UI_EM_DONE_*: the confirmation
+	bool alarm;		// an alarm goes first ("Alarm to"), else the emergency call ("Call to")
+	bool silent;		// Settings > Keys > Emergency > Alert: Silent (no red screen, no cue)
+	bool vibe;		// the countdown vibrates too (a motor, and Settings > Sound > Vibrate on)
+	bool private_call;
+	uint32_t id;		// the target, 0 = none known (no line)
+	const char *name;	// its contact name, "" none
+} ui_em_hold_t;
+#define UI_EM_DONE_NONE		0
+#define UI_EM_DONE_SENT		1
+#define UI_EM_DONE_CANCELED	2
+void ui_draw_em_hold(const radio_view_t *v, const ui_state_t *s, const ui_em_hold_t *h);
 // Volume (the VOL key, a radio without a knob): the step 0 (mute) .. RADIO_VOLUME_MAX as a bar and a number
 void ui_draw_volume(const radio_view_t *v, const ui_state_t *s);
 // Diagnostics: raw key bits, encoder total, radio readings and the board's own lines

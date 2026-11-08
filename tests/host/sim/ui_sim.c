@@ -7,7 +7,12 @@
 // Script tokens (separated by spaces):
 //   up down left right ok back quick ctx 0..9 tt mon user1..user4 emerg enc+ enc-   a short press (counted);
 //   powerkey zone+ zone- scankey lockkey cbkey homekey dualkey abkey: what a reassigned side key sends
-//   long:<key>          a long press (counted)
+//   long:<key>          a long press (counted); a key whose long action needs its release (input_long_up: emergency)
+//                       also gets that release, after 0.7 s
+//   hold:<key>,<ms>     the key held ms (1..60000) and let go, as the input engine sends it (counted): the press
+//                       before the long press time (the short action of the key whose long action this is), else the
+//                       long press at input_long_threshold and, for a key that needs it, its release at ms;
+//                       hold:<key>,<ms>,held keeps it held after ms (and one tick, to draw), until release:<key>
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
 //   mondown ... monup   the monitor key held (FM: the squelch held open)
 //   datatx / dataend    DMR data goes out without PTT (ARS, SMS, IP): the view says TX; it ends
@@ -28,6 +33,9 @@
 //   fmrx / fmrxend      an FM signal opens / closes the squelch
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
+//   emstart             our emergency starts without the key (the debug link)
+//   emphase:on          our emergency's alarm and hot mic are over (in emergency until canceled)
+//   emkey:<name>|none   the key whose long press is Emergency (default: the board's key map)
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
 //                       (each also <src>,<name>: the station's name, _ = space, for one not in the contacts)
 //   zoneoffer:<src>[,c] another radio offers its zone "Club net" (,c: one channel); the import and sends always work
@@ -67,6 +75,7 @@
 #include "ui/ui_svc.h"
 #include "ui/ui_nav.h"
 #include "input/input.h"
+#include "input/input_engine.h"
 #include "hostlink/hostlink.h"
 #include "hotspot/hotspot.h"
 #include "stubentry/stub_entry.h"
@@ -1864,9 +1873,34 @@ bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out)
 	*out = sim_sats[i];
 	return true;
 }
+// Our emergency: on starts its alarm / hot mic (UI_EM_TX); "emphase:on" is their end (UI_EM_ON); mic off does the
+// same. "emkey:<name>|none" names the key whose long press is Emergency (Settings > Keys), default the board's
 static bool emergency_on;
-bool ui_svc_emergency(bool on) { emergency_on = on; return true; }
+static uint8_t em_phase;
+static unsigned em_mic_offs;
+static char em_key[8];
+static bool em_key_set;
+bool ui_svc_emergency(bool on) { emergency_on = on; em_phase = on ? UI_EM_TX : UI_EM_OFF; return true; }
 bool ui_svc_emergency_active(void) { return emergency_on; }
+uint8_t ui_svc_emergency_phase(void) { return emergency_on ? em_phase : UI_EM_OFF; }
+void ui_svc_emergency_mic_off(void)
+{
+	em_mic_offs++;
+	if (emergency_on && em_phase == UI_EM_TX)
+		em_phase = UI_EM_ON;
+}
+const char *ui_svc_key_name_long(uint8_t action)
+{
+	if (action != ACT_EMERGENCY)
+		return NULL;
+	if (em_key_set)
+		return em_key[0] ? em_key : NULL;
+	for (uint8_t r = 0; r < board.side_key_count && board.side_key_names != NULL; r++)
+		for (uint8_t i = 0; i < board.keymap_len; i++)
+			if (board.keymap[i].bit == board.side_keys[r] && board.keymap[i].long_action == ACT_EMERGENCY)
+				return board.side_key_names[r];
+	return NULL;
+}
 bool ui_svc_factory_reset(void) { return true; }
 
 // The crash log (ui_svc.h): "crash:on" a record from before this start nobody has seen, "crash:ask" / "crash:auto"
@@ -1935,6 +1969,8 @@ static void add_message(uint32_t src, const char *text)
 // ---------------- time, keys, scripts ----------------
 
 static int presses;
+// A key held by hold:<key>,<ms>,held until release:<key>
+static struct { uint8_t action, shrt; bool down, long_sent; uint32_t t_down; } key_hold;
 static sim_map_t cur_map;
 static const char *shot_dir, *shot_prefix;
 int sim_presses(void) { return presses; }
@@ -1995,6 +2031,10 @@ static void advance(uint32_t ms)
 void sim_reset(const sim_geom_t *g, sim_map_t map)
 {
 	emergency_on = false;
+	em_phase = UI_EM_OFF;
+	em_mic_offs = 0;
+	em_key_set = false;
+	memset(&key_hold, 0, sizeof key_hold);
 	sim_foreign = sim_held = false;
 	disp.width = g->w;
 	disp.height = g->h;
@@ -2094,6 +2134,10 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_ROAM_PROBE, 0);
 	ui_svc_setting_set(UI_SET_CRASH_MODE, UI_CRASH_SEND_OFF);
 	ui_svc_setting_set(UI_SET_CRASH_CONTACT, 0);
+	ui_svc_setting_set(UI_SET_EM_HOLD_S, 3);
+	ui_svc_setting_set(UI_SET_EM_KEY, 1);
+	ui_svc_setting_set(UI_SET_EM_ALERT, UI_EM_ALERT_BEEP);
+	ui_svc_setting_set(UI_SET_EM_HOT_MIC_S, 10);
 	// English, or the language UI_LANG names ("es": a gallery in that language, docs/dev/translating.md)
 	const char *lang = getenv("UI_LANG");
 	ui_svc_setting_set(UI_SET_LANGUAGE, lang != NULL && strlen(lang) == 2 ? (uint8_t)lang[0] << 8 | (uint8_t)lang[1] : 0);
@@ -2127,6 +2171,30 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
 	{ "5", ACT_DIGIT_5 }, { "6", ACT_DIGIT_6 }, { "7", ACT_DIGIT_7 }, { "8", ACT_DIGIT_8 }, { "9", ACT_DIGIT_9 },
 };
+
+static bool on_map(uint8_t action, bool lng);
+
+// The short action of the key whose long action this is (itself if none)
+static uint8_t short_of(uint8_t a)
+{
+	for (int k = 0; k < board.keymap_len; k++)
+		if (board.keymap[k].long_action == a)
+			return board.keymap[k].short_action;
+	return a;
+}
+
+// The release, held_ms after the press, of a key whose long action needs it: its UP, and within the press window its
+// short press after it (core/input/input_engine.c)
+static void long_up(uint8_t a, uint32_t held_ms)
+{
+	bool press = held_ms < input_press_window(a, LONG_MS);
+	input_event_t ev = { a, GESTURE_UP, (int8_t)(press ? 2 : 1) };
+	ui_app_key(&ev);
+	if (press && short_of(a) != ACT_NONE) {
+		ev = (input_event_t){ short_of(a), GESTURE_PRESS, 0 };
+		ui_app_key(&ev);
+	}
+}
 
 static bool on_map(uint8_t action, bool lng)
 {
@@ -2197,10 +2265,74 @@ static bool press(const char *name, bool lng, char *err, size_t len)
 		advance(lng ? LONG_MS : PRESS_MS / 2);
 		ui_app_key(&ev);
 		advance(PRESS_MS / 2);
+		if (lng && input_long_up(a))
+			long_up(a, LONG_MS);
 		return true;
 	}
 	snprintf(err, len, "unknown key %s", name);
 	return false;
+}
+
+// hold:<key>,<ms>: the key held ms, its gestures as core/input/input_engine.c sends them
+// The release of a key held with hold: the press if its long press never came, else its UP when it needs one
+static void hold_release(void)
+{
+	input_event_t ev = { key_hold.shrt, GESTURE_PRESS, 0 };
+	key_hold.down = false;
+	if (key_hold.long_sent) {
+		if (input_long_up(key_hold.action))
+			long_up(key_hold.action, now_ms - key_hold.t_down);
+	} else if (ev.action != ACT_NONE) {
+		ui_app_key(&ev);
+	}
+	advance(TICK_MS);
+}
+
+static bool hold_key(const char *arg, char *err, size_t len)
+{
+	char name[16], held[8] = "";
+	unsigned ms = 0;
+	char extra;
+	int n = arg != NULL ? sscanf(arg, "%15[^,],%u,%7[^,]%c", name, &ms, held, &extra) : 0;
+	if ((n != 2 && n != 3) || (n == 3 && strcmp(held, "held") != 0) || ms < 1 || ms > 60000) {
+		snprintf(err, len, "hold: expected <key>,<ms>[,held] with ms 1..60000, got %s", arg != NULL ? arg : "nothing");
+		return false;
+	}
+	size_t i = 0;
+	while (i < sizeof keys / sizeof keys[0] && strcmp(name, keys[i].name) != 0)
+		i++;
+	if (i == sizeof keys / sizeof keys[0] || !on_map(keys[i].action, true)) {
+		snprintf(err, len, "hold: no key for long %s on this key map", name);
+		return false;
+	}
+	if (key_hold.down) {
+		snprintf(err, len, "hold: a key is held already (release it first)");
+		return false;
+	}
+	uint8_t a = keys[i].action;
+	key_hold.action = a;
+	key_hold.shrt = short_of(a);	// the press: the short action of the key whose long action this is
+	key_hold.down = true;
+	key_hold.t_down = now_ms;
+	key_hold.long_sent = false;
+	presses++;
+	uint32_t thr = input_long_threshold(a, LONG_MS);
+	if (ms < thr) {
+		advance(ms);
+	} else {
+		advance(thr);
+		input_event_t ev = { a, GESTURE_LONG, 0 };
+		ui_app_key(&ev);
+		if (ui_app_tick(&view, now_ms))	// the UI task ticks right after each key, at the same time (core/ui/ui.c)
+			ui_app_draw();
+		key_hold.long_sent = true;
+		advance(ms - thr);
+	}
+	if (n == 2)
+		hold_release();
+	else
+		advance(TICK_MS);	// drawn
+	return true;
 }
 
 static const char *screen(void)
@@ -2281,6 +2413,9 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "beep") == 0) snprintf(got, sizeof got, "%u", sim_rec.last_beep);	// ui_beep_t
 	else if (strcmp(key, "vibes") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.vibes);
 	else if (strcmp(key, "vibe") == 0) snprintf(got, sizeof got, "%u", sim_rec.last_vibe);	// ui_vibe_t
+	else if (strcmp(key, "emerg") == 0) snprintf(got, sizeof got, "%u", emergency_on);	// our own emergency
+	else if (strcmp(key, "emphase") == 0) snprintf(got, sizeof got, "%u", ui_svc_emergency_phase());
+	else if (strcmp(key, "micoffs") == 0) snprintf(got, sizeof got, "%u", em_mic_offs);
 	else if (strcmp(key, "shows") == 0) {	// a text on the screen (as drawn, after fitting) contains the value
 		got[0] = 0;
 		for (int i = 0; i < live_n; i++) {
@@ -2382,6 +2517,19 @@ static bool run_token(char *t, char *err, size_t len)
 		*arg++ = 0;
 	if (strcmp(t, "long") == 0)
 		return press(arg, true, err, len);
+	if (strcmp(t, "hold") == 0)
+		return hold_key(arg, err, len);
+	if (strcmp(t, "release") == 0) {
+		size_t i = 0;
+		while (arg != NULL && i < sizeof keys / sizeof keys[0] && strcmp(arg, keys[i].name) != 0)
+			i++;
+		if (!key_hold.down || arg == NULL || i == sizeof keys / sizeof keys[0] || keys[i].action != key_hold.action) {
+			snprintf(err, len, "release: no key held with hold:%s,<ms>,held", arg != NULL ? arg : "");
+			return false;
+		}
+		hold_release();
+		return true;
+	}
 	if (strcmp(t, "ptt") == 0) {
 		uint32_t ms = arg != NULL ? (uint32_t)atoi(arg) : 1000u;
 		if (!on_map(ACT_PTT, false)) {
@@ -2447,6 +2595,27 @@ static bool run_token(char *t, char *err, size_t len)
 		int32_t sec = atoi(arg);
 		ui_svc_setting_set(UI_SET_AUTO_LOCK_S, sec);
 		ui_apply_setting(UI_SET_AUTO_LOCK_S, sec);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "emstart") == 0) {	// our emergency started without the key (the debug link)
+		ui_svc_emergency(true);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "emphase") == 0 && arg != NULL) {	// the alarm and hot mic are over: in emergency until canceled
+		if (strcmp(arg, "on") != 0) {
+			snprintf(err, len, "emphase: expected on, got %s", arg);
+			return false;
+		}
+		if (emergency_on)
+			em_phase = UI_EM_ON;
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "emkey") == 0 && arg != NULL) {	// the key whose long press is Emergency, or none
+		em_key_set = true;
+		snprintf(em_key, sizeof em_key, "%s", strcmp(arg, "none") == 0 ? "" : arg);
 		advance(200);
 		return true;
 	}

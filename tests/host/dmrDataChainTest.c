@@ -586,6 +586,28 @@ static void test_emergency_alarm_out(void)
 	dmrDataStats_t st;
 	dmrDataServiceGetStats(&st);
 	CHECK(st.emergencyAlarmsSent == 3);
+
+	// Mic off during the alarm (Home's BACK): the alarms still go, no hot mic follows, the radio stays in emergency
+	es.mode = DMR_EMERGENCY_MODE_ALARM_CALL;
+	es.alarm_tries = 1;
+	es.hot_mic_s = 5;
+	dmr_emergency_set_settings(&es);
+	run(20);
+	CHECK(dmr_emergency_start());
+	run(100);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_ALARM);
+	dmr_emergency_mic_off();
+	run(3000);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_ACTIVE && !dmr_emergency_hot_mic());
+	dmr_emergency_cancel();
+	run(50);
+	// The next emergency has its hot mic again: the skip was for that one only
+	CHECK(dmr_emergency_start());
+	run(3000);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_HOT_MIC && dmr_emergency_hot_mic());
+	dmr_emergency_cancel();
+	run(50);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_IDLE && !dmr_emergency_hot_mic());
 }
 
 // --- ETSI short data (docs/spec/dmr-data.md 5.2) ---

@@ -336,6 +336,9 @@ void ui_svc_beep(uint8_t beep)
 	static const uint8_t map[] = {
 		[UI_BEEP_KEY] = BEEP_KEY, [UI_BEEP_ERROR] = BEEP_ERROR, [UI_BEEP_MESSAGE] = BEEP_MESSAGE,
 		[UI_BEEP_BATTERY_LOW] = BEEP_BATTERY_LOW,
+		// The emergency hold: a short tick, then two tones for sent, falling ones for canceled. Not BEEP_EMERGENCY:
+		// that is someone else's emergency heard
+		[UI_BEEP_COUNTDOWN] = BEEP_SCAN_HOLD, [UI_BEEP_EM_SENT] = BEEP_TOT_WARN, [UI_BEEP_EM_CANCELED] = BEEP_CALL_END,
 	};
 	radio_req_beep(beep < sizeof map ? map[beep] : BEEP_KEY);
 }

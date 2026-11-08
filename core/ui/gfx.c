@@ -525,6 +525,31 @@ int gfx_text_bg(const font_t *f, int x, int y, const char *s, color_t fg, color_
 	return text(f, x, y, s, fg, true, bg);
 }
 
+int gfx_text_scaled(const font_t *f, int x, int y, const char *s, int scale, color_t fg)
+{
+	int bytes = (f->w * f->bpp + 7) / 8;
+#ifdef GFX_FIT_TRACE
+	const char *s0 = s;
+	int x0 = x;
+#endif
+	for (; *s; s++, x += f->w * scale) {
+		int top, rows;
+		const uint8_t *g = font_glyph(f, (uint8_t)*s, &top, &rows);
+		for (int r = 0; g != NULL && r < rows; r++, g += bytes) {
+			for (int col = 0; col < f->w; col++) {
+				unsigned a = f->bpp == 2 ? (g[col >> 2] >> (6 - 2 * (col & 3))) & 3u :
+					     (g[col >> 3] & (0x80u >> (col & 7))) ? 3u : 0;
+				if (a >= 2)
+					gfx_fill(x + col * scale, y + (top + r) * scale, scale, scale, fg);
+			}
+		}
+	}
+#ifdef GFX_FIT_TRACE
+	trace(GFX_TRACE_TEXT, x0, y, (int)strlen(s0) * f->w * scale, f->h * scale, s0);	// after the ink, as text() does
+#endif
+	return x;
+}
+
 int gfx_text_width(const font_t *f, const char *s)
 {
 	if (strchr(s, TEXT_ALT_OPEN[0])) {
