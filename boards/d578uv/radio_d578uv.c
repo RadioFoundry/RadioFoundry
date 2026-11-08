@@ -2007,6 +2007,12 @@ static void tx_off(void)
 static void dmr_wake_listen(bool listen)
 {
 	if (listen) {
+		// A lone burst's modulation outlasts the burst line by 4.5 ms and PE6 by 5.8 ms (top of this file): off at the
+		// line's fall would cut the end of every wake-up CSBK
+		uint32_t fall_us = burst_fall_us;
+
+		while (fall_us != 0 && hal_micros() - fall_us < 6500u)
+			;
 		tx_off();
 	} else {
 		(void)dmr_tx(tx_hz, dmr_tx_dac);	// refused: the burst goes without the PA and the wake-up tries again
