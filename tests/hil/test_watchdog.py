@@ -29,13 +29,16 @@ def _cause(radio):
 
 @pytest.mark.feature("watchdog")
 def test_watchdog_running(radio):
-    """Started and fed: a timeout, the feed count going up, and the idle task's longest gap well inside the timeout."""
+    """Started and fed: a timeout, the feed count going up, and the idle task's longest gap well inside the timeout.
+    The gap is measured from a clear: since the start it also holds work that feeds the watchdog itself (a SPI NAND
+    board's codeplug write, docs/spec/watchdog.md 4), seconds on some radios."""
     v = _view(radio)
     timeout = as_int(v["watchdog.timeout_ms"])
     assert 1000 <= timeout <= 32000, v
     assert v.get("watchdog.starving") == "0", v
     feeds = as_int(v["watchdog.feeds"])
-    time.sleep(0.5)
+    radio.link.watchdog_clear_gap()
+    time.sleep(2.0)
     v2 = _view(radio)
     assert as_int(v2["watchdog.feeds"]) > feeds, (v, v2)
     assert as_int(v2["watchdog.max_gap_ms"]) < timeout // 2, v2
