@@ -102,11 +102,28 @@ def _audio(radio):
     return {k: v for k, v in radio.view(None).items() if k.startswith("beep.")}
 
 
+def _stream(radio):
+    """The PCM stream's late and dropped blocks (audio.late, audio.dropped), or None on firmware that doesn't count
+    them"""
+    a = radio.view(["audio"])
+    if "audio.late" not in a:
+        return None
+    return int(a["audio.late"]), int(a.get("audio.dropped") or 0)
+
+
 def _play(radio, mic, name, segs):
+    """The recording's check, with the stream's own fault added when it played a block late or dropped one: the
+    radio's, whatever the microphone made of it"""
     length = sum(ms for _, ms in segs) / 1000
+    s0 = _stream(radio)
     p, path = mic.start(length + 1.2)
     radio.link.beep(name)
-    return A.check_wav(mic.finish(p, path), segs), path
+    r = A.check_wav(mic.finish(p, path), segs)
+    s1 = _stream(radio)
+    if s0 is not None and s1 is not None and s1 != s0:
+        r.problems.append(f"the audio stream played {s1[0] - s0[0]} block(s) late and dropped {s1[1] - s0[1]} "
+                          f"(audio.late, audio.dropped)")
+    return r, path
 
 
 @pytest.mark.feature("beep")

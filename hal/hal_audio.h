@@ -16,6 +16,14 @@
 // Called once per 20 ms block from the driver's deferred context (not an ISR): mic samples in, fill speaker samples out
 typedef void (*audio_block_cb_t)(const int16_t *mic, int16_t *spk, void *ctx);
 
+// The stream's timing since boot: a late block plays the speaker buffer's old contents again (a block of the sound
+// before it), a dropped one is never seen by the callback
+typedef struct {
+	uint32_t blocks;	// blocks the callback filled
+	uint32_t late;		// a block's turn came before the callback had filled it
+	uint32_t dropped;	// blocks skipped because the callback was a whole block late
+} audio_stream_stats_t;
+
 typedef struct {
 	bool (*start)(audio_block_cb_t cb, void *ctx);
 	void (*stop)(void);
@@ -32,6 +40,8 @@ typedef struct {
 	// Optional: speaker audio other than silence is still queued or playing (a beep's tail in the driver's buffers).
 	// NULL: none is held past the block callback
 	bool (*spk_pending)(void);
+	// Optional: the stream's timing (debug link view audio.*). NULL: not counted
+	void (*stream_stats)(audio_stream_stats_t *out);
 } hal_audio_t;
 
 #endif

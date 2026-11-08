@@ -582,7 +582,8 @@ static void speaker_warm(bool on)
 // a lone 25 or 40 ms beep was lost and longer ones lost their start; with 80 ms every beep plays whole). A mobile on
 // a supply: the amplifier stays up for 30 s after the last key, PTT, reception or beep, so those play at once
 const hal_audio_t md9600_audio = { .start = audio_start, .stop = audio_stop, .speaker_pcm = speaker_pcm,
-				   .speaker_lead_ms = 80, .speaker_warm = speaker_warm, .speaker_hang_s = 30 };
+				   .speaker_lead_ms = 80, .speaker_warm = speaker_warm, .speaker_hang_s = 30,
+				   .stream_stats = stm32_i2s_pcm_stream_stats };
 #endif
 
 #if CONFIG_DMR && (CONFIG_AUDIO_PROBE || MD9600_FM_RX_TAP)
