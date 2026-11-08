@@ -283,7 +283,7 @@ Used by `_over()` (`test_dmr_tx_talker_alias`, `test_dmr_privacy_tx`), `test_dmr
 
 | Test | Why |
 |---|---|
-| `test_dmr_tx_off_air` | judges the waveform: burst on-time, keying ramps, power steps, overlaps, ADC clipping |
+| `test_dmr_tx_off_air` | judges the waveform: burst on-time, keying ramps, power steps, overlaps, the off slot's residual carrier, ADC clipping |
 | `test_split_tx_half_off_air`, `test_split_tx_half_voice` | decodes the CACH from the waveform (`sdrmon.py analyze --cach`) |
 | FM tests (`test_fm_tx`, `test_audio_probe`, `test_mic_gain`, `test_hotspot_cwid`, `test_usrp_fm_tx`) | deviation, tones, CTCSS / DCS and carrier offset come from the demodulated audio |
 | `test_aprs_on_air_*` | AFSK is audio on an FM carrier |

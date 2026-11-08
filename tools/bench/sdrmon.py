@@ -210,6 +210,47 @@ def _movavg(x: np.ndarray, n: int) -> np.ndarray:
     return np.roll(out, n // 2)
 
 
+CARRIER_BELOW_DB = 30.0     # dB under the bursts: no carrier, however far over the floor (an off slot's residual)
+QUIET_DB = -110.0           # dB: a 1 ms window of exact zeros (log of the envelope's 1e-12 guard is -120)
+
+
+def carrier_floor(env1: np.ndarray, threshold_db: float) -> tuple:
+    """(noise, base) in dB from the 1 ms power envelope env1. noise: the floor, from the windows that hold anything (a
+    channel output that rounds a quiet channel to exact zeros would put it at the bottom of the scale; with nothing
+    else quiet, the off slot's residual is then the floor). base: what the carrier thresholds (base + threshold_db)
+    and the ramps' ends stand on: the floor, raised to CARRIER_BELOW_DB + threshold_db under the bursts' level when the
+    receiver is so close that a radio's off-slot residual stands over the floor. That residual is judged by
+    off_slot_residual, not counted as carrier."""
+    live = env1[env1 > QUIET_DB]
+    if len(live) == 0:
+        return float(np.percentile(env1, 10)), float(np.percentile(env1, 10))
+    noise = float(np.percentile(live, 10))
+    level = float(np.percentile(live, 90))
+    return noise, max(noise, level - CARRIER_BELOW_DB - threshold_db)
+
+
+def off_slot_residual(env1: np.ndarray, starts, quiet: float, burst: int = BURST, fs: float = FS_CH):
+    """The carrier between a radio's bursts in one slot: (median of the off part minus the median burst level in dB,
+    whether the off part stands over the quiet level) over burst pairs 55-65 ms apart, None without one. The off part
+    is the middle of the gap (5 ms clear of each burst). quiet: the capture's level with nothing keyed (the 10th
+    percentile of the whole envelope, exact zeros included); at it (under quiet + 3 dB) the residual can't be measured,
+    and the value is only a bound."""
+    ms5, pairs = int(fs * 0.005), []
+    starts = sorted(int(s) for s in starts)
+    for a, b in zip(starts, starts[1:]):
+        if not 55e-3 * fs <= b - a <= 65e-3 * fs or b - ms5 > len(env1):
+            continue
+        on = env1[a + ms5:a + burst - ms5]
+        off = env1[a + burst + ms5:b - ms5]
+        if len(on) and len(off):
+            pairs.append((float(np.median(off)), float(np.median(on))))
+    if not pairs:
+        return None
+    off = float(np.median([o for o, _ in pairs]))
+    on = float(np.median([x for _, x in pairs]))
+    return round(off - on, 1), off > quiet + 3
+
+
 def _sync_scores(f: np.ndarray, unit: np.ndarray) -> np.ndarray:
     """(4, len(f)) cosine similarity of the 24 symbols starting at every sample with each family."""
     n = len(f)
@@ -262,10 +303,10 @@ def cmd_analyze(args) -> int:
     # Power envelope: 0.1 ms (5 samples) and 1 ms averages, in dB.
     env = 10 * np.log10(_movavg(p, 5) + 1e-12)
     env1 = 10 * np.log10(_movavg(p, 48) + 1e-12)
-    noise = float(np.percentile(env1, 10))
+    noise, base = carrier_floor(env1, args.threshold_db)
     # Thermal noise in the ~15 kHz channel (NF ~3 dB, referred to the antenna through the LNA): rough dBm.
     dbm_off = args.dbm_offset if args.dbm_offset is not None else (-174 + 10 * np.log10(15e3) + 3) - noise
-    on_th, off_th = noise + args.threshold_db, noise + args.threshold_db - 3
+    on_th, off_th = base + args.threshold_db, base + args.threshold_db - 3
 
     # Carrier segments with sub-sample edges (linear interpolation of the 0.1 ms envelope).
     segs = []
@@ -300,7 +341,7 @@ def cmd_analyze(args) -> int:
 
     def ramp_up(a):
         plat = np.median(env[a + 48:a + 144]) if a + 144 < n else env[a]
-        lo = noise + 6
+        lo = base + 6
         i0 = a
         while i0 > 0 and env[i0] > lo:
             i0 -= 1
@@ -311,7 +352,7 @@ def cmd_analyze(args) -> int:
 
     def ramp_down(b):
         plat = np.median(env[max(0, b - 144):b - 48]) if b > 144 else env[b]
-        lo = noise + 6
+        lo = base + 6
         i1 = b
         while i1 < n - 1 and env[i1] > lo:
             i1 += 1
@@ -327,7 +368,7 @@ def cmd_analyze(args) -> int:
     S = _sync_scores(f, unit)
     best_fam = np.argmax(np.abs(S), axis=0)
     best = S[best_fam, np.arange(n)]
-    gate = env1 > noise + 6
+    gate = env1 > base + 6
     cand = np.nonzero((np.abs(best) >= args.min_corr) & gate)[0]
     cand = cand[(cand >= PRE + 24 * SPS) & (cand < n - (BURST - PRE) - 1)]
     order = cand[np.argsort(-np.abs(best[cand]))]
@@ -402,7 +443,7 @@ def cmd_analyze(args) -> int:
             q = int(round(pos)) + d
             if q < 0 or q + BURST >= n:
                 continue
-            if np.mean(env1[q:q + BURST]) < noise + 6:
+            if np.mean(env1[q:q + BURST]) < base + 6:
                 continue
             raw = fec.bits_to_bytes(_slice(f[q + np.arange(132) * SPS], ref.center, ref.outer))
             cc, pi, lcss, e = L2.decode_emb(raw)
@@ -476,7 +517,7 @@ def cmd_analyze(args) -> int:
         b.step = b.spread > args.step_db
     # Ramp times, first-burst flag, per-burst ADC clipping and misread-family flags (rfoundry_sdrbench.burstmetrics)
     from rfoundry_sdrbench import burstmetrics
-    burstmetrics.annotate(bursts, f, p, clip, D=int(round(meta["fs"] / FS_CH)), noise_db=noise)
+    burstmetrics.annotate(bursts, f, p, clip, D=int(round(meta["fs"] / FS_CH)), noise_db=base)
 
     # Window.
     lo_ms = args.from_ms if args.from_ms is not None else -1e9
@@ -642,6 +683,10 @@ def cmd_analyze(args) -> int:
     if unexpl:
         print("  carrier with no decoded burst (>5 ms): "
               + ", ".join(f"segment @{a:.1f}: {u:.1f} ms" for a, u in unexpl[:20]))
+    resid = off_slot_residual(env1, [b.start for b in bursts], float(np.percentile(env1, 10)))
+    if resid:
+        print(f"  off-slot residual: {resid[0]:+.1f} dB against the bursts"
+              + ("" if resid[1] else " (at the noise floor: a bound)"))
     if args.cach:
         cs = [b for b in sel if getattr(b, "cach", None) is not None]
         print()
@@ -676,6 +721,10 @@ def cmd_analyze(args) -> int:
                 "repeat_gap_ms": sorted(round(x, 2) for x in gaps),
                 "overlaps": len(ov), "power_steps": len(steps),
                 "unexplained_carrier": [[round(a, 1), round(u, 1)] for a, u in unexpl],
+                # dB against the bursts, and whether it stood over the floor (off_slot_residual); None: no burst pair
+                "off_slot_residual_db": resid[0] if resid else None,
+                "off_slot_residual_measured": resid[1] if resid else None,
+                "carrier_base_dbfs": round(base, 1),
                 # calls (rfoundry_sdrbench.calls): per call its own voice letters, LC types, alias, GPS, and every burst
                 # left out of the calls with the reason (another family / slot, outside the call, a false sync match)
                 "calls": grouped["calls"], "left_out": grouped["left_out"],

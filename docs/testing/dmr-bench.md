@@ -210,6 +210,11 @@ T1 pass criteria (all automatic):
   102 361-1 clause 10.2.3.1.1, figure 10.3; a board can be held to another limit with a reason, `board.toml`
   `[hil.limits] dmr_tx_ramp_ms`, and the check then names it);
 - no overlapping bursts, no power step inside a burst, no carrier without a decoded burst;
+- the carrier left between the bursts (the off slot's residual) at least 30 dB under the bursts, where it stands over
+  the noise floor. The carrier thresholds sit 10 dB over the floor, or 30 dB under the bursts when the receiver is so
+  close that the residual stands over the floor (`sdrmon.py` `carrier_floor`), so a residual is judged by this check
+  and not counted as carrier. The floor leaves out windows of exact zeros (a channel output that rounds a quiet channel
+  to zero);
 - the bench modem hears one call, started by its header, ended by its terminator, AMBE FEC corrections 0 on the bench.
 
 ### 5.3 Voice quality (c)

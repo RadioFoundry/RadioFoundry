@@ -66,6 +66,7 @@ BENCH_TOOLS = ["bench_tx.py", "bench_repeater.py", "sdrmon.py", "sdr_watch.py"]
 DAEMON = os.environ.get("RFOUNDRY_SDR_BENCH_DAEMON", "auto")         # auto (the socket exists) | 1 | 0
 DAEMON_SOCK = "/run/rfoundry-benchd/bench.sock"
 WAIT_MAX = float(os.environ.get("RFOUNDRY_SDR_BENCH_WAIT_MAX", "900"))
+OFF_SLOT_MIN_DB = 30.0      # dB: the carrier a radio leaves between its bursts, under the bursts' level
 EX_TEMPFAIL, EX_NOPERM = 75, 77                                  # rfoundry-bench: waited too long / refused by the config
 
 
@@ -186,7 +187,8 @@ CASES = [
      "pass": "All bursts MS family, cc {cc}; >= 1 (3 expected) voice LC headers with src {radio_id} dst {tg}; "
              "voice A-F in order; embedded LC = the header's; >= 1 terminator after the last voice; same-slot "
              "spacing 60.00 +- 0.05 ms (sd < 0.1); |frequency offset| < 500 Hz; burst on-time 27-31.5 ms; key-up "
-             "/ key-down ramps < 1.5 ms; no power steps, no overlaps, no unexplained carrier; capture clip < 1 %. "
+             "/ key-down ramps < 1.5 ms; no power steps, no overlaps, no unexplained carrier; off-slot residual <= -30 dB where it "
+             "stands over the floor; capture clip < 1 %. "
              "bench modem: one call, terminator, AMBE FEC corrections 0 on the bench."},
     {"id": "T2", "phase": "radio transmits", "title": "Radio PTT tap (< 0.3 s)",
      "steps": [("capture", 10), ("listen", 8), ("prompt", "Tap PTT as briefly as you can. Enter."), ("wait", 2)],
@@ -598,6 +600,12 @@ def check_tx(sdr, expect, radio_id, cc, c, limits=None):
     c.add("no overlapping bursts", s["overlaps"] == 0, f"{s['overlaps']}")
     c.add("no power steps inside bursts", s["power_steps"] == 0, f"{s['power_steps']}")
     c.add("no unexplained carrier", not s["unexplained_carrier"], f"{s['unexplained_carrier'][:3]}")
+    res = s.get("off_slot_residual_db")
+    if res is not None:
+        # A receiver close enough sees the carrier a radio leaves between its bursts; at the floor it's only a bound
+        measured = s.get("off_slot_residual_measured")
+        c.add(f"off-slot residual <= -{OFF_SLOT_MIN_DB:g} dB", res <= -OFF_SLOT_MIN_DB or not measured,
+              f"{res:+.1f} dB" + ("" if measured else " (at the noise floor)"))
 
 
 def check_modem_calls(recs, radio_id, c, voice_quality=False):

@@ -77,7 +77,8 @@ from hil_config import rig
 PTT_S = 3.0
 # dmr_bench.check_tx items that judge the waveform, meaningless in a capture whose ADC clipped
 SDR_WAVEFORM_CHECKS = ("capture not saturated", "sync family", "voice A-F in order", "same-slot spacing", "ramps",
-                       "no overlapping bursts", "no power steps", "burst on-time", "no unexplained carrier")
+                       "no overlapping bursts", "no power steps", "burst on-time", "no unexplained carrier",
+                       "off-slot residual")
 
 
 def talker_alias_on_air(bursts):

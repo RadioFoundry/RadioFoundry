@@ -210,16 +210,16 @@ for f in sys.argv[1:]:
 		head -20 "$OUT/hil-skips.log"
 		bad "HIL skips without a kind (see $OUT/hil-skips.log)"
 	fi
-	# the speaker tests' analysis on synthetic recordings (no radio, needs numpy)
+	# the speaker tests' and sdrmon's carrier floor analysis on synthetic data (no radio, needs numpy)
 	if python3 -c 'import pytest, numpy' 2>/dev/null; then
-		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_audio_check.py > "$OUT/hil-audio-check.log" 2>&1; then
-			ok "HIL speaker analysis tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-audio-check.log"))"
+		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_audio_check.py tests/hil/test_sdrmon_floor.py > "$OUT/hil-audio-check.log" 2>&1; then
+			ok "HIL speaker and SDR floor analysis tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-audio-check.log"))"
 		else
 			tail -20 "$OUT/hil-audio-check.log"
-			bad "HIL speaker analysis tests (see $OUT/hil-audio-check.log)"
+			bad "HIL speaker and SDR floor analysis tests (see $OUT/hil-audio-check.log)"
 		fi
 	else
-		skip "HIL speaker analysis tests: pytest or numpy not installed"
+		skip "HIL speaker and SDR floor analysis tests: pytest or numpy not installed"
 	fi
 	if python3 -c 'import pytest' 2>/dev/null; then
 		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_skip_kinds.py tests/hil/test_radio_reconnect.py tests/hil/test_bench_line.py \
