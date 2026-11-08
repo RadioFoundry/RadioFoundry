@@ -184,7 +184,7 @@
  "flash.title": "Install and Back Up",
  "flash.lead": "Install, back up and restore radio firmware over USB. Requires Chrome or Edge on a desktop computer, or Chrome on Android.",
  "flash.beta.title": "RadioFoundry Is Beta Software",
- "flash.beta.lead": "The RadioFoundry firmware and this web installer are still under active development. More than 200 installations have completed successfully so far, but you may still run into the occasional problem. Here is what to expect before you start.",
+ "flash.beta.lead": "The RadioFoundry firmware and this web installer are still under active development. Over 1000 successful installations so far, but you may still run into the occasional problem. Here is what to expect before you start.",
  "flash.beta.risks_title": "What Can Go Wrong",
  "flash.beta.risk_stop": "An installation, backup or restore can stop partway, for example on a slow or unreliable programming cable. Trying again is safe.",
  "flash.beta.risk_codeplug": "Your original channels, contacts and settings (the codeplug) may not carry over to RadioFoundry. Keep the backup file the installer saves for you.",

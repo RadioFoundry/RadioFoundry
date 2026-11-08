@@ -184,7 +184,7 @@
  "flash.title": "Instalar y hacer copia de seguridad",
  "flash.lead": "Instala, haz copia de seguridad y restaura el firmware de la radio por USB. Requiere Chrome o Edge en una computadora, o Chrome en Android.",
  "flash.beta.title": "RadioFoundry es software beta",
- "flash.beta.lead": "El firmware RadioFoundry y este instalador web siguen en desarrollo activo. Hasta ahora se han completado con éxito más de 200 instalaciones, pero aún puedes encontrar algún problema ocasional. Esto es lo que puedes esperar antes de empezar.",
+ "flash.beta.lead": "El firmware RadioFoundry y este instalador web siguen en desarrollo activo. Hasta ahora se han completado con éxito más de 1000 instalaciones, pero aún puedes encontrar algún problema ocasional. Esto es lo que puedes esperar antes de empezar.",
  "flash.beta.risks_title": "Qué puede fallar",
  "flash.beta.risk_stop": "Una instalación, copia de seguridad o restauración puede detenerse a medias, por ejemplo con un cable de programación lento o poco fiable. Volver a intentarlo es seguro.",
  "flash.beta.risk_codeplug": "Puede que los canales, contactos y ajustes originales (el codeplug) no pasen a RadioFoundry. Conserva el archivo de copia de seguridad que el instalador guarda por ti.",
