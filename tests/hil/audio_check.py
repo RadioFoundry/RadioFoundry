@@ -342,6 +342,26 @@ def check_tones(x, fs, segs, search=None, dur_tol_ms=10.0, ripple_db=12.0, step_
     return r
 
 
+# A sound that stops falls this far at once (its direct sound); what follows is the room's echo dying away, at a rate
+# that depends on the room and the microphone's place, not on the radio
+DIRECT_DB = 10.0
+
+
+def burst_ms(x, fs, freqs, t0_s, ms, drop_db=DIRECT_DB):
+    """A noise burst's own length (one of check_tones' pops: start t0_s, ms long): from its start to the last frame
+    within drop_db of its peak. The pop's length runs on until the echo falls to the floor's limit, so a louder burst
+    (the volume, the microphone closer) measures longer; this doesn't. A room that drops less than drop_db at once
+    only makes it longer, never shorter"""
+    res = residual_level(x, fs, freqs)
+    fr = POP_WIN_MS / 2000
+    a = max(int(round(t0_s / fr)), 0)
+    seg = res[a:min(a + int(round(ms / 1000 / fr)), len(res))]
+    if len(seg) == 0:
+        return ms
+    keep = np.nonzero(seg >= seg.max() - drop_db)[0]
+    return float((keep[-1] + 1) * fr * 1000)
+
+
 def check_wav(path, segs, **kw):
     x, fs = load_wav(path)
     return check_tones(x, fs, segs, **kw)

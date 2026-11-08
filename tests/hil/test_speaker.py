@@ -16,7 +16,8 @@ test_fm_rx_speaker (rf, bench_service): the bench board's FM transmitter sends a
 lengths at several frequencies (--fm-mhz, no sub-audio tone); the radio's VFO receives them. Besides the tones'
 checks, nothing may pop as the squelch opens or closes, and a squelch tail after the carrier may last no longer than
 the core's squelch takes to close (one poll to see the carrier gone, then RADIO_SQL_CLOSE_POLLS polls of RADIO_POLL_MS,
-core/radio/radio_sm.h): squelch tail
+core/radio/radio_sm.h). A tail is measured while it stays within 10 dB of its peak (audio_check.burst_ms): the room's
+echo after it fades for a time set by the room, the volume and the microphone's place. Squelch tail
 elimination is not done (docs/spec/radio-features.md 3.5), so the noise until that close is expected; a longer one
 (a board whose noise reading lags the carrier) fails, unless the board's [hil.limits] fm_squelch_tail_ms holds it to a
 longer one with its reason."""
@@ -205,17 +206,20 @@ def test_fm_rx_speaker(radio, sdr_bench, microphone, pytestconfig):
         _quiet(f"FM {mhz} MHz")
     end = r.tones[-1].end_s      # the program ends with its last tone: the carrier goes with it
     if end is not None:
-        tails = [(t0, over, ms) for t0, over, ms in r.pops if t0 > end + 0.02]
+        # a tail's own length, without the room's echo after it (audio_check.burst_ms): how long the squelch took
+        x, fs = A.load_wav(path)
+        freqs = [h for h, _ in segs if h]
+        tails = [(t0, over, A.burst_ms(x, fs, freqs, t0, ms), ms) for t0, over, ms in r.pops if t0 > end + 0.02]
         allowed, why = squelch_close_ms(), None
         o = rfoundry_hil.board_hil(rfoundry_hil.board_id(radio.version().get("board"))).get("limits", {}).get(
             "fm_squelch_tail_ms")
         if o:
             allowed, why = o["value"], o["reason"]
             print(f"squelch tail limit {allowed:.0f} ms from the board's [hil.limits]: {why}")
-        for i, (t0, over, ms) in enumerate(tails):
+        for i, (t0, over, ms, echo_ms) in enumerate(tails):
             problems = [p for p in problems if f"at {t0:.3f} s" not in p]     # named below instead
-            what = (f"{ms:.0f} ms of noise {over:.0f} dB over the floor, {(t0 - end) * 1000:.0f} ms after the last "
-                    f"tone")
+            what = (f"{ms:.0f} ms of noise {over:.0f} dB over the floor ({echo_ms:.0f} ms with the room's echo), "
+                    f"{(t0 - end) * 1000:.0f} ms after the last tone")
             if i == 0 and ms <= allowed:
                 print(f"squelch tail: {what} (within {allowed:.0f} ms{f': {why}' if why else ', the squelch close time'}"
                       ": expected)")

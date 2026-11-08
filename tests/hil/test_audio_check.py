@@ -124,6 +124,39 @@ def test_noise_burst_after():
     assert any("noise burst" in p for p in r.problems), r.problems
 
 
+def _tail_with_echo(burst_s, level):
+    """A 1 kHz tone, then a noise burst burst_s long at level, each followed by a room's echo: it falls 12 dB at once,
+    then fades 0.15 dB per ms (as a microphone at a radio's speaker heard it). Returns the signal, the burst's start"""
+    segs = [(1000, 300)]
+    x, t0 = render(segs, tail_s=0.9)
+    rng = np.random.default_rng(3)
+    a, n = int((t0 + 0.55) * FS), int(burst_s * FS)
+    burst = rng.normal(0, level, n)
+    k = np.arange(int(0.3 * FS))
+    echo = rng.normal(0, level * 10 ** (-12 / 20), len(k)) * 10 ** (-0.15 * (k / FS * 1000) / 20)
+    x[a:a + n] += burst
+    x[a + n:a + n + len(k)] += echo
+    return x, segs, t0 + 0.55
+
+
+def test_burst_length_leaves_out_the_echo():
+    """The same 50 ms burst at two levels: the pop runs on with the echo (longer when louder), the burst's own
+    length stays about 50 ms"""
+    out = []
+    for level in (0.01, 0.1):
+        x, segs, start = _tail_with_echo(0.05, level)
+        r = check(x, segs, guard_ms=(150, 900))
+        t0, _, ms = [p for p in r.pops if p[0] > start - 0.02][0]
+        out.append((ms, A.burst_ms(x, FS, [1000], t0, ms)))
+    print(out)
+    assert out[1][0] > out[0][0] + 40 and out[1][0] > 150            # the echo counted: louder is longer
+    assert all(40 <= own <= 65 for _, own in out), out                # the burst itself
+    x, segs, start = _tail_with_echo(0.17, 0.05)                       # a long tail stays long
+    r = check(x, segs, guard_ms=(150, 900))
+    t0, _, ms = [p for p in r.pops if p[0] > start - 0.02][0]
+    assert 160 <= A.burst_ms(x, FS, [1000], t0, ms) <= 185
+
+
 def test_gap_filled():
     segs = [(1600, 50), (0, 40), (1600, 50)]
     x, t0 = render(segs)
