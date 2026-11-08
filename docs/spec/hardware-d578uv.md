@@ -379,7 +379,7 @@ byte 3 bit 0 and other byte 4 values only with the second receiver; RadioFoundry
 keeps the single receiver's values. It sends
 `SQ_LEVEL` and `DEMOD_GAIN` once at start-up; RadioFoundry sends both in every start. The baseband needs
 `CARRIER_READY` 2 (ready, demodulated phase reversed): RadioFoundry sends 2 when side A's carrier comes up and 0
-when it goes, from the status poll (`d578uv_modem_carrier`); with 1 no call decodes. RadioFoundry clears byte 0
+when it goes, from the status poll (`d578uv_modem_carrier`); with 1 no call decodes. In DMR the carrier is chip 0's RSSI alone, 10 raw steps (5 dB) under the analog squelch's threshold: raw 92, about -114 dBm, at 446.125 MHz, where the RSSI read 82-87 with no signal. The chip's signal flag (register 0x0C bit 1) needs the RSSI over register 0x78 and the noise within register 0x4F's limit; on a bench call at -102 to -106 dBm it never set, and no call decoded, though the baseband decoded the same call once register 0x78 was lowered. RadioFoundry clears byte 0
 bit 6, so the baseband looks for sync on `CARRIER_READY` alone, and sends 2 14 ms after each return to receive
 from a transmission (`rx_ready`, [modem-sct.md](modem-sct.md) 3), before the status poll has a reading. With bit 6
 set, the original firmware's value, a lone burst soon after a transmission went undecoded. Without its own squelch the
