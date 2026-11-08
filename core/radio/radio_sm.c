@@ -354,6 +354,44 @@ static bool bcast_listening(const radio_sm_t *sm)
 #endif
 }
 
+// The LEDs' timed signals over what the state shows (RADIO_LED_*_MS). A deny flashes red, green, ... once: a radio
+// without a screen has no other way to say PTT was refused. While the radio waits for a repeater to wake, red shows
+// each wake-up burst going out, not the whole wait, which is mostly listening
+static void led_signals(radio_sm_t *sm, bool *red, bool *green)
+{
+	uint32_t now = sm->led_now;
+	bool timed = false;
+	if (sm->deny_led) {
+		uint32_t step = (now - sm->deny_led_ms) / RADIO_LED_DENY_STEP_MS;
+		// A new transmission ends the flash: red then shows the air (or the wake-up bursts), not the refusal before
+		if (step < RADIO_LED_DENY_STEPS && sm->view.state != RS_TX) {
+			*red = (step & 1u) == 0;
+			*green = !*red;
+			sm->led_timed = true;
+			return;
+		}
+		sm->deny_led = false;
+	}
+#if CONFIG_DMR
+	bool waking = sm->view.state == RS_TX && sm->view.ch.mode != RADIO_MODE_FM && !sm->hotspot &&
+		(sm->view.dmr.state == RDMR_TX_WAIT || sm->view.dmr.state == RDMR_TX_PERMIT);
+	if (sm->wake_led && now - sm->wake_led_ms >= RADIO_LED_WAKE_MS) {
+		sm->wake_led = false;
+	}
+	if (waking) {
+		*red = sm->wake_led;
+		timed = sm->wake_led;
+	}
+#endif
+	sm->led_timed = timed;
+}
+
+static void deny_led_start(radio_sm_t *sm)
+{
+	sm->deny_led = true;
+	sm->deny_led_ms = sm->led_now;
+}
+
 // Speaker and LEDs follow the state; only changes go to the board
 // FM: the board's speaker path follows the squelch (or the monitor). DMR voice goes out as PCM from the vocoder
 // (core/dmr/ambe routes the speaker itself); the green LED shows a call being played
@@ -391,10 +429,6 @@ static void outputs(radio_sm_t *sm)
 		sm->audio_out = (int8_t)(open && !bcast);
 		board.radio->audio(open && !bcast);
 	}
-	if (sm->green_out != (int8_t)green) {
-		sm->green_out = (int8_t)green;
-		board.power->led(LED_GREEN, green);
-	}
 #if CONFIG_DUAL_WATCH
 	// The second receiver has the speaker while the selected channel is quiet: that one's calls always win
 	if (board.rx2 != NULL) {
@@ -405,11 +439,17 @@ static void outputs(radio_sm_t *sm)
 		}
 	}
 #endif
-	if (sm->red_out != (int8_t)tx) {
-		sm->red_out = (int8_t)tx;
-		board.power->led(LED_RED, tx);
+	bool red = tx;
+	led_signals(sm, &red, &green);
+	if (sm->green_out != (int8_t)green) {
+		sm->green_out = (int8_t)green;
+		board.power->led(LED_GREEN, green);
 	}
-	sm->view.leds = (uint8_t)((green ? RADIO_LED_GREEN : 0u) | (tx ? RADIO_LED_RED : 0u));
+	if (sm->red_out != (int8_t)red) {
+		sm->red_out = (int8_t)red;
+		board.power->led(LED_RED, red);
+	}
+	sm->view.leds = (uint8_t)((green ? RADIO_LED_GREEN : 0u) | (red ? RADIO_LED_RED : 0u));
 }
 
 static void end_reception(radio_sm_t *sm, uint32_t now_ms)
@@ -871,6 +911,7 @@ static void deny(radio_sm_t *sm, uint8_t reason)
 	sm->view.state = RS_TX_DENIED;
 	sm->view.tx_deny = reason;
 	sm->view.tot_warning = false;
+	deny_led_start(sm);
 	outputs(sm);
 	changed(sm);
 	beep(sm, BEEP_TX_DENY);
@@ -1513,9 +1554,19 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 	const dmr_call_view_t *cv = dmr_call_view();
 	bool tx = dmr_tx_phase(cv->phase);
 
+	if (cv->wake_sent != sm->wake_seen) {
+		sm->wake_seen = cv->wake_sent;
+		sm->wake_led = true;	// a wake-up burst just went out: one blink
+		sm->wake_led_ms = now_ms;
+	}
+
 	if (sm->dmr_keyed && !tx) {
 		sm->dmr_keyed = false;
-		board.radio->tx_off();
+		// The stack is off the air: the receiver stays as the last burst left it when it can (a reply in our own
+		// timeslot comes 30 ms after our terminator; a receive set-up then misses it)
+		if (board.radio->dmr_tx_end == NULL || !board.radio->dmr_tx_end()) {
+			board.radio->tx_off();
+		}
 	}
 	if (sm->ptt) {
 		sm->tx_no_ptt = false;	// the user keyed: that transmission counts
@@ -1557,8 +1608,10 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 			dmr_set_timeslot(sm, ts, sm->hotspot);
 		}
 		if (cv->tx_error == DMR_TX_ERR_NO_REPEATER && !data) {	// a data sender hears about its own failure
-			// A short press goes on waking the repeater after the release: its failure still gets the deny tone
+			// A short press goes on waking the repeater after the release: its failure still gets the deny tone and
+			// the deny flash
 			beep(sm, BEEP_TX_DENY);
+			deny_led_start(sm);
 #if CONFIG_DMR_ROAMING
 			roam_trigger(&sm->roam, ROAM_WHY_TX_FAIL);
 #endif
@@ -4905,6 +4958,7 @@ static bool retunes(uint8_t type)
 
 void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 {
+	sm->led_now = now_ms;
 	// A beep or a vibration is an alert, not the user doing something; the volume changes nothing on air or on the
 	// channel, so it neither gives way to nor cancels anything either
 	bool alert = req->type == RREQ_BEEP || req->type == RREQ_VIBRATE || req->type == RREQ_VOLUME ||
@@ -5682,6 +5736,10 @@ static int16_t rssi_held(radio_sm_t *sm, int16_t rssi_dbm)
 void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 {
 	radio_status_t st;
+	sm->led_now = now_ms;
+	if (sm->led_timed || sm->deny_led) {
+		outputs(sm);	// as in radio_sm_tick: some paths below return before their outputs()
+	}
 	// codeplug_serial() before zone_edit_busy(): a zone write that moved indexes has its log entry by then
 	if ((sm->reload_pending || codeplug_serial() != sm->codeplug_serial || ZONES_MOVED(sm)) && !ZONE_WRITE_BUSY() &&
 	    !sm->hotspot && !sm->ptt && sm->view.state != RS_TX) {
@@ -5743,8 +5801,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	board.radio->status(&st);
 #if CONFIG_AM_RX
 	if (sm->view.am && own_rx) {
-		st.noise = radio_am_noise(st.rssi_dbm);	// AM: the squelch (and scan) work on the signal strength
-		st.tone_ok = true;
+		st.tone_ok = true;	// no sub-audio in AM; the board gives the AM squelch value (hal_radio.h rx_am)
 	}
 #endif
 	sm->view.rssi_dbm = rssi_held(sm, st.rssi_dbm);
@@ -5935,6 +5992,7 @@ static void sfr_rpt_tick(radio_sm_t *sm, uint32_t now_ms)
 
 void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 {
+	sm->led_now = now_ms;
 #if RADIO_SM_CW
 	cw_service(sm, now_ms);
 #endif
@@ -5959,8 +6017,8 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR_EMERGENCY
 	emergency_tick(sm, now_ms);
 #endif
-#else
-	(void)sm;
-	(void)now_ms;
 #endif
+	if (sm->led_timed || sm->deny_led) {
+		outputs(sm);	// a blink or the deny flash runs on time, not only when the state changes
+	}
 }

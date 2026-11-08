@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from rfoundry_hil import DebugLink, DebugLinkError, skip
+from rfoundry_hil import DebugLink, DebugLinkError, need_radio_tx, skip
 from hil_config import rig
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
@@ -68,12 +68,13 @@ def _addresses(radio):
 
 
 @pytest.mark.feature("dmr_control_station")
+@pytest.mark.needs_switch("USB")
 def test_usb_settings_stored(radio):
     """Radio only: op 27 stores each setting, the view keys follow; nothing re-enumerates (the power-on setting acts
     at the next boot only)."""
     _need(radio)
     if "USB" not in radio.features():
-        skip("no_hw", "no USB on this radio: no USB network settings")
+        skip("not_built", "built without CONFIG_USB: no USB network settings")
     try:
         radio.link.usb_net_settings(boot_network=True)
         v = radio.view(["hotspot"])
@@ -250,6 +251,7 @@ def test_passthrough_text(radio, sdr_bench, pytestconfig):
 def test_passthrough_reply(radio, sdr_bench, pytestconfig):
     """The PC's datagram to the bench's ID goes over the air from the radio's own DMR ID; a confirmed packet from the
     bench still gets the radio's ETSI response in passthrough."""
+    need_radio_tx(radio)
     freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     udp, own, host_ip, radio_ip = _passthrough_session(radio, pytestconfig)
     try:

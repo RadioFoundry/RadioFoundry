@@ -104,7 +104,7 @@ typedef struct {
 			// interrupt, p post-access shortly before the reception started, H voice LC header
 	char res;	// n differs from the capture (taken), s same as the capture (held back), v same but taken (more than
 			// STALE_LC_VOICE voice bursts), c CRC error flagged, k kept for the next voice burst, o maybe the
-			// other slot's (held back, modem-hrc6000.md 5.2), - not used
+			// other slot's (held back, modem-hrc6000.md 5.2), r an interrupted call's, read twice (5.6), - not used
 	uint8_t tk;	// ticks since the capture (255: 255 or more)
 	uint8_t vss;	// voice bursts taken in this reception at the time
 	uint32_t src;	// page 2's source ID (LC octets 6-8)
@@ -118,6 +118,9 @@ typedef struct {
 	uint32_t rx_voice;	// voice bursts delivered
 	uint32_t tr_calls;	// receptions whose voice is read at the ticks (rx_voice_read chips)
 	uint32_t tr_bursts;	// voice bursts read at the ticks
+	uint32_t tr_miss_same;	// reads on the call's slot lost because the port had not changed since the last tick
+	uint32_t tr_miss_bad;	// ... because the read changed but no frame checked
+	uint32_t lc_resumed;	// interrupted calls taken back from two late entry reports with their LC (modem-hrc6000.md 5.6)
 	uint32_t rx_lc_header;	// voice LC headers
 	uint32_t rx_terminator;
 	uint32_t rx_csbk;	// CSBK, MBC
@@ -261,6 +264,10 @@ typedef struct {
 	uint32_t pa_tick;	// tick of the last post-access interrupt
 	bool pa_any;
 	uint32_t pa_src;	// page 2's source ID then
+	uint8_t pa_lc[9];	// ... page 2 then, with no reception going on
+	bool pa_new;		// ... a voice LC that differs from the last capture: kept when the reception starts
+	uint8_t resume_reads;	// post-access reads a superframe apart showing an interrupted call's LC, last at resume_tick
+	uint32_t resume_tick;
 	// Each slot's call LC (index ts - 1), so the other slot's is never handed over for this one's (5.2)
 	struct {
 		uint8_t lc[9];

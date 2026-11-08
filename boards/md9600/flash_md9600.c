@@ -21,7 +21,6 @@ static const stm32_spi_flash_cfg_t cfg = {
 	// No assumption about the maker: any part that answers with a size (hardware-md9600.md 12.1)
 	.device = 0, .device_mask = 0,
 	.map = &md9600_flash_map,
-	.map_min_size = MD9600_STORE_FULL_SIZE,
 	.bus_take = md9600_spi2_lock,
 	.bus_give = md9600_spi2_unlock,
 };

@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include "rfseq_md9600.h"
 #include "config.h"
+#include "radio/apc_ramp.h"
 #include "radio/ref_trim.h"
 
 // Per band: index md9600_band_t (VHF 0, UHF 1)
@@ -69,12 +70,15 @@ static void receivers_off(const md9600_rf_ops_t *o)
 	set(o, MD9600_LN_POWER, false);
 }
 
-// The APC reference from one value to another in steps (the PA's power ramp)
+// The APC reference from one value to another in steps (the PA's power ramp): the shared smoothstep shape over the
+// span between them, so a ramp from the APC floor keeps the floor as its low end
 static void apc_ramp(const md9600_rf_ops_t *o, uint16_t from, uint16_t to)
 {
-	for (uint32_t i = 1; i <= MD9600_APC_RAMP_STEPS; i++) {
-		int32_t v = (int32_t)from + ((int32_t)to - (int32_t)from) * (int32_t)i / (int32_t)MD9600_APC_RAMP_STEPS;
-		o->dac(o->ctx, MD9600_DAC_APC_TUNE_V, (uint16_t)v);
+	bool up = to >= from;
+	uint16_t lo = up ? from : to, span = (uint16_t)(up ? to - from : from - to);
+	for (uint16_t i = 1; i <= MD9600_APC_RAMP_STEPS; i++) {
+		uint16_t step = up ? i : (uint16_t)(MD9600_APC_RAMP_STEPS - i);
+		o->dac(o->ctx, MD9600_DAC_APC_TUNE_V, (uint16_t)(lo + apc_ramp_level(span, step, MD9600_APC_RAMP_STEPS)));
 		if (i < MD9600_APC_RAMP_STEPS) {
 			wait_us(o, MD9600_APC_RAMP_STEP_US);
 		}

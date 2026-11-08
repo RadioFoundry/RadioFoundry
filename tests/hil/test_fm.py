@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""FM receive. test_noaa_receive, no transmission: the VFO on a NOAA weather radio station (--noaa-mhz, the rig's) opens the squelch or shows an
-RSSI above the floor within a few seconds. Depends on reception at the bench, so it is optional:
-test_fm_receive_bench is the same check with the bench's carrier.
+"""FM receive. test_noaa_receive, no transmission: the VFO on a NOAA weather radio station (--noaa-mhz, the rig's) opens
+the squelch or shows an RSSI above the floor within a few seconds. Depends on reception at the bench, so it is optional:
+test_fm_receive_bench is the same check with the bench's carrier. A radio whose bands miss NOAA hears the bench board's
+FM transmitter on --fm-mhz instead (--allow-rf, --bench-api): short keys of a 1 kHz tone with no sub-audio tone, the
+run's output saying so (a pass there isn't NOAA coverage).
 
 test_fm_receive_bench (rf, bench_service): the VFO on --fm-mhz, the bench board sends a 1 kHz tone for 3 s, and the
 squelch opens and closes again after it. test_fm_receive_bench_vhf: the same on --vhf-fm-mhz, at the board's top
@@ -12,7 +14,8 @@ default level nothing reached a radio on a dummy load. A radio that doesn't tune
 test_rx_tone_squelch: CTCSS / DCS decode, from the side NOAA can test (it sends no sub-audio tone): on NOAA with the squelch opening (stepped down from the radio's
 level as far as 1 until it does), an RX tone of CTCSS 100.0 Hz and
 then DCS D023N must keep the audio muted (tone_ok=0, the state never rx, for 5 s each) while the carrier is there;
-with the RX tone back to none the squelch opens again within 10 s. The VFO's RX tone is put back. Optional: it needs
+with the RX tone back to none the squelch opens again within 10 s. The VFO's RX tone is put back. With the bench
+fallback each step is a key of its own: open without an RX tone, muted with each tone, open again. Optional: it needs
 NOAA strong enough at the bench, and test_rx_tone_decode_bench covers the same side with the bench's carrier.
 
 test_rx_tone_decode_bench (rf, bench_service): the other side, with the bench board's FM transmitter (--bench-api,
@@ -27,37 +30,107 @@ import pytest
 from rfoundry_hil import skip
 from hil_config import rig
 
+BENCH_FM_S = 3.0        # the bench's 1 kHz tone, under the 10 s key limit with the lead and tail
+FALLBACK_PROGRAM = [{"kind": "tone", "hz": 1000, "s": BENCH_FM_S, "level": 0.6}]
+
+
+def fm_source(radio, pytestconfig, request):
+    """Where a test's FM signal without a sub-audio tone comes from: (MHz, None) for NOAA (--noaa-mhz) when the radio
+    receives it, else (MHz, the bench) for the bench board's FM transmitter on --fm-mhz, printed as the fallback it is.
+    The fallback transmits: it skips (opt_in) without --allow-rf"""
+    mhz = rig(pytestconfig, "noaa-mhz")
+    if radio.in_band(round(mhz * 1e6)):
+        return mhz, None
+    if not pytestconfig.getoption("--allow-rf"):
+        skip("opt_in", f"NOAA ({mhz:g} MHz) is outside the radio's bands; the bench FM fallback transmits: run with "
+                       "--allow-rf")
+    fm = rig(pytestconfig, "fm-mhz", "NOAA is outside the radio's bands: the bench FM fallback needs")
+    print(f"FALLBACK: NOAA ({mhz:g} MHz) is outside the radio's bands ({radio.core().get('bands')}): the bench "
+          f"board's FM on {fm:g} MHz stands in. Not NOAA coverage")
+    return fm, request.getfixturevalue("sdr_bench")
+
+
+def _watch(radio, tx):
+    """The radio's (state, tone_ok) pairs while the bench transmits, and the done record"""
+    states = set()
+    while tx.poll() is None:
+        v = radio.core()
+        states.add((v.get("state"), v.get("tone_ok")))
+        time.sleep(0.1)
+    return states, tx.wait(5)
+
 
 @pytest.mark.feature("fm", "vfo_fm", optional=True)
-def test_noaa_receive(radio, pytestconfig):
+def test_noaa_receive(radio, pytestconfig, request):
     if "VFO_FM" not in radio.features():
         skip("not_built", "built without the FM VFO")
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
-    hz = round(rig(pytestconfig, "noaa-mhz") * 1e6)
+    mhz, bench = fm_source(radio, pytestconfig, request)
+    hz = round(mhz * 1e6)
+    radio.skip_out_of_band(hz)
     floor = pytestconfig.getoption("--rssi-floor")
     with radio.vfo_session():
         radio.link.vfo_set(hz)
         radio.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="VFO tuned")
-        best, opened, end = -999, False, time.monotonic() + 10
-        while time.monotonic() < end and not opened:
-            v = radio.core()
-            best = max(best, int(v["rssi_dbm"]))
-            opened = v["state"] == "rx"
-            time.sleep(0.2)
+        best, opened = -999, False
+        if bench is None:
+            end = time.monotonic() + 10
+            while time.monotonic() < end and not opened:
+                v = radio.core()
+                best = max(best, int(v["rssi_dbm"]))
+                opened = v["state"] == "rx"
+                time.sleep(0.2)
+        else:
+            with bench.lease():
+                tx = bench.fm_tx_start(mhz, FALLBACK_PROGRAM)
+                while tx.poll() is None:
+                    v = radio.core()
+                    best = max(best, int(v["rssi_dbm"]))
+                    opened = opened or v["state"] == "rx"
+                    time.sleep(0.2)
+                print(f"bench FM: opened {opened}, best RSSI {best} dBm; bench {tx.wait(5)}")
         assert opened or best > floor, (f"no signal on {hz / 1e6:.3f} MHz in 10 s: best RSSI {best} dBm "
                                         f"(floor {floor}); squelch {radio.core()['squelch']}")
 
 
+RX_TONES = (("ctcss", 1000, "CTCSS 100.0"), ("dcs", 0o23, "DCS D023N"))
+
+
+def _tone_squelch_bench(radio, mhz, bench):
+    """test_rx_tone_squelch with the bench's FM: a key per step, the RX tone set between them"""
+    L = radio.link
+    with bench.lease():
+        states, done = _watch(radio, bench.fm_tx_start(mhz, FALLBACK_PROGRAM))
+        print(f"no RX tone: states {sorted(states)}; bench {done}")
+        assert any(st == "rx" for st, _ in states), f"the bench's FM didn't open the squelch: {states}"
+        for kind, value, name in RX_TONES:
+            L.tone(2, kind, value)
+            radio.wait_for(lambda v: v.get("ch.rx_tone") == f"{kind}:{value}", sections=("channel",),
+                           what=f"RX tone {name}")
+            time.sleep(0.5)          # the tone debounce (8 polls) after the change
+            states, done = _watch(radio, bench.fm_tx_start(mhz, FALLBACK_PROGRAM))
+            print(f"{name}: states {sorted(states)}; bench {done}")
+            assert all(st != "rx" for st, _ in states), f"{name}: the bench's FM (no tone) opened the audio: {states}"
+            assert all(t == "0" for _, t in states), f"{name}: a tone decoded on the bench's FM: {states}"
+        L.tone(2, "none", 0)
+        radio.wait_for(lambda v: v.get("ch.rx_tone") == "none:0", sections=("channel",), what="no RX tone")
+        states, done = _watch(radio, bench.fm_tx_start(mhz, FALLBACK_PROGRAM))
+        print(f"no RX tone again: states {sorted(states)}; bench {done}")
+        assert any(st == "rx" for st, _ in states), f"open again without a tone: {states}"
+
+
 @pytest.mark.feature("subtone", optional=True)
-def test_rx_tone_squelch(radio, pytestconfig):
+def test_rx_tone_squelch(radio, pytestconfig, request):
     if "VFO_FM" not in radio.features() or "SUBTONE" not in radio.features():
         skip("not_built", "built without the FM VFO or CTCSS / DCS")
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
-    hz = round(rig(pytestconfig, "noaa-mhz") * 1e6)
+    mhz, bench = fm_source(radio, pytestconfig, request)
+    hz = round(mhz * 1e6)
+    radio.skip_out_of_band(hz)
     L = radio.link
     with radio.vfo_session():
         L.vfo_set(hz)
@@ -66,6 +139,9 @@ def test_rx_tone_squelch(radio, pytestconfig):
         try:
             L.tone(2, "none", 0)
             radio.wait_for(lambda v: v.get("ch.rx_tone") == "none:0", sections=("channel",), what="no RX tone")
+            if bench is not None:
+                _tone_squelch_bench(radio, mhz, bench)
+                return
             # the squelch stepped down (restore_radio puts it back) until NOAA opens it, but never to 0 (always open)
             while True:
                 try:
@@ -77,7 +153,7 @@ def test_rx_tone_squelch(radio, pytestconfig):
                                       "nothing to mute")
                     L.squelch_step(-1)
             print(f"NOAA opens the squelch at level {radio.core()['squelch']}")
-            for kind, value, name in (("ctcss", 1000, "CTCSS 100.0"), ("dcs", 0o23, "DCS D023N")):
+            for kind, value, name in RX_TONES:
                 L.tone(2, kind, value)
                 radio.wait_for(lambda v: v.get("ch.rx_tone") == f"{kind}:{value}", sections=("channel",),
                                what=f"RX tone {name}")
@@ -98,18 +174,6 @@ def test_rx_tone_squelch(radio, pytestconfig):
             L.tone(2, kind, int(value))
             radio.wait_for(lambda v: v.get("ch.rx_tone") == tone0, sections=("channel",), what="RX tone restored")
 
-
-BENCH_FM_S = 3.0        # the bench's 1 kHz tone, under the 10 s key limit with the lead and tail
-
-
-def _watch(radio, tx):
-    """The radio's (state, tone_ok) pairs while the bench transmits, and the done record"""
-    states = set()
-    while tx.poll() is None:
-        v = radio.core()
-        states.add((v.get("state"), v.get("tone_ok")))
-        time.sleep(0.1)
-    return states, tx.wait(5)
 
 
 @pytest.mark.feature("fm", "vfo_fm")

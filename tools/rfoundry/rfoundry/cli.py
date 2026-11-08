@@ -360,7 +360,13 @@ def get_saved_codec(args, board, probe):
     saved = codecsave.load(board)
     has_codec = bool(probe) and probe.get("codec") == board.codec.id
     if has_codec and not args.no_probe and (not board.keep_codec_supported or saved is None):
-        got = codecsave.from_radio(board, args.port)
+        say("codec    reading it back from the radio over the debug link (a read, nothing is written to the radio); "
+            "this can take a few minutes")
+        progress, finish = _read_progress()
+        try:
+            got = codecsave.from_radio(board, args.port, progress=progress)
+        finally:
+            finish()
         if got:
             say("codec    read back from the radio (debug link) and checked; saved in %s" % codecsave.save(board, got[1]))
             return got
@@ -827,6 +833,23 @@ def cmd_flash_stub(args, board, image, merged):
     except stubroute.StubRouteError as e:
         raise UsageError(str(e))
     return rc
+
+
+def _read_progress():
+    """(progress, finish) for codecsave.read_codec: one dot for each window read (the read searches the layouts the board has
+    and stops at the first that matches, so there is no total), the line ended by finish."""
+    dots = []
+
+    def progress():
+        sys.stdout.write("." if dots else "reading  .")
+        sys.stdout.flush()
+        dots.append(1)
+
+    def finish():
+        if dots:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+    return progress, finish
 
 
 def cmd_flash_serial(args, board, man, app, slot):

@@ -509,6 +509,20 @@ records which, with its source (`backed`, `unbacked`, `none`, or `unknown`), and
 it. A clock driver arrives behind a hardware switch (`CONFIG_RTC`, `hardware` in `tests/hil/features.toml`). Until GPS,
 the network or the user sets it, the radio shows "no time", and records keep using uptime or mark the time unknown.
 
+### 5.7 LEDs
+
+The radio core drives the board's red and green LEDs (`board.power->led`); `view.leds` (debug link `leds`) is what it
+drives. Red: transmitting. Green: a reception that plays (FM squelch open, a DMR call played). Two timed signals go
+over that (`radio_sm.c` `led_signals`, the times in `radio_sm.h`), for radios without a screen above all:
+
+| Signal | LEDs |
+| --- | --- |
+| Waking a repeater (DMR, PTT through a repeater that isn't up) | red once per wake-up burst sent, `RADIO_LED_WAKE_MS` (100 ms) each, dark while the radio listens for the answer. The call stack counts the bursts (`dmr_call_view_t.wake_sent`) |
+| A TX deny, every reason (`RS_TX_DENIED`), and a repeater that didn't wake after a short press was let go | red, green, red, green, red, green, `RADIO_LED_DENY_STEP_MS` (100 ms) each, once, with the deny tone; then what the state shows. A transmission that starts during it ends it |
+
+Once the repeater answers and the voice goes out, red is solid as for any transmission. The tick and the poll keep
+calling `outputs()` while a signal runs, so it keeps time when nothing else changes.
+
 ## 6. TX power, calibration, band limits
 
 Checked, unchanged: the board clamps the power level, uses the calibration table's drive value for the band and level,

@@ -193,7 +193,7 @@ bool md9600_rf_dmr_key(bool tx);
 void md9600_c6000_tx_lead(uint8_t steps);
 void md9600_rf_dmr_prepare(void);
 void md9600_rf_dmr_wait(void);
-void md9600_rf_dmr_done(void);
+bool md9600_rf_dmr_done(void);
 void md9600_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx);
 #endif
 

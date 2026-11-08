@@ -380,19 +380,22 @@ bool md9600_rf_dmr_key(bool tx)
 // while the repeater was down ended in no_repeater. On simplex too: the receive LO is an IF away from the carrier, and
 // a confirmed data response comes in the next frame, 30 ms after our last burst, before the radio task's tx_off() and
 // rx() get here (a radio that returns that late misses nearly every one). Without the waits, as between an SFR's bursts
-// (hardware-md9600.md 19.8): the listen that follows is far longer than the lock. Not per burst outside an SFR
-void md9600_rf_dmr_done(void)
+// (hardware-md9600.md 19.8): the listen that follows is far longer than the lock. Not per burst outside an SFR.
+// True when the receiver is back on the RX frequency (the glue's tx_done)
+bool md9600_rf_dmr_done(void)
 {
 	if (!dmr_armed || !dmr_tuned || !rf.rx_valid) {
-		return;
+		return false;
 	}
 	key_timer_stop();
 	(void)md9600_rf_pa_burst(&rf, false);
-	if (md9600_rf_burst_rx(&rf) == MD9600_RF_OK) {
-		dmr_tuned = false;
-		dmr_back = true;
-		dmr_rx_back++;
+	if (md9600_rf_burst_rx(&rf) != MD9600_RF_OK) {
+		return false;
 	}
+	dmr_tuned = false;
+	dmr_back = true;
+	dmr_rx_back++;
+	return true;
 }
 
 void md9600_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx)

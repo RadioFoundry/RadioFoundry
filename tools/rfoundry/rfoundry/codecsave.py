@@ -40,13 +40,18 @@ def _check(wins, parts):
     return parts
 
 
-def read_codec(link, board):
+def read_codec(link, board, progress=None):
     """(profile, segments) through an open debug link, or None when the radio's flash doesn't hold this codec or it
-    can't be read."""
+    can't be read. It tries each layout the board has in turn and stops at the first that matches, so how long it takes
+    isn't known up front: progress() is called after each window (segment) read."""
     for prof in profiles_for(board):
         for wins in _forms(prof):
             try:
-                parts = [(a, bytes(link.read_mem(a, n))) for a, n, _ in wins]
+                parts = []
+                for a, n, _ in wins:
+                    parts.append((a, bytes(link.read_mem(a, n))))
+                    if progress:
+                        progress()
             except (debuglink.LinkError, OSError):
                 return None
             if _check(wins, parts):
@@ -96,8 +101,9 @@ def load(board, root=None):
     return None
 
 
-def from_radio(board, port=None, log=None):
-    """Find the radio running RadioFoundry (or use port) and read its codec; None when there's no such radio or no codec."""
+def from_radio(board, port=None, log=None, progress=None):
+    """Find the radio running RadioFoundry (or use port) and read its codec; None when there's no such radio or no codec.
+    progress is read_codec's."""
     if not profiles_for(board):
         return None
     for p in [port] if port else (debuglink.find_ports() or []):
@@ -108,7 +114,7 @@ def from_radio(board, port=None, log=None):
                 log("could not open %s: %s" % (p, e))
             continue
         try:
-            got = read_codec(link, board)
+            got = read_codec(link, board, progress)
         finally:
             link.close()
         if got:

@@ -456,11 +456,13 @@ static bool contact_target_raw(uint16_t raw, ui_target_t *t)
 	return true;
 }
 
+#if CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT	// the lists that use these: Share To, the crash report's Send To
 // Share To's rows: raw rows are the contacts
 static bool contacts_target(uint16_t i, ui_target_t *t)
 {
 	return i < ui_filter_count() && contact_target_raw(ui_filter_raw(i), t);
 }
+#endif
 
 static void contact_row(const ui_target_t *tp, ui_item_t *it)
 {
@@ -484,12 +486,14 @@ static void contact_row(const ui_target_t *tp, ui_item_t *it)
 	}
 }
 
+#if CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT
 static void contacts_item(uint16_t i, ui_item_t *it)
 {
 	ui_target_t t;
 	if (contacts_target(i, &t))
 		contact_row(&t, it);
 }
+#endif
 
 // Contacts: with the contact editor raw row 0 is New contact, first so a long list (and a typed filter's first matches)
 // keeps it in reach; the contacts follow it

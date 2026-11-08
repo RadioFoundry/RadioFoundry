@@ -36,6 +36,7 @@
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   timeout             the TX timeout cuts the transmission off while PTT is still held (shows the timeout deny)
 //   pttlocked:on|off    turns Settings > Privacy > PTT when locked on or off
+//   autolock:<s>        Settings > Keys > Auto lock: s seconds, 0 off
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
@@ -342,6 +343,10 @@ static const keymap_entry_t map_p[] = {
 	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
 	{ K_SK3, ACT_USER_3, ACT_USER_3, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
+static const keymap_entry_t map_s[] = {	// side keys only, no display to navigate: two side keys and PTT
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_USER_1, ACT_USER_2, false, false, 0 },
+	{ K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
+};
 static const uint8_t side_k[] = { K_SK1, K_SK2, K_SK3 }, side_m[] = { K_SK1, K_SK2 };	// board.side_keys
 static const char *const side_names[] = { "SK1", "SK2", "SK3" };
 static const char *const side_names_p[] = { "P3", "P4", "Orange" };	// the MD-9600 (boards/md9600/board.c)
@@ -358,6 +363,7 @@ static const struct {
 	{ map_v, sizeof map_v / sizeof map_v[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR, side_m, 2, side_names },
 	{ map_f, sizeof map_f / sizeof map_f[0], CAP_ENCODER | CAP_DMR, NULL, 0, NULL },
 	{ map_p, sizeof map_p / sizeof map_p[0], CAP_ENCODER | CAP_DMR, side_k, 3, side_names_p },
+	{ map_s, sizeof map_s / sizeof map_s[0], 0, side_m, 2, side_names },
 };
 
 static void d_init(void) {}
@@ -2467,6 +2473,13 @@ static bool run_token(char *t, char *err, size_t len)
 			view.dmr.state = RDMR_IDLE;
 			changed();
 		}
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "autolock") == 0 && arg != NULL) {	// Settings > Keys > Auto lock
+		int32_t sec = atoi(arg);
+		ui_svc_setting_set(UI_SET_AUTO_LOCK_S, sec);
+		ui_apply_setting(UI_SET_AUTO_LOCK_S, sec);
 		advance(200);
 		return true;
 	}

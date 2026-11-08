@@ -31,11 +31,16 @@ typedef struct {
 	// the transmit side ready ahead of the first burst. tx_prepare (under the modem lock or in the timeslot ISR, never
 	// blocks) switches RF to TX: at tx_begin for own timing, at the engine's tx_slot_found for an aligned start, and
 	// from stm32_hrc_dmr_tx_prepare. tx_wait_lock (task level, optional) waits for the synthesizer after it. tx_done
-	// (under the lock, optional) at TX done: on a split channel the receiver back. Without tx_prepare an aligned start
-	// switches at its first burst and the other two are not called
+	// (under the lock, optional) at TX done: the receiver back on the RX frequency, true when it is
+	// (stm32_hrc_dmr_tx_end). Without tx_prepare an aligned start switches at its first burst and the other two are
+	// not called
 	void (*tx_prepare)(void);
 	void (*tx_wait_lock)(void);
-	void (*tx_done)(void);
+	bool (*tx_done)(void);
+	// Optional (task level, stm32_hrc_dmr_tx_end): the end of our DMR transmission with the RF back on receive. End it
+	// as tx_off() does, but leave the RF receiving as it is when it is on the last rx() settings; else set receive up
+	// again as tx_off() does. NULL: the glue leaves it to tx_off()
+	void (*tx_end)(void);
 } stm32_hrc_dmr_board_t;
 
 typedef struct {
@@ -48,7 +53,7 @@ typedef struct {
 } stm32_hrc_dmr_stats_t;
 
 // Lines stm32_hrc_dmr_stats_line formats (at most about 26 characters each, the diagnostics page)
-#define STM32_HRC_DMR_DIAG_LINES	22
+#define STM32_HRC_DMR_DIAG_LINES	23
 
 #if CONFIG_DMR
 // Once, from the radio init, after the chip is attached: interrupt lines (left off), task
@@ -56,6 +61,10 @@ void stm32_hrc_dmr_init(hrc_t *modem, const stm32_hrc_dmr_board_t *b);
 void stm32_hrc_dmr_enter(void);		// the chip has just been put in DMR (hrc6000_dmr_enter): engine on, interrupts on
 void stm32_hrc_dmr_leave(void);		// leaving DMR: transmission dropped, interrupts off, engine off
 void stm32_hrc_dmr_rx_restart(void);	// new channel in DMR
+// hal_radio_t.dmr_tx_end: when the RF is back to receive after our transmission (the last burst switch put it back,
+// the rf_switch result, or tx_done did on a board with tx_prepare; no burst, tx_prepare, new channel or DMR entered or
+// left since), the board's tx_end ends the transmission and true; else false (the core calls tx_off())
+bool stm32_hrc_dmr_tx_end(void);
 bool stm32_hrc_dmr_tx_active(void);	// the engine's slot state says a transmission is in progress
 bool stm32_hrc_dmr_tx_listening(void);	// that transmission receives between its bursts (an SFR, tx_listen)
 // The split duplex BS outbound has the chip (hrc6000_bs.c): µs to its next slot boundary (the slot clock). False
@@ -82,6 +91,7 @@ static inline void stm32_hrc_dmr_init(hrc_t *modem, const stm32_hrc_dmr_board_t 
 static inline void stm32_hrc_dmr_enter(void) {}
 static inline void stm32_hrc_dmr_leave(void) {}
 static inline void stm32_hrc_dmr_rx_restart(void) {}
+static inline bool stm32_hrc_dmr_tx_end(void) { return false; }
 static inline bool stm32_hrc_dmr_tx_active(void) { return false; }
 static inline bool stm32_hrc_dmr_tx_listening(void) { return false; }
 static inline bool stm32_hrc_dmr_bs_boundary_us(uint32_t *us) { (void)us; return false; }

@@ -23,7 +23,7 @@ import sys
 ARCHS = {1: "Cortex-M4", 2: "CK803S"}
 ADDR2LINE = {1: "arm-none-eabi-addr2line", 2: "csky-elf-addr2line"}
 CODE = {1: [(0x08000000, 0x08100000)], 2: [(0x03000000, 0x04000000)]}  # flash (CK803S: XIP; RAM code isn't known here)
-KINDS = {1: "Fault", 2: "Stack overflow", 3: "Out of memory", 4: "Assert", 5: "Hang"}
+KINDS = {1: "Fault", 2: "Stack overflow", 3: "Out of memory", 4: "Assert", 5: "Hang", 6: "Stall"}
 FLAGS = [(0x01, "in an interrupt handler"), (0x02, "build had local changes"), (0x04, "stack copied"),
          (0x08, "seen"), (0x10, "sent")]
 CK803_VECTORS = {1: "misaligned access", 2: "access error", 3: "divide by zero", 4: "illegal instruction",
@@ -137,6 +137,8 @@ def describe(rep, elf=None, addr2line=None):
         lines.append(f"  assertion at line {cause} (configASSERT: see the caller below)")
     elif rep["kind"] == 5:
         lines.append(f"  no watchdog feed for {cause} ms: pc is where the tick found the task that kept the idle task out")
+    elif rep["kind"] == 6:
+        lines.append(f"  the host link's task passed no loop for {cause} ms: its wait is in the snapshot of the tasks")
     task = rep["task"] or ("(an interrupt handler)" if rep["flags"] & 1 else "(none)")
     lines.append(f"  task {task}, after {rep['uptime_ms'] / 1000:.1f} s, {rep['count']} in a row")
     build = f"{rep['build']:08x}" if rep["build"] else "unknown"

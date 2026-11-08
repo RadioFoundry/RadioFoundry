@@ -204,6 +204,8 @@ def test_beep_counts(radio):
         skip("not_built", "built without CONFIG_BEEP")
     if as_int(f0.get("set.beep_level"), 0) == 0:
         skip("state", "beep level 0")
+    if as_int(f0.get("volume.sent"), -1) == 0:
+        skip("state", "volume 0 (a knob turned down): the beep follows it and is dropped before it is counted")
     played0, none0, blocks0 = (as_int(f0.get(k), 0) for k in ("beep.played", "beep.no_stream", "beep.blocks"))
     radio.link.beep("error")
     f = wait_features(radio, lambda v: as_int(v.get("beep.played"), 0) + as_int(v.get("beep.no_stream"), 0)
@@ -577,6 +579,7 @@ def test_tone_burst_time_limit(fm_tx):
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
+@pytest.mark.needs_switch("DMR")
 def test_scan_stops_on_dmr_call(radio, sdr_bench, pytestconfig):
     need_scan(radio)
     if "DMR" not in radio.features():
@@ -688,8 +691,11 @@ def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
+@pytest.mark.needs_switch("DMR")
 def test_dual_watch_stops_on_call(radio, sdr_bench, pytestconfig):
     need_scan(radio)
+    if "DMR" not in radio.features():
+        skip("not_built", "built without DMR")
     hz = round(rig(pytestconfig, "dmr-freq") * 1e6)
     radio.go_home()
     pos = radio.find_channel(hz, "dmr")

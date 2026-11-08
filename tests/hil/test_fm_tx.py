@@ -478,7 +478,11 @@ def test_fm_tx_power_levels(fm_vfo, sdr_bench, pytestconfig):
         return
     mhz = rig(pytestconfig, "fm-mhz")
     levels = []
-    for step in range(3):
+    # The first three levels, or every level of a radio with fewer (board_t.power_count)
+    count = min(3, int(fm_vfo.core().get("power_count") or 3))
+    if count < 2:
+        skip("no_hw", "one power level: nothing to compare")
+    for step in range(count):
         if step:
             fm_vfo.link.power_step(1)
             fm_vfo.wait_for(lambda v: v.get("power") == str(step), what=f"power {step}")
@@ -501,12 +505,13 @@ def test_fm_tx_power_levels(fm_vfo, sdr_bench, pytestconfig):
         # attenuator (or more distance) between the radio and the RTL-SDR for this test.
         skip("bench", f"the SDR's ADC clips even at gain 0 ({clipped[0][3]} % of samples at 50 mW): power levels "
                       f"can't be compared on this bench without an attenuator; levels {levels}")
-    d = [levels[i + 1][2] - levels[i][2] for i in range(2)]
+    d = [levels[i + 1][2] - levels[i][2] for i in range(count - 1)]
     assert all(x >= 1.0 for x in d), f"a higher power level is not stronger on air: steps {d} dB ({levels})"
-    # The span the names give ("50mW" to "5W": 20 dB), else the usual 10 dB; ±5 dB for the bench's path
-    w0, w2 = power_name_watts(levels[0][1]), power_name_watts(levels[2][1])
-    want = 10 * math.log10(w2 / w0) if w0 and w2 else 10.0
-    got = levels[2][2] - levels[0][2]
-    assert want - 5.0 <= got <= want + 5.0, \
-        f"{levels[0][1]} to {levels[2][1]}: {got:.1f} dB (nominally {want:.0f}) ({levels})"
+    if count == 3:
+        # The span the names give ("50mW" to "5W": 20 dB), else the usual 10 dB; ±5 dB for the bench's path
+        w0, w2 = power_name_watts(levels[0][1]), power_name_watts(levels[2][1])
+        want = 10 * math.log10(w2 / w0) if w0 and w2 else 10.0
+        got = levels[2][2] - levels[0][2]
+        assert want - 5.0 <= got <= want + 5.0, \
+            f"{levels[0][1]} to {levels[2][1]}: {got:.1f} dB (nominally {want:.0f}) ({levels})"
 
