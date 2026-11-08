@@ -33,7 +33,7 @@ def test_frame_fields_and_units():
     for k in ("peak_dev_hz", "max_dev_hz", "mark_dev_hz", "space_dev_hz", "twist_db", "mark_hz", "space_hz",
               "txdelay_flags", "txdelay_ms"):
         assert f[k] == FRAME[k], k
-    # what the board doesn't measure is absent, not zero: test_aprs.py prints it from a raw capture only
+    # what the board doesn't measure is absent, not zero
     assert "keyup_to_data_ms" not in f and "phase_rms_deg" not in f
 
 
