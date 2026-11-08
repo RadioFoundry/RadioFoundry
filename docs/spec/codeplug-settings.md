@@ -107,7 +107,7 @@ A type names how a value is encoded, never how wide it is. A value's length (2.2
 | int | Signed, little endian, 1 to 8 bytes. A shorter value sign-extends from its stored length |
 | bool | A uint: 0 = off, anything else on; a writer stores 0 or 1 |
 | enum | A uint. Values are only appended: a value never changes meaning, and a reader treats a value it doesn't know as the default |
-| id | A uint DMR ID. Above 16776415 (`CODEPLUG_DMR_ID_MAX`) it reads as if the key were absent |
+| id | A uint DMR ID, 1 to 4 bytes: an ID fits in 3, and a shorter value zero-extends as any uint. An empty value, or one above 16776415 (`CODEPLUG_DMR_ID_MAX`), reads as if the key were absent. 0 is a value (the setting off), not absent |
 | string | The bytes of the value, no terminator, length from the entry |
 | record list | A key family (below): one key per record, each record's value is of the type its row names |
 

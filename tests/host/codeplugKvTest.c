@@ -110,7 +110,11 @@ static void test_edits(void)
 	CHECK(sim_flash_data[AREA + 16] == 0x01 && sim_flash_data[AREA + 16 + 14] == 0x02);
 	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_IP_GATEWAY, &id) && id == 3100500);
 	CHECK(codeplug_kv_set(CODEPLUG_KEY_ARS_SERVER, big, 1));
-	CHECK(!codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id));	// shorter than the u32: as if absent
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 1);	// shorter than a u32: zero-extended
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_ARS_SERVER, (const uint8_t[]){ 0x40, 0x42, 0x0F }, 3));	// a 3-byte ID
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 1000000);
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_ARS_SERVER, big, 0));
+	CHECK(!codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id));	// empty: as if absent
 	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_IP_GATEWAY, &id) && id == 3100500);
 	// Not keys
 	CHECK(!codeplug_kv_set(0, big, 4) && !codeplug_kv_set(0xFFFF, big, 4));

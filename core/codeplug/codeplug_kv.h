@@ -39,7 +39,8 @@ typedef enum {
 // The value's length (at most max bytes are copied to buf), or -1 when the key is absent or the area isn't valid. Each
 // call checks the whole area: to read several keys, walk them with codeplug_kv_next
 int codeplug_kv_get(uint16_t key, void *buf, uint16_t max);
-// A u32 value that is a DMR ID: false when absent, shorter than 4 bytes or above CODEPLUG_DMR_ID_MAX (as if absent)
+// A value that is a DMR ID, 1-4 bytes zero-extended: false when absent, empty or above CODEPLUG_DMR_ID_MAX (as if
+// absent)
 bool codeplug_kv_get_id(uint16_t key, uint32_t *id);
 
 // A walk over the entries with keys lo..hi, in the area's order, a later entry of a key skipped (the first counts). The

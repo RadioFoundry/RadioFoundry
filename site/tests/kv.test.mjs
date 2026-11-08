@@ -129,11 +129,13 @@ test("settings area: unknown keys kept in order, duplicates, removal", () => {
 	assert.deepEqual(decodeArea(withArea(list).bytes).entries, [e(1, 1), e(2, 2)]);
 });
 
-test("settings area: a value that grew keeps its later fields; short and out-of-range IDs read absent", () => {
+test("settings area: a value that grew keeps its later fields; empty and out-of-range IDs read absent", () => {
 	const img = withArea([e(KEY.arsServer, 0x10, 0, 0, 0, 0xA1, 0xA2), e(KEY.ipGateway, 1, 2)]);
 	const d = decodeArea(img.bytes).entries;
 	assert.equal(getId(d, KEY.arsServer), 0x10);
-	assert.equal(getId(d, KEY.ipGateway), null, "shorter than a u32");
+	assert.equal(getId(d, KEY.ipGateway), 0x0201, "shorter than a u32: zero-extended");
+	assert.equal(getId([e(1, 0x40, 0x42, 0x0F)], 1), 1000000, "a 3-byte ID");
+	assert.equal(getId([e(1)], 1), null, "empty");
 	putIds(img.bytes, { [KEY.arsServer]: 0x20 });
 	assert.deepEqual(getValue(decodeArea(img.bytes).entries, KEY.arsServer), Uint8Array.of(0x20, 0, 0, 0, 0xA1, 0xA2));
 

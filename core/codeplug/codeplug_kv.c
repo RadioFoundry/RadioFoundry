@@ -202,9 +202,9 @@ int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 
 bool codeplug_kv_get_id(uint16_t key, uint32_t *id)
 {
-	uint8_t v[4];
-	if (codeplug_kv_get(key, v, sizeof(v)) < (int)sizeof(v) || get32(v) > CODEPLUG_DMR_ID_MAX) {
-		return false;	// a value that reads as absent: the radio keeps its own
+	uint8_t v[4] = { 0 };	// a shorter value zero-extends (docs/spec/codeplug-settings.md 3.1): a 3-byte ID is whole
+	if (codeplug_kv_get(key, v, sizeof(v)) < 1 || get32(v) > CODEPLUG_DMR_ID_MAX) {
+		return false;	// an empty value, or one that reads as absent: the radio keeps its own
 	}
 	*id = get32(v);
 	return true;

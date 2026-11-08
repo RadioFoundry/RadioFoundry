@@ -74,12 +74,12 @@ export function dedupe(entries) {
 	return entries.filter((e) => !seen.has(e.key) && seen.add(e.key));
 }
 
-// A DMR ID key (a u32): the ID, or null when absent, shorter than 4 bytes or above ID_MAX. A longer value is a later
-// version's: its first 4 bytes are the ID
+// A DMR ID key: the ID, or null when absent, empty or above ID_MAX. A value of 1-3 bytes zero-extends (3.1: an ID fits
+// in 3); a longer value is a later version's: its first 4 bytes are the ID
 export function getId(entries, key) {
 	const v = getValue(entries, key);
-	if (!v || v.length < 4) return null;
-	const id = u32(v, 0);
+	if (!v || v.length === 0) return null;
+	const id = v.length >= 4 ? u32(v, 0) : v.reduce((n, x, i) => n + x * 2 ** (8 * i), 0);
 	return id > ID_MAX ? null : id;
 }
 
