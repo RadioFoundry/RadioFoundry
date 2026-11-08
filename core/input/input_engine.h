@@ -20,7 +20,7 @@ static inline uint32_t input_long_threshold(uint8_t long_action, uint32_t long_m
 
 // A long action that needs the end of the hold too: after its LONG, the release sends it as GESTURE_UP. Value 1: held
 // past input_press_window; value 2: let go before it, and the key's short press follows (a plain key's, not a raw-edge
-// one's), so a shared key keeps its press (the DM-1701's Power level)
+// one's), so a shared key keeps its press (e.g. a side key whose short press is Power level)
 static inline bool input_long_up(uint8_t long_action)
 {
 	return long_action == ACT_EMERGENCY;
