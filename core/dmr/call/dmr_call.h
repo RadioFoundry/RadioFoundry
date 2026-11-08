@@ -207,6 +207,7 @@ typedef struct {
 	uint32_t tx_underruns;		// voice frames replaced with silence
 	uint8_t wake_admits;		// counts repeater wake-ups answered after PTT was let go: the call would have been admitted
 	uint8_t permit_seq;		// counts talk permit holds (permit_hold_ms): play the talk permit now
+	uint8_t wake_sent;		// counts BS_Dwn_Act bursts sent (repeater wake-ups): the red LED blinks once per burst
 } dmr_call_view_t;
 
 void dmr_call_config_default(dmr_call_config_t *cfg);
@@ -230,6 +231,11 @@ void dmr_call_set_tx_gps(const dmr_gps_t *gps);
 void dmr_call_reply_cancel(void);
 // The whole stack runs here: queued modem events, PTT, timeouts, TX queue filling. Call every 10-25 ms with the time
 void dmr_call_poll(uint32_t now_ms);
+// Called when a transmission ends (the modem's DMR_EV_TX_DONE or DMR_EV_TX_REJECTED, already queued): poll now rather
+// than at the next tick, so the receiver is back before a reply 30 ms after the last burst (a confirmed data ACK). From
+// the modem's event callback, at task level (hal_dmr_modem.h): post, never poll or block. NULL: none. Kept across
+// dmr_call_init
+void dmr_call_set_wake(void (*fn)(void));
 
 const dmr_call_view_t *dmr_call_view(void);
 

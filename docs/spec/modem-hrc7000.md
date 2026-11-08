@@ -59,7 +59,7 @@ Offsets from 0x11000000. Values are the ones the driver writes unless noted.
 | 0x114 | RF_MOD_BIAS_CTRL | b25:16 two_point_bias; b15:8 sig_reduce (Mod2 amplitude); b7:0 phase_reduce (Mod1 amplitude) | ((cal + 384) << 16) or modcal (0x4D4D before a frequency is set) | Modulation balance from calibration |
 | 0x118 | DEV_LIMITER | b15:0 | 0xFF00 (reset value) |
 | 0x11C | RSSI_BIAS_VALUE | read-only per the datasheet: rssi b31:16; b15:8 / b7:0 the measured DC bias of the ADC's I / Q inputs | 0x1381 is written (no effect expected) |
-| 0x128 | PHASE_OUT | read-only: b29:16 / b13:0 the largest and smallest 14-bit AF phase in AF receive mode | not written | A live check that AF reaches the ADC: a board receiving DMR reads about +1216 / -1149 (the datasheet expects about ±1300 at -47 dBm); a value that stays within a few counts means no AF arrives. One board had this when its audio-select GPIO was left high, which takes the RF chip's audio off the ADC |
+| 0x128 | PHASE_OUT | read-only: b29:16 / b13:0 the largest and smallest 14-bit AF phase in AF receive mode | not written | A live check that AF reaches the ADC: a board receiving DMR reads about +1216 / -1149 (the datasheet expects about ±1300 at -47 dBm); a value that stays within a few counts means no AF arrives. One board had this when its audio-select GPIO was left high, which takes the RF chip's audio off the ADC; another when the RF chip's digital set left its demodulator off the AF output (the boards' hardware pages) |
 | 0x120 | THRESHOLD_VALUE | b28:24 sync ratio; b23:16 sync low threshold; b15:8 sync high threshold; b7:0 signal detect | **0x0978786F** | |
 | 0x164 | RECV_INFO_COUNT | b31:24 sync errors; b8 select FSK error/EVM; b7:0 FSK error | read for BER/EVM only |
 | 0x168 | (undocumented, "REG_X06") | | 0x14 | |
@@ -418,7 +418,7 @@ The driver, while the BS outbound runs (it takes the slot engine's place, as `hr
 3. Keyed: at each boundary a slot's 36 bytes go to TX RAM and TXRX = 0x80. The chip sends them in the slot that
    starts about 5 ms after the boundary's interrupt, not in the one after it (finding 11), so the slot clock names that
    slot. The key-up starts on an outbound TS1 slot. Each slot plays its own queue, an empty one an idle burst.
-4. The first RF TX interrupt keys the RF chip and starts the PA one-shot; the PA then stays up. Unkeyed: no more slots,
+4. The first RF TX interrupt keys the RF chip and the PA (the RF-burst task's continuous mode, 3.1a); the PA then stays up. Unkeyed: no more slots,
    the PA off one slot later. No boundary for 200 ms: PA off, unkeyed.
 5. Stop (and leaving DMR): TXRX 0, PA off, WORK_MODE 0x80 then 0x6E, LAYER2_CONTROL passive, both slot syncs released,
    then the normal receive restart (5.2). LAYER2_BS_MODE is never written; the power-on set-up writes its reset value
@@ -499,6 +499,44 @@ Both timeslot interrupts are handled by one routine; it decides by the current a
 | 30 | burst on air (27.5 ms of symbols plus guard) |
 | next timeslot interrupt with ≥ 20 ms of TX elapsed | PA drive 0, PA selects off, RF chip back to RX |
 
+RadioFoundry keys from the RF TX interrupt instead, on the per-burst RF task (3.1a): the PA a fixed time after it,
+and back to receive at the burst's last symbol.
+
+### 3.1a The per-burst RF task
+
+Every HR_C7000 board keys its RF per burst: the RF chip to the TX frequency and its TX state, the paths and supplies,
+the PA, and back to receive after the burst, so the radio hears the other slot (and a hotspot listens while keyed).
+Where the modem's MOD1 output modulates the reference oscillator instead of the RF chip, this is the analog
+transmitter's whole key-up, a few milliseconds with waits in it. The sequences run in a task of their own at the
+highest priority (`platform/hrc7000/dmr_rfburst.c`); the interrupts only wake it. The board gives the two sequences
+(`hrc_dmr_board_t.burst`, an `hrc_rfburst_board_t`) and arms and disarms the task from `tx()`, `tx_off()` and `rx()`;
+the glue starts the task and passes it every switch. A board's sequences are only its chip steps; the timing is the
+task's (`dmr_rfburst_timing.h`): a sequence's `at` waits count from the RF TX interrupt (a two-point key-up's RF switch
+and PA times are `hrc_rfburst_switch_at_us` and `hrc_rfburst_pa_at_us`), and the task holds the TX off until the
+burst's last symbol from the modem's `rf_tx_lead`. So a board whose switch must come late (to keep receiving the inbound burst before ours) sets a lead
+about 0.5 ms longer than that point and waits: the task can wake up to 0.42 ms after the interrupt.
+
+A split duplex hotspot's base-station outbound (`hrc7000_bs.c`) is continuous: the task runs the TX-on sequence at its
+first RF TX interrupt and the TX-off sequence at once when it stops, with no hold and no RF RX interrupt ending it.
+
+| Event | Source | The task does |
+|---|---|---|
+| TX on | the RF TX interrupt, rf_pre_on_tx before the burst | the board's TX-on sequence |
+| TX off | the next timeslot interrupt, or the RF RX interrupt once 20 ms have passed since the RF TX interrupt, whichever comes first | waits until the burst's last symbol, then the board's TX-off sequence |
+| Abort | disarm (the end of the transmission, a retune) | the TX-off sequence at once; in a TX-off's hold, the hold's end (the disarm waits for it, up to 40 ms) |
+| End of an outbound | the base-station outbound stops (split duplex) | the TX-off sequence at once |
+
+The burst's last symbol is rf_pre_on_tx × 100 µs + 0.85 ms + 27.5 ms after the RF TX interrupt
+(`platform/hrc7000/dmr_rfburst_timing.h`), so the lead a board sets is the time its TX-on sequence needs, less 0.85
+ms, rounded up to 100 µs. The board's key-up delay in its TX-on sequence counts from the RF TX interrupt, so the
+task's wake doesn't delay the PA. The interrupt itself can come a few hundred µs late, while the slot engine holds
+its lock with the modem's interrupts masked (3.2); the bursts keep the 60 ms frame grid, so a burst whose interrupt
+is more than 30 µs past one frame after the burst before is timed from that point instead. The first burst of a
+transmission has no grid and keeps its interrupt's time, so a board's lead leaves margin for it. The diagnostics
+count the sequences run, the RF RX interrupts and the TX-offs that started late, and, since the key-up, the largest
+wake, the PA-up time after the interrupt (smallest and largest), the largest grid error and the bursts timed from the
+grid (`hrc_rfburst_stats_t`).
+
 ### 3.2 Masking the modem interrupts
 
 PIC_MASK bits 29, 30, 31 and PIC_MASK_1 bit 0 (vectors 61–64) (datasheet mapping). Mask them around multi-register updates
@@ -578,7 +616,7 @@ AUDIO_CONTROL is not rewritten here; after FM it ends up 0x00 once FM audio is s
 
 ### 5.2 Start / restart receive
 
-Used at DMR entry, after TX, at a new DMR frequency (the radio core calls `rx_restart` then, `gotchas.md` 17.2) and wherever reception must be (re)acquired:
+Used at DMR entry, after TX through a repeater (direct: 5.2a), after a stalled transmission, at a new DMR frequency (the radio core calls `rx_restart` then, `gotchas.md` 17.2) and wherever reception must be (re)acquired:
 
 | # | Register | Value | Why |
 |---|---|---|---|
@@ -593,6 +631,38 @@ Used at DMR entry, after TX, at a new DMR frequency (the radio core calls `rx_re
 A sequence of TXRX 0xC00000, 0, 0xC00000, 0x8040 with no SLOTON writes, or a busy wait in the color code probe, does not acquire sync reliably. Use this one everywhere.
 
 A restart also forgets what was heard: the polite-access busy window (`dmr-modem.md`) starts again with the next burst taken. The window is counted in timeslot interrupts, and on an empty channel they stop after a restart, so a station heard just before one stayed "busy" for good. Every polite start was then refused (`tx_rejected`) until the radio left DMR: after a one-burst data response, the restart at the end of the transmission came well inside the window.
+
+### 5.2a End of a direct transmission: the hold
+
+The end of a transmission comes on the TX tick a slot after our terminator, about 25 ms into the next slot. A direct
+answer in the other timeslot, right after our terminator (30 ms after its start), is then already being received, and a 5.2
+restart there makes the chip report it with BS sync and, on some radios, a header CRC error (`gotchas.md` 2.10). So
+a direct transmission ends without the restart:
+
+| # | Register | Value | Why |
+|---|---|---|---|
+| 1 | LAYER2_CONTROL | 0xC0 | passive timing from our active one; the slot syncs stay where our transmission left them |
+| 2 | LAYER2_TXRX_CTRL | 0x40 | receive the next slot |
+
+The software state is reset as at a restart (the polite busy window too). A burst taken holds the receiver as any
+reception does; with none, the 5.2 restart comes once 5 slots (150 ms) have passed with nothing taken, so a station
+on a timing of its own is taken after that. Through a repeater the restart stays at once: the next transmission
+needs a new TC lock (issue 72). Diagnostics: `rs restarts/lost/stale h holds`.
+
+The RF has the same window. An answer in our own timeslot comes one frame later, 60 ms after the start of our
+terminator (a MOTOTRBO portable's link ACK to confirmed data), and a receive set-up by the board then (idle,
+synthesizer, receive) misses it. The radio core ends a DMR transmission through `hal_radio_t.dmr_tx_end`, which the
+glue implements (`hrc_dmr_tx_end`): when the last burst's switch put the RF back to receive, the board's `tx_end`
+(`hrc_dmr_board_t`) ends the transmission and leaves the RF as it is if it is on the last `rx()` settings (frequency,
+trim, awake). Otherwise, and on a board without `tx_end`, the core calls `tx_off()` (`gotchas.md` 3.14).
+
+On the SDR bench (an MS simulator answering a confirmed packet with MS sync, 4-6 sends per case):
+
+| Answer after the start of our terminator | Restart at the end | Hold |
+|---|---|---|
+| 30 ms | 3 of 6 sends, retries; the ACK reported with BS sync | 4 of 4 first try, MS sync |
+| 60 ms | 4 of 4 | 4 of 4 |
+| 90 ms | 4 of 4 | 4 of 4 |
 
 ### 5.3 While receiving
 
@@ -614,7 +684,7 @@ A restart also forgets what was heard: the polite-access busy window (`dmr-modem
 ## 6. Transmit sequences
 
 All transmit actions happen in the timeslot interrupts: the CPU arms one slot at a time with TXRX_CTRL = 0x80 and
-leaves the other slot unused (0x00, or 0x40 / 0x8040 to listen: `tx_listen`, an SFR's inbound slot), giving one burst per 60 ms in its timeslot (datasheet figures 99–100). Every arming also starts the PA one-shot (a board with a PA one-shot timer). The RF TX interrupt that follows keys the RF
+leaves the other slot unused (0x00, or 0x40 / 0x8040 to listen: `tx_listen`, an SFR's inbound slot), giving one burst per 60 ms in its timeslot (datasheet figures 99–100). Every arming also starts the PA one-shot of a board without burst sequences (3.1a). The RF TX interrupt that follows keys the RF
 chip.
 
 ### 6.1 Start of transmission
@@ -646,7 +716,7 @@ Encoded audio must be produced continuously during TX: encode one 20 ms block pe
 | # | Slot | Writes |
 |---|---|---|
 | 1 | active | voice RAM = silence; TX RAM = LC; TXRX_CTRL = 0x80; SEND_TYPE = 0x20 |
-| 2 | next | direct mode: done → idle. Repeater mode: LAYER2_CONTROL = 0xC0, TXRX_CTRL = 0 |
+| 2 | next | direct mode: done → idle (RadioFoundry: the 5.2a hold). Repeater mode: LAYER2_CONTROL = 0xC0, TXRX_CTRL = 0 |
 | 3 | next (repeater mode) | TXRX_CTRL = **0x40** (receive next slot) → receiving |
 
 ### 6.4 Data and CSBK
@@ -775,6 +845,36 @@ RadioFoundry plays all speaker PCM through this FIFO (`platform/hrc7000/audio_pc
 0x180000A0 (AUDIO_CONTROL b5, section 3) gave rough, choppy beeps on one board with every sample layout tried,
 with no queue underruns (measured).
 
+The FIFO takes two pushes from empty (64 samples, 8 ms) before b31 sets (measured), less than one 20 ms PCM block.
+The blocks come at the rate the FIFO plays them, so a queue that pushes each block as it arrives has the FIFO nearly
+empty at every block edge. It ran dry there: the queue emptied with the FIFO taking more 151 times in about 120 blocks
+of beeps, and every tone broke up at 20 ms intervals, its pitch jumping and its level dipping by up to 40 dB at the
+microphone (measured). `audio_pcm.c` therefore pushes nothing after the queue is emptied (route on, gate edges) until
+two blocks are queued, so the queue stays a block ahead of the FIFO for one block (20 ms) of latency. With that hold
+the queue never ran out in the same beeps, and the FIFO was topped up at least every 4 ms (measured). The `un` field
+of the `pg` diagnostics line (below) counts run-outs and stays 0.
+
+The FIFO is two halves of one push (32 samples, 4 ms) each. b31 clears exactly every 4.00 ms, as the modem moves on to
+play the other half, and the next push sets it again at once (measured). Write the 64 bytes as byte writes: with
+halfword or word writes the FIFO counts one entry per bus access and plays nothing usable (measured).
+
+A push in the first microseconds after b31 clears can land in the half being played. From then on every chunk plays
+one chunk early or late: the audio jumps at every 4 ms boundary, a phase step of 360° × f × 4 ms (none at multiples of
+250 Hz, the most near 125 Hz plus multiples of 250 Hz), heard as a buzz of broadband clicks at 250 Hz under the tone,
+limited to the 4 kHz band. It lasts until a later push happens to line the halves up again. Whether a push fell there
+depended on how the audio task's 2 ms poll lined up with the modem's 4 ms, so the fault came and went for seconds at a
+time and between beeps. The `un` field stayed 0 and the chunks went in at exactly 8 kHz: nothing was lost, only
+reordered. On a swept tone, broken stretches had the energy just above the tone's frequency 5-25 dB below the
+tone; whole ones 39-55 dB below it (measured, `test_speaker_sweep`). Traces of the broken stretches showed pushes that found
+b31 set on entry and clear microseconds later, then wrote at once; in clean ones, almost none.
+
+`platform/hrc7000/prompt_fifo.h` therefore waits 200 µs after it sees b31 clear before writing (twice the shortest wait
+that was clean; pushes 0.1-3 ms after the edge played in order in 12 of 12 sweeps). Only a push that saw the bit
+clear writes, so the bit can only have cleared before that look. At 250 pushes a second the wait costs about 5 % of
+the CPU. Speaker PCM (`audio_pcm.c`) and APRS (`hrc_afsk.c`) both push through it. Every sweep recorded with the wait played
+whole, 8 of them; one more recording had half its energy above 4.3 kHz, which an 8 kHz stream can't make, and was
+the capture's fault (measured).
+
 The prompt path also feeds the TX modulator: with AUDIO_CONTROL b7 set during a DMR transmission, the beep's audio
 rides on the 4FSK. On one board the talk permit tone overlapped the second and third voice LC headers, which then
 carried no decodable sync on the SDR bench and the bench modem took the call by late entry; with b7 held clear while
@@ -788,7 +888,7 @@ the speaker stream routed, every 10 ms without), on each speaker route change an
 emptied, a block the audio task was filling at that moment included, so a beep queued during the transmission is
 dropped, not played late. Boards set b7 only through `hrc_audio_pcm_ring()`, which applies the gate. The last of the
 DMR glue's diagnostics lines, `pg g<closings> l<closings that found speaker audio still pending> ra<checks that found
-b7 set while closed>`, checks it: `l` and `ra` stay 0. Its counters reset with the DMR counters.
+b7 set while closed> un<speaker queue run-outs>`, checks it: `l`, `ra` and `un` stay 0. Its counters reset with the DMR counters.
 
 So the talk permit can't sound during DMR TX, and the boards set `CAP_BEEP_NOT_ON_AIR`: the radio core plays it in a
 short receive-only hold before the first burst (`radio-features.md` 4). On air with a hotspot parrot, the beep was

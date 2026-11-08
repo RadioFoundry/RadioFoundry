@@ -83,7 +83,7 @@ Radios: HR_C6000.
 
 **1.4b Page 2 isn't per slot.**
 Symptom: with a call on each slot, the wanted call went quiet with the other call's source shown (23 of 78 bursts
-played; HIL 2026-11-04 on the HR_C5000). Cause: page 2 holds the embedded LC (or alias or GPS block) the chip
+played; HIL on the HR_C5000). Cause: page 2 holds the embedded LC (or alias or GPS block) the chip
 assembled last, of either slot, so at one call's F it held the other's, and the core took it for a new call. Rule:
 keep each slot's call LC and check every embedded LC against both before handing it over; only voice LCs (FLCO 0, 3)
 become a slot's call LC, and alias and GPS blocks wait while the other slot is busy. While a slot's call goes on,
@@ -177,6 +177,25 @@ still listed) leaves its source silent for good. A dead timeslot interrupt means
 transmission; drop a system request pending for 50 ms with no handler run; count both and keep the first one's PIC
 state (`modem-hrc7000.md` 3.3). Radios: the HR_C7000 boards; one report.
 
+**2.10 A receiver restart in the middle of a burst.**
+Symptom: a direct answer in the other timeslot, right after our terminator (30 ms after its start), was lost: decoded but with BS sync, its timeslot
+taken from a TC bit there is none of in direct mode and so often the wrong one, and on some radios with a header CRC
+error. Answers 60 and 90 ms after, and the same bursts sent unsolicited, were taken. Cause: the end of a
+transmission comes on the TX tick a slot after the terminator, about 25 ms into the answer's slot, and the full
+receiver restart there (the WORK_MODE pass, passive timing, both slot syncs released) leaves the chip to report the
+burst it is in the middle of with a reset state. Dropping only the WORK_MODE pass didn't help. Rule: a direct
+transmission ends with receive in passive timing and the slot syncs kept, and the restart waits until the channel
+has been quiet for 150 ms (`modem-hrc7000.md` 5.2a). Any restart from a tick can land in a burst: keep them to
+quiet channels. Radios: the HR_C7000 boards.
+
+**2.11 A prompt FIFO push right after the half switch.**
+Symptom: beeps and speaker audio with a faint buzz under low tones, some beeps and not others, for seconds at a time;
+on a swept tone, stretches with broadband energy as loud as the tone. Cause: the prompt FIFO is two 32-sample halves;
+a push in the first microseconds after AUDIO_CONTROL b31 clears lands in the half being played, and every chunk then
+plays 4 ms early or late until the halves line up again. No samples are lost, so the queue counters stay clean. Rule:
+every push waits 200 µs after it saw the bit clear (`platform/hrc7000/prompt_fifo.h`, `modem-hrc7000.md` 8.4); check
+speaker audio with the sweep (`test_speaker_sweep`), not with steady tones alone. Radios: the HR_C7000 boards.
+
 ## 3. TX/RX state and PA handling
 
 **2.6 HR_C5000 register differences.** Configuration page 0 (page 4 on the HR_C6000); reg 0x10 = 0x6B simplex,
@@ -258,6 +277,14 @@ pin set-up ran after the clock set-up. Rule: every fault handler, crash hook, so
 `board_rf_safe()` first, and so does `main()` before the clocks ([crash-log.md](crash-log.md) 8). A new board must
 provide it, and a new reset or jump path must call it.
 
+**3.14 No receive set-up at the end of a DMR transmission.** Symptom: a MOTOTRBO portable's link ACK to our confirmed
+data, which comes one frame after our terminator in our own timeslot, was missed on every try on several radios. Cause: the board's `tx_off()` set the receiver up again
+(idle, synthesizer, receive) just as the answer came in; the per-burst switch had already left the receiver on the
+channel. Each radio that had fixed it did so with its own check in `rx()`. Rule: the radio core ends a DMR
+transmission through `hal_radio_t.dmr_tx_end`; the modem glue implements it once and has the board's `tx_end` keep the
+RF when the last burst's switch left it on the last `rx()` settings ([modem-hrc7000.md](modem-hrc7000.md) 5.2a).
+`rx()` is always a full set-up. Radios: the boards on both DMR modem glues. Test: `test_dmr_tx_end` (radioCoreTest).
+
 ## 4. AMBE codec calling
 
 **4.1 The STM32 codec glue must be built at -O0.** The codec entry calls were inline assembly that depended on the
@@ -315,15 +342,24 @@ old code compared with the preamble's count and stopped after the header (blocks
 complete or 180 ms after its last frame, max 64 bursts (`DMR_DATA_MAX_BURSTS`); frames that can't be sent are NAKed, not silently ACKed.
 
 **5.6 TMS ACK sequence number is 7 bits.** The ACK carried only the low 5 bits, so senders numbering past 31 never
-matched. Bytes must equal a MOTOTRBO capture (example 00 04 9F 00 95 20 for s/n 53), sent as its own transmission after
-the ETSI response, with preambles.
+matched. Bytes must equal what MOTOTRBO radios and BrandMeister send (00 04 BF 00 9E 60 for s/n 126; header 0xBF,
+not 0x9F: the 0x20 bit is set in every TMS header), sent as its own transmission after the ETSI response, with
+preambles. Confirmed data from BrandMeister has N(S) 0 every time: a repeat must match the data too, not only N(S).
 
 **5.7 Reply queue, not a single slot.** ACKs written by the modem task and read by the main task in one slot were
 overwritten by a second message. Use a single-producer / single-consumer queue (4 entries usable with one slot kept
 free, entries older than 5 s dropped), with compiler barriers so the entry is written before the index store.
 
 **5.8 Duplicate message suppression.** A sender that missed our ACK resends: ACK again but don't store or ring again
-when radio, sequence number and text match within 60 s.
+when radio and text match within 60 s. Not the sequence number: BrandMeister resends an unacknowledged text with a
+new one.
+
+**5.9 BrandMeister ignores data with few preambles.** Confirmed TMS sent with 2 preamble CSBKs reached BrandMeister
+intact and got nothing back: no link ACK, no NACK. The same packet with 16 got its link ACK in under a second. Text and
+IP packets go with 16 where the burst list has room ([dmr-data.md](dmr-data.md) 12.6.4). The hotspot reaches
+BrandMeister over UDP, often on Wi-Fi, so a single unanswered packet may just be lost; the preamble rule rests on 10
+unanswered sends in a row and one identical pair. The TMS ACK goes with 16 too, 1.5 s after our link ACK, and confirmed,
+as MOTOTRBO radios send it: BrandMeister ignored an unconfirmed one with 16 preambles twice ([dmr-data.md](dmr-data.md) 5.1).
 
 ## 6. Privacy
 
@@ -714,7 +750,7 @@ read the low bits of the first byte of a burst 65 ms after the last one, before 
 debounce the shared pin by time, not by scan count. The pin must read low, and not gated, for 20 ms
 (`SHARED_PTT_HOLD_MS`). `tests/hil/test_ptt_host_traffic.py` checks it on the radio. The radio's own transmission,
 picked up on a coiled cable, also reads as a press: the line goes low with flagged characters and no good byte, and
-the press keeps the radio keyed, a latch (2026-11-05: a minute keyed, nothing touched). Rule: while the radio
+the press keeps the radio keyed, a latch (measured: a minute keyed, nothing touched). Rule: while the radio
 transmits, no new press starts on the shared line, and a held press ends at a flagged character after its own break,
 since a grounded line receives nothing. RF that holds a released line steadily low, with no character, still reads
 as held, and the transmit time-out ends it.

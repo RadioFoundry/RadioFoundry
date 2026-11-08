@@ -432,6 +432,9 @@ typedef enum {
 void radio_req_roam(uint8_t cmd);
 // A beep (radio/beep.h beep_t) at the settings' level: key beeps only when key_beep is set (CONFIG_BEEP)
 void radio_req_beep(uint8_t beep);
+// The same delay_ms later (0 = now): a speaker test can start on a radio whose cable mutes the speaker, after the
+// cable is out. A later request replaces one not yet played
+void radio_req_beep_after(uint8_t beep, uint32_t delay_ms);
 // A vibration pattern (radio/vibe.h vibe_t) on the board's motor (CONFIG_VIBRATE; nothing on a radio without
 // hal_power_t.vibrate). Whether an alert vibrates is the caller's setting
 void radio_req_vibrate(uint8_t pattern);

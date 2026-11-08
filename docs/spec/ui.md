@@ -592,7 +592,8 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   into Home.
 - The long-press and key-repeat times are stored in `settings_t` and handed to the input layer (`input_set_timing`,
   clamped to 200..3000 ms and 40..1000 ms); auto lock locks the keys after its time without a key press (counted on
-  Home and in menus alike; injected keys count).
+  Home and in menus alike; injected keys count). A key map with neither QUICK nor BACK (side keys only) is never
+  locked by auto lock, since no key there unlocks it; a side key set to key lock still locks and unlocks.
 - Mic AGC and mic noise reduction are the vocoder's (DMR only). Each is dimmed ("Not on this radio") when the board's
   vocoder lacks the option (`hal_vocoder_t.options`), and in a build without DMR. While Mic AGC is on, Mic gain shows
   "AGC", is dimmed, OK says "Mic AGC sets the level"

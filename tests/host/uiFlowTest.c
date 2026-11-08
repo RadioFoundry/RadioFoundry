@@ -949,6 +949,14 @@ static const flow_t flows_f[] = {
 #endif
 };
 
+// Side keys only (no QUICK, no Back): no key can unlock, so auto lock never locks; a side key set to key lock still
+// locks and unlocks
+static const flow_t flows_s[] = {
+	{ "S auto lock without an unlock key", "autolock:30", "wait:31000", "locked=0", 0, false },
+	{ "S a side key set to key lock", "autolock:30", "lockkey", "locked=1", 1, false },
+	{ "S the side key unlocks", "lockkey", "lockkey", "locked=0", 1, false },
+};
+
 static void run_flow(const flow_t *f, const sim_geom_t *g, sim_map_t map, const char *mapname)
 {
 	char err[300];
@@ -1351,6 +1359,8 @@ int main(void)
 	const sim_geom_t *gf = sim_geom_find("160x128");
 	for (size_t i = 0; i < sizeof flows_f / sizeof flows_f[0]; i++)
 		run_flow(&flows_f[i], gf, SIM_MAP_F, "F few keys");
+	for (size_t i = 0; i < sizeof flows_s / sizeof flows_s[0]; i++)
+		run_flow(&flows_s[i], sim_geom_find("128x64"), SIM_MAP_S, "S side keys");
 	printf("# %d flows run\n", flows_run);
 	about_checks();
 	call_screen_checks();

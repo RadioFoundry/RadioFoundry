@@ -394,7 +394,7 @@ search for the call's phase is limited:
 | The call's own bursts skipped while its slot is unknown | Counted, so the index stays A-F. After a quiet-period restart that costs the first bursts of a call (two in the host test, about 150 ms until the TC locks) |
 
 All of these are host-tested (`hrc5000Test` `test_two_slots`: a call on each slot, a restart mid-call, a TC wrong
-from the start, both slots heard with `rx_lock_slot` 0). On air (2026-11-04, the SDR bench sending repeater bursts
+from the start, both slots heard with `rx_lock_slot` 0). On air (the SDR bench sending repeater bursts
 with the CACH on both slots): the reads alternate as above (phase 0 TS1's frames, phase 1 TS2's), and the wanted call
 plays with the other slot already talking (77 of 78 bursts; 0 before the fix).
 
@@ -403,7 +403,7 @@ call's LC was in page 2 at the wanted call's F: the core took it for a new call,
 the other call's source shown (23 of 78 bursts when the wanted call started first). The engine keeps each slot's
 call LC and holds back an embedded LC that is the other slot's call's (the rules are in modem-hrc6000.md 5.2).
 Host-tested (`test_two_slots`, the `LC`, `alias` and `mixed LC` cases: page 2 gets a call's LC or alias block the
-tick after its F). On air (2026-11-04, the SDR bench, a call on each slot, 78 bursts sent to the wanted slot, two
+tick after its F). On air (the SDR bench, a call on each slot, 78 bursts sent to the wanted slot, two
 runs each):
 
 | Case | Before | After |
@@ -610,8 +610,11 @@ interrupt, the first burst went out unlocked and a one-burst wake-up never reach
 | Own timing (simplex, the repeater wake-up) | at the modem's `tx_begin`, or at radio `tx()` if that comes later |
 | Aligned to a repeater's slots | at the engine's `tx_slot_found`, two ticks before the first burst. Until then the receiver stays on: the engine needs the downlink's TC to find the slot (4, the CACH TC row) |
 
-On a split channel the synthesizer returns to RX at the engine's TX done, so the radio hears the repeater's answer to
-its wake-up; simplex stays on TX until `tx_off()`.
+The synthesizer returns to RX at the engine's TX done, on every channel. On a split channel the radio then hears the
+repeater's answer to its wake-up. On simplex the receive LO is 49.95 MHz from the carrier, and a confirmed data
+response comes in the next frame, 30 ms after our last burst. Left on TX until `tx_off()` (the radio task), the radio
+missed nearly every such response (a receive CRC error instead), and the TX VCO kept leaking the carrier about 34 dB
+below the burst while TX_5V discharged (about 20 ms). `rx()` then keeps the synthesizer where TX done put it.
 
 ### 5.7 The 5C rail (SAVE)
 

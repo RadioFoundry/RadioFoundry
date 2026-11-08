@@ -116,7 +116,7 @@ def test_settings_survive_restart(radio):
     radio.link.reboot(0, radio.link.chip()["token"])
     radio.link.close()
     time.sleep(2.0)
-    radio.reconnect()
+    radio.reconnect(20.0)
     after = radio.wait_for(lambda c: c.get("state") is not None, timeout=5.0)
     assert after["zone_index"] == v["zone_index"] and after["zone_pos"] == str(pos), (v, after)
     s = storage(radio)

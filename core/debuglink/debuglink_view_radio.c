@@ -34,6 +34,20 @@ static const char *word(uint8_t v, const char *const *names, uint8_t n)
 	return v < n ? names[v] : "?";
 }
 
+// The speaker route of the beeps (section audio; the features section has no room left): which stream played them,
+// their lead-in and the amplifier hang (radio-features.md 4)
+void debuglink_view_audio(dl_text_t *t)
+{
+#if CONFIG_BEEP
+	beep_stats_t b;
+	beep_get_stats(&b);
+	dl_text(t, "beep.shared=%u\nbeep.leads=%u\nbeep.warm=%u\nbeep.warms=%u\n", (unsigned)b.shared, (unsigned)b.leads,
+		beep_warm_on(), (unsigned)b.warms);
+#else
+	(void)t;
+#endif
+}
+
 void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 {
 	static const char *const kinds[] = { "off", "zone", "vfo", "dual" };
@@ -228,7 +242,11 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		if (!CONFIG_BEEP) {
 			return DL_ST_UNAVAILABLE;
 		}
-		radio_req_beep(a[0]);
+		if (len >= 2 && a[1] != 0) {	// the delay in seconds: the cable can come out of a radio it mutes
+			radio_req_beep_after(a[0], (uint32_t)a[1] * 1000u);
+		} else {
+			radio_req_beep(a[0]);
+		}
 		return DL_ST_OK;
 	case DL_OP_VIBRATE:
 		if (len < 1 || a[0] == VIBE_NONE || a[0] >= VIBE_COUNT) {

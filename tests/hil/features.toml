@@ -11,6 +11,8 @@
 #
 # [feature.<id>]    the id: stable, snake case, what the tests' feature markers name
 #   switch          the CONFIG_ switch without the prefix; left out for a feature without one
+#   requires        for a feature without a switch that is part of another's (DMR data within DMR): that switch. Where a
+#                   board leaves it out (n/a, not written, off), the feature follows it instead of being required
 #   hardware        what the switch needs that some radios physically lack. tools/boards.py check fails on a board
 #                   that neither builds the switch by default nor lists it with the reason in BOARD_UNSUPPORTED or
 #                   BOARD_NOT_WRITTEN (or, while the fact isn't known, in board.toml [hardware] unconfirmed): never
@@ -151,6 +153,7 @@ source = ["drivers/gps", "platform/stm32f4/gps_uart", "platform/hrc7000/gps_hrc.
 # ── DMR data ──
 
 [feature.dmr_data_rx]
+requires = "DMR"
 spec = "docs/spec/dmr-data.md"
 source = ["core/dmr/dmrData.c", "core/dmr/dmrDataService.c", "core/dmr/dmr_data_api.h"]
 
@@ -175,7 +178,6 @@ switch = "DMR_UDP_COMPRESS"
 spec = "docs/spec/dmr-data.md"
 
 [feature.dmr_confirmed]
-switch = "DMR_CONFIRMED"
 spec = "docs/spec/dmr-data.md"
 
 [feature.sfr]
@@ -293,6 +295,7 @@ switch = "DMR_IP_GATEWAY"
 spec = "docs/spec/dmr-data.md"
 
 [feature.dmr_tx_spacing]
+requires = "DMR"
 spec = "docs/spec/dmr-data.md"
 source = ["core/dmr/dmrAirQueue.c", "core/dmr/dmrDataService.c"]
 
@@ -350,6 +353,7 @@ switch = "TFTP_IDDB"
 spec = "docs/spec/tftp.md"
 
 [feature.dmr_iddb]
+requires = "DMR"
 # The DMR ID database a CPS writes (format N): the names the radio shows for IDs that aren't contacts
 spec = "docs/spec/open-firmware-cps.md"
 source = ["core/codeplug/dmr_iddb.c", "core/codeplug/dmr_iddb.h", "core/debuglink/debuglink_iddb.c"]
@@ -371,6 +375,11 @@ spec = "docs/spec/ppp.md"
 [feature.ui_navigation]
 spec = "docs/spec/ui.md"
 source = ["core/ui", "core/input"]
+
+# Locking the keys by hand (long QUICK, a side key set to key lock) and by auto lock, and PTT while locked
+[feature.key_lock]
+spec = "docs/spec/ui.md"
+source = ["core/ui/ui_app.c"]
 
 [feature.channel_knob]
 spec = "docs/spec/ui.md"
