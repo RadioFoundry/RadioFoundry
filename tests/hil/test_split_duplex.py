@@ -414,7 +414,8 @@ def tx_half_cach(bs):
     cach = [b["cach"] for b in bs if b.get("cach")]
     ok = [c for c in cach if c["ok"]]
     alt = sum(1 for x, y in zip(ok, ok[1:]) if x["tc"] != y["tc"])
-    slcs = [c["slc"] for c in cach if "slc" in c]
+    # a short LC takes four CACHs; the transmitter stops wherever the test ends it, and the last ones ramp down
+    slcs = [c["slc"] for c in cach[:-4] if "slc" in c]
     good = sum(1 for _, g in slcs if g)
     # Where a bad short LC falls (CACH index, the ones decoded around it): at a change of content (a call's start
     # or end) or in the middle of an unchanged run
