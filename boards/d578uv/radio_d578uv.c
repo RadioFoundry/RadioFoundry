@@ -237,6 +237,7 @@ static bool transmitting;
 static uint8_t sr;			// the shift register's outputs
 static bool main_audio;			// side A's audio to the speaker (audio())
 static bool beeping;			// side A's chip sounds a beep instead of its receiver (beep_tone())
+static bool dmr_heard;			// in DMR side A hears a signal (status()): no beep then (beep_tone())
 static int16_t level_code_vol = -1;	// the speaker level code for the volume, -1 until the core sets one
 static bool vol_zero;			// the volume (knob A) is 0: side A and the KTMicro receiver stay silent
 static int16_t level_code_b = -1;	// side B's level code from knob B, -1 until side B's poll reads it
@@ -1971,6 +1972,7 @@ static void status(radio_status_t *st)
 		st->noise = 127;
 		st->carrier = false;
 		st->tone_ok = false;
+		dmr_heard = false;
 		return;
 	}
 #if CONFIG_AM_RX
@@ -1985,6 +1987,7 @@ static void status(radio_status_t *st)
 	st->rssi_dbm = qa4818_rssi_dbm(s.rssi);
 	st->noise = qa4818_noise(s.noise);
 	st->carrier = s.signal && s.rssi >= rx_threshold;
+	dmr_heard = mode == RADIO_MODE_DMR && st->carrier;
 #if CONFIG_DMR
 	if (mode == RADIO_MODE_DMR)
 		d578uv_modem_carrier(st->carrier);
@@ -1994,11 +1997,17 @@ static void status(radio_status_t *st)
 
 // Beeps (hal_radio_t.beep_tone): side A's chip plays the tone generator to its AF output, which the speaker takes
 // whatever the squelch, at the volume. In DMR this takes the chip's output from the baseband for the beep's length.
-// Not while transmitting, in AM or with broadcast FM (the speaker's source is the KTMicro receiver then)
+// Not while transmitting, in AM or with broadcast FM (the speaker's source is the KTMicro receiver then). Not while a
+// DMR signal is heard either: the baseband gets nothing to demodulate for the beep's length and loses the call (HIL: an
+// emergency call's alert beep cost 12 voice bursts, or ended the call and the rest came as a second, late call). A
+// beep sounding when one comes stops
 static void beep_tone(uint16_t hz, uint8_t level)
 {
 	if (hz != 0 && (transmitting || !have_rx || AM_ON || BC_HEARD)) {
 		return;
+	}
+	if (dmr_heard) {
+		hz = 0;
 	}
 	if (hz == 0 && !beeping) {
 		return;
