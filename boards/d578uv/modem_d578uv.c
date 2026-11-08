@@ -403,6 +403,12 @@ void d578uv_modem_carrier(bool carrier)
 		sct_dmr_carrier(carrier ? CR_READY : 0);
 }
 
+// board_t.modem_codec: the boot block the codec slot holds, the same check as the start's
+const char *d578uv_modem_codec(void)
+{
+	return crc32(__codec_slot, SCT_BOOT_BLOCK_BYTES) == BOOT_BLOCK_CRC32 ? "d578uv-boot" : NULL;
+}
+
 uint8_t d578uv_modem_boot_result(void)
 {
 	return (uint8_t)boot_result;

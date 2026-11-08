@@ -211,7 +211,7 @@ static stub_link_t ident;
 // Asked at each VERSION, not at start: the board checks its codec on the first request (some 20 ms)
 static const char *codec_id(void)
 {
-	return hal_vocoder_id(board.vocoder);
+	return board_codec_id();
 }
 
 #if CONFIG_CPS_FAST

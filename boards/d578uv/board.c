@@ -87,6 +87,7 @@ const board_t board = {
 	.caps = CAP_ENCODER | CAP_NO_BATTERY | CAP_DMR | CAP_MODEM_VOICE | (CONFIG_GPS ? CAP_GPS : 0) |
 		(CONFIG_AM_RX ? CAP_AM_RX : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
 	.dmr = &sct_dmr_modem,	// start() fails until the baseband has booted: FM only without the boot block
+	.modem_codec = d578uv_modem_codec,
 #else
 	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_AM_RX ? CAP_AM_RX : 0) |
 		(CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
