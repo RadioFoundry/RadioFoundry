@@ -32,8 +32,8 @@ during the hot mic takes over the transmission.
 Hold the **Power level** key (or a side key set to **Emergency** as its hold, [Settings](17-settings.md#keys-key-8)).
 After 0.3 s the screen counts down: an amber "HOLD FOR EMERGENCY" banner, the seconds left in large amber digits with
 a "beep" (and "vibrate") cue beside them, a bar that fills, where the alarm goes ("Alarm to TG 3100 USA") and "Let go to stop". Each second the radio beeps and, if it has a vibration
-motor, pulses. Keep holding to the end (3 s from the press by default) and the radio starts the emergency: SENT on a
-red screen with its own two-tone sound, then hold again to cancel.
+motor, pulses. Keep holding to the end (3 s from the press by default) and the radio starts the emergency: "Emergency"
+over SENT on a red screen with its own two-tone sound, then hold again to cancel.
 
 | You | The radio |
 |---|---|

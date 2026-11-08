@@ -2690,8 +2690,8 @@ static void __attribute__((noinline)) em_big(const char *text, int y, int room_h
 }
 
 // The hold: an amber banner (the title: what holding does), the seconds left as large as the room allows with "s"
-// and the beep cue beside them, an amber bar, the target. The outcome: SENT large on red (CANCELED on the background),
-// the target under it. 1 bpp: ink only, the banner inverted
+// and the beep cue beside them, an amber bar, the target. The outcome: "Emergency" in the strip, SENT large on red
+// (CANCELED on the background), the target under it. 1 bpp: ink only, the banner inverted
 void __attribute__((noinline)) ui_draw_em_hold(const radio_view_t *v, const ui_state_t *s, const ui_em_hold_t *h)
 {
 	const ui_layout_t *L = &ui_layout;
@@ -2701,7 +2701,8 @@ void __attribute__((noinline)) ui_draw_em_hold(const radio_view_t *v, const ui_s
 	bool mono = gfx_bpp() == 1;
 	bool red = h->done == UI_EM_DONE_SENT && !h->silent && !mono;
 	gfx_clear(red ? ui_col.tx : ui_col.bg);
-	int y = ui_draw_top(v, s, NULL, NULL);	// the status strip; the banner below is the title
+	// The status strip; the hold's banner is its title, the outcome's is "Emergency" so SENT says what went out
+	int y = ui_draw_top(v, s, h->done != UI_EM_DONE_NONE ? TR("Emergency") : NULL, NULL);
 	int hint_y = L->hint_y;
 	int ty = h->id != 0 ? hint_y - L->small->h - 1 : hint_y;	// the target line, over the hint
 	if (h->done != UI_EM_DONE_NONE) {

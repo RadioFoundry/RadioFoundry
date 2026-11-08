@@ -106,7 +106,7 @@ a countdown on the screen. Hold time counts from the press.
 | Each second of the hold | | `UI_BEEP_COUNTDOWN` and a vibration pulse (`UI_VIBE_CALL`; Settings > Sound > Vibrate applies) |
 | Released before `INPUT_EMERGENCY_PRESS_MS` (1.5 s, or the long press time if longer; `input_press_window`) | `GESTURE_UP`, value 2, of `ACT_EMERGENCY`, then the key's short action (`GESTURE_PRESS`; not on a raw-edge key) | the countdown closes without a trace and the press acts (the next power level); after a 1 s hold that already acted, the outcome screen takes the press |
 | Released later, before the end | `GESTURE_UP`, value 1, of `ACT_EMERGENCY` (`input_long_up`) | nothing sent; the previous screen. BACK, long BACK or another screen pushed over the countdown do the same |
-| The end of the hold | | `ui_svc_emergency(true)` (or `false` to cancel); SENT as large as fits on red (inverted on 1 bpp; the background when Silent), the target under it and "Hold again to cancel", with `UI_BEEP_EM_SENT`, `UI_VIBE_EMERGENCY`, or CANCELED with `UI_BEEP_EM_CANCELED`; up 2.5 s or until OK / BACK |
+| The end of the hold | | `ui_svc_emergency(true)` (or `false` to cancel); "Emergency" in the status strip, SENT as large as fits on red (inverted on 1 bpp; the background when Silent), the target under it and "Hold again to cancel", with `UI_BEEP_EM_SENT`, `UI_VIBE_EMERGENCY`, or CANCELED with `UI_BEEP_EM_CANCELED`; up 2.5 s or until OK / BACK |
 
 The hold is timed from the UI tick that follows the LONG (the UI task ticks right after each key, `ui.c`), less 0.3 s;
 the bar redraws every 250 ms (each redraw holds the bus that some boards' key rows share). A screen that covered the
