@@ -296,6 +296,7 @@ not known well enough (section 9).
 | Reset | supply on, strobes idle, boot strap, RSTN pulse, then the chip's start-up time (about 0.7 s) |
 | Boot block | from the modem boot slot, checked by CRC-32 before use |
 | Modem task | polls the chip every 2 ms under the lock, feeds each packet to `sct_dmr_packet`, then calls `sct_dmr_poll` |
+| Health | the host port is polled, so no interrupt can be lost; `hal_dmr_modem_t.health` counts the same harm seen from the driver. `stalls`: transmissions with frames sent that ended on the drain time-out with no packet from the chip meanwhile. `stuck`: received voice bursts skipped because a poll came too late for the four bursts one poll catches up (a stalled task). The first one's four words: the transmission state, its queued frames, the last event and NAK codes |
 | `call_option` | DMR_CALL_OPTION, all five bytes but the traffic mode: how the chip is wired (who keys the RF, baseband or IQ, squelch by the chip), CACH count and LC header repeats, which repeats are reported (every LC header and terminator, section 3). Otherwise as the stock firmware sends it |
 | `report_field` | REPORT_FIELD bits added to the engine's 0xE1, as the stock firmware sends them |
 | `start_fields` | more start fields, such as MODOUT_CONFIG, DMR_OFFSET and the squelch's SQ_LEVEL, with calibrated values where the stock firmware takes them from calibration. Without calibration the board sends the stock factory default |
