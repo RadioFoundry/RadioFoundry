@@ -535,8 +535,18 @@ static bool b_heard(void)
 {
 	return b_on && b_audio && b_open && !transmitting && !AM_ON;
 }
+void d578uv_side_b_state(bool *busy, bool *audio)
+{
+	*busy = b_on && b_open && !transmitting;
+	*audio = b_heard();
+}
 #else
 static bool b_heard(void) { return false; }
+void d578uv_side_b_state(bool *busy, bool *audio)
+{
+	*busy = false;
+	*audio = false;
+}
 #endif
 
 static bool chips_ready;	// init() has set chip 0 up: its output register can be written

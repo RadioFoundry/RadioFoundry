@@ -707,7 +707,8 @@ microphone works on a radio; the plain one is untested.
 | **C** (EXIT) | **Back** |
 | **D** (MENU) | **OK** |
 
-The **Key Lock** switch on the side has no effect yet, and the microphone's **R/T** and **MAIN** lights stay off.
+The **Key Lock** switch on the side has no effect yet. On the keypad microphone, **R/T** shows each side receiving or
+transmitting.
 
 A keypad microphone unplugged while the radio is on stops its PTT within 3 seconds.
 

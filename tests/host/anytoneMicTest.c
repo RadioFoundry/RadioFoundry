@@ -103,7 +103,7 @@ static void test_timeout(void)
 static bool is_status(const uint8_t *b)
 {
 	uint8_t want[ANYTONE_MIC_STATUS_LEN];
-	anytone_mic_status(want);
+	anytone_mic_status(want, 0);
 	for (unsigned i = 0; i < ANYTONE_MIC_STATUS_LEN; i++) {
 		if (b[i] != want[i]) {
 			return false;
@@ -119,31 +119,31 @@ static void test_answers(void)
 	anytone_mic_t m;
 	anytone_mic_init(&m);
 	uint8_t out[ANYTONE_MIC_STATUS_LEN + 4];
-	CHECK(anytone_mic_out(&m, 0, out, sizeof(out)) == 0);	// nothing to a microphone not heard
+	CHECK(anytone_mic_out(&m, 0, 0, out, sizeof(out)) == 0);	// nothing to a microphone not heard
 	const uint8_t f[8] = { 'A', 0, 0, 0, ANYTONE_MIC_ID, 0, 0, ANYTONE_MIC_END };	// as a radio saw it
 	uint32_t t = 5000;
 	CHECK(feed(&m, f, sizeof(f), t) == 1);
-	CHECK(anytone_mic_out(&m, t, out, sizeof(out)) == 1 + ANYTONE_MIC_STATUS_LEN);
+	CHECK(anytone_mic_out(&m, t, 0, out, sizeof(out)) == 1 + ANYTONE_MIC_STATUS_LEN);
 	CHECK(out[0] == ANYTONE_MIC_ACK && is_status(out + 1));
 	CHECK(out[1] == 'S' && out[10] == 0x10 && out[13] == ANYTONE_MIC_STATUS_LONG && out[16] == 0x06);
-	CHECK(anytone_mic_out(&m, t + 10, out, sizeof(out)) == 0);
+	CHECK(anytone_mic_out(&m, t + 10, 0, out, sizeof(out)) == 0);
 	// Presence again 50 ms later: answered at once, its status frame only once the gap is over
 	CHECK(feed(&m, f, sizeof(f), t + 50) == 1);
-	CHECK(anytone_mic_out(&m, t + 50, out, sizeof(out)) == 1 && out[0] == ANYTONE_MIC_ACK);
-	CHECK(anytone_mic_out(&m, t + ANYTONE_MIC_STATUS_GAP_MS - 1, out, sizeof(out)) == 0);
-	CHECK(anytone_mic_out(&m, t + ANYTONE_MIC_STATUS_GAP_MS, out, sizeof(out)) == ANYTONE_MIC_STATUS_LEN);
+	CHECK(anytone_mic_out(&m, t + 50, 0, out, sizeof(out)) == 1 && out[0] == ANYTONE_MIC_ACK);
+	CHECK(anytone_mic_out(&m, t + ANYTONE_MIC_STATUS_GAP_MS - 1, 0, out, sizeof(out)) == 0);
+	CHECK(anytone_mic_out(&m, t + ANYTONE_MIC_STATUS_GAP_MS, 0, out, sizeof(out)) == ANYTONE_MIC_STATUS_LEN);
 	t += ANYTONE_MIC_STATUS_GAP_MS;
 	// The poll
-	CHECK(anytone_mic_out(&m, t + ANYTONE_MIC_POLL_MS - 1, out, sizeof(out)) == 0);
-	CHECK(anytone_mic_out(&m, t + ANYTONE_MIC_POLL_MS, out, sizeof(out)) == ANYTONE_MIC_STATUS_LEN && is_status(out));
+	CHECK(anytone_mic_out(&m, t + ANYTONE_MIC_POLL_MS - 1, 0, out, sizeof(out)) == 0);
+	CHECK(anytone_mic_out(&m, t + ANYTONE_MIC_POLL_MS, 0, out, sizeof(out)) == ANYTONE_MIC_STATUS_LEN && is_status(out));
 	// Two frames before the task runs: two answers, ahead of a due status frame
 	CHECK(frame(&m, 1, 0, 0, t + 1500) == 1 && frame(&m, 0, 0, 0, t + 1505) == 1);
-	CHECK(anytone_mic_out(&m, t + 2000, out, sizeof(out)) == 2 + ANYTONE_MIC_STATUS_LEN);
+	CHECK(anytone_mic_out(&m, t + 2000, 0, out, sizeof(out)) == 2 + ANYTONE_MIC_STATUS_LEN);
 	CHECK(out[0] == ANYTONE_MIC_ACK && out[1] == ANYTONE_MIC_ACK && is_status(out + 2));
 	// No room for a status frame: the answers go, the status frame waits
 	CHECK(frame(&m, 1, 0, 0, t + 3500) == 1);
-	CHECK(anytone_mic_out(&m, t + 3500, out, 4) == 1);
-	CHECK(anytone_mic_out(&m, t + 3500, out, sizeof(out)) == ANYTONE_MIC_STATUS_LEN);
+	CHECK(anytone_mic_out(&m, t + 3500, 0, out, 4) == 1);
+	CHECK(anytone_mic_out(&m, t + 3500, 0, out, sizeof(out)) == ANYTONE_MIC_STATUS_LEN);
 }
 
 // PTT held for longer than the timeout: the microphone sends nothing more of its own, but its answers to the polls
@@ -157,7 +157,7 @@ static void test_held_ptt(void)
 	CHECK(frame(&m, 1, 0, 0, t) == 1);
 	const uint8_t ack = 0x06;
 	for (uint32_t ms = t; ms < t + 3u * ANYTONE_MIC_TIMEOUT_MS; ms += 10) {
-		if (anytone_mic_out(&m, ms, out, sizeof(out)) >= ANYTONE_MIC_STATUS_LEN) {
+		if (anytone_mic_out(&m, ms, 0, out, sizeof(out)) >= ANYTONE_MIC_STATUS_LEN) {
 			CHECK(feed(&m, &ack, 1, ms + 2) == 0);	// its answer; not a frame
 		}
 		CHECK(anytone_mic_poll(&m, ms + 5) && m.ptt);
@@ -166,7 +166,34 @@ static void test_held_ptt(void)
 	CHECK(anytone_mic_poll(&m, last + ANYTONE_MIC_TIMEOUT_MS - 1) && m.ptt);
 	CHECK(!anytone_mic_poll(&m, last + ANYTONE_MIC_TIMEOUT_MS) && !m.ptt);
 	// Gone: nothing is sent, and nothing owed carries over to the next microphone
-	CHECK(anytone_mic_out(&m, last + ANYTONE_MIC_TIMEOUT_MS + ANYTONE_MIC_POLL_MS, out, sizeof(out)) == 0);
+	CHECK(anytone_mic_out(&m, last + ANYTONE_MIC_TIMEOUT_MS + ANYTONE_MIC_POLL_MS, 0, out, sizeof(out)) == 0);
+}
+
+// The lights: each flag in its own byte, 1 or 0, and a change goes out without waiting for the poll
+static void test_lights(void)
+{
+	uint8_t out[ANYTONE_MIC_STATUS_LEN + 4u];
+	anytone_mic_status(out, ANYTONE_MIC_LIGHT_A_BUSY | ANYTONE_MIC_LIGHT_B_TX | ANYTONE_MIC_LIGHT_MAIN_B);
+	CHECK(out[0] == 'S' && out[1] == 1 && out[2] == 0 && out[3] == 0 && out[4] == 0 && out[5] == 0 && out[6] == 1 && out[7] == 1);
+	CHECK(out[8] == 0 && out[9] == 0x10 && out[12] == ANYTONE_MIC_STATUS_LONG && out[15] == 0x06);
+
+	anytone_mic_t m;
+	anytone_mic_init(&m);
+	static const uint8_t presence[] = { 'A', 0, 0, 0, ANYTONE_MIC_ID, 0, 0, ANYTONE_MIC_END };
+	uint32_t t = 10000;
+	for (unsigned i = 0; i < sizeof(presence); i++) {
+		anytone_mic_byte(&m, presence[i], t);
+	}
+	CHECK(anytone_mic_out(&m, t, 0, out, sizeof(out)) == 1 + ANYTONE_MIC_STATUS_LEN && out[1 + 1] == 0);
+	// Unchanged: quiet until the poll
+	CHECK(anytone_mic_out(&m, t + 300, 0, out, sizeof(out)) == 0);
+	// A change inside the gap waits for it, then goes
+	CHECK(anytone_mic_out(&m, t + 100, ANYTONE_MIC_LIGHT_A_TX, out, sizeof(out)) == 0);
+	CHECK(anytone_mic_out(&m, t + ANYTONE_MIC_STATUS_GAP_MS, ANYTONE_MIC_LIGHT_A_TX, out, sizeof(out)) == ANYTONE_MIC_STATUS_LEN);
+	CHECK(out[3] == 1 && out[1] == 0);
+	t += ANYTONE_MIC_STATUS_GAP_MS;
+	CHECK(anytone_mic_out(&m, t + 50, ANYTONE_MIC_LIGHT_A_TX, out, sizeof(out)) == 0);
+	CHECK(anytone_mic_out(&m, t + ANYTONE_MIC_STATUS_GAP_MS, 0, out, sizeof(out)) == ANYTONE_MIC_STATUS_LEN && out[3] == 0);
 }
 
 int main(void)
@@ -176,6 +203,7 @@ int main(void)
 	test_timeout();
 	test_answers();
 	test_held_ptt();
+	test_lights();
 	if (failures) {
 		printf("# anytoneMicTest FAILED (%d)\n", failures);
 		return 1;
