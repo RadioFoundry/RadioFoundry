@@ -55,7 +55,7 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `dmr_signaling` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass |
 | `vfo` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
-| `vfo_fm` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | fail |
+| `vfo_fm` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial |
 | `vfo_dmr` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass |
 | `channel_list` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `channel_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
@@ -76,7 +76,7 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_confirmed` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `sfr` | not recorded | pass (seed) | pass (seed) | not recorded | ✕ | not recorded | ✕ |
 | `sfr_dualpath_rx` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | not recorded |
-| `sfr_cwid` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | fail |
+| `sfr_cwid` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | pass |
 | `aprs` | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `aprs_rx` | pass (seed) | not recorded | not recorded | not written | not written | not recorded | pass |
 | `aprs_igate` | not recorded | off | not recorded | not written | not written | off | pass |
