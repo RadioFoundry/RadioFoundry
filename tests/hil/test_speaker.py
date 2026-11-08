@@ -26,6 +26,7 @@ echo after it fades for a time set by the room, the volume and the microphone's 
 elimination is not done (docs/spec/radio-features.md 3.5), so the noise until that close is expected; a longer one
 (a board whose noise reading lags the carrier) fails, unless the board's [hil.limits] fm_squelch_tail_ms holds it to a
 longer one with its reason."""
+import math
 import os
 import shutil
 import subprocess
@@ -78,7 +79,16 @@ def microphone(pytestconfig, tmp_path_factory):
     dev = rig(pytestconfig, "microphone", "the speaker tests need")
     if not shutil.which("arecord"):
         skip("no_hw", "arecord (alsa-utils) isn't installed")
-    return Microphone(dev, str(tmp_path_factory.mktemp("speaker")))
+    m = Microphone(dev, str(tmp_path_factory.mktemp("speaker")))
+    m.processed = bool(pytestconfig.getoption("--mic-processed"))
+    if m.processed:
+        print("--mic-processed: tone starts only; lengths and silences are not measured by microphone")
+    return m
+
+
+def _judge(mic, path, segs, **kw):
+    """The recording's check: the starts alone when the microphone's processing spoils the rest (--mic-processed)"""
+    return A.check_wav_onsets(path, segs) if mic.processed else A.check_wav(path, segs, **kw)
 
 
 def _check(r, what, path):
@@ -108,12 +118,19 @@ def _audio(radio):
 
 
 def _stream(radio):
-    """The PCM stream's late and dropped blocks (audio.late, audio.dropped), or None on firmware that doesn't count
-    them"""
+    """The PCM stream's late and dropped blocks and the blocks it played (audio.late, audio.dropped, audio.blocks), or
+    None on firmware that doesn't count them"""
     a = radio.view(["audio"])
     if "audio.late" not in a:
         return None
-    return int(a["audio.late"]), int(a.get("audio.dropped") or 0)
+    return int(a["audio.late"]), int(a.get("audio.dropped") or 0), int(a.get("audio.blocks") or 0)
+
+
+def _block_ms():
+    """AUDIO_BLOCK_MS, read from the source so the test copies no number"""
+    import re
+    src = open(os.path.join(A.ROOT, "hal", "hal_audio.h")).read()
+    return int(re.search(r"#define\s+AUDIO_BLOCK_MS\s+(\d+)", src).group(1))
 
 
 def _play(radio, mic, name, segs):
@@ -123,11 +140,19 @@ def _play(radio, mic, name, segs):
     s0 = _stream(radio)
     p, path = mic.start(length + 1.2)
     radio.link.beep(name)
-    r = A.check_wav(mic.finish(p, path), segs)
+    r = _judge(mic, mic.finish(p, path), segs)
     s1 = _stream(radio)
-    if s0 is not None and s1 is not None and s1 != s0:
-        r.problems.append(f"the audio stream played {s1[0] - s0[0]} block(s) late and dropped {s1[1] - s0[1]} "
-                          f"(audio.late, audio.dropped)")
+    if s0 is not None and s1 is not None:
+        if s1[:2] != s0[:2]:
+            r.problems.append(f"the audio stream played {s1[0] - s0[0]} block(s) late and dropped {s1[1] - s0[1]} "
+                              f"(audio.late, audio.dropped)")
+        # the pattern's length, where the microphone can't say: the stream ran at least that long
+        need = math.ceil(length * 1000 / _block_ms())
+        if mic.processed and s1[2] - s0[2] < need:
+            r.problems.append(f"the audio stream played {s1[2] - s0[2]} blocks, the pattern needs at least {need} "
+                              f"(audio.blocks)")
+    elif mic.processed:
+        print(f"{name}: this firmware has no stream counters: its length and silences are unchecked")
     return r, path
 
 
@@ -249,7 +274,7 @@ def test_fm_rx_speaker(radio, sdr_bench, microphone, pytestconfig):
     print(f"bench {done}")
     assert not done.get("cut"), f"the bench cut its transmission: {done}"
     # the squelch's opening is in the guard before the first tone, its closing (and any tail) in the one after
-    r = A.check_wav(path, segs, guard_ms=(FM_LEAD_S * 1000 - 50, 900))
+    r = _judge(microphone, path, segs, guard_ms=(FM_LEAD_S * 1000 - 50, 900))
     problems = _check(r, f"FM {mhz} MHz", path)
     if r.quiet:
         _quiet(f"FM {mhz} MHz")
@@ -302,7 +327,7 @@ def test_am_rx_speaker(radio, sdr_bench, microphone, pytestconfig):
             microphone.finish(p, path)
     print(f"bench {done}")
     assert not done.get("cut"), f"the bench cut its transmission: {done}"
-    r = A.check_wav(path, segs, guard_ms=(AM_LEAD_S * 1000 - 50, 900))
+    r = _judge(microphone, path, segs, guard_ms=(AM_LEAD_S * 1000 - 50, 900))
     problems = _check(r, f"AM {mhz} MHz", path)
     if r.quiet:
         _quiet(f"AM {mhz} MHz")

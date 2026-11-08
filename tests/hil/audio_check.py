@@ -15,7 +15,11 @@ few tens of ms and lets it back up at once, more so the quieter it hears it; a r
 is the radio's: a fade is reported, not failed. What the radio does differs in kind: a lost block or a muted
 amplifier takes the level to the floor within a millisecond or two, an amplifier coming up late puts it above where
 the tone started, and a stream that stops early leaves only the room's echo, dying away, until the tone's time is up.
-A fade instead leaves the tone sounding until its end, where its direct sound stops at once (DIRECT_DB)."""
+A fade instead leaves the tone sounding until its end, where its direct sound stops at once (DIRECT_DB).
+
+Some headsets go further: they cut a tone short and let it back up in the silence after it, so that no length or
+silence in the recording means anything. Each tone's start still does. check_onsets() asks only for those: each tone at
+its frequency, where the sequence puts it. What it can't see, the test takes from the radio's own stream counters."""
 import os
 import re
 import wave
@@ -29,6 +33,7 @@ WIN_MS = 15.0           # tone level analysis window (Blackman: tones 300 Hz apa
 HOP_MS = 1.0
 POP_WIN_MS = 10.0       # pop analysis frames
 ABRUPT_MS = 3.0         # a change within this long is abrupt: a lost block or an amplifier, not a room or a microphone
+ONSET_RISE_MS = 10.0    # a tone's start: its level this long after against this long before
 GONE_DB = 20.0          # a tone within this of the floor is gone: a dropout, not a microphone's fade
 # A sound that stops falls this far at once (its direct sound); what follows is the room's echo dying away, at a rate
 # that depends on the room and the microphone's place, not on the radio
@@ -139,7 +144,7 @@ class Tone:
 
     @property
     def got_ms(self):
-        return None if self.start_s is None else (self.end_s - self.start_s) * 1000
+        return None if self.start_s is None or self.end_s is None else (self.end_s - self.start_s) * 1000
 
 
 @dataclass
@@ -158,6 +163,9 @@ class Result:
         for t in self.tones:
             if t.start_s is None:
                 rows.append(f"  {t.hz} Hz {t.want_ms:.0f} ms: not found")
+            elif t.end_s is None:       # check_onsets: only the start is measured
+                rows.append(f"  {t.hz} Hz {t.want_ms:.0f} ms: starts at {t.start_s:.3f} s, {t.plateau_db:.1f} dBFS, "
+                            f"rise {t.rise_db:.1f} dB")
             else:
                 rows.append(f"  {t.hz} Hz {t.want_ms:.0f} ms: got {t.got_ms:.1f} ms at {t.start_s:.3f} s, "
                             f"{t.plateau_db:.1f} dBFS, ripple {t.ripple_db:.1f} dB, step {t.step_db:.1f} dB, "
@@ -410,6 +418,90 @@ def check_tones(x, fs, segs, search=None, dur_tol_ms=10.0, ripple_db=12.0, step_
 
 
 
+def check_onsets(x, fs, segs, min_snr_db=20.0, tol_ms=15.0, min_rise_db=10.0, min_over_db=GONE_DB):
+    """The start of each tone in segs ([(hz, ms)], hz 0 a silence), for a microphone whose processing makes the rest
+    of the recording meaningless (the module's notes). The first tone must rise min_rise_db out of silence to
+    min_over_db over its frequency's floor and hold a few ms; each later one must be sounding that far over its floor
+    within tol_ms of its place. Doesn't measure lengths, silences or pops. Tone.end_s stays None."""
+    r = Result()
+    tones = [(h, m) for h, m in segs if h]
+    if not tones:
+        raise ValueError("no tone in the sequence")
+    levels = {h: tone_level(x, fs, h) for h in {h for h, _ in tones}}
+    n = min(len(v) for v in levels.values())
+    span = int(sum(m for _, m in segs) / HOP_MS)
+    if n <= span:
+        raise ValueError("the recording is shorter than the sequence")
+    w = int(ONSET_RISE_MS / HOP_MS)
+    floor = {h: float(np.percentile(v[:n], 10)) for h, v in levels.items()}
+    # under the floor is nothing: the zeros while a capture device opens would read as a huge rise
+    levels = {h: np.maximum(v[:n], floor[h]) for h, v in levels.items()}
+    rise = {}
+    for h, v in levels.items():
+        rise[h] = np.zeros(n)
+        rise[h][w:n - w] = v[2 * w:n] - v[:n - 2 * w]
+    first = tones[0][0]
+    r.floor_db = floor[first]
+    r.snr_db = float(levels[first].max()) - r.floor_db
+    if r.snr_db < min_snr_db:
+        r.quiet = True
+        r.problems.append(f"the first tone ({first} Hz) is only {r.snr_db:.0f} dB over the floor (at least "
+                          f"{min_snr_db:.0f} needed): too quiet, or not played")
+        r.tones = [Tone(h, m) for h, m in tones]
+        return r
+    offs, t = [], 0.0
+    for h, m in segs:
+        if h:
+            offs.append((h, m, int(t / HOP_MS)))
+        t += m
+    # how far over its floor each tone holds from its start, at least for the first few ms (a click doesn't hold)
+    held = {}
+    for h, m, _ in offs:
+        ln = max(int(min(m / 2, 15.0) / HOP_MS), 1)
+        v = np.lib.stride_tricks.sliding_window_view(levels[h], ln).min(axis=1) - floor[h]
+        held[(h, m)] = np.concatenate([v[w:], np.zeros(w + ln - 1)])
+    # a start counts for no more than the level it holds, so a noise bump isn't taken for a start with a louder tone
+    # falling on a later place; the small unclipped term picks the steepest point among rises that all reach the clip
+    last = n - span - w
+    score = np.zeros(last)
+    for h, m, o in offs:
+        up = rise[h][o:o + last]
+        score += np.minimum(np.minimum(up, held[(h, m)][o:o + last]), 30.0) + 0.01 * up
+    # the sequence starts out of silence, so the first tone anchors it. A headset's release after each tone rises as
+    # steeply as the tones do and just as evenly spaced, but a tone came just before it
+    h0, m0, _ = offs[0]
+    q = int(200 / HOP_MS)
+    before = np.array([levels[h0][max(i - q, 0):max(i - w, 1)].max() - floor[h0] for i in range(last)])
+    # (near the floor for the 200 ms before it, or far under the tone: a room's noise peaks over its 10th percentile)
+    h = held[(h0, m0)][:last]
+    quiet = (before <= min_over_db + 10.0) | (h - before >= min_over_db)
+    can = quiet & (rise[h0][:last] >= min_rise_db) & (h >= min_over_db)
+    if not can.any():
+        r.problems.append(f"the first tone ({h0} Hz) never rises out of silence: not played, or at another pitch")
+        r.tones = [Tone(h, m) for h, m, _ in offs]
+        return r
+    score[~can] = -1e9
+    i0 = int(np.argmax(score))
+    tol = int(tol_ms / HOP_MS)
+    for n_tone, (h, m, o) in enumerate(offs):
+        k0 = i0 + o
+        a, b = max(k0 - tol, 0), min(k0 + tol + 1, n - w)
+        k = a + int(np.argmax(rise[h][a:b]))
+        over = float(held[(h, m)][k])
+        if n_tone:      # past where a headset's release before it can reach
+            ln = max(int(min(m / 2, 15.0) / HOP_MS), 1)
+            over = float(levels[h][k0 + tol:k0 + tol + ln].min()) - floor[h]
+        t = Tone(h, m, start_s=k * HOP_MS / 1000, rise_db=float(rise[h][k]), plateau_db=floor[h] + over)
+        r.tones.append(t)
+        # a later tone may rise out of the headset's release, or hardly at all: it has to be sounding at its place
+        if (n_tone == 0 and t.rise_db < min_rise_db) or over < min_over_db:
+            t.start_s = None
+            r.problems.append(f"{h} Hz {m} ms: no start at {k0 * HOP_MS / 1000:.3f} s (+-{tol_ms:.0f} ms): rises "
+                              f"{float(rise[h][k]):.0f} dB (at least {min_rise_db:.0f}), to "
+                              f"{over:.0f} dB over its floor (at least {min_over_db:.0f})")
+    return r
+
+
 def burst_ms(x, fs, freqs, t0_s, ms, drop_db=DIRECT_DB):
     """A noise burst's own length (one of check_tones' pops: start t0_s, ms long): from its start to the last frame
     within drop_db of its peak. The pop's length runs on until the echo falls to the floor's limit, so a louder burst
@@ -428,6 +520,11 @@ def burst_ms(x, fs, freqs, t0_s, ms, drop_db=DIRECT_DB):
 def check_wav(path, segs, **kw):
     x, fs = load_wav(path)
     return check_tones(x, fs, segs, **kw)
+
+
+def check_wav_onsets(path, segs, **kw):
+    x, fs = load_wav(path)
+    return check_onsets(x, fs, segs, **kw)
 
 
 def program_segs(program):

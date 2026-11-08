@@ -28,6 +28,9 @@ RIG = {
                       "talker alias), RAM only on the radio", False),
     "microphone": (str, "an ALSA capture device (arecord -D, e.g. plughw:1,0) whose microphone is at the radio's "
                         "speaker: the speaker tests (test_speaker.py)", False),
+    "mic-processed": (int, "1: the microphone has processing of its own that alters a tone's length and the silences "
+                           "(a headset's noise suppression): the speaker tests check each tone's start, and the "
+                           "radio's stream counters for the rest", False),
     "wattmeter-mhz": (str, "MHz, comma separated: where the wattmeter check keys every power level (test_fm_tx "
                            "--manual; default 445,146, the middle of where hams transmit on 70 cm and 2 m); each "
                            "must be in tx_mhz", True),

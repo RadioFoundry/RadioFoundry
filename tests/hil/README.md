@@ -90,6 +90,7 @@ the three ways to give it. `tests/hil/hil_config.py` reads them.
 | `--wattmeter-mhz` | where the wattmeter check (`test_fm_tx_power_levels --manual`) keys every power level, comma separated; default 445 and 146, the middle of where hams transmit on 70 cm and 2 m. A frequency not in `tx_mhz` or not tuned by the radio is left out |
 | `--tx-mhz` | the frequencies the rig may transmit on, comma separated (a TOML list in the file) |
 | `--microphone` | an ALSA capture device (`arecord -D`) whose microphone is at the radio's speaker: the speaker tests ([Speaker tests](#speaker-tests)) |
+| `--mic-processed` | `1` when that microphone has processing of its own (a headset's noise suppression): the speaker tests check tone starts only ([Speaker tests](#speaker-tests)) |
 
 With `--allow-rf`, every transmit frequency the run is given (`--dmr-freq`, `--fm-mhz`, `--aprs-test-mhz`,
 `--sfr-freq`, `--roam-rx` / `--roam-tx`, `--split-out-mhz`, `--split-tx-mhz`, `--outbound-mhz`, `--am-mhz`,
@@ -385,6 +386,15 @@ direct sound's, since a room's echo builds up and dies away slower. Problems:
 | Level | a tone moves by more than 12 dB over its length, by more than 8 dB within a few ms (a step as an amplifier comes up, a dropout), or two tones at one frequency differ by 12 dB |
 | Silence | a silence is more than 10 ms longer than asked, or less than 8 dB under its louder neighbor |
 | Pops | broadband energy away from the tones' harmonics more than 20 dB over the recording's floor, or within 10 dB of a tone on it and in the 60 ms after it (at its edges: louder than the tone). In the FM test this includes the squelch opening and closing; a squelch tail after the carrier is named as one when it lasts longer than the core's squelch takes to close (one `RADIO_POLL_MS` poll to see the carrier gone, then `RADIO_SQL_CLOSE_POLLS` x `RADIO_POLL_MS`, plus one 10 ms frame: tail elimination is not done, radio-features.md 3.5). A tail's length is how long it stays within 10 dB of its peak (`audio_check.burst_ms`): a sound that stops falls about that far at once, and the room's echo after it fades for a time set by the room, the volume and the microphone's place, not the radio |
+
+A microphone with its own processing can shorten a tone and let it back up in the silence after it, which no check
+on the recording can tell from a fault. Give `--mic-processed 1` for one. `audio_check.check_onsets` then replaces
+`check_tones`: the first tone must rise 10 dB out of silence, to 20 dB over its frequency's floor, and each later tone
+must be sounding that far over its floor within 15 ms of its place in the sequence. The recording needs only 20 dB of
+SNR. Lengths, silences and pops aren't
+measured. For a beep, the radio's stream counters stand in: `audio.late` and `audio.dropped` must not grow and
+`audio.blocks` must cover the pattern's length. The silences' content comes from the host tests of the beep player.
+FM and AM receive have no such counters, so with this option they check starts only. The sweep is unchanged.
 
 `audio_check.check_sweep` judges the sweep. A sweep played whole has its energy at its own frequency and the speaker's
 harmonics of it; audio that jumps on its way to the speaker (samples lost, repeated or out of order) spreads energy

@@ -107,6 +107,91 @@ def _mic_fade(x, a, n, after_ms=65.0, over_ms=35.0, depth_db=25.0):
     x[a:a + n] *= g
 
 
+def _headset(x, a, n, cut_ms=25.0, depth_db=25.0, back_ms=60.0, back=1.5):
+    """A headset that cuts a steady tone (from sample a, n long) after cut_ms and plays it back in the silence after
+    it for back_ms, louder than the tone was (an adaptive canceller goes on subtracting a tone that has stopped)"""
+    k = int(cut_ms * FS / 1000)
+    y = x[a:a + n].copy()
+    x[a + k:a + n] *= 10 ** (-depth_db / 20)
+    m = int(back_ms * FS / 1000)
+    x[a + n:a + n + m] += back * y[:m]
+
+
+def onsets(x, segs, **kw):
+    r = A.check_onsets(x, FS, segs, **kw)
+    print(r.report())
+    return r
+
+
+def test_onsets_through_a_headset():
+    segs = [(600, 150), (0, 80), (600, 150), (0, 80), (600, 150)]
+    x, t0 = render(segs, echo=0.3)
+    for k in range(3):
+        _headset(x, int((t0 + k * 0.23) * FS), int(0.15 * FS), cut_ms=110)
+    r = onsets(x, segs)
+    assert not r.problems, r.problems
+    assert all(abs(t.start_s - (t0 + k * 0.23)) < 0.012 for k, t in enumerate(r.tones)), r.report()
+    assert check(x, segs).problems      # the full check can't pass this recording: why the onsets exist
+
+
+def test_onsets_a_noise_bump_before_the_sequence():
+    segs = [(1600, 50), (0, 40), (1600, 50)]
+    x, t0 = render(segs, lead_s=0.5)
+    b = int(0.1 * FS)
+    x[b:b + 160] += 0.001 * np.sin(2 * np.pi * 1600 * np.arange(160) / FS)
+    r = onsets(x, segs)
+    assert not r.problems and abs(r.tones[0].start_s - t0) < 0.012, r.report()
+
+
+def test_onsets_capture_opening():
+    segs = [(300, 400)]
+    x, t0 = render(segs, lead_s=0.4, level=0.001)
+    x[:int(0.05 * FS)] = 0.0                               # the device opening: digital zero
+    k = int(0.05 * FS)
+    x[k:k + 40] += 0.0003 * np.sin(2 * np.pi * 300 * np.arange(40) / FS)     # and a click as it does
+    r = onsets(x, segs)
+    assert not r.problems and abs(r.tones[0].start_s - t0) < 0.012, r.report()
+
+
+def test_onsets_a_lost_tone():
+    segs = [(600, 150), (0, 80), (600, 150), (0, 80), (600, 150)]
+    x, t0 = render(segs)
+    a = int((t0 + 0.23) * FS)
+    x[a:a + int(0.15 * FS)] = np.random.default_rng(2).normal(0, 10 ** (-85 / 20), int(0.15 * FS))
+    r = onsets(x, segs)
+    assert len(r.problems) == 1 and "600 Hz" in r.problems[0], r.report()
+
+
+def test_onsets_a_lost_tone_with_the_headset_release():
+    segs = [(600, 150), (0, 80), (600, 150)]
+    x, t0 = render(segs)
+    _headset(x, int(t0 * FS), int(0.15 * FS), cut_ms=110)
+    a = int((t0 + 0.23) * FS)
+    x[a:a + int(0.15 * FS)] = np.random.default_rng(2).normal(0, 10 ** (-85 / 20), int(0.15 * FS))
+    assert onsets(x, segs).problems
+
+
+def test_onsets_a_late_tone():
+    segs = [(1200, 50), (0, 30), (900, 70)]
+    late = [(1200, 50), (0, 90), (900, 70)]
+    x, _ = render(late)
+    r = onsets(x, segs)
+    assert r.problems, r.report()
+
+
+def test_onsets_wrong_pitch():
+    x, _ = render([(1000, 100), (0, 100), (1000, 100)])
+    r = onsets(x, [(600, 100), (0, 100), (600, 100)])
+    print(r.report())
+    assert r.problems or r.quiet, r.report()
+
+
+def test_onsets_nothing_played():
+    x, _ = render([(1000, 100)], level=0.0)
+    r = onsets(x, [(1000, 100)])
+    assert r.quiet and r.problems, r.report()
+
+
 def test_microphone_fade_passes():
     segs = [(600, 150), (0, 80), (600, 150), (0, 80), (600, 150)]
     x, t0 = render(segs, echo=0.3)
