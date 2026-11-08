@@ -845,6 +845,15 @@ RadioFoundry plays all speaker PCM through this FIFO (`platform/hrc7000/audio_pc
 0x180000A0 (AUDIO_CONTROL b5, section 3) gave rough, choppy beeps on one board with every sample layout tried,
 with no queue underruns (measured).
 
+The FIFO takes two pushes from empty (64 samples, 8 ms) before b31 sets (measured), less than one 20 ms PCM block.
+The blocks come at the rate the FIFO plays them, so a queue that pushes each block as it arrives has the FIFO nearly
+empty at every block edge. It ran dry there: the queue emptied with the FIFO taking more 151 times in about 120 blocks
+of beeps, and every tone broke up at 20 ms intervals, its pitch jumping and its level dipping by up to 40 dB at the
+microphone (measured). `audio_pcm.c` therefore pushes nothing after the queue is emptied (route on, gate edges) until
+two blocks are queued, so the queue stays a block ahead of the FIFO for one block (20 ms) of latency. With that hold
+the queue never ran out in the same beeps, and the FIFO was topped up at least every 4 ms (measured). The `un` field
+of the `pg` diagnostics line (below) counts run-outs and stays 0.
+
 The prompt path also feeds the TX modulator: with AUDIO_CONTROL b7 set during a DMR transmission, the beep's audio
 rides on the 4FSK. On one board the talk permit tone overlapped the second and third voice LC headers, which then
 carried no decodable sync on the SDR bench and the bench modem took the call by late entry; with b7 held clear while
@@ -858,7 +867,7 @@ the speaker stream routed, every 10 ms without), on each speaker route change an
 emptied, a block the audio task was filling at that moment included, so a beep queued during the transmission is
 dropped, not played late. Boards set b7 only through `hrc_audio_pcm_ring()`, which applies the gate. The last of the
 DMR glue's diagnostics lines, `pg g<closings> l<closings that found speaker audio still pending> ra<checks that found
-b7 set while closed>`, checks it: `l` and `ra` stay 0. Its counters reset with the DMR counters.
+b7 set while closed> un<speaker queue run-outs>`, checks it: `l`, `ra` and `un` stay 0. Its counters reset with the DMR counters.
 
 So the talk permit can't sound during DMR TX, and the boards set `CAP_BEEP_NOT_ON_AIR`: the radio core plays it in a
 short receive-only hold before the first burst (`radio-features.md` 4). On air with a hotspot parrot, the beep was

@@ -9,6 +9,11 @@
 // the task pushes the queue to the prompt FIFO, 32 samples at a time while b31 says there is room, as stock does. The
 // CPU-fed speaker buffer (b5, 0x180000A0) sounded rough and choppy on the bench with every sample layout tried.
 //
+// The FIFO takes only two of those chunks (8 ms), less than a block, and the blocks come at the rate it plays them.
+// Pushed as each block came, it was nearly empty at every block edge and ran dry there, which broke each tone up at
+// 20 ms intervals (modem-hrc7000.md 8.4). So after the route turns on (or a gate edge) nothing is pushed until
+// SPK_PRIME_BLOCKS are queued: the queue stays a block ahead of the FIFO, at the cost of one block of latency.
+//
 // Sample format: mic buffer 16-bit native words; prompt FIFO 16-bit samples, low byte first (bench).
 //
 // The prompt FIFO also feeds the TX modulator (modem-hrc7000.md 8.4), so while the DMR engine transmits (the gate,
@@ -37,6 +42,7 @@
 #define AUDIO_TASK_STACK	1536	// words: the vocoder in the callback
 #define HALF			C7_PCM_SAMPLES	// 80
 #define SPK_BLOCKS		3
+#define SPK_PRIME_BLOCKS	2	// queued before the first push after the queue was emptied (spk_drop)
 
 static int16_t mic_blk[2][AUDIO_BLOCK_SAMPLES];	// double buffered: the ISR fills one while the task reads the other
 static int16_t spk_q[SPK_BLOCKS][AUDIO_BLOCK_SAMPLES];
@@ -53,7 +59,9 @@ static void *block_ctx;
 static volatile bool running;
 static bool spk_routed;		// the last speaker_pcm() state
 static volatile bool fifo_held;	// another user (the board's AFSK) owns the FIFO: speaker PCM waits
-static volatile uint32_t blocks, overruns, underruns;	// underruns: the FIFO does not report them (stays 0)
+// underruns: pushes that emptied the queue while loud audio played and the FIFO still had room (it ran dry next)
+static volatile uint32_t blocks, overruns, underruns;
+static bool spk_primed;		// SPK_PRIME_BLOCKS were queued since the last spk_drop: the pushes go on
 static bool spk_loud[SPK_BLOCKS];	// the queued block has a sample other than 0 (a beep, voice)
 static volatile uint32_t loud_pushed;	// hrc_micros() when the last chunk of a loud block went to the FIFO
 static volatile bool loud_recent;	// loud_pushed is set and less than FIFO_PLAY_MS old when last looked at
@@ -121,7 +129,19 @@ static void fifo_feed(void)
 	if (!spk_routed || fifo_held || tx_gated) {
 		return;
 	}
-	while (spk_tail != spk_head && hrc7000_prompt_push(modem, &spk_q[spk_tail][spk_pos])) {
+	if (!spk_primed) {
+		if ((uint8_t)((spk_head + SPK_BLOCKS - spk_tail) % SPK_BLOCKS) < SPK_PRIME_BLOCKS) {
+			return;
+		}
+		spk_primed = true;
+	}
+	bool full = false, pushed = false;
+	while (spk_tail != spk_head) {
+		if (!hrc7000_prompt_push(modem, &spk_q[spk_tail][spk_pos])) {
+			full = true;
+			break;
+		}
+		pushed = true;
 		if (spk_loud[spk_tail]) {
 			loud_pushed = hrc_micros();
 			loud_recent = true;
@@ -131,6 +151,9 @@ static void fifo_feed(void)
 			spk_pos = 0;
 			spk_tail = (uint8_t)((spk_tail + 1u) % SPK_BLOCKS);
 		}
+	}
+	if (pushed && !full && loud_recent) {
+		underruns++;	// this push emptied the queue (once per run-out, not per poll)
 	}
 }
 
@@ -200,6 +223,7 @@ static void spk_drop(void)
 {
 	spk_head = spk_tail = 0;
 	spk_pos = 0;
+	spk_primed = false;
 	spk_gen++;
 }
 
@@ -296,6 +320,7 @@ void hrc_audio_pcm_gate_stats(uint32_t *closings, uint32_t *late, uint32_t *ring
 void hrc_audio_pcm_gate_reset(void)
 {
 	gates = loud_at_gate = ring_on_air = 0;
+	underruns = 0;	// on the same line
 }
 
 // Once: registering masks the source, so never while the meter or the stream has it on

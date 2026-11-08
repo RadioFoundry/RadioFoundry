@@ -35,7 +35,8 @@ void hrc_audio_pcm_gate_reset(void);
 
 extern const hal_audio_t hrc_audio_pcm;
 
-// Block, overrun and underrun counters for diagnostics
+// Block, overrun and underrun counters for diagnostics (underruns: the speaker queue ran out with the FIFO taking
+// more while audio played; stays 0)
 void hrc_audio_pcm_stats(uint32_t *blocks, uint32_t *overruns, uint32_t *underruns);
 void hrc_audio_pcm_reset_stats(void);
 #endif
