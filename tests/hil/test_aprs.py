@@ -7,9 +7,10 @@ the position source. Nothing transmits.
 
 On air, AFSK (radio_tx + bench_service: --allow-rf --allow-service-stop, and the rig's callsign, a licensed
 operator's: the transmissions are amateur ones; the rig's values are in hil_config.py). The radio sends a position, a
-status and a message on the test frequency at its lowest power while the bench's RTL-SDR records I/Q (the gateway service stopped through the lease and
-started again afterwards). tools/aprs_afsk_check.py FM demodulates the capture on the bench, decodes Bell 202 / AX.25
-and measures the tones.
+status and a message on the test frequency at its lowest power while the SDR bench listens. A bench board
+(--bench-api) decodes Bell 202 / AX.25 itself and measures the tones (an FM rx job with "aprs": true): no I/Q comes
+back. On the SDR bench host the receiver records I/Q (the gateway service stopped through the lease and started again
+afterwards) and tools/aprs_afsk_check.py FM demodulates the capture there, decodes and measures.
 
 Where and how it transmits, so that nothing reaches the APRS network:
 - Frequency: --aprs-test-mhz, through the custom APRS region, and one of the rig's transmit frequencies (tx_mhz); no
@@ -55,7 +56,8 @@ Pass criteria:
   demodulated audio over the transmission) 2.0-4.5 kHz; |twist| (mark / space tone amplitudes) under 6 dB. Printed,
   not asserted: the mark and space deviation, TX delay (flags before the frame, and carrier to first frame bit),
   phase continuity at the tone changes (residual RMS / max in degrees after the fitted switching delay; a
-  continuous phase generator gives about 10 degrees, a random phase restart about 100).
+  continuous phase generator gives about 10 degrees, a random phase restart about 100). The carrier to first frame
+  bit and the phase come from a raw capture only: a bench board's decode doesn't measure them.
 - test_aprs_on_air_status: the frame's information field is ">" + the status text.
 - test_aprs_on_air_message: ":ADDRESSEE:text{N" with the addressee padded to 9 characters and N a message number
   1-99999; then the retries (aprs.rf_sent +3 in all, aprs.msg_tries 3).
@@ -352,12 +354,17 @@ def _aprs_air(radio, pytestconfig, call, hz):
 
 
 def send_and_capture(radio, sdr_bench, s, tag, send):
-    """Capture while send() queues one frame; wait for it on air and the radio back on its channel; analyze."""
+    """Listen while send() queues one frame; wait for it on air and the radio back on its channel; decode. A bench
+    board decodes the AFSK itself; the SDR bench host records I/Q for aprs_afsk_check.py."""
     core0, ch0 = radio.core(), radio.view(["channel"])
     v0 = _aprs(radio)
-    rdir = sdr_bench.run_dir(tag)
+    board = bool(sdr_bench.api)
+    rdir = None if board else sdr_bench.run_dir(tag)
     with sdr_bench.lease():
-        cap = sdr_bench.capture_start(rdir, s.hz / 1e6, seconds=CAPTURE_S)
+        if board:
+            cap = sdr_bench.aprs_rx_start(s.hz / 1e6, seconds=CAPTURE_S)
+        else:
+            cap = sdr_bench.capture_start(rdir, s.hz / 1e6, seconds=CAPTURE_S)
         send()
         s.expected_rf += 1
         v = radio.wait_for(lambda x: _n(x, "aprs.rf_sent") > _n(v0, "aprs.rf_sent") or
@@ -366,7 +373,10 @@ def send_and_capture(radio, sdr_bench, s, tag, send):
                            timeout=15, sections=("aprs",), what="APRS transmission")
         v = radio.wait_for(lambda x: x.get("aprs.rf_active") == "0", timeout=8, sections=("aprs",),
                            what="APRS transmission over")
-        sdr_bench.capture_wait()
+        if board:
+            res = sdr_bench.aprs_rx_result(cap)
+        else:
+            sdr_bench.capture_wait()
     print("aprs view:", {k: v[k] for k in ("aprs.rf_sent", "aprs.rf_busy", "aprs.rf_failed", "aprs.last_info")
                          if k in v})
     assert _n(v, "aprs.rf_sent") == _n(v0, "aprs.rf_sent") + 1, \
@@ -375,7 +385,10 @@ def send_and_capture(radio, sdr_bench, s, tag, send):
     for k in ("rx_hz", "mode", "zone_pos", "vfo"):
         assert core.get(k) == core0.get(k), f"{k}: {core0.get(k)} -> {core.get(k)}"
     assert ch.get("ch.rx_hz") == ch0.get("ch.rx_hz"), (ch0, ch)
-    res = sdr_bench.analyze_aprs(cap)
+    if not board:
+        res = sdr_bench.analyze_aprs(cap)
+    if "fcs_bad" in res:
+        print(f"bench board: {res['decoded']} frames decoded, {res['fcs_bad']} with a bad FCS")
     for seg in res.get("segments", []):
         print(f"keyed {seg['t_start_s']:.2f}-{seg['t_end_s']:.2f} s, carrier {seg['carrier_hz']:+d} Hz, "
               f"{seg['level_dbfs']} dBFS (floor {res.get('floor_dbfs')})")
@@ -383,7 +396,7 @@ def send_and_capture(radio, sdr_bench, s, tag, send):
     for f in res["frames"]:
         print_frame(f)
     assert len(ours) == 1, f"expected one frame from {s.call}-{s.ssid} with a valid FCS, got {res['frames']} " \
-                           f"(capture {cap}, segments {res.get('segments')})"
+                           f"({'the bench board' if board else 'capture ' + cap}, segments {res.get('segments')})"
     f = ours[0]
     assert f["fcs_ok"] and f["dst"] == "APZRDF" and f["digis"] == [], f
     assert f["control"] == 0x03 and f["pid"] == 0xF0, f
@@ -391,12 +404,17 @@ def send_and_capture(radio, sdr_bench, s, tag, send):
 
 
 def print_frame(f):
+    """The frame and its measurements. A bench board's decode has no carrier to first bit and no phase continuity
+    (it doesn't measure them): those print from a raw capture only."""
     print(f"decoded: {f['tnc2']}")
-    print(f"  TX delay {f['txdelay_flags']} flags ({f['txdelay_ms']} ms), carrier up to first frame bit "
-          f"{f.get('keyup_to_data_ms')} ms")
+    up = f.get("keyup_to_data_ms")
+    print(f"  TX delay {f['txdelay_flags']} flags ({f['txdelay_ms']} ms)"
+          + (f", carrier up to first frame bit {up} ms" if up is not None else ""))
     if "mark_dev_hz" in f:
         print(f"  deviation peak {f['peak_dev_hz']:.0f} Hz (99.9 %), max {f['max_dev_hz']:.0f} Hz; mark "
               f"{f['mark_dev_hz']:.0f} Hz, space {f['space_dev_hz']:.0f} Hz, twist {f['twist_db']:+.2f} dB")
+    if f.get("mark_hz") is not None and f.get("space_hz") is not None:
+        print(f"  tones {f['mark_hz']:.1f} Hz mark, {f['space_hz']:.1f} Hz space")
     if "phase_rms_deg" in f:
         print(f"  phase at {f['phase_transitions']} tone changes: residual rms {f['phase_rms_deg']:.1f} deg, max "
               f"{f['phase_max_deg']:.1f} deg, {100 * f['phase_over45']:.0f} % over 45 deg, tone switch "

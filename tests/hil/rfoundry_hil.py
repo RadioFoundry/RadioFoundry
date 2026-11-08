@@ -2150,9 +2150,82 @@ class SdrBench:
                        f"--json {capture}.json > {capture}.txt 2>&1; cat {capture}.json", timeout=600)
         return json.loads(txt)
 
+    APRS_RX_BW = 25000.0        # Hz: the board's FM channel filter for an AFSK job, as analyze_aprs()'s 25 kHz
+
+    def aprs_rx_start(self, freq, seconds, bw=APRS_RX_BW):
+        """The receive board's own Bell 202 / AX.25 decode (an FM rx job with "aprs": true, the gateway's
+        bench-api.md 14.6) on freq (MHz) for `seconds` from now, in the background; returns once the board receives,
+        so the radio can key next. No raw I/Q comes back. Finish with aprs_rx_result()."""
+        job = self.fm_rx_start(freq, seconds, bw=bw, aprs=True)
+        job.seconds = float(seconds)
+        return job
+
+    def aprs_rx_result(self, job, timeout=None):
+        """analyze_aprs()'s dict for an aprs_rx_start(): waits for the job's end (its seconds plus 20 s at most)."""
+        done = job.wait(timeout if timeout is not None else job.seconds + 20)
+        res = self.aprs_from_records(job.records, done)
+        if res is None:     # a board that doesn't know the field ignores it: no frames would read as none sent
+            skip("bench", f"the bench board {self.api_rx} doesn't decode APRS (its FM rx summary has no aprs)")
+        return res
+
+    @staticmethod
+    def aprs_from_records(records, done):
+        """An FM rx job's records and done record (with "aprs": true) as aprs_afsk_check.py's JSON: None when the
+        summary has no `aprs` (the board doesn't decode it). Each frame keeps the board's names and units: deviation
+        in Hz (peak_dev_hz the 99.9th percentile of the audio, max_dev_hz, rms_dev_hz, mark_dev_hz, space_dev_hz
+        each tone's level), mark_hz / space_hz the measured tone frequencies, twist_db mark over space (dB),
+        txdelay_flags / txdelay_ms the flags back to back before it. t_start_s / t_end_s are the board's t0 / t1 (s
+        from the stream's start, the first and last bit). The board measures neither the carrier to the first frame
+        bit (keyup_to_data_ms) nor the phase at the tone changes (phase_*): those keys are absent. segments: the
+        runs of blocks with carrier (start, end, mean carrier offset, median power), floor_dbfs the summary's
+        noise_dbfs; fcs_bad: the frames between flags whose FCS failed."""
+        done = done or {}
+        summary = done.get("summary") or {}
+        if not isinstance(summary.get("aprs"), dict):
+            return None
+
+        def octet(v):
+            if isinstance(v, str):
+                return int(v, 0) if v.lower().startswith("0x") else int(v, 16)
+            return v
+
+        frames = []
+        for rec in records:
+            a = rec.get("aprs") if isinstance(rec, dict) else None
+            if not a:
+                continue
+            f = {k: v for k, v in a.items() if k not in ("t0", "t1")}
+            digis = a.get("digis") or []
+            f["digis"] = [d for d in digis.split(",") if d] if isinstance(digis, str) else list(digis)
+            f["control"], f["pid"] = octet(a.get("control")), octet(a.get("pid"))
+            f["fcs_ok"] = bool(a.get("fcs_ok", True))     # the board sends only frames with a good FCS
+            f["t_start_s"], f["t_end_s"] = a.get("t0"), a.get("t1")
+            if f.get("txdelay_ms") is None and a.get("txdelay_flags") is not None:
+                f["txdelay_ms"] = round(a["txdelay_flags"] * 8 / 1200 * 1000, 1)
+            frames.append(f)
+
+        blocks = [r["block"] for r in records if isinstance(r, dict) and isinstance(r.get("block"), dict)]
+        step = min((b2["t"] - b1["t"] for b1, b2 in zip(blocks, blocks[1:]) if b2["t"] > b1["t"]), default=0.1)
+        segments, run = [], []
+        for b in blocks + [None]:
+            if b is not None and b.get("carrier"):
+                run.append(b)
+                continue
+            if run:
+                cfo = [x["cfo_hz"] for x in run if x.get("cfo_hz") is not None]
+                pw = sorted(x["power_dbfs"] for x in run if x.get("power_dbfs") is not None)
+                segments.append({"t_start_s": round(run[0]["t"], 3), "t_end_s": round(run[-1]["t"] + step, 3),
+                                 "carrier_hz": round(sum(cfo) / len(cfo)) if cfo else 0,
+                                 "level_dbfs": round(pw[len(pw) // 2], 1) if pw else None})
+                run = []
+        return {"source": "board", "seconds": done.get("seconds"), "frames": frames, "segments": segments,
+                "floor_dbfs": summary.get("noise_dbfs"), "fcs_bad": summary["aprs"].get("fcs_bad", 0),
+                "decoded": summary["aprs"].get("frames", len(frames))}
+
     def analyze_aprs(self, capture, bw_khz=25.0):
         """tools/aprs_afsk_check.py on the bench (Bell 202 AFSK / AX.25 decode and the tone measurements); returns
-        its JSON result (frames with a valid FCS, segments). Raw I/Q on purpose: AFSK is audio on an FM carrier."""
+        its JSON result (frames with a valid FCS, segments). On raw I/Q: for the SDR bench host; a bench board decodes
+        APRS itself (aprs_rx_start)."""
         if self.api:
             r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "aprs_afsk_check.py"), capture, "--offset",
                                 f"{self._offset_khz(capture) * 1000:.0f}", "--bw", str(bw_khz), "--json"],

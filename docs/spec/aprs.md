@@ -353,14 +353,17 @@ APRS-IS, and every regional APRS frequency is refused), no path, the radio's low
 6 RF says APRS keys at the radio's current level). Each transmission is about 0.6 s. Every APRS setting touched is
 saved and put back once the queued frames and message retries have gone out on the test frequency.
 
-1. Position, status, message: the bench's RTL-SDR records I/Q while the radio sends; `tools/aprs_afsk_check.py`
-   FM demodulates it on the bench and decodes Bell 202 / AX.25 (its own demodulator: tone envelopes, a bit clock PLL,
-   NRZI, HDLC, the X.25 CRC; `--self-test` checks it on synthesized I/Q and on `aprsTest --wav`). Asserted: a valid
-   FCS, `CALL-SSID>APZRDF` with no digipeaters, the payload (position within 1e-4 degree, `>status`,
-   `:ADDRESSEE:text{N`), `aprs.rf_sent` +1, the radio back on its channel, deviation peak 2.0-4.5 kHz, twist under
-   6 dB. Printed: mark and space deviation, TX delay (flags before the frame, and carrier to first frame bit), the
-   phase residual at tone changes after the fitted switching delay (continuous phase: about 10 degrees RMS; random
-   restarts: about 100). The position is sent from the DMR channel and from the FM VFO.
+1. Position, status, message: a bench board decodes Bell 202 / AX.25 itself while the radio sends (an FM receive
+   job with APRS decode: frames with a good FCS and their tone measurements, no I/Q). On the SDR bench host the
+   receiver records I/Q and `tools/aprs_afsk_check.py` FM demodulates it there and decodes Bell 202 / AX.25 (its own
+   demodulator: tone envelopes, a bit clock PLL, NRZI, HDLC, the X.25 CRC; `--self-test` checks it on synthesized
+   I/Q and on `aprsTest --wav`). Asserted: a valid FCS, `CALL-SSID>APZRDF` with no digipeaters, the payload
+   (position within 1e-4 degree, `>status`, `:ADDRESSEE:text{N`), `aprs.rf_sent` +1, the radio back on its channel,
+   deviation peak 2.0-4.5 kHz, twist under 6 dB. Printed: mark and space deviation, TX delay (flags before the
+   frame, and carrier to first frame bit), the phase residual at tone changes after the fitted switching delay
+   (continuous phase: about 10 degrees RMS; random restarts: about 100). The carrier to first frame bit and the
+   phase residual come from the I/Q only: a bench board's decode doesn't measure them. The position is sent from
+   the DMR channel and from the FM VFO.
 2. Digital: on the DMR test channel the position goes to `--aprs-dmr-dst` as an LRRP report and as a UDT location;
    the bench modem's listener hears the header and blocks, the test checks the CRCs, the IPv4 / UDP 4001 / LRRP or
    UDT NMEA layers and the position (within 2e-5 degree). Passed on air (a 70 cm DMR channel, color code 2, 50 mW).
