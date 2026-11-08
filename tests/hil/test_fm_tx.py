@@ -33,11 +33,9 @@ Pass criteria:
   keyed segment, the digit decoded for at least 0.8 s (breaks up to 150 ms allowed: the board can lose a weak digit)
   and ending within 0.15 s of the carrier, the view's dtmf back to '-' at once, one digit counted (the key's late
   release sends nothing).
-- test_fm_tx_power_levels: 1.5 s overs at the three lowest power levels, one measurement
-  per key-up from the board's own power reading: each level's carrier is at least 1 dB stronger than the one below,
-  and the lowest to the third differs by 5-15 dB (nominally 10). Relative only: the receiver isn't calibrated, and the
-  radio is in its near field. A receiver saturated by the radio reads every level the same and fails the steps; the
-  bench then needs an attenuator.
+- test_fm_tx_power_levels: 1.5 s overs at the three lowest power levels: each level's carrier, as the bench board
+  reads it, is at least 1 dB stronger than the one below. Order only: the board's level isn't linear near its
+  quantization floor, so how far apart the levels are is the wattmeter's check below.
   With --manual -s it reads a wattmeter instead (docs/testing/power-calibration.md 4, the short check): a person
   with an averaging wattmeter between the radio and a dummy load rated for the top level. Every power level keys 2 s
   on each --wattmeter-mhz frequency (default 445 and 146 MHz, the middle of where hams transmit on 70 cm and 2 m)
@@ -443,11 +441,6 @@ def test_fm_tx_power_levels(fm_vfo, sdr_bench, pytestconfig):
     print("power levels (step, name, dBFS):", levels)
     d = [levels[i + 1][2] - levels[i][2] for i in range(count - 1)]
     assert all(x >= 1.0 for x in d), f"a higher power level is not stronger on air: steps {d} dB ({levels})"
-    if count == 3:
-        # The span the names give ("50mW" to "5W": 20 dB), else the usual 10 dB; ±5 dB for the bench's path
-        w0, w2 = power_name_watts(levels[0][1]), power_name_watts(levels[2][1])
-        want = 10 * math.log10(w2 / w0) if w0 and w2 else 10.0
-        got = levels[2][2] - levels[0][2]
-        assert want - 5.0 <= got <= want + 5.0, \
-            f"{levels[0][1]} to {levels[2][1]}: {got:.1f} dB (nominally {want:.0f}) ({levels})"
+    # Order only: a bench board's level isn't linear this close to its quantization floor (10 dB less gain moved a
+    # reading 5 dB), so the span between levels is the wattmeter's check (--manual)
 

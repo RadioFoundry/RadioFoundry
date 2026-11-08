@@ -22,7 +22,9 @@ AUDIO_DELAY_S = 0.01     # the board's squelch gate looks this far ahead, so its
 EDGE_S = 0.05            # left out of the voice figures at each end of a segment: the key-up and key-down transients
 MIN_SEGMENT_S = 0.3      # a shorter run of carrier blocks isn't a segment
 BRIDGE_S = 0.05          # a drop-out shorter than this doesn't end a segment
-DTMF_BRIDGE_S = 0.03     # a break in one digit shorter than this is a click, not a new key press
+DTMF_BRIDGE_S = 0.03     # a shorter break in one digit is no new key press: a click on a weak signal, or the silence
+                         # (about 20 ms) a modem's tone generator leaves every 510 ms of a held digit. Under the 40 ms
+                         # a DTMF decoder needs to see a repeat
 SAME_TONE_HZ = 15.0      # two runs this close in pitch can be one tone
 LEVEL_STEP_S = 0.05
 
