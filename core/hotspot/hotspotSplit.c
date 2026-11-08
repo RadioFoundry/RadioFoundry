@@ -290,8 +290,19 @@ static bool snap_start(void)
 	int64_t d = (int64_t)(int32_t)(now + 5000u + (uint32_t)((sp.snap_adj > 0) ? sp.snap_adj : 0) - sp.al_t) * 1000;
 	int64_t k = (d >= 0) ? (d + sp.al_period - 1) / sp.al_period : -((-d) / sp.al_period);
 	uint32_t target = sp.al_t + (uint32_t)(int32_t)((k * (int64_t)sp.al_period) / 1000);
+	uint32_t req = target - (uint32_t)sp.snap_adj;
+	// The driver restarts at the first of req + n x 30 ms at least 2 ms ahead, and names the slot at that instant
+	// (hal_dmr_modem.h): name the grid slot nearest it, not the one aimed at. The delay learned can pass half a slot,
+	// and the restart then falls a slot before the boundary it lands on
+	int32_t r = (int32_t)(req - now) % (int32_t)SLOT_US;
+	uint32_t at = now + (uint32_t)((r < 0) ? r + (int32_t)SLOT_US : r);
+	uint32_t g;
 
-	if (!m->bs_restart(target - (uint32_t)sp.snap_adj, ts_of_counter(sp.al_c + (uint32_t)k))) {
+	if ((int32_t)(at - now) < 2000) {
+		at += SLOT_US;
+	}
+	(void)grid_phase(sp.al_t, sp.al_c, sp.al_period, at, &g);
+	if (!m->bs_restart(req, ts_of_counter(g))) {
 		return false;
 	}
 	sp.snapping = true;
@@ -315,7 +326,11 @@ static void snap_check(void)
 	int32_t ph = phase_now(&ok, &g, &c);
 
 	sp.snapping = false;
-	if (((abs32(ph) >= SPLIT_SNAP_TOL_US) || !ok) && !sp.keyed) {
+	// A chip whose restart delay varies by ms rarely lands within the tolerance, and a later try can land further off:
+	// after SPLIT_SNAP_LOOSE tries, any landing inside the aligned bound ends it
+	int32_t tol = (sp.snap_tries >= SPLIT_SNAP_LOOSE) ? SPLIT_ALIGNED_US : SPLIT_SNAP_TOL_US;
+
+	if (((abs32(ph) >= tol) || !ok) && !sp.keyed) {
 		if (sp.snap_tries < SPLIT_SNAP_TRIES) {
 			sp.snap_tries++;
 			sp.snap_adj += ph;	// the chip's restart delay (taken as under half a slot)
@@ -1312,7 +1327,14 @@ static uint8_t align(const uint8_t *p, uint8_t len, uint8_t *data, uint8_t *res)
 		sp.al_set = true;
 		sp.snap_tries = 0;
 		sp.snap_failed = false;
-		if (snap_start()) {
+		if (parity_ok && (abs32(ph) < SPLIT_SNAP_TOL_US)) {
+			// Already on the grid: numbered, not restarted. A restart costs slots, and on a chip whose restart
+			// delay varies it can land further off than the clock already is
+			sp.cbase = g - c;
+			sp.al_base = true;
+			sp.snapping = false;
+			f |= SPLIT_AL_ALIGNED;
+		} else if (snap_start()) {
 			f |= SPLIT_AL_SNAP;
 		}
 	}

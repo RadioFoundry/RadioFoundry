@@ -83,7 +83,9 @@
 
 #define SPLIT_ALIGNED_US	1000	// |phase| under this: aligned
 #define SPLIT_SNAP_TOL_US	200	// a snap that lands further off than this is done again (the delay learned)
-#define SPLIT_SNAP_TRIES	3	// restarts after the first while the clock is still off the grid
+#define SPLIT_SNAP_TRIES	12	// restarts after the first while the clock is still off the grid (a chip whose restart
+				// delay varies by ms needs several: modem-hrc6000.md 9.1)
+#define SPLIT_SNAP_LOOSE	2	// ... after this many, a landing inside SPLIT_ALIGNED_US is taken
 
 // ALIGN's slewing (spec 3.8): bytes 12-13 the most per slot, byte 14 the mode
 #define SPLIT_SLEW_MAX_US	20	// the default and the most per slot, on average

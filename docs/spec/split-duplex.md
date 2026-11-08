@@ -215,10 +215,15 @@ The reply's **phase_us** is the slot clock's boundary minus the grid's, folded t
 is changed. Flags: 01 aligned (|phase| < 1000 µs after this request), 02 slewing, 04 snapped, 08 period applied to the
 slot clock (else the period is stored for the phase only), 10 not applied (keyed).
 
-- **Not keyed**: the slot clock snaps: it restarts so that a boundary falls on the grid, and from then on GET_EPOCH's
+- **Not keyed**: the slot clock snaps: it restarts so that a boundary falls on the grid (unless it is already within
+  200 µs of the grid on the right slot: then it is only numbered, no restart, and the reply says aligned), and from then on GET_EPOCH's
   counter is the grid's number (counter base) and even counters are outbound TS1. The TX half checks the new clock
-  against the grid at its first boundaries and snaps again (up to three times) if it is off by 1000 µs or more or on
-  the wrong slot, with the chip's restart delay learned from the first boundary (kept for the role). STATUS 42-46 show
+  against the grid at its first boundaries and snaps again (up to twelve times) if it is off by 200 µs or more or on
+  the wrong slot, with the chip's restart delay learned from the last restart (kept for the role). The delay
+  can pass half a slot, so the restart can fall a slot before the boundary it lands on: the slot named for it is the
+  grid slot nearest the instant the driver restarts (the first of the request plus whole slots at least 2 ms ahead). From the third
+  restart on, a landing inside the aligned bound (1000 µs) ends it too: a chip whose delay varies by ms from restart to
+  restart (`modem-hrc6000.md` 9.1) rarely lands within 200 µs, and a later try can land further off. STATUS 42-46 show
   the result: a clock that stays off keeps the counter base but not the aligned flag. Allowed in either stream mode.
 - **Keyed, or mode 1**: if the counter's parity matches the slot clock's and either |phase| < 1000 µs or the driver can
   slew (bit 2), the numbering changes at once (counter base, flag 01 when |phase| < 1000 µs) and, with bit 2, the
@@ -616,8 +621,8 @@ runs a real pair (bring-up and timing readout, no upstream; `--repeat` repeats a
   (`modem-hrc6000.md` 9.1). The first snap of a boot lands off by the chip's delay and the second, with it learned,
   on the grid. HR_C7000 board B 3 of 3, -2 to +227 us, delay -1141 us; HR_C7000 board C 3 of 3, -77 to +84 us, delay -1137 us (both over a USB-serial cable, sync bound 5.4-5.6 ms).
 - `test_split_tx_sched` (radio_tx): the voice test's call as TX_SCHED for numbered TS2 slots, one resend, one late
-  burst, the key-up from the queued bursts; checked off air (one slot, TC 1, the call whole, one key-up, 60 ms
-  spacing) and in STATUS. Board A, 2026-10-21: passed (22 queued, 1 replaced, 1 late; the call decoded without sync errors in its TS2 slots); board B passed. Board C: the radio restarted during the call (no crash record); open.
+  burst, the key-up from the queued bursts; checked off air (one slot, the busy CACHs TC 0 as 3.6 puts them, the call whole, one key-up,
+  60 ms spacing) and in STATUS (aligned while keyed). Board A, 2026-10-21: passed (22 queued, 1 replaced, 1 late; the call decoded without sync errors in its TS2 slots); board B passed. Board C: the radio restarted during the call (no crash record); open.
 - `test_split_slew` (no RF): the TX half snapped onto the host's grid, then ALIGN mode 1 to a grid 1.5 ms later; the
   clock must reach it by slot trims within 5 s (aligned, not slewing, |phase| within 100 µs, `split.slew_us` about the
   shift). Skips without capability bit 2, which no driver sets yet: the HR_C7000's LAYER2_MAX_CNT trim was tried with

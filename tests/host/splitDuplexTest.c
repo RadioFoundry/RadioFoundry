@@ -1406,6 +1406,12 @@ static void test_align(void)
 	// GET_EPOCH numbers from the grid: its boundary lies on it, even counters are TS1
 	epoch(&c, &t, &ts);
 	CHECK((int32_t)(t - grid_t) == (int32_t)(c - GRID_C) * 30000 && ts == slot_of(c));
+	// The same grid again: the clock is on it, so it is numbered without a restart; the other slot's numbering is not
+	CHECK(align_cmd(grid_t, 0, GRID_C + 2u, &ph, &fl) == 0 && ph == 0 && fl == SPLIT_AL_ALIGNED && ssim.restarts == 1);
+	st = status();
+	CHECK(st[46] == (SPLIT_AL_ALIGNED | SPLIT_AL_BASE));
+	CHECK(align_cmd(grid_t, 0, GRID_C + 1u, &ph, &fl) == 0 && fl == SPLIT_AL_SNAP && ssim.restarts == 2);
+	run_ms(100);
 
 	// A chip that comes up 3 ms late: checked at the first boundaries, snapped again with the delay learned
 	start_sched(3000);
@@ -1423,13 +1429,45 @@ static void test_align(void)
 	run_ms(300);
 	hotspot_split_get_view(&v);
 	CHECK(ssim.restarts == 2 && v.snap_adj_us == 12000 && v.align_flags == (SPLIT_AL_ALIGNED | SPLIT_AL_BASE));
-	// A chip that never gets there: three more tries, then it stops: numbered from the grid, not aligned
-	start_sched(5000);
-	ssim.restart_flip = true;
+	// A chip whose first boundary comes 27 ms after the restart, numbered from the restart instant (the HR_C6000
+	// driver): the delay is learned as 27 ms, more than half a slot, so the restart falls a slot before the boundary it
+	// lands on and must name that earlier slot, at any grid offset
+	for (uint32_t off = 0; off < 30000u; off += 3000u) {
+		start_sched(27000);
+		ssim.restart_ts_at_write = true;
+		ssim.restarts = 0;
+		CHECK(align_cmd(grid_t + off, 0, GRID_C, &ph, &fl) == 0 && fl == SPLIT_AL_SNAP);
+		run_ms(400);
+		hotspot_split_get_view(&v);
+		CHECK(ssim.restarts <= 3 && v.phase_us == 0 && v.align_flags == (SPLIT_AL_ALIGNED | SPLIT_AL_BASE));
+		epoch(&c, &t, &ts);
+		CHECK(ts == slot_of(c));
+	}
+	ssim.restart_ts_at_write = false;
+	// A chip whose delay varies (5, 8, 8.5 ms): the third landing, 500 us off, is no snap tolerance hit but inside the
+	// aligned bound, and after SPLIT_SNAP_LOOSE tries that ends it
+	start_sched(0);
+	ssim.restart_seq[0] = 5000;
+	ssim.restart_seq[1] = 8000;
+	ssim.restart_seq[2] = 8500;
+	ssim.restart_seq[3] = 30000;	// never reached
+	ssim.restart_seq_n = 4;
+	ssim.restarts = 0;
 	CHECK(align_cmd(grid_t, 0, GRID_C, &ph, &fl) == 0);
 	run_ms(600);
 	hotspot_split_get_view(&v);
-	CHECK(ssim.restarts == 1 + SPLIT_SNAP_TRIES && v.align_flags == SPLIT_AL_BASE && v.phase_us == -10000);
+	CHECK(SPLIT_SNAP_LOOSE == 2 && ssim.restarts == 3 && v.phase_us == 500 &&
+	      v.align_flags == (SPLIT_AL_ALIGNED | SPLIT_AL_BASE));
+	ssim.restart_seq_n = 0;
+	// A chip that never gets there: SPLIT_SNAP_TRIES more tries, then it stops: numbered from the grid, not aligned
+	start_sched(5000);
+	ssim.restart_flip = true;
+	CHECK(align_cmd(grid_t, 0, GRID_C, &ph, &fl) == 0);
+	run_ms(150 * (1 + SPLIT_SNAP_TRIES));
+	hotspot_split_get_view(&v);
+	// (the flipping chip lands 10 ms early or late in turn: the last restart's side follows the count)
+	CHECK(ssim.restarts == 1 + SPLIT_SNAP_TRIES && v.align_flags == SPLIT_AL_BASE &&
+	      v.phase_us == ((SPLIT_SNAP_TRIES & 1) ? -10000 : 10000));
 
 	// A retune restarts the slot clock: back onto the grid by itself
 	start_sched(0);
