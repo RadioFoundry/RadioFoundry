@@ -87,6 +87,18 @@ bool codeplug_kv_set_u32(uint16_t key, uint32_t value)
 	kv.writes++;
 	return true;
 }
+bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n)
+{
+	// each op a u32 set, through the one-key fake
+	for (uint8_t i = 0; i < n; i++) {
+		const uint8_t *v = ops[i].value;
+		if (ops[i].len != 4 ||
+		    !codeplug_kv_set_u32(ops[i].key, v[0] | (uint32_t)v[1] << 8 | (uint32_t)v[2] << 16 | (uint32_t)v[3] << 24)) {
+			return false;
+		}
+	}
+	return true;
+}
 codeplug_kv_state_t codeplug_kv_info(uint16_t *length, uint16_t *entries)
 {
 	*length = kv.present ? 8 : 0;
@@ -164,6 +176,9 @@ static void test_ip_settings(void)
 	kv.present = false;
 	CHECK(cmd(r, 1 + 15) == 1 && out[0] == DL_ST_OK && settings.ipGatewayId == 3100700);
 	kv.fail = false;
+	// An ID above a radio's own range would read back from the key as absent: refused, nothing written
+	put32(r + 12, CODEPLUG_DMR_ID_MAX + 1);
+	CHECK(cmd(r, 1 + 15) == 1 && out[0] == DL_ST_BAD_ARG && settings.ipGatewayId == 3100700 && kv.writes == 3);
 }
 
 // IP_SEND: the ports little endian in, big endian in the UDP header; flags bit 1 takes a u32 IPv4 destination after

@@ -198,7 +198,9 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 	case DL_DATA_OP_SETTINGS: {
 		dmrDataSettings_t set, was;
 
-		if (n < 5) {
+		// an ID above a radio's own range would be written to the key and then read back as absent: refused, as the
+		// menu does
+		if (n < 5 || (get32(a) & 0xFFFFFFu) > CODEPLUG_DMR_ID_MAX) {
 			st = DL_ST_BAD_ARG;
 			break;
 		}
@@ -286,7 +288,8 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 	case DL_DATA_OP_IP_SETTINGS: {
 		dmrDataSettings_t set, was;
 
-		if (n < 11 || a[0] > DMR_UDPC_ALL || a[1] > DMR_IPC_ALL || a[2] > DMR_IPC_TRIES_MAX) {
+		if (n < 11 || a[0] > DMR_UDPC_ALL || a[1] > DMR_IPC_ALL || a[2] > DMR_IPC_TRIES_MAX ||
+		    (n >= 15 && (get32(a + 11) & 0xFFFFFFu) > CODEPLUG_DMR_ID_MAX)) {
 			st = DL_ST_BAD_ARG;
 			break;
 		}
