@@ -87,6 +87,8 @@ def ready(radio):
 def test_speaker_beep(ready):
     if "BEEP" not in ready.features():
         skip("not_built", "built without CONFIG_BEEP")
+    if as_int(ready.link.view(["features"]).get("set.beep_level"), 0) == 0:
+        skip("state", "beep level 0")     # no beep to hear, as in test_speaker.py
     with _loud(ready):
         assert _heard(ready, "a beep every 1.5 s", during=lambda: ready.link.beep("key")), "no beep heard"
 
