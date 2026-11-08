@@ -407,13 +407,19 @@ def _channel_record(name, rx_hz, tx_hz, dmr, cc=1, ts=1, contact=0, wide=False):
     return r
 
 
-def make_test_codeplug(img, rx_mhz, tg, cc, ts=1, dmr_id=None, callsign=None):
+def make_test_codeplug(img, rx_mhz, tg, cc, ts=1, dmr_id=None, callsign=None, repeater_mhz=None):
     """Edit img (a flat image, file offset = flash address) so the radio has channel 1 (FM, 12.5 kHz, simplex), channel
     2 (DMR on the same frequency, color code cc, timeslot ts, talk target group tg = contact 1) and zone 1 holding both.
-    Everything else in img stays; zone slot 0 and contact 1 are replaced. dmr_id and callsign set the radio's own."""
+    With repeater_mhz also channel 3, in the zone too: DMR as channel 2 but duplex, receiving repeater_mhz (a repeater's
+    output) and transmitting on rx_mhz. Everything else in img stays; zone slot 0 and contact 1 are replaced. dmr_id and
+    callsign set the radio's own."""
     hz = round(rx_mhz * 1e6)
-    for number, rec in ((1, _channel_record(f"Test FM {rx_mhz:.4f}", hz, hz, False)),
-                        (2, _channel_record(f"Test DMR TG{tg}", hz, hz, True, cc, ts, contact=1))):
+    channels = [(1, _channel_record(f"Test FM {rx_mhz:.4f}", hz, hz, False)),
+                (2, _channel_record(f"Test DMR TG{tg}", hz, hz, True, cc, ts, contact=1))]
+    if repeater_mhz:
+        channels.append((3, _channel_record(f"DMR RPT {repeater_mhz:.4f}", round(repeater_mhz * 1e6), hz, True, cc, ts,
+                                            contact=1)))
+    for number, rec in channels:
         _, a = channel_addr(number)
         img[a:a + CHANNEL_SIZE] = rec
         i = number - 1
@@ -421,7 +427,8 @@ def make_test_codeplug(img, rx_mhz, tg, cc, ts=1, dmr_id=None, callsign=None):
     name = f"TG {tg}".encode("ascii")[:16]
     img[CONTACT_BASE:CONTACT_BASE + 24] = (name + b"\xff" * (16 - len(name)) + _bcd_id(tg) +
                                            bytes([0, 0, 0, 0xFF]))
-    zone = b"Test zone".ljust(16, b"\xff") + (1).to_bytes(2, "little") + (2).to_bytes(2, "little") + bytes(156)
+    zone = b"Test zone".ljust(16, b"\xff") + b"".join(n.to_bytes(2, "little") for n, _ in channels)
+    zone += bytes(176 - len(zone))
     img[ZONE_DATA:ZONE_DATA + len(zone)] = zone     # the zeros after the list also select the 80-channel layout
     img[ZONE_BITMAP] |= 1
     if callsign:
@@ -495,14 +502,17 @@ def main(argv=None):
     t.add_argument("--ts", type=int, choices=(1, 2), default=1)
     t.add_argument("--id", type=int, help="the radio's DMR ID")
     t.add_argument("--call", help="the radio's name / callsign")
+    t.add_argument("--repeater", type=float, help="MHz: channel 3, a duplex DMR channel receiving this (a repeater's "
+                   "output, as test_dmr_outbound_voice needs) and transmitting on --rx")
     a = ap.parse_args(argv)
 
     if a.cmd == "test-channels":
         img = load_image(a.image) if os.path.exists(a.image) else bytearray(b"\xff" * IMAGE_SIZE)
-        make_test_codeplug(img, a.rx, a.tg, a.cc, a.ts, a.id, a.call)
+        make_test_codeplug(img, a.rx, a.tg, a.cc, a.ts, a.id, a.call, a.repeater)
         with open(a.image, "wb") as f:
             f.write(img)
-        print(f"{a.image}: channel 1 FM and channel 2 DMR (TG {a.tg}, CC {a.cc}, TS {a.ts}) on {a.rx:.4f} MHz, zone 1")
+        print(f"{a.image}: channel 1 FM and channel 2 DMR (TG {a.tg}, CC {a.cc}, TS {a.ts}) on {a.rx:.4f} MHz" +
+              (f", channel 3 DMR receiving {a.repeater:.4f} MHz" if a.repeater else "") + ", zone 1")
         return 0
     regions = REGIONS[a.regions]
     progress = None if a.quiet else bar

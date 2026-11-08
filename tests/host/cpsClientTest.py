@@ -48,6 +48,15 @@ def test_channels(sim):
         check('zone 0 "Test zone" 2: 1 2' in out, f"zone: {out}")
         check('contact 1 "TG 91" id 91 type 0' in out, f"contact: {out}")
 
+        # --repeater: channel 3, duplex (RX the repeater's output, TX --rx), in the zone after the other two
+        path3 = os.path.join(d, "cp3.bin")
+        rc = cps_client.main(["test-channels", path3, "--rx", "433.45", "--tg", "91", "--cc", "1", "--repeater", "438.5"])
+        img3 = cps_client.load_image(path3)
+        check(rc == 0 and cps_client.decode_channel(img3, 3) ==
+              {"name": "DMR RPT 438.5000", "rx_hz": 438500000, "tx_hz": 433450000}, "repeater channel in the image")
+        zone = img3[cps_client.ZONE_DATA + 16:cps_client.ZONE_DATA + 24]
+        check(zone == bytes([1, 0, 2, 0, 3, 0, 0, 0]), f"zone holds channels 1-3: {zone.hex()}")
+
 
 def main():
     sim = os.path.join(HERE, "cpsSim")
