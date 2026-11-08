@@ -265,14 +265,19 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am)
 	if (!board_in_band(hz, false) || (am && mode != RADIO_MODE_FM)) {
 		return false;
 	}
+	// Back from our DMR transmission on the same channel: the burst switch already put the FD6818 in RX on hz
+	bool back = hrc_dmr_rf_on_rx() && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && !asleep;
 	wake();
 	pa_off();
 	lna(hz, true);
-	fd6818_set_freq(&fd, synth_hz(hz));
-	if (mode == RADIO_MODE_DMR) {
+	if (back) {
+		// receiving already
+	} else if (mode == RADIO_MODE_DMR) {
+		fd6818_set_freq(&fd, synth_hz(hz));
 		fd6818_set_bandwidth(&fd, FD6818_BW_DMR);
 		fd6818_set_state(&fd, FD6818_STATE_RX);
 	} else {
+		fd6818_set_freq(&fd, synth_hz(hz));
 #if CONFIG_AM_RX
 		fd6818_set_bandwidth(&fd, am ? FD6818_BW_AM : fm_bw_reg(bw));
 #else

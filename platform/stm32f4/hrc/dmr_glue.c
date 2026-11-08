@@ -40,6 +40,7 @@ static hrc6000_dmr_t eng RFOUNDRY_CPU_RAM;	// the slot ISRs' state: CCM, off the
 static TaskHandle_t task;
 static const stm32_hrc_dmr_board_t *hooks;
 static volatile bool active;
+static volatile bool rf_on_rx;	// the RF is back to receive after our transmission (stm32_hrc_dmr_rf_on_rx)
 static dmr_event_cb_t volatile stack_cb;
 static void *volatile stack_ctx;
 
@@ -98,9 +99,17 @@ static void notify(void *ctx)
 	}
 }
 
+// A board with tx_prepare keeps the synthesizer on TX between bursts: its tx_done says when receive is back. Any other
+// board's per-burst switch puts it back
 static bool rf(void *ctx, bool tx)
 {
-	return hooks->rf_switch(tx);
+	bool ok = hooks->rf_switch(tx);
+	if (tx) {
+		rf_on_rx = false;
+	} else if (hooks->tx_prepare == NULL) {
+		rf_on_rx = ok;
+	}
+	return ok;
 }
 
 static bool sys_line_low(void *ctx)
@@ -120,6 +129,7 @@ static void tx_slot_found(void *ctx)
 {
 	(void)ctx;
 	tx_rf_due = true;
+	rf_on_rx = false;
 	hooks->tx_prepare();
 }
 
@@ -371,9 +381,7 @@ static void dmr_task(void *arg)
 			if (ev.kind == DMR_EV_TX_DONE && hooks->tx_prepare != NULL) {
 				lock(NULL);
 				tx_rf_due = false;
-				if (hooks->tx_done != NULL) {
-					hooks->tx_done();
-				}
+				rf_on_rx = hooks->tx_done != NULL && hooks->tx_done();
 				unlock(NULL);
 			}
 			dmr_event_cb_t cb = stack_cb;
@@ -400,6 +408,7 @@ void stm32_hrc_dmr_init(hrc_t *modem, const stm32_hrc_dmr_board_t *b)
 
 void stm32_hrc_dmr_enter(void)
 {
+	rf_on_rx = false;
 	hrc6000_dmr_run(&eng);
 	active = true;
 	exti_enable(true);
@@ -410,10 +419,17 @@ void stm32_hrc_dmr_leave(void)
 	exti_enable(false);
 	active = false;
 	hrc6000_dmr_halt(&eng);
+	rf_on_rx = false;	// after the halt: its switch back to RX doesn't count outside DMR
+}
+
+bool stm32_hrc_dmr_rf_on_rx(void)
+{
+	return rf_on_rx;
 }
 
 void stm32_hrc_dmr_rx_restart(void)
 {
+	rf_on_rx = false;
 	hrc6000_dmr_rx_restart(&eng);
 }
 
@@ -423,6 +439,7 @@ void stm32_hrc_dmr_tx_prepare(void)
 		return;
 	}
 	lock(NULL);
+	rf_on_rx = false;
 	hooks->tx_prepare();
 	unlock(NULL);
 	if (hooks->tx_wait_lock != NULL) {

@@ -31,11 +31,12 @@ typedef struct {
 	// the transmit side ready ahead of the first burst. tx_prepare (under the modem lock or in the timeslot ISR, never
 	// blocks) switches RF to TX: at tx_begin for own timing, at the engine's tx_slot_found for an aligned start, and
 	// from stm32_hrc_dmr_tx_prepare. tx_wait_lock (task level, optional) waits for the synthesizer after it. tx_done
-	// (under the lock, optional) at TX done: on a split channel the receiver back. Without tx_prepare an aligned start
-	// switches at its first burst and the other two are not called
+	// (under the lock, optional) at TX done: the receiver back on the RX frequency, true when it is
+	// (stm32_hrc_dmr_rf_on_rx). Without tx_prepare an aligned start switches at its first burst and the other two are
+	// not called
 	void (*tx_prepare)(void);
 	void (*tx_wait_lock)(void);
-	void (*tx_done)(void);
+	bool (*tx_done)(void);
 } stm32_hrc_dmr_board_t;
 
 typedef struct {
@@ -56,6 +57,12 @@ void stm32_hrc_dmr_init(hrc_t *modem, const stm32_hrc_dmr_board_t *b);
 void stm32_hrc_dmr_enter(void);		// the chip has just been put in DMR (hrc6000_dmr_enter): engine on, interrupts on
 void stm32_hrc_dmr_leave(void);		// leaving DMR: transmission dropped, interrupts off, engine off
 void stm32_hrc_dmr_rx_restart(void);	// new channel in DMR
+// True after our transmission when the RF is back to receive: the last burst switch put it back (the rf_switch
+// result), or tx_done did on a board with tx_prepare. A board's rx() for the same DMR channel then skips its retune:
+// the other side's reply (a confirmed data response) comes in the next frame, 30 ms after our last burst, and a
+// retune then misses it. It stays true for a second rx() and is cleared by the next burst, tx_prepare, a new channel
+// (stm32_hrc_dmr_rx_restart) and entering or leaving DMR. The board checks the frequency and sleep itself
+bool stm32_hrc_dmr_rf_on_rx(void);
 bool stm32_hrc_dmr_tx_active(void);	// the engine's slot state says a transmission is in progress
 void stm32_hrc_dmr_tx_drop(void);	// abort a transmission now (radio retune or tx_off while one runs)
 // The transmit side ready ahead of the first burst (a board with tx_prepare): from radio tx() when it arms DMR, from
@@ -78,6 +85,7 @@ static inline void stm32_hrc_dmr_init(hrc_t *modem, const stm32_hrc_dmr_board_t 
 static inline void stm32_hrc_dmr_enter(void) {}
 static inline void stm32_hrc_dmr_leave(void) {}
 static inline void stm32_hrc_dmr_rx_restart(void) {}
+static inline bool stm32_hrc_dmr_rf_on_rx(void) { return false; }
 static inline bool stm32_hrc_dmr_tx_active(void) { return false; }
 static inline void stm32_hrc_dmr_tx_drop(void) {}
 static inline void stm32_hrc_dmr_tx_prepare(void) {}

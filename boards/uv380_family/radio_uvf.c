@@ -724,6 +724,11 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	if (r.mode == RADIO_MODE_DMR) {
 		dmr_disarm();
 	}
+	// Back from our DMR transmission on the same channel: the burst switch already put the AT1846S in RX on hz
+	// (registers as the driver's cache has them; the glue's flag). A retune now (idle, synthesizer words, RX) would
+	// hit a reply that comes in the next frame, 30 ms after our last burst
+	bool back = stm32_hrc_dmr_rf_on_rx() && same && r.mode == RADIO_MODE_DMR && r.rf_tuned_hz == hz &&
+		    !r.rf_rx_pending && !r.asleep;
 	r.asleep = false;
 	tone_restore();
 	inject_stop();
@@ -737,9 +742,13 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	rx_supply(true, uhf);
 	count(at1846s_set_bandwidth(&r.rf, rf_bw(bw)));
 	count(at1846s_set_mode(&r.rf, r.mode == RADIO_MODE_DMR ? AT1846S_MODE_DMR : AT1846S_MODE_FM));
-	count(at1846s_set_freq(&r.rf, hz));
+	if (!back) {
+		count(at1846s_set_freq(&r.rf, hz));
+	}
 	apply_rx_tone();
-	count(at1846s_set_state(&r.rf, AT1846S_STATE_RX));
+	if (!back) {
+		count(at1846s_set_state(&r.rf, AT1846S_STATE_RX));
+	}
 	r.rf_tuned_hz = hz;
 	r.rf_isr_dirty = false;
 	r.rf_rx_pending = false;

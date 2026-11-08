@@ -610,8 +610,11 @@ interrupt, the first burst went out unlocked and a one-burst wake-up never reach
 | Own timing (simplex, the repeater wake-up) | at the modem's `tx_begin`, or at radio `tx()` if that comes later |
 | Aligned to a repeater's slots | at the engine's `tx_slot_found`, two ticks before the first burst. Until then the receiver stays on: the engine needs the downlink's TC to find the slot (4, the CACH TC row) |
 
-On a split channel the synthesizer returns to RX at the engine's TX done, so the radio hears the repeater's answer to
-its wake-up; simplex stays on TX until `tx_off()`.
+The synthesizer returns to RX at the engine's TX done, on every channel. On a split channel the radio then hears the
+repeater's answer to its wake-up. On simplex the receive LO is 49.95 MHz from the carrier, and a confirmed data
+response comes in the next frame, 30 ms after our last burst. Left on TX until `tx_off()` (the radio task), the radio
+missed nearly every such response (a receive CRC error instead), and the TX VCO kept leaking the carrier about 34 dB
+below the burst while TX_5V discharged (about 20 ms). `rx()` then keeps the synthesizer where TX done put it.
 
 ### 5.7 The 5C rail (SAVE)
 

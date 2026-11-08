@@ -14,7 +14,7 @@
     rfoundry_debug.py key --mask 0xBITS --hold MS    physical key bits
     rfoundry_debug.py wake                           backlight on without a key event
     rfoundry_debug.py ptt --seconds S                key PTT for S seconds (at most 10; the firmware also times out)
-    rfoundry_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq MHZ, power +1, copy-vfo, ...
+    rfoundry_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq MHZ, power lowest|LEVEL|+1, copy-vfo, ...
     rfoundry_debug.py volume [N|knob]                print the speaker volume; N (0 mutes, 0..16) sets it, knob gives the knob back
     rfoundry_debug.py log [--follow]                 the firmware's dlog() ring
     rfoundry_debug.py chip                           chip ID, flash size, UID, option bytes (RDP, write protection)
@@ -781,7 +781,31 @@ class DebugLink:
         self.radio(OP_VFO_STEP, struct.pack("<b", d))
 
     def power_step(self, d):
+        """Step the power level by d. The radio wraps (lowest - 1 = highest), as its power key does: use power_level
+        to reach a level."""
         self.radio(OP_POWER, struct.pack("<b", d))
+
+    def power_level(self, target):
+        """Put the power level at target (0 = lowest), never through a wrap: one step of the exact difference, then
+        checked. target may be "lowest", "highest", a level number or a step "+N" / "-N"; a step past either end is
+        refused (DebugLinkError), not wrapped. Returns the view's (power, power_name) after it."""
+        core = self.view(["core"])
+        cur, n = int(core["power"]), int(core["power_count"])
+        if n == 0:
+            raise DebugLinkError("radio power: this radio has no power levels")
+        t = str(target)
+        lvl = 0 if t == "lowest" else n - 1 if t == "highest" else cur + int(t) if t[:1] in "+-" else int(t)
+        if not 0 <= lvl < n:
+            raise DebugLinkError(f"radio power {t}: level {lvl} is outside 0..{n - 1} (now {cur}, "
+                                 f"{core.get('power_name')}); refusing, the radio would wrap")
+        if lvl != cur:
+            self.power_step(lvl - cur)
+        for _ in range(20):
+            core = self.view(["core"])
+            if int(core["power"]) == lvl:
+                return lvl, core.get("power_name")
+            time.sleep(0.05)
+        raise DebugLinkError(f"radio power {t}: the radio is at level {core['power']}, not {lvl}")
 
     def squelch_step(self, d):
         self.radio(OP_SQUELCH, struct.pack("<b", d))
@@ -1292,8 +1316,9 @@ def cmd_radio(link, a):
         link.vfo_set(round(num(0, float) * 1e6))
     elif op == "step":
         link.vfo_step(num(0))
-    elif op == "power":
-        link.power_step(num(0))
+    elif op == "power":               # power lowest|highest|LEVEL|+N|-N (never wraps)
+        lvl, name = link.power_level(num(0, str))
+        print(f"power={lvl} power_name={name}")
     elif op == "squelch":
         link.squelch_step(num(0))
     elif op == "bw":
