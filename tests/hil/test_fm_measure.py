@@ -138,3 +138,16 @@ def test_a_missing_audio_stream_is_a_bench_fault():
     bench.api_rx = "board"
     e = skipped(bench.fm_over_result, Job({"gap_samples": 0}))
     assert e.kind == "bench" and "no FM audio" in str(e)
+
+
+def test_pieces_of_one_tone_are_joined():
+    runs = [(1750.1, 0.37, 0.72, 1251), (1750.0, 0.71, 0.98, 1253), (1749.9, 1.0, 1.4, 1250)]
+    joined = fm_measure.merge_tone_runs(runs)
+    assert len(joined) == 1 and joined[0][1:3] == (0.37, 1.4) and abs(joined[0][0] - 1750.0) < 0.1
+
+
+def test_another_pitch_or_a_pause_is_a_new_run():
+    beep = [(1200.0, 1.99, 2.11, 1207), (900.0, 2.11, 2.21, 1175)]
+    assert fm_measure.merge_tone_runs(beep) == beep
+    apart = [(1750.0, 0.5, 0.8, 1250), (1750.0, 1.0, 1.3, 1250)]
+    assert fm_measure.merge_tone_runs(apart) == apart

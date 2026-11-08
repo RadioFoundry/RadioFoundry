@@ -22,6 +22,7 @@ AUDIO_DELAY_S = 0.01     # the board's squelch gate looks this far ahead, so its
 EDGE_S = 0.05            # left out of the voice figures at each end of a segment: the key-up and key-down transients
 MIN_SEGMENT_S = 0.3      # a shorter run of carrier blocks isn't a segment
 BRIDGE_S = 0.05          # a drop-out shorter than this doesn't end a segment
+SAME_TONE_HZ = 15.0      # two runs this close in pitch can be one tone
 LEVEL_STEP_S = 0.05
 
 
@@ -59,6 +60,20 @@ def segments_of(blocks):
     return out
 
 
+def merge_tone_runs(runs):
+    """tone_runs()'s runs, in time order, with the pieces of one tone joined: on a weak signal a click breaks a steady
+    tone into runs that touch or overlap. A pause longer than BRIDGE_S, or another pitch, stays a new run."""
+    out = []
+    for f, a, b, d in runs:
+        if out and abs(out[-1][0] - f) <= SAME_TONE_HZ and a - out[-1][2] <= BRIDGE_S:
+            f0, a0, b0, d0 = out[-1]
+            n0, n = b0 - a0, b - a
+            out[-1] = ((f0 * n0 + f * n) / (n0 + n), a0, max(b0, b), (d0 * n0 + d * n) / (n0 + n))
+        else:
+            out.append((f, a, b, d))
+    return out
+
+
 def _voice(x, fs, seg):
     """One segment's voice band figures from its audio x (Hz of deviation, sample 0 at t0 of the stream)."""
     import numpy as np
@@ -70,7 +85,7 @@ def _voice(x, fs, seg):
         return out
     whole = x[e0:e1]
     # tones and levels over the whole segment, edges included (a roger beep sits in its last 200 ms)
-    runs = tone_runs(whole, fs, t0)
+    runs = merge_tone_runs(tone_runs(whole, fs, t0))
     out["tones"] = [(round(f, 1), round(a, 3), round(b, 3), round(d)) for f, a, b, d in runs]
     w = int(LEVEL_STEP_S * fs)
     out["levels"] = [float(np.std(whole[i:i + w])) for i in range(0, len(whole) - w + 1, w)]

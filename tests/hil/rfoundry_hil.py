@@ -684,13 +684,14 @@ class Radio:
         on = f"on {rx_hz / 1e6:.5f} MHz" if rx_hz is not None else "at all"
         raise AssertionError(f"no channel {on}{' in ' + mode if mode else ''} in any zone: {', '.join(searched)}")
 
-FM_SQUELCH_DB = 8.0                # a bench board's FM squelch over the channel's floor (fm_over_start)
+FM_SQUELCH_DB = 4.0                # a bench board's FM squelch over the channel's floor (a radio on its lowest power
+                                   # can arrive only 7-9 dB over it)
 FM_BLOCK_S = 0.01                  # its blocks: the keyed segments' resolution
 
 
 class _LineTx:
     """A bench board's tx or rx op (bench_line Request) as one of SdrBench's background jobs: .started once the board
-    keyed or started receiving (its tx / rx header), .records an rx op's records, .done the done record ({"mode", "freq", "on_air_s", "cut", "dev_hz", "peak_hz", ...}) once it's over."""
+    keyed (its "started" line) or started receiving (its rx header), .records an rx op's records, .done the done record ({"mode", "freq", "on_air_s", "cut", "dev_hz", "peak_hz", ...}) once it's over."""
 
     def __init__(self, line, where, req):
         self.started = threading.Event()
@@ -703,11 +704,12 @@ class _LineTx:
         self.req = line.Request(where, req, self._on)
 
     def _on(self, d, data):
-        # The header comes once the board has the modem (after any queued / granted lines) and keys right away;
-        # a "started" line, where a board sends one, says the same
+        # A tx op's header comes before it waits for the modem: only its "started" line says it keyed. An rx op's
+        # header comes once the board receives.
         if "tx" in d or "rx" in d:
             self.header = d.get("tx", d.get("rx"))
-            self.started.set()
+            if "rx" in d:
+                self.started.set()
         elif "rec" in d:
             self.records.append(d["rec"])
         elif "pcm" in d and data is not None:
@@ -1176,7 +1178,6 @@ class SdrBench:
         """The receive board measures FM on freq (MHz) for `seconds` from now, in the background, so the radio can key
         next: 10 ms blocks for the keyed segments, the audio stream with audio (timed tones, voice figures), the DTMF
         digits with dtmf. Finish with fm_over_result(); the board's analyzers, no I/Q."""
-        # The board's squelch 8 dB over the channel's floor: a low-powered radio can arrive only about 11 dB over it
         job = self.fm_rx_start(freq, seconds, bw=25000 if bw_khz > 12.5 else 16000, block_s=FM_BLOCK_S,
                                squelch_over_db=FM_SQUELCH_DB, streams="audio" if audio else None,
                                dtmf=True if dtmf else None)
