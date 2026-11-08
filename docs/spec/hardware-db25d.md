@@ -425,11 +425,12 @@ SFR).
 | SFR repeater, inbound AMBE bits corrected per 72 (first / second / third frame of each burst) | 155-200 (97-117 / 24-40 / 34-58) | 170-194 (98-120 / 22-30 / 48-54) |
 | The same call received without transmitting (TX inhibit, plain receive) | 29-37 | - |
 | Our idle bursts: symbol error, sync errors, carrier vs the bench | 0.10, 0, +15..20 Hz | 0.05-0.12, 0, +13 Hz |
-| Plain simplex call (`test_dmr_tx_off_air`): burst on-time, ramps up / down | 32.76-33.27 ms, 1.62 / 1.65 ms, carrier after the call | 30.38-30.60 ms, 1.56-1.58 / 1.17-1.23 ms, none |
+| Plain simplex call (`test_dmr_tx_off_air`): burst on-time, ramps up / down | 32.76-33.27 ms, 1.62 / 1.65 ms, carrier after the call | 29.67-30.12 ms, 1.31-1.54 / 1.02-1.15 ms (5 calls, 1.5 ms lead, the 32-bit ramp), none |
 
-The key-up ramp (1.56-1.62 ms either way) is longer than the 1.5 ms ramp regions of the ETSI power mask (TS 102 361-1
-clause 10.2.3.1.1, figure 10.3); it comes from the TX on sequence, not the burst timing. `board.toml` `[hil.limits]`
-holds this radio to 1.75 ms in the bench's check until the ramp is shortened.
+The key-up ramp (1.31-1.54 ms; 1.56-1.62 ms before the ramp's 32-bit math) is at the edge of the 1.5 ms ramp regions of
+the ETSI power mask (TS 102 361-1 clause 10.2.3.1.1, figure 10.3), and over it in some calls; it comes from the TX on
+sequence, not the burst timing. `board.toml` `[hil.limits]` holds this radio to 1.75 ms in the bench's check until the
+ramp stays under 1.5 ms.
 
 Tried and dropped (no change in the inbound counts): keeping the LO chip running through TX, a ramp down 0.45 ms before
 the last symbol (16 bits fewer per 72 frames, our last symbols at reduced power), and shorter waits in the TX on
