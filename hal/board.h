@@ -151,6 +151,17 @@ static inline bool board_in_band(uint32_t hz, bool need_tx)
 	return false;
 }
 
+// Some band may transmit: false on a radio whose transmitter isn't written yet
+static inline bool board_can_tx(void)
+{
+	for (uint8_t i = 0; i < board.band_count; i++) {
+		if (board.bands[i].tx) {
+			return true;
+		}
+	}
+	return false;
+}
+
 // The transmit band hz is in (an index into board.bands), or -1
 static inline int board_tx_band(uint32_t hz)
 {

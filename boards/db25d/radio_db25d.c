@@ -88,8 +88,8 @@ static uint8_t vol_dac;		// the modem's line out gain code the volume step selec
 static bool tx_uhf;
 static uint16_t tx_pa;
 static uint16_t tx_off_us;
-static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_db25d.c)
 #if CONFIG_DMR && DB25D_DMR_TX
+static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_db25d.c)
 static uint16_t tx_on_us;
 static uint8_t tx_lead;		// the RF TX interrupt's lead, 100 us steps (db25d_dmr_rf_tx_lead)
 static uint32_t tx_hz;
@@ -208,7 +208,7 @@ static void speaker_source(void)
 // Off: the amplifier first, so the source switch isn't heard; on: the source first
 static void speaker_pins(void)
 {
-	bool on = (audio_open || pcm_on) && !transmitting && !vol_muted;
+	bool on = (audio_open || pcm_on) && !(transmitting && mode != RADIO_MODE_DMR) && !vol_muted;
 	uint32_t s = hrc_irq_save();	// also called from the audio task (db25d_speaker_pcm): the pin writes are read-modify-write
 	if (!on) {
 		hrc_pin_write(PIN_SPK_BODY, true);
@@ -256,13 +256,23 @@ static void set_mode(radio_mode_t m)
 
 static bool tx_stop(void);
 
-static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
+// keep (the end of a DMR transmission, db25d_dmr_tx_end): the last burst's TX off already set the receiver up; on the
+// same channel and trim it stays as it is (dmr_disarm() has waited for the RF task)
+static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in, bool keep)
 {
 	if (!supported || !board_in_band(hz, false)) {
 		return false;
 	}
 #if CONFIG_DMR && DB25D_DMR_TX
 	dmr_disarm();	// a retune ends DMR TX (the hotspot's rx() disarms too)
+	bool back = keep && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && tuned_ppb == trim_ppb;
+	if (back) {
+		rx_bw = bw;
+		rx_tone = rx_tone_in != NULL ? *rx_tone_in : (subtone_t){ TONE_NONE, 0 };
+		return true;
+	}
+#else
+	(void)keep;
 #endif
 	bool from_tx = tx_stop();
 	rx_hz = hz;
@@ -294,6 +304,11 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	return true;
 }
 
+static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
+{
+	return rx_set(hz, bw, rx_tone_in, false);
+}
+
 static void audio(bool on);
 
 #if CONFIG_DMR && DB25D_DMR_TX
@@ -306,7 +321,7 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 		return false;
 	}
 	if (dmr_armed) {
-		db25d_dmr_tx_disarm();
+		hrc_rfburst_disarm();
 	}
 	tx_uhf = hz >= UHF_FROM_HZ;
 	tx_pa = plan.pa;
@@ -319,6 +334,7 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	DAC_DATA_B = 0;
 	hrc_dac_b_power(true);
 	dmr_armed = true;
+	transmitting = true;	// keyed, as an FM transmission is; the RF keys per burst
 	db25d_dmr_tx_arm();
 	return true;
 }
@@ -326,8 +342,9 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 static void dmr_disarm(void)
 {
 	if (dmr_armed) {
-		db25d_dmr_tx_disarm();
+		hrc_rfburst_disarm();
 		dmr_armed = false;
+		transmitting = false;	// the RF task left the RF receiving: no FM TX end for tx_stop()
 		DAC_DATA_B = 0;
 		hrc_dac_b_power(false);
 	}
@@ -335,7 +352,7 @@ static void dmr_disarm(void)
 
 // One burst, the stock TX on (3.2, 4.4 steps 2-7 without the audio): RX paths off, 50 us, main chip to f and the LO
 // off, the page's TX-on delay, PA select and the RX supply off, 200 us, the band's TX supply, the ramp up
-void db25d_burst_on(db25d_wait_fn wait)
+void db25d_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 {
 	hrc_pin_write(PIN_RX_FRONT_END, false);
 	hrc_pin_write(PIN_UHF_RX, false);
@@ -343,7 +360,7 @@ void db25d_burst_on(db25d_wait_fn wait)
 	wait(TX_RX_OFF_US);
 	db25d_main_burst(synth_hz(tx_hz), true);
 	db25d_lo_off();
-	wait(tx_on_us);
+	at(tx_on_us);	// the key-up delay counts from the RF TX interrupt
 	DAC_DATA_B = 0;
 	hrc_pin_write(tx_uhf ? PIN_VHF_TX : PIN_UHF_TX, false);
 	hrc_pin_write(tx_uhf ? PIN_UHF_TX : PIN_VHF_TX, true);
@@ -354,24 +371,18 @@ void db25d_burst_on(db25d_wait_fn wait)
 	apc_ramp(tx_pa, true);
 }
 
-// TX off after a burst: the hold until the burst's last symbol (db25d_dmr_hold_us; none when now), the ramp down,
+// TX off after a burst, after the RF task's hold to its last symbol: the ramp down,
 // supplies and PA selects off with PTA23 high, the main chip back to the IF and the LO on again, the RX path of the
 // band. The stock's waits between these steps (300, 300 and 200 us) are left out: they kept the receiver off for the
-// start of the next slot's burst, which an SFR repeater has to hear (hardware-db25d.md 4.5). Returns how late the ramp
-// down started, in us
-uint32_t db25d_burst_off(db25d_wait_fn wait, uint32_t elapsed_us, bool now)
+// start of the next slot's burst, which an SFR repeater has to hear (hardware-db25d.md 4.5)
+void db25d_burst_off(void)
 {
-	uint32_t late = now ? 0 : db25d_dmr_late_us(elapsed_us, tx_lead);
-	if (!now) {
-		wait(db25d_dmr_hold_us(elapsed_us, tx_lead));
-	}
 	apc_ramp(tx_pa, false);
 	tx_paths_off();
 	hrc_pin_write(PIN_RX_SUPPLY, true);
 	db25d_main_burst(IF_HZ, false);
 	db25d_lo_resume();
 	rx_paths(rx_hz, true);
-	return late;
 }
 #endif
 
@@ -458,17 +469,31 @@ static bool tx_stop(void)
 	return true;
 }
 
-static void tx_off(void)
+// keep: as in rx_set
+static void tx_end(bool keep)
 {
 #if CONFIG_DMR && DB25D_DMR_TX
-	dmr_disarm();	// the RF task finishes the burst it is in; rx() then sets the receiver up again
+	dmr_disarm();	// the RF task finishes the burst it is in; rx_set() then sets the receiver up again
 #endif
 	if (have_rx) {
-		rx(rx_hz, rx_bw, &rx_tone);	// stops the transmission first
+		rx_set(rx_hz, rx_bw, &rx_tone, keep);	// stops the transmission first
 	} else {
 		tx_stop();
 	}
 }
+
+static void tx_off(void)
+{
+	tx_end(false);
+}
+
+#if CONFIG_DMR && DB25D_DMR_TX
+// hrc_dmr_board_t.tx_end (dmr_db25d.c): the last burst's TX off left the receiver on
+void db25d_dmr_tx_end(void)
+{
+	tx_end(true);
+}
+#endif
 
 // FM TX tone (1750 Hz burst, roger beep, CW ID): the chip's tone generator instead of the microphone (0xC3FA). The chip
 // drops it at the end of the transmission (db25d_main_tx_end)
@@ -517,7 +542,7 @@ static void status(radio_status_t *st)
 {
 	if (!supported) {
 		st->rssi_dbm = -160;
-		st->noise = 0;
+		st->noise = UINT8_MAX;		// all noise: 0 reads as a quiet channel, the squelch opens and the screen says receiving
 		st->carrier = false;
 		st->tone_ok = false;
 		return;
@@ -544,7 +569,7 @@ static void status(radio_status_t *st)
 static void audio(bool on)
 {
 	audio_open = on;
-	if (transmitting) {
+	if (transmitting && mode != RADIO_MODE_DMR) {
 		return;		// the speaker stays muted until tx_stop() restores this
 	}
 	if (supported) {
@@ -598,7 +623,7 @@ void db25d_radio_diag(db25d_radio_diag_t *d)
 	d->css_raw = last_css_raw;
 	d->rf_writes = db25d_rf_writes();
 	d->hz = rx_hz;
-	d->transmitting = transmitting || dmr_armed;
+	d->transmitting = transmitting;
 	db25d_tx_plan_t plan;
 	d->pa_low = have_rx && db25d_cal_tx_plan(rx_hz, false, DB25D_TX_DRIVE_PCT, &plan) ? plan.pa : 0;
 	d->pa_high = have_rx && db25d_cal_tx_plan(rx_hz, true, DB25D_TX_DRIVE_PCT, &plan) ? plan.pa : 0;
@@ -610,6 +635,9 @@ const hal_radio_t db25d_radio = {
 	.rx = rx,
 	.tx = tx,
 	.tx_off = tx_off,
+#if CONFIG_DMR
+	.dmr_tx_end = hrc_dmr_tx_end,
+#endif
 	.status = status,
 	.audio = audio,
 	.volume = volume,
@@ -625,9 +653,8 @@ const hal_radio_t db25d_radio = {
 #endif
 };
 
-// The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt). DMR TX keys the RF per
-// burst while armed, without setting transmitting
+// The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt), FM or DMR
 bool db25d_radio_transmitting(void)
 {
-	return transmitting || dmr_armed;
+	return transmitting;
 }

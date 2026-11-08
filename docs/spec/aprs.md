@@ -76,8 +76,8 @@ fake board whose AFSK output is demodulated back to frames.
 - A callsign is required: the debug link's test call, else Settings > My radio's radio name, else the codeplug's
   radio name; its first word, upper case, 3-6 letters and digits with a digit after the first character, not N0CALL.
   Our SSID comes from the APRS settings (7 by default). No callsign: nothing goes out, the page says why.
-- RF only on amateur frequencies: the APRS frequency must be in 144-148, 222-225 or 420-450 MHz and in a band the
-  board transmits in; else the reason is "not amateur" and nothing is keyed.
+- RF only on amateur frequencies: the APRS frequency must be in 144-148, 222-225, 420-450 or 902-928 MHz and in a
+  band the board transmits in; else the reason is "not amateur" and nothing is keyed.
 - A hard minimum of 30 s between automatic beacons (`AUTO_MIN_S`), 10 s for any configuration
   (`APRS_MIN_INTERVAL_FLOOR_S`), and "send now" pressed again within 5 s is ignored.
 - Frames from the host (KISS) must carry our callsign (any SSID) as the source and are rate limited: a burst of 3,
@@ -149,7 +149,9 @@ The path runs while the receive setting is on, the radio receives FM on the APRS
 region's, or the custom one) and no APRS transmission is under way. Anywhere else the stream is left alone: a
 repeater channel's audio isn't APRS, and battery saving would be blocked for nothing. While it runs, battery saving
 (`radio-features.md`) stays off: a sleeping receiver misses packets, and the squelch closes only after 300 ms of
-noise readings over the line (`RADIO_SQL_CLOSE_POLLS_APRS`) instead of 50 ms. On air, a packet's tones
+noise readings over the line (`RADIO_SQL_CLOSE_POLLS_APRS`) instead of 50 ms. A start the board's path refuses (no
+memory, its audio busy) is tried again 1 s later (`RX_RETRY_MS`), not on every tick, since each try routes the
+receiver and back; `aprs.rx_start_fails` counts them. On air, a packet's tones
 at full deviation pushed the AT1846S noise reading over the line for a poll or two, the squelch closed, and the
 squelch gated audio cut the packet in pieces: the preamble in one opening, the frame in the next. `aprs_rx_listening()`
 says whether the path runs.

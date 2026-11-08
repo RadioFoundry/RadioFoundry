@@ -456,8 +456,8 @@ static bool contact_target_raw(uint16_t raw, ui_target_t *t)
 	return true;
 }
 
-#if CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT
-// Share To's rows (and the crash report's): raw rows are the contacts
+#if CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT	// the lists that use these: Share To, the crash report's Send To
+// Share To's rows: raw rows are the contacts
 static bool contacts_target(uint16_t i, ui_target_t *t)
 {
 	return i < ui_filter_count() && contact_target_raw(ui_filter_raw(i), t);
