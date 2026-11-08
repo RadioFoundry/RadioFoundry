@@ -827,6 +827,7 @@ bool stm32_hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " p=", m->lc_pa_new);
 		put_kv(&o, " k=", m->lc_kept);
 		put_kv(&o, " o=", m->lc_other_slot);
+		put_kv(&o, " r=", m->lc_resumed);
 		break;
 	case 20: {	// the last reception's LC trace: capture (how, source ID), then <ev><res><ticks> per look
 		put(&o, "lt ");
@@ -840,6 +841,12 @@ bool stm32_hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		}
 		break;
 	}
+	case 22:	// tick reads: receptions, bursts; reads lost, the port unchanged / changed but no frame checked (a dropout)
+		put_kv(&o, "tr c", m->tr_calls);
+		put_kv(&o, " b", m->tr_bursts);
+		put_kv(&o, " same", m->tr_miss_same);
+		put_kv(&o, " bad", m->tr_miss_bad);
+		break;
 	case 21:	// the split duplex TX half's BS outbound (split-duplex.md 11.6)
 #if CONFIG_HOTSPOT_SPLIT
 		put_kv(&o, "bs sl", bs.st.slots);
