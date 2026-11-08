@@ -237,6 +237,8 @@ static bool transmitting;
 static uint8_t sr;			// the shift register's outputs
 static bool main_audio;			// side A's audio to the speaker (audio())
 static bool beeping;			// side A's chip sounds a beep instead of its receiver (beep_tone())
+static bool beep_quiet;			// side A's level held at its lowest while a beep starts or stops
+static uint8_t level_a_want;		// the level code audio_route() gives side A
 static bool dmr_heard;			// in DMR side A hears a signal (status()): no beep then (beep_tone())
 static int16_t level_code_vol = -1;	// the speaker level code for the volume, -1 until the core sets one
 static bool vol_zero;			// the volume (knob A) is 0: side A and the KTMicro receiver stay silent
@@ -466,13 +468,23 @@ static const uint8_t level_index[33] = {
 	6, 4, 0,
 };
 
+static uint8_t level_code_at(uint8_t i)
+{
+	return (uint8_t)((3u - i % 4u) << 5 | (21u - i / 4u));
+}
+
+// The attenuation index of a code (code 0 is 87, the most)
+static uint8_t level_index_of(uint8_t code)
+{
+	return (uint8_t)((21u - (code & 0x1Fu)) * 4u + 3u - (code >> 5));
+}
+
 static uint8_t level_code(uint8_t level)
 {
 	if (level == 0) {
 		return 0;
 	}
-	uint8_t i = level_index[level > 32 ? 32 : level];
-	return (uint8_t)((3u - i % 4u) << 5 | (21u - i / 4u));
+	return level_code_at(level_index[level > 32 ? 32 : level]);
 }
 #endif
 
@@ -487,6 +499,26 @@ static void level_set(uint8_t side, uint8_t code)
 	level_write(side != 0 ? LEVEL_SEL_B : LEVEL_SEL_A, code);
 #else
 	(void)side;
+	(void)code;
+#endif
+}
+
+// Side A to code one attenuation step per write (about 80 us each, 5-6 ms over the whole range). A beep's tone starts
+// and stops at full strength whatever the RF chip's gains (its tone gain spans 8 dB, its AF gains sit at their
+// lowest), and that edge was the tick at a beep's start (measured by microphone with the speaker path held open)
+static void level_fade(uint8_t code)
+{
+#if D578UV_LEVEL_IC
+	if (level_last[0] < 0) {
+		level_set(0, code);
+		return;
+	}
+	uint8_t i = level_index_of((uint8_t)level_last[0]), to = level_index_of(code);
+	while (i != to) {
+		i = i < to ? i + 1u : i - 1u;
+		level_set(0, level_code_at(i));
+	}
+#else
 	(void)code;
 #endif
 }
@@ -530,7 +562,8 @@ static void audio_route(void)
 	// the KTMicro receiver; the baseband's voice reaches the speaker without it
 	bool a_rf = beeping || kt_out || (mode != RADIO_MODE_DMR && main_audio);
 	if (level_code_vol >= 0) {
-		level_set(0, a_rf || !b ? (uint8_t)level_code_vol : 0);
+		level_a_want = a_rf || !b ? (uint8_t)level_code_vol : 0;
+		level_set(0, beep_quiet ? 0 : level_a_want);
 		level_set(1, (b || kt_out) && code_b >= 0 ? (uint8_t)code_b : 0);
 	}
 	if (chips_ready && !transmitting) {
@@ -2012,6 +2045,13 @@ static void beep_tone(uint16_t hz, uint8_t level)
 	if (hz == 0 && !beeping) {
 		return;
 	}
+	// The tone's edges go through the speaker level faded to its lowest (level_fade()); a change of tone inside a
+	// beep doesn't
+	bool edge = (hz != 0) != beeping;
+	if (edge && level_code_vol >= 0) {
+		level_fade(0);
+		beep_quiet = true;
+	}
 	beeping = hz != 0;
 	if (!beeping) {
 		audio_route();	// the gate shuts first: the chip's output goes back to the receiver below
@@ -2022,6 +2062,10 @@ static void beep_tone(uint16_t hz, uint8_t level)
 	}
 	if (beeping) {
 		audio_route();	// ... and opens once the tone is on
+	}
+	if (beep_quiet) {
+		beep_quiet = false;
+		level_fade(level_a_want);	// up to the beep, or back to the receiver's audio after it
 	}
 }
 
