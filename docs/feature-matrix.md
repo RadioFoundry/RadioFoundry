@@ -94,7 +94,7 @@ is `tools/bringup.py list --radio <id>`.
 | `crash_log` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
 | `crash_screen` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `crash_report` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `watchdog` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | fail | not recorded |
+| `watchdog` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
 | `fault_trace` | not recorded | ✕ | not recorded | not recorded | ✕ | ✕ | off | off |
 | `usb_network` | ✕ | pass (seed) | ✕ | ✕ | not recorded | not recorded | off | not recorded |
 | `dmr_ip_gateway` | not recorded | not recorded | pass (seed) | not recorded | not recorded | not recorded | off | not recorded |
