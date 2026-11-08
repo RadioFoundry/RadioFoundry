@@ -255,6 +255,12 @@ static uint8_t tx_level;
 typedef enum { AUX_NONE, AUX_TONE, AUX_LINE } aux_t;	// AUX_LINE: PB9's audio (DTMF, APRS) on the input pin
 static aux_t aux;			// what replaces the microphone now
 static uint8_t rx_threshold;		// RSSI below which the stock firmware calls a signal lost
+// DMR's carrier for CARRIER_READY: the RSSI alone, this many raw steps (0.5 dB each) under rx_threshold. The chip's
+// signal flag (its analog squelch: the RSSI over register 0x78 and the noise at most 0x4F's limit) stayed off for a
+// bench call at -102 to -106 dBm that the baseband decodes, so no DMR call below about -104 dBm was heard. At
+// 446.125 MHz this is raw 92 (about -114 dBm); with no signal the RSSI read 82-87 (hardware-d578uv.md 4.4)
+#define DMR_CARRIER_BELOW	10u
+static uint8_t dmr_threshold;
 static volatile uint8_t backlight_reg = 0xFFu;	// the PA5 device's register 8 as last asked (full until the UI sets it)
 
 // ---- The RF bus: shared clock and data, one enable per chip ----
@@ -1068,6 +1074,8 @@ static void rx_setup(void)
 	uint8_t code = rx_gain_code(rx_hz, false);
 	qa4818_gain(&chip_if, code);
 	rx_threshold = code < QA4818_RSSI_FLOOR + 3u ? QA4818_RSSI_FLOOR : (uint8_t)(code - 3u);
+	dmr_threshold = rx_threshold < QA4818_RSSI_FLOOR + DMR_CARRIER_BELOW ? QA4818_RSSI_FLOOR :
+		(uint8_t)(rx_threshold - DMR_CARRIER_BELOW);
 	qa4818_out(&chip_lo, QA4818_OUT_LO);
 	qa4818_out(&chip_if, QA4818_OUT_RX);
 	qa4818_lo_on(&chip_lo);
@@ -2019,7 +2027,7 @@ static void status(radio_status_t *st)
 	diag_rx = (uint32_t)s.rssi | (uint32_t)(s.noise & 0x7FFFu) << 16 | (s.signal ? 1u << 31 : 0u);
 	st->rssi_dbm = qa4818_rssi_dbm(s.rssi);
 	st->noise = qa4818_noise(s.noise);
-	st->carrier = s.signal && s.rssi >= rx_threshold;
+	st->carrier = mode == RADIO_MODE_DMR ? s.rssi >= dmr_threshold : s.signal && s.rssi >= rx_threshold;
 	dmr_heard = mode == RADIO_MODE_DMR && st->carrier;
 #if CONFIG_DMR
 	if (mode == RADIO_MODE_DMR)
