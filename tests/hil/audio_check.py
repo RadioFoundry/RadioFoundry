@@ -177,6 +177,8 @@ def _past_fade(lv, d, e, near_a, e_hi, win_half, floor_db, gone_db=GONE_DB, hold
     it was, hold_db over what follows) until
     a fall of hold_db near the end asked for, that fall is the end: the earlier one was a fade (a microphone's
     processing). A stream that stopped at e leaves only its echo, dying away with no such fall."""
+    if e >= near_a:         # the fall is where the tone should end: it did
+        return e, None
     a = max(near_a, int(e + 2 * win_half))
     if e_hi <= a + 1:
         return e, None
