@@ -1946,7 +1946,9 @@ class SdrBench:
                 r = dict(r)
                 t_rel = (r["sc"] - sc0) / fs * 1e3 if sc0 is not None and "sc" in r else (r.get("t", t0) - t0) * 1e3
                 r["t_rel_ms"] = round(t_rel, 3)
-                r.setdefault("slot_ab", "AB"[int(round(t_rel / 30.0)) % 2])
+                slot_ab = "AB"[int(round(t_rel / 30.0)) % 2]
+                # A board's own label comes from its `t`: a UTC step inside the call would split the call in two
+                r["slot_ab"] = slot_ab if sc0 is not None else r.get("slot_ab", slot_ab)
                 r.setdefault("voice", str(r.get("kind", "")).startswith("VOICE") or (r.get("sync") or "").endswith("VOICE"))
                 for k in ("cfo_hz", "level_dbfs", "dev_hz"):
                     if r.get(k) is None:

@@ -49,6 +49,25 @@ def test_utc_step_changes_nothing():
     assert checks(analysis(step_at=7)) == []
 
 
+def test_utc_step_keeps_the_slot():
+    """A board labels slot_ab and t_rel_ms from `t`: both come from the sample count here."""
+    class Watch:
+        api, seconds, error = True, 1, None
+        replies = []
+
+        @staticmethod
+        def wait(_timeout):
+            return True
+
+    Watch.replies = [{"burst": dict(rec(i, "VOICE_A", 0.345 if i >= 2 else 0.0), slot_ab="B" if i >= 2 else "A")}
+                     for i in range(4)]
+    bench = H.SdrBench.__new__(H.SdrBench)
+    bench._api_info = lambda rx=False: {"window": {"fs": FS}}
+    rows, _ = bench.bursts_result(Watch())
+    assert [r["slot_ab"] for r in rows] == ["A"] * 4
+    assert [round(r["t_rel_ms"]) for r in rows] == [0, 60, 120, 180]
+
+
 def test_slow_ramp_fails():
     sdr = analysis()
     sdr["edges"][4]["ramp_up_ms"] = 2.0
