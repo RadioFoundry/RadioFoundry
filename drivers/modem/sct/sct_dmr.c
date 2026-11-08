@@ -43,6 +43,7 @@ static struct {
 	bool lc_new;		// set_embedded_lc gave an LC not yet sent
 	uint8_t emb_lc[LC_BYTES];
 	uint32_t done_ms;	// TX_DRAIN: report TX_DONE by then if the chip stays silent
+	bool drain_heard;	// ... a packet came since the drain began
 
 	// RX
 	uint8_t rx_cc;
@@ -369,6 +370,18 @@ static bool last_burst_over(void)
 	return s.port->burst_edges() - s.tx_edges >= 2u * s.tx_sent;
 }
 
+// The first harm the health keys count keeps its moment
+static void health_mark(void)
+{
+	if (s.st.first_ms == 0) {
+		s.st.first_ms = s.now != 0 ? s.now : 1u;
+		s.st.first[0] = (uint8_t)s.tx;
+		s.st.first[1] = s.q_count;
+		s.st.first[2] = s.st.last_event;
+		s.st.first[3] = s.st.last_nak;
+	}
+}
+
 static void tx_step(void)
 {
 	if (s.tx == TX_IDLE)
@@ -388,9 +401,15 @@ static void tx_step(void)
 	if (s.tx == TX_ENDING && s.q_count == 0 && !s.waiting) {
 		s.tx = TX_DRAIN;
 		s.done_ms = s.now + SCT_DMR_DONE_MS;
+		s.drain_heard = false;
 	}
-	if (s.tx == TX_DRAIN && (int32_t)(s.now - s.done_ms) >= 0)
+	if (s.tx == TX_DRAIN && (int32_t)(s.now - s.done_ms) >= 0) {
+		if (!s.drain_heard && s.tx_sent != 0) {
+			health_mark();
+			s.st.drain_silent++;
+		}
 		tx_finish();
+	}
 }
 
 // --- RX ---
@@ -540,8 +559,13 @@ static void rx_voice_step(void)
 			s.st.rx_voice++;
 			emit(DMR_EV_BURST_RX, b.ts, next_counter(), &b);
 		}
-		if (s.rv[i].on && (int32_t)(s.now - s.rv[i].next_ms) >= 0)
+		if (s.rv[i].on && (int32_t)(s.now - s.rv[i].next_ms) >= 0) {
 			s.rv[i].next_ms = s.now + SCT_DMR_SLOT_MS;	// fell behind (a stalled task): no burst storm
+			if (s.tx == TX_IDLE) {	// four bursts caught up and still late (keyed, none are due)
+				health_mark();
+				s.st.rx_late++;
+			}
+		}
 	}
 }
 
@@ -878,6 +902,8 @@ static void unlock(void)
 void sct_dmr_packet(const uint8_t *pkt, uint16_t len, uint32_t now_ms)
 {
 	lock();
+	if (s.tx == TX_DRAIN)
+		s.drain_heard = true;
 	packet(pkt, len, now_ms);
 	unlock();
 }
@@ -924,6 +950,18 @@ LOCKED_VOID(set_embedded_lc, (const uint8_t lc[9]), (lc))
 LOCKED_VOID(set_cc_filter, (int8_t cc), (cc))
 LOCKED(bool, is_transmitting, (void), ())
 
+static void m_health(dmr_modem_health_t *h)
+{
+	lock();
+	memset(h, 0, sizeof(*h));
+	h->stalls = s.st.drain_silent;
+	h->stuck = s.st.rx_late;
+	h->first_ms = s.st.first_ms;
+	for (unsigned i = 0; i < 4u; i++)
+		h->first_regs[i] = s.st.first[i];
+	unlock();
+}
+
 const hal_dmr_modem_t sct_dmr_modem = {
 	.start = m_start,
 	.stop = m_stop,
@@ -938,6 +976,7 @@ const hal_dmr_modem_t sct_dmr_modem = {
 	.set_embedded_lc = m_set_embedded_lc,
 	.set_cc_filter = m_set_cc_filter,
 	.is_transmitting = m_is_transmitting,
+	.health = m_health,
 };
 
 void sct_dmr_init(const sct_dmr_port_t *port)

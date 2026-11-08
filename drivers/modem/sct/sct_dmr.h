@@ -90,6 +90,12 @@ typedef struct {
 	uint8_t carrier;	// the last CARRIER_READY sent (0 lost, 1 ready, 2 ready with the phase reversed)
 	uint32_t carrier_sent;	// CARRIER_READY packets sent
 	bool sending;		// a frame is out, its answer not in yet
+	// The host port is polled, so no interrupt can be lost; what the health keys count (hal_dmr_modem_t.health)
+	// is the same harm seen from here
+	uint32_t drain_silent;	// transmissions with frames sent, ended by the drain time-out with no packet meanwhile
+	uint32_t rx_late;	// received voice bursts skipped: the poll came five bursts late or more (a stalled task)
+	uint32_t first_ms;	// the poll time of the first of either, 0 none yet
+	uint8_t first[4];	// ... then: the transmission's state, its queued frames, the last event and NAK codes
 } sct_dmr_stats_t;
 
 // After the last frame, how long to wait for the chip's "far end done" before reporting TX_DONE anyway

@@ -1128,6 +1128,52 @@ static void test_dmr_carrier_ends_call(void)
 	CHECK(nev == n);
 }
 
+// The health keys (hal_dmr_modem_t.health): a transmission whose drain hears nothing from the chip, and a received
+// voice burst skipped because the poll came too late to catch up
+static void test_dmr_health(void)
+{
+	dmr_modem_health_t h;
+
+	start();
+	CHECK(m->health != NULL);
+	m->health(&h);
+	CHECK(h.stalls == 0 && h.stuck == 0 && h.first_ms == 0);
+
+	// Nothing sent: an empty transmission's drain time-out is no stall
+	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	m->tx_end();
+	sct_dmr_poll(100);
+	sct_dmr_poll(100 + SCT_DMR_DONE_MS);
+	m->health(&h);
+	CHECK(h.stalls == 0);
+
+	// A call heard, then a poll late by more than the four bursts a poll catches up
+	uint8_t hdr[16] = { 0x43, DMR_BURST_VOICE_LC_HEADER | SCT_PROP_TS2, 9, 0, 0, 0, 0, 0, 0x09, 0x2F, 0x52, 0x5C };
+	chip_packet(hdr, 12, 0x30, 1000);
+	sct_dmr_poll(1060);
+	m->health(&h);
+	CHECK(h.stuck == 0);
+	sct_dmr_poll(1060 + 3 * SCT_DMR_SLOT_MS);	// late, but caught up
+	m->health(&h);
+	CHECK(h.stuck == 0);
+	sct_dmr_poll(1060 + 10 * SCT_DMR_SLOT_MS);
+	m->health(&h);
+	CHECK(h.stuck == 1 && h.first_ms == 1060 + 10 * SCT_DMR_SLOT_MS);
+
+	// A frame sent, then not a word from the chip until the drain time-out: a stall, the first loss kept
+	sct_dmr_carrier(0);
+	sct_dmr_poll(5000 + SCT_DMR_CR_HOLD_MS);
+	dmr_tx_burst_t b = burst(DMR_BURST_VOICE_LC_HEADER, 0, 12);
+	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(m->tx_queue(&b));
+	m->tx_end();
+	uint32_t t = 6000;
+	for (int i = 0; i < 40; i++)
+		sct_dmr_poll(t += 30);
+	m->health(&h);
+	CHECK(h.stalls == 1 && h.stuck == 1 && h.first_ms == 1060 + 10 * SCT_DMR_SLOT_MS);
+}
+
 // A port with rx_ready: after a transmission, no CARRIER_READY until the receiver has settled, whatever the board
 // reads meanwhile, then rx_ready; the board's readings from there as before
 static const sct_dmr_port_t port_settle = {
@@ -1412,6 +1458,7 @@ int main(void)
 	test_dmr_options();
 	test_dmr_carrier();
 	test_dmr_carrier_ends_call();
+	test_dmr_health();
 	test_dmr_carrier_settle();
 	test_dmr_tx_early_end();
 	test_dmr_tx_fields();
