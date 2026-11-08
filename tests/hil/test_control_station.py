@@ -169,6 +169,9 @@ def _passthrough_session(radio, pytestconfig):
     return udp, own, host_ip, radio_ip
 
 
+BENCH_JOB_GAP_S = 2.0     # between two bench transmissions to the radio (test_passthrough_text)
+
+
 def _counters(udp):
     # One section per request: over UDP a long reply is cut short (truncated=1) and the later keys go missing
     v = {}
@@ -214,6 +217,9 @@ def test_passthrough_text(radio, sdr_bench, pytestconfig):
             text = f"RadioFoundry CS {int(time.time()) % 10000}"
             with sdr_bench.lease():
                 sdr_bench.data(freq, cc, own, ip_text=text, src=BENCH_SRC)
+                # A bench board refuses a call while its transceiver heard anything in the last second (it goes back to
+                # its idle channel after a job): sent at once, the second packet never went on the air
+                time.sleep(BENCH_JOB_GAP_S)
                 sdr_bench.data(freq, cc, own, tms=text, tms_seq=(int(time.time()) % 31) + 1, src=BENCH_SRC,
                                listen_after=3)
             got5016, got4007 = _received(s5016, 3), _received(s4007, 1)

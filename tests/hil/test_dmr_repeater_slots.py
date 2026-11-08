@@ -312,9 +312,15 @@ def test_dmr_repeater_burst_offset(radio, sdr_bench, pytestconfig, backup_dir):
         ins = s.bench.bursts_start(s.split, 14, cc=s.cc)
         outs = s.bench.bursts_start(s.freq, 14, cc=s.cc)
         s.call(8.0, "burst offset")
-        inbound, _ = s.bench.bursts_result(ins)
-        outbound, _ = s.bench.bursts_result(outs)
-        print(f"inbound {len(inbound)} bursts, outbound {len(outbound)}")
+        inbound, in_done = s.bench.bursts_result(ins)
+        outbound, out_done = s.bench.bursts_result(outs)
+        print(f"inbound {len(inbound)} bursts ({in_done}), outbound {len(outbound)} ({out_done})")
+        # A watch that lost bursts on the bench board (done.complete false: its front end, decoder or queue fell
+        # behind, done.lost says where) can't judge the radio; a burst missing from a complete watch wasn't on the air
+        lost = [f"{name} {d.get('lost')}" for name, d in (("inbound", in_done), ("outbound", out_done))
+                if d.get("complete") is False]
+        if lost:
+            skip("bench", f"the bench board lost bursts: {'; '.join(lost)}")
         if not outbound:
             # The radio heard the outbound (wait_up), so the SDR bench missed it: no reference to time against
             skip("bench", f"the SDR bench decoded none of the repeater's outbound on {s.freq} MHz")
