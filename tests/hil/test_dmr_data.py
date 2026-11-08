@@ -4,7 +4,7 @@
 answered, and the radio's own call alert, radio check and text message on air.
 
 Opt-in RF. The bench-to-radio tests (rf + radio_tx + bench_service: --allow-rf --allow-service-stop) send from the SDR
-bench's modem with bench_tx.py data / csbk, then listen (--listen-after) for the radio's answer: radio_tx, as the
+bench's modem with a bench_tx data job / csbk, then listen (--listen-after) for the radio's answer: radio_tx, as the
 radio answers on air (outside radio_tx tests its TX inhibit is on). The radio-to-bench tests
 (radio_tx + bench_service) have the radio send through the debug link's DMR_DATA command while the bench modem listens.
 The radio's own counters (the dmr_data view section) are the pass criteria; an answer the bench modem did not hear is
@@ -13,7 +13,7 @@ are in README.md.
 
 The bench modem sits a meter from the radio and is overloaded by it even at the radio's lowest power: it misses some
 bursts and hears others with bit errors. So what it heard is judged like this (heard_tries, heard_header): only
-bursts whose CRC checks after the FEC count (bench_tx.py listen's "crc_ok"); every one of those must carry exactly the
+bursts whose CRC checks after the FEC count (a bench_tx listen job's "crc_ok"); every one of those must carry exactly the
 expected content (opcode, FID, addresses: a wrong one fails); when the radio's counters say it sent N tries, at least
 one and at most N must be heard, fewer than N is a warning. A single packet (a text message) the bench didn't hear is
 sent again, up to 3 times, each send checked on the radio's counters.

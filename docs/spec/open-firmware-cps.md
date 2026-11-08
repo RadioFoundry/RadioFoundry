@@ -295,7 +295,7 @@ The MMDVM protocol itself is public and is specified separately. The switch work
 - **USB (STM32, MK22).** From then on, every USB packet starting with 0xE0 and at least 3 bytes long is taken as one
   MMDVM frame. The radio does not parse the MMDVM length byte. A packet that doesn't fit in the frame ring is dropped
   and counted.
-- **UART (radios without USB).** Bytes are split into frames by the MMDVM length byte, resynchronizing on 0xE0. MMDVMHost may
+- **UART (radios without USB).** Bytes are split into frames by the MMDVM length byte, resynchronizing on 0xE0. A host may
   send frames back to back, so gaps can't be used. Bytes that came with the first request are split the same way.
 - **UDP 3334 (network mode).** A datagram is treated like a USB packet.
 - **Leaving.** In MMDVMHost mode the radio leaves after 20 s without traffic from the host. In BlueDV mode the user

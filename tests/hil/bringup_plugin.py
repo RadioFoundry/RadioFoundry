@@ -37,7 +37,7 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 MARKER_NEEDS = {"rf": "rf", "radio_tx": "rf", "bench_service": "bench", "usb_switch": "usb_switch",
                 "codeplug_write": "codeplug_write", "reboot": "reboot", "manual": "owner_action",
                 "second_radio": "second_radio", "radio_chain": "radio_chain", "factory_reset": "factory_reset"}
-FIXTURE_NEEDS = {"radio": "radio", "sdr_bench": "bench", "bench_station": "second_radio", "microphone": "microphone"}
+FIXTURE_NEEDS = {"radio": "radio", "sdr_bench": "bench", "microphone": "microphone"}
 # A need -> the run options that allow it (any one of them). radio and bench have none: the radio fixture and
 # the bench fixture decide (an unreachable bench is a bench skip, excused for a feature that needs the bench)
 NEED_FLAGS = {
@@ -48,7 +48,7 @@ NEED_FLAGS = {
     "codeplug_write": ("--allow-codeplug-write",),
     "reboot": ("--allow-reboot",),
     "owner_action": ("--manual",),
-    "second_radio": ("--split-rx-port", "--bench-station", "--peer-port"),
+    "second_radio": ("--split-rx-port", "--peer-port"),
     "radio_chain": ("--sfr-talker-port",),
     "microphone": ("--microphone",),
     "factory_reset": (),
@@ -59,7 +59,7 @@ NEED_ENV = {"factory_reset": ("RFOUNDRY_HIL_FACTORY_RESET", "1")}
 FIRMWARE_KEYS = ("proto", "view", "git", "board", "features", "codec", "display")
 # Run options a record keeps: what was allowed and where it ran on air, never a port or a host
 RECORD_OPTIONS = ("--allow-rf", "--allow-service-stop", "--allow-usb-switch", "--allow-codeplug-write",
-                  "--allow-reboot", "--manual", "--dmr-freq", "--dmr-cc", "--dmr-tg", "--fm-mhz", "--tx-power")
+                  "--allow-reboot", "--manual", "--dmr-freq", "--dmr-cc", "--dmr-tg", "--fm-mhz")
 
 
 def add_options(parser):
@@ -115,7 +115,7 @@ def node_id(item):
 
 
 # Options whose values name a port or a host: their values never reach a record
-PORT_OPTIONS = ("--radio-port", "--split-rx-port", "--split-ms-port", "--bench-station")
+PORT_OPTIONS = ("--radio-port", "--split-rx-port", "--split-ms-port")
 
 
 def sanitize(text, secrets=()):
@@ -216,7 +216,7 @@ class Plugin:
                                 "feature(s) the test checks (tests/hil/features.toml); optional: run and recorded, "
                                 "not gating; owner: what a person does for it; gate: the feature's capability gate, "
                                 "run first in bring-up mode, its other required tests fail unless it passes")
-        config.addinivalue_line("markers", "second_radio: needs a second radio (--split-rx-port or --bench-station)")
+        config.addinivalue_line("markers", "second_radio: needs a second radio (--split-rx-port)")
         config.addinivalue_line("markers", "radio_chain: needs two more radios, a talker and a listener "
                                 "(--sfr-talker-port, --sfr-listener-port)")
         config.addinivalue_line("markers", "factory_reset: erases the radio's settings (RFOUNDRY_HIL_FACTORY_RESET=1)")

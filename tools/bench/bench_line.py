@@ -2,13 +2,12 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 """
-bench_line: a client of the bench line protocol, TCP port 7373. A bench board serves it, and it has the same ops as
-the shared bench daemon. One request per connection: a JSON line goes out, and JSON lines come back. A line with
-"bytes": N is followed by N bytes of payload. Closing the connection cancels the request: a capture stops, a
+bench_line: a client of the bench line protocol, TCP port 7373. A bench board serves it. One request per connection: a
+JSON line goes out, and JSON lines come back. A line with "bytes": N is followed by N bytes of payload. Closing the connection cancels the request: a capture stops, a
 transmission unkeys, a session ends.
 
     bench_line.py HOST[:PORT] info | status            the board's view, as JSON
-    bench_line.py HOST[:PORT] run bench_tx ARGS...      a bench_tx.py command line, run as a job on the board
+    bench_line.py HOST[:PORT] run bench_tx ARGS...      a bench_tx job, run on the board
 
 Library use: request() for one-line answers, Request for a stream read on its own thread, job_from_args() for a
 bench_tx / bench_repeater command line as the job the board runs (it builds and sends the bursts itself).
@@ -202,7 +201,7 @@ class Request:
 
 
 def job_from_args(tool, args):
-    """The job a bench_tx.py / bench_repeater.py command line (a string or a list) describes: the tool's options by
+    """The job a bench_tx or bench_repeater command line (a string or a list) describes: the tool's options by
     their long names with _ for -, the subcommand as "cmd". An --ambe file goes along as its bytes (ambe_hex)."""
     argv = shlex.split(args) if isinstance(args, str) else list(args)
     job = {"tool": tool}

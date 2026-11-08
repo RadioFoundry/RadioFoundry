@@ -324,7 +324,7 @@ Burst numbering for privacy keystream purposes is RX_TYPE_INFO's 1–6.
 
 Datasheet source: the Chinese original (HR_C7000_Document_2, 10.2.2.17, 10.2.2.18, 10.2.2.22, 10.2.2.25-10.2.2.28).
 The registers, their bits and what the chip does with them were tried on one board (RadioFoundry build with a scratch memory
-poke command, SDR bench capture on the test frequency, lowest power, `sdrmon.py analyze --cach`). (measured)
+poke command, SDR bench capture on the test frequency, lowest power, burst and CACH decode). (measured)
 
 Datasheet summary:
 
@@ -446,7 +446,7 @@ Second board on the SDR bench, 2026-10-21 (lowest power, the test frequency, `te
 | 6 | Variant 0: the outbound is whole. BS data sync on both slots (189 / 188 idle bursts in 10 s), a burst every 30.0 ms (same slot 60.000 ms), one key-up edge, every CACH of valid TACT parity, TC alternating on every CACH, AT following SET_AT, the short LC decoding (93 ok, 0 bad), no underrun | `test_split_tx_half_off_air`: 377 BS bursts, tact ok 377, TC alternating 376/376 |
 | 7 | Variant 1 (continuous mode) gives the same outbound: the timeslot mode keeps the carrier and every CACH between slots too | 358 BS bursts, tact ok 358, TC 357/357 |
 | 8 | A host-fed voice call goes out whole in its slot | `test_split_tx_half_voice` |
-| 9 | Keyed 5 minutes: carrier offset +58 Hz at key-up, +56 Hz at the end, no underrun, no stall (10 015 slots) | captures across the key-up and the unkey (`sdrmon.py analyze` needs carrier-free air in a capture to find its noise floor) |
+| 9 | Keyed 5 minutes: carrier offset +58 Hz at key-up, +56 Hz at the end, no underrun, no stall (10 015 slots) | captures across the key-up and the unkey (the burst analysis needs carrier-free air in a capture to find its noise floor) |
 | 10 | The RX half labels a bench call, residual 0-1 us after centering, and the label flips with the epoch | `test_split_rx_half_labels` |
 
 Variant 0 stays the default. Writing the slot to both TX RAM halves works, so which half the chip sends in each slot

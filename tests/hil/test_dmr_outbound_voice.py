@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 """Two-slot voice on a repeater outbound (opt-in RF: --allow-rf, a bench board, --outbound-mhz). The bench board sends
-what a repeater's downlink carries: BS bursts with the CACH on both slots, with voice calls on them (bench_tx.py
+what a repeater's downlink carries: BS bursts with the CACH on both slots, with voice calls on them (the bench_tx job
 outbound --voice, up to 8 calls). The radio under test sits on a duplex DMR channel whose RX is that frequency and
 must show the call on its own timeslot, from the right talker and talkgroup, and nothing from the other slot or from
 another color code. The radio never transmits.
@@ -111,8 +111,6 @@ def _run(radio, bench, pytestconfig, backup_dir, calls, radio_ts, cc_offset=0, e
     board's records)."""
     if "DMR" not in radio.features():
         skip("not_built", "built without DMR")
-    if bench.api is None:
-        skip("bench", "an outbound with voice needs a bench board (--bench-api)")
     freq = rig(pytestconfig, "outbound-mhz", "the repeater outbound the bench board sends on:")
     radio.go_home()
     with _duplex_channel(radio, pytestconfig, backup_dir, freq):

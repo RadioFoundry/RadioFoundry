@@ -747,7 +747,7 @@ stays clear: a keyed TX half reports its drift (ALIGN flag 10) and is re-aligned
 ### 9.2 BS framing bench results (2026-10-11 and 12)
 
 A UHF test frequency, lowest power, 10 s and about 335 bursts per run, with the framing variants of
-[split-duplex.md](split-duplex.md) 10.1 and `sdrmon.py analyze --cach` on the SDR bench:
+[split-duplex.md](split-duplex.md) 10.1 and a burst and CACH decode on the SDR bench:
 
 | Build / variant | On air |
 |---|---|

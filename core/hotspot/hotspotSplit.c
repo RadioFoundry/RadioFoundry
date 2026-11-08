@@ -751,18 +751,18 @@ static uint8_t net_burst(int8_t ts, uint8_t control, const uint8_t *frame, dmr_t
 	if (c & MMDVM_DMR_SYNC_DATA) {
 		uint8_t dt = c & 0x0F;
 
-		if (dt == DT_IDLE) {
+		if (dt == DMR_TYPE_IDLE) {
 			return NET_SKIP;	// the outbound makes its own idle bursts
 		}
-		if ((dt == DT_TERMINATOR_WITH_LC) && sp.net_term[k]) {
+		if ((dt == DMR_TYPE_TERMINATOR_LC) && sp.net_term[k]) {
 			return NET_SKIP;	// the second and third terminators
 		}
 		b.kind = dt;
 		b.host_crc = true;		// the host's CRC goes out as sent (CRC_MCU_Control)
-		if ((dt == DT_VOICE_LC_HEADER) || (dt == DT_TERMINATOR_WITH_LC) || (dt == DT_VOICE_PI_HEADER)) {
+		if ((dt == DMR_TYPE_VOICE_LC_HEADER) || (dt == DMR_TYPE_TERMINATOR_LC) || (dt == DMR_TYPE_PI_HEADER)) {
 			dmrFecBptcDecode(frame, b.payload);
 			b.len = 12;
-			if (dt == DT_VOICE_LC_HEADER) {
+			if (dt == DMR_TYPE_VOICE_LC_HEADER) {
 				dmr_emb_rx_reset(&sp.emb_rx[k]);
 				sp.emb_valid[k] = false;
 			}
@@ -1058,7 +1058,7 @@ static void rx_burst(const dmr_burst_t *b, uint32_t arg, uint32_t now_ms)
 		rx_lost(k);
 	}
 	if (actions & HOTSPOT_UP_HEADER) {
-		hotspot_up_lc(up_cmd(k, false), DT_VOICE_LC_HEADER, lc,
+		hotspot_up_lc(up_cmd(k, false), DMR_TYPE_VOICE_LC_HEADER, lc,
 			      (b->kind == DMR_BURST_VOICE_LC_HEADER) ? b->rssi_dbm : 0);
 		dmr_emb_lc_encode(lc, r->sf_frag);
 	}
@@ -1071,7 +1071,7 @@ static void rx_burst(const dmr_burst_t *b, uint32_t arg, uint32_t now_ms)
 		rx_voice(k, u.ambe, u.seq, b->rssi_dbm, true);
 	}
 	if (actions & HOTSPOT_UP_TERMINATOR) {
-		hotspot_up_lc(up_cmd(k, false), DT_TERMINATOR_WITH_LC, lc, b->rssi_dbm);
+		hotspot_up_lc(up_cmd(k, false), DMR_TYPE_TERMINATOR_LC, lc, b->rssi_dbm);
 		r->alias_pending = false;
 	}
 }

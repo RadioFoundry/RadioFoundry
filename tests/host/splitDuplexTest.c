@@ -757,14 +757,14 @@ static void lc_frame(uint8_t dt, const uint8_t *lc, uint8_t *frame)
 {
 	uint8_t full[12];
 
-	dmr_lc_encode_full(lc, (dt == DT_VOICE_LC_HEADER) ? DMR_RS_MASK_VOICE_HEADER : DMR_RS_MASK_TERMINATOR, full);
+	dmr_lc_encode_full(lc, (dt == DMR_TYPE_VOICE_LC_HEADER) ? DMR_RS_MASK_VOICE_HEADER : DMR_RS_MASK_TERMINATOR, full);
 	data_frame(dt, full, 12, frame);
 }
 
 static const uint8_t LC1[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0x98, 0x7C, 0x11 };	// TG 9
 static const uint8_t LC2[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x5B, 0x98, 0x7C, 0x12 };	// TG 91
 
-// A voice frame as MMDVMHost builds it: AMBE, then the EMB and embedded LC fragment for B-E
+// A voice frame as a host builds it: AMBE, then the EMB and embedded LC fragment for B-E
 static void voice_frame(uint8_t index, uint8_t seed, const uint8_t *lc, uint8_t *frame)
 {
 	uint8_t frag[4][4];
@@ -823,7 +823,7 @@ static void test_normal(void)
 	// Simplex DMR_DATA1 still NAK 2, DMR_START / SHORTLC still silent, unknown commands still NAK 1
 	int from = out_count;
 	uint8_t f[33];
-	lc_frame(DT_VOICE_LC_HEADER, LC1, f);
+	lc_frame(DMR_TYPE_VOICE_LC_HEADER, LC1, f);
 	configure(true, 1);
 	set_freq(438000000, 438000000, 255);
 	net(MMDVM_DMR_DATA1, 0x41, f);
@@ -928,16 +928,16 @@ static void test_tx_half(void)
 	}
 	CHECK(dmrShortLcDecode(got, &slc) && slc == dmrShortLcActivity(8, 0, dmrShortLcHash(9), 0));
 
-	// Two network calls, one per slot, MMDVMHost style (headers, voice with control bytes, terminators)
+	// Two network calls, one per slot, standard host style (headers, voice with control bytes, terminators)
 	uint8_t f[33];
 	air0 = ssim.air_n;
-	lc_frame(DT_VOICE_LC_HEADER, LC1, f);
+	lc_frame(DMR_TYPE_VOICE_LC_HEADER, LC1, f);
 	net(MMDVM_DMR_DATA1, 0x41, f);
 	net(MMDVM_DMR_DATA1, 0x41, f);
-	lc_frame(DT_VOICE_LC_HEADER, LC2, f);
+	lc_frame(DMR_TYPE_VOICE_LC_HEADER, LC2, f);
 	net(MMDVM_DMR_DATA2, 0x41, f);
 	uint8_t idle[33];
-	data_frame(DT_IDLE, BS_IDLE_INFO, 12, idle);
+	data_frame(DMR_TYPE_IDLE, BS_IDLE_INFO, 12, idle);
 	net(MMDVM_DMR_DATA2, 0x49, idle);		// taken, dropped
 	for (int sf = 0; sf < 2; sf++) {
 		for (uint8_t i = 0; i < 6; i++) {
@@ -948,11 +948,11 @@ static void test_tx_half(void)
 			run_ms(60);
 		}
 	}
-	lc_frame(DT_TERMINATOR_WITH_LC, LC1, f);
+	lc_frame(DMR_TYPE_TERMINATOR_LC, LC1, f);
 	for (int i = 0; i < 3; i++) {
 		net(MMDVM_DMR_DATA1, 0x42, f);
 	}
-	lc_frame(DT_TERMINATOR_WITH_LC, LC2, f);
+	lc_frame(DMR_TYPE_TERMINATOR_LC, LC2, f);
 	net(MMDVM_DMR_DATA2, 0x42, f);
 	CHECK(nak_of(MMDVM_DMR_DATA1, from) < 0 && nak_of(MMDVM_DMR_DATA2, from) < 0);
 	run_ms(600);
@@ -1000,7 +1000,7 @@ static void test_tx_half(void)
 	// Full: the 17th burst on a slot gets NAK 5 and the overflow flag once
 	from = out_count;
 	voice_frame(0, 0x55, LC1, f);
-	lc_frame(DT_VOICE_LC_HEADER, LC1, idle);
+	lc_frame(DMR_TYPE_VOICE_LC_HEADER, LC1, idle);
 	net(MMDVM_DMR_DATA1, 0x41, idle);
 	for (int i = 0; i < 16; i++) {
 		net(MMDVM_DMR_DATA1, (i % 6 == 0) ? 0x20 : (uint8_t)(i % 6), f);
@@ -1082,7 +1082,7 @@ static void test_tx_guard(void)
 	CHECK(split_cmd(SPLIT_SUB_STATUS, NULL, 0) == 0 && (split_reply(6)[6] & SPLIT_FLAG_COOLDOWN));
 	int from = out_count;
 	uint8_t f[33];
-	lc_frame(DT_VOICE_LC_HEADER, LC1, f);
+	lc_frame(DMR_TYPE_VOICE_LC_HEADER, LC1, f);
 	net(MMDVM_DMR_DATA2, 0x41, f);
 	CHECK(nak_of(MMDVM_DMR_DATA2, from) == MMDVM_NAK_WRONG_MODE);
 	host(MMDVM_GET_STATUS, NULL, 0);
@@ -1168,7 +1168,7 @@ static void test_rx_half(void)
 	CHECK(ssim.locked_ts == 0);
 	int from = out_count;
 	uint8_t f[33];
-	lc_frame(DT_VOICE_LC_HEADER, LC1, f);
+	lc_frame(DMR_TYPE_VOICE_LC_HEADER, LC1, f);
 	net(MMDVM_DMR_DATA1, 0x41, f);
 	CHECK(nak_of(MMDVM_DMR_DATA1, from) == MMDVM_NAK_WRONG_MODE);
 	host(MMDVM_DMR_START, (const uint8_t[]){ 1 }, 1);
@@ -1237,12 +1237,12 @@ static void test_rx_half(void)
 			if (o[2] != cmd) {
 				continue;
 			}
-			if (o[3] == (MMDVM_DMR_SYNC_DATA | DT_VOICE_LC_HEADER)) {
+			if (o[3] == (MMDVM_DMR_SYNC_DATA | DMR_TYPE_VOICE_LC_HEADER)) {
 				uint8_t info[12], lc[9];
 				dmrFecBptcDecode(o + 4, info);
 				CHECK(dmr_lc_decode_full(info, DMR_RS_MASK_VOICE_HEADER, lc) >= 0 && memcmp(lc, want_lc, 9) == 0);
 				hdr++;
-			} else if (o[3] == (MMDVM_DMR_SYNC_DATA | DT_TERMINATOR_WITH_LC)) {
+			} else if (o[3] == (MMDVM_DMR_SYNC_DATA | DMR_TYPE_TERMINATOR_LC)) {
 				terms++;
 			} else if ((o[3] & MMDVM_DMR_SYNC_DATA) == 0) {
 				uint8_t idx = (o[3] & MMDVM_DMR_SYNC_AUDIO) ? 0 : (o[3] & 0x0F);
@@ -1511,7 +1511,7 @@ static void test_sched(void)
 	uint32_t c, t;
 
 	start_sched(0);
-	lc_frame(DT_VOICE_LC_HEADER, LC1, f);
+	lc_frame(DMR_TYPE_VOICE_LC_HEADER, LC1, f);
 	CHECK(sched_cmd(GRID_C + 20u, 1, 0x41, f) == 0xE0 + SPLIT_RESULT_STATE);	// no ALIGN yet
 	CHECK(align_cmd(grid_t, 0, GRID_C, &ph, &fl) == 0);
 	run_ms(100);
@@ -1530,11 +1530,11 @@ static void test_sched(void)
 		CHECK(sched_cmd(g + 2u + 2u * (uint32_t)i, 1, (i == 0) ? 0x20 : (uint8_t)i, vf) == SPLIT_SCHED_QUEUED);
 	}
 	uint8_t term[33];
-	lc_frame(DT_TERMINATOR_WITH_LC, LC1, term);
+	lc_frame(DMR_TYPE_TERMINATOR_LC, LC1, term);
 	CHECK(sched_cmd(g + 14u, 1, 0x42, term) == SPLIT_SCHED_QUEUED);
 	// Inbound slot 2 data in a TS2 slot, sent twice: the second replaces the first
 	uint8_t d[33], info[12] = { 0x01, 0x02, 0x03 };
-	data_frame(DT_CSBK, info, 12, d);
+	data_frame(DMR_TYPE_CSBK, info, 12, d);
 	CHECK(sched_cmd(g + 5u, 2, 0x43, d) == SPLIT_SCHED_QUEUED);
 	CHECK(sched_cmd(g + 5u, 2, 0x43, d) == SPLIT_SCHED_REPLACED);
 	CHECK(sched_cmd(c + 40u, slot_of(c + 40u), 0x43, d) == SPLIT_SCHED_EARLY);

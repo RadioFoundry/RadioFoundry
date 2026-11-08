@@ -302,7 +302,7 @@ static void lc_frame(uint8_t dt, const uint8_t *lc, uint8_t *frame)
 {
 	uint8_t info[12];
 
-	rs_make(lc, (dt == DT_VOICE_LC_HEADER) ? 0x96 : 0x99, info);
+	rs_make(lc, (dt == DMR_TYPE_VOICE_LC_HEADER) ? 0x96 : 0x99, info);
 	data_frame(dt, info, 2, frame);
 }
 
@@ -317,7 +317,7 @@ static void put_middle(uint8_t *frame, const uint8_t *mid6)
 	frame[19] = (uint8_t)((mid6[5] << 4) | (frame[19] & 0x0F));
 }
 
-// A voice frame as MMDVMHost sends it: control 0, voice sync on A, an EMB-ish middle on B-F
+// A voice frame as a host sends it: control 0, voice sync on A, an EMB-ish middle on B-F
 static void voice_frame(uint8_t index, uint8_t seed, uint8_t *frame)
 {
 	static const uint8_t EMB[6] = { 0x13, 0x10, 0x00, 0x00, 0x00, 0x05 };
@@ -333,7 +333,7 @@ static uint8_t net(const uint8_t *frame33)
 	uint8_t p[34];
 	int before = out_count;
 
-	p[0] = 0;	// MMDVMHost's control byte
+	p[0] = 0;	// a host's control byte
 	memcpy(p + 1, frame33, 33);
 	host(MMDVM_DMR_DATA2, p, 34);
 	for (int i = before; i < out_count; i++) {
@@ -483,7 +483,7 @@ static void test_version_status(void)
 }
 
 // A-15: a radio that keeps refusing (or posts the handover and returns): enter is tried at most once a second while
-// MMDVMHost polls every 250 ms, and every poll is answered
+// A standard host polls every 250 ms, and every poll is answered
 static void test_slow_enter(void)
 {
 	reset_world();
@@ -636,7 +636,7 @@ static bool no_dmr_nak(void)
 	return true;
 }
 
-// A network call as MMDVMHost sends it: idle frames, 2 headers, 2 superframes, 3 terminators, all control 0
+// A network call as a host sends it: idle frames, 2 headers, 2 superframes, 3 terminators, all control 0
 static void test_net_call(void)
 {
 	reset_world();
@@ -645,16 +645,16 @@ static void test_net_call(void)
 
 	uint8_t idle[12] = { 0xFF, 0x83, 0xDF, 0x17, 0x32, 0x09, 0x4E, 0xD1, 0xE7, 0xCD, 0x8A, 0x91 };
 	uint8_t f[33];
-	data_frame(DT_IDLE, idle, 2, f);
+	data_frame(DMR_TYPE_IDLE, idle, 2, f);
 	for (int i = 0; i < 6; i++) {
 		CHECK(net(f) == 0);	// taken and dropped, no NAK
 		poll_for(60);
 	}
 	CHECK(m.begins == 0);
 
-	net_lc(DT_VOICE_LC_HEADER, LC1);
+	net_lc(DMR_TYPE_VOICE_LC_HEADER, LC1);
 	poll_for(60);
-	net_lc(DT_VOICE_LC_HEADER, LC1);
+	net_lc(DMR_TYPE_VOICE_LC_HEADER, LC1);
 	poll_for(60);
 	CHECK(m.begins == 0);	// buffering
 	CHECK(status()[5] & MMDVM_STATUS_TX);	// transmitting from buffering on
@@ -666,7 +666,7 @@ static void test_net_call(void)
 	CHECK(m.begins == 1);
 	CHECK(memcmp(m.elc, LC1, 9) == 0);
 	for (int i = 0; i < 3; i++) {
-		net_lc(DT_TERMINATOR_WITH_LC, LC1);
+		net_lc(DMR_TYPE_TERMINATOR_LC, LC1);
 		poll_for(60);
 	}
 	CHECK(m.ends == 1);
@@ -699,29 +699,29 @@ static void test_short_call(void)
 {
 	reset_world();
 	configure(1);
-	net_lc(DT_VOICE_LC_HEADER, LC1);
+	net_lc(DMR_TYPE_VOICE_LC_HEADER, LC1);
 	net_voice(0, 1);
 	net_voice(1, 2);
 	poll_for(20);
 	CHECK(m.begins == 0);
-	net_lc(DT_TERMINATOR_WITH_LC, LC1);
+	net_lc(DMR_TYPE_TERMINATOR_LC, LC1);
 	poll_for(5);
 	CHECK(m.begins == 1 && m.ends == 1 && m.log_count == 4);
 }
 
-// MMDVMHost sends the next call's headers right behind the last call (or a call loses its terminator):
+// A host sends the next call's headers right behind the last call (or a call loses its terminator):
 // the old call ends with a terminator and the new one keys up again with its own header and LC
 static void test_back_to_back(void)
 {
 	reset_world();
 	configure(1);
-	net_lc(DT_VOICE_LC_HEADER, LC1);
+	net_lc(DMR_TYPE_VOICE_LC_HEADER, LC1);
 	for (int i = 0; i < 6; i++) {
 		net_voice((uint8_t)i, (uint8_t)i);
 	}
 	poll_for(10);
 	CHECK(m.begins == 1);
-	net_lc(DT_VOICE_LC_HEADER, LC2);	// no terminator for call 1
+	net_lc(DMR_TYPE_VOICE_LC_HEADER, LC2);	// no terminator for call 1
 	for (int i = 0; i < 6; i++) {
 		net_voice((uint8_t)i, (uint8_t)(40 + i));
 	}
@@ -745,7 +745,7 @@ static void test_full(void)
 	reset_world();
 	configure(1);
 	// Frames faster than anything can leave (no polling)
-	net_lc(DT_VOICE_LC_HEADER, LC1);
+	net_lc(DMR_TYPE_VOICE_LC_HEADER, LC1);
 	int naks = 0;
 	for (int i = 0; i < 40; i++) {
 		uint8_t f[33];
@@ -765,7 +765,7 @@ static void test_net_lost(void)
 {
 	reset_world();
 	configure(1);
-	net_lc(DT_VOICE_LC_HEADER, LC1);
+	net_lc(DMR_TYPE_VOICE_LC_HEADER, LC1);
 	for (int i = 0; i < 6; i++) {
 		net_voice((uint8_t)i, (uint8_t)i);
 	}
@@ -780,7 +780,7 @@ static void test_abort(void)
 {
 	reset_world();
 	configure(1);
-	net_lc(DT_VOICE_LC_HEADER, LC1);
+	net_lc(DMR_TYPE_VOICE_LC_HEADER, LC1);
 	for (int i = 0; i < 6; i++) {
 		net_voice((uint8_t)i, (uint8_t)i);
 	}
@@ -844,7 +844,7 @@ static void check_lc_frame(const uint8_t *fr, uint8_t dt, const uint8_t *lc)
 	CHECK(dmrFecSlotTypeDecode(fr + 4, &fcc, &fdt) && fcc == 2 && fdt == dt);
 	CHECK(dmrFecBptcDecode(fr + 4, info) == 0);
 	CHECK(memcmp(info, lc, 9) == 0);
-	CHECK(rs_valid(info, (dt == DT_VOICE_LC_HEADER) ? 0x96 : 0x99));
+	CHECK(rs_valid(info, (dt == DMR_TYPE_VOICE_LC_HEADER) ? 0x96 : 0x99));
 }
 
 static void test_uplink(void)
@@ -872,8 +872,8 @@ static void test_uplink(void)
 	}
 	CHECK(n == 9);
 	if (n == 9) {
-		check_lc_frame(f[0], DT_VOICE_LC_HEADER, LC2);
-		check_lc_frame(f[1], DT_VOICE_LC_HEADER, LC2);
+		check_lc_frame(f[0], DMR_TYPE_VOICE_LC_HEADER, LC2);
+		check_lc_frame(f[1], DMR_TYPE_VOICE_LC_HEADER, LC2);
 		for (int i = 0; i < 6; i++) {
 			const uint8_t *fr = f[2 + i] + 4;
 
@@ -889,7 +889,7 @@ static void test_uplink(void)
 				CHECK((fr[13] & 0x0F) == 2);			// EMB color code
 			}
 		}
-		check_lc_frame(f[8], DT_TERMINATOR_WITH_LC, LC2);
+		check_lc_frame(f[8], DMR_TYPE_TERMINATOR_LC, LC2);
 	}
 	CHECK(count_out(MMDVM_DMR_LOST2) == 0);
 
@@ -908,15 +908,15 @@ static void test_uplink(void)
 	rf_voice(2, 5, LC1);
 	CHECK(count_out(MMDVM_DMR_DATA2) == 4);
 	if (count_out(MMDVM_DMR_DATA2) == 4) {
-		check_lc_frame(out[0].b, DT_VOICE_LC_HEADER, LC1);
+		check_lc_frame(out[0].b, DMR_TYPE_VOICE_LC_HEADER, LC1);
 		CHECK(out[1].b[3] == 0x20 && out[2].b[3] == 1 && out[3].b[3] == 2);
 	}
 
 	// While we transmit, what the modem reports is dropped
 	reset_world();
 	configure(2);
-	net_lc(DT_VOICE_LC_HEADER, LC1);
-	net_lc(DT_TERMINATOR_WITH_LC, LC1);
+	net_lc(DMR_TYPE_VOICE_LC_HEADER, LC1);
+	net_lc(DMR_TYPE_TERMINATOR_LC, LC1);
 	poll_for(5);
 	CHECK(m.begins == 1);
 	out_count = 0;
@@ -962,7 +962,7 @@ static void test_data(void)
 	configure(2);
 	uint8_t csbk[12] = { 0xBD, 0x00, 0x80, 0x00, 0x00, 0x5B, 0x98, 0x8A, 0xD2, 0x00, 0x12, 0x34 };
 	uint8_t f[33];
-	data_frame(DT_CSBK, csbk, 2, f);
+	data_frame(DMR_TYPE_CSBK, csbk, 2, f);
 	CHECK(net(f) == 0);
 	poll_for(10);
 	CHECK(m.begins == 1 && m.ends == 1 && m.log_count == 1);
@@ -1099,7 +1099,7 @@ static void test_uplink_wrapped_gap(void)
 	for (int i = 2; i < 6; i++) {
 		rf_voice((uint8_t)i, (uint8_t)(8 + i), NULL);
 	}
-	CHECK(check_uplink_emb(0, 2, lcs, 4) == 2);	// the sequence MMDVMHost checks carried on: both superframes' LCs
+	CHECK(check_uplink_emb(0, 2, lcs, 4) == 2);	// the sequence the host checks carried on: both superframes' LCs
 	CHECK(count_out(MMDVM_DMR_LOST2) == 0);
 }
 
@@ -1179,7 +1179,7 @@ static void test_mode_idle(void)
 {
 	reset_world();
 	configure(1);		// state DMR
-	net_lc(DT_VOICE_LC_HEADER, LC1);
+	net_lc(DMR_TYPE_VOICE_LC_HEADER, LC1);
 	for (int i = 0; i < 18; i++) {
 		net_voice((uint8_t)(i % 6), (uint8_t)i);
 	}
@@ -1200,7 +1200,7 @@ static void test_mode_idle(void)
 	// Buffering only (nothing keyed yet): dropped, no transmission
 	reset_world();
 	configure(1);
-	net_lc(DT_VOICE_LC_HEADER, LC1);
+	net_lc(DMR_TYPE_VOICE_LC_HEADER, LC1);
 	host(MMDVM_SET_MODE, &mode, 1);
 	poll_for(500);
 	CHECK(m.begins == 0 && !(status()[5] & MMDVM_STATUS_TX));
@@ -1225,7 +1225,7 @@ static void test_pocsag(void)
 	host(MMDVM_POCSAG_DATA, junk, 20);
 	CHECK(nak_for(MMDVM_POCSAG_DATA, MMDVM_NAK_WRONG_MODE));
 	uint8_t f[33];
-	lc_frame(DT_VOICE_LC_HEADER, LC1, f);
+	lc_frame(DMR_TYPE_VOICE_LC_HEADER, LC1, f);
 	CHECK(net(f) == MMDVM_NAK_WRONG_MODE);
 	// C-11: 06, 00, 02, 02
 	mode = MMDVM_MODE_IDLE;

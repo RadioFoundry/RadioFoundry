@@ -23,7 +23,7 @@ run; **none** = no automated test. Last run:
 | DMR audio both ways (decoded level, frames not repeated, the radio's own over decoded) | `test_dmr_audio_smoke` | not run | added 2026-10-22 after the DM-1801 Pro played every call silent with every counter clean |
 | DMR late entry | `test_dmr_call_features::test_late_entry` | on air | |
 | DMR private calls in | `test_dmr_call_features` | on air | to us played, to another ID not |
-| DMR transmit (voice call) | `test_dmr_tx::test_dmr_tx_off_air` | on air | content strict; waveform checks not judged while the SDR clips (8 % at gain 0) |
+| DMR transmit (voice call) | `test_dmr_tx::test_dmr_tx_off_air` | on air | content strict; waveform checks from the bench board's envelope, not judged while the receiver clips |
 | Talker alias receive | `test_dmr_call_features::test_talker_alias` | on air | |
 | Talker alias transmit | `test_dmr_tx::test_dmr_tx_talker_alias` | on air | needs `--allow-codeplug-write`: the test channel's alias flag set over CPS, backed up and restored byte for byte; the rig's callsign decoded by the SDR and the bench modem |
 | Basic privacy receive | `test_dmr_call_features::test_privacy_service_option` | on air | the bench can't scramble: drop without a key, play with one |
@@ -35,7 +35,7 @@ run; **none** = no automated test. Last run:
 | Emergency alarm and call in | `test_dmr_emergency` (rf) | on air | |
 | Emergency alarm and call out, the key | `test_dmr_emergency` (radio_tx) | on air | alarm tries counted like the data tries |
 | Hotspot protocol | `test_hotspot` | radio | |
-| Hotspot voice and data, both ways | `test_hotspot_voice` | on air | `hotspot_cases.py` rf_voice8, rf_data_unconf, net_voice, net_data |
+| Hotspot voice and data, both ways | none on air | none | the USB protocol is `test_hotspot`; the call path through it is host-tested |
 | Hotspot CW ID | `test_hotspot_cwid` | on air | the Morse tone itself checked since the tone fix |
 | MMDVM SFR | `test_hotspot_sfr` | passes (2026-10-12) | mode switching; a 3-superframe bench call goes up whole and is repeated whole on TS2 (17-18 of 18 voice bursts, terminator). Repeat delay 210 ms, not 90 ms (`docs/spec/sfr.md` 3) |
 | Split duplex repeater (experimental) | `test_split_duplex` | pass | 2026-10-12 (b027277): protocol; TX half with our framing (335 bursts, TC alternating 334/334, AT following SET_AT, 83 short LCs, one key-up); TX half voice (3 headers, 3 superframes with the embedded LC, terminator, no sync errors); RX half (residual 11 µs, the label flips with the epoch). Not yet: a real TX / RX pair (`docs/spec/split-duplex.md` 10.1) |
@@ -73,7 +73,6 @@ run; **none** = no automated test. Last run:
 | DMR transmit | test failed on SDR clipping and the overloaded bench modem's FEC corrections |
 | Data and emergency out | tests needed all 3 tries heard; the overloaded bench modem heard 1-2 (and read others with bit errors) |
 | Talker alias transmit, privacy transmit | no test (the alias check was skipped: the test channel sends none) |
-| Hotspot voice round trip | manual bench script only (`dmr_bench.py run H1`) |
 | SFR, USB network, VOX, split duplex | not in the radio's build; tests skipped |
 | Hotspot CW ID | passed on a keyed carrier with no tone in it |
 | CTCSS / DCS decode | no test |

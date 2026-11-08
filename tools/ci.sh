@@ -211,7 +211,7 @@ for f in sys.argv[1:]:
 		head -20 "$OUT/hil-skips.log"
 		bad "HIL skips without a kind (see $OUT/hil-skips.log)"
 	fi
-	# the speaker tests' and sdrmon's carrier floor analysis on synthetic data, the bench board's APRS and FM records
+	# the speaker tests' and the carrier floor analysis on synthetic data, the bench board's APRS and FM records
 	# parsed, the ID database encoders against iddb_read.py (no radio, needs numpy)
 	if python3 -c 'import pytest, numpy' 2>/dev/null; then
 		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_audio_check.py tests/hil/test_sdrmon_floor.py \

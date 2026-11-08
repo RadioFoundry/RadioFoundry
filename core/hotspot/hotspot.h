@@ -22,7 +22,7 @@
 // ---- What the radio core implements for the hotspot (registered with hotspot_set_radio) ----
 //
 // Every op is called from the host link task, between MMDVM frames: none may block. GET_STATUS must be answered
-// within tens of milliseconds and MMDVMHost resets the modem after 2 s without a status reply
+// within tens of milliseconds and a host resets the modem after 2 s without a status reply
 // (docs/spec/mmdvm-protocol.md 2.4, 3.4), so an op that has slow work to do posts it to the radio core and returns.
 typedef struct {
 	// Leave normal operation for the hotspot: stop FM and the DMR call stack, release the DMR modem (no events to

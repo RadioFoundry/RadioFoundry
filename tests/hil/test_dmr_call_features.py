@@ -4,7 +4,7 @@
 --allow-rf --allow-service-stop; the SDR bench's transmitter is the other station), and the talk target / privacy key
 requests over the debug link (radio only, nothing transmits).
 
-Each RF test sends one short call from the bench (bench_tx.py voice) on the DMR test channel and checks the call stack's
+Each RF test sends one short call from the bench (a bench_tx voice job) on the DMR test channel and checks the call stack's
 counters (dmr_stats) and the call it shows (dmr_call). Pass criteria are in README.md."""
 import time
 
@@ -29,7 +29,7 @@ def _on_dmr_channel(radio, pytestconfig):
 
 
 def _bench_call(radio, sdr_bench, pytestconfig, **kw):
-    """One bench call with the given bench_tx.py voice options; returns (counter deltas, dmr + dmr_call view)."""
+    """One bench call with the given a bench_tx voice job options; returns (counter deltas, dmr + dmr_call view)."""
     freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
     kw.setdefault("dst", tg)
     kw.setdefault("src", BENCH_SRC)

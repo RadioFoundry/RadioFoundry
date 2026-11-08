@@ -439,8 +439,7 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
     assert len(bs) >= 0.9 * TX_SECONDS / 0.03, f"BS bursts {len(bs)}"
     assert all(b["family"] == "bs" for b in bursts), {b["family"] for b in bursts}
     assert all(b["cc"] in (None, cc) for b in bs)
-    # Both slots are filled, so neighbors are 30 ms apart and the same slot is two bursts on (sdrmon's
-    # same-slot spacing only pairs neighbors, which suits a one-slot watch)
+    # Both slots are filled, so neighbors are 30 ms apart and the same slot is two bursts on
     t = sample_time_ms(bs)
     nb = [b - a for a, b in zip(t, t[1:])]
     same = [b - a for a, b in zip(t, t[2:])]

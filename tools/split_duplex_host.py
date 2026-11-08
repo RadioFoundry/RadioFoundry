@@ -374,7 +374,7 @@ class Radio:
             import serial
             # A device or a URL such as rfc2217://host:port (a radio on a network serial hub)
             self.ser = serial.serial_for_url(port, 115200, timeout=0.02, do_not_open=True)
-            self.ser.dtr = dtr  # False: as MMDVMHost on Windows; closing then does not end the hotspot session
+            self.ser.dtr = dtr  # False: as a host on Windows; closing then does not end the hotspot session
             self.ser.open()
         self.buf = bytearray()
         self.lock = threading.Condition()
@@ -539,7 +539,7 @@ def sync_burst(radio, sync, n=8, gap=0.02):
 class Pair:
     """The two halves run as one repeater (8): start-up (8.1), time sync every 1 s, the epoch relayed every 2 s for
     the first 30 s and every 10 s after (6), the AT relay from the RX half's uplink and STATUS (8.4). With repeat set
-    the host also does what a duplex host such as MMDVMHost does with an RF call (8.4): every burst heard goes back
+    the host also does what a duplex host such as a standard host does with an RF call (8.4): every burst heard goes back
     out on its own slot of the TX half (DMR_START, then the burst's control byte and 33 bytes), at once from the RX
     half's reader thread. The counters and first-burst times are for a test."""
 
@@ -687,7 +687,7 @@ def run_exp(a):
         # Short LC: an activity update, TS1 group voice to TG 9 (split-duplex.md 5.3: the 68-bit form)
         slc = dmr_cach.slc_activity(8, 0, dmr_cach.slc_hash(9), 0)
         tx.command(DMR_SHORTLC, dmr_cach.shortlc_frame_payload(slc))
-        print(f"short LC {slc:07X} ({dmr_cach.describe_slc(slc)}): look for it in sdrmon.py analyze --cach")
+        print(f"short LC {slc:07X} ({dmr_cach.describe_slc(slc)}): look for it in a CACH decode of the burst records")
         tx.command(DMR_START, b"\x01")
         t0 = time.monotonic()
         mask = 0

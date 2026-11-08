@@ -252,7 +252,7 @@ static void send_lc_frame_cmd(uint8_t command, uint8_t data_type, const uint8_t 
 	b.dataType = data_type;
 	b.length = 12;
 	b.flags = 0;
-	dmr_lc_encode_full(lc, (data_type == DT_VOICE_LC_HEADER) ? DMR_RS_MASK_VOICE_HEADER : DMR_RS_MASK_TERMINATOR,
+	dmr_lc_encode_full(lc, (data_type == DMR_TYPE_VOICE_LC_HEADER) ? DMR_RS_MASK_VOICE_HEADER : DMR_RS_MASK_TERMINATOR,
 			   b.payload);
 	dmrDataBurstToFrame(&b, cc, frame);
 	send_frame_cmd(command, (uint8_t)(MMDVM_DMR_SYNC_DATA | data_type), frame, rssi_dbm, heard);
@@ -349,7 +349,7 @@ void hotspot_up_voice(uint8_t command, const uint8_t *ambe, uint8_t index, const
 
 void hotspot_up_lc(uint8_t command, uint8_t data_type, const uint8_t *lc, int16_t rssi_dbm)
 {
-	if (data_type == DT_VOICE_LC_HEADER) {
+	if (data_type == DMR_TYPE_VOICE_LC_HEADER) {
 		note_call(lc, false);
 		changed();
 	}
@@ -636,7 +636,7 @@ uint8_t hotspot_net_frame(uint8_t control, const uint8_t *frame, uint32_t now_ms
 		uint8_t info[12];
 
 		switch (dt) {
-		case DT_VOICE_LC_HEADER: {
+		case DMR_TYPE_VOICE_LC_HEADER: {
 			dmrFecBptcDecode(frame, info);
 			bool other_call = enq_open && (memcmp(enq_lc, info, LC_LEN) != 0);
 			// Another call's header while one is still queued (it lost its terminator, or the host sends back to
@@ -658,7 +658,7 @@ uint8_t hotspot_net_frame(uint8_t control, const uint8_t *frame, uint32_t now_ms
 			last_net_ms = now_ms;
 			return 0;
 		}
-		case DT_TERMINATOR_WITH_LC:
+		case DMR_TYPE_TERMINATOR_LC:
 			if (!enq_open) {
 				return 0;	// the second and third terminators of a call, or one without a call
 			}
@@ -670,8 +670,8 @@ uint8_t hotspot_net_frame(uint8_t control, const uint8_t *frame, uint32_t now_ms
 			enq_open = false;
 			last_net_ms = now_ms;
 			return 0;
-		case DT_VOICE_PI_HEADER:
-		case DT_IDLE:
+		case DMR_TYPE_PI_HEADER:
+		case DMR_TYPE_IDLE:
 			return 0;		// taken and dropped: the radio makes its own (gotchas 8.2)
 		default: {
 			uint8_t r = hotspotDataQueue(dt, frame, now_ms);
@@ -689,7 +689,7 @@ uint8_t hotspot_net_frame(uint8_t control, const uint8_t *frame, uint32_t now_ms
 	} else if (((c & 0x0F) >= 1) && ((c & 0x0F) <= 5)) {
 		index = c & 0x0F;
 	} else {
-		index = (uint8_t)((enq_index + 1) % 6);	// MMDVMHost's control byte 0: B-F follow in order
+		index = (uint8_t)((enq_index + 1) % 6);	// control byte 0: B-F follow in order
 	}
 
 	if (!enq_open) {
@@ -1017,7 +1017,7 @@ static void rf_burst(const dmr_burst_t *b, uint32_t now_ms)
 	}
 	if (actions & HOTSPOT_UP_HEADER) {
 		// A header heard is sent as heard (with its RSSI); one made from the embedded LC (late entry) is ours
-		send_lc_frame(DT_VOICE_LC_HEADER, lc, b->rssi_dbm, b->kind == DMR_BURST_VOICE_LC_HEADER);
+		send_lc_frame(DMR_TYPE_VOICE_LC_HEADER, lc, b->rssi_dbm, b->kind == DMR_BURST_VOICE_LC_HEADER);
 		note_call(lc, false);
 		dmr_emb_lc_encode(lc, sf_frag);
 	}
@@ -1031,7 +1031,7 @@ static void rf_burst(const dmr_burst_t *b, uint32_t now_ms)
 		send_voice(u.ambe, u.seq, b->rssi_dbm, true);
 	}
 	if (actions & HOTSPOT_UP_TERMINATOR) {
-		send_lc_frame(DT_TERMINATOR_WITH_LC, lc, b->rssi_dbm, true);
+		send_lc_frame(DMR_TYPE_TERMINATOR_LC, lc, b->rssi_dbm, true);
 		alias_pending = false;
 	}
 }

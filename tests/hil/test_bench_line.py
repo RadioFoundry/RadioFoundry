@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""bench_line.job_from_args: the job a bench_tx.py / bench_repeater.py command line sends a bench board. No radio:
+"""bench_line.job_from_args: the job a bench_tx or bench_repeater command line sends a bench board. No radio:
 these run anywhere, and tools/ci.sh runs them. An outbound's voice calls went as a string, so the board refused every
 call ("outbound --voice: a list of 1-8 calls") and the outbound voice tests skipped."""
 import os

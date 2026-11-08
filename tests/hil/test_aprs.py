@@ -34,8 +34,7 @@ Where and how it transmits, so that nothing reaches the APRS network:
 On air, receive (rf + bench_service: --allow-rf, --callsign): a bench board (--bench-api) sends one AX.25 position
 frame from <call>-7 (-11 when that is the radio's own call) in Bell 202 AFSK on its FM transmitter, on --fm-mhz (one of the rig's transmit frequencies: an amateur
 non-APRS one), path none. The radio, in the FM VFO there with APRS receive on that frequency (custom region), decodes
-it; it doesn't transmit (beacons and the digipeater off, put back after). The SDR bench host has no FM transmitter:
-the test skips there.
+it; it doesn't transmit (beacons and the digipeater off, put back after).
 
 On air, iGate (rf + bench_service + usb_switch: also --allow-usb-switch): the same frame, heard by the radio in the USB
 network personality with the iGate on (iGate transmit off). [aprsis] the test runs a minimal APRS-IS server on the host
@@ -45,7 +44,7 @@ SetHardware 'G').
 
 On air, DMR (radio_tx + bench_service): on the DMR test channel (--dmr-freq / --dmr-cc) at
 the lowest power the radio sends its position as an LRRP report (UDP 4001 in rate 1/2 data) and as an ETSI UDT
-location to --aprs-dmr-dst; the bench modem's listener (bench_tx.py listen) hears the data header and blocks, and
+location to --aprs-dmr-dst; the bench modem's listener (a bench_tx listen job) hears the data header and blocks, and
 the test reassembles and decodes them here.
 
 Pass criteria:

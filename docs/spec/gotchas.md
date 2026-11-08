@@ -415,7 +415,7 @@ shot refused (0x0A).
 **8.1 The host's terminator ends the call.** The old hotspot ignored terminators and ran a 360 ms network timeout plus a
 720 ms stop delay. A call shorter than the buffering minimum starts on its terminator.
 
-**8.2 Type frames from the burst, not the control byte.** MMDVMHost writes control byte 0 on every frame; typing from
+**8.2 Type frames from the burst, not the control byte.** A host may write control byte 0 on every frame; typing from
 it sent data as voice, ignored terminators, and NAKed the 6 idle frames before each call. Terminator / start detection
 by slot type only matched color code 1. Rule: classify from the sync (BS, MS, TS1, TS2; voice or data) and the slot
 type's systematic bits; ACK and drop idle frames and PI headers.
@@ -428,9 +428,9 @@ then key again with the new headers. Another call's header while buffering must 
 negative (255); the serial / UDP receive ring overwrote unread frames on bursts over about 2 KB. NAK (5) or drop and
 count.
 
-**8.5 RF uplink: every header, late entry, fill, LOST.** MMDVMHost and Motorola send up to 8 headers; sending one and
+**8.5 RF uplink: every header, late entry, fill, LOST.** A sender may send up to 8 headers; sending one and
 then a 300 ms timer produced DMR_LOST mid-call and two network calls. Send every header; late entry gets a header made
-from the embedded LC, and the superframe so far as silence from A so the voice sync resets MMDVMHost's sequence (MMDVMHost
+from the embedded LC, and the superframe so far as silence from A so the voice sync resets the host's sequence (a host
 drops the rest of a superframe after a gap); one terminator; DMR_LOST 500 ms after the last burst; keep FID and service
 options from the heard header.
 

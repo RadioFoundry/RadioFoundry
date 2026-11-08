@@ -44,7 +44,7 @@ HSDATA  := hotspotDataTest.c $(CORE)/hotspot/hotspotData.c $(DATA) $(FRAME)
 hotspotDataTest: $(HSDATA) $(CORE)/hotspot/hotspotData.h
 	$(CC) $(CFLAGS) -o $@ $(HSDATA)
 
-# The simplex hotspot's RF -> MMDVMHost call tracking, against a model of MMDVMHost's DMRSlot
+# The simplex hotspot's RF -> host call tracking, against a checker of the uplink stream
 hotspotUplinkTest: hotspotUplinkTest.c $(CORE)/hotspot/hotspotUplink.c $(CORE)/hotspot/hotspotUplink.h
 	$(CC) $(CFLAGS) -o $@ hotspotUplinkTest.c $(CORE)/hotspot/hotspotUplink.c
 

@@ -21,8 +21,7 @@ NOAA strong enough at the bench, and test_rx_tone_decode_bench covers the same s
 test_rx_tone_decode_bench (rf, bench_service): the other side, with the bench board's FM transmitter (--bench-api,
 the line protocol's tx op): the VFO on --fm-mhz with an RX tone of CTCSS 100.0 Hz or DCS D023N, the bench sends a
 1 kHz tone for 3 s with that sub-audio tone, and the audio opens (state rx, tone_ok=1); then with another one
-(CTCSS 131.8 Hz, DCS D025N), and then with none, and the audio stays muted the whole time of each. Skips on the
-SDR bench host (no FM transmitter there).
+(CTCSS 131.8 Hz, DCS D025N), and then with none, and the audio stays muted the whole time of each.
 
 test_wide_squelch_opens_like_narrow (optional): at level 1, whatever opens a 12.5 kHz channel opens a 25 kHz one, and
 a quiet 25 kHz channel stays shut. NOAA on an antenna, with --allow-rf also the bench's FM at several levels."""

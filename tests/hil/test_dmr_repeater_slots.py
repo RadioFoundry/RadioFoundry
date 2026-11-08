@@ -8,7 +8,7 @@ came back on a new slot phase, and all through a long call.
 
 Opt-in like test_dmr_tx_split_repeater (--allow-rf, --allow-codeplug-write, --split-tx-mhz): the test channel's TX
 frequency is set to --split-tx-mhz over CPS (backed up, restored and verified afterwards) and the bench modem is a
-duplex repeater on the pair (bench_repeater.py: input --split-tx-mhz, output --dmr-freq). Its idle receiver doesn't
+duplex repeater on the pair (the bench_repeater job: input --split-tx-mhz, output --dmr-freq). Its idle receiver doesn't
 hear a radio's BS_Dwn_Act on this bench, so it is kept up by its beacon (a local wake-up with the hang time as long as
 the beacon) or answers a wake-up on a timer.
 
@@ -301,14 +301,11 @@ def test_dmr_repeater_burst_offset(radio, sdr_bench, pytestconfig, backup_dir):
     def body(s, rnd):
         for f in (s.split, s.freq):
             if not s.bench.can_watch(f):
-                skip("bench", f"the SDR bench can't decode bursts on {f} MHz (no shared daemon, or outside its window)")
-        if s.bench.api:
-            # A bench board: its idle outbound is the reference (a half-duplex board runs no repeater), and the
-            # radio's bursts are judged by the SDR alone
-            s.rpt, s.outbound = s.bench.outbound_start(s.freq, s.cc, 40), True
-            s.wait_up()
-        else:
-            _up_all_along(s, 40)
+                skip("bench", f"the bench board can't decode bursts on {f} MHz (outside its window)")
+        # The board's idle outbound is the reference (a half-duplex board runs no repeater), and the radio's bursts
+        # are judged by the SDR alone
+        s.rpt, s.outbound = s.bench.outbound_start(s.freq, s.cc, 40), True
+        s.wait_up()
         ins = s.bench.bursts_start(s.split, 14, cc=s.cc)
         outs = s.bench.bursts_start(s.freq, 14, cc=s.cc)
         s.call(8.0, "burst offset")

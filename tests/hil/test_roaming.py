@@ -7,8 +7,8 @@ restore_radio fixture puts back the channel.
 
 The radio-only tests never transmit: roaming starts passive (set.roam_probe=passive), a search only listens. The
 bench test uses the wake probe (the radio transmits BS_Dwn_Act on each site it visits) and the SDR bench's modem as
-a second site (tools/bench/bench_repeater.py, which keys only when woken). The beacon tests have the bench repeater
-key an idle beacon (bench_repeater.py --beacon) and the radio only listens (the survey, dmr-roaming.md 4.8 - 4.10).
+a second site (a bench_repeater job, which keys only when woken). The beacon tests have the bench repeater
+key an idle beacon (a bench_repeater job with --beacon) and the radio only listens (the survey, dmr-roaming.md 4.8 - 4.10).
 The bench tests use the first duplex DMR channel receiving --roam-rx as the bench site. When the codeplug's sites
 transmit where the bench can't serve them, bench_sites() writes the TX frequencies over CPS for the test and puts the
 codeplug back after (--allow-codeplug-write): the bench site on --roam-tx, any other site the rig may not transmit on
@@ -32,7 +32,7 @@ Pass criteria:
 - test_roam_to_bench_repeater (rf, radio_tx, bench_service): the zone holds a site whose frequencies are the bench
   repeater's (--roam-rx / --roam-tx, color code --dmr-cc) and another site with no repeater on the air. Starting on
   the other site with the wake probe on and the threshold at its lowest (-125 dBm: the bench's level is not the test),
-  roam now: within 40 s the radio is on the bench site (roam.roams +1, roam.probes >= 1) and bench_repeater.py
+  roam now: within 40 s the radio is on the bench site (roam.roams +1, roam.probes >= 1) and the bench_repeater job
   reported a wakeup. On a timeout it prints the radio's visits and the bench repeater's output.
 - test_roam_survey_settings_round_trip: SETTING roam_beacon_s / roam_beacon_len_s / roam_survey (25-27) show in
   set.* within 1 s and are put back.
@@ -41,7 +41,7 @@ Pass criteria:
   radio sits on the bench site, survey synced, beacon --roam-beacon s / --roam-beacon-len s (both sides). Within 2
   intervals + 10 s roam.beacons >= 1 and roam.win_conf >= 1 (learned from its own site); within 2 more intervals
   roam.surveys +1 (a round in the window), roam.win_conf >= 2 after another interval; roam.searches, roam.roams,
-  roam.probes unchanged; the radio is back on the bench site after every round; bench_repeater.py saw no wakeup
+  roam.probes unchanged; the radio is back on the bench site after every round; the bench_repeater job saw no wakeup
   from the radio. Each other site's surv.<i> has an age (measured) and dBm 0 once missed twice.
 - test_roam_beacon_other_site (rf, bench_service; slow, about 5 min with a 20 s interval): the radio sits on a
   silent site of the same zone; the bench site beacons. Its own site never beacons, so after 2 intervals + the
@@ -418,7 +418,7 @@ def _roam_to_bench_repeater(roaming, sdr_bench, pytestconfig, rx, tx):
     print("roamed: " + " ".join(f"{k}={v[k]}" for k in sorted(v) if k.startswith("site.")) +
           f" probes={v['roam.probes']}")
     assert any("wakeup" in e for e in events), \
-        f"bench_repeater.py saw no wakeup: {out[-800:] if out else ''}"
+        f"the bench_repeater job saw no wakeup: {out[-800:] if out else ''}"
 
 
 @pytest.mark.feature("dmr_roaming")
@@ -465,12 +465,9 @@ def bench_beacon(sdr_bench, pytestconfig, rx, tx, every, length, seconds):
 def bench_events(p):
     """End the bench repeater (repeater_start) and return (its JSON events, its output)."""
     p.terminate()
-    if hasattr(p, "lines"):         # a bench board job or a shared bench's modem job: its lines as they came
-        if getattr(p, "reader", None) is not None:
-            p.reader.join(5)
-        out = "".join(p.lines)
-    else:
-        out, _ = p.communicate(timeout=10)
+    if getattr(p, "reader", None) is not None:
+        p.reader.join(5)
+    out = "".join(p.lines)              # the board job's lines as they came
     events = []
     for line in (out or "").splitlines():
         try:
@@ -515,7 +512,7 @@ def _roam_beacon_home(roaming, sdr_bench, pytestconfig):
     for k in ("roam.searches", "roam.roams", "roam.probes"):
         assert as_int(v[k]) == c0[k], f"{k} moved: {c0[k]} -> {v[k]}"
     assert not any("wakeup" in e for e in events), "the radio transmitted a wake-up (it only listens)"
-    assert any("beacon" in e for e in events), f"bench_repeater.py sent no beacon: {out[-600:] if out else ''}"
+    assert any("beacon" in e for e in events), f"the bench_repeater job sent no beacon: {out[-600:] if out else ''}"
     home = as_int(v["roam.site"])
     for i in range(as_int(v["roam.sites"])):
         if i != home:

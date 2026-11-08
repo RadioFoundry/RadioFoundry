@@ -772,7 +772,7 @@ def test_battery_save_wakes_for_signal(radio, sdr_bench, pytestconfig):
         seen, t_start = _bench_call_watch(radio, sdr_bench, pytestconfig)
     rx = [(t, v) for t, v in seen if v.get("state") == "rx"]
     assert rx, "the receiver never opened for the bench call"
-    # bench_tx.py needs about 2 s (port, tuning, settle) before its first burst: measure from the first open
+    # the bench_tx job needs about 2 s (port, tuning, settle) before its first burst: measure from the first open
     t_open = rx[0][0]
     asleep_during = [t - t_open for t, v in seen if t_open <= t <= rx[-1][0] and v.get("rx_sleeping") == "1"]
     before = [v.get("rx_sleeping") for t, v in seen if t < t_open]

@@ -4,7 +4,7 @@
 the radio's own alarm and emergency call go out on air.
 
 Opt-in RF like test_dmr_data.py. Bench-to-radio (rf + bench_service): the bench sends an emergency alarm CSBK
-(bench_tx.py csbk --opcode 27 --fid 10) or a voice call with the emergency service option (bench_tx.py voice
+(a bench_tx csbk job --opcode 27 --fid 10) or a voice call with the emergency service option (a bench_tx voice job
 --emergency) to the channel's talkgroup. Radio-to-bench (radio_tx + bench_service): the emergency key through the
 debug link (DMR_DATA op 7) while the bench modem listens. Pass criteria are the dmr_ext view section's em.* and
 data.emergency_* keys; what the bench heard is checked where its listen output carries it (CSBK info octets, the

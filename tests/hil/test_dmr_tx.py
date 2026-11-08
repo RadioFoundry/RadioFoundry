@@ -3,9 +3,9 @@
 """Radio DMR transmit checked off air by the SDR bench (opt-in: --allow-rf --allow-service-stop; the radio and the
 bench's receivers only, the bench never transmits here).
 
-The radio, on low power on the DMR test channel, keys for 3 s through the debug link's PTT. On the bench, a raw
-RTL-SDR capture (sdrmon.py capture, analyzed by sdrmon.py analyze) and the bench modem's DMR listener (bench_tx.py
-listen) run during the over. The checks are dmr_bench.py's case T1 (docs/testing/dmr-bench.md), on the radio's own
+The radio, on low power on the DMR test channel, keys for 3 s through the debug link's PTT. On the bench, the receive
+board's burst records with the keying envelope (dmr_watch_start waveform) and the bench modem's DMR listener (a bench_tx
+listen job) run during the over. The checks are dmr_bench.py's check_tx and check_modem_calls, on the radio's own
 transmission (from its first voice LC header, by source ID):
 
 - SDR: MS sync only; the channel's color code only; at least one voice LC header (3 expected); header and terminator
@@ -51,7 +51,7 @@ parameter statistics of what the bench modem heard (a quiet room, nobody talking
 
 test_dmr_tx_split_repeater (also --allow-codeplug-write and --split-tx-mhz): the test channel's TX frequency is set to
 --split-tx-mhz over CPS (backed up first, restored and verified afterwards), so the channel is a repeater pair: RX
---dmr-freq, TX --split-tx-mhz. The bench modem is a duplex repeater on that pair (bench_repeater.py, input
+--dmr-freq, TX --split-tx-mhz. The bench modem is a duplex repeater on that pair (a bench_repeater job, input
 --split-tx-mhz, output --dmr-freq), down at the key-up. A 4 s over: the radio sends its wake-up (BS_Dwn_Act, seen by
 the SDR on --split-tx-mhz) and listens; the repeater keys its outbound 0.6 s after the key-up, inside the first listen
 window; the radio must hear it on --dmr-freq and go on to voice: tx_voice reached, never tx_error no_repeater,
@@ -140,7 +140,7 @@ def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
         radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
         heard = sdr_bench.listen_result(lis)
         sdr_bench.dmr_watch_wait(watch)
-    sdr = sdr_bench.dmr_watch_result(watch)         # with the gateway back up, as dmr_bench.py does
+    sdr = sdr_bench.dmr_watch_result(watch)
     _, after = radio.counters()
     _report(_tx_checks(sdr, heard, own, target, private, cc, before, after, d.get("dmr.tx_alias", ""), pytestconfig,
                        _limits(radio)), sdr_bench, rdir)
@@ -152,7 +152,7 @@ def _limits(radio):
 
 
 def _tx_checks(sdr, heard, own, target, private, cc, before, after, alias, pytestconfig, limits=None):
-    """dmr_bench.py case T1's checks on one over from us (the module docstring): the SDR analysis, the bench modem's
+    """The dmr_bench checks on one over from us (the module docstring): the SDR analysis, the bench modem's
     calls, the radio's counters before and after the over; limits: the board's overrides. Returns the
     dmr_bench.Checks."""
     import dmr_bench
@@ -210,7 +210,7 @@ def _report(c, sdr_bench, rdir):
 @pytest.mark.bench_modem
 def test_dmr_gps_tx(radio, sdr_bench, pytestconfig):
     """Our ETSI GPS Info (FLCO 8) in the alias superframes: a fixed APRS position and "position in DMR calls" set over
-    the debug link, a 4 s over, the bench modem's listener decodes the GPS Info LC (bench_tx.py listen: the call's
+    the debug link, a 4 s over, the bench modem's listener decodes the GPS Info LC (a bench_tx listen job: the call's
     "gps"). The settings are put back afterwards."""
     feats = radio.features()
     if "DMR_GPS" not in feats or "APRS" not in feats:
@@ -435,8 +435,7 @@ def test_dmr_tx_split_repeater(radio, sdr_bench, pytestconfig, backup_dir):
             with sdr_bench.lease():
                 # The repeater answers the radio's wake-up: it keys its outbound (one long beacon) WAKE_ANSWER_S after
                 # the key-up, inside the radio's first listen window (see the docstring for why not on the BS_Dwn_Act)
-                # The captures first: starting them takes 6-8 s on the shared bench, longer than the beacon's delay, so
-                # started after the repeater the beacon was already on at the check below (SDR bench, 2026-10-18)
+                # The watches first, so the beacon isn't on already at the check below
                 cap = sdr_bench.dmr_watch_start(rdir, split, 22, cc)     # the radio's side: what it sent, where
                 cap_out = sdr_bench.dmr_watch_start(rdir, freq, 22, cc, name="cap1")   # the repeater's: slot timing
                 rpt = sdr_bench.repeater_start(split, freq, cc, seconds=30,
@@ -578,7 +577,7 @@ ENC_CASES = ((0x3, 0x1840),     # the default: Mic noise reduction on
 
 
 def ambe_param_stats(amb):
-    """What a DSD .amb file (bench_tx.py listen --ambe-out: ".amb", then per frame one error byte and the 49 parameter
+    """What a DSD .amb file (a bench_tx listen job, --ambe-out: ".amb", then per frame one error byte and the 49 parameter
     bits in 7 bytes) says about the frames: count, distinct parameter sets, repeats of the previous frame, and the
     mean number of parameter bits that change from one frame to the next. Reported only: the frames depend on the
     room."""
@@ -642,15 +641,11 @@ def test_dmr_tx_encode_options(radio, sdr_bench, pytestconfig, opts, word):
     for k in [r for r in heard if "call" in r][:1]:
         amb = next((f for f in k.get("files", []) if f.endswith(".amb")), None)
         stats = {}
-        if amb and sdr_bench.api:       # the board sent the file back into the run directory
+        if amb:       # the board sent the file back into the run directory
             local = os.path.join(rdir, os.path.basename(amb))
             if os.path.exists(local):
                 with open(local, "rb") as fh:
                     stats = ambe_param_stats(fh.read())
-        elif amb:
-            hexdump = sdr_bench.ssh(f"cd ~/{sdr_bench.dir} && {sdr_bench.py} -c \"import sys; "
-                                    f"print(open(sys.argv[1], 'rb').read().hex())\" {amb}", check=False)
-            stats = ambe_param_stats(bytes.fromhex(hexdump.strip() or ""))
         print(f"encode options {opts:#x} (flags {flags}): {k.get('ambe_frames')} frames heard, "
               f"{k.get('ambe_silence_frames')} silence, parameters {stats}")
     _report(c, sdr_bench, rdir)
