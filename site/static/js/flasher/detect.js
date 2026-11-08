@@ -14,7 +14,7 @@
 // ctx: {radio (radios.json entry), board (its flash-boards.json entry), fb (flash-boards.json), log(line)}. A probe that
 // sends anything that changes the radio's state (a restart) says so in its note.
 
-import { Link, probe as linkProbe } from "./link.js";
+import { Link, probe as linkProbe, RFOUNDRY_USB } from "./link.js";
 
 const PROBES = new Map();
 
@@ -119,6 +119,16 @@ export async function confirmVariant({ id, session, radio, board, fb, expect, im
 // ---------------------------------------------------------------------------------------------------------------
 // The USB ids the port enumerated with (board.toml variants usb_ids): the original firmware's USB device differs by
 // variant on some radios (another MCU, another USB stack). Nothing is sent, so it goes first
+
+// What a port chooser for detection lists: the original firmware's USB devices (board.toml variants usb_ids) and
+// RadioFoundry's. Not a bootloader's unless a variant names it, so the chooser needs a way to show every port
+export function portFilters(radio) {
+	const ids = (radio?.variants || []).flatMap((v) => v.usb_ids || []);
+	return [...new Set(ids)].map((id) => {
+		const [usbVendorId, usbProductId] = id.split(":").map((x) => parseInt(x, 16));
+		return { usbVendorId, usbProductId };
+	}).concat(RFOUNDRY_USB);
+}
 
 export const usbId = (info) => (info?.usbVendorId === undefined || info?.usbProductId === undefined ? null
 	: `${info.usbVendorId.toString(16).padStart(4, "0")}:${info.usbProductId.toString(16).padStart(4, "0")}`.toUpperCase());

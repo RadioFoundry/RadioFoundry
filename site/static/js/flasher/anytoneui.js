@@ -21,7 +21,7 @@ import * as diag from "../diag.js";
 import { AnytoneUpdate, AnytoneProgram, AnytoneError, BAUD, judge, variantOf, variantLabel, stockSet, sortSet, checkFits, findBootBlock,
 	installImage, splitImage, framesNeeded } from "./anytone.js";
 import { FakeAnytone, stockAnytone, SAMPLE_ANYTONE } from "./fakeanytone.js";
-import { confirmVariant } from "./detect.js";
+import { confirmVariant, portFilters } from "./detect.js";
 import { detectControl } from "./detectui.js";
 import { verdict, writable } from "./variant.js";
 import { PROBES as VARIANT_PROBES } from "./anytonedetect.js";
@@ -92,13 +92,16 @@ async function openPort() {
 
 // For the variant probes (detect.js): the port asked for once, opened again at each probe's rate
 function probeOpener() {
-	let port = null;
-	return async (baud) => {
+	let port = null, every = false;
+	const open = async (baud) => {
 		if (S().sim) return simRadio().stream;
 		if (!serialSupported()) throw new Error(t("flash.err.no_serial"));
-		port ||= await navigator.serial.requestPort();
+		port ||= await navigator.serial.requestPort(every ? {} : { filters: portFilters(S().radio) });
 		return SerialStream.open(port, baud || BAUD);
 	};
+	// the update mode's USB id isn't known (hardware-d578uv.md 1), so the filtered chooser may not list a radio in it
+	open.showAll = () => { every = true; port = null; };
+	return open;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -120,7 +123,8 @@ function variantChooser(onPick, detector) {
 // the steps until connect need the radio in its normal mode
 export function buildGate(redraw) {
 	const r = S().radio;
-	const detector = detectControl({ radio: r, board: board(), fb: ctx.fb(), ids: VARIANT_PROBES, open: probeOpener(), showBlocked: false,
+	const open = probeOpener();
+	const detector = detectControl({ radio: r, board: board(), fb: ctx.fb(), ids: VARIANT_PROBES, open, showAllPorts: open.showAll, showBlocked: false,
 		log: (l) => session().log.add(l), onFound: async (f) => {
 			S().atChosen = f.code;
 			S().variant = { version: f.version, code: f.code, via: f.via };
@@ -148,7 +152,8 @@ export function connectView() {
 	const box = h("div", { class: "flasher" });
 	const status = h("div");
 	// made once, so what it found stays shown when the step is drawn again
-	const detector = detectControl({ radio: S().radio, board: board(), fb: ctx.fb(), ids: VARIANT_PROBES, open: probeOpener(),
+	const open = probeOpener();
+	const detector = detectControl({ radio: S().radio, board: board(), fb: ctx.fb(), ids: VARIANT_PROBES, open, showAllPorts: open.showAll,
 		log: (l) => a.log.add(l), onFound: (f) => adopt(f),
 		nextHint: (f) => (f.keep ? null : "flash.detect.then_update") });
 	const draw = () => {
