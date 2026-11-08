@@ -159,5 +159,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "reboot: restarts the radio (needs --allow-reboot)")
     config.addinivalue_line("markers", "usb_switch: switches the USB personality (needs --allow-usb-switch)")
     config.addinivalue_line("markers", "manual: asks a person at the radio to do something (needs --manual and -s)")
+    config.addinivalue_line("markers", "by_ear: a manual test that asks whether the speaker plays a sound; without "
+                            "--manual the microphone (--microphone) listens instead")
     config.addinivalue_line("markers", "audio_smoke: the DMR audio smoke tests (test_dmr_audio_smoke.py), part of every "
                             "bench pass")

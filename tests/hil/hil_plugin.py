@@ -35,8 +35,10 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip_mark("opt_in", "writes the codeplug: run with --allow-codeplug-write"))
         elif "reboot" in item.keywords and not config.getoption("--allow-reboot"):
             item.add_marker(skip_mark("opt_in", "restarts the radio: run with --allow-reboot"))
-        elif "manual" in item.keywords and not config.getoption("--manual"):
-            item.add_marker(skip_mark("opt_in", "needs a person at the radio: run with --manual -s"))
+        elif "manual" in item.keywords and not config.getoption("--manual") and \
+                not ("by_ear" in item.keywords and config.getoption("--microphone")):
+            item.add_marker(skip_mark("opt_in", "needs a person at the radio: run with --manual -s" +
+                                      (", or --microphone to listen with it" if "by_ear" in item.keywords else "")))
 
 
 @pytest.hookimpl(wrapper=True)
