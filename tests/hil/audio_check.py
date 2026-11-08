@@ -6,9 +6,16 @@ A test plays a known sequence of tones and silences (a beep pattern, or a bench 
 speaker. check_tones() finds the sequence in the recording and measures each tone between the points where its
 amplitude rises and falls fastest (the direct sound's edges: a room's echo builds up and dies away slower), so a lost
 start or end shows as a short tone.
-It also asks that the plateau be flat (no step at the amplifier's start, no fade), that each silence be silent, and
+It also asks that the tone hold (no rise as an amplifier comes up, no dropout), that each silence be silent, and
 that nothing between or around the tones is a pop: broadband energy outside the tones' harmonics far above the
-recording's own floor. Pure Python and numpy, no radio: test_audio_check.py runs it on synthetic signals."""
+recording's own floor. Pure Python and numpy, no radio: test_audio_check.py runs it on synthetic signals.
+
+A microphone with its own processing (a headset's noise suppression) fades a steady tone by 20 dB or more after a
+few tens of ms and lets it back up at once, more so the quieter it hears it; a room swells and fades one too. Neither
+is the radio's: a fade is reported, not failed. What the radio does differs in kind: a lost block or a muted
+amplifier takes the level to the floor within a millisecond or two, an amplifier coming up late puts it above where
+the tone started, and a stream that stops early leaves only the room's echo, dying away, until the tone's time is up.
+A fade instead leaves the tone sounding until its end, where its direct sound stops at once (DIRECT_DB)."""
 import os
 import re
 import wave
@@ -20,8 +27,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 WIN_MS = 15.0           # tone level analysis window (Blackman: tones 300 Hz apart and 25 dB apart stay apart)
 HOP_MS = 1.0
-STEP_WIN_MS = 5.0       # the window steps on a plateau are measured with (at least three periods of the tone)
 POP_WIN_MS = 10.0       # pop analysis frames
+ABRUPT_MS = 3.0         # a change within this long is abrupt: a lost block or an amplifier, not a room or a microphone
+GONE_DB = 20.0          # a tone within this of the floor is gone: a dropout, not a microphone's fade
+# A sound that stops falls this far at once (its direct sound); what follows is the room's echo dying away, at a rate
+# that depends on the room and the microphone's place, not on the radio
+DIRECT_DB = 10.0
 HARMONICS = 6           # harmonics of each tone kept out of the pop measure (the speaker distorts)
 
 
@@ -73,6 +84,22 @@ def tone_level(x, fs, hz, win_ms=WIN_MS, hop_ms=HOP_MS):
     return db(np.concatenate([np.full(pad, amp[0]), amp]))
 
 
+def tone_envelope(x, fs, hz, hop_ms=HOP_MS):
+    """The amplitude of the hz component (dBFS) averaged over whole periods, at least 2 ms: fine enough in time to
+    show a few ms lost, where tone_level's window would smooth them over. Index i is centered at i * hop_ms."""
+    per = max(int(round(fs / hz)), 1)
+    span = per * max(1, int(np.ceil(0.002 * fs / per)))
+    z = x * np.exp(-2j * np.pi * hz * np.arange(len(x)) / fs)
+    c = np.concatenate([[0.0], np.cumsum(z)])
+    amp = 2 * np.abs((c[span:] - c[:-span]) / span)       # amp[k]: samples k .. k + span, centered at k + span / 2
+    hop = max(int(fs * hop_ms / 1000), 1)
+    k = np.arange(0, len(x), hop) - span // 2
+    out = np.full(len(k), amp[0] if len(amp) else 0.0)
+    ok = (k >= 0) & (k < len(amp))
+    out[ok] = amp[k[ok]]
+    return db(out)
+
+
 def residual_level(x, fs, freqs, win_ms=POP_WIN_MS):
     """Per frame (win_ms long, every win_ms / 2: a click on one frame's edge is in the middle of the next): the
     energy (dBFS rms) left once the bins near each tone's harmonics and below 150 Hz are taken out. A pop or a noise
@@ -104,7 +131,9 @@ class Tone:
     end_s: float = None
     plateau_db: float = None
     ripple_db: float = None     # max - min on the plateau
-    step_db: float = None       # the largest change on the plateau within a few ms
+    step_db: float = None       # the largest abrupt fall on the plateau (ABRUPT_MS)
+    rise_db: float = None       # the most it rises over where it started (an amplifier coming up)
+    fade_db: float = None       # a fall that left it sounding (a microphone's processing, the room), or None
 
     @property
     def got_ms(self):
@@ -129,13 +158,37 @@ class Result:
                 rows.append(f"  {t.hz} Hz {t.want_ms:.0f} ms: not found")
             else:
                 rows.append(f"  {t.hz} Hz {t.want_ms:.0f} ms: got {t.got_ms:.1f} ms at {t.start_s:.3f} s, "
-                            f"{t.plateau_db:.1f} dBFS, ripple {t.ripple_db:.1f} dB, step {t.step_db:.1f} dB")
+                            f"{t.plateau_db:.1f} dBFS, ripple {t.ripple_db:.1f} dB, step {t.step_db:.1f} dB, "
+                            f"rise {t.rise_db:.1f} dB" +
+                            (f", faded {t.fade_db:.0f} dB (the microphone or the room)" if t.fade_db else ""))
         for want, got, depth in self.gaps:
             rows.append(f"  gap {want:.0f} ms: got {got:.1f} ms, {depth:.0f} dB down")
         for t, over, ms in self.pops:
             rows.append(f"  pop at {t:.3f} s: {ms:.0f} ms, +{over:.0f} dB")
         rows += [f"  PROBLEM: {p}" for p in self.problems]
         return "\n".join(r for r in rows if r)
+
+
+def _past_fade(lv, d, e, near_a, e_hi, win_half, floor_db, gone_db=GONE_DB, hold_db=DIRECT_DB * 0.6, fade_max_db=35.0):
+    """(end, fade dB or None). e is the steepest fall after the tone's middle. When it comes well before the end asked
+    for, and the level after it holds (a tone still sounding: gone_db over the floor, at most fade_max_db under where
+    it was, hold_db over what follows) until
+    a fall of hold_db near the end asked for, that fall is the end: the earlier one was a fade (a microphone's
+    processing). A stream that stopped at e leaves only its echo, dying away with no such fall."""
+    a = max(near_a, int(e + 2 * win_half))
+    if e_hi <= a + 1:
+        return e, None
+    e2 = a + int(np.argmin(d[a:e_hi])) + 0.5
+    k = int(win_half + 3)
+    before, after = int(e2) - k, int(e2) + k + 1
+    held = lv[int(e + win_half + 2):before]
+    if before < 0 or after >= len(lv) or len(held) < 3:
+        return e, None
+    hold = float(np.median(held))
+    was = float(lv[max(int(e) - k, 0)])
+    if hold < floor_db + gone_db or hold < was - fade_max_db or lv[before] - lv[after] < hold_db or hold - lv[after] < hold_db:
+        return e, None
+    return e2, was - hold
 
 
 def _crossing_up(lv, a, b, thr, hold=1):
@@ -153,15 +206,15 @@ def _crossing_up(lv, a, b, thr, hold=1):
 
 def check_tones(x, fs, segs, search=None, dur_tol_ms=10.0, ripple_db=12.0, step_db=8.0, gap_db=8.0, pop_db=20.0,
                 min_snr_db=30.0, edge_ms=4.0, guard_ms=(150.0, 300.0), long_tol_ms=40.0, rel_db=10.0, ring_ms=60.0,
-                edge_db=6.0):
+                edge_db=6.0, gone_db=GONE_DB):
     """Find segs ([(hz, ms)], hz 0 a silence) in x and check it. search (start_s, end_s) limits where the first tone
     may start. Problems:
     - a tone shorter than asked by more than dur_tol_ms (a lost start or end), or longer by more than long_tol_ms
       (a speaker and a room ring on after a tone, so a recording's tone is often a little long);
-    - its level moving by more than ripple_db over the length asked for (a room swells and fades a tone by several
-      dB as its echoes add up), by more than step_db within a few ms (a step as an amplifier comes up,
-      a dropout; measured in a short window), or differing by ripple_db from another tone at its frequency (edge_ms plus half a window in from each
-      edge, so the fades don't count): a step as the amplifier comes up, a fade;
+    - over the length asked for (edge_ms plus half a window in from each edge): its level rising more than step_db
+      over where it started (an amplifier coming up), or falling by more than step_db within ABRUPT_MS to within
+      gone_db of the floor (a dropout: a lost block, a muted amplifier); or its level differing by ripple_db from
+      another tone at its frequency. A fall that leaves the tone sounding is a fade (the module's notes): reported;
     - a silence longer than asked by dur_tol_ms, shorter by long_tol_ms (the ring), or less than gap_db below its
       louder neighbor;
     - a pop or noise burst from guard_ms[0] before the first tone to guard_ms[1] after the last: residual_level more
@@ -247,6 +300,8 @@ def check_tones(x, fs, segs, search=None, dur_tol_ms=10.0, ripple_db=12.0, step_
             e_hi = int(min(s + span + (long_tol_ms + WIN_MS / 2) / HOP_MS, n - 2))
             if e_hi > e_lo + 1:
                 e = e_lo + int(np.argmin(d[e_lo:e_hi])) + 0.5
+                e, t.fade_db = _past_fade(lv, d, e, int(s + span - (dur_tol_ms + WIN_MS / 2) / HOP_MS), e_hi, win_half,
+                                          r.floor_db, gone_db)
         if s is None or e is None:
             r.problems.append(f"{hz} Hz {ms} ms: no clean rise and fall around {expect * hop:.3f} s")
             r.tones.append(t)
@@ -257,23 +312,31 @@ def check_tones(x, fs, segs, search=None, dur_tol_ms=10.0, ripple_db=12.0, step_
         inner = int(edge_ms / HOP_MS + win_half)
         pa, pb = int(s) + inner, int(min(e, s + span)) - inner     # the length asked for: a ring after isn't the plateau
         t.ripple_db = float(lv[pa:pb].max() - lv[pa:pb].min()) if pb > pa + 2 else 0.0
-        # steps by a short window (no other tone is near on the plateau): a room swells a tone slowly, an amplifier
-        # coming up or a lost block changes it at once
-        sw = max(STEP_WIN_MS, 3000.0 / hz)
-        short = tone_level(x, fs, hz, win_ms=sw)
-        w = int(sw / HOP_MS)
-        qa, qb = pa, min(pb, len(short))
-        t.step_db = float(np.abs(short[qa + w:qb] - short[qa:qb - w]).max()) if qb > qa + w else 0.0
+        # an amplifier coming up late leaves the tone's start low; a room or a microphone only fades it from there
+        early = float(np.median(lv[pa:pa + int(10 / HOP_MS)])) if pb > pa + int(10 / HOP_MS) else plateau
+        t.rise_db = max(float(lv[pa:pb].max()) - early, 0.0) if pb > pa + 2 else 0.0
+        # a dropout by the fine envelope: an abrupt fall to near the floor (no other tone is near on the plateau)
+        fine = tone_envelope(x, fs, hz)
+        f_floor = float(np.percentile(fine[a:b], 10))
+        w = int(ABRUPT_MS / HOP_MS)
+        qa, qb = pa, min(pb, len(fine))
+        t.step_db, gone = 0.0, False
+        if qb > qa + w:
+            seg = fine[qa:qb]
+            low = np.array([seg[i + 1:i + w + 1].min() for i in range(len(seg) - w)])
+            fall = seg[:len(low)] - low
+            t.step_db = float(fall.max())
+            gone = bool(((fall > step_db) & (low < f_floor + gone_db)).any())
         if t.got_ms < ms - dur_tol_ms:
             r.problems.append(f"{hz} Hz: {t.got_ms:.1f} ms, want {ms:.0f} ms (cut by {ms - t.got_ms:.1f} ms)")
         elif t.got_ms > ms + long_tol_ms:
             r.problems.append(f"{hz} Hz: {t.got_ms:.1f} ms, want {ms:.0f} ms ({t.got_ms - ms:.1f} ms long)")
-        if t.ripple_db > ripple_db:
-            r.problems.append(f"{hz} Hz {ms} ms: the level moves by {t.ripple_db:.1f} dB on the plateau "
-                              f"(at most {ripple_db:.0f})")
-        if t.step_db > step_db:
-            r.problems.append(f"{hz} Hz {ms} ms: a step or dropout of {t.step_db:.1f} dB within {sw:.0f} ms "
-                              f"(at most {step_db:.0f})")
+        if t.rise_db > step_db:
+            r.problems.append(f"{hz} Hz {ms} ms: a step: it rises {t.rise_db:.1f} dB over where it started (at most "
+                              f"{step_db:.0f}): an amplifier coming up")
+        if gone:
+            r.problems.append(f"{hz} Hz {ms} ms: a dropout: {t.step_db:.1f} dB down within {ABRUPT_MS:.0f} ms, to "
+                              f"within {gone_db:.0f} dB of the floor")
         if prev and prev[0] == "gap":
             _, gms, _ = prev
             before = r.tones[-1] if r.tones else None
@@ -341,10 +404,6 @@ def check_tones(x, fs, segs, search=None, dur_tol_ms=10.0, ripple_db=12.0, step_
             r.problems.append(f"a pop or noise burst at {t0:.3f} s, {ms:.0f} ms, {o:.0f} dB over the floor")
     return r
 
-
-# A sound that stops falls this far at once (its direct sound); what follows is the room's echo dying away, at a rate
-# that depends on the room and the microphone's place, not on the radio
-DIRECT_DB = 10.0
 
 
 def burst_ms(x, fs, freqs, t0_s, ms, drop_db=DIRECT_DB):

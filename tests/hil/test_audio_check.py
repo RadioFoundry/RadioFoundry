@@ -2,7 +2,7 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """The speaker checks' analysis (audio_check.py) on synthetic recordings, no radio: tools/ci.sh runs it when numpy
 is installed. Each fault the speaker tests look for is made on purpose and must be found; the clean signal, with
-a room's echo and the fades the beep player gives, must pass."""
+a room's echo, the fades the beep player gives and a microphone's noise suppression, must pass."""
 from rfoundry_hil import skip
 
 try:
@@ -91,6 +91,47 @@ def test_dropout():
     x, t0 = render(segs)
     a = int((t0 + 0.15) * FS)
     x[a:a + int(0.004 * FS)] = 0                    # 4 ms of the stream lost
+    r = check(x, segs)
+    assert any("dropout" in p for p in r.problems), r.problems
+
+
+def _mic_fade(x, a, n, after_ms=65.0, over_ms=35.0, depth_db=25.0):
+    """A headset's noise suppression on a steady tone from sample a, n long: full for after_ms, then down depth_db
+    over over_ms, smoothly, until the tone stops"""
+    g = np.ones(n)
+    k0, k1 = int(after_ms * FS / 1000), int((after_ms + over_ms) * FS / 1000)
+    g[k0:k1] = 10 ** (-depth_db / 20 * (0.5 - 0.5 * np.cos(np.pi * np.arange(k1 - k0) / (k1 - k0))))
+    g[k1:] = 10 ** (-depth_db / 20)
+    x[a:a + n] *= g
+
+
+def test_microphone_fade_passes():
+    segs = [(600, 150), (0, 80), (600, 150), (0, 80), (600, 150)]
+    x, t0 = render(segs, echo=0.3)
+    for k in range(3):
+        _mic_fade(x, int((t0 + k * 0.23) * FS), int(0.15 * FS))
+    r = check(x, segs)
+    assert not r.problems, r.problems
+    assert all(abs(t.got_ms - 150) < 6 and t.fade_db > 15 for t in r.tones), r.report()
+
+
+def test_microphone_fade_then_cut():
+    segs = [(600, 200)]
+    x, t0 = render(segs)
+    a = int(t0 * FS)
+    _mic_fade(x, a, int(0.2 * FS))
+    x[a + int(0.16 * FS):a + int(0.2 * FS)] = 0       # faded, and the stream stopped 40 ms early
+    r = check(x, segs)
+    # 40 ms of silence at either end fit the sequence equally well: the fault shows at the start or the end
+    assert r.problems, r.report()
+
+
+def test_microphone_fade_then_dropout():
+    segs = [(600, 300)]
+    x, t0 = render(segs)
+    a = int(t0 * FS)
+    _mic_fade(x, a, int(0.3 * FS))
+    x[a + int(0.2 * FS):a + int(0.204 * FS)] = 0      # 4 ms lost after the fade
     r = check(x, segs)
     assert any("dropout" in p for p in r.problems), r.problems
 
