@@ -431,3 +431,16 @@ def reported_features():
 	block = re.search(r'const char build_features\[\] =(.*?);', src, re.S)
 	# switches only: a derived name in the list (DMR_DATA_CORE) is in no release's features, so it would match none
 	return sorted(set(re.findall(r'"([A-Z0-9_]+),?"', block.group(1))) & set(feature_names())) if block else []
+
+
+def can_flash(fl, flash):
+	"""Whether the web flasher can install this radio: fl its radios.json flash entry, flash flash-boards.json. Each
+	backend needs what its page runs on (backends.js available)."""
+	board = flash["boards"].get(fl["board"], {})
+	if fl["backend"] == "anyroad-dfu":
+		return bool(board.get("key_sha256"))
+	if fl["backend"] == "c7000-stub":
+		return fl["board"] in flash["c7000"]["boards"]
+	if fl["backend"] == "anytone-update":
+		return bool(board.get("anytone_models"))
+	return False
