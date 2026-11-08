@@ -152,15 +152,31 @@ The serial microphone, as seen on a radio with the keypad microphone:
 | Control | Where | Code |
 | --- | --- | --- |
 | PTT | left side | frame byte 1 |
-| A/B (manual: "A/B SUBPTT") | left side, the small button above PTT | 0x0D |
+| A/B (manual: "A/B SUBPTT") | front, left, beside PTT | 0x0D |
 | Up, Down | top | 0x10, 0x11 |
 | `0`, `1`-`9` | keypad | 0x01, 0x02-0x0A |
 | `*`, `#` | keypad | 0x0B, 0x0C |
-| A, B, C, D (printed ZONE, ZONE, EXIT, MENU) | keypad, bottom row | 0x1A-0x1D (the firmware's PA-PD) |
-| Key Lock | right side, slide switch | no frame; the keypad sends in both positions |
-| A/B TX/RX and main channel lights | top | driven from the radio (status frame, below) |
+| A, B, C, D (printed ZONE up, ZONE down, EXIT, MENU; some microphones print MENU, ZONE up, ZONE down, EXIT) | keypad, bottom row | 0x1A-0x1D (the firmware's PA-PD) |
+| Key Lock (manual: for the top Up and Down keys) | right side, slide switch | no frame; the keypad sends in both positions |
+| R/T A and B lights (each side's TX and RX) | front, top right | driven from the radio (status frame, below) |
+| MAIN A and B lights (the main channel) | front, left, below A/B | driven from the radio (status frame, below) |
 
 The stock firmware also names codes 0x0E and 0x0F (menu, exit); the keypad microphone doesn't send them.
+
+The microphone connector is an RJ-45 jack on the front (the manufacturer's manual; pin 1 on the left, seen from the
+front with the latch down):
+
+| Pin | Wire | Signal |
+| --- | --- | --- |
+| 1 | red | URX |
+| 2 | brown | 5 V |
+| 3 | yellow | UTX |
+| 4 | green | speaker + |
+| 5 | black | microphone ground |
+| 6 | white | microphone |
+| 7 | blue | speaker - |
+| 8 | gray | ground |
+
 
 Its frames, at 115200 8N1:
 

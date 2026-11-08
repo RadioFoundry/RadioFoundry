@@ -16,7 +16,6 @@ and what has been checked on it.
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
 | [AnyTone AT-D578UV](#anytone-at-d578uv) | AnyTone AT-D578UV PRO, AnyTone AT-D578UV PLUS | FM, DMR voice, text messages and positions, dual watch, GPS and the flash stub work on the GD32F303 radios. Open: air band AM on a radio with the KTMicro receiver. The Artery radios can't be installed yet. |
-| [AnyTone AT-D578UV (Artery)](#anytone-at-d578uv-artery) | AnyTone AT-D578UV PRO, AnyTone AT-D578UV PLUS | The GD32 builds' code on the Artery AT32F435, written from an analysis of the manufacturer's firmware; nothing has run on a radio yet, so the installers refuse it. Open: every function on the radio, DMR. |
 <!-- end generated -->
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
@@ -680,10 +679,18 @@ the `d578uva` image instead. The `rfoundry` route has installed on a radio; the 
 
 ### AT-D578UV keys
 
-The front keys are read, but which printed key sends which code isn't known yet. The menus use four of them as
-**Up**, **Down**, **OK** and **Back**; the others carry **A/B**, **Monitor** and jobs you can set in **Settings > Keys**,
-until a radio shows where they are. The front knob steps the channel, and in a list moves the focus; pushing it is
-**OK**.
+| Front key | Press | Hold |
+|---|---|---|
+| **P1**, **P3** | **Up**, **Down** | repeat |
+| **P2** | **#** | a job you can set |
+| **P4** | **A/B** | a job you can set |
+| **P5** | **Monitor** | **Monitor** |
+| **P6** | a job you can set | a job you can set |
+| **MENU** | **OK** | **\*** |
+| **EXIT** | **Back** | **Back** |
+
+**Settings > Keys** sets the jobs. The front knob steps the channel, and in a list moves the focus; pushing it is
+**OK**, and holding it does a job you can set. The two knobs on the left set the volume of channel A (top) and B.
 
 PTT is on the hand microphone. Both kinds work without a setting: the radio tells the keypad microphone from the plain
 one by the messages it sends. (The original firmware's **Hand Type** setting chooses between them.) The keypad
@@ -695,12 +702,12 @@ microphone works on a radio; the plain one is untested.
 | **Up**, **Down** (both microphones) | as the front **Up** and **Down** |
 | **0**-**9** (keypad microphone) | digits |
 | **\*** / **#** | **\*** / **#**, and **Down** / **Up** in lists |
-| **A/B** (the small button above **PTT**) | **A/B** |
+| **SUBPTT A/B** (beside **PTT**) | **A/B** |
 | **A**, **B** (ZONE) | next zone, previous zone |
 | **C** (EXIT) | **Back** |
 | **D** (MENU) | **OK** |
 
-The **Key Lock** switch on the side has no effect yet, and the microphone's lights stay off.
+The **Key Lock** switch on the side has no effect yet, and the microphone's **R/T** and **MAIN** lights stay off.
 
 A keypad microphone unplugged while the radio is on stops its PTT within 3 seconds.
 

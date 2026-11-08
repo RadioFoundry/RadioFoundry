@@ -154,6 +154,9 @@ BOARD_SCHEMA = {
     # the board's page. name is one of also;
     # also lists the radios in that body (each one of the board's also too)
     "looks": _opt(("list", {"id": _req(str), "name": _req(str), "also": _opt(STR_LIST)})),
+    # this board is the image of one hardware variant of another board's radio: one radio to the reader, so only that
+    # board is listed (the site, the README, the manual's index)
+    "variant_of": _opt(str),
     "debuglink_aliases": _opt(STR_LIST),
     "docs": _req({"hardware": _req(str), "codec": _opt(str), "install": _opt(str), "bringup": _opt(str)}),
     # unconfirmed: a hardware switch (tests/hil/features.toml hardware) that is neither built nor in
@@ -1084,6 +1087,10 @@ def variant_problems(bid, d, boards, bad):
         bad("hardware.variants: a supported board needs a supported variant that runs its image (runs.board = %r)" % bid)
     if not any(v.get("runs", {}).get("board") == bid for v in vs):
         bad("hardware.variants: none runs this board's image (runs.board = %r)" % bid)
+    of = d.get("variant_of")
+    if of and (of not in boards or not any(v.get("runs", {}).get("board") == bid
+                                           for v in boards[of].data["hardware"].get("variants", []))):
+        bad("variant_of: %r is no board with a variant that runs this board's image" % of)
     for v in vs:
         runs = v.get("runs")
         if "blocked" in v and not runs:
@@ -1466,6 +1473,8 @@ def site_view(boards, root=ROOT):
     the keys the pages' scripts use (site/data/radios.json)."""
     out = []
     for bid, b in sorted(boards.items(), key=lambda kv: kv[1].data["order"]):
+        if b.data.get("variant_of"):
+            continue
         d, fl, hw = b.data, b.data["flash"], b.data["hardware"]
         stub = fl.get("stub") or {}
         flash = {"backend": b.family["web"], "board": bid, "family": fl["family"], "link": b.link,
