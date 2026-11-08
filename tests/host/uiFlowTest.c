@@ -1370,7 +1370,12 @@ static void volume_bar_checks(void)
 			int pct = (int)((seed >> 8) % 101u), wait = (int)((seed >> 20) % 5u) * 1000;
 			if ((seed >> 4) % 3u == 0)
 				pct = level;		// the same level again
-			n += (size_t)snprintf(script + n, sizeof script - n, " knob:%d wait:%d", pct, wait);
+			int w = snprintf(script + n, sizeof script - n, " knob:%d wait:%d", pct, wait);
+			if (w < 0 || (size_t)w >= sizeof script - n) {
+				script[n] = 0;	// the buffer is full: drop the cut step, the steps so far make the case
+				break;
+			}
+			n += (size_t)w;
 			since = pct != level ? wait : since + wait;
 			level = pct;
 		}

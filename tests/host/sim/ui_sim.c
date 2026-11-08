@@ -2489,6 +2489,10 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "hints") == 0 && arg != NULL) {	// Settings > Display > Hint row
 		bool on = strcmp(arg, "on") == 0;
+		if (!on && strcmp(arg, "off") != 0) {
+			snprintf(err, len, "hints: expected on or off, got %s", arg);
+			return false;
+		}
 		ui_svc_setting_set(UI_SET_HINTS, on);
 		ui_apply_setting(UI_SET_HINTS, on);
 		advance(200);
