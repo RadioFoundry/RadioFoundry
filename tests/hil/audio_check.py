@@ -376,8 +376,8 @@ def sweep_spec(root=ROOT):
 class Sweep:
     start_s: float = None           # where the sweep starts in the recording
     frames: int = 0                 # analysis frames inside it
-    broken: int = 0                 # of those, frames with the sweep jumping (energy off its frequency)
-    off_db: float = None            # median energy off the sweep's frequency and harmonics, relative to it
+    broken: int = 0                 # of those, frames with the sweep jumping (energy just above its frequency)
+    off_db: float = None            # median energy 150-600 Hz above the sweep (harmonics excluded), relative to it
     response: list = field(default_factory=list)    # (Hz, dB relative to the loudest band): the speaker as heard
     snr_db: float = None
     problems: list = field(default_factory=list)
@@ -387,18 +387,19 @@ class Sweep:
         if self.start_s is None:
             return "  sweep not found\n" + "\n".join(f"  PROBLEM: {p}" for p in self.problems)
         rows = [f"sweep at {self.start_s:.3f} s, SNR {self.snr_db:.0f} dB; {self.broken}/{self.frames} frames broken, "
-                f"median off-sweep energy {self.off_db:.1f} dB",
+                f"median energy above the sweep {self.off_db:.1f} dB",
                 "  response: " + " ".join(f"{hz:.0f}:{d:+.0f}" for hz, d in self.response)]
         rows += [f"  PROBLEM: {p}" for p in self.problems]
         return "\n".join(rows)
 
 
-def check_sweep(x, fs, lo, hi, ms, off_db=-25.0, max_broken=0.05, min_snr_db=30.0):
+def check_sweep(x, fs, lo, hi, ms, off_db=-30.0, max_broken=0.05, min_snr_db=30.0):
     """The speaker test's sweep (BEEP_SWEEP), lo to hi Hz over ms, in a recording: where it is, the speaker's response
     along it, and whether it plays whole. A sweep played whole has nearly all its energy at its frequency and the
     speaker's harmonics of it. One whose audio jumps (samples lost, repeated or played out of order) spreads energy
-    across the band at every jump: a frame counts as broken when the energy off the sweep is within off_db of the
-    sweep's. More than max_broken of the frames broken is a problem."""
+    on both sides of it at every jump. The room can't fake that above the sweep: its echoes arrive at the pitch the
+    sweep had a moment ago, below it. So a frame counts as broken when the energy 150-600 Hz above the sweep (its
+    harmonics excluded) is within off_db of the sweep's. More than max_broken of the frames broken is a problem."""
     r = Sweep()
     n = 1024 if fs > 12000 else 512
     hop = n // 4
@@ -429,21 +430,20 @@ def check_sweep(x, fs, lo, hi, ms, off_db=-25.0, max_broken=0.05, min_snr_db=30.
         f0 = lo + rate * (t[i] - r.start_s)
         if f0 < lo + 50 or f0 > hi - 50 or t[i] - n / 2 / fs < r.start_s:
             continue
-        on = np.zeros(len(fr), bool)
-        keep = np.zeros(len(fr), bool)
-        for h in range(1, HARMONICS + 1):
-            near = np.abs(fr - h * f0) < max(120.0, 3 * fs / n)
-            keep |= near
-            on |= near if h == 1 else False
-        off = ~keep & (fr > 300) & (fr < min(4000.0, fs / 2))
+        width = max(120.0, 3 * fs / n)
+        on = np.abs(fr - f0) < width
         e_on = frames[i][on].sum()
-        ratios.append(10 * np.log10(max(frames[i][off].sum(), 1e-30) / max(e_on, 1e-30)))
         resp.append((f0, e_on))
+        if f0 + 600 > min(4000.0, fs / 2):
+            continue        # nothing above it left in the band to look at
+        above = (fr > f0 + 150) & (fr < f0 + 600)
+        for h in range(2, HARMONICS + 1):
+            above &= np.abs(fr - h * f0) >= width
+        ratios.append((e_on, 10 * np.log10(max(frames[i][above].sum(), 1e-30) / max(e_on, 1e-30))))
     # Only where the speaker plays the sweep within 25 dB of its loudest: below that (a small speaker's low end) the
     # room's floor alone is close to the sweep
-    e = np.array([v for f, v in resp])
-    used = e > e.max() * 10 ** -2.5
-    ratios = np.array(ratios)[used]
+    e_max = max(v for f, v in resp)
+    ratios = np.array([d for v, d in ratios if v > e_max * 10 ** -2.5])
     r.frames = len(ratios)
     r.broken = int((ratios > off_db).sum())
     r.off_db = float(np.median(ratios))
@@ -457,7 +457,8 @@ def check_sweep(x, fs, lo, hi, ms, off_db=-25.0, max_broken=0.05, min_snr_db=30.
     r.response = [(c, lv - top) for c, lv in zip(centers, levels)]
     # The radio plays an 8 kHz stream: above its band is only the codec's images, a few percent of the energy. Much
     # more is the capture's fault (such a recording also falls below the sweep's lowest pitch), not the radio's
-    above = frames[:, fr > 4300].sum() / max(frames[:, (fr > 100) & (fr < 4000)].sum(), 1e-30)
+    e_hi = frames[:, fr > 4300].sum()
+    above = e_hi / max(e_hi + frames[:, (fr > 100) & (fr < 4000)].sum(), 1e-30)    # a share of the energy
     if fs > 9000 and above > 0.25:
         r.problems.append(f"{100 * above:.0f} % of the energy is above 4.3 kHz, which the radio's 8 kHz audio can't "
                           "make: the recording is broken (microphone capture), record again")
@@ -465,7 +466,7 @@ def check_sweep(x, fs, lo, hi, ms, off_db=-25.0, max_broken=0.05, min_snr_db=30.
         r.quiet = True
         r.problems.append(f"the sweep is only {r.snr_db:.0f} dB over the floor (want {min_snr_db:.0f})")
     elif r.broken > max_broken * r.frames:
-        r.problems.append(f"the sweep breaks up: {r.broken} of {r.frames} frames have energy off its frequency within "
+        r.problems.append(f"the sweep breaks up: {r.broken} of {r.frames} frames have energy just above its frequency within "
                           f"{-off_db:.0f} dB of it (audio jumping: samples lost, repeated or out of order)")
     return r
 

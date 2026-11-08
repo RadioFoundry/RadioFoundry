@@ -376,11 +376,12 @@ direct sound's, since a room's echo builds up and dies away slower. Problems:
 
 `audio_check.check_sweep` judges the sweep. A sweep played whole has its energy at its own frequency and the speaker's
 harmonics of it; audio that jumps on its way to the speaker (samples lost, repeated or out of order) spreads energy
-across the band at every jump. A frame counts as broken when the energy off the sweep (300 Hz to 4 kHz, harmonics
-excluded) is within 25 dB of the sweep's, counted only where the speaker plays the sweep within 25 dB of its loudest.
-More than 5 % of the frames broken fails. A whole sweep measured about 35 dB down, a broken one 5-15 dB. A
-recording with more than a quarter of its energy above 4.3 kHz, which the radio's 8 kHz audio can't make, is reported
-as a capture fault. Steady tones can miss what the sweep finds: a jump every 4 ms makes no step at 250 Hz multiples.
+to both sides of it at every jump. The room's echoes arrive at the pitch the sweep had a moment ago, below it, so the
+check looks above: a frame counts as broken when the energy 150-600 Hz above the sweep (harmonics excluded) is within
+30 dB of the sweep's, counted only where the speaker plays the sweep within 25 dB of its loudest. More than 5 % of
+the frames broken fails. A whole sweep measured 39-55 dB down, with the microphone close or farther away; a broken
+one 5-33 dB. A recording with more than a quarter of its energy above 4.3 kHz, which the radio's 8 kHz audio can't
+make, is reported as a capture fault. Steady tones can miss what the sweep finds: a jump every 4 ms makes no step at 250 Hz multiples.
 
 The recordings stay in pytest's temporary directory (the test prints each path). By hand:
 `python3 tests/hil/audio_check.py FILE.wav BEEP` (a beep name, `sweep`, or `HZ:MS,...` with `0:MS` a silence). Many

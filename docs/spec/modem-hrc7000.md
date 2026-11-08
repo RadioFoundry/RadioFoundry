@@ -864,8 +864,8 @@ one chunk early or late: the audio jumps at every 4 ms boundary, a phase step of
 limited to the 4 kHz band. It lasts until a later push happens to line the halves up again. Whether a push fell there
 depended on how the audio task's 2 ms poll lined up with the modem's 4 ms, so the fault came and went for seconds at a
 time and between beeps. The `un` field stayed 0 and the chunks went in at exactly 8 kHz: nothing was lost, only
-reordered. On a swept tone, broken stretches had the energy off the tone's frequency within 5-15 dB of the tone;
-whole ones 35 dB below it (measured, `test_speaker_sweep`). Traces of the broken stretches showed pushes that found
+reordered. On a swept tone, broken stretches had the energy just above the tone's frequency 5-25 dB below the
+tone; whole ones 39-55 dB below it (measured, `test_speaker_sweep`). Traces of the broken stretches showed pushes that found
 b31 set on entry and clear microseconds later, then wrote at once; in clean ones, almost none.
 
 `platform/hrc7000/prompt_fifo.h` therefore waits 200 µs after it sees b31 clear before writing (twice the shortest wait
