@@ -441,20 +441,12 @@ msgid "No match: Back deletes a key"
 msgstr "Nessun risultato: Indietro cancella"
 
 #: core/ui/ui_app.c
-msgid "Emergency: not in this build"
-msgstr "Emergenza: non in questa build"
-
-#: core/ui/ui_app.c
 msgid "Emergency needs a DMR channel and ID"
 msgstr "Emergenza richiede canale DMR e ID"
 
 #: core/ui/ui_app.c
-msgid "EMERGENCY sent: hold again to cancel"
-msgstr "EMERGENZA inviata: tieni per annullare"
-
-#: core/ui/ui_app.c
-msgid "Emergency canceled"
-msgstr "Emergenza annullata"
+msgid "Emergency: not in this build"
+msgstr "Emergenza: non in questa build"
 
 #: core/ui/ui_app.c
 msgid "Call back: DMR only"
@@ -2877,6 +2869,30 @@ msgid "Up/Down on Home"
 msgstr "Su/Giù in Home"
 
 #: core/ui/ui_menus.c
+msgid "Beep+vibrate"
+msgstr "Tono+vibrazione"
+
+#: core/ui/ui_menus.c
+msgid "Silent"
+msgstr "Silenzioso"
+
+#: core/ui/ui_menus.c
+msgid "Hold"
+msgstr "Pressione"
+
+#: core/ui/ui_menus.c
+msgid "Emergency key"
+msgstr "Tasto emergenza"
+
+#: core/ui/ui_menus.c
+msgid "Alert"
+msgstr "Avviso"
+
+#: core/ui/ui_menus.c
+msgid "Open mic"
+msgstr "Microfono aperto"
+
+#: core/ui/ui_menus.c
 msgid "DMR ID and name"
 msgstr "ID DMR e nome"
 
@@ -3519,6 +3535,38 @@ msgstr "EMERGENZA"
 #: core/ui/ui_screens.c
 msgid "OK acknowledge  Back hide"
 msgstr "OK conferma  Indietro nascondi"
+
+#: core/ui/ui_screens.c
+msgid "Emergency sent"
+msgstr "Emergenza inviata"
+
+#: core/ui/ui_screens.c
+msgid "Emergency canceled"
+msgstr "Emergenza annullata"
+
+#: core/ui/ui_screens.c
+msgid "Hold to cancel"
+msgstr "Tieni: annulla"
+
+#: core/ui/ui_screens.c
+msgid "Hold for emergency"
+msgstr "Tieni: emergenza"
+
+#: core/ui/ui_screens.c
+msgid "Alarm to "
+msgstr "Allarme a "
+
+#: core/ui/ui_screens.c
+msgid "Call to "
+msgstr "Chiamata a "
+
+#: core/ui/ui_screens.c
+msgid "Hold again to cancel"
+msgstr "Tieni per annullare"
+
+#: core/ui/ui_screens.c
+msgid "Let go to stop"
+msgstr "Rilascia per fermare"
 
 #: core/ui/ui_screens.c
 msgid "Muted"

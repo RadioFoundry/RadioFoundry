@@ -74,6 +74,7 @@ WEAK bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out) { (void)i; (void)out; ret
 WEAK bool ui_svc_emergency(bool on) { (void)on; return false; }
 WEAK void ui_svc_emergency_dismiss(void) { }
 WEAK bool ui_svc_emergency_active(void) { return false; }
+WEAK bool ui_svc_emergency_target(uint32_t *id, bool *private_call) { *id = 0; *private_call = false; return true; }
 WEAK bool ui_svc_factory_reset(void) { return false; }
 WEAK bool ui_svc_codeplug_answer(uint8_t answer) { (void)answer; return false; }
 
@@ -107,6 +108,7 @@ static int32_t settings[UI_SET_COUNT] = {
 	[UI_SET_VIBRATE] = 1, [UI_SET_VOLUME] = RADIO_VOLUME_DEFAULT, [UI_SET_DUAL_DELAY_MS] = RADIO_DUAL_DELAY_MS,
 	[UI_SET_BCAST_STEP] = 200,
 	[UI_SET_NOISE_REDUCTION] = 1,
+	[UI_SET_EM_HOLD_S] = 3, [UI_SET_EM_KEY] = 1, [UI_SET_EM_HOT_MIC_S] = 10,	// dmr_emergency.h's default
 };
 // (ui_svc_storage.c keeps the ones settings_t has fields for: these are the defaults of the rest, and the UI's
 // stand-ins in a build without the store)

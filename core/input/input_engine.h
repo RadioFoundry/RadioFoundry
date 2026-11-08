@@ -11,13 +11,17 @@
 
 #define INPUT_SCAN_MS		10
 #define INPUT_KEYS_MAX		32	// key map entries handled (key bits are 0..31)
-#define INPUT_HOLD_MS		1500	// hold-to-activate: a key whose long action is EMERGENCY gives it only after this
-					// (or the long press time, if longer; docs/ux/principles.md P7)
-
-// The hold time that gives a key's long action
+// The hold time that gives a key's long action. EMERGENCY's comes early (INPUT_EMERGENCY_SHOW_MS), whatever the long
+// press time: the UI counts the hold down from there and acts only at its end (docs/spec/dmr-emergency.md 5.1)
 static inline uint32_t input_long_threshold(uint8_t long_action, uint32_t long_ms)
 {
-	return long_action == ACT_EMERGENCY && long_ms < INPUT_HOLD_MS ? INPUT_HOLD_MS : long_ms;
+	return long_action == ACT_EMERGENCY ? INPUT_EMERGENCY_SHOW_MS : long_ms;
+}
+
+// A long action that needs the end of the hold too: after its LONG, the release sends it as GESTURE_UP, value 1
+static inline bool input_long_up(uint8_t long_action)
+{
+	return long_action == ACT_EMERGENCY;
 }
 
 typedef void (*input_emit_t)(const input_event_t *ev, void *ctx);

@@ -181,6 +181,10 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "dual_actions", "quick 7 ctx 3 5 ok wait:3000 tune:b call:9991234,91,g tune:a call:9997777,3100,g wait:4000 ctx" },
 #endif
 	{ "emergency", "emergency:9991234" },
+	// The emergency key held (dmr-emergency.md 5.1): the countdown, the outcome, Settings > Keys > Emergency
+	{ "emergency_hold", "hold:emerg,1500,held" },
+	{ "emergency_sent", "hold:emerg,3000" },
+	{ "settings_emergency", "ok 7 8 up ok" },
 	{ "volume", "softvol volkey up up" },
 #if CONFIG_DMR
 	{ "dmr_id", "ok 7 9 ok" },		// Settings > My radio

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Gestures from key masks (docs/ux/information-architecture.md section 2): PRESS on release before the long-press
 // threshold, LONG once at the threshold, REPEAT while held after LONG for repeating keys, DOWN / UP for raw-edge keys,
+// UP (value 1) of the long action at the release after its LONG for one that needs it (input_long_up),
 // ENC_STEP (DOWN, value = detents) for the encoder. Several keys may be held at once; each is tracked on its own.
 // A DTMF key (input_dtmf_digit) goes to the DTMF callback first; a hold it takes gives no gestures (radio-features.md
 // 3.7).
@@ -87,6 +88,9 @@ void input_engine_step(input_engine_t *e, uint32_t raw, int8_t enc, uint32_t now
 				send(emit, ctx, m->short_action, GESTURE_UP, k->long_done ? 1 : 0);
 			} else if (!k->long_done) {
 				send(emit, ctx, m->short_action, GESTURE_PRESS, 0);
+			}
+			if (k->long_done && input_long_up(m->long_action)) {
+				send(emit, ctx, m->long_action, GESTURE_UP, 1);	// the end of a hold that counts (emergency)
 			}
 		} else if (down && (!m->raw_edges || m->long_action != m->short_action)) {
 			// A raw-edge key whose long action differs (a monitor key with a hold function, keyassign.c) gets its

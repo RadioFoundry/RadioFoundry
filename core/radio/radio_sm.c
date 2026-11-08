@@ -1956,7 +1956,7 @@ static void emergency_init(const settings_t *st)
 		es.dst_private = (st->em_flags & SETTINGS_EM_DST_PRIVATE) != 0;
 		es.etsi_fid = (st->em_flags & SETTINGS_EM_ETSI_FID) != 0;
 		es.rx_tone = (st->em_flags & SETTINGS_EM_NO_TONE) == 0;
-		es.alarm_tries = st->em_alarm_tries;
+		es.alarm_tries = st->em_alarm_tries & SETTINGS_EM_TRIES_MASK;
 		es.hot_mic_s = st->em_hot_mic_s;
 	}
 	dmr_emergency_init(&es);
@@ -1974,9 +1974,10 @@ static void emergency_save(uint32_t now_ms)
 	settings_t *st = settings_begin();
 	st->em_mode = es.mode;
 	st->em_dst = es.dst;
-	st->em_flags = (uint8_t)((es.dst_private ? SETTINGS_EM_DST_PRIVATE : 0) | (es.etsi_fid ? SETTINGS_EM_ETSI_FID : 0) |
-				 (es.rx_tone ? 0 : SETTINGS_EM_NO_TONE));
-	st->em_alarm_tries = es.alarm_tries;
+	// The UI's bits of these two bytes (the key's settings) stay as they are
+	st->em_flags = (uint8_t)((st->em_flags & SETTINGS_EM_UI_FLAGS) | (es.dst_private ? SETTINGS_EM_DST_PRIVATE : 0) |
+				 (es.etsi_fid ? SETTINGS_EM_ETSI_FID : 0) | (es.rx_tone ? 0 : SETTINGS_EM_NO_TONE));
+	st->em_alarm_tries = (uint8_t)((st->em_alarm_tries & ~SETTINGS_EM_TRIES_MASK) | (es.alarm_tries & SETTINGS_EM_TRIES_MASK));
 	st->em_hot_mic_s = es.hot_mic_s;
 	st->em_stored = 1;
 	settings_end(now_ms);

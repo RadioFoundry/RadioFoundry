@@ -212,13 +212,14 @@ static void test_engine(void)
 	nev = 0;
 	hold(&e, &now, 1u << K_SK1, 100);
 	CHECK(nev == 1 && evs[0].action == ACT_SCAN && evs[0].gesture == GESTURE_PRESS);
-	// Emergency on a long press still needs the hold time, whatever the long press time
+	// Emergency on a long press: its LONG at INPUT_EMERGENCY_SHOW_MS for the UI's countdown, and its UP at the release
 	nev = 0;
-	hold(&e, &now, 1u << K_SK1, 1000);
+	hold(&e, &now, 1u << K_SK1, INPUT_EMERGENCY_SHOW_MS - 50);
 	CHECK(nev == 1 && evs[0].action == ACT_SCAN);
 	nev = 0;
-	hold(&e, &now, 1u << K_SK1, INPUT_HOLD_MS + 50);
-	CHECK(nev == 1 && evs[0].action == ACT_EMERGENCY && evs[0].gesture == GESTURE_LONG);
+	hold(&e, &now, 1u << K_SK1, INPUT_EMERGENCY_SHOW_MS + 50);
+	CHECK(nev == 2 && evs[0].action == ACT_EMERGENCY && evs[0].gesture == GESTURE_LONG &&
+	      evs[1].action == ACT_EMERGENCY && evs[1].gesture == GESTURE_UP && evs[1].value == 1);
 	// The top key as monitor: down and up edges
 	nev = 0;
 	hold(&e, &now, 1u << K_TOP, 2000);

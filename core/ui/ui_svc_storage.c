@@ -37,6 +37,9 @@
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
 #endif
+#if CONFIG_DMR_EMERGENCY
+#include "dmr/dmr_emergency.h"
+#endif
 #if CONFIG_KEY_ASSIGN
 #include "input/input.h"
 #include "input/input_engine.h"
@@ -211,6 +214,22 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_LANGUAGE:
 		settings_read(&st);
 		return (int32_t)((uint8_t)st.lang[0] << 8 | (uint8_t)st.lang[1]);
+	case UI_SET_EM_HOLD_S:
+		settings_read(&st);
+		return settings_em_hold_s(&st);
+	case UI_SET_EM_KEY:
+		settings_read(&st);
+		return (st.em_flags & SETTINGS_EM_KEY_OFF) == 0;
+	case UI_SET_EM_ALERT:
+		settings_read(&st);
+		return (st.em_flags & SETTINGS_EM_SILENT) != 0 ? UI_EM_ALERT_SILENT : UI_EM_ALERT_BEEP;
+#if CONFIG_DMR_EMERGENCY
+	case UI_SET_EM_HOT_MIC_S: {
+		dmr_emergency_settings_t es;
+		dmr_emergency_get_settings(&es);
+		return es.hot_mic_s;
+	}
+#endif
 	case UI_SET_LARGE_TEXT:
 	case UI_SET_HINTS:
 	case UI_SET_MESSAGE_TONE:
@@ -445,6 +464,30 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		}
 		settings_end(hal_millis());
 		return true;
+	case UI_SET_EM_HOLD_S:
+		st = settings_begin();
+		settings_set_em_hold_s(st, (uint8_t)clamp16(value, 1, SETTINGS_EM_HOLD_MAX_S));
+		settings_end(hal_millis());
+		return true;
+	case UI_SET_EM_KEY:
+	case UI_SET_EM_ALERT: {
+		uint8_t bit = id == UI_SET_EM_KEY ? SETTINGS_EM_KEY_OFF : SETTINGS_EM_SILENT;
+		bool set = id == UI_SET_EM_KEY ? value == 0 : value == UI_EM_ALERT_SILENT;
+		st = settings_begin();
+		st->em_flags = (uint8_t)(set ? st->em_flags | bit : st->em_flags & ~bit);
+		settings_end(hal_millis());
+		return true;
+	}
+#if CONFIG_DMR_EMERGENCY
+	case UI_SET_EM_HOT_MIC_S: {
+		// The emergency module's setting: the radio core saves it (settings_t em_*) when it changes
+		dmr_emergency_settings_t es;
+		dmr_emergency_get_settings(&es);
+		es.hot_mic_s = (uint8_t)clamp16(value, 0, DMR_EMERGENCY_HOT_MIC_MAX_S);
+		dmr_emergency_set_settings(&es);
+		return true;
+	}
+#endif
 	case UI_SET_LANGUAGE:
 		if (value < 0 || value > 0xFFFF)
 			return false;

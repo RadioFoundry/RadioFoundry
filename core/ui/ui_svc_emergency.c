@@ -42,6 +42,15 @@ void ui_svc_emergency_dismiss(void)
 	dmr_emergency_dismiss();
 }
 
+bool ui_svc_emergency_target(uint32_t *id, bool *private_call)
+{
+	dmr_emergency_settings_t es;
+	dmr_emergency_get_settings(&es);
+	*id = es.dst;
+	*private_call = es.dst_private;
+	return es.mode != DMR_EMERGENCY_MODE_CALL;
+}
+
 void ui_svc_emergency_poll(void)
 {
 	static uint32_t seen;
