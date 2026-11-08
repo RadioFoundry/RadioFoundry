@@ -31,7 +31,7 @@
 
 #define UI_STACK_MAX		6
 #define TOAST_MS		1800
-#define VOLUME_MS		3000	// the volume screen closes this long after the last key
+#define VOLUME_MS		3000	// the volume screen closes this long after the last key, the knob's bar after its last turn
 #define ENTRY_TIMEOUT_MS	10000
 #define BANNER_MS		8000
 #define REFRESH_MS		1000
@@ -51,6 +51,10 @@ static radio_view_t view_none;		// until the first tick
 static ui_frame_t stack[UI_STACK_MAX];
 static uint8_t sp;			// stack[sp] is on screen; stack[0] is Home
 static uint32_t toast_until, entry_last, last_refresh, now;
+#if CONFIG_VOLUME_BAR
+static uint32_t volbar_until;
+#endif
+static int8_t knob_seen;		// the knob's last level (percent) the UI saw, -1 = none yet: no bar for the first
 static bool dirty = true;
 static uint32_t draws;
 static bool has_quick_key, has_context_key;
@@ -1800,6 +1804,8 @@ void ui_app_init(void)
 #endif
 	view = &view_none;
 	memset(&ui_st, 0, sizeof ui_st);
+	ui_st.volbar = -1;
+	knob_seen = -1;
 	wake_req = false;
 #if CONFIG_DUAL_WATCH
 	ui_dual_reset();
@@ -2191,6 +2197,28 @@ static uint8_t usb_net_state(void)
 }
 #endif
 
+// The knob turned (#354): the level the radio core passed on changed, from the knob both times. Read from the radio's
+// own view, not dual watch's per-side one. The first level (power-up) and a change of source (the debug link taking
+// over or giving back) set the reference without a bar. The bar wakes the backlight: turning the knob is using the
+// radio
+#if CONFIG_VOLUME_BAR
+static void knob_tick(const radio_view_t *v)
+{
+	int8_t lvl = v->volume_src == RVOL_KNOB ? v->volume : -1;
+	if (lvl >= 0 && knob_seen >= 0 && lvl != knob_seen) {
+		ui_st.volbar = (int8_t)radio_volume_step_of((uint8_t)lvl);
+		volbar_until = now + VOLUME_MS;
+		wake_req = true;
+		dirty = true;
+	}
+	if (lvl < 0 && ui_st.volbar >= 0) {	// the debug link took over (or the knob is gone): its old level is wrong
+		ui_st.volbar = -1;
+		dirty = true;
+	}
+	knob_seen = lvl;
+}
+#endif
+
 bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 {
 	static uint32_t serial_seen;
@@ -2202,6 +2230,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 #endif
 	now = now_ms;
 	ui_st.now_ms = now_ms;
+#if CONFIG_VOLUME_BAR
+	knob_tick(v);
+#endif
 	ui_svc_poll();
 	ui_svc_keys_poll();
 #if CONFIG_ZONE_EDIT
@@ -2287,6 +2318,12 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ui_st.toast = NULL;
 		dirty = true;
 	}
+#if CONFIG_VOLUME_BAR
+	if (ui_st.volbar >= 0 && (int32_t)(now - volbar_until) >= 0) {
+		ui_st.volbar = -1;
+		dirty = true;
+	}
+#endif
 	if (stack[sp].scr == SCR_VOLUME && now - last_key_ms >= VOLUME_MS) {
 		ui_pop();
 	}
@@ -2403,7 +2440,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	return d;
 }
 
-static bool strip_ok;
+static bool strip_ok, volbar_top;
 
 static void draw_screen(void);
 
@@ -2412,7 +2449,15 @@ void ui_app_draw(void)
 	uint32_t before = ui_strip_draws;
 	dirty = false;
 	draws++;
+#if CONFIG_VOLUME_BAR
+	uint32_t hints = ui_hint_draws;
+#endif
 	draw_screen();
+#if CONFIG_VOLUME_BAR
+	volbar_top = ui_hint_draws == hints;
+	if (ui_st.volbar >= 0 && stack[sp].scr != SCR_VOLUME)
+		ui_draw_volume_bar(&ui_st, volbar_top);
+#endif
 	strip_ok = ui_strip_draws != before;
 }
 
@@ -2482,4 +2527,6 @@ void ui_app_status(ui_app_status_t *s)
 #else
 	s->dual = false;
 #endif
+	s->volbar = ui_st.volbar;
+	s->volbar_top = volbar_top;
 }

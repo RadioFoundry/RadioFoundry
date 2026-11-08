@@ -4793,6 +4793,24 @@ static void test_tx_limit_op(void)
 	CHECK(!l.on && tx_limit_allows(461475000u));
 }
 
+// The knob's percent as a step of the volume scale (the bar the UI shows when the knob turns): 0 only when silent,
+// the ends exact, every step round-trips, and never a step back as the knob goes up
+static void test_volume_step_of(void)
+{
+	static const struct { uint8_t pct, step; } ep[] = {
+		{ 0, 0 }, { 1, 1 }, { 3, 1 }, { 9, 1 }, { 10, 2 }, { 50, 8 }, { 96, 15 }, { 97, 16 }, { 100, 16 }, { 101, 16 },
+		{ 255, 16 },
+	};
+	for (size_t i = 0; i < sizeof ep / sizeof ep[0]; i++)
+		CHECK(radio_volume_step_of(ep[i].pct) == ep[i].step);
+	for (uint8_t s = 0; s <= RADIO_VOLUME_MAX; s++)
+		CHECK(radio_volume_step_of(radio_volume_percent(s)) == s);
+	for (int p = 1; p <= 255; p++) {
+		uint8_t a = radio_volume_step_of((uint8_t)(p - 1)), b = radio_volume_step_of((uint8_t)p);
+		CHECK(b >= a && b - a <= 1 && b >= 1 && b <= RADIO_VOLUME_MAX);
+	}
+}
+
 int main(void)
 {
 	test_tx_limit_op();
@@ -4855,6 +4873,7 @@ int main(void)
 #endif
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();
+	test_volume_step_of();
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

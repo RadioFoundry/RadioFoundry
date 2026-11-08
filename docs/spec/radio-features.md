@@ -426,6 +426,18 @@ toast). Up, Down and the encoder change the step by one and save it on each step
 and so does 3 s without a key. The screen shows the step as a large number over a bar of 16 segments (7 px pitch at
 the smallest display, 5 px filled). On the radio without the feature the setting is left out of Settings.
 
+**The knob's bar** (#354). On a `knob` radio, when the level the radio core passed on changes (`radio_view_t.volume`,
+with `volume_src` `knob` before and after), the UI shows the same 16-segment bar, the label and the step over whatever
+screen is open, for 3 s after the last change (`VOLUME_MS`); no screen is pushed, so a call or a menu goes on. It
+takes a row no screen puts its content in: the hint row's place when the frame drew a hint row (`ui_hint_draws`),
+else the status strip's (Quick's tiles at 160x128, a list with the hint row off), so nothing is cut. The step is `radio_volume_step_of(percent)`: 0 only at 0 %, at least 1 above it, 100 % is 16. The
+first level after start-up and a change of source (the override set or given back) show nothing, and a bar that is
+showing goes when the override takes over; nor does a `soft`
+radio, whose volume screen does the job. The bar asks for the backlight (`ui_app_take_wake`): turning the knob is using
+the radio. No new view field: `follow_volume` already filters the knob (2 %, the ends). Tests: `uiFlowTest`
+(`volume_bar_checks`, every display class, a seeded property run), `radioCoreTest` (`test_volume_step_of`), gallery
+`volume_bar`, `volume_bar_call`.
+
 ## 5. Power
 
 ### 5.1 Battery

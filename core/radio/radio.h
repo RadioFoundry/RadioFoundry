@@ -466,6 +466,13 @@ bool radio_volume_soft(void);
 // Whether the MCU can set the speaker level at all (the board has the hook): knob radios accept an override
 bool radio_volume_settable(void);
 uint8_t radio_volume_percent(uint8_t step);
+// A level in percent (the knob) as a step: 0 only at 0 %, at least 1 above it, 100 % and over the top step. Inline:
+// the UI uses it without the radio core
+static inline uint8_t radio_volume_step_of(uint8_t percent)
+{
+	unsigned s = (percent * RADIO_VOLUME_MAX + 50u) / 100u;
+	return (uint8_t)(percent == 0 ? 0 : s < 1 ? 1 : s > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : s);
+}
 // settings_t.volume (0 = default, else a stored step) to a step, and back. A byte written by the 0..10 version (1..11)
 // is scaled to the new range; the new form has bit 7 set
 uint8_t radio_volume_step(uint8_t stored);
