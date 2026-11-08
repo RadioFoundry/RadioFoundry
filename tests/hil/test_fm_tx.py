@@ -232,7 +232,8 @@ def test_fm_tx_roger_beep(fm_vfo, sdr_bench, pytestconfig):
         f"roger_beep 0 still ends with a tone: {results[0]['tones']}"
 
 
-HELD_BREAK_S = 0.15     # the longest moment a held digit may go unheard by the bench board
+HELD_BREAK_S = 0.035    # a held digit's longest break: a decoder takes 40 ms of silence as the end of a digit
+HELD_SNR_DB = 20.0      # the carrier over the noise from which the bench board hears every break as it is
 DTMF_SENT = "1#5D0"     # the last a 20 ms tap: the radio holds it to its shortest tone
 
 
@@ -321,11 +322,15 @@ def test_fm_tx_dtmf_stop(fm_vfo, sdr_bench, pytestconfig):
             r = key_and_check(fm_vfo, sdr_bench, pytestconfig, 12.5, key=held(digit, end), seconds=7, dtmf=True)
         print(f"{name}: segment {r['spans']}, dtmf {r['dtmf']}")
         assert len(r["spans"]) == 1, f"{name}: {len(r['spans'])} keyed segments"
-        # One key held down: on a weak signal the board can lose a held digit for a moment. The radio sent it once
-        # (dtmf_sent below); a longer break would be the tone really stopping
+        # One key held down. A break of 40 ms or more would read as a repeated digit. A weak signal loses the digit
+        # for longer than the radio stopped it, so only a strong one judges the breaks
         assert r["dtmf"] and {d[0] for d in r["dtmf"]} == {digit}, f"{name}: decoded {r['dtmf']}"
-        for a, b in zip(r["dtmf"], r["dtmf"][1:]):
-            assert b[1] - a[2] <= HELD_BREAK_S, f"{name}: the held digit stopped for {b[1] - a[2]:.3f} s: {r['dtmf']}"
+        snr = None if r["power_dbfs"] is None or r["noise_dbfs"] is None else r["power_dbfs"] - r["noise_dbfs"]
+        if snr is not None and snr >= HELD_SNR_DB:
+            for a, b in zip(r["dtmf"], r["dtmf"][1:]):
+                assert b[1] - a[2] <= HELD_BREAK_S, f"{name}: the held digit stopped for {b[1] - a[2]:.3f} s: {r['dtmf']}"
+        else:
+            print(f"{name}: carrier {snr} dB over the noise, under {HELD_SNR_DB:.0f}: breaks not judged")
         seg_end, tone_end = r["spans"][0][1], r["dtmf"][-1][2]
         assert tone_end - r["dtmf"][0][1] >= 0.8, f"{name}: the held digit lasted {r['dtmf']}"
         assert abs(seg_end - tone_end) <= 0.15, f"{name}: tone ends {tone_end:.3f} s, carrier {seg_end:.3f} s"
