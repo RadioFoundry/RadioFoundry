@@ -292,11 +292,12 @@ def test_confirmed_tx_unanswered(radio, sdr_bench, pytestconfig, ip_settings, ar
 
 @contextlib.contextmanager
 def _dmr_on(radio, freq, cc):
-    """A DMR channel on freq from the codeplug, else the DMR VFO tuned there on color code cc, slot 1 (its frequency
-    and mode put back afterwards): a bench board's frequency needs no channel of its own"""
+    """A simplex DMR channel on freq from the codeplug, else the DMR VFO tuned there on color code cc, slot 1 (its
+    frequency and mode put back afterwards): a bench board's frequency needs no channel of its own, and a repeater
+    pair receiving there would key elsewhere"""
     hz = round(freq * 1e6)
     try:
-        radio.find_channel(hz, "dmr")
+        radio.find_channel(hz, "dmr", simplex=True)
     except AssertionError:
         pass
     else:
