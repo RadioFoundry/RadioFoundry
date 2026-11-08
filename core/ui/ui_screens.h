@@ -249,9 +249,11 @@ void ui_draw_hotspot(const radio_view_t *v, const hotspot_view_t *h, const ui_st
 void ui_draw_emergency(const radio_view_t *v, const ui_state_t *s, uint32_t id, const char *name);
 // Volume (the VOL key, a radio without a knob): the step 0 (mute) .. RADIO_VOLUME_MAX as a bar and a number
 void ui_draw_volume(const radio_view_t *v, const ui_state_t *s);
+#if CONFIG_VOLUME_BAR
 // The knob's volume (s->volbar) over whatever screen is drawn: the label, the same bar as the volume screen and the
 // step, in the hint row's place, or the status strip's (top) on a screen that uses the bottom row for itself
 void ui_draw_volume_bar(const ui_state_t *s, bool top);
+#endif
 // Diagnostics: raw key bits, encoder total, radio readings and the board's own lines
 void ui_draw_diag(const radio_view_t *v, uint32_t keys, int32_t enc_total, uint8_t first_line);
 // The first board line of the page after the one starting at first_line (wraps to 0)
