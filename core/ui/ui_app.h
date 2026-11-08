@@ -15,6 +15,8 @@
 void ui_app_init(void);
 // One logical input event (PTT / MONITOR edges included: the radio core gets those from the input layer directly)
 void ui_app_key(const input_event_t *ev);
+// The view the next key acts on (ui_app_tick sets it too): for a key that comes before the tick
+void ui_app_set_view(const radio_view_t *v);
 // Time passes and the radio view may have changed: timeouts, banners, Recent. True if the screen should be redrawn
 bool ui_app_tick(const radio_view_t *v, uint32_t now_ms);
 // Draw the current screen into the frame buffer (no flush)

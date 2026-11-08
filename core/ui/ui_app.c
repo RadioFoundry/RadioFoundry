@@ -2193,15 +2193,20 @@ static uint8_t usb_net_state(void)
 }
 #endif
 
-bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
+void ui_app_set_view(const radio_view_t *v)
 {
-	static uint32_t serial_seen;
-	static uint8_t battery_seen;
 #if CONFIG_DUAL_WATCH
 	view = ui_dual_view(v);	// in dual watch, the selected channel's settings wherever the receiver is
 #else
 	view = v;
 #endif
+}
+
+bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
+{
+	static uint32_t serial_seen;
+	static uint8_t battery_seen;
+	ui_app_set_view(v);
 	now = now_ms;
 	ui_st.now_ms = now_ms;
 	ui_svc_poll();
