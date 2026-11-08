@@ -118,7 +118,7 @@ is `tools/bringup.py list --radio <id>`.
 | `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `key_lock` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `channel_knob` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
-| `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial |
+| `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `diag` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `ui_color` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | ✕ |
 | `font_xl` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
