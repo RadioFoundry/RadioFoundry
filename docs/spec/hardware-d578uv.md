@@ -365,7 +365,7 @@ The DMR start ([modem-sct.md](modem-sct.md) 4), as the stock firmware sends it a
 
 | Field | Value | Meaning |
 | --- | --- | --- |
-| `DMR_CALL_OPTION` | `41 40 42 47 08` | byte 0: squelch detection by the baseband (RadioFoundry: off, 0x01, below), traffic mode 1, no RF control (the MCU keys the RF chips); byte 1: voice delay 0, reserved bit 6 set; byte 2: four good CACH, two LC header repeats; byte 3: every CSBK, LC header and terminator reported, reserved bit 6 set (stock: 0x44, below); byte 4 reserved |
+| `DMR_CALL_OPTION` | `41 40 42 4F 08` | byte 0: squelch detection by the baseband (RadioFoundry: off, 0x01, below), traffic mode 1, no RF control (the MCU keys the RF chips); byte 1: voice delay 0, reserved bit 6 set; byte 2: four good CACH, two LC header repeats; byte 3: every idle frame, CSBK, LC header and terminator reported, reserved bit 6 set (the original firmware: 0x44, below). Without every idle frame the baseband reports a repeater's idle outbound once, and the stack holds a repeater as up only 300 ms after its last burst: a radio on a repeater channel never saw it up (HIL `test_dmr_outbound_voice`); byte 4 reserved |
 | `REPORT_FIELD` | 0xFF | the four documented reports and the reserved bits 4-1 |
 | `MODOUT_CONFIG` | `00 10 00 00 00` | no two-point delay; 0x10 in a reserved byte. RadioFoundry sends `EB 10 00 00 00` before each transmission instead (5.1) |
 | `DMR_OFFSET` | 8 bytes from calibration (7, offset 0x140) | the baseband's RF_TIMING output; changing it moved neither PD0 nor the burst's modulation (5.1, measured). Without a current calibration block the default `00 82 02 D0 02 D0 02 D0` |

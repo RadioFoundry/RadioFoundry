@@ -29,8 +29,8 @@ from hil_config import rig
 
 SUPERFRAME_S = 0.360
 SRC = {1: 9990301, 2: 9990302}      # talker per slot, so a call heard on the wrong slot shows by its source
-DST = {1: 9990401, 2: 9990402}      # the talkgroups; the channel's RX group list must hold them or the radio hears
-                                    # every group (hear_all)
+DST = {1: 9990401, 2: 9990402}      # the talkgroups: the radio hears every group (the hear-all latch) during the calls, so
+                                    # the channel's RX group list needn't hold them
 LEAD_S = 5.0                        # the radio locks to the outbound well before the first call
 
 
@@ -77,6 +77,16 @@ def _setup(radio, pytestconfig):
     return freq, cc
 
 
+def _hear_all(radio, on):
+    """Set the DMR hear-all latch (a monitor key release toggles it); returns the state it was in."""
+    was = radio.view(["dmr"]).get("dmr.hear_all_latch") == "1"
+    if was != on:
+        radio.link.monitor(False)
+        radio.wait_for(lambda x: x.get("dmr.hear_all_latch") == ("1" if on else "0"), timeout=3, sections=("dmr",),
+                       what="the hear-all latch")
+    return was
+
+
 def _run(radio, bench, pytestconfig, calls, radio_ts, cc_offset=0, expect_up=True):
     """The calls on the outbound, with the radio on timeslot radio_ts; returns (radio deltas, radio view after, the
     board's records)."""
@@ -89,6 +99,7 @@ def _run(radio, bench, pytestconfig, calls, radio_ts, cc_offset=0, expect_up=Tru
     seconds = round(max(_span_s(c) for c in calls) + 3.0, 1)
     voice = json.dumps(calls, separators=(",", ":"))
     try:
+        latch = _hear_all(radio, True)      # a call to a group the channel doesn't list is shown, not played
         with bench.lease():
             radio.reset_counters()
             _, before = radio.counters()
@@ -104,6 +115,7 @@ def _run(radio, bench, pytestconfig, calls, radio_ts, cc_offset=0, expect_up=Tru
             _, after = radio.counters()
             view = radio.view(["dmr_call"])
     finally:
+        _hear_all(radio, latch)
         radio.link.clear_temporary()
     if job.returncode not in (0, None):
         text = "".join(job.lines)
@@ -120,6 +132,7 @@ def _board_calls(recs, calls):
     """The board's side: one call record per call sent (index, slot, src, dst), none of its bursts late."""
     rows = [r for r in recs if isinstance(r.get("call"), dict) or ("index" in r and "bursts" in r)]
     rows = [r.get("call", r) if isinstance(r.get("call"), dict) else r for r in rows]
+    rows.sort(key=lambda r: r.get("index", 0))     # each is reported when its call ends: a shorter call comes first
     assert len(rows) == len(calls), f"the board reported {len(rows)} calls for {len(calls)} sent: {rows}"
     for sent, got in zip(calls, rows):
         assert got.get("slot") == sent["slot"], (sent, got)

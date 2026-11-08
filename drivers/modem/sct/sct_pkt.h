@@ -102,6 +102,9 @@ enum {
 // (voice LC). The chip refuses a voice frame without it (ACK 0x01) and sends no traffic at all (Packet Interface 2.5.2.5)
 #define SCT_PROP_VOICE_LC	0x11
 #define SCT_PROP_TYPE		0x0F
+// Received, under base station sync: the burst's slot, set for TS 2 (reserved in the Packet Interface document; seen
+// on a repeater's outbound, where the chip reports both slots' frames in turn and DMR_SLOT_FOUND only now and then)
+#define SCT_PROP_TS2		0x80
 #define SCT_FRAME_MAX		180
 
 // Field data length after the ID in a packet to the chip: >= 0 fixed, SCT_LEN_BYTE a length byte then that many

@@ -49,10 +49,15 @@ static struct {
 	uint8_t sync;		// dmr_sync_family_t from the last DMR_SLOT_FOUND
 	int8_t ts;
 	bool fec_err;		// the last NEW_EVENT was a data sync with an FEC error
-	bool rx_voice;		// a received voice call runs: voice bursts are reported in its slots
-	uint8_t rx_index;	// the next one's index, 0..5 (A..F)
-	uint8_t rx_lc[LC_BYTES];	// the LC of the call rx_voice runs
-	uint32_t rx_next_ms;
+	// A received voice call per slot (a repeater's outbound can carry one in each): while on, a voice burst is
+	// reported in its slot every 60 ms
+	struct {
+		bool on;
+		int8_t ts;		// the slot it came in (0: direct mode without a slot)
+		uint8_t index;		// the next burst's index, 0..5 (A..F)
+		uint8_t lc[LC_BYTES];	// its LC
+		uint32_t next_ms;
+	} rv[2];
 	uint32_t counter;	// burst counter for event args, never 0
 	uint32_t now;
 	bool cr_used;		// the board reports its carrier (sct_dmr_carrier)
@@ -409,6 +414,20 @@ static uint16_t crc_mask(uint8_t kind)
 	}
 }
 
+static void rx_voice_clear(void)
+{
+	s.rv[0].on = false;
+	s.rv[1].on = false;
+}
+
+static void rx_voice_start(uint8_t slot, int8_t ts)
+{
+	s.rv[slot].on = true;
+	s.rv[slot].ts = ts;
+	s.rv[slot].index = 0;
+	s.rv[slot].next_ms = s.now + SCT_DMR_SLOT_MS;
+}
+
 static void rx_frame(const uint8_t *f, uint8_t flen)
 {
 	uint8_t prop = f[0];
@@ -421,6 +440,8 @@ static void rx_frame(const uint8_t *f, uint8_t flen)
 	b.sync = s.sync;
 	b.cc = s.rx_cc;
 	b.ts = s.ts;
+	if (s.sync == DMR_SYNC_BS)
+		b.ts = (int8_t)((prop & SCT_PROP_TS2) ? 2 : 1);	// each frame's own slot: both slots come in turn
 	b.in_step = true;
 	b.crc_ok = !s.fec_err;
 	if (s.fec_err)
@@ -436,38 +457,36 @@ static void rx_frame(const uint8_t *f, uint8_t flen)
 
 		if (n < LC_BYTES)
 			return;
-		if (embedded && s.rx_voice && memcmp(data, s.rx_lc, LC_BYTES) == 0)
+		uint8_t slot = b.ts == 2 ? 1 : 0;
+
+		if (embedded && s.rv[slot].on && memcmp(data, s.rv[slot].lc, LC_BYTES) == 0)
 			return;	// the running call's own LC from a superframe: nothing new
 		memcpy(b.lc, data, LC_BYTES);
 		b.lc_valid = true;
-		memcpy(s.rx_lc, data, LC_BYTES);
+		memcpy(s.rv[slot].lc, data, LC_BYTES);
 		if (embedded) {
 			// To the stack the next voice burst, with the LC embedded as a burst modem reports it, so the call is
 			// taken as a late entry (a header here was a call heard from its start). A late entry's LC came with
 			// burst A; a new talker's takes the place of the next burst, and the bursts go on from it
-			if (!s.rx_voice) {
-				s.rx_voice = true;
-				s.rx_index = 0;
-			}
+			if (!s.rv[slot].on)
+				rx_voice_start(slot, b.ts);
 			b.kind = DMR_BURST_VOICE;
-			b.voice_index = s.rx_index;
+			b.voice_index = s.rv[slot].index;
 			b.len = DMR_VOICE_BYTES;
-			s.rx_index = (uint8_t)((s.rx_index + 1) % 6);
-			s.rx_next_ms = s.now + SCT_DMR_SLOT_MS;
+			s.rv[slot].index = (uint8_t)((s.rv[slot].index + 1) % 6);
+			s.rv[slot].next_ms = s.now + SCT_DMR_SLOT_MS;
 			s.st.rx_voice++;
 		} else {
 			b.kind = prop & SCT_PROP_TYPE;
 			memcpy(b.payload, data, LC_BYTES);
 			b.len = LC_BYTES;
 			if (b.kind == DMR_BURST_TERMINATOR_LC) {
-				s.rx_voice = false;
+				s.rv[slot].on = false;
 			} else {
 				// The chip voices the call from here on and says no more until it ends: the stack gets a voice
 				// burst per slot, as it would from a burst modem, so it holds the call. A repeated header (when
 				// the board has every one reported) starts the count again: the voice follows the last header
-				s.rx_voice = true;
-				s.rx_index = 0;
-				s.rx_next_ms = s.now + SCT_DMR_SLOT_MS;
+				rx_voice_start(slot, b.ts);
 			}
 		}
 	} else {
@@ -493,25 +512,27 @@ static void rx_frame(const uint8_t *f, uint8_t flen)
 // The voice bursts of a call the chip plays: no payload (the voice never reaches the MCU), one per 60 ms
 static void rx_voice_step(void)
 {
-	for (int n = 0; s.rx_voice && s.tx == TX_IDLE && (int32_t)(s.now - s.rx_next_ms) >= 0 && n < 4; n++) {
-		dmr_burst_t b;
+	for (uint8_t i = 0; i < 2; i++) {
+		for (int n = 0; s.rv[i].on && s.tx == TX_IDLE && (int32_t)(s.now - s.rv[i].next_ms) >= 0 && n < 4; n++) {
+			dmr_burst_t b;
 
-		memset(&b, 0, sizeof(b));
-		b.kind = DMR_BURST_VOICE;
-		b.voice_index = s.rx_index;
-		b.sync = s.sync;
-		b.cc = s.rx_cc;
-		b.ts = s.ts;
-		b.crc_ok = true;
-		b.in_step = true;
-		b.len = DMR_VOICE_BYTES;
-		s.rx_index = (uint8_t)((s.rx_index + 1) % 6);
-		s.rx_next_ms += SCT_DMR_SLOT_MS;
-		s.st.rx_voice++;
-		emit(DMR_EV_BURST_RX, b.ts, next_counter(), &b);
+			memset(&b, 0, sizeof(b));
+			b.kind = DMR_BURST_VOICE;
+			b.voice_index = s.rv[i].index;
+			b.sync = s.sync;
+			b.cc = s.rx_cc;
+			b.ts = s.rv[i].ts;
+			b.crc_ok = true;
+			b.in_step = true;
+			b.len = DMR_VOICE_BYTES;
+			s.rv[i].index = (uint8_t)((s.rv[i].index + 1) % 6);
+			s.rv[i].next_ms += SCT_DMR_SLOT_MS;
+			s.st.rx_voice++;
+			emit(DMR_EV_BURST_RX, b.ts, next_counter(), &b);
+		}
+		if (s.rv[i].on && (int32_t)(s.now - s.rv[i].next_ms) >= 0)
+			s.rv[i].next_ms = s.now + SCT_DMR_SLOT_MS;	// fell behind (a stalled task): no burst storm
 	}
-	if (s.rx_voice && (int32_t)(s.now - s.rx_next_ms) >= 0)
-		s.rx_next_ms = s.now + SCT_DMR_SLOT_MS;	// fell behind (a stalled task): no burst storm
 }
 
 static void rx_slot_found(uint8_t v)
@@ -596,7 +617,7 @@ static void rx_event(uint8_t code)
 		break;
 	case SCT_EV_SYNC_LOST:
 	case SCT_EV_CARRIER_LOST:
-		s.rx_voice = false;
+		rx_voice_clear();
 		if (s.tx == TX_IDLE)
 			emit(DMR_EV_SYNC_LOST, s.ts, next_counter(), NULL);
 		s.sync = DMR_SYNC_NONE;
@@ -676,7 +697,7 @@ static bool x_start(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx)
 	s.sync = DMR_SYNC_NONE;
 	s.ts = 0;
 	s.rx_slot = 0;
-	s.rx_voice = false;
+	rx_voice_clear();
 	s.cr_settling = false;
 	sct_pkt_begin(&p, SCT_TYPE_DMR);
 	sct_pkt_add1(&p, SCT_F_PROCESS_MODE, 0x02);	// layer 2
@@ -705,7 +726,7 @@ static void x_stop(void)
 	sct_pkt_t p;
 
 	s.running = false;
-	s.rx_voice = false;
+	rx_voice_clear();
 	s.tx = TX_IDLE;
 	s.q_count = 0;
 	s.waiting = false;
@@ -768,7 +789,7 @@ static bool x_tx_begin(dmr_timing_t timing, int8_t ts, dmr_access_t access)
 	s.tx_voice = false;
 	s.tx_sent = 0;
 	s.tx_edges = s.port->burst_edges != NULL ? s.port->burst_edges() : 0;
-	s.rx_voice = false;
+	rx_voice_clear();
 	s.cr_want = 0;	// the board's next reading after the transmission says what is there
 	s.tx_ts = (int8_t)(ts == 2 ? 2 : 1);
 	s.q_count = 0;
