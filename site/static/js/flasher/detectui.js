@@ -12,13 +12,14 @@ const key = (id) => id.replace(/-/g, "_");	// a probe id or a via word as an i18
 // opts: {radio, board, fb, ids (probe ids, in order), open(baud) (a stream on the radio's port; the first call asks
 // for the port), onFound(found) (a probe named the variant: found as detectVariant returns it), nextHint(found) (an
 // i18n key for what the user does next, or null), log(line), showBlocked (say here that a found variant has no image;
-// false when the caller says so itself)}.
+// false when the caller says so itself), showAllPorts() (optional: the next open lists every port; adds the link for a
+// radio the filtered chooser doesn't list)}.
 // Returns the parts for the caller to lay out: {go (the button), hint (what to do before pressing it), say (the outcome)}
-export function detectControl({ radio, board, fb, ids, open, onFound, nextHint = () => null, log = () => {}, showBlocked = true }) {
+export function detectControl({ radio, board, fb, ids, open, onFound, nextHint = () => null, log = () => {}, showBlocked = true, showAllPorts = null }) {
 	const say = h("div");
 	const fill = (...parts) => say.replaceChildren(...parts.filter(Boolean));
 	let busy = false;
-	const go = button(t("flash.detect.go"), async () => {
+	const run = async () => {
 		if (busy) return;
 		busy = true;
 		go.disabled = true;
@@ -49,6 +50,8 @@ export function detectControl({ radio, board, fb, ids, open, onFound, nextHint =
 			busy = false;
 			go.disabled = false;
 		}
-	});
-	return { go, hint: h("p", { class: "small muted" }, t("flash.detect.hint")), say };
+	};
+	const go = button(t("flash.detect.go"), run);
+	const all = showAllPorts && h("a", { href: "#", onclick: (e) => { e.preventDefault(); showAllPorts(); run(); } }, t("flash.c7.connect.all_ports"));
+	return { go, hint: h("p", { class: "small muted" }, t("flash.detect.hint"), all && " ", all && t("flash.c7.connect.no_cable"), all && " ", all), say };
 }

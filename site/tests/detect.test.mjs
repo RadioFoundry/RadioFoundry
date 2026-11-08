@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const { detectVariant, confirmVariant, DetectMismatch, usbId, variantOfUsb, variantOfBoard, probeOf } = await import("../static/js/flasher/detect.js");
+const { detectVariant, confirmVariant, DetectMismatch, usbId, variantOfUsb, variantOfBoard, probeOf, portFilters } = await import("../static/js/flasher/detect.js");
 const { PROBES } = await import("../static/js/flasher/anytonedetect.js");
 const { FakeAnytone } = await import("../static/js/flasher/fakeanytone.js");
 const { frame, parseFrames, CMD } = await import("../static/js/flasher/link.js");
@@ -118,6 +118,14 @@ test("detect: a radio that answers nothing: every probe tried, none found", asyn
 	assert.ok(PROBES.every((id) => probeOf(id)), "every probe the backend lists is registered");
 	const none = await detectVariant({ ids: ["no-such"], radio: RADIO, board: BOARD, fb: FB, open: async () => s });
 	assert.equal(none.tried[0].outcome, "error");
+});
+
+test("detect: the port chooser lists the variants' USB devices and RadioFoundry's, nothing else", () => {
+	const ids = portFilters(RADIO).map((f) => usbId(f));
+	for (const v of RADIO.variants) for (const id of v.usb_ids || []) assert.ok(ids.includes(id), id);
+	assert.ok(ids.includes("1FC9:0094"));
+	assert.equal(ids.length, new Set(ids).size);
+	assert.deepEqual(portFilters({}).map((f) => usbId(f)), ["1FC9:0094"]);
 });
 
 test("detect: every probe and via word has its strings", () => {

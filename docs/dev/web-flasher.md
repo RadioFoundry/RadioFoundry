@@ -329,6 +329,8 @@ A radio with `[hardware] variants` (several builds sold under one model, each ne
 is asked which one it is before anything is written. `detect.js` holds the engine and the probes every radio shares.
 `detectui.js` is the Auto-detect button a backend puts beside its variant chooser: the user connects the radio in
 whatever state it is in, and the probes run in turn on that one port until one names the variant.
+The port chooser lists the USB devices the variants name (`usb_ids`) and RadioFoundry's (`portFilters()`). A backend that
+can't name every state's device passes `showAllPorts`, which adds a link to a chooser with every port.
 
 A probe is `{id, baud, run(stream, ctx), confirm(session, ctx)}`, registered with `registerProbe()`. `run` returns null
 when the radio didn't answer that way, else `{code, version, via, keep}`. `keep` means the radio stays in a session the
