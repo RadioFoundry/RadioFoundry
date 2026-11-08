@@ -224,7 +224,7 @@ typedef struct {
 	// (docs/spec/zone-share.md 5.4); key 0 = unused, the oldest replaced first
 	settings_zs_import_t zs_import[SETTINGS_ZS_IMPORTS];
 	// The volume knob's options (Settings > Sound on a radio whose MCU reads the knob; appended): SETTINGS_KNOB_*,
-	// 0 = both off, as an older record reads
+	// 0 = all off, as an older record reads
 	uint8_t knob_flags;
 	uint8_t reserved9[3];
 } settings_t;
@@ -322,8 +322,7 @@ static inline void settings_set_crash_contact(settings_t *s, uint16_t num)
 }
 
 // settings_t.knob_flags
-#define SETTINGS_KNOB_SHOW		0x01u	// show the level when the volume knob turns
-#define SETTINGS_KNOB_LOCK		0x02u	// the volume knob does nothing while the keys are locked
+#define SETTINGS_KNOB_LOCK		0x01u	// the volume knob does nothing while the keys are locked (CONFIG_VOLUME_LOCK)
 
 // settings_t.ui_flags (defaults: hints, message tone, talker alias, PTT when locked and vibrate on)
 #define SETTINGS_UI_LARGE_TEXT		0x01u

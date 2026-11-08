@@ -57,7 +57,9 @@ static bool has_quick_key, has_context_key;
 // Long QUICK or long Back unlocks the keys. A radio with neither (side keys only) is never locked by auto lock: only a
 // side key set to key lock could unlock it
 static bool has_unlock_key;
-static int16_t knob_last = -1;	// the knob's position last seen, -1 = none since start-up
+#if CONFIG_VOLUME_LOCK
+static int16_t knob_last = -1;	// the volume knob's position last seen, -1 = none since start-up
+#endif
 static char home_hint[32];
 
 // The hint's keys part, in the language in use: the quick settings key, or holding OK on a radio without it
@@ -122,7 +124,9 @@ static void set_locked(bool locked)
 	}
 	ui_svc_ptt_block(locked && !ui_st.ptt_locked);
 	ui_svc_dtmf_block(locked);
+#if CONFIG_VOLUME_LOCK
 	ui_svc_volume_hold(locked && ui_st.knob_lock);
+#endif
 	dirty = true;
 }
 
@@ -1818,7 +1822,9 @@ void ui_app_init(void)
 					  UI_SET_ALIAS_SHOW, UI_SET_PTT_LOCKED, UI_SET_HEAR_ALL_DEFAULT, UI_SET_MESSAGE_TONE,
 					  UI_SET_UPDOWN_HOME, UI_SET_LOW_BATTERY, UI_SET_AUTO_OFF_MIN, UI_SET_THEME, UI_SET_ACCENT,
 					  UI_SET_STRIP, UI_SET_VIBRATE, UI_SET_VOLUME, UI_SET_LANGUAGE,
-					  UI_SET_KNOB_SHOW, UI_SET_KNOB_LOCK,
+#if CONFIG_VOLUME_LOCK
+					  UI_SET_KNOB_LOCK,
+#endif
 #if CONFIG_DUAL_WATCH
 					  UI_SET_DUAL_TALK_BACK,
 #endif
@@ -1826,7 +1832,9 @@ void ui_app_init(void)
 	for (uint8_t i = 0; i < sizeof ui_ids; i++)
 		ui_apply_setting(ui_ids[i], ui_svc_setting_get(ui_ids[i]));
 	lock_armed = false;
+#if CONFIG_VOLUME_LOCK
 	knob_last = -1;
+#endif
 	ptt_held = false;
 	off_warned = power_off_due = batt_warned = false;
 	hear_all_key = 0;
@@ -1863,11 +1871,12 @@ void ui_apply_setting(uint8_t id, int32_t v)
 	case UI_SET_DUAL_TALK_BACK: ui_st.dual.talk_back = v != 0; break;
 #endif
 	case UI_SET_VOLUME: ui_st.volume = (uint8_t)(v >= 0 && v <= RADIO_VOLUME_MAX ? v : RADIO_VOLUME_DEFAULT); break;
-	case UI_SET_KNOB_SHOW: ui_st.knob_show = v != 0; break;
+#if CONFIG_VOLUME_LOCK
 	case UI_SET_KNOB_LOCK:
 		ui_st.knob_lock = v != 0;
 		ui_svc_volume_hold(ui_st.locked && ui_st.knob_lock);
 		break;
+#endif
 	case UI_SET_UPDOWN_HOME: ui_st.updown = (uint8_t)(v >= 0 && v <= 2 ? v : 0); break;
 	case UI_SET_LOW_BATTERY: ui_st.low_batt_pct = (uint8_t)(v >= 0 && v <= 50 ? v : 15); batt_warned = false; break;
 	case UI_SET_AUTO_OFF_MIN: ui_st.auto_off_min = clamp_u16(v); off_warned = false; break;
@@ -2200,37 +2209,22 @@ static uint8_t usb_net_state(void)
 }
 #endif
 
-// The volume knob turned (the radio core's view.volume_knob, filtered there): with Settings > Sound > Show volume
-// on, the level as a toast; with the keys locked and Lock volume on, the unlock hint instead, as for a key. The
-// first reading after start-up only sets the reference, so switching on shows nothing
+#if CONFIG_VOLUME_LOCK
+// The volume knob turned (the radio core's view.volume_knob, filtered there) while the keys are locked with Settings >
+// Sound > Lock volume on: the unlock hint, as for a key. The first reading after start-up only sets the reference
 static void knob_moved(const radio_view_t *v)
 {
-	static char buf[32];
 	int16_t k = v->volume_knob;
 	if (k < 0 || k == knob_last) {
 		return;
 	}
 	bool first = knob_last < 0;
 	knob_last = k;
-	if (first) {
-		return;
-	}
-	if (ui_st.locked && ui_st.knob_lock) {
+	if (!first && ui_st.locked && ui_st.knob_lock) {
 		ui_toast(locked_text(has_quick_key));
-	} else if (ui_st.knob_show) {
-		sbuf_t b;
-		sb_init(&b, buf, sizeof buf);
-		sb_str(&b, TR("Volume"));
-		sb_str(&b, " ");
-		if (k == 0) {
-			sb_str(&b, TR("Muted"));
-		} else {
-			sb_u32(&b, (uint32_t)k, 1);
-			sb_str(&b, " %");
-		}
-		ui_toast(buf);
 	}
 }
+#endif
 
 bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 {
@@ -2328,7 +2322,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ui_st.toast = NULL;
 		dirty = true;
 	}
+#if CONFIG_VOLUME_LOCK
 	knob_moved(v);
+#endif
 	if (stack[sp].scr == SCR_VOLUME && now - last_key_ms >= VOLUME_MS) {
 		ui_pop();
 	}

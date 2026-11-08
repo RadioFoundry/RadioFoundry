@@ -140,9 +140,6 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_VOLUME:
 		settings_read(&st);
 		return radio_volume_step(st.volume);
-	case UI_SET_KNOB_SHOW:
-		settings_read(&st);
-		return (st.knob_flags & SETTINGS_KNOB_SHOW) != 0;
 	case UI_SET_KNOB_LOCK:
 		settings_read(&st);
 		return (st.knob_flags & SETTINGS_KNOB_LOCK) != 0;
@@ -459,14 +456,12 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		st->lang[1] = (char)value;
 		settings_end(hal_millis());
 		return true;
-	case UI_SET_KNOB_SHOW:
-	case UI_SET_KNOB_LOCK: {
-		uint8_t bit = id == UI_SET_KNOB_SHOW ? SETTINGS_KNOB_SHOW : SETTINGS_KNOB_LOCK;
+	case UI_SET_KNOB_LOCK:
 		st = settings_begin();
-		st->knob_flags = (uint8_t)(value != 0 ? st->knob_flags | bit : st->knob_flags & ~bit);
+		st->knob_flags = (uint8_t)(value != 0 ? st->knob_flags | SETTINGS_KNOB_LOCK :
+							st->knob_flags & ~SETTINGS_KNOB_LOCK);
 		settings_end(hal_millis());
 		return true;
-	}
 	case UI_SET_VOLUME:
 		st = settings_begin();
 		st->volume = radio_volume_stored((uint8_t)clamp16(value, 0, RADIO_VOLUME_MAX));

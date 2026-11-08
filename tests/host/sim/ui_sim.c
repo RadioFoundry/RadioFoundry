@@ -1382,7 +1382,7 @@ static bool soft_volume;
 static bool bcast_rx;
 // A reference trim (Settings > Advanced > Freq trim) only with the "trim" token, the same way
 static bool ref_trim;
-// A volume knob the MCU reads (Settings > Sound > Show volume, Lock volume) only with a "knob:<percent>" token
+// A volume knob the MCU reads (Settings > Sound > Lock volume) only with a "knob:<percent>" token
 static bool knob_radio;
 static bool vol_held;		// ui_svc_volume_hold: the radio ignores the volume knob
 uint32_t ui_svc_features(void)
@@ -2067,7 +2067,6 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ref_trim = false;
 	knob_radio = false;
 	vol_held = false;
-	ui_svc_setting_set(UI_SET_KNOB_SHOW, 0);
 	ui_svc_setting_set(UI_SET_KNOB_LOCK, 0);
 	ui_svc_setting_set(UI_SET_VOLUME, RADIO_VOLUME_DEFAULT);
 	ui_svc_setting_set(UI_SET_HINTS, 1);

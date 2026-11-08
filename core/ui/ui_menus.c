@@ -5036,8 +5036,9 @@ static const char *const n_ptype[] = { TRN("Off"), "Motorola", "Anytone" };
 
 static const set_item_t s_sound[] = {
 	NUMBER(TRN("Volume"), "speaker loudness", UI_SET_VOLUME, 0, RADIO_VOLUME_MAX, 1, NULL),
-	TOGGLE(TRN("Show volume"), "volume knob level", UI_SET_KNOB_SHOW),
+#if CONFIG_VOLUME_LOCK
 	TOGGLE(TRN("Lock volume"), "volume knob key lock", UI_SET_KNOB_LOCK),
+#endif
 	TOGGLE(TRN("Key tones"), "beep", UI_SET_KEY_TONES),
 	NUMBER(TRN("Tone volume"), NULL, UI_SET_TONE_VOLUME, 0, 10, 1, NULL),
 	TOGGLE(TRN("Talk permit tone"), NULL, UI_SET_TALK_PERMIT),
@@ -5213,7 +5214,7 @@ static bool set_hidden(const set_item_t *s)
 #endif
 	if (s->type != ST_ACTION && s->id == UI_SET_VOLUME)
 		return !(feats() & UI_FEAT_VOLUME);	// a knob sets the volume on the other radios
-	if (s->type != ST_ACTION && (s->id == UI_SET_KNOB_SHOW || s->id == UI_SET_KNOB_LOCK))
+	if (s->type != ST_ACTION && s->id == UI_SET_KNOB_LOCK)
 		return !(feats() & UI_FEAT_VOLUME_KNOB);	// only where the MCU reads the knob
 	if (s->type != ST_ACTION && s->id == UI_SET_BCAST_STEP)
 		return !(feats() & UI_FEAT_BCAST);

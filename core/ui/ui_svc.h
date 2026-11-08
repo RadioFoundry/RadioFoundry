@@ -35,7 +35,7 @@
 #define UI_FEAT_VOLUME		(1u << 17)	// the volume is the radio's to set: no knob (radio_volume_soft), VOL key + Settings
 #define UI_FEAT_BCAST		(1u << 18)	// a broadcast FM receiver (radio_bcast_capable): its VFO step setting
 #define UI_FEAT_ZONE_SHARE	(1u << 19)	// ui_svc_zone_* (zone sharing over DMR data, CONFIG_ZONE_SHARE)
-#define UI_FEAT_VOLUME_KNOB	(1u << 21)	// the MCU reads a volume knob (radio_volume_knob): its options in Settings > Sound
+#define UI_FEAT_VOLUME_KNOB	(1u << 21)	// the MCU reads a volume knob (radio_volume_knob): Settings > Sound > Lock volume
 #define UI_FEAT_REF_TRIM	(1u << 20)	// a reference trim (hal_radio_t.ref_trim, radio/ref_trim.h): Freq trim setting
 uint32_t ui_svc_features(void);
 // The parts of it each package reports (ui_svc_features ORs them): dmr-voice / radio core, dmr-data, storage-cps,
@@ -329,9 +329,9 @@ typedef enum {
 	UI_SET_DMR_ID,		// the radio's own DMR ID in the codeplug, 1..CODEPLUG_DMR_ID_MAX (a set is a codeplug write job)
 	UI_SET_REF_TRIM,	// reference oscillator trim, ppb -10000..+10000 (Settings > Advanced; settings_t.ref_trim_ppb)
 	UI_SET_LANGUAGE,	// the UI's language, i18n.h lang_value: "en" English, 0 never picked (Settings > Display; settings_t.lang)
-	// The volume knob (UI_FEAT_VOLUME_KNOB; settings_t.knob_flags): show its level when it turns, and ignore it while
-	// the keys are locked
-	UI_SET_KNOB_SHOW, UI_SET_KNOB_LOCK,
+	// Lock volume: the volume knob does nothing while the keys are locked (CONFIG_VOLUME_LOCK, UI_FEAT_VOLUME_KNOB;
+	// settings_t.knob_flags)
+	UI_SET_KNOB_LOCK,
 	UI_SET_COUNT
 } ui_setting_t;
 
