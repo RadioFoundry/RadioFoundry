@@ -229,8 +229,15 @@ rather than show "VOX on" for a VOX that never keys.
 
 ### 3.5 Squelch tail elimination
 
-Not done. Without a reverse burst or a tone-loss signal from the other station there is nothing to act on; closing
-early on CTCSS loss conflicts with the tone debounce (8 polls) that keeps fades from chopping audio. Left for later.
+No reverse burst or tone-loss signal from the other station is acted on yet; closing early on CTCSS loss conflicts
+with the tone debounce (8 polls) that keeps fades from chopping audio.
+
+The noise squelch shortens the tail itself. It closes after `RADIO_SQL_CLOSE_POLLS` (2) polls over the close line
+(open threshold + `RADIO_SQL_HYST_DB`), 50 ms, but after one poll when the noise is `RADIO_SQL_FAST_CLOSE_DB` (12 dB)
+or more over it: a carrier that goes takes the noise far over the line at once, while a fade crosses it by a little.
+Squelch level 0 (always open) and the APRS hold (`RADIO_SQL_CLOSE_POLLS_APRS`) keep their own timing. On one board
+(BK4819 receiver) the tail at the speaker went from 55 ms to 15-35 ms in three calls (measured,
+`test_fm_rx_speaker`); what is left is the poll and the chip's noise reading lag.
 
 ### 3.6 Mic gain
 
@@ -329,20 +336,30 @@ None of them needs a correction in the driver. The HIL test (`test_fm_tx_dtmf`) 
 | scan hold | 1400 Hz 40 ms | the scan stops on a signal, if `scan_beep` |
 | emergency | 1500 / 900 Hz warble, 6 x 160 ms | someone's emergency heard (alarm or emergency call), if the emergency setting's tone is on (`dmr-emergency.md`) |
 | message | 1000, 1300, 1700 Hz rising, 60-90 ms each | a text message arrived: the UI asks for it (`radio_req_beep(BEEP_MESSAGE)`) when Settings > Sound > Message tone is on |
+| sweep | 400 ms silence, then 150 Hz to 3.8 kHz over 4 s, phase continuous | the speaker test, from the debug link only (op 22, which can delay it); `test_speaker_sweep` measures the speaker's response and whether the audio path plays it whole |
 
 Synthesis: a 64-entry sine table with linear interpolation, 2 ms fades (no clicks); level 100 is about half of full
 scale so a beep mixed over voice doesn't clip. Beeps follow the radio's volume up to `beep_level`. A radio with an analog
 knob (no `hal_radio_t.volume`) and one whose volume hook also scales the PCM path (`volume_pcm`: an HR_C6000
 board's RX gain, an HR_C7000 board's line out gain) play the beep at `beep_level`, and the volume acts on it in the
 speaker path. On a radio where the MCU sets the volume somewhere the PCM path doesn't pass, the core plays each beep at the
-volume percent last given to the board, capped at `beep_level` (`radio_beep_level`): volume 0 gives no beep. When the DMR voice stream runs, the beep is mixed into it (`ambeVoiceSetMixer`); otherwise the beep
-starts the board's PCM audio stream itself and stops it two silent blocks after the pattern. If that stream delivers no
+volume percent last given to the board, capped at `beep_level` (`radio_beep_level`): volume 0 gives no beep. When the DMR voice stream runs, the beep is mixed into it (`ambeVoiceSetMixer`). A DMR call
+leaves that stream running until the radio leaves DMR, so most beeps on a DMR channel are mixed. A mixed beep the
+amplifier isn't ready for (more than one lead-in block, below) gets the same lead-in as silence mixed in with the speaker
+routed; otherwise its tone starts in the first block. Without the voice stream the beep
+starts the board's PCM audio stream itself, routes the speaker for silent lead-in blocks before the tone (one 20 ms
+block, or `hal_audio_t.speaker_lead_ms` rounded up to blocks, at most 200 ms, for an amplifier that unmutes slowly), holds
+the route for four silent blocks after the pattern, and then stops the stream. A beep in that hold plays at once, with no
+lead-in. A board with `speaker_hang_s` (a mobile on a supply; 0 on battery radios) keeps its amplifier powered and
+silent (`speaker_warm`) from any key, PTT, reception or beep until that many seconds after the last one, so a key click
+or the DMR talk permit tone plays at once: while it is warm, beeps take the one-block lead-in. If that stream delivers no
 block for 200 ms (8 radio polls), its clock has stopped: the beep stops the stream, gives the speaker route back and
 drops the pattern, so a codec that goes quiet can't leave the analog receive audio muted. A start that fails (no codec
 clock) is stopped the same way, in case a block already ran. Counters in the view:
 `beep.played` (started), `beep.no_stream` (no audio stream could be started: on a board that can't stream PCM in FM
 mode this counts instead), `beep.blocks` (audio blocks with beep in them), `beep.stalls` (streams given up that way),
-`beep.busy`.
+`beep.busy`; in the `audio` section, `beep.shared` (patterns mixed into the voice stream), `beep.leads` (lead-in blocks
+played), `beep.warm` (1: the amplifier is held warm) and `beep.warms` (times it was powered up for that).
 
 To hear the beeps in context, `tools/beep_reel.py` makes a video of the UI simulator's screen in which every beep sounds
 in a scene that sounds it on a radio, captioned (`build/beep-reel/beep_reel.mp4`; needs ffmpeg built with libass). It

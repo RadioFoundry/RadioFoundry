@@ -16,6 +16,7 @@
 #include "hrc_afsk.h"
 #include "platform.h"
 #include "audio_pcm.h"
+#include "prompt_fifo.h"
 #include "fm_rx_audio.h"
 #include "aprs/afsk.h"
 
@@ -56,7 +57,7 @@ static void fill(void)
 			}
 			pending = true;
 		}
-		if (!hrc7000_prompt_push(modem, chunk)) {
+		if (!hrc_prompt_push(modem, chunk)) {	// waits after the FIFO showed room (prompt_fifo.h)
 			return;
 		}
 		pending = false;

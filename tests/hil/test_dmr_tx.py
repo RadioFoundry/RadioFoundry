@@ -307,11 +307,12 @@ def test_dmr_tx_talker_alias(radio, sdr_bench, pytestconfig, backup_dir):
 
 
 def _gate(radio):
-    """The HR_C7000 TX gate's diagnostics line ("pg g<closings> l<late> ra<ring play while gated>") as a dict, or None
-    on a board without it (one whose beeps may sound on air)."""
+    """The HR_C7000 TX gate's diagnostics line ("pg g<closings> l<late> ra<ring play while gated>", newer firmware
+    adds fields after it, such as " un<speaker queue underruns>") as a dict, or None on a board without it (one whose
+    beeps may sound on air)."""
     import re
     line = rfoundry_hil.find(rfoundry_hil.diag_lines(radio), "pg ")
-    m = re.fullmatch(r"pg g(\d+) l(\d+) ra(\d+)", line.strip()) if line is not None else None
+    m = re.fullmatch(r"pg g(\d+) l(\d+) ra(\d+)(?: .*)?", line.strip()) if line is not None else None
     return {"g": int(m.group(1)), "l": int(m.group(2)), "ra": int(m.group(3))} if m else None
 
 
