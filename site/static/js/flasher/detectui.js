@@ -11,9 +11,10 @@ const key = (id) => id.replace(/-/g, "_");	// a probe id or a via word as an i18
 
 // opts: {radio, board, fb, ids (probe ids, in order), open(baud) (a stream on the radio's port; the first call asks
 // for the port), onFound(found) (a probe named the variant: found as detectVariant returns it), nextHint(found) (an
-// i18n key for what the user does next, or null), log(line)}.
+// i18n key for what the user does next, or null), log(line), showBlocked (say here that a found variant has no image;
+// false when the caller says so itself)}.
 // Returns the element: the button, its hint and where the outcome shows
-export function detectControl({ radio, board, fb, ids, open, onFound, nextHint = () => null, log = () => {} }) {
+export function detectControl({ radio, board, fb, ids, open, onFound, nextHint = () => null, log = () => {}, showBlocked = true }) {
 	const say = h("div");
 	const fill = (...parts) => say.replaceChildren(...parts.filter(Boolean));
 	let busy = false;
@@ -30,7 +31,7 @@ export function detectControl({ radio, board, fb, ids, open, onFound, nextHint =
 				const v = (radio.variants || []).find((x) => x.code === found.code);
 				fill(notice(t("flash.detect.found", { variant: v ? `${v.code} (${v.name})` : found.code, via: t(`flash.detect.via.${key(found.via)}`),
 					version: found.version || "" }), "ok"),
-					v?.blocked ? notice(t("flash.detect.blocked", { why: v.blocked }), "bad")
+					v?.blocked ? (showBlocked ? notice(t("flash.detect.blocked", { why: v.blocked }), "bad") : null)
 						: (found.note || nextHint(found)) ? h("p", {}, t(found.note || nextHint(found))) : null);
 				await onFound(found);
 			} else if (found) {

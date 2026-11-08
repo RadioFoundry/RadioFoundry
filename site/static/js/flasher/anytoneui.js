@@ -23,6 +23,7 @@ import { AnytoneUpdate, AnytoneProgram, AnytoneError, BAUD, judge, variantOf, va
 import { FakeAnytone, stockAnytone, SAMPLE_ANYTONE } from "./fakeanytone.js";
 import { confirmVariant } from "./detect.js";
 import { detectControl } from "./detectui.js";
+import { verdict, writable } from "./variant.js";
 import { PROBES as VARIANT_PROBES } from "./anytonedetect.js";
 
 export const BACKEND = "anytone-update";
@@ -111,6 +112,32 @@ function variantChooser(onPick) {
 	return h("div", {}, h("p", {}, h("b", {}, t("flash.at.variant_title")), " ", r.variant_check || ""),
 		h("div", { class: "choice-grid" }, choices.map((ch) => h("button", { class: "choice", type: "button", "aria-pressed": String(now === ch.code),
 			onclick: () => { S().atChosen = ch.code; onPick(); } }, h("strong", {}, ch.label)))));
+}
+
+// The build step's variant question (backends.js buildGate). A variant with no firmware stops the step, before the
+// user spends a build on it; not knowing is allowed, as connect reads the radio and refuses it there. The port a probe
+// left in the update mode is closed: the steps until connect need the radio in its normal mode
+export function buildGate(redraw) {
+	const r = S().radio;
+	const detector = detectControl({ radio: r, board: board(), fb: ctx.fb(), ids: VARIANT_PROBES, open: probeOpener(), showBlocked: false,
+		log: (l) => session().log.add(l), onFound: async (f) => {
+			S().atChosen = f.code;
+			S().variant = { version: f.version, code: f.code, via: f.via };
+			if (f.keep) try { await f.stream.close(); } catch (e) { /* gone */ }
+			redraw();
+		} });
+	// a pick left over from another radio doesn't count
+	const judged = () => (r.variants?.some((v) => v.code === S().atChosen) ? verdict(r, S().atChosen, r.flash.board, S().buildOptions || {}) : null);
+	const refusal = (vd) => {
+		const what = `${vd.code} (${vd.variant.name})`;
+		return vd.variant.blocked ? t("flash.detect.blocked", { why: vd.variant.blocked })
+			: vd.kind === "other_board" ? t("flash.variant.other_board", { variant: what, radio: (S().data?.radios || []).find((x) => x.flash.board === vd.board)?.name || vd.board })
+			: vd.kind === "options" ? t("flash.variant.options", { variant: what, options: Object.entries(vd.need).map(([n, v]) => `${n} ${v}`).join(", ") })
+			: t("flash.variant.unsupported", { variant: what, radio: r.name });
+	};
+	const refused = () => { const vd = judged(); return !!vd && !writable(vd); };
+	return { refused, view: () => h("div", {}, variantChooser(() => { S().variant = null; redraw(); }), detector,
+		refused() ? notice(refusal(judged()), "bad") : null) };
 }
 
 export function connectView() {
@@ -415,4 +442,5 @@ register({
 	recovery: { first: "fix", stock: "restore", reach: "flash.help.at_reach", stockText: "flash.help.fix.stock_at" },
 	ownImage,
 	release,
+	buildGate,
 });

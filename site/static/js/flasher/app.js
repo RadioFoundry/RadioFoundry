@@ -1030,8 +1030,10 @@ function buildView() {
 		S.customPicked = false;
 		draw();
 	};
+	const gate = backend().buildGate?.(() => draw()) || null;
 	// Continue gets the image first: built on request, then on to the next step
 	const go = async () => {
+		if (gate?.refused()) return;
 		if (!S.firmware && VERSION_REF && validRef(VERSION_REF)) {
 			const yes = await confirmVersion();
 			if (!yes) return;
@@ -1156,7 +1158,7 @@ function buildView() {
 		const busy = building && !S.build.error;
 		const missing = buildOptions().find((o) => !S.buildOptions?.[o.name]);
 		forward(button(busy ? [spinner(), t("flash.nav.building")] : t(missing ? "flash.nav.choose" : S.firmware || S.sim ? `flash.nav.to_${stepsFor()[S.step + 1]}`
-			: VERSION_REF ? "flash.nav.build_version" : "flash.nav.build", { what: missing?.title.toLowerCase(), ref: VERSION_REF && versionShort() }), go, { primary: true, disabled: busy || !!missing }), summary);
+			: VERSION_REF ? "flash.nav.build_version" : "flash.nav.build", { what: missing?.title.toLowerCase(), ref: VERSION_REF && versionShort() }), go, { primary: true, disabled: busy || !!missing || !!gate?.refused() }), summary);
 		// every image, prebuilt choice or not, comes from the build service (or is the user's own)
 		// the image's state, then building it yourself: one line and a fold under the features, not a card of its own
 		const image = h("div", { class: "build-image" },
@@ -1172,6 +1174,7 @@ function buildView() {
 			panel(t("flash.build.title"),
 				// "back up first" only where the original firmware can be backed up before the installation
 				S.radio.status !== "supported" ? notice(t(S.radio.backup?.stock === "none" ? "flash.build.untested_keep_file" : "flash.build.untested", { name: S.radio.name }), "bad") : null,
+				gate?.view(),
 				...options,
 				h("p", {}, t("flash.build.lead")),
 				h("div", { class: "choice-grid", role: "radiogroup" }, cards),

@@ -137,6 +137,32 @@ test("connect: Auto-detect asks the radio, picks its variant and keeps the updat
 	assert.equal(p.last().textContent, "Continue", "no second connect needed");
 });
 
+test("build: a variant with no firmware is refused, and Auto-detect closes the port it opened", async () => {
+	const p = page(models[other][0]);
+	const gate = ui.buildGate(() => {});
+	assert.equal(gate.refused(), false, "not knowing the variant is allowed");
+	p.S.atChosen = other;
+	assert.equal(gate.refused(), true);
+	assert.match(gate.view().textContent, /can't be installed|does not support|needs the/);
+	p.S.atChosen = runs;
+	assert.equal(gate.refused(), false);
+	p.S.atChosen = "NOT-THIS-RADIO";
+	assert.equal(gate.refused(), false, "a pick from another radio doesn't count");
+	p.S.atChosen = null;
+	let drawn = 0, closed = 0;
+	const stream = p.S.fakeAnytone.stream, close = stream.close;
+	stream.close = async () => { closed++; return close?.call(stream); };
+	const found = ui.buildGate(() => { drawn++; });
+	await press(findButton(found.view(), "Auto-detect"));
+	await sleep(100);
+	assert.equal(p.S.atChosen, other);
+	assert.equal(found.refused(), true);
+	assert.equal(drawn, 1);
+	assert.ok(closed, "no update mode session kept for the steps before connect");
+	const red = found.view().textContent.match(/can't be installed/g) || [];
+	assert.ok(red.length <= 1, "one refusal, not two");
+});
+
 test("write: the radio is asked again just before the first frame; another radio stops the install", async () => {
 	if (!other) return;
 	const app = rand(3000, 9);
