@@ -75,6 +75,7 @@ from rfoundry_hil import DebugLinkError, skip
 from hil_config import rig
 
 PTT_S = 3.0
+SOUND_S = 1.5    # the over that measures the carrier for the envelope's threshold
 # dmr_bench.check_tx items that judge the waveform, meaningless in a capture whose ADC clipped
 SDR_WAVEFORM_CHECKS = ("capture not saturated", "sync family", "voice A-F in order", "same-slot spacing", "ramps",
                        "no overlapping bursts", "no power steps", "burst on-time", "no unexplained carrier",
@@ -128,13 +129,14 @@ def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     if own == 0:
         skip("state", "the radio has no DMR ID (dmr.own_id=0)")
     assert ch_cc == cc, f"the channel's color code {ch_cc} != --dmr-cc {cc}"
-    radio.reset_counters()
-    _, before = radio.counters()
     sdr_bench.need_dmr_waveform(freq)
     rdir = sdr_bench.run_dir("hil_dmr_tx")
+    floor_db = _sound_carrier(radio, sdr_bench, rdir, freq, cc)
+    radio.reset_counters()
+    _, before = radio.counters()
     # waveform: check_tx judges burst on-time, keying ramps, power steps, overlaps and clipping
     with sdr_bench.lease():
-        watch = sdr_bench.dmr_watch_start(rdir, freq, PTT_S + 8, cc, waveform=True)
+        watch = sdr_bench.dmr_watch_start(rdir, freq, PTT_S + 8, cc, waveform=True, floor_db=floor_db)
         lis = sdr_bench.listen_start(freq, cc, seconds=PTT_S + 6, ambe_out=sdr_bench.run_path(rdir, "heard"))
         radio.ptt_for(PTT_S)
         radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
@@ -144,6 +146,15 @@ def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     _, after = radio.counters()
     _report(_tx_checks(sdr, heard, own, target, private, cc, before, after, d.get("dmr.tx_alias", ""), pytestconfig,
                        _limits(radio)), sdr_bench, rdir)
+
+
+def _sound_carrier(radio, sdr_bench, rdir, freq, cc):
+    """A short over, watched: the floor the judged over's envelope is keyed from (SdrBench.carrier_floor_db)."""
+    with sdr_bench.lease():
+        probe = sdr_bench.dmr_watch_start(rdir, freq, SOUND_S + 3, cc, waveform=True)
+        radio.ptt_for(SOUND_S)
+        radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
+        return sdr_bench.carrier_floor_db(sdr_bench.dmr_watch_result(probe))
 
 
 def _limits(radio):
@@ -617,12 +628,13 @@ def test_dmr_tx_encode_options(radio, sdr_bench, pytestconfig, opts, word):
     try:
         got = int(radio.view(["dmr"])["voice.enc_options"], 0)
         assert got == opts, f"options in force {got:#x} after SETTING 31 {opts:#x}"
-        radio.reset_counters()
-        _, before = radio.counters()
         sdr_bench.need_dmr_waveform(freq)
         rdir = sdr_bench.run_dir(f"hil_dmr_enc_{word:x}")
+        floor_db = _sound_carrier(radio, sdr_bench, rdir, freq, cc)
+        radio.reset_counters()
+        _, before = radio.counters()
         with sdr_bench.lease():
-            watch = sdr_bench.dmr_watch_start(rdir, freq, PTT_S + 8, cc, waveform=True)
+            watch = sdr_bench.dmr_watch_start(rdir, freq, PTT_S + 8, cc, waveform=True, floor_db=floor_db)
             lis = sdr_bench.listen_start(freq, cc, seconds=PTT_S + 6, ambe_out=f"{rdir}/heard")
             radio.ptt_for(PTT_S)
             radio.wait_for(lambda x: x.get("state") != "tx", timeout=3, what="TX ended")

@@ -449,9 +449,11 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
     assert not holes, f"a gap or overlap in the outbound (ms into the capture, length): {holes}; " \
                       f"bench {sdr.get('bursts_summary')}"
     assert abs(sum(same) / len(same) - 60.0) < 0.05
-    # Key-ups of our carrier only: the receiver also reports sub-millisecond blips some 50 dB below it
+    # Key-ups of our carrier only: the receiver also reports blips at its keying threshold, 10 dB over the floor
+    assert sdr["edges"], f"the bench board reported no key-up edge: {sdr['bursts_summary'].get('envelope')}"
     top = max(e["level_dbfs"] for e in sdr["edges"])
-    ups = [e for e in sdr["edges"] if e["level_dbfs"] > top - 20]
+    cut = max(top - 20, sdr["bursts_summary"]["envelope"]["floor_db"] + 16)
+    ups = [e for e in sdr["edges"] if e["level_dbfs"] > cut]
     assert len(ups) == 1, f"key-up edges: {[(e['up_ms'], e['level_dbfs']) for e in ups]} (it must stay keyed)"
     other = [b for b in bs if b["kind"] != "IDLE" and not b["kind"].startswith("slottype?")]   # an undecoded slot type
     assert not other, f"only idle bursts were queued: {sdr['summary']['counts']}"

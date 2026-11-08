@@ -1504,9 +1504,10 @@ class SdrBench:
         w = self._api_info(rx=True).get("window", {})
         return bool(w.get("enabled", True)) and w.get("lo", 0) + bw_hz / 2e6 <= freq <= w.get("hi", 0) - bw_hz / 2e6
 
-    def bursts_start(self, freq, seconds, cc=None, bursts=None, until_end=False, envelope=False):
+    def bursts_start(self, freq, seconds, cc=None, bursts=None, until_end=False, envelope=False, floor_db=None):
         """The receive board's decoded bursts on freq for `seconds` (the line protocol's bursts op), collected by a thread;
-        returns once it is watching, and bursts_result() waits. envelope: with the carrier's keyed segments too. No
+        returns once it is watching, and bursts_result() waits. envelope: with the carrier's keyed segments too, keyed
+        from floor_db (carrier_floor_db()) when given, else from the channel's measured floor. No
         session: receiving never waits."""
         self._need_lease()
         L = self._line()
@@ -1517,6 +1518,8 @@ class SdrBench:
             req["max_bursts"] = bursts
         if envelope:
             req["envelope"] = True
+            if floor_db is not None:
+                req["floor_db"] = floor_db
         try:
             r = L.Request(L.address(self.api_rx), req)
         except L.BenchLineError as e:
@@ -1561,6 +1564,11 @@ class SdrBench:
             r["sync"] = r.get("sync") or "EMB"
             out.append(r)
         return out, summary
+
+    # The envelope's keying threshold: the bench board's default over its floor, and how far under the carrier it may
+    # go at most (what the capture analyzer allows a close receiver)
+    ENVELOPE_ON_DB = 10.0
+    CARRIER_BELOW_DB = 30.0
 
     @staticmethod
     def edges_from_segments(segments, sc0, fs):
@@ -1614,15 +1622,26 @@ class SdrBench:
                     "sd": round(statistics.pstdev(spacing), 3)}
         return out
 
-    def dmr_watch_start(self, rdir, freq, seconds, cc=None, name="cap0", waveform=False):
+    @staticmethod
+    def carrier_floor_db(sdr):
+        """The floor to key a transmitter's envelope from, given a watch of it: the channel's, raised to
+        CARRIER_BELOW_DB + ENVELOPE_ON_DB under the carrier when the receiver is close. Keyed from a floor far under the
+        carrier, an envelope follows the transmitter's skirt and the receiver's own quantization, not its power mask."""
+        env = sdr["bursts_summary"]["envelope"]
+        levels = [e["level_dbfs"] for e in sdr["edges"] if e.get("level_dbfs") is not None]
+        if not levels:
+            return env["floor_db"]
+        return max(env["floor_db"], max(levels) - SdrBench.CARRIER_BELOW_DB - SdrBench.ENVELOPE_ON_DB)
+
+    def dmr_watch_start(self, rdir, freq, seconds, cc=None, name="cap0", waveform=False, floor_db=None):
         """Watch freq for DMR bursts for `seconds`, started before the transmitter keys up, decoded on the bench: only
         JSON comes back. Skips where the bench can't. Finish with dmr_watch_result(). waveform: the keying edges too
-        (need_dmr_waveform() first), the board's envelope. rdir and name are unused."""
+        (need_dmr_waveform() first), the board's envelope, keyed from floor_db when given. rdir and name are unused."""
         if waveform:
             self.need_dmr_waveform(freq)
         elif not self.can_watch(freq):
             skip("bench", f"the bench can't decode bursts on {freq} MHz")
-        return {"p": self.bursts_start(freq, seconds, cc=cc, envelope=waveform), "freq": freq, "cc": cc}
+        return {"p": self.bursts_start(freq, seconds, cc=cc, envelope=waveform, floor_db=floor_db), "freq": freq, "cc": cc}
 
     def dmr_watch_wait(self, w, timeout=120):
         """Nothing to wait for here: a burst watch ends in dmr_watch_result()."""
