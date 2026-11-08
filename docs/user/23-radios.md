@@ -15,7 +15,7 @@ and what has been checked on it.
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
-| [AnyTone AT-D578UV](#anytone-at-d578uv) | AnyTone AT-D578UV PRO, AnyTone AT-D578UV PLUS | Written from an analysis of the manufacturer's firmware for the GD32F303 radios; nothing has run on a radio yet. Open: every function on the radio, DMR. The Artery radios take their own image. |
+| [AnyTone AT-D578UV](#anytone-at-d578uv) | AnyTone AT-D578UV PRO, AnyTone AT-D578UV PLUS | FM, DMR voice, text messages and positions, dual watch, GPS and the flash stub work on the GD32F303 radios. Open: air band AM on a radio with the KTMicro receiver. The Artery radios take their own image. |
 | [AnyTone AT-D578UV (Artery)](#anytone-at-d578uv-artery) | AnyTone AT-D578UV PRO, AnyTone AT-D578UV PLUS | The GD32 builds' code on the Artery AT32F435, written from an analysis of the manufacturer's firmware; nothing has run on a radio yet. Open: every function on the radio, DMR. |
 <!-- end generated -->
 
@@ -651,8 +651,8 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 
 A mobile radio for 136-174 and 400-480 MHz with a color screen, a front knob, front keys and a hand microphone.
 This section is the radios with a GigaDevice GD32F303 processor; the radios with an Artery processor take their own
-image ([AT-D578UV (Artery)](#anytone-at-d578uv-artery)). Nothing has run on a radio yet: this port is written from
-the hardware notes ([hardware-d578uv.md](../spec/hardware-d578uv.md)) and waits for its first test.
+image ([AT-D578UV (Artery)](#anytone-at-d578uv-artery)). It runs on the radio; the
+[bring-up checklist](../testing/d578uv-bringup.md) lists what has been checked and how.
 
 **Which AT-D578UV.** Open the radio's version screen. A radio that shows `GD_Ver` has the GD32F303 and takes the
 `d578uv` image. A radio that shows `AT_Ver` has the Artery processor and takes the `d578uva` image. The installer
@@ -660,17 +660,17 @@ reads which one the radio has and refuses the other image.
 
 ### Installing on the AT-D578UV
 
-The radio's own update mode takes the image over its USB cable, so the vendor's loader stays and the vendor firmware
+The radio's own update mode takes the image over its USB cable, so the original firmware's loader stays and the original firmware
 can go back the same way ([installing](02-installing.md#radios-installed-through-the-manufacturers-update-mode)). To
-start it, turn the radio on while holding **MENU** and **EXIT**, then connect the cable. The vendor
+start it, turn the radio on while holding **MENU** and **EXIT**, then connect the cable. The original
 firmware's other power-on screens, such as its own **UPDATE MODE**, are for fonts and icons, not the firmware: don't
 install from them.
 
 | Task | Web installer | rfoundry |
 |---|---|---|
 | Check the radio, write nothing | **Connect**: the page asks the radio its model | `rfoundry detect --board d578uv` |
-| Install | **Install**, **Connect**, pick your vendor firmware's `.CDD` (for the DMR chip's boot block), **Install** | `rfoundry flash IMAGE --board d578uv --stock FW.CDD` |
-| Back to the vendor firmware | **Help**, restore, pick the vendor's `.CDD`, `.CDI` and `.spi` | `rfoundry restore-stock FW.CDD --board d578uv` |
+| Install | **Install**, **Connect**, pick your original firmware's `.CDD` (for the DMR chip's boot block), **Install** | `rfoundry flash IMAGE --board d578uv --stock FW.CDD` |
+| Back to the original firmware | **Help**, restore, pick the original firmware's `.CDD`, `.CDI` and `.spi` | `rfoundry restore-stock FW.CDD --board d578uv` |
 
 The installer refuses a radio whose model doesn't match, and an Artery radio (`AT_Ver`) given this image: it names
 the `d578uva` image instead. The `rfoundry` route has installed on a radio; the web installer hasn't yet.
@@ -683,7 +683,7 @@ until a radio shows where they are. The front knob steps the channel, and in a l
 **OK**.
 
 PTT is on the hand microphone. Both kinds work without a setting: the radio tells the keypad microphone from the plain
-one by the messages it sends. (The vendor firmware's **Hand Type** setting chooses between them.) The keypad
+one by the messages it sends. (The original firmware's **Hand Type** setting chooses between them.) The keypad
 microphone works on a radio; the plain one is untested.
 
 | Microphone key | Role |
@@ -703,26 +703,26 @@ A keypad microphone unplugged while the radio is on stops its PTT within 3 secon
 
 ### What the AT-D578UV lacks today
 
-- Every function is untested on a radio.
-- DMR is written (the DMR chip and its voice set-up, receive, and transmit switched on and off per burst) and on in
-  the default build.
+- DMR voice, text messages, positions, the ID database, talker alias, emergency calls and roaming work on the radio.
+  A text message with a response requested longer than 32 characters is lost: the DMR chip clears part of each
+  data block ([DMR data](../spec/modem-sct.md)).
 - Dual watch hears both channels at once only when the other channel is FM: the second receiver has no DMR. With a
   DMR channel there, the radio switches between the two as other radios do.
-- FM transmit sends the 1750 Hz burst, DTMF and APRS; all are written and untested. How loud the APRS tones are is a
-  guess until measured, so other stations may not decode the first beacons.
-- Air band receive (108-137 MHz, AM) is written and untested
-  ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)). While it plays, dual watch
-  pauses: the air band uses the second receiver's parts. FM broadcast receive (87.5-108 MHz) is written and untested;
-  stereo isn't, and the signal level's scale is a guess, so a scan may stop on the wrong stations.
+- FM transmit, DTMF, VOX and APRS beacons work on the radio.
+- Air band receive (108-137 MHz, AM) needs the KTMicro receiver. Some radios carry an RDA5807 in its place, which
+  has FM broadcast only: on those the air band stays silent
+  ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)). While the air band plays, dual
+  watch pauses: it uses the second receiver's parts. FM broadcast receive (87.5-108 MHz) works; stereo isn't
+  written.
 - A Bluetooth PTT button or Bluetooth hand mic paired with the original firmware keys the radio, and the hand
-  mic's channel keys should work too. This is written and untested. Pairing and Bluetooth audio aren't written: the microphone
-  and speaker stay the radio's own. The built-in GPS is written and untested.
-- VOX is written and untested. The vendor firmware has no VOX; RadioFoundry reads the microphone's level from the RF
+  mic's channel keys work too. Pairing and Bluetooth audio aren't written: the microphone and speaker stay the
+  radio's own. The built-in GPS works.
+- The original firmware has no VOX; RadioFoundry reads the microphone's level from the RF
   chip, and how loud a voice must be to key it may need a different **VOX level** than on other radios.
 - APRS receive is written and untested, but this image leaves it out: it needs more memory than the GD32F303 has
-  left with DMR on. The Artery image has it. RadioFoundry decodes the receive audio itself; the vendor's APRS comes
+  left with DMR on. The Artery image has it. RadioFoundry decodes the receive audio itself; the original firmware's APRS comes
   from an add-on board, which RadioFoundry doesn't use.
-- The backlight has only the vendor firmware's five levels: **Brightness** picks one per 20 % (10-20 % the dimmest,
+- The backlight has only the original firmware's five levels: **Brightness** picks one per 20 % (10-20 % the dimmest,
   90-100 % the brightest). The status light shows both transmit and a busy channel; its color may not tell them apart.
 - The hotspot, single frequency repeating, privacy, the USB network and zone sharing are left out: the
   radio's memory is too small for all of them, and the vocoder runs in the DMR chip, out of the processor's reach.

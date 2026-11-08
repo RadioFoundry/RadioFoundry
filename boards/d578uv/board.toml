@@ -33,8 +33,8 @@ variant_check = "Open the version screen in the radio's menu. GD_Ver is the GD32
 [[hardware.variants]]
 code = "GD"
 name = "GD32F303 (built until mid-2022)"
-level = "bring-up"
-notice = "Nothing has run on this radio yet: the display, keys and FM are written from an analysis of the manufacturer's firmware. To go back, write the manufacturer's firmware file through the factory update mode."
+level = "testing"
+notice = "In testing: FM, DMR voice and data, dual watch and GPS work on the radio. Air band AM needs the KTMicro receiver, which some radios don't carry. To go back, write the manufacturer's firmware file through the factory update mode."
 runs = { board = "d578uv" }
 
 [[hardware.variants]]
@@ -45,10 +45,10 @@ notice = "Nothing has run on this radio yet: the Artery build is written from an
 runs = { board = "d578uva" }
 
 [status]
-level = "bring-up"
+level = "testing"
 summary = """\
-Written from an analysis of the manufacturer's firmware for the GD32F303 radios; nothing has run on a radio yet. \
-Open: every function on the radio, DMR. The Artery radios take their own image."""
+FM, DMR voice, text messages and positions, dual watch, GPS and the flash stub work on the GD32F303 radios. \
+Open: air band AM on a radio with the KTMicro receiver. The Artery radios take their own image."""
 release = "testing"
 
 # The vendor bootloader (0x08000000..0x08005FFF) is never written; the image goes to 0x08006000 through the factory
