@@ -57,6 +57,21 @@ def test_channels(sim):
         zone = img3[cps_client.ZONE_DATA + 16:cps_client.ZONE_DATA + 24]
         check(zone == bytes([1, 0, 2, 0, 3, 0, 0, 0]), f"zone holds channels 1-3: {zone.hex()}")
 
+        # --watch: channel 4, FM receive only, last in the zone; --zone2: zone 2 holding channel 1
+        path4 = os.path.join(d, "cp4.bin")
+        rc = cps_client.main(["test-channels", path4, "--rx", "433.45", "--tg", "91", "--cc", "1", "--watch", "433.5",
+                              "--zone2"])
+        img4 = cps_client.load_image(path4)
+        check(rc == 0 and cps_client.decode_channel(img4, 4) ==
+              {"name": "Watch 433.5000", "rx_hz": 433500000, "tx_hz": 433500000}, "watch channel in the image")
+        _, a4 = cps_client.channel_addr(4)
+        check(img4[a4 + 0x33] & 0x04, "watch channel receive only")
+        zone = img4[cps_client.ZONE_DATA + 16:cps_client.ZONE_DATA + 24]
+        check(zone == bytes([1, 0, 2, 0, 4, 0, 0, 0]), f"zone holds channels 1, 2, 4: {zone.hex()}")
+        z2 = img4[cps_client.ZONE_DATA + 176:cps_client.ZONE_DATA + 176 + 20]
+        check(z2[:11] == b"Test zone 2" and z2[16:20] == bytes([1, 0, 0, 0]) and
+              img4[cps_client.ZONE_BITMAP] & 3 == 3, f"zone 2: {z2.hex()}")
+
 
 def main():
     sim = os.path.join(HERE, "cpsSim")

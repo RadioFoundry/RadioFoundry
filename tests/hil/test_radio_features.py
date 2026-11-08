@@ -708,11 +708,17 @@ def test_dual_watch_stops_on_call(radio, sdr_bench, pytestconfig):
     size = as_int(radio.core().get("zone_size"), 0)
     if size < 2:
         skip("state", "the DMR test channel's zone has one channel")
-    other = next((p for p in range(size) if p != pos), None)
-    radio.link.zone_pos(other)
-    radio.wait_for(lambda v: v.get("zone_pos") == str(other), what="the other channel")
-    if radio.core().get("rx_hz") == str(hz):
-        skip("state", "the other channel is on the test frequency too")
+    other = None
+    for p in range(size):		# the first other channel of the zone that isn't on the test frequency
+        if p == pos:
+            continue
+        radio.link.zone_pos(p)
+        radio.wait_for(lambda v: v.get("zone_pos") == str(p), what=f"zone position {p}")
+        if radio.core().get("rx_hz") != str(hz):
+            other = p
+            break
+    if other is None:
+        skip("state", "every other channel of the zone is on the test frequency too")
     with settings(radio, scan_resume=1):
         radio.link.scan("dual", pos)
         try:
