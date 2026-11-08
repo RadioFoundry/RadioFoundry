@@ -229,13 +229,12 @@ def _long_call(s, rnd):
 
 
 def _boot(s, rnd):
-    from test_cps import reconnect
     _up_all_along(s, 90)
     for settle in (0.0, 4.0):
         s.radio.link.reboot(0, s.radio.link.chip()["token"])
         s.radio.link.close()
         time.sleep(2.0)
-        reconnect(s.radio)
+        s.radio.reconnect(20.0)
         s.radio.wait_for(lambda c: c.get("state") not in (None, "tx"), timeout=15, what="the radio after the restart")
         s.radio.lowest_power()
         s.ts = int(s.radio.view(["dmr"])["dmr.ts"])        # the override is gone with the restart
@@ -267,7 +266,8 @@ SCENARIOS = {"up_ts_changes": _up_ts_changes, "long_idle": _long_idle, "rekey": 
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 @pytest.mark.codeplug_write
-@pytest.mark.parametrize("scenario", list(SCENARIOS))
+# The boot scenario restarts the radio, so it needs --allow-reboot (marker reboot) like the other restarts
+@pytest.mark.parametrize("scenario", [pytest.param(k, marks=pytest.mark.reboot) if k == "boot" else k for k in SCENARIOS])
 def test_dmr_repeater_slots(radio, sdr_bench, pytestconfig, backup_dir, scenario):
     _session(radio, sdr_bench, pytestconfig, backup_dir, SCENARIOS[scenario])
 
