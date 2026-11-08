@@ -188,6 +188,14 @@ transmission ends with receive in passive timing and the slot syncs kept, and th
 has been quiet for 150 ms (`modem-hrc7000.md` 5.2a). Any restart from a tick can land in a burst: keep them to
 quiet channels. Radios: the HR_C7000 boards.
 
+**2.11 A prompt FIFO push right after the half switch.**
+Symptom: beeps and speaker audio with a faint buzz under low tones, some beeps and not others, for seconds at a time;
+on a swept tone, stretches with broadband energy as loud as the tone. Cause: the prompt FIFO is two 32-sample halves;
+a push in the first microseconds after AUDIO_CONTROL b31 clears lands in the half being played, and every chunk then
+plays 4 ms early or late until the halves line up again. No samples are lost, so the queue counters stay clean. Rule:
+every push waits 200 µs after it saw the bit clear (`platform/hrc7000/prompt_fifo.h`, `modem-hrc7000.md` 8.4); check
+speaker audio with the sweep (`test_speaker_sweep`), not with steady tones alone. Radios: the HR_C7000 boards.
+
 ## 3. TX/RX state and PA handling
 
 **2.6 HR_C5000 register differences.** Configuration page 0 (page 4 on the HR_C6000); reg 0x10 = 0x6B simplex,

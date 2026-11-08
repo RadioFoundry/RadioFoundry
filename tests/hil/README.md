@@ -339,8 +339,8 @@ Used by `_over()` (`test_dmr_tx_talker_alias`, `test_dmr_privacy_tx`), `test_dmr
 | `test_cps.py` | open-firmware CPS over USB with `tools/cps_client.py`: radio info (a radio type from the board's `board.toml` `[cps] radio_types`, struct 3), two reads of the qdmr regions identical, the current channel's record matches the view, a channel change saved by the settings store within 2 s (the `storage` view section); the write dry run (no write: backup file round trip, the rename touches only the name, the write and restore plans match and restore every byte); opt-in: one channel renamed, read back and the backup restored over what the radio then holds and verified; the channel position survives a restart | radio; `--allow-codeplug-write` (`--codeplug-backup-dir DIR` keeps the backups), `--allow-reboot` |
 | `test_crash.py` | the crash log (`docs/spec/crash-log.md`): the `crash` view section, CRASH TEST refused without its token; opt-in: a trap instruction and a failed assertion each restart the radio and leave a record (kind, pc, the host task, the build's commit) the next start shows, then cleared | radio; `--allow-reboot` for the crash tests; firmware with `CONFIG_CRASH_LOG` |
 | `test_dmr_call_features.py` | bench sends a private call to us and to another ID, an emergency call, a talker alias, an ETSI GPS Info (after an alias), a late entry (no header, 8 bursts left out), a call with the privacy service option (without and with a key), a call with the PI bit; plus the talk target / privacy key requests (radio only) | `--allow-rf --allow-service-stop` (the last test: radio) |
-| `test_speaker.py` | the speaker by microphone ([Speaker tests](#speaker-tests)): every beep, a cold amplifier's key click, FM receive tone pulses from the bench board, AM receive of a 1 kHz tone (`test_am_rx_speaker`) | `--microphone`; the FM and AM tests `--allow-rf` and a bench board (AM also `--am-mhz`) |
-| `test_audio_check.py` | the speaker tests' analysis (`audio_check.py`) on synthetic recordings: cut starts and ends, a level step, a dropout, pops, a squelch tail, a filled silence must be found; a room's echo and swell must pass | numpy (tools/ci.sh runs it) |
+| `test_speaker.py` | the speaker by microphone ([Speaker tests](#speaker-tests)): every beep, a cold amplifier's key click, the sweep, FM receive tone pulses from the bench board, AM receive of a 1 kHz tone (`test_am_rx_speaker`) | `--microphone`; the FM and AM tests `--allow-rf` and a bench board (AM also `--am-mhz`) |
+| `test_audio_check.py` | the speaker tests' analysis (`audio_check.py`) on synthetic recordings: cut starts and ends, a level step, a dropout, pops, a squelch tail, a filled silence, a sweep that breaks up, a broken capture must be found; a room's echo and swell must pass | numpy (tools/ci.sh runs it) |
 | `test_radio_features.py` | the `features` view section, settings round trip, beep counters (does PCM play in this mode), zone scan + cancel, nuisance delete, VFO band scan, dual watch and its debug link controls (select A or B, stop), battery save cycling and MONITOR waking it (radio only); TX inhibit, TOT warning and time-out, roger beep, 1750 Hz burst, VOX quiet (no key-up with nobody talking) on the FM VFO at lowest power (`radio_tx`); the mic level (`vox.level`, and on the HR_C7000 radios the `mic lvl` diagnostics line: the meter counts PCM halves) with VOX off (radio only); the zone scan, the VFO scan and dual watch hold on a bench DMR call, battery save wakes for it (`rf`) | radio; `--allow-rf` (radio_tx); `--allow-rf --allow-service-stop` (the bench ones) |
 | `test_dmr_emergency.py` | DMR emergency: the bench sends an emergency alarm CSBK and an emergency voice call to the channel's talkgroup (alerts raised); the radio sends its alarm (3 CSBKs) and an emergency call with the hot mic (the bench listens); the emergency settings request (radio only) | `--allow-rf --allow-service-stop` (the first test: radio), firmware with `CONFIG_DMR_EMERGENCY` |
 | `test_split_duplex.py` | split duplex (`docs/spec/split-duplex.md` 10): the capability gate (both halves offered); 0xD6 INFO / SET_ROLE / STATUS, unknown sub-command and command answers, the SPLIT debug view (no RF); the TX half keyed 10 s at the lowest power, the SDR bench's `sdrmon.py analyze --cach` (BS sync only, 30 ms slots, one key-up edge, CACH decode printed; variant from `$RFOUNDRY_SPLIT_VARIANT`); the RX half labeling bench calls and the label flipping with the epoch | firmware with `CONFIG_HOTSPOT_SPLIT`; the TX and RX tests `--allow-rf --allow-service-stop` |
@@ -363,6 +363,7 @@ room's noise; a recording too quiet throughout skips `state`.
 |---|---|---|
 | `test_speaker_beeps` | every beep the debug link can ask for, one recording each; the patterns are read from `core/radio/beep.c` | radio |
 | `test_speaker_beep_cold` | the key click after the amplifier hang ran out (`beep.warm` 0): the lead-in must cover the amplifier's start | a board with a speaker hang |
+| `test_speaker_sweep` | the speaker test's sweep (`BEEP_SWEEP`: 150 Hz to 3.8 kHz over 4 s, after 400 ms of silence); prints the speaker's response in third octaves and fails when the sweep breaks up | radio |
 | `test_fm_rx_speaker` | the bench board's FM transmitter on `--fm-mhz`: 0.5 s of carrier, then 1000 Hz 300 ms, 600 Hz 150 ms, 1500 Hz 80 ms and 1000 Hz 500 ms with silences of 200 to 300 ms, the carrier ending with the last tone | `--allow-rf`, a bench board with FM |
 
 `audio_check.check_tones` judges each recording. A tone's edges are where its amplitude rises and falls fastest: the
@@ -375,8 +376,20 @@ direct sound's, since a room's echo builds up and dies away slower. Problems:
 | Silence | a silence is more than 10 ms longer than asked, or less than 8 dB under its louder neighbor |
 | Pops | broadband energy away from the tones' harmonics more than 20 dB over the recording's floor, or within 10 dB of a tone on it and in the 60 ms after it (at its edges: louder than the tone). In the FM test this includes the squelch opening and closing, and a squelch tail after the carrier is named as one |
 
+`audio_check.check_sweep` judges the sweep. A sweep played whole has its energy at its own frequency and the speaker's
+harmonics of it; audio that jumps on its way to the speaker (samples lost, repeated or out of order) spreads energy
+to both sides of it at every jump. The room's echoes arrive at the pitch the sweep had a moment ago, below it, so the
+check looks above: a frame counts as broken when the energy 150-600 Hz above the sweep (harmonics excluded) is within
+30 dB of the sweep's, counted only where the speaker plays the sweep within 25 dB of its loudest. More than 5 % of
+the frames broken fails. A whole sweep measured 39-55 dB down, with the microphone close or farther away; a broken
+one 5-33 dB. A recording with more than a quarter of its energy above 4.3 kHz, which the radio's 8 kHz audio can't
+make, is reported as a capture fault. Steady tones can miss what the sweep finds: a jump every 4 ms makes no step at 250 Hz multiples.
+
 The recordings stay in pytest's temporary directory (the test prints each path). By hand:
-`python3 tests/hil/audio_check.py FILE.wav BEEP` (a beep name, or `HZ:MS,...` with `0:MS` a silence).
+`python3 tests/hil/audio_check.py FILE.wav BEEP` (a beep name, `sweep`, or `HZ:MS,...` with `0:MS` a silence). Many
+radios mute the speaker while a programming cable is in. On those, `rfoundry_debug.py radio beep sweep 15` (any beep
+name; the second number a delay in seconds, 1-255) plays it 15 s later, so the cable can come out first; record across
+that time and check the file.
 
 ### Pass criteria and tolerances
 

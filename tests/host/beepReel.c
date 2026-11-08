@@ -27,9 +27,9 @@
 //   DIR/beeps/<name>.wav   each beep played on its own
 //
 // Exits with 1 if beep_names.h is missing a beep, a beep never stops or makes no sound, two beeps are less than 1 s
-// apart (key beeps in a run of presses may be closer), there are more than EVENTS_MAX beeps, a beep has no scene, or
-// a scene uses a beep that beep.h doesn't have. With --lenient, which is for building against another commit's
-// beep.h, the last two are only warnings.
+// apart (key beeps in a run of presses may be closer), there are more than EVENTS_MAX beeps, a beep has no scene (the
+// speaker test's sweep needs none), or a scene uses a beep that beep.h doesn't have. With --lenient, which is for
+// building against another commit's beep.h, the last two are only warnings.
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -149,8 +149,13 @@ static void pump_to(uint32_t ms)
 {
 	while (audio_ms < ms) {
 		uint32_t t = audio_ms - audio_t0;
-		if (t % POLL_MS == 0)
-			beep_service(false);
+		if (t % POLL_MS == 0) {
+#ifdef BEEP_SERVICE_NOW
+			beep_service(false, audio_ms);
+#else
+			beep_service(false);	// a base commit's beep.h from before the amplifier hang
+#endif
+		}
 		if (t % BLOCK_MS == 0) {
 			int16_t mic[AUDIO_BLOCK_SAMPLES] = { 0 }, spk[AUDIO_BLOCK_SAMPLES] = { 0 };
 			if (cb != NULL)
@@ -554,7 +559,8 @@ int main(int argc, char **argv)
 		}
 	}
 	for (int i = 0; i < BEEPS; i++)
-		if (!sounded[i])
+		// The speaker test's sweep: no radio user hears it. By name: a base commit's beep.h has no BEEP_SWEEP
+		if (!sounded[i] && strcmp(beeps[i].name, "SWEEP") != 0)
 			fail(false, "BEEP_%s has no scene (tests/host/beepReel.c)", beeps[i].name);
 
 	snprintf(path, sizeof path, "%s/reel.wav", out_dir);

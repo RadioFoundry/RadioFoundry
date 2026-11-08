@@ -136,6 +136,9 @@ const hal_audio_t *audio_mux_wrap(const hal_audio_t *board_audio)
 	wrapped.start = w_start;
 	wrapped.stop = w_stop;
 	wrapped.speaker_pcm = w_speaker_pcm;
+	wrapped.speaker_lead_ms = board_audio->speaker_lead_ms;	// the beep player reads these through the wrapper
+	wrapped.speaker_warm = board_audio->speaker_warm;
+	wrapped.speaker_hang_s = board_audio->speaker_hang_s;
 	pcm_slip_init(&slip, AUDIO_MUX_TX_TARGET, AUDIO_BLOCK_SAMPLES);
 	return &wrapped;
 }

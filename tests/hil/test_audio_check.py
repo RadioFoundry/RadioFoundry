@@ -51,6 +51,8 @@ def test_patterns_from_source():
 
 def test_every_beep_clean():
     for name, segs in A.beep_patterns().items():
+        if any(hz == A.SWEEP_HZ for hz, _ in segs):
+            continue        # the speaker test's sweep: test_sweep_*
         x, t0 = render(segs, echo=0.3)
         r = check(x, segs)
         assert not r.problems, name
@@ -162,3 +164,52 @@ def test_noisy_lead():
     r = check(x, segs, guard_ms=(550, 300))
     assert abs(r.tones[0].start_s - t0) < 0.004, r.report()
     assert not [p for p in r.problems if "cut" in p or "long" in p], r.problems
+
+
+def render_sweep(lo, hi, ms, swap_from_s=None, level=0.05, noise_db=-85, seed=2):
+    """The sweep as the radio makes it, 8 kHz, then at FS for the microphone: silence, the sweep, silence. swap_from_s:
+    from that time into the sweep on, each pair of 32-sample chunks plays in the wrong order, as the prompt FIFO did
+    when a chunk went into the half being played (docs/spec/modem-hrc7000.md 8.4)"""
+    rate = 8000
+    n = int(ms * rate / 1000)
+    t = np.arange(n) / rate
+    s = level * np.sin(2 * np.pi * (lo * t + 0.5 * (hi - lo) / (ms / 1000) * t ** 2))
+    if swap_from_s is not None:
+        a = int(swap_from_s * rate) // 64 * 64
+        for k in range(a, n - 64, 64):
+            s[k:k + 64] = np.concatenate([s[k + 32:k + 64], s[k:k + 32]])
+    x8 = np.concatenate([np.zeros(int(0.4 * rate)), s, np.zeros(int(0.6 * rate))])
+    x = np.interp(np.arange(len(x8) * FS // rate) * rate / FS, np.arange(len(x8)), x8)
+    rng = np.random.default_rng(seed)
+    return x + rng.normal(0, 10 ** (noise_db / 20), len(x))
+
+
+def test_sweep_clean():
+    lo, hi, ms = A.sweep_spec()
+    r = A.check_sweep(render_sweep(lo, hi, ms), FS, lo, hi, ms)
+    assert not r.problems and r.broken == 0 and abs(r.start_s - 0.4) < 0.01, r.report()
+    # Flat but for the linear interpolation to FS here, about 4 dB down at 3.2 kHz
+    assert max(d for _, d in r.response) == 0 and min(d for _, d in r.response) > -6, r.report()
+
+
+def test_sweep_breaks_up():
+    """Chunks out of order for the second half of the sweep: half the frames broken, and a problem"""
+    lo, hi, ms = A.sweep_spec()
+    r = A.check_sweep(render_sweep(lo, hi, ms, swap_from_s=ms / 2000), FS, lo, hi, ms)
+    assert r.problems and 0.35 < r.broken / r.frames < 0.65, r.report()
+
+
+def test_sweep_too_quiet():
+    lo, hi, ms = A.sweep_spec()
+    r = A.check_sweep(render_sweep(lo, hi, ms, level=10 ** (-110 / 20)), FS, lo, hi, ms)
+    assert r.quiet and r.problems, r.report()
+
+
+def test_sweep_bad_capture():
+    """A recording with most of its energy above the radio's 8 kHz band: the capture's fault, said so"""
+    lo, hi, ms = A.sweep_spec()
+    x = render_sweep(lo, hi, ms)
+    t = np.arange(len(x)) / FS
+    x += 0.08 * np.sin(2 * np.pi * (6000 - 300 * t) * t) * ((t > 0.4) & (t < 0.4 + ms / 1000))
+    r = A.check_sweep(x, FS, lo, hi, ms)
+    assert any("capture" in p for p in r.problems), r.report()

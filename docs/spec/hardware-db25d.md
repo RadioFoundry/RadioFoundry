@@ -137,6 +137,13 @@ gain (GCR_DACL, `hrc7000_volume_db`): 0 dB at the default step 8, 3 dB less a st
 `DB25D_PCM_VOL_TOP_DB` (12 dB) at step 16; step 0 keeps the amplifier off. The radio sets `volume_pcm`, so beeps play at
 `beep_level` and the volume scales them on the way out. The dB at the speaker is not measured (unverified).
 
+Switching the amplifier on (PTA24 low) pops, whatever the order of the other speaker pins (measured). So the board
+gives the radio core an amplifier hang (`hal_audio_t.speaker_warm`, `speaker_hang_s` 5 s, `radio-features.md` 4):
+after a key, PTT, reception or beep, PTA24 stays low with the source muted (PTB15 high) for 5 s, and the beeps and
+calls in that time play without the enable's pop. Only the first sound after a quiet spell still pops. On the radio
+the debug link's `beep.warm` went to 1 on a key and on a beep and back to 0 after 5 s, and the warm beeps carried no
+pop at the amplifier's turn-on (measured; `test_speaker_beeps`, a microphone at the speaker).
+
 The front keys are power (PTB12), P1, P2, P3, VOL/SQL, TONE/T.SEL, B/E and the encoder push; there's no separate
 Menu/OK key (measured). Their matrix positions, found by pressing each key on the radio, with the key code the vendor firmware uses
 for the same position:
@@ -412,7 +419,7 @@ The inbound bursts lie from -32.5 to -2.5 ms and from +30.0 ms on (about 0.2 ms 
 the page's TX-on delay the PA is within 1 dB at 1.7-2.1 ms (the analog ramp varies from burst to burst; 0.94-1.6 ms
 from the first carrier), so the lead is the shortest 100 us step that has the PA up 0.2 ms ahead of the first symbol:
 `db25d_dmr_rf_tx_lead` = (2.3 ms + the page's TX-on delay - 0.85 ms), rounded up (1.5 ms UHF; 2.5 ms with the VHF
-page's 1000 us, not measured). At 1.3 ms (a 2.1 ms model) one burst in 114 had the 1 dB point only 0.04 ms ahead. The
+page's 1000 us, which gives the VHF figures in the table below). At 1.3 ms (a 2.1 ms model) one burst in 114 had the 1 dB point only 0.04 ms ahead. The
 ramp's 180 steps of 4 us take 0.72 ms plus the level's arithmetic, which is 32-bit (`core/radio/apc_ramp.h`): a 64-bit
 divide per step made the ramp 0.3 ms longer, and the lead was 1.6 ms with it. The page's TX-on delay counts from the
 RF TX interrupt, and a late interrupt (up to 0.12 ms, a few bursts per key-up) is timed from the frame grid
@@ -426,11 +433,16 @@ SFR).
 | The same call received without transmitting (TX inhibit, plain receive) | 29-37 | - |
 | Our idle bursts: symbol error, sync errors, carrier vs the bench | 0.10, 0, +15..20 Hz | 0.05-0.12, 0, +13 Hz |
 | Plain simplex call (`test_dmr_tx_off_air`): burst on-time, ramps up / down | 32.76-33.27 ms, 1.62 / 1.65 ms, carrier after the call | 29.67-30.12 ms, 1.31-1.54 / 1.02-1.15 ms (5 calls, 1.5 ms lead, the 32-bit ramp), none |
+| The same on the VHF page (2 m, lowest power, 2.5 ms lead) | - | 29.58-30.09 ms, 0.77 / 0.73 ms (52 bursts), none |
+| VHF page, the call's content (SDR decode of the same calls) | - | three voice LC headers, embedded LC in every superframe, voice A-F in order, terminator; AMBE FEC: 240 frames in two calls, 0 corrected (UHF: 396 frames, 0) |
 
 The key-up ramp (1.31-1.54 ms; 1.56-1.62 ms before the ramp's 32-bit math) is at the edge of the 1.5 ms ramp regions of
 the ETSI power mask (TS 102 361-1 clause 10.2.3.1.1, figure 10.3), and over it in some calls; it comes from the TX on
 sequence, not the burst timing. `board.toml` `[hil.limits]` holds this radio to 1.75 ms in the bench's check until the
-ramp stays under 1.5 ms.
+ramp stays under 1.5 ms. The VHF page's key-up ramp is about half as long (0.77 ms, table above), inside the mask. The SDR bench's DMR modem covers
+UHF only: on 2 m it split each of these calls in two, lost the terminator and corrected 72-142 AMBE bits, while the
+SDR's own decode of the same transmissions found every frame clean, so `test_dmr_tx_off_air`'s bench modem checks fail
+there and its waveform checks are the ones to read.
 
 Tried and dropped (no change in the inbound counts): keeping the LO chip running through TX, a ramp down 0.45 ms before
 the last symbol (16 bits fewer per 72 frames, our last symbols at reduced power), and shorter waits in the TX on

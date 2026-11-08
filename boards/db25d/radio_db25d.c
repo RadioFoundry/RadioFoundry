@@ -194,6 +194,7 @@ static void volume_apply(void);
 #endif
 
 static volatile bool pcm_on;	// the modem plays CPU samples (a beep, DMR voice): db25d_speaker_pcm()
+static volatile bool warm_on;	// the core's amplifier hang (hal_audio_t.speaker_warm): the amplifier on, the source muted
 
 // PTC18 picks what the speaker amplifier hears (3.3): high for the main chip's AF (FM), low for the modem's line out
 // (DMR voice and beeps, as the stock firmware's call start and beeps do)
@@ -205,18 +206,21 @@ static void speaker_source(void)
 // The speaker pins: on for an open squelch (audio()) or while the modem plays samples. DMR voice never opens the
 // squelch path (the radio core leaves the speaker to the PCM stream), so without the PCM term a call played silently.
 // Volume step 0 keeps the amplifier off: the line out's least gain (-31 dB) isn't silent.
-// Off: the amplifier first, so the source switch isn't heard; on: the source first
+// Off: the amplifier first, so the source switch isn't heard; on: the source first. Warm (the amplifier hang) keeps
+// the amplifier on with the source muted: its enable pops (3.3), so within the hang a beep or call adds no pop
 static void speaker_pins(void)
 {
-	bool on = (audio_open || pcm_on) && !(transmitting && mode != RADIO_MODE_DMR) && !vol_muted;
+	bool allowed = !(transmitting && mode != RADIO_MODE_DMR) && !vol_muted;
+	bool on = (audio_open || pcm_on) && allowed;
+	bool amp = (on || warm_on) && allowed;
 	uint32_t s = hrc_irq_save();	// also called from the audio task (db25d_speaker_pcm): the pin writes are read-modify-write
-	if (!on) {
+	if (!amp) {
 		hrc_pin_write(PIN_SPK_BODY, true);
 	}
 	speaker_source();
 	hrc_pin_write(PIN_SPK_SOURCE, !on);
 	hrc_pin_write(PIN_MIC_PATH, on);
-	if (on) {
+	if (amp) {
 		hrc_pin_write(PIN_SPK_BODY, false);
 	}
 	hrc_irq_restore(s);
@@ -229,6 +233,23 @@ void db25d_speaker_pcm(bool on)
 		speaker_pins();
 	}
 }
+
+#if CONFIG_DMR
+static void speaker_warm(bool on)
+{
+	if (on != warm_on) {
+		warm_on = on;
+		speaker_pins();
+	}
+}
+
+// The amplifier stays up DB25D_SPEAKER_HANG_S after the last key, PTT, reception or beep, so a key click, the talk
+// permit tone or a call's start plays without the enable's pop; a handheld on a battery, so only a few seconds
+#ifndef DB25D_SPEAKER_HANG_S
+#define DB25D_SPEAKER_HANG_S	5
+#endif
+const hal_audio_t db25d_audio = { HRC_AUDIO_PCM_OPS, .speaker_warm = speaker_warm, .speaker_hang_s = DB25D_SPEAKER_HANG_S };
+#endif
 
 static void set_mode(radio_mode_t m)
 {

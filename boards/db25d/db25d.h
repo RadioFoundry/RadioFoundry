@@ -15,6 +15,7 @@ extern const hal_display_t db25d_display;
 extern const hal_input_t db25d_input;
 extern const hal_radio_t db25d_radio;
 extern const hal_power_t db25d_power;
+extern const hal_audio_t db25d_audio;	// radio_db25d.c: the platform's PCM audio and the amplifier hang
 
 // Physical key bits returned by db25d_input.scan(): the front keys (matrix positions found on the radio,
 // hardware-db25d.md 3.3) and the hand mic's 16 keys (3.4)
