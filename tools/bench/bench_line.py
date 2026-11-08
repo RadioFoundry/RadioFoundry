@@ -31,7 +31,9 @@ PORT = 7373
 FLAGS = {"private", "pi", "emergency", "confirmed", "tms_no_ack", "etsi_no_response", "group", "json", "verbose"}
 # options sent as text: free text, and the hex fields (the board reads a string as hex, a number as itself)
 TEXT = {"tms", "etsi", "ip_text", "talker_alias", "gps", "udp_payload", "opcode", "fid", "octet3", "service_options",
-        "slots", "family", "ambe_out", "voice"}
+        "slots", "family", "ambe_out"}
+# options sent as the JSON they hold: an outbound's --voice is a list of calls, and the board refuses it as a string
+JSON_OPTS = {"voice"}
 
 
 class BenchLineError(Exception):
@@ -226,6 +228,12 @@ def job_from_args(tool, args):
             with open(os.path.expanduser(v), "rb") as f:
                 job["ambe_hex"] = f.read().hex()
             continue
+        if key in JSON_OPTS:
+            try:
+                job[key] = json.loads(v)
+            except ValueError as e:
+                raise ValueError(f"{tool}: {a} is not JSON: {e}") from None
+            continue
         if key not in TEXT:
             try:
                 v = int(v)
@@ -238,8 +246,29 @@ def job_from_args(tool, args):
     return job
 
 
+def self_test():
+    """job_from_args on the command lines the HIL tests build; no board."""
+    j = job_from_args("bench_tx", "--freq 446.05 --cc 1 outbound --seconds 4.5 "
+                                  "--voice '[{\"slot\":2,\"src\":1,\"dst\":2,\"group\":true}]'")
+    assert j == {"tool": "bench_tx", "freq": 446.05, "cc": 1, "cmd": "outbound", "seconds": 4.5,
+                 "voice": [{"slot": 2, "src": 1, "dst": 2, "group": True}]}, j
+    j = job_from_args("bench_tx", ["--fid", "10", "--talker-alias", "N0CALL", "--group", "voice", "--dst", "9"])
+    assert j == {"tool": "bench_tx", "fid": "10", "talker_alias": "N0CALL", "group": True, "cmd": "voice",
+                 "dst": 9}, j
+    for bad in ("outbound --voice '[{'", "outbound --voice", "voice outbound"):
+        try:
+            job_from_args("bench_tx", bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {bad!r}")
+    print("bench_line self-test passed")
+    return 0
+
+
 def main(argv=None):
     import argparse
+    if (sys.argv[1:] if argv is None else argv) == ["--self-test"]:
+        return self_test()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("board", help="HOST[:PORT]")
     ap.add_argument("op", choices=("info", "status", "run"))
