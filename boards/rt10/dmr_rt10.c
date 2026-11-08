@@ -18,7 +18,6 @@
 #include "audio_pcm.h"
 
 #define C7_PHASE_OUT		0x128u		// RO: largest / smallest 14-bit AF phase seen (modem-hrc7000.md 2.1)
-#define DMR_PA_DELAY_US		28000u	// the glue's PA one-shot; the PA is keyed by the burst sequence instead
 
 // The modem's receive mode word, as the original firmware writes it on this radio (hardware-rt10.md 7.1), with the TX
 // symbol mapping not inverted (bit 7 clear). make RT10_DMR_RF_MODE=0x... replaces it on the bench
@@ -28,22 +27,10 @@
 
 static hrc7000_t *modem;
 
-// From the modem interrupts, per burst: the RF task's TX on or off
-static void dmr_rf_switch(bool tx)
-{
-	hrc_rfburst_switch(tx);
-}
-
-// The PA one-shot: nothing. The burst sequence keys the PA
-static void dmr_pa_on(void)
-{
-}
-
-static const hrc_dmr_board_t dmr_board = {
-	.rf_switch = dmr_rf_switch, .pa_on = dmr_pa_on, .pa_delay_us = DMR_PA_DELAY_US,
-};
-
+// DMR transmit keys the whole RF per burst on the shared RF-burst task (dmr_rfburst.c), which keys the PA too
 static const hrc_rfburst_board_t rf_board = { .on = rt10_burst_on, .off = rt10_burst_off };
+
+static const hrc_dmr_board_t dmr_board = { .burst = &rf_board, .tx_end = rt10_dmr_tx_end };
 
 // The speaker source for the modem's PCM (audio_pcm.c): the ring (prompt FIFO) on, or off. The modem's FM audio path
 // isn't used on this radio (the FD6818 demodulates FM), so it stays off
@@ -67,7 +54,6 @@ void rt10_dmr_init(hrc7000_t *m)
 	modem = m;	// attached and powered on by the radio init
 	hrc_dmr_board_init(modem, &dmr_board);
 	hrc_audio_pcm_attach(modem, speaker_pcm);
-	hrc_rfburst_init(modem, &rf_board);
 }
 
 void rt10_dmr_enter(uint32_t mod_bias)

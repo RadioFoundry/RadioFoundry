@@ -24,6 +24,9 @@
 #include "rf/rfbus/rfbus_i2c.h"
 #include "rf/fd6818/fd6818.h"
 #include "rf/fd6818/fd6818sh.h"
+#if CONFIG_DMR
+#include "dmr_glue.h"
+#endif
 #if CONFIG_APRS
 #include "hrc_afsk.h"
 #include "audio_pcm.h"
@@ -77,7 +80,7 @@ static const rfbus_regval_t rt10_analog[] = {
 	{ 0x1C, 0x076F }, { 0x1D, 0xB9FD }, { 0x27, 0x18DA }, { FD6818SH_REG_PAGE, 0 },
 };
 // 902-928 MHz is one band, the chip's above 600 MHz: 0x1A and 0x40 as the original firmware's band select writes them.
-// A band word from the chip's lower bands leaves the receiver deaf (hardware-rt10.md 7, gotchas.md 3.15)
+// A band word from the chip's lower bands leaves the receiver deaf (hardware-rt10.md 7, gotchas.md 3.16)
 static const uint16_t rt10_band_edge[] = { 1120 };
 static const uint16_t rt10_band_word[] = { 0x1F80 };
 static const uint8_t rt10_dev_high[] = { 0x3A };
@@ -131,10 +134,7 @@ static bool transmitting;
 static uint32_t tx_end_ms;	// when the last FM transmission ended (tx_stop): the squelch reads closed for a while
 static bool have_rx;
 static bool asleep;		// rx_sleep(true): the receiver is off until rx_sleep(false) or the next rx()
-// DMR: the FD6818 is receiving on rx_hz at kept_ppb, as the last burst's TX off or a DMR rx() left it. rx() then
-// leaves it alone: setting it up again blinds the receiver for a reply 30 ms after our last burst
-static volatile bool rx_kept;
-static volatile int16_t kept_ppb;
+static volatile int16_t tuned_ppb;	// the trim the receiver was last set up with (rx_set, a burst's TX off)
 static volatile int16_t trim_ppb;	// hal_radio_t.ref_trim: taken at the next tune
 static uint32_t rx_hz;
 static radio_bw_t rx_bw = RADIO_BW_12K5;
@@ -147,7 +147,6 @@ static volatile bool dmr_armed;	// DMR TX armed by tx(): the bursts key the RF
 static bool tx_wide;		// the FM transmission is at 25 kHz (the modem's deviation for APRS)
 #if CONFIG_DMR
 static uint32_t tx_hz;		// the armed transmission's frequency
-static uint8_t tx_lead;		// the RF TX interrupt's lead, 100 us steps (rt10_dmr_rf_tx_lead)
 static void dmr_disarm(void);
 #endif
 #if CONFIG_APRS
@@ -309,7 +308,6 @@ static void set_mode(radio_mode_t m)
 #endif
 	}
 	have_rx = false;	// the next rx() retunes
-	rx_kept = false;
 #else
 	(void)m;	// FM only without CONFIG_DMR
 #endif
@@ -340,7 +338,9 @@ static uint32_t synth_hz(uint32_t hz)
 	return ref_trim_tune_hz(hz, trim_ppb);
 }
 
-static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
+// keep (the end of a DMR transmission, rt10_dmr_tx_end): the last burst's TX off already set the receiver up; on the
+// same channel and trim it stays as it is, since a new set-up would blind it for a reply just after our last burst
+static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in, bool keep)
 {
 	if (!board_in_band(hz, false)) {
 		return false;
@@ -349,17 +349,17 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	dmr_disarm();	// a retune ends DMR TX (the hotspot's rx() disarms too)
 #endif
 	bool from_tx = tx_stop();
-	bool kept = rx_kept && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && !asleep && !from_tx &&
-		kept_ppb == trim_ppb;
+	bool back = keep && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && !asleep && !from_tx &&
+		tuned_ppb == trim_ppb;
 	rx_hz = hz;
 	rx_bw = bw;
 	rx_tone = rx_tone_in != NULL ? *rx_tone_in : (subtone_t){ TONE_NONE, 0 };
 	have_rx = true;
 	asleep = false;
-	if (!fd_ok || kept) {
+	if (!fd_ok || back) {
 		return true;
 	}
-	rx_kept = false;
+	tuned_ppb = trim_ppb;
 	write_bias(hz);
 	fd6818sh_set_state(&fd, FD6818SH_STATE_IDLE);
 	fd6818sh_tune(&fd, synth_hz(hz));
@@ -373,11 +373,12 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 		hal_delay_us(TX_END_US);	// original firmware key-down: the retune, then the RX supply
 	}
 	hrc_pin_write(PIN_RX_SUPPLY, true);
-	if (mode == RADIO_MODE_DMR) {
-		kept_ppb = trim_ppb;
-		rx_kept = true;
-	}
 	return true;
+}
+
+static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
+{
+	return rx_set(hz, bw, rx_tone_in, false);
 }
 
 static void apc_ramp(uint16_t target, bool up)
@@ -401,10 +402,9 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	}
 	dmr_disarm();
 	plan = p;
-	tx_lead = rt10_dmr_rf_tx_lead(p.on_us);
 	tx_hz = hz;
 	write_bias(hz);
-	hrc7000_set_rf_tx_lead(&modem, tx_lead);
+	hrc7000_set_rf_tx_lead(&modem, rt10_dmr_rf_tx_lead(p.on_us));
 	fd6818sh_dmr_tx_prepare(&fd, p.pa_gain);
 	DAC_DATA_B = 0;
 	hrc_dac_b_power(true);
@@ -427,10 +427,10 @@ static void dmr_disarm(void)
 // One burst's TX on, the original firmware's (hardware-rt10.md 7.1): the key-up delay, the RX supply off, the FD6818 to
 // the TX frequency (its TX AF word first) in its TX state, PA select and TX supply on, DAC B ramped up. The key-up
 // delay counts from the RF TX interrupt: the task's wake takes part of it
-void rt10_burst_on(hrc_rfburst_wait_fn wait, uint32_t elapsed_us)
+void rt10_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 {
-	wait(plan.on_us > elapsed_us ? plan.on_us - elapsed_us : 0);
-	rx_kept = false;
+	(void)wait;
+	at(plan.on_us);
 	hrc_pin_write(PIN_RX_SUPPLY, false);
 	fd6818sh_burst_tune(&fd, synth_hz(tx_hz), true);
 	DAC_DATA_B = 0;
@@ -443,23 +443,17 @@ void rt10_burst_on(hrc_rfburst_wait_fn wait, uint32_t elapsed_us)
 // 100 us, the FD6818 back to the receive frequency, 100 us, the RX supply on. The original firmware's key-down delay
 // counts from its RF RX interrupt; the hold to the burst's end takes its place. Returns how late the ramp down
 // started, in us
-uint32_t rt10_burst_off(hrc_rfburst_wait_fn wait, uint32_t elapsed_us, bool now)
+void rt10_burst_off(void)
 {
-	uint32_t late = now ? 0 : hrc_rfburst_late_us(elapsed_us, tx_lead);
-	if (!now) {
-		wait(hrc_rfburst_hold_us(elapsed_us, tx_lead));
-	}
 	apc_ramp(plan.dac, false);
 	DAC_DATA_B = 0;
 	hrc_pin_write(PIN_TX_SUPPLY, false);
 	hrc_pin_write(PIN_PA_SELECT, false);
-	wait(TX_END_US);
+	hal_delay_us(TX_END_US);
 	fd6818sh_burst_tune(&fd, synth_hz(rx_hz), false);
-	wait(TX_END_US);
+	hal_delay_us(TX_END_US);
 	hrc_pin_write(PIN_RX_SUPPLY, true);
-	kept_ppb = trim_ppb;
-	rx_kept = true;
-	return late;
+	tuned_ppb = trim_ppb;
 }
 #endif
 
@@ -488,7 +482,6 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		return false;
 	}
 	tx_stop();
-	rx_kept = false;
 	asleep = false;
 	plan = p;
 	tx_wide = bw == RADIO_BW_25K;	// the FD6818's deviation goes by band; the modem's (APRS) by bandwidth
@@ -540,17 +533,31 @@ static bool tx_stop(void)
 	return true;
 }
 
-static void tx_off(void)
+// keep: as in rx_set
+static void tx_end(bool keep)
 {
 #if CONFIG_DMR
-	dmr_disarm();	// the RF task finishes the burst it is in; rx() then sets the receiver up again
+	dmr_disarm();	// the RF task finishes the burst it is in; rx_set() then sets the receiver up again
 #endif
 	if (have_rx) {
-		rx(rx_hz, rx_bw, &rx_tone);	// stops the transmission first
+		rx_set(rx_hz, rx_bw, &rx_tone, keep);	// stops the transmission first
 	} else if (tx_stop()) {
 		hrc_pin_write(PIN_RX_SUPPLY, true);
 	}
 }
+
+static void tx_off(void)
+{
+	tx_end(false);
+}
+
+#if CONFIG_DMR
+// hrc_dmr_board_t.tx_end (dmr_rt10.c): the last burst's TX off left the receiver on
+void rt10_dmr_tx_end(void)
+{
+	tx_end(true);
+}
+#endif
 
 // FM TX tone (1750 Hz burst, roger beep, CW ID): the chip's tone generator instead of the microphone
 static bool tx_tone(uint16_t hz)
@@ -596,7 +603,6 @@ static void rx_sleep(bool sleep)
 		return;
 	}
 	if (sleep) {
-		rx_kept = false;
 		fd6818sh_set_state(&fd, FD6818SH_STATE_IDLE);
 		hrc_pin_write(PIN_RX_SUPPLY, false);
 		asleep = true;
@@ -750,6 +756,9 @@ const hal_radio_t rt10_radio = {
 	.rx = rx,
 	.tx = tx,
 	.tx_off = tx_off,
+#if CONFIG_DMR
+	.dmr_tx_end = hrc_dmr_tx_end,
+#endif
 	.status = status,
 	.audio = audio,
 	.tx_tone = tx_tone,

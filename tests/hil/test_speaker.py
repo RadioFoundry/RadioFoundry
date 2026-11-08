@@ -12,6 +12,11 @@ ones find it warm.
 test_speaker_beep_cold: on a radio with an amplifier hang (the beep.warm view key), waits for the hang to run out,
 then the shortest beep (key): the lead-in must cover the amplifier's start.
 
+test_speaker_sweep: the speaker test's sweep, 150 Hz to 3.8 kHz (BEEP_SWEEP): prints the speaker's response along it
+and fails when the audio jumps on the way to the speaker. By hand on a radio whose cable mutes the speaker:
+`rfoundry_debug.py radio beep sweep 15` starts it 15 s later, so the cable can come out first; record it and run
+`audio_check.py FILE.wav sweep`.
+
 test_fm_rx_speaker (rf, bench_service): the bench board's FM transmitter sends a carrier, then tone pulses of exact
 lengths at several frequencies (--fm-mhz, no sub-audio tone); the radio's VFO receives them. Besides the tones'
 checks, nothing may pop as the squelch opens or closes, and no squelch tail may be heard after the carrier."""
@@ -22,9 +27,13 @@ import time
 
 import pytest
 
-import audio_check as A
 from hil_config import rig
 from rfoundry_hil import skip
+
+try:
+    import audio_check as A
+except ImportError as e:        # audio_check needs numpy
+    skip("bench", f"the speaker analysis needs numpy: {e}", module=True)
 
 RATE = 16000
 
@@ -135,6 +144,29 @@ def test_speaker_beep_cold(radio, microphone):
         _quiet("key")
     assert _audio(radio).get("beep.warm") == "1", "the beep didn't warm the amplifier"
     assert not problems, "\n".join(problems)
+
+
+@pytest.mark.feature("beep")
+def test_speaker_sweep(radio, microphone):
+    """The speaker test's sweep (BEEP_SWEEP, a tone rising through the band): the speaker's response along it, printed
+    for the radio's records, and the sweep whole: audio that jumps (samples lost, repeated or out of order on the way
+    to the speaker) spreads energy across the band, which a tone check at a few pitches can miss"""
+    _beep_ready(radio)
+    from rfoundry_debug import DebugLinkError
+    lo, hi, ms = A.sweep_spec()
+    length = sum(m for _, m in A.beep_patterns()["sweep"]) / 1000
+    p, path = microphone.start(length + 1.5)
+    try:
+        radio.link.beep("sweep")
+    except DebugLinkError as e:
+        microphone.finish(p, path)
+        skip("not_built", f"no sweep in this firmware ({e})")
+    x, fs = A.load_wav(microphone.finish(p, path))
+    r = A.check_sweep(x, fs, lo, hi, ms)
+    print(f"sweep ({path}):\n{r.report()}")
+    if r.quiet:
+        _quiet("the sweep")
+    assert not r.problems, "\n".join(r.problems)
 
 
 # the bench's FM program: a carrier first (the squelch opens on it), then pulses of exact lengths

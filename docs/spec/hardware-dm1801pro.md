@@ -213,7 +213,7 @@ TX path select: PTA31 + PTB7. RX path select: PTA28 + PTB8. Each is a complement
 (5.2): above 200 MHz the PTB pin high and the PTA pin low, below the reverse; both low = off. So PTA high = VHF side,
 PTB high = UHF side. RadioFoundry receives on both bands (a VHF weather
 station, UHF DMR) and transmits on UHF with this (measured). Separate TX and RX band outputs, unlike the DM-32UV's PA selects
-and LNA supplies. PA drive is DAC channel B (12 bit, the calibration byte times 16), ramped in 40 steps.
+and LNA supplies. PA drive is DAC channel B (12 bit, the calibration byte times 16), ramped in 40 steps on the shared smoothstep APC curve.
 
 **VHF transmit.** What differs for a TX frequency at or below 200 MHz:
 
@@ -243,23 +243,27 @@ paths also the modem's FM_PTT and LAYER2_TXRX_CTRL 0. The FD6818 keeps its state
 The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM audio are the DM-32UV's, shared
 (`platform/hrc7000/dmr_glue.c`, `audio_pcm.c`). The board supplies three hooks (`radio_dm1801pro.c`):
 
-- **Per-burst RF switch** (the RF TX interrupt): RX path off, FD6818 0x52 = 028F and 0x30 = C1FE straight from RX,
-  register 0x50 = 3B18, TX path on; after the burst (the engine's first slot tick 20 ms or more after the RF TX
-  interrupt) the drive goes to 0, the TX path goes off, 0x30 = BFF1 straight from TX, and the RX path comes back on.
+- **Per-burst RF switch** (on the shared per-burst RF task, [modem-hrc7000.md](modem-hrc7000.md) 3.1a; untested
+  on the radio since the move: the lead and drive points below were measured with the switch in the RF TX interrupt
+  and the drive from the glue's PA one-shot). 0.6 ms before the lead point: RX path off, FD6818 0x52 = 028F and 0x30 = C1FE straight from RX,
+  register 0x50 = 3B18, TX path on; with the burst's last symbol the drive goes to 0, the TX path goes off, 0x30 = BFF1 straight from TX, and the RX path comes back on.
   The FD6818 never passes through idle (0x30 = 0000, 0200) per burst: through idle the receiver came back about 400 Hz
   off for the first inbound burst after each of ours, which lost most of a call in SFR mode (section 10). 0x37 and
   0x43 keep their values from the RX / TX sequences and the DMR mode set. Against the radio's own handlers (5.4) this
   skips idle and the frequency, 0x47, 0x32 and 0x3F writes (0x3F stays 0 from the DMR mode set), has none of the
-  waits, steps the drive instead of ramping it, and ends the burst on a slot tick instead of the RF RX interrupt.
+  waits and steps the drive instead of ramping it.
   The switch to TX takes 0.46-0.48 ms and back to RX 0.17-0.21 ms with interrupts off (1 us bus, 5.1; with the earlier
   5 us bus about 1.07 and 0.40 ms). The DMR mode set ends with 0x3F = 0000, the radio's DMR receive value.
-- **RF TX interrupt 0.6 ms ahead** (`hrc7000_t.rf_tx_lead` = 6, RF_CONTROL b13:8), not the DM-32UV's 3.1 ms. The
+- **RF switch 0.6 ms ahead of the lead point**: the RF TX interrupt comes 1.1 ms ahead (`hrc7000_t.rf_tx_lead` =
+  11, RF_CONTROL b13:8) and the task waits 0.5 ms, so its wake (up to 0.42 ms) doesn't make the switch late. The
+  drive is keyed 0.5 ms before the first symbol and dropped with the last. The sweep below moved the interrupt with
+  the switch in it. The
   inbound burst's payload ends about 2.5 ms before ours starts (the guard times of both slots), so with 3.1 ms the
   switch cut off the end of the inbound burst before each of ours (unverified). In SFR mode a header clipped that way failed its
   RS check, and the radio then lost the whole first voice superframe after it, with the reception itself clean (bit
   errors 0, PHASE_OUT centered): 5 of 5 calls with the last header flagged lost superframe 1, 7 of 7 with it clean
-  kept it (BENCH 2026-10-19, interrupt trace of PR 38). The PA timer runs from the burst, not from this interrupt, so
-  the drive keeps its place against the burst (next item).
+  kept it (BENCH 2026-10-19, interrupt trace of PR 38). The drive then came from the glue's PA one-shot, which ran
+  from the burst, not from this interrupt.
   2.0 ms fixed the headers but still cost inbound voice bits: in a 72-frame SFR repeat the third frame of each
   inbound pair, the one that ends just before our burst, carried most of the errors. A sweep of the lead (BENCH
   2026-10-20, 2-8 calls per value, AMBE bits corrected in 72 inbound frames):

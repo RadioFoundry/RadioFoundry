@@ -78,9 +78,6 @@ const char build_features[] =
 #if CONFIG_DMR_UDP_COMPRESS && CONFIG_DMR_DATA_CORE
 	"DMR_UDP_COMPRESS,"
 #endif
-#if CONFIG_DMR_CONFIRMED && CONFIG_DMR_DATA_CORE
-	"DMR_CONFIRMED,"
-#endif
 #if CONFIG_NET_TCP
 	"NET_TCP,"
 #endif

@@ -31,8 +31,9 @@ void rt10_dmr_leave(void);
 uint32_t rt10_dmr_phase(void);
 void rt10_speaker_pcm(bool on);	// radio_rt10.c: the amplifier on while the modem plays CPU samples
 // The per-burst RF sequences (radio_rt10.c), from the RF task (hrc_rfburst_board_t)
-void rt10_burst_on(hrc_rfburst_wait_fn wait, uint32_t elapsed_us);
-uint32_t rt10_burst_off(hrc_rfburst_wait_fn wait, uint32_t elapsed_us, bool now);
+void rt10_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait);
+void rt10_burst_off(void);
+void rt10_dmr_tx_end(void);	// radio_rt10.c: hrc_dmr_board_t.tx_end
 #endif
 
 #endif

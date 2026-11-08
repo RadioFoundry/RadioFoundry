@@ -14,7 +14,7 @@
     rfoundry_debug.py key --mask 0xBITS --hold MS    physical key bits
     rfoundry_debug.py wake                           backlight on without a key event
     rfoundry_debug.py ptt --seconds S                key PTT for S seconds (at most 10; the firmware also times out)
-    rfoundry_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq MHZ, power +1, copy-vfo, ...
+    rfoundry_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq MHZ, power lowest|LEVEL|+1, copy-vfo, ...
     rfoundry_debug.py volume [N|knob]                print the speaker volume; N (0 mutes, 0..16) sets it, knob gives the knob back
     rfoundry_debug.py log [--follow]                 the firmware's dlog() ring
     rfoundry_debug.py chip                           chip ID, flash size, UID, option bytes (RDP, write protection)
@@ -152,7 +152,7 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-                 "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps"]
+                 "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -179,6 +179,7 @@ ROAM_CMDS = {"zone_off": 0, "zone_on": 1, "zone_toggle": 2, "now": 3, "lock": 4,
 SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6, "select": 7}
 BEEPS = {"key": 1, "error": 2, "tx_permit": 3, "tx_deny": 4, "call_end": 5, "tot_warn": 6, "battery_low": 7,
          "battery_crit": 8, "scan_hold": 9}
+SWEEP = 13      # the speaker test's sweep (beep.h BEEP_SWEEP): not a beep a user hears, so not in BEEPS
 VIBES = {"message": 1, "call": 2, "emergency": 3}
 SETTINGS = {"tot_s": 1, "tot_warn_s": 2, "bcl": 3, "roger_beep": 4, "tx_inhibit": 5, "scan_resume": 6,
             "scan_hold_s": 7, "scan_delay_ms": 8, "scan_dwell_ms": 9, "scan_priority": 10, "beep_level": 11,
@@ -294,13 +295,18 @@ class UdpPort:
 class DebugLink:
     """One open debug link. All methods raise DebugLinkError on an error status or a time-out."""
 
-    def __init__(self, port=None, timeout=1.0):
+    def __init__(self, port=None, timeout=1.0, s=None):
+        """s: an open port-like object (read, write, in_waiting, close) instead of opening one: tests."""
+        self.timeout = timeout
+        self.seq = 0
+        self.buf = bytearray()
+        self.packed_shots = None                # packed screenshots: None until the firmware says
+        if s is not None:
+            self.port, self.s = str(port or "test"), s
+            return
         if serial is None and not str(port or "").startswith("udp:"):
             raise DebugLinkError("needs pyserial: pip install pyserial")
         self.port = pick_port(port)
-        self.timeout = timeout
-        self.seq = 0
-        self.packed_shots = None                # packed screenshots: None until the firmware says
         if self.port.startswith("udp:"):        # udp:<radio IP>[:port], a radio in USB network mode
             host, _, udp_port = self.port[4:].partition(":")
             self.s = UdpPort(host, int(udp_port or 3334))
@@ -310,7 +316,6 @@ class DebugLink:
             except serial.SerialException as e:
                 raise DebugLinkError(f"can't open {self.port}: {e}")
             low_latency(self.s)
-        self.buf = bytearray()
 
     def close(self):
         self.s.close()
@@ -793,7 +798,31 @@ class DebugLink:
         self.radio(OP_VFO_STEP, struct.pack("<b", d))
 
     def power_step(self, d):
+        """Step the power level by d. The radio wraps (lowest - 1 = highest), as its power key does: use power_level
+        to reach a level."""
         self.radio(OP_POWER, struct.pack("<b", d))
+
+    def power_level(self, target):
+        """Put the power level at target (0 = lowest), never through a wrap: one step of the exact difference, then
+        checked. target may be "lowest", "highest", a level number or a step "+N" / "-N"; a step past either end is
+        refused (DebugLinkError), not wrapped. Returns the view's (power, power_name) after it."""
+        core = self.view(["core"])
+        cur, n = int(core["power"]), int(core["power_count"])
+        if n == 0:
+            raise DebugLinkError("radio power: this radio has no power levels")
+        t = str(target)
+        lvl = 0 if t == "lowest" else n - 1 if t == "highest" else cur + int(t) if t[:1] in "+-" else int(t)
+        if not 0 <= lvl < n:
+            raise DebugLinkError(f"radio power {t}: level {lvl} is outside 0..{n - 1} (now {cur}, "
+                                 f"{core.get('power_name')}); refusing, the radio would wrap")
+        if lvl != cur:
+            self.power_step(lvl - cur)
+        for _ in range(20):
+            core = self.view(["core"])
+            if int(core["power"]) == lvl:
+                return lvl, core.get("power_name")
+            time.sleep(0.05)
+        raise DebugLinkError(f"radio power {t}: the radio is at level {core['power']}, not {lvl}")
 
     def squelch_step(self, d):
         self.radio(OP_SQUELCH, struct.pack("<b", d))
@@ -867,8 +896,13 @@ class DebugLink:
         """Band scan of the VFO from lo to hi in its step."""
         self.radio(OP_SCAN_VFO, struct.pack("<II", int(lo_hz), int(hi_hz)))
 
-    def beep(self, which):
-        self.radio(OP_BEEP, bytes([BEEPS[which] if isinstance(which, str) else which]))
+    def beep(self, which, delay_s=0):
+        """A beep by name (BEEPS, or "sweep" for the speaker test), delay_s (0-255) seconds from now: on a radio whose
+        cable mutes the speaker, time to take the cable out first."""
+        b = SWEEP if which == "sweep" else BEEPS[which] if isinstance(which, str) else which
+        if not 0 <= delay_s <= 255:
+            raise DebugLinkError(f"beep delay {delay_s} s: 0-255")
+        self.radio(OP_BEEP, bytes([b, delay_s]) if delay_s else bytes([b]))
 
     def vibrate(self, which):
         """A vibration pattern on the board's motor (CONFIG_VIBRATE): message | call | emergency."""
@@ -1304,8 +1338,9 @@ def cmd_radio(link, a):
         link.vfo_set(round(num(0, float) * 1e6))
     elif op == "step":
         link.vfo_step(num(0))
-    elif op == "power":
-        link.power_step(num(0))
+    elif op == "power":               # power lowest|highest|LEVEL|+N|-N (never wraps)
+        lvl, name = link.power_level(num(0, str))
+        print(f"power={lvl} power_name={name}")
     elif op == "squelch":
         link.squelch_step(num(0))
     elif op == "bw":
@@ -1340,8 +1375,8 @@ def cmd_radio(link, a):
             link.scan(args[0] if args else "toggle", num(1) if args[:1] == ["dual"] else None)
     elif op == "scan-vfo":            # scan-vfo LO_MHZ HI_MHZ
         link.scan_vfo(round(num(0, float) * 1e6), round(num(1, float) * 1e6))
-    elif op == "beep":                # beep key|error|tx_permit|...
-        link.beep(args[0] if args else "key")
+    elif op == "beep":                # beep key|error|tx_permit|...|sweep [DELAY_S]
+        link.beep(args[0] if args else "key", num(1) if len(args) > 1 else 0)
     elif op == "vibrate":             # vibrate message|call|emergency
         link.vibrate(args[0] if args else "message")
     elif op == "copy-vfo":            # the channel's settings into the VFO, and open it

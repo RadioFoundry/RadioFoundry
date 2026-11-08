@@ -1206,6 +1206,22 @@ static void test_rx_board_only(void)
 	CHECK(!aprs_rx_listening() && brx.starts == 2 && rs.start_fails == 2);
 	run(1100);
 	CHECK(aprs_rx_listening() && brx.starts == 3);
+	// Receive off and on again after a refusal: the new start is at once, not after the refused one's wait
+	c.rx_on = false;
+	aprs_set_cfg(&c, now);
+	run(200);
+	brx.refuse = 1;
+	c.rx_on = true;
+	aprs_set_cfg(&c, now);
+	run(200);
+	CHECK(!aprs_rx_listening() && brx.starts == 4);
+	c.rx_on = false;
+	aprs_set_cfg(&c, now);
+	run(200);
+	c.rx_on = true;
+	aprs_set_cfg(&c, now);
+	run(200);
+	CHECK(aprs_rx_listening() && brx.starts == 5);
 	fake_afsk = saved;
 }
 #endif

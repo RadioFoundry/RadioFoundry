@@ -2027,7 +2027,8 @@ def derive_key(stock, want_sha256=DM1701_KEY_SHA256, max_alternatives=2, candida
     nearly every j, and the few columns where that guess is wrong are found by trying the next most common bytes in the
     least confident columns until the SHA-256 matches. The MD-380 image is far less zero-dominated (a third of the
     columns vote wrong), so when the vote fails the key is refined with a byte-pair model learned from the file itself
-    (_refine) and then checked the same way. No key material is needed or stored: a wrong result can't pass the hash
+    (_refine) and then checked the same way; a file mostly 0xFF padding is refined from the vote with every byte
+    flipped. No key material is needed or stored: a wrong result can't pass the hash
     check. Raises StockError when it fails.
     """
     segs = parse_container(stock)
@@ -2037,8 +2038,10 @@ def derive_key(stock, want_sha256=DM1701_KEY_SHA256, max_alternatives=2, candida
         raise StockError("the file is too short to derive the key from")
     cols = [collections.Counter(payload[j::KEY_LEN]).most_common(8) for j in range(KEY_LEN)]
     base = bytes(c[0][0] for c in cols)
-    if sha256(base) == want_sha256:
-        return base
+    flipped = bytes(b ^ 0xFF for b in base)	# the vote of a file that is mostly 0xFF padding
+    for k in (base, flipped):
+        if sha256(k) == want_sha256:
+            return k
     cands = [[b for b, _ in c] for c in cols]
     margin = [c[0][1] - (c[1][1] if len(c) > 1 else 0) for c in cols]
     doubtful = sorted(range(KEY_LEN), key=lambda j: margin[j])[:candidates]
@@ -2061,6 +2064,11 @@ def derive_key(stock, want_sha256=DM1701_KEY_SHA256, max_alternatives=2, candida
         k = _alternatives(k, alt, order, want_sha256, max_alternatives)
         if k:
             return k
+    # A file padded with 0xFF (erased flash) votes key ^ 0xFF in most columns: refine from that base instead
+    fcands = [[flipped[j]] + [b for b in cands[j] if b != flipped[j]] for j in range(KEY_LEN)]
+    k, _ = _refine(pairs, fcands, flipped, list(range(int(KEY_LEN * 0.9))), False)
+    if sha256(k) == want_sha256:
+        return k
     raise StockError("could not derive the bootloader key from this file (is it a stock firmware file for this radio?)")
 
 

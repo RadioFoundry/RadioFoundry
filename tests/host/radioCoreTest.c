@@ -545,6 +545,18 @@ static void test_squelch(void)
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio && !hw.led[LED_GREEN]);
 	CHECK(sm.view.last_rx_ms == now);
+	// The carrier goes: the noise jumps far over the line, and one poll closes it (a shorter squelch tail)
+	signal(thr - 10, true);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB - 1, true);	// just short of it: two polls as before
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	signal(thr - 10, true);
+	poll_for(RADIO_POLL_MS);
+	signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB, true);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio);
 
 	signal(10, false);			// no RX tone on this channel: the board's tone flag doesn't matter
 	poll_for(RADIO_POLL_MS);
@@ -552,6 +564,11 @@ static void test_squelch(void)
 	signal(120, true);
 	poll_for(100);
 	CHECK(sm.view.state == RS_IDLE);
+	req(RREQ_SQUELCH, -(int)(RADIO_SQUELCH_DEFAULT - 1));	// the most open level short of 0
+	signal(UINT8_MAX, true);		// a receiver that can't hear (an RF chip the board doesn't drive): never opens
+	poll_for(200);
+	CHECK(sm.view.squelch == 1 && sm.view.state == RS_IDLE && !radio_view_wakes(&sm.view));
+	req(RREQ_CLEAR_TEMP, 0);
 
 	req(RREQ_SQUELCH, -9);			// to 0: always open
 	CHECK(sm.view.squelch == 0 && sm.view.temporary);
@@ -627,6 +644,26 @@ static void test_tx(void)
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && hw.tx_calls == 1);
 	req(RREQ_PTT, 0);
+}
+
+// A transmission that starts while a deny still flashes ends the flash: red shows the air, not the refusal before
+static void test_deny_flash_then_tx(void)
+{
+	setup_codeplug();
+	start();
+	req(RREQ_CH_STEP, 1);			// the RX-only channel
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && hw.led[LED_RED] && !hw.led[LED_GREEN]);
+	req(RREQ_PTT, 0);
+	req(RREQ_CH_STEP, -1);			// back to one that transmits, the flash still running
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && hw.led[LED_RED] && !hw.led[LED_GREEN]);
+	poll_for(100);				// the flash's green step
+	CHECK(hw.led[LED_RED] && !hw.led[LED_GREEN] && (sm.view.leds & RADIO_LED_RED) != 0);
+	poll_for(600);
+	CHECK(hw.led[LED_RED] && !hw.led[LED_GREEN]);	// and no flash back after it
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE && !hw.led[LED_RED]);
 }
 
 static void test_timeout(void)
@@ -1232,6 +1269,30 @@ static void test_dmr_tx(void)
 	req(RREQ_PTT, 0);
 	run(1000);
 	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == 2);
+}
+
+// The end of a DMR transmission goes through the board's dmr_tx_end (the glue: the last burst left the receiver on):
+// handled, no tx_off() and no receive set-up, so a reply 30 ms after our terminator is heard; refused, tx_off() as before
+static int tx_end_calls;
+static bool tx_end_ok;
+static bool r_dmr_tx_end(void) { tx_end_calls++; return tx_end_ok; }
+
+static void test_dmr_tx_end(void)
+{
+	dmr_start(true);
+	fake_radio.dmr_tx_end = r_dmr_tx_end;
+	for (int pass = 0; pass < 2; pass++) {
+		tx_end_ok = pass == 0;
+		int ends = tx_end_calls, offs = hw.tx_off_calls, rxs = hw.rx_calls;
+		req(RREQ_PTT, 1);
+		run(600);
+		req(RREQ_PTT, 0);
+		CHECK(tx_end_calls == ends);	// on air until the modem's TX done
+		run(1000);
+		CHECK(sm.view.state == RS_IDLE && !sm.dmr_keyed && tx_end_calls == ends + 1);
+		CHECK(hw.tx_off_calls == offs + (tx_end_ok ? 0 : 1) && hw.rx_calls == rxs);
+	}
+	fake_radio.dmr_tx_end = NULL;
 }
 
 // A modem with no slot timing takes the transmission and never sends (MD-380, HR_C5000 not answering): the radio must
@@ -2768,6 +2829,11 @@ bool radio_get_dual(radio_dual_ref_t ref[2], uint8_t *sel, uint8_t *at)
 }
 void radio_req_roam(uint8_t cmd) { req(RREQ_ROAM, cmd); }
 void radio_req_beep(uint8_t b) { req(RREQ_BEEP, b); }
+void radio_req_beep_after(uint8_t b, uint32_t delay_ms)
+{
+	radio_req_t r = { RREQ_BEEP, b, delay_ms };
+	radio_sm_request(&sm, &r, now);
+}
 void radio_req_vibrate(uint8_t v) { req(RREQ_VIBRATE, v); }
 void radio_req_dmr_target(uint32_t id, bool p) { req(RREQ_DMR_TARGET, (int32_t)((id & 0xFFFFFFu) | (p ? 1u << 24 : 0))); }
 void radio_req_dmr_target_clear(void) { req(RREQ_DMR_TARGET_CLEAR, 0); }
@@ -4736,6 +4802,7 @@ int main(void)
 	test_vfo_step_auto();
 	test_squelch();
 	test_tx();
+	test_deny_flash_then_tx();
 	test_timeout();
 	test_power();
 	test_vfo();
@@ -4748,6 +4815,7 @@ int main(void)
 	test_dmr_rssi_hold();
 	test_fm_rssi_raw();
 	test_dmr_tx();
+	test_dmr_tx_end();
 	test_dmr_stalled();
 	test_dmr_list_talk_target();
 #if CONFIG_VFO_DMR

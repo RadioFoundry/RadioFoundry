@@ -22,6 +22,18 @@ static inline uint8_t hrc_rfburst_lead(uint32_t up_us)
 	}
 	return (uint8_t)((up_us - HRC_RFBURST_SYMBOL_AFTER_LEAD_US + 99u) / 100u);
 }
+// A TX on in two points, both counted from the RF TX interrupt: the RF switched to TX switch_lead_us ahead of the lead
+// point, and the PA keyed pa_ahead_us before the first symbol
+static inline uint32_t hrc_rfburst_switch_at_us(uint8_t lead, uint32_t switch_lead_us)
+{
+	uint32_t at = lead * 100u;
+	return at > switch_lead_us ? at - switch_lead_us : 0;
+}
+static inline uint32_t hrc_rfburst_pa_at_us(uint8_t lead, uint32_t pa_ahead_us)
+{
+	uint32_t at = lead * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US;
+	return at > pa_ahead_us ? at - pa_ahead_us : 0;
+}
 // The ramp down starts with the burst's last symbol, lead + 0.85 ms + 27.5 ms after the RF TX interrupt, so the
 // receiver is back for the slot after ours. How long to wait still, elapsed_us after the RF TX interrupt (0 once that
 // point is past), and by how much it was missed (0 when on time)

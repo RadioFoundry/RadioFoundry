@@ -74,6 +74,7 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "view=%u\n", DL_VIEW_VERSION);
 	dl_text(t, "state=%s\n", state_key((uint8_t)v->state));
 	dl_text(t, "tx_deny=%s\n", deny_key(v->tx_deny));
+	dl_text(t, "can_tx=%u\n", board_can_tx() ? 1u : 0u);
 	{
 		tx_limit_info_t l;
 		tx_limit_get(&l, NULL, 0);
@@ -480,7 +481,7 @@ static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dm
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
 						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc",
-						  "net_link", "cps" };
+						  "net_link", "cps", "board", "audio" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -579,6 +580,12 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_CPS:
 		cps_section(t);
+		break;
+	case DL_VIEW_BOARD:	// no board has keys of its own (board.view_line) yet: the name alone (debuglink.md)
+		dl_text_kv_str(t, "board.name", board.name);
+		break;
+	case DL_VIEW_AUDIO:
+		debuglink_view_audio(t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP
