@@ -254,7 +254,8 @@ def _wake_ts(s, rnd):
         assert s.radio.view(["dmr"]).get("dmr.repeater_up") == "0", "the repeater is up before its answer"
         s.set_ts(3 - s.ts)
         time.sleep(max(0.0, due - time.monotonic()))
-        s.call(1.5, "woke the repeater, timeslot changed 1 s before")
+        # long enough that the wake-up's share of it (up to two attempts) leaves half the voice the check asks for
+        s.call(2.5, "woke the repeater, timeslot changed 1 s before")
 
 
 SCENARIOS = {"up_ts_changes": _up_ts_changes, "long_idle": _long_idle, "rekey": _rekey,

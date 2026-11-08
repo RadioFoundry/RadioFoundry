@@ -428,6 +428,8 @@ static dmr_call_config_t base_cfg(void)
 	return c;
 }
 
+static const hal_dmr_modem_t *modem_under_test = &sim_modem;
+
 static void setup(const dmr_call_config_t *c)
 {
 	sim_reset();
@@ -435,7 +437,7 @@ static void setup(const dmr_call_config_t *c)
 	memset(&src, 0, sizeof(src));
 	now = 1000;
 	sub_ms = 0;
-	dmr_call_init(&sim_modem);
+	dmr_call_init(modem_under_test);
 	dmr_call_set_voice(&sink, &source);
 	dmr_call_configure(c);
 	CHECK(dmr_call_start());
@@ -914,6 +916,37 @@ static void test_rmo_air_slot_alignment(void)
 // The board's receiver follows the wake-up (dmr_call_set_wake_listen)
 static unsigned listen_on, listen_off;
 static void on_wake_listen(bool listen) { if (listen) listen_on++; else listen_off++; }
+
+// How long after PTT the voice starts, the repeater answering the wake-up, with the modem's settle time
+static uint32_t wake_to_voice_ms(uint16_t settle)
+{
+	dmr_call_config_t c = base_cfg();
+	hal_dmr_modem_t m = sim_modem;
+	uint32_t waited = 0;
+
+	c.rmo = true;
+	m.wake_settle_ms = settle;
+	modem_under_test = &m;
+	setup(&c);
+	sim.wake_repeater_on_csbk = true;
+	dmr_call_ptt(true);
+	while (V()->phase != DMR_CALL_PHASE_TX_VOICE && waited < 2000) {
+		run_ms(10);
+		waited += 10;
+	}
+	dmr_call_ptt(false);
+	run_ms(600);
+	modem_under_test = &sim_modem;
+	return waited;
+}
+
+// A modem that needs some of the outbound before an aligned start is keyed that much later, and only then
+static void test_wake_settle(void)
+{
+	uint32_t at_once = wake_to_voice_ms(0), held = wake_to_voice_ms(240);
+
+	CHECK(at_once < 2000 && held >= at_once + 200 && held <= at_once + 320);
+}
 
 static void test_wake_listen(void)
 {
@@ -2490,6 +2523,7 @@ int main(void)
 	test_tx_modem_stalled();
 	test_rmo_wakeup();
 	test_wake_listen();
+	test_wake_settle();
 	test_rmo_air_slot_alignment();
 	test_rx_call();
 	test_rx_filters();

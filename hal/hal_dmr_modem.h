@@ -153,6 +153,8 @@ typedef struct {
 	void (*set_embedded_lc)(const uint8_t lc[9]);	// spread over B-E from the next superframe
 	void (*set_cc_filter)(int8_t cc);
 	bool (*is_transmitting)(void);	// slot state, never the PA
+	// ms from a woken repeater's first burst until an aligned tx_begin lands on the right slot (0: at once)
+	uint16_t wake_settle_ms;
 	// Optional (NULL: the driver can't). For the transmission begun last: receive in the slots between our bursts and
 	// report what is heard there, with the RF switched back to receive per burst (an SFR's inbound slot, sfr.md 3)
 	void (*tx_listen)(void);

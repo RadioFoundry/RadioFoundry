@@ -968,6 +968,7 @@ const hal_dmr_modem_t sct_dmr_modem = {
 	.configure = m_configure,
 	.rx_restart = m_rx_restart,
 	.rx_lock_slot = m_rx_lock_slot,
+	.wake_settle_ms = 240,	// keyed sooner, the chip's aligned start can take the other slot (four slots of outbound)
 	.tx_begin = m_tx_begin,
 	.tx_queue = m_tx_queue,
 	.tx_queue_space = m_tx_queue_space,
