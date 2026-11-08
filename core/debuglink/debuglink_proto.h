@@ -75,7 +75,7 @@ enum {
 };
 // HANG: the host link's task spins with interrupts on and the watchdog fed as usual, so the hang check (crash-log.md
 // 1.1) keeps the record; unavailable without CONFIG_WATCHDOG
-enum { DL_CRASH_TEST_TRAP = 1, DL_CRASH_TEST_ASSERT = 2, DL_CRASH_TEST_HANG = 3 };
+enum { DL_CRASH_TEST_TRAP = 1, DL_CRASH_TEST_ASSERT = 2, DL_CRASH_TEST_HANG = 3, DL_CRASH_TEST_STALL = 4 };
 // The test's guard, little endian in the payload: bytes 'C' 'R' 'S' 'H' (as CRASH_MAGIC), so a stray frame can't crash
 // the radio
 #define DL_CRASH_TOKEN		0x48535243u

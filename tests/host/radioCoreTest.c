@@ -558,6 +558,11 @@ static void test_squelch(void)
 	signal(120, true);
 	poll_for(100);
 	CHECK(sm.view.state == RS_IDLE);
+	req(RREQ_SQUELCH, -(int)(RADIO_SQUELCH_DEFAULT - 1));	// the most open level short of 0
+	signal(UINT8_MAX, true);		// a receiver that can't hear (an RF chip the board doesn't drive): never opens
+	poll_for(200);
+	CHECK(sm.view.squelch == 1 && sm.view.state == RS_IDLE && !radio_view_wakes(&sm.view));
+	req(RREQ_CLEAR_TEMP, 0);
 
 	req(RREQ_SQUELCH, -9);			// to 0: always open
 	CHECK(sm.view.squelch == 0 && sm.view.temporary);
@@ -612,8 +617,11 @@ static void test_tx(void)
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_RX_ONLY && hw.tx_calls == 1);
 	CHECK(radio_view_wakes(&sm.view));	// the screen says why
-	CHECK(!hw.led[LED_RED]);
+	CHECK(hw.led[LED_RED] && !hw.led[LED_GREEN]);	// the deny flash starts red (radio-features.md 5.7)
 	poll_for(100);
+	CHECK(!hw.led[LED_RED] && hw.led[LED_GREEN]);	// then green
+	poll_for(500);
+	CHECK(!hw.led[LED_RED] && !hw.led[LED_GREEN]);	// then dark: the flash runs once
 	CHECK(sm.view.state == RS_TX_DENIED);	// until release
 	req(RREQ_PTT, 0);
 	CHECK(sm.view.state == RS_IDLE && sm.view.tx_deny == TXDENY_NONE && hw.tx_off_calls == 1);
@@ -632,6 +640,26 @@ static void test_tx(void)
 	req(RREQ_PTT, 0);
 }
 
+// A transmission that starts while a deny still flashes ends the flash: red shows the air, not the refusal before
+static void test_deny_flash_then_tx(void)
+{
+	setup_codeplug();
+	start();
+	req(RREQ_CH_STEP, 1);			// the RX-only channel
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && hw.led[LED_RED] && !hw.led[LED_GREEN]);
+	req(RREQ_PTT, 0);
+	req(RREQ_CH_STEP, -1);			// back to one that transmits, the flash still running
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && hw.led[LED_RED] && !hw.led[LED_GREEN]);
+	poll_for(100);				// the flash's green step
+	CHECK(hw.led[LED_RED] && !hw.led[LED_GREEN] && (sm.view.leds & RADIO_LED_RED) != 0);
+	poll_for(600);
+	CHECK(hw.led[LED_RED] && !hw.led[LED_GREEN]);	// and no flash back after it
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE && !hw.led[LED_RED]);
+}
+
 static void test_timeout(void)
 {
 	setup_codeplug();
@@ -642,9 +670,9 @@ static void test_timeout(void)
 	CHECK(sm.view.state == RS_TX);
 	poll_for(1000);
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TIMEOUT);
-	CHECK(hw.tx_off_calls == 1 && !hw.led[LED_RED]);
+	CHECK(hw.tx_off_calls == 1 && hw.led[LED_RED] && !hw.led[LED_GREEN]);	// the deny flash, the transmitter off
 	poll_for(5000);
-	CHECK(sm.view.state == RS_TX_DENIED);
+	CHECK(sm.view.state == RS_TX_DENIED && !hw.led[LED_RED]);
 	req(RREQ_PTT, 0);
 	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == 1);
 	req(RREQ_PTT, 1);			// a fresh press transmits again
@@ -1237,6 +1265,30 @@ static void test_dmr_tx(void)
 	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == 2);
 }
 
+// The end of a DMR transmission goes through the board's dmr_tx_end (the glue: the last burst left the receiver on):
+// handled, no tx_off() and no receive set-up, so a reply 30 ms after our terminator is heard; refused, tx_off() as before
+static int tx_end_calls;
+static bool tx_end_ok;
+static bool r_dmr_tx_end(void) { tx_end_calls++; return tx_end_ok; }
+
+static void test_dmr_tx_end(void)
+{
+	dmr_start(true);
+	fake_radio.dmr_tx_end = r_dmr_tx_end;
+	for (int pass = 0; pass < 2; pass++) {
+		tx_end_ok = pass == 0;
+		int ends = tx_end_calls, offs = hw.tx_off_calls, rxs = hw.rx_calls;
+		req(RREQ_PTT, 1);
+		run(600);
+		req(RREQ_PTT, 0);
+		CHECK(tx_end_calls == ends);	// on air until the modem's TX done
+		run(1000);
+		CHECK(sm.view.state == RS_IDLE && !sm.dmr_keyed && tx_end_calls == ends + 1);
+		CHECK(hw.tx_off_calls == offs + (tx_end_ok ? 0 : 1) && hw.rx_calls == rxs);
+	}
+	fake_radio.dmr_tx_end = NULL;
+}
+
 // A modem with no slot timing takes the transmission and never sends (MD-380, HR_C5000 not answering): the radio must
 // not stay keyed. Released: back to receive with the arming dropped; held: refused until release
 static void test_dmr_stalled(void)
@@ -1746,6 +1798,69 @@ static void test_dmr_denied(void)
 	CHECK(sm.view.tx_deny == TXDENY_RX_ONLY && hw.tx_calls == 0);
 	req(RREQ_PTT, 0);
 	chans[4].rx_only = false;
+}
+
+// The LEDs while a repeater is woken and on a deny (radio-features.md 5.7): red blinks once per wake-up burst, not
+// solid, and the deny flashes red, green, red, green, red, green; a direct call is solid red throughout
+static void test_dmr_wake_leds(void)
+{
+	// Direct: solid red from PTT to release
+	dmr_start(true);
+	req(RREQ_PTT, 1);
+	bool solid = true;
+	for (int i = 0; i < 100; i++) {
+		run(5);
+		solid = solid && hw.led[LED_RED] && (sm.view.leds & RADIO_LED_RED) != 0;
+	}
+	CHECK(solid && sm.view.dmr.state == RDMR_TX);
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(!hw.led[LED_RED]);
+
+	// Through a repeater that never answers
+	chans[4].tx_hz = 433500000;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 3);
+	run(50);
+	req(RREQ_PTT, 1);
+	uint32_t ons = 0, on_ms = 0, wait_ms = 0;
+	bool was = hw.led[LED_RED];
+	ons += was ? 1u : 0u;
+	while (sm.view.state == RS_TX && wait_ms < 6000) {
+		run(5);
+		wait_ms += 5;
+		if (sm.view.state != RS_TX) {
+			break;		// refused: the deny flash, below
+		}
+		bool r = hw.led[LED_RED];
+		CHECK(r == ((sm.view.leds & RADIO_LED_RED) != 0));	// the view says what is driven
+		CHECK(!hw.led[LED_GREEN]);
+		if (r && !was) {
+			ons++;
+		}
+		on_ms += r ? 5u : 0u;
+		was = r;
+	}
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_NO_REPEATER);
+	CHECK(ons == DMR_CALL_WAKEUP_ATTEMPTS);			// one blink per wake-up burst
+	CHECK(on_ms <= DMR_CALL_WAKEUP_ATTEMPTS * (RADIO_LED_WAKE_MS + 10u) && on_ms * 4u < wait_ms);	// not solid
+	CHECK(on_ms >= DMR_CALL_WAKEUP_ATTEMPTS * (RADIO_LED_WAKE_MS - 10u));	// each long enough to see
+	// The deny flash: red, green, red, green, red, green, then dark
+	char seen[16] = { 0 };
+	uint8_t n = 0;
+	char last = 0;
+	for (uint32_t t = 0; t < RADIO_LED_DENY_STEPS * RADIO_LED_DENY_STEP_MS + 200u; t += 5) {
+		char c = hw.led[LED_RED] ? (hw.led[LED_GREEN] ? 'b' : 'r') : (hw.led[LED_GREEN] ? 'g' : '-');
+		if (c != last && n + 1u < sizeof(seen)) {
+			seen[n++] = c;
+			last = c;
+		}
+		run(5);
+	}
+	CHECK(strcmp(seen, "rgrgrg-") == 0);
+	req(RREQ_PTT, 0);
+	chans[4].tx_hz = chans[4].rx_hz;
+	setup_codeplug();
 }
 
 static void test_hotspot(void)
@@ -4166,7 +4281,9 @@ static void test_error_paths(void)
 	run(20);
 	tx_fail = true;
 	req(RREQ_PTT, 1);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && !hw.led[LED_RED]);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND);
+	run(RADIO_LED_DENY_STEPS * RADIO_LED_DENY_STEP_MS);
+	CHECK(!hw.led[LED_RED]);	// after the deny flash: dark, nothing on air
 	req(RREQ_PTT, 0);
 	tx_fail = false;
 
@@ -4707,6 +4824,7 @@ int main(void)
 	test_vfo_step_auto();
 	test_squelch();
 	test_tx();
+	test_deny_flash_then_tx();
 	test_timeout();
 	test_power();
 	test_vfo();
@@ -4719,6 +4837,7 @@ int main(void)
 	test_dmr_rssi_hold();
 	test_fm_rssi_raw();
 	test_dmr_tx();
+	test_dmr_tx_end();
 	test_dmr_stalled();
 	test_dmr_list_talk_target();
 #if CONFIG_VFO_DMR
@@ -4729,6 +4848,7 @@ int main(void)
 	test_vfo_copy();
 	test_vfo_copy_dmr();
 	test_dmr_denied();
+	test_dmr_wake_leds();
 	test_dmr_voice_features();
 	test_dmr_contact_added();
 	test_ui_requests();

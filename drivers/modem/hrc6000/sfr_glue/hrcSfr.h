@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 /*
- * DMR single frequency repeater (SFR): the HR-C6000 glue for functions/sfr.h (STM32 radios and the GD-77)
+ * DMR single frequency repeater (SFR): the HR-C6000 glue for functions/sfr.h (every MCU)
  */
 
 #ifndef RFOUNDRY_HRC_SFR_H
@@ -34,7 +34,7 @@ bool    hrcSfrRepeaterActive(void);// repeater role or hotspot SFR: the receiver
 bool hrcSfrTimeslotStart(void);// first thing in the timeslot ISR: true if it ended one of our bursts
 void hrcSfrTimeslot(int stateAtEntry, bool localTx);// after the driver's state machine
 bool hrcSfrTxInterrupt(void);// true if the burst starting is ours
-// Radios with the HR-C6000's RF RX interrupt (GD-77): true while the repeater is keyed (the driver leaves the RF
+// Radios with the HR-C6000's RF RX interrupt routed: true while the repeater is keyed (the driver leaves the RF
 // alone); the burst on for at least BURST_MIN_MS ends here (else at the next timeslot interrupt, as without it)
 bool hrcSfrRxInterrupt(void);
 void hrcSfrRxBurst(int syncClass, int dataType, int syncType, bool crcValid, uint8_t colorCode);

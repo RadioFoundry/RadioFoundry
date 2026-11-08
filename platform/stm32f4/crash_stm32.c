@@ -164,14 +164,14 @@ void stm32_fault(const uint32_t *frame, uint32_t exc_return, const uint32_t *hi)
 // other handler is active, so it interrupted a task, whose frame the CPU pushed on the PSP. The record names that task.
 // Only that frame is kept: r4-r11 belong to the handler's callers by now, and without EXC_RETURN the frame's size
 // (FPU or not) is unknown, so sp is the frame's address and stack[] starts with the frame
-void hal_crash_hang(uint32_t ms)
+void hal_crash_hang(uint8_t kind, uint32_t ms)
 {
 	static crash_record_t r;	// not on the main stack, which every interrupt shares
 	__disable_irq();
 	board_rf_safe();
 	memset(&r, 0, sizeof r);
 	r.arch = CRASH_ARCH_CM4;
-	r.kind = CRASH_KIND_HANG;
+	r.kind = kind;
 	r.cause = ms;
 	const uint32_t *frame = (const uint32_t *)__get_PSP();
 	uint32_t f = (uint32_t)(uintptr_t)frame;

@@ -207,6 +207,7 @@ def _report(c, sdr_bench, rdir):
 
 
 @pytest.mark.feature("dmr_gps")
+@pytest.mark.needs_switch("APRS")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem

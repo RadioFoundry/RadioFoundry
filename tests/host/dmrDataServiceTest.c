@@ -24,6 +24,7 @@ static int failures = 0;
 #define OUR_ID		1000
 #define RADIO_A		2001
 #define RADIO_B		2002
+#define RADIO_C		2003
 
 static uint32_t millis = 100000;
 static dmrDataChannel_t ch = { .ownId = OUR_ID, .talkGroup = 9, .rmo = false, .canTransmit = true, .channelKey = 1 };
@@ -227,9 +228,11 @@ static void receiveTMS(uint32_t src, const char *text, uint8_t seq)
 }
 
 // The same, as confirmed data with a response requested: an ETSI response, then the TMS ACK
+static dmrDataPacket_t confirmedTms;
+
 static void receiveConfirmedTMS(uint32_t src, const char *text, uint8_t seq, uint8_t sendSeq)
 {
-	static dmrDataPacket_t packet;
+	dmrDataPacket_t packet;
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
 	int count = dmrDataBuildTMS(false, OUR_ID, src, text, seq, true, DT_RATE_12_DATA, 0, bursts, DMR_DATA_MAX_BURSTS);
 	dmrDataRxResult_t result = DMR_DATA_RX_NONE;
@@ -246,6 +249,7 @@ static void receiveConfirmedTMS(uint32_t src, const char *text, uint8_t seq, uin
 	packet.sendSeq = sendSeq;
 	millis += 60;
 	now = millis;
+	confirmedTms = packet;
 	handlePacket(&packet);
 	dmrDataRxReset();
 }
@@ -709,6 +713,10 @@ static void testSignaling(void)
 	CHECK(events[DMR_DATA_EV_CALL_ALERT_ACKED] == 1);
 }
 
+static void ipSettings(uint8_t compress, uint8_t mode, uint8_t tries, uint32_t rule0, uint32_t rule1);
+static void respond(uint32_t from, uint8_t sap, uint8_t response, const uint8_t *flags);
+static const dmrBurst_t *txHeader(void);
+
 #if CONFIG_DMR_TMS
 // Our text messages: to a radio with an ACK, to a group, and unanswered
 static void testOurSms(void)
@@ -719,6 +727,13 @@ static void testOurSms(void)
 	runMainTask(200);
 	CHECK((sentCount == 1) && (sent[0].kind == 'S') && (sent[0].dst == RADIO_A));
 	CHECK(sms_send_state() == DMR_REQ_SENDING);
+	// DMR_DATA_TX_PREAMBLES preambles, each counting the bursts after it: BrandMeister ignores a text with 2 (5.1.1)
+	CHECK(txHeader() == &lastTx[DMR_DATA_TX_PREAMBLES]);
+	for (int i = 0; i < DMR_DATA_TX_PREAMBLES; i++)
+	{
+		CHECK(lastTx[i].dataType == DT_CSBK && (lastTx[i].payload[0] & 0x3F) == DMR_CSBKO_PREAMBLE &&
+		      lastTx[i].payload[3] == lastTxCount - 1 - i);
+	}
 	uint8_t seq = sent[0].seq;
 	// The ACK from A, as A's radio sends it
 	{
@@ -931,12 +946,51 @@ static void testTmsReplies(void)
 	reset();
 	receiveConfirmedTMS(RADIO_A, "confirmed A", 21, 2);
 	receiveConfirmedTMS(RADIO_B, "confirmed B", 22, 5);
-	runMainTask(3000);
+	runMainTask(5000);
 	CHECK(sentCount == 4);
 	CHECK((sent[0].kind == 'R') && (sent[0].dst == RADIO_A));
 	CHECK((sent[1].kind == 'T') && (sent[1].dst == RADIO_A) && (sent[1].seq == 21));
 	CHECK((sent[2].kind == 'R') && (sent[2].dst == RADIO_B));
 	CHECK((sent[3].kind == 'T') && (sent[3].dst == RADIO_B) && (sent[3].seq == 22));
+
+	// The TMS ACK after our link ACK waits TMS_ACK_GAP_MS and has a text's preambles, as MOTOTRBO radios
+	// send it (dmr-data.md 5.1.1)
+	reset();
+	receiveConfirmedTMS(RADIO_A, "gap", 23, 3);
+	runMainTask(1000);
+	CHECK((sentCount == 1) && (sent[0].kind == 'R'));
+	runMainTask(1000);
+	CHECK((sentCount == 2) && (sent[1].kind == 'T') && (sent[1].seq == 23));
+	CHECK(txHeader() == &lastTx[DMR_DATA_TX_PREAMBLES]);
+
+	// A sender that never steps N(S) (BrandMeister sends 0 every time): other data with the same N(S) within
+	// CNF_RX_DUPLICATE_MS is a new packet, passed on; the same data again is the retry, ACKed only
+	reset();
+	uint32_t dups = stats.rxConfirmedDuplicates;
+	receiveConfirmedTMS(RADIO_C, "first from C", 1, 0);
+	runMainTask(3000);
+	receiveConfirmedTMS(RADIO_C, "second from C", 2, 0);
+	runMainTask(3000);
+	millis += 6000;
+	now = millis;
+	handlePacket(&confirmedTms);// the sender's retry: the same packet
+	runMainTask(3000);
+	CHECK(events[DMR_DATA_EV_SMS_RECEIVED] == 2);
+	CHECK(strcmp(dmrDataServiceMessage(0)->text, "second from C") == 0);
+	CHECK(stats.rxConfirmedDuplicates == dups + 1);
+	CHECK(sentCount == 5);// R T, R T, then R only for the retry
+	CHECK((sent[3].kind == 'T') && (sent[3].seq == 2) && (sent[4].kind == 'R') && (sent[4].dst == RADIO_C));
+
+	// The same text resent with a new sequence number (BrandMeister after its TMS ACK wait): ACKed with the new
+	// number, kept once
+	reset();
+	receiveTMS(RADIO_A, "resent text", 30);
+	runMainTask(2000);
+	millis += 28000;
+	receiveTMS(RADIO_A, "resent text", 3);
+	runMainTask(2000);
+	CHECK((sentCount == 2) && (sent[0].seq == 30) && (sent[1].kind == 'T') && (sent[1].seq == 3));
+	CHECK(events[DMR_DATA_EV_SMS_RECEIVED] == 1);
 
 	// More than the queue holds before the main task runs: REPLY_QUEUE_SIZE - 1 are ACKed, the rest retry
 	reset();
@@ -1039,37 +1093,73 @@ static void testIpTx(void)
 	CHECK(dmrDataServiceIpBusy());
 	runMainTask(SEND_MS);
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
-	CHECK(lastTxCount == 2 + 1 + 7 && txHeader() != NULL && (txHeader()->payload[0] & 0x0F) == DMR_DPF_UNCONFIRMED &&
-	      (txHeader()->payload[1] >> 4) == DMR_SAP_UDPIP_COMPRESSION);
+	CHECK(lastTxCount == DMR_DATA_TX_PREAMBLES + 1 + 7 && txHeader() != NULL && (txHeader()->payload[0] & 0x0F) == DMR_DPF_UNCONFIRMED &&
+	      (txHeader()->payload[1] >> 4) == DMR_SAP_UDPIP_COMPRESSION && lastTx[lastTxCount - 1].dataType == DT_RATE_12_DATA);
 
-	// Confirmed for UDP port 161: C_HEAD with F and N(S), the blocks, the data terminator (direct mode); the ACK ends it
+	// Confirmed for UDP port 161 (at rate 3/4: a MOTOTRBO radio refuses rate 1/2 confirmed, docs/spec/dmr-data.md 12.9): C_HEAD with F and N(S), the blocks, the data terminator (direct mode); the ACK ends it
 	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, DMR_IPC_PORT | 161, RADIO_B);
 	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
 	runMainTask(SEND_MS);
 	const dmrBurst_t *h = txHeader();
 	CHECK(h != NULL && (h->payload[0] & 0x4F) == (0x40 | DMR_DPF_CONFIRMED) && (h->payload[8] & 0x80) &&
-	      (h->payload[8] & 0x7F) == 8 && (h->payload[9] & 0x0F) == 0x08);// 73 octets in 10: 8 blocks
+	      (h->payload[8] & 0x7F) == 5 && (h->payload[9] & 0x0F) == 0x08);// rate 3/4: 73 octets in 16: 5 blocks
 	uint8_t ns = (h->payload[9] >> 4) & 7;
 	CHECK(lastTx[lastTxCount - 1].dataType == DT_TERMINATOR_WITH_LC && (lastTx[lastTxCount - 1].payload[8] & 0x67) == (0x60 | ns));
-	CHECK(lastTxCount == 2 + 1 + 8 + 1);
+	CHECK(lastTxCount == DMR_DATA_TX_PREAMBLES + 1 + 5 + 1 && h[1].dataType == DT_RATE_34_DATA);
 	CHECK(dmrDataServiceIpBusy());
+	dmrDataServiceGetStats(&st);
+	uint32_t other = st.ipCnfOther;
 	respond(RADIO_B, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK(ns), NULL);// another radio's: not ours
 	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK((ns + 1) & 7), NULL);// another packet's
 	CHECK(dmrDataServiceIpBusy());
+	// Both kept for the debug link: the last is A's (source ours), the other N(S), while we wait, confirmed
+	dmrDataServiceGetStats(&st);
+	CHECK(st.ipCnfOther == other + 2 &&
+	      st.ipCnfOtherLast == (DMR_RESPONSE_ACK((ns + 1) & 7) | (DMR_SAP_UDPIP_COMPRESSION << 8) |
+	                            (DMR_SAP_UDPIP_COMPRESSION << 12) | ((uint32_t)ns << 16) | (1UL << 19) | (3UL << 20) |
+	                            (1UL << 22)));
 	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK(ns), NULL);
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
 
-	// The next one to the same radio takes the next N(S); a selective ACK has blocks 1 and 6 sent again (F clear)
+	// The ACK before the stack reports our list done (BrandMeister answers that fast): taken, the late report ignored
+	txAutoDone = false;
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
+	runMainTask(SEND_MS);
+	ns = (ns + 1) & 7;
+	CHECK(txOpen && dmrDataServiceIpBusy() && ((txHeader()->payload[9] >> 4) & 7) == ns);
+	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK(ns), NULL);
+	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
+	txOpen = false;
+	dmrDataServiceTxDone(0);
+	txAutoDone = true;
+	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
+
+	// The ACK after our wait, while the next try waits for the channel (the hotspot sending that ACK): taken, the
+	// retry dropped
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
+	runMainTask(SEND_MS);
+	ns = (ns + 1) & 7;
+	int listsBefore = txLists;
+	ch.canTransmit = false;
+	runMainTask(DMR_IPC_RESPONSE_MS + 100);
+	CHECK(dmrDataServiceIpBusy() && txLists == listsBefore);
+	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK(ns), NULL);
+	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
+	ch.canTransmit = true;
+	runMainTask(1000);
+	CHECK(txLists == listsBefore);
+
+	// The next one to the same radio takes the next N(S); a selective ACK has blocks 1 and 3 sent again (F clear)
 	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
 	runMainTask(SEND_MS);
 	CHECK(((txHeader()->payload[9] >> 4) & 7) == ((ns + 1) & 7));
 	ns = (ns + 1) & 7;
-	uint8_t flags[8] = { 0xBD, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+	uint8_t flags[8] = { 0xF5, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_SACK(ns), flags);
 	runMainTask(SEND_MS);
 	h = txHeader();
 	CHECK(h != NULL && !(h->payload[8] & 0x80) && (h->payload[8] & 0x7F) == 2 && ((h->payload[9] >> 4) & 7) == ns);
-	CHECK(lastTx[3].dataType == DT_RATE_12_DATA && (lastTx[3].payload[0] >> 1) == 1 && (lastTx[4].payload[0] >> 1) == 6);
+	CHECK(h != NULL && h[1].dataType == DT_RATE_34_DATA && (h[1].payload[0] >> 1) == 1 && (h[2].payload[0] >> 1) == 3);
 	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK(ns), NULL);
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
 
@@ -1090,7 +1180,7 @@ static void testIpTx(void)
 	runMainTask(SEND_MS);
 	CHECK(txHeader()->payload[8] & 0x80);
 	runMainTask(DMR_IPC_RESPONSE_MS);
-	CHECK(!(txHeader()->payload[8] & 0x80) && (txHeader()->payload[8] & 0x7F) == 8);
+	CHECK(!(txHeader()->payload[8] & 0x80) && (txHeader()->payload[8] & 0x7F) == 5);
 	runMainTask(DMR_IPC_TRIES_DEFAULT * DMR_IPC_RESPONSE_MS);
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_FAILED && txLists - lists == DMR_IPC_TRIES_DEFAULT);
 
@@ -1100,7 +1190,7 @@ static void testIpTx(void)
 	lists = txLists;
 	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
 	runMainTask(SEND_MS);
-	CHECK(lastTx[lastTxCount - 1].dataType == DT_RATE_12_DATA && (txHeader()->payload[1] >> 4) == DMR_SAP_IP);
+	CHECK(lastTx[lastTxCount - 1].dataType == DT_RATE_34_DATA && (txHeader()->payload[1] >> 4) == DMR_SAP_IP);
 	runMainTask(3 * DMR_IPC_RESPONSE_MS);
 	CHECK(dmrDataServiceIpResult() == DMR_REQ_FAILED && txLists - lists == 2);
 	ch.rmo = false;
@@ -1123,10 +1213,10 @@ static void testIpTx(void)
 	ch.canTransmit = true;
 
 	dmrDataServiceGetStats(&st);
-	CHECK(st.ipPackets - st0.ipPackets == 8 && st.ipSent - st0.ipSent == 5 && st.ipFailed - st0.ipFailed == 3);
-	CHECK(st.ipConfirmed - st0.ipConfirmed == 5 && st.ipCnfAcks - st0.ipCnfAcks == 3 && st.ipCnfSacks - st0.ipCnfSacks == 1);
+	CHECK(st.ipPackets - st0.ipPackets == 10 && st.ipSent - st0.ipSent == 7 && st.ipFailed - st0.ipFailed == 3);
+	CHECK(st.ipConfirmed - st0.ipConfirmed == 7 && st.ipCnfAcks - st0.ipCnfAcks == 5 && st.ipCnfSacks - st0.ipCnfSacks == 1);
 	CHECK(st.ipCnfNacks - st0.ipCnfNacks == 1 && st.ipCnfResyncs - st0.ipCnfResyncs == 1 && st.ipCnfTooLong - st0.ipCnfTooLong == 0);
-	CHECK(st.ipCnfTimeouts - st0.ipCnfTimeouts == DMR_IPC_TRIES_DEFAULT + 2 && st.ipCnfFailed - st0.ipCnfFailed == 3);
+	CHECK(st.ipCnfTimeouts - st0.ipCnfTimeouts == DMR_IPC_TRIES_DEFAULT + 3 && st.ipCnfFailed - st0.ipCnfFailed == 3);
 	CHECK(st.ipCnfRetries - st0.ipCnfRetries == 2 + (DMR_IPC_TRIES_DEFAULT - 1) + 1);
 	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
 	decodeTx = true;
@@ -1148,10 +1238,91 @@ static const dmrDataPacket_t *txPacket(void)
 	return got;
 }
 
+#if CONFIG_DMR_TMS
+// With confirmed IP data on, TMS goes as a MOTOTRBO radio sends it to BrandMeister (dmr-data.md 5.1.1): our text and
+// our TMS ACK as confirmed data, uncompressed (UDP 4007 is an application port) unless compression covers every port
+static void testTmsConfirmed(void)
+{
+	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
+
+	// Our text: confirmed, SAP 4; the link ACK alone doesn't end it, the TMS ACK does; no retry after the link ACK
+	reset();
+	CHECK(sms_send(RADIO_A, false, "hello A", true, DMR_SMS_FORMAT_TMS));
+	runMainTask(SEND_MS);
+	const dmrBurst_t *h = txHeader();
+	CHECK((sentCount == 1) && (sent[0].kind == 'S') && h != NULL && (h->payload[0] & 0x0F) == DMR_DPF_CONFIRMED &&
+		  (h->payload[1] >> 4) == DMR_SAP_IP && h == &lastTx[DMR_DATA_TX_PREAMBLES]);
+	uint8_t ns = (h->payload[9] >> 4) & 7;
+	uint8_t seq = sent[0].seq;
+	respond(RADIO_A, DMR_SAP_IP, DMR_RESPONSE_ACK(ns), NULL);
+	runMainTask(3000);
+	CHECK((sentCount == 1) && (sms_send_state() == DMR_REQ_SENDING));
+	{
+		dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+		rxBursts(bursts, dmrDataBuildTMSAck(OUR_ID, RADIO_A, seq, 1, bursts, DMR_DATA_MAX_BURSTS));
+	}
+	runMainTask(200);
+	CHECK((sms_send_state() == DMR_REQ_OK) && (stats.smsAcked >= 1));
+
+	// The link ACK lost, the TMS ACK heard: done, and the retries stop
+	reset();
+	CHECK(sms_send(RADIO_A, false, "lost link ACK", true, DMR_SMS_FORMAT_TMS));
+	runMainTask(SEND_MS);
+	seq = sent[0].seq;
+	{
+		dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+		rxBursts(bursts, dmrDataBuildTMSAck(OUR_ID, RADIO_A, seq, 1, bursts, DMR_DATA_MAX_BURSTS));
+	}
+	runMainTask(200);
+	CHECK(sms_send_state() == DMR_REQ_OK);
+	runMainTask(5 * DMR_IPC_RESPONSE_MS);
+	CHECK((sentCount == 1) && !dmrDataServiceIpBusy());
+
+	// No answer at all: the confirmed tries with the same sequence number, then failed (no link ACK: not delivered)
+	reset();
+	CHECK(sms_send(RADIO_B, false, "anyone?", true, DMR_SMS_FORMAT_TMS));
+	runMainTask(DMR_IPC_TRIES_DEFAULT * (DMR_IPC_RESPONSE_MS + 500) + SMS_ACK_MS);
+	CHECK((sentCount == DMR_IPC_TRIES_DEFAULT) && (sent[0].seq == sent[sentCount - 1].seq));
+	CHECK(sms_send_state() == DMR_REQ_FAILED);
+
+	// A text from A: our link ACK, then our TMS ACK confirmed after TMS_ACK_GAP_MS; A's link ACK ends it
+	reset();
+	receiveConfirmedTMS(RADIO_A, "to us", 24, 4);
+	runMainTask(2000 + SEND_MS);
+	h = txHeader();
+	CHECK((sentCount == 2) && (sent[0].kind == 'R') && (sent[1].kind == 'T') && (sent[1].seq == 24));
+	CHECK(h != NULL && (h->payload[0] & 0x0F) == DMR_DPF_CONFIRMED && (h->payload[1] >> 4) == DMR_SAP_IP);
+	respond(RADIO_A, DMR_SAP_IP, DMR_RESPONSE_ACK((h->payload[9] >> 4) & 7), NULL);
+	CHECK(!dmrDataServiceIpBusy());
+	runMainTask(10000);
+	CHECK(sentCount == 2);
+
+	// Without A's link ACK: sent DMR_IPC_TRIES_DEFAULT times, then dropped
+	reset();
+	receiveConfirmedTMS(RADIO_A, "to us again", 25, 5);
+	runMainTask(2000 + DMR_IPC_TRIES_DEFAULT * (DMR_IPC_RESPONSE_MS + 500));
+	CHECK((sentCount == 1 + DMR_IPC_TRIES_DEFAULT) && !dmrDataServiceIpBusy());
+	CHECK((sent[1].kind == 'T') && (sent[1].seq == 25) && (sent[DMR_IPC_TRIES_DEFAULT].kind == 'T') &&
+		  (sent[DMR_IPC_TRIES_DEFAULT].seq == 25));
+
+	// Compression for every port: the TMS ACK's UDP header compressed (SAP 3)
+	ipSettings(DMR_UDPC_ALL, DMR_IPC_RULES, 0, 0, 0);
+	reset();
+	receiveConfirmedTMS(RADIO_A, "compressed", 26, 6);
+	runMainTask(2000 + SEND_MS);
+	h = txHeader();
+	CHECK((sentCount == 2) && (sent[1].kind == 'T') && (sent[1].seq == 26) && h != NULL &&
+		  (h->payload[1] >> 4) == DMR_SAP_UDPIP_COMPRESSION);
+	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK((h->payload[9] >> 4) & 7), NULL);
+	CHECK(!dmrDataServiceIpBusy());
+	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
+}
+#endif
+
 // The air MTU (dmrData.h, docs/spec/dmr-data.md 12.8): a UDP datagram whose user data on the air is exactly
 // DMR_DATA_IP_MTU octets goes in one transmission (the preambles, the header, 50 blocks), with either header; one octet
-// more doesn't go at all. It is not below the USB link's MTU, and it goes confirmed too: 60 blocks and the terminator,
-// all DMR_DATA_MAX_BURSTS bursts
+// more doesn't go at all. It is not below the USB link's MTU, and it goes confirmed too: 38 rate 3/4 blocks and the
+// terminator
 static void testIpAirMtu(void)
 {
 	static uint8_t l4[8 + DMR_DATA_IP_MTU];
@@ -1159,15 +1330,15 @@ static void testIpAirMtu(void)
 		{ DMR_UDPC_OFF, DMR_SAP_IP, 28 },// the full IPv4 / UDP header
 		{ DMR_UDPC_AUTO, DMR_SAP_UDPIP_COMPRESSION, 9 },// 50000 to 161: both ports in extended headers
 	};
-	const int blocks = 50, cnfBlocks = 60;
+	const int blocks = 50, cnfBlocks = 38;
 	dmrDataStats_t st0, st;
 
 	reset();
 	decodeTx = false;
 	CHECK(DMR_DATA_IP_MTU == 596 && DMR_DATA_IP_MTU >= 586);// as the spec gives it; IPGW_LINK_MTU
 	CHECK(dmrDataPacketBursts(DMR_DATA_IP_MTU, DT_RATE_12_DATA) == 1 + blocks);
-	CHECK(dmrDataConfirmedBlocks(DMR_DATA_IP_MTU, DT_RATE_12_DATA) == cnfBlocks);
-	CHECK(DMR_DATA_IP_PREAMBLES + 1 + cnfBlocks + 1 == DMR_DATA_MAX_BURSTS);
+	CHECK(dmrDataConfirmedBlocks(DMR_DATA_IP_MTU, DT_RATE_34_DATA) == cnfBlocks);
+	CHECK(DMR_DATA_TX_PREAMBLES + 1 + cnfBlocks + 1 <= DMR_DATA_MAX_BURSTS);
 	for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++)
 	{
 		for (int extra = 0; extra <= 1; extra++)
@@ -1199,7 +1370,7 @@ static void testIpAirMtu(void)
 				{
 					// Unanswered: one try, then given up
 					CHECK(h != NULL && (h->payload[0] & 0x0F) == DMR_DPF_CONFIRMED && (h->payload[8] & 0x7F) == cnfBlocks);
-					CHECK(lastTxCount == DMR_DATA_MAX_BURSTS && lastTx[lastTxCount - 1].dataType == DT_TERMINATOR_WITH_LC);
+					CHECK(lastTxCount == DMR_DATA_TX_PREAMBLES + 1 + cnfBlocks + 1 && lastTx[lastTxCount - 1].dataType == DT_TERMINATOR_WITH_LC);
 					runMainTask(2 * DMR_IPC_RESPONSE_MS);
 					dmrDataServiceGetStats(&st);
 					CHECK(!dmrDataServiceIpBusy() && st.ipConfirmed - st0.ipConfirmed == 1);
@@ -1209,7 +1380,9 @@ static void testIpAirMtu(void)
 				dmrDataServiceGetStats(&st);
 				CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK && st.ipSent - st0.ipSent == 1);
 				CHECK(h != NULL && (h->payload[0] & 0x0F) == DMR_DPF_UNCONFIRMED && (h->payload[8] & 0x7F) == blocks);
-				CHECK(lastTxCount == DMR_DATA_IP_PREAMBLES + 1 + blocks);
+				// As many preambles as fit: fewer than DMR_DATA_TX_PREAMBLES at the MTU
+				CHECK(lastTxCount == ((DMR_DATA_TX_PREAMBLES + 1 + blocks < DMR_DATA_MAX_BURSTS) ?
+				      (DMR_DATA_TX_PREAMBLES + 1 + blocks) : DMR_DATA_MAX_BURSTS));
 				const dmrDataPacket_t *p = txPacket();
 				CHECK(p != NULL && p->length == DMR_DATA_IP_MTU && p->sap == cases[c].sap);
 				CHECK(p != NULL && memcmp(&p->data[cases[c].header], &l4[8], payload) == 0);
@@ -1317,6 +1490,39 @@ static void testConfirmedRx(void)
 	CHECK(lastTx[0].payload[9] == DMR_RESPONSE_SACK(7) && lastTx[1].payload[0] == 0x9F);
 	CHECK(packetsHeard == heard + 1);
 
+	// BrandMeister's case: rate 3/4, N(S) 0, one middle block lost on the way: selective ACK, then that block alone
+	{
+		uint8_t big[150];
+		for (int i = 0; i < (int)sizeof(big); i++) big[i] = (uint8_t)(i * 7 + 3);
+		n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_C, big, sizeof(big), DT_RATE_34_DATA, 0, true, 0, 1, b, DMR_DATA_MAX_BURSTS);
+		dmrBurst_t lost[DMR_DATA_MAX_BURSTS];
+		int m = 0;
+		for (int i = 0; i < n; i++) if (i != 5) lost[m++] = b[i];
+		heard = packetsHeard;
+		rxBursts(lost, m);
+		runMainTask(CNF_RX_STALL_MS + 200);
+		CHECK(lastTxCount == 2 && lastTx[0].payload[9] == DMR_RESPONSE_SACK(0) && lastTx[1].payload[0] == 0xF7);
+		n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_C, big, sizeof(big), DT_RATE_34_DATA, 0, false, 1ULL << 3, 1, b, DMR_DATA_MAX_BURSTS);
+		rxBursts(b, n);
+		runMainTask(200);
+		CHECK(packetsHeard == heard + 1 && lastTx[0].payload[9] == DMR_RESPONSE_ACK(0));
+	}
+
+	// The same with the last block lost (all pad and the CRC-32, as BrandMeister's 128 octet reply): after the stall
+	{
+		uint8_t big[128];
+		for (int i = 0; i < (int)sizeof(big); i++) big[i] = (uint8_t)(i * 5 + 1);
+		n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_C, big, sizeof(big), DT_RATE_34_DATA, 0, true, 0, 1, b, DMR_DATA_MAX_BURSTS);
+		heard = packetsHeard;
+		rxBursts(b, n - 1);
+		runMainTask(CNF_RX_STALL_MS + 200);
+		CHECK(lastTxCount == 2 && lastTx[0].payload[9] == DMR_RESPONSE_SACK(0) && lastTx[1].payload[0] == 0xFF && lastTx[1].payload[1] == 0xFE);
+		n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_C, big, sizeof(big), DT_RATE_34_DATA, 0, false, 1ULL << 8, 1, b, DMR_DATA_MAX_BURSTS);
+		rxBursts(b, n);
+		runMainTask(200);
+		CHECK(packetsHeard == heard + 1 && lastTx[0].payload[9] == DMR_RESPONSE_ACK(0));
+	}
+
 	// Every block good, the CRC-32 not: NACK
 	n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_B, pdu, sizeof(pdu), DT_RATE_12_DATA, 0, true, 0, 0, b, DMR_DATA_MAX_BURSTS);
 	b[3].payload[4] ^= 0x80;
@@ -1328,7 +1534,7 @@ static void testConfirmedRx(void)
 	CHECK(lastTxCount == 1 && lastTx[0].payload[9] == DMR_RESPONSE_NACK_CRC(0));
 
 	dmrDataServiceGetStats(&st);
-	CHECK(st.rxSacksSent - st0.rxSacksSent == 2 && st.rxNacksSent - st0.rxNacksSent == 1 &&
+	CHECK(st.rxSacksSent - st0.rxSacksSent == 4 && st.rxNacksSent - st0.rxNacksSent == 1 &&
 	      st.rxConfirmedDuplicates - st0.rxConfirmedDuplicates == 1);
 	decodeTx = true;
 }
@@ -1408,9 +1614,8 @@ static void testIpText(void)
 	runMainTask(300);
 	CHECK((sentCount == 1) && (sent[0].kind == 'I') && (sent[0].dst == RADIO_A) && sent[0].extra &&
 		  (strcmp(sent[0].text, "hello ETSI") == 0));
-	CHECK(sent[0].dpf == (CONFIG_DMR_CONFIRMED ? DMR_DPF_CONFIRMED : DMR_DPF_UNCONFIRMED));
-	CHECK(sms_send_confirmed() == (bool)CONFIG_DMR_CONFIRMED);
-#if CONFIG_DMR_CONFIRMED
+	CHECK(sent[0].dpf == DMR_DPF_CONFIRMED);
+	CHECK(sms_send_confirmed());
 	CHECK((sms_send_state() == DMR_REQ_SENDING) && (events[DMR_DATA_EV_SMS_SENT] == 0));
 	const dmrBurst_t *th = txHeader();
 	CHECK((th != NULL) && ((th->payload[1] >> 4) == DMR_SAP_IP));// the full header, not compressed
@@ -1418,12 +1623,10 @@ static void testIpText(void)
 	respond(RADIO_A, DMR_SAP_IP, DMR_RESPONSE_ACK((tns + 1) & 7), NULL);// another packet's
 	CHECK(sms_send_state() == DMR_REQ_SENDING);
 	respond(RADIO_A, DMR_SAP_IP, DMR_RESPONSE_ACK(tns), NULL);
-#endif
 	CHECK(sms_send_state() == DMR_REQ_OK);
 	CHECK((events[DMR_DATA_EV_SMS_SENT] == 1) && (stats.ipTextSent >= 1));
 	runMainTask(SMS_ACK_MS + 1000);
 	CHECK(sentCount == 1);// never sent again
-#if CONFIG_DMR_CONFIRMED
 	// No response: the IP packet tries, then failed; the gateway's own packets wait meanwhile
 	reset();
 	uint32_t failed = stats.smsFailed;
@@ -1442,7 +1645,6 @@ static void testIpText(void)
 	CHECK((sentCount == 1) && (sent[0].dpf == DMR_DPF_UNCONFIRMED) && !sms_send_confirmed() &&
 		  (sms_send_state() == DMR_REQ_OK));
 	settings.ipConfirmed = DMR_IPC_RULES;
-#endif
 
 	// To a group: unconfirmed ("Sent to")
 	reset();
@@ -1760,7 +1962,8 @@ static void testChain(void)
 	CHECK(dmrDataServiceIpBusy());
 	runMainTask(SEND_MS);
 	CHECK(txLists == lists + 1 && !dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
-	CHECK(lastTx[0].dataType == DT_CSBK && lastTx[1].dataType == DT_CSBK && lastTx[2].dataType == DT_DATA_HEADER);
+	CHECK(lastTx[0].dataType == DT_CSBK && lastTx[DMR_DATA_TX_PREAMBLES - 1].dataType == DT_CSBK &&
+	      lastTx[DMR_DATA_TX_PREAMBLES].dataType == DT_DATA_HEADER);
 	CHECK(lastTx[lastTxCount - 1].dataType == DT_RATE_12_DATA);		// unconfirmed: no terminator
 	CHECK(chainRead(first, &group, &dst, &cbfOk) == 3 && cbfOk && !group && dst == RADIO_A);
 	CHECK(first[0] == 0 && first[1] == 16 && first[2] == 32);
@@ -1975,18 +2178,25 @@ int main(void)
 	dmrDataServiceInit(&fakeEnv);
 
 #if CONFIG_DMR_TMS
+	ipSettings(DMR_UDPC_AUTO, DMR_IPC_OFF, 0, 0, 0);// TMS texts and ACKs unconfirmed: testTmsConfirmed has them confirmed
 	testTmsReplies();
+	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
 #endif
 	testARS();
 	testArsPowerOff();
 	testLrrp();
 	testSignaling();
 #if CONFIG_DMR_TMS
+	ipSettings(DMR_UDPC_AUTO, DMR_IPC_OFF, 0, 0, 0);
 	testOurSms();
+	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
 	testBlockWindow();
 	testNotOnChannel();
 #endif
 	testIpTx();
+#if CONFIG_DMR_TMS
+	testTmsConfirmed();
+#endif
 	testIpAirMtu();
 	testIpAddresses();
 	testConfirmedRx();

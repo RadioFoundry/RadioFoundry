@@ -14,6 +14,8 @@ import iddb_read
 
 
 def check_database(radio, want_format):
+    if "DMR" not in radio.features():
+        skip("not_built", "built without CONFIG_DMR: no ID database")
     if "CPS_FAST" not in radio.features():
         skip("not_built", "built without CONFIG_CPS_FAST: the test reads the database through it")
     info = radio.link.iddb()

@@ -126,7 +126,8 @@ On Home, hold **\*** to lock the keys. The screen shows "Keys locked: hold * to 
 While locked, **PTT** and **Monitor** still work. Any other key shows the unlock hint. Hold **\*** again to unlock.
 In menus holding **\*** doesn't lock, so a slow press can't lock the keys in the middle of a task.
 
-**Settings > Privacy > Auto lock** locks the keys by itself after a time without a key press.
+**Settings > Privacy > Auto lock** locks the keys by itself after a time without a key press. A radio with only
+side keys (no keypad, no Back key) never locks by itself: nothing could unlock it.
 
 <img src="../ux/screens/160x120i5/home_locked.png" width="200" alt="Home with the keys locked">
 

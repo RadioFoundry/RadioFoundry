@@ -9,10 +9,20 @@
 #include "board.h"
 #include "storage/storage.h"
 
-// Where the two open-firmware images sit in the data flash when the board gives no map: the STM32 family puts the 64 KB
-// EEPROM image at 0 and the flash image at +128 KB
+// Where the two open-firmware images sit in the data flash when the board gives no map (a driver drops a map its chip
+// is too small for): the board's own bases from board.mk, as dmr_iddb.c reads them, so a board whose low flash holds
+// the radio's own data never has that read as a codeplug. Without them, the STM32 family's: the 64 KB EEPROM image at
+// 0 and the flash image at +128 KB
+#ifdef CODEPLUG_OPENFW_EEPROM_BASE
+#define DEFAULT_EEPROM_BASE	CODEPLUG_OPENFW_EEPROM_BASE
+#else
 #define DEFAULT_EEPROM_BASE	0x000000u
+#endif
+#ifdef CODEPLUG_OPENFW_FLASH_BASE
+#define DEFAULT_FLASH_BASE	CODEPLUG_OPENFW_FLASH_BASE
+#else
 #define DEFAULT_FLASH_BASE	0x020000u
+#endif
 
 static uint32_t ee_base = DEFAULT_EEPROM_BASE;
 static uint32_t fl_base = DEFAULT_FLASH_BASE;

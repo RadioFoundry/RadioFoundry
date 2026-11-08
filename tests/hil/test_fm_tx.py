@@ -393,7 +393,11 @@ def test_fm_tx_power_levels(fm_vfo, sdr_bench, pytestconfig):
     set_fm(fm_vfo, False, "none", 0)
     mhz = rig(pytestconfig, "fm-mhz")
     levels = []
-    for step in range(3):
+    # The first three levels, or every level of a radio with fewer (board_t.power_count)
+    count = min(3, int(fm_vfo.core().get("power_count") or 3))
+    if count < 2:
+        skip("no_hw", "one power level: nothing to compare")
+    for step in range(count):
         if step:
             fm_vfo.link.power_step(1)
             fm_vfo.wait_for(lambda v: v.get("power") == str(step), what=f"power {step}")
@@ -416,7 +420,8 @@ def test_fm_tx_power_levels(fm_vfo, sdr_bench, pytestconfig):
         # attenuator (or more distance) between the radio and the RTL-SDR for this test.
         skip("bench", f"the SDR's ADC clips even at gain 0 ({clipped[0][3]} % of samples at 50 mW): power levels "
                       f"can't be compared on this bench without an attenuator; levels {levels}")
-    d = [levels[i + 1][2] - levels[i][2] for i in range(2)]
+    d = [levels[i + 1][2] - levels[i][2] for i in range(count - 1)]
     assert all(x >= 1.0 for x in d), f"a higher power level is not stronger on air: steps {d} dB ({levels})"
-    assert 5.0 <= levels[2][2] - levels[0][2] <= 15.0, \
-        f"{levels[0][1]} to {levels[2][1]}: {levels[2][2] - levels[0][2]:.1f} dB (nominally 10) ({levels})"
+    if count == 3:
+        assert 5.0 <= levels[2][2] - levels[0][2] <= 15.0, \
+            f"{levels[0][1]} to {levels[2][1]}: {levels[2][2] - levels[0][2]:.1f} dB (nominally 10) ({levels})"

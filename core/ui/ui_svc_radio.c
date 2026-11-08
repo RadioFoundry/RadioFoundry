@@ -91,6 +91,16 @@ bool ui_svc_vox(bool on)
 }
 #endif
 
+// Outside the DMR block: an FM-only build has a VFO too, and the weak stub would refuse every copy as "no VFO"
+uint8_t ui_svc_vfo_copy(const radio_view_t *v)
+{
+	radio_vfo_copy_t r = radio_vfo_copy_check(&v->ch, v->vfo);
+	if (r == VFO_COPY_OK) {
+		radio_req_vfo_copy();
+	}
+	return (uint8_t)r;
+}
+
 #if CONFIG_DMR
 // Only changes go to the radio core (the UI calls this on every redraw of a list's focus)
 void ui_svc_focus_target(uint32_t id, bool private_call)
@@ -134,15 +144,6 @@ bool ui_svc_mode(uint8_t mode)
 	return true;
 }
 #endif
-
-uint8_t ui_svc_vfo_copy(const radio_view_t *v)
-{
-	radio_vfo_copy_t r = radio_vfo_copy_check(&v->ch, v->vfo);
-	if (r == VFO_COPY_OK) {
-		radio_req_vfo_copy();
-	}
-	return (uint8_t)r;
-}
 
 bool ui_svc_hear_all(bool on)
 {

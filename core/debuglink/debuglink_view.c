@@ -75,6 +75,7 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "view=%u\n", DL_VIEW_VERSION);
 	dl_text(t, "state=%s\n", state_key((uint8_t)v->state));
 	dl_text(t, "tx_deny=%s\n", deny_key(v->tx_deny));
+	dl_text(t, "can_tx=%u\n", board_can_tx() ? 1u : 0u);
 	{
 		tx_limit_info_t l;
 		tx_limit_get(&l, NULL, 0);
@@ -101,6 +102,12 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 		}
 		dl_text(t, "\n");
 	}
+	// The board's bands in Hz, so a HIL test skips a frequency the radio can't tune instead of failing on it
+	dl_text(t, "bands=");
+	for (uint8_t i = 0; i < board.band_count; i++) {
+		dl_text(t, "%s%u-%u", i != 0 ? "," : "", (unsigned)board.bands[i].lo_hz, (unsigned)board.bands[i].hi_hz);
+	}
+	dl_text(t, "\n");
 	dl_text(t, "temporary=%u\ntemp=0x%02x\n", v->temporary, v->temp);
 	dl_text(t, "squelch=%u\nmonitor=%u\ntone_ok=%u\n", v->squelch, v->monitor, v->tone_ok);
 	dl_text(t, "rssi_dbm=%d\nnoise=%u\n", v->rssi_dbm, v->noise);
@@ -320,8 +327,8 @@ static void link_section(dl_text_t *t)
 	dl_text(t, "ui.screen=%s\n", ui_screen_name());
 	ui_app_status_t u;
 	ui_get_status(&u);
-	dl_text(t, "ui.depth=%u\nui.focus=%u\nui.count=%u\nui.locked=%u\n", (unsigned)u.depth, (unsigned)u.focus,
-		(unsigned)u.count, (unsigned)u.locked);
+	dl_text(t, "ui.depth=%u\nui.focus=%u\nui.count=%u\nui.locked=%u\nui.unlock_key=%s\n", (unsigned)u.depth,
+		(unsigned)u.focus, (unsigned)u.count, (unsigned)u.locked, u.unlock_key);
 	dl_text(t, "ui.banner=%s\nui.toast=%s\nui.query=%s\nui.draws=%u\nui.dual=%u\n", u.banner, u.toast, u.query,
 		(unsigned)u.draws, u.dual);
 	dl_text(t, "input.idle_ms=%u\nui.backlight=%u\n", (unsigned)input_idle_ms(), ui_backlight());

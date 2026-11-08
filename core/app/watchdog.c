@@ -47,13 +47,27 @@ bool watchdog_hung(uint32_t now_ms, uint32_t timeout_ms)
 	return now_ms - st.last_fed_ms >= timeout_ms - timeout_ms / 4u;
 }
 
+void watchdog_task_pass(uint32_t now_ms)
+{
+	st.last_pass_ms = now_ms;
+	st.passed = true;
+}
+
+bool watchdog_stalled(uint32_t now_ms)
+{
+	return st.passed && !st.starving && now_ms - st.last_pass_ms >= WATCHDOG_STALL_MS;
+}
+
 #if CONFIG_CRASH_LOG
 void watchdog_tick(void)
 {
 	uint32_t now = hal_millis();
 	crash_alive(now);	// the uptime the next start reports (crash-log.md 1.3)
 	if (watchdog_hung(now, hal_watchdog_timeout_ms())) {
-		hal_crash_hang(now - st.last_fed_ms);
+		hal_crash_hang(CRASH_KIND_HANG, now - st.last_fed_ms);
+	}
+	if (watchdog_stalled(now) && hal_watchdog_timeout_ms() != 0) {	// as the hang check: not with the watchdog stopped
+		hal_crash_hang(CRASH_KIND_STALL, now - st.last_pass_ms);
 	}
 }
 #endif

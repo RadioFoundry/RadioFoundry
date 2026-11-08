@@ -19,7 +19,7 @@ typedef struct {
 
 typedef struct {
 	int16_t rssi_dbm;
-	uint8_t noise;		// chip noise reading, larger = more noise (1 dB units where the chip allows)
+	uint8_t noise;		// chip noise reading, larger = more noise (1 dB units where the chip allows); UINT8_MAX when it can't hear
 	bool carrier;		// the chip's own squelch says carrier (if it has one)
 	bool tone_ok;		// the RX sub-audio tone or code matches (true when none is set)
 } radio_status_t;
@@ -33,6 +33,11 @@ typedef struct {
 	bool (*tx)(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_tone);
 	// Back to receive with the last rx() settings
 	void (*tx_off)(void);
+	// Optional (DMR): the end of a DMR transmission, once the stack is off the air. Ends it as tx_off() does, but
+	// leaves the receiver as the last burst's switch left it when that is on the last rx() settings: a reply can come
+	// 30 ms after our terminator, in our own timeslot, and a receive set-up then misses it. The modem glue implements
+	// it (hrc_dmr_tx_end, stm32_hrc_dmr_tx_end). False: nothing done, the core calls tx_off(). NULL = always tx_off()
+	bool (*dmr_tx_end)(void);
 	void (*status)(radio_status_t *st);
 	// Speaker path (amp and mute) for received audio
 	void (*audio)(bool on);

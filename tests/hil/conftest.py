@@ -107,6 +107,9 @@ def pytest_addoption(parser):
                 help="MHz: test_am_rx, the AM test frequency in the air band (108-137) the bench board sends full-carrier "
                      "AM on and the radio's VFO receives; the bench transmits on it: a cabled setup unless the frequency "
                      "is approved for the air; no default")
+    g.addoption("--no-gps", action="store_true",
+                help="the radio has no GPS module fitted (a board that takes one, such as a variant without it): "
+                     "test_gps_nmea skips instead of failing")
     g.addoption("--split-calls", type=int, default=1,
                 help="test_dmr_tx_split_repeater: key up this many times in one run (the split is written and "
                      "restored once; every call needs a fresh repeater start)")

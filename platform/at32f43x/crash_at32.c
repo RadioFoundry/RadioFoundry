@@ -161,7 +161,7 @@ void at32_fault(const uint32_t *frame, uint32_t exc_return, const uint32_t *hi)
 }
 
 #if CONFIG_WATCHDOG
-// The hang check (core/app/watchdog.c), from SysTick (time.c), which runs at the kernel's priority, the lowest: when
+// The hang and stall checks (core/app/watchdog.c; the kind is theirs), from SysTick (time.c), which runs at the kernel's priority, the lowest: when
 // it runs no other handler is active, so it interrupted a task, whose frame the CPU pushed on the PSP. Only that frame
 // is kept, as on the STM32F4: r4-r11 belong to the handler's callers by now, and without EXC_RETURN the frame's size
 // is unknown, so sp is the frame's address and stack[] starts with the frame. The record is built in the fault stack,
@@ -169,14 +169,14 @@ void at32_fault(const uint32_t *frame, uint32_t exc_return, const uint32_t *hi)
 // stack, which every interrupt shares. A fault during the capture takes that stack over and keeps its own record
 _Static_assert(sizeof(crash_record_t) <= sizeof at32_fault_stack / 2, "the hang record leaves the fault entry room");
 
-void hal_crash_hang(uint32_t ms)
+void hal_crash_hang(uint8_t kind, uint32_t ms)
 {
 	crash_record_t *const r = (crash_record_t *)at32_fault_stack;	// the bottom: the entry pushes from the top
 	__disable_irq();
 	board_rf_safe();
 	memset(r, 0, sizeof *r);
 	r->arch = CRASH_ARCH_CM4;
-	r->kind = CRASH_KIND_HANG;
+	r->kind = kind;
 	r->cause = ms;
 	const uint32_t *frame = (const uint32_t *)__get_PSP();
 	uint32_t f = (uint32_t)(uintptr_t)frame;

@@ -37,6 +37,7 @@ static hrc7000_dmr_t eng;
 static const hrc_dmr_board_t *brd;
 static TaskHandle_t task;
 static volatile bool active;
+static volatile bool rf_on_rx;	// the last burst switch put the RF back to receive (hrc_dmr_tx_end)
 static dmr_event_cb_t volatile stack_cb;
 static void *volatile stack_ctx;
 
@@ -86,16 +87,34 @@ static void notify(void *ctx)
 	}
 }
 
+// A split duplex hotspot's base-station outbound keys once for its whole length (hrc7000_bs.c)
+static bool outbound_continuous(void)
+{
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+	return eng.bs != NULL;
+#else
+	return false;
+#endif
+}
+
 static void rf(void *ctx, bool tx)
 {
 	(void)ctx;
-	brd->rf_switch(tx);
+	if (brd->burst != NULL) {
+		hrc_rfburst_switch(tx, outbound_continuous());
+	} else if (brd->rf_switch != NULL) {
+		brd->rf_switch(tx);
+	}
+	rf_on_rx = !tx;
 }
 
 static void pa_arm(void *ctx)
 {
 	(void)ctx;
-	hrc_timer_oneshot(TIMER_PA, brd->pa_delay_us);
+	// The burst sequences key the PA themselves; a board with neither has no PA key (and no pa_delay_us)
+	if (brd->burst == NULL && brd->pa_on != NULL) {
+		hrc_timer_oneshot(TIMER_PA, brd->pa_delay_us);
+	}
 }
 
 static const hrc7000_dmr_ops_t ops = {
@@ -113,7 +132,7 @@ static void isr_pa_timer(void)
 {
 	hrc_timer_ack(TIMER_PA);
 	hrc_timer_stop(TIMER_PA);
-	if (active) {
+	if (active && brd->pa_on != NULL) {
 		brd->pa_on();
 	}
 }
@@ -209,6 +228,9 @@ HRC_FLASHFUNC void hrc_dmr_board_init(hrc7000_t *modem, const hrc_dmr_board_t *h
 	hrc_irq_register(IRQ_TIMER3, isr_pa_timer);
 	hrc_irq_enable(IRQ_TIMER3, true);
 	irqs_enable(false);
+	if (hooks->burst != NULL) {
+		hrc_rfburst_init(modem, hooks->burst);
+	}
 	if (task == NULL) {
 		xTaskCreate(dmr_task, "dmr", DMR_TASK_STACK, NULL, DMR_TASK_PRIORITY, &task);
 	}
@@ -216,6 +238,7 @@ HRC_FLASHFUNC void hrc_dmr_board_init(hrc7000_t *modem, const hrc_dmr_board_t *h
 
 void hrc_dmr_enter(void)
 {
+	rf_on_rx = false;
 	hrc7000_dmr_run(&eng);
 	active = true;
 	irqs_enable(true);
@@ -226,6 +249,7 @@ void hrc_dmr_leave(void)
 	irqs_enable(false);
 	active = false;
 	hrc7000_dmr_halt(&eng);
+	rf_on_rx = false;	// after the halt: its switch back to RX doesn't count outside DMR
 }
 
 bool hrc_dmr_fm_rx_hook(void (*fn)(void))
@@ -237,8 +261,19 @@ bool hrc_dmr_fm_rx_hook(void (*fn)(void))
 	return true;
 }
 
+bool hrc_dmr_tx_end(void)
+{
+	if (!rf_on_rx || brd == NULL || brd->tx_end == NULL) {
+		return false;
+	}
+	rf_on_rx = false;	// once: a later rx() is a full set-up
+	brd->tx_end();
+	return true;
+}
+
 void hrc_dmr_rx_restart(void)
 {
+	rf_on_rx = false;
 	hrc7000_dmr_rx_restart(&eng);
 }
 
@@ -459,6 +494,7 @@ HRC_FLASHFUNC bool hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " rs", m.rx_restarts);
 		put_kv(&o, "/", m.rx_lost);
 		put_kv(&o, "/", m.rx_stale);
+		put_kv(&o, " h", m.rx_holds);
 		put_kv(&o, " st", m.stalls);
 		break;
 	case 5:		// last burst: CC, TS; raw RX_TYPE_INFO

@@ -120,7 +120,7 @@ typedef enum
 	DMR_DATA_RX_PACKET,							// a complete packet is in dmrDataRxPacket
 	DMR_DATA_RX_CSBK,							// a non preamble CSBK is in the burst passed in
 	DMR_DATA_RX_ERROR,							// header or packet CRC failed, reassembly reset
-	// Confirmed data (CONFIG_DMR_CONFIRMED), the header's fields in dmrDataRxPacket:
+	// Confirmed data, the header's fields in dmrDataRxPacket:
 	DMR_DATA_RX_RETRY,							// blocks are missing or failed their CRC-9: a selective ACK asks for
 												// them (dmrDataRxRetryFlags); the packet is held for the retry
 	DMR_DATA_RX_NACK							// every block arrived good but the CRC-32 failed: a NACK
@@ -248,6 +248,12 @@ int dmrDataBuildTMS(bool group, uint32_t dst, uint32_t src, const char *text, ui
 						uint8_t blockType, int preambles, dmrBurst_t *out, int maxBursts);
 // seq: the 7 bit sequence number of the message being acknowledged
 int dmrDataBuildTMSAck(uint32_t dst, uint32_t src, uint8_t seq, int preambles, dmrBurst_t *out, int maxBursts);
+// The same text and ACK as UDP datagrams (header from and to DMR_UDP_PORT_TMS, checksum left 0 for the IPv4 layer,
+// then the TMS octets) into l4: their length. The data service sends individual ones as confirmed data with them
+#define DMR_TMS_UDP_MAX					(8 + 6 + (2 * 140))
+#define DMR_TMS_ACK_UDP_MAX				(8 + 6)
+int dmrDataTMSUDP(const char *text, uint8_t seq, bool ackRequested, uint8_t l4[DMR_TMS_UDP_MAX]);
+int dmrDataTMSAckUDP(uint8_t seq, uint8_t l4[DMR_TMS_ACK_UDP_MAX]);
 #endif
 
 // A position for the location reports, as NMEA gives it

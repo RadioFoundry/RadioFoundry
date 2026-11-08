@@ -17,7 +17,14 @@ def test_vfo_dmr_settings(radio):
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
     L = radio.link
-    with radio.vfo_session():
+    with radio.vfo_session() as hz:
+        # A VFO left in a receive-only band (air, broadcast) takes no DMR: a 70 cm frequency for the test, which
+        # vfo_session puts back. Nothing is transmitted
+        if not 400000000 <= hz <= 480000000 and not 136000000 <= hz <= 174000000:
+            uhf = 446000000
+            radio.skip_out_of_band(uhf)
+            L.vfo_set(uhf)
+            radio.wait_for(lambda v: v.get("rx_hz") == str(uhf), what="the VFO on 446 MHz")
         try:
             L.dmr_fields(mode="dmr", cc=7, ts=2)
             radio.wait_for(lambda v: v.get("mode") == "dmr" and v.get("dmr.cc") == "7" and v.get("dmr.ts") == "2",

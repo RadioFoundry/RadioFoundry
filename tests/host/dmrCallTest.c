@@ -1073,6 +1073,56 @@ static void test_rx_no_call_after_terminator(void)
 	CHECK(st.rx_calls == 2 && st.rx_late_entries == 1 && sink_log.begins == 2);
 }
 
+// A call that fades (a dropout, no terminator) and comes back by late entry with its own LC is one call with a hole in
+// it: the sink hears it end and begin, the books count one. Another LC, a terminator or a longer gap make it a new call
+static void test_rx_resumed_call(void)
+{
+	dmr_call_config_t c = base_cfg();
+	dmr_call_stats_t st;
+	uint8_t lc[9], other[9];
+	unsigned frame = 1;
+
+	mk_lc(lc, 0, TG_TALK, 9997030);
+	mk_lc(other, 0, TG_LIST, 9997004);
+	setup(&c);
+	dmr_call_reset_stats();
+	rx_call(lc, 1, true, 0, 1, false, &frame);
+	uint32_t started = V()->call_start_ms;
+	run_ms(DMR_CALL_FADE_MS + 200);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && sink_log.ends == 1);
+	rx_call(lc, 1, false, 0, 1, false, &frame);
+	dmr_call_get_stats(&st);
+	CHECK(st.rx_calls == 1 && st.rx_calls_played == 1 && st.rx_calls_resumed == 1 && st.rx_late_entries == 0);
+	CHECK(sink_log.begins == 2 && V()->state != DMR_CALL_STATE_IDLE && V()->call_start_ms == started);
+
+	// Someone else in the gap: a new call
+	setup(&c);
+	dmr_call_reset_stats();
+	rx_call(lc, 1, true, 0, 1, false, &frame);
+	run_ms(DMR_CALL_FADE_MS + 200);
+	rx_call(other, 1, false, 0, 1, false, &frame);
+	dmr_call_get_stats(&st);
+	CHECK(st.rx_calls == 2 && st.rx_calls_resumed == 0 && V()->caller.src == 9997004);
+
+	// The call was ended by its terminator: a new call, however soon
+	setup(&c);
+	dmr_call_reset_stats();
+	rx_call(lc, 1, true, 0, 1, true, &frame);
+	run_ms(DMR_CALL_FADE_MS + 200);
+	rx_call(lc, 1, false, 0, 1, false, &frame);
+	dmr_call_get_stats(&st);
+	CHECK(st.rx_calls == 2 && st.rx_calls_resumed == 0);
+
+	// Too long a gap: a new call
+	setup(&c);
+	dmr_call_reset_stats();
+	rx_call(lc, 1, true, 0, 1, false, &frame);
+	run_ms(DMR_CALL_FADE_MS + DMR_CALL_RESUME_MS + 100);
+	rx_call(lc, 1, false, 0, 1, false, &frame);
+	dmr_call_get_stats(&st);
+	CHECK(st.rx_calls == 2 && st.rx_calls_resumed == 0);
+}
+
 // A call heard as not ours, then the listen rules change with the RF the same (a scan stop on another channel of the
 // same frequency, color code and slot, or a new talk target): the call is ours now and plays from the next burst
 static void test_rx_recheck_on_configure(void)
@@ -2396,6 +2446,7 @@ int main(void)
 	test_rx_no_call_after_terminator();
 	test_rx_group_callback();
 	test_rx_own_id_parrot();
+	test_rx_resumed_call();
 	test_late_entry();
 	test_alias_and_privacy();
 	test_privacy_hook();

@@ -34,7 +34,6 @@ static const stm32_spi_flash_cfg_t cfg = {
 	.cpol = false, .cpha = false,		// mode 0
 	.br = 3,				// APB2 72 MHz / 16 = 4.5 MHz
 	.device = 0x4018u, .device_mask = 0xFFFFu,	// W25Q128: memory type 0x40, capacity 0x18
-	.map_min_size = 0,
 	.map = &map,
 };
 

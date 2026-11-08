@@ -5028,7 +5028,11 @@
     "calibration": {
      "area": 823296,
      "page_id": 2
-    }
+    },
+    "write_test": [
+     7454720,
+     7471104
+    ]
    },
    "variants": {},
    "anytone_models": {},
@@ -5148,7 +5152,11 @@
     "calibration": {
      "area": 823296,
      "page_id": 2
-    }
+    },
+    "write_test": [
+     7454720,
+     7471104
+    ]
    },
    "variants": {},
    "anytone_models": {},

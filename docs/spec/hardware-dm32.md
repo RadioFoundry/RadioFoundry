@@ -53,7 +53,7 @@ All registers are in the modem/system block at 0x11000000. The sequence below is
 | 12 | IO_DIPLEX2 (0x03C) | clear bits 1:0 | CLK_OUT pin = PLLA clock out (datasheet: 0 = PLLA) |
 
 Resulting clocks used everywhere below: CPU/AHB 168 MHz, APB 84 MHz (timers, UARTs, SPI, I2C), SoC reference
-24 MHz. Soft reset of the whole chip: QUAD_ENABLE = 0, then SYS_SOFT_RSTN = 0. The soft reset keeps
+24 MHz. Soft reset of the whole chip: QUAD_ENABLE = 0, then SYS_SOFT_RSTN = 0 (it turns the watchdog off; RadioFoundry restarts by a watchdog reset instead, 3.5). The soft reset keeps
 LCSFC_BAUDR: after a session at divider 2 the ROM and bootloader can't read flash in single-bit mode and the radio stays
 dark until a power cycle. Set LCSFC_BAUDR = 4 before the reset (measured).
 
@@ -232,8 +232,11 @@ value) and 0 while open; any value but the key locks it. OT_LOAD_H is 3 bits (2:
 35-bit start value the counter counts up from, the timeout being its overflow at 2^35 (reset values H = 7, L =
 0xC0000000: about 60 s). RST_LOAD (24:0, reset value 0x03F80000) counts on to 0x03FFFFFF before the reset, about 20
 ms. EN is the only switch: no interrupt, no mode bit, no other enable; the watchdog reset is a global reset. The
-counter runs at the 24 MHz crystal (another HR_C7000 board, measured: H = 7, L = 0xF0000000, 2^28 counts, reset after 11.1 s). Not
-known (unverified): whether a soft reset or a watchdog reset clears EN. RadioFoundry (`CONFIG_WATCHDOG`, `platform/hrc7000/watchdog.c`) arms it after the clock set-up with
+counter runs at the 24 MHz crystal (another HR_C7000 board, measured: H = 7, L = 0xF0000000, 2^28 counts, reset after 11.1 s). A soft
+reset clears EN. A watchdog reset keeps EN and both loads, and the counter starts again from the load (another HR_C7000
+board: armed at 32 s before a soft reset, it was off at `main()`; armed with a 1 ms load, the chip reset
+every 23 ms inside the boot ROM until a power cycle cleared it). RadioFoundry restarts by a watchdog reset
+([watchdog.md](watchdog.md) 3). RadioFoundry (`CONFIG_WATCHDOG`, `platform/hrc7000/watchdog.c`) arms it after the clock set-up with
 every write under LOCK: EN = 0, the loads, a feed, EN = 1. It feeds with LOCK = key, KNOCK = 0x55AADD22, LOCK = 0. The
 load is 2^35 - 4 s x 24 MHz. The bench measurement and the
 rest are in [watchdog.md](watchdog.md).
@@ -565,7 +568,7 @@ two scans in the same millisecond, 65 ms after the last host byte, with the pin 
 a new host byte, not yet received (2026-10-22, RADIO). Before the hold, 2 such presses came in 100 s, each a short
 DMR voice transmission; no line errors (`ue 0`) and no overruns.
 
-**The radio's own RF on the cable (measured, 2026-11-05).** With the programming cable coiled near the antenna, a
+**The radio's own RF on the cable (measured).** With the programming cable coiled near the antenna, a
 1750 Hz burst at the lowest power (FM, UHF) started by the debug link kept the radio keyed for a minute. The link went
 silent 0.5 s in, so the burst's "off" never arrived. The burst's own time limit ended it at 2 s, but the key scan had
 reported PTT down 174 ms after keying with nothing touched, and that press held the radio keyed. A hand near the cable
@@ -793,9 +796,11 @@ switch after the burst moves it back (`fd6818_dmr_burst_at`). A simplex channel 
 this (issue 72), `tx` tuned the synthesizer to the TX frequency at key-up and left it there: the radio was deaf to the
 hotspot's downlink, never aligned to it, and its bursts were not taken. The radio's own firmware retunes at every burst end too. The PLL lock time after each retune is not measured yet (HIL check open).
 
-RadioFoundry raises the RF TX interrupt **0.4 ms** before each burst (`hrc7000_t.rf_tx_lead` = 4), not the driver's 3.1 ms. At
-the interrupt the switch above leaves receive, and with a long lead it cut off the end of the inbound burst before
-ours. The same fault shows on other HR_C7000 boards. An SFR repeat sweep (SDR bench,
+RadioFoundry switches to TX **0.4 ms** before the lead point of each burst, not at the driver's 3.1 ms. The switch
+leaves receive, and earlier it cut off the end of the inbound burst before ours. The sweep below moved the RF TX
+interrupt itself (`hrc7000_t.rf_tx_lead`), with the switch in the interrupt. The switch now runs on the shared
+per-burst RF task ([modem-hrc7000.md](modem-hrc7000.md) 3.1a): the interrupt comes 0.9 ms ahead (`rf_tx_lead` = 9)
+and the task waits until 0.4 ms, so its wake (up to 0.42 ms) doesn't make the switch late. Untested on the radio. The same fault shows on other HR_C7000 boards. An SFR repeat sweep (SDR bench,
 2026-10-20, 72 inbound frames per call, the radio in another room from the bench, so with a weak signal):
 
 | Lead | Frames lost per call | Bits corrected per call in the frames before ours |
@@ -815,6 +820,10 @@ TX data advance (`hrc7000_t.tx_pre_on`, RF_CONTROL b20:16): the chip's 0.4 ms. T
 outbound through a repeater is not measured on this radio yet ([modem-hrc7000.md](modem-hrc7000.md) 2.1).
 
 ### 8.6 DMR PA timer
+
+The original firmware's PA timing. RadioFoundry keys the PA from the per-burst RF task instead: PA select and DAC B
+0.5 ms before the burst's first symbol, timed from the RF TX interrupt, and both off with its last symbol (8.5,
+[modem-hrc7000.md](modem-hrc7000.md) 3.1a). Untested on the radio.
 
 | Item | Value |
 |---|---|
@@ -1319,7 +1328,7 @@ echo before any write; an unconfigured monitor refuses writes.
 **Quiesce and jump** (`platform/hrc7000/system.c` `enter_stub`, a `.ramfunc` so it runs after flash is handed back):
 CPU interrupts off (`psrclr ie`), every PIC source masked (both banks), with `CONFIG_WATCHDOG` the watchdog stretched to 32 s and fed (the stub feeds it; [watchdog.md](watchdog.md) 3.2), otherwise off, then
 `QUAD_ENABLE = 0` and `LCSFC_BAUDR = 4` to put the XIP flash controller back to its reset mode so the program flash
-answers the monitor's SSI again and a later soft reset boots (the same steps `hrc_soft_reset` relies on), and a jump to the entry address. No DMA reaches SRAM on this board, so
+answers the monitor's SSI again and a later soft reset boots (the same steps `hrc_restart` takes), and a jump to the entry address. No DMA reaches SRAM on this board, so
 no DMA engine has to be stopped. RTOS tasks are not stopped gracefully; masking interrupts freezes the scheduler and the
 jump never returns (recover by a power cycle).
 

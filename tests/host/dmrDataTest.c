@@ -265,14 +265,14 @@ static void testTMSAck(void)
 	CHECK(dmrDataDecodeTMS(udp.payload, udp.length, &tms));
 	CHECK(tms.isAck);
 	CHECK(tms.seq == 5);
-	CHECK((udp.length == 5) && (memcmp(udp.payload, "\x00\x03\x9F\x00\x05", 5) == 0));
+	CHECK((udp.length == 5) && (memcmp(udp.payload, "\x00\x03\xBF\x00\x05", 5) == 0));
 
-	// A sequence number over 31 needs the second octet: the same bytes as the MOTOTRBO capture (s/n 53)
-	n = dmrDataBuildTMSAck(9997008, 235, 53, 2, bursts, DMR_DATA_MAX_BURSTS);
+	// A sequence number over 31 needs the second octet: the same bytes as a MOTOTRBO radio's ACK (s/n 126)
+	n = dmrDataBuildTMSAck(9997008, 235, 126, 2, bursts, DMR_DATA_MAX_BURSTS);
 	CHECK(feed(bursts, n) == DMR_DATA_RX_PACKET);
 	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp));
-	CHECK((udp.length == 6) && (memcmp(udp.payload, "\x00\x04\x9F\x00\x95\x20", 6) == 0));
-	CHECK(dmrDataDecodeTMS(udp.payload, udp.length, &tms) && tms.isAck && (tms.seq == 53));
+	CHECK((udp.length == 6) && (memcmp(udp.payload, "\x00\x04\xBF\x00\x9E\x60", 6) == 0));
+	CHECK(dmrDataDecodeTMS(udp.payload, udp.length, &tms) && tms.isAck && (tms.seq == 126));
 	dumpBursts("tms-ack", bursts, n);
 }
 
@@ -291,6 +291,14 @@ static void testReferenceVectors(void)
 	CHECK(dmrDataDecodeTMS(ack, sizeof(ack), &tms));
 	CHECK(tms.isAck);
 	CHECK(tms.seq == 53);
+
+	// BrandMeister's TMS ACK (header 0xBF, s/n 10) and its text, as on air through a hotspot: the text starts with
+	// CR LF, which is dropped
+	const uint8_t bmAck[] = { 0x00, 0x03, 0xBF, 0x00, 0x0A };
+	const uint8_t bmText[] = { 0x00, 0x0E, 0xE0, 0x00, 0x9E, 0x64, 0x0D, 0x00, 0x0A, 0x00, 0x57, 0x00, 0x58, 0x00, 0x20, 0x00 };
+	CHECK(dmrDataDecodeTMS(bmAck, sizeof(bmAck), &tms) && tms.isAck && (tms.seq == 10));
+	CHECK(dmrDataDecodeTMS(bmText, sizeof(bmText), &tms) && !tms.isAck && tms.ackRequested && (tms.seq == 126));
+	CHECK(strcmp(tms.text, "WX ") == 0);
 
 	// Compressed UDP/IP header, Motorola TMS port id 98
 	static dmrDataPacket_t p;
@@ -1091,9 +1099,7 @@ static void fuzzBursts(fuzz_t *f, long iters, long *bad, long *packets)
 				}
 			}
 		}
-#if CONFIG_DMR_CONFIRMED
 		dmrDataRxConfirmedEnd();
-#endif
 	}
 }
 

@@ -130,12 +130,14 @@ def test_codec_present(board):
     assert line.split()[1] in want, f"{line} (accepted: {', '.join(want)})"
 
 
-def test_gps_nmea(board):
+def test_gps_nmea(board, pytestconfig):
     """The GPS module talks: heard at start-up, valid sentences keep coming (about one a second, fix or not), few bad
-    ones. Right after start-up it waits out the driver's 5 s listen."""
+    ones. Right after start-up it waits out the driver's 5 s listen. --no-gps: the radio has no module fitted, skip."""
     line = find(diag_lines(board.radio), "gps ")
     if line is None or line.startswith("gps not built"):
         skip("not_built", "a build without the GPS driver (CONFIG_GPS=n)")
+    if pytestconfig.getoption("--no-gps"):
+        skip("no_hw", "--no-gps: no GPS module fitted in this radio")
     if line.startswith("gps no"):
         time.sleep(6)  # just started: the driver may still be listening
         line = board.line("gps ")

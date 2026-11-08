@@ -14,7 +14,7 @@
     rfoundry_debug.py key --mask 0xBITS --hold MS    physical key bits
     rfoundry_debug.py wake                           backlight on without a key event
     rfoundry_debug.py ptt --seconds S                key PTT for S seconds (at most 10; the firmware also times out)
-    rfoundry_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq MHZ, power +1, copy-vfo, ...
+    rfoundry_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq MHZ, power lowest|LEVEL|+1, copy-vfo, ...
     rfoundry_debug.py volume [N|knob]                print the speaker volume; N (0 mutes, 0..16) sets it, knob gives the knob back
     rfoundry_debug.py log [--follow]                 the firmware's dlog() ring
     rfoundry_debug.py chip                           chip ID, flash size, UID, option bytes (RDP, write protection)
@@ -22,7 +22,7 @@
     rfoundry_debug.py peek ADDR[:LEN]                hex dump of LEN bytes (default 4) at ADDR, in words where aligned
                                                 outside any git tree
     rfoundry_debug.py reboot [--rom-dfu]             reset; --rom-dfu: into ST's ROM USB DFU (RDP level 0 only)
-    rfoundry_debug.py crash [show|clear|test trap|test assert|test hang]
+    rfoundry_debug.py crash [show|clear|test trap|test assert|test hang|test stall]
                                                 the crash log (CONFIG_CRASH_LOG): the record kept from before this
                                                 start, forget it, or crash on purpose (the radio restarts)
     rfoundry_debug.py watchdog [show|clear-gap]      the hardware watchdog (CONFIG_WATCHDOG): timeout, feeds, longest idle gap
@@ -81,7 +81,7 @@ APRS = 0x11
 APRS_OP_SEND_NOW, APRS_OP_STATUS, APRS_OP_MESSAGE, APRS_OP_TEST_CALL, APRS_OP_SET, APRS_OP_NMEA = range(1, 7)
 CRASH = 0x1B                        # the crash log (CONFIG_CRASH_LOG; docs/spec/debuglink.md 3.19)
 CRASH_OP_CLEAR, CRASH_OP_TEST = range(2)
-CRASH_TESTS = {"trap": 1, "assert": 2, "hang": 3}
+CRASH_TESTS = {"trap": 1, "assert": 2, "hang": 3, "stall": 4}
 CRASH_TOKEN = 0x48535243            # 'CRSH'
 WATCHDOG = 0x1D                     # the hardware watchdog's bench tests (CONFIG_WATCHDOG; docs/spec/debuglink.md 3.21)
 WDT_OP_CLEAR_GAP, WDT_OP_TEST, WDT_OP_LOAD = range(3)
@@ -286,13 +286,18 @@ class UdpPort:
 class DebugLink:
     """One open debug link. All methods raise DebugLinkError on an error status or a time-out."""
 
-    def __init__(self, port=None, timeout=1.0):
+    def __init__(self, port=None, timeout=1.0, s=None):
+        """s: an open port-like object (read, write, in_waiting, close) instead of opening one: tests."""
+        self.timeout = timeout
+        self.seq = 0
+        self.buf = bytearray()
+        self.packed_shots = None                # packed screenshots: None until the firmware says
+        if s is not None:
+            self.port, self.s = str(port or "test"), s
+            return
         if serial is None and not str(port or "").startswith("udp:"):
             raise DebugLinkError("needs pyserial: pip install pyserial")
         self.port = pick_port(port)
-        self.timeout = timeout
-        self.seq = 0
-        self.packed_shots = None                # packed screenshots: None until the firmware says
         if self.port.startswith("udp:"):        # udp:<radio IP>[:port], a radio in USB network mode
             host, _, udp_port = self.port[4:].partition(":")
             self.s = UdpPort(host, int(udp_port or 3334))
@@ -301,7 +306,6 @@ class DebugLink:
                 self.s = serial.serial_for_url(self.port, 115200, timeout=0.02)	# a device, or a URL such as rfc2217://host:port
             except serial.SerialException as e:
                 raise DebugLinkError(f"can't open {self.port}: {e}")
-        self.buf = bytearray()
 
     def close(self):
         self.s.close()
@@ -541,8 +545,9 @@ class DebugLink:
         self.request(CRASH, bytes([CRASH_OP_CLEAR]))
 
     def crash_test(self, kind):
-        """Crash on purpose (kind: 'trap', 'assert' or 'hang'); the radio restarts about 100 ms after the reply (a hang:
-        about three quarters of the watchdog's timeout later, plus the fault trace on the HR_C7000)."""
+        """Crash on purpose (kind: 'trap', 'assert', 'hang' or 'stall'); the radio restarts about 100 ms after the reply
+        (a hang: about three quarters of the watchdog's timeout later, plus the fault trace on the HR_C7000; a stall:
+        the stall check's 60 s later, the link silent until then)."""
         self.request(CRASH, struct.pack("<BBI", CRASH_OP_TEST, CRASH_TESTS[kind], CRASH_TOKEN))
 
     def watchdog_clear_gap(self):
@@ -783,7 +788,31 @@ class DebugLink:
         self.radio(OP_VFO_STEP, struct.pack("<b", d))
 
     def power_step(self, d):
+        """Step the power level by d. The radio wraps (lowest - 1 = highest), as its power key does: use power_level
+        to reach a level."""
         self.radio(OP_POWER, struct.pack("<b", d))
+
+    def power_level(self, target):
+        """Put the power level at target (0 = lowest), never through a wrap: one step of the exact difference, then
+        checked. target may be "lowest", "highest", a level number or a step "+N" / "-N"; a step past either end is
+        refused (DebugLinkError), not wrapped. Returns the view's (power, power_name) after it."""
+        core = self.view(["core"])
+        cur, n = int(core["power"]), int(core["power_count"])
+        if n == 0:
+            raise DebugLinkError("radio power: this radio has no power levels")
+        t = str(target)
+        lvl = 0 if t == "lowest" else n - 1 if t == "highest" else cur + int(t) if t[:1] in "+-" else int(t)
+        if not 0 <= lvl < n:
+            raise DebugLinkError(f"radio power {t}: level {lvl} is outside 0..{n - 1} (now {cur}, "
+                                 f"{core.get('power_name')}); refusing, the radio would wrap")
+        if lvl != cur:
+            self.power_step(lvl - cur)
+        for _ in range(20):
+            core = self.view(["core"])
+            if int(core["power"]) == lvl:
+                return lvl, core.get("power_name")
+            time.sleep(0.05)
+        raise DebugLinkError(f"radio power {t}: the radio is at level {core['power']}, not {lvl}")
 
     def squelch_step(self, d):
         self.radio(OP_SQUELCH, struct.pack("<b", d))
@@ -1300,8 +1329,9 @@ def cmd_radio(link, a):
         link.vfo_set(round(num(0, float) * 1e6))
     elif op == "step":
         link.vfo_step(num(0))
-    elif op == "power":
-        link.power_step(num(0))
+    elif op == "power":               # power lowest|highest|LEVEL|+N|-N (never wraps)
+        lvl, name = link.power_level(num(0, str))
+        print(f"power={lvl} power_name={name}")
     elif op == "squelch":
         link.squelch_step(num(0))
     elif op == "bw":

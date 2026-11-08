@@ -70,6 +70,7 @@ def test_usrp_fm_rx(radio, pytestconfig):
     if "VFO_FM" not in radio.features():
         skip("not_built", "built without the FM VFO")
     hz = round(rig(pytestconfig, "noaa-mhz") * 1e6)
+    radio.skip_out_of_band(hz)
     with usrp_session(radio) as (link, peer):
         with radio.vfo_session():
             link.vfo_set(hz)

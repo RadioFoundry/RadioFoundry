@@ -15,8 +15,11 @@ Which skips are excused (the skip kinds are rfoundry_hil.SKIP_KINDS):
   bring-up mode (no_radio below).
 - opt_in: only when the test needs something the run didn't allow (NEED_FLAGS). With every need allowed, a missing
   option (a frequency, a recording) is the run's fault and fails.
-- not_built, no_hw, state, and a skip without a kind: never. Built without the switch, a radio lacking the
-  capability and a test that couldn't set itself up are what the checklist is there to catch.
+- not_built: only when the test is marked @pytest.mark.needs_switch("<SWITCH>") for a switch the radio leaves out
+  by design (--bringup-absent: tools/bringup.py passes the board's switches that are n/a, not written or off). A test
+  of one feature that also needs another's switch (a scan that stops on a DMR call) then doesn't fail an FM-only radio.
+- no_hw, state, other not_built skips, and a skip without a kind: never. Built without the switch, a radio lacking
+  the capability and a test that couldn't set itself up are what the checklist is there to catch.
 An optional test never fails for a skip, and an excused skip is recorded but doesn't verify the feature."""
 import json
 import os
@@ -33,8 +36,8 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 # Test markers and fixtures -> the need they imply
 MARKER_NEEDS = {"rf": "rf", "radio_tx": "rf", "bench_service": "bench", "usb_switch": "usb_switch",
                 "codeplug_write": "codeplug_write", "reboot": "reboot", "manual": "owner_action",
-                "second_radio": "second_radio"}
-FIXTURE_NEEDS = {"radio": "radio", "sdr_bench": "bench", "bench_station": "second_radio"}
+                "second_radio": "second_radio", "factory_reset": "factory_reset"}
+FIXTURE_NEEDS = {"radio": "radio", "sdr_bench": "bench", "bench_station": "second_radio", "microphone": "microphone"}
 # A need -> the run options that allow it (any one of them). radio and bench have none: the radio fixture and
 # the bench fixture decide (an unreachable bench is a bench skip, excused for a feature that needs the bench)
 NEED_FLAGS = {
@@ -46,7 +49,11 @@ NEED_FLAGS = {
     "reboot": ("--allow-reboot",),
     "owner_action": ("--manual",),
     "second_radio": ("--split-rx-port", "--bench-station", "--peer-port"),
+    "microphone": ("--microphone",),
+    "factory_reset": (),
 }
+# A need allowed by the environment instead of an option
+NEED_ENV = {"factory_reset": ("RFOUNDRY_HIL_FACTORY_RESET", "1")}
 # The VERSION keys a record keeps (docs/spec/debuglink.md 3.1): no uptime, nothing that names one unit
 FIRMWARE_KEYS = ("proto", "view", "git", "board", "features", "codec", "display")
 # Run options a record keeps: what was allowed and where it ran on air, never a port or a host
@@ -61,6 +68,9 @@ def add_options(parser):
                 help="bring-up mode: run the tests marked for these features (comma separated, or all); a "
                      "required test that skips for a reason its needs don't excuse fails")
     g.addoption("--bringup-out", default=None, metavar="FILE", help="write the bring-up results here as JSON")
+    g.addoption("--bringup-absent", default="", metavar="SWITCHES",
+                help="the switches the radio leaves out by design (comma separated; tools/bringup.py passes them): a "
+                     "not_built skip of a test marked needs_switch with one of them is excused")
     g.addoption("--bringup-collect", default=None, metavar="FILE",
                 help="write every collected test's features, needs and markers as JSON (tools/bringup.py)")
 
@@ -72,6 +82,11 @@ def feature_marks(item):
         for fid in m.args:
             out.append((fid, bool(m.kwargs.get("optional")), m.kwargs.get("owner"), bool(m.kwargs.get("gate"))))
     return out
+
+
+def switches_of(item):
+    """The switches a test needs built (its needs_switch markers)."""
+    return {sw for m in item.iter_markers("needs_switch") for sw in m.args}
 
 
 def needs_of(item):
@@ -117,7 +132,11 @@ def granted(config):
     """The needs this run allows."""
     out = set()
     for need, flags in NEED_FLAGS.items():
-        if not flags or any(config.getoption(f, default=None) for f in flags):
+        if need in NEED_ENV:
+            var, want = NEED_ENV[need]
+            if os.environ.get(var) == want:
+                out.add(need)
+        elif not flags or any(config.getoption(f, default=None) for f in flags):
             out.add(need)
     return out
 
@@ -129,6 +148,7 @@ class BringUp:
         self.all = want == "all"
         self.features = [] if self.all else [w.strip() for w in want.split(",") if w.strip()]
         self.granted = granted(config)
+        self.absent = {w.strip() for w in config.getoption("--bringup-absent", default="").split(",") if w.strip()}
         self.tests = {}         # node id -> {"required": [features], "optional": [features], "gates": [features],
         #                                     "needs": set}
         self.gates = {}         # feature -> its capability gate's node id
@@ -150,7 +170,7 @@ class BringUp:
         if not req and not opt:
             return False
         self.tests[nid] = {"required": sorted(set(req)), "optional": sorted(set(opt) - set(req)),
-                           "gates": sorted(set(gates)), "needs": needs_of(item)}
+                           "gates": sorted(set(gates)), "needs": needs_of(item), "switches": switches_of(item)}
         return True
 
     def role(self, nid):
@@ -165,6 +185,8 @@ class BringUp:
             return "bench" in needs
         if kind == "opt_in":
             return bool(needs - self.granted)
+        if kind == "not_built":
+            return bool(self.tests[nid]["switches"] & self.absent)
         return False
 
     def record(self, nid, report, required, excused=None):
@@ -194,6 +216,10 @@ class Plugin:
                                 "not gating; owner: what a person does for it; gate: the feature's capability gate, "
                                 "run first in bring-up mode, its other required tests fail unless it passes")
         config.addinivalue_line("markers", "second_radio: needs a second radio (--split-rx-port or --bench-station)")
+        config.addinivalue_line("markers", "factory_reset: erases the radio's settings (RFOUNDRY_HIL_FACTORY_RESET=1)")
+        config.addinivalue_line("markers", "needs_switch(SWITCH, ...): the test also needs these switches built (a "
+                                "CONFIG_ name without the prefix); it skips not_built without them, which bring-up "
+                                "excuses on a radio that leaves the switch out by design")
         if config.getoption("--bringup", default=None):
             config._rfoundry_bringup = BringUp(config)
 
@@ -204,6 +230,7 @@ class Plugin:
             for item in items:
                 found[node_id(item)] = {"markers": sorted({m.name for m in item.iter_markers()}),
                                         "needs": sorted(needs_of(item)),
+                                        "switches": sorted(switches_of(item)),
                                         "features": [{"id": f, "optional": o, "owner": w, "gate": g}
                                                      for f, o, w, g in feature_marks(item)]}
             with open(out, "w") as f:

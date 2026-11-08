@@ -96,6 +96,47 @@ def test_real_radio_fixture(radio):
     pass
 '''
 
+# A scan test that also needs DMR, on the same FM-only radio: its not_built skip is excused only where the run says the
+# radio leaves DMR out by design (--bringup-absent, which tools/bringup.py fills from the board), and only for a test
+# marked needs_switch
+FAKE_SWITCH_TESTS = '''import pytest
+from rfoundry_hil import skip
+
+
+class FakeLink:
+    def ptt(self, on):
+        pass
+
+
+class FakeRadio:
+    link = FakeLink()
+
+    def tx_gate(self, may_transmit):
+        return False
+
+    def snapshot(self):
+        return None
+
+    def restore(self, snap):
+        pass
+
+
+@pytest.fixture
+def radio():
+    return FakeRadio()
+
+
+@pytest.mark.feature("fake_scan")
+@pytest.mark.needs_switch("DMR")
+def test_stops_on_dmr_call(radio):
+    skip("not_built", "built without DMR")
+
+
+@pytest.mark.feature("fake_scan")
+def test_unmarked_dmr(radio):
+    skip("not_built", "built without DMR")
+'''
+
 def fake_tree(tmp_path):
     (tmp_path / "test_fake.py").write_text(FAKE_TESTS)
     (tmp_path / "test_fake_link.py").write_text(FAKE_LINK_TEST)
@@ -137,6 +178,21 @@ def test_required_skip_fails_the_bringup_run(tmp_path):
     assert res["test_keyed"]["skip_kind"] == "opt_in"
     assert "test_unlisted" not in res           # not in a selected feature: deselected
     assert "/nonexistent" not in out.read_text()
+
+
+def test_needs_switch_excuses_a_switch_left_out(tmp_path):
+    (tmp_path / "test_switch.py").write_text(FAKE_SWITCH_TESTS)
+    out = tmp_path / "out.json"
+    r = pytest_run(tmp_path, str(tmp_path / "test_switch.py"), "--bringup", "fake_scan", "--bringup-out", str(out),
+                   "--bringup-absent", "DMR,VOX")
+    assert r.returncode == 1, r.stdout + r.stderr
+    res = outcomes(out)
+    assert res["test_stops_on_dmr_call"]["outcome"] == "skipped" and res["test_stops_on_dmr_call"]["excused"]
+    assert res["test_unmarked_dmr"]["outcome"] == "failed"     # no marker: still the checklist's catch
+    # a radio meant to have DMR (not in --bringup-absent): built without it is a failure
+    r = pytest_run(tmp_path, str(tmp_path / "test_switch.py"), "--bringup", "fake_scan", "--bringup-out", str(out),
+                   "--bringup-absent", "VOX")
+    assert outcomes(out)["test_stops_on_dmr_call"]["outcome"] == "failed", r.stdout
 
 
 def test_a_failed_gate_fails_the_feature_unrun(tmp_path):
@@ -406,3 +462,41 @@ def test_not_written_reads_as_not_written():
                     assert state[s] == want, (board, s, state[s])
                     checked += 1
     assert checked, "no board lists a switch"
+
+
+def test_requires_follows_the_switch():
+    """A feature without a switch that requires one is n/a, not written or off wherever the board leaves that switch
+    out, as the switch's own feature is; elsewhere it resolves on its own. Real boards where one leaves such a switch
+    out, and always three made-up boards, one per way of leaving it out."""
+    py = python311()
+    fake = r"""
+import json, sys
+sys.path.insert(0, sys.argv[1])
+import bringup
+base = {"unsupported": {}, "not_written": {}, "config": {"DMR": "y"}, "overrides": {}, "debuglink_names": []}
+bringup._BOARDS = {
+    "na": dict(base, unsupported={"DMR": "no modem"}),
+    "nw": dict(base, not_written={"DMR": "no glue yet"}),
+    "off": dict(base, config={"DMR": "n"}),
+    "has": base,
+}
+e = {"id": "x", "switch": None, "requires": "DMR"}
+print(json.dumps({b: bringup.resolve(b, e)[0] for b in bringup._BOARDS}))
+"""
+    r = subprocess.run([py, "-c", fake, os.path.join(ROOT, "tools")], capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert json.loads(r.stdout) == {"na": "n/a", "nw": "not written", "off": "off", "has": "required"}, r.stdout
+    checked = 0
+    for board in sorted(os.listdir(os.path.join(ROOT, "boards"))):
+        if not os.path.isfile(os.path.join(ROOT, "boards", board, "board.toml")):
+            continue
+        r = subprocess.run([py, BRINGUP, "list", "--radio", board, "--json"], cwd=ROOT, capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout + r.stderr
+        rows = json.loads(r.stdout)
+        own = {row["switch"]: row["state"] for row in rows if row["switch"]}
+        for row in rows:
+            req = row.get("requires")
+            if req and own.get(req) in ("n/a", "not written", "off"):
+                assert row["state"] == own[req], (board, row["id"], row["state"], req, own[req])
+                checked += 1
+    print(f"{checked} real board rows checked")

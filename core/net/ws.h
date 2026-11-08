@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // WebSocket (RFC 6455) pieces for the HTTP server's /ws endpoint (docs/spec/tcp-services.md 5): the opening
 // handshake's accept value, and the frame header as a server reads and writes it. No state and no I/O: the caller owns
 // the connection. A server's rules: frames from the client are masked, frames to it are not (5.1); no extensions, so

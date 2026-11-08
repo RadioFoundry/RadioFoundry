@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include "board.h"
 #include "flash/nand_sectors/nand_sectors.h"
+#include "dmr_rfburst_timing.h"
 
 // Ops each board file provides
 extern const hal_display_t db25d_display;
@@ -79,35 +80,18 @@ uint16_t db25d_apc_level(uint16_t target, uint16_t step);
 // Squelch open threshold for level 0..9, in dB below 0 dBm at the main chip (bk4819_squelch_rssi(-v, 2))
 uint8_t db25d_cal_squelch_db(uint32_t hz, uint8_t level);
 
-// --- DMR burst timing (hardware-db25d.md 4.5) ---
-// The modem raises the RF TX interrupt rf_tx_lead (100 us steps, RF_CONTROL b13:8) before its TX burst, and the burst's
-// first symbol is on air 0.85 ms after that point. The TX on sequence has the PA fully up 2.4 ms after the interrupt
-// plus the page's TX-on delay. The lead is the shortest that has the PA up for the first symbol: every 100 us more
-// switches the receiver off earlier in the slot before ours, where an SFR repeater hears the inbound burst (measured on
-// the SDR bench, 2026-10-25)
-#define DB25D_DMR_SYMBOL_AFTER_LEAD_US	850u
-#define DB25D_DMR_PA_UP_US		2400u
-#define DB25D_DMR_BURST_US		27500u
+// --- DMR burst timing (hardware-db25d.md 4.5; the arithmetic is platform/hrc7000/dmr_rfburst_timing.h) ---
+// After the RF TX interrupt plus the page's TX-on delay, the TX on sequence has the PA within 1 dB of the plateau at
+// 1.7-2.1 ms (the analog ramp varies). 2.3 ms keeps the 1 dB point at least 0.2 ms ahead of the first symbol
+#define DB25D_DMR_SYMBOL_AFTER_LEAD_US	HRC_RFBURST_SYMBOL_AFTER_LEAD_US
+#define DB25D_DMR_PA_UP_US		2300u
 static inline uint8_t db25d_dmr_rf_tx_lead(uint16_t on_us)
 {
-	return (uint8_t)((DB25D_DMR_PA_UP_US + on_us - DB25D_DMR_SYMBOL_AFTER_LEAD_US + 99u) / 100u);
+	return hrc_rfburst_lead(DB25D_DMR_PA_UP_US + on_us);
 }
-// The ramp down starts with the burst's last symbol, lead + 0.85 ms + 27.5 ms after the RF TX interrupt, so the
-// receiver is back for the slot after ours. How long to wait still, elapsed_us after the RF TX interrupt (0 once that
-// point is past), and by how much it was missed (0 when on time)
 static inline uint32_t db25d_dmr_off_at_us(uint8_t lead)
 {
-	return lead * 100u + DB25D_DMR_SYMBOL_AFTER_LEAD_US + DB25D_DMR_BURST_US;
-}
-static inline uint32_t db25d_dmr_hold_us(uint32_t elapsed_us, uint8_t lead)
-{
-	uint32_t at = db25d_dmr_off_at_us(lead);
-	return elapsed_us < at ? at - elapsed_us : 0;
-}
-static inline uint32_t db25d_dmr_late_us(uint32_t elapsed_us, uint8_t lead)
-{
-	uint32_t at = db25d_dmr_off_at_us(lead);
-	return elapsed_us > at ? elapsed_us - at : 0;
+	return hrc_rfburst_off_at_us(lead);
 }
 
 // --- SPI NAND (nand_db25d.c, hardware-db25d.md 6.5) ---

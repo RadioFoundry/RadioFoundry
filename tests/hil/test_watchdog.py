@@ -59,7 +59,9 @@ def test_watchdog_resets(radio, kind):
     t0 = time.monotonic()
     radio.link.watchdog_test(kind)
     radio.link.close()
-    time.sleep(timeout_s)
+    # The feeds stop 100 ms after the reply (WDT_TEST_DELAY_MS), so the reset comes no sooner than that plus the timeout.
+    # A radio that answers at once on a direct UART otherwise still answers from before the reset
+    time.sleep(timeout_s + 0.5)
     radio.reconnect(timeout_s + 30.0, "the watchdog reset")
     back_s = time.monotonic() - t0
     up_after = as_int(radio.view(["link"])["uptime_ms"])
@@ -88,7 +90,7 @@ def test_reset_cause_reboot(radio):
     radio.link.reboot(0, radio.link.chip()["token"])
     radio.link.close()
     time.sleep(2.0)
-    radio.reconnect()
+    radio.reconnect(60.0, "the watchdog reset")
     c = _cause(radio)
     assert c["reset.cause"] == "software", c
     assert as_int(c["reset.uptime_ms"]) >= up_before, (c, up_before)

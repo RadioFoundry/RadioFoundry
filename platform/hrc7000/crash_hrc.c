@@ -45,7 +45,7 @@ bool hal_crash_code_addr(uint32_t a)
 
 void hal_crash_restart(void)
 {
-	hrc_soft_reset();
+	hrc_restart();
 }
 
 _Static_assert(HRC_CRASH_BOOT + sizeof(crash_boot_t) <= HRC_CRASH_STORE, "the restart cause's words, below the record");

@@ -260,12 +260,13 @@ class Session:
     def __init__(self, args):
         self.dry = args.dry_run
         self.yes = args.yes
-        self.port = getattr(args, "port", None)
+        self.port = full_port(getattr(args, "port", None))
         self.dmrconf = getattr(args, "dmrconf", None) or shutil.which("dmrconf") or "dmrconf"
         self.workdir = None
         self.cache = {}
         self.log = None
         self.state = {}
+        self.platform = sys.platform
 
     def open_workdir(self, path=None, create=True):
         if path is None:
@@ -355,10 +356,44 @@ class Session:
             raise MigrateError("%s failed (exit status %d)" % (os.path.basename(cmd[0]), p.returncode))
         return p.returncode, out
 
-    def dmr(self, *args, radio, check=True, capture=False):
+    def dmr_device(self, serial):
+        """The --device for dmrconf, or None to leave it to dmrconf. A radio running RadioFoundry is a serial port
+        (serial=True) and macOS lists each port twice (cu.X and tty.X), which stops dmrconf's own auto-detect with 'more
+        than one matching USB devices': there the port is found by USB ID, as rfoundry_debug does. A stock radio is not
+        a serial port (libusb), and step 4 (cps_client) finds its port itself, so neither is affected."""
+        if self.port:
+            return dmrconf_device(self.port, self.platform)
+        if not serial or self.platform != "darwin":
+            return None
+        if "dmrconf_device" not in self.cache:
+            try:
+                dev = dmrconf_device(self.pick_port(), self.platform)
+            except MigrateError as e:       # none found, or several: never pick one of two radios
+                if not self.dry:
+                    raise
+                self.say("   [dry run] no radio port: %s" % e)
+                dev = None
+            self.cache["dmrconf_device"] = dev
+            if dev:
+                self.say("   dmrconf device: " + dev)
+        return self.cache["dmrconf_device"]
+
+    def pick_port(self):
+        """The radio's serial port by USB ID 1FC9:0094 ($RFOUNDRY_PORT first, as for rfoundry_debug); MigrateError when
+        there is none or more than one"""
+        dbg = load_module("rfoundry_debug", ["rfoundry_debug.py"])
+        if dbg.list_ports is None:
+            raise MigrateError("pyserial is missing: pip install pyserial")
+        try:
+            return dbg.pick_port()
+        except dbg.DebugLinkError as e:
+            raise MigrateError(str(e))
+
+    def dmr(self, *args, radio, check=True, capture=False, serial=False):
         cmd = [self.dmrconf]
-        if self.port and radio:
-            cmd += ["--device", self.port]
+        dev = self.dmr_device(serial) if radio else None
+        if dev:
+            cmd += ["--device", dev]
         return self.run(cmd + list(args), radio, check, capture)
 
     def rfoundry_debug(self, *args, check=True, capture=True):
@@ -366,6 +401,22 @@ class Session:
         if self.port:
             cmd += ["--port", self.port]
         return self.run(cmd + list(args), True, check, capture)
+
+
+def full_port(port, exists=os.path.exists):
+    """macOS shows a serial port as cu.NAME (and tty.NAME) in /dev; --port may name it without the directory. pyserial
+    needs the path."""
+    if port and re.match(r"(cu|tty)\.", port) and exists("/dev/" + port):
+        return "/dev/" + port
+    return port
+
+
+def dmrconf_device(port, platform=None):
+    """The form dmrconf's --device takes. On macOS that is the short name cu.NAME (the full path is not known to
+    work), elsewhere the port as given."""
+    if (platform or sys.platform) == "darwin" and port.startswith("/dev/"):
+        return port[len("/dev/"):]
+    return port
 
 
 def need_file(sess, path, what):
@@ -678,6 +729,8 @@ def wait_rfoundry(sess, timeout):
             return
         if "pyserial" in (p.stdout or ""):
             raise MigrateError("pyserial is missing: pip install pyserial")
+        if "several radios found" in (p.stdout or ""):
+            raise MigrateError(p.stdout.strip())
         time.sleep(2)
     raise MigrateError("the radio did not answer on its USB serial port within %d s. Switch it off and on; if the "
                        "screen stays dark, flash again (the bootloader is never erased)" % timeout)
@@ -764,7 +817,7 @@ def step_iddb(sess, args):
         cmd += ["--limit", str(args.db_limit)]
     sess.say("   a large database takes several minutes over USB; don't unplug the radio")
     wait_rfoundry(sess, args.wait)
-    sess.dmr(*cmd, radio=True)
+    sess.dmr(*cmd, radio=True, serial=True)
     sess.say("   done: names show on the receive screen for IDs that are not contacts")
     return True
 
@@ -945,6 +998,67 @@ zones:
         check(False, "a file not at 0x0800C000 is refused")
     except MigrateError:
         pass
+
+    # dmrconf's --device: the short name on macOS (/dev/cu.X or cu.X given), the port as given elsewhere
+    check(dmrconf_device("/dev/cu.usbmodem1", "darwin") == "cu.usbmodem1", "macOS: /dev/cu.X becomes cu.X")
+    check(dmrconf_device("cu.usbmodem1", "darwin") == "cu.usbmodem1", "macOS: cu.X stays")
+    check(dmrconf_device("/dev/ttyACM0", "linux") == "/dev/ttyACM0", "Linux: the path stays")
+    check(full_port("cu.usbmodem1", lambda p: p == "/dev/cu.usbmodem1") == "/dev/cu.usbmodem1", "cu.X gets /dev/")
+    check(full_port("cu.nothere", lambda p: False) == "cu.nothere", "a name that is no device stays")
+    check(full_port("/dev/ttyACM0") == "/dev/ttyACM0" and full_port(None) is None, "full paths and None stay")
+
+    def session(port, platform, dry=False):
+        sess = Session(argparse.Namespace(dry_run=dry, yes=True, port=port, dmrconf="dmrconf"))
+        sess.platform, sess.say = platform, lambda msg="": None
+        return sess
+
+    def device(port, ports, platform, dry=False, serial=True):
+        """dmr_device with the USB search faked: `ports` is what pick_port finds; (device, error text)"""
+        sess = session(port, platform, dry)
+
+        def pick_port():
+            if len(ports) != 1:
+                raise MigrateError("no radio found" if not ports else "several radios found %s" % ports)
+            return ports[0]
+        sess.pick_port = pick_port
+        try:
+            return sess.dmr_device(serial), None
+        except MigrateError as e:
+            return None, str(e)
+    mac = "/dev/cu.usbmodem0000000100001"
+    check(device(None, [mac], "darwin") == ("cu.usbmodem0000000100001", None), "auto-detect on macOS: the one radio, short name")
+    check(device(None, [mac], "linux") == (None, None), "Linux: left to dmrconf")
+    check(device("/dev/ttyACM0", [mac], "linux") == ("/dev/ttyACM0", None), "Linux: --port as given")
+    check(device("/dev/cu.x", [mac], "darwin") == ("cu.x", None), "--port /dev/cu.x wins and is shortened")
+    check(device("cu.x", [], "darwin") == ("cu.x", None), "--port cu.x wins")
+    check(device(None, [mac], "darwin", serial=False) == (None, None), "a stock radio: no auto-detect")
+    check("several" in (device(None, [mac, mac + "2"], "darwin")[1] or ""), "two radios: stop, not pick one")
+    check("no radio" in (device(None, [], "darwin")[1] or ""), "no radio: stop")
+    check(device(None, [], "darwin", dry=True) == (None, None), "a dry run without a radio goes on")
+
+    # the real pick_port, with rfoundry_debug faked: its errors become MigrateError, a missing pyserial is named
+    class DebugLinkError(Exception):
+        pass
+
+    def fake_debug(list_ports, ports):
+        def pick_port():
+            if len(ports) != 1:
+                raise DebugLinkError("several radios found %s: give --port" % ports)
+            return ports[0]
+        return type("M", (), {"list_ports": list_ports, "pick_port": staticmethod(pick_port), "DebugLinkError": DebugLinkError})
+
+    real = globals()["load_module"]
+    try:
+        for dbg, want in ((fake_debug(None, [mac]), "pyserial is missing"), (fake_debug(True, [mac, mac + "2"]), "several radios"),
+                          (fake_debug(True, [mac]), None)):
+            globals()["load_module"] = lambda name, cands, dbg=dbg: dbg
+            try:
+                got = session(None, "darwin").pick_port()
+                check(want is None and got == mac, "pick_port finds the one radio")
+            except MigrateError as e:
+                check(want is not None and want in str(e), "pick_port: %s (got %r)" % (want, str(e)))
+    finally:
+        globals()["load_module"] = real
 
     # What --stock and the flash load, here and from a kit. None of it needs the stock file
     check(stockfw().codecmap.load_maps(), "stockfw loads, with the codec maps")

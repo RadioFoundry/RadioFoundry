@@ -30,20 +30,15 @@ def test_copy_to_vfo(radio):
     L = radio.link
     with radio.vfo_session():
         before = _channel(radio)	# the VFO's own values, put back at the end
-        L.vfo(False)
-        radio.wait_for(lambda v: v.get("vfo") == "0", what="a channel")
-        # The first FM channel of the zone
-        pos = None
-        for p in range(int(radio.core().get("zone_size") or 0)):
-            L.zone_pos(p)
-            v = radio.wait_for(lambda v: v.get("zone_pos") == str(p), what=f"position {p}")
-            if v.get("mode") == "fm":
-                pos = p
-                break
-        if pos is None:
-            skip("state", "no FM channel in this zone")
-        chan = _channel(radio)
+        # The first FM channel, in any zone (restore() puts the zone back)
         try:
+            pos = radio.find_channel(None, "fm")
+        except AssertionError:
+            pos = None
+        try:
+            if pos is None:
+                skip("state", "no FM channel in any zone")
+            chan = _channel(radio)
             L.vfo_copy()
             v = radio.wait_for(lambda v: v.get("vfo") == "1", what="the VFO opened")
             assert v["temporary"] == "0" and v["channel_number"] == "0"
