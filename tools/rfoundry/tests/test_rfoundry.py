@@ -777,10 +777,15 @@ class OldRouteGuard(unittest.TestCase):
             self.assertEqual(rc, 0, err.getvalue())					# one range: as before
 
 
-# The MD-9600's two stock builds (board.toml [codec] stock): 06.09 CSV and 16.45 CSV, their tables at different addresses
-# the MD-9600's own placement of these files (the same files are DM-1701 codec sources: stockfw.profile_key)
-MD9600_STOCK = ("79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09@md9600",
-                "de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532@md9600")
+# The MD-9600's stock builds (board.toml [codec] stock), the first two being 06.09 CSV and 16.45 CSV, their tables at
+# different addresses; the MD-9600's own placement of these files (the same files are DM-1701 codec sources:
+# stockfw.profile_key)
+MD9600_STOCK = tuple(k for k, p in stockfw.PROFILES.items() if p["board"] == "md9600")
+# The files with an MD-9600 placement and no DM-1701 one yet (the DM-1701's firmware profile list doesn't take them)
+MD9600_ONLY = {"MD9600-CSV-V06.03.bin", "MD9600-CSV-GPS-P06.03.bin", "MD9600-REC-D06.03.bin", "MD9600-GPS-REC-S06.03.bin",
+               "MD9600-REC-D03.28.bin", "MD9600-REC-D03.29.bin", "MD9600-REC-D04.03.bin",
+               "RT90-CSV(2571V5)-V26.41.bin", "RT90-CSV-GPS(2571V5)-P26.41.bin", "RT90-REC(2571V5)-D26.38.bin",
+               "RT90-GPS-REC(2571V5)-S26.42.bin"}
 
 
 class StockLibrary(unittest.TestCase):
@@ -971,12 +976,14 @@ class StockLibrary(unittest.TestCase):
     def test_md9600_board(self):
         b = boards.get("md9600")
         self.assertTrue(b.releasable)
-        self.assertTrue(b.keep_codec_supported)		# the application has sectors 3-7, the codec 9 and 11
+        self.assertTrue(b.keep_codec_supported)		# the application has sectors 3-7, the codec 9-11
         self.assertEqual(b.codec.id, "md9600-s11")
-        self.assertEqual([s.index for s in b.codec_sectors()], [9, 11])
+        # The largest GPS-REC builds' tables run a few hundred bytes into sector 10, so the board keeps 9-11 for the codec
+        self.assertEqual([s.index for s in b.codec_sectors()], [9, 10, 11])
         self.assertEqual(tuple(b.app_region), (0x0800C000, 0x080A0000))	# memory.ld: sectors 3-8
-        # The board's windows are the union of both stock builds' (a radio may hold either): every window of each
-        # file's layout lies inside one of them, and an image reaching either table range is refused
+        self.assertEqual(tuple(b.codec_stock), MD9600_STOCK)		# board.toml lists every profile, the first two first
+        # The board's windows are the union of every build's: every window of each file's layout lies inside one of
+        # them, and an image reaching any table range is refused
         for sha in MD9600_STOCK:
             for a, n, _ in stockfw.layout(stockfw.PROFILES[sha]):
                 self.assertTrue(any(lo <= a and a + n <= lo + ln for lo, ln in b.codec.windows),
@@ -987,11 +994,40 @@ class StockLibrary(unittest.TestCase):
 
     def test_md9600_profiles(self):
         mine = [p for p in stockfw.PROFILES.values() if p["board"] == "md9600"]
-        self.assertEqual([p["version"] for p in mine], ["V06.09 CSV", "V16.45 CSV"])
-        for p in mine:
+        self.assertEqual([p["version"] for p in mine][:2], ["V06.09 CSV", "V16.45 CSV"])
+        self.assertEqual(len(mine), 21 + len(MD9600_ONLY))
+        self.assertEqual(len(mine), len({p["placement"]["tag"] for p in mine}), "one tag per build")
+        self.assertEqual(len(mine), len({p["name"] for p in mine}))
+        for h, p in stockfw.PROFILES.items():
+            if p["board"] != "md9600":
+                continue
+            sha = stockfw.key_sha(h)
+            dm = stockfw.PROFILES.get(sha)
             self.assertEqual((p["key_sha256"], p["codec_profile"]), (stockfw.MD9600_KEY_SHA256, "md9600-s11"))
-            self.assertEqual(p["code"][1], 0xF214)
             self.assertEqual(p["segments"][0], (0x00060000, 0x59800))
+            if dm is None:		# the 03.xx to 06.03 builds are the MD-9600's own sources only so far
+                self.assertIn(p["name"], MD9600_ONLY)
+                continue
+            # the same file as the DM-1701's codec source: the same windows, only placed differently
+            self.assertEqual((p["name"], p["size"], p["segments"], p["code"], p["tables"]),
+                             (dm["name"], dm["size"], dm["segments"], dm["code"], dm["tables"]))
+            self.assertEqual(dm["file_radio"], "MD-9600")
+            self.assertEqual("MD-9600 " + p["version"], dm["version"])
+            # the code window is a codec the firmware calls at fixed offsets; the tables lie below the code's new place
+            # and may run into sector 10, the descriptor is above the code
+            self.assertTrue(0x08074000 <= p["code"][0] and p["code"][1] % 2 == 0 and 0xF1E0 <= p["code"][1] <= 0x10300)
+            self.assertLessEqual(p["tables"][0] + p["tables"][1], 0x080E0000)
+            self.assertGreaterEqual(p["tables"][0], 0x080A0000)
+            self.assertLessEqual(0x080E0000 + p["code"][1], stockfw.DESC_ADDR)
+            self.assertEqual(p["placement"], {"code": 0x080E0000, "tag": p["placement"]["tag"]})	# tables stay put
+            # the codec map: found by the code's hash, with the entry offsets vocoder_md9600.c calls
+            maps = codecmap.by_code_sha(codecmap.load_maps(), p["code"][2])
+            self.assertEqual(len(maps), 1, p["name"])
+            self.assertEqual(maps[0]["board"], "md9600")
+            self.assertEqual({k: v for k, v in maps[0]["entries"].items() if k != "fec_decode"},
+                             dict(encode=0x130, encode_ecc=0x4E8, decode=0x5D8, enc_init=0x284, fec_init=0x4CC,
+                                  dec_init=0x6D0, enc_params=0x848, enc_set=0x1C0, dec_set=0x688))
+            self.assertEqual(maps[0]["code"]["len"], p["code"][1])
         self.assertEqual(stockfw.profile_for_board("md9600"), MD9600_STOCK[0])
         # the same file on the DM-1701 is a codec source with the DM-1701's placement; the board picks the profile
         sha = stockfw.key_sha(MD9600_STOCK[0])
@@ -1000,20 +1036,26 @@ class StockLibrary(unittest.TestCase):
         self.assertEqual(stockfw.PROFILES[sha]["board"], "dm1701")
         self.assertEqual(stockfw.identify(bytes.fromhex("00")), None)
         self.assertIn("S16.45 GPS-REC", stockfw.KNOWN_FILES["3d71b4358267fe5fdae8980f340b6a158e7b229c9d32c8ab894c4985964e8aff"])
-        # the firmware's two profiles pin the same placed CRCs (boards/md9600/vocoder_md9600.c)
+        # the firmware's profiles pin the same placed CRCs, windows and tags (boards/md9600/vocoder_md9600.c)
         with open(os.path.join(HERE, "..", "..", "..", "boards", "md9600", "vocoder_md9600.c")) as f:
             src = f.read().lower()
+        self.assertEqual(src.count(".tag = "), len(mine))
+        self.assertIn("{ profiles, %d }" % len(mine), src)
         for p in mine:
             self.assertIn("0x%08xu" % p["placed"]["code"][0], src)
             self.assertIn("0x%08xu" % p["placed"]["tables"][0], src)
-            self.assertIn("0x%04xu" % p["placement"]["tag"], src)
+            self.assertIn("{ 0x%08xu, 0x%xu, 0x%08xu }" % (p["tables"][0], p["tables"][1], p["placed"]["tables"][0]), src)
+            self.assertIn(".tag = 0x%04xu" % p["placement"]["tag"], src)
+            self.assertIn(".code_len = 0x%xu" % p["code"][1], src)
 
     def test_md9600_extract_merge_and_plan(self):
         """A synthetic file with each MD-9600 layout: the code moved to sector 11, the tables at the build's stock
-        address in sector 9, the descriptor; the merge plan, against that file's own windows, writes sectors 3-7, 9 and 11,
-        a keep plan only 3-7."""
+        address in sector 9, the descriptor; the merge plan, against that file's own windows, writes sectors 3-7, 9 and
+        11 (and 10 for a build whose tables run into it), a keep plan only 3-7."""
         b = boards.get("md9600")
-        for sha, tab_at in zip(MD9600_STOCK, (0x080AB13C, 0x080AC2BC)):
+        into10 = 0
+        for sha in MD9600_STOCK:
+            tab_at, tab_len = stockfw.PROFILES[sha]["tables"][:2]
             stock, profiles, code, tables = stockfw.build_synthetic_stock(KEY, random.Random(9600), sha)
             prof, segs = stockfw.extract(stock, KEY, profiles)
             self.assertEqual([a for a, _ in segs], [0x080E0000, tab_at, stockfw.DESC_ADDR])
@@ -1023,11 +1065,16 @@ class StockLibrary(unittest.TestCase):
             for a, d in segs:
                 self.assertEqual(merged[a - 0x0800C000:a - 0x0800C000 + len(d)], d)
             p = plan.make_plan(b, [(b.app_base, img)], plan.MERGE, segs, b.merge_windows(prof))
-            self.assertEqual([s.index for s in p.erase], [3, 4, 5, 6, 7, 9, 11])
+            sectors = [3, 4, 5, 6, 7, 9, 11]
+            if tab_at + tab_len > 0x080C0000:
+                sectors = [3, 4, 5, 6, 7, 9, 10, 11]
+                into10 += 1
+            self.assertEqual([s.index for s in p.erase], sectors, stockfw.PROFILES[sha]["name"])
             p = plan.make_plan(b, [(b.app_base, img)], plan.KEEP)
             self.assertEqual([s.index for s in p.erase], [3, 4, 5, 6, 7])
             with self.assertRaises(plan.PlanError):		# the application can't reach the codec sectors
                 plan.make_plan(b, [(b.app_base, app_image(0x080A0000 - 0x0800C000 + 4))], plan.KEEP)
+        self.assertGreater(into10, 0)
 
     def test_derive_key_refines_a_bad_vote(self):
         """Plain text like Thumb code (a Markov chain over a vocabulary of halfwords) where 0x00 is common but not

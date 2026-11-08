@@ -659,6 +659,23 @@ The installers read the original firmware's version and store the board revision
 Board revision). Transmit is off at every start until you turn it on under Settings > Advanced > Hardware > Transmit,
 and it needs a stored revision. Only install this if you can go back to the original firmware. The hardware facts are in [hardware-md9600.md](../spec/hardware-md9600.md).
 
+### MD-9600 voice codec
+
+DMR voice needs the radio's own codec, which neither the repository nor the release images contain. The installer
+takes it from an original firmware file for the radio, and the board's own `codecs/` folder works the same way
+([codecs/README.md](../../codecs/README.md)). It recognizes the file by its SHA-256, so any file name works. These are
+accepted:
+
+| Radio | Original firmware files |
+|---|---|
+| MD-9600 V1-V3 boards | TYT `MD9600-CSV-V06.09.bin` and the rest of the 06.09, 06.24 and 06.03 files; the older `MD9600-REC-D03.28.bin`, `-D03.29.bin` and `-D04.03.bin` |
+| MD-9600 V4 | TYT `MD9600-CSV(V4)-V16.45.bin` and the 16.24 and 16.45 files |
+| MD-9600 V5 and Retevis RT90 | the file the radio came with: TYT `MD9600-CSV(2571V5)-V26.45.bin` and the other 26.45 files, `MD9600-REC(2571V4)-D26.57.bin`, or Retevis `RT90-CSV(2571V5)-V26.41.bin`, `RT90-REC(2571V5)-D26.38.bin`, `RT90-CSV-GPS(2571V5)-P26.41.bin` and `RT90-GPS-REC(2571V5)-S26.42.bin` |
+
+The CSV, CSV-GPS, REC and GPS-REC variants of one version all work. The full list with hashes is in
+[codec-md9600.md](../spec/codec-md9600.md#stock-files). No V5 radio has run these files yet: the checks so far ran their
+codec in an emulator on a computer.
+
 ### MD-9600 keys
 
 | Key | Role |

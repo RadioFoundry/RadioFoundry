@@ -43,9 +43,8 @@ import zlib  # noqa: E402
 
 DM1701_V0206 = "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"
 MD380_D2032 = "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"
-# The MD-9600's own placement of these two files (stockfw.profile_key); they are DM-1701 codec sources too
-MD9600_V0609 = profile_key("79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09", "md9600")
-MD9600_V1645 = profile_key("de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532", "md9600")
+# The MD-9600's own placement of its files (stockfw.profile_key); they are DM-1701 codec sources too
+MD9600_FILES = [k for k, p in PROFILES.items() if p["board"] == "md9600"]
 MDUV380_V1926 = "75e4d470b451cb5d191a647c0836c71801433b826cc4a7fe2c48d750036bd98e"
 RT3S_V21960 = "447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee"
 DM1701_V0201 = "cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713"
@@ -244,27 +243,28 @@ def self_test():
     nmerged = merge(struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(0x080C0000 - APP_BASE - 8), np_, nwins)
     check(not stm32_dfu.check_image(nmerged, "dm1701"), "stm32_dfu accepts the DM-1701 V02.06 noCSV merged image")
 
-    # MD-9600 06.09 and 16.45 CSV: a two-segment container, the code in sectors 7 and 8 moved to the start of sector 11,
-    # the table window at the build's own address in sector 9
-    for sha, tab_at, tag in ((MD9600_V0609, 0x080AB13C, 0x0609), (MD9600_V1645, 0x080AC2BC, 0x1645)):
+    # Every MD-9600 original firmware file: a two-segment container, the code in sectors 7 and 8 moved to the start of
+    # sector 11, the table window at the build's own address in sector 9 (the largest builds' run into sector 10)
+    for sha in MD9600_FILES:
+        tab_at, tag = PROFILES[sha]["tables"][0], PROFILES[sha]["placement"]["tag"]
         gstock, gprofiles, gcode, gtables = build_synthetic_stock(key, rng, sha)
         greal = PROFILES[sha]
-        check(find_profile(gstock, gprofiles, "md9600")["board"] == "md9600", "MD-9600 %04X profile found for the board" % tag)
-        check(parse_container(gstock) == greal["segments"], "MD-9600 %04X container parsed" % tag)
+        check(find_profile(gstock, gprofiles, "md9600")["board"] == "md9600", "MD-9600 %05X profile found for the board" % tag)
+        check(parse_container(gstock) == greal["segments"], "MD-9600 %05X container parsed" % tag)
         gp, gwins = extract(gstock, key, gprofiles)
         check([a for a, _ in gwins] == [0x080E0000, tab_at, DESC_ADDR],
-              "MD-9600 %04X: the code in sector 11, the tables at the build's address, the descriptor" % tag)
-        check(gwins[0][1] != gcode and len(gwins[0][1]) == len(gcode), "MD-9600 %04X: the code moved" % tag)
+              "MD-9600 %05X: the code in sector 11, the tables at the build's address, the descriptor" % tag)
+        check(gwins[0][1] != gcode and len(gwins[0][1]) == len(gcode), "MD-9600 %05X: the code moved" % tag)
         gd = gwins[2][1]
         check(struct.unpack_from("<7I", gd, 0) == (0x43534544, 1, tag, 0x080E0000, len(gcode), zlib.crc32(gwins[0][1]), 1),
-              "MD-9600 %04X descriptor header and code window" % tag)
+              "MD-9600 %05X descriptor header and code window" % tag)
         gimage = struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(rng.randrange(256) for _ in range(0x74000 - 8))
         gmerged = merge(gimage, gp, gwins)
-        check(len(gmerged) == FLASH_END - APP_BASE, "MD-9600 %04X merged image ends with the descriptor" % tag)
-        check(not stm32_dfu.check_image(gmerged, "md9600"), "stm32_dfu accepts the MD-9600 %04X merged image" % tag)
+        check(len(gmerged) == FLASH_END - APP_BASE, "MD-9600 %05X merged image ends with the descriptor" % tag)
+        check(not stm32_dfu.check_image(gmerged, "md9600"), "stm32_dfu accepts the MD-9600 %05X merged image" % tag)
         expect_error(lambda: merge(gimage + b"\0" * (tab_at - 0x08080000 + 1), gp, gwins),
-                     "MD-9600 %04X: application reaching the tables refused" % tag)
-        expect_error(lambda: extract(gstock, bad_key, gprofiles), "MD-9600 %04X wrong key refused" % tag)
+                     "MD-9600 %05X: application reaching the tables refused" % tag)
+        expect_error(lambda: extract(gstock, bad_key, gprofiles), "MD-9600 %05X wrong key refused" % tag)
 
     # main() end to end on the synthetic file
     import contextlib

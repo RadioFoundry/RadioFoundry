@@ -638,21 +638,24 @@ firmware in normal mode, which shows `/0x08000000/03*016Kg` under the same USB I
 
 USB DFU 0483:DF11 with TYT's commands, the DM-1701's protocol ([hardware-dm1701.md](hardware-dm1701.md) 15.2). The image is XORed with the MD-9600's 1024-byte key, index from the start of the application image; key SHA-256
 c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae, first bytes A2 FA BB 4B
-([hardware-dm1701.md](hardware-dm1701.md) 15.3). The key can be derived from an original firmware file (as for the DM-1701 and MD-380): it works on every V06.09, V16.45 and V26.45 file (measured).
+([hardware-dm1701.md](hardware-dm1701.md) 15.3). The key can be derived from an original firmware file (as for the DM-1701 and MD-380): it works on every original firmware file listed in 14.3 (measured).
 
 ### 14.3 Stock firmware files
 
 TYT names the files by feature: P = CSV + GPS, V = CSV, S = recorder + GPS, D = recorder (unverified). TYT's V4
 firmware and CPS (for the "new updated PLL", V4 and later boards) are not compatible with V1-V3 radios (unverified).
-TYT's download page (checked 2026-10-12) offers only CPS installers for the MD-9600, no firmware.
+TYT's download page offers only CPS installers for the MD-9600, no firmware. Retevis's firmware download offers the RT90's V5 firmware (two zips, `RT90-Firmware-v5` and `RT90-Firmware-GPS-v5`). Dealers and community pages mirror the older TYT files.
 
 Files examined):
 
 | Version | Boards | Files | Container |
 |---|---|---|---|
-| 06.09 | V1-V3 (SKY72310) | `MD9600-CSV-V06.09.bin`, `-CSV-GPS-P06.09`, `-REC-D06.09`, `-GPS-REC-S06.09` | model string "MD-9600" at 0x10 |
-| 16.45 | V4 ("PLL1590") | `MD9600-CSV(V4)-V16.45.bin`, `-CSV-GPS(V4)-P16.45`, `-REC(V4)-D16.45`, `-GPS-REC(V4)-S16.45` | model string blank |
+| 03.28, 03.29, 04.03 | older, board not known | `MD9600-REC-D03.28.bin`, `-REC-D03.29`, `-REC-D04.03` | as 06.09 |
+| 06.03 | V1-V3 (SKY72310) | `MD9600-CSV-V06.03.bin`, `-CSV-GPS-P06.03`, `-REC-D06.03`, `-GPS-REC-S06.03` | as 06.09 |
+| 06.09, 06.24 | V1-V3 (SKY72310) | `MD9600-CSV-V06.09.bin`, `-CSV-GPS-P06.09`, `-REC-D06.09`, `-GPS-REC-S06.09` | model string "MD-9600" at 0x10 |
+| 16.24, 16.45 | V4 ("PLL1590") | `MD9600-CSV(V4)-V16.45.bin`, `-CSV-GPS(V4)-P16.45`, `-REC(V4)-D16.45`, `-GPS-REC(V4)-S16.45` (and the same four as 16.24) | model string blank |
 | 26.45 | V5 ("2571") | `MD9600-CSV(2571V5)-V26.45.bin`, `-CSV-GPS(2571V5)-P26.45`, `-REC(2571V5)-D26.45`, `-GPS-REC(2571V5)-S26.45` | as 16.45 |
+| 26.38, 26.41, 26.42 | V5 ("2571"), Retevis RT90 | `RT90-CSV(2571V5)-V26.41.bin`, `-CSV-GPS(2571V5)-P26.41`, `-REC(2571V5)-D26.38`, `-GPS-REC(2571V5)-S26.42` | as 16.45 |
 | 26.57 | V4A ("2571V4") | `MD9600-REC(2571V4)-D26.57.bin` | as 16.45 |
 
 Files named `MD9600-CSV(V4)-V26.45.bin` and `-CSV-GPS(V4)-P26.45` also circulate; they hold the V16.45 V4 ("PLL1590")
