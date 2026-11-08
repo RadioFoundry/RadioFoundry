@@ -360,7 +360,8 @@ static void led_signals(radio_sm_t *sm, bool *red, bool *green)
 	bool timed = false;
 	if (sm->deny_led) {
 		uint32_t step = (now - sm->deny_led_ms) / RADIO_LED_DENY_STEP_MS;
-		if (step < RADIO_LED_DENY_STEPS) {
+		// A new transmission ends the flash: red then shows the air (or the wake-up bursts), not the refusal before
+		if (step < RADIO_LED_DENY_STEPS && sm->view.state != RS_TX) {
 			*red = (step & 1u) == 0;
 			*green = !*red;
 			sm->led_timed = true;

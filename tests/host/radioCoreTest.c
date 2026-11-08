@@ -634,6 +634,26 @@ static void test_tx(void)
 	req(RREQ_PTT, 0);
 }
 
+// A transmission that starts while a deny still flashes ends the flash: red shows the air, not the refusal before
+static void test_deny_flash_then_tx(void)
+{
+	setup_codeplug();
+	start();
+	req(RREQ_CH_STEP, 1);			// the RX-only channel
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && hw.led[LED_RED] && !hw.led[LED_GREEN]);
+	req(RREQ_PTT, 0);
+	req(RREQ_CH_STEP, -1);			// back to one that transmits, the flash still running
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && hw.led[LED_RED] && !hw.led[LED_GREEN]);
+	poll_for(100);				// the flash's green step
+	CHECK(hw.led[LED_RED] && !hw.led[LED_GREEN] && (sm.view.leds & RADIO_LED_RED) != 0);
+	poll_for(600);
+	CHECK(hw.led[LED_RED] && !hw.led[LED_GREEN]);	// and no flash back after it
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE && !hw.led[LED_RED]);
+}
+
 static void test_timeout(void)
 {
 	setup_codeplug();
@@ -4765,6 +4785,7 @@ int main(void)
 	test_vfo_step_auto();
 	test_squelch();
 	test_tx();
+	test_deny_flash_then_tx();
 	test_timeout();
 	test_power();
 	test_vfo();

@@ -505,7 +505,7 @@ over that (`radio_sm.c` `led_signals`, the times in `radio_sm.h`), for radios wi
 | Signal | LEDs |
 | --- | --- |
 | Waking a repeater (DMR, PTT through a repeater that isn't up) | red once per wake-up burst sent, `RADIO_LED_WAKE_MS` (100 ms) each, dark while the radio listens for the answer. The call stack counts the bursts (`dmr_call_view_t.wake_sent`) |
-| A TX deny, every reason (`RS_TX_DENIED`), and a repeater that didn't wake after a short press was let go | red, green, red, green, red, green, `RADIO_LED_DENY_STEP_MS` (100 ms) each, once, with the deny tone; then what the state shows |
+| A TX deny, every reason (`RS_TX_DENIED`), and a repeater that didn't wake after a short press was let go | red, green, red, green, red, green, `RADIO_LED_DENY_STEP_MS` (100 ms) each, once, with the deny tone; then what the state shows. A transmission that starts during it ends it |
 
 Once the repeater answers and the voice goes out, red is solid as for any transmission. The tick and the poll keep
 calling `outputs()` while a signal runs, so it keeps time when nothing else changes.

@@ -111,7 +111,8 @@ static void rf(void *ctx, bool tx)
 static void pa_arm(void *ctx)
 {
 	(void)ctx;
-	if (brd->burst == NULL) {	// the burst sequences key the PA themselves
+	// The burst sequences key the PA themselves; a board with neither has no PA key (and no pa_delay_us)
+	if (brd->burst == NULL && brd->pa_on != NULL) {
 		hrc_timer_oneshot(TIMER_PA, brd->pa_delay_us);
 	}
 }
