@@ -36,6 +36,9 @@ static const beep_seg_t p_emergency[] = { { 1500, 160 }, { 900, 160 }, { 1500, 1
 					  { 900, 160 } };
 // Rising three-note chime: a message
 static const beep_seg_t p_message[] = { { 1000, 60 }, { 0, 30 }, { 1300, 60 }, { 0, 30 }, { 1700, 90 } };
+// The speaker test (tests/hil/test_speaker.py): silence with the route up (a pop or a click there is the route's, not
+// the sweep's), the sweep, a short tail
+static const beep_seg_t p_sweep[] = { { 0, 400 }, { BEEP_HZ_SWEEP, 4000 }, { 0, 200 } };
 
 #define PAT(p)	{ p, sizeof(p) / sizeof(p[0]) }
 static const struct {
@@ -54,6 +57,7 @@ static const struct {
 	[BEEP_EMERGENCY] = PAT(p_emergency),
 	[BEEP_MESSAGE] = PAT(p_message),
 	[BEEP_TX_PERMIT_SHORT] = PAT(p_permit_short),
+	[BEEP_SWEEP] = PAT(p_sweep),
 };
 
 // One period of a sine, Q15
@@ -86,6 +90,7 @@ static uint8_t cb_seg;
 static uint32_t cb_left;	// samples left in the segment
 static uint32_t cb_len;		// samples in the segment
 static uint32_t cb_phase, cb_step;
+static uint32_t cb_dstep;	// the sweep's step increase per sample, 0 for a tone
 static int32_t cb_amp;
 static volatile bool cb_active;
 static volatile uint8_t cb_idle;
@@ -244,6 +249,11 @@ static void load_seg(void)
 	cb_len = cb_left = (uint32_t)s->ms * (AUDIO_RATE_HZ / 1000);
 	// Phase step: hz / rate of a 2^32 turn
 	cb_step = (uint32_t)(((uint64_t)s->hz << 32) / AUDIO_RATE_HZ);
+	cb_dstep = 0;
+	if (s->hz == BEEP_HZ_SWEEP && cb_len != 0) {
+		cb_step = (uint32_t)(((uint64_t)BEEP_SWEEP_LO_HZ << 32) / AUDIO_RATE_HZ);
+		cb_dstep = (uint32_t)((((uint64_t)(BEEP_SWEEP_HI_HZ - BEEP_SWEEP_LO_HZ) << 32) / AUDIO_RATE_HZ) / cb_len);
+	}
 }
 
 // The pattern into one block (both streams)
@@ -290,6 +300,7 @@ static bool tone_mix(int16_t *spk)
 			int32_t out = spk[i] + ((v * amp) >> 15);
 			spk[i] = (int16_t)(out > 32767 ? 32767 : out < -32768 ? -32768 : out);
 			cb_phase += cb_step;
+			cb_step += cb_dstep;
 		}
 		cb_left--;
 	}

@@ -229,8 +229,15 @@ rather than show "VOX on" for a VOX that never keys.
 
 ### 3.5 Squelch tail elimination
 
-Not done. Without a reverse burst or a tone-loss signal from the other station there is nothing to act on; closing
-early on CTCSS loss conflicts with the tone debounce (8 polls) that keeps fades from chopping audio. Left for later.
+No reverse burst or tone-loss signal from the other station is acted on yet; closing early on CTCSS loss conflicts
+with the tone debounce (8 polls) that keeps fades from chopping audio.
+
+The noise squelch shortens the tail itself. It closes after `RADIO_SQL_CLOSE_POLLS` (2) polls over the close line
+(open threshold + `RADIO_SQL_HYST_DB`), 50 ms, but after one poll when the noise is `RADIO_SQL_FAST_CLOSE_DB` (12 dB)
+or more over it: a carrier that goes takes the noise far over the line at once, while a fade crosses it by a little.
+Squelch level 0 (always open) and the APRS hold (`RADIO_SQL_CLOSE_POLLS_APRS`) keep their own timing. On one board
+(BK4819 receiver) the tail at the speaker went from 55 ms to 15-35 ms in three calls (measured,
+`test_fm_rx_speaker`); what is left is the poll and the chip's noise reading lag.
 
 ### 3.6 Mic gain
 
@@ -329,6 +336,7 @@ None of them needs a correction in the driver. The HIL test (`test_fm_tx_dtmf`) 
 | scan hold | 1400 Hz 40 ms | the scan stops on a signal, if `scan_beep` |
 | emergency | 1500 / 900 Hz warble, 6 x 160 ms | someone's emergency heard (alarm or emergency call), if the emergency setting's tone is on (`dmr-emergency.md`) |
 | message | 1000, 1300, 1700 Hz rising, 60-90 ms each | a text message arrived: the UI asks for it (`radio_req_beep(BEEP_MESSAGE)`) when Settings > Sound > Message tone is on |
+| sweep | 400 ms silence, then 150 Hz to 3.8 kHz over 4 s, phase continuous | the speaker test, from the debug link only (op 22, which can delay it); `test_speaker_sweep` measures the speaker's response and whether the audio path plays it whole |
 
 Synthesis: a 64-entry sine table with linear interpolation, 2 ms fades (no clicks); level 100 is about half of full
 scale so a beep mixed over voice doesn't clip. Beeps follow the radio's volume up to `beep_level`. A radio with an analog
