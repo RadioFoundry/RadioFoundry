@@ -2057,7 +2057,8 @@ void ui_app_key(const input_event_t *ev)
 			break;
 		}
 	}
-	if (ev->action == ACT_VFO_TOGGLE && ev->gesture == GESTURE_PRESS) {
+	// A VFO/MR key (its long press is COPY_VFO) or a side key set to VFO/Channel, on either slot
+	if (ev->action == ACT_VFO_TOGGLE && (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)) {
 		vfo_key();
 		return;
 	}
