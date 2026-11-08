@@ -233,17 +233,18 @@ the answer is never taken as a frame's answer or a NAK, OK or not.
 | NEW_EVENT 8 or 13 | `SYNC_LOST`; receive voice stops |
 | DIGC_DATA_FRAME | a burst event to the stack |
 
-- LC kinds are reported with `lc_valid` and 9 bytes. A voice burst's LC (PROP bit 4) is reported as a voice LC
-  header.
+- LC kinds are reported with `lc_valid` and 9 bytes. A voice burst's LC (PROP bit 4, a superframe's embedded LC)
+  is reported as a voice burst with the LC embedded, as a burst-level modem reports it, so the stack takes the call
+  as a late entry. Reported as a header, the call showed as heard from its start.
 - PI header, CSBK, MBC header and data header come with the CRC the chip already checked. The engine rebuilds the
   CRC-CCITT with its mask, so the stack sees 12 bytes as from a burst-level modem.
 - The chip reports a voice call by its header (each repeat, when the board has DMR_CALL_OPTION report them), or by
   the first superframe's LC on a late entry. From there the engine reports a voice burst without payload every
-  60 ms, from burst A (B for a late entry), at most 4 catching up at once, until the terminator, sync lost or
-  carrier lost. A repeated header starts the count again, burst A 60 ms after it; a superframe's LC during the call
-  doesn't. The call's own LC from a superframe isn't reported at all: the stack would take it for a repeated header
-  and count the bursts back to A as lost (seen on a radio: 4 bursts concealed in every call). A different LC is
-  reported, as a voice LC header. The stack holds the call as on other modems.
+  60 ms, from burst A (a late entry's LC is burst A itself), at most 4 catching up at once, until the terminator,
+  sync lost or carrier lost. A repeated header starts the count again, burst A 60 ms after it; a superframe's LC
+  during the call doesn't. The call's own LC from a superframe isn't reported at all: it brings nothing new. A
+  different LC (a new talker without a header) takes the place of the next voice burst, and the count goes on from
+  it. The stack holds the call as on other modems.
 
 ## 7. Voice on the baseband (`CAP_MODEM_VOICE`)
 
