@@ -906,12 +906,13 @@ static void test_dmr_rx(void)
 	CHECK(!ev_bursts[1].crc_ok);
 	CHECK(evs[1].arg != evs[0].arg);
 
-	// A superframe's LC (late entry) reaches the stack as a voice LC header with the LC
+	// A superframe's LC (late entry) reaches the stack as voice burst A with the LC embedded, as from a burst modem
 	uint8_t r3[16] = { SCT_F_DMR_SLOT_FOUND, 0xC4, 0x43, SCT_PROP_VOICE, 9, 0, 0, 0, 0, 0, 0x09, 0x2F, 0x52, 0x5C };
 	chip_packet(r3, 14, 0x30, 400);
 	CHECK(nev == 3);
 	b = &ev_bursts[2];
-	CHECK(b->kind == DMR_BURST_VOICE_LC_HEADER && b->lc_valid && b->crc_ok && b->lc[5] == 0x09 && b->len == 9);
+	CHECK(b->kind == DMR_BURST_VOICE && b->voice_index == 0 && b->lc_valid && b->crc_ok && b->lc[5] == 0x09);
+	CHECK(b->len == 27);
 	CHECK(b->sync == DMR_SYNC_BS && b->ts == 2);
 
 	// The chip plays the call: a voice burst per slot from B on, no payload
@@ -961,13 +962,16 @@ static void test_dmr_rx(void)
 	chip_packet(r3, 14, 0x30, 4140);
 	sct_dmr_poll(4190);
 	CHECK(nev == 18 && ev_bursts[17].kind == DMR_BURST_VOICE && ev_bursts[17].voice_index == 1);
-	// ... another LC (a new talker) goes through, and the bursts go on
+	// ... another LC (a new talker) goes through in place of the next voice burst, and the bursts go on from it
 	uint8_t r7[16] = { 0x43, SCT_PROP_VOICE, 9, 0, 0, 0, 0, 0, 0x09, 0x2F, 0x53, 0x5C };
 	chip_packet(r7, 12, 0x30, 4200);
-	CHECK(nev == 19 && ev_bursts[18].kind == DMR_BURST_VOICE_LC_HEADER && ev_bursts[18].lc[7] == 0x53);
-	sct_dmr_poll(4250);
-	CHECK(nev == 20 && ev_bursts[19].voice_index == 2);
-	chip_packet(r6, 12, 0x30, 4260);
+	CHECK(nev == 19 && ev_bursts[18].kind == DMR_BURST_VOICE && ev_bursts[18].voice_index == 2);
+	CHECK(ev_bursts[18].lc_valid && ev_bursts[18].lc[7] == 0x53);
+	sct_dmr_poll(4259);
+	CHECK(nev == 19);
+	sct_dmr_poll(4260);
+	CHECK(nev == 20 && ev_bursts[19].voice_index == 3 && !ev_bursts[19].lc_valid);
+	chip_packet(r6, 12, 0x30, 4270);
 	chip_packet(r6, 12, 0x30, 4320);
 	sct_dmr_poll(4500);
 	CHECK(nev == 22 && ev_bursts[20].kind == DMR_BURST_TERMINATOR_LC && ev_bursts[21].kind == DMR_BURST_TERMINATOR_LC);
@@ -981,7 +985,7 @@ static void test_dmr_rx(void)
 	chip_packet(junk, 4, 0x30, 900);
 	sct_dmr_stats_t st;
 	sct_dmr_get_stats(&st);
-	CHECK(st.rx_bad == 1 && st.rx_frames == 11 && st.rx_fec == 1 && st.rx_voice == 11);
+	CHECK(st.rx_bad == 1 && st.rx_frames == 11 && st.rx_fec == 1 && st.rx_voice == 13);
 }
 
 // CARRIER_READY: the board's value, sent on a change in receive only, and again at each return to receive

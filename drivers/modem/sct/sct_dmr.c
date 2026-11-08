@@ -430,27 +430,45 @@ static void rx_frame(const uint8_t *f, uint8_t flen)
 
 	if ((prop & SCT_PROP_VOICE) != 0 || (prop & SCT_PROP_TYPE) == DMR_BURST_VOICE_LC_HEADER ||
 	    (prop & SCT_PROP_TYPE) == DMR_BURST_TERMINATOR_LC) {
-		// A voice call: its header, its terminator, or the LC of a superframe (a late entry). The stack gets an LC
-		// header for the last, so it shows the call; the chip plays the voice
+		// A voice call: its header, its terminator, or the LC of a superframe (a late entry, or a new talker without a
+		// header). The chip plays the voice; the stack gets the LC to show the call
+		bool embedded = (prop & SCT_PROP_VOICE) != 0;
+
 		if (n < LC_BYTES)
 			return;
-		if ((prop & SCT_PROP_VOICE) != 0 && s.rx_voice && memcmp(data, s.rx_lc, LC_BYTES) == 0)
-			return;	// the running call's own LC from a superframe: to the stack a header, which restarts it at A
-		b.kind = (prop & SCT_PROP_VOICE) != 0 ? DMR_BURST_VOICE_LC_HEADER : (prop & SCT_PROP_TYPE);
+		if (embedded && s.rx_voice && memcmp(data, s.rx_lc, LC_BYTES) == 0)
+			return;	// the running call's own LC from a superframe: nothing new
 		memcpy(b.lc, data, LC_BYTES);
-		memcpy(b.payload, data, LC_BYTES);
-		b.len = LC_BYTES;
 		b.lc_valid = true;
 		memcpy(s.rx_lc, data, LC_BYTES);
-		if (b.kind == DMR_BURST_TERMINATOR_LC) {
-			s.rx_voice = false;
-		} else if (!s.rx_voice || (prop & SCT_PROP_VOICE) == 0) {
-			// The chip voices the call from here on and says no more until it ends: the stack gets a voice
-			// burst per slot, as it would from a burst modem, so it holds the call. A repeated header (when
-			// the board has every one reported) starts the count again: the voice follows the last header
-			s.rx_voice = true;
-			s.rx_index = (prop & SCT_PROP_VOICE) != 0 ? 1 : 0;	// a late entry's LC came with burst A
+		if (embedded) {
+			// To the stack the next voice burst, with the LC embedded as a burst modem reports it, so the call is
+			// taken as a late entry (a header here was a call heard from its start). A late entry's LC came with
+			// burst A; a new talker's takes the place of the next burst, and the bursts go on from it
+			if (!s.rx_voice) {
+				s.rx_voice = true;
+				s.rx_index = 0;
+			}
+			b.kind = DMR_BURST_VOICE;
+			b.voice_index = s.rx_index;
+			b.len = DMR_VOICE_BYTES;
+			s.rx_index = (uint8_t)((s.rx_index + 1) % 6);
 			s.rx_next_ms = s.now + SCT_DMR_SLOT_MS;
+			s.st.rx_voice++;
+		} else {
+			b.kind = prop & SCT_PROP_TYPE;
+			memcpy(b.payload, data, LC_BYTES);
+			b.len = LC_BYTES;
+			if (b.kind == DMR_BURST_TERMINATOR_LC) {
+				s.rx_voice = false;
+			} else {
+				// The chip voices the call from here on and says no more until it ends: the stack gets a voice
+				// burst per slot, as it would from a burst modem, so it holds the call. A repeated header (when
+				// the board has every one reported) starts the count again: the voice follows the last header
+				s.rx_voice = true;
+				s.rx_index = 0;
+				s.rx_next_ms = s.now + SCT_DMR_SLOT_MS;
+			}
 		}
 	} else {
 		b.kind = prop & SCT_PROP_TYPE;
