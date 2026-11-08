@@ -236,6 +236,8 @@ def readme_radios(root, boards, rows):
     records = bringup.load_records(os.path.join(root, "docs", "testing", "results"))
     out = ["| Radio | Builds | Host tests | On the radio | Support |", "|---|:---:|:---:|:---:|---|"]
     for b in ordered(boards):
+        if b.data.get("variant_of"):
+            continue	# the same radio as the board it names
         out.append("| %s | ● | ● | %s | %s |" % (board_title(b, ""), on_radio_mark(b, records),
                                                b.data["status"]["summary"]))
     for r in planned(rows):
@@ -248,6 +250,8 @@ def manual_radios(boards, rows):
     """The user manual's radio index: each board's section on the page, what it is also sold as, what works."""
     out = ["| Radio | Also sold as | What works |", "|---|---|---|"]
     for b in ordered(boards):
+        if b.data.get("variant_of"):
+            continue	# the same radio as the board it names
         d = b.data
         anchor = re.sub(r"[^\w\- ]", "", d["name"].lower()).replace(" ", "-")
         out.append("| [%s](#%s) | %s | %s |" % (d["name"], anchor, ", ".join(d["also"]), d["status"]["summary"]))

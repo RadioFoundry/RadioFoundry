@@ -116,6 +116,12 @@ test("anytone: a blocked variant is refused for the install, on every board that
 	}
 });
 
+test("anytone: a variant's image of its own is one radio, not a second card", () => {
+	for (const r of RADIOS) for (const v of r.variants || [])
+		if (v.runs && v.runs.board !== r.id) assert.ok(!RADIOS.some((x) => x.id === v.runs.board), `${v.runs.board} has a card beside ${r.id}`);
+	assert.ok(FB.boards[RADIO.variants.find((v) => v.runs?.board !== BOARD.id)?.runs.board ?? BOARD.id], "its image's board is still known to the flasher");
+});
+
 // A vendor set as the manufacturer ships it: the .CDD (here 8 bytes of header, then the image), the .CDI entry, the .spi
 function vendorSet(image, names, addr = BOARD.app_base) {
 	const cdi = new Uint8Array(278);

@@ -113,6 +113,25 @@ the keys it finds by their labels and prints the rest. Tag those by hand, with `
 list them in `data-undrawn`. `tools/svg_keys.py check <b>` must pass; the site build fails CI otherwise. Run `tag`
 again after any redraw, so the tags follow the new shapes.
 
+A bring-up isn't finished on the generic drawing. Each radio gets its own, from straight-on photos and the
+manufacturer's labeled panel drawing (kept outside the repository):
+
+| Check | What it must be |
+|---|---|
+| Scale | The body's proportions and every control's position taken from the reference, in one consistent scale |
+| Radio face | Every key, knob, connector, light and badge the face has, with the text printed on the radio |
+| Screen | One `id="screen"` rect on the display's visible area, in the gallery's aspect ratio, nothing over it |
+| Hand microphone | `<b>-mic.svg` when the radio has a keyed microphone: keys, side and top keys, lights, as printed |
+| Key tags | Each key `id="key-<name>"`, the name its `KEY_*` in lower case without `KEY_`, once across both drawings |
+| Other tags | The channel knob `id="encoder"`, the radio's status light `id="led"`, `data-edge` on side and top keys |
+| Not keys | Lights, the power switch, connectors and slide switches the firmware doesn't read get no `key-` id |
+| Mapping | Each tag on the printed key that really sends that code: from the radio's hardware page, not by position |
+| Checks | `tools/svg_keys.py check <b>` passes; render both drawings and compare them with the reference |
+| Web control | On a radio with `CONFIG_NET_WEBCTL`, press each key on the page and confirm the radio responds |
+
+A board that is the image of another board's hardware variant (`variant_of`) has no drawing of its own: the radio is
+the same one.
+
 The keys held to enter the bootloader go in `board.toml` `[flash.bootloader] hold` by key name (`["ptt", "sk1"]`),
 beside the prose `steps`, and only from a documented source (the radio's hardware page). The web flasher rings them on
 the drawing and names them in a caption, so tag those keys in the drawing when it shows them, and add a
@@ -123,7 +142,8 @@ one without a label.
 ## Bring-up order
 
 1. Platform: start-up, clocks, a time base, a UART or USB for logging. Blink something.
-2. `board.c` with the display and input interfaces. The UI comes up with the built-in channels.
+2. `board.c` with the display and input interfaces. The UI comes up with the built-in channels. Draw the radio and
+   its microphone now, with the key enum at hand ([The drawing](#the-drawing)).
 3. The debug link on the host port, so screenshots and key injection work from here on ([Debug link](debug-link.md)).
    If the host port is a two-pin K-type programming jack, check whether PTT shares the line that carries the host's
    data: send back-to-back 0x00 bytes and watch the raw PTT pin. If it goes low, gate PTT on UART traffic

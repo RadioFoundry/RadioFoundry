@@ -9,6 +9,8 @@ name = "AnyTone AT-D578UV (Artery)"
 maker = "AnyTone"
 model = "AT-D578UV"
 also = ["AnyTone AT-D578UV PRO", "AnyTone AT-D578UV PLUS"]
+# one radio with two MCUs: boards/d578uv's card and its variant chooser cover both
+variant_of = "d578uv"
 kind = "mobile"
 part_of = "d578uv"
 order = 9

@@ -55,6 +55,7 @@ neighbor on the same platform.
 | `part_of` | string, optional | Another board this one is a build of |
 | `debuglink_aliases` | list, optional | Names older firmware reported on the debug link |
 | `looks` | list of tables, optional | Other bodies the board ships in that look too different to share its picture: `{ id, name, also }`. Each is its own radio card on the site, drawn in `site/static/img/radios/src/<id>-<look id>.svg` (the site build refuses a missing drawing), and links to the board's page. `name` and every entry of `also` (the radios in that body) must be in the board's `also`; the board's own card lists the rest |
+| `variant_of` | string, optional | The board whose radio this board's image is one hardware variant of (its `runs.board` names this board). Only that board is listed on the site, in the README and in the manual's index |
 
 ### [docs]
 
