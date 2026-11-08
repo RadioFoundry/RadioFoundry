@@ -59,8 +59,10 @@ def test_dmr_voice_speech(radio, sdr_bench, pytestconfig):
     assert d["call.rx_late_entries"] == 0, f"the call started late (header missed): {d}"
     if radio.view(["dmr"]).get("dmr.modem_voice") == "1":
         # The modem plays the voice itself (docs/spec/modem-sct.md 7): no frame reaches the voice layer, so the call's
-        # bursts, three frames each, are what the radio shows of it
-        assert d["call.rx_voice_bursts"] == sent // 3, f"voice bursts {d['call.rx_voice_bursts']} != {sent // 3}: {d}"
+        # bursts, three frames each, are what the radio shows of it. The driver paces them by time from the header to
+        # the terminator, so one more or less is timing; a missed terminator would show as dozens more
+        bursts = d["call.rx_voice_bursts"]
+        assert abs(bursts - sent // 3) <= 1, f"voice bursts {bursts}, not {sent // 3} (+-1): {d}"
         assert d["call.rx_lost_frames"] == 0 and d["modem.crc"] == 0, d
         return
     assert d["voice.rx_in"] == sent, f"frames into the voice layer {d['voice.rx_in']} != {sent}: {d}"
