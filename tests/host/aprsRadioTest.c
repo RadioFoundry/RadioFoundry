@@ -872,7 +872,7 @@ static void test_dmr_dst(void)
 	CHECK(dst_after_reload(16777216u) == APRS_DMR_DST_DEFAULT);
 	fuzz_t f;
 	fuzz_init(&f, 0xD57);			// PBT
-	for (int i = 0; i < 200; i++) {
+	for (long i = 0; i < fuzz_iters(200); i++) {
 		uint32_t id = 1u + fuzz_below(&f, 16777215u);
 		CHECK(dst_after_reload(id) == id);
 	}

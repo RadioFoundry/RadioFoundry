@@ -242,7 +242,7 @@ reader needs no table of its own. Turning the GPS setting off empties it.
 Send via (AFSK / DMR / Both): DMR positions go out when the radio is on a DMR channel with the call stack running,
 as a private data call to the destination ID (default 310999). BrandMeister's APRS gateway is a private ID
 "MCC999", with MCC replaced by the master's MCC (310999 for US masters, 204999 for a Dutch one). 310999 works from any master; your own master's prefix
-(<MCC>999) is recommended. The old 5057 was
+(`<MCC>999`) is recommended. The old 5057 was
 retired on 2019-03-01 (<https://news.brandmeister.network/gps-5057-destination/>,
 <https://wiki.brandmeister.network/index.php/APRS>). A radio that already saved its APRS settings keeps the stored
 value: run `aprs set dmr_dst <MCC>999` (US: `aprs set dmr_dst 310999`).
