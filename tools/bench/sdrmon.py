@@ -192,6 +192,10 @@ def _load(path: str, meta: dict, freq_override=None):
             f, p = fm.process(y)
             fs_out.append(f)
             ps_out.append(p)
+    if not fs_out:
+        # A triggered capture that never fired (no carrier rose over the receiver's floor) writes no samples
+        raise SystemExit(f"{path}: empty capture, no samples to analyze (a trigger that never fired: no carrier "
+                         f"over the receiver's floor, or a radio that didn't key)")
     f = np.concatenate(fs_out)
     p = np.concatenate(ps_out)
     delay = (chz.N - chz.hop) // (2 * D) + fm.delay       # channel FIR + matched filter group delays
