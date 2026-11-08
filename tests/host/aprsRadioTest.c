@@ -674,6 +674,30 @@ static void test_host_kiss_nmea(void)
 	CHECK(host_out_has("GQ1TST-7>APZRDF,TCPIP*:!/"));	// compressed, no messaging (no receive path)
 }
 
+// The last try's ack wait ends while the frequency is blocked: the message is over, not pending forever
+static void test_message_ends_blocked(void)
+{
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	CHECK(aprs_send_message("Q1ABC-9", "Hello"));
+	CHECK(wait_start(1, 5000));
+	wait_idle();
+	CHECK(wait_start(2, 35u * 1000u));
+	wait_idle();
+	CHECK(wait_start(3, 65u * 1000u));
+	wait_idle();
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.region = APRS_REGION_CUSTOM;
+	c.freq_hz = 150000000u;		// not amateur: nothing can be sent now
+	aprs_set_cfg(&c, now);
+	run(125u * 1000u);
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(v.block == APRS_NOT_AMATEUR && !v.msg_pending && hw.starts == 3);
+}
+
 static void test_messages(void)
 {
 	reset();
@@ -1241,6 +1265,7 @@ int main(void)
 	test_tx_power_own();
 	test_host_kiss_nmea();
 	test_messages();
+	test_message_ends_blocked();
 	test_dmr_position();
 	test_gps_setting();
 	test_gps_status();
