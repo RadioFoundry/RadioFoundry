@@ -48,6 +48,11 @@ def _setup(radio, pytestconfig, tx=False):
     own = int(radio.view(["dmr"])["dmr.own_id"])
     if own == 0:
         skip("state", "the radio has no DMR ID (dmr.own_id=0)")
+    # Nothing left from the test before: a confirmed packet of ours (a TMS ACK waits for its link ACK, then retries,
+    # about 4 x 3 s) keys the radio over this test's traffic, and it hears nothing while it transmits. data.busy covers
+    # only a transmission; ip.busy the whole confirmed exchange, the waits between tries too
+    radio.wait_for(lambda v: v.get("data.busy", "0") == "0" and v.get("ip.busy", "0") == "0", 20,
+                   sections=("dmr_data", "dmr_ip"), what="the data service idle")
     time.sleep(1.0)
     return freq, cc, own, feats
 
@@ -242,9 +247,11 @@ def test_sms_rx(radio, sdr_bench, pytestconfig):
     assert radio.link.inbox(0)["unread"] is False
     need_radio_tx(radio)
     assert d["data.tms_acks_sent"] == 1 and d["data.tx_failed"] == 0, d
-    # The ACK was the radio's own transmission: named in the data view, and not one that lights the screen
+    # The ACK was the radio's own transmission: named in the data view, and not one that lights the screen. A
+    # confirmed TMS ACK goes as our own IP packet (dmr-data.md, TMS), an unconfirmed one as a reply
     if "data.tx_last_kind" in after:
-        assert after["data.tx_last_kind"] == "reply" and after["data.tx_last_ms"] != before["data.tx_last_ms"], after
+        assert after["data.tx_last_kind"] in ("reply", "ip") and after["data.tx_last_ms"] != before["data.tx_last_ms"], \
+            after
         assert radio.view(["core"]).get("tx_auto") == "1"
     _soft((BENCH_SRC, own) in _heard_headers(heard), "the TMS ACK packet's header to the bench")
 
