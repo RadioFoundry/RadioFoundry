@@ -70,20 +70,23 @@ def test_emergency_alarm_rx(radio, sdr_bench, pytestconfig, em_settings):
     """An emergency alarm CSBK (opcode 0x27, Motorola FID, octet 2 0 = to a group) to the channel's talkgroup: one
     alert of kind alarm from the bench; nothing is sent back."""
     freq, cc, own, tg, feats = _emergency_setup(radio, pytestconfig)
+    # Its own source: an emergency from the same ID within the re-alert window (test_emergency_call sends one just
+    # before in a full run) raises no new alert, dismissed or not
+    src = BENCH_SRC + 8
     radio.link.emergency("dismiss")
     xb = _ext(radio)
     db = radio.data_view()
     with sdr_bench.lease():
-        sdr_bench.csbk(freq, cc, tg, opcode=CSBK_EMERGENCY_ALARM, fid=FID_MOTOROLA, src=BENCH_SRC)
+        sdr_bench.csbk(freq, cc, tg, opcode=CSBK_EMERGENCY_ALARM, fid=FID_MOTOROLA, src=src)
     time.sleep(0.5)
     xa = _ext(radio)
     da = radio.data_view()
     print({k: xa[k] for k in xa if k.startswith("em.alert") or k.startswith("data.emergency")})
     assert xa["data.emergency_alarms_received"] - xb["data.emergency_alarms_received"] >= 1, xa
-    assert xa["em.alert"] == 1 and xa["em.alert_kind"] == "alarm" and xa["em.alert_src"] == BENCH_SRC, xa
+    assert xa["em.alert"] == 1 and xa["em.alert_kind"] == "alarm" and xa["em.alert_src"] == src, xa
     assert xa["em.alert_dst"] == tg and xa["em.alert_group"] == 1, xa
     assert da["data.tx_lists"] == db["data.tx_lists"], "the radio answered an emergency alarm"
-    assert da["data.event"] == "emergency_alarm" and da["data.event_id"] == BENCH_SRC, da
+    assert da["data.event"] == "emergency_alarm" and da["data.event_id"] == src, da
 
 
 @pytest.mark.feature("dmr_emergency")
