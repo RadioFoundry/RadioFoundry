@@ -138,6 +138,8 @@ static struct {
 	uint32_t wake_sent_ms;
 	uint8_t wake_tries;
 	bool wake_listening;	// wake_listen_fn was last told true
+	bool wake_answered;	// the repeater's answer was heard; wake_answer_ms is when
+	uint32_t wake_answer_ms;
 	uint32_t permit_ms;	// the talk permit hold's start (TX_PERMIT)
 	bool permit_done;	// this PTT press had its hold
 	uint32_t tx_start_ms;
@@ -1313,6 +1315,7 @@ static void wake_listen(bool listen)
 static void tx_wakeup(uint32_t now)
 {
 	wake_listen(false);
+	s.wake_answered = false;
 	uint8_t csbk[12];
 
 	dmr_csbk_bs_activation(s.cfg.own_id, csbk);
@@ -1499,6 +1502,12 @@ static void tx_poll(uint32_t now)
 				s.wake_listening = false;	// the transmitter comes off with the phase (radio_sm), not keyed again
 				break;
 			}
+			if (!s.wake_answered) {
+				s.wake_answered = true;
+				s.wake_answer_ms = now;
+			}
+			if (now - s.wake_answer_ms < s.modem->wake_settle_ms)
+				break;	// the modem isn't on the outbound's slots yet
 			wake_listen(false);
 			s.tx = TX_ACCESS;
 			tx_access(now);
