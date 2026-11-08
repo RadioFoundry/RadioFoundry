@@ -34,6 +34,7 @@
 #define DMR_CALL_TX_HEADERS		3	// voice LC headers before burst A
 #define DMR_CALL_TX_TERMINATORS		1
 #define DMR_CALL_FADE_MS		390	// no voice burst on the call for this long ends it (13 slots)
+#define DMR_CALL_RESUME_MS		1500	// the same LC this soon after a call faded is that call, not a new one
 #define DMR_CALL_WAKEUP_ATTEMPTS	3
 #define DMR_CALL_WAKEUP_LISTEN_MS	600	// after each BS_Dwn_Act
 #define DMR_CALL_REPEATER_HOLD_MS	300	// the repeater counts as up this long after its outbound was last seen
@@ -241,6 +242,7 @@ const dmr_call_view_t *dmr_call_view(void);
 // Diagnostics counters (the debug link's GET_DIAG / RESET_COUNTERS; wrap freely)
 typedef struct {
 	uint32_t rx_calls;		// calls heard on our slot (a new voice LC, header or late entry)
+	uint32_t rx_calls_resumed;	// faded calls that came back by late entry within DMR_CALL_RESUME_MS: not in rx_calls
 	uint32_t rx_calls_played;	// ... of those, passed the filters and played
 	uint32_t rx_late_entries;	// ... of those, started from the embedded LC (no header seen)
 	uint32_t rx_voice_bursts;	// voice bursts handed to the sink (3 frames each)

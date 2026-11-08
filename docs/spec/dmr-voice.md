@@ -184,6 +184,10 @@ in two superframes. Playback starts at the burst that completed the LC. A new ta
 passing overs without a header) switches the caller from the embedded LC. The host tests cover joining at burst C,
 the lone burst, the stale LC needing confirmation, a fresh LC taken at once, and a talker change.
 
+A call lost for a moment, with no terminator heard, ends and has to be joined again. Where the modem can prove the
+same call is back, that takes one superframe instead of two, and it counts as one call
+([dmr-modem.md](dmr-modem.md) 2.4).
+
 ## 5. Privacy
 
 Basic privacy (`CONFIG_DMR_PRIVACY`): Motorola BP (key 1-255) and Anytone 16-bit BP (`dmrPrivacy.c`). The keystream

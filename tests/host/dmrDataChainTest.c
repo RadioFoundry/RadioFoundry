@@ -741,8 +741,8 @@ static void test_etsi_sms_out(void)
 	run(1500);
 	CHECK(sms_send_state() == DMR_REQ_SENDING);
 	char text[64];
-	dmrBurst_t b[16];
-	int n = captured(0, b, 16);
+	dmrBurst_t b[32];
+	int n = captured(0, b, 32);
 	CHECK(n >= 3 && decode_bursts(b, n, text, sizeof(text)) && strcmp(text, "Out in ETSI form") == 0);
 	CHECK(dmrDataRxPacket.dst == OTHER_ID && dmrDataRxPacket.src == OUR_ID && dmrDataRxPacket.responseRequested);
 	dmrDataRxReset();

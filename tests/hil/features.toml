@@ -178,7 +178,6 @@ switch = "DMR_UDP_COMPRESS"
 spec = "docs/spec/dmr-data.md"
 
 [feature.dmr_confirmed]
-switch = "DMR_CONFIRMED"
 spec = "docs/spec/dmr-data.md"
 
 [feature.sfr]

@@ -1839,6 +1839,43 @@ class CodecFromRadio(unittest.TestCase):
         self.assertIsNone(codecsave.load(self.board, self.tmp))
         self.assertIsNone(codecsave.load(self.board, tempfile.mkdtemp()))
 
+    def with_decoys(self, n):
+        """n profiles ahead of the real one whose windows don't match this flash, so the read tries n+1 layouts."""
+        real = next(iter(stockfw.PROFILES.values()))
+        decoys = {}
+        for i in range(n):
+            wins = [(a + 0x10 * (i + 1), l, "0" * 64) for a, l, _ in stockfw.windows(real)]
+            decoys["%064d" % i] = dict(real, code=wins[0], tables=wins[1], extra=wins[2:])
+        return mock.patch.dict(stockfw.PROFILES, {**decoys, **stockfw.PROFILES}, clear=True)
+
+    def test_progress_is_one_call_per_window(self):
+        seen = []
+        with self.with_decoys(2):
+            prof, segs = codecsave.read_codec(self.radio(), self.board, lambda: seen.append(1))
+        self.assertEqual(len(seen), 3 * len(segs))	# three layouts tried, the last one matched
+        with self.with_decoys(2):	# no callback: the same answer
+            self.assertEqual(codecsave.read_codec(self.radio(), self.board), (prof, segs))
+
+    def test_read_progress_output(self):
+        def run():
+            out = io.StringIO()
+            args = collections.namedtuple("A", "no_probe port")(False, None)
+            probe = {"board": "MD-380", "codec": self.board.codec.id}
+            radio = self.radio()
+            with self.with_decoys(7), contextlib.redirect_stdout(out), \
+                    mock.patch.object(codecsave, "load", return_value=None), \
+                    mock.patch.object(codecsave, "save", return_value="x"), \
+                    mock.patch.object(debuglink, "find_ports", return_value=["fake"]), \
+                    mock.patch.object(debuglink, "Link", return_value=mock.Mock(read_mem=radio.read_mem, close=lambda: None)):
+                self.assertIsNotNone(cli.get_saved_codec(args, self.board, probe))
+            return out.getvalue()
+
+        lines = run().splitlines()
+        self.assertIn("can take a few minutes", lines[0])
+        self.assertIn("a read", lines[0])
+        self.assertEqual(lines[1], "reading  " + "." * 24)	# 8 layouts of 3 windows, one dot each, on one line
+        self.assertIn("read back from the radio", lines[2])
+
     def test_decision_uses_the_copy(self):
         man = {"codec": {"profile": self.board.codec.id}}
         d = cli.decide_codec(self.board, man, "auto", False, None, None, None, have_saved=True)
