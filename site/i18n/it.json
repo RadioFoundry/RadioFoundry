@@ -264,6 +264,8 @@
  "screen.emergency": "Emergenza",
  "screen.emergency_hold": "Tasto di emergenza premuto: il conto alla rovescia",
  "screen.emergency_sent": "Emergenza inviata",
+ "screen.emergency_mic": "Emergenza: microfono aperto, Indietro lo spegne",
+ "screen.emergency_on": "Ancora in emergenza: come terminarla",
  "screen.factory_reset": "Ripristino di fabbrica",
  "screen.settings_freq_trim": "Trim freq. nelle impostazioni Avanzate",
  "screen.freq_trim": "Trim di frequenza",

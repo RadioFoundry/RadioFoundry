@@ -124,6 +124,7 @@ typedef struct {
 	uint16_t auto_off_min;	// switch off after this long without use, 0 = never (Settings > Power saving)
 	uint16_t unread;	// unread messages
 	const char *home_hint;	// the hint for Home's idle state, built from the board's keys ("OK Menu *Quick #Joe")
+	const char *em_bar;	// our emergency is on: Home's hint row is a red bar saying so and how to end it, else NULL
 	ui_banner_t banner;
 #if CONFIG_DUAL_WATCH
 	ui_dual_t dual;

@@ -445,6 +445,34 @@ msgid "Emergency needs a DMR channel and ID"
 msgstr "Emergencia requiere canal DMR e ID"
 
 #: core/ui/ui_app.c
+msgid "{EMERGENCY  Back: mic off|EMERG  Back mic off}"
+msgstr "{EMERGENCIA  Atrás: micro off|EMERG  Atrás micro off}"
+
+#: core/ui/ui_app.c
+msgid "{EMERGENCY  Hold|EMERG  Hold}"
+msgstr "{EMERGENCIA  Mantén|EMERG  Mantén}"
+
+#: core/ui/ui_app.c
+msgid "to end"
+msgstr "para terminar"
+
+#: core/ui/ui_app.c
+msgid "{EMERGENCY  Back twice: end|EMERG  Back x2 end}"
+msgstr "{EMERGENCIA  Atrás 2 veces: fin|EMERG  Atrás x2 fin}"
+
+#: core/ui/ui_app.c
+msgid "Mic off: still in emergency"
+msgstr "Micro apagado: sigue en emergencia"
+
+#: core/ui/ui_app.c
+msgid "Back again to end emergency"
+msgstr "Atrás otra vez para terminar la emergencia"
+
+#: core/ui/ui_app.c
+msgid "Emergency ended"
+msgstr "Emergencia terminada"
+
+#: core/ui/ui_app.c
 msgid "Emergency: not in this build"
 msgstr "Emergencia: no disponible"
 

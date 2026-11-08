@@ -264,6 +264,8 @@
  "screen.emergency": "Emergency",
  "screen.emergency_hold": "Emergency key held: the countdown",
  "screen.emergency_sent": "Emergency sent",
+ "screen.emergency_mic": "Emergency: the open mic, Back turns it off",
+ "screen.emergency_on": "Still in emergency: how to end it",
  "screen.factory_reset": "Factory reset",
  "screen.settings_freq_trim": "Freq trim in Advanced settings",
  "screen.freq_trim": "Frequency trim",

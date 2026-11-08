@@ -33,6 +33,9 @@
 //   fmrx / fmrxend      an FM signal opens / closes the squelch
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
+//   emstart             our emergency starts without the key (the debug link)
+//   emphase:on          our emergency's alarm and hot mic are over (in emergency until canceled)
+//   emkey:<name>|none   the key whose long press is Emergency (default: the board's key map)
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
 //                       (each also <src>,<name>: the station's name, _ = space, for one not in the contacts)
 //   zoneoffer:<src>[,c] another radio offers its zone "Club net" (,c: one channel); the import and sends always work
@@ -1870,9 +1873,34 @@ bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out)
 	*out = sim_sats[i];
 	return true;
 }
+// Our emergency: on starts its alarm / hot mic (UI_EM_TX); "emphase:on" is their end (UI_EM_ON); mic off does the
+// same. "emkey:<name>|none" names the key whose long press is Emergency (Settings > Keys), default the board's
 static bool emergency_on;
-bool ui_svc_emergency(bool on) { emergency_on = on; return true; }
+static uint8_t em_phase;
+static unsigned em_mic_offs;
+static char em_key[8];
+static bool em_key_set;
+bool ui_svc_emergency(bool on) { emergency_on = on; em_phase = on ? UI_EM_TX : UI_EM_OFF; return true; }
 bool ui_svc_emergency_active(void) { return emergency_on; }
+uint8_t ui_svc_emergency_phase(void) { return emergency_on ? em_phase : UI_EM_OFF; }
+void ui_svc_emergency_mic_off(void)
+{
+	em_mic_offs++;
+	if (emergency_on && em_phase == UI_EM_TX)
+		em_phase = UI_EM_ON;
+}
+const char *ui_svc_key_name_long(uint8_t action)
+{
+	if (action != ACT_EMERGENCY)
+		return NULL;
+	if (em_key_set)
+		return em_key[0] ? em_key : NULL;
+	for (uint8_t r = 0; r < board.side_key_count && board.side_key_names != NULL; r++)
+		for (uint8_t i = 0; i < board.keymap_len; i++)
+			if (board.keymap[i].bit == board.side_keys[r] && board.keymap[i].long_action == ACT_EMERGENCY)
+				return board.side_key_names[r];
+	return NULL;
+}
 bool ui_svc_factory_reset(void) { return true; }
 
 // The crash log (ui_svc.h): "crash:on" a record from before this start nobody has seen, "crash:ask" / "crash:auto"
@@ -2003,6 +2031,9 @@ static void advance(uint32_t ms)
 void sim_reset(const sim_geom_t *g, sim_map_t map)
 {
 	emergency_on = false;
+	em_phase = UI_EM_OFF;
+	em_mic_offs = 0;
+	em_key_set = false;
 	memset(&key_hold, 0, sizeof key_hold);
 	sim_foreign = sim_held = false;
 	disp.width = g->w;
@@ -2383,6 +2414,8 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "vibes") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.vibes);
 	else if (strcmp(key, "vibe") == 0) snprintf(got, sizeof got, "%u", sim_rec.last_vibe);	// ui_vibe_t
 	else if (strcmp(key, "emerg") == 0) snprintf(got, sizeof got, "%u", emergency_on);	// our own emergency
+	else if (strcmp(key, "emphase") == 0) snprintf(got, sizeof got, "%u", ui_svc_emergency_phase());
+	else if (strcmp(key, "micoffs") == 0) snprintf(got, sizeof got, "%u", em_mic_offs);
 	else if (strcmp(key, "shows") == 0) {	// a text on the screen (as drawn, after fitting) contains the value
 		got[0] = 0;
 		for (int i = 0; i < live_n; i++) {
@@ -2562,6 +2595,27 @@ static bool run_token(char *t, char *err, size_t len)
 		int32_t sec = atoi(arg);
 		ui_svc_setting_set(UI_SET_AUTO_LOCK_S, sec);
 		ui_apply_setting(UI_SET_AUTO_LOCK_S, sec);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "emstart") == 0) {	// our emergency started without the key (the debug link)
+		ui_svc_emergency(true);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "emphase") == 0 && arg != NULL) {	// the alarm and hot mic are over: in emergency until canceled
+		if (strcmp(arg, "on") != 0) {
+			snprintf(err, len, "emphase: expected on, got %s", arg);
+			return false;
+		}
+		if (emergency_on)
+			em_phase = UI_EM_ON;
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "emkey") == 0 && arg != NULL) {	// the key whose long press is Emergency, or none
+		em_key_set = true;
+		snprintf(em_key, sizeof em_key, "%s", strcmp(arg, "none") == 0 ? "" : arg);
 		advance(200);
 		return true;
 	}

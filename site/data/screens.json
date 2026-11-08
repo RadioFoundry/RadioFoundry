@@ -248,6 +248,18 @@
     "DMR_EMERGENCY"
    ]
   },
+  "emergency_mic": {
+   "group": "calls",
+   "needs": [
+    "DMR_EMERGENCY"
+   ]
+  },
+  "emergency_on": {
+   "group": "calls",
+   "needs": [
+    "DMR_EMERGENCY"
+   ]
+  },
   "banner_call_alert": {
    "group": "calls",
    "needs": [

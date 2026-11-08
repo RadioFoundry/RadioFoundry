@@ -1558,6 +1558,8 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 	}
 }
 
+static void home_bottom(const ui_state_t *s, const char *hint);
+
 static const char *home_hint(const radio_view_t *v, const ui_state_t *s)
 {
 	if (v->state == RS_TX_DENIED)
@@ -1683,7 +1685,7 @@ void ui_draw_home(const radio_view_t *v, const ui_state_t *s)
 		draw_activity(v, s);
 	}
 	ui_draw_banner(s);
-	ui_draw_bottom(s, home_hint(v, s));
+	home_bottom(s, home_hint(v, s));
 }
 
 #if CONFIG_DUAL_WATCH
@@ -2179,9 +2181,27 @@ void ui_draw_home_dual(const radio_view_t *v, const ui_state_t *s)
 		dual_activity(v, s, ay, ft->act ? (L->hint_y - ay) / sm->h : 0);
 	}
 	ui_draw_banner(s);
-	ui_draw_bottom(s, dual_hint(v, s));
+	home_bottom(s, dual_hint(v, s));
 }
 #endif
+
+// Home in emergency (s->em_bar): the hint row red, hints on or off, so the radio says it is still in emergency and
+// how to end it (docs/spec/dmr-emergency.md 5.1). A toast still goes over it. 1 bpp: inverted
+static void home_bottom(const ui_state_t *s, const char *hint)
+{
+	if (s->em_bar == NULL || s->toast != NULL) {
+		ui_draw_bottom(s, hint);
+		return;
+	}
+	const ui_layout_t *L = &ui_layout;
+	const font_t *f = L->small;
+	int w = gfx_width(), y0 = L->hint_y - 1;
+	bool mono = gfx_bpp() == 1;
+	char fit[64];
+	gfx_fill(0, y0, w, gfx_height() - y0, mono ? ui_col.fg : ui_col.tx);
+	gfx_text_fit(f, s->em_bar, w - 2, fit, sizeof fit);
+	gfx_text(f, (w - gfx_text_width(f, fit)) / 2, L->hint_y, fit, mono ? ui_col.bg : ui_col.fg);
+}
 
 void ui_draw_bottom(const ui_state_t *s, const char *hint)
 {

@@ -1113,6 +1113,21 @@ static void key_apply(void)
 	input_set_keymap(map);
 }
 
+const char *ui_svc_key_name_long(uint8_t action)
+{
+	keymap_entry_t map[INPUT_KEYS_MAX];
+	uint8_t n = board.keymap_len > INPUT_KEYS_MAX ? INPUT_KEYS_MAX : board.keymap_len;
+	keyassign_build(board.keymap, n, board.side_keys, board.side_key_count, key_slots, map);
+	for (uint8_t i = 0; i < n; i++) {
+		if (map[i].long_action != action)
+			continue;
+		for (uint8_t r = 0; r < board.side_key_count && board.side_key_names != NULL; r++)
+			if (board.side_keys[r] == map[i].bit)
+				return board.side_key_names[r];
+	}
+	return NULL;
+}
+
 static void key_load(void)
 {
 	key_serial = codeplug_serial();

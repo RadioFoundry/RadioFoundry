@@ -264,6 +264,8 @@
  "screen.emergency": "Emergencia",
  "screen.emergency_hold": "Tecla de emergencia pulsada: la cuenta atrás",
  "screen.emergency_sent": "Emergencia enviada",
+ "screen.emergency_mic": "Emergencia: micro abierto, Atrás lo apaga",
+ "screen.emergency_on": "Sigue en emergencia: cómo terminarla",
  "screen.factory_reset": "Restablecimiento de fábrica",
  "screen.settings_freq_trim": "Ajuste fino de frecuencia en Ajustes avanzados",
  "screen.freq_trim": "Ajuste fino de frecuencia",

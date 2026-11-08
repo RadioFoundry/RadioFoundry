@@ -1052,8 +1052,12 @@ static bool talk_step(int dir)
 }
 #endif
 
+static bool em_back(void);
+
 bool ui_home_key(const input_event_t *ev)
 {
+	if (CONFIG_DMR_EMERGENCY && ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS && em_back())
+		return true;
 #if CONFIG_DUAL_WATCH
 	if (ui_dual_home_key(ev))
 		return true;
@@ -2036,6 +2040,67 @@ bool ui_em_hold_key(const input_event_t *ev)
 }
 #endif
 
+// Home's emergency bar (ui_state_t.em_bar): what ends the hot mic, or the emergency. The key named is the one whose
+// long press is Emergency now (Settings > Keys can move it); with none (Key off, or no key has it) BACK twice ends it
+static char em_bar_text[64];
+static uint32_t em_back_at;	// the first of the two BACK presses (0: none)
+
+static const char *em_key_name(void)
+{
+	return em.key_off ? NULL : ui_svc_key_name_long(ACT_EMERGENCY);
+}
+
+static void __attribute__((noinline)) em_bar_tick(void)
+{
+	uint8_t ph = ui_svc_emergency_phase();
+	const char *key = ph == UI_EM_ON ? em_key_name() : NULL;
+	char t[sizeof em_bar_text];
+	sbuf_t b;
+	sb_init(&b, t, sizeof t);
+	if (ph == UI_EM_TX) {
+		sb_str(&b, TR(TEXT_ALT_OPEN "EMERGENCY  Back: mic off" TEXT_ALT_NEXT "EMERG  Back mic off" TEXT_ALT_CLOSE));
+	} else if (ph == UI_EM_ON && key != NULL) {
+		sb_str(&b, TR(TEXT_ALT_OPEN "EMERGENCY  Hold" TEXT_ALT_NEXT "EMERG  Hold" TEXT_ALT_CLOSE));
+		sb_str(&b, " ");
+		sb_str(&b, key);
+		sb_str(&b, " ");
+		sb_str(&b, TR("to end"));
+	} else if (ph == UI_EM_ON) {
+		sb_str(&b, TR(TEXT_ALT_OPEN "EMERGENCY  Back twice: end" TEXT_ALT_NEXT "EMERG  Back x2 end" TEXT_ALT_CLOSE));
+	}
+	if (em_back_at != 0 && (ph != UI_EM_ON || now - em_back_at >= TOAST_MS))
+		em_back_at = 0;
+	if (strcmp(t, em_bar_text) != 0) {
+		memcpy(em_bar_text, t, sizeof t);
+		dirty = true;
+	}
+	ui_st.em_bar = em_bar_text[0] ? em_bar_text : NULL;
+}
+
+// BACK on Home in emergency: the hot mic off (the emergency goes on), or with no key to end it, twice ends it
+static bool __attribute__((noinline)) em_back(void)
+{
+	uint8_t ph = ui_svc_emergency_phase();
+	if (ph == UI_EM_TX) {
+		ui_svc_emergency_mic_off();
+		ui_toast(TR("Mic off: still in emergency"));
+		return true;
+	}
+	if (ph != UI_EM_ON || em_key_name() != NULL)
+		return false;
+	if (em_back_at == 0) {
+		em_back_at = now | 1u;
+		ui_toast(TR("Back again to end emergency"));
+		return true;
+	}
+	em_back_at = 0;
+	ui_svc_emergency(false);
+	if (!em.silent)
+		ui_svc_beep(UI_BEEP_EM_CANCELED);
+	ui_toast(TR("Emergency ended"));
+	return true;
+}
+
 static bool emergency_key(const input_event_t *ev)
 {
 	if (ev->action != ACT_EMERGENCY)
@@ -2450,6 +2515,8 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ui_pop();
 	}
 	em_tick();
+	if (CONFIG_DMR_EMERGENCY)
+		em_bar_tick();
 	if (ui_st.banner.kind != UI_BANNER_NONE && !ui_st.banner.hold && (int32_t)(now - ui_st.banner.until_ms) >= 0) {
 		ui_st.banner.kind = UI_BANNER_NONE;
 		dirty = true;

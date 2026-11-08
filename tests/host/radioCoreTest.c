@@ -2504,6 +2504,30 @@ static void test_dmr_emergency(void)
 	dmr_emergency_cancel();
 	run(20);
 
+	// Mic off (Home's BACK, ui_svc_emergency_mic_off): the hot mic unkeys at once, the radio stays in emergency. In
+	// any other state it changes nothing
+	es.hot_mic_s = 10;
+	dmr_emergency_set_settings(&es);
+	run(20);
+	CHECK(ui_svc_emergency_phase() == UI_EM_OFF);
+	ui_svc_emergency_mic_off();
+	run(20);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_IDLE);
+	CHECK(dmr_emergency_start());
+	run(300);
+	CHECK(sm.em_keyed && sm.view.state == RS_TX && ui_svc_emergency_phase() == UI_EM_TX);
+	ui_svc_emergency_mic_off();
+	run(20);
+	CHECK(!sm.em_keyed && dmr_emergency_state() == DMR_EMERGENCY_ACTIVE && ui_svc_emergency_phase() == UI_EM_ON);
+	run(1000);
+	CHECK(sm.view.state == RS_IDLE);
+	ui_svc_emergency_mic_off();
+	run(20);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_ACTIVE && !sm.em_keyed);
+	dmr_emergency_cancel();
+	run(20);
+	CHECK(ui_svc_emergency_phase() == UI_EM_OFF);
+
 	// Heard: an emergency call on a group we listen to raises the alert and its tone once
 	dmr_emergency_stats_t s0, s1;
 	dmr_emergency_get_stats(&s0);

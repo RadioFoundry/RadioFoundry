@@ -37,6 +37,18 @@ bool ui_svc_emergency_active(void)
 	return st == DMR_EMERGENCY_ALARM || st == DMR_EMERGENCY_HOT_MIC || st == DMR_EMERGENCY_ACTIVE;
 }
 
+uint8_t ui_svc_emergency_phase(void)
+{
+	dmr_emergency_state_t st = dmr_emergency_state();
+	return st == DMR_EMERGENCY_ALARM || st == DMR_EMERGENCY_HOT_MIC ? UI_EM_TX : st == DMR_EMERGENCY_ACTIVE ? UI_EM_ON :
+		UI_EM_OFF;
+}
+
+void ui_svc_emergency_mic_off(void)
+{
+	dmr_emergency_mic_off();
+}
+
 void ui_svc_emergency_dismiss(void)
 {
 	dmr_emergency_dismiss();

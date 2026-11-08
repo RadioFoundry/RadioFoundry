@@ -42,10 +42,17 @@ over SENT on a red screen with its own two-tone sound, then hold again to cancel
 | Hold longer, then let go before the end | Nothing is sent. The previous screen comes back |
 | Hold, then press **Back** | The same: nothing is sent |
 | Hold to the end | The emergency starts: SENT on a red screen |
+| Press **Back** on Home while the radio transmits for the emergency | The open mic stops. The radio stays in emergency |
 | Hold again, during an emergency | "HOLD TO CANCEL" counts down; at the end CANCELED. Let go early and it stays on |
+| Press **Back** twice on Home, when no key is set to Emergency | The emergency ends |
+
+Until you cancel it, Home's bottom row is red and says so: "EMERGENCY  Back: mic off" while the radio transmits,
+then "EMERGENCY  Hold <key> to end", with the name of whichever key holds Emergency in Settings > Keys. With no key set
+to Emergency it says "Back twice: end".
 
 <img src="../ux/screens/160x120i5/emergency_hold.png" width="200" alt="The countdown while the emergency key is held">
 <img src="../ux/screens/160x120i5/emergency_sent.png" width="200" alt="SENT, after the hold">
+<img src="../ux/screens/160x120i5/emergency_on.png" width="200" alt="Home in emergency: the red bar says how to end it">
 
 Where it can't start (see below) the radio says "Emergency needs a DMR channel and ID". The red LED lights while the
 alarm and the hot mic transmit, as for any transmission.

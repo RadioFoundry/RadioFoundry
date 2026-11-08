@@ -190,6 +190,17 @@ bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out);	// false past the last
 bool ui_svc_emergency(bool on);
 // Our own emergency is going (alarm, hot mic or in emergency until canceled): the key then cancels it
 bool ui_svc_emergency_active(void);
+// Our emergency's phase for Home's emergency bar: UI_EM_OFF, UI_EM_TX (the alarm or the hot mic), UI_EM_ON (in
+// emergency until canceled). Weak: UI_EM_OFF
+#define UI_EM_OFF	0
+#define UI_EM_TX	1
+#define UI_EM_ON	2
+uint8_t ui_svc_emergency_phase(void);
+// The hot mic ends now (during the alarm: it doesn't start); the emergency goes on. Weak no-op
+void ui_svc_emergency_mic_off(void);
+// The name printed on the radio ("SK3") of the reassignable key whose long press is action in the key map in use
+// (Settings > Keys), NULL when no such key has one. Weak: NULL
+const char *ui_svc_key_name_long(uint8_t action);
 // dmr-ext: a new emergency alert heard becomes UI_EV_EMERGENCY (ok: an alarm, else a call); run from ui_svc_poll
 void ui_svc_emergency_poll(void);
 // The emergency screen was acknowledged: the received alert is dismissed (weak no-op without dmr-ext)
