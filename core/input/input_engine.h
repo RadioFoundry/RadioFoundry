@@ -18,10 +18,19 @@ static inline uint32_t input_long_threshold(uint8_t long_action, uint32_t long_m
 	return long_action == ACT_EMERGENCY ? INPUT_EMERGENCY_SHOW_MS : long_ms;
 }
 
-// A long action that needs the end of the hold too: after its LONG, the release sends it as GESTURE_UP, value 1
+// A long action that needs the end of the hold too: after its LONG, the release sends it as GESTURE_UP. Value 1: held
+// past input_press_window; value 2: let go before it, and the key's short press follows (a plain key's, not a raw-edge
+// one's), so a shared key keeps its press (the DM-1701's Power level)
 static inline bool input_long_up(uint8_t long_action)
 {
 	return long_action == ACT_EMERGENCY;
+}
+
+// How long after the press a release of such a key is still its short press: the hold time before the countdown
+static inline uint32_t input_press_window(uint8_t long_action, uint32_t long_ms)
+{
+	(void)long_action;
+	return long_ms > INPUT_EMERGENCY_PRESS_MS ? long_ms : INPUT_EMERGENCY_PRESS_MS;
 }
 
 typedef void (*input_emit_t)(const input_event_t *ev, void *ctx);

@@ -16,6 +16,7 @@
 #include "ui/ui_nav.h"
 #include "config.h"
 #include "fuzz.h"
+#include "input/input_engine.h"
 
 static int fails, flows_run;
 
@@ -934,6 +935,9 @@ static const flow_t flows_em[] = {
 	  "shows=HOLD_TO_CANCEL emerg=1", 1, false },
 	{ "E emergency: let go early keeps it on", "hold:emerg,3000 wait:3000", "hold:emerg,2950", "emerg=1 screen=home", 1,
 	  false },
+	{ "E emergency: let go at 1.45 s is still the key's press", "", "hold:emerg,1450", "power=5 emerg=0 screen=home", 1,
+	  false },
+	{ "E emergency: let go at 1.5 s, no press", "", "hold:emerg,1500", "power=4 emerg=0 screen=home", 1, false },
 	{ "E emergency: a long press of 0.7 s sends nothing", "", "long:emerg wait:5000", "emerg=0 screen=home", 1, false },
 	// Settings > Keys > Emergency, the last row of Keys
 	{ "E emergency settings page", "", "ok 7 8 up ok",
@@ -1399,6 +1403,7 @@ static bool em_run(const sim_geom_t *g, const em_case_t *c, char *why, size_t le
 	}
 	memset(em_beeps, 0, sizeof em_beeps);
 	uint32_t vibes0 = sim_rec.vibes;
+	uint8_t power0 = sim_view()->power;
 	sim_set_beep_hook(em_beep);
 	snprintf(script, sizeof script, "hold:emerg,%u", c->ms);
 	bool ok = sim_run(script, err, sizeof err);
@@ -1416,6 +1421,14 @@ static bool em_run(const sim_geom_t *g, const em_case_t *c, char *why, size_t le
 			ticks += k * 1000u <= c->ms;
 	}
 	unsigned outcome = done && !c->silent;
+	// Let go within the press window (input_press_window: 1.5 s) the key's press steps the power, unless the hold
+	// already acted (a 1 s hold)
+	bool stepped = c->ms < input_press_window(ACT_EMERGENCY, 700) && !done;
+	if ((sim_view()->power != power0) != stepped) {
+		snprintf(why, len, "power %u -> %u: the key's press %s", power0, sim_view()->power,
+			 stepped ? "missing" : "not expected");
+		return false;
+	}
 	bool on = c->active != done;
 	// The outcome stays up 2.5 s from the end of the hold (held or not); the sim's last tick is 50 ms after the release
 	bool up = done && c->ms + 50u - c->hold_s * 1000u < 2500u;
@@ -1457,8 +1470,13 @@ static void em_hold_checks(void)
 				if (!em_run(&sim_geoms[g], &c[i], why, sizeof why))
 					em_fail(&sim_geoms[g], &c[i], why);
 		}
+		// The show edge (0.25 / 0.3 s) and the press window's (1.45 / 1.5 s), each start and cancel, a 1 s hold that
+		// acts inside the window (no press after it)
 		const em_case_t edge[] = {
 			{ 3, false, false, false, 250 }, { 3, false, false, false, 300 },
+			{ 3, false, false, false, 1450 }, { 3, false, false, false, 1500 },
+			{ 3, false, false, true, 1450 }, { 3, false, false, true, 1500 }, { 3, true, false, false, 1450 },
+			{ 1, false, false, false, 1450 }, { 1, false, false, false, 950 },
 			{ 3, true, false, false, 3000 }, { 3, false, true, false, 3000 }, { 3, true, false, true, 3000 },
 			{ 3, false, true, true, 3000 },
 		};

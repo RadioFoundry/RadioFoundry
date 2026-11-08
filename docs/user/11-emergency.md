@@ -38,7 +38,8 @@ red screen with its own two-tone sound, then hold again to cancel.
 | You | The radio |
 |---|---|
 | Press the key shortly (under 0.3 s) | The key's own role: the next power level. No countdown |
-| Hold, then let go before the end | Nothing is sent. The previous screen comes back |
+| Let go before 1.5 s | Still the key's own role: the countdown closes and the power level steps |
+| Hold longer, then let go before the end | Nothing is sent. The previous screen comes back |
 | Hold, then press **Back** | The same: nothing is sent |
 | Hold to the end | The emergency starts: SENT on a red screen |
 | Hold again, during an emergency | "HOLD TO CANCEL" counts down; at the end CANCELED. Let go early and it stays on |

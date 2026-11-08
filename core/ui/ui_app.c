@@ -2026,7 +2026,8 @@ void ui_em_hold_draw(void)
 	ui_draw_em_hold(view, &ui_st, &h);
 }
 
-// BACK stops the countdown (nothing sent) or closes the outcome, as OK does; other keys do nothing here
+// BACK stops the countdown (nothing sent) or closes the outcome, as OK does; other keys (the emergency key's own press
+// after a 1 s hold) do nothing here
 bool ui_em_hold_key(const input_event_t *ev)
 {
 	if (ev->gesture == GESTURE_PRESS && (ev->action == ACT_BACK || (ev->action == ACT_SELECT && !em.holding)))
@@ -2039,7 +2040,10 @@ static bool emergency_key(const input_event_t *ev)
 {
 	if (ev->action != ACT_EMERGENCY)
 		return false;
-	if (ev->gesture == GESTURE_UP) {	// let go: before the end nothing is sent; the outcome stays up
+	if (ev->gesture == GESTURE_UP) {
+		// Let go: before the end nothing is sent; the outcome stays up. Value 2: early enough to be the key's press,
+		// which follows: the countdown goes without a trace and the press reaches the screen under it. After a short
+		// hold (1 s) that already acted, the outcome screen is on top and takes the press (ui_em_hold_key)
 		if (em.holding)
 			em_stop();
 		return true;

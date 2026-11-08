@@ -1942,7 +1942,7 @@ static void add_message(uint32_t src, const char *text)
 
 static int presses;
 // A key held by hold:<key>,<ms>,held until release:<key>
-static struct { uint8_t action, shrt; bool down, long_sent; } key_hold;
+static struct { uint8_t action, shrt; bool down, long_sent; uint32_t t_down; } key_hold;
 static sim_map_t cur_map;
 static const char *shot_dir, *shot_prefix;
 int sim_presses(void) { return presses; }
@@ -2141,6 +2141,30 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	{ "5", ACT_DIGIT_5 }, { "6", ACT_DIGIT_6 }, { "7", ACT_DIGIT_7 }, { "8", ACT_DIGIT_8 }, { "9", ACT_DIGIT_9 },
 };
 
+static bool on_map(uint8_t action, bool lng);
+
+// The short action of the key whose long action this is (itself if none)
+static uint8_t short_of(uint8_t a)
+{
+	for (int k = 0; k < board.keymap_len; k++)
+		if (board.keymap[k].long_action == a)
+			return board.keymap[k].short_action;
+	return a;
+}
+
+// The release, held_ms after the press, of a key whose long action needs it: its UP, and within the press window its
+// short press after it (core/input/input_engine.c)
+static void long_up(uint8_t a, uint32_t held_ms)
+{
+	bool press = held_ms < input_press_window(a, LONG_MS);
+	input_event_t ev = { a, GESTURE_UP, (int8_t)(press ? 2 : 1) };
+	ui_app_key(&ev);
+	if (press && short_of(a) != ACT_NONE) {
+		ev = (input_event_t){ short_of(a), GESTURE_PRESS, 0 };
+		ui_app_key(&ev);
+	}
+}
+
 static bool on_map(uint8_t action, bool lng)
 {
 	if ((action >= ACT_POWER && action <= ACT_VOLUME) || action == ACT_VFO_TOGGLE || action == ACT_DUAL_WATCH ||
@@ -2210,11 +2234,8 @@ static bool press(const char *name, bool lng, char *err, size_t len)
 		advance(lng ? LONG_MS : PRESS_MS / 2);
 		ui_app_key(&ev);
 		advance(PRESS_MS / 2);
-		if (lng && input_long_up(a)) {
-			ev.gesture = GESTURE_UP;
-			ev.value = 1;
-			ui_app_key(&ev);
-		}
+		if (lng && input_long_up(a))
+			long_up(a, LONG_MS);
 		return true;
 	}
 	snprintf(err, len, "unknown key %s", name);
@@ -2226,14 +2247,13 @@ static bool press(const char *name, bool lng, char *err, size_t len)
 static void hold_release(void)
 {
 	input_event_t ev = { key_hold.shrt, GESTURE_PRESS, 0 };
-	if (key_hold.long_sent) {
-		ev = (input_event_t){ key_hold.action, GESTURE_UP, 1 };
-		if (!input_long_up(key_hold.action))
-			ev.action = ACT_NONE;
-	}
 	key_hold.down = false;
-	if (ev.action != ACT_NONE)
+	if (key_hold.long_sent) {
+		if (input_long_up(key_hold.action))
+			long_up(key_hold.action, now_ms - key_hold.t_down);
+	} else if (ev.action != ACT_NONE) {
 		ui_app_key(&ev);
+	}
 	advance(TICK_MS);
 }
 
@@ -2260,13 +2280,9 @@ static bool hold_key(const char *arg, char *err, size_t len)
 	}
 	uint8_t a = keys[i].action;
 	key_hold.action = a;
-	key_hold.shrt = a;	// the press: the short action of the key whose long action this is
-	for (int k = 0; k < board.keymap_len; k++)
-		if (board.keymap[k].long_action == a) {
-			key_hold.shrt = board.keymap[k].short_action;
-			break;
-		}
+	key_hold.shrt = short_of(a);	// the press: the short action of the key whose long action this is
 	key_hold.down = true;
+	key_hold.t_down = now_ms;
 	key_hold.long_sent = false;
 	presses++;
 	uint32_t thr = input_long_threshold(a, LONG_MS);

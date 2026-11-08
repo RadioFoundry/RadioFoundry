@@ -357,7 +357,7 @@ and `keyassignTest` checks every board's key map for it. The key is a key map en
 
 EMERGENCY is hold-to-activate (principles P2): a key whose long action is EMERGENCY gives it at `INPUT_EMERGENCY_SHOW_MS`
 (0.3 s) whatever the long press time (`input_long_threshold`, core/input), and its release after that as `GESTURE_UP`
-value 1 (`input_long_up`); the UI counts the hold down on the `emergency-hold` screen and acts at its end (Settings >
+value 1 (`input_long_up`; value 2 and the key's short press after it when let go within 1.5 s, `input_press_window`); the UI counts the hold down on the `emergency-hold` screen and acts at its end (Settings >
 Keys > Emergency > Hold, 3 s by default; `dmr-emergency.md` 5.1). Which key carries it is the board's key map
 (`board.keymap`): for example a side key's long action in builds with `CONFIG_DMR_EMERGENCY` (else long USER_3 as above), or a dedicated SOS key; the short press stays USER_3. A hold to the end toggles:
 SENT (then hold again to cancel), CANCELED (`ui_svc_emergency_active` reads the radio core's

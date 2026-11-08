@@ -11,6 +11,7 @@
 #define INPUT_LONG_MS		600
 #define INPUT_REPEAT_MS		120
 #define INPUT_EMERGENCY_SHOW_MS	300	// EMERGENCY's long press: the hold countdown shows (a shorter press is the key's press)
+#define INPUT_EMERGENCY_PRESS_MS	1500	// ... let go before this (or the long press time, if longer): still the key's press
 
 void input_start(void);
 // Wait up to wait_ms for the next event (0 = don't wait). PTT and MONITOR edges also go straight to the radio core
