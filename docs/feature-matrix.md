@@ -64,7 +64,7 @@ is `tools/bringup.py list --radio <id>`.
 | `key_assign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `scan` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass |
 | `dual_watch` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass |
-| `beep` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
+| `beep` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | fail |
 | `vibrate` | off | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ |
 | `gps` | pass (seed) | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded |
 | `dmr_data_rx` | not recorded | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | pass |
