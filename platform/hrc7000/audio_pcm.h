@@ -33,6 +33,13 @@ bool hrc_audio_pcm_spk_pending(void);
 void hrc_audio_pcm_gate_stats(uint32_t *closings, uint32_t *late, uint32_t *ring_on);
 void hrc_audio_pcm_gate_reset(void);
 
+// The board's hal_audio_t: hrc_audio_pcm, or the board's own that adds its hooks (speaker_warm, speaker_lead_ms):
+// { HRC_AUDIO_PCM_OPS, .speaker_warm = ..., .speaker_hang_s = ... }
+bool hrc_audio_pcm_start(audio_block_cb_t cb, void *ctx);
+void hrc_audio_pcm_stop(void);
+void hrc_audio_pcm_speaker(bool on);
+#define HRC_AUDIO_PCM_OPS	.start = hrc_audio_pcm_start, .stop = hrc_audio_pcm_stop, \
+				.speaker_pcm = hrc_audio_pcm_speaker, .spk_pending = hrc_audio_pcm_spk_pending
 extern const hal_audio_t hrc_audio_pcm;
 
 // Block, overrun and underrun counters for diagnostics (underruns: the speaker queue ran out with the FIFO taking

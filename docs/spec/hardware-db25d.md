@@ -137,6 +137,13 @@ gain (GCR_DACL, `hrc7000_volume_db`): 0 dB at the default step 8, 3 dB less a st
 `DB25D_PCM_VOL_TOP_DB` (12 dB) at step 16; step 0 keeps the amplifier off. The radio sets `volume_pcm`, so beeps play at
 `beep_level` and the volume scales them on the way out. The dB at the speaker is not measured (unverified).
 
+Switching the amplifier on (PTA24 low) pops, whatever the order of the other speaker pins (measured). So the board
+gives the radio core an amplifier hang (`hal_audio_t.speaker_warm`, `speaker_hang_s` 5 s, `radio-features.md` 4):
+after a key, PTT, reception or beep, PTA24 stays low with the source muted (PTB15 high) for 5 s, and the beeps and
+calls in that time play without the enable's pop. Only the first sound after a quiet spell still pops. On the radio
+the debug link's `beep.warm` went to 1 on a key and on a beep and back to 0 after 5 s, and the warm beeps carried no
+pop at the amplifier's turn-on (measured; `test_speaker_beeps`, a microphone at the speaker).
+
 The front keys are power (PTB12), P1, P2, P3, VOL/SQL, TONE/T.SEL, B/E and the encoder push; there's no separate
 Menu/OK key (measured). Their matrix positions, found by pressing each key on the radio, with the key code the vendor firmware uses
 for the same position:

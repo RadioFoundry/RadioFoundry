@@ -334,7 +334,7 @@ static void isr_register(void)
 	hrc_irq_restore(s);
 }
 
-static bool start(audio_block_cb_t cb, void *ctx)
+bool hrc_audio_pcm_start(audio_block_cb_t cb, void *ctx)
 {
 	if (task == NULL) {
 		isr_register();
@@ -357,7 +357,7 @@ static bool start(audio_block_cb_t cb, void *ctx)
 	return true;
 }
 
-static void stop(void)
+void hrc_audio_pcm_stop(void)
 {
 	uint32_t s = hrc_irq_save();	// the meter's interrupt decides on the same state
 	running = false;
@@ -377,7 +377,7 @@ static void stop(void)
 // Speaker PCM: the modem plays the CPU's samples instead of its FM demodulator (the board's hook owns the bits).
 // Callers repeat the call every block (beep.c), from inside the block callback, so the queue starts empty only when
 // the route turns on: emptying it on every call threw away the block being queued and the one playing (choppy beeps)
-static void speaker_pcm(bool on)
+void hrc_audio_pcm_speaker(bool on)
 {
 	if (on != spk_routed) {
 		spk_drop();
@@ -389,12 +389,7 @@ static void speaker_pcm(bool on)
 	gate_check();
 }
 
-const hal_audio_t hrc_audio_pcm = {
-	.start = start,
-	.stop = stop,
-	.speaker_pcm = speaker_pcm,
-	.spk_pending = hrc_audio_pcm_spk_pending,
-};
+const hal_audio_t hrc_audio_pcm = { HRC_AUDIO_PCM_OPS };
 
 void hrc_audio_pcm_stats(uint32_t *b, uint32_t *ov, uint32_t *un)
 {
