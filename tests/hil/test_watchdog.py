@@ -62,9 +62,17 @@ def test_watchdog_resets(radio, kind):
     # The feeds stop 100 ms after the reply (WDT_TEST_DELAY_MS), so the reset comes no sooner than that plus the timeout.
     # A radio that answers at once on a direct UART otherwise still answers from before the reset
     time.sleep(timeout_s + 0.5)
-    radio.reconnect(timeout_s + 30.0, "the watchdog reset")
-    back_s = time.monotonic() - t0
-    up_after = as_int(radio.view(["link"])["uptime_ms"])
+    # The timeout is nominal: an RC-clocked watchdog may run up to a third longer (a GD32's IRC40K allows 30 kHz). A
+    # starved radio still answers until the reset, so it is asked again until its uptime shows the restart
+    deadline = t0 + timeout_s * 1.4 + 2.0
+    while True:
+        radio.reconnect(timeout_s + 30.0, "the watchdog reset")
+        back_s = time.monotonic() - t0
+        up_after = as_int(radio.view(["link"])["uptime_ms"])
+        if up_after < back_s * 1000.0 or time.monotonic() > deadline:
+            break
+        radio.link.close()
+        time.sleep(0.5)
     # Up for less than the time since the test started: it restarted. (Against up_before alone, a test run right after
     # the previous one's restart reads a radio that restarted as one that didn't.)
     assert up_after < back_s * 1000.0, ("the radio didn't restart", up_before, up_after, back_s)
