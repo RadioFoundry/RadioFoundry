@@ -970,7 +970,7 @@ class StockLibrary(unittest.TestCase):
 
     def test_md9600_board(self):
         b = boards.get("md9600")
-        self.assertFalse(b.releasable)
+        self.assertTrue(b.releasable)
         self.assertTrue(b.keep_codec_supported)		# the application has sectors 3-7, the codec 9 and 11
         self.assertEqual(b.codec.id, "md9600-s11")
         self.assertEqual([s.index for s in b.codec_sectors()], [9, 11])

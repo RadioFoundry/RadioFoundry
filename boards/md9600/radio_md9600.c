@@ -26,7 +26,7 @@
 #endif
 
 // The revision driven when none is stored and the probe has no verdict: one constant, set by the build
-// (board.mk MD9600_REV_DEFAULT). Which revision that should be is the owner's decision
+// (board.mk MD9600_REV_DEFAULT): V5, the current production board
 #ifndef MD9600_REV_DEFAULT
 #define MD9600_REV_DEFAULT	MD9600_REV_V5
 #endif

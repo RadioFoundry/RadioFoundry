@@ -252,7 +252,7 @@ and on which side of the signal the LO sits, giving R 5 / 4 / 6 or 3 / 2 / 4. Wh
 (unverified); RadioFoundry uses 6 and 4.
 
 **V4: "PLL1590" synthesizer, one per band**. TYT's own folder for the V4 firmware (V16.45) is named "firmware for
-PLL1590", which confirms the part family the reference port calls AK1590; the exact part number is still
+PLL1590", which confirms the part family earlier notes call AK1590; the exact part number is still
 unconfirmed (?). The V16.45 stock images (all four variants) hold the 24-bit words 0x1FF404 and 0x19F404 as literals,
 that is reg 4 = 0x1FF40 and 0x19F40 in the format below; the V06.09 images hold neither (from our own reading of the stock images). 24-bit
 words: 20 data bits then the 4-bit address in the low nibble. N in reg 2 (VHF 0x20000 | N, UHF 0x38000 | N), the
@@ -286,7 +286,7 @@ R60, R58, R53 and the rest; V26.45 writes no register outside the set above, and
 restores the chip's defaults (its own VCO, the TX output buffer on, the external VCO's charge pump off) until R7 and
 R8 come again, which is why neither resets on a retune.
 
-No lock detect input is wired in the reference port's pin map for any revision (?). V26.45 reads no synthesizer pin and
+No lock detect input is known for any revision (?). V26.45 reads no synthesizer pin and
 never enables the LMX2571's lock detect output.
 
 ### 5.4 IF receiver per revision
@@ -589,7 +589,7 @@ size. Security registers hold the calibration (11.1).
 
 ### 12.2 Map
 
-The reference port puts its codeplug / "EEPROM" image at 0 and the calibration copy at 0x010000. The stock TYT codeplug
+Earlier notes put the codeplug / "EEPROM" image at 0 and the calibration copy at 0x010000. The stock TYT codeplug
 and the stock user database (CSV builds) also live in this flash: the stock firmware needs its flash content restored
 to run again, so a full backup before the first RadioFoundry flash is mandatory.
 
@@ -817,7 +817,7 @@ last (unidentified synthesizer, needs its power-on quirk).
 
 | Short name | Source | Kind |
 |---|---|---|
-| | The reference port's MD-9600 tree (CubeMX pin map, register writes, README / STATUS notes), outside this repository; facts only |  |
+| | Earlier hardware notes on the MD-9600 (pin map, register writes), outside this repository; facts only |  |
 | | https://www.opengd77.org/viewtopic.php?t=83, hardware versions | Forum (F) |
 | | https://www.opengd77.org/viewtopic.php?p=15, installation | Forum (F) |
 | [passion-radio] | https://www.passion-radio.com/mobile/md9600-505.html | Retailer (F) |
@@ -896,8 +896,8 @@ stored the radio receives with the probe's or the default's revision and never t
 asks for one ("Set rev: Adv>Hardware"). Its first three lines show the revision and its source ("unbuilt" for a
 stored revision this image doesn't drive), that prompt or "rev confirmed", and the probe ("off" when not built).
 
-The default is one constant, `MD9600_REV_DEFAULT` in `boards/md9600/board.mk`. Which revision it should be is the
-owner's decision; v5 stands until then.
+The default is one constant, `MD9600_REV_DEFAULT` in `boards/md9600/board.mk`. It is v5, the current production
+board.
 
 ### 19.4 Pin use in RadioFoundry
 
@@ -1010,8 +1010,7 @@ supply, and the receiver tuned when the revision is driven. It never transmits a
 | TYT bootloader | the stock route (14.1, 14.2): keys held at power-up, then DFU with the MD-9600 key |
 | Flash stub | `CONFIG_STUB_ENTRY` (off by default, as on the DM-1701; in the maximal configuration): `board_stub_prepare` switches the transmitter off first, then the shared STM32F4 stub runs with this radio's board record (14.4). Not tried on this radio |
 
-Open: the rfoundry board entry, the web flasher's radio entry and the update image packaging are not written; they are
-the owner's decision.
+The rfoundry board entry, the web flasher's radio entry and the release images come from `boards/md9600/board.toml`.
 
 ### 19.8 RF sequencing
 

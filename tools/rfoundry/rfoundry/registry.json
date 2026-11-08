@@ -755,7 +755,7 @@
    ],
    "family": "usb-dfu",
    "link": "usb",
-   "release": "testing",
+   "release": "stable",
    "debuglink_names": [
     "MD-9600",
     "MD9600",

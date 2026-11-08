@@ -15,7 +15,7 @@ and what has been checked on it.
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
-| [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | Builds for every board revision (SKY72310, "PLL1590" and LMX2571 synthesizers) and is offered to testers through the bootloader and the flash stub. On a V1-V3 radio, the display, keys and encoder, debug link, programming, FM and DMR receive on both bands with CTCSS / DCS, and transmit on both bands (FM and DMR; the MMDVM hotspot on UHF) work. SFR repeats calls but loses about 18% of the inbound voice frames, so it is not fully supported yet. Transmit is in the build and armed per power cycle; every power level checked on a wattmeter on both bands. Open: SFR inbound frame loss. |
+| [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, the display, keys and encoder, debug link, programming, FM and DMR receive on both bands with CTCSS / DCS, and transmit on both bands (FM and DMR; the MMDVM hotspot on UHF) work, with every power level checked on a wattmeter on both bands. Transmit is armed per power cycle. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames. |
 <!-- end generated -->
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
@@ -651,10 +651,13 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 
 ## TYT MD-9600
 
-Covers the TYT MD-9600 and the Retevis RT90, a mobile radio. **Bring-up: not run on a radio yet.** The image builds
-for every board revision and picks the revision's synthesizer at start-up, but nothing has been checked on an
-MD-9600. Transmit is refused in this image. Only install it if you can go back to the original firmware. The hardware
-facts are in [hardware-md9600.md](../spec/hardware-md9600.md).
+Covers the TYT MD-9600 and the Retevis RT90, a mobile radio. **In testing.** One image serves every board revision. V1-V3 boards
+(original firmware V06.xx) have been tested on a radio: FM and DMR receive and transmit on both bands. V4 (V16.xx) and
+V4A/V5 (V26.xx) boards have not, so receive or transmit may not work on them. SFR is not supported yet.
+
+The installers read the original firmware's version and store the board revision (Settings > Advanced > Hardware >
+Board revision). Transmit is off at every start until you turn it on under Settings > Advanced > Hardware > Transmit,
+and it needs a stored revision. Only install this if you can go back to the original firmware. The hardware facts are in [hardware-md9600.md](../spec/hardware-md9600.md).
 
 ### MD-9600 keys
 
