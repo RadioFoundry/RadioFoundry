@@ -221,8 +221,8 @@ def test_passthrough_text(radio, sdr_bench, pytestconfig):
             s5016.close()
             s4007.close()
         after = _counters(udp)
-        print("deltas:", {k: after.get(k, 0) - before.get(k, 0) for k in
-                          ("data.sms_received", "data.tms_acks_sent", "data.pt_yielded", "data.ip_text_received")})
+        # every counter that moved: whether a lost message was never decoded (data.rx_*) or not handed on
+        print("deltas:", {k: after[k] - before.get(k, 0) for k in sorted(after) if after[k] != before.get(k, 0)})
         assert any(p.decode("utf-16-be", "replace") == text for p, _a in got5016), got5016
         assert got4007, "the TMS didn't reach the PC's socket on 4007"
         assert after["data.sms_received"] == before["data.sms_received"], (before, after)
