@@ -882,6 +882,33 @@ static void test_beep_module(void)
 	CHECK(beep_warm_on() && warm_state);
 	beep_service(false, 3100);
 	CHECK(!beep_warm_on() && !warm_state && warm_calls == 2);
+	// Shared (a DMR call left the voice stream running) with the amplifier cold: the same lead-in, mixed in as silence
+	// with the speaker routed, then the tone; warm past the lead, the tone in the first block
+	beep_reset_stats();
+	beep_play(BEEP_KEY, 100, true);		// powers the amplifier at 3100: the full lead
+	for (int b = 0; b < 4; b++) {
+		for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+			blk[i] = 1000;
+		}
+		bool sounds = beep_mix(blk);
+		CHECK(sounds && beep_busy() && (b < 3 ? blk[42] == 1000 : blk[42] != 1000));
+	}
+	while (beep_mix(blk)) {
+	}
+	beep_get_stats(&ws);
+	CHECK(!beep_busy() && ws.leads == 3);
+	beep_service(true, 3200);		// 100 ms warm
+	beep_play(BEEP_KEY, 100, true);
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		blk[i] = 1000;
+	}
+	CHECK(beep_mix(blk) && blk[42] != 1000);
+	while (beep_mix(blk)) {
+	}
+	beep_get_stats(&ws);
+	CHECK(ws.leads == 3);
+	beep_service(true, 5200);
+	CHECK(!beep_warm_on() && !warm_state);
 	// A board without the hook or with no hang: never warm
 	beep_init(&fake_audio);
 	beep_warm(4000);

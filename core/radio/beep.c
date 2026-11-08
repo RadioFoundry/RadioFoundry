@@ -93,6 +93,7 @@ static volatile uint32_t cb_blocks;	// own callback calls, for the stall check
 static uint32_t seen_blocks;
 static uint8_t stall_polls;
 static uint8_t cb_lead;		// lead-in blocks played since the route turned on
+static uint8_t mix_lead;	// the voice stream's lead-in blocks for the pending pattern (beep_mix)
 
 void beep_init(const hal_audio_t *audio)
 {
@@ -245,7 +246,8 @@ static void load_seg(void)
 	cb_step = (uint32_t)(((uint64_t)s->hz << 32) / AUDIO_RATE_HZ);
 }
 
-bool beep_mix(int16_t *spk)
+// The pattern into one block (both streams)
+static bool tone_mix(int16_t *spk)
 {
 	uint8_t seq = LOAD(req_seq);
 	if (seq != cb_seq) {
@@ -297,6 +299,24 @@ bool beep_mix(int16_t *spk)
 	return true;
 }
 
+bool beep_mix(int16_t *spk)
+{
+	// A pattern the amplifier isn't ready for (cold, or only just powered): its lead-in in silence with the speaker
+	// routed, as on the own stream. A DMR call leaves the voice stream running until the radio leaves DMR, so most
+	// beeps on a DMR channel come this way. Warm, the route settling is the voice stream's: the tone at once
+	if (LOAD(req_seq) == cb_seq) {
+		mix_lead = 0;		// nothing pending
+	} else if (!cb_active) {
+		uint8_t want = lead_target;
+		if (want > 1 && mix_lead < want) {
+			mix_lead++;
+			stats.leads++;
+			return true;
+		}
+	}
+	return tone_mix(spk);
+}
+
 void beep_audio_block(const int16_t *mic, int16_t *spk, void *ctx)
 {
 	(void)mic;
@@ -319,7 +339,7 @@ void beep_audio_block(const int16_t *mic, int16_t *spk, void *ctx)
 		stats.leads++;
 		on = true;	// silence: the route settles before the tone
 	} else {
-		on = beep_mix(spk) || cb_idle < ROUTE_HOLD_BLOCKS;
+		on = tone_mix(spk) || cb_idle < ROUTE_HOLD_BLOCKS;
 	}
 	if (!on) {
 		cb_lead = 0;
