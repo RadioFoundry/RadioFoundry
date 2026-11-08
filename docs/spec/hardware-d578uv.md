@@ -412,7 +412,14 @@ receiver on the generator sounds at twice the frequency of its transmit word (me
 so a beep writes half the word. Its level follows page 1 0x1D: 12 dB louder at the analog path's 0x39FD than at the
 digital path's 0x29A1, which only DMR transmit needs, so DMR receive takes 0x39FD as well and a beep sounds the same in
 both modes (measured by microphone; DMR receive unchanged on bench calls). The chip's output switches to the tone
-before the gate opens, and the gate shuts before it switches back. A tone longer than about 1.1 s drops 12 dB by
+before the gate opens, and the gate shuts before it switches back. Each edge of a beep goes through the level device:
+side A's level steps down to its most attenuation, the tone starts or stops, and the level steps back up, one step
+per write (5-6 ms over the range). The tone generator starts and stops at full strength: 0x70's gain spans only 8 dB
+(0x01 to 0x40 sound the same), and 0x48's AF gains already sit at their lowest. That edge was a tick at the start of
+every beep, in FM and DMR alike: about 18 dB more energy above 4 kHz in a beep's first milliseconds than in its steady
+part, the same with the speaker path held open by a carrier, whichever of 0x70, 0x47 or 0x03 started the tone. With
+the fade it is within 2 dB of the steady part, the beep is as loud, and the receiver's audio comes back at its level
+after a beep (all measured by microphone). A tone longer than about 1.1 s drops 12 dB by
 itself; no beep is that long. In DMR the tone takes the chip's output from the baseband, which then has nothing to
 demodulate: a beep during a call cost 12 voice bursts, or ended the call (HIL, the alert beep of an emergency call). No
 beep sounds while side A hears a DMR signal, and one sounding stops when a signal comes.
