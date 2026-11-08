@@ -30,7 +30,7 @@ feature (`--feature F`) adds `-<feature>`.
 | `options` | The run's flags and frequencies (`allow-rf`, `dmr-freq` and so on) |
 | `tools` | The Python and pytest versions |
 
-A record holds no serial port, host name or serial number: the reasons are scrubbed before they are written, and
+A record holds no serial port, host name, IP address or serial number: the reasons are scrubbed before they are written, and
 `tools/bringup.py check` (in `tools/ci.sh`) fails on a record that names one. It also fails on a record that doesn't
 parse, lacks a key or sits in the wrong board's directory. A missing or stale record never fails CI: it shows in
 `status` as "built, not yet recorded" or "needs re-run".
