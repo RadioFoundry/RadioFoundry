@@ -233,6 +233,7 @@ static uint32_t dmr_hz;
 static uint8_t dmr_power;
 static uint32_t dmr_skipped, dmr_unarmed;
 static uint32_t dmr_rx_back;	// returns to receive at a transmission's end
+static volatile bool dmr_rx_early;	// ... done at the last burst's PA drop (md9600_rf_dmr_key)
 #if CONFIG_SFR
 // An SFR receives between its bursts (docs/spec/sfr.md 3 item 1): one synthesizer, so each burst's end retunes to
 // the receive LO, and the next RF TX interrupt, moved this far ahead of the slot, retunes to the carrier and waits for
@@ -335,6 +336,13 @@ bool md9600_rf_dmr_key(bool tx)
 			}
 		}
 #endif
+		if (dmr_tuned && stm32_hrc_dmr_tx_last_out() && md9600_rf_burst_rx(&rf) == MD9600_RF_OK) {
+			// The last burst: the receiver back now, a slot before the engine's TX done gets to the task. An answer
+			// one frame later (a confirmed data link ACK, 30 ms after this burst) found the receiver set up only
+			// as it came in, and was taken on about one try in three
+			dmr_tuned = false;
+			dmr_rx_early = true;
+		}
 		return true;
 	}
 	if (!dmr_armed) {
@@ -383,6 +391,13 @@ bool md9600_rf_dmr_key(bool tx)
 // True when the receiver is back on the RX frequency (the glue's tx_done)
 bool md9600_rf_dmr_done(void)
 {
+	if (dmr_rx_early) {
+		dmr_rx_early = false;	// the last burst's PA drop put it back (md9600_rf_dmr_key)
+		if (dmr_armed && !dmr_tuned && rf.state == MD9600_RF_RX) {
+			dmr_rx_back++;
+			return true;
+		}
+	}
 	if (!dmr_armed || !dmr_tuned || !rf.rx_valid) {
 		return false;
 	}
@@ -415,6 +430,7 @@ static void dmr_disarm(void)
 	key_timer_stop();
 	(void)md9600_rf_pa_burst(&rf, false);
 	dmr_tuned = false;
+	dmr_rx_early = false;
 #if CONFIG_SFR
 	if (dmr_lead) {
 		md9600_c6000_tx_lead(0);
@@ -525,6 +541,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		dmr_hz = hz;
 		dmr_power = power;
 		dmr_tuned = false;
+		dmr_rx_early = false;
 		__DMB();
 		dmr_armed = true;
 		stm32_hrc_dmr_tx_prepare();	// a transmission the stack has already begun gets its first burst too

@@ -1037,8 +1037,10 @@ interrupt itself (about 1.3 ms ahead of the slot), every burst was 31.7-31.9 ms 
 (2026-11-06, 461.4625 MHz, lowest power; the bench allows 27-31.5 ms). Delayed, full power still comes about 0.2 ms
 after the slot boundary, inside the guard ahead of the payload. The split duplex TX half (a BS outbound) keys once and
 has no guard: its slot starts with the CACH. Its key-up is timed from the slot clock instead, full power 6 ms ahead of
-a timeslot interrupt, after that slot's sync (`docs/spec/modem-hrc6000.md` 9.1). The receiver comes back at the slot engine's TX done,
-on every channel, with the receive column's synthesizer, front-end and line steps and no waits. On a split channel a
+a timeslot interrupt, after that slot's sync (`docs/spec/modem-hrc6000.md` 9.1). The receiver comes back at the last burst's PA
+drop when the engine says no burst follows (`stm32_hrc_dmr_tx_last_out`), else at the slot engine's TX done, on every
+channel, with the receive column's synthesizer, front-end and line steps and no waits. Back only at TX done, the
+receiver was set up a slot later, as an answer starting at our last burst's end came in. On a split channel a
 wake-up then hears the repeater's answer (left on the carrier, every key-up to a repeater that was down ended in
 `no_repeater`). On simplex the reply to a confirmed packet comes in the next frame, 30 ms after the last burst, before
 the radio task ends the transmission. That end goes through the modem glue's shared path (`docs/spec/dmr-modem.md`
