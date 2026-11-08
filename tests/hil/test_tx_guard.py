@@ -14,13 +14,12 @@ import rfoundry_hil as H
 
 
 class FakeConfig:
-    def __init__(self, allow_rf, tx_mhz):
+    def __init__(self, allow_rf, tx_mhz, manual=False):
         self.option = types.SimpleNamespace(tx_mhz=tx_mhz)
-        self._rf = allow_rf
+        self._opts = {"--allow-rf": allow_rf, "--manual": manual}
 
     def getoption(self, name):
-        assert name == "--allow-rf"
-        return self._rf
+        return self._opts[name]
 
 
 class FakeLink:
@@ -162,6 +161,22 @@ def test_run_tx_mhz(monkeypatch):
     assert hil_config.run_tx_mhz() == [446.05, 461.4625]       # each once, and not all of tx_mhz
     monkeypatch.setattr(hil_config, "CONFIG", run_config(False))
     assert hil_config.run_tx_mhz() == []
+
+
+def test_run_tx_mhz_wattmeter(monkeypatch):
+    """With --manual the wattmeter check's frequencies (default 445 and 146) join the run's, only those in tx_mhz"""
+    cfg = run_config(True)
+    cfg._opts["--manual"] = True
+    cfg.option.tx_mhz = cfg.option.tx_mhz + [146.0]
+    monkeypatch.setattr(hil_config, "CONFIG", cfg)
+    assert hil_config.wattmeter_mhz() == [445.0, 146.0]
+    assert hil_config.run_tx_mhz() == [146.0, 446.05, 461.4625]     # 445 isn't in tx_mhz
+    cfg.option.wattmeter_mhz = "446.05, 461.4625"
+    assert hil_config.wattmeter_mhz() == [446.05, 461.4625]
+    assert hil_config.run_tx_mhz() == [446.05, 461.4625]
+    cfg._opts["--manual"] = False
+    cfg.option.wattmeter_mhz = None
+    assert hil_config.run_tx_mhz() == [446.05, 461.4625]            # no person at the meter: none of them
 
 
 def test_gate_blocks_outside_radio_tx(monkeypatch):
