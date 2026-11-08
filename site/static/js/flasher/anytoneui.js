@@ -104,19 +104,20 @@ function probeOpener() {
 // ---------------------------------------------------------------------------------------------------------------
 // connect: update mode, hello, identify, the variant
 
-function variantChooser(onPick) {
+// The variants as a choice, with the Auto-detect button (detector: detectControl's parts, or null) beside them
+function variantChooser(onPick, detector) {
 	const r = S().radio;
 	if (!r.variants?.length) return null;
-	const choices = [...r.variants.map((v) => ({ code: v.code, label: `${v.code}: ${v.name}` })), { code: null, label: t("flash.at.variant_any") }];
 	const now = S().atChosen || null;
 	return h("div", {}, h("p", {}, h("b", {}, t("flash.at.variant_title")), " ", r.variant_check || ""),
-		h("div", { class: "choice-grid" }, choices.map((ch) => h("button", { class: "choice", type: "button", "aria-pressed": String(now === ch.code),
-			onclick: () => { S().atChosen = ch.code; onPick(); } }, h("strong", {}, ch.label)))));
+		h("div", { class: "choice-grid" }, r.variants.map((v) => h("button", { class: "choice", type: "button", "aria-pressed": String(now === v.code),
+			onclick: () => { S().atChosen = v.code; onPick(); } }, h("strong", {}, `${v.code}: ${v.name}`))), detector?.go),
+		detector?.hint, detector?.say);
 }
 
-// The build step's variant question (backends.js buildGate). A variant with no firmware stops the step, before the
-// user spends a build on it; not knowing is allowed, as connect reads the radio and refuses it there. The port a probe
-// left in the update mode is closed: the steps until connect need the radio in its normal mode
+// The build step's variant question (backends.js buildGate). The answer is required, picked or detected: a variant with
+// no firmware stops the step before the user spends a build on it. The port a probe left in the update mode is closed:
+// the steps until connect need the radio in its normal mode
 export function buildGate(redraw) {
 	const r = S().radio;
 	const detector = detectControl({ radio: r, board: board(), fb: ctx.fb(), ids: VARIANT_PROBES, open: probeOpener(), showBlocked: false,
@@ -127,7 +128,8 @@ export function buildGate(redraw) {
 			redraw();
 		} });
 	// a pick left over from another radio doesn't count
-	const judged = () => (r.variants?.some((v) => v.code === S().atChosen) ? verdict(r, S().atChosen, r.flash.board, S().buildOptions || {}) : null);
+	const known = () => !!r.variants?.some((v) => v.code === S().atChosen);
+	const judged = () => (known() ? verdict(r, S().atChosen, r.flash.board, S().buildOptions || {}) : null);
 	const refusal = (vd) => {
 		const what = `${vd.code} (${vd.variant.name})`;
 		return vd.variant.blocked ? t("flash.detect.blocked", { why: vd.variant.blocked })
@@ -136,8 +138,9 @@ export function buildGate(redraw) {
 			: t("flash.variant.unsupported", { variant: what, radio: r.name });
 	};
 	const refused = () => { const vd = judged(); return !!vd && !writable(vd); };
-	return { refused, view: () => h("div", {}, variantChooser(() => { S().variant = null; redraw(); }), detector,
-		refused() ? notice(refusal(judged()), "bad") : null) };
+	return { refused, need: () => (known() || !r.variants?.length ? null : t("flash.at.variant")),
+		view: () => h("div", {}, variantChooser(() => { S().variant = null; redraw(); }, detector),
+			refused() ? notice(refusal(judged()), "bad") : null) };
 }
 
 export function connectView() {
@@ -155,8 +158,7 @@ export function connectView() {
 		fill(box, panel(t("flash.at.connect_title"),
 			h("p", {}, t("flash.at.connect_lead")),
 			withPicture(r, h("ol", { class: "steps" }, r.flash.bootloader.map((x) => h("li", {}, x)))),
-			variantChooser(() => draw()),
-			a.ident ? null : detector,
+			variantChooser(() => draw(), a.ident ? null : detector),
 			a.ident ? h("dl", { class: "kv-list" },
 				h("dt", {}, t("flash.at.model")), h("dd", {}, `${a.ident.model} (${t("flash.at.hw")} ${a.ident.hw}, ${a.ident.version})`),
 				h("dt", {}, t("flash.at.variant")), h("dd", {}, vd?.code ? variantLabel(r, vd.code) : t("flash.at.variant_unknown"))) : null,

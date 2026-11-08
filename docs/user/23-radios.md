@@ -15,7 +15,7 @@ and what has been checked on it.
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
-| [AnyTone AT-D578UV](#anytone-at-d578uv) | AnyTone AT-D578UV PRO, AnyTone AT-D578UV PLUS | FM, DMR voice, text messages and positions, dual watch, GPS and the flash stub work on the GD32F303 radios. Open: air band AM on a radio with the KTMicro receiver. The Artery radios can't be installed yet. |
+| [AnyTone AT-D578UV](#anytone-at-d578uv) | AnyTone AT-D578UV PRO, AnyTone AT-D578UV PLUS | FM, DMR voice, text messages and positions, dual watch, GPS and the flash stub work on the GD32F303 radios. Open: air band AM on a radio with the KTMicro receiver. The AT32 radios can't be installed yet. |
 <!-- end generated -->
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
@@ -649,14 +649,14 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 ## AnyTone AT-D578UV
 
 A mobile radio for 136-174 and 400-480 MHz with a color screen, a front knob, front keys and a hand microphone.
-This section is the radios with a GigaDevice GD32F303 processor; the radios with an Artery processor take their own
-image ([AT-D578UV (Artery)](#anytone-at-d578uv-artery)). It runs on the radio; the
+This section is the radios with a GigaDevice GD32F303 processor; the radios with an AT32 processor take their own
+image ([AT-D578UV (AT32)](#anytone-at-d578uv-at32)). It runs on the radio; the
 [bring-up checklist](../testing/d578uv-bringup.md) lists what has been checked and how.
 
 **Which AT-D578UV.** Open the radio's version screen. A radio that shows `GD_Ver` has the GD32F303 and takes the
-`d578uv` image. A radio that shows `AT_Ver` has the Artery processor, and RadioFoundry can't be installed on it yet
-([AT-D578UV (Artery)](#anytone-at-d578uv-artery)). Or press
-**Auto-detect** on the installer's connect step and connect the radio as it is: on with its original firmware, in
+`d578uv` image. A radio that shows `AT_Ver` has the AT32 processor, and RadioFoundry can't be installed on it yet
+([AT-D578UV (AT32)](#anytone-at-d578uv-at32)). Or press
+**Auto-Detect Now** on the installer's build step and connect the radio as it is: on with its original firmware, in
 update mode, or running RadioFoundry. The installer checks the radio's model again just before it writes, and refuses
 the other variant's image.
 
@@ -674,7 +674,7 @@ install from them.
 | Install | **Install**, **Connect**, pick your original firmware's `.CDD` (for the DMR chip's boot block), **Install** | `rfoundry flash IMAGE --board d578uv --stock FW.CDD` |
 | Back to the original firmware | **Help**, restore, pick the original firmware's `.CDD`, `.CDI` and `.spi` | `rfoundry restore-stock FW.CDD --board d578uv` |
 
-The installer refuses a radio whose model doesn't match, and an Artery radio (`AT_Ver`) given this image: it names
+The installer refuses a radio whose model doesn't match, and an AT32 radio (`AT_Ver`) given this image: it names
 the `d578uva` image instead. The `rfoundry` route has installed on a radio; the web installer hasn't yet.
 
 ### AT-D578UV keys
@@ -731,18 +731,18 @@ A keypad microphone unplugged while the radio is on stops its PTT within 3 secon
 - The original firmware has no VOX; RadioFoundry reads the microphone's level from the RF
   chip, and how loud a voice must be to key it may need a different **VOX level** than on other radios.
 - APRS receive is written and untested, but this image leaves it out: it needs more memory than the GD32F303 has
-  left with DMR on. The Artery image has it. RadioFoundry decodes the receive audio itself; the original firmware's APRS comes
+  left with DMR on. The AT32 image has it. RadioFoundry decodes the receive audio itself; the original firmware's APRS comes
   from an add-on board, which RadioFoundry doesn't use.
 - The backlight has only the original firmware's five levels: **Brightness** picks one per 20 % (10-20 % the dimmest,
   90-100 % the brightest). RadioFoundry doesn't control the status light yet, so its colors don't follow the radio's manual.
 - The hotspot, single frequency repeating, privacy, the USB network and zone sharing are left out: the
   radio's memory is too small for all of them, and the vocoder runs in the DMR chip, out of the processor's reach.
 
-## AnyTone AT-D578UV (Artery)
+## AnyTone AT-D578UV (AT32)
 
-The AT-D578UV with an Artery AT32F435 or AT32F437 processor (version screen `AT_Ver`). The radio around it is the
+The AT-D578UV with an AT32F435 or AT32F437 processor (version screen `AT_Ver`). The radio around it is the
 same as on the GD32F303 radios, and so is RadioFoundry's code for it: keys, functions and what is missing are as in
-[AnyTone AT-D578UV](#anytone-at-d578uv). Only the image differs, and the Artery processor's larger memory leaves
+[AnyTone AT-D578UV](#anytone-at-d578uv). Only the image differs, and the AT32 processor's larger memory leaves
 room for what the GD32F303 image leaves out:
 
 - Zone sharing.
@@ -753,13 +753,13 @@ room for what the GD32F303 image leaves out:
   APRS-IS) don't fit beside them and are left out, and network audio (AllStarLink, DVSwitch) isn't written: the
   voice stays in the DMR chip.
 
-**RadioFoundry can't be installed on an Artery radio yet.** Nothing has run on one, and its processor set-up (clock,
+**RadioFoundry can't be installed on an AT32 radio yet.** Nothing has run on one, and its processor set-up (clock,
 USB) is written from an analysis of the original firmware alone
 ([hardware-d578uv.md](../spec/hardware-d578uv.md)). The installer and `rfoundry` name the radio and refuse it, with
 nothing written. The list above is what the image is built to have once one has been tested.
 
-An Artery radio can still get its original firmware back: `rfoundry restore-stock FW.CDD --board d578uva`, where the
-`.CDD` is an Artery build, or the installer's restore task on the AT-D578UV.
+An AT32 radio can still get its original firmware back: `rfoundry restore-stock FW.CDD --board d578uva`, where the
+`.CDD` is an AT32 build, or the installer's restore task on the AT-D578UV.
 
 ## Planned radios
 

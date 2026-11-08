@@ -4,7 +4,7 @@
 Status: facts only. RadioFoundry has no Anytone board. This page collects what is known about the family, what a RadioFoundry port would need, and what is
 still missing. The survey entry is in [radios.md](radios.md). The AT-D868UV pin map in section 4 is not confirmed on a radio (unverified).
 
-**Summary.** These radios are a GD32F303 (or, on late D578UVs, an Artery AT32F43x) MCU driving a Sicomm SCT3258 DMR
+**Summary.** These radios are a GD32F303 (or, on late D578UVs, an AT32F43x) MCU driving a Sicomm SCT3258 DMR
 baseband over an 8-bit parallel host port. The SCT3258 runs DMR layers 1 and 2 and the AMBE+2 vocoder itself, and
 voice audio goes codec ↔ SCT3258 over I2S without passing through the MCU. The handhelds' RF chip is the AT1846S,
 which RadioFoundry already drives; the AT-D578UV has four QA4818N / WX4818N chips with a different register set
@@ -22,7 +22,7 @@ A value marked `(datasheet)` is from the Sicomm CT3258 / SCT3258 datasheet and "
 
 | Item | AT-D868UV | AT-D878UV / UV PLUS, 878UVII PLUS | AT-D578UV / PLUS / PRO (mobile) |
 | --- | --- | --- | --- |
-| MCU | GD32F303VET6 (512 KB flash, 64 KB RAM) on V1 and early V2 boards; GD32F303VGT6 (1 MB, 96 KB) on late V2 | GD32F303VGT6. 878UVII: not found | GD32F303VKT6 (3 MB flash, 96 KB RAM) until 2022-07-01, then Artery AT32F435/437 |
+| MCU | GD32F303VET6 (512 KB flash, 64 KB RAM) on V1 and early V2 boards; GD32F303VGT6 (1 MB, 96 KB) on late V2 | GD32F303VGT6. 878UVII: not found | GD32F303VKT6 (3 MB flash, 96 KB RAM) until 2022-07-01, then AT32F435/437 |
 | DMR baseband | Sicomm SCT3258 (CML Microcircuits sells it as SCT3258TD) | SCT3258 | SCT3258 |
 | Vocoder | AMBE+2 inside the SCT3258. No separate DVSI chip | same | same |
 | Audio codec | TI TLV320AIC3204, I2S to the SCT3258 | same | same |

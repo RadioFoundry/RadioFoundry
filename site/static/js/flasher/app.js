@@ -1033,7 +1033,7 @@ function buildView() {
 	const gate = backend().buildGate?.(() => draw()) || null;
 	// Continue gets the image first: built on request, then on to the next step
 	const go = async () => {
-		if (gate?.refused()) return;
+		if (gate?.refused() || gate?.need()) return;
 		if (!S.firmware && VERSION_REF && validRef(VERSION_REF)) {
 			const yes = await confirmVersion();
 			if (!yes) return;
@@ -1156,7 +1156,7 @@ function buildView() {
 					? t("flash.build.custom_diff", { added: d.added.length, removed: d.removed.length, variant: baseTitle })
 					: t("flash.build.custom_start")));
 		const busy = building && !S.build.error;
-		const missing = buildOptions().find((o) => !S.buildOptions?.[o.name]);
+		const missing = buildOptions().find((o) => !S.buildOptions?.[o.name]) || (gate?.need() ? { title: gate.need() } : null);
 		forward(button(busy ? [spinner(), t("flash.nav.building")] : t(missing ? "flash.nav.choose" : S.firmware || S.sim ? `flash.nav.to_${stepsFor()[S.step + 1]}`
 			: VERSION_REF ? "flash.nav.build_version" : "flash.nav.build", { what: missing?.title.toLowerCase(), ref: VERSION_REF && versionShort() }), go, { primary: true, disabled: busy || !!missing || !!gate?.refused() }), summary);
 		// every image, prebuilt choice or not, comes from the build service (or is the user's own)

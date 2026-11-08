@@ -1964,9 +1964,9 @@
      null
     ],
     "AT": [
-     "Artery AT32F43x (built from mid-2022)",
+     "AT32F43x (built from mid-2022)",
      "d578uva",
-     "no Artery radio has run RadioFoundry yet"
+     "no AT32 radio has run RadioFoundry yet"
     ]
    },
    "anytone_models": {
@@ -1984,7 +1984,7 @@
   },
   "d578uva": {
    "id": "d578uva",
-   "name": "AnyTone AT-D578UV (Artery)",
+   "name": "AnyTone AT-D578UV (AT32)",
    "model": "AT-D578UV",
    "part_of": "d578uv",
    "platform": "at32f43x",
@@ -4577,9 +4577,9 @@
      null
     ],
     "AT": [
-     "Artery AT32F43x (built from mid-2022)",
+     "AT32F43x (built from mid-2022)",
      "d578uva",
-     "no Artery radio has run RadioFoundry yet"
+     "no AT32 radio has run RadioFoundry yet"
     ]
    },
    "anytone_models": {
