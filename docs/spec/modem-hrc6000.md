@@ -546,11 +546,11 @@ last interrupt if they stop. An answer a slot later, off our timing by a few ms,
 timing gave only late class 0 reports for it. Through a repeater, or after a transmission that set up no burst, the
 restart comes at once. Diagnostics: `rs ... h` counts the holds.
 
-| Answer on the SDR bench | Restart at the end, one interrupt late | End at once, hold, restart after the report |
+| Answer on the SDR bench | Finish one interrupt late, restart | Finish at once, hold, restart after the report |
 |---|---|---|
-| right after our last burst | 0 of 33 tries | 9 of 11 tries (the 2 others taken with a CRC error) |
-| one slot later | first try, 2 of 2 runs | 3 of 3 runs |
-| five slots later | first try, 2 of 2 runs | 4 of 4 runs |
+| right after our last burst | 0 of 3 tries | first try in 10 of 13 runs, the others on the retry |
+| one slot later | first try | first try, 5 of 5 runs |
+| five slots later | first try | first try, 6 of 6 runs |
 
 ### 6.7 Which slot to transmit in
 
