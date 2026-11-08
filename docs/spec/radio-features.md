@@ -541,8 +541,16 @@ the network or the user sets it, the radio shows "no time", and records keep usi
 ### 5.7 LEDs
 
 The radio core drives the board's red and green LEDs (`board.power->led`); `view.leds` (debug link `leds`) is what it
-drives. Red: transmitting. Green: a reception that plays (FM squelch open, a DMR call played). Two timed signals go
-over that (`radio_sm.c` `led_signals`, the times in `radio_sm.h`), for radios without a screen above all:
+drives. Red: transmitting. Green: a reception that plays (FM squelch open, a DMR call played).
+
+Two capabilities change that, for a board that sets them ([feature matrix](../feature-matrix.md)):
+
+| Capability | What the core does |
+| --- | --- |
+| `CAP_LED_RGB` | The core also drives `LED_BLUE`. Green with blue (cyan): a DMR call played. Red with green (orange): an SFR repeater role is on and not transmitting |
+| `CAP_LED_SCAN_FLASH` | Green flashes, `RADIO_LED_SCAN_STEP_MS` (250 ms) on and off, while a zone or VFO scan runs and nothing else lights the LED. Dual watch doesn't flash |
+
+Two timed signals go over that (`radio_sm.c` `led_signals`, the times in `radio_sm.h`), for radios without a screen above all:
 
 | Signal | LEDs |
 | --- | --- |

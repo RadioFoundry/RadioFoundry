@@ -512,8 +512,8 @@ on the PRO; 0x29AA on the 578UV unless a flag is set).
 Chip 0's register 0x25 bit 0 is set in receive and while a TX tone sounds and cleared at each key-up: a microphone
 mute (inferred from where the stock firmware sets it). Bit 1 is the fan, high = on (seen on a radio): the stock "Fan
 Open" setting (PTT, Temperature or Both, default PTT) runs it while transmitting, while PA6's average of four readings
-is hot (on at 0x3E0 and above, off at 0x364 and below), or either (0x0808BE9C). The status LED is an RGB LED whose
-output is not found. Bit 2 is the GPS module's enable, not an LED: the firmware
+is hot (on at 0x3E0 and above, off at 0x364 and below), or either (0x0808BE9C). The status LED's output is not
+confirmed (section 9). Bit 2 is the GPS module's enable, not an LED: the firmware
 sets it with the GPS setting on, together with the GPS UART, and clears it in standby and at power-off (inferred from
 the code). RadioFoundry runs the fan while transmitting or hot (the stock "Both"), and sets bit 2 while the GPS module is
 powered (section 3.6).
@@ -1027,7 +1027,10 @@ Open on the radio:
   `+KEY=01`-`04` are on the hand mic.
 - The serial microphone (3.2): the status frame's light fields, and what the Key Lock switch does.
 - The backlight levels' brightness, and the part behind PA5.
-- The LED's colors: where the second color is switched.
+- The status LED's outputs. The original firmware's use of the shift register suggests 0x10 red, 0x08 green and 0x20
+  blue (inferred: 0x10 and 0x08 blink on their own in low voltage and scan, and 0x08 with 0x20 starts a digital
+  reception). RadioFoundry also switches those bits as the TX path, speaker source and receive path (3), so neither
+  role is settled. It drives no LED until one bit at a time has been set on a radio and the color seen.
 - The deviation per 0x40 step (5) and the dB per microphone gain step (5.7); the microphone level's register and
   scale (5.6); the
   audio routing to the speaker (shift register 0x08/0x40, PA7,

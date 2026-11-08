@@ -387,6 +387,14 @@ static void led_signals(radio_sm_t *sm, bool *red, bool *green)
 		timed = sm->wake_led;
 	}
 #endif
+#if CONFIG_SCAN
+	// Dual watch is a way of listening, not a scan: it runs for as long as the radio is on
+	if ((board.caps & CAP_LED_SCAN_FLASH) != 0 && !*red && !*green &&
+	    (sm->scan.kind == SCAN_ZONE || sm->scan.kind == SCAN_VFO)) {
+		*green = (now / RADIO_LED_SCAN_STEP_MS & 1u) == 0;
+		timed = true;
+	}
+#endif
 	sm->led_timed = timed;
 }
 
@@ -406,9 +414,11 @@ static void outputs(radio_sm_t *sm)
 	bool fm = sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot;
 	bool open = !tx && fm && (sm->view.monitor || sm->view.state == RS_RX);
 	bool green = open;
+	bool digital_rx = false;
 #if CONFIG_DMR
 	if (!fm && !tx && sm->view.state == RS_RX && sm->view.dmr.state == RDMR_RX) {
 		green = true;
+		digital_rx = true;
 		open = !sm->hotspot && (board.caps & CAP_MODEM_VOICE) != 0;
 	}
 	if ((sm->hotspot || sm->sfr_rpt) && board.dmr != NULL && board.dmr->is_transmitting()) {
@@ -447,6 +457,20 @@ static void outputs(radio_sm_t *sm)
 #endif
 	bool red = tx;
 	led_signals(sm, &red, &green);
+	bool blue = false;
+	if ((board.caps & CAP_LED_RGB) != 0) {
+		blue = digital_rx && green && !red;	// cyan
+#if CONFIG_DMR
+		if (sm->sfr_rpt && !red && !sm->led_timed) {
+			red = green = true;		// orange; red alone while it repeats
+			blue = false;
+		}
+#endif
+		if (sm->blue_out != (int8_t)blue) {
+			sm->blue_out = (int8_t)blue;
+			board.power->led(LED_BLUE, blue);
+		}
+	}
 	if (sm->green_out != (int8_t)green) {
 		sm->green_out = (int8_t)green;
 		board.power->led(LED_GREEN, green);
@@ -455,7 +479,7 @@ static void outputs(radio_sm_t *sm)
 		sm->red_out = (int8_t)red;
 		board.power->led(LED_RED, red);
 	}
-	sm->view.leds = (uint8_t)((green ? RADIO_LED_GREEN : 0u) | (red ? RADIO_LED_RED : 0u));
+	sm->view.leds = (uint8_t)((green ? RADIO_LED_GREEN : 0u) | (red ? RADIO_LED_RED : 0u) | (blue ? RADIO_LED_BLUE : 0u));
 }
 
 static void end_reception(radio_sm_t *sm, uint32_t now_ms)
@@ -4844,6 +4868,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	memset(sm, 0, sizeof(*sm));
 	sm->audio_out = -1;
 	sm->green_out = -1;
+	sm->blue_out = -1;
 #if CONFIG_BCAST_FM
 	sm->bcast_audio_out = -1;
 	sm->bcast_volume_out = -1;

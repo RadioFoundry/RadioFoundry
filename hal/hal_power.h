@@ -7,7 +7,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-enum { LED_GREEN, LED_RED };
+// LED_BLUE is sent only to a board with CAP_LED_RGB
+enum { LED_GREEN, LED_RED, LED_BLUE };
 
 typedef struct {
 	void (*init)(void);
