@@ -213,7 +213,7 @@ TX path select: PTA31 + PTB7. RX path select: PTA28 + PTB8. Each is a complement
 (5.2): above 200 MHz the PTB pin high and the PTA pin low, below the reverse; both low = off. So PTA high = VHF side,
 PTB high = UHF side. RadioFoundry receives on both bands (a VHF weather
 station, UHF DMR) and transmits on UHF with this (measured). Separate TX and RX band outputs, unlike the DM-32UV's PA selects
-and LNA supplies. PA drive is DAC channel B (12 bit, the calibration byte times 16), ramped in 40 steps.
+and LNA supplies. PA drive is DAC channel B (12 bit, the calibration byte times 16), ramped in 40 steps on the shared smoothstep APC curve.
 
 **VHF transmit.** What differs for a TX frequency at or below 200 MHz:
 

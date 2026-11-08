@@ -19,6 +19,7 @@
 #include "audio_pcm.h"
 #include "hrc_afsk.h"
 #include "radio/ref_trim.h"
+#include "radio/apc_ramp.h"
 
 // DAC C biases the modem's AF input. The radio's own value: with the other HR_C7000 boards' 0x06E2 the modem missed the sync of
 // about half of the DMR senders (bench, strong and weak signal); with 0x067E it took every burst
@@ -45,8 +46,6 @@
 #define RF_TX_LEAD		11u		// 100 us steps (RF_CONTROL b13:8)
 #define RF_SWITCH_LEAD_US	600u		// the RF to TX this long before the lead point
 #define PA_AHEAD_US		500u		// the drive keyed this long before the first symbol
-#define BURST_SWITCH_AT_US	(RF_TX_LEAD * 100u - RF_SWITCH_LEAD_US)
-#define BURST_PA_AT_US		(RF_TX_LEAD * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US - PA_AHEAD_US)
 // TX data advance (hrc7000_t.tx_pre_on) 1.1 ms, not the chip's 0.4 ms: at 0.4 ms the inbound burst came 0.71 ms late
 // against the outbound, about 0.11 ms less per step (hardware-dm1801pro.md 5.6)
 #define TX_PRE_ON		11u
@@ -124,12 +123,11 @@ static void path_pins(uint8_t vhf_pin, uint8_t uhf_pin, uint32_t hz, bool on)
 static void rx_path(uint32_t hz, bool on) { path_pins(PIN_RX_VHF, PIN_RX_UHF, hz, on); }
 static void tx_path(uint32_t hz, bool on) { path_pins(PIN_TX_VHF, PIN_TX_UHF, hz, on); }
 
-// The PA drive as a ramp, so the carrier doesn't splatter (5.4: 40 steps)
-static void pa_ramp(uint16_t from, uint16_t to)
+// The PA drive as a ramp, so the carrier doesn't splatter (5.4: 40 steps), on the shared APC ramp's curve
+static void pa_ramp(uint16_t target, bool up)
 {
-	for (uint32_t i = 1; i <= PA_RAMP_STEPS; i++) {
-		int32_t v = (int32_t)from + ((int32_t)to - (int32_t)from) * (int32_t)i / (int32_t)PA_RAMP_STEPS;
-		DAC_DATA_B = (uint32_t)v;
+	for (uint16_t i = 1; i <= PA_RAMP_STEPS; i++) {
+		DAC_DATA_B = apc_ramp_level(target, up ? i : (uint16_t)(PA_RAMP_STEPS - i), PA_RAMP_STEPS);
 		hal_delay_us(PA_RAMP_STEP_US);
 	}
 }
@@ -203,36 +201,30 @@ static bool ref_trim(int16_t ppb)
 // One burst's TX on, from the RF task (dmr_rfburst.h), at the switch point: RX path off, FD6818 straight to TX (no
 // idle) and the TX aux word, TX path on; then the drive ahead of the first symbol (one write: a burst is 27.5 ms long,
 // there is no time for the 2 ms ramp of the analog path). Each path is on only while the FD6818 is in its state, as in
-// the radio's own handlers (5.4). Both points count from the RF TX interrupt, elapsed_us ago
-static void burst_on(hrc_rfburst_wait_fn wait, uint32_t elapsed_us)
+// the radio's own handlers (5.4) (both points from the RF TX interrupt)
+static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 {
-	uint32_t t0 = hrc_micros() - elapsed_us;
-	wait(BURST_SWITCH_AT_US > elapsed_us ? BURST_SWITCH_AT_US - elapsed_us : 0);
+	(void)wait;
+	at(hrc_rfburst_switch_at_us(RF_TX_LEAD, RF_SWITCH_LEAD_US));
 	rx_path(rx_hz, false);
 	fd6818_dmr_burst_at(&fd, true, fd.variant->bw_dmr, synth_hz(tx_hz));
 	fd6818_write(&fd, FD_REG_TX_AUX, 0x3B18);
 	tx_path(tx_hz, true);
-	uint32_t e = hrc_micros() - t0;
-	wait(BURST_PA_AT_US > e ? BURST_PA_AT_US - e : 0);
+	at(hrc_rfburst_pa_at_us(RF_TX_LEAD, PA_AHEAD_US));
 	if (dmr_keyed) {
 		DAC_DATA_B = tx_drive;
 	}
 }
 
-// The burst's TX off with its last symbol (now: at once): drive off, TX path off, FD6818 straight back to receive, RX
-// path on. The TX path switches per burst: a hotspot stays keyed while it listens, and with the TX path on it heard
-// nothing
-static uint32_t burst_off(hrc_rfburst_wait_fn wait, uint32_t elapsed_us, bool now)
+// The burst's TX off, after the task's hold to its last symbol: drive off, TX path off, FD6818 straight back to
+// receive, RX path on. The TX path switches per burst: a hotspot stays keyed while it listens, and with the TX path on
+// it heard nothing
+static void burst_off(void)
 {
-	uint32_t late = now ? 0 : hrc_rfburst_late_us(elapsed_us, RF_TX_LEAD);
-	if (!now) {
-		wait(hrc_rfburst_hold_us(elapsed_us, RF_TX_LEAD));
-	}
 	DAC_DATA_B = 0;
 	tx_path(tx_hz, false);
 	fd6818_dmr_burst_at(&fd, false, fd.variant->bw_dmr, synth_hz(rx_hz));
 	rx_path(rx_hz, true);
-	return late;
 }
 
 static const hrc_rfburst_board_t rf_board = { .on = burst_on, .off = burst_off };
@@ -440,7 +432,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		fd6818_write(&fd, FD_REG_TX_AUX, 0x3B18);
 		hal_delay_ms(1);
 		tx_path(hz, true);
-		pa_ramp(0, tx_drive);
+		pa_ramp(tx_drive, true);
 	}
 	transmitting = true;
 	uint32_t irq = hrc_irq_save();
@@ -462,7 +454,7 @@ static void tx_end(bool keep)
 	}
 #endif
 	if (mode == RADIO_MODE_FM) {
-		pa_ramp(tx_drive, 0);
+		pa_ramp(tx_drive, false);
 	}
 	DAC_DATA_B = 0;
 	hal_delay_ms(1);
