@@ -604,8 +604,7 @@ class Site:
 				     % (docsmod.site_path(p), html.escape(self.t(lang, "radio.doc." + k)))
 				     for k, p in sorted(b["docs"].items(), key=lambda kv: DOC_ORDER.index(kv[0])))
 		fl = b["flash"]
-		can_flash = ((fl["backend"] == "anyroad-dfu" and bool(self.flash["boards"].get(fl["board"], {}).get("key_sha256")))
-			     or (fl["backend"] == "c7000-stub" and fl["board"] in self.flash["c7000"]["boards"]))
+		can_flash = repo.can_flash(fl, self.flash)
 		g = b["frame_geometry"]
 		pct = g["screen_pct"]
 		ctx = {"id": b["id"], "name": b["name"], "also": ", ".join(b["also"]) or "—",
