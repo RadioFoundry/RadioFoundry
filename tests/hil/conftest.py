@@ -145,6 +145,8 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "codeplug_write: writes the radio's codeplug over CPS, backed up and restored "
                             "(needs --allow-codeplug-write)")
     config.addinivalue_line("markers", "reboot: restarts the radio (needs --allow-reboot)")
+    # pyserial's rfc2217 client warns on every port open, which buries the real summary
+    config.addinivalue_line("filterwarnings", "ignore:set(Daemon|Name)\\(\\) is deprecated:DeprecationWarning")
     config.addinivalue_line("markers", "usb_switch: switches the USB personality (needs --allow-usb-switch)")
     config.addinivalue_line("markers", "manual: asks a person at the radio to do something (needs --manual and -s)")
     config.addinivalue_line("markers", "by_ear: a manual test that asks whether the speaker plays a sound; without "
