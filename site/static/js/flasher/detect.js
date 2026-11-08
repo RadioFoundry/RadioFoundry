@@ -108,7 +108,9 @@ export async function confirmVariant({ id, session, radio, board, fb, expect, im
 	if (!r?.code) throw new DetectMismatch(`the radio answered ${JSON.stringify(r?.version ?? "")}, which names no variant: nothing written`);
 	if (expect && r.code !== expect)
 		throw new DetectMismatch(`the radio now answers ${r.version} (${r.code}), not the ${expect} judged at connect: nothing written`);
-	const runs = (radio?.variants || []).find((v) => v.code === r.code)?.runs?.board || null;
+	const variant = (radio?.variants || []).find((v) => v.code === r.code);
+	const runs = variant?.runs?.board || null;
+	if (imageBoard && variant?.blocked) throw new DetectMismatch(`the radio is ${r.code}, and ${variant.blocked}: nothing written`);
 	if (imageBoard && runs !== imageBoard)
 		throw new DetectMismatch(`the radio is ${r.code}, which ${runs ? `takes the ${runs} image` : "has no RadioFoundry image"}, not ${imageBoard}: nothing written`);
 	return r;

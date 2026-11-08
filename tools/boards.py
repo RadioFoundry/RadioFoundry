@@ -177,6 +177,9 @@ BOARD_SCHEMA = {
                                                  # enumerates with on this variant: the web flasher reads the variant
                                                  # from the port alone, nothing sent (site detect.js "usb-id")
                                                  "usb_ids": _opt(("list", str)),
+                                                 # why no installer may write RadioFoundry on this variant yet, though
+                                                 # its image exists; its original firmware can still go back
+                                                 "blocked": _opt(str),
                                                  "runs": _opt({"board": _req(str), "options": _opt(("map", str))})})),
                       "variant_pattern": _opt(str), "variant_check": _opt(str)}),
     # summary: what works, then at most one short clause of what is open; plain text, no links (the README, the
@@ -1083,6 +1086,8 @@ def variant_problems(bid, d, boards, bad):
         bad("hardware.variants: none runs this board's image (runs.board = %r)" % bid)
     for v in vs:
         runs = v.get("runs")
+        if "blocked" in v and not runs:
+            bad("hardware.variants %s: blocked goes with runs (a variant no image runs can't be installed anyway)" % v["code"])
         if not runs:
             if "level" in v or "notice" in v:
                 bad("hardware.variants %s: level and notice go with runs (a variant no image runs is not supported)"
@@ -1382,7 +1387,7 @@ def rfoundry_view(boards):
             "stub": b.stub(),
             # [hardware] variants: code -> (name, the board whose image it runs or None); the anytone-update family's
             # model names per variant code
-            "variants": {v["code"]: [v["name"], v.get("runs", {}).get("board")] for v in d["hardware"].get("variants", [])},
+            "variants": {v["code"]: [v["name"], v.get("runs", {}).get("board"), v.get("blocked")] for v in d["hardware"].get("variants", [])},
             "anytone_models": {k: list(v) for k, v in fl.get("anytone", {}).get("models", {}).items()},
             "build_options": d.get("build_options", []),		# rfoundry asks with the same words as the site
             # the radio types another open firmware's CPS radio info reports for this radio (board.toml [cps])

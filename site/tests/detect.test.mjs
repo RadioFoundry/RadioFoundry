@@ -78,8 +78,9 @@ test("detect: the update mode's identify names the variant and the session is ke
 		assert.equal(found.ident.model, modelOf(v.code));
 		assert.deepEqual(tried.map((x) => x.id), ["usb-id", "anytone-update"]);
 		// the check before the write, on that session: the same radio, its own image
-		const r = await confirmVariant({ id: found.id, session: found.radio, radio: RADIO, board: BOARD, fb: FB, expect: v.code, imageBoard: v.runs.board });
-		assert.equal(r.code, v.code);
+		const own = confirmVariant({ id: found.id, session: found.radio, radio: RADIO, board: BOARD, fb: FB, expect: v.code, imageBoard: v.runs.board });
+		if (v.blocked) await assert.rejects(own, (e) => e instanceof DetectMismatch && e.message.includes(v.blocked));
+		else assert.equal((await own).code, v.code);
 		// the other variant's image is refused before a frame
 		const other = v === A ? B : A;
 		await assert.rejects(confirmVariant({ id: found.id, session: found.radio, radio: RADIO, board: BOARD, fb: FB, expect: v.code, imageBoard: other.runs.board }), DetectMismatch);

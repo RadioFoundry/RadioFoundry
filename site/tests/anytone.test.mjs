@@ -27,9 +27,9 @@ const fx = json("anytone.json");
 const RADIO = RADIOS.find((r) => r.flash.backend === "anytone-update") || assert.fail("no anytone-update radio in radios.json");
 const BOARD = FB.boards[RADIO.flash.board];
 const models = BOARD.anytone_models;
-const runs = (RADIO.variants || []).filter((v) => v.runs?.board === BOARD.id && models[v.code]).map((v) => v.code);
+const runs = (RADIO.variants || []).filter((v) => v.runs?.board === BOARD.id && !v.blocked && models[v.code]).map((v) => v.code);
 const noImage = (RADIO.variants || []).filter((v) => !v.runs && models[v.code]).map((v) => v.code);
-const otherBoard = (RADIO.variants || []).filter((v) => v.runs && v.runs.board !== BOARD.id && models[v.code]);
+const otherBoard = (RADIO.variants || []).filter((v) => v.runs && !v.blocked && v.runs.board !== BOARD.id && models[v.code]);
 const enc = (s) => new TextEncoder().encode(s);
 const rand = (n, seed = 1) => {
 	const a = new Uint8Array(n);
@@ -101,6 +101,18 @@ test("anytone: a variant that takes another board's image is refused for the ins
 		const v = at.judge({ board: BOARD, radio: RADIO, model: m, task: "install" });
 		assert.deepEqual([v.ok, v.why, v.code, v.board], [false, "other_board", variant.code, variant.runs.board]);
 		assert.equal(at.judge({ board: BOARD, radio: RADIO, model: m, task: "restore", spiModels: models[variant.code] }).ok, true);
+	}
+});
+
+test("anytone: a blocked variant is refused for the install, on every board that lists it; its own firmware set restores", () => {
+	const blocked = RADIOS.filter((r) => r.flash.backend === "anytone-update").flatMap((r) => (r.variants || []).filter((v) => v.blocked).map((v) => [r, v]));
+	assert.ok(blocked.length, "the check needs a blocked variant");
+	for (const [radio, v] of blocked) {
+		const board = FB.boards[radio.flash.board], m = board.anytone_models[v.code][0];
+		const got = at.judge({ board, radio, model: m, task: "install" });
+		assert.deepEqual([got.ok, got.why, got.code], [false, "blocked", v.code]);
+		assert.ok(got.text.includes(v.blocked));
+		assert.equal(at.judge({ board, radio, model: m, task: "restore", spiModels: board.anytone_models[v.code] }).ok, true);
 	}
 });
 

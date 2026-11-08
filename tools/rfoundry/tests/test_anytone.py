@@ -31,7 +31,7 @@ def model_of(code):
 
 
 def runs_here():
-    return [c for c, r in B.variant_boards.items() if r == B.id]
+    return [c for c, r in B.variant_boards.items() if r == B.id and not B.variant_blocked(c)]
 
 
 def no_image():
@@ -39,7 +39,8 @@ def no_image():
 
 
 def other_board():
-    return [c for c, r in B.variant_boards.items() if r is not None and r != B.id and c in B.anytone_models]
+    return [c for c, r in B.variant_boards.items()
+            if r is not None and r != B.id and c in B.anytone_models and not B.variant_blocked(c)]
 
 
 def app_image(n=5000, seed=1):
@@ -122,6 +123,15 @@ class Protocol(unittest.TestCase):
             with self.assertRaisesRegex(at.UpdateError, "takes the %s image" % B.variant_boards[code]):
                 at.check_install(B, m)
             self.assertEqual(at.check_restore(B, m, {m}), code)
+
+    def test_blocked_variant_refused_on_every_board_but_restores(self):
+        pairs = [(b, c) for b in boards.BOARDS.values() for c in getattr(b, "anytone_models", {}) if b.variant_blocked(c)]
+        self.assertTrue(pairs, "the check needs a blocked variant")
+        for b, code in pairs:
+            m = b.anytone_models[code][0]
+            with self.assertRaisesRegex(at.UpdateError, "can't be installed on it yet"):
+                at.check_install(b, m)
+            self.assertEqual(at.check_restore(b, m, {m}), code)
 
     def test_stock_set(self):
         with tempfile.TemporaryDirectory() as d:

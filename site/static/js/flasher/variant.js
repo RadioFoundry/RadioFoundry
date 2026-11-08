@@ -33,7 +33,7 @@ export function variantCode(radio, text) {
 //   unsupported  the variant is listed without an image, or the code is not listed at all (variant null)
 export function verdict(radio, code, boardId, options = {}) {
 	const v = (radio?.variants || []).find((x) => x.code === code) || null;
-	if (!v || !v.runs) return { kind: "unsupported", variant: v, code };
+	if (!v || !v.runs || v.blocked) return { kind: "unsupported", variant: v, code };
 	if (v.runs.board !== boardId) return { kind: "other_board", variant: v, code, board: v.runs.board };
 	const defaults = Object.fromEntries((radio.flash?.build_options || []).map((o) => [o.name, o.values[0].id]));
 	const need = Object.entries(v.runs.options || {}).filter(([n, val]) => (options[n] ?? defaults[n]) !== val);
@@ -48,8 +48,8 @@ export const writable = (vd) => vd.kind === "ok" || vd.kind === "dev";
 export function groups(radio) {
 	const vs = radio?.variants || [];
 	return {
-		supported: vs.filter((v) => v.runs && v.level === "supported"),
-		dev: vs.filter((v) => v.runs && v.level !== "supported"),
-		none: vs.filter((v) => !v.runs),
+		supported: vs.filter((v) => v.runs && !v.blocked && v.level === "supported"),
+		dev: vs.filter((v) => v.runs && !v.blocked && v.level !== "supported"),
+		none: vs.filter((v) => !v.runs || v.blocked),
 	};
 }
