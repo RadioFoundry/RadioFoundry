@@ -228,13 +228,17 @@ def test_speaker_second_receiver(ready, ear, sdr_bench, pytestconfig):
     hz = round(rig(pytestconfig, "dmr-freq") * 1e6)
     pos = ready.find_channel(hz, "dmr")
     size = as_int(ready.core().get("zone_size"), 0)
-    other = next((p for p in range(size) if p != pos), None)
+    other = None
+    for p in range(size):
+        if p == pos:
+            continue
+        ready.link.zone_pos(p)
+        ready.wait_for(lambda v: v.get("zone_pos") == str(p), what="another channel of the zone")
+        if ready.core().get("rx_hz") != str(hz):
+            other = p
+            break
     if other is None:
-        skip("state", "the DMR test channel's zone has one channel")
-    ready.link.zone_pos(other)
-    ready.wait_for(lambda v: v.get("zone_pos") == str(other), what="the other channel")
-    if ready.core().get("rx_hz") == str(hz):
-        skip("state", "the other channel is on the test frequency too")
+        skip("state", "no other channel of the DMR test channel's zone is on another frequency")
     with settings(ready, scan_resume=1):
         ready.link.scan("dual", pos)
         try:
