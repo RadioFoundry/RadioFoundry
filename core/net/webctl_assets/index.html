@@ -243,10 +243,11 @@ function show(j) {
 	bar('sg', (j.rssi_dbm + 130) * 1.25, j.rssi_dbm + ' dBm');	// -130 dBm (none) to -50 dBm (full)
 	$('bm').hidden = bat === undefined;
 	if (bat >= 0) bar('bt', bat, bat + ' %', bat < 20 ? 'var(--r)' : 'var(--g)');
-	$('led').style.background = j.led_red ? 'var(--r)' : j.led_green ? 'var(--g)' : '';
+	const c = j.led_red ? (j.led_green ? '#ff9a1f' : '#ff3b3b') : j.led_green ? (j.led_blue ? '#2fe0e0' : '#38e060') : '';
+	$('led').style.background = c;
 	if (l) {
 		l.dataset.f = l.dataset.f || l.getAttribute('fill');
-		l.setAttribute('fill', j.led_red ? '#ff3b3b' : j.led_green ? '#38e060' : l.dataset.f);
+		l.setAttribute('fill', c || l.dataset.f);
 	}
 	if (!live && j.draws !== shown) shot(j.draws);
 }

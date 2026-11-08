@@ -47,7 +47,7 @@ static struct {
 	uint32_t tx_hz;
 	int tx_off_calls;
 	bool audio;
-	bool led[2];
+	bool led[3];
 	uint16_t tone_hz;	// tx_tone
 	int tone_calls;
 	uint16_t tone_log[16];
@@ -1615,6 +1615,68 @@ static void test_scan_dmr_mid_call(void)
 // the scan by the LC's superframe after the first burst A (gotchas 17.2). With the noise reading showing the carrier
 // the probe outlasted the stale timing anyway, only later; a noise reading blind to the DMR carrier left the stop at
 // the dwell on every visit
+// The status LED on a board that asks for it (radio-features.md 5.7): green flashes while the scan runs, solid or cyan
+// once a signal holds it; the other boards keep a dark LED, and dual watch never flashes
+static void test_scan_led(void)
+{
+	start();
+	req(RREQ_SCAN, RSCAN_ZONE);
+	bool lit = false;
+	for (int i = 0; i < 40; i++) {
+		run(25);
+		lit |= hw.led[LED_GREEN];
+	}
+	CHECK(!lit);		// no flag: nothing changes
+	req(RREQ_SCAN, RSCAN_STOP);
+
+	board.caps |= CAP_LED_SCAN_FLASH | CAP_LED_RGB;
+	start();
+	req(RREQ_SCAN, RSCAN_ZONE);
+	int ons = 0, offs = 0, flips = 0;
+	bool was = hw.led[LED_GREEN];
+	for (int i = 0; i < 80; i++) {		// 2 s: four periods
+		run(25);
+		bool g = hw.led[LED_GREEN];
+		CHECK(g == ((sm.view.leds & RADIO_LED_GREEN) != 0) && !hw.led[LED_RED] && !hw.led[LED_BLUE]);
+		ons += g;
+		offs += !g;
+		flips += g != was;
+		was = g;
+	}
+	CHECK(flips >= 6 && flips <= 9 && ons >= 30 && offs >= 30);
+
+	// Stopped: dark, and no timed output left running
+	req(RREQ_SCAN, RSCAN_STOP);
+	run(600);
+	CHECK(sm.view.scan == SCAN_OFF && !hw.led[LED_GREEN] && !sm.led_timed);
+
+	// A digital call that holds the scan: cyan, steady
+	start();
+	all_dmr();
+	signal_on(0, 438500000, 30, no_tone);
+	hw.sig[0].tdma = true;
+	air.on = true;
+	air.hz = 438500000;
+	air.t0 = now + 300;
+	air.dst = 9;
+	air.lc_at = 1;
+	req(RREQ_ZONE_POS, 6);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	bool cyan = false;
+	for (int i = 0; i < 240 && !cyan; i++) {
+		run(25);
+		cyan = sm.view.dmr.state == RDMR_RX && sm.view.state == RS_RX && sm.view.scan_phase == SCAN_PH_HOLD;
+	}
+	CHECK(cyan);
+	CHECK(hw.led[LED_GREEN] && hw.led[LED_BLUE] && !hw.led[LED_RED]);
+	CHECK((sm.view.leds & (RADIO_LED_GREEN | RADIO_LED_BLUE)) == (RADIO_LED_GREEN | RADIO_LED_BLUE));
+	air.on = false;
+	req(RREQ_SCAN, RSCAN_STOP);
+	run(600);
+	CHECK(!hw.led[LED_BLUE]);
+	board.caps &= ~(CAP_LED_SCAN_FLASH | CAP_LED_RGB);
+}
+
 static void test_scan_dmr_kept_timing(void)
 {
 	// Every stop on a DMR frequency restarts the receiver; the same frequency again doesn't (a repeater's timing stays)
@@ -3287,6 +3349,7 @@ int main(void)
 	test_vfo_scan();
 	test_mixed_scan();
 	test_scan_dmr_mid_call();
+	test_scan_led();
 	test_scan_dmr_kept_timing();
 	test_scan_dmr_noise_deaf();
 	test_dual_watch();

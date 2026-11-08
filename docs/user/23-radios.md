@@ -733,7 +733,7 @@ A keypad microphone unplugged while the radio is on stops its PTT within 3 secon
   left with DMR on. The Artery image has it. RadioFoundry decodes the receive audio itself; the original firmware's APRS comes
   from an add-on board, which RadioFoundry doesn't use.
 - The backlight has only the original firmware's five levels: **Brightness** picks one per 20 % (10-20 % the dimmest,
-  90-100 % the brightest). The status light shows both transmit and a busy channel; its color may not tell them apart.
+  90-100 % the brightest). RadioFoundry doesn't control the status light yet, so its colors don't follow the radio's manual.
 - The hotspot, single frequency repeating, privacy, the USB network and zone sharing are left out: the
   radio's memory is too small for all of them, and the vocoder runs in the DMR chip, out of the processor's reach.
 

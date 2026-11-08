@@ -220,6 +220,7 @@ typedef struct {
 
 #define RADIO_LED_GREEN		0x01u	// radio_view_t.leds
 #define RADIO_LED_RED		0x02u
+#define RADIO_LED_BLUE		0x04u	// CAP_LED_RGB
 
 typedef struct {
 	radio_state_t state;

@@ -918,7 +918,7 @@ static void test_webctl(void)
 		"\"screen\":[160,128,16,0,0,160,128]}") == 0);
 	run_for(300);
 	CHECK(ws_find(&a, &at, "\"rx_hz\":446006250", m, sizeof m));
-	CHECK(strstr(m, "\"led_green\":true,\"led_red\":false,\"backlight\":80,\"draws\":0"));
+	CHECK(strstr(m, "\"led_green\":true,\"led_red\":false,\"led_blue\":false,\"backlight\":80,\"draws\":0"));
 	// Unchanged: not sent again; a change goes out within one status period
 	run_for(600);
 	CHECK(!ws_find(&a, &at, "\"rx_hz\"", m, sizeof m) || strstr(m, "\"uptime_s\":11"));	// only the second ticking

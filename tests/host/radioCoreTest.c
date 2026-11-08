@@ -4,7 +4,10 @@
 #include "input/keyassign.h"
 #include <stdio.h>
 #include <string.h>
+// The caps change at run time here (the status LED's colors): defined writable, the core sees it const
+#define board board_as_declared
 #include "board.h"
+#undef board
 #include "radio/radio_sm.h"
 #include "radio/radio_sfr.h"
 #include "radio/tones.h"
@@ -47,7 +50,7 @@ static struct {
 	uint8_t tx_power;
 	int tx_off_calls;
 	bool audio;
-	bool led[2];
+	bool led[3];
 	radio_status_t st;
 } hw;
 
@@ -176,7 +179,7 @@ static void fake_gps_enable(bool on)
 #define FAKE_MODEM_VOICE	0
 #endif
 
-const board_t board = {
+board_t board = {
 	.name = "fake",
 	.caps = FAKE_MODEM_VOICE ? CAP_MODEM_VOICE : 0,
 	.gps_enable = fake_gps_enable,
@@ -4515,6 +4518,24 @@ static void test_fm_rssi_raw(void)
 }
 
 #if CONFIG_SFR
+// A repeater role on an RGB LED is orange while it waits (radio-features.md 5.7); without the flag it stays dark
+static void test_sfr_led(void)
+{
+	for (int rgb = 0; rgb < 2; rgb++) {
+		board.caps = rgb ? board.caps | CAP_LED_RGB : board.caps & ~(uint32_t)CAP_LED_RGB;
+		dmr_start(true);
+		chans[4].sfr_flag1 = SFR_CHANNEL_FLAG1_ENABLED;
+		chans[4].sfr_a = SFR_ROLE_RPT_STANDARD;
+		reload_channel();
+		CHECK(sm.sfr_rpt && hw.led[LED_RED] == (rgb != 0) && hw.led[LED_GREEN] == (rgb != 0) && !hw.led[LED_BLUE]);
+		chans[4].sfr_flag1 = 0;
+		chans[4].sfr_a = 0;
+		reload_channel();
+		CHECK(!sm.sfr_rpt && !hw.led[LED_RED] && !hw.led[LED_GREEN]);
+	}
+	board.caps &= ~(uint32_t)CAP_LED_RGB;
+}
+
 // Standalone SFR (docs/spec/sfr.md 4): a channel's SFR role in the codeplug. Repeater: the runner takes the modem
 // instead of the call stack and repeats the inbound slot on the other one. User: the call stack on the inbound slot
 static void test_sfr_roles(void)
@@ -4882,6 +4903,7 @@ int main(void)
 	test_hotspot_session();
 	test_hotspot_cwid();
 #if CONFIG_SFR
+	test_sfr_led();
 	test_sfr_roles();
 #endif
 #if CONFIG_SFR_CWID

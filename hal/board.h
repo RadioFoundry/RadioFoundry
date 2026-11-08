@@ -53,6 +53,11 @@ enum {
 	// never reach the MCU, so DMR voice needs no board.vocoder, and what works on the voice bits (privacy, recording,
 	// a hotspot's voice) has nothing to work on. The modem still takes and reports bursts in their slots
 	CAP_MODEM_VOICE	= 1u << 9,
+	// The status LED mixes red, green and blue. The core then shows cyan for a digital reception and orange for a
+	// repeater role, and sends LED_BLUE to board.power->led (radio-features.md 5.7)
+	CAP_LED_RGB	= 1u << 10,
+	// Green flashes while a zone or VFO scan runs and nothing else lights the LED (radio-features.md 5.7)
+	CAP_LED_SCAN_FLASH = 1u << 11,
 };
 
 // One band's power level names, where a board's levels give different powers per band (board_t.power_bands)

@@ -30,6 +30,7 @@
 #define RADIO_LED_WAKE_MS	100
 #define RADIO_LED_DENY_STEP_MS	100
 #define RADIO_LED_DENY_STEPS	6
+#define RADIO_LED_SCAN_STEP_MS	250	// CAP_LED_SCAN_FLASH: green on, then off, this long each
 #define RADIO_TOT_DEFAULT_S	180	// TX time-out
 #define RADIO_SQUELCH_DEFAULT	5
 #define RADIO_SQUELCH_MAX	9
@@ -275,6 +276,7 @@ typedef struct {
 #endif
 	int8_t green_out;
 	int8_t red_out;
+	int8_t blue_out;
 	// The LEDs' timed signals (outputs()): led_now is the time of the entry point that runs last (poll, tick,
 	// request), since outputs() is called from everywhere without one
 	uint32_t led_now;
