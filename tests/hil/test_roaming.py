@@ -302,7 +302,7 @@ def test_roam_settings_round_trip(roaming):
 
 @pytest.mark.feature("dmr_roaming")
 def test_roam_zone_toggle(roaming):
-    if roaming.core().get("vfo") == "1":
+    if roaming.leave_vfo().get("vfo") == "1":
         skip("state", "the radio is in the VFO: roaming works on channels")
     L = roaming.link
     before = roam(roaming).get("roam.zone_on")
@@ -322,7 +322,7 @@ def test_roam_zone_toggle(roaming):
 
 @pytest.mark.feature("dmr_roaming")
 def test_roam_now_passive(roaming):
-    if roaming.core().get("vfo") == "1":
+    if roaming.leave_vfo().get("vfo") == "1":
         skip("state", "the radio is in the VFO: roaming works on channels")
     L = roaming.link
     L.setting("roam_probe", 0)

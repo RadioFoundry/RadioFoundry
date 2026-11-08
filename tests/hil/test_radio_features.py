@@ -140,9 +140,7 @@ def on_channel(radio, minimum):
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
-    if radio.core().get("vfo") == "1":
-        radio.link.vfo(False)
-        radio.wait_for(lambda v: v.get("vfo") == "0", what="VFO off")
+    radio.leave_vfo()
     size = as_int(radio.core().get("zone_size"), 0)
     if size < minimum:
         skip("state", f"the current zone has {size} channels, the test needs {minimum}")

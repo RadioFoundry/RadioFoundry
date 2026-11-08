@@ -725,6 +725,15 @@ class Radio:
             if self.core().get("mode") != mode:
                 self._req_until(lambda: L.dmr_fields(mode=mode), lambda v: v.get("mode") == mode, "VFO mode back")
 
+    def leave_vfo(self):
+        """Put the radio on its stored channel when it is in the VFO, and return the core view. restore() puts back the
+        state the session found, so a radio left in the VFO comes back to it before each test; a test that works on
+        channels leaves the VFO itself instead of skipping."""
+        if self.core().get("vfo") == "1":
+            L = self.link
+            self._req_until(lambda: L.vfo(False), lambda v: v.get("vfo") == "0", "VFO off")
+        return self.core()
+
     def find_channel(self, rx_hz, mode=None, duplex=None, simplex=False):
         """Select the first channel receiving on rx_hz (None: any frequency), in mode 'fm' / 'dmr' and, with duplex
         True / False, transmitting on another / the same frequency (simplex=True is duplex=False): the current zone
@@ -733,8 +742,7 @@ class Radio:
         if simplex:
             duplex = False
         L = self.link
-        if self.core().get("vfo") == "1":
-            self._req_until(lambda: L.vfo(False), lambda v: v.get("vfo") == "0", "VFO off")
+        self.leave_vfo()
         start = int(self.core().get("zone_index") or 0)
         count = int(self.core().get("zone_count") or 1)
         searched = []

@@ -416,6 +416,13 @@ def tx_half_cach(bs):
     alt = sum(1 for x, y in zip(ok, ok[1:]) if x["tc"] != y["tc"])
     slcs = [c["slc"] for c in cach if "slc" in c]
     good = sum(1 for _, g in slcs if g)
+    # Where a bad short LC falls (CACH index, the ones decoded around it): at a change of content (a call's start
+    # or end) or in the middle of an unchanged run
+    at = [i for i, c in enumerate(cach) if "slc" in c]
+    for k, i in enumerate(at):
+        if not cach[i]["slc"][1]:
+            near = [f"{cach[j]['slc'][0]:07X}{'' if cach[j]['slc'][1] else '!'}" for j in at[max(k - 2, 0):k + 3]]
+            print(f"bad short LC at CACH {i} of {len(cach)}: {' '.join(near)}")
     return cach, ok, alt, {c["at"] for c in ok}, good, len(slcs) - good
 
 
