@@ -684,11 +684,8 @@ class Radio:
         on = f"on {rx_hz / 1e6:.5f} MHz" if rx_hz is not None else "at all"
         raise AssertionError(f"no channel {on}{' in ' + mode if mode else ''} in any zone: {', '.join(searched)}")
 
-API_FM_THRESHOLD_DB = 8.0          # sdr_fm_check's keyed threshold on a bench board (analyze_fm)
-
-
-class BenchFault(Exception):
-    """The bench failed the test, not the radio: reported as a skip of kind "bench"."""
+FM_SQUELCH_DB = 8.0                # a bench board's FM squelch over the channel's floor (fm_over_start)
+FM_BLOCK_S = 0.01                  # its blocks: the keyed segments' resolution
 
 
 class _LineTx:
@@ -701,6 +698,7 @@ class _LineTx:
         self.done = None
         self.header = None
         self.records = []
+        self.pcm = {}               # an rx op's audio streams: name -> int16 LE bytes
         self.req_op = f"{req.get('op')} {req.get('mode', '')}".strip()                  # an rx op's records ({"block": ...})
         self.req = line.Request(where, req, self._on)
 
@@ -712,6 +710,8 @@ class _LineTx:
             self.started.set()
         elif "rec" in d:
             self.records.append(d["rec"])
+        elif "pcm" in d and data is not None:
+            self.pcm.setdefault(d["pcm"].get("stream"), bytearray()).extend(data)
         elif "started" in d:
             self.started.set()
         elif "done" in d:
@@ -1155,13 +1155,13 @@ class SdrBench:
     def fm_rx_start(self, freq, seconds, **fields):
         """The receive board's FM measurement on freq (MHz) for `seconds` from now, in the background: a _LineTx whose
         wait() gives the done record, its summary the board's figures (carrier_s, cfo_hz, deviation, tone, sub: the
-        CTCSS or DCS it decoded). fields: the mode's others (bw, nominal_dev_hz, deemph_us; None left out). Receives
-        only: no claim on the frequency."""
+        CTCSS or DCS it decoded). fields: the mode's others (bw, block_s, streams, dtmf, aprs, nominal_dev_hz,
+        deemph_us; None left out). Receives only: no claim on the frequency."""
         if not self.can_fm_rx():
             skip("bench", f"the bench board {self.api_rx} has no FM receive (signal modes)")
         self._need_lease()
         L = self._line()
-        req = {"op": "rx", "mode": "fm", "freq": freq, "seconds": float(seconds), "streams": [],
+        req = {"op": "rx", "mode": "fm", "freq": freq, "seconds": float(seconds),
                "label": getattr(self.bench, "label", None) or "fm rx"}
         if self.api_rx == self.api:     # the lease's session is the TX board's; another board has none of ours
             req["session"] = self._api_session
@@ -1174,6 +1174,32 @@ class SdrBench:
         if t.req.error is not None:
             self._api_fail(t.req.error, f"FM receive on {freq} MHz")
         return t
+
+    def fm_over_start(self, freq, seconds, bw_khz=12.5, audio=False, dtmf=False):
+        """The receive board measures FM on freq (MHz) for `seconds` from now, in the background, so the radio can key
+        next: 10 ms blocks for the keyed segments, the audio stream with audio (timed tones, voice figures), the DTMF
+        digits with dtmf. Finish with fm_over_result(); the board's analyzers, no I/Q."""
+        # The board's squelch 8 dB over the channel's floor: a low-powered radio can arrive only about 11 dB over it
+        job = self.fm_rx_start(freq, seconds, bw=25000 if bw_khz > 12.5 else 16000, block_s=FM_BLOCK_S,
+                               squelch_over_db=FM_SQUELCH_DB, streams="audio" if audio else None,
+                               dtmf=True if dtmf else None)
+        job.seconds = float(seconds)
+        job.want_audio = audio
+        return job
+
+    def fm_over_result(self, job, timeout=None):
+        """fm_measure.measure()'s report of an fm_over_start() job, waiting for its end. Samples the board lost break a
+        tone or cut a key-up, so that is a bench fault, a skip."""
+        import fm_measure
+        done = job.wait(timeout if timeout is not None else job.seconds + 20)
+        gap = done.get("gap_samples") or 0
+        if gap:
+            skip("bench", f"the bench board lost samples during the FM measurement (gap_samples {gap}); it can't judge "
+                          "the radio")
+        pcm = job.pcm.get("audio")
+        if job.want_audio and not pcm:
+            skip("bench", f"the bench board {self.api_rx} sent no FM audio stream")
+        return fm_measure.measure(done, job.records, job.header, pcm)
 
     def ssh(self, cmd, timeout=300, check=True):
         self._no_api("shell")
