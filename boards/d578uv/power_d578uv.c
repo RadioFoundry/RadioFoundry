@@ -104,11 +104,11 @@ static bool switch_on(void)
 	return held < POWER_OFF_POLLS;
 }
 
-// The LEDs' outputs are not known: chip 0's GPIO bit 1, once taken for one, is the fan (radio_d578uv.c)
+// The face LED's outputs are not confirmed (hardware-d578uv.md 9): for now the core's LEDs reach only the serial
+// microphone's lights
 static void led(uint8_t which, bool on)
 {
-	(void)which;
-	(void)on;
+	d578uv_mic_led(which, on);
 }
 
 static uint16_t supply_mv(void)

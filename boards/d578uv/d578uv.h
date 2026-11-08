@@ -92,6 +92,10 @@ uint8_t d578uv_mic_level(void);	// hal_power_t.mic_level: chip 0's voice amplitu
 #endif
 // Side A's last raw RSSI, noise and signal flag (the radio task's status poll), for the diagnostics
 void d578uv_rx_raw(uint16_t *rssi, uint16_t *noise, bool *signal);
+// The serial microphone's lights (input_d578uv.c): what the core shows on the status LEDs, which hal_power_t.led passes
+// on, and whether side B is busy and has the speaker (radio_d578uv.c)
+void d578uv_mic_led(uint8_t which, bool on);
+void d578uv_side_b_state(bool *busy, bool *audio);
 // Diagnostics page lines (diag_d578uv.c)
 bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len);
 // The band split: the UHF path from here up (hardware-d578uv.md 5)

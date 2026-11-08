@@ -17,7 +17,8 @@
 // ANYTONE_MIC_POLL_MS, and any byte from the microphone keeps it present: ANYTONE_MIC_TIMEOUT_MS without one drops it
 // and with it PTT and the key, so a microphone pulled out mid-transmission doesn't hold the transmitter on. The bytes
 // to send come from anytone_mic_out, called from a task: the stock firmware too answers from its key loop, and this
-// way an answer never lands inside a status frame.
+// way an answer never lands inside a status frame. A change of the microphone's lights sends a status frame at once
+// (the stock firmware's too, on every TX, RX or side change), within ANYTONE_MIC_STATUS_GAP_MS.
 #ifndef ANYTONE_MIC_H
 #define ANYTONE_MIC_H
 
@@ -40,6 +41,16 @@
 // Byte 12 of the status frame: the stock firmware puts its long press setting there, in 100 ms steps less one (5:
 // 600 ms, the core's long press). What the microphone does with it isn't known
 #define ANYTONE_MIC_STATUS_LONG	5u
+// The status frame's light fields: bit n is byte n + 1 (1 or 0). The stock firmware's fields, not checked on the
+// microphone. The main side is A while ANYTONE_MIC_LIGHT_MAIN_B is clear
+#define ANYTONE_MIC_LIGHT_A_BUSY	0x01u	// side A busy
+#define ANYTONE_MIC_LIGHT_MAIN_AUDIO	0x02u	// the main side's audio open
+#define ANYTONE_MIC_LIGHT_A_TX		0x04u	// side A transmitting
+#define ANYTONE_MIC_LIGHT_B_BUSY	0x08u	// side B busy
+#define ANYTONE_MIC_LIGHT_OTHER_AUDIO	0x10u	// the other side's audio open
+#define ANYTONE_MIC_LIGHT_B_TX		0x20u	// side B transmitting
+#define ANYTONE_MIC_LIGHT_MAIN_B	0x40u	// the main side is B
+#define ANYTONE_MIC_LIGHT_FIELDS	7u
 
 // Key codes in byte 4 (the radio's own numbering). All but MENU and EXIT seen on a radio; those two are the stock
 // firmware's, which the keypad microphone's keys don't send (its C and D, labeled EXIT and MENU, are PC and PD)
@@ -66,6 +77,7 @@ typedef struct {
 	uint8_t len;			// its length from the type byte; 0 = waiting for a type byte
 	uint32_t last_ms;		// when the last byte came, once present
 	uint32_t status_ms;		// when the last status frame went out
+	uint8_t lights_sent;		// the ANYTONE_MIC_LIGHT_* of that frame
 	uint8_t acks;			// ANYTONE_MIC_ACK answers owed
 	bool want_status;		// a presence frame came: a status frame next
 	bool present;
@@ -145,24 +157,26 @@ static inline bool anytone_mic_byte(anytone_mic_t *m, uint8_t c, uint32_t now_ms
 	return true;
 }
 
-// The status frame, all idle: byte 0 'S', bytes 1-7 the radio's state for the microphone's lights (side A busy, the
-// main side's audio open, side A transmitting, side B busy, the other side's audio open, side B transmitting, the main
-// side 0 A / 1 B; the stock firmware's fields, not checked on the microphone), byte 9 0x10, byte 12 the long press,
-// byte 15 0x06
-static inline void anytone_mic_status(uint8_t out[ANYTONE_MIC_STATUS_LEN])
+// The status frame: byte 0 'S', bytes 1-7 the microphone's lights (lights: ANYTONE_MIC_LIGHT_*), byte 9 0x10, byte 12
+// the long press, byte 15 0x06
+static inline void anytone_mic_status(uint8_t out[ANYTONE_MIC_STATUS_LEN], uint8_t lights)
 {
 	for (uint8_t i = 0; i < ANYTONE_MIC_STATUS_LEN; i++) {
 		out[i] = 0;
 	}
 	out[0] = 'S';
+	for (uint8_t i = 0; i < ANYTONE_MIC_LIGHT_FIELDS; i++) {
+		out[1u + i] = (lights >> i) & 1u;
+	}
 	out[9] = 0x10;
 	out[12] = ANYTONE_MIC_STATUS_LONG;
 	out[ANYTONE_MIC_STATUS_LEN - 1u] = 0x06;
 }
 
 // The bytes to send the microphone at now_ms, into out (cap: room for the answers owed and a status frame): the answers
-// first, then a status frame when a presence frame asked for one or a poll is due. Their count; 0 while it isn't present
-static inline uint8_t anytone_mic_out(anytone_mic_t *m, uint32_t now_ms, uint8_t *out, uint8_t cap)
+// first, then a status frame when a presence frame asked for one, lights (ANYTONE_MIC_LIGHT_*) changed or a poll is due.
+// Their count; 0 while it isn't present
+static inline uint8_t anytone_mic_out(anytone_mic_t *m, uint32_t now_ms, uint8_t lights, uint8_t *out, uint8_t cap)
 {
 	uint8_t n = 0;
 	if (!m->present) {
@@ -175,11 +189,12 @@ static inline uint8_t anytone_mic_out(anytone_mic_t *m, uint32_t now_ms, uint8_t
 		m->acks--;
 	}
 	uint32_t since = now_ms - m->status_ms;
-	if ((m->want_status || since >= ANYTONE_MIC_POLL_MS) && since >= ANYTONE_MIC_STATUS_GAP_MS &&
-	    (unsigned)(cap - n) >= ANYTONE_MIC_STATUS_LEN) {
-		anytone_mic_status(out + n);
+	if ((m->want_status || lights != m->lights_sent || since >= ANYTONE_MIC_POLL_MS) &&
+	    since >= ANYTONE_MIC_STATUS_GAP_MS && (unsigned)(cap - n) >= ANYTONE_MIC_STATUS_LEN) {
+		anytone_mic_status(out + n, lights);
 		n = (uint8_t)(n + ANYTONE_MIC_STATUS_LEN);
 		m->status_ms = now_ms;
+		m->lights_sent = lights;
 		m->want_status = false;
 	}
 	return n;

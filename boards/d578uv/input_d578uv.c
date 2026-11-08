@@ -33,6 +33,7 @@ static const uint16_t ladder_max[4] = { 500, 1500, 2500, 3500 };
 static quad_dec_t enc;
 static int32_t enc_taken;
 static anytone_mic_t mic;
+static volatile uint8_t mic_lights;	// side A's ANYTONE_MIC_LIGHT_*, from the radio task (d578uv_mic_led)
 static volatile uint32_t mic_byte_ms;	// when the USART last received a byte
 static volatile bool mic_byte_seen;
 static bool mic_tx;			// PA9 is the USART's TX (the key scan's)
@@ -148,18 +149,29 @@ static int8_t ladder(uint8_t ch)
 	return -1;
 }
 
+void d578uv_mic_led(uint8_t which, bool on)
+{
+	uint8_t bits = which == LED_RED ? ANYTONE_MIC_LIGHT_A_TX :
+		which == LED_GREEN ? (ANYTONE_MIC_LIGHT_A_BUSY | ANYTONE_MIC_LIGHT_MAIN_AUDIO) : 0u;
+	mic_lights = (uint8_t)(on ? mic_lights | bits : mic_lights & ~bits);
+}
+
 // The microphone's keys: from the frames while the serial microphone is present, else from the two lines unless bytes
 // are arriving
 static uint32_t mic_scan(void)
 {
 	uint32_t now = hal_millis();
+	bool b_busy, b_audio;
+	d578uv_side_b_state(&b_busy, &b_audio);
+	uint8_t lights = (uint8_t)(mic_lights | (b_busy ? ANYTONE_MIC_LIGHT_B_BUSY : 0u) |
+		(b_audio ? ANYTONE_MIC_LIGHT_OTHER_AUDIO : 0u));
 	NVIC_DisableIRQ(MIC_USART_IRQn);
 	bool present = anytone_mic_poll(&mic, now);
 	bool ptt = mic.ptt;
 	uint8_t key = mic.key;
 	bool busy = mic_byte_seen && now - mic_byte_ms < MIC_ACTIVITY_MS;
 	uint8_t out[ANYTONE_MIC_STATUS_LEN + 4u];
-	uint8_t n = anytone_mic_out(&mic, now, out, sizeof(out));
+	uint8_t n = anytone_mic_out(&mic, now, lights, out, sizeof(out));
 	NVIC_EnableIRQ(MIC_USART_IRQn);
 	if (present && !mic_tx) {
 		mcu_pin_af(PIN_MIC_LINE9, MIC_TX_AF, false);

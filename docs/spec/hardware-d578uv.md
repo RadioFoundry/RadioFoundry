@@ -202,8 +202,10 @@ each presence frame and one a second after that, no closer than 200 ms. Any byte
 too, keeps it present, so PTT held for minutes stays on. After 3 s without a byte the microphone counts as gone, with
 its PTT and key, and PA9 is an input again: a microphone pulled out mid-transmission unkeys within 3 s. For 50 ms
 after any byte the two lines aren't read as keys, so a frame's bits never look like PTT; a plain microphone's PTT is a
-break to the USART, which counts as no byte. The core debounces all of them as the other keys. The status frame is
-sent idle, so the microphone's lights stay off. The diagnostics line `hmic` shows whether a serial microphone is
+break to the USART, which counts as no byte. The core debounces all of them as the other keys. The status frame carries the
+microphone's lights (a change goes out within 200 ms): side A busy and audio open follow the core's green LED, side A
+transmitting its red, side B busy and audio open come from side B, and the main side stays A. Not checked on a
+microphone. The diagnostics line `hmic` shows whether a serial microphone is
 present, its frames and dropped bytes and the key code held.
 
 RadioFoundry's key names (`d578uv.h`): `KEY_UP`, `KEY_DOWN`, `KEY_MENU`, `KEY_EXIT` for 0x14, 0x16, 0x0E and 0x0F,
@@ -512,8 +514,8 @@ on the PRO; 0x29AA on the 578UV unless a flag is set).
 Chip 0's register 0x25 bit 0 is set in receive and while a TX tone sounds and cleared at each key-up: a microphone
 mute (inferred from where the stock firmware sets it). Bit 1 is the fan, high = on (seen on a radio): the stock "Fan
 Open" setting (PTT, Temperature or Both, default PTT) runs it while transmitting, while PA6's average of four readings
-is hot (on at 0x3E0 and above, off at 0x364 and below), or either (0x0808BE9C). The status LED's output is not
-confirmed (section 9). Bit 2 is the GPS module's enable, not an LED: the firmware
+is hot (on at 0x3E0 and above, off at 0x364 and below), or either (0x0808BE9C). The status LED on the face is an RGB LED; its
+outputs are not confirmed (section 9). Bit 2 is the GPS module's enable, not an LED: the firmware
 sets it with the GPS setting on, together with the GPS UART, and clears it in standby and at power-off (inferred from
 the code). RadioFoundry runs the fan while transmitting or hot (the stock "Both"), and sets bit 2 while the GPS module is
 powered (section 3.6).
