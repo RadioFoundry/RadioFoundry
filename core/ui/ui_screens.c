@@ -2673,7 +2673,7 @@ static void volume_segments(int x, int y, int w, int h, int step)
 
 #if CONFIG_VOLUME_BAR
 // noinline: inlined into the frame code, its locals land in ui_task's deepest path, which has 8 bytes to spare on
-// the DM-1701, MD-380 and MD-UV380 builds (make stack-check)
+// the boards with the tightest UI stack (make stack-check)
 __attribute__((noinline)) void ui_draw_volume_bar(const ui_state_t *s, bool top)
 {
 	const ui_layout_t *L = &ui_layout;
