@@ -153,6 +153,7 @@ typedef struct {
 	uint32_t tx_empty;	// slots left empty on request (DMR_BURST_EMPTY)
 	uint32_t rf_fail;	// RF switches the board could not do
 	uint32_t stalls;	// timing stopped while busy (200 ms without a timeslot interrupt)
+	uint32_t rx_holds;	// direct transmissions ended without the restart, held for an answer (modem-hrc6000.md)
 	uint32_t tx_stalls;	// ... of those: while sending, the transmission dropped (a lost timeslot interrupt)
 	uint32_t rs_why[HRC6000_RS_COUNT];	// receiver restarts by reason
 	uint32_t by_class[4];	// every received-data report by 0x51 bits 1-0, before any filtering
@@ -289,6 +290,8 @@ typedef struct {
 	bool restart_pending;
 	uint8_t restart_why;
 	bool idle_restarted;	// the quiet-period restart has been done
+	bool hold_due;		// ... its answer slot is over: the restart once the slot's report is no longer due
+	bool tx_hold;		// a direct transmission ended on our slot timing: restart if nothing comes (tx_hold)
 	// The burst taken last (repeat check)
 	uint32_t t_report;
 	uint8_t report_dms;	// ms after the tick of the report being handled (255 unknown)
@@ -385,6 +388,9 @@ void hrc6000_dmr_tx_abort(hrc6000_dmr_t *e);
 void hrc6000_dmr_set_embedded_lc(hrc6000_dmr_t *e, const uint8_t lc[9]);
 void hrc6000_dmr_set_cc_filter(hrc6000_dmr_t *e, int8_t cc);
 bool hrc6000_dmr_is_transmitting(const hrc6000_dmr_t *e);
+// The end is asked for and every queued burst is set up: a PA drop now ends the last one (interrupt context, the
+// board's rf switch: it may put the receiver back at once). Never during an SFR's transmission (tx_listen)
+bool hrc6000_dmr_tx_last_out(const hrc6000_dmr_t *e);
 
 void hrc6000_dmr_stats(const hrc6000_dmr_t *e, hrc6000_dmr_stats_t *out);
 

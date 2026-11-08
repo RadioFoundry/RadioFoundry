@@ -67,6 +67,7 @@ void stm32_hrc_dmr_rx_restart(void);	// new channel in DMR
 bool stm32_hrc_dmr_tx_end(void);
 bool stm32_hrc_dmr_tx_active(void);	// the engine's slot state says a transmission is in progress
 bool stm32_hrc_dmr_tx_listening(void);	// that transmission receives between its bursts (an SFR, tx_listen)
+bool stm32_hrc_dmr_tx_last_out(void);	// its last burst is set up: the next PA drop ends it (hrc6000_dmr_tx_last_out)
 // The split duplex BS outbound has the chip (hrc6000_bs.c): µs to its next slot boundary (the slot clock). False
 // otherwise. Interrupt context: a board times the outbound's one PA key-up with it
 bool stm32_hrc_dmr_bs_boundary_us(uint32_t *us);
@@ -94,6 +95,7 @@ static inline void stm32_hrc_dmr_rx_restart(void) {}
 static inline bool stm32_hrc_dmr_tx_end(void) { return false; }
 static inline bool stm32_hrc_dmr_tx_active(void) { return false; }
 static inline bool stm32_hrc_dmr_tx_listening(void) { return false; }
+static inline bool stm32_hrc_dmr_tx_last_out(void) { return false; }
 static inline bool stm32_hrc_dmr_bs_boundary_us(uint32_t *us) { (void)us; return false; }
 static inline void stm32_hrc_dmr_tx_drop(void) {}
 static inline void stm32_hrc_dmr_tx_prepare(void) {}

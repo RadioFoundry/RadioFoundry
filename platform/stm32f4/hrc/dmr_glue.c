@@ -563,6 +563,11 @@ bool stm32_hrc_dmr_tx_listening(void)
 	return active && eng.tx_listen;
 }
 
+bool stm32_hrc_dmr_tx_last_out(void)
+{
+	return active && hrc6000_dmr_tx_last_out(&eng);
+}
+
 bool stm32_hrc_dmr_bs_boundary_us(uint32_t *us)
 {
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
@@ -922,13 +927,14 @@ bool stm32_hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " ov", m->ev_overflow);
 		put_kv(&o, " st", m->stalls);
 		break;
-	case 14:	// restarts by reason: idle, lost, out of step, cc, command, stall, tx end
+	case 14:	// restarts by reason: idle, lost, out of step, cc, command, stall + tx end; holds after a transmission
 		put_kv(&o, "rs i", m->rs_why[HRC6000_RS_IDLE]);
 		put_kv(&o, " l", m->rs_why[HRC6000_RS_LOST]);
 		put_kv(&o, " o", m->rs_why[HRC6000_RS_OOS]);
 		put_kv(&o, " c", m->rs_why[HRC6000_RS_CC]);
 		put_kv(&o, " m", m->rs_why[HRC6000_RS_CMD]);
 		put_kv(&o, " s", m->rs_why[HRC6000_RS_STALL] + m->rs_why[HRC6000_RS_TX_END]);
+		put_kv(&o, " h", m->rx_holds);
 		break;
 	case 16:	// class 0 reports: no superframe on their slot, stale number, taken by sequence, number skipped
 		put_kv(&o, "v0 nc", m->rx_no_call);

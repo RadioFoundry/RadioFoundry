@@ -532,6 +532,26 @@ last burst, the end steps 10-11 restore passive timing / the receiver and clear 
 60 ms per burst (covers a repeater wake-up). A received-data interrupt for a data burst is queued (8 deep is enough;
 the packet CRC catches overflow) and handled outside the interrupt.
 
+**End of a transmission.** The transmission is over at the timeslot interrupt where our next slot comes with nothing
+queued and the end asked for, if the last burst's PA has dropped and the slot starting is not a TX slot. Waiting for
+the interrupt after that one left the slot after our last burst closed (0x41 = 0) with the RF still on the carrier.
+An answer can start as our last burst ends (on the SDR bench, an MS simulator's link ACK to confirmed data; its
+report came 4.5 ms after the next timeslot interrupt). That answer was missed on every try.
+
+In direct mode the end then holds the receiver instead of restarting it: 0x40 = 0xC3 (passive timing from our active
+one), 0x41 = receive, and the software state reset as at a restart. A burst taken holds the receiver as any
+reception does. With nothing taken, the restart (reason "tx end") comes from the poll 8 ms after the next timeslot
+interrupt, once that slot's report is no longer due (a restart at the interrupt itself lost it), or 35 ms after the
+last interrupt if they stop. An answer a slot later, off our timing by a few ms, is taken after the restart: the held
+timing gave only late class 0 reports for it. Through a repeater, or after a transmission that set up no burst, the
+restart comes at once. Diagnostics: `rs ... h` counts the holds.
+
+| Answer on the SDR bench | Restart at the end, one interrupt late | End at once, hold, restart after the report |
+|---|---|---|
+| right after our last burst | 0 of 33 tries | 9 of 11 tries (the 2 others taken with a CRC error) |
+| one slot later | first try, 2 of 2 runs | 3 of 3 runs |
+| five slots later | first try, 2 of 2 runs | 4 of 4 runs |
+
 ### 6.7 Which slot to transmit in
 
 Through a repeater: the channel's timeslot, from the CACH. In direct mode the chip's own timing defines the slots and

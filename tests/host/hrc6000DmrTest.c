@@ -542,8 +542,8 @@ static void test_tx_voice_dmo(void)
 	CHECK(done_tick >= setup_tick[9] + 2);	// after the terminator's own slot (gotchas 3.2)
 	CHECK(!hrc6000_dmr_is_transmitting(&eng));
 	CHECK(last_write(4, 0x40) == 0xC3);	// passive timing again, CRC_MCU_Control clear
-	uint8_t v[8];
-	CHECK(writes_of(0x41, v, 8) >= 4 && v[0] == 0x20);	// direct mode: receiver restarted
+	CHECK(eng.st.rx_holds == 1 && (last_write(4, 0x41) & 0x50) == 0x50);	// direct: held on our timing (test_tx_end_hold)
+	CHECK(done_tick == setup_tick[9] + 2);	// at the tick our next slot comes empty: an answer in it is received
 	CHECK(count_ev(DMR_EV_TX_SLOT_STARTED) == 10 && count_ev(DMR_EV_TX_SLOT_ENDED) == 10);
 	CHECK(eng.st.tx_bursts == 10 && eng.st.tx_underrun == 0);
 	CHECK(memcmp(voice_tx_last, (const uint8_t[]){ 0xB9, 0xE8, 0x81 }, 3) == 0);	// terminator: silence AMBE
@@ -729,6 +729,76 @@ static void test_tx_crc_and_underrun(void)
 	}
 	drain();
 	CHECK(count_ev(DMR_EV_TX_DONE) == 1 && !hrc6000_dmr_is_transmitting(&eng));
+}
+
+// The end of a direct transmission holds the receiver on our slot timing for the next slot instead of restarting
+// it: an answer that starts as our last burst ends came while the chip searched for the sync again, and was missed.
+// The answer is taken; with none, the restart comes from the poll once that slot's report is no longer due
+static void test_tx_end_hold(void)
+{
+	for (int answer = 0; answer < 2; answer++) {
+		fresh_engine();
+		pending_burst = false;
+		CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+		dmr_tx_burst_t hdr = mk(DMR_BURST_DATA_HEADER, 0, true);
+		hrc6000_dmr_tx_queue(&eng, &hdr);
+		hrc6000_dmr_tx_end(&eng);
+		uint32_t t = 7000000;
+		int r50, r41;
+		for (int k = 0; k < 8 && hrc6000_dmr_is_transmitting(&eng); k++) {
+			tx_tick(t += 30000, &r50, &r41);
+		}
+		drain();
+		CHECK(count_ev(DMR_EV_TX_DONE) == 1 && !hrc6000_dmr_is_transmitting(&eng));
+		uint32_t rs = eng.st.rx_restarts;
+		CHECK(eng.st.rx_holds == 1 && eng.st.rs_why[HRC6000_RS_TX_END] == 0);
+		CHECK(last_write(4, 0x40) == 0xC3 && (last_write(4, 0x41) & 0x50) == 0x50);	// passive, receive
+		nev = 0;
+		ts_at(t += 30000);	// the slot after our last burst ends
+		t_us = t + 3000;
+		hrc6000_dmr_poll(&eng);
+		CHECK(eng.st.rx_restarts == rs);	// its report may still come
+		if (answer) {
+			report_at(t + 4500, 0x62, 0x20, 0x00);
+			drain();
+			const dmr_burst_t *b = last_burst();
+			CHECK(b != NULL && b->kind == DMR_BURST_DATA_HEADER);
+			t_us = t + 20000;
+			hrc6000_dmr_poll(&eng);
+			CHECK(eng.st.rx_restarts == rs && !eng.tx_hold);	// a reception: held as any is
+		} else {
+			t_us = t + 10000;
+			hrc6000_dmr_poll(&eng);
+			CHECK(eng.st.rx_restarts == rs + 1 && eng.st.rs_why[HRC6000_RS_TX_END] == 1 && !eng.tx_hold);
+			t_us = t + 20000;
+			hrc6000_dmr_poll(&eng);
+			CHECK(eng.st.rx_restarts == rs + 1);	// once
+		}
+	}
+	// No tick after the end (the chip's timing stopped): the restart after HOLD_NO_TICK_US
+	fresh_engine();
+	pending_burst = false;
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	dmr_tx_burst_t hdr = mk(DMR_BURST_DATA_HEADER, 0, true);
+	hrc6000_dmr_tx_queue(&eng, &hdr);
+	CHECK(!hrc6000_dmr_tx_last_out(&eng));	// queued, not set up
+	hrc6000_dmr_tx_end(&eng);
+	CHECK(!hrc6000_dmr_tx_last_out(&eng));
+	uint32_t t = 7000000;
+	int r50, r41;
+	bool last_seen = false;
+	for (int k = 0; k < 8 && hrc6000_dmr_is_transmitting(&eng); k++) {
+		tx_tick(t += 30000, &r50, &r41);
+		last_seen |= r41 == 0x80 && hrc6000_dmr_tx_last_out(&eng);	// the board may switch to RX at its PA drop
+	}
+	CHECK(last_seen && !hrc6000_dmr_tx_last_out(&eng));
+	uint32_t rs = eng.st.rx_restarts;
+	t_us = t + 30000;
+	hrc6000_dmr_poll(&eng);
+	CHECK(eng.st.rx_restarts == rs);
+	t_us = t + 40000;
+	hrc6000_dmr_poll(&eng);
+	CHECK(eng.st.rx_restarts == rs + 1 && eng.st.rs_why[HRC6000_RS_TX_END] == 1);
 }
 
 static void test_tx_aligned_rmo(void)
@@ -1095,6 +1165,7 @@ int main(void)
 	test_tx_empty_slot();
 	test_tx_fill();
 	test_tx_crc_and_underrun();
+	test_tx_end_hold();
 	test_tx_aligned_rmo();
 	test_tc_locked_one_in_two();
 	test_tx_rejected_and_stall();

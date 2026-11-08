@@ -277,6 +277,13 @@ transmission through `hal_radio_t.dmr_tx_end`; the modem glue implements it once
 RF when the last burst's switch left it on the last `rx()` settings ([modem-hrc7000.md](modem-hrc7000.md) 5.2a).
 `rx()` is always a full set-up. Radios: the boards on both DMR modem glues. Test: `test_dmr_tx_end` (radioCoreTest).
 
+**3.15 End the HR_C6000 transmission at the interrupt its queue runs dry.** Symptom: a link ACK starting as our last
+data burst ended was missed on every try; one a slot later was taken. Cause: the slot engine went to its ending state
+at that interrupt, closed the next slot, and finished only at the interrupt after. Then a receiver restart at the end
+lost the answer that had already started. Rule: finish at that interrupt, hold the receiver on our timing for one slot
+in direct mode, and restart only after that slot's report is no longer due ([modem-hrc6000.md](modem-hrc6000.md) 6.6).
+Radios: the boards on the HR_C6000 glue. Test: `test_tx_end_hold` (hrc6000DmrTest).
+
 ## 4. AMBE codec calling
 
 **4.1 The STM32 codec glue must be built at -O0.** The codec entry calls were inline assembly that depended on the
