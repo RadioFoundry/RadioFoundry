@@ -219,7 +219,8 @@ slot clock (else the period is stored for the phase only), 10 not applied (keyed
   200 µs of the grid on the right slot: then it is only numbered, no restart, and the reply says aligned), and from then on GET_EPOCH's
   counter is the grid's number (counter base) and even counters are outbound TS1. The TX half checks the new clock
   against the grid at its first boundaries and snaps again (up to twelve times) if it is off by 200 µs or more or on
-  the wrong slot, with the chip's restart delay learned from the last restart (kept for the role). The delay
+  the wrong slot, with the chip's restart delay learned as the mean of the last restarts' delays (up to eight, kept for the role; a landing more than
+  4 ms off starts the mean again from it). The delay
   can pass half a slot, so the restart can fall a slot before the boundary it lands on: the slot named for it is the
   grid slot nearest the instant the driver restarts (the first of the request plus whole slots at least 2 ms ahead). From the third
   restart on, a landing inside the aligned bound (1000 µs) ends it too: a chip whose delay varies by ms from restart to

@@ -78,6 +78,7 @@ static struct {
 	uint8_t snap_tries;
 	uint32_t snap_c;		// the driver counter when it restarted
 	int32_t snap_adj;		// the chip's restart delay, learned (µs)
+	uint8_t snap_seen;		// ... the restarts it is the mean of (up to SPLIT_SNAP_MEAN)
 	sched_t sched[SPLIT_SCHED_N];
 	bool commit_valid;
 	uint32_t commit_next;		// the driver counter of the next slot to hand over
@@ -326,6 +327,18 @@ static void snap_check(void)
 	int32_t ph = phase_now(&ok, &g, &c);
 
 	sp.snapping = false;
+	// The chip's restart delay (taken as under half a slot): the mean of the last restarts' delays, so a delay that
+	// varies by ms from restart to restart (modem-hrc6000.md 9.1) is averaged, not chased; capped, so a drift is
+	// followed. A landing further off starts the mean again from it (a role's first restart came up 20 ms sooner)
+	if ((abs32(ph) > SPLIT_SNAP_RELEARN_US) || (sp.snap_seen == 0)) {
+		sp.snap_seen = 1;
+		sp.snap_adj += ph;
+	} else {
+		if (sp.snap_seen < SPLIT_SNAP_MEAN) {
+			sp.snap_seen++;
+		}
+		sp.snap_adj += ph / (int32_t)sp.snap_seen;
+	}
 	// A chip whose restart delay varies by ms rarely lands within the tolerance, and a later try can land further off:
 	// after SPLIT_SNAP_LOOSE tries, any landing inside the aligned bound ends it
 	int32_t tol = (sp.snap_tries >= SPLIT_SNAP_LOOSE) ? SPLIT_ALIGNED_US : SPLIT_SNAP_TOL_US;
@@ -333,7 +346,6 @@ static void snap_check(void)
 	if (((abs32(ph) >= tol) || !ok) && !sp.keyed) {
 		if (sp.snap_tries < SPLIT_SNAP_TRIES) {
 			sp.snap_tries++;
-			sp.snap_adj += ph;	// the chip's restart delay (taken as under half a slot)
 			if (snap_start()) {
 				return;
 			}

@@ -1444,12 +1444,12 @@ static void test_align(void)
 		CHECK(ts == slot_of(c));
 	}
 	ssim.restart_ts_at_write = false;
-	// A chip whose delay varies (5, 8, 8.5 ms): the third landing, 500 us off, is no snap tolerance hit but inside the
-	// aligned bound, and after SPLIT_SNAP_LOOSE tries that ends it
+	// A chip whose delay varies (5, 8, 7 ms): learned as 5 ms, then the mean, 6.5 ms; the third landing, 500 us off, is no
+	// snap tolerance hit but inside the aligned bound, and after SPLIT_SNAP_LOOSE tries that ends it
 	start_sched(0);
 	ssim.restart_seq[0] = 5000;
 	ssim.restart_seq[1] = 8000;
-	ssim.restart_seq[2] = 8500;
+	ssim.restart_seq[2] = 7000;
 	ssim.restart_seq[3] = 30000;	// never reached
 	ssim.restart_seq_n = 4;
 	ssim.restarts = 0;
@@ -1465,7 +1465,8 @@ static void test_align(void)
 	CHECK(align_cmd(grid_t, 0, GRID_C, &ph, &fl) == 0);
 	run_ms(150 * (1 + SPLIT_SNAP_TRIES));
 	hotspot_split_get_view(&v);
-	// (the flipping chip lands 10 ms early or late in turn: the last restart's side follows the count)
+	// (the flipping chip lands 10 ms early or late in turn, each beyond SPLIT_SNAP_RELEARN_US, so each is learned in
+	// full: the last restart's side follows the count)
 	CHECK(ssim.restarts == 1 + SPLIT_SNAP_TRIES && v.align_flags == SPLIT_AL_BASE &&
 	      v.phase_us == ((SPLIT_SNAP_TRIES & 1) ? -10000 : 10000));
 
