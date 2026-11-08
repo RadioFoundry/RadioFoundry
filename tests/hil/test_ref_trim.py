@@ -17,7 +17,7 @@ import pytest
 
 from rfoundry_hil import skip
 from rfoundry_debug import DebugLinkError
-from test_fm_tx import PTT_S, fm_vfo, parse_fm, set_fm  # noqa: F401  (fm_vfo: the fixture)
+from test_fm_tx import PTT_S, fm_vfo, set_fm  # noqa: F401  (fm_vfo: the fixture)
 from hil_config import rig
 
 TRIMS_PPB = (5000, -5000)
@@ -62,20 +62,16 @@ def test_ref_trim_setting(radio):
     assert trim_view(radio) == (str(before), stored)
 
 
-def carrier_hz(radio, sdr_bench, pytestconfig, mhz, tag):
-    """One keyed segment's carrier, Hz from mhz (the SDR bench's own error corrected)."""
-    rdir = sdr_bench.run_dir(tag)
+def carrier_hz(radio, sdr_bench, mhz, tag):
+    """One keyed segment's carrier, Hz from mhz (the bench board's demodulator; its own crystal taken out)."""
     with sdr_bench.lease():
-        cap = sdr_bench.capture_start(rdir, mhz, seconds=PTT_S + 5)
+        job = sdr_bench.fm_over_start(mhz, PTT_S + 5, bw_khz=25)
         radio.ptt_for(PTT_S)
         radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
-        sdr_bench.capture_wait()
-    _, text = sdr_bench.analyze_fm(cap, bw_khz=25, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz)
-    r = parse_fm(text)
-    assert r["segments"] >= 1, f"no keyed segment at {tag}: {text[-600:]}"
-    hz = r.get("carrier_corrected_hz", r.get("carrier_hz"))
-    assert hz is not None, f"no carrier at {tag}: {text[-600:]}"
-    return hz
+        r = sdr_bench.fm_over_result(job)
+    assert r["segments"] >= 1, f"no keyed segment at {tag}: {r}"
+    assert r["carrier_hz"] is not None, f"no carrier at {tag}: {r}"
+    return r["carrier_hz"]
 
 
 @pytest.mark.feature("ref_trim")
@@ -95,12 +91,12 @@ def test_ref_trim_moves_carrier(fm_vfo, sdr_bench, pytestconfig):
     try:
         radio.link.setting("ref_trim", 0)
         time.sleep(TRIM_SETTLE_S)
-        base = carrier_hz(radio, sdr_bench, pytestconfig, mhz, "trim0")
+        base = carrier_hz(radio, sdr_bench, mhz, "trim0")
         print(f"trim 0: carrier {base:+d} Hz")
         for ppb in TRIMS_PPB:
             radio.link.setting("ref_trim", ppb)
             time.sleep(TRIM_SETTLE_S)
-            hz = carrier_hz(radio, sdr_bench, pytestconfig, mhz, f"trim{ppb:+d}")
+            hz = carrier_hz(radio, sdr_bench, mhz, f"trim{ppb:+d}")
             want = round(ppb * mhz / 1000)
             tol = round(CARRIER_TOL_PPB * mhz / 1000)
             print(f"trim {ppb / 1000:+.1f} ppm: carrier {hz:+d} Hz, moved {hz - base:+d} Hz (want {want:+d})")

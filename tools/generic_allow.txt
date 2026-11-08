@@ -124,7 +124,6 @@ tests/hil/test_dmr_emergency.py per-radio skip reasons and bench notes
 tests/hil/test_dmr_ip.py per-radio skip reasons and bench notes
 tests/hil/test_dmr_tx.py per-radio skip reasons and bench notes
 tests/hil/test_dmr_voice.py per-radio skip reasons and bench notes
-tests/hil/test_fm_tx.py per-radio skip reasons and bench notes
 tests/hil/test_hotspot_cwid.py per-radio skip reasons and bench notes
 tests/hil/test_hotspot_sfr.py per-radio skip reasons and bench notes
 tests/hil/test_mic_gain.py per-radio skip reasons and bench notes
