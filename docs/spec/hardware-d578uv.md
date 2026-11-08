@@ -490,6 +490,10 @@ sets it with the GPS setting on, together with the GPS UART, and clears it in st
 the code). RadioFoundry runs the fan while transmitting or hot (the stock "Both"), and sets bit 2 while the GPS module is
 powered (section 3.6).
 
+Receiver power saving (`hal_radio_t.rx_sleep`, battery save, FM only): RadioFoundry writes side A's two chips' enable
+word (0x03) to 0, as before a transmission, and runs the whole receive set-up again to wake. Chip 0's GPIO register
+keeps its bits, so the band, fan and GPS outputs stay. Side B and the broadcast receiver are not put to sleep.
+
 ### 5.1 DMR
 
 The stock firmware has two register sets, analog and digital, written at receive set-up:
