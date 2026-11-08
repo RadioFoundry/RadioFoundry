@@ -655,8 +655,10 @@ image ([AT-D578UV (Artery)](#anytone-at-d578uv-artery)). It runs on the radio; t
 [bring-up checklist](../testing/d578uv-bringup.md) lists what has been checked and how.
 
 **Which AT-D578UV.** Open the radio's version screen. A radio that shows `GD_Ver` has the GD32F303 and takes the
-`d578uv` image. A radio that shows `AT_Ver` has the Artery processor and takes the `d578uva` image. The installer
-reads which one the radio has and refuses the other image.
+`d578uv` image. A radio that shows `AT_Ver` has the Artery processor and takes the `d578uva` image. Or press
+**Auto-detect** on the installer's connect step and connect the radio as it is: on with its original firmware, in
+update mode, or running RadioFoundry. The installer checks the radio's model again just before it writes, and refuses
+the other variant's image.
 
 ### Installing on the AT-D578UV
 
