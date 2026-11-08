@@ -738,7 +738,7 @@ def test_dual_watch_second_receiver_bench(radio, sdr_bench, pytestconfig):
         skip("not_built", "built without the FM VFO")
     if not hasattr(sdr_bench, "fm_tx_start"):
         skip("bench", "this bench can't send FM")
-    mhz = pytestconfig.getoption("fm_mhz")
+    mhz = rig(pytestconfig, "fm-mhz")
     hz, other = round(mhz * 1e6), round(mhz * 1e6) + 25000
     L = radio.link
     radio.go_home()

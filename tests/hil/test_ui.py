@@ -442,6 +442,27 @@ def settings_keys(r, keys):
     wait_screen(r, "home")
 
 
+def settings_row(r, group, row, keys="ok"):
+    """Settings group `group` (its digit), focus moved to row `row` (from 0, the group's order), then keys, then Home.
+    By the focus, not by counted presses: a group opens on its first row this build offers, which isn't row 0 when the
+    rows above are greyed out (Privacy's key rows on a build without privacy)."""
+    if "UI_SETTINGS" not in r.features():
+        skip("not_built", "built without CONFIG_UI_SETTINGS: no Settings menu")
+    for k in ("ok", "7", str(group)):
+        r.press(k)
+    v = wait_screen(r, "group")
+    for _ in range(as_int(v.get("ui.count"), 0)):
+        if v.get("ui.focus") == str(row):
+            break
+        r.press("down")
+        v = r.view(["link"])
+    assert v.get("ui.focus") == str(row), f"settings group {group}: no row {row} ({v.get('ui.count')} rows)"
+    for k in keys.split():
+        r.press(k)
+    r.press("back", LONG)
+    wait_screen(r, "home")
+
+
 @pytest.mark.feature("ui_settings")
 def test_long_press_time_reaches_input(home):
     """Settings > Keys > Long press time: the gesture engine uses the new time at once (input.long_ms)."""
@@ -470,7 +491,7 @@ def test_auto_lock(home):
         skip("no_hw", "no key on the radio unlocks: auto lock never locks it")
     if as_int(r.view(["storage"]).get("settings.auto_lock_s"), 0) != 0:
         skip("state", "auto lock is already on")
-    settings_keys(r, "ok 7 4 down down ok")
+    settings_row(r, 4, 2)	# Privacy > Auto lock: Off -> 30 s
     try:
         r.wait_for(lambda x: x.get("settings.auto_lock_s") == "30", sections=("storage",), what="auto lock 30 s")
         assert ui(r)["ui.locked"] == "0"
@@ -577,7 +598,7 @@ def test_ptt_when_locked_off(home):
     if r.unlock_key() != "quick":
         skip("no_hw", "the radio has no QUICK key to lock and unlock it with")
     r.lowest_power()
-    settings_keys(r, "ok 7 4 down down down ok")
+    settings_row(r, 4, 3)	# Privacy > PTT when locked
     try:
         r.wait_for(lambda x: not as_int(x.get("settings.ui_flags"), 0x10) & 0x10, sections=("storage",),
                    what="PTT when locked off")
@@ -596,7 +617,7 @@ def test_ptt_when_locked_off(home):
     finally:
         if ui(r).get("ui.locked") == "1":
             r.press("quick", LONG)
-        settings_keys(r, "ok 7 4 down down down ok")
+        settings_row(r, 4, 3)	# Privacy > PTT when locked
     r.wait_for(lambda x: as_int(x.get("settings.ui_flags"), 0) & 0x10, sections=("storage",),
                what="PTT when locked on again")
 

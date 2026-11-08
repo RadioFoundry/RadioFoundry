@@ -516,8 +516,13 @@ class Radio:
         if as_int(self.view(["storage"]).get("settings.auto_lock_s"), 0) == 0:
             return False
         self.go_home()
-        for k in ("ok", "7", "4", "down", "down"):
+        for k in ("ok", "7", "4"):
             self.press(k)
+        # to Auto lock (row 2) by the focus: the group opens on its first row the build offers (test_ui.settings_row)
+        for _ in range(4):
+            if self.view(["link"]).get("ui.focus") == "2":
+                break
+            self.press("down")
         for _ in range(4):
             if self.view(["storage"]).get("settings.auto_lock_s") == "0":
                 break
