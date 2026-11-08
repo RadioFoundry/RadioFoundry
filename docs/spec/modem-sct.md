@@ -151,7 +151,8 @@ the last one from the previous call, a second call with the same LC is not repor
 over each burst's information bits as one `DIGC_DATA_FRAME`.
 
 PROP byte: bit 4 a voice burst (the data is the 9-byte LC for the embedded signaling), bits 3-0 the data type
-(the TS 102 361-1 slot type, the same numbers as the stack's data burst kinds).
+(the TS 102 361-1 slot type, the same numbers as the stack's data burst kinds). Received under base station sync, bit 7 is the
+burst's slot: set for TS 2 (reserved in the Packet Interface document; seen on a repeater's outbound).
 
 Frame lengths by kind:
 
@@ -228,7 +229,7 @@ the answer is never taken as a frame's answer or a NAK, OK or not.
 | Report | Engine |
 | --- | --- |
 | DMR_CC | the burst's color code |
-| DMR_SLOT_FOUND | sync family and slot: base station sync gives the slot from the TC bit, mobile sync from TDMA slot 1 or 2 |
+| DMR_SLOT_FOUND | sync family and slot: base station sync gives the slot from the TC bit, mobile sync from TDMA slot 1 or 2. Under base station sync it comes only now and then: each frame's slot is its PROP bit 7 |
 | NEW_EVENT 1 | the next frame is reported with its CRC failed |
 | NEW_EVENT 8 or 13 | `SYNC_LOST`; receive voice stops |
 | DIGC_DATA_FRAME | a burst event to the stack |
@@ -245,6 +246,10 @@ the answer is never taken as a frame's answer or a NAK, OK or not.
   during the call doesn't. The call's own LC from a superframe isn't reported at all: it brings nothing new. A
   different LC (a new talker without a header) takes the place of the next voice burst, and the count goes on from
   it. The stack holds the call as on other modems.
+- A repeater's outbound brings both slots' frames in turn, idle bursts too when DMR_CALL_OPTION byte 3 reports
+  every idle frame (the stack takes a repeater as up only for a moment after its last burst). Each frame goes to
+  the stack in its own slot, and each slot's call has its own voice bursts, from its own header or LC to its own
+  terminator: a call starting in one slot while the other's runs neither restarts nor ends that one.
 
 ## 7. Voice on the baseband (`CAP_MODEM_VOICE`)
 

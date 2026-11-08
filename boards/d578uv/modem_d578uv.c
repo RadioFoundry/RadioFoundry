@@ -330,8 +330,9 @@ static void port_unlock(void *ctx)
 // DMR_CALL_OPTION and REPORT_FIELD as the original firmware sends them (hardware-d578uv.md 4.4), but for bytes 0 and
 // 3. Byte 0: the chip's own squelch off (bit 6 clear), so the board's carrier (d578uv_modem_carrier) and the return
 // to receive below start the sync search; with it on, a lone burst soon after a transmission went undecoded. No RF
-// control (the MCU keys the RF chips). Byte 2: four good CACH,
-// two LC header repeats. Byte 3: every CSBK, LC header and terminator reported. The original 0x44 reports identical LC
+// control (the MCU keys the RF chips). Byte 2: four good CACH, two LC header repeats. Byte 3: every idle frame, CSBK,
+// LC header and terminator reported. The stack takes a repeater as up for 300 ms after its last burst, so with idle
+// frames reported once a repeater's idle outbound never showed as up. The original 0x44 reports identical LC
 // headers and terminators once, and whether the chip forgets them between calls is not known: a second call with
 // the same LC could go unreported. The stack takes repeats as from a burst modem. Bit 6 of bytes 1 and 3 and byte 4
 // are reserved in the Packet Interface document; sent as the original firmware sends them.
@@ -342,7 +343,7 @@ static void port_unlock(void *ctx)
 #define CR_READY	2
 static const sct_dmr_port_t port = {
 	.send = port_send,
-	.call_option = { 0x01, 0x40, 0x42, 0x47, 0x08 },
+	.call_option = { 0x01, 0x40, 0x42, 0x4F, 0x08 },
 	.report_field = 0xFF,
 	.rx_ready = CR_READY,
 	.rx_settle_ms = 14,
