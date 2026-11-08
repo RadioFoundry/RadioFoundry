@@ -580,6 +580,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 	case DL_VIEW_CPS:
 		cps_section(t);
 		break;
+	case DL_VIEW_BOARD:	// no board has keys of its own (board.view_line) yet: the name alone (debuglink.md)
+		dl_text_kv_str(t, "board.name", board.name);
+		break;
 	case DL_VIEW_AUDIO:
 		debuglink_view_audio(t);
 		break;

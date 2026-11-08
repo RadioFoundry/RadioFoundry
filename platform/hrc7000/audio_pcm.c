@@ -140,9 +140,13 @@ static void fifo_feed(void)
 	}
 	bool full = false, pushed = false;
 	while (spk_tail != spk_head) {
+		uint8_t gen = spk_gen;
 		if (!hrc_prompt_push(modem, &spk_q[spk_tail][spk_pos])) {
 			full = true;
 			break;
+		}
+		if (gen != spk_gen) {
+			return;	// a gate edge emptied the queue during the push's wait: its state is spk_drop's, not ours
 		}
 		pushed = true;
 		if (spk_loud[spk_tail]) {

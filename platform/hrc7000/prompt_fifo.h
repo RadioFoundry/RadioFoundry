@@ -15,7 +15,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "platform.h"
+#include "hal_time.h"
 #include "modem/hrc7000/hrc7000.h"
 
 #define HRC_PROMPT_SETTLE_US	200u	// twice the shortest wait measured clean; 5 % of the CPU at 250 chunks a second
@@ -27,9 +27,7 @@ static inline bool hrc_prompt_push(hrc7000_t *m, const int16_t *s)
 	if ((hrc7000_rd(m, C7_AUDIO_CONTROL) & C7_AUDIO_RING_FULL) != 0) {
 		return false;
 	}
-	uint32_t t = hrc_micros();
-	while (hrc_micros() - t < HRC_PROMPT_SETTLE_US) {
-	}
+	hal_delay_us(HRC_PROMPT_SETTLE_US);
 	return hrc7000_prompt_push(m, s);
 }
 

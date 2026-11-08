@@ -889,6 +889,8 @@ class DebugLink:
         """A beep by name (BEEPS, or "sweep" for the speaker test), delay_s (0-255) seconds from now: on a radio whose
         cable mutes the speaker, time to take the cable out first."""
         b = SWEEP if which == "sweep" else BEEPS[which] if isinstance(which, str) else which
+        if not 0 <= delay_s <= 255:
+            raise DebugLinkError(f"beep delay {delay_s} s: 0-255")
         self.radio(OP_BEEP, bytes([b, delay_s]) if delay_s else bytes([b]))
 
     def vibrate(self, which):

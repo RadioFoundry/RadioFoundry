@@ -559,7 +559,8 @@ int main(int argc, char **argv)
 		}
 	}
 	for (int i = 0; i < BEEPS; i++)
-		if (!sounded[i] && beeps[i].b != BEEP_SWEEP)	// the speaker test's sweep: no radio user hears it
+		// The speaker test's sweep: no radio user hears it. By name: a base commit's beep.h has no BEEP_SWEEP
+		if (!sounded[i] && strcmp(beeps[i].name, "SWEEP") != 0)
 			fail(false, "BEEP_%s has no scene (tests/host/beepReel.c)", beeps[i].name);
 
 	snprintf(path, sizeof path, "%s/reel.wav", out_dir);
