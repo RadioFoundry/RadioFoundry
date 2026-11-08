@@ -854,6 +854,27 @@ two blocks are queued, so the queue stays a block ahead of the FIFO for one bloc
 the queue never ran out in the same beeps, and the FIFO was topped up at least every 4 ms (measured). The `un` field
 of the `pg` diagnostics line (below) counts run-outs and stays 0.
 
+The FIFO is two halves of one push (32 samples, 4 ms) each. b31 clears exactly every 4.00 ms, as the modem moves on to
+play the other half, and the next push sets it again at once (measured). Write the 64 bytes as byte writes: with
+halfword or word writes the FIFO counts one entry per bus access and plays nothing usable (measured).
+
+A push in the first microseconds after b31 clears can land in the half being played. From then on every chunk plays
+one chunk early or late: the audio jumps at every 4 ms boundary, a phase step of 360° × f × 4 ms (none at multiples of
+250 Hz, the most near 125 Hz plus multiples of 250 Hz), heard as a buzz of broadband clicks at 250 Hz under the tone,
+limited to the 4 kHz band. It lasts until a later push happens to line the halves up again. Whether a push fell there
+depended on how the audio task's 2 ms poll lined up with the modem's 4 ms, so the fault came and went for seconds at a
+time and between beeps. The `un` field stayed 0 and the chunks went in at exactly 8 kHz: nothing was lost, only
+reordered. On a swept tone, broken stretches had the energy off the tone's frequency within 5-15 dB of the tone;
+whole ones 35 dB below it (measured, `test_speaker_sweep`). Traces of the broken stretches showed pushes that found
+b31 set on entry and clear microseconds later, then wrote at once; in clean ones, almost none.
+
+`platform/hrc7000/prompt_fifo.h` therefore waits 200 µs after it sees b31 clear before writing (twice the shortest wait
+that was clean; pushes 0.1-3 ms after the edge played in order in 12 of 12 sweeps). Only a push that saw the bit
+clear writes, so the bit can only have cleared before that look. At 250 pushes a second the wait costs about 5 % of
+the CPU. Speaker PCM (`audio_pcm.c`) and APRS (`hrc_afsk.c`) both push through it. Every sweep recorded with the wait played
+whole, 8 of them; one more recording had half its energy above 4.3 kHz, which an 8 kHz stream can't make, and was
+the capture's fault (measured).
+
 The prompt path also feeds the TX modulator: with AUDIO_CONTROL b7 set during a DMR transmission, the beep's audio
 rides on the 4FSK. On one board the talk permit tone overlapped the second and third voice LC headers, which then
 carried no decodable sync on the SDR bench and the bench modem took the call by late entry; with b7 held clear while

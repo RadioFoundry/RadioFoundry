@@ -12,7 +12,9 @@
 // The FIFO takes only two of those chunks (8 ms), less than a block, and the blocks come at the rate it plays them.
 // Pushed as each block came, it was nearly empty at every block edge and ran dry there, which broke each tone up at
 // 20 ms intervals (modem-hrc7000.md 8.4). So after the route turns on (or a gate edge) nothing is pushed until
-// SPK_PRIME_BLOCKS are queued: the queue stays a block ahead of the FIFO, at the cost of one block of latency.
+// SPK_PRIME_BLOCKS are queued: the queue stays a block ahead of the FIFO, at the cost of one block of latency. Each
+// push waits a moment after the FIFO showed room (prompt_fifo.h): written at once, a chunk could land in the half
+// being played, and the audio then jumped by a chunk every 4 ms.
 //
 // Sample format: mic buffer 16-bit native words; prompt FIFO 16-bit samples, low byte first (bench).
 //
@@ -28,6 +30,7 @@
 #include <string.h>
 #include "config.h"
 #include "audio_pcm.h"
+#include "prompt_fifo.h"
 
 #if CONFIG_DMR	// the whole file: DMR only
 #include "platform.h"
@@ -137,7 +140,7 @@ static void fifo_feed(void)
 	}
 	bool full = false, pushed = false;
 	while (spk_tail != spk_head) {
-		if (!hrc7000_prompt_push(modem, &spk_q[spk_tail][spk_pos])) {
+		if (!hrc_prompt_push(modem, &spk_q[spk_tail][spk_pos])) {
 			full = true;
 			break;
 		}
