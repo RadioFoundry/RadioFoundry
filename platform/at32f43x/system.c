@@ -8,6 +8,8 @@
 #include "platform.h"
 #include "board.h"
 #include "hal_system.h"
+#include "../cortexm/msp_stack.h"
+#include "../cortexm/sys_windows.h"
 #if CONFIG_CRASH_LOG
 #include "hal_crash.h"
 #endif
@@ -28,6 +30,16 @@ static void read(uint32_t addr, void *dst, size_t n)
 	memcpy(dst, (const void *)(uintptr_t)addr, n);
 }
 
+static bool mem_window(unsigned i, hal_mem_window_t *w)
+{
+	return cortexm_mem_window(i, w, AT32_FLASH_SIZE_KB);
+}
+
+static uint32_t irq_stack_free(void)
+{
+	return msp_stack_free();
+}
+
 static bool reboot(uint8_t mode)
 {
 	if (mode != HAL_REBOOT_NORMAL) {
@@ -46,6 +58,9 @@ const hal_system_t at32_system = {
 	.chip = chip,
 	.read = read,
 	.reboot = reboot,
+	.mem_window = mem_window,
+	.irq_stack_free = irq_stack_free,
+	.reg = cortexm_reg,
 #if CONFIG_STUB_ENTRY
 	// stub_entry.c: no span of its own (stub_region, enter_stub NULL), staged in the frame buffer instead
 	.stub_run_addr = 0x20000000u,			// the SRAM base, AT32STUB_RUN_ADDR
