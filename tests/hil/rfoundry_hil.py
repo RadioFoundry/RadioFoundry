@@ -1192,8 +1192,9 @@ class SdrBench:
         done = job.wait(timeout if timeout is not None else job.seconds + 20)
         gap = done.get("gap_samples") or 0
         if gap:
-            skip("bench", f"the bench board lost samples during the FM measurement (gap_samples {gap}); it can't judge "
-                          "the radio")
+            where = [g["gap"] for g in job.req.replies if "gap" in g][:4]
+            skip("bench", f"the bench board lost samples during the FM measurement (gap_samples {gap}, sc0 "
+                          f"{(job.header or {}).get('sc0')}, {where}); it can't judge the radio")
         pcm = job.pcm.get("audio")
         if job.want_audio and not pcm:
             skip("bench", f"the bench board {self.api_rx} sent no FM audio stream")

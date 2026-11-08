@@ -171,7 +171,7 @@ class Request:
                 if d.get("state") == "granted":
                     self.log(f"rfoundry-bench: got the {d.get('kind')} after {d.get('waited_s', 0):.0f} s")
                     continue
-                if "note" in d:
+                if "note" in d and "started" not in d:     # a tx job's started line carries a note of its own
                     self.log(f"rfoundry-bench: {d['note']}")
                     continue
                 self.stamps.append(time.monotonic())
