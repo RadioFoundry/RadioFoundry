@@ -36,7 +36,6 @@
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"	// dmr_sms_format_t
-#include "codeplug/codeplug_kv.h"
 #include "radio/radio_keys.h"
 #endif
 #if CONFIG_DMR_EMERGENCY
@@ -1858,17 +1857,13 @@ static dmrDataSettings_t data_saved;
 // read at start, whenever codeplug_serial() moves on and whenever the settings change. A key that is present holds its
 // setting: a change made another way is put back at the next tick, before it is saved. An absent key leaves the
 // setting as the radio has it (the settings store's copy), so a codeplug from a tool that doesn't carry the area
-// changes nothing. Nothing kept in RAM: a read is a few bytes of flash, and only on those events
-static bool data_kv_apply(dmrDataSettings_t *set)
-{
-	return radio_keys_apply(set);	// the table of the keys (radio_keys.h)
-}
-
+// changes nothing. Nothing kept in RAM: a read is a few bytes of flash, and only on those events. The keys are the
+// table in radio_keys.h (radio_keys_apply)
 static void data_kv_load(void)
 {
 	dmrDataSettings_t set;
 	dmrDataServiceGetSettings(&set);
-	if (data_kv_apply(&set)) {
+	if (radio_keys_apply(&set)) {
 		dmrDataServiceSetSettings(&set);
 	}
 }
@@ -1885,7 +1880,7 @@ static void data_save_settings(uint32_t now_ms)
 	    memcmp(cur.ipConfirmedRule, data_saved.ipConfirmedRule, sizeof(cur.ipConfirmedRule)) == 0) {
 		return;
 	}
-	if (data_kv_apply(&cur)) {
+	if (radio_keys_apply(&cur)) {
 		dmrDataServiceSetSettings(&cur);	// the codeplug's key holds against the change
 	}
 	data_saved = cur;
@@ -2020,7 +2015,7 @@ static void data_init(radio_sm_t *sm)
 		memcpy(set.ipConfirmedRule, st->ds_ip_rule, sizeof(set.ipConfirmedRule));
 		set.ipGatewayId = st->ds_ip_gateway & 0xFFFFFFu;	// 0 in a record from before it (off)
 	}
-	data_kv_apply(&set);
+	radio_keys_apply(&set);
 	data_saved = set;
 	data_tx.list = NULL;
 	dmrDataServiceInit(&env);

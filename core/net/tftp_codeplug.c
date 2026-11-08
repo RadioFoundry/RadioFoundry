@@ -393,11 +393,11 @@ static uint32_t next_sector(uint32_t from)
 // keys (codeplug-settings.md 6)
 static bool copy_sector(uint32_t s, uint8_t *buf)
 {
+	if (s == CODEPLUG_KV_ADDR) {	// a whole region sector: the staged bytes replace all of it
+		return staged_read(s, buf, SECTOR) && (codeplug_kv_keep(phys(s), buf) || storage_sector_write(phys(s), buf));
+	}
 	if (!flash_read(phys(s), buf, SECTOR)) {
 		return false;
-	}
-	if (s == CODEPLUG_KV_ADDR) {
-		return staged_read(s, buf, SECTOR) && (codeplug_kv_keep(phys(s), buf) || storage_sector_write(phys(s), buf));
 	}
 	for (unsigned i = 0; i < REGIONS; i++) {
 		uint32_t lo = s > regions[i].start ? s : regions[i].start;
