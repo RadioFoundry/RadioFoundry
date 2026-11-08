@@ -48,7 +48,8 @@ over SENT on a red screen with its own two-tone sound, then hold again to cancel
 
 Until you cancel it, Home's bottom row is red and says so: "EMERGENCY  Back: mic off" while the radio transmits,
 then "EMERGENCY  Hold <key> to end", with the name of whichever key holds Emergency in Settings > Keys. With no key set
-to Emergency it says "Back twice: end".
+to Emergency it says "Back twice: end". The talk line above it reads "EMERG→" and the target in place of "PTT→":
+every call you make with **PTT** goes there as an emergency call, talking over a busy channel.
 
 <img src="../ux/screens/160x120i5/emergency_hold.png" width="200" alt="The countdown while the emergency key is held">
 <img src="../ux/screens/160x120i5/emergency_sent.png" width="200" alt="SENT, after the hold">
@@ -65,7 +66,7 @@ alarm and the hot mic transmit, as for any transmission.
 |---|---|---|---|
 | Hold | 1-10 s | 3 s | How long the key is held, from the press, to start or cancel |
 | Emergency key | On, Off | On | Off: holding the key does nothing emergency-related (its short press still works) |
-| Alert | Beep+vibrate, Silent | Beep+vibrate | Silent: the countdown and SENT stay on the screen, with no beep, no vibration, no beep cue and no red screen |
+| Alert | Beep+vibrate, Silent | Beep+vibrate | Silent: the countdown, SENT and Home's emergency bar stay on the screen, with no beep, no vibration, no beep cue and no red screen |
 | Open mic | Off, 5 s ... 1 min | 10 s | How long the radio keys itself after the alarm (the hot mic). Off: you key the emergency call with **PTT** |
 
 <img src="../ux/screens/160x120i5/settings_emergency.png" width="200" alt="Settings > Keys > Emergency">

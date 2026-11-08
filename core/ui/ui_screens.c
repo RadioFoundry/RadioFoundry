@@ -795,7 +795,7 @@ void ui_draw_splash(const char *board_name, const char *version, const char *lin
 // --- Home ---
 
 #if CONFIG_DMR
-static void draw_talk_dmr(const radio_view_t *v);
+static void draw_talk_dmr(const radio_view_t *v, bool em);
 static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s);
 #endif
 
@@ -892,11 +892,13 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 		gfx_text(L->medium, x, base - L->medium->ascent, GLYPH_DOT, ui_col.warn);
 }
 
-static void draw_talk(const radio_view_t *v)
+// em: our emergency is on (ui_state_t.em_bar): PTT's call carries the emergency option to the emergency target, which
+// the radio core has made the talk target (dmr-emergency.md 3)
+static void draw_talk(const radio_view_t *v, bool em)
 {
 #if CONFIG_DMR
 	if (v->ch.mode == RADIO_MODE_DMR) {
-		draw_talk_dmr(v);
+		draw_talk_dmr(v, em);
 		return;
 	}
 #endif
@@ -1195,7 +1197,7 @@ static bool dmr_call_screen(const radio_view_t *v)
 // Talk target line on Home: "PTT-> TG 123 Main Ops", or "Reply-> TG 9 (8s)" during the reply window
 static bool ui_st_dmr_off;		// ui_state_t.dmr_off of the frame being drawn
 
-static void draw_talk_dmr(const radio_view_t *v)
+static void draw_talk_dmr(const radio_view_t *v, bool em)
 {
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->medium;
@@ -1204,7 +1206,8 @@ static void draw_talk_dmr(const radio_view_t *v)
 	sbuf_t b;
 	color_t c = ui_col.fg;
 
-	const char *prefix = d->reply_active ? TR("Reply" GLYPH_ARROW " ") : "PTT" GLYPH_ARROW " ";
+	const char *prefix = em ? TR("EMERG" GLYPH_ARROW " ") : d->reply_active ? TR("Reply" GLYPH_ARROW " ") :
+		"PTT" GLYPH_ARROW " ";
 	sb_init(&b, buf, sizeof buf);
 	if (v->ch.rx_only) {
 		sb_str(&b, TR("RX only"));
@@ -1230,7 +1233,8 @@ static void draw_talk_dmr(const radio_view_t *v)
 	}
 	// Too wide: the shorter alternate (a talkgroup drops its name, a contact its ID), never a smaller font
 	int w = gfx_width();
-	int x = gfx_text(f, 0, L->talk_y, prefix, d->reply_active ? ui_col.warn : ui_col.dim);
+	color_t pc = em ? (gfx_bpp() == 1 ? ui_col.fg : ui_col.tx) : d->reply_active ? ui_col.warn : ui_col.dim;
+	int x = gfx_text(f, 0, L->talk_y, prefix, pc);
 	gfx_text_fit(f, buf, w - x, fit, sizeof fit);
 	gfx_text(f, x, L->talk_y, fit, c);
 }
@@ -1678,7 +1682,7 @@ void ui_draw_home(const radio_view_t *v, const ui_state_t *s)
 		draw_home_large(v, s);
 	} else {
 		draw_place(v, s);
-		draw_talk(v);
+		draw_talk(v, s->em_bar != NULL);
 		draw_chips(v, s);
 		if (ui_layout.sep_y >= 0)
 			gfx_hline(0, ui_layout.sep_y, gfx_width(), ui_col.line);
@@ -2186,7 +2190,8 @@ void ui_draw_home_dual(const radio_view_t *v, const ui_state_t *s)
 #endif
 
 // Home in emergency (s->em_bar): the hint row red, hints on or off, so the radio says it is still in emergency and
-// how to end it (docs/spec/dmr-emergency.md 5.1). A toast still goes over it. 1 bpp: inverted
+// how to end it (docs/spec/dmr-emergency.md 5.1). A toast still goes over it. 1 bpp: inverted. Alert Silent: no red
+// (as the outcome screen), the hint row's own colors
 static void home_bottom(const ui_state_t *s, const char *hint)
 {
 	if (s->em_bar == NULL || s->toast != NULL) {
@@ -2196,11 +2201,11 @@ static void home_bottom(const ui_state_t *s, const char *hint)
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->small;
 	int w = gfx_width(), y0 = L->hint_y - 1;
-	bool mono = gfx_bpp() == 1;
+	bool inv = gfx_bpp() == 1 && !s->em_quiet;
 	char fit[64];
-	gfx_fill(0, y0, w, gfx_height() - y0, mono ? ui_col.fg : ui_col.tx);
+	gfx_fill(0, y0, w, gfx_height() - y0, inv ? ui_col.fg : s->em_quiet ? ui_col.hint_bg : ui_col.tx);
 	gfx_text_fit(f, s->em_bar, w - 2, fit, sizeof fit);
-	gfx_text(f, (w - gfx_text_width(f, fit)) / 2, L->hint_y, fit, mono ? ui_col.bg : ui_col.fg);
+	gfx_text(f, (w - gfx_text_width(f, fit)) / 2, L->hint_y, fit, inv ? ui_col.bg : ui_col.fg);
 }
 
 void ui_draw_bottom(const ui_state_t *s, const char *hint)

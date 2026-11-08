@@ -2075,6 +2075,7 @@ static void __attribute__((noinline)) em_bar_tick(void)
 		dirty = true;
 	}
 	ui_st.em_bar = em_bar_text[0] ? em_bar_text : NULL;
+	ui_st.em_quiet = em.silent;
 }
 
 // BACK on Home in emergency: the hot mic off (the emergency goes on), or with no key to end it, twice ends it

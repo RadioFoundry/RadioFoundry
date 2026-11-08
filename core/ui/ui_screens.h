@@ -125,6 +125,7 @@ typedef struct {
 	uint16_t unread;	// unread messages
 	const char *home_hint;	// the hint for Home's idle state, built from the board's keys ("OK Menu *Quick #Joe")
 	const char *em_bar;	// our emergency is on: Home's hint row is a red bar saying so and how to end it, else NULL
+	bool em_quiet;		// Alert Silent: the bar in the hint row's colors, not red
 	ui_banner_t banner;
 #if CONFIG_DUAL_WATCH
 	ui_dual_t dual;

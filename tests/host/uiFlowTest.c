@@ -943,7 +943,7 @@ static const flow_t flows_em[] = {
 	{ "E emergency: BACK turns the mic off, still on", EM_SENT, "back",
 	  "micoffs=1 emphase=2 emerg=1 toast=Mic_off:_still_in_emergency", 1, false },
 	{ "E emergency: in emergency, the key is named", EM_SENT "emphase:on wait:2000", "",
-	  "screen=home emphase=2 shows=Hold_SK3_to_end", 0, false },
+	  "screen=home emphase=2 shows=Hold_SK3_to_end hides=PTT", 0, false },
 	{ "E emergency: the key moved, its new name", EM_SENT "emphase:on emkey:P2 wait:2000", "", "shows=Hold_P2_to_end", 0,
 	  false },
 	{ "E emergency: with the key, BACK doesn't end it", EM_SENT "emphase:on wait:2000", "back back",
@@ -957,7 +957,7 @@ static const flow_t flows_em[] = {
 	{ "E emergency: Key Off, BACK twice ends it", "ok 7 8 up ok down ok long:back emstart emphase:on wait:2000",
 	  "back back", "emerg=0", 2, false },
 	{ "E emergency: canceled, the bar goes", EM_SENT "emphase:on wait:2000", "hold:emerg,3000 wait:3000",
-	  "emerg=0 emphase=0 hides=EMERG", 1, false },
+	  "emerg=0 emphase=0 hides=EMERG shows=PTT", 1, false },
 #undef EM_SENT
 	{ "E emergency: let go at 1.45 s is still the key's press", "", "hold:emerg,1450", "power=5 emerg=0 screen=home", 1,
 	  false },
