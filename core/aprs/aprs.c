@@ -1169,11 +1169,15 @@ void aprs_tick(const aprs_radio_t *r, uint32_t now_ms)
 		a.host_refill_ms = now_ms;
 	}
 #if CONFIG_APRS_RX
+	bool expired = false;
 	for (uint8_t i = 0; i < a.nst; i++) {
 		if (a.st[i].has_pos && now_ms - a.st[i].pos_ms >= STATION_POS_MS) {
 			a.st[i].has_pos = false;
-			changed();
+			expired = true;
 		}
+	}
+	if (expired) {
+		changed();
 	}
 #endif
 	uint8_t block = rf_block();
