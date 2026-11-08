@@ -129,6 +129,10 @@ supply_mv = [10000, 16000]
 [hil.limits]
 fm_squelch_tail_ms = { value = 120, reason = "tails of 70-105 ms of noise after the bench carrier ends, against the core's 85 ms close time; accepted by the owner, since squelch tail elimination isn't done (radio-features.md 3.5)" }
 
+# Features built and known not to work yet on this radio (tools/bringup.py: "unsupported"), each with its reason
+[features]
+sfr = { state = "unsupported", reason = "test_sfr_repeater_quality loses 24 inbound frames of a bench call (3 allowed) on the radio's single receive path; parked until that is looked into" }
+
 # The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
 # reports them
 [cps]
