@@ -55,6 +55,7 @@ static uint32_t tick_count;	// slot ticks, counted by the producer
 static uint8_t tick_alt;	// consecutive ticks with the slot number alternating 1 / 2
 static int8_t tick_ts;
 static void (*wake_fn)(void);	// dmr_call_set_wake; outlives dmr_call_init
+static void (*wake_listen_fn)(bool listen);	// dmr_call_set_wake_listen; the same
 
 // --- Stack state ---
 
@@ -136,6 +137,7 @@ static struct {
 	uint32_t deadline;
 	uint32_t wake_sent_ms;
 	uint8_t wake_tries;
+	bool wake_listening;	// wake_listen_fn was last told true
 	uint32_t permit_ms;	// the talk permit hold's start (TX_PERMIT)
 	bool permit_done;	// this PTT press had its hold
 	uint32_t tx_start_ms;
@@ -1299,8 +1301,18 @@ static void tx_start_voice(uint32_t now)
 	tx_fill(now);
 }
 
+static void wake_listen(bool listen)
+{
+	if (s.wake_listening != listen) {
+		s.wake_listening = listen;
+		if (wake_listen_fn != NULL)
+			wake_listen_fn(listen);
+	}
+}
+
 static void tx_wakeup(uint32_t now)
 {
+	wake_listen(false);
 	uint8_t csbk[12];
 
 	dmr_csbk_bs_activation(s.cfg.own_id, csbk);
@@ -1473,6 +1485,7 @@ static void tx_poll(uint32_t now)
 		break;
 	case TX_WAKE:
 		if (!before(now, s.deadline)) {	// tx_done never came: listen anyway
+			wake_listen(true);
 			s.tx = TX_WAKE_LISTEN;
 			s.deadline = now + DMR_CALL_WAKEUP_LISTEN_MS;
 		}
@@ -1483,8 +1496,10 @@ static void tx_poll(uint32_t now)
 			if (!s.ptt && !s.data_active) {
 				s.tx = TX_NONE;	// PTT let go during the wake-up: the repeater is up, nothing more to send
 				s.view.wake_admits++;	// but the user hears that it would have gone through
+				s.wake_listening = false;	// the transmitter comes off with the phase (radio_sm), not keyed again
 				break;
 			}
+			wake_listen(false);
 			s.tx = TX_ACCESS;
 			tx_access(now);
 		} else if (!before(now, s.deadline)) {
@@ -1492,8 +1507,10 @@ static void tx_poll(uint32_t now)
 
 			if (s.wake_tries < tries)
 				tx_wakeup(now);
-			else
+			else {
+				s.wake_listening = false;	// as when the repeater answers a short press
 				tx_deny(DMR_TX_ERR_NO_REPEATER);
+			}
 		}
 		break;
 	case TX_PERMIT: {
@@ -1592,6 +1609,7 @@ static void handle_event(const evq_item_t *it, uint32_t now)
 		} else if (s.tx == TX_DATA_END) {
 			data_end(DMR_TX_OK);
 		} else if (s.tx == TX_WAKE) {
+			wake_listen(true);
 			s.tx = TX_WAKE_LISTEN;
 			s.deadline = now + DMR_CALL_WAKEUP_LISTEN_MS;
 		}
@@ -1918,6 +1936,11 @@ void dmr_call_reset_stats(void)
 	memset(&stats, 0, sizeof(stats));
 	tx_underruns_base = s.view.tx_underruns;
 	evq_drops_base = evq_drops;
+}
+
+void dmr_call_set_wake_listen(void (*fn)(bool listen))
+{
+	wake_listen_fn = fn;
 }
 
 void dmr_call_set_wake(void (*fn)(void))

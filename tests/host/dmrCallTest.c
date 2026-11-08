@@ -911,6 +911,56 @@ static void test_rmo_air_slot_alignment(void)
 	}
 }
 
+// The board's receiver follows the wake-up (dmr_call_set_wake_listen)
+static unsigned listen_on, listen_off;
+static void on_wake_listen(bool listen) { if (listen) listen_on++; else listen_off++; }
+
+static void test_wake_listen(void)
+{
+	dmr_call_config_t c = base_cfg();
+
+	c.rmo = true;
+	dmr_call_set_wake_listen(on_wake_listen);
+
+	// the repeater answers: receive for the answer, the transmit set-up back before the call
+	setup(&c);
+	listen_on = listen_off = 0;
+	sim.wake_repeater_on_csbk = true;
+	dmr_call_ptt(true);
+	run_ms(400);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && listen_on == 1 && listen_off == 1);
+	dmr_call_ptt(false);
+	run_ms(600);
+
+	// the repeater is up at the next key-up: no wake-up, nothing to switch
+	listen_on = listen_off = 0;
+	dmr_call_ptt(true);
+	run_ms(100);
+	CHECK(listen_on == 0 && listen_off == 0);
+	dmr_call_ptt(false);
+	run_ms(600);
+
+	// no repeater: a listen after every try, transmit again only before the next try, and not after the last
+	setup(&c);
+	listen_on = listen_off = 0;
+	dmr_call_ptt(true);
+	run_ms(3000);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED);
+	CHECK(listen_on == DMR_CALL_WAKEUP_ATTEMPTS && listen_off == DMR_CALL_WAKEUP_ATTEMPTS - 1);
+	dmr_call_ptt(false);
+	run_ms(20);
+
+	// the next call starts keyed, so its first listen is told again
+	setup(&c);
+	listen_on = listen_off = 0;
+	dmr_call_ptt(true);
+	run_ms(400);
+	CHECK(listen_on == 1 && listen_off == 0);
+	dmr_call_ptt(false);
+	run_ms(3000);
+	dmr_call_set_wake_listen(NULL);
+}
+
 static void test_rmo_wakeup(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -2439,6 +2489,7 @@ int main(void)
 	test_tx_done_wake();
 	test_tx_modem_stalled();
 	test_rmo_wakeup();
+	test_wake_listen();
 	test_rmo_air_slot_alignment();
 	test_rx_call();
 	test_rx_filters();
