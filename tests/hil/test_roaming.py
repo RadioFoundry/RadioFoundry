@@ -7,7 +7,7 @@ restore_radio fixture puts back the channel.
 
 The radio-only tests never transmit: roaming starts passive (set.roam_probe=passive), a search only listens. The
 bench test uses the wake probe (the radio transmits BS_Dwn_Act on each site it visits) and the SDR bench's modem as
-a second site (tools/bench/bench_repeater.py, which keys only when woken). The beacon tests have the bench repeater
+a second site (the bench's `bench_repeater` job, which keys only when woken). The beacon tests have the bench repeater
 key an idle beacon (bench_repeater.py --beacon) and the radio only listens (the survey, dmr-roaming.md 4.8 - 4.10).
 
 Pass criteria:
@@ -235,22 +235,16 @@ def test_roam_to_bench_repeater(roaming, sdr_bench, pytestconfig):
     v = roam(roaming)
     r0, p0 = as_int(v["roam.roams"]), as_int(v["roam.probes"])
     with sdr_bench.lease():
-        p = sdr_bench.ssh_bg(f"cd ~/{sdr_bench.dir} && {sdr_bench.py} bench_repeater.py --rx {tx} --tx {rx} "
-                             f"--cc {cc} --power {sdr_bench.tx_power} --seconds 60 --json")
-        time.sleep(3)
-        L.roam("now")
-        v = wait_roam(roaming, lambda x: x.get("channel_number") == bench_ch and x.get("roam.state") == "watch",
-                      40.0, "roamed to the bench repeater")
-        assert as_int(v["roam.roams"]) == r0 + 1
-        assert as_int(v["roam.probes"]) > p0
-        p.terminate()
-        out, _ = p.communicate(timeout=10)
-    events = []
-    for line in (out or "").splitlines():
+        p = sdr_bench.repeater_start(tx, rx, cc, 60)    # the bench's input is the radio's TX, its output the RX
         try:
-            events.append(json.loads(line))
-        except ValueError:
-            pass
+            time.sleep(3)
+            L.roam("now")
+            v = wait_roam(roaming, lambda x: x.get("channel_number") == bench_ch and x.get("roam.state") == "watch",
+                          40.0, "roamed to the bench repeater")
+            assert as_int(v["roam.roams"]) == r0 + 1
+            assert as_int(v["roam.probes"]) > p0
+        finally:
+            events, out = bench_events(p)
     assert any("wakeup" in e for e in events), \
         f"bench_repeater.py saw no wakeup: {out[-800:] if out else ''}"
 
@@ -293,14 +287,17 @@ def beacon_setup(roaming, pytestconfig):
 
 def bench_beacon(sdr_bench, pytestconfig, rx, tx, every, length, seconds):
     cc = rig(pytestconfig, "dmr-cc")
-    return sdr_bench.ssh_bg(f"cd ~/{sdr_bench.dir} && {sdr_bench.py} bench_repeater.py --rx {tx} --tx {rx} "
-                            f"--cc {cc} --power {sdr_bench.tx_power} --seconds {seconds} --beacon {every} "
-                            f"--beacon-len {length} --json")
+    return sdr_bench.repeater_start(tx, rx, cc, seconds, extra=f"--beacon {every} --beacon-len {length}")
 
 
 def bench_events(p):
+    """Stop the bench repeater and parse its JSON lines: a bench board's job (.lines) or a bench-host process."""
     p.terminate()
-    out, _ = p.communicate(timeout=10)
+    if hasattr(p, "lines"):
+        p.wait(10)
+        out = "".join(p.lines)
+    else:
+        out, _ = p.communicate(timeout=10)
     events = []
     for line in (out or "").splitlines():
         try:
