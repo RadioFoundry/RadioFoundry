@@ -331,7 +331,7 @@ typedef enum {
 	UI_SET_RAM_COUNT,	// the ids up to here have a slot in ui_svc_ram_get/set's table; those after live elsewhere only
 	// The ARS server's and the off-net IP gateway's DMR IDs, 0 = off (Settings > Connections > Data services,
 	// CONFIG_DMR_ARS / CONFIG_DMR_IP_GATEWAY): the setting in force; a set is a codeplug write job (the settings area,
-	// docs/spec/codeplug-settings.md), which the radio core takes when codeplug_serial() moves on
+	// docs/spec/codeplug-settings.md), which the radio core takes when codeplug_kv_serial() moves on
 	UI_SET_ARS_SERVER = UI_SET_RAM_COUNT,
 	UI_SET_IP_GATEWAY,
 	UI_SET_COUNT

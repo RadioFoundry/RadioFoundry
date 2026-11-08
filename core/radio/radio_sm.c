@@ -1854,13 +1854,17 @@ static bool data_in_rx_group(uint32_t tg, void *ctx)
 static dmrDataSettings_t data_saved;
 
 // The ARS server and the IP gateway as the codeplug's settings area gives them (docs/spec/codeplug-settings.md 5),
-// read at start, whenever codeplug_serial() moves on and whenever the settings change. A key that is present holds its
+// read at start, whenever codeplug_serial() (a codeplug written) or codeplug_kv_serial() (a key written) moves on and
+// whenever the settings change. A key that is present holds its
 // setting: a change made another way is put back at the next tick, before it is saved. An absent key leaves the
 // setting as the radio has it (the settings store's copy), so a codeplug from a tool that doesn't carry the area
-// changes nothing. Nothing kept in RAM: a read is a few bytes of flash, and only on those events. The keys are the
+// changes nothing. No copy of the keys in RAM: a read is a few bytes of flash, and only on those events. The keys are the
 // table in radio_keys.h (radio_keys_apply)
+static uint8_t data_kv_seen;	// codeplug_kv_serial() at the last load: a key written moves it, not codeplug_serial()
+
 static void data_kv_load(void)
 {
+	data_kv_seen = codeplug_kv_serial();
 	dmrDataSettings_t set;
 	dmrDataServiceGetSettings(&set);
 	if (radio_keys_apply(&set)) {
@@ -2060,6 +2064,9 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_ZONE_SHARE
 	zone_share_tick(now_ms);
 #endif
+	if (codeplug_kv_serial() != data_kv_seen) {
+		data_kv_load();	// a key written (menu, debug link): its value only, without a codeplug reload
+	}
 	data_save_settings(now_ms);
 	if (sm->power_off_req && sm->power_off_busy) {
 		sm->power_off_busy = dmrDataServicePowerOff();	// ARS deregistration, until it has gone out

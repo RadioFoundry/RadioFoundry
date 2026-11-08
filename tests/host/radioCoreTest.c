@@ -245,6 +245,7 @@ uint32_t codeplug_dmr_id(void) { return own_dmr_id; }
 
 // The codeplug's settings area: only the ARS server key here (the gateway's is built out, CONFIG_DMR_IP_GATEWAY=0)
 static bool kv_ars_present;
+static uint8_t kv_serial;
 static uint32_t kv_ars;
 bool codeplug_kv_get_id(uint16_t key, uint32_t *id)
 {
@@ -261,8 +262,24 @@ bool codeplug_kv_set_u32(uint16_t key, uint32_t value)
 	}
 	kv_ars_present = true;
 	kv_ars = value;
-	cp_serial++;
+	kv_serial++;	// as codeplug_kv_write: the area's serial, no codeplug reload
 	return true;
+}
+uint8_t codeplug_kv_serial(void) { return kv_serial; }
+void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi)
+{
+	c->done = !(lo <= CODEPLUG_KEY_ARS_SERVER && CODEPLUG_KEY_ARS_SERVER <= hi);
+}
+int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
+{
+	uint8_t v[4] = { (uint8_t)kv_ars, (uint8_t)(kv_ars >> 8), (uint8_t)(kv_ars >> 16), (uint8_t)(kv_ars >> 24) };
+	if (c->done || !kv_ars_present) {
+		return -1;
+	}
+	c->done = 1;
+	*key = CODEPLUG_KEY_ARS_SERVER;
+	memcpy(buf, v, max < 4 ? max : 4);
+	return 4;
 }
 bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n)
 {
@@ -2179,10 +2196,12 @@ static void test_persist(void)
 	CHECK(ui_svc_setting_get(UI_SET_ARS_SERVER) == 3100777);
 	CHECK(ui_svc_setting_set(UI_SET_ARS_SERVER, 0) && storage_job_busy());
 	CHECK(!ui_svc_setting_set(UI_SET_ARS_SERVER, 1));	// one job at a time
+	uint32_t cp_was = cp_serial;
 	storage_job_poll();
 	CHECK(kv_ars_present && kv_ars == 0 && !storage_job_busy());
 	run(100);
 	CHECK(ui_svc_setting_get(UI_SET_ARS_SERVER) == 0);
+	CHECK(cp_serial == cp_was);	// the key's value taken without a codeplug reload
 	boot();
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.arsServer == 0);

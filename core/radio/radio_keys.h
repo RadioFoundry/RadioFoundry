@@ -46,15 +46,31 @@ static inline uint32_t radio_key_value(const radio_key_t *k, const dmrDataSettin
 	return *(const uint32_t *)((const uint8_t *)set + k->off);
 }
 
-// Put every key the codeplug has into set (an absent key leaves the setting as it is): true if anything changed
+// Put every key the codeplug has into set (an absent key leaves the setting as it is): true if anything changed. One
+// walk over the table's key range, so the area is checked once however many rows there are
 static inline bool radio_keys_apply(dmrDataSettings_t *set)
 {
-	bool changed = false;
+	uint16_t lo = 0xFFFFu, hi = 0;
 	for (size_t i = 0; i < RADIO_KEYS_N; i++) {
+		if (radio_keys[i].built) {
+			lo = radio_keys[i].key < lo ? radio_keys[i].key : lo;
+			hi = radio_keys[i].key > hi ? radio_keys[i].key : hi;
+		}
+	}
+	bool changed = false;
+	if (lo > hi) {
+		return false;	// no row in the build
+	}
+	codeplug_kv_cursor_t c;
+	uint16_t key;
+	uint8_t v[4];
+	int n;
+	codeplug_kv_begin(&c, lo, hi);
+	while ((n = codeplug_kv_next(&c, &key, v, sizeof(v))) >= 0) {
+		const radio_key_t *k = radio_key_find(key);
 		uint32_t id;
-		uint32_t *slot = radio_key_slot(&radio_keys[i], set);
-		if (radio_keys[i].built && codeplug_kv_get_id(radio_keys[i].key, &id) && *slot != id) {
-			*slot = id;
+		if (k != NULL && codeplug_kv_id(v, n, &id) && *radio_key_slot(k, set) != id) {
+			*radio_key_slot(k, set) = id;
 			changed = true;
 		}
 	}

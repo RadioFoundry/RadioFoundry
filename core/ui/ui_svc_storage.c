@@ -770,7 +770,7 @@ static bool dmr_id_post(uint32_t id)
 
 #if CONFIG_DMR_DATA_CORE
 // The ARS server or the IP gateway, written into the codeplug's settings area (Settings > Connections > Data
-// services): the radio core takes it when codeplug_serial() changes, and a CPS read shows it. The key in
+// services): the radio core takes it when codeplug_kv_serial() changes, and a CPS read shows it. The key in
 // job.channel, the ID in job.id
 static void data_id_job(void *ctx)
 {

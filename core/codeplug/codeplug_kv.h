@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "codeplug/codeplug.h"	// CODEPLUG_DMR_ID_MAX
 
 #define CODEPLUG_KV_ADDR	0xE000u		// in the EEPROM image: one STORAGE_SECTOR
 #define CODEPLUG_KV_MAGIC	0x564B4652u	// bytes 52 46 4B 56, "RFKV"
@@ -43,6 +44,21 @@ int codeplug_kv_get(uint16_t key, void *buf, uint16_t max);
 // absent)
 bool codeplug_kv_get_id(uint16_t key, uint32_t *id);
 
+// The same from a value already read: v holds its first min(n, 4) bytes, n its length (from codeplug_kv_next). A longer
+// value is a later version's: its first 4 bytes are the ID
+static inline bool codeplug_kv_id(const uint8_t *v, int n, uint32_t *id)
+{
+	uint32_t x = 0;
+	for (int i = 0; i < n && i < 4; i++) {
+		x |= (uint32_t)v[i] << (8 * i);	// a shorter value zero-extends (docs/spec/codeplug-settings.md 3.1)
+	}
+	if (n < 1 || x > CODEPLUG_DMR_ID_MAX) {
+		return false;
+	}
+	*id = x;
+	return true;
+}
+
 // A walk over the entries with keys lo..hi, in the area's order, a later entry of a key skipped (the first counts). The
 // area is checked whole once, at the first codeplug_kv_next; each later call reads only its header again, and the walk
 // ends if the area changed under it. On the caller's stack, set up by codeplug_kv_begin
@@ -69,7 +85,7 @@ typedef struct {
 	const void *value;
 } codeplug_kv_op_t;
 // Apply n sets and removes in order, then write the area in one journaled sector rewrite (through the shared sector
-// buffer) and bump codeplug_serial(). All or nothing: false, and nothing written, if any op doesn't fit, names key 0 or
+// buffer) and bump codeplug_kv_serial(). All or nothing: false, and nothing written, if any op doesn't fit, names key 0 or
 // 0xFFFF, while a CPS session holds the buffer, when the storage region isn't ours or the area is CODEPLUG_KV_NEWER.
 // A batch that changes nothing (a key set to the value it has, an absent key removed) is true with no write
 bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n);
@@ -83,6 +99,11 @@ codeplug_kv_state_t codeplug_kv_check(const uint8_t *sector);
 // CODEPLUG_KV_VALID while sector isn't. For every path that writes the EEPROM image's sectors (CPS shim, fast CPS,
 // TFTP), so a file without the area never erases the radio's keys
 bool codeplug_kv_keep(uint32_t addr, const uint8_t *sector);
+// Moves on with every write of the area through codeplug_kv_write, so the radio core takes the new values without the
+// whole codeplug's reload that codeplug_serial() brings. A raw write of the sector (CPS, TFTP) moves codeplug_serial()
+// instead, whose reload reads the keys too
+uint8_t codeplug_kv_serial(void);
+
 // For the debug link: the area's state, its data length and how many entries it holds (0 unless valid)
 codeplug_kv_state_t codeplug_kv_info(uint16_t *length, uint16_t *entries);
 

@@ -192,6 +192,13 @@ int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t
 	return found;
 }
 
+static uint8_t kv_serial;	// codeplug_kv_serial(): one byte, only compared for a change
+
+uint8_t codeplug_kv_serial(void)
+{
+	return kv_serial;
+}
+
 int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 {
 	codeplug_kv_cursor_t c;
@@ -202,12 +209,8 @@ int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 
 bool codeplug_kv_get_id(uint16_t key, uint32_t *id)
 {
-	uint8_t v[4] = { 0 };	// a shorter value zero-extends (docs/spec/codeplug-settings.md 3.1): a 3-byte ID is whole
-	if (codeplug_kv_get(key, v, sizeof(v)) < 1 || get32(v) > CODEPLUG_DMR_ID_MAX) {
-		return false;	// an empty value, or one that reads as absent: the radio keeps its own
-	}
-	*id = get32(v);
-	return true;
+	uint8_t v[4];
+	return codeplug_kv_id(v, codeplug_kv_get(key, v, sizeof(v)), id);
 }
 
 codeplug_kv_state_t codeplug_kv_info(uint16_t *length, uint16_t *entries)
@@ -368,7 +371,7 @@ bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n)
 		storage_buffer_release();
 	}
 	if (ok && changed) {
-		codeplug_note_change();	// the radio core takes the new value when it sees the serial move
+		kv_serial++;	// the radio core takes the new values when it sees it move: no codeplug reload
 	}
 	storage_unlock();
 	return ok;

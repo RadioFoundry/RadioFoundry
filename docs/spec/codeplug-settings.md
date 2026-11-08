@@ -149,7 +149,7 @@ change that needs it, never by moving the first.
 |---|---|
 | `codeplug_kv_get(key, buf, max)` | The value's length (copies at most `max` bytes), or -1 when the key is absent or the area invalid. Checks the whole area (its CRC) each call |
 | `codeplug_kv_begin(&c, lo, hi)`, `codeplug_kv_next(&c, &key, buf, max)` | A walk over the keys `lo`..`hi` in the area's order, a later entry of a key skipped. The area is checked once, at the first `next`; each later one reads the header again and ends the walk if the area changed. The cursor is on the caller's stack |
-| `codeplug_kv_write(ops, n)` | Applies `n` sets and removes (`len` = `CODEPLUG_KV_REMOVE`) in order, then one journaled rewrite through the shared sector buffer. All or nothing. Bumps `codeplug_serial()` when a byte changed; a batch that changes nothing writes nothing |
+| `codeplug_kv_write(ops, n)` | Applies `n` sets and removes (`len` = `CODEPLUG_KV_REMOVE`) in order, then one journaled rewrite through the shared sector buffer. All or nothing. Bumps `codeplug_kv_serial()` when a byte changed, not `codeplug_serial()`, so a key written doesn't reload the whole codeplug; a batch that changes nothing writes nothing |
 | `codeplug_kv_set(key, value, len)`, `codeplug_kv_remove(key)` | One op through `codeplug_kv_write` |
 | `codeplug_kv_keep(addr, sector)` | The transfer rule (6) for a raw sector write at flash address `addr`: true when the radio's sector must stay |
 
@@ -165,8 +165,8 @@ While the open-firmware area holds another firmware's codeplug (`codeplug_foreig
 2) the area reads as empty and the writes fail; the menu's write is held for the user's answer like any
 other codeplug write.
 
-The radio core reads the keys at start and whenever `codeplug_serial()` moves on (a menu edit, a CPS commit, a
-TFTP write), and again when the setting changes another way: a key that is present sets the setting and puts such a
+The radio core reads the keys at start, whenever `codeplug_kv_serial()` moves on (a menu edit, a debug link write) and
+whenever `codeplug_serial()` does (a CPS commit, a TFTP write: the whole codeplug's reload), and again when the setting changes another way: a key that is present sets the setting and puts such a
 change back before it is saved. A key that is absent leaves the setting as the radio had it. Nothing of the area is
 kept in RAM between reads. The
 radio's own copy of each setting stays in the settings store (`ds_ars_server`, `ds_ip_gateway`,

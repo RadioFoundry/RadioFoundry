@@ -34,6 +34,28 @@ bool codeplug_kv_set_u32(uint16_t key, uint32_t value)
 }
 
 static int kv_writes;	// batches written
+static int kv_walks;	// walks begun
+
+void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi)
+{
+	c->at = lo;
+	c->hi = hi;
+	kv_walks++;
+}
+
+int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
+{
+	for (; c->at <= c->hi && c->at < 4; c->at++) {
+		if (kv[c->at].present) {
+			uint32_t id = kv[c->at].id;
+			uint8_t v[4] = { (uint8_t)id, (uint8_t)(id >> 8), (uint8_t)(id >> 16), (uint8_t)(id >> 24) };
+			memcpy(buf, v, max < 4 ? max : 4);
+			*key = c->at++;
+			return 4;
+		}
+	}
+	return -1;
+}
 
 bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n)
 {
@@ -82,6 +104,9 @@ int main(void)
 	kv[CODEPLUG_KEY_ARS_SERVER].present = true;
 	kv[CODEPLUG_KEY_ARS_SERVER].id = 0;
 	CHECK(radio_keys_apply(&set) && set.arsServer == 0 && set.ipGatewayId == 5);
+	kv_walks = 0;
+	(void)radio_keys_apply(&set);
+	CHECK(kv_walks == 1);	// every row in one walk
 	CHECK(!radio_keys_apply(&set));	// nothing left to change
 	// an ID above the maximum reads as absent
 	kv[CODEPLUG_KEY_IP_GATEWAY].present = true;

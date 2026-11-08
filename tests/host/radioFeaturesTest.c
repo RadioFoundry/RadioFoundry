@@ -21,6 +21,7 @@
 #include "sim/dmr_sim_modem.h"
 #include "settings/settings.h"
 #include "radio/tx_limit.h"
+#include "codeplug/codeplug_kv.h"	// the settings area fakes
 
 static int failures;
 static int checks;
@@ -302,6 +303,10 @@ bool codeplug_zone(uint16_t i, zone_t *out)
 static const contact_t contacts[] = { { "Local", 9, CONTACT_GROUP, 0 } };
 uint32_t codeplug_dmr_id(void) { return 9996543; }
 bool codeplug_kv_get_id(uint16_t key, uint32_t *id) { (void)key; (void)id; return false; }	// no settings area
+void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi) { (void)c; (void)lo; (void)hi; }
+int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
+	{ (void)c; (void)key; (void)buf; (void)max; return -1; }
+uint8_t codeplug_kv_serial(void) { return 0; }
 bool codeplug_contact(uint16_t index, contact_t *out)
 {
 	if (index != 1) {

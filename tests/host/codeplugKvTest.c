@@ -76,9 +76,9 @@ static void test_blank(void)
 	CHECK(codeplug_kv_get(CODEPLUG_KEY_ARS_SERVER, v, sizeof(v)) == -1);
 	CHECK(!codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id));
 	// A blank flash keeps the built-in codeplug: the area is apart from the records and doesn't store them
-	uint32_t serial = codeplug_serial();
+	uint32_t serial = codeplug_kv_serial(), cp_serial = codeplug_serial();
 	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 3100999));
-	CHECK(codeplug_serial() != serial);
+	CHECK(codeplug_kv_serial() != serial && codeplug_serial() == cp_serial);	// a key written: no codeplug reload
 	CHECK(codeplug_source() == CODEPLUG_BUILTIN);
 	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 3100999);
 	CHECK(codeplug_kv_info(&len, &n) == CODEPLUG_KV_VALID && len == 8 && n == 1);
@@ -195,9 +195,9 @@ static void test_invalid(void)
 	memcpy(before, &sim_flash_data[AREA], sizeof(before));
 	CHECK(codeplug_kv_info(&l, &n) == CODEPLUG_KV_NEWER);
 	CHECK(!codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id));
-	uint32_t serial = codeplug_serial();
+	uint32_t serial = codeplug_kv_serial();
 	CHECK(!codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 9));
-	CHECK(memcmp(before, &sim_flash_data[AREA], sizeof(before)) == 0 && codeplug_serial() == serial);
+	CHECK(memcmp(before, &sim_flash_data[AREA], sizeof(before)) == 0 && codeplug_kv_serial() == serial);
 }
 
 // codeplug_kv_check on a sector in RAM (TFTP's staged area) says what a reader of the same bytes in flash says
@@ -254,7 +254,7 @@ static void test_batch(void)
 	put32(a4, 3100111);
 	put32(b4, 3100222);
 	CHECK(codeplug_kv_set(0x7001, "x", 1));
-	uint32_t w = sector_writes(), serial = codeplug_serial();
+	uint32_t w = sector_writes(), serial = codeplug_kv_serial();
 	codeplug_kv_op_t ops[] = {
 		{ CODEPLUG_KEY_ARS_SERVER, 4, a4 },
 		{ CODEPLUG_KEY_IP_GATEWAY, 4, b4 },
@@ -262,7 +262,7 @@ static void test_batch(void)
 		{ 0x7002, 0, NULL },			// an empty value: present, length 0
 	};
 	CHECK(codeplug_kv_write(ops, 4));
-	CHECK(sector_writes() == w + 1 && codeplug_serial() != serial);	// one rewrite, one serial move
+	CHECK(sector_writes() == w + 1 && codeplug_kv_serial() != serial);	// one rewrite, one serial move
 	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 3100111);
 	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_IP_GATEWAY, &id) && id == 3100222);
 	CHECK(codeplug_kv_get(0x7001, a4, 4) == -1);
@@ -274,13 +274,13 @@ static void test_batch(void)
 	uint8_t before[STORAGE_SECTOR];
 	memcpy(before, &sim_flash_data[AREA], sizeof(before));
 	w = sector_writes();
-	serial = codeplug_serial();
+	serial = codeplug_kv_serial();
 	codeplug_kv_op_t too_big[] = {
 		{ CODEPLUG_KEY_ARS_SERVER, CODEPLUG_KV_REMOVE, NULL },
 		{ 0x7003, STORAGE_SECTOR - CODEPLUG_KV_HDR, big },
 	};
 	CHECK(!codeplug_kv_write(too_big, 2));
-	CHECK(memcmp(before, &sim_flash_data[AREA], sizeof(before)) == 0 && sector_writes() == w && codeplug_serial() == serial);
+	CHECK(memcmp(before, &sim_flash_data[AREA], sizeof(before)) == 0 && sector_writes() == w && codeplug_kv_serial() == serial);
 	codeplug_kv_op_t no_key[] = { { CODEPLUG_KEY_ARS_SERVER, CODEPLUG_KV_REMOVE, NULL }, { 0, 4, a4 } };
 	CHECK(!codeplug_kv_write(no_key, 2) && sector_writes() == w);
 	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id));
@@ -291,11 +291,11 @@ static void test_batch(void)
 
 	// Nothing changed: no rewrite, the serial stays (a key set to its value, an absent key removed, an empty batch)
 	w = sector_writes();
-	serial = codeplug_serial();
+	serial = codeplug_kv_serial();
 	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_IP_GATEWAY, 3100222));
 	CHECK(codeplug_kv_remove(0x7123));
 	CHECK(codeplug_kv_write(NULL, 0));
-	CHECK(sector_writes() == w && codeplug_serial() == serial);
+	CHECK(sector_writes() == w && codeplug_kv_serial() == serial);
 }
 
 static void test_remove(void)
