@@ -588,7 +588,7 @@ static void check_dmr_rx_back(md9600_rev_t r, uint32_t rx_hz, uint32_t tx_hz)
 	md9600_rf_tx_off(&rf);		// the radio leaves transmit: the receiver is already back
 	CHECK(pa_off_now() && rf.state == MD9600_RF_RX && count(EV_PLL, -1) == 0);
 	pa_allowed = false;
-	// rx() on the same channel: the front-end tune back (on VHF the PA drive's DAC, zeroed above), no words, no waits
+	// The glue's tx_end on the same channel: the front-end tune back (on VHF the PA drive's DAC, zeroed above), no words, no waits
 	reset_log();
 	CHECK(md9600_rf_rx_resume(&rf) == MD9600_RF_OK);
 	CHECK(count(EV_PLL, -1) == 0 && delay_total == 0 && pa_off_now() && rf.state == MD9600_RF_RX);
@@ -596,7 +596,7 @@ static void check_dmr_rx_back(md9600_rev_t r, uint32_t rx_hz, uint32_t tx_hz)
 		CHECK(dac_now[MD9600_DAC_APC_TUNE_V] == f_rx_tune(NULL, rx_hz));
 	}
 	md9600_rf_sleep(&rf);
-	CHECK(md9600_rf_rx_resume(&rf) == MD9600_RF_E_STATE);	// not receiving: rx() retunes in full
+	CHECK(md9600_rf_rx_resume(&rf) == MD9600_RF_E_STATE);	// not receiving: tx_off() sets receive up in full
 }
 
 // The reference's writes to the PA drive in [from, to) of the log

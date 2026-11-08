@@ -187,13 +187,14 @@ extern const hal_audio_t md9600_audio;
 // The run-time gate on DMR transmit (off at start-up): follows the transmit arm (md9600_radio_tx_arm)
 void md9600_dmr_tx_allow(bool on);
 // The RF chain's DMR switching (radio_md9600.c): the per-burst keying from the modem interrupts, the transmit side
-// tuned ahead of the first burst (never blocks) and the task-level wait for it, the receiver back at a split channel
-// transmission's end (task level), the counters for the glue
+// tuned ahead of the first burst (never blocks) and the task-level wait for it, the receiver back at a transmission's
+// end (task level), the end of the transmission with the receiver left on (the glue's tx_end), the counters for the glue
 bool md9600_rf_dmr_key(bool tx);
 void md9600_c6000_tx_lead(uint8_t steps);
 void md9600_rf_dmr_prepare(void);
 void md9600_rf_dmr_wait(void);
 bool md9600_rf_dmr_done(void);
+void md9600_dmr_tx_end(void);
 void md9600_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx);
 #endif
 

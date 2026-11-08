@@ -224,7 +224,8 @@ bool md9600_radio_tx_arm(bool on)
 // aligned start) puts the TX VCO on the carrier without the waits; tx_wait_lock (task level) waits the synthesizer's
 // settle time. Each burst then switches the band's transmitter supply, the PA loop and a short APC ramp from the modem
 // interrupts (md9600_rf_pa_burst). The receiver comes back at each transmission's end (md9600_rf_dmr_done), simplex
-// too, and rx() then keeps the synthesizer where that left it (dmr_back)
+// too, and the core ends the transmission through the glue (hal_radio_t.dmr_tx_end), whose tx_end hook
+// (md9600_dmr_tx_end) leaves the receiver where that put it (gotchas 3.14)
 #if CONFIG_MD9600_DMR_TX
 static volatile bool dmr_armed;
 static volatile bool dmr_tuned;
@@ -232,7 +233,6 @@ static uint32_t dmr_hz;
 static uint8_t dmr_power;
 static uint32_t dmr_skipped, dmr_unarmed;
 static uint32_t dmr_rx_back;	// returns to receive at a transmission's end
-static volatile bool dmr_back;	// md9600_rf_dmr_done put the receiver back on rx_hz: rx() keeps the synthesizer
 #if CONFIG_SFR
 // An SFR receives between its bursts (docs/spec/sfr.md 3 item 1): one synthesizer, so each burst's end retunes to
 // the receive LO, and the next RF TX interrupt, moved this far ahead of the slot, retunes to the carrier and waits for
@@ -304,7 +304,6 @@ void md9600_rf_dmr_prepare(void)
 	if (!dmr_armed || dmr_tuned) {
 		return;
 	}
-	dmr_back = false;
 	if (md9600_rf_tx_tune(&rf, dmr_hz, dmr_power, false) != MD9600_RF_OK) {
 		dmr_skipped++;
 		return;
@@ -393,7 +392,6 @@ bool md9600_rf_dmr_done(void)
 		return false;
 	}
 	dmr_tuned = false;
-	dmr_back = true;
 	dmr_rx_back++;
 	return true;
 }
@@ -506,23 +504,13 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	(void)rx_tone;
 #endif
 	md9600_noise_clear(&noise_win);
-#if CONFIG_MD9600_DMR_TX
-	// On rx_hz since the transmission's end (md9600_rf_dmr_done): a retune now could hit the reply to it
-	bool back = dmr_back && dmr_mode && rf.rx_valid && hz == rf.rx_hz && (bw == RADIO_BW_25K) == rf.rx_wide &&
-		    md9600_rf_rx_resume(&rf) == MD9600_RF_OK;
-	dmr_back = false;
-#else
-	bool back = false;
-#endif
-	if (!back && md9600_rf_rx(&rf, hz, bw == RADIO_BW_25K) != MD9600_RF_OK) {
+	if (md9600_rf_rx(&rf, hz, bw == RADIO_BW_25K) != MD9600_RF_OK) {
 		return false;
 	}
 	if (!md9600_cal_squelch(hz, &sql_l1, &sql_l9)) {
 		sql_l1 = sql_l9 = 0;	// once per retune, not per status poll
 	}
-	if (!back) {
-		md9600_c6000_retune(hz);	// same frequency when back: nothing for it to change
-	}
+	md9600_c6000_retune(hz);
 	return true;
 }
 
@@ -597,7 +585,9 @@ static bool tx_dtmf(char digit)
 }
 #endif
 
-static void tx_off(void)
+// keep (the end of a DMR transmission, md9600_dmr_tx_end): the TX done already put the receiver back on the RX
+// frequency; only the VHF front-end tune, which shares the DAC with the PA drive, is set again
+static void tx_end(bool keep)
 {
 #if CONFIG_SUBTONE && CONFIG_MD9600_TX
 	md9600_subtone_tx_stop();
@@ -607,10 +597,25 @@ static void tx_off(void)
 		dmr_disarm();	// after the stack's TX done this only disarms; before it, the transmission is cut
 	}
 #endif
-	md9600_rf_tx_off(&rf);
+	if (!keep || md9600_rf_rx_resume(&rf) != MD9600_RF_OK) {
+		md9600_rf_tx_off(&rf);
+	}
 	md9600_c6000_fm_tx_end();
 	drive_override = 0;	// one transmission only
 }
+
+static void tx_off(void)
+{
+	tx_end(false);
+}
+
+#if CONFIG_MD9600_DMR_TX
+// stm32_hrc_dmr_board_t.tx_end: md9600_rf_dmr_done left the receiver on the channel
+void md9600_dmr_tx_end(void)
+{
+	tx_end(true);
+}
+#endif
 
 #if CONFIG_MD9600_TX
 static uint16_t tx_drive_level(uint32_t hz, uint8_t level)
@@ -704,6 +709,9 @@ const hal_radio_t md9600_radio = {
 	.rx = rx,
 	.tx = tx,
 	.tx_off = tx_off,
+#if CONFIG_MD9600_DMR_TX
+	.dmr_tx_end = stm32_hrc_dmr_tx_end,
+#endif
 #if CONFIG_SUBTONE && CONFIG_MD9600_TX
 	.tx_tail = tx_tail,
 #endif

@@ -430,6 +430,7 @@ static const stm32_hrc_dmr_board_t dmr_board = {
 	.tx_prepare = md9600_rf_dmr_prepare,
 	.tx_wait_lock = md9600_rf_dmr_wait,
 	.tx_done = md9600_rf_dmr_done,
+	.tx_end = md9600_dmr_tx_end,
 #endif
 };
 

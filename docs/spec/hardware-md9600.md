@@ -1041,8 +1041,9 @@ a timeslot interrupt, after that slot's sync (`docs/spec/modem-hrc6000.md` 9.1).
 on every channel, with the receive column's synthesizer, front-end and line steps and no waits. On a split channel a
 wake-up then hears the repeater's answer (left on the carrier, every key-up to a repeater that was down ended in
 `no_repeater`). On simplex the reply to a confirmed packet comes in the next frame, 30 ms after the last burst, before
-the radio task returns to receive. That return then keeps the synthesizer and only sets the front-end tune again (on
-VHF it shares the DAC with the PA drive, which the end of the transmission zeroes). An SFR receives between its bursts
+the radio task ends the transmission. That end goes through the modem glue's shared path (`docs/spec/dmr-modem.md`
+6.4): with the receiver back from TX done, the board's `tx_end` keeps the synthesizer and only sets the front-end tune
+again (on VHF it shares the DAC with the PA drive, which the end of the transmission zeroes); `rx()` is a full set-up. An SFR receives between its bursts
 (below).
 
 SFR (`CONFIG_SFR`; the transmission receives between its bursts, `docs/spec/sfr.md` 3 item 1, gotchas 14.6): at each
