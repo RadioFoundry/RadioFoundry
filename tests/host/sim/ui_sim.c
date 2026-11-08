@@ -2276,6 +2276,8 @@ static bool hold_key(const char *arg, char *err, size_t len)
 		advance(thr);
 		input_event_t ev = { a, GESTURE_LONG, 0 };
 		ui_app_key(&ev);
+		if (ui_app_tick(&view, now_ms))	// the UI task ticks right after each key, at the same time (core/ui/ui.c)
+			ui_app_draw();
 		key_hold.long_sent = true;
 		advance(ms - thr);
 	}

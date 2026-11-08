@@ -1766,6 +1766,7 @@ static void list_draw(const ui_scr_def_t *d)
 	l.empty = tr(d->empty);
 	l.hint = tr(d->hint);
 	l.body = d->body != NULL ? d->body() : NULL;
+	l.footer = d->footer != NULL ? d->footer() : NULL;
 	if ((d->flags & SF_FILTER) && filter_keys[0]) {
 		sbuf_t b;
 		sb_init(&b, header, sizeof header);
@@ -1792,12 +1793,13 @@ static struct {
 	uint32_t t0;		// the key went down
 	uint32_t done_at;	// the outcome came up
 	uint32_t id;		// the target shown, 0 none
-	uint16_t step;		// left_ms / 100 last drawn
+	uint16_t step;		// left_ms / REFRESH_FAST_MS last drawn
 	uint8_t hold_s;		// Settings > Keys > Emergency: Hold
 	uint8_t secs;		// the seconds left last signalled
 	uint8_t done;		// UI_EM_DONE_*
 	bool key_off, silent;	// ... Key Off, Alert Silent
 	bool holding, cancel, alarm, private_call;
+	bool timed;		// t0 set (at the first tick after the LONG: the key's time can be a wait old)
 	char name[CODEPLUG_NAME_LEN + 1];
 } em;
 
@@ -1923,7 +1925,7 @@ static void __attribute__((noinline)) em_start(void)
 {
 	em.holding = true;
 	em.done = UI_EM_DONE_NONE;
-	em.t0 = now - INPUT_EMERGENCY_SHOW_MS;
+	em.timed = false;
 	em.cancel = ui_svc_emergency_active();	// the radio core's state: a start over the debug link counts too
 	em.alarm = ui_svc_emergency_target(&em.id, &em.private_call);
 	em.name[0] = 0;
@@ -1969,6 +1971,11 @@ static void __attribute__((noinline)) em_tick(void)
 {
 	if (!CONFIG_DMR_EMERGENCY)
 		return;		// the countdown code leaves the image with it
+	if (stack[sp].scr == SCR_EM_HOLD && !em.holding && em.done == UI_EM_DONE_NONE) {
+		ui_pop();	// back on top after a screen that covered it (which stopped it): the previous screen
+		dirty = true;
+		return;
+	}
 	if (em.done != UI_EM_DONE_NONE) {
 		if (stack[sp].scr != SCR_EM_HOLD)
 			em.done = UI_EM_DONE_NONE;
@@ -1982,6 +1989,10 @@ static void __attribute__((noinline)) em_tick(void)
 		em.holding = false;
 		return;
 	}
+	if (!em.timed) {	// the UI task ticks right after a key, with the time read then (ui.c)
+		em.t0 = now - INPUT_EMERGENCY_SHOW_MS;
+		em.timed = true;
+	}
 	uint32_t left = ui_em_left_ms(now - em.t0, em.hold_s);
 	if (left == 0) {
 		em_fire();
@@ -1990,23 +2001,27 @@ static void __attribute__((noinline)) em_tick(void)
 	uint8_t secs = (uint8_t)((left + 999u) / 1000u);
 	if (secs != em.secs) {	// each second: a tick and a pulse
 		em.secs = secs;
+		dirty = true;
 		if (!em.silent) {
 			ui_svc_beep(UI_BEEP_COUNTDOWN);
 			vibrate(UI_VIBE_CALL);
 		}
 	}
-	if (left / 100u != em.step) {
-		em.step = (uint16_t)(left / 100u);
+	// The bar steps at REFRESH_FAST_MS: each redraw holds the bus some boards' key rows share
+	if (left / REFRESH_FAST_MS != em.step) {
+		em.step = (uint16_t)(left / REFRESH_FAST_MS);
 		dirty = true;
 	}
 }
 
+#if CONFIG_DMR_EMERGENCY
 void ui_em_hold_draw(void)
 {
 	ui_em_hold_t h = {
-		.left_ms = (uint16_t)(em.holding ? ui_em_left_ms(now - em.t0, em.hold_s) : 0),
+		.left_ms = (uint16_t)(em.holding ? (em.timed ? ui_em_left_ms(now - em.t0, em.hold_s) : em.hold_s * 1000u) : 0),
 		.hold_ms = (uint16_t)(em.hold_s * 1000u), .cancel = em.cancel, .done = em.done, .alarm = em.alarm,
-		.silent = em.silent, .private_call = em.private_call, .id = em.id, .name = em.name,
+		.silent = em.silent, .vibe = ui_st.vibrate && (ui_svc_features() & UI_FEAT_VIBRATE) != 0,
+		.private_call = em.private_call, .id = em.id, .name = em.name,
 	};
 	ui_draw_em_hold(view, &ui_st, &h);
 }
@@ -2018,6 +2033,7 @@ bool ui_em_hold_key(const input_event_t *ev)
 		em_stop();
 	return true;
 }
+#endif
 
 static bool emergency_key(const input_event_t *ev)
 {
@@ -2034,8 +2050,7 @@ static bool emergency_key(const input_event_t *ev)
 		ui_svc_beep(UI_BEEP_KEY);
 		ui_toast(TR("Emergency: not in this build"));
 	} else if (CONFIG_DMR_EMERGENCY && !em.key_off) {	// Key Off: the hold does nothing
-		em_start();
-		em_tick();		// the first second's tick
+		em_start();	// the countdown and its first beep come with the next tick
 	}
 	return true;
 }

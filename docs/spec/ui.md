@@ -360,7 +360,7 @@ EMERGENCY is hold-to-activate (principles P2): a key whose long action is EMERGE
 value 1 (`input_long_up`); the UI counts the hold down on the `emergency-hold` screen and acts at its end (Settings >
 Keys > Emergency > Hold, 3 s by default; `dmr-emergency.md` 5.1). Which key carries it is the board's key map
 (`board.keymap`): for example a side key's long action in builds with `CONFIG_DMR_EMERGENCY` (else long USER_3 as above), or a dedicated SOS key; the short press stays USER_3. A hold to the end toggles:
-"Emergency sent" (then hold again to cancel), "Emergency canceled" (`ui_svc_emergency_active` reads the radio core's
+SENT (then hold again to cancel), CANCELED (`ui_svc_emergency_active` reads the radio core's
 state, so a cancel from elsewhere counts). A board whose key map has no EMERGENCY entry has no emergency key (for example a board whose third side key isn't located yet).
 
 PTT while the keys are locked works unless Settings > Privacy > PTT when locked is off: the UI then tells the input

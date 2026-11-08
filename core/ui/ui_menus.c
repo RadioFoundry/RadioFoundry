@@ -5582,6 +5582,16 @@ static bool group_key(const input_event_t *ev)
 
 static void group_enter(void) { set_editing = false; }
 
+// Settings > Keys > Emergency: the ranges under the rows
+static const char *group_footer(void)
+{
+#if CONFIG_DMR_EMERGENCY
+	if (ui_frame()->arg == GROUP_EMERGENCY)
+		return TR("Hold 1-10 s, Emergency key On/Off, Alert Beep+vibrate/Silent");
+#endif
+	return NULL;
+}
+
 static const char *group_title(void)
 {
 	uint8_t g = (uint8_t)ui_frame()->arg;
@@ -5591,7 +5601,7 @@ static const char *group_title(void)
 static const ui_scr_def_t group_screen = {
 	.name = "group", .flags = SF_LIST, .hint = TRN("OK change  Back"),
 	.count = group_count, .item = group_item, .select = group_select, .key = group_key, .enter = group_enter,
-	.title = group_title,
+	.footer = group_footer, .title = group_title,
 };
 
 // ======================= Confirmation (destructive only, defaults to No; P7) =======================

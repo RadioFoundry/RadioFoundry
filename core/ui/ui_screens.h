@@ -219,6 +219,7 @@ typedef struct {
 	ui_item_fn item;
 	const char *empty;		// shown when count is 0
 	const char *hint;
+	const char *footer;		// dim word-wrapped text under the rows where there is room (the ranges), NULL = none
 } ui_list_t;
 
 void ui_draw_list(const radio_view_t *v, const ui_state_t *s, const ui_list_t *l);
@@ -252,7 +253,8 @@ typedef struct {
 	bool cancel;		// the hold cancels our emergency
 	uint8_t done;		// UI_EM_DONE_*: the confirmation
 	bool alarm;		// an alarm goes first ("Alarm to"), else the emergency call ("Call to")
-	bool silent;		// Settings > Keys > Emergency > Alert: Silent (no red screen)
+	bool silent;		// Settings > Keys > Emergency > Alert: Silent (no red screen, no cue)
+	bool vibe;		// the countdown vibrates too (a motor, and Settings > Sound > Vibrate on)
 	bool private_call;
 	uint32_t id;		// the target, 0 = none known (no line)
 	const char *name;	// its contact name, "" none

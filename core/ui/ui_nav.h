@@ -78,6 +78,7 @@ typedef struct {
 	bool (*target)(uint16_t i, ui_target_t *t);	// what PTT talks to with this row focused (one-shot)
 	const char *(*title)(void);			// title name part (NULL: none)
 	const char *(*body)(void);			// text above the rows (NULL: none)
+	const char *(*footer)(void);			// dim text under the rows where there is room (NULL: none)
 	bool (*key)(const input_event_t *ev);		// screen keys before the list's own (true: used)
 	void (*draw)(void);				// own drawing instead of the list
 	void (*enter)(void);				// on push

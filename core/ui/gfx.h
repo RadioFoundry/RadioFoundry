@@ -79,6 +79,9 @@ int gfx_text(const font_t *f, int x, int y, const char *s, color_t fg);
 // The same with each glyph cell filled with bg first
 int gfx_text_bg(const font_t *f, int x, int y, const char *s, color_t fg, color_t bg);
 int gfx_text_width(const font_t *f, const char *s);
+// Text with each font pixel drawn as a scale x scale block (a large number on a tall panel: no larger font is built).
+// Anti-aliased edges are dropped (half ink and more is ink). Returns the x after it; its width is strlen * f->w * scale
+int gfx_text_scaled(const font_t *f, int x, int y, const char *s, int scale, color_t fg);
 // Text alternates (font.h): s with every group at its alternative number level (or its last one) into out; *more says
 // whether a higher level would give something different. Returns the length
 size_t gfx_text_alt(const char *s, int level, char *out, size_t cap, bool *more);

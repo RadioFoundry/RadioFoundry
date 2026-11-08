@@ -2552,6 +2552,10 @@ void ui_draw_list(const radio_view_t *v, const ui_state_t *s, const ui_list_t *l
 		}
 		row_text(f, x, ry + pad, w, it.label, val, fg, vfg, (it.flags & UI_ITEM_PREVIEW) != 0);
 	}
+	if (l->footer != NULL) {
+		int shown = l->count - top < rows ? l->count - top : rows;
+		wrap_text(f, l->footer, y + shown * L->row_h + 2, y_end, true, ui_col.dim);
+	}
 	// Scroll marks: more above / below
 	if (top > 0)
 		gfx_fill(w - 3, y, 3, 2, ui_col.dim);
@@ -2597,6 +2601,7 @@ void ui_draw_emergency(const radio_view_t *v, const ui_state_t *s, uint32_t id, 
 	ui_draw_hint(s->toast != NULL ? s->toast : TR("OK acknowledge  Back hide"), s->toast != NULL);
 }
 
+#if CONFIG_DMR_EMERGENCY
 // The emergency hold: what holding does, the seconds left in the volume screen's large digits over a bar that fills,
 // the target and how to stop; at the end the outcome in large type. Static buffers and noinline: the UI task has
 // little stack to spare, and this stays out of the frame of the screens drawn next to it
@@ -2608,54 +2613,162 @@ static void __attribute__((noinline)) em_line(const font_t *f, int y, const char
 	gfx_text(f, (w - gfx_text_width(f, fit)) / 2, y, fit, col);
 }
 
+static void __attribute__((noinline)) em_target(const ui_em_hold_t *h, int y)
+{
+	static char buf[48];
+	sbuf_t b;
+	sb_init(&b, buf, sizeof buf);
+	sb_str(&b, h->alarm ? TR("Alarm to ") : TR("Call to "));
+	sb_target(&b, h->id, h->private_call, h->name);
+	em_line(ui_layout.small, y, buf, ui_col.fg);
+}
+
+// "((o)) beep" and "~~ vibrate": two lines at x, or one centered line
+static void __attribute__((noinline)) em_cue(const font_t *t, int x, int y, bool vibe, bool one_line)
+{
+	static char buf[40];
+	sbuf_t b;
+	sb_init(&b, buf, sizeof buf);
+	sb_str(&b, "((o)) ");
+	sb_str(&b, TR("beep"));
+	if (vibe && one_line) {
+		sb_str(&b, "  ~~ ");
+		sb_str(&b, TR("vibrate"));
+	}
+	if (one_line) {
+		em_line(t, y, buf, ui_col.dim);
+		return;
+	}
+	gfx_text(t, x, y, buf, ui_col.dim);
+	if (vibe) {
+		sb_init(&b, buf, sizeof buf);
+		sb_str(&b, "~~ ");
+		sb_str(&b, TR("vibrate"));
+		gfx_text(t, x, y + t->h, buf, ui_col.dim);
+	}
+}
+
+// The cue's width in characters (its longer line)
+static int em_cue_chars(bool vibe)
+{
+	int n = (int)(sizeof "((o)) " - 1 + strlen(TR("beep")));
+	int m = (int)(sizeof "~~ " - 1 + strlen(TR("vibrate")));
+	return vibe && m > n ? m : n;
+}
+
+// The font and scale that make text as large as fits a box: the largest font that fits, scaled up while it fits
+static const font_t *em_fit(const char *text, int room_h, int room_w, int *scale)
+{
+	const ui_layout_t *L = &ui_layout;
+	const font_t *fonts[] = { font_largest, L->large, L->medium, L->small };
+	const font_t *f = L->small;
+	for (unsigned i = 0; i < sizeof fonts / sizeof fonts[0]; i++) {
+		f = fonts[i];
+		if (f->h <= room_h && gfx_text_width(f, text) <= room_w)
+			break;
+	}
+	*scale = 1;
+	while (f->h * (*scale + 1) <= room_h && gfx_text_width(f, text) * (*scale + 1) <= room_w && *scale < 6)
+		(*scale)++;
+	return f;
+}
+
+// Text as large as fits a box, centered in it. Out: its width and its baseline
+static void __attribute__((noinline)) em_big(const char *text, int y, int room_h, int room_w, int x_mid, color_t c,
+					     int *drawn_w, int *base)
+{
+	int scale;
+	const font_t *f = em_fit(text, room_h, room_w, &scale);
+	int tw = gfx_text_width(f, text) * scale;
+	int ty = y + (room_h - f->h * scale) / 2;
+	*drawn_w = tw;
+	*base = ty + f->ascent * scale;
+	if (scale > 1)
+		gfx_text_scaled(f, x_mid - tw / 2, ty, text, scale, c);
+	else
+		gfx_text(f, x_mid - tw / 2, ty, text, c);
+}
+
+// The hold: an amber banner (the title: what holding does), the seconds left as large as the room allows with "s"
+// and the beep cue beside them, an amber bar, the target. The outcome: SENT large on red (CANCELED on the background),
+// the target under it. 1 bpp: ink only, the banner inverted
 void __attribute__((noinline)) ui_draw_em_hold(const radio_view_t *v, const ui_state_t *s, const ui_em_hold_t *h)
 {
 	const ui_layout_t *L = &ui_layout;
-	static char buf[48];
+	static char buf[16];
 	sbuf_t b;
 	int w = gfx_width();
-	bool red = h->done == UI_EM_DONE_SENT && !h->silent && gfx_bpp() != 1;
+	bool mono = gfx_bpp() == 1;
+	bool red = h->done == UI_EM_DONE_SENT && !h->silent && !mono;
 	gfx_clear(red ? ui_col.tx : ui_col.bg);
-	int y = ui_draw_top(v, s, TR("Emergency"), NULL) + 2;
+	int y = ui_draw_top(v, s, NULL, NULL);	// the status strip; the banner below is the title
+	int hint_y = L->hint_y;
+	int ty = h->id != 0 ? hint_y - L->small->h - 1 : hint_y;	// the target line, over the hint
 	if (h->done != UI_EM_DONE_NONE) {
-		const char *word = h->done == UI_EM_DONE_SENT ? TR("Emergency sent") : TR("Emergency canceled");
-		const font_t *big = gfx_text_width(L->large, word) <= w ? L->large : L->medium;
-		if (h->done == UI_EM_DONE_SENT && gfx_bpp() == 1 && !h->silent) {
-			gfx_fill(0, y, w, big->h, ui_col.fg);
-			em_line(big, y, word, ui_col.bg);
-		} else {
-			em_line(big, y, word, ui_col.fg);
-		}
-		y += big->h + 2;
+		const char *word = h->done == UI_EM_DONE_SENT ? TR("SENT") : TR("CANCELED");
+		int bh = ty - y - 4, tw, base;
+		bool inv = mono && h->done == UI_EM_DONE_SENT && !h->silent;	// 1 bpp: SENT inverted
+		if (inv)
+			gfx_fill(0, y + 2, w, bh, ui_col.fg);
+		em_big(word, y + 2, bh, w - 4, w / 2, inv ? ui_col.bg : ui_col.fg, &tw, &base);
+		if (h->id != 0 && h->done == UI_EM_DONE_SENT)
+			em_target(h, ty);
 	} else {
-		// A short display (128x64) keeps the target line: the small font and no gaps
-		int bh = L->row_h > 10 ? L->row_h / 2 : 5;
-		bool tight = y + L->medium->h + L->large->h + bh + L->small->h + 9 > L->hint_y;
-		int gap = tight ? 1 : 2;
-		const font_t *f = tight ? L->small : L->medium;
-		em_line(f, y, h->cancel ? TR("Hold to cancel") : TR("Hold for emergency"), ui_col.fg);
-		y += f->h + gap;
+		color_t amber = mono ? ui_col.fg : h->cancel ? ui_col.fg : ui_col.warn;
+		// The banner: what holding does, dark on amber (inverted on 1 bpp)
+		const char *title = h->cancel ? TR("HOLD TO CANCEL") : TR("HOLD FOR EMERGENCY");
+		const font_t *bf = gfx_text_width(L->medium, title) <= w - 4 && ty - y >= 4 * L->medium->h ? L->medium : L->small;
+		int bnh = bf->h + 2;
+		gfx_fill(0, y, w, bnh, amber);
+		em_line(bf, y + 1, title, mono ? ui_col.bg : ui_col.pill_dark_fg);
+		y += bnh + 2;
+		// The bar over the target; the digits centered in what is left, with "s" and the cue beside them
+		int room = ty - y;
+		int barh = room / 8 < 4 ? 4 : room / 8 > 16 ? 16 : room / 8;
+		int by = ty - barh - 2;
+		bool cue = !h->silent;
+		const font_t *t = L->tiny;
+		int cue_w = cue ? em_cue_chars(h->vibe) * t->w : 0;
+		int dh = by - 2 - y;
 		sb_init(&b, buf, sizeof buf);
 		sb_u32(&b, (h->left_ms + 999u) / 1000u, 1);
-		em_line(L->large, y, buf, h->cancel ? ui_col.fg : ui_col.tx);
-		y += L->large->h + 2 * gap;
+		// Beside the digits: "s", then the cue. The cue goes on its own line over the bar when beside them it would
+		// make the largest count ("10") smaller than the room's height allows
+		int s_w = L->small->w + 2;
+		int sc;
+		const font_t *tall = em_fit("10", dh, w - 2 * s_w - 4, &sc);
+		int need = gfx_text_width(tall, "10") * sc;
+		bool cue_beside = cue && need + 2 * (s_w + cue_w + 4) + 4 <= w;
+		// A short panel (128x64) has no line to spare under the digits: they move left of the middle, the cue right
+		bool shifted = cue && !cue_beside && dh - t->h < L->large->h;
+		if (shifted)
+			cue_beside = true;
+		else if (cue && !cue_beside)
+			dh -= t->h;
+		int side = s_w + (cue_beside ? cue_w + 4 : 0);
+		int x_mid = shifted ? w / 3 : w / 2;
+		int dw, base;
+		em_big(buf, y, dh, shifted ? 2 * x_mid - 4 : w - 2 * side - 4, x_mid, amber, &dw, &base);
+		int rx = x_mid + dw / 2 + 2;	// "s" and the cue from the digits' right edge
+		gfx_text(L->small, rx, base - L->small->ascent, "s", amber);
+		int cy = base - (h->vibe ? 2 : 1) * t->h;
+		if (cue_beside)
+			em_cue(t, rx + s_w + 4, cy < y ? y : cy, h->vibe, false);
+		else if (cue)
+			em_cue(t, 0, by - 2 - t->h, h->vibe, true);
 		int bw = w - 8;
 		int fill = h->hold_ms != 0 ? (int)((uint32_t)bw * (uint32_t)(h->hold_ms - h->left_ms) / h->hold_ms) : bw;
-		gfx_rect(4, y, bw, bh, ui_col.line);
+		gfx_rect(4, by, bw, barh, ui_col.line);
 		if (fill > 0)
-			gfx_fill(4, y, fill, bh, h->cancel ? ui_col.fg : ui_col.tx);
-		y += bh + gap + 1;
-	}
-	if (h->id != 0 && h->done != UI_EM_DONE_CANCELED && y + L->small->h <= L->hint_y) {
-		sb_init(&b, buf, sizeof buf);
-		sb_str(&b, h->alarm ? TR("Alarm to ") : TR("Call to "));
-		sb_target(&b, h->id, h->private_call, h->name);
-		em_line(L->small, y, buf, ui_col.fg);
+			gfx_fill(4, by, fill, barh, amber);
+		if (h->id != 0)
+			em_target(h, ty);
 	}
 	const char *hint = h->done == UI_EM_DONE_SENT ? TR("Hold again to cancel") : h->done != UI_EM_DONE_NONE ? "" :
 		TR("Let go to stop");
 	ui_draw_hint(s->toast != NULL ? s->toast : hint, s->toast != NULL);
 }
+#endif
 
 // The volume screen: the step as a number (a word at 0) over a bar of RADIO_VOLUME_MAX segments.
 // Large type, no scale to read
@@ -2952,7 +3065,7 @@ static void __attribute__((noinline)) draw_quick_list(const radio_view_t *v, con
 	quick_s = s;
 	quick_list_focus = s->quick_focus;
 	ui_list_t l = { TR("Quick"), v->vfo ? "VFO" : v->ch.name, NULL, NULL, UI_QUICK_TILES, quick_list_focus, &top,
-			quick_list_item, NULL, split_hint != NULL ? split_hint : TR("1-9 change  Hold OK save") };
+			quick_list_item, NULL, split_hint != NULL ? split_hint : TR("1-9 change  Hold OK save"), NULL };
 	ui_draw_list(v, s, &l);
 }
 

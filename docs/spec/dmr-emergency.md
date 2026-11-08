@@ -102,12 +102,15 @@ a countdown on the screen. Hold time counts from the press.
 | Step | Input layer (`core/input/input_engine.c`) | UI (`core/ui/ui_app.c`, screen `emergency-hold`) |
 |---|---|---|
 | Released before `INPUT_EMERGENCY_SHOW_MS` (0.3 s) | the key's short action (`GESTURE_PRESS`) | the key's own role, no countdown |
-| Held 0.3 s | `GESTURE_LONG` of `ACT_EMERGENCY` (`input_long_threshold`, whatever the long press time) | the countdown: "Hold for emergency" (or "Hold to cancel" while ours runs), the seconds left in large digits, a bar, the target ("Alarm to" / "Call to" and `dst`, else the channel's talk target), "Let go to stop" |
+| Held 0.3 s | `GESTURE_LONG` of `ACT_EMERGENCY` (`input_long_threshold`, whatever the long press time) | the countdown under the status strip: an amber banner "HOLD FOR EMERGENCY" (dark text; "HOLD TO CANCEL" in white while ours runs; inverted on 1 bpp) as the title, the seconds left in amber as large as the room allows (the largest font, scaled up by `gfx_text_scaled`, centered between the banner and the bar) with a small "s", a cue "((o)) beep / ~~ vibrate" beside them or on a line over the bar (not when Silent; "vibrate" with a motor and Vibrate on), an amber bar, the target ("Alarm to" / "Call to" and `dst`, else the channel's talk target), "Let go to stop" |
 | Each second of the hold | | `UI_BEEP_COUNTDOWN` and a vibration pulse (`UI_VIBE_CALL`; Settings > Sound > Vibrate applies) |
 | Released before the end | `GESTURE_UP`, value 1, of `ACT_EMERGENCY` (`input_long_up`) | nothing sent; the previous screen. BACK, long BACK or another screen pushed over the countdown do the same |
-| The end of the hold | | `ui_svc_emergency(true)` (or `false` to cancel); "Emergency sent" (red on color screens) with `UI_BEEP_EM_SENT`, `UI_VIBE_EMERGENCY`, or "Emergency canceled" with `UI_BEEP_EM_CANCELED`; up 2.5 s or until OK / BACK |
+| The end of the hold | | `ui_svc_emergency(true)` (or `false` to cancel); SENT as large as fits on red (inverted on 1 bpp; the background when Silent), the target under it and "Hold again to cancel", with `UI_BEEP_EM_SENT`, `UI_VIBE_EMERGENCY`, or CANCELED with `UI_BEEP_EM_CANCELED`; up 2.5 s or until OK / BACK |
 
-A raw-edge key (monitor press, emergency hold) sends its own `GESTURE_UP` and then the emergency's. The beeps are not
+The hold is timed from the UI tick that follows the LONG (the UI task ticks right after each key, `ui.c`), less 0.3 s;
+the bar redraws every 250 ms (each redraw holds the bus that some boards' key rows share). A screen that covered the
+countdown stops it, and when that screen closes the countdown goes too. A raw-edge key (monitor press, emergency hold)
+sends its own `GESTURE_UP` and then the emergency's. The beeps are not
 gated by Key tones (the radio core drops only `BEEP_KEY`) and are never `BEEP_EMERGENCY` (someone else's emergency).
 The red LED is the transmit LED of the alarm and the hot mic; there is no LED of its own.
 
@@ -119,6 +122,8 @@ Settings > Keys > Emergency (`UI_SET_EM_*`, shown with `UI_FEAT_EMERGENCY`):
 | Emergency key | on | on, off (the hold does nothing; the short press keeps its role) | `em_flags` `SETTINGS_EM_KEY_OFF` |
 | Alert | beep and vibrate | beep and vibrate, silent (no beep, vibration or red screen) | `em_flags` `SETTINGS_EM_SILENT` |
 | Open mic | 10 s | off, 5-60 s | `hot_mic_s` above (`dmr_emergency_set_settings`) |
+
+The page shows the ranges in a dim line under its rows (the list's `footer`).
 
 These bits are the UI's: the radio core keeps them when it saves its own settings (`emergency_save`) and masks
 `em_alarm_tries` to bits 0-3 when it loads them. A record from before reads as hold 3 s, key on, beep on. An older

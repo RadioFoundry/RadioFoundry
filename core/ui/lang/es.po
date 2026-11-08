@@ -3029,6 +3029,10 @@ msgid ", steps of "
 msgstr ", pasos de "
 
 #: core/ui/ui_menus.c
+msgid "Hold 1-10 s, Emergency key On/Off, Alert Beep+vibrate/Silent"
+msgstr "Pulsación 1-10 s, Tecla emergencia Sí/No, Aviso Tono+vibración/Silencioso"
+
+#: core/ui/ui_menus.c
 msgid "No, keep settings"
 msgstr "No, mantener ajustes"
 
@@ -3537,28 +3541,36 @@ msgid "OK acknowledge  Back hide"
 msgstr "OK aceptar  Atrás"
 
 #: core/ui/ui_screens.c
-msgid "Emergency sent"
-msgstr "Emergencia enviada"
-
-#: core/ui/ui_screens.c
-msgid "Emergency canceled"
-msgstr "Emergencia cancelada"
-
-#: core/ui/ui_screens.c
-msgid "Hold to cancel"
-msgstr "Mantén: cancelar"
-
-#: core/ui/ui_screens.c
-msgid "Hold for emergency"
-msgstr "Mantén: emergencia"
-
-#: core/ui/ui_screens.c
 msgid "Alarm to "
 msgstr "Alarma a "
 
 #: core/ui/ui_screens.c
 msgid "Call to "
 msgstr "Llamada a "
+
+#: core/ui/ui_screens.c
+msgid "beep"
+msgstr "tono"
+
+#: core/ui/ui_screens.c
+msgid "vibrate"
+msgstr "vibra"
+
+#: core/ui/ui_screens.c
+msgid "SENT"
+msgstr "ENVIADA"
+
+#: core/ui/ui_screens.c
+msgid "CANCELED"
+msgstr "CANCELADA"
+
+#: core/ui/ui_screens.c
+msgid "HOLD TO CANCEL"
+msgstr "MANTÉN: CANCELAR"
+
+#: core/ui/ui_screens.c
+msgid "HOLD FOR EMERGENCY"
+msgstr "MANTÉN: EMERGENCIA"
 
 #: core/ui/ui_screens.c
 msgid "Hold again to cancel"

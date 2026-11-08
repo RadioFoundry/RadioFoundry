@@ -908,23 +908,30 @@ static const flow_t flows_k[] = {
 static const flow_t flows_em[] = {
 	// The emergency hold (dmr-emergency.md 5.1; set79 Hold, set80 Key, set81 Alert, set82 Open mic): the countdown from
 	// 0.3 s, sent at the end of the hold (3 s), nothing when let go before it
-	{ "E emergency: hold the top key", "", "hold:emerg,3000", "emerg=1 screen=emergency-hold shows=Emergency_sent", 1,
+	{ "E emergency: hold the top key", "", "hold:emerg,3000", "emerg=1 screen=emergency-hold shows=SENT", 1,
 	  false },
 	{ "E emergency: the outcome closes by itself", "", "hold:emerg,3000 wait:3000", "emerg=1 screen=home", 1, false },
 	{ "E emergency: let go one tick before the end", "", "hold:emerg,2950", "emerg=0 screen=home", 1, false },
 	{ "E emergency: 0.29 s is the key's press, no countdown", "", "hold:emerg,290,held", "emerg=0 screen=home", 1,
 	  false },
 	{ "E emergency: 0.3 s shows the countdown", "", "hold:emerg,300,held",
-	  "screen=emergency-hold shows=Hold_for_emergency shows=Let_go_to_stop shows=Alarm_to_TG emerg=0", 1, false },
+	  "screen=emergency-hold shows=HOLD_FOR_EMERGENCY shows=Let_go_to_stop shows=Alarm_to_TG emerg=0", 1, false },
 	{ "E emergency: the seconds count down", "", "hold:emerg,1500,held", "shows=2 emerg=0", 1, false },
 	{ "E emergency: BACK stops the countdown", "hold:emerg,1000,held", "back wait:3000 release:emerg",
 	  "emerg=0 screen=home", 1, false },
 	{ "E emergency: long BACK stops it too", "hold:emerg,1000,held", "long:back wait:3000 release:emerg",
 	  "emerg=0 screen=home", 1, false },
+	// A screen over the countdown stops it; when it closes, the screen from before the hold, not a frozen countdown
+	{ "E emergency: the talk target picker over it", "hold:emerg,1000,held", "long:ctx back wait:3000 release:emerg",
+	  "emerg=0 screen=home", 2, false },
+	{ "E emergency: an emergency heard over it", "hold:emerg,1000,held", "emergency:9991234 ok wait:3000 release:emerg",
+	  "emerg=0 screen=home", 1, false },
+	{ "E emergency: an emergency heard over the outcome", "hold:emerg,3000", "emergency:9991234 ok wait:500",
+	  "emerg=1 screen=home", 1, false },
 	{ "E emergency: hold again cancels", "hold:emerg,3000 wait:3000", "hold:emerg,3000",
-	  "emerg=0 shows=Emergency_canceled", 1, false },
+	  "emerg=0 shows=CANCELED", 1, false },
 	{ "E emergency: the cancel says so while held", "hold:emerg,3000 wait:3000", "hold:emerg,500,held",
-	  "shows=Hold_to_cancel emerg=1", 1, false },
+	  "shows=HOLD_TO_CANCEL emerg=1", 1, false },
 	{ "E emergency: let go early keeps it on", "hold:emerg,3000 wait:3000", "hold:emerg,2950", "emerg=1 screen=home", 1,
 	  false },
 	{ "E emergency: a long press of 0.7 s sends nothing", "", "long:emerg wait:5000", "emerg=0 screen=home", 1, false },
@@ -946,8 +953,11 @@ static const flow_t flows_em[] = {
 	{ "E emergency: Key Off, the hold does nothing", "ok 7 8 up ok down ok long:back", "hold:emerg,5000",
 	  "emerg=0 screen=home", 1, false },
 	{ "E emergency: Alert Silent", "", "ok 7 8 up ok down down ok", "set81=1 shows=Silent", 8, false },
+	{ "E emergency: the beep cue beside the seconds", "", "hold:emerg,1000,held", "shows=beep shows=vibrate", 1, false },
+	{ "E emergency: Silent, no cue", "ok 7 8 up ok down down ok long:back", "hold:emerg,1000,held",
+	  "hides=beep hides=vibrate screen=emergency-hold", 1, false },
 	{ "E emergency: Silent still sends and shows", "ok 7 8 up ok down down ok long:back", "hold:emerg,3000",
-	  "emerg=1 shows=Emergency_sent", 1, false },
+	  "emerg=1 shows=SENT", 1, false },
 	{ "E emergency: Open mic 15 s", "", "ok 7 8 up ok down down down ok", "set82=15 shows=15_s", 9, false },
 };
 
@@ -1459,7 +1469,7 @@ static void em_hold_checks(void)
 	// The 0.29 s press on the DM-1701 is the key's own (Power level), with no countdown drawn
 	char err[300];
 	sim_reset(sim_geom_find("160x120i5"), SIM_MAP_K);
-	if (!sim_run("hold:emerg,290 expect:power=5 expect:screen=home expect:hides=Hold_for_emergency", err, sizeof err)) {
+	if (!sim_run("hold:emerg,290 expect:power=5 expect:screen=home expect:hides=HOLD_FOR_EMERGENCY", err, sizeof err)) {
 		printf("FAIL emergency hold 0.29 s: %s\n", err);
 		fails++;
 	}
