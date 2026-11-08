@@ -31,19 +31,28 @@ typedef enum {
 	BEEP_EMERGENCY,		// DMR: someone's emergency heard (alarm or emergency call; core/dmr/dmr_emergency.h)
 	BEEP_MESSAGE,		// a text message arrived (the UI, if Settings > Sound > Message tone)
 	BEEP_TX_PERMIT_SHORT,	// DMR: talk now, played before keying (CAP_BEEP_NOT_ON_AIR): one short tone
+	BEEP_SWEEP,		// speaker test (debug link only): a 4 s sweep, BEEP_SWEEP_LO_HZ to BEEP_SWEEP_HI_HZ
 	BEEP_COUNT
 } beep_t;
 
 typedef struct {
-	uint16_t hz;		// 0 = silence
+	uint16_t hz;		// 0 = silence, BEEP_HZ_SWEEP = the sweep
 	uint16_t ms;
 } beep_seg_t;
+
+// A segment with this hz is a linear sweep from BEEP_SWEEP_LO_HZ to BEEP_SWEEP_HI_HZ over its length, phase continuous
+#define BEEP_HZ_SWEEP		1u
+#define BEEP_SWEEP_LO_HZ	150u
+#define BEEP_SWEEP_HI_HZ	3800u	// the 8 kHz stream's band, short of its 4 kHz edge
 
 typedef struct {
 	uint32_t played;	// patterns started
 	uint32_t no_stream;	// patterns dropped: no PCM audio, or the stream would not start (no codec clock)
 	uint32_t blocks;	// 20 ms blocks with a beep in them
 	uint32_t stalls;	// own streams given up: no block for STALL_POLLS polls (the codec clock stopped)
+	uint32_t shared;	// patterns mixed into the voice stream (no lead-in of their own)
+	uint32_t leads;		// silent lead-in blocks played on the own stream
+	uint32_t warms;		// times the amplifier was powered up ahead of a sound (hal_audio_t.speaker_warm)
 } beep_stats_t;
 
 #define BEEP_SEGS_MAX	6
@@ -57,8 +66,15 @@ void beep_init_tone(void (*tone)(uint16_t hz, uint8_t level), uint16_t poll_ms);
 // Start a pattern at level 1..100 (0 or BEEP_NONE: nothing). shared: the DMR voice stream is running and mixes the
 // beep in; otherwise the beep starts its own stream. Replaces a pattern still playing
 void beep_play(beep_t b, uint8_t level, bool shared);
-// Every radio poll: stop the beep's own stream once the pattern is over (shared: the voice stream took over)
-void beep_service(bool shared);
+// Every radio poll: stop the beep's own stream once the pattern is over (shared: the voice stream took over), and
+// let the amplifier go once its hang has run out
+void beep_service(bool shared, uint32_t now_ms);
+#define BEEP_SERVICE_NOW	1	// beep_service takes now_ms (the beep reel builds older beep.h files too)
+// The user or the radio did something a sound may follow (a key, PTT, a reception, a beep): on a board with
+// speaker_hang_s, power the amplifier now and hold it for that long
+void beep_warm(uint32_t now_ms);
+// The amplifier is held powered (beep_warm)
+bool beep_warm_on(void);
 // From an audio block callback: add the beep to the block (saturating). True while the beep sounds
 bool beep_mix(int16_t *spk);
 // Whether a pattern is still playing (as last seen by the audio side)

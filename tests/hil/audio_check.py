@@ -23,15 +23,17 @@ HOP_MS = 1.0
 STEP_WIN_MS = 5.0       # the window steps on a plateau are measured with (at least three periods of the tone)
 POP_WIN_MS = 10.0       # pop analysis frames
 HARMONICS = 6           # harmonics of each tone kept out of the pop measure (the speaker distorts)
+SWEEP_HZ = -1           # beep_patterns' hz for the sweep segment (beep.h BEEP_HZ_SWEEP)
 
 
 def beep_patterns(root=ROOT):
     """The beep patterns from core/radio/beep.c, so the tests copy none: {name: [(hz, ms), ...]} with the
-    debug link's names (BEEP_TX_PERMIT -> tx_permit); hz 0 is a silence."""
+    debug link's names (BEEP_TX_PERMIT -> tx_permit); hz 0 is a silence, SWEEP_HZ the speaker test's sweep."""
     src = open(os.path.join(root, "core", "radio", "beep.c")).read()
     tables = {}
     for name, body in re.findall(r"static const beep_seg_t (p_\w+)\[\]\s*=\s*\{(.*?)\};", src, re.S):
-        tables[name] = [(int(h), int(m)) for h, m in re.findall(r"\{\s*(\d+)\s*,\s*(\d+)\s*\}", body)]
+        tables[name] = [(SWEEP_HZ if h == "BEEP_HZ_SWEEP" else int(h), int(m))
+                        for h, m in re.findall(r"\{\s*(\d+|BEEP_HZ_SWEEP)\s*,\s*(\d+)\s*\}", body)]
     out = {}
     for beep, table in re.findall(r"\[BEEP_(\w+)\]\s*=\s*PAT\((p_\w+)\)", src):
         out[beep.lower()] = tables[table]
@@ -360,10 +362,124 @@ def program_segs(program):
     return out
 
 
-if __name__ == "__main__":      # by hand: audio_check.py FILE.wav BEEP|HZ:MS,...
+def sweep_spec(root=ROOT):
+    """The sweep (beep.h BEEP_SWEEP): (lowest Hz, highest Hz, its length in ms)"""
+    src = open(os.path.join(root, "core", "radio", "beep.h")).read()
+    lo, hi = (int(re.search(rf"#define BEEP_SWEEP_{k}_HZ\s+(\d+)", src).group(1)) for k in ("LO", "HI"))
+    ms = [m for h, m in beep_patterns(root)["sweep"] if h == SWEEP_HZ]
+    if len(ms) != 1:
+        raise ValueError("core/radio/beep.c: the sweep pattern has no single sweep segment")
+    return lo, hi, ms[0]
+
+
+@dataclass
+class Sweep:
+    start_s: float = None           # where the sweep starts in the recording
+    frames: int = 0                 # analysis frames inside it
+    broken: int = 0                 # of those, frames with the sweep jumping (energy just above its frequency)
+    off_db: float = None            # median energy 150-600 Hz above the sweep (harmonics excluded), relative to it
+    response: list = field(default_factory=list)    # (Hz, dB relative to the loudest band): the speaker as heard
+    snr_db: float = None
+    problems: list = field(default_factory=list)
+    quiet: bool = False
+
+    def report(self):
+        if self.start_s is None:
+            return "  sweep not found\n" + "\n".join(f"  PROBLEM: {p}" for p in self.problems)
+        rows = [f"sweep at {self.start_s:.3f} s, SNR {self.snr_db:.0f} dB; {self.broken}/{self.frames} frames broken, "
+                f"median energy above the sweep {self.off_db:.1f} dB",
+                "  response: " + " ".join(f"{hz:.0f}:{d:+.0f}" for hz, d in self.response)]
+        rows += [f"  PROBLEM: {p}" for p in self.problems]
+        return "\n".join(rows)
+
+
+def check_sweep(x, fs, lo, hi, ms, off_db=-30.0, max_broken=0.05, min_snr_db=30.0):
+    """The speaker test's sweep (BEEP_SWEEP), lo to hi Hz over ms, in a recording: where it is, the speaker's response
+    along it, and whether it plays whole. A sweep played whole has nearly all its energy at its frequency and the
+    speaker's harmonics of it. One whose audio jumps (samples lost, repeated or played out of order) spreads energy
+    on both sides of it at every jump. The room can't fake that above the sweep: its echoes arrive at the pitch the
+    sweep had a moment ago, below it. So a frame counts as broken when the energy 150-600 Hz above the sweep (its
+    harmonics excluded) is within off_db of the sweep's. More than max_broken of the frames broken is a problem."""
+    r = Sweep()
+    n = 1024 if fs > 12000 else 512
+    hop = n // 4
+    win = np.hanning(n)
+    fr = np.fft.rfftfreq(n, 1 / fs)
+    rate = (hi - lo) / (ms / 1000)
+    frames = np.array([np.abs(np.fft.rfft(x[k:k + n] * win)) ** 2 for k in range(0, len(x) - n, hop)])
+    if not len(frames):
+        r.problems.append("the recording is shorter than one analysis frame")
+        return r
+    t = (np.arange(len(frames)) * hop + n / 2) / fs
+    band = (fr > lo * 0.8) & (fr < min(hi * 1.05, fs / 2))
+    peak = fr[np.argmax(frames * band, axis=1)]
+    power = frames[:, band].sum(axis=1)
+    floor = max(np.percentile(power, 10), 1e-30)     # the quiet before and after the sweep
+    loud = power > floor * 1e3
+    inside = loud & (peak > lo + 0.1 * (hi - lo)) & (peak < hi - 0.1 * (hi - lo))
+    if inside.sum() < 10:
+        r.quiet = loud.sum() < 10
+        r.problems.append("no sweep found: " + ("the microphone hears too little of the speaker" if r.quiet else
+                                                "sound, but no tone rising through the band"))
+        return r
+    r.start_s = float(np.median(t[inside] - (peak[inside] - lo) / rate))
+    r.snr_db = float(10 * np.log10(np.percentile(power[inside], 90) / floor))
+    ratios = []
+    resp = []
+    for i in range(len(frames)):
+        f0 = lo + rate * (t[i] - r.start_s)
+        if f0 < lo + 50 or f0 > hi - 50 or t[i] - n / 2 / fs < r.start_s:
+            continue
+        width = max(120.0, 3 * fs / n)
+        on = np.abs(fr - f0) < width
+        e_on = frames[i][on].sum()
+        resp.append((f0, e_on))
+        if f0 + 600 > min(4000.0, fs / 2):
+            continue        # nothing above it left in the band to look at
+        above = (fr > f0 + 150) & (fr < f0 + 600)
+        for h in range(2, HARMONICS + 1):
+            above &= np.abs(fr - h * f0) >= width
+        ratios.append((e_on, 10 * np.log10(max(frames[i][above].sum(), 1e-30) / max(e_on, 1e-30))))
+    # Only where the speaker plays the sweep within 25 dB of its loudest: below that (a small speaker's low end) the
+    # room's floor alone is close to the sweep
+    e_max = max(v for f, v in resp)
+    ratios = np.array([d for v, d in ratios if v > e_max * 10 ** -2.5])
+    r.frames = len(ratios)
+    r.broken = int((ratios > off_db).sum())
+    r.off_db = float(np.median(ratios))
+    # The response in third-octave bands from the first frames' level per band, relative to the loudest
+    centers = [c for c in 200 * 2 ** (np.arange(0, 15) / 3) if lo * 1.12 < c < hi / 1.12]
+    levels = []
+    for c in centers:
+        e = [v for f, v in resp if c / 1.12 <= f < c * 1.12]
+        levels.append(10 * np.log10(np.mean(e)) if e else -300.0)
+    top = max(levels) if levels else 0
+    r.response = [(c, lv - top) for c, lv in zip(centers, levels)]
+    # The radio plays an 8 kHz stream: above its band is only the codec's images, a few percent of the energy. Much
+    # more is the capture's fault (such a recording also falls below the sweep's lowest pitch), not the radio's
+    e_hi = frames[:, fr > 4300].sum()
+    above = e_hi / max(e_hi + frames[:, (fr > 100) & (fr < 4000)].sum(), 1e-30)    # a share of the energy
+    if fs > 9000 and above > 0.25:
+        r.problems.append(f"{100 * above:.0f} % of the energy is above 4.3 kHz, which the radio's 8 kHz audio can't "
+                          "make: the recording is broken (microphone capture), record again")
+    elif r.snr_db < min_snr_db:
+        r.quiet = True
+        r.problems.append(f"the sweep is only {r.snr_db:.0f} dB over the floor (want {min_snr_db:.0f})")
+    elif r.broken > max_broken * r.frames:
+        r.problems.append(f"the sweep breaks up: {r.broken} of {r.frames} frames have energy just above its frequency within "
+                          f"{-off_db:.0f} dB of it (audio jumping: samples lost, repeated or out of order)")
+    return r
+
+
+if __name__ == "__main__":      # by hand: audio_check.py FILE.wav BEEP|sweep|HZ:MS,...
     import sys
     pats = beep_patterns()
     spec = sys.argv[2]
+    if spec == "sweep":
+        x, fs = load_wav(sys.argv[1])
+        res = check_sweep(x, fs, *sweep_spec())
+        print(res.report())
+        sys.exit(1 if res.problems else 0)
     segs = pats[spec] if spec in pats else [tuple(float(v) for v in s.split(":")) for s in spec.split(",")]
     res = check_wav(sys.argv[1], [(int(h), m) for h, m in segs])
     print(res.report())

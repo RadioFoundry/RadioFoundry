@@ -142,6 +142,9 @@ void radio_settings_default(radio_settings_t *s)
 static void activity(radio_sm_t *sm, uint32_t now_ms)
 {
 	sm->activity_ms = now_ms;
+#if CONFIG_BEEP
+	beep_warm(now_ms);	// a sound may follow: the amplifier up now (a board with a speaker hang)
+#endif
 }
 
 // A beep at the settings' level: mixed into the DMR voice stream when it runs, else on its own stream
@@ -5451,9 +5454,18 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		break;
 #endif
 	case RREQ_BEEP:
-		if (req->arg != BEEP_KEY || sm->set.key_beep) {
-			beep(sm, (uint8_t)req->arg);
+		if (req->arg == BEEP_KEY && !sm->set.key_beep) {
+			break;
 		}
+#if CONFIG_BEEP
+		if (req->arg2 != 0) {	// later (a speaker test on a radio whose cable mutes the speaker): one at a time
+			sm->beep_due = (uint8_t)req->arg;
+			sm->beep_due_ms = now_ms + req->arg2;
+			break;
+		}
+		sm->beep_due = BEEP_NONE;
+#endif
+		beep(sm, (uint8_t)req->arg);
 		break;
 #if CONFIG_VIBRATE
 	case RREQ_VIBRATE:
@@ -5786,7 +5798,12 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR
 	shared = ambeVoiceStreaming();
 #endif
-	beep_service(shared);
+	if (sm->beep_due != BEEP_NONE && (int32_t)(now_ms - sm->beep_due_ms) >= 0) {
+		uint8_t b = sm->beep_due;
+		sm->beep_due = BEEP_NONE;
+		beep(sm, b);
+	}
+	beep_service(shared, now_ms);
 #endif
 #if CONFIG_VIBRATE
 	vibe_service(now_ms, board.power != NULL ? board.power->vibrate : NULL);
@@ -5976,7 +5993,8 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	} else if (holds) {
 		activity(sm, now_ms);
 		sm->close_count = 0;
-	} else if (++sm->close_count >= close_polls()) {
+	} else if (++sm->close_count >= close_polls() || (sq != 0 && close_polls() == RADIO_SQL_CLOSE_POLLS &&
+			   st.noise >= open_below + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB)) {
 		end_reception(sm, now_ms);
 		changed(sm);
 	}
