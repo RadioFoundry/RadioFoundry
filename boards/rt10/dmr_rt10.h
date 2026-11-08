@@ -8,14 +8,14 @@
 #include <stdbool.h>
 #include "config.h"
 
-// The modem's ADC gain in DMR (GCR_ADCL, dB): above the stock's 11 dB, as listened to through a parrot.
+// The modem's ADC gain in DMR (GCR_ADCL, dB): above the original firmware's 11 dB, as listened to through a parrot.
 // make RT10_DMR_MIC_DB=N replaces it on the bench
 #ifndef RT10_DMR_MIC_DB
 #define RT10_DMR_MIC_DB		23u
 #endif
 // DAC C in DMR: the bias of the modem's AF ADC (its N input), which sets where the FD6818's 4FSK sits in the ADC's
-// range. 1850 gave the fewest AMBE bits corrected (hardware-rt10.md 7.1); the stock's 1762 corrects about one per
-// frame. make RT10_DMR_DAC_C=N replaces it on the bench
+// range. 1850 gave the fewest AMBE bits corrected (hardware-rt10.md 7.1); the original firmware's 1762 corrects about
+// one per frame. make RT10_DMR_DAC_C=N replaces it on the bench
 #ifndef RT10_DMR_DAC_C
 #define RT10_DMR_DAC_C		1850u
 #endif

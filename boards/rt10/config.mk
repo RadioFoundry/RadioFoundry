@@ -2,7 +2,7 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 # RT10 feature defaults (config/features.mk lists them all). The host link runs on the accessory jack's UART0; USB, PPP
 # and TCP_CONNS follow the platform (platform/hrc7000/config.mk)
-# DMR (hardware-rt10.md 7.1): the stock scheme on the shared RF-burst task; voice needs the codec merged (8)
+# DMR (hardware-rt10.md 7.1): the original firmware's scheme on the shared RF-burst task; voice needs the codec merged (8)
 CONFIG_DMR ?= y
 CONFIG_HOTSPOT_SPLIT ?= n
 # PPP's host sends at any time, and the radio sending while the host sends latched the cable line low until a power

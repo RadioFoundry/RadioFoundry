@@ -35,15 +35,15 @@
 #define FD_REG_NOISE	0x65u
 #define FD_REG_RSSI	0x67u
 #define FD_VOLUME	14u	// fd6818sh_volume_word step: the radio's volume is the analog knob after the chip
-#define TX_TONE_GAIN	48u	// FM TX tone generator level (0..127), the stock single tone's
+#define TX_TONE_GAIN	48u	// FM TX tone generator level (0..127), the original firmware's single tone's
 #define RX_QUIET_MS	150u	// after an FM key-down the chip reads as a carrier for a moment: the squelch stays shut
 #define SPK_SWITCH_MS	10u	// the AF gate before the amplifier on, after it off (the original firmware's)
-#define APC_STEPS	180u	// the stock ramp's length: 180 steps of 2 us (hardware-rt10.md 5)
+#define APC_STEPS	180u	// the original firmware's ramp length: 180 steps of 2 us (hardware-rt10.md 5)
 #define APC_STEP_US	2u
-#define TX_END_US	100u	// stock key-down: between the PA pins, the receiver's retune and the RX supply
+#define TX_END_US	100u	// original firmware key-down: between the PA pins, the receiver's retune and the RX supply
 #define CTCSS_MIN_X10	600u
 #define CTCSS_MAX_X10	2600u
-#define DAC_C_INIT	1762u	// the stock DAC set-up's channel C level, as on the other HR_C7000 radios
+#define DAC_C_INIT	1762u	// the original firmware's DAC set-up's channel C level, as on the other HR_C7000 radios
 #define MODEM_MIC_DB	0u	// the modem's ADC gain: the microphone reaches the FD6818, not the modem
 
 // The RT10's power-on set (hardware-rt10.md 7). Page 1 is addressed from 0x80 on this bus
@@ -67,25 +67,25 @@ static const rfbus_regval_t rt10_agc[] = {
 static const rfbus_regval_t rt10_after[] = {
 	{ 0x3E, 0x7410 }, { 0x25, 0x0000 }, { 0x27, 0x0000 }, { 0x26, 0x0000 }, { 0x53, 0x765D },
 };
-// The stock receive set-up, written by the analog mode: the RT10's AFC, DC, filter and page-1 words (the microphone
-// gain among them) in place of the driver's. It undoes the digital set; 0x48 goes back to its power-on word, the one
-// FM was measured with (the stock writes it per bandwidth instead, hardware-rt10.md 7)
+// The original firmware's receive set-up, written by the analog mode: the RT10's AFC, DC, filter and page-1 words (the
+// microphone gain among them) in place of the driver's. It undoes the digital set; 0x48 goes back to its power-on word,
+// the one FM was measured with (the original firmware writes it per bandwidth instead, hardware-rt10.md 7)
 static const rfbus_regval_t rt10_analog[] = {
 	{ 0x73, 0x4642 }, { 0x04, 0x0300 }, { 0x7E, 0x3425 }, { 0x44, 0x42CC }, { 0x4B, 0x223C }, { 0x48, 0x6C4C },
 	{ 0x35, 0xF008 }, { 0x77, 0x80EF },
 	{ 0x23, 0x9C0F }, { FD6818SH_REG_PAGE, 1 }, { 0x17, 0x02BE }, { 0x18, 0x8FD8 }, { 0x19, 0x4840 },
 	{ 0x1C, 0x076F }, { 0x1D, 0xB9FD }, { 0x27, 0x18DA }, { FD6818SH_REG_PAGE, 0 },
 };
-// 902-928 MHz is one band, the chip's above 600 MHz: 0x1A and 0x40 as the stock's band select writes them. A band
-// word from the chip's lower bands leaves the receiver deaf (hardware-rt10.md 7, gotchas.md 3.15)
+// 902-928 MHz is one band, the chip's above 600 MHz: 0x1A and 0x40 as the original firmware's band select writes them.
+// A band word from the chip's lower bands leaves the receiver deaf (hardware-rt10.md 7, gotchas.md 3.15)
 static const uint16_t rt10_band_edge[] = { 1120 };
 static const uint16_t rt10_band_word[] = { 0x1F80 };
 static const uint8_t rt10_dev_high[] = { 0x3A };
 
-// The digital set (hardware-rt10.md 7.1), the stock's DMR entry, then its digital bandwidth word and the band select's
-// 0x40, which the stock's every tune writes. 0x4B = 0xE442 is what puts the demodulated 4FSK on the AF output: without
-// it the modem's AF ADC sees a few millivolts and never syncs. Receive audio 0x4140 goes to the modem; at a burst's TX
-// 0x6740. 0x77 is the stock's DMR word (0x80EF in FM, the analog set)
+// The digital set (hardware-rt10.md 7.1), the original firmware's DMR entry, then its digital bandwidth word and the
+// band select's 0x40, which every tune of the original firmware writes. 0x4B = 0xE442 is what puts the demodulated 4FSK
+// on the AF output: without it the modem's AF ADC sees a few millivolts and never syncs. Receive audio 0x4140 goes to
+// the modem; at a burst's TX 0x6740. 0x77 is the original firmware's DMR word (0x80EF in FM, the analog set)
 static const rfbus_regval_t rt10_digital[] = {
 	{ 0x04, 0x0300 }, { 0x48, 0x6C5C }, { 0x4B, 0xE442 }, { 0x73, 0x569A }, { 0x7E, 0x349E }, { 0x23, 0x8F87 },
 	{ 0x43, 0x7E08 }, { 0x40, 0x3AD0 }, { 0x77, 0xC0FF },
@@ -199,7 +199,8 @@ static void init(void)
 {
 	board_rf_safe();
 	rt10_cal_load(cal_read);
-	// DAC B (the PA control) and C to their pins, as the stock DAC set-up does; without it the PA gets no drive
+	// DAC B (the PA control) and C to their pins, as the original firmware's DAC set-up does; without it the PA gets
+	// no drive
 	hrc_modem_analog_init(DAC_C_INIT);
 	uint32_t irq = hrc_irq_save();
 	IO_DIPLEX2 &= ~IO_DIPLEX2_DAC_C;
@@ -369,7 +370,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	fd6818sh_set_af(&fd, af_on() ? FD6818SH_AF_RX : FD6818SH_AF_MUTE);
 	fd6818sh_set_state(&fd, FD6818SH_STATE_RX);
 	if (from_tx) {
-		hal_delay_us(TX_END_US);	// stock key-down: the retune, then the RX supply
+		hal_delay_us(TX_END_US);	// original firmware key-down: the retune, then the RX supply
 	}
 	hrc_pin_write(PIN_RX_SUPPLY, true);
 	if (mode == RADIO_MODE_DMR) {
@@ -423,9 +424,9 @@ static void dmr_disarm(void)
 	}
 }
 
-// One burst's TX on, the stock's (hardware-rt10.md 7.1): the key-up delay, the RX supply off, the FD6818 to the TX
-// frequency (its TX AF word first) in its TX state, PA select and TX supply on, DAC B ramped up. The key-up delay
-// counts from the RF TX interrupt: the task's wake takes part of it
+// One burst's TX on, the original firmware's (hardware-rt10.md 7.1): the key-up delay, the RX supply off, the FD6818 to
+// the TX frequency (its TX AF word first) in its TX state, PA select and TX supply on, DAC B ramped up. The key-up
+// delay counts from the RF TX interrupt: the task's wake takes part of it
 void rt10_burst_on(hrc_rfburst_wait_fn wait, uint32_t elapsed_us)
 {
 	wait(plan.on_us > elapsed_us ? plan.on_us - elapsed_us : 0);
@@ -439,8 +440,9 @@ void rt10_burst_on(hrc_rfburst_wait_fn wait, uint32_t elapsed_us)
 }
 
 // The burst's TX off: the hold until its last symbol (none when now), the ramp down, TX supply and PA select off,
-// 100 us, the FD6818 back to the receive frequency, 100 us, the RX supply on. The stock's key-down delay counts from
-// its RF RX interrupt; the hold to the burst's end takes its place. Returns how late the ramp down started, in us
+// 100 us, the FD6818 back to the receive frequency, 100 us, the RX supply on. The original firmware's key-down delay
+// counts from its RF RX interrupt; the hold to the burst's end takes its place. Returns how late the ramp down
+// started, in us
 uint32_t rt10_burst_off(hrc_rfburst_wait_fn wait, uint32_t elapsed_us, bool now)
 {
 	uint32_t late = now ? 0 : hrc_rfburst_late_us(elapsed_us, tx_lead);
@@ -461,9 +463,9 @@ uint32_t rt10_burst_off(hrc_rfburst_wait_fn wait, uint32_t elapsed_us, bool now)
 }
 #endif
 
-// The stock key-up (hardware-rt10.md 5): the TX words while still receiving, speaker off, PA select and TX supply
-// low; then the calibration's delay, the RX supply off, the chip to f in its TX state, PA select and TX supply on, and
-// DAC B ramped up to the calibration's level
+// The original firmware's key-up (hardware-rt10.md 5): the TX words while still receiving, speaker off, PA select and
+// TX supply low; then the calibration's delay, the RX supply off, the chip to f in its TX state, PA select and TX
+// supply on, and DAC B ramped up to the calibration's level
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_tone)
 {
 	if (mode == RADIO_MODE_DMR) {
@@ -481,7 +483,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		return false;
 	}
 	rt10_tx_plan_t p;
-	// Power index 1 ("H") is the stock's high set, "L" its low one
+	// Power index 1 ("H") is the original firmware's high set, "L" its low one
 	if (!fd_ok || !board_in_band(hz, true) || !rt10_cal_tx_plan(hz, power >= 1, &p)) {
 		return false;
 	}
@@ -511,9 +513,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	return true;
 }
 
-// The stock key-down without the retune: the chip back to RX (still on the TX frequency), the calibration's delay,
-// the ramp down, TX supply and PA select off. True when there was a transmission; rx() then retunes and turns the RX
-// supply on
+// The original firmware's key-down without the retune: the chip back to RX (still on the TX frequency), the
+// calibration's delay, the ramp down, TX supply and PA select off. True when there was a transmission; rx() then
+// retunes and turns the RX supply on
 static bool tx_stop(void)
 {
 	if (!transmitting) {

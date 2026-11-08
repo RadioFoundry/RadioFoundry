@@ -56,7 +56,7 @@ typedef struct {
 	uint8_t pa_gain;
 	uint16_t on_us, off_us;
 } rt10_tx_plan_t;
-// high: the stock's high power set, else its low one
+// high: the original firmware's high power set, else its low one
 bool rt10_cal_tx_plan(uint32_t hz, bool high, rt10_tx_plan_t *p);
 uint8_t rt10_cal_tx_center(void);
 uint8_t rt10_cal_mod(uint32_t hz);

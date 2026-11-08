@@ -9,10 +9,10 @@
 #define CAL_SECTOR		0x1FF000u
 #define OFF_TX_CENTER		0x1A9u		// TCXO center byte (the modem's SIG_CENTER)
 #define OFF_BASE		0x470u		// the first step's frequency / 10 MHz
-#define OFF_DAC_HIGH		0x51Du		// PA control level / 16, the stock's two power sets
+#define OFF_DAC_HIGH		0x51Du		// PA control level / 16, the original firmware's two power sets
 #define OFF_DAC_LOW		0x52Cu
 #define OFF_MOD			0x559u		// (u8, u8) pairs, the first byte: the modulation balance
-#define OFF_PA_HIGH		0x5B5u		// FD6818 PA gain; the stock caps the high set's at 7
+#define OFF_PA_HIGH		0x5B5u		// FD6818 PA gain; the original firmware caps the high set's at 7
 #define OFF_PA_LOW		0x5C4u
 #define OFF_ON_HIGH		0x5D3u		// key-up delay / 10 us, RX supply off to TX state
 #define OFF_ON_LOW		0x5F1u

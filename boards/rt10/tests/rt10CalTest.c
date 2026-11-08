@@ -136,7 +136,7 @@ static void test_no_calibration(void)
 // when the first symbol goes out 0.85 ms after the lead
 static void test_dmr_lead(void)
 {
-	CHECK(rt10_dmr_rf_tx_lead(450) == 25);		// the low set's 450 us key-up delay: 2.5 ms, not the stock's 2.6
+	CHECK(rt10_dmr_rf_tx_lead(450) == 25);		// the low set's 450 us key-up delay: 2.5 ms, not the original's 2.6
 	CHECK(rt10_dmr_rf_tx_lead(100) == 22);
 	CHECK(rt10_dmr_rf_tx_lead(1000) == 31);
 	for (uint16_t on = 0; on <= 2550; on += 10) {	// the calibration's byte x 10 us

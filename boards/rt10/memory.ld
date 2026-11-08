@@ -7,8 +7,8 @@
  * 0x030E8000..0x03100000 as on the other HR_C7000 radios (never linked into).
  *
  * SRAM (288 KB at 0x10000): RadioFoundry's region from 0x10000 and the codec window 0x43A00..0x58000 at the top. The
- * runtime stub (CONFIG_STUB_ENTRY) loads into that window (platform.h HRC_STUB_BASE). The modem SRAM window the stock
- * build copies its codec tables to, 0x1800420C..0x18007184 (hardware-rt10.md 8), is reserved.
+ * runtime stub (CONFIG_STUB_ENTRY) loads into that window (platform.h HRC_STUB_BASE). The modem SRAM window the original
+ * firmware's build copies its codec tables to, 0x1800420C..0x18007184 (hardware-rt10.md 8), is reserved.
  *
  * The layout is the platform's (platform/hrc7000/common.ld). */
 
