@@ -1919,7 +1919,7 @@
  "flash.detect.running": "Chiedo alla radio quale variante è…",
  "flash.detect.found": "Rilevata {variant}: {via} ha risposto {version}.",
  "flash.detect.no_variant": "{via} ha risposto ({version}), ma questo non dice quale variante è la radio. Controllala sulla radio:",
- "flash.detect.none": "La radio non ha risposto in nessun modo noto alla pagina. Controlla la variante sulla radio:",
+ "flash.detect.none": "Nessuna radio ha risposto su quella porta. Controlla che la radio sia collegata e accesa, poi premi di nuovo Rileva ora. Puoi anche leggere la variante sulla radio:",
  "flash.detect.failed": "Impossibile aprire la porta della radio ({why}).",
  "flash.detect.then_update": "Ora metti la radio in modalità aggiornamento e premi Connetti. La pagina ricontrolla il modello lì, e ancora una volta subito prima di scrivere.",
  "flash.detect.blocked": "RadioFoundry non può ancora essere installato su questa variante: {why}. Il firmware originale può ancora essere riscritto.",

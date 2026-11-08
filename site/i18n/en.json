@@ -1919,7 +1919,7 @@
  "flash.detect.running": "Asking the radio which variant it is…",
  "flash.detect.found": "Detected {variant}: {via} answered {version}.",
  "flash.detect.no_variant": "{via} answered ({version}), but that doesn't say which variant the radio is. Check it on the radio:",
- "flash.detect.none": "The radio didn't answer in any way the page knows. Check its variant on the radio:",
+ "flash.detect.none": "No radio answered on that port. Check that the radio is connected and turned on, then press Auto-Detect Now again. You can also read the variant on the radio:",
  "flash.detect.failed": "The radio's port couldn't be opened ({why}).",
  "flash.detect.then_update": "Now put the radio in its update mode and press Connect. The page checks the model again there, and once more just before it writes.",
  "flash.detect.blocked": "RadioFoundry can't be installed on this variant yet: {why}. Its original firmware can still be written back.",
