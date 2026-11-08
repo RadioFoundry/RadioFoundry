@@ -49,10 +49,6 @@ def pytest_addoption(parser):
     g.addoption("--bench-station", default=os.environ.get("RFOUNDRY_BENCH_STATION"),
                 help="a shared bench's station (a RadioFoundry radio on the bench host) as the second radio of the tests "
                      "that use one (bench_station fixture); rfoundry-bench info lists them")
-    g.addoption("--sdr-gain", type=float, default=5.0, help="RTL-SDR gain for raw captures (dmr_bench.py C0 picks it)")
-    g.addoption("--sdr-ppm", type=float, default=None,
-                help="the SDR's own frequency error in ppm for FM carrier offsets (default: the SDR bench's calibration, "
-                     "recorded with each capture)")
     g.addoption("--max-foff", type=float, default=500.0, help="Hz: largest carrier offset the TX tests accept")
     g.addoption("--allow-codeplug-write", action="store_true",
                 help="tests may write the radio's codeplug over CPS (marker codeplug_write: backed up first, "

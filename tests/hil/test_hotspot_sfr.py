@@ -118,9 +118,8 @@ def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
     radio.ptt_for(1.0)
     radio.wait_for(lambda x: x.get("state") != "tx", timeout=5, what="TX ended")
     v0 = radio.view(["hotspot", "sfr"])
-    rdir = sdr_bench.run_dir("hil_sfr_repeat")
     with sdr_bench.lease():
-        watch = sdr_bench.dmr_watch_start(rdir, freq, 12, cc)     # bursts decoded on the bench when it can
+        watch = sdr_bench.dmr_watch_start(None, freq, 12, cc)
         with radio.released() as port:
             t = M.Transport(port)
             hs = M.MmdvmLink(t, hz, cc, 12, simplex=False)
@@ -152,7 +151,6 @@ def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
     print(f"uplink: {len(up)} DMR_DATA1 (controls {sorted(set(ctl))}), NAKs {naks}; SDR families {fams}; "
           f"TS2 LCs {ts2_lc[:3]}; sfr.repeated {v0.get('sfr.repeated')} -> {v1.get('sfr.repeated')}, "
           f"sfr.tx_starts {v0.get('sfr.tx_starts')} -> {v1.get('sfr.tx_starts')}")
-    print(f"capture: {sdr_bench.run_path(rdir)}" if "cap" in watch else "bursts decoded on the bench")
     # The repeat's slot timing: each TS2 burst against the last inbound TS1 one before it (30 ms on the grid)
     t_in = sorted(b["t_ms"] for b in bursts if b.get("family") == "ts1")
     offs = []

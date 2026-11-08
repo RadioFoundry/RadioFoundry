@@ -18,7 +18,7 @@ transmission (from its first voice LC header, by source ID):
 - bench modem: exactly one call, started by a header (not late entry), ended by a terminator, source = the radio's
   ID, voice bursts in whole superframes, AMBE FEC corrections at most 0.5 % of the AMBE bits heard (the bench modem
   is overloaded by the radio a meter away, even at 50 mW: a few corrected bits are its own; more than any are a
-  warning). Run with --sdr-gain 0 on a bench where the RTL-SDR clips. When the capture still clips (1 % or more of
+  warning). When the capture still clips (1 % or more of
   the samples at the ADC rails) the waveform checks (sync family, A-F order, spacing, on-time, ramps, overlaps, power
   steps, stray carrier) are reported as not judged, with a warning; the decoded content stays strict.
 - radio: the call stack counted one TX call (call.tx_calls + 1), no TX underruns.
@@ -257,7 +257,7 @@ def _dmr_tx_setup(radio, pytestconfig):
 def _over(radio, sdr_bench, freq, cc, seconds, tag):
     """A PTT over watched by the SDR and heard by the bench modem; returns (sdr analysis, bench lines). The SDR's
     bursts are decoded on the bench (dmr_watch_*: only the LC, kind and timing fields these tests read come back, no
-    raw I/Q); without the shared bench daemon it is a raw capture analyzed afterwards, as before."""
+    raw I/Q)."""
     rdir = sdr_bench.run_dir(tag)
     with sdr_bench.lease():
         watch = sdr_bench.dmr_watch_start(rdir, freq, seconds + 8, cc)
