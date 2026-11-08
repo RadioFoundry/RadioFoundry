@@ -545,6 +545,18 @@ static void test_squelch(void)
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio && !hw.led[LED_GREEN]);
 	CHECK(sm.view.last_rx_ms == now);
+	// The carrier goes: the noise jumps far over the line, and one poll closes it (a shorter squelch tail)
+	signal(thr - 10, true);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB - 1, true);	// just short of it: two polls as before
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	signal(thr - 10, true);
+	poll_for(RADIO_POLL_MS);
+	signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB, true);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio);
 
 	signal(10, false);			// no RX tone on this channel: the board's tone flag doesn't matter
 	poll_for(RADIO_POLL_MS);

@@ -229,8 +229,15 @@ rather than show "VOX on" for a VOX that never keys.
 
 ### 3.5 Squelch tail elimination
 
-Not done. Without a reverse burst or a tone-loss signal from the other station there is nothing to act on; closing
-early on CTCSS loss conflicts with the tone debounce (8 polls) that keeps fades from chopping audio. Left for later.
+No reverse burst or tone-loss signal from the other station is acted on yet; closing early on CTCSS loss conflicts
+with the tone debounce (8 polls) that keeps fades from chopping audio.
+
+The noise squelch shortens the tail itself. It closes after `RADIO_SQL_CLOSE_POLLS` (2) polls over the close line
+(open threshold + `RADIO_SQL_HYST_DB`), 50 ms, but after one poll when the noise is `RADIO_SQL_FAST_CLOSE_DB` (12 dB)
+or more over it: a carrier that goes takes the noise far over the line at once, while a fade crosses it by a little.
+Squelch level 0 (always open) and the APRS hold (`RADIO_SQL_CLOSE_POLLS_APRS`) keep their own timing. On one board
+(BK4819 receiver) the tail at the speaker went from 55 ms to 15-35 ms in three calls (measured,
+`test_fm_rx_speaker`); what is left is the poll and the chip's noise reading lag.
 
 ### 3.6 Mic gain
 

@@ -5943,7 +5943,8 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	} else if (holds) {
 		activity(sm, now_ms);
 		sm->close_count = 0;
-	} else if (++sm->close_count >= close_polls()) {
+	} else if (++sm->close_count >= close_polls() || (sq != 0 && close_polls() == RADIO_SQL_CLOSE_POLLS &&
+			   st.noise >= open_below + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB)) {
 		end_reception(sm, now_ms);
 		changed(sm);
 	}
