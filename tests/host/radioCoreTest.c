@@ -28,6 +28,8 @@
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dl_fmt.h"
 #include "radio/tx_limit.h"
+#include "radio/battery.h"
+#include "fuzz.h"
 
 static int failures;
 static int checks;
@@ -3523,6 +3525,30 @@ static void test_ui_settings(void)
 	CHECK(ui_svc_setting_get(UI_SET_KEY_TONES) == 1 && ui_svc_setting_get(UI_SET_TONE_VOLUME) == 7);
 	CHECK(ui_svc_setting_get(UI_SET_TOT_S) == 90 && ui_svc_setting_get(UI_SET_BACKLIGHT_S) == 20);
 	CHECK(ui_svc_setting_get(UI_SET_BATTERY_SAVER) == 1);
+	// Backlight (EP): > 0 dims then goes off at 4x, 0 always on, < 0 dims after -value and never goes off
+	static const struct { int32_t v; uint16_t dim, off; int32_t back; } bl[] = {
+		{ 30, 30, 120, 30 }, { 0, 0, 0, 0 }, { -30, 30, 0, -30 },
+		{ 1, 1, 4, 1 }, { -1, 1, 0, -1 },				// BVA: the smallest times
+		{ 0x3FFF, 0x3FFF, 0xFFFC, 0x3FFF }, { 0x4000, 0x4000, 0xFFFF, 0x4000 },	// off saturates
+		{ -0xFFFF, 0xFFFF, 0, -0xFFFF }, { -0x10000, 0xFFFF, 0, -0xFFFF },	// dim saturates
+	};
+	for (size_t i = 0; i < sizeof bl / sizeof bl[0]; i++) {
+		ui_svc_apply(UI_SET_BACKLIGHT_S, bl[i].v);
+		radio_get_settings(&rs);
+		CHECK(rs.backlight_dim_s == bl[i].dim && rs.backlight_off_s == bl[i].off);
+		CHECK(ui_svc_setting_get(UI_SET_BACKLIGHT_S) == bl[i].back);
+	}
+	// PBT: every value in the menu's range reads back as set, and a negative one never turns the backlight off
+	fuzz_t bf;
+	fuzz_init(&bf, 0xB1);
+	for (long i = 0; i < fuzz_iters(500); i++) {
+		int32_t v = (int32_t)fuzz_below(&bf, 2 * 0x3FFF + 1) - 0x3FFF;
+		ui_svc_apply(UI_SET_BACKLIGHT_S, v);
+		radio_get_settings(&rs);
+		CHECK(ui_svc_setting_get(UI_SET_BACKLIGHT_S) == v);
+		CHECK(v >= 0 || batt_backlight_pct(100, rs.backlight_dim_s, rs.backlight_off_s, 0xFFFFFFFFu, BATT_OK) == 20);
+	}
+	ui_svc_apply(UI_SET_BACKLIGHT_S, 20);
 	CHECK(ui_svc_setting_get(UI_SET_ROAM_SURVEY) == 2 && ui_svc_setting_get(UI_SET_ROAM_BEACON_S) == 120 &&
 	      ui_svc_setting_get(UI_SET_ROAM_BEACON_LEN) == 6 && ui_svc_setting_get(UI_SET_ROAM_PROBE) == 1);
 	// ... which the store leaves to ui_svc_apply (nothing written here)

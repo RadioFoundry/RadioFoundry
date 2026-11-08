@@ -2541,6 +2541,22 @@ msgid "Serial"
 msgstr "Serie"
 
 #: core/ui/ui_menus.c
+msgid "10s/dim"
+msgstr "10s/tenue"
+
+#: core/ui/ui_menus.c
+msgid "30s/dim"
+msgstr "30s/tenue"
+
+#: core/ui/ui_menus.c
+msgid "1m/dim"
+msgstr "1m/tenue"
+
+#: core/ui/ui_menus.c
+msgid "2m/dim"
+msgstr "2m/tenue"
+
+#: core/ui/ui_menus.c
 msgid "Never"
 msgstr "Nunca"
 

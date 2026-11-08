@@ -2335,7 +2335,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strncmp(key, "set", 3) == 0 && key[3] >= '0' && key[3] <= '9')	// set<N>: ui_setting_t N's value
 		snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get((uint8_t)atoi(key + 3)));
 	else if (strcmp(key, "radio_tot") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tot_s);
-	else if (strcmp(key, "radio_backlight") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.backlight_s);
+	else if (strcmp(key, "radio_backlight") == 0) snprintf(got, sizeof got, "%d", (int)sim_rec.backlight_s);
 	else if (strcmp(key, "count") == 0) snprintf(got, sizeof got, "%u", s.count);
 	else if (strcmp(key, "depth") == 0) snprintf(got, sizeof got, "%u", s.depth);
 	else if (strcmp(key, "hotspot") == 0) snprintf(got, sizeof got, "%u", hotspot_on);

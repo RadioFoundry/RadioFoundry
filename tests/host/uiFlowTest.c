@@ -427,6 +427,7 @@ static const flow_t flows[] = {
 	// Settings the radio core acts on reach it (ui_svc_apply), key presses ask for a key beep
 	{ "S TX timeout to the radio", "", "ok 7 3 down ok", "radio_tot=300", 5, false },
 	{ "S backlight time to the radio", "", "ok 7 2 down ok", "radio_backlight=60", 5, false },
+	{ "S backlight dim only to the radio", "", "ok 7 2 down ok ok ok ok", "radio_backlight=-30", 8, false },
 	{ "S key beep", "", "up", "beeps=1", 1, false },
 	{ "S long press time to input", "", "ok 7 8 ok up ok", "longpress=700", 6, false },
 	{ "S auto lock after 30 s", "ok 7 4 down down ok long:back", "wait:31000", "locked=1", 0, false },
