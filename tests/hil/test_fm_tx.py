@@ -482,22 +482,26 @@ def test_fm_tx_power_levels(fm_vfo, sdr_bench, pytestconfig):
     count = min(3, int(fm_vfo.core().get("power_count") or 3))
     if count < 2:
         skip("no_hw", "one power level: nothing to compare")
-    for step in range(count):
-        if step:
-            fm_vfo.link.power_step(1)
-            fm_vfo.wait_for(lambda v: v.get("power") == str(step), what=f"power {step}")
-        name = fm_vfo.core().get("power_name")
-        rdir = sdr_bench.run_dir(f"hil_fm_power{step}")
-        with sdr_bench.lease():
-            cap = sdr_bench.capture_start(rdir, mhz, seconds=4, gain=0)
-            fm_vfo.ptt_for(1.5)
-            fm_vfo.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
-            sdr_bench.capture_wait()
-        meta = sdr_bench.capture_meta(cap)
-        _, text = sdr_bench.analyze_fm(cap, bw_khz=12.5)
-        r = parse_fm(text)
-        assert len(r["levels"]) == 1, f"power {step} ({name}): {len(r['levels'])} keyed segments: {text[-600:]}"
-        levels.append((step, name, r["levels"][0], meta.get("clip_pct")))
+    # Each level set as such: the run may start the radio on any level (--radio-tx-watts), and a step from there
+    # wraps past the highest
+    start = int(fm_vfo.core()["power"])
+    try:
+        for step in range(count):
+            power, name = fm_vfo.link.power_level(step)
+            assert int(power) == step, (power, name)
+            rdir = sdr_bench.run_dir(f"hil_fm_power{step}")
+            with sdr_bench.lease():
+                cap = sdr_bench.capture_start(rdir, mhz, seconds=4, gain=0)
+                fm_vfo.ptt_for(1.5)
+                fm_vfo.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
+                sdr_bench.capture_wait()
+            meta = sdr_bench.capture_meta(cap)
+            _, text = sdr_bench.analyze_fm(cap, bw_khz=12.5)
+            r = parse_fm(text)
+            assert len(r["levels"]) == 1, f"power {step} ({name}): {len(r['levels'])} keyed segments: {text[-600:]}"
+            levels.append((step, name, r["levels"][0], meta.get("clip_pct")))
+    finally:
+        fm_vfo.link.power_level(start)
     print("power levels (step, name, dBFS, ADC clip %):", levels)
     clipped = [x for x in levels if (x[3] or 0) > 0.5]
     if clipped:
