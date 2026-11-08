@@ -13,6 +13,7 @@
 #include "pins.h"
 #include "hal_time.h"
 #include "display/st7735/st7735.h"
+#include "backlight_uvf.h"
 
 
 #define LCD_AF		12	// GPIO_AF12_FSMC
@@ -141,35 +142,49 @@ static st7735_t panel = {
 
 static bool ready;
 
-// ---- Backlight: TIM1 CC1 paces DMA2 Stream1 channel 6, which copies a 100-word table to the backlight port's BSRR ----
-// Entry 0 sets the pin, entry N clears it, the rest are 0: N % duty at about 101 Hz (72 MHz / 7100 / 100)
+// ---- Backlight: TIM1 paces two one-word DMA writes to the backlight port's BSRR (backlight_uvf.h) ----
+// The update (DMA2 Stream5 channel 6) sets the pin, the CC1 match (DMA2 Stream1 channel 6) clears it: duty = CCR1 /
+// period at 40 kHz, two transfers per cycle. 0 % and 100 % stop both and drive the pin steady.
 
-#define BL_STEPS	100
 #define BL_MASK		PIN_MASK(PIN_LCD_BACKLIGHT)
 
-static uint32_t bl_table[BL_STEPS];	// main SRAM (.bss), reachable by DMA2
-static uint8_t bl_duty;			// table entry currently clearing the pin, 0 = none
+static uint32_t bl_set = BL_MASK;			// main SRAM, reachable by DMA2
+static uint32_t bl_clear = (uint32_t)BL_MASK << 16;
 static bool bl_running;
+
+static void bl_stream_stop(DMA_Stream_TypeDef *st)
+{
+	st->CR &= ~DMA_SxCR_EN;
+	while (st->CR & DMA_SxCR_EN) {
+	}
+}
+
+static void bl_stream_start(DMA_Stream_TypeDef *st, uint32_t *word)
+{
+	st->PAR = (uint32_t)&PIN_PORT(PIN_LCD_BACKLIGHT)->BSRR;
+	st->M0AR = (uint32_t)word;
+	st->NDTR = 1;
+	st->FCR = 0;	// direct mode
+	st->CR = (6u << DMA_SxCR_CHSEL_Pos) | DMA_SxCR_PL_1 | DMA_SxCR_MSIZE_1 | DMA_SxCR_PSIZE_1 | DMA_SxCR_CIRC |
+		DMA_SxCR_DIR_0;
+	st->CR |= DMA_SxCR_EN;
+}
 
 static void bl_dma_stop(void)
 {
-	DMA2_Stream1->CR &= ~DMA_SxCR_EN;
-	while (DMA2_Stream1->CR & DMA_SxCR_EN) {
-	}
+	bl_stream_stop(DMA2_Stream5);
+	bl_stream_stop(DMA2_Stream1);
 	DMA2->LIFCR = DMA_LIFCR_CTCIF1 | DMA_LIFCR_CHTIF1 | DMA_LIFCR_CTEIF1 | DMA_LIFCR_CDMEIF1 | DMA_LIFCR_CFEIF1;
+	DMA2->HIFCR = DMA_HIFCR_CTCIF5 | DMA_HIFCR_CHTIF5 | DMA_HIFCR_CTEIF5 | DMA_HIFCR_CDMEIF5 | DMA_HIFCR_CFEIF5;
 	bl_running = false;
 }
 
 static void bl_dma_start(void)
 {
-	DMA2_Stream1->PAR = (uint32_t)&PIN_PORT(PIN_LCD_BACKLIGHT)->BSRR;
-	DMA_RAM_OK(bl_table);
-	DMA2_Stream1->M0AR = (uint32_t)bl_table;
-	DMA2_Stream1->NDTR = BL_STEPS;
-	DMA2_Stream1->FCR = 0;	// direct mode
-	DMA2_Stream1->CR = (6u << DMA_SxCR_CHSEL_Pos) | DMA_SxCR_PL_1 | DMA_SxCR_MSIZE_1 | DMA_SxCR_PSIZE_1 |
-		DMA_SxCR_MINC | DMA_SxCR_CIRC | DMA_SxCR_DIR_0;
-	DMA2_Stream1->CR |= DMA_SxCR_EN;
+	DMA_RAM_OK(&bl_set);
+	DMA_RAM_OK(&bl_clear);
+	bl_stream_start(DMA2_Stream1, &bl_clear);
+	bl_stream_start(DMA2_Stream5, &bl_set);
 	bl_running = true;
 }
 
@@ -178,38 +193,31 @@ static void bl_init(void)
 	stm32_pin_out(PIN_PORT(PIN_LCD_BACKLIGHT), PIN_MASK(PIN_LCD_BACKLIGHT), false, false);
 	__HAL_RCC_DMA2_CLK_ENABLE();
 	__HAL_RCC_TIM1_CLK_ENABLE();
-	for (uint32_t i = 0; i < BL_STEPS; i++) {
-		bl_table[i] = 0;
-	}
-	bl_table[0] = BL_MASK;
-	bl_duty = 0;
 	bl_dma_stop();
 
 	TIM1->CR1 = 0;
 	TIM1->PSC = 0;
-	TIM1->ARR = 7100 - 1;
+	TIM1->ARR = UVF_BL_PERIOD - 1;
 	TIM1->CCR1 = 1;
-	TIM1->CCMR1 = 0;		// CC1 output compare, frozen: only the match event is used
-	TIM1->DIER = TIM_DIER_CC1DE;	// DMA request on each CC1 match
+	TIM1->CCMR1 = TIM_CCMR1_OC1PE;	// CC1 output compare, frozen, preloaded: a new duty starts at the next cycle
+	TIM1->DIER = TIM_DIER_UDE | TIM_DIER_CC1DE;	// DMA requests on update (set) and CC1 match (clear)
 	TIM1->EGR = TIM_EGR_UG;
-	TIM1->CR1 = TIM_CR1_CEN;
+	TIM1->CR1 = TIM_CR1_ARPE | TIM_CR1_CEN;
 }
 
 // 0 = off, 100 or more = fully on, otherwise PWM duty in percent
 static void set_backlight(uint8_t percent)
 {
-	if (!ready || percent == 0 || percent >= BL_STEPS) {
+	uint16_t cmp = uvf_bl_compare(percent);
+
+	if (!ready || cmp == 0 || cmp >= UVF_BL_PERIOD) {
 		if (bl_running) {
 			bl_dma_stop();
 		}
-		PIN_WRITE(PIN_LCD_BACKLIGHT, percent > 0);
+		PIN_WRITE(PIN_LCD_BACKLIGHT, cmp > 0);
 		return;
 	}
-	if (bl_duty != 0) {
-		bl_table[bl_duty] = 0;
-	}
-	bl_duty = percent;
-	bl_table[bl_duty] = (uint32_t)BL_MASK << 16;
+	TIM1->CCR1 = cmp;
 	if (!bl_running) {
 		bl_dma_start();
 	}

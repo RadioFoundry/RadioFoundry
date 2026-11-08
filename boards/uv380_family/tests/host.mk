@@ -11,6 +11,12 @@ calibrationTest: $(HERE)calibrationTest.c $(HERE)../calibration_uvf.c $(HERE)../
 calibrationTestMduv380: $(HERE)calibrationTest.c $(HERE)../calibration_uvf.c $(HERE)../uvf.h $(CORE)/radio/cal_curve.h
 	$(CC) $(CFLAGS) -DTEST_MDUV380=1 -I$(ROOT)/hal -I$(ROOT)/platform/stm32f4 -Wshadow -I$(dir $<).. -o $@ $(filter %.c,$^)
 
-run-boards:: calibrationTest calibrationTestMduv380
+# The backlight PWM steps (#330)
+TESTS   += backlightTest
+backlightTest: $(HERE)backlightTest.c $(HERE)../backlight_uvf.h $(ROOT)/tests/host/fuzz.h
+	$(CC) $(CFLAGS) -I$(dir $<).. -I$(ROOT)/tests/host -o $@ $(filter %.c,$^)
+
+run-boards:: calibrationTest calibrationTestMduv380 backlightTest
 	./calibrationTest
 	./calibrationTestMduv380
+	./backlightTest
