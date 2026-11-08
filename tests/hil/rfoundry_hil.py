@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shlex
+import statistics
 import struct
 import subprocess
 import sys
@@ -1863,13 +1864,14 @@ class SdrBench:
         off_khz = abs(freq - w["center"]) * 1e3
         return off_khz >= w["dc_guard_khz"] and off_khz + bw_hz / 2e3 <= (w["hi"] - w["lo"]) * 1e3 / 2
 
-    def bursts_start(self, freq, seconds, cc=None, bursts=None, until_end=False):
+    def bursts_start(self, freq, seconds, cc=None, bursts=None, until_end=False, envelope=False):
         """rfoundry-bench dmr-bursts in the background (the shared receiver's window; receive only); returns once it is
         watching (its READY line). bursts_result() collects the records. The daemon's own `bursts` op does the work
         when it has it, else the client decodes short captures (the tool decides, same records either way). On a
-        bench board: its bursts op on freq, from the receive board (the same record fields)."""
+        bench board: its bursts op on freq, from the receive board (the same record fields); envelope: with the
+        carrier's keyed segments too (bench boards only)."""
         if self.api:
-            return self._api_bursts_start(freq, seconds, cc, bursts, until_end)
+            return self._api_bursts_start(freq, seconds, cc, bursts, until_end, envelope)
         self._need_lease()
         self._claim(freq)
         cmd = (f"{self.bench.ctl} dmr-bursts --session {self.bench.session} --freq {freq} --seconds {seconds}"
@@ -1899,7 +1901,7 @@ class SdrBench:
             self._busy("".join(p.err).strip().splitlines()[-1])
         return p
 
-    def _api_bursts_start(self, freq, seconds, cc, bursts, until_end):
+    def _api_bursts_start(self, freq, seconds, cc, bursts, until_end, envelope=False):
         """The receive board's decoded bursts on freq for `seconds` (the line protocol's bursts op, the daemon's
         dmr-bursts records), collected by a thread; bursts_result() waits. No session: receiving never waits."""
         self._need_lease()
@@ -1909,6 +1911,8 @@ class SdrBench:
             req["cc"] = cc
         if bursts:
             req["max_bursts"] = bursts
+        if envelope:
+            req["envelope"] = True
         try:
             r = L.Request(L.address(self.api_rx), req)
         except L.BenchLineError as e:
@@ -1929,12 +1933,19 @@ class SdrBench:
                 self._api_fail(p.error, "bursts")
             rows = [d["burst"] for d in p.replies if "burst" in d]
             summary = next((d["done"] for d in p.replies if "done" in d), {"bursts": len(rows)})
+            # Times from the sample count: a board steps its stream's UTC when it drifts from NTP or GNSS, which moves
+            # `t` by hundreds of ms inside a transmission with no burst missing
+            fs = self._api_info(rx=True).get("window", {}).get("fs")
+            sc0 = rows[0].get("sc") if rows and fs else None
+            if sc0 is not None:
+                summary = dict(summary, edges=self.edges_from_segments(
+                    [d["segment"] for d in p.replies if "segment" in d], sc0, fs))
             t0 = rows[0]["t"] if rows else 0.0
             out = []
             for r in rows:
                 r = dict(r)
-                t_rel = (r.get("t", t0) - t0) * 1e3
-                r.setdefault("t_rel_ms", round(t_rel, 1))
+                t_rel = (r["sc"] - sc0) / fs * 1e3 if sc0 is not None and "sc" in r else (r.get("t", t0) - t0) * 1e3
+                r["t_rel_ms"] = round(t_rel, 3)
                 r.setdefault("slot_ab", "AB"[int(round(t_rel / 30.0)) % 2])
                 r.setdefault("voice", str(r.get("kind", "")).startswith("VOICE") or (r.get("sync") or "").endswith("VOICE"))
                 for k in ("cfo_hz", "level_dbfs", "dev_hz"):
@@ -1958,26 +1969,66 @@ class SdrBench:
         return [r for r in rows if "summary" not in r], summary
 
     @staticmethod
+    def edges_from_segments(segments, sc0, fs):
+        """A board's envelope segments as sdrmon's edges, in ms from the sample count sc0 (the first burst's), so on the
+        bursts' time base. A segment cut by the watch or by lost samples, or with a ramp the board couldn't measure,
+        has no on_ms: check_tx doesn't judge it."""
+        edges = []
+        for s in segments:
+            e = {"up_ms": round((s["up_sc"] - sc0) / fs * 1e3, 2), "ramp_up_ms": s.get("ramp_up_ms"),
+                 "level_dbfs": s.get("level_dbfs"), "steps": s.get("steps", [])}
+            whole = not (s.get("open_start") or s.get("open_end") or s.get("gap"))
+            if whole and None not in (s.get("on_ms"), s.get("ramp_up_ms"), s.get("ramp_down_ms")):
+                e.update(down_ms=round(e["up_ms"] + s["on_ms"], 2), ramp_down_ms=s["ramp_down_ms"], on_ms=s["on_ms"])
+            edges.append(e)
+        return edges
+
+    @staticmethod
     def analysis_from_bursts(records, summary):
         """The records as analyze_dmr()'s dict, for the parts of it a bursts watch can fill: bursts (t_ms, slot,
-        family, voice, kind, cc, lc, foff_hz, cach_ts; `slot` is the A/B position on the 30 ms grid) and meta. No
-        edges and no power / overlap summary: those come from the raw waveform (use a raw capture for them)."""
+        family, voice, kind, cc, lc, foff_hz, cach_ts; `slot` is the A/B position on the 30 ms grid) and meta. The
+        edges and the power / overlap summary come from a watch with the envelope (a bench board), else from a raw
+        capture."""
         bursts = []
         for r in records:
             fam = r["sync"].split("_")[0].lower()
             bursts.append({"t_ms": r["t_rel_ms"], "slot": r.get("slot_ab"), "family": fam, "voice": r["voice"],
-                           "kind": r["kind"], "cc": r["cc"], "lc": r["lc"], "foff_hz": round(r["cfo_hz"]),
+                           "kind": r["kind"], "cc": None if r["cc"] == -1 else r["cc"],    # -1: a voice sync burst has none
+                           "lc": r["lc"], "foff_hz": round(r["cfo_hz"]),
                            "cach_ts": r["slot"] if fam == "bs" else None, "level_dbfs": r["level_dbfs"],
                            "dev_hz": r["dev_hz"], "fec_ok": r["fec"]["fec_ok"]})
-        return {"bursts": bursts, "edges": [], "summary": {}, "meta": {"clip_pct": summary.get("clip_pct", 0)},
-                "source": "bursts", "bursts_summary": summary}
+        env = summary.get("envelope")
+        out = {"bursts": bursts, "edges": [], "summary": {},
+               "meta": {"clip_pct": (env or summary).get("clip_pct", 0)}, "source": "bursts", "bursts_summary": summary}
+        if env:
+            spacing = []
+            for slot in {b["slot"] for b in bursts}:
+                t = [b["t_ms"] for b in bursts if b["slot"] == slot]
+                spacing += [y - x for x, y in zip(t, t[1:]) if 55 <= y - x <= 65]      # sdrmon's same-slot spacing
+            out["edges"] = summary.get("edges", [])
+            out["summary"] = {"overlaps": env["overlaps"], "power_steps": env["power_steps"],
+                              "unexplained_carrier": env["unexplained_carrier"]}
+            if spacing:
+                out["summary"]["same_slot_spacing_ms"] = {
+                    "n": len(spacing), "mean": round(statistics.fmean(spacing), 3),
+                    "sd": round(statistics.pstdev(spacing), 3)}
+        return out
 
-    def dmr_watch_start(self, rdir, freq, seconds, cc=None, name="cap0"):
+    def dmr_watch_start(self, rdir, freq, seconds, cc=None, name="cap0", waveform=False):
         """Watch freq for DMR bursts for `seconds`, started before the transmitter keys up: bursts decoded on the
-        bench when can_watch() (nothing but JSON comes back), else a raw capture. Finish with dmr_watch_result()."""
-        if self.can_watch(freq):
+        bench when can_watch() (nothing but JSON comes back), else a raw capture. Finish with dmr_watch_result().
+        waveform: the keying edges too (need_dmr_waveform() first): a bench board's envelope, measured on the board
+        since its network can't carry I/Q, else a raw capture."""
+        if waveform and self.api:
+            return {"p": self.bursts_start(freq, seconds, cc=cc, envelope=True), "freq": freq, "cc": cc}
+        if not waveform and self.can_watch(freq):
             return {"p": self.bursts_start(freq, seconds, cc=cc), "freq": freq, "cc": cc}
         return {"cap": self.capture_start(rdir, freq, seconds=seconds, name=name), "freq": freq, "cc": cc}
+
+    def dmr_watch_wait(self, w, timeout=120):
+        """A raw capture's end, inside its lease; a burst watch ends in dmr_watch_result()."""
+        if "cap" in w:
+            self.capture_wait(timeout)
 
     def dmr_watch_result(self, w, timeout=120):
         """analyze_dmr()'s dict for a dmr_watch_start(): from the burst records (analysis_from_bursts) or from the
@@ -1987,10 +2038,15 @@ class SdrBench:
         self.capture_wait()
         return self.analyze_dmr(w["cap"], w["freq"], w["cc"])
 
-    def need_dmr_waveform(self):
-        """Skip now, before the radio keys, when analyze_dmr() can't run here: sdrmon.py's waveform analysis runs on
-        the bench host only."""
-        self._no_api("sdrmon.py waveform analysis (analyze_dmr)")
+    def need_dmr_waveform(self, freq):
+        """Skip now, before the radio keys, when the waveform can't be measured on freq: a bench board needs the
+        envelope and freq inside its receive window; raw captures are analyzed on the bench host."""
+        if not self.api:
+            return
+        if "bursts_envelope" not in self._api_info(rx=True).get("features", []):
+            skip("bench", f"the bench board {self.api_rx} has no burst envelope (bursts_envelope)")
+        if not self.can_watch(freq):
+            skip("bench", f"{freq} MHz is outside the bench board's receive window")
 
     def analyze_dmr(self, capture, freq, cc):
         """sdrmon.py analyze: every burst with its sync, CC, LC, timing, frequency offset, edges (a dict). From raw
