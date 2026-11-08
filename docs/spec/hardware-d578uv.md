@@ -411,7 +411,9 @@ so a beep writes half the word. Its level follows page 1 0x1D: 12 dB louder at t
 digital path's 0x29A1, which only DMR transmit needs, so DMR receive takes 0x39FD as well and a beep sounds the same in
 both modes (measured by microphone; DMR receive unchanged on bench calls). The chip's output switches to the tone
 before the gate opens, and the gate shuts before it switches back. A tone longer than about 1.1 s drops 12 dB by
-itself; no beep is that long.
+itself; no beep is that long. In DMR the tone takes the chip's output from the baseband, which then has nothing to
+demodulate: a beep during a call cost 12 voice bursts, or ended the call (HIL, the alert beep of an emergency call). No
+beep sounds while side A hears a DMR signal, and one sounding stops when a signal comes.
 
 ## 5. RF chips
 
