@@ -275,3 +275,18 @@ test("settings area: a write sends the file's area only when valid and the radio
 	areaForWrite(file2.bytes, newer.bytes);
 	assert.deepEqual(area(file2), area(newer));
 });
+
+test("settings area: the editor sends the file's area only when the edit changed it", () => {
+	// opened from a file with ARS 100; the radio's menu has since set 200
+	const base = withArea([e(KEY.arsServer, 100, 0, 0, 0)]);
+	const radio = withArea([e(KEY.arsServer, 200, 0, 0, 0)]);
+	// a channel edit leaves the area as opened: the radio's own stays
+	const same = base.clone();
+	areaForWrite(same.bytes, radio.bytes, base.bytes);
+	assert.equal(getId(decodeArea(same.bytes).entries, KEY.arsServer), 200);
+	// an ARS edit goes
+	const edited = base.clone();
+	assert.ok(putIds(edited.bytes, { [KEY.arsServer]: 300 }));
+	areaForWrite(edited.bytes, radio.bytes, base.bytes);
+	assert.equal(getId(decodeArea(edited.bytes).entries, KEY.arsServer), 300);
+});

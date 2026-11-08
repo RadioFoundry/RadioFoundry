@@ -830,7 +830,7 @@ async function planWrite() {
 		// the same codeplug with this radio's own name, ID and boot text kept, and what each would send
 		// (compared byte for byte: two plans can send the same number of bytes. The second is planned only when there
 		// is something to keep: each plan is a pass over every block's CRC)
-		areaForWrite(file.bytes, c.image.bytes);
+		areaForWrite(file.bytes, c.image.bytes, S.model.base?.bytes);
 		const kept = keepIdentity(file, c.image);
 		const differs = IDENTITY.some(([a, b]) => kept.bytes.subarray(a, b).some((x, i) => x !== file.bytes[a + i]));
 		const plans = { file: await c.transport.plan(file, c.image, { iddb }) };

@@ -151,9 +151,13 @@ export function putIds(bytes, ids) {
 	return putArea(bytes, entries);
 }
 
-// The area a write to a radio sends (6): the file's when it is valid and the radio's isn't of a newer version, else
-// the radio's own, put into file's bytes. A file without an area (another tool's, 0xFF there) never erases the keys
-export function areaForWrite(file, radio) {
-	if (decodeArea(file).state === "valid" && decodeArea(radio).state !== "newer") return;
+// The area a write to a radio sends (6, 7): the file's when it is valid, the radio's isn't of a newer version and the
+// edit changed it from base (the image the editor opened, when given), else the radio's own, put into file's bytes.
+// A file without an area (another tool's, 0xFF there) never erases the keys, and a file opened before the radio's
+// menu or debug link changed a key doesn't put the old value back
+export function areaForWrite(file, radio, base = null) {
+	const sector = (b) => b.subarray(KV_ADDR, KV_ADDR + KV_SIZE);
+	const edited = !base || !sector(file).every((x, i) => x === sector(base)[i]);
+	if (edited && decodeArea(file).state === "valid" && decodeArea(radio).state !== "newer") return;
 	file.subarray(KV_ADDR, KV_ADDR + KV_SIZE).set(radio.subarray(KV_ADDR, KV_ADDR + KV_SIZE));
 }
