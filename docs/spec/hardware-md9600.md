@@ -397,6 +397,11 @@ carrier ends (UHF, -127 dBm), so a fall of 8 dB or more since the last poll star
 on the next reading (`md9600_noise_floor`, `rfseq_md9600.c`). Without it, the noise kept the squelch open about 170 ms
 after the carrier dropped.
 
+The calibration's squelch rows suit the 12.5 kHz filter. Through the 25 kHz one the noise line reads about twice as high
+under the same weak signal: a -89 dBm VHF carrier reads about 1350 instead of 710, while an empty channel moves only from
+about 1750 to 1850 and a full-quieting one stays near 220. A 25 kHz FM channel therefore multiplies both thresholds by 7/4
+(`md9600_rf_sql_wide`); without that, the carrier stayed shut at level 1. DMR is always narrow and keeps them.
+
 ---
 
 ## 6. Audio

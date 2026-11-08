@@ -668,8 +668,10 @@ static void status(radio_status_t *st)
 	uint16_t rssi = md9600_adc_raw(band == MD9600_VHF ? MD9600_ADC_RSSI_V : MD9600_ADC_RSSI_U);
 	uint16_t noise = md9600_adc_raw(band == MD9600_VHF ? MD9600_ADC_NOISE_V : MD9600_ADC_NOISE_U);
 	st->rssi_dbm = md9600_rf_rssi_dbm(rf.rev, band, rssi);
-	st->noise = md9600_rf_squelch_noise(&noise_win, rf.state == MD9600_RF_RX, noise, st->rssi_dbm, hal_millis(), sql_l1,
-					    sql_l9);
+	bool wide = rf.rx_wide && !rf.dmr;	// the same test as the IF filter's: DMR is always narrow
+	st->noise = md9600_rf_squelch_noise(&noise_win, rf.state == MD9600_RF_RX, noise, st->rssi_dbm, hal_millis(),
+					    wide ? md9600_rf_sql_wide(sql_l1) : sql_l1,
+					    wide ? md9600_rf_sql_wide(sql_l9) : sql_l9);
 	st->carrier = rf.state == MD9600_RF_RX && st->rssi_dbm >= CARRIER_DBM;
 #if MD9600_TX_SIG
 	if (rf.state == MD9600_RF_TX) {

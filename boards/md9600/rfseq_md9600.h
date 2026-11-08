@@ -217,6 +217,12 @@ int16_t md9600_rf_rssi_dbm(md9600_rev_t rev, uint8_t band, uint16_t raw12);
 #define MD9600_SQL_CORE_L9	40
 uint8_t md9600_rf_noise(uint16_t raw12, uint16_t l1_open, uint16_t l9_open);
 
+// The calibration's squelch thresholds are for the 12.5 kHz filter. Under the same signal the noise line reads about
+// twice as high through the 25 kHz one (hardware-md9600.md 5.7), so a 25 kHz FM channel scales them
+#define MD9600_SQL_WIDE_NUM	7
+#define MD9600_SQL_WIDE_DEN	4
+uint16_t md9600_rf_sql_wide(uint16_t open12);
+
 // The squelch's noise window (hardware-md9600.md 5.7). The noise line follows the modulation: under a strong carrier it
 // reads about 100 counts in a pause and peaks over 1000 in speech for tens of ms, while an empty channel holds
 // 1700-1900. The squelch gets the lowest reading over the last MD9600_NOISE_BUCKETS buckets of MD9600_NOISE_BUCKET_MS,

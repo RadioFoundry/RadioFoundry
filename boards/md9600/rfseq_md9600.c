@@ -603,6 +603,11 @@ uint8_t md9600_rf_noise(uint16_t raw12, uint16_t l1_open, uint16_t l9_open)
 	return (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v);
 }
 
+uint16_t md9600_rf_sql_wide(uint16_t open12)
+{
+	return (uint16_t)((uint32_t)open12 * MD9600_SQL_WIDE_NUM / MD9600_SQL_WIDE_DEN);
+}
+
 void md9600_noise_clear(md9600_noise_win_t *w)
 {
 	w->valid = false;
