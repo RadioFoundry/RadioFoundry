@@ -22,6 +22,7 @@
 #include "hal_time.h"
 #include "input/quadrature/quadrature.h"
 #include "input/anytone_mic/anytone_mic.h"
+#include "radio/radio.h"
 
 #define MIC_BAUD		115200u
 #define MIC_ACTIVITY_MS		50u
@@ -33,7 +34,7 @@ static const uint16_t ladder_max[4] = { 500, 1500, 2500, 3500 };
 static quad_dec_t enc;
 static int32_t enc_taken;
 static anytone_mic_t mic;
-static volatile uint8_t mic_lights;	// side A's ANYTONE_MIC_LIGHT_*, from the radio task (d578uv_mic_led)
+static volatile bool led_rx, led_tx;	// the core's green and red LEDs (d578uv_mic_led), for the microphone's lights
 static volatile uint32_t mic_byte_ms;	// when the USART last received a byte
 static volatile bool mic_byte_seen;
 static bool mic_tx;			// PA9 is the USART's TX (the key scan's)
@@ -151,9 +152,11 @@ static int8_t ladder(uint8_t ch)
 
 void d578uv_mic_led(uint8_t which, bool on)
 {
-	uint8_t bits = which == LED_RED ? ANYTONE_MIC_LIGHT_A_TX :
-		which == LED_GREEN ? (ANYTONE_MIC_LIGHT_A_BUSY | ANYTONE_MIC_LIGHT_MAIN_AUDIO) : 0u;
-	mic_lights = (uint8_t)(on ? mic_lights | bits : mic_lights & ~bits);
+	if (which == LED_RED) {
+		led_tx = on;
+	} else if (which == LED_GREEN) {
+		led_rx = on;
+	}
 }
 
 // The microphone's keys: from the frames while the serial microphone is present, else from the two lines unless bytes
@@ -161,10 +164,13 @@ void d578uv_mic_led(uint8_t which, bool on)
 static uint32_t mic_scan(void)
 {
 	uint32_t now = hal_millis();
-	bool b_busy, b_audio;
-	d578uv_side_b_state(&b_busy, &b_audio);
-	uint8_t lights = (uint8_t)(mic_lights | (b_busy ? ANYTONE_MIC_LIGHT_B_BUSY : 0u) |
-		(b_audio ? ANYTONE_MIC_LIGHT_OTHER_AUDIO : 0u));
+	anytone_mic_radio_t state = { .rx = led_rx, .tx = led_tx };
+	if (mic.present) {		// the lock is taken only for a microphone that can show it
+		radio_dual_ref_t ref[2];
+		state.dual = radio_get_dual(ref, &state.sel, &state.at);
+	}
+	d578uv_side_b_state(&state.rx2_busy, &state.rx2_audio);
+	uint8_t lights = anytone_mic_lights(&state);
 	NVIC_DisableIRQ(MIC_USART_IRQn);
 	bool present = anytone_mic_poll(&mic, now);
 	bool ptt = mic.ptt;
