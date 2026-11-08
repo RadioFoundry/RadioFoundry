@@ -20,6 +20,8 @@ from rfoundry_hil import skip
 import dmr_packet
 from test_dmr_ip import BENCH_ID, _ip_view, _ours, _setup, ip_settings  # noqa: F401 (ip_settings: the fixture)
 
+pytestmark = [pytest.mark.needs_switch("DMR_IP_GATEWAY")]	# its packets go through the IP gateway (_setup)
+
 COUNT = 6
 SRC_PORT, DST_PORT = 50000, 5000
 DEFAULT_GUARD_MS = 250

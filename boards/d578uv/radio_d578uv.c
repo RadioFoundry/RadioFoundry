@@ -233,6 +233,7 @@ static uint32_t rx_hz;
 static radio_bw_t rx_bw = RADIO_BW_25K;
 static subtone_t rx_tone;
 static bool have_rx;
+static bool asleep;			// rx_sleep(true): side A's two chips off until rx_sleep(false) or the next set-up
 static bool transmitting;
 static uint8_t sr;			// the shift register's outputs
 static bool main_audio;			// side A's audio to the speaker (audio())
@@ -1064,6 +1065,7 @@ void d578uv_pa_counts_reset(void)
 static void rx_setup(void)
 {
 	bool digital = mode == RADIO_MODE_DMR;
+	asleep = false;
 	qa4818_rx_plan_t plan;
 	qa4818_rx_plan(synth_hz(rx_hz), IF_A_HZ, &plan);
 	qa4818_tune(&chip_lo, plan.lo_subband, plan.lo_hz);
@@ -1720,6 +1722,21 @@ static void chips_off(void)
 	qa4818_enable(&chip_lo, QA4818_ENABLE_OFF);
 }
 
+// Power saving (hal_radio_t.rx_sleep), FM only: side A's two chips off as before a transmission (chip 0's outputs,
+// the band and supply bits, stay), and the whole receive set-up again to wake. Side B and the broadcast receiver run on
+static void rx_sleep(bool sleep)
+{
+	if (mode != RADIO_MODE_FM || transmitting || !have_rx || AM_ON || sleep == asleep) {
+		return;
+	}
+	if (sleep) {
+		chips_off();
+		asleep = true;
+	} else {
+		rx_setup();
+	}
+}
+
 #if CONFIG_DMR
 // The stock digital TX-on (5.1): chips off, chip 0 to hz with the digital set, keyed, band and TX bits, 10 ms, then the
 // PA is the bursts'. Called before the modem's transmission starts (the core's order), held until tx_off()
@@ -2008,7 +2025,7 @@ static void status(radio_status_t *st)
 #if CONFIG_VOX
 	mic_poll();
 #endif
-	if (transmitting || !have_rx || (rx_back_ms != 0 && hal_millis() - rx_back_ms < RX_BACK_MS)) {
+	if (transmitting || !have_rx || asleep || (rx_back_ms != 0 && hal_millis() - rx_back_ms < RX_BACK_MS)) {
 		st->rssi_dbm = -160;
 		st->noise = 127;
 		st->carrier = false;
@@ -2184,6 +2201,7 @@ const hal_radio_t d578uv_radio = {
 #endif
 	.status = status,
 	.audio = audio,
+	.rx_sleep = rx_sleep,
 	.volume = volume,
 	.volume_pcm = true,	// beeps go through the level device, which the volume sets
 	.beep_tone = beep_tone,
