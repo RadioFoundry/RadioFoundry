@@ -105,10 +105,12 @@ What the stock firmware does with each code:
 - Every programmable key has a short and a long function ("Key Func"), a function id from a list of 58. First-boot
   defaults: P1 VFO/MR, P2 Tx Power, P3 TalkAround, P4 Speaker Mode, P5 APRS Set, P6 Switch ChType; PA Key Menu, PB
   Zone Up, PC Zone Dn, PD Key Exit; PUSH and every long press Off. The programming software sets its own.
-- The firmware names keys only by code (P1-P6, PA-PD, PUSH). PUSH is the encoder's switch (seen on a radio); which
-  printed key is P1 is not in the image. The serial microphone's codes are confirmed on a radio (table below).
-- Encoder: an edge on PC8 with PC9 equal to PC8 afterwards is 0x12 (+1), unequal 0x13. Which is clockwise depends
-  on the wiring, which isn't known.
+- The firmware names keys only by code (P1-P6, PA-PD, PUSH). On a radio the printed keys read as their codes: P1-P3
+  are PB0's positions 1-3 (0x14-0x16), P4-P6 PB1's (0x17-0x19), MENU PB0's fourth (0x0E), EXIT PB1's fourth (0x0F).
+  PUSH is the encoder's switch. The serial microphone's codes are confirmed on a radio (table below).
+- Encoder: an edge on PC8 with PC9 equal to PC8 afterwards is 0x12 (+1), unequal 0x13. Clockwise is +1, one step a
+  click (seen on a radio).
+- Volume knobs: A on PC2, B (bottom left) on PC5, each 0 to 4092 over its turn (seen on a radio).
 - Power-on combinations, read by the stock application in its reset init (PA1 and the ladders, PA1 debounced twice
   10 ms apart):
 
@@ -940,7 +942,7 @@ The order to check it in on a radio, with the diagnostics lines and what to chan
 | Part | State |
 | --- | --- |
 | Clocks, GPIO, ADC, USB | written from the analysis, untested |
-| Display, keys, encoder | written, untested; the key names are not known |
+| Display, keys, encoder | the 8 front keys, the encoder's steps and switch and both volume knobs work on a radio (3.2); the display works |
 | Backlight | register 8 of the PA5 device, the five stock levels (3.1); written, untested |
 | PA5 trims | registers 1, 2, 4, 6, 0xA, 0xC from the calibration after each retune and key-up (5.5); written, host tested, untested on the radio |
 | Microphone | the plain microphone on PA9/PA10 and the serial keypad microphone on USART0, told apart by its frames (3.2); the serial microphone's PTT and keys work on a radio. The analog microphone level from the calibration (5.7); written, untested |
@@ -987,7 +989,6 @@ Open on the radio:
 - The serial microphone (3.2): the status frame's light fields, and what the Key Lock switch does.
 - The backlight levels' brightness, and the part behind PA5.
 - The LED's colors: where the second color is switched.
-- Which printed key each ladder position is; the encoder's direction.
 - The deviation per 0x40 step (5) and the dB per microphone gain step (5.7); the microphone level's register and
   scale (5.6); the
   audio routing to the speaker (shift register 0x08/0x40, PA7,
