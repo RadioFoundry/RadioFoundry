@@ -173,6 +173,10 @@ BOARD_SCHEMA = {
                       # before it writes and refuses another image
                       "variants": _opt(("list", {"code": _req(str), "name": _req(str), "level": _opt(LEVELS),
                                                  "notice": _opt(str),
+                                                 # the USB ids ("VVVV:PPPP", hex) the radio's original firmware
+                                                 # enumerates with on this variant: the web flasher reads the variant
+                                                 # from the port alone, nothing sent (site detect.js "usb-id")
+                                                 "usb_ids": _opt(("list", str)),
                                                  "runs": _opt({"board": _req(str), "options": _opt(("map", str))})})),
                       "variant_pattern": _opt(str), "variant_check": _opt(str)}),
     # summary: what works, then at most one short clause of what is open; plain text, no links (the README, the
@@ -1066,6 +1070,12 @@ def variant_problems(bid, d, boards, bad):
     codes = [v["code"] for v in vs]
     if len(set(codes)) != len(codes):
         bad("hardware.variants names a code twice")
+    ids = [u for v in vs for u in v.get("usb_ids", [])]
+    for u in ids:
+        if not re.fullmatch(r"[0-9A-F]{4}:[0-9A-F]{4}", u):
+            bad("hardware.variants usb_ids: %r is not VVVV:PPPP in upper-case hex" % u)
+    if len(set(ids)) != len(ids):
+        bad("hardware.variants: a USB id names two variants (or one twice)")
     if not any(v.get("runs", {}).get("board") == bid and v.get("level") == "supported" for v in vs) \
             and d["status"]["level"] == "supported":
         bad("hardware.variants: a supported board needs a supported variant that runs its image (runs.board = %r)" % bid)

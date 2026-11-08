@@ -29,13 +29,16 @@ variant_check = "Open the version screen in the radio's menu. GD_Ver is the GD32
 
 [[hardware.variants]]
 code = "GD"
+# the USB device the original firmware enumerates as (hardware-d578uv.md 1)
+usb_ids = ["28E9:018A"]
 name = "GD32F303 (built until mid-2022)"
-level = "bring-up"
-notice = "Nothing has run on this radio yet: the display, keys and FM are written from an analysis of the manufacturer's firmware. To go back, write the manufacturer's firmware file through the factory update mode."
+level = "testing"
+notice = "In testing: FM, DMR voice and data, dual watch and GPS work on the radio. Air band AM needs the KTMicro receiver, which some radios don't carry. To go back, write the manufacturer's firmware file through the factory update mode."
 runs = { board = "d578uv" }
 
 [[hardware.variants]]
 code = "AT"
+usb_ids = ["2E3C:5740"]
 name = "Artery AT32F43x (built from mid-2022)"
 level = "bring-up"
 notice = "Nothing has run on this radio yet: the Artery build is written from an analysis of the manufacturer's firmware and the GD32 build's code. To go back, write the manufacturer's firmware file through the factory update mode."

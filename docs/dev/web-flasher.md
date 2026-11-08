@@ -322,6 +322,39 @@ STM32F4 loader's SREAD (stub-stm32f4.md 6.2), each register checked against the 
 `used`, `read(mem, addr, n)` giving `{data, complete}`, `close()` and `abort()`. A new read-back protocol is a reader,
 and the bundle format and the backup step stay as they are.
 
+## Variant detection
+
+A radio with `[hardware] variants` (several builds sold under one model, each needing its own image or build options)
+is asked which one it is before anything is written. `detect.js` holds the engine and the probes every radio shares.
+`detectui.js` is the Auto-detect button a backend puts beside its variant chooser: the user connects the radio in
+whatever state it is in, and the probes run in turn on that one port until one names the variant.
+
+A probe is `{id, baud, run(stream, ctx), confirm(session, ctx)}`, registered with `registerProbe()`. `run` returns null
+when the radio didn't answer that way, else `{code, version, via, keep}`. `keep` means the radio stays in a session the
+backend takes over, such as an open update mode, so the user needn't connect again. A backend lists its probes in the
+order that is safe for its radios: probes that send nothing first, then words or frames the other firmwares ignore.
+
+| Probe | Module | Reads | Sends |
+|---|---|---|---|
+| `usb-id` | `detect.js` | The port's USB ids against the variants' `usb_ids` (board.toml) | nothing |
+| `rfoundry` | `detect.js` | The board RadioFoundry runs (debug link `VERSION`), when one variant takes that image | debug link frames |
+| `anytone-update` | `anytonedetect.js` | The update mode's model answer (`anytone.js` `variantOf`) | `UPDATE`, `02` |
+
+A probe never puts the radio in a state it can't leave without a restart; one that can't tell the variants apart
+without that is left out. For example, the AnyTone PC mode answers the same model name on both MCUs, and leaving it
+restarts the radio.
+
+**The check before a write is mandatory.** Just before the first byte, the backend calls `confirmVariant()` on the
+session it writes through. The probe that opened the session asks again with a read-only question (`confirm`). The
+write stops with nothing written when the answer is another variant than the one judged at connect, or a variant the
+image isn't for. A probe without `confirm` refuses the write. Tests: `site/tests/detect.test.mjs`, and the backend's
+own (`site/tests/anytoneui.test.mjs`).
+
+To support another radio's variants:
+1. List them in its board.toml, with `usb_ids` where the original firmware's USB device differs per variant.
+2. Write a probe for any other protocol that names the variant.
+3. Add the Auto-detect control and the `confirmVariant()` call to the radio's backend.
+
 ## Backup bundles (`rfoundry-backup/1`)
 
 A zip the user keeps: `backup.json` (the radio, its chip UID, the firmware when the backup was taken and before RadioFoundry,

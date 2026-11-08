@@ -21,7 +21,19 @@ The radio was built with two MCUs. Each needs its own firmware build; the manufa
 | GD | GigaDevice GD32F303VKT6 (Cortex-M4, 3 MB flash, 96 KB RAM, no CCM) | until about mid-2022 | `D578UV2` (578UV), `D578UV` (PRO); `D578UV` confirmed on a PRO (bootloader V100) |
 | AT | Artery AT32F435/437 (Cortex-M4F) | from about mid-2022 | `578UV2A` (578UV), `D578UVA` (PRO) |
 
-- The stock firmware's version screen names the build: `GD_Ver` or `AT_Ver`.
+- The original firmware's version screen names the build: `GD_Ver` or `AT_Ver`.
+- The original firmware's USB device differs by MCU, so the port alone names the variant:
+
+  | Variant | USB id | Strings |
+  | --- | --- | --- |
+  | GD | `28E9:018A` | "GD32Microelectronics", "GD32 Virtual ComPort in FS Mode" |
+  | AT | `2E3C:5740` | "Artery", "AT32 Virtual Com Port" |
+
+- The model names in the table are the ones in the manufacturer's `.spi` files, which the update mode compares with
+  its answer. `D578UV` was seen from a GD PRO's bootloader. An Artery radio's bootloader answer has not been seen.
+- The original firmware's PC mode answers the identify (`02`, after `PROGRAM`) with the same name on both MCUs:
+  `D578UV2` (578UV) or `D578UV` (PRO). It can't tell the variants apart, and leaving it (`END`) restarts the radio.
+  It ignores `UPDATE` and RadioFoundry's debug link frames.
 - The 578UV and the PRO GD builds differ in one RF register value (section 5); no pin or calibration field tells
   them apart at run time, so one RadioFoundry image serves both.
 - The Artery build uses the same pins and logic on STM32F4-style GPIO (0x40020000 + 0x400 per port), 12 MHz crystal,

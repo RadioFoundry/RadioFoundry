@@ -117,3 +117,39 @@ test("restore: the vendor set of the radio's model is written; another model's s
 	await press(p.last());
 	assert.match(c.textContent, /not for this radio/);
 });
+
+const findButton = (e, text) => {
+	if (e?.tagName === "BUTTON" && e.textContent === text) return e;
+	for (const c of e?.children || []) { const f = c instanceof El && findButton(c, text); if (f) return f; }
+	return null;
+};
+
+test("connect: Auto-detect asks the radio, picks its variant and keeps the update mode session", async () => {
+	const p = page(models[runs][0]);
+	const box = ui.connectView();
+	const go = findButton(box, "Auto-detect");
+	assert.ok(go, "the Auto-detect button beside the variant chooser");
+	await press(go);
+	await sleep(100);
+	assert.equal(p.S.atChosen, runs);
+	assert.equal(p.S.variant.via, "update-mode");
+	assert.match(box.textContent, /can run RadioFoundry/);
+	assert.equal(p.last().textContent, "Continue", "no second connect needed");
+});
+
+test("write: the radio is asked again just before the first frame; another radio stops the install", async () => {
+	if (!other) return;
+	const app = rand(3000, 9);
+	const p = page(models[runs][0], "install", { firmware: { image: app, source: "test.bin", manifest: { version: "v0" } } });
+	ui.connectView();
+	await press(p.last());
+	p.S.at.block = concat(fromHex(FB0.modem_boot.prefix), rand(FB0.modem_boot.len - 8, 5));
+	p.S.fakeAnytone.model = models[other][0];	// a different radio answers now
+	const box = ui.writeView();
+	await press(p.last());
+	await sleep(100);
+	assert.match(box.textContent, /check just before writing stopped here/);
+	assert.equal(p.S.fakeAnytone.frames, 0, "nothing written");
+	assert.equal(p.done.flashes.length, 0, "no flash started");
+	assert.equal(p.last().textContent, "Connect again");
+});

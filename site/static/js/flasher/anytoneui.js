@@ -21,6 +21,9 @@ import * as diag from "../diag.js";
 import { AnytoneUpdate, AnytoneProgram, AnytoneError, BAUD, judge, variantOf, variantLabel, stockSet, sortSet, checkFits, findBootBlock,
 	installImage, splitImage, framesNeeded } from "./anytone.js";
 import { FakeAnytone, stockAnytone, SAMPLE_ANYTONE } from "./fakeanytone.js";
+import { confirmVariant } from "./detect.js";
+import { detectControl } from "./detectui.js";
+import { PROBES as VARIANT_PROBES } from "./anytonedetect.js";
 
 export const BACKEND = "anytone-update";
 export const INSTALL = ["radio", "build", "at_channels", "connect", "at_boot", "write", "done"];
@@ -73,18 +76,28 @@ function fakeModel() {
 	return models[code]?.[0] || "RADIO";
 }
 
+const simRadio = () => (S().fakeAnytone ||= new FakeAnytone({ model: fakeModel(), memory: stockAnytone(SAMPLE_ANYTONE), pairs: true }));
+
 async function openPort() {
 	const a = session();
 	if (a.stream && !a.stream.lost) return a.stream;
-	if (S().sim) {
-		S().fakeAnytone ||= new FakeAnytone({ model: fakeModel(), memory: stockAnytone(SAMPLE_ANYTONE), pairs: true });
-		return (a.stream = S().fakeAnytone.stream);
-	}
+	if (S().sim) return (a.stream = simRadio().stream);
 	if (!serialSupported()) throw new Error(t("flash.err.no_serial"));
 	// the update mode's USB ids are the vendor's and not known here: any port, the user picks the radio's
 	const port = await navigator.serial.requestPort();
 	a.stream = await SerialStream.open(port, BAUD);
 	return a.stream;
+}
+
+// For the variant probes (detect.js): the port asked for once, opened again at each probe's rate
+function probeOpener() {
+	let port = null;
+	return async (baud) => {
+		if (S().sim) return simRadio().stream;
+		if (!serialSupported()) throw new Error(t("flash.err.no_serial"));
+		port ||= await navigator.serial.requestPort();
+		return SerialStream.open(port, baud || BAUD);
+	};
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -104,6 +117,10 @@ export function connectView() {
 	const a = session();
 	const box = h("div", { class: "flasher" });
 	const status = h("div");
+	// made once, so what it found stays shown when the step is drawn again
+	const detector = detectControl({ radio: S().radio, board: board(), fb: ctx.fb(), ids: VARIANT_PROBES, open: probeOpener(),
+		log: (l) => a.log.add(l), onFound: (f) => adopt(f),
+		nextHint: (f) => (f.keep ? null : "flash.detect.then_update") });
 	const draw = () => {
 		const vd = verdictNow();
 		a.verdict = vd;
@@ -112,6 +129,7 @@ export function connectView() {
 			h("p", {}, t("flash.at.connect_lead")),
 			withPicture(r, h("ol", { class: "steps" }, r.flash.bootloader.map((x) => h("li", {}, x)))),
 			variantChooser(() => draw()),
+			a.ident ? null : detector,
 			a.ident ? h("dl", { class: "kv-list" },
 				h("dt", {}, t("flash.at.model")), h("dd", {}, `${a.ident.model} (${t("flash.at.hw")} ${a.ident.hw}, ${a.ident.version})`),
 				h("dt", {}, t("flash.at.variant")), h("dd", {}, vd?.code ? variantLabel(r, vd.code) : t("flash.at.variant_unknown"))) : null,
@@ -121,6 +139,17 @@ export function connectView() {
 		S().forward(vd?.ok ? button(t("flash.at.continue"), () => ctx.next(), { primary: true })
 			: button(t(a.ident ? "flash.at.connect_again" : "flash.at.connect"), connect, { primary: true }));
 	};
+	// A probe named the variant: it becomes the pick; one that left the update mode open is the connection
+	async function adopt(found) {
+		S().atChosen = found.code;
+		S().variant = { version: found.version, code: found.code, via: found.via };
+		if (found.keep && found.radio) {
+			await release();
+			Object.assign(a, { stream: found.stream, radio: found.radio, ident: found.ident });
+			diag.note("anytone identify", { model: found.ident.model, hw: found.ident.hw, version: found.ident.version, variant: found.code });
+		}
+		draw();
+	}
 	async function connect() {
 		fill(status, notice(t("flash.at.connecting"), "info"));
 		try {
@@ -244,6 +273,22 @@ function writePanel({ title, rows, addr, data, report, okText, onDone }) {
 		abort = new AbortController();
 		S().forward(button(t("flash.at.stop"), stop, { danger: true }));
 		fill(status, notice(t("flash.at.writing", { n: framesNeeded(data.length) }), "info"));
+		try {
+			// mandatory, just before the first frame: the radio asked once more on this session (detect.js)
+			// the install also needs the variant that runs this image; a restore's set was checked against the model at connect
+			await confirmVariant({ id: "anytone-update", session: a.radio, radio: S().radio, board: board(), fb: ctx.fb(),
+				expect: vd.code, imageBoard: report.task === "install" ? board().id : null, log: (l) => a.log.add(l) });
+		} catch (e) {
+			diag.note("anytone confirm", { error: errText(e) });
+			fill(status, errorNotice(t("flash.at.confirm_failed", { why: errText(e) })));
+			a.radio = null;
+			await release();
+			return S().forward(button(t("flash.at.connect_again_go"), () => {
+				const list = task() === "restore" ? RESTORE : S().recovering ? RECOVER : INSTALL;
+				S().step = list.indexOf("connect");
+				ctx.render();
+			}, { primary: true }));
+		}
 		const started = ctx.flashStarted?.({ ...report, variant: report.variant || vd.code || "" });
 		try {
 			let first = true;
