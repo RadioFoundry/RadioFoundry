@@ -22,18 +22,18 @@
 #include "modem/hrc7000/hrc7000.h"
 #include "dmr_rfburst_timing.h"
 
-// The sequences' waits: wait(us) sleeps the RF task for us microseconds on the board timer (TIMER_BOARD); short ones
-// spin
+// The sequences' waits, on the board timer (TIMER_BOARD) while the RF task sleeps; short ones spin. wait(us): us
+// microseconds from now. at(us): until us after the burst's RF TX interrupt, at once if that is past, so a late wake
+// of the task doesn't make a step late
 typedef void (*hrc_rfburst_wait_fn)(uint32_t us);
 
+// A board gives only its chip steps; the timing is the task's. The hold until the burst's last symbol (none for an
+// aborted transmission or at the end of a continuous outbound) comes before off, from the modem's rf_tx_lead
 typedef struct {
-	// One burst's TX on, from the RF task, elapsed_us after its RF TX interrupt: the RF to the TX frequency and the
-	// PA up. The board's key-up wait counts from the interrupt (less elapsed_us), so a late wake doesn't make the
-	// PA late
-	void (*on)(hrc_rfburst_wait_fn wait, uint32_t elapsed_us);
-	// The burst's TX off, from the RF task, elapsed_us after its RF TX interrupt; now: at once, no hold (an aborted
-	// transmission). Returns how late the ramp down started against its point (hrc_rfburst_late_us), in us
-	uint32_t (*off)(hrc_rfburst_wait_fn wait, uint32_t elapsed_us, bool now);
+	// One burst's TX on, from the RF task: the RF to the TX frequency and the PA up
+	void (*on)(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait);
+	// The burst's TX off, from the RF task: the PA down and the RF back to receive
+	void (*off)(void);
 } hrc_rfburst_board_t;
 
 typedef struct {

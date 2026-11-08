@@ -28,8 +28,6 @@
 #define RF_TX_LEAD		9u		// 100 us steps (RF_CONTROL b13:8)
 #define RF_SWITCH_LEAD_US	400u		// the RF to TX this long before the lead point
 #define PA_AHEAD_US		500u		// the PA keyed this long before the first symbol
-#define BURST_SWITCH_AT_US	(RF_TX_LEAD * 100u - RF_SWITCH_LEAD_US)
-#define BURST_PA_AT_US		(RF_TX_LEAD * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US - PA_AHEAD_US)
 // TX data advance (hrc7000_t.tx_pre_on): the chip's 0.4 ms until the inbound burst's offset against the outbound is
 // measured here. The other FD6818 board needed 1.1 ms
 #define TX_PRE_ON		4u
@@ -166,32 +164,26 @@ static bool ref_trim(int16_t ppb)
 
 // One burst's TX on, from the RF task (dmr_rfburst.h): at the switch point the LNA off and the FD6818 idle then TX,
 // on the TX frequency (a split channel's one synthesizer moves for the burst and back); the PA keyed ahead of the
-// first symbol. Both points count from the RF TX interrupt, elapsed_us ago
-static void burst_on(hrc_rfburst_wait_fn wait, uint32_t elapsed_us)
+// first symbol (both points from the RF TX interrupt)
+static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 {
-	uint32_t t0 = hrc_micros() - elapsed_us;
-	wait(BURST_SWITCH_AT_US > elapsed_us ? BURST_SWITCH_AT_US - elapsed_us : 0);
+	(void)wait;
+	at(hrc_rfburst_switch_at_us(RF_TX_LEAD, RF_SWITCH_LEAD_US));
 	lna(tx_hz, false);
 	fd6818_dmr_burst_at(&fd, true, FD6818_BW_DMR, synth_hz(tx_hz));
-	uint32_t e = hrc_micros() - t0;
-	wait(BURST_PA_AT_US > e ? BURST_PA_AT_US - e : 0);
+	at(hrc_rfburst_pa_at_us(RF_TX_LEAD, PA_AHEAD_US));
 	if (dmr_keyed) {
 		pa_key();
 	}
 }
 
-// The burst's TX off with its last symbol (now: at once): PA off, the FD6818 and the LNA back to RX, so the radio hears
-// the other slot (the hotspot listens while keyed)
-static uint32_t burst_off(hrc_rfburst_wait_fn wait, uint32_t elapsed_us, bool now)
+// The burst's TX off, after the task's hold to its last symbol: PA off, the FD6818 and the LNA back to RX, so the
+// radio hears the other slot (the hotspot listens while keyed)
+static void burst_off(void)
 {
-	uint32_t late = now ? 0 : hrc_rfburst_late_us(elapsed_us, RF_TX_LEAD);
-	if (!now) {
-		wait(hrc_rfburst_hold_us(elapsed_us, RF_TX_LEAD));
-	}
 	pa_off();
 	fd6818_dmr_burst_at(&fd, false, FD6818_BW_DMR, synth_hz(rx_hz));
 	lna(rx_hz, true);
-	return late;
 }
 
 static const hrc_rfburst_board_t rf_board = { .on = burst_on, .off = burst_off };

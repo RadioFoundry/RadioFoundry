@@ -14,7 +14,9 @@
 #define RF_GUARD_US		20000u		// an RF RX interrupt ends the burst only this long after its RF TX interrupt
 #define WAIT_SPIN_US		50u		// shorter waits spin, as the original firmware's delay routine does
 #define WAIT_TIMEOUT_MS		10u		// the timer never fired this long after it should have: go on
-#define DISARM_WAIT_MS		20u
+// A disarm during a TX-off's hold waits for it: the hold runs to the burst's last symbol, up to the longest lead
+// (6.3 ms) + 0.85 ms + 27.5 ms after the RF TX interrupt, and an abort that comes in it is only noted (rf_wait)
+#define DISARM_WAIT_MS		40u
 #define FRAME_US		60000u		// one RF TX interrupt per TDMA frame while transmitting
 #define GRID_SLACK_US		30u		// an RF TX interrupt later than this off the frame grid was held up
 
@@ -107,6 +109,18 @@ static void rf_wait(uint32_t us)
 	hrc_timer_stop(TIMER_BOARD);
 }
 
+// The sequences' waits counted from the burst's RF TX interrupt
+static void rf_at(uint32_t us)
+{
+	uint32_t e = hrc_micros() - t_on;
+	rf_wait(us > e ? us - e : 0);
+}
+
+static uint8_t lead_steps(void)
+{
+	return modem->rf_tx_lead != 0 ? modem->rf_tx_lead : HRC7000_RF_TX_LEAD_DEF;
+}
+
 // The TX-on timing (hrc_rfburst_stats_t)
 static void note_burst(uint32_t t0, uint32_t wake, uint32_t up)
 {
@@ -157,7 +171,7 @@ static void rf_task_fn(void *arg)
 			uint32_t t0 = on_time(t_on);
 			t_on = t0;
 			uint32_t wake = hrc_micros() - t0;
-			board->on(rf_wait, wake);
+			board->on(rf_at, rf_wait);
 			uint32_t up = hrc_micros() - t0;
 			rf_tx = true;
 			stats.bursts++;
@@ -166,7 +180,13 @@ static void rf_task_fn(void *arg)
 		if ((v & (EV_OFF_TICK | EV_OFF_RFRX | EV_ABORT)) != 0 && rf_tx) {
 			bool abort = (v & EV_ABORT) != 0;
 			bool now = abort || cont;	// a continuous outbound ends when it stops: nothing to hold for
-			uint32_t late = board->off(rf_wait, hrc_micros() - t_on, now);
+			uint32_t late = 0;
+			if (!now) {	// the ramp down with the burst's last symbol, so the receiver is back for the next slot
+				uint32_t e = hrc_micros() - t_on;
+				late = hrc_rfburst_late_us(e, lead_steps());
+				rf_wait(hrc_rfburst_hold_us(e, lead_steps()));
+			}
+			board->off();
 			rf_tx = false;
 			stats.ends++;
 			stats.last_by = abort ? 'A' : cont ? 'B' : (v & EV_OFF_RFRX) != 0 ? 'R' : 'T';

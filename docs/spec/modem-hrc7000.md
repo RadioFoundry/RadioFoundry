@@ -510,8 +510,10 @@ Where the modem's MOD1 output modulates the reference oscillator instead of the 
 transmitter's whole key-up, a few milliseconds with waits in it. The sequences run in a task of their own at the
 highest priority (`platform/hrc7000/dmr_rfburst.c`); the interrupts only wake it. The board gives the two sequences
 (`hrc_dmr_board_t.burst`, an `hrc_rfburst_board_t`) and arms and disarms the task from `tx()`, `tx_off()` and `rx()`;
-the glue starts the task and passes it every switch. The board's sequences place the RF switch and the PA from the RF
-TX interrupt, so a board whose switch must come late (to keep receiving the inbound burst before ours) sets a lead
+the glue starts the task and passes it every switch. A board's sequences are only its chip steps; the timing is the
+task's (`dmr_rfburst_timing.h`): a sequence's `at` waits count from the RF TX interrupt (a two-point key-up's RF switch
+and PA times are `hrc_rfburst_switch_at_us` and `hrc_rfburst_pa_at_us`), and the task holds the TX off until the
+burst's last symbol from the modem's `rf_tx_lead`. So a board whose switch must come late (to keep receiving the inbound burst before ours) sets a lead
 about 0.5 ms longer than that point and waits: the task can wake up to 0.42 ms after the interrupt.
 
 A split duplex hotspot's base-station outbound (`hrc7000_bs.c`) is continuous: the task runs the TX-on sequence at its
@@ -521,7 +523,7 @@ first RF TX interrupt and the TX-off sequence at once when it stops, with no hol
 |---|---|---|
 | TX on | the RF TX interrupt, rf_pre_on_tx before the burst | the board's TX-on sequence |
 | TX off | the next timeslot interrupt, or the RF RX interrupt once 20 ms have passed since the RF TX interrupt, whichever comes first | waits until the burst's last symbol, then the board's TX-off sequence |
-| Abort | disarm (the end of the transmission, a retune) | the TX-off sequence at once |
+| Abort | disarm (the end of the transmission, a retune) | the TX-off sequence at once; in a TX-off's hold, the hold's end (the disarm waits for it, up to 40 ms) |
 | End of an outbound | the base-station outbound stops (split duplex) | the TX-off sequence at once |
 
 The burst's last symbol is rf_pre_on_tx × 100 µs + 0.85 ms + 27.5 ms after the RF TX interrupt

@@ -35,8 +35,8 @@ uint32_t db25d_dmr_phase(void);		// HR_C7000 PHASE_OUT: b29:16 / b13:0, the larg
 // Disarm with hrc_rfburst_disarm, the stats with hrc_rfburst_stats
 void db25d_dmr_tx_arm(void);
 // The per-burst RF sequences (radio_db25d.c), from the RF task (hrc_rfburst_board_t)
-void db25d_burst_on(hrc_rfburst_wait_fn wait, uint32_t elapsed_us);
-uint32_t db25d_burst_off(hrc_rfburst_wait_fn wait, uint32_t elapsed_us, bool now);
+void db25d_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait);
+void db25d_burst_off(void);
 void db25d_dmr_tx_end(void);	// radio_db25d.c: hrc_dmr_board_t.tx_end
 #endif
 #endif
