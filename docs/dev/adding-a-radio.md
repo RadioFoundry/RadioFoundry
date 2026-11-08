@@ -167,7 +167,8 @@ What the docs claim for a radio comes from its records, so each step above ends 
 2. `tools/bringup.py list --radio <b>` shows the checklist: every feature of
    [tests/hil/features.toml](../../tests/hil/features.toml) the board builds, `n/a` for its `BOARD_UNSUPPORTED`
    switches and `not written` for its `BOARD_NOT_WRITTEN` ones. Each needs a reason in `config.mk`; a feature built
-   but known not to work yet gets a `[features]` entry in `board.toml`.
+   but known not to work yet gets a `[features]` entry in `board.toml` (`state = "unsupported"`), and so does a
+   feature without a switch that the hardware rules out (`state = "n/a"`).
 3. As a step works, `tools/bringup.py run --radio <b> --feature F -- <pytest options>` runs its tests under the
    radio lock and writes `docs/testing/results/<b>/<date>-<commit>.json`. Commit the record with the change it
    checks; a record with failures is the to-do list ([HIL bring-up mode](../../tests/hil/README.md#bring-up-mode)).

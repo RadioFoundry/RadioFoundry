@@ -83,7 +83,7 @@ Radios: HR_C6000.
 
 **1.4b Page 2 isn't per slot.**
 Symptom: with a call on each slot, the wanted call went quiet with the other call's source shown (23 of 78 bursts
-played; HIL 2026-11-04 on the HR_C5000). Cause: page 2 holds the embedded LC (or alias or GPS block) the chip
+played; HIL on the HR_C5000). Cause: page 2 holds the embedded LC (or alias or GPS block) the chip
 assembled last, of either slot, so at one call's F it held the other's, and the core took it for a new call. Rule:
 keep each slot's call LC and check every embedded LC against both before handing it over; only voice LCs (FLCO 0, 3)
 become a slot's call LC, and alias and GPS blocks wait while the other slot is busy. While a slot's call goes on,
@@ -177,6 +177,17 @@ still listed) leaves its source silent for good. A dead timeslot interrupt means
 transmission; drop a system request pending for 50 ms with no handler run; count both and keep the first one's PIC
 state (`modem-hrc7000.md` 3.3). Radios: the HR_C7000 boards; one report.
 
+**2.10 A receiver restart in the middle of a burst.**
+Symptom: a direct answer in the other timeslot, right after our terminator (30 ms after its start), was lost: decoded but with BS sync, its timeslot
+taken from a TC bit there is none of in direct mode and so often the wrong one, and on some radios with a header CRC
+error. Answers 60 and 90 ms after, and the same bursts sent unsolicited, were taken. Cause: the end of a
+transmission comes on the TX tick a slot after the terminator, about 25 ms into the answer's slot, and the full
+receiver restart there (the WORK_MODE pass, passive timing, both slot syncs released) leaves the chip to report the
+burst it is in the middle of with a reset state. Dropping only the WORK_MODE pass didn't help. Rule: a direct
+transmission ends with receive in passive timing and the slot syncs kept, and the restart waits until the channel
+has been quiet for 150 ms (`modem-hrc7000.md` 5.2a). Any restart from a tick can land in a burst: keep them to
+quiet channels. Radios: the HR_C7000 boards.
+
 ## 3. TX/RX state and PA handling
 
 **2.6 HR_C5000 register differences.** Configuration page 0 (page 4 on the HR_C6000); reg 0x10 = 0x6B simplex,
@@ -257,6 +268,14 @@ until a power cycle (2026-10-21). Neither the fault path nor the reset turned th
 pin set-up ran after the clock set-up. Rule: every fault handler, crash hook, software reset and stub jump calls
 `board_rf_safe()` first, and so does `main()` before the clocks ([crash-log.md](crash-log.md) 8). A new board must
 provide it, and a new reset or jump path must call it.
+
+**3.14 No receive set-up at the end of a DMR transmission.** Symptom: a MOTOTRBO portable's link ACK to our confirmed
+data, which comes one frame after our terminator in our own timeslot, was missed on every try on several radios. Cause: the board's `tx_off()` set the receiver up again
+(idle, synthesizer, receive) just as the answer came in; the per-burst switch had already left the receiver on the
+channel. Each radio that had fixed it did so with its own check in `rx()`. Rule: the radio core ends a DMR
+transmission through `hal_radio_t.dmr_tx_end`; the modem glue implements it once and has the board's `tx_end` keep the
+RF when the last burst's switch left it on the last `rx()` settings ([modem-hrc7000.md](modem-hrc7000.md) 5.2a).
+`rx()` is always a full set-up. Radios: the boards on both DMR modem glues. Test: `test_dmr_tx_end` (radioCoreTest).
 
 ## 4. AMBE codec calling
 
@@ -723,7 +742,7 @@ read the low bits of the first byte of a burst 65 ms after the last one, before 
 debounce the shared pin by time, not by scan count. The pin must read low, and not gated, for 20 ms
 (`SHARED_PTT_HOLD_MS`). `tests/hil/test_ptt_host_traffic.py` checks it on the radio. The radio's own transmission,
 picked up on a coiled cable, also reads as a press: the line goes low with flagged characters and no good byte, and
-the press keeps the radio keyed, a latch (2026-11-05: a minute keyed, nothing touched). Rule: while the radio
+the press keeps the radio keyed, a latch (measured: a minute keyed, nothing touched). Rule: while the radio
 transmits, no new press starts on the shared line, and a held press ends at a flagged character after its own break,
 since a grounded line receives nothing. RF that holds a released line steadily low, with no character, still reads
 as held, and the transmit time-out ends it.

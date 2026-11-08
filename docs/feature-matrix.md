@@ -116,6 +116,7 @@ is `tools/bringup.py list --radio <id>`.
 | `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_ppp` | not recorded | off | pass (seed) | pass (seed) | off | off |
 | `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `key_lock` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `channel_knob` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `diag` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |

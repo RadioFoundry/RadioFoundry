@@ -132,6 +132,14 @@ def skip(kind, reason, module=False):
     raise e
 
 
+def need_radio_tx(radio):
+    """Skip (not_built) when the radio can't transmit at all: its view's can_tx is 0 (no band may, a transmitter not
+    written yet). A test that also checks what the radio received calls this after those checks."""
+    __tracebackhide__ = True
+    if radio.view(["core"]).get("can_tx") == "0":
+        skip("not_built", "the radio can't transmit (can_tx 0: its transmitter isn't written yet)")
+
+
 def skip_mark(kind, reason):
     """pytest.mark.skip with a kind, for marks added at collection."""
     import pytest
@@ -243,6 +251,7 @@ class Radio:
         self._version = None
         self._txlim = None      # the firmware has the test TX limit (tx_gate); None: not asked yet
         self._last_shot = 0.0
+        self._last_key = 0.0     # when this host last pressed a key (ensure_awake is asked only after a pause)
 
     @staticmethod
     def _uid(link):
@@ -440,19 +449,53 @@ class Radio:
             time.sleep(1.2)
 
     def press(self, name, gesture=PRESS, value=0, settle=0.15):
+        # A pause long enough for the backlight to go off (a screenshot of a large screen takes over 30 s at 115200
+        # baud) would let the UI eat this key: ask whether it needs waking, after a pause only, so a sequence stays fast
+        if time.monotonic() - self._last_key > 15:
+            self.ensure_awake()
         self.link.key(name, gesture, value)
         self.link.wait_keys_idle()
+        self._last_key = time.monotonic()
         time.sleep(settle)
 
     def long_press(self, name):
         self.press(name, LONG)
 
+    def in_band(self, hz):
+        """True if hz is inside one of the radio's bands (core view bands=). Firmware without the key: True."""
+        bands = self.core().get("bands")
+        if bands is None:
+            return True
+        for r in filter(None, bands.split(",")):
+            lo, _, hi = r.partition("-")
+            if int(lo) <= hz <= int(hi):
+                return True
+        return False
+
+    def skip_out_of_band(self, hz):
+        """Skip the test (no_hw) when hz is outside the radio's bands."""
+        if not self.in_band(hz):
+            skip("no_hw", f"{hz / 1e6:.4f} MHz is outside the radio's bands ({self.core().get('bands')})")
+
+    def unlock_key(self, v=None):
+        """The key held to unlock: "quick", "back" or "none" (a key map with neither; auto lock never locks it). Firmware
+        without ui.unlock_key: "quick"."""
+        v = v if v is not None else self.link.view(["link"])
+        return v.get("ui.unlock_key", "quick")
+
+    def unlock(self):
+        """Unlock the keys if they are locked. With no unlock key on the radio a long Back still unlocks: the keys come
+        from the debug link, which isn't held to the key map."""
+        v = self.link.view(["link"])
+        if v.get("ui.locked") != "1":
+            return
+        self.long_press("quick" if self.unlock_key(v) == "quick" else "back")
+        self.wait_for(lambda v: v.get("ui.locked") == "0", sections=("link",), what="keys unlocked")
+
     def go_home(self):
         self.ensure_awake()
-        if self.link.view(["link"]).get("ui.locked") == "1":
-            # auto lock locks the keys while the radio sits idle; a locked radio ignores every other key
-            self.long_press("quick")
-            self.wait_for(lambda v: v.get("ui.locked") == "0", sections=("link",), what="keys unlocked")
+        # auto lock locks the keys while the radio sits idle; a locked radio ignores every other key
+        self.unlock()
         # The zone editor's screens go five deep below Home (menu, zones, zone, channel actions, a picker), so a test cut
         # short there leaves more than a few screens; each press is waited on, so a slow one isn't pressed again
         for _ in range(8):
@@ -606,6 +649,9 @@ class Radio:
         try:
             yield hz
         finally:
+            # The tones, frequency and mode are the VFO's: back in it first, after a test that left it for a channel
+            if self.core().get("vfo") != "1":
+                self._req_until(lambda: L.vfo(True), lambda v: v.get("vfo") == "1", "VFO on")
             if tones != none:
                 set_tones(tones)
             if self.core().get("rx_hz") != str(hz):
@@ -614,8 +660,8 @@ class Radio:
                 self._req_until(lambda: L.dmr_fields(mode=mode), lambda v: v.get("mode") == mode, "VFO mode back")
 
     def find_channel(self, rx_hz, mode=None, simplex=False):
-        """Select the first channel receiving on rx_hz (and in mode 'fm' / 'dmr'; with simplex, also transmitting on
-        rx_hz, not a repeater pair): the current zone first, then the others in order, so a test doesn't depend on the
+        """Select the first channel receiving on rx_hz (None: any frequency; and in mode 'fm' / 'dmr'; with simplex,
+        also transmitting where it receives, not a repeater pair): the current zone first, then the others in order, so a test doesn't depend on the
         zone the radio was left in (restore() puts the zone back). Returns the channel's position in the zone it
         selected. AssertionError if no zone has one."""
         L = self.link
@@ -630,12 +676,12 @@ class Radio:
             size = int(self.core().get("zone_size") or 0)
             for pos in range(size):
                 v = self._req_until(lambda: L.zone_pos(pos), lambda x: x.get("zone_pos") == str(pos), f"position {pos}")
-                if int(v["rx_hz"]) == int(rx_hz) and (mode is None or v.get("mode") == mode) and \
-                        (not simplex or int(v.get("tx_hz") or 0) == int(rx_hz)):
+                if (rx_hz is None or int(v["rx_hz"]) == int(rx_hz)) and (mode is None or v.get("mode") == mode) and \
+                        (not simplex or int(v.get("tx_hz") or 0) == int(v["rx_hz"])):
                     return pos
             searched.append(f"{self.core().get('zone_name')!r} ({size})")
-        raise AssertionError(f"no channel on {rx_hz / 1e6:.5f} MHz{' ' + mode if mode else ''} in any zone: "
-                             f"{', '.join(searched)}")
+        on = f"on {rx_hz / 1e6:.5f} MHz" if rx_hz is not None else "at all"
+        raise AssertionError(f"no channel {on}{' in ' + mode if mode else ''} in any zone: {', '.join(searched)}")
 
 API_FM_THRESHOLD_DB = 8.0          # sdr_fm_check's keyed threshold on a bench board (analyze_fm)
 

@@ -440,6 +440,8 @@ static void rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_b
 	*rx_back = r.rf_rx_back;
 }
 
+static void dmr_tx_end(void);
+
 // The shared DMR glue's view of this board: the modem's interrupt lines are PC0-PC2
 static const stm32_hrc_dmr_board_t dmr_board = {
 	.int_port = GPIOC,
@@ -448,6 +450,7 @@ static const stm32_hrc_dmr_board_t dmr_board = {
 	.tx_prepare = rf_dmr_prepare,
 	.tx_wait_lock = rf_dmr_wait_lock,
 	.tx_done = rf_dmr_tx_done,
+	.tx_end = dmr_tx_end,
 };
 
 // Stop per-burst keying (task level): disarm, drop a transmission still running, PA off
@@ -685,8 +688,10 @@ static void set_mode(radio_mode_t mode)
 	}
 }
 
-// Enter RX: PA off, synthesizer to the receive VCO, receiver supply, front-end tuning, reference, HR_C5000
-static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
+// Enter RX: PA off, synthesizer to the receive VCO, receiver supply, front-end tuning, reference, HR_C5000. keep (the
+// end of a DMR transmission, dmr_tx_end): the TX done already put the synthesizer on the receive VCO; on the same
+// channel it stays as it is
+static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone, bool keep)
 {
 	if (find_band(hz) == NULL) {
 		return false;
@@ -704,8 +709,8 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	(void)rx_tone;
 #endif
 	bool from_tx = r.dmr_tx_tuned;
-	// On rx_hz since the TX done (the glue's flag): a retune now would hit a reply
-	bool back = stm32_hrc_dmr_rf_on_rx() && r.mode == RADIO_MODE_DMR && same && !r.asleep;
+	// On rx_hz since the TX done: a retune now would hit a reply in the next frame
+	bool back = keep && r.mode == RADIO_MODE_DMR && same && !r.asleep;
 	if (r.mode == RADIO_MODE_DMR) {
 		dmr_disarm();
 	}
@@ -742,6 +747,11 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	}
 	r.tx_on = false;
 	return true;
+}
+
+static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
+{
+	return rx_set(hz, bw, rx_tone, false);
 }
 
 // Enter FM TX: receiver off, HR_C5000 FM TX, synthesizer to the transmit VCO and locked, then the PA. Refused
@@ -805,7 +815,8 @@ static bool tx_tail(bool on)
 }
 #endif
 
-static void tx_off(void)
+// keep: as in rx_set
+static void tx_end(bool keep)
 {
 #if CONFIG_SUBTONE
 	md380_subtone_tx_stop();
@@ -815,12 +826,23 @@ static void tx_off(void)
 	}
 	pa_off();
 	if (r.rx_valid) {
-		rx(r.rx_hz, r.rx_bw, NULL);
+		rx_set(r.rx_hz, r.rx_bw, NULL, keep);
 		return;
 	}
 	r.dmr_tx_tuned = false;
 	count(hrc5000_set_mode_fm_rx(&r.modem));
 	r.tx_on = false;
+}
+
+static void tx_off(void)
+{
+	tx_end(false);
+}
+
+// stm32_hrc_dmr_board_t.tx_end: the TX done left the synthesizer receiving
+static void dmr_tx_end(void)
+{
+	tx_end(true);
 }
 
 static void status(radio_status_t *st)
@@ -859,6 +881,7 @@ const hal_radio_t md380_radio = {
 	.rx = rx,
 	.tx = tx,
 	.tx_off = tx_off,
+	.dmr_tx_end = stm32_hrc_dmr_tx_end,
 #if CONFIG_SUBTONE
 	.tx_tail = tx_tail,
 #endif
