@@ -42,6 +42,8 @@ runs = { board = "d578uv" }
 [[hardware.variants]]
 code = "AT"
 usb_ids = ["2E3C:5740"]
+# kept out of the installers until a first radio has booted it: docs/spec/hardware-d578uv.md 10
+blocked = "no Artery radio has run RadioFoundry yet"
 name = "Artery AT32F43x (built from mid-2022)"
 level = "bring-up"
 notice = "Nothing has run on this radio yet: the Artery build is written from an analysis of the manufacturer's firmware and the GD32 build's code. To go back, write the manufacturer's firmware file through the factory update mode."
@@ -51,7 +53,7 @@ runs = { board = "d578uva" }
 level = "testing"
 summary = """\
 FM, DMR voice, text messages and positions, dual watch, GPS and the flash stub work on the GD32F303 radios. \
-Open: air band AM on a radio with the KTMicro receiver. The Artery radios take their own image."""
+Open: air band AM on a radio with the KTMicro receiver. The Artery radios can't be installed yet."""
 release = "testing"
 
 # The vendor bootloader (0x08000000..0x08005FFF) is never written; the image goes to 0x08006000 through the factory

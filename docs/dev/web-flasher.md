@@ -355,6 +355,10 @@ To support another radio's variants:
 2. Write a probe for any other protocol that names the variant.
 3. Add the Auto-detect control and the `confirmVariant()` call to the radio's backend.
 
+A variant with `blocked` in board.toml (the reason, as text) can be identified and given its original firmware back, but
+no installer writes RadioFoundry on it: the page's check at connect, the check before the write and the `rfoundry` tools
+all refuse it. It is for an image that exists but has never run on that hardware.
+
 ## Backup bundles (`rfoundry-backup/1`)
 
 A zip the user keeps: `backup.json` (the radio, its chip UID, the firmware when the backup was taken and before RadioFoundry,

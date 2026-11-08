@@ -69,7 +69,7 @@ test("connect: a radio of the variant with an image passes; the user's wrong pic
 	assert.match(box.textContent, /variant you picked is not the radio's/);
 	assert.notEqual(p.last().textContent, "Continue");
 	// a radio of the other variant: no install, with the reason (no image yet, or another board's image)
-	const otherBoard = RADIO.variants.find((v) => v.code === other).runs?.board;
+	const otherV = RADIO.variants.find((v) => v.code === other), otherBoard = otherV.blocked ? null : otherV.runs?.board;
 	p = page(models[other][0]);
 	box = ui.connectView();
 	await press(p.last());

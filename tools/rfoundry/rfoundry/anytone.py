@@ -108,6 +108,10 @@ def check_install(board, model, chosen=None):
     """check_radio, and the variant must run this board's image: an Artery radio of a GD32 board is refused (the
     vendor's updater refuses a file for the other MCU too)"""
     got = check_radio(board, model, chosen)
+    why = board.variant_blocked(got)
+    if why:
+        raise UpdateError("the radio is %s, and RadioFoundry can't be installed on it yet: %s. Nothing written. Its own "
+                          "stock firmware can still be written back" % (_named(board, got), why))
     runs = board.variant_boards.get(got)
     if runs is not None and runs != board.id:
         raise UpdateError("the radio is %s, which takes the %s image, not the %s one: nothing written. Run again "

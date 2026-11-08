@@ -15,8 +15,8 @@ and what has been checked on it.
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
-| [AnyTone AT-D578UV](#anytone-at-d578uv) | AnyTone AT-D578UV PRO, AnyTone AT-D578UV PLUS | FM, DMR voice, text messages and positions, dual watch, GPS and the flash stub work on the GD32F303 radios. Open: air band AM on a radio with the KTMicro receiver. The Artery radios take their own image. |
-| [AnyTone AT-D578UV (Artery)](#anytone-at-d578uv-artery) | AnyTone AT-D578UV PRO, AnyTone AT-D578UV PLUS | The GD32 builds' code on the Artery AT32F435, written from an analysis of the manufacturer's firmware; nothing has run on a radio yet. Open: every function on the radio, DMR. |
+| [AnyTone AT-D578UV](#anytone-at-d578uv) | AnyTone AT-D578UV PRO, AnyTone AT-D578UV PLUS | FM, DMR voice, text messages and positions, dual watch, GPS and the flash stub work on the GD32F303 radios. Open: air band AM on a radio with the KTMicro receiver. The Artery radios can't be installed yet. |
+| [AnyTone AT-D578UV (Artery)](#anytone-at-d578uv-artery) | AnyTone AT-D578UV PRO, AnyTone AT-D578UV PLUS | The GD32 builds' code on the Artery AT32F435, written from an analysis of the manufacturer's firmware; nothing has run on a radio yet, so the installers refuse it. Open: every function on the radio, DMR. |
 <!-- end generated -->
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
@@ -655,7 +655,8 @@ image ([AT-D578UV (Artery)](#anytone-at-d578uv-artery)). It runs on the radio; t
 [bring-up checklist](../testing/d578uv-bringup.md) lists what has been checked and how.
 
 **Which AT-D578UV.** Open the radio's version screen. A radio that shows `GD_Ver` has the GD32F303 and takes the
-`d578uv` image. A radio that shows `AT_Ver` has the Artery processor and takes the `d578uva` image. Or press
+`d578uv` image. A radio that shows `AT_Ver` has the Artery processor, and RadioFoundry can't be installed on it yet
+([AT-D578UV (Artery)](#anytone-at-d578uv-artery)). Or press
 **Auto-detect** on the installer's connect step and connect the radio as it is: on with its original firmware, in
 update mode, or running RadioFoundry. The installer checks the radio's model again just before it writes, and refuses
 the other variant's image.
@@ -744,17 +745,13 @@ room for what the GD32F303 image leaves out:
   APRS-IS) don't fit beside them and are left out, and network audio (AllStarLink, DVSwitch) isn't written: the
   voice stays in the DMR chip.
 
-Nothing has run on an Artery radio yet, and its processor set-up (clock, USB) is written from the vendor firmware
-alone ([hardware-d578uv.md](../spec/hardware-d578uv.md)).
+**RadioFoundry can't be installed on an Artery radio yet.** Nothing has run on one, and its processor set-up (clock,
+USB) is written from an analysis of the original firmware alone
+([hardware-d578uv.md](../spec/hardware-d578uv.md)). The installer and `rfoundry` name the radio and refuse it, with
+nothing written. The list above is what the image is built to have once one has been tested.
 
-Installing works as on the GD32F303 radios ([Installing on the AT-D578UV](#installing-on-the-at-d578uv)), with the
-`d578uva` image: `rfoundry detect --board d578uva`, `rfoundry flash IMAGE --board d578uva --stock FW.CDD` and
-`rfoundry restore-stock FW.CDD --board d578uva`. The vendor `.CDD` must be an Artery build. The installer refuses
-a GD32F303 radio given this image.
-
-Updating a radio that already runs RadioFoundry also needs the keys held at power-on. The GD32F303 radios can skip
-that (the installer loads its own flash helper over the cable), but that helper isn't written for the Artery
-processor yet.
+An Artery radio can still get its original firmware back: `rfoundry restore-stock FW.CDD --board d578uva`, where the
+`.CDD` is an Artery build, or the installer's restore task on the AT-D578UV.
 
 ## Planned radios
 

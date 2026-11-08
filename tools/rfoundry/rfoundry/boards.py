@@ -91,6 +91,11 @@ class Board:
         """{variant code: the board id whose image it runs, or None}"""
         return {c: v[1] for c, v in self.variants.items()}
 
+    def variant_blocked(self, code):
+        """Why no installer may write RadioFoundry on this variant yet, or None"""
+        v = self.variants.get(code)
+        return v[2] if v and len(v) > 2 else None
+
     def variant_name(self, code):
         return self.variants[code][0] if code in self.variants else code
 

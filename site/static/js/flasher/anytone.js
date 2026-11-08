@@ -112,6 +112,8 @@ export function judge({ board, radio, model, task, chosen = null, spiModels = nu
 	if (chosen && chosen !== code)
 		return { ok: false, code, why: "mismatch", text: `you picked ${variantLabel(radio, chosen)}, but the radio answers model ${model}: it is ${variantLabel(radio, code)}` };
 	if (task === "install") {
+		const why = variantEntry(radio, code)?.blocked;
+		if (why) return { ok: false, code, why: "blocked", text: `the radio is ${variantLabel(radio, code)}, and ${why}` };
 		const runs = variantEntry(radio, code)?.runs?.board || null;
 		if (runs && runs !== board.id) return { ok: false, code, why: "other_board", board: runs, text: `the radio is ${variantLabel(radio, code)}, which takes the ${runs} image, not the ${board.id} one` };
 		if (runs !== board.id) return { ok: false, code, why: "no_image", text: `the radio is ${variantLabel(radio, code)}, which RadioFoundry has no image for. Its original firmware can still be written back` };

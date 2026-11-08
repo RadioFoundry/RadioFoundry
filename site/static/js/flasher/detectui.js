@@ -29,7 +29,9 @@ export function detectControl({ radio, board, fb, ids, open, onFound, nextHint =
 			if (found?.code) {
 				const v = (radio.variants || []).find((x) => x.code === found.code);
 				fill(notice(t("flash.detect.found", { variant: v ? `${v.code} (${v.name})` : found.code, via: t(`flash.detect.via.${key(found.via)}`),
-					version: found.version || "" }), "ok"), (found.note || nextHint(found)) ? h("p", {}, t(found.note || nextHint(found))) : null);
+					version: found.version || "" }), "ok"),
+					v?.blocked ? notice(t("flash.detect.blocked", { why: v.blocked }), "bad")
+						: (found.note || nextHint(found)) ? h("p", {}, t(found.note || nextHint(found))) : null);
 				await onFound(found);
 			} else if (found) {
 				fill(notice(t("flash.detect.no_variant", { version: found.version || "", via: t(`flash.detect.via.${key(found.via)}`) }), "info"),

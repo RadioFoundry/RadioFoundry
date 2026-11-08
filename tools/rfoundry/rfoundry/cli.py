@@ -991,7 +991,9 @@ def cmd_detect(args):
         if got is None:
             return 1
         runs = board.variant_boards.get(got)
-        say("         %s" % ("RadioFoundry installs on it" if runs == board.id else
+        why = board.variant_blocked(got)
+        say("         %s" % ("RadioFoundry can't be installed on it yet: %s" % why if why else
+                            "RadioFoundry installs on it" if runs == board.id else
                             "no RadioFoundry image for this variant: only its stock firmware can be written"))
         return 0
     p = debuglink.probe(args.port, log=say) if not args.no_probe else None

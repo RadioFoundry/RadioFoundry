@@ -1035,6 +1035,10 @@ Open on the radio:
 
 ## 10. Artery builds
 
+The installers refuse the Artery variant until a first radio has booted the image (`blocked` in the variants of
+`boards/d578uv/board.toml` and `boards/d578uva/board.toml`). The original firmware can still be written back. The first
+radio's bring-up removes that field in its own tree.
+
 The Artery radios run `boards/d578uva`: the same radio code (`boards/d578uv`) built on the AT32F43x platform
 (`platform/at32f43x`). The board code reaches the MCU through `mcu_io.h`, which each platform provides with the same
 names. Facts below are from the PRO V1.21 Artery image; `(inferred)` marks a register bit's meaning taken from how

@@ -1960,11 +1960,13 @@
    "variants": {
     "GD": [
      "GD32F303 (built until mid-2022)",
-     "d578uv"
+     "d578uv",
+     null
     ],
     "AT": [
      "Artery AT32F43x (built from mid-2022)",
-     "d578uva"
+     "d578uva",
+     "no Artery radio has run RadioFoundry yet"
     ]
    },
    "anytone_models": {
@@ -4571,11 +4573,13 @@
    "variants": {
     "GD": [
      "GD32F303 (built until mid-2022)",
-     "d578uv"
+     "d578uv",
+     null
     ],
     "AT": [
      "Artery AT32F43x (built from mid-2022)",
-     "d578uva"
+     "d578uva",
+     "no Artery radio has run RadioFoundry yet"
     ]
    },
    "anytone_models": {
@@ -4723,19 +4727,23 @@
    "variants": {
     "DBB": [
      "DB25-D PRO: two BK4819 (2024 on)",
-     "db25d"
+     "db25d",
+     null
     ],
     "D64": [
      "FD6818 transceiver, 0x7813 LO (2021-2023)",
-     "db25d"
+     "db25d",
+     null
     ],
     "D66": [
      "FD6818 transceiver and LO (2021-2023)",
-     "db25d"
+     "db25d",
+     null
     ],
     "D6T": [
      "FD6818 transceiver, AT1141 LO (2021-2023)",
-     "db25d"
+     "db25d",
+     null
     ]
    },
    "anytone_models": {},
