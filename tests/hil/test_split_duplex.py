@@ -11,8 +11,8 @@ test skips on a build without it.
 - test_split_tx_half_off_air (radio_tx, bench_service: --allow-rf --allow-service-stop): the radio as the TX half on
   --dmr-freq at its lowest power for 10 s, idle bursts with a short LC, SET_AT toggled every 2 s, the framing variant
   from $RFOUNDRY_SPLIT_VARIANT (default 0, ours; on the DM-1701 1 is the chip's, whose CACH is empty; on the HR_C7000
-  radios a bit field of physical layer options, modem-hrc7000.md 2.10). The SDR bench captures and decodes it
-  (sdrmon.py analyze --cach). Asserted: BS sync only, one burst every 30 ms on both slots (same-slot spacing 60 ms),
+  radios a bit field of physical layer options, modem-hrc7000.md 2.10). The bench board decodes it (bursts with the
+  CACH and the carrier envelope). Asserted: BS sync only, one burst every 30 ms on both slots (same-slot spacing 60 ms),
   one key-up edge for the whole outbound, the channel's color code, no driver underruns in STATUS; with our framing
   also the CACH: TC alternating, AT following SET_AT, the short LC decoding.
 - test_split_tx_half_voice (radio_tx, bench_service): the same outbound (our framing) with a group call from the host
@@ -184,13 +184,11 @@ def tx_half_run(radio, sdr_bench, pytestconfig, variant, regs=(), call=()):
     freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     hz = round(freq * 1e6)
     radio.link.split_variant(variant, regs)
-    sdr_bench.sync_tool(os.path.join(ROOT, "tools", "bench", "sdrmon.py"))
-    sdr_bench.sync_tool(os.path.join(ROOT, "tools", "bench", "dmr_cach.py"))
-    rdir = sdr_bench.run_dir("hil_split_tx")
+    sdr_bench.need_bursts_cach(freq)
+    sdr_bench.need_dmr_waveform(freq)
     call = list(call)
-    # Raw I/Q on purpose: sdrmon analyze --cach decodes the CACH from the waveform, which the burst records lack
     with sdr_bench.lease():
-        cap = sdr_bench.capture_start(rdir, freq, seconds=TX_SECONDS + 6)
+        watch = sdr_bench.dmr_watch_start(None, freq, TX_SECONDS + 6, cc, waveform=True)
         with radio.released() as port:
             r = sdh.Radio(port, "tx", dtr=False)
             try:
@@ -221,12 +219,7 @@ def tx_half_run(radio, sdr_bench, pytestconfig, variant, regs=(), call=()):
                 sdh.set_role(r, sdh.ROLE_NORMAL)
             finally:
                 r.close()
-        sdr_bench.capture_wait()
-    txt = sdr_bench.ssh(f"cd ~/{sdr_bench.dir} && {sdr_bench.py} sdrmon.py analyze {cap} --freq {freq} --cc {cc} "
-                        f"--cach --json {cap}.json > {cap}.txt 2>&1; tail -40 {cap}.txt", timeout=600)
-    print(txt)
-    import json
-    sdr = json.loads(sdr_bench.ssh(f"cat {cap}.json"))
+        sdr = sdr_bench.dmr_watch_result(watch)
     leave_hotspot(radio)
     return sdr, st, end
 
@@ -262,7 +255,7 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
     assert all(b["family"] == "bs" for b in bursts), {b["family"] for b in bursts}
     assert all(b["cc"] in (None, cc) for b in bs)
     # Both slots are filled, so neighbors are 30 ms apart and the same slot is two bursts on (sdrmon's
-    # same_slot_spacing only pairs neighbors, which suits a one-slot capture)
+    # same-slot spacing only pairs neighbors, which suits a one-slot watch)
     t = [b["t_ms"] for b in bs]
     nb = [b - a for a, b in zip(t, t[1:])]
     same = [b - a for a, b in zip(t, t[2:])]
@@ -379,9 +372,8 @@ def test_split_tx_sched(radio, sdr_bench, pytestconfig):
     freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     hz = round(freq * 1e6)
     radio.link.split_variant(0, [])
-    sdr_bench.sync_tool(os.path.join(ROOT, "tools", "bench", "sdrmon.py"))
-    sdr_bench.sync_tool(os.path.join(ROOT, "tools", "bench", "dmr_cach.py"))
-    rdir = sdr_bench.run_dir("hil_split_sched")
+    sdr_bench.need_bursts_cach(freq)
+    sdr_bench.need_dmr_waveform(freq)
     outcomes = []
     with sdr_bench.lease():
         with radio.released() as port:
@@ -400,7 +392,7 @@ def test_split_tx_sched(radio, sdr_bench, pytestconfig):
                 time.sleep(0.3)
                 assert sdh.get_status(r)["align"] & sdh.AL_ALIGNED
                 st0 = sdh.get_status(r)        # the counters run since boot
-                cap = sdr_bench.capture_start(rdir, freq, seconds=8)
+                watch = sdr_bench.dmr_watch_start(None, freq, 8, cc, waveform=True)
                 time.sleep(1.0)
                 first = (sdh.Radio.host_us() + 600_000) // 30_000 | 1      # an odd counter: TS2
                 for i, (c, f) in enumerate(CALL):
@@ -425,12 +417,7 @@ def test_split_tx_sched(radio, sdr_bench, pytestconfig):
                 sdh.set_role(r, sdh.ROLE_NORMAL)
             finally:
                 r.close()
-        sdr_bench.capture_wait()
-    txt = sdr_bench.ssh(f"cd ~/{sdr_bench.dir} && {sdr_bench.py} sdrmon.py analyze {cap} --freq {freq} --cc {cc} "
-                        f"--cach --json {cap}.json > {cap}.txt 2>&1; tail -40 {cap}.txt", timeout=600)
-    print(txt)
-    import json
-    sdr = json.loads(sdr_bench.ssh(f"cat {cap}.json"))
+        sdr = sdr_bench.dmr_watch_result(watch)
     leave_hotspot(radio)
     print(f"outcomes {outcomes}\nSTATUS {st}\nafter {end}")
     assert outcomes.count(0) == len(CALL) and outcomes.count(3) == 1 and outcomes.count(1) == 1, outcomes
@@ -444,7 +431,7 @@ def test_split_tx_sched(radio, sdr_bench, pytestconfig):
     assert all(b["sync_errors"] == 0 for b in ours)
     assert len({b["slot"] for b in ours}) == 1, "the call must stay on one slot"
     # The TX half marks AT busy in the CACH before each non-idle burst (no SET_AT here): the busy CACHs name the call's
-    # slot. (Which CACH the analysis pairs with a burst depends on where the capture starts.)
+    # slot. (Which CACH is paired with a burst depends on where the watch starts.)
     cach = [b["cach"] for b in sdr["bursts"] if b.get("cach") and b["cach"]["ok"]]
     tc = {c["tc"] for c in cach if c["at"]}
     assert tc == {1}, f"the call's CACH must say TS2: TC of the busy CACHs {tc}"
