@@ -399,8 +399,9 @@ after the carrier dropped.
 
 The calibration's squelch rows suit the 12.5 kHz filter. Through the 25 kHz one the noise line reads about twice as high
 under the same weak signal: a -89 dBm VHF carrier reads about 1350 instead of 710, while an empty channel moves only from
-about 1750 to 1850 and a full-quieting one stays near 220. A 25 kHz FM channel therefore multiplies both thresholds by 7/4
-(`md9600_rf_sql_wide`); without that, the carrier stayed shut at level 1. DMR is always narrow and keeps them.
+about 1750 to 1850 and a full-quieting one stays near 220. A 25 kHz FM channel therefore multiplies both thresholds by 3/2
+(`md9600_rf_sql_wide`); without that, the carrier stayed shut at level 1. 7/4 opened level 1 on empty UHF channels. DMR is
+always narrow and keeps them.
 
 ---
 

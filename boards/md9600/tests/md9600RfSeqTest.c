@@ -830,11 +830,11 @@ static void test_noise_window(void)
 	CHECK(md9600_rf_squelch_noise(&w, true, 1600, -138, t, 2400, 1600) == 40);	// calibrated the same way
 
 	// 25 kHz: thresholds from a real channel (level 1 open 900, level 9 open 570). A weak signal the 12.5 kHz filter
-	// passes reads about 1500 through the wide one and has to open level 1; an empty channel (1700 up) must not
-	CHECK(md9600_rf_sql_wide(900) == 1575 && md9600_rf_sql_wide(570) == 997);
-	CHECK(md9600_rf_sql_wide(4095) == 7166);					// no overflow
-	CHECK(md9600_rf_noise(1500, md9600_rf_sql_wide(900), md9600_rf_sql_wide(570)) < 64);
-	CHECK(md9600_rf_noise(1700, md9600_rf_sql_wide(900), md9600_rf_sql_wide(570)) >= 64 + 3);
+	// passes reads about 1300 through the wide one and has to open level 1; an empty channel (1500 up) must not
+	CHECK(md9600_rf_sql_wide(900) == 1350 && md9600_rf_sql_wide(570) == 855);
+	CHECK(md9600_rf_sql_wide(4095) == 6142);					// no overflow
+	CHECK(md9600_rf_noise(1300, md9600_rf_sql_wide(900), md9600_rf_sql_wide(570)) < 64);
+	CHECK(md9600_rf_noise(1500, md9600_rf_sql_wide(900), md9600_rf_sql_wide(570)) >= 64 + 3);
 }
 
 static void test_readings(void)
