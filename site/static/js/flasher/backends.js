@@ -21,8 +21,9 @@
 //   vendorRestore(radio, file, fb)  optional: a restore bundle from the radio's original firmware file (an
 //                           openVendorFile entry for this radio), so recovery "restore" also takes that file
 //   release()               optional: let go of a port or loader the backend still holds (start over, other radio)
-//   buildGate(redraw)       optional: the hardware variant asked in the build step, {view() (its element), refused()
-//                           (no firmware can be built for the variant picked)}; made once per visit to the step
+//   buildGate(redraw)       optional: the hardware variant asked in the build step, {view() (its element), need() (what
+//                           is still to be picked, or null), refused() (no firmware can be built for the variant
+//                           picked)}; made once per visit to the step
 //
 // Bulk memory reads for backups go through readers (readers.js), so a backend that shares a radio family's backup
 // steps can still bring its own way of reading.

@@ -304,7 +304,7 @@ a radio, such as another bootloader protocol or a stock firmware's own read-back
 | `vendorRestore(radio, file, fb)` | Optional: a restore bundle from the radio's original firmware file, so the restore task takes that file too |
 | `ownImage(fb, board, data)` | Optional: a user's own image file, split into the image and anything the backend keeps (a merged codec slot) |
 | `release()` | Optional: let go of a port or loader still held (Start Over, another radio) |
-| `buildGate(redraw)` | Optional: the hardware variant asked in the build step: `{view(), refused()}`. A variant with no firmware shows a refusal and Build Firmware stays off |
+| `buildGate(redraw)` | Optional: the hardware variant asked in the build step: `{view(), need(), refused()}`. Build Firmware stays off until a variant is picked or detected, and for a variant with no firmware, which shows a refusal |
 
 | Backend | Radios | Module |
 |---|---|---|

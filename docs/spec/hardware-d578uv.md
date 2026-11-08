@@ -5,10 +5,10 @@
 
 The AT-D578UV (also sold as the PLUS and the PRO) is a dual-band mobile: an MCU, a Sicomm SCT3258 DMR baseband with
 its own vocoder, four RF chips (two receivers and two local oscillators) and an SPI NAND. Boards: `boards/d578uv`
-(the GD32 builds) and `boards/d578uva` (the Artery builds, section 10).
+(the GD32 builds) and `boards/d578uva` (the AT32 builds, section 10).
 The family survey (the 868 and 878 handhelds share most parts) is [hardware-anytone.md](hardware-anytone.md).
 
-Sources: static analysis of the manufacturer's firmware (V2.08 and PRO V1.21, GD32 builds; Artery builds for
+Sources: static analysis of the manufacturer's firmware (V2.08 and PRO V1.21, GD32 builds; AT32 builds for
 sections 1 and 10), the chips' public data sheets, and public photos. Nothing in this page has been checked on a radio yet:
 `(inferred)` marks what was deduced from how the firmware uses a part, `(unverified)` what has no source.
 
@@ -19,7 +19,7 @@ The radio was built with two MCUs. Each needs its own firmware build; the manufa
 | Variant | MCU | Built | Firmware model names (update mode answer) |
 | --- | --- | --- | --- |
 | GD | GigaDevice GD32F303VKT6 (Cortex-M4, 3 MB flash, 96 KB RAM, no CCM) | until about mid-2022 | `D578UV2` (578UV), `D578UV` (PRO); `D578UV` confirmed on a PRO (bootloader V100) |
-| AT | Artery AT32F435/437 (Cortex-M4F) | from about mid-2022 | `578UV2A` (578UV), `D578UVA` (PRO) |
+| AT | AT32F435/437 (Cortex-M4F) | from about mid-2022 | `578UV2A` (578UV), `D578UVA` (PRO) |
 
 - The original firmware's version screen names the build: `GD_Ver` or `AT_Ver`.
 - The original firmware's USB device differs by MCU, so the port alone names the variant:
@@ -30,15 +30,15 @@ The radio was built with two MCUs. Each needs its own firmware build; the manufa
   | AT | `2E3C:5740` | "Artery", "AT32 Virtual Com Port" |
 
 - The model names in the table are the ones in the manufacturer's `.spi` files, which the update mode compares with
-  its answer. `D578UV` was seen from a GD PRO's bootloader. An Artery radio's bootloader answer has not been seen.
+  its answer. `D578UV` was seen from a GD PRO's bootloader. An AT32 radio's bootloader answer has not been seen.
 - The original firmware's PC mode answers the identify (`02`, after `PROGRAM`) with the same name on both MCUs:
   `D578UV2` (578UV) or `D578UV` (PRO). It can't tell the variants apart, and leaving it (`END`) restarts the radio.
   It ignores `UPDATE` and RadioFoundry's debug link frames.
 - The 578UV and the PRO GD builds differ in one RF register value (section 5); no pin or calibration field tells
   them apart at run time, so one RadioFoundry image serves both.
-- The Artery build uses the same pins and logic on STM32F4-style GPIO (0x40020000 + 0x400 per port), 12 MHz crystal,
+- The AT32 build uses the same pins and logic on STM32F4-style GPIO (0x40020000 + 0x400 per port), 12 MHz crystal,
   PLL to 120 MHz, APB1 and APB2 at 60 MHz. Each variant takes its own RadioFoundry image: `d578uv` on the GD32,
-  `d578uva` on the Artery (section 10). The flashing tools refuse the other variant's image (section 8).
+  `d578uva` on the AT32 (section 10). The flashing tools refuse the other variant's image (section 8).
 
 ## 2. MCU, clock and memory
 
@@ -277,7 +277,7 @@ audio while side B also receives, and whether it is there with the squelch close
 | Port | Pins | Use |
 | --- | --- | --- |
 | USART1 | PA2 (TX) / PA3 (RX), 9600 baud 8N1 | GPS (NMEA); the module's supply is RF chip 0's register 0x25 bit 2 (section 5) |
-| UART3 (the Artery's UART4) | PC10 / PC11, 115200 baud 8N1 | the Bluetooth module, or the APRS add-on board (3.7) |
+| UART3 (the AT32's UART4) | PC10 / PC11, 115200 baud 8N1 | the Bluetooth module, or the APRS add-on board (3.7) |
 | USART0 | PA9 / PA10, 115200 baud | the serial keypad microphone (section 3.2); GPIO inputs with a plain microphone |
 | USB | PA11 / PA12 | native USB, the host link and the update mode |
 | I2C (bit-banged) | PB6 SDA / PB7 SCL | the KTMicro AM/FM receiver or the RDA5807 (5.4). The stock firmware drives SDA push-pull and reads it as an input with pull-up |
@@ -781,7 +781,7 @@ Cells wrap modulo 256. The value at a frequency: cell i, plus m tenths of the wa
 1 MHz in a UHF cell, 100 kHz in the others), taking the difference as an unsigned 16-bit value, so a falling table
 doesn't interpolate down. Past the last cell, the last point. Register 0xA uses the UHF table above 300 MHz and the
 VHF block's 220 MHz cells from 200 MHz. Factory default points: 0x0A..0x0C 1E 87 FF (UHF), 03 87 FF (VHF); 0x10 B4,
-AA; 0x11 AA, AA; 0x16 96, 91; the UHF block's 0x1B..0x1D 41 6E B4 and the VHF block's 0x1B B4. The Artery firmware
+AA; 0x11 AA, AA; 0x16 96, 91; the UHF block's 0x1B..0x1D 41 6E B4 and the VHF block's 0x1B B4. The AT32 firmware
 computes the same.
 
 RadioFoundry (`rf_plan.h`, `radio_d578uv.c`): the same values by the same arithmetic, computed when written (no
@@ -967,7 +967,7 @@ radio is turned on with MENU and EXIT held (unverified, section 3.2).
 
 - The model names differ by MCU (section 1). The vendor's updater compares the answer with the names in the
   firmware's `.spi` file and refuses a mismatch; RadioFoundry's tools refuse in the same way, and refuse to write
-  one variant's image to the other (the GD32 image to an Artery radio, or the reverse).
+  one variant's image to the other (the GD32 image to an AT32 radio, or the reverse).
 - A vendor firmware set is a `.CDD` (the image), a `.CDI` (278-byte entries: name, address, length, offset) and a
   `.spi` (the model names). The application's address in the `.CDI` is the image's flash address.
 - The application's own `UPDATE` answer (a `PROGRAM` session) writes fonts and icons to the NAND only; the firmware
@@ -999,9 +999,9 @@ The order to check it in on a radio, with the diagnostics lines and what to chan
 | Bluetooth | PTT and keys from the module's lines (3.7, `CONFIG_BT_PTT`); written, the line parser host tested, untested on the radio. Pairing, audio and the module's settings not written |
 | DMR on side B | not written: what is missing is listed below |
 | VOX | chip 0's voice amplitude as the microphone level (5.6); written, untested on the radio. The register and its scale are inferred from the BK4819 map |
-| APRS receive | PC0 sampled at 9600 Hz into the core's demodulator (3.4); written, the sample path host tested with the demodulator, untested on the radio. Off on the GD32 builds: it takes about 11.6 KB of RAM (the demodulator, the station list, the iGate and the 2 KB sample ring) and about 6.4 KB is free with DMR on. On in the Artery builds (section 10) |
+| APRS receive | PC0 sampled at 9600 Hz into the core's demodulator (3.4); written, the sample path host tested with the demodulator, untested on the radio. Off on the GD32 builds: it takes about 11.6 KB of RAM (the demodulator, the station list, the iGate and the 2 KB sample ring) and about 6.4 KB is free with DMR on. On in the AT32 builds (section 10) |
 | APRS transmit | the tones on PB9 into chip 0's audio input with the DTMF set-up (5.3); written, the tones host tested through the core's demodulator, untested on the radio. The deviation per APRS level is inferred |
-| Artery variant | `boards/d578uva` on the AT32F43x platform (section 10): builds, untested on the radio |
+| AT32 variant | `boards/d578uva` on the AT32F43x platform (section 10): builds, untested on the radio |
 
 DMR on side B needs facts not in the stock code's static analysis or the documents, and a model the core doesn't have:
 
@@ -1054,15 +1054,15 @@ Open on the radio:
 - GPS: that bit 2 of chip 0's register 0x25 powers the module, which module it is (CASIC or MTK), that a CASIC
   module sends `$xxTXT` after power-on and takes the set-up, and an MTK module's default output at 9600 baud (3.6).
 
-## 10. Artery builds
+## 10. AT32 builds
 
-The installers refuse the Artery variant until a first radio has booted the image (`blocked` in the variants of
+The installers refuse the AT32 variant until a first radio has booted the image (`blocked` in the variants of
 `boards/d578uv/board.toml` and `boards/d578uva/board.toml`). The original firmware can still be written back. The first
 radio's bring-up removes that field in its own tree.
 
-The Artery radios run `boards/d578uva`: the same radio code (`boards/d578uv`) built on the AT32F43x platform
+The AT32 radios run `boards/d578uva`: the same radio code (`boards/d578uv`) built on the AT32F43x platform
 (`platform/at32f43x`). The board code reaches the MCU through `mcu_io.h`, which each platform provides with the same
-names. Facts below are from the PRO V1.21 Artery image; `(inferred)` marks a register bit's meaning taken from how
+names. Facts below are from the PRO V1.21 AT32 image; `(inferred)` marks a register bit's meaning taken from how
 the image uses it, without the reference manual.
 
 | Item | Value |

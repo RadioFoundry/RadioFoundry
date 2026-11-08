@@ -13,7 +13,7 @@ const key = (id) => id.replace(/-/g, "_");	// a probe id or a via word as an i18
 // for the port), onFound(found) (a probe named the variant: found as detectVariant returns it), nextHint(found) (an
 // i18n key for what the user does next, or null), log(line), showBlocked (say here that a found variant has no image;
 // false when the caller says so itself)}.
-// Returns the element: the button, its hint and where the outcome shows
+// Returns the parts for the caller to lay out: {go (the button), hint (what to do before pressing it), say (the outcome)}
 export function detectControl({ radio, board, fb, ids, open, onFound, nextHint = () => null, log = () => {}, showBlocked = true }) {
 	const say = h("div");
 	const fill = (...parts) => say.replaceChildren(...parts.filter(Boolean));
@@ -49,6 +49,6 @@ export function detectControl({ radio, board, fb, ids, open, onFound, nextHint =
 			busy = false;
 			go.disabled = false;
 		}
-	}, { quiet: true });
-	return h("div", { class: "detect-variant" }, h("p", { class: "small muted" }, t("flash.detect.hint"), " ", go), say);
+	});
+	return { go, hint: h("p", { class: "small muted" }, t("flash.detect.hint")), say };
 }

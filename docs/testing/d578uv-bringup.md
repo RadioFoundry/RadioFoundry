@@ -4,9 +4,9 @@
 # AT-D578UV bring-up checklist
 
 The AT-D578UV port builds and passes its host tests: `make BOARD=d578uv` for the GD32 radios (`GD_Ver` on the stock
-version screen), `make BOARD=d578uva` for the Artery radios (`AT_Ver`). Nothing has run on a radio yet. This page is
+version screen), `make BOARD=d578uva` for the AT32 radios (`AT_Ver`). Nothing has run on a radio yet. This page is
 the order to try it in, what each stage proves, and what to change when it doesn't work. Every row names the knob in
-the source that the likely failure points at. Both builds share `boards/d578uv`; the Artery build swaps the platform
+the source that the likely failure points at. Both builds share `boards/d578uv`; the AT32 build swaps the platform
 underneath (`platform/at32f43x`, [hardware-d578uv.md](../spec/hardware-d578uv.md) section 10), so a fix in the
 board's code serves both.
 
@@ -80,9 +80,9 @@ high and nothing keys the transmitter. Transmit only from stage 7 on, at the low
 | Check | Pass | If not |
 | --- | --- | --- |
 | The radio stays on after the power key is let go | the hold line PC3 is set first in `board_early_init` | Nothing ran: the vector table at 0x08006000, `APP_BASE` in `board.mk`; the bootloader may check the image (re-enter update mode, write the stock set) |
-| USB enumerates, the debug link answers `version` | the clocks, USB (PA11/PA12) | GD32: the USB clock prescaler (/2.5 from 120 MHz, `platform/gd32f30x/clock.c`). Artery: the HICK 48 MHz path and ACC (section 10) |
+| USB enumerates, the debug link answers `version` | the clocks, USB (PA11/PA12) | GD32: the USB clock prescaler (/2.5 from 120 MHz, `platform/gd32f30x/clock.c`). AT32: the HICK 48 MHz path and ACC (section 10) |
 | `rfoundry_debug.py crash` empty | the crash log (KEPT RAM region) survived the boot | a report: `tools/crash_decode.py`. A record that vanishes on a warm reset means the bootloader clears the top of SRAM ([crash-log.md](../spec/crash-log.md) 2.4) |
-| Artery: the image runs at all | the clock tree and the flash divider | the PWC LDO and flash divider order (section 10, "Clock"); 0x40023C60 |
+| AT32: the image runs at all | the clock tree and the flash divider | the PWC LDO and flash divider order (section 10, "Clock"); 0x40023C60 |
 
 ## 2. Display and backlight
 
@@ -187,5 +187,5 @@ first word erased (section 9): the stub's interlock relies on it.
 
 ## 12. After the bench
 
-Record each result in [hardware-d578uv.md](../spec/hardware-d578uv.md) section 9 (and section 10 for the Artery
+Record each result in [hardware-d578uv.md](../spec/hardware-d578uv.md) section 9 (and section 10 for the AT32
 radio) and in this page's Status, and move the radio's `[status]` in `boards/d578uv/board.toml` on.

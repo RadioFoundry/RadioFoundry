@@ -127,7 +127,7 @@ const findButton = (e, text) => {
 test("connect: Auto-detect asks the radio, picks its variant and keeps the update mode session", async () => {
 	const p = page(models[runs][0]);
 	const box = ui.connectView();
-	const go = findButton(box, "Auto-detect");
+	const go = findButton(box, "Auto-Detect Now");
 	assert.ok(go, "the Auto-detect button beside the variant chooser");
 	await press(go);
 	await sleep(100);
@@ -140,20 +140,23 @@ test("connect: Auto-detect asks the radio, picks its variant and keeps the updat
 test("build: a variant with no firmware is refused, and Auto-detect closes the port it opened", async () => {
 	const p = page(models[other][0]);
 	const gate = ui.buildGate(() => {});
-	assert.equal(gate.refused(), false, "not knowing the variant is allowed");
+	assert.ok(gate.need(), "the variant is required");
+	assert.equal(gate.refused(), false);
 	p.S.atChosen = other;
+	assert.equal(gate.need(), null);
 	assert.equal(gate.refused(), true);
 	assert.match(gate.view().textContent, /can't be installed|does not support|needs the/);
 	p.S.atChosen = runs;
 	assert.equal(gate.refused(), false);
 	p.S.atChosen = "NOT-THIS-RADIO";
-	assert.equal(gate.refused(), false, "a pick from another radio doesn't count");
+	assert.equal(gate.refused(), false);
+	assert.ok(gate.need(), "a pick from another radio doesn't count");
 	p.S.atChosen = null;
 	let drawn = 0, closed = 0;
 	const stream = p.S.fakeAnytone.stream, close = stream.close;
 	stream.close = async () => { closed++; return close?.call(stream); };
 	const found = ui.buildGate(() => { drawn++; });
-	await press(findButton(found.view(), "Auto-detect"));
+	await press(findButton(found.view(), "Auto-Detect Now"));
 	await sleep(100);
 	assert.equal(p.S.atChosen, other);
 	assert.equal(found.refused(), true);
