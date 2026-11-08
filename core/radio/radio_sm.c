@@ -4898,7 +4898,8 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 
 #if CONFIG_DMR
 	bool modem_voice = (board.caps & CAP_MODEM_VOICE) != 0;
-	sm->codec = modem_voice || (board.vocoder != NULL && board.vocoder->present != NULL && board.vocoder->present());
+	sm->codec = modem_voice ? board.modem_codec == NULL || board.modem_codec() != NULL :
+			board.vocoder != NULL && board.vocoder->present != NULL && board.vocoder->present();
 	sm->view.dmr.codec = sm->codec;
 	sm->hs_power = default_power();
 	dmr_call_init(board.dmr);	// board.dmr NULL: DMR channels receive nothing and refuse PTT

@@ -91,6 +91,10 @@ typedef struct {
 	const hal_dmr_modem_t *dmr;	// NULL on FM-only radios
 	const hal_audio_t *audio;
 	const hal_vocoder_t *vocoder;
+	// Optional, a board whose modem plays the voice (CAP_MODEM_VOICE, no vocoder): the modem's voice code the board
+	// keeps in flash, checked. Its profile id (VERSION's codec=, docs/spec/debuglink.md 3.1) when the check passes,
+	// NULL when it fails (erased, damaged); then DMR voice can't run. NULL hook: the modem holds its own
+	const char *(*modem_codec)(void);
 	const hal_stream_t *host_port;	// the link to a host computer (MMDVM hotspot, CPS); NULL if none
 	// Optional: line i of a board diagnostics page (raw readings for bench checks); false past the last line
 	bool (*diag_line)(uint8_t i, char *buf, uint8_t len);
@@ -132,6 +136,17 @@ typedef struct {
 } board_t;
 
 extern const board_t board;
+
+// VERSION's codec= (docs/spec/debuglink.md 3.1): the vocoder's check, or where the modem plays the voice the board's
+// check of the modem's code (board_t.modem_codec, set in DMR builds only): its profile id, or absent. none without either
+static inline const char *board_codec_id(void)
+{
+	if (board.vocoder == NULL && board.modem_codec != NULL) {
+		const char *id = board.modem_codec();
+		return id != NULL ? id : "absent";
+	}
+	return hal_vocoder_id(board.vocoder);
+}
 
 // The radio runs from a battery (every handheld). False for a mobile on a fixed supply (CAP_NO_BATTERY)
 static inline bool board_has_battery(void)

@@ -156,9 +156,10 @@ profile id (`<profile>-s11` on an STM32F4 radio: the descriptor is valid and the
 every codec window match the codec as the merge places it, code in sector 11, as
 [codec-placement.md](codec-placement.md) "STM32 radios" describes;
 `<board id>-<build>` on an HR_C7000 radio: the codec slot is valid, and the build is the version of the stock file it
-was carved from), `absent` (the board has a
-vocoder but the check failed: erased, another stock version, damaged), `present` (a valid codec whose board names no
-profile) or `none` (built without DMR). It describes flash, not whether voice can run at that moment: after the
+was carved from; on a board whose modem plays the voice (`CAP_MODEM_VOICE`), the board's check of the modem's code it
+keeps in flash, `board_t.modem_codec`), `absent` (the board has a
+vocoder or modem code but the check failed: erased, another stock version, damaged; DMR voice then doesn't run and
+`dmr.codec` is 0), `present` (a valid codec whose board names no profile) or `none` (built without DMR). It describes flash, not whether voice can run at that moment: after the
 HR_C7000 stub entry has stopped the codec (its RAM is the stub's), the profile id is still reported. The first request after boot may take some 20 ms longer while the board
 computes the CRCs. It reads flash only. `tools/rfoundry` asks for it before flashing to decide whether the codec
 sectors can be left alone ([docs/dev/release.md](../dev/release.md)). A build from before the STM32 codec moved

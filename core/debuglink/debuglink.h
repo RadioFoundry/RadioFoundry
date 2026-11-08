@@ -87,7 +87,7 @@ static inline bool debuglink_is_feature_op(uint8_t op)
 	       op == DL_OP_DMR_FIELDS || op == DL_OP_VFO_COPY || op == DL_OP_VOICE_TEST || op == DL_OP_DTMF ||
 	       op == DL_OP_TX_LIMIT || op == DL_OP_TX_DRIVE;
 }
-// VERSION's codec= (hal_vocoder_id; the name the host tests use)
+// VERSION's codec= for a vocoder (hal_vocoder_id; the name the host tests use); the board's is board_codec_id()
 static inline const char *debuglink_codec_id(const hal_vocoder_t *v)
 {
 	return hal_vocoder_id(v);
