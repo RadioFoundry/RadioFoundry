@@ -232,9 +232,12 @@ def test_split_state_cleanup(radio):
     hz = int(radio.core()["rx_hz"])
     before = radio.link.split_view()
     with radio.released() as port:
-        # The split host sets the RX half (no RF: it never transmits) with the default lease and goes away. DTR stays
-        # clear, so the radio never sees the port close, as on a radio without DTR (a UART): only the lease ends it
+        # The split host sets the RX half (no RF: it never transmits) with the default lease and goes away. The port
+        # stays open and DTR clear, so the radio never sees it close, as on a radio without DTR (a UART): only the
+        # lease ends it. The next host takes the open port: a close and reopen through a network serial hub, which
+        # opens the device only while a client is connected, dropped DTR and ended the role at once
         r = sdh.Radio(port, "split host", dtr=False)
+        handoff = None
         try:
             need_role(r, sdh, sdh.ROLE_RX)
             sdh.setup_half(r, hz, hz, 0, 1)
@@ -242,9 +245,11 @@ def test_split_state_cleanup(radio):
             t_last, _, res, d = r.split(sdh.SUB_STATUS)       # its last 0xD6 request: the lease runs from here
             assert res == 0
             held = sdh.parse_status(d)
+            handoff = r.detach()
         finally:
-            r.close()
-        s = sdh.Radio(port, "standard host", dtr=False)
+            if handoff is None:
+                r.close()
+        s = sdh.Radio(port, "standard host", dtr=False, ser=handoff)
         try:
             # Its start-up comes while the dead host's role still holds: the standard commands keep their meaning in a
             # role (2.4). Its polls then show the RX half (no space, 4.2) until the lease runs out, then the hotspot

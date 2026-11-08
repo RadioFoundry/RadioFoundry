@@ -359,11 +359,14 @@ def busy_mask_from_uplink(open_calls, cmd, control):
 class Radio:
     """One radio's MMDVM port: a reader thread, replies matched by command (and 0xD6 sub-command)."""
 
-    def __init__(self, port, name="radio", log=None, dtr=True, on_uplink=None):
+    def __init__(self, port, name="radio", log=None, dtr=True, on_uplink=None, ser=None):
+        """ser: a port another Radio gave up with detach(), still open: a second host on it without a close"""
         self.name = name
         self.on_uplink = on_uplink      # called from the reader thread with (host µs, frame) for each uplink frame
         self.wlock = threading.Lock()   # one frame at a time on the port (the reader thread may send too)
-        if str(port).startswith("udp:"):        # udp:<radio IP>[:port], a radio in USB network mode
+        if ser is not None:
+            self.ser = ser
+        elif str(port).startswith("udp:"):        # udp:<radio IP>[:port], a radio in USB network mode
             from rfoundry_debug import UdpPort
             host, _, udp_port = port[4:].partition(":")
             self.ser = UdpPort(host, int(udp_port or 3334))
@@ -472,10 +475,14 @@ class Radio:
         t_rx, t_tx = struct.unpack_from("<II", d, 8)
         return sync.add(t1, t4, t_rx, t_tx)
 
-    def close(self):
+    def detach(self):
+        """Stop this host and give its port back open, as a host that dies without closing it (no DTR edge)"""
         self.stop = True
         self.t.join(timeout=1)
-        self.ser.close()
+        return self.ser
+
+    def close(self):
+        self.detach().close()
 
 
 def require_split(radio):
