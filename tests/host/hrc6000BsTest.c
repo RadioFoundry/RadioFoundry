@@ -337,7 +337,8 @@ static bool fake_raw(const dmr_tx_burst_t *b, const dmr_cach_t *cach, int8_t ts,
 }
 
 // Without a builder, or with variant 1, the chip frames (0x10 stays 0x6E); with one, variants 0 and 255 put the chip
-// in the physical layer mode (0x10 = 0x66), 255 with its raw pairs; all of it restored at unkey / stop
+// in the physical layer mode (0x10 = 0x66), 255 with its raw pairs. The mode is set at start, ahead of the slot
+// clock, and not written again until stop: a 0x10 write at a key-up moved the timeslot interrupt off its clock
 static void test_variants(void)
 {
 	static const struct { uint8_t v; bool raw; uint8_t r10; } want[] = {
@@ -349,20 +350,20 @@ static void test_variants(void)
 		start_raw = want[k].raw ? fake_raw : NULL;
 		start(want[k].v);
 		start_raw = NULL;
+		CHECK(last_write(HRC_PAGE_SYS, 0x10) == want[k].r10);
 		hrc6000_bs_key(&eng, true);
 		nx = 0;
 		do {
 			tick();
 		} while (!bs.on_air);
-		CHECK(last_write(HRC_PAGE_SYS, 0x10) == want[k].r10);
+		CHECK(count_writes(HRC_PAGE_SYS, 0x10, -1) == 0);
 		if (want[k].v == HRC6000_BS_VARIANT_RAW) {
 			CHECK(last_write(HRC_PAGE_SYS, 0x0D) == 0x5A);
 			CHECK(last_write(HRC_PAGE_SYS, 0x0E) == 0xA5);
 		}
 		hrc6000_bs_key(&eng, false);
-		nx = 0;
 		tick();
-		CHECK(last_write(HRC_PAGE_SYS, 0x10) == 0x6E);
+		CHECK(count_writes(HRC_PAGE_SYS, 0x10, -1) == 0);
 		hrc6000_bs_stop(&eng);
 		CHECK(last_write(HRC_PAGE_SYS, 0x10) == 0x6E);
 	}
@@ -679,6 +680,17 @@ static void test_restart(void)
 		CHECK(eng.tick == ticks + 1u);
 		tick();
 		CHECK(hrc6000_bs_slot_clock(&eng, &c, &t, &ts) && ts == 3 - want);
+
+		// The first interrupt a slot late (seen in the physical layer mode, 25-31 ms after the write): it is the
+		// slot after the one asked for, numbered by the time since the write
+		now_step = 7;
+		CHECK(hrc6000_bs_restart(&eng, t_us + 10000u, want));
+		now_step = 0;
+		t_us += 31200;
+		hrc6000_dmr_isr_timeslot(&eng);
+		CHECK(hrc6000_bs_slot_clock(&eng, &c, &t, &ts) && ts == 3 - want);
+		tick();
+		CHECK(hrc6000_bs_slot_clock(&eng, &c, &t, &ts) && ts == want);
 		hrc6000_bs_stop(&eng);
 	}
 }

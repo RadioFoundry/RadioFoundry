@@ -725,8 +725,20 @@ before.
 timeslot interrupt comes 1.18-1.24 ms after that write and every 30 ms from it, and none comes during the wait. Clearing
 TxEn and RxEn (0x40 = 0x03) or 0xC3 then 0xE3 without the sync drop stopped the timer only sometimes: interrupts kept
 coming during the wait and the old phase came back. The driver takes no interrupt while it waits and gives the
-requested slot to the first boundary after the write; the diagnostics line `bs` shows the restarts (`rs`), interrupts
+requested slot to the boundary the time since the write names (a slot per 30 ms, from 15 ms on); the diagnostics line `bs` shows the restarts (`rs`), interrupts
 during waits (`ri`) and the first three after the last write (`r1`-`r3`, µs).
+
+**The layer mode for the whole session.** 0x10 (the physical layer mode of our framing) is written at the start,
+ahead of `0x40 = 0xE3`, and back to 0x6E at the stop, never at a key-up. Written at the first keyed slot, it moved the
+timeslot interrupt: the next one came 12.9 or 19.1 ms after the last, and every one after kept 30 ms from it. The
+clock was then 12-17 ms off the ALIGN grid for the whole call, and the 15 ms same-slot filter counted one slot too
+many or too few, so the call went out in the other grid slot (4 of 4 calls). With the mode set from the
+start, keyed interrupts stay within 0.6 ms of the grid (4 of 4). In this mode the restart's first interrupt comes
+22-30 ms after the write instead of 1.2 ms, numbered as the slot after the one named for the write. Writing 0x10 = 0x66 just before or just after the
+`0xE3` write, or in layer 2 for the stop and sync drop, changed nothing (25-30 ms); switched at the new clock's
+first boundary, the next interrupts came 64-89 ms after the write. So one restart lands up to a few ms off at random, and
+learning the delay doesn't help: the core snaps again until a landing is inside the aligned bound
+(`split-duplex.md` 3.8), and an ALIGN to a grid the clock is already on restarts nothing.
 
 **No slewing.** The manual lists no slot length trim, so the driver offers no `bs_slew` and INFO capability bit 2
 stays clear: a keyed TX half reports its drift (ALIGN flag 10) and is re-aligned by a restart at the next unkey.
