@@ -136,6 +136,14 @@ static void ui_task(void *arg)
 		if (rests)
 			rested = hal_millis();
 		if (got) {
+			// The radio's view may have changed while this task waited (a channel change from the debug link or
+			// the radio core): the key acts on the view as it is now, not as it was up to a wait ago
+			uint32_t s = radio_view_serial();
+			if (s != serial) {
+				serial = s;
+				radio_get_view(&view);
+				ui_app_set_view(&view);
+			}
 			bool was_off = backlight_now == 0;
 			set_backlight(ui_app_brightness());
 			if (!was_off || ev.action == ACT_PTT || ev.action == ACT_MONITOR)
