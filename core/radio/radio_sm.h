@@ -137,7 +137,7 @@ typedef enum {
 	RREQ_HS_LEAVE,		// hotspot: back to the channel
 	RREQ_SCAN,		// arg: radio_scan_cmd_t, arg2: dual watch position
 	RREQ_SCAN_VFO,		// arg: low Hz, arg2: high Hz (both 0: the VFO's band)
-	RREQ_BEEP,		// arg: beep_t
+	RREQ_BEEP,		// arg: beep_t, arg2: delay in ms (0 = now)
 	RREQ_TONE_BURST,	// arg: 1 on, 0 off; arg2: the burst's longest time in ms (0 = until off or the TX time-out)
 	RREQ_SETTINGS,		// radio_task.c: the pending settings were copied with radio_sm_set_settings
 	RREQ_POWER_OFF,		// switching off: ARS deregistration (radio_power_off_busy until done); arg 1 = canceled
@@ -312,6 +312,10 @@ typedef struct {
 	batt_t batt;
 	uint32_t batt_ms;		// last battery reading
 	uint32_t tx_end_ms;		// end of the last transmission (battery readings wait)
+#if CONFIG_BEEP
+	uint8_t beep_due;		// a beep asked for later (RREQ_BEEP arg2), BEEP_NONE = none
+	uint32_t beep_due_ms;		// when it plays
+#endif
 #if CONFIG_FM_TX_TONES
 	bool burst_keyed;		// the 1750 Hz burst keyed the transmitter (not PTT)
 	uint32_t burst_end_ms;		// the burst ends by itself at this time (RREQ_TONE_BURST arg2), 0 = no limit

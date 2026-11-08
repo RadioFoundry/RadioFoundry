@@ -2829,6 +2829,11 @@ bool radio_get_dual(radio_dual_ref_t ref[2], uint8_t *sel, uint8_t *at)
 }
 void radio_req_roam(uint8_t cmd) { req(RREQ_ROAM, cmd); }
 void radio_req_beep(uint8_t b) { req(RREQ_BEEP, b); }
+void radio_req_beep_after(uint8_t b, uint32_t delay_ms)
+{
+	radio_req_t r = { RREQ_BEEP, b, delay_ms };
+	radio_sm_request(&sm, &r, now);
+}
 void radio_req_vibrate(uint8_t v) { req(RREQ_VIBRATE, v); }
 void radio_req_dmr_target(uint32_t id, bool p) { req(RREQ_DMR_TARGET, (int32_t)((id & 0xFFFFFFu) | (p ? 1u << 24 : 0))); }
 void radio_req_dmr_target_clear(void) { req(RREQ_DMR_TARGET_CLEAR, 0); }

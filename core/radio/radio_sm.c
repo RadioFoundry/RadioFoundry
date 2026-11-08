@@ -5418,9 +5418,18 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		break;
 #endif
 	case RREQ_BEEP:
-		if (req->arg != BEEP_KEY || sm->set.key_beep) {
-			beep(sm, (uint8_t)req->arg);
+		if (req->arg == BEEP_KEY && !sm->set.key_beep) {
+			break;
 		}
+#if CONFIG_BEEP
+		if (req->arg2 != 0) {	// later (a speaker test on a radio whose cable mutes the speaker): one at a time
+			sm->beep_due = (uint8_t)req->arg;
+			sm->beep_due_ms = now_ms + req->arg2;
+			break;
+		}
+		sm->beep_due = BEEP_NONE;
+#endif
+		beep(sm, (uint8_t)req->arg);
 		break;
 #if CONFIG_VIBRATE
 	case RREQ_VIBRATE:
@@ -5753,6 +5762,11 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR
 	shared = ambeVoiceStreaming();
 #endif
+	if (sm->beep_due != BEEP_NONE && (int32_t)(now_ms - sm->beep_due_ms) >= 0) {
+		uint8_t b = sm->beep_due;
+		sm->beep_due = BEEP_NONE;
+		beep(sm, b);
+	}
 	beep_service(shared, now_ms);
 #endif
 #if CONFIG_VIBRATE

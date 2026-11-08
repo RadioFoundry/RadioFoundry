@@ -179,6 +179,7 @@ ROAM_CMDS = {"zone_off": 0, "zone_on": 1, "zone_toggle": 2, "now": 3, "lock": 4,
 SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6, "select": 7}
 BEEPS = {"key": 1, "error": 2, "tx_permit": 3, "tx_deny": 4, "call_end": 5, "tot_warn": 6, "battery_low": 7,
          "battery_crit": 8, "scan_hold": 9}
+SWEEP = 13      # the speaker test's sweep (beep.h BEEP_SWEEP): not a beep a user hears, so not in BEEPS
 VIBES = {"message": 1, "call": 2, "emergency": 3}
 SETTINGS = {"tot_s": 1, "tot_warn_s": 2, "bcl": 3, "roger_beep": 4, "tx_inhibit": 5, "scan_resume": 6,
             "scan_hold_s": 7, "scan_delay_ms": 8, "scan_dwell_ms": 9, "scan_priority": 10, "beep_level": 11,
@@ -884,8 +885,11 @@ class DebugLink:
         """Band scan of the VFO from lo to hi in its step."""
         self.radio(OP_SCAN_VFO, struct.pack("<II", int(lo_hz), int(hi_hz)))
 
-    def beep(self, which):
-        self.radio(OP_BEEP, bytes([BEEPS[which] if isinstance(which, str) else which]))
+    def beep(self, which, delay_s=0):
+        """A beep by name (BEEPS, or "sweep" for the speaker test), delay_s (0-255) seconds from now: on a radio whose
+        cable mutes the speaker, time to take the cable out first."""
+        b = SWEEP if which == "sweep" else BEEPS[which] if isinstance(which, str) else which
+        self.radio(OP_BEEP, bytes([b, delay_s]) if delay_s else bytes([b]))
 
     def vibrate(self, which):
         """A vibration pattern on the board's motor (CONFIG_VIBRATE): message | call | emergency."""
@@ -1358,8 +1362,8 @@ def cmd_radio(link, a):
             link.scan(args[0] if args else "toggle", num(1) if args[:1] == ["dual"] else None)
     elif op == "scan-vfo":            # scan-vfo LO_MHZ HI_MHZ
         link.scan_vfo(round(num(0, float) * 1e6), round(num(1, float) * 1e6))
-    elif op == "beep":                # beep key|error|tx_permit|...
-        link.beep(args[0] if args else "key")
+    elif op == "beep":                # beep key|error|tx_permit|...|sweep [DELAY_S]
+        link.beep(args[0] if args else "key", num(1) if len(args) > 1 else 0)
     elif op == "vibrate":             # vibrate message|call|emergency
         link.vibrate(args[0] if args else "message")
     elif op == "copy-vfo":            # the channel's settings into the VFO, and open it

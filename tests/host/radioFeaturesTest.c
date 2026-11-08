@@ -4,6 +4,7 @@
 // then scan, TX time-out warning, busy channel lockout, roger beep, 1750 Hz burst, VOX, battery monitor, receiver
 // battery saving and the DMR beeps through radio_sm.c, against a fake board whose receiver hears signals per frequency
 #include <stdio.h>
+#include <math.h>
 #include <string.h>
 // The caps change at run time here (a radio without a battery): defined writable, the core sees it const
 #define board board_as_declared
@@ -652,6 +653,59 @@ static void test_battery_module(void)
 
 // ---- the beep engine on its own ----
 
+// The speaker test's sweep (BEEP_SWEEP): silence with the route up, then a rising tone with no jump between samples, from
+// BEEP_SWEEP_LO_HZ to BEEP_SWEEP_HI_HZ, then silence again
+static void test_beep_sweep(void)
+{
+	memset(&aud, 0, sizeof(aud));
+	beep_init(&fake_audio);
+	const beep_seg_t *segs;
+	CHECK(beep_pattern(BEEP_SWEEP, &segs) == 3 && segs[0].hz == 0 && segs[1].hz == BEEP_HZ_SWEEP && segs[2].hz == 0);
+	uint32_t total = 0;
+	for (int i = 0; i < 3; i++) {
+		total += segs[i].ms;
+	}
+	beep_play(BEEP_SWEEP, 100, false);
+	static int16_t out[(4600 / 20 + 20) * AUDIO_BLOCK_SAMPLES];
+	int n = 0;
+	int16_t blk[AUDIO_BLOCK_SAMPLES];
+	while (beep_busy() && n + AUDIO_BLOCK_SAMPLES <= (int)(sizeof out / sizeof out[0])) {
+		beep_audio_block(mic, blk, NULL);
+		memcpy(&out[n], blk, sizeof blk);
+		n += AUDIO_BLOCK_SAMPLES;
+	}
+	CHECK(!beep_busy() && aud.pcm);
+	CHECK(n >= (int)(total * 8) && n <= (int)(total * 8) + 20 * AUDIO_BLOCK_SAMPLES);	// its length and the lead-in
+	// The first sound: after the lead-in and the 400 ms of silence
+	int first = 0;
+	while (first < n && out[first] == 0) {
+		first++;
+	}
+	CHECK(first >= 400 * 8 && first < 400 * 8 + 11 * AUDIO_BLOCK_SAMPLES);
+	// Zero crossings in 20 ms near each end: about 2 x 20 ms x the frequency there
+	int lo = 0, hi = 0;
+	int a = first + 400, b = first + 4000 * 8 - 600;
+	for (int i = a; i < a + 160; i++) {
+		lo += (out[i] < 0) != (out[i + 1] < 0);
+	}
+	for (int i = b; i < b + 160; i++) {
+		hi += (out[i] < 0) != (out[i + 1] < 0);
+	}
+	CHECK(lo >= 5 && lo <= 9);		// near 160 Hz
+	CHECK(hi >= 145 && hi <= 155);		// near 3780 Hz
+	// Phase continuous: each sample follows from the two before it as a sine at the sweep's frequency there would
+	// (x[n+1] = 2 cos(w) x[n] - x[n-1]), within the sine table's
+	// interpolation error
+	double worst = 0;
+	for (int i = first + 16 + 1; i < first + 4000 * 8 - 16; i++) {
+		double f = BEEP_SWEEP_LO_HZ + (double)(BEEP_SWEEP_HI_HZ - BEEP_SWEEP_LO_HZ) * (i - first) / (4000 * 8);
+		double pred = 2 * cos(2 * M_PI * f / 8000) * out[i] - out[i - 1];
+		double e = fabs(out[i + 1] - pred);
+		worst = e > worst ? e : worst;
+	}
+	CHECK(worst < 1500);	// about 450 at the top of the sweep; a jump misses by up to twice the amplitude
+}
+
 static void test_beep_module(void)
 {
 	memset(&aud, 0, sizeof(aud));
@@ -662,7 +716,7 @@ static void test_beep_module(void)
 	CHECK(beep_pattern(BEEP_NONE, &segs) == 0 && beep_pattern(BEEP_COUNT, &segs) == 0);
 	for (int b = BEEP_KEY; b < BEEP_COUNT; b++) {
 		uint8_t n = beep_pattern((beep_t)b, &segs);
-		CHECK(n >= 1 && n <= BEEP_SEGS_MAX && segs[0].hz != 0);
+		CHECK(n >= 1 && n <= BEEP_SEGS_MAX && (segs[0].hz != 0 || b == BEEP_SWEEP));	// the sweep starts silent
 	}
 
 	// Level 0 or BEEP_NONE: nothing
@@ -2231,6 +2285,21 @@ static void test_tot_and_beeps(void)
 	req(RREQ_BEEP, BEEP_ERROR);
 	beep_get_stats(&b1);
 	CHECK(b1.played == b0.played + 1);
+	// A beep for later (the debug link's delay, a speaker test): nothing now, once when its time comes, and a second
+	// request before then replaces the first
+	run(500);
+	beep_get_stats(&b0);
+	req2(RREQ_BEEP, BEEP_TX_DENY, 3000);
+	req2(RREQ_BEEP, BEEP_ERROR, 2000);
+	run(1900);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played);
+	run(200);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1);
+	run(3000);
+	beep_get_stats(&b0);
+	CHECK(b0.played == b1.played);
 }
 
 static void set_tot(radio_settings_t *s) { s->tot_s = 60; s->tot_warn_s = 0; s->key_beep = false; }
@@ -3138,6 +3207,7 @@ int main(void)
 	test_scan_engine();
 	test_battery_module();
 	test_beep_module();
+	test_beep_sweep();
 	test_vibe_module();
 	test_zone_scan();
 	test_scan_ptt_and_modes();

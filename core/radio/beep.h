@@ -31,13 +31,19 @@ typedef enum {
 	BEEP_EMERGENCY,		// DMR: someone's emergency heard (alarm or emergency call; core/dmr/dmr_emergency.h)
 	BEEP_MESSAGE,		// a text message arrived (the UI, if Settings > Sound > Message tone)
 	BEEP_TX_PERMIT_SHORT,	// DMR: talk now, played before keying (CAP_BEEP_NOT_ON_AIR): one short tone
+	BEEP_SWEEP,		// speaker test (debug link only): a 4 s sweep, BEEP_SWEEP_LO_HZ to BEEP_SWEEP_HI_HZ
 	BEEP_COUNT
 } beep_t;
 
 typedef struct {
-	uint16_t hz;		// 0 = silence
+	uint16_t hz;		// 0 = silence, BEEP_HZ_SWEEP = the sweep
 	uint16_t ms;
 } beep_seg_t;
+
+// A segment with this hz is a linear sweep from BEEP_SWEEP_LO_HZ to BEEP_SWEEP_HI_HZ over its length, phase continuous
+#define BEEP_HZ_SWEEP		1u
+#define BEEP_SWEEP_LO_HZ	150u
+#define BEEP_SWEEP_HI_HZ	3800u	// the 8 kHz stream's band, short of its 4 kHz edge
 
 typedef struct {
 	uint32_t played;	// patterns started

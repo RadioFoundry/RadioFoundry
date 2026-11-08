@@ -242,7 +242,11 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		if (!CONFIG_BEEP) {
 			return DL_ST_UNAVAILABLE;
 		}
-		radio_req_beep(a[0]);
+		if (len >= 2 && a[1] != 0) {	// the delay in seconds: the cable can come out of a radio it mutes
+			radio_req_beep_after(a[0], (uint32_t)a[1] * 1000u);
+		} else {
+			radio_req_beep(a[0]);
+		}
 		return DL_ST_OK;
 	case DL_OP_VIBRATE:
 		if (len < 1 || a[0] == VIBE_NONE || a[0] >= VIBE_COUNT) {
