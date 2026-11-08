@@ -1279,11 +1279,11 @@ class SdrBench:
 
     def fm_over_start(self, freq, seconds, bw_khz=12.5, audio=False, dtmf=False):
         """The receive board measures FM on freq (MHz) for `seconds` from now, in the background, so the radio can key
-        next: 10 ms blocks for the keyed segments, the audio stream with audio (timed tones, voice figures), the DTMF
+        next: 10 ms blocks for the keyed segments, with audio the timed tones and the audio stream (voice figures), the DTMF
         digits with dtmf. Finish with fm_over_result(); the board's analyzers, no I/Q."""
         job = self.fm_rx_start(freq, seconds, bw=25000 if bw_khz > 12.5 else 16000, block_s=FM_BLOCK_S,
                                squelch_over_db=FM_SQUELCH_DB, streams="audio" if audio else None,
-                               dtmf=True if dtmf else None)
+                               dtmf=True if dtmf else None, tones=True if audio else None)
         job.seconds = float(seconds)
         job.want_audio = audio
         return job
@@ -1301,6 +1301,8 @@ class SdrBench:
         pcm = job.pcm.get("audio")
         if job.want_audio and not pcm:
             skip("bench", f"the bench board {self.api_rx} sent no FM audio stream")
+        if job.want_audio and "tones" not in (done.get("summary") or {}):
+            skip("bench", f"the bench board {self.api_rx} has no tone analyzer: its gateway needs an update")
         return fm_measure.measure(done, job.records, job.header, pcm)
 
     def ssh(self, cmd, timeout=300, check=True):

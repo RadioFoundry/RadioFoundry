@@ -88,12 +88,11 @@ def test_dtmf_twist_after_de_emphasis():
     assert r["dtmf"] == [("5", 1.0, 1.2, 2400, 1.5, round(received_twist(1.5, "5"), 1))]
 
 
-def test_tone_from_the_audio_stream():
+def test_voice_figures_from_the_audio_stream():
     t = np.arange(3 * FS) / FS
     x = 1500.0 * np.sin(2 * np.pi * 1000.0 * t)
     r = fm_measure.measure({}, blocks((50, 250)), HEADER, pcm(x))
     v = r["voice"][0]
-    assert len(r["tones"]) == 1 and abs(r["tones"][0][0] - 1000.0) < 5
     assert abs(v["peak"] - 1500) < 30 and abs(v["rms"] - 1061) < 30
     assert len(v["levels"]) == 40
 
@@ -143,17 +142,13 @@ def test_a_missing_audio_stream_is_a_bench_fault():
     assert e.kind == "bench" and "no FM audio" in str(e)
 
 
-def test_pieces_of_one_tone_are_joined():
-    runs = [(1750.1, 0.37, 0.72, 1251), (1750.0, 0.71, 0.98, 1253), (1749.9, 1.0, 1.4, 1250)]
-    joined = fm_measure.merge_tone_runs(runs)
-    assert len(joined) == 1 and joined[0][1:3] == (0.37, 1.4) and abs(joined[0][0] - 1750.0) < 0.1
-
-
-def test_another_pitch_or_a_pause_is_a_new_run():
-    beep = [(1200.0, 1.99, 2.11, 1207), (900.0, 2.11, 2.21, 1175)]
-    assert fm_measure.merge_tone_runs(beep) == beep
-    apart = [(1750.0, 0.5, 0.8, 1250), (1750.0, 1.0, 1.3, 1250)]
-    assert fm_measure.merge_tone_runs(apart) == apart
+def test_tone_runs_from_the_board():
+    run = {"tone_run": {"hz": 1750.04, "t0": 0.6, "t1": 1.1, "s": 0.5, "dev_hz": 1251.4}}
+    late = {"tone_run": {"hz": 900.0, "t0": 3.5, "t1": 3.6, "s": 0.1, "dev_hz": 1100.0}}
+    t = np.arange(3 * FS) / FS
+    r = fm_measure.measure({}, blocks((50, 250)) + [run, late], HEADER, pcm(0.0 * t))
+    assert r["tones"] == [(1750.0, 0.6, 1.1, 1251), (900.0, 3.5, 3.6, 1100)]
+    assert r["voice"][0]["tones"] == [(1750.0, 0.6, 1.1, 1251)]
 
 
 def test_pieces_of_one_digit_are_joined():

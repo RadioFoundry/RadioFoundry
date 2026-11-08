@@ -5,9 +5,9 @@ radio needed: test_fm_measure.py runs it on made-up records. SdrBench.fm_over_re
 assert on it.
 
 The board demodulates: its block records give the keyed segments, its summary the carrier, deviation and sub-audio,
-its digit records the DTMF. Only the timed audio figures come from the audio stream on this side (the board's
-filtered audio, about 16 kS/s of demodulated 300-3000 Hz audio, never I/Q): the steady tone runs and the voice band's
-peak and rms, each per segment, with the voice band's rms every 50 ms.
+its digit records the DTMF, its tone_run records the steady tones. Only the voice band's figures come from the audio
+stream on this side (the board's filtered audio, about 16 kS/s of demodulated 300-3000 Hz audio, never I/Q): its peak
+and rms per segment, and its rms every 50 ms.
 
 Times are seconds from the job's first sample (the blocks' `t`).
 """
@@ -25,7 +25,6 @@ BRIDGE_S = 0.05          # a drop-out shorter than this doesn't end a segment
 DTMF_BRIDGE_S = 0.03     # a shorter break in one digit is no new key press: a click on a weak signal, or the silence
                          # (about 20 ms) a modem's tone generator leaves every 510 ms of a held digit. Under the 40 ms
                          # a DTMF decoder needs to see a repeat
-SAME_TONE_HZ = 15.0      # two runs this close in pitch can be one tone
 LEVEL_STEP_S = 0.05
 
 
@@ -63,20 +62,6 @@ def segments_of(blocks):
     return out
 
 
-def merge_tone_runs(runs):
-    """tone_runs()'s runs, in time order, with the pieces of one tone joined: on a weak signal a click breaks a steady
-    tone into runs that touch or overlap. A pause longer than BRIDGE_S, or another pitch, stays a new run."""
-    out = []
-    for f, a, b, d in runs:
-        if out and abs(out[-1][0] - f) <= SAME_TONE_HZ and a - out[-1][2] <= BRIDGE_S:
-            f0, a0, b0, d0 = out[-1]
-            n0, n = b0 - a0, b - a
-            out[-1] = ((f0 * n0 + f * n) / (n0 + n), a0, max(b0, b), (d0 * n0 + d * n) / (n0 + n))
-        else:
-            out.append((f, a, b, d))
-    return out
-
-
 def merge_dtmf(digits):
     """The board's digits, in time order, with the pieces of one key press joined: on a weak signal a click splits a
     digit. The same digit after a pause longer than DTMF_BRIDGE_S is a new press (the radios leave at least 40 ms)."""
@@ -95,16 +80,12 @@ def merge_dtmf(digits):
 def _voice(x, fs, seg):
     """One segment's voice band figures from its audio x (Hz of deviation, sample 0 at t0 of the stream)."""
     import numpy as np
-    from sdr_fm_check import tone_runs
     t0, t1 = seg
     e0, e1 = int((t0 + AUDIO_DELAY_S) * fs), min(int((t1 + AUDIO_DELAY_S) * fs), len(x))
-    out = {"start": t0, "len": round(t1 - t0, 3), "tones": []}
+    out = {"start": t0, "len": round(t1 - t0, 3)}
     if e1 - e0 < int(0.2 * fs):
         return out
     whole = x[e0:e1]
-    # tones and levels over the whole segment, edges included (a roger beep sits in its last 200 ms)
-    runs = merge_tone_runs(tone_runs(whole, fs, t0))
-    out["tones"] = [(round(f, 1), round(a, 3), round(b, 3), round(d)) for f, a, b, d in runs]
     w = int(LEVEL_STEP_S * fs)
     out["levels"] = [float(np.std(whole[i:i + w])) for i in range(0, len(whole) - w + 1, w)]
     v = np.asarray(x[int((t0 + EDGE_S + AUDIO_DELAY_S) * fs):int((t1 - EDGE_S + AUDIO_DELAY_S) * fs)], float)
@@ -117,7 +98,7 @@ def _voice(x, fs, seg):
 
 def measure(done, records, header=None, audio=None):
     """The report of one job: its done record, its records, its header and the audio stream's int16 LE bytes (None: no
-    tones, voice figures or levels). Keys: segments, spans [(t0, t1)], levels [dBFS, one per segment], carrier_hz (the
+    voice figures or levels). Keys: segments, spans [(t0, t1)], levels [dBFS, one per segment], carrier_hz (the
     board's mean offset, its crystal taken out), freq_tol_hz, deviation, ctcss_hz / ctcss_dev_hz or dcs / dcs_codes /
     dcs_dev_hz / dcs_turnoff (a bool: the board heard the 134.4 Hz turn-off tone for an eighth of a second), sub (the
     board's as it is), track [(t, Hz): the carrier every 50 ms of the first segment], tone (the strongest audio tone:
@@ -179,6 +160,9 @@ def measure(done, records, header=None, audio=None):
                 bins.setdefault(int((b["t"] - t0) / LEVEL_STEP_S), []).append(b["cfo_hz"])
         r["track"] = [(round(t0 + k * LEVEL_STEP_S, 2), round(sum(v) / len(v))) for k, v in sorted(bins.items())]
 
+    r["tones"] = [(round(float(t["hz"]), 1), round(float(t["t0"]), 3), round(float(t["t1"]), 3), round(float(t["dev_hz"])))
+                  for t in (x["tone_run"] for x in records if "tone_run" in x)]
+
     if audio is not None and segs:
         import numpy as np
         rate, full = 16000.0, 5000.0
@@ -188,8 +172,8 @@ def measure(done, records, header=None, audio=None):
         x = np.frombuffer(bytes(audio), dtype="<i2").astype(float) * full / 32767.0
         for t0, t1, _ in segs:
             v = _voice(x, rate, (t0, t1))
+            v["tones"] = [t for t in r["tones"] if t[1] < t1 and t[2] > t0]
             r["voice"].append(v)
-            r["tones"].extend(v["tones"])
     return r
 
 
