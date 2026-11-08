@@ -59,6 +59,7 @@ test skips on a build without it.
 """
 import math
 import os
+import statistics
 import sys
 import time
 
@@ -299,7 +300,7 @@ def test_split_align(radio):
                 _, _, res, d = r.split(sdh.SUB_ALIGN, sdh.align_payload(sync.to_modem(n * 30_000), n))
                 assert res == 0, f"ALIGN result {res}"
                 al = sdh.parse_align(d)
-                deadline = time.monotonic() + 1.5
+                deadline = time.monotonic() + 3.0      # a snap may take up to nine restarts (split-duplex.md 3.8)
                 while True:
                     sdh.sync_burst(r, sync, n=4)
                     st = sdh.get_status(r)
@@ -333,6 +334,23 @@ CALL_VOICE = bytes.fromhex("b9e881526173002a6bb9e881526000000000000173002a6bb9e8
 CALL_TERM = bytes.fromhex("00530ac60bbc0ab07080908188b000000000000fcd7c16f81a80b4a0ca812280fa")
 CALL = ([(0x41, CALL_HEADER)] * 3 + [(0x20 if n == 0 else n, CALL_VOICE) for _ in range(3) for n in range(6)]
         + [(0x42, CALL_TERM)])
+
+
+def sample_time_ms(bursts):
+    """The bursts' times in ms, on the receive board's sample clock when its records carry the sample counter: the
+    board's time stamps can step (112 ms once, every burst there, 30 ms apart in samples), which reads as a gap the
+    radio never left. The rate is the median of samples per ms between neighbors."""
+    t = [b["t_ms"] for b in bursts]
+    sc = [b.get("sc") for b in bursts]
+    if len(t) < 3 or any(x is None for x in sc):
+        return t
+    d = [((y - x) & 0xFFFFFFFF, b - a) for x, y, a, b in zip(sc, sc[1:], t, t[1:]) if b - a > 0]
+    per_ms = statistics.median(n / ms for n, ms in d)
+    out, acc = [t[0]], t[0]
+    for x, y in zip(sc, sc[1:]):
+        acc += ((y - x) & 0xFFFFFFFF) / per_ms
+        out.append(acc)
+    return out
 
 
 def tx_half_run(radio, sdr_bench, pytestconfig, variant, regs=(), call=()):
@@ -423,12 +441,14 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
     assert all(b["cc"] in (None, cc) for b in bs)
     # Both slots are filled, so neighbors are 30 ms apart and the same slot is two bursts on (sdrmon's
     # same_slot_spacing only pairs neighbors, which suits a one-slot capture)
-    t = [b["t_ms"] for b in bs]
+    t = sample_time_ms(bs)
     nb = [b - a for a, b in zip(t, t[1:])]
     same = [b - a for a, b in zip(t, t[2:])]
     print(f"BS burst spacing: neighbors {min(nb):.2f}-{max(nb):.2f} ms, same slot mean "
           f"{sum(same) / len(same):.3f} ms; kinds {sdr['summary']['counts']}")
-    assert all(abs(x - 30.0) < 0.5 for x in nb), f"a gap or overlap in the outbound: {sorted(set(round(x) for x in nb))}"
+    holes = [(round(a - t[0]), round(b - a)) for a, b in zip(t, t[1:]) if abs(b - a - 30.0) >= 0.5]
+    assert not holes, f"a gap or overlap in the outbound (ms into the capture, length): {holes}; " \
+                      f"bench {sdr.get('bursts_summary')}"
     assert abs(sum(same) / len(same) - 60.0) < 0.05
     # Key-ups of our carrier only: the SDR also reports sub-millisecond blips some 50 dB below it. Burst records have
     # no edges: there the unbroken 30 ms grid above shows it stayed keyed
@@ -648,8 +668,11 @@ def test_split_tx_sched(radio, sdr_bench, pytestconfig):
                 n = (sdh.Radio.host_us() + 200_000) // 30_000
                 _, _, res, _ = r.split(sdh.SUB_ALIGN, sdh.align_payload(sync.to_modem(n * 30_000), n))
                 assert res == 0
-                time.sleep(0.3)
-                assert sdh.get_status(r)["align"] & sdh.AL_ALIGNED
+                # The snap may restart the clock a few times while it learns the chip's delay (split-duplex.md 3.8)
+                t0 = time.monotonic()
+                while not sdh.get_status(r)["align"] & sdh.AL_ALIGNED and time.monotonic() - t0 < 3:
+                    time.sleep(0.1)
+                assert sdh.get_status(r)["align"] & sdh.AL_ALIGNED, f"not aligned 3 s after ALIGN: {sdh.get_status(r)}"
                 st0 = sdh.get_status(r)        # the counters run since boot
                 cap = sdr_bench.capture_start(rdir, freq, seconds=8)
                 time.sleep(1.0)
@@ -684,17 +707,19 @@ def test_split_tx_sched(radio, sdr_bench, pytestconfig):
     d = {k: (st[k] - st0[k]) & 0xFFFF for k in ("sched_sent", "sched_late", "sched_replaced")}
     assert d == {"sched_sent": len(CALL), "sched_late": 1, "sched_replaced": 1}, (d, st)
     assert st["flags"] & sdh.FLAG_KEYED and not end["flags"] & sdh.FLAG_KEYED, (st, end)
+    # Keyed, the slot clock must stay on the grid: a key-up that moves it puts the call in the other grid slot
+    assert st["align"] & sdh.AL_ALIGNED, f"keyed off the grid: {st}"
     bursts = [b for b in sdr["bursts"] if b["family"] in ("bs", "emb")]
     ours = [b for b in bursts if b["kind"] != "IDLE"]
     kinds = [b["kind"] for b in ours]
     print("call on air:", kinds)
     assert all(b["sync_errors"] == 0 for b in ours)
     assert len({b["slot"] for b in ours}) == 1, "the call must stay on one slot"
-    # The TX half marks AT busy in the CACH before each non-idle burst (no SET_AT here): the busy CACHs name the call's
-    # slot. (Which CACH the analysis pairs with a burst depends on where the capture starts.)
+    # The TX half marks the call's channel busy (no SET_AT here, the automatic rule): the bit goes out in the CACH
+    # before the other outbound slot (split-duplex.md 3.6, 5.2), so for a TS2 call every busy CACH says TC 0
     cach = [b["cach"] for b in sdr["bursts"] if b.get("cach") and b["cach"]["ok"]]
     tc = {c["tc"] for c in cach if c["at"]}
-    assert tc == {1}, f"the call's CACH must say TS2: TC of the busy CACHs {tc}"
+    assert tc == {0}, f"a TS2 call's busy bit goes in the CACH before TS1: TC of the busy CACHs {tc}"
     voice = [b["kind"][-1] for b in ours if b["kind"].startswith("VOICE_")]
     assert len([b for b in ours if b["kind"] == "VLC_HDR"]) == 3 and "".join(voice) == "ABCDEF" * 3, kinds
     assert len([b for b in ours if b["kind"] == "TERM_LC"]) == 1, kinds

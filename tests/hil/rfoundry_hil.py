@@ -2080,6 +2080,7 @@ class SdrBench:
             bursts.append({"t_ms": r["t_rel_ms"], "slot": r.get("slot_ab"), "family": fam, "voice": r["voice"],
                            "kind": r["kind"], "cc": r["cc"], "lc": r["lc"], "foff_hz": round(r["cfo_hz"]),
                            "cach_ts": r["slot"] if fam == "bs" else None, "level_dbfs": r["level_dbfs"],
+                           "sc": r.get("sc"),     # the board's sample counter (32 bits): its time without clock steps
                            "dev_hz": r["dev_hz"], "fec_ok": r["fec"]["fec_ok"], "sync_errors": r.get("sync_errors"),
                            # 24 bits in air order, the first on air the top bit: dmr_cach's TX(23..0)
                            "cach": cdec.push(int(cach, 16)) if isinstance(cach, str) else None})
