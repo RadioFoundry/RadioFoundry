@@ -14,6 +14,7 @@
 #endif
 #include "FreeRTOS.h"
 #include "task.h"
+#include "../cortexm/msp_stack.h"
 #include "time_fold.h"
 
 static time_fold_t clk;
@@ -90,6 +91,10 @@ void hal_delay_ms(uint32_t ms)
 
 void vApplicationTickHook(void)
 {
+	// The interrupt handlers' stack (../cortexm/msp_stack.h): from the tick, which runs on it with room to spare
+	if (!msp_stack_canary_ok()) {
+		vApplicationStackOverflowHook(NULL, (char *)"irq");
+	}
 	(void)hal_millis();
 }
 

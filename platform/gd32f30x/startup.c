@@ -5,6 +5,7 @@
 // .data, clears .bss, runs the constructors (the boards' .preinit_array entries among them) and calls main()
 #include <stdint.h>
 #include "gd32f30x.h"
+#include "../cortexm/msp_stack.h"
 
 extern uint32_t _sidata[], _sdata[], _edata[], _sbss[], _ebss[], _estack[];
 extern void __libc_init_array(void);
@@ -188,6 +189,7 @@ __attribute__((noreturn)) void Reset_Handler(void)
 	for (uint32_t *d = _sbss; d < _ebss;) {
 		*d++ = 0;
 	}
+	msp_stack_fill();	// the interrupt handlers' stack, before anything else uses it deeply
 	__libc_init_array();
 	__enable_irq();	// PRIMASK as after a reset: the RTOS masks by BASEPRI
 	(void)main();

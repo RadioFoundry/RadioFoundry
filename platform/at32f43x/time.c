@@ -12,6 +12,7 @@
 #endif
 #include "FreeRTOS.h"
 #include "task.h"
+#include "../cortexm/msp_stack.h"
 
 static uint64_t cycles;
 static uint32_t last;
@@ -72,6 +73,10 @@ void hal_delay_ms(uint32_t ms)
 
 void vApplicationTickHook(void)
 {
+	// The interrupt handlers' stack (../cortexm/msp_stack.h): from the tick, which runs on it with room to spare
+	if (!msp_stack_canary_ok()) {
+		vApplicationStackOverflowHook(NULL, (char *)"irq");
+	}
 	(void)cycles_now();
 }
 
