@@ -248,6 +248,11 @@ the answer is never taken as a frame's answer or a NAK, OK or not.
   during the call doesn't. The call's own LC from a superframe isn't reported at all: it brings nothing new. A
   different LC (a new talker without a header) takes the place of the next voice burst, and the count goes on from
   it. The stack holds the call as on other modems.
+- After a data header with A set (response requested), the chip reports every data block as a confirmed one: it
+  clears the 9 bits it takes for the serial number's CRC-9 (octet 0 bit 0 and octet 1) and keeps the rest. That
+  harms nothing in a confirmed packet (the stack lets the CRC-32 decide), but in a defined short data packet with a
+  response requested (an ETSI text message asking for an ACK) those bits are user data, so its CRC-32 fails and the
+  message is lost. The same message without A decodes. No setting in the Packet Interface document changes this.
 - A repeater's outbound brings both slots' frames in turn, idle bursts too when DMR_CALL_OPTION byte 3 reports
   every idle frame (the stack takes a repeater as up only for a moment after its last burst). Each frame goes to
   the stack in its own slot, and each slot's call has its own voice bursts, from its own header or LC to its own

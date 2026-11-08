@@ -235,6 +235,10 @@ def test_sms_rx(radio, sdr_bench, pytestconfig):
     after = radio.data_view()
     d = _deltas(before, after, ["data.sms_received", "data.tms_acks_sent", "data.tx_ok", "data.tx_failed"])
     print("radio deltas:", d, "event:", after["data.event"], after["data.event_id"])
+    # A confirmed ACK (the IP confirmation setting) waits for a response the bench never sends and goes again, up to
+    # its tries: wait it out, or it keys over the next test's message
+    if "ip.busy" in radio.link.view(["dmr_ip"]):
+        radio.wait_for(lambda v: v.get("ip.busy") == "0", timeout=20, sections=("dmr_ip",), what="TMS ACK tries over")
     assert d["data.sms_received"] == 1, d
     m = radio.link.inbox(0)
     assert m is not None and m["text"] == text and m["src"] == BENCH_SRC and m["unread"], m
@@ -242,9 +246,10 @@ def test_sms_rx(radio, sdr_bench, pytestconfig):
     assert radio.link.inbox(0)["unread"] is False
     need_radio_tx(radio)
     assert d["data.tms_acks_sent"] == 1 and d["data.tx_failed"] == 0, d
-    # The ACK was the radio's own transmission: named in the data view, and not one that lights the screen
+    # The ACK was the radio's own transmission: named in the data view, and not one that lights the screen. It goes
+    # as confirmed IP data (kind "ip") while the IP confirmation setting is on, the default, else as a reply
     if "data.tx_last_kind" in after:
-        assert after["data.tx_last_kind"] == "reply" and after["data.tx_last_ms"] != before["data.tx_last_ms"], after
+        assert after["data.tx_last_kind"] in ("reply", "ip") and after["data.tx_last_ms"] != before["data.tx_last_ms"], after
         assert radio.view(["core"]).get("tx_auto") == "1"
     _soft((BENCH_SRC, own) in _heard_headers(heard), "the TMS ACK packet's header to the bench")
 
