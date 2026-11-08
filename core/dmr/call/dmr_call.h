@@ -237,6 +237,11 @@ void dmr_call_poll(uint32_t now_ms);
 // dmr_call_init
 void dmr_call_set_wake(void (*fn)(void));
 
+// Called with true when a repeater wake-up burst has gone and the stack listens for the answer, and with false before
+// it sends again (another try, or the call once the repeater is up). For a board whose transmit set-up leaves it deaf
+// (hal_radio_t.dmr_wake_listen). NULL: none. Kept across dmr_call_init
+void dmr_call_set_wake_listen(void (*fn)(bool listen));
+
 const dmr_call_view_t *dmr_call_view(void);
 
 // Diagnostics counters (the debug link's GET_DIAG / RESET_COUNTERS; wrap freely)

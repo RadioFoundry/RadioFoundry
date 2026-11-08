@@ -1750,6 +1750,8 @@ static void rx_sleep(bool sleep)
 #if CONFIG_DMR
 // The stock digital TX-on (5.1): chips off, chip 0 to hz with the digital set, keyed, band and TX bits, 10 ms, then the
 // PA is the bursts'. Called before the modem's transmission starts (the core's order), held until tx_off()
+static uint16_t dmr_tx_dac;	// the DAC word of the last dmr_tx, for dmr_wake_listen to key again with
+
 static bool dmr_tx(uint32_t hz, uint16_t dac)
 {
 	if (!pa_gate_can_key(mcu_pin_read(PIN_DMR_TX_BURST))) {
@@ -1757,6 +1759,7 @@ static bool dmr_tx(uint32_t hz, uint16_t dac)
 		return false;
 	}
 	transmitting = true;
+	dmr_tx_dac = dac;
 	tx_hz = hz;	// the modem's set-up for this transmission reads it (d578uv_tx_hz)
 	mcu_pin_write(PIN_SPK_MUTE, true);	// the speaker is off while transmitting, as audio_route() keeps it
 	sr_set(SR_TX, 0);
@@ -1998,6 +2001,19 @@ static void tx_off(void)
 	b_resume();
 }
 
+#if CONFIG_DMR
+// hal_radio_t.dmr_wake_listen: the chips stay on the transmit frequency from dmr_tx on, so between wake-up bursts the
+// radio could not hear the repeater answer
+static void dmr_wake_listen(bool listen)
+{
+	if (listen) {
+		tx_off();
+	} else {
+		(void)dmr_tx(tx_hz, dmr_tx_dac);	// refused: the burst goes without the PA and the wake-up tries again
+	}
+}
+#endif
+
 // Side A's last raw RSSI (bits 15:0), noise (30:16) and signal flag (31), as status() read them for the radio task
 static volatile uint32_t diag_rx;
 
@@ -2204,6 +2220,9 @@ const hal_radio_t d578uv_radio = {
 	.rx = rx,
 	.tx = tx,
 	.tx_off = tx_off,
+#if CONFIG_DMR
+	.dmr_wake_listen = dmr_wake_listen,
+#endif
 	.tx_tone = tx_tone,
 	.tx_tone_key = tx_tone_key,
 #if CONFIG_DTMF

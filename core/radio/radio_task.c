@@ -7,6 +7,7 @@
 #include <string.h>
 #include "radio/radio.h"
 #include "radio/radio_sm.h"
+#include "board.h"
 #include "hal_time.h"
 #include "config.h"
 #if CONFIG_HOTSPOT
@@ -230,6 +231,7 @@ void radio_core_start(void)
 	radio_sm_init(&sm, hal_millis());
 #if CONFIG_DMR
 	dmr_call_set_wake(wake);
+	dmr_call_set_wake_listen(board.radio->dmr_wake_listen);
 #endif
 	shared_view = sm.view;
 	shared_serial = sm.serial;

@@ -38,6 +38,10 @@ typedef struct {
 	// 30 ms after our terminator, in our own timeslot, and a receive set-up then misses it. The modem glue implements
 	// it (hrc_dmr_tx_end, stm32_hrc_dmr_tx_end). False: nothing done, the core calls tx_off(). NULL = always tx_off()
 	bool (*dmr_tx_end)(void);
+	// Optional (DMR): for a board whose tx() leaves the receiver deaf between bursts (RF chips held on the transmit
+	// frequency). true: a repeater wake-up burst has gone, receive on the last rx() settings for the answer; false: back
+	// to the transmit set-up of the last tx(), for the next burst. NULL: the modem switches between bursts by itself
+	void (*dmr_wake_listen)(bool listen);
 	void (*status)(radio_status_t *st);
 	// Speaker path (amp and mute) for received audio
 	void (*audio)(bool on);
