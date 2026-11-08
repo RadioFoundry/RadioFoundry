@@ -257,11 +257,11 @@ The FD6818 has no AFSK path of its own, so APRS goes through the HR_C7000 (`plat
 
 | Direction | Path |
 | --- | --- |
-| Transmit | The FD6818 keys up in its TX state, then goes to its tone state with no tone (0xC1FA: carrier on, microphone ADC off, `fd6818sh_mic_off`). The HR_C7000's FM transmitter plays the AFSK from its prompt FIFO onto MOD1 (the TCXO, as DMR does), with the codec microphone muted. Level: `amp_per_level` 55 in `boards/rt10/radio_rt10.c`, not yet set against a measured deviation |
+| Transmit | The FD6818 keys up in its TX state, then goes to its tone state with no tone (0xC1FA: carrier on, microphone ADC off, `fd6818sh_mic_off`). The HR_C7000's FM transmitter plays the AFSK from its prompt FIFO onto MOD1 (the TCXO, as DMR does). Ring play alone sent a bare carrier, so the tones take the codec mixer (`hrc7000_codec_dac_to_tx`, [modem-hrc7000.md](modem-hrc7000.md) 8.4), which also keeps the microphone out. The FM limiter (`fm_tx_limit`) is 0x0F at both bandwidths; the default 4 held the peak to 1.66 kHz. Level: `amp_per_level` 55 in `boards/rt10/radio_rt10.c` |
 | Receive | The HR_C7000 in FM receive copies the FD6818's AF output (0x47 = 0x7140) to the CPU (`fm_rx_audio.c`). The AF output stays on while APRS listens; the modem's FM_PLAY stays off |
 
-The transmitter keys up and the frames go out (`aprs.block` ok). Deviation, twist, the decode of the frames and
-receive are not yet measured on air.
+Measured on air (927.5 MHz, lowest power): the frames decode with a valid FCS, 3.0 kHz peak deviation at the default
+level, 2.8 dB less at the 1200 Hz tone than at the 2200 Hz tone. Receive is not yet measured on air.
 
 ## 8. Codec
 

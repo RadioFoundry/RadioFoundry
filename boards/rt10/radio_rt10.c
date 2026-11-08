@@ -229,6 +229,7 @@ static void init(void)
 	fd6818sh_analog_mode(&fd);
 #if CONFIG_APRS
 	hrc_fm_rx_attach(&modem);
+	modem.fm_tx_limit[0] = modem.fm_tx_limit[1] = 0x0Fu;	// the default 4 caps the tones near 1.65 kHz (modem-hrc7000.md 8.4)
 	hrc_afsk_attach(&modem, &afsk_board);
 #endif
 }
@@ -700,13 +701,13 @@ static bool afsk_tx_route(bool on)
 	afsk_tx = on;
 	if (on) {
 		fd6818sh_mic_off(&fd, true);
-		hrc7000_codec_mute(&modem, true, false);
 		hrc7000_fm_tx(&modem, tx_wide);
+		hrc7000_codec_dac_to_tx(&modem, true);	// ring play alone sent no tones; the mic's input is zeroed in the mix
 		hrc_audio_pcm_ring(&modem, true);
 	} else {
 		hrc_audio_pcm_ring(&modem, pcm_on);	// back to what the speaker PCM last asked for
+		hrc7000_codec_dac_to_tx(&modem, false);
 		modem_fm();
-		hrc7000_codec_mute(&modem, false, false);
 		fd6818sh_mic_off(&fd, false);
 	}
 	return true;
