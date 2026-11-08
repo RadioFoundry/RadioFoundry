@@ -45,6 +45,7 @@ import time
 
 import pytest
 
+import fm_measure
 from rfoundry_hil import skip
 from hil_config import rig
 
@@ -274,11 +275,10 @@ def test_probe_fm_rx_variants(probe, pytestconfig):
     assert len(rows) == len(RX_VARIANTS)
 
 
-def keyed_runs(probe, sdr_bench, pytestconfig, runs, tag, ptt_s=PTT_S, **analyze):
+def keyed_runs(probe, sdr_bench, pytestconfig, runs, ptt_s=PTT_S, tone_snr=None):
     """Key FM on --fm-mhz once per run with the microphone muted. Each run is (name, before, during): before() runs
     unkeyed, during() keyed once the TX set-up has written its registers and returns a note (or None). Returns
     [(name, (peak 99.5 %, peak 99.9 %, rms) of the voice band deviation in Hz or None, note)]."""
-    import re
     L = probe.link
     mhz = rig(pytestconfig, "fm-mhz")
     hz = round(mhz * 1e6)
@@ -290,9 +290,8 @@ def keyed_runs(probe, sdr_bench, pytestconfig, runs, tag, ptt_s=PTT_S, **analyze
         try:
             for i, (name, before, during) in enumerate(runs):
                 before()
-                rdir = sdr_bench.run_dir(f"hil_aprobe_{tag}{i}")
                 with sdr_bench.lease():
-                    cap = sdr_bench.capture_start(rdir, mhz, seconds=ptt_s + 5)
+                    job = sdr_bench.fm_over_start(mhz, ptt_s + 5, audio=True)
                     L.ptt(True, int(ptt_s * 1000) + 1500)
                     try:
                         probe.wait_for(lambda v: v.get("state") == "tx", timeout=2, what="keyed")
@@ -304,24 +303,35 @@ def keyed_runs(probe, sdr_bench, pytestconfig, runs, tag, ptt_s=PTT_S, **analyze
                     finally:
                         L.ptt(False)
                     probe.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
-                    sdr_bench.capture_wait()
+                    r = sdr_bench.fm_over_result(job)
                 L.probe_stop()
-                rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz,
-                                                tones=True, **analyze)
-                m = re.search(r"voice 300-3000 Hz: peak (\d+) Hz \(99\.5%\), (\d+) Hz \(99\.9%\), rms (\d+) Hz", text)
-                extra = re.findall(r"(SINAD [-\d.]+ dB|noise 4-7\.5 kHz: rms \d+ Hz|wideband tone rms \d+ Hz)", text)
+                v = r["voice"][0] if r["voice"] else {}
+                extra = snr_notes(r, tone_snr)
                 if extra:
                     note = "; ".join(([note] if note else []) + extra)
-                tones = re.findall(r"tone (\d+(?:\.\d)?) Hz [\d.]+-[\d.]+ s \(([\d.]+) s\)", text)
-                tone_note = "tones " + ", ".join(f"{hz} Hz {d} s" for hz, d in tones) if tones else "no steady tone"
+                tones = r["tones"]
+                tone_note = "tones " + ", ".join(f"{t[0]:g} Hz {t[2] - t[1]:.2f} s" for t in tones) \
+                    if tones else "no steady tone"
                 note = f"{note}; {tone_note}" if note else tone_note
-                rows.append((name, tuple(int(x) for x in m.groups()) if m else None, note))
-                if not m:
-                    print(text)
+                rows.append((name, (v["peak"], v["peak999"], v["rms"]) if "peak" in v else None, note))
+                if not v:
+                    print(fm_measure.describe(r))
         finally:
             L.ptt(False)
             L.probe_stop()
     return rows
+
+
+def snr_notes(r, tone_hz):
+    """The notes for a run with a test tone: the board's SINAD of it, or above the audio stream's 3 kHz its level in
+    the board's spectrum (to 5 kHz: a tone past that doesn't show)."""
+    if tone_hz is None:
+        return []
+    t = r.get("tone") or {}
+    if tone_hz <= 3000 and t and abs(t.get("hz", 0) - tone_hz) <= 30:
+        return [f"SINAD {t.get('sinad_db')} dB, tone {t.get('dev_hz')} Hz"]
+    p = next((x for x in r["peaks"] if abs(x.get("hz", 0) - tone_hz) <= 30), None)
+    return [f"{tone_hz:g} Hz: {p.get('dev_hz')} Hz in the board's spectrum"] if p else [f"no line at {tone_hz:g} Hz"]
 
 
 def print_tx_rows(title, rows, base_row=0):
@@ -348,7 +358,7 @@ def test_probe_fm_tx_variants(probe, sdr_bench, pytestconfig):
         return (lambda: pcm_start(L, hz, amp)), during
 
     runs = [(name, *run(regs, amp, hz)) for name, regs, amp, hz in TX_VARIANTS]
-    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "tx")
+    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs)
     print_tx_rows("FM TX from the I2S link", rows)
     assert len(rows) == len(TX_VARIANTS)
 
@@ -428,7 +438,7 @@ def test_probe_fm_ram_tx_variants(probe, sdr_bench, pytestconfig):
     runs = [("mic muted, RAM silent (baseline)", *run([], bytes(RAM_FM_LEN)))]
     runs += [(name, *run(regs, tone_bytes(order) * 2)) for name, regs, order in RAM_TX_VARIANTS]
     try:
-        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "ramtx")
+        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs)
     finally:
         restore()
     print_tx_rows("FM TX from the TX RAM FM buffers", rows)
@@ -496,7 +506,7 @@ def test_probe_fm_tx_music(probe, sdr_bench, pytestconfig):
         ("FIFO little endian, path open, pass-through", [(0x06, 0x02, 0), (0xE3, 0x01, 0)], True),
     )]
     try:
-        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "music")
+        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs)
     finally:
         restore()
     print_tx_rows(f"FM TX from the prompt tone FIFO ({MUSIC_HZ} Hz)", rows)
@@ -523,7 +533,6 @@ def test_probe_fm_tx_sweep(probe, sdr_bench, pytestconfig):
     and which source (600 Hz: I2S, 1000 Hz: TX RAM) reach the modulator."""
     if "VFO_FM" not in probe.features():
         skip("not_built", "built without the FM VFO")
-    import re
     L = probe.link
     mhz = rig(pytestconfig, "fm-mhz")
     hz = round(mhz * 1e6)
@@ -542,9 +551,8 @@ def test_probe_fm_tx_sweep(probe, sdr_bench, pytestconfig):
                     L.probe_reg(PAGE, r, v)
                 L.probe_ram(RAM_PAGE, RAM_FM, data=tone_bytes(">") * 2)
                 pcm_start(L, I2S_HZ, TONE_AMP)
-                rdir = sdr_bench.run_dir(f"hil_aprobe_sweep{k}")
                 with sdr_bench.lease():
-                    cap = sdr_bench.capture_start(rdir, mhz, seconds=key_s + 5)
+                    job = sdr_bench.fm_over_start(mhz, key_s + 5, audio=True)
                     L.ptt(True, int(key_s * 1000) + 1500)
                     try:
                         probe.wait_for(lambda v: v.get("state") == "tx", timeout=2, what="keyed")
@@ -569,16 +577,13 @@ def test_probe_fm_tx_sweep(probe, sdr_bench, pytestconfig):
                     finally:
                         L.ptt(False)
                     probe.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
-                    sdr_bench.capture_wait()
+                    r = sdr_bench.fm_over_result(job)
                 L.probe_stop()
-                rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz,
-                                                tones=True)
-                runs = [(float(f), float(a), float(e)) for f, a, e in
-                        re.findall(r"tone (\d+(?:\.\d)?) Hz ([\d.]+)-([\d.]+) s", text)]
+                runs = [t[:3] for t in r["tones"]]
                 marks = [t for t in runs if MARK_HZ[0] <= t[0] <= MARK_HZ[1]]
                 if not marks:
                     missing_marker.append(k)
-                    print(f"key-up {k}: no marker tone; tones {runs}\n{text}")
+                    print(f"key-up {k}: no marker tone; tones {runs}\n{fm_measure.describe(r)}")
                     continue
                 t0 = marks[0][1]
                 for f, a, e in runs:
@@ -618,12 +623,11 @@ def tx_ram_tone():
     return tone_bytes(">", n=RAM_FM // 2) + tone_bytes(">") * 2
 
 
-def marked_steps(probe, sdr_bench, pytestconfig, steps, tag, per_key=8):
+def marked_steps(probe, sdr_bench, pytestconfig, steps, per_key=8):
     """Keyed with the microphone muted, a 600 Hz tone on the I2S stream and a 1000 Hz tone in the TX RAM (FM flags
     unmasked), each step (label, page, register, value) written for SWEEP_ON_S and then restored. Each key-up starts
     with LINEIN2's marker tone, as in test_probe_fm_tx_sweep. Returns (hits, unmapped, key-ups without the marker,
     texts): a hit is (label, Hz, source, seconds)."""
-    import re
     L = probe.link
     mhz = rig(pytestconfig, "fm-mhz")
     hz = round(mhz * 1e6)
@@ -642,16 +646,8 @@ def marked_steps(probe, sdr_bench, pytestconfig, steps, tag, per_key=8):
                     L.probe_reg(p, r, v)
                 L.probe_ram(RAM_PAGE, 0, data=tx_ram_tone())
                 pcm_start(L, I2S_HZ, TONE_AMP)
-                rdir = sdr_bench.run_dir(f"hil_aprobe_{tag}{k}")
                 with sdr_bench.lease():
-                    for attempt in range(3):      # the bench service sometimes still holds the SDR for a moment
-                        try:
-                            cap = sdr_bench.capture_start(rdir, mhz, seconds=key_s + 5)
-                            break
-                        except RuntimeError:
-                            if attempt == 2:
-                                raise
-                            time.sleep(5)
+                    job = sdr_bench.fm_over_start(mhz, key_s + 5, audio=True)
                     L.ptt(True, int(key_s * 1000) + 1500)
                     try:
                         probe.wait_for(lambda v: v.get("state") == "tx", timeout=2, what="keyed")
@@ -680,13 +676,10 @@ def marked_steps(probe, sdr_bench, pytestconfig, steps, tag, per_key=8):
                     finally:
                         L.ptt(False)
                     probe.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
-                    sdr_bench.capture_wait()
+                    r = sdr_bench.fm_over_result(job)
                 L.probe_stop()
-                rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz,
-                                                tones=True)
-                texts.append((k, [s[0] for s in slots], text))
-                runs = [(float(f), float(a), float(e)) for f, a, e in
-                        re.findall(r"tone (\d+(?:\.\d)?) Hz ([\d.]+)-([\d.]+) s", text)]
+                texts.append((k, [s[0] for s in slots], fm_measure.describe(r)))
+                runs = [t[:3] for t in r["tones"]]
                 print(f"key-up {k}/{len(batches)} ({slots[0][0]} .. {slots[-1][0]}): tones "
                       f"{[(round(f), round(e - a, 2)) for f, a, e in runs]}", flush=True)  # survives a later failure
                 marks = [t for t in runs if MARK_HZ[0] <= t[0] <= MARK_HZ[1]]
@@ -736,7 +729,7 @@ def test_probe_fm_tx_mode_sweep(probe, sdr_bench, pytestconfig):
     if "VFO_FM" not in probe.features():
         skip("not_built", "built without the FM VFO")
     steps = [(f"4:0x10 = 0x{v:02X}", PAGE, 0x10, v) for v in range(0x81, 0x100)]
-    hits, unmapped, missing, texts = marked_steps(probe, sdr_bench, pytestconfig, steps, "mode")
+    hits, unmapped, missing, texts = marked_steps(probe, sdr_bench, pytestconfig, steps)
     print_steps("FM TX mode sweep (0x10 values)", len(steps), hits, unmapped, missing, texts)
     assert not missing, f"key-ups without the marker tone: {missing}"
 
@@ -751,7 +744,7 @@ def test_probe_fm_tx_hwcfg_sweep(probe, sdr_bench, pytestconfig):
         skip("not_built", "built without the FM VFO")
     steps = [(f"{p}:0x{r:02X} bit {b}", p, r, ("xor", 1 << b)) for p, r in ((PAGE, 0x01), (1, 0x50), (1, 0x51))
              for b in range(8)]
-    hits, unmapped, missing, texts = marked_steps(probe, sdr_bench, pytestconfig, steps, "hwcfg")
+    hits, unmapped, missing, texts = marked_steps(probe, sdr_bench, pytestconfig, steps)
     print_steps("FM TX sweep (0x01, page 1 0x50 / 0x51 bits)", len(steps), hits, unmapped, missing, texts)
     assert not missing, f"key-ups without the marker tone: {missing}"
 
@@ -788,9 +781,8 @@ def test_probe_fm_tx_offsets(probe, sdr_bench, pytestconfig):
             for k, reg in enumerate(OFFSET_REGS):
                 for r, v in saved.items():
                     L.probe_reg(PAGE, r, v)
-                rdir = sdr_bench.run_dir(f"hil_aprobe_offset{k}")
                 with sdr_bench.lease():
-                    cap = sdr_bench.capture_start(rdir, mhz, seconds=key_s + 5)
+                    job = sdr_bench.fm_over_start(mhz, key_s + 5, audio=True)
                     t_ptt = time.monotonic()
                     L.ptt(True, int(key_s * 1000) + 1500)
                     try:
@@ -821,21 +813,18 @@ def test_probe_fm_tx_offsets(probe, sdr_bench, pytestconfig):
                     finally:
                         L.ptt(False)
                     probe.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
-                    sdr_bench.capture_wait()
-                rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz,
-                                                tones=True, track=True)
-                rows.append((reg, base, sched, text))
+                    r = sdr_bench.fm_over_result(job)
+                rows.append((reg, base, sched, r))
         finally:
             L.ptt(False)
             for r, v in saved.items():
                 L.probe_reg(PAGE, r, v)
     print("\nFM TX modulation offsets (times from PTT; the track starts when the carrier comes up):")
-    for reg, base, sched, text in rows:
+    for reg, base, sched, r in rows:
         print(f"\n4:0x{reg:02X} as set 0x{base:02X}: " +
               "; ".join(f"{lab} {a:.2f}-{b:.2f} s" if b else lab for lab, a, b in sched))
-        for line in text.splitlines():
-            if re.match(r"\s*(track|carrier|voice|tone|segment|\S+: [\d.]+ s)", line):
-                print("  " + line.strip())
+        print("  " + fm_measure.describe(r).replace("\n", "\n  "))
+        print("  carrier track (s, Hz):", r["track"])
     assert len(rows) == len(OFFSET_REGS)
 
 
@@ -863,7 +852,7 @@ def test_probe_fm_tx_mod_tone(probe, sdr_bench, pytestconfig):
 
     runs = [("0x04 as set (baseline)", lambda: None, lambda: None)]
     runs += [(f"0x04 tone {hz} Hz, {steps} steps", *run(hz, steps)) for hz, steps in MOD_TONES]
-    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "mod")
+    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs)
     print_tx_rows("FM TX from the MCU through 0x04", rows)
     assert len(rows) == len(runs)
 
@@ -886,7 +875,7 @@ def test_probe_fm_tx_sweep2(probe, sdr_bench, pytestconfig):
     if "VFO_FM" not in probe.features():
         skip("not_built", "built without the FM VFO")
     steps = [(f"4:0x{r:02X} bit {b}", PAGE, r, ("xor", 1 << b)) for r in SWEEP2_REGS for b in range(8)]
-    hits, unmapped, missing, texts = marked_steps(probe, sdr_bench, pytestconfig, steps, "sweep2")
+    hits, unmapped, missing, texts = marked_steps(probe, sdr_bench, pytestconfig, steps)
     print_steps("FM TX bit sweep 2", len(steps), hits, unmapped, missing, texts)
     assert not missing, f"key-ups without the marker tone: {missing}"
 
@@ -942,7 +931,7 @@ def test_probe_fm_tx_ram_ack(probe, sdr_bench, pytestconfig):
 
     runs = [(name, *run(w)) for name, w in ACK_VARIANTS]
     try:
-        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "ack")
+        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs)
     finally:
         restore()
     print_tx_rows("FM TX from the TX RAM, each data request answered", rows)
@@ -1001,7 +990,7 @@ def test_probe_fm_tx_ram_readback(probe, sdr_bench, pytestconfig):
         return before, during
 
     runs = [("keyed, microphone on", *run(True)), ("keyed, microphone muted", *run(False))]
-    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "rback")
+    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs)
     print(f"\nTX RAM read back through page 6:\n  unkeyed: {notes['unkeyed']}")
     for name, _, note in rows:
         print(f"  {name}: {note}")
@@ -1059,7 +1048,7 @@ def test_probe_fm_tx_ram_chase(probe, sdr_bench, pytestconfig):
             ("chase, tone big endian", *run(">")),
             ("chase, tone little endian", *run("<")),
             ("chase, big endian, 10 ms after the switch", *run(">", 0.010))]
-    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "chase")
+    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs)
     print_tx_rows("FM TX: TX RAM halves overwritten behind the codec", rows)
     assert len(rows) == len(runs)
 
@@ -1154,7 +1143,7 @@ def test_probe_fm_tx_ramfeed_sweep(probe, sdr_bench, pytestconfig):
     """Keyed with the microphone muted, the firmware keeps a 1 kHz tone in the TX RAM FM halves and applies each flip
     for 0.5 s. A flip during which the voice band level jumps (or a 1 kHz tone shows) makes the modulator read the
     RAM. On the DM-1701 (2026-10-12): none of 511; 0x01 bit 4 and 0x25 bit 1 drop the carrier."""
-    ramfeed_sweep(probe, sdr_bench, pytestconfig, feed_flips(), "feed")
+    ramfeed_sweep(probe, sdr_bench, pytestconfig, feed_flips())
 
 
 # The flips the first run lost to a dropped carrier (0x01 bit 4, 0x25 bit 1 ended their key-ups); those two last
@@ -1168,10 +1157,10 @@ FEED_RERUN = [(f"4:0x{r:02X} bit {b}", PAGE, r, 1 << b) for r, bits in ((0x01, (
 @pytest.mark.sdr_rx
 def test_probe_fm_tx_ramfeed_rerun(probe, sdr_bench, pytestconfig):
     """FEED_RERUN through the fed sweep, in key-ups of their own"""
-    ramfeed_sweep(probe, sdr_bench, pytestconfig, FEED_RERUN, "rerun")
+    ramfeed_sweep(probe, sdr_bench, pytestconfig, FEED_RERUN)
 
 
-def ramfeed_sweep(probe, sdr_bench, pytestconfig, flips, tag):
+def ramfeed_sweep(probe, sdr_bench, pytestconfig, flips):
     if "VFO_FM" not in probe.features():
         skip("not_built", "built without the FM VFO")
     L = probe.link
@@ -1187,16 +1176,8 @@ def ramfeed_sweep(probe, sdr_bench, pytestconfig, flips, tag):
         probe.lowest_power()
         try:
             for k, batch in enumerate(batches):
-                rdir = sdr_bench.run_dir(f"hil_aprobe_{tag}{k}")
                 with sdr_bench.lease():
-                    for attempt in range(3):
-                        try:
-                            cap = sdr_bench.capture_start(rdir, mhz, seconds=key_s + 5)
-                            break
-                        except RuntimeError:
-                            if attempt == 2:
-                                raise
-                            time.sleep(5)
+                    job = sdr_bench.fm_over_start(mhz, key_s + 5, audio=True)
                     t_ptt = time.monotonic()
                     L.ptt(True, int(key_s * 1000) + 1500)
                     try:
@@ -1209,14 +1190,12 @@ def ramfeed_sweep(probe, sdr_bench, pytestconfig, flips, tag):
                     finally:
                         L.ptt(False)
                     probe.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
-                    sdr_bench.capture_wait()
-                rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz,
-                                                tones=True, levels=True)
-                m = re.search(r"levels ([\d.]+) s, 0\.05 s steps: ([\d ]+)", text)
-                if not m:
-                    print(f"key-up {k}: no levels\n{text}")
+                    r = sdr_bench.fm_over_result(job)
+                v = r["voice"][0] if r["voice"] else {}
+                if not v.get("levels"):
+                    print(f"key-up {k}: no levels\n{fm_measure.describe(r)}")
                     continue
-                t_seg, lv = float(m.group(1)), [float(v) for v in m.group(2).split()]
+                lv = v["levels"]
                 # the segment starts when the carrier comes up, about when the PTT command went out
                 base = sorted(lv)[len(lv) // 4]
                 summary = []
@@ -1228,7 +1207,7 @@ def ramfeed_sweep(probe, sdr_bench, pytestconfig, flips, tag):
                     if lvl > 3 * max(base, 30):
                         hits.append((label, lvl, base))
                         print(f"  -> {label}: voice band {lvl:.0f} Hz rms vs {base:.0f} Hz", flush=True)
-                tones = re.findall(r"tone (\d+(?:\.\d)?) Hz ([\d.]+)-([\d.]+) s", text)
+                tones = [t[:3] for t in r["tones"]]
                 print(f"key-up {k}/{len(batches)}: {f['switches']} half switches, {f['writes']} writes, max lag "
                       f"{f['max_lag_ms']} ms; base {base:.0f} Hz; tones {tones}; " + ", ".join(summary), flush=True)
         finally:
@@ -1255,7 +1234,7 @@ def test_probe_fm_tx_mod_shaped(probe, sdr_bench, pytestconfig):
 
     runs = [(f"0x04 1 kHz, {s} steps, {'shaped' if sh else 'plain'}", *run(s, sh))
             for s in (32, 16, 4) for sh in (False, True)]
-    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "shaped", ptt_s=2.5, tone_snr=1000)
+    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, ptt_s=2.5, tone_snr=1000)
     print_tx_rows("FM TX through 0x04, plain and noise shaped", rows)
     assert len(rows) == len(runs)
 
@@ -1306,7 +1285,7 @@ def test_probe_fm_tx_ramfeed_combos(probe, sdr_bench, pytestconfig):
 
     runs = [(name, *run(w)) for name, w in FEED_COMBOS]
     try:
-        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "combo")
+        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs)
     finally:
         restore()
     print_tx_rows("FM TX from the fed TX RAM, MSK / FM voice settings", rows)
@@ -1334,7 +1313,7 @@ def test_probe_fm_tx_mod_gain(probe, sdr_bench, pytestconfig):
         return (lambda: None), during
 
     runs = [(f"0x04 1 kHz 16 steps, 0x46 / {d}", *run(d)) for d in (1, 2, 4)]
-    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "gain", ptt_s=2.5)
+    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, ptt_s=2.5)
     print_tx_rows("FM TX through 0x04 against the MOD1 amplitude 0x46", rows)
     assert len(rows) == len(runs)
 
@@ -1403,7 +1382,7 @@ def test_probe_fm_tx_tone_gen(probe, sdr_bench, pytestconfig):
     runs = [("2-tone set up before keying", *run_before_key()), ("2-tone long A, retriggered", *run_long()),
             ("2-tone, step rewritten 1200 / 2200", *run_afsk())]
     try:
-        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "tgen")
+        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs)
     finally:
         restore()
     print_tx_rows("FM TX from the chip's tone generator", rows)
@@ -1435,7 +1414,7 @@ def test_probe_fm_tx_ext_codec_switch(probe, sdr_bench, pytestconfig):
         return "LINEIN2 on 0-1.5 s, then 0x06 |= 0x04 1.5-3 s"
 
     runs = [("LINEIN2 marker, then external codec mode", lambda: None, during)]
-    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "ext", ptt_s=3.5, levels=True)
+    rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, ptt_s=3.5)
     print_tx_rows("FM TX source switch 0x06 bit 2", rows)
     assert len(rows) == 1
 
@@ -1482,7 +1461,7 @@ def test_probe_fm_tx_ext_i2s(probe, sdr_bench, pytestconfig):
 
     runs = [(name, *run(w)) for name, w in EXT_I2S_VARIANTS]
     try:
-        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "exti2s")
+        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs)
     finally:
         restore()
     print_tx_rows("FM TX in external codec mode, MCU tone on I2S", rows)
@@ -1539,7 +1518,7 @@ def test_probe_fm_tx_linein2_loop(probe, sdr_bench, pytestconfig):
 
     runs = [(name, *run(w)) for name, w in LOOP_VARIANTS]
     try:
-        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "loop", ptt_s=3.0, tone_snr=TONE_HZ)
+        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, ptt_s=3.0, tone_snr=TONE_HZ)
     finally:
         restore()
     print_tx_rows("FM TX through LINEIN2 with a 1 kHz tone on I2S", rows)
@@ -1635,7 +1614,7 @@ def test_probe_fm_tx_pin_tone(probe, sdr_bench, pytestconfig):
     runs = [(name, *run(hz, w)) for name, hz, w in PIN_TONE_VARIANTS]
     runs.append(("pins 16-20 as timed GPIO, MCU pin scan", lambda: None, scan_timed))
     try:
-        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, "pin", ptt_s=3.0, tone_snr=TONE_HZ)
+        rows = keyed_runs(probe, sdr_bench, pytestconfig, runs, ptt_s=3.0, tone_snr=TONE_HZ)
     finally:
         L.probe_pin_tone(0)
         for r, v in saved.items():
@@ -1705,7 +1684,7 @@ def pwm_runs(probe, sdr_bench, pytestconfig, variants):
     rows = []
     try:
         for name, top, hz, amp, writes in variants:
-            rows += keyed_runs(probe, sdr_bench, pytestconfig, [(name, *run(top, hz, amp, writes))], "pwm",
+            rows += keyed_runs(probe, sdr_bench, pytestconfig, [(name, *run(top, hz, amp, writes))],
                                ptt_s=3.0, tone_snr=hz)
     finally:
         L.probe_pin_pwm(1023, 0, 0)
@@ -1759,7 +1738,7 @@ def test_probe_fm_tx_wideband(probe, sdr_bench, pytestconfig):
         return lambda: None, during
 
     for hz in (1000, 3000, 3800, 4800, 6000):
-        rows += keyed_runs(probe, sdr_bench, pytestconfig, [(f"0x04, {hz} Hz, 16 steps", *mod(hz))], "wb",
+        rows += keyed_runs(probe, sdr_bench, pytestconfig, [(f"0x04, {hz} Hz, 16 steps", *mod(hz))],
                            ptt_s=2.5, tone_snr=hz)
     print_tx_rows("FM TX noise floor and the 0x04 path's response", rows)
     assert len(rows) == 7
@@ -1792,7 +1771,7 @@ def test_probe_fm_tx_sinad_reference(probe, sdr_bench, pytestconfig):
         return "tone generator, 1 kHz"
 
     try:
-        rows = keyed_runs(probe, sdr_bench, pytestconfig, [("tone generator 1 kHz", restore, during)], "ref",
+        rows = keyed_runs(probe, sdr_bench, pytestconfig, [("tone generator 1 kHz", restore, during)],
                           ptt_s=3.0, tone_snr=1000)
     finally:
         restore()

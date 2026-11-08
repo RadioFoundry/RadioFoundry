@@ -211,21 +211,23 @@ for f in sys.argv[1:]:
 		head -20 "$OUT/hil-skips.log"
 		bad "HIL skips without a kind (see $OUT/hil-skips.log)"
 	fi
-	# the speaker tests' and sdrmon's carrier floor analysis on synthetic data, the bench board's APRS records
+	# the speaker tests' and sdrmon's carrier floor analysis on synthetic data, the bench board's APRS and FM records
 	# parsed, the ID database encoders against iddb_read.py (no radio, needs numpy)
 	if python3 -c 'import pytest, numpy' 2>/dev/null; then
 		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_audio_check.py tests/hil/test_sdrmon_floor.py \
-			tests/hil/test_aprs_board.py tests/hil/test_iddb_write.py > "$OUT/hil-audio-check.log" 2>&1; then
-			ok "HIL speaker, SDR floor, APRS record and ID database tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-audio-check.log"))"
+			tests/hil/test_aprs_board.py tests/hil/test_fm_measure.py tests/hil/test_iddb_write.py \
+			> "$OUT/hil-audio-check.log" 2>&1; then
+			ok "HIL speaker, SDR floor, APRS, FM record and ID database tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-audio-check.log"))"
 		else
 			tail -20 "$OUT/hil-audio-check.log"
-			bad "HIL speaker, SDR floor, APRS record and ID database tests (see $OUT/hil-audio-check.log)"
+			bad "HIL speaker, SDR floor, APRS, FM record and ID database tests (see $OUT/hil-audio-check.log)"
 		fi
 	else
-		skip "HIL speaker, SDR floor, APRS record and ID database tests: pytest or numpy not installed"
+		skip "HIL speaker, SDR floor, APRS, FM record and ID database tests: pytest or numpy not installed"
 	fi
 	if python3 -c 'import pytest' 2>/dev/null; then
 		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_skip_kinds.py tests/hil/test_radio_reconnect.py tests/hil/test_bench_line.py \
+			tests/hil/test_bench_envelope.py \
 			tests/hil/test_tx_guard.py \
 			> "$OUT/hil-skip-test.log" 2>&1; then
 			ok "HIL skip, reconnect, TX guard and bench line helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"

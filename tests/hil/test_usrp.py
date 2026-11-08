@@ -16,12 +16,12 @@ tools/usrp_client.py from the host's side of the link, and switches it back to s
                      host stops sending (the keyup watchdog)"""
 import contextlib
 import os
-import re
 import sys
 import time
 
 import pytest
 
+import fm_measure
 from rfoundry_hil import skip
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
@@ -200,9 +200,8 @@ def test_usrp_fm_tx(radio, sdr_bench, pytestconfig):
             radio.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO tuned")
             radio.lowest_power()
             before = usrp_view(link)
-            rdir = sdr_bench.run_dir("hil_usrp_fm_tx")
             with sdr_bench.lease():
-                cap = sdr_bench.capture_start(rdir, mhz, seconds=10)
+                job = sdr_bench.fm_over_start(mhz, 10, audio=True)
                 time.sleep(1.0)
                 peer.transmit(usrp_client.tone_frames(1000, 3.0))      # then keyup 0
                 radio.wait_for(lambda v: v.get("state") != "tx", 2, what="unkeyed by keyup 0")
@@ -212,17 +211,15 @@ def test_usrp_fm_tx(radio, sdr_bench, pytestconfig):
                 t0 = time.monotonic()
                 radio.wait_for(lambda v: v.get("state") != "tx", 2, what="unkeyed by the watchdog")
                 watchdog_s = time.monotonic() - t0
-                sdr_bench.capture_wait()
+                r = sdr_bench.fm_over_result(job)
             after = usrp_view(link)
-        rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz,
-                                        tones=True, tone_snr=1000)
-        print("\n" + text)
+        print("\n" + fm_measure.describe(r))
         print("usrp:", " ".join(f"{k}={before.get(k)}->{after[k]}" for k in sorted(after)))
         assert int(after["usrp.ptt_downs"]) - int(before["usrp.ptt_downs"]) == 2, after
         assert int(after["usrp.timeouts"]) - int(before["usrp.timeouts"]) == 1, after
         assert int(after["mux.fm_pulls"]) > int(before["mux.fm_pulls"]), "the PWM path never pulled audio"
         assert watchdog_s < 1.0, f"the watchdog took {watchdog_s:.2f} s"
-        tones = [float(f) for f in re.findall(r"tone (\d+(?:\.\d)?) Hz [\d.]+-[\d.]+ s", text)]
+        tones = [t[0] for t in r["tones"]]
         assert any(abs(f - 1000) < 15 for f in tones), f"no 1 kHz tone on air: {tones}"
-        m = re.search(r"voice 300-3000 Hz: peak (\d+) Hz \(99\.5%\), (\d+) Hz \(99\.9%\), rms (\d+) Hz", text)
-        assert m and 500 <= int(m.group(3)) <= 2500, f"voice band rms deviation out of range: {m.groups() if m else None}"
+        rms = r["voice"][0].get("rms") if r["voice"] else None
+        assert rms is not None and 500 <= rms <= 2500, f"voice band rms deviation out of range: {r['voice']}"

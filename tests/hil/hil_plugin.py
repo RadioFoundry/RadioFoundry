@@ -141,7 +141,7 @@ def restore_radio(request):
 def sdr_bench(pytestconfig):
     b = SdrBench(allow_rf=pytestconfig.getoption("--allow-rf"),
                  allow_service_stop=pytestconfig.getoption("--allow-service-stop"),
-                 tx_power=pytestconfig.getoption("--tx-power"), gain=pytestconfig.getoption("--sdr-gain"),
+                 tx_power=pytestconfig.getoption("--tx-power"),
                  wait_max=pytestconfig.getoption("--bench-wait-max"), api=pytestconfig.getoption("--bench-api"),
                  api_rx=pytestconfig.getoption("--bench-api-rx"),
                  api_level=pytestconfig.getoption("--bench-api-level"))

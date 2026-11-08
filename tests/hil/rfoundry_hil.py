@@ -3,11 +3,13 @@
 """Helpers for the hardware-in-the-loop tests: the radio over its USB debug link (Radio), and the SDR bench with its
 bench transmitter and RTL-SDR receiver (SdrBench). See README.md."""
 import argparse
+import collections
 import contextlib
 import json
 import os
 import re
 import shlex
+import statistics
 import struct
 import subprocess
 import sys
@@ -761,16 +763,14 @@ class Radio:
         raise AssertionError(f"no{kind} channel {on}{' ' + mode if mode else ''} in any zone: "
                              f"{', '.join(searched)}")
 
-API_FM_THRESHOLD_DB = 8.0          # sdr_fm_check's keyed threshold on a bench board (analyze_fm)
-
-
-class BenchFault(Exception):
-    """The bench failed the test, not the radio: reported as a skip of kind "bench"."""
+FM_SQUELCH_DB = 4.0                # a bench board's FM squelch over the channel's floor (a radio on its lowest power
+                                   # can arrive only 7-9 dB over it)
+FM_BLOCK_S = 0.01                  # its blocks: the keyed segments' resolution
 
 
 class _LineTx:
     """A bench board's tx or rx op (bench_line Request) as one of SdrBench's background jobs: .started once the board
-    keyed or started receiving (its tx / rx header), .records an rx op's records, .done the done record ({"mode", "freq", "on_air_s", "cut", "dev_hz", "peak_hz", ...}) once it's over."""
+    keyed (its "started" line) or started receiving (its rx header), .records an rx op's records, .done the done record ({"mode", "freq", "on_air_s", "cut", "dev_hz", "peak_hz", ...}) once it's over."""
 
     def __init__(self, line, where, req):
         self.started = threading.Event()
@@ -778,17 +778,21 @@ class _LineTx:
         self.done = None
         self.header = None
         self.records = []
+        self.pcm = {}               # an rx op's audio streams: name -> int16 LE bytes
         self.req_op = f"{req.get('op')} {req.get('mode', '')}".strip()                  # an rx op's records ({"block": ...})
         self.req = line.Request(where, req, self._on)
 
     def _on(self, d, data):
-        # The header comes once the board has the modem (after any queued / granted lines) and keys right away;
-        # a "started" line, where a board sends one, says the same
+        # A tx op's header comes before it waits for the modem: only its "started" line says it keyed. An rx op's
+        # header comes once the board receives.
         if "tx" in d or "rx" in d:
             self.header = d.get("tx", d.get("rx"))
-            self.started.set()
+            if "rx" in d:
+                self.started.set()
         elif "rec" in d:
             self.records.append(d["rec"])
+        elif "pcm" in d and data is not None:
+            self.pcm.setdefault(d["pcm"].get("stream"), bytearray()).extend(data)
         elif "started" in d:
             self.started.set()
         elif "done" in d:
@@ -1001,8 +1005,8 @@ def counter_deltas(before, after, keys):
 
 class SdrBench:
     """The SDR bench: a small Linux board next to the radio with an MMDVM modem board (the bench transmitter and
-    DMR listener, driven by tools/bench/bench_tx.py) and an RTL-SDR receiver (raw captures by tools/bench/sdrmon.py,
-    analyzed by sdrmon.py for DMR and tools/sdr_fm_check.py for FM). Both are normally held by the bench's gateway
+    DMR listener, driven by tools/bench/bench_tx.py) and a receiver whose bursts the bench's daemon decodes. Both are
+    normally held by the bench's gateway
     service. Stopping that service goes through dmr_bench.py's lease: a detached process on the bench
     restarts it whatever happens here. Nothing transmits and nothing is stopped unless the run allowed it
     (--allow-rf, --allow-service-stop). Host, service, directory and python come from $RFOUNDRY_SDR_BENCH_* (dmr_bench.py
@@ -1017,14 +1021,13 @@ class SdrBench:
     A bench board (api="HOST[:PORT]", --bench-api) stands in for the SDR bench host, over the bench line protocol
     (tools/bench/bench_line.py, TCP 7373; the daemon's ops). transmit() and the calls built on it (voice_call, data,
     csbk), listen_start(), repeater_start() and outbound_start() send bench_tx.py / bench_repeater.py command lines as
-    jobs the board runs with its own DMR stack, under a session held for the lease. bursts_start() and capture_start()
-    read the receive board (api_rx, --bench-api-rx; the same board by default): its decoded bursts, and the channel's
-    I/Q from a triggered capture into a local run directory, where analyze_fm() / analyze_aprs() run their tools. A job the board can't do
-    (a duplex repeater on a half-duplex board) skips; so does what needs the bench host (sdrmon.py analysis,
-    stations)."""
+    jobs the board runs with its own DMR stack, under a session held for the lease. bursts_start(), fm_rx_start() and
+    aprs_rx_start() read the receive board (api_rx, --bench-api-rx; the same board by default): what it decoded and
+    measured, never I/Q. A job the board can't do (a duplex repeater on a half-duplex board) skips; so does what needs
+    the bench host (stations)."""
 
-    def __init__(self, allow_rf=False, allow_service_stop=False, tx_power=40, lease_max=300, gain=5.0,
-                 offset_khz=-200.0, wait_max=None, api=None, api_rx=None, api_level=None):
+    def __init__(self, allow_rf=False, allow_service_stop=False, tx_power=40, lease_max=300, wait_max=None,
+                 api=None, api_rx=None, api_level=None):
         import dmr_bench
         self.dmr_bench = dmr_bench
         self.api = api
@@ -1040,8 +1043,6 @@ class SdrBench:
         self.allow_rf = allow_rf
         self.allow_service_stop = allow_service_stop
         self.tx_power = tx_power
-        self.gain = gain
-        self.offset_khz = offset_khz
         self.bench = dmr_bench.Bench(argparse.Namespace(dry_run=False, lease_max=lease_max, yes=True))
         self.bench.note = lambda line: None         # dmr_bench prints every command; pytest -s shows ours anyway
         if wait_max is not None:
@@ -1247,8 +1248,8 @@ class SdrBench:
             pass
 
     def can_fm_rx(self):
-        """True when the receive board demodulates FM itself (the rx op, mode fm): a second measurement of what the
-        radio sends, beside the analysis of the board's I/Q"""
+        """True when the receive board demodulates FM itself (the rx op, mode fm): what the FM tests measure the radio
+        with"""
         if not self.api:
             return False
         return "fm" in (self._api_info(rx=True).get("signal_modes") or {}).get("rx", [])
@@ -1256,13 +1257,13 @@ class SdrBench:
     def fm_rx_start(self, freq, seconds, **fields):
         """The receive board's FM measurement on freq (MHz) for `seconds` from now, in the background: a _LineTx whose
         wait() gives the done record, its summary the board's figures (carrier_s, cfo_hz, deviation, tone, sub: the
-        CTCSS or DCS it decoded). fields: the mode's others (bw, nominal_dev_hz, deemph_us; None left out). Receives
-        only: no claim on the frequency."""
+        CTCSS or DCS it decoded). fields: the mode's others (bw, block_s, streams, dtmf, aprs, nominal_dev_hz,
+        deemph_us; None left out). Receives only: no claim on the frequency."""
         if not self.can_fm_rx():
             skip("bench", f"the bench board {self.api_rx} has no FM receive (signal modes)")
         self._need_lease()
         L = self._line()
-        req = {"op": "rx", "mode": "fm", "freq": freq, "seconds": float(seconds), "streams": [],
+        req = {"op": "rx", "mode": "fm", "freq": freq, "seconds": float(seconds),
                "label": getattr(self.bench, "label", None) or "fm rx"}
         if self.api_rx == self.api:     # the lease's session is the TX board's; another board has none of ours
             req["session"] = self._api_session
@@ -1275,6 +1276,32 @@ class SdrBench:
         if t.req.error is not None:
             self._api_fail(t.req.error, f"FM receive on {freq} MHz")
         return t
+
+    def fm_over_start(self, freq, seconds, bw_khz=12.5, audio=False, dtmf=False):
+        """The receive board measures FM on freq (MHz) for `seconds` from now, in the background, so the radio can key
+        next: 10 ms blocks for the keyed segments, the audio stream with audio (timed tones, voice figures), the DTMF
+        digits with dtmf. Finish with fm_over_result(); the board's analyzers, no I/Q."""
+        job = self.fm_rx_start(freq, seconds, bw=25000 if bw_khz > 12.5 else 16000, block_s=FM_BLOCK_S,
+                               squelch_over_db=FM_SQUELCH_DB, streams="audio" if audio else None,
+                               dtmf=True if dtmf else None)
+        job.seconds = float(seconds)
+        job.want_audio = audio
+        return job
+
+    def fm_over_result(self, job, timeout=None):
+        """fm_measure.measure()'s report of an fm_over_start() job, waiting for its end. Samples the board lost break a
+        tone or cut a key-up, so that is a bench fault, a skip."""
+        import fm_measure
+        done = job.wait(timeout if timeout is not None else job.seconds + 20)
+        gap = done.get("gap_samples") or 0
+        if gap:
+            where = [g["gap"] for g in job.req.replies if "gap" in g][:4]
+            skip("bench", f"the bench board lost samples during the FM measurement (gap_samples {gap}, sc0 "
+                          f"{(job.header or {}).get('sc0')}, {where}); it can't judge the radio")
+        pcm = job.pcm.get("audio")
+        if job.want_audio and not pcm:
+            skip("bench", f"the bench board {self.api_rx} sent no FM audio stream")
+        return fm_measure.measure(done, job.records, job.header, pcm)
 
     def ssh(self, cmd, timeout=300, check=True):
         self._no_api("shell")
@@ -1380,18 +1407,8 @@ class SdrBench:
         subprocess.run(["scp", "-q", local, f"{self.host}:{remote}"], check=True, timeout=120)
         return f"runs/{name}"     # relative: bench_tx.py runs in ~/<dir>, and a quoted "~" would not expand
 
-    def sync_tool(self, local):
-        """Copy one tool (e.g. tools/sdr_fm_check.py) into the bench directory; returns its name there. With a bench
-        board the analyzers run here: nothing to copy, the local path."""
-        if self.api:
-            return local
-        name = os.path.basename(local)
-        self.ssh(f"mkdir -p ~/{self.dir}")
-        subprocess.run(["scp", "-q", local, f"{self.host}:{self.dir}/{name}"], check=True, timeout=120)
-        return name
-
     def run_dir(self, tag):
-        if self.api:            # captures land here
+        if self.api:            # what a job writes lands here
             import tempfile
             d = tempfile.mkdtemp(prefix=f"rfoundry-hil-{tag}-")
             self._run_dirs.append(d)
@@ -1437,7 +1454,7 @@ class SdrBench:
         (either): None when it can. Judged from the daemon's info(); a bench without the daemon has both, as far as
         a test can tell before it takes the lease."""
         if self.api:
-            return None         # the board transmits and decodes bursts; a raw capture skips when a test asks for one
+            return None         # the board transmits and decodes bursts
         info = self.info()
         if not info:
             return None
@@ -1796,172 +1813,16 @@ class SdrBench:
         return self._api_job("bench_tx", f"--freq {freq} --cc {cc} outbound "
                                          f"--seconds {seconds}", seconds)
 
-    # ── the RTL-SDR ──
-    def capture_start(self, run_dir, freq, seconds, name="cap0", gain=None):
-        """A raw I/Q capture (cs8, 1.536 MS/s, the channel offset_khz from the tuner center) in the background;
-        returns once the capture is running. The file stays on the bench (about 3 MB/s). gain: this capture's RTL-SDR
-        gain instead of --sdr-gain (level measurements want the ADC far from its rails)."""
-        if self.api:
-            return self._api_capture_start(run_dir, freq, seconds, name)
-        self._need_lease()
-        f = f"~/{self.dir}/{run_dir}/{name}.cs8"
-        g = self.gain if gain is None else gain
-        self._claim(freq)
-        try:
-            self.bench.capture_bg(freq, seconds, f, self.offset_khz, g)
-        except self.dmr_bench.BenchBusy as e:
-            self._busy(e)
-        return f
-
-    def capture_wait(self, timeout=120):
-        if self.api:
-            caps, self._api_caps = getattr(self, "_api_caps", []), []
-            for t, err in caps:
-                t.join(timeout)
-                if t.is_alive():        # the file is still being written and has no FILE.json: nothing to analyze
-                    skip("bench", f"the bench board's capture didn't end in {timeout:g} s")
-                if err and isinstance(err[0], BenchFault):
-                    skip("bench", str(err[0]))
-                if err and isinstance(err[0], self._line().BenchLineError):
-                    self._api_fail(err[0], "a capture")
-                if err:
-                    raise RuntimeError(f"bench board capture failed: {err[0]}")
-            return
-        self.bench.captures_wait(timeout)
-
-    API_CAPTURE_BW = 40000.0        # Hz: the channel cut on the board, wider than a 25 kHz FM channel's spectrum
-    API_CAPTURE_PRE_S = 1.0         # s of history before the key-up
-    # dB over the channel's floor that fires the trigger (the board's default is 10). The receive board's front end
-    # compresses near a transmitting radio: the radio read 11-12 dB over the floor at 100 mW and at 5 W alike, so at
-    # 10 dB a small swing of the floor let it miss the key-up and the capture came back empty
-    API_CAPTURE_THRESHOLD_DB = 6.0
-
-    def _api_capture_start(self, run_dir, freq, seconds, name):
-        """The receive board's channel at freq as I/Q (cs16, about 48 kS/s, centered on it; the line protocol's
-        trigger op), by a thread; capture_wait() joins it. The board learns the channel's floor, fires when the radio
-        keys and sends from API_CAPTURE_PRE_S before the key-up to `seconds` after it: a quarter of the wideband
-        stream's bytes, which a busy network link to the board can carry where 18 s of wideband I/Q lost seconds.
-        Nothing keyed within `seconds` leaves an empty capture (the analyzers find no carrier). Every frame is placed
-        by its sample clock, so samples the board couldn't send are zeros in place and counted. FILE.json gets what
-        sdr_fm_check.py reads: center (the channel: the I/Q is mixed to 0 Hz), rate, fmt, ppm 0 (the board's I/Q
-        needs no carrier correction; its own ppm, the sample clock's, is kept as clock_ppm), freq."""
-        self._need_lease()
-        L = self._line()
-        info = self._api_info(rx=True)
-        win = info.get("window", {})
-        if not win.get("enabled", True) or not (win.get("lo", 0) + 0.00625 <= freq <= win.get("hi", 0) - 0.00625):
-            skip("bench", f"{freq} MHz is outside the bench board's receive window "
-                          f"{win.get('lo', 0):.4f}-{win.get('hi', 0):.4f} MHz")
-        f = os.path.join(run_dir, f"{name}.cs16")
-        err = []
-        st = {"sc0": None, "pos": 0, "missing": 0, "fh": open(f, "wb"), "meta": None}
-        armed = threading.Event()
-
-        def on(d, data):
-            fh = st["fh"]
-            if "armed" in d:
-                armed.set()
-            elif "iq" in d and data is not None:
-                sc = d["iq"]["sc"]
-                if st["sc0"] is None:
-                    st["sc0"] = sc
-                at = (sc - st["sc0"]) * 4
-                if at > st["pos"]:          # samples the history overwrote before they went: zeros in place
-                    st["missing"] += (at - st["pos"]) // 4
-                    fh.write(b"\0" * (at - st["pos"]))
-                    st["pos"] = at
-                fh.write(data)
-                st["pos"] += len(data)
-            elif "done" in d:
-                st["meta"] = d["done"]
-        req = {"op": "trigger", "freq": freq, "bw": self.API_CAPTURE_BW, "fmt": "cs16", "pre_s": self.API_CAPTURE_PRE_S,
-               "post_s": float(seconds), "timeout_s": float(seconds), "threshold_db": self.API_CAPTURE_THRESHOLD_DB}
-
-        def run():
-            try:
-                r = L.Request(L.address(self.api_rx), req, on)
-                r.wait(2 * seconds + 60)
-                if not r.done.is_set():
-                    r.cancel()
-                    raise BenchFault(f"the bench board's capture didn't end in {2 * seconds + 60:g} s (board hung?)")
-                if r.error is not None and r.error.code != "no_signal":
-                    raise r.error
-                if r.error is None and st["meta"] is None:
-                    raise BenchFault("the bench board ended the capture without its summary (board restarted?)")
-                m = st["meta"] or {}
-                end = (m.get("samples") or 0) * 4
-                if end > st["pos"]:
-                    st["missing"] += (end - st["pos"]) // 4
-                    st["fh"].write(b"\0" * (end - st["pos"]))
-                st["fh"].close()
-                rate = m.get("rate") or 48000.0
-                # Samples the board lost are zeros in the file (its timeline stays real): a key cut short or a tone
-                # broken up, so the capture is a bench fault. gap_samples counts the board's filler and what it
-                # couldn't send; 2 ms of exact zeros is never noise (the channel's noise is a few counts) and is
-                # checked too
-                gap = max(m.get("gap_samples") or 0, st["missing"])
-                with open(f, "rb") as fh:
-                    zeros = sum(len(z.group()) for z in re.finditer(b"\0{%d,}" % int(rate * 0.002 * 4), fh.read()))
-                if gap > 0 or zeros:
-                    err.append(BenchFault(f"the bench board lost samples in the capture (gap_samples {gap}, "
-                                          f"{zeros / 4 / rate:.3f} s of zero runs); it can't judge the radio"))
-                meta = {"center": freq * 1e6, "rate": rate, "fs": rate, "fmt": "cs16",     # fs: sdrmon.py's name
-                        # The board's ppm is its sample clock's rate error (timestamps); its I/Q is on frequency, so
-                        # the analyzers must not correct the carrier by it
-                        "ppm": 0.0, "clock_ppm": info.get("window", {}).get("ppm"), "freq": freq * 1e6,
-                        "scale_db": m.get("scale_db"), "samples": m.get("samples", 0), "clip_pct": m.get("clip_pct", 0),
-                        "trigger_time": m.get("trigger_time"), "level_db": m.get("level_db"),
-                        "floor_db": m.get("floor_db"), "no_signal": r.error is not None,
-                        # how far the board's crystal correction may be off at freq (null: not known), and its source
-                        "freq_tol_hz": m.get("freq_tol_hz"), "ppm_source": m.get("ppm_source"),
-                        "gap_samples": gap, "zero_s": round(zeros / 4 / rate, 3)}
-                with open(f + ".json", "w") as fh:
-                    json.dump(meta, fh)
-            except Exception as e:      # noqa: BLE001 - reported by capture_wait
-                err.append(e)
-            finally:
-                armed.set()
-                if not st["fh"].closed:
-                    st["fh"].close()
-        t = threading.Thread(target=run, daemon=True)
-        t.start()
-        if not hasattr(self, "_api_caps"):
-            self._api_caps = []
-        self._api_caps.append((t, err))
-        armed.wait(15)                  # the floor is learned before the radio keys
-        return f
-
-    def _offset_khz(self, capture):
-        """The channel minus the tuner center of this capture: a shared bench's receiver sits at one center for
-        every channel, not at offset_khz."""
-        m = self.capture_meta(capture)
-        if "freq" in m and "center" in m:
-            return (m["freq"] - m["center"]) / 1e3
-        return self.offset_khz
-
-    def capture_meta(self, capture):
-        """The capture's FILE.json (sdrmon.py capture): gain, samples, overflows, clip_pct (I/Q samples at the ADC
-        rails, over the whole file). A bench board's also has freq_tol_hz and ppm_source (its crystal correction)."""
-        if self.api:
-            try:
-                with open(capture + ".json") as fh:
-                    return json.load(fh)
-            except (OSError, ValueError):
-                return {}
-        try:
-            return json.loads(self.ssh(f"cat {capture}.json", timeout=30))
-        except (RuntimeError, ValueError):
-            return {}
 
     # ── DMR bursts decoded on the bench (rfoundry-bench dmr-bursts): no raw I/Q pulled, only one JSON line per burst ──
     def can_watch(self, freq, bw_hz=12500.0):
         """True when dmr_watch_start() can decode bursts on the bench: it runs the shared bench daemon, its client has
         `dmr-bursts` and freq (with bw_hz around it) is inside the shared receiver's window (the tool never retunes
-        the SDR). Otherwise a test takes a raw capture and analyzes that (dmr_watch_start does this itself)."""
+        the SDR). Otherwise dmr_watch_start() skips."""
         if self.api:            # the receive board decodes bursts on any channel inside its window
             w = self._api_info(rx=True).get("window", {})
             return bool(w.get("enabled", True)) and w.get("lo", 0) + bw_hz / 2e6 <= freq <= w.get("hi", 0) - bw_hz / 2e6
-        if not self.bench.uses_daemon() or os.environ.get("RFOUNDRY_HIL_RAW_IQ") == "1":     # =1: force raw captures
+        if not self.bench.uses_daemon():
             return False
         if getattr(self, "_watch_cli", None) is None:
             r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", self.host,
@@ -1974,13 +1835,14 @@ class SdrBench:
         off_khz = abs(freq - w["center"]) * 1e3
         return off_khz >= w["dc_guard_khz"] and off_khz + bw_hz / 2e3 <= (w["hi"] - w["lo"]) * 1e3 / 2
 
-    def bursts_start(self, freq, seconds, cc=None, bursts=None, until_end=False):
+    def bursts_start(self, freq, seconds, cc=None, bursts=None, until_end=False, envelope=False):
         """rfoundry-bench dmr-bursts in the background (the shared receiver's window; receive only); returns once it is
         watching (its READY line). bursts_result() collects the records. The daemon's own `bursts` op does the work
         when it has it, else the client decodes short captures (the tool decides, same records either way). On a
-        bench board: its bursts op on freq, from the receive board (the same record fields)."""
+        bench board: its bursts op on freq, from the receive board (the same record fields); envelope: with the
+        carrier's keyed segments too (bench boards only)."""
         if self.api:
-            return self._api_bursts_start(freq, seconds, cc, bursts, until_end)
+            return self._api_bursts_start(freq, seconds, cc, bursts, until_end, envelope)
         self._need_lease()
         self._claim(freq)
         cmd = (f"{self.bench.ctl} dmr-bursts --session {self.bench.session} --freq {freq} --seconds {seconds}"
@@ -2010,7 +1872,7 @@ class SdrBench:
             self._busy("".join(p.err).strip().splitlines()[-1])
         return p
 
-    def _api_bursts_start(self, freq, seconds, cc, bursts, until_end):
+    def _api_bursts_start(self, freq, seconds, cc, bursts, until_end, envelope=False):
         """The receive board's decoded bursts on freq for `seconds` (the line protocol's bursts op, the daemon's
         dmr-bursts records), collected by a thread; bursts_result() waits. No session: receiving never waits."""
         self._need_lease()
@@ -2020,6 +1882,8 @@ class SdrBench:
             req["cc"] = cc
         if bursts:
             req["max_bursts"] = bursts
+        if envelope:
+            req["envelope"] = True
         try:
             r = L.Request(L.address(self.api_rx), req)
         except L.BenchLineError as e:
@@ -2040,13 +1904,22 @@ class SdrBench:
                 self._api_fail(p.error, "bursts")
             rows = [d["burst"] for d in p.replies if "burst" in d]
             summary = next((d["done"] for d in p.replies if "done" in d), {"bursts": len(rows)})
+            # Times from the sample count: a board steps its stream's UTC when it drifts from NTP or GNSS, which moves
+            # `t` by hundreds of ms inside a transmission with no burst missing
+            fs = self._api_info(rx=True).get("window", {}).get("fs")
+            sc0 = rows[0].get("sc") if rows and fs else None
+            if sc0 is not None:
+                summary = dict(summary, edges=self.edges_from_segments(
+                    [d["segment"] for d in p.replies if "segment" in d], sc0, fs))
             t0 = rows[0]["t"] if rows else 0.0
             out = []
             for r in rows:
                 r = dict(r)
-                t_rel = (r.get("t", t0) - t0) * 1e3
-                r.setdefault("t_rel_ms", round(t_rel, 1))
-                r.setdefault("slot_ab", "AB"[int(round(t_rel / 30.0)) % 2])
+                t_rel = (r["sc"] - sc0) / fs * 1e3 if sc0 is not None and "sc" in r else (r.get("t", t0) - t0) * 1e3
+                r["t_rel_ms"] = round(t_rel, 3)
+                slot_ab = "AB"[int(round(t_rel / 30.0)) % 2]
+                # A board's own label comes from its `t`: a UTC step inside the call would split the call in two
+                r["slot_ab"] = slot_ab if sc0 is not None else r.get("slot_ab", slot_ab)
                 r.setdefault("voice", str(r.get("kind", "")).startswith("VOICE") or (r.get("sync") or "").endswith("VOICE"))
                 for k in ("cfo_hz", "level_dbfs", "dev_hz"):
                     if r.get(k) is None:
@@ -2068,98 +1941,99 @@ class SdrBench:
         summary = next((r["summary"] for r in reversed(rows) if "summary" in r), {})
         return [r for r in rows if "summary" not in r], summary
 
-    def bursts_carry_cach(self):
-        """True when the receive board's burst records carry each BS burst's CACH bits (bench-api.md 14.2, info
-        features.bursts_cach): a CACH check then needs no raw capture."""
-        return bool(self.api and self._api_info(rx=True).get("features", {}).get("bursts_cach"))
+    @staticmethod
+    def edges_from_segments(segments, sc0, fs):
+        """A board's envelope segments as sdrmon's edges, in ms from the sample count sc0 (the first burst's), so on the
+        bursts' time base. A segment cut by the watch or by lost samples, or with a ramp the board couldn't measure,
+        has no on_ms: check_tx doesn't judge it."""
+        edges = []
+        for s in segments:
+            e = {"up_ms": round((s["up_sc"] - sc0) / fs * 1e3, 2), "ramp_up_ms": s.get("ramp_up_ms"),
+                 "level_dbfs": s.get("level_dbfs"), "steps": s.get("steps", [])}
+            whole = not (s.get("open_start") or s.get("open_end") or s.get("gap"))
+            if whole and None not in (s.get("on_ms"), s.get("ramp_up_ms"), s.get("ramp_down_ms")):
+                e.update(down_ms=round(e["up_ms"] + s["on_ms"], 2), ramp_down_ms=s["ramp_down_ms"], on_ms=s["on_ms"])
+            edges.append(e)
+        return edges
 
     @staticmethod
     def analysis_from_bursts(records, summary):
-        """The records as analyze_dmr()'s dict, for the parts of it a bursts watch can fill: bursts (t_ms, slot,
-        family, voice, kind, cc, lc, foff_hz, cach_ts, sync_errors, and cach as sdrmon's --cach gives it when the
-        records carry the CACH bits; `slot` is the A/B position on the 30 ms grid), summary counts and meta. No
-        edges and no power / overlap summary: those come from the raw waveform (use a raw capture for them)."""
+        """The records as one dict: bursts (t, t_ms, slot, family, voice, kind, cc, lc, foff_hz, cach_ts, sync_errors,
+        and on a board's BS bursts cach, the decoded CACH: dmr_cach's dict; `slot` is the A/B position on the 30 ms
+        grid), summary (counts of each kind) and meta. The edges and the power / overlap summary come from a watch
+        with the envelope."""
         import dmr_cach
-        cdec = dmr_cach.CachDecoder()
+        slots = dmr_cach.CachDecoder()
         bursts = []
         for r in records:
             fam = r["sync"].split("_")[0].lower()
-            cach = r.get("cach")
             bursts.append({"t_ms": r["t_rel_ms"], "slot": r.get("slot_ab"), "family": fam, "voice": r["voice"],
-                           "kind": r["kind"], "cc": r["cc"], "lc": r["lc"], "foff_hz": round(r["cfo_hz"]),
+                           "kind": r["kind"], "cc": None if r["cc"] == -1 else r["cc"],    # -1: a voice sync burst has none
+                           "lc": r["lc"], "foff_hz": round(r["cfo_hz"]),
                            "cach_ts": r["slot"] if fam == "bs" else None, "level_dbfs": r["level_dbfs"],
                            "sc": r.get("sc"),     # the board's sample counter (32 bits): its time without clock steps
-                           "dev_hz": r["dev_hz"], "fec_ok": r["fec"]["fec_ok"], "sync_errors": r.get("sync_errors"),
-                           # 24 bits in air order, the first on air the top bit: dmr_cach's TX(23..0)
-                           "cach": cdec.push(int(cach, 16)) if isinstance(cach, str) else None})
-        return {"bursts": bursts, "edges": [], "summary": {"counts": summary.get("kinds", {})},
-                "meta": {"clip_pct": summary.get("clip_pct", 0)},
-                "source": "bursts", "bursts_summary": summary,
-                "t0": records[0].get("t") if records else None}     # UTC s of t_ms 0, as a capture's meta t0
+                           "dev_hz": r["dev_hz"], "fec_ok": r["fec"]["fec_ok"], "t": r.get("t"),
+                           "sync_errors": r.get("sync_errors", 0)})
+            if r.get("cach"):
+                bursts[-1]["cach"] = slots.push(int(r["cach"], 16))
+        env = summary.get("envelope")
+        out = {"bursts": bursts, "edges": [], "summary": {"counts": dict(collections.Counter(b["kind"] for b in bursts))},
+               "meta": {"clip_pct": (env or summary).get("clip_pct", 0)}, "source": "bursts", "bursts_summary": summary}
+        if env:
+            spacing = []
+            for slot in {b["slot"] for b in bursts}:
+                t = [b["t_ms"] for b in bursts if b["slot"] == slot]
+                spacing += [y - x for x, y in zip(t, t[1:]) if 55 <= y - x <= 65]      # sdrmon's same-slot spacing
+            out["edges"] = summary.get("edges", [])
+            out["summary"].update(overlaps=env["overlaps"], power_steps=env["power_steps"],
+                                  unexplained_carrier=env["unexplained_carrier"])
+            if spacing:
+                out["summary"]["same_slot_spacing_ms"] = {
+                    "n": len(spacing), "mean": round(statistics.fmean(spacing), 3),
+                    "sd": round(statistics.pstdev(spacing), 3)}
+        return out
 
-    def dmr_watch_start(self, rdir, freq, seconds, cc=None, name="cap0"):
-        """Watch freq for DMR bursts for `seconds`, started before the transmitter keys up: bursts decoded on the
-        bench when can_watch() (nothing but JSON comes back), else a raw capture. Finish with dmr_watch_result()."""
-        if self.can_watch(freq):
-            return {"p": self.bursts_start(freq, seconds, cc=cc), "freq": freq, "cc": cc}
-        return {"cap": self.capture_start(rdir, freq, seconds=seconds, name=name), "freq": freq, "cc": cc}
+    def dmr_watch_start(self, rdir, freq, seconds, cc=None, name="cap0", waveform=False):
+        """Watch freq for DMR bursts for `seconds`, started before the transmitter keys up, decoded on the bench: only
+        JSON comes back. Skips where the bench can't. Finish with dmr_watch_result(). waveform: the keying edges too
+        (need_dmr_waveform() first), the board's envelope. rdir and name are unused."""
+        if waveform:
+            self.need_dmr_waveform(freq)
+        elif not self.can_watch(freq):
+            skip("bench", f"the bench can't decode bursts on {freq} MHz")
+        return {"p": self.bursts_start(freq, seconds, cc=cc, envelope=waveform), "freq": freq, "cc": cc}
+
+    def dmr_watch_wait(self, w, timeout=120):
+        """Nothing to wait for here: a burst watch ends in dmr_watch_result()."""
 
     def dmr_watch_result(self, w, timeout=120):
-        """analyze_dmr()'s dict for a dmr_watch_start(): from the burst records (analysis_from_bursts) or from the
-        raw capture."""
-        if "p" in w:
-            rows, summary = self.bursts_result(w["p"], timeout)
-            if summary.get("complete") is False:    # a burst the receiver lost would read as one the radio didn't send
-                skip("bench", f"the bench board lost samples while watching bursts ({summary.get('lost')}); "
-                              "it can't judge the radio")
-            return self.analysis_from_bursts(rows, summary)
-        self.capture_wait()
-        return self.analyze_dmr(w["cap"], w["freq"], w["cc"])
+        """A dmr_watch_start()'s bursts: analysis_from_bursts()."""
+        rows, summary = self.bursts_result(w["p"], timeout)
+        if summary.get("complete") is False:    # a burst the receiver lost would read as one the radio didn't send
+            skip("bench", f"the bench board lost samples while watching bursts ({summary.get('lost')}); "
+                          "it can't judge the radio")
+        return self.analysis_from_bursts(rows, summary)
 
-    def need_dmr_waveform(self):
-        """Skip now, before the radio keys, when analyze_dmr() can't run here. With a bench board sdrmon.py runs on
-        this machine on the board's channel I/Q, and needs the rfoundry_sdrbench package (installed, or a checkout in
-        $RFOUNDRY_SDRBENCH)."""
-        if self.api and self._sdrbench_env() is None:
-            skip("bench", "sdrmon.py's waveform analysis (analyze_dmr) needs the rfoundry_sdrbench package here "
-                          "(installed, or a checkout in $RFOUNDRY_SDRBENCH)")
+    def need_dmr_waveform(self, freq):
+        """Skip now, before the radio keys, when the waveform can't be measured on freq: it needs a bench board with
+        the envelope and freq inside its receive window."""
+        if not self.api:
+            skip("bench", "the keying edges come from a bench board's envelope (--bench-api)")
+        if "bursts_envelope" not in self._api_info(rx=True).get("features", []):
+            skip("bench", f"the bench board {self.api_rx} has no burst envelope (bursts_envelope)")
+        if not self.can_watch(freq):
+            skip("bench", f"{freq} MHz is outside the bench board's receive window")
 
-    @staticmethod
-    def _sdrbench_env():
-        """The environment that lets a tool on this machine import rfoundry_sdrbench, None when it can't."""
-        env = dict(os.environ)
-        d = os.environ.get("RFOUNDRY_SDRBENCH")
-        if d:
-            env["PYTHONPATH"] = os.pathsep.join(x for x in (d, env.get("PYTHONPATH")) if x)
-        r = subprocess.run([sys.executable, "-c", "import rfoundry_sdrbench.channelizer"], env=env,
-                           capture_output=True, timeout=60)
-        return env if r.returncode == 0 else None
+    def need_bursts_cach(self, freq):
+        """Skip now, before the radio keys, when bursts on freq won't carry their CACH: a bench board's feature."""
+        if not self.api:
+            skip("bench", "the CACH comes from a bench board's bursts (--bench-api)")
+        if "bursts_cach" not in self._api_info(rx=True).get("features", []):
+            skip("bench", f"the bench board {self.api_rx} doesn't report the CACH (bursts_cach)")
+        if not self.can_watch(freq):
+            skip("bench", f"{freq} MHz is outside the bench board's receive window")
 
-    def analyze_dmr(self, capture, freq, cc, cach=False):
-        """sdrmon.py analyze: every burst with its sync, CC, LC, timing, frequency offset, edges (a dict). From raw
-        I/Q: use it only for what the burst records (dmr_watch_start) lack: the waveform (keying edges, ramps, power
-        steps, overlaps, CACH decode). With a bench board, on this machine on the board's channel I/Q (48 kS/s, the
-        analysis's own rate, centered on the channel)."""
-        extra = " --cach" if cach else ""
-        if self.api:
-            env = self._sdrbench_env()
-            if env is None:
-                skip("bench", "sdrmon.py needs the rfoundry_sdrbench package here")
-            r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "bench", "sdrmon.py"), "analyze", capture,
-                                "--freq", str(freq), "--cc", str(cc), "--json", capture + ".analysis.json"]
-                               + (["--cach"] if cach else []), env=env, capture_output=True, text=True, timeout=600)
-            with open(capture + ".txt", "w") as fh:
-                fh.write(r.stdout + r.stderr)
-            print("\n".join((r.stdout + r.stderr).splitlines()[-40:]))
-            if r.returncode != 0 or not os.path.exists(capture + ".analysis.json"):
-                raise RuntimeError(f"sdrmon.py analyze failed ({r.returncode}): {(r.stdout + r.stderr)[-1500:]}")
-            with open(capture + ".analysis.json") as fh:
-                return json.load(fh)
-        txt = self.ssh(f"cd ~/{self.dir} && {self.py} sdrmon.py analyze {capture} --freq {freq} --cc {cc}{extra} "
-                       f"--json {capture}.json > {capture}.txt 2>&1; cat {capture}.json", timeout=600)
-        return json.loads(txt)
-
-    APRS_RX_BW = 25000.0        # Hz: the board's FM channel filter for an AFSK job, as analyze_aprs()'s 25 kHz
+    APRS_RX_BW = 25000.0        # Hz: the board's FM channel filter for an AFSK job
 
     def aprs_rx_start(self, freq, seconds, bw=APRS_RX_BW):
         """The receive board's own Bell 202 / AX.25 decode (an FM rx job with "aprs": true, the gateway's
@@ -2170,7 +2044,7 @@ class SdrBench:
         return job
 
     def aprs_rx_result(self, job, timeout=None):
-        """analyze_aprs()'s dict for an aprs_rx_start(): waits for the job's end (its seconds plus 20 s at most)."""
+        """The frames and segments of an aprs_rx_start() as aprs_afsk_check.py's JSON: waits for the job's end (its seconds plus 20 s at most)."""
         done = job.wait(timeout if timeout is not None else job.seconds + 20)
         res = self.aprs_from_records(job.records, done)
         if res is None:     # a board that doesn't know the field ignores it: no frames would read as none sent
@@ -2230,50 +2104,3 @@ class SdrBench:
         return {"source": "board", "seconds": done.get("seconds"), "frames": frames, "segments": segments,
                 "floor_dbfs": summary.get("noise_dbfs"), "fcs_bad": summary["aprs"].get("fcs_bad", 0),
                 "decoded": summary["aprs"].get("frames", len(frames))}
-
-    def analyze_aprs(self, capture, bw_khz=25.0):
-        """tools/aprs_afsk_check.py on the bench (Bell 202 AFSK / AX.25 decode and the tone measurements); returns
-        its JSON result (frames with a valid FCS, segments). On raw I/Q: for the SDR bench host; a bench board decodes
-        APRS itself (aprs_rx_start)."""
-        if self.api:
-            r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "aprs_afsk_check.py"), capture, "--offset",
-                                f"{self._offset_khz(capture) * 1000:.0f}", "--bw", str(bw_khz), "--json"],
-                               capture_output=True, text=True, timeout=600)
-            out = r.stdout + r.stderr
-        else:
-            self.sync_tool(os.path.join(ROOT, "tools", "sdr_fm_check.py"))     # its filters
-            tool = self.sync_tool(os.path.join(ROOT, "tools", "aprs_afsk_check.py"))
-            out = self.ssh(f"cd ~/{self.dir} && {self.py} {tool} {capture} --offset "
-                           f"{self._offset_khz(capture) * 1000:.0f} --bw {bw_khz} --json", timeout=600, check=False)
-        lines = [ln for ln in out.splitlines() if ln.startswith("{")]
-        if not lines:
-            raise RuntimeError(f"aprs_afsk_check.py printed no result: {out[-1500:]}")
-        return json.loads(lines[-1])
-
-    def analyze_fm(self, capture, bw_khz=12.5, ctcss=None, dcs=None, ppm=None, freq=None, tones=False, track=False,
-                   levels=False, tone_snr=None, dtmf=False):
-        """tools/sdr_fm_check.py on the bench; returns (exit status, text). tones: also report the audio tones;
-        track: the carrier every 50 ms; levels: the voice band rms every 50 ms. Raw I/Q on purpose: FM audio, tone,
-        deviation and carrier-offset measurements need the demodulated waveform, not decoded DMR bursts. dtmf: the DTMF digits."""
-        tool = None if self.api else self.sync_tool(os.path.join(ROOT, "tools", "sdr_fm_check.py"))
-        off = self._offset_khz(capture)
-        a = f"--offset {off * 1000:.0f} --bw {bw_khz}" + (" --tones" if tones else "") + \
-            (" --track" if track else "") + (" --levels" if levels else "") + (" --dtmf" if dtmf else "") + \
-            (f" --tone-snr {tone_snr}" if tone_snr else "")
-        if ctcss is not None:
-            a += f" --expect-ctcss {ctcss}"
-        if dcs is not None:
-            a += f" --expect-dcs {dcs}"
-        if ppm is not None and freq is not None:
-            a += f" --center {freq * 1e6 - off * 1e3:.0f} --ppm {ppm}"
-        if self.api:
-            # A board's receiver sits wherever the bench put it: a radio on low power into a dummy load can arrive
-            # only about 11 dB over its floor, under sdr_fm_check's 15 dB default
-            a += f" --threshold {API_FM_THRESHOLD_DB:g}"
-            r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "sdr_fm_check.py"), capture] + a.split(),
-                               capture_output=True, text=True, timeout=600)
-            return r.returncode, r.stdout + r.stderr
-        r = subprocess.run(["ssh", "-o", "BatchMode=yes", self.host,
-                            f"cd ~/{self.dir} && {self.py} {tool} {capture} {a}"],
-                           capture_output=True, text=True, timeout=600)
-        return r.returncode, r.stdout + r.stderr

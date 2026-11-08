@@ -18,7 +18,7 @@ transmission (from its first voice LC header, by source ID):
 - bench modem: exactly one call, started by a header (not late entry), ended by a terminator, source = the radio's
   ID, voice bursts in whole superframes, AMBE FEC corrections at most 0.5 % of the AMBE bits heard (the bench modem
   is overloaded by the radio a meter away, even at 50 mW: a few corrected bits are its own; more than any are a
-  warning). Run with --sdr-gain 0 on a bench where the RTL-SDR clips. When the capture still clips (1 % or more of
+  warning). When the capture still clips (1 % or more of
   the samples at the ADC rails) the waveform checks (sync family, A-F order, spacing, on-time, ramps, overlaps, power
   steps, stray carrier) are reported as not judged, with a warning; the decoded content stays strict.
 - radio: the call stack counted one TX call (call.tx_calls + 1), no TX underruns.
@@ -130,18 +130,17 @@ def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     assert ch_cc == cc, f"the channel's color code {ch_cc} != --dmr-cc {cc}"
     radio.reset_counters()
     _, before = radio.counters()
-    sdr_bench.need_dmr_waveform()
+    sdr_bench.need_dmr_waveform(freq)
     rdir = sdr_bench.run_dir("hil_dmr_tx")
-    # Raw I/Q on purpose: check_tx judges the waveform (burst on-time, keying ramps, power steps, overlaps, clipping),
-    # which the bench-side burst records (dmr_watch_start) don't carry
+    # waveform: check_tx judges burst on-time, keying ramps, power steps, overlaps and clipping
     with sdr_bench.lease():
-        cap = sdr_bench.capture_start(rdir, freq, seconds=PTT_S + 8)
+        watch = sdr_bench.dmr_watch_start(rdir, freq, PTT_S + 8, cc, waveform=True)
         lis = sdr_bench.listen_start(freq, cc, seconds=PTT_S + 6, ambe_out=sdr_bench.run_path(rdir, "heard"))
         radio.ptt_for(PTT_S)
         radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
         heard = sdr_bench.listen_result(lis)
-        sdr_bench.capture_wait()
-    sdr = sdr_bench.analyze_dmr(cap, freq, cc)      # with the gateway back up, as dmr_bench.py does
+        sdr_bench.dmr_watch_wait(watch)
+    sdr = sdr_bench.dmr_watch_result(watch)         # with the gateway back up, as dmr_bench.py does
     _, after = radio.counters()
     _report(_tx_checks(sdr, heard, own, target, private, cc, before, after, d.get("dmr.tx_alias", ""), pytestconfig,
                        _limits(radio)), sdr_bench, rdir)
@@ -261,7 +260,7 @@ def _dmr_tx_setup(radio, pytestconfig):
 def _over(radio, sdr_bench, freq, cc, seconds, tag):
     """A PTT over watched by the SDR and heard by the bench modem; returns (sdr analysis, bench lines). The SDR's
     bursts are decoded on the bench (dmr_watch_*: only the LC, kind and timing fields these tests read come back, no
-    raw I/Q); without the shared bench daemon it is a raw capture analyzed afterwards, as before."""
+    raw I/Q)."""
     rdir = sdr_bench.run_dir(tag)
     with sdr_bench.lease():
         watch = sdr_bench.dmr_watch_start(rdir, freq, seconds + 8, cc)
@@ -621,16 +620,16 @@ def test_dmr_tx_encode_options(radio, sdr_bench, pytestconfig, opts, word):
         assert got == opts, f"options in force {got:#x} after SETTING 31 {opts:#x}"
         radio.reset_counters()
         _, before = radio.counters()
-        sdr_bench.need_dmr_waveform()
+        sdr_bench.need_dmr_waveform(freq)
         rdir = sdr_bench.run_dir(f"hil_dmr_enc_{word:x}")
         with sdr_bench.lease():
-            cap = sdr_bench.capture_start(rdir, freq, seconds=PTT_S + 8)
+            watch = sdr_bench.dmr_watch_start(rdir, freq, PTT_S + 8, cc, waveform=True)
             lis = sdr_bench.listen_start(freq, cc, seconds=PTT_S + 6, ambe_out=f"{rdir}/heard")
             radio.ptt_for(PTT_S)
             radio.wait_for(lambda x: x.get("state") != "tx", timeout=3, what="TX ended")
             heard = sdr_bench.listen_result(lis)
-            sdr_bench.capture_wait()
-        sdr = sdr_bench.analyze_dmr(cap, freq, cc)
+            sdr_bench.dmr_watch_wait(watch)
+        sdr = sdr_bench.dmr_watch_result(watch)
         _, after = radio.counters()
         flags = radio.view(["dmr"]).get("voice.enc_flags")
     finally:
