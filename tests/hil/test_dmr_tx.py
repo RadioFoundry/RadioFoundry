@@ -330,9 +330,17 @@ def test_dmr_tx_talker_alias(radio, sdr_bench, pytestconfig, backup_dir):
     if d.get("dmr.ts") != "1":
         skip("state", "the test channel is on TS2: the edit sets the TS1 flag")
     number = int(radio.core()["channel_number"])
+    call = rig(pytestconfig, "callsign")
+
+    def edit(img):
+        cps_client.set_channel_alias(img, number, ts1=True)
+        # The alias is the radio name: a codeplug without one (a test codeplug made without --call) gets the callsign
+        if call and all(b in (0x00, 0xFF) for b in img[cps_client.GENERAL:cps_client.GENERAL + 8]):
+            raw = call.encode("ascii")[:8]
+            img[cps_client.GENERAL:cps_client.GENERAL + 8] = raw + b"\xff" * (8 - len(raw))
+
     _, before = radio.counters()
-    with codeplug_edited(radio, backup_dir, lambda img: cps_client.set_channel_alias(img, number, ts1=True),
-                         "alias"):
+    with codeplug_edited(radio, backup_dir, edit, "alias"):
         v = radio.wait_for(lambda x: x.get("dmr.alias_tx") == "1", timeout=5, sections=("dmr",),
                            what="talker alias TX on (dmr.alias_tx)")
         alias = v.get("dmr.tx_alias", "")
