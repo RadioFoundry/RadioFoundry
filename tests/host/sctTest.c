@@ -1097,6 +1097,37 @@ static void test_dmr_carrier(void)
 	CHECK(nsent == n);
 }
 
+// The board's carrier gone for the hold ends a call the chip plays (its terminators missed on a weak signal): the
+// paced voice stops with SYNC_LOST, no seconds-long wait for the chip's own
+static void test_dmr_carrier_ends_call(void)
+{
+	start();
+	sct_dmr_carrier(2);
+	uint8_t hdr[16] = { 0x43, DMR_BURST_VOICE_LC_HEADER | SCT_PROP_TS2, 9, 0, 0, 0, 0, 0, 0x09, 0x2F, 0x52, 0x5C };
+	chip_packet(hdr, 12, 0x30, 1000);
+	sct_dmr_poll(1060);
+	sct_dmr_carrier(2);			// the board's reading at each status poll
+	sct_dmr_poll(1120);
+	sct_dmr_carrier(2);
+	int n = nev;
+	CHECK(n >= 3 && ev_bursts[n - 1].kind == DMR_BURST_VOICE);
+	sct_dmr_carrier(0);			// the signal goes, the chip says nothing
+	sct_dmr_poll(1120 + SCT_DMR_CR_HOLD_MS - 10);
+	CHECK(evs[nev - 1].kind != DMR_EV_SYNC_LOST);	// within the hold the bursts go on
+	n = nev;
+	sct_dmr_poll(1120 + SCT_DMR_CR_HOLD_MS);
+	CHECK(nev > n && evs[nev - 1].kind == DMR_EV_SYNC_LOST);
+	n = nev;
+	sct_dmr_poll(3000);
+	CHECK(nev == n);			// no more paced bursts
+
+	// A loss with no call playing reports nothing
+	sct_dmr_carrier(2);
+	sct_dmr_carrier(0);
+	sct_dmr_poll(3000 + SCT_DMR_CR_HOLD_MS);
+	CHECK(nev == n);
+}
+
 // A port with rx_ready: after a transmission, no CARRIER_READY until the receiver has settled, whatever the board
 // reads meanwhile, then rx_ready; the board's readings from there as before
 static const sct_dmr_port_t port_settle = {
@@ -1380,6 +1411,7 @@ int main(void)
 	test_dmr_rx_outbound();
 	test_dmr_options();
 	test_dmr_carrier();
+	test_dmr_carrier_ends_call();
 	test_dmr_carrier_settle();
 	test_dmr_tx_early_end();
 	test_dmr_tx_fields();

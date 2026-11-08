@@ -242,7 +242,9 @@ the answer is never taken as a frame's answer or a NAK, OK or not.
 - The chip reports a voice call by its header (each repeat, when the board has DMR_CALL_OPTION report them), or by
   the first superframe's LC on a late entry. From there the engine reports a voice burst without payload every
   60 ms, from burst A (a late entry's LC is burst A itself), at most 4 catching up at once, until the terminator,
-  sync lost or carrier lost. A repeated header starts the count again, burst A 60 ms after it; a superframe's LC
+  sync lost or carrier lost, or until a board that reports its carrier (`sct_dmr_carrier`) sends `CARRIER_READY`
+  lost, which then also reports sync lost: on a weak signal the chip missed every terminator and said sync lost only
+  about 2 s later (measured), and the stack held the call that long. A repeated header starts the count again, burst A 60 ms after it; a superframe's LC
   during the call doesn't. The call's own LC from a superframe isn't reported at all: it brings nothing new. A
   different LC (a new talker without a header) takes the place of the next voice burst, and the count goes on from
   it. The stack holds the call as on other modems.
