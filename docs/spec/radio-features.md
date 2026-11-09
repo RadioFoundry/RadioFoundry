@@ -465,6 +465,11 @@ switch.
 `backlight_dim_s` without input, off after `backlight_off_s`, capped at 30 % while the battery is low or critical.
 The UI owns the backlight and calls it; the radio core doesn't drive the backlight itself.
 
+Either time 0 means never: `backlight_dim_s` 0 never dims, `backlight_off_s` 0 never turns the backlight off, so a
+dim time with off 0 dims and stays on. The UI's setting (`UI_SET_BACKLIGHT_S`, Settings > Display > Backlight
+Dim/Off) carries both in one value: a time T > 0 dims after T and goes off after 4T, 0 is always on, and -T dims after
+T and never goes off (the "T/dim" choices).
+
 Idle time restarts on input and while `radio_view_wakes(view)` holds: something the user would want to see.
 
 | State | Wakes | Why |

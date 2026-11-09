@@ -5168,9 +5168,10 @@ typedef struct {
 	uint8_t count;
 } set_group_t;
 
-static const int16_t v_backlight[] = { 5, 10, 30, 60, 120, 0 };
+static const int16_t v_backlight[] = { 5, 10, 30, 60, 120, -10, -30, -60, -120, 0 };	// < 0: dims, never off
 // Dim after / off after (four times as long): both times shown, so that the dim step isn't taken for the time-out
-static const char *const n_backlight[] = { "5s/20s", "10s/40s", "30s/2m", "1m/4m", "2m/8m", TRN("Never") };
+static const char *const n_backlight[] = { "5s/20s", "10s/40s", "30s/2m", "1m/4m", "2m/8m", TRN("10s/dim"), TRN("30s/dim"),
+	TRN("1m/dim"), TRN("2m/dim"), TRN("Never") };
 #if CONFIG_UI_COLOR
 static const int16_t v_theme[] = { 0, 1, 2 };
 static const char *const n_theme[] = { TRN("Dark"), TRN("Light"), TRN("High contrast") };
