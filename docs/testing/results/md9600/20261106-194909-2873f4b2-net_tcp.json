@@ -1,0 +1,66 @@
+{
+ "board": "md9600",
+ "commit": "2873f4b27ae46450819b3ddb408b49dfa99b0dd0",
+ "date": "2026-11-06T19:49:09Z",
+ "dirty": false,
+ "features": [
+  "net_tcp"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,DMR_CONFIRMED,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "2873f4b2",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.075,
+  "dmr-tg": 202,
+  "fm-mhz": 446.1,
+  "tx-power": 40
+ },
+ "sources": {
+  "net_tcp": {
+   "core/net/aprsis.c": "4286a4c6c52d9015e108369dc742c66c2d05158b",
+   "core/net/http.c": "8d1bbd9956b5be0f0f5ce76e70942eb8a2d56f6d",
+   "core/net/kiss_tcp.c": "e7fc052d47c0e167d89e9b5c1a4c25d275d0449d",
+   "core/net/net.c": "fc98537b8dd138bd0b972138b3ccf7b515e40cdb",
+   "core/net/rigctld.c": "d86eb71d9ae14336b9721cb15823d5a22ccf1382",
+   "core/net/tcp.c": "53b319bc20046c31b2ec7a1c4a6b98e8b0622b0b",
+   "docs/spec/tcp-services.md": "c965b6ea566aef62d8187d638eade1805b143ebe"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "net_tcp"
+   ],
+   "id": "tests/hil/test_tcp_services.py::test_http_status",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

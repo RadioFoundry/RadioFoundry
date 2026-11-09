@@ -81,6 +81,13 @@ typedef struct {
 	// it now (false) or at the next tune (true: the caller asks the radio task for one, radio_req_retune). NULL = the
 	// radio has no trim
 	bool (*ref_trim)(int16_t ppb);
+	// Optional, both or neither: the PA drive, in the board's own units (its power control DAC counts), for transmit
+	// power calibration with a wattmeter (docs/testing/power-calibration.md). tx_drive_level: the drive the board uses
+	// for a power level at a transmit frequency, 0 when it has none (no calibration, out of band). tx_drive: the drive
+	// for the next transmission instead of its level's, from the next tx() until tx_off() (one transmission); 0 = the
+	// level's again. False: over the board's hardware limit. Any task may call it
+	uint16_t (*tx_drive_level)(uint32_t hz, uint8_t level);
+	bool (*tx_drive)(uint16_t drive);
 } hal_radio_t;
 
 #endif

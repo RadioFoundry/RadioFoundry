@@ -73,6 +73,13 @@ static inline uint16_t sky72310_word(uint8_t reg, uint16_t data)
 	return (uint16_t)(((uint16_t)(reg & 0xFu) << 12) | (data & 0x0FFFu));
 }
 
+// Pure: a complete programming sequence for f_vco, for boards that rewrite every register on each retune: modulation control and data 0, reference divider ref_div, divider, dividend LSB,
+// dividend MSB (the ratio takes effect), phase detector gain, then register 7 as power_mux. Returns
+// SKY72310_PROGRAM_WORDS, or 0 when the ratio is out of range (out untouched)
+#define SKY72310_PROGRAM_WORDS	8u
+uint8_t sky72310_program_words(uint32_t f_osc_hz, uint8_t ref_div, uint32_t f_vco_hz, uint8_t pd_gain,
+			       uint16_t power_mux, uint16_t out[SKY72310_PROGRAM_WORDS]);
+
 typedef struct {
 	// One 16-bit word, MSB first, framed by CS (low during the word, high after it latches)
 	bool (*write)(void *ctx, uint16_t word);

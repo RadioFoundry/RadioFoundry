@@ -47,6 +47,7 @@ typedef struct {
 	uint32_t page2_lc;	// embedded LC rewrites (two slots share page 2)
 	uint32_t raw;		// slots of our framing written
 	uint32_t uncoded;	// ... of those, a burst the builder couldn't code (idle sent instead)
+	uint32_t primes;	// idle TS2 frames put in TX RAM ahead of the first slot (prime())
 	uint32_t at_late;	// a burst for a numbered slot that had passed: dropped
 	uint32_t at_wait;	// a slot whose queue head is for a later slot: idle
 	uint32_t restarts;	// slot clock restarts (ALIGN)
@@ -60,6 +61,8 @@ typedef struct hrc6000_bs {
 	volatile bool keyed;	// asked
 	bool on_air;		// keyed and the first TS1 slot set up
 	bool pa;
+	bool pa_due;		// the PA key waits for the first slot set up, or a failed one for the next slot
+	uint8_t plain;		// slots still sent with the default CACH after the key-up (our framing)
 	bool regs_written;	// the variant's registers are in the chip
 	uint8_t reg40;
 	uint32_t base_tick;	// the tick at bs_start (slot base_tick + 1 is an outbound TS1 slot)
