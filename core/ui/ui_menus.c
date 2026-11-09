@@ -5196,7 +5196,7 @@ static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITO
 					 KEYFN_ZONE_UP, KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_KEY_LOCK,
 					 KEYFN_HOME_ZONE,
 #if CONFIG_VFO_FM || CONFIG_VFO_DMR
-					 KEYFN_COPY_VFO,
+					 KEYFN_COPY_VFO, KEYFN_VFO_TOGGLE,
 #endif
 #if CONFIG_DMR
 					 KEYFN_CALL_BACK,
@@ -5209,7 +5209,7 @@ static const char *const n_keyfn_press[] = { TRN("Default"), TRN("Nothing"), TRN
 					     TRN("Power level"), TRN("Next zone"), TRN("Previous zone"), TRN("Scan"),
 					     TRN("Key lock"), TRN("Home zone"),
 #if CONFIG_VFO_FM || CONFIG_VFO_DMR
-					     TRN("Copy to VFO"),
+					     TRN("Copy to VFO"), TRN("VFO/Channel"),
 #endif
 #if CONFIG_DMR
 					     TRN("Call back"),
@@ -5225,7 +5225,7 @@ static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TA
 #endif
 					KEYFN_KEY_LOCK, KEYFN_HOME_ZONE,
 #if CONFIG_VFO_FM || CONFIG_VFO_DMR
-					KEYFN_COPY_VFO,
+					KEYFN_COPY_VFO, KEYFN_VFO_TOGGLE,
 #endif
 #if CONFIG_DMR
 					KEYFN_CALL_BACK,
@@ -5241,7 +5241,7 @@ static const char *const n_keyfn_hold[] = { TRN("Default"), TRN("Nothing"), TRN(
 #endif
 					    TRN("Key lock"), TRN("Home zone"),
 #if CONFIG_VFO_FM || CONFIG_VFO_DMR
-					    TRN("Copy to VFO"),
+					    TRN("Copy to VFO"), TRN("VFO/Channel"),
 #endif
 #if CONFIG_DMR
 					    TRN("Call back"),

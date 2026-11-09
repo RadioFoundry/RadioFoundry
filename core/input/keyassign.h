@@ -37,6 +37,7 @@ typedef enum {
 	KEYFN_COPY_VFO,		// copy the channel to the VFO and open it (CONFIG_VFO)
 	KEYFN_DUAL_WATCH,	// dual watch on / off (CONFIG_DUAL_WATCH)
 	KEYFN_AB,		// dual watch: the other channel, A / B (starts dual watch when it is off)
+	KEYFN_VFO_TOGGLE,	// between the channel and the VFO, as a VFO/MR key (CONFIG_VFO)
 	KEYFN_COUNT
 } keyfn_t;
 

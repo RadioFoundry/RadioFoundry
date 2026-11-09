@@ -309,6 +309,28 @@ def vfo_state(r):
 
 
 @pytest.mark.feature("vfo")
+def test_vfo_toggle_key(home):
+    """VFO/Channel (a side key function, or a VFO/MR key): a press opens the VFO, the next one goes back to the channel
+    it left. Only a press: on a radio with a VFO/MR key an injected long press holds that key, whose long press is Copy
+    to VFO (the host flows check the long press). Nothing is transmitted or written."""
+    r = home
+    feats = r.features()
+    if "VFO_FM" not in feats and "VFO_DMR" not in feats:
+        skip("not_built", "built without a VFO")
+    chan = r.core()
+    try:
+        r.press("vfo_toggle")
+        r.wait_for(lambda x: x.get("vfo") == "1", what="the VFO")
+        r.press("vfo_toggle")
+        v = r.wait_for(lambda x: x.get("vfo") == "0", what="the channel again")
+        assert v["zone_pos"] == chan["zone_pos"], v
+    finally:
+        if r.core().get("vfo") == "1":
+            r.link.vfo(False)
+            r.wait_for(lambda x: x.get("vfo") == "0", what="VFO off")
+
+
+@pytest.mark.feature("vfo")
 def test_quick_copy_to_vfo(home):
     """Quick 4 on a channel copies it to the VFO and opens it (a channel's tile 4; the VFO's is Mode). The VFO's own
     frequency, mode, bandwidth, tones, color code, slot and target are put back."""
