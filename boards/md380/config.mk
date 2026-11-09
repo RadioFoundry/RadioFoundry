@@ -51,3 +51,4 @@ BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 # translations: maximal keeps Spanish, as the default build does (Italian builds on the other boards)
 # Peek and poke (DEBUG_MEM, a bench tool that the default build has) too: with every other switch on, the flash is full
 MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT DEBUG_MEM
+MAXIMAL_VARS := CONFIG_DEBUG_MEM=n
