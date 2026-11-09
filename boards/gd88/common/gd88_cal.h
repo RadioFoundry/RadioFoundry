@@ -58,6 +58,13 @@ static inline uint8_t gd88_dmr_rf_tx_lead(uint16_t on_us)
 {
 	return hrc_rfburst_lead(GD88_DMR_PA_UP_US + on_us);
 }
+// B's own transmitter (an SFR's repeat): the sequence runs one step after the other on B, its chip tuned first, where
+// on A's bursts the tune and B's PA sequence overlap. With A's lead the first four symbols of every burst were lost
+#define GD88_DMR_OWN_PA_UP_US	(GD88_DMR_PA_UP_US + 900u)
+static inline uint8_t gd88_dmr_own_rf_tx_lead(uint16_t on_us)
+{
+	return hrc_rfburst_lead(GD88_DMR_OWN_PA_UP_US + on_us);
+}
 // The ramp down starts with the burst's last symbol, with no page TX-off delay: that delay held the carrier 0.75 ms
 // past the data. A's TX line falls this long before it, B's wake on the edge (hrc_rfburst_board_t.off_ahead_us)
 #define GD88_DMR_OFF_AHEAD_US	150u

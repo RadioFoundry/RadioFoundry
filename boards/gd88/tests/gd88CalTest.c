@@ -254,6 +254,9 @@ static void test_dmr_timing(void)
 {
 	CHECK(gd88_dmr_rf_tx_lead(0) == 16);
 	CHECK(gd88_dmr_rf_tx_lead(1000) == 26);
+	// B's own transmitter: its sequence runs in series
+	CHECK(gd88_dmr_own_rf_tx_lead(0) == 25);
+	CHECK(gd88_dmr_own_rf_tx_lead(1000) == 35);
 	const uint8_t lead = gd88_dmr_rf_tx_lead(0);
 	uint32_t at = hrc_rfburst_off_at_us(lead) - GD88_DMR_OFF_AHEAD_US;
 	CHECK(at == 1600u + 850u + 27500u - GD88_DMR_OFF_AHEAD_US);

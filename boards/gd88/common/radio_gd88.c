@@ -473,7 +473,7 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	tx_off_us = DMR_OFF_DELAY_US;
 	tx_hz = hz;
 	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias_dc(gd88_cal_tx_center(), gd88_cal_mod(hz)));
-	hrc7000_set_rf_tx_lead(&modem, gd88_dmr_rf_tx_lead(plan.on_us));
+	hrc7000_set_rf_tx_lead(&modem, GD88_TX ? gd88_dmr_rf_tx_lead(plan.on_us) : gd88_dmr_own_rf_tx_lead(plan.on_us));
 	bk4819_dmr_tx_prepare(&rf_main);
 	dmr_armed = true;
 	gd88_dmr_tx_arm();
