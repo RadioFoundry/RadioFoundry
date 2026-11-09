@@ -35,7 +35,7 @@
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   timeout             the TX timeout cuts the transmission off while PTT is still held (shows the timeout deny)
-//   pttlocked:on|off    turns Settings > Privacy > PTT when locked on or off
+//   pttlocked:on|off    turns Settings > Key lock > PTT when locked on or off
 //   autolock:<s>        Settings > Keys > Auto lock: s seconds, 0 off
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
@@ -1448,7 +1448,7 @@ static const hal_hwopt_t sim_hwopts[] = {
 
 // A reference trim (Settings > Advanced > Freq trim) only with the "trim" token, the same way
 static bool ref_trim;
-// A volume knob the MCU reads (Settings > Sound > Lock volume) only with a "knob:<percent>" token
+// A volume knob the MCU reads (Settings > Key lock > Knob when locked) only with a "knob:<percent>" token
 static bool knob_radio;
 static bool vol_held;		// ui_svc_volume_hold: the radio ignores the volume knob
 uint32_t ui_svc_features(void)
@@ -2148,7 +2148,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ref_trim = false;
 	knob_radio = false;
 	vol_held = false;
-	ui_svc_setting_set(UI_SET_KNOB_LOCK, 0);
+	ui_svc_setting_set(UI_SET_KNOB_WHEN_LOCKED, 1);
 	board.hwopts = NULL;
 	board.hwopt_count = 0;
 	hwopt_val[0] = HWOPT_NONE;
@@ -2561,7 +2561,7 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
-	if (strcmp(t, "pttlocked") == 0 && arg != NULL) {	// Settings > Privacy > PTT when locked
+	if (strcmp(t, "pttlocked") == 0 && arg != NULL) {	// Settings > Key lock > PTT when locked
 		bool on = strcmp(arg, "on") == 0;
 		if (!on && strcmp(arg, "off") != 0) {
 			snprintf(err, len, "pttlocked: expected on or off, got %s", arg);
@@ -2902,9 +2902,18 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if ((strcmp(t, "knob") == 0 || strcmp(t, "override") == 0) && arg != NULL) {
 		// The level the radio core passed on (radio_view_t.volume) and where from: the knob a radio's MCU reads,
-		// the debug link's override, or the stored step of a radio without a knob ("softvol")
-		view.volume = (int8_t)atoi(arg);
-		view.volume_src = soft_volume ? RVOL_SOFT : t[0] == 'k' ? RVOL_KNOB : RVOL_OVERRIDE;
+		// the debug link's override, or the stored step of a radio without a knob ("softvol"). "knob" also makes
+		// this a radio whose MCU reads the knob; while the keys hold the level (ui_svc_volume_hold) the core
+		// keeps it and only the knob's position moves
+		int8_t level = (int8_t)atoi(arg);
+		if (t[0] == 'k') {
+			knob_radio = true;
+			view.volume_knob = level;
+		}
+		if (t[0] != 'k' || !vol_held) {
+			view.volume = level;
+			view.volume_src = soft_volume ? RVOL_SOFT : t[0] == 'k' ? RVOL_KNOB : RVOL_OVERRIDE;
+		}
 		changed();
 		step();
 		return true;
@@ -2916,12 +2925,6 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "bcast") == 0) {		// this radio has a broadcast FM receiver
 		bcast_rx = true;
-		return true;
-	}
-	if (strcmp(t, "knob") == 0 && arg != NULL) {	// knob:<percent>: this radio's MCU reads the volume knob, now there
-		knob_radio = true;
-		view.volume_knob = (int8_t)strtol(arg, NULL, 10);
-		advance(200);
 		return true;
 	}
 	if (strcmp(t, "hwopt") == 0) {		// this radio has hardware options (sim_hwopts)

@@ -316,9 +316,7 @@ void radio_req_squelch(int8_t dir) { post(RREQ_SQUELCH, dir, 0); }
 // The level must not be lost: the user looks at the bar, and the setting is already saved
 void radio_req_volume(uint8_t step) { post(RREQ_VOLUME, step, pdMS_TO_TICKS(50)); }
 void radio_req_volume_override(int8_t step) { post(RREQ_VOLUME_OVERRIDE, step, pdMS_TO_TICKS(50)); }
-#if CONFIG_VOLUME_LOCK
 void radio_req_volume_hold(bool hold) { post(RREQ_VOLUME_HOLD, hold, pdMS_TO_TICKS(50)); }
-#endif
 void radio_req_clear_temporary(void) { post(RREQ_CLEAR_TEMP, 0, 0); }
 void radio_req_retune(void) { post(RREQ_RETUNE, 0, pdMS_TO_TICKS(50)); }
 void radio_req_reload(void) { post(RREQ_RELOAD, 0, pdMS_TO_TICKS(50)); }

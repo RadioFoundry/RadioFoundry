@@ -4855,10 +4855,8 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->volume_sent = -1;
 	sm->vol_step = RADIO_VOLUME_DEFAULT;
 	sm->vol_override = -1;
-#if CONFIG_VOLUME_LOCK
 	sm->knob_seen = -1;
 	sm->vol_hold = false;
-#endif
 	sm->view.volume = -1;
 	sm->view.volume_knob = -1;
 	sm->view.volume_override = -1;
@@ -5230,11 +5228,9 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_VOLUME_OVERRIDE:
 		sm->vol_override = (int8_t)(req->arg < 0 ? -1 : req->arg > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : req->arg);
 		break;
-#if CONFIG_VOLUME_LOCK
 	case RREQ_VOLUME_HOLD:
 		sm->vol_hold = req->arg != 0;
 		break;
-#endif
 	case RREQ_SQUELCH: {
 		int s = sm->view.squelch + req->arg;
 		if (s < 0) {
@@ -5533,13 +5529,11 @@ bool radio_volume_soft(void)
 	       board.power->volume != NULL && board.power->volume() < 0;
 }
 
-#if CONFIG_VOLUME_LOCK
 bool radio_volume_knob(void)
 {
 	return board.radio != NULL && board.radio->volume != NULL && board.power != NULL &&
 	       board.power->volume != NULL && board.power->volume() >= 0;
 }
-#endif
 
 bool radio_volume_settable(void)
 {
@@ -5589,7 +5583,6 @@ static void follow_volume(radio_sm_t *sm)
 	}
 	int v = board.power->volume();
 	uint8_t src = RVOL_KNOB;
-#if CONFIG_VOLUME_LOCK
 	if (v >= 0) {
 		// The knob's own position, with the same 2 % filter as the level below, in force or not: the UI shows the
 		// unlock hint when a held knob turns
@@ -5600,7 +5593,6 @@ static void follow_volume(radio_sm_t *sm)
 			changed(sm);
 		}
 	}
-#endif
 	if (v < 0) {
 		v = radio_volume_percent(sm->vol_step);
 		src = RVOL_SOFT;
@@ -5608,13 +5600,11 @@ static void follow_volume(radio_sm_t *sm)
 		v = radio_volume_percent((uint8_t)sm->vol_override);
 		src = RVOL_OVERRIDE;
 	}
-#if CONFIG_VOLUME_LOCK
 	else if (sm->vol_hold && sm->volume_sent >= 0) {
 		// Keys locked with the knob lock on: the level in force stays. Let go, the knob's level goes out at once
 		v = sm->volume_sent;
 		src = RVOL_HOLD;
 	}
-#endif
 	if (src != sm->view.volume_src || sm->vol_step != sm->view.volume_step ||
 	    sm->vol_override != sm->view.volume_override) {
 		sm->view.volume_src = src;

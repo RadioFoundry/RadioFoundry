@@ -2729,10 +2729,6 @@ msgid "Volume"
 msgstr "Volumen"
 
 #: core/ui/ui_menus.c
-msgid "Lock volume"
-msgstr "Bloquear volumen"
-
-#: core/ui/ui_menus.c
 msgid "Key tones"
 msgstr "Tonos de tecla"
 
@@ -2859,6 +2855,10 @@ msgstr "Bloqueo auto"
 #: core/ui/ui_menus.c
 msgid "PTT when locked"
 msgstr "PTT si bloqueado"
+
+#: core/ui/ui_menus.c
+msgid "Knob when locked"
+msgstr "Perilla si bloqueado"
 
 #: core/ui/ui_menus.c
 msgid "Position format"

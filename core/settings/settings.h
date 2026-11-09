@@ -322,7 +322,7 @@ static inline void settings_set_crash_contact(settings_t *s, uint16_t num)
 }
 
 // settings_t.knob_flags
-#define SETTINGS_KNOB_LOCK		0x01u	// the volume knob does nothing while the keys are locked (CONFIG_VOLUME_LOCK)
+#define SETTINGS_KNOB_LOCK		0x01u	// the volume knob does nothing while the keys are locked (Settings > Key lock > Knob when locked Off)
 
 // settings_t.ui_flags (defaults: hints, message tone, talker alias, PTT when locked and vibrate on)
 #define SETTINGS_UI_LARGE_TEXT		0x01u

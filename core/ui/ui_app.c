@@ -62,9 +62,7 @@ static bool has_quick_key, has_context_key;
 // Long QUICK or long Back unlocks the keys. A radio with neither (side keys only) is never locked by auto lock: only a
 // side key set to key lock could unlock it
 static bool has_unlock_key;
-#if CONFIG_VOLUME_LOCK
 static int16_t knob_last = -1;	// the volume knob's position last seen, -1 = none since start-up
-#endif
 static char home_hint[32];
 
 // The hint's keys part, in the language in use: the quick settings key, or holding OK on a radio without it
@@ -119,7 +117,7 @@ static void entry_cancel(void)
 	dirty = true;
 }
 
-// Lock or unlock the keys; PTT goes with them when Settings > Privacy > PTT when locked is off
+// Lock or unlock the keys; PTT goes with them when Settings > Key lock > PTT when locked is off
 static void set_locked(bool locked)
 {
 	ui_st.locked = locked;
@@ -129,9 +127,7 @@ static void set_locked(bool locked)
 	}
 	ui_svc_ptt_block(locked && !ui_st.ptt_locked);
 	ui_svc_dtmf_block(locked);
-#if CONFIG_VOLUME_LOCK
 	ui_svc_volume_hold(locked && ui_st.knob_lock);
-#endif
 	dirty = true;
 }
 
@@ -1829,9 +1825,7 @@ void ui_app_init(void)
 					  UI_SET_ALIAS_SHOW, UI_SET_PTT_LOCKED, UI_SET_HEAR_ALL_DEFAULT, UI_SET_MESSAGE_TONE,
 					  UI_SET_UPDOWN_HOME, UI_SET_LOW_BATTERY, UI_SET_AUTO_OFF_MIN, UI_SET_THEME, UI_SET_ACCENT,
 					  UI_SET_STRIP, UI_SET_VIBRATE, UI_SET_VOLUME, UI_SET_LANGUAGE,
-#if CONFIG_VOLUME_LOCK
-					  UI_SET_KNOB_LOCK,
-#endif
+					  UI_SET_KNOB_WHEN_LOCKED,
 #if CONFIG_DUAL_WATCH
 					  UI_SET_DUAL_TALK_BACK,
 #endif
@@ -1839,9 +1833,7 @@ void ui_app_init(void)
 	for (uint8_t i = 0; i < sizeof ui_ids; i++)
 		ui_apply_setting(ui_ids[i], ui_svc_setting_get(ui_ids[i]));
 	lock_armed = false;
-#if CONFIG_VOLUME_LOCK
 	knob_last = -1;
-#endif
 	ptt_held = false;
 	off_warned = power_off_due = batt_warned = false;
 	hear_all_key = 0;
@@ -1878,12 +1870,10 @@ void ui_apply_setting(uint8_t id, int32_t v)
 	case UI_SET_DUAL_TALK_BACK: ui_st.dual.talk_back = v != 0; break;
 #endif
 	case UI_SET_VOLUME: ui_st.volume = (uint8_t)(v >= 0 && v <= RADIO_VOLUME_MAX ? v : RADIO_VOLUME_DEFAULT); break;
-#if CONFIG_VOLUME_LOCK
-	case UI_SET_KNOB_LOCK:
-		ui_st.knob_lock = v != 0;
+	case UI_SET_KNOB_WHEN_LOCKED:
+		ui_st.knob_lock = v == 0;	// Off: the knob does nothing while the keys are locked
 		ui_svc_volume_hold(ui_st.locked && ui_st.knob_lock);
 		break;
-#endif
 	case UI_SET_UPDOWN_HOME: ui_st.updown = (uint8_t)(v >= 0 && v <= 2 ? v : 0); break;
 	case UI_SET_LOW_BATTERY: ui_st.low_batt_pct = (uint8_t)(v >= 0 && v <= 50 ? v : 15); batt_warned = false; break;
 	case UI_SET_AUTO_OFF_MIN: ui_st.auto_off_min = clamp_u16(v); off_warned = false; break;
@@ -1957,7 +1947,7 @@ void ui_app_key(const input_event_t *ev)
 	last_use_ms = now;
 	off_warned = false;
 	if (ev->action == ACT_PTT && ev->gesture == GESTURE_DOWN && ui_st.locked && !ui_st.ptt_locked) {
-		// The input layer kept this press from the radio (Settings > Privacy > PTT when locked)
+		// The input layer kept this press from the radio (Settings > Key lock > PTT when locked)
 		ui_svc_beep(UI_BEEP_ERROR);
 		ui_toast(has_quick_key ? TR("PTT is off while locked: hold * to unlock") :
 			TR("PTT is off while locked: hold Back to unlock"));
@@ -2218,9 +2208,8 @@ static uint8_t usb_net_state(void)
 }
 #endif
 
-#if CONFIG_VOLUME_LOCK
 // The volume knob turned (the radio core's view.volume_knob, filtered there) while the keys are locked with Settings >
-// Sound > Lock volume on: the unlock hint, as for a key. The first reading after start-up only sets the reference
+// Key lock > Knob when locked Off: the unlock hint, as for a key. The first reading after start-up only sets the reference
 static void knob_moved(const radio_view_t *v)
 {
 	int16_t k = v->volume_knob;
@@ -2233,7 +2222,6 @@ static void knob_moved(const radio_view_t *v)
 		ui_toast(locked_text(has_quick_key));
 	}
 }
-#endif
 
 // The knob turned (#354): the level the radio core passed on changed, from the knob both times. Read from the radio's
 // own view, not dual watch's per-side one. The first level (power-up) and a change of source (the debug link taking
@@ -2356,9 +2344,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ui_st.toast = NULL;
 		dirty = true;
 	}
-#if CONFIG_VOLUME_LOCK
 	knob_moved(v);
-#endif
 #if CONFIG_VOLUME_BAR
 	if (ui_st.volbar >= 0 && (int32_t)(now - volbar_until) >= 0) {
 		ui_st.volbar = -1;

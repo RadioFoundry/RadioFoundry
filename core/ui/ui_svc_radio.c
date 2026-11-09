@@ -192,7 +192,7 @@ bool ui_svc_roam(uint8_t cmd)
 uint32_t ui_svc_feat_radio(void)
 {
 	bool motor = CONFIG_VIBRATE && board.power != NULL && board.power->vibrate != NULL;
-	bool knob = CONFIG_VOLUME_LOCK && radio_volume_knob();
+	bool knob = radio_volume_knob();
 	return (CONFIG_SCAN ? UI_FEAT_SCAN : 0) | (CONFIG_DMR_ROAMING ? UI_FEAT_ROAMING : 0) |
 	       (motor ? UI_FEAT_VIBRATE : 0) | (radio_volume_soft() ? UI_FEAT_VOLUME : 0) |
 	       (knob ? UI_FEAT_VOLUME_KNOB : 0) |
@@ -365,12 +365,10 @@ void ui_svc_dtmf_block(bool blocked)
 	input_set_dtmf_block(blocked);
 }
 
-#if CONFIG_VOLUME_LOCK
 void ui_svc_volume_hold(bool hold)
 {
 	radio_req_volume_hold(hold);
 }
-#endif
 
 // The reply window the Settings screen shows: the radio's setting, else the codeplug's group hang time, else the
 // call stack's 10 s
