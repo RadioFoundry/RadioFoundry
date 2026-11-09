@@ -104,7 +104,7 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 | PC3 | ADC1 IN13: 2T/5T (FM discriminator audio) | (unverified); unused |
 | PC4 | RF_APC_SW, PA power loop on | (unverified) |
 | PC5 | 5TC, transmitter supply | (unverified) |
-| PC6 | LAMP, LCD backlight (TIM8 CH1 PWM, AF3) | (unverified); PWM is our choice |
+| PC6 | LAMP, LCD backlight (TIM8 CH1 PWM, AF3) | (unverified); PWM is our choice: 40 kHz, far above the FM transmit audio band (#330) |
 | PC7 | CTC/DCS_OUT, sub-audio tone output (PWM) | (unverified); TIM3 CH2 (AF2) with `CONFIG_SUBTONE` (section 6.4), otherwise released (open drain, high): it tunes the reference (5.2) |
 | PC8 | BEEP (TIM8 CH3) | (unverified); unused |
 | PC9 | 5RC, receiver supply | (unverified) |
