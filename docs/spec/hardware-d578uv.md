@@ -360,7 +360,8 @@ The bus is bit-banged, as the stock firmware does it (`boards/d578uv/modem_d578u
 All four stock images (578UV and PRO, GD and AT) carry the same 2048-byte boot block (CRC-32 0x024F600A). The
 flashing tool takes it from the user's stock firmware file and writes it to the modem boot slot (`[codec]` in
 `board.toml`, tool `modem_boot`). Without it the radio runs FM only. RadioFoundry boots the modem from its own task, so
-the boot screen shows while the modem starts; the DMR start waits for the result. None of the images has SPI or boot ROM code: this
+the boot screen shows while the modem starts and stays until it has finished (`board_t.boot_busy`); the DMR start waits
+for the result. None of the images has SPI or boot ROM code: this
 radio carries the SCT3258 only.
 
 ### 4.4 Settings

@@ -482,6 +482,11 @@ const char *d578uv_modem_codec(void)
 	return crc32(__codec_slot, SCT_BOOT_BLOCK_BYTES) == BOOT_BLOCK_CRC32 ? "d578uv-boot" : NULL;
 }
 
+bool d578uv_modem_booting(void)
+{
+	return !boot_done;
+}
+
 uint8_t d578uv_modem_boot_result(void)
 {
 	return (uint8_t)boot_result;

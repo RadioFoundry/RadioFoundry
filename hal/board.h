@@ -105,6 +105,9 @@ typedef struct {
 	// keeps in flash, checked. Its profile id (VERSION's codec=, docs/spec/debuglink.md 3.1) when the check passes,
 	// NULL when it fails (erased, damaged); then DMR voice can't run. NULL hook: the modem holds its own
 	const char *(*modem_codec)(void);
+	// True while something the boot screen should cover is still starting (a baseband booting); the UI holds the
+	// splash until it is false, so it must end by itself. NULL: the splash has its fixed time only
+	bool (*boot_busy)(void);
 	const hal_stream_t *host_port;	// the link to a host computer (MMDVM hotspot, CPS); NULL if none
 	// Optional: line i of a board diagnostics page (raw readings for bench checks); false past the last line
 	bool (*diag_line)(uint8_t i, char *buf, uint8_t len);
