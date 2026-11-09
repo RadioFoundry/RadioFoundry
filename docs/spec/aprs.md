@@ -320,7 +320,11 @@ position now, Automatic beacons, Frequency (region: N America 144.390, Europe 14
 144.575, Japan 144.660, China 144.640, Custom), Power (As channel, then each of the board's levels), Path (the
 digipeater path of RF packets: None, WIDE1-1, WIDE1-1,WIDE2-1, WIDE2-1, WIDE2-2; OK steps to the next and WIDE2-2
 wraps to None), Interval (Off, 1, 2, 5, 10, 30 min), SmartBeaconing, Send via (AFSK, DMR, Both), Position (opens its page, below), Position in DMR calls (`dmr-voice.md` 3.1), KISS on USB, Stations
-heard (RX builds: the list, most recent first, dimmed when heard through a digipeater). On a radio without
+heard (RX builds: the list, most recent first, dimmed when heard through a digipeater; a station with a position shows
+its distance and compass point from ours, `aprs_position_now` as DMR GPS Info uses it, "14.5 km NE" by `sb_range`,
+left out first when the row is too narrow, and nothing without a position on either side; that row's age is the
+position's, `pos_ms`, else the last packet's. An object's or item's position is not stored as its sender's; a
+station's position is dropped at 24 h, `STATION_POS_MS`, so its age never wraps). On a radio without
 `board.afsk`, Power and Path are dimmed, and so is Frequency unless the build receives APRS. Rows 11 and 12 have no
 digit key.
 

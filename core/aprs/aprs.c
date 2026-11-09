@@ -27,6 +27,9 @@
 #define RF_TRIES	3		// a frame given up after this many failed transmissions
 #define RF_RETRY_MS	15000u		// after a failed transmission
 #define POS_STALE_MS	60000u		// a GPS / host fix older than this doesn't count
+// A heard station's position older than this is dropped: other packets keep the entry, and its age would wrap at
+// 2^32 ms (49.7 days)
+#define STATION_POS_MS	(24u * 3600000u)
 #define AUTO_MIN_S	30		// hard minimum between automatic beacons
 #define PTT_GAP_S	120		// "after PTT" only when the last beacon is older than this
 #define HOST_BURST	3		// KISS frames from the host: a burst of 3, then one per HOST_REFILL_MS
@@ -822,10 +825,11 @@ static void station_update(const ax25_frame_t *f, const aprs_parsed_t *p)
 	s->direct = direct;
 	s->type = p->type;
 	s->count++;
-	if (p->has_pos) {
+	if (p->has_pos && p->type != APRS_T_OBJECT && p->type != APRS_T_ITEM) {	// an object's position isn't its sender's
 		s->has_pos = true;
 		s->lat = p->pos.lat;
 		s->lon = p->pos.lon;
+		s->pos_ms = a.now;
 		s->sym_table = p->pos.sym_table;
 		s->sym_code = p->pos.sym_code;
 		s->course = p->pos.course;
@@ -874,6 +878,7 @@ void aprs_dmr_heard(uint32_t id, const char *alias, int32_t lat, int32_t lon, ui
 		s->has_pos = true;
 		s->lat = lat;
 		s->lon = lon;
+		s->pos_ms = now_ms;
 		s->sym_table = '/';
 		s->sym_code = '[';
 		s->course = s->speed_kn = 0xFFFFu;
@@ -1179,6 +1184,18 @@ void aprs_tick(const aprs_radio_t *r, uint32_t now_ms)
 	if (a.host_tokens >= HOST_BURST) {
 		a.host_refill_ms = now_ms;
 	}
+#if CONFIG_APRS_RX
+	bool expired = false;
+	for (uint8_t i = 0; i < a.nst; i++) {
+		if (a.st[i].has_pos && now_ms - a.st[i].pos_ms >= STATION_POS_MS) {
+			a.st[i].has_pos = false;
+			expired = true;
+		}
+	}
+	if (expired) {
+		changed();
+	}
+#endif
 	uint8_t block = rf_block();
 	if (block != a.block) {
 		a.block = block;

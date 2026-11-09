@@ -19,6 +19,7 @@
 #include "aprs/afsk.h"
 #include "radio/tx_limit.h"
 #include "fuzz.h"
+#include "ui/ui_svc_aprs.h"
 
 static int failures;
 static int checks;
@@ -50,6 +51,7 @@ static struct {
 } hw;
 
 static uint32_t now;
+uint32_t hal_millis(void) { return now; }	// ui_svc_aprs.c
 static char frames[8][AX25_TNC2_MAX];	// what went out, decoded from the tones
 static int nframes;
 
@@ -760,6 +762,92 @@ static void test_stations_digi_igate(void)
 }
 #endif
 
+#if CONFIG_APRS_RX
+// The range Stations heard shows (ui_svc_aprs_range): from our position as aprs_position_now gives it, to the
+// station's. EP: our position none / fixed / GPS (GPS wins in Auto) x the station's none / valid. BVA: the same
+// spot is 0 m; 10 minutes of latitude due north is 18.5 km at bearing 0
+static void test_station_range(void)
+{
+	aprs_station_t far, here, nopos;
+	uint32_t m = 1;
+	uint16_t deg = 1;
+
+	reset();
+	aprs_set_test_call("Q1TST");
+	rx_line("Q1ABC-9>APZRDF:=4913.50N/07201.75W>North");	// 10' north of the fixed position
+	rx_line("Q1ABC-8>APZRDF:=4903.50N/07201.75W>Here");	// on it
+	rx_line("Q1ABC-7>APZRDF:>Status only");
+	CHECK(aprs_station_count() == 3);
+	CHECK(aprs_station(2, &far) && far.has_pos && aprs_station(1, &here) && here.has_pos);
+	CHECK(aprs_station(0, &nopos) && !nopos.has_pos);
+	// our position: none
+	CHECK(!ui_svc_aprs_range(&far, &m, &deg) && !ui_svc_aprs_range(&nopos, &m, &deg));
+	// fixed
+	configure(0, false);
+	CHECK(ui_svc_aprs_range(&far, &m, &deg) && m > 18450 && m < 18600 && deg == 0);
+	CHECK(ui_svc_aprs_range(&here, &m, &deg) && m < 5);	// the APRS position's 0.01' rounding, about 1 m
+	CHECK(!ui_svc_aprs_range(&nopos, &m, &deg));
+	// GPS (48 07.038 N 011 31.000 E) wins over the fixed position: the station is across the Atlantic, to the west
+	const char *rmc = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
+	aprs_nmea(rmc, strlen(rmc), true, now);
+	run(100);
+	CHECK(ui_svc_aprs_range(&here, &m, &deg) && m > 5814000 && m < 5816000 && deg == 305);	// haversine: 5815.2 km, 304.6
+	CHECK(!ui_svc_aprs_range(&nopos, &m, &deg));
+	// EP on the packet that carries a position: an object or an item is somewhere else than its sender. A station
+	// with a position keeps it (and its range); one heard sending only objects and items has none
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	rx_line("Q1ABC-9>APZRDF:=4913.50N/07201.75W>North");
+	rx_line("Q1ABC-9>APZRDF:;LEADER   *092345z4803.50N/07001.75W>Object far away");
+	rx_line("Q1ABC-9>APZRDF:)AID#2!4703.50N/07101.75W>Item far away");
+	rx_line("Q1ABC-9>APZRDF:;LEADER   _092345z4803.50N/07001.75W>Object deleted");
+	rx_line("Q1OBJ>APZRDF:;MARKER   *092345z4803.50N/07001.75W>Object only");
+	rx_line("Q1OBJ>APZRDF:)AID#3!4703.50N/07101.75W>Item only");
+	CHECK(aprs_station_count() == 2 && aprs_station(1, &far) && strcmp(far.call, "Q1ABC-9") == 0);
+	CHECK(far.count == 4 && far.has_pos && far.lat == 492250000);
+	CHECK(ui_svc_aprs_range(&far, &m, &deg) && m > 18450 && m < 18600 && deg == 0);
+	CHECK(aprs_station(0, &nopos) && strcmp(nopos.call, "Q1OBJ") == 0 && nopos.count == 2 && !nopos.has_pos);
+	CHECK(!ui_svc_aprs_range(&nopos, &m, &deg));
+	// The position's time: packets without one later move heard_ms on, not pos_ms (the row shows pos_ms's age)
+	uint32_t t0 = now;
+	now += 600000;
+	rx_line("Q1ABC-9>APZRDF:>Status, no position");
+	CHECK(aprs_station(0, &far) && strcmp(far.call, "Q1ABC-9") == 0 && far.heard_ms == now && far.pos_ms == t0);
+	CHECK(far.has_pos && ui_svc_aprs_range(&far, &m, &deg) && m > 18450 && m < 18600);
+	rx_line("Q1ABC-9>APZRDF:=4923.50N/07201.75W>Further north");
+	CHECK(aprs_station(0, &far) && far.pos_ms == now && ui_svc_aprs_range(&far, &m, &deg) && m > 37000 && m < 37200);
+
+	// BVA on the position's age (STATION_POS_MS, 24 h): packets without a position keep the entry fresh, the
+	// position goes at 24 h (so its age never wraps at 2^32 ms), across the clock's own wrap too
+	static const uint32_t starts[] = { 1000, 0xFFFFFFFFu - 3600000u };	// the 2nd wraps 1 h into the day
+	for (size_t k = 0; k < sizeof starts / sizeof starts[0]; k++) {
+		reset();
+		aprs_set_test_call("Q1TST");
+		configure(0, false);
+		now = starts[k];
+		rx_line("Q1ABC-9>APZRDF:=4913.50N/07201.75W>North");
+		t0 = now;
+		for (int h = 1; h < 24; h++) {	// a status every hour
+			now = t0 + (uint32_t)h * 3600000u;
+			rx_line("Q1ABC-9>APZRDF:>Status");
+			run(RADIO_POLL_MS);
+		}
+		now = t0 + 24u * 3600000u - RADIO_POLL_MS - 1u;	// 1 ms inside the day after this poll
+		run(RADIO_POLL_MS);
+		CHECK(aprs_station(0, &far) && far.has_pos && ui_svc_aprs_range(&far, &m, &deg) && m > 18450 && m < 18600);
+		run(RADIO_POLL_MS);				// a day old: gone
+		CHECK(aprs_station(0, &far) && !far.has_pos && !ui_svc_aprs_range(&far, &m, &deg));
+		now = t0 + 0x80000000u;				// still sending, the old position doesn't come back
+		rx_line("Q1ABC-9>APZRDF:>Status");
+		run(RADIO_POLL_MS);
+		CHECK(aprs_station_count() == 1 && aprs_station(0, &far) && !far.has_pos && far.heard_ms == now - RADIO_POLL_MS);
+		rx_line("Q1ABC-9>APZRDF:=4913.50N/07201.75W>North");	// a new one counts again
+		CHECK(aprs_station(0, &far) && far.has_pos && far.pos_ms == now);
+	}
+}
+#endif
+
 // The position DMR GPS Info takes (aprs_position_now): the fixed position, the setting, ambiguity; and DMR callers'
 // positions in the station list
 static void test_dmr_position(void)
@@ -792,7 +880,8 @@ static void test_dmr_position(void)
 	CHECK(aprs_station_count() == n0 + 3);
 	CHECK(aprs_station(0, &st) && strcmp(st.call, "9990002") == 0 && st.has_pos);
 	CHECK(aprs_station(1, &st) && strcmp(st.call, "9990001") == 0);
-	CHECK(aprs_station(2, &st) && strcmp(st.call, "QD9XYZ") == 0 && st.count == 1 && st.lat == 337490000);
+	CHECK(aprs_station(2, &st) && strcmp(st.call, "QD9XYZ") == 0 && st.count == 1 && st.lat == 337490000 &&
+	      st.pos_ms == now);	// the position's time, as for RF stations
 #endif
 }
 
@@ -1285,6 +1374,7 @@ int main(void)
 	test_stations_digi_igate();
 	test_rx_stream();
 	test_rx_board_only();
+	test_station_range();
 #endif
 	printf("# aprsRadioTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;

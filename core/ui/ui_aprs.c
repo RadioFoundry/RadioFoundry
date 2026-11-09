@@ -23,6 +23,7 @@ WEAK void ui_svc_aprs_set_cfg(const aprs_cfg_t *c) { (void)c; }
 WEAK bool ui_svc_aprs_send_now(void) { return false; }
 WEAK uint8_t ui_svc_aprs_station_count(void) { return 0; }
 WEAK bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out) { (void)i; (void)out; return false; }
+WEAK bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg) { (void)s; (void)m; (void)deg; return false; }
 
 enum { AP_SEND, AP_AUTO, AP_FREQ, AP_POWER, AP_PATH, AP_INTERVAL, AP_SMART, AP_VIA, AP_POS, AP_DMR_GPS, AP_KISS, AP_HEARD, AP_COUNT };
 
@@ -446,8 +447,19 @@ static void heard_item(uint16_t i, ui_item_t *it)
 	if (!ui_svc_aprs_station((uint8_t)i, &s)) {
 		return;
 	}
-	strcpy(it->label, s.call);
-	ui_sb_age(it->value, sizeof it->value, ui_st.now_ms - s.heard_ms);
+	sbuf_t b;
+	uint32_t m, at = s.heard_ms;
+	uint16_t deg;
+	sb_init(&b, it->label, sizeof it->label);
+	sb_str(&b, s.call);
+	if (ui_svc_aprs_range(&s, &m, &deg)) {
+		// How far and which way ("12.3 km NE"): an alternate, so a narrow row drops it before the call (font.h)
+		sb_str(&b, TEXT_ALT_OPEN " ");
+		sb_range(&b, m, deg);
+		sb_str(&b, TEXT_ALT_NEXT TEXT_ALT_CLOSE);
+		at = s.pos_ms;	// the age of the position the range is from, not of the station's last packet
+	}
+	ui_sb_age(it->value, sizeof it->value, ui_st.now_ms - at);
 	if (!s.direct) {
 		it->flags |= UI_ITEM_TEMP;	// heard through a digipeater
 	}
