@@ -1780,7 +1780,7 @@
    "id": "tests/hil/test_dmr_tx.py::test_dmr_tx_off_air",
    "optional": [],
    "outcome": "skipped",
-   "reason": "[bench] the bench board 192.168.1.182 has no sdrmon.py waveform analysis (analyze_dmr) here: only the SDR bench host does",
+   "reason": "[bench] the bench board has no sdrmon.py waveform analysis (analyze_dmr) here: only the SDR bench host does",
    "required": true,
    "skip_kind": "bench"
   },
@@ -2055,7 +2055,7 @@
    "id": "tests/hil/test_hotspot_voice.py::test_hotspot_on_air[net_data]",
    "optional": [],
    "outcome": "skipped",
-   "reason": "[bench] the bench board 192.168.1.182 has no modem command line here: only the SDR bench host does",
+   "reason": "[bench] the bench board has no modem command line here: only the SDR bench host does",
    "required": true,
    "skip_kind": "bench"
   },
@@ -2067,7 +2067,7 @@
    "id": "tests/hil/test_hotspot_voice.py::test_hotspot_on_air[net_voice]",
    "optional": [],
    "outcome": "skipped",
-   "reason": "[bench] the bench board 192.168.1.182 has no modem command line here: only the SDR bench host does",
+   "reason": "[bench] the bench board has no modem command line here: only the SDR bench host does",
    "required": true,
    "skip_kind": "bench"
   },
@@ -2079,7 +2079,7 @@
    "id": "tests/hil/test_hotspot_voice.py::test_hotspot_on_air[rf_data_unconf]",
    "optional": [],
    "outcome": "skipped",
-   "reason": "[bench] the bench board 192.168.1.182 has no modem command line here: only the SDR bench host does",
+   "reason": "[bench] the bench board has no modem command line here: only the SDR bench host does",
    "required": true,
    "skip_kind": "bench"
   },
@@ -2091,7 +2091,7 @@
    "id": "tests/hil/test_hotspot_voice.py::test_hotspot_on_air[rf_voice8]",
    "optional": [],
    "outcome": "skipped",
-   "reason": "[bench] the bench board 192.168.1.182 has no modem command line here: only the SDR bench host does",
+   "reason": "[bench] the bench board has no modem command line here: only the SDR bench host does",
    "required": true,
    "skip_kind": "bench"
   },
@@ -2582,7 +2582,7 @@
    "id": "tests/hil/test_split_duplex.py::test_split_tx_half_off_air",
    "optional": [],
    "outcome": "skipped",
-   "reason": "[bench] the bench board 192.168.1.182 has no shell here: only the SDR bench host does",
+   "reason": "[bench] the bench board has no shell here: only the SDR bench host does",
    "required": true,
    "skip_kind": "bench"
   },
@@ -2594,7 +2594,7 @@
    "id": "tests/hil/test_split_duplex.py::test_split_tx_half_voice",
    "optional": [],
    "outcome": "skipped",
-   "reason": "[bench] the bench board 192.168.1.182 has no shell here: only the SDR bench host does",
+   "reason": "[bench] the bench board has no shell here: only the SDR bench host does",
    "required": true,
    "skip_kind": "bench"
   },
