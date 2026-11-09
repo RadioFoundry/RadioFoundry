@@ -20,14 +20,18 @@
 
 #define UHF_FROM_HZ		280000000u	// PA / LNA band split (8.5)
 #define MIC_GAIN_DB		11u		// GCR_ADCL at init (9.1)
-// DMR bursts on the shared RF-burst task (dmr_rfburst.h), timed from the RF TX interrupt. The RF leaves receive 0.4 ms
-// ahead of the lead point, not earlier: an earlier switch cut the tail of the inbound burst an SFR receives before ours
-// (swept 0.4-2.0 ms in hardware-dm32.md 8.5). The interrupt comes 0.5 ms before that, so a late wake of the task
-// (up to 0.42 ms) doesn't make the switch late. The PA is keyed 0.5 ms before the first symbol: the one-step key-up's
-// rise (8.6)
-#define RF_TX_LEAD		9u		// 100 us steps (RF_CONTROL b13:8)
-#define RF_SWITCH_LEAD_US	400u		// the RF to TX this long before the lead point
-#define PA_AHEAD_US		500u		// the PA keyed this long before the first symbol
+// DMR bursts on the shared RF-burst task (dmr_rfburst.h), timed from the RF TX interrupt (hardware-dm32.md 8.5). The PA
+// takes about 1.1 ms from its key to full power, so it is keyed 1.5 ms before the first symbol; keyed 0.5 ms ahead, the
+// first symbols went out on a rising carrier and every burst lost bits. Before the PA the FD6818 goes to TX: two state
+// writes (0.1 ms) on one frequency, up to 1.4 ms with a split channel's retune. The switch comes no earlier than that
+// needs, so on a simplex channel an SFR still hears the inbound burst before ours (it ends about 2.3 ms before our first
+// symbol). The lead leaves the task's wake (up to 0.42 ms) room before the split's switch
+#define RF_TX_LEAD		26u		// 100 us steps (RF_CONTROL b13:8)
+#define PA_AHEAD_US		1500u		// the PA keyed this long before the first symbol
+#define SWITCH_AHEAD_US		300u		// the FD6818 to TX this long before the PA
+#define SWITCH_AHEAD_SPLIT_US	1450u		// the same with the synthesizer's move to the TX frequency
+_Static_assert(RF_TX_LEAD * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US >= PA_AHEAD_US + SWITCH_AHEAD_SPLIT_US + 420u,
+	       "the split's switch must come after the RF task's latest wake");
 // TX data advance (hrc7000_t.tx_pre_on): the chip's 0.4 ms until the inbound burst's offset against the outbound is
 // measured here. The other FD6818 board needed 1.1 ms
 #define TX_PRE_ON		4u
@@ -163,12 +167,12 @@ static bool ref_trim(int16_t ppb)
 #endif
 
 // One burst's TX on, from the RF task (dmr_rfburst.h): at the switch point the LNA off and the FD6818 idle then TX,
-// on the TX frequency (a split channel's one synthesizer moves for the burst and back); the PA keyed ahead of the
-// first symbol (both points from the RF TX interrupt)
+// on the TX frequency (a split channel's one synthesizer moves for the burst and back, so it switches earlier); the
+// PA keyed ahead of the first symbol (both points from the RF TX interrupt)
 static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 {
 	(void)wait;
-	at(hrc_rfburst_switch_at_us(RF_TX_LEAD, RF_SWITCH_LEAD_US));
+	at(hrc_rfburst_pa_at_us(RF_TX_LEAD, PA_AHEAD_US + (tx_hz != rx_hz ? SWITCH_AHEAD_SPLIT_US : SWITCH_AHEAD_US)));
 	lna(tx_hz, false);
 	fd6818_dmr_burst_at(&fd, true, FD6818_BW_DMR, synth_hz(tx_hz));
 	at(hrc_rfburst_pa_at_us(RF_TX_LEAD, PA_AHEAD_US));

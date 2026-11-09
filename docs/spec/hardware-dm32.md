@@ -796,11 +796,42 @@ switch after the burst moves it back (`fd6818_dmr_burst_at`). A simplex channel 
 this (issue 72), `tx` tuned the synthesizer to the TX frequency at key-up and left it there: the radio was deaf to the
 hotspot's downlink, never aligned to it, and its bursts were not taken. The radio's own firmware retunes at every burst end too. The PLL lock time after each retune is not measured yet (HIL check open).
 
-RadioFoundry switches to TX **0.4 ms** before the lead point of each burst, not at the driver's 3.1 ms. The switch
-leaves receive, and earlier it cut off the end of the inbound burst before ours. The sweep below moved the RF TX
-interrupt itself (`hrc7000_t.rf_tx_lead`), with the switch in the interrupt. The switch now runs on the shared
-per-burst RF task ([modem-hrc7000.md](modem-hrc7000.md) 3.1a): the interrupt comes 0.9 ms ahead (`rf_tx_lead` = 9)
-and the task waits until 0.4 ms, so its wake (up to 0.42 ms) doesn't make the switch late. Untested on the radio. The same fault shows on other HR_C7000 boards. An SFR repeat sweep (SDR bench,
+**Burst TX-on timing.** The per-burst RF task ([modem-hrc7000.md](modem-hrc7000.md) 3.1a) runs the TX-on in two
+points, counted from the RF TX interrupt. The interrupt comes 2.6 ms ahead of the lead point (`rf_tx_lead` = 26), so
+the first symbol is 3.45 ms after it.
+
+| Point | Before the first symbol | Why |
+|---|---|---|
+| FD6818 to TX (LNA off, idle, TX) on a simplex channel | 1.8 ms | two state writes, 0.1 ms |
+| The same on a split channel (the synthesizer to the TX frequency first) | 2.95 ms | with the frequency words 1.1-1.4 ms |
+| PA keyed (PA select, DAC B) | 1.5 ms | the PA takes about 1.1 ms from its key to full power |
+
+Measured on the SDR bench (2026-11-09, 446.075 and 448.7 MHz, high power, the radio 35 ft from the receiver, its carrier
+against the symbols from each burst's sync). The BER is a duplex hotspot's, next to the receiver; it moved when the radios
+were moved a few feet (the reference radio then read 0.4-0.7 %), so it compares radios measured together, not builds.
+Now, `check_tx`'s figures (`tools/bench/dmr_bench.py`) pass on both channel kinds: on-time 28.5-29.2 ms, ramps under
+0.9 ms, the bursts on the 60 ms grid, the carrier between bursts 52 dB down:
+
+| | Carrier at -6 dB vs the first symbol | vs the last symbol | Ramp up 10-90 % | Duplex hotspot BER | Bursts with a corrected bit (simplex) |
+|---|---|---|---|---|---|
+| Before (lead 0.9 ms, PA 0.5 ms ahead) | 0.65 ms after | at it | 0.75 ms | 1.7-2.7 % | 25-60 % |
+| Now | 0.75-0.79 ms before | -0.08 ms (split), +0.15 ms (simplex) | 0.6-0.8 ms | 0.2-0.4 % (TS1 and TS2) | 0-17 % |
+| A reference radio on the same channel (another modem chip) | 1.58 ms before | 0.38 ms after | 0.26 ms | 0.3-0.4 % | 0 % |
+
+Keyed 0.5 ms ahead, and late besides (the split's writes overran the PA's point: the PA came up 1.6 ms after the
+interrupt), the first ~5 symbols of every burst went out on a rising carrier. A repeater or hotspot then saw a few
+bad bits in every burst, on simplex too, and the slot timing was right (inbound +0.166 ms against the outbound + 30
+ms, the same as the other radio). The diagnostics' `up` line shows the PA's time after the interrupt (2.0-2.1 ms). Its grid error grows with the lead
+(about 0.02 ms at lead 9, 0.2 ms at 24, 0.4 ms at 26: an RF TX interrupt that early against the one before), not
+explained yet; the bursts' syncs stay on the 60 ms grid. The carrier
+still ramps down from the last symbol (the shared model); the decode is clean with it. The switch moved earlier only
+on a split channel, where no inbound burst is heard on the TX frequency. On a simplex channel it is at 1.8 ms, after
+the inbound burst before ours (it ends about 2.3-2.5 ms before our first symbol), as an SFR needs; SFR on this radio
+is not checked with it.
+
+Before this, RadioFoundry switched to TX **0.4 ms** before the lead point of each burst, not at the driver's 3.1 ms.
+The switch leaves receive, and earlier it cut off the end of the inbound burst before ours. The sweep below moved the
+RF TX interrupt itself (`hrc7000_t.rf_tx_lead`), with the switch in the interrupt. An SFR repeat sweep (SDR bench,
 2026-10-20, 72 inbound frames per call, the radio in another room from the bench, so with a weak signal):
 
 | Lead | Frames lost per call | Bits corrected per call in the frames before ours |
@@ -822,8 +853,8 @@ outbound through a repeater is not measured on this radio yet ([modem-hrc7000.md
 ### 8.6 DMR PA timer
 
 The original firmware's PA timing. RadioFoundry keys the PA from the per-burst RF task instead: PA select and DAC B
-0.5 ms before the burst's first symbol, timed from the RF TX interrupt, and both off with its last symbol (8.5,
-[modem-hrc7000.md](modem-hrc7000.md) 3.1a). Untested on the radio.
+1.5 ms before the burst's first symbol, timed from the RF TX interrupt, and both off with its last symbol (8.5,
+[modem-hrc7000.md](modem-hrc7000.md) 3.1a). At 0.5 ms the carrier was still rising for the first symbols (8.5).
 
 | Item | Value |
 |---|---|
