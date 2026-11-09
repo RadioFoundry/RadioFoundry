@@ -28,7 +28,7 @@ clock = { rtc = "unknown", note = "no clock crystal or backup cell identified ye
 level = "bring-up"
 summary = """\
 Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. FM receive with CTCSS/DCS \
-decode, FM transmit, and DMR transmit and receive with the radio's own codec work on the radio."""
+decode, FM transmit, DMR transmit and receive with the radio's own codec, and APRS transmit work on the radio."""
 release = "testing"
 
 # No vendor loader: the boot ROM's serial window on the accessory jack is the way in at every power-on
