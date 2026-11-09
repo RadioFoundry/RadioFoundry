@@ -808,16 +808,38 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 }
 
 #if CONFIG_SUBTONE
+// PTT is up for the sub-audio tail: the microphone off until the tail or the transmission ends
+static bool tail_mic_off;
+
+static void tail_mic(bool off)
+{
+	uint8_t e0;
+
+	if (hrc_read(hrc5000_hrc(&r.modem), 4, 0xE0, &e0)) {
+		count(hrc_write(hrc5000_hrc(&r.modem), 4, 0xE0, (uint8_t)(off ? (e0 & ~0x40u) : (e0 | 0x40u))));
+	}
+	tail_mic_off = off;
+}
+
 // The DCS turn-off tail from the PWM generator (hardware-md380.md 6.4); the core holds the carrier for it
 static bool tx_tail(bool on)
 {
-	return r.tx_on && r.mode == RADIO_MODE_FM && md380_subtone_tx_tail(on);
+	if (!r.tx_on || r.mode != RADIO_MODE_FM || !md380_subtone_tx_tail(on)) {
+		return false;
+	}
+	tail_mic(on);
+	return true;
 }
 #endif
 
 // keep: as in rx_set
 static void tx_end(bool keep)
 {
+#if CONFIG_SUBTONE
+	if (tail_mic_off) {
+		tail_mic(false);
+	}
+#endif
 #if CONFIG_SUBTONE
 	md380_subtone_tx_stop();
 #endif

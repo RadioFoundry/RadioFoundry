@@ -2616,6 +2616,9 @@ static void test_subtone_tail(void)
 	run(500);
 	req(RREQ_PTT, 0);
 	CHECK(sm.view.state == RS_TX && hw.tail_on && hw.tail_starts == 1 && hw.tx_off_calls == 1);
+	radio_view_t shown = sm.view;
+	radio_view_for_screen(&shown);
+	CHECK(shown.state == RS_IDLE);	// the screen follows the key
 	run(RADIO_SUBTONE_TAIL_MS - 50);
 	CHECK(sm.view.state == RS_TX && hw.tail_on);
 	run(100);

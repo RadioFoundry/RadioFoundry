@@ -190,10 +190,12 @@ of the carrier dropping.
 | Step | Behavior |
 |---|---|
 | PTT release (after the roger beep, if on) | the core calls the board's `tx_tail(true)`. True: the radio stays keyed `RADIO_SUBTONE_TAIL_MS` (300 ms), then `tx_tail(false)` and unkeys. False (no DCS, or no tail on the radio): unkeys at once |
-| PTT again during the tail | `tx_tail(false)`: the code again, the transmission goes on |
+| Microphone during the tail | off: PTT is up. Each board's `tx_tail` turns it off and back on |
+| PTT again during the tail | `tx_tail(false)`: the code again, the microphone back, the transmission goes on |
 | Time-out during the tail | the tail ends with the transmission |
 
-The board maps the hook to its chip; the core owns the timing.
+The board maps the hook to its chip; the core owns the timing. The screen shows the release at once
+(`radio_view_for_screen`), during the roger beep too; the LED follows the RF.
 
 | Chip | Tail | Measured (SDR bench, D023N, 12.5 kHz) |
 |---|---|---|

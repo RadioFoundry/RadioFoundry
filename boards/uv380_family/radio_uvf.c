@@ -845,8 +845,24 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 }
 
 // keep: as in rx_set
+// PTT is up for the sub-audio tail: the microphone off, as for a TX tone, until the tail or the transmission ends
+static bool tail_mic_off;
+
+static void tail_mic(bool off)
+{
+	uint8_t e0;
+
+	if (hrc_read(&r.modem, 4, 0xE0, &e0)) {
+		count(hrc_write(&r.modem, 4, 0xE0, (uint8_t)(off ? (e0 & ~0x40u) : (e0 | 0x40u))));
+	}
+	tail_mic_off = off;
+}
+
 static void tx_end(bool keep)
 {
+	if (tail_mic_off) {
+		tail_mic(false);
+	}
 	if (r.mode == RADIO_MODE_DMR) {
 		dmr_disarm();	// after DMR_EV_TX_DONE this only disarms; before it, the transmission is cut
 		r.rf_isr_dirty = !r.rx_valid;	// rx() below retunes with forced writes; without it, resync here
@@ -932,7 +948,11 @@ static bool tx_tail(bool on)
 	if (!r.tx_on || r.mode != RADIO_MODE_FM) {
 		return false;
 	}
-	return at1846s_tx_tail(&r.rf, on);
+	if (!at1846s_tx_tail(&r.rf, on)) {
+		return false;
+	}
+	tail_mic(on);
+	return true;
 }
 
 // voice_sel selects tone1; with voice_sel left at "nothing" the carrier was unmodulated (gotchas 3.10). high != 0:

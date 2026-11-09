@@ -3721,6 +3721,10 @@ static inline void dtmf_cancel(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (voi
 
 // --- FM transmit tones and the end of an FM transmission ---
 
+#if CONFIG_SUBTONE
+static void tail_cancel(radio_sm_t *sm);
+#endif
+
 // Back to receive after an FM transmission (PTT released, roger beep done, burst released)
 // keyed: DMR per-burst keying is still armed (dmr_follow releases it), so no tx_off here
 static void fm_tx_end(radio_sm_t *sm, bool keyed, uint32_t now_ms)
@@ -3730,10 +3734,14 @@ static void fm_tx_end(radio_sm_t *sm, bool keyed, uint32_t now_ms)
 	sm->view.dtmf_digits[0] = 0;
 #endif
 	if (sm->view.state == RS_TX && !keyed) {
+#if CONFIG_SUBTONE
+		tail_cancel(sm);	// while keyed: the board gives the microphone back
+#endif
 		board.radio->tx_off();	// ends a sub-audio tail too
 	}
 #if CONFIG_SUBTONE
 	sm->tail_ms = 0;
+	sm->view.tx_released = false;
 #endif
 	if (sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED) {
 		sm->view.state = RS_IDLE;
@@ -3763,6 +3771,7 @@ static bool tail_start(radio_sm_t *sm, uint32_t now_ms)
 		return false;
 	}
 	sm->tail_ms = now_ms != 0 ? now_ms : 1;
+	sm->view.tx_released = true;
 	return true;
 }
 
@@ -3771,6 +3780,7 @@ static void tail_cancel(radio_sm_t *sm)
 	if (sm->tail_ms != 0) {
 		board.radio->tx_tail(false);
 		sm->tail_ms = 0;
+		sm->view.tx_released = false;
 	}
 }
 
@@ -3847,6 +3857,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 	sm->tail_ms = 0;	// a transmission that ended some other way (tx_off() ended its tail)
+	sm->view.tx_released = false;
 #endif
 #if CONFIG_SCAN
 #if CONFIG_DUAL_WATCH

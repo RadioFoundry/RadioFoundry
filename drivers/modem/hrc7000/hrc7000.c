@@ -282,8 +282,20 @@ void hrc7000_fm_tx(hrc7000_t *d, bool wide)
 	hrc7000_wr(d, C7_FM_PTT, 1);
 }
 
+// PTT is up for the sub-audio tail: the microphone off (the ADC mute) until the tail ends
+static void tail_mic(hrc7000_t *d, bool off)
+{
+	uint8_t adc = hrc7000_codec_rd(d, C7_CODEC_CR_ADC);
+
+	hrc7000_codec_wr(d, C7_CODEC_CR_ADC, (uint8_t)(off ? (adc | 0x80u) : (adc & 0x7Fu)));
+	d->tail_mic_off = off;
+}
+
 void hrc7000_fm_idle(hrc7000_t *d)
 {
+	if (d->tail_mic_off) {
+		tail_mic(d, false);	// tx_off() during the tail
+	}
 	hrc7000_tx_tone(d, 0, 0);
 	hrc7000_wr(d, C7_FM_PTT, 0);
 	hrc7000_audio_bits(d, 0, C7_AUDIO_FM_PLAY);
@@ -351,6 +363,7 @@ bool hrc7000_tx_tail(hrc7000_t *d, bool on)
 		return false;
 	}
 	hrc7000_wr(d, C7_FM_PTT, on ? 0u : 1u);
+	tail_mic(d, on);
 	return true;
 }
 
