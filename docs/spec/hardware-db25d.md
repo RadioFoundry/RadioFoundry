@@ -419,7 +419,7 @@ The inbound bursts lie from -32.5 to -2.5 ms and from +30.0 ms on (about 0.2 ms 
 the page's TX-on delay the PA is within 1 dB at 1.7-2.1 ms (the analog ramp varies from burst to burst; 0.94-1.6 ms
 from the first carrier), so the lead is the shortest 100 us step that has the PA up 0.2 ms ahead of the first symbol:
 `db25d_dmr_rf_tx_lead` = (2.3 ms + the page's TX-on delay - 0.85 ms), rounded up (1.5 ms UHF; 2.5 ms with the VHF
-page's 1000 us, which gives the VHF figures in the table below). At 1.3 ms (a 2.1 ms model) one burst in 114 had the 1 dB point only 0.04 ms ahead. The
+page's 1000 us, which gives the VHF figures in the table below). At 1.3 ms (a 2.1 ms model) one burst in 114 had the 1 dB point only 0.04 ms ahead. AMBE errors don't tell the two leads apart: on the SDR bench, 12 key-ups each gave 0 uncorrectable frames in 3024 at both 1.3 and 1.5 ms (0.002 and 0.0003 corrected bits a frame). The
 ramp's 180 steps of 4 us take 0.72 ms plus the level's arithmetic, which is 32-bit (`core/radio/apc_ramp.h`): a 64-bit
 divide per step made the ramp 0.3 ms longer, and the lead was 1.6 ms with it. The page's TX-on delay counts from the
 RF TX interrupt, and a late interrupt (up to 0.12 ms, a few bursts per key-up) is timed from the frame grid

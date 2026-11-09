@@ -652,10 +652,9 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 
 ## Retevis RT10
 
-A handheld for 902-928 MHz with a 16-position channel knob, two side keys and no display. **In bring-up: not for
-everyday use yet.** FM receive with CTCSS and DCS decode and FM transmit work on the radio. DMR transmit and receive
-work with the radio's own codec. DMR speech from the microphone and to the speaker isn't checked yet
-([hardware and bring-up state](../spec/hardware-rt10.md#9-bring-up-state)).
+A handheld for 902-928 MHz with a 16-position channel knob, two side keys and no display. FM receive with CTCSS
+and DCS decode, FM transmit, DMR transmit and receive with the radio's own codec, and APRS transmit work on the radio.
+DMR speech to the speaker isn't checked yet ([hardware and bring-up state](../spec/hardware-rt10.md#9-bring-up-state)).
 
 ### Installing on the RT10
 

@@ -47,7 +47,7 @@ on the radio`, any of the three. The README marks each ◐ until the board merge
 | BTECH DMR-6X2 PRO | ? | ? | ? | ? | ? | yes | ? (built on the AT-D878UVII Plus, unverified, [miklor](https://miklor.com/COM/Review_DMR6X2.php)) | Planned. Built on the AT-D878UVII Plus, so it should follow the Anytone port |
 | Anytone AT-D578UV (mobile) | GD32F303VKT6; AT32F435/437 after 2022-07, with separate firmware (unverified) | SCT3258 (unverified) | 4x QA4818N, AT1846S-compatible; true dual receive (unverified) | ? | ? | ? | as the 878 (unverified) | Planned. The 878's chips in a mobile, with a mid-run MCU change: two platforms ([hardware-anytone.md](hardware-anytone.md)) |
 | BridgeCom Maverick | ? | ? | ? | ? | ? | yes | ? (sold as an upgraded 878, takes the 868/878 battery, F, [BridgeCom](https://www.bridgecomsystems.com/products/bridgecom-maverick-dual-band-dmr-analog-ham-radio)) | Planned. Sold as an upgraded AT-D878UV, so it likely follows the Anytone port |
-| Retevis RT10 (902-928 MHz) | HR_C7000 SoC (board photos) | HR_C7000 | FD6818, on a two-wire bus | none | 2 MB SPI NOR data flash, 2 MB program flash | none | the SoC's boot ROM over the UART cable | Bring-up ([hardware-rt10.md](hardware-rt10.md)) |
+| Retevis RT10 (902-928 MHz) | HR_C7000 SoC (board photos) | HR_C7000 | FD6818, on a two-wire bus | none | 2 MB SPI NOR data flash, 2 MB program flash | none | the SoC's boot ROM over the UART cable | Supported ([hardware-rt10.md](hardware-rt10.md)) |
 
 ## Per-radio notes
 

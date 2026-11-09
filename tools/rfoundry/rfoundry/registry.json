@@ -1171,7 +1171,7 @@
    "platform_stubs": [],
    "family": "boot-rom",
    "link": "serial-cable",
-   "release": "testing",
+   "release": "stable",
    "debuglink_names": [
     "RT10",
     "rt10"
