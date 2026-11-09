@@ -18,6 +18,7 @@
 #include "config.h"
 #include "hal_dtmf.h"
 #include "radio/radio.h"
+#include "radio/ref_trim.h"
 #include "platform.h"
 #include "hal_time.h"
 #include "rf/rfbus/rfbus.h"
@@ -172,9 +173,29 @@ static uint32_t lo_hz_for(uint32_t hz)
 	return hz + IF_HZ;
 }
 
+// The reference trim (hal_radio_t.ref_trim): both BK4819s run from the TCXO, so the trim retunes them instead of
+// moving its control voltage. Receive: the LO at f x (1 + trim) +- IF; the main chip stays on the IF. Transmit: the
+// main chip at f x (1 + trim)
+static volatile int16_t trim_ppb;
+static int16_t tuned_ppb;	// the trim the LO was tuned with: DMR bursts use it too, so TX and RX move together
+
+static uint32_t synth_hz(uint32_t hz)
+{
+	return ref_trim_tune_hz(hz, tuned_ppb);
+}
+
+#if CONFIG_REF_TRIM
+// Taken at the next tune, so the RF chips' bus stays the radio task's: true asks the core for one
+static bool ref_trim_set(int16_t ppb)
+{
+	trim_ppb = ppb;
+	return true;
+}
+#endif
+
 static void lo_tune(uint32_t hz)
 {
-	sh_lo.ops->tune(sh_lo.chip, lo_hz_for(hz));
+	sh_lo.ops->tune(sh_lo.chip, synth_hz(hz) + lo_hz_for(hz) - hz);
 }
 
 #if GD88_TX || GD88_DMR_TX || CONFIG_BATTERY_SAVE
@@ -203,7 +224,7 @@ static void tx_paths_off(void)
 // The C7000 modem's DC bias at every receive set-up, in FM too: the page's TX center in SIG_CENTER and the two-point
 // bias level with the modulation balance in RF_MOD_BIAS_CTRL. It is the voltage on the TCXO's control pin, so it sets
 // the frequency of both BK4819s
-static void ref_trim(uint32_t hz)
+static void write_bias(uint32_t hz)
 {
 	uint8_t c = gd88_cal_tx_center();
 	hrc7000_wr(&modem, C7_SIG_CENTER, hrc7000_sig_center_dc(c));
@@ -226,7 +247,7 @@ static void init(void)
 	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
 	modem.dac_gain = pcm_gain(vol_step(vol_pct));	// the power-on init writes it
 	hrc7000_power_on_init(&modem, gd88_cal_tx_center(), GD88_MIC_GAIN_DB);
-	ref_trim(BIAS_DEFAULT_HZ);
+	write_bias(BIAS_DEFAULT_HZ);
 
 	rfbus_3w_attach(&bus_main, &pins_main);
 	rfbus_3w_attach(&bus_lo, &pins_lo);
@@ -346,17 +367,18 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in, bool
 	dmr_disarm();	// a retune ends DMR TX
 #endif
 	bool from_tx = tx_stop();
-	bool back = keep && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && !asleep && !from_tx;
+	bool back = keep && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && !asleep && !from_tx && tuned_ppb == trim_ppb;
 	rx_hz = hz;
 	rx_bw = bw;
 	rx_tone = rx_tone_in != NULL ? *rx_tone_in : (subtone_t){ TONE_NONE, 0 };
 	have_rx = true;
 	asleep = false;
 
-	ref_trim(hz);
+	write_bias(hz);
 	if (back) {
 		return true;
 	}
+	tuned_ppb = trim_ppb;
 	tx_paths_off();
 	bk4819_set_state(&rf_main, BK4819_STATE_IDLE);
 	lo_tune(hz);
@@ -500,7 +522,7 @@ void gd88_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 	(void)at;
 	gd88_path_rx_front_off();
 	wait(TX_RX_OFF_US);
-	bk4819_burst_tune(&rf_main, tx_hz, BK4819_STATE_TX_MAIN);
+	bk4819_burst_tune(&rf_main, synth_hz(tx_hz), BK4819_STATE_TX_MAIN);
 	lo_off();
 	wait(tx_on_us + TX_SUPPLY_US + PA_RAMP_US);
 }
@@ -528,7 +550,7 @@ void gd88_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 	gd88_path_own_tx(true, tx_hz);
 	own_gpio(true, tx_hz);
 	wait(TX_RX_OFF_US);
-	bk4819_burst_tune(&rf_main, tx_hz, BK4819_STATE_TX_MAIN);
+	bk4819_burst_tune(&rf_main, synth_hz(tx_hz), BK4819_STATE_TX_MAIN);
 	lo_off();
 	wait(tx_on_us);
 	gd88_pa_own(true);
@@ -590,7 +612,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	speaker();
 	gd88_path_rx_front_off();
 	hal_delay_us(TX_RX_OFF_US);
-	bk4819_tx_tune(&rf_main, hz);
+	bk4819_tx_tune(&rf_main, synth_hz(hz));
 	lo_off();
 	hal_delay_ms(TX_SETTLE_MS);
 	hal_delay_us(plan.on_us + TX_SUPPLY_US + PA_RAMP_US + PA_SLACK_US);	// B's PA sequence, begun at the edge
@@ -868,6 +890,9 @@ const hal_radio_t gd88_radio = {
 	.status = status,
 	.audio = audio,
 	.volume = volume,
+#if CONFIG_REF_TRIM
+	.ref_trim = ref_trim_set,
+#endif
 	.tx_tone = tx_tone,
 	.tx_tone_key = tx_tone_key,
 	.tx_tail = tx_tail,
