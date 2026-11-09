@@ -342,8 +342,11 @@ static size_t dispatch_main(const uint8_t *buf, size_t len, uint32_t now, bool n
 		return len;
 	}
 	if (cps_handler != NULL) {
-		if ((mode == HOSTLINK_IDLE) && (cps_request_start_fn != NULL) && !cps_request_start_fn(buf[0])) {
-			noise_bytes++;	// no request starts with it: a CPS session would hold the side protocol off
+		// A session holds the side protocol off, so only a request can open one: a letter byte at a request
+		// boundary, not one in the middle of a burst of noise or of a debug link frame whose start was lost
+		if ((mode == HOSTLINK_IDLE) && (cps_request_start_fn != NULL) &&
+		    (!new_request || !cps_request_start_fn(buf[0]))) {
+			noise_bytes++;
 			return 1;
 		}
 		mode = HOSTLINK_CPS;

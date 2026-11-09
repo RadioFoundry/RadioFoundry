@@ -26,7 +26,7 @@ def test_line_noise_no_mode_change(radio):
     with radio.released() as port:
         link = mmdvm_probe.Link(port, dtr=False)
         try:
-            for noise in (b"\xE0", b"\xFC", b"\xE0\x00", b"\x80", b"\xE0\xF0\x00", b"\xF0\xFE"):
+            for noise in (b"\xE0", b"\xFC", b"\xE0\x00", b"\x80", b"\xE0\xF0\x00", b"\xF0\xFE", b"\xF0CDRWX"):
                 link.s.write(noise)
                 link.s.flush()
                 time.sleep(0.03)

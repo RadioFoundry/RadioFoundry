@@ -72,8 +72,8 @@ void hostlink_request_ppp(bool on);
 // (requests are not framed here; the handler splits them, e.g. by the 3 ms gap), and with len 0 (buf NULL) as a tick
 // on every pass of the task while the session lasts. Replies go out with hostlink_write. mid_request (may be NULL) says
 // the handler holds part of a request: then a quiet gap is no request boundary, and the rest stays the handler's.
-// request_start (may be NULL) says a byte can start a request: on an idle port any other byte is line noise, dropped
-// without opening a session
+// request_start (may be NULL) says a byte can start a request: on an idle port any other byte, or that byte away from
+// a request boundary, is line noise, dropped without opening a session
 typedef void (*hostlink_cps_fn)(const uint8_t *buf, size_t len, uint32_t now_ms);
 void hostlink_set_cps_handler(hostlink_cps_fn fn, bool (*mid_request)(void), bool (*request_start)(uint8_t b));
 // The side protocol: start is the first byte of its frames; feed takes bytes that start (buf[0] == start) or continue
