@@ -193,6 +193,7 @@ def _udp_until_heard(radio, sdr_bench, freq, cc, own, want_sap, what, tries=3, d
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
+@pytest.mark.needs_switch("DMR_IP_GATEWAY")
 def test_udp_compressed_tx(radio, sdr_bench, pytestconfig, ip_settings, ars_off):
     """A UDP datagram (50000 to 161, 40 octets) in auto mode: one unconfirmed SAP 3 packet with the 9 octet header
     (IPv4 identification, SAID / DAID 0, no port IDs, both ports in the extended headers), 6 blocks instead of 7."""
@@ -210,6 +211,7 @@ def test_udp_compressed_tx(radio, sdr_bench, pytestconfig, ip_settings, ars_off)
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
+@pytest.mark.needs_switch("DMR_IP_GATEWAY")
 def test_udp_full_header_tx(radio, sdr_bench, pytestconfig, ip_settings, ars_off):
     """The same datagram with compression off: SAP 4, the full IPv4 / UDP header (28 octets)."""
     freq, cc, own, _ = _setup(radio, pytestconfig)
@@ -258,6 +260,7 @@ def test_udp_off_net_tx(radio, sdr_bench, pytestconfig, ip_settings, ars_off):
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
+@pytest.mark.needs_switch("DMR_IP_GATEWAY")
 def test_confirmed_tx_unanswered(radio, sdr_bench, pytestconfig, ip_settings, ars_off):
     """Confirmed for the bench's ID, 2 tries: the C_HEAD (DPF 3, A set, F set, an N(S), FSN 1000) with every block
     (each with its serial number and a CRC-9 the bench's independent check accepts), no response, the whole packet
@@ -323,6 +326,7 @@ LINK_ACK_SLOTS = (1, 2, 6)
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.parametrize("slots", LINK_ACK_SLOTS)
+@pytest.mark.needs_switch("DMR_IP_GATEWAY")
 def test_confirmed_tx_link_ack(radio, sdr_bench, pytestconfig, ip_settings, ars_off, slots):
     """Confirmed for the bench's ID, answered by the bench board's confirmed data responder (mssim) with an ACK
     `slots` slots after our data terminator: the radio must be back on receive in time and take it, so the packet
