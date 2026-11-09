@@ -47,7 +47,7 @@ is `tools/bringup.py list --radio <id>`.
 | `battery_save` | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass |
 | `am_rx` | not recorded | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ |
 | `bcast_fm` | not recorded | ✕ | not recorded | not written | ✕ | ✕ | ✕ |
-| `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | fail |
+| `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | pass |
 | `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `dmr_talker_alias` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass |
 | `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass |
@@ -84,7 +84,7 @@ is `tools/bringup.py list --radio <id>`.
 | `usb` | ✕ | pass (seed) | ✕ | ✕ | not recorded | not recorded | not recorded |
 | `hostlink` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `hotspot` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | not recorded | pass |
-| `split_duplex` | pass (seed) | pass (seed) | pass (seed) | not written | not written | not recorded | fail |
+| `split_duplex` | pass (seed) | pass (seed) | pass (seed) | not written | not written | not recorded | pass |
 | `debuglink` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | pass |
 | `task_stacks` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `cps_openfw` | not recorded | pass (seed) | not recorded | pass (seed) | pass (seed) | not recorded | pass |
@@ -132,7 +132,7 @@ is `tools/bringup.py list --radio <id>`.
 | `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass |
 | `codeplug_foreign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `nand_storage` | ✕ | ✕ | ✕ | not recorded | ✕ | ✕ | ✕ |
-| `codec_check` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
+| `codec_check` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `audio_probe` | not written | off | not written | not written | not written | off | off |
 <!-- end generated -->
 
