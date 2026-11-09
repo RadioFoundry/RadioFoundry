@@ -256,11 +256,11 @@ value: run `aprs set dmr_dst <MCC>999` (US: `aprs set dmr_dst 310999`).
 ### 8.1 LRRP details
 
 An unsolicited report carries request ID 00000001 (no request came). BrandMeister's gateway accepts it with no ARS
-registration. Measured 2026-11-07 on master 3102 through a hotspot: each report to 310999 appeared on APRS-IS as
+registration. Checked on master 3102 through a hotspot: each report to 310999 appeared on APRS-IS as
 `<callsign>-7>APBM1D,<callsign>,DMR*,qAR,<callsign>:=<lat>/<lon>[<name> D` (SSID and comment from the BrandMeister
 profile, tocall APBM1D).
-The retired 5050-5059 IDs chose the SSID and icon; whether MCC999 does is unverified (HIL step, section 13). The APRS settings on BrandMeister's self care page set the
-comment.
+The retired 5050-5059 IDs chose the SSID and icon; whether MCC999 does is unverified (HIL step, section 13). The APRS settings
+on BrandMeister's self care page set the comment.
 
 ## 9. Host port: KISS TNC
 
