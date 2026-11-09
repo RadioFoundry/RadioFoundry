@@ -144,6 +144,22 @@ def need_radio_tx(radio):
         skip("not_built", "the radio can't transmit (can_tx 0: its transmitter isn't written yet)")
 
 
+def bench_sms(radio, bench, freq_mhz, cc, src=9990301):
+    """Have the bench send the radio a HIL text message (HIL_SMS_PREFIX, no ACK asked: the radio doesn't transmit)
+    on the DMR test channel, and wait until the inbox has it. Returns the radio's inbox count after. The inbox is RAM,
+    so a test that needs a message of ours makes one rather than count on test_sms_rx and no restart since."""
+    radio.go_home()
+    radio.find_channel(round(freq_mhz * 1e6), "dmr")
+    own = int(radio.view(["dmr"])["dmr.own_id"])
+    text = f"{HIL_SMS_PREFIX}{int(time.time()) % 10000}"
+    with bench.lease():
+        bench.data(freq_mhz, cc, own, tms=text, tms_seq=(int(time.time()) % 31) + 1, tms_ack=False, src=src)
+    v = radio.wait_for(lambda x: (radio.link.inbox(0) or {}).get("text") == text, timeout=5.0, sections=("dmr_data",),
+                       what="the bench's message in the inbox")
+    radio.go_home()
+    return as_int(v.get("data.inbox_count"), 0)
+
+
 def skip_mark(kind, reason):
     """pytest.mark.skip with a kind, for marks added at collection."""
     import pytest
@@ -292,6 +308,11 @@ class Radio:
                             foreign.add(port)
                         continue
                     self.link, self.port = link, port
+                    # A transmit arm is RAM only: a test that keys right after its restart needs it back now
+                    try:
+                        self.hwopts_back()
+                    except DebugLinkError as e:
+                        print(f"rfoundry-hil: hardware options not set back after {what}: {e}")
                     return
                 except (DebugLinkError, OSError):
                     # A serial hub takes one client per port: a link left open would lock out every later try.

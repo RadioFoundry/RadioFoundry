@@ -105,3 +105,17 @@ def test_no_hardware_options_no_requests():
     r.hwopt_baseline()
     r.hwopts_back()
     assert r.link.set == []
+
+
+def test_reconnect_sets_the_options_back(monkeypatch):
+    """A test that restarts the radio and keys at once (test_dmr_repeater_slots boot) needs the arm before teardown"""
+    r = radio_with([{"name": "Transmit (bring-up)", "value": 1, "restart": False}])
+    r.hwopt_baseline()
+    fresh = FakeLink([{"name": "Transmit (bring-up)", "value": 0, "restart": False}])
+    fresh.ping = lambda: None
+    fresh.close = lambda: None
+    r.link.close = lambda: None
+    r.port, r.pinned, r.uid = "/dev/radio", True, None
+    monkeypatch.setattr(H, "DebugLink", lambda port, timeout: fresh)
+    r.reconnect(timeout=1.0)
+    assert r.link is fresh and fresh.set == [(0, 1)]

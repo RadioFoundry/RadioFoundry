@@ -14,7 +14,7 @@ import time
 import pytest
 
 from hil_config import rig
-from rfoundry_hil import HIL_SMS_PREFIX, LONG, as_int, skip, skip_if
+from rfoundry_hil import HIL_SMS_PREFIX, LONG, as_int, bench_sms, skip, skip_if
 from rfoundry_debug import DOWN, UP
 
 
@@ -691,18 +691,24 @@ def test_zone_editor_moves_a_channel(home):
 
 
 @pytest.mark.feature("dmr_sms")
-def test_delete_message(home):
+def test_delete_message(home, request, pytestconfig):
     """Hub 2 (Messages), OK on the newest, Delete (the fourth action): the inbox has one message less. Only a message
-    a HIL test sent (test_sms_rx's, its text starting HIL_SMS_PREFIX) is deleted without asking; to delete one of the
-    owner's set RFOUNDRY_HIL_DELETE_MESSAGE=1."""
+    a HIL test sent (its text starting HIL_SMS_PREFIX) is deleted without asking: when the newest isn't one, the bench
+    sends one first (with --allow-rf; the radio only receives). To delete one of the owner's instead set
+    RFOUNDRY_HIL_DELETE_MESSAGE=1."""
     r = home
+    if r.data_view().get("data.built") != 1:
+        skip("not_built", "built without the DMR data features")
     n = as_int(r.view(["dmr_data"]).get("data.inbox_count"))
-    if not n:
-        skip("state", "the inbox is empty (or no data core)")
-    newest = r.link.inbox(0) or {}
+    newest = (r.link.inbox(0) or {}) if n else {}
     if not newest.get("text", "").startswith(HIL_SMS_PREFIX) and os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") != "1":
-        skip("opt_in", "the newest inbox message isn't a HIL test's (run test_sms_rx first), and deleting another "
-                       "needs RFOUNDRY_HIL_DELETE_MESSAGE=1")
+        if not pytestconfig.getoption("--allow-rf"):
+            skip("opt_in", "the newest inbox message isn't a HIL test's: give --allow-rf (the bench sends one) or set "
+                           "RFOUNDRY_HIL_DELETE_MESSAGE=1 to delete it")
+        n = bench_sms(r, request.getfixturevalue("sdr_bench"), rig(pytestconfig, "dmr-freq"),
+                      rig(pytestconfig, "dmr-cc"))
+    if not n:
+        skip("state", "the inbox is empty")
     r.press("ok")
     wait_screen(r, "hub")
     r.press("2")
