@@ -219,7 +219,7 @@ void ui_bands_text(char *out, size_t len)
 {
 	sbuf_t b;
 	sb_init(&b, out, len);
-	for (int i = 0; i < board.band_count; i++) {
+	for (int i = 0; i < board_band_count(); i++) {
 		if (i)
 			sb_chr(&b, ' ');
 		sb_u32(&b, board.bands[i].lo_hz / 1000000u, 1);

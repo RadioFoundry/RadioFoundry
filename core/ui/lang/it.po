@@ -441,6 +441,10 @@ msgid "No match: Back deletes a key"
 msgstr "Nessun risultato: Indietro cancella"
 
 #: core/ui/ui_app.c
+msgid "Receive only. Sensitivity not rated"
+msgstr "Solo ricezione. Sensibilità non specificata"
+
+#: core/ui/ui_app.c
 msgid "Emergency: not in this build"
 msgstr "Emergenza: non in questa build"
 
@@ -2939,6 +2943,10 @@ msgstr "Ripristino fabbrica"
 #: core/ui/ui_menus.c
 msgid "Crash log"
 msgstr "Log crash"
+
+#: core/ui/ui_menus.c
+msgid "RX past bands"
+msgstr "RX fuori banda"
 
 #: core/ui/ui_menus.c
 msgid "Freq trim"

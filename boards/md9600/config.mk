@@ -57,3 +57,5 @@ BOARD_REQUIRED := FM
 MAXIMAL_SKIP := NET_PPP
 # English only (the owner's choice, 2026-11-03)
 CONFIG_LANG_ES ?= n
+CONFIG_RX_EXT ?= n
+BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)

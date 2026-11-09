@@ -235,6 +235,7 @@ typedef struct {
 // cp_flags: the owner kept another firmware's codeplug as the radio's own ("Use anyway", docs/spec/codeplug-native.md
 // 2); app.c keeps it equal to codeplug_acceptance(), which a codeplug written by a CPS or TFTP drops
 #define SETTINGS_CP_ACCEPTED		0x01u
+#define SETTINGS_CP_RX_EXT		0x02u	// receive past the band table is on (not about the codeplug: the free bit here)
 
 #define SETTINGS_ZONE_JRN_NONE		0u	// zone_jrn_kind
 #define SETTINGS_ZONE_JRN_ADD		1u

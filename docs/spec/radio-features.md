@@ -578,6 +578,23 @@ The value is a correction to enter by hand: measure the carrier against a refere
 monitor, or a hotspot's MMDVMCal BER test) and enter the error with its sign reversed. A radio 2 kHz high at 448.7 MHz
 is 4.5 ppm high and takes -4.5 ppm. [feature-matrix.md](../feature-matrix.md) lists which radios have the hook.
 
+### 6.2 Receive past the band table (CONFIG_RX_EXT)
+
+A board may list receive-only ranges past its rated bands: the last `board_t.rx_ext_count` entries of `bands`, with
+`tx` false. They count only while `*board_t.rx_ext_on` is set.
+
+| Rule | Detail |
+|---|---|
+| Setting | Settings > Advanced > RX past bands, off by default. Stored in `settings_t.cp_flags`, cleared by a factory reset. Hidden on a board with no range. |
+| Table | Everything that reads the bands uses `board_band_count()`: the VFO's tuning and wrap, the keypad entry, VFO scan, the channel editor, `rigctld` and the debug link's `bands=`. |
+| Transmit | Never: `board_in_band(hz, true)` skips the entries, so PTT gives `TXDENY_BAND`. |
+| Modes | FM only, as in any receive-only band: the channel editor refuses DMR there. |
+| Turning it off | The radio core reloads. A VFO past the table returns to a band; a channel there stays stored and doesn't tune. |
+
+A board's ranges come from its receiver chip's documents. Nothing past the rated bands is
+measured: front-end filters may cut sensitivity well inside the chip's range, and spurs aren't specified.
+A radio's ranges are on its hardware page.
+
 ## 7. Verification status
 
 Host-tested (`radioFeaturesTest`): scan engine and glue (zone, skip flags, nuisance, resume modes,

@@ -66,6 +66,11 @@ switch = "BCAST_FM"
 hardware = "a broadcast FM receiver"
 spec = "docs/spec/airband-and-broadcast.md"
 
+[feature.rx_ext]
+switch = "RX_EXT"
+hardware = "a receiver chip whose documents give a range past the rated bands"
+spec = "docs/spec/radio-features.md"
+
 [feature.dmr_voice]
 switch = "DMR"
 spec = "docs/spec/dmr-voice.md"

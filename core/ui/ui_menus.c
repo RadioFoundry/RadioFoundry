@@ -5450,6 +5450,9 @@ static const set_item_t s_advanced[] = {
 #if CONFIG_CRASH_SCREEN
 	ACTION(TRN("Crash log"), "crash report fault debug", SA_CRASH),
 #endif
+#if CONFIG_RX_EXT
+	TOGGLE(TRN("RX past bands"), "extended out of band receive range", UI_SET_RX_EXT),
+#endif
 #if CONFIG_REF_TRIM
 	NUMBER(TRN("Freq trim"), "frequency offset reference oscillator calibration ppm", UI_SET_REF_TRIM, -REF_TRIM_MAX_PPB,
 	       REF_TRIM_MAX_PPB, REF_TRIM_STEP_PPB, NULL),	// its own page (trim_screen); last: Up from the top
@@ -5489,6 +5492,8 @@ static bool set_hidden(const set_item_t *s)
 		return !(feats() & UI_FEAT_VOLUME);	// a knob sets the volume on the other radios
 	if (s->type != ST_ACTION && s->id == UI_SET_BCAST_STEP)
 		return !(feats() & UI_FEAT_BCAST);
+	if (s->type != ST_ACTION && s->id == UI_SET_RX_EXT)
+		return board.rx_ext_count == 0;	// a board with no measured range past its bands
 	if (s->type != ST_ACTION && s->id == UI_SET_REF_TRIM)
 		return !(feats() & UI_FEAT_REF_TRIM);	// only a radio whose board has the trim
 	return !board_has_battery() && s->type != ST_ACTION &&
