@@ -13,7 +13,8 @@ import time
 
 import pytest
 
-from rfoundry_hil import LONG, as_int, skip, skip_if
+from hil_config import rig
+from rfoundry_hil import HIL_SMS_PREFIX, LONG, as_int, bench_sms, skip, skip_if
 from rfoundry_debug import DOWN, UP
 
 
@@ -308,6 +309,28 @@ def vfo_state(r):
 
 
 @pytest.mark.feature("vfo")
+def test_vfo_toggle_key(home):
+    """VFO/Channel (a side key function, or a VFO/MR key): a press opens the VFO, the next one goes back to the channel
+    it left. Only a press: on a radio with a VFO/MR key an injected long press holds that key, whose long press is Copy
+    to VFO (the host flows check the long press). Nothing is transmitted or written."""
+    r = home
+    feats = r.features()
+    if "VFO_FM" not in feats and "VFO_DMR" not in feats:
+        skip("not_built", "built without a VFO")
+    chan = r.core()
+    try:
+        r.press("vfo_toggle")
+        r.wait_for(lambda x: x.get("vfo") == "1", what="the VFO")
+        r.press("vfo_toggle")
+        v = r.wait_for(lambda x: x.get("vfo") == "0", what="the channel again")
+        assert v["zone_pos"] == chan["zone_pos"], v
+    finally:
+        if r.core().get("vfo") == "1":
+            r.link.vfo(False)
+            r.wait_for(lambda x: x.get("vfo") == "0", what="VFO off")
+
+
+@pytest.mark.feature("vfo")
 def test_quick_copy_to_vfo(home):
     """Quick 4 on a channel copies it to the VFO and opens it (a channel's tile 4; the VFO's is Mode). The VFO's own
     frequency, mode, bandwidth, tones, color code, slot and target are put back."""
@@ -566,10 +589,14 @@ def test_privacy_key_entry(home):
 
 @pytest.mark.feature("key_lock")
 @pytest.mark.radio_tx
-def test_ptt_when_locked_off(home):
+def test_ptt_when_locked_off(home, pytestconfig):
     """Settings > Privacy > PTT when locked Off: with the keys locked an injected PTT doesn't transmit and the UI
-    says how to unlock. Marked radio_tx: if the block failed the radio would key up (lowest power)."""
+    says how to unlock. Marked radio_tx: if the block failed the radio would key up (lowest power), so it does that
+    on the DMR test channel (--dmr-freq), not on whatever channel the radio was left on (a receive-only one is refused
+    by the TX guard before the radio sees the PTT)."""
     r = home
+    r.find_channel(round(rig(pytestconfig, "dmr-freq") * 1e6), "dmr")
+    r.go_home()
     flags = ui_flags(r)
     if flags is None:
         skip("not_built", "firmware without settings.ui_flags")
@@ -686,14 +713,24 @@ def test_zone_editor_moves_a_channel(home):
 
 
 @pytest.mark.feature("dmr_sms")
-@skip_if(os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") != "1", "opt_in",
-         "deletes the newest inbox message: set RFOUNDRY_HIL_DELETE_MESSAGE=1")
-def test_delete_message(home):
-    """Hub 2 (Messages), OK on the newest, Delete (the fourth action): the inbox has one message less."""
+def test_delete_message(home, request, pytestconfig):
+    """Hub 2 (Messages), OK on the newest, Delete (the fourth action): the inbox has one message less. Only a message
+    a HIL test sent (its text starting HIL_SMS_PREFIX) is deleted without asking: when the newest isn't one, the bench
+    sends one first (with --allow-rf; the radio only receives). To delete one of the owner's instead set
+    RFOUNDRY_HIL_DELETE_MESSAGE=1."""
     r = home
+    if r.data_view().get("data.built") != 1:
+        skip("not_built", "built without the DMR data features")
     n = as_int(r.view(["dmr_data"]).get("data.inbox_count"))
+    newest = (r.link.inbox(0) or {}) if n else {}
+    if not newest.get("text", "").startswith(HIL_SMS_PREFIX) and os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") != "1":
+        if not pytestconfig.getoption("--allow-rf"):
+            skip("opt_in", "the newest inbox message isn't a HIL test's: give --allow-rf (the bench sends one) or set "
+                           "RFOUNDRY_HIL_DELETE_MESSAGE=1 to delete it")
+        n = bench_sms(r, request.getfixturevalue("sdr_bench"), rig(pytestconfig, "dmr-freq"),
+                      rig(pytestconfig, "dmr-cc"))
     if not n:
-        skip("state", "the inbox is empty (or no data core)")
+        skip("state", "the inbox is empty")
     r.press("ok")
     wait_screen(r, "hub")
     r.press("2")

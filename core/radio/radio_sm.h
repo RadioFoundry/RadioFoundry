@@ -94,6 +94,7 @@
 
 // FM transmit tones
 #define RADIO_BURST_HZ		1750
+#define RADIO_BURST_MIN_MS	1000
 #define RADIO_ROGER_HZ1		1200
 #define RADIO_ROGER_HZ2		900
 #define RADIO_ROGER_STEP_MS	100	// each of the two roger tones
@@ -139,6 +140,7 @@ typedef enum {
 	RREQ_SCAN_VFO,		// arg: low Hz, arg2: high Hz (both 0: the VFO's band)
 	RREQ_BEEP,		// arg: beep_t, arg2: delay in ms (0 = now)
 	RREQ_TONE_BURST,	// arg: 1 on, 0 off; arg2: the burst's longest time in ms (0 = until off or the TX time-out)
+	RREQ_TONE_BURST_KEY,	// arg: 1 down, 0 up; at least RADIO_BURST_MIN_MS
 	RREQ_SETTINGS,		// radio_task.c: the pending settings were copied with radio_sm_set_settings
 	RREQ_POWER_OFF,		// switching off: ARS deregistration (radio_power_off_busy until done); arg 1 = canceled
 	RREQ_RELOAD,		// the settings' preferences changed: read them again (codeplug changes are noticed alone)
@@ -317,6 +319,9 @@ typedef struct {
 	uint32_t beep_due_ms;		// when it plays
 #endif
 #if CONFIG_FM_TX_TONES
+	bool burst_timed, burst_held;
+	bool burst_key_owned;		// side-key release owns the burst or its TX denial
+	uint32_t burst_ms;		// start of the side-key burst
 	bool burst_keyed;		// the 1750 Hz burst keyed the transmitter (not PTT)
 	uint32_t burst_end_ms;		// the burst ends by itself at this time (RREQ_TONE_BURST arg2), 0 = no limit
 	uint32_t roger_ms;		// roger beep start, 0 = none

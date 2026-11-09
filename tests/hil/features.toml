@@ -44,6 +44,10 @@ spec = "docs/spec/radio-features.md"
 switch = "FM_TX_TONES"
 spec = "docs/spec/radio-features.md"
 
+[feature.tone_burst_key]
+spec = "docs/spec/radio-features.md"
+source = ["core/input", "core/ui/ui_menus.c", "core/ui/ui_svc_storage.c", "core/radio", "core/debuglink"]
+
 [feature.dtmf]
 switch = "DTMF"
 spec = "docs/spec/radio-features.md"
