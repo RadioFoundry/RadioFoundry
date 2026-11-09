@@ -345,6 +345,10 @@ short. View 5: the `cps.*` and `cpsf.*` keys moved from `storage` to `cps` (27),
 | 28 | `board` | `board.name`, then the board's own keys, each as `board.<key>` (`board.view_line`): bring-up readings such as pin levels, raw ADC values, the clock that started and the flash ID. The keys are listed in the radio's hardware spec; a board without its own keys sends only `board.name` |
 | 29 | `audio` | the beeps' speaker route (`radio-features.md` 4): `beep.shared` (patterns mixed into the DMR voice stream) `beep.leads` (silent lead-in blocks played on a beep's own stream) `beep.warm` (1: the amplifier is held powered, `hal_audio_t.speaker_hang_s`) `beep.warms` (times it was powered up for that), these four only with CONFIG_BEEP; and on a board that counts them (`hal_audio_t.stream_stats`), the PCM stream's timing since boot: `audio.blocks` (blocks filled) `audio.late` (a block's turn came before it was filled: the speaker played its old contents, the sound before it, again) `audio.dropped` (blocks skipped, a whole block late) |
 
+With `CONFIG_KEY_ASSIGN` and at least one assignable key, `link` also reports `key.first.bit` (the first
+`board.side_keys` entry, for KEY kind 1) and `key.first.press` (its saved `keyfn_t`, [ui.md](ui.md#31-key-assignment)).
+The saved value changes after the Settings write completes; it lets a test restore the assignment through the UI.
+
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
 `?`. Built without DMR the DMR sections hold `dmr.built=0`; built without the DMR data features `dmr_data` holds

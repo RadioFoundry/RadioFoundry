@@ -17,6 +17,10 @@
 #include "hal_dtmf.h"
 #include "settings/settings.h"
 #include "input/input.h"
+#if CONFIG_KEY_ASSIGN
+#include "input/keyassign.h"
+#include "codeplug/codeplug.h"
+#endif
 #if CONFIG_DMR
 #include "dmr/ambe/ambeVoice.h"
 #if CONFIG_ZONE_SHARE
@@ -155,6 +159,20 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	} else {
 		dl_text(t, "set.reply_s=codeplug\n");
 	}
+}
+
+void debuglink_view_keys(dl_text_t *t)
+{
+#if CONFIG_KEY_ASSIGN
+	if (board.side_key_count != 0) {
+		uint16_t slots[CODEPLUG_QUICK_KEYS];
+		(void)codeplug_quick_keys(slots);
+		// The saved assignment lets HIL restore the key through Settings after exercising its physical bit.
+		dl_text(t, "key.first.bit=%u\nkey.first.press=%u\n", board.side_keys[0], keyassign_get(slots, 0, false));
+	}
+#else
+	(void)t;
+#endif
 }
 
 // One setting by id (DL radio op SETTING; docs/spec/debuglink.md 3.8)
