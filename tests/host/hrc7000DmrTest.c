@@ -1238,6 +1238,51 @@ static void test_tx_empty_and_fill(void)
 	count_kind(0xFF, NULL);
 }
 
+// Through a repeater with a call on each slot, an embedded LC goes with the next voice burst of its own chip slot: the
+// next burst heard is the other call's, and an LC given to it changed the talker of the call being heard
+static void late_lc(uint8_t chip_slot, uint8_t first)
+{
+	for (int i = 0; i < 9; i++) {
+		buf[C7_RX_RAM + i] = (uint8_t)(first + i);
+	}
+	REG(C7_RX_TYPE_INFO) = rti(6, 0, 1, 1, chip_slot, 0);
+	REG(C7_SYS_INTERP_LIST) = 1u << 2;
+	hrc7000_dmr_isr_sys(&eng);
+	REG(C7_SYS_INTERP_LIST) = 0;
+}
+
+static void voice_burst(uint8_t chip_slot, uint8_t vb, dmr_burst_t *b)
+{
+	REG(C7_RX_TYPE_INFO) = rti(vb, 0, 1, 1, chip_slot, 0);
+	REG(C7_SYS_INTERP_LIST) = 1u << 3;
+	hrc7000_dmr_isr_sys(&eng);
+	REG(C7_SYS_INTERP_LIST) = 0;
+	CHECK(count_kind(DMR_EV_BURST_RX, b) == 1);
+}
+
+static void test_rx_emb_lc_per_slot(void)
+{
+	setup();
+	hrc7000_dmr_run(&eng);
+	dmr_burst_t b;
+
+	// Slot 0's LC, then the other slot's burst F: it takes nothing
+	late_lc(0, 0xA0);
+	voice_burst(1, 6, &b);
+	CHECK(!b.lc_valid);
+	// Slot 1's LC comes in before slot 0's next burst: neither overwrites the other
+	late_lc(1, 0xB0);
+	voice_burst(0, 1, &b);
+	CHECK(b.lc_valid && b.lc[0] == 0xA0 && b.lc[8] == 0xA8);
+	voice_burst(1, 1, &b);
+	CHECK(b.lc_valid && b.lc[0] == 0xB0 && b.lc[8] == 0xB8);
+	// Each is handed over once
+	voice_burst(0, 2, &b);
+	CHECK(!b.lc_valid);
+	voice_burst(1, 2, &b);
+	CHECK(!b.lc_valid);
+}
+
 // A received burst's arg is the tick of the slot after its own (hrc7000_dmr.h): a deframe late in a slot belongs to
 // that slot, one early in a slot to the one before. The split duplex RX half times its labels from it; the slot clock
 // gives the last boundary
@@ -1398,6 +1443,7 @@ int main(void)
 	test_pure();
 	test_rx();
 	test_rx_sfr_both_copies();
+	test_rx_emb_lc_per_slot();
 	test_rx_slot_arg();
 	test_rx_voice_ram_call();
 	test_bs_mode_cleared();
