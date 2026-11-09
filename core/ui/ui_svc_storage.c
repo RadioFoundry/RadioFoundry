@@ -284,15 +284,22 @@ int32_t ui_svc_setting_get(uint8_t id)
 #if CONFIG_DMR_DATA_CORE
 	case UI_SET_CHECK_REPLY:
 	case UI_SET_ALERT_ANSWER:
-	case UI_SET_POS_REPLY:
-	case UI_SET_MSG_FORMAT: {
+	case UI_SET_POS_REPLY: {
 		dmrDataSettings_t ds;
 		dmr_data_get_settings(&ds);
-		if (id == UI_SET_MSG_FORMAT)
-			return ds.smsFormat;
 		return id == UI_SET_CHECK_REPLY ? ds.radioCheckReply : id == UI_SET_ALERT_ANSWER ? ds.callAlertAck :
 			ds.lrrpReply;
 	}
+#endif
+	case UI_SET_MSG_FORMAT:
+#if CONFIG_DMR_SMS
+		{
+			dmrDataSettings_t ds;
+			dmr_data_get_settings(&ds);
+			return ds.smsFormat;
+		}
+#else
+		return 2;
 #endif
 #if CONFIG_CRASH_REPORT
 	case UI_SET_CRASH_MODE:
@@ -526,16 +533,21 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		dmr_data_set_settings(&ds);	// the radio core saves the data service's settings when they change
 		return true;
 	}
-	case UI_SET_MSG_FORMAT: {
-		dmrDataSettings_t ds;
+#endif
+	case UI_SET_MSG_FORMAT:
+#if CONFIG_DMR_SMS
 		if ((value != DMR_SMS_FORMAT_ETSI_IP) && (value != DMR_SMS_FORMAT_ETSI) &&
 		    !(CONFIG_DMR_TMS && (value == DMR_SMS_FORMAT_TMS)))
 			return false;
-		dmr_data_get_settings(&ds);
-		ds.smsFormat = (uint8_t)value;
-		dmr_data_set_settings(&ds);
+		{
+			dmrDataSettings_t ds;
+			dmr_data_get_settings(&ds);
+			ds.smsFormat = (uint8_t)value;
+			dmr_data_set_settings(&ds);
+		}
 		return true;
-	}
+#else
+		return false;
 #endif
 #if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
 	case UI_SET_USB_BOOT_NET:

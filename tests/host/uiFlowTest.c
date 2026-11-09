@@ -57,6 +57,14 @@ static const flow_t flows[] = {
 	{ "5 private call by ID", "", "9 9 9 9 9 9 9 down ptt", "txid=9999999 txpriv=1", 9, false },
 	{ "6 canned reply to last caller", CALLER, "ctx 3 ok", "sent=1 text=OK", 4, false },
 	{ "6 canned to contact by name", "", "5 6 3 ctx 3 ok", "sent=1 text=OK", 6, false },
+	{ "6 custom message opens editor", "", "5 6 3 ctx 3 down down down down ok",
+	  "screen=message-text", 10, false },
+	{ "6 custom message sends typed text", "", "5 6 3 ctx 3 down down down down ok 4 4 wait:1100 4 4 4 ok",
+	  "sent=1 text=HI screen=home", 16, false },
+#if CONFIG_LANG_ES
+	{ "6 preset sends in selected language", "ok 7 2 up ok down ok long:back", "5 6 3 ctx 3 down ok",
+	  "sent=1 text=En_camino", 7, false },
+#endif
 	{ "7 read message, banner up", "msg:9991234,Meet_at_the_north_lot", "ctx", "screen=message", 1, false },
 	{ "7 read message later", "msg:9991234,Meet_at_the_north_lot wait:9000", "ok 2 ok", "screen=message", 3, false },
 #if CONFIG_ZONE_SHARE
@@ -578,6 +586,23 @@ static const flow_t flows[] = {
 	{ "G GPS pages wrap", "ok 6 2", "up down", "shows=Status", 2, false },
 	{ "A KISS on USB", "ok 6 8", "up up ok", "aprs_kiss=1", 3, false },
 	{ "A stations heard", "", "ok 6 8 up ok", "screen=aprs-heard count=2", 5, false },
+	{ "A station opens its Message action", "ok 6 8 up ok", "ok", "screen=aprs-station shows=Message", 1, false },
+	{ "A station Message fills its callsign", "ok 6 8 up ok ok", "ok", "screen=compose shows=Q4WABC-15", 1, false },
+	{ "A new APRS message appears independently of DMR format", "", "ok 2", "shows=New_APRS_message", 2, false },
+	{ "A new APRS message opens its composer", "ok 2", "ok", "screen=compose shows=To_callsign", 1, false },
+	{ "A new APRS message needs our callsign", "aprs:nocall ok 2", "", "hides=New_APRS_message", 0, false },
+	{ "A received APRS message opens in Messages", "aprs:message ok 2", "ok", "screen=message shows=Hello_APRS", 1, false },
+	{ "A received APRS message replies over APRS", "aprs:message ok 2 ok", "ok", "sent=1 aprs_to=Q4WAB-9 text=OK", 1, false },
+	{ "A received APRS message opens a typed reply", "aprs:message ok 2 ok", "ctx",
+	  "screen=compose shows=Q4WAB-9", 1, false },
+	{ "A DMR message context uses its sender", "msg:9991234,Hi wait:9000 ok 2 ok", "ctx 3 ok",
+	  "sent=1 txid=9991234 text=OK", 3, false },
+	{ "A newer APRS message sorts before DMR", "msg:9991234,Older wait:9000 aprs:message ok 2", "ok",
+	  "screen=message shows=Hello_APRS", 1, false },
+	{ "A newer DMR message sorts before APRS", "aprs:message wait:1100 msg:9991234,Newer wait:9000 ok 2", "ok",
+	  "screen=message shows=Newer", 1, false },
+	{ "A new DMR message does not change an open APRS reply", "aprs:message ok 2 ok msg:9991234,Newer wait:9000", "ok",
+	  "sent=1 aprs_to=Q4WAB-9 text=OK", 1, false },
 	{ "A not in this build", "aprs:off", "ok 6 8 2", "toast=APRS:_not aprs_auto=0", 4, false },
 	// The crash log and its report (docs/spec/crash-log.md): Settings > Advanced > Crash log, after the restart
 	{ "C crash log from Advanced", "crash:on", "ok 7 0 down down down down ok", "screen=crash shows=Fault_3 shows=Crash_Log crash_seen=1",
@@ -1238,6 +1263,46 @@ static void call_screen_checks(void)
 	}
 }
 
+// Tools > APRS > Stations heard, at every display class: a station with a position shows how far and which way it is
+// from ours, beside the longest call there is, kept whole. No position of ours, or none of the station's: the row is
+// the call and its age, as before.
+// EP: our position none / fixed x the station's none / valid (QJ4XYZ has none)
+static void heard_checks(void)
+{
+	static const struct { const char *name, *setup; bool range; } cases[] = {
+		{ "both positions", "", true },
+		{ "no position of ours", "aprs:nopos ", false },
+	};
+	char err[300], buf[200];
+	for (int g = 0; g < sim_geom_count; g++) {
+		for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			snprintf(buf, sizeof buf, "%sok 6 8 up ok expect:screen=aprs-heard expect:shows=Q4WABC-15 "
+				 "expect:shows=QJ4XYZ expect:%s=14.5_km_NE", cases[i].setup,
+				 cases[i].range ? "shows" : "hides");
+			if (!sim_run(buf, err, sizeof err)) {
+				printf("FAIL stations heard %s [%s]: %s\n", cases[i].name, sim_geoms[g].name, err);
+				fails++;
+			}
+		}
+	}
+	// Packets without a position since the last one: the row's age is the position's (10 min), not the last
+	// packet's (1 min), so it says how old the range is
+	sim_reset(&sim_geoms[0], SIM_MAP_K);
+	if (!sim_run("wait:600000 ok 6 8 up ok expect:shows=14.5_km_NE expect:shows=10m expect:hides=1m", err,
+		     sizeof err)) {
+		printf("FAIL stations heard position age [%s]: %s\n", sim_geoms[0].name, err);
+		fails++;
+	}
+	// BVA on the row's width: a display too narrow for the call, the range and the age gives up the range, never
+	// the call (96 px: under 20 cells, the call and the range alone are 20)
+	sim_reset(sim_geom_find("96x64m"), SIM_MAP_K);
+	if (!sim_run("ok 6 8 up ok expect:screen=aprs-heard expect:shows=Q4WABC-15 expect:hides=km", err, sizeof err)) {
+		printf("FAIL stations heard narrow [96x64m]: %s\n", err);
+		fails++;
+	}
+}
+
 // A radio without a battery (CAP_NO_BATTERY), at every display class: no percentage in the status strip, no battery
 // warning, and no Battery page, Battery saver or Low battery warning in the lists (Tools keep their numbers, Battery
 // is the last one; in Settings the other rows move up). With a
@@ -1376,6 +1441,7 @@ int main(void)
 	printf("# %d flows run\n", flows_run);
 	about_checks();
 	call_screen_checks();
+	heard_checks();
 	vfo_split_dmr_checks();
 	no_battery_checks();
 	title_row_checks();
