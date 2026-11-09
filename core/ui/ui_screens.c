@@ -1731,6 +1731,7 @@ static int dual_right(const font_t *rf, int x_end, int y, int row_h, int min_x, 
 	bool more = true;
 	int tw = 0;
 	for (int level = 0; more; level++) {	// the longest alternate that fits
+		gfx_text_alt(text, level, fit, sizeof fit, &more);
 		tw = gfx_text_width(rf, fit);	// pixels: a CJK character is not one cell wide
 		if (tw <= room)
 			break;
