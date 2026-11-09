@@ -431,6 +431,7 @@ SFR).
 | SFR repeater, inbound frames lost per 72 | 10-13 (5 calls) | 0 (8 calls) |
 | SFR repeater, inbound AMBE bits corrected per 72 (first / second / third frame of each burst) | 155-200 (97-117 / 24-40 / 34-58) | 170-194 (98-120 / 22-30 / 48-54) |
 | The same call received without transmitting (TX inhibit, plain receive) | 29-37 | - |
+| The 1.5 ms lead with a RadioFoundry radio as the talker (lowest power, 198 frames a call, 10 calls): frames lost / AMBE bits corrected | - | 18-33 / 341-472 |
 | Our idle bursts: symbol error, sync errors, carrier vs the bench | 0.10, 0, +15..20 Hz | 0.05-0.12, 0, +13 Hz |
 | Plain simplex call (`test_dmr_tx_off_air`): burst on-time, ramps up / down | 32.76-33.27 ms, 1.62 / 1.65 ms, carrier after the call | 29.67-30.12 ms, 1.31-1.54 / 1.02-1.15 ms (5 calls, 1.5 ms lead, the 32-bit ramp), none |
 | The same on the VHF page (2 m, lowest power, 2.5 ms lead) | - | 29.58-30.09 ms, 0.77 / 0.73 ms (52 bursts), none |
