@@ -488,13 +488,13 @@ def test_long_press_time_reaches_input(home):
 
 @pytest.mark.feature("key_lock")
 def test_auto_lock(home):
-    """Settings > Privacy > Auto lock 30 s locks the keys after 30 s without a key; set back to Off after."""
+    """Settings > Key lock > Auto lock 30 s locks the keys after 30 s without a key; set back to Off after."""
     r = home
     if r.unlock_key() == "none":
         skip("no_hw", "no key on the radio unlocks: auto lock never locks it")
     if as_int(r.view(["storage"]).get("settings.auto_lock_s"), 0) != 0:
         skip("state", "auto lock is already on")
-    settings_keys(r, "ok 7 4 down down ok")
+    settings_keys(r, "ok 7 9 ok")
     try:
         r.wait_for(lambda x: x.get("settings.auto_lock_s") == "30", sections=("storage",), what="auto lock 30 s")
         assert ui(r)["ui.locked"] == "0"
@@ -590,7 +590,7 @@ def test_privacy_key_entry(home):
 @pytest.mark.feature("key_lock")
 @pytest.mark.radio_tx
 def test_ptt_when_locked_off(home, pytestconfig):
-    """Settings > Privacy > PTT when locked Off: with the keys locked an injected PTT doesn't transmit and the UI
+    """Settings > Key lock > PTT when locked Off: with the keys locked an injected PTT doesn't transmit and the UI
     says how to unlock. Marked radio_tx: if the block failed the radio would key up (lowest power), so it does that
     on the DMR test channel (--dmr-freq), not on whatever channel the radio was left on (a receive-only one is refused
     by the TX guard before the radio sees the PTT)."""
@@ -605,7 +605,7 @@ def test_ptt_when_locked_off(home, pytestconfig):
     if r.unlock_key() != "quick":
         skip("no_hw", "the radio has no QUICK key to lock and unlock it with")
     r.lowest_power()
-    settings_keys(r, "ok 7 4 down down down ok")
+    settings_keys(r, "ok 7 9 down ok")
     try:
         r.wait_for(lambda x: not as_int(x.get("settings.ui_flags"), 0x10) & 0x10, sections=("storage",),
                    what="PTT when locked off")
@@ -624,7 +624,7 @@ def test_ptt_when_locked_off(home, pytestconfig):
     finally:
         if ui(r).get("ui.locked") == "1":
             r.press("quick", LONG)
-        settings_keys(r, "ok 7 4 down down down ok")
+        settings_keys(r, "ok 7 9 down ok")
     r.wait_for(lambda x: as_int(x.get("settings.ui_flags"), 0) & 0x10, sections=("storage",),
                what="PTT when locked on again")
 

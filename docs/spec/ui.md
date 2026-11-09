@@ -98,7 +98,7 @@ into logical actions (`hal_input.h`).
 The stack holds up to 6 frames; Home is frame 0. Each screen is a `ui_scr_def_t` (`ui_nav.h`): a name (the debug
 link's `ui.screen`), flags, and callbacks for list rows, SELECT, CONTEXT, the talk target of the focused row, a title,
 a body, raw keys, drawing and entry. List screens need only `count` and `item`; the generic list code does focus,
-scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and the long-press target.
+scrolling, numbered shortcuts (`SF_NUMBERED`: 1-9, then 0 for the 10th row; later rows have none), T9 filtering (`SF_FILTER`), and the long-press target.
 
 A filtered list's rows are raw rows (`raw_count`, `raw_label`) that have a label and, with keys typed, match them.
 With keys typed the list is the first `UI_FILTER_MAX` (128) matches. With none it is every row: the first 126 are kept
@@ -370,7 +370,7 @@ whatever the long press time (`input_long_threshold`, core/input). Which key car
 "EMERGENCY sent: hold again to cancel", "Emergency canceled" (`ui_svc_emergency_active` reads the radio core's state,
 so a cancel from elsewhere counts). A board whose key map has no EMERGENCY entry has no emergency key (for example a board whose third side key isn't located yet).
 
-PTT while the keys are locked works unless Settings > Privacy > PTT when locked is off: the UI then tells the input
+PTT while the keys are locked works unless Settings > Key lock > PTT when locked is off: the UI then tells the input
 layer (`ui_svc_ptt_block`, `input_set_ptt_block`), which keeps PTT DOWN from the radio core (UP always passes), and the
 UI gives an error beep and "PTT is off while locked: hold * to unlock".
 The same setting blocks Tone burst DOWN; UP always passes so locking cannot prevent an existing burst from ending.

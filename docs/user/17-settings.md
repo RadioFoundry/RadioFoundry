@@ -81,8 +81,6 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 |---|---|---|---|---|
 | Key type | Off, Motorola, Anytone | Off | The kind of basic privacy key ([DMR](09-dmr.md#privacy)). Off removes the key | Works |
 | Key | Motorola 1 to 255, Anytone 0 to 65535 | | The key value, typed with the number keys. Dimmed until a type is chosen | Works |
-| Auto lock | Off, 30 s, 1 min, 5 min | Off | Locks the keys after this time without a key press | Works |
-| PTT when locked | On, Off | On | Whether **PTT** works while the keys are locked. Off: **PTT** does nothing until you unlock | Works |
 
 ### Location (key 5)
 
@@ -138,14 +136,24 @@ The list has a row pair for each key the menus don't need; [the radio's list](23
 key settings are also in the codeplug, so a codeplug written to the radio can set them, and a change here is written to
 the codeplug.
 
-### My radio (key 9)
+### Key lock (key 9)
+
+When the keys lock by themselves and what still works while they are locked ([Key lock](05-keys-and-navigation.md#key-lock)).
+
+| Setting | Values | Default | What it does | Status |
+|---|---|---|---|---|
+| Auto lock | Off, 30 s, 1 min, 5 min | Off | Locks the keys after this time without a key press | Works |
+| PTT when locked | On, Off | On | Whether **PTT** works while the keys are locked. Off: **PTT** does nothing until you unlock | Works |
+| Knob when locked | On, Off | On | On radios whose firmware reads the volume knob only (the row is not shown on the others; see the [feature matrix](../feature-matrix.md)). Whether the volume knob works while the keys are locked. Off: turning it does nothing and shows the unlock hint, and when you unlock, the volume goes straight to where the knob is | Works |
+
+### My radio (key 0)
 
 | Setting | What it does |
 |---|---|
 | DMR ID and name | The radio model, then your DMR ID, the radio name and the two boot screen lines, as stored in the codeplug. On **DMR ID**, type a new ID with the digit keys (up to 16776415; the IDs above it are reserved for the network) and press **OK**: the radio writes it into the codeplug and uses it at once, and the Codeplug Editor or qdmr shows it on the next read. **Back** takes back the last digit, and with none left leaves the ID unchanged. On **Radio name**, **Boot 1** or **Boot 2**, **OK** opens text entry ([Text entry](07-channels-zones-vfo.md#text-entry)); **OK** there saves it, up to 16 characters |
 | About | The firmware version, its date and the radio model: the same page as **Settings > Advanced > About** (below) |
 
-### Advanced (key 0)
+### Advanced (last row)
 
 | Item | What it does |
 |---|---|

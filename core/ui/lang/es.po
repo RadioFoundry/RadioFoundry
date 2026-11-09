@@ -2857,6 +2857,10 @@ msgid "PTT when locked"
 msgstr "PTT si bloqueado"
 
 #: core/ui/ui_menus.c
+msgid "Knob when locked"
+msgstr "Perilla si bloqueado"
+
+#: core/ui/ui_menus.c
 msgid "Position format"
 msgstr "Formato"
 

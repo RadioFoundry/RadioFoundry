@@ -63,6 +63,7 @@ is `tools/bringup.py list --radio <id>`.
 | `zone_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `contact_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `volume_bar` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `volume_lock` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `key_assign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `scan` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `dual_watch` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
@@ -109,7 +110,7 @@ is `tools/bringup.py list --radio <id>`.
 | `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `net_usrp` | not recorded | not recorded | not recorded | not written | not recorded | not recorded | pass |
-| `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
+| `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `mdns` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `tftp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `tftp_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
@@ -131,7 +132,7 @@ is `tools/bringup.py list --radio <id>`.
 | `lang_default_es` | off | off | off | off | off | off | off |
 | `lang_default_it` | off | off | off | off | off | off | off |
 | `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run |
-| `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass |
+| `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run |
 | `codeplug_foreign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `nand_storage` | ✕ | ✕ | ✕ | not recorded | ✕ | ✕ | ✕ |
 | `codec_check` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |

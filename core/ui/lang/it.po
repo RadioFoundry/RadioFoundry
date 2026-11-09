@@ -2857,6 +2857,10 @@ msgid "PTT when locked"
 msgstr "PTT da bloccata"
 
 #: core/ui/ui_menus.c
+msgid "Knob when locked"
+msgstr "Manopola da bloccata"
+
+#: core/ui/ui_menus.c
 msgid "Position format"
 msgstr "Formato posiz."
 
