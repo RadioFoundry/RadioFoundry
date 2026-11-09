@@ -76,7 +76,7 @@ def self_test():
     for b, t in CODEC_TOOLS.items():	# every board with a codec tool finds each of its stock files
         if t is None:
             continue
-        profs = board_profiles(__import__(t).PROFILES, b)
+        profs = board_profiles(getattr(__import__(t), "PROFILES", {}), b)
         if profs and not all(stockfw.key_sha(h) in profile_shas(profs) for h in profs):
             fails.append("%s: a stock file is not found" % b)
     for f in fails:
