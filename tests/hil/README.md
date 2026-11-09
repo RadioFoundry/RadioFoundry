@@ -204,8 +204,8 @@ the Python and pytest versions. Ports, host names and serial numbers are left ou
 (the commit, the content hashes): in a tree that isn't a git checkout, such as a `git archive` export, `run` stops
 before testing unless it has `--no-record`, and `list` and `status` say that nothing was checked for staleness. Commit the record with the change it
 checks. A feature's status never understates the radio. The newest record that ran it decides: `pass`, `partial`
-(excused skips), `fail`, or `needs re-run` when its `spec` or `source` paths differ from the content the record hashed
-(`sources`; by content, so a squash merge changes nothing). Before a run, the board's seed record decides (the evidence
+(excused skips), `fail`, or `needs re-run` when its `source` paths differ from the content the record hashed
+(`sources`; by content, so a squash merge changes nothing; a spec edit alone changes nothing either). Before a run, the board's seed record decides (the evidence
 the docs held before bring-up records existed), marked as a seed. With neither, the feature is `built, not yet
 recorded`. Only a failing record shows a failure
 ([docs/testing/results/README.md](../../docs/testing/results/README.md#status)). The steps for a new radio, from its
