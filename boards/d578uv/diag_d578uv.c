@@ -85,6 +85,18 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 			put_u(&o, st.rx_frames);
 			put(&o, " fec ");
 			put_u(&o, st.rx_fec);
+			put(&o, " nak ");
+			put_u(&o, st.naks);
+			put(&o, "/");
+			put_u(&o, st.last_nak);
+			put(&o, " rst ");
+			put_u(&o, st.chip_restarts);
+			put(&o, " wm ");
+			put_u(&o, st.mode_timeouts);
+			put(&o, " rej ");
+			put_u(&o, st.tx_rejected);
+			put(&o, " uns ");
+			put_u(&o, st.rx_unsupported);
 		}
 #else
 		put(&o, "-");

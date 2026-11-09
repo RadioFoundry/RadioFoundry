@@ -217,7 +217,8 @@ def _channel_change(s, rnd):
         s.radio.wait_for(lambda c: c.get("channel_number") == number, timeout=5, what="back on the test channel")
         delay = rnd.uniform(0.0, 0.5)
         time.sleep(delay)
-        s.call(1.5, f"key-up {delay:.2f} s after coming back from the next channel")
+        # 2.5 s: right after a channel change a key-up can wait up to about 0.8 s for the slot (modem-sct.md 5)
+        s.call(2.5, f"key-up {delay:.2f} s after coming back from the next channel")
         time.sleep(1.0)
 
 
