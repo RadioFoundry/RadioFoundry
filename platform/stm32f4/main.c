@@ -19,6 +19,7 @@ int main(void)
 {
 	board_rf_safe();	// transmitter off before anything that could hang (docs/spec/crash-log.md 8)
 	stm32_sysboot_check();	// REBOOT ROM-DFU: into the ROM bootloader before anything is set up
+	stm32_irq_stack_fill();	// before the first interrupt: the main stack's high water mark and canary (irq_stack.c)
 #if CONFIG_WATCHDOG
 	hal_watchdog_start();	// after the ROM entry check: the IWDG can't be stopped and the ROM never feeds it
 #endif

@@ -344,6 +344,13 @@ void stm32_i2s_pcm_stats(stm32_i2s_pcm_stats_t *out)
 	out->dropped = dropped;
 }
 
+void stm32_i2s_pcm_stream_stats(audio_stream_stats_t *out)
+{
+	out->blocks = blocks;
+	out->late = overruns;
+	out->dropped = dropped;
+}
+
 void stm32_i2s_pcm_reset_stats(void)
 {
 	taskENTER_CRITICAL();
