@@ -129,7 +129,7 @@ CONFIG_DEBUGLINK ?= $(CONFIG_HOSTLINK)
 # table of the tasks (core/app/task_stack.c, docs/spec/debuglink.md 3.7; needs DEBUGLINK). About 0.6 KB
 CONFIG_TASK_STACKS ?= $(CONFIG_DEBUGLINK)
 # peek and poke on the debug link: memory and register reads, and, armed with a key, writes and pin changes
-# (docs/spec/debuglink.md 3.23; needs DEBUGLINK or a second SoC's debug link server). About 1 KB
+# (docs/spec/debuglink.md 3.26; needs DEBUGLINK or a second SoC's debug link server). About 1 KB
 CONFIG_DEBUG_MEM ?= $(CONFIG_DEBUGLINK)
 # the open-firmware CPS protocol shim on the host port, so qdmr and the open-firmware CPS can read and write the
 # codeplug (docs/spec/open-firmware-cps.md; needs HOSTLINK)
