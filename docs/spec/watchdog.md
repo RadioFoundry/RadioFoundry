@@ -10,7 +10,9 @@ feeds, and the chip resets within a few seconds. Off: no watchdog runs, as befor
 
 With the crash log, the hang check in the tick interrupt keeps a record of the task that kept the idle task out, a
 quarter of the timeout before the reset would come, and restarts the radio itself ([crash-log.md](crash-log.md) 1.1).
-Only a hang with interrupts off still reaches the hardware reset.
+Only a hang with interrupts off still reaches the hardware reset. The stall check, in the same tick, keeps a record
+and restarts the radio when the host link's task stops passing its loop for a minute while the rest runs on
+([crash-log.md](crash-log.md) 1.1.1).
 
 A watchdog reset is a chip reset: the radio starts as at power-on. The transmitter must be off by then, which is the
 early-boot RF-off step's job (`board_rf_safe`, [crash-log.md](crash-log.md)), not the watchdog's.
@@ -58,10 +60,20 @@ take time, and a watchdog build of RadioFoundry refuses to enter a stub that doe
 
 | Exit | HR_C7000 | STM32F4 |
 |---|---|---|
-| Reboot (`hal_system_t.reboot`, the debug link's REBOOT, a crash restart) | `hrc_soft_reset` turns it off first: whether a soft reset clears it is unknown, and the vendor bootloader's update mode never feeds it. If the soft reset doesn't happen, it turns the watchdog back on as the last way out | `NVIC_SystemReset`: a system reset stops the IWDG |
+| Reboot (`hal_system_t.reboot`, the debug link's REBOOT, a crash restart) | `hrc_restart` is a watchdog reset, which leaves the watchdog guarding the next start (below) | `NVIC_SystemReset`: a system reset stops the IWDG |
 | ROM DFU entry (REBOOT mode 1, STM32 boards) | not offered | the request resets first; `stm32_sysboot_check()` jumps to the ROM before `main()` starts the IWDG |
 | Runtime stub entry (STUB ENTER, [debuglink.md](debuglink.md) 3.18) | `hrc_watchdog_stretch()` gives it 32 s and a feed, and the stub feeds it from its start-up on (3.2) | the IWDG can't be stopped: ENTER is refused for a stub whose image header doesn't say it feeds; `stm32_watchdog_stretch()` sets the longest timeout (about 32 s, at least 22 s) for the jump, and the stub feeds it from its first instruction on (3.1) |
 | Power off | the supply goes; until it does the idle task feeds as usual (a knob that keeps the radio on leaves it running normally) | the same |
+
+**The HR_C7000 restart.** A soft reset (`SYS_SOFT_RSTN`) turns the watchdog off, and a watchdog reset keeps its enable
+and both loads, the counter starting again from the load (measured on an HR_C7000 radio). The restart used
+to be a soft reset, and once a start after one hung with nothing left to reset it: the radio stayed dead until a power
+cycle. `hrc_restart` (transmitter off, the loader's clocks and flash controller mode back) arms the watchdog with a
+1 ms load, then writes the 32 s load without a feed. The reset comes about 23 ms later (RST_LOAD's 22 ms included),
+and the start that follows counts from the 32 s load: `main()` turns it off and starts its own, and a start that hangs
+before `main()` is reset again. A 1 ms load alone resets the chip every 23 ms, inside the boot ROM, until a power cycle
+clears it (measured). A power cycle starts with the watchdog off, so a vendor bootloader's update mode, entered only at
+power-on, isn't cut off. Rebooted this way the radio answered 3 s later, with the restart cause kept.
 
 ### 3.1 The STM32 stub and the IWDG
 
@@ -80,7 +92,7 @@ The stub (`stub/stm32f4`) feeds the IWDG:
 |---|---|
 | `stub_main`, first | once, before anything else: RadioFoundry's stretch covered the copy and the jump |
 | `stub_ms()`, which every wait loop reads: the main loop's receive poll, the flash erase and program busy waits (a 128 KB sector: up to 2 s), the SPI flash's status polls, the USB transmit waits, the delays | every pass |
-| The protocol engine (`f4stub_port_t.feed`) | at every request, before each erase or program, once per 4 KB block in SUMS and READ (a 1 MB SUMS is 256 blocks) |
+| The protocol engine (`stubeng_port_t.feed`, `stub/common/stubeng.c`) | at every request, before each erase or program, once per 4 KB block in SUMS and READ (a 1 MB SUMS is 256 blocks) |
 
 The loops left without a feed are bounded to microseconds (the SPI byte transfers, the FIFO copies) or are the stub
 hanging, which is what the watchdog is for.
@@ -112,8 +124,7 @@ programs are host-driven SPI commands, one frame at a time, so the stub passes t
 A knock while the watchdog is off does nothing.
 
 The stub's reset (`--boot reset`, the web flasher's `resetChip`) turns the watchdog off over the stub's register write
-before `SYS_SOFT_RSTN`, as `hrc_soft_reset` does: a soft reset may keep it, and the bootloader never feeds it. RadioFoundry starts
-it again in `main()`.
+before `SYS_SOFT_RSTN`; the soft reset turns it off anyway (3). RadioFoundry starts it again in `main()`.
 
 RadioFoundry needs no version check here. Every older HR_C7000 stub turns the watchdog off at its start-up, so it runs as before,
 without the watchdog: never reset part way through a write. A watchdog build with no stub that feeds is the STM32 case
@@ -136,15 +147,13 @@ FreeRTOS call after the scheduler starts lets the idle task run and needs nothin
 | Internal flash erase and program | the stubs only (`stub/stm32f4`, the HR_C7000 stubs) | RadioFoundry never writes its own program flash; the stubs run after the exits in 3 |
 | UI work while keys come faster than it (Find, a filtered list of 1024 contacts or channels: about 0.1 s a key on a radio with polled SPI flash) | `core/ui/ui.c` | the UI task runs above the idle task and doesn't wait while keys are queued, so after `BUSY_MAX_MS` (250 ms) without waiting it sleeps a tick; a redraw waits while keys are queued, at most `FRAME_DEFER_MS` (300 ms). The longest gap is then one slice, one key's work and one redraw: fast typing on a full codeplug measured 0.6 s at most; before, 1.8 s |
 | Critical sections, `vTaskSuspendAll` | `core/input`, `core/radio`, `core/debuglink/dlog.c`, the audio drivers | microseconds; none loops |
-| A CPU fault: the fault trace, then the record and the restart | `platform/hrc7000/irq.c` | one feed before the 3 s trace; the restart turns the watchdog off |
+| A CPU fault: the fault trace, then the record and the restart | `platform/hrc7000/irq.c` | one feed before the 3 s trace; the restart is a watchdog reset (3) |
 | A deliberate stop without the crash log (stack overflow or malloc-failed hook, a failed `configASSERT`) | `platform/*/main.c`, `FreeRTOSConfig.h` | none: they spin with interrupts off and the watchdog resets the radio, instead of leaving it stopped |
 
 ## 5. Unverified
 
 - The HR_C7000 counter's clock and load units (2.1): until measured, the real timeout is somewhere between 4 s and
   much longer.
-- Whether the HR_C7000 soft reset, or a watchdog reset itself, leaves the watchdog running into the bootloader. The
-  soft reset turns it off first; after a watchdog reset the bootloader's update mode must still be checked to stay up.
 - The STM32 LSI on these radios (the IWDG's timeout scales with it).
 - The longest legitimate idle gap on each radio, in particular the start-up of a SPI NAND board with a full codeplug.
 - A whole STM32 stub write on a watchdog build, and the refusal of a stub without the header (version 2), on the

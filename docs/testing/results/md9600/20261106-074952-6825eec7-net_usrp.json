@@ -1,0 +1,95 @@
+{
+ "board": "md9600",
+ "commit": "6825eec713e4c9b8c705b7bf233d965e56485011",
+ "date": "2026-11-06T07:49:52Z",
+ "dirty": true,
+ "features": [
+  "net_usrp"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,DMR_CONFIRMED,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "6825eec7",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.075,
+  "dmr-tg": 202,
+  "fm-mhz": 446.1,
+  "tx-power": 40
+ },
+ "sources": {
+  "net_usrp": {
+   "core/net/net.c": "fc98537b8dd138bd0b972138b3ccf7b515e40cdb",
+   "core/usbaudio/audio_mux.c": "3855c4aba9d8b9b85c62d0ca87c1931fd56f4f87",
+   "core/usbaudio/pcm_slip.c": "d512726008073e7b09e8ac10f5ff6a9d540befeb",
+   "core/usbaudio/usrp.c": "b4eaf1ba56613261af041d0789747fc8e3f5adcc",
+   "core/usbaudio/usrp_net.c": "20a40cb4dacc44ee21f0070c4fff70d161ab9c5c",
+   "docs/spec/usb-audio.md": "09eb10c500bebfd256913e72949d4df09e77d5f1"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "net_usrp"
+   ],
+   "id": "tests/hil/test_usrp.py::test_usrp_dmr_rx",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": false,
+   "features": [],
+   "id": "tests/hil/test_usrp.py::test_usrp_fm_rx",
+   "optional": [
+    "net_usrp"
+   ],
+   "outcome": "skipped",
+   "reason": "[bench] NOAA on 162.475 MHz doesn't open the squelch here",
+   "required": false,
+   "skip_kind": "bench"
+  },
+  {
+   "features": [
+    "net_usrp"
+   ],
+   "id": "tests/hil/test_usrp.py::test_usrp_fm_rx_bench",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "net_usrp"
+   ],
+   "id": "tests/hil/test_usrp.py::test_usrp_fm_tx",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

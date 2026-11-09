@@ -75,13 +75,15 @@ and drops the ID.
 <img src="../ux/screens/160x120i5/tx_private.png" width="200" alt="Transmitting a private call">
 
 On DMR the screen may first show WAITING (the radio waits for a free slot) or WAKING RPT (it wakes up the repeater).
+While it wakes the repeater, the red LED blinks once for each wake-up signal it sends, and lights steady once you are
+on the air.
 
 The radio also transmits without PTT on DMR: registration (ARS), text messages, positions, call alerts and their
 answers, and packet data from a computer on USB or serial. While it does, the status line shows TX, the red LED
 lights and Home says SENDING. Data the radio receives shows RX on the status line.
 
-When the radio refuses to transmit, the status line shows NO TX. The screen says why, and the hint row says what to
-do:
+When the radio refuses to transmit, the status line shows NO TX and the LEDs flash red, green, red, green, red, green
+once with the deny tone. The screen says why, and the hint row says what to do:
 
 | Message | Cause | What to do |
 |---|---|---|

@@ -77,8 +77,8 @@ fake board whose AFSK output is demodulated back to frames.
 - A callsign is required: the debug link's test call, else Settings > My radio's radio name, else the codeplug's
   radio name; its first word, upper case, 3-6 letters and digits with a digit after the first character, not N0CALL.
   Our SSID comes from the APRS settings (7 by default). No callsign: nothing goes out, the page says why.
-- RF only on amateur frequencies: the APRS frequency must be in 144-148, 222-225 or 420-450 MHz and in a band the
-  board transmits in; else the reason is "not amateur" and nothing is keyed.
+- RF only on amateur frequencies: the APRS frequency must be in 144-148, 222-225, 420-450 or 902-928 MHz and in a
+  band the board transmits in; else the reason is "not amateur" and nothing is keyed.
 - A hard minimum of 30 s between automatic beacons (`AUTO_MIN_S`), 10 s for any configuration
   (`APRS_MIN_INTERVAL_FLOOR_S`), and "send now" pressed again within 5 s is ignored.
 - Frames from the host (KISS) must carry our callsign (any SSID) as the source and are rate limited: a burst of 3,
@@ -148,7 +148,9 @@ The path runs while the receive setting is on, the radio receives FM on the APRS
 region's, or the custom one) and no APRS transmission is under way. Anywhere else the stream is left alone: a
 repeater channel's audio isn't APRS, and battery saving would be blocked for nothing. While it runs, battery saving
 (`radio-features.md`) stays off: a sleeping receiver misses packets, and the squelch closes only after 300 ms of
-noise readings over the line (`RADIO_SQL_CLOSE_POLLS_APRS`) instead of 50 ms. On air, a packet's tones
+noise readings over the line (`RADIO_SQL_CLOSE_POLLS_APRS`) instead of 50 ms. A start the board's path refuses (no
+memory, its audio busy) is tried again 1 s later (`RX_RETRY_MS`), not on every tick, since each try routes the
+receiver and back; `aprs.rx_start_fails` counts them. On air, a packet's tones
 at full deviation pushed the AT1846S noise reading over the line for a poll or two, the squelch closed, and the
 squelch gated audio cut the packet in pieces: the preamble in one opening, the frame in the next. `aprs_rx_listening()`
 says whether the path runs.
@@ -360,14 +362,12 @@ APRS-IS, and every regional APRS frequency is refused), no path, the radio's low
 6 RF says APRS keys at the radio's current level). Each transmission is about 0.6 s. Every APRS setting touched is
 saved and put back once the queued frames and message retries have gone out on the test frequency.
 
-1. Position, status, message: the bench's RTL-SDR records I/Q while the radio sends; `tools/aprs_afsk_check.py`
-   FM demodulates it on the bench and decodes Bell 202 / AX.25 (its own demodulator: tone envelopes, a bit clock PLL,
-   NRZI, HDLC, the X.25 CRC; `--self-test` checks it on synthesized I/Q and on `aprsTest --wav`). Asserted: a valid
-   FCS, `CALL-SSID>APZRDF` with no digipeaters, the payload (position within 1e-4 degree, `>status`,
+1. Position, status, message: a bench board decodes Bell 202 / AX.25 itself while the radio sends (an FM receive
+   job with APRS decode: frames with a good FCS and their tone measurements, no I/Q). Asserted: a valid FCS,
+   `CALL-SSID>APZRDF` with no digipeaters, the payload (position within 1e-4 degree, `>status`,
    `:ADDRESSEE:text{N`), `aprs.rf_sent` +1, the radio back on its channel, deviation peak 2.0-4.5 kHz, twist under
-   6 dB. Printed: mark and space deviation, TX delay (flags before the frame, and carrier to first frame bit), the
-   phase residual at tone changes after the fitted switching delay (continuous phase: about 10 degrees RMS; random
-   restarts: about 100). The position is sent from the DMR channel and from the FM VFO.
+   6 dB. Printed: mark and space deviation, TX delay (flags before the frame). The position is sent from the DMR
+   channel and from the FM VFO.
 2. Digital: on the DMR test channel the position goes to `--aprs-dmr-dst` as an LRRP report and as a UDT location;
    the bench modem's listener hears the header and blocks, the test checks the CRCs, the IPv4 / UDP 4001 / LRRP or
    UDT NMEA layers and the position (within 2e-5 degree). Passed on air (a 70 cm DMR channel, color code 2, 50 mW).

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Write the web control page's per-radio files (CONFIG_NET_WEBCTL, docs/spec/tcp-services.md 5.1; run by make).
 
     gen_webctl_assets.py BOARD OUT_DIR
