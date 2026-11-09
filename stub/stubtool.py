@@ -583,6 +583,12 @@ C7_BOARDS = {b.id: {"id": b.stub["id"], "name": b.model, "names": tuple(b.debugl
              for b in rfoundryboards.BOARDS.values() if b.stub and b.stub["tool"] == "stubtool"}
 GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000,
            "rom_entry": None, "led": {"red": 255, "green": 255}, "protect": [], "write_test": None}   # an unknown radio: no pin driven as an LED
+# The tool installs at one application start, which every board must use: a radio whose bootloader ends elsewhere has to
+# give this tool and the web flasher a per-board start first, or an install would overwrite the end of that bootloader
+for _b in rfoundryboards.BOARDS.values():
+    if _b.stub and _b.stub["tool"] == "stubtool" and _b.app_base - _b.rom_base != APP_START:
+        raise ImportError("stubtool: the %s's image starts at flash offset 0x%X, the tools know 0x%X only"
+                          % (_b.id, _b.app_base - _b.rom_base, APP_START))
 # This tool's memory names as board.toml [[flash.protect]] names them
 PROTECT_MEM = {"progmem": "progmem", "q128": "data", "nand": "nand"}
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
