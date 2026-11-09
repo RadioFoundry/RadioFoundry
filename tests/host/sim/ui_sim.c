@@ -1726,7 +1726,7 @@ void ui_svc_apply(uint8_t id, int32_t value)
 	else if (id == UI_SET_TOT_S)
 		sim_rec.tot_s = (uint32_t)value;
 	else if (id == UI_SET_BACKLIGHT_S)
-		sim_rec.backlight_s = (uint32_t)value;
+		sim_rec.backlight_s = value;
 	else if (id == UI_SET_VFO_STEP) {
 		sim_step = value;
 		changed();
@@ -2306,7 +2306,7 @@ static bool check(const char *kv, char *err, size_t len)
 	key[eq - kv] = 0;
 	snprintf(want, sizeof want, "%s", eq + 1);
 	for (char *p = want; *p; p++)
-		if (*p == '_')
+		if (*p == '_' && strcmp(key, "showsraw") != 0)
 			*p = ' ';
 	ui_app_status_t s;
 	ui_app_status(&s);
@@ -2348,6 +2348,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "bvfo") == 0) snprintf(got, sizeof got, "%u", sim_dual[1].vfo);
 	else if (strcmp(key, "bpos") == 0) snprintf(got, sizeof got, "%u", sim_dual[1].pos + 1u);
 	else if (strcmp(key, "avfo") == 0) snprintf(got, sizeof got, "%u", sim_dual[0].vfo);
+	else if (strcmp(key, "bfreq") == 0) snprintf(got, sizeof got, "%u", (unsigned)ui_st.dual.pane[1].rx_hz);
 	// What the UI works from (ui_view): in dual watch, the selected channel wherever the receiver is
 	else if (strcmp(key, "uipos") == 0) snprintf(got, sizeof got, "%u", ui_view()->zone_pos + 1u);
 	else if (strcmp(key, "uitemp") == 0) snprintf(got, sizeof got, "%u", ui_view()->temporary);
@@ -2367,7 +2368,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "beep") == 0) snprintf(got, sizeof got, "%u", sim_rec.last_beep);	// ui_beep_t
 	else if (strcmp(key, "vibes") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.vibes);
 	else if (strcmp(key, "vibe") == 0) snprintf(got, sizeof got, "%u", sim_rec.last_vibe);	// ui_vibe_t
-	else if (strcmp(key, "shows") == 0) {	// a text on the screen (as drawn, after fitting) contains the value
+	else if (strcmp(key, "shows") == 0 || strcmp(key, "showsraw") == 0) {	// drawn text contains the value
 		got[0] = 0;
 		for (int i = 0; i < live_n; i++) {
 			if (strstr(live[i].s, want) != NULL) {
@@ -2421,7 +2422,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strncmp(key, "set", 3) == 0 && key[3] >= '0' && key[3] <= '9')	// set<N>: ui_setting_t N's value
 		snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get((uint8_t)atoi(key + 3)));
 	else if (strcmp(key, "radio_tot") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tot_s);
-	else if (strcmp(key, "radio_backlight") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.backlight_s);
+	else if (strcmp(key, "radio_backlight") == 0) snprintf(got, sizeof got, "%ld", (long)sim_rec.backlight_s);
 	else if (strcmp(key, "count") == 0) snprintf(got, sizeof got, "%u", s.count);
 	else if (strcmp(key, "depth") == 0) snprintf(got, sizeof got, "%u", s.depth);
 	else if (strcmp(key, "hotspot") == 0) snprintf(got, sizeof got, "%u", hotspot_on);

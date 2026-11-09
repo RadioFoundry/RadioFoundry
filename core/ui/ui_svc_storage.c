@@ -134,8 +134,9 @@ int32_t ui_svc_setting_get(uint8_t id)
 			return (rs.beep_level + 5) / 10;
 		if (id == UI_SET_TOT_S)
 			return rs.tot_s;
-		if (id == UI_SET_BACKLIGHT_S)
-			return rs.backlight_dim_s;
+		if (id == UI_SET_BACKLIGHT_S)	// < 0: dims, never goes off
+			return rs.backlight_off_s == 0 && rs.backlight_dim_s != 0 ? -(int32_t)rs.backlight_dim_s
+										    : rs.backlight_dim_s;
 		return rs.rx_save != 0;
 	case UI_SET_VOLUME:
 		settings_read(&st);

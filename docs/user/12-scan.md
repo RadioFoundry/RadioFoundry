@@ -157,7 +157,9 @@ step the frequency. In a zone with no other channel to go to, the radio says so 
 A channel you pick in Find, Channels or Zones becomes the selected channel; picking the other channel selects it. The
 **VFO** key puts the selected channel on a VFO, and a second press takes it back to its channel. Copy to VFO copies
 the selected channel into a VFO. A and B each get their own VFO, so both can be VFOs on different frequencies; the
-radio remembers both. Hotspot mode and a codeplug write don't stop dual watch.
+radio remembers both. To set a VFO pane's frequency, select it and type the frequency. The digits appear on that pane
+as you type; **Back** deletes a digit. Press **OK** or **#** to tune. Dual watch continues on the new frequency. With
+no frequency being typed, **#** opens the dual watch actions. Hotspot mode and a codeplug write don't stop dual watch.
 
 The zone keys (**Previous zone** and **Next zone**) move the selected channel to the
 previous or next zone, on the zone's first channel that isn't the other one ("A zone: Simplex"). Dual watch goes on.
