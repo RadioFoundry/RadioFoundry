@@ -18,6 +18,7 @@
 #include "aprs/kiss.h"
 #include "aprs/afsk.h"
 #include "radio/tx_limit.h"
+#include "fuzz.h"
 
 static int failures;
 static int checks;
@@ -849,6 +850,38 @@ static void test_gps_status(void)
 	CHECK(aprs_gps(&g, now) && !g.fix);		// the old fix was dropped with the setting
 }
 
+// DMR destination: EP the default and stored values (a stored 5057 is kept as stored), BVA at the ends of the
+// 24-bit range (0 and above 16777215 load as the default), PBT random IDs survive store and reload
+static uint32_t dst_after_reload(uint32_t id)
+{
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.dmr_dst = id;
+	aprs_set_cfg(&c, now);
+	aprs_reload();
+	run(200);
+	aprs_get_cfg(&c);
+	return c.dmr_dst;
+}
+
+static void test_dmr_dst(void)
+{
+	reset();
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	CHECK(c.dmr_dst == 310999u && APRS_DMR_DST_DEFAULT == 310999u);	// EP: never saved
+	CHECK(dst_after_reload(5057) == 5057 && dst_after_reload(204999) == 204999);	// EP: stored values are kept
+	CHECK(dst_after_reload(0) == APRS_DMR_DST_DEFAULT);			// BVA
+	CHECK(dst_after_reload(1) == 1 && dst_after_reload(16777215u) == 16777215u);
+	CHECK(dst_after_reload(16777216u) == APRS_DMR_DST_DEFAULT);
+	fuzz_t f;
+	fuzz_init(&f, 0xD57);			// PBT
+	for (long i = 0; i < fuzz_iters(200); i++) {
+		uint32_t id = 1u + fuzz_below(&f, 16777215u);
+		CHECK(dst_after_reload(id) == id);
+	}
+}
+
 // The configuration kept in the settings (settings_t aprs_*): back exactly after a reload, and a stored record with
 // values out of range (another firmware's, a damaged one) loads field by field with the defaults for the bad ones
 static void test_cfg_store(void)
@@ -1245,6 +1278,7 @@ int main(void)
 	test_gps_setting();
 	test_gps_status();
 	test_cfg_store();
+	test_dmr_dst();
 	test_codeplug_path();
 	test_rf_failures();
 #if CONFIG_APRS_RX

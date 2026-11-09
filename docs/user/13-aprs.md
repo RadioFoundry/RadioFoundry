@@ -7,8 +7,11 @@ The radio sends APRS two ways:
 
 - **On FM**: as 1200 baud AFSK packets on the APRS frequency of your region. The radio leaves your channel for about
   a second, sends, and comes back.
-- **Over DMR**: as a position report to an APRS gateway ID (BrandMeister's 5057 by default). This works on DMR
-  channels.
+- **Over DMR**: as a position report to an APRS gateway ID (BrandMeister's 310999 by default; it works from any master, but your own master's MCC plus 999 is recommended, for example 204999). This works on DMR
+  channels. BrandMeister forwards Motorola (LRRP) and Hytera position reports to APRS, so keep the default LRRP format
+  (not UDT). A radio that already saved APRS settings keeps its stored ID: run `aprs set dmr_dst 310999` (US) or
+  `aprs set dmr_dst <MCC>999`. The position appears on APRS-IS as your callsign with the SSID from your BrandMeister
+  profile (aprs.fi may take a minute to show it).
 
 Not every radio does both. Some send only, some can't send APRS on FM yet, and a build can leave APRS out for flash
 room. The [Radio reference](23-radios.md) lists them and says where APRS is verified.
