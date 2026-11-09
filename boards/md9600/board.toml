@@ -19,6 +19,7 @@ codec = "docs/spec/codec-md9600.md"
 
 # One-line summaries for the site and the generated tables; the facts are in docs.hardware
 [hardware]
+unconfirmed = { BT_PTT = "whether a Bluetooth module is fitted is not known; the hardware page does not say (docs/spec/hardware-md9600.md)" }
 bands = "136-174 / 400-480 MHz"
 power = "up to 50 W"
 display = "monochrome, 128 × 64"
