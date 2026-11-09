@@ -32,11 +32,11 @@
 #define SMS_TRIES				2
 #define SMS_ACK_MS				8000
 #define SMS_ETSI_ACK_MS			4000	// the ETSI response comes straight after the message
-#define SMS_BLOCK_TYPE			DT_RATE_12_DATA	// rate 1/2 by default: rate 1 fails on one bit error (gotcha 5.3)
+#define SMS_BLOCK_TYPE			DMR_TYPE_RATE_1_2	// rate 1/2 by default: rate 1 fails on one bit error (gotcha 5.3)
 // IP packets: the rates a MOTOTRBO radio sends, and the only ones it took on simplex at every try: rate 3/4 confirmed,
 // rate 1/2 unconfirmed. It refused rate 1/2 confirmed and dropped rate 3/4 unconfirmed (docs/spec/dmr-data.md 12.9)
-#define IP_CONFIRMED_RATE		DT_RATE_34_DATA
-#define IP_UNCONFIRMED_RATE		DT_RATE_12_DATA
+#define IP_CONFIRMED_RATE		DMR_TYPE_RATE_3_4
+#define IP_UNCONFIRMED_RATE		DMR_TYPE_RATE_1_2
 // Motorola ARS (gotchas 7.1-7.4): registration 5-15 s after power on (spread by radio ID, so that radios switched on
 // together don't collide), and again once the channel, our ID or the server has been unchanged for ARS_SETTLE_MS. A
 // registration the server doesn't acknowledge is retried ARS_RETRIES times, ARS_RETRY_FIRST_MS apart and doubling
@@ -331,7 +331,7 @@ static bool sendUDP(bool group, uint32_t dst, uint16_t srcPort, uint16_t dstPort
 
 bool dmrDataServiceSendUDP(bool group, uint32_t dst, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length)
 {
-	return sendUDP(group, dst, srcPort, dstPort, payload, length, DT_RATE_12_DATA, TXK_OTHER);
+	return sendUDP(group, dst, srcPort, dstPort, payload, length, DMR_TYPE_RATE_1_2, TXK_OTHER);
 }
 
 #if DMR_DATA_UDP_API
@@ -363,7 +363,7 @@ static void udpTick(void)
 		udpReq.stamped = true;
 		udpReq.since = now;
 	}
-	if (sendUDP(udpReq.group, udpReq.dst, udpReq.srcPort, udpReq.dstPort, udpReq.data, udpReq.length, DT_RATE_12_DATA, TXK_UDP))
+	if (sendUDP(udpReq.group, udpReq.dst, udpReq.srcPort, udpReq.dstPort, udpReq.data, udpReq.length, DMR_TYPE_RATE_1_2, TXK_UDP))
 	{
 		udpReq.state = DMR_REQ_SENDING;
 	}
@@ -400,7 +400,7 @@ int dmrDataServiceSendShortData(bool group, uint32_t dst, uint32_t src, const ui
 		return 0;
 	}
 
-	int count = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, group, dst, src, data, length, DT_RATE_12_DATA,
+	int count = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, group, dst, src, data, length, DMR_TYPE_RATE_1_2,
 									preambles, txBursts, DMR_DATA_MAX_BURSTS);
 
 	return (count <= 0) ? -1 : (queueTx(count, TXK_OTHER) ? 1 : 0);
@@ -565,7 +565,7 @@ static void terminatorLC(uint32_t dst, uint32_t src, bool firstTry, uint8_t ns, 
 	lc[6] = (src >> 8) & 0xFF;
 	lc[7] = src & 0xFF;
 	lc[8] = 0x40 | (firstTry ? 0x20 : 0x00) | (ns & 0x07);// individual, A, F, S clear, N(S)
-	out->dataType = DT_TERMINATOR_WITH_LC;
+	out->dataType = DMR_TYPE_TERMINATOR_LC;
 	out->length = DMR_LC_FULL_BYTES;
 	out->flags = DMR_BURST_FLAG_MCU_CRC;
 	dmr_lc_encode_full(lc, DMR_RS_MASK_TERMINATOR, out->payload);
@@ -1449,7 +1449,7 @@ static bool arsSend(uint32_t server, bool registration)
 	int length = registration ? dmrDataBuildARSRegistration(channel.ownId, pdu) : dmrDataBuildARSDeregistration(pdu);
 
 	if (!queueTx(dmrDataBuildUDP(false, server, channel.ownId, DMR_UDP_PORT_ARS, DMR_UDP_PORT_ARS, pdu, length,
-								 DT_RATE_12_DATA, DMR_DATA_SMS_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS), TXK_ARS))
+								 DMR_TYPE_RATE_1_2, DMR_DATA_SMS_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS), TXK_ARS))
 	{
 		return false;
 	}
@@ -1659,7 +1659,7 @@ static bool lrrpSend(uint32_t dst, const uint8_t *doc, int length, int preambles
 	}
 
 	if (!queueTx(dmrDataBuildUDP(false, dst, channel.ownId, DMR_UDP_PORT_LRRP, DMR_UDP_PORT_LRRP, doc, length,
-								 DT_RATE_12_DATA, preambles, txBursts, DMR_DATA_MAX_BURSTS), TXK_OTHER))
+								 DMR_TYPE_RATE_1_2, preambles, txBursts, DMR_DATA_MAX_BURSTS), TXK_OTHER))
 	{
 		return false;
 	}
@@ -2282,6 +2282,20 @@ static void handlePacket(const dmrDataPacket_t *packet)
 		env.packet(packet, env.ctx);
 	}
 
+	// A position as an NMEA sentence (DMR APRS from other makes' radios) for the station list, whoever it is addressed
+	// to: usually the APRS gateway's ID, as FM APRS hears every station. Only this hook sees a packet not for us.
+	// Both ports, not appPort: 10110 isn't one of the well known ports appPort picks, and the radios send from it too.
+	// A compressed header names its destination network: only DAID 0 (radio) or 2 (group) is the ID's own, 1 (USB
+	// network, TS 102 361-3 7.2.4.2) a host behind it (dmrDataGetUDP takes the address from the ID either way)
+	uint8_t daid = (isUDP && (packet->sap == DMR_SAP_UDPIP_COMPRESSION)) ? (packet->data[2] & 0x0F) : 0;
+	if (isUDP && (udp.dstPort == DMR_UDP_PORT_NMEA) && (udp.srcPort == DMR_UDP_PORT_NMEA) &&
+			((daid == 0) || (daid == 2)) && dmrDataIpIsId(udp.dstIp, packet->group, packet->dst) &&
+			(packet->src != channel.ownId) &&
+			!(CONFIG_DMR_CONTROL_STATION && passthrough) && (env.position != NULL))
+	{
+		env.position(packet->src, udp.payload, udp.length, now, env.ctx);
+	}
+
 	if (!forUs)
 	{
 		return;
@@ -2613,7 +2627,7 @@ void dmrDataServiceRxBurst(const dmrBurst_t *burst, uint32_t nowMs)
 	now = nowMs;
 	stats.rxBursts++;
 
-	bool block = (burst->dataType == DT_RATE_12_DATA) || (burst->dataType == DT_RATE_34_DATA) || (burst->dataType == DT_RATE_1_DATA);
+	bool block = (burst->dataType == DMR_TYPE_RATE_1_2) || (burst->dataType == DMR_TYPE_RATE_3_4) || (burst->dataType == DMR_TYPE_RATE_1);
 
 	if (block)
 	{
@@ -2625,11 +2639,11 @@ void dmrDataServiceRxBurst(const dmrBurst_t *burst, uint32_t nowMs)
 			return;// noise decodes as data blocks
 		}
 	}
-	else if ((burst->dataType == DT_CSBK) || (burst->dataType == DT_DATA_HEADER))
+	else if ((burst->dataType == DMR_TYPE_CSBK) || (burst->dataType == DMR_TYPE_DATA_HEADER))
 	{
 		// The receiver checks the CRC itself (dmr-modem.md 2.2: headers and CSBKs with a bad one are dropped); the
 		// modem's flag is only compared with it, for the bench
-		bool ok = dmrDataCheckCRC16(burst->payload, (burst->dataType == DT_CSBK) ? 0xA5 : 0xCC);
+		bool ok = dmrDataCheckCRC16(burst->payload, (burst->dataType == DMR_TYPE_CSBK) ? 0xA5 : 0xCC);
 		bool flagOk = (burst->flags & DMR_BURST_FLAG_RX_CRC_ERROR) == 0;
 
 		stats.rxCrcFlagMismatch += (ok != flagOk) ? 1 : 0;
@@ -2638,7 +2652,7 @@ void dmrDataServiceRxBurst(const dmrBurst_t *burst, uint32_t nowMs)
 			stats.rxCrcErrors++;
 			return;
 		}
-		if (burst->dataType == DT_CSBK)
+		if (burst->dataType == DMR_TYPE_CSBK)
 		{
 			stats.rxCsbk++;
 		}

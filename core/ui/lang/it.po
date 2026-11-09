@@ -756,6 +756,14 @@ msgstr "Indietro"
 msgid "Nothing heard yet"
 msgstr "Ancora niente sentito"
 
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgid "Message"
+msgstr "Messaggio"
+
+#: core/ui/ui_aprs.c
+msgid "OK choose  Back"
+msgstr "OK scegli  Indietro"
+
 #: core/ui/ui_dual.c core/ui/ui_screens.c
 msgid "No tone"
 msgstr "Nessun tono"
@@ -1145,10 +1153,6 @@ msgid "Private call"
 msgstr "Chiamata privata"
 
 #: core/ui/ui_menus.c
-msgid "Message"
-msgstr "Messaggio"
-
-#: core/ui/ui_menus.c
 msgid "Radio check"
 msgstr "Controllo radio"
 
@@ -1229,8 +1233,24 @@ msgid "Can't talk now"
 msgstr "Non posso parlare"
 
 #: core/ui/ui_menus.c
+msgid "To callsign"
+msgstr "Al nominativo"
+
+#: core/ui/ui_menus.c
+msgid "Enter"
+msgstr "Inserisci"
+
+#: core/ui/ui_menus.c
 msgid "Write..."
 msgstr "Scrivi..."
+
+#: core/ui/ui_menus.c
+msgid "Request acknowledgment"
+msgstr "Richiedi conferma"
+
+#: core/ui/ui_menus.c
+msgid "Include position"
+msgstr "Includi posizione"
 
 #: core/ui/ui_menus.c
 msgid "Couldn't send: try again"
@@ -1241,8 +1261,8 @@ msgid "Sending to "
 msgstr "Invio a "
 
 #: core/ui/ui_menus.c
-msgid "Typing: not in this build"
-msgstr "Digitazione: non in questa build"
+msgid "Callsign"
+msgstr "Nominativo"
 
 #: core/ui/ui_menus.c
 msgid "To"
@@ -1277,6 +1297,10 @@ msgid "Contacts: not in this build"
 msgstr "Contatti: non in questa build"
 
 #: core/ui/ui_menus.c
+msgid "New APRS message"
+msgstr "Nuovo messaggio APRS"
+
+#: core/ui/ui_menus.c
 msgid "OK open  # reply  Back"
 msgstr "OK apri  # rispondi  Indietro"
 
@@ -1309,12 +1333,12 @@ msgid "Couldn't delete: try again"
 msgstr "Eliminazione non riuscita: riprova"
 
 #: core/ui/ui_menus.c
-msgid "To "
-msgstr "A "
-
-#: core/ui/ui_menus.c
 msgid "From "
 msgstr "Da "
+
+#: core/ui/ui_menus.c
+msgid "To "
+msgstr "A "
 
 #: core/ui/ui_menus.c
 msgid "OK choose  # more  Back"
@@ -1533,6 +1557,22 @@ msgid "Empty zone"
 msgstr "Zona vuota"
 
 #: core/ui/ui_menus.c
+msgid "That's the most it can hold"
+msgstr "Non ne entrano di più"
+
+#: core/ui/ui_menus.c
+msgid "Name"
+msgstr "Nome"
+
+#: core/ui/ui_menus.c
+msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
+msgstr "{Indietro canc.  # ABC/123/abc  OK tieni|Indietro canc  # modo  OK}"
+
+#: core/ui/ui_menus.c
+msgid "{Back delete  # ABC/123/abc  OK send|Back del  # mode  OK}"
+msgstr "{Indietro canc.  # ABC/123/abc  OK invia|Indietro canc  # modo  OK}"
+
+#: core/ui/ui_menus.c
 msgid "New from current"
 msgstr "Nuova da attuale"
 
@@ -1567,10 +1607,6 @@ msgstr " zone"
 #: core/ui/ui_menus.c
 msgid "Radio's"
 msgstr "Della radio"
-
-#: core/ui/ui_menus.c
-msgid "Name"
-msgstr "Nome"
 
 #: core/ui/ui_menus.c
 msgid "Number"
@@ -1775,14 +1811,6 @@ msgstr "Modifiche non salvate"
 #: core/ui/ui_menus.c
 msgid "{OK choose  Back keep editing|OK choose  Back}"
 msgstr "{OK scegli  Indietro continua|OK scegli  Indietro}"
-
-#: core/ui/ui_menus.c
-msgid "That's the most it can hold"
-msgstr "Non ne entrano di più"
-
-#: core/ui/ui_menus.c
-msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
-msgstr "{Indietro canc.  # ABC/123/abc  OK tieni|Indietro canc  # modo  OK}"
 
 #: core/ui/ui_menus.c
 msgid "Type"
@@ -2197,6 +2225,10 @@ msgid "DMR ID saved"
 msgstr "ID DMR salvato"
 
 #: core/ui/ui_menus.c
+msgid "Typing: not in this build"
+msgstr "Digitazione: non in questa build"
+
+#: core/ui/ui_menus.c
 msgid "My Radio"
 msgstr "Mia radio"
 
@@ -2541,6 +2573,22 @@ msgid "Serial"
 msgstr "Seriale"
 
 #: core/ui/ui_menus.c
+msgid "10s/dim"
+msgstr "10s/fioca"
+
+#: core/ui/ui_menus.c
+msgid "30s/dim"
+msgstr "30s/fioca"
+
+#: core/ui/ui_menus.c
+msgid "1m/dim"
+msgstr "1m/fioca"
+
+#: core/ui/ui_menus.c
+msgid "2m/dim"
+msgstr "2m/fioca"
+
+#: core/ui/ui_menus.c
 msgid "Never"
 msgstr "Mai"
 
@@ -2637,8 +2685,16 @@ msgid "Home zone"
 msgstr "Zona casa"
 
 #: core/ui/ui_menus.c
+msgid "Tone burst"
+msgstr "Tono di apertura"
+
+#: core/ui/ui_menus.c
 msgid "Copy to VFO"
 msgstr "Copia su VFO"
+
+#: core/ui/ui_menus.c
+msgid "VFO/Channel"
+msgstr "VFO/Canale"
 
 #: core/ui/ui_menus.c
 msgid "Call back"
@@ -3523,6 +3579,10 @@ msgstr "EMERGENZA"
 #: core/ui/ui_screens.c
 msgid "OK acknowledge  Back hide"
 msgstr "OK conferma  Indietro nascondi"
+
+#: core/ui/ui_screens.c
+msgid "Vol"
+msgstr "Vol"
 
 #: core/ui/ui_screens.c
 msgid "Muted"

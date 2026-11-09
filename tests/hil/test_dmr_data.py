@@ -4,7 +4,7 @@
 answered, and the radio's own call alert, radio check and text message on air.
 
 Opt-in RF. The bench-to-radio tests (rf + radio_tx + bench_service: --allow-rf --allow-service-stop) send from the SDR
-bench's modem with bench_tx.py data / csbk, then listen (--listen-after) for the radio's answer: radio_tx, as the
+bench's modem with a bench_tx data job / csbk, then listen (--listen-after) for the radio's answer: radio_tx, as the
 radio answers on air (outside radio_tx tests its TX inhibit is on). The radio-to-bench tests
 (radio_tx + bench_service) have the radio send through the debug link's DMR_DATA command while the bench modem listens.
 The radio's own counters (the dmr_data view section) are the pass criteria; an answer the bench modem did not hear is
@@ -13,7 +13,7 @@ are in README.md.
 
 The bench modem sits a meter from the radio and is overloaded by it even at the radio's lowest power: it misses some
 bursts and hears others with bit errors. So what it heard is judged like this (heard_tries, heard_header): only
-bursts whose CRC checks after the FEC count (bench_tx.py listen's "crc_ok"); every one of those must carry exactly the
+bursts whose CRC checks after the FEC count (a bench_tx listen job's "crc_ok"); every one of those must carry exactly the
 expected content (opcode, FID, addresses: a wrong one fails); when the radio's counters say it sent N tries, at least
 one and at most N must be heard, fewer than N is a warning. A single packet (a text message) the bench didn't hear is
 sent again, up to 3 times, each send checked on the radio's counters.
@@ -25,7 +25,7 @@ import warnings
 
 import pytest
 
-from rfoundry_hil import need_radio_tx, skip
+from rfoundry_hil import HIL_SMS_PREFIX, need_radio_tx, skip
 from hil_config import rig
 
 BENCH_SRC = 9990301
@@ -48,6 +48,11 @@ def _setup(radio, pytestconfig, tx=False):
     own = int(radio.view(["dmr"])["dmr.own_id"])
     if own == 0:
         skip("state", "the radio has no DMR ID (dmr.own_id=0)")
+    # Nothing left from the test before: a confirmed packet of ours (a TMS ACK waits for its link ACK, then retries,
+    # about 4 x 3 s) keys the radio over this test's traffic, and it hears nothing while it transmits. data.busy covers
+    # only a transmission; ip.busy the whole confirmed exchange, the waits between tries too
+    radio.wait_for(lambda v: v.get("data.busy", "0") == "0" and v.get("ip.busy", "0") == "0", 20,
+                   sections=("dmr_data", "dmr_ip"), what="the data service idle")
     time.sleep(1.0)
     return freq, cc, own, feats
 
@@ -226,7 +231,7 @@ def test_sms_rx(radio, sdr_bench, pytestconfig):
     TMS ACK sent back."""
     freq, cc, own, feats = _setup(radio, pytestconfig)
     _need(feats, "DMR_SMS")
-    text = f"RadioFoundry HIL {int(time.time()) % 10000}"
+    text = f"{HIL_SMS_PREFIX}{int(time.time()) % 10000}"
     before = radio.data_view()
     with sdr_bench.lease():
         heard = sdr_bench.data(freq, cc, own, tms=text, tms_seq=(int(time.time()) % 31) + 1, src=BENCH_SRC,
@@ -242,9 +247,11 @@ def test_sms_rx(radio, sdr_bench, pytestconfig):
     assert radio.link.inbox(0)["unread"] is False
     need_radio_tx(radio)
     assert d["data.tms_acks_sent"] == 1 and d["data.tx_failed"] == 0, d
-    # The ACK was the radio's own transmission: named in the data view, and not one that lights the screen
+    # The ACK was the radio's own transmission: named in the data view, and not one that lights the screen. A
+    # confirmed TMS ACK goes as our own IP packet (dmr-data.md, TMS), an unconfirmed one as a reply
     if "data.tx_last_kind" in after:
-        assert after["data.tx_last_kind"] == "reply" and after["data.tx_last_ms"] != before["data.tx_last_ms"], after
+        assert after["data.tx_last_kind"] in ("reply", "ip") and after["data.tx_last_ms"] != before["data.tx_last_ms"], \
+            after
         assert radio.view(["core"]).get("tx_auto") == "1"
     _soft((BENCH_SRC, own) in _heard_headers(heard), "the TMS ACK packet's header to the bench")
 

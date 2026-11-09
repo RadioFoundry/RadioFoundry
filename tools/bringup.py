@@ -20,7 +20,8 @@ A radio's state for a feature is resolved, never typed:
 The rule for the two config.mk lists: docs/build-config.md, "Unsupported, not written, unconfirmed". A test skips a
 feature that isn't built as not_built (n/a and not written alike: the firmware leaves it out).
 A required feature's status never understates it. The newest run record that ran it decides: pass, fail, partial
-(excused skips) or "needs re-run" (its spec or source paths differ in the tree from the hashes the record keeps).
+(excused skips) or "needs re-run" (its source paths differ in the tree from the hashes the record keeps; its spec
+may change freely).
 Without one, the board's seed record (<board>/seed.json, the evidence from before its first run) decides, marked as a
 seed. With neither the feature is "built, not yet recorded". Only a failing record shows a failure.
 
@@ -310,13 +311,16 @@ def source_hashes(e, rev=None):
 
 
 def stale(hashes, e):
-    """The feature's paths whose content in the tree differs from the recorded hashes (empty: not stale)."""
+    """The feature's source paths whose content in the tree differs from the recorded hashes (empty: not stale). The
+    spec is hashed but not compared: an edit to the doc doesn't change what ran on the radio."""
     if not git_checkout():
         return []		# nothing to compare with; the listing says so (no_git_note)
     if not hashes:
         return ["(no source hashes recorded)"]
     now = source_hashes(e)
-    return sorted(p for p in set(now) | set(hashes) if now.get(p) != hashes.get(p))
+    code = {p.rstrip("/") for p in feature_paths(e)[1:]}
+    doc_only = {e["spec"].rstrip("/")} - code
+    return sorted(p for p in set(now) | set(hashes) if p not in doc_only and now.get(p) != hashes.get(p))
 
 
 NOT_RECORDED = "built, not yet recorded"
@@ -519,9 +523,11 @@ def cmd_run(args):
                 + ":")
     tmp = tempfile.mkdtemp(prefix="rfoundry-bringup-")
     out_path = os.path.join(tmp, "out.json")
-    cmd = [_pytest_python(args.pytest_python), "-m", "pytest", *args.tests, "-v", "-rs", "-p", "no:cacheprovider",
+    cmd = [_pytest_python(args.pytest_python), "-m", "pytest", *args.tests, "-v", "-rs", "--durations=0", "-p", "no:cacheprovider",
            *args.pytest_arg, "--bringup", ",".join(names), "--bringup-out", out_path,
-           "--bringup-absent", ",".join(absent_switches(args.radio)), *pytest_args]
+           "--bringup-absent", ",".join(absent_switches(args.radio)),
+           *([] if any(a.startswith("--hil-board") for a in pytest_args) else ["--hil-board", args.radio]),
+           *pytest_args]
     lock = lock_path(args.lock, pytest_args)
     if args.dry_run:
         print(f"lock: {lock}")

@@ -17,6 +17,7 @@
 #include "ui_app.h"
 #include "ui_nav.h"
 #include "ui_svc.h"
+#include "ui_svc_aprs.h"
 #include "fmt.h"
 #include "i18n.h"
 #include "input/input.h"
@@ -31,7 +32,7 @@
 
 #define UI_STACK_MAX		6
 #define TOAST_MS		1800
-#define VOLUME_MS		3000	// the volume screen closes this long after the last key
+#define VOLUME_MS		3000	// the volume screen closes this long after the last key, the knob's bar after its last turn
 #define ENTRY_TIMEOUT_MS	10000
 #define BANNER_MS		8000
 #define REFRESH_MS		1000
@@ -51,6 +52,10 @@ static radio_view_t view_none;		// until the first tick
 static ui_frame_t stack[UI_STACK_MAX];
 static uint8_t sp;			// stack[sp] is on screen; stack[0] is Home
 static uint32_t toast_until, entry_last, last_refresh, now;
+#if CONFIG_VOLUME_BAR
+static uint32_t volbar_until;
+#endif
+static int8_t knob_seen;		// the knob's last level (percent) the UI saw, -1 = none yet: no bar for the first
 static bool dirty = true;
 static uint32_t draws;
 static bool has_quick_key, has_context_key;
@@ -1434,7 +1439,7 @@ static void quick_activate(int tile)
 		sbuf_t b;
 		sb_init(&b, msg, sizeof msg);
 		sb_str(&b, TR("Power "));
-		sb_str(&b, ui_power_name(next));
+		sb_str(&b, ui_power_name(next, view->ch.tx_hz));
 		ui_toast(msg);
 		break;
 	}
@@ -1806,6 +1811,8 @@ void ui_app_init(void)
 #endif
 	view = &view_none;
 	memset(&ui_st, 0, sizeof ui_st);
+	ui_st.volbar = -1;
+	knob_seen = -1;
 	wake_req = false;
 #if CONFIG_DUAL_WATCH
 	ui_dual_reset();
@@ -1968,7 +1975,7 @@ void ui_app_key(const input_event_t *ev)
 		return;
 	if (ev->action == ACT_PTT)
 		ptt_held = ev->gesture == GESTURE_DOWN;	// PTT sends only DOWN and UP (raw edges)
-	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR)
+	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR || ev->action == ACT_TONE_BURST)
 		return;		// the input layer already sent these to the radio
 	// While PTT keys the radio the digit keys do nothing: no Find, channel entry or speed dial under the TX screen.
 	// On FM with DTMF the input task gives them (and * and #) to the radio core instead and they never get here
@@ -1983,7 +1990,8 @@ void ui_app_key(const input_event_t *ev)
 	// Key lock: only long QUICK (and PTT, MONITOR, emergency) get through
 	// Long * locks only from Home (principles 3): in a menu it would lock the keys mid-task, and in text entry a slow *
 	// is a delete. It unlocks from anywhere (auto lock can lock with a menu open)
-	bool typing = stack[sp].scr == SCR_TEXT;
+	bool typing = stack[sp].scr == SCR_TEXT || stack[sp].scr == SCR_APRS_TO ||
+		stack[sp].scr == SCR_MESSAGE_TEXT;
 	bool lock_key = has_quick_key ? (ev->action == ACT_QUICK && ev->gesture == GESTURE_LONG && (sp == 0 || ui_st.locked)) :
 		(ev->action == ACT_BACK && ev->gesture == GESTURE_LONG && ui_st.locked);
 	// A side key set to key lock (keyassign.h) locks and unlocks on a press or a long press, as long QUICK does
@@ -2075,7 +2083,8 @@ void ui_app_key(const input_event_t *ev)
 			break;
 		}
 	}
-	if (ev->action == ACT_VFO_TOGGLE && ev->gesture == GESTURE_PRESS) {
+	// A VFO/MR key (its long press is COPY_VFO) or a side key set to VFO/Channel, on either slot
+	if (ev->action == ACT_VFO_TOGGLE && (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)) {
 		vfo_key();
 		return;
 	}
@@ -2226,6 +2235,28 @@ static void knob_moved(const radio_view_t *v)
 }
 #endif
 
+// The knob turned (#354): the level the radio core passed on changed, from the knob both times. Read from the radio's
+// own view, not dual watch's per-side one. The first level (power-up) and a change of source (the debug link taking
+// over or giving back) set the reference without a bar. The bar wakes the backlight: turning the knob is using the
+// radio
+#if CONFIG_VOLUME_BAR
+__attribute__((noinline)) static void knob_tick(const radio_view_t *v)
+{
+	int8_t lvl = v->volume_src == RVOL_KNOB ? v->volume : -1;
+	if (lvl >= 0 && knob_seen >= 0 && lvl != knob_seen) {
+		ui_st.volbar = (int8_t)radio_volume_step_of((uint8_t)lvl);
+		volbar_until = now + VOLUME_MS;
+		wake_req = true;
+		dirty = true;
+	}
+	if (lvl < 0 && ui_st.volbar >= 0) {	// the debug link took over (or the knob is gone): its old level is wrong
+		ui_st.volbar = -1;
+		dirty = true;
+	}
+	knob_seen = lvl;
+}
+#endif
+
 bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 {
 	static uint32_t serial_seen;
@@ -2237,6 +2268,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 #endif
 	now = now_ms;
 	ui_st.now_ms = now_ms;
+#if CONFIG_VOLUME_BAR
+	knob_tick(v);
+#endif
 	ui_svc_poll();
 	ui_svc_keys_poll();
 #if CONFIG_ZONE_EDIT
@@ -2325,6 +2359,12 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 #if CONFIG_VOLUME_LOCK
 	knob_moved(v);
 #endif
+#if CONFIG_VOLUME_BAR
+	if (ui_st.volbar >= 0 && (int32_t)(now - volbar_until) >= 0) {
+		ui_st.volbar = -1;
+		dirty = true;
+	}
+#endif
 	if (stack[sp].scr == SCR_VOLUME && now - last_key_ms >= VOLUME_MS) {
 		ui_pop();
 	}
@@ -2342,6 +2382,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	if (ui_st.entry && (now - entry_last >= ENTRY_TIMEOUT_MS || !view->vfo))
 		entry_cancel();
 	uint16_t unread = ui_svc_msg_unread();
+	aprs_view_t aprs_view;
+	if (ui_svc_aprs_view(&aprs_view))
+		unread += aprs_view.unread;
 	if (unread != ui_st.unread) {
 		ui_st.unread = unread;
 		dirty = true;
@@ -2441,7 +2484,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	return d;
 }
 
-static bool strip_ok;
+static bool strip_ok, volbar_top;
 
 static void draw_screen(void);
 
@@ -2450,7 +2493,15 @@ void ui_app_draw(void)
 	uint32_t before = ui_strip_draws;
 	dirty = false;
 	draws++;
+#if CONFIG_VOLUME_BAR
+	uint32_t hints = ui_hint_draws;
+#endif
 	draw_screen();
+#if CONFIG_VOLUME_BAR
+	volbar_top = ui_hint_draws == hints;
+	if (ui_st.volbar >= 0 && stack[sp].scr != SCR_VOLUME)
+		ui_draw_volume_bar(&ui_st, volbar_top);
+#endif
 	strip_ok = ui_strip_draws != before;
 }
 
@@ -2520,4 +2571,6 @@ void ui_app_status(ui_app_status_t *s)
 #else
 	s->dual = false;
 #endif
+	s->volbar = ui_st.volbar;
+	s->volbar_top = volbar_top;
 }

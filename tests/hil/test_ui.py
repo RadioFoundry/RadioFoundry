@@ -13,7 +13,8 @@ import time
 
 import pytest
 
-from rfoundry_hil import LONG, as_int, skip, skip_if
+from hil_config import rig
+from rfoundry_hil import HIL_SMS_PREFIX, LONG, as_int, bench_sms, skip, skip_if
 from rfoundry_debug import DOWN, UP
 
 
@@ -227,14 +228,15 @@ def test_injected_keys_count_as_activity(home):
 
 
 def on_mode(r, mode):
-    """The home screen on a channel in mode ('fm' / 'dmr'): the current one, else the first of the zones that is one
-    (the radio fixture puts the channel back)"""
-    if r.core().get("mode") != mode:
-        try:
-            r.find_channel(None, mode)
-        except AssertionError as e:
-            skip("state", f"no {mode.upper()} channel: {e}")
-        wait_screen(r, "home")
+    """Home on a channel in mode ('fm' / 'dmr'): the current one, else the first such channel in any zone (restore()
+    puts the zone and channel back). Skips (state) when the codeplug has none"""
+    if r.core().get("vfo") != "1" and r.core().get("mode") == mode:
+        return r
+    try:
+        r.find_channel(None, mode)
+    except AssertionError as e:
+        skip("state", f"no {mode.upper()} channel to test on: {e}")
+    wait_screen(r, "home")
     return r
 
 
@@ -304,6 +306,28 @@ VFO_KEYS = ("mode", "rx_hz", "ch.bw", "ch.rx_tone", "ch.tx_tone", "dmr.cc", "dmr
 def vfo_state(r):
     v = r.view(["core", "channel", "dmr"])
     return {k: v.get(k) for k in VFO_KEYS}
+
+
+@pytest.mark.feature("vfo")
+def test_vfo_toggle_key(home):
+    """VFO/Channel (a side key function, or a VFO/MR key): a press opens the VFO, the next one goes back to the channel
+    it left. Only a press: on a radio with a VFO/MR key an injected long press holds that key, whose long press is Copy
+    to VFO (the host flows check the long press). Nothing is transmitted or written."""
+    r = home
+    feats = r.features()
+    if "VFO_FM" not in feats and "VFO_DMR" not in feats:
+        skip("not_built", "built without a VFO")
+    chan = r.core()
+    try:
+        r.press("vfo_toggle")
+        r.wait_for(lambda x: x.get("vfo") == "1", what="the VFO")
+        r.press("vfo_toggle")
+        v = r.wait_for(lambda x: x.get("vfo") == "0", what="the channel again")
+        assert v["zone_pos"] == chan["zone_pos"], v
+    finally:
+        if r.core().get("vfo") == "1":
+            r.link.vfo(False)
+            r.wait_for(lambda x: x.get("vfo") == "0", what="VFO off")
 
 
 @pytest.mark.feature("vfo")
@@ -565,10 +589,14 @@ def test_privacy_key_entry(home):
 
 @pytest.mark.feature("key_lock")
 @pytest.mark.radio_tx
-def test_ptt_when_locked_off(home):
+def test_ptt_when_locked_off(home, pytestconfig):
     """Settings > Privacy > PTT when locked Off: with the keys locked an injected PTT doesn't transmit and the UI
-    says how to unlock. Marked radio_tx: if the block failed the radio would key up (lowest power)."""
+    says how to unlock. Marked radio_tx: if the block failed the radio would key up (lowest power), so it does that
+    on the DMR test channel (--dmr-freq), not on whatever channel the radio was left on (a receive-only one is refused
+    by the TX guard before the radio sees the PTT)."""
     r = home
+    r.find_channel(round(rig(pytestconfig, "dmr-freq") * 1e6), "dmr")
+    r.go_home()
     flags = ui_flags(r)
     if flags is None:
         skip("not_built", "firmware without settings.ui_flags")
@@ -685,14 +713,24 @@ def test_zone_editor_moves_a_channel(home):
 
 
 @pytest.mark.feature("dmr_sms")
-@skip_if(os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") != "1", "opt_in",
-         "deletes the newest inbox message: set RFOUNDRY_HIL_DELETE_MESSAGE=1")
-def test_delete_message(home):
-    """Hub 2 (Messages), OK on the newest, Delete (the fourth action): the inbox has one message less."""
+def test_delete_message(home, request, pytestconfig):
+    """Hub 2 (Messages), OK on the newest, Delete (the fourth action): the inbox has one message less. Only a message
+    a HIL test sent (its text starting HIL_SMS_PREFIX) is deleted without asking: when the newest isn't one, the bench
+    sends one first (with --allow-rf; the radio only receives). To delete one of the owner's instead set
+    RFOUNDRY_HIL_DELETE_MESSAGE=1."""
     r = home
+    if r.data_view().get("data.built") != 1:
+        skip("not_built", "built without the DMR data features")
     n = as_int(r.view(["dmr_data"]).get("data.inbox_count"))
+    newest = (r.link.inbox(0) or {}) if n else {}
+    if not newest.get("text", "").startswith(HIL_SMS_PREFIX) and os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") != "1":
+        if not pytestconfig.getoption("--allow-rf"):
+            skip("opt_in", "the newest inbox message isn't a HIL test's: give --allow-rf (the bench sends one) or set "
+                           "RFOUNDRY_HIL_DELETE_MESSAGE=1 to delete it")
+        n = bench_sms(r, request.getfixturevalue("sdr_bench"), rig(pytestconfig, "dmr-freq"),
+                      rig(pytestconfig, "dmr-cc"))
     if not n:
-        skip("state", "the inbox is empty (or no data core)")
+        skip("state", "the inbox is empty")
     r.press("ok")
     wait_screen(r, "hub")
     r.press("2")
@@ -716,16 +754,23 @@ def test_factory_reset(home):
     (never the codeplug or calibration), and the radio restarts. The channel position survives only as the default."""
     r = home
     r.version()     # known before the restart: reconnect() checks a radio on another port against it
-    zone_size = r.core().get("zone_size")
-    for k in ("ok", "6", "0", "down", "down", "down", "ok"):
+    zones = r.core().get("zone_count")
+    # Hub digits are the entry numbers in every build (Settings 7), Advanced is group 0, Factory reset its fourth row
+    for k, screen in (("ok", "hub"), ("7", "settings"), ("0", "group")):
+        r.press(k)
+        wait_screen(r, screen)
+    for k in ("down", "down", "down", "ok"):
         r.press(k)
     wait_screen(r, "confirm", "the confirmation (defaults to No)")
     assert ui(r)["ui.focus"] == "0"
     r.press("down")
-    r.press("ok", settle=0)
+    up0 = as_int(r.link.view(["link"]).get("uptime_ms"), 0)
+    r.link.key("ok")    # not press(): it waits for the keys to go idle, and the radio is restarting then
     time.sleep(2.0)
     r.reconnect(20.0)
     s = r.view(["storage", "link"])
+    assert as_int(s.get("uptime_ms"), up0) < up0, f"the radio did not restart: {s.get('uptime_ms')} ms up"
     assert as_int(s.get("settings.long_press_ms")) in (0, 600) and s.get("settings.auto_lock_s") == "0", s
     assert as_int(s.get("settings.failures"), 0) == 0, s
-    assert r.core().get("zone_size") == zone_size, "the codeplug changed"
+    # The channel position goes back to the default (another zone), so the zone count says the codeplug stayed
+    assert r.core().get("zone_count") == zones, "the codeplug changed"

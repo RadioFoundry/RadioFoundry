@@ -21,7 +21,9 @@ typedef struct {
 	bool big;		// lists and labels one size up: the radio is built with CONFIG_FONT_BIG
 } sim_geom_t;
 
-typedef enum { SIM_MAP_K, SIM_MAP_M, SIM_MAP_V, SIM_MAP_F, SIM_MAP_S, SIM_MAP_COUNT } sim_map_t;
+// K full keypad, M navigation keys, V a mobile's front panel + hand-mic keypad, F few keys, P that front panel
+// alone, S side keys only
+typedef enum { SIM_MAP_K, SIM_MAP_M, SIM_MAP_V, SIM_MAP_F, SIM_MAP_P, SIM_MAP_S, SIM_MAP_COUNT } sim_map_t;
 
 extern const sim_geom_t sim_geoms[];
 extern const int sim_geom_count;
@@ -77,11 +79,14 @@ typedef struct {
 	uint32_t codeplug_writes;	// save to channel, make default
 	uint32_t radio_checks, call_alerts, messages_sent;
 	char last_text[48];
+	char last_aprs_to[11];	// destination callsign of the last APRS message
+	uint8_t last_aprs_flags;
 	uint32_t beeps;			// beeps asked of the radio (any kind)
 	uint8_t last_beep;		// ui_beep_t of the last one
 	uint32_t vibes;			// vibrations asked of the radio (any pattern)
 	uint8_t last_vibe;		// ui_vibe_t of the last one
-	uint32_t tot_s, backlight_s;	// settings handed to the radio core (ui_svc_apply)
+	uint32_t tot_s;		// settings handed to the radio core (ui_svc_apply)
+	int32_t backlight_s;	// < 0: dims, never off
 	uint32_t long_press_ms;		// handed to the input layer (ui_svc_apply)
 	uint32_t shortened;		// texts gfx_text_fit shortened with an ellipsis
 } sim_record_t;

@@ -26,6 +26,7 @@ typedef enum {
 	// Zone sharing (CONFIG_ZONE_SHARE): send the zone or channel (SCR_SHARE only without the zone editor, whose menus
 	// send them), to whom; an offer, its channels, the zone a channel joins
 	SCR_SHARE, SCR_SHARE_TO, SCR_OFFER, SCR_OFFER_PREVIEW, SCR_OFFER_ZONE,
+	SCR_HWOPT,			// the board's hardware options (Settings > Advanced > Hardware; hal_hwopt.h)
 	SCR_ZCHANNEL, SCR_ZPICK, SCR_ZONEEDIT, SCR_ZONEDEL,	// the zone editor (ui.md 2.2): Channel actions, Add
 								// channel, Zone options, Delete zone
 	SCR_CHZONES,			// the channel editor's Zones: in which zones the channel is (arg = its number)
@@ -35,6 +36,9 @@ typedef enum {
 	SCR_CONTACT_EDIT,		// the contact editor (CONFIG_CONTACT_EDIT): a new contact, from ui_target
 	SCR_LANGUAGE,			// Settings > Display > Language: every language, those not built dimmed
 	SCR_CP_FOREIGN,			// another firmware's codeplug: what the first edit does with it (ui_svc_codeplug_answer)
+	SCR_APRS_TO,			// destination callsign editor for APRS transmission
+	SCR_APRS_STATION,		// a heard station's actions
+	SCR_MESSAGE_TEXT,		// message body editor
 	SCR_COUNT
 } ui_scr_t;
 
@@ -110,6 +114,7 @@ void ui_dirty(void);
 void ui_focus_changed(void);
 // Open the actions for a target (SCR_ACTIONS)
 void ui_open_actions(const ui_target_t *t);
+void ui_aprs_compose(const char *call);
 #if CONFIG_CONTACT_EDIT
 // The contact editor on a new contact for t: its ID, type and name (a talkgroup or ID as its name when it has none)
 void ui_new_contact(const ui_target_t *t);

@@ -53,6 +53,11 @@ The hint row is groups separated by two spaces (`"OK open  # more  Back"`). The 
 are left out whole from the right. A toast is one centered line instead. A banner or a two-line toast starts in a gap
 between lines of the screen under it (a row all one color), never through a line of text.
 
+Hints and toasts call the QUICK and CONTEXT keys `*` and `#`. A radio without those keys gives its own names
+(`board.quick_label`, `board.context_label`: for example a front panel's own key names), and each `*` or `#` that stands alone is
+drawn as that name ("OK Menu  P1 Quick"). On a radio with no digit keys a hint group that starts with a digit
+("0-9 find") is left out. Toasts keep their numbers.
+
 Text is shortened with a middle ellipsis only as a last resort (P5 allows it for names on Home). Before that:
 
 - A list row keeps its label whole and gives the value the room left: values carry text alternates (`font.h`) down to
@@ -66,6 +71,9 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
   short form before it would go below the medium font. The short form of a talkgroup is its number ("TG 91 World"
   becomes "TG 91"); of a private contact, its name ("Joe Smith 9991234" becomes "Joe Smith"). A contact's ID alone
   says nothing at a glance, so it is what goes. An ID without a contact is shown as the ID.
+- While a VFO frequency is being typed in dual watch, its selected pane shows the digits and blanks for the remaining
+  places in place of the old frequency, including on Large text Home. The other pane keeps its frequency. Back removes
+  a digit; OK or # tunes the selected pane.
 - The RX and TX screens put the number in the title ("TG 91") and the talkgroup's or contact's name on a line of its
   own; a talker alias takes two lines when it needs them. A private call's title says "Private" where a group call's
   says "TG": "Private 9991234" while transmitting (just "Private" where that doesn't fit), "Private to you" or
@@ -139,6 +147,7 @@ without its label, for the cursor's steps. With 1024 channels a key took 0.34 s 
 | My Radio | `dmr-id` | Settings > My radio > DMR ID and name: the radio model above the rows DMR ID (`CONFIG_DMR`), Radio name, Boot 1 and Boot 2, from the codeplug. On DMR ID, digits type an ID as the channel editor's Own ID (2.1): the first digit replaces the shown one, a digit that would take it past `CODEPLUG_DMR_ID_MAX` (16776415) is refused, BACK takes the last digit back and with none typed leaves the ID as it was, OK writes it into the codeplug (with nothing typed, leaves it; 0 is refused: "IDs start at 1"). OK on a name row opens Text entry (2.1, `CONFIG_CHANNEL_EDIT`; without it "Typing: not in this build"); OK there writes the radio name (`codeplug_set_radio_name`) or the boot line (`codeplug_set_boot_text`) as a storage job (`ui_svc_name_set`), "Saved" |
 | Language | `language` | Settings > Display > Language (the last row; its value is the language in use): every language the firmware has a catalog for, each in its own name ("English", "Español"), the one in use marked "In use". OK switches at once and goes back; a language this image was built without is dimmed and OK says "Not in this build" (2.5) |
 | About | `about` | Settings > My radio > About, and Settings > Advanced > About: a text page (`ui_draw_text_page`) in the smallest font, word-wrapped and never shortened, Up / Down / the knob scroll a line. `SF_NO_STRIP`: no status strip while the radio is idle (the owner's request); RX or TX draws it again, so the TX / RX pill still shows (P2) |
+| Hardware | `hwopt` | Settings > Advanced > Hardware, only on a radio with hardware options (`hal/hal_hwopt.h`, such as a board revision): each option with the stored choice, "Not set" (warning) without one. OK shows the next choice (marked `*` until stored), long OK stores it; a toast says when it applies from the next start-up. The simulator has no options, so the gallery has no picture of it |
 
 The gallery (section 7) shows every screen at every display class.
 
@@ -349,11 +358,11 @@ channel's contact and its listen list; the arrow keys only: the channel knob, EN
 VFO frequency, #25), USER_1 / USER_4 the zone, USER_3 the power, long USER_3 speaks the status (a
 toast until voice prompts exist).
 
-VFO_TOGGLE is the VFO / MR key's short press (a board key map entry, not a side key function): between the channel
-and the VFO, "VFO" and "Back to channels". Its long press, COPY_VFO, copies the channel to the VFO (`dmr-voice.md`
-2.2). A board with a dedicated VFO/MR key gives its long press to COPY_VFO,
-and `keyassignTest` checks every board's key map for it. The key is a key map entry with fixed meanings (not one of the
-`board.side_keys`), so Settings > Keys doesn't change it.
+VFO_TOGGLE goes between the channel and the VFO, "VFO" and "Back to channels" (in dual watch, on the selected side).
+It is the VFO / MR key's short press, and any side key can send it with the VFO/Channel function (3.1). The VFO / MR
+key's long press, COPY_VFO, copies the channel to the VFO (`dmr-voice.md` 2.2). A board with a dedicated VFO/MR key
+gives its long press to COPY_VFO, and `keyassignTest` checks every board's key map for it. That key is a key map entry
+with fixed meanings (not one of the `board.side_keys`), so Settings > Keys doesn't change it.
 
 EMERGENCY is hold-to-activate (principles P2): a key whose long action is EMERGENCY needs `INPUT_HOLD_MS` (1.5 s)
 whatever the long press time (`input_long_threshold`, core/input). Which key carries it is the board's key map
@@ -364,6 +373,7 @@ so a cancel from elsewhere counts). A board whose key map has no EMERGENCY entry
 PTT while the keys are locked works unless Settings > Privacy > PTT when locked is off: the UI then tells the input
 layer (`ui_svc_ptt_block`, `input_set_ptt_block`), which keeps PTT DOWN from the radio core (UP always passes), and the
 UI gives an error beep and "PTT is off while locked: hold * to unlock".
+The same setting blocks Tone burst DOWN; UP always passes so locking cannot prevent an existing burst from ending.
 
 The state pill follows `radio_view_t.state`. RX also shows while the monitor holds an FM squelch open (MON stays beside
 the mode). DMR's monitor key is digital monitor and leaves it IDLE.
@@ -406,12 +416,17 @@ position in the list is its role. Each role has a press and a long press, and ea
 | Call back (12) | CALL_BACK: talk for now to the last call heard, its talkgroup or, for a private call, its caller (`dmr-voice.md` 2) | yes | yes |
 | Home zone (13) | HOME_ZONE: the codeplug's first zone (the CPS's zone order picks it; no setting, the settings record has no byte to spare). Leaves the VFO; "Home zone: <name>" | yes | yes |
 | Copy to VFO (14) | COPY_VFO: copy the channel in effect to the VFO and open it (`dmr-voice.md` 2.2). In the VFO: "Already in VFO". A channel the VFO can't hold gets a "VFO: ..." toast and nothing changes. Offered in builds with a VFO (`CONFIG_VFO_FM` or `CONFIG_VFO_DMR`) | yes | yes |
+| VFO/Channel (17) | VFO_TOGGLE: between the channel and the VFO, as a VFO / MR key does ("VFO", "Back to channels"; in dual watch, the selected side). Offered in builds with a VFO | yes | yes |
+| Tone burst (18) | TONE_BURST raw edges: FM repeater access, at least 1 s; offered with `CONFIG_FM_TX_TONES` | yes | no |
 
-POWER, ZONE_UP, ZONE_DOWN, SCAN, CALL_BACK, HOME_ZONE and COPY_VFO do the same on a press and a long press and
-work on any screen. LOCK also gets through while the keys are locked, to unlock them. TALK_TARGET opens the picker on
+POWER, ZONE_UP, ZONE_DOWN, SCAN, CALL_BACK, HOME_ZONE, COPY_VFO and VFO_TOGGLE do the same on a press and a long
+press and work on any screen. LOCK also gets through while the keys are locked, to unlock them. TALK_TARGET opens the picker on
 a long press too. A monitor key given a press of its own loses its hold: its long press is nothing until set. A Monitor press with a hold
 function: the input engine sends DOWN, the LONG (value 1) at the threshold and UP (value 1 when the LONG ran); the
 radio core then doesn't toggle digital monitor (RREQ_MONITOR 2), and the UI drops the LONG on FM.
+
+Tone burst uses both edges of the press key and suppresses its long-press function. A tap sends 1 s; a longer hold
+sends until release. Timing, PTT interaction and refusals are in [radio-features.md](radio-features.md#33-roger-beep-and-1750-hz-burst-config_fm_tx_tones).
 
 Storage: the open-firmware codeplug's ten quick-key slots (EEPROM 0x7524, 2 bytes LE each,
 `open-firmware-cps.md` 7.2). Slot 0 is the marker 0x4B02 ("K", layout 2); slot 1 + k is role k, its press in the low
@@ -521,7 +536,8 @@ pixels, so they hold on any display.
 ## 7. Host simulator and tests
 
 `tests/host/sim/` runs the real `core/ui` files against a simulated board (any display geometry, any of the key
-maps K for a three-key board, M for a GD-77 style map, V for a two-key map, F few keys), radio core, the usability-test codeplug (3 zones,
+maps K full keypad, M navigation keys, V a mobile's front panel with a hand-mic keypad, F few keys, P that front
+panel alone), radio core, the usability-test codeplug (3 zones,
 40 channels, 30 contacts) and the services of section 4.
 
 ```
@@ -562,10 +578,11 @@ draw the anti-aliased fonts (`CONFIG_FONT_AA`), and `240x320i10x5` the larger te
 | `expect:<key>=<value>` | check: `screen focus depth count zone pos vfo freq mode tx txid txpriv talk locked query banner toast power sq ts cc temporary writes checks sent text scanning privacy hearall monitor hotspot beeps radio_tot radio_backlight beep pttblock poweroff wake usbnet set<id>` (`wake` 1 when a banner or the emergency screen asked for the backlight since the last check, `beep` the last beep kind, `set<id>` a setting's stored value; `_` = space, `*` = anything) |
 
 `uiFlowTest` runs every task flow of `task-flows.md` with the press budgets of `usability-tests.md` on four display
-and key map pairs (K at 160x120i5, M at 128x64, V at 160x128, K at 240x320) plus the few-key fallbacks: 160 flow runs.
+and key map pairs (K at 160x120i5, M at 128x64, V at 128x64, K at 240x320) plus the few-key fallbacks and the
+front panel alone (P at 128x64: no digits, the panel's key names in the hints).
 A crawler then visits every reachable screen and checks the rules that hold everywhere: BACK leaves every screen, long
 BACK reaches Home, long QUICK locks on Home and nowhere else, long CONTEXT opens the talk target picker on a DMR channel, the status strip is drawn (except About while idle),
-PTT shows TX, and every field-use screen is at most 3 presses deep. The About check scrolls the page to its end at
+PTT shows TX, and every field-use screen is at most 3 presses deep. The crawler runs with K, M, F and P. The About check scrolls the page to its end at
 every display class and fails if any text was shortened.
 
 `uiSim --ellipsis [GEOM]` lists every text shortened with a middle ellipsis on the gallery screens and the settings

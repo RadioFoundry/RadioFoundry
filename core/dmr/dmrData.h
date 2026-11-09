@@ -14,20 +14,18 @@
 // Big buffers only the CPU touches: in the board's CPU-only RAM where it has one (config.h RFOUNDRY_CPU_RAM)
 #define DMR_DATA_BUFFER RFOUNDRY_CPU_RAM
 
-// ETSI TS 102 361-1 data types (same values as the hotspot's DT_xxx)
-#ifndef DT_CSBK
-#define DT_VOICE_PI_HEADER		0x00U
-#define DT_VOICE_LC_HEADER		0x01U
-#define DT_TERMINATOR_WITH_LC	0x02U
-#define DT_CSBK					0x03U
-#define DT_MBC_HEADER			0x04U
-#define DT_MBC_CONTINUATION		0x05U
-#define DT_DATA_HEADER			0x06U
-#define DT_RATE_12_DATA			0x07U
-#define DT_RATE_34_DATA			0x08U
-#define DT_IDLE					0x09U
-#define DT_RATE_1_DATA			0x0AU
-#endif
+// ETSI TS 102 361-1 data types
+#define DMR_TYPE_PI_HEADER		0x00U
+#define DMR_TYPE_VOICE_LC_HEADER		0x01U
+#define DMR_TYPE_TERMINATOR_LC		0x02U
+#define DMR_TYPE_CSBK		0x03U
+#define DMR_TYPE_MBC_HEADER		0x04U
+#define DMR_TYPE_MBC_CONT		0x05U
+#define DMR_TYPE_DATA_HEADER		0x06U
+#define DMR_TYPE_RATE_1_2		0x07U
+#define DMR_TYPE_RATE_3_4		0x08U
+#define DMR_TYPE_IDLE		0x09U
+#define DMR_TYPE_RATE_1		0x0AU
 
 // This module has no hardware dependencies, so it can be unit tested on a host (see tests/host)
 
@@ -53,7 +51,7 @@
 
 typedef struct
 {
-	uint8_t dataType;							// DT_xxx from dmrDefines.h
+	uint8_t dataType;							// DMR_TYPE_xxx
 	uint8_t length;
 	uint8_t flags;
 	uint8_t payload[DMR_BURST_PAYLOAD_MAX];
@@ -93,6 +91,7 @@ typedef struct
 #define DMR_UDP_PORT_ARS			4005
 #define DMR_UDP_PORT_TMS			4007
 #define DMR_UDP_PORT_ETSI_TEXT		5016		// ETSI IP text (TS 102 361-3 5.7.1; compressed port ID 1)
+#define DMR_UDP_PORT_NMEA			10110		// NMEA over UDP: the DMR APRS position some radios send (docs/spec/dmr-data.md 3)
 
 typedef struct
 {
@@ -138,7 +137,7 @@ int dmrDataBuildCSBK(const uint8_t csbk[10], dmrBurst_t *out);
 // The answer from us (ID src) to a received CSBK (its 10 bytes, CRC checked): the ack of a call alert, or the
 // answer to a radio check. 0 if the CSBK isn't one of those, or isn't addressed to us
 int dmrDataBuildCSBKAnswer(const uint8_t *csbk, uint32_t src, dmrBurst_t *out);
-// blockType: DT_RATE_12_DATA, DT_RATE_34_DATA or DT_RATE_1_DATA
+// blockType: DMR_TYPE_RATE_1_2, DMR_TYPE_RATE_3_4 or DMR_TYPE_RATE_1
 int dmrDataBlockLength(uint8_t blockType);
 int dmrDataBuildPacket(uint8_t dpf, uint8_t sap, bool group, uint32_t dst, uint32_t src,
 						const uint8_t *data, int length, uint8_t blockType, int preambles, dmrBurst_t *out, int maxBursts);
@@ -277,7 +276,7 @@ typedef struct
 // format (80 bits: C, N/S, E/W, Q, speed in knots, latitude and longitude in degrees and minutes, UTC to ten
 // seconds), its CRC-CCITT unmasked, after the preamble CSBKs (none straight after a call of ours: receivers are in sync)
 #define DMR_UDT_FORMAT_NMEA				0x05
-#define DMR_UDT_OPCODE					0x1A	// as rfoundry_sdrbench's builder (C_UDTHU)
+#define DMR_UDT_OPCODE					0x1A	// C_UDTHU
 int dmrDataBuildUDTLocation(bool group, uint32_t dst, uint32_t src, const dmrDataLocation_t *location, int preambles,
 							dmrBurst_t *out, int maxBursts);
 

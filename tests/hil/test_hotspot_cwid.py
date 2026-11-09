@@ -4,12 +4,12 @@
 (the DM-1701, hal_radio_t tx_tone_key): the radio leaves DMR, keys an FM carrier on the hotspot's TX frequency with
 the tone keyed in Morse at the settings' speed (20 wpm by default), then the hotspot's DMR set-up is back.
 
-Opt-in: radio_tx + bench_service (--allow-rf --allow-service-stop). The ID keys at the lowest power: SET_FREQ's RF level 0. The bench only records (sdrmon.py capture) and
-tools/sdr_fm_check.py finds the keyed segment. The MMDVM client keeps DTR clear (see test_hotspot.py).
+Opt-in: radio_tx + bench_service (--allow-rf --allow-service-stop). The ID keys at the lowest power: SET_FREQ's RF level 0. The bench only receives: its board demodulates the
+FM (SdrBench.fm_over_start) and finds the keyed segment. The MMDVM client keeps DTR clear (see test_hotspot.py).
 
 Pass criteria: SEND_CWID ACKed; the GET_STATUS TX flag set while keying; hs.cw_sent +1, hs.cw_wpm 20, hs.cw_last_ms
 within 10 % of 150 + 60 x units + 150 ms (the Morse of --callsign, the rig's: hil_config.py); one keyed segment of
-about that length off air, with the Morse in it (runs of one audio tone, sdr_fm_check.py --tones: at least two
+about that length off air, with the Morse in it (runs of one audio tone in the board's demodulated audio: at least two
 thirds of the callsign's dashes); the hotspot answers GET_STATUS again with the TX flag clear and DMR slot space."""
 import struct
 import time
@@ -17,7 +17,7 @@ import time
 import pytest
 
 from rfoundry_hil import skip
-from test_fm_tx import parse_fm
+import fm_measure
 from hil_config import rig
 
 GET_VERSION, GET_STATUS, SET_CONFIG, SET_MODE, SET_FREQ, SEND_CWID = 0x00, 0x01, 0x02, 0x03, 0x04, 0x0A
@@ -36,10 +36,11 @@ def config(cc=1):
     return bytes([0x80, 0x02, 10, 2, 128, 128, cc, 0, 128, 0, 128, 0, 0, 128, 128] + [0] * 8)
 
 
-def freq(rx, tx):
-    """SET_FREQ with RF level 0: the board's lowest power step (radio_sm_hotspot_power). In hotspot mode the RF level
-    sets the power, not the radio's power setting, and level 255 keyed the ID at full power"""
-    return bytes([0]) + struct.pack("<II", rx, tx) + bytes([0]) + struct.pack("<I", tx)
+def freq(rx, tx, rf_level=0):
+    """SET_FREQ with an RF level: 0 the board's lowest power step (radio_sm_hotspot_power), or the bench's level
+    (Radio.hotspot_rf_level). In hotspot mode the RF level sets the power, not the radio's power setting, and level 255
+    keyed the ID at full power"""
+    return bytes([0]) + struct.pack("<II", rx, tx) + bytes([rf_level]) + struct.pack("<I", tx)
 
 
 @pytest.mark.feature("hotspot", optional=True)
@@ -62,17 +63,17 @@ def test_hotspot_cwid(radio, sdr_bench, pytestconfig):
     radio.go_home()
     radio.find_channel(hz, "dmr")
     radio.lowest_power()
+    rf_level = radio.hotspot_rf_level()
     x0 = radio.view(["dmr_ext"])
     expect_ms = 150 + 60 * units + 150
-    rdir = sdr_bench.run_dir("cwid")
     with sdr_bench.lease():
-        cap = sdr_bench.capture_start(rdir, mhz, seconds=expect_ms / 1000 + 4)
+        job = sdr_bench.fm_over_start(mhz, expect_ms / 1000 + 4, audio=True)
         with radio.released() as port:
             link = mmdvm_probe.Link(port, dtr=False)
             try:
                 assert link.request(GET_VERSION, timeout=2.0)[0] == "reply"
                 assert link.request(SET_CONFIG, config())[0] == "ack"
-                assert link.request(SET_FREQ, freq(hz, hz))[0] == "ack"
+                assert link.request(SET_FREQ, freq(hz, hz, rf_level))[0] == "ack"
                 assert link.request(SET_MODE, bytes([0]))[0] == "ack"
                 kind, f = link.request(SEND_CWID, call.encode())
                 assert kind == "ack", f
@@ -84,17 +85,15 @@ def test_hotspot_cwid(radio, sdr_bench, pytestconfig):
                 assert kind == "reply" and not st[5] & 0x01, f"TX flag still set: {st!r}"
             finally:
                 link.s.close()
-        sdr_bench.capture_wait()
+        r = sdr_bench.fm_over_result(job)
     x1 = radio.view(["dmr_ext"])
     radio.link.hotspot_exit()
     radio.wait_for(lambda v: v.get("hostlink") == "idle", 5, sections=("hotspot",), what="hotspot left")
     print({k: x1[k] for k in x1 if k.startswith("hs.cw")})
     assert int(x1["hs.cw_sent"]) == int(x0["hs.cw_sent"]) + 1 and x1["hs.cw_wpm"] == "20", x1
     assert abs(int(x1["hs.cw_last_ms"]) - expect_ms) <= expect_ms // 10, (x1["hs.cw_last_ms"], expect_ms)
-    rc, text = sdr_bench.analyze_fm(cap, bw_khz=12.5, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz, tones=True)
-    print(text)
-    r = parse_fm(text)
-    assert r["segments"] == 1, f"keyed segments: {r['segments']} ({sdr_bench.run_path(rdir)})"
+    print(fm_measure.describe(r))
+    assert r["segments"] == 1, f"keyed segments: {r['segments']}: {r}"
     # The Morse itself: the dashes (180 ms at 20 wpm) as tone runs at one audio frequency
     tones = r["tones"]
     best = max((sum(1 for u in tones if abs(u[0] - t[0]) <= 25) for t in tones), default=0)

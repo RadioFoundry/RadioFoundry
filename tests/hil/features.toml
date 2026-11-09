@@ -44,6 +44,10 @@ spec = "docs/spec/radio-features.md"
 switch = "FM_TX_TONES"
 spec = "docs/spec/radio-features.md"
 
+[feature.tone_burst_key]
+spec = "docs/spec/radio-features.md"
+source = ["core/input", "core/ui/ui_menus.c", "core/ui/ui_svc_storage.c", "core/radio", "core/debuglink"]
+
 [feature.dtmf]
 switch = "DTMF"
 spec = "docs/spec/radio-features.md"
@@ -122,6 +126,10 @@ spec = "docs/spec/ui.md"
 [feature.contact_edit]
 switch = "CONTACT_EDIT"
 spec = "docs/spec/ui.md"
+
+[feature.volume_bar]
+switch = "VOLUME_BAR"
+spec = "docs/spec/radio-features.md"
 
 [feature.volume_lock]
 switch = "VOLUME_LOCK"
@@ -241,11 +249,6 @@ source = [
     "drivers/modem",
     "hal/hal_dmr_modem.h",
     "tools/split_duplex_host.py",
-]
-planned_tests = [
-    "tests/hil/test_split_duplex.py::test_split_tx_half_continuous",
-    "tests/hil/test_split_duplex.py::test_split_standard_host",
-    "tests/hil/test_split_duplex.py::test_split_state_cleanup",
 ]
 
 [feature.debuglink]

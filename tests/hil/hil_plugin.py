@@ -35,8 +35,10 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip_mark("opt_in", "writes the codeplug: run with --allow-codeplug-write"))
         elif "reboot" in item.keywords and not config.getoption("--allow-reboot"):
             item.add_marker(skip_mark("opt_in", "restarts the radio: run with --allow-reboot"))
-        elif "manual" in item.keywords and not config.getoption("--manual"):
-            item.add_marker(skip_mark("opt_in", "needs a person at the radio: run with --manual -s"))
+        elif "manual" in item.keywords and not config.getoption("--manual") and \
+                not ("by_ear" in item.keywords and config.getoption("--microphone")):
+            item.add_marker(skip_mark("opt_in", "needs a person at the radio: run with --manual -s" +
+                                      (", or --microphone to listen with it" if "by_ear" in item.keywords else "")))
 
 
 @pytest.hookimpl(wrapper=True)
@@ -74,6 +76,7 @@ def radio(pytestconfig):
     if lang:
         print(f"rfoundry-hil: the radio's language was {lang}: set back to English (the tests read English text)")
     r.tx_gate(False)        # blocked from the start: module fixtures run before any test's own gate
+    r.hwopt_baseline()
     yield r
     try:
         r.tx_gate_end()
@@ -138,49 +141,16 @@ def restore_radio(request):
 @pytest.fixture(scope="session")
 def sdr_bench(pytestconfig):
     b = SdrBench(allow_rf=pytestconfig.getoption("--allow-rf"),
-                 allow_service_stop=pytestconfig.getoption("--allow-service-stop"),
-                 tx_power=pytestconfig.getoption("--tx-power"), gain=pytestconfig.getoption("--sdr-gain"),
                  wait_max=pytestconfig.getoption("--bench-wait-max"), api=pytestconfig.getoption("--bench-api"),
                  api_rx=pytestconfig.getoption("--bench-api-rx"),
                  api_level=pytestconfig.getoption("--bench-api-level"))
+    if not b.api:
+        skip("bench", "no bench board: give --bench-api HOST[:PORT] (no bench test runs, the DMR audio smoke neither)")
     if not b.reachable():
-        if b.api:
-            skip("bench", f"bench board {b.api} (receive {b.api_rx}) not answering on the line protocol, with a TX "
-                          "frequency and its receiver running")
-        skip("bench", f"SDR bench {b.host} not reachable over ssh, or its tools missing (tools/bench/dmr_bench.py "
-                      "sync): no bench test runs, the DMR audio smoke neither")
+        skip("bench", f"bench board {b.api} (receive {b.api_rx}) not answering on the line protocol, with a TX "
+                      "frequency and its receiver running")
     yield b
     b.remove_run_dirs()
-
-
-@pytest.fixture(autouse=True)
-def bench_hardware(request):
-    """Skips a test marked sdr_rx / bench_modem / sdr_or_modem when the SDR bench lacks that piece (SdrBench.lacks).
-    Unmarked tests need neither and don't touch the bench here."""
-    kw = request.node.keywords
-    sdr, modem, either = "sdr_rx" in kw, "bench_modem" in kw, "sdr_or_modem" in kw
-    if not (sdr or modem or either):
-        yield
-        return
-    if "radio" in request.fixturenames:
-        request.getfixturevalue("radio")        # no radio: skip for that first, without asking the bench
-    bench = request.getfixturevalue("sdr_bench")
-    why = bench.lacks(sdr=sdr, modem=modem, either=either)
-    if why:
-        skip("bench", why)
-    yield
-
-
-@pytest.fixture(scope="session")
-def bench_station(pytestconfig, sdr_bench):
-    """The name of the bench station to use as the second radio (--bench-station); skips without one."""
-    name = pytestconfig.getoption("--bench-station")
-    if not name:
-        skip("opt_in", "no bench station: give --bench-station NAME (rfoundry-bench info on the bench lists them)")
-    st = next((s for s in sdr_bench.info().get("stations", []) if s["name"] == name), None)
-    if st is None or not st.get("present"):
-        skip("bench", f"bench station {name} is not on the bench (or the bench has no rfoundry-benchd)")
-    return name
 
 
 @pytest.fixture

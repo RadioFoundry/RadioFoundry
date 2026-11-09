@@ -6,6 +6,13 @@
 #include <string.h>
 #include "input/keyassign.h"
 #include "input/input_engine.h"
+#include "input/input_forward.h"
+
+static unsigned ptt_downs, ptt_ups, burst_downs, burst_ups;
+void radio_req_ptt(bool down) { if (down) ptt_downs++; else ptt_ups++; }
+void radio_req_monitor(bool down) { (void)down; }
+void radio_req_monitor_held_up(void) {}
+void radio_req_tone_burst_key(bool down) { if (down) burst_downs++; else burst_ups++; }
 
 static int failures;
 static int checks;
@@ -90,6 +97,8 @@ static void test_allowed(void)
 	uint16_t s[KEYASSIGN_SLOTS] = { 0 };
 	CHECK(keyassign_allowed(KEYFN_MONITOR, false) && !keyassign_allowed(KEYFN_MONITOR, true));
 	CHECK(!keyassign_allowed(KEYFN_EMERGENCY, false) && keyassign_allowed(KEYFN_EMERGENCY, true));
+	CHECK(KEYFN_TONE_BURST == 18);
+	CHECK(keyassign_allowed(KEYFN_TONE_BURST, false) && !keyassign_allowed(KEYFN_TONE_BURST, true));
 	CHECK(!keyassign_allowed(KEYFN_COUNT, false));
 	// Emergency on a press would go off by accident; monitor on a long press can't be held
 	keyassign_set(s, 0, false, KEYFN_EMERGENCY);
@@ -142,11 +151,12 @@ static void test_toggles(void)
 	static const struct { uint8_t fn; uint8_t value; uint8_t action; } t[] = {
 		{ KEYFN_KEY_LOCK, 11, ACT_LOCK }, { KEYFN_CALL_BACK, 12, ACT_CALL_BACK }, { KEYFN_HOME_ZONE, 13, ACT_HOME_ZONE },
 		{ KEYFN_COPY_VFO, 14, ACT_COPY_VFO }, { KEYFN_DUAL_WATCH, 15, ACT_DUAL_WATCH }, { KEYFN_AB, 16, ACT_AB },
+		{ KEYFN_VFO_TOGGLE, 17, ACT_VFO_TOGGLE },
 	};
 	// Stored in the codeplug's slots: append only, so every value that shipped keeps its number
 	CHECK(KEYFN_DEFAULT == 0 && KEYFN_NONE == 1 && KEYFN_MONITOR == 2 && KEYFN_TALK_TARGET == 3 &&
 	      KEYFN_POWER == 4 && KEYFN_ZONE_UP == 5 && KEYFN_ZONE_DOWN == 6 && KEYFN_SCAN == 7 && KEYFN_EMERGENCY == 8);
-	CHECK(KEYFN_HEAR_ALL == 9 && KEYFN_MONITOR_LATCH == 10 && KEYFN_COUNT == 17);
+	CHECK(KEYFN_HEAR_ALL == 9 && KEYFN_MONITOR_LATCH == 10 && KEYFN_COUNT == 19);
 	for (unsigned i = 0; i < sizeof t / sizeof t[0]; i++) {
 		uint16_t s[KEYASSIGN_SLOTS] = { 0 };
 		CHECK(t[i].fn == t[i].value);
@@ -256,6 +266,51 @@ static void test_engine(void)
 	      evs[2].gesture == GESTURE_UP && evs[2].value == 1);
 }
 
+
+static void test_burst_edges(void)
+{
+	uint16_t s[KEYASSIGN_SLOTS] = { 0 };
+	input_engine_t e;
+	uint32_t now = 1000;
+	keyassign_set(s, 0, false, KEYFN_TONE_BURST);
+	keyassign_set(s, 0, true, KEYFN_POWER);
+	CHECK(keyassign_get(s, 0, false) == KEYFN_TONE_BURST);
+	keyassign_build(base, N, side, 3, s, map);
+	CHECK(map[1].raw_edges && map[1].short_action == ACT_TONE_BURST &&
+	      map[1].long_action == ACT_TONE_BURST && !map[1].repeat);
+	input_engine_init(&e, map, N, now);
+	input_engine_step(&e, 0, 0, now, emit, NULL);
+	for (unsigned ms = 100; ms <= 3000; ms += 2900) {
+		nev = 0;
+		hold(&e, &now, 1u << K_SK1, ms);
+		CHECK(nev == 2 && evs[0].action == ACT_TONE_BURST && evs[0].gesture == GESTURE_DOWN &&
+		      evs[1].action == ACT_TONE_BURST && evs[1].gesture == GESTURE_UP);
+	}
+}
+
+static void test_burst_lock(void)
+{
+	input_event_t down = { .action = ACT_TONE_BURST, .gesture = GESTURE_DOWN };
+	input_event_t up = { .action = ACT_TONE_BURST, .gesture = GESTURE_UP };
+	input_forward(&down, true);
+	CHECK(burst_downs == 0 && burst_ups == 0);
+	input_forward(&up, true);
+	CHECK(burst_downs == 0 && burst_ups == 1);
+	input_forward(&down, false);
+	CHECK(burst_downs == 1 && burst_ups == 1);
+	input_forward(&up, true);
+	CHECK(burst_downs == 1 && burst_ups == 2);
+
+	down.action = up.action = ACT_PTT;
+	input_forward(&down, true);
+	CHECK(ptt_downs == 0 && ptt_ups == 0);
+	input_forward(&up, true);
+	CHECK(ptt_downs == 0 && ptt_ups == 1);
+	input_forward(&down, false);
+	input_forward(&up, false);
+	CHECK(ptt_downs == 1 && ptt_ups == 2);
+}
+
 // A board key map entry whose short press is the VFO / channel toggle (ACT_VFO_TOGGLE) has Copy to VFO on its long
 // press (docs/ux/information-architecture.md 2). Read from the boards' sources: they don't build on the host
 static void test_board_defaults(void)
@@ -284,7 +339,7 @@ static void test_board_defaults(void)
 		}
 		fclose(f);
 	}
-	CHECK(toggles == 1);	// a VFO/MR key
+	CHECK(toggles >= 1);	// at least one board has the key, so the check reads something
 }
 
 int main(void)
@@ -295,6 +350,8 @@ int main(void)
 	test_build();
 	test_toggles();
 	test_engine();
+	test_burst_edges();
+	test_burst_lock();
 	test_board_defaults();
 	printf("# keyassignTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;

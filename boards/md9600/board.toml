@@ -1,0 +1,170 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# The MD-9600's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
+# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in memory.ld.
+
+id = "md9600"
+name = "TYT MD-9600"
+maker = "TYT"
+model = "MD-9600"
+also = ["Retevis RT90"]
+kind = "mobile"
+debuglink_aliases = ["MD9600", "RT90"]
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 7
+
+[docs]
+hardware = "docs/spec/hardware-md9600.md"
+codec = "docs/spec/codec-md9600.md"
+
+# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+[hardware]
+bands = "136-174 / 400-480 MHz"
+power = "up to 50 W"
+display = "monochrome, 128 × 64"
+gallery = "128x64"
+clock = { rtc = "unknown", note = "STM32 RTC on a 32.768 kHz crystal; the backup domain is only known to hold while DC is applied, VBAT unverified (docs/spec/hardware-md9600.md 1.3, 1.4)" }
+
+[status]
+level = "supported"
+summary = """\
+One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, \
+roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power \
+level checked on a wattmeter on both bands. Transmit is armed per power cycle. Open: V4 and V4A/V5 boards have not run \
+on a radio, and SFR loses inbound voice frames."""
+release = "stable"
+
+# This board's own switches (config.mk, config_md9600.h) aren't feature switches, so ci's per-switch builds don't cover
+# them: a receive-only image, and a single-revision image
+[ci]
+extra = [
+	{ name = "no-tx", make = ["CONFIG_MD9600_TX=n", "CONFIG_MD9600_DMR_TX=n"] },
+	{ name = "v5-only", make = ["CONFIG_MD9600_V1V3=n", "CONFIG_MD9600_V4=n"] },
+]
+
+[flash]
+family = "usb-dfu"
+keep_codec = true
+notice = "One image serves every MD-9600, but only V1-V3 boards (original firmware V06.xx) have run RadioFoundry so far. V4 (V16.xx) and V4A/V5 (V26.xx) boards have not been tried on a radio: receive or transmit may not work. Transmit stays off until you turn it on in Settings > Advanced > Hardware. Keep a backup so you can go back to the original firmware, and please report what you find."
+stock_versions = [
+	"03.28 to 06.24 (V1-V3 boards)", "16.24 and 16.45 (V4 boards)", "26.38 to 26.45 (V5 boards)", "26.57 (V4A boards)",
+]
+backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
+
+[flash.bootloader]
+steps = [
+	"Disconnect the radio's DC power cable (the power key alone is not enough) and connect the USB cable to the mini-USB port on the rear.",
+	"Hold P1 and the orange (alarm) key while you connect the power again. The screen stays blank and the backlight blinks once a second.",
+	"Release the keys.",
+]
+
+# The STM32F4 flash stub's board record (docs/spec/stub-stm32f4.md 5.2): the data flash on SPI2 in mode 3, its pins in
+# pins.h, the LCD's chip select held high so the panel ignores the bus. Writes checked on a V1-V3 radio (2026-11-05)
+[flash.stub]
+id = 3
+tested = true
+spi = { bus = 2, mode = 3, hz = 4500000 }
+idle_cs = ["PIN_LCD_CS"]
+
+# The TYT bootloader takes the same DFU protocol and sector order as the other usb-dfu radios, with its own key
+# (docs/spec/hardware-md9600.md 14.2)
+[flash.dfu]
+vid = 0x0483
+pid = 0xDF11
+string1 = "AnyRoad Technology"
+product = "Digital Radio in USB mode"
+key_sha256 = "c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae"
+key_prefix = "A2FABB4B"
+# the bootloader's alt 0 string (seen on a radio, hardware-md9600.md 15): the flashers accept no other DFU layout
+layout = "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg"
+
+# The board revision, which RadioFoundry can't detect (docs/spec/hardware-md9600.md 16), follows the major version of
+# the radio's original firmware. The installers read that version over USB before the install and store the
+# revision as the board record once RadioFoundry runs (hardware-md9600.md 15.1, 19.3)
+[flash.original_version]
+read = "dfu-info"
+# the original firmware's first DFU interface string; the bootloader's is "@Internal Flash   /0x0800C000/..."
+interface = "@Internal Flash   /0x08000000/03*016Kg"
+hwopt = "Board revision"
+major = { "06" = "V1-V3", "16" = "V4", "26" = "V4A/V5" }
+
+# What the web flasher backs up before the install, from the original firmware running normally or from the bootloader
+# (hardware-md9600.md 15.2): the info blocks (A2 ss), one snapshot of the internal flash from 0x08000000 before program
+# mode, then the SPI flash in program mode: all of it from the original firmware, the first 1 MB from the bootloader.
+# quick: the codeplug areas only
+[flash.original_backup]
+info = ["02", "01", "03", "04", "05", "07", "08", "32", "33", "50"]
+mirror = 0xFFFF
+spi = 0x1000000
+quick = 0x200000
+loader_interface = "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg"
+loader_spi = 0x100000
+
+# The codec where the merge puts it (docs/spec/codec-md9600.md "Hosting"): the tables stay at the stock build's address in
+# sector 9 (the largest GPS-REC builds' run a few hundred bytes into sector 10, which is free), the code moves to the
+# start of sector 11 and the descriptor to its end. The application has sectors 3-8, so an update leaves the codec
+# sectors alone. The builds keep their tables at different addresses and report the one codec id: a merge uses the
+# windows of the file it merges, and the board's windows are all the files' (sectors 9-11). Each line is one original
+# firmware file: 03.28 to 06.24 (06.09 is the V1-V3 boards' file), 16.xx for V4, 26.38 to 26.45 for V5 (the RT90's are 26.38, 26.41 and
+# 26.42) and 26.57 for V4A, in the CSV, CSV-GPS, REC and GPS-REC variants that exist
+[codec]
+tool = "codec_extract"
+stock = [
+	"79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09@md9600",	# MD9600-CSV-V06.09.bin
+	"de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532@md9600",	# MD9600-CSV(V4)-V16.45.bin
+	"9454eb221ae1f206fca5a15ec1b540bf06b3db4991f466b1626a3a3073ca91d5@md9600",	# MD9600-CSV-GPS-P06.09.bin
+	"7b1b1b33e661766a5b0c0b3ddab9c31c96e3855b09f4e280b07f4990b563b68f@md9600",	# MD9600-REC-D06.09.bin
+	"4610ed115e80efa04be554a94915ec2e053ae00f6b64dfa4815451966840dba7@md9600",	# MD9600-GPS-REC-S06.09.bin
+	"194526d60f796cc0f7339d14c1efeedc267731d108fd66a96876b459408de0ba@md9600",	# MD9600-CSV-V06.24.bin
+	"1eafdb774fd71cb7bc3334d06617ed42264ee25df1c73f61744f6b21742bbd20@md9600",	# MD9600-CSV-GPS-P06.24.bin
+	"6643261e62b9778a5df43b1e5c3428d6d308bf54b34478513df3e08f6f4dbb63@md9600",	# MD9600-REC-D06.24.bin
+	"ec44929e855442ad248f1a5c171a467922d6cb5742fc35f759db269c645e22ab@md9600",	# MD9600-GPS-REC-S06.24.bin
+	"7f4d760288f0c1875c7c5dc83dcdf3f355f5188becde2b505eedf609fdbe665f@md9600",	# MD9600-CSV-GPS(V4)-P16.45.bin
+	"d2ef7a7e9c484dc1a8777488816f4da47181899ff8b7299a0ead7d141d55e10c@md9600",	# MD9600-REC(V4)-D16.45.bin
+	"3d71b4358267fe5fdae8980f340b6a158e7b229c9d32c8ab894c4985964e8aff@md9600",	# MD9600-GPS-REC(V4)-S16.45.bin
+	"98302fbc26fa0db93bd7ecbd29a410ac9fbb42cbd7d6ce15d54ce085fefff329@md9600",	# MD9600-CSV(V4)-V16.24.bin
+	"e86b9e9775758548dd2d01334cfacc96c640fbf843aa6c5fa009b4bc7598e98d@md9600",	# MD9600-CSV-GPS(V4)-P16.24.bin
+	"e21c72e30716fb43e4d15798012aec15e964b9ec8c1a534ede5d0b0fe73f3acb@md9600",	# MD9600-REC(V4)-D16.24.bin
+	"4e1c5c081d5bdf4bef8f205668fd7381391187d8b07150df7e99275b030b811b@md9600",	# MD9600-GPS-REC(V4)-S16.24.bin
+	"d8a653307222e576ee416ab6d4704d14758fa71c1b0e826ffd840f26266cf11f@md9600",	# MD9600-CSV(2571V5)-V26.45.bin
+	"02e366687f122ed752581344db8316666d21782d9353334518b69237a81e74dc@md9600",	# MD9600-CSV-GPS(2571V5)-P26.45.bin
+	"baee36b0fd852dfc1fb14952242a1231dbfa4fabc37cba57c61f1b8d3e0d830d@md9600",	# MD9600-REC(2571V5)-D26.45.bin
+	"6df34152e9786530d61032ab71f1962cf194aca0b99cf0a54e3802fd2cd4ac72@md9600",	# MD9600-GPS-REC(2571V5)-S26.45.bin
+	"2522008737d7845e43ab47a307d38498ee783c788a377fac855dff94dea53af0@md9600",	# MD9600-REC(2571V4)-D26.57.bin
+	"cf52b678629466bac593d533abc87fd7524c6e123b608dce6ef0d4e685a1d79e@md9600",	# MD9600-CSV-V06.03.bin
+	"50eed60616030f5ca110db649ec938782d90b23d7c911d05e388a0a7cd20af53@md9600",	# MD9600-CSV-GPS-P06.03.bin
+	"6356f4f467942ea0a1137d625071945ad47c0af72320bfc4f7890d99371cd8ca@md9600",	# MD9600-REC-D06.03.bin
+	"4cb9f3bd483eb998a96c2700b070af94393f91aab688dd5b0670c85e379f1452@md9600",	# MD9600-GPS-REC-S06.03.bin
+	"b25c573013b79f58a65629f0df85f5aced57c89eabde40465331984bb14dcc38@md9600",	# MD9600-REC-D03.28.bin
+	"9035209ffb2ecd08999cea93bfe5d255006e783f0a4da11354390c9ecbcb8521@md9600",	# MD9600-REC-D03.29.bin
+	"32044e55879afa44c7a525a9a53633a51e38c3ae01ff512d2d0971117a97a75b@md9600",	# MD9600-REC-D04.03.bin
+	"1536ea3093394859c29ec6a522464c1b3f87a516e1a73b2cbf4f7be254b2dec4@md9600",	# RT90-CSV(2571V5)-V26.41.bin
+	"8acfedbc60fe8dec2d88ed1f00a1444d6f8f243590d967a1a59b121f5d6dfef4@md9600",	# RT90-CSV-GPS(2571V5)-P26.41.bin
+	"267dac314c1aa217ab259a6f9709f2e19342ff3a79aa18a2bf8b501939347e49@md9600",	# RT90-REC(2571V5)-D26.38.bin
+	"a10bad809048c8bbd9602c7b50ca4c824a6dbdee34b2167b872ec86c0affbbe1@md9600",	# RT90-GPS-REC(2571V5)-S26.42.bin
+]
+
+# How the site draws the radio
+[frame]
+shape = "mobile"
+body = "#1d1f22"
+accent = "#e07a26"
+lens = [22, 22]
+
+# What the health checks expect (tests/hil/test_health.py): the supply range is a vehicle's 13.8 V system with margin
+# (the divider's scale is unverified, hardware-md9600.md 10.3). The data flash's JEDEC ID and the calibration lines
+# aren't here: no radio has confirmed the part, and the calibration is read by the board's own HIL test
+# (boards/md9600/hil)
+[hil]
+display = "128x64x1"
+features = ["USB", "DEBUGLINK", "CPS_FAST"]	# CPS_FAST needs CPS_OPENFW, which the feature string doesn't list
+supply_mv = [10000, 16000]
+
+# Features built and known not to work yet on this radio (tools/bringup.py: "unsupported"), each with its reason
+[features]
+sfr = { state = "unsupported", reason = "test_sfr_repeater_quality loses 24 inbound frames of a bench call (3 allowed) on the radio's single receive path; parked until that is looked into" }
+
+# The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
+# reports them
+[cps]
+radio_types = [5]

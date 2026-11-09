@@ -454,7 +454,12 @@ void ui_svc_apply(uint8_t id, int32_t value)
 		rs.dual_delay_ms = v16;
 		break;
 #endif
-	case UI_SET_BACKLIGHT_S:		// dims after this, goes off after four times as long (0 = always on)
+	case UI_SET_BACKLIGHT_S:		// dims after this, goes off after four times as long (0 = always on; < 0: dims
+		if (value < 0) {		// after -value, never goes off)
+			rs.backlight_dim_s = (uint16_t)(value < -0xFFFF ? 0xFFFF : -value);
+			rs.backlight_off_s = 0;
+			break;
+		}
 		rs.backlight_dim_s = v16;
 		rs.backlight_off_s = (uint16_t)(v16 > 0x3FFF ? 0xFFFF : v16 * 4u);
 		break;

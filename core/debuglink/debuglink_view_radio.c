@@ -17,6 +17,10 @@
 #include "hal_dtmf.h"
 #include "settings/settings.h"
 #include "input/input.h"
+#if CONFIG_KEY_ASSIGN
+#include "input/keyassign.h"
+#include "codeplug/codeplug.h"
+#endif
 #if CONFIG_DMR
 #include "dmr/ambe/ambeVoice.h"
 #if CONFIG_ZONE_SHARE
@@ -35,7 +39,8 @@ static const char *word(uint8_t v, const char *const *names, uint8_t n)
 }
 
 // The speaker route of the beeps (section audio; the features section has no room left): which stream played them,
-// their lead-in and the amplifier hang (radio-features.md 4)
+// their lead-in and the amplifier hang (radio-features.md 4); and the PCM stream's timing, which a speaker test reads to
+// tell a block played late (heard as the sound before it again) from what its microphone does
 void debuglink_view_audio(dl_text_t *t)
 {
 #if CONFIG_BEEP
@@ -43,9 +48,15 @@ void debuglink_view_audio(dl_text_t *t)
 	beep_get_stats(&b);
 	dl_text(t, "beep.shared=%u\nbeep.leads=%u\nbeep.warm=%u\nbeep.warms=%u\n", (unsigned)b.shared, (unsigned)b.leads,
 		beep_warm_on(), (unsigned)b.warms);
-#else
-	(void)t;
 #endif
+	const hal_audio_t *a = board.audio;
+	if (a != NULL && a->stream_stats != NULL) {
+		audio_stream_stats_t s;
+		a->stream_stats(&s);
+		dl_text(t, "audio.blocks=%u\naudio.late=%u\naudio.dropped=%u\n", (unsigned)s.blocks, (unsigned)s.late,
+			(unsigned)s.dropped);
+	}
+	(void)t;
 }
 
 void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
@@ -148,6 +159,20 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	} else {
 		dl_text(t, "set.reply_s=codeplug\n");
 	}
+}
+
+void debuglink_view_keys(dl_text_t *t)
+{
+#if CONFIG_KEY_ASSIGN
+	if (board.side_key_count != 0) {
+		uint16_t slots[CODEPLUG_QUICK_KEYS];
+		(void)codeplug_quick_keys(slots);
+		// The saved assignment lets HIL restore the key through Settings after exercising its physical bit.
+		dl_text(t, "key.first.bit=%u\nkey.first.press=%u\n", board.side_keys[0], keyassign_get(slots, 0, false));
+	}
+#else
+	(void)t;
+#endif
 }
 
 // One setting by id (DL radio op SETTING; docs/spec/debuglink.md 3.8)
@@ -346,6 +371,16 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		}
 		return tx_limit_set((a[0] & 1u) != 0, hz, a[1]) ? DL_ST_OK : DL_ST_BAD_ARG;
 	}
+	case DL_OP_TX_DRIVE:
+		// drive u16: the PA drive of the next transmission in the board's units, 0 = its power level's again
+		// (hal_radio_t.tx_drive; power calibration). The radio's transmit rules still apply
+		if (len < 2) {
+			return DL_ST_BAD_ARG;
+		}
+		if (board.radio == NULL || board.radio->tx_drive == NULL) {
+			return DL_ST_UNAVAILABLE;
+		}
+		return board.radio->tx_drive((uint16_t)(a[0] | (a[1] << 8))) ? DL_ST_OK : DL_ST_BAD_ARG;
 	case DL_OP_DTMF:
 		// digit u8 (ASCII), down u8: as a DTMF key's edge, so the same rules and timing apply. Refused unless a key
 		// would send now (dtmf_ready); an up is always taken

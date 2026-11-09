@@ -68,16 +68,19 @@ bool debuglink_dmr_diag_line(uint8_t i, char *buf, uint8_t len);
 void debuglink_dmr_reset(void);
 
 // The radio features (debuglink_view_radio.c): the "features" section, and the RADIO operations for scan, beeps, the
-// tone burst, one setting, roaming, vibration, volume, the DMR voice test signal, DTMF keys and the test TX limit (DL_OP_*;
+// tone burst, one setting, roaming, vibration, volume, the DMR voice test signal, DTMF keys, the test TX limit and the PA
+// drive (DL_OP_*;
 // returns a DL_ST_* status)
 void debuglink_view_radio(const radio_view_t *v, dl_text_t *t);
 void debuglink_view_audio(dl_text_t *t);
+void debuglink_view_keys(dl_text_t *t);
 enum {
 	DL_OP_SCAN = 20, DL_OP_SCAN_VFO = 21, DL_OP_BEEP = 22, DL_OP_TONE_BURST = 23, DL_OP_SETTING = 24,
 	DL_OP_ROAM = 26, DL_OP_VIBRATE = 29, DL_OP_VOLUME = 30, DL_OP_DMR_FIELDS = 31, DL_OP_VFO_COPY = 32,
 	DL_OP_VOICE_TEST = 33,
 	DL_OP_DTMF = 34,
 	DL_OP_TX_LIMIT = 35,
+	DL_OP_TX_DRIVE = 36,
 };
 uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *args, uint16_t len);
 // RADIO ops the dispatcher hands to debuglink_radio_feature_op: a new DL_OP_* goes here too
@@ -85,7 +88,7 @@ static inline bool debuglink_is_feature_op(uint8_t op)
 {
 	return (op >= DL_OP_SCAN && op <= DL_OP_SETTING) || op == DL_OP_ROAM || op == DL_OP_VIBRATE || op == DL_OP_VOLUME ||
 	       op == DL_OP_DMR_FIELDS || op == DL_OP_VFO_COPY || op == DL_OP_VOICE_TEST || op == DL_OP_DTMF ||
-	       op == DL_OP_TX_LIMIT;
+	       op == DL_OP_TX_LIMIT || op == DL_OP_TX_DRIVE;
 }
 // VERSION's codec= (hal_vocoder_id; the name the host tests use)
 static inline const char *debuglink_codec_id(const hal_vocoder_t *v)
@@ -159,6 +162,8 @@ size_t debuglink_cmd_chip_reg(const uint8_t *req, uint16_t len, uint8_t *out, si
 void debuglink_view_watchdog(dl_text_t *t);
 size_t debuglink_cmd_watchdog(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 void debuglink_watchdog_service(void);
+// The board's hardware options (debuglink_hwopt.c, docs/spec/debuglink.md 3.25, hal_hwopt.h): DL_CMD_HWOPT
+size_t debuglink_cmd_hwopt(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 
 // The debug link's own counters: frames answered, bad CRC, too long, timed out (debuglink.c)
 #define DL_LINK_COUNTERS	4
