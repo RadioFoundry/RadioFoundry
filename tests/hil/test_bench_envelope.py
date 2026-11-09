@@ -2,6 +2,8 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """A bench board's burst and envelope records as the DMR TX checks read them (rfoundry_hil.py, dmr_bench.check_tx), no
 radio: tools/ci.sh runs it. The board's sample count is the time base, so a UTC step inside a transmission moves nothing."""
+import pytest
+
 import dmr_bench
 import rfoundry_hil as H
 
@@ -77,3 +79,39 @@ def test_slow_ramp_fails():
 def test_cut_segment_is_not_judged():
     edges = H.SdrBench.edges_from_segments([segment(0, open_end=True), segment(1, ramp_up_ms=None), segment(2)], 5000, FS)
     assert ["on_ms" in e for e in edges] == [False, False, True]
+
+
+def test_cach_decoded_in_burst_order():
+    import dmr_cach
+    words = [dmr_cach.cach_build(0, i % 2, 0, 0x155) for i in range(2)]
+    rows = [dict(rec(i, "VLC_HDR"), sync="BS_DATA", cach=f"{w:06x}", sync_errors=1) for i, w in enumerate(words)]
+    bursts = H.SdrBench.analysis_from_bursts(rows, {})["bursts"]
+    assert [(b["cach"]["ok"], b["cach"]["tc"]) for b in bursts] == [(True, 0), (True, 1)]
+    assert bursts[0]["t"] == rows[0]["t"] and bursts[0]["sync_errors"] == 1
+
+
+def test_no_cach_on_other_bursts():
+    bursts = H.SdrBench.analysis_from_bursts([dict(rec(0, "VLC_HDR"), cach=None)], {})["bursts"]
+    assert "cach" not in bursts[0]
+
+
+def test_counts_of_each_kind():
+    sdr = H.SdrBench.analysis_from_bursts([rec(i, "VOICE_A") for i in range(3)], {})
+    assert sdr["summary"]["counts"] == {"VOICE_A": 3}
+
+
+def skipped(fn, *args):
+    """The skip fn raises (pytest's isn't an Exception)."""
+    try:
+        fn(*args)
+    except BaseException as e:
+        return e
+    raise AssertionError("no skip")
+
+
+@pytest.mark.parametrize("need", ["need_dmr_waveform", "need_bursts_cach"])
+def test_a_bench_without_a_board_skips(need):
+    bench = H.SdrBench.__new__(H.SdrBench)
+    bench.api = None
+    e = skipped(getattr(bench, need), 446.0)
+    assert e.kind == "bench" and "bench board" in str(e)

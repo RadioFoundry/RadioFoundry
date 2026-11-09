@@ -6,7 +6,7 @@ side (time sync, epoch relay, AT relay) and repeats every burst heard into the T
 
 - test_split_pair_repeat (radio_tx, bench_service: --allow-rf, --split-rx-port, --split-out-mhz): the TX half keyed on
   --split-out-mhz at its lowest power; the bench sends one group call (three superframes) on --dmr-freq, the repeater
-  input. The SDR bench captures both frequencies. Asserted: the RX half sends the call up whole under one label
+  input. The bench board decodes the bursts of both frequencies (with the CACH). Asserted: the RX half sends the call up whole under one label
   (header, voice A-F three times in order, terminator); every burst went into the TX half; the outbound carries the
   call on one slot, whole and in order, with the bench call's LC in its headers and terminator, BS sync, the CACH
   right (TC alternating) and no underrun in STATUS. The repeat delay (the first header on the input to the first on
@@ -24,7 +24,6 @@ The bench is a simplex station: its slots have no fixed phase against the outbou
 label (and the outbound slot the call lands on) is whichever half of the outbound frame the call falls in, and the
 residual is that phase. Only a subscriber synced to the outbound, as in test_split_pair_handheld, checks the labels.
 """
-import json
 import os
 import sys
 import threading
@@ -39,15 +38,6 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 
 SRC = 9990301
-
-
-def analyze(sdr_bench, cap, freq, cc):
-    """sdrmon.py analyze into its own file (FILE.json is the capture's metadata) and the capture's start time"""
-    out = f"{cap}.an.json"
-    txt = sdr_bench.ssh(f"cd ~/{sdr_bench.dir} && {sdr_bench.py} sdrmon.py analyze {cap} --freq {freq} --cc {cc} "
-                        f"--cach --json {out} > {cap}.txt 2>&1; cat {out}", timeout=600)
-    meta = sdr_bench.capture_meta(cap)
-    return json.loads(txt), meta.get("t0")
 
 
 def call_bursts(bursts):
@@ -69,11 +59,11 @@ def test_split_pair_repeat(radio, sdr_bench, pytestconfig):
         skip("not_built", "built without the split duplex extension (make CONFIG_HOTSPOT_SPLIT=y)")
     import split_duplex_host as sdh
     fin, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
-    rdir = sdr_bench.run_dir("hil_split_pair")
+    sdr_bench.need_bursts_cach(fin)
     log = []
     with sdr_bench.lease():
-        cap_in = sdr_bench.capture_start(rdir, fin, seconds=30, name="in")
-        cap_out = sdr_bench.capture_start(rdir, fout, seconds=30, name="out")
+        watch_in = sdr_bench.dmr_watch_start(None, fin, 30, cc)
+        watch_out = sdr_bench.dmr_watch_start(None, fout, 30, cc)
         with radio.released() as port:
             p = sdh.Pair(port, rx_port, repeat=True, log=log.append)
             try:
@@ -94,7 +84,8 @@ def test_split_pair_repeat(radio, sdr_bench, pytestconfig):
                 st_tx, st_rx = sdh.get_status(p.tx), sdh.get_status(p.rx)
             finally:
                 p.close()
-        sdr_bench.capture_wait()
+        sdr_in = sdr_bench.dmr_watch_result(watch_in)
+        sdr_out = sdr_bench.dmr_watch_result(watch_out)
     print("\n".join(log))
     print("TX half STATUS:", st_tx)
     print("RX half STATUS:", st_rx)
@@ -113,8 +104,6 @@ def test_split_pair_repeat(radio, sdr_bench, pytestconfig):
     ts = 1 if labels == {sdh.DMR_DATA1} else 2
 
     # Input and output off air
-    sdr_in, t0_in = analyze(sdr_bench, cap_in, fin, cc)
-    sdr_out, t0_out = analyze(sdr_bench, cap_out, fout, cc)
     inb = call_bursts(sdr_in["bursts"])
     bs = [b for b in sdr_out["bursts"] if b["family"] in ("bs", "emb")]
     ours = [b for b in bs if b["kind"] != "IDLE"]
@@ -129,17 +118,17 @@ def test_split_pair_repeat(radio, sdr_bench, pytestconfig):
     t = [b for b in ours if b["kind"] == "TERM_LC"]
     assert h and all(b["lc"] and b["lc"]["src"] == SRC and b["lc"]["dst"] == tg for b in h), h
     assert t and t[0]["lc"]["src"] == SRC, t
-    # A bit or two of the 48-bit sync may go when the TX half clips the SDR's ADC (a radio on an antenna next to it);
+    # A bit or two of the 48-bit sync may go when the TX half overloads the bench's receiver (a radio on an antenna next to it);
     # the LCs and the voice order above are the real check
     assert all(b["sync_errors"] <= 2 for b in ours), [(b["kind"], b["sync_errors"]) for b in ours if b["sync_errors"]]
     cach = [b["cach"] for b in sdr_out["bursts"] if b.get("cach")]
     ok = [c for c in cach if c.get("ok")]
-    assert len(ok) >= 0.98 * len(cach), f"CACH ok {len(ok)}/{len(cach)}"
+    assert cach and len(ok) >= 0.98 * len(cach), f"CACH ok {len(ok)}/{len(cach)}"
     assert st_tx[f"underruns{ts}"] == 0, st_tx
 
     hin = [b for b in inb if b["kind"] == "VLC_HDR"]
-    if hin and h and t0_in and t0_out:
-        delay = (t0_out + h[0]["t_ms"] / 1e3) - (t0_in + hin[0]["t_ms"] / 1e3)
+    if hin and h:
+        delay = h[0]["t"] - hin[0]["t"]         # the bursts' own UTC times, on one receive board
         print(f"repeat delay: {delay * 1e3:.0f} ms (first header in to first header out)")
         assert 0 < delay < 1.0, delay
 
@@ -211,13 +200,13 @@ def test_split_pair_handheld(radio, sdr_bench, pytestconfig, backup_dir):
 
 def handheld_call(radio, ms, sdr_bench, rx_port, fin, fout, cc, ts, own):
     import split_duplex_host as sdh
-    rdir = sdr_bench.run_dir(f"hil_split_ms_ts{ts}")
+    sdr_bench.need_bursts_cach(fin)
     log = []
     heard = []
     errs = set()
     with sdr_bench.lease():
-        cap_in = sdr_bench.capture_start(rdir, fin, seconds=24, name="in")
-        cap_out = sdr_bench.capture_start(rdir, fout, seconds=24, name="out")
+        watch_in = sdr_bench.dmr_watch_start(None, fin, 24, cc)
+        watch_out = sdr_bench.dmr_watch_start(None, fout, 24, cc)
         with radio.released() as port:
             p = sdh.Pair(port, rx_port, repeat=True, log=log.append)
             try:
@@ -247,7 +236,8 @@ def handheld_call(radio, ms, sdr_bench, rx_port, fin, fout, cc, ts, own):
                 _, after = ms.counters()
             finally:
                 p.close()
-        sdr_bench.capture_wait()
+        sdr_in = sdr_bench.dmr_watch_result(watch_in)
+        sdr_out = sdr_bench.dmr_watch_result(watch_out)
     print(f"--- TS{ts}")
     print("\n".join(log[-3:]))
     print("TX half STATUS:", st_tx)
@@ -266,8 +256,6 @@ def handheld_call(radio, ms, sdr_bench, rx_port, fin, fout, cc, ts, own):
           f"terminators {ctl.count(0x42)}, repeated {p.repeated}, residual {st_rx['residual_us']} us; "
           f"subscriber call.tx_calls +{tx_calls}, call.tx_denied +{denied}")
 
-    sdr_in, t0_in = analyze(sdr_bench, cap_in, fin, cc)
-    sdr_out, t0_out = analyze(sdr_bench, cap_out, fout, cc)
     grid = ts_of_outbound(sdr_out["bursts"])
     ours = [b for b in sdr_out["bursts"] if b["family"] in ("bs", "emb") and b["kind"] != "IDLE"]
     out_ts = {}
@@ -277,9 +265,9 @@ def handheld_call(radio, ms, sdr_bench, rx_port, fin, fout, cc, ts, own):
     hdr_out = [b for b in ours if b["kind"] == "VLC_HDR"]
     hdr_in = [b for b in sdr_in["bursts"] if b["kind"] == "VLC_HDR" and (b.get("lc") or {}).get("src") == own]
     print(f"input: {len([b for b in sdr_in['bursts'] if b['family'] in ('ms', 'emb')])} subscriber bursts; outbound: "
-          f"{len(ours)} call bursts by slot {out_ts} (grid {grid}), headers {len(hdr_out)}; captures {sdr_bench.run_path(rdir)}")
-    if hdr_in and hdr_out and t0_in and t0_out:
-        print(f"repeat delay: {((t0_out + hdr_out[0]['t_ms'] / 1e3) - (t0_in + hdr_in[0]['t_ms'] / 1e3)) * 1e3:.0f} ms")
+          f"{len(ours)} call bursts by slot {out_ts} (grid {grid}), headers {len(hdr_out)}")
+    if hdr_in and hdr_out:
+        print(f"repeat delay: {(hdr_out[0]['t'] - hdr_in[0]['t']) * 1e3:.0f} ms")
 
     assert denied == 0 and tx_calls == 1, f"subscriber call.tx_calls +{tx_calls}, call.tx_denied +{denied}"
     assert "tx_voice" in heard, f"the subscriber never reached tx_voice: {heard}, tx_error {sorted(e for e in errs if e)}"

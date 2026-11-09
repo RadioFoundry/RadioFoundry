@@ -12,9 +12,10 @@ repeatable and skips cleanly what it can't reach. What each level is for and whe
 | Coverage, sanitizers, fuzzing | the host (gcovr for coverage) | `tools/coverage.sh`, `make -C tests/host SANITIZE=1` | [docs/dev/ci.md](../dev/ci.md#coverage) |
 | Hardware in the loop, radio only | the radio on USB | `python3 -m pytest tests/hil -v -rs` | `tests/hil/README.md` |
 | Hardware in the loop, on air | the radio and the SDR bench | the same with opt-in flags | `tests/hil/README.md`, section 3 here |
-| Manual bench cases | the SDR bench, a person at the radio | `tools/bench/dmr_bench.py run CASE` | `docs/testing/dmr-bench.md` |
+| Manual bench cases | the bench board, a person at the radio | `tools/bench/bench_line.py HOST run bench_tx ARGS` | `docs/testing/dmr-bench.md` |
 | DM-32UV first hardware test | a DM-32UV on its programming cable, a dummy load | step by step | `docs/testing/dm32-bringup.md` |
 | MD-380 first hardware test | an MD-380 / MD-390 / RT3 on USB, a dummy load, an SDR or signal generator | step by step | `docs/testing/md380-bringup.md` |
+| MD-9600 first hardware test | an MD-9600 / RT90 on USB, DC supply, a dummy load, a signal source | step by step | `docs/testing/md9600-bringup.md` |
 
 ## 1. The release gate: `tools/ci.sh`
 
@@ -142,7 +143,7 @@ Each flag allows one more kind of action, and a test runs only when all it needs
 | Flag | Allows |
 |---|---|
 | `--allow-rf` | anything that transmits: the SDR bench's modem, the radio itself |
-| `--allow-service-stop` | stopping the SDR bench's gateway service (always restarted by a bench-side guard) to use its modem and RTL-SDR |
+| `--allow-service-stop` | accepted and ignored: a bench board stops nothing |
 | `--allow-usb-switch`, `--allow-codeplug-write`, `--allow-reboot` | as in section 2 (no RF) |
 
 ```
@@ -158,27 +159,23 @@ RFOUNDRY_SPLIT_VARIANT=0 python3 -m pytest tests/hil/test_split_duplex.py -v -rs
 |---|---|
 | `test_dmr_rx`, `test_dmr_voice` | the bench modem sends calls; the radio's counters show every burst, every voice frame reaches the speaker path |
 | `test_dmr_audio_smoke` | DMR audio both ways, which no counter shows: the bench's speech decodes to audio on the radio, frames not repeated; the radio's test signal reaches the air as distinct, non-silent frames that decode to audio when played back. Part of every bench pass on every radio with DMR (`tests/hil/README.md`, Default bench pass); a run without it prints `DMR AUDIO NOT CHECKED` |
-| `test_dmr_tx` | the radio keys 3 s; an SDR capture (`sdrmon.py`) and the bench modem's listener check source ID, talkgroup, color code, headers / voice / terminator, slot timing, ramps, carrier offset |
-| `test_fm_tx` | the radio's FM VFO keys with CTCSS 100.0 Hz, DCS D023N, at 12.5 and 25 kHz, the 1750 Hz burst, the roger beep, three power levels; `tools/sdr_fm_check.py` decodes the tones (`--tones`: audio tones) and compares the deviations |
-| `test_aprs` | APRS at the lowest power on the rig's amateur simplex test frequency (`--aprs-test-mhz`, never an APRS frequency, no path): position, status and message decoded off air (by the bench board itself, or by `tools/aprs_afsk_check.py` on the SDR bench host's I/Q), with the deviation, twist and TX delay (phase continuity from the I/Q only); positions over DMR (LRRP, UDT) decoded from the bench modem |
+| `test_dmr_tx` | the radio keys 3 s; the receive board's burst records and envelope and the bench modem's listener check source ID, talkgroup, color code, headers / voice / terminator, slot timing, ramps, carrier offset |
+| `test_fm_tx` | the radio's FM VFO keys with CTCSS 100.0 Hz, DCS D023N, at 12.5 and 25 kHz, the 1750 Hz burst, the roger beep, three power levels; the bench board demodulates, and the test checks its tones, sub-audio and deviations |
+| `test_aprs` | APRS at the lowest power on the rig's amateur simplex test frequency (`--aprs-test-mhz`, never an APRS frequency, no path): position, status and message decoded off air by the bench board, with the deviation, twist and TX delay; positions over DMR (LRRP, UDT) decoded from the bench modem |
 | `test_dmr_data` | the bench sends data, a text message, a call alert and radio checks to the radio, which answers (its `dmr_data` counters, the answers heard by the bench modem); the radio sends a call alert, a radio check and a text message the bench modem hears (`docs/spec/dmr-data.md`) |
 | `test_split_duplex` | a `CONFIG_HOTSPOT_SPLIT=y` build: the 0xD6 protocol (no RF); the TX half's continuous BS outbound at the lowest power checked off air with the CACH decode of the BS framing experiment (variant from `RFOUNDRY_SPLIT_VARIANT`); the RX half labeling bench calls, the label flipping with the epoch (`docs/spec/split-duplex.md` 10) |
-| `test_hotspot_voice` | the hotspot on air both ways: bench calls and data up the USB link, host calls and data heard on air |
 | `test_radio_features` (rf) | the zone scan, VFO scan and dual watch holding on a bench call; battery save waking for it |
 
 Which feature is covered on air, and what the last run found: [on-air-coverage.md](on-air-coverage.md). On this
 bench the radio overloads both receivers even at 50 mW; `tests/hil/README.md` ("On this bench") says what the tests
 do about it.
 
-The SDR bench's names come from the environment: `RFOUNDRY_SDR_BENCH_HOST` (ssh host or alias, default `sdr-bench`),
-`RFOUNDRY_SDR_BENCH_SERVICE`, `RFOUNDRY_SDR_BENCH_DIR`, `RFOUNDRY_SDR_BENCH_PY`, `RFOUNDRY_SDR_BENCH_ENV_FILE`
-(`docs/testing/dmr-bench.md` section 1).
+The bench board comes from `--bench-api HOST[:PORT]` or `RFOUNDRY_BENCH_API` (`docs/testing/dmr-bench.md` section 1).
 
 ## 4. Manual bench cases
 
-`docs/testing/dmr-bench.md`: the DMR test cases that need a person at the radio (talking, reading the display), run
-end to end by `tools/bench/dmr_bench.py` with automatic checks where possible; `--dry-run` prints every command
-first. `docs/testing/mmdvm-audit.md`: the MMDVM protocol audit of the hotspot. `docs/testing/dm32-bringup.md`: the
+`docs/testing/dmr-bench.md`: the DMR test cases that need a person at the radio (reading the display), sent as bench
+board jobs with `tools/bench/bench_line.py`. `docs/testing/mmdvm-audit.md`: the MMDVM protocol audit of the hotspot. `docs/testing/dm32-bringup.md`: the
 DM-32UV port's first test on a radio, in order, with what to change when a step fails; `docs/testing/md380-bringup.md`
 is the same for the MD-380.
 

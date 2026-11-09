@@ -74,6 +74,9 @@ FAMILIES = {
 # loads the stub through it before RadioFoundry is installed: site/static/js/flasher/usmart.js)
 STOCK_CONSOLES = ("usmart",)
 CODEC_TOOLS = ("codec_extract", "hrc7000_codec")
+# [flash.original_version] read: how the installers read the original firmware's version (rfoundry/origversion.py,
+# site/static/js/flasher/origversion.js)
+ORIGINAL_VERSION_READS = ("dfu-info",)
 RFOUNDRY_JSON = "tools/rfoundry/rfoundry/registry.json"	# the flashing tools' view, generated and committed
 # hal_flash_map_t fields (hal/hal_flash.h). The site reads the open-firmware image's data flash address, the end of the
 # room for it and the DMR ID database, and the TFTP staging area (the codeplug editor); the check reads every area, to
@@ -135,6 +138,8 @@ STR_LIST = ("list", str)
 # The HIL pass limits a board can override ([hil.limits]): name -> the check that reads it
 HIL_LIMITS = {
     "dmr_tx_ramp_ms": "a DMR TX burst's key-up and key-down ramps, each (tools/bench/dmr_bench.py check_tx)",
+    "fm_squelch_tail_ms": "the noise heard after an FM carrier ends, until the squelch closes (tests/hil/test_speaker.py "
+                          "test_fm_rx_speaker)",
 }
 HIL_LIMIT = {"value": _req(float), "reason": _req(str)}
 RANGE = ("list", int)
@@ -199,6 +204,18 @@ BOARD_SCHEMA = {
         # (rfoundry dfu.py normal_mode)
         "dfu": _opt({"vid": _req(int), "pid": _req(int), "string1": _req(str), "product": _req(str),
                      "key_sha256": _req(str), "key_prefix": _req(str), "layout": _opt(str)}),
+        # a hardware option the radio can't detect, settled by the version its original firmware reports before the
+        # install (rfoundry/origversion.py; docs/dev/board-registry.md "Original firmware version"): how the version is
+        # read, the option's name (hal_hwopt_t) and its choice for each major version
+        # interface: the DFU interface string that marks the original firmware running (not the bootloader)
+        "original_version": _opt({"read": _req(ORIGINAL_VERSION_READS), "interface": _req(str), "hwopt": _req(str),
+                                  "major": _req(("map", str))}),
+        # a backup before the install through the original firmware's or the bootloader's DFU device
+        # (site/static/js/flasher/origbackup.js; docs/dev/board-registry.md "Backup before the install"): the info blocks
+        # (A2 ss, two hex digits), the most of the internal flash mirror to ask for, the SPI bytes the original firmware
+        # reads (spi) and the quick read's (quick), the bootloader's interface string and the SPI bytes it reads
+        "original_backup": _opt({"info": _req(STR_LIST), "mirror": _req(int), "spi": _req(int), "quick": _req(int),
+                                 "loader_interface": _req(str), "loader_spi": _req(int)}),
         # flash no tool may erase or write (PROTECT_MEMS): the factory calibration and other factory data that can't
         # be made again. start and end (exclusive) are offsets in the memory, on its erase boundaries; what says
         # what it is and where the spec says so (docs/dev/board-registry.md, "Protected regions")
@@ -1190,8 +1207,8 @@ def check(root=ROOT):
         if cst is not None:
             if not cst or len(set(cst)) != len(cst):
                 bad("codec.stock lists each stock file once, at least one")
-            if any(not re.fullmatch(r"[0-9a-f]{64}", h) for h in cst):
-                bad("codec.stock entries are SHA-256 digests (64 lowercase hex digits)")
+            if any(not re.fullmatch(r"[0-9a-f]{64}(@[a-z0-9]+)?", h) for h in cst):
+                bad("codec.stock entries are SHA-256 digests (64 lowercase hex digits; '@board' after a file placed differently on that board)")
             for k in ("profile", "sources"):
                 if k in d["codec"]:
                     bad("codec.%s comes from the stock files' profiles when codec.stock is set" % k)
@@ -1212,6 +1229,29 @@ def check(root=ROOT):
         if "dfu" in fl and (not re.fullmatch(r"[0-9a-f]{64}", fl["dfu"]["key_sha256"])
                             or not re.fullmatch(r"[0-9A-F]{8}", fl["dfu"]["key_prefix"])):
             bad("flash.dfu key_sha256 is 64 lower-case hex digits, key_prefix 8 upper-case")
+        ov = fl.get("original_version")
+        if ov is not None:
+            if "dfu" not in fl:
+                bad("flash.original_version read %s talks to the DFU device: it needs [flash.dfu]" % ov["read"])
+            if not ov["major"] or any(not re.fullmatch(r"[0-9]{2}", m) for m in ov["major"]):
+                bad('flash.original_version major is a table of two-digit major versions ("06" = "<choice>")')
+            # the option and its choices are the board's hal_hwopt_t labels, as the debug link lists them
+            text = "".join(t for _, t in _c_sources(os.path.join(root, "boards", bid)))
+            for label in [ov["hwopt"]] + sorted(set(ov["major"].values())):
+                if '"%s"' % label not in text:
+                    bad("flash.original_version: %r is no hardware option or choice in boards/%s/*.c" % (label, bid))
+        ob = fl.get("original_backup")
+        if ob is not None:
+            if ov is None:
+                bad("flash.original_backup tells the devices apart by [flash.original_version] interface: it needs it")
+            if not ob["info"] or any(not re.fullmatch(r"[0-9A-F]{2}", c, re.I) for c in ob["info"]):
+                bad("flash.original_backup info lists two-digit hex block codes")
+            if not 0 < ob["mirror"] <= 0xFFFF:
+                bad("flash.original_backup mirror is one control transfer: 1..0xFFFF")
+            if ob["spi"] % 1024 or ob["quick"] % 1024 or ob["loader_spi"] % 1024 or not 0 < ob["quick"] <= ob["spi"]:
+                bad("flash.original_backup spi, quick and loader_spi are whole 1 KB blocks, quick at most spi")
+            if ob["spi"] > fl["backup"]["spi_size"]:
+                bad("flash.original_backup spi is more than the board's SPI flash (backup.spi_size)")
         stub = fl.get("stub")
         bs = b.platform.data.get("board_stub")
         if stub is not None:
@@ -1350,6 +1390,10 @@ def rfoundry_view(boards):
             "dfu_ids": [dfu["vid"], dfu["pid"]] if dfu else None,
             "dfu_string1": dfu["string1"] if dfu else None, "dfu_product": dfu["product"] if dfu else None,
             "dfu_layout": dfu.get("layout") if dfu else None,
+            # a hardware option the original firmware's version settles (rfoundry/origversion.py), or None
+            "original_version": fl.get("original_version"),
+            # the backup before the install (origbackup.js), or None
+            "original_backup": fl.get("original_backup"),
             "stub": b.stub(),
             "build_options": d.get("build_options", []),		# rfoundry asks with the same words as the site
             # the radio types another open firmware's CPS radio info reports for this radio (board.toml [cps])

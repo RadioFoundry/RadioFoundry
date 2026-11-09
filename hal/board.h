@@ -23,6 +23,7 @@
 #include "hal_bcast.h"
 #include "hal_afsk.h"
 #include "hal_rx2.h"
+#include "hal_hwopt.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -50,6 +51,12 @@ enum {
 	CAP_BEEP_NOT_ON_AIR = 1u << 8,
 };
 
+// One band's power level names, where a board's levels give different powers per band (board_t.power_bands)
+typedef struct {
+	uint32_t lo_hz, hi_hz;		// the transmit frequencies it covers
+	const char *const *names;	// power_count labels, lowest first
+} board_power_band_t;
+
 typedef struct {
 	const char *name;
 	uint32_t caps;
@@ -57,6 +64,11 @@ typedef struct {
 	uint8_t band_count;
 	uint8_t power_count;
 	const char *const *power_names;	// short labels for the status line, power_count entries
+	// Optional: the labels per band, where a level's power differs between bands (a top level of 45 W on one band and
+	// 50 W on the other). Each band has power_count levels, so a stored level is the same step on every band. A
+	// frequency in no entry gets power_names. Read through board_power_name()
+	const board_power_band_t *power_bands;
+	uint8_t power_band_count;
 	uint8_t power_default;
 	const hal_display_t *display;
 	const hal_input_t *input;
@@ -69,6 +81,10 @@ typedef struct {
 	const uint8_t *side_keys;
 	const char *const *side_key_names;
 	uint8_t side_key_count;
+	// Optional: what the screen hints call the keys that send QUICK and CONTEXT on a radio without * and # keys
+	// ("P1", "P2"; docs/spec/ui.md 1); NULL: "*" and "#"
+	const char *quick_label;
+	const char *context_label;
 	const hal_radio_t *radio;
 	const hal_power_t *power;
 	const hal_flash_t *flash;
@@ -80,6 +96,9 @@ typedef struct {
 	bool (*diag_line)(uint8_t i, char *buf, uint8_t len);
 	// Optional: zero the counters behind diag_line (the debug link's RESET_COUNTERS)
 	void (*diag_reset)(void);
+	// Optional: line i of the board's own debug link view keys as "key=value" (the debug link's `board` section adds
+	// the "board." prefix; the keys are listed in the radio's hardware spec); false past the last line
+	bool (*view_line)(uint8_t i, char *buf, uint8_t len);
 	// Optional: chip identity, raw memory reads, reboot modes (hal_system.h)
 	const hal_system_t *system;
 	// Battery warnings (the radio core's battery monitor): below battery_low_mv the radio warns, below
@@ -111,6 +130,11 @@ typedef struct {
 	// Writes val when write, then sets *val to the register as read back (a write-only register: the value written).
 	// False for a chip, page or register it doesn't offer. NULL: none
 	bool (*chip_reg)(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
+
+	// Optional: hardware options a person states because software can't read them (hal_hwopt.h): Settings >
+	// Advanced > Hardware and the debug link's HWOPT. NULL / 0 = none
+	const hal_hwopt_t *hwopts;
+	uint8_t hwopt_count;
 } board_t;
 
 extern const board_t board;
@@ -158,6 +182,21 @@ static inline int board_tx_band(uint32_t hz)
 
 // A repeater offset carries to a new RX frequency only within one transmit band: RX before and after and the TX it
 // gives all in it (a UHF offset means nothing on VHF, even where TX would land in a band)
+// A power level's label at a transmit frequency (power_bands, else power_names); "?" for no such level
+static inline const char *board_power_name(uint8_t level, uint32_t tx_hz)
+{
+	if (level >= board.power_count) {
+		return "?";
+	}
+	for (uint8_t i = 0; i < board.power_band_count; i++) {
+		const board_power_band_t *b = &board.power_bands[i];
+		if (tx_hz >= b->lo_hz && tx_hz <= b->hi_hz) {
+			return b->names[level];
+		}
+	}
+	return board.power_names != NULL ? board.power_names[level] : "?";
+}
+
 static inline bool board_offset_carries(uint32_t old_rx, uint32_t new_rx, uint32_t new_tx)
 {
 	int band = board_tx_band(new_rx);

@@ -156,6 +156,39 @@ added only once it was read on a radio in its bootloader. The flashers then acce
 refuse a layout that shows only the bootloader's sectors (from 0x08000000, at most 48 KB): that is the radio's own
 firmware switched on normally, which has the bootloader's IDs and strings but whose erase can reach the bootloader.
 
+#### Original firmware version
+
+`[flash.original_version]` (optional): a hardware option (`board_t.hwopts`, [debuglink.md](../spec/debuglink.md#325-hwopt))
+that RadioFoundry can't detect but that the version of the radio's original firmware settles, such as a board revision
+when the manufacturer ships one firmware line per revision. The installers read that version before they ask for the
+bootloader, and store the choice over the debug link once RadioFoundry runs (rfoundry's `origversion.py`, the web
+flasher's `origversion.js`; [web-flasher.md](web-flasher.md#the-original-firmware-version)).
+
+| Key | Meaning |
+|---|---|
+| `read` | How the version is read. `dfu-info`: the original firmware, running normally, is a DFU device with the bootloader's USB IDs (`[flash.dfu]` required); block 0 command `A2 02`, then UPLOAD, answers the version (first byte 0x56; the bootloader answers 0x54). The request sequence is in the radio's hardware page |
+| `interface` | The DFU interface string the original firmware shows while it runs (spaces not counted). The installers send the read only to a device showing it, and refuse to write to one |
+| `hwopt` | The option's name, as `hal_hwopt_t` names it |
+| `major` | The choice for each major version: `{ "06" = "<choice>", ... }`, two digits each, every choice one of the option's labels |
+
+`tools/boards.py check` refuses a choice or option name that doesn't appear in the board's sources. A version whose
+major isn't listed settles nothing: the radio then uses its own fallback.
+
+#### Backup before the install
+
+`[flash.original_backup]` (optional, with `[flash.original_version]`): what the web flasher backs up through the
+original firmware's or the bootloader's DFU device before an install (`origbackup.js`,
+[web-flasher.md](web-flasher.md#backup-before-the-install)). The commands are in the radio's hardware page.
+
+| Key | Meaning |
+|---|---|
+| `info` | The info block codes (`A2 ss`), two hex digits each, in the order read |
+| `mirror` | The most to ask for in the one snapshot of the internal flash from the start of flash, before program mode (at most 0xFFFF) |
+| `spi` | The SPI bytes the original firmware reads in program mode (at most `backup.spi_size`) |
+| `quick` | The SPI bytes of the quick read (the codeplug areas) |
+| `loader_interface` | The bootloader's DFU interface string (spaces not counted), which tells it from the original firmware |
+| `loader_spi` | The SPI bytes the bootloader reads |
+
 `[flash.stub]` (a board on a platform with `board_stub`): `id` (the board id the stub echoes, unique per stub; 0xFE is reserved for the stub tools' test profiles) and
 `tested` (flashed through the stub on a radio), then the keys the platform's `board_stub` names:
 

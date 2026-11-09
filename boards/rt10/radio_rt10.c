@@ -80,7 +80,7 @@ static const rfbus_regval_t rt10_analog[] = {
 	{ 0x1C, 0x076F }, { 0x1D, 0xB9FD }, { 0x27, 0x18DA }, { FD6818SH_REG_PAGE, 0 },
 };
 // 902-928 MHz is one band, the chip's above 600 MHz: 0x1A and 0x40 as the original firmware's band select writes them.
-// A band word from the chip's lower bands leaves the receiver deaf (hardware-rt10.md 7, gotchas.md 3.16)
+// A band word from the chip's lower bands leaves the receiver deaf (hardware-rt10.md 7, gotchas.md 3.17)
 static const uint16_t rt10_band_edge[] = { 1120 };
 static const uint16_t rt10_band_word[] = { 0x1F80 };
 static const uint8_t rt10_dev_high[] = { 0x3A };

@@ -211,26 +211,29 @@ for f in sys.argv[1:]:
 		head -20 "$OUT/hil-skips.log"
 		bad "HIL skips without a kind (see $OUT/hil-skips.log)"
 	fi
-	# the speaker tests' analysis on synthetic recordings, the bench board's APRS records parsed (no radio, needs numpy)
+	# the speaker tests' and the carrier floor analysis on synthetic data, the bench board's APRS and FM records
+	# parsed, the ID database encoders against iddb_read.py (no radio, needs numpy)
 	if python3 -c 'import pytest, numpy' 2>/dev/null; then
-		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_audio_check.py tests/hil/test_aprs_board.py \
+		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_audio_check.py tests/hil/test_sdrmon_floor.py \
+			tests/hil/test_aprs_board.py tests/hil/test_fm_measure.py tests/hil/test_iddb_write.py \
 			> "$OUT/hil-audio-check.log" 2>&1; then
-			ok "HIL speaker and APRS record tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-audio-check.log"))"
+			ok "HIL speaker, SDR floor, APRS, FM record and ID database tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-audio-check.log"))"
 		else
 			tail -20 "$OUT/hil-audio-check.log"
-			bad "HIL speaker and APRS record tests (see $OUT/hil-audio-check.log)"
+			bad "HIL speaker, SDR floor, APRS, FM record and ID database tests (see $OUT/hil-audio-check.log)"
 		fi
 	else
-		skip "HIL speaker and APRS record tests: pytest or numpy not installed"
+		skip "HIL speaker, SDR floor, APRS, FM record and ID database tests: pytest or numpy not installed"
 	fi
 	if python3 -c 'import pytest' 2>/dev/null; then
-		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_skip_kinds.py tests/hil/test_radio_reconnect.py tests/hil/test_bench_envelope.py \
+		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_skip_kinds.py tests/hil/test_radio_reconnect.py tests/hil/test_bench_line.py \
+			tests/hil/test_bench_envelope.py \
 			tests/hil/test_tx_guard.py \
 			> "$OUT/hil-skip-test.log" 2>&1; then
-			ok "HIL skip, reconnect and TX guard helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
+			ok "HIL skip, reconnect, TX guard and bench line helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
 		else
 			tail -20 "$OUT/hil-skip-test.log"
-			bad "HIL skip, reconnect and TX guard helper tests (see $OUT/hil-skip-test.log)"
+			bad "HIL skip, reconnect, TX guard and bench line helper tests (see $OUT/hil-skip-test.log)"
 		fi
 	fi
 	# the feature checklist (tests/hil/README.md, "Bring-up mode"): tools/bringup.py check, and the bring-up
