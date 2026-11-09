@@ -72,11 +72,16 @@ stations go into **Stations heard**, messages to your callsign are kept and ackn
 turned it on) passes packets on.
 
 - It listens only on the APRS frequency, in FM, and the tuned frequency must equal the APRS **Frequency** exactly.
-  On other channels nothing is decoded.
+  On other FM channels nothing is decoded.
 - The volume knob doesn't matter: a radio turned all the way down still decodes.
 - On a radio that decodes only what opens the squelch ([Radio reference](23-radios.md)), a packet must be strong enough to open it. Keep the squelch at its usual level, not tight.
 - Battery saving pauses while the radio listens for APRS: a sleeping receiver misses packets.
-- Receiving is on by default. Turn it off with `tools/rfoundry_debug.py aprs set rx 0`.
+- Receiving is on by default. Turn it off with `tools/rfoundry_debug.py aprs set rx 0` (FM only).
+
+On a DMR channel, a DMR APRS position another radio sends (some makes send it as an NMEA position) also goes into
+**Stations heard**, whoever it is addressed to: usually the APRS gateway, as on FM every station heard is listed. It
+is listed under the sender's callsign when its DMR ID is in the radio's DMR ID database, else under the DMR ID. This
+works whatever the receive setting. **Stations heard** shows the station and when it was heard, not its position.
 
 ## Triggers
 

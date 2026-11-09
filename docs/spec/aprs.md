@@ -253,6 +253,29 @@ gateway expects for unsolicited reports is unverified: an open decision, checked
 BrandMeister maps the ID to an SSID and icon (5050-5059); the APRS settings on BrandMeister's self care page set the
 comment.
 
+### 8.2 Positions heard over DMR
+
+Some radios of other makes send their DMR APRS position as an NMEA sentence over UDP port 10110 (compressed UDP/IP
+header, SAP 3), as a private data call or to a talkgroup, usually to the APRS gateway's ID (BrandMeister's <MCC>999,
+e.g. 310999). As on FM, where every station heard goes into the list, the data service hands each one heard on the
+channel to the radio core whoever it is addressed to (only control station passthrough, our own repeated back and a
+compressed header for a host behind the radio, DAID 1, are left out; `dmr-data.md` 3; the stock radio sends DAID 0).
+The core parses it with `nmea_parse_unchecked` and puts a position with a fix into the station list through
+`aprs_dmr_heard`, as a caller's GPS Info. The packet has no callsign and a data call no talker alias, so the station
+is named by the DMR ID database (`dmr_iddb_lookup`: its callsign, the record's first word) when the ID is in it,
+else by the DMR ID. BrandMeister names the same report on APRS-IS by the callsign registered for the ID, with the
+SSID set in SelfCare; no SSID is made up here. What one stock radio sent on air:
+`$GPRMC,...,3000.0000,N,8700.0000\0,W,...,A` with no `*hh` checksum, a NUL before `,W`, a NUL from the pad after the
+sentence, and the longitude with 4 integer digits. The checksum is optional here (the packet's CRC-32 covered it,
+but one that is given is checked), NULs are skipped, and the coordinates are read as numbers, so 8700.0000 is 87
+degrees (anything past 90 / 180 degrees, or an integer part too long to scale, is refused, as in `nmea_parse`). Time
+and date are not used. Like a caller's GPS Info, it does not depend on the APRS receive setting (`rx_on`, which is
+the FM decoder's). Host tests: `aprsTest` (`test_nmea_unchecked`: input classes, the 90 / 180 degree, 60 minute,
+32-bit and length edges, a seeded fuzz and a metamorphic check against the strict parse), `dmrDataServiceTest`
+(`testNmeaPosition`: the packet heard on air rebuilt with placeholder IDs, its blocks and CRC-32 matching the ones
+heard; the packet classes, ports and payload lengths) and `radioCoreTestAprs` (`test_dmr_aprs_position`: through the
+radio core into the station list).
+
 ## 9. Host port: KISS TNC
 
 With Tools > APRS > KISS on USB, the host link claims KISS frames (0xC0) and `$` lines on the USB serial port (and on
