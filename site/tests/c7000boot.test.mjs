@@ -15,7 +15,7 @@ import { Stub, StubError, stubImages, ROM_FLAG, romFlagSector } from "../static/
 import { Link, probe } from "../static/js/flasher/link.js";
 import * as c7 from "../static/js/flasher/c7000.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options, STOCK_ENTRY } from "../static/js/flasher/fakec7000.js";
-import { installWrite, restoreWrite, romEntry, stubFor } from "../static/js/flasher/c7000ui.js";
+import { installWrite, restoreWrite, romEntry, startState, stubFor } from "../static/js/flasher/c7000ui.js";
 
 const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
@@ -96,8 +96,13 @@ for (const id of DIRECT) {
 		assert.equal(order.at(-1), 0, "the flag sector is the last written");
 		assert.equal(states.get(0), "written");
 		assert.equal(res.written, order.length);
-		const again = await installWrite(s, sim.c, id, start, data);
+		const seen = new Map();
+		const again = await installWrite(s, sim.c, id, start, data, (a, st) => seen.set(a, st));
 		assert.equal(again.written, 0, "the same install again writes nothing, the flag included");
+		assert.equal(seen.get(0), "same", "the map shows the flag sector unchanged, not still to write");
+		assert.equal(startState(C, id, 0), "todo", "the flag sector is written, so it isn't drawn as never written");
+		assert.equal(startState(C, id, C.sector), "boot");
+		assert.equal(startState(C, id, C.app_start), "");
 		await s.resetChip();
 		await sleep(1500);
 		assert.equal(r.firmware(), "rfoundry", "the boot ROM now starts RadioFoundry");

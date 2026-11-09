@@ -81,6 +81,8 @@ const progSize = () => c7.totalSize(C(), boardId());
 const viaIap = () => session().how === "iap";
 // What the radio's screen shows while the stub runs: RadioFoundry's loader screen, whatever the original firmware last drew, or
 // nothing after a boot ROM load
+// A radio without a display: what the page tells the user to look at can't be its screen
+const noScreen = () => S().radio?.display === "none";
 const screenNow = () => ({ rfoundry: "loader", usmart: "any" })[session().how] || "off";
 
 export function init(context) {
@@ -345,7 +347,7 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 	const fromRFoundry = async (offer) => {
 		const prog = progressBar();
 		show({ led: "off", screen: "rfoundry" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.connect.rfoundry_found", { git: c.rfoundry.git }))),
-			h("p", {}, t("flash.c7.connect.rfoundry_loading")), prog.el);
+			h("p", {}, t(noScreen() ? "flash.c7.connect.rfoundry_loading_noscreen" : "flash.c7.connect.rfoundry_loading")), prog.el);
 		try {
 			const stub = mkStub();
 			await stub.enterFromRFoundry(await boardStub(), (d, n) => prog.set(d, n, t("flash.c7.connect.loader")));
@@ -413,7 +415,7 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 			h("ol", { class: "steps c7-big" },
 				on ? h("li", {}, t("flash.c7.connect.step_off")) : null,
 				h("li", {}, t("flash.c7.connect.step_on"))),
-			h("p", {}, t(S().radio?.display === "none" ? "flash.c7.connect.no_keys_dark" : "flash.c7.connect.no_keys")), simPower(), h("p", { class: "small" }, clock), hints, slowNote());
+			h("p", {}, t(noScreen() ? "flash.c7.connect.no_keys_dark" : "flash.c7.connect.no_keys")), simPower(), h("p", { class: "small" }, clock), hints, slowNote());
 		act(button(t("flash.c7.connect.cancel"), () => { ac.abort(); clearInterval(tick); cableStep(); }, { quiet: true }));
 		const stub = mkStub();
 		try {
@@ -470,7 +472,7 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 
 	// The radio was reset out of loader mode: the visit ends here, not at the task's connect step again
 	const restarted = () => {
-		show({ led: "off", screen: c.rfoundry ? "rfoundry" : "any", knob: "cycle" }, notice(t("flash.c7.restart.done"), "ok"), h("p", {}, t("flash.c7.restart.wait")));
+		show({ led: "off", screen: c.rfoundry ? "rfoundry" : "any", knob: "cycle" }, notice(t("flash.c7.restart.done"), "ok"), h("p", {}, t(noScreen() ? "flash.c7.restart.wait_noscreen" : "flash.c7.restart.wait")));
 		act(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
 	};
 	// the actions go first: a second click, or Continue, would reach a radio that is already restarting
@@ -506,7 +508,7 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 			show({ led: "wait", screen }, h("p", { class: "c7-big" }, h("b", {}, how)),
 				h("dl", { class: "kv-list" },
 					h("dt", {}, t("flash.c7.radio")), h("dd", {}, c.model ? S().radio.name : t("flash.c7.radio_unconfirmed"))),
-				h("p", {}, t({ rfoundry: "flash.c7.connect.led_rfoundry", usmart: "flash.usmart.led" }[c.how] || "flash.c7.connect.led_rom")));
+				h("p", {}, t(noScreen() && c.how !== "usmart" ? "flash.c7.connect.led_rom_noscreen" : { rfoundry: "flash.c7.connect.led_rfoundry", usmart: "flash.usmart.led" }[c.how] || "flash.c7.connect.led_rom")));
 			if (restart) {
 				await sleep(S().fakeC7 ? 400 : 1500);
 				if (gone()) return;
@@ -998,23 +1000,27 @@ function fwName(c) {
 }
 
 function retryHelp() {
-	return h("div", { class: "notice info" }, h("p", {}, t("flash.c7.retry_safe")),
+	return h("div", { class: "notice info" }, h("p", {}, t(romEntry(C(), boardId()) === null ? "flash.c7.retry_safe" : "flash.c7.retry_safe_rom")),
 		h("p", { class: "small" }, t("flash.c7.retry_how")));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
 // write
 
-// The program memory as a grid of 4 KB sectors: the bootloader (never written), unchanged, to write, written
+// What a sector's square shows before the write. Below the application: the bootloader, never written; on a board
+// the boot ROM starts directly there is none, so the flag sector is to write (last) and the rest is unused space
+export const startState = (c, board, addr) => addr >= c.app_start ? "" : addr === 0 && romEntry(c, board) !== null ? "todo" : "boot";
+
+// The program memory as a grid of 4 KB sectors: not written, unchanged, to write, written
 function sectorMap(c) {
 	const n = c.progmem_size / c.sector;
-	const cells = Array.from({ length: n }, (_, i) => h("span", { "data-s": i * c.sector < c.app_start ? "boot" : "" }));
+	const cells = Array.from({ length: n }, (_, i) => h("span", { "data-s": startState(c, boardId(), i * c.sector) }));
 	const slot0 = c.boards[boardId()].slot[0] / c.sector;
 	for (let i = slot0; i < n; i++) cells[i].classList.add("slot");
 	const legend = (s, label) => h("li", {}, h("span", { class: "c7-map" }, h("span", { "data-s": s })), label);
 	return {
 		el: h("div", {}, h("div", { class: "c7-map", role: "img", "aria-label": t("flash.c7.write.map_label") }, cells),
-			h("ul", { class: "c7-legend" }, legend("boot", t("flash.c7.write.map_boot")), legend("same", t("flash.c7.write.map_same")),
+			h("ul", { class: "c7-legend" }, legend("boot", t(romEntry(c, boardId()) === null ? "flash.c7.write.map_boot" : "flash.c7.write.map_unused")), legend("same", t("flash.c7.write.map_same")),
 				legend("todo", t("flash.c7.write.map_todo")), legend("written", t("flash.c7.write.map_written")),
 				h("li", {}, t("flash.c7.write.map_slot", { addr: hex(C().progmem_base + c.boards[boardId()].slot[0]) })))),
 		set(addr, state) { cells[addr / c.sector].dataset.s = state; },
@@ -1062,7 +1068,11 @@ async function guardedWrite(stub, c, board, write) {
 // as any other sector written (0 todo, then written)
 async function romFlagLast(stub, c, board, res, written, onSector, opts) {
 	const entry = romEntry(c, board);
-	if (entry === null || !(await stub.writeRomFlag(entry, opts))) return res;
+	if (entry === null) return res;
+	if (!(await stub.writeRomFlag(entry, opts))) {
+		onSector(0, "same");
+		return res;
+	}
 	written(0);
 	onSector(0, "todo");
 	onSector(0, "written");
@@ -1241,7 +1251,7 @@ export function doneView() {
 		if (!p) {
 			diag.note("verify: no answer", { tries });
 			top.set({ led: "off", screen: "rfoundry", knob: "cycle" });
-			fill(status, notice(t("flash.c7.done.no_answer"), tries > 1 ? "bad" : ""),
+			fill(status, notice(t(noScreen() ? "flash.c7.done.no_answer_noscreen" : "flash.c7.done.no_answer"), tries > 1 ? "bad" : ""),
 				S().fakeC7 ? h("div", { class: "actions" }, button(t("flash.sim.c7_off"), () => S().fakeC7.powerOff()),
 					button(t("flash.sim.c7_on"), () => S().fakeC7.powerOn())) : null,
 				tries > 1 ? ctx.helpLink() : null, tries > 1 ? reportLine() : null);

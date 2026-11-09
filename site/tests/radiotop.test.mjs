@@ -57,6 +57,8 @@ test("a radio without a display gets no screen line", () => {
 	assert.match(top, /const url = noScreen \? null : screenShot\(radio, sc\);/);
 	assert.match(top, /sc === "any" \|\| noScreen \? null : t\(`flash\.c7\.visual\.screen_\$\{sc\}`\)/);
 	const ui = readFileSync(new URL("../static/js/flasher/c7000ui.js", import.meta.url), "utf8");
-	assert.match(ui, /S\(\)\.radio\?\.display === "none" \? "flash\.c7\.connect\.no_keys_dark" : "flash\.c7\.connect\.no_keys"/);
+	assert.match(ui, /const noScreen = \(\) => S\(\)\.radio\?\.display === "none";/);
+	assert.match(ui, /noScreen\(\) \? "flash\.c7\.connect\.no_keys_dark" : "flash\.c7\.connect\.no_keys"/);
+	for (const [k, v] of Object.entries(en)) if (k.includes("_noscreen")) assert.ok(!/screen|display/i.test(v), `${k} names a screen`);
 	assert.ok(en["flash.c7.connect.no_keys_dark"] && !/screen/i.test(en["flash.c7.connect.no_keys_dark"]));
 });
