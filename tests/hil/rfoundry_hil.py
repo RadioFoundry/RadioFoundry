@@ -640,7 +640,7 @@ class Radio:
             self._hwopts_start = []
 
     def hwopts_back(self):
-        """Set back a hardware option a restart reset: one that holds for a power cycle only (the MD-9600's transmit
+        """Set back a hardware option a restart reset: one that holds for a power cycle only (a bring-up transmit
         arm) is lost when a test restarts the radio, and every later test would then fail as if the firmware did. An
         option that needs a restart to apply is left alone: a restart doesn't change a stored one."""
         start = getattr(self, "_hwopts_start", [])
