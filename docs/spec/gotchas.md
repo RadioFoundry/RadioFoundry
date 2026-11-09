@@ -807,7 +807,11 @@ didn't lift it, and a full SoC reset by the watchdog didn't release it. PPP isn'
 back to back, without waiting for the answers, did it within 15 ms. Request and answer in turn (the debug link, CPS)
 never did. Rule: on such a radio a host port write waits until the line has been quiet for a few milliseconds
 (`HRC_HOST_TX_IDLE_MS`, `platform/hrc7000/uart_idle.h`), and PPP, whose host sends at any time, stays off. The wait
-can't stop a host that starts sending during the radio's answer; MMDVM and KISS hosts do that too, unchecked. Don't
+can't stop a host that starts sending during the radio's answer; MMDVM and KISS hosts do that too, unchecked. A latched
+line reads as a held PTT, and a chip reset would start a new press, so a press on the shared line needs the pin to have
+read high since start-up and since the last good byte, and not to have gone low within 20 ms of the radio's own serial
+send (`drivers/input/sharedptt`). The start-up key guard can't catch it: the first scan reports nothing during the
+20 ms hold. A line that stays low that way for 2 s flashes the LEDs red and green fast until a power cycle. Don't
 reproduce it more than needed: a latch-up draws current. Radios: one confirmed.
 
 ## 17. Scan

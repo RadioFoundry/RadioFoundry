@@ -678,6 +678,10 @@ changes nothing.
 Two, **L** and **H**: the radio's own factory calibration for each 10 MHz step. Without a valid calibration the
 radio refuses to transmit.
 
+### If the RT10's LEDs flash red and green fast
+
+The cable line is stuck low. The radio won't transmit until the line is released: switch the radio off and on again. Holding PTT for more than 2 s while the radio starts shows the same flash until the key is let go.
+
 ### What the RT10 lacks today
 
 - The network over the programming cable (PPP) and the services on it. The cable's line latches when the computer

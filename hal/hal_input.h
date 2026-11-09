@@ -89,6 +89,9 @@ typedef struct {
 	// channel by where it points: 0-based, -1 while it hasn't settled. The core selects that position in the zone
 	// (docs/spec/ui.md 3). NULL: the knob, if any, steps through the channels (encoder)
 	int8_t (*position)(void);
+	// The PTT line is stuck low and only a power cycle can release it (docs/spec/gotchas.md 16.5). The core flashes the
+	// LEDs to ask for one. NULL: the board can't tell
+	bool (*ptt_line_stuck)(void);
 } hal_input_t;
 
 #endif

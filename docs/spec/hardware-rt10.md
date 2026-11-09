@@ -99,7 +99,8 @@ switched off ([gotchas.md](gotchas.md) 16.5):
 
 RadioFoundry: a host port write waits for 2 ms with no received character first (`HRC_HOST_TX_IDLE_MS` in
 `boards/rt10/board.mk`), and PPP is off (`boards/rt10/config.mk`). The MMDVM hotspot and KISS hosts also send at
-any time; unchecked.
+any time; unchecked. A latched line doesn't count as PTT, and the LEDs flash red and green fast to ask for a power cycle
+([gotchas.md](gotchas.md) 16.5). This is checked in the host tests, not on a latched radio.
 
 ## 4. Data flash (2 MB, SPI0)
 

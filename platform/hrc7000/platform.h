@@ -369,6 +369,8 @@ uint32_t hrc_host_uart_line_errors(void);	// characters the UART flagged (its FI
 // When the last byte without a line error arrived (hal_millis()); false if none has yet. A board whose PTT shares the
 // serial line (drivers/input/sharedptt) reads it to tell host data from a press
 bool hrc_host_uart_last_rx(uint32_t *ms);
+// When the radio last sent on the host port (hal_millis()); false if it hasn't. For the same boards: gotchas.md 16.5
+bool hrc_host_uart_last_tx(uint32_t *ms);
 // Host port traffic for the diagnostics page: when the host link stops answering, these tell a dead receiver (rx
 // stops), a stuck transmitter (tx_stalls) and a stuck host link task (waits stops) apart
 typedef struct {
