@@ -230,7 +230,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `REF_TRIM` | ● | ● | ● | ● | ● | ● | ● | ● | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● | ● | ● | ● |
 | `VIBRATE` | ? | ✕ | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
-| `BT_PTT` | ? | ✕ | ✕ | ? | ✕ | ✕ | ○ | ● | ● |
+| `BT_PTT` | ? | ✕ | ✕ | ? | ✕ | ✕ | ? | ● | ● |
 | `GPS` | ● | ● | ✕ | ● | ● | ● | ● | ● | ● |
 | `AUDIO_PROBE` | … | ○ | … | … | … | ○ | ○ | … | … |
 | `STUB_ENTRY` | ● | ● | ● | ● | ● | ● | ● | ● | ● |
