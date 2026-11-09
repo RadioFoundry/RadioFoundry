@@ -36,6 +36,7 @@
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"	// dmr_sms_format_t
+#include "aprs/aprs_nmea.h"	// DMR APRS positions heard (data_position)
 #endif
 #if CONFIG_DMR_EMERGENCY
 #include "dmr/dmr_emergency.h"
@@ -1904,6 +1905,24 @@ static bool data_channel_clear(uint32_t now_ms, void *ctx)
 	return dmr_call_channel_clear(now_ms);
 }
 
+#if CONFIG_APRS_RX
+// A DMR APRS position (an NMEA sentence on UDP 10110, docs/spec/aprs.md 8.2) into the station list, as a GPS Info is
+static void data_position(uint32_t src, const uint8_t *nmea, int length, uint32_t now_ms, void *ctx)
+{
+	nmea_fix_t f;
+	(void)ctx;
+	if (nmea_parse_unchecked(nmea, (size_t)length, &f) && f.fix) {
+		// No talker alias in a data call: the ID database's "callsign name ..." in its place (aprs_dmr_heard takes
+		// the first word when it is a callsign, else the DMR ID)
+		char text[DMR_IDDB_TEXT_MAX + 1] = "";
+		if (!dmr_iddb_lookup(src, text, sizeof(text))) {
+			text[0] = '\0';
+		}
+		aprs_dmr_heard(src, text, f.lat, f.lon, now_ms);
+	}
+}
+#endif
+
 static bool data_in_rx_group(uint32_t tg, void *ctx)
 {
 	const radio_sm_t *sm = ctx;
@@ -2028,6 +2047,9 @@ static void data_init(radio_sm_t *sm)
 			     .inRxGroup = data_in_rx_group, .ctx = sm };
 #if CONFIG_DMR_AIR_QUEUE
 	airqInit();
+#endif
+#if CONFIG_APRS_RX
+	env.position = data_position;
 #endif
 #if CONFIG_DMR_IP_GATEWAY
 	env.packet = hostlink_net_air_packet;
