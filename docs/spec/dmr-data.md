@@ -782,7 +782,8 @@ portable (confirmed: also its TMS ACK back). Each failing case was sent at least
   been in the standard since V1.2.1 (2006), and the portable never sends it itself: likely its firmware.
 - Rate 3/4 unconfirmed: nothing comes back (none is due), and the portable shows nothing.
 - One portable on one firmware version: more radios and versions are needed before calling this MOTOTRBO behavior.
-- The portable's link response comes in the next frame, 30 ms after our data terminator. A radio still switching
+- The portable's link response comes in the next frame in our timeslot: its first burst starts 60 ms after our data
+  terminator's start, about 29 ms after the terminator's end (measured off air). A radio still switching
   back from transmit misses it: one that returned to receive only from the radio task decoded it 1 time in about 30
   (a receive CRC error instead); returning at the slot engine's TX done, 4 of 4 on the first try. Radios whose burst
   switch already puts the receiver back after each burst missed it too (0 of 16 each), because the radio task's
