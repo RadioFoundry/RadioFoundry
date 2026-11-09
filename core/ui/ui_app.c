@@ -2202,7 +2202,7 @@ static uint8_t usb_net_state(void)
 // over or giving back) set the reference without a bar. The bar wakes the backlight: turning the knob is using the
 // radio
 #if CONFIG_VOLUME_BAR
-static void knob_tick(const radio_view_t *v)
+__attribute__((noinline)) static void knob_tick(const radio_view_t *v)
 {
 	int8_t lvl = v->volume_src == RVOL_KNOB ? v->volume : -1;
 	if (lvl >= 0 && knob_seen >= 0 && lvl != knob_seen) {
