@@ -1174,12 +1174,22 @@ static void tx_superframe_lc(void)
 		stats.tx_alias_lcs++;
 }
 
+// PTT release or the time-out: the call ends at the next superframe boundary and carries silence until then
+static void tx_stop(void)
+{
+	if (s.stop_req)
+		return;
+	s.stop_req = true;
+	if (s.modem->tx_release != NULL)
+		s.modem->tx_release();
+}
+
 static void tx_fill(uint32_t now)
 {
 	while (s.tx == TX_ON) {
 		uint32_t inflight = tx_inflight();
 
-		if (inflight >= DMR_CALL_TX_MAX_INFLIGHT || s.modem->tx_queue_space() == 0)
+		if (inflight >= (s.cfg.tx_ahead ? s.cfg.tx_ahead : DMR_CALL_TX_MAX_INFLIGHT) || s.modem->tx_queue_space() == 0)
 			return;
 		if (s.headers_left) {
 			uint8_t full[DMR_LC_FULL_BYTES];
@@ -1204,14 +1214,16 @@ static void tx_fill(uint32_t now)
 			s.dirty = true;
 			return;
 		}
-		while (s.stage_n < DMR_AMBE_FRAMES_PER_BURST && s.source && s.source->next &&
+		// Once the call is ending what remains of the superframe is silence: nothing said after the release goes out
+		while (!s.stop_req && s.stage_n < DMR_AMBE_FRAMES_PER_BURST && s.source && s.source->next &&
 		       s.source->next(s.stage[s.stage_n], s.source->ctx))
 			s.stage_n++;
-		if (s.stage_n < DMR_AMBE_FRAMES_PER_BURST && inflight > 1)
+		if (!s.stop_req && s.stage_n < DMR_AMBE_FRAMES_PER_BURST && inflight > 1)
 			return;	// not due yet: wait for the encoder
 		while (s.stage_n < DMR_AMBE_FRAMES_PER_BURST) {
 			memcpy(s.stage[s.stage_n++], dmr_ambe_silence, DMR_AMBE_FRAME_BYTES);
-			s.view.tx_underruns++;
+			if (!s.stop_req)
+				s.view.tx_underruns++;
 		}
 
 		if (s.voice_index == 0)
@@ -1277,6 +1289,7 @@ static void tx_start_voice(uint32_t now)
 	s.voice_index = 0;
 	s.queued = s.started = 0;
 	s.stop_req = false;
+	s.view.tx_released = false;
 	s.tot_hit = false;
 	s.stage_n = 0;
 	s.tx = TX_ON;
@@ -1481,7 +1494,8 @@ static void tx_ptt_released(void)
 	case TX_WAKE_LISTEN:
 		break;		// a short press still wakes the repeater, as other radios do; tx_poll ends it once up
 	case TX_ON:
-		s.stop_req = true;	// at the next superframe boundary
+		tx_stop();
+		s.view.tx_released = true;
 		break;
 	default:
 		break;
@@ -1569,7 +1583,7 @@ static void tx_poll(uint32_t now)
 			break;
 		}
 		if (s.cfg.tot_s && !s.stop_req && (uint32_t)(now - s.tx_start_ms) >= (uint32_t)s.cfg.tot_s * 1000u) {
-			s.stop_req = true;
+			tx_stop();
 			s.tot_hit = true;
 		}
 		tx_fill(now);

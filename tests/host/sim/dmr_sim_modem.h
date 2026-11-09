@@ -40,7 +40,7 @@ typedef struct {
 	dmr_timing_t last_timing;
 	int8_t last_ts;
 	dmr_access_t last_access;
-	unsigned tx_ends, tx_aborts, underflows;
+	unsigned tx_ends, tx_aborts, tx_releases, underflows;
 	unsigned rx_restarts;	// rx_restart calls: the receiver drops its slot timing and searches again
 	uint8_t emb_lc[9];
 	bool emb_lc_set;

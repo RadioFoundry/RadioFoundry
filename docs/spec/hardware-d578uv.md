@@ -424,6 +424,10 @@ While it transmits, the stock firmware mutes the headphone driver (codec page 1 
 the calibrated level back for receive. RadioFoundry does the same: the mute before `WORK_MODE` transmit, the level
 after `WORK_MODE` receive (`codec_tx` and `codec_rx`, [modem-sct.md](modem-sct.md) 5).
 
+From PTT release to the end of the call the codec's ADC is muted, left and right (page 0 register 82 to 0x88, 0x00 for
+the return to receive; `codec_mic_off` and `codec_mic_on`), so the baseband encodes silence. On the air the frames after
+the release are near-constant low-energy frames, and the next call is back to normal.
+
 The voice goes from the baseband to the codec, so the board sets `CAP_MODEM_VOICE`, and privacy, the hotspot and the
 store-and-forward repeater are not written for this radio. RAM decides the rest: the USB network adapter and zone
 sharing are off with DMR on.

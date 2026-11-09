@@ -59,6 +59,13 @@ channel. In the VFO the same requests change the VFO's own settings instead (sec
 TX time-out: the channel's codeplug TOT (15 s units) when it has one, else the radio's (180 s by default). The
 transmission ends at the next superframe boundary with its terminator, and PTT shows "timed out" until released.
 
+PTT release: the call runs on to the next superframe boundary, up to about half a second, so the voice ends on a
+whole superframe. From the release the rest of the call carries silence: the stack stops taking frames from the
+vocoder, and a modem with its own microphone path stops using it (`tx_release`). The time-out does the same. The screen
+follows the key at once (`radio_view_for_screen`, view `tx_released`, debug link `dmr.tx_released`) and the LED follows
+the RF. A modem that makes the voice itself needs no audio queued in the stack, so it keeps fewer bursts ahead of the air
+(`dmr_call_config_t.tx_ahead`, 2 rather than `DMR_CALL_TX_MAX_INFLIGHT`): each one is 60 ms more before the end goes out.
+
 Stalled modem: PTT release and the time-out both wait for a superframe boundary, which only comes while the modem
 sends bursts. When the modem takes no burst for `DMR_CALL_TX_STALL_MS` (1.5 s; a burst counts when it is queued or its
 slot starts), the stack aborts the transmission and returns to receive with `DMR_TX_ERR_STALLED` (`dmr.tx_error=stalled`

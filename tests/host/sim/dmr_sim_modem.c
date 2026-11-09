@@ -76,6 +76,8 @@ static int8_t tx_fill(const dmr_tx_burst_t *b)
 static uint8_t tx_queue_space(void) { return (uint8_t)(SIM_QUEUE_DEPTH - sim.q_count); }
 static void tx_end(void) { sim.tx_ends++; sim.tx_ending = true; }
 
+static void tx_release(void) { sim.tx_releases++; }
+
 static void tx_abort(void)
 {
 	sim.tx_aborts++;
@@ -103,7 +105,7 @@ static bool is_transmitting(void) { return sim.tx_active; }
 const hal_dmr_modem_t sim_modem = {
 	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
 	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_end = tx_end,
-	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
+	.tx_abort = tx_abort, .tx_release = tx_release, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
 	.is_transmitting = is_transmitting, .tx_listen = tx_listen, .tx_fill = tx_fill,
 };
 

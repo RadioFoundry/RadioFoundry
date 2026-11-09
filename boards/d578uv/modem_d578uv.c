@@ -276,6 +276,10 @@ static const sct_codec_write_t codec_start[] = { { 0, 0x3C, 17 } };
 // The headphone driver muted while transmitting; codec_writes[CODEC_HPL] restores it
 static const sct_codec_write_t hpl_mute = { 1, 0x10, 0x40 };
 
+// The ADC muted once the call is ending, left and right (TLV320AIC3204 page 0 register 82, bits 7 and 3)
+static const sct_codec_write_t mic_off = { 0, 0x52, 0x88 };
+static const sct_codec_write_t mic_on = { 0, 0x52, 0x00 };
+
 // The calibrated values: the four codec levels into the first four writes, the digital mode gains, and DMR_OFFSET
 static void cal_values(void)
 {
@@ -359,6 +363,8 @@ static const sct_dmr_port_t port = {
 	.start_count = sizeof(start_fields) / sizeof(start_fields[0]),
 	.codec_tx = &hpl_mute,
 	.codec_rx = &codec_writes[CODEC_HPL],
+	.codec_mic_off = &mic_off,
+	.codec_mic_on = &mic_on,
 	.codec_start = codec_start,
 	.codec_start_count = sizeof(codec_start) / sizeof(codec_start[0]),
 	.tx_fields = port_tx_fields,

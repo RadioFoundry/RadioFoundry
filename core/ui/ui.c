@@ -119,6 +119,7 @@ static void ui_task(void *arg)
 	while (input_next(&ev, 0))
 		;	// keys pressed during the splash are dropped
 	radio_get_view(&view);
+	radio_view_for_screen(&view);
 	ui_app_status(&status);
 
 	uint32_t serial = radio_view_serial() - 1u;
@@ -145,6 +146,7 @@ static void ui_task(void *arg)
 			if (s != serial) {
 				serial = s;
 				radio_get_view(&view);
+				radio_view_for_screen(&view);
 				ui_app_set_view(&view);
 			}
 			bool was_off = backlight_now == 0;
@@ -158,6 +160,7 @@ static void ui_task(void *arg)
 		if (s != serial) {
 			serial = s;
 			radio_get_view(&view);
+			radio_view_for_screen(&view);
 		}
 		if (radio_view_wakes(&view))
 			radio_active_ms = now;

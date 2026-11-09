@@ -90,6 +90,7 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		char alias[DMR_TA_TEXT_MAX + 1];
 		dmr_call_tx_alias(alias);
 		dl_text(t, "dmr.tx_alias=%s\n", alias);
+		dl_text(t, "dmr.tx_released=%u\n", (unsigned)d->tx_released);
 		dl_text(t, "dmr.rmo=%u\ndmr.repeater_up=%u\n", d->rmo, d->repeater_up);
 		// The channel's SFR role (sfrRole_t; sfr.md 4) and whether its repeater role has the modem
 		radio_settings_t rs;

@@ -175,6 +175,7 @@ typedef struct {
 	radio_dmr_call_t last;
 	uint32_t last_ms;	// hal_millis() of its last burst, 0 = none yet
 	uint32_t underruns;	// TX voice frames sent as silence (diagnostics)
+	bool tx_released;	// a DMR transmission whose PTT is up, running on to its superframe boundary
 } radio_dmr_view_t;
 #endif
 
@@ -322,6 +323,18 @@ typedef struct {
 void radio_core_start(void);
 // A consistent copy of the current state
 void radio_get_view(radio_view_t *v);
+
+// The view as the screen shows it. After PTT release a DMR call still runs to the end of its superframe, up to about
+// half a second. The screen follows the key, so the radio does not look stuck in TX; the LED still shows the RF
+static inline void radio_view_for_screen(radio_view_t *v)
+{
+#if CONFIG_DMR
+	if (v->state == RS_TX && v->ch.mode == RADIO_MODE_DMR && v->dmr.tx_released)
+		v->state = RS_IDLE;
+#else
+	(void)v;
+#endif
+}
 // Just the view's state, for a caller short of stack (the view is some 0.7 KB)
 radio_state_t radio_get_state(void);
 // Bumped on every visible change, so the UI can redraw only when needed
