@@ -26,7 +26,7 @@ def _window(link):
     """The start of a READ_MEM window (the chip's, or any known one without INFO_CHIP) that reads the same twice: the
     comparisons below read it more than once, so RAM in use would differ."""
     windows = dbg.MEM_WINDOWS.get(dbg.chip_family(link)) or [w for ws in dbg.MEM_WINDOWS.values() for w in ws]
-    for lo, _ in windows:
+    for lo, *_ in windows:
         try:
             if link.read_mem(lo, N) == link.read_mem(lo, N):
                 return lo
