@@ -292,11 +292,6 @@ int32_t ui_svc_setting_get(uint8_t id)
 	}
 #endif
 	case UI_SET_MSG_FORMAT:
-		settings_read(&st);
-#if CONFIG_APRS
-		if (st.cp_flags & SETTINGS_MSG_APRS)
-			return UI_MSG_FORMAT_APRS;
-#endif
 #if CONFIG_DMR_SMS
 		{
 			dmrDataSettings_t ds;
@@ -304,7 +299,7 @@ int32_t ui_svc_setting_get(uint8_t id)
 			return ds.smsFormat;
 		}
 #else
-		return CONFIG_APRS ? UI_MSG_FORMAT_APRS : 2;
+		return 2;
 #endif
 #if CONFIG_CRASH_REPORT
 	case UI_SET_CRASH_MODE:
@@ -540,14 +535,6 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	}
 #endif
 	case UI_SET_MSG_FORMAT:
-		if (CONFIG_APRS && value == UI_MSG_FORMAT_APRS) {
-			if (board.afsk == NULL || board.afsk->tx_start == NULL)
-				return false;
-			st = settings_begin();
-			st->cp_flags |= SETTINGS_MSG_APRS;
-			settings_end(hal_millis());
-			return true;
-		}
 #if CONFIG_DMR_SMS
 		if ((value != DMR_SMS_FORMAT_ETSI_IP) && (value != DMR_SMS_FORMAT_ETSI) &&
 		    !(CONFIG_DMR_TMS && (value == DMR_SMS_FORMAT_TMS)))
@@ -558,9 +545,6 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 			ds.smsFormat = (uint8_t)value;
 			dmr_data_set_settings(&ds);
 		}
-		st = settings_begin();
-		st->cp_flags &= (uint8_t)~SETTINGS_MSG_APRS;
-		settings_end(hal_millis());
 		return true;
 #else
 		return false;

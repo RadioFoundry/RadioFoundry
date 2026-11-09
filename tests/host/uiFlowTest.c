@@ -581,6 +581,13 @@ static const flow_t flows[] = {
 	{ "G GPS pages wrap", "ok 6 2", "up down", "shows=Status", 2, false },
 	{ "A KISS on USB", "ok 6 8", "up up ok", "aprs_kiss=1", 3, false },
 	{ "A stations heard", "", "ok 6 8 up ok", "screen=aprs-heard count=2", 5, false },
+	{ "A station opens its Message action", "ok 6 8 up ok", "ok", "screen=aprs-station shows=Message", 1, false },
+	{ "A station Message fills its callsign", "ok 6 8 up ok ok", "ok", "screen=compose shows=Q4WAB-9", 1, false },
+	{ "A new APRS message appears independently of DMR format", "", "ok 2", "shows=New_APRS_message", 2, false },
+	{ "A new APRS message opens its composer", "ok 2", "ok", "screen=compose shows=To_callsign", 1, false },
+	{ "A new APRS message needs our callsign", "aprs:nocall ok 2", "", "hides=New_APRS_message", 0, false },
+	{ "A received APRS message opens in Messages", "aprs:message ok 2", "ok", "screen=message shows=Hello_APRS", 1, false },
+	{ "A received APRS message replies over APRS", "aprs:message ok 2 ok", "ok", "sent=1 aprs_to=Q4WAB-9 text=OK", 1, false },
 	{ "A not in this build", "aprs:off", "ok 6 8 2", "toast=APRS:_not aprs_auto=0", 4, false },
 	// The crash log and its report (docs/spec/crash-log.md): Settings > Advanced > Crash log, after the restart
 	{ "C crash log from Advanced", "crash:on", "ok 7 0 down down down down ok", "screen=crash shows=Fault_3 shows=Crash_Log crash_seen=1",
@@ -773,26 +780,6 @@ static const flow_t flows_mono[] = {
 
 // DM-1701 key map only: the top side key, long waits
 static const flow_t flows_k[] = {
-#if CONFIG_APRS && CONFIG_DMR_SMS && CONFIG_DMR_TMS && CONFIG_TFTP
-	{ "APRS format adds a message composer", "ok 7 6 down down down down ok ok ok long:back ok 2",
-	  "ok", "screen=compose shows=To_callsign", 1, false },
-	{ "APRS destination opens its callsign editor", "ok 7 6 down down down down ok ok ok long:back ok 2 ok",
-	  "ok", "screen=aprs-to", 1, false },
-	{ "APRS message sends to a typed callsign", "ok 7 6 down down down down ok ok ok long:back ok 2 ok",
-	  "ok 5 5 long:1 2 wait:1100 2 2 wait:1100 2 2 2 ok down ok",
-	  "sent=1 text=OK aprs_to=K1ABC screen=home", 13, false },
-	{ "APRS custom message sends typed text", "ok 7 6 down down down down ok ok ok long:back ok 2 ok",
-	  "ok 5 5 long:1 2 wait:1100 2 2 wait:1100 2 2 2 ok down down down down down ok 4 4 wait:1100 4 4 4 ok",
-	  "sent=1 text=HI aprs_to=K1ABC screen=home", 24, false },
-	{ "APRS message choices set per-send flags", "ok 7 6 down down down down ok ok ok long:back ok 2 ok",
-	  "ok 5 5 long:1 2 wait:1100 2 2 wait:1100 2 2 2 ok down down down down down down ok down ok up up up up up up ok",
-	  "sent=1 text=OK aprs_to=K1ABC aprs_flags=2 screen=home", 30, false },
-#if CONFIG_LANG_ES
-	{ "APRS preset sends localized ASCII", "ok 7 2 up ok down ok long:back ok 7 6 down down down down ok ok ok long:back ok 2 ok",
-	  "ok 5 5 long:1 2 wait:1100 2 2 wait:1100 2 2 2 ok down down down ok",
-	  "sent=1 text=Llamame aprs_to=K1ABC", 15, false },
-#endif
-#endif
 	// Dual watch on the side keys: SK2 is A/B pressed, Dual watch held; P1 / P2 (zones) and the knob act on the
 	// selected channel
 	{ "11 dual watch: SK2 pressed is A/B", "quick 7 ctx 3 5 ok", "sk2", "dual=1 sel=B", 1, false },

@@ -3510,6 +3510,7 @@ static void test_ui_settings(void)
 	CHECK(ui_svc_setting_set(UI_SET_MSG_FORMAT, DMR_SMS_FORMAT_ETSI) &&
 	      ui_svc_setting_get(UI_SET_MSG_FORMAT) == DMR_SMS_FORMAT_ETSI);
 	CHECK(!ui_svc_setting_set(UI_SET_MSG_FORMAT, 9) && ui_svc_setting_get(UI_SET_MSG_FORMAT) == DMR_SMS_FORMAT_ETSI);
+	CHECK(!ui_svc_setting_set(UI_SET_MSG_FORMAT, 3) && ui_svc_setting_get(UI_SET_MSG_FORMAT) == DMR_SMS_FORMAT_ETSI);
 	CHECK(ui_svc_setting_set(UI_SET_MSG_FORMAT, DMR_SMS_FORMAT_ETSI_IP));
 
 	// USB personality and the control station switches (no control station in this build: those stay off)

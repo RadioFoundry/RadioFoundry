@@ -689,12 +689,12 @@ static void test_messages(void)
 	CHECK(!aprs_send_message("Q1ABC-9", "Hello"));
 	aprs_set_cfg(&cfg, now);
 	CHECK(aprs_send_message("Q1ABC-9", "Hello"));
-	CHECK(!aprs_send_message("Q1ABC-9", "Again"));	// one at a time
+	CHECK(aprs_send_message("Q1ABC-9", "Again"));	// newest message replaces the pending retry
 	CHECK(wait_start(1, 5000));
 	CHECK(nframes == 1);
 	char msgno[8] = "";
 	const char *brace = nframes > 0 ? strchr(frames[0], '{') : NULL;
-	CHECK(brace != NULL && strstr(frames[0], "::Q1ABC-9  :Hello{") != NULL);
+	CHECK(brace != NULL && strstr(frames[0], "::Q1ABC-9  :Again{") != NULL);
 	if (brace != NULL) {
 		strncpy(msgno, brace + 1, sizeof(msgno) - 1);
 	}
@@ -759,6 +759,23 @@ static void test_message_options(void)
 	CHECK(aprs_send_message_opts("K1ABC-9", "Ack me", APRS_MSG_ACK));
 	CHECK(wait_start(2, 5000));
 	CHECK(strstr(frames[1], "::K1ABC-9  :Ack me{") != NULL);
+}
+
+static void test_message_replaces_pending(void)
+{
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	CHECK(aprs_send_message("Q1ABC-9", "First"));
+	CHECK(wait_start(1, 5000));
+	wait_idle();
+	CHECK(aprs_send_message("K1ABC-9", "Second"));
+	CHECK(wait_start(2, 5000));
+	CHECK(strstr(frames[1], "::K1ABC-9  :Second{") != NULL);
+	wait_idle();
+	run(28u * 1000u);
+	CHECK(wait_start(3, 6000));
+	CHECK(strstr(frames[2], "::K1ABC-9  :Second{") != NULL);
 }
 
 #if CONFIG_APRS_RX
@@ -1264,6 +1281,7 @@ int main(void)
 	test_host_kiss_nmea();
 	test_messages();
 	test_message_options();
+	test_message_replaces_pending();
 #if CONFIG_APRS_RX
 	test_message_rejection();
 #endif

@@ -756,6 +756,14 @@ msgstr "Atrás"
 msgid "Nothing heard yet"
 msgstr "Aún nada oído"
 
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgid "Message"
+msgstr "Mensaje"
+
+#: core/ui/ui_aprs.c
+msgid "OK choose  Back"
+msgstr "OK elegir  Atrás"
+
 #: core/ui/ui_dual.c core/ui/ui_screens.c
 msgid "No tone"
 msgstr "Sin tono"
@@ -1145,10 +1153,6 @@ msgid "Private call"
 msgstr "Llamada privada"
 
 #: core/ui/ui_menus.c
-msgid "Message"
-msgstr "Mensaje"
-
-#: core/ui/ui_menus.c
 msgid "Radio check"
 msgstr "Prueba de radio"
 
@@ -1329,12 +1333,12 @@ msgid "Couldn't delete: try again"
 msgstr "No se pudo borrar: reintenta"
 
 #: core/ui/ui_menus.c
-msgid "To "
-msgstr "A "
-
-#: core/ui/ui_menus.c
 msgid "From "
 msgstr "De "
+
+#: core/ui/ui_menus.c
+msgid "To "
+msgstr "A "
 
 #: core/ui/ui_menus.c
 msgid "OK choose  # more  Back"

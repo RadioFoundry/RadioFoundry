@@ -402,6 +402,8 @@ static bool usb_up;	// the computer has brought the network adapter up (hal_neti
 static struct {
 	bool off;		// "aprs:off": not in this build
 	bool no_call;		// "aprs:nocall": no callsign anywhere
+	bool message;		// "aprs:message": an unread APRS message
+	bool message_read;
 	aprs_cfg_t cfg;
 	uint32_t sent;
 } aprs_sim;
@@ -430,6 +432,8 @@ bool ui_svc_aprs_view(aprs_view_t *v)
 	v->next_s = aprs_sim.cfg.tx_on ? 245 : 0xFFFFu;
 	v->rf_sent = aprs_sim.sent;
 	v->stations = 2;
+	v->messages = aprs_sim.message ? 1 : 0;
+	v->unread = aprs_sim.message && !aprs_sim.message_read ? 1 : 0;
 	return true;
 }
 void ui_svc_aprs_cfg(aprs_cfg_t *c) { *c = aprs_sim.cfg; }
@@ -451,6 +455,27 @@ bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out)
 	strcpy(out->call, calls[i]);
 	out->heard_ms = now_ms > 60000u * (i + 1u) ? now_ms - 60000u * (i + 1u) : 0;
 	out->direct = i == 0;
+	return true;
+}
+uint8_t ui_svc_aprs_msg_count(void) { return aprs_sim.message ? 1 : 0; }
+bool ui_svc_aprs_msg(uint8_t i, aprs_msg_t *out, bool read)
+{
+	if (i != 0 || !aprs_sim.message)
+		return false;
+	memset(out, 0, sizeof *out);
+	strcpy(out->from, "Q4WAB-9");
+	strcpy(out->text, "Hello APRS");
+	out->ms = 0;
+	out->read = aprs_sim.message_read;
+	if (read)
+		aprs_sim.message_read = true;
+	return true;
+}
+bool ui_svc_aprs_msg_delete(uint8_t i)
+{
+	if (i != 0 || !aprs_sim.message)
+		return false;
+	aprs_sim.message = false;
 	return true;
 }
 bool hostlink_request_usb_network(bool network) { usb_net = network; return true; }
@@ -2680,6 +2705,7 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "aprs") == 0 && arg != NULL) {	// aprs:off (not built), aprs:nocall, aprs:custom (a custom frequency set)
 		aprs_sim.off = strcmp(arg, "off") == 0;
 		aprs_sim.no_call = strcmp(arg, "nocall") == 0;
+		aprs_sim.message = strcmp(arg, "message") == 0;
 		if (strcmp(arg, "custom") == 0)
 			aprs_sim.cfg.freq_hz = 144930000;
 		return true;

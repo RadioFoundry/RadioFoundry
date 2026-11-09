@@ -756,6 +756,14 @@ msgstr "Indietro"
 msgid "Nothing heard yet"
 msgstr "Ancora niente sentito"
 
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgid "Message"
+msgstr "Messaggio"
+
+#: core/ui/ui_aprs.c
+msgid "OK choose  Back"
+msgstr "OK scegli  Indietro"
+
 #: core/ui/ui_dual.c core/ui/ui_screens.c
 msgid "No tone"
 msgstr "Nessun tono"
@@ -1145,10 +1153,6 @@ msgid "Private call"
 msgstr "Chiamata privata"
 
 #: core/ui/ui_menus.c
-msgid "Message"
-msgstr "Messaggio"
-
-#: core/ui/ui_menus.c
 msgid "Radio check"
 msgstr "Controllo radio"
 
@@ -1329,12 +1333,12 @@ msgid "Couldn't delete: try again"
 msgstr "Eliminazione non riuscita: riprova"
 
 #: core/ui/ui_menus.c
-msgid "To "
-msgstr "A "
-
-#: core/ui/ui_menus.c
 msgid "From "
 msgstr "Da "
+
+#: core/ui/ui_menus.c
+msgid "To "
+msgstr "A "
 
 #: core/ui/ui_menus.c
 msgid "OK choose  # more  Back"

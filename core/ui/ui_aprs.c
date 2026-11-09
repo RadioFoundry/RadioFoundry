@@ -28,6 +28,12 @@ WEAK bool ui_svc_aprs_send_message(const char *to, const char *text, uint8_t fla
 	(void)flags;
 	return false;
 }
+WEAK uint8_t ui_svc_aprs_msg_count(void) { return 0; }
+WEAK bool ui_svc_aprs_msg(uint8_t i, aprs_msg_t *out, bool read)
+{
+	(void)i; (void)out; (void)read; return false;
+}
+WEAK bool ui_svc_aprs_msg_delete(uint8_t i) { (void)i; return false; }
 WEAK uint8_t ui_svc_aprs_station_count(void) { return 0; }
 WEAK bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out) { (void)i; (void)out; return false; }
 
@@ -447,6 +453,12 @@ const ui_scr_def_t ui_aprs_screen = {
 
 static uint16_t heard_count(void) { return ui_svc_aprs_station_count(); }
 
+static void heard_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	ui_push(SCR_APRS_STATION, i);
+}
+
 static void heard_item(uint16_t i, ui_item_t *it)
 {
 	aprs_station_t s;
@@ -463,5 +475,32 @@ static void heard_item(uint16_t i, ui_item_t *it)
 const ui_scr_def_t ui_aprs_heard_screen = {
 	.name = "aprs-heard", .flags = SF_LIST | SF_FIELD, .prefix = TRN("Heard"), .hint = TRN("Back"),
 	.empty = TRN("Nothing heard yet"),
-	.count = heard_count, .item = heard_item,
+	.count = heard_count, .item = heard_item, .select = heard_select,
+};
+
+static uint16_t station_count(void) { return 1; }
+static void station_item(uint16_t i, ui_item_t *it)
+{
+	(void)i;
+	str_copy(it->label, sizeof it->label, TR("Message"));
+}
+static const char *station_title(void)
+{
+	static char call[AX25_CALL_LEN + 4];
+	aprs_station_t s;
+	if (!ui_svc_aprs_station((uint8_t)ui_frame()->arg, &s))
+		return "";
+	str_copy(call, sizeof call, s.call);
+	return call;
+}
+static void station_select(uint16_t i, bool hold)
+{
+	(void)i; (void)hold;
+	aprs_station_t s;
+	if (ui_svc_aprs_station((uint8_t)ui_frame()->arg, &s))
+		ui_aprs_compose(s.call);
+}
+const ui_scr_def_t ui_aprs_station_screen = {
+	.name = "aprs-station", .flags = SF_LIST | SF_FIELD, .prefix = TRN("Heard"), .hint = TRN("OK choose  Back"),
+	.count = station_count, .item = station_item, .select = station_select, .title = station_title,
 };

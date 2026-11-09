@@ -38,7 +38,7 @@ frequency, your position and its source, and when the next beacon goes out. If t
 | Position | Where the position comes from, and the fixed position (see Position below) |
 | Position in DMR calls | Your position in your DMR voice calls (see [DMR](09-dmr.md#position-in-calls)) |
 | KISS on USB | The radio works as a KISS TNC for APRS programs on the computer |
-| Stations heard | Stations the radio heard (radios that can receive APRS) |
+| Stations heard | Stations the radio heard (radios that can receive APRS); select one and choose Message to fill its callsign |
 
 The symbol, comment and the DMR destination are set with the debug tool for now
 (`tools/rfoundry_debug.py aprs set ...`), later with qdmr.
@@ -68,7 +68,7 @@ On radios that can receive APRS, the radio decodes packets while you listen on t
 the frequency shown in **Frequency** on the APRS page (your region's, 144.390 MHz in North America) in FM, or tune
 the VFO there, and leave the radio on it. If the packets are sent on another frequency, set **Frequency** to Custom
 and enter it first. Heard
-stations go into **Stations heard**, messages to your callsign are kept and acknowledged, and the digipeater (if you
+stations go into **Stations heard**, messages to your callsign appear in **Messages** and are acknowledged, and the digipeater (if you
 turned it on) passes packets on.
 
 - It listens only on the APRS frequency, in FM, and the tuned frequency must equal the APRS **Frequency** exactly.

@@ -15,6 +15,9 @@ void ui_svc_aprs_cfg(aprs_cfg_t *c);
 void ui_svc_aprs_set_cfg(const aprs_cfg_t *c);
 bool ui_svc_aprs_send_now(void);
 bool ui_svc_aprs_send_message(const char *to, const char *text, uint8_t flags);
+uint8_t ui_svc_aprs_msg_count(void);
+bool ui_svc_aprs_msg(uint8_t i, aprs_msg_t *out, bool read);
+bool ui_svc_aprs_msg_delete(uint8_t i);
 uint8_t ui_svc_aprs_station_count(void);
 bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out);
 

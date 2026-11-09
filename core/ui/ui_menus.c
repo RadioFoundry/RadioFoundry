@@ -39,7 +39,7 @@
 #endif
 
 extern const ui_scr_def_t ui_find_screen;
-extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_pos_screen;	// ui_aprs.c
+extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_pos_screen, ui_aprs_station_screen;	// ui_aprs.c
 extern const ui_scr_def_t ui_gps_screen;	// ui_gps.c
 #if CONFIG_DUAL_WATCH
 extern const ui_scr_def_t ui_dual_screen, ui_dual_pick_screen, ui_dual_zone_screen;	// ui_dual.c
@@ -201,7 +201,7 @@ static void act_item(uint16_t i, ui_item_t *it)
 		break;
 	case A_MESSAGE:
 		sb_str(&b, TR("Message"));
-		if (!(feats() & UI_FEAT_SMS) && !compose_aprs())
+		if (!(feats() & UI_FEAT_SMS))
 			it->flags |= UI_ITEM_DIM;
 		break;
 	case A_CHECK:
@@ -268,7 +268,7 @@ static void act_select(uint16_t i, bool hold)
 		ui_talk(&ui_target, true);
 		break;
 	case A_MESSAGE:
-		if ((feats() & UI_FEAT_SMS) || compose_aprs())
+		if (feats() & UI_FEAT_SMS)
 			ui_push(SCR_COMPOSE, 0);
 		else
 			ui_toast(TR("Messages: not in this build"));
@@ -342,14 +342,22 @@ static const char *const canned[] = { TRN("OK"), TRN("On my way"), TRN("Call me"
 // The inbox body and composer cannot be on screen at the same time.
 static char message_buffer[UI_MSG_TEXT_MAX + 48];
 static char aprs_to[AX25_CALL_LEN + 4];
+static char aprs_compose_to[AX25_CALL_LEN + 4];
 static uint8_t aprs_message_flags;
+static bool aprs_composing;
 #if CONFIG_APRS
 static void ui_text_open_to(char *target, uint8_t max);
 #endif
 #if CONFIG_DMR_SMS || CONFIG_APRS
 static void ui_text_open_message(bool aprs);
 #endif
-static bool compose_aprs(void) { return ui_svc_setting_get(UI_SET_MSG_FORMAT) == UI_MSG_FORMAT_APRS; }
+static bool compose_aprs(void) { return aprs_composing; }
+
+void ui_aprs_compose(const char *call)
+{
+	str_copy(aprs_compose_to, sizeof aprs_compose_to, call);
+	ui_push(SCR_COMPOSE, 1);
+}
 
 static uint16_t compose_count(void) { return CANNED_N + 1u + (compose_aprs() ? 3u : 0u); }
 
@@ -448,7 +456,9 @@ static const char *compose_title(void)
 
 static void compose_enter(void)
 {
-	aprs_to[0] = 0;
+	aprs_composing = ui_frame()->arg == 1u;
+	str_copy(aprs_to, sizeof aprs_to, compose_aprs() ? aprs_compose_to : "");
+	aprs_compose_to[0] = 0;
 	aprs_message_flags = APRS_MSG_ACK;
 }
 
@@ -642,12 +652,42 @@ static const ui_scr_def_t contacts_screen = {
 
 // ======================= Messages =======================
 
-static uint16_t msgs_count(void) { return ui_svc_msg_count() + (compose_aprs() ? 1u : 0u); }
+static bool aprs_new_available(void)
+{
+#if CONFIG_APRS
+	aprs_view_t v;
+	return ui_svc_aprs_view(&v) && v.call[0] != '\0';
+#else
+	return false;
+#endif
+}
+
+static uint16_t msgs_count(void)
+{
+	return ui_svc_msg_count() + ui_svc_aprs_msg_count() + (aprs_new_available() ? 1u : 0u);
+}
 
 static void msgs_item(uint16_t i, ui_item_t *it)
 {
-	if (compose_aprs() && i == ui_svc_msg_count()) {
+	uint16_t dmr_count = ui_svc_msg_count();
+	uint16_t aprs_count = ui_svc_aprs_msg_count();
+	if (aprs_new_available() && i == dmr_count + aprs_count) {
 		str_copy(it->label, sizeof it->label, TR("New APRS message"));
+		return;
+	}
+	if (i >= dmr_count) {
+		aprs_msg_t m;
+		if (!ui_svc_aprs_msg((uint8_t)(i - dmr_count), &m, false))
+			return;
+		sbuf_t b;
+		sb_init(&b, it->label, sizeof it->label);
+		sb_str(&b, m.from);
+		sb_str(&b, ": ");
+		sb_str(&b, m.text);
+		ui_sb_age(it->value, sizeof it->value, ui_st.now_ms - m.ms);
+		it->flags |= UI_ITEM_PREVIEW;
+		if (!m.read)
+			it->flags |= UI_ITEM_WARN;
 		return;
 	}
 	ui_msg_t m;
@@ -672,7 +712,10 @@ static void msgs_item(uint16_t i, ui_item_t *it)
 static void msgs_select(uint16_t i, bool hold)
 {
 	(void)hold;
-	ui_push(compose_aprs() && i == ui_svc_msg_count() ? SCR_COMPOSE : SCR_MESSAGE, i);
+	if (aprs_new_available() && i == ui_svc_msg_count() + ui_svc_aprs_msg_count())
+		ui_aprs_compose("");
+	else
+		ui_push(SCR_MESSAGE, i);
 }
 
 static void msg_target_of(uint16_t i, ui_target_t *t)
@@ -688,7 +731,7 @@ static void msg_target_of(uint16_t i, ui_target_t *t)
 
 static void msgs_context(uint16_t i)
 {
-	if (compose_aprs() && i == ui_svc_msg_count())
+	if (i >= ui_svc_msg_count())
 		return;
 	ui_target_t t;
 	msg_target_of(i, &t);
@@ -705,9 +748,17 @@ static const ui_scr_def_t messages_screen = {
 
 enum { MV_REPLY_OK, MV_REPLY_WAY, MV_CALL, MV_DELETE, MV_COUNT };
 
+static bool message_aprs(void) { return ui_frame()->arg >= ui_svc_msg_count(); }
+static uint8_t message_aprs_index(void) { return (uint8_t)(ui_frame()->arg - ui_svc_msg_count()); }
+
 static void msg_enter(void)
 {
-	ui_svc_msg_read(ui_frame()->arg);
+	if (message_aprs()) {
+		aprs_msg_t m;
+		(void)ui_svc_aprs_msg(message_aprs_index(), &m, true);
+	} else {
+		ui_svc_msg_read(ui_frame()->arg);
+	}
 }
 
 static uint16_t msg_count(void) { return MV_COUNT; }
@@ -717,7 +768,9 @@ static void msg_item(uint16_t i, ui_item_t *it)
 	static const char *const names[] = { TRN("Reply \"OK\""), TRN("Reply \"On my way\""), TRN("Call"),
 					     TRN("Delete") };
 	str_copy(it->label, sizeof it->label, tr(names[i]));
-	if (i <= MV_REPLY_WAY && !(feats() & UI_FEAT_SMS))
+	if (i <= MV_REPLY_WAY && !message_aprs() && !(feats() & UI_FEAT_SMS))
+		it->flags |= UI_ITEM_DIM;
+	if (i == MV_CALL && message_aprs())
 		it->flags |= UI_ITEM_DIM;
 }
 
@@ -728,13 +781,24 @@ static void msg_select(uint16_t i, bool hold)
 	switch (i) {
 	case MV_REPLY_OK:
 	case MV_REPLY_WAY:
-		send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]), false);
+		if (message_aprs()) {
+			aprs_msg_t m;
+			if (ui_svc_aprs_msg(message_aprs_index(), &m, false)) {
+				str_copy(aprs_to, sizeof aprs_to, m.from);
+				aprs_message_flags = APRS_MSG_ACK;
+				send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]), true);
+			}
+		} else {
+			send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]), false);
+		}
 		break;
 	case MV_CALL:
-		ui_talk(&ui_target, false);
+		if (!message_aprs())
+			ui_talk(&ui_target, false);
 		break;
 	case MV_DELETE:
-		if (ui_svc_msg_delete(ui_frame()->arg)) {
+		if (message_aprs() ? ui_svc_aprs_msg_delete(message_aprs_index()) :
+		    ui_svc_msg_delete(ui_frame()->arg)) {
 			ui_pop();
 			ui_toast(TR("Message deleted"));
 		} else {
@@ -750,7 +814,7 @@ static bool msg_target(uint16_t i, ui_target_t *t)
 {
 	(void)i;
 	msg_target_of(ui_frame()->arg, t);
-	return t->id != 0;
+	return !message_aprs() && t->id != 0;
 }
 
 static const char *msg_title(void)
@@ -760,12 +824,24 @@ static const char *msg_title(void)
 	sb_init(&b, t, sizeof t);
 	sb_u32(&b, ui_frame()->arg + 1u, 1);
 	sb_str(&b, TR(" of "));
-	sb_u32(&b, ui_svc_msg_count(), 1);
+	sb_u32(&b, ui_svc_msg_count() + ui_svc_aprs_msg_count(), 1);
 	return t;
 }
 
 static const char *msg_body(void)
 {
+	if (message_aprs()) {
+		aprs_msg_t m;
+		if (!ui_svc_aprs_msg(message_aprs_index(), &m, false))
+			return TR("Message deleted");
+		sbuf_t b;
+		sb_init(&b, message_buffer, sizeof message_buffer);
+		sb_str(&b, TR("From "));
+		sb_str(&b, m.from);
+		sb_chr(&b, '\n');
+		sb_str(&b, m.text);
+		return message_buffer;
+	}
 	ui_msg_t m;
 	if (!ui_svc_msg_get(ui_frame()->arg, &m))
 		return TR("Message deleted");
@@ -5116,27 +5192,17 @@ static const char *const n_dual_wait[] = { "0.5 s", "1 s", "1.5 s", "2 s", "3 s"
 #endif
 static const int16_t v_autooff[] = { 0, 30, 60, 120 };
 static const char *const n_autooff[] = { TRN("Off"), TRN("30 min"), "1 h", "2 h" };
-#if CONFIG_DMR_SMS || CONFIG_APRS
-static const int16_t v_msgfmt[] = {
 #if CONFIG_DMR_SMS
+static const int16_t v_msgfmt[] = {
 	2, 1,	// dmr_sms_format_t: ETSI IP text, ETSI short data, Motorola TMS
 #if CONFIG_DMR_TMS
 	0,
 #endif
-#endif
-#if CONFIG_APRS
-	UI_MSG_FORMAT_APRS,
-#endif
 };
 static const char *const n_msgfmt[] = {
-#if CONFIG_DMR_SMS
 	"ETSI", TRN("ETSI short"),
 #if CONFIG_DMR_TMS
 	"Motorola",
-#endif
-#endif
-#if CONFIG_APRS
-	"APRS",
 #endif
 };
 #endif
@@ -5234,8 +5300,8 @@ static const set_item_t s_connections[] = {
 #if CONFIG_TFTP
 	TOGGLE(TRN("TFTP codeplug write"), "network USB programming", UI_SET_TFTP_WRITE),
 #endif
-#if CONFIG_DMR_SMS || CONFIG_APRS
-	LIST(TRN("Message format"), "SMS text ETSI TMS APRS", UI_SET_MSG_FORMAT, v_msgfmt, n_msgfmt),
+#if CONFIG_DMR_SMS
+	LIST(TRN("Message format"), "SMS text ETSI TMS", UI_SET_MSG_FORMAT, v_msgfmt, n_msgfmt),
 #endif
 #if CONFIG_ZONE_SHARE
 	TOGGLE(TRN("Accept zone shares"), "zone offers sharing receive import channel", UI_SET_ZONE_OFFERS),
@@ -6041,6 +6107,7 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_PICKER] = &picker_screen, [SCR_INFO] = &info_screen, [SCR_CONFIRM] = &confirm_screen,
 	[SCR_DIAG] = &diag_screen, [SCR_EMERGENCY] = &emergency_screen, [SCR_SCAN] = &scan_screen,
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
+	[SCR_APRS_STATION] = &ui_aprs_station_screen,
 	[SCR_APRS_POS] = &ui_aprs_pos_screen, [SCR_ABOUT] = &about_screen,
 	[SCR_VOLUME] = &volume_screen, [SCR_LANGUAGE] = &lang_screen,
 	[SCR_DMR_ID] = &dmr_id_screen,

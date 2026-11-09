@@ -1487,7 +1487,7 @@ bool aprs_send_message_opts(const char *to, const char *text, uint8_t flags)
 		xl += cn;
 	}
 	LOCK();
-	if ((a.out.active && !a.out.acked && a.out.tries < APRS_MSG_TRIES) || rf_block() != APRS_OK) {
+	if (rf_block() != APRS_OK) {
 		UNLOCK();
 		return false;
 	}
@@ -1559,16 +1559,32 @@ uint8_t aprs_msg_count(void)
 	return n;
 }
 
-bool aprs_msg(uint8_t i, aprs_msg_t *out)
+static bool message_get(uint8_t i, aprs_msg_t *out, bool read)
 {
 	LOCK();
 	bool ok = i < a.nmsg;
 	if (ok) {
 		*out = a.msgs[i];
-		if (!a.msgs[i].read) {
+		if (read && !a.msgs[i].read) {
 			a.msgs[i].read = true;
 			changed();
 		}
+	}
+	UNLOCK();
+	return ok;
+}
+
+bool aprs_msg(uint8_t i, aprs_msg_t *out) { return message_get(i, out, true); }
+bool aprs_msg_peek(uint8_t i, aprs_msg_t *out) { return message_get(i, out, false); }
+
+bool aprs_msg_delete(uint8_t i)
+{
+	LOCK();
+	bool ok = i < a.nmsg;
+	if (ok) {
+		memmove(&a.msgs[i], &a.msgs[i + 1u], (a.nmsg - i - 1u) * sizeof a.msgs[0]);
+		a.nmsg--;
+		changed();
 	}
 	UNLOCK();
 	return ok;

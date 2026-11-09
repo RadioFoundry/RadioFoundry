@@ -33,12 +33,13 @@ Messages.
    | Call | Makes the sender the talk target for now |
    | Delete | Deletes the message. There is no undo |
 
-**#** on a message opens the actions for its sender. **PTT** in an open message calls the sender.
+**#** on a DMR message opens the actions for its sender. **PTT** in an open DMR message calls the sender. The Call
+action is unavailable for APRS messages, whose sender is a callsign.
 
 <img src="../ux/screens/160x120i5/messages.png" width="200" alt="Messages">
 <img src="../ux/screens/160x120i5/message_view.png" width="200" alt="A message">
 
-The radio keeps the last 4 messages received, in memory. They are lost when the radio turns off.
+The radio keeps DMR and APRS messages in memory. They are lost when the radio turns off.
 
 ## Sending a message
 
@@ -66,8 +67,9 @@ delete. A DMR message can hold up to 143 characters. Messages you send aren't st
 
 ### Sending over APRS
 
-1. Set **Settings > Connections > Message format** to **APRS**.
-2. Open **Messages > New APRS message**. Select **To callsign** and enter the recipient's callsign, with an optional
+1. Open **Messages > New APRS message** when APRS is built and your callsign is set. You can also open **Stations heard**,
+   select a station and choose **Message** to fill its callsign.
+2. Select **To callsign** and enter the recipient's callsign, with an optional
    SSID (for example, `K1ABC-9`). Press **OK** to keep it.
 3. Choose **Request acknowledgment** and **Include position** if needed, then pick a preset or **Write...** and press
    **OK** to send. Both choices apply only to this message. APRS messages hold up to 67 characters. Presets use the
@@ -79,21 +81,20 @@ that needs no delivery confirmation. **Include position** starts off. When on, t
 or fixed position as decimal coordinates to the message text. It refuses to send if no position is available or the
 text plus coordinates exceeds 67 characters. The position is part of the message body, not a separate position beacon.
 
-The APRS destination is a callsign, not a DMR ID. Sending is refused if the callsign or text is invalid, another
-APRS message is still waiting, or the APRS RF path is unavailable. **Tools > APRS** shows the configured frequency
-and any blocking reason. APRS reception and APRS messages in the shared inbox are not available in this flow.
+The APRS destination is a callsign, not a DMR ID. A new outgoing message replaces one still awaiting an acknowledgment.
+Sending is refused if the callsign or text is invalid or the APRS RF path is unavailable. **Tools > APRS** shows the
+configured frequency and any blocking reason. Received APRS messages appear in Messages; replies go over APRS.
 
 ## Message formats
 
-**Settings > Connections > Message format** picks the format of new messages you send. The radio reads all three DMR
-formats, whatever the setting. A reply to a DMR inbox message still uses DMR.
+**Settings > Connections > Message format** picks the encoding of new DMR messages. The radio reads all three DMR
+formats, whatever the setting. A reply to a DMR inbox message uses DMR.
 
 | Format | Use it for |
 |---|---|
 | ETSI (default) | The standard DMR text message (ETSI IP text). Radios and dispatch software set to "DMR standard" text read it. Delivery to a person is confirmed |
 | ETSI short | Radios that only show ETSI short data messages. Delivery is confirmed |
 | Motorola | MOTOTRBO radios and dispatch software set to Motorola text messages (TMS). Delivery is confirmed. Not in builds made without Motorola TMS support |
-| APRS | Addressed AX.25 text over FM to a callsign. Shown only in builds with APRS; selection requires an AFSK transmit path. The APRS engine retries while waiting for an acknowledgment |
 
 If your radio was set up before ETSI became the default and its data settings were saved, it keeps sending Motorola
 messages until you change the setting.

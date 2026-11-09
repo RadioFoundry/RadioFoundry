@@ -244,6 +244,8 @@ uint8_t aprs_station_count(void);
 bool aprs_station(uint8_t i, aprs_station_t *out);	// 0 = most recent
 uint8_t aprs_msg_count(void);
 bool aprs_msg(uint8_t i, aprs_msg_t *out);		// 0 = newest; marks it read
+bool aprs_msg_peek(uint8_t i, aprs_msg_t *out);	// leaves unread state alone
+bool aprs_msg_delete(uint8_t i);
 #endif
 
 // --- The host link (aprs_host.c) and a board GPS ---
