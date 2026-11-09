@@ -143,7 +143,7 @@ Pin index 0-31 = PTA, 32-63 = PTB, 64-95 = PTC.
 | Speaker amplifier | PTC18 high, together with the serial chain's amplifier bit (9.3) |
 | PTC20 | Low cuts the modem's audio line while a beep plays (INF). Low at start-up |
 | Line out gain | Beeps and DMR voice come from the modem's line out, not the main chip's AF, so the volume sets the codec's DAC gain (GCR_DACL) as well, as the original firmware does (3 dB a step). At 0 dB a beep doesn't reach A's microphone at a loud knob; from about +16 dB it is as loud as the receiver's noise (**HW** 2026-10-27). The loudspeaker also needs B's switch closed (section 10) |
-| PTT / K1 data | PTA9, shared with UART1 RXD; low = PTT. On DMR transmit at 446 MHz with the programming cable in, each burst disturbs this line (**HW**): one character with a line error per burst, which the host UART drops ([gotchas 2.13](gotchas.md)), and a host request sent during a burst can be lost |
+| PTT / K1 data | PTA9, shared with UART1 RXD; low = PTT. On transmit at 446 MHz, FM and DMR, with the programming cable in, the transmission disturbs this line (**HW**). The host UART drops each character with a line error ([gotchas 2.13](gotchas.md)), and host requests are lost from about 0.2 s after key-up until the transmission ends. At 146 MHz none are lost |
 | UARTs | UART1 PTA9/10 PC cable (115200); UART2 PTA11/12 GPS (9600); UART3 PTA13/14 link to B (115200) |
 | GPS power | PTB17, high = on. On start-up the receiver gets `$CFGPRT,,0,9600,3,3` |
 | LCD | 320x240 on the i8080 controller (0x12000000), reset PTC2 (low 10 ms, high 130 ms, twice). Four init variants (9.4) |
