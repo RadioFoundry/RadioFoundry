@@ -21,7 +21,7 @@
 
 #define APRS_TOCALL		"APZRDF"	// destination: the experimental APZ block (docs/spec/aprs.md 4.2)
 #define APRS_SSID_DEFAULT	7		// handheld
-#define APRS_DMR_DST_DEFAULT	5057u		// BrandMeister's APRS location service, "person" icon
+#define APRS_DMR_DST_DEFAULT	310999u		// BrandMeister's APRS gateway, <master MCC>999 (310999 for US masters); 5057 retired 2019-03-01
 #define APRS_LEVEL_DEFAULT	50
 #define APRS_TXDELAY_DEFAULT	30		// 300 ms of flags
 #define APRS_INTERVAL_DEFAULT	600		// s, when automatic beacons are turned on without SmartBeaconing

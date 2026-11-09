@@ -24,8 +24,9 @@ Sources (all public, read for the formats only; no implementation was used as a 
 - The KISS TNC protocol (Chepponis and Karn, 1987): framing, escapes, the command bytes.
 - aprs-is.net: "IGate Design", "q Construct", "Connecting to APRS-IS" (login, passcode, filters).
 - SmartBeaconing as published by Tony Arnerich KD7TA and Steve Bragg KA9MVA (HamHUD), released for anyone to use.
-- BrandMeister's APRS documentation: the location service IDs (5050-5059, SSID and icon by ID) that turn LRRP and
-  ETSI location reports into APRS positions.
+- BrandMeister's APRS documentation: the location service IDs (the retired 5050-5059 and the MCC999 gateway) that turn Motorola (LRRP) and
+  Hytera position reports into APRS positions ("Position reports of Hytera and Motorola radios can be forwarded to
+  APRS", wiki.brandmeister.network/index.php/APRS, last edited 2020-07-03).
 - Bell 202: 1200 baud, mark 1200 Hz, space 2200 Hz, NRZI (a 0 bit is a tone change).
 
 Black-box oracles (never read for code): Direwolf decodes the WAV that `aprsTest --wav` writes
@@ -241,17 +242,48 @@ reader needs no table of its own. Turning the GPS setting off empties it.
 ## 8. Positions over DMR
 
 Send via (AFSK / DMR / Both): DMR positions go out when the radio is on a DMR channel with the call stack running,
-as a private data call to the destination ID (default 5057, BrandMeister's APRS service, "person" icon):
+as a private data call to the destination ID (default 310999). BrandMeister's APRS gateway is a private ID
+"MCC999", with MCC replaced by the master's MCC (310999 for US masters, 204999 for a Dutch one). 310999 works from any master; your own master's prefix
+(`<MCC>999`) is recommended. The old 5057 was
+retired on 2019-03-01 (<https://news.brandmeister.network/gps-5057-destination/>,
+<https://wiki.brandmeister.network/index.php/APRS>). A radio that already saved its APRS settings keeps the stored
+value: run `aprs set dmr_dst <MCC>999` (US: `aprs set dmr_dst 310999`).
 
 - Motorola LRRP triggered location report (the default): UDP port 4001, built by `dmrLrrp.c`.
-- ETSI UDT location (`dmr_udt` on): `dmrDataBuildUDTLocation`.
+- ETSI UDT location (`dmr_udt` on): `dmrDataBuildUDTLocation`. BrandMeister forwards the position reports of Motorola
+  (LRRP) and Hytera radios to APRS, so use LRRP, not UDT, for BrandMeister.
 
 ### 8.1 LRRP details
 
-An unsolicited report carries request ID 00000001 (no request came). Which request ID and token BrandMeister's
-gateway expects for unsolicited reports is unverified: an open decision, checked with the HIL step in section 13.
-BrandMeister maps the ID to an SSID and icon (5050-5059); the APRS settings on BrandMeister's self care page set the
-comment.
+An unsolicited report carries request ID 00000001 (no request came). BrandMeister's gateway accepts it with no ARS
+registration. Checked on master 3102 through a hotspot: each report to 310999 appeared on APRS-IS as
+`<callsign>-7>APBM1D,<callsign>,DMR*,qAR,<callsign>:=<lat>/<lon>[<name> D` (SSID and comment from the BrandMeister
+profile, tocall APBM1D).
+The retired 5050-5059 IDs chose the SSID and icon; whether MCC999 does is unverified (HIL step, section 13). The APRS settings
+on BrandMeister's self care page set the comment.
+
+### 8.2 Positions heard over DMR
+
+Some radios of other makes send their DMR APRS position as an NMEA sentence over UDP port 10110 (compressed UDP/IP
+header, SAP 3), as a private data call or to a talkgroup, usually to the APRS gateway's ID (BrandMeister's <MCC>999,
+e.g. 310999). As on FM, where every station heard goes into the list, the data service hands each one heard on the
+channel to the radio core whoever it is addressed to (only control station passthrough, our own repeated back and a
+compressed header for a host behind the radio, DAID 1, are left out; `dmr-data.md` 3; the stock radio sends DAID 0).
+The core parses it with `nmea_parse_unchecked` and puts a position with a fix into the station list through
+`aprs_dmr_heard`, as a caller's GPS Info. The packet has no callsign and a data call no talker alias, so the station
+is named by the DMR ID database (`dmr_iddb_lookup`: its callsign, the record's first word) when the ID is in it,
+else by the DMR ID. BrandMeister names the same report on APRS-IS by the callsign registered for the ID, with the
+SSID set in SelfCare; no SSID is made up here. What one stock radio sent on air:
+`$GPRMC,...,3000.0000,N,8700.0000\0,W,...,A` with no `*hh` checksum, a NUL before `,W`, a NUL from the pad after the
+sentence, and the longitude with 4 integer digits. The checksum is optional here (the packet's CRC-32 covered it,
+but one that is given is checked), NULs are skipped, and the coordinates are read as numbers, so 8700.0000 is 87
+degrees (anything past 90 / 180 degrees, or an integer part too long to scale, is refused, as in `nmea_parse`). Time
+and date are not used. Like a caller's GPS Info, it does not depend on the APRS receive setting (`rx_on`, which is
+the FM decoder's). Host tests: `aprsTest` (`test_nmea_unchecked`: input classes, the 90 / 180 degree, 60 minute,
+32-bit and length edges, a seeded fuzz and a metamorphic check against the strict parse), `dmrDataServiceTest`
+(`testNmeaPosition`: the packet heard on air rebuilt with placeholder IDs, its blocks and CRC-32 matching the ones
+heard; the packet classes, ports and payload lengths) and `radioCoreTestAprs` (`test_dmr_aprs_position`: through the
+radio core into the station list).
 
 ## 9. Host port: KISS TNC
 
@@ -329,7 +361,7 @@ The path lives in both places, and the one changed last wins:
   none: the radio then keeps the path in the settings only. A change over the debug link stays in the settings.
 
 Defaults: TX off, region N America, SSID 7, symbol `/[`, path WIDE1-1,WIDE2-1, compressed, interval 10 min,
-SmartBeaconing on, level 50, TX delay 300 ms, via Radio, destination 5057; messaging and RX only on boards with a
+SmartBeaconing on, level 50, TX delay 300 ms, via Radio, destination 310999; messaging and RX only on boards with a
 receive path.
 
 ## 12. Size
@@ -367,7 +399,7 @@ saved and put back once the queued frames and message retries have gone out on t
    the bench modem's listener hears the header and blocks, the test checks the CRCs, the IPv4 / UDP 4001 / LRRP or
    UDT NMEA layers and the position (within 2e-5 degree). Passed on air (a 70 cm DMR channel, color code 2, 50 mW).
 3. Still manual: BrandMeister (`aprs set via dmr` through a BrandMeister repeater or hotspot; the position on aprs.fi
-   with the 5057 SSID, else `dmr_udt 1`, and the LRRP request ID question, 8.1) and KISS (`aprs set kiss 1`,
+   with the SSID BrandMeister assigns, and the LRRP request ID question, 8.1) and KISS (`aprs set kiss 1`,
    `tools/aprs_gate.py --port PORT --kiss-tcp 8001`, or in USB network mode the radio's own KISS port 8001; a position
    from APRSdroid / Xastir goes out on RF).
 
