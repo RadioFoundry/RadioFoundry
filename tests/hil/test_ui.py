@@ -13,7 +13,8 @@ import time
 
 import pytest
 
-from rfoundry_hil import LONG, as_int, skip, skip_if
+from hil_config import rig
+from rfoundry_hil import HIL_SMS_PREFIX, LONG, as_int, skip, skip_if
 from rfoundry_debug import DOWN, UP
 
 
@@ -566,10 +567,14 @@ def test_privacy_key_entry(home):
 
 @pytest.mark.feature("key_lock")
 @pytest.mark.radio_tx
-def test_ptt_when_locked_off(home):
+def test_ptt_when_locked_off(home, pytestconfig):
     """Settings > Privacy > PTT when locked Off: with the keys locked an injected PTT doesn't transmit and the UI
-    says how to unlock. Marked radio_tx: if the block failed the radio would key up (lowest power)."""
+    says how to unlock. Marked radio_tx: if the block failed the radio would key up (lowest power), so it does that
+    on the DMR test channel (--dmr-freq), not on whatever channel the radio was left on (a receive-only one is refused
+    by the TX guard before the radio sees the PTT)."""
     r = home
+    r.find_channel(round(rig(pytestconfig, "dmr-freq") * 1e6), "dmr")
+    r.go_home()
     flags = ui_flags(r)
     if flags is None:
         skip("not_built", "firmware without settings.ui_flags")
@@ -686,14 +691,18 @@ def test_zone_editor_moves_a_channel(home):
 
 
 @pytest.mark.feature("dmr_sms")
-@skip_if(os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") != "1", "opt_in",
-         "deletes the newest inbox message: set RFOUNDRY_HIL_DELETE_MESSAGE=1")
 def test_delete_message(home):
-    """Hub 2 (Messages), OK on the newest, Delete (the fourth action): the inbox has one message less."""
+    """Hub 2 (Messages), OK on the newest, Delete (the fourth action): the inbox has one message less. Only a message
+    a HIL test sent (test_sms_rx's, its text starting HIL_SMS_PREFIX) is deleted without asking; to delete one of the
+    owner's set RFOUNDRY_HIL_DELETE_MESSAGE=1."""
     r = home
     n = as_int(r.view(["dmr_data"]).get("data.inbox_count"))
     if not n:
         skip("state", "the inbox is empty (or no data core)")
+    newest = r.link.inbox(0) or {}
+    if not newest.get("text", "").startswith(HIL_SMS_PREFIX) and os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") != "1":
+        skip("opt_in", "the newest inbox message isn't a HIL test's (run test_sms_rx first), and deleting another "
+                       "needs RFOUNDRY_HIL_DELETE_MESSAGE=1")
     r.press("ok")
     wait_screen(r, "hub")
     r.press("2")

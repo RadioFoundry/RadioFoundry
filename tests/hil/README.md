@@ -105,6 +105,22 @@ aprs_test_mhz = 433.4750
 aprs_dmr_dst = 9990301
 ```
 
+A `[board.<id>]` table (the board's id in `boards/`) holds one radio's run: its test channel, its bench and the
+options its tests need, so every run of that radio gets the same ones and no required test skips for a value someone
+forgot. `--hil-board <id>` (or `$RFOUNDRY_HIL_BOARD`) applies it; `tools/bringup.py run --radio <id>` passes it. Its
+values come before the file's top level, after the command line and the environment. Besides the keys above it may
+give any option that takes a value (`bench_api`, `split_tx_mhz`, `sfr_freq`, `roam_rx`, ...). A flag (`--allow-rf`
+and the other `--allow-*`) and `--radio-port` (ports move with the cables) stay on the command line, and the run
+stops on either in the file:
+
+```toml
+[board.radio_a]
+dmr_freq = 433.4500
+fm_mhz = 433.4750
+bench_api = "192.0.2.10"
+bench_api_level = 255
+```
+
 The tools in `tools/bench/` take `--freq` and `--cc` or `$RFOUNDRY_BENCH_FREQ` / `$RFOUNDRY_BENCH_CC`, and the SDR
 receiver's name `--receiver` or `$RFOUNDRY_SDR_RECEIVER`; none has a default.
 
@@ -295,7 +311,7 @@ The waveform and CACH tests skip as `bench` on a board without the feature (`bur
 | `test_boot.py` | version / features, ping latency, screenshot geometry (in the packed form), firmware clock vs wall clock (no stalls), view sections, diagnostics clock, error replies (unknown command, bad CRC, oversized request), log ring | radio |
 | `test_task_stacks.py` | after every view section and a screenshot, the `tasks` view section: every task has at least 64 bytes of stack left since it started (`RFOUNDRY_HIL_STACK_MIN_FREE` overrides), none untracked, the core's and the kernel's tasks present; prints each task's least free stack. Skipped without the section | radio, firmware with `CONFIG_TASK_STACKS` |
 | `test_ptt_host_traffic.py` | Host traffic never makes a PTT press (radios whose PTT pin is also the cable's serial line, [gotchas](../../docs/spec/gotchas.md) 16.2; trivially passes elsewhere): 30 s of polling with gaps of 40 to 120 ms around the 50 ms gate and some requests back to back, TX inhibit on (RAM, put back): `input.ptt_downs` unchanged, the state never `tx` | |
-| `test_ui.py` | UP / DOWN change the channel on Home; OK opens the Hub (6 rows), digits open its destinations, BACK goes up, long BACK goes Home from depth 3; Quick settings open and close (BACK and QUICK); digits on Home start Find (`ui.query`); long QUICK locks and unlocks; long # opens Recent; diagnostics through Tools (Hub 5, 7); screenshots `ui_quick.png` and `ui_find.png`; injected keys count as activity; the Quick tiles for now (DMR: slot `dmr.ts` + temp 0x20, color code `dmr.cc` + 0x40, hear all `dmr.hear_all_latch`; FM: monitor latch, VOX `vox_on`), each undone by BACK on Home or a second press; Quick 4 on a DMR channel copies it to the VFO (`vfo`, `mode`, the toast; the channel unchanged, the VFO's own values put back); the picker's focus row (`dmr.focus_id`, cleared by long BACK); Settings long press time (`input.long_ms`, set back) and auto lock 30 s (`ui.locked` after 30 s, set back to Off); opt-in: the timeslot saved to the channel and back (`storage.job_busy`, `temporary`), the zone editor's Move down and Move up on the channel in use (`zone.edits`, `zone.edit_last`, `zone_pos`; the zone ends as it was), deleting the newest message (`$RFOUNDRY_HIL_DELETE_MESSAGE=1`), factory reset with a restart (`$RFOUNDRY_HIL_FACTORY_RESET=1`). State is read from the link section (`ui.screen`, `ui.depth`, `ui.count`, `ui.locked`, `ui.query`, `ui.toast`) | radio; `--allow-codeplug-write`, `--allow-reboot` |
+| `test_ui.py` | UP / DOWN change the channel on Home; OK opens the Hub (6 rows), digits open its destinations, BACK goes up, long BACK goes Home from depth 3; Quick settings open and close (BACK and QUICK); digits on Home start Find (`ui.query`); long QUICK locks and unlocks; long # opens Recent; diagnostics through Tools (Hub 5, 7); screenshots `ui_quick.png` and `ui_find.png`; injected keys count as activity; the Quick tiles for now (DMR: slot `dmr.ts` + temp 0x20, color code `dmr.cc` + 0x40, hear all `dmr.hear_all_latch`; FM: monitor latch, VOX `vox_on`), each undone by BACK on Home or a second press; Quick 4 on a DMR channel copies it to the VFO (`vfo`, `mode`, the toast; the channel unchanged, the VFO's own values put back); the picker's focus row (`dmr.focus_id`, cleared by long BACK); Settings long press time (`input.long_ms`, set back) and auto lock 30 s (`ui.locked` after 30 s, set back to Off); opt-in: the timeslot saved to the channel and back (`storage.job_busy`, `temporary`), the zone editor's Move down and Move up on the channel in use (`zone.edits`, `zone.edit_last`, `zone_pos`; the zone ends as it was), deleting the newest message (one `test_sms_rx` sent, its text starting `RadioFoundry HIL `; another needs `$RFOUNDRY_HIL_DELETE_MESSAGE=1`), factory reset with a restart (`$RFOUNDRY_HIL_FACTORY_RESET=1`). State is read from the link section (`ui.screen`, `ui.depth`, `ui.count`, `ui.locked`, `ui.query`, `ui.toast`) | radio; `--allow-codeplug-write`, `--allow-reboot` |
 | `test_encoder.py` | The channel knob: injected detents move to the next channel on Home and down a list (forward), back the other way; with `--manual`, asks for 10 clicks each way and a wobble and checks the decoder's counts (`input.enc_detents` = clicks, `input.enc_transitions` = clicks x `input.enc_steps`, `input.enc_illegal` near 0, no count from the wobble) | radio; a zone of 3+ channels; `--manual -s` and a person for the second test |
 | `test_vfo_copy.py` | Copy to VFO (`dmr-voice.md` 2.2), nothing transmitted: RADIO op 32 puts the first FM channel of the zone into the VFO (frequencies, mode, bandwidth, tones), the channel stays as it was, a second copy in the VFO is refused, the VFO keeps the values over a channel and back, then its own values are put back | radio with the FM VFO |
 | `test_vfo_dmr.py` | the DMR VFO (`dmr-voice.md` 2.1), nothing transmitted: mode, color code, slot and talk target set over the debug link (RADIO ops 31 and 15) show in the `core` / `dmr` views with no temporary flag, survive a channel and back, and the VFO goes back to FM with the defaults | radio with the DMR and FM VFO |
@@ -492,6 +508,13 @@ checks reported as not judged when the receiver clips, and the bench modem's tri
   channel). The session puts the VFO in FM and puts its frequency and mode back afterwards; `vfo_session(mode=None)`
   keeps the mode. The VFO's mode, color code, slot and talk target are its own settings and outlive a power cycle,
   so a test that changes them (Copy to VFO does) puts them back itself.
+- `restore_radio` also sets back a hardware option (`hwopt`) a restart reset to its default: one that holds for a
+  power cycle only (a transmit arm) is otherwise lost after a test that restarts the radio, and every later test
+  fails as if the firmware did. An option that needs a restart to apply is left alone.
+- Don't depend on the state the radio starts in: an earlier test or run may leave a temporary change (the lowest
+  power the TX tests set is one) or any zone and channel. A test that keys picks its channel (`find_channel` on
+  `--dmr-freq` or `--fm-mhz`), and one that checks a flag checks what it changed (the bits it added), not the
+  flag's absolute value.
 - Before the first test the session sets auto lock back to Off and the radio's language back to English
   (`settings.lang`, Settings > Display > Language) and says so: tests match the English text in the view (`ui.toast`,
   `ui.banner`, screen texts). A test that changes the language puts it back itself.
