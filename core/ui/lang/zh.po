@@ -638,7 +638,7 @@ msgstr "自动信标"
 msgid "Frequency"
 msgstr "频率"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgid "Power"
 msgstr "功率"
 
@@ -2927,6 +2927,14 @@ msgid "Connections"
 msgstr "连接"
 
 #: core/ui/ui_menus.c
+msgid "Power saving"
+msgstr "省电"
+
+#: core/ui/ui_menus.c
+msgid "Power Saving"
+msgstr "省电"
+
+#: core/ui/ui_menus.c
 msgid "Keys"
 msgstr "按键"
 
@@ -3339,6 +3347,10 @@ msgid "WAITING"
 msgstr "等待"
 
 #: core/ui/ui_screens.c
+msgid "ADMITTED"
+msgstr "已准许"
+
+#: core/ui/ui_screens.c
 msgid "ENDING"
 msgstr "结束中"
 
@@ -3551,6 +3563,10 @@ msgid "No calls yet"
 msgstr "暂无通话"
 
 #: core/ui/ui_screens.c
+msgid "{Power|Pwr}"
+msgstr "{功率|功}"
+
+#: core/ui/ui_screens.c
 msgid "{Squelch|SQL}"
 msgstr "{静噪|SQL}"
 
@@ -3675,12 +3691,12 @@ msgid "Couldn't read the channel: for now only"
 msgstr "信道读取失败：仅临时"
 
 #: core/ui/ui_svc_storage.c
-msgid "Codeplug not written: for now only"
-msgstr "电台频率未写入：仅临时"
-
-#: core/ui/ui_svc_storage.c
 msgid "Not a stored contact: for now only"
 msgstr "非已存联系人：仅临时"
+
+#: core/ui/ui_svc_storage.c
+msgid "Codeplug not written: for now only"
+msgstr "电台频率未写入：仅临时"
 
 #: core/ui/ui_svc_storage.c
 msgid "Reset: the settings couldn't be saved"
