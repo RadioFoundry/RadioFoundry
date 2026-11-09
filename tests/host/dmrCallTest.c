@@ -948,6 +948,44 @@ static void test_wake_settle(void)
 	CHECK(at_once < 2000 && held >= at_once + 200 && held <= at_once + 320);
 }
 
+// Keyed again right after our own call, on a repeater still up: the same hold before an aligned start
+static uint32_t rekey_to_voice_ms(uint16_t settle)
+{
+	dmr_call_config_t c = base_cfg();
+	hal_dmr_modem_t m = sim_modem;
+	uint32_t waited = 0;
+
+	c.rmo = true;
+	m.wake_settle_ms = settle;
+	modem_under_test = &m;
+	setup(&c);
+	sim.wake_repeater_on_csbk = true;
+	dmr_call_ptt(true);
+	run_ms(1000);
+	dmr_call_ptt(false);
+	while ((V()->phase == DMR_CALL_PHASE_TX_VOICE || V()->phase == DMR_CALL_PHASE_TX_ENDING) && waited < 2000) {
+		run_ms(5);
+		waited += 5;
+	}
+	waited = 0;	// the transmission is done; the repeater's copy of it may still be heard
+	dmr_call_ptt(true);
+	while (V()->phase != DMR_CALL_PHASE_TX_VOICE && waited < 2000) {
+		run_ms(5);
+		waited += 5;
+	}
+	dmr_call_ptt(false);
+	run_ms(600);
+	modem_under_test = &sim_modem;
+	return waited;
+}
+
+static void test_settle_after_own_call(void)
+{
+	uint32_t at_once = rekey_to_voice_ms(0), held = rekey_to_voice_ms(240);
+
+	CHECK(at_once < 100 && held >= at_once + 100 && held <= at_once + 320);
+}
+
 static void test_wake_listen(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -2524,6 +2562,7 @@ int main(void)
 	test_rmo_wakeup();
 	test_wake_listen();
 	test_wake_settle();
+	test_settle_after_own_call();
 	test_rmo_air_slot_alignment();
 	test_rx_call();
 	test_rx_filters();

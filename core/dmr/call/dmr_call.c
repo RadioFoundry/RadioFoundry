@@ -1350,6 +1350,8 @@ static void tx_access(uint32_t now)
 	}
 	if (s.cfg.rmo && !repeater_up(now)) {
 		tx_wakeup(now);
+	} else if (s.cfg.rmo && !elapsed(now, s.tx_end_ms, s.tx_end_seen, s.modem->wake_settle_ms)) {
+		return;		// just off our own call: the modem isn't on the outbound's slots yet
 	} else if (s.cfg.permit_hold_ms != 0 && !s.permit_done) {
 		s.tx = TX_PERMIT;	// admitted: the talk permit sounds now, while we still receive
 		s.permit_ms = now;
