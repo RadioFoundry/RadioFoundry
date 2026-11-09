@@ -70,11 +70,11 @@ static void up_burst(void *ctx, const sfrBurst_t *b, const uint8_t *header_lc, i
 
 	(void)ctx;
 	if (header_lc != NULL) {
-		hotspot_up_lc(cmd, DT_VOICE_LC_HEADER, header_lc, 0);	// made from the embedded LC (late entry)
+		hotspot_up_lc(cmd, DMR_TYPE_VOICE_LC_HEADER, header_lc, 0);	// made from the embedded LC (late entry)
 	}
 	if (b->kind == SFR_BURST_VOICE) {
 		hotspot_up_voice(cmd, b->payload, b->type, sfrRunnerCallLc(&run), rssi_dbm);
-	} else if ((b->type == DT_VOICE_LC_HEADER) || (b->type == DT_TERMINATOR_WITH_LC)) {
+	} else if ((b->type == DMR_TYPE_VOICE_LC_HEADER) || (b->type == DMR_TYPE_TERMINATOR_LC)) {
 		hotspot_up_lc(cmd, b->type, b->payload, rssi_dbm);
 	} else {
 		hotspot_up_data(cmd, b->type, b->payload, b->length, rssi_dbm);
@@ -156,10 +156,10 @@ static uint8_t alt_net_frame(uint8_t command, uint8_t control, const uint8_t *fr
 	if (c & MMDVM_DMR_SYNC_DATA) {
 		uint8_t dt = c & 0x0F;
 
-		if (dt == DT_IDLE) {
+		if (dt == DMR_TYPE_IDLE) {
 			return 0;	// the radio makes its own
 		}
-		if (dt == DT_TERMINATOR_WITH_LC) {
+		if (dt == DMR_TYPE_TERMINATOR_LC) {
 			if (net_last_term) {
 				return 0;	// the second and third terminators
 			}
@@ -167,7 +167,7 @@ static uint8_t alt_net_frame(uint8_t command, uint8_t control, const uint8_t *fr
 		b.kind = SFR_BURST_DATA;
 		b.type = dt;
 		b.flags = SFR_BURST_FLAG_MCU_CRC;
-		if ((dt == DT_VOICE_LC_HEADER) || (dt == DT_TERMINATOR_WITH_LC) || (dt == DT_VOICE_PI_HEADER)) {
+		if ((dt == DMR_TYPE_VOICE_LC_HEADER) || (dt == DMR_TYPE_TERMINATOR_LC) || (dt == DMR_TYPE_PI_HEADER)) {
 			dmrFecBptcDecode(frame, b.payload);	// 12 bytes: the LC (or PI) and its checksum
 			b.length = 12;
 		} else {
@@ -199,7 +199,7 @@ static uint8_t alt_net_frame(uint8_t command, uint8_t control, const uint8_t *fr
 	uint8_t r = sfrRunnerNetBurst(&run, &b, now_ms);
 
 	if (r == 0) {
-		net_last_term = (b.kind == SFR_BURST_DATA) && (b.type == DT_TERMINATOR_WITH_LC);
+		net_last_term = (b.kind == SFR_BURST_DATA) && (b.type == DMR_TYPE_TERMINATOR_LC);
 	}
 	return r;
 }

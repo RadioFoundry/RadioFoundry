@@ -96,7 +96,8 @@ Status per modem driver:
 | HR_C7000 (`drivers/modem/hrc7000/hrc7000_dmr.c`) | HR_C7000 boards | all: `sync_override`, `DMR_TIMING_ALIGNED` (the TX slot built from the receive slot, ours picked by slot number), `tx_listen` (with the voice-access flag during a call), `DMR_BURST_EMPTY`, `tx_fill`, the TX slot events; headers and terminators heard while sending are passed on with the chip's CRC verdict. On air (gotchas 14.11) |
 
 The board switches the RF per burst: the RF TX interrupt keys the PA, the timeslot interrupt that starts the next slot
-drops it (the AT1846S goes back to RX about 1.3 ms into the slot, gotchas 3.4). The rest of this
+drops it (the AT1846S goes back to RX about 1.3 ms into the slot, gotchas 3.4). A board with one synthesizer for
+receive and transmit retunes it per burst as well (gotchas 14.6). The rest of this
 section is the HR_C6000 bring-up, measured on an AT1846S board. Item 1 was missing in the chip: the slot between our bursts was written
 "no receive" (0x41 = 0x00), so nothing was heard there and MMDVM SFR repeated only what it heard before
 keying (HIL 2026-10-10: mode switching and the first repeat on TS2 passed, the rest of the call failed). With
@@ -198,7 +199,7 @@ is active the SFR stays off, and without a role the SFR works exactly as describ
   `tests/host/roamTest.c` (the `sfr_cwid` bits stored and clamped).
 - HIL: `tests/hil/test_hotspot_sfr.py` (MMDVM SFR on and off through MMDVM on the radio's channel, no traffic sent;
   marked `radio_tx` because a call heard would be repeated). On-air repeat tests need the driver work of section 3
-  and the SDR bench (`tools/bench/mmdvm_hotspot.py --sfr`, `tools/bench/sfr_call.sh`).
+  and the SDR bench (`tools/bench/mmdvm_hotspot.py --sfr`).
   `tests/hil/test_sfr_standalone.py` runs the standalone roles from codeplug channels: the repeater's inbound quality
   (`sfr.rx_fec`, `sfr.rx_fec_pos`), TX inhibit, the CW ID and the user's receive modes against the bench talker, and
   `test_sfr_chain_rfoundry_user`, a whole chain of RadioFoundry radios (talker, repeater, listener) judged by what the

@@ -223,16 +223,25 @@ usrp_event_t usrp_link_rx(usrp_link_t *l, const uint8_t *buf, size_t len, uint32
 	return USRP_EV_NONE;
 }
 
+// Milliseconds from then to now, 0 when then is later: a caller's now can be read before the frame it then takes in
+// stamped its own time (the host link reads the clock once per poll), and the plain unsigned difference is a wrapped
+// 4e9 then, a keyup timeout on a live link
+uint32_t usrp_since(uint32_t now_ms, uint32_t then_ms)
+{
+	int32_t d = (int32_t)(now_ms - then_ms);
+	return d > 0 ? (uint32_t)d : 0u;
+}
+
 usrp_event_t usrp_link_tick(usrp_link_t *l, uint32_t now_ms)
 {
-	uint32_t quiet = now_ms - l->last_keyup_ms;
+	uint32_t quiet = usrp_since(now_ms, l->last_keyup_ms);
 	if (l->keyed) {
 		if (quiet >= l->cfg.keyup_timeout_ms) {
 			l->keyed = false;
 			l->stats.timeouts++;
 			return USRP_EV_TIMEOUT;
 		}
-		if (l->cfg.tx_max_ms != 0 && (uint32_t)(now_ms - l->key_ms) >= l->cfg.tx_max_ms) {
+		if (l->cfg.tx_max_ms != 0 && usrp_since(now_ms, l->key_ms) >= l->cfg.tx_max_ms) {
 			l->keyed = false;
 			l->locked_out = true;
 			l->stats.tx_limits++;

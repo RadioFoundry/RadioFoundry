@@ -6,7 +6,7 @@
 #include "hotspot/hotspot.h"
 
 #define DESCRIPTION_MAX		96	// any build ID plus an extension suffix fits (docs/spec/gotchas.md 8.11)
-// MMDVM firmware doesn't acknowledge DMR data frames (it only NAKs a refused one); hosts don't wait for an answer
+// a modem doesn't acknowledge DMR data frames (it only NAKs a refused one); hosts don't wait for an answer
 #define ACK_DMR_DATA		0
 #define MODES_KNOWN		(MMDVM_MODE_BIT_DMR | MMDVM_MODE_BIT_POCSAG)	// enable bits we keep (and report)
 
@@ -421,7 +421,7 @@ void mmdvm_frame(const uint8_t *frame, uint16_t len, uint32_t now_ms)
 		break;
 	case MMDVM_DMR_START:
 	case MMDVM_DMR_SHORTLC:
-		// Taken silently: MMDVMHost sends the short LC on every call even in simplex (spec 2.10). SFR: ACKed and
+		// Taken silently: a standard host sends the short LC on every call even in simplex (spec 2.10). SFR: ACKed and
 		// ignored, the radio owns its keying and sends no CACH (spec 6.2)
 		if (hotspot_alt_active()) {
 			ack(command);

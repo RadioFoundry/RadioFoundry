@@ -39,6 +39,8 @@ void stm32_i2s_pcm_stop(void);
 bool stm32_i2s_pcm_running(void);
 void stm32_i2s_pcm_stats(stm32_i2s_pcm_stats_t *out);
 void stm32_i2s_pcm_reset_stats(void);
+// hal_audio_t.stream_stats
+void stm32_i2s_pcm_stream_stats(audio_stream_stats_t *out);
 #endif
 
 #endif

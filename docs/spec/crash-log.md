@@ -13,7 +13,7 @@ radio until a power cycle, as before.
 | Kind | `kind` | From | `cause` | `pc` |
 |---|---|---|---|---|
 | Fault | 1 | a CPU exception: the platform's fault entry (2) | the exception number (CM4: 3 HardFault; CK803: the vector, 1 misaligned access, 2 access error, 3 divide by zero, 4 illegal instruction, 7 breakpoint, 8 unrecoverable error) | the faulting instruction |
-| Stack overflow | 2 | FreeRTOS's stack check (`configCHECK_FOR_STACK_OVERFLOW` 2), at a context switch. On the HR_C7000 also the interrupt stack's canary, at every tick: its lowest 4 words no longer hold the fill (`platform/hrc7000/irq_stack.h`) | 0 | in the kernel or the tick; `task` names the task, `irq` for the interrupt stack |
+| Stack overflow | 2 | FreeRTOS's stack check (`configCHECK_FOR_STACK_OVERFLOW` 2), at a context switch. Also the interrupt stack's canary, at every tick: its lowest 4 words no longer hold the fill (HR_C7000: its own interrupt stack, `platform/hrc7000/irq_stack.h`; STM32F4: the main stack, the handlers' once the scheduler runs, down to the end of `.bss`, `platform/stm32f4/irq_stack.c`) | 0 | in the kernel or the tick; `task` names the task, `irq` for the interrupt stack |
 | Out of heap | 3 | FreeRTOS's malloc-failed hook | 0 | in the kernel |
 | Assert | 4 | `configASSERT` (the platforms' `FreeRTOSConfig.h`) | the line | the caller of the assertion |
 | Hang | 5 | the hang check in the tick interrupt (1.1), with `CONFIG_WATCHDOG` | ms since the last watchdog feed | where the interrupted task was |

@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 /*
  * Host unit test for the hotspot uplink (hotspot/hotspotUplink.c): the bursts heard on RF, through the call tracker,
- * into a model of what MMDVMHost's DMRSlot::writeModem() accepts from a simplex modem
+ * into a record of the stream the radio sends up, checked against what ETSI TS 102 361-1 says a voice call looks like
  */
 
 #include <stdio.h>
@@ -14,78 +14,94 @@ static int failures = 0;
 
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
 
-// MMDVMHost DMRSlot::writeModem(), the RF side, reduced to its states and checks
-typedef struct
-{
-	enum { LISTENING, LATE_ENTRY, AUDIO } state;
-	unsigned lastN;
-	uint8_t lc[9];
-	int starts, ends, losts, voice, silence, dropped;
-	int headersSeen;
-} host_t;
-
-static void hostHeader(host_t *h, const uint8_t *lc)
-{
-	h->headersSeen++;
-	if (h->state == AUDIO)
-	{
-		return;// "if (m_rfState == RS_RF_AUDIO) return true"
-	}
-	memcpy(h->lc, lc, 9);
-	h->state = AUDIO;
-	h->starts++;
-}
-
-static void hostVoice(host_t *h, uint8_t seq, bool silence)
-{
-	if (seq == 0)
-	{
-		if (h->state == AUDIO)
-		{
-			h->lastN = 0;
-			h->voice++;
-			h->silence += silence;
-		}
-		else
-		{
-			h->state = LATE_ENTRY;// its own late entry needs the EMB, which the radio regenerates from the LC it sent
-			h->dropped++;
-		}
-		return;
-	}
-
-	if ((h->state != AUDIO) || (seq == h->lastN) || (seq != (h->lastN + 1)))
-	{
-		h->dropped++;
-		return;
-	}
-	h->lastN = seq;
-	h->voice++;
-	h->silence += silence;
-}
-
-static void hostTerminator(host_t *h)
-{
-	if (h->state == AUDIO)
-	{
-		h->ends++;
-	}
-	h->state = LISTENING;
-}
-
-static void hostLost(host_t *h)
-{
-	if (h->state == AUDIO)
-	{
-		h->losts++;
-	}
-	h->state = LISTENING;
-}
-
-// The hotspot task: a burst through the tracker to the host model, as hotspot.c does it
 static hotspotUplink_t up;
-static host_t host;
 static uint32_t now;
+
+// What the radio sent up, one letter per frame so a whole call reads at a glance: H header, A-F voice at that position,
+// a-f silence at that position, T terminator, L lost
+#define SENT_MAX	1100
+
+static char sent[SENT_MAX + 1];
+static uint8_t sentLc[SENT_MAX][HOTSPOT_UPLINK_LC_LENGTH];	// for H and T: the LC as it was when the frame went up
+static int sentLen;
+
+static void record(char what)
+{
+	if (sentLen == SENT_MAX)
+	{
+		printf("FAIL %s:%d: more than %d frames sent\n", __FILE__, __LINE__, SENT_MAX);
+		failures++;
+		return;
+	}
+
+	memcpy(sentLc[sentLen], hotspotUplinkLc(&up), HOTSPOT_UPLINK_LC_LENGTH);
+	sent[sentLen++] = what;
+	sent[sentLen] = '\0';
+}
+
+static void checkSent(int line, const char *expected)
+{
+	char want[SENT_MAX + 1];
+	int n = 0;
+
+	for (const char *p = expected; (*p != '\0') && (n < SENT_MAX); p++)
+	{
+		if (*p != ' ')
+		{
+			want[n++] = *p;
+		}
+	}
+	want[n] = '\0';
+
+	if (strcmp(want, sent) != 0)
+	{
+		printf("FAIL %s:%d: sent \"%s\", expected \"%s\"\n", __FILE__, line, sent, want);
+		failures++;
+	}
+}
+
+// The whole stream so far, spaces ignored
+#define CHECK_SENT(expected) checkSent(__LINE__, (expected))
+
+static int sentCount(char what)
+{
+	int n = 0;
+
+	for (int i = 0; i < sentLen; i++)
+	{
+		n += (sent[i] == what);
+	}
+
+	return n;
+}
+
+// Every frame of this kind carried this LC, and there was at least one
+static bool allCarry(char what, const uint8_t *lc)
+{
+	for (int i = 0; i < sentLen; i++)
+	{
+		if ((sent[i] == what) && (memcmp(sentLc[i], lc, HOTSPOT_UPLINK_LC_LENGTH) != 0))
+		{
+			return false;
+		}
+	}
+
+	return sentCount(what) > 0;
+}
+
+// The nth (from 0) frame of this kind carried this LC
+static bool nthCarries(char what, int nth, const uint8_t *lc)
+{
+	for (int i = 0; i < sentLen; i++)
+	{
+		if ((sent[i] == what) && (nth-- == 0))
+		{
+			return memcmp(sentLc[i], lc, HOTSPOT_UPLINK_LC_LENGTH) == 0;
+		}
+	}
+
+	return false;
+}
 
 static void deliver(const hotspotUplinkBurst_t *b)
 {
@@ -94,33 +110,33 @@ static void deliver(const hotspotUplinkBurst_t *b)
 
 	if (hotspotUplinkLost(&up, b->ms))
 	{
-		hostLost(&host);
+		record('L');
 	}
 
 	actions = hotspotUplinkBurst(&up, b, &fill);
 
 	if (actions & HOTSPOT_UP_LOST)
 	{
-		hostLost(&host);
+		record('L');
 	}
 	if (actions & HOTSPOT_UP_HEADER)
 	{
-		hostHeader(&host, hotspotUplinkLc(&up));
+		record('H');
 	}
 	if (actions & HOTSPOT_UP_FILL)
 	{
 		for (uint8_t s = fill; s != b->seq; s = (uint8_t)((s + 1) % 6))
 		{
-			hostVoice(&host, s, true);
+			record((char)('a' + s));
 		}
 	}
 	if (actions & HOTSPOT_UP_VOICE)
 	{
-		hostVoice(&host, b->seq, false);
+		record((char)('A' + b->seq));
 	}
 	if (actions & HOTSPOT_UP_TERMINATOR)
 	{
-		hostTerminator(&host);
+		record('T');
 	}
 }
 
@@ -131,7 +147,7 @@ static void tick(uint32_t toMs)
 		now++;
 		if (hotspotUplinkLost(&up, now))
 		{
-			hostLost(&host);
+			record('L');
 		}
 	}
 }
@@ -182,7 +198,8 @@ static void superframes(int n, const uint8_t *lc)
 static void start(void)
 {
 	hotspotUplinkReset(&up);
-	memset(&host, 0, sizeof(host));
+	sentLen = 0;
+	sent[0] = '\0';
 	now = 100000;
 }
 
@@ -199,13 +216,12 @@ static void testEightHeaders(void)
 	terminator(LC_A);
 	tick(now + 2000);
 
-	CHECK(host.starts == 1);
-	CHECK(host.headersSeen == 8);
-	CHECK(host.losts == 0);// the 480 ms of headers didn't end the call
-	CHECK(host.voice == 18);
-	CHECK(host.dropped == 0);
-	CHECK(host.ends == 1);
-	CHECK(memcmp(host.lc, LC_A, 9) == 0);
+	// Measured with a real host through a fake modem: repeated headers and terminators made one call and one end. Only
+	// the first terminator goes up: the call is closed by then, and nothing follows it, not even a late lost
+	CHECK_SENT("HHHHHHHH ABCDEF ABCDEF ABCDEF T");
+	CHECK(allCarry('H', LC_A));
+	CHECK(allCarry('T', LC_A));
+	CHECK(!up.open);
 }
 
 static void testLongHeaderRun(void)
@@ -218,11 +234,11 @@ static void testLongHeaderRun(void)
 	}
 	superframes(1, LC_B);
 	terminator(LC_B);
-	CHECK(host.starts == 1);
-	CHECK(host.losts == 0);
-	CHECK(host.voice == 6);
-	CHECK(host.ends == 1);
-	CHECK(memcmp(host.lc, LC_B, 9) == 0);// FID and service options kept
+
+	// Longer than the lost time from the first header to the voice: each header has to count as the call still being on
+	CHECK_SENT("HHHHHHHHHHHHHHHHHHHH ABCDEF T");
+	CHECK(allCarry('H', LC_B));
+	CHECK(allCarry('T', LC_B));
 }
 
 static void testLateEntry(void)
@@ -232,16 +248,16 @@ static void testLateEntry(void)
 	voice(2, NULL);
 	voice(3, NULL);
 	voice(4, NULL);
+	CHECK_SENT("");// nothing can go up without an LC to put in the header
 	voice(5, LC_A);// header made, A-E as silence, then F
-	CHECK(host.starts == 1);
-	CHECK(host.voice == 6);
-	CHECK(host.silence == 5);
 	superframes(2, LC_A);
 	terminator(LC_A);
-	CHECK(host.voice == 18);
-	CHECK(host.dropped == 0);
-	CHECK(host.ends == 1);
-	CHECK(host.losts == 0);
+
+	// Measured with a real host through a fake modem: B-F after a header, with no A before them, counted for nothing.
+	// So the made header is followed by a superframe from A, never by the burst that was heard
+	CHECK_SENT("H abcde F ABCDEF ABCDEF T");
+	CHECK(allCarry('H', LC_A));
+	CHECK(allCarry('T', LC_A));
 }
 
 static void testLateEntryMissedA(void)
@@ -258,11 +274,11 @@ static void testLateEntryMissedA(void)
 	voice(1, LC_A);
 	voice(2, LC_A);
 	terminator(LC_A);
-	CHECK(host.starts == 1);
-	CHECK(host.voice == 9);// silent A, B; C-F; silent A; B, C
-	CHECK(host.silence == 3);
-	CHECK(host.dropped == 0);
-	CHECK(host.ends == 1);
+
+	// The voice starts at C, in the superframe the LC became known in, and the missed A is filled like any other
+	CHECK_SENT("H ab CDEF aBC T");
+	CHECK(allCarry('H', LC_A));
+	CHECK(allCarry('T', LC_A));
 }
 
 static void testLateEntryMidSuperframe(void)
@@ -275,19 +291,22 @@ static void testLateEntryMidSuperframe(void)
 	voice(4, LC_A);
 	voice(5, LC_A);
 	superframes(1, LC_A);
-	CHECK(host.starts == 1);
-	CHECK(host.voice == 12);
-	CHECK(host.dropped == 0);
-	CHECK(host.silence == 2);
+
+	CHECK_SENT("H ab CDEF ABCDEF");
+	CHECK(allCarry('H', LC_A));
+	CHECK(hotspotUplinkCallOpen(&up));
 }
 
 static void testLateEntryAtA(void)
 {
+	// Joined at A: the superframe is complete, so there is nothing to fill
 	start();
 	voice(0, LC_A);
 	voice(1, LC_A);
-	CHECK(host.starts == 1);
-	CHECK(host.voice == 2);
+
+	CHECK_SENT("H AB");
+	CHECK(allCarry('H', LC_A));
+	CHECK(hotspotUplinkCallOpen(&up));
 }
 
 static void testLateEntryNoSync(void)
@@ -295,27 +314,39 @@ static void testLateEntryNoSync(void)
 	// Noise: bursts without a good EMB don't start a call
 	start();
 	burst(HOTSPOT_UPLINK_VOICE, 3, LC_A, HOTSPOT_UPLINK_FLAG_LC_VALID);
-	CHECK(host.starts == 0);
 	CHECK(!up.open);
+	CHECK_SENT("");
 }
 
 static void testLongCall(void)
 {
 	// 60 s
+	char expected[SENT_MAX + 1];
+	int n = 0;
+
 	start();
 	header(LC_A);
 	superframes(1000 / 6 + 1, LC_A);
 	terminator(LC_A);
-	CHECK(host.starts == 1);
-	CHECK(host.voice == (1000 / 6 + 1) * 6);
-	CHECK(host.dropped == 0);
-	CHECK(host.losts == 0);
-	CHECK(host.ends == 1);
+
+	expected[n++] = 'H';
+	for (int i = 0; i < 1000 / 6 + 1; i++)
+	{
+		memcpy(&expected[n], "ABCDEF", 6);
+		n += 6;
+	}
+	expected[n++] = 'T';
+	expected[n] = '\0';
+
+	// A long call never loses its place, nor closes and reopens along the way
+	CHECK_SENT(expected);
+	CHECK(allCarry('H', LC_A));
+	CHECK(allCarry('T', LC_A));
 }
 
 static void testMissedBursts(void)
 {
-	// D of the second superframe never heard: a silent D keeps MMDVMHost's sequence (else it drops E and F)
+	// D of the second superframe never heard: a silent D keeps the host's sequence (else it drops E and F)
 	start();
 	header(LC_A);
 	superframes(1, LC_A);
@@ -327,9 +358,11 @@ static void testMissedBursts(void)
 	voice(5, LC_A);
 	superframes(1, LC_A);
 	terminator(LC_A);
-	CHECK(host.voice == 18);
-	CHECK(host.silence == 1);
-	CHECK(host.dropped == 0);
+
+	// Measured with a real host through a fake modem: with D left out of the stream, E and F counted for nothing until
+	// the next A. So exactly one silent D, in D's place
+	CHECK_SENT("H ABCDEF ABC d EF ABCDEF T");
+	CHECK(sentCount('d') == 1);
 
 	// A missed after the headers: a silent A first
 	start();
@@ -337,11 +370,9 @@ static void testMissedBursts(void)
 	tick(now + HOTSPOT_UPLINK_BURST_MS);// A
 	voice(1, LC_A);
 	voice(2, LC_A);
-	CHECK(host.voice == 3);
-	CHECK(host.silence == 1);
-	CHECK(host.dropped == 0);
+	CHECK_SENT("H a BC");
 
-	// Bursts out of order without the time for the missing ones: not filled (MMDVMHost picks up at the next A)
+	// Bursts out of order without the time for the missing ones: not filled (the host picks up at the next A)
 	start();
 	header(LC_A);
 	voice(0, LC_A);
@@ -352,8 +383,7 @@ static void testMissedBursts(void)
 	b.flags = HOTSPOT_UPLINK_FLAG_SYNC_OK;
 	b.ms = now + 5;
 	deliver(&b);
-	CHECK(host.silence == 0);
-	CHECK(host.dropped == 1);
+	CHECK_SENT("H A E");
 }
 
 static void testDuplicate(void)
@@ -368,8 +398,11 @@ static void testDuplicate(void)
 	b.flags = HOTSPOT_UPLINK_FLAG_SYNC_OK;
 	b.ms = now + 2;
 	deliver(&b);
-	CHECK(host.voice == 1);
-	CHECK(host.dropped == 0);
+
+	// One burst heard twice goes up once, and doesn't cost the next one its place
+	CHECK_SENT("H A");
+	voice(1, LC_A);
+	CHECK_SENT("H A B");
 }
 
 static void testLost(void)
@@ -378,11 +411,15 @@ static void testLost(void)
 	header(LC_A);
 	superframes(2, LC_A);
 	tick(now + HOTSPOT_UPLINK_LOST_MS - 1);
-	CHECK(host.losts == 0);
+	CHECK_SENT("H ABCDEF ABCDEF");// not yet
+	CHECK(hotspotUplinkCallOpen(&up));
 	tick(now + 2);
-	CHECK(host.losts == 1);
+	CHECK_SENT("H ABCDEF ABCDEF L");
 	tick(now + 2000);
-	CHECK(host.losts == 1);// once
+
+	// Measured with a real host through a fake modem: a call left without an end stayed open for seconds, so the radio
+	// has to say so itself, and once
+	CHECK_SENT("H ABCDEF ABCDEF L");
 	CHECK(!up.open);
 
 	// A fade shorter than that keeps the call (the missed bursts filled)
@@ -394,16 +431,14 @@ static void testLost(void)
 	voice(5, LC_A);
 	superframes(1, LC_A);
 	terminator(LC_A);
-	CHECK(host.losts == 0);
-	CHECK(host.voice == 18);
-	CHECK(host.silence == 4);
+	CHECK_SENT("H ABCDEF A bcde F ABCDEF T");
 
 	// A call never announced (no LC heard) isn't lost upstream
 	start();
 	voice(1, NULL);
 	tick(now + 2000);
-	CHECK(host.losts == 0);
 	CHECK(!up.open);
+	CHECK_SENT("");
 }
 
 static void testNewCallWithoutTerminator(void)
@@ -414,10 +449,13 @@ static void testNewCallWithoutTerminator(void)
 	header(LC_B);// the first call's terminator was missed
 	superframes(1, LC_B);
 	terminator(LC_B);
-	CHECK(host.starts == 2);
-	CHECK(host.losts == 1);
-	CHECK(host.ends == 1);
-	CHECK(memcmp(host.lc, LC_B, 9) == 0);
+
+	// Measured with a real host through a fake modem: a new call's header with the old call still open was taken as
+	// more of the old call. So the old one is closed first, and each header carries its own call's LC
+	CHECK_SENT("H ABCDEF L H ABCDEF T");
+	CHECK(nthCarries('H', 0, LC_A));
+	CHECK(nthCarries('H', 1, LC_B));
+	CHECK(allCarry('T', LC_B));
 }
 
 static void testBackToBack(void)
@@ -433,11 +471,17 @@ static void testBackToBack(void)
 		terminator(lc);
 		terminator(lc);
 	}
-	CHECK(host.starts == 5);
-	CHECK(host.ends == 5);
-	CHECK(host.losts == 0);
-	CHECK(host.voice == 60);
-	CHECK(host.dropped == 0);
+
+	// Each call closed by its own first terminator, none lost, and the next one starts clean at its header
+	CHECK_SENT("HH ABCDEF ABCDEF T  HH ABCDEF ABCDEF T  HH ABCDEF ABCDEF T  HH ABCDEF ABCDEF T  HH ABCDEF ABCDEF T");
+	for (int call = 0; call < 5; call++)
+	{
+		const uint8_t *lc = (call & 1) ? LC_B : LC_A;
+
+		CHECK(nthCarries('H', call * 2, lc));
+		CHECK(nthCarries('H', call * 2 + 1, lc));
+		CHECK(nthCarries('T', call, lc));
+	}
 }
 
 static void testTerminatorOnly(void)
@@ -445,24 +489,23 @@ static void testTerminatorOnly(void)
 	// The tail of a call heard after a gap: nothing up
 	start();
 	terminator(LC_A);
-	CHECK(host.starts == 0);
-	CHECK(host.ends == 0);
 	CHECK(!up.open);
+	CHECK_SENT("");
 }
 
 static void testData(void)
 {
 	start();
-	CHECK(!hotspotUplinkData(&up, DT_RATE_12_DATA, 1000));// a block from noise, idle
-	CHECK(hotspotUplinkData(&up, DT_CSBK, 1000));
-	CHECK(hotspotUplinkData(&up, DT_DATA_HEADER, 1060));
-	CHECK(hotspotUplinkData(&up, DT_RATE_12_DATA, 1120));
-	CHECK(hotspotUplinkData(&up, DT_RATE_34_DATA, 1180));
-	CHECK(hotspotUplinkData(&up, DT_RATE_1_DATA, 1240));
-	CHECK(!hotspotUplinkData(&up, DT_RATE_12_DATA, 1240 + HOTSPOT_UPLINK_DATA_GAP_MS + 1));
-	CHECK(!hotspotUplinkData(&up, DT_RATE_12_DATA, 1240 + HOTSPOT_UPLINK_DATA_GAP_MS + 60));
-	CHECK(!hotspotUplinkData(&up, DT_IDLE, 3000));
-	CHECK(hotspotUplinkData(&up, DT_MBC_HEADER, 3000));
+	CHECK(!hotspotUplinkData(&up, DMR_TYPE_RATE_1_2, 1000));// a block from noise, idle
+	CHECK(hotspotUplinkData(&up, DMR_TYPE_CSBK, 1000));
+	CHECK(hotspotUplinkData(&up, DMR_TYPE_DATA_HEADER, 1060));
+	CHECK(hotspotUplinkData(&up, DMR_TYPE_RATE_1_2, 1120));
+	CHECK(hotspotUplinkData(&up, DMR_TYPE_RATE_3_4, 1180));
+	CHECK(hotspotUplinkData(&up, DMR_TYPE_RATE_1, 1240));
+	CHECK(!hotspotUplinkData(&up, DMR_TYPE_RATE_1_2, 1240 + HOTSPOT_UPLINK_DATA_GAP_MS + 1));
+	CHECK(!hotspotUplinkData(&up, DMR_TYPE_RATE_1_2, 1240 + HOTSPOT_UPLINK_DATA_GAP_MS + 60));
+	CHECK(!hotspotUplinkData(&up, DMR_TYPE_IDLE, 3000));
+	CHECK(hotspotUplinkData(&up, DMR_TYPE_MBC_HEADER, 3000));
 }
 
 static void testQueue(void)

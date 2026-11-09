@@ -1,0 +1,79 @@
+{
+ "board": "md9600",
+ "commit": "69149c76336c5be60d5f6531fe164c223c22595d",
+ "date": "2026-11-03T04:54:50Z",
+ "dirty": false,
+ "features": [
+  "vox"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,DMR_UDP_COMPRESS,DMR_CONFIRMED,IDDB_COMPACT,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "ffdb37d0-dirty",
+  "proto": "1",
+  "view": "4"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "radio"
+ ],
+ "kind": "run",
+ "options": {
+  "dmr-cc": 2,
+  "dmr-freq": 461.6875,
+  "dmr-tg": 9,
+  "fm-mhz": 461.6875,
+  "tx-power": 40
+ },
+ "sources": {
+  "vox": {
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "9f189358a1c9aa740d0909eb178c43748b9f4369",
+   "core/radio/radio_sm.c": "63bc512509446e8eefa07c885aae1cfbf28e0d39",
+   "core/radio/radio_sm.h": "89d12ef6b1e5166f4a0966c3d0a9629bc6496f2e",
+   "core/ui/ui_svc_radio.c": "fe4fdd57dc9ce54d80a58370ec6c60b6fccbb7cc",
+   "docs/spec/radio-features.md": "1b348a2c29f14632698bd216354eeb53976eb2d5",
+   "platform/hrc7000/audio_pcm.c": "7a1669c6deb51c99a51547c6ff17191d63ecb56d",
+   "platform/hrc7000/audio_pcm.h": "08efbeba208229bc8802a26579e4ef9afe9c96a2"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "vox"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_mic_level",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "vox"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_vox_quiet",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "vox"
+   ],
+   "id": "tests/hil/test_ui.py::test_quick_vox_toggle",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

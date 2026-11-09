@@ -208,6 +208,8 @@ static void test_keyup(void)
 	// Keyed: the first slot set up is an outbound TS1 slot; nothing queued, idle bursts (underruns)
 	hrc6000_bs_key(&eng, true);
 	CHECK(hrc6000_dmr_is_transmitting(&eng));
+	hrc6000_dmr_isr_rftx(&eng);
+	CHECK(rf_on == 0 && !eng.pa_on);	// nothing set up yet: the PA waits for the first slot's set-up
 	nx = 0;
 	tick();
 	first_next = (bs.ts_tick == 2) ? 1 : 2;
@@ -216,13 +218,14 @@ static void test_keyup(void)
 		tick();
 	}
 	CHECK(bs.st.bursts == 1 && bs.on_air);
+	CHECK(rf_on == 1 && eng.pa_on);		// the RF TX interrupt came before it: keyed at the set-up
 	CHECK(bs.st.underruns == 1);
 	CHECK(last_write(HRC_PAGE_SYS, 0x41) == 0x80);
 	CHECK(last_write(HRC_PAGE_SYS, 0x50) == hrc6000_dmr_reg50(DMR_BURST_IDLE, 0));
 	CHECK(count_writes(HRC_PAGE_DATA, 0x18, -1) == 1);	// the idle message
 	CHECK(bs.st.keyups == 1);
 
-	// PA: keyed once at the first RF TX interrupt, never again while on air
+	// PA: keyed once, never again while on air
 	hrc6000_dmr_isr_rftx(&eng);
 	hrc6000_dmr_isr_rftx(&eng);
 	CHECK(rf_on == 1 && hrc6000_bs_keyed(&eng));
@@ -334,7 +337,8 @@ static bool fake_raw(const dmr_tx_burst_t *b, const dmr_cach_t *cach, int8_t ts,
 }
 
 // Without a builder, or with variant 1, the chip frames (0x10 stays 0x6E); with one, variants 0 and 255 put the chip
-// in the physical layer mode (0x10 = 0x66), 255 with its raw pairs; all of it restored at unkey / stop
+// in the physical layer mode (0x10 = 0x66), 255 with its raw pairs. The mode is set at start, ahead of the slot
+// clock, and not written again until stop: a 0x10 write at a key-up moved the timeslot interrupt off its clock
 static void test_variants(void)
 {
 	static const struct { uint8_t v; bool raw; uint8_t r10; } want[] = {
@@ -346,20 +350,20 @@ static void test_variants(void)
 		start_raw = want[k].raw ? fake_raw : NULL;
 		start(want[k].v);
 		start_raw = NULL;
+		CHECK(last_write(HRC_PAGE_SYS, 0x10) == want[k].r10);
 		hrc6000_bs_key(&eng, true);
 		nx = 0;
 		do {
 			tick();
 		} while (!bs.on_air);
-		CHECK(last_write(HRC_PAGE_SYS, 0x10) == want[k].r10);
+		CHECK(count_writes(HRC_PAGE_SYS, 0x10, -1) == 0);
 		if (want[k].v == HRC6000_BS_VARIANT_RAW) {
 			CHECK(last_write(HRC_PAGE_SYS, 0x0D) == 0x5A);
 			CHECK(last_write(HRC_PAGE_SYS, 0x0E) == 0xA5);
 		}
 		hrc6000_bs_key(&eng, false);
-		nx = 0;
 		tick();
-		CHECK(last_write(HRC_PAGE_SYS, 0x10) == 0x6E);
+		CHECK(count_writes(HRC_PAGE_SYS, 0x10, -1) == 0);
 		hrc6000_bs_stop(&eng);
 		CHECK(last_write(HRC_PAGE_SYS, 0x10) == 0x6E);
 	}
@@ -433,7 +437,14 @@ static void test_raw_slot(void)
 	CHECK(hrc6000_bs_queue(&eng, 2, &a, &c, lc));
 	CHECK(hrc6000_bs_queue(&eng, 2, &bb, &c, NULL));
 	CHECK(hrc6000_bs_queue(&eng, 2, &r1, &c, NULL));
+	nx = 0;
 	hrc6000_bs_key(&eng, true);
+	// Primed at key-up: an idle TS2 frame with the default CACH (no CACH given) in both halves, before any slot
+	CHECK(bs.st.primes == 1 && raw_built == 1 && nx == 2);
+	CHECK(xlog[0].page == HRC_PAGE_DATA && xlog[0].reg == 0x00 && xlog[1].reg == 0x24);
+	CHECK(xlog[0].n == HRC6000_BS_RAW_BYTES && xlog[0].data[0] == 0xAF && xlog[0].data[1] == 2 &&
+	      xlog[0].data[35] == (uint8_t)(DMR_BURST_IDLE ^ bs.cfg.cc));
+	raw_built = 0;
 	nx = 0;
 	voice_writes = 0;
 	do {
@@ -449,10 +460,53 @@ static void test_raw_slot(void)
 			half1 += xlog[i].reg == 0x24;
 		}
 	}
-	CHECK(half0 == raw_built && half1 == raw_built && raw_built >= 6 && bs.st.raw == (uint32_t)raw_built);
+	// A slot waited for TS1 is primed again
+	CHECK(half0 == raw_built && half1 == raw_built && raw_built >= 6 &&
+	      bs.st.raw + bs.st.primes - 1u == (uint32_t)raw_built);
 	CHECK(count_writes(HRC_PAGE_SYS, 0x52, -1) == 0 && voice_writes == 0);
-	CHECK(bs.st.uncoded == 1 && bs.st.cach_written == 3);
+	CHECK(bs.st.uncoded == 1 && bs.st.cach_written == 2);	// the first TS2 slot after the key-up: the default CACH
 	CHECK(bs.lc_valid[1] && memcmp(bs.lc[1], lc, 9) == 0);	// TS2's superframe LC kept for B-E
+	hrc6000_bs_stop(&eng);
+}
+
+// Our framing: the first slot after a key-up gets the default CACH (no short LC fragment), the next ones the core's
+static int last_raw_cach(void)
+{
+	for (int i = nx - 1; i >= 0; i--) {
+		if (!xlog[i].read && xlog[i].page == HRC_PAGE_DATA && xlog[i].reg == 0x00 && xlog[i].n == HRC6000_BS_RAW_BYTES) {
+			return xlog[i].data[0];
+		}
+	}
+	return -1;
+}
+
+static void test_first_cach(void)
+{
+	fresh();
+	start_raw = fake_raw;
+	start(0);
+	start_raw = NULL;
+	dmr_tx_burst_t i1 = burst(DMR_BURST_IDLE, 0, 0x11), i2 = burst(DMR_BURST_IDLE, 0, 0x22);
+	dmr_cach_t c = { .tc = 0, .lcss = 1 };
+
+	dmr_tx_burst_t j1 = burst(DMR_BURST_IDLE, 0, 0x33);
+	dmr_cach_t d = { .tc = 1, .lcss = 3 };
+
+	CHECK(hrc6000_bs_queue(&eng, 1, &i1, &c, NULL));
+	CHECK(hrc6000_bs_queue(&eng, 1, &i2, &c, NULL));
+	CHECK(hrc6000_bs_queue(&eng, 2, &j1, &d, NULL));
+	hrc6000_bs_key(&eng, true);
+	do {
+		nx = 0;
+		tick();
+	} while (!bs.on_air);
+	CHECK(last_raw_cach() == 0xAF && bs.st.cach_written == 0);	// the first TS1 slot: no CACH given to the builder
+	nx = 0;
+	tick();		// TS2: its burst, still without its CACH
+	CHECK(last_raw_cach() == 0xAF && bs.st.cach_written == 0);
+	nx = 0;
+	tick();		// TS1: the second burst, with its CACH
+	CHECK(last_raw_cach() == 0xA0 && bs.st.cach_written == 1);
 	hrc6000_bs_stop(&eng);
 }
 
@@ -499,6 +553,25 @@ static void test_stall_and_halt(void)
 	rf_ok = true;
 	hrc6000_dmr_isr_rftx(&eng);
 	CHECK(eng.pa_on && rf_on == 2);
+	hrc6000_bs_stop(&eng);
+
+	// ... or at the next slot: in the BS outbound's mode the chip raises the RF TX interrupt once per key-up
+	fresh();
+	start(0);
+	hrc6000_bs_key(&eng, true);
+	do {
+		tick();
+	} while (!bs.on_air);
+	rf_ok = false;
+	hrc6000_dmr_isr_rftx(&eng);
+	CHECK(!eng.pa_on && bs.st.rf_fail == 1);
+	rf_ok = true;
+	nx = 0;
+	tick();
+	CHECK(eng.pa_on && rf_on == 2);
+	nx = 0;
+	tick();
+	CHECK(rf_on == 2);
 	hrc6000_bs_stop(&eng);
 }
 
@@ -607,8 +680,44 @@ static void test_restart(void)
 		CHECK(eng.tick == ticks + 1u);
 		tick();
 		CHECK(hrc6000_bs_slot_clock(&eng, &c, &t, &ts) && ts == 3 - want);
+
+		// The first interrupt a slot late (seen in the physical layer mode, 25-31 ms after the write): it is the
+		// slot after the one asked for, numbered by the time since the write
+		now_step = 7;
+		CHECK(hrc6000_bs_restart(&eng, t_us + 10000u, want));
+		now_step = 0;
+		t_us += 31200;
+		hrc6000_dmr_isr_timeslot(&eng);
+		CHECK(hrc6000_bs_slot_clock(&eng, &c, &t, &ts) && ts == 3 - want);
+		tick();
+		CHECK(hrc6000_bs_slot_clock(&eng, &c, &t, &ts) && ts == want);
 		hrc6000_bs_stop(&eng);
 	}
+}
+
+// FM receive with the chip's codec playing PCM: FM mode set, then the modulator back to DMR (bit 7 clear)
+static void test_fm_rx_pcm(void)
+{
+	nx = 0;
+	CHECK(hrc6000_set_mode_fm_rx(&dev));
+	CHECK(last_write(4, 0x10) >= 0 && (last_write(4, 0x10) & 0x80) != 0);
+	CHECK(hrc6000_fm_rx_pcm(&dev));
+	CHECK(last_write(4, 0x10) >= 0 && (last_write(4, 0x10) & 0x80) == 0);
+}
+
+// The receive I/Q order (4:0x01 bit 6): swapped by default; straight is kept for later writes of 0x01
+static void test_rx_iq_swap(void)
+{
+	nx = 0;
+	CHECK(hrc6000_rx_iq_swap(&dev, false, true));
+	CHECK(last_write(4, 0x01) == 0xB0);
+	nx = 0;
+	CHECK(hrc6000_rx_iq_swap(&dev, false, false));
+	CHECK(last_write(4, 0x01) == -1);	// not in DMR receive: kept for the next entry
+	CHECK(hrc6000_dmr_enter(&dev, 0x10, 0x10, 5));
+	CHECK(last_write(4, 0x01) == 0xB0);
+	CHECK(hrc6000_rx_iq_swap(&dev, true, true));
+	CHECK(last_write(4, 0x01) == 0xF0);
 }
 
 int main(void)
@@ -616,6 +725,7 @@ int main(void)
 	hrc6000_attach(&dev, &bus);
 	test_start_stop();
 	test_keyup();
+	test_first_cach();
 	test_embedded_lc();
 	test_ring_wrap();
 	test_variants();
@@ -624,6 +734,8 @@ int main(void)
 	test_stall_and_halt();
 	test_queue_at();
 	test_restart();
+	test_fm_rx_pcm();
+	test_rx_iq_swap();
 	printf("# hrc6000BsTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;
 }

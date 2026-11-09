@@ -359,12 +359,12 @@ void sfrRunnerPoll(sfrRunner_t *r, uint32_t now_ms)
 
 static bool is_lc_type(uint8_t type)
 {
-	return (type == DT_VOICE_LC_HEADER) || (type == DT_TERMINATOR_WITH_LC);
+	return (type == DMR_TYPE_VOICE_LC_HEADER) || (type == DMR_TYPE_TERMINATOR_LC);
 }
 
 static bool has_crc(uint8_t type)
 {
-	return (type == DT_VOICE_PI_HEADER) || (type == DT_CSBK) || (type == DT_MBC_HEADER) || (type == DT_DATA_HEADER) ||
+	return (type == DMR_TYPE_PI_HEADER) || (type == DMR_TYPE_CSBK) || (type == DMR_TYPE_MBC_HEADER) || (type == DMR_TYPE_DATA_HEADER) ||
 	       is_lc_type(type);
 }
 
@@ -417,7 +417,7 @@ static bool to_sfr_burst(sfrRunner_t *r, const dmr_burst_t *b, bool keyed, sfrBu
 		}
 		s->type = type;
 		s->length = 12;
-		dmr_lc_encode_full(lc, (type == DT_VOICE_LC_HEADER) ? DMR_RS_MASK_VOICE_HEADER : DMR_RS_MASK_TERMINATOR,
+		dmr_lc_encode_full(lc, (type == DMR_TYPE_VOICE_LC_HEADER) ? DMR_RS_MASK_VOICE_HEADER : DMR_RS_MASK_TERMINATOR,
 				   s->payload);
 		return true;
 	}
@@ -467,7 +467,7 @@ static void rx_burst(sfrRunner_t *r, const dmr_burst_t *b, uint32_t now_ms)
 	// A call's header run and its terminators are identical copies: in an open inbound call they are the caller's,
 	// not our echo (HIL 2026-10-12: 2 of the bench's 8 headers repeated; the SFR glue never echo-checked them)
 	bool lc_copy = r->eng.rfCall && (s.kind == SFR_BURST_DATA) &&
-		       ((s.type == DT_VOICE_LC_HEADER) || (s.type == DT_TERMINATOR_WITH_LC));
+		       ((s.type == DMR_TYPE_VOICE_LC_HEADER) || (s.type == DMR_TYPE_TERMINATOR_LC));
 	if (!lc_copy && is_echo(r, &s, now_ms)) {
 		r->stats.rx_echo++;
 		return;
@@ -514,7 +514,7 @@ static void rx_burst(sfrRunner_t *r, const dmr_burst_t *b, uint32_t now_ms)
 		if (b->lc_valid && !sfrLcKnown(r->eng.rfLc) && dmr_lc_is_voice(b->lc)) {
 			sfrEngineRfLc(&r->eng, b->lc);
 		}
-	} else if (s.type == DT_VOICE_LC_HEADER) {
+	} else if (s.type == DMR_TYPE_VOICE_LC_HEADER) {
 		r->voice_since_header = false;
 	}
 

@@ -371,6 +371,61 @@ def set_channel_tx(img, number, hz):
     img[a + 0x14:a + 0x18] = _bcd_freq(hz)
 
 
+def set_channel_rx(img, number, hz):
+    """Set the channel's RX frequency."""
+    _, a = channel_addr(number)
+    img[a + 0x10:a + 0x14] = _bcd_freq(hz)
+
+
+CH_POWER = 0x19                 # 0: the radio's master power, else the 10-step scale (open-firmware-cps.md 7.3.3)
+
+
+def power_byte(level, count):
+    """The power byte that reads as power level `level` on a radio with `count` levels (core/codeplug power_to_byte)"""
+    if count < 2 or count >= 9:
+        return level + 1
+    return (level * 9 + (count - 1) // 2) // (count - 1) + 1
+
+
+def set_channel_power(img, number, level, count):
+    """Set the channel's power to level `level` of a radio with `count` levels."""
+    _, a = channel_addr(number)
+    img[a + CH_POWER] = power_byte(level, count)
+
+
+def channel_dmr(img, number):
+    """(DMR, color code, TX contact index) of a channel record (open-firmware-cps.md 7.3.3)"""
+    _, a = channel_addr(number)
+    return img[a + 0x18] == 1, img[a + 0x2C], int.from_bytes(img[a + 0x2E:a + 0x30], "little")
+
+
+def set_channel_cc(img, number, cc):
+    _, a = channel_addr(number)
+    img[a + 0x2C] = cc
+
+
+def zones(img):
+    """[(slot, name, [channel numbers])] of the zones in use, in slot order (open-firmware-cps.md 7.3.4; 0x806F picks
+    the 80- or 16-channel layout). An erased slot (name 0xFF) is not a zone, and an erased number ends the list, as
+    in a blank image whose bitmap is still 0xFF"""
+    per, size = (80, 0xB0) if img[0x806F] <= 4 else (16, 0x30)
+    out = []
+    for z in range(68):
+        if not img[ZONE_BITMAP + z // 8] & (1 << (z % 8)):
+            continue
+        base = ZONE_DATA + z * size
+        if img[base] == 0xFF:
+            continue
+        members = []
+        for k in range(per):
+            n = int.from_bytes(img[base + 16 + 2 * k:base + 18 + 2 * k], "little")
+            if n in (0, 0xFFFF):
+                break
+            members.append(n)
+        out.append((z, bytes(img[base:base + 16]).split(b"\xff")[0].decode("ascii", "replace"), members))
+    return out
+
+
 # ── a small test codeplug: one FM and one DMR channel, a contact, a zone ──
 CONTACT_BASE = 0xA7620          # contact 1 (flash image 0x87620 + the 128 KB offset), 24 bytes each
 ZONE_BITMAP = 0x8010

@@ -4,8 +4,9 @@
 """The debug link's IDDB command (docs/spec/debuglink.md 3.23) and tools/iddb_read.py against cpsSim: databases in
 format N (open-firmware-cps.md 7.5, records running into area 2) and format C (iddb-compact.md: 1- and 2-byte
 dictionary codes, literals, empty tokens, a record page in area 2), built here byte by byte from the specs, written
-into the simulated flash, read back through tools/cps_fast.py and looked up by the radio's code. Run by
-`make -C tests/host`."""
+into the simulated flash, read back through tools/cps_fast.py and looked up by the radio's code. Then
+tools/iddb_write.py as tests/hil/test_iddb.py uses it: a synthetic database of each format put over the one there
+through the fast protocol, looked up, and the backup restored byte for byte. Run by `make -C tests/host`."""
 import os
 import subprocess
 import sys
@@ -15,6 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "tools"))
 import cps_fast  # noqa: E402
 import iddb_read  # noqa: E402
+import iddb_write  # noqa: E402
 
 AREA1 = iddb_read.FLASH_START + iddb_read.AREA1_OFF
 AREA2 = iddb_read.FLASH_START + iddb_read.AREA2_OFF
@@ -178,6 +180,28 @@ def main():
         open(dump, "wb").write(flash)
         want = [(i, text_of(t, words)) for _, recs in pages for i, t in recs]
         against_radio(sim, dump, want, [2000001, 2000000 + 11 * n, 1999999], "format C")
+
+        # tools/iddb_write.py as tests/hil/test_iddb.py uses it: the format C database above backed up, a synthetic
+        # one of each format put over it and looked up, the backup restored byte for byte
+        link = cps_fast.open_link(exec_cmd=f"{sim} --image {dump}")
+        try:
+            before = link.iddb()
+            recs = iddb_write.synthetic_records()
+            for fmt, blocks in (("N", iddb_write.encode_n(recs)), ("C", iddb_write.encode_c(recs))):
+                backup = iddb_write.save(link, blocks, os.path.join(d, "iddb.bak"))
+                check(iddb_write.load(os.path.join(d, "iddb.bak")) == backup, f"write {fmt}: backup file")
+                check(iddb_write.put(link, blocks) > 0, f"write {fmt}: nothing written")
+                check(not iddb_write.differ(link, blocks), f"write {fmt}: blocks differ after the write")
+                info = link.iddb()
+                check(info["format"] == fmt and info["records"] == len(recs), f"write {fmt}: radio {info}")
+                bad = [(i, t) for i, t in recs[::7] if link.iddb(i).get("text") != t]
+                check(not bad, f"write {fmt}: {len(bad)} lookups differ, first {bad[:2]}")
+                iddb_write.restore(link, backup)
+                check(link.iddb() == before, f"write {fmt}: after the restore {link.iddb()}, before {before}")
+                check(iddb_write.put(link, backup) == 0, f"write {fmt}: the restore left a block to write")
+            print(f"# iddb_write: {len(recs)} synthetic records in formats N and C, put and restored")
+        finally:
+            link.close()
 
     if failures:
         print(f"iddbLookupClientTest: {failures} failure(s)")

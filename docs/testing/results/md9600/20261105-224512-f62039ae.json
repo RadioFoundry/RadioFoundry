@@ -1,0 +1,376 @@
+{
+ "board": "md9600",
+ "commit": "f62039aeb7ccbf16977b1e4f71f0274076428bab",
+ "date": "2026-11-05T22:45:12Z",
+ "dirty": false,
+ "features": [
+  "fm",
+  "subtone",
+  "fm_tx_tones",
+  "dtmf",
+  "ref_trim",
+  "vox",
+  "battery_save"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,DMR_CONFIRMED,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "f62039ae",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "radio",
+  "rf"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-rf": true,
+  "dmr-cc": 1,
+  "dmr-freq": 461.4625,
+  "dmr-tg": 202,
+  "fm-mhz": 461.4625,
+  "tx-power": 40
+ },
+ "sources": {
+  "battery_save": {
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "dcf086a96125c9389c1e75ab3d4315f96f850b69",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "docs/spec/radio-features.md": "10abfa66c0e0ed78f06880ed259b9ecfad5a91c6"
+  },
+  "dtmf": {
+   "core/debuglink/debuglink_view_radio.c": "9c1d8ed401fde65d1a27167c552f56e85c920615",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/input/input_task.c": "dd6231130609602ca9470f2b253cb78225931cc1",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "dcf086a96125c9389c1e75ab3d4315f96f850b69",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "core/radio/radio_task.c": "be04cb551da20034b9de511ef74c993fec2b468a",
+   "docs/spec/radio-features.md": "10abfa66c0e0ed78f06880ed259b9ecfad5a91c6",
+   "hal/hal_radio.h": "74e039e2420503182a4c16e1612cba7632162e65"
+  },
+  "fm": {
+   "core/radio": "bdfd2872523c5b238e5c8b8169d3d17986c29036",
+   "docs/spec/radio-features.md": "10abfa66c0e0ed78f06880ed259b9ecfad5a91c6",
+   "drivers/rf": "2ec99c4c8595aa4a70ec2b709d7176fa153043a3",
+   "hal/hal_audio.h": "60705fda664207aaf868aefa26fc4aa56b0173ff",
+   "hal/hal_radio.h": "74e039e2420503182a4c16e1612cba7632162e65"
+  },
+  "fm_tx_tones": {
+   "core/debuglink/debuglink.c": "525e77b6429cc556686d436315d62c85d757562b",
+   "core/debuglink/debuglink_view_radio.c": "9c1d8ed401fde65d1a27167c552f56e85c920615",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "dcf086a96125c9389c1e75ab3d4315f96f850b69",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "docs/spec/radio-features.md": "10abfa66c0e0ed78f06880ed259b9ecfad5a91c6"
+  },
+  "ref_trim": {
+   "core/radio/ref_trim.c": "0c4fc52a5af319b0e8932fa0061b490dd4c08a0f",
+   "core/radio/ref_trim.h": "a976722e6a723c5e0dba4da3795c415314a5622e",
+   "core/ui/ui_menus.c": "010b9b9fd97a8b359c27a51bd87b268d1525eb47",
+   "docs/spec/radio-features.md": "10abfa66c0e0ed78f06880ed259b9ecfad5a91c6"
+  },
+  "subtone": {
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio_sm.c": "dcf086a96125c9389c1e75ab3d4315f96f850b69",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "core/radio/tones.c": "16903a7457681d39d4424571e89a6c15502f8ec6",
+   "core/radio/tones.h": "c30292ff05c9d7f0a04f2556f6b5db4d1a8da0c9",
+   "core/ui/ui_menus.c": "010b9b9fd97a8b359c27a51bd87b268d1525eb47",
+   "core/ui/ui_screens.c": "ce4e054460068e0d17b0e8d45c753dc76354bdf2",
+   "docs/spec/radio-features.md": "10abfa66c0e0ed78f06880ed259b9ecfad5a91c6"
+  },
+  "vox": {
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "dcf086a96125c9389c1e75ab3d4315f96f850b69",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "core/ui/ui_svc_radio.c": "fe4fdd57dc9ce54d80a58370ec6c60b6fccbb7cc",
+   "docs/spec/radio-features.md": "10abfa66c0e0ed78f06880ed259b9ecfad5a91c6",
+   "platform/hrc7000/audio_pcm.c": "83228906a4424baeef5e1a61b204e1540a9d8253",
+   "platform/hrc7000/audio_pcm.h": "4aec1175dc822bd1b74e65df29151ff1e60afad5"
+  }
+ },
+ "tests": [
+  {
+   "features": [],
+   "id": "boards/md9600/hil/test_md9600.py::test_calibration_and_options_read",
+   "optional": [
+    "fm"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "boards/md9600/hil/test_md9600.py::test_pa_calibration",
+   "optional": [
+    "fm"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "boards/md9600/hil/test_md9600.py::test_receiver_tuned",
+   "optional": [
+    "fm"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "boards/md9600/hil/test_md9600.py::test_transmitter_held_off",
+   "optional": [
+    "fm"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [
+    "fm"
+   ],
+   "id": "tests/hil/test_fm.py::test_noaa_receive",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_fm.py:42: AssertionError",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "subtone"
+   ],
+   "id": "tests/hil/test_fm.py::test_rx_tone_decode_bench[ctcss]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the SDR bench host has no FM transmitter: needs a bench board (--bench-api)",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": true,
+   "features": [
+    "subtone"
+   ],
+   "id": "tests/hil/test_fm.py::test_rx_tone_decode_bench[dcs]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the SDR bench host has no FM transmitter: needs a bench board (--bench-api)",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "features": [
+    "subtone"
+   ],
+   "id": "tests/hil/test_fm.py::test_rx_tone_squelch",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "bring-up: a required test of subtone skipped (bench), which its needs don't excuse: Skipped: [bench] NOAA on 162.475 MHz doesn't open the squelch at level 1: nothing to mute",
+   "required": true
+  },
+  {
+   "features": [
+    "fm"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_bandwidth",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "subtone"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_ctcss",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "subtone"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_dcs",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dtmf"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_dtmf",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "fm"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_power_levels",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the SDR's ADC clips even at gain 0 (4.296 % of samples at 50 mW): power levels can't be compared on this bench without an attenuator; levels [(0, '5W', -1.0, 0.0), (1, '10W', 0.2, 4.296), (2, '25W', 0.8, 9.306)]",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_roger_beep",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_tone_burst",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": false,
+   "features": [],
+   "id": "tests/hil/test_mic_gain.py::test_mic_gain_deviation",
+   "optional": [
+    "fm"
+   ],
+   "outcome": "skipped",
+   "reason": "[opt_in] needs a person at the radio: run with --manual -s",
+   "required": false,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "battery_save"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_battery_save",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "battery_save"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_battery_save_wakes_for_signal",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "vox"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_mic_level",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_roger_beep",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_tone_burst",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_tone_burst_time_limit",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "vox"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_vox_quiet",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "ref_trim"
+   ],
+   "id": "tests/hil/test_ref_trim.py::test_ref_trim_moves_carrier",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "ref_trim"
+   ],
+   "id": "tests/hil/test_ref_trim.py::test_ref_trim_setting",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm"
+   ],
+   "id": "tests/hil/test_speaker.py::test_fm_rx_speaker",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "bring-up: a required test of fm skipped (opt_in), which its needs don't excuse: Skipped: [opt_in] the speaker tests need --microphone (or $RFOUNDRY_HIL_MICROPHONE, or microphone in the rig's file: tests/hil/README.md, \"The rig's configuration\")",
+   "required": true
+  },
+  {
+   "features": [
+    "fm"
+   ],
+   "id": "tests/hil/test_ui.py::test_quick_monitor_latch",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "bring-up: a required test of fm skipped (state), which its needs don't excuse: Skipped: [state] the current channel isn't FM",
+   "required": true
+  },
+  {
+   "features": [
+    "vox"
+   ],
+   "id": "tests/hil/test_ui.py::test_quick_vox_toggle",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "bring-up: a required test of vox skipped (state), which its needs don't excuse: Skipped: [state] the current channel isn't FM",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

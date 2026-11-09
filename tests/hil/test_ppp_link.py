@@ -77,7 +77,10 @@ def test_ppp_link(ppp):
     assert c.bad_frames == 0, "frames from the radio failed their FCS"
 
 
-@pytest.mark.feature("net_ppp", "net_http")
+# Required for PPP; for the service only one way to reach it (its own tests run over the USB network), so a build
+# without PPP leaves it unproven, not failed
+@pytest.mark.feature("net_ppp")
+@pytest.mark.feature("net_http", optional=True)
 def test_ppp_http(ppp):
     if "NET_HTTP" not in ppp["features"]:
         skip("not_built", "built without CONFIG_NET_HTTP")
@@ -91,7 +94,8 @@ def test_ppp_http(ppp):
     assert st == 404
 
 
-@pytest.mark.feature("net_ppp", "snmp")
+@pytest.mark.feature("net_ppp")
+@pytest.mark.feature("snmp", optional=True)
 def test_ppp_snmp(ppp):
     if "SNMP" not in ppp["features"]:
         skip("not_built", "built without CONFIG_SNMP")
@@ -105,7 +109,8 @@ def test_ppp_snmp(ppp):
     assert len(vbs) == 2 and all(v not in (None, b"", "") for _, _, v in vbs), vbs
 
 
-@pytest.mark.feature("net_ppp", "tftp")
+@pytest.mark.feature("net_ppp")
+@pytest.mark.feature("tftp", optional=True)
 def test_ppp_tftp_read(ppp, monkeypatch):
     if "TFTP" not in ppp["features"]:
         skip("not_built", "built without CONFIG_TFTP")

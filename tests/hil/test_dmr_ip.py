@@ -13,7 +13,7 @@ standards apart from the firmware's code: the data header, the blocks, the CRC-3
 compressed header. The bench modem sits next to the radio and misses or garbles some bursts (test_dmr_data.py's
 notes): a packet it didn't hear whole is sent again, up to 3 times; the radio's own counters (the dmr_ip view section)
 are the pass criteria for what it sent. A datagram for an IPv4 address other than the DMR ID's (the off-net route)
-goes with the full header whatever the compression setting. The SDR bench host doesn't answer confirmed data, so
+goes with the full header whatever the compression setting. Without a responder nothing answers confirmed data, so
 test_confirmed_tx_unanswered checks the retries and the failure. A bench board with the confirmed data responder (the
 line protocol's mssim op) answers with an ACK a set number of slots after our data terminator:
 test_confirmed_tx_link_ack checks the radio is back on receive in time to take it (a selective retry is covered on the

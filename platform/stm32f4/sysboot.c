@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// STM32F4 system services (hal_system.h): chip identity and option bytes, memory reads, reboot, and the software
-// entry to the MCU's ROM bootloader (docs/spec/hardware-dm1701.md "Software entry to a bootloader").
+// STM32F4 system services (hal_system.h): chip identity and option bytes, memory reads, SoC registers, reboot, and the
+// software entry to the MCU's ROM bootloader (docs/spec/hardware-dm1701.md "Software entry to a bootloader").
 //
 // ROM DFU entry: the request stores a flag in an RTC backup register (kept through a system reset, unlike RAM, which
 // the stock bootloader runs in before the application) and resets. The stock bootloader then starts the application
@@ -42,15 +42,69 @@ static bool chip(hal_chip_t *c)
 	return true;
 }
 
+// Whole aligned words are read one 32-bit load at a time: that is what a register block needs (mem_window.h refuses
+// anything else there), and memcpy may use byte loads
 static void read(uint32_t addr, void *dst, size_t n)
 {
-	memcpy(dst, (const void *)(uintptr_t)addr, n);
+	if (((addr | n) & 3u) != 0) {
+		memcpy(dst, (const void *)(uintptr_t)addr, n);
+		return;
+	}
+	uint8_t *d = dst;
+	for (size_t i = 0; i < n; i += 4u) {
+		uint32_t v = *(volatile const uint32_t *)(uintptr_t)(addr + i);
+		memcpy(d + i, &v, 4u);
+	}
 }
 
 static bool mem_window(unsigned i, hal_mem_window_t *w)
 {
 	return stm32_mem_window_for(i, w, *(volatile const uint16_t *)FLASH_SIZE_ADDR);
 }
+
+#if CONFIG_DEBUGLINK
+#define BUS_ERRORS	(SCB_CFSR_PRECISERR_Msk | SCB_CFSR_IMPRECISERR_Msk | SCB_CFSR_BFARVALID_Msk)
+
+// CHIP_REG's SoC registers (mem_window.h). The write and its read back run at priority -1 (FAULTMASK), so no handler
+// changes the register between them, and with data bus faults ignored there (CCR.BFHFNMIGN): a reserved address inside
+// the windows is refused instead of crashing the radio. The write goes around the write buffer (ACTLR.DISDEFWBUF), so
+// its fault, if any, is precise and lands here rather than after FAULTMASK is lifted
+static bool reg(uint32_t addr, uint32_t *val, bool write)
+{
+	if (!stm32_reg_allowed(addr)) {
+		return false;
+	}
+	uint32_t fm = __get_FAULTMASK();
+	__disable_fault_irq();
+	uint32_t before = SCB->CFSR & BUS_ERRORS;
+	SCB->CCR |= SCB_CCR_BFHFNMIGN_Msk;
+	__DSB();
+	__ISB();
+	if (write) {
+		SCnSCB->ACTLR |= SCnSCB_ACTLR_DISDEFWBUF_Msk;
+		__DSB();
+		__ISB();
+		*(volatile uint32_t *)(uintptr_t)addr = *val;
+		__DSB();
+		SCnSCB->ACTLR &= ~SCnSCB_ACTLR_DISDEFWBUF_Msk;
+	}
+	uint32_t v = *(volatile const uint32_t *)(uintptr_t)addr;
+	__DSB();
+	SCB->CCR &= ~SCB_CCR_BFHFNMIGN_Msk;
+	uint32_t err = SCB->CFSR & BUS_ERRORS & ~before;
+	if (err != 0) {
+		SCB->CFSR = err;	// write 1 to clear: only the flags this access set
+	}
+	__DSB();
+	__ISB();
+	__set_FAULTMASK(fm);
+	if (err != 0) {
+		return false;
+	}
+	*val = v;
+	return true;
+}
+#endif
 
 static void backup_write(uint32_t v)
 {
@@ -85,6 +139,10 @@ const hal_system_t stm32_system = {
 	.read = read,
 	.mem_window = mem_window,
 	.reboot = reboot,
+	.irq_stack_free = stm32_irq_stack_free,	// irq_stack.c
+#if CONFIG_DEBUGLINK
+	.reg = reg,
+#endif
 #if CONFIG_STUB_ENTRY
 	.stub_region = stm32_stub_region,	// stub_entry.c
 	.enter_stub = stm32_enter_stub,

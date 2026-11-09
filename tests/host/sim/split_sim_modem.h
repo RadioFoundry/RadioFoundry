@@ -60,6 +60,9 @@ typedef struct {
 	bool restarting;		// from bs_restart to the new clock's first boundary: no slot clock (as the drivers)
 	int32_t restart_err_us;		// bs_restart puts the boundary this far after the target (a chip's restart delay)
 	bool restart_flip;		// ... and the sign of that flips at every restart (a delay that can't be learned)
+	bool restart_ts_at_write;	// ts names the slot at the restart instant, the first boundary counted on from it
+	int32_t restart_seq[4];		// when restart_seq_n > 0: restart_err_us from this list in turn (a delay that varies)
+	uint8_t restart_seq_n;
 	ssim_air_t air[SSIM_AIR_MAX];
 	unsigned air_n;
 	// RX slot clock

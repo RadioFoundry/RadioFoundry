@@ -1941,6 +1941,8 @@
    "dfu_string1": null,
    "dfu_product": null,
    "dfu_layout": null,
+   "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "f4stub",
     "id": 6,
@@ -4561,6 +4563,8 @@
    "dfu_string1": null,
    "dfu_product": null,
    "dfu_layout": null,
+   "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "f4stub",
     "id": 7,
@@ -4709,6 +4713,8 @@
    "dfu_string1": null,
    "dfu_product": null,
    "dfu_layout": null,
+   "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "stubtool",
     "id": 3,
@@ -4903,6 +4909,8 @@
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
    "dfu_layout": "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg",
+   "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "f4stub",
     "id": 1,
@@ -5024,6 +5032,8 @@
    "dfu_string1": null,
    "dfu_product": null,
    "dfu_layout": null,
+   "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "stubtool",
     "id": 2,
@@ -5148,6 +5158,8 @@
    "dfu_string1": null,
    "dfu_product": null,
    "dfu_layout": null,
+   "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "stubtool",
     "id": 1,
@@ -5314,6 +5326,8 @@
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
    "dfu_layout": "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg",
+   "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "f4stub",
     "id": 2,
@@ -5358,6 +5372,207 @@
    ],
    "cps_radio_types": [
     7
+   ]
+  },
+  "md9600": {
+   "id": "md9600",
+   "name": "TYT MD-9600",
+   "model": "MD-9600",
+   "part_of": null,
+   "platform": "stm32f4",
+   "platform_stubs": [
+    "stub/stm32f4"
+   ],
+   "family": "usb-dfu",
+   "link": "usb",
+   "release": "stable",
+   "debuglink_names": [
+    "MD-9600",
+    "MD9600",
+    "RT90",
+    "md9600"
+   ],
+   "rom_base": 134217728,
+   "app_base": 134266880,
+   "flash_end": 135266304,
+   "app_region": [
+    134266880,
+    134873088
+   ],
+   "sectors": [
+    [
+     3,
+     134266880,
+     16384
+    ],
+    [
+     4,
+     134283264,
+     65536
+    ],
+    [
+     5,
+     134348800,
+     131072
+    ],
+    [
+     6,
+     134479872,
+     131072
+    ],
+    [
+     7,
+     134610944,
+     131072
+    ],
+    [
+     8,
+     134742016,
+     131072
+    ],
+    [
+     9,
+     134873088,
+     131072
+    ],
+    [
+     10,
+     135004160,
+     131072
+    ],
+    [
+     11,
+     135135232,
+     131072
+    ]
+   ],
+   "protected": [
+    [
+     134217728,
+     134266880
+    ]
+   ],
+   "protect": [],
+   "keep_codec_supported": true,
+   "first_stage": null,
+   "codec_tool": "codec_extract",
+   "codec_stock": [
+    "79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09@md9600",
+    "de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532@md9600",
+    "9454eb221ae1f206fca5a15ec1b540bf06b3db4991f466b1626a3a3073ca91d5@md9600",
+    "7b1b1b33e661766a5b0c0b3ddab9c31c96e3855b09f4e280b07f4990b563b68f@md9600",
+    "4610ed115e80efa04be554a94915ec2e053ae00f6b64dfa4815451966840dba7@md9600",
+    "194526d60f796cc0f7339d14c1efeedc267731d108fd66a96876b459408de0ba@md9600",
+    "1eafdb774fd71cb7bc3334d06617ed42264ee25df1c73f61744f6b21742bbd20@md9600",
+    "6643261e62b9778a5df43b1e5c3428d6d308bf54b34478513df3e08f6f4dbb63@md9600",
+    "ec44929e855442ad248f1a5c171a467922d6cb5742fc35f759db269c645e22ab@md9600",
+    "7f4d760288f0c1875c7c5dc83dcdf3f355f5188becde2b505eedf609fdbe665f@md9600",
+    "d2ef7a7e9c484dc1a8777488816f4da47181899ff8b7299a0ead7d141d55e10c@md9600",
+    "3d71b4358267fe5fdae8980f340b6a158e7b229c9d32c8ab894c4985964e8aff@md9600",
+    "98302fbc26fa0db93bd7ecbd29a410ac9fbb42cbd7d6ce15d54ce085fefff329@md9600",
+    "e86b9e9775758548dd2d01334cfacc96c640fbf843aa6c5fa009b4bc7598e98d@md9600",
+    "e21c72e30716fb43e4d15798012aec15e964b9ec8c1a534ede5d0b0fe73f3acb@md9600",
+    "4e1c5c081d5bdf4bef8f205668fd7381391187d8b07150df7e99275b030b811b@md9600",
+    "d8a653307222e576ee416ab6d4704d14758fa71c1b0e826ffd840f26266cf11f@md9600",
+    "02e366687f122ed752581344db8316666d21782d9353334518b69237a81e74dc@md9600",
+    "baee36b0fd852dfc1fb14952242a1231dbfa4fabc37cba57c61f1b8d3e0d830d@md9600",
+    "6df34152e9786530d61032ab71f1962cf194aca0b99cf0a54e3802fd2cd4ac72@md9600",
+    "2522008737d7845e43ab47a307d38498ee783c788a377fac855dff94dea53af0@md9600",
+    "cf52b678629466bac593d533abc87fd7524c6e123b608dce6ef0d4e685a1d79e@md9600",
+    "50eed60616030f5ca110db649ec938782d90b23d7c911d05e388a0a7cd20af53@md9600",
+    "6356f4f467942ea0a1137d625071945ad47c0af72320bfc4f7890d99371cd8ca@md9600",
+    "4cb9f3bd483eb998a96c2700b070af94393f91aab688dd5b0670c85e379f1452@md9600",
+    "b25c573013b79f58a65629f0df85f5aced57c89eabde40465331984bb14dcc38@md9600",
+    "9035209ffb2ecd08999cea93bfe5d255006e783f0a4da11354390c9ecbcb8521@md9600",
+    "32044e55879afa44c7a525a9a53633a51e38c3ae01ff512d2d0971117a97a75b@md9600",
+    "1536ea3093394859c29ec6a522464c1b3f87a516e1a73b2cbf4f7be254b2dec4@md9600",
+    "8acfedbc60fe8dec2d88ed1f00a1444d6f8f243590d967a1a59b121f5d6dfef4@md9600",
+    "267dac314c1aa217ab259a6f9709f2e19342ff3a79aa18a2bf8b501939347e49@md9600",
+    "a10bad809048c8bbd9602c7b50ca4c824a6dbdee34b2167b872ec86c0affbbe1@md9600"
+   ],
+   "codec": {
+    "id": null,
+    "windows": null,
+    "installed": [],
+    "sources": null
+   },
+   "codec_code": null,
+   "codec_slot": null,
+   "codec_run": null,
+   "codec_tables": null,
+   "loader_id": null,
+   "loader_keys": null,
+   "loader_sign": "",
+   "bootloader_steps": [
+    "Disconnect the radio's DC power cable (the power key alone is not enough) and connect the USB cable to the mini-USB port on the rear.",
+    "Hold P1 and the orange (alarm) key while you connect the power again. The screen stays blank and the backlight blinks once a second.",
+    "Release the keys."
+   ],
+   "stock_download": null,
+   "key_sha256": "c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae",
+   "key_prefix": "A2FABB4B",
+   "dfu_ids": [
+    1155,
+    57105
+   ],
+   "dfu_string1": "AnyRoad Technology",
+   "dfu_product": "Digital Radio in USB mode",
+   "dfu_layout": "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg",
+   "original_version": {
+    "read": "dfu-info",
+    "interface": "@Internal Flash   /0x08000000/03*016Kg",
+    "hwopt": "Board revision",
+    "major": {
+     "06": "V1-V3",
+     "16": "V4",
+     "26": "V4A/V5"
+    }
+   },
+   "original_backup": {
+    "info": [
+     "02",
+     "01",
+     "03",
+     "04",
+     "05",
+     "07",
+     "08",
+     "32",
+     "33",
+     "50"
+    ],
+    "mirror": 65535,
+    "spi": 16777216,
+    "quick": 2097152,
+    "loader_interface": "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg",
+    "loader_spi": 1048576
+   },
+   "stub": {
+    "tool": "f4stub",
+    "id": 3,
+    "tested": true,
+    "boot_end": 134266880,
+    "hse": 8000000,
+    "spi": {
+     "bus": 2,
+     "mode": 3,
+     "hz": 4500000,
+     "af": 5,
+     "sck": "PB13",
+     "miso": "PB14",
+     "mosi": "PB15",
+     "cs": "PB12",
+     "idle": [
+      "PD14"
+     ]
+    },
+    "spi_nand": null
+   },
+   "variants": {},
+   "anytone_models": {},
+   "build_options": [],
+   "cps_radio_types": [
+    5
    ]
   },
   "mduv380": {
@@ -5520,6 +5735,8 @@
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
    "dfu_layout": null,
+   "original_version": null,
+   "original_backup": null,
    "stub": {
     "tool": "f4stub",
     "id": 5,

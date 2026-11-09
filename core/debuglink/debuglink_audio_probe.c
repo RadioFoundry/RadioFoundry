@@ -464,7 +464,8 @@ size_t debuglink_cmd_audio_probe(const uint8_t *req, uint16_t len, uint8_t *out,
 		uint32_t blocks = 0;
 		bool running = tap->last_block != NULL && tap->last_block(scr_l, scr_r, &blocks);
 		out[0] = DL_ST_OK;
-		out[1] = (uint8_t)((probing ? 1u : 0u) | (running ? 2u : 0u));	// bit 0 ours, bit 1 the stream runs
+		// bit 0 ours, bit 1 the stream runs, bit 2 the board has no PCM tap (START is unavailable there)
+		out[1] = (uint8_t)((probing ? 1u : 0u) | (running ? 2u : 0u) | (tap->last_block == NULL ? 4u : 0u));
 		put32(out + 2, blocks);
 		for (int c = 0; c < 2; c++) {
 			put16(out + 6 + 6 * c, level[c].peak);

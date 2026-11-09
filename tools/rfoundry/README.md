@@ -39,9 +39,12 @@ rfoundry flash build/dm1801pro/rfoundry_dm1801pro.bin --board dm1801pro --port /
 ```
 
 `rfoundry flash` does, in order: load the image and check it against its manifest (SHA-256, the radio model, the
-ranges); ask a running RadioFoundry radio for its codec over USB; decide the codec mode; tell you to put the radio in its
-bootloader (DM-1701: off, hold PTT and SK1, on) and wait for it; print the plan; erase and write; wait for the radio to
-restart and check what it reports.
+ranges); ask a running RadioFoundry radio for its codec over USB; decide the codec mode; print the plan; on a board with
+`[flash.original_version]`, read the version the radio's original firmware reports while it runs (`origversion.py`,
+nothing on the radio changes; `--no-version-read` skips it); tell you to put the radio in its bootloader (DM-1701: off,
+hold PTT and SK1, on) and wait for it; erase and write; wait for the radio to restart, check what it reports, and store
+the hardware option the version settled over the debug link (HWOPT) unless the radio already holds one
+([web-flasher.md](../../docs/dev/web-flasher.md#the-original-firmware-version)).
 
 ### The codec
 

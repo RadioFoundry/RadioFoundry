@@ -34,7 +34,7 @@ def home(radio):
 @pytest.mark.feature("channel_knob")
 def test_knob_direction(home):
     r = home
-    v = r.core()
+    v = r.leave_vfo()
     if v.get("vfo") == "1" or as_int(v.get("zone_size"), 0) < 3:
         skip("state", "needs a zone of 3 or more channels, not the VFO")
     pos = as_int(v["zone_pos"])

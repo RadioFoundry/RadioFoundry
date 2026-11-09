@@ -238,7 +238,7 @@ The structure is little endian, packed, 46 bytes in struct version 3.
 | 2 | MK22 radio (DM-860 family) | qdmr (MK22 driver) |
 | 3 | RD-5R / DM-5R Tier2 | qdmr (MK22 driver) |
 | 4 | MK22 radio (single band) | qdmr (MK22 driver) |
-| 5 | MD-9600 / RT-90 | qdmr (UV380 driver) |
+| 5 | a dual-band mobile radio on the STM32 and HR_C6000 pair | qdmr (UV380 driver) |
 | 6 | UV380 family. Also what a board reports when it sets no radio type, such as the HR_C7000 boards | qdmr (UV380 driver) |
 | 7 | the HR_C5000 radio and its sibling model | qdmr (UV380 driver) |
 | 8 | a UV380-class radio with a BGR panel | qdmr (UV380 driver) |
@@ -295,7 +295,7 @@ The MMDVM protocol itself is public and is specified separately. The switch work
 - **USB (STM32, MK22).** From then on, every USB packet starting with 0xE0 and at least 3 bytes long is taken as one
   MMDVM frame. The radio does not parse the MMDVM length byte. A packet that doesn't fit in the frame ring is dropped
   and counted.
-- **UART (radios without USB).** Bytes are split into frames by the MMDVM length byte, resynchronizing on 0xE0. MMDVMHost may
+- **UART (radios without USB).** Bytes are split into frames by the MMDVM length byte, resynchronizing on 0xE0. A host may
   send frames back to back, so gaps can't be used. Bytes that came with the first request are split the same way.
 - **UDP 3334 (network mode).** A datagram is treated like a USB packet.
 - **Leaving.** In MMDVMHost mode the radio leaves after 20 s without traffic from the host. In BlueDV mode the user

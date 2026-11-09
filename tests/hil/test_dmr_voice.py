@@ -38,7 +38,7 @@ def test_dmr_voice_speech(radio, sdr_bench, pytestconfig):
         skip("not_built", "built without DMR")
     freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
     frames = os.path.getsize(ambe) // 9
-    sent = 18 * -(-frames // 18)        # bench_tx.py pads to whole superframes
+    sent = 18 * -(-frames // 18)        # the bench_tx job pads to whole superframes
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
     if radio.view(["dmr"]).get("dmr.codec") != "1":
@@ -91,7 +91,7 @@ def test_vocoder_encode_options(radio):
 
     voice.enc_flags is the word the codec was last given: the audio callback hands new options over before the next
     frame it encodes. After a change with no transmission since, the word still belongs to the previous options, so
-    a mismatch is only printed here; test_dmr_tx_encode_options checks the word after an over."""
+    a mismatch is only printed here."""
     if "DMR" not in radio.features():
         skip("not_built", "built without DMR")
     v = radio.view(["dmr", "storage"])

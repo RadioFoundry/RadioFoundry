@@ -82,6 +82,8 @@
 #define PA_MIN_ON_US		20000u
 #define PA_FORCE_OFF_US		40000u	// poll fallback when no timeslot interrupt came to drop the PA
 #define STALL_US		200000u
+#define HOLD_NO_TICK_US		35000u	// a hold after our transmission whose slot ticks stopped
+#define HOLD_REPORT_US		8000u	// a slot's report comes this long after the tick that ends it, if at all
 #define RX_LOST_TICKS		13u	// a reception is over (390 ms)
 #define RX_IDLE_TICKS		20u	// nothing taken while idle: restart the receiver
 #define RX_RESUME_TICKS		50u	// a call with no terminator can come back this long after its voice (1.5 s, 5.6)
@@ -376,11 +378,37 @@ static void do_restart(hrc6000_dmr_t *e, uint8_t why)
 	e->voice_valid = false;
 	e->out_of_step_run = 0;
 	e->restart_pending = false;
+	e->tx_hold = false;
 	e->st.rx_restarts++;
+}
+
+// The end of a direct transmission (modem-hrc6000.md 6.6): receive on in passive timing for the next slot, without
+// the restart. An answer that starts as our last burst ends (on the SDR bench, an MS simulator's link ACK to our
+// confirmed data) came while a restart had the chip search for the sync again, and was missed on most tries. The
+// software state is reset as at a restart. Nothing taken in that slot: the restart once its report is no longer due
+// (HOLD_REPORT_US after the tick that ends it, from the poll; a restart at the tick lost that report), in time for an
+// answer a slot later off our timing, which the held timing did not decode (late class 0 reports only)
+static void tx_hold(hrc6000_dmr_t *e)
+{
+	w(e->dev, R_L2_CTL, L2_PASSIVE);	// passive timing from our active one
+	set_ctl(e, rx_ctl(e));
+	forget_slots(e);
+	e->held[0].valid = false;
+	e->held[1].valid = false;
+	e->rx_any = false;
+	e->rx_tick = e->tick;
+	e->report_valid = false;
+	e->voice_valid = false;
+	e->out_of_step_run = 0;
+	e->restart_pending = false;
+	e->tx_hold = true;
+	e->hold_due = false;
+	e->st.rx_holds++;
 }
 
 static void pa_drop(hrc6000_dmr_t *e, uint32_t t)
 {
+
 	if (!e->ops->rf(e->ops->ctx, false)) {
 		e->st.rf_fail++;
 	}
@@ -484,8 +512,10 @@ static void tx_finish(hrc6000_dmr_t *e)
 		w(e->dev, R_L2_CTL, L2_PASSIVE);	// passive timing again, CRC_MCU_Control clear
 		set_ctl(e, rx_ctl(e));
 		e->rx_tick = e->tick;
+	} else if (!rmo(e) && e->tx_any_setup) {
+		tx_hold(e);	// direct: an answer comes on our timing; then follow whoever talks next
 	} else {
-		do_restart(e, HRC6000_RS_TX_END);	// direct mode: follow whoever talks next
+		do_restart(e, HRC6000_RS_TX_END);
 	}
 	txq_flush(e);
 	if (e->dev->chip->tx_end != NULL) {
@@ -543,6 +573,17 @@ static void tx_slot(hrc6000_dmr_t *e)
 	}
 }
 
+// Over only once the last burst's slot has gone by: its PA dropped, the slot starting not a TX slot (gotchas 3.1, 3.2)
+static void tx_end_check(hrc6000_dmr_t *e, uint8_t r42)
+{
+	uint32_t since = e->tick - e->tx_last_setup;
+	bool done = !e->tx_any_setup || (since >= 2u && !e->pa_on && (r42 & STAT_TX_SLOT) == 0)
+		|| since >= DONE_FALLBACK_TICKS;
+	if (done) {
+		tx_finish(e);
+	}
+}
+
 static void tx_tick(hrc6000_dmr_t *e, uint8_t r42)
 {
 	uint8_t next_phase = (uint8_t)((e->tick + 1u) & 1u);
@@ -588,26 +629,24 @@ static void tx_tick(hrc6000_dmr_t *e, uint8_t r42)
 	case TXS_RUN:
 		if (next_phase == e->tx_phase) {
 			tx_slot(e);
+			if (e->tx_state == TXS_ENDING) {
+				// Nothing more to send: over at this tick if the last burst's slot has gone by. Waiting for the
+				// next tick left our next slot closed and the RF on the carrier: an answer one frame after our
+				// last burst (a confirmed data link ACK, 30 ms after its end) was missed on every try
+				tx_end_check(e, r42);
+			}
 		} else {
 			// The other slot: an SFR's inbound one is received (the PA dropped at its timeslot interrupt puts the
 			// RF back to receive), else left closed
 			set_ctl(e, e->tx_listen ? rx_ctl(e) : CTL_NONE);
 		}
 		return;
-	case TXS_ENDING: {
+	case TXS_ENDING:
 		if (e->ctl_next != CTL_NONE) {
 			set_ctl(e, CTL_NONE);
 		}
-		uint32_t since = e->tick - e->tx_last_setup;
-		// Over only once the last burst's slot has gone by: its PA dropped, the slot starting not a TX slot
-		// (gotchas 3.1, 3.2)
-		bool done = !e->tx_any_setup || (since >= 2u && !e->pa_on && (r42 & STAT_TX_SLOT) == 0)
-			|| since >= DONE_FALLBACK_TICKS;
-		if (done) {
-			tx_finish(e);
-		}
+		tx_end_check(e, r42);
 		return;
-	}
 	default:
 		return;
 	}
@@ -1059,6 +1098,7 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	}
 	e->rx_tick = e->tick;
 	e->rx_any = true;
+	e->tx_hold = false;	// an answer: the reception holds the timing as any does
 	e->idle_restarted = false;
 	if (voice && e->voice_since_start < 255u) {
 		e->voice_since_start++;
@@ -1623,6 +1663,8 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 		if (e->restart_pending) {
 			do_restart(e, e->restart_why);
 			push(e, DMR_EV_SYNC_LOST, 0, e->tick);
+		} else if (e->tx_hold && !e->rx_any && quiet > 0 && !e->hold_due) {
+			e->hold_due = true;	// the answer slot is over: the restart once its report is no longer due (poll)
 		} else if (e->rx_any && quiet > RX_LOST_TICKS) {
 			do_restart(e, HRC6000_RS_LOST);		// a reception is over (5.5)
 			e->idle_restarted = true;
@@ -1799,6 +1841,7 @@ void hrc6000_dmr_run(hrc6000_dmr_t *e)
 	e->cc_matches = 0;
 	e->heard_any = false;
 	e->idle_restarted = false;
+	e->tx_hold = false;
 	memset(e->vs, 0, sizeof(e->vs));
 	memset(e->held, 0, sizeof(e->held));
 	slot_lc_forget(e);	// their ticks are from before the tick restarted
@@ -1866,11 +1909,16 @@ void hrc6000_dmr_poll(hrc6000_dmr_t *e)
 		if (e->pa_on && (uint32_t)(t - e->t_pa_on) > PA_FORCE_OFF_US) {
 			pa_drop(e, t);
 		}
+		if (e->tx_hold && !e->rx_any && e->tx_state == TXS_IDLE
+		    && (uint32_t)(t - e->t_tick) > (e->hold_due ? HOLD_REPORT_US : HOLD_NO_TICK_US)) {
+			do_restart(e, HRC6000_RS_TX_END);	// no answer on our timing: follow whoever talks next
+		}
 		if (e->timing && (uint32_t)(t - e->t_tick) > STALL_US) {
 			e->timing = false;
 			bool busy = e->tx_state != TXS_IDLE || (e->rx_any && (uint32_t)(e->tick - e->rx_tick) <= RX_LOST_TICKS);
 			if (e->tx_state != TXS_IDLE) {
 				e->tx_any_setup = false;	// nothing more will go out
+				e->st.tx_stalls++;
 				tx_finish(e);
 			} else if (busy) {
 				do_restart(e, HRC6000_RS_STALL);
@@ -2058,6 +2106,11 @@ void hrc6000_dmr_set_cc_filter(hrc6000_dmr_t *e, int8_t cc)
 		e->restart_why = HRC6000_RS_CMD;
 	}
 	unlock(e);
+}
+
+bool hrc6000_dmr_tx_last_out(const hrc6000_dmr_t *e)
+{
+	return (e->tx_state == TXS_RUN || e->tx_state == TXS_ENDING) && e->tx_end_req && !e->tx_listen && txq_count(e) == 0;
 }
 
 bool hrc6000_dmr_is_transmitting(const hrc6000_dmr_t *e)

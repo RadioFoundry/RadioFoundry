@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 /*
- * Hotspot uplink: what the simplex MMDVM hotspot hears on RF, as MMDVMHost wants it (see hotspotUplink.h)
+ * Hotspot uplink: what the simplex MMDVM hotspot hears on RF, as a host wants it (see hotspotUplink.h)
  */
 
 #include <string.h>
@@ -92,7 +92,7 @@ void hotspotUplinkReset(hotspotUplink_t *u)
 	u->lastSeq = 5;
 }
 
-// The call is over (its terminator, a new call, or lost): true if MMDVMHost knew about it
+// The call is over (its terminator, a new call, or lost): true if the host knew about it
 static bool callClose(hotspotUplink_t *u)
 {
 	bool announced = u->open && u->headerSent;
@@ -141,7 +141,7 @@ uint8_t hotspotUplinkBurst(hotspotUplink_t *u, const hotspotUplinkBurst_t *b, ui
 				actions |= HOTSPOT_UP_LOST;
 			}
 
-			// Every header goes up: MMDVMHost takes the call's first, and each one shows the call is still on
+			// Every header goes up: the host takes the call's first, and each one shows the call is still on
 			if (!u->open || !u->headerSent)
 			{
 				callOpen(u, b->ms);
@@ -194,7 +194,7 @@ uint8_t hotspotUplinkBurst(hotspotUplink_t *u, const hotspotUplinkBurst_t *b, ui
 
 	uint32_t elapsed = b->ms - u->lastMs;
 
-	// Late entry: MMDVMHost needs the call's LC first, a header made from it, once it's known
+	// Late entry: the host needs the call's LC first, a header made from it, once it's known
 	if (!u->headerSent)
 	{
 		u->lastMs = b->ms;
@@ -208,7 +208,7 @@ uint8_t hotspotUplinkBurst(hotspotUplink_t *u, const hotspotUplinkBurst_t *b, ui
 		u->headerSent = true;
 		actions |= HOTSPOT_UP_HEADER;
 
-		// MMDVMHost only takes B-F in sequence after an A (its voice sync resets the sequence; a header doesn't): the
+		// A host only takes B-F in sequence after an A (voice sync resets the sequence; a header doesn't): the
 		// superframe so far is filled with silence from A, and the voice goes on from this burst. Waiting for the next A
 		// instead cost a whole superframe whenever that A was missed (normal hotspot rf_late: 6 or 0 of 22 bursts)
 		if (b->seq != 0)
@@ -230,8 +230,8 @@ uint8_t hotspotUplinkBurst(hotspotUplink_t *u, const hotspotUplinkBurst_t *b, ui
 	uint8_t expected = (uint8_t)((u->lastSeq + 1) % 6);
 	uint8_t missing = (uint8_t)((b->seq + 6 - expected) % 6);
 
-	// Bursts missed: as many silent ones as there was time for (a burst every 60 ms), so the sequence MMDVMHost checks
-	// carries on. If there wasn't time for them all the numbering is off: MMDVMHost picks the call up again at burst A
+	// Bursts missed: as many silent ones as there was time for (a burst every 60 ms), so the sequence the host checks
+	// carries on. If there wasn't time for them all the numbering is off: the host picks the call up again at burst A
 	if ((missing > 0) && ((elapsed + (HOTSPOT_UPLINK_BURST_MS / 2)) >= ((uint32_t)(missing + 1) * HOTSPOT_UPLINK_BURST_MS)))
 	{
 		*fillFirst = expected;
@@ -256,9 +256,9 @@ bool hotspotUplinkLost(hotspotUplink_t *u, uint32_t nowMs)
 
 bool hotspotUplinkData(hotspotUplink_t *u, uint8_t dataType, uint32_t nowMs)
 {
-	bool block = (dataType == DT_RATE_12_DATA) || (dataType == DT_RATE_34_DATA) || (dataType == DT_RATE_1_DATA);
+	bool block = (dataType == DMR_TYPE_RATE_1_2) || (dataType == DMR_TYPE_RATE_3_4) || (dataType == DMR_TYPE_RATE_1);
 
-	if (dataType == DT_IDLE)
+	if (dataType == DMR_TYPE_IDLE)
 	{
 		return false;
 	}

@@ -1,0 +1,103 @@
+{
+ "board": "md9600",
+ "commit": "77755fcbd6be91767a53d4c5f4145a1453486f02",
+ "date": "2026-11-08T22:51:10Z",
+ "dirty": false,
+ "features": [
+  "dmr_control_station"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "da54663a",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "microphone",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 2,
+  "dmr-freq": 461.4625,
+  "dmr-tg": 201,
+  "fm-mhz": 461.4625
+ },
+ "sources": {
+  "dmr_control_station": {
+   "core/debuglink/debuglink.c": "86e811c30150ee9f44f3b7b78a892e57c0b7c52b",
+   "core/dmr/dmrDataService.c": "e5992a341d82ce68378ea6525d7cb272a2b37389",
+   "core/dmr/dmrDataService.h": "25dc1a140c599bf1c9a6bf51d964b52e2227b37d",
+   "core/hostlink/hostlink_net.c": "7f72df1b1e34bd400c3fb2fd20b358d355b722a5",
+   "core/hostlink/hostlink_net.h": "1e778c8717782f88effa7e2fa8d4023e17c0e622",
+   "core/ui/ui_menus.c": "5672529b5ab5fd470f02b2a52c4029efaff6d1b0",
+   "core/ui/ui_svc_storage.c": "fd7044aa12498a245883412cb537d5fa74eed8bd",
+   "docs/spec/usb-network.md": "3650061b7ce6be9425c862da53968437ff9919a6"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "dmr_control_station"
+   ],
+   "id": "tests/hil/test_control_station.py::test_boot_network",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_control_station"
+   ],
+   "id": "tests/hil/test_control_station.py::test_fixed_link",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_control_station"
+   ],
+   "id": "tests/hil/test_control_station.py::test_passthrough_reply",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_control_station"
+   ],
+   "id": "tests/hil/test_control_station.py::test_passthrough_text",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_control_station"
+   ],
+   "id": "tests/hil/test_control_station.py::test_usb_settings_stored",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

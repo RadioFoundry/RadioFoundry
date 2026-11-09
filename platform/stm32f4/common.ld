@@ -13,7 +13,7 @@ ENTRY(Reset_Handler)
  * (hardware-dm1701.md 18 (1)), so the regions end 4 bytes short */
 _estack = ORIGIN(RAM) + LENGTH(RAM);
 _Min_Heap_Size = 0x1000;
-_Min_Stack_Size = 0x800;	/* main stack: start-up and interrupts */
+_Min_Stack_Size = 0x800;	/* main stack: start-up and interrupts (at least this much RAM stays free for it) */
 
 SECTIONS
 {
@@ -69,6 +69,8 @@ SECTIONS
 		. = ALIGN(8);
 		PROVIDE(end = .);
 		PROVIDE(_end = .);
+		/* Nothing uses the heap (no _sbrk): the main stack may grow down to here, its canary words (irq_stack.c) */
+		__main_stack_bottom = .;
 		. = . + _Min_Heap_Size;
 		. = . + _Min_Stack_Size;
 		. = ALIGN(8);

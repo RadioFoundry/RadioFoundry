@@ -1,0 +1,73 @@
+{
+ "board": "md9600",
+ "commit": "a78fe76f7365224a8995b9ed6dfef72fde19fde5",
+ "date": "2026-11-06T13:19:40Z",
+ "dirty": false,
+ "features": [
+  "aprs_igate"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,DMR_CONFIRMED,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "fe289288",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.075,
+  "dmr-tg": 202,
+  "fm-mhz": 446.1,
+  "tx-power": 40
+ },
+ "sources": {
+  "aprs_igate": {
+   "core/aprs/aprs.c": "980fd9455fb4d198942bd22f2136378961c1746c",
+   "core/debuglink/debuglink_aprs.c": "6be1e2cd78185115997be66eb3667cb6f8ded86f",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/net/aprsis.c": "496a9c30dd019c117c9b72706cb5c9710d57d2b2",
+   "docs/spec/aprs.md": "2afb554969f945446f8b1b65c1a3126b7a049b3c"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "aprs_igate"
+   ],
+   "id": "tests/hil/test_aprs.py::test_aprs_igate_on_air[aprsis]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "aprs_igate"
+   ],
+   "id": "tests/hil/test_aprs.py::test_aprs_igate_on_air[kiss_tcp]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

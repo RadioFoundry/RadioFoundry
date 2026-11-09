@@ -103,7 +103,9 @@ meets the margin, rounded to a level name it reaches (for example 0.25 W instead
 
 ## 4. Short check (each further radio of a model)
 
-About 10 key-ups per band at frequency A, with the model's table in the firmware (`power_cal.py check`):
+About 10 key-ups per band at frequency A, with the model's table in the firmware (`power_cal.py check`). The HIL
+version (`test_fm_tx_power_levels --manual`) keys every level at 445 and 146 MHz by default, the middle of where hams
+transmit on 70 cm and 2 m, in one batch; the readings are typed after it:
 
 1. Each power level once through the normal level setting: within ±1 dB of its name (±2 dB for levels under 1 W).
 2. The lowest level's drive minus the model's margin plus 5 counts (5 counts above the model's highest cliff), once:

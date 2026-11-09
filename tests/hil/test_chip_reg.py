@@ -9,14 +9,14 @@ transmitted. Skipped on firmware without CHIP_REG and on platforms without SoC r
 import pytest
 
 from rfoundry_hil import DebugLinkError, skip
-from rfoundry_debug import CHIP_AT32F43X, CHIP_GD32F30X, CHIP_HRC7000, ST_REFUSED, ST_UNAVAILABLE
+from rfoundry_debug import CHIP_AT32F43X, CHIP_GD32F30X, CHIP_HRC7000, CHIP_STM32F4, ST_REFUSED, ST_UNAVAILABLE
 
 ST_UNKNOWN_CMD = 1
 # Per chip family: a register word with no read side effects that both windows hold, its start-up value, and an address
 # outside the register windows (main SRAM)
 CORTEX_M4_CPUID = (0xE000ED00, 0x410FC241, 0x20000000)
 PROBES = {CHIP_HRC7000: (0x17000004, 0xFFFFFFFF, 0x00010000), CHIP_GD32F30X: CORTEX_M4_CPUID,
-          CHIP_AT32F43X: CORTEX_M4_CPUID}
+          CHIP_AT32F43X: CORTEX_M4_CPUID, CHIP_STM32F4: CORTEX_M4_CPUID}
 
 
 @pytest.mark.feature("debuglink")

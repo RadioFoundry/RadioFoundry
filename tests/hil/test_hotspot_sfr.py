@@ -9,7 +9,7 @@ frequency (the bench's). It expects a quiet channel (sfr.tx_starts stays put). T
 test_hotspot.py).
 
 test_sfr_repeats_bench_call (rf, radio_tx, bench_service): the radio in SFR mode on the DMR test channel
-(tools/bench/mmdvm_hotspot.py's MmdvmLink as the host, RF level 12: the lowest power); the bench modem sends a 3
+(tools/bench/mmdvm_hotspot.py's MmdvmLink as the host, the RF level of the lowest power or of --radio-tx-watts); the bench modem sends a 3
 superframe group call with TS1 direct mode sync (the default inbound slot) while the RTL-SDR records. Pass: the call's
 header goes up the USB link as DMR_DATA1; on air a TS2 direct mode sync burst (the outbound slot) carries the bench
 call's LC (source ID and talkgroup); the session's sfr.repeated and sfr.tx_starts (counted from 0 per session) are at
@@ -114,16 +114,16 @@ def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
     hz = round(freq * 1e6)
     radio.go_home()
     radio.find_channel(hz, "dmr")
+    rf_level = radio.hotspot_rf_level()
     # A transmission on our own timing first (see the docstring)
     radio.ptt_for(1.0)
     radio.wait_for(lambda x: x.get("state") != "tx", timeout=5, what="TX ended")
     v0 = radio.view(["hotspot", "sfr"])
-    rdir = sdr_bench.run_dir("hil_sfr_repeat")
     with sdr_bench.lease():
-        watch = sdr_bench.dmr_watch_start(rdir, freq, 12, cc)     # bursts decoded on the bench when it can
+        watch = sdr_bench.dmr_watch_start(None, freq, 12, cc)
         with radio.released() as port:
             t = M.Transport(port)
-            hs = M.MmdvmLink(t, hz, cc, 12, simplex=False)
+            hs = M.MmdvmLink(t, hz, cc, rf_level, simplex=False)
             try:
                 mark = hs.mark()
                 sdr_bench.transmit(f"voice --src {src} --dst {tg} --superframes 3 --family ts1", freq, cc)
@@ -152,7 +152,6 @@ def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
     print(f"uplink: {len(up)} DMR_DATA1 (controls {sorted(set(ctl))}), NAKs {naks}; SDR families {fams}; "
           f"TS2 LCs {ts2_lc[:3]}; sfr.repeated {v0.get('sfr.repeated')} -> {v1.get('sfr.repeated')}, "
           f"sfr.tx_starts {v0.get('sfr.tx_starts')} -> {v1.get('sfr.tx_starts')}")
-    print(f"capture: {sdr_bench.run_path(rdir)}" if "cap" in watch else "bursts decoded on the bench")
     # The repeat's slot timing: each TS2 burst against the last inbound TS1 one before it (30 ms on the grid)
     t_in = sorted(b["t_ms"] for b in bursts if b.get("family") == "ts1")
     offs = []

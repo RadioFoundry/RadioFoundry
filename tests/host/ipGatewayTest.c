@@ -798,7 +798,7 @@ static void testOffNet(void)
 	CHECK(framesSent == 5 && get32(&lastFrame[26]) == lookalike && get32(&lastFrame[30]) == HOST_IP);
 }
 
-// MMDVMHost's UDP modem protocol: datagrams to the radio's port 3334 carry the serial byte stream, replies go back
+// the UDP modem protocol: datagrams to the radio's port 3334 carry the serial byte stream, replies go back
 static void testSerial(void)
 {
 	uint8_t f[200];

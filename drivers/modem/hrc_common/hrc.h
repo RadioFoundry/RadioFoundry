@@ -64,6 +64,7 @@ typedef struct {
 struct hrc {
 	const hrc_bus_t *bus;
 	const hrc_chip_t *chip;
+	bool rx_iq_straight;	// HR_C6000: 4:0x01 bit 6 clear, receive I and Q not swapped (hrc6000_rx_iq_swap)
 };
 
 // Bind a chip driver's description to a bus. Called by hrc6000_attach and hrc5000_attach, not by the boards

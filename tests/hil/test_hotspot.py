@@ -4,7 +4,7 @@
 hotspot takes the DMR modem, the debug link still answers in hotspot mode, and hotspot mode is left through the debug
 link.
 
-The MMDVM client opens the port with DTR clear, as MMDVMHost on Windows does. A client that raises DTR ends hotspot
+The MMDVM client opens the port with DTR clear, as a host on Windows may. A client that raises DTR ends hotspot
 mode when it closes the port (the DTR drop, docs/spec/mmdvm-protocol.md 5.1, hostlink_policy.c): with DTR set, the
 radio would be back to normal before the debug link could look (hostlink.left=closed)."""
 import time

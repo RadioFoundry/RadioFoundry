@@ -55,8 +55,9 @@ typedef struct {
 	// Optional (NULL: none): interrupts the platform's fallback handler took for a source with no handler (it masks the
 	// source so it can't storm), and the last such source. A count above 0 means some interrupt went quiet for good
 	void (*irq_unhandled)(uint32_t *count, uint32_t *last_source);
-	// Optional (NULL: the handlers share the task or main stacks): bytes of the interrupt handlers' own stack never
-	// written since start. The platform checks that stack's end itself (a stack overflow crash, task "irq")
+	// Optional (NULL: the handlers share the task stacks): bytes of the interrupt handlers' own stack (on a Cortex-M the
+	// main stack, theirs alone once the scheduler runs) never written since start. The platform checks that stack's end
+	// itself (a stack overflow crash, task "irq")
 	uint32_t (*irq_stack_free)(void);
 	// Optional (NULL: none): one 32-bit SoC register for the debug link's CHIP_REG (docs/spec/debuglink.md 3.24), only
 	// an aligned word inside the platform's register windows. Writes *val when write, then reads the register back into

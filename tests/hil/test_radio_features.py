@@ -144,9 +144,7 @@ def on_channel(radio, minimum):
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
-    if radio.core().get("vfo") == "1":
-        radio.link.vfo(False)
-        radio.wait_for(lambda v: v.get("vfo") == "0", what="VFO off")
+    radio.leave_vfo()
     size = as_int(radio.core().get("zone_size"), 0)
     if size < minimum:
         skip("state", f"the current zone has {size} channels, the test needs {minimum}")
@@ -412,7 +410,8 @@ def fm_tx(radio, pytestconfig):
             yield radio
         finally:
             radio.link.ptt(False)
-            radio.link.tone_burst(False)
+            with contextlib.suppress(DebugLinkError):	# "unavailable" in a build without the FM TX tones
+                radio.link.tone_burst(False)
             radio.wait_for(lambda v: v.get("state") != "tx", 3.0, what="TX ended")
 
 
@@ -708,17 +707,17 @@ def test_dual_watch_stops_on_call(radio, sdr_bench, pytestconfig):
     size = as_int(radio.core().get("zone_size"), 0)
     if size < 2:
         skip("state", "the DMR test channel's zone has one channel")
+    # The other channel: the first in the zone on another frequency (a zone may hold the test frequency twice, as a DMR
+    # and an FM channel)
     other = None
-    for p in range(size):		# the first other channel of the zone that isn't on the test frequency
-        if p == pos:
-            continue
+    for p in (p for p in range(size) if p != pos):
         radio.link.zone_pos(p)
-        radio.wait_for(lambda v: v.get("zone_pos") == str(p), what=f"zone position {p}")
+        radio.wait_for(lambda v, p=p: v.get("zone_pos") == str(p), what=f"zone position {p}")
         if radio.core().get("rx_hz") != str(hz):
             other = p
             break
     if other is None:
-        skip("state", "every other channel of the zone is on the test frequency too")
+        skip("state", "every other channel in the test channel's zone is on the test frequency too")
     with settings(radio, scan_resume=1):
         radio.link.scan("dual", pos)
         try:
@@ -853,7 +852,7 @@ def test_battery_save_wakes_for_signal(radio, sdr_bench, pytestconfig):
         seen, t_start = _bench_call_watch(radio, sdr_bench, pytestconfig)
     rx = [(t, v) for t, v in seen if v.get("state") == "rx"]
     assert rx, "the receiver never opened for the bench call"
-    # bench_tx.py needs about 2 s (port, tuning, settle) before its first burst: measure from the first open
+    # the bench_tx job needs about 2 s (port, tuning, settle) before its first burst: measure from the first open
     t_open = rx[0][0]
     asleep_during = [t - t_open for t, v in seen if t_open <= t <= rx[-1][0] and v.get("rx_sleeping") == "1"]
     before = [v.get("rx_sleeping") for t, v in seen if t < t_open]

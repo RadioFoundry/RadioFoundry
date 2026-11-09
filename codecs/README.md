@@ -25,6 +25,9 @@ and the release images never contain it. Each radio uses the codec from its own 
    | DB25-D PRO | the 2024-05-09 build, `909E.D6x.EARSAB.018` | `9e199f54cd6545d153d39542ca5be3ac1076ee215eb93ca630a83cbdbbff4606` |
    | MD-380 | TYT `MD-380-D2.32(AD).bin` ("Firmware 2.32", D002.032) | `e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43` |
    | AT-D578UV | AnyTone `.CDD` of any GD32 build (2.08, PRO 1.21) | Any file holding the DMR chip's boot block (`743515b9…`, `tools/modem_boot.py`) |
+   | MD-9600 | TYT `MD9600-CSV-V06.09.bin` (V1-V3 boards) | `79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09` |
+   | MD-9600 | TYT `MD9600-CSV(V4)-V16.45.bin` (V4 boards) | `de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532` |
+   | MD-9600 | Any other TYT MD-9600 or Retevis RT90 original firmware file (versions 03.28 to 26.57, V5 radios' 26.xx files included, in the CSV, CSV-GPS, REC and GPS-REC variants) | The hashes are in [docs/spec/codec-md9600.md](../docs/spec/codec-md9600.md#stock-files) |
    | DM-1801 Pro | A 1 MB program flash read of the radio running its stock firmware (`stub/stubtool.py --progmem`) | Any file whose codec code window hashes to `8f7641b6…` (`tools/hrc7000_codec.py`) |
 
    The DM-1801 Pro has no published update file, so the codec comes from the radio's own flash. Read it **before** the
@@ -38,7 +41,7 @@ and the release images never contain it. Each radio uses the codec from its own 
 
    Next to the plain image, the build writes `build/dm1701/rfoundry_dm1701_codec.bin`. Flash that one.
 
-The DM-1701 and the MD-380 need no key file, because the codec tool derives the key from the stock file (a few seconds
+The DM-1701, the MD-380 and the MD-9600 need no key file, because the codec tool derives the key from the stock file (a few seconds
 for the MD-380). If you have the radio's 1024-byte firmware key file, you can put it here too, and the build uses it
 instead.
 

@@ -8,7 +8,7 @@
 #
 # A scheduled run happens only when the repository variable RFOUNDRY_HIL_SCHEDULE is "true", with the radio-only tests
 # plus RFOUNDRY_HIL_SCHEDULE_FLAGS (for example "--allow-rf --allow-service-stop"). The runner's own environment gives
-# RFOUNDRY_SDR_BENCH_HOST, RFOUNDRY_PORT, RFOUNDRY_HIL_AMBE and RFOUNDRY_RADIO_LOCK (docs/dev/ci.md); never put them in this file.
+# RFOUNDRY_BENCH_API, RFOUNDRY_PORT, RFOUNDRY_HIL_AMBE and RFOUNDRY_RADIO_LOCK (docs/dev/ci.md); never put them in this file.
 name: HIL
 
 on:
@@ -35,7 +35,7 @@ on:
         type: string
         default: ""
       extra:
-        description: "More pytest options (e.g. --ambe PATH --sdr-gain 0)"
+        description: "More pytest options (e.g. --ambe PATH --max-foff 800)"
         type: string
         default: ""
   schedule:

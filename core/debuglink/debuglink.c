@@ -846,6 +846,8 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_iddb(req, len, out, cap);
 	case DL_CMD_CHIP_REG:
 		return debuglink_cmd_chip_reg(req, len, out, cap);
+	case DL_CMD_HWOPT:
+		return debuglink_cmd_hwopt(req, len, out, cap);
 	case DL_CMD_CODEPLUG:
 #if CONFIG_CPS_FAST
 		return cps_fast_cmd(req, len, out, cap, hal_millis());

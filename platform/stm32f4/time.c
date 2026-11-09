@@ -90,6 +90,7 @@ void HAL_Delay(uint32_t Delay)
 void vApplicationTickHook(void)
 {
 	(void)cycles_now();
+	stm32_irq_stack_check();
 }
 
 // The tick interrupt: the hang check first (crash-log.md 1.1), here rather than in the tick hook, which xTaskResumeAll

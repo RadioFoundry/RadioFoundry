@@ -106,8 +106,11 @@ export class FakeRadio {
 	// protocol doesn't serve the security registers (area 10). noMap: a memory chip smaller than the board's flash map
 	// needs: RadioFoundry stores nothing (STORAGE answers unavailable) and gives its radio info (area 9) with the chip's
 	// size. radioInfo: the radio info answered on a radio with its map too.
-	// state "openfw": another open firmware runs (installOpenFirmware; await radio.ready before using it), options in openfw
-	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 5, stubConfig = "ok", openfw = {}, flashKb = 1024, cpsSecurity = true, noMap = false, radioInfo = noMap } = {}) {
+	// state "openfw": another open firmware runs (installOpenFirmware; await radio.ready before using it), options in openfw.
+	// On a board with original_version (origversion.js): originalVersion, the 4 bytes the original firmware's version read
+	// answers while it runs (null: it stalls the read), and hwoptValue, the choice RadioFoundry's board record holds (-1 none)
+	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 5, stubConfig = "ok", openfw = {}, flashKb = 1024, cpsSecurity = true, noMap = false, radioInfo = noMap,
+		originalVersion = new Uint8Array([0x56, 0x00, 0x60, 0x09]), hwoptValue = -1, usbCap = 0 } = {}) {
 		this.sim = sim;
 		Object.assign(this, { noMap, radioInfo });
 		this.board = sim.board;
@@ -139,6 +142,14 @@ export class FakeRadio {
 		this.events = [];
 		this.port = 0;
 		this.resetDfu();
+		const ov = this.board.original_version;
+		this.originalVersion = ov ? originalVersion : null;
+		this.hwopt = ov ? { name: ov.hwopt, choices: [...new Set(Object.values(ov.major))], value: hwoptValue } : null;
+		this.dfuRequests = [];	// what the version read and the backup sent the original firmware
+		this.forbidden = [];	// requests outside the backup's allowlist that reached the original firmware
+		this.appMode = 0;	// the original firmware's mode byte (0x30: program mode)
+		this.usbCap = usbCap;
+		this.staleBuffer = new Uint8Array(1024);
 		this.log = [];
 		this.ready = state === "openfw" ? this.installOpenFirmware(openfw) : Promise.resolve();
 	}
@@ -152,6 +163,9 @@ export class FakeRadio {
 		this.blocks = 0;
 		this.violations = [];
 		this.exited = false;
+		this.loaderMode = 0;	// the bootloader's mode byte: 91 01 0x30, 91 31 0x40 (erase and write)
+		this.selector = null;	// A2 ss: the info block the next UPLOAD of block 0 answers
+		this.dfuPointer = 0;
 	}
 
 	enterBootloader() { this.mode = "bootloader"; this.resetDfu(); }
@@ -171,23 +185,128 @@ export class FakeRadio {
 		const radio = this;
 		return {
 			async out(req, value, data) { return radio.dfuOut(req, value, data || new Uint8Array(0)); },
-			async in(req, length) { return radio.dfuIn(req, length); },
+			async in(req, length, value = 0) { return radio.dfuIn(req, length, value); },
 			async fingerprint() {
+				// the original firmware running normally shows its own interface strings (origversion.js runsOriginal)
+				const spi = "@SPI Flash Memory /0x00000000/16*064Kg";
+				const interfaces = radio.runsOriginal() ? [radio.board.original_version.interface, spi]
+					: radio.board.original_backup ? [radio.board.original_backup.loader_interface, spi]
+						: ["@Internal Flash  /0x0800C000/01*016Kg,01*064Kg,07*128Kg"];
 				return { string1: radio.board.dfu_string1, manufacturer: "STMicroelectronics", product: "Digital Radio in USB mode",
-					serial: "SIMULATED", version: "2.0.0", interfaces: ["@Internal Flash  /0x0800C000/01*016Kg,01*064Kg,07*128Kg"] };
+					serial: "SIMULATED", version: "2.0.0", interfaces };
 			},
 			async close() {},
 		};
 	}
 
-	dfuIn(req) {
+	// The original firmware running normally and the bootloader, as far as the version read and the backup before the
+	// install use them (origversion.js, origbackup.js; docs/spec/hardware-md9600.md 15): a mode byte that 91 01 raises
+	// to program mode (0x30) and the bootloader's 91 31 to 0x40; UPLOAD of block 2 and up answers the internal flash
+	// from 0x08000000 below program mode (block number ignored) and the SPI flash in it (the bootloader's first 1 MB
+	// only, a stale buffer above); 91 05 restarts the original firmware before it answers. A request outside the
+	// backup's allowlist sent to the original firmware, or a command the bootloader doesn't take, fails the test; every
+	// request to the original firmware is in dfuRequests. usbCap: the largest control IN the "host" passes
+	runsOriginal() { return this.mode === "normal" && this.running === "stock" && !!this.board.original_version; }
+
+	// info block ss (A2 ss) as the device answers it: sizes from the original firmware's table; the bootloader's version
+	// is 'T', its option and calibration copies blank
+	infoBlock(ss, loader) {
+		const sizes = { 0x01: 32, 0x03: 24, 0x04: 8, 0x05: 512, 0x07: 16, 0x08: 7, 0x32: 561, 0x33: 64, 0x50: 8 };
+		if (!sizes[ss]) return loader ? new Uint8Array([0x54, 0x02, 0x10, 0x06]) : this.originalVersion.slice();
+		if (ss === 0x07) return concat(le32(crc32(this.uid)), this.uid);
+		if (loader && [0x01, 0x03, 0x04, 0x05].includes(ss)) return new Uint8Array(sizes[ss]).fill(0xFF);
+		return randomBytes(rng(0x100 + ss), sizes[ss]);
+	}
+
+	// UPLOAD block >= 2: the mirror of address 0 below program mode, the SPI flash in it
+	uploadData(value, length, mode, spiLimit) {
+		if (this.usbCap && length > this.usbCap) throw new Error("USB transfer error (EINVAL)");
+		if (mode < 0x30) return this.flash.slice(0, length);
+		if (length > 1024) throw new Error(`SPI read of ${length} bytes: the buffer overruns`);
+		const a = this.dfuPointer + (value - 2) * 1024;
+		if (a + length > spiLimit) return this.staleBuffer.slice(0, length);
+		this.staleBuffer = this.spi.slice(a, a + length);
+		return this.staleBuffer.slice();
+	}
+
+	dfuStatus() {
+		let st = this.state;
+		if (st === 3) {	// the command runs after this reply; the next one finds it done
+			this.state = 5;
+			st = 4;
+			if (this.pendingReset) {
+				this.pendingReset = false;
+				this.port++;
+				this.appMode = 0;
+				this.state = 2;
+				this.events.push("restart (91 05)");
+				throw new Error("the device has been lost");
+			}
+		}
+		return new Uint8Array([0, 0, 0, 0, st, 0]);
+	}
+
+	originalIn(req, length, value) {
+		this.dfuRequests.push(["in", req, length, value]);
+		if (req === 3 && length === 6 && value === 0) return this.dfuStatus();
+		if (req === 2 && value === 0 && this.state === 2) {
+			const sel = this.selector;
+			this.selector = null;
+			const d = sel === null ? new Uint8Array([0x00, 0x21, 0x41]) : this.infoBlock(sel, false);
+			return d.slice(0, Math.min(d.length, length));
+		}
+		if (req === 2 && value >= 2 && (this.state === 2 || this.state === 9)) {
+			this.state = 9;
+			return this.uploadData(value, length, this.appMode, this.spi.length);
+		}
+		this.forbidden.push(["in", req, length, value]);
+		throw new Error(`IN request ${req} block ${value} (${length}) sent to the original firmware`);
+	}
+
+	originalOut(req, value, data) {
+		this.dfuRequests.push(["out", req, value, Array.from(data)]);
+		const cmd = (...b) => data.length === b.length && b.every((x, i) => data[i] === x);
+		if (value === 0 && req === 4 && !data.length) { this.state = this.state === 10 ? 2 : 10; return 0; }
+		if (value === 0 && req === 6 && !data.length) { this.state = 2; return 0; }
+		const allowed = req === 1 && value === 0 && ((data.length === 2 && data[0] === 0xA2) || (data.length === 5 && data[0] === 0x21)
+			|| cmd(0x91, 0x01) || cmd(0x91, 0x05));
+		if (!allowed) {
+			this.forbidden.push(["out", req, value, Array.from(data)]);
+			throw new Error(`request ${req} block ${value} [${Array.from(data)}] sent to the original firmware`);
+		}
+		if (data[0] === 0xA2 && !this.originalVersion) throw new Error("USB transfer stall");
+		if (this.state !== 2 && this.state !== 5) throw new Error("USB transfer stall");
+		this.state = 3;
+		if (data[0] === 0xA2) this.selector = data[1];
+		else if (data[0] === 0x21) this.dfuPointer = u32le(data, 1);
+		else if (cmd(0x91, 0x01)) { if (this.appMode < 0x30) this.appMode = 0x30; }
+		else if (this.appMode >= 0x30) this.pendingReset = true;	// 91 05
+		else throw new Error("USB transfer stall");
+		return data.length;
+	}
+
+	dfuIn(req, length, value = 0) {
+		if (this.runsOriginal()) return this.originalIn(req, length, value);
 		if (this.mode !== "bootloader") throw new Error("the radio is not in its bootloader");
+		if (req === 2) {
+			if (this.busy || (this.state !== 2 && this.state !== 9)) throw new Error("USB transfer stall");
+			if (value === 0) {
+				const sel = this.selector;
+				this.selector = null;
+				const d = sel === null ? new Uint8Array([0x00, 0x21, 0x41]) : this.infoBlock(sel, true);
+				return d.slice(0, Math.min(d.length, length));
+			}
+			if (value === 1) { this.state = 10; throw new Error("USB transfer stall"); }
+			this.state = 9;
+			return this.uploadData(value, length, this.loaderMode, 0x100000);
+		}
 		let st = this.state;
 		if (this.busy) { this.busy--; st = 4; }
 		return new Uint8Array([0, 1, 0, 0, st, 0]);
 	}
 
 	dfuOut(req, value, data) {
+		if (this.runsOriginal()) return this.originalOut(req, value, data);
 		if (this.mode !== "bootloader") throw new Error("the radio is not in its bootloader");
 		if (req === 4 || req === 6) { this.state = 2; return 0; }
 		if (req !== 1) throw new Error(`unexpected request ${req}`);
@@ -202,21 +321,28 @@ export class FakeRadio {
 				// what boots next: RadioFoundry unless a test says it wrote stock firmware back
 				this.running = this.afterExit || "rfoundry";
 				if (this.running === "rfoundry" && this.codecReport() === "absent") this.running = "rfoundry-nocodec";
-			} else if (data[0] === 0x91) {
+			} else if (data[0] === 0x91 && data.length === 2 && (data[1] === 0x01 || data[1] === 0x31)) {
+				// each raises the mode once: 91 01 below 0x30, 91 31 below 0x40; a gated one stalls (the cautious model)
+				const [gate, to] = data[1] === 0x01 ? [0x30, 0x30] : [0x40, 0x40];
+				if (this.loaderMode >= gate) { this.busy = 0; this.state = 10; throw new Error("USB transfer stall"); }
+				this.loaderMode = to;
 				this.vendor.push(data[1]);
-				this.busy = 0;
-			} else if (data[0] === 0x41) {
+			} else if (data[0] === 0x41 && data.length === 5) {
 				const a = u32le(data, 1);
 				const sec = sectorAt(a);
 				if (!sec || sec.addr !== a) throw new Error(`erase of ${a.toString(16)}, not a sector start`);
-				if (this.vendor.join() !== "1,49") throw new Error("erase before the vendor commands");
+				if (this.loaderMode < 0x40) throw new Error("erase before the vendor commands");
 				this.flash.fill(0xFF, a - FLASH_BASE, a - FLASH_BASE + sec.size);
 				this.erased.push(a);
-			} else if (data[0] === 0x21) {
+			} else if (data[0] === 0x21 && data.length === 5) {
 				this.addr = u32le(data, 1);
+				this.dfuPointer = this.addr;
+			} else if (data[0] === 0xA2 && data.length === 2) {
+				this.selector = data[1];
 			} else throw new Error("unknown command");
 		} else {
 			if (value < FIRST_BLOCK || data.length !== BLOCK) throw new Error("bad block");
+			if (this.loaderMode < 0x40) throw new Error("a write below mode 0x40: the bootloader drops it");
 			const dest = this.addr + (value - FIRST_BLOCK) * BLOCK;
 			const sec = sectorAt(this.addr);
 			if (!sec || sec.addr !== this.addr || dest + BLOCK > sec.addr + sec.size) throw new Error("block outside its sector");
@@ -519,6 +645,20 @@ export class FakeRadio {
 					this.spi.fill(0xFF, 0x11000, 0x1B000);
 					this.storageOurs = true;
 					this.events.push("storage claimed");
+					return ok(new Uint8Array(0));
+				}
+			}
+			if (f.cmd === 0x21) {
+				// HWOPT (debuglink.md 3.25): the option the board's original_version names, choices in its table's order
+				if (f.payload[0] === 0 && f.payload.length === 1) {
+					const o = this.hwopt;
+					const text = o ? `hwopt.count=1\nhwopt.0.value=${o.value}\nhwopt.0.restart=1\nhwopt.0.name=${o.name}\nhwopt.0.choices=${o.choices.join("|")}\n` : "hwopt.count=0\n";
+					return ok(new TextEncoder().encode(text));
+				}
+				if (f.payload[0] === 1 && f.payload.length === 3) {
+					if (!this.hwopt || f.payload[1] !== 0 || f.payload[2] >= this.hwopt.choices.length) return frame(f.cmd | 0x80, f.seq, new Uint8Array([2]));
+					this.hwopt.value = f.payload[2];
+					this.events.push(`hwopt ${this.hwopt.choices[f.payload[2]]}`);
 					return ok(new Uint8Array(0));
 				}
 			}

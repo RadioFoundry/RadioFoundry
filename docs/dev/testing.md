@@ -11,7 +11,7 @@ what each level is for and where a new test goes.
 | Unit | the host | `make -C tests/host` | Wrong math, encoders, parsers, the settings format |
 | Software in the loop | the host | `make -C tests/host` | Whole features against simulated chips: calls, data, hotspot, CPS, storage, the UI |
 | Hardware in the loop | a radio on USB | `python3 -m pytest tests/hil -v -rs` | The real chips and timing; with flags, transmit and receive on air |
-| Manual bench cases | the SDR bench and a person | `tools/bench/dmr_bench.py run CASE` | What can't be scripted yet ([dmr-bench.md](../testing/dmr-bench.md)) |
+| Manual bench cases | the bench board and a person | `tools/bench/bench_line.py HOST run bench_tx ARGS` | What can't be scripted yet ([dmr-bench.md](../testing/dmr-bench.md)) |
 | Release gate | the host | `JOBS=8 tools/ci.sh` | Everything above that needs no radio, plus every board's feature matrix with zero warnings, doc links and the license checks |
 
 `tools/ci.sh` must pass before every merge ([Contributing](contributing.md)); what it runs step by step is in
@@ -90,7 +90,7 @@ Opt-in flags allow what changes the radio or the air around it:
 |---|---|
 | none | Radio-only tests. Nothing transmits |
 | `--allow-rf` | Transmitting, from the radio or the SDR bench |
-| `--allow-service-stop` | Stopping the SDR bench's gateway service to borrow its modem and SDR (always restarted) |
+| `--allow-service-stop` | Accepted and ignored: a bench board stops nothing |
 | `--allow-usb-switch` | Switching the radio to USB network mode and back |
 | `--allow-codeplug-write` | Writing the codeplug over CPS (backed up and restored) |
 | `--allow-reboot` | Restarting the radio |
@@ -104,9 +104,9 @@ result in `docs/testing/results/` ([tests/hil/README.md](../../tests/hil/README.
 
 ## The SDR bench
 
-A second station for on-air tests: a DMR modem, an RTL-SDR and the bench scripts in `tools/bench/`. It sends calls,
-texts and data to the radio and checks what the radio transmits (IDs, color code, slot timing, ramps, carrier offset,
-FM tones and deviation). Its host and paths come from `RFOUNDRY_SDR_BENCH_*` environment variables, never from files in
-the repository. Setup and the manual cases: [docs/testing/dmr-bench.md](../testing/dmr-bench.md).
+A second station for on-air tests: one or two boards that serve the bench line protocol (`tools/bench/bench_line.py`).
+They send calls, texts and data to the radio and check what the radio transmits (IDs, color code, slot timing, ramps, carrier
+offset, FM tones and deviation). A board's address comes from `--bench-api` or `RFOUNDRY_BENCH_API`, never from files
+in the repository. Setup and the manual cases: [docs/testing/dmr-bench.md](../testing/dmr-bench.md).
 
 A bug found on the bench should end as a host test, so it stays fixed without the bench.

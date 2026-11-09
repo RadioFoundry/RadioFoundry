@@ -200,7 +200,7 @@ static void test_rs129(void)
 		CHECK(ref_rs_eval(cw, 1) == 0 && ref_rs_eval(cw, 2) == 0 && ref_rs_eval(cw, 3) == 0);
 
 		dmr_lc_encode_full(d, DMR_RS_MASK_VOICE_HEADER, full);
-		CHECK(sfrDataBurstCrcOk(DT_VOICE_LC_HEADER, full));
+		CHECK(sfrDataBurstCrcOk(DMR_TYPE_VOICE_LC_HEADER, full));
 		CHECK(dmr_lc_decode_full(full, DMR_RS_MASK_VOICE_HEADER, lc) == 0 && memcmp(lc, d, 9) == 0);
 		CHECK(dmr_lc_decode_full(full, DMR_RS_MASK_TERMINATOR, lc) != 0);	// header isn't a terminator
 
@@ -215,7 +215,7 @@ static void test_rs129(void)
 		CHECK(dmr_lc_decode_full(bad, DMR_RS_MASK_VOICE_HEADER, lc) == -1);
 
 		dmr_lc_encode_full(d, DMR_RS_MASK_TERMINATOR, full);
-		CHECK(sfrDataBurstCrcOk(DT_TERMINATOR_WITH_LC, full));
+		CHECK(sfrDataBurstCrcOk(DMR_TYPE_TERMINATOR_LC, full));
 		CHECK(dmr_lc_decode_full(full, DMR_RS_MASK_TERMINATOR, lc) == 0);
 	}
 }
@@ -229,7 +229,7 @@ static void test_csbk(void)
 	CHECK(memcmp(mine, ten, 10) == 0);
 	CHECK(dmrDataBuildCSBK(ten, &ref) > 0);
 	CHECK(memcmp(mine, ref.payload, 12) == 0);	// same CRC as the data service's builder
-	CHECK(sfrDataBurstCrcOk(DT_CSBK, mine));
+	CHECK(sfrDataBurstCrcOk(DMR_TYPE_CSBK, mine));
 }
 
 static void test_embedded(void)

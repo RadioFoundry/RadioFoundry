@@ -8,7 +8,10 @@
 // the chip stays busy for a while after each, addresses wrap at the chip's size (3-byte addresses reach 16 MB). It
 // can fail the bus, refuse the write enable (write protected), stay busy forever and lose power in the middle of a
 // program or an erase. Then core/storage and core/settings run on the driver as the boards wire it (16 MB and 1 MB
-// parts), with power cuts at every program / erase of a settings save and a codeplug sector rewrite.
+// parts), with power cuts at every program / erase of a settings save and a codeplug sector rewrite. Every command any
+// test sent is checked at the end: none may erase or program a security register or write a status register (the
+// factory calibration lives there). A board's own storage test includes this file with SPI_NOR_TEST_LIB defined and
+// brings its own main (boards/<id>/tests).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -60,6 +63,9 @@ static struct {
 	bool cut;				// no power: every transfer fails
 	uint32_t status_reads[3];
 } chip;
+
+// Every command byte seen, over all tests (chip_create doesn't clear it)
+static uint32_t cmds_seen[256];
 
 static void chip_create(uint32_t size, uint8_t mfr, uint8_t type, uint8_t cap)
 {
@@ -159,6 +165,7 @@ static uint8_t chip_byte(uint8_t in)
 {
 	uint32_t p = chip.pos++;
 	if (p == 0) {
+		cmds_seen[in]++;
 		chip.cmd = in;
 		chip.addr = 0;
 		if (in == 0x06 && !chip.protect && chip.busy == 0) {
@@ -620,6 +627,28 @@ static void test_store_cuts(void)
 	CHECK(chip.violations == 0 && chip.page_overruns == 0);
 }
 
+// Over every test: only the commands the driver is meant to send. None may erase (0x44) or program (0x42) a security
+// register, write a status register (0x01, 0x31, 0x11: the security register lock bits), or erase more than a sector.
+// 0x4B reads the unique ID
+static void test_commands_sent(void)
+{
+	static const uint8_t allowed[] = { 0x03, 0x02, 0x20, 0x06, 0x05, 0x35, 0x15, 0x9F, 0x48, 0x4B };
+	for (unsigned c = 0; c < 256; c++) {
+		bool ok = false;
+		for (unsigned i = 0; i < sizeof allowed; i++) {
+			ok |= allowed[i] == c;
+		}
+		if (!ok && cmds_seen[c] != 0) {
+			printf("FAIL spi_nor: command 0x%02X sent %u times\n", c, cmds_seen[c]);
+			failures++;
+		}
+	}
+#ifndef SPI_NOR_TEST_LIB
+	CHECK(cmds_seen[0x48] != 0 && cmds_seen[0x20] != 0);	// the tests did read security registers and erase
+#endif
+}
+
+#ifndef SPI_NOR_TEST_LIB
 int main(void)
 {
 	test_probe();
@@ -627,7 +656,9 @@ int main(void)
 	test_store_16mb();
 	test_store_small_part();
 	test_store_cuts();
+	test_commands_sent();
 	free(chip.mem);
 	printf("# spiNorTest %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);
 	return failures ? 1 : 0;
 }
+#endif
