@@ -179,8 +179,9 @@ static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 
 // The burst's TX off, after the task's hold to its last symbol: PA off, the FD6818 and the LNA back to RX, so the
 // radio hears the other slot (the hotspot listens while keyed)
-static void burst_off(void)
+static void burst_off(hrc_rfburst_wait_fn wait)
 {
+	(void)wait;
 	pa_off();
 	fd6818_dmr_burst_at(&fd, false, FD6818_BW_DMR, synth_hz(rx_hz));
 	lna(rx_hz, true);

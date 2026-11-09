@@ -51,18 +51,8 @@ uint8_t gd88_cal_squelch_db(uint32_t hz, uint8_t level);
 #define GD88_CAL_OFF_EXTRA	0x602u
 
 // DMR burst end: the TX-off starts at the modem's RF RX interrupt, 30.5 ms after the RF TX interrupt that keyed the
-// burst, plus the page's TX-off delay, as in hardware-db25d.md 4.5. How long to wait still, elapsed_us after
-// the RF TX interrupt (0 once that point is past), and by how much it was missed (0 when on time)
-#define GD88_DMR_RFRX_AFTER_RFTX_US	30500u
-static inline uint32_t gd88_dmr_hold_us(uint32_t elapsed_us, uint16_t off_us)
-{
-	uint32_t at = GD88_DMR_RFRX_AFTER_RFTX_US + off_us;
-	return elapsed_us < at ? at - elapsed_us : 0;
-}
-static inline uint32_t gd88_dmr_late_us(uint32_t elapsed_us, uint16_t off_us)
-{
-	uint32_t at = GD88_DMR_RFRX_AFTER_RFTX_US + off_us;
-	return elapsed_us > at ? elapsed_us - at : 0;
-}
+// burst, and the PA keys down the page's TX-off delay later, as in hardware-db25d.md 4.5. The last symbol is at the
+// 3.1 ms lead + 0.85 ms + 27.5 ms, so the shared hold (hrc_rfburst_board_t.off_ahead_us) ends this long before it
+#define GD88_DMR_OFF_AHEAD_US	950u
 
 #endif

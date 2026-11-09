@@ -104,17 +104,10 @@ void gd88_speaker_pcm(bool on);		// radio_gd88.c: the speaker on while the modem
 uint32_t gd88_dmr_phase(void);		// HR_C7000 PHASE_OUT: b29:16 / b13:0, the largest / smallest AF phase
 
 #if GD88_DMR_TX
-void gd88_dmr_tx_arm(void);
-void gd88_dmr_tx_disarm(void);
+void gd88_dmr_tx_arm(void);	// RF_MODE's TX polarity, then hrc_rfburst_arm
 void gd88_dmr_tx_end(void);	// radio_gd88.c: hrc_dmr_board_t.tx_end
-typedef void (*gd88_wait_fn)(uint32_t us);
-void gd88_burst_on(gd88_wait_fn wait);
-uint32_t gd88_burst_off(gd88_wait_fn wait, uint32_t elapsed_us, bool now);
-typedef struct {
-	uint32_t bursts, ends, rfrx_ints, late, last_late_us;
-	char last_by;		// what woke the last TX-off: 'R' RF RX interrupt, 'T' the engine, 'A' abort
-} gd88_dmr_tx_stats_t;
-void gd88_dmr_tx_stats(gd88_dmr_tx_stats_t *st);
+void gd88_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait);
+void gd88_burst_off(hrc_rfburst_wait_fn wait);
 #endif
 #endif
 

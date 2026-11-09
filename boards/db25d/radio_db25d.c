@@ -396,8 +396,9 @@ void db25d_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 // supplies and PA selects off with PTA23 high, the main chip back to the IF and the LO on again, the RX path of the
 // band. The stock's waits between these steps (300, 300 and 200 us) are left out: they kept the receiver off for the
 // start of the next slot's burst, which an SFR repeater has to hear (hardware-db25d.md 4.5)
-void db25d_burst_off(void)
+void db25d_burst_off(hrc_rfburst_wait_fn wait)
 {
+	(void)wait;
 	apc_ramp(tx_pa, false);
 	tx_paths_off();
 	hrc_pin_write(PIN_RX_SUPPLY, true);

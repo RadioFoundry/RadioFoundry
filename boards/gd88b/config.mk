@@ -22,7 +22,6 @@ BOARD_UNSUPPORTED += DMR_EMERGENCY	# B has no display, keys or host port to use 
 BOARD_UNSUPPORTED += DMR_ROAMING	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
 BOARD_UNSUPPORTED += DMR_IP_GATEWAY	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
 BOARD_UNSUPPORTED += DMR_UDP_COMPRESS	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
-BOARD_UNSUPPORTED += DMR_CONFIRMED	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
 BOARD_UNSUPPORTED += DMR_CONTROL_STATION	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
 BOARD_UNSUPPORTED += NET_TCP	# B has no host port, only the link to A: SoC A runs the network
 BOARD_UNSUPPORTED += NET_KISS	# B has no host port, only the link to A: SoC A runs the network

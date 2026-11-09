@@ -8,8 +8,9 @@ HERE := $(dir $(lastword $(MAKEFILE_LIST)))
 # The factory calibration page, the layout of hardware-db25d.md 6 on each SoC (hardware-gd88.md 7), in the code both
 # SoCs share
 TESTS   += gd88CalTest
-gd88CalTest: $(HERE)gd88CalTest.c $(HERE)../common/calibration_gd88.c $(HERE)../common/gd88_cal.h $(CORE)/radio/cal_curve.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(dir $<)../common -Wshadow -o $@ $(filter %.c,$^)
+gd88CalTest: $(HERE)gd88CalTest.c $(HERE)../common/calibration_gd88.c $(HERE)../common/gd88_cal.h $(CORE)/radio/cal_curve.h \
+		$(ROOT)/platform/hrc7000/dmr_rfburst_timing.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(ROOT)/platform/hrc7000 -I$(dir $<)../common -Wshadow -o $@ $(filter %.c,$^)
 
 # The two first stages (boot/gd88, boot/gd88b): the RF chain and UART1 on A, UART3 and the long window on B. One test,
 # built for each SoC; it includes the stage's boot.c

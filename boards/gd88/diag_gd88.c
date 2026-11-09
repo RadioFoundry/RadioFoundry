@@ -329,8 +329,8 @@ bool gd88_diag_line(uint8_t i, char *buf, uint8_t len)
 		if (i == DIAG_DMR_FIRST + HRC_DMR_DIAG_LINES + 1) {
 			// DMR TX bursts: TX-on and TX-off sequences run, RF RX interrupts seen, what woke the last TX-off
 			// (R: RF RX interrupt, T: slot tick, A: abort), and how many ramp downs started late, the last by how much
-			gd88_dmr_tx_stats_t t;
-			gd88_dmr_tx_stats(&t);
+			hrc_rfburst_stats_t t;
+			hrc_rfburst_stats(&t);
 			put(&o, "b");
 			put_u(&o, t.bursts);
 			put(&o, "/");

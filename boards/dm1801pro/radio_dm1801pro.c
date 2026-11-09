@@ -219,8 +219,9 @@ static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 // The burst's TX off, after the task's hold to its last symbol: drive off, TX path off, FD6818 straight back to
 // receive, RX path on. The TX path switches per burst: a hotspot stays keyed while it listens, and with the TX path on
 // it heard nothing
-static void burst_off(void)
+static void burst_off(hrc_rfburst_wait_fn wait)
 {
+	(void)wait;
 	DAC_DATA_B = 0;
 	tx_path(tx_hz, false);
 	fd6818_dmr_burst_at(&fd, false, fd.variant->bw_dmr, synth_hz(rx_hz));

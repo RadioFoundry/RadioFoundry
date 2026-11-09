@@ -13,7 +13,7 @@
 // every transmission), then raises its TX line PTB2; B keys the PA on that edge and ramps its DAC B, and drops it on
 // the falling edge. A never writes DAC B. TX is refused without a valid page, outside the bands, with a tone other
 // than CTCSS, or when B doesn't take the drive. DMR transmit runs the same sequence once per burst (gd88_burst_on /
-// gd88_burst_off, from the RF task in dmr_gd88.c).
+// gd88_burst_off, on the shared RF-burst task).
 #include "gd88_rf.h"
 #include "config.h"
 #include "hal_dtmf.h"
@@ -418,7 +418,7 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 		return false;
 	}
 	if (dmr_armed) {
-		gd88_dmr_tx_disarm();
+		hrc_rfburst_disarm();
 	}
 #if GD88_TX && CONFIG_SFR
 	if (rx2_dmr_main_split()) {
@@ -452,7 +452,7 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 static void dmr_disarm(void)
 {
 	if (dmr_armed) {
-		gd88_dmr_tx_disarm();
+		hrc_rfburst_disarm();
 		dmr_armed = false;
 		gd88_pa_disarm();
 	}
@@ -486,8 +486,9 @@ void gd88_dmr_split(bool on)
 #if GD88_TX
 // One burst: the TX line high (B starts its PA sequence: the page's TX-on delay, PA select, 200 us, supply, ramp),
 // 50 us, main chip to f and the LO off, then as long as B's sequence takes
-void gd88_burst_on(gd88_wait_fn wait)
+void gd88_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 {
+	(void)at;
 	gd88_path_rx_front_off();
 	wait(TX_RX_OFF_US);
 	bk4819_burst_tune(&rf_main, tx_hz, BK4819_STATE_TX_MAIN);
@@ -495,15 +496,11 @@ void gd88_burst_on(gd88_wait_fn wait)
 	wait(tx_on_us + TX_SUPPLY_US + PA_RAMP_US);
 }
 
-// After a burst: the hold until the TX-off point (none when now), the TX line low (B waits the page's TX-off delay
-// and ramps down), that long, 300 us, the main chip back to the IF and the LO on again, 300 us, the band's RX path,
-// 200 us. Returns how late the TX line dropped, in us
-uint32_t gd88_burst_off(gd88_wait_fn wait, uint32_t elapsed_us, bool now)
+// After a burst, from the task's hold (GD88_DMR_OFF_AHEAD_US before the last symbol): the TX line low (B waits the
+// page's TX-off delay and ramps down), that long, 300 us, the main chip back to the IF and the LO on again, 300 us,
+// the band's RX path, 200 us
+void gd88_burst_off(hrc_rfburst_wait_fn wait)
 {
-	uint32_t late = now ? 0 : gd88_dmr_late_us(elapsed_us, 0);
-	if (!now) {
-		wait(gd88_dmr_hold_us(elapsed_us, 0));
-	}
 	tx_paths_off();
 	wait(tx_off_us + PA_RAMP_US + PA_SLACK_US);
 	wait(TX_END_PATH_US);
@@ -512,13 +509,13 @@ uint32_t gd88_burst_off(gd88_wait_fn wait, uint32_t elapsed_us, bool now)
 	wait(TX_END_PATH_US);
 	gd88_path_rx(rx_hz, true, true);
 	wait(TX_END_RX_US);
-	return late;
 }
 #else
 // B's own burst (the original firmware's path 1): its path pins to its chip in the TX band and its RX path off, 50 us,
 // the chip to f and the LO off, the page's TX-on delay, then its PA: select, 200 us, supply, the ramp
-void gd88_burst_on(gd88_wait_fn wait)
+void gd88_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 {
+	(void)at;
 	gd88_path_own_tx(true, tx_hz);
 	own_gpio(true, tx_hz);
 	wait(TX_RX_OFF_US);
@@ -528,15 +525,11 @@ void gd88_burst_on(gd88_wait_fn wait)
 	gd88_pa_own(true);
 }
 
-// After it: the hold, the page's TX-off delay, the PA down, 300 us, the chip back to the IF and the LO on, 300 us, the
-// path pins and the RX path back, 200 us
-uint32_t gd88_burst_off(gd88_wait_fn wait, uint32_t elapsed_us, bool now)
+// After it, from the task's hold: the page's TX-off delay, the PA down, 300 us, the chip back to the IF and the LO on,
+// 300 us, the path pins and the RX path back, 200 us
+void gd88_burst_off(hrc_rfburst_wait_fn wait)
 {
-	uint32_t late = now ? 0 : gd88_dmr_late_us(elapsed_us, 0);
-	if (!now) {
-		wait(gd88_dmr_hold_us(elapsed_us, 0));
-		wait(tx_off_us);
-	}
+	wait(tx_off_us);
 	gd88_pa_own(false);
 	wait(TX_END_PATH_US);
 	bk4819_burst_tune(&rf_main, IF_HZ, BK4819_STATE_RX);
@@ -546,7 +539,6 @@ uint32_t gd88_burst_off(gd88_wait_fn wait, uint32_t elapsed_us, bool now)
 	gd88_path_own_tx(false, tx_hz);
 	gd88_path_rx(rx_hz, true, true);
 	wait(TX_END_RX_US);
-	return late;
 }
 #endif
 #endif
