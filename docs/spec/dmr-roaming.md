@@ -459,10 +459,10 @@ later. MMDVM duplex hosts send their own beacons (the host's setting), not throu
   radio core.
 - HIL (`tests/hil/test_roaming.py`, listed in `tests/hil/README.md`): radio only: the `roam` section, the settings
   round trip, the zone toggle and back, a passive roam now on the current zone (ends on one of its sites, nothing
-  sent), lock and roam now ending it; with `--allow-rf --allow-service-stop --roam-rx --roam-tx`: the SDR bench runs
-  `bench_repeater.py` as a second site and the radio, started on a dead site with the wake probe on, wakes it and
+  sent), lock and roam now ending it; with `--allow-rf --allow-service-stop --roam-rx --roam-tx`: the bench board runs
+  a `bench_repeater` job as a second site and the radio, started on a dead site with the wake probe on, wakes it and
   moves there. A passive variant (the bench repeater carrying a bench call while the radio searches) needs the bench
-  to transmit through its own repeater and is left for later. Beacons (`-k beacon`, `bench_repeater.py --beacon
+  to transmit through its own repeater and is left for later. Beacons (`-k beacon`, a `bench_repeater` job with `--beacon
   --beacon-len`, defaults from `--roam-beacon 20 --roam-beacon-len 3`): the survey settings round trip (radio
   only); the bench site as home beaconing, the radio learns the window (`roam.win_conf`, `roam.beacons`); the bench
   site as the other site, the radio surveys it in the window (`surv.<i>` fresh).

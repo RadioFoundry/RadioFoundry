@@ -93,7 +93,7 @@ For each over (3 steps at 12.5 kHz, then at 25 kHz):
 1. Wait for `=== over N/6: ... ===` and `GO`. The bench records for `--mic-gain-window` s (30).
 2. Unplug the cable, key PTT, give the same source each time for about 5 s (a steady whistle or a phone playing a
    1 kHz tone at a fixed distance, or the same sentence), release PTT, plug the cable back in.
-3. The test prints sdr_fm_check.py's report and `link back: step S, GCR_ADCL 0xNN`.
+3. The test prints the bench board's measurements and `link back: step S, GCR_ADCL 0xNN`.
 
 At the end it prints one row per over: bandwidth, step, offset, GCR_ADCL (bits 5:0 = dB), segment length, voice peak
 (99.5 %) and rms deviation, and the strongest tone with its deviation. Expect the deviation to rise about 2 dB a step

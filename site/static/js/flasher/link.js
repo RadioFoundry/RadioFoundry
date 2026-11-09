@@ -3,7 +3,8 @@
 // Talking to a radio that runs RadioFoundry, over its USB serial port (WebSerial): the debug link (docs/spec/debuglink.md:
 // VERSION, INFO_CHIP, READ_MEM) and the open-firmware CPS reads (docs/spec/open-firmware-cps.md 2.1 and 3: area 1 the
 // SPI flash, 5 the MCU flash, 9 the radio info, 10 the flash security registers). Read only, apart from the CPS
-// codeplug writes restore uses (X 1-3), which the radio limits to the codeplug areas.
+// codeplug writes restore uses (X 1-3), which the radio limits to the codeplug areas, and HWOPT SET for a hardware
+// option an install learned (origversion.js).
 
 import { be32, concat, le32, sleep, u16be, u16le, u32le, toHex } from "./bytes.js";
 import { wire, note } from "../diag.js";
@@ -16,7 +17,7 @@ export const RFOUNDRY_USB = { usbVendorId: 0x1FC9, usbProductId: 0x0094 };
 // driver owns the interfaces, so a page can only see that it is there (WebUSB lists it without claiming it)
 export const RFOUNDRY_NET = { vendorId: 0x1FC9, productId: 0x0096 };
 const SOF1 = 0xA5, SOF2 = 0x5A;
-export const CMD = { PING: 0x01, VERSION: 0x02, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F };
+export const CMD = { PING: 0x01, VERSION: 0x02, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F, HWOPT: 0x21 };
 // The status a command not built in, or with nothing to act on, answers (debuglink.md 2)
 const DL_UNAVAILABLE = 4;
 
@@ -238,6 +239,19 @@ export class Link {
 
 	async version() {
 		return parseKv(new TextDecoder().decode(await this.request(CMD.VERSION)));
+	}
+
+	// HWOPT LIST (debuglink.md 3.25): [{name, value (-1: none stored), restart, choices}]
+	async hwopts() {
+		const kv = parseKv(new TextDecoder().decode(await this.request(CMD.HWOPT, new Uint8Array([0]))));
+		return Array.from({ length: Number(kv["hwopt.count"] || 0) }, (_, i) => ({
+			name: kv[`hwopt.${i}.name`] || "", value: Number(kv[`hwopt.${i}.value`] ?? -1),
+			restart: kv[`hwopt.${i}.restart`] === "1", choices: (kv[`hwopt.${i}.choices`] || "").split("|") }));
+	}
+
+	// HWOPT SET: store a choice (LinkError status 7 when the radio refuses: transmitting, or the board can't store it)
+	async hwoptSet(option, choice) {
+		await this.request(CMD.HWOPT, new Uint8Array([1, option, choice]));
 	}
 
 	// INFO_CHIP (debuglink.md 3.9), offsets after the status byte
