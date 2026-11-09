@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SPDX-License-Identifier: MIT -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -180 480 1270" data-undrawn="sk1 sk2">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -180 480 1270">
 <defs>
 <linearGradient id="body" x1="0" x2="1"><stop offset="0" stop-color="#121314"/><stop offset=".5" stop-color="#26292b"/><stop offset="1" stop-color="#101112"/></linearGradient>
 <linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#232628"/><stop offset="1" stop-color="#16181a"/></linearGradient>
@@ -21,7 +21,9 @@
 </g>
 <rect x="320" y="170" width="60" height="84" rx="8" fill="url(#knob)" stroke="#000" stroke-width="2"/>
 <path d="M 330 178 V 246 M 342 178 V 246 M 355 178 V 246 M 368 178 V 246" stroke="#000" stroke-width="2" opacity=".55"/>
-<!-- PTT on the left edge -->
+<!-- PTT and the two side keys on the left edge, placed from the switches along the board's edge -->
+<rect id="key-sk1" data-edge="left" x="13" y="296" width="20" height="58" rx="8" fill="url(#key)" stroke="#000" stroke-width="2"/>
+<rect id="key-sk2" data-edge="left" x="13" y="620" width="20" height="58" rx="8" fill="url(#key)" stroke="#000" stroke-width="2"/>
 <rect id="key-ptt" data-edge="left" x="12" y="370" width="20" height="210" rx="8" fill="url(#key)" stroke="#000" stroke-width="2"/>
 <!-- body -->
 <rect x="25" y="246" width="430" height="830" rx="44" fill="url(#body)" stroke="#000" stroke-width="3"/>
