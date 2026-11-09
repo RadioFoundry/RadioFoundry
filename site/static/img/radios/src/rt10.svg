@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SPDX-License-Identifier: MIT -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 1090" data-undrawn="sk1 sk2">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -180 480 1270" data-undrawn="sk1 sk2">
 <defs>
 <linearGradient id="body" x1="0" x2="1"><stop offset="0" stop-color="#121314"/><stop offset=".5" stop-color="#26292b"/><stop offset="1" stop-color="#101112"/></linearGradient>
 <linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#232628"/><stop offset="1" stop-color="#16181a"/></linearGradient>
@@ -11,7 +11,7 @@
 <linearGradient id="key" x1="0" x2="1"><stop offset="0" stop-color="#1a1c1e"/><stop offset="1" stop-color="#3a3e41"/></linearGradient>
 </defs>
 <!-- antenna: whip and its collar -->
-<path d="M 98 16 Q 110 2 122 16 L 128 182 L 92 182 Z" fill="url(#ant)" stroke="#000" stroke-width="2"/>
+<path d="M 87 -140 Q 87 -169 110 -169 Q 133 -169 133 -140 L 141 182 L 79 182 Z" fill="url(#ant)" stroke="#000" stroke-width="2"/>
 <rect x="72" y="178" width="76" height="80" rx="10" fill="url(#ant)" stroke="#000" stroke-width="2"/>
 <path d="M 76 202 H 144 M 76 220 H 144 M 76 238 H 144" stroke="#000" stroke-width="2" opacity=".5"/>
 <!-- the channel knob and the volume / power knob -->
