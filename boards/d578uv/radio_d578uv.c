@@ -37,7 +37,7 @@
 // lags PD0 by that much. The core calls tx() before the call stack starts the modem's transmission, so the RF is keyed
 // before the baseband gets DMR_CALL_SLOT with the transmit bit.
 //
-// Around the chips: the 8-bit shift register (PE3 data, PE4 clock) switches the audio and RF paths, PE6 enables the
+// Around the chips: the 8-bit shift register (PE3 data, PE4 clock) switches audio paths and the status LED, PE6 enables the
 // transmitter, PA7 mutes the speaker, the two-wire level device on PA13/PA14 sets the speaker level (SWD is off while
 // it is in use), and the serial device on PA5 (4-bit address, 8-bit data on the RF bus lines) holds the backlight
 // level in its register 8 and values the stock firmware writes once. Each value is the stock firmware's; what a shift
@@ -113,11 +113,11 @@
 #define SR_BOOT			0x02u	// the Bluetooth module's supply, on from boot (bt_d578uv.c)
 #define SR_RX_DEMOD		0x04u	// main side's demodulator to the codec, FM and DMR alike: with it clear the baseband
 					// hears nothing (measured; set on every receive start, as stock does)
-#define SR_RF_AUDIO		0x08u	// speaker from the RF chip, 0 for the DMR codec (INF)
-#define SR_TX			0x10u	// transmit path
-#define SR_RX_PATH		0x20u	// cleared at the end of TX turn-on (receive front end, INF)
+#define SR_LED_GREEN		0x08u	// the face's status LED, one bit a color (d578uv_status_led)
+#define SR_LED_RED		0x10u
+#define SR_LED_BLUE		0x20u
 #define SR_RX_AUDIO		0x40u	// receive audio gate
-#define SR_RX			(SR_BOOT | SR_RX_DEMOD | SR_RF_AUDIO | SR_RX_PATH | SR_RX_AUDIO)
+#define SR_RX			(SR_BOOT | SR_RX_DEMOD | SR_RX_AUDIO)
 
 // PC4: low in receive; the stock firmware sets it when RX and TX frequencies straddle 300 MHz (not done here)
 #define PIN_RF_SPLIT		GPIOC, MCU_PIN(4)
@@ -419,6 +419,13 @@ static void sr_set(uint8_t set, uint8_t clear)
 	}
 }
 
+// The core's LEDs on the face's status LED
+void d578uv_status_led(uint8_t which, bool on)
+{
+	uint8_t bit = which == LED_RED ? SR_LED_RED : which == LED_GREEN ? SR_LED_GREEN : SR_LED_BLUE;
+	sr_set(on ? bit : 0, on ? 0 : bit);
+}
+
 // The standby (power_d578uv.c): every shift register output off, as the stock power-off writes it
 void d578uv_outputs_off(void)
 {
@@ -565,8 +572,7 @@ static void chip1_gpio(uint16_t mask, uint16_t val)
 // side B plays with side A shut. PA7 turns the amplifier on only while something plays (side A's audio, side B, a beep,
 // the KTMicro receiver) and a knob is up: a hiss that doesn't follow the volume came from the speaker with the gate shut
 // and no hand mic connected (heard on a radio), and switching it at the squelch's edges or for a beep adds no click
-// (measured by microphone, the same as with it held on). The shift
-// register's RF audio bit is set for an FM side. The main receiver's calls win: the core gives side B the speaker
+// (measured by microphone, the same as with it held on). The main receiver's calls win: the core gives side B the speaker
 // only while side A is quiet. In AM, and while broadcast FM plays, both channels take the volume (which one carries
 // the KTMicro receiver isn't traced)
 static void audio_route(void)
@@ -586,10 +592,6 @@ static void audio_route(void)
 	}
 	if (chips_ready && !transmitting) {
 		chip1_gpio(GPIO_B_A_AUDIO, a_rf || b ? GPIO_B_A_AUDIO : 0);
-	}
-	bool rf = mode == RADIO_MODE_FM || b || kt_out;
-	if (!transmitting) {
-		sr_set(rf ? SR_RF_AUDIO : 0, rf ? 0 : SR_RF_AUDIO);
 	}
 	bool b_loud = b && (level_code_b < 0 ? !vol_zero : !vol_b_zero);
 	mcu_pin_write(PIN_SPK_MUTE, spk_amp_off(transmitting, beeping || kt_out || main_audio || b, !vol_zero || b_loud));
@@ -1101,7 +1103,7 @@ static void rx_setup(void)
 #endif
 	pa_off();
 	mcu_pin_write(PIN_RF_SPLIT, false);
-	sr_set((uint8_t)(digital ? (SR_RX & ~SR_RF_AUDIO) : SR_RX), (uint8_t)(SR_TX | (digital ? SR_RF_AUDIO : 0)));
+	sr_set(SR_RX, 0);
 	audio_route();		// side B may need the RF audio with side A on DMR
 }
 
@@ -1634,7 +1636,7 @@ static void init(void)
 	mcu_pin_out(PIN_RF_SPLIT, false, false);
 	mcu_pin_out(PIN_SPK_MUTE, true, false);
 	mcu_pin_out(PIN_SR_LATCH, true, false);
-	sr = SR_BOOT | SR_RF_AUDIO;
+	sr = SR_BOOT;
 	sr_shift(sr);
 
 	d578uv_bus_init();
@@ -1749,7 +1751,7 @@ static void rx_sleep(bool sleep)
 }
 
 #if CONFIG_DMR
-// The stock digital TX-on (5.1): chips off, chip 0 to hz with the digital set, keyed, band and TX bits, 10 ms, then the
+// The stock digital TX-on (5.1): chips off, chip 0 to hz with the digital set, keyed, band bits, 10 ms, then the
 // PA is the bursts'. Called before the modem's transmission starts (the core's order), held until tx_off()
 static uint16_t dmr_tx_dac;	// the DAC word of the last dmr_tx, for dmr_wake_listen to key again with
 
@@ -1763,7 +1765,6 @@ static bool dmr_tx(uint32_t hz, uint16_t dac)
 	dmr_tx_dac = dac;
 	tx_hz = hz;	// the modem's set-up for this transmission reads it (d578uv_tx_hz)
 	mcu_pin_write(PIN_SPK_MUTE, true);	// the speaker is off while transmitting, as audio_route() keeps it
-	sr_set(SR_TX, 0);
 	chips_off();
 	b_pause();
 	qa4818_tune(&chip_if, qa4818_tx_subband(hz), synth_hz(hz));
@@ -1773,8 +1774,6 @@ static bool dmr_tx(uint32_t hz, uint16_t dac)
 	band_bits(hz);
 	chip0_gpio(GPIO_TX_UHF | GPIO_FAN | GPIO_MIC_MUTE, (hz > UHF_FROM_HZ ? GPIO_TX_UHF : 0) | GPIO_FAN);
 	hal_delay_ms(10);
-	// The receive path bit before the PA can come on (the stock firmware clears it after its PE6 step)
-	sr_set(SR_TX, SR_RX_PATH);
 	burst_arm(dac);
 	return true;
 }
@@ -1826,7 +1825,6 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 
 	transmitting = true;
 	mcu_pin_write(PIN_SPK_MUTE, true);	// the speaker is off while transmitting, as audio_route() keeps it
-	sr_set(SR_TX, 0);
 	chips_off();
 	b_pause();
 	qa4818_tune(&chip_if, qa4818_tx_subband(hz), synth_hz(hz));
@@ -1841,7 +1839,6 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	chip0_gpio(GPIO_TX_UHF | GPIO_FAN | GPIO_MIC_MUTE, (hz > UHF_FROM_HZ ? GPIO_TX_UHF : 0) | GPIO_FAN);
 	hal_delay_ms(10);
 	mcu_dac_write(0, dac);
-	sr_set(SR_TX, SR_RX_PATH);
 	// The PA enable toggled three times 2 ms apart, then held (the stock sequence)
 	for (int i = 0; i < 3; i++) {
 		mcu_pin_write(PIN_TX_ENABLE, true);
@@ -1978,7 +1975,6 @@ static void tx_off(void)
 #if CONFIG_DMR
 	burst_disarm();
 #endif
-	sr_set(0, SR_TX);
 	pa_off();
 	if (aux != AUX_NONE) {
 		mic_again();	// the chip's voice path for the next key-up, and the tone generator off
@@ -2235,11 +2231,6 @@ void d578uv_rf_safe(void)
 	if (mcu_dac_clocked()) {
 		mcu_dac_write(0, 0);
 	}
-	sr = (uint8_t)(sr & ~SR_TX);
-	// no RTOS, any clock: the lines stay outputs
-	mcu_pin_force(PIN_SR_DATA, false);
-	mcu_pin_force(PIN_SR_CLK, false);
-	sr_clock(sr);
 }
 
 const hal_radio_t d578uv_radio = {

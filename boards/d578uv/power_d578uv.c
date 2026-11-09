@@ -93,10 +93,10 @@ static bool switch_on(void)
 	return pwrkey_on(&power_key, !mcu_pin_read(PIN_POWER_KEY));
 }
 
-// The face LED's outputs are not confirmed (hardware-d578uv.md 9): for now the core's LEDs reach only the serial
-// microphone's lights
+// The core's LEDs: the face's status LED and the serial microphone's lights
 static void led(uint8_t which, bool on)
 {
+	d578uv_status_led(which, on);
 	d578uv_mic_led(which, on);
 }
 

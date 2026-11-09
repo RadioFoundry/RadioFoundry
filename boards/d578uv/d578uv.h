@@ -25,8 +25,8 @@ extern const hal_bcast_t d578uv_bcast;	// the KTMicro receiver's broadcast FM (r
 // 0x1E. In menus the stock firmware takes 0x14 and 0x16 as up and down, 0x0E confirms and 0x0F exits. Which printed key
 // each is isn't traced, so the others keep their stock code. PTT and the microphone's Up and Down come from the plain
 // hand microphone's lines (front_io.h) or the serial microphone's frames, which add its keypad (the KEY_MIC_ digits,
-// '*', '#', the A/B button above PTT and the A..D keys; drivers/input/anytone_mic). The microphone's EXIT and MENU are
-// its C and D
+// '*', '#', the A/B button above PTT and the A..D keys; drivers/input/anytone_mic). The microphone's MENU and EXIT are
+// its A and D
 enum {
 	KEY_UP, KEY_C15, KEY_DOWN, KEY_MENU,
 	KEY_C17, KEY_C18, KEY_C19, KEY_EXIT,
@@ -48,7 +48,7 @@ void d578uv_backlight(uint8_t percent);
 void d578uv_bus_init(void);
 
 // --- Radio (radio_d578uv.c, hardware-d578uv.md 5) ---
-// board_rf_safe's part: PE6 low, the PA DAC at 0, the shift register's TX bit clear. Plain register writes only
+// board_rf_safe's part: PE6 low, the PA DAC at 0. Plain register writes only
 void d578uv_rf_safe(void);
 // board.chip_reg: the QA4818s (chips 0-3) and the PA5 trims device (chip 4, write-only)
 bool d578uv_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
@@ -95,6 +95,7 @@ void d578uv_rx_raw(uint16_t *rssi, uint16_t *noise, bool *signal);
 // The serial microphone's lights (input_d578uv.c): what the core shows on the status LEDs, which hal_power_t.led passes
 // on, and whether side B is busy and has the speaker (radio_d578uv.c)
 void d578uv_mic_led(uint8_t which, bool on);
+void d578uv_status_led(uint8_t which, bool on);	// the face's status LED (radio_d578uv.c)
 void d578uv_side_b_state(bool *busy, bool *audio);
 // Diagnostics page lines (diag_d578uv.c)
 bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len);
