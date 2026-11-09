@@ -112,6 +112,9 @@ uint32_t hostlink_noise_bytes(void);
 void hostlink_side_hold(bool on, uint32_t now_ms);
 // The side protocol took a valid frame
 void hostlink_side_frame(uint32_t now_ms);
+// For the link watch's record: the mode in bits 24-31, seconds since the port last gave a byte in bits 16-23 (255: that
+// long or more, or never)
+uint32_t hostlink_port_state(uint32_t now_ms);
 
 // Whether a frame's length and command bytes can be what opens an MMDVM session (hostlink_policy.c): a stray 0xE0 on a
 // disturbed line must not switch the port to hotspot mode

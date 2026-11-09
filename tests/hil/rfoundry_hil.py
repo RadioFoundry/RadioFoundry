@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools", "bench"))
 
 import rfoundry_debug
 rfoundry_debug.DebugLink.hold_session = True    # noise from a transmission must not take the port during a test
+rfoundry_debug.DebugLink.hold_watch_s = 120     # and a link that dies restarts the radio, with a record of why
 from rfoundry_debug import (DebugLink, DebugLinkError, as_int, find_ports, parse_counters,  # noqa: E402
                        to_rgb, write_png, ACTIONS, PRESS, LONG, UP, APRS, APRS_OP_MESSAGE, APRS_OP_SEND_NOW,
                        APRS_OP_STATUS, DATA_OP_CALL_ALERT, DATA_OP_EMERGENCY, DATA_OP_IP_SEND,

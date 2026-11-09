@@ -113,7 +113,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x1F` | IDDB | DMR ID u32 (3.23); `CONFIG_DMR` builds, else status 4 | format u8, records u32, found u8, text (3.23) |
 | `0x20` | CHIP_REG | chip u8, page u8, register u8 [+ value u32]; or chip `0xFF`, address u32 [+ value u32] (3.24) | the register's value u32 (3.24) |
 | `0x21` | HWOPT | operation u8 + arguments (3.25) | the options as key=value text, or none (3.25) |
-| `0x23` | LINK_HOLD | on u8 (3.27) | none |
+| `0x23` | LINK_HOLD | on u8, optional watch seconds u16 (3.27) | none |
 | `0x22` | MEM | operation u8 + arguments (3.26); `CONFIG_DEBUG_MEM` builds, else unknown | values, the value read back, or a pin's state (3.26) |
 
 ### 3.1 VERSION
@@ -857,6 +857,10 @@ would open CPS, hotspot, TNC or PPP are dropped and counted in `hostlink.noise`,
 session that never answered a request. This keeps a disturbed line from taking the port from a client that is
 polling. CPS and MMDVM on the wire don't change, and a client that never asks is never held. The hold ends on
 release or after 60 s without a valid frame. A client hands the port to another protocol with on = 0 first.
+
+With watch seconds (5 or more; 0 or absent is off), the radio restarts if no valid frame comes for that long, and the
+crash record says why ([crash-log.md](crash-log.md) 1.1.2). On = 0, or a hold without a watch, stops it. A build
+without `CONFIG_WATCHDOG` and `CONFIG_CRASH_LOG` answers unavailable to a watch.
 
 ## 4. Safety
 

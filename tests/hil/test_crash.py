@@ -2,13 +2,15 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """The crash log (docs/spec/crash-log.md): the view section, and on purpose crashes that must leave a record the next
 start shows. The crash tests restart the radio: opt-in with --allow-reboot (marker reboot)."""
+import struct
 import time
 
 import pytest
 
 from rfoundry_hil import DebugLinkError, as_int, skip
 
-CRASH_KIND_FAULT, CRASH_KIND_ASSERT, CRASH_KIND_HANG, CRASH_KIND_STALL = 1, 4, 5, 6
+CRASH_KIND_FAULT, CRASH_KIND_ASSERT, CRASH_KIND_HANG, CRASH_KIND_STALL, CRASH_KIND_LINK = 1, 4, 5, 6, 7
+LINK_HOLD = 0x23        # docs/spec/debuglink.md 3.27
 STALL_MS = 60000        # WATCHDOG_STALL_MS (core/app/watchdog.h)
 
 
@@ -47,6 +49,32 @@ def test_crash_test_refused_without_token(radio):
     with pytest.raises(DebugLinkError) as e:
         radio.link.request(0x1B, bytes([1, 1, 0, 0, 0, 0]))
     assert e.value.status == 7     # refused: no crash without the token
+
+
+@pytest.mark.feature("crash_log")
+@pytest.mark.reboot
+def test_link_watch_restarts(radio):
+    """A client that armed the link watch and went silent: the radio restarts by itself and says why."""
+    _need(radio)
+    L = radio.link
+    L.crash_clear()
+    up_before = as_int(radio.view(["link"])["uptime_ms"])
+    try:
+        L.request(LINK_HOLD, bytes([1]) + struct.pack("<H", 5))
+    except DebugLinkError as e:
+        skip("not_built", f"no link watch: {e}")
+    L._held = False                     # close without letting go: the client is gone
+    L.close()
+    time.sleep(12.0)
+    radio.reconnect(30.0, "the link watch")
+    assert as_int(radio.view(["link"])["uptime_ms"]) < up_before, "the radio didn't restart"
+    v = radio.view(["crash"])
+    assert v.get("crash.valid") == "1", v
+    assert as_int(v["crash.kind"]) == CRASH_KIND_LINK, v
+    cause = as_int(v["crash.cause"])
+    assert cause >> 24 == 0, v          # the port was idle
+    assert (cause >> 16) & 0xFF >= 4, v  # and nothing had come in for the 5 s limit
+    radio.link.crash_clear()
 
 
 @pytest.mark.feature("crash_log")

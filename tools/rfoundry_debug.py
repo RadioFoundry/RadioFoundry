@@ -309,7 +309,9 @@ class DebugLink:
     """One open debug link. All methods raise DebugLinkError on an error status or a time-out."""
 
     hold_session = False                # True: every link opened on a serial port holds it (LINK_HOLD)
+    hold_watch_s = 0                    # the hold's link watch: the radio restarts after this long without a frame
     _held = False
+    _hold_t = 0.0
 
     def __init__(self, port=None, timeout=1.0, rx2=False, s=None):
         """rx2: every request goes to the second SoC through the first (RX2 FORWARD). s: an open port-like object
@@ -337,14 +339,26 @@ class DebugLink:
             self.hold(True)
 
     def hold(self, on=True):
-        """Hold the host port for this client, or let go (LINK_HOLD, always the SoC on the cable). True if the radio
-        did: a build without the command doesn't."""
-        try:
-            data = self._exchange(LINK_HOLD, bytes([1 if on else 0]), min(self.timeout, 0.5))
-        except (DebugLinkError, OSError):
-            return False
-        self._held = on and bool(data) and data[0] == ST_OK
-        return bool(data) and data[0] == ST_OK
+        """Hold the host port for this client, or let go (LINK_HOLD, always the SoC on the cable), with hold_watch_s
+        as the link watch's limit. True if the radio did: a build without the command doesn't. Letting go is retried:
+        a hold left behind keeps the next protocol off the port."""
+        payload = bytes([1 if on else 0])
+        if on and self.hold_watch_s:
+            payload += struct.pack("<H", self.hold_watch_s)
+        ok = False
+        for _ in range(1 if on else 3):
+            try:
+                data = self._exchange(LINK_HOLD, payload, min(self.timeout, 0.5))
+            except (DebugLinkError, OSError):
+                continue
+            ok = bool(data) and data[0] == ST_OK
+            break
+        self._hold_t = time.monotonic()
+        if not on:
+            self._held = False
+        elif ok:
+            self._held = True
+        return ok
 
     def close(self):
         if self._held:
@@ -433,6 +447,8 @@ class DebugLink:
         if len(payload) > REQ_MAX:
             raise DebugLinkError(f"request payload {len(payload)} > {REQ_MAX}")
         timeout = self.timeout if timeout is None else timeout
+        if self._held and time.monotonic() - self._hold_t > 20.0:
+            self.hold(True)             # the radio may have restarted since
         end_busy = time.monotonic() + busy_wait
         while True:
             data = self._forward(cmd, payload, timeout) if self.rx2 else self._exchange(cmd, payload, timeout)

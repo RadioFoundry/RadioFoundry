@@ -16,6 +16,9 @@
 #include "debuglink/dlog.h"
 #include "hostlink/build_info.h"
 #include "hostlink/hostlink.h"
+#if CONFIG_WATCHDOG
+#include "app/watchdog.h"
+#endif
 #include "stubentry/stub_entry.h"
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
@@ -790,17 +793,44 @@ static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 
 // --- dispatch ---
 
+#define LINK_WATCH	(CONFIG_WATCHDOG && CONFIG_CRASH_LOG)	// the tick that acts on it needs both
+#define LINK_WATCH_MIN_S	5u	// a typo must not become a restart loop
+
+#if LINK_WATCH
+static uint32_t link_watch_cause(uint32_t now_ms)
+{
+	return hostlink_port_state(now_ms) | ((parser.bad_crc > 0xFFFFu) ? 0xFFFFu : parser.bad_crc);
+}
+#endif
+
 static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
 {
+	uint32_t frame_ms = hal_millis();
+
+	hostlink_side_frame(frame_ms);
+#if LINK_WATCH
+	watchdog_link_frame(frame_ms);
+#endif
 	switch (cmd) {
-	case DL_CMD_LINK_HOLD:
-		if (len != 1) {
+	case DL_CMD_LINK_HOLD: {
+		uint32_t watch_s = (len == 3) ? ((uint32_t)req[1] | ((uint32_t)req[2] << 8)) : 0u;
+
+		if (((len != 1) && (len != 3)) || ((watch_s != 0u) && (watch_s < LINK_WATCH_MIN_S))) {
 			out[0] = DL_ST_BAD_ARG;
 			return 1;
 		}
-		hostlink_side_hold(req[0] != 0, hal_millis());
+#if LINK_WATCH
+		watchdog_link_watch(frame_ms, (req[0] != 0) ? (watch_s * 1000u) : 0u, link_watch_cause);
+#else
+		if (watch_s != 0u) {
+			out[0] = DL_ST_UNAVAILABLE;
+			return 1;
+		}
+#endif
+		hostlink_side_hold(req[0] != 0, frame_ms);
 		out[0] = DL_ST_OK;
 		return 1;
+	}
 	case DL_CMD_PING:
 		out[0] = DL_ST_OK;
 		memcpy(out + 1, req, len);
@@ -877,12 +907,7 @@ static void write_out(const uint8_t *buf, size_t len)
 
 static size_t side_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 {
-	uint32_t frames = parser.frames;
 	size_t took = dl_parser_feed(&parser, buf, len, now_ms, handle, write_out, reply);
-
-	if (parser.frames != frames) {
-		hostlink_side_frame(now_ms);
-	}
 	if (reboot_pending) {
 		reboot_now();
 	}

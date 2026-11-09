@@ -86,6 +86,8 @@ static uint32_t (*cps_answered_fn)(void);
 static uint32_t cps_answered_at_entry;
 static uint32_t noise_bytes;
 static hostlink_side_hold_t side_hold;
+static uint32_t last_rx_ms;
+static bool rx_seen;
 static const hostlink_side_t *side;
 static const hostlink_tnc_t *tnc;
 static uint32_t last_byte_ms;
@@ -148,6 +150,13 @@ void hostlink_request_ppp(bool on)
 uint32_t hostlink_noise_bytes(void)
 {
 	return noise_bytes;
+}
+
+uint32_t hostlink_port_state(uint32_t now_ms)
+{
+	uint32_t s = rx_seen ? ((now_ms - last_rx_ms) / 1000u) : 255u;
+
+	return ((uint32_t)mode << 24) | (((s > 255u) ? 255u : s) << 16);
 }
 
 void hostlink_side_hold(bool on, uint32_t now_ms)
@@ -636,6 +645,8 @@ static void hostlink_task(void *arg)
 			if (n == 0) {
 				break;
 			}
+			last_rx_ms = now;
+			rx_seen = true;
 #if CONFIG_NET_PPP
 			size_t p = port_ppp(buf, n, now);
 
