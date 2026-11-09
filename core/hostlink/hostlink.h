@@ -71,9 +71,11 @@ void hostlink_request_ppp(bool on);
 // The CPS protocol, when it exists: called from the host link task with each chunk of bytes in a CPS session
 // (requests are not framed here; the handler splits them, e.g. by the 3 ms gap), and with len 0 (buf NULL) as a tick
 // on every pass of the task while the session lasts. Replies go out with hostlink_write. mid_request (may be NULL) says
-// the handler holds part of a request: then a quiet gap is no request boundary, and the rest stays the handler's
+// the handler holds part of a request: then a quiet gap is no request boundary, and the rest stays the handler's.
+// request_start (may be NULL) says a byte can start a request: on an idle port any other byte is line noise, dropped
+// without opening a session
 typedef void (*hostlink_cps_fn)(const uint8_t *buf, size_t len, uint32_t now_ms);
-void hostlink_set_cps_handler(hostlink_cps_fn fn, bool (*mid_request)(void));
+void hostlink_set_cps_handler(hostlink_cps_fn fn, bool (*mid_request)(void), bool (*request_start)(uint8_t b));
 // The side protocol: start is the first byte of its frames; feed takes bytes that start (buf[0] == start) or continue
 // a frame and returns how many it took (0: not its own after all, the bytes go to the other protocols); in_frame
 // says whether a frame is in progress (its next bytes belong to it). Called from the host link task; replies go out
@@ -96,6 +98,13 @@ typedef struct {
 void hostlink_set_tnc(const hostlink_tnc_t *tnc);
 // Bytes to the host; only from the host link task (the CPS handler, the hotspot, the side protocol)
 size_t hostlink_write(const uint8_t *buf, size_t len);
+
+// Bytes an idle port dropped as line noise since boot, for the debug link
+uint32_t hostlink_noise_bytes(void);
+
+// Whether a frame's length and command bytes can be what opens an MMDVM session (hostlink_policy.c): a stray 0xE0 on a
+// disturbed line must not switch the port to hotspot mode
+bool hostlink_mmdvm_first_frame(uint8_t len, uint8_t cmd);
 
 // When to leave hotspot mode (hostlink_policy.c, no RTOS: the host tests run it). Fed after every pass of the task
 typedef enum {

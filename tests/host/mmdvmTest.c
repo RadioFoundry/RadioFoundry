@@ -1302,6 +1302,23 @@ static void test_ext_space(void)
 }
 
 // A-2 / T-USB-2: hotspot mode never depends on DTR being set, only on it dropping
+// A low pulse on a disturbed line reads as 0xE0, and the bytes around it are as arbitrary
+static void test_hostlink_first_frame(void)
+{
+	CHECK(hostlink_mmdvm_first_frame(3, MMDVM_GET_VERSION));
+	CHECK(hostlink_mmdvm_first_frame(3, MMDVM_GET_STATUS));
+	CHECK(hostlink_mmdvm_first_frame(26, MMDVM_SET_CONFIG));
+	CHECK(hostlink_mmdvm_first_frame(4, MMDVM_SET_MODE));
+	CHECK(hostlink_mmdvm_first_frame(37, MMDVM_DMR_DATA2));
+	CHECK(!hostlink_mmdvm_first_frame(0, MMDVM_GET_VERSION));	// E0 00 00
+	CHECK(!hostlink_mmdvm_first_frame(2, MMDVM_GET_VERSION));
+	CHECK(!hostlink_mmdvm_first_frame(0xE0, MMDVM_GET_VERSION));	// E0 E0 00
+	CHECK(!hostlink_mmdvm_first_frame(0xF0, MMDVM_GET_STATUS));
+	CHECK(!hostlink_mmdvm_first_frame(3, 0xE0));			// E0 03 E0
+	CHECK(!hostlink_mmdvm_first_frame(0xFC, 0xF0));
+	CHECK(!hostlink_mmdvm_first_frame(200, MMDVM_SET_CONFIG));
+}
+
 static void test_hostlink_dtr(void)
 {
 	hostlink_session_t hs;
@@ -1409,6 +1426,7 @@ int main(void)
 	test_cwid();
 	test_morse();
 	test_ext_space();
+	test_hostlink_first_frame();
 	test_hostlink_dtr();
 	test_end();
 	if (failures == 0) {

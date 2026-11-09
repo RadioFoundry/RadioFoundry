@@ -213,6 +213,7 @@ static void hotspot_section(dl_text_t *t)
 
 	dl_text(t, "hostlink=%s\n", (unsigned)m < 4 ? modes[m] : "?");
 	dl_text(t, "hostlink.left=%s\n", (unsigned)l < 5 ? leaves[l] : "?");
+	dl_text(t, "hostlink.noise=%u\n", (unsigned)hostlink_noise_bytes());
 	dl_text(t, "usb.network=%u\nusb.net_up=%u\n", hostlink_network_mode(),
 		(board.netif != NULL) && board.netif->up());
 #if CONFIG_DMR_IP_GATEWAY

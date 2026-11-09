@@ -61,6 +61,8 @@
 #define READ_CHUNK		64
 #define CPS_GAP_MS		3	// a new CPS request starts after this much quiet (open-firmware-cps.md 1.2)
 #define PPP_FLAG		0x7E	// starts every PPP frame (RFC 1662); no other protocol here starts a request with it
+#define MMDVM_PROBE_LEN		3	// start, length and command: enough to tell a frame from a stray 0xE0
+#define MMDVM_PROBE_MS		20	// a frame's first bytes come together; a lone 0xE0 older than this was noise
 
 #ifndef RFOUNDRY_GIT
 #define RFOUNDRY_GIT "unknown"
@@ -78,6 +80,8 @@ static bool ppp_on;				// the port carries PPP: its bytes go to core/net/ppp.c, 
 #endif
 static hostlink_cps_fn cps_handler;
 static bool (*cps_mid_request)(void);
+static bool (*cps_request_start_fn)(uint8_t b);
+static uint32_t noise_bytes;
 static const hostlink_side_t *side;
 static const hostlink_tnc_t *tnc;
 static uint32_t last_byte_ms;
@@ -137,10 +141,16 @@ void hostlink_request_ppp(bool on)
 }
 #endif
 
-void hostlink_set_cps_handler(hostlink_cps_fn fn, bool (*mid_request)(void))
+uint32_t hostlink_noise_bytes(void)
+{
+	return noise_bytes;
+}
+
+void hostlink_set_cps_handler(hostlink_cps_fn fn, bool (*mid_request)(void), bool (*request_start)(uint8_t b))
 {
 	cps_handler = fn;
 	cps_mid_request = mid_request;
+	cps_request_start_fn = request_start;
 }
 
 void hostlink_set_side_protocol(const hostlink_side_t *p)
@@ -261,16 +271,63 @@ static size_t side_take(const uint8_t *buf, size_t len, uint32_t now, bool new_r
 	return side->feed(buf, len, now);
 }
 
+#if CONFIG_HOTSPOT
+// A transmission can disturb a UART line shared with other signals, and a short low pulse reads as 0xE0: the port
+// changes mode only for what looks like a frame. Holds the first bytes until the length and command are in, across
+// chunks. Returns the bytes taken, 0 when buf is not part of a possible frame
+static size_t mmdvm_probe(const uint8_t *buf, size_t len, uint32_t now, bool new_request)
+{
+	static uint8_t probe[MMDVM_PROBE_LEN];
+	static uint8_t probe_len;
+	static uint32_t probe_ms;
+	size_t taken = 0;
+
+	if ((probe_len > 0) && ((now - probe_ms) > MMDVM_PROBE_MS)) {
+		noise_bytes += probe_len;
+		probe_len = 0;
+	}
+	if ((probe_len == 0) && (!new_request || (buf[0] != MMDVM_FRAME_START))) {
+		return 0;
+	}
+	if (probe_len == 0) {
+		probe_ms = now;
+	}
+	while ((probe_len < MMDVM_PROBE_LEN) && (taken < len)) {
+		if ((probe_len > 0) && (side != NULL) && (buf[taken] == side->start)) {
+			noise_bytes += probe_len;	// a side frame follows: the 0xE0 before it was noise
+			probe_len = 0;
+			return taken;
+		}
+		probe[probe_len++] = buf[taken++];
+	}
+	if (probe_len < MMDVM_PROBE_LEN) {
+		return taken;
+	}
+	probe_len = 0;
+	if (!hostlink_mmdvm_first_frame(probe[1], probe[2])) {
+		noise_bytes += MMDVM_PROBE_LEN;
+		return taken;
+	}
+	mode = HOSTLINK_HOTSPOT;
+	mmdvm_framer_reset(&framer);
+	hostlink_session_start(&session, (board.host_port != NULL) && board.host_port->connected());
+	entered_ms = now;
+	dlog("hostlink: entering hotspot mode");
+	(void)feed_mmdvm(probe, MMDVM_PROBE_LEN, now);
+	return taken;
+}
+#endif	// CONFIG_HOTSPOT
+
 // The other protocols: returns the bytes taken (all of them, except in hotspot mode before a side frame)
 static size_t dispatch_main(const uint8_t *buf, size_t len, uint32_t now, bool new_request)
 {
 #if CONFIG_HOTSPOT
-	if ((mode != HOSTLINK_HOTSPOT) && new_request && (buf[0] == MMDVM_FRAME_START) && hotspot_allowed) {
-		mode = HOSTLINK_HOTSPOT;
-		mmdvm_framer_reset(&framer);
-		hostlink_session_start(&session, (board.host_port != NULL) && board.host_port->connected());
-		entered_ms = now;
-		dlog("hostlink: entering hotspot mode");
+	if ((mode != HOSTLINK_HOTSPOT) && hotspot_allowed) {
+		size_t taken = mmdvm_probe(buf, len, now, new_request);
+
+		if (taken > 0) {
+			return taken;
+		}
 	}
 	if (mode == HOSTLINK_HOTSPOT) {
 		return feed_mmdvm(buf, len, now);
@@ -285,6 +342,10 @@ static size_t dispatch_main(const uint8_t *buf, size_t len, uint32_t now, bool n
 		return len;
 	}
 	if (cps_handler != NULL) {
+		if ((mode == HOSTLINK_IDLE) && (cps_request_start_fn != NULL) && !cps_request_start_fn(buf[0])) {
+			noise_bytes++;	// no request starts with it: a CPS session would hold the side protocol off
+			return 1;
+		}
 		mode = HOSTLINK_CPS;
 		cps_handler(buf, len, now);
 	}

@@ -4,6 +4,27 @@
 // on Windows) never ends the session; a set DTR that drops (a POSIX host closing the port) does
 // (docs/spec/mmdvm-protocol.md 5.1, test T-USB-2).
 #include "hostlink/hostlink.h"
+#include "hotspot/mmdvm.h"
+
+#define MMDVM_CONFIG_LEN_MAX	64	// longer than any SET_CONFIG, SET_MODE or SET_FREQ
+
+bool hostlink_mmdvm_first_frame(uint8_t len, uint8_t cmd)
+{
+	if ((len < 3) || (cmd >= MMDVM_ACK)) {
+		return false;
+	}
+	switch (cmd) {
+	case MMDVM_GET_VERSION:
+	case MMDVM_GET_STATUS:
+		return len == 3;
+	case MMDVM_SET_CONFIG:
+	case MMDVM_SET_MODE:
+	case MMDVM_SET_FREQ:
+		return len <= MMDVM_CONFIG_LEN_MAX;
+	default:
+		return true;
+	}
+}
 
 void hostlink_session_start(hostlink_session_t *s, bool connected)
 {
