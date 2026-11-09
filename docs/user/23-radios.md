@@ -706,10 +706,10 @@ microphone works on a radio; the plain one is untested.
 | **Up**, **Down** (both microphones) | as the front **Up** and **Down** |
 | **0**-**9** (keypad microphone) | digits |
 | **\*** / **#** | **\*** / **#**, and **Down** / **Up** in lists |
-| **SUBPTT A/B** (beside **PTT**) | **A/B** |
-| **A**, **B** (ZONE) | next zone, previous zone |
-| **C** (EXIT) | **Back** |
-| **D** (MENU) | **OK** |
+| **SUBPTT A/B** (beside **PTT**) | **A/B**; held, dual watch on or off |
+| **A** (MENU) | **OK** |
+| **B**, **C** (ZONE) | next zone, previous zone |
+| **D** (EXIT) | **Back** |
 
 The **Key Lock** switch on the side has no effect yet. On the keypad microphone, **R/T** shows each side receiving or
 transmitting and **MAIN** the selected side.

@@ -152,11 +152,11 @@ The serial microphone, as seen on a radio with the keypad microphone:
 | Control | Where | Code |
 | --- | --- | --- |
 | PTT | left side | frame byte 1 |
-| A/B (manual: "A/B SUBPTT") | front, left, beside PTT | 0x0D |
+| A/B (manual: "A/B SUBPTT"; a hold starts or stops dual watch) | front, left, beside PTT | 0x0D |
 | Up, Down | top | 0x10, 0x11 |
 | `0`, `1`-`9` | keypad | 0x01, 0x02-0x0A |
 | `*`, `#` | keypad | 0x0B, 0x0C |
-| A, B, C, D (printed ZONE up, ZONE down, EXIT, MENU; some microphones print MENU, ZONE up, ZONE down, EXIT) | keypad, bottom row | 0x1A-0x1D (the firmware's PA-PD) |
+| A, B, C, D (printed MENU, ZONE up, ZONE down, EXIT; the manufacturer's drawing shows ZONE up, ZONE down, EXIT, MENU) | keypad, bottom row | 0x1A-0x1D (the firmware's PA-PD) |
 | Key Lock (manual: for the top Up and Down keys) | right side, slide switch | no frame; the keypad sends in both positions |
 | R/T A and B lights (each side's TX and RX) | front, top right | driven from the radio (status frame, below) |
 | MAIN A and B lights (the main channel) | front, left, below A/B | driven from the radio (status frame, below) |
@@ -212,8 +212,8 @@ RadioFoundry's key names (`d578uv.h`): `KEY_UP`, `KEY_DOWN`, `KEY_MENU`, `KEY_EX
 `KEY_C15`, `KEY_C17`, `KEY_C18`, `KEY_C19`, `KEY_C1E` (the stock code) for the others, `KEY_PTT`, `KEY_MIC_UP`,
 `KEY_MIC_DOWN` and `KEY_MIC_0`-`KEY_MIC_9`, `KEY_MIC_STAR`, `KEY_MIC_HASH`, `KEY_MIC_AB`, `KEY_MIC_PA`-`KEY_MIC_PD`
 for the microphones. The microphone's Up and Down act as the front Up and Down, its digits enter digits, `*` and `#`
-act as down and up, A/B switches the side, and A-D follow their printed labels: zone up, zone down, back (EXIT) and
-confirm (MENU). PUSH (`KEY_C1E`) confirms, as the menu key does.
+act as down and up, A/B switches the side and held starts or stops dual watch, and A-D follow their printed labels: confirm (MENU), zone up, zone down and
+back (EXIT). PUSH (`KEY_C1E`) confirms, as the menu key does.
 
 ### 3.3 Power
 
@@ -244,8 +244,8 @@ loop that wakes on PA0 held for 1 s.
 
 Shift register bits (inferred unless marked): 0x02 main audio enable, 0x04 the main side's demodulator output to the
 codec, FM and DMR alike (measured: with it clear the baseband hears nothing; the stock firmware sets it on every
-receive start), 0x08 speaker from the RF chip (clear in DMR), 0x10 TX path, 0x20 cleared at the end of TX turn-on,
-0x40 RX audio gate, 0x01 and 0x80 rarely used.
+receive start), 0x08, 0x10 and 0x20 the status LED's green, red and blue (seen on a radio), 0x40 RX audio gate, 0x01
+and 0x80 rarely used.
 
 The audio codec is a TLV320AIC3204 class part on the baseband's I2C; the MCU sets it up through the baseband's codec
 bypass packets ([modem-sct.md](modem-sct.md) 3).
@@ -359,7 +359,8 @@ The bus is bit-banged, as the stock firmware does it (`boards/d578uv/modem_d578u
 
 All four stock images (578UV and PRO, GD and AT) carry the same 2048-byte boot block (CRC-32 0x024F600A). The
 flashing tool takes it from the user's stock firmware file and writes it to the modem boot slot (`[codec]` in
-`board.toml`, tool `modem_boot`). Without it the radio runs FM only. None of the images has SPI or boot ROM code: this
+`board.toml`, tool `modem_boot`). Without it the radio runs FM only. RadioFoundry boots the modem from its own task, so
+the boot screen shows while the modem starts; the DMR start waits for the result. None of the images has SPI or boot ROM code: this
 radio carries the SCT3258 only.
 
 ### 4.4 Settings
@@ -516,8 +517,8 @@ on the PRO; 0x29AA on the 578UV unless a flag is set).
 Chip 0's register 0x25 bit 0 is set in receive and while a TX tone sounds and cleared at each key-up: a microphone
 mute (inferred from where the stock firmware sets it). Bit 1 is the fan, high = on (seen on a radio): the stock "Fan
 Open" setting (PTT, Temperature or Both, default PTT) runs it while transmitting, while PA6's average of four readings
-is hot (on at 0x3E0 and above, off at 0x364 and below), or either (0x0808BE9C). The status LED on the face is an RGB LED; its
-outputs are not confirmed (section 9). Bit 2 is the GPS module's enable, not an LED: the firmware
+is hot (on at 0x3E0 and above, off at 0x364 and below), or either (0x0808BE9C). The status LED on the face is an RGB LED on the
+shift register (section 3). Bit 2 is the GPS module's enable, not an LED: the firmware
 sets it with the GPS setting on, together with the GPS UART, and clears it in standby and at power-off (inferred from
 the code). RadioFoundry runs the fan while transmitting or hot (the stock "Both"), and sets bit 2 while the GPS module is
 powered (section 3.6).
@@ -613,9 +614,8 @@ driver. Whether the original firmware's ramp is the same was not measured.
 
 ### 5.2 Side B
 
-Side B is chips 1 (receiver) and 3 (LO), set up after side A when dual receive is on; either side can transmit. Shift
-register bit 0x08 picks the speaker's source: clear for the baseband's audio (a DMR call on the open side), set for
-FM. The volume device on PA13/PA14 sets each side's level: channel 2 side A, channel 3 side B. The stock firmware sets
+Side B is chips 1 (receiver) and 3 (LO), set up after side A when dual receive is on; either side can transmit. The
+volume device on PA13/PA14 sets each side's level: channel 2 side A, channel 3 side B. The stock firmware sets
 both once at start-up; PA7 mutes the speaker for both.
 
 The stock side B set-up, FM:
@@ -646,7 +646,7 @@ A change of the flag resends the call option. A digital side B sets chip 1's 0x4
 RadioFoundry (`radio_d578uv.c`, `CONFIG_DUAL_WATCH`): side B is the core's second receiver (`board.rx2`) for an FM
 channel; a DMR channel is refused, so dual watch alternates side A as on a one-receiver radio. The squelch is the
 core's noise levels with its hysteresis, and the tone flags of 0x60. Side B gets the speaker only while side A is
-quiet (the core's rule): then side A's level goes to 0, side B's to the volume and shift register bit 0x08 is set. Side
+quiet (the core's rule): then side A's level goes to 0 and side B's to the volume. Side
 B stops while side A transmits and comes back after. The AGC bytes and tables, the band pair's sense and the level
 channels are inferred from the stock code; untested on the radio.
 
@@ -1019,7 +1019,7 @@ DMR on side B needs facts not in the stock code's static analysis or the documen
   and whether the color code, the call slot and the call match apply to both sides or to each. The stock receive path
   that reads the flag is not traced.
 - The voice. The baseband plays the voice to the codec itself (section 4). Which side's call it plays when both have
-  one is not known; the speaker source bit (shift register 0x08) has one setting for baseband audio.
+  one is not known.
 - Side A with the flag set: what chip 0's 0x13 = 0x0396 and 0x73 = 0x569A change. RadioFoundry uses the values
   without the flag, as the stock firmware does with an FM side B.
 - The core. `hal_rx2_t` is a second receiver that decodes DMR itself, matches the groups and plays the call, as the
@@ -1035,13 +1035,9 @@ Open on the radio:
   `+KEY=01`-`04` are on the hand mic.
 - The serial microphone (3.2): the status frame's light fields, and what the Key Lock switch does.
 - The backlight levels' brightness, and the part behind PA5.
-- The status LED's outputs. The original firmware's use of the shift register suggests 0x10 red, 0x08 green and 0x20
-  blue (inferred: 0x10 and 0x08 blink on their own in low voltage and scan, and 0x08 with 0x20 starts a digital
-  reception). RadioFoundry also switches those bits as the TX path, speaker source and receive path (3), so neither
-  role is settled. It drives no LED until one bit at a time has been set on a radio and the color seen.
 - The deviation per 0x40 step (5) and the dB per microphone gain step (5.7); the microphone level's register and
   scale (5.6); the
-  audio routing to the speaker (shift register 0x08/0x40, PA7,
+  audio routing to the speaker (shift register 0x40, PA7,
   the volume device).
 - Air band (5.4): the receiver's audio path to the speaker, chip 3's output bit 6, the
   RSSI scale against the core's AM squelch levels, and that chip 0's outputs (the GPS supply, the band pairs) hold

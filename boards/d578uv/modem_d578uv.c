@@ -23,6 +23,7 @@
 #define MODEM_POLL_MS		2
 // The chip answers about 2.15 s after the boot block (measured at HOBIB on a radio): 2 s gave up just before it
 #define BOOT_TIMEOUT_MS		5000
+#define BOOT_POLL_MS		10
 // CRC-32 (zlib) of the 2048-byte boot block every stock image holds (SHA-256 743515b9...): the slot holds it, not an
 // erased page or something else
 #define BOOT_BLOCK_CRC32	0x024F600Au
@@ -51,6 +52,7 @@ static const uint8_t cal_offset_default[8] = { 0x00, 0x82, 0x02, 0xD0, 0x02, 0xD
 // The middle of the stock firmware's five microphone gain steps
 #define MIC_GAIN		0x20
 
+static volatile bool boot_done;		// the boot has ended, either way (modem_task)
 static bool booted;
 static sct_boot_result_t boot_result = SCT_BOOT_SILENT;
 static SemaphoreHandle_t lock;
@@ -312,6 +314,9 @@ static bool port_send(const uint8_t *buf, uint16_t len, void *ctx)
 static bool port_ready(void *ctx)
 {
 	(void)ctx;
+	// The boot takes seconds and runs in modem_task, so the screen comes up first: the DMR start waits for its result
+	while (!boot_done)
+		vTaskDelay(pdMS_TO_TICKS(BOOT_POLL_MS));
 	return booted;
 }
 
@@ -371,6 +376,11 @@ static void on_packet(const uint8_t *pkt, uint16_t len, void *ctx)
 static void modem_task(void *arg)
 {
 	(void)arg;
+	boot_result = sct_host_boot(&host, &rx, BOOT_TIMEOUT_MS);
+	booted = boot_result == SCT_BOOT_OK;
+	boot_done = true;
+	while (!booted)
+		vTaskDelay(portMAX_DELAY);	// FM only: nothing to poll
 	for (;;) {
 		port_lock(NULL);
 		sct_host_poll(&host, &rx, on_packet, NULL);
@@ -449,13 +459,10 @@ bool d578uv_modem_init(void)
 	sct_dmr_init(&port);
 	if (crc32(__codec_slot, SCT_BOOT_BLOCK_BYTES) != BOOT_BLOCK_CRC32) {
 		boot_result = SCT_BOOT_NO_BLOCK;
+		boot_done = true;
 		return false;
 	}
 	cal_values();
-	boot_result = sct_host_boot(&host, &rx, BOOT_TIMEOUT_MS);
-	booted = boot_result == SCT_BOOT_OK;
-	if (!booted)
-		return false;
 	lock = xSemaphoreCreateRecursiveMutex();
 	xTaskCreate(modem_task, "modem", MODEM_TASK_STACK, NULL, MODEM_TASK_PRIORITY, NULL);
 	return true;

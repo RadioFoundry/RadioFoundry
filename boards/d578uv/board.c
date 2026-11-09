@@ -46,8 +46,8 @@ static const board_power_band_t power_bands[] = {
 // (P2..P6 and PUSH, defaults Tx Power, TalkAround, Speaker Mode, APRS Set, Switch ChType and none), so they get the
 // core's other actions on a press and the user actions on a long press. PUSH (PA1, the knob's switch) confirms as the
 // menu key does, so the knob alone can work a list. The serial microphone's keypad: the digits (with their DTMF), '*'
-// and '#' as list down and up, A/B, and A..D by their printed labels (ZONE, ZONE, EXIT, MENU) with DTMF A..D while
-// PTT is held on FM
+// and '#' as list down and up, A/B, and A..D by their printed labels (MENU, ZONE up, ZONE down, EXIT) with DTMF A..D
+// while PTT is held on FM
 static const keymap_entry_t keymap[] = {
 	{ KEY_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
 	{ KEY_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
@@ -74,22 +74,22 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_MIC_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
 	{ KEY_MIC_STAR, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, '*' },
 	{ KEY_MIC_HASH, ACT_NAV_UP, ACT_NAV_UP, false, true, '#' },
-	{ KEY_MIC_AB, ACT_AB, ACT_AB, false, false, 0 },
-	{ KEY_MIC_PA, ACT_ZONE_UP, ACT_ZONE_UP, false, false, 'A' },
-	{ KEY_MIC_PB, ACT_ZONE_DOWN, ACT_ZONE_DOWN, false, false, 'B' },
-	{ KEY_MIC_PC, ACT_BACK, ACT_BACK, false, false, 'C' },
-	{ KEY_MIC_PD, ACT_SELECT, ACT_QUICK, false, false, 'D' },
+	{ KEY_MIC_AB, ACT_AB, ACT_DUAL_WATCH, false, false, 0 },
+	{ KEY_MIC_PA, ACT_SELECT, ACT_QUICK, false, false, 'A' },
+	{ KEY_MIC_PB, ACT_ZONE_UP, ACT_ZONE_UP, false, false, 'B' },
+	{ KEY_MIC_PC, ACT_ZONE_DOWN, ACT_ZONE_DOWN, false, false, 'C' },
+	{ KEY_MIC_PD, ACT_BACK, ACT_BACK, false, false, 'D' },
 };
 
 const board_t board = {
 	.name = BOARD_T_NAME,	// board.mk: the GD32 and Artery builds report their own
 #if CONFIG_DMR
-	.caps = CAP_ENCODER | CAP_NO_BATTERY | CAP_DMR | CAP_MODEM_VOICE | (CONFIG_GPS ? CAP_GPS : 0) |
+	.caps = CAP_ENCODER | CAP_NO_BATTERY | CAP_LED_RGB | CAP_DMR | CAP_MODEM_VOICE | (CONFIG_GPS ? CAP_GPS : 0) |
 		(CONFIG_AM_RX ? CAP_AM_RX : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
 	.dmr = &sct_dmr_modem,	// start() fails until the baseband has booted: FM only without the boot block
 	.modem_codec = d578uv_modem_codec,
 #else
-	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_AM_RX ? CAP_AM_RX : 0) |
+	.caps = CAP_ENCODER | CAP_NO_BATTERY | CAP_LED_RGB | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_AM_RX ? CAP_AM_RX : 0) |
 		(CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
 #endif
 #if CONFIG_GPS

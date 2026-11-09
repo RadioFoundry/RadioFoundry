@@ -53,7 +53,7 @@
 #define ANYTONE_MIC_LIGHT_FIELDS	7u
 
 // Key codes in byte 4 (the radio's own numbering). All but MENU and EXIT seen on a radio; those two are the stock
-// firmware's, which the keypad microphone's keys don't send (its C and D, labeled EXIT and MENU, are PC and PD)
+// firmware's, which the keypad microphone's keys don't send (its A and D, labeled MENU and EXIT, are PA and PD)
 typedef enum {
 	ANYTONE_MIC_KEY_NONE = 0x00,
 	ANYTONE_MIC_KEY_0 = 0x01,
