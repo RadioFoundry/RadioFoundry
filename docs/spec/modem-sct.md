@@ -335,7 +335,7 @@ of any baseband field, for checking a driver value against the chip.
 | DMR_SLOT_FOUND AT bit | check that the inbound channel is idle before a call | not read | the stack has its own channel check, the same on every modem |
 | CARRIER_READY 0 after a terminator | the host can send it | sent from the board's carrier reading only | a board's reading already covers the end of a call |
 | DMR_CALL_SLOT Direct TDMA bit | enables two-slot direct mode | clear | the stack's direct mode uses one slot |
-| SYNC_MISS_COUNT | can report a run of missed syncs | left at its default, 255 (never) | the board's carrier reading and NEW_EVENT 8 and 13 already end a call |
+| SYNC_MISS_COUNT | threshold for NEW_EVENT 8 | not sent: the manual's default, 255, never reports | NEW_EVENT 13 and the board's carrier reading end a call; a threshold was not tried |
 
 ## 10. Open
 
