@@ -167,6 +167,8 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "home_dual_on_b", "quick 7 ctx 3 5 ok wait:3000 tune:b call:9991234,91,g tune:a call:9997777,3100,g wait:4000 ctx 1 wait:3000" },
 	{ "home_dual_tx", "quick 7 ctx 3 5 ok wait:3000 pttdown" },
 	{ "home_dual_vfo", "quick 7 ctx 1 vfokey ctx 1 wait:3000" },
+	{ "home_dual_vfo_entry", "quick 7 ctx 1 vfokey tune:a 1 4 6 5" },
+	{ "home_dual_vfo_entry_large_text", "ok 7 2 down down down down down ok long:back quick 7 ctx 1 vfokey 1 4 6 5" },
 	// A name that needs row 1 whole beside the PTT pill: the pill moves to row 3 where there is one
 	{ "home_dual_pill_row3", "quick 7 ctx 1 wait:3000" },
 	{ "home_dual_other_zone", "quick 7 ctx 1 zone+ ctx 1 wait:3000 tune:b fmrx" },
