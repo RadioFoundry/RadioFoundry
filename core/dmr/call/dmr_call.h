@@ -38,6 +38,7 @@
 #define DMR_CALL_WAKEUP_ATTEMPTS	3
 #define DMR_CALL_WAKEUP_LISTEN_MS	600	// after each BS_Dwn_Act
 #define DMR_CALL_REPEATER_HOLD_MS	300	// the repeater counts as up this long after its outbound was last seen
+#define DMR_CALL_SLOT_VERIFY_MS		1000	// an aligned key-up waits this long for hal_dmr_modem_t.slot_verified, then is denied
 #define DMR_CALL_LBT_DMO_MS		120	// machine traffic: quiet needed before sending (gotcha 3.6)
 #define DMR_CALL_LBT_RMO_MS		180
 #define DMR_CALL_RMO_HANG_MS		3000	// machine traffic waits this long after a call through a repeater

@@ -138,8 +138,8 @@ static struct {
 	uint32_t wake_sent_ms;
 	uint8_t wake_tries;
 	bool wake_listening;	// wake_listen_fn was last told true
-	bool wake_answered;	// the repeater's answer was heard; wake_answer_ms is when
-	uint32_t wake_answer_ms;
+	bool slot_waiting;	// an aligned key-up is held for the modem's slot_verified, since slot_wait_ms
+	uint32_t slot_wait_ms;
 	uint32_t permit_ms;	// the talk permit hold's start (TX_PERMIT)
 	bool permit_done;	// this PTT press had its hold
 	uint32_t tx_start_ms;
@@ -1315,7 +1315,7 @@ static void wake_listen(bool listen)
 static void tx_wakeup(uint32_t now)
 {
 	wake_listen(false);
-	s.wake_answered = false;
+	s.slot_waiting = false;
 	uint8_t csbk[12];
 
 	dmr_csbk_bs_activation(s.cfg.own_id, csbk);
@@ -1337,10 +1337,32 @@ static void tx_wakeup(uint32_t now)
 
 static void tx_start_data(uint32_t now);
 
+// Through a repeater an aligned start before the modem has settled the outbound's slot numbering can go out on the
+// other slot, so it waits, and a modem that never settles it is denied rather than sent on a guess. True: hold (or
+// denied just now)
+static bool slot_unverified(uint32_t now)
+{
+	if (!s.cfg.rmo || s.modem->slot_verified == NULL || s.modem->slot_verified()) {
+		s.slot_waiting = false;
+		return false;
+	}
+	if (!s.slot_waiting) {
+		s.slot_waiting = true;
+		s.slot_wait_ms = now;
+	}
+	if (elapsed(now, s.slot_wait_ms, true, DMR_CALL_SLOT_VERIFY_MS)) {
+		s.slot_waiting = false;
+		s.wake_listening = false;
+		tx_deny(DMR_TX_ERR_NO_REPEATER);
+	}
+	return true;
+}
+
 static void tx_access(uint32_t now)
 {
 	if (s.data_active) {	// the repeater is up now (the list's owner did the listen before talk)
-		tx_start_data(now);
+		if (!slot_unverified(now))
+			tx_start_data(now);
 		return;
 	}
 	if (voice_channel_busy(now)) {
@@ -1349,7 +1371,10 @@ static void tx_access(uint32_t now)
 		return;
 	}
 	if (s.cfg.rmo && !repeater_up(now)) {
+		s.slot_waiting = false;
 		tx_wakeup(now);
+	} else if (slot_unverified(now)) {
+		return;
 	} else if (s.cfg.permit_hold_ms != 0 && !s.permit_done) {
 		s.tx = TX_PERMIT;	// admitted: the talk permit sounds now, while we still receive
 		s.permit_ms = now;
@@ -1438,6 +1463,7 @@ static void tx_ptt_pressed(uint32_t now)
 	s.tx_since = now;
 	s.wake_tries = 0;
 	s.permit_done = false;
+	s.slot_waiting = false;
 	s.tx = TX_ACCESS;
 	s.dirty = true;
 	tx_access(now);
@@ -1502,12 +1528,9 @@ static void tx_poll(uint32_t now)
 				s.wake_listening = false;	// the transmitter comes off with the phase (radio_sm), not keyed again
 				break;
 			}
-			if (!s.wake_answered) {
-				s.wake_answered = true;
-				s.wake_answer_ms = now;
-			}
-			if (now - s.wake_answer_ms < s.modem->wake_settle_ms)
-				break;	// the modem isn't on the outbound's slots yet
+			// Here, while the receiver is still on: the transmit set-up that wake_listen(false) restores can be deaf
+			if (slot_unverified(now))
+				break;
 			wake_listen(false);
 			s.tx = TX_ACCESS;
 			tx_access(now);
