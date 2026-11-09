@@ -48,17 +48,17 @@ is `tools/bringup.py list --radio <id>`.
 | `am_rx` | not recorded | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ | fail | not recorded |
 | `bcast_fm` | not recorded | ✕ | not recorded | not written | ✕ | ✕ | ✕ | pass, needs re-run | not recorded |
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | pass, needs re-run | fail | not recorded |
-| `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not written | not written |
+| `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not written | not written |
 | `dmr_talker_alias` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
-| `dmr_emergency` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass | pass | not recorded |
-| `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass | not recorded |
+| `dmr_emergency` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
+| `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `dmr_signaling` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `vfo` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `vfo_fm` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run | not recorded |
 | `vfo_dmr` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
-| `channel_list` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | pass, needs re-run | not recorded |
-| `channel_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | pass, needs re-run | not recorded |
+| `channel_list` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
+| `channel_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `zone_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `contact_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `key_assign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
@@ -74,7 +74,7 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_ars` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_lrrp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `dmr_udp_compress` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run | not recorded |
-| `dmr_confirmed` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | fail | partial, needs re-run | not recorded |
+| `dmr_confirmed` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run | not recorded |
 | `sfr` | not recorded | pass (seed) | pass (seed) | not recorded | ✕ | not recorded | ✕ | not written | not written |
 | `sfr_dualpath_rx` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | not recorded | not written | not written |
 | `sfr_cwid` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | pass, needs re-run | not written | not written |
@@ -84,22 +84,22 @@ is `tools/bringup.py list --radio <id>`.
 | `gps_sky` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `usb` | ✕ | pass (seed) | ✕ | ✕ | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `hostlink` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `hotspot` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | not recorded | pass | not written | not written |
+| `hotspot` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | not recorded | pass, needs re-run | not written | not written |
 | `split_duplex` | pass (seed) | pass (seed) | pass (seed) | not written | not written | not recorded | pass, needs re-run | not written | not written |
 | `debuglink` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `task_stacks` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
-| `cps_openfw` | not recorded | pass (seed) | not recorded | pass (seed) | pass (seed) | not recorded | pass | pass | not recorded |
+| `cps_openfw` | not recorded | pass (seed) | not recorded | pass (seed) | pass (seed) | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `cps_fast` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `stub_entry` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `crash_log` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `crash_screen` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `crash_report` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `watchdog` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | pass, needs re-run | not recorded |
+| `watchdog` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `fault_trace` | not recorded | ✕ | not recorded | not recorded | ✕ | ✕ | ✕ | off | off |
 | `usb_network` | ✕ | pass (seed) | ✕ | ✕ | not recorded | not recorded | pass, needs re-run | off | not recorded |
 | `dmr_ip_gateway` | not recorded | not recorded | pass (seed) | not recorded | not recorded | not recorded | pass, needs re-run | off | not recorded |
 | `dmr_tx_spacing` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run | not recorded |
-| `zone_share` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | off | not recorded |
+| `zone_share` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off | not recorded |
 | `dmr_control_station` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off | not recorded |
 | `net_tcp` | not recorded | not recorded | pass (seed) | pass (seed) | not recorded | not recorded | pass, needs re-run | off | off |
 | `net_kiss` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off | off |
@@ -107,20 +107,20 @@ is `tools/bringup.py list --radio <id>`.
 | `net_http_gzip` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off | off |
 | `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off | off |
 | `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off | off |
-| `net_usrp` | not recorded | not recorded | not recorded | not written | not recorded | not recorded | pass | not written | not written |
+| `net_usrp` | not recorded | not recorded | not recorded | not written | not recorded | not recorded | pass, needs re-run | not written | not written |
 | `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off | off |
-| `mdns` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | off | not recorded |
-| `tftp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | off | not recorded |
+| `mdns` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off | not recorded |
+| `tftp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off | not recorded |
 | `tftp_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off | not recorded |
-| `dmr_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | pass, needs re-run | not recorded |
-| `iddb_compact` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | pass, needs re-run | not recorded |
+| `dmr_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
+| `iddb_compact` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off | not recorded |
 | `net_ppp` | not recorded | off | pass (seed) | pass (seed) | off | off | off | off | off |
 | `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `key_lock` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
-| `channel_knob` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | pass, needs re-run | not recorded |
+| `channel_knob` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `hand_mic` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
-| `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | partial, needs re-run | not recorded |
+| `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run | not recorded |
 | `diag` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `ui_color` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | ✕ | pass, needs re-run | not recorded |
 | `font_xl` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
@@ -131,8 +131,8 @@ is `tools/bringup.py list --radio <id>`.
 | `lang_default_es` | off | off | off | off | off | off | off | off | off |
 | `lang_default_it` | off | off | off | off | off | off | off | off | off |
 | `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
-| `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass | pass | not recorded |
-| `codeplug_foreign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | pass | not recorded |
+| `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
+| `codeplug_foreign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `nand_storage` | ✕ | ✕ | ✕ | not recorded | ✕ | ✕ | ✕ | not recorded | not recorded |
 | `codec_check` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `audio_probe` | not written | off | not written | not written | not written | off | off | not written | not written |
@@ -287,7 +287,6 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 10,864 | 11,456 | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). Measured 2026-10-21 on the dual watch branch, default builds |
 | Beeps and alert tones | `BEEP` | 1,552 | 1,800 |  |
 | Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one RadioFoundry drives. On for the DM-1801 Pro. Measured 2026-10-16 with `CONFIG_SNMP=n`; 236 B with LTO |
-| Bluetooth PTT and keys: the module's PTT button and its hand mic's PTT and keys | `BT_PTT` | — | — | Needs a Bluetooth module on a UART (`hal_input_t.bt_stats`). Audio stays with the module. On for the D578UV |
 | GPS receiver: the module driver and its NMEA input (Settings > Location > GPS) | `GPS` | — | 1,196 | Needs a GPS receiver. Off, DMR GPS, LRRP and APRS keep the fixed position and report no fix. MD-380 measured 2026-10-22 (LTO, 58f2cebe). The DM-1701 has none from the factory but listens for an owner-fitted one (1,308 B, LTO) |
 
 ## DMR data
