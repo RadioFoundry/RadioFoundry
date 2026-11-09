@@ -38,19 +38,20 @@ is `tools/bringup.py list --radio <id>`.
 <!-- generated: tools/boards.py docs checked; edit docs/testing/results/<board>/ (tools/bringup.py run) -->
 | Feature | DM-32UV | DM-1701 | DM-1801 Pro | DB25-D PRO | MD-380 | MD-UV380 | MD-9600 |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| `fm` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial |
+| `fm` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial, needs re-run |
 | `ref_trim` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | pass, needs re-run |
 | `subtone` | pass (seed) | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | pass, needs re-run |
-| `fm_tx_tones` | not recorded | pass (seed) | not recorded | not recorded | not written | not recorded | pass |
-| `dtmf` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | pass |
+| `fm_tx_tones` | not recorded | pass (seed) | not recorded | not recorded | not written | not recorded | pass, needs re-run |
+| `tone_burst_key` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `dtmf` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | pass, needs re-run |
 | `vox` | not written | not recorded | not recorded | not written | not recorded | not recorded | pass, needs re-run |
-| `battery_save` | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass |
+| `battery_save` | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `am_rx` | not recorded | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ |
 | `bcast_fm` | not recorded | ✕ | not recorded | not written | ✕ | ✕ | ✕ |
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial |
 | `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `dmr_talker_alias` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
-| `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass |
+| `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `dmr_emergency` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass |
 | `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
 | `dmr_signaling` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass |
@@ -128,7 +129,7 @@ is `tools/bringup.py list --radio <id>`.
 | `lang_it` | off | off | off | off | off | off | off |
 | `lang_default_es` | off | off | off | off | off | off | off |
 | `lang_default_it` | off | off | off | off | off | off | off |
-| `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass |
+| `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run |
 | `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass |
 | `codeplug_foreign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `nand_storage` | ✕ | ✕ | ✕ | not recorded | ✕ | ✕ | ✕ |
