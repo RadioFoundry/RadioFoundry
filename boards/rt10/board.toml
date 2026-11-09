@@ -22,7 +22,7 @@ bands = "902-928 MHz"
 power = "L / H"
 display = "none"
 gallery = "128x64"
-clock = { rtc = "unknown", note = "no clock crystal or backup cell identified yet (docs/spec/hardware-rt10.md 1)" }
+clock = { rtc = "unbacked", note = "the SoC RTC, with no coin cell or backup capacitor on the board (docs/spec/hardware-rt10.md 1)" }
 
 [status]
 level = "supported"

@@ -17,7 +17,7 @@ markings.
 | Program flash | GD25Q16C, JEDEC C8 40 15 (measured) | 2 MB, execute in place at 0x03000000 |
 | Data flash | GD25Q16C | 2 MB on SPI0 (section 4) |
 | Audio | NJM2904 dual op amp | analog, no control lines |
-| Clock | none found | no RTC crystal or backup cell identified |
+| Clock | SoC RTC, no backup cell | no coin cell or backup capacitor on either side of the board. The original firmware reads the SoC RTC on I2C2 (address 0x70). The long two-pad crystal marked `EAUE` beside the SoC is probably its 32.768 kHz crystal (from the package; not measured). Not measured: whether the RTC stays on the main battery with the radio off. RadioFoundry doesn't use the RTC on this radio |
 
 ## 2. Boot and program flash
 
