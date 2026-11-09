@@ -66,6 +66,7 @@ Look at the boards on your platform for a model (`tools/boards.py list --platfor
 | `caps` | `CAP_KEYPAD`, `CAP_ENCODER`, `CAP_GPS`, `CAP_DMR`, `CAP_VOLUME_POT`, `CAP_AM_RX`, `CAP_BCAST_FM`, `CAP_NO_BATTERY` (a mobile on a fixed supply: no battery UI, no battery monitor; leave `battery_mv` and `battery_pct` NULL, and set `hal_power_t.supply_mv` if the radio measures its DC input: [radio-features.md](../spec/radio-features.md), battery) |
 | `bands`, `band_count` | Receive ranges, each with `tx` true where transmit is allowed |
 | `power_count`, `power_names`, `power_default` | Power levels as short labels, lowest first, and the default index |
+| `power_bands`, `power_band_count` | Optional: the labels per band, where a level gives a different power on each band (a top level of 45 W on one band, 50 W on the other). Same `power_count` on every band; a frequency in no entry uses `power_names` |
 | `display`, `input`, `keymap`, `keymap_len` | Display and key interfaces, and the key map (below) |
 | `radio`, `dmr`, `audio`, `vocoder` | RF chip, DMR modem (NULL on an FM-only radio), audio path, codec hosting |
 | `power`, `flash` | Battery and power switch, external flash |
@@ -167,7 +168,8 @@ What the docs claim for a radio comes from its records, so each step above ends 
 2. `tools/bringup.py list --radio <b>` shows the checklist: every feature of
    [tests/hil/features.toml](../../tests/hil/features.toml) the board builds, `n/a` for its `BOARD_UNSUPPORTED`
    switches and `not written` for its `BOARD_NOT_WRITTEN` ones. Each needs a reason in `config.mk`; a feature built
-   but known not to work yet gets a `[features]` entry in `board.toml`.
+   but known not to work yet gets a `[features]` entry in `board.toml` (`state = "unsupported"`), and so does a
+   feature without a switch that the hardware rules out (`state = "n/a"`).
 3. As a step works, `tools/bringup.py run --radio <b> --feature F -- <pytest options>` runs its tests under the
    radio lock and writes `docs/testing/results/<b>/<date>-<commit>.json`. Commit the record with the change it
    checks; a record with failures is the to-do list ([HIL bring-up mode](../../tests/hil/README.md#bring-up-mode)).

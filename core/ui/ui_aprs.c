@@ -162,7 +162,7 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 		if (!rf_send()) {
 			it->flags |= UI_ITEM_DIM;	// no APRS on RF here (no transmit tone path)
 		} else {
-			sb_str(&b, c.power == 0 ? TR("As channel") : ui_power_name((uint8_t)(c.power - 1u)));
+			sb_str(&b, c.power == 0 ? TR("As channel") : ui_power_name((uint8_t)(c.power - 1u), v.freq_hz));
 		}
 		break;
 	case AP_PATH:

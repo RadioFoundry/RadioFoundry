@@ -26,6 +26,7 @@ typedef enum {
 	// Zone sharing (CONFIG_ZONE_SHARE): send the zone or channel (SCR_SHARE only without the zone editor, whose menus
 	// send them), to whom; an offer, its channels, the zone a channel joins
 	SCR_SHARE, SCR_SHARE_TO, SCR_OFFER, SCR_OFFER_PREVIEW, SCR_OFFER_ZONE,
+	SCR_HWOPT,			// the board's hardware options (Settings > Advanced > Hardware; hal_hwopt.h)
 	SCR_ZCHANNEL, SCR_ZPICK, SCR_ZONEEDIT, SCR_ZONEDEL,	// the zone editor (ui.md 2.2): Channel actions, Add
 								// channel, Zone options, Delete zone
 	SCR_CHZONES,			// the channel editor's Zones: in which zones the channel is (arg = its number)

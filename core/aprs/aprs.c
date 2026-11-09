@@ -120,6 +120,8 @@ static struct {
 	afsk_demod_t demod;
 	bool rx_running;
 	uint16_t rx_peak;
+	uint32_t rx_start_fails, rx_retry_ms;	// starts the board refused; the next try (RX_RETRY_MS later)
+	bool rx_retry_wait;			// the last start was refused: wait for rx_retry_ms
 	int16_t rxbuf[160];
 	char gate[AX25_TNC2_MAX + 20];
 #endif
@@ -160,7 +162,7 @@ uint32_t aprs_cfg_freq(const aprs_cfg_t *c)
 bool aprs_amateur_hz(uint32_t hz)
 {
 	return (hz >= 144000000u && hz <= 148000000u) || (hz >= 222000000u && hz <= 225000000u) ||
-	       (hz >= 420000000u && hz <= 450000000u);
+	       (hz >= 420000000u && hz <= 450000000u) || (hz >= 902000000u && hz <= 928000000u);
 }
 
 bool aprs_callsign_ok(const char *call)
@@ -1006,6 +1008,10 @@ static bool rx_by_stream(void)
 	return board.audio != NULL && board.audio_tap != NULL && (board.audio_tap->caps & AUDIO_TAP_FM_RX) != 0;
 }
 
+// A start the board refused (no memory, its audio path busy) is tried again this much later, not on every tick: each
+// try routes the receiver and back
+#define RX_RETRY_MS	1000u
+
 // The receive path: on while receiving FM with the setting on (radio task, outside the lock)
 static void rx_service(const aprs_radio_t *r, uint32_t now_ms)
 {
@@ -1013,11 +1019,17 @@ static void rx_service(const aprs_radio_t *r, uint32_t now_ms)
 	bool own = rx_by_board();
 	bool want = a.cfg.rx_on && r->fm_rx && r->rx_hz != 0 && r->rx_hz == aprs_cfg_freq(&a.cfg) &&
 		    (own || rx_by_stream());
-	if (want && !a.rx_running) {
+	// The wait only after a refusal: an old rx_retry_ms compared 24.8 days later would read as in the future
+	if (want && !a.rx_running && (!a.rx_retry_wait || (int32_t)(now_ms - a.rx_retry_ms) >= 0)) {
 		a.rx_peak = 0;
 		a.rx_running = afsk_demod_init(&a.demod, own ? h->rx_rate_hz : 8000u, demod_frame, NULL);
 		if (a.rx_running && own) {
 			a.rx_running = h->rx_start();
+			a.rx_retry_wait = !a.rx_running;
+			if (!a.rx_running) {
+				a.rx_start_fails++;
+				a.rx_retry_ms = now_ms + RX_RETRY_MS;
+			}
 		} else if (a.rx_running) {
 			audio_mux_aprs_rx(true);
 		}
@@ -1030,6 +1042,9 @@ static void rx_service(const aprs_radio_t *r, uint32_t now_ms)
 			audio_mux_aprs_rx(false);
 		}
 		a.rx_running = false;
+	}
+	if (!want) {
+		a.rx_retry_wait = false;	// a refusal's wait is for the try it followed, not a later one
 	}
 	if (a.rx_running) {
 		uint16_t n = (uint16_t)(sizeof(a.rxbuf) / sizeof(a.rxbuf[0]));
@@ -1058,6 +1073,7 @@ void aprs_rx_stats(aprs_rx_stats_t *out)
 	out->frames = a.demod.frames;
 	out->fcs_errors = afsk_demod_fcs_errors(&a.demod);
 	out->aborts = afsk_demod_aborts(&a.demod);
+	out->start_fails = a.rx_start_fails;
 }
 #endif
 

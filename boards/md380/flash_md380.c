@@ -37,7 +37,6 @@ static const stm32_spi_flash_cfg_t cfg = {
 	.cpol = false, .cpha = false,		// mode 0
 	.br = 3,				// APB2 72 MHz / 16 = 4.5 MHz
 	.device = 0x4000u, .device_mask = 0xFF00u,	// any capacity of the W25Q family (JEDEC memory type 0x40)
-	.map_min_size = 0x1000000u,			// 16 MB: room for the open-firmware layout
 	.map = &map,
 };
 

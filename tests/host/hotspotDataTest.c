@@ -64,7 +64,7 @@ static int packet(dmrBurst_t *out)
 	uint8_t data[60];
 
 	memset(data, 0x55, sizeof(data));
-	return dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_IP, false, 9998199, 9996543, data, sizeof(data), DT_RATE_12_DATA, 0, out, DMR_DATA_MAX_BURSTS);
+	return dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_IP, false, 9998199, 9996543, data, sizeof(data), DMR_TYPE_RATE_1_2, 0, out, DMR_DATA_MAX_BURSTS);
 }
 
 static dmrBurst_t storage[DMR_DATA_MAX_BURSTS];
@@ -101,7 +101,7 @@ static void testHeaderAfterShortPreambles(bool paced)
 		CHECK(tx.starts == ((i == n - 1) ? 1 : 0));
 		t += paced ? 60 : 0;
 	}
-	CHECK(tx.count == 9 && tx.first.dataType == DT_CSBK);
+	CHECK(tx.count == 9 && tx.first.dataType == DMR_TYPE_CSBK);
 	CHECK(hotspotDataIsBusy());
 }
 
@@ -149,8 +149,8 @@ static void testSecondList(void)
 
 	tx.done = true;
 	hotspotDataTick(1400, true);
-	CHECK(tx.starts == 2 && tx.count == DMR_DATA_MAX_BURSTS - n && tx.first.dataType == DT_CSBK);
-	CHECK(storage[0].dataType == DT_CSBK && memcmp(storage[0].payload, lone.payload, 12) == 0);// moved to the front
+	CHECK(tx.starts == 2 && tx.count == DMR_DATA_MAX_BURSTS - n && tx.first.dataType == DMR_TYPE_CSBK);
+	CHECK(storage[0].dataType == DMR_TYPE_CSBK && memcmp(storage[0].payload, lone.payload, 12) == 0);// moved to the front
 
 	tx.done = true;
 	hotspotDataTick(1500, true);
@@ -164,8 +164,8 @@ static void testRefused(void)
 	dmrBurst_t lone = preamble(0);
 
 	reset();
-	CHECK(hotspotDataQueue(DT_VOICE_PI_HEADER, frame, 0) == HOTSPOT_DATA_NAK_UNSUPPORTED);
-	CHECK(hotspotDataQueue(DT_IDLE, frame, 0) == HOTSPOT_DATA_NAK_UNSUPPORTED);
+	CHECK(hotspotDataQueue(DMR_TYPE_PI_HEADER, frame, 0) == HOTSPOT_DATA_NAK_UNSUPPORTED);
+	CHECK(hotspotDataQueue(DMR_TYPE_IDLE, frame, 0) == HOTSPOT_DATA_NAK_UNSUPPORTED);
 	CHECK(hotspotDataQueue(0x0B, frame, 0) == HOTSPOT_DATA_NAK_UNSUPPORTED);// USBD
 	CHECK(!hotspotDataIsBusy());
 
@@ -180,7 +180,7 @@ static void testRefused(void)
 // Rate 3/4 and Rate 1 blocks are taken, with their 18 and 24 bytes
 static void testCodedBlocks(void)
 {
-	dmrBurst_t r34 = { .dataType = DT_RATE_34_DATA, .length = 18 }, r1 = { .dataType = DT_RATE_1_DATA, .length = 24 };
+	dmrBurst_t r34 = { .dataType = DMR_TYPE_RATE_3_4, .length = 18 }, r1 = { .dataType = DMR_TYPE_RATE_1, .length = 24 };
 
 	reset();
 	memset(r34.payload, 0x3C, 18);
@@ -235,7 +235,7 @@ static void setSync(uint8_t *frame, uint64_t sync)
 	frame[19] = (frame[19] & 0x0F) | (uint8_t)((sync & 0x0F) << 4);
 }
 
-// MMDVMHost's frames all come with control byte 0: the type from the burst's sync and slot type
+// A host's frames all come with control byte 0: the type from the burst's sync and slot type
 static void testNetFrameControl(void)
 {
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
@@ -245,24 +245,24 @@ static void testNetFrameControl(void)
 
 	CHECK(n == 7);
 	dmrDataBurstToFrame(&bursts[0], 2, frame);
-	CHECK(hotspotNetFrameControl(0x00, frame) == (0x40 | DT_DATA_HEADER));
+	CHECK(hotspotNetFrameControl(0x00, frame) == (0x40 | DMR_TYPE_DATA_HEADER));
 	CHECK(hotspotNetFrameControl(0x47, frame) == 0x47);// the host's own kept
 	dmrDataBurstToFrame(&bursts[1], 7, frame);
-	CHECK(hotspotNetFrameControl(0x00, frame) == (0x40 | DT_RATE_12_DATA));
+	CHECK(hotspotNetFrameControl(0x00, frame) == (0x40 | DMR_TYPE_RATE_1_2));
 	dmrDataBurstToFrame(&csbk, 15, frame);
-	CHECK(hotspotNetFrameControl(0x00, frame) == (0x40 | DT_CSBK));
+	CHECK(hotspotNetFrameControl(0x00, frame) == (0x40 | DMR_TYPE_CSBK));
 
 	// BS data sync (a repeater's), one bit wrong
 	setSync(frame, 0xDFF57D75DF5DULL ^ 0x000100000000ULL);
-	CHECK(hotspotNetFrameControl(0x00, frame) == (0x40 | DT_CSBK));
+	CHECK(hotspotNetFrameControl(0x00, frame) == (0x40 | DMR_TYPE_CSBK));
 
 	// A terminator and an idle burst, color code 2 (the old END_FRAME_PATTERN only matched color code 1)
-	csbk.dataType = DT_TERMINATOR_WITH_LC;
+	csbk.dataType = DMR_TYPE_TERMINATOR_LC;
 	dmrDataBurstToFrame(&csbk, 2, frame);
-	CHECK(hotspotNetFrameControl(0x00, frame) == (0x40 | DT_TERMINATOR_WITH_LC));
-	csbk.dataType = DT_IDLE;
+	CHECK(hotspotNetFrameControl(0x00, frame) == (0x40 | DMR_TYPE_TERMINATOR_LC));
+	csbk.dataType = DMR_TYPE_IDLE;
 	dmrDataBurstToFrame(&csbk, 2, frame);
-	CHECK(hotspotNetFrameControl(0x00, frame) == (0x40 | DT_IDLE));
+	CHECK(hotspotNetFrameControl(0x00, frame) == (0x40 | DMR_TYPE_IDLE));
 
 	// Voice: A has the voice sync (MS, or direct mode TS2), B-F the EMB (no sync): the control byte as given
 	memset(frame, 0x5A, sizeof(frame));

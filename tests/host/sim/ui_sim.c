@@ -36,6 +36,7 @@
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   timeout             the TX timeout cuts the transmission off while PTT is still held (shows the timeout deny)
 //   pttlocked:on|off    turns Settings > Privacy > PTT when locked on or off
+//   autolock:<s>        Settings > Keys > Auto lock: s seconds, 0 off
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
@@ -333,19 +334,36 @@ static const keymap_entry_t map_f[] = {	// few keys (7.5): Up / Down / Select / 
 	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
 	{ K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
+// The MD-9600's front panel as boards/md9600/board.c maps it, the hand-mic keypad not read (7.4): Enter, Back, P1 /
+// P2 as QUICK / CONTEXT, Up / Down, P3 monitor (SK1), P4 talk target (SK2), the orange key (SK3), no digits
+static const keymap_entry_t map_p[] = {
+	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 }, { K_RED, ACT_BACK, ACT_BACK, false, false, 0 },
+	{ K_P1, ACT_QUICK, ACT_QUICK, false, false, 0 }, { K_P2, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },
+	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ K_SK3, ACT_USER_3, ACT_USER_3, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
+};
+static const keymap_entry_t map_s[] = {	// side keys only, no display to navigate: two side keys and PTT
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_USER_1, ACT_USER_2, false, false, 0 },
+	{ K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
+};
 static const uint8_t side_k[] = { K_SK1, K_SK2, K_SK3 }, side_m[] = { K_SK1, K_SK2 };	// board.side_keys
 static const char *const side_names[] = { "SK1", "SK2", "SK3" };
+static const char *const side_names_p[] = { "P3", "P4", "Orange" };	// the MD-9600 (boards/md9600/board.c)
 static const struct {
 	const keymap_entry_t *m;
 	uint8_t n;
 	uint32_t caps;
 	const uint8_t *side;
 	uint8_t side_n;
+	const char *const *names;
 } maps[SIM_MAP_COUNT] = {
-	{ map_k, sizeof map_k / sizeof map_k[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR, side_k, 3 },	// the DM-1701 has the channel knob
-	{ map_m, sizeof map_m / sizeof map_m[0], CAP_KEYPAD | CAP_DMR, side_m, 2 },
-	{ map_v, sizeof map_v / sizeof map_v[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR, side_m, 2 },
-	{ map_f, sizeof map_f / sizeof map_f[0], CAP_ENCODER | CAP_DMR, NULL, 0 },
+	{ map_k, sizeof map_k / sizeof map_k[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR, side_k, 3, side_names },	// the DM-1701 has the channel knob
+	{ map_m, sizeof map_m / sizeof map_m[0], CAP_KEYPAD | CAP_DMR, side_m, 2, side_names },
+	{ map_v, sizeof map_v / sizeof map_v[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR, side_m, 2, side_names },
+	{ map_f, sizeof map_f / sizeof map_f[0], CAP_ENCODER | CAP_DMR, NULL, 0, NULL },
+	{ map_p, sizeof map_p / sizeof map_p[0], CAP_ENCODER | CAP_DMR, side_k, 3, side_names_p },
+	{ map_s, sizeof map_s / sizeof map_s[0], 0, side_m, 2, side_names },
 };
 
 static void d_init(void) {}
@@ -1399,6 +1417,20 @@ static uint16_t n_inbox;
 static bool soft_volume;
 // The broadcast receiver (Settings > Talk & listen > FM broadcast step) only with the "bcast" token, the same way
 static bool bcast_rx;
+// Hardware options (Settings > Advanced > Hardware, hal_hwopt.h) only with the "hwopt" token: a revision that starts
+// unset and a plain option
+static int8_t hwopt_val[2];
+static const char *const hwopt_revs[] = { "V1", "V2", "V3" };
+static const char *const hwopt_onoff[] = { "Off", "On" };
+static int8_t hwopt_get0(void) { return hwopt_val[0]; }
+static int8_t hwopt_get1(void) { return hwopt_val[1]; }
+static bool hwopt_set0(uint8_t c) { hwopt_val[0] = (int8_t)c; return true; }
+static bool hwopt_set1(uint8_t c) { hwopt_val[1] = (int8_t)c; return true; }
+static const hal_hwopt_t sim_hwopts[] = {
+	{ .name = "Board revision", .count = 3, .choices = hwopt_revs, .get = hwopt_get0, .set = hwopt_set0, .restart = true },
+	{ .name = "Option", .count = 2, .choices = hwopt_onoff, .get = hwopt_get1, .set = hwopt_set1 },
+};
+
 // A reference trim (Settings > Advanced > Freq trim) only with the "trim" token, the same way
 static bool ref_trim;
 uint32_t ui_svc_features(void)
@@ -2039,10 +2071,13 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.keymap = maps[map].m;
 	board.keymap_len = maps[map].n;
 	board.side_keys = maps[map].side;
-	board.side_key_names = side_names;
+	board.side_key_names = maps[map].names;
 	board.side_key_count = maps[map].side_n;
 	board.caps = maps[map].caps;
 	power.supply_mv = NULL;
+	// The MD-9600's panel names its QUICK and CONTEXT keys in the hints
+	board.quick_label = map == SIM_MAP_P ? "P1" : NULL;
+	board.context_label = map == SIM_MAP_P ? "P2" : NULL;
 	cur_map = map;
 	gfx_init(&disp);
 	gfx_invalidate();
@@ -2089,6 +2124,10 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	soft_volume = false;
 	bcast_rx = false;
 	ref_trim = false;
+	board.hwopts = NULL;
+	board.hwopt_count = 0;
+	hwopt_val[0] = HWOPT_NONE;
+	hwopt_val[1] = 0;
 	ui_svc_setting_set(UI_SET_VOLUME, RADIO_VOLUME_DEFAULT);
 	ui_svc_setting_set(UI_SET_HINTS, 1);
 	ui_svc_setting_set(UI_SET_LARGE_TEXT, 0);
@@ -2475,6 +2514,13 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+	if (strcmp(t, "autolock") == 0 && arg != NULL) {	// Settings > Keys > Auto lock
+		int32_t sec = atoi(arg);
+		ui_svc_setting_set(UI_SET_AUTO_LOCK_S, sec);
+		ui_apply_setting(UI_SET_AUTO_LOCK_S, sec);
+		advance(200);
+		return true;
+	}
 	if (strcmp(t, "pttlocked") == 0 && arg != NULL) {	// Settings > Privacy > PTT when locked
 		bool on = strcmp(arg, "on") == 0;
 		if (!on && strcmp(arg, "off") != 0) {
@@ -2818,6 +2864,11 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "bcast") == 0) {		// this radio has a broadcast FM receiver
 		bcast_rx = true;
+		return true;
+	}
+	if (strcmp(t, "hwopt") == 0) {		// this radio has hardware options (sim_hwopts)
+		board.hwopts = sim_hwopts;
+		board.hwopt_count = 2;
 		return true;
 	}
 	if (strcmp(t, "trim") == 0) {		// this radio has a reference trim (hal_radio_t.ref_trim)
