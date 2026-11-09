@@ -917,35 +917,92 @@ static void test_rmo_air_slot_alignment(void)
 static unsigned listen_on, listen_off;
 static void on_wake_listen(bool listen) { if (listen) listen_on++; else listen_off++; }
 
-// How long after PTT the voice starts, the repeater answering the wake-up, with the modem's settle time
-static uint32_t wake_to_voice_ms(uint16_t settle)
+// One burst of the repeater's outbound, so it counts as up
+static void repeater_outbound_keepalive(void)
+{
+	dmr_burst_t b;
+
+	memset(&b, 0, sizeof(b));
+	b.kind = DMR_BURST_IDLE;
+	b.cc = 1;
+	b.ts = 1;
+	b.sync = DMR_SYNC_BS;
+	b.crc_ok = true;
+	sim_rx(&b);
+}
+
+static bool slot_ok;
+static bool sim_slot_verified(void) { return slot_ok; }
+
+// An aligned start waits for the modem to settle the outbound's slots, and is denied if it never does
+static void test_slot_verified(void)
 {
 	dmr_call_config_t c = base_cfg();
 	hal_dmr_modem_t m = sim_modem;
-	uint32_t waited = 0;
 
 	c.rmo = true;
-	m.wake_settle_ms = settle;
+	m.slot_verified = sim_slot_verified;
 	modem_under_test = &m;
+	dmr_call_set_wake_listen(on_wake_listen);
+
+	// After a wake-up: held with the receiver still on, then the transmit set-up back and the voice
 	setup(&c);
+	slot_ok = false;
+	listen_on = listen_off = 0;
 	sim.wake_repeater_on_csbk = true;
 	dmr_call_ptt(true);
-	while (V()->phase != DMR_CALL_PHASE_TX_VOICE && waited < 2000) {
-		run_ms(10);
-		waited += 10;
-	}
+	run_ms(500);
+	CHECK(V()->phase != DMR_CALL_PHASE_TX_VOICE && listen_on == 1 && listen_off == 0);
+	slot_ok = true;
+	run_ms(100);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && listen_off == 1);
 	dmr_call_ptt(false);
 	run_ms(600);
+
+	// The repeater up, keyed before the modem has verified: no burst until it has
+	slot_ok = false;
+	repeater_outbound_keepalive();
+	unsigned begins = sim.tx_begins;
+
+	dmr_call_ptt(true);
+	run_ms(200);
+	CHECK(sim.tx_begins == begins);
+	repeater_outbound_keepalive();
+	slot_ok = true;
+	run_ms(100);
+	CHECK(sim.tx_begins == begins + 1 && V()->phase == DMR_CALL_PHASE_TX_VOICE);
+	dmr_call_ptt(false);
+	run_ms(600);
+
+	// The repeater idle: only its CACH is reported, as slot ticks. It stays up past the hold while the modem verifies,
+	// so no wake-up goes out to take the time the verify needs
+	slot_ok = false;
+	sim.repeater = true;
+	repeater_outbound_keepalive();
+	begins = sim.tx_begins;
+	dmr_call_ptt(true);
+	run_ms(DMR_CALL_REPEATER_HOLD_MS + 300);
+	CHECK(sim.tx_begins == begins && V()->phase != DMR_CALL_PHASE_TX_VOICE && V()->phase != DMR_CALL_PHASE_TX_WAKEUP);
+	slot_ok = true;
+	run_ms(100);
+	CHECK(sim.tx_begins == begins + 1 && V()->phase == DMR_CALL_PHASE_TX_VOICE);
+	dmr_call_ptt(false);
+	run_ms(600);
+
+	// Never verified with the outbound up: denied, nothing keyed on a guess
+	slot_ok = false;
+	begins = sim.tx_begins;
+	dmr_call_ptt(true);
+	for (uint32_t t = 0; t < DMR_CALL_SLOT_VERIFY_MS + 200; t += 100) {
+		repeater_outbound_keepalive();
+		run_ms(100);
+	}
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && V()->tx_error == DMR_TX_ERR_NO_REPEATER && sim.tx_begins == begins);
+	dmr_call_ptt(false);
+	run_ms(20);
+
+	dmr_call_set_wake_listen(NULL);
 	modem_under_test = &sim_modem;
-	return waited;
-}
-
-// A modem that needs some of the outbound before an aligned start is keyed that much later, and only then
-static void test_wake_settle(void)
-{
-	uint32_t at_once = wake_to_voice_ms(0), held = wake_to_voice_ms(240);
-
-	CHECK(at_once < 2000 && held >= at_once + 200 && held <= at_once + 320);
 }
 
 static void test_wake_listen(void)
@@ -2523,7 +2580,7 @@ int main(void)
 	test_tx_modem_stalled();
 	test_rmo_wakeup();
 	test_wake_listen();
-	test_wake_settle();
+	test_slot_verified();
 	test_rmo_air_slot_alignment();
 	test_rx_call();
 	test_rx_filters();
