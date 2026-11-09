@@ -205,11 +205,9 @@ void ui_layout_init(void)
 
 // --- shared pieces ---
 
-const char *ui_power_name(uint8_t p)
+const char *ui_power_name(uint8_t p, uint32_t tx_hz)
 {
-	if (board.power_names != NULL && p < board.power_count)
-		return board.power_names[p];
-	return "?";
+	return board_power_name(p, tx_hz);
 }
 
 static uint8_t channel_power(const radio_view_t *v)
@@ -529,12 +527,64 @@ static void hint_split(const char *text, char *left, size_t lcap, char *right, s
 	left[ln] = 0;
 }
 
+static bool alt_mark(char c)
+{
+	return c == TEXT_ALT_OPEN[0] || c == TEXT_ALT_NEXT[0] || c == TEXT_ALT_CLOSE[0];
+}
+
+static bool board_has_digits(void)
+{
+	for (uint8_t i = 0; board.keymap != NULL && i < board.keymap_len; i++) {
+		if (board.keymap[i].short_action >= ACT_DIGIT_0 && board.keymap[i].short_action <= ACT_DIGIT_9)
+			return true;
+	}
+	return false;
+}
+
+// Hints and toasts are written for a keypad: "*" and "#" name the QUICK and CONTEXT keys, and a hint group may start
+// with a digit ("0-9 find"). On a radio without them (ui.md 1) a "*" or "#" standing alone becomes the board's own
+// key name (board.quick_label / context_label: "P1 Quick"), and in a hint (not a toast, whose numbers are values) a
+// group that starts with a digit goes, so no hint names a key the radio doesn't have. Text for a keypad radio comes
+// back unchanged
+static const char *key_names(const char *text, char *out, size_t cap, bool hint)
+{
+	bool digits = board_has_digits() || !hint;
+	if (text == NULL || cap == 0 || (digits && board.quick_label == NULL && board.context_label == NULL))
+		return text;
+	size_t n = 0;
+	for (const char *p = text; *p && n + 1 < cap; p++) {
+		bool start = p == text || alt_mark(p[-1]) || (p - text >= 2 && p[-1] == ' ' && p[-2] == ' ');
+		if (start && !digits && *p >= '0' && *p <= '9') {
+			// Drop the group and one of the two-space separators around it
+			while (p[1] && !alt_mark(p[1]) && !(p[1] == ' ' && p[2] == ' '))
+				p++;
+			if (n >= 2 && out[n - 1] == ' ' && out[n - 2] == ' ')
+				n -= 2;
+			else if (p[1] == ' ' && p[2] == ' ')
+				p += 2;
+			continue;
+		}
+		bool alone = (p == text || p[-1] == ' ' || alt_mark(p[-1])) && (p[1] == 0 || p[1] == ' ' || alt_mark(p[1]));
+		const char *sub = !alone ? NULL : *p == '*' ? board.quick_label : *p == '#' ? board.context_label : NULL;
+		if (sub == NULL) {
+			out[n++] = *p;
+			continue;
+		}
+		while (*sub && n + 1 < cap)
+			out[n++] = *sub++;
+	}
+	out[n] = 0;
+	return out;
+}
+
 // The hint row. Hints are groups separated by two spaces ("OK open  # more  Back"); the group for the Back key
 // ("Back", "Back keeps", ...) is pinned to the right edge, under the key, and the others run from the left. A hint may
 // hold text alternates (font.h): the longest form that fits is used. A toast is centered; one too long for the row
 // takes a second line above it, so it is never shortened
 void ui_draw_hint(const char *text, bool toast)
 {
+	// The key names go into each alternate once it is picked, in buffers this function has anyway: no static (RAM is
+	// tight on some radios) and no more stack (the UI task's deepest chain runs through here, docs/dev/stack-check.md)
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->small;
 	int w = gfx_width();
@@ -544,16 +594,23 @@ void ui_draw_hint(const char *text, bool toast)
 	if (gfx_bpp() == 1 && !toast)
 		fg = ui_col.fg;
 	if (toast) {
-		char first[64], second[64];
+		char first[64], second[64];	// second holds the raw alternate until the key names are in first
+		const char *line = first;	// the alternate with the key names: first, or second when there were none
 		bool more = true;
 		// One line in the longest alternate that fits it, else two lines of the first
 		for (int level = 0; more; level++) {
-			gfx_text_alt(text, level, first, sizeof first, &more);
-			if (gfx_text_width(f, first) <= w - 2)
+			gfx_text_alt(text, level, second, sizeof second, &more);
+			line = key_names(second, first, sizeof first, false);
+			if (gfx_text_width(f, line) <= w - 2)
 				break;
 		}
-		if (gfx_text_width(f, first) > w - 2)
-			gfx_text_alt(text, 0, first, sizeof first, &more);
+		if (gfx_text_width(f, line) > w - 2) {
+			gfx_text_alt(text, 0, second, sizeof second, &more);
+			line = key_names(second, first, sizeof first, false);
+		}
+		if (line != first) {
+			memcpy(first, second, sizeof first);	// the rest below may point into it, and second is reused
+		}
 		const char *rest = wrap_line(f, first, w - 2, fit, sizeof fit);
 		int y = L->hint_y, top = y;
 		second[0] = 0;
@@ -583,7 +640,7 @@ void ui_draw_hint(const char *text, bool toast)
 	int lw = 0, rw = 0;
 	for (int level = 0; more; level++) {
 		gfx_text_alt(text, level, form, sizeof form, &more);
-		hint_split(form, left, sizeof left, right, sizeof right);
+		hint_split(key_names(form, fit, sizeof fit, true), left, sizeof left, right, sizeof right);
 		lw = gfx_text_width(f, left);
 		rw = gfx_text_width(f, right);
 		if (lw + (rw && lw ? f->w : 0) + rw <= w)
@@ -986,7 +1043,7 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 	bool pw_temp = v->power != channel_power(v);
 	if (pw_temp)
 		x = gfx_text(f, x, y, GLYPH_DOT, ui_col.warn);
-	x = gfx_text(f, x, y, ui_power_name(v->power), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
+	x = gfx_text(f, x, y, ui_power_name(v->power, v->ch.tx_hz), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
 	sb_init(&b, buf, sizeof buf);
 	sb_str(&b, "SQ");
 	sb_u32(&b, v->squelch, 1);
@@ -1266,7 +1323,7 @@ static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s)
 	bool pw_temp = v->power != channel_power(v);
 	if (pw_temp)
 		x = gfx_text(f, x, L->chips_y, GLYPH_DOT, ui_col.warn);
-	x = gfx_text(f, x, L->chips_y, ui_power_name(v->power), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
+	x = gfx_text(f, x, L->chips_y, ui_power_name(v->power, v->ch.tx_hz), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
 	if (L->zone_y < 0 && v->vfo && !v->ch.rx_only && v->ch.tx_hz != v->ch.rx_hz) {
 		// A split VFO with no top row for its TX frequency: the offset here ("+600k")
 		sb_init(&b, buf, sizeof buf);
@@ -1645,7 +1702,7 @@ static void draw_home_large(const radio_view_t *v, const ui_state_t *s)
 	{
 		sb_str(&b, mode_word(v));
 		sb_chr(&b, ' ');
-		sb_str(&b, ui_power_name(v->power));
+		sb_str(&b, ui_power_name(v->power, v->ch.tx_hz));
 	}
 	f = large_font(buf, room, form, sizeof form);
 	gfx_text_fit(f, form, w, fit, sizeof fit);
@@ -2665,7 +2722,7 @@ void ui_draw_hotspot(const radio_view_t *v, const hotspot_view_t *h, const ui_st
 	sb_str(&b, "CC");
 	sb_u32(&b, h->cc, 1);
 	sb_str(&b, " ");
-	sb_str(&b, ui_power_name(v->power));
+	sb_str(&b, ui_power_name(v->power, v->ch.tx_hz));
 	y = call_line(L->small, y, buf, ui_col.dim);
 	sb_init(&b, buf, sizeof buf);
 	if (h->src != 0) {
@@ -2743,7 +2800,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 	case QT_POWER:
 		if (v->power != channel_power(v))
 			sb_str(&b, GLYPH_DOT);
-		sb_str(&b, ui_power_name(v->power));
+		sb_str(&b, ui_power_name(v->power, v->ch.tx_hz));
 		return true;
 	case QT_SQUELCH:
 		if (v->temp & RADIO_TEMP_SQUELCH)
@@ -3037,6 +3094,7 @@ void ui_draw_diag(const radio_view_t *v, uint32_t keys, int32_t enc_total, uint8
 		gfx_text(f, 0, y, buf, ui_col.dim);
 		y += f->h;
 	}
-	gfx_text(f, 0, gfx_height() - f->h, TR("* more  Back"), ui_col.idle);
+	char named[32];
+	gfx_text(f, 0, gfx_height() - f->h, key_names(TR("* more  Back"), named, sizeof named, true), ui_col.idle);
 }
 #endif

@@ -4,20 +4,20 @@
 """Quick check that a radio answers as an MMDVM modem on its USB serial port (core/hotspot/mmdvm.c).
 
     mmdvm_probe.py [--port /dev/cu.usbmodemXXXX] [--config CC] [--freq MHZ] [--status N] [--no-dtr]
-                   [--order mmdvmhost|sdrbench] [--quiet-commands]
+                   [--order mmdvmhost|mode-first] [--quiet-commands]
 
 Sends GET_VERSION and GET_STATUS and prints the answers. The first MMDVM frame puts the radio in hotspot mode (it
 takes the DMR modem from the call stack); it goes back to normal 20 s after the last frame. With --config it also
 sends SET_CONFIG (simplex, DMR, the color code), with --freq SET_FREQ (RX = TX), then SET_MODE DMR, and checks each
-is ACKed. --status N polls GET_STATUS N times, 250 ms apart, as MMDVMHost does; after a configuration every status
+is ACKed. --status N polls GET_STATUS N times, 250 ms apart, as a standard host does; after a configuration every status
 must still show the DMR state (the configuration stuck). Exit status 0 when every request was answered as expected.
 
---no-dtr opens the port with DTR cleared, as MMDVMHost on Windows does (docs/spec/mmdvm-protocol.md 5.1, test
+--no-dtr opens the port with DTR cleared, as a host on Windows may (docs/spec/mmdvm-protocol.md 5.1, test
 T-USB-2): the radio must answer and keep its configuration all the same.
 
 --order picks the start-up sequence (docs/spec/mmdvm-protocol.md 3.1, 3.2, tests T-1 and T-2):
   mmdvmhost  (default) GET_VERSION, then SET_FREQ, SET_CONFIG (state 00), SET_MODE DMR, as given
-  sdrbench   GET_VERSION, SET_MODE DMR at once (before any configuration), then the tune: SET_FREQ, SET_CONFIG with
+  mode-first GET_VERSION, SET_MODE DMR at once (before any configuration), then the tune: SET_FREQ, SET_CONFIG with
              state 02, SET_MODE DMR, each waited on for 1 s. Needs --freq; --config defaults to 1
 
 --quiet-commands sends what the radio must take without a NAK (docs/testing/mmdvm-audit.md A-5, A-13, I-2):
@@ -52,7 +52,7 @@ class Link:
     def __init__(self, port, dtr=True):
         # A device or a URL such as rfc2217://host:port (a radio on a network serial hub)
         self.s = serial.serial_for_url(port, 115200, timeout=0.05, do_not_open=True)
-        self.s.dtr = dtr               # applied at open: False opens with DTR cleared, as Windows MMDVMHost does
+        self.s.dtr = dtr               # applied at open: False opens with DTR cleared, as a Windows host may
         self.s.open()
         self.buf = bytearray()
 
@@ -118,12 +118,12 @@ def main():
     ap.add_argument("--freq", type=float, metavar="MHZ", help="send SET_FREQ (RX = TX)")
     ap.add_argument("--status", type=int, default=1, metavar="N")
     ap.add_argument("--no-dtr", action="store_true", help="open the port with DTR cleared (Windows MMDVMHost)")
-    ap.add_argument("--order", choices=("mmdvmhost", "sdrbench"), default="mmdvmhost")
+    ap.add_argument("--order", choices=("mmdvmhost", "mode-first"), default="mmdvmhost")
     ap.add_argument("--quiet-commands", action="store_true", help="check the commands that must not get a NAK")
     a = ap.parse_args()
-    if a.order == "sdrbench":
+    if a.order == "mode-first":
         if a.freq is None:
-            ap.error("--order sdrbench needs --freq")
+            ap.error("--order mode-first needs --freq")
         if a.config is None:
             a.config = 1
 
@@ -132,7 +132,7 @@ def main():
     ok = True
 
     kind, f = None, None
-    for _ in range(6):                  # as MMDVMHost: the radio may still be starting its USB side
+    for _ in range(6):                  # as a standard host: the radio may still be starting its USB side
         kind, f = link.request(GET_VERSION)
         if kind == "reply":
             break
@@ -145,8 +145,8 @@ def main():
         print(f"{what}: {kind}" + (f" (reason {f[4]})" if kind == "nak" else ""))
         return kind == "ack"
 
-    if a.order == "sdrbench":
-        # SDR bench: SET_MODE DMR right after the version, before any SET_FREQ / SET_CONFIG; then per tune
+    if a.order == "mode-first":
+        # SET_MODE DMR right after the version, before any SET_FREQ / SET_CONFIG; then per tune
         ok &= check(*link.request(SET_MODE, bytes([MODE_DMR])), "SET_MODE DMR (before configuration)")
         hz = int(round(a.freq * 1e6)).to_bytes(4, "little")
         ok &= check(*link.request(SET_FREQ, b"\x00" + hz + hz + b"\xff" + hz), f"SET_FREQ {a.freq} MHz")

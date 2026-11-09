@@ -519,7 +519,7 @@ def cmd_run(args):
                 + ":")
     tmp = tempfile.mkdtemp(prefix="rfoundry-bringup-")
     out_path = os.path.join(tmp, "out.json")
-    cmd = [_pytest_python(args.pytest_python), "-m", "pytest", *args.tests, "-v", "-rs", "-p", "no:cacheprovider",
+    cmd = [_pytest_python(args.pytest_python), "-m", "pytest", *args.tests, "-v", "-rs", "--durations=0", "-p", "no:cacheprovider",
            *args.pytest_arg, "--bringup", ",".join(names), "--bringup-out", out_path,
            "--bringup-absent", ",".join(absent_switches(args.radio)), *pytest_args]
     lock = lock_path(args.lock, pytest_args)

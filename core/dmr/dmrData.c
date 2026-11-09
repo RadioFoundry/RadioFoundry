@@ -142,12 +142,12 @@ int dmrDataBuildCSBK(const uint8_t csbk[10], dmrBurst_t *out)
 
 	memcpy(buf, csbk, 10);
 	addCRC16(buf, 0xA5);
-	setBurst(out, DT_CSBK, buf, 12);
+	setBurst(out, DMR_TYPE_CSBK, buf, 12);
 
 	return 1;
 }
 
-// Call alert and radio check, as MMDVMHost decodes them: target ID in bytes 4-6, source in 7-9. The radio check
+// Call alert and radio check: target ID in bytes 4-6, source in 7-9. The radio check
 // answer is the request echoed back with byte 3 cleared, so its first ID is the radio answering
 int dmrDataBuildCSBKAnswer(const uint8_t *csbk, uint32_t src, dmrBurst_t *out)
 {
@@ -186,11 +186,11 @@ int dmrDataBlockLength(uint8_t blockType)
 {
 	switch (blockType)
 	{
-		case DT_RATE_12_DATA:
+		case DMR_TYPE_RATE_1_2:
 			return 12;
-		case DT_RATE_34_DATA:
+		case DMR_TYPE_RATE_3_4:
 			return 18;
-		case DT_RATE_1_DATA:
+		case DMR_TYPE_RATE_1:
 			return 24;
 		default:
 			return 0;
@@ -264,7 +264,7 @@ int dmrDataBuildPacket(uint8_t dpf, uint8_t sap, bool group, uint32_t dst, uint3
 	buf[8] = 0x80 | blocks;// Full message
 	buf[9] = 0x00;// FSN: unconfirmed single fragment
 	addCRC16(buf, 0xCC);
-	setBurst(out++, DT_DATA_HEADER, buf, 12);
+	setBurst(out++, DMR_TYPE_DATA_HEADER, buf, 12);
 
 	memcpy(txPacket, data, length);
 	memset(&txPacket[length], 0, padOctets);
@@ -326,7 +326,7 @@ int dmrDataBuildUDTLocation(bool group, uint32_t dst, uint32_t src, const dmrDat
 	buf[8] = 0x00;// pad nibbles 0, appended blocks - 1 = 0
 	buf[9] = DMR_UDT_OPCODE;// SF 0, PF 0
 	addCRC16(buf, 0xCC);
-	setBurst(out++, DT_DATA_HEADER, buf, 12);
+	setBurst(out++, DMR_TYPE_DATA_HEADER, buf, 12);
 
 	// The appended block: short NMEA location, then the CRC of the 10 octets
 	memset(buf, 0, sizeof(buf));
@@ -345,7 +345,7 @@ int dmrDataBuildUDTLocation(bool group, uint32_t dst, uint32_t src, const dmrDat
 	putBits(buf, 71, 6, location->utcMinutes);
 	putBits(buf, 77, 3, location->utcSeconds / 10);
 	addCRC16(buf, 0x00);
-	setBurst(out++, DT_RATE_12_DATA, buf, 12);
+	setBurst(out++, DMR_TYPE_RATE_1_2, buf, 12);
 
 	return bursts;
 }
@@ -708,7 +708,7 @@ int dmrDataBuildResponse(uint8_t sap, uint32_t dst, uint32_t src, uint8_t respon
 	buf[8] = (flags != NULL) ? 1 : 0;// blocks to follow
 	buf[9] = response;
 	addCRC16(buf, 0xCC);
-	setBurst(out, DT_DATA_HEADER, buf, 12);
+	setBurst(out, DMR_TYPE_DATA_HEADER, buf, 12);
 	if (flags == NULL)
 	{
 		return 1;
@@ -720,7 +720,7 @@ int dmrDataBuildResponse(uint8_t sap, uint32_t dst, uint32_t src, uint8_t respon
 	buf[9] = (crc >> 8) & 0xFF;
 	buf[10] = (crc >> 16) & 0xFF;
 	buf[11] = (crc >> 24) & 0xFF;
-	setBurst(out + 1, DT_RATE_12_DATA, buf, 12);
+	setBurst(out + 1, DMR_TYPE_RATE_1_2, buf, 12);
 	return 2;
 }
 
@@ -749,9 +749,9 @@ static uint16_t crc9Mask(uint8_t blockType)
 {
 	switch (blockType)
 	{
-		case DT_RATE_12_DATA:
+		case DMR_TYPE_RATE_1_2:
 			return DMR_CRC9_MASK_RATE_12;
-		case DT_RATE_34_DATA:
+		case DMR_TYPE_RATE_3_4:
 			return DMR_CRC9_MASK_RATE_34;
 		default:
 			return DMR_CRC9_MASK_RATE_1;
@@ -829,7 +829,7 @@ int dmrDataBuildConfirmed(uint8_t sap, uint32_t dst, uint32_t src, const uint8_t
 	buf[8] = (firstTry ? 0x80 : 0x00) | count;
 	buf[9] = ((ns & 0x07) << 4) | 0x08;
 	addCRC16(buf, 0xCC);
-	setBurst(out++, DT_DATA_HEADER, buf, 12);
+	setBurst(out++, DMR_TYPE_DATA_HEADER, buf, 12);
 
 	memmove(txPacket, pdu, length);
 	memset(&txPacket[length], 0, padOctets);
@@ -887,7 +887,7 @@ int dmrDataBuildTMSAck(uint32_t dst, uint32_t src, uint8_t seq, int preambles, d
 	uint8_t ack[6];
 	int length = tmsAck(seq, ack);
 
-	return dmrDataBuildUDP(false, dst, src, DMR_UDP_PORT_TMS, DMR_UDP_PORT_TMS, ack, length, DT_RATE_12_DATA, preambles, out, maxBursts);
+	return dmrDataBuildUDP(false, dst, src, DMR_UDP_PORT_TMS, DMR_UDP_PORT_TMS, ack, length, DMR_TYPE_RATE_1_2, preambles, out, maxBursts);
 }
 
 int dmrDataTMSAckUDP(uint8_t seq, uint8_t l4[DMR_TMS_ACK_UDP_MAX])
@@ -940,7 +940,7 @@ int dmrDataBuildEtsiText(bool group, uint32_t dst, uint32_t src, const char *tex
 	buf[8] = (DMR_DD_ISO8859_1 << 2) | 0x01;// S 0, F 1
 	buf[9] = padOctets * 8;
 	addCRC16(buf, 0xCC);
-	setBurst(out++, DT_DATA_HEADER, buf, 12);
+	setBurst(out++, DMR_TYPE_DATA_HEADER, buf, 12);
 
 	memcpy(txPacket, text, length);
 	memset(&txPacket[length], 0, padOctets);
@@ -953,7 +953,7 @@ int dmrDataBuildEtsiText(bool group, uint32_t dst, uint32_t src, const char *tex
 
 	for (int i = 0; i < blocks; i++)
 	{
-		setBurst(out++, DT_RATE_12_DATA, &txPacket[i * blockLen], blockLen);
+		setBurst(out++, DMR_TYPE_RATE_1_2, &txPacket[i * blockLen], blockLen);
 	}
 
 	return bursts;
@@ -1434,14 +1434,14 @@ dmrDataRxResult_t dmrDataRxBurst(const dmrBurst_t *burst)
 
 	switch (burst->dataType)
 	{
-		case DT_CSBK:
+		case DMR_TYPE_CSBK:
 			if (!checkCRC16(burst->payload, 0xA5))
 			{
 				return DMR_DATA_RX_ERROR;
 			}
 			return ((burst->payload[0] & 0x3F) == DMR_CSBKO_PREAMBLE) ? DMR_DATA_RX_NONE : DMR_DATA_RX_CSBK;
 
-		case DT_DATA_HEADER:
+		case DMR_TYPE_DATA_HEADER:
 			// SAP 9 in the first header means a proprietary second header follows, it counts as one of the blocks to follow
 			if (rxCollecting && (rxBlocksReceived == 0) && (p->sap == DMR_SAP_PROPRIETARY))
 			{
@@ -1464,7 +1464,7 @@ dmrDataRxResult_t dmrDataRxBurst(const dmrBurst_t *burst)
 
 			if (p->blocksToFollow == 0)
 			{
-				p->dataType = DT_DATA_HEADER;
+				p->dataType = DMR_TYPE_DATA_HEADER;
 				return DMR_DATA_RX_PACKET;
 			}
 			if (p->dpf == DMR_DPF_CONFIRMED)
@@ -1480,9 +1480,9 @@ dmrDataRxResult_t dmrDataRxBurst(const dmrBurst_t *burst)
 			rxBytes = 0;
 			return DMR_DATA_RX_NONE;
 
-		case DT_RATE_12_DATA:
-		case DT_RATE_34_DATA:
-		case DT_RATE_1_DATA:
+		case DMR_TYPE_RATE_1_2:
+		case DMR_TYPE_RATE_3_4:
+		case DMR_TYPE_RATE_1:
 			{
 				if (!rxCollecting)
 				{

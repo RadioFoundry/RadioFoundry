@@ -81,6 +81,8 @@ APRS = 0x11
 APRS_OP_SEND_NOW, APRS_OP_STATUS, APRS_OP_MESSAGE, APRS_OP_TEST_CALL, APRS_OP_SET, APRS_OP_NMEA = range(1, 7)
 CRASH = 0x1B                        # the crash log (CONFIG_CRASH_LOG; docs/spec/debuglink.md 3.19)
 CRASH_OP_CLEAR, CRASH_OP_TEST = range(2)
+HWOPT = 0x21                        # the board's hardware options (docs/spec/debuglink.md 3.25)
+HWOPT_OP_LIST, HWOPT_OP_SET = range(2)
 CRASH_TESTS = {"trap": 1, "assert": 2, "hang": 3, "stall": 4}
 CRASH_TOKEN = 0x48535243            # 'CRSH'
 WATCHDOG = 0x1D                     # the hardware watchdog's bench tests (CONFIG_WATCHDOG; docs/spec/debuglink.md 3.21)
@@ -152,7 +154,7 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-                 "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps"]
+                 "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -171,6 +173,7 @@ OP_VFO_COPY = 32
 OP_VOICE_TEST = 33
 OP_DTMF = 34
 OP_TX_LIMIT = 35
+OP_TX_DRIVE = 36
 TX_LIMIT_MAX = 10       # frequencies in the test TX limit's list (core/radio/tx_limit.h)
 DTMF_DIGITS = "0123456789*#ABCD"
 VOLUME_KNOB = 0xFF
@@ -179,6 +182,7 @@ ROAM_CMDS = {"zone_off": 0, "zone_on": 1, "zone_toggle": 2, "now": 3, "lock": 4,
 SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6, "select": 7}
 BEEPS = {"key": 1, "error": 2, "tx_permit": 3, "tx_deny": 4, "call_end": 5, "tot_warn": 6, "battery_low": 7,
          "battery_crit": 8, "scan_hold": 9}
+SWEEP = 13      # the speaker test's sweep (beep.h BEEP_SWEEP): not a beep a user hears, so not in BEEPS
 VIBES = {"message": 1, "call": 2, "emergency": 3}
 SETTINGS = {"tot_s": 1, "tot_warn_s": 2, "bcl": 3, "roger_beep": 4, "tx_inhibit": 5, "scan_resume": 6,
             "scan_hold_s": 7, "scan_delay_ms": 8, "scan_dwell_ms": 9, "scan_priority": 10, "beep_level": 11,
@@ -407,7 +411,7 @@ class DebugLink:
         _, r = self.request(AUDIO_PROBE, bytes([PROBE_STATUS]))
         flags, blocks = r[0], struct.unpack_from("<I", r, 1)[0]
         lp, lr, lm, rp, rr, rm = struct.unpack_from("<6H", r, 5)
-        return {"ours": bool(flags & 1), "running": bool(flags & 2), "blocks": blocks,
+        return {"ours": bool(flags & 1), "running": bool(flags & 2), "no_pcm": bool(flags & 4), "blocks": blocks,
                 "left": {"peak": lp, "rms": lr, "peak_max": lm}, "right": {"peak": rp, "rms": rr, "peak_max": rm}}
 
     def probe_reg(self, page, reg, value=None):
@@ -572,6 +576,17 @@ class DebugLink:
 
     def rx2_restart(self):
         self.request(RX2, struct.pack("<BI", RX2_OP_RESTART, RX2_TOKEN))
+
+    def hwopts(self):
+        """The board's hardware options: [{name, value (-1 = none stored), restart, choices}]"""
+        kv = parse_kv(self.request(HWOPT, bytes([HWOPT_OP_LIST]))[1].decode("ascii", "replace"))
+        return [{"name": kv.get(f"hwopt.{i}.name", ""), "value": int(kv.get(f"hwopt.{i}.value", "-1")),
+                 "restart": kv.get(f"hwopt.{i}.restart") == "1",
+                 "choices": kv.get(f"hwopt.{i}.choices", "").split("|")} for i in range(int(kv.get("hwopt.count", "0")))]
+
+    def hwopt_set(self, option, choice):
+        """Store a choice; raises DebugLinkError (status 7) when the board refuses it or the radio transmits."""
+        self.request(HWOPT, bytes([HWOPT_OP_SET, option, choice]))
 
     def iddb(self, dmr_id=0):
         """The DMR ID database as the radio sees it, and the text it shows for dmr_id: {format, records, found, text}"""
@@ -884,8 +899,13 @@ class DebugLink:
         """Band scan of the VFO from lo to hi in its step."""
         self.radio(OP_SCAN_VFO, struct.pack("<II", int(lo_hz), int(hi_hz)))
 
-    def beep(self, which):
-        self.radio(OP_BEEP, bytes([BEEPS[which] if isinstance(which, str) else which]))
+    def beep(self, which, delay_s=0):
+        """A beep by name (BEEPS, or "sweep" for the speaker test), delay_s (0-255) seconds from now: on a radio whose
+        cable mutes the speaker, time to take the cable out first."""
+        b = SWEEP if which == "sweep" else BEEPS[which] if isinstance(which, str) else which
+        if not 0 <= delay_s <= 255:
+            raise DebugLinkError(f"beep delay {delay_s} s: 0-255")
+        self.radio(OP_BEEP, bytes([b, delay_s]) if delay_s else bytes([b]))
 
     def vibrate(self, which):
         """A vibration pattern on the board's motor (CONFIG_VIBRATE): message | call | emergency."""
@@ -934,6 +954,12 @@ class DebugLink:
         if len(hz) > TX_LIMIT_MAX:
             raise ValueError(f"tx_limit: at most {TX_LIMIT_MAX} frequencies")
         self.radio(OP_TX_LIMIT, struct.pack(f"<BB{len(hz)}I", 1 if block else 0, len(hz), *hz))
+
+    def tx_drive(self, drive=0):
+        """The PA drive of the next transmission (RADIO op 36; power calibration), in the board's own units, in place of
+        its power level's; it lasts until that transmission ends. 0: the level's again. Set it before key-up. The core
+        view's tx_drive lists each level's drive. Raises DebugLinkError over the board's limit or without the hook."""
+        self.radio(OP_TX_DRIVE, struct.pack("<H", int(drive)))
 
     def tone_burst(self, on, max_ms=0):
         """The 1750 Hz burst (FM): keys up and sends the tone while on. The firmware ends it by itself after max_ms
@@ -1358,8 +1384,8 @@ def cmd_radio(link, a):
             link.scan(args[0] if args else "toggle", num(1) if args[:1] == ["dual"] else None)
     elif op == "scan-vfo":            # scan-vfo LO_MHZ HI_MHZ
         link.scan_vfo(round(num(0, float) * 1e6), round(num(1, float) * 1e6))
-    elif op == "beep":                # beep key|error|tx_permit|...
-        link.beep(args[0] if args else "key")
+    elif op == "beep":                # beep key|error|tx_permit|...|sweep [DELAY_S]
+        link.beep(args[0] if args else "key", num(1) if len(args) > 1 else 0)
     elif op == "vibrate":             # vibrate message|call|emergency
         link.vibrate(args[0] if args else "message")
     elif op == "copy-vfo":            # the channel's settings into the VFO, and open it
@@ -1383,6 +1409,8 @@ def cmd_radio(link, a):
             link.tx_limit(block=args[:1] == ["block"])
         else:
             link.tx_limit(mhz=[float(f) for f in ",".join(args).split(",") if f])
+    elif op == "tx-drive":            # tx-drive N|off (the next transmission's PA drive, power calibration)
+        link.tx_drive(0 if args[:1] in ([], ["off"]) else num(0))
     elif op == "set":                 # set NAME VALUE
         link.setting(args[0], num(1))
     elif op == "usb":                 # usb network|serial
@@ -1547,7 +1575,7 @@ def decode_iddb(r):
 # these only give a clear message first. Flash ends at the largest part's size: the radio knows its own
 MEM_WINDOWS = {
     CHIP_STM32F4: [(0x08000000, 0x08100000, False), (0x1FFF0000, 0x1FFF7800, False), (0x1FFF7800, 0x1FFF7A10, False),
-                   (0x1FFFC000, 0x1FFFC010, False)],
+                   (0x1FFFC000, 0x1FFFC010, False), (0xE000ED00, 0xE000ED40, True)],
     CHIP_HRC7000: [(0x03000000, 0x03200000, False), (0x00010000, 0x00058000, False), (0x18000000, 0x18008000, False),
                    (0x11000000, 0x11000060, True), (0x14020000, 0x14020080, True), (0x14100000, 0x14100080, True),
                    (0x14110000, 0x14110080, True), (0x17000000, 0x17000034, True), (0x1700003C, 0x17000040, True),
@@ -1928,6 +1956,24 @@ def cmd_watchdog(link, a):
         for k, v in link.view(["watchdog"]).items():
             if k.startswith("watchdog."):
                 print(f"{k}={v}")
+
+
+def cmd_hwopt(link, a):
+    opts = link.hwopts()
+    if a.option is not None:
+        names = [o["name"].lower() for o in opts]
+        i = int(a.option) if a.option.isdigit() else names.index(a.option.lower()) if a.option.lower() in names else -1
+        if not 0 <= i < len(opts) or a.choice not in opts[i]["choices"]:
+            print("hwopt: OPTION (number or name) and one of its choices; see `hwopt` for the list", file=sys.stderr)
+            return 2
+        link.hwopt_set(i, opts[i]["choices"].index(a.choice))
+        print(f"{opts[i]['name']} = {a.choice}" + (" (from the next start-up)" if opts[i]["restart"] else ""))
+        return 0
+    for i, o in enumerate(opts):
+        v = o["choices"][o["value"]] if 0 <= o["value"] < len(o["choices"]) else "not set"
+        print(f"{i} {o['name']}: {v}  ({' | '.join(o['choices'])}){'  restart' if o['restart'] else ''}")
+    if not opts:
+        print("no hardware options on this radio")
     return 0
 
 
@@ -2025,7 +2071,8 @@ def self_test():
           ["0x14100040: 000000c0 00000000 000000c0 000000c0", "0x14100050: 00000001"], "peek: words")
     check(format_peek(0x00010001, b"\x01\x02\x03") == ["0x00010001: 01 02 03"], "peek: bytes")
     check(mem_allowed(0x14100040, 4, CHIP_HRC7000) and not mem_allowed(0x14100042, 4, CHIP_HRC7000) and
-          not mem_allowed(0x14030000, 4, CHIP_HRC7000) and not mem_allowed(0x00010000, 4, CHIP_STM32F4),
+          not mem_allowed(0x14030000, 4, CHIP_HRC7000) and not mem_allowed(0x00010000, 4, CHIP_STM32F4) and
+          mem_allowed(0xE000ED00, 4, CHIP_STM32F4) and not mem_allowed(0xE000ED02, 2, CHIP_STM32F4),
           "READ_MEM windows by family")
     print("rfoundry_debug self-test:", "ok" if ok else "FAILED")
     return 0 if ok else 1
@@ -2083,7 +2130,7 @@ def main(argv=None):
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
                                   "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "copy-vfo", "voice-test", "dtmf",
-                                  "tx-limit"])
+                                  "tx-limit", "tx-drive"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",
@@ -2119,6 +2166,9 @@ def main(argv=None):
     p = sub.add_parser("rx2", help="the second receiver's SoC: info, restart (the update bridge is stubtool's, "
                        "docs/spec/debuglink.md 3.22)")
     p.add_argument("op", nargs="?", default="info", choices=["info", "restart"])
+    p = sub.add_parser("hwopt", help="hardware options: list, or set OPTION CHOICE (docs/spec/debuglink.md 3.25)")
+    p.add_argument("option", nargs="?", help="number or name, e.g. 'Board revision'")
+    p.add_argument("choice", nargs="?", help="one of the option's choices, e.g. V4A/V5")
     p = sub.add_parser("iddb", help="the DMR ID database: its format and records, and the text for each ID given "
                        "(docs/spec/debuglink.md 3.23)")
     p.add_argument("ids", nargs="*", type=int)
@@ -2189,6 +2239,8 @@ def main(argv=None):
                 return cmd_crash(link, a)
             elif a.cmd == "watchdog":
                 return cmd_watchdog(link, a)
+            elif a.cmd == "hwopt":
+                return cmd_hwopt(link, a)
             elif a.cmd == "storage":
                 return cmd_storage(link, a)
             elif a.cmd == "rx2":
