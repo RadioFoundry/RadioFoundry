@@ -477,7 +477,7 @@ def test_tx_limit(fm_tx):
         fm_tx.tx_gate(True)
 
 
-@pytest.mark.feature("debuglink")
+@pytest.mark.feature("debuglink", optional=True)     # only radios whose board gives hal_radio_t.tx_drive
 def test_tx_drive_op(radio):
     """The PA drive override (RADIO op 36, power calibration) without keying: the core view lists each power level's
     drive, rising; the op takes a drive and 0 (the level's again) and refuses one past the board's limit."""

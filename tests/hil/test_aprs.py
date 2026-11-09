@@ -552,11 +552,13 @@ def data_packets(lines):
 
 def lrrp_position(user):
     """(lat, lon) of an LRRP triggered location report in IPv4 / UDP to port 4001; asserts the layers."""
-    assert user[0] >> 4 == 4 and user[9] == 17, f"not IPv4 / UDP: {user.hex()}"
-    ihl = (user[0] & 0x0F) * 4
-    udp = user[ihl:]
-    assert int.from_bytes(udp[2:4], "big") == 4001, f"UDP port {int.from_bytes(udp[2:4], 'big')}"
-    doc = udp[8:]
+    if user[0] >> 4 == 4:
+        assert user[9] == 17, f"not UDP: {user.hex()}"
+        udp = user[(user[0] & 0x0F) * 4:]
+        port, doc = int.from_bytes(udp[2:4], "big"), udp[8:]
+    else:                               # compressed UDP/IP (the IP setting's "all"): 5 octets, the two ports, the data
+        port, doc = int.from_bytes(user[7:9], "big"), user[9:]
+    assert port == 4001, f"UDP port {port}: {user.hex()}"
     assert doc[0] == 0x0D, f"LRRP document {doc[0]:#x} (0x0D: triggered location report): {doc.hex()}"
     i = 2 if doc[1] < 0x80 else 3
     while i < len(doc):

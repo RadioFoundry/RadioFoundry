@@ -21,17 +21,24 @@ def _need(radio):
 
 
 
+def _restarted(up_before, t_before, up_after):
+    """The uptime grew by less than the time that passed. A plain up_after < up_before fails when the test before
+    this one also restarted the radio, and the two uptimes are both a few seconds."""
+    return up_after < up_before + (time.monotonic() - t_before) * 1000 - 500
+
+
 def _crash(radio, kind, wait_s=30.0):
     """Crash on purpose, wait for the restart (up to wait_s), return the crash view."""
     radio.link.crash_clear()
     assert radio.view(["crash"]).get("crash.valid") == "0"
     up_before = as_int(radio.view(["link"])["uptime_ms"])
+    t_before = time.monotonic()
     radio.link.crash_test(kind)
     radio.link.close()
     time.sleep(2.0)
     radio.reconnect(wait_s, "the crash")
     up_after = as_int(radio.view(["link"])["uptime_ms"])
-    assert up_after < up_before, f"the radio didn't restart (uptime {up_before} ms, then {up_after})"
+    assert _restarted(up_before, t_before, up_after), f"the radio didn't restart (uptime {up_before} ms, then {up_after})"
     return radio.view(["crash"])
 
 
@@ -59,6 +66,7 @@ def test_link_watch_restarts(radio):
     L = radio.link
     L.crash_clear()
     up_before = as_int(radio.view(["link"])["uptime_ms"])
+    t_before = time.monotonic()
     try:
         L.request(LINK_HOLD, bytes([1]) + struct.pack("<H", 5))
     except DebugLinkError as e:
@@ -67,13 +75,13 @@ def test_link_watch_restarts(radio):
     L.close()
     time.sleep(12.0)
     radio.reconnect(30.0, "the link watch")
-    assert as_int(radio.view(["link"])["uptime_ms"]) < up_before, "the radio didn't restart"
+    assert _restarted(up_before, t_before, as_int(radio.view(["link"])["uptime_ms"])), "the radio didn't restart"
     v = radio.view(["crash"])
     assert v.get("crash.valid") == "1", v
     assert as_int(v["crash.kind"]) == CRASH_KIND_LINK, v
     cause = as_int(v["crash.cause"])
-    assert cause >> 24 == 0, v          # the port was idle
-    assert (cause >> 16) & 0xFF >= 4, v  # and nothing had come in for the 5 s limit
+    assert (cause >> 16) & 0xFF >= 4, v  # nothing had come in for the 5 s limit (the mode in bits 24-31 is whatever
+                                         # the test before left: an answered CPS session stays for its 10 s)
     radio.link.crash_clear()
 
 

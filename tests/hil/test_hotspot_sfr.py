@@ -166,9 +166,17 @@ def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
     split = v1.get("sfr.split") == "1"
     if split:
         # The repeat went out on the radio's second transmitter: the own modem's TX ticks say nothing, the SDR does
-        assert offs, "split: no repeat burst of ours seen on the outbound slot"
-        med = statistics.median(offs)
-        assert abs(med - 30.0) <= 1.0, f"split: the repeat came {med} ms after the inbound bursts, off the slot grid"
+        ours = [b["t_ms"] for b in bursts if b.get("family") in ("ts2", "emb")]
+        assert ours, "split: no repeat burst of ours seen on the outbound slot"
+        if t_in:
+            assert offs, "split: no repeat burst of ours between the inbound bursts"
+            med = statistics.median(offs)
+            assert abs(med - 30.0) <= 1.0, f"split: the repeat came {med} ms after the inbound bursts, off the slot grid"
+        else:
+            # A listener coupled to the radio may not hear the bench station at all: the repeat's bursts against each
+            # other instead of the inbound
+            late = [t for t in ours if min((t - ours[0]) % 60.0, 60.0 - (t - ours[0]) % 60.0) > 1.0]
+            assert not late, f"split: repeat bursts off the 60 ms grid: {late[:8]}"
     m = None if split else next((re.search(r"\bu(\d+)", x) for x in diag if x.startswith("txh ")), None)
     if m:
         u = int(m.group(1))

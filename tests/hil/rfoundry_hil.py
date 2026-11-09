@@ -601,7 +601,10 @@ class Radio:
         return lang
 
     def ptt_for(self, seconds):
-        self.link.ptt_for(seconds)
+        try:
+            self.link.ptt_for(seconds)
+        except DebugLinkError:          # a key-up can disturb a cable line shared with the PTT and lose the reply: it is
+            time.sleep(seconds + 0.5)   # keyed anyway, and asking again would be lost too. The caller checks what went out
 
     # ── radio state: every test leaves the radio as it found it ──
     def snapshot(self):
