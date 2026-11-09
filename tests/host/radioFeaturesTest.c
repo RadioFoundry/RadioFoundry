@@ -2601,17 +2601,291 @@ static void test_roger_burst(void)
 	req(RREQ_PTT, 0);
 	run(300);
 	CHECK(sm.view.state == RS_IDLE);
-	// On a DMR channel: nothing
+	// The explicit debug-link request takes over the roger tail until burst off.
+	req(RREQ_PTT, 1);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_TX && sm.view.roger && !sm.ptt);
+	req(RREQ_TONE_BURST, 1);
+	CHECK(sm.ptt && sm.burst_keyed && !sm.view.roger && sm.view.tone_burst);
+	run(300);
+	CHECK(sm.view.state == RS_TX && hw.tone_hz == RADIO_BURST_HZ);
+	req(RREQ_TONE_BURST, 0);
+	CHECK(sm.view.state == RS_IDLE && !sm.ptt && !sm.view.tone_burst && hw.tone_hz == 0);
+
+	// Refused explicit bursts beep without keying: DMR, hotspot, no tone hook.
+	hal_radio_t radio_no_tone = fake_radio;
+	radio_no_tone.tx_tone = NULL;
+	for (unsigned refusal = 0; refusal < 3; refusal++) {
+		start();
+		if (refusal == 0) {
+			req(RREQ_ZONE_POS, 5);
+			run(50);
+		} else if (refusal == 1) {
+			sm.hotspot = true;
+		} else {
+			board.radio = &radio_no_tone;
+		}
+		beep_reset_stats();
+		req(RREQ_TONE_BURST, 1);
+		beep_stats_t stats;
+		beep_get_stats(&stats);
+		CHECK(stats.played == 1 && hw.tx_calls == 0);
+		CHECK(sm.view.state != RS_TX && !sm.view.tone_burst);
+		CHECK(!sm.burst_timed && !sm.burst_held && sm.burst_ms == 0 && sm.burst_end_ms == 0);
+		req(RREQ_TONE_BURST, 0);
+		board.radio = &fake_radio;
+	}
+}
+
+// The side key owns a minimum duration; the debug link still has explicit on/off control.
+static void test_burst_key(void)
+{
+	start();
+	req(RREQ_TONE_BURST_KEY, 1);
+	CHECK(sm.view.state == RS_TX && hw.tone_hz == 1750);
+	run(100);
+	req(RREQ_TONE_BURST_KEY, 0);
+	run(RADIO_BURST_MIN_MS - 110);
+	CHECK(sm.view.state == RS_TX && sm.view.tone_burst);
+	run(10);
+	CHECK(sm.view.state == RS_IDLE && !sm.view.tone_burst && hw.tone_hz == 0);
+	CHECK(hw.tx_calls == 1 && hw.tx_off_calls == 1);
+
+	req(RREQ_TONE_BURST_KEY, 1);
+	run(3000);
+	CHECK(sm.view.state == RS_TX && hw.tone_hz == 1750);
+	req(RREQ_TONE_BURST_KEY, 0);
+	CHECK(sm.view.state == RS_IDLE && hw.tone_hz == 0 && hw.tx_off_calls == 2);
+
+	req(RREQ_PTT, 1);
+	req(RREQ_TONE_BURST_KEY, 1);
+	run(100);
+	req(RREQ_TONE_BURST_KEY, 0);
+	run(900);
+	CHECK(sm.view.state == RS_TX && sm.ptt && hw.tone_hz == 0 && !sm.view.tone_burst);
+	// Even with roger beep enabled, releasing PTT cuts a burst short and unkeys.
+	settings(set_roger);
+	req(RREQ_TONE_BURST_KEY, 1);
+	run(100);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE && hw.tone_hz == 0 && !sm.burst_timed);
+	req(RREQ_TONE_BURST_KEY, 0);
+	run(1000);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// Taking over a burst with PTT retains the mic after the minimum duration.
+	req(RREQ_TONE_BURST_KEY, 1);
+	req(RREQ_PTT, 1);
+	req(RREQ_TONE_BURST_KEY, 0);
+	run(1000);
+	CHECK(sm.view.state == RS_TX && sm.ptt && hw.tone_hz == 0);
+	req(RREQ_PTT, 0);
+	run(300);
+
+	// A burst during the roger beep takes ownership of the carrier and still unkeys.
+	req(RREQ_PTT, 1);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.roger && !sm.ptt);
+	req(RREQ_TONE_BURST_KEY, 1);
+	CHECK(sm.burst_keyed && !sm.view.roger && hw.tone_hz == 1750);
+	req(RREQ_TONE_BURST_KEY, 0);
+	run(1000);
+	CHECK(sm.view.state == RS_IDLE && hw.tone_hz == 0);
+
+	// A board that refuses the tone must not leave a carrier keyed.
+	hw.has_tx_tone = false;
+	req(RREQ_TONE_BURST_KEY, 1);
+	CHECK(sm.view.state == RS_IDLE && !sm.ptt && hw.tone_hz == 0);
+	req(RREQ_TONE_BURST_KEY, 0);
+	hw.has_tx_tone = true;
+
 	req(RREQ_ZONE_POS, 5);
 	run(50);
-	req(RREQ_TONE_BURST, 1);
-	CHECK(sm.view.state != RS_TX && !sm.view.tone_burst);
-	req(RREQ_TONE_BURST, 0);
+	beep_reset_stats();
+	int tx = hw.tx_calls;
+	req(RREQ_TONE_BURST_KEY, 1);
+	beep_stats_t stats;
+	beep_get_stats(&stats);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && hw.tx_calls == tx && !sm.view.tone_burst);
+	CHECK(stats.played == 1);
+	CHECK(!sm.burst_timed && !sm.burst_held && sm.burst_ms == 0 && sm.burst_end_ms == 0);
+	req(RREQ_TONE_BURST_KEY, 0);
+}
+
+static void test_burst_deadlines(void)
+{
+	// Every exit clears both clocks before a burst from the other source starts.
+	for (unsigned side_key = 0; side_key <= 1; side_key++) {
+		for (unsigned end = 0; end < 5; end++) {
+			start();
+			settings(set_tot5);
+			uint8_t source = side_key ? RREQ_TONE_BURST_KEY : RREQ_TONE_BURST;
+			req2(source, 1, end == 3 ? 10000 : 2000);
+			run(100);
+			CHECK(sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+			CHECK(side_key ? sm.burst_timed && sm.burst_end_ms == 0 :
+				!sm.burst_timed && !sm.burst_held && sm.burst_ms == 0 && sm.burst_end_ms != 0);
+			switch (end) {
+			case 0: req(RREQ_TONE_BURST, 0); break;
+			case 1:
+				req(RREQ_PTT, 1);	// take ownership before releasing PTT
+				req(RREQ_PTT, 0);
+				break;
+			case 2: req(RREQ_POWER_OFF, 0); break;
+			case 3: run(5000); break;
+			case 4:
+				if (side_key) {
+					req(source, 0);
+				}
+				run(2000);
+				break;
+			}
+			CHECK(!sm.view.tone_burst && hw.tone_hz == 0 && hw.tx_off_calls == 1);
+			CHECK(!sm.burst_timed && !sm.burst_held && sm.burst_ms == 0 && sm.burst_end_ms == 0);
+			CHECK(sm.view.state == (end == 3 ? RS_TX_DENIED : RS_IDLE));
+			req(source, 0);	// the release clears a time-out denial
+			CHECK(sm.view.state == RS_IDLE && !sm.burst_keyed);
+			if (end == 2) {
+				req(RREQ_POWER_OFF, 1);
+			}
+			if (side_key) {
+				// A host burst outlasts the side key's old minimum, then obeys max_ms.
+				req2(RREQ_TONE_BURST, 1, 2000);
+				run(1500);
+				CHECK(sm.view.tone_burst && !sm.burst_timed && sm.burst_ms == 0);
+				run(600);
+			} else {
+				// A held side key outlasts the old host deadline; a release after 1 s ends it.
+				req(RREQ_TONE_BURST_KEY, 1);
+				run(3000);
+				CHECK(sm.view.tone_burst && sm.burst_timed && sm.burst_held && sm.burst_end_ms == 0);
+				req(RREQ_TONE_BURST_KEY, 0);
+			}
+			CHECK(sm.view.state == RS_IDLE && !sm.view.tone_burst && hw.tone_hz == 0);
+			CHECK(!sm.burst_timed && !sm.burst_held && sm.burst_ms == 0 && sm.burst_end_ms == 0);
+		}
+	}
+
+	// A second source's down/on leaves an active burst's original timing intact.
+	start();
+	req2(RREQ_TONE_BURST, 1, 500);
+	run(100);
+	uint32_t deadline = sm.burst_end_ms;
+	req(RREQ_TONE_BURST_KEY, 1);
+	CHECK(!sm.burst_timed && !sm.burst_held && sm.burst_end_ms == deadline);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !sm.view.tone_burst);
+	req(RREQ_TONE_BURST_KEY, 0);
+	req(RREQ_TONE_BURST_KEY, 1);
+	run(100);
+	req(RREQ_TONE_BURST_KEY, 0);
+	req2(RREQ_TONE_BURST, 1, 200);
+	CHECK(sm.burst_timed && !sm.burst_held && sm.burst_end_ms == 0);
+	run(800);
+	CHECK(sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+	run(100);
+	CHECK(sm.view.state == RS_IDLE && !sm.view.tone_burst);
+}
+
+static void test_burst_key_host_overlap(void)
+{
+	start();
+	req2(RREQ_TONE_BURST, 1, 500);
+	run(100);
+	uint32_t deadline = sm.burst_end_ms;
+	req(RREQ_TONE_BURST_KEY, 1);
+	run(100);
+	req(RREQ_TONE_BURST_KEY, 0);
+	CHECK(sm.view.state == RS_TX && sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+	CHECK(sm.ptt && sm.burst_keyed && sm.burst_end_ms == deadline && hw.tx_off_calls == 0);
+	run(275);
+	CHECK(sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+	run(50);
+	CHECK(sm.view.state == RS_IDLE && !sm.view.tone_burst && hw.tone_hz == 0);
+	CHECK(!sm.ptt && hw.tx_off_calls == 1);
+}
+
+static void test_burst_key_denied(void)
+{
+	start();
+	settings(set_inhibit);
+	req(RREQ_TONE_BURST_KEY, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_INHIBIT);
+	CHECK(sm.ptt && sm.burst_keyed && !sm.view.tone_burst && !sm.burst_timed);
+	CHECK(hw.tx_calls == 0 && hw.tone_hz == 0);
+	req(RREQ_TONE_BURST_KEY, 0);
+	CHECK(sm.view.state == RS_IDLE && sm.view.tx_deny == TXDENY_NONE);
+	CHECK(!sm.ptt && !sm.burst_keyed && hw.tx_calls == 0);
+}
+
+static void test_burst_power_off(void)
+{
+	for (unsigned held = 0; held <= 1; held++) {
+		start();
+		settings(set_roger);
+		hw.has_tail = true;
+		req(RREQ_TONE_BURST_KEY, 1);
+		run(100);
+		if (!held) {
+			req(RREQ_TONE_BURST_KEY, 0);
+		}
+		CHECK(sm.view.tone_burst && sm.burst_timed);
+		req(RREQ_PTT, 0);
+		req(RREQ_POWER_OFF, 0);
+		CHECK(sm.view.state == RS_IDLE && !sm.ptt && hw.tx_off_calls == 1);
+		CHECK(!sm.view.tone_burst && !sm.view.roger && hw.tone_hz == 0 && !hw.tail_on);
+		CHECK(!sm.burst_timed && !sm.burst_held && !sm.burst_keyed);
+		req(RREQ_TONE_BURST_KEY, 0);
+		run(3000);
+		CHECK(sm.view.state == RS_IDLE && hw.tx_calls == 1 && hw.tone_hz == 0);
+	}
+}
+
+static void test_burst_stray_up(void)
+{
+	start();
+	req(RREQ_TONE_BURST_KEY, 0);
+	CHECK(sm.view.state == RS_IDLE && !sm.ptt && hw.tx_calls == 0 && hw.tone_calls == 0);
+	req(RREQ_PTT, 1);
+	req(RREQ_TONE_BURST_KEY, 0);
+	CHECK(sm.view.state == RS_TX && sm.ptt && hw.tx_off_calls == 0 && hw.tone_calls == 0);
+	req(RREQ_PTT, 0);
 }
 
 static void set_vox_all(radio_settings_t *s) { s->vox = RADIO_VOX_ALL; s->vox_level = 5; s->vox_tail_ms = 1000; }
 static void set_vox_channel(radio_settings_t *s) { s->vox = RADIO_VOX_CHANNEL; }
 static void set_vox_off(radio_settings_t *s) { s->vox = RADIO_VOX_OFF; }
+
+static void test_vox_burst(void)
+{
+	for (unsigned held = 0; held <= 1; held++) {
+		start();
+		settings(set_vox_all);
+		hw.mic = 90;
+		run(100);
+		CHECK(sm.view.state == RS_TX && sm.view.vox_keyed);
+		hw.mic = 0;
+		run(900);	// Most of the VOX tail elapsed before the burst starts.
+		req(RREQ_TONE_BURST_KEY, 1);
+		run(100);
+		if (!held) {
+			req(RREQ_TONE_BURST_KEY, 0);
+		}
+		run(RADIO_BURST_MIN_MS - 110);
+		CHECK(sm.view.state == RS_TX && sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+		run(10);
+		if (held) {
+			run(2000);
+			CHECK(sm.view.state == RS_TX && sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+			req(RREQ_TONE_BURST_KEY, 0);
+		}
+		CHECK(sm.view.state == RS_TX && sm.view.vox_keyed && !sm.view.tone_burst && hw.tone_hz == 0);
+		run(sm.set.vox_tail_ms - 10);
+		CHECK(sm.view.state == RS_TX && sm.view.vox_keyed);
+		run(10 + RADIO_POLL_MS);
+		CHECK(sm.view.state == RS_IDLE && !sm.view.vox_keyed && hw.tx_off_calls == 1);
+	}
+}
 
 static void test_vox(void)
 {
@@ -3233,11 +3507,18 @@ int main(void)
 	test_bcl_inhibit();
 	test_tx_limit();
 	test_roger_burst();
+	test_burst_key();
+	test_burst_deadlines();
+	test_burst_key_host_overlap();
+	test_burst_key_denied();
+	test_burst_power_off();
+	test_burst_stray_up();
 	test_dtmf();
 	test_subtone_tail();
 	test_dtmf_tail();
 	test_tot_tones_and_clamps();
 	test_vox();
+	test_vox_burst();
 	test_battery();
 	test_no_battery();
 	test_supply_voltage();

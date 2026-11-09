@@ -5195,6 +5195,9 @@ static const char *const n_possend[] = { TRN("Off"), TRN("1 min"), TRN("5 min"),
 static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITOR, KEYFN_TALK_TARGET, KEYFN_POWER,
 					 KEYFN_ZONE_UP, KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_KEY_LOCK,
 					 KEYFN_HOME_ZONE,
+#if CONFIG_FM_TX_TONES
+					 KEYFN_TONE_BURST,
+#endif
 #if CONFIG_VFO_FM || CONFIG_VFO_DMR
 					 KEYFN_COPY_VFO, KEYFN_VFO_TOGGLE,
 #endif
@@ -5208,6 +5211,9 @@ static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITO
 static const char *const n_keyfn_press[] = { TRN("Default"), TRN("Nothing"), TRN("Monitor"), TRN("Talk target"),
 					     TRN("Power level"), TRN("Next zone"), TRN("Previous zone"), TRN("Scan"),
 					     TRN("Key lock"), TRN("Home zone"),
+#if CONFIG_FM_TX_TONES
+					     TRN("Tone burst"),
+#endif
 #if CONFIG_VFO_FM || CONFIG_VFO_DMR
 					     TRN("Copy to VFO"), TRN("VFO/Channel"),
 #endif

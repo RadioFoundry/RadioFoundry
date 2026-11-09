@@ -21,6 +21,9 @@ Pass criteria:
   2.6 times the one at 12.5 kHz (the radio scales every deviation with the channel bandwidth; nominally 2).
 - test_fm_tx_tone_burst: TONE_BURST on for 2 s (radio-features.md 3.3): one keyed segment holding a 1750 Hz tone
   (+-10 Hz) for at least 1.5 s, deviation 500-2500 Hz peak at 12.5 kHz (the narrow band limit).
+- test_fm_tx_tone_burst_key: Tone burst assigned to the first side key in Settings > Keys (restored afterwards), the
+  key's scan bit injected: a 100 ms tap sends one keyed segment of 1750 Hz (+-10 Hz) for 0.8-1.3 s (the timed burst,
+  nominally 1 s); a 3 s hold sends 1750 Hz for 2.7-3.3 s and the carrier drops within 0.5 s of the tone's end.
 - test_fm_tx_roger_beep: roger_beep 1, a 1.5 s over: the segment ends with 1200 Hz then 900 Hz (+-15 Hz), each 60-160
   ms (nominally 100), the 900 Hz tone within 80 ms of the end of the carrier; the same over with roger_beep 0 ends with
   no tone.
@@ -190,6 +193,92 @@ def test_fm_tx_tone_burst(fm_vfo, sdr_bench, pytestconfig):
     hz, t0, t1, dev = max(burst_runs, key=lambda t: t[2] - t[1])
     assert t1 - t0 >= 1.5, f"1750 Hz for only {t1 - t0:.2f} s of the 2 s burst"
     assert 500 <= dev <= 2500, f"1750 Hz burst deviation {dev} Hz peak at 12.5 kHz (at most 2500)"
+
+
+KEYFN_TONE_BURST = 18   # core/input/keyassign.h, docs/spec/ui.md 3.1
+
+
+def set_first_side_key(radio, function):
+    """Settings > Keys > the first side key's press row, stepped with OK until it saves function (key.first.press)."""
+    radio.go_home()
+    for key in ("ok", "7", "8", "down", "down", "down"):  # Settings, Keys, past the three rows before the key rows
+        radio.press(key)
+    view = radio.view(["link"])
+    assert view.get("ui.screen") == "group" and view.get("ui.focus") == "3", view
+    try:
+        for _ in range(20):  # more than the functions the row offers
+            before = radio.view(["link"])["key.first.press"]
+            if before == str(function):
+                return
+            radio.press("ok")
+            radio.wait_for(lambda v: v.get("key.first.press") != before, sections=("link",),
+                           what="the side-key function saved")
+        raise AssertionError(f"the first side key never offered function {function}")
+    finally:
+        radio.go_home()
+
+
+def burst_tone(r, want_s):
+    """The 1750 Hz run closest to want_s seconds long: (start, end, deviation)."""
+    runs = [t for t in r["tones"] if abs(t[0] - 1750.0) <= 10.0]
+    assert runs, f"no 1750 Hz tone on air: {r['tones']}"
+    _, t0, t1, dev = min(runs, key=lambda t: abs((t[2] - t[1]) - want_s))
+    return t0, t1, dev
+
+
+@pytest.mark.feature("tone_burst_key")
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+@pytest.mark.sdr_rx
+def test_fm_tx_tone_burst_key(fm_vfo, sdr_bench, pytestconfig):
+    radio = fm_vfo
+    for feature in ("FM_TX_TONES", "KEY_ASSIGN", "UI_SETTINGS"):
+        if feature not in radio.features():
+            skip("not_built", f"built without CONFIG_{feature}")
+    before = radio.view(["link"])
+    if "key.first.bit" not in before:
+        skip("not_built", "no key.first view (firmware older than the tone burst key, or no assignable key)")
+    bit, saved = int(before["key.first.bit"]), int(before["key.first.press"])
+    assert 0 <= bit < 32, before
+    hz = round(rig(pytestconfig, "fm-mhz") * 1e6)
+    try:
+        set_first_side_key(radio, KEYFN_TONE_BURST)
+        # A key save reloads the codeplug: back to the test's FM VFO, no tone, lowest power
+        radio.link.dmr_fields(mode="fm")
+        radio.link.vfo_set(hz)
+        radio.wait_for(lambda v: v.get("mode") == "fm" and v.get("rx_hz") == str(hz) and v.get("tx_hz") == str(hz),
+                       what="FM test frequency")
+        radio.lowest_power()
+        set_fm(radio, False, "none", 0)
+
+        def press(ms):
+            def key():
+                radio.link.keys_mask(1 << bit, ms)
+                radio.wait_for(lambda v: v.get("tone_burst") == "1" and v.get("state") == "tx", 0.6, interval=0.03,
+                               sections=("core", "features"), what="side-key burst keyed")
+                radio.link.wait_keys_idle()
+            return key
+
+        r = key_and_check(radio, sdr_bench, pytestconfig, 12.5, key=press(100), seconds=5, tones=True)
+        print("tap tones:", r["tones"])
+        t0, t1, dev = burst_tone(r, 1.0)
+        assert 0.8 <= t1 - t0 <= 1.3, f"a tap sent 1750 Hz for {t1 - t0:.2f} s (the timed burst is 1 s)"
+        assert 500 <= dev <= 2500, f"tap burst deviation {dev} Hz peak at 12.5 kHz"
+
+        r = key_and_check(radio, sdr_bench, pytestconfig, 12.5, key=press(3000), seconds=7, tones=True)
+        print("hold tones:", r["tones"], "segments:", r["spans"])
+        t0, t1, dev = burst_tone(r, 3.0)
+        assert 2.7 <= t1 - t0 <= 3.3, f"a 3 s hold sent 1750 Hz for {t1 - t0:.2f} s"
+        assert 500 <= dev <= 2500, f"hold burst deviation {dev} Hz peak at 12.5 kHz"
+        seg = [b for a, b in r["spans"] if a <= t1 <= b + 0.1]
+        assert seg and seg[0] - t1 <= 0.5, f"carrier kept {seg} after the tone ended at {t1:.2f} s"
+    finally:
+        try:
+            radio.link.wait_keys_idle()
+            radio.link.tone_burst(False)
+            radio.wait_for(lambda v: v.get("state") != "tx", 1.0, what="burst cleanup")
+        finally:
+            set_first_side_key(radio, saved)
 
 
 @pytest.mark.feature("fm_tx_tones")

@@ -373,6 +373,7 @@ so a cancel from elsewhere counts). A board whose key map has no EMERGENCY entry
 PTT while the keys are locked works unless Settings > Privacy > PTT when locked is off: the UI then tells the input
 layer (`ui_svc_ptt_block`, `input_set_ptt_block`), which keeps PTT DOWN from the radio core (UP always passes), and the
 UI gives an error beep and "PTT is off while locked: hold * to unlock".
+The same setting blocks Tone burst DOWN; UP always passes so locking cannot prevent an existing burst from ending.
 
 The state pill follows `radio_view_t.state`. RX also shows while the monitor holds an FM squelch open (MON stays beside
 the mode). DMR's monitor key is digital monitor and leaves it IDLE.
@@ -416,12 +417,16 @@ position in the list is its role. Each role has a press and a long press, and ea
 | Home zone (13) | HOME_ZONE: the codeplug's first zone (the CPS's zone order picks it; no setting, the settings record has no byte to spare). Leaves the VFO; "Home zone: <name>" | yes | yes |
 | Copy to VFO (14) | COPY_VFO: copy the channel in effect to the VFO and open it (`dmr-voice.md` 2.2). In the VFO: "Already in VFO". A channel the VFO can't hold gets a "VFO: ..." toast and nothing changes. Offered in builds with a VFO (`CONFIG_VFO_FM` or `CONFIG_VFO_DMR`) | yes | yes |
 | VFO/Channel (17) | VFO_TOGGLE: between the channel and the VFO, as a VFO / MR key does ("VFO", "Back to channels"; in dual watch, the selected side). Offered in builds with a VFO | yes | yes |
+| Tone burst (18) | TONE_BURST raw edges: FM repeater access, at least 1 s; offered with `CONFIG_FM_TX_TONES` | yes | no |
 
 POWER, ZONE_UP, ZONE_DOWN, SCAN, CALL_BACK, HOME_ZONE, COPY_VFO and VFO_TOGGLE do the same on a press and a long
 press and work on any screen. LOCK also gets through while the keys are locked, to unlock them. TALK_TARGET opens the picker on
 a long press too. A monitor key given a press of its own loses its hold: its long press is nothing until set. A Monitor press with a hold
 function: the input engine sends DOWN, the LONG (value 1) at the threshold and UP (value 1 when the LONG ran); the
 radio core then doesn't toggle digital monitor (RREQ_MONITOR 2), and the UI drops the LONG on FM.
+
+Tone burst uses both edges of the press key and suppresses its long-press function. A tap sends 1 s; a longer hold
+sends until release. Timing, PTT interaction and refusals are in [radio-features.md](radio-features.md#33-roger-beep-and-1750-hz-burst-config_fm_tx_tones).
 
 Storage: the open-firmware codeplug's ten quick-key slots (EEPROM 0x7524, 2 bytes LE each,
 `open-firmware-cps.md` 7.2). Slot 0 is the marker 0x4B02 ("K", layout 2); slot 1 + k is role k, its press in the low
