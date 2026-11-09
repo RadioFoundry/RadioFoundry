@@ -26,6 +26,7 @@ between TS1 and TS2 (a temporary override, cleared afterwards) unless the scenar
 | long_call | up all along | a 25 s call on each slot |
 | boot | up all along | restarted, keys as soon as the link answers, then again once settled |
 | wake_ts | down at each key-up, answers 0.6 s after it | the timeslot changed 1 s before, 5 calls |
+| mixed_gaps | wakes and drops on the radio's own traffic | 36 calls: back to back, 0.1-4 s apart, and 5-9 s apart so it drops; both slots |
 
 test_dmr_repeater_burst_offset (the same options, and the SDR bench): where in the slot the radio's inbound bursts
 fall. On a bench board (--bench-api) the reference is the board's idle outbound with no repeater behind it, and the
@@ -258,8 +259,22 @@ def _wake_ts(s, rnd):
         s.call(2.5, "woke the repeater, timeslot changed 1 s before")
 
 
+def _mixed_gaps(s, rnd):
+    # No beacon comes (its first is after the run): the repeater keys only on the radio's wake-up, and a beacon length
+    # is its hang time, so 3 s. Back-to-back calls, close ones at varied gaps and ones the repeater drops between, mixed
+    gaps = [0.0] * 12 + [rnd.uniform(0.1, 4.0) for _ in range(12)] + [rnd.uniform(5.0, 9.0) for _ in range(12)]
+    rnd.shuffle(gaps)
+    s.start(sum(gaps) + 36 * 4.0 + 20, beacon=9000, beacon_len=3.0, phase=9000)
+    for k, gap in enumerate(gaps):
+        time.sleep(gap)
+        s.call(2.5, f"{gap:.2f} s after the last call")
+        s.calls[-1]["what"] += f", tx_error {s.radio.view(['dmr']).get('dmr.tx_error')}"
+        if k % 3 == 2:
+            s.set_ts(3 - s.ts)
+
+
 SCENARIOS = {"up_ts_changes": _up_ts_changes, "long_idle": _long_idle, "rekey": _rekey,
-             "channel_change": _channel_change, "long_call": _long_call, "boot": _boot, "wake_ts": _wake_ts}
+             "channel_change": _channel_change, "long_call": _long_call, "boot": _boot, "wake_ts": _wake_ts, "mixed_gaps": _mixed_gaps}
 
 
 @pytest.mark.feature("dmr_voice")
