@@ -98,6 +98,8 @@ static void step_update(radio_sm_t *sm)
 	sm->view.vfo_step_auto = sm->vfo_step_set == 0;
 }
 
+#define MODEM_VOICE_TX_AHEAD	2	// bursts queued ahead of the air (dmr_call_config_t.tx_ahead)
+
 static void changed(radio_sm_t *sm)
 {
 	step_update(sm);	// every change that can move the width comes here
@@ -1182,6 +1184,8 @@ static void dmr_configure(radio_sm_t *sm)
 		cfg.permit_hold_ms = PERMIT_HOLD_MIN_MS;
 		cfg.permit_busy = permit_busy;
 	}
+	if (board.caps & CAP_MODEM_VOICE)
+		cfg.tx_ahead = MODEM_VOICE_TX_AHEAD;
 	dmr_call_configure(&cfg);
 	sm->view.dmr.own_id = cfg.own_id;
 	sm->view.dmr.hear_all = cfg.listen.hear_all;
@@ -1597,6 +1601,7 @@ static void dmr_publish(radio_sm_t *sm)
 		d->last_ms = cv->last_heard_ms;
 	}
 	d->underruns = cv->tx_underruns;
+	d->tx_released = cv->tx_released;
 	changed(sm);
 }
 

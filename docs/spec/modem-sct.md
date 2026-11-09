@@ -321,6 +321,7 @@ not known well enough (section 10).
 | `report_field` | REPORT_FIELD bits added to the engine's 0xE1, as the original firmware sends them |
 | `start_fields` | more start fields, such as MODOUT_CONFIG, DMR_OFFSET and the squelch's SQ_LEVEL, with calibrated values where the original firmware takes them from calibration. Without calibration the board sends the factory default |
 | `codec_tx`, `codec_rx` | a codec write at the start of a transmission and its undo on the return to receive, such as an output the original firmware mutes while transmitting |
+| `codec_mic_off`, `codec_mic_on` | a codec write that silences the microphone when the call is ending (`tx_release`) and its undo on the return to receive |
 | `tx_fields` | control fields sent at each start and before each transmission, such as a modulator gain by band or a two-point modulation delay (section 5) |
 | `codec_start` | codec writes sent at each start, after the start packet: a codec setting the chip's own set-up doesn't make, such as a DAC filter with less delay (section 5) |
 | Voice set-up | `sct_voice_t`: CODEC_SELECT and VOCODER_SEL as the original firmware sends them, control `fields` (the digital mode microphone and speaker gains), then the codec writes (gains and routing for the board's audio wiring). Calibrated values where the original firmware takes them from calibration |

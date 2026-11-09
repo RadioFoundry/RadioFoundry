@@ -121,6 +121,9 @@ typedef struct {
 	// DMR_CALL_PERMIT_MAX_MS, then keys. Each hold counts in view.permit_seq: the tone's cue. 0 = keys at once
 	uint16_t permit_hold_ms;
 	bool (*permit_busy)(void);	// NULL = the minimum alone
+	// Bursts queued ahead of the air, 0 = DMR_CALL_TX_MAX_INFLIGHT. Each one is 60 ms more between the end being
+	// decided and it going out. A modem that makes the voice itself needs no audio buffered here, so it takes fewer
+	uint8_t tx_ahead;
 } dmr_call_config_t;
 
 // Caller info for the UI
@@ -206,6 +209,7 @@ typedef struct {
 	uint32_t last_heard_ms;		// poll time of its last burst, 0 = none
 	uint32_t evq_overflows;		// diagnostics
 	uint32_t tx_underruns;		// voice frames replaced with silence
+	bool tx_released;		// PTT is up and the transmission runs on to its boundary; true until the next one starts
 	uint8_t wake_admits;		// counts repeater wake-ups answered after PTT was let go: the call would have been admitted
 	uint8_t permit_seq;		// counts talk permit holds (permit_hold_ms): play the talk permit now
 	uint8_t wake_sent;		// counts BS_Dwn_Act bursts sent (repeater wake-ups): the red LED blinks once per burst

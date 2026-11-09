@@ -378,6 +378,7 @@ static struct {
 	uint32_t start_ms;
 	unsigned produced, taken, begins, ends;
 	bool starve;
+	bool unpaced;	// always a frame ready, as with a modem that makes the voice itself
 } src;
 
 static void src_begin(void *ctx) { (void)ctx; src.on = true; src.start_ms = now; src.produced = src.taken = 0; src.begins++; }
@@ -388,7 +389,7 @@ static bool src_next(uint8_t f[9], void *ctx)
 	if (!src.on || src.starve)
 		return false;
 	unsigned avail = (now - src.start_ms) / 20 + 1;	// first frame 0 ms after begin
-	if (src.taken >= avail)
+	if (src.taken >= avail && !src.unpaced)
 		return false;
 	f[0] = (uint8_t)(src.taken + 1);
 	for (int i = 1; i < 9; i++)
@@ -574,12 +575,16 @@ static void test_tx_call(void)
 	CHECK(V()->caller.src == OWN_ID && V()->caller.dst == TG_TALK && V()->caller.group);
 	CHECK(src.begins == 1);
 	run_ms(1000);
+	CHECK(!V()->tx_released);
 	dmr_call_ptt(false);	// mid superframe
 	run_ms(10);
+	unsigned taken = src.taken;
 	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE);	// finishing the superframe
+	CHECK(V()->tx_released && sim.tx_releases == 1);
 	run_ms(600);
 	CHECK(V()->state == DMR_CALL_STATE_IDLE && V()->phase == DMR_CALL_PHASE_IDLE);
 	CHECK(sim.tx_ends == 1 && sim.tx_aborts == 0 && sim.underflows == 0);
+	CHECK(src.taken == taken);	// nothing said after the release goes out
 	CHECK(src.ends == 1);
 	check_tx_burst_sequence(0, lc, &v);
 	CHECK(v >= 18);
@@ -595,11 +600,49 @@ static void test_tx_call(void)
 				expect++;
 			}
 		}
-	CHECK(silent == V()->tx_underruns);
-	CHECK(silent <= 3);
+	CHECK(expect - 1 == taken && silent == 3 * v - taken);	// the rest of the superframe is silence
+	CHECK(V()->tx_underruns <= 3);
 	printf("# TX: %u headers, %u voice bursts, %u silence frames, 1 terminator\n", DMR_CALL_TX_HEADERS, v, silent);
 	// The talk target was the channel's: no reply countdown
 	CHECK(!V()->reply_active && V()->tx_target.id == TG_TALK);
+}
+
+// Fewer bursts ahead of the air (a modem with its own voice) end the call sooner, and still on a whole superframe
+static unsigned release_ms(uint8_t ahead, unsigned hold_ms)
+{
+	dmr_call_config_t c = base_cfg();
+	unsigned v, ms = 0;
+	uint8_t lc[9];
+
+	c.tx_ahead = ahead;
+	setup(&c);
+	src.unpaced = true;
+	dmr_call_ptt(true);
+	run_ms(hold_ms);
+	dmr_call_ptt(false);
+	while (V()->state != DMR_CALL_STATE_IDLE && ms < 2000) {
+		run_ms(10);
+		ms += 10;
+	}
+	CHECK(sim.tx_ends == 1 && sim.underflows == 0);
+	mk_lc(lc, DMR_FLCO_GROUP_VOICE, TG_TALK, OWN_ID);
+	check_tx_burst_sequence(0, lc, &v);
+	CHECK(v % 6 == 0);
+	return ms;
+}
+
+static void test_tx_ahead(void)
+{
+	unsigned full = 0, two = 0;
+
+	for (unsigned i = 0; i < 6; i++) {	// a release at each burst of the superframe: the longest wait
+		unsigned f = release_ms(0, 1000 + i * 60), t = release_ms(2, 1000 + i * 60);
+
+		full = f > full ? f : full;
+		two = t > two ? t : two;
+	}
+	printf("# release to idle, longest: %u ms with the default queue, %u ms with 2 bursts ahead\n", full, two);
+	CHECK(two + 100 <= full);
 }
 
 static void test_tx_timeout_and_starve(void)
@@ -2031,6 +2074,8 @@ static void test_basic_privacy(void)
 		sim_air_t *a = &sim.air[i];
 		if (a->kind != DMR_BURST_VOICE)
 			continue;
+		if ((voice + 1) * 3 > src.taken)
+			break;	// the silence after the release
 		uint8_t clear[27], bits_air[49], bits_clear[49];
 		for (int f = 0; f < 3; f++) {
 			unsigned n = voice * 3 + (unsigned)f;
@@ -2573,6 +2618,7 @@ int main(void)
 	test_embedded();
 	test_alias();
 	test_tx_call();
+	test_tx_ahead();
 	test_tx_permit_hold();
 	test_tx_timeout_and_starve();
 	test_tx_refused();

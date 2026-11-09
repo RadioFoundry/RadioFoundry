@@ -57,6 +57,10 @@ typedef struct {
 	// engine ignores
 	const sct_codec_write_t *codec_tx;
 	const sct_codec_write_t *codec_rx;
+	// Optional: a codec write that silences the microphone when the call is ending (tx_release), and its undo at
+	// the return to receive
+	const sct_codec_write_t *codec_mic_off;
+	const sct_codec_write_t *codec_mic_on;
 	// Optional: codec writes sent at each start, after the start packet: a codec setting the chip's own set-up
 	// doesn't make, such as a filter with less delay (modem-sct.md 5)
 	const sct_codec_write_t *codec_start;

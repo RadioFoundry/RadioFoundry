@@ -347,6 +347,7 @@ interrupt.
 | `tx_queue_burst` | one burst: type (voice header, voice A-F with 27-byte AMBE, terminator, PI header, CSBK, data header / block, idle, raw DT), payload, "host supplied CRC" flag, embedded LC for B-E (voice), sync family override (SFR outbound) |
 | `tx_end` | no more bursts: finish the queued ones (a voice call ends at the superframe boundary with its terminator, which the stack has queued), then `tx_done` |
 | `tx_abort` | stop at the next slot (emergency, timeout) |
+| `tx_release` | optional: the call is ending and runs to its superframe boundary. A modem that takes the voice from the microphone itself sends silence from here on |
 | `set_embedded_lc` | the LC (or talker alias / GPS embedded LC) the modem spreads over B-E from the next superframe |
 | `set_cc_filter(cc or any)` | color code deframing |
 | `is_transmitting` | slot-state based (6.1 point 5) |

@@ -150,6 +150,9 @@ typedef struct {
 	uint8_t (*tx_queue_space)(void);
 	void (*tx_end)(void);		// send what is queued, then DMR_EV_TX_DONE
 	void (*tx_abort)(void);
+	// Optional. The call is ending but runs to its superframe boundary: a modem that takes the voice from the
+	// microphone itself sends silence from here on (the stack does that for the voice it gives the modem)
+	void (*tx_release)(void);
 	void (*set_embedded_lc)(const uint8_t lc[9]);	// spread over B-E from the next superframe
 	void (*set_cc_filter)(int8_t cc);
 	bool (*is_transmitting)(void);	// slot state, never the PA

@@ -42,6 +42,7 @@ static struct {
 	uint32_t tx_edges;	// the port's burst_edges() at the key-up
 	uint32_t tx_sent;	// frames sent since
 	bool audio_tx;		// codec_tx went: codec_rx is due at the return to receive
+	bool mic_off;		// codec_mic_off went: codec_mic_on is due at the return to receive
 	bool lc_new;		// set_embedded_lc gave an LC not yet sent
 	uint8_t emb_lc[LC_BYTES];
 	uint32_t done_ms;	// TX_DRAIN: report TX_DONE by then if the chip stays silent
@@ -260,6 +261,10 @@ static void audio_tx(void)
 
 static void audio_rx(void)
 {
+	if (s.mic_off) {
+		s.mic_off = false;
+		codec_write(s.port->codec_mic_on);
+	}
 	if (!s.audio_tx)
 		return;
 	s.audio_tx = false;
@@ -1046,6 +1051,14 @@ static void x_tx_end(void)
 	tx_step();
 }
 
+static void x_tx_release(void)
+{
+	if (s.tx == TX_IDLE || s.mic_off || s.port->codec_mic_off == NULL)
+		return;
+	s.mic_off = true;
+	codec_write(s.port->codec_mic_off);
+}
+
 static void x_tx_abort(void)
 {
 	if (s.tx == TX_IDLE)
@@ -1147,6 +1160,7 @@ LOCKED(bool, tx_queue, (const dmr_tx_burst_t *b), (b))
 LOCKED(uint8_t, tx_queue_space, (void), ())
 LOCKED_VOID(tx_end, (void), ())
 LOCKED_VOID(tx_abort, (void), ())
+LOCKED_VOID(tx_release, (void), ())
 LOCKED_VOID(set_embedded_lc, (const uint8_t lc[9]), (lc))
 LOCKED_VOID(set_cc_filter, (int8_t cc), (cc))
 LOCKED(bool, is_transmitting, (void), ())
@@ -1175,6 +1189,7 @@ const hal_dmr_modem_t sct_dmr_modem = {
 	.tx_queue_space = m_tx_queue_space,
 	.tx_end = m_tx_end,
 	.tx_abort = m_tx_abort,
+	.tx_release = m_tx_release,
 	.set_embedded_lc = m_set_embedded_lc,
 	.set_cc_filter = m_set_cc_filter,
 	.is_transmitting = m_is_transmitting,
