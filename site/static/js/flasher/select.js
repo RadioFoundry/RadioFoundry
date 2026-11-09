@@ -24,6 +24,11 @@ export class Selection {
 		return (this.radio.not_written || []).includes(name);
 	}
 
+	// a board's reason for leaving a switch it can build off by default (config.mk BOARD_DEFAULT_OFF), or null
+	defaultOffWhy(name) {
+		return this.radio.default_off?.[name] || null;
+	}
+
 	required(name) {
 		return this.radio.required.includes(name);
 	}

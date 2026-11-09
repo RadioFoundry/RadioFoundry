@@ -161,7 +161,7 @@ class Site:
 		for b in self.boards:
 			r = {k: b[k] for k in ("id", "name", "maker", "model", "also", "kind", "order", "status", "bands",
 					       "power", "gallery", "cpu", "display", "docs", "flash", "backup", "unsupported",
-					       "unsupported_reasons", "not_written", "not_written_reasons", "required", "config", "screens", "codeplug", "volts",
+					       "unsupported_reasons", "not_written", "not_written_reasons", "default_off", "required", "config", "screens", "codeplug", "volts",
 					       "clock", "variants", "variant_pattern", "variant_check")}
 			r["support"] = docsmod.plain(b["summary"])
 			r["image"] = "static/img/radios/%s.svg" % b["id"]

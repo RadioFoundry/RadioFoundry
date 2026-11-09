@@ -9,9 +9,11 @@ CONFIG_HOTSPOT_SPLIT ?= n
 # cycle (hardware-rt10.md 3.1): off, and the IP gateway and its services with it. It builds, for a check with
 # another cable
 CONFIG_NET_PPP ?= n
+BOARD_DEFAULT_OFF += NET_PPP	# Off by default on this radio: the computer can send while the radio is sending, which can lock up the cable's PTT and serial line until the radio is switched off and on.
 # The MMDVM host sends when it likes, as pppd does, so the hotspot may latch the line the same way: off until that is
 # resolved. It builds, for the check
 CONFIG_HOTSPOT ?= n
+BOARD_DEFAULT_OFF += HOTSPOT	# Off by default on this radio: the computer can send while the radio is sending, which may lock up the cable's PTT and serial line until the radio is switched off and on.
 CONFIG_NET_USRP ?= n
 CONFIG_VOX ?= n
 CONFIG_FONT_XL ?= n

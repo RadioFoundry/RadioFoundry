@@ -99,7 +99,7 @@ STUB_WRITE_TEST = 0x4000	# [flash.stub] write_test: the data flash bytes stubtoo
 NO_PIN = 255			# the universal stub's "no pin"
 # board.mk values the registry reads, through make (conditionals and config.mk included)
 MAKE_VARS = ("PLATFORM", "APP_BASE", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS",
-             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "BOARD_NOT_WRITTEN", "HSE_VALUE", "MCU_DEFS")
+             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "BOARD_NOT_WRITTEN", "BOARD_DEFAULT_OFF", "HSE_VALUE", "MCU_DEFS")
 # The frame buffer core/ui/gfx.h builds when a board's MCU_DEFS don't size it (RGB565, 160x128, at most 160 rows)
 GFX_DEFAULTS = {"GFX_FB_BYTES": 160 * 128 * 2, "GFX_MAX_ROWS": 160, "GFX_INDEXED": 0}
 # The [flash.stub] id every stub keeps for its tools' test profiles (stub/f4stub.py test_board()), so a test record
@@ -530,16 +530,29 @@ def unsupported_reasons(config_mk):
 NOT_WRITTEN_RE = re.compile(r"^\s*BOARD_NOT_WRITTEN\s*[:+]?=([^#]*)(?:#(.*))?$")
 
 
+DEFAULT_OFF_RE = re.compile(r"^\s*BOARD_DEFAULT_OFF\s*[:+]?=([^#]*)(?:#(.*))?$")
+
+
 def not_written_reasons(config_mk):
     """{switch: reason} from config.mk's BOARD_NOT_WRITTEN lines, in BOARD_UNSUPPORTED's form: the switches the
     radio's hardware can do but whose driver or glue isn't written yet (docs/build-config.md)."""
+    return _listed_reasons(config_mk, NOT_WRITTEN_RE)
+
+
+def default_off_reasons(config_mk):
+    """{switch: reason} from config.mk's BOARD_DEFAULT_OFF lines, in the same form: switches that work but carry a
+    risk on this radio, left for a custom build to turn on. The reason is shown to users by the switch."""
+    return _listed_reasons(config_mk, DEFAULT_OFF_RE)
+
+
+def _listed_reasons(config_mk, line_re):
     out = {}
     try:
         lines = open(config_mk, encoding="utf-8").read().splitlines()
     except OSError:
         return out
     for line in lines:
-        m = NOT_WRITTEN_RE.match(line)
+        m = line_re.match(line)
         if m:
             sws = m.group(1).split()
             for s in sws:
@@ -558,6 +571,23 @@ def not_written_problems(bid, b):
         if s in b.unsupported:
             out.append("boards/%s: %s is in both BOARD_UNSUPPORTED and BOARD_NOT_WRITTEN: UNSUPPORTED only when the "
                        "hardware can't do it (docs/build-config.md)" % (bid, s))
+    return out
+
+
+def default_off_problems(bid, b, built):
+    """config.mk's BOARD_DEFAULT_OFF of a board (built: switch -> "y"/"n"): each switch has the reason users read, is
+    off by default and can be chosen, so it is in neither list of what can't be."""
+    out = []
+    for s, why in b.default_off.items():
+        if not why:
+            out.append("boards/%s/config.mk: BOARD_DEFAULT_OFF %s has no reason: one switch a line, "
+                       "BOARD_DEFAULT_OFF += %s  # <the reason users read>" % (bid, s, s))
+        if s in b.unsupported or s in b.not_written:
+            out.append("boards/%s: %s is in BOARD_DEFAULT_OFF and in BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN: "
+                       "a default-off switch can be chosen (docs/build-config.md)" % (bid, s))
+        if built.get(s) != "n":
+            out.append("boards/%s: %s is in BOARD_DEFAULT_OFF but built by default: add CONFIG_%s ?= n to its config.mk"
+                       % (bid, s, s))
     return out
 
 
@@ -608,6 +638,8 @@ class Board:
         self.unsupported = {s: reasons.get(s, "") for s in mk.get("BOARD_UNSUPPORTED", "").split()}
         # config.mk BOARD_NOT_WRITTEN, the same way (load() fills it)
         self.not_written = {}
+        # config.mk BOARD_DEFAULT_OFF, the same way (load() fills it)
+        self.default_off = {}
         boot = mk.get("BOOT_STAGE")
         self.first_stage = None
         if boot:
@@ -899,6 +931,9 @@ def load(root=ROOT, only=None):
         nw = {**not_written_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
               **not_written_reasons(os.path.join(bdir, "config.mk"))}
         out[bid].not_written = {s: nw.get(s, "") for s in mk.get("BOARD_NOT_WRITTEN", "").split()}
+        off = {**default_off_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
+               **default_off_reasons(os.path.join(bdir, "config.mk"))}
+        out[bid].default_off = {s: off.get(s, "") for s in mk.get("BOARD_DEFAULT_OFF", "").split()}
     return out
 
 
@@ -1114,6 +1149,12 @@ def check(root=ROOT):
                 problems.append("boards/%s/config.mk: BOARD_UNSUPPORTED %s has no reason: one switch a line, "
                                 "BOARD_UNSUPPORTED += %s  # <reason>" % (bid, s, s))
         problems += not_written_problems(bid, b)
+        if b.default_off:
+            try:
+                problems += default_off_problems(bid, b, {k[len("CONFIG_"):]: v for k, v in make_vars(
+                    root, bid, ["CONFIG_" + s for s in b.default_off]).items()})
+            except RegistryError as e:
+                problems.append(str(e))
         if hw:
             try:
                 built = {s: v for s, v in ((k[len("CONFIG_"):], v) for k, v in
@@ -1498,7 +1539,8 @@ def site_view(boards, root=ROOT):
             "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
             "looks": json.loads(json.dumps(d.get("looks", []))),
-            "unsupported": dict(b.unsupported), "not_written": dict(b.not_written), "volts": b.volts,
+            "unsupported": dict(b.unsupported), "not_written": dict(b.not_written),
+            "default_off": dict(b.default_off), "volts": b.volts,
             "clock": hw["clock"]["rtc"],
             # the hardware variants and how the flasher reads them ([hardware] variants)
             "variants": json.loads(json.dumps(hw.get("variants", []))), "variant_pattern": hw.get("variant_pattern"),
@@ -1770,6 +1812,15 @@ def self_test():
     ok(not_written_reasons(os.path.join(tmpm, "config.mk")) == {"DTMF": "no tone path yet"}
        and unsupported_reasons(os.path.join(tmpm, "config.mk")) == {"USB": "no USB port"},
        "not_written_reasons: BOARD_NOT_WRITTEN lines only, and BOARD_UNSUPPORTED's reader skips them")
+    with open(os.path.join(tmpm, "config.mk"), "w", encoding="utf-8") as f:
+        f.write("BOARD_NOT_WRITTEN += DTMF\t# no tone path yet\nBOARD_DEFAULT_OFF += PPP\t# may lock up the line\n")
+    ok(default_off_reasons(os.path.join(tmpm, "config.mk")) == {"PPP": "may lock up the line"},
+       "default_off_reasons: BOARD_DEFAULT_OFF lines only")
+    fake = type("B", (), {"default_off": {"A": "why", "B": "", "C": "why", "D": "why"}, "unsupported": {"C": "x"},
+                          "not_written": {}})
+    probs = default_off_problems("t", fake, {"A": "n", "B": "n", "C": "n", "D": "y"})
+    ok(len(probs) == 3 and "B has no reason" in probs[0] and "C is in" in probs[1] and "D is in" in probs[2],
+       "default_off_problems: a reason, choosable, off by default")
     shutil.rmtree(tmpm)
     for bad, what in (({"hil": {"battery_mv": "5V"}}, "a [hil] value of the wrong type"),
                       ({"hil": {"no_such": 1}}, "an unknown [hil] key"),

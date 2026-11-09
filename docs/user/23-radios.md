@@ -685,9 +685,10 @@ The cable line is stuck low. The radio won't transmit until the line is released
 ### What the RT10 lacks today
 
 - The network over the programming cable (PPP) and the services on it. The cable's line latches when the computer
-  and the radio send at the same time, and only switching the radio off frees it, so PPP is off in the RT10 build.
+  and the radio send at the same time, and only switching the radio off frees it, so PPP is off by default in the
+  RT10 build. A custom build can turn it on, at that risk.
 - Hotspot mode. The hotspot software on the computer also sends at any time, so it may latch the line the same way.
-  The hotspot is off in the RT10 build until that is resolved.
+  The hotspot is off by default in the RT10 build until that is resolved. A custom build can turn it on, at that risk.
 - The battery scale.
 
 ## TYT MD-9600

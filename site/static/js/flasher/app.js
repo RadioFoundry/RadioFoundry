@@ -1126,9 +1126,9 @@ function buildView() {
 				const off = S.data.variants.find((v) => v.id === sel.base)?.off.find((o) => o.name === f.name);
 				// a needed feature outside this group that is off: turning this on turns it on too
 				const away = (f.needs?.all || []).filter((n) => !items.some((i) => i.name === n) && sel.supported(n) && !sel.on.has(n));
-				// one line per feature; the help (written for developers) is the tooltip, the build's reason for leaving
-				// a feature out and a needed feature that's off show inline
-				const note = na ? [naNote(f.name)] : [off && !isOn ? off.why : null,
+				// one line per feature; the help (written for developers) is the tooltip, the board's or the build's reason
+				// for leaving a feature out and a needed feature that's off show inline
+				const note = na ? [naNote(f.name)] : [sel.defaultOffWhy(f.name), off && !isOn ? off.why : null,
 					away.length ? t("flash.build.needs", { names: away.map((n) => sel.byName[n]?.title || n).join(", ") }) : null].filter(Boolean);
 				const tipId = `tip-${f.name}`;
 				const tipOpen = S.openTip === f.name;
