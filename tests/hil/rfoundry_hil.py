@@ -438,8 +438,18 @@ class Radio:
         """Poll the view until pred(view) is true; returns that view. AssertionError with the last view if not."""
         end = time.monotonic() + timeout
         v = {}
+        missed = False
         while True:
-            v = self.link.view(list(sections))
+            try:
+                v = self.link.view(list(sections))
+            except DebugLinkError as e:
+                # One unanswered request is no fault: a key-up or burst can disturb a cable line shared with the PTT
+                # (docs/spec/gotchas.md 2.13). A second in a row is a radio that stopped answering
+                if e.status is not None or missed:
+                    raise
+                missed = True
+                continue
+            missed = False
             if pred(v):
                 return v
             if time.monotonic() > end:

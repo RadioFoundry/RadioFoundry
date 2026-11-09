@@ -362,10 +362,18 @@ def test_dmr_tx_permit_before_key(radio, sdr_bench, pytestconfig):
     gate = _gate(radio)
     freq, cc, _, d = _dmr_tx_setup(radio, pytestconfig)
     own = int(d["dmr.own_id"])
-    played = int(radio.view().get("beep.played", 0))
-    sdr, heard = _over(radio, sdr_bench, freq, cc, 3.0, "hil_dmr_permit")
-    after = _gate(radio)
-    played = int(radio.view().get("beep.played", 0)) - played
+    # A knob turned down drops the beep before it is counted (test_radio_features.py): hold a volume for the over
+    knob_down = radio.view(["features"]).get("volume.sent") == "0"
+    if knob_down:
+        radio.link.volume(3)
+    try:
+        played = int(radio.view().get("beep.played", 0))
+        sdr, heard = _over(radio, sdr_bench, freq, cc, 3.0, "hil_dmr_permit")
+        after = _gate(radio)
+        played = int(radio.view().get("beep.played", 0)) - played
+    finally:
+        if knob_down:
+            radio.link.volume("knob")
     print(f"beep.played +{played}; gate {gate} -> {after}")
     assert played >= 1, "no beep played for the over: is Settings > Talk permit off?"
     if gate is not None:
