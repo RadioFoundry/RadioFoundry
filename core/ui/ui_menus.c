@@ -4882,7 +4882,7 @@ static const ui_scr_def_t tools_screen = {
 #if CONFIG_UI_SETTINGS
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
-enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE };
+enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE };
 
 typedef struct {
 	const char *name;
@@ -5182,6 +5182,8 @@ static const set_item_t s_advanced[] = {
 	NUMBER(TRN("Freq trim"), "frequency offset reference oscillator calibration ppm", UI_SET_REF_TRIM, -REF_TRIM_MAX_PPB,
 	       REF_TRIM_MAX_PPB, REF_TRIM_STEP_PPB, NULL),	// its own page (trim_screen); last: Up from the top
 #endif
+	// Only on radios with hardware options (hal_hwopt.h): last, so the rows above keep their places
+	ACTION("Hardware", "board revision", SA_HARDWARE),
 };
 
 #define GROUP(nm, a)		{ nm, nm, a, sizeof a / sizeof a[0] }
@@ -5203,6 +5205,8 @@ const char *ui_set_group_name(uint8_t g) { return g < GROUPS ? groups[g].name : 
 // shown disabled
 static bool set_hidden(const set_item_t *s)
 {
+	if (s->type == ST_ACTION && s->id == SA_HARDWARE)
+		return board.hwopts == NULL || board.hwopt_count == 0;
 #if CONFIG_KEY_ASSIGN
 	if (s->type != ST_ACTION && s->id >= UI_SET_KEY_FIRST && s->id <= UI_SET_KEY_LAST) {
 		key_labels();
@@ -5483,6 +5487,7 @@ static void group_select(uint16_t i, bool hold)
 #if CONFIG_CRASH_SCREEN
 		case SA_CRASH: ui_push(SCR_CRASH, 0); break;
 #endif
+		case SA_HARDWARE: ui_push(SCR_HWOPT, 0); break;
 		default: break;
 		}
 		break;
@@ -5566,6 +5571,72 @@ static const ui_scr_def_t group_screen = {
 	.name = "group", .flags = SF_LIST, .hint = TRN("OK change  Back"),
 	.count = group_count, .item = group_item, .select = group_select, .key = group_key, .enter = group_enter,
 	.title = group_title,
+};
+
+// ======================= Hardware options (hal_hwopt.h) =======================
+// OK steps through an option's choices without storing; holding OK stores the one shown. A choice the board marks
+// "restart" applies from the next start-up. One row at a time shows an unstored choice, kept in the screen's frame
+// argument (no static: RAM is tight on some radios): the row + 1 in the high byte, 0 = none, the choice in the low one.
+// Stepping another row drops it
+
+#define HWOPT_ROWS_MAX		15
+
+static void hwopt_enter(void)
+{
+	ui_frame()->arg = 0;
+}
+
+static uint16_t hwopt_count(void)
+{
+	return board.hwopts != NULL ? (board.hwopt_count < HWOPT_ROWS_MAX ? board.hwopt_count : HWOPT_ROWS_MAX) : 0;
+}
+
+static int8_t hwopt_shown(uint16_t i, int8_t stored)
+{
+	uint16_t p = ui_frame()->arg;
+	return (p >> 8) == i + 1u ? (int8_t)(p & 0xFFu) : stored;
+}
+
+static void hwopt_item(uint16_t i, ui_item_t *it)
+{
+	const hal_hwopt_t *o = &board.hwopts[i];
+	int8_t stored = o->get();
+	int8_t c = hwopt_shown(i, stored);
+	sbuf_t b;
+	sb_init(&b, it->label, sizeof it->label);
+	sb_str(&b, o->name);
+	sb_init(&b, it->value, sizeof it->value);
+	sb_str(&b, c >= 0 && c < o->count ? o->choices[c] : "Not set");
+	if (c != stored)
+		sb_chr(&b, '*');	// shown, not stored yet
+	if (stored == HWOPT_NONE)
+		it->flags |= UI_ITEM_WARN;
+}
+
+static void hwopt_select(uint16_t i, bool hold)
+{
+	const hal_hwopt_t *o = &board.hwopts[i];
+	int8_t stored = o->get();
+	int8_t c = hwopt_shown(i, stored);
+	if (!hold) {
+		ui_frame()->arg = (uint16_t)(((i + 1u) << 8) | (uint8_t)(c < 0 ? 0 : (c + 1) % o->count));
+		return;
+	}
+	if (c < 0) {
+		ui_toast("Press OK to choose first");
+	} else if (c == stored) {
+		ui_toast("Already stored");
+	} else if (!o->set((uint8_t)c)) {
+		ui_toast("Not stored");
+	} else {
+		ui_frame()->arg = 0;
+		ui_toast(o->restart ? "Stored: restart to apply" : "Stored");
+	}
+}
+
+static const ui_scr_def_t hwopt_screen = {
+	.name = "hwopt", .flags = SF_LIST, .prefix = "Hardware", .hint = "OK next  Hold OK store",
+	.count = hwopt_count, .item = hwopt_item, .select = hwopt_select, .enter = hwopt_enter,
 };
 
 // ======================= Confirmation (destructive only, defaults to No; P7) =======================
@@ -5939,6 +6010,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #endif
 #if CONFIG_CRASH_SCREEN
 	[SCR_CRASH] = &crash_screen,
+#endif
+#if CONFIG_UI_SETTINGS
+	[SCR_HWOPT] = &hwopt_screen,
 #endif
 #if CONFIG_CRASH_REPORT && CONFIG_DMR
 	[SCR_CRASH_TO] = &crash_to_screen,

@@ -76,6 +76,18 @@ int main(void)
 	CHECK(q.detents == 3 && events == 17 && backward == 0);
 	CHECK(q.reversals == 1);
 
+	// A knob that rests where A != B (start at 01): with that mask every detent counts; with the A == B mask the
+	// first crossing after the start comes one step in and is dropped, so a run of 10 clicks counts 9 (the symptom of
+	// a wrong mask on a radio)
+	reset(2, QUAD_REST_DIFFER, 1);
+	turn(10, 2, 0);
+	CHECK(q.detents == 10 && events == 10 && backward == 0 && q.illegal == 0);
+	turn(-10, 2, 0);
+	CHECK(q.detents == 0 && events == 20 && backward == 0);
+	reset(2, QUAD_REST_EQUAL, 1);
+	turn(10, 2, 0);
+	CHECK(q.detents == 9 && q.transitions == 20 && q.illegal == 0);
+
 	// Heavy bounce on every edge: still exactly one count per detent, never one backward
 	reset(2, QUAD_REST_EQUAL, 0);
 	turn(25, 2, 3);

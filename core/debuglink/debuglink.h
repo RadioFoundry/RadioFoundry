@@ -162,6 +162,8 @@ size_t debuglink_cmd_chip_reg(const uint8_t *req, uint16_t len, uint8_t *out, si
 void debuglink_view_watchdog(dl_text_t *t);
 size_t debuglink_cmd_watchdog(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 void debuglink_watchdog_service(void);
+// The board's hardware options (debuglink_hwopt.c, docs/spec/debuglink.md 3.25, hal_hwopt.h): DL_CMD_HWOPT
+size_t debuglink_cmd_hwopt(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 
 // The debug link's own counters: frames answered, bad CRC, too long, timed out (debuglink.c)
 #define DL_LINK_COUNTERS	4

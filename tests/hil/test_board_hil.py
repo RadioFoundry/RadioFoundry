@@ -138,3 +138,12 @@ def test_limit_overrides():
     for b in rfoundry_hil.board_names():
         for name, o in rfoundry_hil.board_hil(b).get("limits", {}).items():
             assert o.get("reason"), (b, name)
+
+
+def test_carrier_floor_db():
+    def sdr(floor, *levels):
+        return {"bursts_summary": {"envelope": {"floor_db": floor}}, "edges": [{"level_dbfs": x} for x in levels]}
+    bench = rfoundry_hil.SdrBench
+    assert bench.carrier_floor_db(sdr(-65.0, -54.0, -11.0)) == -51.0       # close: 40 dB under the carrier
+    assert bench.carrier_floor_db(sdr(-65.0, -40.0)) == -65.0              # weak: the channel's own floor
+    assert bench.carrier_floor_db(sdr(-65.0)) == -65.0                     # nothing keyed

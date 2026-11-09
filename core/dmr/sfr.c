@@ -273,14 +273,14 @@ static void queueDropNet(sfrEngine_t *e)
 
 static inline bool isLcBurst(const sfrBurst_t *b)
 {
-	return (b->kind == SFR_BURST_DATA) && ((b->type == DT_VOICE_LC_HEADER) || (b->type == DT_TERMINATOR_WITH_LC));
+	return (b->kind == SFR_BURST_DATA) && ((b->type == DMR_TYPE_VOICE_LC_HEADER) || (b->type == DMR_TYPE_TERMINATOR_LC));
 }
 
 // Voice, its LC header or PI header: a voice call's. Anything else but idle (CSBK, MBC, data header, blocks): a data
 // call's
 static inline bool isVoiceCallBurst(const sfrBurst_t *b)
 {
-	return (b->kind == SFR_BURST_VOICE) || (b->type == DT_VOICE_LC_HEADER) || (b->type == DT_VOICE_PI_HEADER);
+	return (b->kind == SFR_BURST_VOICE) || (b->type == DMR_TYPE_VOICE_LC_HEADER) || (b->type == DMR_TYPE_PI_HEADER);
 }
 
 bool sfrLcKnown(const uint8_t *lc)
@@ -298,13 +298,13 @@ void sfrEngineInit(sfrEngine_t *e, const sfrConfig_t *cfg)
 // A burst heard on the inbound slot (repeater roles). cc: its color code, sync: its sync type (sfrSync_t)
 sfrRxResult_t sfrEngineRfBurst(sfrEngine_t *e, const sfrBurst_t *b, uint8_t cc, uint8_t sync, uint32_t nowMs)
 {
-	if ((cc != e->cfg.inboundCC) || ((b->kind == SFR_BURST_VOICE) ? (b->type > 5) : (b->type == DT_IDLE)) ||
+	if ((cc != e->cfg.inboundCC) || ((b->kind == SFR_BURST_VOICE) ? (b->type > 5) : (b->type == DMR_TYPE_IDLE)) ||
 			((b->kind == SFR_BURST_DATA) && !sfrInboundSyncAccepted(&e->cfg, sync)))
 	{
 		return SFR_RX_IGNORED;
 	}
 
-	bool terminator = (b->kind == SFR_BURST_DATA) && (b->type == DT_TERMINATOR_WITH_LC);
+	bool terminator = (b->kind == SFR_BURST_DATA) && (b->type == DMR_TYPE_TERMINATOR_LC);
 	bool newCall = (!e->rfCall || ((nowMs - e->rfLastMs) > SFR_RF_LOSS_MS));
 
 	// Only a call's own terminator is repeated: the extra ones some radios send after it, or one heard alone, aren't
@@ -395,8 +395,8 @@ void sfrEngineRfLc(sfrEngine_t *e, const uint8_t *lc)
 // embedded LC gave one (NULL otherwise). Returns 0, or the NAK reason
 uint8_t sfrEngineNetBurst(sfrEngine_t *e, const sfrBurst_t *b, const uint8_t *lc, uint32_t nowMs)
 {
-	bool header = (b->kind == SFR_BURST_DATA) && (b->type == DT_VOICE_LC_HEADER);
-	bool terminator = (b->kind == SFR_BURST_DATA) && (b->type == DT_TERMINATOR_WITH_LC);
+	bool header = (b->kind == SFR_BURST_DATA) && (b->type == DMR_TYPE_VOICE_LC_HEADER);
+	bool terminator = (b->kind == SFR_BURST_DATA) && (b->type == DMR_TYPE_TERMINATOR_LC);
 
 	if (e->rfCall && ((nowMs - e->rfLastMs) > SFR_RF_LOSS_MS))
 	{
@@ -536,7 +536,7 @@ sfrTxAction_t sfrEngineOutboundSlot(sfrEngine_t *e, uint32_t nowMs, sfrBurst_t *
 		}
 
 		// The MMDVM busy flag ends when the inbound call's terminator has been repeated, not with the hang time
-		if ((origin == 0) && (out->kind == SFR_BURST_DATA) && (out->type == DT_TERMINATOR_WITH_LC))
+		if ((origin == 0) && (out->kind == SFR_BURST_DATA) && (out->type == DMR_TYPE_TERMINATOR_LC))
 		{
 			e->rfCall = false;
 			e->rfBusy = false;
@@ -578,8 +578,8 @@ void sfrUplinkReset(sfrUplink_t *u)
 
 uint8_t sfrUplinkBurst(sfrUplink_t *u, const sfrBurst_t *b, bool lcKnown, uint32_t nowMs)
 {
-	bool header = (b->kind == SFR_BURST_DATA) && (b->type == DT_VOICE_LC_HEADER);
-	bool terminator = (b->kind == SFR_BURST_DATA) && (b->type == DT_TERMINATOR_WITH_LC);
+	bool header = (b->kind == SFR_BURST_DATA) && (b->type == DMR_TYPE_VOICE_LC_HEADER);
+	bool terminator = (b->kind == SFR_BURST_DATA) && (b->type == DMR_TYPE_TERMINATOR_LC);
 	uint8_t actions = SFR_UP_SEND;
 
 	if (u->open && ((nowMs - u->lastMs) > SFR_UPLINK_LOST_MS))
@@ -700,17 +700,17 @@ bool sfrDataBurstCrcOk(uint8_t dataType, const uint8_t *info)
 {
 	switch (dataType)
 	{
-		case DT_VOICE_LC_HEADER:
+		case DMR_TYPE_VOICE_LC_HEADER:
 			return rs129Ok(info, 0x96) || rs129Ok(info, 0x00);
-		case DT_TERMINATOR_WITH_LC:
+		case DMR_TYPE_TERMINATOR_LC:
 			return rs129Ok(info, 0x99) || rs129Ok(info, 0x00);
-		case DT_VOICE_PI_HEADER:
+		case DMR_TYPE_PI_HEADER:
 			return crc16Ok(info, 0x69) || crc16Ok(info, 0x00);
-		case DT_CSBK:
+		case DMR_TYPE_CSBK:
 			return crc16Ok(info, 0xA5) || crc16Ok(info, 0x00);
-		case DT_MBC_HEADER:
+		case DMR_TYPE_MBC_HEADER:
 			return crc16Ok(info, 0xAA) || crc16Ok(info, 0x00);
-		case DT_DATA_HEADER:
+		case DMR_TYPE_DATA_HEADER:
 			return crc16Ok(info, 0xCC) || crc16Ok(info, 0x00);
 		default:
 			return true;
@@ -787,7 +787,7 @@ uint8_t sfrRawClassify(const uint8_t *frame, uint8_t colorCode, uint8_t *dataTyp
 
 			*sync = (uint8_t)s;
 
-			if ((cc != colorCode) || (dt > DT_RATE_1_DATA) || (dt == DT_RATE_34_DATA) || (dt == DT_RATE_1_DATA))
+			if ((cc != colorCode) || (dt > DMR_TYPE_RATE_1) || (dt == DMR_TYPE_RATE_3_4) || (dt == DMR_TYPE_RATE_1))
 			{
 				return SFR_RAW_NONE;// (rate 3/4 and 1 aren't BPTC: the HR-C6000's info bits are used for them)
 			}
@@ -828,17 +828,17 @@ void sfrRawAmbe(const uint8_t *frame, uint8_t *ambe)
 
 uint8_t sfrLcBurstGuess(uint8_t reportedType, const uint8_t *info, const uint8_t *callLc, bool voiceSinceHeader)
 {
-	if (!sfrLcKnown(callLc) || (reportedType > DT_TERMINATOR_WITH_LC) || (memcmp(info, callLc, 5) != 0))
+	if (!sfrLcKnown(callLc) || (reportedType > DMR_TYPE_TERMINATOR_LC) || (memcmp(info, callLc, 5) != 0))
 	{
 		return 0xFF;
 	}
 
-	if (sfrDataBurstCrcOk(reportedType, info) && (reportedType != DT_VOICE_PI_HEADER))
+	if (sfrDataBurstCrcOk(reportedType, info) && (reportedType != DMR_TYPE_PI_HEADER))
 	{
 		return 0xFF;// good as it is
 	}
 
-	return voiceSinceHeader ? DT_TERMINATOR_WITH_LC : DT_VOICE_LC_HEADER;
+	return voiceSinceHeader ? DMR_TYPE_TERMINATOR_LC : DMR_TYPE_VOICE_LC_HEADER;
 }
 
 bool sfrMmdvmTrigger(bool simplexFlag, uint32_t rxFreq, uint32_t txFreq)

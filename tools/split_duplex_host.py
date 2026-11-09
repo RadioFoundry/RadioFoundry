@@ -359,11 +359,14 @@ def busy_mask_from_uplink(open_calls, cmd, control):
 class Radio:
     """One radio's MMDVM port: a reader thread, replies matched by command (and 0xD6 sub-command)."""
 
-    def __init__(self, port, name="radio", log=None, dtr=True, on_uplink=None):
+    def __init__(self, port, name="radio", log=None, dtr=True, on_uplink=None, ser=None):
+        """ser: a port another Radio gave up with detach(), still open: a second host on it without a close"""
         self.name = name
         self.on_uplink = on_uplink      # called from the reader thread with (host µs, frame) for each uplink frame
         self.wlock = threading.Lock()   # one frame at a time on the port (the reader thread may send too)
-        if str(port).startswith("udp:"):        # udp:<radio IP>[:port], a radio in USB network mode
+        if ser is not None:
+            self.ser = ser
+        elif str(port).startswith("udp:"):        # udp:<radio IP>[:port], a radio in USB network mode
             from rfoundry_debug import UdpPort
             host, _, udp_port = port[4:].partition(":")
             self.ser = UdpPort(host, int(udp_port or 3334))
@@ -371,7 +374,7 @@ class Radio:
             import serial
             # A device or a URL such as rfc2217://host:port (a radio on a network serial hub)
             self.ser = serial.serial_for_url(port, 115200, timeout=0.02, do_not_open=True)
-            self.ser.dtr = dtr  # False: as MMDVMHost on Windows; closing then does not end the hotspot session
+            self.ser.dtr = dtr  # False: as a host on Windows; closing then does not end the hotspot session
             self.ser.open()
         self.buf = bytearray()
         self.lock = threading.Condition()
@@ -472,10 +475,14 @@ class Radio:
         t_rx, t_tx = struct.unpack_from("<II", d, 8)
         return sync.add(t1, t4, t_rx, t_tx)
 
-    def close(self):
+    def detach(self):
+        """Stop this host and give its port back open, as a host that dies without closing it (no DTR edge)"""
         self.stop = True
         self.t.join(timeout=1)
-        self.ser.close()
+        return self.ser
+
+    def close(self):
+        self.detach().close()
 
 
 def require_split(radio):
@@ -496,8 +503,21 @@ def setup_half(radio, rx_hz, tx_hz, level, cc):
             raise SystemExit(f"{radio.name}: command 0x{cmd:02X} NAK {nak}")
 
 
+ROLE_WAIT_S = 2.0    # how long a radio may take to take the modem after the first commands (split-duplex.md 3.2)
+
+
 def set_role(radio, role, **kw):
-    _, _, res, d = radio.split(SUB_SET_ROLE, role_payload(role, **kw))
+    """SET_ROLE. Result 2 for an offered role right after the first commands means the radio is still taking the
+    modem (its hotspot entry waits for a retune): asked again until ROLE_WAIT_S has passed"""
+    end = time.monotonic() + ROLE_WAIT_S
+    while True:
+        _, _, res, d = radio.split(SUB_SET_ROLE, role_payload(role, **kw))
+        if res != 2 or role == 0 or time.monotonic() >= end:
+            break
+        _, _, ires, idata = radio.split(SUB_INFO)
+        if ires != 0 or not (parse_info(idata)["offered"] >> (role - 1)) & 1:
+            break       # the role isn't offered: waiting won't help
+        time.sleep(0.05)
     if res != 0:
         raise SystemExit(f"{radio.name}: SET_ROLE {role}: {RESULTS.get(res, res)}")
     return parse_info(d)
@@ -519,7 +539,7 @@ def sync_burst(radio, sync, n=8, gap=0.02):
 class Pair:
     """The two halves run as one repeater (8): start-up (8.1), time sync every 1 s, the epoch relayed every 2 s for
     the first 30 s and every 10 s after (6), the AT relay from the RX half's uplink and STATUS (8.4). With repeat set
-    the host also does what a duplex host such as MMDVMHost does with an RF call (8.4): every burst heard goes back
+    the host also does what a duplex host such as a standard host does with an RF call (8.4): every burst heard goes back
     out on its own slot of the TX half (DMR_START, then the burst's control byte and 33 bytes), at once from the RX
     half's reader thread. The counters and first-burst times are for a test."""
 
@@ -667,7 +687,7 @@ def run_exp(a):
         # Short LC: an activity update, TS1 group voice to TG 9 (split-duplex.md 5.3: the 68-bit form)
         slc = dmr_cach.slc_activity(8, 0, dmr_cach.slc_hash(9), 0)
         tx.command(DMR_SHORTLC, dmr_cach.shortlc_frame_payload(slc))
-        print(f"short LC {slc:07X} ({dmr_cach.describe_slc(slc)}): look for it in sdrmon.py analyze --cach")
+        print(f"short LC {slc:07X} ({dmr_cach.describe_slc(slc)}): look for it in a CACH decode of the burst records")
         tx.command(DMR_START, b"\x01")
         t0 = time.monotonic()
         mask = 0

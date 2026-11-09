@@ -202,7 +202,7 @@ class Host:
             if mask != mask_old:
                 self.send_at()
             if cmd in (sdh.DMR_DATA1, sdh.DMR_DATA2) and not self.silent:
-                # The duplex host repeats the RF call on its own slot (8.4), as MMDVMHost does: DMR_START, then the
+                # The duplex host repeats the RF call on its own slot (8.4), as a standard host does: DMR_START, then the
                 # bursts (control byte and 33 bytes, without the RSSI)
                 if not self.tx_keyed:
                     self.w.send(self.w.tx, sdh.frame(sdh.DMR_START, b"\x01"))

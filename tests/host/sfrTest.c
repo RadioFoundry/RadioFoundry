@@ -195,18 +195,18 @@ static void testEngineRepeat(void)
 	CHECK(sfrEngineOutboundSlot(&e, t, &out) == SFR_TX_NONE, "idle");
 	CHECK(sfrEngineSpace(&e) == SFR_QUEUE_SIZE, "empty");
 
-	b = data(DT_VOICE_LC_HEADER, LC1);
+	b = data(DMR_TYPE_VOICE_LC_HEADER, LC1);
 	CHECK(sfrEngineRfBurst(&e, &b, 2, SFR_SYNC_MS, t) == SFR_RX_IGNORED, "other color code ignored");
 	CHECK(sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_BS, t) == SFR_RX_IGNORED, "BS sync ignored");
-	b = data(DT_TERMINATOR_WITH_LC, LC1);
+	b = data(DMR_TYPE_TERMINATOR_LC, LC1);
 	CHECK(sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, t) == SFR_RX_IGNORED, "a terminator alone isn't a call");
 	CHECK(!sfrEngineRfBusy(&e), "not busy");
 
-	b = data(DT_VOICE_LC_HEADER, LC1);
+	b = data(DMR_TYPE_VOICE_LC_HEADER, LC1);
 	CHECK(sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, t) == SFR_RX_REPEATED, "header repeated");
 	CHECK(sfrEngineRfBusy(&e), "busy from the first burst");
 	CHECK(sfrEngineOutboundSlot(&e, t + 30, &out) == SFR_TX_BURST, "sent");
-	CHECK((out.kind == SFR_BURST_DATA) && (out.type == DT_VOICE_LC_HEADER) && (memcmp(out.payload, LC1, 9) == 0), "the header");
+	CHECK((out.kind == SFR_BURST_DATA) && (out.type == DMR_TYPE_VOICE_LC_HEADER) && (memcmp(out.payload, LC1, 9) == 0), "the header");
 	CHECK(sfrEngineKeyed(&e), "keyed");
 
 	t += 60;
@@ -225,15 +225,15 @@ static void testEngineRepeat(void)
 	t += 60;
 
 	// CSBK / data go out as received
-	b = data(DT_CSBK, NULL);
+	b = data(DMR_TYPE_CSBK, NULL);
 	CHECK(sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, t) == SFR_RX_REPEATED, "CSBK");
-	CHECK((sfrEngineOutboundSlot(&e, t + 30, &out) == SFR_TX_BURST) && (out.type == DT_CSBK) && (out.flags & SFR_BURST_FLAG_MCU_CRC), "CSBK verbatim");
+	CHECK((sfrEngineOutboundSlot(&e, t + 30, &out) == SFR_TX_BURST) && (out.type == DMR_TYPE_CSBK) && (out.flags & SFR_BURST_FLAG_MCU_CRC), "CSBK verbatim");
 	t += 60;
 
-	b = data(DT_TERMINATOR_WITH_LC, LC1);
+	b = data(DMR_TYPE_TERMINATOR_LC, LC1);
 	CHECK(sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, t) == SFR_RX_REPEATED, "terminator");
 	CHECK(sfrEngineRfBusy(&e), "busy until the terminator is repeated");
-	CHECK((sfrEngineOutboundSlot(&e, t + 30, &out) == SFR_TX_BURST) && (out.type == DT_TERMINATOR_WITH_LC), "terminator sent");
+	CHECK((sfrEngineOutboundSlot(&e, t + 30, &out) == SFR_TX_BURST) && (out.type == DMR_TYPE_TERMINATOR_LC), "terminator sent");
 	CHECK(!sfrEngineRfBusy(&e), "not busy once it's repeated");
 
 	// Hang: idle bursts for cfg.hangMs after the last traffic, then the end
@@ -243,7 +243,7 @@ static void testEngineRepeat(void)
 	CHECK(!sfrEngineKeyed(&e) && (sfrEngineOutboundSlot(&e, t + 1100, &out) == SFR_TX_NONE), "unkeyed");
 
 	// Extra terminators after the call aren't repeated, and don't make it busy again
-	b = data(DT_TERMINATOR_WITH_LC, LC1);
+	b = data(DMR_TYPE_TERMINATOR_LC, LC1);
 	CHECK(sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, t + 60) == SFR_RX_IGNORED, "extra terminator");
 }
 
@@ -307,7 +307,7 @@ static void testEngineNetwork(void)
 	CHECK(cfg.framing == SFR_FRAMING_TS, "hotspot TS");
 
 	// A network stream goes out straight away
-	b = data(DT_VOICE_LC_HEADER, LC2);
+	b = data(DMR_TYPE_VOICE_LC_HEADER, LC2);
 	CHECK(sfrEngineNetBurst(&e, &b, NULL, t) == 0, "header");
 	b = voice(0, 0x55);
 	CHECK(sfrEngineNetBurst(&e, &b, NULL, t + 1) == 0, "voice");
@@ -320,7 +320,7 @@ static void testEngineNetwork(void)
 	sfrEngineNetBurst(&e, &b, NULL, t + 60);
 	b = voice(2, 0x55);
 	sfrEngineNetBurst(&e, &b, NULL, t + 120);
-	b = data(DT_VOICE_LC_HEADER, LC1);
+	b = data(DMR_TYPE_VOICE_LC_HEADER, LC1);
 	CHECK(sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, t + 130) == SFR_RX_REPEATED, "RF call");
 	CHECK(sfrEngineSpace(&e) == SFR_QUEUE_SIZE - 1, "net bursts dropped, the RF one queued");
 	b = voice(3, 0x55);
@@ -328,14 +328,14 @@ static void testEngineNetwork(void)
 	CHECK((sfrEngineOutboundSlot(&e, t + 190, &out) == SFR_TX_BURST) && !(out.flags & SFR_BURST_FLAG_NET), "RF first");
 
 	// Its terminator queued: network bursts can queue behind it; the busy flag stays until it's sent
-	b = data(DT_TERMINATOR_WITH_LC, LC1);
+	b = data(DMR_TYPE_TERMINATOR_LC, LC1);
 	sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, t + 250);
 	b = voice(4, 0x55);
 	CHECK(sfrEngineNetBurst(&e, &b, NULL, t + 260) == SFR_MMDVM_NAK_RF_BUSY, "the rest of the cut stream is still refused");
-	b = data(DT_VOICE_LC_HEADER, LC2);
+	b = data(DMR_TYPE_VOICE_LC_HEADER, LC2);
 	CHECK(sfrEngineNetBurst(&e, &b, NULL, t + 270) == 0, "a new stream queues behind the RF terminator");
 	CHECK(sfrEngineRfBusy(&e), "busy flag until the terminator has gone out");
-	CHECK((sfrEngineOutboundSlot(&e, t + 280, &out) == SFR_TX_BURST) && (out.type == DT_TERMINATOR_WITH_LC), "RF terminator");
+	CHECK((sfrEngineOutboundSlot(&e, t + 280, &out) == SFR_TX_BURST) && (out.type == DMR_TYPE_TERMINATOR_LC), "RF terminator");
 	CHECK(!sfrEngineRfBusy(&e), "not busy");
 	CHECK((sfrEngineOutboundSlot(&e, t + 340, &out) == SFR_TX_BURST) && (out.flags & SFR_BURST_FLAG_NET), "then the network");
 
@@ -351,9 +351,9 @@ static void testEngineNetwork(void)
 	t = 100000;
 	b = voice(0, 1);
 	sfrEngineNetBurst(&e, &b, NULL, t);
-	b = data(DT_VOICE_LC_HEADER, LC1);
+	b = data(DMR_TYPE_VOICE_LC_HEADER, LC1);
 	sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, t + 10);
-	b = data(DT_TERMINATOR_WITH_LC, LC1);
+	b = data(DMR_TYPE_TERMINATOR_LC, LC1);
 	sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, t + 70);
 	sfrEngineOutboundSlot(&e, t + 80, &out);
 	sfrEngineOutboundSlot(&e, t + 140, &out);
@@ -409,7 +409,7 @@ static void testIdle(void)
 static void testUplink(void)
 {
 	sfrUplink_t u;
-	sfrBurst_t h = data(DT_VOICE_LC_HEADER, LC1), t = data(DT_TERMINATOR_WITH_LC, LC1), c = data(DT_CSBK, NULL);
+	sfrBurst_t h = data(DMR_TYPE_VOICE_LC_HEADER, LC1), t = data(DMR_TYPE_TERMINATOR_LC, LC1), c = data(DMR_TYPE_CSBK, NULL);
 	sfrBurst_t v;
 	uint32_t now = 1000;
 
@@ -506,11 +506,11 @@ static void testCrc(void)
 
 	// dmrData's CSBK builder (CRC-CCITT, mask A5A5) is accepted, a flipped bit isn't
 	CHECK(dmrDataBuildCSBK(csbk, &built) > 0, "CSBK built");
-	CHECK(sfrDataBurstCrcOk(DT_CSBK, built.payload), "CSBK CRC");
+	CHECK(sfrDataBurstCrcOk(DMR_TYPE_CSBK, built.payload), "CSBK CRC");
 	built.payload[3] ^= 0x10;
-	CHECK(!sfrDataBurstCrcOk(DT_CSBK, built.payload), "CSBK bit error");
+	CHECK(!sfrDataBurstCrcOk(DMR_TYPE_CSBK, built.payload), "CSBK bit error");
 	built.payload[3] ^= 0x10;
-	CHECK(!sfrDataBurstCrcOk(DT_DATA_HEADER, built.payload), "the CSBK's mask isn't a data header's");
+	CHECK(!sfrDataBurstCrcOk(DMR_TYPE_DATA_HEADER, built.payload), "the CSBK's mask isn't a data header's");
 
 	for (int n = 0; n < 200; n++)
 	{
@@ -523,21 +523,21 @@ static void testCrc(void)
 		lc[9] = par[2] ^ 0x96;
 		lc[10] = par[1] ^ 0x96;
 		lc[11] = par[0] ^ 0x96;
-		CHECK(sfrDataBurstCrcOk(DT_VOICE_LC_HEADER, lc), "header RS %d", n);
-		CHECK(!sfrDataBurstCrcOk(DT_TERMINATOR_WITH_LC, lc), "a header isn't a terminator %d", n);
+		CHECK(sfrDataBurstCrcOk(DMR_TYPE_VOICE_LC_HEADER, lc), "header RS %d", n);
+		CHECK(!sfrDataBurstCrcOk(DMR_TYPE_TERMINATOR_LC, lc), "a header isn't a terminator %d", n);
 		lc[9] = par[2] ^ 0x99;
 		lc[10] = par[1] ^ 0x99;
 		lc[11] = par[0] ^ 0x99;
-		CHECK(sfrDataBurstCrcOk(DT_TERMINATOR_WITH_LC, lc), "terminator RS %d", n);
+		CHECK(sfrDataBurstCrcOk(DMR_TYPE_TERMINATOR_LC, lc), "terminator RS %d", n);
 		lc[9] = par[2];
 		lc[10] = par[1];
 		lc[11] = par[0];
-		CHECK(sfrDataBurstCrcOk(DT_TERMINATOR_WITH_LC, lc) && sfrDataBurstCrcOk(DT_VOICE_LC_HEADER, lc), "unmasked RS %d", n);
+		CHECK(sfrDataBurstCrcOk(DMR_TYPE_TERMINATOR_LC, lc) && sfrDataBurstCrcOk(DMR_TYPE_VOICE_LC_HEADER, lc), "unmasked RS %d", n);
 		lc[n % 9] ^= (uint8_t)(1 << (n % 8));
-		CHECK(!sfrDataBurstCrcOk(DT_TERMINATOR_WITH_LC, lc), "terminator bit error %d", n);
+		CHECK(!sfrDataBurstCrcOk(DMR_TYPE_TERMINATOR_LC, lc), "terminator bit error %d", n);
 	}
 
-	CHECK(sfrDataBurstCrcOk(DT_RATE_12_DATA, lc), "blocks: no check");
+	CHECK(sfrDataBurstCrcOk(DMR_TYPE_RATE_1_2, lc), "blocks: no check");
 }
 
 
@@ -563,10 +563,10 @@ static void testRaw(void)
 	in[11] = par[0] ^ 0x99;
 	memset(frame, 0, sizeof(frame));
 	dmrFecBptcEncode(in, frame);
-	dmrFecSlotTypeEncode(2, DT_TERMINATOR_WITH_LC, frame);
+	dmrFecSlotTypeEncode(2, DMR_TYPE_TERMINATOR_LC, frame);
 	putMiddle(frame, 0xD5D7F77FD757ULL);
 	CHECK(sfrRawClassify(frame, 2, &dt, info, &sync) == SFR_RAW_DATA, "terminator");
-	CHECK((dt == DT_TERMINATOR_WITH_LC) && (sync == SFR_SYNC_MS) && (memcmp(info, in, 12) == 0), "its type, sync and info");
+	CHECK((dt == DMR_TYPE_TERMINATOR_LC) && (sync == SFR_SYNC_MS) && (memcmp(info, in, 12) == 0), "its type, sync and info");
 	CHECK(sfrRawClassify(frame, 3, &dt, info, &sync) == SFR_RAW_NONE, "another color code");
 
 	frame[19] ^= 0x60;// 2 sync bit errors: still found
@@ -613,20 +613,20 @@ static void testLcGuess(void)
 	static const uint8_t NOT_OURS[12] = { 0x00, 0x00, 0x20, 0x00, 0x00, 0xC3, 0xD0, 0x70, 0xDD, 0x93, 0x86, 0x13 };
 	uint8_t none[9] = { 0 }, good[12], par[4];
 
-	CHECK(sfrLcBurstGuess(DT_VOICE_PI_HEADER, BAD, LC, true) == DT_TERMINATOR_WITH_LC, "type 0, after voice: terminator");
-	CHECK(sfrLcBurstGuess(DT_VOICE_PI_HEADER, BAD, LC, false) == DT_VOICE_LC_HEADER, "type 0, no voice yet: header");
-	CHECK(sfrLcBurstGuess(DT_TERMINATOR_WITH_LC, BAD, LC, true) == DT_TERMINATOR_WITH_LC, "terminator, bad bytes");
-	CHECK(sfrLcBurstGuess(DT_VOICE_LC_HEADER, BAD, LC, false) == DT_VOICE_LC_HEADER, "header, bad bytes");
-	CHECK(sfrLcBurstGuess(DT_CSBK, BAD, LC, true) == 0xFF, "not a header / terminator type");
-	CHECK(sfrLcBurstGuess(DT_VOICE_PI_HEADER, NOT_OURS, LC, true) == 0xFF, "first bytes not the LC's");
-	CHECK(sfrLcBurstGuess(DT_VOICE_PI_HEADER, BAD, none, true) == 0xFF, "no LC known");
+	CHECK(sfrLcBurstGuess(DMR_TYPE_PI_HEADER, BAD, LC, true) == DMR_TYPE_TERMINATOR_LC, "type 0, after voice: terminator");
+	CHECK(sfrLcBurstGuess(DMR_TYPE_PI_HEADER, BAD, LC, false) == DMR_TYPE_VOICE_LC_HEADER, "type 0, no voice yet: header");
+	CHECK(sfrLcBurstGuess(DMR_TYPE_TERMINATOR_LC, BAD, LC, true) == DMR_TYPE_TERMINATOR_LC, "terminator, bad bytes");
+	CHECK(sfrLcBurstGuess(DMR_TYPE_VOICE_LC_HEADER, BAD, LC, false) == DMR_TYPE_VOICE_LC_HEADER, "header, bad bytes");
+	CHECK(sfrLcBurstGuess(DMR_TYPE_CSBK, BAD, LC, true) == 0xFF, "not a header / terminator type");
+	CHECK(sfrLcBurstGuess(DMR_TYPE_PI_HEADER, NOT_OURS, LC, true) == 0xFF, "first bytes not the LC's");
+	CHECK(sfrLcBurstGuess(DMR_TYPE_PI_HEADER, BAD, none, true) == 0xFF, "no LC known");
 
 	memcpy(good, LC, 9);
 	refRs129(good, par);
 	good[9] = par[2] ^ 0x96;
 	good[10] = par[1] ^ 0x96;
 	good[11] = par[0] ^ 0x96;
-	CHECK(sfrLcBurstGuess(DT_VOICE_LC_HEADER, good, LC, false) == 0xFF, "a good header is used as it is");
+	CHECK(sfrLcBurstGuess(DMR_TYPE_VOICE_LC_HEADER, good, LC, false) == 0xFF, "a good header is used as it is");
 }
 
 // A data call (CSBK x2, data header, 4 blocks) straight followed by a voice call (8 headers, A-F, 3 terminators), as on
@@ -646,19 +646,19 @@ static void testDataThenVoice(void)
 		if ((sfrEngineOutboundSlot(&e, t + 30, &out) == SFR_TX_BURST) && (sent < 40)) types[sent++] = (out.kind == SFR_BURST_VOICE) ? (0x20 | out.type) : out.type; \
 		t += 60; } while (0)
 
-	b = data(DT_CSBK, NULL);
+	b = data(DMR_TYPE_CSBK, NULL);
 	HEAR(b);
 	HEAR(b);
-	b = data(DT_DATA_HEADER, NULL);
+	b = data(DMR_TYPE_DATA_HEADER, NULL);
 	HEAR(b);
 	for (int n = 0; n < 4; n++)
 	{
-		b = data(DT_RATE_12_DATA, NULL);
+		b = data(DMR_TYPE_RATE_1_2, NULL);
 		HEAR(b);
 	}
 	for (int n = 0; n < 8; n++)
 	{
-		b = data(DT_VOICE_LC_HEADER, LC1);
+		b = data(DMR_TYPE_VOICE_LC_HEADER, LC1);
 		HEAR(b);
 	}
 	for (int n = 0; n < 6; n++)
@@ -669,7 +669,7 @@ static void testDataThenVoice(void)
 	CHECK(sfrEngineRfBusy(&e), "busy in the voice call");
 	for (int n = 0; n < 3; n++)
 	{
-		b = data(DT_TERMINATOR_WITH_LC, LC1);
+		b = data(DMR_TYPE_TERMINATOR_LC, LC1);
 		HEAR(b);
 	}
 #undef HEAR
@@ -685,8 +685,8 @@ static void testDataThenVoice(void)
 	}
 
 	CHECK(repeated == (7 + 8 + 6 + 1), "repeated: the data call, the headers, A-F, one terminator (%d)", repeated);
-	CHECK((sent == repeated) && (types[0] == DT_CSBK) && (types[7] == DT_VOICE_LC_HEADER) && (types[15] == 0x20) && (types[20] == 0x25) &&
-			(types[21] == DT_TERMINATOR_WITH_LC), "in order (%d)", sent);
+	CHECK((sent == repeated) && (types[0] == DMR_TYPE_CSBK) && (types[7] == DMR_TYPE_VOICE_LC_HEADER) && (types[15] == 0x20) && (types[20] == 0x25) &&
+			(types[21] == DMR_TYPE_TERMINATOR_LC), "in order (%d)", sent);
 	CHECK(!sfrEngineRfBusy(&e), "the terminator ended it");
 }
 
@@ -705,9 +705,9 @@ static void testDataHold(void)
 	sfrEngineInit(&e, &cfg);
 
 	// A voice call first: its LC
-	b = data(DT_VOICE_LC_HEADER, LC1);
+	b = data(DMR_TYPE_VOICE_LC_HEADER, LC1);
 	sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, t);
-	b = data(DT_TERMINATOR_WITH_LC, LC1);
+	b = data(DMR_TYPE_TERMINATOR_LC, LC1);
 	sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, t + 60);
 	CHECK(sfrEngineOutboundSlot(&e, t + 90, &out) == SFR_TX_BURST, "header");
 	CHECK(sfrEngineOutboundSlot(&e, t + 150, &out) == SFR_TX_BURST, "terminator");
@@ -717,7 +717,7 @@ static void testDataHold(void)
 	t += 300;
 	CHECK(sfrEngineEndHang(&e) && !sfrEngineKeyed(&e), "the hang ends");
 	CHECK(!sfrEngineEndHang(&e), "once");
-	uint8_t dts[7] = { DT_CSBK, DT_CSBK, DT_DATA_HEADER, DT_RATE_12_DATA, DT_RATE_12_DATA, DT_RATE_12_DATA, DT_RATE_12_DATA };
+	uint8_t dts[7] = { DMR_TYPE_CSBK, DMR_TYPE_CSBK, DMR_TYPE_DATA_HEADER, DMR_TYPE_RATE_1_2, DMR_TYPE_RATE_1_2, DMR_TYPE_RATE_1_2, DMR_TYPE_RATE_1_2 };
 	for (int n = 0; n < 7; n++, t += 60)
 	{
 		b = data(dts[n], NULL);
@@ -739,26 +739,26 @@ static void testDataHold(void)
 			CHECK(out.payload[0] == (uint8_t)(sent - 1), "in order (%d)", sent);
 		}
 	}
-	CHECK((sent == 7) && (types[0] == DT_CSBK) && (types[2] == DT_DATA_HEADER) && (types[6] == DT_RATE_12_DATA), "all of it (%d)", sent);
+	CHECK((sent == 7) && (types[0] == DMR_TYPE_CSBK) && (types[2] == DMR_TYPE_DATA_HEADER) && (types[6] == DMR_TYPE_RATE_1_2), "all of it (%d)", sent);
 	CHECK(!sfrEngineRfBusy(&e) && sfrEngineKeyed(&e), "not busy, the hang");
 
 	// A held data call cut short by a voice header: sent from then on, before it
 	sfrEngineInit(&e, &cfg);
 	t += 2000;
-	b = data(DT_CSBK, NULL);
+	b = data(DMR_TYPE_CSBK, NULL);
 	sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, t);
 	CHECK(e.rfHold, "held");
-	b = data(DT_VOICE_LC_HEADER, LC2);
+	b = data(DMR_TYPE_VOICE_LC_HEADER, LC2);
 	sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, t + 60);
 	CHECK(!e.rfHold && sfrEngineRfVoiceCall(&e) && (memcmp(e.rfLc, LC2, 9) == 0), "a voice call now");
-	CHECK((sfrEngineOutboundSlot(&e, t + 90, &out) == SFR_TX_BURST) && (out.type == DT_CSBK), "the CSBK first");
+	CHECK((sfrEngineOutboundSlot(&e, t + 90, &out) == SFR_TX_BURST) && (out.type == DMR_TYPE_CSBK), "the CSBK first");
 
 	// Keyed for network traffic when a data call starts: the transmission ends while it's held
 	sfrEngineInit(&e, &cfg);
-	b = data(DT_VOICE_LC_HEADER, LC1);
+	b = data(DMR_TYPE_VOICE_LC_HEADER, LC1);
 	sfrEngineNetBurst(&e, &b, NULL, t);
 	CHECK(sfrEngineOutboundSlot(&e, t + 30, &out) == SFR_TX_BURST, "network header");
-	b = data(DT_CSBK, NULL);
+	b = data(DMR_TYPE_CSBK, NULL);
 	sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, t + 40);
 	CHECK(sfrEngineOutboundSlot(&e, t + 90, &out) == SFR_TX_END, "the transmission ends");
 	CHECK(sfrEngineOutboundSlot(&e, t + 150, &out) == SFR_TX_NONE, "held");
@@ -767,7 +767,7 @@ static void testDataHold(void)
 	// The hold off (the glue's debug knob): repeated as heard
 	sfrEngineInit(&e, &cfg);
 	e.noDataHold = true;
-	b = data(DT_CSBK, NULL);
+	b = data(DMR_TYPE_CSBK, NULL);
 	sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, t);
 	CHECK(!e.rfHold && (sfrEngineOutboundSlot(&e, t + 30, &out) == SFR_TX_BURST), "no hold");
 
@@ -788,7 +788,7 @@ static void testFlush(void)
 {
 	sfrConfig_t cfg = repeaterConfig(SFR_ROLE_HOTSPOT, SFR_FRAMING_AUTO, 0);
 	sfrEngine_t e;
-	sfrBurst_t b = data(DT_VOICE_LC_HEADER, LC2), out;
+	sfrBurst_t b = data(DMR_TYPE_VOICE_LC_HEADER, LC2), out;
 
 	sfrEngineInit(&e, &cfg);
 	sfrEngineRfBurst(&e, &b, 1, SFR_SYNC_MS, 100);

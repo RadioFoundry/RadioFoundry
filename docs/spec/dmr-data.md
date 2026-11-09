@@ -823,4 +823,4 @@ portable (confirmed: also its TMS ACK back). Each failing case was sent at least
 - `tests/hil/test_dmr_ip_burst.py`: datagrams back to back each way (radio, host and bench) and the air MTU on air
   (12.8): the largest datagram each way, the receiver's limit and one block more; one octet more to the air and the
   ICMP reply to the host on firmware with a narrower air MTU only. The
-  bench sends UDP with `tools/bench/bench_tx.py data --udp-port` (its offline check: `bench_tx.py selftest`).
+  bench board sends UDP with a `bench_tx` `data --udp-port` job.

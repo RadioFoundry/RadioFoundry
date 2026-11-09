@@ -490,9 +490,14 @@ static void test_aprsis(void)
 	srv.rx[srv.rxn] = 0;
 	CHECK(strcmp((char *)srv.rx, "user Q0TEST-7 pass 9667 vers RadioFoundry unknown filter m/50\r\n") == 0);
 	CHECK(!net_tnc_taken());
+	// A poll whose time was read before the login went out (frames handled after it): not a timed-out login
+	aprsis_poll(now_ms - 1);
+	CHECK(!srv.reset);
 	static const char hello[] = "# aprsc 2.1.14\r\n# logresp Q0TEST-7 verified, server TIER2\r\n";
 	peer_send(&srv, hello, sizeof(hello) - 1);
 	CHECK(aprsis_online() && net_tnc_taken());
+	aprsis_poll(now_ms - 1);	// nor, after a line, a silent server
+	CHECK(!srv.reset && aprsis_online());
 
 	// The engine's lines for APRS-IS go to the server; other frames don't
 	peer_clear(&srv);

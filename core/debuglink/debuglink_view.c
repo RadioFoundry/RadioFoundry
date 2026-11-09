@@ -94,6 +94,12 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "power=%u\n", v->power);
 	dl_text_kv_str(t, "power_name", pw);
 	dl_text(t, "power_count=%u\n", board.power_count);
+	// Every level's name at the channel's transmit frequency (per band), so a host picks a level by its power
+	dl_text(t, "power_names=");
+	for (uint8_t l = 0; l < board.power_count; l++) {
+		dl_text(t, l ? "/%s" : "%s", board_power_name(l, v->ch.tx_hz));
+	}
+	dl_text(t, "\n");
 	if (board.radio != NULL && board.radio->tx_drive_level != NULL) {
 		// The PA drive of each level at the channel's transmit frequency (power calibration)
 		dl_text(t, "tx_drive=");
@@ -532,6 +538,21 @@ static void sensors_section(dl_text_t *t)
 	}
 }
 
+// The board's name and its own keys, each prefixed "board." (bring-up readings a HIL test checks; docs/spec/debuglink.md
+// 3.7)
+static void board_section(dl_text_t *t)
+{
+	char line[80];
+
+	dl_text_kv_str(t, "board.name", board.name);
+	for (uint8_t i = 0; board.view_line != NULL && i < 0xFFu && !t->full; i++) {
+		if (!board.view_line(i, line, sizeof(line))) {
+			break;
+		}
+		dl_text(t, "board.%s\n", line);
+	}
+}
+
 static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
@@ -621,6 +642,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 	case DL_VIEW_WATCHDOG:
 		debuglink_view_watchdog(t);
 		break;
+	case DL_VIEW_BOARD:
+		board_section(t);
+		break;
 	case DL_VIEW_RESET:
 		debuglink_view_reset(t);
 		break;
@@ -635,9 +659,6 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_CPS:
 		cps_section(t);
-		break;
-	case DL_VIEW_BOARD:	// no board has keys of its own (board.view_line) yet: the name alone (debuglink.md)
-		dl_text_kv_str(t, "board.name", board.name);
 		break;
 	case DL_VIEW_AUDIO:
 		debuglink_view_audio(t);

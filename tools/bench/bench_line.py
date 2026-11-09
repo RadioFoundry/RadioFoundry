@@ -2,13 +2,12 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 """
-bench_line: a client of the bench line protocol, TCP port 7373. A bench board serves it, and it has the same ops as
-the shared bench daemon. One request per connection: a JSON line goes out, and JSON lines come back. A line with
-"bytes": N is followed by N bytes of payload. Closing the connection cancels the request: a capture stops, a
+bench_line: a client of the bench line protocol, TCP port 7373. A bench board serves it. One request per connection: a
+JSON line goes out, and JSON lines come back. A line with "bytes": N is followed by N bytes of payload. Closing the connection cancels the request: a capture stops, a
 transmission unkeys, a session ends.
 
     bench_line.py HOST[:PORT] info | status            the board's view, as JSON
-    bench_line.py HOST[:PORT] run bench_tx ARGS...      a bench_tx.py command line, run as a job on the board
+    bench_line.py HOST[:PORT] run bench_tx ARGS...      a bench_tx job, run on the board
 
 Library use: request() for one-line answers, Request for a stream read on its own thread, job_from_args() for a
 bench_tx / bench_repeater command line as the job the board runs (it builds and sends the bursts itself).
@@ -32,8 +31,8 @@ FLAGS = {"private", "pi", "emergency", "confirmed", "tms_no_ack", "etsi_no_respo
 # options sent as text: free text, and the hex fields (the board reads a string as hex, a number as itself)
 TEXT = {"tms", "etsi", "ip_text", "talker_alias", "gps", "udp_payload", "opcode", "fid", "octet3", "service_options",
         "slots", "family", "ambe_out"}
-# options sent as the JSON they hold: an outbound's --voice is a list of calls, and the board refuses it as a string
-JSON_OPTS = {"voice"}
+# options whose value is JSON on the command line and goes to the board decoded: an outbound's voice calls are a list
+JSON = {"voice"}
 
 
 class BenchLineError(Exception):
@@ -173,7 +172,7 @@ class Request:
                 if d.get("state") == "granted":
                     self.log(f"rfoundry-bench: got the {d.get('kind')} after {d.get('waited_s', 0):.0f} s")
                     continue
-                if "note" in d:
+                if "note" in d and "started" not in d:     # a tx job's started line carries a note of its own
                     self.log(f"rfoundry-bench: {d['note']}")
                     continue
                 self.stamps.append(time.monotonic())
@@ -202,7 +201,7 @@ class Request:
 
 
 def job_from_args(tool, args):
-    """The job a bench_tx.py / bench_repeater.py command line (a string or a list) describes: the tool's options by
+    """The job a bench_tx or bench_repeater command line (a string or a list) describes: the tool's options by
     their long names with _ for -, the subcommand as "cmd". An --ambe file goes along as its bytes (ambe_hex)."""
     argv = shlex.split(args) if isinstance(args, str) else list(args)
     job = {"tool": tool}
@@ -228,13 +227,12 @@ def job_from_args(tool, args):
             with open(os.path.expanduser(v), "rb") as f:
                 job["ambe_hex"] = f.read().hex()
             continue
-        if key in JSON_OPTS:
+        if key in JSON:
             try:
-                job[key] = json.loads(v)
+                v = json.loads(v)
             except ValueError as e:
-                raise ValueError(f"{tool}: {a} is not JSON: {e}") from None
-            continue
-        if key not in TEXT:
+                raise ValueError(f"{tool}: {a} takes JSON: {e}") from None
+        elif key not in TEXT:
             try:
                 v = int(v)
             except ValueError:

@@ -38,7 +38,8 @@ def test_dmr_rx_counters(radio, sdr_bench, pytestconfig):
     # A baseband that plays the voice itself reports no modem.* counters: the call stack's count of the voice bursts
     # it was given stands in for the modem's, and headers, terminators and CRC errors aren't seen
     burst_modem = "modem.voice" in after
-    keys = ["call.rx_calls", "call.rx_dup_dropped", "call.rx_voice_bursts"]
+    # a call counted twice: joined again by late entry after a gap, or another station's call on the channel
+    keys = ["call.rx_calls", "call.rx_dup_dropped", "call.rx_voice_bursts", "call.rx_late_entries", "call.rx_calls_played"]
     if burst_modem:
         keys += ["modem.voice", "modem.headers", "modem.terminators", "modem.crc"]
     d = counter_deltas(before, after, keys)
