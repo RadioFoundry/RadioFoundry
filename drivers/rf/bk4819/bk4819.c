@@ -439,6 +439,7 @@ bool bk4819_tx_tail_start(bk4819_t *dev)
 		return false;
 	}
 	bk4819_write(dev, BK4819_REG_CSS_DETECT, CSS_TAIL | CSS_DETECT_DEF);
+	bk4819_write(dev, BK4819_REG_ENABLES, BK4819_STATE_TX_TONE);	// PTT is up: the microphone off
 	dev->tail_on = true;
 	return true;
 }
@@ -446,6 +447,7 @@ bool bk4819_tx_tail_start(bk4819_t *dev)
 void bk4819_tx_tail_end(bk4819_t *dev)
 {
 	bk4819_write(dev, BK4819_REG_CSS_DETECT, CSS_DETECT_DEF);
+	bk4819_write(dev, BK4819_REG_ENABLES, BK4819_STATE_TX_MAIN);
 	dev->tail_on = false;
 }
 

@@ -154,6 +154,7 @@ typedef struct {
 	uint32_t audio_ctl;		// shadow of AUDIO_CONTROL (the CPU's bits)
 	uint32_t subvoice;		// SUBVOICE_COEF before a TX tone (hrc7000_tx_tone)
 	bool tone_on;
+	bool tail_mic_off;	// the sub-audio tail muted the microphone
 	uint8_t subaudio_dev;		// SUBVOICE_COEF b15:8 at 12.5 kHz (the chip's reset value, set by power_on_init)
 	// How far the modem advances its TX data, RF_CONTROL b20:16 in 100 us steps: the board's RF TX path delay. A larger
 	// value puts the inbound burst earlier against the outbound. Set before power_on_init; 0 = HRC7000_TX_PRE_ON_DEF

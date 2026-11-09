@@ -68,7 +68,8 @@ typedef struct {
 	// Optional: the turn-off tail of the TX tone tx() set, at the end of an FM transmission (DCS: the 134.4 Hz tone that
 	// closes the receivers' squelch before the carrier drops). on: start it; false when there is none (no DCS, or the
 	// chip can't), and the core unkeys at once. off: stop it, still keyed. The core keeps the carrier up
-	// RADIO_SUBTONE_TAIL_MS between the two, then calls tx_off(), which also ends a tail still running
+	// RADIO_SUBTONE_TAIL_MS between the two, then calls tx_off(), which also ends a tail still running. PTT is up for
+	// the tail, so the microphone is off from on until off or tx_off()
 	bool (*tx_tail)(bool on);
 	// Optional: receiver power saving. true = receiver off (no status until woken), false = receive again with the
 	// last rx() settings

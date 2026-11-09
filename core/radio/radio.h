@@ -303,6 +303,7 @@ typedef struct {
 #if CONFIG_DMR_ROAMING
 	radio_roam_view_t roam;
 #endif
+	bool tx_released;	// FM: PTT is up and the sub-audio tail runs
 } radio_view_t;
 
 // view.temp bits
@@ -325,15 +326,16 @@ void radio_core_start(void);
 void radio_get_view(radio_view_t *v);
 
 // The view as the screen shows it. After PTT release a DMR call still runs to the end of its superframe, up to about
-// half a second. The screen follows the key, so the radio does not look stuck in TX; the LED still shows the RF
+// half a second, and FM can send a roger beep and a sub-audio tail. The screen follows the key, so the radio does not
+// look stuck in TX; the LED still shows the RF
 static inline void radio_view_for_screen(radio_view_t *v)
 {
 #if CONFIG_DMR
 	if (v->state == RS_TX && v->ch.mode == RADIO_MODE_DMR && v->dmr.tx_released)
 		v->state = RS_IDLE;
-#else
-	(void)v;
 #endif
+	if (v->state == RS_TX && (v->tx_released || v->roger))
+		v->state = RS_IDLE;
 }
 // Just the view's state, for a caller short of stack (the view is some 0.7 KB)
 radio_state_t radio_get_state(void);
