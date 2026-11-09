@@ -587,7 +587,7 @@ static const flow_t flows[] = {
 	{ "A KISS on USB", "ok 6 8", "up up ok", "aprs_kiss=1", 3, false },
 	{ "A stations heard", "", "ok 6 8 up ok", "screen=aprs-heard count=2", 5, false },
 	{ "A station opens its Message action", "ok 6 8 up ok", "ok", "screen=aprs-station shows=Message", 1, false },
-	{ "A station Message fills its callsign", "ok 6 8 up ok ok", "ok", "screen=compose shows=Q4WAB-9", 1, false },
+	{ "A station Message fills its callsign", "ok 6 8 up ok ok", "ok", "screen=compose shows=Q4WABC-15", 1, false },
 	{ "A new APRS message appears independently of DMR format", "", "ok 2", "shows=New_APRS_message", 2, false },
 	{ "A new APRS message opens its composer", "ok 2", "ok", "screen=compose shows=To_callsign", 1, false },
 	{ "A new APRS message needs our callsign", "aprs:nocall ok 2", "", "hides=New_APRS_message", 0, false },
