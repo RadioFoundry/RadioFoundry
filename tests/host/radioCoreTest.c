@@ -412,7 +412,7 @@ static void poll_for(uint32_t ms)
 	}
 }
 
-static void signal(uint8_t noise, bool tone_ok)
+static void rx_signal(uint8_t noise, bool tone_ok)
 {
 	hw.st.noise = noise;
 	hw.st.tone_ok = tone_ok;
@@ -431,7 +431,7 @@ static void boot(void)
 	memset(&aud, 0, sizeof(aud));
 	sim_reset();
 	memset(&hw, 0, sizeof(hw));
-	signal(120, true);
+	rx_signal(120, true);
 	radio_sm_init(&sm, now);
 }
 
@@ -442,7 +442,7 @@ static void start(void)
 	memset(&aud, 0, sizeof(aud));
 	sim_reset();
 	memset(&hw, 0, sizeof(hw));
-	signal(120, true);
+	rx_signal(120, true);
 	now = 1000;
 	radio_sm_init(&sm, now);
 }
@@ -536,52 +536,52 @@ static void test_squelch(void)
 
 	poll_for(100);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio);
-	signal(thr, true);			// at the threshold: still closed
+	rx_signal(thr, true);			// at the threshold: still closed
 	poll_for(50);
 	CHECK(sm.view.state == RS_IDLE);
-	signal(thr - 10, true);
+	rx_signal(thr - 10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX && hw.audio && hw.led[LED_GREEN]);
 	CHECK(sm.view.rssi_dbm == -80);
 	CHECK(radio_view_wakes(&sm.view));	// FM: what opens the squelch plays, so it lights the screen
-	signal(thr + RADIO_SQL_HYST_DB - 1, true);	// inside the hysteresis: stays open
+	rx_signal(thr + RADIO_SQL_HYST_DB - 1, true);	// inside the hysteresis: stays open
 	poll_for(200);
 	CHECK(sm.view.state == RS_RX);
 	CHECK(sm.view.last_rx_ms == 0);
-	signal(thr + RADIO_SQL_HYST_DB, true);
+	rx_signal(thr + RADIO_SQL_HYST_DB, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);		// one poll above is not enough
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio && !hw.led[LED_GREEN]);
 	CHECK(sm.view.last_rx_ms == now);
 	// The carrier goes: the noise jumps far over the line, and one poll closes it (a shorter squelch tail)
-	signal(thr - 10, true);
+	rx_signal(thr - 10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
-	signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB - 1, true);	// just short of it: two polls as before
+	rx_signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB - 1, true);	// just short of it: two polls as before
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
-	signal(thr - 10, true);
+	rx_signal(thr - 10, true);
 	poll_for(RADIO_POLL_MS);
-	signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB, true);
+	rx_signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio);
 
-	signal(10, false);			// no RX tone on this channel: the board's tone flag doesn't matter
+	rx_signal(10, false);			// no RX tone on this channel: the board's tone flag doesn't matter
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
-	signal(120, true);
+	rx_signal(120, true);
 	poll_for(100);
 	CHECK(sm.view.state == RS_IDLE);
 	req(RREQ_SQUELCH, -(int)(RADIO_SQUELCH_DEFAULT - 1));	// the most open level short of 0
-	signal(UINT8_MAX, true);		// a receiver that can't hear (an RF chip the board doesn't drive): never opens
+	rx_signal(UINT8_MAX, true);		// a receiver that can't hear (an RF chip the board doesn't drive): never opens
 	poll_for(200);
 	CHECK(sm.view.squelch == 1 && sm.view.state == RS_IDLE && !radio_view_wakes(&sm.view));
 	req(RREQ_CLEAR_TEMP, 0);
 
 	req(RREQ_SQUELCH, -9);			// to 0: always open
 	CHECK(sm.view.squelch == 0 && sm.view.temporary);
-	signal(200, true);
+	rx_signal(200, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX && hw.audio);
 	req(RREQ_CLEAR_TEMP, 0);
@@ -599,7 +599,7 @@ static void test_squelch(void)
 
 	// A DMR channel: the state follows the call stack, not the carrier, and the FM speaker stays shut
 	req(RREQ_ZONE_POS, 3);
-	signal(10, true);
+	rx_signal(10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio);
 }
@@ -608,7 +608,7 @@ static void test_tx(void)
 {
 	setup_codeplug();
 	start();
-	signal(10, true);
+	rx_signal(10, true);
 	poll_for(50);
 	CHECK(sm.view.state == RS_RX);
 	req(RREQ_PTT, 1);
@@ -842,10 +842,10 @@ static void test_tone_squelch(void)
 	req(RREQ_CH_STEP, 1);			// RX DCS 754
 	uint8_t thr = radio_sm_squelch_open_below(RADIO_SQUELCH_DEFAULT);
 
-	signal(thr - 20, false);		// carrier, no code: closed
+	rx_signal(thr - 20, false);		// carrier, no code: closed
 	poll_for(500);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio && !sm.view.tone_ok);
-	signal(thr - 20, true);
+	rx_signal(thr - 20, true);
 	poll_for(RADIO_POLL_MS);		// one poll of a match is not enough
 	CHECK(sm.view.state == RS_IDLE);
 	poll_for(RADIO_POLL_MS * (RADIO_TONE_ON_POLLS - 1));
@@ -853,34 +853,34 @@ static void test_tone_squelch(void)
 
 	// The flag chatters: short drop-outs keep the squelch open
 	for (int i = 0; i < 20; i++) {
-		signal(thr - 20, i % 3 != 0);
+		rx_signal(thr - 20, i % 3 != 0);
 		poll_for(RADIO_POLL_MS * (1 + i % 4 % 3));
 		CHECK(sm.view.state == RS_RX);
 	}
-	signal(thr - 20, true);
+	rx_signal(thr - 20, true);
 	poll_for(RADIO_POLL_MS);
 	// The tone goes away for good, carrier stays: closes after the debounce and the close count
-	signal(thr - 20, false);
+	rx_signal(thr - 20, false);
 	poll_for(RADIO_POLL_MS * (RADIO_TONE_OFF_POLLS - 1));
 	CHECK(sm.view.state == RS_RX);
 	poll_for(RADIO_POLL_MS * (1 + RADIO_SQL_CLOSE_POLLS));
 	CHECK(sm.view.state == RS_IDLE && !hw.audio && !sm.view.tone_ok);
 
 	// Tone without a carrier (noise above the threshold): closed
-	signal(thr + 20, true);
+	rx_signal(thr + 20, true);
 	poll_for(500);
 	CHECK(sm.view.state == RS_IDLE && sm.view.tone_ok);
 	// Carrier back with the tone: opens at once (the tone is already heard)
-	signal(thr - 20, true);
+	rx_signal(thr - 20, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
 	// Carrier gone: closes on the noise alone
-	signal(thr + 20, true);
+	rx_signal(thr + 20, true);
 	poll_for(RADIO_POLL_MS * RADIO_SQL_CLOSE_POLLS);
 	CHECK(sm.view.state == RS_IDLE);
 
 	// Monitor overrides tone squelch
-	signal(thr - 20, false);
+	rx_signal(thr - 20, false);
 	poll_for(500);
 	req(RREQ_MONITOR, 1);
 	CHECK(hw.audio && sm.view.state == RS_IDLE);
@@ -889,10 +889,10 @@ static void test_tone_squelch(void)
 
 	// Squelch level 0 with an RX tone: the tone alone decides
 	req(RREQ_SQUELCH, -9);
-	signal(200, false);
+	rx_signal(200, false);
 	poll_for(200);
 	CHECK(sm.view.state == RS_IDLE);
-	signal(200, true);
+	rx_signal(200, true);
 	poll_for(RADIO_POLL_MS * RADIO_TONE_ON_POLLS);
 	CHECK(sm.view.state == RS_RX);
 	req(RREQ_CLEAR_TEMP, 0);
@@ -900,7 +900,7 @@ static void test_tone_squelch(void)
 	// A channel without an RX tone ignores the board's tone flag
 	req(RREQ_CH_STEP, 1);
 	CHECK(sm.view.channel_number == 7 && sm.view.tone_ok);
-	signal(thr - 20, false);
+	rx_signal(thr - 20, false);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
 }
@@ -1917,10 +1917,10 @@ static void test_hotspot(void)
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HOTSPOT);
 	req(RREQ_PTT, 0);
 	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == off0);
-	signal(10, true);
+	rx_signal(10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.hs_carrier && sm.view.state == RS_IDLE);
-	signal(120, true);
+	rx_signal(120, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(!sm.hs_carrier);
 
