@@ -13,13 +13,13 @@
 #include "mcu_io.h"
 #include "config.h"
 #include "hal_time.h"
+#include "radio/power_key.h"
 #if CONFIG_WATCHDOG
 #include "app/watchdog.h"
 #endif
 #include "FreeRTOS.h"
 #include "task.h"
 
-#define POWER_OFF_POLLS		20u	// held this many switch_on polls after a release (the core polls about every 50 ms)
 #define STANDBY_POLL_US		10000u
 #define STANDBY_WAKE_POLLS	100u	// the power key held this many polls (1 s) wakes the radio from standby
 #define SUPPLY_SAMPLES		4u
@@ -27,8 +27,7 @@
 #define SUPPLY_MV_NUM		36300u
 #define SUPPLY_MV_DEN		4096u
 
-static bool key_released;
-static uint8_t held;
+static pwrkey_t power_key;
 
 static void init(void)
 {
@@ -39,8 +38,7 @@ static void init(void)
 	mcu_pin_analog(PIN_VOL_B);
 	mcu_pin_analog(PIN_PA_TEMP);
 	mcu_adc_init();
-	key_released = false;
-	held = 0;
+	pwrkey_init(&power_key);
 }
 
 // Dropping PC3 doesn't cut a mobile's supply (seen on a radio): "off" is the stock firmware's standby instead. The
@@ -90,18 +88,9 @@ static int8_t volume(void)
 	return (int8_t)d578uv_pot_percent(mcu_adc_read(ADC_VOL_A));
 }
 
-// The key must be let go after power-on before a hold counts, so the press that switched the radio on doesn't
-// switch it off again
 static bool switch_on(void)
 {
-	bool down = !mcu_pin_read(PIN_POWER_KEY);
-	if (!down) {
-		key_released = true;
-		held = 0;
-	} else if (key_released && held < POWER_OFF_POLLS) {
-		held++;
-	}
-	return held < POWER_OFF_POLLS;
+	return pwrkey_on(&power_key, !mcu_pin_read(PIN_POWER_KEY));
 }
 
 // The face LED's outputs are not confirmed (hardware-d578uv.md 9): for now the core's LEDs reach only the serial
