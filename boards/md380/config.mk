@@ -21,6 +21,10 @@ CONFIG_HOTSPOT_SPLIT ?= n
 # portDONT_DISCARD; the vectors are referenced from the assembly start-up). The image needed it while the application
 # had 275 KB, before the codec moved; it stays on for the smaller image
 LTO_3P ?= 1
+# Stored uncompressed, web control's page and drawing take about 18.5 KB more flash, more than this image has free:
+# it would run into the codec sectors. So web control goes with the compression: CONFIG_NET_HTTP_GZIP=n builds the
+# plain status page instead (hardware-md380.md 19). Asking for CONFIG_NET_WEBCTL=y as well still fails in the linker
+CONFIG_NET_WEBCTL ?= $(CONFIG_NET_HTTP_GZIP)
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
 # docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off
 BOARD_UNSUPPORTED += SFR	# the HR_C5000 lacks CRC_MCU_Control for the idle bursts (docs/spec/sfr.md)
