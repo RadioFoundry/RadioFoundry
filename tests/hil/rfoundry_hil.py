@@ -37,6 +37,9 @@ from rfoundry_debug import (DebugLink, DebugLinkError, as_int, find_ports, parse
 # tx_inhibit outside radio_tx tests) covers that.
 TX_KEYS = {ACTIONS["ptt"], ACTIONS["emergency"]}
 
+# The start of every text message a HIL test sends the radio: test_delete_message deletes one of these without asking
+HIL_SMS_PREFIX = "RadioFoundry HIL "
+
 
 def keys_tx(cmd, payload):
     """Where a debug link request transmits: "channel" (the channel's TX frequency), "position" (an APRS position, by
@@ -142,6 +145,22 @@ def need_radio_tx(radio):
     __tracebackhide__ = True
     if radio.view(["core"]).get("can_tx") == "0":
         skip("not_built", "the radio can't transmit (can_tx 0: its transmitter isn't written yet)")
+
+
+def bench_sms(radio, bench, freq_mhz, cc, src=9990301):
+    """Have the bench send the radio a HIL text message (HIL_SMS_PREFIX, no ACK asked: the radio doesn't transmit)
+    on the DMR test channel, and wait until the inbox has it. Returns the radio's inbox count after. The inbox is RAM,
+    so a test that needs a message of ours makes one rather than count on test_sms_rx and no restart since."""
+    radio.go_home()
+    radio.find_channel(round(freq_mhz * 1e6), "dmr")
+    own = int(radio.view(["dmr"])["dmr.own_id"])
+    text = f"{HIL_SMS_PREFIX}{int(time.time()) % 10000}"
+    with bench.lease():
+        bench.data(freq_mhz, cc, own, tms=text, tms_seq=(int(time.time()) % 31) + 1, tms_ack=False, src=src)
+    v = radio.wait_for(lambda x: (radio.link.inbox(0) or {}).get("text") == text, timeout=5.0, sections=("dmr_data",),
+                       what="the bench's message in the inbox")
+    radio.go_home()
+    return as_int(v.get("data.inbox_count"), 0)
 
 
 def skip_mark(kind, reason):
@@ -292,6 +311,11 @@ class Radio:
                             foreign.add(port)
                         continue
                     self.link, self.port = link, port
+                    # A transmit arm is RAM only: a test that keys right after its restart needs it back now
+                    try:
+                        self.hwopts_back()
+                    except DebugLinkError as e:
+                        print(f"rfoundry-hil: hardware options not set back after {what}: {e}")
                     return
                 except (DebugLinkError, OSError):
                     # A serial hub takes one client per port: a link left open would lock out every later try.
@@ -624,11 +648,31 @@ class Radio:
                 if time.monotonic() >= end:
                     raise
 
+    def hwopt_baseline(self):
+        """Remember the board's hardware options as the session found them (hwopts_back puts them back)"""
+        try:
+            self._hwopts_start = [o["value"] for o in self.link.hwopts()]
+        except DebugLinkError:     # firmware without HWOPT
+            self._hwopts_start = []
+
+    def hwopts_back(self):
+        """Set back a hardware option a restart reset: one that holds for a power cycle only (a bring-up transmit
+        arm) is lost when a test restarts the radio, and every later test would then fail as if the firmware did. An
+        option that needs a restart to apply is left alone: a restart doesn't change a stored one."""
+        start = getattr(self, "_hwopts_start", [])
+        if not start:
+            return
+        for i, o in enumerate(self.link.hwopts()[:len(start)]):
+            if o["value"] != start[i] and start[i] >= 0 and not o["restart"]:
+                self.link.hwopt_set(i, start[i])
+                print(f"rfoundry-hil: hardware option {o['name']!r} was reset (a restart?): set back")
+
     def restore(self, snap):
-        """Put back what snapshot() saw: monitor, zone, VFO or channel position, temporary changes, power, squelch.
-        The VFO's own frequency is not known while on a channel; tests that change it restore it themselves
-        (vfo_session)."""
+        """Put back what snapshot() saw: monitor, zone, VFO or channel position, temporary changes, power, squelch, and
+        the session's hardware options (hwopts_back). The VFO's own frequency is not known while on a channel; tests
+        that change it restore it themselves (vfo_session)."""
         L = self.link
+        self.hwopts_back()
         cur = self.core()
         if cur.get("monitor") != snap["monitor"]:
             L.monitor(snap["monitor"] == "1")

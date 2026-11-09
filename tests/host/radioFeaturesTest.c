@@ -1774,8 +1774,14 @@ static void test_dual_watch(void)
 	// The VFO as B, in the other zone's company
 	dual(far, vfo, 1);
 	CHECK(wait_on(far, 2500));
+	// A frequency request while A is tuned changes the selected B VFO, then the watch can resume with that VFO.
+	req(RREQ_VFO_SET, 146550000);
+	CHECK(sm.view.scan == SCAN_OFF && sm.view.vfo && sm.view.ch.rx_hz == 146550000 && hw.rx_hz == 146550000);
+	dual(far, vfo, 1);
+	CHECK(sm.view.scan == SCAN_DUAL && wait_on(far, 2500) && wait_on(vfo, 2500));
+	CHECK(sm.view.ch.rx_hz == 146550000 && hw.rx_hz == 146550000);
 	req(RREQ_PTT, 1);
-	CHECK(sm.view.vfo && hw.tx_hz == 146000000 && sm.view.scan == SCAN_DUAL);
+	CHECK(sm.view.vfo && hw.tx_hz == 146550000 && sm.view.scan == SCAN_DUAL);
 	req(RREQ_PTT, 0);
 	CHECK(wait_on(far, 2500) && sm.view.scan == SCAN_DUAL);
 	dual_stop();
