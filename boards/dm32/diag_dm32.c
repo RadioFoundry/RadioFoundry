@@ -5,6 +5,7 @@
 #include "dm32.h"
 #include "config.h"
 #include "platform.h"
+#include "dmr_rfburst.h"
 
 #if CONFIG_DIAG
 
@@ -169,6 +170,39 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 			put(&o, "none");
 		}
 		break;
+	case 12: {	// DMR TX bursts (dmr_rfburst.h): TX-on / TX-off sequences run, RF RX interrupts, what woke the
+			// last TX-off (R RF RX interrupt, T slot tick, A abort), ramp downs started late and the last by how much
+		hrc_rfburst_stats_t t;
+		hrc_rfburst_stats(&t);
+		put(&o, "b");
+		put_u(&o, t.bursts);
+		put(&o, "/");
+		put_u(&o, t.ends);
+		put(&o, " rx");
+		put_u(&o, t.rfrx_ints);
+		put(&o, t.last_by == 'R' ? " R" : t.last_by == 'T' ? " T" : t.last_by == 'A' ? " A" : " -");
+		put(&o, " L");
+		put_u(&o, t.late);
+		put(&o, "/");
+		put_u(&o, t.last_late_us);
+		break;
+	}
+	case 13: {	// The TX-on timing since the key-up, in us: the RF task's wake (largest), the PA up after the RF TX
+			// interrupt (smallest..largest), an interrupt off its 60 ms grid (largest / count retimed)
+		hrc_rfburst_stats_t t;
+		hrc_rfburst_stats(&t);
+		put(&o, "up w");
+		put_u(&o, t.wake_max_us);
+		put(&o, " u");
+		put_u(&o, t.up_min_us);
+		put(&o, "..");
+		put_u(&o, t.up_max_us);
+		put(&o, " g");
+		put_u(&o, t.grid_max_us);
+		put(&o, "/");
+		put_u(&o, t.regridded);
+		break;
+	}
 #endif
 	default:
 		return false;
