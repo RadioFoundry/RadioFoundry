@@ -341,11 +341,12 @@ def test_host_link_idle_after_tx(radio, sdr_bench, pytestconfig):
     arrive as a character with a line error (docs/spec/gotchas.md 2.13), and one handed to the protocols put the link
     in CPS mode."""
     _dmr_tx_setup(radio, pytestconfig)
-    radio.wait_for(lambda v: v.get("hostlink") == "idle", timeout=12, what="host link idle before the over")
+    radio.wait_for(lambda v: v.get("hostlink") == "idle", timeout=12, sections=("hotspot",),
+                   what="host link idle before the over")
     with sdr_bench.lease():
         radio.ptt_for(2.0)
         radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
-    mode = radio.view().get("hostlink")
+    mode = radio.link.view(["hotspot"]).get("hostlink")
     assert mode == "idle", f"host link mode {mode!r} after the over"
 
 

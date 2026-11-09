@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "dmr_rfburst_timing.h"
 
 #define GD88_CAL_LEN		0x800u
 #define GD88_CAL_POINTS		8u
@@ -50,9 +51,15 @@ uint8_t gd88_cal_squelch_db(uint32_t hz, uint8_t level);
 // bench radios have them unwritten (0xFF) (hardware-gd88.md 7), so they aren't used
 #define GD88_CAL_OFF_EXTRA	0x602u
 
-// DMR burst end: the TX-off starts at the modem's RF RX interrupt, 30.5 ms after the RF TX interrupt that keyed the
-// burst, and the PA keys down the page's TX-off delay later, as in hardware-db25d.md 4.5. The last symbol is at the
-// 3.1 ms lead + 0.85 ms + 27.5 ms, so the shared hold (hrc_rfburst_board_t.off_ahead_us) ends this long before it
-#define GD88_DMR_OFF_AHEAD_US	950u
+// DMR keying (hardware-gd88.md): the shortest lead that has the PA up for the first symbol. From the RF TX interrupt to
+// the PA within 1 dB: A's task wake, B's edge, its 50 us and the page's TX-on delay, PA select, 200 us, supply, the ramp
+#define GD88_DMR_PA_UP_US	2400u
+static inline uint8_t gd88_dmr_rf_tx_lead(uint16_t on_us)
+{
+	return hrc_rfburst_lead(GD88_DMR_PA_UP_US + on_us);
+}
+// The ramp down starts with the burst's last symbol, with no page TX-off delay: that delay held the carrier 0.75 ms
+// past the data. A's TX line falls this long before it, B's wake on the edge (hrc_rfburst_board_t.off_ahead_us)
+#define GD88_DMR_OFF_AHEAD_US	150u
 
 #endif

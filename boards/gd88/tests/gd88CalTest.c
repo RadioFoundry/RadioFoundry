@@ -247,15 +247,19 @@ static void test_apc(void)
 	CHECK(gd88_apc_level(4095, 1) < 4 && gd88_apc_level(4095, 179) > 4095 - 4);
 }
 
-// DMR burst end (4.5): at the 3.1 ms lead the shared hold ends at the modem's RF RX interrupt, 30.5 ms after the RF TX
-// interrupt, whatever woke the TX-off; a trigger after that point starts it at once and counts as late
-static void test_dmr_hold(void)
+// DMR keying: the lead is the shortest with the PA up for the first symbol, the page's TX-on delay on top; the shared
+// hold ends GD88_DMR_OFF_AHEAD_US before the last symbol, whatever woke the TX-off; past that point it starts at once and
+// counts as late
+static void test_dmr_timing(void)
 {
-	const uint8_t lead = 31;
-	CHECK(hrc_rfburst_off_at_us(lead) - GD88_DMR_OFF_AHEAD_US == 30500u);
-	CHECK(hrc_rfburst_hold_us(GD88_DMR_OFF_AHEAD_US, lead) == 30500u);
-	CHECK(hrc_rfburst_hold_us(30500u + GD88_DMR_OFF_AHEAD_US, lead) == 0);
-	CHECK(hrc_rfburst_late_us(31400u + GD88_DMR_OFF_AHEAD_US, lead) == 900u);
+	CHECK(gd88_dmr_rf_tx_lead(0) == 16);
+	CHECK(gd88_dmr_rf_tx_lead(1000) == 26);
+	const uint8_t lead = gd88_dmr_rf_tx_lead(0);
+	uint32_t at = hrc_rfburst_off_at_us(lead) - GD88_DMR_OFF_AHEAD_US;
+	CHECK(at == 1600u + 850u + 27500u - GD88_DMR_OFF_AHEAD_US);
+	CHECK(hrc_rfburst_hold_us(GD88_DMR_OFF_AHEAD_US, lead) == at);
+	CHECK(hrc_rfburst_hold_us(at + GD88_DMR_OFF_AHEAD_US, lead) == 0);
+	CHECK(hrc_rfburst_late_us(at + 900u + GD88_DMR_OFF_AHEAD_US, lead) == 900u);
 	CHECK(hrc_rfburst_late_us(20000u + GD88_DMR_OFF_AHEAD_US, lead) == 0);
 }
 
@@ -268,7 +272,7 @@ int main(void)
 	test_squelch();
 	test_tx_plan();
 	test_apc();
-	test_dmr_hold();
+	test_dmr_timing();
 	if (failures) {
 		printf("gd88CalTest: %d failures\n", failures);
 		return 1;

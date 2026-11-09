@@ -411,6 +411,14 @@ static void own_gpio(bool on, uint32_t hz)
 }
 #endif
 
+// TX-off wait in a burst: A's TX line falls ahead of the last symbol by B's wake, so B waits none; B's own PA has no
+// link to wait for, so it sits out that same lead
+#if GD88_TX
+#define DMR_OFF_DELAY_US	0u
+#else
+#define DMR_OFF_DELAY_US	GD88_DMR_OFF_AHEAD_US
+#endif
+
 static bool dmr_tx(uint32_t hz, uint8_t power)
 {
 	gd88_tx_plan_t plan;
@@ -436,13 +444,14 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	}
 	tx_power = power;
 #endif
-	if (!gd88_pa_arm(hz, plan.pa, plan.on_us, plan.off_us)) {
+	if (!gd88_pa_arm(hz, plan.pa, plan.on_us, DMR_OFF_DELAY_US)) {
 		return false;
 	}
 	tx_on_us = plan.on_us;
-	tx_off_us = plan.off_us;
+	tx_off_us = DMR_OFF_DELAY_US;
 	tx_hz = hz;
 	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias_dc(gd88_cal_tx_center(), gd88_cal_mod(hz)));
+	hrc7000_set_rf_tx_lead(&modem, gd88_dmr_rf_tx_lead(plan.on_us));
 	bk4819_dmr_tx_prepare(&rf_main);
 	dmr_armed = true;
 	gd88_dmr_tx_arm();
