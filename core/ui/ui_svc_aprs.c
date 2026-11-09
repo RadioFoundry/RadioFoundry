@@ -107,5 +107,18 @@ bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out)
 {
 	return aprs_station(i, out);
 }
+
+bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg)
+{
+	int32_t lat, lon;
+	uint32_t err_m;
+	bool dmr_gps;
+	if (!s->has_pos || !aprs_position_now(&lat, &lon, &err_m, &dmr_gps)) {
+		return false;
+	}
+	*m = aprs_distance_m(lat, lon, s->lat, s->lon);
+	*deg = aprs_bearing_deg(lat, lon, s->lat, s->lon);
+	return true;
+}
 #endif
 #endif

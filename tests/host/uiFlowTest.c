@@ -1254,6 +1254,46 @@ static void call_screen_checks(void)
 	}
 }
 
+// Tools > APRS > Stations heard, at every display class: a station with a position shows how far and which way it is
+// from ours, beside the longest call there is, kept whole. No position of ours, or none of the station's: the row is
+// the call and its age, as before.
+// EP: our position none / fixed x the station's none / valid (QJ4XYZ has none)
+static void heard_checks(void)
+{
+	static const struct { const char *name, *setup; bool range; } cases[] = {
+		{ "both positions", "", true },
+		{ "no position of ours", "aprs:nopos ", false },
+	};
+	char err[300], buf[200];
+	for (int g = 0; g < sim_geom_count; g++) {
+		for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			snprintf(buf, sizeof buf, "%sok 6 8 up ok expect:screen=aprs-heard expect:shows=Q4WABC-15 "
+				 "expect:shows=QJ4XYZ expect:%s=14.5_km_NE", cases[i].setup,
+				 cases[i].range ? "shows" : "hides");
+			if (!sim_run(buf, err, sizeof err)) {
+				printf("FAIL stations heard %s [%s]: %s\n", cases[i].name, sim_geoms[g].name, err);
+				fails++;
+			}
+		}
+	}
+	// Packets without a position since the last one: the row's age is the position's (10 min), not the last
+	// packet's (1 min), so it says how old the range is
+	sim_reset(&sim_geoms[0], SIM_MAP_K);
+	if (!sim_run("wait:600000 ok 6 8 up ok expect:shows=14.5_km_NE expect:shows=10m expect:hides=1m", err,
+		     sizeof err)) {
+		printf("FAIL stations heard position age [%s]: %s\n", sim_geoms[0].name, err);
+		fails++;
+	}
+	// BVA on the row's width: a display too narrow for the call, the range and the age gives up the range, never
+	// the call (96 px: under 20 cells, the call and the range alone are 20)
+	sim_reset(sim_geom_find("96x64m"), SIM_MAP_K);
+	if (!sim_run("ok 6 8 up ok expect:screen=aprs-heard expect:shows=Q4WABC-15 expect:hides=km", err, sizeof err)) {
+		printf("FAIL stations heard narrow [96x64m]: %s\n", err);
+		fails++;
+	}
+}
+
 // A radio without a battery (CAP_NO_BATTERY), at every display class: no percentage in the status strip, no battery
 // warning, and no Battery page, Battery saver or Low battery warning in the lists (Tools keep their numbers, Battery
 // is the last one; in Settings the other rows move up). With a
@@ -1392,6 +1432,7 @@ int main(void)
 	printf("# %d flows run\n", flows_run);
 	about_checks();
 	call_screen_checks();
+	heard_checks();
 	vfo_split_dmr_checks();
 	no_battery_checks();
 	title_row_checks();
