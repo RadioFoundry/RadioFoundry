@@ -612,7 +612,7 @@ static int build_dd(uint8_t dd, const uint8_t *data, int len, uint8_t extra_pad_
 	crc = (uint16_t)(~crc ^ 0xCCCC);
 	h[10] = (uint8_t)(crc >> 8);
 	h[11] = (uint8_t)crc;
-	out[0].dataType = DT_DATA_HEADER;
+	out[0].dataType = DMR_TYPE_DATA_HEADER;
 	out[0].length = 12;
 	out[0].flags = 0;
 	memcpy(out[0].payload, h, 12);
@@ -624,7 +624,7 @@ static int build_dd(uint8_t dd, const uint8_t *data, int len, uint8_t extra_pad_
 	pkt[len + pad + 2] = (uint8_t)(c32 >> 16);
 	pkt[len + pad + 3] = (uint8_t)(c32 >> 24);
 	for (int i = 0; i < blocks; i++) {
-		out[1 + i].dataType = DT_RATE_12_DATA;
+		out[1 + i].dataType = DMR_TYPE_RATE_1_2;
 		out[1 + i].length = 12;
 		out[1 + i].flags = 0;
 		memcpy(out[1 + i].payload, &pkt[i * 12], 12);
@@ -687,7 +687,7 @@ static void test_etsi_text_vector(void)
 	char text[64];
 	dmrBurst_t b[8];
 	for (int i = 0; i < 3; i++) {
-		b[i].dataType = i == 0 ? DT_DATA_HEADER : DT_RATE_12_DATA;
+		b[i].dataType = i == 0 ? DMR_TYPE_DATA_HEADER : DMR_TYPE_RATE_1_2;
 		b[i].length = 12;
 		b[i].flags = 0;
 		memcpy(b[i].payload, etsi_vec[i], 12);
@@ -702,7 +702,7 @@ static void test_etsi_text_vector(void)
 	for (int i = 0; i < n && i < 3; i++) {
 		CHECK(b[i].length == 12 && memcmp(b[i].payload, etsi_vec[i], 12) == 0);
 	}
-	CHECK(b[0].dataType == DT_DATA_HEADER && b[1].dataType == DT_RATE_12_DATA && b[2].dataType == DT_RATE_12_DATA);
+	CHECK(b[0].dataType == DMR_TYPE_DATA_HEADER && b[1].dataType == DMR_TYPE_RATE_1_2 && b[2].dataType == DMR_TYPE_RATE_1_2);
 }
 
 // An ETSI text message to us with a response requested: kept in the inbox as ETSI, the ETSI response (ACK) goes out
@@ -796,9 +796,9 @@ int main(void)
 {
 	hrc6000_attach(&dev, &bus);
 	test_call_alert_in();
-	test_sms_in(DT_RATE_12_DATA, "Hello from the chain");
-	test_sms_in(DT_RATE_34_DATA, "Rate three quarters, a little longer text");
-	test_sms_in(DT_RATE_1_DATA, "Rate one");
+	test_sms_in(DMR_TYPE_RATE_1_2, "Hello from the chain");
+	test_sms_in(DMR_TYPE_RATE_3_4, "Rate three quarters, a little longer text");
+	test_sms_in(DMR_TYPE_RATE_1, "Rate one");
 	test_radio_check_out();
 	test_radio_check_etsi();	// before a check is left unanswered (the state carries over)
 	test_call_alert_out_no_answer();

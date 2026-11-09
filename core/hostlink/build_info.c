@@ -135,6 +135,12 @@ const char build_features[] =
 #if CONFIG_DIAG
 	"DIAG,"
 #endif
+#if CONFIG_UI_SETTINGS
+	"UI_SETTINGS,"
+#endif
+#if CONFIG_CHANNEL_LIST
+	"CHANNEL_LIST,"
+#endif
 #if CONFIG_CRASH_LOG
 	"CRASH_LOG,"
 #endif

@@ -34,6 +34,13 @@ enum {
 	DL_CMD_RX2		= 0x1E,	// the second receiver's SoC: state, the update bridge, restart (debuglink_rx2.c, 3.22)
 	DL_CMD_IDDB		= 0x1F,	// the DMR ID database: its format, records and an ID looked up (debuglink_iddb.c, 3.23)
 	DL_CMD_CHIP_REG		= 0x20,	// an RF chip or SoC register read or written (debuglink_chipreg.c, 3.24)
+	DL_CMD_HWOPT		= 0x21,	// the board's hardware options: list, set (debuglink_hwopt.c, 3.25)
+};
+
+// DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.25)
+enum {
+	DL_HWOPT_OP_LIST	= 0,	// none -> key=value text: hwopt.count, hwopt.<i>.name / value / restart / choices
+	DL_HWOPT_OP_SET		= 1,	// option u8, choice u8 -> none (refused: the board didn't store it, or on air)
 };
 
 // DL_CMD_CHIP_REG's chip number for the SoC's own registers (board.system->reg): an address u32 follows, not a page and
@@ -75,7 +82,7 @@ enum {
 };
 // HANG: the host link's task spins with interrupts on and the watchdog fed as usual, so the hang check (crash-log.md
 // 1.1) keeps the record; unavailable without CONFIG_WATCHDOG
-enum { DL_CRASH_TEST_TRAP = 1, DL_CRASH_TEST_ASSERT = 2, DL_CRASH_TEST_HANG = 3 };
+enum { DL_CRASH_TEST_TRAP = 1, DL_CRASH_TEST_ASSERT = 2, DL_CRASH_TEST_HANG = 3, DL_CRASH_TEST_STALL = 4 };
 // The test's guard, little endian in the payload: bytes 'C' 'R' 'S' 'H' (as CRASH_MAGIC), so a stray frame can't crash
 // the radio
 #define DL_CRASH_TOKEN		0x48535243u

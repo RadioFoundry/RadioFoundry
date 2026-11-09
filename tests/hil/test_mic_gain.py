@@ -10,12 +10,12 @@ over goes like this:
 
 1. With the cable in, the test sets the FM VFO on --fm-mhz (lowest power, no sub-audio), the bandwidth and the Mic
    gain step (the debug link's SETTING op, RAM only), and prints which over is next.
-2. The SDR bench starts a --mic-gain-window recording (default 30 s) and the test prints "GO".
+2. The bench board starts a --mic-gain-window FM measurement (default 30 s) and the test prints "GO".
 3. The person unplugs the cable, keys PTT, gives a steady tone (a whistle or a tone from a phone held at the
    microphone, the same distance and level every time) or reads the same sentence for about 5 s, releases PTT and
    plugs the cable back in.
-4. The test analyzes the recording (tools/sdr_fm_check.py: the voice band peak and rms deviation of the longest keyed
-   segment, and the strongest tone), waits for the debug link to answer again (up to 3 min) and reads the step back.
+4. The test reads the board's report (the voice band peak and rms deviation of the longest keyed segment and its
+   strongest tone, from its demodulated audio), waits for the debug link to answer again (up to 3 min) and reads the step back.
 
 One over per step and bandwidth: --mic-gain-steps (default 3,5,7) at 12.5 kHz, then the same at 25 kHz. At the end
 the test prints a table: bandwidth, step, offset (dB), the modem's GCR_ADCL after the over (DM-1801 Pro diagnostics,
@@ -31,6 +31,7 @@ import time
 
 import pytest
 
+import fm_measure
 from rfoundry_hil import skip
 from rfoundry_debug import DebugLink, DebugLinkError, as_int
 from test_fm_tx import fm_vfo  # noqa: F401  (the fixture)
@@ -77,23 +78,6 @@ def adcl(radio):
     return None
 
 
-def segments(text):
-    """Per keyed segment of sdr_fm_check.py's report: length, voice peak / rms, tones (Hz, deviation)."""
-    out = []
-    for block in re.split(r"\n(?=segment \d+:)", text):
-        m = re.match(r"segment \d+: ([\d.]+)-([\d.]+) s", block)
-        if not m:
-            continue
-        seg = {"start": float(m.group(1)), "len": float(m.group(2)) - float(m.group(1))}
-        v = re.search(r"voice 300-3000 Hz: peak (\d+) Hz \(99\.5%\), (\d+) Hz \(99\.9%\), rms (\d+) Hz", block)
-        if v:
-            seg["peak"], seg["peak999"], seg["rms"] = int(v.group(1)), int(v.group(2)), int(v.group(3))
-        seg["tones"] = [(float(f), int(d)) for f, d in
-                        re.findall(r"tone ([\d.]+) Hz [\d.]+-[\d.]+ s \([\d.]+ s\), deviation (\d+) Hz", block)]
-        out.append(seg)
-    return out
-
-
 @pytest.mark.feature("fm", optional=True, owner=(
         "key PTT and speak or whistle into the microphone in each recording window; on a radio whose programming "
         "cable mutes the microphone, take the cable out for each over"))
@@ -129,24 +113,20 @@ def test_mic_gain_deviation(fm_vfo, sdr_bench, pytestconfig):
             radio.wait_for(lambda v: v.get("set.mic_gain") == str(step), sections=("features",), what="mic gain step")
             print(f"\n=== over {n}/{len(overs)}: {bw_khz:g} kHz, mic gain step {step} ({(step - 5) * 2:+d} dB), "
                   f"{mhz} MHz ===")
-            rdir = sdr_bench.run_dir(f"hil_mic_gain_{n}")
             with sdr_bench.lease():
-                cap = sdr_bench.capture_start(rdir, mhz, seconds=window)
+                job = sdr_bench.fm_over_start(mhz, window, bw_khz=bw_khz, audio=True)
                 print(f"GO: {window:.0f} s from now. Unplug the cable, key PTT, the tone or sentence for about 5 s, "
                       "release, plug the cable back in.", flush=True)
                 t0 = time.time()
-                sdr_bench.capture_wait(timeout=window + 120)
-            print(f"recording done ({time.time() - t0:.0f} s); analyzing")
-            rc, text = sdr_bench.analyze_fm(cap, bw_khz=bw_khz, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz,
-                                            tones=True)
-            print(text)
-            segs = [s for s in segments(text) if s["len"] >= MIN_SEGMENT_S]
-            seg = max(segs, key=lambda s: s["len"]) if segs else None
+                r = sdr_bench.fm_over_result(job, timeout=window + 120)
+            print(f"recording done ({time.time() - t0:.0f} s)")
+            print(fm_measure.describe(r))
+            segs = [v for v in r["voice"] if v["len"] >= MIN_SEGMENT_S]
+            seg = max(segs, key=lambda v: v["len"]) if segs else None
             wait_link(radio)
             back = features(radio).get("set.mic_gain")
             reg = adcl(radio)
-            rows.append({"bw": bw_khz, "step": step, "back": back, "adcl": reg, "seg": seg,
-                         "capture": sdr_bench.run_path(rdir)})
+            rows.append({"bw": bw_khz, "step": step, "back": back, "adcl": reg, "seg": seg})
             print(f"link back: step {back}, GCR_ADCL {'?' if reg is None else f'0x{reg:02X}'}", flush=True)
     finally:
         try:
@@ -159,13 +139,13 @@ def test_mic_gain_deviation(fm_vfo, sdr_bench, pytestconfig):
     for r in rows:
         s = r["seg"] or {}
         reg = "?" if r["adcl"] is None else f"0x{r['adcl']:02X}({r['adcl'] & 0x3F})"
-        tone = s.get("tones") and max(s["tones"], key=lambda t: t[1])
-        tone_txt = f"{tone[0]:.0f} Hz {tone[1]} Hz pk" if tone else "-"
+        tone = s.get("tones") and max(s["tones"], key=lambda t: t[3])
+        tone_txt = f"{tone[0]:.0f} Hz {tone[3]} Hz pk" if tone else "-"
         print(f"  {r['bw']:6g}  {r['step']:4d}  {(r['step'] - 5) * 2:+3d}  {reg:9s} "
               f"{s.get('len', 0):5.1f}  {s.get('peak', '-')!s:>7}  {s.get('rms', '-')!s:>6}  {tone_txt}")
     missing = [r for r in rows if r["seg"] is None]
     assert not missing, "no keyed segment of 1 s or more in: " + ", ".join(
-        f"{r['bw']:g} kHz step {r['step']} ({r['capture']})" for r in missing)
+        f"{r['bw']:g} kHz step {r['step']}" for r in missing)
     wrong = [r for r in rows if r["back"] != str(r["step"])]
     assert not wrong, "the step read back after the over differs (did the radio restart?): " + ", ".join(
         f"set {r['step']}, read {r['back']}" for r in wrong)

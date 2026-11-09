@@ -202,10 +202,11 @@ bool aprs_rx_listening(void);
 #if CONFIG_APRS_RX
 #if CONFIG_APRS_RX
 // The receive path's diagnostics (debug link): the largest sample since it started (0: only silence, the squelch never
-// opened or no audio arrives), tone decisions, and the HDLC decoder's good frames, FCS errors and aborts
+// opened or no audio arrives), tone decisions, the HDLC decoder's good frames, FCS errors and aborts, and the starts
+// the board's receive path refused
 typedef struct {
 	uint16_t peak;
-	uint32_t bits, frames, fcs_errors, aborts;
+	uint32_t bits, frames, fcs_errors, aborts, start_fails;
 } aprs_rx_stats_t;
 void aprs_rx_stats(aprs_rx_stats_t *out);
 #endif

@@ -354,7 +354,7 @@ class Command(unittest.TestCase):
     def test_dm1701_takes_no_route(self):
         with tempfile.TemporaryDirectory() as d:
             p = self.local(d, struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(5000), "rfoundry_dm1701.bin")
-            rc, out, err, calls = self.run_flash([p, "--board", "dm1701", "--route", "stub", "--dry-run",
+            rc, out, err, calls = self.run_flash([p, "--board", "dm1701", "--route", "bootloader", "--dry-run",
                                                   "--codec", "keep", "--no-probe"])
         self.assertEqual((rc, calls), (2, []))
         self.assertIn("--route is for", err)

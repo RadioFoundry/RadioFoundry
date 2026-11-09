@@ -1,0 +1,586 @@
+{
+ "board": "md9600",
+ "commit": "40a4ff1cd8ce4a63aecc0622486c5e7b65f9db8b",
+ "date": "2026-11-08T16:50:01Z",
+ "dirty": false,
+ "features": [
+  "dmr_voice",
+  "dual_watch",
+  "split_duplex",
+  "zone_share"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "a6054f30",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "microphone",
+  "radio",
+  "reboot",
+  "rf",
+  "second_radio",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 2,
+  "dmr-freq": 461.4625,
+  "dmr-tg": 201,
+  "fm-mhz": 461.4625,
+  "tx-power": 40
+ },
+ "sources": {
+  "dmr_voice": {
+   "core/dmr/ambe": "6c51e53ad12e5d09061c8b8c0cf246f7e9d1a8bd",
+   "core/dmr/call": "5985987bf77df8a73f47fcce47655b5021bf1d2c",
+   "core/dmr/fec": "ef810773bfde2f7a2639dc06ebb643644b67458d",
+   "docs/spec/dmr-voice.md": "0f6239dda372685d7c512308646debfc8416096c",
+   "drivers/modem": "da112dec97c50406ab02782cc64c5ff601669072",
+   "hal/hal_dmr_modem.h": "ef1e463062602df0db0ebe01ebbaa7344488f1fe",
+   "hal/hal_vocoder.h": "ccab114a06df427ea3115af9b3ffd1a770eb96c8"
+  },
+  "dual_watch": {
+   "core/debuglink/debuglink_view_radio.c": "a1ac2668e6cf1f7374fa60ca4dbb7100a3e1d3d0",
+   "core/input/keyassign.h": "8501bc24842be8a884dc497567e1b7674df10852",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "8c3102d53dfa2e57e3a06e9e38bfbb732aabc064",
+   "core/radio/radio_sm.h": "45e2d4be945694a1acf24f58ed047d9623484cd4",
+   "core/radio/radio_task.c": "60c228d7f3a667e8f9b8c92e8132f837967225ae",
+   "core/ui/ui_app.c": "b452aeeb2a9a1af58646974bd5269030f51742ed",
+   "core/ui/ui_dual.c": "d54bf63736cf0c4dae690746567aa3f7f391bd73",
+   "core/ui/ui_menus.c": "5672529b5ab5fd470f02b2a52c4029efaff6d1b0",
+   "core/ui/ui_nav.h": "59ed3080c7ad4c4ff5614c592e65664b34c08036",
+   "core/ui/ui_screens.c": "f7bfa3dd2960f22ee0e88e84c0294699b5728e4c",
+   "core/ui/ui_screens.h": "fe92a2e13987bc84cf62508ba05bfc0c1b9045ba",
+   "core/ui/ui_svc.h": "b0115904398c27ff10091a77d7b7e3b0a2acdb27",
+   "core/ui/ui_svc_radio.c": "3c12f217fcab922161c514d09f89fdbec58582a4",
+   "core/ui/ui_svc_storage.c": "fd7044aa12498a245883412cb537d5fa74eed8bd",
+   "docs/spec/radio-features.md": "a1eb281d348d8d93478173ad56f06b0dcb8501f2"
+  },
+  "split_duplex": {
+   "core/dmr/bsOutbound.c": "2a3aae452963660b4f245f9c92f19b6b3f8c0a10",
+   "core/dmr/slotEpoch.c": "bf4a0593c7ba811659bee8913b042e908a1897f7",
+   "core/hotspot": "9b4f88ccfecae838dd76fceba275353f554a5bc7",
+   "docs/spec/split-duplex.md": "7cfd8373b394996b6dd56028f699c8f57718d4ec",
+   "drivers/modem": "da112dec97c50406ab02782cc64c5ff601669072",
+   "hal/hal_dmr_modem.h": "ef1e463062602df0db0ebe01ebbaa7344488f1fe",
+   "tools/split_duplex_host.py": "93748c3c1efbe4e434aedb7b1261316fa437ca16"
+  },
+  "zone_share": {
+   "core/dmr/dmrAirQueue.c": "d273bbf8fdd3008ab048a8947f043d62874228fd",
+   "core/dmr/zoneShare.c": "f34704eebb4e5f03ad435ff68693067291f3886d",
+   "core/dmr/zoneShareSvc.c": "dfa0d6115d25b07be345b8e0d862894b9f405ad1",
+   "docs/spec/zone-share.md": "03406f24df3177b86179d93b34b63a4474b7cd84"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_call_features.py::test_late_entry",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_call_features.py::test_pi_bit",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_call_features.py::test_private_call_to_other",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_call_features.py::test_private_call_to_us",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_call_features.py::test_talk_target_requests",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_alone[1-1]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_alone[1-2]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_alone[2-1]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_alone[2-2]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_both_slots[1]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_both_slots[2]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_late_entry[0]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_late_entry[3]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_late_entry[5]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_slot2_mid_call[1]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_slot2_mid_call[2]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_outbound_voice.py::test_outbound_voice_wrong_cc",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_burst_offset",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[boot]",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_dmr_repeater_slots.py:127: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[channel_change]",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_dmr_repeater_slots.py:127: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[long_call]",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_dmr_repeater_slots.py:127: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[long_idle]",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_dmr_repeater_slots.py:127: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[rekey]",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_dmr_repeater_slots.py:127: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[up_ts_changes]",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_dmr_repeater_slots.py:127: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[wake_ts]",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_dmr_repeater_slots.py:127: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_rx.py::test_dmr_rx_counters",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_dmr_rx.py:47: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_tx.py::test_dmr_tx_off_air",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_dmr_tx.py::test_dmr_tx_split_repeater",
+   "optional": [
+    "split_duplex"
+   ],
+   "outcome": "failed",
+   "reason": "tests/hil/test_dmr_tx.py:529: AssertionError",
+   "required": false
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_voice.py::test_dmr_voice_speech",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_modem_interrupts.py::test_no_lost_modem_interrupts",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dual_watch"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_dual_watch",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dual_watch"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_dual_watch_debug_link",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dual_watch"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_dual_watch_stops_on_call",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_speaker_ear.py::test_speaker_dmr_voice",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dual_watch"
+   ],
+   "id": "tests/hil/test_speaker_ear.py::test_speaker_second_receiver",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "bring-up: a required test of dual_watch skipped (state), which its needs don't excuse: Skipped: [state] the other channel is on the test frequency too",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_capability",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_protocol",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_rx_half_labels",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_standard_host",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_state_cleanup",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_tx_half_continuous",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_tx_half_off_air",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_tx_half_voice",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_split_duplex.py:510: AssertionError",
+   "required": true
+  },
+  {
+   "excused": false,
+   "features": [],
+   "id": "tests/hil/test_split_pair.py::test_split_pair_handheld",
+   "optional": [
+    "split_duplex"
+   ],
+   "outcome": "skipped",
+   "reason": "[opt_in] needs the RX half (--split-rx-port), a subscriber radio (--split-ms-port) and the repeater output (--split-out-mhz)",
+   "required": false,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_pair.py::test_split_pair_repeat",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_ui.py::test_quick_color_code_for_now",
+   "optional": [
+    "dmr_voice"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_ui.py::test_quick_hear_all_latch",
+   "optional": [
+    "dmr_voice"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_ui.py::test_quick_timeslot_for_now",
+   "optional": [
+    "dmr_voice"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_usb_network_services.py::test_net_split_protocol",
+   "optional": [
+    "split_duplex"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_usb_network_services.py::test_net_split_rx_half_labels",
+   "optional": [
+    "split_duplex"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [
+    "zone_share"
+   ],
+   "id": "tests/hil/test_zone_share.py::test_send_channel_heard",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "zone_share"
+   ],
+   "id": "tests/hil/test_zone_share.py::test_zone_and_channel_between_radios",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "zone_share"
+   ],
+   "id": "tests/hil/test_zone_share.py::test_zone_share_view",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

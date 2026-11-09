@@ -38,6 +38,7 @@ static bool start(audio_block_cb_t cb, void *ctx)
 	return stm32_i2s_pcm_start(&i2s_cfg, cb, ctx);
 }
 
-const hal_audio_t md380_audio = { .start = start, .stop = stm32_i2s_pcm_stop, .speaker_pcm = speaker_pcm };
+const hal_audio_t md380_audio = { .start = start, .stop = stm32_i2s_pcm_stop, .speaker_pcm = speaker_pcm,
+				  .stream_stats = stm32_i2s_pcm_stream_stats };
 
 #endif	// CONFIG_DMR

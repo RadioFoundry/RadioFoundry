@@ -1,0 +1,426 @@
+{
+ "board": "md9600",
+ "commit": "d393410d7f74226e7e16f8f701dec815f71d1e23",
+ "date": "2026-11-08T00:58:45Z",
+ "dirty": false,
+ "features": [
+  "ref_trim",
+  "subtone",
+  "fm_tx_tones",
+  "dtmf",
+  "vox",
+  "battery_save",
+  "scan",
+  "dual_watch",
+  "radio_controls"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,DMR_CONFIRMED,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "02dfdbe3",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.075,
+  "dmr-tg": 202,
+  "fm-mhz": 446.1,
+  "tx-power": 40
+ },
+ "sources": {
+  "battery_save": {
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "1d686257536727a8a95ce65be61ffff9702a5e10",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "docs/spec/radio-features.md": "4dcbd17207c1d1166572b410fa4668f0cebc98c5"
+  },
+  "dtmf": {
+   "core/debuglink/debuglink_view_radio.c": "a1ac2668e6cf1f7374fa60ca4dbb7100a3e1d3d0",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/input/input_task.c": "3ce609d9edf78dc938955215df31c1894912e353",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "1d686257536727a8a95ce65be61ffff9702a5e10",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "core/radio/radio_task.c": "be04cb551da20034b9de511ef74c993fec2b468a",
+   "docs/spec/radio-features.md": "4dcbd17207c1d1166572b410fa4668f0cebc98c5",
+   "hal/hal_radio.h": "f172bb47e7b44961b4df3d3103436fc96214e1cf"
+  },
+  "dual_watch": {
+   "core/debuglink/debuglink_view_radio.c": "a1ac2668e6cf1f7374fa60ca4dbb7100a3e1d3d0",
+   "core/input/keyassign.h": "8501bc24842be8a884dc497567e1b7674df10852",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "1d686257536727a8a95ce65be61ffff9702a5e10",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "core/radio/radio_task.c": "be04cb551da20034b9de511ef74c993fec2b468a",
+   "core/ui/ui_app.c": "4d3b519ccf6cfed60992ba29084894dde1b4dcf9",
+   "core/ui/ui_dual.c": "d54bf63736cf0c4dae690746567aa3f7f391bd73",
+   "core/ui/ui_menus.c": "0234ba2358034fb13ab0173e19ea80eae360ec92",
+   "core/ui/ui_nav.h": "59ed3080c7ad4c4ff5614c592e65664b34c08036",
+   "core/ui/ui_screens.c": "f7bfa3dd2960f22ee0e88e84c0294699b5728e4c",
+   "core/ui/ui_screens.h": "fe92a2e13987bc84cf62508ba05bfc0c1b9045ba",
+   "core/ui/ui_svc.h": "b0115904398c27ff10091a77d7b7e3b0a2acdb27",
+   "core/ui/ui_svc_radio.c": "fe4fdd57dc9ce54d80a58370ec6c60b6fccbb7cc",
+   "core/ui/ui_svc_storage.c": "fd7044aa12498a245883412cb537d5fa74eed8bd",
+   "docs/spec/radio-features.md": "4dcbd17207c1d1166572b410fa4668f0cebc98c5"
+  },
+  "fm_tx_tones": {
+   "core/debuglink/debuglink.c": "86e811c30150ee9f44f3b7b78a892e57c0b7c52b",
+   "core/debuglink/debuglink_view_radio.c": "a1ac2668e6cf1f7374fa60ca4dbb7100a3e1d3d0",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "1d686257536727a8a95ce65be61ffff9702a5e10",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "docs/spec/radio-features.md": "4dcbd17207c1d1166572b410fa4668f0cebc98c5"
+  },
+  "radio_controls": {
+   "core/radio": "80a1852a9d6e9ed41bf76b01faa491a532e3ec4c",
+   "docs/spec/radio-features.md": "4dcbd17207c1d1166572b410fa4668f0cebc98c5"
+  },
+  "ref_trim": {
+   "core/radio/ref_trim.c": "0c4fc52a5af319b0e8932fa0061b490dd4c08a0f",
+   "core/radio/ref_trim.h": "a976722e6a723c5e0dba4da3795c415314a5622e",
+   "core/ui/ui_menus.c": "0234ba2358034fb13ab0173e19ea80eae360ec92",
+   "docs/spec/radio-features.md": "4dcbd17207c1d1166572b410fa4668f0cebc98c5"
+  },
+  "scan": {
+   "core/debuglink/debuglink_view_radio.c": "a1ac2668e6cf1f7374fa60ca4dbb7100a3e1d3d0",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "1d686257536727a8a95ce65be61ffff9702a5e10",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "core/radio/radio_task.c": "be04cb551da20034b9de511ef74c993fec2b468a",
+   "core/radio/scan.c": "839feb246aa4eea82da97492db9b247fc4a609fa",
+   "core/ui/ui_svc_radio.c": "fe4fdd57dc9ce54d80a58370ec6c60b6fccbb7cc",
+   "docs/spec/radio-features.md": "4dcbd17207c1d1166572b410fa4668f0cebc98c5"
+  },
+  "subtone": {
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio_sm.c": "1d686257536727a8a95ce65be61ffff9702a5e10",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "core/radio/tones.c": "16903a7457681d39d4424571e89a6c15502f8ec6",
+   "core/radio/tones.h": "c30292ff05c9d7f0a04f2556f6b5db4d1a8da0c9",
+   "core/ui/ui_menus.c": "0234ba2358034fb13ab0173e19ea80eae360ec92",
+   "core/ui/ui_screens.c": "f7bfa3dd2960f22ee0e88e84c0294699b5728e4c",
+   "docs/spec/radio-features.md": "4dcbd17207c1d1166572b410fa4668f0cebc98c5"
+  },
+  "vox": {
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "1d686257536727a8a95ce65be61ffff9702a5e10",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "core/ui/ui_svc_radio.c": "fe4fdd57dc9ce54d80a58370ec6c60b6fccbb7cc",
+   "docs/spec/radio-features.md": "4dcbd17207c1d1166572b410fa4668f0cebc98c5",
+   "platform/hrc7000/audio_pcm.c": "83228906a4424baeef5e1a61b204e1540a9d8253",
+   "platform/hrc7000/audio_pcm.h": "4aec1175dc822bd1b74e65df29151ff1e60afad5"
+  }
+ },
+ "tests": [
+  {
+   "features": [],
+   "id": "boards/md9600/hil/test_md9600.py::test_keys_idle",
+   "optional": [
+    "radio_controls"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [
+    "subtone"
+   ],
+   "id": "tests/hil/test_fm.py::test_rx_tone_decode_bench[ctcss]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "subtone"
+   ],
+   "id": "tests/hil/test_fm.py::test_rx_tone_decode_bench[dcs]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": false,
+   "features": [],
+   "id": "tests/hil/test_fm.py::test_rx_tone_squelch",
+   "optional": [
+    "subtone"
+   ],
+   "outcome": "skipped",
+   "reason": "[bench] NOAA on 162.475 MHz doesn't open the squelch at level 1: nothing to mute",
+   "required": false,
+   "skip_kind": "bench"
+  },
+  {
+   "features": [
+    "subtone"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_ctcss",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "subtone"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_dcs",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dtmf"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_dtmf",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_roger_beep",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_tone_burst",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "battery_save"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_battery_save",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "battery_save"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_battery_save_wakes_for_signal",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dual_watch",
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_dual_watch",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dual_watch"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_dual_watch_debug_link",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dual_watch",
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_dual_watch_stops_on_call",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "radio_controls"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_features_section",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "vox"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_mic_level",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_roger_beep",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_scan_stops_on_dmr_call",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_tone_burst",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_tone_burst_time_limit",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "radio_controls"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_tot_warning",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "radio_controls"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_tx_inhibit",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_vfo_scan",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_vfo_scan_stops_on_signal",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "radio_controls"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_volume_op",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "vox"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_vox_quiet",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_zone_scan_cancel",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_zone_scan_nuisance",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "ref_trim"
+   ],
+   "id": "tests/hil/test_ref_trim.py::test_ref_trim_moves_carrier",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "ref_trim"
+   ],
+   "id": "tests/hil/test_ref_trim.py::test_ref_trim_setting",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "vox"
+   ],
+   "id": "tests/hil/test_ui.py::test_quick_vox_toggle",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.1.1",
+  "python": "3.13.5"
+ }
+}

@@ -80,13 +80,19 @@ uint32_t radio_hs_serial(void)
 // --- hotspot_radio_ops_t, called from the host link task. None of them waits ---
 
 // The request runs in the radio task, which is above the host link task: it has normally been handled by the time
-// the post returns. If not, false now and the hotspot asks again later (a repeat while in hotspot mode is a no-op)
+// the post returns. If not (the board's retune sleeps while its synthesizer locks), false now; the hotspot asks again
+// as soon as hs_is_active says the radio got there (a repeat while in hotspot mode is a no-op)
 static bool hs_enter(uint32_t rx_hz)
 {
 	if (hs_active) {
 		return true;
 	}
 	post(RREQ_HS_ENTER, (int32_t)rx_hz, 0, false);
+	return hs_active;
+}
+
+static bool hs_is_active(void)
+{
 	return hs_active;
 }
 
@@ -186,7 +192,7 @@ void radio_hs_cw_get_stats(radio_hs_cw_stats_t *out)
 }
 
 const hotspot_radio_ops_t radio_hs_ops = {
-	.enter = hs_enter, .set_freq = hs_set_freq, .set_power = hs_set_power, .leave = hs_leave,
+	.enter = hs_enter, .active = hs_is_active, .set_freq = hs_set_freq, .set_power = hs_set_power, .leave = hs_leave,
 	.carrier = hs_carrier_fn, .changed = hs_changed, .rssi_dbm = hs_rssi_fn,
 	.cw_id = hs_cw_id, .cw_busy = hs_cw_busy,	// keyed by the radio task (radio_sm.c cw_*), on boards with tx_tone
 };
