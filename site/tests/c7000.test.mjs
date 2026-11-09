@@ -853,3 +853,10 @@ test("a pick nothing in which serves is logged with its problem and why, not as 
 	assert.ok(rec.why, "why the file was not taken");
 	assert.match(rec.id, /^problem:/);
 });
+
+test("a whole data memory read is the board's own chip, not the usual 16 MB", () => {
+	const usual = 0x1000000;
+	assert.equal(c7.dataMemSize({ backup: { spi_size: 0x200000 } }, "q128", usual), 0x200000);
+	assert.equal(c7.dataMemSize({ backup: { spi_size: 0 } }, "q128", usual), usual, "no SPI NOR listed");
+	assert.equal(c7.dataMemSize({ backup: { spi_size: 0x200000 } }, "nand", 0x10000000), 0x10000000, "a NAND has its own size");
+});

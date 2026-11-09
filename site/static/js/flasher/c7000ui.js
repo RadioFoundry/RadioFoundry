@@ -208,6 +208,7 @@ const mkStub = () => {
 	c.stub = null;
 	const stub = new Stub(c.stream, { log: (l) => c.log.add(l), cable: USB_SERIAL.has(S().adapter?.chip) ? S().adapter.chip : "" });
 	stub.size.progmem = progSize();
+	stub.size[dataMem()] = c7.dataMemSize(S().radio, dataMem(), MEM[dataMem()].size);
 	return stub;
 };
 
@@ -649,7 +650,7 @@ function backupOptions(want, { firstInstall = false, text = (k) => t(`flash.c7.b
 // settings only when asked: the whole data memory at 115200 baud can take many minutes.
 export const backupChoices = (firstInstall, cal) => ({ progmem: firstInstall, cal, q128: false });
 
-const dataSize = () => session().stub?.size?.[dataMem()] || MEM[dataMem()].size;	// a whole data memory read (Stub.dump)
+const dataSize = () => session().stub?.size?.[dataMem()] || c7.dataMemSize(S().radio, dataMem(), MEM[dataMem()].size);	// a whole data memory read (Stub.dump)
 
 // How long reading bytes of a memory takes (c7.readSeconds): from the radio's own count of its blank sectors once
 // there is one, the cable's rate measured on this radio once something was read, else the board's stated rate or the

@@ -47,6 +47,9 @@ export const profilesFor = (c, boardId) => c.profiles.filter((p) => p.board === 
 // The size of the board's whole program flash (the DB25-D's is 2 MB), and the first progmem_size bytes of a read of it,
 // which is where the codec and the profiles' addresses lie
 export const totalSize = (c, boardId) => c.boards[boardId]?.progmem_size || c.progmem_size;
+// A whole read of the data memory: the board's SPI NOR (radios.json backup.spi_size, 0 on a board with a NAND), else
+// the memory's usual size. Reading past a smaller chip's end only wraps around to its start
+export const dataMemSize = (radio, mem, usual) => (mem === "q128" && radio?.backup?.spi_size) || usual;
 export const lowPart = (c, progmem) => (progmem.length > c.progmem_size ? progmem.subarray(0, c.progmem_size) : progmem);
 
 // A known codec anywhere in a program flash read: each stock version puts it at its own addresses. Returns
