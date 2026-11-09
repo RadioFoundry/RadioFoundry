@@ -683,11 +683,18 @@ static bool msg_row(uint16_t row, bool *aprs, uint16_t *index)
 	for (uint16_t n = 0; n <= row; n++) {
 		bool take_aprs = d == nd;
 		if (!take_aprs && a < na) {
-			ui_msg_t dm;
+			// One message at a time: both copies at once put this list on the UI task's deepest chain
+			uint32_t dmr_age;
+			{
+				ui_msg_t dm;
+				if (!ui_svc_msg_get(d, &dm))
+					return false;
+				dmr_age = dm.age_ms;
+			}
 			aprs_msg_t am;
-			if (!ui_svc_msg_get(d, &dm) || !ui_svc_aprs_msg((uint8_t)a, &am, false))
+			if (!ui_svc_aprs_msg((uint8_t)a, &am, false))
 				return false;
-			take_aprs = ui_st.now_ms - am.ms < dm.age_ms;
+			take_aprs = ui_st.now_ms - am.ms < dmr_age;
 		}
 		*aprs = take_aprs;
 		*index = take_aprs ? a++ : d++;
