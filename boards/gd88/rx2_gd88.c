@@ -394,7 +394,7 @@ static void bridge(void)
 		ring_drain(&to_b, UART3_BASE);
 		ring_drain(&to_host, UART1_BASE);
 	}
-	hrc_soft_reset();
+	hrc_restart();
 }
 
 void gd88_rx2_diag(gd88_rx2_diag_t *d)

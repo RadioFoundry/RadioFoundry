@@ -241,7 +241,7 @@ static void op_stub(void)
 static void op_reset(void)
 {
 	vTaskDelay(pdMS_TO_TICKS(20));
-	hrc_soft_reset();
+	hrc_restart();
 }
 
 #if CONFIG_DMR && GD88_DMR_TX
@@ -510,7 +510,7 @@ void watchdog_tick(void)
 	uint32_t timeout = hal_watchdog_timeout_ms();
 	crash_alive(now);
 	if (fed_ms != 0 && timeout != 0 && now - fed_ms >= timeout - timeout / 4u) {
-		hal_crash_hang(now - fed_ms);
+		hal_crash_hang(CRASH_KIND_HANG, now - fed_ms);
 	}
 }
 #endif
