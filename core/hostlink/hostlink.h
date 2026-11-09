@@ -18,8 +18,9 @@
 //
 // A side protocol (the debug link, docs/spec/debuglink.md) may be registered beside these: its frames start with a
 // byte no other protocol starts a request with (0xA5; MMDVM is 0xE0, CPS requests are ASCII letters). It never
-// changes the mode. Its first byte is recognized at a request boundary: in idle mode always, in a CPS session only
-// after the CPS_GAP_MS quiet that starts a new request or right after another side frame, in hotspot mode only between MMDVM frames (where the MMDVM
+// changes the mode. Its first byte is recognized at a request boundary: in idle mode always, in a CPS session
+// whenever the engine holds no part of a request, or after the CPS_GAP_MS quiet that starts a new request or right
+// after another side frame, in hotspot mode only between MMDVM frames (where the MMDVM
 // framer would throw the byte away as junk). Once a side frame has started, its bytes go to it until it ends or
 // times out.
 //

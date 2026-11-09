@@ -255,7 +255,9 @@ static size_t side_take(const uint8_t *buf, size_t len, uint32_t now, bool new_r
 #endif
 			break;
 		case HOSTLINK_CPS:
-			if (!new_request) {
+			// With no part of a request held, the byte can't be CPS data. Noise that keeps arriving leaves
+			// no quiet gap, and must not hold the debug link off for as long as it lasts
+			if (!new_request && ((cps_mid_request == NULL) || cps_mid_request())) {
 				return 0;
 			}
 			break;
