@@ -1,0 +1,78 @@
+{
+ "board": "md9600",
+ "commit": "77755fcbd6be91767a53d4c5f4145a1453486f02",
+ "date": "2026-11-08T22:26:59Z",
+ "dirty": false,
+ "features": [
+  "dmr_gps"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "da54663a",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "microphone",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 2,
+  "dmr-freq": 461.4625,
+  "dmr-tg": 201,
+  "fm-mhz": 461.4625
+ },
+ "sources": {
+  "dmr_gps": {
+   "core/aprs/aprs.h": "718a2e4b504f05c8fa797f9650e63cff712a6110",
+   "core/debuglink/debuglink_view_dmr.c": "4966c50d72b1e9e3ed22ae52b505a32540c982eb",
+   "core/dmr/call/dmr_call.c": "9ce75365e63b6873ccb9250df6902c9e3e1975ea",
+   "core/dmr/call/dmr_call.h": "83a600ef4a6f1f6c35eb6fe6e2d9e63b62c5ad24",
+   "core/hostlink/build_info.c": "73dbddd5cf176f0f93346325160724c27b1f2652",
+   "core/radio/radio.h": "7e64c625639b077bdec4629c1681e430a2b2fc25",
+   "core/radio/radio_sm.c": "39ad3cc74e39cc75d868bce6f2ef45ec59efa698",
+   "core/settings/settings.h": "54acd6d1a017dc4cadf51faa0b5a20dba89dca11",
+   "core/ui/ui_aprs.c": "25c1058e014a22bc04155ef5cb21bd673569b604",
+   "docs/spec/dmr-voice.md": "ee13ac43d772afd738276afed3b7ef020ee98318"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "dmr_gps"
+   ],
+   "id": "tests/hil/test_dmr_call_features.py::test_gps_info",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_gps"
+   ],
+   "id": "tests/hil/test_dmr_tx.py::test_dmr_gps_tx",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

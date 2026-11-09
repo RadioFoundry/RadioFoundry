@@ -6,8 +6,9 @@ HERE := $(dir $(lastword $(MAKEFILE_LIST)))
 
 # The factory calibration page (hardware-db25d.md 6)
 TESTS   += db25dCalTest
-db25dCalTest: $(HERE)db25dCalTest.c $(HERE)../calibration_db25d.c $(HERE)../db25d.h $(CORE)/radio/cal_curve.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(dir $<).. -Wshadow -o $@ $(filter %.c,$^)
+db25dCalTest: $(HERE)db25dCalTest.c $(HERE)../calibration_db25d.c $(HERE)../db25d.h $(CORE)/radio/cal_curve.h \
+		$(ROOT)/platform/hrc7000/dmr_rfburst_timing.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(ROOT)/platform/hrc7000 -I$(dir $<).. -Wshadow -o $@ $(filter %.c,$^)
 
 # The first stage in front of the application (boot/db25d): the stub load, dropped frames, the window, a cold UART.
 # The test includes boot.c, which includes the shared protocol (boot/hrc7000/stage.c)

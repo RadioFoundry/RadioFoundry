@@ -13,9 +13,12 @@ standards apart from the firmware's code: the data header, the blocks, the CRC-3
 compressed header. The bench modem sits next to the radio and misses or garbles some bursts (test_dmr_data.py's
 notes): a packet it didn't hear whole is sent again, up to 3 times; the radio's own counters (the dmr_ip view section)
 are the pass criteria for what it sent. A datagram for an IPv4 address other than the DMR ID's (the off-net route)
-goes with the full header whatever the compression setting. The bench doesn't answer confirmed data, so the
-confirmed test checks the retries and the failure, not an ACK (an ACK and a selective retry are covered on the host:
-dmrDataServiceTest)."""
+goes with the full header whatever the compression setting. Without a responder nothing answers confirmed data, so
+test_confirmed_tx_unanswered checks the retries and the failure. A bench board with the confirmed data responder (the
+line protocol's mssim op) answers with an ACK a set number of slots after our data terminator:
+test_confirmed_tx_link_ack checks the radio is back on receive in time to take it (a selective retry is covered on the
+host: dmrDataServiceTest)."""
+import contextlib
 import ipaddress
 import socket
 import time
@@ -44,7 +47,13 @@ def _ip_view(radio):
     return out
 
 
-def _setup(radio, pytestconfig, tx=True):
+def _rx_counts(radio):
+    """What the radio's data receiver decoded: a missed answer shows whether it was heard at all"""
+    v = radio.view(["dmr_data_stats"])
+    return {k: int(v.get(k, 0)) for k in ("data.rx_bursts", "data.rx_headers", "data.rx_packets", "data.rx_for_us")}
+
+
+def _setup(radio, pytestconfig, tx=True, tune=True):
     feats = radio.features()
     if "DMR_IP_GATEWAY" not in feats:
         skip("not_built", "built without CONFIG_DMR_IP_GATEWAY")
@@ -52,7 +61,8 @@ def _setup(radio, pytestconfig, tx=True):
         skip("not_built", "firmware without the dmr_ip view section (before SAP 3 transmit)")
     freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     radio.go_home()
-    radio.find_channel(round(freq * 1e6), "dmr")
+    if tune:
+        radio.find_channel(round(freq * 1e6), "dmr")
     if tx:
         radio.lowest_power()
     own = int(radio.view(["dmr"])["dmr.own_id"])
@@ -278,6 +288,92 @@ def test_confirmed_tx_unanswered(radio, sdr_bench, pytestconfig, ip_settings, ar
         warnings.warn("the bench modem heard no first try whole: the CRC-9 / CRC-32 not checked on air")
     if not any(r.get("dt") == 2 for r in heard):
         warnings.warn("no data terminator LC heard after the confirmed packets")
+
+
+@contextlib.contextmanager
+def _dmr_on(radio, freq, cc):
+    """A simplex DMR channel on freq from the codeplug, else the DMR VFO tuned there on color code cc, slot 1 (its
+    frequency and mode put back afterwards): a bench board's frequency needs no channel of its own, and a repeater
+    pair receiving there would key elsewhere"""
+    hz = round(freq * 1e6)
+    try:
+        radio.find_channel(hz, "dmr", simplex=True)
+    except AssertionError:
+        pass
+    else:
+        yield
+        return
+    if "VFO_DMR" not in radio.features():
+        skip("state", f"no DMR channel on {freq} MHz and no DMR VFO")
+    L = radio.link
+    with radio.vfo_session():
+        L.vfo_set(hz)
+        L.dmr_fields(mode="dmr", cc=cc, ts=1)
+        radio.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "dmr" and v.get("dmr.cc") == str(cc),
+                       sections=("core", "dmr"), what=f"the DMR VFO on {freq} MHz, color code {cc}")
+        yield
+
+
+# The responder's answer this many 30 ms slots after the start of our data terminator. 2 is a real radio's timing, the
+# next frame in our own timeslot (dmr-data.md 12.9, tested against a commercial portable). 6 is the standard's
+# recommended 180 ms. 1 is earlier than that radio answers, about 2.5 ms after our terminator's end: a stress case that
+# doesn't gate
+LINK_ACK_SLOTS = (pytest.param(1, marks=pytest.mark.feature("dmr_confirmed", optional=True)),
+                  pytest.param(2, marks=pytest.mark.feature("dmr_confirmed")),
+                  pytest.param(6, marks=pytest.mark.feature("dmr_confirmed")))
+
+
+def _link_ack_problem(d, answers):
+    """What's wrong with a confirmed packet's counters (d: the radio's deltas) given the answers the responder sent, or
+    None. The responder's log lists only the packets it heard, so an entry's position isn't the radio's try number:
+    a try it never heard has no entry and no answer. So count: the packet takes one ACK, and an answer sent before
+    that one was an answer the radio missed."""
+    if d["ip.cnf_acks"] != 1 or d["ip.cnf_failed"]:
+        return f"no ACK taken of the {answers} the responder sent"
+    if answers != 1:
+        return f"{answers - 1} of the responder's {answers} answers weren't taken"
+    if d["ip.cnf_timeouts"] != d["ip.cnf_tx"] - 1:
+        return "the answered try timed out"
+    return None
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+@pytest.mark.parametrize("slots", LINK_ACK_SLOTS)
+def test_confirmed_tx_link_ack(radio, sdr_bench, pytestconfig, ip_settings, ars_off, slots):
+    """Confirmed for the bench's ID, answered by the bench board's confirmed data responder (mssim) with an ACK
+    `slots` slots after our data terminator: the radio must be back on receive in time and take every answer sent. A
+    try the responder didn't answer (it missed the packet or a block) is a bench miss: the radio's next try is answered
+    instead. A bench without the responder skips."""
+    freq, cc, own, _ = _setup(radio, pytestconfig, tx=False, tune=False)
+    radio.link.ip_settings("auto", "rules", 3, [BENCH_ID])
+    profile = {"answer": "ack", "slots": slots, "end": "terminator", "sync": "ms", "to": BENCH_ID, "from": own}
+    with _dmr_on(radio, freq, cc), sdr_bench.lease():
+        radio.lowest_power()
+        _data_quiet(radio)
+        sdr_bench.mssim_arm(freq, cc, profile, seconds=60)
+        try:
+            before = _ip_view(radio)
+            rx_before = _rx_counts(radio)
+            radio.link.ip_send(BENCH_ID, SRC_PORT, DST_PORT, PAYLOAD)
+            radio.wait_for(lambda x: int(x.get("ip.cnf", 0)) > before["ip.cnf"] and x.get("ip.busy") == "0",
+                           timeout=25, sections=("dmr_ip",), what="the confirmed packet done")
+            time.sleep(1.0)
+            log = [e for e in sdr_bench.mssim_log() if e.get("src") == own]
+        finally:
+            sdr_bench.mssim_disarm()
+    after = _ip_view(radio)
+    d = {k: after[k] - before[k] for k in ("ip.cnf_tx", "ip.cnf_acks", "ip.cnf_timeouts", "ip.cnf_failed")}
+    rx_after = _rx_counts(radio)
+    print("radio deltas:", d, {k: rx_after[k] - rx_before[k] for k in rx_after})
+    for e in log:
+        print("responder:", e)
+    answers = sum(1 for e in log if e.get("sent"))
+    if not answers:
+        skip("bench", f"the responder answered none of the radio's {d['ip.cnf_tx']} tries (it heard {len(log)})")
+    problem = _link_ack_problem(d, answers)
+    assert problem is None, \
+        f"the ACK {slots * 30} ms after our terminator's start: {problem}: {d}, {after['ip.result']}"
 
 
 @pytest.mark.feature("dmr_ip_gateway")

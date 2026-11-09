@@ -52,7 +52,7 @@ def ppp(radio):
         port.reset_input_buffer()
     assert hung_up, "no Terminate-Ack from the radio"
     radio.ping()
-    assert radio.view(["hotspot"]).get("ppp.running") == "0", "the radio still runs PPP after the hang-up"
+    assert radio.view(["net_link"]).get("ppp.running") == "0", "the radio still runs PPP after the hang-up"
 
 
 @pytest.mark.feature("net_ppp")
@@ -69,7 +69,7 @@ def test_ppp_link(ppp):
     dl = DebugLink(s=UdpPort(c), timeout=3.0)
     v = dl.version()
     assert v.get("board") == ppp["board"], f"over UDP the radio says board {v.get('board')}"
-    h = dl.view(["hotspot"])
+    h = dl.view(["hotspot", "net_link"])  # usb.* in hotspot, ppp.* in net_link
     print({k: h.get(k) for k in ("usb.network", "usb.net_up", "ppp.lcp", "ppp.ipcp", "ppp.rx_errors")})
     assert int(h.get("ppp.lcp", 0)) == LCP_OPENED and int(h.get("ppp.ipcp", 0)) == LCP_OPENED
     assert h.get("usb.net_up") == "1"
@@ -77,7 +77,10 @@ def test_ppp_link(ppp):
     assert c.bad_frames == 0, "frames from the radio failed their FCS"
 
 
-@pytest.mark.feature("net_ppp", "net_http")
+# Required for PPP; for the service only one way to reach it (its own tests run over the USB network), so a build
+# without PPP leaves it unproven, not failed
+@pytest.mark.feature("net_ppp")
+@pytest.mark.feature("net_http", optional=True)
 def test_ppp_http(ppp):
     if "NET_HTTP" not in ppp["features"]:
         skip("not_built", "built without CONFIG_NET_HTTP")
@@ -91,7 +94,8 @@ def test_ppp_http(ppp):
     assert st == 404
 
 
-@pytest.mark.feature("net_ppp", "snmp")
+@pytest.mark.feature("net_ppp")
+@pytest.mark.feature("snmp", optional=True)
 def test_ppp_snmp(ppp):
     if "SNMP" not in ppp["features"]:
         skip("not_built", "built without CONFIG_SNMP")
@@ -105,7 +109,8 @@ def test_ppp_snmp(ppp):
     assert len(vbs) == 2 and all(v not in (None, b"", "") for _, _, v in vbs), vbs
 
 
-@pytest.mark.feature("net_ppp", "tftp")
+@pytest.mark.feature("net_ppp")
+@pytest.mark.feature("tftp", optional=True)
 def test_ppp_tftp_read(ppp, monkeypatch):
     if "TFTP" not in ppp["features"]:
         skip("not_built", "built without CONFIG_TFTP")

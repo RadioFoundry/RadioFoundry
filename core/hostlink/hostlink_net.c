@@ -166,7 +166,9 @@ void hostlink_net_poll(uint32_t now_ms)
 		ipGatewayEthernetIn(frame, n);
 	}
 #if CONFIG_NET_LOCAL
-	net_poll(now_ms, net_up());	// the radio's own services: timers, output
+	// The radio's own services: timers, output. The time is read again: the frames above stamped their connections
+	// with a later one, and an older "now" would make those look 49 days old (an APRS-IS login dropped as timed out)
+	net_poll(hal_millis(), net_up());
 #endif
 	while (up_out != up_in) {
 		__sync_synchronize();

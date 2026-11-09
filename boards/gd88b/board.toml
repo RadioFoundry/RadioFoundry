@@ -10,7 +10,7 @@ maker = "Radioddity"
 model = "GD-88 receiver B"
 also = []
 kind = "handheld"
-order = 8
+order = 9
 part_of = "gd88"
 
 [docs]

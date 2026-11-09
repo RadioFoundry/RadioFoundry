@@ -1,0 +1,54 @@
+{
+ "board": "md9600",
+ "commit": "f11d73f1bab98beece4a3ab3ca8629edf5d0f91e",
+ "date": "2026-11-02T01:52:51Z",
+ "dirty": false,
+ "features": [
+  "dmr_iddb"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,DMR_UDP_COMPRESS,DMR_CONFIRMED,IDDB_COMPACT,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "f11d73f1",
+  "proto": "1",
+  "view": "4"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "radio"
+ ],
+ "kind": "run",
+ "options": {
+  "dmr-cc": 2,
+  "dmr-freq": 461.6875,
+  "dmr-tg": 9,
+  "fm-mhz": 461.6875,
+  "tx-power": 40
+ },
+ "sources": {
+  "dmr_iddb": {
+   "core/codeplug/dmr_iddb.c": "7083de617f50d1deb97e37cd4d05a092c596ae55",
+   "core/codeplug/dmr_iddb.h": "57369f90ec3f2c20e7fdbc6e89bba178605911ba",
+   "core/debuglink/debuglink_iddb.c": "1f82f9dee494ca95239f80f3ad12f24dc421f681",
+   "docs/spec/open-firmware-cps.md": "fc856d424e291a70545d352d0899a89fb37c5a51"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "dmr_iddb"
+   ],
+   "id": "tests/hil/test_iddb.py::test_iddb_lookup_format_n",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

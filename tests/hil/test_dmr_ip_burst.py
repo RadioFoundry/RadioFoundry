@@ -6,8 +6,7 @@ back with no delay, each way, and the longest datagram one transmission carries,
 Opt-in RF as test_dmr_ip.py: radio_tx + bench_service (--allow-rf --allow-service-stop), firmware with
 CONFIG_DMR_IP_GATEWAY. The tests that use this host's socket over the radio's IP link are also usb_switch
 (--allow-usb-switch): the USB network adapter, or on a radio without one PPP on its serial host port (pppd, as root or
-with passwordless sudo; rfoundry_hil.host_network). The bench sends UDP with tools/bench/bench_tx.py's `data --udp-port` (run
-tools/bench/dmr_bench.py sync first: an older copy on the bench has no UDP mode, and those tests skip).
+with passwordless sudo; rfoundry_hil.host_network). The bench board sends UDP with a bench_tx `data --udp-port` job.
 
 Pass criteria are the radio's own counters (the dmr_ip, air and hotspot view sections) and, from the air, what this
 host's socket got. What the bench modem heard of the radio is decoded by tools/bench/dmr_packet.py; the bench modem
@@ -59,7 +58,7 @@ ICMP_UNREACHABLE, ICMP_FRAG_NEEDED = 3, 4
 
 
 def _payload(index, n):
-    """The payload of datagram index: as bench_tx.py builds it (filler (i * 7 + 1) & 0xFF, the first 2 octets the
+    """The payload of datagram index: as the bench_tx job builds it (filler (i * 7 + 1) & 0xFF, the first 2 octets the
     index, big endian), so the same rule serves both ways."""
     base = bytes((i * 7 + 1) & 0xFF for i in range(n))
     return index.to_bytes(2, "big") + base[2:] if n >= 2 else base
@@ -147,15 +146,10 @@ def _udp_socket(df):
 
 
 def _bench_udp(sdr_bench, freq, cc, dst, payload_len, repeat=1, udp_port=HOST_PORT):
-    """The bench sends UDP (SAP 4) to dst: repeat datagrams of payload_len octets back to back (bench_tx.py data
-    --udp-port --repeat)."""
-    try:
-        return sdr_bench.data(freq, cc, dst, udp_port=udp_port, udp_src_port=SRC_PORT, octets=payload_len,
-                              repeat=repeat, src=BENCH_ID)
-    except RuntimeError as e:
-        if "unrecognized arguments" in str(e) or "invalid choice" in str(e):
-            skip("bench", "the bench's bench_tx.py has no UDP mode: run tools/bench/dmr_bench.py sync")
-        raise
+    """The bench sends UDP (SAP 4) to dst: repeat datagrams of payload_len octets back to back (a bench_tx data
+    job, --udp-port --repeat)."""
+    return sdr_bench.data(freq, cc, dst, udp_port=udp_port, udp_src_port=SRC_PORT, octets=payload_len,
+                          repeat=repeat, src=BENCH_ID)
 
 
 def _check_heard(pkts, own, sent, sap, what):
@@ -400,7 +394,9 @@ def test_udp_over_receive_limit_air_to_pc(radio, sdr_bench, pytestconfig):
     assert [p for p, _ in after_ok] == [_payload(0, 40)], "the next datagram didn't arrive: the receiver is stuck"
 
 
-@pytest.mark.feature("dmr_ip_gateway")
+# Optional for the gateway: the default build's air MTU is above the link's, so a bring-up run (default build) can't
+# run these two; a build with a narrower IPGW_AIR_MTU runs them
+@pytest.mark.feature("dmr_ip_gateway", optional=True)
 @pytest.mark.feature("dmr_udp_compress", optional=True)
 @pytest.mark.usb_switch
 @pytest.mark.radio_tx
@@ -512,7 +508,7 @@ def test_dhcp_mtu_on_host(radio, pytestconfig):
         warnings.warn(f"the host's adapter MTU is {mtu}, not the {LINK_MTU} DHCP gave (its client ignores option 26?)")
 
 
-@pytest.mark.feature("dmr_ip_gateway")
+@pytest.mark.feature("dmr_ip_gateway", optional=True)     # a narrower IPGW_AIR_MTU only, as above
 @pytest.mark.usb_switch
 def test_frag_needed_received(radio, pytestconfig, ip_settings):
     """Firmware with an air MTU below the link's only (_need_narrow_air). A DF datagram from this host too long for the

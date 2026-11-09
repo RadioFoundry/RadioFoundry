@@ -334,7 +334,10 @@ static void set_mode(radio_mode_t m)
 
 static bool tx_stop(void);
 
-static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
+// keep (the end of a DMR transmission, gd88_dmr_tx_end): the last burst's TX off already put the main chip on the IF
+// in RX, the LO on and the RX path on (dmr_disarm() has waited for the RF task). On the same channel it stays as it is:
+// set up again now, the receiver would miss a reply that comes in the next frame, 30 ms after our last burst
+static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in, bool keep)
 {
 	if (!supported || !board_in_band(hz, false)) {
 		return false;
@@ -343,10 +346,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	dmr_disarm();	// a retune ends DMR TX
 #endif
 	bool from_tx = tx_stop();
-	// Back from our DMR transmission on the same channel: the last burst's TX off already put the main chip on the IF
-	// in RX, the LO on and the RX path on (the glue's flag; dmr_disarm() above waited for the RF task). Set up again
-	// now, the receiver would miss a reply that comes in the next frame, 30 ms after our last burst
-	bool back = hrc_dmr_rf_on_rx() && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && !asleep && !from_tx;
+	bool back = keep && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && !asleep && !from_tx;
 	rx_hz = hz;
 	rx_bw = bw;
 	rx_tone = rx_tone_in != NULL ? *rx_tone_in : (subtone_t){ TONE_NONE, 0 };
@@ -385,6 +385,11 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 		hal_delay_us(TX_END_RX_US);
 	}
 	return true;
+}
+
+static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
+{
+	return rx_set(hz, bw, rx_tone_in, false);
 }
 
 static void audio(bool on);
@@ -617,17 +622,30 @@ static bool tx_stop(void)
 	return true;
 }
 
-static void tx_off(void)
+static void tx_end(bool keep)
 {
 #if CONFIG_DMR && GD88_DMR_TX
-	dmr_disarm();	// the RF task finishes the burst it is in; rx() then sets the receiver up again
+	dmr_disarm();	// the RF task finishes the burst it is in; rx_set() then sets the receiver up again or keeps it
 #endif
 	if (have_rx) {
-		rx(rx_hz, rx_bw, &rx_tone);	// stops the transmission first
+		rx_set(rx_hz, rx_bw, &rx_tone, keep);	// stops the transmission first
 	} else {
 		tx_stop();
 	}
 }
+
+static void tx_off(void)
+{
+	tx_end(false);
+}
+
+#if CONFIG_DMR && GD88_DMR_TX
+// hrc_dmr_board_t.tx_end (dmr_gd88.c): the last burst's TX off left the receiver on
+void gd88_dmr_tx_end(void)
+{
+	tx_end(true);
+}
+#endif
 
 // FM TX tone (1750 Hz burst, roger beep, CW ID): the chip's tone generator instead of the microphone
 static bool tx_tone(uint16_t hz)
@@ -845,6 +863,7 @@ const hal_radio_t gd88_radio = {
 	.rx = rx,
 	.tx = tx,
 	.tx_off = tx_off,
+	.dmr_tx_end = hrc_dmr_tx_end,
 	.status = status,
 	.audio = audio,
 	.volume = volume,

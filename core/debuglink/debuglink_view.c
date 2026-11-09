@@ -69,7 +69,7 @@ static void tone(dl_text_t *t, const char *key, const subtone_t *s)
 
 static void core_section(const radio_view_t *v, dl_text_t *t)
 {
-	const char *pw = (v->power < board.power_count && board.power_names != NULL) ? board.power_names[v->power] : "?";
+	const char *pw = board_power_name(v->power, v->ch.tx_hz);
 	static const char *const sources[] = { "none", "builtin", "open-firmware" };
 
 	dl_text(t, "view=%u\n", DL_VIEW_VERSION);
@@ -94,6 +94,26 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "power=%u\n", v->power);
 	dl_text_kv_str(t, "power_name", pw);
 	dl_text(t, "power_count=%u\n", board.power_count);
+	// Every level's name at the channel's transmit frequency (per band), so a host picks a level by its power
+	dl_text(t, "power_names=");
+	for (uint8_t l = 0; l < board.power_count; l++) {
+		dl_text(t, l ? "/%s" : "%s", board_power_name(l, v->ch.tx_hz));
+	}
+	dl_text(t, "\n");
+	if (board.radio != NULL && board.radio->tx_drive_level != NULL) {
+		// The PA drive of each level at the channel's transmit frequency (power calibration)
+		dl_text(t, "tx_drive=");
+		for (uint8_t l = 0; l < board.power_count; l++) {
+			dl_text(t, l ? "/%u" : "%u", (unsigned)board.radio->tx_drive_level(v->ch.tx_hz, l));
+		}
+		dl_text(t, "\n");
+	}
+	// The board's bands in Hz, so a HIL test skips a frequency the radio can't tune instead of failing on it
+	dl_text(t, "bands=");
+	for (uint8_t i = 0; i < board.band_count; i++) {
+		dl_text(t, "%s%u-%u", i != 0 ? "," : "", (unsigned)board.bands[i].lo_hz, (unsigned)board.bands[i].hi_hz);
+	}
+	dl_text(t, "\n");
 	dl_text(t, "temporary=%u\ntemp=0x%02x\n", v->temporary, v->temp);
 	dl_text(t, "squelch=%u\nmonitor=%u\ntone_ok=%u\n", v->squelch, v->monitor, v->tone_ok);
 	dl_text(t, "rssi_dbm=%d\nnoise=%u\n", v->rssi_dbm, v->noise);
@@ -324,8 +344,8 @@ static void link_section(dl_text_t *t)
 	dl_text(t, "ui.screen=%s\n", ui_screen_name());
 	ui_app_status_t u;
 	ui_get_status(&u);
-	dl_text(t, "ui.depth=%u\nui.focus=%u\nui.count=%u\nui.locked=%u\n", (unsigned)u.depth, (unsigned)u.focus,
-		(unsigned)u.count, (unsigned)u.locked);
+	dl_text(t, "ui.depth=%u\nui.focus=%u\nui.count=%u\nui.locked=%u\nui.unlock_key=%s\n", (unsigned)u.depth,
+		(unsigned)u.focus, (unsigned)u.count, (unsigned)u.locked, u.unlock_key);
 	dl_text(t, "ui.banner=%s\nui.toast=%s\nui.query=%s\nui.draws=%u\nui.dual=%u\n", u.banner, u.toast, u.query,
 		(unsigned)u.draws, u.dual);
 	dl_text(t, "input.idle_ms=%u\nui.backlight=%u\n", (unsigned)input_idle_ms(), ui_backlight());
@@ -489,11 +509,26 @@ static void cps_section(dl_text_t *t)
 #endif
 }
 
+// The board's name and its own keys, each prefixed "board." (bring-up readings a HIL test checks; docs/spec/debuglink.md
+// 3.7)
+static void board_section(dl_text_t *t)
+{
+	char line[80];
+
+	dl_text_kv_str(t, "board.name", board.name);
+	for (uint8_t i = 0; board.view_line != NULL && i < 0xFFu && !t->full; i++) {
+		if (!board.view_line(i, line, sizeof(line))) {
+			break;
+		}
+		dl_text(t, "board.%s\n", line);
+	}
+}
+
 static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
 						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc",
-						  "net_link", "cps" };
+						  "net_link", "cps", "board", "audio" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -578,6 +613,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 	case DL_VIEW_WATCHDOG:
 		debuglink_view_watchdog(t);
 		break;
+	case DL_VIEW_BOARD:
+		board_section(t);
+		break;
 	case DL_VIEW_RESET:
 		debuglink_view_reset(t);
 		break;
@@ -592,6 +630,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_CPS:
 		cps_section(t);
+		break;
+	case DL_VIEW_AUDIO:
+		debuglink_view_audio(t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP

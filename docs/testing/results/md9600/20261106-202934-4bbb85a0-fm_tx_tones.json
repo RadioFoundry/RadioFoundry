@@ -1,0 +1,102 @@
+{
+ "board": "md9600",
+ "commit": "4bbb85a052c24dcf64c865ea4a787fabfbe287c9",
+ "date": "2026-11-06T20:29:34Z",
+ "dirty": false,
+ "features": [
+  "fm_tx_tones"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,DMR_CONFIRMED,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "a7453791",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.075,
+  "dmr-tg": 202,
+  "fm-mhz": 446.1,
+  "tx-power": 40
+ },
+ "sources": {
+  "fm_tx_tones": {
+   "core/debuglink/debuglink.c": "86e811c30150ee9f44f3b7b78a892e57c0b7c52b",
+   "core/debuglink/debuglink_view_radio.c": "a1ac2668e6cf1f7374fa60ca4dbb7100a3e1d3d0",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "1d686257536727a8a95ce65be61ffff9702a5e10",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "docs/spec/radio-features.md": "a97cd7348dacf2564d3d735998844f927783da33"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_roger_beep",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_tone_burst",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_roger_beep",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_tone_burst",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "fm_tx_tones"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_tone_burst_time_limit",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

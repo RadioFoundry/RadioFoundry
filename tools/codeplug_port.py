@@ -21,7 +21,9 @@ Pure logic raises PortError; the tools catch it like their own errors.
 import os
 import re
 import struct
+import subprocess
 import sys
+import tempfile
 import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -574,6 +576,44 @@ zones:
     A: [ch1, ch2, ch3, ch4, ch5]
 scanLists: []
 """
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# tester kits
+
+def kit_package_files():
+    """{source: path in the kit} for the rfoundry package. The tools' helpers import it with tools/rfoundry on sys.path,
+    so a kit keeps that layout, rfoundry/rfoundry beside the scripts. All of it, not the modules imported today: a list
+    goes stale, and a kit that doesn't import is found by the tester."""
+    pkg = os.path.join(HERE, "rfoundry", "rfoundry")
+    if not os.path.isfile(os.path.join(pkg, "__init__.py")):
+        raise PortError("the rfoundry package isn't at %s: make the kit from the repository" % pkg)
+    files = {}
+    for d, _, names in os.walk(pkg):
+        for name in names:
+            if name.endswith((".py", ".json")):
+                src = os.path.join(d, name)
+                files[src] = os.path.join("rfoundry", "rfoundry", os.path.relpath(src, pkg))
+    return files
+
+
+def kit_error(script, image, code):
+    """Make a kit with script's 'package' and run code in a fresh Python that sees only the kit: None, or what went
+    wrong. code is what the tool loads as it runs; the kit's own package and codec maps are checked after it."""
+    code += ("\nimport os, sys, rfoundry.codecmap\n"
+             "assert os.path.abspath(rfoundry.__file__).startswith(os.path.abspath(sys.argv[1])), rfoundry.__file__\n"
+             "assert rfoundry.codecmap.load_maps(), 'no codec maps'\n")
+    with tempfile.TemporaryDirectory() as tmp:
+        img, kit = os.path.join(tmp, "image.bin"), os.path.join(tmp, "kit")
+        with open(img, "wb") as f:
+            f.write(image)
+        for cmd in ([os.path.abspath(script), "package", kit, "--image", img],
+                    ["-I", "-c", "import sys; sys.path.insert(0, sys.argv[1])\n" + code, kit]):
+            r = subprocess.run([sys.executable] + cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               universal_newlines=True)
+            if r.returncode:
+                return r.stdout[-400:]
+    return None
 
 
 def self_test():

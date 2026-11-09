@@ -4,6 +4,7 @@
 // then scan, TX time-out warning, busy channel lockout, roger beep, 1750 Hz burst, VOX, battery monitor, receiver
 // battery saving and the DMR beeps through radio_sm.c, against a fake board whose receiver hears signals per frequency
 #include <stdio.h>
+#include <math.h>
 #include <string.h>
 // The caps change at run time here (a radio without a battery): defined writable, the core sees it const
 #define board board_as_declared
@@ -217,6 +218,15 @@ static bool a_start(audio_block_cb_t cb, void *ctx)
 static void a_stop(void) { aud.streaming = false; aud.cb = NULL; aud.stops++; }
 static void a_pcm(bool on) { aud.pcm = on; }
 static const hal_audio_t fake_audio = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm };
+
+// The amplifier hang hook (hal_audio_t.speaker_warm)
+static int warm_calls;
+static bool warm_state;
+static void a_warm(bool on)
+{
+	warm_calls++;
+	warm_state = on;
+}
 
 // FM transmit audio from the MCU (hal_audio_tap_t.fm_tx_inject): what the radio core asked for
 static struct {
@@ -643,6 +653,59 @@ static void test_battery_module(void)
 
 // ---- the beep engine on its own ----
 
+// The speaker test's sweep (BEEP_SWEEP): silence with the route up, then a rising tone with no jump between samples, from
+// BEEP_SWEEP_LO_HZ to BEEP_SWEEP_HI_HZ, then silence again
+static void test_beep_sweep(void)
+{
+	memset(&aud, 0, sizeof(aud));
+	beep_init(&fake_audio);
+	const beep_seg_t *segs;
+	CHECK(beep_pattern(BEEP_SWEEP, &segs) == 3 && segs[0].hz == 0 && segs[1].hz == BEEP_HZ_SWEEP && segs[2].hz == 0);
+	uint32_t total = 0;
+	for (int i = 0; i < 3; i++) {
+		total += segs[i].ms;
+	}
+	beep_play(BEEP_SWEEP, 100, false);
+	static int16_t out[(4600 / 20 + 20) * AUDIO_BLOCK_SAMPLES];
+	int n = 0;
+	int16_t blk[AUDIO_BLOCK_SAMPLES];
+	while (beep_busy() && n + AUDIO_BLOCK_SAMPLES <= (int)(sizeof out / sizeof out[0])) {
+		beep_audio_block(mic, blk, NULL);
+		memcpy(&out[n], blk, sizeof blk);
+		n += AUDIO_BLOCK_SAMPLES;
+	}
+	CHECK(!beep_busy() && aud.pcm);
+	CHECK(n >= (int)(total * 8) && n <= (int)(total * 8) + 20 * AUDIO_BLOCK_SAMPLES);	// its length and the lead-in
+	// The first sound: after the lead-in and the 400 ms of silence
+	int first = 0;
+	while (first < n && out[first] == 0) {
+		first++;
+	}
+	CHECK(first >= 400 * 8 && first < 400 * 8 + 11 * AUDIO_BLOCK_SAMPLES);
+	// Zero crossings in 20 ms near each end: about 2 x 20 ms x the frequency there
+	int lo = 0, hi = 0;
+	int a = first + 400, b = first + 4000 * 8 - 600;
+	for (int i = a; i < a + 160; i++) {
+		lo += (out[i] < 0) != (out[i + 1] < 0);
+	}
+	for (int i = b; i < b + 160; i++) {
+		hi += (out[i] < 0) != (out[i + 1] < 0);
+	}
+	CHECK(lo >= 5 && lo <= 9);		// near 160 Hz
+	CHECK(hi >= 145 && hi <= 155);		// near 3780 Hz
+	// Phase continuous: each sample follows from the two before it as a sine at the sweep's frequency there would
+	// (x[n+1] = 2 cos(w) x[n] - x[n-1]), within the sine table's
+	// interpolation error
+	double worst = 0;
+	for (int i = first + 16 + 1; i < first + 4000 * 8 - 16; i++) {
+		double f = BEEP_SWEEP_LO_HZ + (double)(BEEP_SWEEP_HI_HZ - BEEP_SWEEP_LO_HZ) * (i - first) / (4000 * 8);
+		double pred = 2 * cos(2 * M_PI * f / 8000) * out[i] - out[i - 1];
+		double e = fabs(out[i + 1] - pred);
+		worst = e > worst ? e : worst;
+	}
+	CHECK(worst < 1500);	// about 450 at the top of the sweep; a jump misses by up to twice the amplitude
+}
+
 static void test_beep_module(void)
 {
 	memset(&aud, 0, sizeof(aud));
@@ -653,7 +716,7 @@ static void test_beep_module(void)
 	CHECK(beep_pattern(BEEP_NONE, &segs) == 0 && beep_pattern(BEEP_COUNT, &segs) == 0);
 	for (int b = BEEP_KEY; b < BEEP_COUNT; b++) {
 		uint8_t n = beep_pattern((beep_t)b, &segs);
-		CHECK(n >= 1 && n <= BEEP_SEGS_MAX && segs[0].hz != 0);
+		CHECK(n >= 1 && n <= BEEP_SEGS_MAX && (segs[0].hz != 0 || b == BEEP_SWEEP));	// the sweep starts silent
 	}
 
 	// Level 0 or BEEP_NONE: nothing
@@ -687,12 +750,12 @@ static void test_beep_module(void)
 	CHECK(blk[100] == 0 && blk[159] == 0 && aud.pcm);
 	for (int i = 0; i < 3; i++) {
 		beep_audio_block(mic, blk, NULL);
-		beep_service(false);
+		beep_service(false, 0);
 		CHECK(aud.pcm && aud.streaming && !beep_busy() && blk[0] == 0);	// held: the queued tail plays out
 	}
 	beep_audio_block(mic, blk, NULL);
 	CHECK(!aud.pcm);
-	beep_service(false);
+	beep_service(false, 0);
 	CHECK(!aud.streaming && aud.stops == 1);
 
 	// The stream's clock stops after one block (a codec that goes quiet): the beep gives the stream and the speaker
@@ -701,12 +764,12 @@ static void test_beep_module(void)
 	CHECK(aud.starts == 2 && aud.streaming);
 	beep_audio_block(mic, blk, NULL);
 	CHECK(aud.pcm && beep_busy());
-	beep_service(false);			// sees the block
+	beep_service(false, 0);			// sees the block
 	for (int i = 0; i < 7; i++) {
-		beep_service(false);
+		beep_service(false, 0);
 	}
 	CHECK(aud.streaming && aud.pcm);	// 7 polls (175 ms) without a block: still waiting
-	beep_service(false);
+	beep_service(false, 0);
 	CHECK(!aud.streaming && !aud.pcm && !beep_busy() && aud.stops == 2);
 	beep_stats_t bs;
 	beep_get_stats(&bs);
@@ -720,16 +783,16 @@ static void test_beep_module(void)
 		lead_silent &= blk[i] == 0;
 	}
 	CHECK(lead_silent && aud.pcm && beep_busy());
-	beep_service(false);
+	beep_service(false, 0);
 	for (int i = 0; i < 12; i++) {
 		beep_audio_block(mic, blk, NULL);
-		beep_service(false);
+		beep_service(false, 0);
 	}
 	beep_get_stats(&bs);
 	CHECK(bs.stalls == 1);
 	while (aud.streaming) {
 		beep_audio_block(mic, blk, NULL);
-		beep_service(false);
+		beep_service(false, 0);
 	}
 	CHECK(!aud.pcm && aud.stops == 3);
 
@@ -784,9 +847,126 @@ static void test_beep_module(void)
 	CHECK(blk[0] == 0 && blk[42] != 0);
 	for (int i = 0; i < 8; i++) {
 		beep_audio_block(mic, blk, NULL);
-		beep_service(false);
+		beep_service(false, 0);
 	}
 	CHECK(!aud.pcm && !aud.streaming);
+
+	// A board whose amplifier unmutes slowly (speaker_lead_ms 50): three silent blocks with the speaker routed, then
+	// the whole tone
+	static const hal_audio_t slow_amp = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm, .speaker_lead_ms = 50 };
+	beep_init(&slow_amp);
+	beep_play(BEEP_KEY, 100, false);
+	for (int b = 0; b < 3; b++) {
+		beep_audio_block(mic, blk, NULL);
+		bool silent = true;
+		for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+			silent &= blk[i] == 0;
+		}
+		CHECK(silent && aud.pcm && beep_busy());
+	}
+	beep_audio_block(mic, blk, NULL);
+	CHECK(blk[0] == 0 && blk[42] != 0);	// the tone from the block's start, faded in
+	for (int i = 0; i < 10; i++) {
+		beep_audio_block(mic, blk, NULL);
+		beep_service(false, 0);
+	}
+	CHECK(!aud.pcm && !aud.streaming);
+	// The voice stream takes a beep over during its hold (DMR transmit right after a beep): the next beep on the
+	// beep stream still gets the whole lead-in, not the count the last one left
+	beep_play(BEEP_KEY, 100, false);
+	for (int b = 0; b < 4; b++) {
+		beep_audio_block(mic, blk, NULL);
+	}
+	a_stop();
+	for (int b = 0; b < 8; b++) {	// the voice stream runs on past the hold
+		beep_mix(blk);
+	}
+	CHECK(!beep_busy());
+	beep_play(BEEP_KEY, 100, false);
+	for (int b = 0; b < 3; b++) {
+		beep_audio_block(mic, blk, NULL);
+		bool silent = true;
+		for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+			silent &= blk[i] == 0;
+		}
+		CHECK(silent && aud.pcm);
+	}
+	beep_audio_block(mic, blk, NULL);
+	CHECK(blk[42] != 0);
+	for (int i = 0; i < 10; i++) {
+		beep_audio_block(mic, blk, NULL);
+		beep_service(false, 0);
+	}
+	CHECK(!aud.pcm && !aud.streaming);
+
+	// The amplifier hang (speaker_warm, 2 s): a key at 1000 ms powers it, a beep at once still takes the full lead
+	// (the amplifier only just came up), one after the lead takes one block, and the hang ends 2 s after the last event
+	warm_calls = 0;
+	warm_state = false;
+	static const hal_audio_t hang_amp = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm, .speaker_lead_ms = 50,
+					      .speaker_warm = a_warm, .speaker_hang_s = 2 };
+	beep_init(&hang_amp);
+	beep_service(false, 1000);
+	CHECK(!beep_warm_on() && !warm_state);
+	beep_warm(1000);
+	CHECK(beep_warm_on() && warm_state && warm_calls == 1);
+	beep_warm(1010);	// again: held, not powered twice
+	CHECK(warm_calls == 1);
+	beep_reset_stats();
+	beep_play(BEEP_KEY, 100, false);
+	for (int i = 0; i < 12; i++) {
+		beep_audio_block(mic, blk, NULL);
+		beep_service(false, 1010);
+	}
+	beep_stats_t ws;
+	beep_get_stats(&ws);
+	CHECK(ws.leads == 3);
+	beep_service(false, 1100);	// 100 ms warm: past the 50 ms lead
+	beep_play(BEEP_KEY, 100, false);
+	beep_audio_block(mic, blk, NULL);
+	beep_audio_block(mic, blk, NULL);
+	beep_get_stats(&ws);
+	CHECK(ws.leads == 4 && blk[42] != 0);	// one silent block, then the tone
+	for (int i = 0; i < 10; i++) {
+		beep_audio_block(mic, blk, NULL);
+		beep_service(false, 1200);
+	}
+	CHECK(beep_warm_on());		// the beep at 1100 holds it until 3100
+	beep_service(false, 3099);
+	CHECK(beep_warm_on() && warm_state);
+	beep_service(false, 3100);
+	CHECK(!beep_warm_on() && !warm_state && warm_calls == 2);
+	// Shared (a DMR call left the voice stream running) with the amplifier cold: the same lead-in, mixed in as silence
+	// with the speaker routed, then the tone; warm past the lead, the tone in the first block
+	beep_reset_stats();
+	beep_play(BEEP_KEY, 100, true);		// powers the amplifier at 3100: the full lead
+	for (int b = 0; b < 4; b++) {
+		for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+			blk[i] = 1000;
+		}
+		bool sounds = beep_mix(blk);
+		CHECK(sounds && beep_busy() && (b < 3 ? blk[42] == 1000 : blk[42] != 1000));
+	}
+	while (beep_mix(blk)) {
+	}
+	beep_get_stats(&ws);
+	CHECK(!beep_busy() && ws.leads == 3);
+	beep_service(true, 3200);		// 100 ms warm
+	beep_play(BEEP_KEY, 100, true);
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		blk[i] = 1000;
+	}
+	CHECK(beep_mix(blk) && blk[42] != 1000);
+	while (beep_mix(blk)) {
+	}
+	beep_get_stats(&ws);
+	CHECK(ws.leads == 3);
+	beep_service(true, 5200);
+	CHECK(!beep_warm_on() && !warm_state);
+	// A board without the hook or with no hang: never warm
+	beep_init(&fake_audio);
+	beep_warm(4000);
+	CHECK(!beep_warm_on());
 }
 
 // ---- through the radio core ----
@@ -2184,6 +2364,21 @@ static void test_tot_and_beeps(void)
 	req(RREQ_BEEP, BEEP_ERROR);
 	beep_get_stats(&b1);
 	CHECK(b1.played == b0.played + 1);
+	// A beep for later (the debug link's delay, a speaker test): nothing now, once when its time comes, and a second
+	// request before then replaces the first
+	run(500);
+	beep_get_stats(&b0);
+	req2(RREQ_BEEP, BEEP_TX_DENY, 3000);
+	req2(RREQ_BEEP, BEEP_ERROR, 2000);
+	run(1900);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played);
+	run(200);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1);
+	run(3000);
+	beep_get_stats(&b0);
+	CHECK(b0.played == b1.played);
 }
 
 static void set_tot(radio_settings_t *s) { s->tot_s = 60; s->tot_warn_s = 0; s->key_beep = false; }
@@ -3091,6 +3286,7 @@ int main(void)
 	test_scan_engine();
 	test_battery_module();
 	test_beep_module();
+	test_beep_sweep();
 	test_vibe_module();
 	test_zone_scan();
 	test_scan_ptt_and_modes();

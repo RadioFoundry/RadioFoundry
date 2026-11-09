@@ -106,6 +106,7 @@ uint32_t gd88_dmr_phase(void);		// HR_C7000 PHASE_OUT: b29:16 / b13:0, the large
 #if GD88_DMR_TX
 void gd88_dmr_tx_arm(void);
 void gd88_dmr_tx_disarm(void);
+void gd88_dmr_tx_end(void);	// radio_gd88.c: hrc_dmr_board_t.tx_end
 typedef void (*gd88_wait_fn)(uint32_t us);
 void gd88_burst_on(gd88_wait_fn wait);
 uint32_t gd88_burst_off(gd88_wait_fn wait, uint32_t elapsed_us, bool now);

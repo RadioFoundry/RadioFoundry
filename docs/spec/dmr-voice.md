@@ -184,6 +184,10 @@ in two superframes. Playback starts at the burst that completed the LC. A new ta
 passing overs without a header) switches the caller from the embedded LC. The host tests cover joining at burst C,
 the lone burst, the stale LC needing confirmation, a fresh LC taken at once, and a talker change.
 
+A call lost for a moment, with no terminator heard, ends and has to be joined again. Where the modem can prove the
+same call is back, that takes one superframe instead of two, and it counts as one call
+([dmr-modem.md](dmr-modem.md) 2.4).
+
 ## 5. Privacy
 
 Basic privacy (`CONFIG_DMR_PRIVACY`): Motorola BP (key 1-255) and Anytone 16-bit BP (`dmrPrivacy.c`). The keystream
@@ -235,8 +239,8 @@ own in the VFO), op 15 the talk target and op 32 copies the channel to the VFO (
 `emergency`, `pi_header`, `alias_complete`, `fid`, `svc`, `pi_alg`, `pi_key`; the counters `rx_private_calls`,
 `rx_emergency_calls`, `rx_encrypted_calls`, `rx_pi_headers`, `rx_alias_complete`, `tx_alias_lcs`, `rx_gps`,
 `tx_gps_lcs`; GPS Info as `call.gps_valid gps_lat gps_lon gps_err gps_dist_m gps_bearing` (and `last.`). HIL tests:
-`tests/hil/test_dmr_call_features.py` (`test_gps_info`: the bench sends a call with a GPS block, `tools/bench/
-bench_tx.py voice --gps LAT,LON[,ERR]`), `tests/hil/test_dmr_tx.py` (`test_dmr_gps_tx`: our GPS Info decoded by the
+`tests/hil/test_dmr_call_features.py` (`test_gps_info`: the bench sends a call with a GPS block, a `bench_tx`
+`voice --gps LAT,LON[,ERR]` job), `tests/hil/test_dmr_tx.py` (`test_dmr_gps_tx`: our GPS Info decoded by the
 bench modem's listener).
 
 ## 8. Open points

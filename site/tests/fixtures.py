@@ -144,7 +144,7 @@ def stock_layouts(out, image):
 				       board.merge_windows(prof))
 		desc = segs[-1][1]
 		w = struct.unpack_from("<%dI" % (7 + 3 * stockfw.DESC_WINDOWS), desc)
-		name = "layout-%s.bin" % sha[:8]
+		name = "layout-%s%s.bin" % (sha[:8], sha[64:].replace("@", "-"))	# "<sha>@<board>" too
 		with open(os.path.join(out, name), "wb") as f:
 			f.write(stock)
 		docs.append({"file": name, "real_sha256": sha, "stock_sha256": ssha, "key": key.hex(), "profile": js_profile(prof),

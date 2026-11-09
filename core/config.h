@@ -53,9 +53,6 @@
 #ifndef CONFIG_DMR_UDP_COMPRESS
 #define CONFIG_DMR_UDP_COMPRESS		CONFIG_DMR
 #endif
-#ifndef CONFIG_DMR_CONFIRMED
-#define CONFIG_DMR_CONFIRMED		CONFIG_DMR
-#endif
 #ifndef CONFIG_NET_TCP
 #define CONFIG_NET_TCP			CONFIG_DMR_IP_GATEWAY
 #endif
@@ -132,7 +129,7 @@
 #ifndef CONFIG_RX2_DL_SERVER
 #define CONFIG_RX2_DL_SERVER		0
 #endif
-// Peek and poke on the debug link (core/debuglink/dl_mem.c, debuglink.md 3.25): the debug link's, or a second SoC's
+// Peek and poke on the debug link (core/debuglink/dl_mem.c, debuglink.md 3.26): the debug link's, or a second SoC's
 // server's
 #ifndef CONFIG_DEBUG_MEM
 #define CONFIG_DEBUG_MEM		(CONFIG_DEBUGLINK || CONFIG_RX2_DL_SERVER)
@@ -338,7 +335,7 @@
 #error "CONFIG_SUBTONE needs CONFIG_FM"
 #endif
 #if (CONFIG_DMR_PRIVACY || CONFIG_DMR_TALKER_ALIAS || CONFIG_DMR_GPS || CONFIG_DMR_DATA_CORE || CONFIG_DMR_ROAMING || CONFIG_SFR || \
-     CONFIG_HOTSPOT || CONFIG_DMR_UDP_COMPRESS || CONFIG_DMR_CONFIRMED || CONFIG_ZONE_SHARE) && !CONFIG_DMR
+     CONFIG_HOTSPOT || CONFIG_DMR_UDP_COMPRESS || CONFIG_ZONE_SHARE) && !CONFIG_DMR
 #error "a DMR feature is on without CONFIG_DMR"
 #endif
 #if CONFIG_HOTSPOT && !CONFIG_HOSTLINK

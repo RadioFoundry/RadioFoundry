@@ -73,6 +73,9 @@ static void dmr_pa_on(void)
 
 static const hrc_dmr_board_t dmr_board = {
 	.rf_switch = dmr_rf_switch, .pa_on = dmr_pa_on, .pa_delay_us = DMR_PA_DELAY_US,
+#if GD88_DMR_TX
+	.tx_end = gd88_dmr_tx_end,
+#endif
 };
 
 // The speaker source for the modem's PCM (audio_pcm.c): the ring (prompt FIFO) on, or off. The modem's FM audio path

@@ -15,6 +15,7 @@ and what has been checked on it.
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
+| [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, the display, keys and encoder, debug link, programming, FM and DMR receive on both bands with CTCSS / DCS, and transmit on both bands (FM and DMR; the MMDVM hotspot on UHF) work, with every power level checked on a wattmeter on both bands. Transmit is armed per power cycle. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames. |
 | [Radioddity GD-88](#radioddity-gd-88) | Kydera DR-880UV | Written from the hardware notes: analog FM and DMR receive, dual watch on the second SoC, settings on the SPI NAND and the host link build. Open: a first run on the radio, and transmit. |
 <!-- end generated -->
 
@@ -56,6 +57,9 @@ These are the defaults. **Settings > Keys** can give other jobs to every key the
 
 OK, Back, the arrows, the number keys, **\***, **#**, PTT and the volume stay as they are. On the DB25-D PRO that
 includes P1, P2 and the microphone's P6 and P7, which are **\*** and **#** there.
+
+The hints at the bottom of the screen use these names. A radio that knows its own name for a key shows that instead
+(the MD-9600 shows "P1 Quick", not "\* Quick"), and a radio without number keys leaves out hints that need them.
 
 On a radio without a key for a job, the menus reach it:
 
@@ -646,6 +650,71 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
   ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)) are built in but not checked on
   the radio yet. Broadcast covers 65 to 108 MHz.
 
+## TYT MD-9600
+
+Covers the TYT MD-9600 and the Retevis RT90, a mobile radio. **In testing.** One image serves every board revision. V1-V3 boards
+(original firmware V06.xx) have been tested on a radio: FM and DMR receive and transmit on both bands. V4 (V16.xx) and
+V4A/V5 (V26.xx) boards have not, so receive or transmit may not work on them. SFR is not supported yet.
+
+The installers read the original firmware's version and store the board revision (Settings > Advanced > Hardware >
+Board revision). Transmit is off at every start until you turn it on under Settings > Advanced > Hardware > Transmit,
+and it needs a stored revision. Only install this if you can go back to the original firmware. The hardware facts are in [hardware-md9600.md](../spec/hardware-md9600.md).
+
+### MD-9600 voice codec
+
+DMR voice needs the radio's own codec, which neither the repository nor the release images contain. The installer
+takes it from an original firmware file for the radio, and the board's own `codecs/` folder works the same way
+([codecs/README.md](../../codecs/README.md)). It recognizes the file by its SHA-256, so any file name works. These are
+accepted:
+
+| Radio | Original firmware files |
+|---|---|
+| MD-9600 V1-V3 boards | TYT `MD9600-CSV-V06.09.bin` and the rest of the 06.09, 06.24 and 06.03 files; the older `MD9600-REC-D03.28.bin`, `-D03.29.bin` and `-D04.03.bin` |
+| MD-9600 V4 | TYT `MD9600-CSV(V4)-V16.45.bin` and the 16.24 and 16.45 files |
+| MD-9600 V5 and Retevis RT90 | the file the radio came with: TYT `MD9600-CSV(2571V5)-V26.45.bin` and the other 26.45 files, `MD9600-REC(2571V4)-D26.57.bin`, or Retevis `RT90-CSV(2571V5)-V26.41.bin`, `RT90-REC(2571V5)-D26.38.bin`, `RT90-CSV-GPS(2571V5)-P26.41.bin` and `RT90-GPS-REC(2571V5)-S26.42.bin` |
+
+The CSV, CSV-GPS, REC and GPS-REC variants of one version all work. The full list with hashes is in
+[codec-md9600.md](../spec/codec-md9600.md#stock-files). No V5 radio has run these files yet: the checks so far ran their
+codec in an emulator on a computer.
+
+### MD-9600 keys
+
+| Key | Role |
+|---|---|
+| Enter | **OK** |
+| Back | **Back** |
+| Up, Down | **Up**, **Down** |
+| P1 | **Quick** |
+| P2 | **Context** |
+| P3 | **Monitor** |
+| P4 | **Talk target** |
+| Orange key | User key 3 |
+| Channel knob | Channel knob |
+| **PTT** | **PTT** (on the hand microphone) |
+
+The hand microphone's keypad gives digits, **\*** (**Quick**) and **#** (**Context**). Its A/B key switches between
+the channel and the VFO, and holding it copies the channel to the VFO. The roles of A-D and A/B are a proposal, and
+the keypad's levels haven't been measured on a radio.
+
+### MD-9600 bands and power levels
+
+Both bands on every radio: VHF (136-174 MHz) and UHF (400-480 MHz). Five power levels, measured into a dummy load: UHF
+100 mW, 1 W, 5 W, 25 W and 45 W; VHF 250 mW, 1 W, 5 W, 25 W and 50 W. The top level differs by band, and the screen
+shows the level for the channel's band. The radio runs from a vehicle's 13.8 V supply, so it shows the supply voltage
+instead of a battery level and never warns about a low battery. The voltage's scale isn't checked on a radio yet.
+
+### MD-9600 display
+
+A 128 x 64 monochrome screen.
+
+### What the MD-9600 lacks today
+
+- No transmit, FM or DMR: it stays refused until a radio confirms the transmit sequence.
+- No CTCSS or DCS: the sub-audio path isn't written.
+- No hotspot, DTMF, USB network or IP services: they all need the transmitter.
+- No APRS: the radio doesn't pass its received audio to the decoder yet.
+- No air band or broadcast receiver, and no vibration motor.
+
 ## Radioddity GD-88
 
 A dual band handheld (136-174 and 400-480 MHz) with a 320x240 color display. It has two HR_C7000 chips. The first
@@ -684,7 +753,6 @@ models it covers.
 <!-- generated: tools/boards.py docs planned; edit the Port cells of docs/spec/radios.md -->
 | Radio | Status |
 |---|---|
-| TYT MD-9600, Retevis RT90 (mobile) | In progress ([#112](https://github.com/radiofoundry/radiofoundry/pull/112)). Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD. |
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | In progress ([#111](https://github.com/radiofoundry/radiofoundry/pull/111)). A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated. |
 | Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | Planned. A new platform (GD32F30x) and a new DMR chip (SCT3258, which runs the vocoder itself), so it starts the Anytone family ([hardware-anytone.md](../spec/hardware-anytone.md)). |
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port. |

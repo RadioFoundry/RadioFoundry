@@ -11,7 +11,8 @@ checks it, and the records of those runs (docs/testing/results/<board>/). tests/
   tools/bringup.py check                        host-side consistency (tools/ci.sh)
 
 A radio's state for a feature is resolved, never typed:
-  n/a          the switch is in the board's BOARD_UNSUPPORTED: the hardware can't (config.mk, the reason on its line)
+  n/a          the switch is in the board's BOARD_UNSUPPORTED: the hardware can't (config.mk, the reason on its line);
+               for a feature without a switch, board.toml [features] <id> state = "n/a" with the reason
   not written  the switch is in the board's BOARD_NOT_WRITTEN: the hardware can, the board's code isn't written yet
   unsupported  board.toml [features] <id> state = "unsupported": built, known not to work yet (a reason is required)
   off          the board's default build leaves the switch off: nothing to check
@@ -44,8 +45,8 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 FEATURES_TOML = os.path.join(ROOT, "tests", "hil", "features.toml")
 RESULTS = os.path.join(ROOT, "docs", "testing", "results")
 RECORD_FORMAT = 1
-FIELDS = {"switch", "hardware", "spec", "source", "planned_tests", "manual"}
-OVERRIDE_STATES = ("unsupported",)
+FIELDS = {"switch", "requires", "hardware", "spec", "source", "planned_tests", "manual"}
+OVERRIDE_STATES = ("unsupported", "n/a")
 # How list shows a resolved state: "required" is the checklist's word, "built" what it means to a reader
 SHOWN = {"required": "built"}
 SEED_RESULTS = ("pass", "fail")
@@ -108,6 +109,7 @@ def load_features(path=FEATURES_TOML):
         for k in ("source", "planned_tests", "manual"):
             e.setdefault(k, [])
         e.setdefault("switch", None)
+        e.setdefault("requires", None)
         feats.append(e)
     return feats
 
@@ -199,11 +201,26 @@ def resolve(board, e):
         return "n/a", bd["unsupported"][e["switch"]]
     if e["switch"] and e["switch"] in bd["not_written"]:
         return "not written", bd["not_written"][e["switch"]]
+    # A feature without a switch of its own that is part of another's (requires): that switch's absence decides
+    req = e["requires"]
+    if req and req in bd["unsupported"]:
+        return "n/a", f"needs {req}: {bd['unsupported'][req]}"
+    if req and req in bd["not_written"]:
+        return "not written", f"needs {req}: {bd['not_written'][req]}"
+    if req and bd["config"].get(req) != "y":
+        return "off", f"needs {req}, which the board's default build leaves off"
     if ov:
         return ov.get("state", "required"), ov.get("reason", "")
     if e["switch"] and bd["config"].get(e["switch"]) != "y":
         return "off", "the board's default build leaves it off"
     return "required", ""
+
+
+def absent_switches(board):
+    """The switches a board leaves out by design: n/a, not written, or off in its default build. A test marked
+    needs_switch for one of them skips not_built there, and bring-up excuses that (tests/hil/bringup_plugin.py)."""
+    bd = _boards()[board]
+    return sorted(set(bd["unsupported"]) | set(bd["not_written"]) | {s for s, v in bd["config"].items() if v != "y"})
 
 
 # ── records ──
@@ -363,7 +380,7 @@ def cmd_list(args):
         status, basis, detail = (feature_status(args.radio, e, records, required if found is not None else None)
                                  if state == "required" else (state, None, reason))
         owner = {t["id"]: t["owner"] for t in tests or [] if t["owner"]}
-        rows.append({"id": e["id"], "switch": e["switch"] or "", "state": state, "status": status, "basis": basis,
+        rows.append({"id": e["id"], "switch": e["switch"] or "", "requires": e["requires"] or "", "state": state, "status": status, "basis": basis,
                      "detail": detail, "tests": len(required) if found is not None else None,
                      "needs": sorted({n for t in tests or [] for n in t["needs"]}), "owner": owner,
                      "manual": e["manual"]})
@@ -502,8 +519,9 @@ def cmd_run(args):
                 + ":")
     tmp = tempfile.mkdtemp(prefix="rfoundry-bringup-")
     out_path = os.path.join(tmp, "out.json")
-    cmd = [_pytest_python(args.pytest_python), "-m", "pytest", *args.tests, "-v", "-rs", "-p", "no:cacheprovider",
-           *args.pytest_arg, "--bringup", ",".join(names), "--bringup-out", out_path, *pytest_args]
+    cmd = [_pytest_python(args.pytest_python), "-m", "pytest", *args.tests, "-v", "-rs", "--durations=0", "-p", "no:cacheprovider",
+           *args.pytest_arg, "--bringup", ",".join(names), "--bringup-out", out_path,
+           "--bringup-absent", ",".join(absent_switches(args.radio)), *pytest_args]
     lock = lock_path(args.lock, pytest_args)
     if args.dry_run:
         print(f"lock: {lock}")
@@ -557,6 +575,10 @@ def check(feats, boards, records, found, all_switches):
             if e["switch"] not in all_switches:
                 errs.append(f"{where}: switch {e['switch']} is not in config/features.mk")
             by_switch.setdefault(e["switch"], []).append(e["id"])
+        if e["requires"] and e["requires"] not in all_switches:
+            errs.append(f"{where}: requires {e['requires']}, which is not in config/features.mk")
+        if e["requires"] and e["switch"]:
+            errs.append(f"{where}: has a switch and requires: a feature with a switch follows its own")
         for p in [e.get("spec"), *e["source"]]:
             if p and not os.path.exists(os.path.join(ROOT, p)):
                 errs.append(f"{where}: no such path {p}")
@@ -602,6 +624,9 @@ def check(feats, boards, records, found, all_switches):
                             "supported mark comes from the records, never typed)")
             if not ov.get("reason"):
                 errs.append(f"{where}: no reason")
+            if ov.get("state") == "n/a" and by_id[fid]["switch"]:
+                errs.append(f"{where}: n/a for a feature with a switch: BOARD_UNSUPPORTED += "
+                            f"{by_id[fid]['switch']} in boards/{b}/config.mk instead")
         for e in feats:
             state, reason = resolve(b, e)
             if state in ("n/a", "not written", "unsupported") and not reason:
