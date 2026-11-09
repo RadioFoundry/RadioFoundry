@@ -1213,6 +1213,7 @@
  "flash.c7.write.map_same": "sin cambios",
  "flash.c7.write.map_todo": "por escribir",
  "flash.c7.write.map_written": "escrito y verificado",
+ "flash.c7.write.map_untouched": "no forma parte de esta instalación",
  "flash.c7.write.map_slot": "línea azul: espacio reservado para el códec",
  "flash.c7.done.restarting": "La radio se está reiniciando…",
  "flash.c7.done.lead": "La utilidad de programación de radios consulta el firmware instalado por el mismo cable.",

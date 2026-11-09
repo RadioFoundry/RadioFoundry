@@ -1213,6 +1213,7 @@
  "flash.c7.write.map_same": "unchanged",
  "flash.c7.write.map_todo": "to write",
  "flash.c7.write.map_written": "written and verified",
+ "flash.c7.write.map_untouched": "not part of this installation",
  "flash.c7.write.map_slot": "blue line: space set aside for the codec",
  "flash.c7.done.restarting": "The radio is restarting…",
  "flash.c7.done.lead": "The radio programming utility queries the installed firmware over the same cable.",

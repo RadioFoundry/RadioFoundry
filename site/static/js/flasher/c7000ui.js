@@ -1021,7 +1021,7 @@ function sectorMap(c) {
 	return {
 		el: h("div", {}, h("div", { class: "c7-map", role: "img", "aria-label": t("flash.c7.write.map_label") }, cells),
 			h("ul", { class: "c7-legend" }, legend("boot", t(romEntry(c, boardId()) === null ? "flash.c7.write.map_boot" : "flash.c7.write.map_unused")), legend("same", t("flash.c7.write.map_same")),
-				legend("todo", t("flash.c7.write.map_todo")), legend("written", t("flash.c7.write.map_written")),
+				legend("todo", t("flash.c7.write.map_todo")), legend("written", t("flash.c7.write.map_written")), legend("", t("flash.c7.write.map_untouched")),
 				h("li", {}, t("flash.c7.write.map_slot", { addr: hex(C().progmem_base + c.boards[boardId()].slot[0]) })))),
 		set(addr, state) { cells[addr / c.sector].dataset.s = state; },
 	};
