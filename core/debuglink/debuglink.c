@@ -793,6 +793,14 @@ static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
 {
 	switch (cmd) {
+	case DL_CMD_LINK_HOLD:
+		if (len != 1) {
+			out[0] = DL_ST_BAD_ARG;
+			return 1;
+		}
+		hostlink_side_hold(req[0] != 0, hal_millis());
+		out[0] = DL_ST_OK;
+		return 1;
 	case DL_CMD_PING:
 		out[0] = DL_ST_OK;
 		memcpy(out + 1, req, len);
@@ -869,7 +877,12 @@ static void write_out(const uint8_t *buf, size_t len)
 
 static size_t side_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 {
+	uint32_t frames = parser.frames;
 	size_t took = dl_parser_feed(&parser, buf, len, now_ms, handle, write_out, reply);
+
+	if (parser.frames != frames) {
+		hostlink_side_frame(now_ms);
+	}
 	if (reboot_pending) {
 		reboot_now();
 	}

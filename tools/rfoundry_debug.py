@@ -99,6 +99,7 @@ WATCHDOG = 0x1D                     # the hardware watchdog's bench tests (CONFI
 WDT_OP_CLEAR_GAP, WDT_OP_TEST, WDT_OP_LOAD = range(3)
 WDT_TESTS = {"starve": 1, "spin": 2, "irq-off": 3}
 WDT_TOKEN = 0x474F4457              # 'WDOG'
+LINK_HOLD = 0x23                    # hold the host port for this client (docs/spec/debuglink.md 3.27)
 MEM = 0x22                          # peek and poke (CONFIG_DEBUG_MEM; docs/spec/debuglink.md 3.26)
 MEM_OP_READ, MEM_OP_WRITE, MEM_OP_SET, MEM_OP_CLEAR, MEM_OP_ARM, MEM_OP_DISARM, MEM_OP_PIN = range(7)
 MEM_WRITE_OPS = {"write": MEM_OP_WRITE, "set": MEM_OP_SET, "clear": MEM_OP_CLEAR}
@@ -307,6 +308,9 @@ class UdpPort:
 class DebugLink:
     """One open debug link. All methods raise DebugLinkError on an error status or a time-out."""
 
+    hold_session = False                # True: every link opened on a serial port holds it (LINK_HOLD)
+    _held = False
+
     def __init__(self, port=None, timeout=1.0, rx2=False, s=None):
         """rx2: every request goes to the second SoC through the first (RX2 FORWARD). s: an open port-like object
         (read, write, in_waiting, close) instead of opening one: tests."""
@@ -329,8 +333,22 @@ class DebugLink:
                 self.s = serial.serial_for_url(self.port, 115200, timeout=0.02)	# a device, or a URL such as rfc2217://host:port
             except serial.SerialException as e:
                 raise DebugLinkError(f"can't open {self.port}: {e}")
+        if self.hold_session and not self.port.startswith("udp:"):
+            self.hold(True)
+
+    def hold(self, on=True):
+        """Hold the host port for this client, or let go (LINK_HOLD, always the SoC on the cable). True if the radio
+        did: a build without the command doesn't."""
+        try:
+            data = self._exchange(LINK_HOLD, bytes([1 if on else 0]), min(self.timeout, 0.5))
+        except (DebugLinkError, OSError):
+            return False
+        self._held = on and bool(data) and data[0] == ST_OK
+        return bool(data) and data[0] == ST_OK
 
     def close(self):
+        if self._held:
+            self.hold(False)            # the port is another protocol's from here
         self.s.close()
 
     def __enter__(self):

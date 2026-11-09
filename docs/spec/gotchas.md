@@ -208,7 +208,9 @@ disturb the line, and the UART then delivers a 0x00 with a framing error, about 
 that byte read as the start of a CPS request and put the host link in CPS mode. The host UART's receive interrupt counts
 a flagged character (`rx_line_errors`, and the receive tap still sees it) and drops it. A real PTT press is read from
 the pin by the shared PTT gate. The disturbance can still corrupt a host request sent during the burst, so a host polling
-through a transmission retries.
+through a transmission retries. The line can also deliver clean bytes: a short low pulse reads as 0xE0 or 0xC0, so an idle
+port changes protocol only for a plausible request (mmdvm-protocol.md 5.1), and a debug client can hold it
+([debuglink.md](debuglink.md) 3.27).
 
 ## 3. TX/RX state and PA handling
 

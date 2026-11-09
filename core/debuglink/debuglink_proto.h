@@ -35,6 +35,7 @@ enum {
 	DL_CMD_IDDB		= 0x1F,	// the DMR ID database: its format, records and an ID looked up (debuglink_iddb.c, 3.23)
 	DL_CMD_CHIP_REG		= 0x20,	// an RF chip or SoC register read or written (debuglink_chipreg.c, 3.24)
 	DL_CMD_HWOPT		= 0x21,	// the board's hardware options: list, set (debuglink_hwopt.c, 3.25)
+	DL_CMD_LINK_HOLD	= 0x23,	// hold the host port for this client, or let go (docs/spec/debuglink.md 3.27)
 	DL_CMD_MEM		= 0x22,	// peek and poke: memory, registers and pins (CONFIG_DEBUG_MEM; dl_mem.c, 3.26)
 };
 

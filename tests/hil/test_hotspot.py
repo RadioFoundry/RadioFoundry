@@ -38,6 +38,28 @@ def test_line_noise_no_mode_change(radio):
 
 
 @pytest.mark.feature("hotspot")
+def test_debug_hold_keeps_the_port(radio):
+    """While a debug client holds the port, even a well-formed MMDVM, CPS or KISS opening leaves it idle"""
+    if "HOTSPOT" not in radio.features():
+        skip("not_built", "built without the hotspot")
+    L = radio.link
+    before = radio.wait_for(lambda x: x.get("hostlink") == "idle", 25, sections=("hotspot",), what="an idle port")
+    if not L.hold(True):
+        skip("not_built", "built without LINK_HOLD")
+    try:
+        for noise in (bytes([0xE0, 3, 0]), b"C\x00", bytes([0xC0, 0x00])):
+            time.sleep(0.02)
+            L.s.write(noise)
+            L.s.flush()
+            time.sleep(0.05)
+            v = radio.view(["hotspot"])
+            assert v.get("hostlink") == "idle", (noise, v)
+        assert int(v["hostlink.noise"]) > int(before["hostlink.noise"]), v
+    finally:
+        L.hold(True)                    # as the session had it
+
+
+@pytest.mark.feature("hotspot")
 def test_hotspot_version_status(radio):
     if "HOTSPOT" not in radio.features():
         skip("not_built", "built without the hotspot")

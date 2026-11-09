@@ -63,6 +63,7 @@
 #define PPP_FLAG		0x7E	// starts every PPP frame (RFC 1662); no other protocol here starts a request with it
 #define MMDVM_PROBE_LEN		3	// start, length and command: enough to tell a frame from a stray 0xE0
 #define MMDVM_PROBE_MS		20	// a frame's first bytes come together; a lone 0xE0 older than this was noise
+#define KISS_FEND_BYTE		0xC0	// a short low pulse reads as this too
 
 #ifndef RFOUNDRY_GIT
 #define RFOUNDRY_GIT "unknown"
@@ -81,7 +82,10 @@ static bool ppp_on;				// the port carries PPP: its bytes go to core/net/ppp.c, 
 static hostlink_cps_fn cps_handler;
 static bool (*cps_mid_request)(void);
 static bool (*cps_request_start_fn)(uint8_t b);
+static uint32_t (*cps_answered_fn)(void);
+static uint32_t cps_answered_at_entry;
 static uint32_t noise_bytes;
+static hostlink_side_hold_t side_hold;
 static const hostlink_side_t *side;
 static const hostlink_tnc_t *tnc;
 static uint32_t last_byte_ms;
@@ -146,11 +150,27 @@ uint32_t hostlink_noise_bytes(void)
 	return noise_bytes;
 }
 
-void hostlink_set_cps_handler(hostlink_cps_fn fn, bool (*mid_request)(void), bool (*request_start)(uint8_t b))
+void hostlink_side_hold(bool on, uint32_t now_ms)
+{
+	hostlink_side_hold_set(&side_hold, on, now_ms);
+}
+
+void hostlink_side_frame(uint32_t now_ms)
+{
+	hostlink_side_hold_frame(&side_hold, now_ms);
+	if (hostlink_side_hold_active(&side_hold, now_ms) && (mode == HOSTLINK_CPS) && (cps_answered_fn != NULL) &&
+	    (cps_answered_fn() == cps_answered_at_entry) && ((cps_mid_request == NULL) || !cps_mid_request())) {
+		mode = HOSTLINK_IDLE;	// noise opened it: no request was ever answered
+	}
+}
+
+void hostlink_set_cps_handler(hostlink_cps_fn fn, bool (*mid_request)(void), bool (*request_start)(uint8_t b),
+			      uint32_t (*answered)(void))
 {
 	cps_handler = fn;
 	cps_mid_request = mid_request;
 	cps_request_start_fn = request_start;
+	cps_answered_fn = answered;
 }
 
 void hostlink_set_side_protocol(const hostlink_side_t *p)
@@ -320,11 +340,53 @@ static size_t mmdvm_probe(const uint8_t *buf, size_t len, uint32_t now, bool new
 }
 #endif	// CONFIG_HOTSPOT
 
+// A KISS client's first frame starts with FEND and a command or another FEND. A FEND at the end of a chunk waits for the
+// next byte. Returns the bytes taken, 0 when buf is not for the TNC
+static size_t tnc_probe(const uint8_t *buf, size_t len, uint32_t now, bool new_request)
+{
+	static bool fend_held;
+	static uint32_t fend_ms;
+	const uint8_t fend = KISS_FEND_BYTE;
+
+	if (fend_held) {
+		bool fresh = (now - fend_ms) <= MMDVM_PROBE_MS;
+
+		fend_held = false;
+		if (!fresh || !hostlink_kiss_second(buf[0])) {
+			noise_bytes++;
+		} else {
+			mode = HOSTLINK_TNC;
+			dlog("hostlink: TNC (KISS)");
+			tnc->feed(&fend, 1, now);
+			return 0;	// the caller's TNC branch feeds buf
+		}
+	}
+	if ((mode == HOSTLINK_TNC) || !new_request || !tnc->claims(buf[0])) {
+		return 0;
+	}
+	if (buf[0] == KISS_FEND_BYTE) {
+		if (len == 1) {
+			fend_held = true;
+			fend_ms = now;
+			return 1;
+		}
+		if (!hostlink_kiss_second(buf[1])) {
+			noise_bytes++;
+			return 1;
+		}
+	}
+	mode = HOSTLINK_TNC;
+	dlog("hostlink: TNC (KISS)");
+	return 0;
+}
+
 // The other protocols: returns the bytes taken (all of them, except in hotspot mode before a side frame)
 static size_t dispatch_main(const uint8_t *buf, size_t len, uint32_t now, bool new_request)
 {
+	bool held = hostlink_side_hold_active(&side_hold, now);
+
 #if CONFIG_HOTSPOT
-	if ((mode != HOSTLINK_HOTSPOT) && hotspot_allowed) {
+	if ((mode != HOSTLINK_HOTSPOT) && hotspot_allowed && !held) {
 		size_t taken = mmdvm_probe(buf, len, now, new_request);
 
 		if (taken > 0) {
@@ -335,9 +397,12 @@ static size_t dispatch_main(const uint8_t *buf, size_t len, uint32_t now, bool n
 		return feed_mmdvm(buf, len, now);
 	}
 #endif
-	if ((tnc != NULL) && (mode == HOSTLINK_IDLE) && new_request && tnc->claims(buf[0])) {
-		mode = HOSTLINK_TNC;
-		dlog("hostlink: TNC (KISS)");
+	if ((tnc != NULL) && (mode == HOSTLINK_IDLE) && !held) {
+		size_t taken = tnc_probe(buf, len, now, new_request);
+
+		if (taken > 0) {
+			return taken;
+		}
 	}
 	if (mode == HOSTLINK_TNC) {
 		tnc->feed(buf, len, now);
@@ -346,10 +411,13 @@ static size_t dispatch_main(const uint8_t *buf, size_t len, uint32_t now, bool n
 	if (cps_handler != NULL) {
 		// A session holds the side protocol off, so only a request can open one: a letter byte at a request
 		// boundary, not one in the middle of a burst of noise or of a debug link frame whose start was lost
-		if ((mode == HOSTLINK_IDLE) && (cps_request_start_fn != NULL) &&
-		    (!new_request || !cps_request_start_fn(buf[0]))) {
+		if ((mode == HOSTLINK_IDLE) && (held || ((cps_request_start_fn != NULL) &&
+		    (!new_request || !cps_request_start_fn(buf[0]))))) {
 			noise_bytes++;
 			return 1;
+		}
+		if ((mode == HOSTLINK_IDLE) && (cps_answered_fn != NULL)) {
+			cps_answered_at_entry = cps_answered_fn();
 		}
 		mode = HOSTLINK_CPS;
 		cps_handler(buf, len, now);
@@ -444,6 +512,7 @@ static size_t port_ppp(const uint8_t *buf, size_t len, uint32_t now)
 		bool boundary = side_ended || ((now - last_byte_ms) >= CPS_GAP_MS);
 
 		if ((buf[0] != PPP_FLAG) || (mode != HOSTLINK_IDLE) || !boundary || hostlink_network_mode() ||
+		    hostlink_side_hold_active(&side_hold, now) ||
 		    ((side != NULL) && side->in_frame(now))) {
 			return 0;
 		}

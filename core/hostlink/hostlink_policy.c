@@ -26,6 +26,32 @@ bool hostlink_mmdvm_first_frame(uint8_t len, uint8_t cmd)
 	}
 }
 
+bool hostlink_kiss_second(uint8_t b)
+{
+	return (b == 0xC0) || (b <= 0x06);
+}
+
+void hostlink_side_hold_set(hostlink_side_hold_t *h, bool on, uint32_t now_ms)
+{
+	h->held = on;
+	h->last_ms = now_ms;
+}
+
+void hostlink_side_hold_frame(hostlink_side_hold_t *h, uint32_t now_ms)
+{
+	if (h->held) {
+		h->last_ms = now_ms;
+	}
+}
+
+bool hostlink_side_hold_active(hostlink_side_hold_t *h, uint32_t now_ms)
+{
+	if (h->held && ((now_ms - h->last_ms) >= HOSTLINK_SIDE_HOLD_MS)) {
+		h->held = false;
+	}
+	return h->held;
+}
+
 void hostlink_session_start(hostlink_session_t *s, bool connected)
 {
 	s->was_connected = connected;

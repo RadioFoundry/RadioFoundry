@@ -1319,6 +1319,26 @@ static void test_hostlink_first_frame(void)
 	CHECK(!hostlink_mmdvm_first_frame(200, MMDVM_SET_CONFIG));
 }
 
+static void test_hostlink_side_hold(void)
+{
+	hostlink_side_hold_t h = { false, 0 };
+
+	CHECK(hostlink_kiss_second(0x00) && hostlink_kiss_second(0xC0) && hostlink_kiss_second(0x06));
+	CHECK(!hostlink_kiss_second(0x07) && !hostlink_kiss_second(0xFC) && !hostlink_kiss_second(0xF0));
+
+	hostlink_side_hold_frame(&h, 100);			// opt-in: a frame alone doesn't hold
+	CHECK(!hostlink_side_hold_active(&h, 101));
+	hostlink_side_hold_set(&h, true, 1000);
+	CHECK(hostlink_side_hold_active(&h, 1000 + HOSTLINK_SIDE_HOLD_MS - 1));
+	hostlink_side_hold_frame(&h, 1000 + HOSTLINK_SIDE_HOLD_MS - 1);
+	CHECK(hostlink_side_hold_active(&h, 1000 + (2 * HOSTLINK_SIDE_HOLD_MS) - 2));
+	CHECK(!hostlink_side_hold_active(&h, 1000 + (2 * HOSTLINK_SIDE_HOLD_MS) - 1));	// the client went away
+	CHECK(!hostlink_side_hold_active(&h, 1000 + (2 * HOSTLINK_SIDE_HOLD_MS)));	// and it stays ended
+	hostlink_side_hold_set(&h, true, 5000);
+	hostlink_side_hold_set(&h, false, 5001);
+	CHECK(!hostlink_side_hold_active(&h, 5002));
+}
+
 static void test_hostlink_dtr(void)
 {
 	hostlink_session_t hs;
@@ -1427,6 +1447,7 @@ int main(void)
 	test_morse();
 	test_ext_space();
 	test_hostlink_first_frame();
+	test_hostlink_side_hold();
 	test_hostlink_dtr();
 	test_end();
 	if (failures == 0) {
