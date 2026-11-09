@@ -3577,6 +3577,10 @@ msgid "OK acknowledge  Back hide"
 msgstr "OK conferma  Indietro nascondi"
 
 #: core/ui/ui_screens.c
+msgid "Vol"
+msgstr "Vol"
+
+#: core/ui/ui_screens.c
 msgid "Muted"
 msgstr "Muto"
 

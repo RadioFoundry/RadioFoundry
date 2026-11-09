@@ -96,6 +96,16 @@ Nothing about this dual watch has been checked on the air on any radio.
 The Anytone AT-D578UV is the radio the two-receiver case is for: its hardware has two receiver chips
 ([Anytone hardware notes](../spec/hardware-anytone.md)). RadioFoundry has no board for it, so there is no support.
 
+## The volume bar
+
+On a radio whose volume knob RadioFoundry reads, turning the knob shows the volume at the bottom of the screen (at the
+top on a screen that uses its bottom row, such as Quick settings): a bar of 16 steps and the step number. It goes away 3 s after you stop turning, and the screen under it carries on (a call,
+a menu). It also turns the backlight on. On a radio without a knob, the **Volume** key opens the volume screen
+instead. A radio whose volume control works after the radio chip (`volume.src` none) can't know the level, and shows
+nothing.
+
+<img src="../ux/screens/160x128/volume_bar.png" width="200" alt="The volume bar at the bottom of Home after turning the knob">
+
 ## Setting the volume from a PC
 
 `rfoundry_debug.py volume` prints the volume the radio uses and where it comes from. `rfoundry_debug.py volume 12` sets step 12

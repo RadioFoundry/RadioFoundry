@@ -250,6 +250,7 @@ static const char *mode_word(const radio_view_t *v)
 // the name is shortened, from the middle. On tall displays the strip stays whole and the title gets its own row below
 // it. Either way the title is centered. Returns the y where content starts.
 uint32_t ui_strip_draws;
+uint32_t ui_hint_draws;
 
 // A word after the mode, with a space either side, where the strip has room for it: measured, since a translation may
 // be longer than the English
@@ -583,6 +584,9 @@ static const char *key_names(const char *text, char *out, size_t cap, bool hint)
 // takes a second line above it, so it is never shortened
 void ui_draw_hint(const char *text, bool toast)
 {
+#if CONFIG_VOLUME_BAR
+	ui_hint_draws++;
+#endif
 	// The key names go into each alternate once it is picked, in buffers this function has anyway: no static (RAM is
 	// tight on some radios) and no more stack (the UI task's deepest chain runs through here, docs/dev/stack-check.md)
 	const ui_layout_t *L = &ui_layout;
@@ -2680,6 +2684,44 @@ void ui_draw_emergency(const radio_view_t *v, const ui_state_t *s, uint32_t id, 
 	ui_draw_hint(s->toast != NULL ? s->toast : TR("OK acknowledge  Back hide"), s->toast != NULL);
 }
 
+// The volume step as RADIO_VOLUME_MAX segments in w px, filled up to step: the volume screen and the knob's bar
+static void volume_segments(int x, int y, int w, int h, int step)
+{
+	int pitch = w / RADIO_VOLUME_MAX, gap = pitch >= 6 ? 2 : 1;
+	x += (w - pitch * RADIO_VOLUME_MAX) / 2;
+	for (int i = 0; i < RADIO_VOLUME_MAX; i++) {
+		if (i < step)
+			gfx_fill(x + i * pitch, y, pitch - gap, h, ui_col.fg);
+		else
+			gfx_rect(x + i * pitch, y, pitch - gap, h, ui_col.line);
+	}
+}
+
+#if CONFIG_VOLUME_BAR
+// noinline: inlined into the frame code, its locals land in ui_task's deepest path, which has 8 bytes to spare on
+// the boards with the tightest UI stack (make stack-check)
+__attribute__((noinline)) void ui_draw_volume_bar(const ui_state_t *s, bool top)
+{
+	const ui_layout_t *L = &ui_layout;
+	const font_t *f = L->small;
+	int w = gfx_width();
+	// Rows no screen lays its content in, so nothing is cut on any display class: the hint row (its keys and toasts
+	// come back with it), or on a screen that fills the bottom (Quick's tiles, a list with hints off) the status strip
+	int y = top ? 0 : L->hint_y, y0 = top ? 0 : y - 1, bh = top ? L->strip_h : gfx_height() - y0;
+	char num[4];
+	sbuf_t b;
+	sb_init(&b, num, sizeof num);
+	sb_u32(&b, (uint32_t)s->volbar, 1);
+	const char *label = TR("Vol");
+	int lw = gfx_text_width(f, label), nw = gfx_text_width(f, "16");
+	gfx_fill(0, y0, w, bh, ui_col.bg);
+	gfx_hline(0, top ? y0 + bh - 1 : y0, w, ui_col.line);
+	gfx_text(f, 2, y, label, ui_col.fg);
+	gfx_text(f, w - 2 - gfx_text_width(f, num), y, num, ui_col.fg);
+	volume_segments(lw + 6, y + 1, w - lw - nw - 12, f->h - 2, s->volbar);
+}
+#endif
+
 // The volume screen: the step as a number (a word at 0) over a bar of RADIO_VOLUME_MAX segments.
 // Large type, no scale to read
 void ui_draw_volume(const radio_view_t *v, const ui_state_t *s)
@@ -2700,16 +2742,7 @@ void ui_draw_volume(const radio_view_t *v, const ui_state_t *s)
 		big = L->medium;
 	gfx_text(big, (w - gfx_text_width(big, buf)) / 2, y, buf, ui_col.fg);
 	y += big->h + 6;
-	int seg = RADIO_VOLUME_MAX;
-	int pitch = (w - 8) / seg;
-	int x0 = (w - pitch * seg) / 2;
-	int bh = L->row_h > 10 ? L->row_h : 10;
-	for (int i = 0; i < seg; i++) {
-		if (i < s->volume)
-			gfx_fill(x0 + i * pitch, y, pitch - 2, bh, ui_col.fg);
-		else
-			gfx_rect(x0 + i * pitch, y, pitch - 2, bh, ui_col.line);
-	}
+	volume_segments(4, y, w - 8, L->row_h > 10 ? L->row_h : 10, s->volume);
 	ui_draw_bottom(s, TR("Up Down change  OK done"));
 }
 

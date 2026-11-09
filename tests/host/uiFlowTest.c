@@ -1386,6 +1386,100 @@ static void no_battery_checks(void)
 	}
 }
 
+// The volume bar when the knob turns (#354): over whatever screen is open, 3 s after the last change; never at
+// power-up, for an unchanged level, a radio without a knob or the debug link taking over. EP and BVA cases, then a
+// seeded property run: the bar shows exactly when the knob's level changed in the last 3 s, at that level
+#if CONFIG_VOLUME_BAR
+static bool vol_run(const sim_geom_t *g, const char *script, const char *expect, char *err, size_t len)
+{
+	char buf[600];
+	sim_reset(g, SIM_MAP_K);
+	snprintf(buf, sizeof buf, "%s", script);
+	if (!sim_run(buf, err, len))
+		return false;
+	char *o = buf;
+	for (const char *p = expect; *p && o < buf + sizeof buf - 16;) {
+		while (*p == ' ')
+			p++;
+		memcpy(o, "expect:", 7);
+		o += 7;
+		while (*p && *p != ' ' && o < buf + sizeof buf - 2)
+			*o++ = *p++;
+		*o++ = ' ';
+	}
+	*o = 0;
+	return sim_run(buf, err, len);
+}
+
+static void volume_bar_checks(void)
+{
+	static const struct { const char *name, *script, *expect; } cases[] = {
+		{ "a turn shows the level", "knob:50 knob:75", "volbar=12 shows=Vol wake=1 screen=home" },
+		{ "power-up: none", "knob:50", "volbar=-1" },
+		{ "the same level: none", "knob:50 wait:4000 knob:50", "volbar=-1" },
+		{ "down to silent", "knob:50 knob:0", "volbar=0" },
+		{ "a whisper is not silent", "knob:50 knob:1", "volbar=1" },
+		{ "full", "knob:50 knob:100", "volbar=16" },
+		{ "still there at 2.9 s", "knob:50 knob:60 wait:2900", "volbar=10" },
+		{ "gone at 3 s", "knob:50 knob:60 wait:3000", "volbar=-1 hides=Vol" },
+		{ "a turn at 2 s keeps it", "knob:50 knob:60 wait:2000 knob:70 wait:2900", "volbar=11" },
+		{ "over a menu, which stays", "ok knob:50 knob:60", "volbar=10 screen=hub" },
+		{ "no knob: none", "softvol knob:50 knob:75", "volbar=-1" },
+		{ "the debug link takes over: none", "knob:50 override:80", "volbar=-1" },
+		{ "and gives it back: none", "knob:50 override:80 knob:30", "volbar=-1" },
+		{ "a turn after it gave back", "knob:50 override:80 knob:30 knob:40", "volbar=6" },
+		{ "the debug link takes over while it shows: gone", "knob:50 knob:75 override:0", "volbar=-1 hides=Vol" },
+		{ "Home: in the hint row", "knob:50 knob:60", "volbar_at=bottom" },
+		{ "over Quick", "quick knob:50 knob:60", "volbar=10 screen=quick" },
+		{ "hints off: in the strip", "hints:off knob:50 knob:60", "volbar=10 volbar_at=top" },
+	};
+	char err[300];
+	for (int g = 0; g < sim_geom_count; g++) {
+		for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+			if (!vol_run(&sim_geoms[g], cases[i].script, cases[i].expect, err, sizeof err)) {
+				printf("FAIL volume bar %s [%s]: %s\n", cases[i].name, sim_geoms[g].name, err);
+				fails++;
+			}
+		}
+	}
+	// Where Quick's tiles fill the bottom row (160x128) the bar goes to the strip and cuts no tile
+	if (!vol_run(sim_geom_find("160x128"), "quick knob:50 knob:60", "volbar_at=top", err, sizeof err)) {
+		printf("FAIL volume bar Quick 160x128 in the strip: %s\n", err);
+		fails++;
+	}
+	// Property: random turns and pauses against a model of the rule
+	uint32_t seed = 0x354u;
+	const sim_geom_t *g = sim_geom_find("160x128");
+	for (int it = 0; it < 200; it++) {
+		char script[500] = "knob:50", expect[40], err2[300];
+		int level = 50, since = 1 << 20;	// ms since the last change
+		size_t n = strlen(script);
+		for (int k = 0; k < 6; k++) {
+			seed = seed * 1103515245u + 12345u;
+			int pct = (int)((seed >> 8) % 101u), wait = (int)((seed >> 20) % 5u) * 1000;
+			if ((seed >> 4) % 3u == 0)
+				pct = level;		// the same level again
+			int w = snprintf(script + n, sizeof script - n, " knob:%d wait:%d", pct, wait);
+			if (w < 0 || (size_t)w >= sizeof script - n) {
+				script[n] = 0;	// the buffer is full: drop the cut step, the steps so far make the case
+				break;
+			}
+			n += (size_t)w;
+			since = pct != level ? wait : since + wait;
+			level = pct;
+		}
+		int step = level == 0 ? 0 : (level * RADIO_VOLUME_MAX + 50) / 100;
+		step = level != 0 && step < 1 ? 1 : step;
+		snprintf(expect, sizeof expect, "volbar=%d", since < 3000 ? step : -1);
+		if (!vol_run(g, script, expect, err2, sizeof err2)) {
+			printf("FAIL volume bar property [%s]: %s\n", script, err2);
+			fails++;
+			break;
+		}
+	}
+}
+#endif
+
 // A page's title is centered on every display class. Where it shares the status strip (displays under UI_TALL_PX)
 // the battery gives way to it; on tall displays the strip above the title row keeps the battery
 static void title_row_checks(void)
@@ -1459,6 +1553,9 @@ int main(void)
 	heard_checks();
 	vfo_split_dmr_checks();
 	no_battery_checks();
+#if CONFIG_VOLUME_BAR
+	volume_bar_checks();
+#endif
 	title_row_checks();
 
 	crawl(sim_geom_find("160x120i5"), SIM_MAP_K, "K DM-1701");

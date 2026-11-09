@@ -184,6 +184,14 @@ static const struct { const char *name, *script; } gallery[] = {
 #endif
 	{ "emergency", "emergency:9991234" },
 	{ "volume", "softvol volkey up up" },
+#if CONFIG_VOLUME_BAR
+	// A knob radio: the knob turned, over Home and over a call (#354)
+	{ "volume_bar", "knob:50 knob:62" },
+	{ "volume_bar_quick", "quick knob:50 knob:62" },	// Quick's tiles fill the bottom at 160x128: the strip
+#if CONFIG_DMR
+	{ "volume_bar_call", "rx:9991234,3100,g wait:500 knob:50 knob:31" },
+#endif
+#endif
 #if CONFIG_DMR
 	{ "dmr_id", "ok 7 9 ok" },		// Settings > My radio
 	{ "dmr_id_entry", "ok 7 9 ok 3 1 0 9" },

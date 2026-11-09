@@ -2137,6 +2137,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	now_ms = 1000;
 	load_channel();
 	soft_volume = false;
+	view.volume = -1;	// no level passed on yet (power-up)
+	view.volume_src = RVOL_KNOB;
 	bcast_rx = false;
 	ref_trim = false;
 	board.hwopts = NULL;
@@ -2416,6 +2418,8 @@ static bool check(const char *kv, char *err, size_t len)
 			if (strstr(live[i].s, want) != NULL)
 				snprintf(got, sizeof got, "shown in \"%s\"", live[i].s);
 	}
+	else if (strcmp(key, "volbar_at") == 0) snprintf(got, sizeof got, "%s", s.volbar_top ? "top" : "bottom");
+	else if (strcmp(key, "volbar") == 0) snprintf(got, sizeof got, "%d", s.volbar);	// the knob's bar, -1 = none
 	else if (strcmp(key, "pttblock") == 0) snprintf(got, sizeof got, "%u", ptt_blocked);
 	else if (strcmp(key, "poweroff") == 0) snprintf(got, sizeof got, "%u", ui_app_power_off_due());
 	else if (strcmp(key, "wake") == 0) snprintf(got, sizeof got, "%u", ui_app_take_wake());	// the backlight asked for
@@ -2534,6 +2538,17 @@ static bool run_token(char *t, char *err, size_t len)
 		int32_t sec = atoi(arg);
 		ui_svc_setting_set(UI_SET_AUTO_LOCK_S, sec);
 		ui_apply_setting(UI_SET_AUTO_LOCK_S, sec);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "hints") == 0 && arg != NULL) {	// Settings > Display > Hint row
+		bool on = strcmp(arg, "on") == 0;
+		if (!on && strcmp(arg, "off") != 0) {
+			snprintf(err, len, "hints: expected on or off, got %s", arg);
+			return false;
+		}
+		ui_svc_setting_set(UI_SET_HINTS, on);
+		ui_apply_setting(UI_SET_HINTS, on);
 		advance(200);
 		return true;
 	}
@@ -2874,6 +2889,15 @@ static bool run_token(char *t, char *err, size_t len)
 				return false;
 			}
 		}
+		return true;
+	}
+	if ((strcmp(t, "knob") == 0 || strcmp(t, "override") == 0) && arg != NULL) {
+		// The level the radio core passed on (radio_view_t.volume) and where from: the knob a radio's MCU reads,
+		// the debug link's override, or the stored step of a radio without a knob ("softvol")
+		view.volume = (int8_t)atoi(arg);
+		view.volume_src = soft_volume ? RVOL_SOFT : t[0] == 'k' ? RVOL_KNOB : RVOL_OVERRIDE;
+		changed();
+		step();
 		return true;
 	}
 	if (strcmp(t, "softvol") == 0) {	// this radio has no volume knob: the board sets the speaker volume
