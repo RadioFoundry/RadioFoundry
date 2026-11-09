@@ -251,6 +251,13 @@ bool codeplug_set_dmr_id(uint32_t id)
 }
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]) { line1[0] = line2[0] = 0; }
 void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]) { out[0] = 0; }
+#if CONFIG_APRS
+// APRS (radioCoreTestAprs): no APRS channel in the codeplug, no host link
+bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out) { memset(out, 0, sizeof(*out)); return false; }
+bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2) { return false; }
+#include "hostlink/hostlink.h"
+void hostlink_set_tnc(const hostlink_tnc_t *tnc) { (void)tnc; }
+#endif
 bool codeplug_set_radio_name(const char *name) { (void)name; return false; }
 bool codeplug_set_boot_text(const char *line1, const char *line2) { (void)line1; (void)line2; return false; }
 bool codeplug_contact(uint16_t index, contact_t *out)
@@ -2453,6 +2460,60 @@ static void test_dmr_contact_added(void)
 	CHECK(d->target_id == 9996001 && d->target_private && strcmp(d->target_name, "Charlie Harper") == 0);
 	memset(&added_contact, 0, sizeof(added_contact));
 }
+
+#if CONFIG_APRS_RX
+// One NMEA sentence from src to dst (a private call) on UDP 10110 (SAP 3), as the data service hears it
+static void hear_dmr_nmea(uint32_t src, uint32_t dst, const char *sentence, size_t length)
+{
+	uint8_t data[9 + 96] = { 0x00, 0x01, 0x00, 0x00, 0x00, 0x27, 0x7e, 0x27, 0x7e };
+	static dmrBurst_t b[DMR_DATA_MAX_BURSTS];
+
+	memcpy(&data[9], sentence, length);
+	int nb = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_UDPIP_COMPRESSION, false, dst, src, data,
+				    (int)(9 + length), DMR_TYPE_RATE_1_2, 4, b, DMR_DATA_MAX_BURSTS);
+	CHECK(nb > 0);
+	for (int i = 0; i < nb; i++) {
+		now += 60;
+		dmrDataServiceRxBurst(&b[i], now);
+	}
+	run(20);
+}
+
+// DMR APRS as a stock radio sends it (#401): through radio_sm's hook into the APRS station list under the sender's
+// callsign in the ID database (else its DMR ID), to us or to anyone else (the APRS gateway). A sentence without a
+// fix, or out of range, neither adds a station nor moves one
+static void test_dmr_aprs_position(void)
+{
+	static const char heard[] = "$GPRMC,062544.000,A,3000.0000,N,8700.0000\0,W,0.00,0.00,051126,,,A\0";
+	static const char *const none[] = {
+		"$GPRMC,062544.000,V,3100.0000,N,08600.0000,W,,,051126,,,N",	// void status: no fix
+		"$GPRMC,062544.000,A,9100.0000,N,08600.0000,W,,,051126,,,A",	// past 90 degrees
+	};
+	aprs_station_t st;
+
+	dmr_start(false);
+	uint8_t before = aprs_station_count();
+	hear_dmr_nmea(9991234, 9996543, heard, sizeof(heard) - 1);
+	CHECK(aprs_station_count() == before + 1);
+	CHECK(aprs_station(0, &st) && strcmp(st.call, "9991234") == 0 && st.has_pos && st.lat == 300000000 &&
+	      st.lon == -870000000);
+	for (unsigned i = 0; i < sizeof(none) / sizeof(none[0]); i++) {
+		hear_dmr_nmea(9991234, 9996543, none[i], strlen(none[i]));	// the same station: not moved
+		hear_dmr_nmea(9991235, 9996543, none[i], strlen(none[i]));	// another: not added
+		CHECK(aprs_station_count() == before + 1);
+		CHECK(aprs_station(0, &st) && strcmp(st.call, "9991234") == 0 && st.lat == 300000000 && st.lon == -870000000);
+	}
+	// The usual case: another radio's report to the APRS gateway (BrandMeister's <MCC>999), heard on the channel
+	hear_dmr_nmea(9991236, 310999, heard, sizeof(heard) - 1);
+	CHECK(aprs_station_count() == before + 2);
+	CHECK(aprs_station(0, &st) && strcmp(st.call, "9991236") == 0 && st.lat == 300000000 && st.lon == -870000000);
+
+	// EP, the name: an ID in the ID database is listed under its callsign, one not in it under the number (above)
+	hear_dmr_nmea(9995555, 310999, heard, sizeof(heard) - 1);
+	CHECK(aprs_station_count() == before + 3);
+	CHECK(aprs_station(0, &st) && strcmp(st.call, "QD9XYZ") == 0 && st.lat == 300000000 && st.lon == -870000000);
+}
+#endif
 
 static void test_dmr_emergency(void)
 {
@@ -4875,6 +4936,9 @@ int main(void)
 	test_sfr_cwid();
 #endif
 	test_dmr_emergency();
+#if CONFIG_APRS_RX
+	test_dmr_aprs_position();
+#endif
 	test_power_off_ars();
 #if CONFIG_VFO_DMR
 	test_vfo_dmr_data();
