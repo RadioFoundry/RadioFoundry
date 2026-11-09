@@ -28,8 +28,14 @@ CONFIG_CHANNEL_LIST ?= n
 CONFIG_DMR_SMS ?= n
 CONFIG_ZONE_SHARE ?= n
 CONFIG_CRASH_SCREEN ?= n
+CONFIG_DIAG ?= n
 CONFIG_GPS ?= n
 CONFIG_GPS_SKY ?= n
+# No GPS receiver, so no position of its own to report. Custom builds can still turn these on
+CONFIG_DMR_GPS ?= n
+BOARD_DEFAULT_OFF += DMR_GPS	# Off by default on this radio: it has no GPS receiver or display, so it has no position to send or show.
+CONFIG_DMR_LRRP ?= n
+BOARD_DEFAULT_OFF += DMR_LRRP	# Off by default on this radio: it has no GPS receiver, so it could only answer that it has no position.
 CONFIG_AM_RX ?= n
 CONFIG_BCAST_FM ?= n
 # No display or keypad: no frequency to type in, no A / B channel to pick, no digits to dial
@@ -57,6 +63,7 @@ BOARD_UNSUPPORTED += CONTACT_EDIT	# no display: no contact editor
 BOARD_UNSUPPORTED += DMR_SMS	# no display: text messages can't be read or written
 BOARD_UNSUPPORTED += DMR_TMS	# the TMS format of text messages (above)
 BOARD_UNSUPPORTED += ZONE_SHARE	# no display: an offered zone can't be shown or accepted
+BOARD_UNSUPPORTED += DIAG	# no display: the diagnostics page is a screen
 BOARD_UNSUPPORTED += CRASH_SCREEN	# no display: the debug link reads the crash log
 BOARD_UNSUPPORTED += CRASH_REPORT	# sent from the crash log's screen
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR, GD25Q16 class (docs/spec/hardware-rt10.md 4)

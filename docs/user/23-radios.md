@@ -689,6 +689,8 @@ The cable line is stuck low. The radio won't transmit until the line is released
   RT10 build. A custom build can turn it on, at that risk.
 - Hotspot mode. The hotspot software on the computer also sends at any time, so it may latch the line the same way.
   The hotspot is off by default in the RT10 build until that is resolved. A custom build can turn it on, at that risk.
+- GPS. The radio has no receiver, so DMR position reports and LRRP location replies are off by default in the RT10
+  build.
 - The battery scale.
 
 ## TYT MD-9600
