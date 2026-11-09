@@ -239,15 +239,12 @@ def zone_on(radio):
 
 def site_zone(radio):
     """Roaming on, on a repeater site with a second site: the current channel if it is one, else the first such
-    channel of the other zones in order (each zone's flag put back by the roaming fixture). Its view."""
+    channel of the zones in order (each zone's flag put back by the roaming fixture). Its view."""
     v = zone_on(radio)
     if v["roam.state"] != "off":
         return v
     L = radio.link
-    start = radio.core().get("zone_index")
     for zone in range(int(radio.core().get("zone_count") or 1)):
-        if str(zone) == start:
-            continue
         L.zone(zone)
         radio.wait_for(lambda x: x.get("zone_index") == str(zone), 3.0, what=f"zone {zone}")
         for pos in range(int(radio.core().get("zone_size") or 0)):
