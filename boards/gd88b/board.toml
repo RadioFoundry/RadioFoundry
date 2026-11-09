@@ -27,7 +27,7 @@ clock = { rtc = "none", note = "SoC B keeps no time: the clock is SoC A's (docs/
 
 [status]
 level = "bring-up"
-summary = "Written from the hardware notes: analog FM and DMR receive for SoC A's dual watch. Open: a first run on the radio."
+summary = "Runs on the radio: analog FM and DMR receive for SoC A's dual watch, and the PA for its transmit."
 release = "testing"
 
 [flash]

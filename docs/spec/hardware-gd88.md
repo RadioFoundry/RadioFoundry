@@ -1,8 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Radioddity GD-88 (Kydera DR-880UV) hardware
 
-Status: bring-up, 2026-10-21. RadioFoundry builds for both SoCs (`boards/gd88`, `boards/gd88b`; section 13) but has not run
-on a GD-88 yet. Sections 1-5 record how the GD-88 programs and updates (a USB-serial cable, not native USB). Sections
+Status: bring-up. RadioFoundry runs on both SoCs (`boards/gd88`, `boards/gd88b`; section 13). Sections 1-5 record how the GD-88 programs and updates (a USB-serial cable, not native USB). Sections
 6-12 are the hardware facts the port is written from. The survey entry is in [radios.md](radios.md); the HR_C7000 facts it builds
 on (UART registers, USB core, clock gates) are in [hardware-dm32.md](hardware-dm32.md).
 
@@ -144,7 +143,7 @@ Pin index 0-31 = PTA, 32-63 = PTB, 64-95 = PTC.
 | Speaker amplifier | PTC18 high, together with the serial chain's amplifier bit (9.3) |
 | PTC20 | Low cuts the modem's audio line while a beep plays (INF). Low at start-up |
 | Line out gain | Beeps and DMR voice come from the modem's line out, not the main chip's AF, so the volume sets the codec's DAC gain (GCR_DACL) as well, as the original firmware does (3 dB a step). At 0 dB a beep doesn't reach A's microphone at a loud knob; from about +16 dB it is as loud as the receiver's noise (**HW** 2026-10-27). The loudspeaker also needs B's switch closed (section 10) |
-| PTT / K1 data | PTA9, shared with UART1 RXD; low = PTT |
+| PTT / K1 data | PTA9, shared with UART1 RXD; low = PTT. On DMR transmit at 446 MHz with the programming cable in, each burst disturbs this line (**HW**): one character with a line error per burst, which the host UART drops ([gotchas 2.13](gotchas.md)), and a host request sent during a burst can be lost |
 | UARTs | UART1 PTA9/10 PC cable (115200); UART2 PTA11/12 GPS (9600); UART3 PTA13/14 link to B (115200) |
 | GPS power | PTB17, high = on. On start-up the receiver gets `$CFGPRT,,0,9600,3,3` |
 | LCD | 320x240 on the i8080 controller (0x12000000), reset PTC2 (low 10 ms, high 130 ms, twice). Four init variants (9.4) |
@@ -305,7 +304,7 @@ Not supported yet: the IMU, the headset path on its own, the RTC.
 The code marks each with `TODO(gd88)`. The first-day plan that settles them is [gd88-bringup.md](../testing/gd88-bringup.md).
 
 1. Which RF chips other units have (the bench's A: BK4819 and AT1141), and B's.
-2. The output power at each level, and DMR transmit on the radio.
+2. The output power at each level.
 3. Chain bit 6 as the broadcast tuner's source, and B's audio source pair.
 4. The front panel's navigation keys, whether PTB12 is the knob's contact.
 5. DAC C on each SoC. On A it is powered and on its pin, and 0 to 4095 leave the RSSI unchanged at 146, 162 and 461 MHz (**HW**): not receive gain; a frequency trim or a transmit role is left.
