@@ -18,7 +18,7 @@
 
 #if CONFIG_DMR
 
-#define MODEM_TASK_STACK	256
+#define MODEM_TASK_STACK	288
 #define MODEM_TASK_PRIORITY	(configMAX_PRIORITIES - 2)
 #define MODEM_POLL_MS		2
 // The chip answers about 2.15 s after the boot block (measured at HOBIB on a radio): 2 s gave up just before it
@@ -301,6 +301,8 @@ static const sct_host_t host = {
 	.voice = &voice,
 };
 
+#define FIELD_WAIT_MS	200	// the manual's 40 ms for most fields, with room for a busy modem task
+
 static bool port_send(const uint8_t *buf, uint16_t len, void *ctx)
 {
 	(void)ctx;
@@ -376,6 +378,70 @@ static void modem_task(void *arg)
 		sct_dmr_poll(hal_millis());
 		vTaskDelay(pdMS_TO_TICKS(MODEM_POLL_MS));
 	}
+}
+
+// board.chip_reg's baseband fields (hardware-d578uv.md 4.4): a field of up to 4 bytes, MSB first
+bool d578uv_modem_field(uint8_t type, uint8_t id, uint32_t *val, bool write)
+{
+	int len = sct_field_len(id);
+	uint8_t d[4], n = 0;
+
+	if (!booted || (write && (len < 0 || len > 4)))
+		return false;
+	if (write) {
+		if (len < 4 && (*val >> (8 * len)) != 0)
+			return false;
+		for (int i = 0; i < len; i++)
+			d[i] = (uint8_t)(*val >> (8 * (len - 1 - i)));
+	}
+	if (!sct_dmr_field_begin(type, id, d, write ? (uint8_t)len : 0, !write))
+		return false;
+	for (int t = 0; t < FIELD_WAIT_MS; t += 2) {
+		int r = sct_dmr_field_poll(d, &n);
+
+		if (r < 0)
+			return false;
+		if (r > 0) {
+			if (!write) {
+				*val = 0;
+				for (uint8_t i = 0; i < n; i++)
+					*val = (*val << 8) | d[i];
+			}
+			return true;
+		}
+		vTaskDelay(pdMS_TO_TICKS(2));
+	}
+	sct_dmr_field_cancel();
+	return false;
+}
+
+// SCRATCH (never commit): raw read of an SCT field that carries a 16-bit argument (0x3F READ_MM, a debug memory
+// peek). Sends TYPE|READ, id, arg_hi, arg_lo; returns the reply's data assembled MSB-first. Reached via chip 0x7F in
+// d578uv_chip_reg. Needs field_len[0x3F]=2 and the read-arg path in sct_dmr_field_begin.
+bool d578uv_modem_raw_read(uint8_t type, uint8_t id, uint16_t arg, uint32_t *val)
+{
+	uint8_t req[2] = { (uint8_t)(arg >> 8), (uint8_t)arg };
+	uint8_t d[4], n = 0;
+
+	if (!booted)
+		return false;
+	if (!sct_dmr_field_begin(type, id, req, 2, true))
+		return false;
+	for (int t = 0; t < FIELD_WAIT_MS; t += 2) {
+		int r = sct_dmr_field_poll(d, &n);
+
+		if (r < 0)
+			return false;
+		if (r > 0) {
+			*val = 0;
+			for (uint8_t i = 0; i < n; i++)
+				*val = (*val << 8) | d[i];
+			return true;
+		}
+		vTaskDelay(pdMS_TO_TICKS(2));
+	}
+	sct_dmr_field_cancel();
+	return false;
 }
 
 bool d578uv_modem_init(void)

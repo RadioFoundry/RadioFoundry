@@ -106,3 +106,6 @@ lens = [20, 20]
 tool = "modem_boot"
 profile = "d578uv-boot"
 sources = ["AT-D578UV stock firmware (.CDD), any build", "a program flash read of the radio"]
+
+[hil.limits]
+dmr_tx_ramp_ms = { value = 1.75, reason = "the PA's key-down ramp measures 1.58-1.69 ms on the SDR bench: over the 1.5 ms of the ETSI power mask; the baseband's manuals offer no ramp setting; hardware-d578uv.md 5.1" }

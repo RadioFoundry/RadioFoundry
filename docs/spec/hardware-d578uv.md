@@ -485,7 +485,9 @@ kHz). The calibration's MODU (modulation) bytes feed it.
 | 3 | side B local oscillator, and the air band receiver's LO |
 
 The debug link's CHIP_REG ([debuglink.md](debuglink.md) 3.24) uses these numbers: chips 0-3 on pages 0 and 1, every
-register but 0x7F (the page itself); chip 4 is the PA5 trims device (5.5), page 0, registers 0-0xF, write-only.
+register but 0x7F (the page itself); chip 4 is the PA5 trims device (5.5), page 0, registers 0-0xF, write-only. Chip 5
+is a baseband field of up to 4 bytes, MSB first (page = the packet TYPE, register = the field ID); chip 6 is a byte of
+the baseband's DMR_CALL_OPTION (page 0, registers 0-4).
 
 RadioFoundry clocks the bus as fast as the pin writes go, with one 1 us wait between the register byte and the data
 (the BK4819's limits: clock to 8 MHz, 1 us from the register byte's last falling edge to the next rising one), and
@@ -548,7 +550,7 @@ six); with the digital ones every burst decodes (d578uv-bringup.md, status 8).
 
 Transmit keys the RF chips once, before the baseband gets `DMR_CALL_SLOT` with the transmit bit, and keeps them in
 transmit for the whole call; the digital set carries over. Per burst only the PA is switched, from PD0 (`pa_gate.h`).
-At the end the baseband gets `WORK_MODE` and `DMR_CALL_SLOT` 0x10, then the RF goes back to receive.
+At the end the original firmware sends the baseband `WORK_MODE` and `DMR_CALL_SLOT` 0x10, then the RF goes back to receive.
 
 PD0 is high for 30.0 ms per burst, but the burst's modulation lags it: it starts 7.0 ms after the rising edge and ends
 4.5 ms after the falling edge (measured on the bench by the sync's position in the RF envelope, the same on every
@@ -604,6 +606,10 @@ the original firmware's full-duplex `WORK_MODE` 0x23 after the transmission with
 `DEMOD_GAIN` (2048, 0 dB), a much weaker reply (to rule out an overloaded receiver), and the LO chip (chip 2) left on through the
 transmission. The limit is in the receive path after `tx_off()`; which part is not known. The RF chip's RSSI and
 noise reach their receive values 30-46 ms after the return to receive.
+
+A DMR burst's key-up ramp measures 0.38-0.40 ms and its key-down ramp 1.58-1.69 ms on the SDR bench, a little over the
+1.5 ms of the ETSI power mask. The SCT3258's manuals offer no ramp setting, and the key-down ramp did not change with the
+driver. Whether the original firmware's ramp is the same was not measured.
 
 ### 5.2 Side B
 

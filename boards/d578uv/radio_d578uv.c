@@ -43,6 +43,7 @@
 // level in its register 8 and values the stock firmware writes once. Each value is the stock firmware's; what a shift
 // register bit does is inferred from where the stock firmware sets it.
 #include "d578uv.h"
+#include "modem/sct/sct_dmr.h"
 #include "config.h"
 #include "pins.h"
 #include "mcu_io.h"
@@ -2173,9 +2174,30 @@ static void trims_b(void)
 #endif
 
 // board.chip_reg (debuglink.md 3.24): chips 0-3 are the QA4818s, pages 0 and 1 (not the page register itself); chip
-// 4 is the PA5 trims device, registers 0-0xF, write-only (hardware-d578uv.md 5.5)
+// 4 is the PA5 trims device, registers 0-0xF, write-only (hardware-d578uv.md 5.5); chip 5 the baseband's fields (page
+// the packet TYPE, register the field ID) and chip 6 the bytes of its DMR_CALL_OPTION (hardware-d578uv.md 4.4)
 bool d578uv_chip_reg(uint8_t chip, uint8_t pg, uint8_t reg, uint32_t *val, bool write)
 {
+#if CONFIG_DMR
+	if (chip == 0x7F) {	// SCRATCH (never commit): raw SCT read via chip 0x7F; *val in = 16-bit arg, out = reply word
+		return d578uv_modem_raw_read(pg, reg, (uint16_t)*val, val);
+	}
+	if (chip == 5) {
+		return d578uv_modem_field(pg, reg, val, write);
+	}
+	if (chip == 6) {
+		if (pg != 0 || *val > 0xFFu) {
+			return false;
+		}
+		uint8_t b = (uint8_t)*val;
+
+		if (!sct_dmr_call_option(reg, &b, write)) {
+			return false;
+		}
+		*val = b;
+		return true;
+	}
+#endif
 	if (!chips_ready || pg > 1) {
 		return false;
 	}
