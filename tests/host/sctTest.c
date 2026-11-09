@@ -187,7 +187,7 @@ static bool b_write(const uint8_t *buf, uint16_t len, void *ctx)
 		uint8_t st = id == bus.refuse_id ? SCT_ACK_UNKNOWN : SCT_ACK_OK;
 
 		if (bus.processing)
-			chip_ack(SCT_ACK_PROCESSING);
+			chip_ack(SCT_ACK_FIELD_ERROR);
 		const uint8_t a[] = { 0x84, 0xA9, 0x61, 0x00, 0x02, buf[5], codec ? (uint8_t)SCT_F_ACK : buf[6], st };
 
 		chip_says(a, sizeof(a));
@@ -318,10 +318,10 @@ static void test_voice(void)
 	CHECK(memcmp(bus.log[4], c1, sizeof(c1)) == 0);
 	CHECK(memcmp(bus.log[5], c2, sizeof(c2)) == 0);
 
-	// "Processing" before the answer is waited through
+	// ACK 0x06 is the manual's "error in processing field": the step fails
 	bus.nlog = 0;
 	bus.processing = true;
-	CHECK(sct_host_boot(&h, &rx, 1000) == SCT_BOOT_OK && bus.nlog == 6);
+	CHECK(sct_host_boot(&h, &rx, 1000) == SCT_BOOT_NO_VOICE && bus.nlog == 1);
 	bus.processing = false;
 
 	// A refused field ends the set-up there; one unanswered waits its 200 ms
@@ -383,6 +383,11 @@ static struct {
 } sent[SENT_MAX];
 static int nsent;
 
+static bool wm_silent;	// the fake chip answers WORK_MODE transmit as tx_begin returns, unless silent
+static uint32_t fake_now;	// the time of the test's last call in
+#define sct_dmr_poll(t) (fake_now = (t), (sct_dmr_poll)(fake_now))
+
+
 static bool d_send(const uint8_t *buf, uint16_t len, void *ctx)
 {
 	if (nsent < SENT_MAX) {
@@ -397,9 +402,12 @@ static bool d_send(const uint8_t *buf, uint16_t len, void *ctx)
 static dmr_event_t evs[EV_MAX];
 static dmr_burst_t ev_bursts[EV_MAX];
 static int nev;
+static bool keep_ticks;		// slot ticks are recorded only for the test that looks at them
 
 static void on_event(const dmr_event_t *ev, void *ctx)
 {
+	if (ev->kind == DMR_EV_SLOT_TICK && !keep_ticks)
+		return;
 	if (nev < EV_MAX) {
 		evs[nev] = *ev;
 		if (ev->burst != NULL)
@@ -451,7 +459,18 @@ static void chip_packet(const uint8_t *body, uint8_t n, uint8_t type, uint32_t n
 	uint8_t p[SCT_PKT_MAX] = { 0x84, 0xA9, 0x61, 0x00, n, type };
 
 	memcpy(&p[6], body, n);
+	fake_now = now;
 	sct_dmr_packet(p, (uint16_t)(6 + n), now);
+}
+
+static bool tx_begin_answered(dmr_timing_t timing, int8_t ts, dmr_access_t access)
+{
+	static const uint8_t a[] = { SCT_F_WORK_MODE, SCT_ACK_OK };
+	bool r = sct_dmr_modem.tx_begin(timing, ts, access);
+
+	if (r && !wm_silent)
+		chip_packet(a, sizeof(a), SCT_TYPE_CONTROL, fake_now);
+	return r;
 }
 
 static void frame_ok(uint32_t now)
@@ -498,6 +517,7 @@ static void start(void)
 
 	sct_dmr_init(&port);
 	nsent = nev = 0;
+	fake_now = 0;
 	CHECK(m->start(&cfg, on_event, NULL));
 }
 
@@ -520,28 +540,44 @@ static void test_dmr_start(void)
 	const uint8_t *d;
 
 	start();
-	CHECK(nsent == 2);
+	CHECK(nsent == 4);
 	d = sent_field(0, SCT_F_PROCESS_MODE, NULL);
 	CHECK(d != NULL && d[0] == 0x02);
-	d = sent_field(0, SCT_F_DMR_CC, NULL);
+	d = sent_field(1, SCT_F_DMR_CC, NULL);
 	CHECK(d != NULL && d[0] == 2);
-	d = sent_field(0, SCT_F_DMR_OWN_ID, &n);
+	d = sent_field(1, SCT_F_DMR_OWN_ID, &n);
 	CHECK(d != NULL && n == 4 && d[0] == 0x01 && d[3] == 0x67);
 	// Byte 0's traffic mode is the engine's (1, whatever the board gave); the rest is the board's
-	d = sent_field(0, SCT_F_DMR_CALL_OPTION, &n);
+	d = sent_field(1, SCT_F_DMR_CALL_OPTION, &n);
 	CHECK(d != NULL && n == 5 && d[0] == 0x41 && d[1] == 0x00 && d[2] == 0x31 && d[3] == 0x07 && d[4] == 0x00);
 	d = sent_field(0, SCT_F_REPORT_FIELD, NULL);
 	CHECK(d != NULL && d[0] == 0xE1);
-	CHECK(sent_field(0, SCT_F_DMR_OFFSET, NULL) == NULL && sent_field(0, SCT_F_MODOUT_CONFIG, NULL) == NULL);
-	CHECK(sent[0].pkt[5] == SCT_TYPE_DMR);
-	d = sent_field(1, SCT_F_WORK_MODE, NULL);
+	CHECK(sent_field(1, SCT_F_DMR_OFFSET, NULL) == NULL && sent_field(0, SCT_F_MODOUT_CONFIG, NULL) == NULL);
+	CHECK(sent[0].pkt[5] == SCT_TYPE_CONTROL && sent[1].pkt[5] == SCT_TYPE_DMR);
+	d = sent_field(2, SCT_F_WORK_MODE, NULL);
 	CHECK(d != NULL && d[0] == 1);
-	d = sent_field(1, SCT_F_DMR_CALL_SLOT, NULL);
-	CHECK(d != NULL && d[0] == 3);
+	d = sent_field(3, SCT_F_DMR_CALL_SLOT, NULL);
+	CHECK(d != NULL && d[0] == 0);	// direct mode: slot number 0
 
 	m->rx_lock_slot(2);
 	d = sent_field(nsent - 1, SCT_F_DMR_CALL_SLOT, NULL);
+	CHECK(d != NULL && d[0] == 0);
+
+	// A repeater channel: both slots until the stack locks one
+	dmr_config_t rmo = { .own_id = 1234567, .cc = 2, .access = DMR_ACCESS_IMPOLITE, .repeater = true };
+
+	sct_dmr_init(&port);
+	nsent = 0;
+	CHECK(m->start(&rmo, on_event, NULL));
+	d = sent_field(3, SCT_F_DMR_CALL_SLOT, NULL);
+	CHECK(d != NULL && d[0] == 3);
+	m->rx_lock_slot(2);
+	d = sent_field(nsent - 1, SCT_F_DMR_CALL_SLOT, NULL);
 	CHECK(d != NULL && d[0] == 2);
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 2, DMR_ACCESS_IMPOLITE));
+	d = sent_field(nsent - 2, SCT_F_DMR_CALL_SLOT, NULL);
+	CHECK(d != NULL && d[0] == 0x82);
+	m->tx_abort();
 }
 
 static void test_dmr_voice_tx(void)
@@ -551,12 +587,12 @@ static void test_dmr_voice_tx(void)
 	uint32_t t = 1000;
 
 	start();
-	CHECK(m->tx_begin(DMR_TIMING_OWN, 2, DMR_ACCESS_IMPOLITE));
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 2, DMR_ACCESS_IMPOLITE));
 	CHECK(m->is_transmitting());
 	d = sent_field(nsent - 1, SCT_F_WORK_MODE, NULL);
 	CHECK(d != NULL && d[0] == 2);
-	d = sent_field(nsent - 1, SCT_F_DMR_CALL_SLOT, NULL);
-	CHECK(d != NULL && d[0] == 0x82);
+	d = sent_field(nsent - 2, SCT_F_DMR_CALL_SLOT, NULL);
+	CHECK(d != NULL && d[0] == 0x80);	// direct mode: slot number 0
 
 	sct_dmr_poll(t);
 	dmr_tx_burst_t b = burst(DMR_BURST_VOICE_LC_HEADER, 0, 12);
@@ -621,7 +657,7 @@ static void test_dmr_voice_tx(void)
 	far_done(t + 300);
 	CHECK(count_ev(DMR_EV_TX_DONE) == 1);
 	CHECK(!m->is_transmitting());
-	d = sent_field(nsent - 1, SCT_F_WORK_MODE, NULL);
+	d = sent_field(nsent - 2, SCT_F_WORK_MODE, NULL);
 	CHECK(d != NULL && d[0] == 1);
 	sct_dmr_stats_t st;
 	sct_dmr_get_stats(&st);
@@ -636,7 +672,7 @@ static void test_dmr_data_tx(void)
 
 	start();
 	sct_dmr_poll(t);
-	CHECK(m->tx_begin(DMR_TIMING_ASAP, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(tx_begin_answered(DMR_TIMING_ASAP, 1, DMR_ACCESS_IMPOLITE));
 	// Payloads come with their CRC (12 bytes); the chip gets the information bits only
 	dmr_tx_burst_t b = burst(DMR_BURST_DATA_HEADER, 0, 12);
 	b.host_crc = true;
@@ -683,13 +719,13 @@ static void test_dmr_data_tx(void)
 	CHECK(st.tx_timeouts == 1 && st.naks == 1 && st.last_nak == SCT_ACK_LENGTH);
 
 	// tx_abort: back to receive, no TX_DONE
-	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
 	b = burst(DMR_BURST_CSBK, 0, 12);
 	CHECK(m->tx_queue(&b));
 	int before = nsent;
 	m->tx_abort();
 	CHECK(!m->is_transmitting());
-	CHECK(nsent == before + 1 && sent_field(nsent - 1, SCT_F_WORK_MODE, NULL)[0] == 1);
+	CHECK(nsent == before + 2 && sent_field(nsent - 2, SCT_F_WORK_MODE, NULL)[0] == 1);
 	CHECK(count_ev(DMR_EV_TX_DONE) == 1);
 }
 
@@ -702,7 +738,7 @@ static void test_dmr_tx_answer_on_air(void)
 
 	start();
 	sct_dmr_poll(t);
-	CHECK(m->tx_begin(DMR_TIMING_ASAP, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(tx_begin_answered(DMR_TIMING_ASAP, 1, DMR_ACCESS_IMPOLITE));
 	dmr_tx_burst_t b = burst(DMR_BURST_VOICE_LC_HEADER, 0, 12);
 	for (int i = 0; i < 3; i++)
 		CHECK(m->tx_queue(&b));
@@ -783,20 +819,20 @@ static void test_dmr_options(void)
 	sct_dmr_init(&port_opts);
 	nsent = nev = 0;
 	CHECK(m->start(&cfg, on_event, NULL));
-	CHECK(nsent == 2);
-	d = sent_field(0, SCT_F_DMR_CALL_OPTION, &n);
+	CHECK(nsent == 4);
+	d = sent_field(1, SCT_F_DMR_CALL_OPTION, &n);
 	CHECK(d != NULL && n == 5 && d[0] == 0x41 && d[1] == 0x40 && d[2] == 0x42 && d[3] == 0x47 && d[4] == 0x08);
 	d = sent_field(0, SCT_F_REPORT_FIELD, NULL);
 	CHECK(d != NULL && d[0] == 0xFF);
 	d = sent_field(0, SCT_F_MODOUT_CONFIG, &n);
 	CHECK(d != NULL && n == 5 && d[0] == 0x00 && d[1] == 0x10);
-	d = sent_field(0, SCT_F_DMR_OFFSET, &n);
+	d = sent_field(1, SCT_F_DMR_OFFSET, &n);
 	CHECK(d != NULL && n == 8 && memcmp(d, t_offset, 8) == 0);
 	d = sent_field(0, SCT_F_SQ_LEVEL, &n);
 	CHECK(d != NULL && n == 12 && memcmp(d, t_sq, 12) == 0);
 	d = sent_field(0, SCT_F_DEMOD_GAIN, &n);
 	CHECK(d != NULL && n == 2 && d[0] == 0 && d[1] == 0);
-	CHECK(sent[0].pkt[5] == SCT_TYPE_DMR && sent_field(0, SCT_F_CARRIER_READY, NULL) == NULL);
+	CHECK(sent[1].pkt[5] == SCT_TYPE_DMR && sent_field(0, SCT_F_CARRIER_READY, NULL) == NULL);
 	CHECK(codec_count(&t_mute) == 0 && codec_count(&t_unmute) == 0);
 
 	// The chip's answer to the start: every field's status, all walked
@@ -809,9 +845,9 @@ static void test_dmr_options(void)
 
 	// Transmit: the mute goes before WORK_MODE transmit
 	sct_dmr_poll(t);
-	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
-	CHECK(nsent == 4 && is_codec(2, &t_mute));
-	d = sent_field(3, SCT_F_WORK_MODE, NULL);
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(nsent == 7 && is_codec(4, &t_mute));
+	d = sent_field(6, SCT_F_WORK_MODE, NULL);
 	CHECK(d != NULL && d[0] == 2);
 	dmr_tx_burst_t b = burst(DMR_BURST_CSBK, 0, 12);
 	CHECK(m->tx_queue(&b));
@@ -833,17 +869,17 @@ static void test_dmr_options(void)
 	m->tx_end();
 	far_done(t + 100);
 	CHECK(count_ev(DMR_EV_TX_DONE) == 1);
-	d = sent_field(nsent - 2, SCT_F_WORK_MODE, NULL);
+	d = sent_field(nsent - 3, SCT_F_WORK_MODE, NULL);
 	CHECK(d != NULL && d[0] == 1 && is_codec(nsent - 1, &t_unmute));
 	CHECK(codec_count(&t_mute) == 1 && codec_count(&t_unmute) == 1);
 
 	// tx_abort and stop undo it too, once
-	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
 	m->tx_abort();
 	CHECK(is_codec(nsent - 1, &t_unmute) && codec_count(&t_unmute) == 2);
 	m->tx_abort();
 	CHECK(codec_count(&t_unmute) == 2);
-	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
 	m->stop();
 	CHECK(is_codec(nsent - 1, &t_unmute) && codec_count(&t_unmute) == 3);
 	m->stop();
@@ -866,7 +902,7 @@ static void test_dmr_options(void)
 	bad.start_count = 1;
 	sct_dmr_init(&bad);
 	nsent = 0;
-	CHECK(!m->start(&cfg, on_event, NULL) && nsent == 0);
+	CHECK(!m->start(&cfg, on_event, NULL) && nsent == 1);
 }
 
 static uint16_t ref_crc(const uint8_t *b, int n)
@@ -1026,7 +1062,7 @@ static void test_dmr_rx(void)
 	nev = 6;
 
 	// Nothing reported while transmitting; a garbled packet is counted
-	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
 	chip_packet(r, 19, 0x30, 900);
 	CHECK(nev == 6);
 	uint8_t junk[4] = { 0x03, 0x00, 0x00, 0x00 };
@@ -1044,31 +1080,31 @@ static void test_dmr_carrier(void)
 
 	start();
 	sct_dmr_poll(1000);
-	CHECK(nsent == 2);			// the board said nothing yet: nothing sent
+	CHECK(nsent == 4);			// the board said nothing yet: nothing sent
 	sct_dmr_carrier(2);
-	CHECK(nsent == 3 && sent[2].pkt[5] == SCT_TYPE_CONTROL);
-	d = sent_field(2, SCT_F_CARRIER_READY, NULL);
+	CHECK(nsent == 5 && sent[4].pkt[5] == SCT_TYPE_CONTROL);
+	d = sent_field(4, SCT_F_CARRIER_READY, NULL);
 	CHECK(d != NULL && d[0] == 2);
 	sct_dmr_carrier(2);
 	sct_dmr_poll(1010);
-	CHECK(nsent == 3);			// no change, nothing more
+	CHECK(nsent == 5);			// no change, nothing more
 	// A loss goes out only once it has lasted the hold: the gaps between one station's bursts don't
 	sct_dmr_carrier(0);
 	sct_dmr_poll(1040);
-	CHECK(nsent == 3);
+	CHECK(nsent == 5);
 	sct_dmr_poll(1070);
 	sct_dmr_carrier(2);
 	sct_dmr_carrier(0);
 	sct_dmr_poll(1070 + SCT_DMR_CR_HOLD_MS - 10);
-	CHECK(nsent == 3);
+	CHECK(nsent == 5);
 	sct_dmr_poll(1070 + SCT_DMR_CR_HOLD_MS);
 	d = sent_field(nsent - 1, SCT_F_CARRIER_READY, NULL);
-	CHECK(nsent == 4 && d != NULL && d[0] == 0);
+	CHECK(nsent == 6 && d != NULL && d[0] == 0);
 	sct_dmr_carrier(2);
-	CHECK(nsent == 5);
+	CHECK(nsent == 7);
 
 	// Transmitting: nothing, and the reading from before doesn't come back after it
-	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
 	int n = nsent;
 	sct_dmr_carrier(2);
 	sct_dmr_poll(1500);
@@ -1086,7 +1122,7 @@ static void test_dmr_carrier(void)
 	m->rx_restart();
 	sct_dmr_poll(1520);
 	d = sent_field(nsent - 1, SCT_F_CARRIER_READY, NULL);
-	CHECK(nsent == n + 2 && d != NULL && d[0] == 2);
+	CHECK(nsent == n + 3 && d != NULL && d[0] == 2);
 	sct_dmr_get_stats(&st);
 	CHECK(st.carrier == 2 && st.carrier_sent == 6);
 
@@ -1140,7 +1176,7 @@ static void test_dmr_health(void)
 	CHECK(h.stalls == 0 && h.stuck == 0 && h.first_ms == 0);
 
 	// Nothing sent: an empty transmission's drain time-out is no stall
-	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
 	m->tx_end();
 	sct_dmr_poll(100);
 	sct_dmr_poll(100 + SCT_DMR_DONE_MS);
@@ -1164,7 +1200,7 @@ static void test_dmr_health(void)
 	sct_dmr_carrier(0);
 	sct_dmr_poll(5000 + SCT_DMR_CR_HOLD_MS);
 	dmr_tx_burst_t b = burst(DMR_BURST_VOICE_LC_HEADER, 0, 12);
-	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
 	CHECK(m->tx_queue(&b));
 	m->tx_end();
 	uint32_t t = 6000;
@@ -1205,7 +1241,7 @@ static void test_dmr_carrier_settle(void)
 	CHECK(cr_sent_since(0) == 0);		// no transmission yet: only the board's readings, none so far
 
 	// A transmission that ends on the drain timeout: receive again at t
-	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
 	m->tx_end();
 	sct_dmr_poll(t += SCT_DMR_DONE_MS);
 	int n = nsent;
@@ -1224,9 +1260,9 @@ static void test_dmr_carrier_settle(void)
 	CHECK(cr_sent_since(n) == 2 && d != NULL && d[0] == 0);
 
 	// An aborted transmission settles the same way; a new one before the time sends nothing in between
-	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
 	m->tx_abort();
-	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
 	n = nsent;
 	sct_dmr_poll(t + 100);
 	CHECK(cr_sent_since(n) == 0);
@@ -1276,7 +1312,7 @@ static void test_dmr_tx_early_end(void)
 	t_edges += 7;				// edges before the key-up don't count
 
 	// Three CSBKs, a slot apart (the chip answers none in time)
-	CHECK(m->tx_begin(DMR_TIMING_ASAP, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(tx_begin_answered(DMR_TIMING_ASAP, 1, DMR_ACCESS_IMPOLITE));
 	for (int i = 0; i < 3; i++) {
 		dmr_tx_burst_t b = burst(DMR_BURST_CSBK, 0, 12);
 		CHECK(m->tx_queue(&b));
@@ -1295,7 +1331,7 @@ static void test_dmr_tx_early_end(void)
 	t_edges += 1;				// ... and falls: done at the next poll
 	sct_dmr_poll(t += 1);
 	CHECK(count_ev(DMR_EV_TX_DONE) == 1 && !m->is_transmitting());
-	d = sent_field(nsent - 1, SCT_F_WORK_MODE, NULL);
+	d = sent_field(nsent - 2, SCT_F_WORK_MODE, NULL);
 	CHECK(d != NULL && d[0] == 1);
 	far_done(t + 17);			// the chip's own end comes late: nothing more
 	sct_dmr_poll(t + SCT_DMR_DONE_MS);
@@ -1306,7 +1342,7 @@ static void test_dmr_tx_early_end(void)
 	// Voice: the chip's own voice bursts aren't frames, so the edges don't end it; the chip's end does
 	t += 1000;
 	sct_dmr_poll(t);
-	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
 	dmr_tx_burst_t b = burst(DMR_BURST_VOICE_LC_HEADER, 0, 12);
 	CHECK(m->tx_queue(&b));
 	b = burst(DMR_BURST_VOICE, 0, 27);
@@ -1330,7 +1366,7 @@ static void test_dmr_tx_early_end(void)
 	// A refused frame never goes on the air: its burst never comes, and the end is the chip's or the drain's
 	t += 1000;
 	sct_dmr_poll(t);
-	CHECK(m->tx_begin(DMR_TIMING_ASAP, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(tx_begin_answered(DMR_TIMING_ASAP, 1, DMR_ACCESS_IMPOLITE));
 	b = burst(DMR_BURST_CSBK, 0, 12);
 	CHECK(m->tx_queue(&b));
 	m->tx_end();
@@ -1382,7 +1418,7 @@ static void test_dmr_codec_start(void)
 	for (int k = 0; k < 2; k++) {
 		nsent = 0;
 		CHECK(m->start(&cfg, on_event, NULL));
-		CHECK(nsent == 4 && sent[0].pkt[5] == SCT_TYPE_DMR && is_codec(2, &t_cstart[0]) && is_codec(3, &t_cstart[1]));
+		CHECK(nsent == 6 && sent[1].pkt[5] == SCT_TYPE_DMR && is_codec(4, &t_cstart[0]) && is_codec(5, &t_cstart[1]));
 		m->stop();
 	}
 	sct_dmr_init(&port_opts);
@@ -1409,22 +1445,22 @@ static void test_dmr_tx_fields(void)
 	d = sent_field(nsent - 1, SCT_F_MOD_GAIN, &n);
 	CHECK(d != NULL && n == 2 && memcmp(d, t_gain_a, 2) == 0);
 	m->stop();
-	// None given: start sends no control packet
+	// None given: start sends no gain
 	t_band = 0;
 	nsent = 0;
 	CHECK(m->start(&cfg, on_event, NULL));
 	for (int i = 0; i < nsent; i++)
-		CHECK(sent[i].pkt[5] != SCT_TYPE_CONTROL);
+		CHECK(sent_field(i, SCT_F_MOD_GAIN, NULL) == NULL);
 	sct_dmr_poll(t);
 	for (uint8_t k = 1; k <= 2; k++) {
 		t_band = k;
 		nsent = 0;
-		CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
-		CHECK(nsent == 2 && sent[0].pkt[5] == SCT_TYPE_CONTROL);
+		CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+		CHECK(nsent == 3 && sent[0].pkt[5] == SCT_TYPE_CONTROL);
 		d = sent_field(0, SCT_F_MOD_GAIN, &n);
 		CHECK(d != NULL && n == 2 && memcmp(d, k == 1 ? t_gain_a : t_gain_b, 2) == 0);
-		d = sent_field(1, SCT_F_WORK_MODE, NULL);
-		CHECK(d != NULL && d[0] == 2 && sent_field(1, SCT_F_MOD_GAIN, NULL) == NULL);
+		d = sent_field(2, SCT_F_WORK_MODE, NULL);
+		CHECK(d != NULL && d[0] == 2 && sent_field(2, SCT_F_MOD_GAIN, NULL) == NULL);
 		// The field's status is no frame's answer and no NAK
 		static const uint8_t a[] = { SCT_F_MOD_GAIN, SCT_ACK_OK };
 		sct_dmr_get_stats(&st0);
@@ -1436,10 +1472,199 @@ static void test_dmr_tx_fields(void)
 	// None given: no control packet
 	t_band = 0;
 	nsent = 0;
-	CHECK(m->tx_begin(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
-	CHECK(nsent == 1 && sent_field(0, SCT_F_WORK_MODE, NULL) != NULL);
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(nsent == 2 && sent_field(1, SCT_F_WORK_MODE, NULL) != NULL);
 	m->tx_abort();
 	m->stop();
+}
+
+// The debug link's field access: a write answered by its echo, a refusal, a query's data, and no answer at all
+static void test_chip_answers(void)
+{
+	sct_dmr_stats_t st;
+	static const uint8_t refuse[] = { SCT_F_WORK_MODE, SCT_ACK_UNKNOWN };
+	static const uint8_t ready[] = { SCT_F_ACK, SCT_ACK_RESET_READY };
+	static const uint8_t bad_vocoder[] = { SCT_F_NEW_EVENT, SCT_EV_WRONG_VOCODER };
+	dmr_config_t cfg = { .own_id = 1234567, .cc = 2, .access = DMR_ACCESS_IMPOLITE };
+	dmr_tx_burst_t b = burst(DMR_BURST_VOICE_LC_HEADER, 0, 12);
+	uint32_t t = 5000;
+
+	// No frame until WORK_MODE is answered, and the answer lets it go
+	start();
+	sct_dmr_poll(t);
+	wm_silent = true;
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(m->tx_queue(&b));
+	sct_dmr_poll(t + 2);
+	CHECK(frames_sent() == 0);
+	wm_silent = false;
+	// Unanswered, the Packet Interface's 40 ms later it goes anyway, and is counted
+	sct_dmr_poll(t + 39);
+	CHECK(frames_sent() == 0);
+	sct_dmr_poll(t + 40);
+	sct_dmr_get_stats(&st);
+	CHECK(frames_sent() == 1 && st.mode_timeouts == 1);
+	m->tx_abort();
+
+	// WORK_MODE refused: the stack is told, the chip goes back to receive
+	t += 1000;
+	sct_dmr_poll(t);
+	nev = 0;
+	wm_silent = true;
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	wm_silent = false;
+	chip_packet(refuse, sizeof(refuse), SCT_TYPE_CONTROL, t + 1);
+	CHECK(!m->is_transmitting() && count_ev(DMR_EV_TX_REJECTED) == 1);
+
+	// The frame that starts the voice refused: the same. One after it is only counted
+	t += 1000;
+	sct_dmr_poll(t);
+	nev = 0;
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	sct_dmr_poll(t);
+	b = burst(DMR_BURST_VOICE, 0, 27);
+	CHECK(m->tx_queue(&b));
+	sct_dmr_poll(t + 1);
+	CHECK(frames_sent() >= 1);
+	static const uint8_t nak[] = { SCT_F_DATA_FRAME, SCT_ACK_FIELD_ERROR };
+
+	chip_packet(nak, sizeof(nak), SCT_TYPE_DMR, t + 2);
+	CHECK(!m->is_transmitting() && count_ev(DMR_EV_TX_REJECTED) == 1);
+
+	// ACK 0x01 within a second of the start is the chip's answer to it: nothing happens
+	sct_dmr_get_stats(&st);
+	uint32_t restarts = st.chip_restarts;
+
+	t += 3000;
+	sct_dmr_poll(t);
+	CHECK(m->start(&cfg, on_event, NULL));
+	nsent = 0;
+	chip_packet(ready, sizeof(ready), SCT_TYPE_CONTROL, t + 900);
+	sct_dmr_poll(t + 901);
+	sct_dmr_get_stats(&st);
+	CHECK(st.chip_restarts == restarts && nsent == 0);
+
+	// ACK 0x01 later: the chip restarted, the whole start goes again, at most once a second
+	t += 2000;
+	sct_dmr_poll(t);
+	nsent = 0;
+	chip_packet(ready, sizeof(ready), SCT_TYPE_CONTROL, t + 1);
+	sct_dmr_get_stats(&st);
+	CHECK(st.chip_restarts == restarts + 1);
+	sct_dmr_poll(t + 2);
+	CHECK(nsent >= 4 && sent_field(0, SCT_F_PROCESS_MODE, NULL) != NULL);
+	nsent = 0;
+	chip_packet(ready, sizeof(ready), SCT_TYPE_CONTROL, t + 3);
+	sct_dmr_poll(t + 4);
+	CHECK(nsent == 0);
+	chip_packet(ready, sizeof(ready), SCT_TYPE_CONTROL, t + 1003);
+	sct_dmr_poll(t + 1004);
+	CHECK(nsent >= 4);
+
+	// A field of the start refused: one retry, then left alone
+	t += 3000;
+	sct_dmr_poll(t);
+	CHECK(m->start(&cfg, on_event, NULL));
+	nsent = 0;
+	static const uint8_t refused_field[] = { SCT_F_PROCESS_MODE, SCT_ACK_FIELD_ERROR };
+	static const uint8_t slot_ok[] = { SCT_F_DMR_CALL_SLOT, SCT_ACK_OK };
+
+	chip_packet(refused_field, sizeof(refused_field), SCT_TYPE_CONTROL, t + 1);
+	sct_dmr_poll(t + 1001);
+	CHECK(nsent >= 4);
+	nsent = 0;
+	chip_packet(refused_field, sizeof(refused_field), SCT_TYPE_CONTROL, t + 1002);
+	sct_dmr_poll(t + 2100);
+	CHECK(nsent == 0);
+	chip_packet(slot_ok, sizeof(slot_ok), SCT_TYPE_DMR, t + 2101);
+
+	// A hunt that goes on: the receive mode is sent again at the limit, once, and a verified report after that counts
+	static const uint8_t hunting[] = { SCT_F_DMR_SLOT_FOUND, 0x8B };
+	static const uint8_t verified[] = { SCT_F_DMR_SLOT_FOUND, 0xAB };
+
+	m->rx_restart();
+	nsent = 0;
+	for (int i = 1; i < SCT_DMR_HUNT_LONG; i++)
+		chip_packet(hunting, sizeof(hunting), SCT_TYPE_READ, t + 2101);
+	CHECK(nsent == 0);
+	chip_packet(hunting, sizeof(hunting), SCT_TYPE_READ, t + 2101);
+	CHECK(nsent == 2 && sent_field(0, SCT_F_WORK_MODE, NULL) != NULL);
+	sct_dmr_get_stats(&st);
+	CHECK(st.rehunts == 1);
+	for (int i = 0; i < 2 * SCT_DMR_HUNT_LONG; i++)
+		chip_packet(hunting, sizeof(hunting), SCT_TYPE_READ, t + 2101);
+	CHECK(nsent == 2 && !m->slot_verified());
+	chip_packet(verified, sizeof(verified), SCT_TYPE_READ, t + 2101);
+	CHECK(m->slot_verified());
+
+	// A base station sync report is a slot tick for the stack, with the slot from the TC bit; a mobile one isn't
+	static const uint8_t bs_ts1[] = { SCT_F_DMR_SLOT_FOUND, 0x83 };
+	static const uint8_t bs_ts2[] = { SCT_F_DMR_SLOT_FOUND, 0x87 };
+	static const uint8_t ms[] = { SCT_F_DMR_SLOT_FOUND, 0x01 };
+
+	nev = 0;
+	keep_ticks = true;
+	chip_packet(bs_ts1, sizeof(bs_ts1), SCT_TYPE_READ, t + 2101);
+	CHECK(count_ev(DMR_EV_SLOT_TICK) == 1 && evs[0].ts == 1);
+	chip_packet(bs_ts2, sizeof(bs_ts2), SCT_TYPE_READ, t + 2101);
+	CHECK(count_ev(DMR_EV_SLOT_TICK) == 2 && evs[1].ts == 2);
+	chip_packet(ms, sizeof(ms), SCT_TYPE_READ, t + 2101);
+	CHECK(count_ev(DMR_EV_SLOT_TICK) == 2);
+	keep_ticks = false;
+
+	// NEW_EVENT 15 is counted, nothing else
+	chip_packet(bad_vocoder, sizeof(bad_vocoder), SCT_TYPE_READ, t + 2102);
+	sct_dmr_get_stats(&st);
+	CHECK(st.rx_unsupported == 1);
+	m->stop();
+}
+
+static void test_field_access(void)
+{
+	dmr_config_t cfg = { .own_id = 1, .cc = 1 };
+	uint8_t d[4], n = 0, v = 0;
+	sct_dmr_stats_t st;
+
+	CHECK(sct_dmr_modem.start(&cfg, on_event, NULL));
+	nsent = 0;
+	CHECK(sct_dmr_field_poll(d, &n) == 0);
+	v = 8;
+	CHECK(sct_dmr_field_begin(SCT_TYPE_CONTROL, 0x2F, &v, 1, false));
+	CHECK(nsent == 1 && sent[0].pkt[5] == SCT_TYPE_CONTROL && sent[0].pkt[6] == 0x2F && sent[0].pkt[7] == 8);
+	CHECK(sct_dmr_field_poll(d, &n) == 0);
+	const uint8_t ok[] = { 0x84, 0xA9, 0x61, 0x00, 0x02, 0x00, 0x2F, 0x00 };
+	sct_dmr_packet(ok, sizeof(ok), 10);
+	CHECK(sct_dmr_field_poll(d, &n) == 1);
+	CHECK(sct_dmr_field_poll(d, &n) == 0);
+	// Refused, and not counted against the engine
+	sct_dmr_get_stats(&st);
+	uint32_t naks = st.naks;
+	CHECK(sct_dmr_field_begin(SCT_TYPE_CONTROL, 0x2F, &v, 1, false));
+	const uint8_t no[] = { 0x84, 0xA9, 0x61, 0x00, 0x02, 0x00, 0x2F, SCT_ACK_UNKNOWN };
+	sct_dmr_packet(no, sizeof(no), 20);
+	CHECK(sct_dmr_field_poll(d, &n) == -1);
+	sct_dmr_get_stats(&st);
+	CHECK(st.naks == naks);
+	// A query: the read bit on, the ID alone; the answer's data comes back
+	nsent = 0;
+	CHECK(sct_dmr_field_begin(SCT_TYPE_DMR, SCT_F_DMR_CC, NULL, 0, true));
+	CHECK(nsent == 1 && sent[0].pkt[5] == (SCT_TYPE_DMR | SCT_TYPE_READ) && sent[0].pkt[4] == 1 && sent[0].pkt[6] == SCT_F_DMR_CC);
+	const uint8_t cc[] = { 0x84, 0xA9, 0x61, 0x00, 0x02, 0x25, SCT_F_DMR_CC, 0x07 };
+	sct_dmr_packet(cc, sizeof(cc), 30);
+	CHECK(sct_dmr_field_poll(d, &n) == 1 && n == 1 && d[0] == 7);
+	// A bench change of an option byte goes out at once and stays for the next configure
+	nsent = 0;
+	v = 0x82;
+	CHECK(sct_dmr_call_option(2, &v, true) && v == 0x82);
+	uint8_t flen = 0;
+	const uint8_t *opt = sent_field(0, SCT_F_DMR_CALL_OPTION, &flen);
+	CHECK(nsent == 1 && opt != NULL && flen == 5 && opt[2] == 0x82);
+	v = 0;
+	CHECK(sct_dmr_call_option(2, &v, false) && v == 0x82);
+	CHECK(!sct_dmr_call_option(5, &v, false));
+	v = port.call_option[2];
+	sct_dmr_call_option(2, &v, true);
+	sct_dmr_modem.stop();
 }
 
 int main(void)
@@ -1463,6 +1688,8 @@ int main(void)
 	test_dmr_tx_early_end();
 	test_dmr_tx_fields();
 	test_dmr_codec_start();
+	test_chip_answers();
+	test_field_access();
 	CHECK(lock_depth == 0 && lock_max == 1);
 	// Not booted: start fails and sends nothing
 	booted = false;

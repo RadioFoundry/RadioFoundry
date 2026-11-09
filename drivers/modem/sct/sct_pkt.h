@@ -78,7 +78,7 @@ enum {
 	SCT_ACK_PARITY		= 0x03,
 	SCT_ACK_UNKNOWN		= 0x04,
 	SCT_ACK_LENGTH		= 0x05,
-	SCT_ACK_PROCESSING	= 0x06,
+	SCT_ACK_FIELD_ERROR	= 0x06,	// the Packet Interface: "error in processing field"
 	SCT_ACK_FAR_DONE	= 0x0A,	// a message to the far end has gone
 	SCT_ACK_NOT_ACTIVATED	= 0x0C,
 	SCT_ACK_UNSUPPORTED	= 0x0D,
@@ -93,7 +93,23 @@ enum {
 	SCT_EV_SYNC_LOST	= 8,
 	SCT_EV_CARRIER		= 12,
 	SCT_EV_CARRIER_LOST	= 13,
+	SCT_EV_UNSUPPORTED_CALL	= 14,
+	SCT_EV_WRONG_VOCODER	= 15,
 };
+
+// A field of the DMR packet type (TYPE 5, the Packet Interface's table); the others used here are control (TYPE 0)
+static inline bool sct_field_is_dmr(uint8_t id)
+{
+	return id == 0x36 || id == SCT_F_DMR_SLC || id == SCT_F_DMR_CALL_SLOT ||
+	       (id >= SCT_F_DMR_FLC && id <= SCT_F_DMR_SLOT_FOUND);
+}
+
+// DMR_SLOT_FOUND. The Packet Interface's table has bit 6 as verified and bit 5 as inverted; its example (`7F A9`,
+// "verify completed, with no need to invert") and every report seen on the air have them the other way round: bit 5
+// comes alone (verified) or with bit 6 (verified, earlier reports inverted), and bit 6 never alone
+#define SCT_SLOT_BS		0x80
+#define SCT_SLOT_INVERTED	0x40
+#define SCT_SLOT_VERIFIED	0x20
 
 // DIGC_DATA_FRAME PROP byte in DMR: bit 4 a voice burst (data = the 9-byte LC for the embedded signaling), bits 3-0
 // the data type (TS 102 361-1 slot type, the same numbers as dmr_burst_kind_t's data kinds)

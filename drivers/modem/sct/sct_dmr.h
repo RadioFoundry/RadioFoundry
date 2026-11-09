@@ -13,8 +13,8 @@
 //   there the driver reports a voice burst without payload every 60 ms until the terminator or the chip's sync
 //   lost, so the stack holds the call as it does on other modems. The voice itself goes from the chip to the codec,
 //   not through the MCU (the board sets CAP_MODEM_VOICE).
-// - CSBK, data header, MBC header and PI header are reported with the CRC the chip checked, rebuilt and masked, so
-//   the stack sees 12 bytes as from other modems.
+// - CSBK, data header and MBC header are reported with the CRC the chip checked, rebuilt and masked, so the stack
+//   sees 12 bytes as from other modems. The chip gives a PI header as 9 bytes without its CRC, like an LC.
 //
 // No RTOS calls and no waits: the board's modem task feeds packets in (sct_dmr_packet) and calls sct_dmr_poll, so
 // the host tests drive it with a fake chip.
@@ -84,6 +84,11 @@ typedef struct {
 	uint32_t rx_voice;	// voice bursts reported for calls the chip plays
 	uint32_t rx_bad;	// packets or fields that didn't parse
 	uint32_t naks;		// ACK_MESSAGE codes other than OK, ready and far-end done
+	uint32_t mode_timeouts;	// transmit WORK_MODE not answered in time (the frames went anyway)
+	uint32_t tx_rejected;	// transmissions the chip refused
+	uint32_t chip_restarts;	// ACK 0x01 while running: the start was run again
+	uint32_t rx_unsupported; // NEW_EVENT 14 and 15: a call the chip can't play
+	uint32_t rehunts;	// long slot hunts started over
 	uint8_t last_nak;
 	uint8_t last_event;	// the last NEW_EVENT code
 	uint8_t last_slot_found;
@@ -101,6 +106,7 @@ typedef struct {
 // After the last frame, how long to wait for the chip's "far end done" before reporting TX_DONE anyway
 #define SCT_DMR_DONE_MS		600
 #define SCT_DMR_SLOT_MS		60
+#define SCT_DMR_HUNT_LONG	12	// DMR_SLOT_FOUND reports without the verified flag before a hunt is started over
 // How long the board's carrier must stay lost before CARRIER_READY 0 goes out: a voice superframe
 #define SCT_DMR_CR_HOLD_MS	360
 
@@ -119,6 +125,17 @@ void sct_dmr_poll(uint32_t now_ms);
 // receiver has settled, when it sets one); it never sends one while it transmits. A board
 // that never calls it relies on the chip's own squelch (docs/spec/modem-sct.md 3)
 void sct_dmr_carrier(uint8_t ready);
+
+// Bench access for the debug link's CHIP_REG (docs/spec/modem-sct.md 8): one field to the chip in a packet of TYPE
+// `type`, or a query for it (read: the data is ignored). sct_dmr_field_poll: 0 no answer yet, 1 answered (a query's
+// data in out, at most 4 bytes), -1 refused. The caller waits between polls and cancels if the answer never comes.
+// A field the engine also sends is overwritten at its next set-up
+bool sct_dmr_field_begin(uint8_t type, uint8_t id, const uint8_t *data, uint8_t n, bool read);
+int sct_dmr_field_poll(uint8_t out[4], uint8_t *n);
+void sct_dmr_field_cancel(void);
+// A byte of DMR_CALL_OPTION (five bytes, too long for CHIP_REG's value): read it, or change it and send the field at
+// once when in receive. Lasts until the engine's next init
+bool sct_dmr_call_option(uint8_t byte, uint8_t *value, bool write);
 
 void sct_dmr_get_stats(sct_dmr_stats_t *out);
 void sct_dmr_reset_stats(void);

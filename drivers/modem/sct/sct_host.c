@@ -69,8 +69,6 @@ static int wait_status(const sct_host_t *h, sct_rx_t *rx, uint8_t id, uint32_t d
 			if (!sct_rx_feed(rx, buf[i], &plen) || !sct_fields_begin(&it, rx->buf, plen, false))
 				continue;
 			while (sct_fields_next(&it, &fid, &d, &flen, &ack)) {
-				if (fid == SCT_F_ACK && d[0] == SCT_ACK_PROCESSING)
-					continue;
 				if (fid == SCT_F_ACK && (id == SCT_F_ACK || d[0] != SCT_ACK_OK))
 					return d[0];
 				if (fid == id && ack)

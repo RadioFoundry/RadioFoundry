@@ -10,7 +10,7 @@ layer 2 engine that implements `hal_dmr_modem_t` (`sct_dmr`). The board supplies
 [feature-matrix.md](../feature-matrix.md) lists which radios have one.
 
 Sources: the chip's datasheet and its "Packet Interface" document (cite them, don't copy them into this repository),
-and what the stock firmware of the radios that carry the chips sends. `(unverified)` marks what no radio has
+and what the original firmware of the radios that carry the chips sends. `(unverified)` marks what no radio has
 confirmed yet.
 
 ## 1. Chips and host link
@@ -48,15 +48,15 @@ answer before the next:
 | 4 | TYPE 0x40, `00 page register value 00 00` (LEN 6), one packet per entry of the board's `codec_writes`, in order | `17 00`, 200 ms |
 
 The waits are the Packet Interface document's field timeouts; the control field's and the codec write's are what
-the stock firmware allows. A field of the wrong length is not sent and fails the set-up.
-An `ACK_MESSAGE` with an error code answers any step; 0x06 (processing) is waited through.
+the original firmware allows. A field of the wrong length is not sent and fails the set-up.
+An `ACK_MESSAGE` with an error code answers any step and fails it.
 
 Results (`sct_boot_result_t`): `OK`, `NO_BLOCK` (no block given), `BUS` (a write failed), `NO_APP` (the chip
 answered, but its application didn't start), `SILENT` (no answer in time), `NO_VOICE` (the application runs, but a
 voice set-up step was refused or not answered).
 
 The boot block is the chip vendor's code. RadioFoundry never ships it: the flashing tool takes it from the user's
-own stock firmware file and writes it to the board's modem boot slot ([codec-placement.md](codec-placement.md)
+own original firmware file and writes it to the board's modem boot slot ([codec-placement.md](codec-placement.md)
 describes the slot mechanism). The board checks the slot's CRC before it boots; without a valid block the radio runs without DMR.
 
 ## 3. Packets
@@ -82,6 +82,8 @@ TYPE:
 | 0x40 | codec bypass: the body goes to the codec chip on the baseband's I2C; answered by `ACK_MESSAGE`. For the TLV320AIC3204 it is `00 page register value 00 00`; another length is refused with ACK 0x05 |
 | 0x80 | AMBE bypass: the packet goes to an external vocoder chip. Not a path to the baseband's own vocoder frames (section 7) |
 
+The engine sends each field in the TYPE of the Packet Interface's table: `WORK_MODE`, `PROCESS_MODE`, `REPORT_FIELD`, the gains and `SQ_LEVEL` are control, 0x6E, 0x6F and 0x76-0x7F DMR. For a transmission `DMR_CALL_SLOT` goes before `WORK_MODE`.
+
 A write is answered with a packet without the read bit whose fields are `ID status`. A report has the read bit and
 the fields as written. `sct_fields_next` walks either; an unknown ID or a field cut short stops the walk with bytes
 left over, and the engine counts the packet as bad.
@@ -91,10 +93,10 @@ Fields the driver uses:
 | ID | Name | Data |
 | --- | --- | --- |
 | 0x10 | VOCODER_SEL | the vocoder: 4 AMBE+2 (the chip's default), 16 analog |
-| 0x17 | ACK_MESSAGE | status code (0x00 OK, 0x01 reset ready, 0x02-0x05 errors, 0x06 processing, 0x0A far-end message sent, 0x0C-0x0E not activated / unsupported / not loaded) |
+| 0x17 | ACK_MESSAGE | status code (0x00 OK, 0x01 reset ready, 0x02-0x06 errors, 0x0A far-end message sent, 0x0C-0x0E not activated / unsupported / not loaded) |
 | 0x18 | WORK_MODE | 0x01 receive, 0x02 transmit |
 | 0x1A | PROCESS_MODE | 0x02 layer 2 |
-| 0x1B | NEW_EVENT | 1 data sync with FEC error, 4 data sync, 5 voice sync, 8 sync lost, 12 carrier, 13 carrier lost |
+| 0x1B | NEW_EVENT | 1 data sync with FEC error, 4 data sync, 5 voice sync, 8 sync lost, 12 carrier, 13 carrier lost, 14 unsupported call, 15 wrong vocoder |
 | 0x19 | CARRIER_READY | bits 1-0: 0 carrier lost (the default), 1 carrier ready, 2 ready with the demodulated phase reversed; bit 2 mute on a code mismatch (never set by the driver) |
 | 0x1C | DEMOD_GAIN | 2 bytes, MSB first: the demodulator's gain in Q16.11 (2048 = 0 dB); 0 auto calibration (the default) |
 | 0x1D | REPORT_FIELD | which fields the chip reports. In DMR: bit 7 NEW_EVENT, bit 6 DMR_FLC, bit 5 CSBK, bit 0 slot type and EMB, bits 4-1 reserved. The chip's default is 0x70 |
@@ -105,7 +107,7 @@ Fields the driver uses:
 | 0x68 | DIGI_MIC_GAIN | 2 bytes, MSB first: the microphone gain in digital mode, Q16.11 (2048 = 0 dB) |
 | 0x69 | DIGI_SPEAKER_GAIN | 2 bytes, the speaker gain in digital mode, the same format |
 | 0x6C | SQ_LEVEL | 12 bytes, the chip's squelch: gain adjustment (dB, signed), external LNA, forced RF gain, OOBE interval (1.333 ms units), then four u16 OOBE thresholds MSB first: digital high and low, analog high and low. Default 0, 0, 0, 90, 0x4000, 0x0400, 0x4000, 0x0400. Read with the read bit, it reports RSSI and OOBE instead |
-| 0x6F | DMR_CALL_SLOT | bit 7 transmit, bit 6 aligned to the received slot timing, bits 1-0 slot (3 = both) |
+| 0x6F | DMR_CALL_SLOT | bit 7 transmit, bit 6 aligned to the received slot timing, bits 1-0 slot (3 = both, receive only; 0 for a direct mode call) |
 | 0x77 | DMR_CC | color code |
 | 0x79 | DMR_CALL_OPTION | 5 bytes, below |
 | 0x7A | DMR_OFFSET | 8 bytes. The Packet Interface document gives 4: the RF_TIMING output's offset against the slot timing (signed, MSB first, 41.7 µs units, ±720) and its length (240-1200, default 720). The firmware seen sends 8 |
@@ -176,8 +178,12 @@ Start (`start`), all packets TYPE 0x05 (the voice set-up of section 2 ran once a
 | DMR_CC, DMR_OWN_ID_BCD | the channel's |
 | the board's `start_fields` | in order, as given (MODOUT_CONFIG, DMR_OFFSET, SQ_LEVEL, DEMOD_GAIN and the like) |
 
-Then a second packet: WORK_MODE receive and DMR_CALL_SLOT 3 (or the locked slot). A start field of the wrong
-length fails `start`.
+Then a further packet each for WORK_MODE receive and DMR_CALL_SLOT: 3 or the locked slot on a repeater channel, 0
+in direct mode. A start field of the wrong length fails `start`.
+
+A field of the start the chip refuses gets one more start, from the poll. The chip answers the start and a new
+configuration with `ACK_MESSAGE` 0x01 (measured). Later than a second after either, 0x01 means the chip restarted and
+lost what the start set: the start runs again and any transmission is refused (`chip_restarts`).
 
 Reports with IDs the engine doesn't use (DMR_CALLED_ID, DMR_OWN_ID, DMR_EMB) are walked past. An ID the length table
 doesn't know stops the walk: the rest of that packet is lost and counted as bad.
@@ -189,19 +195,27 @@ modem task can both call in. No RTOS calls and no waits: the host tests run the 
 ## 5. Transmit
 
 1. `tx_begin`: the board's `tx_fields` (when given) as one control packet (TYPE 0), such as a modulator gain for
-   the band being keyed; then its `codec_tx` (when given), then WORK_MODE transmit, DMR_CALL_SLOT
-   `0x80 | aligned 0x40 | slot`. The queue holds 8 bursts.
+   the band being keyed; then its `codec_tx` (when given), then DMR_CALL_SLOT `0x80 | aligned 0x40 | slot` (slot 0
+   in direct mode), then WORK_MODE transmit, in the Packet Interface's order. No frame goes before WORK_MODE is
+   answered, or 40 ms without an answer (`mode_timeouts`). WORK_MODE refused: `TX_REJECTED`. The queue holds 8 bursts.
 2. Each frame is sent, then the engine waits for its answer (`43 00` or ACK 0x0A), at most a slot (60 ms). The next
    frame goes 60 ms after the one before. A chip may answer no frame with `43 00` and send ACK 0x0A only once its
    frames are on the air, about two slots after the send and once for frames sent back to back: waiting for that
    answer put the voice LC headers one slot in four (measured).
-3. A frame unanswered within its slot is counted (`tx_timeouts`); a NAK frees the slot at once.
+   Each frame is one burst on air: the three LC headers the stack queues arrive as three, the chip adds none.
+3. A frame unanswered within its slot is counted (`tx_timeouts`); a NAK frees the slot at once. A NAK of the frame
+   that starts the call's voice ends the transmission with `TX_REJECTED`: none of the call would go out.
 4. Voice: the first voice burst of a call (and burst A after `set_embedded_lc`) sends `43 11 09 LC`. Later voice
    bursts carry nothing for the chip; they are taken one per 60 ms and reported as sent. The PROP must be 0x11 (a
    voice burst, data type 1): the chip answers 0x10 with ACK 0x01 and then sends no traffic at all, though it keys its
    burst timing (the LC headers before it are acknowledged as sent but never go on the air).
-   After a repeater's answer to a wake-up the stack waits 240 ms (`wake_settle_ms`, four slots of outbound) before an
-   aligned start: keyed at once, the chip's start can take the other slot (2 of 5 calls in the repeater slot test).
+   An aligned start waits for `DMR_SLOT_FOUND` with the verified flag since the last return to receive, as the Packet
+   Interface's mobile station procedure says (`slot_verified`, about 200-380 ms after the return to receive). Keyed
+   before that, the chip can take the other slot for the whole call. A hunt that reaches 12 reports without the
+   flag is started over, once (`rehunts`): every call that went out on the other slot followed a hunt of 18 or more
+   reports, and calls after 7 or fewer were right. It costs that key-up up to about 0.8 s, most visible right after a
+   channel change. With it, 1 call of 180 in a run against a repeater in its hang time still took the other slot,
+   after a hunt that verified at its 5th report (section 10).
 5. `TX_DONE` comes on the first ACK 0x0A at least a slot after the last frame (an earlier one is another frame's),
    also when it comes before the queue has drained, or `SCT_DMR_DONE_MS` (600 ms) after it. Then WORK_MODE
    receive. `tx_abort` goes back to receive without `TX_DONE`.
@@ -231,16 +245,19 @@ the answer is never taken as a frame's answer or a NAK, OK or not.
 | Report | Engine |
 | --- | --- |
 | DMR_CC | the burst's color code |
-| DMR_SLOT_FOUND | sync family and slot: base station sync gives the slot from the TC bit, mobile sync from TDMA slot 1 or 2. Under base station sync it comes only now and then: each frame's slot is its PROP bit 7 |
+| DMR_SLOT_FOUND | sync family and slot: base station sync gives the slot from the TC bit, mobile sync from TDMA slot 1 or 2. Under base station sync it comes only now and then: each frame's slot is its PROP bit 7 Bit 5 is slot verified, bit 6 that earlier reports had the slots swapped: the Packet Interface's table has the two the other way round, its example and the chip have them so. Unverified reports come per CACH, then one verified after DMR_CALL_OPTION's count |
+| DMR_SLOT_FOUND, base station sync | also `DMR_EV_SLOT_TICK` with the slot from the TC bit. A repeater's idle output reports no frames, so these keep it counted as up while a transmission waits for the verified report |
 | NEW_EVENT 1 | the next frame is reported with its CRC failed |
 | NEW_EVENT 8 or 13 | `SYNC_LOST`; receive voice stops |
+| NEW_EVENT 14 or 15 | counted (`rx_unsupported`): a call the chip can't play |
 | DIGC_DATA_FRAME | a burst event to the stack |
 
 - LC kinds are reported with `lc_valid` and 9 bytes. A voice burst's LC (PROP bit 4, a superframe's embedded LC)
   is reported as a voice burst with the LC embedded, as a burst-level modem reports it, so the stack takes the call
   as a late entry. Reported as a header, the call showed as heard from its start.
-- PI header, CSBK, MBC header and data header come with the CRC the chip already checked. The engine rebuilds the
-  CRC-CCITT with its mask, so the stack sees 12 bytes as from a burst-level modem.
+- CSBK, MBC header and data header come with the CRC the chip already checked. The engine rebuilds the CRC-CCITT
+  with its mask, so the stack sees 12 bytes as from a burst-level modem. The chip gives a PI header as 9 bytes without
+  its CRC, like an LC.
 - The chip reports a voice call by its header (each repeat, when the board has DMR_CALL_OPTION report them), or by
   the first superframe's LC on a late entry. From there the engine reports a voice burst without payload every
   60 ms, from burst A (a late entry's LC is burst A itself), at most 4 catching up at once, until the terminator,
@@ -281,7 +298,7 @@ open it. The board routes its speaker to the baseband's voice in DMR. Beeps have
 them through `beep_tone` ([radio-features.md](radio-features.md) 4).
 
 The vocoder's frames can be routed through the MCU, but the driver doesn't do it yet: what the chip's frames hold is
-not known well enough (section 9).
+not known well enough (section 10).
 
 | Item | What is known |
 | --- | --- |
@@ -295,29 +312,44 @@ not known well enough (section 9).
 
 | Board part | Notes |
 | --- | --- |
-| Bus | the parallel port is bit-banged on GPIO where the stock firmware does so: data direction per transfer, strobes with a short settle, reads while HOBIB says data waits |
+| Bus | the parallel port is bit-banged on GPIO where the original firmware does so: data direction per transfer, strobes with a short settle, reads while HOBIB says data waits |
 | Reset | supply on, strobes idle, boot strap, RSTN pulse, then the chip's start-up time (about 0.7 s) |
 | Boot block | from the modem boot slot, checked by CRC-32 before use |
 | Modem task | polls the chip every 2 ms under the lock, feeds each packet to `sct_dmr_packet`, then calls `sct_dmr_poll` |
 | Health | the host port is polled, so no interrupt can be lost; `hal_dmr_modem_t.health` counts the same harm seen from the driver. `stalls`: transmissions with frames sent that ended on the drain time-out with no packet from the chip meanwhile. `stuck`: received voice bursts skipped because a poll came too late for the four bursts one poll catches up (a stalled task). The first one's four words: the transmission state, its queued frames, the last event and NAK codes |
-| `call_option` | DMR_CALL_OPTION, all five bytes but the traffic mode: how the chip is wired (who keys the RF, baseband or IQ, squelch by the chip), CACH count and LC header repeats, which repeats are reported (every LC header and terminator, section 3). Otherwise as the stock firmware sends it |
-| `report_field` | REPORT_FIELD bits added to the engine's 0xE1, as the stock firmware sends them |
-| `start_fields` | more start fields, such as MODOUT_CONFIG, DMR_OFFSET and the squelch's SQ_LEVEL, with calibrated values where the stock firmware takes them from calibration. Without calibration the board sends the stock factory default |
-| `codec_tx`, `codec_rx` | a codec write at the start of a transmission and its undo on the return to receive, such as an output the stock firmware mutes while transmitting |
+| `call_option` | DMR_CALL_OPTION, all five bytes but the traffic mode: how the chip is wired (who keys the RF, baseband or IQ, squelch by the chip), CACH count and LC header repeats, which repeats are reported (every LC header and terminator, section 3). Otherwise as the original firmware sends it |
+| `report_field` | REPORT_FIELD bits added to the engine's 0xE1, as the original firmware sends them |
+| `start_fields` | more start fields, such as MODOUT_CONFIG, DMR_OFFSET and the squelch's SQ_LEVEL, with calibrated values where the original firmware takes them from calibration. Without calibration the board sends the factory default |
+| `codec_tx`, `codec_rx` | a codec write at the start of a transmission and its undo on the return to receive, such as an output the original firmware mutes while transmitting |
 | `tx_fields` | control fields sent at each start and before each transmission, such as a modulator gain by band or a two-point modulation delay (section 5) |
 | `codec_start` | codec writes sent at each start, after the start packet: a codec setting the chip's own set-up doesn't make, such as a DAC filter with less delay (section 5) |
-| Voice set-up | `sct_voice_t`: CODEC_SELECT and VOCODER_SEL as the stock firmware sends them, control `fields` (the digital mode microphone and speaker gains), then the codec writes (gains and routing for the board's audio wiring). Calibrated values where the stock firmware takes them from calibration |
+| Voice set-up | `sct_voice_t`: CODEC_SELECT and VOCODER_SEL as the original firmware sends them, control `fields` (the digital mode microphone and speaker gains), then the codec writes (gains and routing for the board's audio wiring). Calibrated values where the original firmware takes them from calibration |
 
-## 9. Open
+The field access `sct_dmr_field_begin/poll/cancel` and `sct_dmr_call_option` give a board's debug link a read or write
+of any baseband field, for checking a driver value against the chip.
 
+## 9. Packet Interface options not taken
+
+| Item | Packet Interface | Engine | Why |
+| --- | --- | --- | --- |
+| DMR_SLOT_FOUND AT bit | check that the inbound channel is idle before a call | not read | the stack has its own channel check, the same on every modem |
+| CARRIER_READY 0 after a terminator | the host can send it | sent from the board's carrier reading only | a board's reading already covers the end of a call |
+| DMR_CALL_SLOT Direct TDMA bit | enables two-slot direct mode | clear | the stack's direct mode uses one slot |
+| SYNC_MISS_COUNT | can report a run of missed syncs | left at its default, 255 (never) | the board's carrier reading and NEW_EVENT 8 and 13 already end a call |
+
+## 10. Open
+
+- A long hunt is started over (section 5), but 1 aligned start of 180 still went out on the other slot after a hunt
+  that verified at its 5th report. No report value told it apart from the calls that were right: the verified flag and
+  bit 6 looked the same. The cause is unknown.
 - Whether the SCT3288 boot ROM starts the application by itself after reset, or always waits for the start command
   (both are handled) (unverified).
 - DMR_CALL_OPTION byte 3 with bits 1 and 0 clear reports identical LC headers and terminators once. Whether the
   chip forgets the last one between calls is open (unverified); boards set both bits (section 3). What the reserved
-  bits the stock firmware sets (bit 6 of bytes 1 and 3, byte 4, REPORT_FIELD bits 4-1) do is unknown.
-- The SQ_LEVEL thresholds and the digital mode gains a board sends are the stock firmware's; whether the chip's
+  bits the original firmware sets (bit 6 of bytes 1 and 3, byte 4, REPORT_FIELD bits 4-1) do is unknown.
+- The SQ_LEVEL thresholds and the digital mode gains a board sends are the original firmware's; whether the chip's
   squelch opens on weak signals with them, and the audio levels they give, are unverified.
-- EQUALIZER_FILTER: the chip enables no filter by default, which is what the stock firmware's "no equalizer" setting
+- EQUALIZER_FILTER: the chip enables no filter by default, which is what the original firmware's "no equalizer" setting
   sends, so the driver sends nothing. A user equalizer preset is not written.
 - The vocoder's frames on the MCU (section 7). Needed before the driver can route them:
   - the order of the 49 bits in a `CHAN_D` frame, against the parameter order the core's FEC and privacy use, and
