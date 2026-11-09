@@ -143,6 +143,7 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		ambeVoiceGetStats(&a);
 		dl_text(t, "call.rx_calls=%u\ncall.rx_calls_played=%u\ncall.rx_late_entries=%u\n", (unsigned)c.rx_calls,
 			(unsigned)c.rx_calls_played, (unsigned)c.rx_late_entries);
+		dl_text(t, "call.rx_calls_resumed=%u\n", (unsigned)c.rx_calls_resumed);
 		dl_text(t, "call.rx_voice_bursts=%u\ncall.rx_lost_frames=%u\n", (unsigned)c.rx_voice_bursts,
 			(unsigned)c.rx_lost_frames);
 		dl_text(t, "call.rx_dup_dropped=%u\ncall.rx_enc_dropped=%u\ncall.rx_term_dropped=%u\n",

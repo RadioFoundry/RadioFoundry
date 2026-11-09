@@ -52,7 +52,7 @@ static int headerBlocks(const uint8_t *h)
 
 uint8_t hotspotDataQueue(uint8_t dataType, const uint8_t *frame, uint32_t nowMs)
 {
-	if ((dataType < DT_CSBK) || (dataType > DT_RATE_1_DATA) || (dataType == DT_IDLE))
+	if ((dataType < DMR_TYPE_CSBK) || (dataType > DMR_TYPE_RATE_1) || (dataType == DMR_TYPE_IDLE))
 	{
 		return HOTSPOT_DATA_NAK_UNSUPPORTED;// PI header, Idle, USBD
 	}
@@ -66,7 +66,7 @@ uint8_t hotspotDataQueue(uint8_t dataType, const uint8_t *frame, uint32_t nowMs)
 	dmrDataFrameToBurst(dataType, frame, burst);
 	const uint8_t *p = burst->payload;
 
-	if (dataType == DT_DATA_HEADER)
+	if (dataType == DMR_TYPE_DATA_HEADER)
 	{
 		// A proprietary header after a data header is one of the blocks it announced
 		if (!(list.hasHeader && ((p[0] & 0x0F) == DMR_DPF_PROPRIETARY)))
@@ -75,11 +75,11 @@ uint8_t hotspotDataQueue(uint8_t dataType, const uint8_t *frame, uint32_t nowMs)
 			list.hasHeader = true;
 		}
 	}
-	else if ((dataType == DT_CSBK) && ((p[0] & 0x3F) == DMR_CSBKO_PREAMBLE) && !list.hasHeader)
+	else if ((dataType == DMR_TYPE_CSBK) && ((p[0] & 0x3F) == DMR_CSBKO_PREAMBLE) && !list.hasHeader)
 	{
 		list.expected = list.count + p[3];// blocks to follow
 	}
-	else if (((dataType == DT_MBC_HEADER) || (dataType == DT_MBC_CONTINUATION)) && ((p[0] & 0x80) == 0))
+	else if (((dataType == DMR_TYPE_MBC_HEADER) || (dataType == DMR_TYPE_MBC_CONT)) && ((p[0] & 0x80) == 0))
 	{
 		list.expected = list.count + 1;// not the last block
 	}

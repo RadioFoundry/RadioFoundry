@@ -1,0 +1,71 @@
+{
+ "board": "md9600",
+ "commit": "c709afd9a0029318f734da5931f64381d66ea93a",
+ "date": "2026-11-07T23:10:01Z",
+ "dirty": false,
+ "features": [
+  "vfo_dmr"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,DMR_CONFIRMED,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "07cddbc5",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.075,
+  "dmr-tg": 202,
+  "fm-mhz": 446.1,
+  "tx-power": 40
+ },
+ "sources": {
+  "vfo_dmr": {
+   "core/cps/cps_openfw.c": "de486d298e889447af493812a93368aa9c4e4bf5",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "1d686257536727a8a95ce65be61ffff9702a5e10",
+   "core/radio/radio_sm.h": "2fe0545a339bbac75138092055431484f7a13de3",
+   "core/ui/ui_app.c": "4d3b519ccf6cfed60992ba29084894dde1b4dcf9",
+   "core/ui/ui_find.c": "9e5d580d18928c0c0cb84494f25154b622f1a5fd",
+   "core/ui/ui_menus.c": "0234ba2358034fb13ab0173e19ea80eae360ec92",
+   "core/ui/ui_screens.c": "f7bfa3dd2960f22ee0e88e84c0294699b5728e4c",
+   "core/ui/ui_svc_radio.c": "fe4fdd57dc9ce54d80a58370ec6c60b6fccbb7cc",
+   "core/ui/ui_svc_storage.c": "fd7044aa12498a245883412cb537d5fa74eed8bd",
+   "docs/spec/dmr-voice.md": "00bddd81f534381770b06d32e4b0c564c15918fc"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "vfo_dmr"
+   ],
+   "id": "tests/hil/test_vfo_dmr.py::test_vfo_dmr_settings",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

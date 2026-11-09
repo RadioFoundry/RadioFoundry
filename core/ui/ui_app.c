@@ -55,6 +55,9 @@ static uint32_t toast_until, entry_last, last_refresh, now;
 static bool dirty = true;
 static uint32_t draws;
 static bool has_quick_key, has_context_key;
+// Long QUICK or long Back unlocks the keys. A radio with neither (side keys only) is never locked by auto lock: only a
+// side key set to key lock could unlock it
+static bool has_unlock_key;
 static char home_hint[32];
 
 // The hint's keys part, in the language in use: the quick settings key, or holding OK on a radio without it
@@ -1426,7 +1429,7 @@ static void quick_activate(int tile)
 		sbuf_t b;
 		sb_init(&b, msg, sizeof msg);
 		sb_str(&b, TR("Power "));
-		sb_str(&b, ui_power_name(next));
+		sb_str(&b, ui_power_name(next, view->ch.tx_hz));
 		ui_toast(msg);
 		break;
 	}
@@ -1825,6 +1828,7 @@ void ui_app_init(void)
 	off_warned = power_off_due = batt_warned = false;
 	hear_all_key = 0;
 	has_quick_key = ui_has_action(ACT_QUICK);
+	has_unlock_key = has_quick_key || ui_has_action(ACT_BACK);
 	has_context_key = ui_has_action(ACT_CONTEXT);
 	// ui_app_tick builds it again each tick, in the language in use then
 	str_copy(home_hint, sizeof home_hint, home_hint_keys());
@@ -2347,7 +2351,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		last_key_ms = now;
 		last_use_ms = now;
 	}
-	if (ui_st.auto_lock_s != 0 && !ui_st.locked && v->state != RS_TX &&
+	if (ui_st.auto_lock_s != 0 && has_unlock_key && !ui_st.locked && v->state != RS_TX &&
 			now - last_key_ms >= (uint32_t)ui_st.auto_lock_s * 1000u) {
 		set_locked(true);
 	}
@@ -2463,6 +2467,7 @@ void ui_app_status(ui_app_status_t *s)
 	s->focus = stack[sp].scr == SCR_QUICK ? ui_st.quick_focus : stack[sp].focus;
 	s->count = (d->flags & SF_LIST) && d->count != NULL ? d->count() : 0;
 	s->locked = ui_st.locked;
+	s->unlock_key = has_quick_key ? "quick" : has_unlock_key ? "back" : "none";
 	s->field_use = (d->flags & SF_FIELD) != 0;
 	s->banner = ui_st.banner.kind != UI_BANNER_NONE ? ui_st.banner.title : "";
 	s->toast = ui_st.toast != NULL ? ui_st.toast : "";

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Web control over the status server's /ws (webctl.h, docs/spec/tcp-services.md 5.1). The HTTP server does the
 // upgrade; from then on the connection's bytes come here: client frames (ws.h) are parsed as they arrive, a text
 // frame is one command, and the client gets the status JSON when it changes, pings, and the screen and receive audio
