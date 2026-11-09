@@ -50,7 +50,7 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | pass | partial |
 | `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | partial |
 | `dmr_talker_alias` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
-| `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
+| `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off |
 | `dmr_emergency` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass | pass |
 | `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
 | `dmr_signaling` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
@@ -71,7 +71,7 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_sms` | not recorded | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | pass, needs re-run | ✕ |
 | `dmr_tms` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | ✕ |
 | `dmr_ars` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `dmr_lrrp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
+| `dmr_lrrp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off |
 | `dmr_udp_compress` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
 | `dmr_confirmed` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
 | `sfr` | not recorded | pass (seed) | pass (seed) | not recorded | ✕ | not recorded | ✕ | partial |
@@ -119,7 +119,7 @@ is `tools/bringup.py list --radio <id>`.
 | `key_lock` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | ✕ |
 | `channel_knob` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass |
 | `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | ✕ |
-| `diag` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
+| `diag` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | ✕ |
 | `ui_color` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | ✕ | ✕ |
 | `font_xl` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `font_aa` | not recorded | off | off | off | off | off | ✕ | ✕ |
@@ -168,11 +168,11 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `DMR` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_PRIVACY` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_TALKER_ALIAS` | ● | ● | ● | ● | ● | ● | ● | ● |
-| `DMR_GPS` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `DMR_GPS` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `DMR_SMS` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `DMR_TMS` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `DMR_ARS` | ● | ● | ● | ● | ● | ● | ● | ● |
-| `DMR_LRRP` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `DMR_LRRP` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `DMR_SIGNALING` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_EMERGENCY` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_ROAMING` | ● | ● | ● | ● | ● | ● | ● | ● |
@@ -209,7 +209,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `VFO` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `VFO_FM` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `VFO_DMR` | ● | ● | ● | ● | ● | ● | ● | ✕ |
-| `DIAG` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `DIAG` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `FONT_XL` | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `FONT_AA` | ● | ○ | ○ | ○ | ○ | ○ | ✕ | ✕ |
 | `FONT_BIG` | ● | ○ | ○ | ○ | ○ | ○ | ✕ | ✕ |
