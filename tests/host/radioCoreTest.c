@@ -2468,7 +2468,7 @@ static void hear_dmr_nmea(uint32_t src, uint32_t dst, const char *sentence, size
 
 	memcpy(&data[9], sentence, length);
 	int nb = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_UDPIP_COMPRESSION, false, dst, src, data,
-				    (int)(9 + length), DT_RATE_12_DATA, 4, b, DMR_DATA_MAX_BURSTS);
+				    (int)(9 + length), DMR_TYPE_RATE_1_2, 4, b, DMR_DATA_MAX_BURSTS);
 	CHECK(nb > 0);
 	for (int i = 0; i < nb; i++) {
 		now += 60;
