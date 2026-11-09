@@ -174,12 +174,14 @@ bool hrc_uart_poll_tx(uint32_t base, uint8_t c)
 static void host_rx(uint8_t b, bool flagged)
 {
 	hrc_host_uart_rx_tap(b, flagged);
+	// A break or framing error is a held or disturbed line (a PTT press), not host data. Where RXD is also the PTT line
+	// each transmit burst can arrive as a 0x00 with a framing error. Handed on, it read as the start of a CPS request.
 	if (flagged) {
 		rx_line_errors++;
-	} else {
-		rx_good_ms = hal_millis();	// a break or framing error is a held line (a PTT press), not host data
-		rx_good_seen = true;
+		return;
 	}
+	rx_good_ms = hal_millis();
+	rx_good_seen = true;
 	uint32_t next = (rx_head + 1u) & (RX_SIZE - 1u);
 	if (next != rx_tail) {
 		rx_buf[rx_head] = b;

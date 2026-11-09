@@ -203,6 +203,13 @@ sends by interrupt, and the other UARTs' `hrc_uart_write` sleeps a tick while th
 with interrupts on, and spins only in an interrupt, a fault handler or a section with interrupts off. A CPS read is no
 slower.
 
+**2.13 A character with a line error is not data.** Where the host UART's RXD is also the PTT line, a transmit burst can
+disturb the line, and the UART then delivers a 0x00 with a framing error, about one per burst. Handed to the protocols,
+that byte read as the start of a CPS request and put the host link in CPS mode. The host UART's receive interrupt counts
+a flagged character (`rx_line_errors`, and the receive tap still sees it) and drops it. A real PTT press is read from
+the pin by the shared PTT gate. The disturbance can still corrupt a host request sent during the burst, so a host polling
+through a transmission retries.
+
 ## 3. TX/RX state and PA handling
 
 **2.6 HR_C5000 register differences.** Configuration page 0 (page 4 on the HR_C6000); reg 0x10 = 0x6B simplex,

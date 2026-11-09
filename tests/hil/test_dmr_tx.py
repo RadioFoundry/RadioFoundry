@@ -333,6 +333,22 @@ PERMIT_LEVEL_DB = 1.5     # a header's level against the over's median (a beep o
 
 
 @pytest.mark.feature("beep")
+@pytest.mark.feature("dmr_voice")
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_host_link_idle_after_tx(radio, sdr_bench, pytestconfig):
+    """An over leaves the host link in idle mode. Where the host UART's RXD is also the PTT line a transmit burst can
+    arrive as a character with a line error (docs/spec/gotchas.md 2.13), and one handed to the protocols put the link
+    in CPS mode."""
+    _dmr_tx_setup(radio, pytestconfig)
+    radio.wait_for(lambda v: v.get("hostlink") == "idle", timeout=12, what="host link idle before the over")
+    with sdr_bench.lease():
+        radio.ptt_for(2.0)
+        radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
+    mode = radio.view().get("hostlink")
+    assert mode == "idle", f"host link mode {mode!r} after the over"
+
+
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_or_modem
