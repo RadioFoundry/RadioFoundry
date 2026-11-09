@@ -67,12 +67,12 @@
 #endif
 #define GD88_VOL_GAIN_DEFAULT	3u
 // What the modem plays (beeps, DMR voice) leaves its line out, not the main chip's AF, so the knob sets the line out's
-// gain too, as the original firmware does: 3 dB a step, 0 dB at the middle step and GD88_PCM_VOL_TOP_DB at the top.
-// At 0 dB a beep was too quiet to hear over the microphone at a loud knob; +16 dB was as loud as the receiver's noise
-// (bench 2026-10-27)
-#define GD88_PCM_VOL_DEF_STEP	(RADIO_VOLUME_MAX / 2u)
+// gain too: 3 dB a step, 0 dB at three quarters and GD88_PCM_VOL_TOP_DB at the top. Decoded DMR voice is close to full
+// scale: measured at the speaker, its level stops following the gain above about +6 dB and the sound distorts from
+// 0 dB up, so a gain that suits a quiet beep clips voice
+#define GD88_PCM_VOL_DEF_STEP	(RADIO_VOLUME_MAX * 3u / 4u)
 #ifndef GD88_PCM_VOL_TOP_DB
-#define GD88_PCM_VOL_TOP_DB	24
+#define GD88_PCM_VOL_TOP_DB	3
 #endif
 #define TX_RX_OFF_US		50u		// RX paths off, then this long before the transmitter is tuned
 #define TX_SETTLE_MS		3u		// the chip's VCO calibration, before the PA is selected
