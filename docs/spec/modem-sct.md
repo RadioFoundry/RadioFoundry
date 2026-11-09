@@ -201,7 +201,7 @@ modem task can both call in. No RTOS calls and no waits: the host tests run the 
    voice burst, data type 1): the chip answers 0x10 with ACK 0x01 and then sends no traffic at all, though it keys its
    burst timing (the LC headers before it are acknowledged as sent but never go on the air).
    After a repeater's answer to a wake-up the stack waits 240 ms (`wake_settle_ms`, four slots of outbound) before an
-   aligned start: keyed at once, the chip's start can take the other slot (2 of 5 calls in the repeater slot test).
+   aligned start, and the same after its own call: keyed at once, the chip's start can take the other slot.
 5. `TX_DONE` comes on the first ACK 0x0A at least a slot after the last frame (an earlier one is another frame's),
    also when it comes before the queue has drained, or `SCT_DMR_DONE_MS` (600 ms) after it. Then WORK_MODE
    receive. `tx_abort` goes back to receive without `TX_DONE`.

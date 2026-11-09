@@ -233,7 +233,7 @@ transmitting in the slot after the next one, in phase with the bursts being rece
 - A board whose transmit set-up leaves it deaf between bursts provides `hal_radio_t.dmr_wake_listen`: the stack has it
   receive after each burst and go back to the transmit set-up before the next one.
 - A modem whose aligned start needs some of the outbound first gives `wake_settle_ms`: the stack waits that long after
-  the repeater's answer before it keys.
+  the repeater's answer before it keys, and that long after its own call ended before it keys again.
 - A short PTT press still runs the whole wake-up (the user only starts the call; other radios do the same). On release the
   stack keeps listening and retrying. If the repeater answers after release, nothing is sent and the call view's
   `wake_admits` counter goes up, so the radio plays its talk permit tone. If no repeater is heard in the last attempt, the
