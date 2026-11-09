@@ -17,6 +17,7 @@
 #include "ui_app.h"
 #include "ui_nav.h"
 #include "ui_svc.h"
+#include "ui_svc_aprs.h"
 #include "fmt.h"
 #include "i18n.h"
 #include "input/input.h"
@@ -1965,7 +1966,8 @@ void ui_app_key(const input_event_t *ev)
 	// Key lock: only long QUICK (and PTT, MONITOR, emergency) get through
 	// Long * locks only from Home (principles 3): in a menu it would lock the keys mid-task, and in text entry a slow *
 	// is a delete. It unlocks from anywhere (auto lock can lock with a menu open)
-	bool typing = stack[sp].scr == SCR_TEXT;
+	bool typing = stack[sp].scr == SCR_TEXT || stack[sp].scr == SCR_APRS_TO ||
+		stack[sp].scr == SCR_MESSAGE_TEXT;
 	bool lock_key = has_quick_key ? (ev->action == ACT_QUICK && ev->gesture == GESTURE_LONG && (sp == 0 || ui_st.locked)) :
 		(ev->action == ACT_BACK && ev->gesture == GESTURE_LONG && ui_st.locked);
 	// A side key set to key lock (keyassign.h) locks and unlocks on a press or a long press, as long QUICK does
@@ -2057,7 +2059,8 @@ void ui_app_key(const input_event_t *ev)
 			break;
 		}
 	}
-	if (ev->action == ACT_VFO_TOGGLE && ev->gesture == GESTURE_PRESS) {
+	// A VFO/MR key (its long press is COPY_VFO) or a side key set to VFO/Channel, on either slot
+	if (ev->action == ACT_VFO_TOGGLE && (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)) {
 		vfo_key();
 		return;
 	}
@@ -2304,6 +2307,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	if (ui_st.entry && (now - entry_last >= ENTRY_TIMEOUT_MS || !view->vfo))
 		entry_cancel();
 	uint16_t unread = ui_svc_msg_unread();
+	aprs_view_t aprs_view;
+	if (ui_svc_aprs_view(&aprs_view))
+		unread += aprs_view.unread;
 	if (unread != ui_st.unread) {
 		ui_st.unread = unread;
 		dirty = true;

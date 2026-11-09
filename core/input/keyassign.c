@@ -17,6 +17,7 @@ static const uint8_t fn_action[KEYFN_COUNT] = {
 #endif
 	[KEYFN_CALL_BACK] = ACT_CALL_BACK, [KEYFN_HOME_ZONE] = ACT_HOME_ZONE,
 	[KEYFN_COPY_VFO] = ACT_COPY_VFO, [KEYFN_DUAL_WATCH] = ACT_DUAL_WATCH, [KEYFN_AB] = ACT_AB,
+	[KEYFN_VFO_TOGGLE] = ACT_VFO_TOGGLE,
 };
 
 bool keyassign_allowed(uint8_t fn, bool hold)

@@ -57,6 +57,14 @@ static const flow_t flows[] = {
 	{ "5 private call by ID", "", "9 9 9 9 9 9 9 down ptt", "txid=9999999 txpriv=1", 9, false },
 	{ "6 canned reply to last caller", CALLER, "ctx 3 ok", "sent=1 text=OK", 4, false },
 	{ "6 canned to contact by name", "", "5 6 3 ctx 3 ok", "sent=1 text=OK", 6, false },
+	{ "6 custom message opens editor", "", "5 6 3 ctx 3 down down down down ok",
+	  "screen=message-text", 10, false },
+	{ "6 custom message sends typed text", "", "5 6 3 ctx 3 down down down down ok 4 4 wait:1100 4 4 4 ok",
+	  "sent=1 text=HI screen=home", 16, false },
+#if CONFIG_LANG_ES
+	{ "6 preset sends in selected language", "ok 7 2 up ok down ok long:back", "5 6 3 ctx 3 down ok",
+	  "sent=1 text=En_camino", 7, false },
+#endif
 	{ "7 read message, banner up", "msg:9991234,Meet_at_the_north_lot", "ctx", "screen=message", 1, false },
 	{ "7 read message later", "msg:9991234,Meet_at_the_north_lot wait:9000", "ok 2 ok", "screen=message", 3, false },
 #if CONFIG_ZONE_SHARE
@@ -149,8 +157,8 @@ static const flow_t flows[] = {
 	{ "11 dual watch: no stale reply target on B", "quick 7 ctx 3 5 ok wait:3000",
 	  "tune:b call:9991234,91,g tune:a call:9997777,3100,g wait:4000", "dual=1 sel=A hides=World", 0, false },
 	// B on the VFO, selected before the receiver has been there (a new selection doesn't retune): digits are a frequency
-	{ "11 dual watch: digits on B the VFO, receiver on A", "quick 7 ctx 1 vfokey ctx 1 wait:3000 tune:a ctx 1", "4 4",
-	  "dual=1 sel=B entry=44", 2, false },
+	{ "11 dual watch: digits on B the VFO, receiver on A", "quick 7 ctx 1 vfokey wait:3000 tune:a", "1 4",
+	  "dual=1 sel=B bvfo=1 entry=14", 2, false },
 	// Stopped with B selected, the radio stays on B: the next start keeps the pair (A the channel it is on)
 	{ "11 dual watch: again after a stop on B", "quick 7 ctx 1 back back", "quick 7", "dual=1 sel=A apos=4 bpos=3", 2,
 	  false },
@@ -167,8 +175,18 @@ static const flow_t flows[] = {
 	{ "11 dual watch: changes kept over hops", "quick 7 ctx 3 5 ok quick 2 back", "tune:b tune:a", "pos=3 temporary=1", 0,
 	  false },
 	{ "11 dual watch: talk target for the selected", "quick 7 tune:b", "tt", "dual=1 screen=picker", 1, false },
-	{ "11 dual watch: VFO entry over a hop", "quick 7 ctx 1 vfokey ctx 1 ctx 1", "1 4 6 tune:a 5", "dual=1 sel=B entry=1465",
+	{ "11 dual watch: VFO entry over a hop", "quick 7 ctx 1 vfokey", "1 4 6 tune:a 5", "dual=1 sel=B bvfo=1 entry=1465",
 	  4, false },
+	{ "11 dual watch: set B VFO frequency while A is tuned", "quick 7 ctx 1 vfokey tune:a", "1 4 6 5 5 0 0 ok wait:1000",
+	  "dual=1 sel=B bvfo=1 bfreq=146550000 screen=home", 8, false },
+	{ "11 dual watch: # sets B VFO frequency", "quick 7 ctx 1 vfokey tune:a expect:sel=B expect:screen=home expect:bvfo=1", "1 4 6 5 5 0 0 expect:entry=1465500 ctx wait:1000",
+	  "dual=1 sel=B bvfo=1 bfreq=146550000 screen=home entry=none", 8, false },
+	{ "11 dual watch: B VFO shows typed frequency", "quick 7 ctx 1 vfokey tune:a", "1 4 6 5",
+	  "dual=1 sel=B entry=1465 showsraw=146.5__", 4, false },
+	{ "11 dual watch: B VFO shows a deleted digit", "quick 7 ctx 1 vfokey tune:a", "1 4 6 5 back",
+	  "dual=1 sel=B entry=146 showsraw=146.___", 5, false },
+	{ "11 dual watch: Large text shows typed B VFO frequency", "ok 7 2 down down down down down ok long:back quick 7 ctx 1 vfokey",
+	  "1 4 6 5", "dual=1 sel=B entry=1465 showsraw=146.5__", 4, false },
 	// Up / Down with nothing to step to says why
 	{ "11 dual watch: one channel in the zone", "zonesize:1,1 quick 7 ctx 1 zone+", "up",
 	  "dual=1 sel=B toast=Only_one_channel", 1, false },
@@ -432,6 +450,7 @@ static const flow_t flows[] = {
 	// Settings the radio core acts on reach it (ui_svc_apply), key presses ask for a key beep
 	{ "S TX timeout to the radio", "", "ok 7 3 down ok", "radio_tot=300", 5, false },
 	{ "S backlight time to the radio", "", "ok 7 2 down ok", "radio_backlight=60", 5, false },
+	{ "S backlight dim only to the radio", "", "ok 7 2 down ok ok ok ok", "radio_backlight=-30", 8, false },
 	{ "S key beep", "", "up", "beeps=1", 1, false },
 	{ "S long press time to input", "", "ok 7 8 ok up ok", "longpress=700", 6, false },
 	{ "S auto lock after 30 s", "ok 7 4 down down ok long:back", "wait:31000", "locked=1", 0, false },
@@ -578,6 +597,23 @@ static const flow_t flows[] = {
 	{ "G GPS pages wrap", "ok 6 2", "up down", "shows=Status", 2, false },
 	{ "A KISS on USB", "ok 6 8", "up up ok", "aprs_kiss=1", 3, false },
 	{ "A stations heard", "", "ok 6 8 up ok", "screen=aprs-heard count=2", 5, false },
+	{ "A station opens its Message action", "ok 6 8 up ok", "ok", "screen=aprs-station shows=Message", 1, false },
+	{ "A station Message fills its callsign", "ok 6 8 up ok ok", "ok", "screen=compose shows=Q4WABC-15", 1, false },
+	{ "A new APRS message appears independently of DMR format", "", "ok 2", "shows=New_APRS_message", 2, false },
+	{ "A new APRS message opens its composer", "ok 2", "ok", "screen=compose shows=To_callsign", 1, false },
+	{ "A new APRS message needs our callsign", "aprs:nocall ok 2", "", "hides=New_APRS_message", 0, false },
+	{ "A received APRS message opens in Messages", "aprs:message ok 2", "ok", "screen=message shows=Hello_APRS", 1, false },
+	{ "A received APRS message replies over APRS", "aprs:message ok 2 ok", "ok", "sent=1 aprs_to=Q4WAB-9 text=OK", 1, false },
+	{ "A received APRS message opens a typed reply", "aprs:message ok 2 ok", "ctx",
+	  "screen=compose shows=Q4WAB-9", 1, false },
+	{ "A DMR message context uses its sender", "msg:9991234,Hi wait:9000 ok 2 ok", "ctx 3 ok",
+	  "sent=1 txid=9991234 text=OK", 3, false },
+	{ "A newer APRS message sorts before DMR", "msg:9991234,Older wait:9000 aprs:message ok 2", "ok",
+	  "screen=message shows=Hello_APRS", 1, false },
+	{ "A newer DMR message sorts before APRS", "aprs:message wait:1100 msg:9991234,Newer wait:9000 ok 2", "ok",
+	  "screen=message shows=Newer", 1, false },
+	{ "A new DMR message does not change an open APRS reply", "aprs:message ok 2 ok msg:9991234,Newer wait:9000", "ok",
+	  "sent=1 aprs_to=Q4WAB-9 text=OK", 1, false },
 	{ "A not in this build", "aprs:off", "ok 6 8 2", "toast=APRS:_not aprs_auto=0", 4, false },
 	// The crash log and its report (docs/spec/crash-log.md): Settings > Advanced > Crash log, after the restart
 	{ "C crash log from Advanced", "crash:on", "ok 7 0 down down down down ok", "screen=crash shows=Fault_3 shows=Crash_Log crash_seen=1",
@@ -810,14 +846,23 @@ static const flow_t flows_k[] = {
 	  false },
 	{ "K top key hold: copy to VFO", "ok 7 8 up ok ok ok ok ok ok ok ok ok", "ok", "set47=14 shows=Copy_to_VFO", 1,
 	  false },
-	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back", 1,
+	{ "K top key hold: VFO/Channel after copy to VFO", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok", "ok",
+	  "set47=17 shows=VFO/Channel", 1, false },
+	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back",
+	  1, false },
+	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
 	  false },
-	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1, false },
 	{ "K a key set to power", "", "powerkey", "power=5", 1, false },
 	{ "K a key set to power, long", "", "long:powerkey", "power=5", 1, false },
 	{ "K a key set to the next zone", "", "zone+", "zone=1", 1, false },
 	{ "K a key set to the previous zone", "", "zone-", "zone=2", 1, false },
 	{ "K a key set to scan, from a menu", "ok 7", "scankey", "scanning=1", 1, false },
+	// VFO/Channel (KEYFN_VFO_TOGGLE) sends what a VFO/MR key does, on a press or a long press, on any screen
+	{ "K a key set to VFO/Channel", "", "vfokey", "vfo=1 toast=VFO", 1, false },
+	{ "K a key set to VFO/Channel, back", "vfokey", "vfokey", "vfo=0 toast=Back_to_channels", 1, false },
+	{ "K a key set to VFO/Channel, long", "", "long:vfokey", "vfo=1 toast=VFO", 1, false },
+	{ "K a key set to VFO/Channel, long, back", "vfokey", "long:vfokey", "vfo=0 toast=Back_to_channels", 1, false },
+	{ "K a key set to VFO/Channel, from a menu", "ok 7", "vfokey", "vfo=1", 1, false },
 	{ "K talk target on a long press", "", "long:tt", "screen=picker", 1, false },
 	// The picker's last row, Select contact..., opens Contacts: every contact, PTT, OK and hold OK as in the picker
 	{ "C Select contact in the picker", "", "tt up", "screen=picker focus=Select_contact", 2, false },
@@ -1233,6 +1278,46 @@ static void call_screen_checks(void)
 	}
 }
 
+// Tools > APRS > Stations heard, at every display class: a station with a position shows how far and which way it is
+// from ours, beside the longest call there is, kept whole. No position of ours, or none of the station's: the row is
+// the call and its age, as before.
+// EP: our position none / fixed x the station's none / valid (QJ4XYZ has none)
+static void heard_checks(void)
+{
+	static const struct { const char *name, *setup; bool range; } cases[] = {
+		{ "both positions", "", true },
+		{ "no position of ours", "aprs:nopos ", false },
+	};
+	char err[300], buf[200];
+	for (int g = 0; g < sim_geom_count; g++) {
+		for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			snprintf(buf, sizeof buf, "%sok 6 8 up ok expect:screen=aprs-heard expect:shows=Q4WABC-15 "
+				 "expect:shows=QJ4XYZ expect:%s=14.5_km_NE", cases[i].setup,
+				 cases[i].range ? "shows" : "hides");
+			if (!sim_run(buf, err, sizeof err)) {
+				printf("FAIL stations heard %s [%s]: %s\n", cases[i].name, sim_geoms[g].name, err);
+				fails++;
+			}
+		}
+	}
+	// Packets without a position since the last one: the row's age is the position's (10 min), not the last
+	// packet's (1 min), so it says how old the range is
+	sim_reset(&sim_geoms[0], SIM_MAP_K);
+	if (!sim_run("wait:600000 ok 6 8 up ok expect:shows=14.5_km_NE expect:shows=10m expect:hides=1m", err,
+		     sizeof err)) {
+		printf("FAIL stations heard position age [%s]: %s\n", sim_geoms[0].name, err);
+		fails++;
+	}
+	// BVA on the row's width: a display too narrow for the call, the range and the age gives up the range, never
+	// the call (96 px: under 20 cells, the call and the range alone are 20)
+	sim_reset(sim_geom_find("96x64m"), SIM_MAP_K);
+	if (!sim_run("ok 6 8 up ok expect:screen=aprs-heard expect:shows=Q4WABC-15 expect:hides=km", err, sizeof err)) {
+		printf("FAIL stations heard narrow [96x64m]: %s\n", err);
+		fails++;
+	}
+}
+
 // A radio without a battery (CAP_NO_BATTERY), at every display class: no percentage in the status strip, no battery
 // warning, and no Battery page, Battery saver or Low battery warning in the lists (Tools keep their numbers, Battery
 // is the last one; in Settings the other rows move up). With a
@@ -1371,6 +1456,7 @@ int main(void)
 	printf("# %d flows run\n", flows_run);
 	about_checks();
 	call_screen_checks();
+	heard_checks();
 	vfo_split_dmr_checks();
 	no_battery_checks();
 	title_row_checks();

@@ -27,6 +27,9 @@
 #define RF_TRIES	3		// a frame given up after this many failed transmissions
 #define RF_RETRY_MS	15000u		// after a failed transmission
 #define POS_STALE_MS	60000u		// a GPS / host fix older than this doesn't count
+// A heard station's position older than this is dropped: other packets keep the entry, and its age would wrap at
+// 2^32 ms (49.7 days)
+#define STATION_POS_MS	(24u * 3600000u)
 #define AUTO_MIN_S	30		// hard minimum between automatic beacons
 #define PTT_GAP_S	120		// "after PTT" only when the last beacon is older than this
 #define HOST_BURST	3		// KISS frames from the host: a burst of 3, then one per HOST_REFILL_MS
@@ -99,6 +102,7 @@ static struct {
 		uint8_t tries;
 		uint32_t next_ms;
 		bool acked;
+		bool want_ack;
 	} out;
 	uint16_t msg_seq;
 	uint8_t ring[OUT_RING];
@@ -737,6 +741,8 @@ static void message_service(void)
 		own_to_is(a.info, n);
 		a.out.tries++;
 		a.out.next_ms = a.now + (MSG_RETRY_MS << (a.out.tries - 1u));
+		if (!a.out.want_ack)
+			a.out.active = false;
 		changed();
 	}
 }
@@ -822,10 +828,11 @@ static void station_update(const ax25_frame_t *f, const aprs_parsed_t *p)
 	s->direct = direct;
 	s->type = p->type;
 	s->count++;
-	if (p->has_pos) {
+	if (p->has_pos && p->type != APRS_T_OBJECT && p->type != APRS_T_ITEM) {	// an object's position isn't its sender's
 		s->has_pos = true;
 		s->lat = p->pos.lat;
 		s->lon = p->pos.lon;
+		s->pos_ms = a.now;
 		s->sym_table = p->pos.sym_table;
 		s->sym_code = p->pos.sym_code;
 		s->course = p->pos.course;
@@ -874,6 +881,7 @@ void aprs_dmr_heard(uint32_t id, const char *alias, int32_t lat, int32_t lon, ui
 		s->has_pos = true;
 		s->lat = lat;
 		s->lon = lon;
+		s->pos_ms = now_ms;
 		s->sym_table = '/';
 		s->sym_code = '[';
 		s->course = s->speed_kn = 0xFFFFu;
@@ -894,8 +902,11 @@ static void message_in(const ax25_frame_t *f, const aprs_parsed_t *p)
 	}
 	if (p->ack || p->rej) {
 		if (a.out.active && strcmp(a.out.to, from) == 0 && strcmp(a.out.msgno, p->msgno) == 0) {
-			a.out.acked = true;
-			a.out.next_ms = a.now;
+			a.out.acked = p->ack;
+			if (p->rej)
+				a.out.active = false;
+			else
+				a.out.next_ms = a.now;
 			changed();
 		}
 		return;
@@ -1179,6 +1190,18 @@ void aprs_tick(const aprs_radio_t *r, uint32_t now_ms)
 	if (a.host_tokens >= HOST_BURST) {
 		a.host_refill_ms = now_ms;
 	}
+#if CONFIG_APRS_RX
+	bool expired = false;
+	for (uint8_t i = 0; i < a.nst; i++) {
+		if (a.st[i].has_pos && now_ms - a.st[i].pos_ms >= STATION_POS_MS) {
+			a.st[i].has_pos = false;
+			expired = true;
+		}
+	}
+	if (expired) {
+		changed();
+	}
+#endif
 	uint8_t block = rf_block();
 	if (block != a.block) {
 		a.block = block;
@@ -1442,38 +1465,93 @@ bool aprs_send_status(const char *text)
 	return ok;
 }
 
-bool aprs_send_message(const char *to, const char *text)
+static char *message_coord(char *p, int32_t value, bool lon)
 {
+	uint32_t n = (uint32_t)(value < 0 ? -(int64_t)value : value);
+	uint32_t d = (n + 500u) / 1000u;
+	uint32_t degrees = d / 10000u;
+	uint32_t fraction = d % 10000u;
+	if (lon)
+		*p++ = (char)('0' + degrees / 100u % 10u);
+	*p++ = (char)('0' + degrees / 10u % 10u);
+	*p++ = (char)('0' + degrees % 10u);
+	*p++ = '.';
+	for (uint32_t div = 1000u; div != 0; div /= 10u)
+		*p++ = (char)('0' + fraction / div % 10u);
+	*p++ = lon ? (value < 0 ? 'W' : 'E') : (value < 0 ? 'S' : 'N');
+	return p;
+}
+
+bool aprs_send_message_opts(const char *to, const char *text, uint8_t flags)
+{
+	if (to == NULL || text == NULL)
+		return false;
 	ax25_addr_t x;
 	size_t tl = strlen(to), xl = strlen(text);
-	if (!ax25_addr_parse(to, tl, &x) || xl == 0 || xl > APRS_MSG_TEXT_MAX) {
+	if (!ax25_addr_parse(to, tl, &x) || xl == 0 || xl > APRS_MSG_TEXT_MAX ||
+	    (flags & ~(APRS_MSG_ACK | APRS_MSG_POSITION)) != 0) {
 		return false;
 	}
+	for (size_t i = 0; i < xl; i++) {
+		if ((uint8_t)text[i] < 0x20u || (uint8_t)text[i] > 0x7eu)
+			return false;
+	}
+	char composed[APRS_MSG_TEXT_MAX + 1];
+	if (flags & APRS_MSG_POSITION) {
+		int32_t lat, lon;
+		uint32_t err_m;
+		bool dmr_gps;
+		if (!aprs_position_now(&lat, &lon, &err_m, &dmr_gps))
+			return false;
+		char coord[24];
+		char *end = coord;
+		*end++ = ' ';
+		*end++ = '@';
+		end = message_coord(end, lat, false);
+		*end++ = ' ';
+		end = message_coord(end, lon, true);
+		size_t cn = (size_t)(end - coord);
+		if (xl + cn > APRS_MSG_TEXT_MAX)
+			return false;
+		memcpy(composed, text, xl);
+		memcpy(composed + xl, coord, cn);
+		composed[xl + cn] = '\0';
+		text = composed;
+		xl += cn;
+	}
 	LOCK();
-	if ((a.out.active && !a.out.acked && a.out.tries < APRS_MSG_TRIES) || !a.me_ok) {
+	if (rf_block() != APRS_OK) {
 		UNLOCK();
 		return false;
 	}
 	memset(&a.out, 0, sizeof(a.out));
 	a.out.active = true;
+	a.out.want_ack = (flags & APRS_MSG_ACK) != 0;
 	ax25_addr_format(&x, false, a.out.to);
 	memcpy(a.out.text, text, xl + 1u);
-	a.msg_seq = (uint16_t)(a.msg_seq % 999u + 1u);
-	uint16_t s = a.msg_seq;
-	char d[4];
-	uint8_t k = 0;
-	do {
-		d[k++] = (char)('0' + s % 10u);
-		s = (uint16_t)(s / 10u);
-	} while (s != 0);
-	for (uint8_t i = 0; i < k; i++) {
-		a.out.msgno[i] = d[k - 1u - i];
+	if (a.out.want_ack) {
+		a.msg_seq = (uint16_t)(a.msg_seq % 999u + 1u);
+		uint16_t s = a.msg_seq;
+		char d[4];
+		uint8_t k = 0;
+		do {
+			d[k++] = (char)('0' + s % 10u);
+			s = (uint16_t)(s / 10u);
+		} while (s != 0);
+		for (uint8_t i = 0; i < k; i++) {
+			a.out.msgno[i] = d[k - 1u - i];
+		}
+		a.out.msgno[k] = '\0';
 	}
-	a.out.msgno[k] = '\0';
 	a.out.next_ms = a.now;
 	changed();
 	UNLOCK();
 	return true;
+}
+
+bool aprs_send_message(const char *to, const char *text)
+{
+	return aprs_send_message_opts(to, text, APRS_MSG_ACK);
 }
 
 void aprs_set_test_call(const char *call)
@@ -1514,16 +1592,32 @@ uint8_t aprs_msg_count(void)
 	return n;
 }
 
-bool aprs_msg(uint8_t i, aprs_msg_t *out)
+static bool message_get(uint8_t i, aprs_msg_t *out, bool read)
 {
 	LOCK();
 	bool ok = i < a.nmsg;
 	if (ok) {
 		*out = a.msgs[i];
-		if (!a.msgs[i].read) {
+		if (read && !a.msgs[i].read) {
 			a.msgs[i].read = true;
 			changed();
 		}
+	}
+	UNLOCK();
+	return ok;
+}
+
+bool aprs_msg(uint8_t i, aprs_msg_t *out) { return message_get(i, out, true); }
+bool aprs_msg_peek(uint8_t i, aprs_msg_t *out) { return message_get(i, out, false); }
+
+bool aprs_msg_delete(uint8_t i)
+{
+	LOCK();
+	bool ok = i < a.nmsg;
+	if (ok) {
+		memmove(&a.msgs[i], &a.msgs[i + 1u], (a.nmsg - i - 1u) * sizeof a.msgs[0]);
+		a.nmsg--;
+		changed();
 	}
 	UNLOCK();
 	return ok;

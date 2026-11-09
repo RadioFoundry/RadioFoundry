@@ -228,12 +228,12 @@ for f in sys.argv[1:]:
 	if python3 -c 'import pytest' 2>/dev/null; then
 		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_skip_kinds.py tests/hil/test_radio_reconnect.py tests/hil/test_bench_line.py \
 			tests/hil/test_bench_envelope.py \
-			tests/hil/test_tx_guard.py \
+			tests/hil/test_tx_guard.py tests/hil/test_rig_state.py \
 			> "$OUT/hil-skip-test.log" 2>&1; then
-			ok "HIL skip, reconnect, TX guard and bench line helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
+			ok "HIL skip, reconnect, TX guard, rig state and bench line helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
 		else
 			tail -20 "$OUT/hil-skip-test.log"
-			bad "HIL skip, reconnect, TX guard and bench line helper tests (see $OUT/hil-skip-test.log)"
+			bad "HIL skip, reconnect, TX guard, rig state and bench line helper tests (see $OUT/hil-skip-test.log)"
 		fi
 	fi
 	# the feature checklist (tests/hil/README.md, "Bring-up mode"): tools/bringup.py check, and the bring-up

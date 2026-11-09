@@ -97,7 +97,7 @@ static void test_allowed(void)
 	uint16_t s[KEYASSIGN_SLOTS] = { 0 };
 	CHECK(keyassign_allowed(KEYFN_MONITOR, false) && !keyassign_allowed(KEYFN_MONITOR, true));
 	CHECK(!keyassign_allowed(KEYFN_EMERGENCY, false) && keyassign_allowed(KEYFN_EMERGENCY, true));
-	CHECK(KEYFN_TONE_BURST == 17);
+	CHECK(KEYFN_TONE_BURST == 18);
 	CHECK(keyassign_allowed(KEYFN_TONE_BURST, false) && !keyassign_allowed(KEYFN_TONE_BURST, true));
 	CHECK(!keyassign_allowed(KEYFN_COUNT, false));
 	// Emergency on a press would go off by accident; monitor on a long press can't be held
@@ -151,11 +151,12 @@ static void test_toggles(void)
 	static const struct { uint8_t fn; uint8_t value; uint8_t action; } t[] = {
 		{ KEYFN_KEY_LOCK, 11, ACT_LOCK }, { KEYFN_CALL_BACK, 12, ACT_CALL_BACK }, { KEYFN_HOME_ZONE, 13, ACT_HOME_ZONE },
 		{ KEYFN_COPY_VFO, 14, ACT_COPY_VFO }, { KEYFN_DUAL_WATCH, 15, ACT_DUAL_WATCH }, { KEYFN_AB, 16, ACT_AB },
+		{ KEYFN_VFO_TOGGLE, 17, ACT_VFO_TOGGLE },
 	};
 	// Stored in the codeplug's slots: append only, so every value that shipped keeps its number
 	CHECK(KEYFN_DEFAULT == 0 && KEYFN_NONE == 1 && KEYFN_MONITOR == 2 && KEYFN_TALK_TARGET == 3 &&
 	      KEYFN_POWER == 4 && KEYFN_ZONE_UP == 5 && KEYFN_ZONE_DOWN == 6 && KEYFN_SCAN == 7 && KEYFN_EMERGENCY == 8);
-	CHECK(KEYFN_HEAR_ALL == 9 && KEYFN_MONITOR_LATCH == 10 && KEYFN_COUNT == 18);
+	CHECK(KEYFN_HEAR_ALL == 9 && KEYFN_MONITOR_LATCH == 10 && KEYFN_COUNT == 19);
 	for (unsigned i = 0; i < sizeof t / sizeof t[0]; i++) {
 		uint16_t s[KEYASSIGN_SLOTS] = { 0 };
 		CHECK(t[i].fn == t[i].value);

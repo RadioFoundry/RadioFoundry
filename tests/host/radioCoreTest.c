@@ -28,6 +28,8 @@
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dl_fmt.h"
 #include "radio/tx_limit.h"
+#include "radio/battery.h"
+#include "fuzz.h"
 
 static int failures;
 static int checks;
@@ -249,6 +251,13 @@ bool codeplug_set_dmr_id(uint32_t id)
 }
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]) { line1[0] = line2[0] = 0; }
 void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]) { out[0] = 0; }
+#if CONFIG_APRS
+// APRS (radioCoreTestAprs): no APRS channel in the codeplug, no host link
+bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out) { memset(out, 0, sizeof(*out)); return false; }
+bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2) { return false; }
+#include "hostlink/hostlink.h"
+void hostlink_set_tnc(const hostlink_tnc_t *tnc) { (void)tnc; }
+#endif
 bool codeplug_set_radio_name(const char *name) { (void)name; return false; }
 bool codeplug_set_boot_text(const char *line1, const char *line2) { (void)line1; (void)line2; return false; }
 bool codeplug_contact(uint16_t index, contact_t *out)
@@ -403,7 +412,7 @@ static void poll_for(uint32_t ms)
 	}
 }
 
-static void signal(uint8_t noise, bool tone_ok)
+static void rx_signal(uint8_t noise, bool tone_ok)
 {
 	hw.st.noise = noise;
 	hw.st.tone_ok = tone_ok;
@@ -422,7 +431,7 @@ static void boot(void)
 	memset(&aud, 0, sizeof(aud));
 	sim_reset();
 	memset(&hw, 0, sizeof(hw));
-	signal(120, true);
+	rx_signal(120, true);
 	radio_sm_init(&sm, now);
 }
 
@@ -433,7 +442,7 @@ static void start(void)
 	memset(&aud, 0, sizeof(aud));
 	sim_reset();
 	memset(&hw, 0, sizeof(hw));
-	signal(120, true);
+	rx_signal(120, true);
 	now = 1000;
 	radio_sm_init(&sm, now);
 }
@@ -527,52 +536,52 @@ static void test_squelch(void)
 
 	poll_for(100);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio);
-	signal(thr, true);			// at the threshold: still closed
+	rx_signal(thr, true);			// at the threshold: still closed
 	poll_for(50);
 	CHECK(sm.view.state == RS_IDLE);
-	signal(thr - 10, true);
+	rx_signal(thr - 10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX && hw.audio && hw.led[LED_GREEN]);
 	CHECK(sm.view.rssi_dbm == -80);
 	CHECK(radio_view_wakes(&sm.view));	// FM: what opens the squelch plays, so it lights the screen
-	signal(thr + RADIO_SQL_HYST_DB - 1, true);	// inside the hysteresis: stays open
+	rx_signal(thr + RADIO_SQL_HYST_DB - 1, true);	// inside the hysteresis: stays open
 	poll_for(200);
 	CHECK(sm.view.state == RS_RX);
 	CHECK(sm.view.last_rx_ms == 0);
-	signal(thr + RADIO_SQL_HYST_DB, true);
+	rx_signal(thr + RADIO_SQL_HYST_DB, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);		// one poll above is not enough
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio && !hw.led[LED_GREEN]);
 	CHECK(sm.view.last_rx_ms == now);
 	// The carrier goes: the noise jumps far over the line, and one poll closes it (a shorter squelch tail)
-	signal(thr - 10, true);
+	rx_signal(thr - 10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
-	signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB - 1, true);	// just short of it: two polls as before
+	rx_signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB - 1, true);	// just short of it: two polls as before
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
-	signal(thr - 10, true);
+	rx_signal(thr - 10, true);
 	poll_for(RADIO_POLL_MS);
-	signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB, true);
+	rx_signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio);
 
-	signal(10, false);			// no RX tone on this channel: the board's tone flag doesn't matter
+	rx_signal(10, false);			// no RX tone on this channel: the board's tone flag doesn't matter
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
-	signal(120, true);
+	rx_signal(120, true);
 	poll_for(100);
 	CHECK(sm.view.state == RS_IDLE);
 	req(RREQ_SQUELCH, -(int)(RADIO_SQUELCH_DEFAULT - 1));	// the most open level short of 0
-	signal(UINT8_MAX, true);		// a receiver that can't hear (an RF chip the board doesn't drive): never opens
+	rx_signal(UINT8_MAX, true);		// a receiver that can't hear (an RF chip the board doesn't drive): never opens
 	poll_for(200);
 	CHECK(sm.view.squelch == 1 && sm.view.state == RS_IDLE && !radio_view_wakes(&sm.view));
 	req(RREQ_CLEAR_TEMP, 0);
 
 	req(RREQ_SQUELCH, -9);			// to 0: always open
 	CHECK(sm.view.squelch == 0 && sm.view.temporary);
-	signal(200, true);
+	rx_signal(200, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX && hw.audio);
 	req(RREQ_CLEAR_TEMP, 0);
@@ -590,7 +599,7 @@ static void test_squelch(void)
 
 	// A DMR channel: the state follows the call stack, not the carrier, and the FM speaker stays shut
 	req(RREQ_ZONE_POS, 3);
-	signal(10, true);
+	rx_signal(10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio);
 }
@@ -599,7 +608,7 @@ static void test_tx(void)
 {
 	setup_codeplug();
 	start();
-	signal(10, true);
+	rx_signal(10, true);
 	poll_for(50);
 	CHECK(sm.view.state == RS_RX);
 	req(RREQ_PTT, 1);
@@ -833,10 +842,10 @@ static void test_tone_squelch(void)
 	req(RREQ_CH_STEP, 1);			// RX DCS 754
 	uint8_t thr = radio_sm_squelch_open_below(RADIO_SQUELCH_DEFAULT);
 
-	signal(thr - 20, false);		// carrier, no code: closed
+	rx_signal(thr - 20, false);		// carrier, no code: closed
 	poll_for(500);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio && !sm.view.tone_ok);
-	signal(thr - 20, true);
+	rx_signal(thr - 20, true);
 	poll_for(RADIO_POLL_MS);		// one poll of a match is not enough
 	CHECK(sm.view.state == RS_IDLE);
 	poll_for(RADIO_POLL_MS * (RADIO_TONE_ON_POLLS - 1));
@@ -844,34 +853,34 @@ static void test_tone_squelch(void)
 
 	// The flag chatters: short drop-outs keep the squelch open
 	for (int i = 0; i < 20; i++) {
-		signal(thr - 20, i % 3 != 0);
+		rx_signal(thr - 20, i % 3 != 0);
 		poll_for(RADIO_POLL_MS * (1 + i % 4 % 3));
 		CHECK(sm.view.state == RS_RX);
 	}
-	signal(thr - 20, true);
+	rx_signal(thr - 20, true);
 	poll_for(RADIO_POLL_MS);
 	// The tone goes away for good, carrier stays: closes after the debounce and the close count
-	signal(thr - 20, false);
+	rx_signal(thr - 20, false);
 	poll_for(RADIO_POLL_MS * (RADIO_TONE_OFF_POLLS - 1));
 	CHECK(sm.view.state == RS_RX);
 	poll_for(RADIO_POLL_MS * (1 + RADIO_SQL_CLOSE_POLLS));
 	CHECK(sm.view.state == RS_IDLE && !hw.audio && !sm.view.tone_ok);
 
 	// Tone without a carrier (noise above the threshold): closed
-	signal(thr + 20, true);
+	rx_signal(thr + 20, true);
 	poll_for(500);
 	CHECK(sm.view.state == RS_IDLE && sm.view.tone_ok);
 	// Carrier back with the tone: opens at once (the tone is already heard)
-	signal(thr - 20, true);
+	rx_signal(thr - 20, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
 	// Carrier gone: closes on the noise alone
-	signal(thr + 20, true);
+	rx_signal(thr + 20, true);
 	poll_for(RADIO_POLL_MS * RADIO_SQL_CLOSE_POLLS);
 	CHECK(sm.view.state == RS_IDLE);
 
 	// Monitor overrides tone squelch
-	signal(thr - 20, false);
+	rx_signal(thr - 20, false);
 	poll_for(500);
 	req(RREQ_MONITOR, 1);
 	CHECK(hw.audio && sm.view.state == RS_IDLE);
@@ -880,10 +889,10 @@ static void test_tone_squelch(void)
 
 	// Squelch level 0 with an RX tone: the tone alone decides
 	req(RREQ_SQUELCH, -9);
-	signal(200, false);
+	rx_signal(200, false);
 	poll_for(200);
 	CHECK(sm.view.state == RS_IDLE);
-	signal(200, true);
+	rx_signal(200, true);
 	poll_for(RADIO_POLL_MS * RADIO_TONE_ON_POLLS);
 	CHECK(sm.view.state == RS_RX);
 	req(RREQ_CLEAR_TEMP, 0);
@@ -891,7 +900,7 @@ static void test_tone_squelch(void)
 	// A channel without an RX tone ignores the board's tone flag
 	req(RREQ_CH_STEP, 1);
 	CHECK(sm.view.channel_number == 7 && sm.view.tone_ok);
-	signal(thr - 20, false);
+	rx_signal(thr - 20, false);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
 }
@@ -1908,10 +1917,10 @@ static void test_hotspot(void)
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HOTSPOT);
 	req(RREQ_PTT, 0);
 	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == off0);
-	signal(10, true);
+	rx_signal(10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.hs_carrier && sm.view.state == RS_IDLE);
-	signal(120, true);
+	rx_signal(120, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(!sm.hs_carrier);
 
@@ -2451,6 +2460,60 @@ static void test_dmr_contact_added(void)
 	CHECK(d->target_id == 9996001 && d->target_private && strcmp(d->target_name, "Charlie Harper") == 0);
 	memset(&added_contact, 0, sizeof(added_contact));
 }
+
+#if CONFIG_APRS_RX
+// One NMEA sentence from src to dst (a private call) on UDP 10110 (SAP 3), as the data service hears it
+static void hear_dmr_nmea(uint32_t src, uint32_t dst, const char *sentence, size_t length)
+{
+	uint8_t data[9 + 96] = { 0x00, 0x01, 0x00, 0x00, 0x00, 0x27, 0x7e, 0x27, 0x7e };
+	static dmrBurst_t b[DMR_DATA_MAX_BURSTS];
+
+	memcpy(&data[9], sentence, length);
+	int nb = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_UDPIP_COMPRESSION, false, dst, src, data,
+				    (int)(9 + length), DMR_TYPE_RATE_1_2, 4, b, DMR_DATA_MAX_BURSTS);
+	CHECK(nb > 0);
+	for (int i = 0; i < nb; i++) {
+		now += 60;
+		dmrDataServiceRxBurst(&b[i], now);
+	}
+	run(20);
+}
+
+// DMR APRS as a stock radio sends it (#401): through radio_sm's hook into the APRS station list under the sender's
+// callsign in the ID database (else its DMR ID), to us or to anyone else (the APRS gateway). A sentence without a
+// fix, or out of range, neither adds a station nor moves one
+static void test_dmr_aprs_position(void)
+{
+	static const char heard[] = "$GPRMC,062544.000,A,3000.0000,N,8700.0000\0,W,0.00,0.00,051126,,,A\0";
+	static const char *const none[] = {
+		"$GPRMC,062544.000,V,3100.0000,N,08600.0000,W,,,051126,,,N",	// void status: no fix
+		"$GPRMC,062544.000,A,9100.0000,N,08600.0000,W,,,051126,,,A",	// past 90 degrees
+	};
+	aprs_station_t st;
+
+	dmr_start(false);
+	uint8_t before = aprs_station_count();
+	hear_dmr_nmea(9991234, 9996543, heard, sizeof(heard) - 1);
+	CHECK(aprs_station_count() == before + 1);
+	CHECK(aprs_station(0, &st) && strcmp(st.call, "9991234") == 0 && st.has_pos && st.lat == 300000000 &&
+	      st.lon == -870000000);
+	for (unsigned i = 0; i < sizeof(none) / sizeof(none[0]); i++) {
+		hear_dmr_nmea(9991234, 9996543, none[i], strlen(none[i]));	// the same station: not moved
+		hear_dmr_nmea(9991235, 9996543, none[i], strlen(none[i]));	// another: not added
+		CHECK(aprs_station_count() == before + 1);
+		CHECK(aprs_station(0, &st) && strcmp(st.call, "9991234") == 0 && st.lat == 300000000 && st.lon == -870000000);
+	}
+	// The usual case: another radio's report to the APRS gateway (BrandMeister's <MCC>999), heard on the channel
+	hear_dmr_nmea(9991236, 310999, heard, sizeof(heard) - 1);
+	CHECK(aprs_station_count() == before + 2);
+	CHECK(aprs_station(0, &st) && strcmp(st.call, "9991236") == 0 && st.lat == 300000000 && st.lon == -870000000);
+
+	// EP, the name: an ID in the ID database is listed under its callsign, one not in it under the number (above)
+	hear_dmr_nmea(9995555, 310999, heard, sizeof(heard) - 1);
+	CHECK(aprs_station_count() == before + 3);
+	CHECK(aprs_station(0, &st) && strcmp(st.call, "QD9XYZ") == 0 && st.lat == 300000000 && st.lon == -870000000);
+}
+#endif
 
 static void test_dmr_emergency(void)
 {
@@ -3540,6 +3603,30 @@ static void test_ui_settings(void)
 	CHECK(ui_svc_setting_get(UI_SET_KEY_TONES) == 1 && ui_svc_setting_get(UI_SET_TONE_VOLUME) == 7);
 	CHECK(ui_svc_setting_get(UI_SET_TOT_S) == 90 && ui_svc_setting_get(UI_SET_BACKLIGHT_S) == 20);
 	CHECK(ui_svc_setting_get(UI_SET_BATTERY_SAVER) == 1);
+	// Backlight (EP): > 0 dims then goes off at 4x, 0 always on, < 0 dims after -value and never goes off
+	static const struct { int32_t v; uint16_t dim, off; int32_t back; } bl[] = {
+		{ 30, 30, 120, 30 }, { 0, 0, 0, 0 }, { -30, 30, 0, -30 },
+		{ 1, 1, 4, 1 }, { -1, 1, 0, -1 },				// BVA: the smallest times
+		{ 0x3FFF, 0x3FFF, 0xFFFC, 0x3FFF }, { 0x4000, 0x4000, 0xFFFF, 0x4000 },	// off saturates
+		{ -0xFFFF, 0xFFFF, 0, -0xFFFF }, { -0x10000, 0xFFFF, 0, -0xFFFF },	// dim saturates
+	};
+	for (size_t i = 0; i < sizeof bl / sizeof bl[0]; i++) {
+		ui_svc_apply(UI_SET_BACKLIGHT_S, bl[i].v);
+		radio_get_settings(&rs);
+		CHECK(rs.backlight_dim_s == bl[i].dim && rs.backlight_off_s == bl[i].off);
+		CHECK(ui_svc_setting_get(UI_SET_BACKLIGHT_S) == bl[i].back);
+	}
+	// PBT: every value in the menu's range reads back as set, and a negative one never turns the backlight off
+	fuzz_t bf;
+	fuzz_init(&bf, 0xB1);
+	for (long i = 0; i < fuzz_iters(500); i++) {
+		int32_t v = (int32_t)fuzz_below(&bf, 2 * 0x3FFF + 1) - 0x3FFF;
+		ui_svc_apply(UI_SET_BACKLIGHT_S, v);
+		radio_get_settings(&rs);
+		CHECK(ui_svc_setting_get(UI_SET_BACKLIGHT_S) == v);
+		CHECK(v >= 0 || batt_backlight_pct(100, rs.backlight_dim_s, rs.backlight_off_s, 0xFFFFFFFFu, BATT_OK) == 20);
+	}
+	ui_svc_apply(UI_SET_BACKLIGHT_S, 20);
 	CHECK(ui_svc_setting_get(UI_SET_ROAM_SURVEY) == 2 && ui_svc_setting_get(UI_SET_ROAM_BEACON_S) == 120 &&
 	      ui_svc_setting_get(UI_SET_ROAM_BEACON_LEN) == 6 && ui_svc_setting_get(UI_SET_ROAM_PROBE) == 1);
 	// ... which the store leaves to ui_svc_apply (nothing written here)
@@ -4849,6 +4936,9 @@ int main(void)
 	test_sfr_cwid();
 #endif
 	test_dmr_emergency();
+#if CONFIG_APRS_RX
+	test_dmr_aprs_position();
+#endif
 	test_power_off_ars();
 #if CONFIG_VFO_DMR
 	test_vfo_dmr_data();
