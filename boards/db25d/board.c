@@ -95,7 +95,7 @@ const board_t board = {
 #endif
 #if CONFIG_DMR
 	.dmr = &hrc_dmr,
-	.audio = &hrc_audio_pcm,
+	.audio = &db25d_audio,
 	.vocoder = &hrc_vocoder,
 #endif
 #if CONFIG_HOSTLINK

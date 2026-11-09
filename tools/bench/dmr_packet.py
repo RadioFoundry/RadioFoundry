@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 """
-DMR packet data from what the bench modem heard: reassembles the packets in `bench_tx.py listen --json` lines (data
+DMR packet data from what the bench modem heard: reassembles the packets in a bench_tx listen job's JSON lines (data
 headers and rate 1/2 blocks, their "info" octets) and decodes the IP in them, the compressed UDP/IPv4 header (SAP 3)
 included. Written from ETSI TS 102 361-1 (8.2, 9.2.1, B.3.8-B.3.10) and TS 102 361-3 (5.6, 7.2), apart from the
 firmware's code, so the HIL tests (tests/hil/test_dmr_ip.py) check the radio against an independent reading.
@@ -10,8 +10,8 @@ firmware's code, so the HIL tests (tests/hil/test_dmr_ip.py) check the radio aga
     dmr_packet.py listen.jsonl          # one line per packet heard
     python3 -m ... / import dmr_packet: packets(lines) -> list of dicts
 
-Only rate 1/2 blocks: the listener reports the info octets of those (bench_tx.py); a packet at rate 3/4 or 1 shows as
-incomplete. Pure Python, no rfoundry_sdrbench package: runs on the test host.
+Only rate 1/2 blocks: the listener reports the info octets of those; a packet at rate 3/4 or 1 shows as
+incomplete. Pure Python: runs on the test host.
 """
 import json
 import sys
