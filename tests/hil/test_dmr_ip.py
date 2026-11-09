@@ -314,20 +314,37 @@ def _dmr_on(radio, freq, cc):
         yield
 
 
-# The responder's answer this many 30 ms slots after the start of our data terminator: 1 is the next slot, as a
-# MOTOTRBO radio answers (dmr-data.md 12.9), 6 the standard's recommended 180 ms
-LINK_ACK_SLOTS = (1, 2, 6)
+# The responder's answer this many 30 ms slots after the start of our data terminator. 2 is a real radio's timing, the
+# next frame in our own timeslot (dmr-data.md 12.9, tested against a commercial portable). 6 is the standard's
+# recommended 180 ms. 1 is earlier than that radio answers, about 2.5 ms after our terminator's end: a stress case that
+# doesn't gate
+LINK_ACK_SLOTS = (pytest.param(1, marks=pytest.mark.feature("dmr_confirmed", optional=True)),
+                  pytest.param(2, marks=pytest.mark.feature("dmr_confirmed")),
+                  pytest.param(6, marks=pytest.mark.feature("dmr_confirmed")))
 
 
-@pytest.mark.feature("dmr_confirmed")
+def _link_ack_problem(d, answers):
+    """What's wrong with a confirmed packet's counters (d: the radio's deltas) given the answers the responder sent, or
+    None. The responder's log lists only the packets it heard, so an entry's position isn't the radio's try number:
+    a try it never heard has no entry and no answer. So count: the packet takes one ACK, and an answer sent before
+    that one was an answer the radio missed."""
+    if d["ip.cnf_acks"] != 1 or d["ip.cnf_failed"]:
+        return f"no ACK taken of the {answers} the responder sent"
+    if answers != 1:
+        return f"{answers - 1} of the responder's {answers} answers weren't taken"
+    if d["ip.cnf_timeouts"] != d["ip.cnf_tx"] - 1:
+        return "the answered try timed out"
+    return None
+
+
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.parametrize("slots", LINK_ACK_SLOTS)
 def test_confirmed_tx_link_ack(radio, sdr_bench, pytestconfig, ip_settings, ars_off, slots):
     """Confirmed for the bench's ID, answered by the bench board's confirmed data responder (mssim) with an ACK
-    `slots` slots after our data terminator: the radio must be back on receive in time and take it, so the packet
-    ends ok with no timeout on the answered try. A try the responder didn't answer (it missed a block) is a bench
-    miss: the radio's next try is answered instead. A bench without the responder skips."""
+    `slots` slots after our data terminator: the radio must be back on receive in time and take every answer sent. A
+    try the responder didn't answer (it missed the packet or a block) is a bench miss: the radio's next try is answered
+    instead. A bench without the responder skips."""
     freq, cc, own, _ = _setup(radio, pytestconfig, tx=False, tune=False)
     radio.link.ip_settings("auto", "rules", 3, [BENCH_ID])
     profile = {"answer": "ack", "slots": slots, "end": "terminator", "sync": "ms", "to": BENCH_ID, "from": own}
@@ -351,14 +368,12 @@ def test_confirmed_tx_link_ack(radio, sdr_bench, pytestconfig, ip_settings, ars_
     print("radio deltas:", d, {k: rx_after[k] - rx_before[k] for k in rx_after})
     for e in log:
         print("responder:", e)
-    answered = [i for i, e in enumerate(log) if e.get("sent")]
-    if not answered:
+    answers = sum(1 for e in log if e.get("sent"))
+    if not answers:
         skip("bench", f"the responder answered none of the radio's {d['ip.cnf_tx']} tries (it heard {len(log)})")
-    first = answered[0]
-    assert after["ip.result"] == "ok" and d["ip.cnf_acks"] == 1 and d["ip.cnf_failed"] == 0, (d, after["ip.result"])
-    # Every try before the answered one timed out; the answered one must not have
-    assert d["ip.cnf_tx"] == first + 1 and d["ip.cnf_timeouts"] == first, \
-        f"the ACK {slots * 30} ms after our terminator wasn't taken: {d}, answered try {first + 1}"
+    problem = _link_ack_problem(d, answers)
+    assert problem is None, \
+        f"the ACK {slots * 30} ms after our terminator's start: {problem}: {d}, {after['ip.result']}"
 
 
 @pytest.mark.feature("dmr_ip_gateway")
