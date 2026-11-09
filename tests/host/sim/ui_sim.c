@@ -420,6 +420,9 @@ static bool usb_up;	// the computer has brought the network adapter up (hal_neti
 static struct {
 	bool off;		// "aprs:off": not in this build
 	bool no_call;		// "aprs:nocall": no callsign anywhere
+	bool message;		// "aprs:message": an unread APRS message
+	bool message_read;
+	uint32_t message_ms;
 	bool no_pos;		// "aprs:nopos": no position of our own (no GPS fix, no fixed position)
 	aprs_cfg_t cfg;
 	uint32_t sent;
@@ -449,6 +452,8 @@ bool ui_svc_aprs_view(aprs_view_t *v)
 	v->next_s = aprs_sim.cfg.tx_on ? 245 : 0xFFFFu;
 	v->rf_sent = aprs_sim.sent;
 	v->stations = 2;
+	v->messages = aprs_sim.message ? 1 : 0;
+	v->unread = aprs_sim.message && !aprs_sim.message_read ? 1 : 0;
 	return true;
 }
 void ui_svc_aprs_cfg(aprs_cfg_t *c) { *c = aprs_sim.cfg; }
@@ -483,6 +488,27 @@ bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg)
 		return false;
 	*m = 14461;
 	*deg = 40;
+	return true;
+}
+uint8_t ui_svc_aprs_msg_count(void) { return aprs_sim.message ? 1 : 0; }
+bool ui_svc_aprs_msg(uint8_t i, aprs_msg_t *out, bool read)
+{
+	if (i != 0 || !aprs_sim.message)
+		return false;
+	memset(out, 0, sizeof *out);
+	strcpy(out->from, "Q4WAB-9");
+	strcpy(out->text, "Hello APRS");
+	out->ms = aprs_sim.message_ms;
+	out->read = aprs_sim.message_read;
+	if (read)
+		aprs_sim.message_read = true;
+	return true;
+}
+bool ui_svc_aprs_msg_delete(uint8_t i)
+{
+	if (i != 0 || !aprs_sim.message)
+		return false;
+	aprs_sim.message = false;
 	return true;
 }
 bool hostlink_request_usb_network(bool network) { usb_net = network; return true; }
@@ -1865,6 +1891,16 @@ bool ui_svc_msg_send(uint32_t dst, bool group, const char *text)
 	sim_rec.tx_id = dst;
 	return true;
 }
+bool ui_svc_aprs_send_message(const char *to, const char *text, uint8_t flags)
+{
+	if (to[0] == '\0')
+		return false;
+	sim_rec.messages_sent++;
+	strncpy(sim_rec.last_aprs_to, to, sizeof(sim_rec.last_aprs_to) - 1);
+	strncpy(sim_rec.last_text, text, sizeof(sim_rec.last_text) - 1);
+	sim_rec.last_aprs_flags = flags;
+	return true;
+}
 bool ui_svc_radio_check(uint32_t id) { sim_rec.radio_checks++; check_id = id; check_due = now_ms + 800; return true; }
 bool ui_svc_call_alert(uint32_t id) { (void)id; sim_rec.call_alerts++; return true; }
 // A GPS + BeiDou receiver near Boston with a 3D fix: 9 of 14 satellites used
@@ -2132,6 +2168,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_STRIP, 1);
 	ui_svc_setting_set(UI_SET_ALIAS_SHOW, 1);
 	ui_svc_setting_set(UI_SET_MESSAGE_TONE, 1);
+	ui_svc_setting_set(UI_SET_MSG_FORMAT, 2);
 	ui_svc_setting_set(UI_SET_VIBRATE, 1);
 	ui_svc_setting_set(UI_SET_PRIVACY_TYPE, 0);
 	ui_svc_setting_set(UI_SET_PRIVACY_KEY, 0);
@@ -2300,6 +2337,8 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "checks") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.radio_checks);
 	else if (strcmp(key, "sent") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.messages_sent);
 	else if (strcmp(key, "text") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_text);
+	else if (strcmp(key, "aprs_to") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_aprs_to);
+	else if (strcmp(key, "aprs_flags") == 0) snprintf(got, sizeof got, "%u", sim_rec.last_aprs_flags);
 	else if (strcmp(key, "scanning") == 0) snprintf(got, sizeof got, "%u", view.scan != 0 && view.scan != 3);
 #if CONFIG_DUAL_WATCH
 	else if (strcmp(key, "dual") == 0) snprintf(got, sizeof got, "%u", ui_st.dual.on && view.scan == 3);
@@ -2727,6 +2766,9 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "aprs") == 0 && arg != NULL) {	// aprs:off (not built), aprs:nocall, aprs:nopos, aprs:custom (a custom frequency set)
 		aprs_sim.off = strcmp(arg, "off") == 0;
 		aprs_sim.no_call = strcmp(arg, "nocall") == 0;
+		aprs_sim.message = strcmp(arg, "message") == 0;
+		if (aprs_sim.message)
+			aprs_sim.message_ms = now_ms;
 		aprs_sim.no_pos = strcmp(arg, "nopos") == 0;
 		if (strcmp(arg, "custom") == 0)
 			aprs_sim.cfg.freq_hz = 144930000;

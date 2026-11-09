@@ -96,7 +96,19 @@ fake board whose AFSK output is demodulated back to frames.
   comment if any). Position ambiguity 0-4 blanks digits as APRS101 chapter 8 says.
 - Status: `>text` (40 characters).
 - Messages: `:ADDRESSEE:text{NN` (67 characters), acks `:ADDRESSEE:ackNN`; ours retried at 30, 60 and 120 s
-  (3 tries) until the ack.
+  (3 tries) until the ack. The composer can omit the message number (one transmission, no retry or acknowledgment)
+  and append a position snapshot as ` @DD.DDDDN DDD.DDDDW` in the message text. Both are per-message choices; requesting
+  an acknowledgment is on and including position is off when the composer opens. A position needs a current GPS, host
+  or fixed source. Its text counts toward the 67-character limit; a message that cannot fit is refused.
+  The send API accepts printable ASCII text and rejects control bytes. An incoming `rej` stops retries without
+  reporting the message as acknowledged.
+- Messages > New APRS message appears when APRS is built and our callsign is set. A station in Stations heard has a
+  Message action that fills its callsign. The composer asks for an AX.25 callsign with optional SSID, then sends a
+  localized preset or typed text through `aprs_send_message`. Presets fold accented letters to printable ASCII; typed
+  text holds at most 67 characters. The callsign editor holds at most nine characters (six for the call, a hyphen and
+  up to two for the SSID). Received APRS messages appear in Messages; replies use APRS. DMR replies use DMR, and
+  Settings > Connections > Message format selects only a DMR encoding. A new outgoing APRS message replaces one still
+  awaiting acknowledgment. `aprs_send_message` refuses a message when the RF path is blocked.
 - Path: none, WIDE1-1, WIDE1-1,WIDE2-1 (the default), WIDE2-1, WIDE2-2. Set on the APRS page (section 10), over the
   debug link, or in the codeplug's APRS record (section 11).
 
@@ -414,7 +426,6 @@ is still to run on the HR_C7000 boards. Per-radio levels and results are in the 
 - A registered tocall instead of APZRDF.
 - The LRRP request ID and token for unsolicited reports to BrandMeister; whether LRRP answers should use the APRS
   position when there is no GPS; whether Settings > Location > Send position should drive APRS.
-- APRS messages merged into the Messages inbox (now: Stations heard and the debug link only).
 - The codeplug APRS record's fixed position and frequency encodings.
 - Receive from the HR_C6000's ungated RX RAM (5.3).
 - Settings and debug link section / command numbers may need renumbering when merged with other branches.
@@ -423,4 +434,4 @@ Future, not done:
 
 - 9600 baud APRS (G3RUH FSK, scrambled NRZI direct FM): needs a flat (discriminator / modulator direct) audio path
   and an FSK modem; a tone generator path can't do it. Not planned for now.
-- Messages in the Messages inbox; Settings > Location tied to APRS; GPS Info in the hotspot's own transmissions.
+- Settings > Location tied to APRS; GPS Info in the hotspot's own transmissions.

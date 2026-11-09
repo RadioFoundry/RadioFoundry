@@ -13,6 +13,7 @@
 #include "aprs/aprs.h"
 #include "aprs/aprs_host.h"
 #include "aprs/aprs_beacon.h"
+#include "aprs/aprs_fmt.h"
 #include "aprs/ax25.h"
 #include "aprs/hdlc.h"
 #include "aprs/kiss.h"
@@ -682,13 +683,25 @@ static void test_messages(void)
 	reset();
 	aprs_set_test_call("Q1TST");
 	configure(0, false);
+	CHECK(!aprs_send_message("Q1ABC-9", ""));
+	CHECK(!aprs_send_message("not a call", "Hello"));
+	CHECK(!aprs_send_message("Q1ABC-9", "Line\nTwo"));
+	CHECK(!aprs_send_message(NULL, "Hello"));
+	aprs_cfg_t cfg;
+	aprs_get_cfg(&cfg);
+	aprs_cfg_t bad = cfg;
+	bad.region = APRS_REGION_CUSTOM;
+	bad.freq_hz = 150000000u;
+	aprs_set_cfg(&bad, now);
+	CHECK(!aprs_send_message("Q1ABC-9", "Hello"));
+	aprs_set_cfg(&cfg, now);
 	CHECK(aprs_send_message("Q1ABC-9", "Hello"));
-	CHECK(!aprs_send_message("Q1ABC-9", "Again"));	// one at a time
+	CHECK(aprs_send_message("Q1ABC-9", "Again"));	// newest message replaces the pending retry
 	CHECK(wait_start(1, 5000));
 	CHECK(nframes == 1);
 	char msgno[8] = "";
 	const char *brace = nframes > 0 ? strchr(frames[0], '{') : NULL;
-	CHECK(brace != NULL && strstr(frames[0], "::Q1ABC-9  :Hello{") != NULL);
+	CHECK(brace != NULL && strstr(frames[0], "::Q1ABC-9  :Again{") != NULL);
 	if (brace != NULL) {
 		strncpy(msgno, brace + 1, sizeof(msgno) - 1);
 	}
@@ -724,6 +737,76 @@ static void test_messages(void)
 	(void)rx_line;
 #endif
 }
+
+static void test_message_options(void)
+{
+	reset();
+	aprs_set_test_call("N0TST");
+	configure(0, false);
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.fix_lat = 0;
+	c.fix_lon = 0;
+	aprs_set_cfg(&c, now);
+	CHECK(!aprs_send_message_opts("K1ABC-9", "Here", APRS_MSG_POSITION));
+	c.fix_lat = 490583333;
+	c.fix_lon = -720291667;
+	aprs_set_cfg(&c, now);
+	char long_text[APRS_MSG_TEXT_MAX + 1];
+	memset(long_text, 'x', sizeof(long_text) - 1u);
+	long_text[sizeof(long_text) - 1u] = '\0';
+	CHECK(!aprs_send_message_opts("K1ABC-9", long_text, APRS_MSG_POSITION));
+	CHECK(aprs_send_message_opts("K1ABC-9", "Here", APRS_MSG_POSITION));
+	CHECK(wait_start(1, 5000));
+	CHECK(strstr(frames[0], "::K1ABC-9  :Here @49.0583N 072.0292W") != NULL);
+	CHECK(strchr(frames[0], '{') == NULL);
+	wait_idle();
+	run(200u * 1000u);
+	CHECK(hw.starts == 1);
+	CHECK(aprs_send_message_opts("K1ABC-9", "Ack me", APRS_MSG_ACK));
+	CHECK(wait_start(2, 5000));
+	CHECK(strstr(frames[1], "::K1ABC-9  :Ack me{") != NULL);
+}
+
+static void test_message_replaces_pending(void)
+{
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	CHECK(aprs_send_message("Q1ABC-9", "First"));
+	CHECK(wait_start(1, 5000));
+	wait_idle();
+	CHECK(aprs_send_message("K1ABC-9", "Second"));
+	CHECK(wait_start(2, 5000));
+	CHECK(strstr(frames[1], "::K1ABC-9  :Second{") != NULL);
+	wait_idle();
+	run(28u * 1000u);
+	CHECK(wait_start(3, 6000));
+	CHECK(strstr(frames[2], "::K1ABC-9  :Second{") != NULL);
+}
+
+#if CONFIG_APRS_RX
+static void test_message_rejection(void)
+{
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	CHECK(aprs_send_message("Q1ABC-9", "Hello"));
+	CHECK(wait_start(1, 5000));
+	const char *brace = strchr(frames[0], '{');
+	CHECK(brace != NULL);
+	char rej[64];
+	snprintf(rej, sizeof(rej), "Q1ABC-9>APRS::Q1TST-7  :rej%s", brace != NULL ? brace + 1 : "");
+	wait_idle();
+	rx_line(rej);
+	run(200u * 1000u);
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(!v.msg_pending && !v.msg_acked);
+	CHECK(hw.starts == 1);
+	CHECK(aprs_send_message("Q1ABC-9", "Another"));
+}
+#endif
 
 #if CONFIG_APRS_RX
 static void test_stations_digi_igate(void)
@@ -1363,6 +1446,11 @@ int main(void)
 	test_tx_power_own();
 	test_host_kiss_nmea();
 	test_messages();
+	test_message_options();
+	test_message_replaces_pending();
+#if CONFIG_APRS_RX
+	test_message_rejection();
+#endif
 	test_dmr_position();
 	test_gps_setting();
 	test_gps_status();
