@@ -372,7 +372,8 @@ def test_confirmed_tx_link_ack(radio, sdr_bench, pytestconfig, ip_settings, ars_
     if not answers:
         skip("bench", f"the responder answered none of the radio's {d['ip.cnf_tx']} tries (it heard {len(log)})")
     problem = _link_ack_problem(d, answers)
-    assert problem is None, f"the ACK {slots * 30} ms after our terminator's start: {problem}: {d}, {after['ip.result']}"
+    assert problem is None, \
+        f"the ACK {slots * 30} ms after our terminator's start: {problem}: {d}, {after['ip.result']}"
 
 
 @pytest.mark.feature("dmr_ip_gateway")
