@@ -154,6 +154,7 @@ void d578uv_gps_power(bool on);
 // --- DMR baseband (modem_d578uv.c, hardware-d578uv.md 4) ---
 // Boot the SCT3258 from the codec slot (about 1 s) and start the modem task. False: no block or no answer, FM only
 bool d578uv_modem_init(void);
+bool d578uv_modem_booting(void);		// board_t.boot_busy
 uint8_t d578uv_modem_boot_result(void);		// sct_boot_result_t
 const char *d578uv_modem_codec(void);		// board_t.modem_codec
 bool d578uv_modem_field(uint8_t type, uint8_t id, uint32_t *val, bool write);	// board.chip_reg chip 5

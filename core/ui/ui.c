@@ -35,6 +35,7 @@
 #define UI_TASK_STACK_WORDS	504
 
 #define SPLASH_MS		1000
+#define SPLASH_POLL_MS		20
 #define FRAME_MIN_MS		50	// at most 20 redraws a second
 // Keys still waiting put a redraw off, so a burst of keys costs one: a changed list repaints most of a large panel
 // (a full frame of a 240x320 panel driven a byte at a time is near 0.2 s). Not longer than this, so the screen keeps
@@ -113,6 +114,8 @@ static void ui_task(void *arg)
 	ui_app_init();
 	set_backlight(ui_app_brightness());
 	vTaskDelay(pdMS_TO_TICKS(SPLASH_MS));
+	while (board.boot_busy != NULL && board.boot_busy())
+		vTaskDelay(pdMS_TO_TICKS(SPLASH_POLL_MS));
 	while (input_next(&ev, 0))
 		;	// keys pressed during the splash are dropped
 	radio_get_view(&view);
