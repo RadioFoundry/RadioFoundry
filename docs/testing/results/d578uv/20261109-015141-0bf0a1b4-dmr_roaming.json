@@ -1,0 +1,128 @@
+{
+ "board": "d578uv",
+ "commit": "0bf0a1b4511c2bfb69a5ec40d46946f2a23ba2dd",
+ "date": "2026-11-09T01:51:41Z",
+ "dirty": false,
+ "features": [
+  "dmr_roaming"
+ ],
+ "firmware": {
+  "board": "AT-D578UV",
+  "codec": "d578uv-boot",
+  "display": "160x128x4",
+  "features": "FM,SUBTONE,DMR,DMR_TALKER_ALIAS,DMR_GPS,APRS,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,DMR_UDP_COMPRESS,IDDB_COMPACT,VFO,VFO_FM,VFO_DMR,AM_RX,BCAST_FM,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "0bf0a1b4",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "radio",
+  "rf"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-rf": true,
+  "dmr-cc": 2,
+  "dmr-tg": 202
+ },
+ "sources": {
+  "dmr_roaming": {
+   "core/debuglink/debuglink.h": "68269d7b5946b7275db6b5c0d5967b49c566c8a8",
+   "core/debuglink/debuglink_view_radio.c": "e682447482b45ce63b214c5f065c044ac638b997",
+   "core/debuglink/debuglink_view_roam.c": "ac3790ff5766f3b67d66705ee72d6b6ec49c8cce",
+   "core/hostlink/build_info.c": "73dbddd5cf176f0f93346325160724c27b1f2652",
+   "core/radio/radio.h": "d6874cc561961cc7229da7a5d474db73d6c418fb",
+   "core/radio/radio_sm.c": "892f6aa8f1dcf5b91be2d25d3271bf429142e9fc",
+   "core/radio/radio_sm.h": "4f91df780c02f646f470bed3c54319e10f78fff0",
+   "core/radio/roam.c": "60129585c876312a06020003a395aab2e1970e81",
+   "core/radio/roam.h": "937b2a6413611d95f0680a819ee875bdb8bd356d",
+   "core/ui/ui_app.c": "87625b10d890577a94c513a4cdde2b1bf4ed1819",
+   "core/ui/ui_find.c": "9e5d580d18928c0c0cb84494f25154b622f1a5fd",
+   "core/ui/ui_menus.c": "5672529b5ab5fd470f02b2a52c4029efaff6d1b0",
+   "core/ui/ui_screens.c": "f7bfa3dd2960f22ee0e88e84c0294699b5728e4c",
+   "core/ui/ui_svc_radio.c": "c09e8ceedf45a8e32755367851b7d3af8b3eb7c2",
+   "core/ui/ui_svc_storage.c": "ecfb1f4fd13da0352f81b7426a927e8753255360",
+   "docs/spec/dmr-roaming.md": "a74fb7aa3d48d46fb149b3b5662fdfab684a3649"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "dmr_roaming"
+   ],
+   "id": "tests/hil/test_roaming.py::test_roam_beacon_home",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_roaming"
+   ],
+   "id": "tests/hil/test_roaming.py::test_roam_beacon_other_site",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_roaming"
+   ],
+   "id": "tests/hil/test_roaming.py::test_roam_now_passive",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_roaming"
+   ],
+   "id": "tests/hil/test_roaming.py::test_roam_section",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_roaming"
+   ],
+   "id": "tests/hil/test_roaming.py::test_roam_settings_round_trip",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_roaming"
+   ],
+   "id": "tests/hil/test_roaming.py::test_roam_survey_settings_round_trip",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_roaming"
+   ],
+   "id": "tests/hil/test_roaming.py::test_roam_to_bench_repeater",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_roaming"
+   ],
+   "id": "tests/hil/test_roaming.py::test_roam_zone_toggle",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}
