@@ -238,11 +238,6 @@ source = [
     "hal/hal_dmr_modem.h",
     "tools/split_duplex_host.py",
 ]
-planned_tests = [
-    "tests/hil/test_split_duplex.py::test_split_tx_half_continuous",
-    "tests/hil/test_split_duplex.py::test_split_standard_host",
-    "tests/hil/test_split_duplex.py::test_split_state_cleanup",
-]
 
 [feature.debuglink]
 switch = "DEBUGLINK"

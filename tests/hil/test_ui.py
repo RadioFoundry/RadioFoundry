@@ -227,14 +227,15 @@ def test_injected_keys_count_as_activity(home):
 
 
 def on_mode(r, mode):
-    """The home screen on a channel in mode ('fm' / 'dmr'): the current one, else the first of the zones that is one
-    (the radio fixture puts the channel back)"""
-    if r.core().get("mode") != mode:
-        try:
-            r.find_channel(None, mode)
-        except AssertionError as e:
-            skip("state", f"no {mode.upper()} channel: {e}")
-        wait_screen(r, "home")
+    """Home on a channel in mode ('fm' / 'dmr'): the current one, else the first such channel in any zone (restore()
+    puts the zone and channel back). Skips (state) when the codeplug has none"""
+    if r.core().get("vfo") != "1" and r.core().get("mode") == mode:
+        return r
+    try:
+        r.find_channel(None, mode)
+    except AssertionError as e:
+        skip("state", f"no {mode.upper()} channel to test on: {e}")
+    wait_screen(r, "home")
     return r
 
 
@@ -738,16 +739,23 @@ def test_factory_reset(home):
     (never the codeplug or calibration), and the radio restarts. The channel position survives only as the default."""
     r = home
     r.version()     # known before the restart: reconnect() checks a radio on another port against it
-    zone_size = r.core().get("zone_size")
-    for k in ("ok", "6", "0", "down", "down", "down", "ok"):
+    zones = r.core().get("zone_count")
+    # Hub digits are the entry numbers in every build (Settings 7), Advanced is group 0, Factory reset its fourth row
+    for k, screen in (("ok", "hub"), ("7", "settings"), ("0", "group")):
+        r.press(k)
+        wait_screen(r, screen)
+    for k in ("down", "down", "down", "ok"):
         r.press(k)
     wait_screen(r, "confirm", "the confirmation (defaults to No)")
     assert ui(r)["ui.focus"] == "0"
     r.press("down")
-    r.press("ok", settle=0)
+    up0 = as_int(r.link.view(["link"]).get("uptime_ms"), 0)
+    r.link.key("ok")    # not press(): it waits for the keys to go idle, and the radio is restarting then
     time.sleep(2.0)
     r.reconnect(20.0)
     s = r.view(["storage", "link"])
+    assert as_int(s.get("uptime_ms"), up0) < up0, f"the radio did not restart: {s.get('uptime_ms')} ms up"
     assert as_int(s.get("settings.long_press_ms")) in (0, 600) and s.get("settings.auto_lock_s") == "0", s
     assert as_int(s.get("settings.failures"), 0) == 0, s
-    assert r.core().get("zone_size") == zone_size, "the codeplug changed"
+    # The channel position goes back to the default (another zone), so the zone count says the codeplug stayed
+    assert r.core().get("zone_count") == zones, "the codeplug changed"

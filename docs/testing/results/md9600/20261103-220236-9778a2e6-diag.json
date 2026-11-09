@@ -1,0 +1,73 @@
+{
+ "board": "md9600",
+ "commit": "9778a2e607c0c3012a0dd94f6ff9163ab1761e3a",
+ "date": "2026-11-03T22:02:36Z",
+ "dirty": false,
+ "features": [
+  "diag"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,DMR_CONFIRMED,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "9778a2e6",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "radio"
+ ],
+ "kind": "run",
+ "options": {
+  "dmr-cc": 2,
+  "dmr-freq": 461.6875,
+  "dmr-tg": 9,
+  "fm-mhz": 461.6875,
+  "tx-power": 40
+ },
+ "sources": {
+  "diag": {
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/ui/ui_app.c": "b89103156fa4df83b6163b507571be351e235723",
+   "core/ui/ui_menus.c": "06492964b124d61994f143549dd391bcb5578637",
+   "core/ui/ui_screens.c": "8291cc7030c7f3d15335ebcff8f452bddc49d3ff",
+   "docs/spec/ui.md": "0ccbdcc301c65431ce2d73ed0ea026e09639c824"
+  }
+ },
+ "tests": [
+  {
+   "features": [],
+   "id": "boards/md9600/hil/test_md9600.py::test_adc_scan",
+   "optional": [
+    "diag"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "boards/md9600/hil/test_md9600.py::test_clock",
+   "optional": [
+    "diag"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [
+    "diag"
+   ],
+   "id": "tests/hil/test_ui.py::test_diagnostics_page",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

@@ -324,7 +324,7 @@ Burst numbering for privacy keystream purposes is RX_TYPE_INFO's 1–6.
 
 Datasheet source: the Chinese original (HR_C7000_Document_2, 10.2.2.17, 10.2.2.18, 10.2.2.22, 10.2.2.25-10.2.2.28).
 The registers, their bits and what the chip does with them were tried on one board (RadioFoundry build with a scratch memory
-poke command, SDR bench capture on the test frequency, lowest power, `sdrmon.py analyze --cach`). (measured)
+poke command, SDR bench capture on the test frequency, lowest power, burst and CACH decode). (measured)
 
 Datasheet summary:
 
@@ -446,7 +446,7 @@ Second board on the SDR bench, 2026-10-21 (lowest power, the test frequency, `te
 | 6 | Variant 0: the outbound is whole. BS data sync on both slots (189 / 188 idle bursts in 10 s), a burst every 30.0 ms (same slot 60.000 ms), one key-up edge, every CACH of valid TACT parity, TC alternating on every CACH, AT following SET_AT, the short LC decoding (93 ok, 0 bad), no underrun | `test_split_tx_half_off_air`: 377 BS bursts, tact ok 377, TC alternating 376/376 |
 | 7 | Variant 1 (continuous mode) gives the same outbound: the timeslot mode keeps the carrier and every CACH between slots too | 358 BS bursts, tact ok 358, TC 357/357 |
 | 8 | A host-fed voice call goes out whole in its slot | `test_split_tx_half_voice` |
-| 9 | Keyed 5 minutes: carrier offset +58 Hz at key-up, +56 Hz at the end, no underrun, no stall (10 015 slots) | captures across the key-up and the unkey (`sdrmon.py analyze` needs carrier-free air in a capture to find its noise floor) |
+| 9 | Keyed 5 minutes: carrier offset +58 Hz at key-up, +56 Hz at the end, no underrun, no stall (10 015 slots) | captures across the key-up and the unkey (the burst analysis needs carrier-free air in a capture to find its noise floor) |
 | 10 | The RX half labels a bench call, residual 0-1 us after centering, and the label flips with the epoch | `test_split_rx_half_labels` |
 
 Variant 0 stays the default. Writing the slot to both TX RAM halves works, so which half the chip sends in each slot
@@ -845,6 +845,36 @@ RadioFoundry plays all speaker PCM through this FIFO (`platform/hrc7000/audio_pc
 0x180000A0 (AUDIO_CONTROL b5, section 3) gave rough, choppy beeps on one board with every sample layout tried,
 with no queue underruns (measured).
 
+The FIFO takes two pushes from empty (64 samples, 8 ms) before b31 sets (measured), less than one 20 ms PCM block.
+The blocks come at the rate the FIFO plays them, so a queue that pushes each block as it arrives has the FIFO nearly
+empty at every block edge. It ran dry there: the queue emptied with the FIFO taking more 151 times in about 120 blocks
+of beeps, and every tone broke up at 20 ms intervals, its pitch jumping and its level dipping by up to 40 dB at the
+microphone (measured). `audio_pcm.c` therefore pushes nothing after the queue is emptied (route on, gate edges) until
+two blocks are queued, so the queue stays a block ahead of the FIFO for one block (20 ms) of latency. With that hold
+the queue never ran out in the same beeps, and the FIFO was topped up at least every 4 ms (measured). The `un` field
+of the `pg` diagnostics line (below) counts run-outs and stays 0.
+
+The FIFO is two halves of one push (32 samples, 4 ms) each. b31 clears exactly every 4.00 ms, as the modem moves on to
+play the other half, and the next push sets it again at once (measured). Write the 64 bytes as byte writes: with
+halfword or word writes the FIFO counts one entry per bus access and plays nothing usable (measured).
+
+A push in the first microseconds after b31 clears can land in the half being played. From then on every chunk plays
+one chunk early or late: the audio jumps at every 4 ms boundary, a phase step of 360° × f × 4 ms (none at multiples of
+250 Hz, the most near 125 Hz plus multiples of 250 Hz), heard as a buzz of broadband clicks at 250 Hz under the tone,
+limited to the 4 kHz band. It lasts until a later push happens to line the halves up again. Whether a push fell there
+depended on how the audio task's 2 ms poll lined up with the modem's 4 ms, so the fault came and went for seconds at a
+time and between beeps. The `un` field stayed 0 and the chunks went in at exactly 8 kHz: nothing was lost, only
+reordered. On a swept tone, broken stretches had the energy just above the tone's frequency 5-25 dB below the
+tone; whole ones 39-55 dB below it (measured, `test_speaker_sweep`). Traces of the broken stretches showed pushes that found
+b31 set on entry and clear microseconds later, then wrote at once; in clean ones, almost none.
+
+`platform/hrc7000/prompt_fifo.h` therefore waits 200 µs after it sees b31 clear before writing (twice the shortest wait
+that was clean; pushes 0.1-3 ms after the edge played in order in 12 of 12 sweeps). Only a push that saw the bit
+clear writes, so the bit can only have cleared before that look. At 250 pushes a second the wait costs about 5 % of
+the CPU. Speaker PCM (`audio_pcm.c`) and APRS (`hrc_afsk.c`) both push through it. Every sweep recorded with the wait played
+whole, 8 of them; one more recording had half its energy above 4.3 kHz, which an 8 kHz stream can't make, and was
+the capture's fault (measured).
+
 The prompt path also feeds the TX modulator: with AUDIO_CONTROL b7 set during a DMR transmission, the beep's audio
 rides on the 4FSK. On one board the talk permit tone overlapped the second and third voice LC headers, which then
 carried no decodable sync on the SDR bench and the bench modem took the call by late entry; with b7 held clear while
@@ -858,7 +888,7 @@ the speaker stream routed, every 10 ms without), on each speaker route change an
 emptied, a block the audio task was filling at that moment included, so a beep queued during the transmission is
 dropped, not played late. Boards set b7 only through `hrc_audio_pcm_ring()`, which applies the gate. The last of the
 DMR glue's diagnostics lines, `pg g<closings> l<closings that found speaker audio still pending> ra<checks that found
-b7 set while closed>`, checks it: `l` and `ra` stay 0. Its counters reset with the DMR counters.
+b7 set while closed> un<speaker queue run-outs>`, checks it: `l`, `ra` and `un` stay 0. Its counters reset with the DMR counters.
 
 So the talk permit can't sound during DMR TX, and the boards set `CAP_BEEP_NOT_ON_AIR`: the radio core plays it in a
 short receive-only hold before the first burst (`radio-features.md` 4). On air with a hotspot parrot, the beep was

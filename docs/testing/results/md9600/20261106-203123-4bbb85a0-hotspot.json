@@ -1,0 +1,110 @@
+{
+ "board": "md9600",
+ "commit": "4bbb85a052c24dcf64c865ea4a787fabfbe287c9",
+ "date": "2026-11-06T20:31:23Z",
+ "dirty": false,
+ "features": [
+  "hotspot"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,DMR_CONFIRMED,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "a7453791",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.075,
+  "dmr-tg": 202,
+  "fm-mhz": 446.1,
+  "tx-power": 40
+ },
+ "sources": {
+  "hotspot": {
+   "core/hostlink": "ffa0568f7c05e07fb4a477d61b919fde581a6cc3",
+   "core/hotspot": "063d570c9751a6690effd4e5395e72df17fb966a",
+   "docs/spec/mmdvm-protocol.md": "dc8ab9dc73c4dfccdc48f0e95abcecfb0d55ea73"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "hotspot"
+   ],
+   "id": "tests/hil/test_hotspot.py::test_hotspot_version_status",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": false,
+   "features": [],
+   "id": "tests/hil/test_hotspot_cwid.py::test_hotspot_cwid",
+   "optional": [
+    "hotspot"
+   ],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board lost samples in the capture (gap_samples 40, 0.000 s of zero runs); it can't judge the radio",
+   "required": false,
+   "skip_kind": "bench"
+  },
+  {
+   "features": [
+    "hotspot"
+   ],
+   "id": "tests/hil/test_hotspot_voice.py::test_hotspot_on_air[net_data]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "hotspot"
+   ],
+   "id": "tests/hil/test_hotspot_voice.py::test_hotspot_on_air[net_voice]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "hotspot"
+   ],
+   "id": "tests/hil/test_hotspot_voice.py::test_hotspot_on_air[rf_data_unconf]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "hotspot"
+   ],
+   "id": "tests/hil/test_hotspot_voice.py::test_hotspot_on_air[rf_voice8]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

@@ -566,12 +566,14 @@ HRC_FLASHFUNC bool hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		break;
 #endif
 	case HRC_DMR_DIAG_LINES - 1: {	// the prompt FIFO's TX gate (audio_pcm.c): closings, late (a beep still
-					// sounding, its tail cut), ring play on while closed (never)
-		uint32_t g, l, ra;
+					// sounding, its tail cut), ring play on while closed (never); the speaker queue's underruns (never)
+		uint32_t g, l, ra, b, ov, un;
 		hrc_audio_pcm_gate_stats(&g, &l, &ra);
+		hrc_audio_pcm_stats(&b, &ov, &un);
 		put_kv(&o, "pg g", g);
 		put_kv(&o, " l", l);
 		put_kv(&o, " ra", ra);
+		put_kv(&o, " un", un);
 		break;
 	}
 	default:

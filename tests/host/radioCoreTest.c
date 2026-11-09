@@ -545,6 +545,18 @@ static void test_squelch(void)
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio && !hw.led[LED_GREEN]);
 	CHECK(sm.view.last_rx_ms == now);
+	// The carrier goes: the noise jumps far over the line, and one poll closes it (a shorter squelch tail)
+	signal(thr - 10, true);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB - 1, true);	// just short of it: two polls as before
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	signal(thr - 10, true);
+	poll_for(RADIO_POLL_MS);
+	signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB, true);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio);
 
 	signal(10, false);			// no RX tone on this channel: the board's tone flag doesn't matter
 	poll_for(RADIO_POLL_MS);
@@ -2526,7 +2538,7 @@ static void test_dmr_emergency(void)
 	// A message heard: one UI_EV_MESSAGE. Reading and deleting it change the inbox, not the last event: nothing again
 	{
 		static dmrBurst_t b[DMR_DATA_MAX_BURSTS];
-		int nb = dmrDataBuildIPText(false, 9996543, 9991234, "hello", DT_RATE_12_DATA, 0, b, DMR_DATA_MAX_BURSTS);
+		int nb = dmrDataBuildIPText(false, 9996543, 9991234, "hello", DMR_TYPE_RATE_1_2, 0, b, DMR_DATA_MAX_BURSTS);
 		CHECK(nb > 0);
 		int before = sms_inbox_count();
 		for (int i = 0; i < nb; i++) {
@@ -2817,6 +2829,11 @@ bool radio_get_dual(radio_dual_ref_t ref[2], uint8_t *sel, uint8_t *at)
 }
 void radio_req_roam(uint8_t cmd) { req(RREQ_ROAM, cmd); }
 void radio_req_beep(uint8_t b) { req(RREQ_BEEP, b); }
+void radio_req_beep_after(uint8_t b, uint32_t delay_ms)
+{
+	radio_req_t r = { RREQ_BEEP, b, delay_ms };
+	radio_sm_request(&sm, &r, now);
+}
 void radio_req_vibrate(uint8_t v) { req(RREQ_VIBRATE, v); }
 void radio_req_dmr_target(uint32_t id, bool p) { req(RREQ_DMR_TARGET, (int32_t)((id & 0xFFFFFFu) | (p ? 1u << 24 : 0))); }
 void radio_req_dmr_target_clear(void) { req(RREQ_DMR_TARGET_CLEAR, 0); }

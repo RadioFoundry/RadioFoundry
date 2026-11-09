@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 /*
- * Hotspot uplink: what the simplex MMDVM hotspot hears on RF, as MMDVMHost wants it (RF -> host)
+ * Hotspot uplink: what the simplex MMDVM hotspot hears on RF, as a host wants it (RF -> host)
  */
 
 #ifndef RFOUNDRY_HOTSPOTUPLINK_H
@@ -52,7 +52,7 @@ uint32_t hotspotUplinkRxOverflows(void);
 typedef struct
 {
 	bool     open;			// a call is being heard
-	bool     headerSent;	// MMDVMHost has its header (it's in its RF audio state)
+	bool     headerSent;	// the host has its header (the call is open there)
 	uint8_t  lastSeq;		// the last voice burst sent (or 5 after a header: A is next)
 	uint32_t lastMs;		// the last burst heard in the call
 	uint8_t  lc[HOTSPOT_UPLINK_LC_LENGTH];

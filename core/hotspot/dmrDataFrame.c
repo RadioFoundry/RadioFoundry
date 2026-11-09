@@ -226,12 +226,12 @@ bool dmrDataFrameToBurst(uint8_t dataType, const uint8_t *frame, dmrBurst_t *bur
 	burst->dataType = dataType;
 	burst->flags = DMR_BURST_FLAG_MCU_CRC;// the CRC and mask are already in the frame
 
-	if (dataType == DT_RATE_34_DATA)
+	if (dataType == DMR_TYPE_RATE_3_4)
 	{
 		burst->length = 18;
 		trellisDecode(frame, burst->payload);
 	}
-	else if (dataType == DT_RATE_1_DATA)
+	else if (dataType == DMR_TYPE_RATE_1)
 	{
 		burst->length = 24;
 		rate1Decode(frame, burst->payload);
@@ -247,15 +247,15 @@ bool dmrDataFrameToBurst(uint8_t dataType, const uint8_t *frame, dmrBurst_t *bur
 // MS sourced, as the hotspot is on the mobile side of the air interface
 bool dmrDataBurstToFrame(const dmrBurst_t *burst, uint8_t colorCode, uint8_t *frame)
 {
-	if ((burst->dataType == DT_RATE_34_DATA) && (burst->length == 18))
+	if ((burst->dataType == DMR_TYPE_RATE_3_4) && (burst->length == 18))
 	{
 		trellisEncode(burst->payload, frame);
 	}
-	else if ((burst->dataType == DT_RATE_1_DATA) && (burst->length == 24))
+	else if ((burst->dataType == DMR_TYPE_RATE_1) && (burst->length == 24))
 	{
 		rate1Encode(burst->payload, frame);
 	}
-	else if ((burst->length == 12) && (burst->dataType != DT_RATE_34_DATA) && (burst->dataType != DT_RATE_1_DATA))
+	else if ((burst->length == 12) && (burst->dataType != DMR_TYPE_RATE_3_4) && (burst->dataType != DMR_TYPE_RATE_1))
 	{
 		dmrFecBptcEncode(burst->payload, frame);
 	}

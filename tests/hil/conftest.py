@@ -21,13 +21,13 @@ def pytest_addoption(parser):
     g.addoption("--allow-rf", action="store_true",
                 help="tests may transmit (the SDR bench's transmitter; the radio only in tests marked radio_tx)")
     g.addoption("--allow-service-stop", action="store_true",
-                help="tests may stop the SDR bench's gateway service to use its transmitter and "
-                     "receiver (dmr_bench.py's lease: always restarted). Not needed on a bench that runs the "
-                     "shared bench daemon: nothing is stopped there")
+                help="accepted and ignored: a bench board stops nothing (bench_service tests need only --bench-api)")
     g.addoption("--allow-usb-switch", action="store_true",
                 help="tests may switch the radio's USB personality to the network adapter (it re-enumerates; the "
                      "test switches it back over UDP), or on a radio without one run pppd on its serial port")
-    g.addoption("--tx-power", type=int, default=40, help="bench transmitter RF level 0-255 (bench: low)")
+    g.addoption("--radio-tx-watts", type=float, default=None,
+                help="W: on-air tests key the radio at its lowest power level named at least this (a bench that can't "
+                     "hear the lowest level through a dummy load); default the lowest level. Ham APRS keeps the lowest")
     g.addoption("--sfr-freq", type=float, default=None,
                 help="MHz: the SFR test channels' frequency (test_sfr_standalone); default --dmr-freq")
     g.addoption("--ambe", default=os.environ.get("RFOUNDRY_HIL_AMBE"),
@@ -38,7 +38,7 @@ def pytest_addoption(parser):
     g.addoption("--bench-wait-max", type=float, default=float(os.environ.get("RFOUNDRY_SDR_BENCH_WAIT_MAX", "900")),
                 help="s: a test that would wait longer for a shared SDR bench (rfoundry-benchd) is skipped")
     g.addoption("--bench-api", default=os.environ.get("RFOUNDRY_BENCH_API"), metavar="HOST[:PORT]",
-                help="a bench board (the bench line protocol, TCP 7373) in place of the SDR bench host: it runs the "
+                help="a bench board (the bench line protocol, TCP 7373): it runs the "
                      "bench's jobs and receives (tests/hil/README.md)")
     g.addoption("--bench-api-rx", default=os.environ.get("RFOUNDRY_BENCH_API_RX"), metavar="HOST[:PORT]",
                 help="a second bench board for bursts and captures (default: --bench-api's): a half-duplex board "
@@ -46,13 +46,6 @@ def pytest_addoption(parser):
     g.addoption("--bench-api-level", type=int, default=(int(os.environ["RFOUNDRY_BENCH_API_LEVEL"])
                                                         if os.environ.get("RFOUNDRY_BENCH_API_LEVEL") else None),
                 metavar="0-255", help="the bench board's transmit level for its jobs and FM (default: the board's own)")
-    g.addoption("--bench-station", default=os.environ.get("RFOUNDRY_BENCH_STATION"),
-                help="a shared bench's station (a RadioFoundry radio on the bench host) as the second radio of the tests "
-                     "that use one (bench_station fixture); rfoundry-bench info lists them")
-    g.addoption("--sdr-gain", type=float, default=5.0, help="RTL-SDR gain for raw captures (dmr_bench.py C0 picks it)")
-    g.addoption("--sdr-ppm", type=float, default=None,
-                help="the SDR's own frequency error in ppm for FM carrier offsets (default: the SDR bench's calibration, "
-                     "recorded with each capture)")
     g.addoption("--max-foff", type=float, default=500.0, help="Hz: largest carrier offset the TX tests accept")
     g.addoption("--allow-codeplug-write", action="store_true",
                 help="tests may write the radio's codeplug over CPS (marker codeplug_write: backed up first, "
@@ -74,9 +67,9 @@ def pytest_addoption(parser):
                 help="tests may restart the radio (marker reboot: the settings persistence check)")
     g.addoption("--roam-rx", type=float, default=None,
                 help="MHz: test_roaming's bench repeater site as the radio sees it, the radio's receive frequency "
-                     "(bench_repeater.py --tx); no default: a pair you are licensed for")
+                     "(the bench_repeater job's --tx); no default: a pair you are licensed for")
     g.addoption("--roam-tx", type=float, default=None,
-                help="MHz: the radio's transmit frequency of that site (bench_repeater.py --rx)")
+                help="MHz: the radio's transmit frequency of that site (the bench_repeater job's --rx)")
     g.addoption("--split-rx-port", default=os.environ.get("RFOUNDRY_SPLIT_RX_PORT"),
                 help="test_split_pair: the second radio's port, the RX half (the --radio-port radio is the TX half)")
     g.addoption("--split-ms-port", default=os.environ.get("RFOUNDRY_SPLIT_MS_PORT"),
@@ -116,7 +109,7 @@ def pytest_addoption(parser):
     g.addoption("--roam-beacon", type=float, default=20.0,
                 help="s: test_roaming's beacon tests, the bench repeater's beacon interval (set on the radio too)")
     g.addoption("--roam-beacon-len", type=int, default=3,
-                help="s: their beacon duration (bench_repeater.py --beacon-len, the radio's roam_beacon_len_s)")
+                help="s: their beacon duration (the bench_repeater job's --beacon-len, the radio's roam_beacon_len_s)")
     g.addoption("--aprs-ssid", type=int, default=15, help="test_aprs on air: the SSID sent (restored afterwards)")
     g.addoption("--mic-gain-steps", default="3,5,7",
                 help="test_mic_gain: the Mic gain steps (0-10, 2 dB a step, 5 = the board's level) keyed at each "
@@ -140,21 +133,23 @@ def pytest_configure(config):
         config.args += sorted(d for d in glob.glob(os.path.join(ROOT, "boards", "*", "hil"))
                               if glob.glob(os.path.join(d, "test_*.py")))
     config.addinivalue_line("markers", "rf: transmits (needs --allow-rf)")
-    config.addinivalue_line("markers", "bench_service: uses the SDR bench's transmitter / receiver through the "
-                            "lease (a bench without a shared bench daemon stops its gateway service for it: "
-                            "needs --allow-service-stop, else the test skips when it takes the lease)")
-    config.addinivalue_line("markers", "sdr_rx: needs the SDR bench's receiver (the RTL-SDR) and no bench modem; a "
-                            "bench without one skips it. With bench_modem on the same test: needs both")
-    config.addinivalue_line("markers", "bench_modem: needs the SDR bench's modem or a bench station (the MMDVM "
-                            "board that transmits to the radio, listens to it or acts as a repeater) and no SDR; "
-                            "skips without one. With sdr_rx on the same test: needs both")
-    config.addinivalue_line("markers", "sdr_or_modem: needs the SDR or the bench modem, either will do (the test "
-                            "accepts what one of them heard); skips only when the bench has neither")
+    config.addinivalue_line("markers", "bench_service: uses the bench board's transmitter or receiver through a "
+                            "session (needs --bench-api, skips without one)")
+    config.addinivalue_line("markers", "sdr_rx: uses the bench board's receiver and no transmitter. With bench_modem "
+                            "on the same test: both")
+    config.addinivalue_line("markers", "bench_modem: uses the bench board's transmitter (it transmits to the radio, "
+                            "listens to it or acts as a repeater); no SDR receiver. With sdr_rx on the same test: both")
+    config.addinivalue_line("markers", "sdr_or_modem: the receiver or the transmitter, either will do (the test "
+                            "accepts what one of them heard)")
     config.addinivalue_line("markers", "radio_tx: the radio under test transmits (needs --allow-rf)")
     config.addinivalue_line("markers", "codeplug_write: writes the radio's codeplug over CPS, backed up and restored "
                             "(needs --allow-codeplug-write)")
     config.addinivalue_line("markers", "reboot: restarts the radio (needs --allow-reboot)")
+    # pyserial's rfc2217 client warns on every port open, which buries the real summary
+    config.addinivalue_line("filterwarnings", "ignore:set(Daemon|Name)\\(\\) is deprecated:DeprecationWarning")
     config.addinivalue_line("markers", "usb_switch: switches the USB personality (needs --allow-usb-switch)")
     config.addinivalue_line("markers", "manual: asks a person at the radio to do something (needs --manual and -s)")
+    config.addinivalue_line("markers", "by_ear: a manual test that asks whether the speaker plays a sound; without "
+                            "--manual the microphone (--microphone) listens instead")
     config.addinivalue_line("markers", "audio_smoke: the DMR audio smoke tests (test_dmr_audio_smoke.py), part of every "
                             "bench pass")
