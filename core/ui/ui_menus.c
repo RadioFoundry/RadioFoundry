@@ -656,6 +656,8 @@ static const ui_scr_def_t contacts_screen = {
 
 // ======================= Messages =======================
 
+#define MSG_APRS_ARG	0x8000u
+
 static bool aprs_new_available(void)
 {
 #if CONFIG_APRS
@@ -671,6 +673,28 @@ static uint16_t msgs_count(void)
 	return ui_svc_msg_count() + ui_svc_aprs_msg_count() + (aprs_new_available() ? 1u : 0u);
 }
 
+// Both inboxes are newest first. Merge their small RAM lists by age for the shared Messages screen.
+static bool msg_row(uint16_t row, bool *aprs, uint16_t *index)
+{
+	uint16_t d = 0, a = 0;
+	uint16_t nd = ui_svc_msg_count(), na = ui_svc_aprs_msg_count();
+	if (row >= nd + na)
+		return false;
+	for (uint16_t n = 0; n <= row; n++) {
+		bool take_aprs = d == nd;
+		if (!take_aprs && a < na) {
+			ui_msg_t dm;
+			aprs_msg_t am;
+			if (!ui_svc_msg_get(d, &dm) || !ui_svc_aprs_msg((uint8_t)a, &am, false))
+				return false;
+			take_aprs = ui_st.now_ms - am.ms < dm.age_ms;
+		}
+		*aprs = take_aprs;
+		*index = take_aprs ? a++ : d++;
+	}
+	return true;
+}
+
 static void msgs_item(uint16_t i, ui_item_t *it)
 {
 	uint16_t dmr_count = ui_svc_msg_count();
@@ -679,9 +703,13 @@ static void msgs_item(uint16_t i, ui_item_t *it)
 		str_copy(it->label, sizeof it->label, TR("New APRS message"));
 		return;
 	}
-	if (i >= dmr_count) {
+	bool aprs;
+	uint16_t index;
+	if (!msg_row(i, &aprs, &index))
+		return;
+	if (aprs) {
 		aprs_msg_t m;
-		if (!ui_svc_aprs_msg((uint8_t)(i - dmr_count), &m, false))
+		if (!ui_svc_aprs_msg((uint8_t)index, &m, false))
 			return;
 		sbuf_t b;
 		sb_init(&b, it->label, sizeof it->label);
@@ -695,7 +723,7 @@ static void msgs_item(uint16_t i, ui_item_t *it)
 		return;
 	}
 	ui_msg_t m;
-	if (!ui_svc_msg_get(i, &m))
+	if (!ui_svc_msg_get(index, &m))
 		return;
 	sbuf_t b;
 	sb_init(&b, it->label, sizeof it->label);
@@ -718,8 +746,12 @@ static void msgs_select(uint16_t i, bool hold)
 	(void)hold;
 	if (aprs_new_available() && i == ui_svc_msg_count() + ui_svc_aprs_msg_count())
 		ui_aprs_compose("");
-	else
-		ui_push(SCR_MESSAGE, i);
+	else {
+		bool aprs;
+		uint16_t index;
+		if (msg_row(i, &aprs, &index))
+			ui_push(SCR_MESSAGE, aprs ? (uint16_t)(MSG_APRS_ARG | index) : index);
+	}
 }
 
 static void msg_target_of(uint16_t i, ui_target_t *t)
@@ -735,10 +767,18 @@ static void msg_target_of(uint16_t i, ui_target_t *t)
 
 static void msgs_context(uint16_t i)
 {
-	if (i >= ui_svc_msg_count())
+	bool aprs;
+	uint16_t index;
+	if (!msg_row(i, &aprs, &index))
 		return;
+	if (aprs) {
+		aprs_msg_t m;
+		if (ui_svc_aprs_msg((uint8_t)index, &m, false))
+			ui_aprs_compose(m.from);
+		return;
+	}
 	ui_target_t t;
-	msg_target_of(i, &t);
+	msg_target_of(index, &t);
 	ui_open_actions(&t);
 }
 
@@ -752,8 +792,8 @@ static const ui_scr_def_t messages_screen = {
 
 enum { MV_REPLY_OK, MV_REPLY_WAY, MV_CALL, MV_DELETE, MV_COUNT };
 
-static bool message_aprs(void) { return ui_frame()->arg >= ui_svc_msg_count(); }
-static uint8_t message_aprs_index(void) { return (uint8_t)(ui_frame()->arg - ui_svc_msg_count()); }
+static bool message_aprs(void) { return (ui_frame()->arg & MSG_APRS_ARG) != 0; }
+static uint8_t message_aprs_index(void) { return (uint8_t)(ui_frame()->arg & ~MSG_APRS_ARG); }
 
 static void msg_enter(void)
 {
@@ -781,7 +821,8 @@ static void msg_item(uint16_t i, ui_item_t *it)
 static void msg_select(uint16_t i, bool hold)
 {
 	(void)hold;
-	msg_target_of(ui_frame()->arg, &ui_target);
+	if (!message_aprs())
+		msg_target_of(ui_frame()->arg, &ui_target);
 	switch (i) {
 	case MV_REPLY_OK:
 	case MV_REPLY_WAY:
@@ -817,8 +858,24 @@ static void msg_select(uint16_t i, bool hold)
 static bool msg_target(uint16_t i, ui_target_t *t)
 {
 	(void)i;
+	if (message_aprs())
+		return false;
 	msg_target_of(ui_frame()->arg, t);
-	return !message_aprs() && t->id != 0;
+	return t->id != 0;
+}
+
+static void msg_context(uint16_t i)
+{
+	(void)i;
+	if (message_aprs()) {
+		aprs_msg_t m;
+		if (ui_svc_aprs_msg(message_aprs_index(), &m, false))
+			ui_aprs_compose(m.from);
+	} else {
+		ui_target_t t;
+		msg_target_of(ui_frame()->arg, &t);
+		ui_open_actions(&t);
+	}
 }
 
 static const char *msg_title(void)
@@ -826,7 +883,12 @@ static const char *msg_title(void)
 	static char t[24];
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
-	sb_u32(&b, ui_frame()->arg + 1u, 1);
+	uint16_t row = 0, index;
+	bool aprs;
+	while (msg_row(row, &aprs, &index) &&
+	       (aprs != message_aprs() || index != (ui_frame()->arg & ~MSG_APRS_ARG)))
+		row++;
+	sb_u32(&b, row + 1u, 1);
 	sb_str(&b, TR(" of "));
 	sb_u32(&b, ui_svc_msg_count() + ui_svc_aprs_msg_count(), 1);
 	return t;
@@ -842,6 +904,8 @@ static const char *msg_body(void)
 		sb_init(&b, message_buffer, sizeof message_buffer);
 		sb_str(&b, TR("From "));
 		sb_str(&b, m.from);
+		sb_str(&b, ", ");
+		sb_age_long(&b, ui_st.now_ms - m.ms);
 		sb_chr(&b, '\n');
 		sb_str(&b, m.text);
 		return message_buffer;
@@ -866,7 +930,7 @@ static const char *msg_body(void)
 
 static const ui_scr_def_t message_screen = {
 	.name = "message", .flags = SF_LIST | SF_FIELD, .prefix = TRN("Message"), .hint = TRN("OK choose  # more  Back"),
-	.count = msg_count, .item = msg_item, .select = msg_select, .context = msgs_context, .target = msg_target,
+	.count = msg_count, .item = msg_item, .select = msg_select, .context = msg_context, .target = msg_target,
 	.title = msg_title, .body = msg_body, .enter = msg_enter,
 };
 

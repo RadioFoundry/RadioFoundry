@@ -34,7 +34,8 @@ Messages.
    | Delete | Deletes the message. There is no undo |
 
 **#** on a DMR message opens the actions for its sender. **PTT** in an open DMR message calls the sender. The Call
-action is unavailable for APRS messages, whose sender is a callsign.
+action is unavailable for APRS messages, whose sender is a callsign. **#** on an APRS message opens a composer addressed
+to that callsign.
 
 <img src="../ux/screens/160x120i5/messages.png" width="200" alt="Messages">
 <img src="../ux/screens/160x120i5/message_view.png" width="200" alt="A message">

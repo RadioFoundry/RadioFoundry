@@ -422,6 +422,7 @@ static struct {
 	bool no_call;		// "aprs:nocall": no callsign anywhere
 	bool message;		// "aprs:message": an unread APRS message
 	bool message_read;
+	uint32_t message_ms;
 	aprs_cfg_t cfg;
 	uint32_t sent;
 } aprs_sim;
@@ -483,7 +484,7 @@ bool ui_svc_aprs_msg(uint8_t i, aprs_msg_t *out, bool read)
 	memset(out, 0, sizeof *out);
 	strcpy(out->from, "Q4WAB-9");
 	strcpy(out->text, "Hello APRS");
-	out->ms = 0;
+	out->ms = aprs_sim.message_ms;
 	out->read = aprs_sim.message_read;
 	if (read)
 		aprs_sim.message_read = true;
@@ -2752,6 +2753,8 @@ static bool run_token(char *t, char *err, size_t len)
 		aprs_sim.off = strcmp(arg, "off") == 0;
 		aprs_sim.no_call = strcmp(arg, "nocall") == 0;
 		aprs_sim.message = strcmp(arg, "message") == 0;
+		if (aprs_sim.message)
+			aprs_sim.message_ms = now_ms;
 		if (strcmp(arg, "custom") == 0)
 			aprs_sim.cfg.freq_hz = 144930000;
 		return true;
