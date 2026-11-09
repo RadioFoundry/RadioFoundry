@@ -50,6 +50,9 @@ static bool fixed(const char *s, size_t n, uint8_t scale, uint32_t *out)
 		}
 	}
 	while (frac < scale) {
+		if (v > UINT32_MAX / 10u) {
+			return false;	// too many integer digits: would wrap to a plausible value
+		}
 		v *= 10u;
 		frac++;
 	}
@@ -70,6 +73,9 @@ static bool coord(const char *s, size_t n, char hemi, bool lon, int32_t *out)
 		return false;
 	}
 	int64_t e7 = (int64_t)deg * 10000000 + ((int64_t)min_e5 * 10000000) / 6000000;
+	if (e7 > (lon ? 1800000000 : 900000000)) {
+		return false;	// 90 degrees and some minutes
+	}
 	bool neg;
 	if (lon ? (hemi == 'W') : (hemi == 'S')) {
 		neg = true;
@@ -181,11 +187,44 @@ bool nmea_parse(const char *s, size_t n, nmea_fix_t *out)
 		}
 		if (fl[9] > 0) {
 			bool neg = f[9][0] == '-';
-			if (fixed(f[9] + (neg ? 1 : 0), fl[9] - (neg ? 1u : 0u), 1, &v)) {
+			if (fixed(f[9] + (neg ? 1 : 0), fl[9] - (neg ? 1u : 0u), 1, &v) && v <= INT32_MAX) {	// else unknown
 				out->alt_dm = neg ? -(int32_t)v : (int32_t)v;
 			}
 		}
 		return true;
 	}
 	return false;
+}
+
+bool nmea_parse_unchecked(const uint8_t *s, size_t n, nmea_fix_t *out)
+{
+	static const char hex[] = "0123456789ABCDEF";
+	char line[NMEA_LINE_MAX + 1];
+	size_t k = 0;
+	bool star = false;
+	uint8_t sum = 0;
+	for (size_t i = 0; i < n && s[i] != '\r' && s[i] != '\n'; i++) {
+		if (s[i] == '\0') {
+			continue;	// a stock radio puts one inside the sentence and pads after it
+		}
+		if (k >= NMEA_LINE_MAX) {
+			memset(out, 0, sizeof(*out));
+			return false;
+		}
+		star = star || s[i] == '*';
+		if (!star && k > 0) {
+			sum ^= s[i];
+		}
+		line[k++] = (char)s[i];
+	}
+	if (!star) {
+		if (k + 3u > NMEA_LINE_MAX) {	// no room for the "*hh"
+			memset(out, 0, sizeof(*out));
+			return false;
+		}
+		line[k++] = '*';
+		line[k++] = hex[sum >> 4];
+		line[k++] = hex[sum & 15u];
+	}
+	return nmea_parse(line, k, out);
 }

@@ -84,6 +84,7 @@ typedef struct {
 	uint32_t slot_abnormal;	// bits 5, 6, 16
 	uint32_t rx_restarts;
 	uint32_t rx_lost, rx_stale;	// receiver restarts: reception over, stale slot timing
+	uint32_t rx_holds;	// direct transmissions ended without the restart, held for an answer (5.2a)
 	uint32_t cc_scan_steps;
 	uint32_t ev_overflow;
 	uint32_t tx_bursts, tx_underrun, tx_rejected, tx_done;
@@ -141,7 +142,8 @@ typedef struct {
 	// Receive
 	uint32_t rx_tick;	// tick of the last burst taken
 	bool rx_any;
-	uint32_t resync_tick;	// tick of the last receiver restart for lost or stale timing
+	uint32_t resync_tick;	// tick of the last receiver restart for lost or stale timing, or of the post-TX hold
+	uint8_t idle_ticks;	// quiet ticks before the stale restart: RX_IDLE_TICKS, POST_TX_HOLD_TICKS after a hold
 	uint8_t rx_chip_slot;	// chip slot of the last burst taken (an aligned start's reference)
 	int8_t voice_chip_slot;	// chip slot of the voice call being received, -1 none
 	uint32_t voice_tick;

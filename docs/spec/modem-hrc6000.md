@@ -92,7 +92,7 @@ Names are the manual's. Only the bits we rely on are listed.
 | Reg | Name | Bits / values used |
 |---|---|---|
 | 0x00 | reset (active low per module: DMR, PHY, codec, FM, vocoder IF, MSK, I2S, built-in codec) | 0xFF at init (all running) then 0x2A (partial reset, unexplained) |
-| 0x01 | H/W config | 0xF0 in DMR (two-point modulation TX, IF RX); 0xB0 then 0xF8 during init (unexplained). The same value is used on UHF and VHF |
+| 0x01 | H/W config | 0xF0 in DMR (two-point modulation TX, IF RX); 0xB0 then 0xF8 during init (unexplained). The same value is used on UHF and VHF. Bit 6 swaps the receive I and Q (the manual: the receive port's mapping to the RF port). With an IF input that inverts the received spectrum, so it must match the radio's mixers: inverted 4FSK flips every symbol, and since the voice and data sync patterns are complements, the chip then sees the odd voice burst as a data sync and tracks no call. A board whose first LO changes side between bands sets the bit per band (`hrc6000_rx_iq_swap()`); the default is set |
 | 0x02-0x05 | TX / RX I and Q offsets | 0 at init; 0x04 is rewritten in FM with the calibration "Mod2 offset". In two-point mode 0x04 is the MOD1 (reference crystal) offset and 0x02 the MOD2 (VCO) one (manual 4.7.2; the register table says MOD2 for both): 0x04 moves the FM carrier about 75 Hz a step, signed (bench 2026-10-12) |
 | 0x06 | vocoder select | 0x21 = vocoder over SPI under MCU control; 0x22 = "open music" (used only while flushing page 3); 0x20 = normal |
 | 0x07-0x09 | IF frequency H/M/L | 0x0B, 0xB8, 0x00 (450 kHz) |
@@ -252,6 +252,21 @@ transmission, a one-shot 29 ms timer does the same. Keying takes the PA enables 
 On such a board the RF chip's "transmitting" state therefore goes on and off **burst by burst**. Code that needs to
 know whether a transmission is in progress must use the modem slot state (section 7.5), not the PA.
 
+### 4.4 Lost interrupts
+
+The three lines are edge triggered. A system line still low after its handler (a flag set again, or one whose edge
+was missed) gives no further edge, so no later request interrupts. The STM32F4 glue (`platform/stm32f4/hrc/dmr_glue.c`)
+recovers and counts (`hal_dmr_modem_t.health`, the debug link's `dmr.modem_*` keys):
+
+| Count | Found | Recovery |
+|---|---|---|
+| stalls | no timeslot interrupt for 200 ms while transmitting (the engine's `tx_stalls`; a stall while receiving is not counted) | the transmission ends, the receiver restarts |
+| stuck | the system line low with no edge pending: at a timeslot interrupt (EXTI pending bit clear), or at the task's 10 ms poll (still low 5 us later with no handler run) | the timeslot handler services it, or the task pends the handler; counted once per low stretch |
+
+Entering DMR with the line already low (a flag from FM) pends the handler at once and is not counted. The first loss
+keeps four words: 0x82, EXTI_PR, the interrupt port's IDR, and the three lines' NVIC enable, pending and active bits
+(bits 0-2, 8-10, 16-18).
+
 ---
 
 ## 5. Receive
@@ -307,7 +322,7 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
   | This slot's open call's LC | Yes, even when the other slot's call has the same LC (a group on both slots) |
   | The other slot's call's LC, while that call may go on | No, unless this slot has no call of its own and 8 of its F reads in a row showed only that LC (then it is this call's too: a group on both slots, or the other call over unseen) |
   | Another voice LC, the other slot idle | Yes: this slot's next talker (no header, a terminator missed) |
-  | Another voice LC, the other slot's call maybe going on | No while this slot's call goes on (voice within the last superframe): its talker can't change without a gap, and a mix of both calls stays in page 2 for as long as both talk (bench, 2026-11-04). Otherwise only when read again a superframe later, so such a call gets its LC about 360 ms later. Page 2 held a mix of both calls' LCs (bench, 2026-11-04: a source and talk group neither call had, from 2.2 s into the call on every run); the embedded LC has only a 5-bit checksum, so about 1 mix in 32 passes it |
+  | Another voice LC, the other slot's call maybe going on | No while this slot's call goes on (voice within the last superframe): its talker can't change without a gap, and a mix of both calls stays in page 2 for as long as both talk (bench). Otherwise only when read again a superframe later, so such a call gets its LC about 360 ms later. Page 2 held a mix of both calls' LCs (bench: a source and talk group neither call had, from 2.2 s into the call on every run); the embedded LC has only a 5-bit checksum, so about 1 mix in 32 passes it |
   | A talker alias or GPS block (other FLCOs) | Only when the other slot isn't busy. Never kept as a slot's call LC |
 
   A slot is busy for 2.2 s (6 superframes) after its header, voice or LC was last taken, or its LC last seen in page
@@ -334,9 +349,9 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
   `dle <ev><res> @<ticks> v<voice> <src>` (ev: `F` burst F, `f` F's repeated report, `A` the next burst A, `P`
   post-access, `p` post-access just before the reception, `H` header; res: `n` differs from the capture, taken; `s`
   same, held back; `v` same, taken after more than one superframe; `k` differs, kept for the next voice burst; `c` CRC
-  error flagged; `o` the other slot's call's, held back). Diagnostics lines `lc n= s= v= c=` (at F),
-  `lc2 a= f= p= k= o=` (found at A, at F's repeat, at post-access; kept LCs handed over; held back as the other slot's
-  call's) and `lt <how><capture src> <ev><res><ticks>...` (the last reception).
+  error flagged; `o` the other slot's call's, held back; `r` an interrupted call's, read twice, kept, 5.6). Diagnostics
+  lines `lc n= s= v= c=` (at F), `lc2 a= f= p= k= o= r=` (found at A, at F's repeat, at post-access; kept LCs handed
+  over; held back as the other slot's call's; interrupted calls taken back) and `lt <how><capture src> <ev><res><ticks>...` (the last reception).
 - Talker alias and GPS embedded data (FLCO 4-8) appear in the same page 2 location as the embedded LC.
 
 ### 5.3 Timeslot tracking (repeater signals)
@@ -380,7 +395,7 @@ the CC is held. Release the hold after 5 s of no received audio while idle.
 | Signal | Rule |
 |---|---|
 | Terminator with LC, good CRC | ends the call in **direct mode**. Through a repeater, ignore it: the repeater echoes our own terminators, which would end our next reception |
-| no valid burst for 13 timeslot interrupts while receiving (about 390 ms) | call over; restart the receiver |
+| no valid burst for 13 timeslot interrupts while receiving (about 390 ms) | call over; restart the receiver. The restart drops the chip's sync, so it costs more than the wait ([gotchas 1.12](gotchas.md)) |
 | no valid burst for 20 timeslot interrupts while idle | restart the receiver |
 | no timeslot interrupt for 200 ms while not idle | the modem has stopped: re-initialize the DMR state and the receiver |
 | slot captured but silent for the "capture timeout" (user setting, seconds) through a repeater, no slot filter | switch to the other slot |
@@ -392,8 +407,29 @@ The post-access interrupt (0x82 bit 4) comes when the chip acquires a voice call
 signaling. If idle, with the CC held and matching: write 0x41=0x50 and start receiving as for a header. Skip voice
 until two bursts A have passed, unless the source ID is already known and isn't our own. The LC comes from page 2 once
 the embedded LC is complete (subject to the sticky-LC rule above). The driver reads page 2 at the interrupt and keeps an
-LC that differs from the capture for the next voice burst (counted as `lc2 p=`, traced as `P`); whether the interrupt
-comes on a late entry, and when relative to burst F, is what the trace shows.
+LC that differs from the capture for the next voice burst (counted as `lc2 p=`, traced as `P`). On the HR_C5000 the
+interrupt comes once per superframe, just after burst E (bench trace), and starts the decoder, so it comes
+before the reception. An LC read then that differs from the last capture is kept for the reception's first burst
+(traced `pk`): the capture that follows holds that same LC, and the sticky rule would make it wait for the second F.
+On the HR_C6000, on the bench (a call joined at burst C of its second superframe), it came before the next F
+in most runs and the LC was taken there; on a weak signal it came one superframe later in 2 of 9 runs, page 2
+still held the old LC at F, and the call played from the superframe after that.
+
+**Resuming a call.** A call that stopped with no terminator and comes back has the sticky LC problem in its worst
+form: the LC in page 2 is the call's own, so the sticky rule waits for the second F (22 ticks). That page 2 still
+shows the call's LC proves nothing: it would show the same if another caller had started. The post-access interrupt
+does prove it, read twice:
+
+| Rule | Why |
+|---|---|
+| Two post-access reads, 8-13 ticks apart, both show the LC of a slot's call that is open (no terminator) with voice in the last 50 ticks (1.5 s) | Each read is an LC the chip assembled from what is on air. One read isn't enough: nothing on air shows page 2 is written by the time the interrupt comes, and gotchas 1.4a shows it can lag |
+| Any read showing another LC clears the count | That LC follows the normal rules, so another caller is never played or named as the old call |
+| A terminator closes the call | The same LC after it is a new call, with the sticky rule |
+| An identical LC from a new transmission | Treated as the same call. Same source and destination, so the name shown is right |
+
+This takes back about one superframe of the wait, not all of it (traced `Pr`, counted as `lc2 r=`). Taking the first
+read would save another 300 ms, but needs an on-air run with a second caller in the gap. The call stack counts the
+call once (`rx_calls_resumed`, [dmr-modem.md](dmr-modem.md) 2.4).
 
 ### 5.7 Audio buffering
 
@@ -496,6 +532,26 @@ last burst, the end steps 10-11 restore passive timing / the receiver and clear 
 60 ms per burst (covers a repeater wake-up). A received-data interrupt for a data burst is queued (8 deep is enough;
 the packet CRC catches overflow) and handled outside the interrupt.
 
+**End of a transmission.** The transmission is over at the timeslot interrupt where our next slot comes with nothing
+queued and the end asked for, if the last burst's PA has dropped and the slot starting is not a TX slot. Waiting for
+the interrupt after that one left the slot after our last burst closed (0x41 = 0) with the RF still on the carrier.
+An answer can start as our last burst ends (on the SDR bench, an MS simulator's link ACK to confirmed data; its
+report came 4.5 ms after the next timeslot interrupt). That answer was missed on every try.
+
+In direct mode the end then holds the receiver instead of restarting it: 0x40 = 0xC3 (passive timing from our active
+one), 0x41 = receive, and the software state reset as at a restart. A burst taken holds the receiver as any
+reception does. With nothing taken, the restart (reason "tx end") comes from the poll 8 ms after the next timeslot
+interrupt, once that slot's report is no longer due (a restart at the interrupt itself lost it), or 35 ms after the
+last interrupt if they stop. An answer a slot later, off our timing by a few ms, is taken after the restart: the held
+timing gave only late class 0 reports for it. Through a repeater, or after a transmission that set up no burst, the
+restart comes at once. Diagnostics: `rs ... h` counts the holds.
+
+| Answer on the SDR bench | Finish one interrupt late, restart | Finish at once, hold, restart after the report |
+|---|---|---|
+| right after our last burst | 0 of 3 tries | first try in 10 of 13 runs, the others on the retry |
+| one slot later | first try | first try, 5 of 5 runs |
+| five slots later | first try | first try, 6 of 6 runs |
+
 ### 6.7 Which slot to transmit in
 
 Through a repeater: the channel's timeslot, from the CACH. In direct mode the chip's own timing defines the slots and
@@ -559,18 +615,31 @@ deviation, 0xA0 = CTCSS or DCS deviation, 0x3F=0x04, 0x34=0x3C, 0x3E=0x08, page 
 **FM RX**: 0x60=0x00, 0xE0=0x89, 0x10=0x80, 0x34=0x3C, 0x81=0x19, 0x85=0x00, 0x26=0xFD. Audio feed-through 0x36=0x02
 (0x00 mutes); 0x10 back to 0x6E for DMR.
 
-**Tones (0xA1 mode)**: 0x80 off, 0x88 CTCSS, 0x84 DCS, 0x82 DTMF.
+**Codec in FM mode**: with 0x10 bit 7 set (FM) the codec's line out carries the chip's own FM receive audio, and 0x36
+bit 1 switches it on (the manual: in FM mode, receive opens the voice channel's codec switch). I2S PCM (beeps, prompts)
+doesn't reach the line out then, with the bit set or clear. A board whose FM audio comes from elsewhere puts 0x10 back
+to DMR after the FM receive rows (`hrc6000_fm_rx_pcm()`), so PCM plays in FM receive as it does in DMR.
+
+**Tones (0xA1 mode)**: 0x80 off, 0x88 CTCSS, 0x84 DCS, 0x82 DTMF, as traced. The manual's register table differs:
+0xA1 is `fm_mod`, bit 7 is reserved and must be 0, bit 6 MSK, and its appendix selects CTCSS with 0x08, CDCSS 0x04,
+DTMF 0x02, 2-tone 0x10, 5-tone 0x20. With bit 7 set (the init's 0x80) a board that feeds the chip a 450 kHz IF never
+gets a DMR sync, though the chip's RSSI (0x43 / 0x44) follows the signal; `hrc6000_tones_off()` writes 0x00 after
+the power-on init. The other boards receive with 0x80 and haven't been tried with 0x00.
 - CTCSS TX: 0xA1=0x88, 0xA8 = tone index. RX: 0xA1=0x88, 0xA7=0x10 (threshold), 0xD3=0x07 / 0xD2=0xD0 (sampling depth
   2000 = 250 ms at 8 kHz), 0xD4 = tone index. Detected: 0x93 bit 0.
 - DCS TX: 0xA1=0x84, 0xA2 = 0x00 inverted / 0x08 normal, 0xAB = code bits 7-0, 0xAC = code bit 8. RX: 0xA1=0x84, 0xA2 =
   0x04 inverted / 0x00 normal, 0xD4 = code bits 7-0, 0xD3 = (code bit 8 << 4) + 0x03, 0xD2=0x20 (depth 800 = 100 ms).
-- DTMF TX: save 0xA1, 0xA0 and 0xD1; 0xA1=0x82, 0xA0 = deviation, 0xA4=0xFA (tone time, continuous), 0xA3=0x19 (gap,
+- DTMF TX: save 0xA1, 0xA0 and 0xD1; 0xA1=0x82, 0xA0 = deviation, 0xA4=0xFA (tone time), 0xA3=0x19 (gap,
   2 ms units), 0xD1=0x01 (one code), 0xAF = code << 4, 0x60=0x00 then 0x80 to send. Restore the three registers after
-  (the high bits of 0xD1 matter).
+  (the high bits of 0xD1 matter). Seen on air: 0xA4 = 0xFA is 500 ms, not continuous; one code is at most 510 ms and
+  ends in about 20 ms of silence (`hrc6000-registers.md` 7.6).
 - Tone table (page 1, extended addresses, value = f x 65536 / 32000, low byte first): 0x11A/0x11B 697 Hz (0x0593),
   0x11C/D 770 (0x0629), 0x11E/F 852 (0x06D1), 0x120/1 941 (0x0787), 0x122/3 1209 (0x09AC), 0x124/5 1336 (0x0AB0),
-  0x126/7 1477 (0x0BD1), 0x128/9 1633 (0x0D10). A single arbitrary
-  tone: put its value in both the 697 and 1209 entries and send DTMF "1"; restore the entries after.
+  0x126/7 1477 (0x0BD1), 0x128/9 1633 (0x0D10). Any DTMF pair: put its values in the 697 and 1209 entries and send
+  DTMF "1"; restore the entries after.
+- A single tone (1750 Hz burst, roger beep, AFSK; `hrc6000_tx_pair`): 2-tone mode (0xA1 = 0x10, bit 7 kept), every
+  entry 0x11A-0x123 set to the tone, 0xA4 = 0xA5 = 0xA6 = 0xFF, 0xA3 = 0, code "A-B" (0xAF = 0x0A, 0xAE = 0xB0): one
+  gapless tone of at least 25.5 s. The driver starts the sequence again before it runs out (`hrc6000-registers.md` 7.8).
 
 ### 8.1 FM audio paths in the manual (unverified)
 
@@ -622,8 +691,9 @@ interrupt while keyed sets up the next slot from that slot's queue (or the idle 
 underrun): the MCU CRC bit of 0x40 per burst kind, the payload (voice on page 3, LC / data on page 2 0x00), 0x41 =
 0x80 and 0x50. Page 2 0x00 is shared by both slots, so a slot's embedded LC is written back before its voice A-E
 whenever the other slot's header or data overwrote it. The first burst after a key-up is an outbound TS1 slot
-(outbound slot = ((tick - base) & 1) ? TS1 : TS2). The PA is keyed once, at the first RF TX interrupt, and dropped
-at the first timeslot interrupt after the unkey, or by the watchdog when no timeslot interrupt came for 200 ms. Stop:
+(outbound slot = ((tick - base) & 1) ? TS1 : TS2). The PA is keyed once: at the RF TX interrupt, or at the first slot's
+set-up when that interrupt came before it, and a key the board could not do is tried again at the next slot. It is
+dropped at the first timeslot interrupt after the unkey, or by the watchdog when no timeslot interrupt came for 200 ms. Stop:
 0x10 / 0x11 back to 0x6E / 0x80, MS sync, 0x40 = 0xC3, the slot engine restarts the receiver.
 
 The CACH: the manual has the MCU give the BS downstream CACH's AT and TC in 0x52 (written) and the short LC in TX RAM
@@ -636,13 +706,39 @@ layer 2. The driver writes each slot's frame (`bsOutboundRawSlot`) to both halve
 isn't known, and nothing to 0x50, 0x52 or the vocoder. Variant 1 keeps the layer 2 framing (0x52 and the short LC
 written for every burst) for comparison; 255 adds up to four raw page 4 pairs at key-up. Host test: `tests/host/hrc6000BsTest.c`.
 
+**The key-up** (our framing). In this mode the chip raises the RF TX interrupt once per key-up, anywhere in the slot
+(5.8 to 30.1 ms after the timeslot interrupt in three key-ups), not ahead of each slot, and it sends TX RAM whenever
+the PA is up. So the PA can come up in the slot before the first frame, or inside the first frames. Three rules keep
+that off the air as harm:
+
+| Rule | Why |
+|---|---|
+| At the key and while it waits for the TS1 slot, both halves hold an idle TS2 burst with the default CACH (LCSS last, no short LC) | the slot before the first frame otherwise sent whatever TX RAM last held: an out-of-sequence CACH |
+| The first two slots set up get the default CACH, not the core's | a CACH clipped by the rising PA can decode as LCSS first; with the core's fragments after it, the decoder assembled a short LC with a bad CRC (about one key-up in three). The next fragment now breaks the sequence. The first short LC comes 60 ms later |
+| A board whose key-up is slower than the CACH times it from the slot clock (`stm32_hrc_dmr_bs_boundary_us`) | full power after the slot's sync and ahead of the next CACH |
+
+On the SDR bench, 10 key-ups of 10 s each: no bad short LC, TC alternating, against a bad short LC in two of four
+before.
+
 **Restarting the slot timer** (ALIGN, `split-duplex.md` 3.8; bench 2026-10-21): 0x41 = 0x00,
 0x40 = 0xC3, 0x41 = 0x20, 0x00, 0x20, 0x00 (the 5.1 sync drop), then 0x40 = 0xE3 at the chosen time. The first
 timeslot interrupt comes 1.18-1.24 ms after that write and every 30 ms from it, and none comes during the wait. Clearing
 TxEn and RxEn (0x40 = 0x03) or 0xC3 then 0xE3 without the sync drop stopped the timer only sometimes: interrupts kept
 coming during the wait and the old phase came back. The driver takes no interrupt while it waits and gives the
-requested slot to the first boundary after the write; the diagnostics line `bs` shows the restarts (`rs`), interrupts
+requested slot to the boundary the time since the write names (a slot per 30 ms, from 15 ms on); the diagnostics line `bs` shows the restarts (`rs`), interrupts
 during waits (`ri`) and the first three after the last write (`r1`-`r3`, µs).
+
+**The layer mode for the whole session.** 0x10 (the physical layer mode of our framing) is written at the start,
+ahead of `0x40 = 0xE3`, and back to 0x6E at the stop, never at a key-up. Written at the first keyed slot, it moved the
+timeslot interrupt: the next one came 12.9 or 19.1 ms after the last, and every one after kept 30 ms from it. The
+clock was then 12-17 ms off the ALIGN grid for the whole call, and the 15 ms same-slot filter counted one slot too
+many or too few, so the call went out in the other grid slot (4 of 4 calls). With the mode set from the
+start, keyed interrupts stay within 0.6 ms of the grid (4 of 4). In this mode the restart's first interrupt comes
+22-30 ms after the write instead of 1.2 ms, numbered as the slot after the one named for the write. Writing 0x10 = 0x66 just before or just after the
+`0xE3` write, or in layer 2 for the stop and sync drop, changed nothing (25-30 ms); switched at the new clock's
+first boundary, the next interrupts came 64-89 ms after the write. So one restart lands up to a few ms off at random, and
+learning the delay doesn't help: the core snaps again until a landing is inside the aligned bound
+(`split-duplex.md` 3.8), and an ALIGN to a grid the clock is already on restarts nothing.
 
 **No slewing.** The manual lists no slot length trim, so the driver offers no `bs_slew` and INFO capability bit 2
 stays clear: a keyed TX half reports its drift (ALIGN flag 10) and is re-aligned by a restart at the next unkey.
@@ -651,7 +747,7 @@ stays clear: a keyed TX half reports its drift (ALIGN flag 10) and is re-aligned
 ### 9.2 BS framing bench results (2026-10-11 and 12)
 
 A UHF test frequency, lowest power, 10 s and about 335 bursts per run, with the framing variants of
-[split-duplex.md](split-duplex.md) 10.1 and `sdrmon.py analyze --cach` on the SDR bench:
+[split-duplex.md](split-duplex.md) 10.1 and a burst and CACH decode on the SDR bench:
 
 | Build / variant | On air |
 |---|---|
@@ -676,3 +772,6 @@ at the slot start. Earlier runs also found every fourth TS2 burst sent as a zero
 - Whether the post-access interrupt is reliable for data calls (it is a voice mechanism in the manual).
 - Crystal frequency on the boards (the PLL values match 29.4912 MHz).
 - Passive full duplex (manual 5.4.4) for a true SFR / repeater: not tried.
+- The BS outbound's key-up (9.1): timed from the slot clock, full power still lands inside the first frames in about
+  half the key-ups, so the timeslot interrupt's place against the slot on air seems to vary between key-ups. The first
+  burst off air can then carry a clipped CACH (harmless by the rules in 9.1).

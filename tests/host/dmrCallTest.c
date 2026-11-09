@@ -200,7 +200,7 @@ static void test_rs129(void)
 		CHECK(ref_rs_eval(cw, 1) == 0 && ref_rs_eval(cw, 2) == 0 && ref_rs_eval(cw, 3) == 0);
 
 		dmr_lc_encode_full(d, DMR_RS_MASK_VOICE_HEADER, full);
-		CHECK(sfrDataBurstCrcOk(DT_VOICE_LC_HEADER, full));
+		CHECK(sfrDataBurstCrcOk(DMR_TYPE_VOICE_LC_HEADER, full));
 		CHECK(dmr_lc_decode_full(full, DMR_RS_MASK_VOICE_HEADER, lc) == 0 && memcmp(lc, d, 9) == 0);
 		CHECK(dmr_lc_decode_full(full, DMR_RS_MASK_TERMINATOR, lc) != 0);	// header isn't a terminator
 
@@ -215,7 +215,7 @@ static void test_rs129(void)
 		CHECK(dmr_lc_decode_full(bad, DMR_RS_MASK_VOICE_HEADER, lc) == -1);
 
 		dmr_lc_encode_full(d, DMR_RS_MASK_TERMINATOR, full);
-		CHECK(sfrDataBurstCrcOk(DT_TERMINATOR_WITH_LC, full));
+		CHECK(sfrDataBurstCrcOk(DMR_TYPE_TERMINATOR_LC, full));
 		CHECK(dmr_lc_decode_full(full, DMR_RS_MASK_TERMINATOR, lc) == 0);
 	}
 }
@@ -229,7 +229,7 @@ static void test_csbk(void)
 	CHECK(memcmp(mine, ten, 10) == 0);
 	CHECK(dmrDataBuildCSBK(ten, &ref) > 0);
 	CHECK(memcmp(mine, ref.payload, 12) == 0);	// same CRC as the data service's builder
-	CHECK(sfrDataBurstCrcOk(DT_CSBK, mine));
+	CHECK(sfrDataBurstCrcOk(DMR_TYPE_CSBK, mine));
 }
 
 static void test_embedded(void)
@@ -645,6 +645,51 @@ static void test_tx_refused(void)
 	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
 }
 
+// The end of a transmission wakes the poll's owner (dmr_call_set_wake) with the event already queued: one poll at the
+// same time ends the call, without waiting for the next tick. Nothing else wakes it
+static unsigned wakes;
+static void on_wake(void) { wakes++; }
+
+static void test_tx_done_wake(void)
+{
+	dmr_call_config_t c = base_cfg();
+
+	setup(&c);
+	dmr_call_set_wake(on_wake);
+	wakes = 0;
+	dmr_call_ptt(true);
+	run_ms(500);
+	CHECK(V()->state == DMR_CALL_STATE_TX && wakes == 0);	// slot ticks, bursts, the start: no wake
+	dmr_call_ptt(false);
+	// The slots alone until the modem says it is done, polling as run_ms does until then
+	for (unsigned t = 0; t < 1000 && wakes == 0; t += 10) {
+		now += 10;
+		sub_ms += 10;
+		if (sub_ms >= 30) {
+			sub_ms = 0;
+			sim_slot();
+		}
+		if (wakes == 0)
+			dmr_call_poll(now);
+	}
+	CHECK(wakes == 1 && sim.tx_ends == 1);
+	CHECK(V()->state == DMR_CALL_STATE_TX);
+	dmr_call_poll(now);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && V()->phase == DMR_CALL_PHASE_IDLE);
+	run_ms(300);
+	CHECK(wakes == 1);
+
+	// A refusal mid call wakes it too
+	dmr_call_ptt(true);
+	run_ms(100);
+	sim.reject_next = true;
+	run_ms(100);
+	CHECK(V()->tx_error == DMR_TX_ERR_REJECTED && wakes == 2);
+	dmr_call_ptt(false);
+	run_ms(30);
+	dmr_call_set_wake(NULL);
+}
+
 // A modem that takes the transmission but never sends a burst (no slot timing: a modem not answering).
 // The call must end on its own, PTT held or released, not wait for a superframe boundary that never comes
 static void test_tx_modem_stalled(void)
@@ -1026,6 +1071,56 @@ static void test_rx_no_call_after_terminator(void)
 	rx_call(lc, 1, false, 4, 3, false, &frame);
 	dmr_call_get_stats(&st);
 	CHECK(st.rx_calls == 2 && st.rx_late_entries == 1 && sink_log.begins == 2);
+}
+
+// A call that fades (a dropout, no terminator) and comes back by late entry with its own LC is one call with a hole in
+// it: the sink hears it end and begin, the books count one. Another LC, a terminator or a longer gap make it a new call
+static void test_rx_resumed_call(void)
+{
+	dmr_call_config_t c = base_cfg();
+	dmr_call_stats_t st;
+	uint8_t lc[9], other[9];
+	unsigned frame = 1;
+
+	mk_lc(lc, 0, TG_TALK, 9997030);
+	mk_lc(other, 0, TG_LIST, 9997004);
+	setup(&c);
+	dmr_call_reset_stats();
+	rx_call(lc, 1, true, 0, 1, false, &frame);
+	uint32_t started = V()->call_start_ms;
+	run_ms(DMR_CALL_FADE_MS + 200);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && sink_log.ends == 1);
+	rx_call(lc, 1, false, 0, 1, false, &frame);
+	dmr_call_get_stats(&st);
+	CHECK(st.rx_calls == 1 && st.rx_calls_played == 1 && st.rx_calls_resumed == 1 && st.rx_late_entries == 0);
+	CHECK(sink_log.begins == 2 && V()->state != DMR_CALL_STATE_IDLE && V()->call_start_ms == started);
+
+	// Someone else in the gap: a new call
+	setup(&c);
+	dmr_call_reset_stats();
+	rx_call(lc, 1, true, 0, 1, false, &frame);
+	run_ms(DMR_CALL_FADE_MS + 200);
+	rx_call(other, 1, false, 0, 1, false, &frame);
+	dmr_call_get_stats(&st);
+	CHECK(st.rx_calls == 2 && st.rx_calls_resumed == 0 && V()->caller.src == 9997004);
+
+	// The call was ended by its terminator: a new call, however soon
+	setup(&c);
+	dmr_call_reset_stats();
+	rx_call(lc, 1, true, 0, 1, true, &frame);
+	run_ms(DMR_CALL_FADE_MS + 200);
+	rx_call(lc, 1, false, 0, 1, false, &frame);
+	dmr_call_get_stats(&st);
+	CHECK(st.rx_calls == 2 && st.rx_calls_resumed == 0);
+
+	// Too long a gap: a new call
+	setup(&c);
+	dmr_call_reset_stats();
+	rx_call(lc, 1, true, 0, 1, false, &frame);
+	run_ms(DMR_CALL_FADE_MS + DMR_CALL_RESUME_MS + 100);
+	rx_call(lc, 1, false, 0, 1, false, &frame);
+	dmr_call_get_stats(&st);
+	CHECK(st.rx_calls == 2 && st.rx_calls_resumed == 0);
 }
 
 // A call heard as not ours, then the listen rules change with the RF the same (a scan stop on another channel of the
@@ -2341,6 +2436,7 @@ int main(void)
 	test_tx_permit_hold();
 	test_tx_timeout_and_starve();
 	test_tx_refused();
+	test_tx_done_wake();
 	test_tx_modem_stalled();
 	test_rmo_wakeup();
 	test_rmo_air_slot_alignment();
@@ -2350,6 +2446,7 @@ int main(void)
 	test_rx_no_call_after_terminator();
 	test_rx_group_callback();
 	test_rx_own_id_parrot();
+	test_rx_resumed_call();
 	test_late_entry();
 	test_alias_and_privacy();
 	test_privacy_hook();

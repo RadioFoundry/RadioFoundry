@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // The UI host simulator's command line (docs/spec/ui.md 7):
 //
-//   uiSim [--geom 160x120i5|160x128|128x64|240x320|WxH[iN|m]] [--map K|M|V|F] [--scale N] [--out FILE.png]
+//   uiSim [--geom 160x120i5|160x128|128x64|240x320|WxH[iN|m]] [--map K|M|V|F|P] [--scale N] [--out FILE.png]
 //         [--script "ok 4 down ok expect:zone=1"]
 //   uiSim --gallery DIR      every screen at every display class: DIR/<geom>/<screen>.png, plus the contact sheets
 //                            in DIR/sheets. A color page is drawn again in each highlight color UI_GALLERY_COLORS
@@ -276,6 +276,7 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_aprs_nocall", "aprs:nocall ok 6 8" },
 	{ "w_aprs_position", "ok 6 8 9 2 3 3 7 4 9 0 ok 3 8 4 3 8 8 0 down ok wait:3000" },
 	{ "w_aprs_position_edit", "ok 6 8 9 2 3 3 7" },
+	{ "w_aprs_heard", "ok 6 8 up ok" },
 	{ "w_usb", "ok 6 4" },
 	{ "w_sfr", "ok 6 5" },
 	{ "w_battery", "battery:5 ok 6 9" },
@@ -640,10 +641,10 @@ int main(int argc, char **argv)
 			}
 			i++;
 		} else if (strcmp(a, "--map") == 0 && v != NULL) {
-			const char *maps = "KMVF";
+			const char *maps = "KMVFP";
 			const char *p = strchr(maps, v[0]);
 			if (p == NULL || v[0] == 0) {
-				fprintf(stderr, "key map is one of K M V F\n");
+				fprintf(stderr, "key map is one of K M V F P\n");
 				return 2;
 			}
 			map = (sim_map_t)(p - maps);

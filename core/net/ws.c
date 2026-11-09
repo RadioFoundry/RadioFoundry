@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // WebSocket handshake and frame headers (RFC 6455; ws.h). SHA-1 from FIPS 180-4 6.1, written for size: one block of
 // message schedule kept as a 16 word ring (6.1.3's alternative method).
 #include <string.h>

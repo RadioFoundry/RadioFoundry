@@ -1,0 +1,70 @@
+{
+ "board": "md9600",
+ "commit": "77755fcbd6be91767a53d4c5f4145a1453486f02",
+ "date": "2026-11-08T22:52:30Z",
+ "dirty": false,
+ "features": [
+  "sfr_cwid"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "da54663a",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "microphone",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.075,
+  "dmr-tg": 202,
+  "fm-mhz": 446.1
+ },
+ "sources": {
+  "sfr_cwid": {
+   "core/debuglink/debuglink_view_radio.c": "d59aa9d20e2aaa28c0d06d096128298fe0834a3d",
+   "core/radio/radio.h": "7e64c625639b077bdec4629c1681e430a2b2fc25",
+   "core/radio/radio_cwid.c": "7b7528a0d5bde8b48d410d56d800b74e4a8484ac",
+   "core/radio/radio_cwid.h": "95780efc22145dfe7e9685f5f1dccc9ab24105ab",
+   "core/radio/radio_sm.c": "39ad3cc74e39cc75d868bce6f2ef45ec59efa698",
+   "core/radio/radio_sm.h": "5d2d67c0f5e8971ce9c759a6713f622cc346621d",
+   "core/ui/ui_menus.c": "5672529b5ab5fd470f02b2a52c4029efaff6d1b0",
+   "core/ui/ui_svc.h": "b0115904398c27ff10091a77d7b7e3b0a2acdb27",
+   "core/ui/ui_svc_radio.c": "3c12f217fcab922161c514d09f89fdbec58582a4",
+   "core/ui/ui_svc_storage.c": "fd7044aa12498a245883412cb537d5fa74eed8bd",
+   "docs/spec/sfr.md": "1ac6db675f5d064b2f8ce2eaf08793bfdbf5c9eb"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "sfr_cwid"
+   ],
+   "id": "tests/hil/test_sfr_standalone.py::test_sfr_cwid",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

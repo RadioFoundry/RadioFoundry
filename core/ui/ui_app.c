@@ -17,6 +17,7 @@
 #include "ui_app.h"
 #include "ui_nav.h"
 #include "ui_svc.h"
+#include "ui_svc_aprs.h"
 #include "fmt.h"
 #include "i18n.h"
 #include "input/input.h"
@@ -54,6 +55,9 @@ static uint32_t toast_until, entry_last, last_refresh, now;
 static bool dirty = true;
 static uint32_t draws;
 static bool has_quick_key, has_context_key;
+// Long QUICK or long Back unlocks the keys. A radio with neither (side keys only) is never locked by auto lock: only a
+// side key set to key lock could unlock it
+static bool has_unlock_key;
 static char home_hint[32];
 
 // The hint's keys part, in the language in use: the quick settings key, or holding OK on a radio without it
@@ -1425,7 +1429,7 @@ static void quick_activate(int tile)
 		sbuf_t b;
 		sb_init(&b, msg, sizeof msg);
 		sb_str(&b, TR("Power "));
-		sb_str(&b, ui_power_name(next));
+		sb_str(&b, ui_power_name(next, view->ch.tx_hz));
 		ui_toast(msg);
 		break;
 	}
@@ -1824,6 +1828,7 @@ void ui_app_init(void)
 	off_warned = power_off_due = batt_warned = false;
 	hear_all_key = 0;
 	has_quick_key = ui_has_action(ACT_QUICK);
+	has_unlock_key = has_quick_key || ui_has_action(ACT_BACK);
 	has_context_key = ui_has_action(ACT_CONTEXT);
 	// ui_app_tick builds it again each tick, in the language in use then
 	str_copy(home_hint, sizeof home_hint, home_hint_keys());
@@ -1961,7 +1966,8 @@ void ui_app_key(const input_event_t *ev)
 	// Key lock: only long QUICK (and PTT, MONITOR, emergency) get through
 	// Long * locks only from Home (principles 3): in a menu it would lock the keys mid-task, and in text entry a slow *
 	// is a delete. It unlocks from anywhere (auto lock can lock with a menu open)
-	bool typing = stack[sp].scr == SCR_TEXT;
+	bool typing = stack[sp].scr == SCR_TEXT || stack[sp].scr == SCR_APRS_TO ||
+		stack[sp].scr == SCR_MESSAGE_TEXT;
 	bool lock_key = has_quick_key ? (ev->action == ACT_QUICK && ev->gesture == GESTURE_LONG && (sp == 0 || ui_st.locked)) :
 		(ev->action == ACT_BACK && ev->gesture == GESTURE_LONG && ui_st.locked);
 	// A side key set to key lock (keyassign.h) locks and unlocks on a press or a long press, as long QUICK does
@@ -2300,6 +2306,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	if (ui_st.entry && (now - entry_last >= ENTRY_TIMEOUT_MS || !view->vfo))
 		entry_cancel();
 	uint16_t unread = ui_svc_msg_unread();
+	aprs_view_t aprs_view;
+	if (ui_svc_aprs_view(&aprs_view))
+		unread += aprs_view.unread;
 	if (unread != ui_st.unread) {
 		ui_st.unread = unread;
 		dirty = true;
@@ -2343,7 +2352,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		last_key_ms = now;
 		last_use_ms = now;
 	}
-	if (ui_st.auto_lock_s != 0 && !ui_st.locked && v->state != RS_TX &&
+	if (ui_st.auto_lock_s != 0 && has_unlock_key && !ui_st.locked && v->state != RS_TX &&
 			now - last_key_ms >= (uint32_t)ui_st.auto_lock_s * 1000u) {
 		set_locked(true);
 	}
@@ -2459,6 +2468,7 @@ void ui_app_status(ui_app_status_t *s)
 	s->focus = stack[sp].scr == SCR_QUICK ? ui_st.quick_focus : stack[sp].focus;
 	s->count = (d->flags & SF_LIST) && d->count != NULL ? d->count() : 0;
 	s->locked = ui_st.locked;
+	s->unlock_key = has_quick_key ? "quick" : has_unlock_key ? "back" : "none";
 	s->field_use = (d->flags & SF_FIELD) != 0;
 	s->banner = ui_st.banner.kind != UI_BANNER_NONE ? ui_st.banner.title : "";
 	s->toast = ui_st.toast != NULL ? ui_st.toast : "";

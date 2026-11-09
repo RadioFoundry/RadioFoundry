@@ -12,9 +12,21 @@ ones find it warm.
 test_speaker_beep_cold: on a radio with an amplifier hang (the beep.warm view key), waits for the hang to run out,
 then the shortest beep (key): the lead-in must cover the amplifier's start.
 
+test_speaker_sweep: the speaker test's sweep, 150 Hz to 3.8 kHz (BEEP_SWEEP): prints the speaker's response along it
+and fails when the audio jumps on the way to the speaker. By hand on a radio whose cable mutes the speaker:
+`rfoundry_debug.py radio beep sweep 15` starts it 15 s later, so the cable can come out first; record it and run
+`audio_check.py FILE.wav sweep`.
+
 test_fm_rx_speaker (rf, bench_service): the bench board's FM transmitter sends a carrier, then tone pulses of exact
 lengths at several frequencies (--fm-mhz, no sub-audio tone); the radio's VFO receives them. Besides the tones'
-checks, nothing may pop as the squelch opens or closes, and no squelch tail may be heard after the carrier."""
+checks, nothing may pop as the squelch opens or closes, and a squelch tail after the carrier may last no longer than
+the core's squelch takes to close (one poll to see the carrier gone, then RADIO_SQL_CLOSE_POLLS polls of RADIO_POLL_MS,
+core/radio/radio_sm.h). A tail is measured while it stays within 10 dB of its peak (audio_check.burst_ms): the room's
+echo after it fades for a time set by the room, the volume and the microphone's place. Squelch tail
+elimination is not done (docs/spec/radio-features.md 3.5), so the noise until that close is expected; a longer one
+(a board whose noise reading lags the carrier) fails, unless the board's [hil.limits] fm_squelch_tail_ms holds it to a
+longer one with its reason."""
+import math
 import os
 import shutil
 import subprocess
@@ -22,9 +34,14 @@ import time
 
 import pytest
 
-import audio_check as A
 from hil_config import rig
+import rfoundry_hil
 from rfoundry_hil import skip
+
+try:
+    import audio_check as A
+except ImportError as e:        # audio_check needs numpy
+    skip("bench", f"the speaker analysis needs numpy: {e}", module=True)
 
 RATE = 16000
 
@@ -43,8 +60,9 @@ class Microphone:
         p = subprocess.Popen(["arecord", "-q", "-D", self.device, "-f", "S16_LE", "-r", str(RATE), "-c", "1",
                               "-d", str(int(seconds + 0.999)), path], stderr=subprocess.PIPE)
         time.sleep(0.3)     # arecord opens the device
-        if p.poll() is not None:
-            raise RuntimeError(f"arecord -D {self.device}: {p.stderr.read().decode(errors='replace').strip()}")
+        if p.poll() is not None:     # it couldn't open it: unplugged, renamed or busy, the rig's and not the radio's
+            skip("bench", f"the microphone isn't usable: arecord -D {self.device}: "
+                          f"{p.stderr.read().decode(errors='replace').strip()}")
         return p, path
 
     def finish(self, p, path):
@@ -61,7 +79,16 @@ def microphone(pytestconfig, tmp_path_factory):
     dev = rig(pytestconfig, "microphone", "the speaker tests need")
     if not shutil.which("arecord"):
         skip("no_hw", "arecord (alsa-utils) isn't installed")
-    return Microphone(dev, str(tmp_path_factory.mktemp("speaker")))
+    m = Microphone(dev, str(tmp_path_factory.mktemp("speaker")))
+    m.processed = bool(pytestconfig.getoption("--mic-processed"))
+    if m.processed:
+        print("--mic-processed: tone starts only; lengths and silences are not measured by microphone")
+    return m
+
+
+def _judge(mic, path, segs, **kw):
+    """The recording's check: the starts alone when the microphone's processing spoils the rest (--mic-processed)"""
+    return A.check_wav_onsets(path, segs) if mic.processed else A.check_wav(path, segs, **kw)
 
 
 def _check(r, what, path):
@@ -90,11 +117,43 @@ def _audio(radio):
     return {k: v for k, v in radio.view(None).items() if k.startswith("beep.")}
 
 
+def _stream(radio):
+    """The PCM stream's late and dropped blocks and the blocks it played (audio.late, audio.dropped, audio.blocks), or
+    None on firmware that doesn't count them"""
+    a = radio.view(["audio"])
+    if "audio.late" not in a:
+        return None
+    return int(a["audio.late"]), int(a.get("audio.dropped") or 0), int(a.get("audio.blocks") or 0)
+
+
+def _block_ms():
+    """AUDIO_BLOCK_MS, read from the source so the test copies no number"""
+    import re
+    src = open(os.path.join(A.ROOT, "hal", "hal_audio.h")).read()
+    return int(re.search(r"#define\s+AUDIO_BLOCK_MS\s+(\d+)", src).group(1))
+
+
 def _play(radio, mic, name, segs):
+    """The recording's check, with the stream's own fault added when it played a block late or dropped one: the
+    radio's, whatever the microphone made of it"""
     length = sum(ms for _, ms in segs) / 1000
+    s0 = _stream(radio)
     p, path = mic.start(length + 1.2)
     radio.link.beep(name)
-    return A.check_wav(mic.finish(p, path), segs), path
+    r = _judge(mic, mic.finish(p, path), segs)
+    s1 = _stream(radio)
+    if s0 is not None and s1 is not None:
+        if s1[:2] != s0[:2]:
+            r.problems.append(f"the audio stream played {s1[0] - s0[0]} block(s) late and dropped {s1[1] - s0[1]} "
+                              f"(audio.late, audio.dropped)")
+        # the pattern's length, where the microphone can't say: the stream ran at least that long
+        need = math.ceil(length * 1000 / _block_ms())
+        if mic.processed and s1[2] - s0[2] < need:
+            r.problems.append(f"the audio stream played {s1[2] - s0[2]} blocks, the pattern needs at least {need} "
+                              f"(audio.blocks)")
+    elif mic.processed:
+        print(f"{name}: this firmware has no stream counters: its length and silences are unchecked")
+    return r, path
 
 
 @pytest.mark.feature("beep")
@@ -137,8 +196,41 @@ def test_speaker_beep_cold(radio, microphone):
     assert not problems, "\n".join(problems)
 
 
+@pytest.mark.feature("beep")
+def test_speaker_sweep(radio, microphone):
+    """The speaker test's sweep (BEEP_SWEEP, a tone rising through the band): the speaker's response along it, printed
+    for the radio's records, and the sweep whole: audio that jumps (samples lost, repeated or out of order on the way
+    to the speaker) spreads energy across the band, which a tone check at a few pitches can miss"""
+    _beep_ready(radio)
+    from rfoundry_debug import DebugLinkError
+    lo, hi, ms = A.sweep_spec()
+    length = sum(m for _, m in A.beep_patterns()["sweep"]) / 1000
+    p, path = microphone.start(length + 1.5)
+    try:
+        radio.link.beep("sweep")
+    except DebugLinkError as e:
+        microphone.finish(p, path)
+        skip("not_built", f"no sweep in this firmware ({e})")
+    x, fs = A.load_wav(microphone.finish(p, path))
+    r = A.check_sweep(x, fs, lo, hi, ms)
+    print(f"sweep ({path}):\n{r.report()}")
+    if r.quiet:
+        _quiet("the sweep")
+    assert not r.problems, "\n".join(r.problems)
+
+
 # the bench's FM program: a carrier first (the squelch opens on it), then pulses of exact lengths
 FM_LEAD_S = 0.5
+
+
+def squelch_close_ms():
+    """The longest the core's squelch stays open after the carrier: up to one poll before a poll sees the carrier gone,
+    then the close polls (read from radio_sm.h so the test copies no number), plus one pop analysis frame for where the
+    burst's edges fall."""
+    import re
+    src = open(os.path.join(A.ROOT, "core", "radio", "radio_sm.h")).read()
+    get = lambda name: int(re.search(rf"#define\s+{name}\s+(\d+)", src).group(1))  # noqa: E731
+    return (get("RADIO_SQL_CLOSE_POLLS") + 1) * get("RADIO_POLL_MS") + A.POP_WIN_MS
 FM_PROGRAM = [{"kind": "silence", "s": FM_LEAD_S},
               {"kind": "tone", "hz": 1000, "s": 0.30, "level": 0.6},
               {"kind": "silence", "s": 0.20},
@@ -182,17 +274,33 @@ def test_fm_rx_speaker(radio, sdr_bench, microphone, pytestconfig):
     print(f"bench {done}")
     assert not done.get("cut"), f"the bench cut its transmission: {done}"
     # the squelch's opening is in the guard before the first tone, its closing (and any tail) in the one after
-    r = A.check_wav(path, segs, guard_ms=(FM_LEAD_S * 1000 - 50, 900))
+    r = _judge(microphone, path, segs, guard_ms=(FM_LEAD_S * 1000 - 50, 900))
     problems = _check(r, f"FM {mhz} MHz", path)
     if r.quiet:
         _quiet(f"FM {mhz} MHz")
     end = r.tones[-1].end_s      # the program ends with its last tone: the carrier goes with it
     if end is not None:
-        for t0, over, ms in r.pops:
-            if t0 > end + 0.02:
-                problems = [p for p in problems if f"at {t0:.3f} s" not in p]     # named below instead
-                problems.append(f"FM {mhz} MHz: a squelch tail: {ms:.0f} ms of noise {over:.0f} dB over the floor, "
-                                f"{(t0 - end) * 1000:.0f} ms after the carrier ended")
+        # a tail's own length, without the room's echo after it (audio_check.burst_ms): how long the squelch took
+        x, fs = A.load_wav(path)
+        freqs = [h for h, _ in segs if h]
+        tails = [(t0, over, A.burst_ms(x, fs, freqs, t0, ms), ms) for t0, over, ms in r.pops if t0 > end + 0.02]
+        allowed, why = squelch_close_ms(), None
+        o = rfoundry_hil.board_hil(rfoundry_hil.board_id(radio.version().get("board"))).get("limits", {}).get(
+            "fm_squelch_tail_ms")
+        if o:
+            allowed, why = o["value"], o["reason"]
+            print(f"squelch tail limit {allowed:.0f} ms from the board's [hil.limits]: {why}")
+        for i, (t0, over, ms, echo_ms) in enumerate(tails):
+            problems = [p for p in problems if f"at {t0:.3f} s" not in p]     # named below instead
+            what = (f"{ms:.0f} ms of noise {over:.0f} dB over the floor ({echo_ms:.0f} ms with the room's echo), "
+                    f"{(t0 - end) * 1000:.0f} ms after the last tone")
+            if i == 0 and ms <= allowed:
+                print(f"squelch tail: {what} (within {allowed:.0f} ms{f': {why}' if why else ', the squelch close time'}"
+                      ": expected)")
+            else:
+                problems.append(f"FM {mhz} MHz: a squelch tail: {what}" +
+                                (f" (more than {allowed:.0f} ms{f': {why}' if why else ', the squelch close time'})"
+                                 if i == 0 else ""))
     assert not problems, "\n".join(problems)
 
 
@@ -219,7 +327,7 @@ def test_am_rx_speaker(radio, sdr_bench, microphone, pytestconfig):
             microphone.finish(p, path)
     print(f"bench {done}")
     assert not done.get("cut"), f"the bench cut its transmission: {done}"
-    r = A.check_wav(path, segs, guard_ms=(AM_LEAD_S * 1000 - 50, 900))
+    r = _judge(microphone, path, segs, guard_ms=(AM_LEAD_S * 1000 - 50, 900))
     problems = _check(r, f"AM {mhz} MHz", path)
     if r.quiet:
         _quiet(f"AM {mhz} MHz")

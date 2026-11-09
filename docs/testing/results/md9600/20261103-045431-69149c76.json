@@ -1,0 +1,453 @@
+{
+ "board": "md9600",
+ "commit": "69149c76336c5be60d5f6531fe164c223c22595d",
+ "date": "2026-11-03T04:54:31Z",
+ "dirty": false,
+ "features": [
+  "ui_navigation",
+  "dmr_sms",
+  "dual_watch",
+  "channel_knob",
+  "vox",
+  "aprs_rx",
+  "vfo_fm",
+  "vfo_dmr",
+  "zone_edit",
+  "dmr_signaling",
+  "dmr_data_rx"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,DMR_UDP_COMPRESS,DMR_CONFIRMED,IDDB_COMPACT,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "ffdb37d0-dirty",
+  "proto": "1",
+  "view": "4"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "radio"
+ ],
+ "kind": "run",
+ "options": {
+  "dmr-cc": 2,
+  "dmr-freq": 461.6875,
+  "dmr-tg": 9,
+  "fm-mhz": 461.6875,
+  "tx-power": 40
+ },
+ "sources": {
+  "aprs_rx": {
+   "core/usbaudio/audio_mux.c": "ed2b878dbb7618a24d99844740d0e4ba90ec68ec",
+   "core/usbaudio/pcm_slip.c": "d512726008073e7b09e8ac10f5ff6a9d540befeb",
+   "docs/spec/aprs.md": "bd4513ac972ba28a96331b5838b11f8ab132cd60"
+  },
+  "channel_knob": {
+   "docs/spec/ui.md": "2490acfc410ea6c33815e50e4be2ddf7f3314cba",
+   "drivers/input/quadrature": "b41be3eb619bd76b9f2a374a862096568ec9574a"
+  },
+  "dmr_data_rx": {
+   "core/dmr/dmrData.c": "ea5e2c34ad42c8bf76aeca11dd5171f26c74cb28",
+   "core/dmr/dmrDataService.c": "c20042a517c5578148b135299acd7dde7eef6fb9",
+   "core/dmr/dmr_data_api.h": "3c2e5efe933057db21f3f604f107ed3b268dfab9",
+   "docs/spec/dmr-data.md": "77a260890c836fd9d9ad25bb05ba696d3265eb54"
+  },
+  "dmr_signaling": {
+   "core/dmr/dmrDataService.c": "c20042a517c5578148b135299acd7dde7eef6fb9",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/ui/ui_svc_data.c": "6e406e3304a47b731961d95f7cde83ec7c4205b9",
+   "docs/spec/dmr-data.md": "77a260890c836fd9d9ad25bb05ba696d3265eb54"
+  },
+  "dmr_sms": {
+   "core/dmr/dmrDataService.c": "c20042a517c5578148b135299acd7dde7eef6fb9",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/ui/ui_menus.c": "88cd3930a5304de6e5e33924b9793508b8ecd414",
+   "core/ui/ui_svc_data.c": "6e406e3304a47b731961d95f7cde83ec7c4205b9",
+   "docs/spec/dmr-data.md": "77a260890c836fd9d9ad25bb05ba696d3265eb54"
+  },
+  "dual_watch": {
+   "core/debuglink/debuglink_view_radio.c": "174abcc249a5721a4070ebf254333c3744fb8227",
+   "core/input/keyassign.h": "8501bc24842be8a884dc497567e1b7674df10852",
+   "core/radio/radio.h": "9f189358a1c9aa740d0909eb178c43748b9f4369",
+   "core/radio/radio_sm.c": "63bc512509446e8eefa07c885aae1cfbf28e0d39",
+   "core/radio/radio_sm.h": "89d12ef6b1e5166f4a0966c3d0a9629bc6496f2e",
+   "core/radio/radio_task.c": "17d2fd1269de03dc74a0c071e7ad535b16a497eb",
+   "core/ui/ui_app.c": "886ce0d6753a6812e0431995f9f6a17373a3a8cf",
+   "core/ui/ui_dual.c": "98868b527498b81b46711b58848dad445b41c29e",
+   "core/ui/ui_menus.c": "88cd3930a5304de6e5e33924b9793508b8ecd414",
+   "core/ui/ui_nav.h": "df761e8998bbc9af98fe1baea0a8e9b76775970f",
+   "core/ui/ui_screens.c": "e0aab2ed9f1db861d6ad88c9f41c94d8ce8fb911",
+   "core/ui/ui_screens.h": "0f1c6ba0488ac438fc68f1310c2b4fc93d44240d",
+   "core/ui/ui_svc.h": "9f86a3a0b0eadbed65a8d1ae4fce694a83a38b97",
+   "core/ui/ui_svc_radio.c": "fe4fdd57dc9ce54d80a58370ec6c60b6fccbb7cc",
+   "core/ui/ui_svc_storage.c": "37a22dfff6452ea234de574fb02b298cd8e1e2d5",
+   "docs/spec/radio-features.md": "1b348a2c29f14632698bd216354eeb53976eb2d5"
+  },
+  "ui_navigation": {
+   "core/input": "a702b5848fac5e6b4b09ef9166b8b115f0365843",
+   "core/ui": "0972d8944842f0ee3160d2dc8f792566acd3f6b1",
+   "docs/spec/ui.md": "2490acfc410ea6c33815e50e4be2ddf7f3314cba"
+  },
+  "vfo_dmr": {
+   "core/cps/cps_openfw.c": "c534c1236d309a43d731db0bbd32d7b555c0a2d9",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "9f189358a1c9aa740d0909eb178c43748b9f4369",
+   "core/radio/radio_sm.c": "63bc512509446e8eefa07c885aae1cfbf28e0d39",
+   "core/radio/radio_sm.h": "89d12ef6b1e5166f4a0966c3d0a9629bc6496f2e",
+   "core/ui/ui_app.c": "886ce0d6753a6812e0431995f9f6a17373a3a8cf",
+   "core/ui/ui_find.c": "c800961cfa39b8a9981d8c45e6ce2a94056f05e1",
+   "core/ui/ui_menus.c": "88cd3930a5304de6e5e33924b9793508b8ecd414",
+   "core/ui/ui_screens.c": "e0aab2ed9f1db861d6ad88c9f41c94d8ce8fb911",
+   "core/ui/ui_svc_radio.c": "fe4fdd57dc9ce54d80a58370ec6c60b6fccbb7cc",
+   "core/ui/ui_svc_storage.c": "37a22dfff6452ea234de574fb02b298cd8e1e2d5",
+   "docs/spec/dmr-voice.md": "a7cbb138e7cb8fbb450610956e7456158e5acfd2"
+  },
+  "vfo_fm": {
+   "core/cps/cps_openfw.c": "c534c1236d309a43d731db0bbd32d7b555c0a2d9",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "9f189358a1c9aa740d0909eb178c43748b9f4369",
+   "core/radio/radio_sm.c": "63bc512509446e8eefa07c885aae1cfbf28e0d39",
+   "core/ui/ui_app.c": "886ce0d6753a6812e0431995f9f6a17373a3a8cf",
+   "core/ui/ui_find.c": "c800961cfa39b8a9981d8c45e6ce2a94056f05e1",
+   "core/ui/ui_menus.c": "88cd3930a5304de6e5e33924b9793508b8ecd414",
+   "core/ui/ui_screens.c": "e0aab2ed9f1db861d6ad88c9f41c94d8ce8fb911",
+   "core/ui/ui_svc_radio.c": "fe4fdd57dc9ce54d80a58370ec6c60b6fccbb7cc",
+   "docs/spec/dmr-voice.md": "a7cbb138e7cb8fbb450610956e7456158e5acfd2"
+  },
+  "vox": {
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "9f189358a1c9aa740d0909eb178c43748b9f4369",
+   "core/radio/radio_sm.c": "63bc512509446e8eefa07c885aae1cfbf28e0d39",
+   "core/radio/radio_sm.h": "89d12ef6b1e5166f4a0966c3d0a9629bc6496f2e",
+   "core/ui/ui_svc_radio.c": "fe4fdd57dc9ce54d80a58370ec6c60b6fccbb7cc",
+   "docs/spec/radio-features.md": "1b348a2c29f14632698bd216354eeb53976eb2d5",
+   "platform/hrc7000/audio_pcm.c": "7a1669c6deb51c99a51547c6ff17191d63ecb56d",
+   "platform/hrc7000/audio_pcm.h": "08efbeba208229bc8802a26579e4ef9afe9c96a2"
+  },
+  "zone_edit": {
+   "core/ui/ui_app.c": "886ce0d6753a6812e0431995f9f6a17373a3a8cf",
+   "core/ui/ui_menus.c": "88cd3930a5304de6e5e33924b9793508b8ecd414",
+   "core/ui/ui_nav.h": "df761e8998bbc9af98fe1baea0a8e9b76775970f",
+   "core/ui/ui_svc_storage.c": "37a22dfff6452ea234de574fb02b298cd8e1e2d5",
+   "docs/spec/ui.md": "2490acfc410ea6c33815e50e4be2ddf7f3314cba"
+  }
+ },
+ "tests": [
+  {
+   "excused": true,
+   "features": [
+    "dmr_signaling"
+   ],
+   "id": "tests/hil/test_dmr_data.py::test_call_alert_rx",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_signaling"
+   ],
+   "id": "tests/hil/test_dmr_data.py::test_call_alert_tx",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "dmr_data_rx"
+   ],
+   "id": "tests/hil/test_dmr_data.py::test_data_view_and_settings",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_sms"
+   ],
+   "id": "tests/hil/test_dmr_data.py::test_etsi_sms_rx",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_sms"
+   ],
+   "id": "tests/hil/test_dmr_data.py::test_etsi_sms_tx",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_signaling"
+   ],
+   "id": "tests/hil/test_dmr_data.py::test_radio_check_rx",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_signaling"
+   ],
+   "id": "tests/hil/test_dmr_data.py::test_radio_check_tx",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_signaling"
+   ],
+   "id": "tests/hil/test_dmr_data.py::test_radio_check_tx_etsi",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_data_rx"
+   ],
+   "id": "tests/hil/test_dmr_data.py::test_unconfirmed_data_rx",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": false,
+   "features": [],
+   "id": "tests/hil/test_encoder.py::test_encoder_interrupt_not_lost",
+   "optional": [
+    "channel_knob"
+   ],
+   "outcome": "skipped",
+   "reason": "[not_built] no encoder interrupt watch: another platform, or older firmware",
+   "required": false,
+   "skip_kind": "not_built"
+  },
+  {
+   "excused": false,
+   "features": [],
+   "id": "tests/hil/test_encoder.py::test_knob_counts_detents",
+   "optional": [
+    "channel_knob"
+   ],
+   "outcome": "skipped",
+   "reason": "[opt_in] needs a person at the radio: run with --manual -s",
+   "required": false,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "channel_knob"
+   ],
+   "id": "tests/hil/test_encoder.py::test_knob_direction",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "vfo_fm"
+   ],
+   "id": "tests/hil/test_fm.py::test_noaa_receive",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dual_watch"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_dual_watch",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dual_watch"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_dual_watch_debug_link",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "dual_watch"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_dual_watch_stops_on_call",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "vox"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_mic_level",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "vox"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_vox_quiet",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "dmr_sms"
+   ],
+   "id": "tests/hil/test_ui.py::test_delete_message",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "ui_navigation"
+   ],
+   "id": "tests/hil/test_ui.py::test_find_by_digits",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "ui_navigation"
+   ],
+   "id": "tests/hil/test_ui.py::test_hub_and_back",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "ui_navigation"
+   ],
+   "id": "tests/hil/test_ui.py::test_key_lock",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "ui_navigation"
+   ],
+   "id": "tests/hil/test_ui.py::test_keys_move_the_channel",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "ui_navigation"
+   ],
+   "id": "tests/hil/test_ui.py::test_picker_focus_target",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "ui_navigation"
+   ],
+   "id": "tests/hil/test_ui.py::test_quick_settings_open_and_close",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "vox"
+   ],
+   "id": "tests/hil/test_ui.py::test_quick_vox_toggle",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "bring-up: a required test of vox skipped (state), which its needs don't excuse: Skipped: [state] the current channel isn't FM",
+   "required": true
+  },
+  {
+   "features": [
+    "ui_navigation"
+   ],
+   "id": "tests/hil/test_ui.py::test_recent_from_the_hub",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "ui_navigation"
+   ],
+   "id": "tests/hil/test_ui.py::test_talk_target_picker_on_long_context",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "zone_edit"
+   ],
+   "id": "tests/hil/test_ui.py::test_zone_editor_moves_a_channel",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] writes the codeplug: run with --allow-codeplug-write",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "vfo_dmr"
+   ],
+   "id": "tests/hil/test_vfo_dmr.py::test_vfo_dmr_settings",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}
