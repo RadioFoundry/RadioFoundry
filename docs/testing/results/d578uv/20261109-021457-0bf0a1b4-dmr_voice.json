@@ -1,0 +1,134 @@
+{
+ "board": "d578uv",
+ "commit": "0bf0a1b4511c2bfb69a5ec40d46946f2a23ba2dd",
+ "date": "2026-11-09T02:14:57Z",
+ "dirty": false,
+ "features": [
+  "dmr_voice"
+ ],
+ "firmware": {
+  "board": "AT-D578UV",
+  "codec": "d578uv-boot",
+  "display": "160x128x4",
+  "features": "FM,SUBTONE,DMR,DMR_TALKER_ALIAS,DMR_GPS,APRS,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,DMR_UDP_COMPRESS,IDDB_COMPACT,VFO,VFO_FM,VFO_DMR,AM_RX,BCAST_FM,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "0bf0a1b4",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "dmr-cc": 2,
+  "dmr-tg": 202
+ },
+ "sources": {
+  "dmr_voice": {
+   "core/dmr/ambe": "6c51e53ad12e5d09061c8b8c0cf246f7e9d1a8bd",
+   "core/dmr/call": "791b045002a7bacbe26a8e5dc0f0afa5846e0465",
+   "core/dmr/fec": "ef810773bfde2f7a2639dc06ebb643644b67458d",
+   "docs/spec/dmr-voice.md": "ee13ac43d772afd738276afed3b7ef020ee98318",
+   "drivers/modem": "be3e95e5937611800296071391add82373c7cb3e",
+   "hal/hal_dmr_modem.h": "827ba82fabb1c7efe93b42db2b1a45fe7c09d6bb",
+   "hal/hal_vocoder.h": "ccab114a06df427ea3115af9b3ffd1a770eb96c8"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_burst_offset",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[boot]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[channel_change]",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_dmr_repeater_slots.py:128: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[long_call]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[long_idle]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[mixed_gaps]",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_dmr_repeater_slots.py:128: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[rekey]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[up_ts_changes]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_voice"
+   ],
+   "id": "tests/hil/test_dmr_repeater_slots.py::test_dmr_repeater_slots[wake_ts]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}
