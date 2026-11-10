@@ -412,6 +412,13 @@ access, debuglink.md 3.24): a rise while the source is masked sets its INT_ST bi
 after the request is taken, a line still high does not interrupt again, unmasked and with the INT_ST bit still set,
 until it falls and rises. A handler must clear its device's cause, or the source stays silent (gotchas 2.9).
 
+A vector can arrive for a masked source (measured): after a watchdog restart, a UART that kept its interrupt enable and
+kept receiving (a second SoC's link) had its source requesting before `main`. `hrc_irq_init` masked every source and
+cleared the request record, the UART's cause was gone, and still the first time the first task turned interrupts on,
+the CPU took that source's vector. Turning the UART's interrupt enable off in `hrc_irq_init` didn't stop it: the request
+is held from before. The fallback handler ignores a vector whose source is masked as it arrives; a source that is
+enabled with no handler is still masked and counted.
+
 Dispatch: all 64 user vectors (32–95) point at one common entry; it saves context, writes 0x04 to PIC_COW1, takes the
 vector number from PSR bits 23:16, subtracts 32 and calls through a 64-entry software table.
 
