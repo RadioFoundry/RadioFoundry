@@ -533,11 +533,23 @@ The burst's last symbol is rf_pre_on_tx × 100 µs + 0.85 ms + 27.5 ms after the
 ms, rounded up to 100 µs. The board's key-up delay in its TX-on sequence counts from the RF TX interrupt, so the
 task's wake doesn't delay the PA. The interrupt itself can come a few hundred µs late, while the slot engine holds
 its lock with the modem's interrupts masked (3.2); the bursts keep the 60 ms frame grid, so a burst whose interrupt
-is more than 30 µs past one frame after the burst before is timed from that point instead. The first burst of a
-transmission has no grid and keeps its interrupt's time, so a board's lead leaves margin for it. The diagnostics
+is more than 30 µs past one frame after the burst before is timed from that point instead.
+
+The first burst of a transmission has no burst before it. With a long lead the modem raises its RF TX interrupt late
+by the same amount at every key-up, while the burst itself is on the slot grid: 0.42 ms at lead 26, about 0.2 ms at
+24, none seen at 9 (SDR bench). Timed from that stamp, the first burst's whole TX on and TX off came late by as
+much, and its first symbols went out on a rising carrier. The slot engine's tick is steady through the key-up, so
+the first burst is timed from it instead:
+
+| Step | What |
+|---|---|
+| Learn | Each burst on the frame grid (within 30 µs of one frame after the one before) gives its interrupt's time after the tick before it; the largest is kept. A tick held up by the masking makes the time shorter and a late interrupt is off the grid, so the largest is the true one. It is kept across transmissions and cleared when the lead changes |
+| First burst | Its interrupt's time after its tick, against what was learned: later by more than 30 µs and no more than 1 ms, it is timed at the learned point after the tick; otherwise, or with nothing learned yet (the first transmission after a start, or after a lead change), from its interrupt |
+
+The arithmetic is in `dmr_rfburst_timing.h` (`hrc_rfburst_tick_ref`, `hrc_rfburst_first_on`). The diagnostics
 count the sequences run, the RF RX interrupts and the TX-offs that started late, and, since the key-up, the largest
-wake, the PA-up time after the interrupt (smallest and largest), the largest grid error and the bursts timed from the
-grid (`hrc_rfburst_stats_t`).
+wake, the PA-up time after the interrupt (smallest and largest), the largest grid error, the bursts timed from the
+grid and how much earlier than its interrupt the first burst was timed (`hrc_rfburst_stats_t`).
 
 ### 3.2 Masking the modem interrupts
 

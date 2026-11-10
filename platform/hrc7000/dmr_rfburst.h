@@ -55,14 +55,16 @@ typedef struct {
 	uint32_t up_max_us;
 	uint32_t grid_max_us;
 	uint32_t regridded;	// bursts whose RF TX interrupt came late and were timed from the grid instead
+	uint32_t first_retimed_us;	// how much earlier than its RF TX interrupt the first burst was timed (0: as stamped)
 } hrc_rfburst_stats_t;
 
 #if CONFIG_DMR
 // Once, from hrc_dmr_board_init for a board with burst sequences: the RF task, the board timer and the RF RX interrupt
 void hrc_rfburst_init(hrc7000_t *modem, const hrc_rfburst_board_t *board);
 // From the glue's RF switch (modem interrupts): wakes the RF task for our burst's TX on, or for its TX off. continuous:
-// a base-station outbound (above). The TX on does nothing while disarmed
-void hrc_rfburst_switch(bool tx, bool continuous);
+// a base-station outbound (above); tick_us: hrc_micros() at the slot engine's last tick, the first burst's reference.
+// The TX on does nothing while disarmed
+void hrc_rfburst_switch(bool tx, bool continuous, uint32_t tick_us);
 // Arm once the board's TX plan is set (task level): the bursts' RF TX interrupts then key the RF. Disarm waits until
 // the RF task has finished the burst it is in and left the RF receiving
 void hrc_rfburst_arm(void);
