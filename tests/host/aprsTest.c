@@ -624,7 +624,8 @@ static void test_geo_accuracy(void)
 		uint32_t d = aprs_distance_m(la1, lo1, la2, lo2);
 		long double e = d > m ? d - m : m - d;
 		bool ok = e <= 2.0L + m / 5000.0L;
-		if (m > 20.0L && la1 < LAT_MAX - 10000000 && la1 > -LAT_MAX + 10000000 && la2 < LAT_MAX - 10000000 &&
+		// (and not at the antipode, where every bearing is right)
+		if (m > 20.0L && m < 19900000.0L && la1 < LAT_MAX - 10000000 && la1 > -LAT_MAX + 10000000 && la2 < LAT_MAX - 10000000 &&
 		    la2 > -LAT_MAX + 10000000) {
 			long double eb = fabsl((long double)aprs_bearing_deg(la1, lo1, la2, lo2) - deg);
 			ok = ok && (eb <= 0.6L || eb >= 359.4L);
