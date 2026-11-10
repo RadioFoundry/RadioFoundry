@@ -15,19 +15,39 @@
 #include "fm_rx_audio.h"
 #include "hrc_afsk.h"
 #include "radio/ref_trim.h"
+#include "radio/pa_keyup.h"
 
 #define DAC_C_INIT		0x06E2u
 
 #define UHF_FROM_HZ		280000000u	// PA / LNA band split (8.5)
 #define MIC_GAIN_DB		11u		// GCR_ADCL at init (9.1)
-// DMR bursts on the shared RF-burst task (dmr_rfburst.h), timed from the RF TX interrupt. The RF leaves receive 0.4 ms
-// ahead of the lead point, not earlier: an earlier switch cut the tail of the inbound burst an SFR receives before ours
-// (swept 0.4-2.0 ms in hardware-dm32.md 8.5). The interrupt comes 0.5 ms before that, so a late wake of the task
-// (up to 0.42 ms) doesn't make the switch late. The PA is keyed 0.5 ms before the first symbol: the one-step key-up's
-// rise (8.6)
-#define RF_TX_LEAD		9u		// 100 us steps (RF_CONTROL b13:8)
-#define RF_SWITCH_LEAD_US	400u		// the RF to TX this long before the lead point
-#define PA_AHEAD_US		500u		// the PA keyed this long before the first symbol
+// DMR bursts on the shared RF-burst task (dmr_rfburst.h), timed from the RF TX interrupt (hardware-dm32.md 8.5). The PA
+// keys up from the power cal table (radio/pa_keyup.h): a drive boost whose length follows the step, a hold, then the
+// step's drive. A low step's drive alone took 3-4 ms to full power; with the boost every step is up by the first
+// symbol. The PA is selected with the boost, so the FD6818 goes to TX 0.3 ms before that: 1.8 ms before the first
+// symbol on a simplex channel (two state writes, 0.1 ms), after the inbound burst before ours (it ends about 2.3 ms
+// before our first symbol). A split channel's retune holds the task 1.1-1.4 ms, so it runs before the boost. The lead
+// leaves the task's wake (up to 0.42 ms) room before that
+#define RF_TX_LEAD		26u		// 100 us steps (RF_CONTROL b13:8)
+#define SWITCH_AHEAD_US		300u		// the FD6818 to TX this long before the PA
+#define SWITCH_AHEAD_SPLIT_US	1450u		// the same with the synthesizer's move to the TX frequency, before the boost
+#define TASK_WAKE_US		420u		// the RF task's latest wake after the interrupt
+// The earliest key-up point: the split's switch still after the task's wake
+#define KEYUP_MAX_AHEAD_US	(RF_TX_LEAD * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US - TASK_WAKE_US - SWITCH_AHEAD_SPLIT_US)
+// The key-up constants (docs/spec/pa-keyup.md): measured on the SDR bench at UHF and VHF, every step up 0.1-0.8 ms
+// before the first symbol and no more than 3 dB over (hardware-dm32.md 8.5). The knee goes with pa_us: the control
+// charges less with the PA selected, so a later PA wants a smaller knee
+#define KEYUP_BOOST_US		1500u
+#define KEYUP_PA_US		1500u
+#define KEYUP_DRIVE_US		500u
+_Static_assert(KEYUP_BOOST_US <= KEYUP_MAX_AHEAD_US && KEYUP_PA_US <= KEYUP_BOOST_US && KEYUP_DRIVE_US <= KEYUP_BOOST_US,
+	       "the key-up's points must come after the split's switch, in order (pa_keyup_valid)");
+#if CONFIG_DMR
+static const pa_keyup_cfg_t keyup_cfg = {
+	.dead = 680, .knee = 1450, .slope_us = 600, .boost_pct = 120, .hold_pct = 80,
+	.boost_us = KEYUP_BOOST_US, .pa_us = KEYUP_PA_US, .drive_us = KEYUP_DRIVE_US,
+};
+#endif
 // TX data advance (hrc7000_t.tx_pre_on): the chip's 0.4 ms until the inbound burst's offset against the outbound is
 // measured here. The other FD6818 board needed 1.1 ms
 #define TX_PRE_ON		4u
@@ -54,6 +74,8 @@ static bool tx_wide;
 static volatile bool dmr_keyed;		// DMR transmission on: the burst sequence may key the PA
 static volatile bool tx_uhf;
 static volatile uint16_t tx_drive;	// DAC B value for the transmission
+static pa_keyup_cfg_t ku_cfg;		// the transmission's DMR key-up, set before the RF task is armed
+static pa_keyup_t ku;
 static uint16_t last_rssi_raw, last_noise_raw;
 static bool pcm_on;		// a beep or DMR voice plays through the codec
 static bool rx_audio;		// the squelch is open (the radio's audio hook)
@@ -106,9 +128,14 @@ static void lna(uint32_t hz, bool on)
 	hrc_pin_write(PIN_VHF_LNA, on && !uhf);
 }
 
-static void pa_key(void)
+static void pa_select(void)
 {
 	hrc_pin_write(tx_uhf ? PIN_UHF_PA : PIN_VHF_PA, true);
+}
+
+static void pa_key(void)
+{
+	pa_select();
 	DAC_DATA_B = tx_drive;
 }
 
@@ -162,18 +189,68 @@ static bool ref_trim(int16_t ppb)
 }
 #endif
 
-// One burst's TX on, from the RF task (dmr_rfburst.h): at the switch point the LNA off and the FD6818 idle then TX,
-// on the TX frequency (a split channel's one synthesizer moves for the burst and back); the PA keyed ahead of the
-// first symbol (both points from the RF TX interrupt)
+// The LNA off and the FD6818 idle then TX, on the TX frequency (a split channel's one synthesizer moves for the burst
+// and back)
+static void burst_switch(void)
+{
+	lna(tx_hz, false);
+	fd6818_dmr_burst_at(&fd, true, FD6818_BW_DMR, synth_hz(tx_hz));
+}
+
+// One burst's TX on, from the RF task (dmr_rfburst.h): the key-up's points in time order (the boost, the PA on, the
+// hold, the drive to the step's), with the switch to TX before the PA, or before them all on a split channel; every
+// point from the RF TX interrupt. Without a boost the PA is keyed at its point at the step's drive
 static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 {
 	(void)wait;
-	at(hrc_rfburst_switch_at_us(RF_TX_LEAD, RF_SWITCH_LEAD_US));
-	lna(tx_hz, false);
-	fd6818_dmr_burst_at(&fd, true, FD6818_BW_DMR, synth_hz(tx_hz));
-	at(hrc_rfburst_pa_at_us(RF_TX_LEAD, PA_AHEAD_US));
-	if (dmr_keyed) {
-		pa_key();
+	bool boost = dmr_keyed && ku.boost != 0u;
+	bool split = tx_hz != rx_hz;
+	enum { P_SWITCH, P_BOOST, P_PA, P_HOLD, P_DRIVE, P_COUNT };	// on a tie in this order
+	// The switch to TX: ahead of the PA, or ahead of every point on a split channel (its retune holds the task)
+	uint32_t sw = split ? SWITCH_AHEAD_SPLIT_US + (boost ? ku_cfg.boost_us : ku_cfg.pa_us) : SWITCH_AHEAD_US + ku_cfg.pa_us;
+	const uint32_t ahead[P_COUNT] = { sw, ku_cfg.boost_us, ku_cfg.pa_us, ku.hold_us, ku_cfg.drive_us };
+	bool done[P_COUNT] = { false, !boost, false, !boost, !boost };
+	for (;;) {
+		int8_t next = -1;
+		for (int8_t i = 0; i < P_COUNT; i++) {
+			if (!done[i] && (next < 0 || ahead[i] > ahead[next])) {
+				next = i;
+			}
+		}
+		if (next < 0) {
+			break;
+		}
+		done[next] = true;
+		at(hrc_rfburst_pa_at_us(RF_TX_LEAD, ahead[next]));
+		if (next == P_SWITCH) {
+			burst_switch();
+			continue;
+		}
+		if (!dmr_keyed) {
+			// Disarmed in the sequence: the drive may be at the boost, so the PA goes off now, not at burst_off
+			if (boost) {
+				pa_off();
+			}
+			continue;
+		}
+		switch (next) {
+		case P_BOOST:
+			DAC_DATA_B = ku.boost;
+			break;
+		case P_HOLD:
+			DAC_DATA_B = ku.hold;
+			break;
+		case P_DRIVE:
+			DAC_DATA_B = tx_drive;
+			break;
+		default:
+			if (boost) {
+				pa_select();	// the drive has its own points
+			} else {
+				pa_key();
+			}
+			break;
+		}
 	}
 }
 
@@ -227,6 +304,9 @@ static void init(void)
 	modem.fm_tx_limit[0] = FM_TX_LIMIT_12K5;
 	modem.fm_tx_limit[1] = FM_TX_LIMIT_25K;
 	hrc7000_set_rf_tx_lead(&modem, RF_TX_LEAD);
+#if CONFIG_DMR
+	pa_keyup_init(&keyup_cfg, KEYUP_MAX_AHEAD_US, DAC_MAX);
+#endif
 
 	hrc_pin_out(PIN_FD_CS, true);
 	hrc_pin_out(PIN_FD_CLK, false);
@@ -345,6 +425,20 @@ static void retune(bool keep)
 	rx_tune(rx_hz, rx_bw, &t, fd6818_am_on(&fd), keep);
 }
 
+#if CONFIG_DMR
+// The key-up drives from the cal table at the TX frequency (radio/pa_keyup.h), before the RF task is armed
+static void keyup_plan(uint32_t hz)
+{
+	uint16_t top = 0u;
+	for (uint8_t l = 0u; l < board.power_count; l++) {
+		uint16_t v = bf_cal_power_level(hz, l);
+		top = v > top ? v : top;
+	}
+	ku_cfg = keyup_cfg;			// pa_keyup_plan leaves it when no key-up is set up (no boost then)
+	ku = pa_keyup_plan(tx_drive, top, &ku_cfg);	// the plan and its points from one set of constants
+}
+#endif
+
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 {
 	if (!board_in_band(hz, true)) {
@@ -353,6 +447,11 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	wake();
 	tx_uhf = hz >= UHF_FROM_HZ;
 	tx_drive = bf_cal_power_level(hz, power);
+#if CONFIG_DMR
+	if (mode == RADIO_MODE_DMR) {
+		keyup_plan(hz);
+	}
+#endif
 	tx_hz = hz;
 	write_mod_bias(hz);
 	// DMR keeps listening on the RX frequency until a burst (burst_on retunes per burst); on a split channel the

@@ -485,6 +485,37 @@ def test_tx_drive_op(radio):
         radio.link.tx_drive(0)
 
 
+@pytest.mark.feature("debuglink")
+def test_pa_keyup_op(radio):
+    """The DMR PA key-up constants (RADIO op 37, docs/spec/pa-keyup.md) without keying: the core view shows the board's,
+    the op takes a valid set and shows it, refuses one out of range or out of order and keeps the set before, and no
+    argument restores the board's."""
+    core = radio.core()
+    if "pa_keyup" not in core:
+        with pytest.raises(DebugLinkError):
+            radio.link.pa_keyup()               # a radio without the view key doesn't key this way
+        skip("not_built", "no DMR PA key-up on this radio (docs/spec/pa-keyup.md)")
+    board = [int(x) for x in core["pa_keyup"].split("/")]
+    assert len(board) == 8, core
+    dead, knee, slope_us, boost, hold, boost_us, pa_us, drive_us = board
+    assert 50 <= boost <= 120 and hold <= 100, board
+    assert boost_us == 0 or (boost_us >= pa_us and boost_us >= drive_us), board
+    assert len(core["pa_keyup.last"].split("/")) == 4, core
+    mine = [dead, max(knee - 50, 0), slope_us, 100, hold, boost_us, pa_us, drive_us]
+    try:
+        radio.link.pa_keyup(*mine)
+        assert [int(x) for x in radio.core()["pa_keyup"].split("/")] == mine
+        for bad in (mine[:3] + [121] + mine[4:], mine[:4] + [101] + mine[5:], mine[:6] + [boost_us + 1, drive_us],
+                    mine[:7] + [boost_us + 1], mine[:5] + [60000, pa_us, drive_us]):
+            with pytest.raises(DebugLinkError) as e:
+                radio.link.pa_keyup(*bad)
+            assert e.value.status == 2, (bad, e.value)     # bad argument
+        assert [int(x) for x in radio.core()["pa_keyup"].split("/")] == mine
+    finally:
+        radio.link.pa_keyup()
+    assert [int(x) for x in radio.core()["pa_keyup"].split("/")] == board
+
+
 @pytest.mark.feature("radio_controls")
 @pytest.mark.radio_tx
 def test_tot_warning(fm_tx):
