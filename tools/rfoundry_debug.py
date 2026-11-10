@@ -46,8 +46,8 @@
 Key names: up down left right select (ok) back (exit) quick (star) context (hash) 0-9 ptt monitor tt (talk target)
 emergency enc user1-user4.
 
-The port is found by its USB ID 1FC9:0094 (the only one present); --port or $RFOUNDRY_PORT picks one. Needs pyserial
-(pip install pyserial). Exit status 0 on success, 1 on a radio error, 2 on a usage or connection problem.
+The port is found by its USB ID 1FC9:0094 (the only one present), else a radio in USB network mode answering over UDP;
+--port or $RFOUNDRY_PORT picks one. A serial port needs pyserial (pip install pyserial). Exit status 0 on success, 1 on a radio error, 2 on a usage or connection problem.
 """
 import argparse
 import json
@@ -234,6 +234,18 @@ def as_int(v, default=None):
         return default
 
 
+def find_network_radios():
+    """udp:ADDR of each radio in USB network mode (the rfoundry package's discovery: tools/rfoundry/rfoundry/debuglink.py)"""
+    pkg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry")
+    if pkg not in sys.path:
+        sys.path.insert(0, pkg)
+    try:
+        from rfoundry.debuglink import find_network_radios as find
+    except ImportError:
+        return []
+    return find()
+
+
 def find_ports():
     if list_ports is None:
         return []
@@ -244,11 +256,12 @@ def pick_port(port=None):
     port = port or os.environ.get("RFOUNDRY_PORT")
     if port:
         return port
-    ports = find_ports()
+    ports = find_ports() or find_network_radios()	# no serial port: a radio in USB network mode, over UDP
     if len(ports) == 1:
         return ports[0]
     if not ports:
-        raise DebugLinkError("no radio found (USB 1FC9:0094): is it plugged in and powered on? Or give --port")
+        raise DebugLinkError("no radio found (USB 1FC9:0094, or a network adapter radio answering on UDP): is it plugged "
+                             "in and powered on? Or give --port")
     raise DebugLinkError(f"several radios found {ports}: give --port")
 
 
