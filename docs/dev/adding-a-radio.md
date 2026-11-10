@@ -135,6 +135,8 @@ one without a label.
    ([settings-store.md](../spec/settings-store.md) 5).
 5. RF chip: FM receive, then FM transmit into a dummy load.
 6. DMR modem and the codec: receive, then transmit, checked on the SDR bench.
+   Then the DMR PA key-up on every band with its own PA: `tools/bench/pa_keyup_autocal.py`
+   ([pa-keyup.md](../spec/pa-keyup.md) 6).
 7. CPS, so qdmr can program it.
 8. Flashing from where an owner starts:
    - Find every stock build an owner's radio may run before RadioFoundry: every firmware version the vendor and its

@@ -156,3 +156,65 @@ boost of fixed length blended from d and the top step, then a hold, the PA keyed
 
 The earlier form's boost was the same length at every step, so it was too short for the low drive and left the PA
 coming up at the first symbol. Sizing the boost by the step brings every step up before it.
+
+## 6. Automatic tuning
+
+`tools/bench/pa_keyup_autocal.py` does section 5 by itself: about 25 s per try, 10-20 min per band.
+
+### Setup
+
+| What | How |
+|---|---|
+| Load | The radio into a dummy load rated for its top power |
+| Tap | Fixed pads to an AD936x SDR's receive port (libiio). Pads so the top level gives at most −13 dBm at the SDR |
+| SDR gain | 0 dB, manual. The tool sets it and checks it before every key |
+| Firmware | A build with `pa_keyup` in the `core` view (RADIO op 37) |
+| Frequency | One the radio may key into the load. Needs `--lease-cmd` if the bench has frequency leases |
+
+Pads needed: top power in dBm + 13. A 5 W radio (37 dBm) needs 50 dB, a 50 W radio 60 dB.
+
+### Run
+
+One band at a time, near its center:
+
+```
+tools/bench/pa_keyup_autocal.py --radio-port PORT --sdr-uri usb:1.2.5 \
+    --freq 446.05 --pad-db 57 --max-w 5 --boost-us 2550 --log uhf.jsonl
+```
+
+| Option | Value |
+|---|---|
+| `--radio-port` | The radio's debug link port |
+| `--sdr-uri` | The SDR's libiio context (`iio_info -s` lists them) |
+| `--freq` | MHz |
+| `--pad-db` | The pads' total |
+| `--max-w` | The highest level's output, W |
+| `--boost-us` | The board's earliest point: the `max_ahead_us` it passes to `pa_keyup_init` |
+| `--levels` | Optional: the levels to tune on, `0,1,2,3`. Leave out a level that is over the SDR's limit |
+| `--radio-ssh`, `--sdr-ssh` | Optional: the hosts the radio and the SDR are plugged into |
+| `--arm`, `--disarm` | Optional: debug link commands a radio needs before and after keying |
+
+### What it does
+
+1. Preflight: SDR gain and LO, the input level, the radio's test TX limit set to `--freq` only.
+2. Baseline: every level with the board's constants.
+3. Fits the loop with the boost off: `dead`, `knee`, the low-pass.
+4. With a knee: tunes `knee` (lowest level), `slope_us` (top level), `late_pct` (the levels between).
+5. With no knee (every level up the same time after the PA's point): no boost, only `pa_us`.
+6. Verifies every level twice against section 5's targets.
+
+It always restores the board's constants and the lowest level at the end.
+
+### Result
+
+```
+PASS: dead 0 knee 0 slope_us 0 boost 100 hold 100 boost_us 0 pa_us 951 drive_us 0 late 0
+  rfoundry_debug.py radio pa-keyup 0 0 0 100 100 0 951 0
+```
+
+1. `PASS`: put the constants in the board's key-up table for that band. `CHECK`: the verify table names the level
+   and the target it missed.
+2. Repeat for each band with its own PA.
+3. Check a set of constants again: `--start DEAD,KNEE,...,LATE` with `BOOST_US` 0 only verifies.
+
+Levels print as their measured output (W, mW). For exact watts, set `--dbfs-to-dbm` for the SDR against a wattmeter.
