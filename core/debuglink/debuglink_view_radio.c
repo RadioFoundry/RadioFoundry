@@ -12,6 +12,7 @@
 #include "radio/mic_gain.h"
 #include "radio/ref_trim.h"
 #include "radio/tx_limit.h"
+#include "radio/pa_keyup.h"
 #include "radio/radio_cwid.h"
 #include "hal_time.h"
 #include "hal_dtmf.h"
@@ -381,6 +382,29 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			return DL_ST_UNAVAILABLE;
 		}
 		return board.radio->tx_drive((uint16_t)(a[0] | (a[1] << 8))) ? DL_ST_OK : DL_ST_BAD_ARG;
+	case DL_OP_PA_KEYUP: {
+		// blend u8, top u8, hold u8 (%), boost_us u16, hold_us u16, pa_us u16: the DMR PA key-up constants
+		// (radio/pa_keyup.h), RAM only, from the next key-up; no argument = the board's again
+		if (len != 0 && len != 9) {
+			return DL_ST_BAD_ARG;
+		}
+#if !CONFIG_DMR
+		return DL_ST_UNAVAILABLE;
+#else
+		if (pa_keyup_cfg() == NULL) {
+			return DL_ST_UNAVAILABLE;
+		}
+		if (len == 0) {
+			return pa_keyup_set(NULL) ? DL_ST_OK : DL_ST_BAD_ARG;
+		}
+		pa_keyup_cfg_t c = {
+			.blend_pct = a[0], .top_pct = a[1], .hold_pct = a[2],
+			.boost_us = (uint16_t)(a[3] | (a[4] << 8)), .hold_us = (uint16_t)(a[5] | (a[6] << 8)),
+			.pa_us = (uint16_t)(a[7] | (a[8] << 8)),
+		};
+		return pa_keyup_set(&c) ? DL_ST_OK : DL_ST_BAD_ARG;
+#endif
+	}
 	case DL_OP_DTMF:
 		// digit u8 (ASCII), down u8: as a DTMF key's edge, so the same rules and timing apply. Refused unless a key
 		// would send now (dtmf_ready); an up is always taken

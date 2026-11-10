@@ -15,6 +15,7 @@
 #include "settings/settings.h"
 #include "radio/ref_trim.h"
 #include "radio/tx_limit.h"
+#include "radio/pa_keyup.h"
 #include "storage/storage.h"
 #if CONFIG_APRS
 #include "aprs/aprs.h"
@@ -107,6 +108,16 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 		}
 		dl_text(t, "\n");
 	}
+#if CONFIG_DMR
+	const pa_keyup_cfg_t *ku = pa_keyup_cfg();
+	if (ku != NULL) {
+		// The DMR PA key-up's constants (RADIO op 37) and the last key-up's drives
+		pa_keyup_t k = pa_keyup_last();
+		dl_text(t, "pa_keyup=%u/%u/%u/%u/%u/%u\n", (unsigned)ku->blend_pct, (unsigned)ku->top_pct,
+			(unsigned)ku->hold_pct, (unsigned)ku->boost_us, (unsigned)ku->hold_us, (unsigned)ku->pa_us);
+		dl_text(t, "pa_keyup.last=%u/%u/%u\n", (unsigned)k.boost, (unsigned)k.hold, (unsigned)k.drive);
+	}
+#endif
 	// The board's bands in Hz, so a HIL test skips a frequency the radio can't tune instead of failing on it
 	dl_text(t, "bands=");
 	for (uint8_t i = 0; i < board.band_count; i++) {
