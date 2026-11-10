@@ -567,12 +567,6 @@ follows PD0 late: the DAC and PE6 on 5.75 ms after the rising edge, the DAC off 
 bit errors. `DMR_OFFSET` (offsets 0, 0x82 and 0xFF, length 1200) and `MODOUT_CONFIG` byte 1 (0x00, 0x28) moved
 neither PD0 nor the modulation.
 
-The key-up runs on the shared rule ([pa-keyup.md](pa-keyup.md)): from PD0's rising edge, 7.0 ms before the first
-symbol, a one-shot timer steps through its points (`pa_keyup_steps`). The board's constants have no boost (`boost_us`
-0) and key the PA at the step's drive 1.25 ms before the first symbol, the timing above. The boost is not tuned yet:
-`dead` 190 is where the FM output starts (5.8), the other constants are a start from another radio. A burst that rises
-while the PA is still on from the one before gets no boost.
-
 Through a repeater, with the baseband's own set-up, the inbound burst ran **0.85 ms late**: against the outbound plus
 30 ms, median +0.854 ms, range +0.792 to +0.917 ms, 136 bursts. ETSI TS 102 361-1 10.2.3.1.3 allows 1 ms for
 propagation and drift; the test allows the radio 0.25 ms of its own. The baseband times its transmit from the slot

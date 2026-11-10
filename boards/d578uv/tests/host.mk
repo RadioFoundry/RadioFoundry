@@ -4,9 +4,9 @@
 # file is included; recipes use $< (the test, first) and $^ instead, which keep the paths they were given
 HERE := $(dir $(lastword $(MAKEFILE_LIST)))
 
-# The PA switching per DMR burst (pa_gate.h, hardware-d578uv.md 5.1) with the shared key-up (core/radio/pa_keyup.c)
+# The PA switching per DMR burst (pa_gate.h, hardware-d578uv.md 5.1)
 TESTS   += d578uvPaGateTest
-d578uvPaGateTest: $(HERE)d578uvPaGateTest.c $(HERE)../pa_gate.h $(CORE)/radio/pa_keyup.c $(CORE)/radio/pa_keyup.h
+d578uvPaGateTest: $(HERE)d578uvPaGateTest.c $(HERE)../pa_gate.h
 	$(CC) $(CFLAGS) -I$(dir $<).. -Wshadow -o $@ $(filter %.c,$^)
 
 run-boards:: d578uvPaGateTest
