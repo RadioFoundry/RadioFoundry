@@ -256,7 +256,11 @@ The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM 
   5 us bus about 1.07 and 0.40 ms). The DMR mode set ends with 0x3F = 0000, the radio's DMR receive value.
 - **RF switch 0.6 ms ahead of the lead point**: the RF TX interrupt comes 1.1 ms ahead (`hrc7000_t.rf_tx_lead` =
   11, RF_CONTROL b13:8) and the task waits 0.5 ms, so its wake (up to 0.42 ms) doesn't make the switch late. The
-  drive is keyed 0.5 ms before the first symbol and dropped with the last. The sweep below moved the interrupt with
+  drive is keyed 1.0 ms before the first symbol (the key-up rule's PA point, [pa-keyup.md](pa-keyup.md), no boost)
+  and dropped with the last. The output follows the drive about 0.65 ms later at every drive from 300 to the low
+  level's, on both bands, so a boost gains nothing here. On the SDR bench, low level and below: keyed 0.5 ms before,
+  the -3 dB point came 0.15 ms after the first symbol and the first symbol 5-18 dB low; 0.8 ms before, 0.15 ms before
+  it and within 1 dB; 1.0 ms and 1.2 ms before, 0.3 ms before it. The mid and high levels are not measured. The sweep below moved the interrupt with
   the switch in it. The
   inbound burst's payload ends about 2.5 ms before ours starts (the guard times of both slots), so with 3.1 ms the
   switch cut off the end of the inbound burst before each of ours (unverified). In SFR mode a header clipped that way failed its

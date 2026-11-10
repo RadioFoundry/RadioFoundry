@@ -720,6 +720,52 @@ Interpolation fractions (empirical):
 On the 10 W radio levels 5-8 are 2 W, 3 W, 5 W, 10 W: level 5 = low + (mid - low) x f2, level 6 = low + (mid - low) x
 f3, level 7 = mid, level 8 = high. Clamp to 4095.
 
+### 7.1 Five levels (DM-1701)
+
+The DM-1701 uses five levels in place of the nine above ([power-calibration.md](../testing/power-calibration.md)): the
+two low levels are fixed DAC values per band, the next two lie between factory rows, the top level is the high row.
+
+| Level | Name | VHF | UHF |
+|---|---|---|---|
+| 0 | 100 mW | 517 | 339 |
+| 1 | 500 mW | 800 | 620 |
+| 2 | 1 W | very low + (low - very low) x 0.723 | very low + (low - very low) x 0.838 |
+| 3 | 2.5 W | low + (mid - low) x 0.791 | low + (mid - low) x 0.809 |
+| 4 | 5 W | high | high |
+
+These values are a draft: they come from the SDR bench's relative levels at 145.51 and 449.9 MHz with the high row
+taken as 5 W, and came out within 0.2 dB of their spacing there. No wattmeter reading backs them yet, and the zero
+point and cliff of the procedure are not measured.
+
+Relative output against the DAC value, same radio and frequencies (dB below the high row):
+
+| DAC | UHF | DAC | VHF |
+|---|---|---|---|
+| 250 | -21.3 | 350 | -25.2 |
+| 350 | -16.5 | 490 | -18.1 |
+| 500 | -12.3 | 640 | -13.0 |
+| 650 | -9.5 | 830 | -9.5 |
+| 895 | -6.4 | 1081 | -6.9 |
+| 1200 | -3.9 | 1400 | -4.4 |
+| 1669 | -1.2 | 1882 | -1.1 |
+| 2080 | 0 | 2062 | 0 |
+| 2800 | +0.5 | 2800 | +1.7 |
+
+### 7.2 DMR key-up
+
+The PA is keyed by the shared rule ([pa-keyup.md](pa-keyup.md)), 0.6 ms after the RF TX interrupt, with constants per
+band (`boards/dm1701/board.c`):
+
+| Band | dead | knee | slope_us | boost % | hold % | boost_us | pa_us | drive_us |
+|---|---|---|---|---|---|---|---|---|
+| VHF | 0 | 1560 | 656 | 120 | 100 | 1930 | 1930 | 300 |
+| UHF | 0 | 500 | 780 | 120 | 100 | 1930 | 1930 | 300 |
+
+Measured on the SDR bench with these, every level: the -3 dB point 0.76-1.09 ms before the first symbol at UHF and
+0.26-0.53 ms at VHF, the first symbol within 0.7 dB of the settled level, overshoot under 1 dB at UHF and under 3 dB
+at VHF. Keyed at the level's drive 1 ms after the interrupt, as before, the lowest level's first symbol was 13 dB low
+at UHF and 24 dB low at VHF.
+
 Without a loaded calibration RadioFoundry drives a fixed DAC value of 300 (`DM1701_DAC_UNCALIBRATED` in
 `boards/dm1701/radio_dm1701.c`), a very low drive.
 
