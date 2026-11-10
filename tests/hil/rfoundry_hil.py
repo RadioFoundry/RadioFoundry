@@ -554,13 +554,13 @@ class Radio:
         raise AssertionError(f"could not get to the Home screen (screen {self.screen()})")
 
     def auto_lock_off(self):
-        """Settings > Privacy > Auto lock back to Off (it cycles Off, 30 s, 60 s, 300 s). The session does this before
+        """Settings > Key lock > Auto lock back to Off (it cycles Off, 30 s, 60 s, 300 s). The session does this before
         the first test: a run cut short inside test_auto_lock leaves it on, and a radio that locks its keys after 30 s
         fails every UI test after it. Returns True when it had to change it."""
         if as_int(self.view(["storage"]).get("settings.auto_lock_s"), 0) == 0:
             return False
         self.go_home()
-        for k in ("ok", "7", "4", "down", "down"):
+        for k in ("ok", "7", "9"):
             self.press(k)
         for _ in range(4):
             if self.view(["storage"]).get("settings.auto_lock_s") == "0":

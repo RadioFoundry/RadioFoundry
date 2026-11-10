@@ -356,7 +356,7 @@ range without letting them corrupt the live settings. It can ignore the range, o
 | 0x7518 | 1 | Boot screen type: 0x01 text, 0x00 picture. This byte is also the start of the 7 byte boot PIN block read from 0x7518 |
 | 0x7519 | 1 | Bit 0: boot password (PIN) enabled |
 | 0x751C | 3 | Boot PIN as BCD digits, high nibble first. A nibble of 0xF ends the PIN. Up to 6 digits |
-| 0x7524 | 10 x 2 | Quick-key slots (LE). The CPS's function ids there aren't documented here. RadioFoundry uses the slots for its key assignment: slot 0 the marker 0x4B02, slots 1-9 one per assignable key, the press's `keyfn_t` in the low byte and the long press's in the high byte (`core/input/keyassign.h`, `ui.md` 3.1). Layout 1 (marker 0x4B01, a slot each for the press and long press of three keys) is read and rewritten as layout 2 on the first change |
+| 0x7524 | 10 x 2 | Quick-key slots (LE). The CPS's function ids there aren't documented here. RadioFoundry uses the slots for its key assignment: slot 0 the marker 0x4B02, slots 1-9 one per assignable key, the press's `keyfn_t` (including 17, Tone burst, press only) in the low byte and the long press's in the high byte (`core/input/keyassign.h`, `ui.md` 3.1). Layout 1 (marker 0x4B01, a slot each for the press and long press of three keys) is read and rewritten as layout 2 on the first change |
 | 0x7540 | 16 | Boot text line 1 |
 | 0x7550 | 16 | Boot text line 2 |
 | 0x7590 | 0x38 | VFO A, channel record format (7.3.3) |

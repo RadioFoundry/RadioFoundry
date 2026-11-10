@@ -134,12 +134,16 @@ int32_t ui_svc_setting_get(uint8_t id)
 			return (rs.beep_level + 5) / 10;
 		if (id == UI_SET_TOT_S)
 			return rs.tot_s;
-		if (id == UI_SET_BACKLIGHT_S)
-			return rs.backlight_dim_s;
+		if (id == UI_SET_BACKLIGHT_S)	// < 0: dims, never goes off
+			return rs.backlight_off_s == 0 && rs.backlight_dim_s != 0 ? -(int32_t)rs.backlight_dim_s
+										    : rs.backlight_dim_s;
 		return rs.rx_save != 0;
 	case UI_SET_VOLUME:
 		settings_read(&st);
 		return radio_volume_step(st.volume);
+	case UI_SET_KNOB_WHEN_LOCKED:
+		settings_read(&st);
+		return (st.knob_flags & SETTINGS_KNOB_LOCK) == 0;	// stored as the lock, shown as the knob working
 	case UI_SET_BRIGHTNESS:
 		settings_read(&st);
 		return st.brightness >= 10 && st.brightness <= 100 ? st.brightness : 100;
@@ -458,6 +462,12 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		st = settings_begin();
 		st->lang[0] = (char)(value >> 8);
 		st->lang[1] = (char)value;
+		settings_end(hal_millis());
+		return true;
+	case UI_SET_KNOB_WHEN_LOCKED:
+		st = settings_begin();
+		st->knob_flags = (uint8_t)(value == 0 ? st->knob_flags | SETTINGS_KNOB_LOCK :
+							st->knob_flags & ~SETTINGS_KNOB_LOCK);
 		settings_end(hal_millis());
 		return true;
 	case UI_SET_VOLUME:

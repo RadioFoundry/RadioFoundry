@@ -755,6 +755,25 @@
    "group": "settings",
    "needs": []
   },
+  "volume_bar": {
+   "group": "home",
+   "needs": [
+    "VOLUME_BAR"
+   ]
+  },
+  "volume_bar_call": {
+   "group": "calls",
+   "needs": [
+    "VOLUME_BAR",
+    "DMR"
+   ]
+  },
+  "volume_bar_quick": {
+   "group": "home",
+   "needs": [
+    "VOLUME_BAR"
+   ]
+  },
   "factory_reset": {
    "group": "settings",
    "needs": []
