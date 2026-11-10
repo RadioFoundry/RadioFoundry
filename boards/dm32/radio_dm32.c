@@ -37,11 +37,17 @@
 // The key-up constants (docs/spec/pa-keyup.md): measured on the SDR bench at UHF and VHF, every step up 0.1-0.8 ms
 // before the first symbol and no more than 3 dB over (hardware-dm32.md 8.5). The knee goes with pa_us: the control
 // charges less with the PA selected, so a later PA wants a smaller knee
+#define KEYUP_BOOST_US		1500u
+#define KEYUP_PA_US		1500u
+#define KEYUP_DRIVE_US		500u
+_Static_assert(KEYUP_BOOST_US <= KEYUP_MAX_AHEAD_US && KEYUP_PA_US <= KEYUP_BOOST_US && KEYUP_DRIVE_US <= KEYUP_BOOST_US,
+	       "the key-up's points must come after the split's switch, in order (pa_keyup_valid)");
+#if CONFIG_DMR
 static const pa_keyup_cfg_t keyup_cfg = {
 	.dead = 680, .knee = 1450, .slope_us = 600, .boost_pct = 120, .hold_pct = 80,
-	.boost_us = 1500, .pa_us = 1500, .drive_us = 500,
+	.boost_us = KEYUP_BOOST_US, .pa_us = KEYUP_PA_US, .drive_us = KEYUP_DRIVE_US,
 };
-_Static_assert(1500u <= KEYUP_MAX_AHEAD_US, "the boost must come after the split's switch");
+#endif
 // TX data advance (hrc7000_t.tx_pre_on): the chip's 0.4 ms until the inbound burst's offset against the outbound is
 // measured here. The other FD6818 board needed 1.1 ms
 #define TX_PRE_ON		4u
@@ -221,6 +227,10 @@ static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 			continue;
 		}
 		if (!dmr_keyed) {
+			// Disarmed in the sequence: the drive may be at the boost, so the PA goes off now, not at burst_off
+			if (boost) {
+				pa_off();
+			}
 			continue;
 		}
 		switch (next) {
@@ -424,9 +434,8 @@ static void keyup_plan(uint32_t hz)
 		uint16_t v = bf_cal_power_level(hz, l);
 		top = v > top ? v : top;
 	}
-	const pa_keyup_cfg_t *c = pa_keyup_cfg();
-	ku_cfg = c != NULL ? *c : keyup_cfg;
-	ku = pa_keyup_plan(tx_drive, top);
+	ku_cfg = keyup_cfg;			// pa_keyup_plan leaves it when no key-up is set up (no boost then)
+	ku = pa_keyup_plan(tx_drive, top, &ku_cfg);	// the plan and its points from one set of constants
 }
 #endif
 

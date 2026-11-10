@@ -56,7 +56,8 @@ key-up. A boost inside the dead zone or under d gives no boost: the PA is keyed 
 Two rules for the hold:
 
 - Keep it above the dead zone at the lowest step. A hold far under it (drive 0) for more than a few hundred µs loses
-  the boost's charge, and the step comes up milliseconds late.
+  the boost's charge, and the step comes up milliseconds late. `pa_keyup_drives` holds at `dead + 1` when
+  `hold_pct` of d is at or under it, and at d for a step whose drive is in the dead zone.
 - The lowest drive sits on an edge. After the boost it adds to the knee only at its own small rate, so a boost a few
   percent short comes up late and one a few percent long overshoots. Higher steps have several times the margin.
 
@@ -67,7 +68,7 @@ A board with per-burst keying opts in; one that doesn't call it keys its PA as b
 | Step | Call |
 |---|---|
 | Start-up | `pa_keyup_init(defaults, max_ahead_us, max_drive)`: its constants, the earliest point its burst sequence can run (after the burst task's wake and any switching that has to go first) and its drive limit |
-| Key-up (radio task) | `pa_keyup_plan(d, top)` with its cal table's drives at the transmit frequency; keep the result and the constants (`pa_keyup_cfg`) for the bursts |
+| Key-up (radio task) | `pa_keyup_plan(d, top, &cfg)` with its cal table's drives at the transmit frequency; keep the result and the constants it returns in `cfg` for the bursts, so the points and the plan come from one set |
 | Each burst | the four points in time order, the RF switch to transmit placed among them by its own time |
 
 The RF switch has its own lead on the PA's point. A switch that holds the burst task for longer (a synthesizer retune

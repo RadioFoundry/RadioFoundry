@@ -34,9 +34,12 @@ int main(void)
 	c.pa_us = 900;
 	k = pa_keyup_drives(&c, 955, 2615, 4095);
 	CHECK(k.boost == 3138 && k.hold_us == 500);
-	// A drive under the dead zone still gets the knee's boost
+	// A drive under the dead zone still gets the knee's boost, and holds at its own drive
 	k = pa_keyup_drives(&dflt, 500, 2615, 4095);
-	CHECK(k.boost == 3138 && k.hold_us == 1500 - 589 && k.hold == 400);
+	CHECK(k.boost == 3138 && k.hold_us == 1500 - 589 && k.hold == 500);
+	// The hold never under the dead zone: 80 % of 800 is 640, held at 681
+	k = pa_keyup_drives(&dflt, 800, 2615, 4095);
+	CHECK(k.boost == 3138 && k.hold == 681 && k.drive == 800);
 
 	// No boost: no table drive, no constants, boost_us 0, a boost inside the dead zone or under the step's drive (a
 	// calibration drive over the table's top): the PA keyed at pa_us at the drive, as before
@@ -77,16 +80,18 @@ int main(void)
 
 	// The board's copy: nothing before init, the board's constants after, a set checked whole, NULL restores
 	CHECK(pa_keyup_cfg() == NULL && !pa_keyup_set(&dflt));
-	CHECK(pa_keyup_plan(955, 2615).boost == 0);
+	pa_keyup_cfg_t used = { .knee = 7 };
+	CHECK(pa_keyup_plan(955, 2615, &used).boost == 0 && used.knee == 7);
 	pa_keyup_init(&dflt, 1580, 4095);
 	CHECK(pa_keyup_cfg() != NULL && pa_keyup_cfg()->knee == 1450);
-	k = pa_keyup_plan(955, 2615);
-	CHECK(k.boost == 3138 && k.hold == 764 && k.hold_us == 843);
+	k = pa_keyup_plan(955, 2615, &used);
+	CHECK(k.boost == 3138 && k.hold == 764 && k.hold_us == 843 && used.knee == 1450 && used.boost_us == 1500);
 	CHECK(pa_keyup_last().hold_us == 843);
 	c = dflt;
 	c.knee = 1229;
 	CHECK(pa_keyup_set(&c) && pa_keyup_cfg()->knee == 1229);
-	CHECK(pa_keyup_plan(680, 2615).hold_us == 1000);
+	CHECK(pa_keyup_plan(680, 2615, NULL).hold_us == 1000);
+	CHECK(pa_keyup_plan(955, 2615, &used).boost == 3138 && used.knee == 1229);
 	c.boost_us = 2000;
 	CHECK(!pa_keyup_set(&c) && pa_keyup_cfg()->boost_us == 1500);
 	CHECK(pa_keyup_set(NULL) && pa_keyup_cfg()->knee == 1450 && pa_keyup_cfg()->boost_pct == 120);

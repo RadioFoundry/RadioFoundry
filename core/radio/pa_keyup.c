@@ -26,7 +26,13 @@ pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, ui
 		t = room;
 	}
 	k.boost = (uint16_t)boost;
-	k.hold = (uint16_t)((uint32_t)d * c->hold_pct / 100u);
+	// The hold stays above the dead zone: under it the loop loses the boost's charge (pa-keyup.md 2). A step whose
+	// own drive is in the dead zone holds at d
+	uint32_t hold = (uint32_t)d * c->hold_pct / 100u;
+	if (hold <= c->dead) {
+		hold = d > c->dead ? (uint32_t)c->dead + 1u : d;
+	}
+	k.hold = (uint16_t)hold;
 	k.hold_us = (uint16_t)(c->boost_us - t);
 	return k;
 }
@@ -44,7 +50,10 @@ bool pa_keyup_valid(const pa_keyup_cfg_t *c, uint16_t max_ahead_us)
 
 #if CONFIG_DMR
 static const pa_keyup_cfg_t *board_cfg;	// the board's, kept by pa_keyup_init's caller
-static pa_keyup_cfg_t cfg;
+// Two copies: a set writes the one not in use, then switches, so a key-up reads one whole set (a set comes from the
+// debug link at a person's pace, never twice within one key-up's copy)
+static pa_keyup_cfg_t cfgs[2];
+static volatile uint8_t cur;
 static uint16_t ahead_limit, drive_limit;
 static bool on;
 static pa_keyup_t last;
@@ -55,7 +64,7 @@ void pa_keyup_init(const pa_keyup_cfg_t *defaults, uint16_t max_ahead_us, uint16
 		return;
 	}
 	board_cfg = defaults;
-	cfg = *defaults;
+	cfgs[cur] = *defaults;
 	ahead_limit = max_ahead_us;
 	drive_limit = max_drive;
 	on = true;
@@ -63,7 +72,7 @@ void pa_keyup_init(const pa_keyup_cfg_t *defaults, uint16_t max_ahead_us, uint16
 
 const pa_keyup_cfg_t *pa_keyup_cfg(void)
 {
-	return on ? &cfg : NULL;
+	return on ? &cfgs[cur] : NULL;
 }
 
 bool pa_keyup_set(const pa_keyup_cfg_t *c)
@@ -76,13 +85,19 @@ bool pa_keyup_set(const pa_keyup_cfg_t *c)
 	} else if (!pa_keyup_valid(c, ahead_limit)) {
 		return false;
 	}
-	cfg = *c;
+	uint8_t n = (uint8_t)(cur ^ 1u);
+	cfgs[n] = *c;
+	cur = n;
 	return true;
 }
 
-pa_keyup_t pa_keyup_plan(uint16_t d, uint16_t top)
+pa_keyup_t pa_keyup_plan(uint16_t d, uint16_t top, pa_keyup_cfg_t *used)
 {
-	last = pa_keyup_drives(on ? &cfg : NULL, d, top, drive_limit);
+	pa_keyup_cfg_t c = cfgs[cur];
+	if (used != NULL && on) {
+		*used = c;
+	}
+	last = pa_keyup_drives(on ? &c : NULL, d, top, drive_limit);
 	return last;
 }
 

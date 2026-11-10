@@ -9,7 +9,7 @@
 //
 //	boost = boost% * top			from boost_us before the first symbol, for
 //	t = (knee + slope * (d - dead)) / (boost - dead)
-//	hold  = hold% * d			from then on
+//	hold  = hold% * d, above dead		from then on
 //	d					from drive_us before
 //	the PA on				at pa_us before (its own point: with the boost, or later)
 //
@@ -23,8 +23,8 @@
 // keys its PA as before. The constants are RAM: the debug link may change them (RADIO op 37) for tuning a radio, and
 // a restart restores the board's.
 //
-// Threading: pa_keyup_set from the debug link task, pa_keyup_plan from the radio task at key-up. A key-up during a
-// change may mix old and new constants: each set is checked whole, and a mixed one only times a point late.
+// Threading: pa_keyup_set from the debug link task, pa_keyup_plan from the radio task at key-up. Each set is checked
+// whole and switched in whole, and a key-up takes one set: the plan and the board's points come from the same.
 #ifndef RADIO_PA_KEYUP_H
 #define RADIO_PA_KEYUP_H
 
@@ -66,8 +66,9 @@ void pa_keyup_init(const pa_keyup_cfg_t *defaults, uint16_t max_ahead_us, uint16
 const pa_keyup_cfg_t *pa_keyup_cfg(void);
 // New constants (NULL: the board's); false when invalid or no board keys this way. The next key-up takes them
 bool pa_keyup_set(const pa_keyup_cfg_t *c);
-// The key-up with the constants now, kept as the last one for the debug link view
-pa_keyup_t pa_keyup_plan(uint16_t d, uint16_t top);
+// The key-up with the constants now, kept as the last one for the debug link view. used (may be NULL): a copy of the
+// constants it took, for the board's points (unchanged when no board keys this way)
+pa_keyup_t pa_keyup_plan(uint16_t d, uint16_t top, pa_keyup_cfg_t *used);
 pa_keyup_t pa_keyup_last(void);
 
 #endif
