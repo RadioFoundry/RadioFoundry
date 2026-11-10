@@ -522,6 +522,16 @@ The power level is one value for the three arrays: 0 = low (0x40 / 0xD0), 1 = mi
 (0x4A / 0xDA, also used for 3). The radio's menu shows the setting as High / Low / Middle and stores 2 / 0 / 1, and the
 drive bytes rise with the level in every segment. RadioFoundry's L / M / H use the same arrays and the same lookup.
 
+RadioFoundry has five power levels: 2, 3 and 4 are L, M and H. Levels 0 and 1 are 37 % and 65 % of the low array's
+drive: drafts, to be set with a wattmeter ([power-calibration.md](../testing/power-calibration.md)). On the SDR bench
+at 445 MHz (DMR bursts, relative to L, drive 1616):
+
+| Drive | 300 | 450 | 600 | 750 | 900 | 1050 | 1200 | 1400 |
+|---|---|---|---|---|---|---|---|---|
+| dB | -22.6 | -13.9 | -10.3 | -7.7 | -6.2 | -4.7 | -3.7 | -1.7 |
+
+At 146 MHz the curve is flatter and not monotonic below drive 450.
+
 **L / M / H on air.** At the test frequency (between the 452.5 and 470 MHz points) the radio examined gets a middle drive 1.40
 times the low drive and a high drive 1.46 times the middle, in DAC counts. The bench run used RadioFoundry's older lookup,
 within 9 counts of the radio's own; the lookup is now the radio's. The drive steps are about even, so the 0.4 dB

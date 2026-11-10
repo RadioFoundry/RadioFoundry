@@ -1087,6 +1087,12 @@ it, between bursts the carrier is below the measuring receiver's floor (26 dB do
 -13 dB (T5), then full power 0.4 ms later; key-down takes 0.4 ms. On-time 30.7 ms, same-slot spacing 60.0 ms, outer
 symbol deviation 1933 Hz, every burst of a 3 s call decoded (headers, 9 superframes, terminator).
 
+The key-up follows the key-up rule ([pa-keyup.md](pa-keyup.md)): the rule's points run on the key timer, with the
+band's T5 supply 500 us ahead of the loop. The board's constants have no boost, so the sequence is the one above, the
+loop closed 1.35 ms before the first symbol. The debug link's `radio pa-keyup` changes them for tuning. On the SDR
+bench (445 MHz, DMR) the loop closes on the T5 leak: at the two lowest levels the burst starts 3 dB and 6 dB over its
+settled level for 0.5 ms, and from the 5 W level up it rises without overshoot, 0.6 ms before the first symbol.
+
 At power-up, with the revision known: receivers on, then on V1-V4 the AK2365A reset (PE15 low for 10 us), and on V4
 the VHF synthesizer set for 145 MHz receive. On V4A / V5 the LMX2571 reset goes to both chips, then 10 ms; PE15 stays
 an input.

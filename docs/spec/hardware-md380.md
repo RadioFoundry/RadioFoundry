@@ -595,8 +595,29 @@ Roaming reads this RSSI (the IF chain's level on an ADC) as the site signal ([dm
 
 ### 5.6 PA and power control
 
-DAC1 is the APC reference, scaled from the calibration's power rows (11.2). Two levels, 1 W and 5 W. TX is refused
+DAC1 is the APC reference, scaled from the calibration's power rows (11.2), 1 W and 5 W. TX is refused
 without an accepted calibration table (no safe uncalibrated drive is known).
+
+Five power levels. The values are drafts, to be set with a wattmeter
+([power-calibration.md](../testing/power-calibration.md)); the debug link's `radio tx-drive` keys any drive.
+
+| Level | Name | Drive |
+|---|---|---|
+| 0 | 100 mW | 56.5 % of the 1 W row |
+| 1 | 500 mW | 80.7 % of the 1 W row |
+| 2 | 1 W | the 1 W row |
+| 3 | 2.5 W | 45 % of the way from the 1 W row to the 5 W row (not measured) |
+| 4 | 5 W | the 5 W row |
+
+Levels 0 and 1 come from a drive sweep on the SDR bench (UHF radio, 432 MHz, DMR bursts, relative to the 1 W row's
+drive 1115; the 5 W row is 2119):
+
+| Drive | 300 | 400 | 500 | 600 | 700 | 800 | 950 |
+|---|---|---|---|---|---|---|---|
+| dB | -42.8 | -32.2 | -18.7 | -12.4 | -8.2 | -4.8 | -2.1 |
+
+The burst's key-up is clean from drive 500 up (no overshoot, the first symbol at the settled level), so this radio
+keys its PA as before, without the key-up rule's boost.
 
 DMR: the PA follows the bursts. The RF TX interrupt keys it (APC_EN); a TIM7 one-shot drops it 30 ms later
  3.4, and the slot engine's PA-off at the next timeslot interrupt stays as the fallback.
