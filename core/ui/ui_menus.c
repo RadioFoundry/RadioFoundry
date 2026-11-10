@@ -1927,9 +1927,42 @@ static void text_enter(void)
 	text_mode = TEXT_UPPER;
 }
 
+static char text_case(char c)
+{
+	return text_mode == TEXT_LOWER && c >= 'A' && c <= 'Z' ? (char)(c - 'A' + 'a') : c;
+}
+
+// The keys with letters cycle letters, digit, then the letters again in the other case; the others their set as is
+static uint8_t text_cycle_len(const char *set)
+{
+	uint8_t n = (uint8_t)strlen(set);
+	return set[0] >= 'A' && set[0] <= 'Z' ? (uint8_t)(2u * n - 1u) : n;
+}
+
+static char text_char(const char *set, uint8_t idx)
+{
+	uint8_t n = (uint8_t)strlen(set);
+	if (!(set[0] >= 'A' && set[0] <= 'Z'))
+		return set[idx];
+	if (idx < n)
+		return idx == n - 1u ? set[idx] : text_case(set[idx]);	// the letters in the mode's case, then the digit
+	char c = set[idx - n];
+	return text_mode == TEXT_LOWER ? c : (char)(c - 'A' + 'a');	// then the other case
+}
+
+static void text_append(char c)
+{
+	if (text_len >= text_max) {
+		ui_toast(TR("That's the most it can hold"));
+		return;
+	}
+	text_buf[text_len++] = c;
+	text_buf[text_len] = 0;
+}
+
 static void text_draw(void)
 {
-	static const char *const prefixes[TEXT_PREFIXES] = { "Name", "Message", "Callsign" };
+	static const char *const prefixes[TEXT_PREFIXES] = { TRN("Name"), TRN("Message"), TRN("Callsign") };
 	static const char *const modes[TEXT_MODES] = { "ABC", "123", "abc" };
 	const ui_layout_t *L = &ui_layout;
 	char linebuf[32];
@@ -1975,40 +2008,10 @@ static void text_draw(void)
 		y += L->small->h;
 	} while(start_char < (text_len+1));
 
-	ui_draw_hint(TRN(TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE), false);
-}
-
-static char text_case(char c)
-{
-	return text_mode == TEXT_LOWER && c >= 'A' && c <= 'Z' ? (char)(c - 'A' + 'a') : c;
-}
-
-// The keys with letters cycle letters, digit, then the letters again in the other case; the others their set as is
-static uint8_t text_cycle_len(const char *set)
-{
-	uint8_t n = (uint8_t)strlen(set);
-	return set[0] >= 'A' && set[0] <= 'Z' ? (uint8_t)(2u * n - 1u) : n;
-}
-
-static char text_char(const char *set, uint8_t idx)
-{
-	uint8_t n = (uint8_t)strlen(set);
-	if (!(set[0] >= 'A' && set[0] <= 'Z'))
-		return set[idx];
-	if (idx < n)
-		return idx == n - 1u ? set[idx] : text_case(set[idx]);	// the letters in the mode's case, then the digit
-	char c = set[idx - n];
-	return text_mode == TEXT_LOWER ? c : (char)(c - 'A' + 'a');	// then the other case
-}
-
-static void text_append(char c)
-{
-	if (text_len >= text_max) {
-		ui_toast(TR("That's the most it can hold"));
-		return;
-	}
-	text_buf[text_len++] = c;
-	text_buf[text_len] = 0;
+	if(text_prefix != TEXT_MESSAGE)
+		ui_draw_hint(TRN(TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE), false);
+	else
+		ui_draw_hint(TRN(TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK send" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE), false);
 }
 
 static bool text_key_fn(const input_event_t *ev)
@@ -2088,19 +2091,19 @@ static bool text_key_fn(const input_event_t *ev)
 
 #if CONFIG_CHANNEL_EDIT
 static const ui_scr_def_t text_screen = {
-	.name = "text", .flags = SF_FIELD, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
+	.name = "text", .flags = 0, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
 };
 #endif
 
 #if CONFIG_APRS
 static const ui_scr_def_t aprs_to_screen = {
-	.name = "aprs-to", .flags = SF_FIELD, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
+	.name = "aprs-to", .flags = 0, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
 };
 #endif
 
 #if CONFIG_DMR_SMS || CONFIG_APRS
 static const ui_scr_def_t message_text_screen = {
-	.name = "message-text", .flags = SF_FIELD, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
+	.name = "message-text", .flags = 0, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
 };
 #endif
 
