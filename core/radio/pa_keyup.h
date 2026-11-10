@@ -9,14 +9,15 @@
 //
 //	boost = boost% * top			from boost_us before the first symbol, for
 //	t = (knee + slope * (d - dead)) / (boost - dead)
-//	hold  = hold% * d, above dead		from then on
+//	hold  = hold% * d, above dead		from then on (% of d's part above the floor, on a board with one)
 //	d					from drive_us before
 //	the PA on				at pa_us before (its own point: with the boost, or later)
 //
 // d is the step's drive and top the table's top drive at the transmit frequency. dead is the drive under which the
 // loop's reference stays at zero, knee the amount the reference must add up to (drive counts above dead times ms),
 // slope the extra time per count a higher step needs (about the low-pass's time constant). Nothing is stored per step
-// or per frequency.
+// or per frequency. A board whose calibration has a floor (the drive where the PA's output reaches zero at the
+// transmit frequency) gives it at each key-up: dead then counts from the floor, and the hold never goes under it.
 //
 // A board with per-burst keying opts in: pa_keyup_init once with its constants and the earliest point its burst
 // sequence can run, pa_keyup_plan at each key-up, then the points in its burst sequence. A board that doesn't call it
@@ -32,11 +33,11 @@
 #include <stdbool.h>
 
 typedef struct {
-	uint16_t dead;		// drive counts that do nothing: the loop's reference starts above this
+	uint16_t dead;		// drive counts (above the floor) that do nothing: the loop's reference starts above this
 	uint16_t knee;		// what the reference adds up to before the PA gives output, counts above dead x ms
 	uint16_t slope_us;	// more boost time per count of (d - dead), us x counts / the boost above dead
 	uint8_t boost_pct;	// the boost, % of the top step's drive, 50..PA_KEYUP_BOOST_MAX_PCT
-	uint8_t hold_pct;	// the hold after the boost, % of d, 0..100
+	uint8_t hold_pct;	// the hold after the boost, % of d (above the floor), 0..100
 	uint16_t boost_us;	// the boost from this long before the first symbol; 0 = no boost or hold
 	uint16_t pa_us;		// the PA on this long before (at most boost_us)
 	uint16_t drive_us;	// the drive to d this long before (at most boost_us)
@@ -52,9 +53,20 @@ typedef struct {
 	uint16_t hold_us;	// the boost ends (the hold starts) this long before the first symbol
 } pa_keyup_t;
 
-// The key-up for a step (pure): d the step's drive, top the table's top drive at the transmit frequency, max the
-// board's drive limit. hold <= d, boost within max, drive_us <= hold_us <= boost_us
-pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, uint16_t max);
+// The key-up for a step (pure): d the step's drive, top the table's top drive at the transmit frequency, floor the
+// calibration's zero-output drive there (0: none), max the board's drive limit. floor <= hold <= d, boost within max,
+// drive_us <= hold_us <= boost_us
+pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, uint16_t floor, uint16_t max);
+
+// A burst's points in time order, earliest first, for a board's burst sequence (a task's waits or a timer's steps).
+// Without a boost one point: the PA keyed at d at pa_us. Points at the same time come in the enum's order
+typedef enum { PA_KEYUP_PT_BOOST, PA_KEYUP_PT_PA, PA_KEYUP_PT_HOLD, PA_KEYUP_PT_DRIVE } pa_keyup_kind_t;
+typedef struct {
+	uint16_t us;	// before the first symbol
+	uint8_t kind;	// pa_keyup_kind_t
+} pa_keyup_point_t;
+#define PA_KEYUP_POINTS	4u
+uint8_t pa_keyup_points(const pa_keyup_cfg_t *c, const pa_keyup_t *k, pa_keyup_point_t out[PA_KEYUP_POINTS]);
 
 // The constants are in range, the points in order and none earlier than max_ahead_us
 bool pa_keyup_valid(const pa_keyup_cfg_t *c, uint16_t max_ahead_us);
@@ -62,13 +74,17 @@ bool pa_keyup_valid(const pa_keyup_cfg_t *c, uint16_t max_ahead_us);
 // Once, by a board that keys this way: its constants (valid against max_ahead_us; kept by pointer, so static) and
 // its drive limit
 void pa_keyup_init(const pa_keyup_cfg_t *defaults, uint16_t max_ahead_us, uint16_t max_drive);
+// A board whose bands have their own PA: the transmit band's constants (valid, static), before pa_keyup_plan. They are
+// the board's from then on; constants the debug link set stay until it gives them back
+void pa_keyup_select(const pa_keyup_cfg_t *defaults);
 // The constants now; NULL when no board keys this way
 const pa_keyup_cfg_t *pa_keyup_cfg(void);
 // New constants (NULL: the board's); false when invalid or no board keys this way. The next key-up takes them
 bool pa_keyup_set(const pa_keyup_cfg_t *c);
-// The key-up with the constants now, kept as the last one for the debug link view. used (may be NULL): a copy of the
-// constants it took, for the board's points (unchanged when no board keys this way)
-pa_keyup_t pa_keyup_plan(uint16_t d, uint16_t top, pa_keyup_cfg_t *used);
+// The key-up with the constants now, kept as the last one for the debug link view. floor: the calibration's
+// zero-output drive at the transmit frequency (0: none). used (may be NULL): a copy of the constants it took, for the
+// board's points (unchanged when no board keys this way)
+pa_keyup_t pa_keyup_plan(uint16_t d, uint16_t top, uint16_t floor, pa_keyup_cfg_t *used);
 pa_keyup_t pa_keyup_last(void);
 
 #endif

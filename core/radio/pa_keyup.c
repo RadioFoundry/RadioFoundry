@@ -5,10 +5,10 @@
 #include "config.h"
 #include <stddef.h>
 
-pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, uint16_t max)
+pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, uint16_t floor, uint16_t max)
 {
 	pa_keyup_t k = { .boost = 0, .hold = 0, .drive = d, .hold_us = 0 };
-	if (c == NULL || c->boost_us == 0u || d == 0u) {
+	if (c == NULL || c->boost_us == 0u || d == 0u || d < floor) {
 		return k;
 	}
 	// 32-bit integer math: drives <= 4095 or so, knee and slope_us 16 bits, so every product stays below 2^32
@@ -16,25 +16,44 @@ pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, ui
 	if (boost > max) {
 		boost = max;
 	}
-	if (boost <= (uint32_t)c->dead + 1u || boost < d) {
+	uint32_t dead = (uint32_t)floor + c->dead;
+	if (boost <= dead + 1u || boost < d) {
 		return k;	// a boost that would do nothing, or one under the step's drive: key at d
 	}
-	uint32_t over = d > c->dead ? (uint32_t)d - c->dead : 0u;
-	uint32_t t = ((uint32_t)c->knee * 1000u + (uint32_t)c->slope_us * over) / (boost - c->dead);
+	uint32_t over = d > dead ? (uint32_t)d - dead : 0u;
+	uint32_t t = ((uint32_t)c->knee * 1000u + (uint32_t)c->slope_us * over) / (boost - dead);
 	uint32_t room = (uint32_t)c->boost_us - c->drive_us;	// the boost ends by the point the drive goes to d
 	if (t > room) {
 		t = room;
 	}
 	k.boost = (uint16_t)boost;
 	// The hold stays above the dead zone: under it the loop loses the boost's charge (pa-keyup.md 2). A step whose
-	// own drive is in the dead zone holds at d
-	uint32_t hold = (uint32_t)d * c->hold_pct / 100u;
-	if (hold <= c->dead) {
-		hold = d > c->dead ? (uint32_t)c->dead + 1u : d;
+	// own drive is in the dead zone holds at d. On a board with a floor both count from it
+	uint32_t hold = floor + (uint32_t)(d - floor) * c->hold_pct / 100u;
+	if (hold <= dead) {
+		hold = d > dead ? dead + 1u : d;
 	}
 	k.hold = (uint16_t)hold;
 	k.hold_us = (uint16_t)(c->boost_us - t);
 	return k;
+}
+
+uint8_t pa_keyup_points(const pa_keyup_cfg_t *c, const pa_keyup_t *k, pa_keyup_point_t out[PA_KEYUP_POINTS])
+{
+	if (k->boost == 0u) {
+		out[0] = (pa_keyup_point_t){ .us = c->pa_us, .kind = PA_KEYUP_PT_PA };
+		return 1u;
+	}
+	const uint16_t us[PA_KEYUP_POINTS] = { c->boost_us, c->pa_us, k->hold_us, c->drive_us };	// in the enum's order
+	for (uint8_t i = 0; i < PA_KEYUP_POINTS; i++) {
+		uint8_t at = i;	// insertion keeps the enum's order among equal times
+		while (at > 0u && out[at - 1u].us < us[i]) {
+			out[at] = out[at - 1u];
+			at--;
+		}
+		out[at] = (pa_keyup_point_t){ .us = us[i], .kind = i };
+	}
+	return PA_KEYUP_POINTS;
 }
 
 bool pa_keyup_valid(const pa_keyup_cfg_t *c, uint16_t max_ahead_us)
@@ -56,6 +75,7 @@ static pa_keyup_cfg_t cfgs[2];
 static volatile uint8_t cur;
 static uint16_t ahead_limit, drive_limit;
 static bool on;
+static bool custom;	// the debug link's constants: a band's don't replace them
 static pa_keyup_t last;
 
 void pa_keyup_init(const pa_keyup_cfg_t *defaults, uint16_t max_ahead_us, uint16_t max_drive)
@@ -82,8 +102,11 @@ bool pa_keyup_set(const pa_keyup_cfg_t *c)
 	}
 	if (c == NULL) {
 		c = board_cfg;
+		custom = false;
 	} else if (!pa_keyup_valid(c, ahead_limit)) {
 		return false;
+	} else {
+		custom = true;
 	}
 	uint8_t n = (uint8_t)(cur ^ 1u);
 	cfgs[n] = *c;
@@ -91,13 +114,26 @@ bool pa_keyup_set(const pa_keyup_cfg_t *c)
 	return true;
 }
 
-pa_keyup_t pa_keyup_plan(uint16_t d, uint16_t top, pa_keyup_cfg_t *used)
+void pa_keyup_select(const pa_keyup_cfg_t *defaults)
+{
+	if (!on || !pa_keyup_valid(defaults, ahead_limit)) {
+		return;
+	}
+	board_cfg = defaults;
+	if (!custom) {
+		uint8_t n = (uint8_t)(cur ^ 1u);	// as pa_keyup_set: the copy not in use, then the switch
+		cfgs[n] = *defaults;
+		cur = n;
+	}
+}
+
+pa_keyup_t pa_keyup_plan(uint16_t d, uint16_t top, uint16_t floor, pa_keyup_cfg_t *used)
 {
 	pa_keyup_cfg_t c = cfgs[cur];
 	if (used != NULL && on) {
 		*used = c;
 	}
-	last = pa_keyup_drives(on ? &c : NULL, d, top, drive_limit);
+	last = pa_keyup_drives(on ? &c : NULL, d, top, floor, drive_limit);
 	return last;
 }
 

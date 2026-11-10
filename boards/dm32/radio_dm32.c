@@ -435,7 +435,7 @@ static void keyup_plan(uint32_t hz)
 		top = v > top ? v : top;
 	}
 	ku_cfg = keyup_cfg;			// pa_keyup_plan leaves it when no key-up is set up (no boost then)
-	ku = pa_keyup_plan(tx_drive, top, &ku_cfg);	// the plan and its points from one set of constants
+	ku = pa_keyup_plan(tx_drive, top, 0u, &ku_cfg);	// the plan and its points from one set of constants
 }
 #endif
 

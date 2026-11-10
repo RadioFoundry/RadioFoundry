@@ -68,7 +68,8 @@ A board with per-burst keying opts in; one that doesn't call it keys its PA as b
 | Step | Call |
 |---|---|
 | Start-up | `pa_keyup_init(defaults, max_ahead_us, max_drive)`: its constants, the earliest point its burst sequence can run (after the burst task's wake and any switching that has to go first) and its drive limit |
-| Key-up (radio task) | `pa_keyup_plan(d, top, &cfg)` with its cal table's drives at the transmit frequency; keep the result and the constants it returns in `cfg` for the bursts, so the points and the plan come from one set |
+| Key-up (radio task), a board whose bands have their own PA | `pa_keyup_select(constants)` with the transmit band's, before the plan |
+| Key-up (radio task) | `pa_keyup_plan(d, top, floor, &cfg)` with its cal table's drives at the transmit frequency; keep the result and the constants it returns in `cfg` for the bursts, so the points and the plan come from one set |
 | Each burst | the four points in time order, the RF switch to transmit placed among them by its own time |
 
 The RF switch has its own lead on the PA's point. A switch that holds the burst task for longer (a synthesizer retune
@@ -78,7 +79,7 @@ switch, the more of the inbound burst before ours the radio still hears.
 ## 4. Debug link
 
 The constants are RAM: RADIO op 37 ([debuglink.md](debuglink.md)) changes them for tuning, from the next key-up, and a
-restart restores the board's. The `core` view shows `pa_keyup` (the constants) and `pa_keyup.last` (the last key-up's
+restart restores the board's. Constants set this way apply on every band until `default` gives the board's back. The `core` view shows `pa_keyup` (the constants) and `pa_keyup.last` (the last key-up's
 boost, hold and drive, and the hold's point). RADIO op 36 sets a drive that is not in the table.
 
 ```
@@ -97,6 +98,8 @@ burst, find the first symbol from the sync, and take the median power envelope a
 | The -3 dB point | at or before the first symbol, every step |
 | The first symbol's level against the settled level | within 3 dB |
 | Overshoot above the settled level | 3 dB at most; the lowest step overshoots most |
+
+Tune each band that has its own PA: the knee of one band's PA can be several times another's on the same radio.
 
 1. Characterize the loop with the boost off (`boost_us` 0): the time from the PA's point to the output at three or
    four drives. Two drives give `dead` and `knee`: the knee is (d − dead) × (that time − the low-pass's time), the same
