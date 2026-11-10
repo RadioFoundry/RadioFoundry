@@ -260,7 +260,7 @@ The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM 
   and dropped with the last. The output follows the drive about 0.65 ms later at every drive from 300 to the low
   level's, on both bands, so a boost gains nothing here. On the SDR bench, low level and below: keyed 0.5 ms before,
   the -3 dB point came 0.15 ms after the first symbol and the first symbol 5-18 dB low; 0.8 ms before, 0.15 ms before
-  it and within 1 dB; 1.0 ms and 1.2 ms before, 0.3 ms before it. The mid and high levels are not measured. The sweep below moved the interrupt with
+  it and within 1 dB; 1.0 ms and 1.2 ms before, 0.3 ms before it. The mid and high levels key the same on both bands (-3 dB point 0.25-0.33 ms before, overshoot under 0.5 dB). The sweep below moved the interrupt with
   the switch in it. The
   inbound burst's payload ends about 2.5 ms before ours starts (the guard times of both slots), so with 3.1 ms the
   switch cut off the end of the inbound burst before each of ours (unverified). In SFR mode a header clipped that way failed its
@@ -531,6 +531,8 @@ at 445 MHz (DMR bursts, relative to L, drive 1616):
 | dB | -22.6 | -13.9 | -10.3 | -7.7 | -6.2 | -4.7 | -3.7 | -1.7 |
 
 At 146 MHz the curve is flatter and not monotonic below drive 450.
+
+M and H gave 3.1 and 3.7 dB over L at 445 MHz, and 3.8 and 5.5 dB over L at 146 MHz.
 
 **L / M / H on air.** At the test frequency (between the 452.5 and 470 MHz points) the radio examined gets a middle drive 1.40
 times the low drive and a high drive 1.46 times the middle, in DAC counts. The bench run used RadioFoundry's older lookup,
