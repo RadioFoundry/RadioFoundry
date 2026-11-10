@@ -5,7 +5,13 @@ the rig may transmit on (README.md, "The rig's configuration"). None of them has
 comes from the command line, else $RFOUNDRY_HIL_<NAME>, else the rig's TOML file (--hil-config, else
 $RFOUNDRY_HIL_CONFIG, else ~/.config/rfoundry/hil.toml), whose keys are the option names with _ for -. A test that
 needs a value no one gave skips (kind opt_in). With --allow-rf, every transmit frequency given must be in tx_mhz,
-and the bench client refuses to key anywhere else."""
+and the bench client refuses to key anywhere else.
+
+The file's [board.<id>] table (the id in boards/) holds one radio's run: with --hil-board <id> (tools/bringup.py run
+passes its --radio) its values come before the file's top level, and it may also give any other option that takes a
+value (--bench-api, --split-tx-mhz, --sfr-freq ...), so every run of that radio gets the same ones. The command line
+and the environment still come first. A flag (the --allow-* ones) stays on the command line: a file never grants a
+transmission."""
 import os
 
 import pytest
@@ -45,6 +51,9 @@ TX_OPTIONS = ("dmr-freq", "fm-mhz", "aprs-test-mhz", "sfr-freq", "roam-rx", "roa
 def add_options(g):
     g.addoption("--hil-config", default=None, metavar="TOML",
                 help=f"the rig's values (default $RFOUNDRY_HIL_CONFIG, else {DEFAULT_FILE} when it exists)")
+    g.addoption("--hil-board", default=os.environ.get("RFOUNDRY_HIL_BOARD"), metavar="ID",
+                help="the board whose [board.<id>] table in the rig's file applies (default $RFOUNDRY_HIL_BOARD; "
+                     "tools/bringup.py run passes its --radio)")
     for name, (_, text, _) in RIG.items():
         g.addoption(f"--{name}", default=None, help=f"{text} (or ${env_name(name)}, or {key(name)} in the rig's file)")
 
@@ -97,11 +106,27 @@ def configure(config):
     global CONFIG
     CONFIG = config
     data, path = _file(config)
+    boards = data.pop("board", {})
     for k in data:
         # exactly key(name): a hyphenated key would pass a looser test and then never be read
         if k not in {key(n) for n in RIG} | {key(n) for n in TX_OPTIONS}:
             raise pytest.UsageError(f"{path}: unknown key {k!r} (keys: {', '.join(key(n) for n in RIG)}, "
-                                    f"{', '.join(key(n) for n in TX_OPTIONS if n not in RIG)})")
+                                    f"{', '.join(key(n) for n in TX_OPTIONS if n not in RIG)}, [board.<id>])")
+    board = config.getoption("--hil-board")
+    own = dict(boards.get(board, {})) if board else {}
+    for k, v in list(own.items()):
+        if k in {key(n) for n in RIG} | {key(n) for n in TX_OPTIONS}:
+            data[k] = v         # the board's value before the file's top level
+            continue
+        if k == "radio_port":
+            raise pytest.UsageError(f"{path} [board.{board}]: radio_port: ports move when cables do, give it on the "
+                                    "command line")
+        cur = getattr(config.option, k, None) if hasattr(config.option, k) else KeyError
+        if cur is KeyError or isinstance(cur, bool) or isinstance(v, bool):
+            why = "a flag stays on the command line" if cur is not KeyError else "no such option"
+            raise pytest.UsageError(f"{path} [board.{board}]: {k!r}: {why}")
+        if cur is None:         # not given on the command line or by its environment variable
+            setattr(config.option, k, v)
     for name in list(RIG) + [n for n in TX_OPTIONS if n not in RIG]:
         dest = key(name)
         typ = RIG[name][0] if name in RIG else float

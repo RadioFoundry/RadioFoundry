@@ -693,8 +693,9 @@ bool ui_dual_home_key(const input_event_t *ev)
 		ui_dual_select(ev->action == ACT_NAV_RIGHT ? 1 : 0);
 		return true;
 	case ACT_CONTEXT:
-		if (!press)
+		if (!press || ui_st.entry)
 			return false;
+		// Home commits typed VFO digits with #; the actions open only with no entry in progress.
 		ui_push(SCR_DUAL, 0);
 		return true;
 	default:

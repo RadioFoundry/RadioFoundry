@@ -346,7 +346,7 @@ def test_bringup_run_records_and_status(tmp_path):
     # fake_split's row was made on an old commit whose files differ from today's: it needs a re-run. fake_seeded's
     # paths (LICENSE) are as HEAD has them unless someone edits the license in their tree
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
-    root = old_commit_differing(["tests/hil/README.md", "tests/hil/bringup_plugin.py"])
+    root = old_commit_differing(["tests/hil/bringup_plugin.py"])	# a source path: a spec edit alone stales nothing
     (results / board / "seed.json").write_text(json.dumps(seed(board, {"fake_split": {"result": "pass",
                                                                                         "commit": root},
                                                                          "fake_seeded": {"result": "pass",
@@ -378,6 +378,11 @@ def test_bringup_run_records_and_status(tmp_path):
 
     # staleness is by content: a commit squash-merged away changes nothing while the files are the same
     rec["commit"] = "0" * 40
+    with open(recs[0], "w") as f:
+        json.dump(rec, f)
+    assert statuses(common, board, t)["fake_ok"] == ("pass", "run")
+    # an edit to the spec alone: what ran on the radio is the same, no re-run
+    rec["sources"]["fake_ok"]["tests/hil/README.md"] = "0" * 40
     with open(recs[0], "w") as f:
         json.dump(rec, f)
     assert statuses(common, board, t)["fake_ok"] == ("pass", "run")

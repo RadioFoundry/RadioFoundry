@@ -76,6 +76,7 @@ def radio(pytestconfig):
     if lang:
         print(f"rfoundry-hil: the radio's language was {lang}: set back to English (the tests read English text)")
     r.tx_gate(False)        # blocked from the start: module fixtures run before any test's own gate
+    r.hwopt_baseline()
     yield r
     try:
         r.tx_gate_end()

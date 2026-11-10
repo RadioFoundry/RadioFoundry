@@ -21,8 +21,22 @@ WEAK bool ui_svc_aprs_view(aprs_view_t *v) { memset(v, 0, sizeof(*v)); return fa
 WEAK void ui_svc_aprs_cfg(aprs_cfg_t *c) { memset(c, 0, sizeof(*c)); }
 WEAK void ui_svc_aprs_set_cfg(const aprs_cfg_t *c) { (void)c; }
 WEAK bool ui_svc_aprs_send_now(void) { return false; }
+WEAK bool ui_svc_aprs_send_message(const char *to, const char *text, uint8_t flags)
+{
+	(void)to;
+	(void)text;
+	(void)flags;
+	return false;
+}
+WEAK uint8_t ui_svc_aprs_msg_count(void) { return 0; }
+WEAK bool ui_svc_aprs_msg(uint8_t i, aprs_msg_t *out, bool read)
+{
+	(void)i; (void)out; (void)read; return false;
+}
+WEAK bool ui_svc_aprs_msg_delete(uint8_t i) { (void)i; return false; }
 WEAK uint8_t ui_svc_aprs_station_count(void) { return 0; }
 WEAK bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out) { (void)i; (void)out; return false; }
+WEAK bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg) { (void)s; (void)m; (void)deg; return false; }
 
 enum { AP_SEND, AP_AUTO, AP_FREQ, AP_POWER, AP_PATH, AP_INTERVAL, AP_SMART, AP_VIA, AP_POS, AP_DMR_GPS, AP_KISS, AP_HEARD, AP_COUNT };
 
@@ -440,14 +454,31 @@ const ui_scr_def_t ui_aprs_screen = {
 
 static uint16_t heard_count(void) { return ui_svc_aprs_station_count(); }
 
+static void heard_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	ui_push(SCR_APRS_STATION, i);
+}
+
 static void heard_item(uint16_t i, ui_item_t *it)
 {
 	aprs_station_t s;
 	if (!ui_svc_aprs_station((uint8_t)i, &s)) {
 		return;
 	}
-	strcpy(it->label, s.call);
-	ui_sb_age(it->value, sizeof it->value, ui_st.now_ms - s.heard_ms);
+	sbuf_t b;
+	uint32_t m, at = s.heard_ms;
+	uint16_t deg;
+	sb_init(&b, it->label, sizeof it->label);
+	sb_str(&b, s.call);
+	if (ui_svc_aprs_range(&s, &m, &deg)) {
+		// How far and which way ("12.3 km NE"): an alternate, so a narrow row drops it before the call (font.h)
+		sb_str(&b, TEXT_ALT_OPEN " ");
+		sb_range(&b, m, deg);
+		sb_str(&b, TEXT_ALT_NEXT TEXT_ALT_CLOSE);
+		at = s.pos_ms;	// the age of the position the range is from, not of the station's last packet
+	}
+	ui_sb_age(it->value, sizeof it->value, ui_st.now_ms - at);
 	if (!s.direct) {
 		it->flags |= UI_ITEM_TEMP;	// heard through a digipeater
 	}
@@ -456,5 +487,32 @@ static void heard_item(uint16_t i, ui_item_t *it)
 const ui_scr_def_t ui_aprs_heard_screen = {
 	.name = "aprs-heard", .flags = SF_LIST | SF_FIELD, .prefix = TRN("Heard"), .hint = TRN("Back"),
 	.empty = TRN("Nothing heard yet"),
-	.count = heard_count, .item = heard_item,
+	.count = heard_count, .item = heard_item, .select = heard_select,
+};
+
+static uint16_t station_count(void) { return 1; }
+static void station_item(uint16_t i, ui_item_t *it)
+{
+	(void)i;
+	str_copy(it->label, sizeof it->label, TR("Message"));
+}
+static const char *station_title(void)
+{
+	static char call[AX25_CALL_LEN + 4];
+	aprs_station_t s;
+	if (!ui_svc_aprs_station((uint8_t)ui_frame()->arg, &s))
+		return "";
+	str_copy(call, sizeof call, s.call);
+	return call;
+}
+static void station_select(uint16_t i, bool hold)
+{
+	(void)i; (void)hold;
+	aprs_station_t s;
+	if (ui_svc_aprs_station((uint8_t)ui_frame()->arg, &s))
+		ui_aprs_compose(s.call);
+}
+const ui_scr_def_t ui_aprs_station_screen = {
+	.name = "aprs-station", .flags = SF_LIST | SF_FIELD, .prefix = TRN("Heard"), .hint = TRN("OK choose  Back"),
+	.count = station_count, .item = station_item, .select = station_select, .title = station_title,
 };

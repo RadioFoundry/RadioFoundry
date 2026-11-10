@@ -244,6 +244,7 @@ PC can't send it.
 | Motorola TMS, UDP 4007 | inbox, TMS ACK from the radio | PC only: no ACK, no inbox entry |
 | ETSI IP text, UDP 5016 | inbox | PC only |
 | LRRP, UDP 4001 | answered by the radio | PC only; running triggers and queued requests are dropped when passthrough starts |
+| NMEA position, UDP 10110 | APRS station list (and the PC) | PC only |
 | other UDP, ICMP, SCTP | PC (no service of the radio's) | PC |
 | ETSI defined short data, UDT text (no IP header) | inbox, ETSI response | unchanged (and forwarded raw on 40078) |
 | call alert, radio check, emergency alarm (CSBK) | answered by the radio per its settings | unchanged |

@@ -67,6 +67,12 @@ Two panes of the same size, A over B: neither channel is second class. Each pane
 | 3 | Frequency, timeslot and color code, or tone and width (where there is room) |
 | 4 | The zone (where there is room: B may be in another zone than A). Where row 3 has room, the zone sits at its right instead |
 
+While a frequency is typed for the selected VFO pane, row 1 shows the digits so far and blanks for the remaining places
+in amber. The other pane keeps its frequency. Large text shows the same entry on the selected line. Back removes a
+digit; OK or # tunes it.
+
+<img src="screens/160x120i5/home_dual_vfo_entry.png" width="200" alt="Frequency entry on the selected B VFO pane">
+
 **Which channel PTT uses** (asked for: "easy to tell which one transmits"): the selected pane's tag is filled and has
 the arrow, and its row 1 always has the **PTT** pill. The other pane has neither. While transmitting, the tag and pill
 turn red and say **TX**, and the line under the panes says "TALKING on A" with the time.

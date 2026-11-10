@@ -83,6 +83,20 @@ bool ui_svc_aprs_send_now(void)
 	return aprs_send_now();
 }
 
+bool ui_svc_aprs_send_message(const char *to, const char *text, uint8_t flags)
+{
+	return aprs_send_message_opts(to, text, flags);
+}
+
+#if CONFIG_APRS_RX
+uint8_t ui_svc_aprs_msg_count(void) { return aprs_msg_count(); }
+bool ui_svc_aprs_msg(uint8_t i, aprs_msg_t *out, bool read)
+{
+	return read ? aprs_msg(i, out) : aprs_msg_peek(i, out);
+}
+bool ui_svc_aprs_msg_delete(uint8_t i) { return aprs_msg_delete(i); }
+#endif
+
 #if CONFIG_APRS_RX
 uint8_t ui_svc_aprs_station_count(void)
 {
@@ -92,6 +106,19 @@ uint8_t ui_svc_aprs_station_count(void)
 bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out)
 {
 	return aprs_station(i, out);
+}
+
+bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg)
+{
+	int32_t lat, lon;
+	uint32_t err_m;
+	bool dmr_gps;
+	if (!s->has_pos || !aprs_position_now(&lat, &lon, &err_m, &dmr_gps)) {
+		return false;
+	}
+	*m = aprs_distance_m(lat, lon, s->lat, s->lon);
+	*deg = aprs_bearing_deg(lat, lon, s->lat, s->lon);
+	return true;
 }
 #endif
 #endif

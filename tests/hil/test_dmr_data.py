@@ -25,7 +25,7 @@ import warnings
 
 import pytest
 
-from rfoundry_hil import need_radio_tx, skip
+from rfoundry_hil import HIL_SMS_PREFIX, need_radio_tx, skip
 from hil_config import rig
 
 BENCH_SRC = 9990301
@@ -231,7 +231,7 @@ def test_sms_rx(radio, sdr_bench, pytestconfig):
     TMS ACK sent back."""
     freq, cc, own, feats = _setup(radio, pytestconfig)
     _need(feats, "DMR_SMS")
-    text = f"RadioFoundry HIL {int(time.time()) % 10000}"
+    text = f"{HIL_SMS_PREFIX}{int(time.time()) % 10000}"
     before = radio.data_view()
     with sdr_bench.lease():
         heard = sdr_bench.data(freq, cc, own, tms=text, tms_seq=(int(time.time()) % 31) + 1, src=BENCH_SRC,
