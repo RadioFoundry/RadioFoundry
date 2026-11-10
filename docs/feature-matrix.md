@@ -54,7 +54,7 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
 | `dmr_emergency` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
 | `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
-| `dmr_signaling` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
+| `dmr_signaling` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
 | `vfo` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
 | `vfo_fm` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run | not recorded |
 | `vfo_dmr` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run | not recorded |
@@ -74,15 +74,15 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_sms` | not recorded | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | pass, needs re-run | not recorded |
 | `dmr_tms` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
 | `dmr_ars` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `dmr_lrrp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
-| `dmr_udp_compress` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
+| `dmr_lrrp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
+| `dmr_udp_compress` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
 | `dmr_confirmed` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
 | `sfr` | not recorded | pass (seed) | pass (seed) | not recorded | ✕ | not recorded | ✕ | not recorded |
 | `sfr_dualpath_rx` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded |
 | `sfr_cwid` | not recorded | not recorded | not recorded | not recorded | ✕ | not recorded | pass, needs re-run | not recorded |
 | `aprs` | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
 | `aprs_rx` | pass (seed) | not recorded | not recorded | not written | not written | not recorded | pass | not written |
-| `aprs_igate` | not recorded | off | not recorded | not written | not written | off | pass | not written |
+| `aprs_igate` | not recorded | off | not recorded | not written | not written | off | pass, needs re-run | not written |
 | `gps_sky` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `usb` | ✕ | pass (seed) | ✕ | ✕ | not recorded | not recorded | not recorded | ✕ |
 | `hostlink` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
@@ -105,18 +105,18 @@ is `tools/bringup.py list --radio <id>`.
 | `zone_share` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial | not recorded |
 | `dmr_control_station` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
 | `net_tcp` | not recorded | not recorded | pass (seed) | pass (seed) | not recorded | not recorded | pass | not recorded |
-| `net_kiss` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
+| `net_kiss` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
 | `net_http` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
 | `net_http_gzip` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
+| `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
 | `net_usrp` | not recorded | not recorded | not recorded | not written | not recorded | not recorded | pass | not written |
 | `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
 | `mdns` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
 | `tftp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
 | `tftp_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
-| `iddb_compact` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
+| `iddb_compact` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
 | `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | not recorded |
 | `net_ppp` | not recorded | off | pass (seed) | pass (seed) | off | off | off | not recorded |
 | `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded |
