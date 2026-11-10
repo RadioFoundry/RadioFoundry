@@ -942,6 +942,7 @@
  "flash.net.back_now": "Return it to network mode now",
  "flash.net.manual": "If that doesn't work, switch it on the radio:",
  "flash.net.offer": "Radio in USB network mode? Switch it to USB serial",
+ "flash.net.not_secure": "A tab opens on the radio's own page and closes again. Your browser may say that page is not secure: it is the radio on your USB cable, and nothing leaves the computer. If the browser asks, choose to continue.",
  "home.cta_manual": "User Manual",
  "home.codec": "Free forever. Installs on your radio directly from your browser, using any operating system; no software download required.",
  "home.f_voice": "Voice",

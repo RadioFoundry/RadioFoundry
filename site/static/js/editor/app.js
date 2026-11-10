@@ -513,7 +513,7 @@ async function connect() {
 					const r = await toSerial();
 					say(t(r.back ? "flash.net.switched" : "flash.net.switch_unseen"), r.back ? "info" : "warn");
 				});
-				messages.firstChild?.append(h("p", {}, go));
+				messages.firstChild?.append(h("p", {}, go), h("p", { class: "small" }, t("flash.net.not_secure")));
 				return null;
 			}
 		}

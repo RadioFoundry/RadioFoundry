@@ -942,6 +942,7 @@
  "flash.net.back_now": "Riportala ora in modalità rete",
  "flash.net.manual": "Se non funziona, cambiala sulla radio:",
  "flash.net.offer": "Radio in modalità rete USB? Passala a USB seriale",
+ "flash.net.not_secure": "Si apre una scheda sulla pagina della radio stessa e si richiude. Il browser può dire che quella pagina non è sicura: è la radio sul tuo cavo USB e nulla esce dal computer. Se il browser lo chiede, scegli di continuare.",
  "home.cta_manual": "Manuale utente",
  "home.codec": "Gratis per sempre. Si installa sulla tua radio direttamente dal browser, con qualsiasi sistema operativo; nessun software da scaricare.",
  "home.f_voice": "Voce",

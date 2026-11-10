@@ -594,7 +594,7 @@ function networkModeHelp({ found = true } = {}) {
 	}, { primary: true });
 	return h("div", { class: "notice info" },
 		found ? h("p", {}, h("b", {}, t("flash.net.found"))) : null,
-		h("p", {}, go), result,
+		h("p", {}, go), h("p", { class: "small" }, t("flash.net.not_secure")), result,
 		h("p", { class: "small" }, t("flash.net.manual")),
 		h("ol", { class: "steps" }, h("li", {}, t("flash.net.step1")), h("li", {}, t("flash.net.step2")), h("li", {}, t("flash.net.step3"))));
 }
