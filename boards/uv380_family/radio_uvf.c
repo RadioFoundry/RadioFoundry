@@ -892,10 +892,10 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		r.dmr_uhf = uhf;
 		// The burst's key-up points from the cal table at the TX frequency (radio/pa_keyup.h)
 		uint16_t top = calibrated ? (uint16_t)power_to_dac(&cal, UVF_POWER_TOP, uhf) : (uint16_t)drive;
-		const pa_keyup_cfg_t *band = uvf_variant.keyup != NULL ? &uvf_variant.keyup[uhf ? 1 : 0] : &keyup_cfg;
-		pa_keyup_cfg_t c = *band;	// the plan and its points from one set of constants
+		const pa_keyup_cfg_t *kb = uvf_variant.keyup != NULL ? &uvf_variant.keyup[uhf ? 1 : 0] : &keyup_cfg;
+		pa_keyup_cfg_t c = *kb;	// the plan and its points from one set of constants
 #if CONFIG_DMR
-		pa_keyup_select(band);
+		pa_keyup_select(kb);
 		r.ku = pa_keyup_plan((uint16_t)drive, top, 0u, &c);
 #else
 		r.ku = pa_keyup_drives(&c, (uint16_t)drive, top, 0u, DAC_MAX);
