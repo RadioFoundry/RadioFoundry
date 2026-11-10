@@ -18,7 +18,6 @@ VID, PID = 0x1FC9, 0x0094
 NET_PID = 0x0096	# the network personality (CDC-NCM, docs/spec/usb-network.md)
 UDP_PORT = 3334		# the serial protocols over UDP at the radio's address in network mode
 INDIVIDUAL_NET = ipaddress.IPv4Network("12.0.0.0/8")	# the host's address is 12.<DMR ID>, the radio's that xor 1
-FIXED_LINK_DEFAULT = ipaddress.IPv4Network("192.168.10.0/24")	# the fixed link's default pair: radio .1, host .2
 SOF1, SOF2 = 0xA5, 0x5A
 CMD_VERSION, CMD_INFO_CHIP, CMD_READ_MEM, CMD_HWOPT = 0x02, 0x0B, 0x0C, 0x21
 HWOPT_LIST, HWOPT_SET = 0, 1
@@ -144,11 +143,11 @@ def host_addresses():
 
 def network_adapter_addresses():
     """Linux: the host's addresses on adapters that are a RadioFoundry radio in network mode (USB 1FC9:0096), whatever
-    their range (a fixed link anywhere). Empty elsewhere."""
+    their range (a fixed link anywhere). None where the system can't say which adapter is a radio."""
     out = []
     root = "/sys/class/net"
     if not os.path.isdir(root):
-        return out
+        return None
     for ifname in sorted(os.listdir(root)):
         dev = os.path.realpath(os.path.join(root, ifname, "device"))
         ids = []
@@ -170,18 +169,22 @@ def network_adapter_addresses():
 
 def radio_address_candidates(addresses=None, adapter=None):
     """Where a radio in network mode may be, from the host's side of the link (docs/spec/usb-network.md 3, 5.3): the
-    host has 12.<DMR ID> and the radio that address xor 1; on a fixed link the host has the radio's address + 1."""
-    addresses = host_addresses() if addresses is None else addresses
-    adapter = network_adapter_addresses() if adapter is None else adapter
+    host has 12.<DMR ID> and the radio that address xor 1; on a fixed link the host has the radio's address + 1.
+    Nothing is sent to a network that isn't a radio's: where the system names the radio's adapter (Linux) only its
+    addresses count, so a host without one gets no candidates; elsewhere only a 12.x address does, and a fixed link
+    needs --port udp:ADDR."""
+    if adapter is None:
+        adapter = network_adapter_addresses()
+    if adapter is None:     # the adapter can't be told from the others: the range only a radio's link has
+        addresses = host_addresses() if addresses is None else addresses
+        adapter, addresses = [], [a for a in addresses if a in INDIVIDUAL_NET]
+    else:
+        addresses = adapter
     out = []
-    for a in list(adapter) + list(addresses):
-        if a in INDIVIDUAL_NET:
-            c = [ipaddress.IPv4Address(int(a) ^ 1)]
-        elif a in adapter or a in FIXED_LINK_DEFAULT:
-            c = [a - 1]
-        else:
-            continue
-        out += [x for x in c if x not in out]
+    for a in addresses:
+        c = ipaddress.IPv4Address(int(a) ^ 1) if a in INDIVIDUAL_NET else a - 1
+        if c not in out:
+            out.append(c)
     return out
 
 

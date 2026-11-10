@@ -34,6 +34,9 @@ adapter (`pid_network`), with their own descriptors. Switching drops the D+ pull
   `cps_client.py`, the `rfoundry` installer and the HIL take it without `--port`. `stubtool.py --rfoundry-enter` with no
   port loads the stub over UDP; the stub enumerates as the serial port, and the write ends with a reset, after which
   the radio starts in the personality its stored setting says. Nothing is changed or restored in the settings.
+  A host without a radio in network mode is not probed: on Linux only the addresses of an adapter with the radio's
+  USB identity (1FC9:0096) count; elsewhere only a host address in 12.0.0.0/8, so a fixed link there needs
+  `--port udp:<address>`. With a serial radio plugged in the search doesn't run at all.
 - A web page can send neither UDP nor, from an https page, plain http requests, and the OS network driver holds the
   adapter's interfaces. Two requests ask the radio for the serial personality at run time (the same switch as op 25:
   the stored setting stays, a restart brings the adapter back), and the pages use them
