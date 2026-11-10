@@ -14,6 +14,13 @@ static const pa_keyup_cfg_t dflt = {
 	.boost_us = 1500, .pa_us = 1500, .drive_us = 500,
 };
 
+// A table of four levels at one frequency, none elsewhere
+static uint16_t level_drive(uint32_t hz, uint8_t level)
+{
+	static const uint16_t d[4] = { 955, 1249, 2101, 2615 };
+	return hz == 435000000u && level < 4 ? d[level] : 0;
+}
+
 int main(void)
 {
 	// A UHF table with a top drive of 2615: the boost is 3138 at every step, and lasts
@@ -95,6 +102,51 @@ int main(void)
 	c.boost_us = 2000;
 	CHECK(!pa_keyup_set(&c) && pa_keyup_cfg()->boost_us == 1500);
 	CHECK(pa_keyup_set(NULL) && pa_keyup_cfg()->knee == 1450 && pa_keyup_cfg()->boost_pct == 120);
+
+	// The top drive: the largest level's at the frequency, 0 with none
+	CHECK(pa_keyup_top(level_drive, 435000000u, 4) == 2615 && pa_keyup_top(level_drive, 435000000u, 2) == 1249);
+	CHECK(pa_keyup_top(level_drive, 0u, 4) == 0 && pa_keyup_top(NULL, 435000000u, 4) == 0);
+
+	// The points earliest first; a tie in the enum's order (the board's switch, the boost, the PA, the hold, the drive)
+	pa_keyup_point_t pt[PA_KEYUP_POINTS];
+	k = pa_keyup_drives(&dflt, 955, 2615, 4095);
+	uint8_t n = pa_keyup_points(&dflt, &k, true, 1800, pt);
+	CHECK(n == 5);
+	CHECK(pt[0].at == PA_KEYUP_AT_BOARD && pt[0].ahead_us == 1800);
+	CHECK(pt[1].at == PA_KEYUP_AT_BOOST && pt[2].at == PA_KEYUP_AT_PA && pt[1].ahead_us == 1500 && pt[2].ahead_us == 1500);
+	CHECK(pt[3].at == PA_KEYUP_AT_HOLD && pt[3].ahead_us == 843 && pt[4].at == PA_KEYUP_AT_DRIVE && pt[4].ahead_us == 500);
+	n = pa_keyup_points(&dflt, &k, true, 1500, pt);		// a tie with the boost: the switch first
+	CHECK(n == 5 && pt[0].at == PA_KEYUP_AT_BOARD && pt[1].at == PA_KEYUP_AT_BOOST);
+	c = dflt;
+	c.pa_us = 600;						// the PA later than the hold
+	n = pa_keyup_points(&c, &k, true, 0, pt);
+	CHECK(n == 4 && pt[0].at == PA_KEYUP_AT_BOOST && pt[1].at == PA_KEYUP_AT_HOLD && pt[2].at == PA_KEYUP_AT_PA &&
+	      pt[3].at == PA_KEYUP_AT_DRIVE);
+	// No boost (disarmed, or none planned): the switch and the PA alone
+	n = pa_keyup_points(&dflt, &k, false, 1800, pt);
+	CHECK(n == 2 && pt[0].at == PA_KEYUP_AT_BOARD && pt[1].at == PA_KEYUP_AT_PA);
+	pa_keyup_t none = pa_keyup_drives(&off, 955, 2615, 4095);
+	n = pa_keyup_points(&off, &none, true, 0, pt);
+	CHECK(n == 1 && pt[0].at == PA_KEYUP_AT_PA && pt[0].ahead_us == 300);
+
+	// Steps from an edge 7 ms ahead: points at one time in one step, the PA's own drive only without a boost
+	pa_keyup_steps_t st;
+	pa_keyup_steps(&dflt, &k, true, 7000, &st);
+	CHECK(st.n == 3);
+	CHECK(st.s[0].at_us == 5500 && st.s[0].set_drive && st.s[0].drive == 3138 && st.s[0].pa_on);
+	CHECK(st.s[1].at_us == 6157 && st.s[1].drive == 764 && !st.s[1].pa_on);
+	CHECK(st.s[2].at_us == 6500 && st.s[2].drive == 955 && !st.s[2].pa_on);
+	pa_keyup_steps(&dflt, &k, false, 7000, &st);
+	CHECK(st.n == 1 && st.s[0].at_us == 5500 && st.s[0].drive == 955 && st.s[0].pa_on);
+	c = dflt;
+	c.drive_us = 843;					// the hold's point and the drive's: the drive wins
+	k = pa_keyup_drives(&c, 955, 2615, 4095);
+	pa_keyup_steps(&c, &k, true, 7000, &st);
+	CHECK(st.n == 2 && st.s[1].drive == 955);
+	pa_keyup_steps(&off, &none, true, 1000, &st);		// a point before the edge: as soon as it can
+	CHECK(st.n == 1 && st.s[0].at_us == 700);
+	pa_keyup_steps(&off, &none, true, 200, &st);
+	CHECK(st.n == 1 && st.s[0].at_us == 1);
 
 	if (failures == 0) {
 		printf("paKeyupTest: all passed\n");

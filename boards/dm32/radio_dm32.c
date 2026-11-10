@@ -197,32 +197,21 @@ static void burst_switch(void)
 	fd6818_dmr_burst_at(&fd, true, FD6818_BW_DMR, synth_hz(tx_hz));
 }
 
-// One burst's TX on, from the RF task (dmr_rfburst.h): the key-up's points in time order (the boost, the PA on, the
-// hold, the drive to the step's), with the switch to TX before the PA, or before them all on a split channel; every
-// point from the RF TX interrupt. Without a boost the PA is keyed at its point at the step's drive
+// One burst's TX on, from the RF task (dmr_rfburst.h): the key-up's points in time order (pa_keyup_points: the boost,
+// the PA on, the hold, the drive to the step's), with the switch to TX before the PA, or before them all on a split
+// channel; every point from the RF TX interrupt. Without a boost the PA is keyed at its point at the step's drive
 static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 {
 	(void)wait;
 	bool boost = dmr_keyed && ku.boost != 0u;
 	bool split = tx_hz != rx_hz;
-	enum { P_SWITCH, P_BOOST, P_PA, P_HOLD, P_DRIVE, P_COUNT };	// on a tie in this order
 	// The switch to TX: ahead of the PA, or ahead of every point on a split channel (its retune holds the task)
 	uint32_t sw = split ? SWITCH_AHEAD_SPLIT_US + (boost ? ku_cfg.boost_us : ku_cfg.pa_us) : SWITCH_AHEAD_US + ku_cfg.pa_us;
-	const uint32_t ahead[P_COUNT] = { sw, ku_cfg.boost_us, ku_cfg.pa_us, ku.hold_us, ku_cfg.drive_us };
-	bool done[P_COUNT] = { false, !boost, false, !boost, !boost };
-	for (;;) {
-		int8_t next = -1;
-		for (int8_t i = 0; i < P_COUNT; i++) {
-			if (!done[i] && (next < 0 || ahead[i] > ahead[next])) {
-				next = i;
-			}
-		}
-		if (next < 0) {
-			break;
-		}
-		done[next] = true;
-		at(hrc_rfburst_pa_at_us(RF_TX_LEAD, ahead[next]));
-		if (next == P_SWITCH) {
+	pa_keyup_point_t pt[PA_KEYUP_POINTS];
+	uint8_t n = pa_keyup_points(&ku_cfg, &ku, boost, (uint16_t)sw, pt);
+	for (uint8_t i = 0u; i < n; i++) {
+		at(hrc_rfburst_pa_at_us(RF_TX_LEAD, pt[i].ahead_us));
+		if (pt[i].at == PA_KEYUP_AT_BOARD) {
 			burst_switch();
 			continue;
 		}
@@ -233,14 +222,14 @@ static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 			}
 			continue;
 		}
-		switch (next) {
-		case P_BOOST:
+		switch (pt[i].at) {
+		case PA_KEYUP_AT_BOOST:
 			DAC_DATA_B = ku.boost;
 			break;
-		case P_HOLD:
+		case PA_KEYUP_AT_HOLD:
 			DAC_DATA_B = ku.hold;
 			break;
-		case P_DRIVE:
+		case PA_KEYUP_AT_DRIVE:
 			DAC_DATA_B = tx_drive;
 			break;
 		default:
@@ -429,11 +418,7 @@ static void retune(bool keep)
 // The key-up drives from the cal table at the TX frequency (radio/pa_keyup.h), before the RF task is armed
 static void keyup_plan(uint32_t hz)
 {
-	uint16_t top = 0u;
-	for (uint8_t l = 0u; l < board.power_count; l++) {
-		uint16_t v = bf_cal_power_level(hz, l);
-		top = v > top ? v : top;
-	}
+	uint16_t top = pa_keyup_top(bf_cal_power_level, hz, board.power_count);
 	ku_cfg = keyup_cfg;			// pa_keyup_plan leaves it when no key-up is set up (no boost then)
 	ku = pa_keyup_plan(tx_drive, top, &ku_cfg);	// the plan and its points from one set of constants
 }
