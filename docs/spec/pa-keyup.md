@@ -109,6 +109,8 @@ burst, find the first symbol from the sync, and take the median power envelope a
    a call. A band whose low drive wants a knee more than a few percent away needs its own.
 6. `knee` goes with `pa_us`: the control charges less with the PA selected, so moving the PA's point later wants a
    smaller knee. Retune after moving it.
+7. On a simplex channel the board's switch to TX before the PA must come after the inbound burst before ours, or an
+   SFR repeater misses that burst. Keep `pa_us` plus the board's switch time under that, and check an SFR call.
 
 The charts show a radio at a low drive and its top step: the estimated PA output (a curve fit of the measured median),
 and the drive through each sequence. Three sequences: the PA keyed at d with no boost, an earlier form of this rule (a
