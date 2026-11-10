@@ -21,6 +21,7 @@
 #include "rf/at1846s/at1846s.h"
 #include "modem/hrc6000/hrc6000.h"
 #include "radio/ref_trim.h"
+#include "radio/pa_keyup.h"
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "hrc/hrc_bus.h"
 #include "dmr_uvf.h"
@@ -34,6 +35,7 @@
 
 // APC DAC value when no calibration is loaded: deliberately very low, never an uncalibrated high drive
 #define UVF_DAC_UNCALIBRATED		300u
+#define UVF_POWER_TOP			0xFFu	// power_to_dac: any level past the last is the top one
 #define DAC_MAX				4095u
 
 #define UHF_MIN_HZ		300000000u
@@ -43,9 +45,18 @@
 #define I2C_TIMEOUT_MS		5
 #define C6000_PWD_WAIT_MS	12	// at least 10 ms after PWD low before the first SPI access
 #define RF_ISR_I2C_TIMEOUT_MS	2	// one reg 0x30 write from a modem ISR takes about 0.1 ms at 400 kHz
-// The RF TX interrupt comes about 1.28 ms before the slot boundary. Keyed at once, the PA cut the end of the inbound
-// burst an SFR receives in the other slot; 0.6-1.2 ms later all measured the same, without a delay frames were lost
-#define DMR_KEY_DELAY_US	1000u
+// The RF TX interrupt comes about 1.28 ms before the slot boundary, 2.53 ms before the burst's first symbol. Keyed at
+// once, the PA cut the end of the inbound burst an SFR receives in the other slot; 0.6-1.2 ms later all measured the
+// same, without a delay frames were lost. So the PA point's default is 1 ms after the interrupt
+#define DMR_KEY_INT_AHEAD_US	2530u
+#define DMR_KEY_MIN_US		30u	// the key timer's shortest step; closer points run together
+// The earliest key-up point (radio/pa_keyup.h): the timer's first step after the interrupt
+#define KEYUP_MAX_AHEAD_US	(DMR_KEY_INT_AHEAD_US - DMR_KEY_MIN_US)
+// The key-up constants (docs/spec/pa-keyup.md). No boost: the PA keyed at the step's drive, 1 ms after the interrupt
+static const pa_keyup_cfg_t keyup_cfg = {
+	.dead = 0, .knee = 0, .slope_us = 0, .boost_pct = 100, .hold_pct = 100,
+	.boost_us = 0, .pa_us = DMR_KEY_INT_AHEAD_US - 1000u, .drive_us = 0,
+};
 
 // Voice SPI2 (hardware-dm1701.md 4.3): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C6000_VCS
 #define VOICE_SPI_PINS		(GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15)
@@ -82,7 +93,13 @@ static struct {
 	volatile uint8_t rf_page;	// AT1846S page last written to reg 0x7F, 0xFF unknown
 	volatile int8_t rf_ref;		// calibrated HR_C6000 MOD1 offset (4:0x04) for the RX frequency
 	volatile bool rf_direct;	// this burst was keyed without the idle step: 4:0x04 raised, the receiver not retuned
-	volatile bool rf_key_pending;	// TIM7 keys this burst at its expiry
+	volatile bool rf_key_pending;	// TIM7 runs this burst's key-up points
+	pa_keyup_point_t key_pt[PA_KEYUP_POINTS];	// the transmission's, earliest first, set before it is armed
+	uint8_t key_n;
+	pa_keyup_t ku;
+	volatile uint8_t key_i;		// the next point
+	volatile uint16_t key_base_us;	// the point the timer last counted from
+	volatile uint32_t key_apc;	// the drive now: what the PA point keys with
 	uint32_t rf_skipped, rf_unarmed, rf_rx_retries;
 } r = { .rf_page = 0xFF };
 
@@ -243,11 +260,26 @@ static int32_t lerp(int32_t a, int32_t b, uint16_t per_mille)
 }
 
 // Board power level -> DAC value from the four calibrated curves (hardware-dm1701.md 7, the radio's fractions)
+// The PA drive set over the debug link for the next transmission (power calibration; hal_radio_t.tx_drive), 0 = the
+// level's. Any task sets it; tx_off clears it
+static volatile uint16_t drive_override;
+
 static uint32_t power_to_dac(const uvf_cal_point_t *cal, uint8_t level, bool uhf)
 {
 	const uint16_t *f = uvf_variant.frac[uhf ? 1 : 0];
 	int32_t vl = cal->power_dac[0], lo = cal->power_dac[1], mid = cal->power_dac[2], hi = cal->power_dac[3];
 	int32_t v;
+	if (uvf_variant.power5 != NULL) {
+		const uvf_power_band_t *p = &uvf_variant.power5[uhf ? 1 : 0];
+		switch (level) {
+		case 0:
+		case 1: v = p->low[level]; break;
+		case 2: v = lerp(vl, lo, p->frac[0]); break;
+		case 3: v = lerp(lo, mid, p->frac[1]); break;
+		default: v = hi; break;
+		}
+		return (uint32_t)v > DAC_MAX ? DAC_MAX : (uint32_t)v;
+	}
 	switch (level) {
 	case 0: v = vl > 160 ? vl - 160 : 0; break;
 	case 1: v = vl; break;
@@ -387,21 +419,22 @@ static bool rf_key(void)
 pa:
 	r.rf_rx_pending = false;
 	rx_supply(false, false);	// the RX pre-amps off while the PA is up (hardware-dm1701.md 6)
-	apc_set(r.dmr_drive);
+	apc_set(r.key_apc);
 	PIN_WRITE(PIN_PA_EN1, true);
 	PIN_WRITE(PIN_PA_BAND, r.dmr_uhf);
 	PIN_WRITE(PIN_PA_EN2, true);
 	return true;
 }
 
-// TIM7: one-shot at 1 MHz for the key delay, at the modem interrupts' priority (they share I2C3 and never preempt
-// each other)
+// TIM7 at 1 MHz steps through the burst's key-up points, at the modem interrupts' priority (they share I2C3 and never
+// preempt each other). It counts on from each point's update, so a point's own work (the PA point's I2C writes take
+// 0.1-0.35 ms) doesn't delay the ones after it
 static void key_timer_setup(void)
 {
 	__HAL_RCC_TIM7_CLK_ENABLE();
 	TIM7->CR1 = 0;
 	TIM7->PSC = (uint16_t)(2u * HAL_RCC_GetPCLK1Freq() / 1000000u - 1u);
-	TIM7->ARR = DMR_KEY_DELAY_US - 1u;
+	TIM7->ARR = 0xFFFFu;
 	TIM7->EGR = TIM_EGR_UG;		// load the prescaler
 	TIM7->SR = 0;
 	TIM7->DIER = TIM_DIER_UIE;
@@ -416,17 +449,57 @@ static void key_timer_stop(void)
 	r.rf_key_pending = false;
 }
 
+// One key-up point (radio/pa_keyup.h). false: the PA didn't key, the rest of the burst's points are dropped
+static bool key_point(uint8_t kind)
+{
+	switch (kind) {
+	case PA_KEYUP_PT_BOOST:
+		r.key_apc = r.ku.boost;
+		break;
+	case PA_KEYUP_PT_PA:
+		if (!rf_key()) {	// disarmed meanwhile: counted unarmed, nothing keyed
+			apc_set(0);
+			return false;
+		}
+		return true;
+	case PA_KEYUP_PT_HOLD:
+		r.key_apc = r.ku.hold;
+		break;
+	default:
+		r.key_apc = r.ku.drive;
+		break;
+	}
+	apc_set(r.key_apc);
+	return true;
+}
+
 void TIM7_IRQHandler(void)
 {
+	TIM7->ARR = 0xFFFFu;	// count on from this update while the points run: a short step must not come round again
 	TIM7->SR = 0;
-	if (r.rf_key_pending) {
-		r.rf_key_pending = false;
-		(void)rf_key();	// disarmed meanwhile: counted unarmed, nothing keyed
+	if (!r.rf_key_pending) {
+		TIM7->CR1 = 0;
+		return;
+	}
+	for (;;) {
+		uint8_t i = r.key_i;
+		if (!key_point(r.key_pt[i].kind) || ++i >= r.key_n) {
+			key_timer_stop();
+			return;
+		}
+		r.key_i = i;
+		uint32_t step = (uint32_t)r.key_base_us - r.key_pt[i].us;	// from the last update
+		if (TIM7->CNT + DMR_KEY_MIN_US < step) {
+			TIM7->ARR = step - 1u;
+			r.key_base_us = r.key_pt[i].us;
+			return;
+		}
 	}
 }
 
-// The RF TX interrupt arms the key timer (the engine counts the burst as keyed from here: the PA drop at the timeslot
-// interrupt more than 20 ms later is unchanged); the timeslot interrupt drops the PA, a key still pending included
+// The RF TX interrupt starts the burst's key-up points (the engine counts the burst as keyed from here: the PA drop at
+// the timeslot interrupt more than 20 ms later is unchanged); the timeslot interrupt drops the PA, points still
+// pending included
 bool uvf_rf_dmr_switch(bool tx)
 {
 	if (!tx) {
@@ -437,11 +510,16 @@ bool uvf_rf_dmr_switch(bool tx)
 		r.rf_unarmed++;
 		return false;
 	}
+	uint32_t first = r.key_pt[0].us;
 	TIM7->CR1 = 0;
 	TIM7->CNT = 0;
+	TIM7->ARR = (first + DMR_KEY_MIN_US < DMR_KEY_INT_AHEAD_US ? DMR_KEY_INT_AHEAD_US - first : DMR_KEY_MIN_US) - 1u;
 	TIM7->SR = 0;
+	r.key_i = 0;
+	r.key_base_us = (uint16_t)first;
+	r.key_apc = r.dmr_drive;
 	r.rf_key_pending = true;
-	TIM7->CR1 = TIM_CR1_OPM | TIM_CR1_CEN;
+	TIM7->CR1 = TIM_CR1_CEN;
 	return true;
 }
 
@@ -617,6 +695,9 @@ static void init(void)
 	r.diag.c6000_ok = hrc_read(&r.modem, 4, 0x10, &r.diag.c6000_r10);
 	stm32_hrc_dmr_init(&r.modem, &dmr_board);
 	key_timer_setup();
+#if CONFIG_DMR
+	pa_keyup_init(&keyup_cfg, KEYUP_MAX_AHEAD_US, DAC_MAX);
+#endif
 }
 
 static void set_mode(radio_mode_t mode)
@@ -797,6 +878,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	uvf_cal_point_t cal;
 	bool calibrated = uvf_cal_at(hz, &cal) && cal.valid;
 	uint32_t drive = calibrated ? power_to_dac(&cal, power, uhf) : UVF_DAC_UNCALIBRATED;
+	if (drive_override != 0u) {
+		drive = drive_override;
+	}
 
 	if (r.mode == RADIO_MODE_DMR) {
 		// Arm only: the receiver stays on the RX frequency (a repeater's slot timing is followed until our first
@@ -806,6 +890,17 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		r.dmr_tx_hz = (uint32_t)((int32_t)hz + dmr_offset);
 		r.dmr_drive = drive;
 		r.dmr_uhf = uhf;
+		// The burst's key-up points from the cal table at the TX frequency (radio/pa_keyup.h)
+		uint16_t top = calibrated ? (uint16_t)power_to_dac(&cal, UVF_POWER_TOP, uhf) : (uint16_t)drive;
+		const pa_keyup_cfg_t *band = uvf_variant.keyup != NULL ? &uvf_variant.keyup[uhf ? 1 : 0] : &keyup_cfg;
+		pa_keyup_cfg_t c = *band;	// the plan and its points from one set of constants
+#if CONFIG_DMR
+		pa_keyup_select(band);
+		r.ku = pa_keyup_plan((uint16_t)drive, top, 0u, &c);
+#else
+		r.ku = pa_keyup_drives(&c, (uint16_t)drive, top, 0u, DAC_MAX);
+#endif
+		r.key_n = pa_keyup_points(&c, &r.ku, r.key_pt);
 		__DMB();
 		r.dmr_armed = true;
 		r.tx_on = true;
@@ -868,6 +963,22 @@ static void tx_end(bool keep)
 static void tx_off(void)
 {
 	tx_end(false);
+	drive_override = 0u;
+}
+
+static uint16_t tx_drive_level(uint32_t hz, uint8_t level)
+{
+	uvf_cal_point_t cal;
+	return uvf_cal_at(hz, &cal) && cal.valid ? (uint16_t)power_to_dac(&cal, level, hz >= UHF_MIN_HZ) : 0u;
+}
+
+static bool tx_drive(uint16_t drive)
+{
+	if (drive > DAC_MAX) {
+		return false;
+	}
+	drive_override = drive;
+	return true;
 }
 
 // stm32_hrc_dmr_board_t.tx_end: the burst switch left the AT1846S receiving
@@ -1078,6 +1189,8 @@ const hal_radio_t uvf_radio = {
 #if CONFIG_REF_TRIM
 	.ref_trim = ref_trim,
 #endif
+	.tx_drive_level = tx_drive_level,
+	.tx_drive = tx_drive,
 };
 
 void uvf_radio_diag(uvf_radio_diag_t *d)

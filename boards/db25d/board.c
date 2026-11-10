@@ -17,7 +17,8 @@ static const band_t bands[] = {
 };
 
 // Nominal 20 W mobile. The radio refuses TX until the PA calibration can be read (radio_db25d.c)
-static const char *const power_names[] = { "L", "H" };
+// Five levels from the calibration's two tables (radio_db25d.c): "L" and "H" are the tables
+static const char *const power_names[] = { "L--", "L-", "L", "M", "H" };
 
 // docs/ux/information-architecture.md 7.4 (mobile: front encoder and a few keys; the encoder push is OK). The hand
 // mic adds the digits, * and # (marked down and up) and P4-P7, which send DTMF A-D while PTT is held on FM (the
@@ -75,7 +76,7 @@ const board_t board = {
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
-	.power_default = 0,
+	.power_default = 2,	// "L"
 	.display = &db25d_display,
 	.input = &db25d_input,
 	.keymap = keymap,

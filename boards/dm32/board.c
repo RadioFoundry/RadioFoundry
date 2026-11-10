@@ -28,9 +28,9 @@ static const band_t bands[] = {
 #endif
 };
 
-// Power levels 0..8 of hardware-dm32.md 11.3 (level 9, the user value, isn't offered). Labels are nominal: the radio
-// is rated 5 W VHF / 4 W UHF at high power; check against a meter at the bring-up
-static const char *const power_names[] = { "L-", "L", "L+", "L++", "M", "M+", "M++", "H-", "H" };
+// Five of the power levels 0..8 of hardware-dm32.md 11.3: very low, low, mid, a step above mid, high (radio_dm32.c).
+// Labels are nominal: the radio is rated 5 W VHF / 4 W UHF at high power; check against a meter at the bring-up
+static const char *const power_names[] = { "L-", "L", "M", "M+", "H" };
 
 // docs/ux/information-architecture.md 7.1 (the DM-32 has no top key; SK1 / SK2 are the side keys below the PTT)
 static const keymap_entry_t keymap[] = {

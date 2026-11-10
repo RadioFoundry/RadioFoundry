@@ -425,13 +425,25 @@ static void retune(bool keep)
 	rx_tune(rx_hz, rx_bw, &t, fd6818_am_on(&fd), keep);
 }
 
+// The PA drive set over the debug link for the next transmission (power calibration; hal_radio_t.tx_drive), 0 = the
+// level's. Any task sets it; tx_off clears it
+static volatile uint16_t drive_override;
+
+// A power level's PA drive: five of the calibration's nine steps (drivers/cal/baofeng): very low, low, mid, a step
+// between mid and high, high. Draft choice, to be set with a wattmeter
+static uint16_t level_drive(uint32_t hz, uint8_t level)
+{
+	static const uint8_t step[5] = { 0, 1, 4, 6, 8 };
+	return bf_cal_power_level(hz, step[level > 4u ? 4u : level]);
+}
+
 #if CONFIG_DMR
 // The key-up drives from the cal table at the TX frequency (radio/pa_keyup.h), before the RF task is armed
 static void keyup_plan(uint32_t hz)
 {
 	uint16_t top = 0u;
 	for (uint8_t l = 0u; l < board.power_count; l++) {
-		uint16_t v = bf_cal_power_level(hz, l);
+		uint16_t v = level_drive(hz, l);
 		top = v > top ? v : top;
 	}
 	ku_cfg = keyup_cfg;			// pa_keyup_plan leaves it when no key-up is set up (no boost then)
@@ -446,7 +458,10 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	}
 	wake();
 	tx_uhf = hz >= UHF_FROM_HZ;
-	tx_drive = bf_cal_power_level(hz, power);
+	tx_drive = level_drive(hz, power);
+	if (drive_override != 0u) {
+		tx_drive = drive_override;
+	}
 #if CONFIG_DMR
 	if (mode == RADIO_MODE_DMR) {
 		keyup_plan(hz);
@@ -510,6 +525,21 @@ static void tx_end(bool keep)
 static void tx_off(void)
 {
 	tx_end(false);
+	drive_override = 0u;
+}
+
+static uint16_t drive_level(uint32_t hz, uint8_t level)
+{
+	return board_in_band(hz, true) ? level_drive(hz, level) : 0u;
+}
+
+static bool drive_set(uint16_t drive)
+{
+	if (drive > 4095u) {	// DAC B is 12 bits
+		return false;
+	}
+	drive_override = drive;
+	return true;
 }
 
 // hrc_dmr_board_t.tx_end: the burst switch left the FD6818 receiving
@@ -756,6 +786,8 @@ const hal_radio_t dm32_radio = {
 #if CONFIG_REF_TRIM
 	.ref_trim = ref_trim,
 #endif
+	.tx_drive_level = drive_level,
+	.tx_drive = drive_set,
 };
 
 // The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt)

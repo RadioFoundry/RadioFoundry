@@ -754,6 +754,24 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	return rx_set(hz, bw, rx_tone, false);
 }
 
+// The PA drive set over the debug link for the next transmission (power calibration; hal_radio_t.tx_drive), 0 = the
+// level's. Any task sets it; tx_off clears it
+static volatile uint16_t drive_override;
+
+// Board power level -> DAC1 value (hardware-md380.md 5.6). Five levels: 2 and 4 are the calibration's 1 W and 5 W
+// rows, 0 and 1 fractions of the 1 W row's drive, 3 between the rows. Draft values, to be set with a wattmeter
+static uint32_t power_to_dac(const md380_cal_point_t *cal, uint8_t level)
+{
+	uint32_t lo = cal->power_dac[0], hi = cal->power_dac[1];
+	switch (level) {
+	case 0: return lo * 565u / 1000u;
+	case 1: return lo * 807u / 1000u;
+	case 2: return lo;
+	case 3: return hi > lo ? lo + (hi - lo) * 45u / 100u : lo;
+	default: return hi;
+	}
+}
+
 // Enter FM TX: receiver off, HR_C5000 FM TX, synthesizer to the transmit VCO and locked, then the PA. Refused
 // without an accepted calibration table (the APC values would be guesses)
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_tone)
@@ -772,7 +790,10 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	if (!md380_cal_at(hz, &cal) || !cal.valid) {
 		return false;
 	}
-	uint32_t drive = cal.power_dac[power > 1 ? 1 : power];
+	uint32_t drive = power_to_dac(&cal, power);
+	if (drive_override != 0u) {
+		drive = drive_override;
+	}
 
 	if (r.mode == RADIO_MODE_DMR) {
 		// Arm only: the receiver stays on the RX frequency until the first burst (md380_rf_dmr_switch)
@@ -837,6 +858,22 @@ static void tx_end(bool keep)
 static void tx_off(void)
 {
 	tx_end(false);
+	drive_override = 0u;
+}
+
+static uint16_t tx_drive_level(uint32_t hz, uint8_t level)
+{
+	md380_cal_point_t cal;
+	return md380_cal_at(hz, &cal) && cal.valid ? (uint16_t)power_to_dac(&cal, level) : 0u;
+}
+
+static bool tx_drive(uint16_t drive)
+{
+	if (drive > DAC_MAX) {
+		return false;
+	}
+	drive_override = drive;
+	return true;
 }
 
 // stm32_hrc_dmr_board_t.tx_end: the TX done left the synthesizer receiving
@@ -891,6 +928,8 @@ const hal_radio_t md380_radio = {
 #if CONFIG_REF_TRIM
 	.ref_trim = ref_trim,
 #endif
+	.tx_drive_level = tx_drive_level,
+	.tx_drive = tx_drive,
 };
 
 void md380_radio_diag(md380_radio_diag_t *d)

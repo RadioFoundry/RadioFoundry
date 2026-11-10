@@ -29,6 +29,22 @@ const uint8_t uvf_key_matrix[3][8] = {
 // hardware-dm1701.md: 9.2 (type 2 is "vertically flipped; treated as type 3 with RGB order": the bench radio reports 2,
 // and the type 2 MADCTL showed the picture mirrored top to bottom), 11.1 (raw / 37.5 per 0.1 V), 11.2 (measured on the
 // bench: 26 at the bottom, 2063 at the top; spec 29..2075), 7 and 12.1 (the DM-1701 rows)
+// DMR key-up (docs/spec/pa-keyup.md, hardware-dm1701.md 7): measured on the SDR bench at every step. The PA 0.6 ms
+// after the RF TX interrupt, inside what an SFR's receive slot allows; the VHF PA needs about three times the UHF knee
+static const pa_keyup_cfg_t keyup[2] = {
+	{ .dead = 0, .knee = 1560, .slope_us = 656, .boost_pct = 120, .hold_pct = 100,
+	  .boost_us = 1930, .pa_us = 1930, .drive_us = 300 },
+	{ .dead = 0, .knee = 500, .slope_us = 780, .boost_pct = 120, .hold_pct = 100,
+	  .boost_us = 1930, .pa_us = 1930, .drive_us = 300 },
+};
+
+// The power levels (hardware-dm1701.md 7): draft drives from the SDR bench's relative levels with the high row taken
+// as 5 W; not yet measured with a wattmeter
+static const uvf_power_band_t power5[2] = {
+	{ .low = { 517, 800 }, .frac = { 723, 791 } },
+	{ .low = { 339, 620 }, .frac = { 838, 809 } },
+};
+
 const uvf_variant_t uvf_variant = {
 	.panel_type = { 0, 1, 3, 3 },
 	.panel_rgb = { false, false, true, false },
@@ -36,6 +52,8 @@ const uvf_variant_t uvf_variant = {
 	.vol_min = 26, .vol_break = 318, .vol_max = 2060,
 	.frac = { { 450, 750, 250, 530 }, { 460, 730, 140, 360 } },
 	.cal_k = { { 610, 1000, 850, 1300 }, { 650, 1000, 860, 1700 } },
+	.keyup = keyup,
+	.power5 = power5,
 #if CONFIG_GPS
 	.init = uvf_gps_init,	// an owner-fitted module on PA10 / PA9 (hardware-dm1701.md 14.2)
 #endif
@@ -46,7 +64,7 @@ static const band_t bands[] = {
 	{ 400000000, 480000000, true },
 };
 
-static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
+static const char *const power_names[] = { "100mW", "500mW", "1W", "2.5W", "5W" };
 
 // The side keys are SK1 (above PTT, row 2 D5; held with PTT at power-on it is the bootloader combination, which the
 // running firmware never sees), SK2 and SK3 (below PTT), top to bottom (hardware-dm1701.md 20). SK3: short = power
@@ -116,7 +134,7 @@ const board_t board = {
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
-	.power_default = 4,	// 1 W
+	.power_default = 2,	// 1 W
 	.display = &uvf_display,
 	.input = &uvf_input,
 	.keymap = keymap,

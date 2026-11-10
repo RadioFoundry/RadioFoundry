@@ -118,6 +118,10 @@ static void rx_paths(uint32_t hz, bool on)
 	hrc_pin_write(PIN_VHF_RX, on && !uhf);
 }
 
+// The PA drive set over the debug link for the next transmission (power calibration; hal_radio_t.tx_drive), 0 = the
+// level's. Any task sets it; tx_off clears it
+static volatile uint16_t drive_override;
+
 // The PA control DAC is powered only for a transmission
 static void apc_ramp(uint16_t target, bool up)
 {
@@ -332,20 +336,40 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 
 static void audio(bool on);
 
+// A power level's PA drive (hardware-db25d.md, power levels): five levels from the calibration's two tables. Level 2
+// is the low table and level 4 the high one (the stock's level 1, table 0x045); levels 0 and 1 are fractions of the
+// low table's drive, level 3 is halfway between the tables. Draft values, to be set with a wattmeter
+static bool level_plan(uint32_t hz, uint8_t power, db25d_tx_plan_t *p)
+{
+	static const uint8_t low_pct[3] = { 75, 87, 100 };
+	if (power >= 4u) {
+		return db25d_cal_tx_plan(hz, true, DB25D_TX_DRIVE_PCT, p);
+	}
+	if (power < 3u) {
+		return db25d_cal_tx_plan(hz, false, (uint8_t)(low_pct[power] * DB25D_TX_DRIVE_PCT / 100u), p);
+	}
+	db25d_tx_plan_t high;
+	if (!db25d_cal_tx_plan(hz, false, DB25D_TX_DRIVE_PCT, p) || !db25d_cal_tx_plan(hz, true, DB25D_TX_DRIVE_PCT, &high)) {
+		return false;
+	}
+	p->pa = (uint16_t)((p->pa + high.pa) / 2u);
+	return true;
+}
+
 #if CONFIG_DMR && DB25D_DMR_TX
 // DMR TX, armed at the key-up (4.5). The RF stays as it is, receiving, until the first burst's RF TX interrupt; the
 // modem's bias gets the modulation level for the TX frequency, the main chip the digital TX words (deviation off)
 static bool dmr_tx(uint32_t hz, uint8_t power)
 {
 	db25d_tx_plan_t plan;
-	if (!supported || !board_in_band(hz, true) || !db25d_cal_tx_plan(hz, power >= 1, DB25D_TX_DRIVE_PCT, &plan)) {
+	if (!supported || !board_in_band(hz, true) || !level_plan(hz, power, &plan)) {
 		return false;
 	}
 	if (dmr_armed) {
 		hrc_rfburst_disarm();
 	}
 	tx_uhf = hz >= UHF_FROM_HZ;
-	tx_pa = plan.pa;
+	tx_pa = drive_override != 0u ? drive_override : plan.pa;
 	tx_on_us = plan.on_us;
 	tx_lead = db25d_dmr_rf_tx_lead(plan.on_us);
 	tx_hz = hz;
@@ -425,13 +449,12 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		return false;
 	}
 	db25d_tx_plan_t plan;
-	// Power index 1 ("H") is the stock's level 1, table 0x045; "L" the other table
-	if (!supported || !board_in_band(hz, true) || !db25d_cal_tx_plan(hz, power >= 1, DB25D_TX_DRIVE_PCT, &plan)) {
+	if (!supported || !board_in_band(hz, true) || !level_plan(hz, power, &plan)) {
 		return false;
 	}
 	tx_stop();
 	tx_uhf = hz >= UHF_FROM_HZ;
-	tx_pa = plan.pa;
+	tx_pa = drive_override != 0u ? drive_override : plan.pa;
 	tx_off_us = plan.off_us;
 	// Deviation and sub-audio words go in while the chip is still receiving, as the stock firmware does
 	db25d_main_tx_prepare(tone.type, tone.value, hz, bw);
@@ -506,6 +529,22 @@ static void tx_end(bool keep)
 static void tx_off(void)
 {
 	tx_end(false);
+	drive_override = 0u;
+}
+
+static uint16_t tx_drive_level(uint32_t hz, uint8_t level)
+{
+	db25d_tx_plan_t plan;
+	return supported && level_plan(hz, level, &plan) ? plan.pa : 0u;
+}
+
+static bool tx_drive(uint16_t drive)
+{
+	if (drive > 4095u) {	// DAC B is 12 bits
+		return false;
+	}
+	drive_override = drive;
+	return true;
 }
 
 #if CONFIG_DMR && DB25D_DMR_TX
@@ -672,6 +711,8 @@ const hal_radio_t db25d_radio = {
 #if CONFIG_REF_TRIM
 	.ref_trim = ref_trim,
 #endif
+	.tx_drive_level = tx_drive_level,
+	.tx_drive = tx_drive,
 };
 
 // The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt), FM or DMR
