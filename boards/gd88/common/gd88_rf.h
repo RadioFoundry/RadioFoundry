@@ -58,6 +58,8 @@ void gd88_radio_diag(gd88_radio_diag_t *d);
 bool gd88_radio_squelch_open(uint8_t level);
 // The core's last volume() in percent (A passes it on to B's audio)
 uint8_t gd88_radio_volume(void);
+// The debug link's CHIP_REG for the main chip and a BK4819 LO (board.chip_reg)
+bool gd88_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 
 // --- RF and audio paths, one implementation per SoC ---
 void gd88_path_init(void);			// every switch at its safe level: TX off, RX path off, speaker off

@@ -297,6 +297,7 @@ page, DMR on the modem and the SPI NAND. Both run on the bench's radio (2026-10-
 | Calibration | both copies read, never written | the program-flash copy |
 | Update | the cable, through RadioFoundry's first stage | through A's bridge (rx2-link.md 4): `stubtool.py --board gd88b` |
 | Broadcast FM | the RDA5807-class tuner (`CONFIG_BCAST_FM`, on by default, `bcast_gd88.c`): the shared driver on PTA7 / PTA8, its audio on chain bit 6 with the amplifier | - |
+| Debug link `CHIP_REG` ([debuglink.md](debuglink.md) 3.24) | chip 0: the main BK4819; chip 1: the LO when it is a BK4819. Page 0, registers 0x00-0x7F | - |
 
 Not supported yet: the IMU, the headset path on its own, the RTC.
 

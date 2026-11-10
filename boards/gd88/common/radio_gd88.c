@@ -889,6 +889,23 @@ void gd88_radio_diag(gd88_radio_diag_t *d)
 	d->pa_high = GD88_TX && have_rx && gd88_cal_tx_plan(rx_hz, true, GD88_TX_DRIVE_PCT, &plan) ? plan.pa : 0;
 }
 
+// The debug link's CHIP_REG (board.chip_reg, hardware-gd88.md 13): chip 0 is the main BK4819, chip 1 the LO when it
+// is a BK4819 (an AT1141 LO isn't offered), page 0 only, registers 0x00-0x7F. Through the driver, so its copies of the
+// enables, AF gain and GPIO words follow a write; its next set-up overwrites the register. A frame is atomic (rfbus.h),
+// so the radio task's frames and this one don't mix
+bool gd88_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
+{
+	bk4819_t *dev = chip == 0 ? &rf_main : chip == 1 && !lo_is_at1141 ? &rf_lo : NULL;
+	if (dev == NULL || page != 0 || reg > 0x7Fu || (write && *val > 0xFFFFu) || !supported) {
+		return false;	// supported: both chips answered at the radio init
+	}
+	if (write) {
+		bk4819_write(dev, reg, (uint16_t)*val);
+	}
+	*val = bk4819_read(dev, reg);
+	return true;
+}
+
 const hal_radio_t gd88_radio = {
 	.init = init,
 	.set_mode = set_mode,

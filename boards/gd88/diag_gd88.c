@@ -124,6 +124,8 @@ bool gd88_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, d.rf_writes);
 		put(&o, " ovr ");
 		put_u(&o, hrc_host_uart_overruns());
+		put(&o, " ue ");
+		put_u(&o, hrc_host_uart_line_errors());	// the UART flagged a character: its FIFO overran (interrupts held off)
 		break;
 	case 6:
 		put(&o, "cal ");

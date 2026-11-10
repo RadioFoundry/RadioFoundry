@@ -123,6 +123,7 @@ const board_t board = {
 	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the host port's UART1 (docs/spec/ppp.md)
 #endif
 	.system = &hrc_system,
+	.chip_reg = gd88_chip_reg,
 #if CONFIG_NAND_STORAGE
 	.flash = &gd88_flash,
 #endif
