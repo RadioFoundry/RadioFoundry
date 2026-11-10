@@ -759,7 +759,7 @@ lower level's later, by `late %` of what its boost is shorter:
 
 | Band | dead | knee | slope_us | boost % | hold % | boost_us | pa_us | drive_us | late % |
 |---|---|---|---|---|---|---|---|---|---|
-| VHF | 0 | 1560 | 656 | 120 | 100 | 1730 | 1730 | 300 | 50 |
+| VHF | 0 | 1520 | 850 | 120 | 100 | 1730 | 1730 | 300 | 50 |
 | UHF | 0 | 500 | 780 | 120 | 100 | 1530 | 1530 | 300 | 100 |
 
 Measured on the SDR bench with these, every level:
@@ -767,7 +767,7 @@ Measured on the SDR bench with these, every level:
 | Band | -3 dB point before the first symbol | First symbol against the settled level | Overshoot |
 |---|---|---|---|
 | UHF | 0.16-0.34 ms | within 0.7 dB | under 1 dB |
-| VHF | 0.07-0.11 ms | 1.2-1.5 dB low | under 2 dB |
+| VHF | 0.08-0.14 ms | within 0.6 dB up to 1 W; the two top levels not measured with this set (1.1 and 1.5 dB low with the sets next to it) | under 2 dB |
 
 What sets the points:
 

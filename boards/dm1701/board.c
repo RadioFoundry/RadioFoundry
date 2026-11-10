@@ -33,7 +33,7 @@ const uint8_t uvf_key_matrix[3][8] = {
 // step's PA 0.8 ms (VHF) and 1.0 ms (UHF) after the RF TX interrupt: 0.6 ms cut the end of the burst an SFR repeater
 // receives just before. The VHF PA needs about three times the UHF knee
 static const pa_keyup_cfg_t keyup[2] = {
-	{ .dead = 0, .knee = 1560, .slope_us = 656, .boost_pct = 120, .hold_pct = 100,
+	{ .dead = 0, .knee = 1520, .slope_us = 850, .boost_pct = 120, .hold_pct = 100,
 	  .boost_us = 1730, .pa_us = 1730, .drive_us = 300, .late_pct = 50 },
 	{ .dead = 0, .knee = 500, .slope_us = 780, .boost_pct = 120, .hold_pct = 100,
 	  .boost_us = 1530, .pa_us = 1530, .drive_us = 300, .late_pct = 100 },
