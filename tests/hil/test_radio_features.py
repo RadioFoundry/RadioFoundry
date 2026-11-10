@@ -489,17 +489,17 @@ def test_pa_keyup_op(radio):
             radio.link.pa_keyup()               # a radio without the view key doesn't key this way
         skip("not_built", "no DMR PA key-up on this radio (docs/spec/pa-keyup.md)")
     board = [int(x) for x in core["pa_keyup"].split("/")]
-    assert len(board) == 8, core
-    dead, knee, slope_us, boost, hold, boost_us, pa_us, drive_us = board
-    assert 50 <= boost <= 120 and hold <= 100, board
+    assert len(board) == 9, core
+    dead, knee, slope_us, boost, hold, boost_us, pa_us, drive_us, late = board
+    assert 50 <= boost <= 120 and hold <= 100 and late <= 100, board
     assert boost_us == 0 or (boost_us >= pa_us and boost_us >= drive_us), board
-    assert len(core["pa_keyup.last"].split("/")) == 4, core
-    mine = [dead, max(knee - 50, 0), slope_us, 100, hold, boost_us, pa_us, drive_us]
+    assert len(core["pa_keyup.last"].split("/")) == 5, core
+    mine = [dead, max(knee - 50, 0), slope_us, 100, hold, boost_us, pa_us, drive_us, 40]
     try:
         radio.link.pa_keyup(*mine)
         assert [int(x) for x in radio.core()["pa_keyup"].split("/")] == mine
-        for bad in (mine[:3] + [121] + mine[4:], mine[:4] + [101] + mine[5:], mine[:6] + [boost_us + 1, drive_us],
-                    mine[:7] + [boost_us + 1], mine[:5] + [60000, pa_us, drive_us]):
+        for bad in (mine[:3] + [121] + mine[4:], mine[:4] + [101] + mine[5:], mine[:6] + [boost_us + 1, drive_us, 40],
+                    mine[:7] + [boost_us + 1, 40], mine[:5] + [60000, pa_us, drive_us, 40], mine[:8] + [101]):
             with pytest.raises(DebugLinkError) as e:
                 radio.link.pa_keyup(*bad)
             assert e.value.status == 2, (bad, e.value)     # bad argument

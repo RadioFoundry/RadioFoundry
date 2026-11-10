@@ -7,7 +7,7 @@
 
 pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, uint16_t floor, uint16_t max)
 {
-	pa_keyup_t k = { .boost = 0, .hold = 0, .drive = d, .hold_us = 0 };
+	pa_keyup_t k = { .boost = 0, .hold = 0, .drive = d, .hold_us = 0, .late_us = 0 };
 	if (c == NULL || c->boost_us == 0u || d == 0u || d < floor) {
 		return k;
 	}
@@ -26,6 +26,14 @@ pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, ui
 	if (t > room) {
 		t = room;
 	}
+	// Just in time: late_pct of what the step's boost is shorter than the top step's goes to a later start, and the
+	// receiver keeps that time. At 100 every boost ends where the top step's does
+	uint32_t t_top = ((uint32_t)c->knee * 1000u + (uint32_t)c->slope_us * (top > dead ? (uint32_t)top - dead : 0u)) /
+		(boost - dead);
+	if (t_top > room) {
+		t_top = room;
+	}
+	uint32_t late = t_top > t ? (t_top - t) * c->late_pct / 100u : 0u;
 	k.boost = (uint16_t)boost;
 	// The hold stays above the dead zone: under it the loop loses the boost's charge (pa-keyup.md 2). A step whose
 	// own drive is in the dead zone holds at d. On a board with a floor both count from it
@@ -34,7 +42,8 @@ pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, ui
 		hold = d > dead ? dead + 1u : d;
 	}
 	k.hold = (uint16_t)hold;
-	k.hold_us = (uint16_t)(c->boost_us - t);
+	k.hold_us = (uint16_t)(c->boost_us - late - t);
+	k.late_us = (uint16_t)late;
 	return k;
 }
 
@@ -44,7 +53,9 @@ uint8_t pa_keyup_points(const pa_keyup_cfg_t *c, const pa_keyup_t *k, pa_keyup_p
 		out[0] = (pa_keyup_point_t){ .us = c->pa_us, .kind = PA_KEYUP_PT_PA };
 		return 1u;
 	}
-	const uint16_t us[PA_KEYUP_POINTS] = { c->boost_us, c->pa_us, k->hold_us, c->drive_us };	// in the enum's order
+	const uint16_t boost_us = (uint16_t)(c->boost_us - k->late_us);
+	// in the enum's order; the PA never before the boost
+	const uint16_t us[PA_KEYUP_POINTS] = { boost_us, c->pa_us < boost_us ? c->pa_us : boost_us, k->hold_us, c->drive_us };
 	for (uint8_t i = 0; i < PA_KEYUP_POINTS; i++) {
 		uint8_t at = i;	// insertion keeps the enum's order among equal times
 		while (at > 0u && out[at - 1u].us < us[i]) {
@@ -58,7 +69,7 @@ uint8_t pa_keyup_points(const pa_keyup_cfg_t *c, const pa_keyup_t *k, pa_keyup_p
 
 bool pa_keyup_valid(const pa_keyup_cfg_t *c, uint16_t max_ahead_us)
 {
-	if (c == NULL || c->hold_pct > 100u || c->boost_pct < 50u || c->boost_pct > PA_KEYUP_BOOST_MAX_PCT) {
+	if (c == NULL || c->hold_pct > 100u || c->late_pct > 100u || c->boost_pct < 50u || c->boost_pct > PA_KEYUP_BOOST_MAX_PCT) {
 		return false;
 	}
 	if (c->pa_us > max_ahead_us) {

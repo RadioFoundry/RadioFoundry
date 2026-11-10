@@ -207,8 +207,11 @@ static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 	bool split = tx_hz != rx_hz;
 	enum { P_SWITCH, P_BOOST, P_PA, P_HOLD, P_DRIVE, P_COUNT };	// on a tie in this order
 	// The switch to TX: ahead of the PA, or ahead of every point on a split channel (its retune holds the task)
-	uint32_t sw = split ? SWITCH_AHEAD_SPLIT_US + (boost ? ku_cfg.boost_us : ku_cfg.pa_us) : SWITCH_AHEAD_US + ku_cfg.pa_us;
-	const uint32_t ahead[P_COUNT] = { sw, ku_cfg.boost_us, ku_cfg.pa_us, ku.hold_us, ku_cfg.drive_us };
+	// A lower step's boost starts later (pa_keyup.h), and the PA never before it
+	uint32_t boost_us = (uint32_t)ku_cfg.boost_us - ku.late_us;
+	uint32_t pa_us = boost && ku_cfg.pa_us > boost_us ? boost_us : ku_cfg.pa_us;
+	uint32_t sw = split ? SWITCH_AHEAD_SPLIT_US + (boost ? boost_us : pa_us) : SWITCH_AHEAD_US + pa_us;
+	const uint32_t ahead[P_COUNT] = { sw, boost_us, pa_us, ku.hold_us, ku_cfg.drive_us };
 	bool done[P_COUNT] = { false, !boost, false, !boost, !boost };
 	for (;;) {
 		int8_t next = -1;

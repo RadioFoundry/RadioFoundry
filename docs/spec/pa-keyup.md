@@ -30,12 +30,18 @@ All times are before the burst's first symbol.
 
 | Point | PA drive | PA |
 |---|---|---|
-| `boost_us` | boost = boost% × top | |
-| `pa_us` | | on (its own point: with the boost, or later) |
-| `boost_us` − t | hold = hold% × d | |
+| `boost_us` − late | boost = boost% × top | |
+| `pa_us`, or with the boost when that starts later | | on |
+| `boost_us` − late − t | hold = hold% × d | |
 | `drive_us` | d | |
 
-t = (knee + slope × (d − dead)) / (boost − dead), at most `boost_us` − `drive_us`.
+t = (knee + slope × (d − dead)) / (boost − dead), at most `boost_us` − `drive_us`. late = late% × (t_top − t), where
+t_top is t for the top step.
+
+A lower step's boost is shorter, so it starts later, and the PA with it. Each step is keyed just in time: its output
+rises where the top step's does, and the receiver keeps the time a fixed start would take from it. `boost_us` is the
+top step's start, the earliest of all. At `late_pct` 100 every boost ends at the same point. A PA whose low steps
+come up slower after the boost takes less. 0 starts every step at `boost_us`.
 
 | Constant | What it sets |
 |---|---|
@@ -44,11 +50,12 @@ t = (knee + slope × (d − dead)) / (boost − dead), at most `boost_us` − `d
 | `slope_us` | more boost time for a higher step, in µs × counts per count of (d − dead) |
 | `hold_pct` | the hold between the boost and d, % of d, 0-100 %. It lets the low-pass forget the boost |
 | `boost_pct` | the boost, % of the top step's drive, 50-120 %. A limit more than a tuning value |
+| `late_pct` | how much later a lower step starts, % of what its boost is shorter than the top step's, 0-100 % |
 | `boost_us`, `pa_us`, `drive_us` | the points; `boost_us` 0 = no boost or hold: the PA keyed at `pa_us` at d |
 
-Every step gets the same boost level for a time of its own: a low step a short boost and a long hold, the top step a
-long boost and almost no hold. No step is driven over `boost_pct` of the top step's drive, and only for about a
-millisecond. Nothing is stored per frequency or per step: the cal table already has the drives.
+Every step gets the same boost level for a time of its own: a low step a short, late boost, the top step a long one
+from `boost_us`. No step is driven over `boost_pct` of the top step's drive, and
+only for about a millisecond. Nothing is stored per frequency or per step: the cal table already has the drives.
 
 Integer math, 32-bit: `t_us = (knee * 1000 + slope_us * (d - dead)) / (top * boost_pct / 100 - dead)`, one divide per
 key-up. A boost inside the dead zone or under d gives no boost: the PA is keyed at `pa_us` at d.
@@ -80,10 +87,10 @@ switch, the more of the inbound burst before ours the radio still hears.
 
 The constants are RAM: RADIO op 37 ([debuglink.md](debuglink.md)) changes them for tuning, from the next key-up, and a
 restart restores the board's. Constants set this way apply on every band until `default` gives the board's back. The `core` view shows `pa_keyup` (the constants) and `pa_keyup.last` (the last key-up's
-boost, hold and drive, and the hold's point). RADIO op 36 sets a drive that is not in the table.
+boost, hold and drive, the hold's point and the later start). RADIO op 36 sets a drive that is not in the table.
 
 ```
-rfoundry_debug.py radio pa-keyup 680 1450 600 120 80 1500 1500 500
+rfoundry_debug.py radio pa-keyup 680 1450 600 120 80 1500 1500 500 100
 rfoundry_debug.py radio pa-keyup default
 ```
 
@@ -95,7 +102,7 @@ burst, find the first symbol from the sync, and take the median power envelope a
 
 | Measure | Target |
 |---|---|
-| The -3 dB point | at or before the first symbol, every step |
+| The -3 dB point | at or before the first symbol, every step, and no step more than about 0.3 ms before |
 | The first symbol's level against the settled level | within 3 dB |
 | Overshoot above the settled level | 3 dB at most; the lowest step overshoots most |
 
@@ -110,7 +117,10 @@ Tune each band that has its own PA: the knee of one band's PA can be several tim
 4. At the top step: late or low at the first symbol, raise `slope_us` or `hold_pct`; overshooting, lower `slope_us`.
 5. Check every step at both band edges and the band center, on every band, then split channels and the first burst of
    a call. A band whose low drive wants a knee more than a few percent away needs its own.
-6. `knee` goes with `pa_us`: the control charges less with the PA selected, so moving the PA's point later wants a
+6. With the top step right, look at where the lower steps rise. Earlier than the top step: raise `late_pct` until
+   they line up with it. Later, or low at the first symbol: lower it. Then move `boost_us` and `pa_us` together as
+   late as the top step allows.
+7. `knee` goes with `pa_us`: the control charges less with the PA selected, so moving the PA's point later wants a
    smaller knee. Retune after moving it.
 
 The charts show a radio at a low drive and its top step: the estimated PA output (a curve fit of the measured median),

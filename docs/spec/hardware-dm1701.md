@@ -753,17 +753,32 @@ Relative output against the DAC value, same radio and frequencies (dB below the 
 
 ### 7.2 DMR key-up
 
-The PA is keyed by the shared rule ([pa-keyup.md](pa-keyup.md)), 0.6 ms after the RF TX interrupt, with constants per
-band (`boards/dm1701/board.c`):
+The PA is keyed by the shared rule ([pa-keyup.md](pa-keyup.md)), with constants per band
+(`boards/dm1701/board.c`). The top level's PA comes on 1.0 ms (UHF) and 0.8 ms (VHF) after the RF TX interrupt, and a
+lower level's later, by `late %` of what its boost is shorter:
 
-| Band | dead | knee | slope_us | boost % | hold % | boost_us | pa_us | drive_us |
-|---|---|---|---|---|---|---|---|---|
-| VHF | 0 | 1560 | 656 | 120 | 100 | 1930 | 1930 | 300 |
-| UHF | 0 | 500 | 780 | 120 | 100 | 1930 | 1930 | 300 |
+| Band | dead | knee | slope_us | boost % | hold % | boost_us | pa_us | drive_us | late % |
+|---|---|---|---|---|---|---|---|---|---|
+| VHF | 0 | 1560 | 656 | 120 | 100 | 1730 | 1730 | 300 | 50 |
+| UHF | 0 | 500 | 780 | 120 | 100 | 1530 | 1530 | 300 | 100 |
 
-Measured on the SDR bench with these, every level: the -3 dB point 0.76-1.09 ms before the first symbol at UHF and
-0.26-0.53 ms at VHF, the first symbol within 0.7 dB of the settled level, overshoot under 1 dB at UHF and under 3 dB
-at VHF. Keyed at the level's drive 1 ms after the interrupt, as before, the lowest level's first symbol was 13 dB low
+Measured on the SDR bench with these, every level:
+
+| Band | -3 dB point before the first symbol | First symbol against the settled level | Overshoot |
+|---|---|---|---|
+| UHF | 0.16-0.34 ms | within 0.7 dB | under 1 dB |
+| VHF | 0.07-0.11 ms | 1.2-1.5 dB low | under 2 dB |
+
+What sets the points:
+
+| Setting | Result |
+|---|---|
+| PA 0.6 ms after the interrupt (`pa_us` 1930) | an SFR repeater loses the end of the burst it receives just before: 16-24 corrected bits in the last voice frame of each burst over a 72-frame call, none at 0.8 or 1.0 ms |
+| Every level started at `boost_us` (late 0 %) | the low levels rise early: at UHF the lowest 0.70 ms before the first symbol with the top at 0.34 ms |
+| VHF at late 100 % | the low levels rise 0.1 ms after the first symbol, which is 3.5 dB low |
+| VHF with a longer low-level boost (knee 1800-2055) | the lowest level overshoots 4-6 dB |
+
+Keyed at the level's drive 1 ms after the interrupt, as before the rule, the lowest level's first symbol was 13 dB low
 at UHF and 24 dB low at VHF.
 
 Without a loaded calibration RadioFoundry drives a fixed DAC value of 300 (`DM1701_DAC_UNCALIBRATED` in

@@ -7,11 +7,15 @@
 // forgotten the boost when the output appears (the output follows the reference, so what is left of the boost then
 // is overshoot):
 //
-//	boost = boost% * top			from boost_us before the first symbol, for
 //	t = (knee + slope * (d - dead)) / (boost - dead)
+//	boost = boost% * top			for t, from boost_us less late% of what t is under the top step's
 //	hold  = hold% * d, above dead		from then on (% of d's part above the floor, on a board with one)
 //	d					from drive_us before
-//	the PA on				at pa_us before (its own point: with the boost, or later)
+//	the PA on				at pa_us before, or with the boost when that starts later
+//
+// A lower step's boost is shorter, so it can start later (late_us) and leave that time to the receiver: each step
+// keyed just in time. At late% 100 every boost ends where the top step's does; a PA whose low steps come up slower
+// after the boost takes less, and 0 starts every step at boost_us.
 //
 // d is the step's drive and top the table's top drive at the transmit frequency. dead is the drive under which the
 // loop's reference stays at zero, knee the amount the reference must add up to (drive counts above dead times ms),
@@ -38,9 +42,10 @@ typedef struct {
 	uint16_t slope_us;	// more boost time per count of (d - dead), us x counts / the boost above dead
 	uint8_t boost_pct;	// the boost, % of the top step's drive, 50..PA_KEYUP_BOOST_MAX_PCT
 	uint8_t hold_pct;	// the hold after the boost, % of d (above the floor), 0..100
-	uint16_t boost_us;	// the boost from this long before the first symbol; 0 = no boost or hold
+	uint16_t boost_us;	// the top step's boost from this long before the first symbol; 0 = no boost or hold
 	uint16_t pa_us;		// the PA on this long before (at most boost_us)
 	uint16_t drive_us;	// the drive to d this long before (at most boost_us)
+	uint8_t late_pct;	// a lower step starts later by this % of what its boost is shorter than the top step's, 0..100
 } pa_keyup_cfg_t;
 
 // The boost's ceiling: a little over the top step, never far over what the cal table drives
@@ -51,15 +56,17 @@ typedef struct {
 	uint16_t hold;
 	uint16_t drive;		// d
 	uint16_t hold_us;	// the boost ends (the hold starts) this long before the first symbol
+	uint16_t late_us;	// the boost starts this long after boost_us, and the PA no earlier than the boost
 } pa_keyup_t;
 
 // The key-up for a step (pure): d the step's drive, top the table's top drive at the transmit frequency, floor the
 // calibration's zero-output drive there (0: none), max the board's drive limit. floor <= hold <= d, boost within max,
-// drive_us <= hold_us <= boost_us
+// drive_us <= hold_us <= boost_us - late_us
 pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, uint16_t floor, uint16_t max);
 
 // A burst's points in time order, earliest first, for a board's burst sequence (a task's waits or a timer's steps).
-// Without a boost one point: the PA keyed at d at pa_us. Points at the same time come in the enum's order
+// Without a boost one point: the PA keyed at d at pa_us. With one the boost at boost_us - late_us and the PA at pa_us
+// or with the boost, whichever is later. Points at the same time come in the enum's order
 typedef enum { PA_KEYUP_PT_BOOST, PA_KEYUP_PT_PA, PA_KEYUP_PT_HOLD, PA_KEYUP_PT_DRIVE } pa_keyup_kind_t;
 typedef struct {
 	uint16_t us;	// before the first symbol

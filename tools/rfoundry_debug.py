@@ -964,19 +964,21 @@ class DebugLink:
         self.radio(OP_TX_DRIVE, struct.pack("<H", int(drive)))
 
     def pa_keyup(self, dead=None, knee=None, slope_us=None, boost=None, hold=None, boost_us=None, pa_us=None,
-                 drive_us=None):
+                 drive_us=None, late=0):
         """The DMR PA key-up constants (RADIO op 37; docs/spec/pa-keyup.md), RAM only, from the next key-up: the drive
         that does nothing (dead), the knee (counts x ms), the slope (us), the boost (% of the top step's drive) and the
-        hold (% of the step's drive), then the boost, PA and drive points in us before the first symbol. No arguments:
-        the board's again. The core view shows them (pa_keyup) and the last key-up (pa_keyup.last: boost, hold, drive
-        and the hold's point). Raises DebugLinkError out of range or on a radio without it."""
+        hold (% of the step's drive), then the boost, PA and drive points in us before the first symbol, and how much
+        later a lower step starts (late, % of what its boost is shorter than the top step's; 0: not sent, for a radio
+        with the eight-value op). No arguments: the board's again. The core view shows them (pa_keyup) and the last
+        key-up (pa_keyup.last: boost, hold, drive, the hold's point and the later start in us). Raises DebugLinkError
+        out of range or on a radio without it."""
         v = (dead, knee, slope_us, boost, hold, boost_us, pa_us, drive_us)
         if all(x is None for x in v):
             self.radio(OP_PA_KEYUP, b"")
             return
         if any(x is None for x in v):
-            raise ValueError("pa_keyup: all eight values, or none")
-        self.radio(OP_PA_KEYUP, struct.pack("<HHHBBHHH", *(int(x) for x in v)))
+            raise ValueError("pa_keyup: the eight values (and late), or none")
+        self.radio(OP_PA_KEYUP, struct.pack("<HHHBBHHH", *(int(x) for x in v)) + (bytes([int(late)]) if late else b""))
 
     def tone_burst(self, on, max_ms=0):
         """The 1750 Hz burst (FM): keys up and sends the tone while on. The firmware ends it by itself after max_ms
@@ -1428,8 +1430,8 @@ def cmd_radio(link, a):
             link.tx_limit(mhz=[float(f) for f in ",".join(args).split(",") if f])
     elif op == "tx-drive":            # tx-drive N|off (the next transmission's PA drive, power calibration)
         link.tx_drive(0 if args[:1] in ([], ["off"]) else num(0))
-    elif op == "pa-keyup":            # pa-keyup DEAD KNEE SLOPE_US BOOST HOLD BOOST_US PA_US DRIVE_US|default (RAM only)
-        link.pa_keyup(*([] if args[:1] in ([], ["default"]) else [num(i) for i in range(8)]))
+    elif op == "pa-keyup":            # pa-keyup DEAD KNEE SLOPE_US BOOST HOLD BOOST_US PA_US DRIVE_US [LATE]|default (RAM only)
+        link.pa_keyup(*([] if args[:1] in ([], ["default"]) else [num(i) for i in range(max(len(args), 8))]))
     elif op == "set":                 # set NAME VALUE
         link.setting(args[0], num(1))
     elif op == "usb":                 # usb network|serial
