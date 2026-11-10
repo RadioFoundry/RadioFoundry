@@ -67,13 +67,40 @@ pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, ui
 // A burst's points in time order, earliest first, for a board's burst sequence (a task's waits or a timer's steps).
 // Without a boost one point: the PA keyed at d at pa_us. With one the boost at boost_us - late_us and the PA at pa_us
 // or with the boost, whichever is later. Points at the same time come in the enum's order
-typedef enum { PA_KEYUP_PT_BOOST, PA_KEYUP_PT_PA, PA_KEYUP_PT_HOLD, PA_KEYUP_PT_DRIVE } pa_keyup_kind_t;
+// PA_KEYUP_PT_BOARD: the first kind a board may give its own points (pa_keyup_insert)
+typedef enum { PA_KEYUP_PT_BOOST, PA_KEYUP_PT_PA, PA_KEYUP_PT_HOLD, PA_KEYUP_PT_DRIVE, PA_KEYUP_PT_BOARD } pa_keyup_kind_t;
 typedef struct {
 	uint16_t us;	// before the first symbol
 	uint8_t kind;	// pa_keyup_kind_t
 } pa_keyup_point_t;
 #define PA_KEYUP_POINTS	4u
 uint8_t pa_keyup_points(const pa_keyup_cfg_t *c, const pa_keyup_t *k, pa_keyup_point_t out[PA_KEYUP_POINTS]);
+
+// A board's own point among them (a switch to transmit, a supply), in time order at us, ahead of the points at the same
+// time (pure). pt has n points and room for one more; returns n + 1
+#define PA_KEYUP_POINTS_MAX	(PA_KEYUP_POINTS + 1u)
+uint8_t pa_keyup_insert(pa_keyup_point_t *pt, uint8_t n, uint16_t us, uint8_t kind);
+
+// The points as a timer's steps (pure), for a board that times them from a reference event ref_us before the first
+// symbol (an RF TX interrupt, a baseband's burst line): the points at one time in one step, in their order, the first
+// step no earlier than min_us (the timer's shortest wait) after the reference. Computed at key-up: the timer's handler
+// applies a step's points (pt[previous end] up to pt[end]), then waits for the next (pa_keyup_step_wait), or applies
+// it at once when it is due within min_us. Returns the step count, 0 for no points
+typedef struct {
+	uint16_t us;	// the step's time before the first symbol
+	uint8_t end;	// one past its last point in pt
+} pa_keyup_step_t;
+uint8_t pa_keyup_steps(const pa_keyup_point_t *pt, uint8_t n, uint16_t ref_us, uint16_t min_us,
+		       pa_keyup_step_t out[PA_KEYUP_POINTS_MAX]);
+
+// At the end of a step, in the timer's handler: the wait to the next step at next_us from the timer's base (the step
+// it last counted from, base_us) when more than min_us are left after the elapsed_us the timer has counted since, else
+// 0: the next step is due now and goes with this one, from the same base
+static inline uint32_t pa_keyup_step_wait(uint16_t base_us, uint16_t next_us, uint32_t elapsed_us, uint16_t min_us)
+{
+	uint32_t step = (uint32_t)base_us - next_us;
+	return elapsed_us + min_us < step ? step : 0u;
+}
 
 // The constants are in range, the points in order and none earlier than max_ahead_us
 bool pa_keyup_valid(const pa_keyup_cfg_t *c, uint16_t max_ahead_us);

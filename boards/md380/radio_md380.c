@@ -108,9 +108,10 @@ static struct {
 	volatile uint32_t dmr_tx_hz;
 	volatile uint32_t dmr_drive;
 	pa_keyup_point_t key_pt[PA_KEYUP_POINTS];	// the transmission's key-up points, earliest first, set before it is armed
-	uint8_t key_n;
+	pa_keyup_step_t key_st[PA_KEYUP_POINTS_MAX];	// and as TIM7's steps (pa_keyup_steps)
+	uint8_t key_ns;
 	pa_keyup_t ku;
-	volatile uint8_t key_i;		// the next point; key_n: the points are done and the timer runs to the PA drop
+	volatile uint8_t key_i;		// the next step; key_ns: the steps are done and the timer runs to the PA drop
 	volatile uint16_t key_base_us;	// the timer's last update, in us before the first symbol
 	volatile uint32_t key_apc;	// the drive of the last point, for the PA's own point
 	uint8_t dmr_mod2, dmr_mod1;
@@ -257,13 +258,13 @@ static void pa_timer_stop(void)
 // Started at the RF TX interrupt: the first key-up point comes DMR_KEY_INT_AHEAD_US - its time later
 static void pa_timer_start(void)
 {
-	uint32_t first = r.key_pt[0].us;
+	uint16_t first = r.key_st[0].us;	// no earlier than DMR_KEY_MIN_US after the interrupt
 	TIM7->CR1 = 0;
 	TIM7->CNT = 0;
-	TIM7->ARR = (first + DMR_KEY_MIN_US < DMR_KEY_INT_AHEAD_US ? DMR_KEY_INT_AHEAD_US - first : DMR_KEY_MIN_US) - 1u;
+	TIM7->ARR = (uint32_t)(DMR_KEY_INT_AHEAD_US - first) - 1u;
 	TIM7->SR = 0;
 	r.key_i = 0;
-	r.key_base_us = (uint16_t)(first + DMR_KEY_MIN_US < DMR_KEY_INT_AHEAD_US ? first : DMR_KEY_INT_AHEAD_US - DMR_KEY_MIN_US);
+	r.key_base_us = first;
 	r.key_apc = r.dmr_drive;
 	pa_timer_running = true;
 	TIM7->CR1 = TIM_CR1_CEN;
@@ -312,24 +313,27 @@ void TIM7_IRQHandler(void)
 		TIM7->CR1 = 0;
 		return;
 	}
-	if (r.key_i >= r.key_n) {	// the burst is over
+	if (r.key_i >= r.key_ns) {	// the burst is over
 		pa_timer_stop();
 		pa_off();
 		return;
 	}
 	for (;;) {
-		key_point(r.key_pt[r.key_i].kind);
-		uint8_t i = (uint8_t)(r.key_i + 1u);
-		r.key_i = i;
-		if (i >= r.key_n) {
+		uint8_t i = r.key_i;
+		for (uint8_t p = i != 0u ? r.key_st[i - 1u].end : 0u; p < r.key_st[i].end; p++) {
+			key_point(r.key_pt[p].kind);
+		}
+		r.key_i = ++i;
+		if (i >= r.key_ns) {
 			// The PA drop, PA_HOLD_US after the interrupt
 			TIM7->ARR = PA_HOLD_US - (DMR_KEY_INT_AHEAD_US - r.key_base_us) - 1u;
 			return;
 		}
-		uint32_t step = (uint32_t)r.key_base_us - r.key_pt[i].us;	// from the last update
-		if (TIM7->CNT + DMR_KEY_MIN_US < step) {
+		// From the last update; a step already due goes now
+		uint32_t step = pa_keyup_step_wait(r.key_base_us, r.key_st[i].us, TIM7->CNT, DMR_KEY_MIN_US);
+		if (step != 0u) {
 			TIM7->ARR = step - 1u;
-			r.key_base_us = r.key_pt[i].us;
+			r.key_base_us = r.key_st[i].us;
 			return;
 		}
 	}
@@ -877,7 +881,8 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 #else
 		r.ku = pa_keyup_drives(&c, (uint16_t)drive, top, 0u, DAC_MAX);
 #endif
-		r.key_n = pa_keyup_points(&c, &r.ku, r.key_pt);
+		r.key_ns = pa_keyup_steps(r.key_pt, pa_keyup_points(&c, &r.ku, r.key_pt), DMR_KEY_INT_AHEAD_US, DMR_KEY_MIN_US,
+					  r.key_st);
 		__DMB();
 		r.dmr_armed = true;
 		r.tx_on = true;

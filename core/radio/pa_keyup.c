@@ -67,6 +67,40 @@ uint8_t pa_keyup_points(const pa_keyup_cfg_t *c, const pa_keyup_t *k, pa_keyup_p
 	return PA_KEYUP_POINTS;
 }
 
+uint8_t pa_keyup_insert(pa_keyup_point_t *pt, uint8_t n, uint16_t us, uint8_t kind)
+{
+	uint8_t at = n;
+	while (at > 0u && pt[at - 1u].us <= us) {	// ahead of every point at its time or later
+		pt[at] = pt[at - 1u];
+		at--;
+	}
+	pt[at] = (pa_keyup_point_t){ .us = us, .kind = kind };
+	return (uint8_t)(n + 1u);
+}
+
+uint8_t pa_keyup_steps(const pa_keyup_point_t *pt, uint8_t n, uint16_t ref_us, uint16_t min_us,
+		       pa_keyup_step_t out[PA_KEYUP_POINTS_MAX])
+{
+	if (n == 0u) {
+		return 0u;
+	}
+	// The first step no earlier than min_us after the reference
+	uint16_t latest = ref_us > min_us ? (uint16_t)(ref_us - min_us) : (uint16_t)0u;
+	uint16_t first = (uint32_t)pt[0].us + min_us < ref_us ? pt[0].us : latest;
+	uint8_t m = 0u;
+	out[0] = (pa_keyup_step_t){ .us = first, .end = 1u };
+	for (uint8_t i = 1u; i < n; i++) {
+		// Only points at one time share a step: whether a later one goes with it depends on when the handler runs,
+		// and the timer counts from its last update (pa_keyup_step_wait), not from this step
+		if (pt[i].us < out[m].us) {
+			out[++m] = (pa_keyup_step_t){ .us = pt[i].us, .end = (uint8_t)(i + 1u) };
+		} else {
+			out[m].end = (uint8_t)(i + 1u);
+		}
+	}
+	return (uint8_t)(m + 1u);
+}
+
 bool pa_keyup_valid(const pa_keyup_cfg_t *c, uint16_t max_ahead_us)
 {
 	if (c == NULL || c->hold_pct > 100u || c->late_pct > 100u || c->boost_pct < 50u || c->boost_pct > PA_KEYUP_BOOST_MAX_PCT) {

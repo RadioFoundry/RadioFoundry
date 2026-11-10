@@ -77,7 +77,21 @@ A board with per-burst keying opts in; one that doesn't call it keys its PA as b
 | Start-up | `pa_keyup_init(defaults, max_ahead_us, max_drive)`: its constants, the earliest point its burst sequence can run (after the burst task's wake and any switching that has to go first) and its drive limit |
 | Key-up (radio task), a board whose bands have their own PA | `pa_keyup_select(constants)` with the transmit band's, before the plan |
 | Key-up (radio task) | `pa_keyup_plan(d, top, floor, &cfg)` with its cal table's drives at the transmit frequency; keep the result and the constants it returns in `cfg` for the bursts, so the points and the plan come from one set |
-| Each burst | the four points in time order, the RF switch to transmit placed among them by its own time |
+| Key-up (radio task) | `pa_keyup_points(&cfg, &plan, pts)`: the points in time order; `pa_keyup_insert(pts, n, us, kind)` adds a board's own point (the RF switch to transmit, a supply) at its time, ahead of the points at that time, with a kind from `PA_KEYUP_PT_BOARD` on |
+| Each burst | the points in time order, by the board's burst task or its timer |
+
+A board that times the points with a hardware timer from a reference event a fixed time before the first symbol (an
+RF TX interrupt, a baseband's burst line) takes them as steps:
+
+| Where | Call |
+|---|---|
+| Key-up (radio task) | `pa_keyup_steps(pts, n, ref_us, min_us, steps)`: the points at one time in one step, the first step no earlier than `min_us` (the timer's shortest wait) after the reference |
+| The reference | the timer to the first step, `ref_us` minus its time |
+| The timer's handler | the step's points in order, then `pa_keyup_step_wait(base, next, elapsed, min_us)`: the wait to the next step from the timer's last update (`base`), or 0 when the next step is due within `min_us` of the count so far, and goes at once from the same base |
+
+Only points at one time share a step. Whether a later point goes with a step depends on when the handler runs, so the
+handler decides from its timer's count, and a late handler never takes a point early. A timer restarted at each step
+(a one-shot) waits from step to step and doesn't need the check.
 
 The RF switch has its own lead on the PA's point. A switch that holds the burst task for longer (a synthesizer retune
 on a split channel) goes before the boost, so it can't delay the boost's points. On a simplex channel, the later the
