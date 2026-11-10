@@ -441,6 +441,29 @@ static void test_sequences(void)
 	bk4819_set_af_gain(&m, 200);
 	CHECK(chips[0].log[1].val == 0xB3BF && m.af_gain == 0xB3BF);
 
+	// The AF level: Gain2 in 0.5 dB codes from 0x3F to 0x03, Gain1 below that, the DAC held; the top nibble kept
+	chips[0].n = 0;
+	bk4819_set_af_level_db(&m, 9, 0);
+	CHECK(chips[0].log[0].reg == 0x48 && chips[0].log[0].val == (0xB000 | 0x3F << 4 | 9));
+	bk4819_set_af_level_db(&m, 9, 3);	// above the top: the top
+	CHECK(chips[0].log[1].val == (0xB000 | 0x3F << 4 | 9));
+	bk4819_set_af_level_db(&m, 9, -3);
+	CHECK(chips[0].log[2].val == (0xB000 | 0x39 << 4 | 9));
+	bk4819_set_af_level_db(&m, 9, -30);	// Gain2's lowest code used: 0x01 mutes
+	CHECK(chips[0].log[3].val == (0xB000 | 0x03 << 4 | 9));
+	bk4819_set_af_level_db(&m, 9, -31);	// Gain1 -6 dB, Gain2 back up 5 dB
+	CHECK(chips[0].log[4].val == (0xB000 | 1 << 10 | 0x0D << 4 | 9));
+	CHECK(BK4819_AF_MIN_DB == -48);
+	bk4819_set_af_level_db(&m, 20, BK4819_AF_MIN_DB);
+	CHECK(chips[0].log[5].val == (0xB000 | 3 << 10 | 0x03 << 4 | 15));
+	bk4819_set_af_level_db(&m, 9, -99);	// below the range: the bottom, never a muting Gain2 code
+	CHECK(chips[0].log[6].val == (0xB000 | 3 << 10 | 0x03 << 4 | 9));
+	for (int db = 0; db >= BK4819_AF_MIN_DB; db--) {	// every level exact, in half dB: Gain2's code less Gain1
+		bk4819_set_af_level_db(&m, 9, db);
+		int g2 = (m.af_gain >> 4) & 0x3F, g1 = (m.af_gain >> 10) & 3;
+		CHECK(g2 >= 3 && (g2 - 63) - 12 * g1 == 2 * db && (m.af_gain & 0xF00F) == 0xB009);
+	}
+
 	// Analog mode set (stock): AFC on (0x73 bit 4 cleared, the rest kept), 0x7E, 0x2B, live microphone 0x50
 	chips[0].regs[0x73] = 0x0112;
 	chips[0].n = 0;

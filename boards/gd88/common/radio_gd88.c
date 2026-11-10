@@ -69,6 +69,17 @@
 #ifndef GD88_VOL_TOP_DB
 #define GD88_VOL_TOP_DB		0
 #endif
+// FM's level on the same steps: the main chip's AF DAC held at GD88_FM_DAC, its AF gains at vol_db + GD88_FM_TOP_DB.
+// Set so that one speech clip plays about as loud on both at every step, measured at the speaker by microphone: DMR
+// decoding to -6 dBFS peaks, FM peaking at 2.5 kHz deviation on a 12.5 kHz channel. At DAC 0 and the gains' top FM was
+// 19-20 dB quieter; DAC 2 adds about 15 dB. Step 1 is then the gains' floor (BK4819_AF_MIN_DB). A test signal of tones
+// changing every 20 ms is no reference here: the vocoder loses about 13 dB on it, about 6 on steady tones
+#ifndef GD88_FM_DAC
+#define GD88_FM_DAC		2u
+#endif
+#ifndef GD88_FM_TOP_DB
+#define GD88_FM_TOP_DB		(-3)
+#endif
 #define TX_RX_OFF_US		50u		// RX paths off, then this long before the transmitter is tuned
 #define TX_SETTLE_MS		3u		// the chip's VCO calibration, before the PA is selected
 #define TX_SUPPLY_US		200u		// B: PA select, then this long before the TX supply
@@ -809,7 +820,7 @@ static void volume_apply(void)
 	if (!supported || mode == RADIO_MODE_DMR || transmitting) {
 		return;
 	}
-	bk4819_set_af_level_db(&rf_main, vol_db);
+	bk4819_set_af_level_db(&rf_main, GD88_FM_DAC, vol_db + GD88_FM_TOP_DB);
 	bk4819_set_af(&rf_main, audio_open && !vol_muted ? BK4819_AF_FM : BK4819_AF_MUTE);
 }
 

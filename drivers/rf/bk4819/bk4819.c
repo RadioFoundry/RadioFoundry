@@ -194,21 +194,18 @@ void bk4819_set_af_gain(bk4819_t *dev, uint8_t gain)
 	bk4819_write(dev, BK4819_REG_AF_GAIN, (uint16_t)((dev->af_gain & 0xFFF0u) | gain));
 }
 
-void bk4819_set_af_level_db(bk4819_t *dev, int db)
+void bk4819_set_af_level_db(bk4819_t *dev, uint8_t dac, int db)
 {
-	if (db > 0) {
-		db = 0;
-	}
-	if (db < BK4819_AF_MIN_DB) {
-		db = BK4819_AF_MIN_DB;
-	}
+	int down = db > 0 ? 0 : db < BK4819_AF_MIN_DB ? -BK4819_AF_MIN_DB : -db;	// dB below the top
 	unsigned gain1 = 0;	// 6 dB each
-	while (db + 6 * (int)gain1 < -30 && gain1 < 3u) {
+	while (down - 6 * (int)gain1 > BK4819_AF_GAIN2_SPAN_DB && gain1 < 3u) {
 		gain1++;
 	}
-	int dac = 15 + (db + 6 * (int)gain1 - 1) / 2;	// 2 dB a step, rounded down to the quieter
-	dac = dac < 0 ? 0 : dac;
-	bk4819_write(dev, BK4819_REG_AF_GAIN, (uint16_t)((dev->af_gain & 0xF3F0u) | (gain1 << 10) | (unsigned)dac));
+	unsigned gain2 = (unsigned)(63 - 2 * (down - 6 * (int)gain1));	// 0x3F = +5.5 dB, 0.5 dB a code, 0x03 at least
+	if (dac > 15u) {
+		dac = 15u;
+	}
+	bk4819_write(dev, BK4819_REG_AF_GAIN, (uint16_t)((dev->af_gain & 0xF000u) | (gain1 << 10) | (gain2 << 4) | dac));
 }
 
 // 4.5 DMR receive: the stock digital mode set, in its order. 0x27 and 0x48 are saved for the end; the stock firmware
