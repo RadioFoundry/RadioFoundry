@@ -46,6 +46,13 @@ int main(void)
 	tick = 0xFFFFF000u;
 	CHECK(hrc_rfburst_first_on(tick + 27716u, tick, ref, SLACK) == (uint32_t)(tick + 27299u));
 
+	// The grid: a late burst is taken back to it, one on time or early is not; right after a retimed first burst its
+	// own stamp starts the grid (a wrong retime is not carried on)
+	CHECK(hrc_rfburst_regrid(60000u + SLACK + 1u, 60000u, SLACK, false));
+	CHECK(!hrc_rfburst_regrid(60000u + SLACK, 60000u, SLACK, false));
+	CHECK(!hrc_rfburst_regrid(59000u, 60000u, SLACK, false));
+	CHECK(!hrc_rfburst_regrid(60000u + 420u, 60000u, SLACK, true));
+
 	if (failures == 0) {
 		printf("hrc7000RfburstTest: all passed\n");
 	}

@@ -40,6 +40,7 @@ static uint32_t pending;		// events that came while the task waited for its time
 static uint32_t t_on_prev;		// the burst before's t_on, for the grid check (0: none since the arm)
 static uint32_t tick_ref_us;		// an on-time RF TX interrupt's time after its tick, at tick_ref_lead (0: none yet)
 static uint8_t tick_ref_lead;
+static bool prev_retimed;		// the burst before was the retimed first one (hrc_rfburst_regrid)
 static hrc_rfburst_stats_t stats;
 
 static void rf_post(uint32_t ev)
@@ -145,7 +146,9 @@ static void note_burst(uint32_t t0, uint32_t wake, uint32_t up)
 // interrupt can come a few hundred us late, and the key-up and the hold to the burst's end with it. The bursts keep
 // the frame grid (on the SDR bench: 60 ms, sd 25 us), so a stamp later than the grid's point by more than the slack is
 // taken back to it. The first burst after the arm has no grid yet: it is timed from the slot engine's tick instead,
-// as the modem raises its interrupt late (dmr_rfburst_timing.h), with what the on-grid bursts taught at this lead
+// as the modem raises its interrupt late (dmr_rfburst_timing.h), with what the on-grid bursts taught at this lead.
+// Only on the slot engine's own ticks: a continuous outbound (a split hotspot's base station) has another clock, so it
+// neither retimes nor teaches
 static uint32_t on_time(uint32_t stamp, uint32_t tick)
 {
 	uint8_t lead = lead_steps();
@@ -154,10 +157,13 @@ static uint32_t on_time(uint32_t stamp, uint32_t tick)
 		tick_ref_us = 0;
 	}
 	if (t_on_prev == 0) {
-		uint32_t t = hrc_rfburst_first_on(stamp, tick, tick_ref_us, GRID_SLACK_US);
+		uint32_t t = cont ? stamp : hrc_rfburst_first_on(stamp, tick, tick_ref_us, GRID_SLACK_US);
 		stats.first_retimed_us = stamp - t;
+		prev_retimed = t != stamp;
 		return t;
 	}
+	bool after_retime = prev_retimed;
+	prev_retimed = false;
 	uint32_t d = stamp - t_on_prev;
 	if (d <= FRAME_US / 2 || d >= FRAME_US * 3 / 2) {
 		return stamp;
@@ -166,11 +172,11 @@ static uint32_t on_time(uint32_t stamp, uint32_t tick)
 	if (off > stats.grid_max_us) {
 		stats.grid_max_us = off;
 	}
-	if (d > FRAME_US + GRID_SLACK_US) {
+	if (hrc_rfburst_regrid(d, FRAME_US, GRID_SLACK_US, after_retime)) {
 		stats.regridded++;
 		return t_on_prev + FRAME_US;
 	}
-	if (off <= GRID_SLACK_US) {
+	if (off <= GRID_SLACK_US && !cont) {
 		tick_ref_us = hrc_rfburst_tick_ref(tick_ref_us, stamp, tick, SLOT_US);
 	}
 	return stamp;
