@@ -248,6 +248,7 @@ export function channelForm(m, t) {
 		fm(txt("txTone", "editor.col.tx_tone", tone(t), (v) => v)),
 		fm(sel("squelch", "editor.col.squelch", () => [[0, t("editor.squelch.default")], ...[...Array(21).keys()].map((n) => [n + 1, String(n + 1)])])),
 		fm(chk("vox", "editor.col.vox")),
+		fm(chk("toneBurst", "editor.col.tone_burst")),
 		dmr({ group: t("editor.form.digital") }),
 		dmr(sel("colorCode", "editor.col.cc", () => [...Array(16).keys()].map((n) => [n, String(n)]))),
 		dmr(sel("timeslot", "editor.col.ts", () => [[1, "1"], [2, "2"]])),

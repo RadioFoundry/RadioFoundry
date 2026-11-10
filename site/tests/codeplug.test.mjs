@@ -36,7 +36,8 @@ function detail(m, ids = [], db = []) {
 		out.push(`channel ${c.number} "${c.name}" rx ${c.rxHz} tx ${c.txHz} mode ${b(c.mode === "dmr")} bw ${b(c.bw === 25)}` +
 			` power ${power} tot ${c.tot} rxtone ${tone(c.rxTone)} txtone ${tone(c.txTone)} cc ${c.colorCode} ts ${c.timeslot}` +
 			` contact ${refNumber(c.contact)} list ${refNumber(c.rxList)} id ${c.dmrId} dmo ${b(c.dmo)} rxonly ${b(c.rxOnly)}` +
-			` skip ${b(c.zoneSkip)} vox ${b(c.vox)} nobeep ${b(c.noBeep)} noeco ${b(c.noEco)} roam ${b(c.roam)} alias ${alias}`);
+			` skip ${b(c.zoneSkip)} vox ${b(c.vox)} nobeep ${b(c.noBeep)} noeco ${b(c.noEco)} roam ${b(c.roam)}` +
+			` burst ${b(c.toneBurst)} alias ${alias}`);
 	}
 	m.zones.forEach((z, i) => {
 		const chs = z.channels.map(refNumber).filter((n) => used.has(n));
@@ -140,7 +141,8 @@ function rich() {
 	m.rxLists.push(list);
 	const chs = [
 		newChannel({ name: "Simplex", rxHz: 146520000, txHz: 146520000, bw: 25, rxTone: "100.0", txTone: "D023I", power: 9 }),
-		newChannel({ name: "Repeater", rxHz: 442100000, txHz: 447100000, txTone: "88.5", tot: 180, vox: true, zoneSkip: true }),
+		newChannel({ name: "Repeater", rxHz: 442100000, txHz: 447100000, txTone: "88.5", tot: 180, vox: true, zoneSkip: true,
+			toneBurst: true }),
 		newChannel({ name: "DMR TG91", rxHz: 438500000, txHz: 438500000, mode: "dmr", colorCode: 7, timeslot: 2,
 			contact: tg91, rxList: list, dmrId: 9991277, dmo: true, noBeep: true, noEco: true, aliasTs1: 2, aliasTs2: 3 }),
 		newChannel({ name: "RX only", rxHz: 162550000, txHz: 162550000, rxOnly: true, power: 1 }),
