@@ -266,10 +266,11 @@ static const pa_keyup_cfg_t keyup_cfg = {
 	.dead = 0, .knee = 0, .slope_us = 0, .boost_pct = 100, .hold_pct = 100,
 	.boost_us = 0, .pa_us = 1350, .drive_us = 0,
 };
-enum { KEY_PT_SUPPLY = PA_KEYUP_PT_DRIVE + 1 };
-static pa_keyup_point_t key_pt[PA_KEYUP_POINTS + 1u];	// the transmission's, set before it is armed
-static uint8_t key_pts;			// 0: the stepped ramp
-static volatile uint8_t key_pt_next;
+enum { KEY_PT_SUPPLY = PA_KEYUP_PT_BOARD };
+static pa_keyup_point_t key_pt[PA_KEYUP_POINTS_MAX];	// the transmission's, set before it is armed
+static pa_keyup_step_t key_st[PA_KEYUP_POINTS_MAX];	// and as TIM5's steps: points at one time together
+static uint8_t key_ns;			// 0: the stepped ramp
+static volatile uint8_t key_st_next;	// 1 + the step the timer runs to, 0 none
 static pa_keyup_t ku;
 static uint16_t ku_floor;
 static uint32_t key_delay_us = MD9600_BURST_KEY_DELAY_US;	// the stepped ramp's start after the interrupt
@@ -280,7 +281,7 @@ static void keyup_plan(uint32_t hz, uint8_t power)
 	uint16_t d = 0, top = 0;
 	uint8_t band = MD9600_UHF;
 	pa_keyup_cfg_t c = keyup_cfg;	// the plan and its points from one set of constants
-	key_pts = 0;
+	key_ns = 0;
 	key_delay_us = MD9600_BURST_KEY_DELAY_US;
 	if (pa_keyup_cfg() == NULL || !md9600_band_of(hz, &band) || !op_apc(NULL, hz, power, &d) ||
 	    !md9600_cal_apc(hz, MD9600_POWER_LEVELS - 1u, &top)) {
@@ -295,18 +296,10 @@ static void keyup_plan(uint32_t hz, uint8_t power)
 		key_delay_us = KEYUP_INT_AHEAD_US - MD9600_BURST_T5_US - c.pa_us;
 		return;
 	}
-	pa_keyup_point_t pt[PA_KEYUP_POINTS];
-	uint8_t n = pa_keyup_points(&c, &ku, pt), o = 0;
-	uint16_t supply_us = (uint16_t)(c.pa_us + MD9600_BURST_T5_US);
-	bool placed = false;
-	for (uint8_t i = 0; i < n; i++) {
-		if (!placed && pt[i].us <= supply_us) {
-			key_pt[o++] = (pa_keyup_point_t){ .us = supply_us, .kind = KEY_PT_SUPPLY };
-			placed = true;	// the PA's point is later, so the supply is always placed
-		}
-		key_pt[o++] = pt[i];
-	}
-	key_pts = o;
+	// The supply ahead of the PA's point by T5, and ahead of any point at its time
+	uint8_t n = pa_keyup_insert(key_pt, pa_keyup_points(&c, &ku, key_pt), (uint16_t)(c.pa_us + MD9600_BURST_T5_US),
+				    KEY_PT_SUPPLY);
+	key_ns = pa_keyup_steps(key_pt, n, KEYUP_INT_AHEAD_US, 0u, key_st);
 }
 
 // One point (interrupt level). False: refused, the PA left safe
@@ -356,24 +349,21 @@ void TIM5_IRQHandler(void)
 	if (!key_pending) {
 		return;
 	}
-	if (key_pt_next != 0u) {
-		// The rule's points: this one and any at the same time, then the wait to the next
-		uint8_t i = (uint8_t)(key_pt_next - 1u);
-		for (;;) {
-			if (!key_point(key_pt[i].kind)) {
-				dmr_skipped++;
-				break;
-			}
-			if (++i >= key_pts) {
-				break;
-			}
-			if (key_pt[i].us < key_pt[i - 1u].us) {
-				key_pt_next = (uint8_t)(i + 1u);
-				key_timer_start((uint32_t)key_pt[i - 1u].us - key_pt[i].us);
-				return;
-			}
+	if (key_st_next != 0u) {
+		// The rule's step: its points (those at one time), then the wait to the next
+		uint8_t i = (uint8_t)(key_st_next - 1u);
+		bool ok = true;
+		for (uint8_t p = i != 0u ? key_st[i - 1u].end : 0u; ok && p < key_st[i].end; p++) {
+			ok = key_point(key_pt[p].kind);
 		}
-		key_pt_next = 0;
+		if (!ok) {
+			dmr_skipped++;
+		} else if (++i < key_ns) {
+			key_st_next = (uint8_t)(i + 1u);
+			key_timer_start((uint32_t)key_st[i - 1u].us - key_st[i].us);
+			return;
+		}
+		key_st_next = 0;
 		key_pending = false;
 		return;
 	}
@@ -455,7 +445,7 @@ bool md9600_rf_dmr_key(bool tx)
 #endif
 	}
 	key_step = 0;
-	key_pt_next = 0;
+	key_st_next = 0;
 	key_pending = true;
 	uint32_t until;
 
@@ -465,11 +455,11 @@ bool md9600_rf_dmr_key(bool tx)
 		// clipped the first CACH; during the slot's sync, the receiver took that burst with noise for its CACH
 		key_timer_start(until > MD9600_BS_KEY_LEAD_US ? until - MD9600_BS_KEY_LEAD_US
 							      : until + MD9600_SLOT_US - MD9600_BS_KEY_LEAD_US);
-	} else if (key_pts != 0u) {
+	} else if (key_ns != 0u) {
 		// The reference at the floor until its first point; the points are all after the interrupt (KEYUP_MAX_AHEAD_US)
 		(void)md9600_rf_pa_ref(&rf, ku_floor);
-		key_pt_next = 1;
-		key_timer_start(KEYUP_INT_AHEAD_US - key_pt[0].us);
+		key_st_next = 1;
+		key_timer_start(KEYUP_INT_AHEAD_US - key_st[0].us);
 	} else {
 		key_timer_start(key_delay_us);
 	}

@@ -14,6 +14,172 @@ static const pa_keyup_cfg_t dflt = {
 	.boost_us = 1500, .pa_us = 1500, .drive_us = 500, .late_pct = 100,
 };
 
+// ---- The timer walks (pa_keyup_steps, pa_keyup_step_wait) against the arithmetic the boards used before them ----
+
+// A run of a walk: for each point the timer update (us after the reference) it was applied at, each programmed wait
+// and the walk's last base (a board may time its PA drop from it)
+typedef struct {
+	uint32_t at[PA_KEYUP_POINTS_MAX];
+	uint32_t waits[PA_KEYUP_POINTS_MAX + 1];
+	uint8_t nwaits, napplied;
+	uint16_t base;
+} walk_t;
+
+static uint32_t rnd = 12345u;
+static uint32_t next_rand(uint32_t n)
+{
+	rnd = rnd * 1103515245u + 12345u;
+	return (rnd >> 8) % n;
+}
+
+// The handler's model: it enters lat us after an update, each point costs cost us, and TIM7's count runs on from
+// the update (ARR 0xFFFF while the points run), so the next update comes the programmed wait after the last one
+#define WALK_REF	2530u
+#define WALK_MIN	30u
+
+// A free-running walk (the timer counts on from each update) as boards did it before the shared steps: each point
+// checked against the timer's base and count
+static walk_t old_walk(const pa_keyup_point_t *pt, uint8_t n, uint32_t lat, uint32_t cost)
+{
+	walk_t w = { 0 };
+	uint32_t first = pt[0].us;
+	uint32_t t = first + WALK_MIN < WALK_REF ? WALK_REF - first : WALK_MIN;	// the first update after the reference
+	w.waits[w.nwaits++] = t;
+	uint16_t base = (uint16_t)(first + WALK_MIN < WALK_REF ? first : WALK_REF - WALK_MIN);
+	uint8_t i = 0;
+	for (;;) {	// one handler entry
+		uint32_t cnt = lat;
+		for (;;) {
+			w.at[w.napplied++] = t;
+			cnt += cost;
+			if (++i >= n) {
+				w.base = base;
+				return w;
+			}
+			uint32_t step = (uint32_t)base - pt[i].us;
+			if (cnt + WALK_MIN < step) {
+				w.waits[w.nwaits++] = step;
+				t += step;
+				base = pt[i].us;
+				break;
+			}
+		}
+	}
+}
+
+static walk_t new_walk(const pa_keyup_point_t *pt, uint8_t n, uint32_t lat, uint32_t cost)
+{
+	walk_t w = { 0 };
+	pa_keyup_step_t st[PA_KEYUP_POINTS_MAX];
+	uint8_t ns = pa_keyup_steps(pt, n, WALK_REF, WALK_MIN, st);
+	uint16_t base = st[0].us;
+	uint32_t t = (uint32_t)(WALK_REF - base);
+	w.waits[w.nwaits++] = t;
+	uint8_t i = 0;
+	for (;;) {
+		uint32_t cnt = lat;
+		for (;;) {
+			for (uint8_t p = i != 0u ? st[i - 1u].end : 0u; p < st[i].end; p++) {
+				w.at[w.napplied++] = t;
+				cnt += cost;
+			}
+			if (++i >= ns) {
+				w.base = base;
+				return w;
+			}
+			uint32_t step = pa_keyup_step_wait(base, st[i].us, cnt, WALK_MIN);
+			if (step != 0u) {
+				w.waits[w.nwaits++] = step;
+				t += step;
+				base = st[i].us;
+				break;
+			}
+		}
+	}
+}
+
+// A one-shot walk as boards did it before them: the timer restarted per group of points at one time, waits from point
+// to point
+static uint8_t old_waits_oneshot(const pa_keyup_point_t *pt, uint8_t n, uint32_t *waits)
+{
+	uint8_t nw = 0;
+	waits[nw++] = WALK_REF - pt[0].us;
+	for (uint8_t i = 1; i < n; i++) {
+		if (pt[i].us < pt[i - 1u].us) {
+			waits[nw++] = (uint32_t)pt[i - 1u].us - pt[i].us;
+		}
+	}
+	return nw;
+}
+
+static uint8_t new_waits_oneshot(const pa_keyup_point_t *pt, uint8_t n, uint32_t *waits)
+{
+	pa_keyup_step_t st[PA_KEYUP_POINTS_MAX];
+	uint8_t ns = pa_keyup_steps(pt, n, WALK_REF, 0u, st), nw = 0;
+	waits[nw++] = WALK_REF - st[0].us;
+	for (uint8_t i = 1; i < ns; i++) {
+		waits[nw++] = (uint32_t)st[i - 1u].us - st[i].us;
+	}
+	CHECK(st[ns - 1u].end == n);
+	return nw;
+}
+
+// Random key-ups as the rule makes them: constants within pa_keyup_valid for the reference, a drive and a top
+static uint8_t random_points(pa_keyup_point_t *pt)
+{
+	pa_keyup_cfg_t c = {
+		.dead = (uint16_t)next_rand(900), .knee = (uint16_t)next_rand(2500), .slope_us = (uint16_t)next_rand(1000),
+		.boost_pct = (uint8_t)(50 + next_rand(71)), .hold_pct = (uint8_t)next_rand(101),
+		.late_pct = (uint8_t)next_rand(101),
+	};
+	uint16_t max_ahead = WALK_REF - WALK_MIN;
+	c.boost_us = next_rand(8) == 0 ? 0 : (uint16_t)(1 + next_rand(max_ahead));
+	uint16_t lim = c.boost_us != 0 ? c.boost_us : max_ahead;
+	c.pa_us = (uint16_t)next_rand(lim + 1u);
+	c.drive_us = (uint16_t)next_rand(lim + 1u);
+	if (next_rand(6) == 0) {
+		c.pa_us = c.drive_us = c.boost_us;	// ties
+	}
+	CHECK(pa_keyup_valid(&c, max_ahead));
+	uint16_t top = (uint16_t)(500 + next_rand(3500));
+	pa_keyup_t k = pa_keyup_drives(&c, (uint16_t)(1 + next_rand(top)), top, (uint16_t)next_rand(300), 4095);
+	return pa_keyup_points(&c, &k, pt);
+}
+
+static void check_walks(void)
+{
+	int compared = 0, merged = 0;
+	for (int run = 0; run < 20000; run++) {
+		pa_keyup_point_t pt[PA_KEYUP_POINTS_MAX];
+		uint8_t n = random_points(pt);
+		if (next_rand(2) == 0) {	// a board point (a supply, a switch) among them
+			n = pa_keyup_insert(pt, n, (uint16_t)(pt[n - 1u].us + next_rand(WALK_REF - WALK_MIN - pt[n - 1u].us + 1u)),
+					    PA_KEYUP_PT_BOARD);
+		}
+		for (uint8_t i = 1; i < n; i++) {
+			CHECK(pt[i].us <= pt[i - 1u].us);
+		}
+		uint32_t lat = next_rand(4) == 0 ? next_rand(200) : next_rand(15), cost = next_rand(25);
+		walk_t a = old_walk(pt, n, lat, cost), b = new_walk(pt, n, lat, cost);
+		CHECK(a.napplied == n && b.napplied == n && a.nwaits == b.nwaits && a.base == b.base);
+		for (uint8_t i = 0; i < n; i++) {
+			CHECK(a.at[i] == b.at[i]);
+		}
+		for (uint8_t i = 0; i < a.nwaits; i++) {
+			CHECK(a.waits[i] == b.waits[i]);
+		}
+		uint32_t wa[PA_KEYUP_POINTS_MAX + 1], wb[PA_KEYUP_POINTS_MAX + 1];
+		uint8_t na = old_waits_oneshot(pt, n, wa), nb = new_waits_oneshot(pt, n, wb);
+		CHECK(na == nb);
+		for (uint8_t i = 0; i < na && i < nb; i++) {
+			CHECK(wa[i] == wb[i]);
+		}
+		merged += a.nwaits < n;
+		compared++;
+	}
+	CHECK(compared == 20000 && merged > 1000);	// the merging was exercised
+}
+
 int main(void)
 {
 	// A UHF table with a top drive of 2615: the boost is 3138 at every step, and lasts
@@ -153,6 +319,29 @@ int main(void)
 	c.boost_us = 2000;
 	CHECK(!pa_keyup_set(&c) && pa_keyup_cfg()->boost_us == 1500);
 	CHECK(pa_keyup_set(NULL) && pa_keyup_cfg()->knee == 1450 && pa_keyup_cfg()->boost_pct == 120);
+
+	// A board point: ahead of the points at its time, after the earlier ones; at the end when it is the latest
+	pa_keyup_point_t ip[PA_KEYUP_POINTS_MAX] = { { 1500, PA_KEYUP_PT_BOOST }, { 1500, PA_KEYUP_PT_PA },
+						      { 900, PA_KEYUP_PT_HOLD }, { 500, PA_KEYUP_PT_DRIVE } };
+	CHECK(pa_keyup_insert(ip, 4, 900, PA_KEYUP_PT_BOARD) == 5);
+	CHECK(ip[2].kind == PA_KEYUP_PT_BOARD && ip[2].us == 900 && ip[3].kind == PA_KEYUP_PT_HOLD && ip[4].us == 500);
+	pa_keyup_point_t ip2[PA_KEYUP_POINTS_MAX] = { { 1500, PA_KEYUP_PT_PA } };
+	CHECK(pa_keyup_insert(ip2, 1, 1800, PA_KEYUP_PT_BOARD) == 2 && ip2[0].us == 1800 && ip2[1].kind == PA_KEYUP_PT_PA);
+	CHECK(pa_keyup_insert(ip2, 2, 100, PA_KEYUP_PT_BOARD) == 3 && ip2[2].us == 100);
+
+	// Steps: the points at one time together, the first no earlier than min after the reference
+	pa_keyup_step_t st[PA_KEYUP_POINTS_MAX];
+	pa_keyup_point_t sp[PA_KEYUP_POINTS_MAX] = { { 2520, PA_KEYUP_PT_BOOST }, { 2500, PA_KEYUP_PT_PA },
+						      { 2489, PA_KEYUP_PT_HOLD }, { 500, PA_KEYUP_PT_DRIVE } };
+	CHECK(pa_keyup_steps(sp, 4, 2530, 30, st) == 3);	// the first two at 2500: no earlier than 30 us after
+	CHECK(st[0].us == 2500 && st[0].end == 2 && st[1].us == 2489 && st[1].end == 3 && st[2].us == 500 && st[2].end == 4);
+	CHECK(pa_keyup_steps(sp, 4, 2530, 0, st) == 4 && st[0].us == 2520 && st[1].us == 2500);
+	sp[2].us = 2500;					// one time, one step
+	CHECK(pa_keyup_steps(sp, 4, 2530, 0, st) == 3 && st[1].us == 2500 && st[1].end == 3);
+	CHECK(pa_keyup_steps(sp, 0, 2530, 30, st) == 0);
+	CHECK(pa_keyup_step_wait(2500, 2489, 0, 30) == 0 && pa_keyup_step_wait(2489, 500, 0, 30) == 1989);
+	CHECK(pa_keyup_step_wait(2489, 500, 1959, 30) == 0 && pa_keyup_step_wait(2489, 500, 1958, 30) == 1989);
+	check_walks();
 
 	if (failures == 0) {
 		printf("paKeyupTest: all passed\n");

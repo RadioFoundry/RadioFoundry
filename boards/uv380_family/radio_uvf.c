@@ -95,9 +95,10 @@ static struct {
 	volatile bool rf_direct;	// this burst was keyed without the idle step: 4:0x04 raised, the receiver not retuned
 	volatile bool rf_key_pending;	// TIM7 runs this burst's key-up points
 	pa_keyup_point_t key_pt[PA_KEYUP_POINTS];	// the transmission's, earliest first, set before it is armed
-	uint8_t key_n;
+	pa_keyup_step_t key_st[PA_KEYUP_POINTS_MAX];	// and as TIM7's steps (pa_keyup_steps)
+	uint8_t key_ns;
 	pa_keyup_t ku;
-	volatile uint8_t key_i;		// the next point
+	volatile uint8_t key_i;		// the next step
 	volatile uint16_t key_base_us;	// the point the timer last counted from
 	volatile uint32_t key_apc;	// the drive now: what the PA point keys with
 	uint32_t rf_skipped, rf_unarmed, rf_rx_retries;
@@ -483,15 +484,22 @@ void TIM7_IRQHandler(void)
 	}
 	for (;;) {
 		uint8_t i = r.key_i;
-		if (!key_point(r.key_pt[i].kind) || ++i >= r.key_n) {
+		for (uint8_t p = i != 0u ? r.key_st[i - 1u].end : 0u; p < r.key_st[i].end; p++) {
+			if (!key_point(r.key_pt[p].kind)) {
+				key_timer_stop();
+				return;
+			}
+		}
+		if (++i >= r.key_ns) {
 			key_timer_stop();
 			return;
 		}
 		r.key_i = i;
-		uint32_t step = (uint32_t)r.key_base_us - r.key_pt[i].us;	// from the last update
-		if (TIM7->CNT + DMR_KEY_MIN_US < step) {
+		// From the last update; a step already due goes now
+		uint32_t step = pa_keyup_step_wait(r.key_base_us, r.key_st[i].us, TIM7->CNT, DMR_KEY_MIN_US);
+		if (step != 0u) {
 			TIM7->ARR = step - 1u;
-			r.key_base_us = r.key_pt[i].us;
+			r.key_base_us = r.key_st[i].us;
 			return;
 		}
 	}
@@ -510,13 +518,13 @@ bool uvf_rf_dmr_switch(bool tx)
 		r.rf_unarmed++;
 		return false;
 	}
-	uint32_t first = r.key_pt[0].us;
+	uint16_t first = r.key_st[0].us;	// no earlier than DMR_KEY_MIN_US after the interrupt
 	TIM7->CR1 = 0;
 	TIM7->CNT = 0;
-	TIM7->ARR = (first + DMR_KEY_MIN_US < DMR_KEY_INT_AHEAD_US ? DMR_KEY_INT_AHEAD_US - first : DMR_KEY_MIN_US) - 1u;
+	TIM7->ARR = (uint32_t)(DMR_KEY_INT_AHEAD_US - first) - 1u;
 	TIM7->SR = 0;
 	r.key_i = 0;
-	r.key_base_us = (uint16_t)first;
+	r.key_base_us = first;
 	r.key_apc = r.dmr_drive;
 	r.rf_key_pending = true;
 	TIM7->CR1 = TIM_CR1_CEN;
@@ -900,7 +908,8 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 #else
 		r.ku = pa_keyup_drives(&c, (uint16_t)drive, top, 0u, DAC_MAX);
 #endif
-		r.key_n = pa_keyup_points(&c, &r.ku, r.key_pt);
+		r.key_ns = pa_keyup_steps(r.key_pt, pa_keyup_points(&c, &r.ku, r.key_pt), DMR_KEY_INT_AHEAD_US, DMR_KEY_MIN_US,
+					  r.key_st);
 		__DMB();
 		r.dmr_armed = true;
 		r.tx_on = true;
