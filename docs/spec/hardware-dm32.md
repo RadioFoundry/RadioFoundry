@@ -878,6 +878,16 @@ UHF (the radio 20 ft from the receiver, so no -30 dB point), the -3 dB point / o
 Not measured with these constants: L, L++, H- and VHF. The other knees at PA 0.9 ms (950, 1100) and PA 1.1 ms (knee
 1100, 1250) were also up before the first symbol on every step measured, with less overshoot at L-.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../dev/img/dm32-keyup-sfr-ramp-dark.png">
+  <img alt="The key-up's rise at L-, M and H with the PA at 1.5 ms and at 0.9 ms, against where receive stops" src="../dev/img/dm32-keyup-sfr-ramp-light.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../dev/img/dm32-keyup-sfr-timing-dark.png">
+  <img alt="The key-up's points before and after: receive stopping, the boost, the PA, the hold and the drive" src="../dev/img/dm32-keyup-sfr-timing-light.png">
+</picture>
+
 The measurements below were made with the PA keyed 1.5 ms ahead at d, before the key-up.
 
 Measured on the SDR bench (2026-11-09, 446.075 and 448.7 MHz, high power, the radio 35 ft from the receiver, its carrier
