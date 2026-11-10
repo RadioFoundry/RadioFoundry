@@ -138,7 +138,7 @@ Pin index 0-31 = PTA, 32-63 = PTB, 64-95 = PTC.
 |---|---|
 | Key matrix | 6 rows PTB18-23 (outputs, idle low) by 3 sense lines PTB9-11 (inputs). Plus three keys read directly on the sense lines (9.2); 20-tick debounce |
 | Power key / latch | PTB12 in (high = pressed); PTB13 out, high keeps power on (9.1) |
-| Rotary encoder | PTB5, PTB8, both edges: one event +1 or -1. PTB5 leads PTB8 clockwise; a detent rests with both lines equal (both high or both low), two steps each (**HW** 2026-10-27) |
+| Rotary encoder | PTB5, PTB8, both edges: one event +1 or -1. PTB5 leads PTB8 clockwise; a detent rests with both lines equal (both high or both low), two steps each (**HW** 2026-10-27). The GPIO B interrupt was lost for good after a few turns once (both lines pending, never taken), so the 10 ms key scan serves the bank when that happens (the HR_C7000 platform's GPIO interrupt watch, `platform/hrc7000/gpio_watch.c`) (**HW**) |
 | TX / RX line | PTB2, high = transmit. The modem's RF TX and RX interrupts also switch it, so on DMR it follows every burst. It is wired to B's PTB2 too: B keys the PA on its edges (section 10) (BIN) |
 | Speaker amplifier | PTC18 high, together with the serial chain's amplifier bit (9.3) |
 | PTC20 | Low cuts the modem's audio line while a beep plays (INF). Low at start-up |
@@ -165,7 +165,7 @@ Pin index 0-31 = PTA, 32-63 = PTB, 64-95 = PTC.
 |---|---|
 | Power key | PTB12 reads high while pressed. The radio is switched on with the volume knob, so PTB12 is most likely the knob's switch contact (INF). The vendor code latches on when it reads high, and switches off when the key is pressed again or the battery reading drops |
 | Battery | ADC channel 2, 2S Li-ion. V x 10 = (raw + 5.7818) / 7.8551. Below 6.0 V critical, 6.0-6.9 V warnings, 7.0 V and up normal. A raw reading below 50 means the supply is going: switch off |
-| Volume | ADC channel 1, 0 at the lowest end to 1010 at the highest (**HW** 2026-10-27). 21 equal levels with hysteresis |
+| Volume | ADC channel 1, an audio taper pot: 0 at the lowest end, 59 at a quarter of the turn, 129 at half, 671 at three quarters, 1010 at the highest (**HW**). Linear between those points (`drivers/power/knob`), then 21 levels of 5 % with hysteresis, so each quarter of the turn is a quarter of the volume |
 
 ### 9.2 Keys
 
