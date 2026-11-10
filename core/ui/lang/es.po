@@ -2573,6 +2573,22 @@ msgid "Serial"
 msgstr "Serie"
 
 #: core/ui/ui_menus.c
+msgid "10s/dim"
+msgstr "10s/tenue"
+
+#: core/ui/ui_menus.c
+msgid "30s/dim"
+msgstr "30s/tenue"
+
+#: core/ui/ui_menus.c
+msgid "1m/dim"
+msgstr "1m/tenue"
+
+#: core/ui/ui_menus.c
+msgid "2m/dim"
+msgstr "2m/tenue"
+
+#: core/ui/ui_menus.c
 msgid "Never"
 msgstr "Nunca"
 
@@ -2669,8 +2685,16 @@ msgid "Home zone"
 msgstr "Zona de inicio"
 
 #: core/ui/ui_menus.c
+msgid "Tone burst"
+msgstr "Ráfaga de tono"
+
+#: core/ui/ui_menus.c
 msgid "Copy to VFO"
 msgstr "Copiar a VFO"
+
+#: core/ui/ui_menus.c
+msgid "VFO/Channel"
+msgstr "VFO/Canal"
 
 #: core/ui/ui_menus.c
 msgid "Call back"
@@ -2831,6 +2855,10 @@ msgstr "Bloqueo auto"
 #: core/ui/ui_menus.c
 msgid "PTT when locked"
 msgstr "PTT si bloqueado"
+
+#: core/ui/ui_menus.c
+msgid "Knob when locked"
+msgstr "Perilla si bloqueado"
 
 #: core/ui/ui_menus.c
 msgid "Position format"
@@ -3551,6 +3579,10 @@ msgstr "EMERGENCIA"
 #: core/ui/ui_screens.c
 msgid "OK acknowledge  Back hide"
 msgstr "OK aceptar  Atrás"
+
+#: core/ui/ui_screens.c
+msgid "Vol"
+msgstr "Vol"
 
 #: core/ui/ui_screens.c
 msgid "Muted"

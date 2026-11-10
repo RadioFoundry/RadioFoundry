@@ -17,6 +17,10 @@
 #include "hal_dtmf.h"
 #include "settings/settings.h"
 #include "input/input.h"
+#if CONFIG_KEY_ASSIGN
+#include "input/keyassign.h"
+#include "codeplug/codeplug.h"
+#endif
 #if CONFIG_DMR
 #include "dmr/ambe/ambeVoice.h"
 #if CONFIG_ZONE_SHARE
@@ -120,9 +124,9 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	else
 		dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n",
 			board_has_battery() ? word(v->battery, batt, 3) : "none", v->battery_pct, v->battery_mv, v->power_off);
-	static const char *const vsrc[] = { "none", "knob", "soft", "override" };
+	static const char *const vsrc[] = { "none", "knob", "soft", "override", "hold" };
 	dl_text(t, "volume.soft=%u\nvolume.sent=%d\nvolume.src=%s\nvolume.max=%u\nvolume.step=%u\nvolume.override=%d\n",
-		radio_volume_soft(), v->volume, word(v->volume_src, vsrc, 4), RADIO_VOLUME_MAX, v->volume_step, v->volume_override);
+		radio_volume_soft(), v->volume, word(v->volume_src, vsrc, 5), RADIO_VOLUME_MAX, v->volume_step, v->volume_override);
 #if CONFIG_BEEP
 	beep_stats_t b;
 	beep_get_stats(&b);
@@ -155,6 +159,20 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	} else {
 		dl_text(t, "set.reply_s=codeplug\n");
 	}
+}
+
+void debuglink_view_keys(dl_text_t *t)
+{
+#if CONFIG_KEY_ASSIGN
+	if (board.side_key_count != 0) {
+		uint16_t slots[CODEPLUG_QUICK_KEYS];
+		(void)codeplug_quick_keys(slots);
+		// The saved assignment lets HIL restore the key through Settings after exercising its physical bit.
+		dl_text(t, "key.first.bit=%u\nkey.first.press=%u\n", board.side_keys[0], keyassign_get(slots, 0, false));
+	}
+#else
+	(void)t;
+#endif
 }
 
 // One setting by id (DL radio op SETTING; docs/spec/debuglink.md 3.8)

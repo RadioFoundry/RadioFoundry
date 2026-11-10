@@ -351,6 +351,7 @@ static void link_section(dl_text_t *t)
 		}
 	}
 	dl_text(t, "input.source=%s\n", input_last_source() == INPUT_SRC_HOST ? "host" : "keys");
+	debuglink_view_keys(t);
 	dl_text(t, "input.raw_keys=0x%08x\ninput.injected=0x%08x\n", (unsigned)input_raw_keys(),
 		(unsigned)input_injected_keys());
 	dl_text(t, "input.encoder_total=%d\n", (int)input_encoder_total());
