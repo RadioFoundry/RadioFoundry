@@ -499,7 +499,7 @@ def test_tx_drive_op(radio):
         radio.link.tx_drive(0)
 
 
-@pytest.mark.feature("debuglink")
+@pytest.mark.feature("debuglink", optional=True)    # a board opts in to the key-up (pa-keyup.md): no switch to excuse it
 def test_pa_keyup_op(radio):
     """The DMR PA key-up constants (RADIO op 37, docs/spec/pa-keyup.md) without keying: the core view shows the board's,
     the op takes a valid set and shows it, refuses one out of range or out of order and keeps the set before, and no
