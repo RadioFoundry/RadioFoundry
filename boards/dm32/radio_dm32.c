@@ -22,21 +22,24 @@
 #define UHF_FROM_HZ		280000000u	// PA / LNA band split (8.5)
 #define MIC_GAIN_DB		11u		// GCR_ADCL at init (9.1)
 // DMR bursts on the shared RF-burst task (dmr_rfburst.h), timed from the RF TX interrupt (hardware-dm32.md 8.5). The PA
-// keys up from the power cal table (radio/pa_keyup.h): drive boost with the PA off, a hold, then the PA at the step's
-// drive. A low step's drive alone took 3-4 ms to full power; with the boost every step is up by the first symbol.
-// The FD6818 goes to TX at 0.45 ms on a simplex channel (two state writes, 0.1 ms), after the inbound burst before
-// ours (it ends about 2.3 ms before our first symbol), as an SFR needs. A split channel's retune holds the task 1.1-1.4
-// ms, so it runs before the boost. The lead leaves the task's wake (up to 0.42 ms) room before that
+// keys up from the power cal table (radio/pa_keyup.h): a drive boost whose length follows the step, a hold, then the
+// step's drive. A low step's drive alone took 3-4 ms to full power; with the boost every step is up by the first
+// symbol. The PA is selected with the boost, so the FD6818 goes to TX 0.3 ms before that: 1.8 ms before the first
+// symbol on a simplex channel (two state writes, 0.1 ms), after the inbound burst before ours (it ends about 2.3 ms
+// before our first symbol). A split channel's retune holds the task 1.1-1.4 ms, so it runs before the boost. The lead
+// leaves the task's wake (up to 0.42 ms) room before that
 #define RF_TX_LEAD		26u		// 100 us steps (RF_CONTROL b13:8)
 #define SWITCH_AHEAD_US		300u		// the FD6818 to TX this long before the PA
 #define SWITCH_AHEAD_SPLIT_US	1450u		// the same with the synthesizer's move to the TX frequency, before the boost
 #define TASK_WAKE_US		420u		// the RF task's latest wake after the interrupt
 // The earliest key-up point: the split's switch still after the task's wake
 #define KEYUP_MAX_AHEAD_US	(RF_TX_LEAD * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US - TASK_WAKE_US - SWITCH_AHEAD_SPLIT_US)
-// The key-up constants (docs/spec/pa-keyup.md): measured on the SDR bench at UHF, every step at -3 dB within 0.15 ms of
-// the first symbol. VHF's low steps overshoot by 5-7 dB with them (open)
+// The key-up constants (docs/spec/pa-keyup.md): measured on the SDR bench at UHF and VHF, every step up 0.1-0.8 ms
+// before the first symbol and no more than 3 dB over (hardware-dm32.md 8.5). The knee goes with pa_us: the control
+// charges less with the PA selected, so a later PA wants a smaller knee
 static const pa_keyup_cfg_t keyup_cfg = {
-	.blend_pct = 55, .top_pct = 111, .hold_pct = 80, .boost_us = 1500, .hold_us = 500, .pa_us = 150,
+	.dead = 680, .knee = 1450, .slope_us = 600, .boost_pct = 120, .hold_pct = 80,
+	.boost_us = 1500, .pa_us = 1500, .drive_us = 500,
 };
 _Static_assert(1500u <= KEYUP_MAX_AHEAD_US, "the boost must come after the split's switch");
 // TX data advance (hrc7000_t.tx_pre_on): the chip's 0.4 ms until the inbound burst's offset against the outbound is
@@ -119,9 +122,14 @@ static void lna(uint32_t hz, bool on)
 	hrc_pin_write(PIN_VHF_LNA, on && !uhf);
 }
 
-static void pa_key(void)
+static void pa_select(void)
 {
 	hrc_pin_write(tx_uhf ? PIN_UHF_PA : PIN_VHF_PA, true);
+}
+
+static void pa_key(void)
+{
+	pa_select();
 	DAC_DATA_B = tx_drive;
 }
 
@@ -183,31 +191,55 @@ static void burst_switch(void)
 	fd6818_dmr_burst_at(&fd, true, FD6818_BW_DMR, synth_hz(tx_hz));
 }
 
-// One burst's TX on, from the RF task (dmr_rfburst.h): the key-up's points (boost, hold, the PA keyed) in time order,
-// with the switch to TX before the first point it is ahead of; every point from the RF TX interrupt
+// One burst's TX on, from the RF task (dmr_rfburst.h): the key-up's points in time order (the boost, the PA on, the
+// hold, the drive to the step's), with the switch to TX before the PA, or before them all on a split channel; every
+// point from the RF TX interrupt. Without a boost the PA is keyed at its point at the step's drive
 static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 {
 	(void)wait;
 	bool boost = dmr_keyed && ku.boost != 0u;
 	bool split = tx_hz != rx_hz;
-	const uint32_t ahead[3] = { ku_cfg.boost_us, ku_cfg.hold_us, ku_cfg.pa_us };
-	const uint16_t drive[2] = { ku.boost, ku.hold };
-	uint32_t sw = (split ? SWITCH_AHEAD_SPLIT_US : SWITCH_AHEAD_US) + (split && boost ? ahead[0] : ahead[2]);
-	bool switched = false;
-	for (uint8_t i = boost ? 0u : 2u; i < 3u; i++) {
-		if (!switched && sw >= ahead[i]) {
-			at(hrc_rfburst_pa_at_us(RF_TX_LEAD, sw));
-			burst_switch();
-			switched = true;
+	enum { P_SWITCH, P_BOOST, P_PA, P_HOLD, P_DRIVE, P_COUNT };	// on a tie in this order
+	// The switch to TX: ahead of the PA, or ahead of every point on a split channel (its retune holds the task)
+	uint32_t sw = split ? SWITCH_AHEAD_SPLIT_US + (boost ? ku_cfg.boost_us : ku_cfg.pa_us) : SWITCH_AHEAD_US + ku_cfg.pa_us;
+	const uint32_t ahead[P_COUNT] = { sw, ku_cfg.boost_us, ku_cfg.pa_us, ku.hold_us, ku_cfg.drive_us };
+	bool done[P_COUNT] = { false, !boost, false, !boost, !boost };
+	for (;;) {
+		int8_t next = -1;
+		for (int8_t i = 0; i < P_COUNT; i++) {
+			if (!done[i] && (next < 0 || ahead[i] > ahead[next])) {
+				next = i;
+			}
 		}
-		at(hrc_rfburst_pa_at_us(RF_TX_LEAD, ahead[i]));
+		if (next < 0) {
+			break;
+		}
+		done[next] = true;
+		at(hrc_rfburst_pa_at_us(RF_TX_LEAD, ahead[next]));
+		if (next == P_SWITCH) {
+			burst_switch();
+			continue;
+		}
 		if (!dmr_keyed) {
 			continue;
 		}
-		if (i < 2u) {
-			DAC_DATA_B = drive[i];	// the PA still off
-		} else {
-			pa_key();
+		switch (next) {
+		case P_BOOST:
+			DAC_DATA_B = ku.boost;
+			break;
+		case P_HOLD:
+			DAC_DATA_B = ku.hold;
+			break;
+		case P_DRIVE:
+			DAC_DATA_B = tx_drive;
+			break;
+		default:
+			if (boost) {
+				pa_select();	// the drive has its own points
+			} else {
+				pa_key();
+			}
+			break;
 		}
 	}
 }
@@ -394,7 +426,7 @@ static void keyup_plan(uint32_t hz)
 	}
 	const pa_keyup_cfg_t *c = pa_keyup_cfg();
 	ku_cfg = c != NULL ? *c : keyup_cfg;
-	ku = pa_keyup_plan(tx_drive, bf_cal_power_level(hz, 0u), top);
+	ku = pa_keyup_plan(tx_drive, top);
 }
 #endif
 

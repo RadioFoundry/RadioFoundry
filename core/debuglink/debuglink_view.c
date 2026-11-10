@@ -113,9 +113,11 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	if (ku != NULL) {
 		// The DMR PA key-up's constants (RADIO op 37) and the last key-up's drives
 		pa_keyup_t k = pa_keyup_last();
-		dl_text(t, "pa_keyup=%u/%u/%u/%u/%u/%u\n", (unsigned)ku->blend_pct, (unsigned)ku->top_pct,
-			(unsigned)ku->hold_pct, (unsigned)ku->boost_us, (unsigned)ku->hold_us, (unsigned)ku->pa_us);
-		dl_text(t, "pa_keyup.last=%u/%u/%u\n", (unsigned)k.boost, (unsigned)k.hold, (unsigned)k.drive);
+		dl_text(t, "pa_keyup=%u/%u/%u/%u/%u/%u/%u/%u\n", (unsigned)ku->dead, (unsigned)ku->knee,
+			(unsigned)ku->slope_us, (unsigned)ku->boost_pct, (unsigned)ku->hold_pct, (unsigned)ku->boost_us,
+			(unsigned)ku->pa_us, (unsigned)ku->drive_us);
+		dl_text(t, "pa_keyup.last=%u/%u/%u/%u\n", (unsigned)k.boost, (unsigned)k.hold, (unsigned)k.drive,
+			(unsigned)k.hold_us);
 	}
 #endif
 	// The board's bands in Hz, so a HIL test skips a frequency the radio can't tune instead of failing on it

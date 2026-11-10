@@ -963,18 +963,20 @@ class DebugLink:
         view's tx_drive lists each level's drive. Raises DebugLinkError over the board's limit or without the hook."""
         self.radio(OP_TX_DRIVE, struct.pack("<H", int(drive)))
 
-    def pa_keyup(self, blend=None, top=None, hold=None, boost_us=None, hold_us=None, pa_us=None):
-        """The DMR PA key-up constants (RADIO op 37; docs/spec/pa-keyup.md), RAM only, from the next key-up: the boost's
-        blend, its target (% of the top step's drive) and the hold (% of the step's drive), then the boost, hold and PA
-        points in us before the first symbol. No arguments: the board's again. The core view shows them (pa_keyup) and
-        the last key-up's drives (pa_keyup.last). Raises DebugLinkError out of range or on a radio without it."""
-        v = (blend, top, hold, boost_us, hold_us, pa_us)
+    def pa_keyup(self, dead=None, knee=None, slope_us=None, boost=None, hold=None, boost_us=None, pa_us=None,
+                 drive_us=None):
+        """The DMR PA key-up constants (RADIO op 37; docs/spec/pa-keyup.md), RAM only, from the next key-up: the drive
+        that does nothing (dead), the knee (counts x ms), the slope (us), the boost (% of the top step's drive) and the
+        hold (% of the step's drive), then the boost, PA and drive points in us before the first symbol. No arguments:
+        the board's again. The core view shows them (pa_keyup) and the last key-up (pa_keyup.last: boost, hold, drive
+        and the hold's point). Raises DebugLinkError out of range or on a radio without it."""
+        v = (dead, knee, slope_us, boost, hold, boost_us, pa_us, drive_us)
         if all(x is None for x in v):
             self.radio(OP_PA_KEYUP, b"")
             return
         if any(x is None for x in v):
-            raise ValueError("pa_keyup: all six values, or none")
-        self.radio(OP_PA_KEYUP, struct.pack("<BBBHHH", *(int(x) for x in v)))
+            raise ValueError("pa_keyup: all eight values, or none")
+        self.radio(OP_PA_KEYUP, struct.pack("<HHHBBHHH", *(int(x) for x in v)))
 
     def tone_burst(self, on, max_ms=0):
         """The 1750 Hz burst (FM): keys up and sends the tone while on. The firmware ends it by itself after max_ms
@@ -1426,8 +1428,8 @@ def cmd_radio(link, a):
             link.tx_limit(mhz=[float(f) for f in ",".join(args).split(",") if f])
     elif op == "tx-drive":            # tx-drive N|off (the next transmission's PA drive, power calibration)
         link.tx_drive(0 if args[:1] in ([], ["off"]) else num(0))
-    elif op == "pa-keyup":            # pa-keyup BLEND TOP HOLD BOOST_US HOLD_US PA_US|default (DMR PA key-up, RAM only)
-        link.pa_keyup(*([] if args[:1] in ([], ["default"]) else [num(i) for i in range(6)]))
+    elif op == "pa-keyup":            # pa-keyup DEAD KNEE SLOPE_US BOOST HOLD BOOST_US PA_US DRIVE_US|default (RAM only)
+        link.pa_keyup(*([] if args[:1] in ([], ["default"]) else [num(i) for i in range(8)]))
     elif op == "set":                 # set NAME VALUE
         link.setting(args[0], num(1))
     elif op == "usb":                 # usb network|serial
