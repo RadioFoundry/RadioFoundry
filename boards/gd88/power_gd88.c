@@ -22,12 +22,13 @@
 #define BAT_FULL_MV		8400u
 #define BAT_EMPTY_MV		6000u
 // The knob: 21 positions (5 % each) over its turn, with a little hysteresis so a knob resting on a boundary doesn't
-// flicker between two. It is an audio taper pot: the readings at its stops and quarters (hardware-gd88.md 9), linear
-// between them
+// flicker between two. It is an audio taper pot: the readings at its quarters (hardware-gd88.md 9), linear between
+// them. The ends sit a little inside the stops (0 and 1010 measured), so a knob whose wiper stops a little short still
+// reaches silence and the top
 #define VOL_LEVELS		21u
 #define VOL_STEP_PCT		5
 #define VOL_HYST_PCT		1
-static const uint16_t vol_curve[5] = { 0, 59, 129, 671, 1010 };
+static const uint16_t vol_curve[5] = { 5, 59, 129, 671, 980 };
 
 static battery_avg_t bat;
 static uint8_t off_count, gone_count;

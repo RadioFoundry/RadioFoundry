@@ -165,7 +165,7 @@ Pin index 0-31 = PTA, 32-63 = PTB, 64-95 = PTC.
 |---|---|
 | Power key | PTB12 reads high while pressed. The radio is switched on with the volume knob, so PTB12 is most likely the knob's switch contact (INF). The vendor code latches on when it reads high, and switches off when the key is pressed again or the battery reading drops |
 | Battery | ADC channel 2, 2S Li-ion. V x 10 = (raw + 5.7818) / 7.8551. Below 6.0 V critical, 6.0-6.9 V warnings, 7.0 V and up normal. A raw reading below 50 means the supply is going: switch off |
-| Volume | ADC channel 1, an audio taper pot: 0 at the lowest end, 59 at a quarter of the turn, 129 at half, 671 at three quarters, 1010 at the highest (**HW**). Linear between those points (`drivers/power/knob`), then 21 levels of 5 % with hysteresis, so each quarter of the turn is a quarter of the volume |
+| Volume | ADC channel 1, an audio taper pot: 0 at the lowest end, 59 at a quarter of the turn, 129 at half, 671 at three quarters, 1010 at the highest (**HW**). Linear between those points (`drivers/power/knob`), with the ends at 5 and 980 so a knob that stops a little short still reaches 0 and 100 %, then 21 levels of 5 % with hysteresis, so each quarter of the turn is a quarter of the volume |
 
 ### 9.2 Keys
 
