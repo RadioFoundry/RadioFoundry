@@ -15,6 +15,7 @@
 #include <stdbool.h>
 
 #define MDNS_PORT		5353
+#define MDNS_ALIAS		"rfoundry"	// <alias>.local: the radio on this link, whatever its DMR ID
 #define MDNS_GROUP		0xE00000FBu	// 224.0.0.251
 #define MDNS_SERVICES_MAX	8
 #define MDNS_LABEL_MAX		63

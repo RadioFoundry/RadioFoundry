@@ -4,6 +4,7 @@
 // RFC 6763. The records it owns:
 //   <host>.local                        A      the radio's address                     unique, TTL 120
 //   <host>.local                        NSEC   "only an A record here"                 unique, TTL 120
+//   rfoundry.local (MDNS_ALIAS)         A      the radio's address                     shared, TTL 120, answers only
 // and for each service s of the table:
 //   <type>.local                        PTR    <instance>.<type>.local                 shared, TTL 4500
 //   <instance>.<type>.local             SRV    0 0 <port> <host>.local                 unique, TTL 120
@@ -42,8 +43,8 @@
 #define IDENTITY_MS	1000u
 #define SEND_BUDGET	4		// messages per tick at most
 
-// Records: two for the host, then K_COUNT per service
-enum { REC_A, REC_HNSEC, REC_SVC0 };
+// Records: two for the host, the alias's A, then K_COUNT per service
+enum { REC_A, REC_HNSEC, REC_ALIAS, REC_SVC0 };
 enum { K_PTR, K_SRV, K_TXT, K_ENUM, K_NSEC, K_COUNT };
 #define REC(s, k)	(REC_SVC0 + (s) * K_COUNT + (k))
 #define BIT(r)		((recset_t)1 << (r))
@@ -51,7 +52,7 @@ typedef uint64_t recset_t;
 _Static_assert(REC_SVC0 + MDNS_SERVICES_MAX * K_COUNT <= 64, "record sets are 64 bits");
 
 // Names, as label lists
-enum { N_HOST, N_TYPE, N_INST, N_ENUM };
+enum { N_HOST, N_TYPE, N_INST, N_ENUM, N_ALIAS };
 #define LABELS_MAX	6
 typedef struct {
 	const char *p[LABELS_MAX];
@@ -204,6 +205,9 @@ static void make_name(name_t *nm, int which, int s)
 	case N_TYPE:
 		add_type(nm, svc[s].type);
 		break;
+	case N_ALIAS:
+		add_label(nm, MDNS_ALIAS, sizeof(MDNS_ALIAS) - 1);
+		break;
 	default:
 		add_label(nm, "_services", 9);
 		add_label(nm, "_dns-sd", 7);
@@ -277,6 +281,10 @@ static int our_name(const uint8_t *msg, int length, int off, int *s, int *end)
 	make_name(&nm, N_ENUM, 0);
 	if (name_match(msg, length, off, &nm, end)) {
 		return N_ENUM;
+	}
+	make_name(&nm, N_ALIAS, 0);
+	if (name_match(msg, length, off, &nm, end)) {
+		return N_ALIAS;
 	}
 	for (int i = 0; i < nsvc; i++) {
 		*s = i;
@@ -389,7 +397,7 @@ static void put_txt(msg_t *m)
 static void make_owner(name_t *nm, int rec)
 {
 	if (rec < REC_SVC0) {
-		make_name(nm, N_HOST, 0);
+		make_name(nm, rec == REC_ALIAS ? N_ALIAS : N_HOST, 0);
 		return;
 	}
 	int s = (rec - REC_SVC0) / K_COUNT, k = (rec - REC_SVC0) % K_COUNT;
@@ -412,6 +420,8 @@ static bool put_record(msg_t *m, int rec, int how)
 		type = TYPE_A, ttl = TTL_HOST, unique = true;
 	} else if (rec == REC_HNSEC) {
 		type = TYPE_NSEC, ttl = TTL_HOST, unique = true;
+	} else if (rec == REC_ALIAS) {
+		type = TYPE_A, ttl = TTL_HOST, unique = false;	// every radio answers to it: never probed or defended
 	} else if (k == K_PTR || k == K_ENUM) {
 		type = TYPE_PTR, ttl = TTL_OTHER, unique = false;
 	} else if (k == K_SRV) {
@@ -732,6 +742,11 @@ static void question(int which, int s, uint16_t qtype, recset_t *ans, recset_t *
 			*ans |= BIT(REC_A);
 		} else {
 			*neg |= BIT(REC_HNSEC) | BIT(REC_A);
+		}
+		break;
+	case N_ALIAS:
+		if (any || qtype == TYPE_A) {
+			*ans |= BIT(REC_ALIAS);
 		}
 		break;
 	case N_ENUM:

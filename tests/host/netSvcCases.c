@@ -166,6 +166,16 @@ void debuglink_view_section(uint8_t s, const radio_view_t *v, dl_text_t *t)
 	}
 }
 
+// The host link's USB personality (core/hostlink/hostlink.h), as /api/usb sees it
+static bool usb_net_mode = true;
+static int usb_serial_requests;
+bool hostlink_network_mode(void) { return usb_net_mode; }
+bool hostlink_request_usb_network(bool network)
+{
+	usb_serial_requests += network ? 0 : 1;
+	return true;
+}
+
 static int http_get_from(peer_t *p, uint32_t ip, uint16_t port, const char *req)
 {
 	if (!peer_connect(p, ip, port, NET_HTTP_PORT)) {
@@ -275,6 +285,25 @@ static void test_http(void)
 	CHECK(rows_ok);
 	fake_display.bpp = 16;
 	fake_display.width = 160;
+
+	// The USB personality back to serial: from the host only, in network mode only, and after the answer went out
+	static peer_t far;
+	CHECK(http_get_from(&far, 0xC0000201u, 51030, "GET /api/usb?mode=serial HTTP/1.0\r\n\r\n") > 0 && strstr((char *)far.rx, " 403 "));
+	CHECK(http_get(&a, 51031, "GET /api/usb HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
+	CHECK(http_get(&a, 51032, "GET /api/usb?mode=network HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
+	usb_net_mode = false;	// over PPP the port is the serial port already
+	CHECK(http_get(&a, 51033, "GET /api/usb?mode=serial HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 400 "));
+	usb_net_mode = true;
+	CHECK(http_get(&a, 51034, "HEAD /api/usb?mode=serial HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
+	run_for(1000);
+	CHECK(usb_serial_requests == 0);
+	CHECK(http_get(&a, 51035, "GET /api/usb?mode=serial HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
+	CHECK(strstr((char *)a.rx, "Content-Type: text/html") && strstr(body_of(&a), "serial port") && a.fin);
+	CHECK(usb_serial_requests == 0);	// the reply and the close first
+	run_for(1000);
+	CHECK(usb_serial_requests == 1);
+	run_for(1000);
+	CHECK(usb_serial_requests == 1);
 
 	// Errors
 	CHECK(http_get(&a, 51008, "POST / HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 405 "));

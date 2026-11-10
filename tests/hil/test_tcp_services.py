@@ -295,3 +295,26 @@ def test_aprsis(net):
         _get(ip, "/api/aprsis?server=off")
         if stand_in:
             stand_in.close()
+
+
+@pytest.mark.feature("net_http", "usb_network")
+@pytest.mark.usb_switch
+def test_http_usb_serial(net, radio):
+    """Last in this module (it ends network mode): the request a web page uses to get the serial port back
+    (docs/spec/usb-network.md 1). A query it doesn't know changes nothing; mode=serial answers its page and the radio
+    enumerates as the serial port. Where the host resolves mDNS names, the alias is the radio."""
+    if "NET_HTTP" not in net["features"]:
+        skip("not_built", "built without CONFIG_NET_HTTP")
+    try:
+        assert socket.gethostbyname("rfoundry.local") == net["ip"]
+    except socket.gaierror:
+        pass    # no mDNS resolver on this host
+    with pytest.raises(urllib.error.HTTPError) as e:
+        _get(net["ip"], "/api/usb?mode=network")
+    assert e.value.code == 400
+    assert net["link"].view(["hotspot"]).get("usb.network") == "1"
+    status, ctype, body = _get(net["ip"], "/api/usb?mode=serial")
+    assert status == 200 and ctype == "text/html" and b"serial port" in body
+    time.sleep(1.5)     # the switch follows the answer by 500 ms: a radio found over UDP still answers there until then
+    assert radio.serial_back(20), "the radio didn't come back as a serial port"
+    assert radio.view(["hotspot"]).get("usb.network") == "0"

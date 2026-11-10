@@ -14,10 +14,11 @@ export { serialApi };
 
 export const RFOUNDRY_USB = { usbVendorId: 0x1FC9, usbProductId: 0x0094 };
 // The same radio as a USB network adapter (CDC-NCM, docs/spec/usb-network.md 1): no serial port, and the OS network
-// driver owns the interfaces, so a page can only see that it is there (WebUSB lists it without claiming it)
+// driver owns the interfaces, so a page can only see that it is there (WebUSB lists it without claiming it) and ask
+// it for the serial port (netmode.js)
 export const RFOUNDRY_NET = { vendorId: 0x1FC9, productId: 0x0096 };
 const SOF1 = 0xA5, SOF2 = 0x5A;
-export const CMD = { PING: 0x01, VERSION: 0x02, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F, HWOPT: 0x21 };
+export const CMD = { PING: 0x01, VERSION: 0x02, RADIO: 0x0A, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F, HWOPT: 0x21 };
 // The status a command not built in, or with nothing to act on, answers (debuglink.md 2)
 const DL_UNAVAILABLE = 4;
 
@@ -252,6 +253,12 @@ export class Link {
 	// HWOPT SET: store a choice (LinkError status 7 when the radio refuses: transmitting, or the board can't store it)
 	async hwoptSet(option, choice) {
 		await this.request(CMD.HWOPT, new Uint8Array([1, option, choice]));
+	}
+
+	// RADIO op 25 (debuglink.md 3.8): the USB personality, network or serial, until the radio restarts. The radio
+	// leaves the bus after its reply, so the port is gone when this returns
+	async usbNetwork(on) {
+		await this.request(CMD.RADIO, new Uint8Array([25, on ? 1 : 0]));
 	}
 
 	// INFO_CHIP (debuglink.md 3.9), offsets after the status byte

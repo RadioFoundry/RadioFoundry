@@ -25,6 +25,11 @@ void usb_device_set_mode(usb_mode_t mode);
 bool usb_device_switch_mode(usb_mode_t mode);
 usb_mode_t usb_device_mode(void);
 
+// Endpoint 0, network personality: a vendor request to the device with no data (bmRequestType 0x40) that asks for the
+// serial personality (docs/spec/usb-network.md 1). usb_device_take_serial_request: one came in since the last call
+#define USB_REQ_SERIAL_MODE	0x53
+bool usb_device_take_serial_request(void);
+
 // Configured by the host (the reduced-power clock must not be used meanwhile, docs/spec/hardware-dm1701.md 1.3)
 bool usb_device_configured(void);
 

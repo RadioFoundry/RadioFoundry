@@ -23,7 +23,8 @@ python3 -m pytest tests/hil -v -rs -s -k aprs --allow-rf --allow-service-stop   
 python3 -m pytest tests/hil -v -rs -s -k encoder --manual                              # turn the knob when asked
 ```
 
-Without a radio every test is skipped with the reason (no failure). The radio is found by its USB ID 1FC9:0094;
+Without a radio every test is skipped with the reason (no failure). The radio is found by its USB ID 1FC9:0094, else
+as the one radio in USB network mode that answers the debug link over UDP (`docs/spec/usb-network.md` 1);
 `--radio-port` or `$RFOUNDRY_PORT` picks one when there are several. The port can also be a pyserial URL, such as
 `rfc2217://host:7001` for a radio on another machine's RFC 2217 server.
 

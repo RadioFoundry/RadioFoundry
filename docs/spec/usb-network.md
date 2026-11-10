@@ -27,6 +27,25 @@ adapter (`pid_network`), with their own descriptors. Switching drops the D+ pull
   port that last sent there, in datagrams of at most 512 bytes. `rfoundry_debug.py --port udp:<radio IP>` uses it, and so
   can MMDVMHost (`Protocol=udp`, `ModemAddress=<radio IP>`, `ModemPort=3334`). The MMDVM session's DTR rule does not
   apply (there is no DTR); the 20 s idle timeout does.
+- The tools find a radio in network mode by themselves when no serial port (1FC9:0094) is there
+  (`tools/rfoundry/rfoundry/debuglink.py` `find_network_radios`): from each of the host's addresses the radio's is
+  worked out (individual addressing: the host's address xor 1; a fixed link: the host's address - 1, section 5.3) and
+  the one that answers the debug link's VERSION on UDP 3334 is used as `udp:<address>`. `rfoundry_debug.py`,
+  `cps_client.py`, the `rfoundry` installer and the HIL take it without `--port`. `stubtool.py --rfoundry-enter` with no
+  port loads the stub over UDP; the stub enumerates as the serial port, and the write ends with a reset, after which
+  the radio starts in the personality its stored setting says. Nothing is changed or restored in the settings.
+- A web page can send neither UDP nor, from an https page, plain http requests, and the OS network driver holds the
+  adapter's interfaces. Two requests ask the radio for the serial personality at run time (the same switch as op 25:
+  the stored setting stays, a restart brings the adapter back), and the pages use them
+  (`site/static/js/flasher/netmode.js`):
+
+  | Request | From | Notes |
+  |---|---|---|
+  | Endpoint 0: vendor, to the device, no data (`bmRequestType` 0x40, `bRequest` 0x53 `USB_REQ_SERIAL_MODE`, `wValue` and `wIndex` 0) | WebUSB | Acknowledged, then carried out from the adapter's tick. Only where the browser can open a device whose interfaces a kernel driver holds: not on Windows (no WinUSB function), not on Linux without a udev rule |
+  | `GET http://rfoundry.local/api/usb?mode=serial` ([tcp-services.md](tcp-services.md) 5, the name in [mdns.md](mdns.md) 1) | a browser tab the page opens (a navigation is allowed where a fetch is not) | Needs `CONFIG_NET_HTTP` and `CONFIG_MDNS`, the link up and mDNS on the host. The switch follows the answer by 500 ms |
+
+  After the job a page sends op 25 (network) over the serial port, or leaves it: a restart, as at the end of a
+  firmware update, puts the radio back in network mode when the stored setting is on.
 - Windows 10 binds NCM through Microsoft OS 1.0 descriptors (string 0xEE "MSFT100", vendor code 0x47, extended compat
   ID "WINNCM" for interface 0); Windows 11, Linux and macOS bind it by class.
 - The link is up while the host has the adapter configured and the bus isn't suspended (`hal_netif_t.up`, view key

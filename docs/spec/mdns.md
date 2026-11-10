@@ -15,11 +15,13 @@ only; there is no IPv6 on the link.
 | Host | `rfoundry-<DMR ID>.local`, e.g. `rfoundry-9991234.local`. The DMR ID is the radio's own (the one the gateway's addresses come from) |
 | Instance | `<callsign> <board> (<DMR ID>)`, e.g. `Q0TST XR-100UV (9991234)`. `<board>` is `board.name`. The call sign is the settings' radio name, else the codeplug's, first word only; left out when there is none |
 | After a conflict | host `rfoundry-9991234-2`, instance `... (9991234) (2)`, counting up |
+| Alias | `rfoundry.local` (`MDNS_ALIAS`): the radio on this link, for a host that doesn't know its DMR ID (a web page, `usb-network.md` 1) |
 
 | Owner | Type | Data | TTL | Kind |
 |---|---|---|---|---|
 | host | A | the radio's address (`ipGatewayRadioIP`) | 120 s | unique |
 | host | NSEC | next name = host, types: A | 120 s | unique |
+| alias | A | the radio's address | 120 s | shared: answered when asked for (A or ANY), never probed, announced or defended, and another answer for it is no conflict |
 | `<type>.local` | PTR | `<instance>.<type>.local` | 4500 s | shared |
 | `<instance>.<type>.local` | SRV | priority 0, weight 0, the port, target host | 120 s | unique |
 | `<instance>.<type>.local` | TXT | `board=<board.name>` `id=9991234` `call=Q0TST` `fw=<git>` | 4500 s | unique |

@@ -8,8 +8,8 @@ import os
 import pytest
 
 import bringup_plugin
-from rfoundry_hil import (DebugLinkError, Radio, SdrBench, board_id, find_ports, need_radio_tx, skip, skip_kind,
-                          skip_mark)
+from rfoundry_hil import (DebugLinkError, Radio, SdrBench, board_id, find_network_radios, find_ports, need_radio_tx,
+                          skip, skip_kind, skip_mark)
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
@@ -56,8 +56,9 @@ def pytest_runtest_makereport(item, call):
 @pytest.fixture(scope="session")
 def radio(pytestconfig):
     port = pytestconfig.getoption("--radio-port")
-    if not port and not find_ports():
-        bringup_plugin.no_radio(pytestconfig, "no radio on USB (1FC9:0094): plug it in or give --radio-port "
+    if not port and not find_ports() and not find_network_radios():
+        bringup_plugin.no_radio(pytestconfig, "no radio on USB (1FC9:0094, or one in USB network mode answering on "
+                                            "UDP): plug it in or give --radio-port "
                                             "(DMR audio not checked either)")
     try:
         r = Radio(port)

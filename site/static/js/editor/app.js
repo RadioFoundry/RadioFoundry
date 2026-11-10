@@ -12,6 +12,7 @@ import { decode, encode, empty, remove, validate, newChannel, newContact, number
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
 import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
 import { FastError } from "../codeplug/fastlink.js";
+import { toSerial } from "../flasher/netmode.js";
 import { convert as convertDb, readHeader as dbHeader } from "../codeplug/iddb.js";
 import { convertIddb, iddbEnd } from "../codeplug/sources/output.js";
 import { FakeCpsRadio } from "../codeplug/fakecps.js";
@@ -494,7 +495,9 @@ async function connect() {
 	} else {
 		if (!serialSupported()) throw new TransportError("no_serial");
 		// one chooser for both links: the radio's own USB port, or a programming cable, told apart by the port's USB ID.
-		// A port granted before where RadioFoundry answers needs no chooser
+		// A port granted before where RadioFoundry answers needs no chooser. A radio in USB network mode is asked for
+		// its serial port first, where WebUSB reaches it (netmode.js); it goes back when it restarts
+		await toSerial({ http: false, ms: 6000 });
 		const known = await knownRadioPort([RFOUNDRY_USB, ...CABLES]);
 		let port = known?.port;
 		if (!port) {
@@ -503,6 +506,13 @@ async function connect() {
 			} catch (e) {
 				if (e?.name !== "NotFoundError") throw e;
 				say(t("editor.connect.none"), "warn");
+				// the radio's own page switches it where WebUSB couldn't: a tab, so from a click
+				const go = button(t("flash.net.switch"), async () => {
+					go.disabled = true;
+					const r = await toSerial();
+					say(t(r.back ? "flash.net.switched" : "flash.net.switch_unseen"), r.back ? "info" : "warn");
+				});
+				messages.firstChild?.append(h("p", {}, go));
 				return null;
 			}
 		}
