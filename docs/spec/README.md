@@ -38,6 +38,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [modem-hrc6000.md](modem-hrc6000.md) | HR_C6000 as a DMR modem (also the HR_C5000's base) |
 | [hrc6000-registers.md](hrc6000-registers.md) | HR_C6000 register reference |
 | [modem-hrc7000.md](modem-hrc7000.md) | HR_C7000 as a DMR modem |
+| [pa-keyup.md](pa-keyup.md) | DMR PA key-up per burst from the power cal table |
 | [rx2-link.md](rx2-link.md) | The link to a second receiver on another SoC: frames, messages, timing |
 
 ## Host link and network

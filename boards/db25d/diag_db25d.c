@@ -298,7 +298,8 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 			put_u(&o, t.ends);
 			put(&o, " rx");
 			put_u(&o, t.rfrx_ints);
-			put(&o, t.last_by == 'R' ? " R" : t.last_by == 'T' ? " T" : t.last_by == 'A' ? " A" : " -");
+			char by[3] = { ' ', t.last_by != 0 ? t.last_by : '-', '\0' };	// R, T, A or B (dmr_rfburst.h)
+			put(&o, by);
 			put(&o, " L");
 			put_u(&o, t.late);
 			put(&o, "/");

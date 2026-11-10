@@ -796,11 +796,93 @@ switch after the burst moves it back (`fd6818_dmr_burst_at`). A simplex channel 
 this (issue 72), `tx` tuned the synthesizer to the TX frequency at key-up and left it there: the radio was deaf to the
 hotspot's downlink, never aligned to it, and its bursts were not taken. The radio's own firmware retunes at every burst end too. The PLL lock time after each retune is not measured yet (HIL check open).
 
-RadioFoundry switches to TX **0.4 ms** before the lead point of each burst, not at the driver's 3.1 ms. The switch
-leaves receive, and earlier it cut off the end of the inbound burst before ours. The sweep below moved the RF TX
-interrupt itself (`hrc7000_t.rf_tx_lead`), with the switch in the interrupt. The switch now runs on the shared
-per-burst RF task ([modem-hrc7000.md](modem-hrc7000.md) 3.1a): the interrupt comes 0.9 ms ahead (`rf_tx_lead` = 9)
-and the task waits until 0.4 ms, so its wake (up to 0.42 ms) doesn't make the switch late. Untested on the radio. The same fault shows on other HR_C7000 boards. An SFR repeat sweep (SDR bench,
+**Burst TX-on timing.** The per-burst RF task ([modem-hrc7000.md](modem-hrc7000.md) 3.1a) runs the TX-on at points
+counted from the RF TX interrupt. The interrupt comes 2.6 ms ahead of the lead point (`rf_tx_lead` = 26), so the first
+symbol is 3.45 ms after it. The PA keys up from the power cal table ([pa-keyup.md](pa-keyup.md)): dead 680, knee 1450,
+slope 600 µs, boost 120 %, hold 80 %.
+
+| Point | Before the first symbol | What |
+|---|---|---|
+| FD6818 to TX on a split channel (the synthesizer to the TX frequency first) | 2.95 ms | LNA off, idle, frequency words, TX: 1.1-1.4 ms, so before the boost |
+| FD6818 to TX on a simplex channel | 1.8 ms | LNA off, idle, TX: two state writes, 0.1 ms |
+| Boost, PA select high | 1.5 ms | DAC B = 1.2 × top |
+| Hold | 1.5 ms − t | DAC B = 0.8 × d; t = (1450 + 0.6 × (d − 680)) / (1.2 × top − 680) ms: 0.69 ms at drive 955, 0.92 ms at the H step on UHF |
+| Drive | 0.5 ms | DAC B = d |
+
+d is the step's drive (11.3) and top the H step's, at the TX frequency. The earliest point the sequence may take is
+1.58 ms (the split's switch after the task's latest wake, 0.42 ms after the interrupt); RADIO op 37 refuses an earlier
+boost.
+
+**The PA key-up, measured.** A low step's drive alone takes 3-4 ms to full power; the top step about 1 ms. Raw I/Q on
+the SDR bench (2.4 MS/s, a dummy load, about 16 bursts each, the first symbol from each burst's sync). "Low" is a test
+drive under the table's lowest step (955 on UHF, 900 on VHF; RADIO op 36), about 12 dB under the H step. The -3 dB
+point against the first symbol at that drive and at the H step (the two rows with d alone were taken with the receiver
+compressing at the H step, so their H figures may read early):
+
+| Key-up | -3 dB, low | H |
+|---|---|---|
+| PA keyed 0.15 ms ahead, d alone | 4.58 ms | 0.88 ms |
+| PA keyed 0.45 ms ahead, d alone | 4.35 ms | 0.54 ms |
+| A boost of fixed length (1 ms, ending 0.5 ms ahead, its level 55 % of the way from d to 1.11 × top), PA 0.15 ms ahead | 0.30 ms | not measured without receiver compression |
+| The key-up above | -0.23 to -0.33 ms | -0.60 ms |
+
+The key-up per step and channel: the -3 dB point against the first symbol (ms) / the overshoot above the settled level
+(dB) / the first symbol against the settled level (dB). The same constants throughout.
+
+| Channel | Low | L- | L3 | H |
+|---|---|---|---|---|
+| UHF | -0.23 / 2.3 / +2.1 | -0.54 / 1.1 / +0.7 | -0.24 / 0.0 / -0.5 | -0.60 / -0.1 / -1.1 |
+| 432.000 | -0.40 / 2.5 / +2.5 | | | -0.13 / 0.4 / -0.1 |
+| 449.900 | -0.28 / 2.0 / +2.0 | | | -0.48 / 0.1 / -1.4 |
+| 145.510 | -0.39 / 2.8 / +2.7 | -0.60 / 0.4 | -0.75 / 0.1 | -0.79 / 0.2 |
+| 146.000 | -0.32 / 2.1 / +2.1 | | | -0.77 / 0.2 |
+
+- Every measured step is up before the first symbol and no more than 3 dB over, on both bands with one set of
+  constants. Empty cells are not measured.
+- The low drive is on an edge: knee 1300 came up 0.4-0.56 ms late with under 1 dB over, 1450 as above, 1550 0.48 ms
+  early with 3.5 dB, 1650 with 5.1 dB. A repeat of 1450 after 25 minutes of keying moved 0.1 ms earlier and 0.2 dB up.
+- The boost of fixed length could not meet both at the low drive: on time took a level that overshot 5-6 dB, and
+  under 3 dB came 0.25 ms late or more. Its memory in the loop (about 1 ms) was still there when the output appeared.
+- A hold at DAC 0 for 0.7 ms with the PA off lost the boost's charge (3 ms late). At 0.8 × d (764 at the low drive) it
+  kept it. Holds of 0, 40 and 80 % of d for 0.2 ms made no difference.
+- The control charges less with the PA selected. At the low drive with no hold, a 0.40 ms boost with the PA selected
+  0.6 ms after its start came up at -0.43 ms with 3.8 dB; a 0.51 ms boost with the PA selected at its start came up at
+  +0.55 ms with 0.7 dB. The knee above goes with the PA selected at the boost.
+- The L- drive sits on the PA's turn-on knee, where 50 DAC counts move the output by about 8 dB.
+- Not measured with the key-up yet: the other steps, split channels, the first burst of a call, decoding, spurs,
+  receiver desense while the drive is held before the slot, and SFR with the simplex switch at 1.8 ms.
+
+The measurements below were made with the PA keyed 1.5 ms ahead at d, before the key-up.
+
+Measured on the SDR bench (2026-11-09, 446.075 and 448.7 MHz, high power, the radio 35 ft from the receiver, its carrier
+against the symbols from each burst's sync). The BER is a duplex hotspot's, next to the receiver; it moved when the radios
+were moved a few feet (the reference radio then read 0.4-0.7 %), so it compares radios measured together, not builds.
+Now, `check_tx`'s figures (`tools/bench/dmr_bench.py`) pass on both channel kinds: on-time 28.5-29.2 ms, ramps under
+0.9 ms, the bursts on the 60 ms grid, the carrier between bursts 52 dB down:
+
+| | Carrier at -6 dB vs the first symbol | vs the last symbol | Ramp up 10-90 % | Duplex hotspot BER | Bursts with a corrected bit (simplex) |
+|---|---|---|---|---|---|
+| Before (lead 0.9 ms, PA 0.5 ms ahead) | 0.65 ms after | at it | 0.75 ms | 1.7-2.7 % | 25-60 % |
+| Now | 0.75-0.79 ms before | -0.08 ms (split), +0.15 ms (simplex) | 0.6-0.8 ms | 0.2-0.4 % (TS1 and TS2) | 0-17 % |
+| A reference radio on the same channel (another modem chip) | 1.58 ms before | 0.38 ms after | 0.26 ms | 0.3-0.4 % | 0 % |
+
+Keyed 0.5 ms ahead, and late besides (the split's writes overran the PA's point: the PA came up 1.6 ms after the
+interrupt), the first ~5 symbols of every burst went out on a rising carrier. A repeater or hotspot then saw a few
+bad bits in every burst, on simplex too, and the slot timing was right (inbound +0.166 ms against the outbound + 30
+ms, the same as the other radio). The diagnostics' `up` line shows the PA's time after the interrupt (2.0-2.1 ms). Its grid error grew with the lead
+(about 0.02 ms at lead 9, 0.2 ms at 24, 0.4 ms at 26) while the bursts' syncs stayed on the 60 ms grid: the modem
+raises the first burst's RF TX interrupt late (0.42 ms at lead 26: 27.71 ms after the slot tick before it, the later
+bursts 27.29 ms), so that burst's key-up and key-down came 0.42 ms late on every step and both bands, and the second
+burst's interrupt looked early against it. The first burst is now timed from the slot tick
+([modem-hrc7000.md](modem-hrc7000.md) 3.1a); the `up` line's `f` is by how much. The carrier
+still ramps down from the last symbol (the shared model); the decode is clean with it. The switch moved earlier only
+on a split channel, where no inbound burst is heard on the TX frequency. On a simplex channel it is at 1.8 ms, after
+the inbound burst before ours (it ends about 2.3-2.5 ms before our first symbol), as an SFR needs; SFR on this radio
+is not checked with it.
+
+Before this, RadioFoundry switched to TX **0.4 ms** before the lead point of each burst, not at the driver's 3.1 ms.
+The switch leaves receive, and earlier it cut off the end of the inbound burst before ours. The sweep below moved the
+RF TX interrupt itself (`hrc7000_t.rf_tx_lead`), with the switch in the interrupt. An SFR repeat sweep (SDR bench,
 2026-10-20, 72 inbound frames per call, the radio in another room from the bench, so with a weak signal):
 
 | Lead | Frames lost per call | Bits corrected per call in the frames before ours |
@@ -821,9 +903,10 @@ outbound through a repeater is not measured on this radio yet ([modem-hrc7000.md
 
 ### 8.6 DMR PA timer
 
-The original firmware's PA timing. RadioFoundry keys the PA from the per-burst RF task instead: PA select and DAC B
-0.5 ms before the burst's first symbol, timed from the RF TX interrupt, and both off with its last symbol (8.5,
-[modem-hrc7000.md](modem-hrc7000.md) 3.1a). Untested on the radio.
+The original firmware's PA timing. RadioFoundry keys the PA from the per-burst RF task instead: the key-up from the
+power cal table (PA select and a boost 1.5 ms before the burst's first symbol, a hold, then DAC B at the step's drive
+0.5 ms before), timed from the RF TX interrupt, and both off with its last symbol (8.5, [pa-keyup.md](pa-keyup.md), [modem-hrc7000.md](modem-hrc7000.md)
+3.1a). At 0.5 ms with the step's drive alone the carrier was still rising for the first symbols (8.5).
 
 | Item | Value |
 |---|---|

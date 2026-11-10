@@ -5,6 +5,7 @@
 #ifndef HRC_DMR_RFBURST_TIMING_H
 #define HRC_DMR_RFBURST_TIMING_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 // --- Burst timing ---
@@ -50,6 +51,37 @@ static inline uint32_t hrc_rfburst_late_us(uint32_t elapsed_us, uint8_t lead)
 {
 	uint32_t at = hrc_rfburst_off_at_us(lead);
 	return elapsed_us > at ? elapsed_us - at : 0;
+}
+
+// --- The first burst against the slot clock ---
+// With a long lead the modem raises the first burst's RF TX interrupt late, at the same point every key-up, while the
+// burst itself keeps the slot grid (on the SDR bench at lead 26: 0.42 ms, the later bursts on time; less with a
+// shorter lead). Timed from that stamp, the whole first burst's key-up and key-down came 0.42 ms late. The slot
+// engine's tick before the interrupt is steady (30 ms), so the later bursts' time after it is the reference for the
+// first. Bursts on the 60 ms grid teach it: the largest such time, as a masked tick comes late and makes it shorter,
+// while a late stamp is off the grid and not taken
+#define HRC_RFBURST_FIRST_LATE_MAX_US	1000u	// later than this against the reference: not the modem's late interrupt
+static inline uint32_t hrc_rfburst_tick_ref(uint32_t ref_us, uint32_t stamp, uint32_t tick, uint32_t slot_us)
+{
+	uint32_t off = stamp - tick;
+	return off < slot_us && off > ref_us ? off : ref_us;
+}
+// The first burst's time: the reference after its tick when its stamp is later than that by more than slack_us (and
+// no more than HRC_RFBURST_FIRST_LATE_MAX_US), else the stamp. ref_us 0: nothing learned yet
+static inline uint32_t hrc_rfburst_first_on(uint32_t stamp, uint32_t tick, uint32_t ref_us, uint32_t slack_us)
+{
+	uint32_t off = stamp - tick;
+	if (ref_us == 0 || off <= ref_us + slack_us || off - ref_us > HRC_RFBURST_FIRST_LATE_MAX_US) {
+		return stamp;
+	}
+	return tick + ref_us;
+}
+// A burst d_us after the one before is taken back to the frame grid when later than frame_us + slack_us. Not right
+// after a retimed first burst: a retime from a wrong tick (or a reference from another mode) would put the grid early,
+// and later bursts, only ever moved earlier onto it, would keep it. That burst's own stamp starts the grid instead
+static inline bool hrc_rfburst_regrid(uint32_t d_us, uint32_t frame_us, uint32_t slack_us, bool after_retime)
+{
+	return !after_retime && d_us > frame_us + slack_us;
 }
 
 #endif
