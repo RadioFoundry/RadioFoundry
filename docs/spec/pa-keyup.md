@@ -68,20 +68,8 @@ A board with per-burst keying opts in; one that doesn't call it keys its PA as b
 | Step | Call |
 |---|---|
 | Start-up | `pa_keyup_init(defaults, max_ahead_us, max_drive)`: its constants, the earliest point its burst sequence can run (after the burst task's wake and any switching that has to go first) and its drive limit |
-| Key-up (radio task) | `pa_keyup_plan(d, top, &cfg)` with its cal table's drives at the transmit frequency (`pa_keyup_top` finds `top` from the board's drive per level); keep the result and the constants it returns in `cfg` for the bursts, so the points and the plan come from one set |
-| Each burst | the points in time order, from one of two helpers below |
-
-How a board times the points depends on what tells it a burst is coming:
-
-| Burst timing | Helper | What the board does |
-|---|---|---|
-| A task woken a lead before the first symbol, waiting to each point | `pa_keyup_points(&cfg, &plan, boost, board_us, pts)`: the points earliest first, with the board's own point (`board_us`, the RF switch to transmit; 0 none) among them | waits to each point and applies it |
-| An edge a fixed time before the first symbol (a baseband's burst line), a one-shot timer | `pa_keyup_steps(&cfg, &plan, boost, lead_us, &steps)`: the points as steps after the edge, those at one time in one step (the drive to set, the PA on) | starts the timer at each step for the next |
-
-On a tie the order is the board's point, the boost, the PA, the hold, the drive. `boost` false gives the PA's point
-alone at d: for a disarmed transmission, or a burst that starts while the PA is still on from the one before (back to
-back), where a boost would push an output that is already up. A board that ends the transmission or sees the burst
-cut short during the boost turns the PA off at once, since the drive may be at the boost.
+| Key-up (radio task) | `pa_keyup_plan(d, top, &cfg)` with its cal table's drives at the transmit frequency; keep the result and the constants it returns in `cfg` for the bursts, so the points and the plan come from one set |
+| Each burst | the four points in time order, the RF switch to transmit placed among them by its own time |
 
 The RF switch has its own lead on the PA's point. A switch that holds the burst task for longer (a synthesizer retune
 on a split channel) goes before the boost, so it can't delay the boost's points. On a simplex channel, the later the

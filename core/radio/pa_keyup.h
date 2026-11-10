@@ -19,8 +19,7 @@
 // or per frequency.
 //
 // A board with per-burst keying opts in: pa_keyup_init once with its constants and the earliest point its burst
-// sequence can run, pa_keyup_plan at each key-up (pa_keyup_top gives the top drive), then the points in its burst
-// sequence: pa_keyup_points in time order, or pa_keyup_steps for a one-shot timer from a burst edge. A board that doesn't call it
+// sequence can run, pa_keyup_plan at each key-up, then the points in its burst sequence. A board that doesn't call it
 // keys its PA as before. The constants are RAM: the debug link may change them (RADIO op 37) for tuning a radio, and
 // a restart restores the board's.
 //
@@ -59,47 +58,6 @@ pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, ui
 
 // The constants are in range, the points in order and none earlier than max_ahead_us
 bool pa_keyup_valid(const pa_keyup_cfg_t *c, uint16_t max_ahead_us);
-
-// The top step's drive at hz: the largest drive(hz, level) over the board's levels, 0 when none transmits there
-uint16_t pa_keyup_top(uint16_t (*drive)(uint32_t hz, uint8_t level), uint32_t hz, uint8_t levels);
-
-// A burst's points, each this long before the first symbol (pa-keyup.md 3). On a tie, in this order
-typedef enum {
-	PA_KEYUP_AT_BOARD,	// the board's own point (an RF switch to transmit), 0 = none
-	PA_KEYUP_AT_BOOST,	// the drive to the boost
-	PA_KEYUP_AT_PA,		// the PA on: at d without a boost, else the PA alone (the drive has its own points)
-	PA_KEYUP_AT_HOLD,	// the drive to the hold
-	PA_KEYUP_AT_DRIVE,	// the drive to d
-} pa_keyup_at_t;
-
-typedef struct {
-	uint8_t at;		// pa_keyup_at_t
-	uint16_t ahead_us;
-} pa_keyup_point_t;
-
-#define PA_KEYUP_POINTS		5u
-
-// The points earliest first (pure). boost false or k without one: the board's point and the PA's alone. Returns how
-// many
-uint8_t pa_keyup_points(const pa_keyup_cfg_t *c, const pa_keyup_t *k, bool boost, uint16_t board_us,
-			pa_keyup_point_t out[PA_KEYUP_POINTS]);
-
-// For a board that times the points with a one-shot timer from an edge lead_us before the first symbol (the
-// baseband's burst line): the points as steps after that edge, those at one time in one step (pure). A point at or
-// before the edge goes at 1 us
-typedef struct {
-	uint16_t at_us;		// after the edge, rising
-	uint16_t drive;		// with set_drive
-	bool set_drive;
-	bool pa_on;
-} pa_keyup_step_t;
-
-typedef struct {
-	pa_keyup_step_t s[PA_KEYUP_POINTS];
-	uint8_t n;		// at least 1: the PA's point
-} pa_keyup_steps_t;
-
-void pa_keyup_steps(const pa_keyup_cfg_t *c, const pa_keyup_t *k, bool boost, uint16_t lead_us, pa_keyup_steps_t *out);
 
 // Once, by a board that keys this way: its constants (valid against max_ahead_us; kept by pointer, so static) and
 // its drive limit
