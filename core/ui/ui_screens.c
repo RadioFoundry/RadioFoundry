@@ -794,7 +794,7 @@ void ui_draw_splash(const char *board_name, const char *version, const char *lin
 // --- Home ---
 
 #if CONFIG_DMR
-static void draw_talk_dmr(const radio_view_t *v);
+static void draw_talk_dmr(const radio_view_t *v, bool label_first);
 static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s);
 #endif
 
@@ -891,13 +891,15 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 		gfx_text(L->medium, x, base - L->medium->ascent, GLYPH_DOT, ui_col.warn);
 }
 
-static void draw_talk(const radio_view_t *v)
+static void draw_talk(const radio_view_t *v, bool label_first)
 {
 #if CONFIG_DMR
 	if (v->ch.mode == RADIO_MODE_DMR) {
-		draw_talk_dmr(v);
+		draw_talk_dmr(v, label_first);
 		return;
 	}
+#else
+	(void)label_first;
 #endif
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->medium;
@@ -1255,9 +1257,8 @@ static bool dmr_call_screen(const radio_view_t *v)
 // Talk target line on Home: an arrow and "TG 201 Main Ops", or an inverted return arrow and "TG 9 (8s)" in warn color
 // during the reply window. Icons, not words, so a small display keeps room for the label (#336)
 static bool ui_st_dmr_off;		// ui_state_t.dmr_off of the frame being drawn
-static bool ui_st_label_first;		// ui_state_t.label_first of the frame being drawn
 
-static void draw_talk_dmr(const radio_view_t *v)
+static void draw_talk_dmr(const radio_view_t *v, bool label_first)
 {
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->medium;
@@ -1294,7 +1295,7 @@ static void draw_talk_dmr(const radio_view_t *v)
 			c = ui_col.warn;
 		}
 		// and last without the reply seconds (the hint still says the reply is on)
-		sb_talk_alts(&b, d->target_id, d->target_private, d->target_name, secs, room, ui_st_label_first);
+		sb_talk_alts(&b, d->target_id, d->target_private, d->target_name, secs, room, label_first);
 	}
 	// Too wide: the shorter alternate (a talkgroup's label cut, then dropped; a contact its ID), never a smaller font
 	gfx_text_fit(f, buf, w - x, fit, sizeof fit);
@@ -1727,7 +1728,6 @@ void ui_draw_home(const radio_view_t *v, const ui_state_t *s)
 #endif
 #if CONFIG_DMR
 	ui_st_dmr_off = s->dmr_off;
-	ui_st_label_first = s->label_first;
 	if (dmr_call_screen(v)) {
 		draw_dmr_call(v, s);
 		ui_draw_banner(s);
@@ -1742,7 +1742,7 @@ void ui_draw_home(const radio_view_t *v, const ui_state_t *s)
 		draw_home_large(v, s);
 	} else {
 		draw_place(v, s);
-		draw_talk(v);
+		draw_talk(v, s->label_first);
 		draw_chips(v, s);
 		if (ui_layout.sep_y >= 0)
 			gfx_hline(0, ui_layout.sep_y, gfx_width(), ui_col.line);
