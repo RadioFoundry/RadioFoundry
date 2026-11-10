@@ -616,11 +616,21 @@ drive 1115; the 5 W row is 2119):
 |---|---|---|---|---|---|---|---|
 | dB | -42.8 | -32.2 | -18.7 | -12.4 | -8.2 | -4.8 | -2.1 |
 
-The burst's key-up is clean from drive 500 up (no overshoot, the first symbol at the settled level), so this radio
-keys its PA as before, without the key-up rule's boost.
+DMR: the PA follows the bursts, keyed by the key-up rule ([pa-keyup.md](pa-keyup.md)) without a boost: the loop
+follows the drive within about 0.1 ms, and a boost overshot the low levels by 7 dB and more. Keyed at the RF TX
+interrupt, the PA was up 1.1-1.6 ms before the first symbol, so the PA point is 1 ms after the interrupt (`pa_us`
+1530, the interrupt taken as 2.53 ms before the first symbol). On the SDR bench (UHF radio, 432 MHz):
 
-DMR: the PA follows the bursts. The RF TX interrupt keys it (APC_EN); a TIM7 one-shot drops it 30 ms later
- 3.4, and the slot engine's PA-off at the next timeslot interrupt stays as the fallback.
+| Level | -3 dB point before the first symbol | First symbol against the settled level | Overshoot |
+|---|---|---|---|
+| 100 mW | 0.13 ms | -0.2 dB | 0.6 dB |
+| 500 mW | 0.47 ms | +0.4 dB | 1.3 dB |
+| 1 W | 0.59 ms | 0.0 dB | 0.5 dB |
+
+The lowest level sets the point: a higher drive comes up sooner. The levels above 1 W are not measured.
+
+A TIM7 timer runs the points from the RF TX interrupt and drops the PA 30 ms after it
+([gotchas.md](gotchas.md) 3.4), and the slot engine's PA-off at the next timeslot interrupt stays as the fallback.
 
 The radio has one synthesizer, so it can't receive while it is set up to transmit. The switch to TX (receiver off,
 the HR_C5000's transmit set, the TX VCO locked, TX_5V up) happens before the first burst, never at it: done in the RF TX

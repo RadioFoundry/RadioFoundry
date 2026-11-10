@@ -16,7 +16,7 @@
 // frequency at the first burst of a transmission (from the RF TX interrupt, without waiting for lock: the interrupt
 // comes some milliseconds before the burst). Between bursts only the PA supply and loop are switched; the end of the
 // transmission puts the receiver back on the RX frequency at once (rf_dmr_tx_done), simplex too. Each burst's PA is dropped
-// 30 ms after its RF TX interrupt by a TIM7 one-shot (gotchas 3.4: the phase of the HR_C5000's timeslot interrupt
+// 30 ms after its RF TX interrupt by the TIM7 key timer, which also runs the key-up points (gotchas 3.4: the phase of the HR_C5000's timeslot interrupt
 // against the burst is unknown); the slot engine's own PA-off at the next timeslot interrupt is the fallback.
 #include <stddef.h>
 #include "config.h"
@@ -28,6 +28,7 @@
 #include "modem/hrc5000/hrc5000.h"
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "dmr_md380.h"
+#include "radio/pa_keyup.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
@@ -62,8 +63,19 @@
 #define PLL_LOCK_US		5000u	// task-level wait for lock detect after a retune
 #define C5000_MIC_GAIN		0xC8	// HR_C5000 4:0x0F, the value the MD-380 sets
 #define C5000_PWD_WAIT_MS	12	// at least 10 ms after PWD low before the first access (?)
-#define PA_HOLD_TICKS		300u	// TIM7 at 10 kHz: the PA stays keyed 30 ms after the RF TX interrupt
+#define PA_HOLD_US		30000u	// TIM7 at 1 MHz: the PA is dropped 30 ms after the RF TX interrupt
 #define PA_TIMER_PRIORITY	5	// the modem interrupts' level
+// The RF TX interrupt comes about this long before the burst's first symbol (the figure of the HR_C6000 radios; the
+// key-up points count back from it). Keyed at the interrupt, the PA was up 1.1-1.6 ms before the first symbol
+#define DMR_KEY_INT_AHEAD_US	2530u
+#define DMR_KEY_MIN_US		30u	// the key timer's shortest step; closer points run together
+// The earliest key-up point (radio/pa_keyup.h): the timer's first step after the interrupt
+#define KEYUP_MAX_AHEAD_US	(DMR_KEY_INT_AHEAD_US - DMR_KEY_MIN_US)
+// The key-up constants (docs/spec/pa-keyup.md). No boost: the PA keyed at the step's drive, 1 ms after the interrupt
+static const pa_keyup_cfg_t keyup_cfg = {
+	.dead = 0, .knee = 0, .slope_us = 0, .boost_pct = 100, .hold_pct = 100,
+	.boost_us = 0, .pa_us = DMR_KEY_INT_AHEAD_US - 1000u, .drive_us = 0,
+};
 
 // Voice SPI2 (hardware-md380.md 4.4): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C5000_VCS
 #define VOICE_SPI_PINS		(GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15)
@@ -95,6 +107,12 @@ static struct {
 	volatile bool dmr_tx_tuned;	// the synthesizer and the HR_C5000 are on the transmit side
 	volatile uint32_t dmr_tx_hz;
 	volatile uint32_t dmr_drive;
+	pa_keyup_point_t key_pt[PA_KEYUP_POINTS];	// the transmission's key-up points, earliest first, set before it is armed
+	uint8_t key_n;
+	pa_keyup_t ku;
+	volatile uint8_t key_i;		// the next point; key_n: the points are done and the timer runs to the PA drop
+	volatile uint16_t key_base_us;	// the timer's last update, in us before the first symbol
+	volatile uint32_t key_apc;	// the drive of the last point, for the PA's own point
 	uint8_t dmr_mod2, dmr_mod1;
 	uint32_t rf_skipped, rf_unarmed, rf_rx_back;
 } r;
@@ -215,13 +233,13 @@ static void ref_dac_apply(void)
 
 static volatile bool pa_timer_running;
 
-// TIM7: one-shot, 10 kHz count (APB1 timer clock 72 MHz)
+// TIM7: 1 MHz count (APB1 timer clock 72 MHz); each update is a key-up point or the PA drop
 static void pa_timer_setup(void)
 {
 	__HAL_RCC_TIM7_CLK_ENABLE();
 	TIM7->CR1 = 0;
-	TIM7->PSC = (uint16_t)(2u * HAL_RCC_GetPCLK1Freq() / 10000u - 1u);
-	TIM7->ARR = PA_HOLD_TICKS - 1u;
+	TIM7->PSC = (uint16_t)(2u * HAL_RCC_GetPCLK1Freq() / 1000000u - 1u);
+	TIM7->ARR = 0xFFFFu;
 	TIM7->EGR = TIM_EGR_UG;		// load the prescaler
 	TIM7->SR = 0;
 	TIM7->DIER = TIM_DIER_UIE;
@@ -236,13 +254,19 @@ static void pa_timer_stop(void)
 	pa_timer_running = false;
 }
 
+// Started at the RF TX interrupt: the first key-up point comes DMR_KEY_INT_AHEAD_US - its time later
 static void pa_timer_start(void)
 {
+	uint32_t first = r.key_pt[0].us;
 	TIM7->CR1 = 0;
 	TIM7->CNT = 0;
+	TIM7->ARR = (first + DMR_KEY_MIN_US < DMR_KEY_INT_AHEAD_US ? DMR_KEY_INT_AHEAD_US - first : DMR_KEY_MIN_US) - 1u;
 	TIM7->SR = 0;
+	r.key_i = 0;
+	r.key_base_us = (uint16_t)(first + DMR_KEY_MIN_US < DMR_KEY_INT_AHEAD_US ? first : DMR_KEY_INT_AHEAD_US - DMR_KEY_MIN_US);
+	r.key_apc = r.dmr_drive;
 	pa_timer_running = true;
-	TIM7->CR1 = TIM_CR1_OPM | TIM_CR1_CEN;
+	TIM7->CR1 = TIM_CR1_CEN;
 }
 
 // PA loop and transmitter supply off; DAC1 left at 0 until the receiver takes it
@@ -260,12 +284,54 @@ static void pa_on(uint32_t drive)
 	PIN_WRITE(PIN_APC_EN, true);
 }
 
+// One key-up point (radio/pa_keyup.h): the drive on DAC1, and at the PA's own point the supply and the loop
+static void key_point(uint8_t kind)
+{
+	switch (kind) {
+	case PA_KEYUP_PT_BOOST:
+		r.key_apc = r.ku.boost;
+		break;
+	case PA_KEYUP_PT_PA:
+		pa_on(r.key_apc);
+		return;
+	case PA_KEYUP_PT_HOLD:
+		r.key_apc = r.ku.hold;
+		break;
+	default:
+		r.key_apc = r.ku.drive;
+		break;
+	}
+	dac1_set(r.key_apc);
+}
+
 void TIM7_IRQHandler(void)
 {
+	TIM7->ARR = 0xFFFFu;	// count on from this update while the points run: a short step must not come round again
 	TIM7->SR = 0;
-	if (pa_timer_running) {
-		pa_timer_running = false;
+	if (!pa_timer_running) {
+		TIM7->CR1 = 0;
+		return;
+	}
+	if (r.key_i >= r.key_n) {	// the burst is over
+		pa_timer_stop();
 		pa_off();
+		return;
+	}
+	for (;;) {
+		key_point(r.key_pt[r.key_i].kind);
+		uint8_t i = (uint8_t)(r.key_i + 1u);
+		r.key_i = i;
+		if (i >= r.key_n) {
+			// The PA drop, PA_HOLD_US after the interrupt
+			TIM7->ARR = PA_HOLD_US - (DMR_KEY_INT_AHEAD_US - r.key_base_us) - 1u;
+			return;
+		}
+		uint32_t step = (uint32_t)r.key_base_us - r.key_pt[i].us;	// from the last update
+		if (TIM7->CNT + DMR_KEY_MIN_US < step) {
+			TIM7->ARR = step - 1u;
+			r.key_base_us = r.key_pt[i].us;
+			return;
+		}
 	}
 }
 
@@ -378,8 +444,7 @@ bool md380_rf_dmr_switch(bool tx)
 		}
 		r.dmr_tx_tuned = true;
 	}
-	pa_on(r.dmr_drive);
-	pa_timer_start();
+	pa_timer_start();	// the key-up points, then the PA drop
 	return true;
 }
 
@@ -647,6 +712,9 @@ static void init(void)
 	dac_setup();
 	pa_off();
 	pa_timer_setup();
+#if CONFIG_DMR
+	pa_keyup_init(&keyup_cfg, KEYUP_MAX_AHEAD_US, DAC_MAX);
+#endif
 	voice_spi_setup();
 
 	PIN_WRITE(PIN_C5000_PWD, false);
@@ -801,6 +869,15 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		r.dmr_drive = drive;
 		r.dmr_mod2 = cal.dmr_i;
 		r.dmr_mod1 = cal.dmr_q;
+		// The burst's key-up points (radio/pa_keyup.h), against the top level's drive here
+		uint16_t top = (uint16_t)power_to_dac(&cal, (uint8_t)(board.power_count - 1));
+		pa_keyup_cfg_t c = keyup_cfg;	// the plan and its points from one set of constants
+#if CONFIG_DMR
+		r.ku = pa_keyup_plan((uint16_t)drive, top, 0u, &c);
+#else
+		r.ku = pa_keyup_drives(&c, (uint16_t)drive, top, 0u, DAC_MAX);
+#endif
+		r.key_n = pa_keyup_points(&c, &r.ku, r.key_pt);
 		__DMB();
 		r.dmr_armed = true;
 		r.tx_on = true;
