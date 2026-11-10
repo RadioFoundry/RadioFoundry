@@ -367,7 +367,10 @@ knob (no `hal_radio_t.volume`) and one whose volume hook also scales the PCM pat
 board's RX gain, an HR_C7000 board's line out gain) play the beep at `beep_level`, and the volume acts on it in the
 speaker path. On a radio where the MCU sets the volume somewhere the PCM path doesn't pass, the core plays each beep at the
 volume percent last given to the board, capped at `beep_level` (`radio_beep_level`): volume 0 gives no beep. When the DMR voice stream runs, the beep is mixed into it (`ambeVoiceSetMixer`). A DMR call
-leaves that stream running until the radio leaves DMR, so most beeps on a DMR channel are mixed. A mixed beep the
+leaves that stream running until the radio leaves DMR, so most beeps on a DMR channel are mixed. A voice stream that
+takes over from a beep's own stream (the talk permit, then the over) sets the speaker route on its first block: on only
+while a call plays or a beep is mixed. The beep's stream leaves the route as it was, and an amplifier that follows the
+route stayed powered until the radio left DMR. A mixed beep the
 amplifier isn't ready for (more than one lead-in block, below) gets the same lead-in as silence mixed in with the speaker
 routed; otherwise its tone starts in the first block. Without the voice stream the beep
 starts the board's PCM audio stream itself, routes the speaker for silent lead-in blocks before the tone (one 20 ms

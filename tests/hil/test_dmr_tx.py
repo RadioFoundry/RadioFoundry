@@ -329,6 +329,24 @@ def _gate(radio):
     return {"g": int(m.group(1)), "l": int(m.group(2)), "ra": int(m.group(3))} if m else None
 
 
+def _speaker_released(radio, timeout=3.0):
+    """A board's speaker path line ("spk a<amplifier> o<FM audio open> p<PCM route> r<ring play>") once the PCM route
+    is off, or the last one read after timeout s (the beeps after an over hold the route a few blocks), as a dict; None
+    on a board without the line. The talk permit's own stream once left the route on when the voice stream took over,
+    and the amplifier with it, until the radio left DMR."""
+    import re
+    end = time.monotonic() + timeout
+    while True:
+        line = rfoundry_hil.find(rfoundry_hil.diag_lines(radio), "spk ")
+        m = re.fullmatch(r"spk a(\d) o(\d) p(\d) r(\d)(?: .*)?", line.strip()) if line is not None else None
+        if m is None:
+            return None
+        spk = dict(zip("aopr", map(int, m.groups())))
+        if spk["p"] == 0 or time.monotonic() >= end:
+            return spk
+        time.sleep(0.5)
+
+
 PERMIT_LEVEL_DB = 1.5     # a header's level against the over's median (a beep on air or a late gate would dent it)
 
 
@@ -380,6 +398,8 @@ def test_dmr_tx_permit_before_key(radio, sdr_bench, pytestconfig):
         assert after["g"] - gate["g"] >= 1, "the TX gate never closed for the over"
         assert after["l"] == gate["l"], f"the key-up found the beep still sounding ({gate['l']} -> {after['l']})"
         assert after["ra"] == gate["ra"], f"ring play was on while the gate was closed ({gate['ra']} -> {after['ra']})"
+    spk = _speaker_released(radio)
+    assert spk is None or spk["p"] == 0, f"the PCM speaker route stayed on after the over (amplifier {spk['a']})"
 
     bursts = sdr.get("bursts", [])
     ours = [b for b in bursts if (b.get("lc") or {}).get("src") == own]
