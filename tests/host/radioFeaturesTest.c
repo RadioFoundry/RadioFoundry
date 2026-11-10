@@ -2637,6 +2637,71 @@ static void test_roger_burst(void)
 	}
 }
 
+// A channel with its tone burst on: each PTT key-up opens with one timed burst, then the microphone (channel_t.tone_burst)
+static void test_channel_burst(void)
+{
+	start();
+	// Off (the default): PTT keys with no tone
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && !sm.view.tone_burst && hw.tone_hz == 0);
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE);
+
+	chans[1].tone_burst = true;
+	req(RREQ_ZONE_POS, 0);
+	run(50);
+	CHECK(sm.view.ch.tone_burst);
+	int tx = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && sm.ptt && sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ && hw.tx_calls == tx + 1);
+	CHECK(!sm.burst_keyed);	// the PTT owns the carrier, not the burst
+	run(RADIO_BURST_MIN_MS - 20);
+	CHECK(sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+	run(40);
+	CHECK(sm.view.state == RS_TX && sm.ptt && !sm.view.tone_burst && hw.tone_hz == 0);	// the microphone follows
+	run(2000);
+	CHECK(sm.view.state == RS_TX && hw.tone_hz == 0);	// once per key-up
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE);
+	// Released during the burst: unkeys at once, the tone with it
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.tone_burst);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE && !sm.view.tone_burst && hw.tone_hz == 0 && !sm.burst_timed);
+	run(300);
+	// The next key-up has it again
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+	req(RREQ_PTT, 0);
+	run(300);
+
+	// The tone refused: the error beep warns that the repeater may not open, and the PTT's transmission goes on
+	hw.has_tx_tone = false;
+	beep_stats_t b0, b1;
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && sm.ptt && !sm.view.tone_burst);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1);
+	req(RREQ_PTT, 0);
+	run(300);
+	hw.has_tx_tone = true;
+
+	// Never on DMR, whatever the record holds
+	chans[6].tone_burst = true;
+	req(RREQ_ZONE_POS, 5);
+	run(50);
+	req(RREQ_PTT, 1);
+	run(50);
+	CHECK(!sm.view.tone_burst && hw.tone_hz == 0);
+	req(RREQ_PTT, 0);
+	run(1000);
+	chans[1].tone_burst = chans[6].tone_burst = false;
+}
+
 // The side key owns a minimum duration; the debug link still has explicit on/off control.
 static void test_burst_key(void)
 {
@@ -3508,6 +3573,7 @@ int main(void)
 	test_tx_limit();
 	test_roger_burst();
 	test_burst_key();
+	test_channel_burst();
 	test_burst_deadlines();
 	test_burst_key_host_overlap();
 	test_burst_key_denied();

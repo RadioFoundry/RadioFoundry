@@ -2261,7 +2261,7 @@ static const ui_scr_def_t chlist_screen = {
 // Without CONFIG_CHANNEL_EDIT the rows are read only and OK goes to the channel
 
 enum { CE_NAME, CE_NUMBER, CE_MODE, CE_RX, CE_TX, CE_POWER, CE_RX_ONLY, CE_BW, CE_RX_TONE, CE_TX_TONE, CE_VOX,
-       CE_CC, CE_TS, CE_CONTACT, CE_LIST, CE_ID, CE_DMO, CE_BEEP, CE_ALIAS1, CE_ALIAS2, CE_TOT, CE_SCAN, CE_ECO,
+       CE_BURST, CE_CC, CE_TS, CE_CONTACT, CE_LIST, CE_ID, CE_DMO, CE_BEEP, CE_ALIAS1, CE_ALIAS2, CE_TOT, CE_SCAN, CE_ECO,
        CE_ZONES, CE_GO, CE_SHARE, CE_SAVE, CE_SAVE_NEW, CE_COUNT, CE_NONE = 0xFF };
 
 static channel_t ced_ch;		// what the screen shows (the working copy when editing)
@@ -2297,6 +2297,7 @@ static const struct { uint8_t off, len, bit; } ced_fields[CE_ZONES] = {
 	[CE_NAME] = CE_FIELD(name), [CE_MODE] = CE_FIELD(mode), [CE_RX] = CE_FIELD(rx_hz), [CE_TX] = CE_FIELD(tx_hz),
 	[CE_POWER] = CE_FIELD(power), [CE_RX_ONLY] = CE_FIELD(rx_only), [CE_BW] = CE_FIELD(bw),
 	[CE_RX_TONE] = CE_FIELD(rx_tone), [CE_TX_TONE] = CE_FIELD(tx_tone), [CE_VOX] = CE_FIELD(vox),
+	[CE_BURST] = CE_FIELD(tone_burst),
 	[CE_CC] = CE_FIELD(color_code), [CE_TS] = CE_FIELD(timeslot), [CE_CONTACT] = CE_FIELD(contact),
 	[CE_LIST] = CE_FIELD(listen_list), [CE_ID] = CE_FIELD(dmr_id), [CE_DMO] = CE_FIELD(dmo),
 	[CE_BEEP] = CE_FIELD(no_beep), [CE_ALIAS1] = { offsetof(channel_t, alias_tx), 1, CODEPLUG_ALIAS_TS1_TEXT },
@@ -2370,10 +2371,12 @@ static void ced_build(void)
 #endif
 	ced_n = 0;
 	for (uint8_t r = 0; r < CE_COUNT; r++) {
-		bool fm_only = r == CE_BW || r == CE_RX_TONE || r == CE_TX_TONE || r == CE_VOX;
+		bool fm_only = r == CE_BW || r == CE_RX_TONE || r == CE_TX_TONE || r == CE_VOX || r == CE_BURST;
 		bool dmr_only = r >= CE_CC && r <= CE_ALIAS2;
 		if ((fm_only && dmr) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR))
 			continue;
+		if (r == CE_BURST && !CONFIG_FM_TX_TONES)
+			continue;	// as the Tone burst key: the radio core skips it on a board with no TX tone
 		if ((r == CE_ZONES || r == CE_GO || r == CE_SHARE || r == CE_SAVE_NEW) && fresh)
 			continue;
 		if (r == CE_SHARE && !CONFIG_ZONE_SHARE)
@@ -2511,7 +2514,8 @@ static int32_t ced_val_or(int32_t stored)
 static void chinfo_item(uint16_t i, ui_item_t *it)
 {
 	static const char *const labels[CE_COUNT] = { TRN("Name"), TRN("Number"), TRN("Mode"), "RX", "TX", TRN("Power"),
-		TRN("RX only"), TRN("Bandwidth"), TRN("RX CTCSS/DCS"), TRN("TX CTCSS/DCS"), "VOX", TRN("Color code"),
+		TRN("RX only"), TRN("Bandwidth"), TRN("RX CTCSS/DCS"), TRN("TX CTCSS/DCS"), "VOX", TRN("Tone burst"),
+		TRN("Color code"),
 		TRN("Timeslot"), TRN("TX contact"), TRN("RX group list"), TRN("Own ID"), TRN("Direct mode"),
 		TRN("Talk permit beeps"), TRN("Talker alias TS1"), TRN("Talker alias TS2"), TRN("TX time-out"), TRN("Scan"),
 		TRN("Battery saver"), TRN("Zones"), TRN("Tune to this ch"), TRN(GLYPH_SHARE " Share channel to..."),
@@ -2608,6 +2612,9 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 	}
 	case CE_VOX:
 		sb_onoff(&b, ch->vox);
+		break;
+	case CE_BURST:
+		sb_onoff(&b, ch->tone_burst);
 		break;
 	case CE_CC:
 		sb_u32(&b, editing ? (uint32_t)ced_val_or(ch->color_code) : ch->color_code, 1);
@@ -2986,6 +2993,7 @@ static void chinfo_select(uint16_t i, bool hold)
 		ced_len = 0;
 		break;
 	case CE_VOX: c->vox = !c->vox; break;
+	case CE_BURST: c->tone_burst = !c->tone_burst; break;
 	case CE_CC:
 	case CE_TOT:
 		ced_edit = r;

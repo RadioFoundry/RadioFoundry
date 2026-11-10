@@ -350,7 +350,8 @@ static uint32_t channel_hash(uint16_t number, const channel_t *ch)
 	b[n++] = (uint8_t)(ch->tot_s >> 8);
 	b[n++] = ch->alias_tx;
 	b[n++] = (uint8_t)((ch->rx_only ? 1 : 0) | (ch->dmo ? 2 : 0) | (ch->scan_skip ? 4 : 0) | (ch->vox ? 8 : 0) |
-			   (ch->no_beep ? 16 : 0) | (ch->no_eco ? 32 : 0) | (ch->roam ? 64 : 0));
+			   (ch->no_beep ? 16 : 0) | (ch->no_eco ? 32 : 0) | (ch->roam ? 64 : 0) |
+			   (ch->tone_burst ? 128 : 0));
 	uint32_t h = fnv1a(2166136261u, b, n);
 
 	return fnv1a(h, (const uint8_t *)ch->name, (int)strnlen(ch->name, CODEPLUG_NAME_LEN));

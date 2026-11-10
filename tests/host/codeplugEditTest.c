@@ -46,7 +46,8 @@ static bool same_channel(const channel_t *a, const channel_t *b)
 	       a->tx_tone.type == b->tx_tone.type && a->tx_tone.value == b->tx_tone.value && a->power == b->power &&
 	       a->rx_only == b->rx_only && a->color_code == b->color_code && a->timeslot == b->timeslot &&
 	       a->contact == b->contact && a->listen_list == b->listen_list && a->dmr_id == b->dmr_id && a->dmo == b->dmo &&
-	       a->vox == b->vox && a->scan_skip == b->scan_skip && a->no_beep == b->no_beep && a->no_eco == b->no_eco;
+	       a->vox == b->vox && a->scan_skip == b->scan_skip && a->no_beep == b->no_beep && a->no_eco == b->no_eco &&
+	       a->tone_burst == b->tone_burst;
 }
 
 static channel_t make(const char *name, uint32_t rx, uint32_t tx)
@@ -137,6 +138,19 @@ static void test_encode(void)
 	codeplug_openfw_encode(&d, r);
 	CHECK((r[0x33] & 0x60) == 0 && (r[0x26] & 0x62) == 0x22);
 	CHECK(codeplug_openfw_decode(r, &d) && !d.vox && !d.scan_skip && !d.no_beep && d.no_eco);
+	// The FM tone burst is SFR byte B bit 6 (open-firmware-cps.md 7.3.3): set and cleared alone, the SFR bits kept
+	CHECK(!d.tone_burst);
+	d.tone_burst = true;
+	codeplug_openfw_encode(&d, r);
+	CHECK(r[0x2A] == 0xC5 && r[0x25] == 0x0B && (r[0x26] & 0x02));
+	CHECK(codeplug_openfw_decode(r, &d) && d.tone_burst && d.sfr_b == 0xC5);
+	d.tone_burst = false;
+	codeplug_openfw_encode(&d, r);
+	CHECK(r[0x2A] == 0x85);
+	// Read without the SFR flag too: a channel with no SFR has the burst
+	r[0x26] &= (uint8_t)~0x02u;
+	r[0x2A] = 0x40;
+	CHECK(codeplug_openfw_decode(r, &d) && d.tone_burst && d.sfr_b == 0);
 }
 
 static void test_materialize(void)
