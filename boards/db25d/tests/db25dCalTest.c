@@ -251,14 +251,15 @@ static void test_apc(void)
 // trigger after that point ramps at once and counts as late
 static void test_dmr_timing(void)
 {
-	CHECK(db25d_dmr_rf_tx_lead(1) == 15);			// UHF page: 1.5 ms, not the driver's 3.1 ms
-	CHECK(db25d_dmr_rf_tx_lead(0) == 15);
-	CHECK(db25d_dmr_rf_tx_lead(1000) == 25);		// VHF page
+	CHECK(db25d_dmr_rf_tx_lead(DB25D_DMR_PA_UP_US, 1) == 15);			// UHF page: 1.5 ms, not the driver's 3.1 ms
+	CHECK(db25d_dmr_rf_tx_lead(DB25D_DMR_PA_UP_US, 0) == 15);
+	CHECK(db25d_dmr_rf_tx_lead(DB25D_DMR_PA_UP_US, 1000) == 25);
+	CHECK(db25d_dmr_rf_tx_lead(DB25D_DMR_PA_UP_VHF_US, 1000) == 18);	// VHF page
 	// A PA up before the first symbol with no lead still gets the shortest one: 0 is the driver's default, 3.1 ms
 	CHECK(hrc_rfburst_lead(0) == 1 && hrc_rfburst_lead(HRC_RFBURST_SYMBOL_AFTER_LEAD_US) == 1);
 	CHECK(hrc_rfburst_lead(HRC_RFBURST_SYMBOL_AFTER_LEAD_US + 1u) == 1 && hrc_rfburst_lead(HRC_RFBURST_SYMBOL_AFTER_LEAD_US + 101u) == 2);
 	for (uint16_t on = 0; on <= 3000; on += 50) {
-		uint8_t lead = db25d_dmr_rf_tx_lead(on);
+		uint8_t lead = db25d_dmr_rf_tx_lead(DB25D_DMR_PA_UP_US, on);
 		CHECK(lead * 100u + DB25D_DMR_SYMBOL_AFTER_LEAD_US >= DB25D_DMR_PA_UP_US + on);	// PA up in time
 		CHECK(lead * 100u + DB25D_DMR_SYMBOL_AFTER_LEAD_US < DB25D_DMR_PA_UP_US + on + 100u);	// and no earlier
 	}

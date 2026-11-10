@@ -21,6 +21,7 @@
 #include "hal_dtmf.h"
 #include "radio/radio.h"
 #include "radio/ref_trim.h"
+#include "radio/pa_keyup.h"
 #include "pins.h"
 #include "platform.h"
 #include "hal_time.h"
@@ -92,6 +93,20 @@ static uint16_t tx_off_us;
 static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_db25d.c)
 static uint16_t tx_on_us;
 static uint8_t tx_lead;		// the RF TX interrupt's lead, 100 us steps (db25d_dmr_rf_tx_lead)
+#if CONFIG_DMR && DB25D_DMR_TX
+// The DMR key-up (radio/pa_keyup.h, docs/spec/pa-keyup.md), [VHF, UHF]. pa_us is the TX on sequence's time: it sets
+// the RF TX interrupt's lead with the page's TX-on delay. With a boost the ramp goes to the boost drive, and the
+// hold and the drive follow at their points; boost_us is where that ramp ends
+#define KEYUP_MAX_AHEAD_US	3000u
+static const pa_keyup_cfg_t keyup_cfg[2] = {
+	{ .dead = 0, .knee = 0, .slope_us = 0, .boost_pct = 100, .hold_pct = 100,
+	  .boost_us = 0, .pa_us = DB25D_DMR_PA_UP_VHF_US, .drive_us = 0 },
+	{ .dead = 0, .knee = 0, .slope_us = 0, .boost_pct = 100, .hold_pct = 100,
+	  .boost_us = 0, .pa_us = DB25D_DMR_PA_UP_US, .drive_us = 0 },
+};
+static pa_keyup_t ku;			// the transmission's, set before the RF task is armed
+static uint16_t ku_drive_us;
+#endif
 static uint32_t tx_hz;
 static void dmr_disarm(void);
 #endif
@@ -178,6 +193,9 @@ static void init(void)
 	// The modem block powered as the DMR glue does, so the reference trim reaches the TCXO in FM builds too
 	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
 	modem.tx_pre_on = TX_PRE_ON;
+#if CONFIG_DMR && DB25D_DMR_TX
+	pa_keyup_init(&keyup_cfg[1], KEYUP_MAX_AHEAD_US, DAC_MAX);
+#endif
 	hrc7000_set_dac_gain(&modem, vol_dac);	// before the init, which writes it: a volume given before init() holds
 	hrc7000_power_on_init(&modem, db25d_cal_tx_center(), DB25D_MIC_GAIN_DB);
 	write_bias(BIAS_DEFAULT_HZ);
@@ -371,7 +389,14 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	tx_uhf = hz >= UHF_FROM_HZ;
 	tx_pa = drive_override != 0u ? drive_override : plan.pa;
 	tx_on_us = plan.on_us;
-	tx_lead = db25d_dmr_rf_tx_lead(plan.on_us);
+	// The key-up against the high level's drive here
+	db25d_tx_plan_t high;
+	uint16_t top = db25d_cal_tx_plan(hz, true, DB25D_TX_DRIVE_PCT, &high) && high.pa > tx_pa ? high.pa : tx_pa;
+	pa_keyup_cfg_t c = keyup_cfg[tx_uhf ? 1 : 0];	// the plan and its points from one set of constants
+	pa_keyup_select(&keyup_cfg[tx_uhf ? 1 : 0]);
+	ku = pa_keyup_plan(tx_pa, top, 0u, &c);
+	ku_drive_us = c.drive_us;
+	tx_lead = db25d_dmr_rf_tx_lead(c.pa_us, plan.on_us);
 	tx_hz = hz;
 	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias_dc(db25d_cal_tx_center(), db25d_cal_mod(hz)));
 	hrc7000_set_rf_tx_lead(&modem, tx_lead);
@@ -413,7 +438,15 @@ void db25d_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 	wait(TX_SUPPLY_US);
 	hrc_pin_write(tx_uhf ? PIN_TX_SUPPLY_B : PIN_TX_SUPPLY_A, false);
 	hrc_pin_write(tx_uhf ? PIN_TX_SUPPLY_A : PIN_TX_SUPPLY_B, true);
-	apc_ramp(tx_pa, true);
+	if (ku.boost == 0u) {
+		apc_ramp(tx_pa, true);
+		return;
+	}
+	apc_ramp(ku.boost, true);
+	at(hrc_rfburst_pa_at_us(tx_lead, ku.hold_us));
+	DAC_DATA_B = ku.hold;
+	at(hrc_rfburst_pa_at_us(tx_lead, ku_drive_us));
+	DAC_DATA_B = tx_pa;
 }
 
 // TX off after a burst, after the RF task's hold to its last symbol: the ramp down,

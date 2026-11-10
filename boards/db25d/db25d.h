@@ -86,9 +86,11 @@ uint8_t db25d_cal_squelch_db(uint32_t hz, uint8_t level);
 // 1.7-2.1 ms (the analog ramp varies). 2.3 ms keeps the 1 dB point at least 0.2 ms ahead of the first symbol
 #define DB25D_DMR_SYMBOL_AFTER_LEAD_US	HRC_RFBURST_SYMBOL_AFTER_LEAD_US
 #define DB25D_DMR_PA_UP_US		2300u
-static inline uint8_t db25d_dmr_rf_tx_lead(uint16_t on_us)
+// The VHF PA comes up in half the time (4.5): with 2.3 ms it was up 1.0-1.1 ms before the first symbol
+#define DB25D_DMR_PA_UP_VHF_US		1600u
+static inline uint8_t db25d_dmr_rf_tx_lead(uint16_t up_us, uint16_t on_us)
 {
-	return hrc_rfburst_lead(DB25D_DMR_PA_UP_US + on_us);
+	return hrc_rfburst_lead((uint32_t)up_us + on_us);
 }
 static inline uint32_t db25d_dmr_off_at_us(uint8_t lead)
 {
