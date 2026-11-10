@@ -12,7 +12,7 @@
 #define INPUT_REPEAT_MS		120
 
 void input_start(void);
-// Wait up to wait_ms for the next event (0 = don't wait). PTT and MONITOR edges also go straight to the radio core
+// Wait up to wait_ms for the next event (0 = don't wait). PTT, MONITOR and TONE_BURST edges also go straight to the radio core
 bool input_next(input_event_t *ev, uint32_t wait_ms);
 // An event is waiting (the UI leaves a redraw for after it)
 bool input_pending(void);
@@ -34,7 +34,7 @@ bool input_bt_stats(hal_bt_stats_t *st);
 // Clamped to 200..3000 and 40..1000; in effect from the next scan
 void input_set_timing(uint16_t long_ms, uint16_t repeat_ms);
 uint16_t input_long_ms(void);		// in effect now
-// PTT while the keys are locked and Settings > Privacy > PTT when locked is off: a PTT press is not handed to the
+// PTT while the keys are locked and Settings > Key lock > PTT when locked is off: a PTT press is not handed to the
 // radio core (the UI still gets it, to say why). A release always is, so a transmission never sticks
 void input_set_ptt_block(bool blocked);
 // Keys locked: DTMF keys don't send during FM TX (radio-features.md 3.7)

@@ -27,12 +27,12 @@
 
 #define UI_TASK_PRIORITY	(tskIDLE_PRIORITY + 1)	// below the radio and input tasks
 // List screens and Find: about 1.2 KB measured on the host, plus the driver. The static stack check's deepest chain
-// (ui_task > ui_quick_draw > draw_quick_list > ui_draw_list, down to a setting's read) needs 1672 bytes on the STM32
-// radios, the same on macOS and in CI now that the link order is sorted (gotchas 13.10); the quick screen's tiles and
+// (ui_task > handle_event > ui_push > msgs_item > msg_row, down to a contact lookup in the codeplug) needs 1728 bytes
+// at worst, the same on macOS and in CI now that the link order is sorted (gotchas 13.10); the quick screen's tiles and
 // the dual Home's layout table (dual_choose) live in frames of their own to stay below it, as a 4 bpp panel's palette
-// lookup adds 48 bytes under every fill. 504 words leave the 208 byte port overhead, the 128 byte margin and 8 bytes.
+// lookup adds 48 bytes under every fill. 518 words leave the 208 byte port overhead, the 128 byte margin and 8 bytes.
 // Every word here is RAM on all radios: raise it only by what the check shows
-#define UI_TASK_STACK_WORDS	504
+#define UI_TASK_STACK_WORDS	518
 
 #define SPLASH_MS		1000
 #define SPLASH_POLL_MS		20

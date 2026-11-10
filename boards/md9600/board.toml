@@ -27,12 +27,12 @@ gallery = "128x64"
 clock = { rtc = "unknown", note = "STM32 RTC on a 32.768 kHz crystal; the backup domain is only known to hold while DC is applied, VBAT unverified (docs/spec/hardware-md9600.md 1.3, 1.4)" }
 
 [status]
-level = "testing"
+level = "supported"
 summary = """\
-One image serves every board revision. On a V1-V3 radio, the display, keys and encoder, debug link, programming, FM and \
-DMR receive on both bands with CTCSS / DCS, and transmit on both bands (FM and DMR; the MMDVM hotspot on UHF) work, with \
-every power level checked on a wattmeter on both bands. Transmit is armed per power cycle. Open: V4 and V4A/V5 boards \
-have not run on a radio, and SFR loses inbound voice frames."""
+One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, \
+roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power \
+level checked on a wattmeter on both bands. Transmit is armed per power cycle. Open: V4 and V4A/V5 boards have not run \
+on a radio, and SFR loses inbound voice frames."""
 release = "stable"
 
 # This board's own switches (config.mk, config_md9600.h) aren't feature switches, so ci's per-switch builds don't cover

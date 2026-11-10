@@ -84,6 +84,11 @@ dmr_data_api.h (UI, debug link)                  sms_inbox_*, sms_send, dmr_sign
 - Text to us (any format, 5): kept in the inbox (4 messages, newest first, the oldest replaced). A TMS ACK request is
   answered with a TMS ACK. The same message again from the same radio within 60 s (sender, format, text; the
   sequence number may differ) is a retry: answered again, not kept twice (gotcha 5.8).
+- An NMEA sentence from and to UDP port 10110 (a DMR APRS position), whoever it is addressed to (usually the APRS
+  gateway's ID), outside passthrough and not our own; a compressed header's DAID must be 0 (radio) or 2 (group), not
+  1 (USB network, a host behind the radio): to the host's `position` hook, for the APRS station list
+  (`aprs.md` 8.2). The one exception to "addressed to us": nothing else looks at a packet not for us, and it gets no
+  response. The IP gateway still gets the packet, as every other.
 - Control station passthrough (`usb-network.md` 5.2): IP based packets to us are left to the PC; only the ETSI
   response above is still sent.
 - Replies (responses, TMS ACKs, CSBK answers) wait in a 4-entry queue; one still queued after 5 s, or not started
