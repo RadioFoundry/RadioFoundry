@@ -2689,6 +2689,10 @@ msgid "Home zone"
 msgstr "Zona casa"
 
 #: core/ui/ui_menus.c
+msgid "Tone burst"
+msgstr "Tono di apertura"
+
+#: core/ui/ui_menus.c
 msgid "Copy to VFO"
 msgstr "Copia su VFO"
 
@@ -2855,6 +2859,10 @@ msgstr "Blocco auto"
 #: core/ui/ui_menus.c
 msgid "PTT when locked"
 msgstr "PTT da bloccata"
+
+#: core/ui/ui_menus.c
+msgid "Knob when locked"
+msgstr "Manopola da bloccata"
 
 #: core/ui/ui_menus.c
 msgid "Position format"
@@ -3579,6 +3587,10 @@ msgstr "EMERGENZA"
 #: core/ui/ui_screens.c
 msgid "OK acknowledge  Back hide"
 msgstr "OK conferma  Indietro nascondi"
+
+#: core/ui/ui_screens.c
+msgid "Vol"
+msgstr "Vol"
 
 #: core/ui/ui_screens.c
 msgid "Muted"

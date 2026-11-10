@@ -35,6 +35,7 @@
 #define UI_FEAT_VOLUME		(1u << 17)	// the volume is the radio's to set: no knob (radio_volume_soft), VOL key + Settings
 #define UI_FEAT_BCAST		(1u << 18)	// a broadcast FM receiver (radio_bcast_capable): its VFO step setting
 #define UI_FEAT_ZONE_SHARE	(1u << 19)	// ui_svc_zone_* (zone sharing over DMR data, CONFIG_ZONE_SHARE)
+#define UI_FEAT_VOLUME_KNOB	(1u << 21)	// the MCU reads a volume knob (radio_volume_knob): Settings > Key lock > Knob when locked
 #define UI_FEAT_REF_TRIM	(1u << 20)	// a reference trim (hal_radio_t.ref_trim, radio/ref_trim.h): Freq trim setting
 uint32_t ui_svc_features(void);
 // The parts of it each package reports (ui_svc_features ORs them): dmr-voice / radio core, dmr-data, storage-cps,
@@ -129,11 +130,14 @@ void ui_svc_beep(uint8_t beep);
 // Vibrate is on. Weak no-op without CONFIG_VIBRATE ---
 typedef enum { UI_VIBE_MESSAGE, UI_VIBE_CALL, UI_VIBE_EMERGENCY } ui_vibe_t;
 void ui_svc_vibrate(uint8_t vibe);
-// PTT while the keys are locked (Settings > Privacy > PTT when locked): blocked = the input layer doesn't hand PTT
+// PTT while the keys are locked (Settings > Key lock > PTT when locked): blocked = the input layer doesn't hand PTT
 // presses to the radio core (a PTT already held is still released). Weak no-op without the input layer
 void ui_svc_ptt_block(bool blocked);
 // Keys locked: DTMF keys send nothing during FM TX (radio-features.md 3.7). Weak no-op without the input layer
 void ui_svc_dtmf_block(bool blocked);
+// Keys locked with Settings > Key lock > Knob when locked Off: the radio holds its level and ignores the volume knob; false
+// follows the knob again. Weak no-op without the radio core
+void ui_svc_volume_hold(bool hold);
 
 // --- Messages and signaling (dmr-data) ---
 #define UI_MSG_TEXT_MAX	143
@@ -326,6 +330,9 @@ typedef enum {
 	UI_SET_REF_TRIM,	// reference oscillator trim, ppb -10000..+10000 (Settings > Advanced; settings_t.ref_trim_ppb)
 	UI_SET_LANGUAGE,	// the UI's language, i18n.h lang_value: "en" English, 0 never picked (Settings > Display; settings_t.lang)
 	UI_SET_RX_EXT,		// receive past the band table (Settings > Advanced; settings_t.cp_flags, CONFIG_RX_EXT)
+	// Knob when locked: 1 the volume knob works while the keys are locked (the default), 0 it does nothing
+	// (UI_FEAT_VOLUME_KNOB; settings_t.knob_flags bit SETTINGS_KNOB_LOCK, stored inverted)
+	UI_SET_KNOB_WHEN_LOCKED,
 	UI_SET_COUNT
 } ui_setting_t;
 

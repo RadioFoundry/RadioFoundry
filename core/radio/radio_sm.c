@@ -3689,6 +3689,10 @@ static inline void dtmf_cancel(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (voi
 // keyed: DMR per-burst keying is still armed (dmr_follow releases it), so no tx_off here
 static void fm_tx_end(radio_sm_t *sm, bool keyed, uint32_t now_ms)
 {
+#if CONFIG_FM_TX_TONES
+	sm->burst_timed = sm->burst_held = sm->burst_key_owned = false;
+	sm->burst_ms = sm->burst_end_ms = 0;
+#endif
 	dtmf_cancel(sm, now_ms);
 #if CONFIG_DTMF
 	sm->view.dtmf_digits[0] = 0;
@@ -3910,7 +3914,10 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 #endif
 	dtmf_cancel(sm, now_ms);	// before the roger beep: the board never mixes the two
 #if CONFIG_FM_TX_TONES
+	sm->burst_timed = sm->burst_held = sm->burst_key_owned = false;
+	sm->burst_ms = sm->burst_end_ms = 0;
 	if (sm->view.tone_burst) {
+		roger = false;	// releasing PTT during a burst ends the transmission
 		tx_tone(0);
 		sm->view.tone_burst = false;
 	}
@@ -4848,7 +4855,10 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->volume_sent = -1;
 	sm->vol_step = RADIO_VOLUME_DEFAULT;
 	sm->vol_override = -1;
+	sm->knob_seen = -1;
+	sm->vol_hold = false;
 	sm->view.volume = -1;
+	sm->view.volume_knob = -1;
 	sm->view.volume_override = -1;
 	sm->view.volume_step = RADIO_VOLUME_DEFAULT;
 	sm->base_squelch = RADIO_SQUELCH_DEFAULT;
@@ -4933,11 +4943,16 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 static void tone_burst(radio_sm_t *sm, bool on, uint32_t max_ms, uint32_t now_ms)
 {
 	if (on) {
-		if (sm->view.tone_burst || sm->view.ch.mode != RADIO_MODE_FM || sm->hotspot ||
-				board.radio->tx_tone == NULL) {
+		if (sm->view.tone_burst) {
 			return;
 		}
-		if (sm->view.state != RS_TX) {
+		sm->burst_timed = sm->burst_held = sm->burst_key_owned = false;
+		sm->burst_ms = sm->burst_end_ms = 0;
+		if (sm->view.ch.mode != RADIO_MODE_FM || sm->hotspot || board.radio->tx_tone == NULL) {
+			beep(sm, BEEP_ERROR);
+			return;
+		}
+		if (sm->view.state != RS_TX || !sm->ptt) {
 			ptt_down(sm, now_ms);
 			sm->burst_keyed = sm->ptt;	// held by the burst, even when refused (the deny shows until release)
 			if (sm->view.state != RS_TX) {
@@ -4950,10 +4965,16 @@ static void tone_burst(radio_sm_t *sm, bool on, uint32_t max_ms, uint32_t now_ms
 			sm->view.tone_burst = true;
 			sm->burst_end_ms = max_ms != 0 ? (now_ms + max_ms) | 1u : 0;	// | 1: never 0, "no limit"
 			changed(sm);
+		} else {
+			beep(sm, BEEP_ERROR);
+			if (sm->burst_keyed) {
+				ptt_release(sm, false, now_ms);
+			}
 		}
 		return;
 	}
-	sm->burst_end_ms = 0;
+	sm->burst_timed = sm->burst_held = sm->burst_key_owned = false;
+	sm->burst_ms = sm->burst_end_ms = 0;
 	if (sm->view.tone_burst) {
 		tx_tone(0);
 		sm->view.tone_burst = false;
@@ -4984,7 +5005,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	// A beep or a vibration is an alert, not the user doing something; the volume changes nothing on air or on the
 	// channel, so it neither gives way to nor cancels anything either
 	bool alert = req->type == RREQ_BEEP || req->type == RREQ_VIBRATE || req->type == RREQ_VOLUME ||
-		     req->type == RREQ_VOLUME_OVERRIDE;
+		     req->type == RREQ_VOLUME_OVERRIDE || req->type == RREQ_VOLUME_HOLD;
 	if (!alert && req->type != RREQ_DMR_FOCUS && req->type != RREQ_SETTINGS && req->type != RREQ_RETUNE) {
 		aprs_rf_abort(sm, now_ms);	// the user does something: an APRS transmission gives way
 	}
@@ -5207,6 +5228,9 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_VOLUME_OVERRIDE:
 		sm->vol_override = (int8_t)(req->arg < 0 ? -1 : req->arg > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : req->arg);
 		break;
+	case RREQ_VOLUME_HOLD:
+		sm->vol_hold = req->arg != 0;
+		break;
 	case RREQ_SQUELCH: {
 		int s = sm->view.squelch + req->arg;
 		if (s < 0) {
@@ -5411,6 +5435,15 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 #endif
 			break;
 		}
+#if CONFIG_FM_TX_TONES
+		if (sm->view.tone_burst || sm->burst_keyed) {
+#if CONFIG_VOX
+			sm->vox_keyed = sm->view.vox_keyed = false;
+#endif
+			ptt_release(sm, false, now_ms);
+			fm_tx_end(sm, false, now_ms);	// shutdown does not wait for a sub-audio tail
+		}
+#endif
 		sm->power_off_req = true;
 		sm->power_off_busy = CONFIG_DMR_DATA_CORE;	// data_tick clears it once the deregistration is out
 		break;
@@ -5459,6 +5492,22 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		break;
 #endif
 #if CONFIG_FM_TX_TONES
+	case RREQ_TONE_BURST_KEY:
+		if (req->arg != 0) {
+			if (!sm->view.tone_burst) {
+				tone_burst(sm, true, 0, now_ms);
+				sm->burst_timed = sm->view.tone_burst;
+				sm->burst_key_owned = sm->burst_timed || sm->burst_keyed;
+				sm->burst_ms = sm->burst_timed ? now_ms : 0;
+			}
+			sm->burst_held = sm->burst_timed;
+		} else if (sm->burst_key_owned) {
+			sm->burst_held = false;
+			if (!sm->burst_timed || now_ms - sm->burst_ms >= RADIO_BURST_MIN_MS) {
+				tone_burst(sm, false, 0, now_ms);
+			}
+		}
+		break;
 	case RREQ_TONE_BURST:
 		tone_burst(sm, req->arg != 0, req->arg2, now_ms);
 		break;
@@ -5478,6 +5527,12 @@ bool radio_volume_soft(void)
 {
 	return board.radio != NULL && board.radio->volume != NULL && board.power != NULL &&
 	       board.power->volume != NULL && board.power->volume() < 0;
+}
+
+bool radio_volume_knob(void)
+{
+	return board.radio != NULL && board.radio->volume != NULL && board.power != NULL &&
+	       board.power->volume != NULL && board.power->volume() >= 0;
 }
 
 bool radio_volume_settable(void)
@@ -5528,12 +5583,27 @@ static void follow_volume(radio_sm_t *sm)
 	}
 	int v = board.power->volume();
 	uint8_t src = RVOL_KNOB;
+	if (v >= 0) {
+		// The knob's own position, with the same 2 % filter as the level below, in force or not: the UI shows the
+		// unlock hint when a held knob turns
+		int dk = v - sm->knob_seen;
+		if (sm->knob_seen < 0 || dk >= 2 || dk <= -2 || ((v == 0 || v == 100) && v != sm->knob_seen)) {
+			sm->knob_seen = (int16_t)v;
+			sm->view.volume_knob = (int8_t)v;
+			changed(sm);
+		}
+	}
 	if (v < 0) {
 		v = radio_volume_percent(sm->vol_step);
 		src = RVOL_SOFT;
 	} else if (sm->vol_override >= 0) {
 		v = radio_volume_percent((uint8_t)sm->vol_override);
 		src = RVOL_OVERRIDE;
+	}
+	else if (sm->vol_hold && sm->volume_sent >= 0) {
+		// Keys locked with the knob lock on: the level in force stays. Let go, the knob's level goes out at once
+		v = sm->volume_sent;
+		src = RVOL_HOLD;
 	}
 	if (src != sm->view.volume_src || sm->vol_step != sm->view.volume_step ||
 	    sm->vol_override != sm->view.volume_override) {
@@ -5717,6 +5787,12 @@ static void vox_poll(radio_sm_t *sm, uint32_t now_ms)
 		changed(sm);
 		return;
 	}
+#if CONFIG_FM_TX_TONES
+	if (sm->view.tone_burst) {
+		sm->vox_quiet_ms = 0;	// the quiet tail starts after the burst restores the microphone
+		return;
+	}
+#endif
 	uint8_t level = vox_enabled(sm) ? board.power->mic_level() : 0;
 	if (level >= 100u - 8u * sm->set.vox_level) {
 		sm->vox_quiet_ms = 0;
@@ -5940,6 +6016,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		if (sm->view.tot_s != 0 && sm->view.tx_elapsed_ms >= (uint32_t)sm->view.tot_s * 1000) {
 			dtmf_cancel(sm, now_ms);
 #if CONFIG_FM_TX_TONES
+			// Keep side-key ownership so its release clears the time-out denial.
+			sm->burst_timed = sm->burst_held = false;
+			sm->burst_ms = sm->burst_end_ms = 0;
 			if (sm->roger_ms != 0 || sm->view.tone_burst) {
 				tx_tone(0);
 				sm->roger_ms = 0;
@@ -6030,6 +6109,11 @@ static void sfr_rpt_tick(radio_sm_t *sm, uint32_t now_ms)
 void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 {
 	sm->led_now = now_ms;
+#if CONFIG_FM_TX_TONES
+	if (sm->burst_timed && !sm->burst_held && now_ms - sm->burst_ms >= RADIO_BURST_MIN_MS) {
+		tone_burst(sm, false, 0, now_ms);
+	}
+#endif
 #if RADIO_SM_CW
 	cw_service(sm, now_ms);
 #endif

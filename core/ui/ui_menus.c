@@ -47,7 +47,7 @@ extern const ui_scr_def_t ui_dual_screen, ui_dual_pick_screen, ui_dual_zone_scre
 
 static void item_num(ui_item_t *it, uint16_t n)
 {
-	it->num = (char)('0' + n % 10u);
+	it->num = n >= 1u && n <= 10u ? (char)('0' + n % 10u) : 0;	// rows after the 10th have no digit
 }
 
 void item_num_set(ui_item_t *it, uint16_t n)
@@ -5195,6 +5195,9 @@ static const char *const n_possend[] = { TRN("Off"), TRN("1 min"), TRN("5 min"),
 static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITOR, KEYFN_TALK_TARGET, KEYFN_POWER,
 					 KEYFN_ZONE_UP, KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_KEY_LOCK,
 					 KEYFN_HOME_ZONE,
+#if CONFIG_FM_TX_TONES
+					 KEYFN_TONE_BURST,
+#endif
 #if CONFIG_VFO_FM || CONFIG_VFO_DMR
 					 KEYFN_COPY_VFO, KEYFN_VFO_TOGGLE,
 #endif
@@ -5208,6 +5211,9 @@ static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITO
 static const char *const n_keyfn_press[] = { TRN("Default"), TRN("Nothing"), TRN("Monitor"), TRN("Talk target"),
 					     TRN("Power level"), TRN("Next zone"), TRN("Previous zone"), TRN("Scan"),
 					     TRN("Key lock"), TRN("Home zone"),
+#if CONFIG_FM_TX_TONES
+					     TRN("Tone burst"),
+#endif
 #if CONFIG_VFO_FM || CONFIG_VFO_DMR
 					     TRN("Copy to VFO"), TRN("VFO/Channel"),
 #endif
@@ -5360,8 +5366,12 @@ static const set_item_t s_talk[] = {
 static const set_item_t s_privacy[] = {
 	LIST(TRN("Key type"), "privacy encryption", UI_SET_PRIVACY_TYPE, v_ptype, n_ptype),
 	NUMBER(TRN("Key"), "privacy BP", UI_SET_PRIVACY_KEY, 1, 255, 1, NULL),	// the range follows the type (set_range)
+};
+// The key lock's rules: when it locks by itself and what still works while locked
+static const set_item_t s_lock[] = {
 	LIST(TRN("Auto lock"), "keylock", UI_SET_AUTO_LOCK_S, v_lock, n_lock),
 	TOGGLE(TRN("PTT when locked"), NULL, UI_SET_PTT_LOCKED),
+	TOGGLE(TRN("Knob when locked"), "volume knob key lock", UI_SET_KNOB_WHEN_LOCKED),
 };
 static const set_item_t s_location[] = {
 	TOGGLE("GPS", NULL, UI_SET_GPS),
@@ -5468,7 +5478,8 @@ static const set_group_t groups[] = {
 	GROUP_T(TRN("Talk & listen"), TRN("Talk & Listen"), s_talk), GROUP(TRN("Privacy"), s_privacy),
 	GROUP(TRN("Location"), s_location), GROUP(TRN("Connections"), s_connections),
 	GROUP_T(TRN("Power saving"), TRN("Power Saving"), s_power),
-	GROUP(TRN("Keys"), s_keys), GROUP_T(TRN("My radio"), TRN("My Radio"), s_my_radio), GROUP(TRN("Advanced"), s_advanced),
+	GROUP(TRN("Keys"), s_keys), GROUP(TRN("Key lock"), s_lock),
+	GROUP_T(TRN("My radio"), TRN("My Radio"), s_my_radio), GROUP(TRN("Advanced"), s_advanced),
 };
 #define GROUPS	(sizeof groups / sizeof groups[0])
 
@@ -5490,6 +5501,8 @@ static bool set_hidden(const set_item_t *s)
 #endif
 	if (s->type != ST_ACTION && s->id == UI_SET_VOLUME)
 		return !(feats() & UI_FEAT_VOLUME);	// a knob sets the volume on the other radios
+	if (s->type != ST_ACTION && s->id == UI_SET_KNOB_WHEN_LOCKED)
+		return !(feats() & UI_FEAT_VOLUME_KNOB);	// only where the MCU reads the knob
 	if (s->type != ST_ACTION && s->id == UI_SET_BCAST_STEP)
 		return !(feats() & UI_FEAT_BCAST);
 	if (s->type != ST_ACTION && s->id == UI_SET_RX_EXT)

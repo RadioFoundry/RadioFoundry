@@ -116,20 +116,20 @@ static const flow_t flows[] = {
 	{ "11 dual watch: the last B after power off", "quick 7 ctx 3 5 ok back back reboot", "quick 7", "dual=1 sel=A bpos=5",
 	  2, false },
 	// Settings > Advanced > Hardware (last row): OK steps a choice without storing ("*"), holding OK stores it
-	{ "S hardware options open", "hwopt", "ok 7 0 up ok", "screen=hwopt shows=Not_set", 5, false },
-	{ "S hardware option stepped, not stored", "hwopt ok 7 0 up ok", "ok ok", "shows=V2*", 2, false },
-	{ "S hardware option stored on hold", "hwopt ok 7 0 up ok", "ok long:ok", "toast=Stored:_restart hides=V1*", 2, false },
-	{ "S stepping another row drops the first", "hwopt ok 7 0 up ok ok", "down ok", "shows=Not_set shows=On*", 2, false },
-	{ "S freq trim opens its page", "trim", "ok 7 0 up ok", "screen=freq-trim shows=440_MHz shows=144_MHz", 9, false },
-	{ "S freq trim: Down steps 0.1 ppm at once", "trim ok 7 0 up ok", "down down",
+	{ "S hardware options open", "hwopt", "ok 7 up ok up ok", "screen=hwopt shows=Not_set", 6, false },
+	{ "S hardware option stepped, not stored", "hwopt ok 7 up ok up ok", "ok ok", "shows=V2*", 2, false },
+	{ "S hardware option stored on hold", "hwopt ok 7 up ok up ok", "ok long:ok", "toast=Stored:_restart hides=V1*", 2, false },
+	{ "S stepping another row drops the first", "hwopt ok 7 up ok up ok ok", "down ok", "shows=Not_set shows=On*", 2, false },
+	{ "S freq trim opens its page", "trim", "ok 7 up ok up ok", "screen=freq-trim shows=440_MHz shows=144_MHz", 9, false },
+	{ "S freq trim: Down steps 0.1 ppm at once", "trim ok 7 up ok up ok", "down down",
 	  "set77=-200 shows=-0.2 shows=-88_Hz", 2, false },
-	{ "S freq trim: # 4 5 OK types -4.5 ppm", "trim ok 7 0 up ok", "ctx 4 5 ok",
+	{ "S freq trim: # 4 5 OK types -4.5 ppm", "trim ok 7 up ok up ok", "ctx 4 5 ok",
 	  "set77=-4500 shows=-1980_Hz screen=freq-trim", 4, false },
-	{ "S freq trim: # flips the sign", "trim ok 7 0 up ok up up", "ctx", "set77=-200", 1, false },
-	{ "S freq trim: BACK takes a digit back", "trim ok 7 0 up ok 1 2", "back ok", "set77=100", 2, false },
-	{ "S freq trim: past 10.0 ppm is refused", "trim ok 7 0 up ok 1 0", "1", "toast=Up_to_10.0", 1, false },
-	{ "S freq trim: OK leaves", "trim ok 7 0 up ok", "ok", "screen=group shows=Freq_trim", 1, false },
-	{ "S no freq trim without the hook", "", "ok 7 0", "hides=Freq_trim", 3, false },
+	{ "S freq trim: # flips the sign", "trim ok 7 up ok up ok up up", "ctx", "set77=-200", 1, false },
+	{ "S freq trim: BACK takes a digit back", "trim ok 7 up ok up ok 1 2", "back ok", "set77=100", 2, false },
+	{ "S freq trim: past 10.0 ppm is refused", "trim ok 7 up ok up ok 1 0", "1", "toast=Up_to_10.0", 1, false },
+	{ "S freq trim: OK leaves", "trim ok 7 up ok up ok", "ok", "screen=group shows=Freq_trim", 1, false },
+	{ "S no freq trim without the hook", "", "ok 7 up ok", "hides=Freq_trim", 4, false },
 	// Settings > Display > Language, the last row (i18n.h; set78 = UI_SET_LANGUAGE, 'e' << 8 | 's' = 25971 Spanish,
 	// 'e' << 8 | 'n' = 25966 English picked; 0 never picked)
 	{ "S language list", "", "ok 7 2 up ok", "screen=language shows=English", 5, false },
@@ -453,7 +453,7 @@ static const flow_t flows[] = {
 	{ "S backlight dim only to the radio", "", "ok 7 2 down ok ok ok ok", "radio_backlight=-30", 8, false },
 	{ "S key beep", "", "up", "beeps=1", 1, false },
 	{ "S long press time to input", "", "ok 7 8 ok up ok", "longpress=700", 6, false },
-	{ "S auto lock after 30 s", "ok 7 4 down down ok long:back", "wait:31000", "locked=1", 0, false },
+	{ "S auto lock after 30 s", "ok 7 9 ok long:back", "wait:31000", "locked=1", 0, false },
 	{ "S auto lock waits for keys", "ok 7 4 down down ok long:back", "wait:20000 up wait:20000", "locked=0", 1, false },
 	// DMR repeater roaming (docs/spec/dmr-roaming.md 6.2): Tools 8
 	{ "R roaming on for this zone", "", "ok 6 6 1", "roamzone=1 roam=1 toast=Roaming_on_for", 4, false },
@@ -469,7 +469,7 @@ static const flow_t flows[] = {
 	{ "T22 Home and undo", "quick 2 back ok 6", "long:back back", "screen=home temporary=0", 2, false },
 	// Settings that act now (uifix). set<N> = ui_setting_t N: 7 theme, 31 privacy key type, 32 privacy key
 	{ "S PTT on when locked (default)", "long:quick", "ptt", "tx=1 pttblock=0", 1, false },
-	{ "S PTT off when locked", "ok 7 4 down down down ok long:back long:quick", "ptt",
+	{ "S PTT off when locked", "ok 7 9 down ok long:back long:quick", "ptt",
 	  "tx=0 pttblock=1 toast=PTT_is_off", 1, false },
 	{ "S PTT back with the unlock", "ok 7 4 down down down ok long:back long:quick", "long:quick ptt",
 	  "tx=1 pttblock=0", 2, false },
@@ -486,25 +486,25 @@ static const flow_t flows[] = {
 	{ "S message tone", "", "msg:9991234,Hi", "beep=2", 0, false },
 	// The own DMR ID (Settings > My radio, set76, the codeplug's): digits type it, OK saves, BACK takes the last digit
 	// back and with none typed leaves it; 0 is refused
-	{ "S DMR ID opens", "", "ok 7 9 ok", "screen=dmr-id shows=DMR_ID", 4, false },
-	{ "S About from My radio", "", "ok 7 9 down ok", "screen=about shows=Build:", 5, false },
-	{ "S DMR ID typed and saved", "ok 7 9 ok", "9 9 9 9 9 9 9 ok", "set76=9999999 toast=DMR_ID_saved", 8, false },
-	{ "S DMR ID: BACK takes a digit back", "ok 7 9 ok", "3 1 back ok", "set76=3 toast=DMR_ID_saved", 4, false },
-	{ "S DMR ID: BACK with none typed leaves it", "ok 7 9 ok 9 9 9 9 9 9 9 ok", "3 1 back back back",
+	{ "S DMR ID opens", "", "ok 7 0 ok", "screen=dmr-id shows=DMR_ID", 4, false },
+	{ "S About from My radio", "", "ok 7 0 down ok", "screen=about shows=Build:", 5, false },
+	{ "S DMR ID typed and saved", "ok 7 0 ok", "9 9 9 9 9 9 9 ok", "set76=9999999 toast=DMR_ID_saved", 8, false },
+	{ "S DMR ID: BACK takes a digit back", "ok 7 0 ok", "3 1 back ok", "set76=3 toast=DMR_ID_saved", 4, false },
+	{ "S DMR ID: BACK with none typed leaves it", "ok 7 0 ok 9 9 9 9 9 9 9 ok", "3 1 back back back",
 	  "set76=9999999 screen=dmr-id shows=9999999", 5, false },
-	{ "S DMR ID: OK with none typed leaves it", "ok 7 9 ok 9 9 9 9 9 9 9 ok", "ok ok", "set76=9999999 shows=9999999", 2,
+	{ "S DMR ID: OK with none typed leaves it", "ok 7 0 ok 9 9 9 9 9 9 9 ok", "ok ok", "set76=9999999 shows=9999999", 2,
 	  false },
-	{ "S DMR ID: the last own ID", "ok 7 9 ok", "1 6 7 7 6 4 1 5 ok", "set76=16776415 toast=DMR_ID_saved", 9, false },
+	{ "S DMR ID: the last own ID", "ok 7 0 ok", "1 6 7 7 6 4 1 5 ok", "set76=16776415 toast=DMR_ID_saved", 9, false },
 	// Above 16776415 are the network's IDs: the digit that would go past it is refused, as the channel editor's Own ID
-	{ "S DMR ID: past the last is refused", "ok 7 9 ok", "1 6 7 7 6 4 1 6", "toast=IDs_go_up", 8, false },
-	{ "S DMR ID: the refused digit isn't kept", "ok 7 9 ok", "1 6 7 7 6 4 1 6 ok", "set76=1677641", 9, false },
-	{ "S DMR ID 0 is refused", "ok 7 9 ok 3 1 ok", "0 ok", "set76=31 toast=IDs_start screen=dmr-id", 2, false },
+	{ "S DMR ID: past the last is refused", "ok 7 0 ok", "1 6 7 7 6 4 1 6", "toast=IDs_go_up", 8, false },
+	{ "S DMR ID: the refused digit isn't kept", "ok 7 0 ok", "1 6 7 7 6 4 1 6 ok", "set76=1677641", 9, false },
+	{ "S DMR ID 0 is refused", "ok 7 0 ok 3 1 ok", "0 ok", "set76=31 toast=IDs_start screen=dmr-id", 2, false },
 	// My radio's names (the codeplug's radio name and boot lines): OK types the row's text, OK saves it
-	{ "S radio name opens text entry", "ok 7 9 ok", "down ok", "screen=text", 2, false },
-	{ "S radio name typed and saved", "ok 7 9 ok down ok", "2 ok", "screen=dmr-id toast=Saved writes=1 shows=Q0TESTA", 2, true },
-	{ "S boot line 2 typed and saved", "ok 7 9 ok down down down ok", "2 ok", "screen=dmr-id toast=Saved writes=1 shows=Jamie_ThompsonA", 2,
+	{ "S radio name opens text entry", "ok 7 0 ok", "down ok", "screen=text", 2, false },
+	{ "S radio name typed and saved", "ok 7 0 ok down ok", "2 ok", "screen=dmr-id toast=Saved writes=1 shows=Q0TESTA", 2, true },
+	{ "S boot line 2 typed and saved", "ok 7 0 ok down down down ok", "2 ok", "screen=dmr-id toast=Saved writes=1 shows=Jamie_ThompsonA", 2,
 	  true },
-	{ "S digits on a name row type no ID", "ok 7 9 ok down", "3 1",
+	{ "S digits on a name row type no ID", "ok 7 0 ok down", "3 1",
 	  "screen=dmr-id focus=Radio_name toast=No_item_with_that_number", 2, false },
 	// Vibrate (Settings > Sound, radio-features.md 4.1): ui_vibe_t 0 message, 1 call, 2 emergency
 	{ "S vibrate on a message", "", "msg:9991234,Hi", "vibes=1 vibe=0", 0, false },
@@ -616,8 +616,8 @@ static const flow_t flows[] = {
 	  "sent=1 aprs_to=Q4WAB-9 text=OK", 1, false },
 	{ "A not in this build", "aprs:off", "ok 6 8 2", "toast=APRS:_not aprs_auto=0", 4, false },
 	// The crash log and its report (docs/spec/crash-log.md): Settings > Advanced > Crash log, after the restart
-	{ "C crash log from Advanced", "crash:on", "ok 7 0 down down down down ok", "screen=crash shows=Fault_3 shows=Crash_Log crash_seen=1",
-	  8, false },
+	{ "C crash log from Advanced", "crash:on", "ok 7 up ok down down down down ok", "screen=crash shows=Fault_3 shows=Crash_Log crash_seen=1",
+	  9, false },
 	{ "C crash: Off neither asks nor sends", "crash:on wait:2500", "", "screen=home crash_sends=0 crash_seen=0", 0, false },
 	{ "C crash: Ask prompts after the restart", "crash:ask wait:2500", "", "screen=crash shows=USA?",
 	  0, false },
@@ -626,18 +626,18 @@ static const flow_t flows[] = {
 	  false },
 	{ "C crash: Auto sends without a prompt", "crash:auto wait:2500", "", "screen=home crash_sends=1 crash_seen=1", 0,
 	  false },
-	{ "C crash: send needs a target", "crash:on ok 7 0 down down down down ok", "1", "crash_sends=0 toast=Pick_Send_to",
+	{ "C crash: send needs a target", "crash:on ok 7 up ok down down down down ok", "1", "crash_sends=0 toast=Pick_Send_to",
 	  1, false },
-	{ "C crash: Send to picks a contact", "crash:on ok 7 0 down down down down ok", "2 ok", "screen=crash shows=USA", 2,
+	{ "C crash: Send to picks a contact", "crash:on ok 7 up ok down down down down ok", "2 ok", "screen=crash shows=USA", 2,
 	  false },
-	{ "C crash: send from the menu", "crash:on ok 7 0 down down down down ok 2 ok", "1", "crash_sends=1", 1, false },
-	{ "C crash: After a crash cycles", "crash:on ok 7 0 down down down down ok", "3", "shows=Ask", 1, false },
-	{ "C crash: cleared", "crash:on ok 7 0 down down down down ok", "4", "crash_have=0 shows=No_crash_recorded", 1, false },
-	{ "C crash: nothing to clear", "ok 7 0 down down down down ok", "4", "toast=none shows=No_crash_recorded", 1, false },
-	{ "C crash: nothing to send", "ok 7 0 down down down down ok", "1", "toast=No_crash crash_sends=0", 1, false },
-	{ "C crash: a send that can't start says so", "crash:on crashtx:refuse ok 7 0 down down down down ok 2 ok", "1",
+	{ "C crash: send from the menu", "crash:on ok 7 up ok down down down down ok 2 ok", "1", "crash_sends=1", 1, false },
+	{ "C crash: After a crash cycles", "crash:on ok 7 up ok down down down down ok", "3", "shows=Ask", 1, false },
+	{ "C crash: cleared", "crash:on ok 7 up ok down down down down ok", "4", "crash_have=0 shows=No_crash_recorded", 1, false },
+	{ "C crash: nothing to clear", "ok 7 up ok down down down down ok", "4", "toast=none shows=No_crash_recorded", 1, false },
+	{ "C crash: nothing to send", "ok 7 up ok down down down down ok", "1", "toast=No_crash crash_sends=0", 1, false },
+	{ "C crash: a send that can't start says so", "crash:on crashtx:refuse ok 7 up ok down down down down ok 2 ok", "1",
 	  "toast=Can't_send crash_sends=0", 1, false },
-	{ "C crash: Ask without a target asks for one", "crash:on ok 7 0 down down down down ok", "3",
+	{ "C crash: Ask without a target asks for one", "crash:on ok 7 up ok down down down down ok", "3",
 	  "shows=Ask toast=Pick_Send_to_as_well", 1, false },
 	{ "C crash: Auto says when the report is out", "crash:auto wait:2500", "", "toast=Crash_report_sent", 0, false },
 	{ "C crash: Auto says when the report failed", "crash:auto crashtx:fail wait:2500", "",
@@ -647,7 +647,7 @@ static const flow_t flows[] = {
 	{ "C crash: no prompt off Home", "crash:ask ok wait:2500", "", "screen=hub crash_seen=0", 0, false },
 	{ "C crash: the prompt once back on Home", "crash:ask ok wait:2500 back wait:100", "", "screen=crash shows=USA?", 0,
 	  false },
-	{ "C crash: a seen record isn't asked about", "crash:ask ok 7 0 down down down down ok long:back wait:2500", "",
+	{ "C crash: a seen record isn't asked about", "crash:ask ok 7 up ok down down down down ok long:back wait:2500", "",
 	  "screen=home crash_sends=0", 0, false },
 	// Digit keys while transmitting (#37)
 	{ "T FM transmitting: a digit does nothing (#37)", "down pttdown", "5", "screen=home toast=none", 1, false },
@@ -834,6 +834,10 @@ static const flow_t flows_k[] = {
 	{ "E top key short: power", "", "user3", "power=5", 1, false },
 	// Side keys (Settings > Keys rows 4-9, core/input/keyassign.h; set42 = side key 1 ... set47 = top key hold)
 	{ "K side key 1: the next choice", "ok 7 8", "down down down ok", "set42=1 shows=Nothing", 4, false },
+#if CONFIG_FM_TX_TONES
+	{ "K side key 1: tone burst", "ok 7 8 down down down ok ok ok ok ok ok ok ok ok", "ok",
+	  "set42=18 shows=Tone_burst", 1, false },
+#endif
 	{ "K side key 1: monitor", "ok 7 8 down down down ok", "ok", "set42=2", 1, false },
 	{ "K side key 1 hold while it monitors (DMR)", "ok 7 8", "down down down down ok", "set43=1", 5, false },
 	{ "K side key 1 hold once it doesn't", "ok 7 8 down down down ok down", "ok", "set43=1", 1, false },
@@ -906,13 +910,22 @@ static const flow_t flows_k[] = {
 	{ "V volume from a menu, back returns to it", "softvol ok", "volkey back", "screen=hub", 2, false },
 	{ "V a knob radio: no editor", "", "volkey", "screen=home toast=Volume:_use", 1, false },
 	{ "V volume is in Settings > Sound", "softvol ok 7", "ok", "shows=Volume", 1, false },
-	{ "K home zone: back to the first zone", "zone+ zone+", "homekey", "zone=0 toast=Home_zone", 1, false },
-	{ "K home zone: already there", "", "homekey", "zone=0 toast=Home_zone", 1, false },
-	{ "K home zone: out of the VFO", "ok 4 up ok", "homekey", "vfo=0 zone=0", 1, false },
-	{ "K a key set to key lock, long", "", "long:lockkey", "locked=1 toast=Keys_locked", 1, false },
-	{ "K key lock unlocks on a long press", "long:lockkey", "long:lockkey", "locked=0 toast=Keys_unlocked", 1,
-	  false },
-	{ "K locked: the monitor key still works", "lockkey", "mon", "hearall=1", 1, false },
+	// A volume knob the MCU reads ("knob:<percent>"): Settings > Key lock > Knob when locked, on by default
+	{ "V knob: the option is in Settings > Key lock", "knob:50 ok 7 9", "down down", "focus=Knob_when_locked", 2, false },
+	{ "V knob: no option without a knob", "ok 7 9", "down down", "focus=Auto_lock", 2, false },
+	{ "V knob: on, locking holds nothing", "knob:50", "long:lockkey", "locked=1 volhold=0", 1, false },
+	{ "V knob: on, a turn while locked sets the level and shows the bar", "knob:50 long:lockkey wait:3000", "knob:75",
+	  "toast=none volhold=0 volbar=12", 0, false },
+	{ "V knob: off, locking holds the level", "knob:50 ok 7 9 down down ok long:back", "long:lockkey",
+	  "locked=1 volhold=1", 1, false },
+	{ "V knob: off, a turn while locked gives the unlock hint and no bar",
+	  "knob:50 ok 7 9 down down ok long:back long:lockkey wait:3000", "knob:75",
+	  "toast=Keys_locked volhold=1 volbar=-1", 0, false },
+	{ "V knob: off, unlocking lets go", "knob:50 ok 7 9 down down ok long:back long:lockkey", "long:lockkey",
+	  "locked=0 volhold=0", 1, false },
+	{ "V knob: off, unlocked, a turn shows no hint", "knob:50 ok 7 9 down down ok long:back", "knob:70",
+	  "toast=none volhold=0", 0, false },
+	{ "K locked: the channel knob does nothing", "lockkey", "enc+", "pos=3 screen=home toast=Keys_locked", 1, false },
 	{ "K locked: call back is ignored", CALLER "lockkey", "cbkey", "talk=3100 toast=Keys_locked", 1, false },
 	{ "K unlocked again: call back works", CALLER "lockkey lockkey", "cbkey", "talk=91 toast=Talking_to", 1, false },
 	{ "K call back: a private call talks to the caller", "call:9991234,1,p wait:11000", "cbkey ptt",
@@ -974,7 +987,7 @@ static const flow_t flows_f[] = {
 	  "writes=1 toast=Saved_channel_3", 1, true },
 #endif
 	// No programmable keys: the Keys group ends at its three general rows (ui.md 3.1)
-	{ "F no key rows without keys", "ok up ok up up up ok", "down down down", "focus=Long hides=Key_1", 3, false },
+	{ "F no key rows without keys", "ok up ok up up up up ok", "down down down", "focus=Long hides=Key_1", 3, false },
 #if CONFIG_ZONE_EDIT
 	// No CONTEXT: long OK opens a zone's list in Zones and Channel actions in the list (information-architecture 7.5)
 	{ "F 23 move the channel in use down", "", "ok down down down down ok long:ok long:ok down ok",
@@ -1209,7 +1222,7 @@ static void about_checks(void)
 		const char *gn = sim_geoms[g].name;
 		ui_app_status_t st;
 		sim_reset(&sim_geoms[g], SIM_MAP_K);
-		if (!sim_run("ok 7 0 ok", err, sizeof err)) {
+		if (!sim_run("ok 7 up ok ok", err, sizeof err)) {
 			printf("FAIL about [%s]: %s\n", gn, err);
 			fails++;
 			continue;
@@ -1382,6 +1395,100 @@ static void no_battery_checks(void)
 	}
 }
 
+// The volume bar when the knob turns (#354): over whatever screen is open, 3 s after the last change; never at
+// power-up, for an unchanged level, a radio without a knob or the debug link taking over. EP and BVA cases, then a
+// seeded property run: the bar shows exactly when the knob's level changed in the last 3 s, at that level
+#if CONFIG_VOLUME_BAR
+static bool vol_run(const sim_geom_t *g, const char *script, const char *expect, char *err, size_t len)
+{
+	char buf[600];
+	sim_reset(g, SIM_MAP_K);
+	snprintf(buf, sizeof buf, "%s", script);
+	if (!sim_run(buf, err, len))
+		return false;
+	char *o = buf;
+	for (const char *p = expect; *p && o < buf + sizeof buf - 16;) {
+		while (*p == ' ')
+			p++;
+		memcpy(o, "expect:", 7);
+		o += 7;
+		while (*p && *p != ' ' && o < buf + sizeof buf - 2)
+			*o++ = *p++;
+		*o++ = ' ';
+	}
+	*o = 0;
+	return sim_run(buf, err, len);
+}
+
+static void volume_bar_checks(void)
+{
+	static const struct { const char *name, *script, *expect; } cases[] = {
+		{ "a turn shows the level", "knob:50 knob:75", "volbar=12 shows=Vol wake=1 screen=home" },
+		{ "power-up: none", "knob:50", "volbar=-1" },
+		{ "the same level: none", "knob:50 wait:4000 knob:50", "volbar=-1" },
+		{ "down to silent", "knob:50 knob:0", "volbar=0" },
+		{ "a whisper is not silent", "knob:50 knob:1", "volbar=1" },
+		{ "full", "knob:50 knob:100", "volbar=16" },
+		{ "still there at 2.9 s", "knob:50 knob:60 wait:2900", "volbar=10" },
+		{ "gone at 3 s", "knob:50 knob:60 wait:3000", "volbar=-1 hides=Vol" },
+		{ "a turn at 2 s keeps it", "knob:50 knob:60 wait:2000 knob:70 wait:2900", "volbar=11" },
+		{ "over a menu, which stays", "ok knob:50 knob:60", "volbar=10 screen=hub" },
+		{ "no knob: none", "softvol knob:50 knob:75", "volbar=-1" },
+		{ "the debug link takes over: none", "knob:50 override:80", "volbar=-1" },
+		{ "and gives it back: none", "knob:50 override:80 knob:30", "volbar=-1" },
+		{ "a turn after it gave back", "knob:50 override:80 knob:30 knob:40", "volbar=6" },
+		{ "the debug link takes over while it shows: gone", "knob:50 knob:75 override:0", "volbar=-1 hides=Vol" },
+		{ "Home: in the hint row", "knob:50 knob:60", "volbar_at=bottom" },
+		{ "over Quick", "quick knob:50 knob:60", "volbar=10 screen=quick" },
+		{ "hints off: in the strip", "hints:off knob:50 knob:60", "volbar=10 volbar_at=top" },
+	};
+	char err[300];
+	for (int g = 0; g < sim_geom_count; g++) {
+		for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+			if (!vol_run(&sim_geoms[g], cases[i].script, cases[i].expect, err, sizeof err)) {
+				printf("FAIL volume bar %s [%s]: %s\n", cases[i].name, sim_geoms[g].name, err);
+				fails++;
+			}
+		}
+	}
+	// Where Quick's tiles fill the bottom row (160x128) the bar goes to the strip and cuts no tile
+	if (!vol_run(sim_geom_find("160x128"), "quick knob:50 knob:60", "volbar_at=top", err, sizeof err)) {
+		printf("FAIL volume bar Quick 160x128 in the strip: %s\n", err);
+		fails++;
+	}
+	// Property: random turns and pauses against a model of the rule
+	uint32_t seed = 0x354u;
+	const sim_geom_t *g = sim_geom_find("160x128");
+	for (int it = 0; it < 200; it++) {
+		char script[500] = "knob:50", expect[40], err2[300];
+		int level = 50, since = 1 << 20;	// ms since the last change
+		size_t n = strlen(script);
+		for (int k = 0; k < 6; k++) {
+			seed = seed * 1103515245u + 12345u;
+			int pct = (int)((seed >> 8) % 101u), wait = (int)((seed >> 20) % 5u) * 1000;
+			if ((seed >> 4) % 3u == 0)
+				pct = level;		// the same level again
+			int w = snprintf(script + n, sizeof script - n, " knob:%d wait:%d", pct, wait);
+			if (w < 0 || (size_t)w >= sizeof script - n) {
+				script[n] = 0;	// the buffer is full: drop the cut step, the steps so far make the case
+				break;
+			}
+			n += (size_t)w;
+			since = pct != level ? wait : since + wait;
+			level = pct;
+		}
+		int step = level == 0 ? 0 : (level * RADIO_VOLUME_MAX + 50) / 100;
+		step = level != 0 && step < 1 ? 1 : step;
+		snprintf(expect, sizeof expect, "volbar=%d", since < 3000 ? step : -1);
+		if (!vol_run(g, script, expect, err2, sizeof err2)) {
+			printf("FAIL volume bar property [%s]: %s\n", script, err2);
+			fails++;
+			break;
+		}
+	}
+}
+#endif
+
 // A page's title is centered on every display class. Where it shares the status strip (displays under UI_TALL_PX)
 // the battery gives way to it; on tall displays the strip above the title row keeps the battery
 static void title_row_checks(void)
@@ -1455,6 +1562,9 @@ int main(void)
 	heard_checks();
 	vfo_split_dmr_checks();
 	no_battery_checks();
+#if CONFIG_VOLUME_BAR
+	volume_bar_checks();
+#endif
 	title_row_checks();
 
 	crawl(sim_geom_find("160x120i5"), SIM_MAP_K, "K DM-1701");

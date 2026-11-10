@@ -35,7 +35,7 @@
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   timeout             the TX timeout cuts the transmission off while PTT is still held (shows the timeout deny)
-//   pttlocked:on|off    turns Settings > Privacy > PTT when locked on or off
+//   pttlocked:on|off    turns Settings > Key lock > PTT when locked on or off
 //   autolock:<s>        Settings > Keys > Auto lock: s seconds, 0 off
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
@@ -1448,10 +1448,14 @@ static const hal_hwopt_t sim_hwopts[] = {
 
 // A reference trim (Settings > Advanced > Freq trim) only with the "trim" token, the same way
 static bool ref_trim;
+// A volume knob the MCU reads (Settings > Key lock > Knob when locked) only with a "knob:<percent>" token
+static bool knob_radio;
+static bool vol_held;		// ui_svc_volume_hold: the radio ignores the volume knob
 uint32_t ui_svc_features(void)
 {
 	return 0xFFFFFFFFu & ~(soft_volume ? 0 : UI_FEAT_VOLUME) & ~(bcast_rx ? 0 : UI_FEAT_BCAST) &
-	       ~(ref_trim ? 0 : UI_FEAT_REF_TRIM);
+	       ~(ref_trim ? 0 : UI_FEAT_REF_TRIM) &
+	       ~(knob_radio ? 0 : UI_FEAT_VOLUME_KNOB);
 }
 // My radio's names (ui_svc_name_*): placeholders, as the user's own would be; a save writes at once
 static char sim_names[UI_NAME_COUNT][17];
@@ -1719,6 +1723,7 @@ void ui_svc_beep(uint8_t beep)
 void ui_svc_vibrate(uint8_t vibe) { sim_rec.vibes++; sim_rec.last_vibe = vibe; }
 static bool ptt_blocked;	// ui_svc_ptt_block: the input layer keeps PTT presses from the radio
 void ui_svc_ptt_block(bool blocked) { ptt_blocked = blocked; }
+void ui_svc_volume_hold(bool hold) { vol_held = hold; }
 void ui_svc_apply(uint8_t id, int32_t value)
 {
 	if (id == UI_SET_LONG_PRESS_MS)
@@ -2137,8 +2142,13 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	now_ms = 1000;
 	load_channel();
 	soft_volume = false;
+	view.volume = -1;	// no level passed on yet (power-up)
+	view.volume_src = RVOL_KNOB;
 	bcast_rx = false;
 	ref_trim = false;
+	knob_radio = false;
+	vol_held = false;
+	ui_svc_setting_set(UI_SET_KNOB_WHEN_LOCKED, 1);
 	board.hwopts = NULL;
 	board.hwopt_count = 0;
 	hwopt_val[0] = HWOPT_NONE;
@@ -2325,6 +2335,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "talk") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.dmr.target_id);
 	else if (strcmp(key, "vol") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_VOLUME));
 	else if (strcmp(key, "locked") == 0) snprintf(got, sizeof got, "%u", s.locked);
+	else if (strcmp(key, "volhold") == 0) snprintf(got, sizeof got, "%u", vol_held);
 	else if (strcmp(key, "query") == 0) snprintf(got, sizeof got, "%s", s.query);
 	else if (strcmp(key, "banner") == 0) { snprintf(got, sizeof got, "%s", s.banner[0] ? s.banner : "none"); prefix = true; }
 	else if (strcmp(key, "toast") == 0) { snprintf(got, sizeof got, "%s", s.toast[0] ? s.toast : "none"); prefix = true; }
@@ -2416,6 +2427,8 @@ static bool check(const char *kv, char *err, size_t len)
 			if (strstr(live[i].s, want) != NULL)
 				snprintf(got, sizeof got, "shown in \"%s\"", live[i].s);
 	}
+	else if (strcmp(key, "volbar_at") == 0) snprintf(got, sizeof got, "%s", s.volbar_top ? "top" : "bottom");
+	else if (strcmp(key, "volbar") == 0) snprintf(got, sizeof got, "%d", s.volbar);	// the knob's bar, -1 = none
 	else if (strcmp(key, "pttblock") == 0) snprintf(got, sizeof got, "%u", ptt_blocked);
 	else if (strcmp(key, "poweroff") == 0) snprintf(got, sizeof got, "%u", ui_app_power_off_due());
 	else if (strcmp(key, "wake") == 0) snprintf(got, sizeof got, "%u", ui_app_take_wake());	// the backlight asked for
@@ -2537,7 +2550,18 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
-	if (strcmp(t, "pttlocked") == 0 && arg != NULL) {	// Settings > Privacy > PTT when locked
+	if (strcmp(t, "hints") == 0 && arg != NULL) {	// Settings > Display > Hint row
+		bool on = strcmp(arg, "on") == 0;
+		if (!on && strcmp(arg, "off") != 0) {
+			snprintf(err, len, "hints: expected on or off, got %s", arg);
+			return false;
+		}
+		ui_svc_setting_set(UI_SET_HINTS, on);
+		ui_apply_setting(UI_SET_HINTS, on);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "pttlocked") == 0 && arg != NULL) {	// Settings > Key lock > PTT when locked
 		bool on = strcmp(arg, "on") == 0;
 		if (!on && strcmp(arg, "off") != 0) {
 			snprintf(err, len, "pttlocked: expected on or off, got %s", arg);
@@ -2874,6 +2898,24 @@ static bool run_token(char *t, char *err, size_t len)
 				return false;
 			}
 		}
+		return true;
+	}
+	if ((strcmp(t, "knob") == 0 || strcmp(t, "override") == 0) && arg != NULL) {
+		// The level the radio core passed on (radio_view_t.volume) and where from: the knob a radio's MCU reads,
+		// the debug link's override, or the stored step of a radio without a knob ("softvol"). "knob" also makes
+		// this a radio whose MCU reads the knob; while the keys hold the level (ui_svc_volume_hold) the core
+		// keeps it and only the knob's position moves
+		int8_t level = (int8_t)atoi(arg);
+		if (t[0] == 'k') {
+			knob_radio = true;
+			view.volume_knob = level;
+		}
+		if (t[0] != 'k' || !vol_held) {
+			view.volume = level;
+			view.volume_src = soft_volume ? RVOL_SOFT : t[0] == 'k' ? RVOL_KNOB : RVOL_OVERRIDE;
+		}
+		changed();
+		step();
 		return true;
 	}
 	if (strcmp(t, "softvol") == 0) {	// this radio has no volume knob: the board sets the speaker volume

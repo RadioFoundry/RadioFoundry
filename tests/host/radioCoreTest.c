@@ -2856,6 +2856,7 @@ void radio_req_monitor(bool down) { req(RREQ_MONITOR, down); }
 void radio_req_reload(void) { req(RREQ_RELOAD, 0); }
 void radio_req_volume(uint8_t step) { req(RREQ_VOLUME, step); }
 void radio_req_volume_override(int8_t step) { req(RREQ_VOLUME_OVERRIDE, step); }
+void radio_req_volume_hold(bool hold) { req(RREQ_VOLUME_HOLD, hold); }
 void radio_req_clear_temporary(void) { req(RREQ_CLEAR_TEMP, 0); }
 void radio_req_retune(void) { req(RREQ_RETUNE, 0); }
 // Not under test here: debuglink_view_radio.c, linked for the volume operation, refers to them
@@ -3982,6 +3983,24 @@ static void test_soft_volume(void)
 	CHECK(debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ RADIO_VOLUME_KNOB }, 1) == DL_ST_OK);
 	run(100);
 	CHECK(vol_last == 90 && sm.view.volume_src == RVOL_KNOB && sm.view.volume_override == -1);
+	// The knob lock (keys locked, Settings > Key lock > Knob when locked Off): the level stays while the knob moves, the view
+	// still tracks the knob, and letting go takes the knob's level at once
+	CHECK(radio_volume_knob() && (ui_svc_feat_radio() & UI_FEAT_VOLUME_KNOB) && sm.view.volume_knob == 90);
+	radio_req_volume_hold(true);
+	run(100);
+	vol_calls = 0;
+	vol_knob = 30;
+	run(100);
+	CHECK(vol_calls == 0 && vol_last == 90 && sm.view.volume_src == RVOL_HOLD && sm.view.volume_knob == 30);
+	radio_req_volume_hold(false);
+	run(100);
+	CHECK(vol_calls == 1 && vol_last == 30 && sm.view.volume_src == RVOL_KNOB);
+	// A 1 % wobble is not a move
+	vol_knob = 31;
+	run(100);
+	CHECK(sm.view.volume_knob == 30);
+	vol_knob = 90;
+	run(100);
 	CHECK(debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ 0 }, 1) == DL_ST_OK);
 	run(100);
 	CHECK(vol_last == 0);
@@ -4543,7 +4562,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(432);	// the settings records (page 1: 172 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
+	sim_flash_cut_after(436);	// the settings records (page 1: 176 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);
@@ -4907,6 +4926,24 @@ static void test_tx_limit_op(void)
 	CHECK(!l.on && tx_limit_allows(461475000u));
 }
 
+// The knob's percent as a step of the volume scale (the bar the UI shows when the knob turns): 0 only when silent,
+// the ends exact, every step round-trips, and never a step back as the knob goes up
+static void test_volume_step_of(void)
+{
+	static const struct { uint8_t pct, step; } ep[] = {
+		{ 0, 0 }, { 1, 1 }, { 3, 1 }, { 9, 1 }, { 10, 2 }, { 50, 8 }, { 96, 15 }, { 97, 16 }, { 100, 16 }, { 101, 16 },
+		{ 255, 16 },
+	};
+	for (size_t i = 0; i < sizeof ep / sizeof ep[0]; i++)
+		CHECK(radio_volume_step_of(ep[i].pct) == ep[i].step);
+	for (uint8_t s = 0; s <= RADIO_VOLUME_MAX; s++)
+		CHECK(radio_volume_step_of(radio_volume_percent(s)) == s);
+	for (int p = 1; p <= 255; p++) {
+		uint8_t a = radio_volume_step_of((uint8_t)(p - 1)), b = radio_volume_step_of((uint8_t)p);
+		CHECK(b >= a && b - a <= 1 && b >= 1 && b <= RADIO_VOLUME_MAX);
+	}
+}
+
 int main(void)
 {
 	test_tx_limit_op();
@@ -4973,6 +5010,7 @@ int main(void)
 #endif
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();
+	test_volume_step_of();
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }
