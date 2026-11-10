@@ -869,9 +869,12 @@ Now, `check_tx`'s figures (`tools/bench/dmr_bench.py`) pass on both channel kind
 Keyed 0.5 ms ahead, and late besides (the split's writes overran the PA's point: the PA came up 1.6 ms after the
 interrupt), the first ~5 symbols of every burst went out on a rising carrier. A repeater or hotspot then saw a few
 bad bits in every burst, on simplex too, and the slot timing was right (inbound +0.166 ms against the outbound + 30
-ms, the same as the other radio). The diagnostics' `up` line shows the PA's time after the interrupt (2.0-2.1 ms). Its grid error grows with the lead
-(about 0.02 ms at lead 9, 0.2 ms at 24, 0.4 ms at 26: an RF TX interrupt that early against the one before), not
-explained yet; the bursts' syncs stay on the 60 ms grid. The carrier
+ms, the same as the other radio). The diagnostics' `up` line shows the PA's time after the interrupt (2.0-2.1 ms). Its grid error grew with the lead
+(about 0.02 ms at lead 9, 0.2 ms at 24, 0.4 ms at 26) while the bursts' syncs stayed on the 60 ms grid: the modem
+raises the first burst's RF TX interrupt late (0.42 ms at lead 26: 27.71 ms after the slot tick before it, the later
+bursts 27.29 ms), so that burst's key-up and key-down came 0.42 ms late on every step and both bands, and the second
+burst's interrupt looked early against it. The first burst is now timed from the slot tick
+([modem-hrc7000.md](modem-hrc7000.md) 3.1a); the `up` line's `f` is by how much. The carrier
 still ramps down from the last symbol (the shared model); the decode is clean with it. The switch moved earlier only
 on a split channel, where no inbound burst is heard on the TX frequency. On a simplex channel it is at 1.8 ms, after
 the inbound burst before ours (it ends about 2.3-2.5 ms before our first symbol), as an SFR needs; SFR on this radio

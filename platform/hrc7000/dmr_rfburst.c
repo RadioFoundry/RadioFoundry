@@ -18,6 +18,7 @@
 // (6.3 ms) + 0.85 ms + 27.5 ms after the RF TX interrupt, and an abort that comes in it is only noted (rf_wait)
 #define DISARM_WAIT_MS		40u
 #define FRAME_US		60000u		// one RF TX interrupt per TDMA frame while transmitting
+#define SLOT_US			30000u		// the slot engine's tick
 #define GRID_SLACK_US		30u		// an RF TX interrupt later than this off the frame grid was held up
 
 #define EV_ON		0x01u	// RF TX interrupt: the burst's TX on
@@ -34,8 +35,11 @@ static volatile bool rf_tx;		// the RF is in its TX state (written by the task)
 static volatile bool rf_busy;		// the task is running a sequence
 static volatile bool cont;		// the keyed outbound is continuous (a split hotspot's base station)
 static volatile uint32_t t_on;		// hrc_micros() at the burst's RF TX interrupt
+static volatile uint32_t t_tick_on;	// the slot engine's tick before it (hrc_micros())
 static uint32_t pending;		// events that came while the task waited for its timer
 static uint32_t t_on_prev;		// the burst before's t_on, for the grid check (0: none since the arm)
+static uint32_t tick_ref_us;		// an on-time RF TX interrupt's time after its tick, at tick_ref_lead (0: none yet)
+static uint8_t tick_ref_lead;
 static hrc_rfburst_stats_t stats;
 
 static void rf_post(uint32_t ev)
@@ -54,12 +58,13 @@ static void rf_post(uint32_t ev)
 
 // From the modem interrupts, per burst (ISR, or task level for a halt): the RF TX interrupt's time and a wake for the
 // TX on, or a wake for the TX off. Disarmed, nothing is keyed and there is nothing to switch
-void hrc_rfburst_switch(bool tx, bool continuous)
+void hrc_rfburst_switch(bool tx, bool continuous, uint32_t tick_us)
 {
 	if (tx) {
 		if (keyed) {
 			cont = continuous;
 			t_on = hrc_micros();
+			t_tick_on = tick_us;
 			rf_post(EV_ON);
 		}
 	} else {
@@ -139,11 +144,22 @@ static void note_burst(uint32_t t0, uint32_t wake, uint32_t up)
 // The burst's RF TX interrupt time. The modem's interrupts are masked while the slot engine holds its lock, so the
 // interrupt can come a few hundred us late, and the key-up and the hold to the burst's end with it. The bursts keep
 // the frame grid (on the SDR bench: 60 ms, sd 25 us), so a stamp later than the grid's point by more than the slack is
-// taken back to it. The first burst after the arm has no grid yet
-static uint32_t on_time(uint32_t stamp)
+// taken back to it. The first burst after the arm has no grid yet: it is timed from the slot engine's tick instead,
+// as the modem raises its interrupt late (dmr_rfburst_timing.h), with what the on-grid bursts taught at this lead
+static uint32_t on_time(uint32_t stamp, uint32_t tick)
 {
+	uint8_t lead = lead_steps();
+	if (lead != tick_ref_lead) {
+		tick_ref_lead = lead;
+		tick_ref_us = 0;
+	}
+	if (t_on_prev == 0) {
+		uint32_t t = hrc_rfburst_first_on(stamp, tick, tick_ref_us, GRID_SLACK_US);
+		stats.first_retimed_us = stamp - t;
+		return t;
+	}
 	uint32_t d = stamp - t_on_prev;
-	if (t_on_prev == 0 || d <= FRAME_US / 2 || d >= FRAME_US * 3 / 2) {
+	if (d <= FRAME_US / 2 || d >= FRAME_US * 3 / 2) {
 		return stamp;
 	}
 	uint32_t off = d > FRAME_US ? d - FRAME_US : FRAME_US - d;
@@ -153,6 +169,9 @@ static uint32_t on_time(uint32_t stamp)
 	if (d > FRAME_US + GRID_SLACK_US) {
 		stats.regridded++;
 		return t_on_prev + FRAME_US;
+	}
+	if (off <= GRID_SLACK_US) {
+		tick_ref_us = hrc_rfburst_tick_ref(tick_ref_us, stamp, tick, SLOT_US);
 	}
 	return stamp;
 }
@@ -168,7 +187,7 @@ static void rf_task_fn(void *arg)
 		}
 		rf_busy = true;
 		if ((v & EV_ON) != 0 && keyed && !rf_tx) {
-			uint32_t t0 = on_time(t_on);
+			uint32_t t0 = on_time(t_on, t_tick_on);
 			t_on = t0;
 			uint32_t wake = hrc_micros() - t0;
 			board->on(rf_at, rf_wait);
@@ -217,6 +236,7 @@ void hrc_rfburst_arm(void)
 	hrc7000_wr(modem, C7_INTERP_CLEAR, C7_INT_RF_RX);
 	t_on_prev = 0;
 	stats.wake_max_us = stats.up_min_us = stats.up_max_us = stats.grid_max_us = stats.regridded = 0;
+	stats.first_retimed_us = 0;
 	keyed = true;
 	hrc_irq_enable(IRQ_MODEM_RF_RX, true);
 }

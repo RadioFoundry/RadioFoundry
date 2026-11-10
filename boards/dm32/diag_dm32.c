@@ -188,7 +188,8 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 		break;
 	}
 	case 13: {	// The TX-on timing since the key-up, in us: the RF task's wake (largest), the PA up after the RF TX
-			// interrupt (smallest..largest), an interrupt off its 60 ms grid (largest / count retimed)
+			// interrupt (smallest..largest), an interrupt off its 60 ms grid (largest / count retimed), how much
+			// earlier the first burst was timed than its interrupt
 		hrc_rfburst_stats_t t;
 		hrc_rfburst_stats(&t);
 		put(&o, "up w");
@@ -201,6 +202,8 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, t.grid_max_us);
 		put(&o, "/");
 		put_u(&o, t.regridded);
+		put(&o, " f");
+		put_u(&o, t.first_retimed_us);
 		break;
 	}
 #endif

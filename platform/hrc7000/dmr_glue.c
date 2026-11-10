@@ -101,7 +101,7 @@ static void rf(void *ctx, bool tx)
 {
 	(void)ctx;
 	if (brd->burst != NULL) {
-		hrc_rfburst_switch(tx, outbound_continuous());
+		hrc_rfburst_switch(tx, outbound_continuous(), eng.t_tick);
 	} else if (brd->rf_switch != NULL) {
 		brd->rf_switch(tx);
 	}
