@@ -28,6 +28,7 @@
 #include "rf/bk4819/bk4819_superhet.h"
 #include "rf/at1141/at1141_superhet.h"
 #include "modem/hrc7000/hrc7000.h"
+#include "audio_pcm.h"
 #include "audio/afsk_tonegen/afsk_tonegen.h"
 #if CONFIG_DMR && GD88_TX && CONFIG_SFR
 #include "rx2/rx2_dmr.h"
@@ -60,19 +61,13 @@
 #endif
 #define GD88_AFSK_DEV_ZERO	0x2FAu
 #define GD88_AFSK_DEV_MAX	0x4D0u
-// Speaker volume steps 1..RADIO_VOLUME_MAX -> the AF DAC gain nibble (register 0x48 bits 3:0), step 1 = 0 up to
-// GD88_VOL_GAIN_TOP. Step 0 is mute
-#ifndef GD88_VOL_GAIN_TOP
-#define GD88_VOL_GAIN_TOP	15u
-#endif
-#define GD88_VOL_GAIN_DEFAULT	3u
-// What the modem plays (beeps, DMR voice) leaves its line out, not the main chip's AF, so the knob sets the line out's
-// gain too: 3 dB a step, 0 dB at three quarters and GD88_PCM_VOL_TOP_DB at the top. Decoded DMR voice is close to full
-// scale: measured at the speaker, its level stops following the gain above about +6 dB and the sound distorts from
-// 0 dB up, so a gain that suits a quiet beep clips voice
-#define GD88_PCM_VOL_DEF_STEP	(RADIO_VOLUME_MAX * 3u / 4u)
-#ifndef GD88_PCM_VOL_TOP_DB
-#define GD88_PCM_VOL_TOP_DB	3
+// Speaker volume steps 1..RADIO_VOLUME_MAX as one level in dB for both paths: 3 dB a step, GD88_VOL_TOP_DB at the
+// top, so step 1 is 45 dB below it. Step 0 is mute. FM: the main chip's AF level (bk4819_set_af_level_db). Beeps and
+// DMR voice leave the modem's line out: its DAC gain down to the DAC's floor, then a gain on the samples. The speaker
+// amplifier after them is loud: 24 dB down was still loud in a room. Decoded DMR voice is close to full scale:
+// measured at the speaker, its level stops following the gain above about +6 dB and the sound distorts from 0 dB up
+#ifndef GD88_VOL_TOP_DB
+#define GD88_VOL_TOP_DB		0
 #endif
 #define TX_RX_OFF_US		50u		// RX paths off, then this long before the transmitter is tuned
 #define TX_SETTLE_MS		3u		// the chip's VCO calibration, before the PA is selected
@@ -101,7 +96,7 @@ static bool asleep;		// rx_sleep(true): the receiver is off until rx_sleep(false
 static bool transmitting;
 static bool audio_open;		// what audio() was last asked, restored after a transmission
 static bool vol_muted;		// volume step 0: the chip output stays off whatever audio() asks
-static uint8_t vol_gain = GD88_VOL_GAIN_DEFAULT;
+static int8_t vol_db;		// the level of the current step (vol_level_db)
 static uint8_t vol_pct = 50;
 
 static unsigned vol_step(uint8_t percent)
@@ -110,9 +105,9 @@ static unsigned vol_step(uint8_t percent)
 	return step > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : step;
 }
 
-static uint8_t pcm_gain(unsigned step)
+static int vol_level_db(unsigned step)
 {
-	return hrc7000_dac_code(hrc7000_volume_db(step, GD88_PCM_VOL_DEF_STEP, RADIO_VOLUME_MAX, GD88_PCM_VOL_TOP_DB));
+	return hrc7000_volume_db(step, RADIO_VOLUME_MAX, RADIO_VOLUME_MAX, 0) + GD88_VOL_TOP_DB;
 }
 static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_gd88.c)
 #if GD88_TX || GD88_DMR_TX
@@ -245,7 +240,9 @@ static void init(void)
 
 	// The modem block powered as the DMR glue does, so the reference trim reaches the TCXO in FM builds too
 	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
-	modem.dac_gain = pcm_gain(vol_step(vol_pct));	// the power-on init writes it
+	vol_db = (int8_t)vol_level_db(vol_step(vol_pct));
+	modem.dac_gain = hrc7000_dac_code(vol_db);	// the power-on init writes it
+	hrc_audio_pcm_spk_gain(hrc7000_sample_gain_q15(vol_db));
 	hrc7000_power_on_init(&modem, gd88_cal_tx_center(), GD88_MIC_GAIN_DB);
 	write_bias(BIAS_DEFAULT_HZ);
 
@@ -812,7 +809,7 @@ static void volume_apply(void)
 	if (!supported || mode == RADIO_MODE_DMR || transmitting) {
 		return;
 	}
-	bk4819_set_af_gain(&rf_main, vol_gain);
+	bk4819_set_af_level_db(&rf_main, vol_db);
 	bk4819_set_af(&rf_main, audio_open && !vol_muted ? BK4819_AF_FM : BK4819_AF_MUTE);
 }
 
@@ -826,10 +823,11 @@ static void volume(uint8_t percent)
 	vol_pct = percent;
 	unsigned step = vol_step(percent);
 	vol_muted = step == 0;
-	vol_gain = step == 0 ? 0 : (uint8_t)(((step - 1u) * GD88_VOL_GAIN_TOP + (RADIO_VOLUME_MAX - 1u) / 2u) / (RADIO_VOLUME_MAX - 1u));
+	vol_db = (int8_t)vol_level_db(step);
 	if (modem.regs != NULL) {
-		hrc7000_set_dac_gain(&modem, pcm_gain(step));	// the init sets it from vol_pct before then
+		hrc7000_set_dac_gain(&modem, hrc7000_dac_code(vol_db));	// the init sets it from vol_pct before then
 	}
+	hrc_audio_pcm_spk_gain(hrc7000_sample_gain_q15(vol_db));
 	volume_apply();
 }
 

@@ -783,9 +783,16 @@ static void test_dac_gain(void)
 	CHECK(hrc7000_dac_code(-40) == 31 && hrc7000_dac_code(1) == 63 && hrc7000_dac_code(16) == 48);
 	CHECK(hrc7000_dac_code(32) == 32 && hrc7000_dac_code(50) == 32);
 	CHECK(hrc7000_volume_db(8, 8, 16, 12) == 0 && hrc7000_volume_db(7, 8, 16, 12) == -3);
-	CHECK(hrc7000_volume_db(1, 8, 16, 12) == -21 && hrc7000_volume_db(0, 8, 16, 12) == HRC7000_DAC_MIN_DB);
+	CHECK(hrc7000_volume_db(1, 8, 16, 12) == -21 && hrc7000_volume_db(0, 8, 16, 12) == HRC7000_VOL_MIN_DB);
 	CHECK(hrc7000_volume_db(12, 8, 16, 12) == 6 && hrc7000_volume_db(16, 8, 16, 12) == 12);
-	CHECK(hrc7000_volume_db(40, 8, 16, 12) == 12 && hrc7000_volume_db(1, 16, 16, 0) == HRC7000_DAC_MIN_DB);
+	CHECK(hrc7000_volume_db(40, 8, 16, 12) == 12 && hrc7000_volume_db(1, 16, 16, 0) == -45);
+	// Below the DAC's floor the samples take the rest: 1 at or above it, half 6 dB below, a quarter 12 dB below
+	CHECK(hrc7000_sample_gain_q15(0) == 32768u && hrc7000_sample_gain_q15(HRC7000_DAC_MIN_DB) == 32768u);
+	CHECK(hrc7000_sample_gain_q15(HRC7000_DAC_MIN_DB - 6) == 16384u && hrc7000_sample_gain_q15(HRC7000_DAC_MIN_DB - 12) == 8192u);
+	CHECK(hrc7000_sample_gain_q15(HRC7000_DAC_MIN_DB - 1) == 29205u && hrc7000_sample_gain_q15(-200) > 0u);
+	for (int db = HRC7000_DAC_MIN_DB; db > HRC7000_VOL_MIN_DB; db--) {
+		CHECK(hrc7000_sample_gain_q15(db - 1) < hrc7000_sample_gain_q15(db));	// every dB is quieter
+	}
 	for (unsigned s = 2; s <= 16; s++) {
 		CHECK(hrc7000_volume_db(s, 8, 16, 12) > hrc7000_volume_db(s - 1u, 8, 16, 12));	// every step is louder
 	}

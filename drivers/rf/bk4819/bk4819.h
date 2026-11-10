@@ -156,6 +156,10 @@ void bk4819_set_af(bk4819_t *dev, uint16_t af);
 void bk4819_gpio(bk4819_t *dev, uint8_t pin, bool high);
 // AF DAC gain 0..15 (the received audio level)
 void bk4819_set_af_gain(bk4819_t *dev, uint8_t gain);
+// The received audio level in dB (0 = the AF DAC at the top), down to BK4819_AF_MIN_DB: the AF DAC gain (about 2 dB a
+// step, 30 dB) and below its range AF Rx Gain1 (0x48 bits 11:10, 0 / -6 / -12 / -18 dB). AF Rx Gain2 stays as set
+#define BK4819_AF_MIN_DB	(-48)
+void bk4819_set_af_level_db(bk4819_t *dev, int db);
 // DMR receive (hardware-db25d.md 4.5): the stock firmware's digital mode set for the main chip, written when it enters a
 // digital channel: 0x2A, 0x51 = 0, AFC off, 0x52, 0x47, 0x7E, 0x43, 0x40 = 0, 0x27, 0x2B, 0x48, then the AF output on
 // with the digital bit (0x47 = 0x6143). The modem samples the chip's AF output, so the output stays on in DMR. Idle the
