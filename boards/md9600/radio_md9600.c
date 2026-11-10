@@ -259,12 +259,15 @@ static bool key_timer_ready;
 // transmitter supply MD9600_BURST_T5_US ahead of the loop, in time order from the same timer. The RF TX interrupt
 // comes KEYUP_INT_AHEAD_US before the burst's first symbol (SDR bench: the loop closed 1.2 ms after the interrupt
 // put the carrier up 1.35 ms before it). Without a boost (boost_us 0) the key-up is the stepped ramp, its loop closed
-// at pa_us
+// at pa_us. [VHF, UHF]: neither loop has a knee (every level up 0.5-0.75 ms after its point on a conducted path),
+// so no boost, only the loop's point: each level up 0.18-0.34 ms before the first symbol (hardware-md9600.md 19.8)
 #define KEYUP_INT_AHEAD_US	2550u
 #define KEYUP_MAX_AHEAD_US	(KEYUP_INT_AHEAD_US - MD9600_BURST_T5_US - 50u)	// the supply's point after the interrupt
-static const pa_keyup_cfg_t keyup_cfg = {
-	.dead = 0, .knee = 0, .slope_us = 0, .boost_pct = 100, .hold_pct = 100,
-	.boost_us = 0, .pa_us = 1350, .drive_us = 0,
+static const pa_keyup_cfg_t keyup_cfg[2] = {
+	[MD9600_VHF] = { .dead = 0, .knee = 0, .slope_us = 0, .boost_pct = 100, .hold_pct = 100,
+			 .boost_us = 0, .pa_us = 936, .drive_us = 0 },
+	[MD9600_UHF] = { .dead = 0, .knee = 0, .slope_us = 0, .boost_pct = 100, .hold_pct = 100,
+			 .boost_us = 0, .pa_us = 850, .drive_us = 0 },
 };
 enum { KEY_PT_SUPPLY = PA_KEYUP_PT_BOARD };
 static pa_keyup_point_t key_pt[PA_KEYUP_POINTS_MAX];	// the transmission's, set before it is armed
@@ -280,11 +283,14 @@ static void keyup_plan(uint32_t hz, uint8_t power)
 {
 	uint16_t d = 0, top = 0;
 	uint8_t band = MD9600_UHF;
-	pa_keyup_cfg_t c = keyup_cfg;	// the plan and its points from one set of constants
 	key_ns = 0;
 	key_delay_us = MD9600_BURST_KEY_DELAY_US;
-	if (pa_keyup_cfg() == NULL || !md9600_band_of(hz, &band) || !op_apc(NULL, hz, power, &d) ||
-	    !md9600_cal_apc(hz, MD9600_POWER_LEVELS - 1u, &top)) {
+	if (pa_keyup_cfg() == NULL || !md9600_band_of(hz, &band)) {
+		return;
+	}
+	pa_keyup_select(&keyup_cfg[band]);
+	pa_keyup_cfg_t c = keyup_cfg[band];	// the plan and its points from one set of constants
+	if (!op_apc(NULL, hz, power, &d) || !md9600_cal_apc(hz, MD9600_POWER_LEVELS - 1u, &top)) {
 		return;
 	}
 	ku_floor = md9600_cal_apc_floor(band);
@@ -568,7 +574,7 @@ static void init(void)
 	md9600_rf_pa_safe(&rf);
 	md9600_c6000_init();
 #if CONFIG_MD9600_DMR_TX
-	pa_keyup_init(&keyup_cfg, KEYUP_MAX_AHEAD_US, MD9600_APC_MAX);
+	pa_keyup_init(&keyup_cfg[MD9600_UHF], KEYUP_MAX_AHEAD_US, MD9600_APC_MAX);
 #endif
 }
 
