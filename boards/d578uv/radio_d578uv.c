@@ -915,22 +915,11 @@ static void pa_off(void)
 // The guard: true from the key-up until tx_off(). The handlers read it before switching anything on, so once it is
 // false (tx_off, board_rf_safe) a late edge or timer can only switch the PA off
 static volatile bool burst_keyed;
-// The key-up (radio/pa_keyup.h, docs/spec/pa-keyup.md): with boost_us 0 the PA is keyed at the step's drive PA_ON_US
-// before the first symbol, the timing measured on the radio before the shared rule (hardware-d578uv.md 5.1). The
-// boost's constants are a start for tuning it on the SDR bench (pa-keyup.md 5) with RADIO op 37: dead at the drive
-// where the wattmeter's FM output starts (160-256 counts by band, hardware-d578uv.md 5.8), the rest the first tuned radio's
-#define KEYUP_MAX_AHEAD_US	3000u	// the earliest point: well after PD0's rise, 7 ms before the first symbol
-static const pa_keyup_cfg_t keyup_cfg = {
-	.dead = 190, .knee = 1450, .slope_us = 600, .boost_pct = 120, .hold_pct = 80,
-	.boost_us = 0, .pa_us = PA_ON_US, .drive_us = 0,
-};
-_Static_assert(PA_ON_US <= KEYUP_MAX_AHEAD_US && KEYUP_MAX_AHEAD_US < PA_FIRST_SYMBOL_US,
-	       "the key-up's points must come after PD0's rise (pa_keyup_valid)");
-static pa_gate_plan_t burst_plan;	// the transmission's steps, set before arming
+static volatile uint16_t burst_dac;	// the DAC word while a burst goes out
 static volatile uint32_t burst_count;	// rising edges while keyed (diag_d578uv.c)
 static volatile uint32_t burst_edges;	// level changes of the burst line seen, never reset (the modem's burst_edges)
 static bool burst_level;
-static pa_gate_state_t burst_gate;	// the handlers' (one priority, so neither interrupts the other)
+static pa_phase_t burst_phase;		// the handlers' (one priority, so neither interrupts the other)
 static uint32_t burst_refused;		// key-ups refused with the burst line high (pa_gate_can_key)
 // The receiver's way back after a DMR transmission: hal_micros() at the last burst line fall while keyed (0 none
 // yet), and from it to tx_off() and to the end of its receive set-up. A reply can come 30 ms after the last burst
@@ -954,16 +943,12 @@ static void burst_timer_start(uint16_t us)
 }
 
 // From the handlers and, with them masked, the task: plain register writes
-static void burst_apply(pa_gate_t a, const pa_keyup_step_t *k)
+static void burst_apply(pa_gate_t a)
 {
 	switch (a) {
-	case PA_GATE_STEP:
-		if (k->set_drive) {
-			mcu_dac0_put(k->drive);
-		}
-		if (k->pa_on) {
-			mcu_pin_write(PIN_TX_ENABLE, true);
-		}
+	case PA_GATE_ON:
+		mcu_dac0_put(burst_dac);
+		mcu_pin_write(PIN_TX_ENABLE, true);
 		break;
 	case PA_GATE_DOWN:
 		mcu_dac0_put(0);
@@ -985,22 +970,22 @@ static void burst_step(pa_step_t st)
 	} else if (st.act != PA_GATE_OFF) {
 		burst_timer_stop();
 	}
-	burst_apply(st.act, &st.step);
+	burst_apply(st.act);
 }
 
 void MCU_EXTI0_HANDLER(void)
 {
 	mcu_exti_clear(BURST_LINE);
 	bool burst = mcu_pin_read(PIN_DMR_TX_BURST);
-	pa_phase_t was = burst_gate.ph;
+	pa_phase_t was = burst_phase;
 
 	if (burst != burst_level) {
 		burst_level = burst;
 		burst_edges++;
 	}
-	pa_step_t st = pa_gate_edge(&burst_gate, &burst_plan, burst_keyed, burst);
+	pa_step_t st = pa_gate_edge(&burst_phase, burst_keyed, burst);
 
-	if (burst_gate.ph == PA_RISING && was != PA_RISING) {
+	if (burst_phase == PA_RISING && was != PA_RISING) {
 		burst_count++;
 	}
 	if (!burst && burst_keyed) {
@@ -1016,7 +1001,7 @@ void MCU_EXTI0_HANDLER(void)
 void MCU_TIM2_HANDLER(void)
 {
 	MCU_TIM_SR(BURST_TIMER) = 0;
-	burst_step(pa_gate_timer(&burst_gate, &burst_plan, burst_keyed));
+	burst_step(pa_gate_timer(&burst_phase, burst_keyed));
 }
 
 // PD0 an input with pull-up (the stock set-up) on EXTI 0, both edges, its interrupt off until a key-up; TIM2 a
@@ -1042,16 +1027,13 @@ static void burst_init(void)
 	NVIC_EnableIRQ(MCU_TIM2_IRQn);
 }
 
-// The key-up's steps from the cal table at hz (pa_keyup_plan), then the burst line on. d: the step's DAC word
-static void burst_arm(uint32_t hz, uint16_t d)
+static void burst_arm(uint16_t dac_word)
 {
-	pa_keyup_cfg_t cfg = keyup_cfg;		// pa_keyup_plan leaves it when no key-up is set up (no boost then)
-	pa_keyup_t k = pa_keyup_plan(d, pa_keyup_top(tx_drive_level, hz, board.power_count), &cfg);
-	pa_gate_plan(&burst_plan, &cfg, &k);	// the plan and its points from one set of constants
+	burst_dac = dac_word;
 	burst_fall_us = 0;
 	mcu_exti_clear(BURST_LINE);
 	__disable_irq();
-	burst_gate = (pa_gate_state_t){ .ph = PA_IDLE };
+	burst_phase = PA_IDLE;
 	burst_level = false;	// low: pa_gate_can_key() checked it
 	burst_keyed = true;
 	mcu_exti_enable(BURST_LINE);	// an edge from here on is pending: it follows
@@ -1065,7 +1047,7 @@ static void burst_disarm(void)
 	__DSB();
 	mcu_exti_disable(BURST_LINE);
 	mcu_exti_clear(BURST_LINE);
-	burst_apply(PA_GATE_OFF, NULL);
+	burst_apply(PA_GATE_OFF);
 }
 
 uint32_t d578uv_burst_edges(void)
@@ -1714,7 +1696,6 @@ static void init(void)
 	cal_load();
 #if CONFIG_DMR
 	burst_init();
-	pa_keyup_init(&keyup_cfg, KEYUP_MAX_AHEAD_US, 0xFFFu);
 #endif
 #if KT_USED
 	kt_attach();
@@ -1793,7 +1774,7 @@ static bool dmr_tx(uint32_t hz, uint16_t dac)
 	band_bits(hz);
 	chip0_gpio(GPIO_TX_UHF | GPIO_FAN | GPIO_MIC_MUTE, (hz > UHF_FROM_HZ ? GPIO_TX_UHF : 0) | GPIO_FAN);
 	hal_delay_ms(10);
-	burst_arm(hz, dac);
+	burst_arm(dac);
 	return true;
 }
 #endif
