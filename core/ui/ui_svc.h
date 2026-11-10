@@ -62,6 +62,8 @@ void ui_svc_focus_target(uint32_t id, bool private_call);
 // --- On-the-fly channel changes (temporary, P7) ---
 bool ui_svc_dmr_timeslot(uint8_t ts);
 bool ui_svc_dmr_color_code(uint8_t cc);
+// The VFO's SFR role (CONFIG_SFR, sfr.md 4): a as a channel's SFR byte A; false: not in this build
+bool ui_svc_vfo_sfr(uint8_t a);
 bool ui_svc_mode(uint8_t mode);			// radio_mode_t: the VFO's mode (a channel's goes through Copy to VFO)
 // Copy to VFO: the channel on view into the VFO, which opens (CONFIG_VFO). Returns a radio_vfo_copy_t: VFO_COPY_OK
 // when the request went to the radio core, else why nothing changed

@@ -2033,6 +2033,22 @@ msgid "Single-Freq Repeater"
 msgstr "Ripetitore freq. unica"
 
 #: core/ui/ui_menus.c
+msgid "User"
+msgstr "Utente"
+
+#: core/ui/ui_menus.c
+msgid "User (ERDM)"
+msgstr "Utente (ERDM)"
+
+#: core/ui/ui_menus.c
+msgid "Repeater"
+msgstr "Ripetitore"
+
+#: core/ui/ui_menus.c
+msgid "Repeater (ERDM style)"
+msgstr "Ripetitore (stile ERDM)"
+
+#: core/ui/ui_menus.c
 msgid "Supply"
 msgstr "Alimentaz."
 
@@ -2101,16 +2117,16 @@ msgid "USB network: not in this build"
 msgstr "Rete USB: non in questa build"
 
 #: core/ui/ui_menus.c
+msgid "The VFO has no SFR role. Pick one below."
+msgstr "Il VFO non ha ruolo SFR. Scegline uno qui sotto."
+
+#: core/ui/ui_menus.c
+msgid "Off here: the role needs DMR and one frequency (no split)."
+msgstr "Inattivo qui: il ruolo richiede DMR e una sola frequenza (senza TX separata)."
+
+#: core/ui/ui_menus.c
 msgid "This channel has no SFR role. Set Repeater or User in the Codeplug Editor, on a channel with one frequency."
 msgstr "Questo canale non ha ruolo SFR. Imposta Ripetitore o Utente nel Codeplug Editor, su un canale con una sola frequenza."
-
-#: core/ui/ui_menus.c
-msgid "Repeater (ERDM style)"
-msgstr "Ripetitore (stile ERDM)"
-
-#: core/ui/ui_menus.c
-msgid "Repeater"
-msgstr "Ripetitore"
 
 #: core/ui/ui_menus.c
 msgid "In TS"
@@ -2165,6 +2181,14 @@ msgid "Single-freq repeater: not in this build"
 msgstr "Ripetitore freq. unica: non in questa build"
 
 #: core/ui/ui_menus.c
+msgid "Role"
+msgstr "Ruolo"
+
+#: core/ui/ui_menus.c
+msgid "Inbound slot"
+msgstr "TS in ingresso"
+
+#: core/ui/ui_menus.c
 msgid "Switch USB to serial"
 msgstr "Passa USB a seriale"
 
@@ -2175,6 +2199,10 @@ msgstr "Passa USB a rete"
 #: core/ui/ui_menus.c
 msgid "Stop hotspot"
 msgstr "Ferma hotspot"
+
+#: core/ui/ui_menus.c
+msgid "Pick a role first"
+msgstr "Scegli prima un ruolo"
 
 #: core/ui/ui_menus.c
 msgid "No USB network on this radio"
