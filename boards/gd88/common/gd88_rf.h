@@ -51,6 +51,7 @@ typedef struct {
 	uint16_t pa_low, pa_high;	// the PA drive a transmission there would use (0: TX refused)
 	bool transmitting;
 	bool supported;			// both chips answered as BK4819
+	bool audio_open, pcm_on;	// the speaker's requests: FM receive audio, the modem's PCM (speaker())
 } gd88_radio_diag_t;
 void gd88_radio_diag(gd88_radio_diag_t *d);
 // The squelch now (status() and the receiver's own squelch on B): the main chip's RSSI against the page's threshold
@@ -104,6 +105,7 @@ void gd88_dmr_leave(void);
 void gd88_dmr_lo_side(bool high);
 void gd88_speaker_pcm(bool on);		// radio_gd88.c: the speaker on while the modem plays CPU samples
 uint32_t gd88_dmr_phase(void);		// HR_C7000 PHASE_OUT: b29:16 / b13:0, the largest / smallest AF phase
+bool gd88_dmr_ring_play(void);		// the modem plays its prompt FIFO (AUDIO_CONTROL ring play)
 
 #if GD88_DMR_TX
 void gd88_dmr_tx_arm(void);	// RF_MODE's TX polarity, then hrc_rfburst_arm

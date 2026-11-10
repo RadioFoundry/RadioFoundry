@@ -57,11 +57,10 @@ static void speaker_pcm(bool on)
 	}
 	last = (int8_t)on;
 	uint32_t s = hrc_irq_save();	// the AUDIO_CONTROL shadow is shared with the audio task
-	if (on) {
-		hrc7000_audio_bits(modem, C7_AUDIO_RING_PLAY, C7_AUDIO_FM_PLAY);
-	} else {
-		hrc7000_audio_bits(modem, 0, C7_AUDIO_RING_PLAY | C7_AUDIO_FM_PLAY);
-	}
+	hrc7000_audio_bits(modem, 0, C7_AUDIO_FM_PLAY);
+	// Held off while the DMR engine transmits (audio_pcm.c). Set here directly, the gate's reopening applied its own
+	// (never set) state: ring play off with the amplifier on, a hum after a DMR over
+	hrc_audio_pcm_ring(modem, on);
 	hrc_irq_restore(s);
 	gd88_speaker_pcm(on);	// the amplifier and its source: the squelch path never opens for DMR voice
 }
@@ -105,6 +104,11 @@ void gd88_dmr_leave(void)
 uint32_t gd88_dmr_phase(void)
 {
 	return hrc7000_rd(modem, C7_PHASE_OUT);
+}
+
+bool gd88_dmr_ring_play(void)
+{
+	return modem != NULL && (modem->audio_ctl & C7_AUDIO_RING_PLAY) != 0;
 }
 
 #if GD88_DMR_TX

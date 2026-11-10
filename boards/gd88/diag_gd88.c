@@ -327,6 +327,19 @@ bool gd88_diag_line(uint8_t i, char *buf, uint8_t len)
 			put_i(&o, (int32_t)(ph << 18) >> 18);		// b13:0
 			break;
 		}
+		if (i == DIAG_DMR_FIRST + HRC_DMR_DIAG_LINES + 3) {
+			// The speaker path: the amplifier, its requests (FM receive audio open, the modem's PCM) and the modem's
+			// ring play. The amplifier on with neither request, or for the PCM with ring play off, sounds as a hum
+			put(&o, "spk a");
+			put_u(&o, gd88_path_speaker_wanted());
+			put(&o, " o");
+			put_u(&o, d.audio_open);
+			put(&o, " p");
+			put_u(&o, d.pcm_on);
+			put(&o, " r");
+			put_u(&o, gd88_dmr_ring_play());
+			break;
+		}
 #if GD88_TX
 		if (i == DIAG_DMR_FIRST + HRC_DMR_DIAG_LINES + 1) {
 			// DMR TX bursts: TX-on and TX-off sequences run, RF RX interrupts seen, what woke the last TX-off

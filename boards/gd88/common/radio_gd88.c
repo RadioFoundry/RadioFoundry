@@ -884,6 +884,8 @@ void gd88_radio_diag(gd88_radio_diag_t *d)
 	d->hz = rx_hz;
 	d->transmitting = transmitting || dmr_armed;
 	d->supported = supported;
+	d->audio_open = audio_open;
+	d->pcm_on = pcm_on;
 	gd88_tx_plan_t plan;
 	d->pa_low = GD88_TX && have_rx && gd88_cal_tx_plan(rx_hz, false, GD88_TX_DRIVE_PCT, &plan) ? plan.pa : 0;
 	d->pa_high = GD88_TX && have_rx && gd88_cal_tx_plan(rx_hz, true, GD88_TX_DRIVE_PCT, &plan) ? plan.pa : 0;
