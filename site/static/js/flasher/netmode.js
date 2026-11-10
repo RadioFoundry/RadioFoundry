@@ -6,14 +6,16 @@
 //   - WebUSB: a vendor request on endpoint 0 (drivers/usb/usb_device.h USB_REQ_SERIAL_MODE). Works where the browser
 //     can open a device whose interfaces the OS network driver holds (Android, macOS), not on Windows (no WinUSB
 //     driver on it) or on Linux without a udev rule for the device.
-//   - a new tab on the radio's own page, http://rfoundry.local/api/usb?mode=serial (docs/spec/tcp-services.md 5): a
-//     navigation is allowed where a fetch is not. The tab closes itself. Needs the link up and mDNS on the host.
+//   - a new tab on the radio's own page, SERIAL_MODE_URL (docs/spec/tcp-services.md 5): a navigation is allowed
+//     where a fetch is not. The tab closes itself. Needs the link up (the host routes 12.0.0.0/8 through the radio).
 
 import { RFOUNDRY_NET, RFOUNDRY_USB, serialApi, serialSupported } from "./link.js";
 import { sleep } from "./bytes.js";
 
 export const SERIAL_MODE_REQUEST = 0x53;
-export const SERIAL_MODE_URL = "http://rfoundry.local/api/usb?mode=serial";
+// 12.255.255.254: the radio on this link, whatever its DMR ID (core/dmr/ipGateway.h IPGW_ANY_RADIO_IP). An address,
+// not the mDNS name: a sandboxed browser (Flatpak, Snap) resolves no .local names
+export const SERIAL_MODE_URL = "http://12.255.255.254/api/usb?mode=serial";
 
 const isNet = (d) => d.vendorId === RFOUNDRY_NET.vendorId && d.productId === RFOUNDRY_NET.productId;
 

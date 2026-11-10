@@ -12,7 +12,7 @@ import { decode, encode, empty, remove, validate, newChannel, newContact, number
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
 import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
 import { FastError } from "../codeplug/fastlink.js";
-import { toSerial, grantedNetworkRadios } from "../flasher/netmode.js";
+import { toSerial } from "../flasher/netmode.js";
 import { convert as convertDb, readHeader as dbHeader } from "../codeplug/iddb.js";
 import { convertIddb, iddbEnd } from "../codeplug/sources/output.js";
 import { FakeCpsRadio } from "../codeplug/fakecps.js";
@@ -506,10 +506,9 @@ async function connect() {
 			} catch (e) {
 				if (e?.name !== "NotFoundError") throw e;
 				say(t("editor.connect.none"), "warn");
-				// only where this site has seen a radio in network mode (the installer's check): the radio's own
-				// page switches it where WebUSB couldn't. A tab, so from a click
-				if (!(await grantedNetworkRadios()).length) return null;
-				const go = button(t("flash.net.switch"), async () => {
+				// the message says a radio in network mode isn't listed: the radio's own page switches it where
+				// WebUSB couldn't (netmode.js). A tab, so from a click
+				const go = button(t("flash.net.offer"), async () => {
 					go.disabled = true;
 					const r = await toSerial();
 					say(t(r.back ? "flash.net.switched" : "flash.net.switch_unseen"), r.back ? "info" : "warn");

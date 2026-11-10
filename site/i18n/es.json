@@ -941,6 +941,7 @@
  "flash.net.switched_note": "La radio estaba en modo de red USB y por ahora es un puerto serie. Volverá al modo de red cuando se reinicie.",
  "flash.net.back_now": "Devolverla al modo de red ahora",
  "flash.net.manual": "Si eso no funciona, cámbiala en la radio:",
+ "flash.net.offer": "¿La radio está en modo de red USB? Cámbiala a USB serie",
  "home.cta_manual": "Manual de usuario",
  "home.codec": "Gratis para siempre. Se instala en tu radio directamente desde el navegador, en cualquier sistema operativo; sin descargar software.",
  "home.f_voice": "Voz",

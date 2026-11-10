@@ -59,7 +59,7 @@ test("where WebUSB can't open the radio, its own page opens in a tab that has no
 	const r = await toSerial({ usb: usbWith(device({ opens: false })), serial: serialAfter(0), open: (...a) => opened.push(a), step: 1, ms: 50 });
 	assert.deepEqual(r, { how: "http", back: true });
 	assert.deepEqual(opened, [[SERIAL_MODE_URL, "_blank", "noopener"]]);
-	assert.equal(SERIAL_MODE_URL, "http://rfoundry.local/api/usb?mode=serial");
+	assert.equal(SERIAL_MODE_URL, "http://12.255.255.254/api/usb?mode=serial");	// IPGW_ANY_RADIO_IP
 });
 
 test("outside a click nothing opens: no way to ask, no wait", async () => {

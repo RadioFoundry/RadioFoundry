@@ -941,6 +941,7 @@
  "flash.net.switched_note": "La radio era in modalità rete USB e per ora è una porta seriale. Torna in modalità rete al riavvio.",
  "flash.net.back_now": "Riportala ora in modalità rete",
  "flash.net.manual": "Se non funziona, cambiala sulla radio:",
+ "flash.net.offer": "Radio in modalità rete USB? Passala a USB seriale",
  "home.cta_manual": "Manuale utente",
  "home.codec": "Gratis per sempre. Si installa sulla tua radio direttamente dal browser, con qualsiasi sistema operativo; nessun software da scaricare.",
  "home.f_voice": "Voce",

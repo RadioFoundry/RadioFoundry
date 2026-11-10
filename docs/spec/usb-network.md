@@ -45,7 +45,14 @@ adapter (`pid_network`), with their own descriptors. Switching drops the D+ pull
   | Request | From | Notes |
   |---|---|---|
   | Endpoint 0: vendor, to the device, no data (`bmRequestType` 0x40, `bRequest` 0x53 `USB_REQ_SERIAL_MODE`, `wValue` and `wIndex` 0) | WebUSB | Acknowledged, then carried out from the adapter's tick. Only where the browser can open a device whose interfaces a kernel driver holds: not on Windows (no WinUSB function), not on Linux without a udev rule |
-  | `GET http://rfoundry.local/api/usb?mode=serial` ([tcp-services.md](tcp-services.md) 5, the name in [mdns.md](mdns.md) 1) | a browser tab the page opens (a navigation is allowed where a fetch is not) | Needs `CONFIG_NET_HTTP` and `CONFIG_MDNS`, the link up and mDNS on the host. The switch follows the answer by 500 ms |
+  | `GET http://12.255.255.254/api/usb?mode=serial` ([tcp-services.md](tcp-services.md) 5) | a browser tab the page opens (a navigation is allowed where a fetch is not) | Needs `CONFIG_NET_HTTP` and the link up. The switch follows the answer by 500 ms |
+
+  12.255.255.254 (`IPGW_ANY_RADIO_IP`) is the radio on this link, whatever its DMR ID or link addressing: TCP to it
+  is the radio's own, answered from that address. A page can't know the radio's own address, and a sandboxed browser
+  (Flatpak, Snap) resolves no `.local` name. It is reached by the route to the individual range the radio's DHCP
+  gives (option 121 / 249, section 5.3), so not from a host that ignores that option or routes the address
+  elsewhere: the tab then shows the browser's error and nothing changes. Only TCP: UDP and ICMP to the address go
+  the way they always did. No DMR ID has it (it is the radio's address on a shared link, section 3.1).
 
   After the job a page sends op 25 (network) over the serial port, or leaves it: a restart, as at the end of a
   firmware update, puts the radio back in network mode when the stored setting is on.

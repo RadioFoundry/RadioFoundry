@@ -8,6 +8,7 @@
 #include "net/net.h"
 #include "net/net_svc.h"
 #include "net/tcp.h"
+#include "dmr/ipGateway.h"
 #include "config.h"
 #include "radio/radio.h"
 #include "ui/gfx.h"
@@ -304,6 +305,19 @@ static void test_http(void)
 	CHECK(usb_serial_requests == 1);
 	run_for(1000);
 	CHECK(usb_serial_requests == 1);
+	// ... and at the address every radio answers to (IPGW_ANY_RADIO_IP), for a page that knows no other: the replies
+	// come from that address (checked for every segment in the peer)
+	uint32_t own = net_test_radio_ip;
+	net_test_radio_ip = IPGW_ANY_RADIO_IP;
+	CHECK(http_get(&a, 51036, "GET /status HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 ") && a.fin);
+	CHECK(http_get(&a, 51037, "GET /api/usb?mode=serial HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
+	CHECK(http_get(&a, 51038, "GET /nothing HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 404 "));
+	static peer_t closed_port;
+	CHECK(!peer_connect(&closed_port, net_test_host_ip(), 51039, 9) && closed_port.reset);	// a RST from there too
+	net_test_radio_ip = own;
+	run_for(1000);
+	CHECK(usb_serial_requests == 2);
+	CHECK(http_get(&a, 51040, "GET /status HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
 
 	// Errors
 	CHECK(http_get(&a, 51008, "POST / HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 405 "));

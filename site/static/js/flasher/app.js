@@ -569,12 +569,20 @@ function serialHelp() {
 			out.replaceChildren(notice(err?.name === "NotFoundError" ? t("flash.net.none") : errorText(err)));
 		}
 	} }, t("flash.net.check"));
-	return h("div", {}, h("p", { class: "small" }, check), out);
+	// the switch itself needs no USB chooser: the radio's own page does it (netmode.js), so it is offered at once
+	const offer = h("a", { href: "#", class: "small", onclick: (e) => {
+		e.preventDefault();
+		if (S.fakeRadio) return;
+		const help = networkModeHelp({ found: false });
+		out.replaceChildren(help);
+		help.querySelector("button")?.click();	// this click is the one the tab opens from
+	} }, t("flash.net.offer"));
+	return h("div", {}, h("p", { class: "small" }, check, " · ", offer), out);
 }
 
 // The radio is in network mode: a button that asks it for its serial port (netmode.js), and the steps on the radio
 // for when that doesn't reach it
-function networkModeHelp() {
+function networkModeHelp({ found = true } = {}) {
 	const result = h("div");
 	const go = button(t("flash.net.switch"), async () => {
 		go.disabled = true;
@@ -585,7 +593,7 @@ function networkModeHelp() {
 		result.replaceChildren(notice(t(r.back ? "flash.net.switched" : "flash.net.switch_unseen"), r.back ? "ok" : ""));
 	}, { primary: true });
 	return h("div", { class: "notice info" },
-		h("p", {}, h("b", {}, t("flash.net.found"))),
+		found ? h("p", {}, h("b", {}, t("flash.net.found"))) : null,
 		h("p", {}, go), result,
 		h("p", { class: "small" }, t("flash.net.manual")),
 		h("ol", { class: "steps" }, h("li", {}, t("flash.net.step1")), h("li", {}, t("flash.net.step2")), h("li", {}, t("flash.net.step3"))));
@@ -928,7 +936,8 @@ function updateView() {
 				} catch (e) {
 					await dropSerial();
 					await c7ui.dropC7();
-					if (e?.name === "NotFoundError") return status.replaceChildren();
+					// the chooser closed without a pick: no error, only the way on for a radio it couldn't list
+					if (e?.name === "NotFoundError") return status.replaceChildren(serialHelp());
 					status.replaceChildren(connectError(e), connectHelp(e, "flash.update.not_rfoundry"));
 				}
 			}, { primary: true }));

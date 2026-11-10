@@ -114,11 +114,11 @@ static uint8_t *io_buffer(void)
 
 // The USB IN endpoint holds one frame at a time: wait a little for it rather than lose the segment (an ACK lost here
 // would cost the peer a retransmission timeout)
-static bool io_send(uint32_t dst, int length)
+static bool io_send_from(uint32_t src, uint32_t dst, int length)
 {
 	uint32_t t0 = hal_millis();
 
-	while (!ipGatewaySendLocal(IP_PROTO_TCP, dst, length)) {
+	while (!ipGatewaySendLocalFrom(IP_PROTO_TCP, src, dst, length)) {
 		if ((board.netif == NULL) || !board.netif->up() || ((hal_millis() - t0) >= NET_SEND_WAIT_MS)) {
 			return false;
 		}
@@ -128,11 +128,16 @@ static bool io_send(uint32_t dst, int length)
 	return true;
 }
 
-static const tcp_io_t io = { .buffer = io_buffer, .send = io_send, .local_ip = ipGatewayRadioIP };
-
-static void tcp_in(uint32_t src, const uint8_t *seg, int length)
+static bool io_send(uint32_t dst, int length)
 {
-	tcp_input(src, seg, length, hal_millis());
+	return io_send_from(ipGatewayRadioIP(), dst, length);
+}
+
+static const tcp_io_t io = { .buffer = io_buffer, .send = io_send, .local_ip = ipGatewayRadioIP, .send_from = io_send_from };
+
+static void tcp_in(uint32_t src, uint32_t dst, const uint8_t *seg, int length)
+{
+	tcp_input_to(src, dst, seg, length, hal_millis());
 }
 #else
 bool net_tnc_taken(void)
