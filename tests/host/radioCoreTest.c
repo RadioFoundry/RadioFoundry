@@ -28,6 +28,8 @@
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dl_fmt.h"
 #include "radio/tx_limit.h"
+#include "radio/battery.h"
+#include "fuzz.h"
 
 static int failures;
 static int checks;
@@ -410,7 +412,7 @@ static void poll_for(uint32_t ms)
 	}
 }
 
-static void signal(uint8_t noise, bool tone_ok)
+static void rx_signal(uint8_t noise, bool tone_ok)
 {
 	hw.st.noise = noise;
 	hw.st.tone_ok = tone_ok;
@@ -429,7 +431,7 @@ static void boot(void)
 	memset(&aud, 0, sizeof(aud));
 	sim_reset();
 	memset(&hw, 0, sizeof(hw));
-	signal(120, true);
+	rx_signal(120, true);
 	radio_sm_init(&sm, now);
 }
 
@@ -440,7 +442,7 @@ static void start(void)
 	memset(&aud, 0, sizeof(aud));
 	sim_reset();
 	memset(&hw, 0, sizeof(hw));
-	signal(120, true);
+	rx_signal(120, true);
 	now = 1000;
 	radio_sm_init(&sm, now);
 }
@@ -534,52 +536,52 @@ static void test_squelch(void)
 
 	poll_for(100);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio);
-	signal(thr, true);			// at the threshold: still closed
+	rx_signal(thr, true);			// at the threshold: still closed
 	poll_for(50);
 	CHECK(sm.view.state == RS_IDLE);
-	signal(thr - 10, true);
+	rx_signal(thr - 10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX && hw.audio && hw.led[LED_GREEN]);
 	CHECK(sm.view.rssi_dbm == -80);
 	CHECK(radio_view_wakes(&sm.view));	// FM: what opens the squelch plays, so it lights the screen
-	signal(thr + RADIO_SQL_HYST_DB - 1, true);	// inside the hysteresis: stays open
+	rx_signal(thr + RADIO_SQL_HYST_DB - 1, true);	// inside the hysteresis: stays open
 	poll_for(200);
 	CHECK(sm.view.state == RS_RX);
 	CHECK(sm.view.last_rx_ms == 0);
-	signal(thr + RADIO_SQL_HYST_DB, true);
+	rx_signal(thr + RADIO_SQL_HYST_DB, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);		// one poll above is not enough
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio && !hw.led[LED_GREEN]);
 	CHECK(sm.view.last_rx_ms == now);
 	// The carrier goes: the noise jumps far over the line, and one poll closes it (a shorter squelch tail)
-	signal(thr - 10, true);
+	rx_signal(thr - 10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
-	signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB - 1, true);	// just short of it: two polls as before
+	rx_signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB - 1, true);	// just short of it: two polls as before
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
-	signal(thr - 10, true);
+	rx_signal(thr - 10, true);
 	poll_for(RADIO_POLL_MS);
-	signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB, true);
+	rx_signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio);
 
-	signal(10, false);			// no RX tone on this channel: the board's tone flag doesn't matter
+	rx_signal(10, false);			// no RX tone on this channel: the board's tone flag doesn't matter
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
-	signal(120, true);
+	rx_signal(120, true);
 	poll_for(100);
 	CHECK(sm.view.state == RS_IDLE);
 	req(RREQ_SQUELCH, -(int)(RADIO_SQUELCH_DEFAULT - 1));	// the most open level short of 0
-	signal(UINT8_MAX, true);		// a receiver that can't hear (an RF chip the board doesn't drive): never opens
+	rx_signal(UINT8_MAX, true);		// a receiver that can't hear (an RF chip the board doesn't drive): never opens
 	poll_for(200);
 	CHECK(sm.view.squelch == 1 && sm.view.state == RS_IDLE && !radio_view_wakes(&sm.view));
 	req(RREQ_CLEAR_TEMP, 0);
 
 	req(RREQ_SQUELCH, -9);			// to 0: always open
 	CHECK(sm.view.squelch == 0 && sm.view.temporary);
-	signal(200, true);
+	rx_signal(200, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX && hw.audio);
 	req(RREQ_CLEAR_TEMP, 0);
@@ -597,7 +599,7 @@ static void test_squelch(void)
 
 	// A DMR channel: the state follows the call stack, not the carrier, and the FM speaker stays shut
 	req(RREQ_ZONE_POS, 3);
-	signal(10, true);
+	rx_signal(10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio);
 }
@@ -606,7 +608,7 @@ static void test_tx(void)
 {
 	setup_codeplug();
 	start();
-	signal(10, true);
+	rx_signal(10, true);
 	poll_for(50);
 	CHECK(sm.view.state == RS_RX);
 	req(RREQ_PTT, 1);
@@ -840,10 +842,10 @@ static void test_tone_squelch(void)
 	req(RREQ_CH_STEP, 1);			// RX DCS 754
 	uint8_t thr = radio_sm_squelch_open_below(RADIO_SQUELCH_DEFAULT);
 
-	signal(thr - 20, false);		// carrier, no code: closed
+	rx_signal(thr - 20, false);		// carrier, no code: closed
 	poll_for(500);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio && !sm.view.tone_ok);
-	signal(thr - 20, true);
+	rx_signal(thr - 20, true);
 	poll_for(RADIO_POLL_MS);		// one poll of a match is not enough
 	CHECK(sm.view.state == RS_IDLE);
 	poll_for(RADIO_POLL_MS * (RADIO_TONE_ON_POLLS - 1));
@@ -851,34 +853,34 @@ static void test_tone_squelch(void)
 
 	// The flag chatters: short drop-outs keep the squelch open
 	for (int i = 0; i < 20; i++) {
-		signal(thr - 20, i % 3 != 0);
+		rx_signal(thr - 20, i % 3 != 0);
 		poll_for(RADIO_POLL_MS * (1 + i % 4 % 3));
 		CHECK(sm.view.state == RS_RX);
 	}
-	signal(thr - 20, true);
+	rx_signal(thr - 20, true);
 	poll_for(RADIO_POLL_MS);
 	// The tone goes away for good, carrier stays: closes after the debounce and the close count
-	signal(thr - 20, false);
+	rx_signal(thr - 20, false);
 	poll_for(RADIO_POLL_MS * (RADIO_TONE_OFF_POLLS - 1));
 	CHECK(sm.view.state == RS_RX);
 	poll_for(RADIO_POLL_MS * (1 + RADIO_SQL_CLOSE_POLLS));
 	CHECK(sm.view.state == RS_IDLE && !hw.audio && !sm.view.tone_ok);
 
 	// Tone without a carrier (noise above the threshold): closed
-	signal(thr + 20, true);
+	rx_signal(thr + 20, true);
 	poll_for(500);
 	CHECK(sm.view.state == RS_IDLE && sm.view.tone_ok);
 	// Carrier back with the tone: opens at once (the tone is already heard)
-	signal(thr - 20, true);
+	rx_signal(thr - 20, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
 	// Carrier gone: closes on the noise alone
-	signal(thr + 20, true);
+	rx_signal(thr + 20, true);
 	poll_for(RADIO_POLL_MS * RADIO_SQL_CLOSE_POLLS);
 	CHECK(sm.view.state == RS_IDLE);
 
 	// Monitor overrides tone squelch
-	signal(thr - 20, false);
+	rx_signal(thr - 20, false);
 	poll_for(500);
 	req(RREQ_MONITOR, 1);
 	CHECK(hw.audio && sm.view.state == RS_IDLE);
@@ -887,10 +889,10 @@ static void test_tone_squelch(void)
 
 	// Squelch level 0 with an RX tone: the tone alone decides
 	req(RREQ_SQUELCH, -9);
-	signal(200, false);
+	rx_signal(200, false);
 	poll_for(200);
 	CHECK(sm.view.state == RS_IDLE);
-	signal(200, true);
+	rx_signal(200, true);
 	poll_for(RADIO_POLL_MS * RADIO_TONE_ON_POLLS);
 	CHECK(sm.view.state == RS_RX);
 	req(RREQ_CLEAR_TEMP, 0);
@@ -898,7 +900,7 @@ static void test_tone_squelch(void)
 	// A channel without an RX tone ignores the board's tone flag
 	req(RREQ_CH_STEP, 1);
 	CHECK(sm.view.channel_number == 7 && sm.view.tone_ok);
-	signal(thr - 20, false);
+	rx_signal(thr - 20, false);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
 }
@@ -1915,10 +1917,10 @@ static void test_hotspot(void)
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HOTSPOT);
 	req(RREQ_PTT, 0);
 	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == off0);
-	signal(10, true);
+	rx_signal(10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.hs_carrier && sm.view.state == RS_IDLE);
-	signal(120, true);
+	rx_signal(120, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(!sm.hs_carrier);
 
@@ -2850,6 +2852,7 @@ void radio_req_monitor(bool down) { req(RREQ_MONITOR, down); }
 void radio_req_reload(void) { req(RREQ_RELOAD, 0); }
 void radio_req_volume(uint8_t step) { req(RREQ_VOLUME, step); }
 void radio_req_volume_override(int8_t step) { req(RREQ_VOLUME_OVERRIDE, step); }
+void radio_req_volume_hold(bool hold) { req(RREQ_VOLUME_HOLD, hold); }
 void radio_req_clear_temporary(void) { req(RREQ_CLEAR_TEMP, 0); }
 void radio_req_retune(void) { req(RREQ_RETUNE, 0); }
 // Not under test here: debuglink_view_radio.c, linked for the volume operation, refers to them
@@ -3601,6 +3604,30 @@ static void test_ui_settings(void)
 	CHECK(ui_svc_setting_get(UI_SET_KEY_TONES) == 1 && ui_svc_setting_get(UI_SET_TONE_VOLUME) == 7);
 	CHECK(ui_svc_setting_get(UI_SET_TOT_S) == 90 && ui_svc_setting_get(UI_SET_BACKLIGHT_S) == 20);
 	CHECK(ui_svc_setting_get(UI_SET_BATTERY_SAVER) == 1);
+	// Backlight (EP): > 0 dims then goes off at 4x, 0 always on, < 0 dims after -value and never goes off
+	static const struct { int32_t v; uint16_t dim, off; int32_t back; } bl[] = {
+		{ 30, 30, 120, 30 }, { 0, 0, 0, 0 }, { -30, 30, 0, -30 },
+		{ 1, 1, 4, 1 }, { -1, 1, 0, -1 },				// BVA: the smallest times
+		{ 0x3FFF, 0x3FFF, 0xFFFC, 0x3FFF }, { 0x4000, 0x4000, 0xFFFF, 0x4000 },	// off saturates
+		{ -0xFFFF, 0xFFFF, 0, -0xFFFF }, { -0x10000, 0xFFFF, 0, -0xFFFF },	// dim saturates
+	};
+	for (size_t i = 0; i < sizeof bl / sizeof bl[0]; i++) {
+		ui_svc_apply(UI_SET_BACKLIGHT_S, bl[i].v);
+		radio_get_settings(&rs);
+		CHECK(rs.backlight_dim_s == bl[i].dim && rs.backlight_off_s == bl[i].off);
+		CHECK(ui_svc_setting_get(UI_SET_BACKLIGHT_S) == bl[i].back);
+	}
+	// PBT: every value in the menu's range reads back as set, and a negative one never turns the backlight off
+	fuzz_t bf;
+	fuzz_init(&bf, 0xB1);
+	for (long i = 0; i < fuzz_iters(500); i++) {
+		int32_t v = (int32_t)fuzz_below(&bf, 2 * 0x3FFF + 1) - 0x3FFF;
+		ui_svc_apply(UI_SET_BACKLIGHT_S, v);
+		radio_get_settings(&rs);
+		CHECK(ui_svc_setting_get(UI_SET_BACKLIGHT_S) == v);
+		CHECK(v >= 0 || batt_backlight_pct(100, rs.backlight_dim_s, rs.backlight_off_s, 0xFFFFFFFFu, BATT_OK) == 20);
+	}
+	ui_svc_apply(UI_SET_BACKLIGHT_S, 20);
 	CHECK(ui_svc_setting_get(UI_SET_ROAM_SURVEY) == 2 && ui_svc_setting_get(UI_SET_ROAM_BEACON_S) == 120 &&
 	      ui_svc_setting_get(UI_SET_ROAM_BEACON_LEN) == 6 && ui_svc_setting_get(UI_SET_ROAM_PROBE) == 1);
 	// ... which the store leaves to ui_svc_apply (nothing written here)
@@ -3952,6 +3979,24 @@ static void test_soft_volume(void)
 	CHECK(debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ RADIO_VOLUME_KNOB }, 1) == DL_ST_OK);
 	run(100);
 	CHECK(vol_last == 90 && sm.view.volume_src == RVOL_KNOB && sm.view.volume_override == -1);
+	// The knob lock (keys locked, Settings > Key lock > Knob when locked Off): the level stays while the knob moves, the view
+	// still tracks the knob, and letting go takes the knob's level at once
+	CHECK(radio_volume_knob() && (ui_svc_feat_radio() & UI_FEAT_VOLUME_KNOB) && sm.view.volume_knob == 90);
+	radio_req_volume_hold(true);
+	run(100);
+	vol_calls = 0;
+	vol_knob = 30;
+	run(100);
+	CHECK(vol_calls == 0 && vol_last == 90 && sm.view.volume_src == RVOL_HOLD && sm.view.volume_knob == 30);
+	radio_req_volume_hold(false);
+	run(100);
+	CHECK(vol_calls == 1 && vol_last == 30 && sm.view.volume_src == RVOL_KNOB);
+	// A 1 % wobble is not a move
+	vol_knob = 31;
+	run(100);
+	CHECK(sm.view.volume_knob == 30);
+	vol_knob = 90;
+	run(100);
 	CHECK(debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ 0 }, 1) == DL_ST_OK);
 	run(100);
 	CHECK(vol_last == 0);
@@ -4490,7 +4535,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(432);	// the settings records (page 1: 172 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
+	sim_flash_cut_after(436);	// the settings records (page 1: 176 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);
@@ -4854,6 +4899,24 @@ static void test_tx_limit_op(void)
 	CHECK(!l.on && tx_limit_allows(461475000u));
 }
 
+// The knob's percent as a step of the volume scale (the bar the UI shows when the knob turns): 0 only when silent,
+// the ends exact, every step round-trips, and never a step back as the knob goes up
+static void test_volume_step_of(void)
+{
+	static const struct { uint8_t pct, step; } ep[] = {
+		{ 0, 0 }, { 1, 1 }, { 3, 1 }, { 9, 1 }, { 10, 2 }, { 50, 8 }, { 96, 15 }, { 97, 16 }, { 100, 16 }, { 101, 16 },
+		{ 255, 16 },
+	};
+	for (size_t i = 0; i < sizeof ep / sizeof ep[0]; i++)
+		CHECK(radio_volume_step_of(ep[i].pct) == ep[i].step);
+	for (uint8_t s = 0; s <= RADIO_VOLUME_MAX; s++)
+		CHECK(radio_volume_step_of(radio_volume_percent(s)) == s);
+	for (int p = 1; p <= 255; p++) {
+		uint8_t a = radio_volume_step_of((uint8_t)(p - 1)), b = radio_volume_step_of((uint8_t)p);
+		CHECK(b >= a && b - a <= 1 && b >= 1 && b <= RADIO_VOLUME_MAX);
+	}
+}
+
 int main(void)
 {
 	test_tx_limit_op();
@@ -4919,6 +4982,7 @@ int main(void)
 #endif
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();
+	test_volume_step_of();
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

@@ -250,6 +250,7 @@ static const char *mode_word(const radio_view_t *v)
 // the name is shortened, from the middle. On tall displays the strip stays whole and the title gets its own row below
 // it. Either way the title is centered. Returns the y where content starts.
 uint32_t ui_strip_draws;
+uint32_t ui_hint_draws;
 
 // A word after the mode, with a space either side, where the strip has room for it: measured, since a translation may
 // be longer than the English
@@ -583,6 +584,9 @@ static const char *key_names(const char *text, char *out, size_t cap, bool hint)
 // takes a second line above it, so it is never shortened
 void ui_draw_hint(const char *text, bool toast)
 {
+#if CONFIG_VOLUME_BAR
+	ui_hint_draws++;
+#endif
 	// The key names go into each alternate once it is picked, in buffers this function has anyway: no static (RAM is
 	// tight on some radios) and no more stack (the UI task's deepest chain runs through here, docs/dev/stack-check.md)
 	const ui_layout_t *L = &ui_layout;
@@ -851,6 +855,20 @@ void ui_draw_splash(const char *board_name, const char *version, const char *lin
 
 // --- Home ---
 
+// The frequency being typed on Home: MHz digits, then decimals, with blanks for the next digits.
+static void home_entry_text(const ui_state_t *s, char *buf, size_t len)
+{
+	sbuf_t b;
+	sb_init(&b, buf, len);
+	int dec = s->entry_len > UI_ENTRY_MHZ ? s->entry_len - UI_ENTRY_MHZ : 0;
+	int show = dec < 3 ? 3 : dec;
+	for (int i = 0; i < UI_ENTRY_MHZ + show; i++) {
+		if (i == UI_ENTRY_MHZ)
+			sb_chr(&b, '.');
+		sb_chr(&b, i < s->entry_len ? s->entry_digits[i] : '_');
+	}
+}
+
 #if CONFIG_DMR
 static void draw_talk_dmr(const radio_view_t *v);
 static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s);
@@ -910,17 +928,10 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 		// blanks for the rest
 		bool tx = v->state == RS_TX && v->vfo;
 		sb_init(&b, buf, sizeof buf);
-		if (s->entry) {
-			int dec = s->entry_len > UI_ENTRY_MHZ ? s->entry_len - UI_ENTRY_MHZ : 0;
-			int show = dec < 3 ? 3 : dec;
-			for (int i = 0; i < UI_ENTRY_MHZ + show; i++) {
-				if (i == UI_ENTRY_MHZ)
-					sb_chr(&b, '.');
-				sb_chr(&b, i < s->entry_len ? s->entry_digits[i] : '_');
-			}
-		} else {
+		if (s->entry)
+			home_entry_text(s, buf, sizeof buf);
+		else
 			sb_freq(&b, tx ? v->ch.tx_hz : v->ch.rx_hz);
-		}
 		int x = gfx_text(L->large, 0, y, buf, s->entry ? ui_col.warn : tx ? ui_col.tx : ui_col.fg);
 		if (x + L->small->w / 2 + gfx_text_width(L->small, "MHz") <= w)	// 5 decimals leave no room on 120 px
 			gfx_text(L->small, x + L->small->w / 2, base - L->small->ascent, "MHz", ui_col.dim);
@@ -1797,9 +1808,14 @@ static int dual_pill_w(const char *word)
 // The channel number's font next to a name in f: medium beside the large font, else the name's
 static const font_t *dual_num_font(const font_t *f) { return f == ui_layout.large ? ui_layout.medium : f; }
 
-// The pane's first-row text: the channel name, or the VFO's frequency
-static void dual_name(const ui_dual_pane_t *p, char *buf, size_t len)
+// The pane's first-row text: the channel name, the VFO's frequency, or the selected VFO's typed digits
+static void dual_name(const ui_state_t *s, int i, char *buf, size_t len)
 {
+	const ui_dual_pane_t *p = &s->dual.pane[i];
+	if (p->vfo && s->entry && s->dual.sel == i) {
+		home_entry_text(s, buf, len);
+		return;
+	}
 	sbuf_t b;
 	sb_init(&b, buf, len);
 	if (p->vfo)
@@ -1810,16 +1826,16 @@ static void dual_name(const ui_dual_pane_t *p, char *buf, size_t len)
 
 // The largest font up to the layout's name font in which pane i's name fits whole next to its number and the
 // widest pill (PTT)
-static const font_t *dual_name_font(const ui_dual_t *d, int i, const font_t *nf)
+static const font_t *dual_name_font(const ui_state_t *s, int i, const font_t *nf)
 {
 	const ui_layout_t *L = &ui_layout;
-	const ui_dual_pane_t *p = &d->pane[i];
+	const ui_dual_pane_t *p = &s->dual.pane[i];
 	const font_t *order[] = { L->large, L->medium, L->small };
 	char buf[40], num[8];
 	sbuf_t nb;
 	sb_init(&nb, num, sizeof num);
 	sb_u32(&nb, p->number, 1);
-	dual_name(p, buf, sizeof buf);
+	dual_name(s, i, buf, sizeof buf);
 	int room = gfx_width() - dual_x0(nf) - dual_pill_w("PTT") - L->small->w / 2 - 1;
 	for (unsigned k = 0; k < 3; k++) {
 		const font_t *f = order[k];
@@ -1852,6 +1868,7 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 	const font_t *nf = ft->name, *sm = L->small;
 	int w = gfx_width();
 	bool tx = v->state == RS_TX && d->sel == i, rx = !tx && p->rx, sel = d->sel == i;
+	bool entry = s->entry && sel && p->vfo;
 	bool quiet = !rx && d->pane[!i].rx;	// the other pane has a call: this one steps back
 	color_t fg = quiet ? ui_col.dim : ui_col.fg;
 	char buf[48], fit[48];
@@ -1907,7 +1924,7 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 	const char *word = tx ? "TX" : "PTT";
 	bool pill3 = false;
 	if ((tx || sel) && ft->detail != NULL) {
-		dual_name(p, buf, sizeof buf);
+		dual_name(s, i, buf, sizeof buf);
 		int need = gfx_text_width(f, buf);
 		if (!p->vfo) {
 			sb_init(&b, fit, sizeof fit);
@@ -1944,13 +1961,13 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 		x = gfx_text(mf, x, base - mf->ascent, num, quiet || gfx_bpp() == 1 ? ui_col.dim : ui_col.chnum) +
 			mf->w / 2;
 	}
-	dual_name(p, buf, sizeof buf);
-	if (tx && p->vfo) {	// the VFO transmitting: its TX frequency (the view's channel is the selected pane's)
+	dual_name(s, i, buf, sizeof buf);
+	if (tx && p->vfo && !entry) {	// the VFO transmitting: its TX frequency (the view's channel is the selected pane's)
 		sb_init(&b, buf, sizeof buf);
 		sb_freq(&b, v->ch.tx_hz);
 	}
 	gfx_text_fit(f, buf, rx_end - x, fit, sizeof fit);
-	x = gfx_text(f, x, base - f->ascent, fit, tx && p->vfo ? ui_col.tx : rx ? ui_col.rx : fg);
+	x = gfx_text(f, x, base - f->ascent, fit, entry ? ui_col.warn : tx && p->vfo ? ui_col.tx : rx ? ui_col.rx : fg);
 	if (p->vfo && x + sm->w / 2 + gfx_text_width(sm, "MHz") <= rx_end) {
 		gfx_text(sm, x + sm->w / 2, base - sm->ascent, "MHz", ui_col.dim);
 		x += sm->w / 2 + gfx_text_width(sm, "MHz");
@@ -2070,13 +2087,24 @@ static void dual_large(const radio_view_t *v, const ui_state_t *s)
 		sbuf_t b;
 		sb_init(&b, buf, sizeof buf);
 		sb_str(&b, i ? "B " : "A ");
-		if (p->vfo)
-			sb_freq(&b, p->rx_hz);
-		else
+		if (p->vfo) {
+			char name[24];
+			dual_name(s, i, name, sizeof name);
+			sb_str(&b, name);
+		} else
 			sb_str(&b, p->name);
 		const font_t *f = large_font(buf, room, form, sizeof form);
+		if (gfx_text_width(f, form) + (d->sel == i ? f->w / 3 + 2 : 0) > w) {
+			const font_t *smaller[] = { L->large, L->medium, L->small };
+			for (unsigned k = 0; k < sizeof smaller / sizeof smaller[0]; k++) {
+				f = smaller[k];
+				if (f->h <= room && gfx_text_width(f, form) + (d->sel == i ? f->w / 3 + 2 : 0) <= w)
+					break;
+			}
+		}
 		bool tx = v->state == RS_TX && d->sel == i, rx = !tx && p->rx;
-		color_t c = tx ? ui_col.tx : rx ? ui_col.rx : d->sel == i ? ui_col.fg : ui_col.dim;
+		color_t c = s->entry && d->sel == i && p->vfo ? ui_col.warn :
+			    tx ? ui_col.tx : rx ? ui_col.rx : d->sel == i ? ui_col.fg : ui_col.dim;
 		// The arrow in the room a selection bar would take: f->w / 3 wide, half the letter high, a 2 px gap; the
 		// other line starts at 0
 		int aw = d->sel == i ? f->w / 3 + 2 : 0, ah = (f->h / 2) | 1;
@@ -2168,6 +2196,8 @@ static const char *dual_hint(const radio_view_t *v, const ui_state_t *s)
 	const ui_dual_t *d = &s->dual;
 	if (v->state == RS_TX_DENIED)
 		return deny_action(v);
+	if (s->entry)
+		return TR("OK tune  Back delete");
 	if (s->locked)
 		return TR(TEXT_ALT_OPEN "Keys locked: hold * to unlock" TEXT_ALT_NEXT "Locked: hold * to unlock" TEXT_ALT_CLOSE);
 	// Talk back on the channel a call came in on: the way back now
@@ -2225,7 +2255,7 @@ void ui_draw_home_dual(const radio_view_t *v, const ui_state_t *s)
 		const dual_fit_t *ft = &fit;
 		const font_t *sm = L->small;
 		int ph = dual_pane_h(ft) + 2 * pad;
-		const font_t *f0 = dual_name_font(&s->dual, 0, ft->name), *f1 = dual_name_font(&s->dual, 1, ft->name);
+		const font_t *f0 = dual_name_font(s, 0, ft->name), *f1 = dual_name_font(s, 1, ft->name);
 		dual_nf = f0->h < f1->h ? f0 : f1;
 		if (dual_nf->h < ft->target->h)
 			dual_nf = ft->target;	// never smaller than the row under it: a long name is shortened instead
@@ -2654,6 +2684,44 @@ void ui_draw_emergency(const radio_view_t *v, const ui_state_t *s, uint32_t id, 
 	ui_draw_hint(s->toast != NULL ? s->toast : TR("OK acknowledge  Back hide"), s->toast != NULL);
 }
 
+// The volume step as RADIO_VOLUME_MAX segments in w px, filled up to step: the volume screen and the knob's bar
+static void volume_segments(int x, int y, int w, int h, int step)
+{
+	int pitch = w / RADIO_VOLUME_MAX, gap = pitch >= 6 ? 2 : 1;
+	x += (w - pitch * RADIO_VOLUME_MAX) / 2;
+	for (int i = 0; i < RADIO_VOLUME_MAX; i++) {
+		if (i < step)
+			gfx_fill(x + i * pitch, y, pitch - gap, h, ui_col.fg);
+		else
+			gfx_rect(x + i * pitch, y, pitch - gap, h, ui_col.line);
+	}
+}
+
+#if CONFIG_VOLUME_BAR
+// noinline: inlined into the frame code, its locals land in ui_task's deepest path, which has 8 bytes to spare on
+// the boards with the tightest UI stack (make stack-check)
+__attribute__((noinline)) void ui_draw_volume_bar(const ui_state_t *s, bool top)
+{
+	const ui_layout_t *L = &ui_layout;
+	const font_t *f = L->small;
+	int w = gfx_width();
+	// Rows no screen lays its content in, so nothing is cut on any display class: the hint row (its keys and toasts
+	// come back with it), or on a screen that fills the bottom (Quick's tiles, a list with hints off) the status strip
+	int y = top ? 0 : L->hint_y, y0 = top ? 0 : y - 1, bh = top ? L->strip_h : gfx_height() - y0;
+	char num[4];
+	sbuf_t b;
+	sb_init(&b, num, sizeof num);
+	sb_u32(&b, (uint32_t)s->volbar, 1);
+	const char *label = TR("Vol");
+	int lw = gfx_text_width(f, label), nw = gfx_text_width(f, "16");
+	gfx_fill(0, y0, w, bh, ui_col.bg);
+	gfx_hline(0, top ? y0 + bh - 1 : y0, w, ui_col.line);
+	gfx_text(f, 2, y, label, ui_col.fg);
+	gfx_text(f, w - 2 - gfx_text_width(f, num), y, num, ui_col.fg);
+	volume_segments(lw + 6, y + 1, w - lw - nw - 12, f->h - 2, s->volbar);
+}
+#endif
+
 // The volume screen: the step as a number (a word at 0) over a bar of RADIO_VOLUME_MAX segments.
 // Large type, no scale to read
 void ui_draw_volume(const radio_view_t *v, const ui_state_t *s)
@@ -2674,16 +2742,7 @@ void ui_draw_volume(const radio_view_t *v, const ui_state_t *s)
 		big = L->medium;
 	gfx_text(big, (w - gfx_text_width(big, buf)) / 2, y, buf, ui_col.fg);
 	y += big->h + 6;
-	int seg = RADIO_VOLUME_MAX;
-	int pitch = (w - 8) / seg;
-	int x0 = (w - pitch * seg) / 2;
-	int bh = L->row_h > 10 ? L->row_h : 10;
-	for (int i = 0; i < seg; i++) {
-		if (i < s->volume)
-			gfx_fill(x0 + i * pitch, y, pitch - 2, bh, ui_col.fg);
-		else
-			gfx_rect(x0 + i * pitch, y, pitch - 2, bh, ui_col.line);
-	}
+	volume_segments(4, y, w - 8, L->row_h > 10 ? L->row_h : 10, s->volume);
 	ui_draw_bottom(s, TR("Up Down change  OK done"));
 }
 

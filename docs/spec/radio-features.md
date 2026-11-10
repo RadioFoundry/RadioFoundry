@@ -120,6 +120,7 @@ VFO during the watch copies into a VFO the other channel isn't on: the one last 
 | `radio_req_scan` stop, cancel or toggle (the debug link) | Ends it on the selected channel and counts it in the view's `dual_stops`: the UI takes it as the user's stop and doesn't start the watch again. The radio has stopped already, so the UI asks for nothing and takes on a watch started right after it at once |
 | `radio_req_dual` with the same pair and the other selected (the debug link's select) | The view's `dual_sel` changes; the UI follows a change it didn't ask for, so the next channel, zone or VFO request changes that channel |
 | A VFO request, a frequency or Copy to VFO with a channel selected | The selected channel goes into a VFO the other channel isn't on: the one last used, else the other one |
+| Typed frequency on a selected VFO pane | OK or # commits it to that pane, even while the receiver listens on the other pane. # opens the dual watch actions only when no frequency is being typed |
 | Power off | The saved position is the selected channel's, wherever the receiver is: the radio powers up there |
 
 `radio_get_dual()` returns the pair, the selected one and the one the receiver is on (the debug link's `dual.a dual.b
@@ -176,6 +177,27 @@ keys up if needed and sends 1750 Hz until `false` or until `max_ms` has passed (
 the view. The debug link always gives a limit (at most `INPUT_INJECT_MAX_MS`), so a lost "off" unkeys as the "off"
 would; 0 means no limit but the TX time-out. A board without
 `tx_tone` gets neither.
+The debug link's `DL_OP_TONE_BURST` now gives the error beep when refused on a DMR channel, in hotspot mode or
+without `tx_tone`, instead of silently doing nothing.
+A debug-link burst requested during the roger beep tail after PTT release now re-keys, cancels the roger beep and
+owns the transmission until burst off, the host deadline or the TX time-out.
+
+The **Tone burst** side-key press function sends raw down/up requests (`radio_req_tone_burst_key`). The core starts
+1750 Hz on down and holds it for at least `RADIO_BURST_MIN_MS` (1000 ms). A tap releases at that minimum; a longer
+hold ends on up. The 10 ms radio tick ends a released timed burst. From receive it keys and unkeys through the usual
+TX checks (including TX inhibit and RX-only); DMR, hotspot and boards without `tx_tone` refuse with an error beep.
+During PTT it replaces the mic, then restores it while PTT keeps the transmitter keyed. Releasing PTT during the
+burst stops the tone and unkeys, without a roger beep. PTT pressed during a burst takes over the transmission.
+There is no duration setting or host deadline for the side key; the TX time-out still applies.
+The debug link's explicit on/off request keeps its `max_ms` limit. A new burst starts with only its own timing;
+an on/down request while a burst is already sounding does not restart it or change its deadline.
+A side-key up releases only its own burst or TX denial; down/up during a host burst leaves that burst running.
+Power-off cancels a held or timed burst and unkeys without a roger beep before shutdown waits.
+VOX cannot release during a burst; its full quiet tail starts after the burst ends.
+
+Why 1 s: the [UK repeater access standard](https://www.ukrepeater.net/access.htm) accepts 1750 Hz +/- 25 Hz
+after 200-400 ms, and some decoders need 500 ms; a 1 s minimum exceeds both. Once open, a repeater stays open on
+carrier through its hang time, so one burst opens a contact.
 
 The board restores the microphone path on `tx_tone(0)` and on every return to receive. An AT1846S board makes the
 tone with the voice source select (tone 1, tone 2 or both) in place of the microphone. Verified on air on an HR_C6000 + AT1846S board (HIL 2026-10-10): the burst, the roger beep and APRS
@@ -404,6 +426,7 @@ hook; `hal_power_t.volume()` says where the level comes from (`radio_volume_src_
 | `knob` | A hook and a knob the MCU reads | The knob's 0..100 % |
 | `soft` | A hook and no knob (`hal_power_t.volume()` = -1); `radio_volume_soft()`, reported to the UI as `UI_FEAT_VOLUME` | The stored step |
 | `override` | As `knob`, with the debug link's level in force | The step the debug link set, whatever the knob does |
+| `hold` | As `knob`, with the keys locked and Settings > Key lock > Knob when locked Off | The level in force when the hold began, whatever the knob does |
 
 | Item | Value |
 |---|---|
@@ -413,6 +436,8 @@ hook; `hal_power_t.volume()` says where the level comes from (`radio_volume_src_
 | To the board | `follow_volume` (radio poll) calls `hal_radio_t.volume(percent)` at start-up and after each change (the knob's changes of 2 % or more, and its ends); the same level twice calls nothing |
 | A change | `ui_svc_setting_set(UI_SET_VOLUME)` saves the step and posts `RREQ_VOLUME` (`radio_req_volume`), so it is in force at once. The request counts as neither user activity nor an interruption: a transmission or a roaming search goes on |
 | Override | `radio_req_volume_override(step)` (`RREQ_VOLUME_OVERRIDE`) holds a level over the knob until `-1`; RAM only, so a restart gives the knob back. Without a knob there is nothing to override, and the request changes nothing |
+| Hold | `radio_req_volume_hold(true)` (`RREQ_VOLUME_HOLD`, from the UI's key lock through `ui_svc_volume_hold`) keeps the level in force and ignores the knob; `false` follows the knob again, and its level goes out at once. RAM only; ignored without a knob or under an override |
+| Knob position | `radio_view_t.volume_knob`: the knob's 0..100 % with the same 2 % filter, in force or not (also while held), -1 without a knob the MCU reads. While held, a change shows the unlock hint, as a key does. `radio_volume_knob()` (`UI_FEAT_VOLUME_KNOB`) says whether the board has such a knob; Settings > Key lock > Knob when locked (`UI_SET_KNOB_WHEN_LOCKED`) is shown only then |
 | Beeps | Key and status tones keep their own level (Tone volume, 4) and are mixed at the board's speaker path as before |
 
 **Debug link.** RADIO op 30 (`debuglink.md` 3.8) sets a step 0..16, or `0xFF` for "back to the knob". On a `soft` radio
@@ -425,6 +450,18 @@ The volume screen (`SCR_VOLUME`) opens on `ACT_VOLUME`, a board key map entry (a
 toast). Up, Down and the encoder change the step by one and save it on each step; OK, Back or the same key close it,
 and so does 3 s without a key. The screen shows the step as a large number over a bar of 16 segments (7 px pitch at
 the smallest display, 5 px filled). On the radio without the feature the setting is left out of Settings.
+
+**The knob's bar** (#354). On a `knob` radio, when the level the radio core passed on changes (`radio_view_t.volume`,
+with `volume_src` `knob` before and after), the UI shows the same 16-segment bar, the label and the step over whatever
+screen is open, for 3 s after the last change (`VOLUME_MS`); no screen is pushed, so a call or a menu goes on. It
+takes a row no screen puts its content in: the hint row's place when the frame drew a hint row (`ui_hint_draws`),
+else the status strip's (Quick's tiles at 160x128, a list with the hint row off), so nothing is cut. The step is `radio_volume_step_of(percent)`: 0 only at 0 %, at least 1 above it, 100 % is 16. The
+first level after start-up and a change of source (the override set or given back) show nothing, and a bar that is
+showing goes when the override takes over; nor does a `soft`
+radio, whose volume screen does the job. The bar asks for the backlight (`ui_app_take_wake`): turning the knob is using
+the radio. No new view field: `follow_volume` already filters the knob (2 %, the ends). Tests: `uiFlowTest`
+(`volume_bar_checks`, every display class, a seeded property run), `radioCoreTest` (`test_volume_step_of`), gallery
+`volume_bar`, `volume_bar_call`.
 
 ## 5. Power
 
@@ -463,6 +500,11 @@ switch.
 `radio_backlight_pct(brightness, idle_ms)`: the UI's brightness, dimmed to a fifth (at least 5 %) after
 `backlight_dim_s` without input, off after `backlight_off_s`, capped at 30 % while the battery is low or critical.
 The UI owns the backlight and calls it; the radio core doesn't drive the backlight itself.
+
+Either time 0 means never: `backlight_dim_s` 0 never dims, `backlight_off_s` 0 never turns the backlight off, so a
+dim time with off 0 dims and stays on. The UI's setting (`UI_SET_BACKLIGHT_S`, Settings > Display > Backlight
+Dim/Off) carries both in one value: a time T > 0 dims after T and goes off after 4T, 0 is always on, and -T dims after
+T and never goes off (the "T/dim" choices).
 
 Idle time restarts on input and while `radio_view_wakes(view)` holds: something the user would want to see.
 
