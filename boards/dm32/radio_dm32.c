@@ -36,20 +36,29 @@
 #define TASK_WAKE_US		420u		// the RF task's latest wake after the interrupt
 // The earliest key-up point: the split's switch still after the task's wake
 #define KEYUP_MAX_AHEAD_US	(RF_TX_LEAD * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US - TASK_WAKE_US - SWITCH_AHEAD_SPLIT_US)
-// The key-up constants (docs/spec/pa-keyup.md): measured on the SDR bench at UHF, every step measured up 0.1-0.5 ms
-// before the first symbol and no more than 3 dB over (hardware-dm32.md 8.5). The knee goes with pa_us: the control
-// charges less with the PA selected, so a later PA wants a smaller knee (1450 with the PA at the boost)
+// The key-up constants (docs/spec/pa-keyup.md), [VHF, UHF]: measured on the SDR bench at every level, each up
+// 0.1-0.55 ms before the first symbol and no more than 1.1 dB over (hardware-dm32.md 8.5). The knee goes with pa_us:
+// the control charges less with the PA selected, so a later PA wants a smaller knee (UHF: 1450 with the PA at the
+// boost). The VHF PA comes up about 0.15 ms after it is selected whatever the boost, so its point sets the top
+// level's rise. The low levels rise later than the top one on both bands, so none starts late (late_pct 0)
 #define KEYUP_BOOST_US		1500u
-#define KEYUP_PA_US		900u
-#define KEYUP_DRIVE_US		500u
-_Static_assert(KEYUP_BOOST_US <= KEYUP_MAX_AHEAD_US && KEYUP_PA_US <= KEYUP_BOOST_US && KEYUP_DRIVE_US <= KEYUP_BOOST_US,
+#define KEYUP_PA_US_VHF		500u
+#define KEYUP_PA_US_UHF		900u
+#define KEYUP_DRIVE_US_VHF	400u
+#define KEYUP_DRIVE_US_UHF	500u
+_Static_assert(KEYUP_BOOST_US <= KEYUP_MAX_AHEAD_US && KEYUP_PA_US_VHF <= KEYUP_BOOST_US &&
+	       KEYUP_PA_US_UHF <= KEYUP_BOOST_US && KEYUP_DRIVE_US_VHF <= KEYUP_BOOST_US &&
+	       KEYUP_DRIVE_US_UHF <= KEYUP_BOOST_US,
 	       "the key-up's points must come after the split's switch, in order (pa_keyup_valid)");
-_Static_assert(SWITCH_AHEAD_US + KEYUP_PA_US <= SWITCH_AHEAD_SIMPLEX_MAX_US,
+_Static_assert(SWITCH_AHEAD_US + KEYUP_PA_US_VHF <= SWITCH_AHEAD_SIMPLEX_MAX_US &&
+	       SWITCH_AHEAD_US + KEYUP_PA_US_UHF <= SWITCH_AHEAD_SIMPLEX_MAX_US,
 	       "the simplex switch to TX must come after the inbound burst before ours");
 #if CONFIG_DMR
-static const pa_keyup_cfg_t keyup_cfg = {
-	.dead = 680, .knee = 1250, .slope_us = 600, .boost_pct = 120, .hold_pct = 80,
-	.boost_us = KEYUP_BOOST_US, .pa_us = KEYUP_PA_US, .drive_us = KEYUP_DRIVE_US,
+static const pa_keyup_cfg_t keyup_cfg[2] = {
+	{ .dead = 680, .knee = 1000, .slope_us = 600, .boost_pct = 120, .hold_pct = 80,
+	  .boost_us = KEYUP_BOOST_US, .pa_us = KEYUP_PA_US_VHF, .drive_us = KEYUP_DRIVE_US_VHF },
+	{ .dead = 680, .knee = 1250, .slope_us = 600, .boost_pct = 120, .hold_pct = 80,
+	  .boost_us = KEYUP_BOOST_US, .pa_us = KEYUP_PA_US_UHF, .drive_us = KEYUP_DRIVE_US_UHF },
 };
 #endif
 // TX data advance (hrc7000_t.tx_pre_on): the chip's 0.4 ms until the inbound burst's offset against the outbound is
@@ -312,7 +321,7 @@ static void init(void)
 	modem.fm_tx_limit[1] = FM_TX_LIMIT_25K;
 	hrc7000_set_rf_tx_lead(&modem, RF_TX_LEAD);
 #if CONFIG_DMR
-	pa_keyup_init(&keyup_cfg, KEYUP_MAX_AHEAD_US, DAC_MAX);
+	pa_keyup_init(&keyup_cfg[1], KEYUP_MAX_AHEAD_US, DAC_MAX);
 #endif
 
 	hrc_pin_out(PIN_FD_CS, true);
@@ -453,7 +462,9 @@ static void keyup_plan(uint32_t hz)
 		uint16_t v = level_drive(hz, l);
 		top = v > top ? v : top;
 	}
-	ku_cfg = keyup_cfg;			// pa_keyup_plan leaves it when no key-up is set up (no boost then)
+	const pa_keyup_cfg_t *kb = &keyup_cfg[hz >= UHF_FROM_HZ ? 1 : 0];
+	pa_keyup_select(kb);
+	ku_cfg = *kb;				// pa_keyup_plan leaves it when no key-up is set up (no boost then)
 	ku = pa_keyup_plan(tx_drive, top, 0u, &ku_cfg);	// the plan and its points from one set of constants
 }
 #endif

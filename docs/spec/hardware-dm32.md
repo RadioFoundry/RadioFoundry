@@ -866,8 +866,8 @@ switch cut their end. The RF TX interrupt's lead (2.6 ms) did not matter: the sw
 | 1.5 ms (PA 1.2 ms) | 5 of 6 | 48-72 | 45-73 |
 | 1.2 ms (PA 0.9 ms) | 5 of 6 | 54-72 | 5-23 |
 
-The PA now selects at 0.9 ms, 0.6 ms after the boost, so the switch comes at 1.2 ms; a static assert keeps it no
-earlier. With the PA selected later the boost charges the control more, so the knee went from 1450 to 1250. Raw I/Q on
+The PA now selects at 0.9 ms on UHF (0.5 ms on VHF, below), 0.6 ms after the boost, so the switch comes at 1.2 ms; a
+static assert keeps it no earlier on either band. With the PA selected later the boost charges the control more, so the knee went from 1450 to 1250. Raw I/Q on
 UHF (the radio 20 ft from the receiver, so no -30 dB point), the -3 dB point / overshoot:
 
 | Step | L- | L+ | M | M+ | M++ | H |
@@ -882,9 +882,39 @@ On VHF, every step, one call each:
 | PA 1.5 ms, knee 1450 | -0.64 / 1.0 | -0.66 / 0.4 | -0.67 / 0.2 | -0.81 / 0.4 | -0.78 / 0.4 | -0.82 / 0.4 | -0.80 / 0.4 | -0.83 / 0.4 | -0.80 / 0.4 |
 | PA 0.9 ms, knee 1250 | -0.72 / 2.8 | -0.71 / 2.0 | -0.71 / 0.4 | -0.64 / 0.3 | -0.72 / 0.4 | -0.75 / 0.4 | -0.79 / 0.4 | -0.79 / 0.5 | -0.80 / 0.4 |
 
-On VHF the low steps overshoot more with the later PA (2.8 dB at L-, inside the 3 dB limit); a VHF knee of its own
-could lower it. Not measured with these constants on UHF: L, L++ and H-. The other knees at PA 0.9 ms (950, 1100) and PA 1.1 ms (knee
-1100, 1250) were also up before the first symbol on every step measured, with less overshoot at L-.
+On VHF the low steps overshoot more with the later PA (2.8 dB at L-, inside the 3 dB limit). Not measured with these
+constants on UHF: L, L++ and H-. The other knees at PA 0.9 ms (950, 1100) and PA 1.1 ms (knee 1100, 1250) were also up
+before the first symbol on every step measured, with less overshoot at L-.
+
+**Each band's constants.** The VHF PA comes up about 0.15 ms after it is selected, whatever the boost: with the PA
+at 0.9 ms, knees from 600 to 1250 all put L- at -0.70 to -0.73 ms and H at -0.78 to -0.81 ms, and L- still
+overshot 2.3-3.1 dB. So VHF has its own constants: the PA at 0.5 ms, the drive at 0.4 ms and knee 1000. The UHF set
+stays as above. On both bands the low levels rise later than H, so no level's boost starts late (late 0 %).
+The VHF PA point and knee at L- (PA 0.5 ms):
+
+| Knee | L- | L | H |
+|---|---|---|---|
+| 800 | +0.10 / 0.1, first symbol 2.9 dB low | | -0.53 / 0.2 |
+| 950 | -0.12 to -0.13 / 0.2 | -0.24 / 0.2 | |
+| 1000 | -0.08 to -0.20 / 0.2-0.3 | -0.20 to -0.28 / 0.2-0.4 | -0.52 / 0.3 |
+| 1100 | -0.24 to -0.40 / 1.3-2.9 | -0.33 to -0.35 / 1.0 | -0.48 to -0.53 / 0.2 |
+| 1250 | -0.38 / 2.4 | -0.40 / 1.6 | |
+
+The PA at 0.4 ms put H at -0.42 ms and L- (knee 800) at +0.17 ms. The five power levels with the built-in
+constants, the -3 dB point / overshoot, one or two calls each (raw I/Q from an 8-bit receiver on the SDR bench, the radio into
+a dummy load at full power):
+
+| Channel | L- | L | M | M+ | H |
+|---|---|---|---|---|---|
+| 146.000 | -0.16 / 0.1 | -0.26 / 0.5 | -0.46 / 0.2 | -0.42 / 0.2 | -0.53 / 0.2 |
+| 432.000 | -0.26 / 1.1 | -0.24 / 0.5 | | | -0.17 / 0.5 |
+| 445.000 | -0.15 to -0.23 / 0.3-0.6 | -0.18 to -0.23 / 0.2 | -0.29 to -0.38 / 0.1 | -0.42 to -0.47 / 0.1 | -0.50 to -0.53 / 0.1 |
+| 449.900 | -0.47 / 0.5 | -0.49 / 0.0 | | | -0.53 / 0.0 |
+
+Every level is up before the first symbol, at most 0.53 ms early and 1.1 dB over. The first symbol is within 1.2 dB
+of the settled level. The simplex switch on VHF comes at 0.8 ms, later than UHF's
+1.2 ms. The levels' output against H is not measured: the dummy load's leak to the receiver moved up to 4 dB between
+runs. That needs a wattmeter.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../dev/img/dm32-keyup-sfr-ramp-dark.png">
