@@ -171,7 +171,8 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 		}
 		break;
 	case 12: {	// DMR TX bursts (dmr_rfburst.h): TX-on / TX-off sequences run, RF RX interrupts, what woke the
-			// last TX-off (R RF RX interrupt, T slot tick, A abort), ramp downs started late and the last by how much
+			// last TX-off (R RF RX interrupt, T slot tick, A abort, B end of a continuous outbound), ramp downs
+			// started late and the last by how much
 		hrc_rfburst_stats_t t;
 		hrc_rfburst_stats(&t);
 		put(&o, "b");
@@ -180,7 +181,8 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, t.ends);
 		put(&o, " rx");
 		put_u(&o, t.rfrx_ints);
-		put(&o, t.last_by == 'R' ? " R" : t.last_by == 'T' ? " T" : t.last_by == 'A' ? " A" : " -");
+		char by[3] = { ' ', t.last_by != 0 ? t.last_by : '-', '\0' };
+		put(&o, by);
 		put(&o, " L");
 		put_u(&o, t.late);
 		put(&o, "/");
