@@ -13,6 +13,7 @@
 #include "audio_pcm.h"
 #include "hal_time.h"
 #include "power/battery/battery.h"
+#include "power/knob/knob.h"
 
 // TODO(gd88): unknown, needs a radio: whether PTB12 is the knob's contact or a key
 #define KEY_OFF_POLLS		3u	// pressed this many polls in a row (100 ms each) before believing it
@@ -20,11 +21,13 @@
 #define BAT_GONE_SAMPLES	10u	// a second of readings below it
 #define BAT_FULL_MV		8400u
 #define BAT_EMPTY_MV		6000u
-// The knob: 21 positions over the ADC's range, with a little hysteresis so a knob resting on a boundary doesn't
-// flicker between two. The knob reads 0 to 1010 end to end (hardware-gd88.md 9)
+// The knob: 21 positions (5 % each) over its turn, with a little hysteresis so a knob resting on a boundary doesn't
+// flicker between two. It is an audio taper pot: the readings at its stops and quarters (hardware-gd88.md 9), linear
+// between them
 #define VOL_LEVELS		21u
-#define VOL_FULL_RAW		1010u
-#define VOL_HYST_RAW		12u
+#define VOL_STEP_PCT		5
+#define VOL_HYST_PCT		1
+static const uint16_t vol_curve[5] = { 0, 59, 129, 671, 1010 };
 
 static battery_avg_t bat;
 static uint8_t off_count, gone_count;
@@ -89,16 +92,14 @@ static uint8_t battery_pct(void)
 	return battery_linear_pct(battery_mv(), BAT_EMPTY_MV, BAT_FULL_MV);
 }
 
-// The level whose band holds raw; a move of less than VOL_HYST_RAW past the current band's edge keeps it
+// The level whose band holds the knob's position; a move of less than VOL_HYST_PCT past the current band's edge keeps it
 static int8_t volume(void)
 {
-	uint32_t raw = hrc_adc_read(GD88_ADC_VOLUME);
-	uint32_t band = (VOL_FULL_RAW + VOL_LEVELS - 1u) / VOL_LEVELS;
-	uint32_t lo = vol_level * band;
-	uint32_t hi = lo + band;
-	if (raw + VOL_HYST_RAW < lo || raw >= hi + VOL_HYST_RAW) {
-		uint32_t l = raw / band;
-		vol_level = (uint8_t)(l >= VOL_LEVELS ? VOL_LEVELS - 1u : l);
+	int32_t pct = knob_curve_pct(hrc_adc_read(GD88_ADC_VOLUME), vol_curve, 5);
+	int32_t lo = (int32_t)vol_level * VOL_STEP_PCT;
+	if (pct + VOL_HYST_PCT < lo || pct >= lo + VOL_STEP_PCT + VOL_HYST_PCT) {
+		int32_t l = pct / VOL_STEP_PCT;
+		vol_level = (uint8_t)(l >= (int32_t)VOL_LEVELS ? VOL_LEVELS - 1u : (uint32_t)l);
 	}
 	return (int8_t)(vol_level * 100u / (VOL_LEVELS - 1u));
 }

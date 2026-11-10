@@ -301,6 +301,10 @@ resampleTest: resampleTest.c $(ROOT)/drivers/audio/resample/resample.h
 TESTS   += batteryTest
 batteryTest: batteryTest.c $(ROOT)/drivers/power/battery/battery.h
 	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ batteryTest.c
+# The volume knob curve the radios share (drivers/power/knob)
+TESTS   += knobTest
+knobTest: knobTest.c $(ROOT)/drivers/power/knob/knob.h
+	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ knobTest.c
 # The band check of hal/board.h, which the core and the radios share
 TESTS   += boardBandTest
 boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
@@ -308,7 +312,7 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 
 run: run-core
 run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestAprs radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
-          rx2LinkTest rx2DmrTest dlMemTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest afskTonegenTest
+          rx2LinkTest rx2DmrTest dlMemTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest knobTest afskTonegenTest
 	./aprsRadioTest
 	./afskTonegenTest
 	./radioCoreTest
@@ -331,6 +335,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestAprs radioFeaturesTes
 	./powerKeyTest
 	./boardBandTest
 	./batteryTest
+	./knobTest
 .PHONY: run-core
 
 # The read-only codeplug (open-firmware layout and built-in channels), on fake flash images
