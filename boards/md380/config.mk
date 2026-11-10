@@ -49,6 +49,7 @@ BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
 # radios (docs/spec/ppp.md), and this one has the adapter. Every switch on doesn't fit the 464 KB of flash with two
 # translations: maximal keeps Spanish, as the default build does (Italian builds on the other boards)
-# Peek and poke (DEBUG_MEM, a bench tool that the default build has) too: with every other switch on, the flash is full
-MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT DEBUG_MEM
-MAXIMAL_VARS := CONFIG_DEBUG_MEM=n
+# The DMR ID database over TFTP too (it follows TFTP, so it is turned off here): with every other switch on the flash is
+# full, and the other radios' maximal builds still cover it
+MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT TFTP_IDDB
+MAXIMAL_VARS := CONFIG_TFTP_IDDB=n
