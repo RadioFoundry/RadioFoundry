@@ -82,7 +82,7 @@ restart restores the board's. The `core` view shows `pa_keyup` (the constants) a
 boost, hold and drive, and the hold's point). RADIO op 36 sets a drive that is not in the table.
 
 ```
-rfoundry_debug.py radio pa-keyup 680 1450 600 120 80 1500 1500 500
+rfoundry_debug.py radio pa-keyup 680 1250 600 120 80 1500 900 500
 rfoundry_debug.py radio pa-keyup default
 ```
 
@@ -101,7 +101,8 @@ burst, find the first symbol from the sync, and take the median power envelope a
 1. Characterize the loop with the boost off (`boost_us` 0): the time from the PA's point to the output at three or
    four drives. Two drives give `dead` and `knee`: the knee is (d − dead) × (that time − the low-pass's time), the same
    at every drive. The decay of an overshoot gives the low-pass's time; start `slope_us` there.
-2. Set `boost_pct` 120, `hold_pct` 80 (higher if that is under the dead zone at the lowest step), the boost at the earliest point the board allows, the PA with it, and `drive_us` about a third of that.
+2. Set `boost_pct` 120, `hold_pct` 80 (higher if that is under the dead zone at the lowest step), the boost at the earliest point the board allows, the PA with it or later (no earlier than step 7 allows), and
+   `drive_us` about a third of the boost's.
 3. At the lowest drive, step `knee` until the -3 dB point is 0.2-0.3 ms before the first symbol. Too little comes up
    late with no overshoot, too much early and over. Repeat the chosen value: it should hold within 0.1 ms.
 4. At the top step: late or low at the first symbol, raise `slope_us` or `hold_pct`; overshooting, lower `slope_us`.

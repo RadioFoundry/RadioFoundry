@@ -807,7 +807,7 @@ slope 600 µs, boost 120 %, hold 80 %, boost at 1.5 ms, PA at 0.9 ms, drive at 0
 | Boost | 1.5 ms | DAC B = 1.2 × top |
 | FD6818 to TX on a simplex channel | 1.2 ms | LNA off, idle, TX: two state writes, 0.1 ms; after the inbound burst before ours |
 | PA select high | 0.9 ms | |
-| Hold | 1.5 ms − t | DAC B = 0.8 × d; t = (1250 + 0.6 × (d − 680)) / (1.2 × top − 680) ms, at most 1 ms: 0.58 ms at drive 955, 0.98 ms at the H step on UHF (top 2615) |
+| Hold | 1.5 ms − t | DAC B = 0.8 × d; t = (1250 + 0.6 × (d − 680)) / (1.2 × top − 680) ms, at most 1 ms: from 0.92 ms at drive 955 (before the PA select), from 0.52 ms at the H step on UHF (top 2615) |
 | Drive | 0.5 ms | DAC B = d |
 
 d is the step's drive (11.3) and top the H step's, at the TX frequency. The earliest point the sequence may take is
@@ -855,7 +855,7 @@ symbol against the settled level (dB). The same constants throughout.
   while the drive is held before the slot.
 
 **The simplex switch and SFR.** With the PA at the boost (1.5 ms), the simplex switch came 1.8 ms before our first
-symbol, and an SFR repeater lost about half of each call: the runner decoded 33-45 of the call's 72 inbound frames and
+symbol, and an SFR repeater lost about half of each call: the runner decoded 0-45 of the call's 72 inbound frames and
 repeated 19-23 bursts, with no frame failing its FEC. The inbound bursts it missed were never handed over, so the
 switch cut their end. The RF TX interrupt's lead (2.6 ms) did not matter: the switch's time alone moved the result.
 `test_sfr_repeater_quality`, the radio on a simplex channel, the SDR bench talking at full power, six calls each:

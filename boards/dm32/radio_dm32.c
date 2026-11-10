@@ -31,12 +31,12 @@
 // 0.42 ms) room before that
 #define RF_TX_LEAD		26u		// 100 us steps (RF_CONTROL b13:8)
 #define SWITCH_AHEAD_US		300u		// the FD6818 to TX this long before the PA
-#define SWITCH_AHEAD_SIMPLEX_MAX_US 1200u	// the latest the simplex switch may come, for the inbound burst before ours
+#define SWITCH_AHEAD_SIMPLEX_MAX_US 1200u	// the simplex switch's longest lead: earlier cuts the inbound burst before ours
 #define SWITCH_AHEAD_SPLIT_US	1450u		// the same with the synthesizer's move to the TX frequency, before the boost
 #define TASK_WAKE_US		420u		// the RF task's latest wake after the interrupt
 // The earliest key-up point: the split's switch still after the task's wake
 #define KEYUP_MAX_AHEAD_US	(RF_TX_LEAD * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US - TASK_WAKE_US - SWITCH_AHEAD_SPLIT_US)
-// The key-up constants (docs/spec/pa-keyup.md): measured on the SDR bench at UHF and VHF, every step up 0.1-0.8 ms
+// The key-up constants (docs/spec/pa-keyup.md): measured on the SDR bench at UHF, every step measured up 0.1-0.5 ms
 // before the first symbol and no more than 3 dB over (hardware-dm32.md 8.5). The knee goes with pa_us: the control
 // charges less with the PA selected, so a later PA wants a smaller knee (1450 with the PA at the boost)
 #define KEYUP_BOOST_US		1500u
