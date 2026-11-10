@@ -875,7 +875,15 @@ UHF (the radio 20 ft from the receiver, so no -30 dB point), the -3 dB point / o
 | PA 1.5 ms, knee 1450 | -0.58 to -0.60 / 1.6-1.9 | -0.22 / 0.0 | | | -0.14 / -0.1 | -0.14 to -0.16 / -0.1 |
 | PA 0.9 ms, knee 1250 | -0.50 / 1.5 | -0.23 to -0.26 / 0.0 | -0.21 / 0.0 | -0.16 / 0.0 | -0.16 / 0.0 | -0.22 / -0.1 |
 
-Not measured with these constants: L, L++, H- and VHF. The other knees at PA 0.9 ms (950, 1100) and PA 1.1 ms (knee
+On VHF, every step, one call each:
+
+| Constants | L- | L | L+ | L++ | M | M+ | M++ | H- | H |
+|---|---|---|---|---|---|---|---|---|---|
+| PA 1.5 ms, knee 1450 | -0.64 / 1.0 | -0.66 / 0.4 | -0.67 / 0.2 | -0.81 / 0.4 | -0.78 / 0.4 | -0.82 / 0.4 | -0.80 / 0.4 | -0.83 / 0.4 | -0.80 / 0.4 |
+| PA 0.9 ms, knee 1250 | -0.72 / 2.8 | -0.71 / 2.0 | -0.71 / 0.4 | -0.64 / 0.3 | -0.72 / 0.4 | -0.75 / 0.4 | -0.79 / 0.4 | -0.79 / 0.5 | -0.80 / 0.4 |
+
+On VHF the low steps overshoot more with the later PA (2.8 dB at L-, inside the 3 dB limit); a VHF knee of its own
+could lower it. Not measured with these constants on UHF: L, L++ and H-. The other knees at PA 0.9 ms (950, 1100) and PA 1.1 ms (knee
 1100, 1250) were also up before the first symbol on every step measured, with less overshoot at L-.
 
 <picture>
