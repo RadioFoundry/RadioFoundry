@@ -15,6 +15,7 @@ import { CodeplugImage, CODEPLUG_SPAN } from "../static/js/codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, refNumber, listenBand } from "../static/js/codeplug/model.js";
 import { getTone, putTone, parseTone, parseFreq, mhz, getCoord, coordBytes } from "../static/js/codeplug/fields.js";
 import * as iddb from "../static/js/codeplug/iddb.js";
+import { blankChannel, decodeChannel, encodeChannel } from "../static/js/codeplug/records.js";
 import { targets } from "../static/js/flasher/restore.js";
 
 const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
@@ -162,6 +163,24 @@ test("an edited codeplug is read by the radio as written", () => {
 	assert.equal(detail(decode(img)), detail(m));
 	assert.equal(m.channels[4].number, 300);
 	assert.equal(m.contacts.map((c) => c.number).join(), "1,2,3,4");
+});
+
+test("a channel's tone burst byte filled with 0xFF is not set, and is never written as 0xFF", () => {
+	// open-firmware-cps.md 7.3.3: byte 0x2A bit 6, the firmware's guard for a writer that fills bytes it doesn't know
+	const m = empty();
+	m.channels.push(newChannel({ name: "Filled", rxHz: 145500000, txHz: 145500000 }));
+	const r = encodeChannel(m.channels[0], blankChannel());
+	r[0x2A] = 0xFF;
+	const c = decodeChannel(r);
+	assert.equal(c.toneBurst, false);
+	assert.equal(encodeChannel(c, r.slice())[0x2A], 0xBF);
+	c.toneBurst = true;
+	const on = encodeChannel(c, r.slice());
+	assert.equal(on[0x2A], 0xCF);
+	assert.equal(decodeChannel(on).toneBurst, true);
+	// a byte with other bits clear is as before
+	r[0x2A] = 0x40;
+	assert.equal(decodeChannel(r).toneBurst, true);
 });
 
 test("an edit rewrites only what changed", () => {

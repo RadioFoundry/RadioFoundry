@@ -151,6 +151,16 @@ static void test_encode(void)
 	r[0x26] &= (uint8_t)~0x02u;
 	r[0x2A] = 0x40;
 	CHECK(codeplug_openfw_decode(r, &d) && d.tone_burst && d.sfr_b == 0);
+	// A byte a writer filled with 0xFF is "not set", not a burst on every channel; turning the burst on there is
+	// never written as 0xFF again
+	r[0x2A] = 0xFF;
+	CHECK(codeplug_openfw_decode(r, &d) && !d.tone_burst);
+	codeplug_openfw_encode(&d, r);
+	CHECK(r[0x2A] == 0xBF);
+	r[0x2A] = 0xFF;
+	d.tone_burst = true;
+	codeplug_openfw_encode(&d, r);
+	CHECK(r[0x2A] == 0xCF && codeplug_openfw_decode(r, &d) && d.tone_burst);
 }
 
 static void test_materialize(void)
