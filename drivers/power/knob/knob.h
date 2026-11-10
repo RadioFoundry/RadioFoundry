@@ -28,4 +28,17 @@ static inline int32_t knob_curve_pct(int32_t raw, const uint16_t *pts, uint8_t n
 	return 100;
 }
 
+// The level (0..levels-1, step_pct each) whose band holds pct, kept while pct stays within hyst_pct of the current
+// band's edges, so a knob resting on a boundary doesn't flicker between two. The stops always give the end levels: the
+// hysteresis would otherwise ask for more than 100 % to reach the top
+static inline uint8_t knob_level(int32_t pct, uint8_t level, uint8_t levels, int32_t step_pct, int32_t hyst_pct)
+{
+	int32_t lo = (int32_t)level * step_pct;
+	if (pct <= 0 || pct >= 100 || pct + hyst_pct < lo || pct >= lo + step_pct + hyst_pct) {
+		int32_t l = pct <= 0 ? 0 : pct / step_pct;
+		return (uint8_t)(l >= (int32_t)levels ? levels - 1u : (uint32_t)l);
+	}
+	return level;
+}
+
 #endif

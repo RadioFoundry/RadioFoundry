@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The volume knob curve (drivers/power/knob): the ends, each measured point, linear between points, and a two-segment
-// table (a break point at half the turn) giving what the plain two-segment formula gives
+// table (a break point at half the turn) giving what the plain two-segment formula gives, and the levels' hysteresis
+// and ends
 #include <stdio.h>
 #include "power/knob/knob.h"
 
@@ -35,6 +36,25 @@ int main(void)
 		int32_t want = raw < 1500 ? (raw - 120) * 50 / (1500 - 120) : 50 + (raw - 1500) * 50 / (3900 - 1500);
 		CHECK(knob_curve_pct(raw, b, 3) == want);
 	}
+
+	// Levels of 5 % with 1 % of hysteresis: the stops reach the end levels from the next one, a boundary holds
+	CHECK(knob_level(100, 19, 21, 5, 1) == 20);
+	CHECK(knob_level(99, 19, 21, 5, 1) == 19);
+	CHECK(knob_level(0, 1, 21, 5, 1) == 0);
+	CHECK(knob_level(4, 1, 21, 5, 1) == 1);	// within the hysteresis below 5
+	CHECK(knob_level(3, 1, 21, 5, 1) == 0);
+	CHECK(knob_level(10, 1, 21, 5, 1) == 1);	// within the hysteresis above 10
+	CHECK(knob_level(11, 1, 21, 5, 1) == 2);
+	CHECK(knob_level(52, 0, 21, 5, 1) == 10);
+	uint8_t lv = 0;
+	for (int32_t raw = 0; raw <= 1010; raw++) {
+		lv = knob_level(knob_curve_pct(raw, q, 5), lv, 21, 5, 1);
+	}
+	CHECK(lv == 20);	// turned all the way up: the top level
+	for (int32_t raw = 1010; raw >= 0; raw--) {
+		lv = knob_level(knob_curve_pct(raw, q, 5), lv, 21, 5, 1);
+	}
+	CHECK(lv == 0);
 
 	if (failures == 0) {
 		printf("knobTest: passed (0 failures)\n");

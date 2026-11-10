@@ -92,15 +92,10 @@ static uint8_t battery_pct(void)
 	return battery_linear_pct(battery_mv(), BAT_EMPTY_MV, BAT_FULL_MV);
 }
 
-// The level whose band holds the knob's position; a move of less than VOL_HYST_PCT past the current band's edge keeps it
 static int8_t volume(void)
 {
 	int32_t pct = knob_curve_pct(hrc_adc_read(GD88_ADC_VOLUME), vol_curve, 5);
-	int32_t lo = (int32_t)vol_level * VOL_STEP_PCT;
-	if (pct + VOL_HYST_PCT < lo || pct >= lo + VOL_STEP_PCT + VOL_HYST_PCT) {
-		int32_t l = pct / VOL_STEP_PCT;
-		vol_level = (uint8_t)(l >= (int32_t)VOL_LEVELS ? VOL_LEVELS - 1u : (uint32_t)l);
-	}
+	vol_level = knob_level(pct, vol_level, VOL_LEVELS, VOL_STEP_PCT, VOL_HYST_PCT);
 	return (int8_t)(vol_level * 100u / (VOL_LEVELS - 1u));
 }
 
