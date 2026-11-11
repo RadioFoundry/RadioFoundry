@@ -9,11 +9,12 @@ pa_cal_plot: a pa_cal.py run as pictures (docs/spec/pa-keyup.md 6). Needs matplo
 
 Per band two files:
 
-  pa_cal_<MHz>_ramps.png   the burst's envelope at the lowest, a middle and the top power level, with the board's
-                           constants (before) and the run's (after): the key-up against the slot's start, the guard
-                           time, the key-up window, the planned drive points and the first symbol; the key-down
-                           against the last symbol and the slot's end. Without envelopes from the gateway (`trace`)
-                           only the measured -3 dB points are drawn.
+  pa_cal_<MHz>_ramps.png   the burst's envelope at the lowest, a middle and the top power level over each other, a
+                           color each: the key-up against the slot's start, the guard time, the key-up window, the
+                           planned drive points and the first symbol; the key-down against the last symbol and the
+                           slot's end. When the run changed the constants, the board's (before) are dashed; a run
+                           that kept them has one measurement and draws one. Without envelopes from the gateway
+                           (`trace`) only the measured -3 dB points are drawn.
   pa_cal_<MHz>_fit.png     the open-loop time of each drive with the fitted law, and every level's -3 dB point
                            before and after.
 
@@ -26,6 +27,7 @@ import sys
 # A DMR burst is 27.5 ms in a 30 ms slot: 1.25 ms of guard on either side (ETSI TS 102 361-1, 4.2)
 GUARD_MS = 1.25
 BEFORE, AFTER, INK, FAINT = "#8a8f98", "#1f6fd1", "#30343b", "#c9ced6"
+LEVELS = ("#1f6fd1", "#d9622b", "#7a3fb8", "#12857a", "#b3261e")    # a color per shown power level
 
 
 def law(c, d, top, ref):
@@ -34,16 +36,17 @@ def law(c, d, top, ref):
     return None if d <= dead else (c["knee_us"] * max(top - dead, 0) + c["slope_us"] * (d - dead)) / (d - dead)
 
 
-def _curve(ax, t, color, label, lw):
+def _curve(ax, t, color, label, before=False):
     if not t:
         return False
     x = [t["t0_ms"] + i * t["dt_ms"] for i in range(len(t["db"]))]
-    ax.plot(x, t["db"], color=color, lw=lw, label=label)
+    ax.plot(x, t["db"], color=color, lw=1.1 if before else 1.7, ls="--" if before else "-", alpha=0.55 if before else 1,
+            label=label)
     return True
 
 
 def _marks(ax, start):
-    """The slot's own timing, the same on every panel."""
+    """The slot's own timing."""
     if start:
         ax.axvspan(-GUARD_MS, 0, color="#f3e9c6", lw=0, label="guard time (1.25 ms)")
         ax.axvspan(ax.get_xlim()[0], -GUARD_MS, color="#eceef1", lw=0, label="the slot before")
@@ -58,67 +61,87 @@ def _marks(ax, start):
     ax.axhline(0, color=FAINT, lw=0.8)
 
 
-def _points(ax, k, color, y):
+def _points(ax, k, color, y, alpha=1.0):
     """A key-up's planned points as ticks under the curves: the boost (^), the PA (s), the drive (v)."""
     if not k:
         return
     if k.get("boost"):
-        ax.plot([-k["boost_us"] / 1000], [y], "^", color=color, ms=6)
-        ax.plot([-k["drive_us"] / 1000], [y], "v", color=color, ms=6)
-    ax.plot([-k["pa_us"] / 1000], [y], "s", color=color, ms=5, mfc="none")
+        ax.plot([-k["boost_us"] / 1000], [y], "^", color=color, ms=6, alpha=alpha)
+        ax.plot([-k["drive_us"] / 1000], [y], "v", color=color, ms=6, alpha=alpha)
+    ax.plot([-k["pa_us"] / 1000], [y], "s", color=color, ms=5, mfc="none", alpha=alpha)
+
+
+def _pair(mine, l):
+    """A level's keys: (before, after). before is None when the run kept the board's constants: one measurement."""
+    after = next((k for k in reversed(mine) if k.get("after") and k.get("level") == l), None)
+    before = next((k for k in mine if k.get("tag") == "before" and k.get("level") == l), None)
+    return (None if before is after else before), after
 
 
 def ramps(plt, band, keys, path):
+    """One picture: the shown levels over each other, a color each; the constants before as dashed lines, only when
+    the run changed them."""
+    from matplotlib.lines import Line2D
     shown = band.get("shown") or sorted(int(l) for l in band["levels"])[:3]
     mhz = band["mhz"]
     mine = [k for k in keys if k.get("mhz") == mhz]
-    fig, axes = plt.subplots(len(shown), 2, figsize=(11, 3.1 * len(shown)), squeeze=False,
-                             gridspec_kw={"width_ratios": [3, 2]})
-    for row, l in enumerate(shown):
-        lv = band["levels"].get(l) or band["levels"].get(str(l))
-        before = next((k for k in mine if k.get("tag") == "before" and k.get("level") == l), None)
-        after = next((k for k in reversed(mine) if k.get("after") and k.get("level") == l), None)
-        for col, name in enumerate(("trace", "tail")):
-            ax = axes[row][col]
-            ax.set_xlim((-4.0, 2.0) if col == 0 else (-2.0, 4.0))
-            ax.set_ylim(-45, 8)
-            _marks(ax, col == 0)
-            drawn = _curve(ax, before and before.get(name), BEFORE, "before", 1.3)
-            drawn |= _curve(ax, after and after.get(name), AFTER, "after (this run's)", 1.8)
-            if col == 0:
-                ax.axvline(-band["window_us"] / 1000, color=AFTER, lw=0.8, ls="--", label="key-up window")
-                ax.axvline(band["target_us"] / 1000, color="#2a9d5c", lw=0.8, ls="--", label="-3 dB target")
-                for k, color in ((before, BEFORE), (after, AFTER)):
-                    if k and k.get("rise_us") is not None:
-                        ax.plot([k["rise_us"] / 1000], [-3], "o", color=color, ms=5)
-                _points(ax, before and before.get("plan"), BEFORE, -41)
-                _points(ax, lv and lv.get("plan"), AFTER, -37)
-                note = []
-                for k, word in ((before, "before"), (after, "after")):
-                    if k and k.get("rise_us") is not None:
-                        note.append(f"{word}: -3 dB at {k['rise_us']:+.0f} us, overshoot {k.get('over_db') or 0:.1f} dB")
-                ax.text(0.01, 0.97, "\n".join(note), transform=ax.transAxes, va="top", fontsize=8, color=INK)
-                ax.set_ylabel("dB from the burst's level")
-                ax.set_title(f"level {l} ({lv['power'] if lv else '?'}), drive {lv['drive'] if lv else '?'}: key-up",
-                             fontsize=10, loc="left")
-            else:
-                ax.set_title("key-down", fontsize=10, loc="left")
-            if not drawn:
-                ax.text(0.5, 0.5, "no envelope from the gateway", transform=ax.transAxes, ha="center", color=BEFORE)
-            if row == len(shown) - 1:
-                ax.set_xlabel("ms from the first symbol" if col == 0 else "ms from the last symbol's end")
-            ax.grid(True, color="#e6e8ec", lw=0.5)
-    h, lab = axes[0][0].get_legend_handles_labels()
-    from matplotlib.lines import Line2D
+    pairs = [(l, band["levels"].get(l) or band["levels"].get(str(l))) + _pair(mine, l) for l in shown]
+    compared = any(b for _, _, b, _ in pairs)
+    fig, (up, down) = plt.subplots(1, 2, figsize=(12, 5.2), gridspec_kw={"width_ratios": [3, 2]})
+    up.set_xlim(-4.0, 2.0)
+    down.set_xlim(-2.0, 4.0)
+    for ax, name in ((up, "trace"), (down, "tail")):
+        ax.set_ylim(-45, 8)
+        _marks(ax, ax is up)
+        drawn = False
+        for i, (l, lv, before, after) in enumerate(pairs):
+            color = LEVELS[i % len(LEVELS)]
+            drawn |= _curve(ax, before and before.get(name), color, None, before=True)
+            drawn |= _curve(ax, after and after.get(name), color, None)
+        if not drawn:
+            ax.text(0.5, 0.5, "no envelope from the gateway", transform=ax.transAxes, ha="center", color=BEFORE)
+        ax.grid(True, color="#e6e8ec", lw=0.5)
+    up.axvline(-band["window_us"] / 1000, color=INK, lw=0.8, ls="--", label="key-up window")
+    up.axvline(band["target_us"] / 1000, color="#2a9d5c", lw=0.8, ls="--", label="-3 dB target")
+    names, note = [], []
+    for i, (l, lv, before, after) in enumerate(pairs):
+        color = LEVELS[i % len(LEVELS)]
+        for k, old in ((before, True), (after, False)):
+            if k and k.get("rise_us") is not None:
+                up.plot([k["rise_us"] / 1000], [-3], "o", color=color, ms=5, mfc="none" if old else color,
+                        alpha=0.55 if old else 1)
+        y = -42 + 3 * i
+        _points(up, before and before.get("plan"), color, y, 0.45)
+        _points(up, lv and lv.get("plan"), color, y)
+        # The level by its place and drive: the measured power is only as good as the run's --pad-db
+        power = "lowest level" if i == 0 else "top level" if i == len(pairs) - 1 else f"level {l}"
+        meas = f", {lv['power']}" if lv and not lv["power"].startswith("0 ") else ""
+        names.append(Line2D([], [], color=color, lw=1.7, label=f"{power} (drive {lv['drive'] if lv else '?'}{meas})"))
+        words = [f"{w}{k['rise_us']:+.0f} us, {k.get('over_db') or 0:.1f} dB over"
+                 for k, w in ((before, "before "), (after, "after " if compared else ""))
+                 if k and k.get("rise_us") is not None]
+        note.append((f"{power}: " + "; ".join(words), color))
+    for i, (text, color) in enumerate(note):
+        up.text(0.01, 0.97 - 0.05 * i, text, transform=up.transAxes, va="top", fontsize=8, color=color)
+    up.set_ylabel("dB from the burst's level")
+    up.set_xlabel("ms from the first symbol")
+    down.set_xlabel("ms from the last symbol's end")
+    up.set_title("key-up (-3 dB point, overshoot)", fontsize=10, loc="left")
+    down.set_title("key-down", fontsize=10, loc="left")
+    if compared:
+        names += [Line2D([], [], color=INK, lw=1.1, ls="--", alpha=0.55, label="before"),
+                  Line2D([], [], color=INK, lw=1.7, label="after (this run's)")]
+    up.legend(handles=names, loc="lower right", fontsize=8, frameon=True, framealpha=0.9, edgecolor=FAINT)
+    h, lab = up.get_legend_handles_labels()
     h += [Line2D([], [], marker="^", ls="", color=INK), Line2D([], [], marker="s", ls="", color=INK, mfc="none"),
           Line2D([], [], marker="v", ls="", color=INK), Line2D([], [], marker="o", ls="", color=INK)]
     lab += ["boost written", "PA on", "drive to the level's", "measured -3 dB point"]
-    fig.legend(h, lab, loc="lower center", ncol=6, fontsize=8, frameon=False)
+    fig.legend(h, lab, loc="lower center", ncol=5, fontsize=8, frameon=False)
     c = band["constants"]
+    state = "kept: the board's constants hold" if band.get("kept") else "PASS" if band["ok"] else "CHECK"
     fig.suptitle(f"{mhz:g} MHz key-up: dead {c['dead_pm']}/1000, knee {c['knee_us']} us, slope {c['slope_us']} us, "
-                 f"window {c['window_us']} us, settle {c['settle_us']} us  ({'PASS' if band['ok'] else 'CHECK'})",
-                 fontsize=11)
-    fig.tight_layout(rect=(0, 0.06, 1, 0.97))
+                 f"window {c['window_us']} us, settle {c['settle_us']} us  ({state})", fontsize=11)
+    fig.tight_layout(rect=(0, 0.09, 1, 0.96))
     fig.savefig(path, dpi=130)
     plt.close(fig)
 
@@ -152,9 +175,9 @@ def fit(plt, band, keys, path):
     for i, l in enumerate(names):
         lv = band["levels"][l]
         b = next((k for k in mine if k.get("tag") in ("before", "check") and k.get("level") == int(l)), None)
-        if b and b.get("rise_us") is not None:
+        if b and b.get("rise_us") is not None and not b.get("after"):     # a kept run has one measurement, not two
             a2.plot([i - 0.12], [b["rise_us"]], "o", color=BEFORE, ms=7, label="before" if i == 0 else None)
-        a2.plot([i + 0.12], [lv["rise_us"]], "o", color=AFTER, ms=7, label="after" if i == 0 else None)
+        a2.plot([i + 0.12], [lv["rise_us"]], "o", color=AFTER, ms=7, label="this run" if i == 0 else None)
     a2.axhspan(-600, 0, color="#e3f3e8", lw=0, label="in time: up before the first symbol")
     a2.axhline(0, color=INK, lw=1.0)
     a2.axhline(band["target_us"], color="#2a9d5c", lw=0.8, ls="--", label="target")
