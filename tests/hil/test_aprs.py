@@ -164,7 +164,8 @@ class AprsSession:
                      "pos_src": _n(v, "set.aprs_pos_src"), "dmr_dst": _n(v, "set.aprs_dmr_dst"),
                      "dmr_udt": _n(v, "set.aprs_dmr_udt"), "via": VIAS[v["set.aprs_via"]],
                      "path": PATHS.index(v["set.aprs_path"]), "rx": _n(v, "set.aprs_rx"),
-                     "digi": _n(v, "set.aprs_digi"), "power": _n(v, "set.aprs_power")}
+                     "digi": _n(v, "set.aprs_digi"), "power": _n(v, "set.aprs_power"),
+                     "ambiguity": _n(v, "set.pos_ambiguity")}
         self.v0 = v
         self.expected_rf = 0
         self.message = False
@@ -247,7 +248,7 @@ class AprsSession:
         if {"lat", "lon"} & self.changed:
             L.aprs_set("lat", self.fixed[0])
             L.aprs_set("lon", self.fixed[1])
-        for f in ("ssid", "path", "via", "dmr_dst", "dmr_udt", "pos_src", "rx", "digi", "power"):
+        for f in ("ssid", "path", "via", "dmr_dst", "dmr_udt", "pos_src", "rx", "digi", "power", "ambiguity"):
             if f in self.changed:
                 L.aprs_set(f, k[f])
         if self.custom_hz is not None:
@@ -544,6 +545,7 @@ def test_aprs_dmr_position(radio, sdr_bench, pytestconfig, form):
         s.set("via", VIAS["dmr"])
         s.set("dmr_dst", dst)
         s.set("dmr_udt", 1 if form == "udt" else 0)
+        s.set("ambiguity", 0)       # a DMR report gets the ambiguity's blur (position_blur): the exact position here
         s.position()
         v0 = _aprs(radio)
         with sdr_bench.lease():
