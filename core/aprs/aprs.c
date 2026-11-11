@@ -7,7 +7,6 @@
 #include "aprs/aprs.h"
 #include "aprs/aprs_fmt.h"
 #include "aprs/aprs_beacon.h"
-#include "aprs/aprs_nmea.h"
 #include "aprs/aprs_igate.h"
 #include "aprs/aprs_dmr.h"
 #include "aprs/hdlc.h"
@@ -26,7 +25,6 @@
 #define MIN_FLAGS	8
 #define RF_TRIES	3		// a frame given up after this many failed transmissions
 #define RF_RETRY_MS	15000u		// after a failed transmission
-#define POS_STALE_MS	60000u		// a GPS / host fix older than this doesn't count
 // A heard station's position older than this is dropped: other packets keep the entry, and its age would wrap at
 // 2^32 ms (49.7 days)
 #define STATION_POS_MS	(24u * 3600000u)
@@ -52,17 +50,6 @@ typedef struct {
 	uint8_t data[AX25_FRAME_MAX];
 } qframe_t;
 
-typedef struct {
-	bool valid;
-	int32_t lat, lon;
-	int32_t alt_m;		// APRS_ALT_NONE
-	uint16_t speed_kmh;	// 0xFFFF
-	uint16_t course;	// 0..359, 0xFFFF
-	uint32_t utc_hms;	// 0xFFFFFFFF
-	uint32_t date;
-	uint32_t ms;		// last update
-} fix_t;
-
 static void nolock(void) {}
 static void (*lock_fn)(void) = nolock;
 static void (*unlock_fn)(void) = nolock;
@@ -79,15 +66,6 @@ static struct {
 	bool me_ok;
 	uint8_t block;
 	uint32_t now;
-	fix_t host, gps;
-	bool gps_off;		// Settings > Location > GPS is off: the board's fix doesn't count (aprs_gps_enable)
-	bool gps_heard;		// the board GPS has sent a valid sentence (fix or not), last at gps_heard_ms
-	uint32_t gps_heard_ms;
-	uint8_t gps_sats;	// satellites used, from its last GGA
-	uint16_t gps_hdop10;	// ... and its dilution x 10, 0xFFFF unknown
-#if CONFIG_GPS_SKY
-	nmea_sky_t sky;		// the satellites (GSV, GSA) for the GPS screen
-#endif
 	qframe_t q[QUEUE_LEN];
 	uint8_t qn;
 	uint8_t taken;		// frames in the transmission under way
@@ -198,7 +176,7 @@ void aprs_cfg_default(aprs_cfg_t *c)
 	c->path = APRS_PATH_WIDE1_WIDE2;
 	c->compressed = true;
 	c->messaging = aprs_can_receive();
-	c->pos_src = APRS_POS_AUTO;
+	c->pos_src = POSITION_AUTO;
 	c->fix_alt_m = INT16_MIN;
 	c->interval_s = APRS_INTERVAL_DEFAULT;
 	c->smart = true;
@@ -244,7 +222,7 @@ static void cfg_from_settings(const settings_t *s, aprs_cfg_t *c)
 		c->sym_code = s->aprs_symbol[1];
 	}
 	c->path = s->aprs_path < APRS_PATH_COUNT ? s->aprs_path : APRS_PATH_WIDE1_WIDE2;
-	c->pos_src = s->aprs_pos_src < APRS_POS_COUNT ? s->aprs_pos_src : APRS_POS_AUTO;
+	c->pos_src = s->aprs_pos_src < POSITION_PREF_COUNT ? s->aprs_pos_src : POSITION_AUTO;
 	c->level = s->aprs_level <= 100 ? s->aprs_level : APRS_LEVEL_DEFAULT;
 	c->power = s->aprs_power;
 	c->txdelay = s->aprs_txdelay != 0 ? s->aprs_txdelay : APRS_TXDELAY_DEFAULT;
@@ -293,6 +271,10 @@ static void cfg_to_settings(const aprs_cfg_t *c, settings_t *s)
 static void apply_cfg(void)
 {
 	const aprs_cfg_t *c = &a.cfg;
+	// The position settings are APRS's on its page, used by every position report (position.h)
+	position_cfg_t pc = { .pref = c->pos_src, .fix_lat = c->fix_lat, .fix_lon = c->fix_lon, .fix_alt_m = c->fix_alt_m,
+			      .ambiguity = c->ambiguity, .dmr_gps = c->dmr_gps };
+	position_set_cfg(&pc);
 	aprs_beacon_cfg_t *b = &a.bcfg;
 	memset(b, 0, sizeof(*b));
 	b->auto_on = c->tx_on;
@@ -494,43 +476,6 @@ static uint8_t rf_block(void)
 	return APRS_OK;
 }
 
-static bool fresh(const fix_t *f)
-{
-	return f->valid && (a.now - f->ms) < POS_STALE_MS;
-}
-
-// The position in use (lock held)
-static const fix_t *position(uint8_t *src)
-{
-	static fix_t fixed;
-	bool gps_ok = board_has_gps() && fresh(&a.gps);
-	bool host_ok = fresh(&a.host);
-	bool fixed_ok = a.cfg.fix_lat != 0 || a.cfg.fix_lon != 0;
-	uint8_t s = a.cfg.pos_src;
-	if ((s == APRS_POS_AUTO || s == APRS_POS_GPS) && gps_ok) {
-		*src = APRS_SRC_GPS;
-		return &a.gps;
-	}
-	if ((s == APRS_POS_AUTO || s == APRS_POS_HOST) && host_ok) {
-		*src = APRS_SRC_HOST;
-		return &a.host;
-	}
-	if ((s == APRS_POS_AUTO || s == APRS_POS_FIXED) && fixed_ok) {
-		memset(&fixed, 0, sizeof(fixed));
-		fixed.valid = true;
-		fixed.lat = a.cfg.fix_lat;
-		fixed.lon = a.cfg.fix_lon;
-		fixed.alt_m = a.cfg.fix_alt_m != INT16_MIN ? a.cfg.fix_alt_m : APRS_ALT_NONE;
-		fixed.speed_kmh = 0xFFFFu;
-		fixed.course = 0xFFFFu;
-		fixed.utc_hms = 0xFFFFFFFFu;
-		fixed.ms = a.now;
-		*src = APRS_SRC_FIXED;
-		return &fixed;
-	}
-	*src = APRS_SRC_NONE;
-	return NULL;
-}
 
 static uint16_t kmh_to_kn(uint16_t kmh)
 {
@@ -673,7 +618,7 @@ static void own_to_is(const char *info, size_t n)
 
 // --- Beacons (lock held) ---
 
-static size_t build_beacon(const fix_t *f)
+static size_t build_beacon(const position_fix_t *f)
 {
 	aprs_report_t r;
 	memset(&r, 0, sizeof(r));
@@ -699,7 +644,7 @@ static void note_info(size_t n)
 }
 
 // A beacon is due for why: RF (queued), APRS-IS, DMR (flagged for after the lock). True when anything went
-static bool beacon(uint8_t why, const fix_t *f)
+static bool beacon(uint8_t why, const position_fix_t *f)
 {
 	bool any = false;
 	size_t n = build_beacon(f);
@@ -1097,14 +1042,6 @@ void aprs_init(uint32_t now_ms)
 {
 	memset(&a, 0, sizeof(a));
 	a.now = now_ms;
-	a.host.utc_hms = a.gps.utc_hms = 0xFFFFFFFFu;
-	a.host.alt_m = a.gps.alt_m = APRS_ALT_NONE;
-	a.host.speed_kmh = a.gps.speed_kmh = 0xFFFFu;
-	a.host.course = a.gps.course = 0xFFFFu;
-	a.gps_hdop10 = 0xFFFFu;
-#if CONFIG_GPS_SKY
-	nmea_sky_init(&a.sky);
-#endif
 	a.host_tokens = HOST_BURST;
 	a.host_refill_ms = now_ms;
 	a.msg_seq = (uint16_t)(now_ms % 900u);
@@ -1113,43 +1050,6 @@ void aprs_init(uint32_t now_ms)
 	aprs_beacon_init(&a.bc, &a.bcfg, now_ms);
 	a.block = rf_block();
 	UNLOCK();
-}
-
-// The middle of the ambiguity cell (grid in 1e-7 degree, within the whole degree) the position is in
-static int32_t blur(int32_t v, int32_t grid)
-{
-	int32_t m = v < 0 ? -v : v;
-	int32_t f = m % 10000000 / grid * grid + grid / 2;
-	m = m / 10000000 * 10000000 + (f < 10000000 ? f : 9999999);
-	return v < 0 ? -m : m;
-}
-
-bool aprs_position_now(int32_t *lat, int32_t *lon, uint32_t *err_m, bool *dmr_gps)
-{
-	// Position ambiguity (APRS101 ch. 8): the same blur for DMR. Grid in 1e-7 degree and the error it means
-	static const int32_t grid[] = { 1, 16667, 166667, 1666667, 10000000 };
-	static const uint32_t blur_m[] = { 0, 185, 1852, 18520, 111120 };
-	uint8_t src;
-	LOCK();
-	const fix_t *f = position(&src);
-	bool ok = f != NULL;
-	uint8_t amb = a.cfg.ambiguity <= 4 ? a.cfg.ambiguity : 0;
-	if (ok) {
-		*lat = f->lat;
-		*lon = f->lon;
-	}
-	*dmr_gps = a.cfg.dmr_gps;
-	UNLOCK();
-	if (!ok) {
-		return false;
-	}
-	*err_m = src == APRS_SRC_FIXED ? 200u : 20u;	// GPS / host fixes: tens of meters; a typed position: less sure
-	if (amb != 0) {
-		*lat = blur(*lat, grid[amb]);
-		*lon = blur(*lon, grid[amb]);
-		*err_m = blur_m[amb];
-	}
-	return true;
 }
 
 void aprs_reload(void)
@@ -1207,8 +1107,10 @@ void aprs_tick(const aprs_radio_t *r, uint32_t now_ms)
 		a.block = block;
 		changed();
 	}
-	uint8_t src;
-	const fix_t *f = position(&src);
+	// The position in use (position.h), exact: the beacon formats apply the ambiguity
+	position_fix_t fx;
+	uint8_t src = position_fix(&fx, now_ms);
+	const position_fix_t *f = src != POSITION_SRC_NONE ? &fx : NULL;
 	aprs_beacon_pos_t bp;
 	memset(&bp, 0, sizeof(bp));
 	if (f != NULL) {
@@ -1257,8 +1159,8 @@ void aprs_tick(const aprs_radio_t *r, uint32_t now_ms)
 		dp.lon = f->lon;
 		dp.speed_kn = kmh_to_kn(f->speed_kmh);
 		dp.course = f->course;
-		dp.utc_hms = src == APRS_SRC_FIXED ? 0xFFFFFFFFu : f->utc_hms;
-		dp.date = src == APRS_SRC_FIXED ? 0 : f->date;
+		dp.utc_hms = src == POSITION_SRC_FIXED ? 0xFFFFFFFFu : f->utc_hms;
+		dp.date = src == POSITION_SRC_FIXED ? 0 : f->date;
 	}
 	bool udt = a.cfg.dmr_udt;
 	uint32_t dst = a.cfg.dmr_dst;
@@ -1501,7 +1403,7 @@ bool aprs_send_message_opts(const char *to, const char *text, uint8_t flags)
 		int32_t lat, lon;
 		uint32_t err_m;
 		bool dmr_gps;
-		if (!aprs_position_now(&lat, &lon, &err_m, &dmr_gps))
+		if (!position_now(&lat, &lon, &err_m, &dmr_gps, a.now))
 			return false;
 		char coord[24];
 		char *end = coord;
@@ -1667,113 +1569,6 @@ void aprs_host_is_line(const char *line, size_t n, uint32_t now_ms)
 	(void)now_ms;
 #endif
 }
-
-void aprs_nmea(const char *s, size_t n, bool gps, uint32_t now_ms)
-{
-	nmea_fix_t x;
-	bool pos = nmea_parse(s, n, &x);
-	if (!pos && !(CONFIG_GPS_SKY && gps)) {
-		return;
-	}
-	LOCK();
-	if (gps && a.gps_off) {
-		UNLOCK();
-		return;
-	}
-#if CONFIG_GPS_SKY
-	if (gps && nmea_sky_sentence(&a.sky, s, n)) {
-		a.gps_heard = true;
-		a.gps_heard_ms = now_ms;
-	}
-#endif
-	if (!pos) {
-		UNLOCK();
-		return;
-	}
-	fix_t *f = gps ? &a.gps : &a.host;
-	if (gps) {
-		a.gps_heard = true;
-		a.gps_heard_ms = now_ms;
-		if (x.kind == NMEA_GGA) {
-			a.gps_sats = x.sats;
-			a.gps_hdop10 = x.hdop10;
-		}
-	}
-	if (!x.fix) {
-		f->valid = false;
-	} else {
-		f->valid = true;
-		f->lat = x.lat;
-		f->lon = x.lon;
-		f->ms = now_ms;
-		f->utc_hms = x.utc_hms;
-		if (x.kind == NMEA_RMC) {
-			f->speed_kmh = x.speed_kn10 == 0xFFFFu ? 0xFFFFu : (uint16_t)(((uint32_t)x.speed_kn10 * 1852u + 5000u) / 10000u);
-			f->course = x.course10 == 0xFFFFu ? 0xFFFFu : (uint16_t)((x.course10 + 5u) / 10u % 360u);
-			f->date = x.date;
-			if (f->speed_kmh == 0) {
-				f->course = 0xFFFFu;	// standing still: no meaningful course
-			}
-		} else {
-			f->alt_m = x.alt_dm == INT32_MIN ? APRS_ALT_NONE : x.alt_dm / 10;
-		}
-	}
-	UNLOCK();
-}
-
-void aprs_gps_enable(bool on)
-{
-	LOCK();
-	a.gps_off = !on;
-	if (!on) {
-		a.gps.valid = false;
-		a.gps_heard = false;
-#if CONFIG_GPS_SKY
-		nmea_sky_init(&a.sky);
-#endif
-	}
-	UNLOCK();
-}
-
-bool aprs_gps(aprs_gps_t *out, uint32_t now_ms)
-{
-	LOCK();
-	bool on = !a.gps_off && a.gps_heard && now_ms - a.gps_heard_ms < POS_STALE_MS;
-	if (on) {
-		out->fix = a.gps.valid && now_ms - a.gps.ms < POS_STALE_MS;
-		out->sats = a.gps_sats;
-		out->lat = a.gps.lat;
-		out->lon = a.gps.lon;
-		out->alt_m = a.gps.alt_m;
-		out->hdop10 = a.gps_hdop10;
-		out->speed_kmh = a.gps.speed_kmh;
-		out->course = a.gps.course;
-		out->utc_hms = a.gps.utc_hms;
-#if CONFIG_GPS_SKY
-		out->mode = a.sky.mode;
-		out->in_view = a.sky.n;
-#else
-		out->mode = 0;
-		out->in_view = 0;
-#endif
-	}
-	UNLOCK();
-	return on;
-}
-
-#if CONFIG_GPS_SKY
-bool aprs_gps_sat(uint8_t i, sky_sat_t *out, bool *used)
-{
-	LOCK();
-	bool ok = i < a.sky.n;
-	if (ok) {
-		*out = a.sky.sat[i];
-		*used = nmea_sky_used(&a.sky, out);
-	}
-	UNLOCK();
-	return ok;
-}
-#endif
 
 size_t aprs_host_output(uint8_t *out, size_t max)
 {

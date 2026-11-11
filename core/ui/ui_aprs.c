@@ -176,7 +176,7 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 	case AP_INTERVAL: sb_str(&b, tr(interval_names[interval_index(c.interval_s)])); break;
 	case AP_SMART: sb_str(&b, c.smart ? TR("On") : TR("Off")); break;
 	case AP_VIA: sb_str(&b, tr(via_names[c.via < APRS_VIA_COUNT ? c.via : 0])); break;
-	case AP_POS: sb_str(&b, tr(pos_names[c.pos_src < APRS_POS_COUNT ? c.pos_src : 0])); break;
+	case AP_POS: sb_str(&b, tr(pos_names[c.pos_src < POSITION_PREF_COUNT ? c.pos_src : 0])); break;
 	case AP_DMR_GPS:
 		if (!CONFIG_DMR_GPS) {
 			it->flags |= UI_ITEM_DIM;
@@ -335,7 +335,7 @@ static void pos_item(uint16_t i, ui_item_t *it)
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
 	if (i == PP_SRC) {
-		sb_str(&b, tr(pos_names[c.pos_src < APRS_POS_COUNT ? c.pos_src : 0]));
+		sb_str(&b, tr(pos_names[c.pos_src < POSITION_PREF_COUNT ? c.pos_src : 0]));
 		return;
 	}
 	bool edit = pos_editing && i == ui_frame()->focus;
@@ -384,7 +384,7 @@ static void pos_select(uint16_t i, bool hold)
 	if (i == PP_SRC) {
 		aprs_cfg_t c;
 		ui_svc_aprs_cfg(&c);
-		c.pos_src = (uint8_t)((c.pos_src + 1u) % APRS_POS_COUNT);
+		c.pos_src = (uint8_t)((c.pos_src + 1u) % POSITION_PREF_COUNT);
 		ui_svc_aprs_set_cfg(&c);
 	} else if (pos_editing) {
 		pos_save(i);

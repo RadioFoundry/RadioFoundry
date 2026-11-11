@@ -258,9 +258,9 @@ CONFIG_APRS ?= $(CONFIG_FM)
 CONFIG_APRS_RX ?= $(CONFIG_APRS)
 # APRS iGate rules, RF <-> APRS-IS through the host helper tools/aprs_gate.py (needs APRS_RX and HOSTLINK)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
-# the GPS status screen: satellites on a sky plot and signal bars, fix quality, grid locator (core/aprs/nmea_sky.c,
-# core/ui/ui_gps.c, docs/spec/aprs.md 7.1). Needs GPS and APRS; off, Tools > Position is a page of text
-CONFIG_GPS_SKY ?= $(if $(and $(filter y,$(CONFIG_GPS)),$(filter y,$(CONFIG_APRS))),y,n)
+# the GPS status screen: satellites on a sky plot and signal bars, fix quality, grid locator (core/position/nmea_sky.c,
+# core/ui/ui_gps.c, docs/spec/position.md 3). Needs GPS; off, Tools > Position is a page of text
+CONFIG_GPS_SKY ?= $(CONFIG_GPS)
 
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
@@ -438,8 +438,8 @@ ifneq ($(call feature_on,APRS_IGATE),)
   endif
 endif
 ifneq ($(call feature_on,GPS_SKY),)
-  ifeq ($(and $(call feature_on,GPS),$(call feature_on,APRS)),)
-    $(error CONFIG_GPS_SKY=y needs CONFIG_GPS=y and CONFIG_APRS=y)
+  ifeq ($(call feature_on,GPS),)
+    $(error CONFIG_GPS_SKY=y needs CONFIG_GPS=y)
   endif
 endif
 ifeq ($(call feature_on,FM)$(call feature_on,DMR),)
@@ -449,7 +449,10 @@ endif
 # Derived: the shared packet data / CSBK code is built when any data feature is on (the emergency alarm is a CSBK)
 CONFIG_DMR_DATA_CORE := $(if $(strip $(foreach f,DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_IP_GATEWAY ZONE_SHARE CRASH_REPORT,$(call feature_on,$(f)))),y,n)
 
-FEATURE_DEFS := $(foreach f,$(FEATURES) DMR_DATA_CORE,-DCONFIG_$(f)=$(if $(call feature_on,$(f)),1,0))
+# Derived: the position service (core/position) for the GPS and APRS, which LRRP and DMR GPS Info read too
+CONFIG_POSITION := $(if $(or $(call feature_on,GPS),$(call feature_on,APRS)),y,n)
+
+FEATURE_DEFS := $(foreach f,$(FEATURES) DMR_DATA_CORE POSITION,-DCONFIG_$(f)=$(if $(call feature_on,$(f)),1,0))
 
 ## Numeric build values (board config.mk sets the defaults; the command line overrides)
 # Display safe area in pixels: edges hidden by the bezel or lens. CONFIG_DISPLAY_INSET sets all four

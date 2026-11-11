@@ -133,7 +133,7 @@ static uint8_t set_field(uint8_t field, uint32_t val)
 	case DL_APRS_F_LAT: c.fix_lat = (int32_t)val; break;
 	case DL_APRS_F_LON: c.fix_lon = (int32_t)val; break;
 	case DL_APRS_F_POS_SRC:
-		if (val >= APRS_POS_COUNT) {
+		if (val >= POSITION_PREF_COUNT) {
 			return DL_ST_BAD_ARG;
 		}
 		c.pos_src = (uint8_t)val;
@@ -232,7 +232,7 @@ size_t debuglink_cmd_aprs(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 		st = n == 5 ? set_field(a[0], get32(a + 1)) : DL_ST_BAD_ARG;
 		break;
 	case DL_APRS_OP_NMEA:
-		aprs_nmea((const char *)a, n, false, hal_millis());
+		position_nmea((const char *)a, n, false, hal_millis());
 		break;
 	default:
 		st = DL_ST_BAD_ARG;

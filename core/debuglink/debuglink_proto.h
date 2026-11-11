@@ -137,7 +137,7 @@ enum {
 	DL_APRS_F_SSID,			// 0-15
 	DL_APRS_F_LAT,			// fixed position, 1e-7 degree
 	DL_APRS_F_LON,
-	DL_APRS_F_POS_SRC,		// aprs_pos_src_t
+	DL_APRS_F_POS_SRC,		// position_pref_t
 	DL_APRS_F_INTERVAL_S,		// 0 = none (the engine keeps its minimum)
 	DL_APRS_F_SMART,		// SmartBeaconing 0/1
 	DL_APRS_F_VIA,			// aprs_via_t

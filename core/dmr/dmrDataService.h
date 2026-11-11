@@ -128,6 +128,9 @@ typedef struct
 	// An NMEA sentence heard on UDP DMR_UDP_PORT_NMEA, whoever it is addressed to (outside passthrough, not our own,
 	// DAID 0 or 2): a position report. The one hook called for packets not to us (may be NULL)
 	void (*position)(uint32_t src, const uint8_t *nmea, int length, uint32_t nowMs, void *ctx);
+	// Our position for LRRP (docs/spec/position.md): false for none, and NULL for none ever. Only asked when the
+	// settings say hasGps
+	bool (*ownPosition)(lrrpPosition_t *position, void *ctx);
 	void *ctx;
 } dmrDataEnv_t;
 
@@ -320,8 +323,8 @@ dmrArsState_t dmrDataServiceArsState(void);
 int dmrDataServiceLrrpTriggerCount(void);
 // When the service next needs a position, in ms (0: now or any time, UINT32_MAX: never): GPS power management
 uint32_t dmrDataServiceLocationNeededInMs(void);
-// The platform's position for LRRP (weak: none). Only asked when the settings say hasGps
-bool dmrDataServiceGetPosition(lrrpPosition_t *position);
+// The position LRRP would answer with now (dmrDataEnv_t.ownPosition; false: "no fix")
+bool dmrDataServiceOwnPosition(lrrpPosition_t *position);
 
 // The inbox: the last DMR_DATA_INBOX_SIZE messages, newest first; a new message replaces the oldest
 int dmrDataServiceMessageCount(void);

@@ -30,6 +30,7 @@
 #include "radio/tx_limit.h"
 #include "radio/battery.h"
 #include "fuzz.h"
+#include "position/position.h"
 
 static int failures;
 static int checks;
@@ -169,6 +170,8 @@ static const uint8_t side_keys[] = { 1, 2 };
 
 static int gps_enable_calls;
 static bool gps_enabled;
+static bool gps_here;	// the module answered (board_has_gps): only test_position has one
+static bool fake_gps_present(void) { return gps_here; }
 static void fake_gps_enable(bool on)
 {
 	gps_enable_calls++;
@@ -177,7 +180,9 @@ static void fake_gps_enable(bool on)
 
 const board_t board = {
 	.name = "fake",
+	.caps = CAP_GPS,
 	.gps_enable = fake_gps_enable,
+	.gps_present = fake_gps_present,
 	.bands = bands,
 	.band_count = 4,
 	.rx_ext_count = 1,
@@ -3110,6 +3115,74 @@ static void test_dual_two_vfos(void)
 }
 #endif
 
+// The board GPS for everything that reports a position (#466): the Position screen, LRRP's answer and DMR GPS Info
+// read the position service, and the stored position settings apply. radioCoreTest builds it without APRS,
+// radioCoreTestAprs with
+static void test_position(void)
+{
+	static const char gga[] = "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47";
+	static const char rmc[] = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
+	lrrpPosition_t lp;
+	ui_position_t up;
+	int32_t lat, lon;
+	uint32_t err;
+	bool send = true;
+
+	CHECK(CONFIG_POSITION);
+	gps_here = false;
+	dmr_start(true);
+	CHECK(!(ui_svc_feat_radio() & UI_FEAT_GPS) && !ui_svc_position(&up));
+	CHECK(!dmrDataServiceOwnPosition(&lp));
+	gps_here = true;
+	CHECK(ui_svc_feat_radio() & UI_FEAT_GPS);
+	CHECK(!ui_svc_position(&up));		// nothing heard yet
+	position_nmea(gga, strlen(gga), true, now);
+	position_nmea(rmc, strlen(rmc), true, now);
+	CHECK(ui_svc_position(&up) && up.fix && up.sats == 8 && up.lat_e7 == 481173000 && up.lon_e7 == 115166666);
+	CHECK(up.alt_ok && up.alt_m == 545 && up.course == 84);
+	run(10);
+	CHECK(dmrDataServiceOwnPosition(&lp) && lp.location.fixValid && lp.location.north && lp.location.east);
+	CHECK(lp.location.latDegrees == 48 && lp.location.latMinutes10000 == 70380 && lp.location.lonDegrees == 11 &&
+	      lp.location.lonMinutes10000 == 310000);
+	CHECK(lp.location.speedKnots == 22 && lp.hasCourse && lp.courseDegrees == 84 && lp.utcYear == 2094 &&
+	      lp.utcMonth == 3 && lp.utcDay == 23 && lp.location.utcHours == 12 && lp.location.utcMinutes == 35);
+	dmrDataSettings_t ds;
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.hasGps);			// LRRP takes triggered requests: a GPS is there
+
+	// DMR GPS Info: off until the setting says so, then our position goes out in the call
+	CHECK(position_now(&lat, &lon, &err, &send, now) && !send && lat == 481173000 && err == 20);
+	settings_t *st = settings_begin();
+	st->aprs_stored = 1;
+	st->aprs_flags2 |= SETTINGS_APRS2_DMR_GPS;
+	st->aprs_misc = (uint8_t)(2u << 4);	// ambiguity: whole minutes
+	settings_end(now);
+	boot();
+	position_nmea(rmc, strlen(rmc), true, now);
+	CHECK(position_now(&lat, &lon, &err, &send, now) && send && err == 1852);
+	CHECK(lat == 481250002);		// 48 07.038 -> the middle of its minute, 48 07.5
+	dmr_start(true);
+	position_cfg_t pc = { .pref = POSITION_AUTO, .fix_alt_m = INT16_MIN, .dmr_gps = true };
+	position_set_cfg(&pc);
+	position_nmea(rmc, strlen(rmc), true, now);
+	dmr_call_stats_t cs0, cs1;
+	dmr_call_get_stats(&cs0);
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs1);
+	CHECK(cs1.tx_gps_lcs - cs0.tx_gps_lcs >= 1);
+
+	// Settings > Location > GPS off: the fix goes at once
+	position_gps_enable(false);
+	CHECK(!ui_svc_position(&up) && !dmrDataServiceOwnPosition(&lp));
+	position_gps_enable(true);
+	gps_here = false;
+	settings_init();
+	boot();
+}
+
 static void test_ui_glue(void)
 {
 	const radio_dmr_view_t *d = &sm.view.dmr;
@@ -5071,6 +5144,7 @@ int main(void)
 	test_dmr_contact_added();
 	test_ui_requests();
 	test_ui_glue();
+	test_position();
 #if CONFIG_DUAL_WATCH
 	test_ui_dual();
 	test_dual_two_vfos();

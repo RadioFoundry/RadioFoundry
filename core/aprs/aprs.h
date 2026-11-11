@@ -15,9 +15,7 @@
 #include <stddef.h>
 #include "config.h"
 #include "aprs/ax25.h"
-#if CONFIG_GPS_SKY
-#include "aprs/nmea_sky.h"
-#endif
+#include "position/position.h"
 
 #define APRS_TOCALL		"APZRDF"	// destination: the experimental APZ block (docs/spec/aprs.md 4.2)
 #define APRS_SSID_DEFAULT	7		// handheld
@@ -39,7 +37,6 @@ typedef enum {
 	APRS_PATH_NONE, APRS_PATH_WIDE1, APRS_PATH_WIDE1_WIDE2, APRS_PATH_WIDE2, APRS_PATH_WIDE2_2, APRS_PATH_COUNT,
 } aprs_path_t;
 
-typedef enum { APRS_POS_AUTO, APRS_POS_GPS, APRS_POS_HOST, APRS_POS_FIXED, APRS_POS_COUNT } aprs_pos_src_t;
 typedef enum { APRS_VIA_RF, APRS_VIA_DMR, APRS_VIA_BOTH, APRS_VIA_COUNT } aprs_via_t;
 
 typedef struct {
@@ -53,7 +50,7 @@ typedef struct {
 	bool compressed;
 	uint8_t ambiguity;	// 0-4
 	bool messaging;		// we take messages
-	uint8_t pos_src;	// aprs_pos_src_t
+	uint8_t pos_src;	// position_pref_t (position.h)
 	int32_t fix_lat, fix_lon;	// 1e-7 degree, both 0 = none
 	int16_t fix_alt_m;	// INT16_MIN = none
 	uint16_t interval_s;	// 0 = none
@@ -93,8 +90,6 @@ typedef enum {
 	APRS_OK, APRS_NO_CALL, APRS_NO_FREQ, APRS_NOT_AMATEUR, APRS_NO_POSITION, APRS_NO_AFSK, APRS_BUSY,
 } aprs_block_t;
 
-typedef enum { APRS_SRC_NONE, APRS_SRC_GPS, APRS_SRC_HOST, APRS_SRC_FIXED } aprs_src_t;
-
 // How an RF transmission ended (aprs_rf_done). The failures name the step that stopped it
 typedef enum {
 	APRS_RF_SENT, APRS_RF_BUSY, APRS_RF_ABORTED, APRS_RF_NO_KEY, APRS_RF_NO_AFSK, APRS_RF_TIMEOUT,
@@ -104,7 +99,7 @@ typedef struct {
 	char call[AX25_CALL_LEN + 4];	// "Q0TST-7", "" = none
 	uint8_t block;		// aprs_block_t for RF
 	uint32_t freq_hz;
-	uint8_t pos_src;	// aprs_src_t in use
+	uint8_t pos_src;	// position_src_t in use
 	bool pos_valid;
 	int32_t lat, lon;
 	uint16_t speed_kmh;	// 0xFFFF unknown
@@ -236,9 +231,6 @@ bool aprs_send_status(const char *text);
 // A message with acks and retries; false when one is still waiting or the text is unusable
 bool aprs_send_message(const char *to, const char *text);
 bool aprs_send_message_opts(const char *to, const char *text, uint8_t flags);
-// The position in use now (GPS, host or fixed, as the beacons use it) for DMR: false when there is none. err_m is the
-// error estimate in meters (position ambiguity included), dmr_gps the "send position in DMR calls" setting
-bool aprs_position_now(int32_t *lat, int32_t *lon, uint32_t *err_m, bool *dmr_gps);
 // RAM-only override for bench tests (debug link): the callsign ("" = back to the settings / codeplug)
 void aprs_set_test_call(const char *call);
 #if CONFIG_APRS_RX
@@ -250,33 +242,12 @@ bool aprs_msg_peek(uint8_t i, aprs_msg_t *out);	// leaves unread state alone
 bool aprs_msg_delete(uint8_t i);
 #endif
 
-// --- The host link (aprs_host.c) and a board GPS ---
+// --- The host link (aprs_host.c) ---
 
 // A KISS data frame (AX.25 without FCS) from the host for RF: checked (our callsign as the source, rate limit)
 bool aprs_host_frame(const uint8_t *frame, size_t n, uint32_t now_ms);
 // An APRS-IS line from the host helper (KISS SetHardware 'G')
 void aprs_host_is_line(const char *line, size_t n, uint32_t now_ms);
-// An NMEA sentence from the host, or (gps true) from a board GPS driver
-void aprs_nmea(const char *s, size_t n, bool gps, uint32_t now_ms);
-// Settings > Location > GPS: off drops the board GPS fix and ignores its sentences, so the position falls back at once
-void aprs_gps_enable(bool on);
-// The board GPS as it is now, for the Position screen: false when it is off or has sent nothing for a minute
-typedef struct {
-	bool fix;		// a position under a minute old
-	uint8_t sats;		// satellites used (GGA)
-	int32_t lat, lon;	// 1e-7 degree, with fix
-	int32_t alt_m;		// APRS_ALT_NONE
-	uint16_t hdop10;	// x 10, 0xFFFF unknown
-	uint16_t speed_kmh, course;	// 0xFFFF unknown
-	uint32_t utc_hms;	// hhmmss of the last fix, 0xFFFFFFFF
-	uint8_t mode;		// GSA (CONFIG_GPS_SKY): 1 no fix, 2 2D, 3 3D, 0 unknown
-	uint8_t in_view;	// satellites in the table (aprs_gps_sat)
-} aprs_gps_t;
-bool aprs_gps(aprs_gps_t *out, uint32_t now_ms);
-#if CONFIG_GPS_SKY
-// Satellite i of the board GPS's table (0 .. in_view - 1) and whether the fix uses it; false past the end
-bool aprs_gps_sat(uint8_t i, sky_sat_t *out, bool *used);
-#endif
 // KISS-encoded bytes for the host: copies up to max, returns the count (0 = nothing waiting)
 size_t aprs_host_output(uint8_t *out, size_t max);
 // The KISS setting is on (host output allowed in the host link's idle mode)

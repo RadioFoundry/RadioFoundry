@@ -386,7 +386,7 @@ static void test_defaults(void)
 	run(3600u * 1000u);
 	CHECK(hw.tx_calls == 0 && hw.starts == 0);
 	aprs_get_view(&v);
-	CHECK(v.block == APRS_OK && strcmp(v.call, "Q1TST-7") == 0 && v.pos_valid && v.pos_src == APRS_SRC_FIXED);
+	CHECK(v.block == APRS_OK && strcmp(v.call, "Q1TST-7") == 0 && v.pos_valid && v.pos_src == POSITION_SRC_FIXED);
 	CHECK(hw.rx_hz == CH_HZ);
 	// N0CALL (refused by name) and a name without a digit are no callsign
 	CHECK(!aprs_callsign_ok("N0CALL") && !aprs_callsign_ok("QTEST") && !aprs_callsign_ok("1ABC") &&
@@ -637,7 +637,7 @@ static void test_host_kiss_nmea(void)
 	run(100);
 	aprs_view_t v;
 	aprs_get_view(&v);
-	CHECK(v.pos_valid && v.pos_src == APRS_SRC_HOST && v.lat == 481173000 && v.speed_kmh == 41 && v.course == 84);
+	CHECK(v.pos_valid && v.pos_src == POSITION_SRC_HOST && v.lat == 481173000 && v.speed_kmh == 41 && v.course == 84);
 	// a KISS data frame from the host, from our call (another SSID)
 	ax25_frame_t f;
 	uint8_t frame[AX25_FRAME_MAX], kiss[2 * AX25_FRAME_MAX];
@@ -872,7 +872,7 @@ static void test_station_range(void)
 	CHECK(!ui_svc_aprs_range(&nopos, &m, &deg));
 	// GPS (48 07.038 N 011 31.000 E) wins over the fixed position: the station is across the Atlantic, to the west
 	const char *rmc = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
-	aprs_nmea(rmc, strlen(rmc), true, now);
+	position_nmea(rmc, strlen(rmc), true, now);
 	run(100);
 	CHECK(ui_svc_aprs_range(&here, &m, &deg) && m > 5814000 && m < 5816000 && deg == 305);	// haversine: 5815.2 km, 304.6
 	CHECK(!ui_svc_aprs_range(&nopos, &m, &deg));
@@ -931,7 +931,7 @@ static void test_station_range(void)
 }
 #endif
 
-// The position DMR GPS Info takes (aprs_position_now): the fixed position, the setting, ambiguity; and DMR callers'
+// The position DMR GPS Info takes (position_now): the fixed position, the setting, ambiguity; and DMR callers'
 // positions in the station list
 static void test_dmr_position(void)
 {
@@ -941,15 +941,15 @@ static void test_dmr_position(void)
 	bool send = true;
 
 	reset();
-	CHECK(!aprs_position_now(&lat, &lon, &err, &send) && !send);	// no position, setting off by default
+	CHECK(!position_now(&lat, &lon, &err, &send, now) && !send);	// no position, setting off by default
 	configure(0, false);
-	CHECK(aprs_position_now(&lat, &lon, &err, &send) && lat == 490583333 && lon == -720291667 && err == 200 &&
+	CHECK(position_now(&lat, &lon, &err, &send, now) && lat == 490583333 && lon == -720291667 && err == 200 &&
 	      !send);
 	aprs_get_cfg(&c);
 	c.dmr_gps = true;
 	c.ambiguity = 2;	// whole minutes: the middle of the minute, about 1.9 km
 	aprs_set_cfg(&c, now);
-	CHECK(aprs_position_now(&lat, &lon, &err, &send) && send && err == 1852);
+	CHECK(position_now(&lat, &lon, &err, &send, now) && send && err == 1852);
 	CHECK(lat == 490583334 && lon == -720250000);	// 49 03.5 N (already mid-minute), 072 01.5 W
 	aprs_get_cfg(&c);
 	CHECK(c.dmr_gps);	// saved and read back
@@ -968,7 +968,7 @@ static void test_dmr_position(void)
 #endif
 }
 
-// Settings > Location > GPS (aprs_gps_enable): a board fix is the position while the setting is on, and with it off
+// Settings > Location > GPS (position_gps_enable): a board fix is the position while the setting is on, and with it off
 // the fix is gone at once (not 60 s later) and new sentences from the driver are ignored
 static void test_gps_setting(void)
 {
@@ -977,49 +977,49 @@ static void test_gps_setting(void)
 
 	reset();
 	configure(0, false);
-	aprs_nmea(rmc, strlen(rmc), true, now);
+	position_nmea(rmc, strlen(rmc), true, now);
 	run(100);
 	aprs_get_view(&v);
-	CHECK(v.pos_valid && v.pos_src == APRS_SRC_GPS && v.lat == 481173000);
-	aprs_gps_enable(false);
+	CHECK(v.pos_valid && v.pos_src == POSITION_SRC_GPS && v.lat == 481173000);
+	position_gps_enable(false);
 	run(100);
 	aprs_get_view(&v);
-	CHECK(v.pos_src == APRS_SRC_FIXED);		// the fixed position, not the GPS fix
-	aprs_nmea(rmc, strlen(rmc), true, now);	// a sentence that was already in the driver's queue
+	CHECK(v.pos_src == POSITION_SRC_FIXED);		// the fixed position, not the GPS fix
+	position_nmea(rmc, strlen(rmc), true, now);	// a sentence that was already in the driver's queue
 	run(100);
 	aprs_get_view(&v);
-	CHECK(v.pos_src == APRS_SRC_FIXED);
-	aprs_gps_enable(true);
-	aprs_nmea(rmc, strlen(rmc), true, now);
+	CHECK(v.pos_src == POSITION_SRC_FIXED);
+	position_gps_enable(true);
+	position_nmea(rmc, strlen(rmc), true, now);
 	run(100);
 	aprs_get_view(&v);
-	CHECK(v.pos_src == APRS_SRC_GPS);
+	CHECK(v.pos_src == POSITION_SRC_GPS);
 }
 
-// The Position screen's view of the board GPS (aprs_gps): nothing before a sentence, then satellites without a fix,
+// The Position screen's view of the board GPS (position_gps): nothing before a sentence, then satellites without a fix,
 // then the fix; gone with the setting off and after a minute of silence
 static void test_gps_status(void)
 {
 	const char *nofix = "$GPGGA,123519,,,,,0,05,,,M,,M,,*6E";
 	const char *fix = "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47";
-	aprs_gps_t g;
+	position_gps_t g;
 
 	reset();
 	configure(0, false);
-	CHECK(!aprs_gps(&g, now));			// never heard
-	aprs_nmea(nofix, strlen(nofix), true, now);
-	CHECK(aprs_gps(&g, now) && !g.fix && g.sats == 5);
-	aprs_nmea(fix, strlen(fix), false, now);	// the host's GPS isn't the board's
-	CHECK(aprs_gps(&g, now) && !g.fix);
-	aprs_nmea(fix, strlen(fix), true, now);
-	CHECK(aprs_gps(&g, now) && g.fix && g.sats == 8 && g.lat == 481173000 && g.lon == 115166666 && g.alt_m == 545);
-	CHECK(!aprs_gps(&g, now + 61000));		// silent for a minute
-	aprs_gps_enable(false);
-	CHECK(!aprs_gps(&g, now));
-	aprs_gps_enable(true);
-	CHECK(!aprs_gps(&g, now));			// until the module speaks again
-	aprs_nmea(nofix, strlen(nofix), true, now);
-	CHECK(aprs_gps(&g, now) && !g.fix);		// the old fix was dropped with the setting
+	CHECK(!position_gps(&g, now));			// never heard
+	position_nmea(nofix, strlen(nofix), true, now);
+	CHECK(position_gps(&g, now) && !g.fix && g.sats == 5);
+	position_nmea(fix, strlen(fix), false, now);	// the host's GPS isn't the board's
+	CHECK(position_gps(&g, now) && !g.fix);
+	position_nmea(fix, strlen(fix), true, now);
+	CHECK(position_gps(&g, now) && g.fix && g.sats == 8 && g.lat == 481173000 && g.lon == 115166666 && g.alt_m == 545);
+	CHECK(!position_gps(&g, now + 61000));		// silent for a minute
+	position_gps_enable(false);
+	CHECK(!position_gps(&g, now));
+	position_gps_enable(true);
+	CHECK(!position_gps(&g, now));			// until the module speaks again
+	position_nmea(nofix, strlen(nofix), true, now);
+	CHECK(position_gps(&g, now) && !g.fix);		// the old fix was dropped with the setting
 }
 
 // DMR destination: EP the default and stored values (a stored 5057 is kept as stored), BVA at the ends of the
@@ -1070,7 +1070,7 @@ static void test_cfg_store(void)
 	c.sym_code = 'k';
 	c.path = APRS_PATH_WIDE2_2;
 	c.ambiguity = 3;
-	c.pos_src = APRS_POS_FIXED;
+	c.pos_src = POSITION_FIXED;
 	c.fix_lat = -337000000;
 	c.fix_lon = 1512000000;
 	c.fix_alt_m = -12;
@@ -1088,7 +1088,7 @@ static void test_cfg_store(void)
 	CHECK(b.tx_on && b.smart && b.compressed && b.after_ptt && b.boot && b.kiss && b.narrow && b.rx_on);
 	CHECK(b.igate && b.igate_tx && b.messaging && b.dmr_udt && b.to_is && b.dmr_gps);
 	CHECK(b.region == APRS_REGION_CUSTOM && b.freq_hz == 145825000 && b.ssid == 9 && b.sym_table == '\\' &&
-	      b.sym_code == 'k' && b.path == APRS_PATH_WIDE2_2 && b.ambiguity == 3 && b.pos_src == APRS_POS_FIXED);
+	      b.sym_code == 'k' && b.path == APRS_PATH_WIDE2_2 && b.ambiguity == 3 && b.pos_src == POSITION_FIXED);
 	CHECK(b.fix_lat == -337000000 && b.fix_lon == 1512000000 && b.fix_alt_m == -12 && b.interval_s == 900 &&
 	      b.distance_m == 2500 && b.level == 63 && b.txdelay == 45 && b.via == APRS_VIA_BOTH && b.dmr_dst == 5057 &&
 	      b.digi == 2);
@@ -1119,7 +1119,7 @@ static void test_cfg_store(void)
 	aprs_cfg_default(&d);
 	CHECK(b.region == APRS_REGION_NA && b.ssid == d.ssid && b.dmr_dst == d.dmr_dst && b.sym_code == d.sym_code &&
 	      b.sym_table == d.sym_table);
-	CHECK(b.path == APRS_PATH_WIDE1_WIDE2 && b.pos_src == APRS_POS_AUTO && b.level == d.level &&
+	CHECK(b.path == APRS_PATH_WIDE1_WIDE2 && b.pos_src == POSITION_AUTO && b.level == d.level &&
 	      b.txdelay == d.txdelay && b.via == APRS_VIA_RF && b.digi == 0 && b.ambiguity == 0);
 	CHECK(b.tx_on && b.freq_hz == 145825000);	// the good fields stay
 	// Not stored at all: the defaults

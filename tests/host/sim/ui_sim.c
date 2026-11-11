@@ -446,7 +446,7 @@ bool ui_svc_aprs_view(aprs_view_t *v)
 	v->block = aprs_sim.no_call ? APRS_NO_CALL : APRS_OK;
 	v->freq_hz = aprs_sim.cfg.region == APRS_REGION_CUSTOM ? aprs_sim.cfg.freq_hz : hz[aprs_sim.cfg.region % APRS_REGION_COUNT];
 	v->pos_valid = !aprs_sim.no_call && !aprs_sim.no_pos;
-	v->pos_src = APRS_SRC_FIXED;
+	v->pos_src = POSITION_SRC_FIXED;
 	v->lat = 337000000;
 	v->lon = -841000000;
 	v->next_s = aprs_sim.cfg.tx_on ? 245 : 0xFFFFu;

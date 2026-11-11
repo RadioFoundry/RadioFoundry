@@ -268,9 +268,9 @@
 #define CONFIG_APRS_IGATE		(CONFIG_APRS_RX && CONFIG_HOSTLINK)
 #endif
 // The GPS status screen: the satellites (NMEA GSV / GSA) on a sky plot and signal bars, the fix's quality, the grid
-// locator (core/aprs/nmea_sky.c, core/ui/ui_gps.c). Needs GPS and APRS, whose NMEA input it shares
+// locator (core/position/nmea_sky.c, core/ui/ui_gps.c). Needs GPS
 #ifndef CONFIG_GPS_SKY
-#define CONFIG_GPS_SKY			(CONFIG_GPS && CONFIG_APRS)
+#define CONFIG_GPS_SKY			CONFIG_GPS
 #endif
 #ifndef CONFIG_NET_KISS
 #define CONFIG_NET_KISS			(CONFIG_NET_TCP && CONFIG_APRS)
@@ -299,6 +299,11 @@
 #ifndef CONFIG_DMR_DATA_CORE
 #define CONFIG_DMR_DATA_CORE		(CONFIG_DMR_SMS || CONFIG_DMR_ARS || CONFIG_DMR_LRRP || CONFIG_DMR_SIGNALING || \
 					 CONFIG_DMR_EMERGENCY || CONFIG_DMR_IP_GATEWAY || CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT)
+#endif
+// The position service (core/position): the board GPS, a host's NMEA, the fixed position; APRS, LRRP and DMR GPS Info
+// read it
+#ifndef CONFIG_POSITION
+#define CONFIG_POSITION			(CONFIG_GPS || CONFIG_APRS)
 #endif
 // The air queue (core/dmr/dmrAirQueue.c): what the IP gateway and zone sharing send, in order with the guard
 #define CONFIG_DMR_AIR_QUEUE		(CONFIG_DMR_IP_GATEWAY || CONFIG_ZONE_SHARE)
@@ -411,8 +416,8 @@
 #if CONFIG_APRS && !CONFIG_FM
 #error "CONFIG_APRS needs CONFIG_FM"
 #endif
-#if CONFIG_GPS_SKY && !(CONFIG_GPS && CONFIG_APRS)
-#error "CONFIG_GPS_SKY needs CONFIG_GPS and CONFIG_APRS"
+#if CONFIG_GPS_SKY && !CONFIG_GPS
+#error "CONFIG_GPS_SKY needs CONFIG_GPS"
 #endif
 #if (CONFIG_APRS_RX && !CONFIG_APRS) || (CONFIG_APRS_IGATE && !(CONFIG_APRS_RX && CONFIG_HOSTLINK))
 #error "an APRS sub-feature is on without its parent (APRS_RX needs APRS; APRS_IGATE needs APRS_RX and HOSTLINK)"

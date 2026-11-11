@@ -5,7 +5,8 @@
 #include "config.h"
 #include "aprs/aprs_host.h"
 #include "aprs/aprs.h"
-#include "aprs/aprs_nmea.h"
+#include "position/nmea.h"
+#include "position/position.h"
 #include "aprs/kiss.h"
 #if CONFIG_HOSTLINK
 #include "hostlink/hostlink.h"
@@ -40,7 +41,7 @@ void aprs_host_kiss_frame(const uint8_t *f, size_t n, uint32_t now_ms)
 		if (n >= 2 && f[1] == KISS_TAG_IS_LINE) {
 			aprs_host_is_line((const char *)f + 2, n - 2u, now_ms);
 		} else if (n >= 2 && f[1] == KISS_TAG_NMEA) {
-			aprs_nmea((const char *)f + 2, n - 2u, false, now_ms);
+			position_nmea((const char *)f + 2, n - 2u, false, now_ms);
 		}
 		break;
 	default:
@@ -58,7 +59,7 @@ void aprs_host_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 		}
 		if (nmea_on) {
 			if (b == '\n' || b == '\r') {
-				aprs_nmea(nmea, nmea_len, false, now_ms);
+				position_nmea(nmea, nmea_len, false, now_ms);
 				nmea_on = false;
 			} else if (nmea_len < NMEA_LINE_MAX) {
 				nmea[nmea_len++] = (char)b;

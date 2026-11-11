@@ -1622,18 +1622,15 @@ typedef struct
 } lrrpTrigger_t;
 static lrrpTrigger_t lrrpTriggers[LRRP_TRIGGERS_MAX];
 
-// The platform's position for LRRP. Weak: none (the host test brings its own)
-#if !defined(DMR_DATA_SERVICE_TEST)
-__attribute__((weak)) bool dmrDataServiceGetPosition(lrrpPosition_t *position)
-{
-	memset(position, 0, sizeof(*position));
-	return false;
-}
-#endif
-
 static bool havePosition(lrrpPosition_t *position)
 {
-	return settings.hasGps && dmrDataServiceGetPosition(position);
+	memset(position, 0, sizeof(*position));
+	return settings.hasGps && (env.ownPosition != NULL) && env.ownPosition(position, env.ctx);
+}
+
+bool dmrDataServiceOwnPosition(lrrpPosition_t *position)
+{
+	return havePosition(position);
 }
 
 static void lrrpReceived(uint32_t src, const uint8_t *payload, int length)

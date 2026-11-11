@@ -16,7 +16,7 @@
 #include <string.h>
 #define DMR_DATA_SERVICE_TEST
 #include "../../core/dmr/dmrDataService.c"
-#include "../../core/aprs/aprs_nmea.h"
+#include "../../core/position/nmea.h"
 
 static int failures = 0;
 
@@ -51,9 +51,9 @@ void dmrDataServiceZoneShareRx(uint32_t src, bool group, const uint8_t *payload,
 
 static bool haveLocation = false;
 static int positionLatMinutes = 0;// the test moves the radio north by this many 1/10000 minutes
-bool dmrDataServiceGetPosition(lrrpPosition_t *position)
+static bool fakeOwnPosition(lrrpPosition_t *position, void *ctx)
 {
-	memset(position, 0, sizeof(*position));
+	(void)ctx;
 	if (!haveLocation)
 	{
 		return false;
@@ -206,7 +206,8 @@ static void fakePosition(uint32_t src, const uint8_t *nmea, int length, uint32_t
 }
 
 static const dmrDataEnv_t fakeEnv = { .txStart = fakeTxStart, .channelClear = fakeClear, .inRxGroup = fakeInRxGroup,
-									  .notify = fakeNotify, .packet = fakePacket, .position = fakePosition };
+									  .notify = fakeNotify, .packet = fakePacket, .position = fakePosition,
+									  .ownPosition = fakeOwnPosition };
 
 // The radio task: ticks every 10 ms for a while, everything queued goes out
 static void runMainTask(int ms)

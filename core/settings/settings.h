@@ -166,7 +166,7 @@ typedef struct {
 	uint16_t aprs_distance_m;	// beacon after moving this far, 0 = off
 	char aprs_symbol[2];		// symbol table and code
 	uint8_t aprs_path;		// aprs_path_t
-	uint8_t aprs_pos_src;		// aprs_pos_src_t
+	uint8_t aprs_pos_src;		// position_pref_t
 	uint8_t aprs_level;		// AFSK level, 0-100
 	uint8_t aprs_txdelay;		// preamble in 10 ms units
 	uint8_t aprs_misc;		// bits 0-1 aprs_via_t, 2-3 digipeater mode, 4-6 position ambiguity
