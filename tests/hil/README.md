@@ -66,10 +66,10 @@ callsign) are in the next section.
 ### The rig's configuration
 
 The repository holds no frequency, callsign or ID of any rig. Each value comes from the command line, else
-`$RFOUNDRY_HIL_<NAME>` (the option's name in capitals, `_` for `-`), else the rig's TOML file: `--hil-config FILE`,
-else `$RFOUNDRY_HIL_CONFIG`, else `~/.config/rfoundry/hil.toml` when it exists. The file's keys are the option names
-with `_` for `-`; an unknown key is an error. A test that needs a value no one gave skips (kind `opt_in`) and names
-the three ways to give it. `tests/hil/hil_config.py` reads them.
+`$RFOUNDRY_HIL_<NAME>` (the option's name in capitals, `_` for `-`), else the rig's TOML file: `--hil-config FILE`, else
+`$RFOUNDRY_HIL_CONFIG`, else `~/.config/rfoundry/hil.toml` when it exists (`none` reads no file; `tools/ci.sh` uses it).
+The file's keys are the option names with `_` for `-`; an unknown key is an error. A test that needs a value no one gave
+skips (kind `opt_in`) and names the three ways to give it. `tests/hil/hil_config.py` reads them.
 
 | Option | Value |
 |---|---|
