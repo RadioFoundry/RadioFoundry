@@ -50,6 +50,8 @@ class Udp(unittest.TestCase):
     def test_bytes_both_ways_like_a_serial_port(self):
         s = debuglink.UdpSerial(self.addr, timeout=0.5)
         self.addCleanup(s.close)
+        s.reset_input_buffer()                  # before anything was sent, as a link's first request does
+        self.assertEqual(s.in_waiting, 0)
         self.assertEqual(s.write(b"\xA5\x5Aabc"), 5)
         data, src = self.radio.recvfrom(64)
         self.assertEqual(data, b"\xA5\x5Aabc")

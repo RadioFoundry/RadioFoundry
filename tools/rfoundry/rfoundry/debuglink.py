@@ -85,6 +85,9 @@ class UdpSerial:
         host, _, port = addr.partition(":")
         self.addr = (socket.gethostbyname(host), int(port or UDP_PORT))
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # The port sendto would take anyway, now: Windows refuses recvfrom on a socket not yet bound (WinError 10022),
+        # and a link flushes its input before the first send
+        self.sock.bind(("", 0))
         self.timeout = timeout
         self.pending = bytearray()
         self.port = "udp:%s:%d" % self.addr
@@ -97,8 +100,8 @@ class UdpSerial:
                 if src[0] == self.addr[0]:
                     self.pending += data
                 self.sock.settimeout(0)
-        except (socket.timeout, BlockingIOError):
-            pass
+        except (socket.timeout, BlockingIOError, ConnectionResetError):
+            pass    # ConnectionResetError: Windows reports an earlier datagram's ICMP port unreachable here
 
     def read(self, n=1):
         if not self.pending:
