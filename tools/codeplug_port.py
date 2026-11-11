@@ -21,7 +21,9 @@ Pure logic raises PortError; the tools catch it like their own errors.
 import os
 import re
 import struct
+import subprocess
 import sys
+import tempfile
 import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -362,24 +364,47 @@ def build_dfuse(targets):
     return data + struct.pack("<I", (~zlib.crc32(data)) & 0xFFFFFFFF)
 
 
+FLASH_IMAGE_BASE = 0x20000      # flat image address of flash image address 0, the STM32 mapping (open-firmware-cps.md 7.1)
+
+
+def _target_bases(targets):
+    """Where each target's elements go in the flat image. dmrconf's openuv380 file has an empty EEPROM target and puts
+    everything in its flash target at STM32 wire addresses already. Its opengd77 file (the MK22 mapping) has an EEPROM
+    target and a flash target that both start at 0; the flash one moves up by FLASH_IMAGE_BASE, so the flat image has
+    the STM32 layout either way (cps_client.channel_addr)."""
+    mk22 = any(elems for name, elems in targets if "EEPROM" in name.upper())
+    return [FLASH_IMAGE_BASE if mk22 and "FLASH" in name.upper() else 0 for name, _ in targets]
+
+
+def _placed(targets):
+    """[(flat image address, bytes)] of every element, in file order."""
+    return [(b + a, d) for b, (_, elems) in zip(_target_bases(targets), targets) for a, d in elems]
+
+
 def dfu_regions(targets):
-    return [(a, a + len(d)) for _, elems in targets for a, d in elems if d]
+    regions = [(a, a + len(d)) for a, d in _placed(targets) if d]
+    by_start = sorted(regions)
+    for (s0, e0), (s1, e1) in zip(by_start, by_start[1:]):
+        if s1 < e0:
+            raise PortError("DfuSe file: elements overlap at 0x%X..0x%X (unknown target layout)" % (s1, min(e0, e1)))
+    return regions
 
 
 def dfu_image(targets):
-    """A flat image (file offset = CPS wire address before the offset, 0xFF elsewhere) and its regions."""
+    """A flat image in the STM32 layout (file offset = CPS wire address before the offset, 0xFF elsewhere; an MK22
+    file's flash target moved up, _target_bases) and its regions."""
     regions = dfu_regions(targets)
     size = max([0x120000] + [e for _, e in regions])
     img = bytearray(b"\xff" * size)
-    for _, elems in targets:
-        for a, d in elems:
-            img[a:a + len(d)] = d
+    for a, d in _placed(targets):
+        img[a:a + len(d)] = d
     return img, regions
 
 
 def image_to_dfu(template, img):
     """The template's targets and elements with their bytes taken from img (a read back)."""
-    return [(name, [(a, bytes(img[a:a + len(d)])) for a, d in elems]) for name, elems in template]
+    return [(name, [(a, bytes(img[b + a:b + a + len(d)])) for a, d in elems])
+            for b, (name, elems) in zip(_target_bases(template), template)]
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -511,11 +536,11 @@ SAMPLE = """version: 0.15.1
 settings:
   defaultID: id1
 radioIDs:
-  - dmr: {id: id1, name: N0CALL, number: 3100001}
+  - dmr: {id: id1, name: Q1AAA, number: 9990001}
 contacts:
   - dmr: {id: cont1, name: Local9, ring: false, type: GroupCall, number: 9}
   - dmr: {id: cont2, name: TAC 310, ring: false, type: GroupCall, number: 310}
-  - dmr: {id: cont3, name: "Alice, A", ring: false, type: PrivateCall, number: 3100002}
+  - dmr: {id: cont3, name: "Alice, A", ring: false, type: PrivateCall, number: 9990002}
 groupLists:
   - {id: grp1, name: L9, contacts: [cont1]}
   - {id: grp2, name: Empty, contacts: []}
@@ -553,6 +578,44 @@ zones:
     A: [ch1, ch2, ch3, ch4, ch5]
 scanLists: []
 """
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# tester kits
+
+def kit_package_files():
+    """{source: path in the kit} for the rfoundry package. The tools' helpers import it with tools/rfoundry on sys.path,
+    so a kit keeps that layout, rfoundry/rfoundry beside the scripts. All of it, not the modules imported today: a list
+    goes stale, and a kit that doesn't import is found by the tester."""
+    pkg = os.path.join(HERE, "rfoundry", "rfoundry")
+    if not os.path.isfile(os.path.join(pkg, "__init__.py")):
+        raise PortError("the rfoundry package isn't at %s: make the kit from the repository" % pkg)
+    files = {}
+    for d, _, names in os.walk(pkg):
+        for name in names:
+            if name.endswith((".py", ".json")):
+                src = os.path.join(d, name)
+                files[src] = os.path.join("rfoundry", "rfoundry", os.path.relpath(src, pkg))
+    return files
+
+
+def kit_error(script, image, code):
+    """Make a kit with script's 'package' and run code in a fresh Python that sees only the kit: None, or what went
+    wrong. code is what the tool loads as it runs; the kit's own package and codec maps are checked after it."""
+    code += ("\nimport os, sys, rfoundry.codecmap\n"
+             "assert os.path.abspath(rfoundry.__file__).startswith(os.path.abspath(sys.argv[1])), rfoundry.__file__\n"
+             "assert rfoundry.codecmap.load_maps(), 'no codec maps'\n")
+    with tempfile.TemporaryDirectory() as tmp:
+        img, kit = os.path.join(tmp, "image.bin"), os.path.join(tmp, "kit")
+        with open(img, "wb") as f:
+            f.write(image)
+        for cmd in ([os.path.abspath(script), "package", kit, "--image", img],
+                    ["-I", "-c", "import sys; sys.path.insert(0, sys.argv[1])\n" + code, kit]):
+            r = subprocess.run([sys.executable] + cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               universal_newlines=True)
+            if r.returncode:
+                return r.stdout[-400:]
+    return None
 
 
 def self_test():
@@ -625,8 +688,9 @@ def self_test():
     check(r == [] and len(sk) == 1 and "holds" in sk[0][1], "a record with another name is left alone")
     check(struct.unpack_from("<H", img2, addr(4)[1] + CH_CONTACT)[0] == 0, "... and not written")
 
-    # DfuSe round trip
-    t = [("EEPROM", [(0x80, b"\x01\x02"), (0x7500, b"\x03")]), ("Flash", [(0x9B000, bytes(range(40)))])]
+    # DfuSe round trip, the openuv380 layout: an empty EEPROM target, STM32 wire addresses in the flash target
+    t = [("Codeplug EEPROM", []), ("Codeplug FLASH", [(0x80, b"\x01\x02"), (0x7500, b"\x03"),
+                                                      (0x9B000, bytes(range(40)))])]
     d = build_dfuse(t)
     check(parse_dfuse(d) == [(n, [(a, bytes(x)) for a, x in e]) for n, e in t], "DfuSe round trip")
     im, reg = dfu_image(t)
@@ -639,10 +703,35 @@ def self_test():
         except PortError:
             pass
 
+    # the opengd77 (MK22) layout: EEPROM and flash targets both from 0; the flash one lands at +0x20000, so the
+    # general settings at EEPROM 0xE0 survive and a channel past 128 is where channel_addr looks
+    eeprom = bytearray(b"\xff" * 0x5FE0)
+    eeprom[0xE0 - 0x80:0xEC - 0x80] = b"Q1AAA\xff\xff\xff" + bytes.fromhex("09990001")
+    flash = bytearray(b"\xff" * 0x13E60)
+    bitmap, rec = _cps().channel_addr(130)
+    flash[bitmap - 0x9B000] = 0x02
+    struct.pack_into("<H", flash, rec - 0x9B000 + CH_CONTACT, 2)
+    t = [("Codeplug EEPROM", [(0x80, bytes(eeprom))]), ("Codeplug FLASH", [(0x0, b"\x5A" * 0x11A0),
+                                                                           (0x7B000, bytes(flash))])]
+    im, reg = dfu_image(t)
+    check(reg == [(0x80, 0x6060), (0x20000, 0x211A0), (0x9B000, 0xAEE60)], "MK22 regions %r" % reg)
+    check(im[0xE0:0xEC] == eeprom[0x60:0x6C] and im[0x20000] == 0x5A, "MK22 flat image keeps EEPROM 0xE0")
+    check(struct.unpack_from("<H", im, rec + CH_CONTACT)[0] == 2, "channel 130's contact where channel_addr looks")
+    struct.pack_into("<H", im, rec + CH_CONTACT, 3)
+    back = image_to_dfu(t, im)
+    check(back[0][1] == t[0][1] and back[1][1][0] == t[1][1][0], "MK22 image back to DfuSe, EEPROM 0xE0 kept")
+    check(struct.unpack_from("<H", back[1][1][1][1], rec - 0x9B000 + CH_CONTACT)[0] == 3,
+          "a contact written into channel 130 reaches the flash target")
+    try:
+        dfu_image([("A", [(0x80, b"\x01" * 16)]), ("B", [(0x88, b"\x02")])])
+        check(False, "overlapping elements are refused")
+    except PortError:
+        pass
+
     # the shared YAML helpers
     s = codeplug_summary(SAMPLE)
     check(s["counts"] == {"channels": 5, "zones": 1, "contacts": 3, "groupLists": 5}, "counts %r" % s["counts"])
-    check(s["names"]["contacts"][2] == "Alice, A" and s["radio_ids"] == [3100001], "names and radio ID")
+    check(s["names"]["contacts"][2] == "Alice, A" and s["radio_ids"] == [9990001], "names and radio ID")
     check(compare_counts({"channels": 5}, {"channels": 4, "zones": 0, "contacts": 0, "groupLists": 0})
           == [("channels", 5, 4)], "a lost channel is found")
 

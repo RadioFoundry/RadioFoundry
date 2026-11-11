@@ -67,7 +67,7 @@ On FM, the activity region shows "Receiving" while the squelch is open, or "Sque
 While you hold **PTT**, the screen shows TALKING, the target, the timeslot and color code (DMR), the time on air and
 the transmit timeout. DMR shows the time as "0:07 of 3:00", FM as "2:53 left of 3:00".
 
-On DMR the top line says what kind of call it is: "TG 3100" for a group call, "Private 3101234" for a private call.
+On DMR the top line says what kind of call it is: "TG 3100" for a group call, "Private 9991234" for a private call.
 A private call shows the contact's name, and its ID when there is room. A name too long for the line keeps the name
 and drops the ID.
 
@@ -75,13 +75,15 @@ and drops the ID.
 <img src="../ux/screens/160x120i5/tx_private.png" width="200" alt="Transmitting a private call">
 
 On DMR the screen may first show WAITING (the radio waits for a free slot) or WAKING RPT (it wakes up the repeater).
+While it wakes the repeater, the red LED blinks once for each wake-up signal it sends, and lights steady once you are
+on the air.
 
 The radio also transmits without PTT on DMR: registration (ARS), text messages, positions, call alerts and their
 answers, and packet data from a computer on USB or serial. While it does, the status line shows TX, the red LED
 lights and Home says SENDING. Data the radio receives shows RX on the status line.
 
-When the radio refuses to transmit, the status line shows NO TX. The screen says why, and the hint row says what to
-do:
+When the radio refuses to transmit, the status line shows NO TX and the LEDs flash red, green, red, green, red, green
+once with the deny tone. The screen says why, and the hint row says what to do:
 
 | Message | Cause | What to do |
 |---|---|---|

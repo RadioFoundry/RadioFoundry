@@ -67,30 +67,30 @@ static void test_fcs(void)
 static void test_addresses(void)
 {
 	ax25_addr_t a;
-	CHECK(ax25_addr_parse("n0call-15", 9, &a) && strcmp(a.call, "N0CALL") == 0 && a.ssid == 15, "parse");
-	CHECK(!ax25_addr_parse("N0CALL-16", 9, &a), "ssid 16");
+	CHECK(ax25_addr_parse("q0test-15", 9, &a) && strcmp(a.call, "Q0TEST") == 0 && a.ssid == 15, "parse");
+	CHECK(!ax25_addr_parse("Q0TEST-16", 9, &a), "ssid 16");
 	CHECK(!ax25_addr_parse("TOOLONG1", 8, &a), "7 chars");
 	CHECK(!ax25_addr_parse("-1", 2, &a), "empty call");
-	CHECK(!ax25_addr_parse("N0CALL-", 7, &a), "dash only");
+	CHECK(!ax25_addr_parse("Q0TEST-", 7, &a), "dash only");
 	char s[12];
-	ax25_addr_parse("N0CALL-15", 9, &a);
+	ax25_addr_parse("Q0TEST-15", 9, &a);
 	a.h = true;
 	ax25_addr_format(&a, true, s);
-	CHECK(strcmp(s, "N0CALL-15*") == 0, "format %s", s);
+	CHECK(strcmp(s, "Q0TEST-15*") == 0, "format %s", s);
 
-	// N0CALL>APRS: the address bytes of AX.25 2.2 3.12 (callsign shifted left, SSID byte 0b011SSSS0, C bit on
+	// Q0TEST>APRS: the address bytes of AX.25 2.2 3.12 (callsign shifted left, SSID byte 0b011SSSS0, C bit on
 	// the destination for a command, the extension bit on the last address)
 	uint8_t buf[64];
-	size_t n = make_frame("N0CALL>APRS:>test", buf, sizeof(buf));
-	static const uint8_t want[] = { 0x82, 0xA0, 0xA4, 0xA6, 0x40, 0x40, 0xE0, 0x9C, 0x60, 0x86, 0x82, 0x98, 0x98,
+	size_t n = make_frame("Q0TEST>APRS:>test", buf, sizeof(buf));
+	static const uint8_t want[] = { 0x82, 0xA0, 0xA4, 0xA6, 0x40, 0x40, 0xE0, 0xA2, 0x60, 0xA8, 0x8A, 0xA6, 0xA8,
 					0x61, 0x03, 0xF0, '>', 't', 'e', 's', 't' };
 	CHECK(n == sizeof(want) && memcmp(buf, want, n) == 0, "encode n=%zu", n);
 	ax25_frame_t f;
-	CHECK(ax25_decode(buf, n, &f) && f.ndigi == 0 && strcmp(f.src.call, "N0CALL") == 0 && f.info_len == 5,
+	CHECK(ax25_decode(buf, n, &f) && f.ndigi == 0 && strcmp(f.src.call, "Q0TEST") == 0 && f.info_len == 5,
 	      "decode");
 
 	// TNC2 round trip with a used digipeater
-	const char *line = "K1ABC-9>APZRDF,W1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-Test";
+	const char *line = "Q1ABC-9>APZRDF,Q1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-Test";
 	n = make_frame(line, buf, sizeof(buf));
 	CHECK(ax25_decode(buf, n, &f), "decode digi");
 	CHECK(f.ndigi == 2 && f.digi[0].h && !f.digi[1].h, "h bits");
@@ -103,7 +103,7 @@ static void test_addresses(void)
 	buf[27] &= (uint8_t)~1u;
 	CHECK(!ax25_decode(buf, 21, &f), "no end bit");
 	// APRS-IS line with a q construct and a long server name: the name is skipped
-	CHECK(ax25_from_tnc2("K1ABC>APRS,TCPIP*,qAC,T2TEXAS99:>hi", 35, &f) && f.ndigi == 2 &&
+	CHECK(ax25_from_tnc2("Q1ABC>APRS,TCPIP*,qAC,T2TEXAS99:>hi", 35, &f) && f.ndigi == 2 &&
 	      strcmp(f.digi[1].call, "QAC") == 0, "is line");
 }
 
@@ -113,7 +113,7 @@ static void test_hdlc(void)
 {
 	uint8_t frame[64], tones[256];
 	// a frame full of 0xFF and 0x7E: the worst case for stuffing
-	size_t n = make_frame("N0CALL>APRS:~~~~", frame, sizeof(frame));
+	size_t n = make_frame("Q0TEST>APRS:~~~~", frame, sizeof(frame));
 	for (int i = 0; i < 4; i++) {
 		frame[n - 4 + i] = (uint8_t)(i & 1 ? 0xFF : 0x7E);
 	}
@@ -199,7 +199,7 @@ static int afsk_run_emph(uint32_t mod_rate, uint32_t demod_rate, float snr_db, f
 {
 	static uint8_t frame[AX25_FRAME_MAX], tones[1024];
 	static int16_t pcm[400000];
-	size_t n = make_frame("K1ABC-9>APZRDF,WIDE1-1,WIDE2-1:=4903.50N/07201.75W>RadioFoundry APRS test 0123456789",
+	size_t n = make_frame("Q1ABC-9>APZRDF,WIDE1-1,WIDE2-1:=4903.50N/07201.75W>RadioFoundry APRS test 0123456789",
 			      frame, sizeof(frame));
 	hdlc_enc_t e;
 	hdlc_enc_init(&e, tones, sizeof(tones));
@@ -337,10 +337,10 @@ static void test_position_build(void)
 	// status, message, ack
 	aprs_build_status("On the air", out, sizeof(out));
 	CHECK(strcmp(out, ">On the air") == 0, "status");
-	aprs_build_message("K1ABC-9", "Hi {there}|", "42", out, sizeof(out));
-	CHECK(strcmp(out, ":K1ABC-9  :Hi  there} {42") == 0, "message %s", out);
-	aprs_build_ack("K1ABC-9", "42", false, out, sizeof(out));
-	CHECK(strcmp(out, ":K1ABC-9  :ack42") == 0, "ack %s", out);
+	aprs_build_message("Q1ABC-9", "Hi {there}|", "42", out, sizeof(out));
+	CHECK(strcmp(out, ":Q1ABC-9  :Hi  there} {42") == 0, "message %s", out);
+	aprs_build_ack("Q1ABC-9", "42", false, out, sizeof(out));
+	CHECK(strcmp(out, ":Q1ABC-9  :ack42") == 0, "ack %s", out);
 	CHECK(aprs_build_status("x", out, 2) == 0, "too small");
 }
 
@@ -418,16 +418,16 @@ static void test_mice(void)
 static void test_messages(void)
 {
 	aprs_parsed_t p;
-	const char *s = ":N0CALL-7 :Hello there{123";
+	const char *s = ":Q0TEST-7 :Hello there{123";
 	CHECK(aprs_parse(NULL, (const uint8_t *)s, strlen(s), &p) && p.type == APRS_T_MESSAGE, "message");
-	CHECK(strcmp(p.addressee, "N0CALL-7") == 0 && strcmp(p.msgno, "123") == 0 && p.text_len == 11 &&
+	CHECK(strcmp(p.addressee, "Q0TEST-7") == 0 && strcmp(p.msgno, "123") == 0 && p.text_len == 11 &&
 	      memcmp(p.text, "Hello there", 11) == 0 && !p.ack, "fields");
-	s = ":N0CALL   :ack123";
+	s = ":Q0TEST   :ack123";
 	CHECK(aprs_parse(NULL, (const uint8_t *)s, strlen(s), &p) && p.ack && strcmp(p.msgno, "123") == 0, "ack");
-	s = ":N0CALL   :rej7";
+	s = ":Q0TEST   :rej7";
 	CHECK(aprs_parse(NULL, (const uint8_t *)s, strlen(s), &p) && p.rej && strcmp(p.msgno, "7") == 0, "rej");
 	// 1.1 reply-ack: "{MM}AA"
-	s = ":N0CALL   :Hi{AB}CD";
+	s = ":Q0TEST   :Hi{AB}CD";
 	CHECK(aprs_parse(NULL, (const uint8_t *)s, strlen(s), &p) && strcmp(p.msgno, "AB") == 0 && p.text_len == 2,
 	      "reply-ack %s", p.msgno);
 	s = ":BLN1     :Bulletin";
@@ -455,6 +455,240 @@ static void test_geo(void)
 	CHECK(memcmp(b, "5L!!", 4) == 0 && aprs_base91_value("5L!!", 4) == 15427503, "base91");
 }
 
+// The range Stations heard shows (aprs_distance_m, aprs_bearing_deg), at its limits (BVA)
+#define HALF_EARTH_M	20015087u	// pi * 6371 km, the farthest two points can be
+#define LAT_MAX		(90 * APRS_DEG)
+#define LON_MAX		(180 * APRS_DEG)
+
+static void test_geo_limits(void)
+{
+	static const struct {
+		const char *name;
+		int32_t lat1, lon1, lat2, lon2;
+		uint32_t lo, hi;	// meters
+		int deg;		// -1: any
+	} cases[] = {
+		{ "same point", 337000000, -841000000, 337000000, -841000000, 0, 0, -1 },
+		{ "1e-7 deg apart: 1 cm", 0, 0, 1, 0, 0, 1, -1 },
+		{ "999 m north (last m)", 0, 0, 89845, 0, 998, 1000, 0 },
+		{ "1000 m north (first 0.1 km)", 0, 0, 89932, 0, 999, 1001, 0 },
+		{ "1 deg north", 0, 0, APRS_DEG, 0, 111100, 111300, 0 },
+		{ "pole to pole", LAT_MAX, 0, -LAT_MAX, 0, HALF_EARTH_M - 50, HALF_EARTH_M + 50, 180 },
+		{ "north pole, any longitude: the same point", LAT_MAX, 0, LAT_MAX, 1234567890, 0, 5, -1 },
+		{ "antipodes on the equator", 0, 0, 0, LON_MAX, HALF_EARTH_M - 50, HALF_EARTH_M + 50, -1 },
+		{ "antipodes off the equator", 337000000, -841000000, -337000000, 959000000, HALF_EARTH_M - 50,
+		  HALF_EARTH_M + 50, -1 },
+		{ "180 E is 180 W", 0, LON_MAX, 0, -LON_MAX, 0, 5, -1 },
+		{ "across the date line, westward", 0, 1795000000, 0, -1795000000, 111100, 111300, 90 },
+		{ "across the date line, eastward", 0, -1795000000, 0, 1795000000, 111100, 111300, 270 },
+		// bearing: the quadrant edges and the wrap at north
+		{ "N", 0, 0, 1000000, 0, 0, HALF_EARTH_M, 0 },
+		{ "E", 0, 0, 0, 1000000, 0, HALF_EARTH_M, 90 },
+		{ "S", 0, 0, -1000000, 0, 0, HALF_EARTH_M, 180 },
+		{ "W", 0, 0, 0, -1000000, 0, HALF_EARTH_M, 270 },
+		{ "NE", 0, 0, 1000000, 1000000, 0, HALF_EARTH_M, 45 },
+		{ "359.4: 359", 0, 0, 1000000, -10472, 0, HALF_EARTH_M, 359 },
+		{ "359.6: rounds to 0, not 360", 0, 0, 1000000, -6981, 0, HALF_EARTH_M, 0 },
+		{ "0.4: 0", 0, 0, 1000000, 6981, 0, HALF_EARTH_M, 0 },
+		{ "0.6: 1", 0, 0, 1000000, 10472, 0, HALF_EARTH_M, 1 },
+	};
+	for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+		uint32_t d = aprs_distance_m(cases[i].lat1, cases[i].lon1, cases[i].lat2, cases[i].lon2);
+		uint16_t b = aprs_bearing_deg(cases[i].lat1, cases[i].lon1, cases[i].lat2, cases[i].lon2);
+		CHECK(d >= cases[i].lo && d <= cases[i].hi, "geo %s: %u m", cases[i].name, d);
+		CHECK(b < 360 && (cases[i].deg < 0 || b == cases[i].deg), "geo %s: %u deg", cases[i].name, b);
+	}
+}
+
+static int32_t fuzz_coord(fuzz_t *f, int32_t max)
+{
+	// one in four on a limit, or just inside it: the poles, the date line, the antipodes come up often
+	switch (fuzz_below(f, 8)) {
+	case 0: return max;
+	case 1: return -max;
+	case 2: return max - (int32_t)fuzz_below(f, 1000);
+	case 3: return 0;
+	default: return (int32_t)((int64_t)fuzz_below(f, 2u * (uint32_t)max + 1u) - max);
+	}
+}
+
+// Properties over seeded random pairs (PBT, fuzz.h): the distance is symmetric, 0 from a point to itself and at most
+// half the circumference; the bearing is in [0, 360); the same longitude 360 degrees on (where int32 holds it) changes
+// nothing; the distance obeys the triangle inequality (metamorphic)
+static void test_geo_props(void)
+{
+	fuzz_t f;
+	fuzz_init(&f, 0x6E0);
+	long n = fuzz_iters(20000), bad = 0;
+	for (long i = 0; i < n && bad < 5; i++) {
+		int32_t la1 = fuzz_coord(&f, LAT_MAX), lo1 = fuzz_coord(&f, LON_MAX);
+		int32_t la2 = fuzz_coord(&f, LAT_MAX), lo2 = fuzz_coord(&f, LON_MAX);
+		int32_t la3 = fuzz_coord(&f, LAT_MAX), lo3 = fuzz_coord(&f, LON_MAX);
+		if (i % 4 == 0) {	// near the antipode of the first point
+			la2 = -la1 + (int32_t)fuzz_below(&f, 2001) - 1000;
+			lo2 = lo1 > 0 ? lo1 - LON_MAX : lo1 + LON_MAX;
+		}
+		uint32_t d12 = aprs_distance_m(la1, lo1, la2, lo2), d21 = aprs_distance_m(la2, lo2, la1, lo1);
+		uint32_t d13 = aprs_distance_m(la1, lo1, la3, lo3), d23 = aprs_distance_m(la2, lo2, la3, lo3);
+		uint16_t b = aprs_bearing_deg(la1, lo1, la2, lo2);
+		// The triangle with 5 km to spare: near the antipode, 1 - a in float steps by 1.2e-7, which is 2.2 km of arc
+		bool ok = d12 <= HALF_EARTH_M + 50u && (d12 > d21 ? d12 - d21 : d21 - d12) <= 2u &&
+			  aprs_distance_m(la1, lo1, la1, lo1) == 0 && b < 360 && d13 <= d12 + d23 + 5000u;
+		// 360 degrees on: float rounding of the angle (1e-7 rad is 0.6 m) is all that may change. The bearing only
+		// where it means something: not at the point itself, near its antipode or from a pole (every way leads there)
+		int64_t shifted = (int64_t)lo2 + (lo2 < 0 ? 360 : -360) * (int64_t)APRS_DEG;
+		if (shifted >= INT32_MIN && shifted <= INT32_MAX && d12 > 1000u && d12 < HALF_EARTH_M - 10000u &&
+		    la1 < LAT_MAX - 100000 && la1 > -LAT_MAX + 100000) {
+			uint32_t ds = aprs_distance_m(la1, lo1, la2, (int32_t)shifted);
+			int db = (int)aprs_bearing_deg(la1, lo1, la2, (int32_t)shifted) - (int)b;
+			db = db < -180 ? db + 360 : db > 180 ? db - 360 : db;
+			uint32_t tol = d12 < HALF_EARTH_M / 2u ? 20u : 5000u;	// the far half: float as near the antipode
+			ok = ok && (ds > d12 ? ds - d12 : d12 - ds) <= tol && db >= -1 && db <= 1;
+		}
+		if (!ok) {
+			bad++;
+			CHECK(false, "geo props (%d,%d)-(%d,%d)-(%d,%d): %u/%u m, %u deg, %u+%u", la1, lo1, la2, lo2, la3,
+			      lo3, d12, d21, b, d13, d23);
+		}
+	}
+}
+
+// The reference the integer and polynomial math is held to: the haversine and the initial bearing in long double
+static void geo_ref(int32_t la1, int32_t lo1, int32_t la2, int32_t lo2, long double *m, long double *deg)
+{
+	const long double k = 3.14159265358979323846264338327950288L / 180.0L / 1e7L;
+	long double p1 = la1 * k, p2 = la2 * k, dp = p2 - p1, dl = ((long double)lo2 - lo1) * k;
+	long double a = sinl(dp / 2) * sinl(dp / 2) + cosl(p1) * cosl(p2) * sinl(dl / 2) * sinl(dl / 2);
+	if (a > 1)
+		a = 1;
+	*m = 6371000.0L * 2 * atan2l(sqrtl(a), sqrtl(1 - a));
+	long double b = atan2l(sinl(dl) * cosl(p2), cosl(p1) * sinl(p2) - sinl(p1) * cosl(p2) * cosl(dl)) * 180 /
+		3.14159265358979323846264338327950288L;
+	*deg = b < 0 ? b + 360 : b;
+}
+
+// Known pairs (the reference values are the haversine on a 6371 km sphere, worked out by hand with 1e-7 degree
+// inputs): ranges from 50 m to nearly half the globe, the date line, the antipode region and a pole
+static void test_geo_known(void)
+{
+	static const struct {
+		const char *name;
+		int32_t lat1, lon1, lat2, lon2;
+		uint32_t m;	// meters
+		int deg;	// whole degrees, rounded
+	} cases[] = {
+		{ "50 m east at 33.7 N", 337000000, -841000000, 337000000, -840994601, 50, 90 },
+		{ "London to Paris", 515074000, -1278000, 488566000, 23522000, 343556, 148 },
+		{ "Anchorage to Tokyo, over the date line", 612181000, -1499003000, 356762000, 1396503000, 5565987, 273 },
+		{ "Sydney to Santiago", -338688000, 1512093000, -334489000, -706693000, 11346715, 145 },
+		{ "Quito to Singapore", -1800000, -784700000, 13500000, 1038200000, 19729165, 297 },
+		{ "over the pole", 899000000, 100000000, 899000000, -1700000000, 22239, 0 },
+	};
+	for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+		uint32_t d = aprs_distance_m(cases[i].lat1, cases[i].lon1, cases[i].lat2, cases[i].lon2);
+		uint16_t b = aprs_bearing_deg(cases[i].lat1, cases[i].lon1, cases[i].lat2, cases[i].lon2);
+		uint32_t tol = 2u + cases[i].m / 5000u;	// 2e-4 of the range (the measured worst: 1.4e-4 at 100 km)
+		CHECK(d + tol >= cases[i].m && d <= cases[i].m + tol, "known %s: %u m, want %u", cases[i].name, d,
+		      cases[i].m);
+		CHECK(b == cases[i].deg, "known %s: %u deg, want %d", cases[i].name, b, cases[i].deg);
+	}
+}
+
+// Against the reference over seeded random pairs at every range from a few meters to the globe: the distance within
+// 2 m + 2e-4 of itself (the polynomials give 150 m at worst; the poles are left to test_geo_limits), the bearing
+// within the rounding to a degree, wherever it means something
+static void test_geo_accuracy(void)
+{
+	fuzz_t f;
+	fuzz_init(&f, 0x6E1);
+	long n = fuzz_iters(100000), bad = 0;
+	for (long i = 0; i < n && bad < 5; i++) {
+		int32_t la1 = fuzz_coord(&f, LAT_MAX), lo1 = fuzz_coord(&f, LON_MAX), la2, lo2;
+		static const int32_t span[] = { 100, 10000, 1000000, 100000000, 1000000000 };	// 1e-7 degree
+		int32_t sp = span[fuzz_below(&f, 5)];
+		int64_t a = (int64_t)la1 + (int64_t)fuzz_below(&f, 2u * (uint32_t)sp + 1u) - sp;
+		int64_t b = (int64_t)lo1 + (int64_t)fuzz_below(&f, 2u * (uint32_t)sp + 1u) - sp;
+		la2 = (int32_t)(a > LAT_MAX ? LAT_MAX : a < -LAT_MAX ? -LAT_MAX : a);
+		lo2 = (int32_t)(b > LON_MAX ? b - 2 * (int64_t)LON_MAX : b < -LON_MAX ? b + 2 * (int64_t)LON_MAX : b);
+		if (i % 5 == 4) {
+			la2 = fuzz_coord(&f, LAT_MAX);
+			lo2 = fuzz_coord(&f, LON_MAX);
+		}
+		long double m, deg;
+		geo_ref(la1, lo1, la2, lo2, &m, &deg);
+		// not within a kilometer of a pole: the float's step in the latitude is a few meters of cosine there
+		if (la1 > LAT_MAX - 10000 || la1 < -LAT_MAX + 10000 || la2 > LAT_MAX - 10000 ||
+		    la2 < -LAT_MAX + 10000) {
+			continue;
+		}
+		uint32_t d = aprs_distance_m(la1, lo1, la2, lo2);
+		long double e = d > m ? d - m : m - d;
+		bool ok = e <= 2.0L + m / 5000.0L;
+		// Nor near the antipode: the course to a point on the far side of the globe is any of them. The bearing's y
+		// and x both go to zero there and their signs are rounding noise (on the equator, 180 degrees of longitude
+		// away: 270 degrees on one libm and compiler, 90 on another), so the reference is as free to pick a side
+		// as the code is. The distance is checked all the same
+		if (m > 20.0L && m < 20015087.0L - 1000.0L && la1 < LAT_MAX - 10000000 && la1 > -LAT_MAX + 10000000 && la2 < LAT_MAX - 10000000 &&
+		    la2 > -LAT_MAX + 10000000) {
+			long double eb = fabsl((long double)aprs_bearing_deg(la1, lo1, la2, lo2) - deg);
+			ok = ok && (eb <= 0.6L || eb >= 359.4L);
+		}
+		if (!ok) {
+			bad++;
+			CHECK(false, "geo accuracy (%d,%d)-(%d,%d): %u m, ref %.1Lf, %u deg, ref %.2Lf", la1, lo1, la2, lo2, d,
+			      m, aprs_bearing_deg(la1, lo1, la2, lo2), deg);
+		}
+	}
+}
+
+// What goes on the air: the compressed speed byte for every speed from 0 knots up to (not including) unknown is round(ln(knots + 1) /
+// ln 1.08), at most 89, as the formula in the reference gives it (checked here in double; its nearest tie to a whole
+// byte is 0.0007 away, so any float evaluation gives the same byte)
+static void test_compressed_speed_byte(void)
+{
+	for (uint32_t kn = 0; kn < APRS_SPEED_NONE; kn++) {
+		aprs_report_t r = { .compressed = true, .pos = { .lat = 337000000, .lon = -841000000, .course = 90,
+			.speed_kn = (uint16_t)kn, .alt_m = APRS_ALT_NONE, .sym_table = '/', .sym_code = '>' } };
+		char o[64];
+		size_t len = aprs_build_position(&r, o, sizeof o);
+		double s = floor(log((double)kn + 1.0) / log(1.08) + 0.5);
+		char want = (char)(33 + (s > 89.0 ? 89 : (int)s));
+		if (len != 14 || o[11] != '!' + 22 || o[12] != want) {	// '!', table, 8 chars, symbol, then c and s
+			CHECK(false, "speed byte for %u kn: '%c' want '%c' (len %zu)", kn, len > 12 ? o[12] : '?', want, len);
+			break;
+		}
+	}
+}
+
+// What is heard: every course / speed pair of a compressed position gives the knots 1.08^s - 1 rounded and the course
+// 4 degrees a step, and every GGA altitude pair gives 1.002f^n feet in meters rounded (1.002f, the single-precision
+// constant the formula was always evaluated with, is 1.0019999743) exactly
+static void test_compressed_decode_all(void)
+{
+	ax25_addr_t dst = addr("APRS");
+	for (int c = 33; c <= 123; c++) {
+		for (int sp = 33; sp <= 123; sp++) {
+			char s[16];
+			aprs_parsed_t p;
+			snprintf(s, sizeof s, "=/5L!!<*e7>%c%c%c", c, sp, '!' + 0x22);
+			bool ok = aprs_parse(&dst, (const uint8_t *)s, 14, &p);
+			uint32_t kn = (uint32_t)floor(pow(1.08, sp - 33) - 1.0 + 0.5);
+			int crs = (c - 33) * 4;
+			if (c - 33 <= 89 && (!ok || p.pos.speed_kn != kn || p.pos.course != (crs ? (uint16_t)crs : (uint16_t)APRS_COURSE_NONE))) {
+				CHECK(false, "cs %d %d: %u kn %u deg, want %u kn %d", c, sp, p.pos.speed_kn, p.pos.course, kn, crs);
+				return;
+			}
+			snprintf(s, sizeof s, "=/5L!!<*e7>%c%c%c", c, sp, '!' + 0x10);	// source GGA: cs is the altitude
+			ok = aprs_parse(&dst, (const uint8_t *)s, 14, &p);
+			long double m = powl(1.00199997425079345703125L, (c - 33) * 91 + (sp - 33)) * 0.3048L;
+			if (!ok || p.pos.alt_m != (int32_t)floorl(m + 0.5L)) {
+				CHECK(false, "alt %d %d: %d m, want %Lf", c, sp, p.pos.alt_m, m);
+				return;
+			}
+		}
+	}
+}
+
 // --- NMEA ---
 
 static void test_nmea(void)
@@ -478,6 +712,185 @@ static void test_nmea(void)
 	const char *ws = "$GPRMC,010203,A,3352.1300,S,15112.5600,W,0.0,,010125,,*3B";
 	ok = nmea_parse(ws, strlen(ws), &f);
 	CHECK(ok && f.lat < 0 && f.lon < -1500000000, "south west ok=%d %d %d", ok, f.lat, f.lon);
+}
+
+// --- nmea_parse_unchecked: DMR APRS on UDP 10110 (#401), tested by classes (EP), edges (BVA) and properties (PBT) ---
+
+// body ("GPRMC,...", no $ or *) -> "$body*hh"
+static size_t nmea_with_sum(const char *body, char *out, size_t cap)
+{
+	uint8_t sum = 0;
+	for (const char *c = body; *c; c++)
+		sum ^= (uint8_t)*c;
+	return (size_t)snprintf(out, cap, "$%s*%02X", body, sum);
+}
+
+typedef struct {
+	const char *s;
+	size_t n;	// with the NULs in s
+	bool ok;	// parsed
+	bool fix;
+	int32_t lat, lon;
+} nmea_case_t;
+#define NC(str, ...) { str, sizeof(str) - 1, __VA_ARGS__ }
+
+static void nmea_cases(const nmea_case_t *t, size_t count, const char *what)
+{
+	for (size_t i = 0; i < count; i++) {
+		nmea_fix_t f;
+		bool ok = nmea_parse_unchecked((const uint8_t *)t[i].s, t[i].n, &f);
+		CHECK(ok == t[i].ok && (!ok || (f.fix == t[i].fix && (!f.fix || (f.lat == t[i].lat && f.lon == t[i].lon)))),
+		      "%s %u: ok=%d fix=%d %d %d", what, (unsigned)i, ok, f.fix, f.lat, f.lon);
+	}
+}
+
+static void test_nmea_unchecked(void)
+{
+	// EP: one case per class. The first is the sentence a stock radio sent on air (report 4)
+	static const nmea_case_t ep[] = {
+		NC("$GPRMC,062544.000,A,3000.0000,N,8700.0000\0,W,0.00,0.00,051126,,,A\0", true, true, 300000000, -870000000),
+		NC("$GPRMC,062544.000,A,3000.0000,N,08700.0000,W,0.00,0.00,051126,,,A*70\r\n", true, true, 300000000,
+		   -870000000),								// strict, with *hh
+		NC("$GPRMC,062544.000,A,3000.0000,N,08700.0000,W,0.00,0.00,051126,,,A*71", false, false, 0, 0),	// *hh wrong
+		NC("$GPRMC,062544.000,A,3000.0000,N,08700.0000,W,0.00,0.00,051126,,,A", true, true, 300000000, -870000000),
+		NC("$GPRMC,062544.000,A,3000.0000,N,8700.0000,W,,,051126,,,A", true, true, 300000000, -870000000),	// 4 digits
+		NC("$GPGGA,062544,3000.0000,S,08700.0000,E,1,08,0.9,5.0,M,,M,,", true, true, -300000000, 870000000),
+		NC("$GPRMC,062544.000,V,,,,,,,051126,,,N", true, false, 0, 0),		// void status: parsed, no fix
+		NC("$GPRMC,062544.000,A,3000.0000,,08700.0000,W,,,051126", false, false, 0, 0),	// missing hemisphere
+		NC("$GPRMC,062544.000,A,3000.0000,X,08700.0000,W,,,051126", false, false, 0, 0),	// not a hemisphere
+		NC("$GPGSV,1,1,00,,,,", false, false, 0, 0),					// another sentence
+		NC("GPRMC,062544.000,A,3000.0000,N,08700.0000,W,,,051126", false, false, 0, 0),	// no $
+		NC("$GPRMC,062544.000,A,3000.0000,N,08700.0000,W,,,051126*", false, false, 0, 0),	// * without digits
+		NC("", false, false, 0, 0),
+		NC("\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", false, false, 0, 0),			// only NULs
+		NC("\x7e\xff\x01garbage,,,,,,,\x80", false, false, 0, 0),
+	};
+	nmea_cases(ep, sizeof ep / sizeof ep[0], "EP");
+
+	// BVA: latitude and longitude at 90 / 180 degrees, the minutes at 60
+	static const nmea_case_t bva[] = {
+		NC("$GPRMC,0,A,8959.9999,N,17959.9999,E,,,0", true, true, 899999983, 1799999983),
+		NC("$GPRMC,0,A,9000.0000,N,18000.0000,E,,,0", true, true, 900000000, 1800000000),
+		NC("$GPRMC,0,A,9000.0000,S,18000.0000,W,,,0", true, true, -900000000, -1800000000),
+		NC("$GPRMC,0,A,9000.0001,N,08700.0000,W,,,0", false, false, 0, 0),
+		NC("$GPRMC,0,A,3000.0000,N,18000.0001,E,,,0", false, false, 0, 0),
+		NC("$GPRMC,0,A,9059.9999,N,18059.9999,E,,,0", false, false, 0, 0),
+		NC("$GPRMC,0,A,3059.9999,N,08700.0000,W,,,0", true, true, 309999983, -870000000),
+		NC("$GPRMC,0,A,3060.0000,N,08700.0000,W,,,0", false, false, 0, 0),		// minutes 60: refused
+		NC("$GPRMC,0,A,3000.0000,N,08760.0000,W,,,0", false, false, 0, 0),
+		NC("$GPRMC,0,A,43000,N,08700,W,0,0,010100", false, false, 0, 0),		// wraps when scaled
+	};
+	nmea_cases(bva, sizeof bva / sizeof bva[0], "BVA");
+
+	// BVA: the GGA altitude at the int32 edge (decimeters): beyond it, unknown (INT32_MIN), never wrapped or negated
+	static const struct {
+		const char *alt;
+		int32_t dm;
+	} alt[] = {
+		{ "214748364.7", 2147483647 }, { "-214748364.7", -2147483647 },
+		{ "214748364.8", INT32_MIN }, { "-214748364.8", INT32_MIN }, { "429496729.5", INT32_MIN },
+	};
+	for (size_t i = 0; i < sizeof alt / sizeof alt[0]; i++) {
+		char line[96];
+		nmea_fix_t f;
+		snprintf(line, sizeof line, "$GPGGA,0,3000.0000,N,08700.0000,W,1,08,0.9,%s,M,,M,,", alt[i].alt);
+		CHECK(nmea_parse_unchecked((const uint8_t *)line, strlen(line), &f) && f.fix && f.alt_dm == alt[i].dm,
+		      "altitude %s: %d", alt[i].alt, f.alt_dm);
+	}
+
+	// BVA: a number at the 32-bit edge (x 1e5 for the coordinates). The digit loop keeps a margin of 9, so the largest
+	// taken is 4294967289
+	uint32_t v;
+	CHECK(nmea_number("42949.67289", 11, 5, &v) && v == 4294967289u, "the largest");
+	CHECK(!nmea_number("42949.67290", 11, 5, &v), "one more");
+	CHECK(nmea_number("42949", 5, 5, &v) && v == 4294900000u, "42949 x 1e5");
+	CHECK(!nmea_number("42950", 5, 5, &v), "42950 x 1e5 wraps");
+
+	// BVA: the length. NMEA_LINE_MAX (88: 82 by the standard and some slack) with its "*hh"; without one, the body
+	// may be 3 shorter (it is added). The utc field's decimals pad the sentence to the length wanted
+	for (int len = NMEA_LINE_MAX - 1; len <= NMEA_LINE_MAX + 1; len++) {
+		char body[128], line[136];
+		int pad = len - 3 - (int)strlen("$GPRMC,0.,A,3000.0000,N,08700.0000,W,,,0");
+		snprintf(body, sizeof body, "GPRMC,0.%0*d,A,3000.0000,N,08700.0000,W,,,0", pad, 0);
+		size_t n = nmea_with_sum(body, line, sizeof line);
+		nmea_fix_t f;
+		CHECK(n == (size_t)len, "built %u", (unsigned)n);
+		CHECK(nmea_parse_unchecked((const uint8_t *)line, n, &f) == (len <= NMEA_LINE_MAX), "with *hh, %d", len);
+		CHECK(nmea_parse(line, n, &f) == (len <= NMEA_LINE_MAX), "strict, %d", len);
+		CHECK(nmea_parse_unchecked((const uint8_t *)line, n - 3, &f) == (len <= NMEA_LINE_MAX), "no *hh, %d", len);
+	}
+
+	// PBT 1 and 2: mutated sentences never crash or overread (fuzz_exact; SANITIZE=1), and whatever is accepted with
+	// a fix lies within +-90 / +-180 degrees
+	static const char *const seeds[] = {
+		"$GPRMC,062544.000,A,3000.0000,N,8700.0000\0,W,0.00,0.00,051126,,,A\0",
+		"$GPRMC,0,A,9000.0000,S,18000.0000,W,,,0",
+		"$GPGGA,062544,3000.0000,S,08700.0000,E,1,08,0.9,5.0,M,,M,,*48",
+		"$GPGGA,0,3000.0000,N,08700.0000,W,1,08,0.9,-214748364.7,M,,M,,",	// the altitude at its edge
+	};
+	static const size_t seed_len[] = { 66, 39, 61, 62 };
+	fuzz_t fz;
+	fuzz_init(&fz, 0x4E4D4541u);
+	long iters = fuzz_iters(20000), accepted = 0;
+	for (long i = 0; i < iters; i++) {
+		uint8_t buf[NMEA_LINE_MAX + 32];
+		int s = (int)fuzz_below(&fz, 4);
+		memcpy(buf, seeds[s], seed_len[s]);
+		int n = fuzz_mutate(&fz, buf, (int)seed_len[s], (int)sizeof buf);
+		uint8_t *q = fuzz_exact(buf, n);
+		nmea_fix_t f;
+		if (nmea_parse_unchecked(q, (size_t)n, &f) && f.fix) {
+			accepted++;
+			CHECK(f.lat >= -900000000 && f.lat <= 900000000 && f.lon >= -1800000000 && f.lon <= 1800000000,
+			      "fuzz %ld out of range %d %d", i, f.lat, f.lon);
+		}
+		if (nmea_parse((const char *)q, (size_t)n, &f) && f.fix) {
+			CHECK(f.lat >= -900000000 && f.lat <= 900000000 && f.lon >= -1800000000 && f.lon <= 1800000000,
+			      "fuzz %ld strict out of range %d %d", i, f.lat, f.lon);
+		}
+		free(q);
+	}
+	printf("# nmea_parse_unchecked fuzz: %ld sentences, %ld accepted with a fix\n", iters, accepted);
+
+	// PBT 3, metamorphic: for a valid strict sentence at a random position, dropping the checksum, inserting NULs
+	// and dropping the longitude's leading zero each give exactly the strict parse's position
+	fuzz_init(&fz, 0x4D455441u);
+	long rounds = fuzz_iters(5000);
+	for (long i = 0; i < rounds; i++) {
+		unsigned la = fuzz_below(&fz, 90), lo = fuzz_below(&fz, 180);
+		unsigned lam = fuzz_below(&fz, 600000), lom = fuzz_below(&fz, 600000);
+		char ns = fuzz_below(&fz, 2) ? 'N' : 'S', ew = fuzz_below(&fz, 2) ? 'E' : 'W';
+		char body[96], line[104];
+		snprintf(body, sizeof body, "GPRMC,062544.000,A,%02u%02u.%04u,%c,%03u%02u.%04u,%c,0.00,0.00,051126,,,A", la,
+			 lam / 10000, lam % 10000, ns, lo, lom / 10000, lom % 10000, ew);
+		size_t n = nmea_with_sum(body, line, sizeof line);
+		nmea_fix_t ref, f;
+		bool ok = nmea_parse(line, n, &ref) && ref.fix;
+		CHECK(ok, "meta %ld strict: %s", i, line);
+		if (!ok)
+			continue;
+		CHECK(nmea_parse_unchecked((const uint8_t *)line, n, &f) && f.lat == ref.lat && f.lon == ref.lon,
+		      "meta %ld as is", i);
+		CHECK(nmea_parse_unchecked((const uint8_t *)line, n - 3, &f) && f.lat == ref.lat && f.lon == ref.lon,
+		      "meta %ld no checksum", i);
+		uint8_t nul[160];
+		size_t m = 0;
+		for (size_t k = 0; k < n; k++) {
+			while (fuzz_below(&fz, 8) == 0 && m < sizeof nul - n)
+				nul[m++] = 0;
+			nul[m++] = (uint8_t)line[k];
+		}
+		CHECK(nmea_parse_unchecked(nul, m, &f) && f.lat == ref.lat && f.lon == ref.lon, "meta %ld NULs", i);
+		if (lo < 100) {
+			char *comma = line;
+			for (int c = 0; c < 5; c++)
+				comma = strchr(comma, ',') + 1;	// the longitude
+			memmove(comma, comma + 1, strlen(comma));	// "08700.0000" -> "8700.0000"; the checksum is stale now
+			CHECK(nmea_parse_unchecked((const uint8_t *)line, strlen(line) - 3, &f) && f.lat == ref.lat &&
+			      f.lon == ref.lon, "meta %ld 4-digit lon", i);
+		}
+	}
+	printf("# nmea_parse_unchecked metamorphic: %ld positions\n", rounds);
 }
 
 // GSV / GSA (nmea_sky.c): a GPS + BeiDou receiver's round, satellites dropped when a round no longer lists them, a
@@ -714,14 +1127,14 @@ static bool fake_direct(const char *call, uint8_t ssid, uint32_t secs, void *ctx
 {
 	(void)secs;
 	(void)ctx;
-	return strcmp(call, "K1ABC") == 0 && ssid == 9;
+	return strcmp(call, "Q1ABC") == 0 && ssid == 9;
 }
 
 static bool fake_rf(const char *call, uint8_t ssid, uint32_t secs, void *ctx)
 {
 	(void)secs;
 	(void)ctx;
-	return (strcmp(call, "K1ABC") == 0 && ssid == 9) || strcmp(call, "W2RF") == 0;
+	return (strcmp(call, "Q1ABC") == 0 && ssid == 9) || strcmp(call, "Q2RF") == 0;
 }
 
 static ax25_frame_t parse_line(const char *line)
@@ -738,45 +1151,45 @@ static void test_igate(void)
 {
 	aprs_dedup_t d;
 	memset(&d, 0, sizeof(d));
-	ax25_addr_t me = addr("N0CALL-10");
+	ax25_addr_t me = addr("Q0TEST-10");
 	char out[AX25_TNC2_MAX + 20];
-	ax25_frame_t f = parse_line("K1ABC-9>APZRDF,W1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-Test\r");
+	ax25_frame_t f = parse_line("Q1ABC-9>APZRDF,Q1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-Test\r");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 1000, out, sizeof(out)) == APRS_GATE_OK, "gate");
-	CHECK(strcmp(out, "K1ABC-9>APZRDF,W1XYZ-1*,WIDE2-1,qAR,N0CALL-10:!4903.50N/07201.75W-Test") == 0, "line %s", out);
+	CHECK(strcmp(out, "Q1ABC-9>APZRDF,Q1XYZ-1*,WIDE2-1,qAR,Q0TEST-10:!4903.50N/07201.75W-Test") == 0, "line %s", out);
 	// the same packet over another digipeater within 30 s: once only; after 30 s again
-	f = parse_line("K1ABC-9>APZRDF,W1ZZZ*,WIDE2*:!4903.50N/07201.75W-Test");
+	f = parse_line("Q1ABC-9>APZRDF,Q1ZZZ*,WIDE2*:!4903.50N/07201.75W-Test");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 5000, out, sizeof(out)) == APRS_GATE_DUP, "dup");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 32000, out, sizeof(out)) == APRS_GATE_OK, "after 30 s");
-	f = parse_line("K1ABC-9>APZRDF,RFONLY:>local");
+	f = parse_line("Q1ABC-9>APZRDF,RFONLY:>local");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 40000, out, sizeof(out)) == APRS_GATE_NO_PATH, "rfonly");
-	f = parse_line("K1ABC-9>APZRDF,NOGATE:>local");
+	f = parse_line("Q1ABC-9>APZRDF,NOGATE:>local");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 40000, out, sizeof(out)) == APRS_GATE_NO_PATH, "nogate");
-	f = parse_line("K1ABC-9>APZRDF:?APRS?");
+	f = parse_line("Q1ABC-9>APZRDF:?APRS?");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 40000, out, sizeof(out)) == APRS_GATE_QUERY, "query");
 	// third party: from the Internet (TCPIP inside) stays; from RF elsewhere is gated as the inner packet
-	f = parse_line("W1GATE>APRS,WIDE1-1:}K9XYZ>APRS,TCPIP,W1GATE*::K1ABC-9  :hi{1");
+	f = parse_line("Q1GATE>APRS,WIDE1-1:}Q9XYZ>APRS,TCPIP,Q1GATE*::Q1ABC-9  :hi{1");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 40000, out, sizeof(out)) == APRS_GATE_FROM_IS, "third party from IS");
-	f = parse_line("W1GATE>APRS,WIDE1-1:}K9XYZ>APRS,W9DIGI*:>far away");
+	f = parse_line("Q1GATE>APRS,WIDE1-1:}Q9XYZ>APRS,Q9DIGI*:>far away");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 40000, out, sizeof(out)) == APRS_GATE_OK &&
-	      strcmp(out, "K9XYZ>APRS,W9DIGI*,qAR,N0CALL-10:>far away") == 0, "third party inner %s", out);
+	      strcmp(out, "Q9XYZ>APRS,Q9DIGI*,qAR,Q0TEST-10:>far away") == 0, "third party inner %s", out);
 	// the information field ends at a CR in the middle
-	f = parse_line("K1ABC-9>APZRDF:>one\rtwo");
+	f = parse_line("Q1ABC-9>APZRDF:>one\rtwo");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 41000, out, sizeof(out)) == APRS_GATE_OK &&
-	      strcmp(out, "K1ABC-9>APZRDF,qAR,N0CALL-10:>one") == 0, "cr %s", out);
+	      strcmp(out, "Q1ABC-9>APZRDF,qAR,Q0TEST-10:>one") == 0, "cr %s", out);
 
 	// IS -> RF
 	aprs_igate_env_t env = { fake_direct, fake_rf, NULL };
 	char info[AX25_INFO_MAX + 1];
 	size_t len;
-	const char *msg = "K9XYZ>APRS,TCPIP*,qAC,T2TEXAS::K1ABC-9  :Hello{12";
+	const char *msg = "Q9XYZ>APRS,TCPIP*,qAC,T2TEXAS::Q1ABC-9  :Hello{12";
 	CHECK(aprs_igate_is_to_rf(&d, msg, strlen(msg), &me, &env, 50000, info, sizeof(info), &len), "is to rf");
-	CHECK(strcmp(info, "}K9XYZ>APRS,TCPIP,N0CALL-10*::K1ABC-9  :Hello{12") == 0 && len == strlen(info), "%s", info);
+	CHECK(strcmp(info, "}Q9XYZ>APRS,TCPIP,Q0TEST-10*::Q1ABC-9  :Hello{12") == 0 && len == strlen(info), "%s", info);
 	CHECK(!aprs_igate_is_to_rf(&d, msg, strlen(msg), &me, &env, 52000, info, sizeof(info), &len), "is dup");
-	const char *far = "K9XYZ>APRS,TCPIP*,qAC,T2TEXAS::W5FAR    :Hello{13";
+	const char *far = "Q9XYZ>APRS,TCPIP*,qAC,T2TEXAS::Q5FAR    :Hello{13";
 	CHECK(!aprs_igate_is_to_rf(&d, far, strlen(far), &me, &env, 53000, info, sizeof(info), &len), "not local");
-	const char *pos = "K9XYZ>APRS,TCPIP*,qAC,T2TEXAS:!4903.50N/07201.75W-";
+	const char *pos = "Q9XYZ>APRS,TCPIP*,qAC,T2TEXAS:!4903.50N/07201.75W-";
 	CHECK(!aprs_igate_is_to_rf(&d, pos, strlen(pos), &me, &env, 53000, info, sizeof(info), &len), "not a message");
-	const char *rfs = "W2RF>APRS,TCPIP*,qAC,T2TEXAS::K1ABC-9  :Hi{14";
+	const char *rfs = "Q2RF>APRS,TCPIP*,qAC,T2TEXAS::Q1ABC-9  :Hi{14";
 	CHECK(!aprs_igate_is_to_rf(&d, rfs, strlen(rfs), &me, &env, 53000, info, sizeof(info), &len), "sender on RF");
 	const char *cmt = "# aprsc 2.1.14";
 	CHECK(!aprs_igate_is_to_rf(&d, cmt, strlen(cmt), &me, &env, 53000, info, sizeof(info), &len), "comment");
@@ -786,30 +1199,30 @@ static void test_digi(void)
 {
 	aprs_dedup_t d;
 	memset(&d, 0, sizeof(d));
-	ax25_addr_t me = addr("N0CALL-10");
+	ax25_addr_t me = addr("Q0TEST-10");
 	ax25_frame_t in, out;
 	char s[AX25_TNC2_MAX];
-	in = parse_line("K1ABC-9>APZRDF,WIDE1-1,WIDE2-1:>hi");
+	in = parse_line("Q1ABC-9>APZRDF,WIDE1-1,WIDE2-1:>hi");
 	CHECK(aprs_digi(&d, &in, &out, &me, APRS_DIGI_FILL_IN, 1000), "fill-in");
 	ax25_to_tnc2(&out, s, sizeof(s));
-	CHECK(strcmp(s, "K1ABC-9>APZRDF,N0CALL-10,WIDE1*,WIDE2-1:>hi") == 0, "fill-in path %s", s);
+	CHECK(strcmp(s, "Q1ABC-9>APZRDF,Q0TEST-10,WIDE1*,WIDE2-1:>hi") == 0, "fill-in path %s", s);
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_FILL_IN, 2000), "dup");
 	// WIDE2-2 after a first hop: only in WIDE mode
-	in = parse_line("K1ABC-9>APZRDF,W1XYZ*,WIDE2-2:>two");
+	in = parse_line("Q1ABC-9>APZRDF,Q1XYZ*,WIDE2-2:>two");
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_FILL_IN, 3000), "fill-in leaves WIDE2");
 	memset(&d, 0, sizeof(d));
 	CHECK(aprs_digi(&d, &in, &out, &me, APRS_DIGI_WIDE, 3000), "wide");
 	ax25_to_tnc2(&out, s, sizeof(s));
-	CHECK(strcmp(s, "K1ABC-9>APZRDF,W1XYZ,N0CALL-10*,WIDE2-1:>two") == 0, "wide path %s", s);
+	CHECK(strcmp(s, "Q1ABC-9>APZRDF,Q1XYZ,Q0TEST-10*,WIDE2-1:>two") == 0, "wide path %s", s);
 	// directed at us
-	in = parse_line("K1ABC-9>APZRDF,N0CALL-10:>direct");
+	in = parse_line("Q1ABC-9>APZRDF,Q0TEST-10:>direct");
 	CHECK(aprs_digi(&d, &in, &out, &me, APRS_DIGI_FILL_IN, 4000) && out.digi[0].h, "direct");
 	// used up, our own, WIDE3-3
-	in = parse_line("K1ABC-9>APZRDF,WIDE1*,WIDE2*:>done");
+	in = parse_line("Q1ABC-9>APZRDF,WIDE1*,WIDE2*:>done");
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_WIDE, 5000), "used up");
-	in = parse_line("N0CALL-10>APZRDF,WIDE1-1:>mine");
+	in = parse_line("Q0TEST-10>APZRDF,WIDE1-1:>mine");
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_WIDE, 5000), "own");
-	in = parse_line("K1ABC-9>APZRDF,WIDE3-3:>far");
+	in = parse_line("Q1ABC-9>APZRDF,WIDE3-3:>far");
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_WIDE, 5000), "WIDE3-3");
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_OFF, 5000), "off");
 }
@@ -822,9 +1235,9 @@ static void wav_u16(FILE *f, uint16_t v) { fputc(v & 255, f); fputc(v >> 8, f); 
 static int write_wav(const char *dir)
 {
 	static const char *const lines[] = {
-		"N0CALL-7>APZRDF,WIDE1-1,WIDE2-1:=4903.50N/07201.75W-RadioFoundry test 1",
-		"N0CALL-7>APZRDF,WIDE1-1:=/5L!!<*e7>7PCRadioFoundry test 2",
-		"N0CALL-7>APZRDF::K1ABC-9  :Hello from the host test{42",
+		"Q0TST-7>APZRDF,WIDE1-1,WIDE2-1:=4903.50N/07201.75W-RadioFoundry test 1",
+		"Q0TST-7>APZRDF,WIDE1-1:=/5L!!<*e7>7PCRadioFoundry test 2",
+		"Q0TST-7>APZRDF::Q1ABC-9  :Hello from the host test{42",
 	};
 	static int16_t pcm[100000];
 	static uint8_t frame[AX25_FRAME_MAX], tones[1024];
@@ -919,8 +1332,8 @@ static void test_parse_edges(void)
 	// every truncation of each format: parsed or refused, never read past
 	static const char *const formats[] = {
 		"=4903.50N/07201.75W-088/036/A=003281Hello", "@092345z4903.50N/07201.75W>", "=/5L!!<*e7>7P[comment",
-		";LEADER   *092345z4903.50N/07201.75W>088/036", ")AID #2!4903.50N/07201.75WA", ":N0CALL-7 :hello{12}AB",
-		":N0CALL   :ack123", "`(_fn\"Oj/`\"4T}text", ">status", "}N0CALL>APRS:>third",
+		";LEADER   *092345z4903.50N/07201.75W>088/036", ")AID #2!4903.50N/07201.75WA", ":Q0TEST-7 :hello{12}AB",
+		":Q0TEST   :ack123", "`(_fn\"Oj/`\"4T}text", ">status", "}Q0TEST>APRS:>third",
 	};
 	int bad = 0;
 	for (unsigned f = 0; f < sizeof(formats) / sizeof(formats[0]); f++) {
@@ -947,11 +1360,11 @@ static void test_parse_edges(void)
 	// Messages: addressee all spaces, message number at its limit and past it, an ack with no number
 	strcpy(s, ":         :x");
 	CHECK(parse_exact(NULL, s, strlen(s), &p) && p.type == APRS_T_MESSAGE && p.addressee[0] == '\0', "blank addressee");
-	strcpy(s, ":N0CALL   :hi{123456789");
+	strcpy(s, ":Q0TEST   :hi{123456789");
 	CHECK(parse_exact(NULL, s, strlen(s), &p) && strlen(p.msgno) == APRS_MSGNO_MAX && p.text_len == 2, "msgno max");
-	strcpy(s, ":N0CALL   :ack");
+	strcpy(s, ":Q0TEST   :ack");
 	CHECK(parse_exact(NULL, s, strlen(s), &p) && !p.ack && p.text_len == 3, "ack without number");
-	strcpy(s, ":N0CALL   :ack ");
+	strcpy(s, ":Q0TEST   :ack ");
 	CHECK(parse_exact(NULL, s, strlen(s), &p) && !p.ack, "ack space");
 	// objects: one short of the position, killed; items with names of 3 and 9 characters, 10 is too long
 	strcpy(s, ";LEADER   _092345z4903.50N/07201.75W>");
@@ -984,14 +1397,14 @@ static void test_parse_edges(void)
 static void test_parse_fuzz(void)
 {
 	static const char *const lines[] = {
-		"K1ABC-9>APZRDF,W1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-088/036/A=003281Test",
-		"N0CALL>APRS:=/5L!!<*e7>7P[compressed",
-		"N0CALL>SSRUVT,WIDE1-1:`(_fn\"Oj/`\"4T}mic-e",
-		"N0CALL>APRS::N0CALL-7 :hello{12}AB",
-		"N0CALL>APRS:;LEADER   *092345z4903.50N/07201.75W>088/036",
-		"N0CALL>APRS:)AID #2!4903.50N/07201.75WA",
-		"N0CALL>APRS:}W1AW>APRS,TCPIP,N0CALL*:>third party",
-		"N0CALL>APRS:@092345z4903.50N/07201.75W_220/004g005t077",
+		"Q1ABC-9>APZRDF,Q1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-088/036/A=003281Test",
+		"Q0TEST>APRS:=/5L!!<*e7>7P[compressed",
+		"Q0TEST>SSRUVT,WIDE1-1:`(_fn\"Oj/`\"4T}mic-e",
+		"Q0TEST>APRS::Q0TEST-7 :hello{12}AB",
+		"Q0TEST>APRS:;LEADER   *092345z4903.50N/07201.75W>088/036",
+		"Q0TEST>APRS:)AID #2!4903.50N/07201.75WA",
+		"Q0TEST>APRS:}W1AW>APRS,TCPIP,Q0TEST*:>third party",
+		"Q0TEST>APRS:@092345z4903.50N/07201.75W_220/004g005t077",
 	};
 	uint8_t seeds[8][AX25_FRAME_MAX];
 	size_t seedLen[8];
@@ -1071,7 +1484,14 @@ int main(int argc, char **argv)
 	test_parse_edges();
 	test_parse_fuzz();
 	test_geo();
+	test_geo_limits();
+	test_geo_props();
+	test_geo_known();
+	test_geo_accuracy();
+	test_compressed_speed_byte();
+	test_compressed_decode_all();
 	test_nmea();
+	test_nmea_unchecked();
 	test_nmea_sky();
 	test_kiss();
 	test_beacon();

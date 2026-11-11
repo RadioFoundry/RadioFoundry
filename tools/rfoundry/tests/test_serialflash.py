@@ -117,6 +117,26 @@ class Images(unittest.TestCase):
         self.assertEqual(name, real["name"])
 
 
+class LowLatency(unittest.TestCase):
+    """open_port asks for the 1 ms FTDI latency timer, and a port that can't take it still opens."""
+    def opened(self, port):
+        serial = mock.MagicMock(Serial=mock.Mock(return_value=port), SerialException=OSError)
+        with mock.patch.dict(sys.modules, {"serial": serial}):
+            return sf.open_port("/dev/ttyUSB0")
+
+    def test_asks_for_it(self):
+        port = mock.Mock()
+        self.assertIs(self.opened(port), port)
+        port.set_low_latency_mode.assert_called_once_with(True)
+
+    def test_a_port_without_it_still_opens(self):
+        for err in (OSError("not a tty"), NotImplementedError(), ValueError("closed")):
+            port = mock.Mock(**{"set_low_latency_mode.side_effect": err})
+            self.assertIs(self.opened(port), port)
+        port = mock.Mock(spec=["read", "write", "close"])     # rfc2217 and the like: no such method
+        self.assertIs(self.opened(port), port)
+
+
 class Decisions(unittest.TestCase):
     def test_route(self):
         self.assertEqual(sf.choose_route("auto", rfoundry(), True)[0], sf.STUB)
@@ -354,7 +374,7 @@ class Command(unittest.TestCase):
     def test_dm1701_takes_no_route(self):
         with tempfile.TemporaryDirectory() as d:
             p = self.local(d, struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(5000), "rfoundry_dm1701.bin")
-            rc, out, err, calls = self.run_flash([p, "--board", "dm1701", "--route", "stub", "--dry-run",
+            rc, out, err, calls = self.run_flash([p, "--board", "dm1701", "--route", "bootloader", "--dry-run",
                                                   "--codec", "keep", "--no-probe"])
         self.assertEqual((rc, calls), (2, []))
         self.assertIn("--route is for", err)

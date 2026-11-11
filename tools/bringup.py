@@ -11,7 +11,8 @@ checks it, and the records of those runs (docs/testing/results/<board>/). tests/
   tools/bringup.py check                        host-side consistency (tools/ci.sh)
 
 A radio's state for a feature is resolved, never typed:
-  n/a          the switch is in the board's BOARD_UNSUPPORTED: the hardware can't (config.mk, the reason on its line)
+  n/a          the switch is in the board's BOARD_UNSUPPORTED: the hardware can't (config.mk, the reason on its line);
+               for a feature without a switch, board.toml [features] <id> state = "n/a" with the reason
   not written  the switch is in the board's BOARD_NOT_WRITTEN: the hardware can, the board's code isn't written yet
   unsupported  board.toml [features] <id> state = "unsupported": built, known not to work yet (a reason is required)
   off          the board's default build leaves the switch off: nothing to check
@@ -19,7 +20,8 @@ A radio's state for a feature is resolved, never typed:
 The rule for the two config.mk lists: docs/build-config.md, "Unsupported, not written, unconfirmed". A test skips a
 feature that isn't built as not_built (n/a and not written alike: the firmware leaves it out).
 A required feature's status never understates it. The newest run record that ran it decides: pass, fail, partial
-(excused skips) or "needs re-run" (its spec or source paths differ in the tree from the hashes the record keeps).
+(excused skips) or "needs re-run" (its source paths differ in the tree from the hashes the record keeps; its spec
+may change freely).
 Without one, the board's seed record (<board>/seed.json, the evidence from before its first run) decides, marked as a
 seed. With neither the feature is "built, not yet recorded". Only a failing record shows a failure.
 
@@ -44,8 +46,8 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 FEATURES_TOML = os.path.join(ROOT, "tests", "hil", "features.toml")
 RESULTS = os.path.join(ROOT, "docs", "testing", "results")
 RECORD_FORMAT = 1
-FIELDS = {"switch", "hardware", "spec", "source", "planned_tests", "manual"}
-OVERRIDE_STATES = ("unsupported",)
+FIELDS = {"switch", "requires", "hardware", "spec", "source", "planned_tests", "manual"}
+OVERRIDE_STATES = ("unsupported", "n/a")
 # How list shows a resolved state: "required" is the checklist's word, "built" what it means to a reader
 SHOWN = {"required": "built"}
 SEED_RESULTS = ("pass", "fail")
@@ -108,6 +110,7 @@ def load_features(path=FEATURES_TOML):
         for k in ("source", "planned_tests", "manual"):
             e.setdefault(k, [])
         e.setdefault("switch", None)
+        e.setdefault("requires", None)
         feats.append(e)
     return feats
 
@@ -199,11 +202,26 @@ def resolve(board, e):
         return "n/a", bd["unsupported"][e["switch"]]
     if e["switch"] and e["switch"] in bd["not_written"]:
         return "not written", bd["not_written"][e["switch"]]
+    # A feature without a switch of its own that is part of another's (requires): that switch's absence decides
+    req = e["requires"]
+    if req and req in bd["unsupported"]:
+        return "n/a", f"needs {req}: {bd['unsupported'][req]}"
+    if req and req in bd["not_written"]:
+        return "not written", f"needs {req}: {bd['not_written'][req]}"
+    if req and bd["config"].get(req) != "y":
+        return "off", f"needs {req}, which the board's default build leaves off"
     if ov:
         return ov.get("state", "required"), ov.get("reason", "")
     if e["switch"] and bd["config"].get(e["switch"]) != "y":
         return "off", "the board's default build leaves it off"
     return "required", ""
+
+
+def absent_switches(board):
+    """The switches a board leaves out by design: n/a, not written, or off in its default build. A test marked
+    needs_switch for one of them skips not_built there, and bring-up excuses that (tests/hil/bringup_plugin.py)."""
+    bd = _boards()[board]
+    return sorted(set(bd["unsupported"]) | set(bd["not_written"]) | {s for s, v in bd["config"].items() if v != "y"})
 
 
 # ── records ──
@@ -293,13 +311,16 @@ def source_hashes(e, rev=None):
 
 
 def stale(hashes, e):
-    """The feature's paths whose content in the tree differs from the recorded hashes (empty: not stale)."""
+    """The feature's source paths whose content in the tree differs from the recorded hashes (empty: not stale). The
+    spec is hashed but not compared: an edit to the doc doesn't change what ran on the radio."""
     if not git_checkout():
         return []		# nothing to compare with; the listing says so (no_git_note)
     if not hashes:
         return ["(no source hashes recorded)"]
     now = source_hashes(e)
-    return sorted(p for p in set(now) | set(hashes) if now.get(p) != hashes.get(p))
+    code = {p.rstrip("/") for p in feature_paths(e)[1:]}
+    doc_only = {e["spec"].rstrip("/")} - code
+    return sorted(p for p in set(now) | set(hashes) if p not in doc_only and now.get(p) != hashes.get(p))
 
 
 NOT_RECORDED = "built, not yet recorded"
@@ -363,7 +384,7 @@ def cmd_list(args):
         status, basis, detail = (feature_status(args.radio, e, records, required if found is not None else None)
                                  if state == "required" else (state, None, reason))
         owner = {t["id"]: t["owner"] for t in tests or [] if t["owner"]}
-        rows.append({"id": e["id"], "switch": e["switch"] or "", "state": state, "status": status, "basis": basis,
+        rows.append({"id": e["id"], "switch": e["switch"] or "", "requires": e["requires"] or "", "state": state, "status": status, "basis": basis,
                      "detail": detail, "tests": len(required) if found is not None else None,
                      "needs": sorted({n for t in tests or [] for n in t["needs"]}), "owner": owner,
                      "manual": e["manual"]})
@@ -502,8 +523,11 @@ def cmd_run(args):
                 + ":")
     tmp = tempfile.mkdtemp(prefix="rfoundry-bringup-")
     out_path = os.path.join(tmp, "out.json")
-    cmd = [_pytest_python(args.pytest_python), "-m", "pytest", *args.tests, "-v", "-rs", "-p", "no:cacheprovider",
-           *args.pytest_arg, "--bringup", ",".join(names), "--bringup-out", out_path, *pytest_args]
+    cmd = [_pytest_python(args.pytest_python), "-m", "pytest", *args.tests, "-v", "-rs", "--durations=0", "-p", "no:cacheprovider",
+           *args.pytest_arg, "--bringup", ",".join(names), "--bringup-out", out_path,
+           "--bringup-absent", ",".join(absent_switches(args.radio)),
+           *([] if any(a.startswith("--hil-board") for a in pytest_args) else ["--hil-board", args.radio]),
+           *pytest_args]
     lock = lock_path(args.lock, pytest_args)
     if args.dry_run:
         print(f"lock: {lock}")
@@ -557,6 +581,10 @@ def check(feats, boards, records, found, all_switches):
             if e["switch"] not in all_switches:
                 errs.append(f"{where}: switch {e['switch']} is not in config/features.mk")
             by_switch.setdefault(e["switch"], []).append(e["id"])
+        if e["requires"] and e["requires"] not in all_switches:
+            errs.append(f"{where}: requires {e['requires']}, which is not in config/features.mk")
+        if e["requires"] and e["switch"]:
+            errs.append(f"{where}: has a switch and requires: a feature with a switch follows its own")
         for p in [e.get("spec"), *e["source"]]:
             if p and not os.path.exists(os.path.join(ROOT, p)):
                 errs.append(f"{where}: no such path {p}")
@@ -602,6 +630,9 @@ def check(feats, boards, records, found, all_switches):
                             "supported mark comes from the records, never typed)")
             if not ov.get("reason"):
                 errs.append(f"{where}: no reason")
+            if ov.get("state") == "n/a" and by_id[fid]["switch"]:
+                errs.append(f"{where}: n/a for a feature with a switch: BOARD_UNSUPPORTED += "
+                            f"{by_id[fid]['switch']} in boards/{b}/config.mk instead")
         for e in feats:
             state, reason = resolve(b, e)
             if state in ("n/a", "not written", "unsupported") and not reason:

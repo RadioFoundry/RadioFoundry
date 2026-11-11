@@ -141,7 +141,7 @@ Focus a row and press **OK**:
 |---|---|
 | Two choices (mode, timeslot, bandwidth, RX only, scan, VOX, direct mode, beeps, talker alias, battery saver) | switches to the other one |
 | Power, RX CTCSS/DCS, TX CTCSS/DCS, color code, TX time-out | opens a picker: turn the knob (or Up / Down) to the value, **OK** keeps it, **Back** cancels. Color code and time-out also take digits |
-| RX CTCSS/DCS, TX CTCSS/DCS, typed | type a CTCSS tone with its tenths digit: **8 8 5** is 88.5, **1 3 1 8** is 131.8. Under 60 the digits are whole Hz: **6 7** is 67.0, **1 0 0** is 100.0. Start with **0** for a DCS code: **0 2 3** is D023N. **Back** takes the last digit back. For an inverted DCS code, turn the knob |
+| RX CTCSS/DCS, TX CTCSS/DCS, typed | type a CTCSS tone with its tenths digit: **8 8 5** is 88.5, **1 3 1 8** is 131.8. Under 60 the digits are whole Hz: **6 7** is 67.0, **1 0 0** is 100.0. Start with **0** for a DCS code: **0 2 3** is D023N. **Back** takes the last digit back. For an inverted DCS code, turn the knob one step: each code's I follows its N (D023N, D023I, D025N) |
 | Zones | opens every zone, marked "In" where the channel is. **OK** puts the channel in a zone or takes it out, saved at once. A new channel shows the row once saved |
 | RX, TX, own ID | type the digits, **OK** keeps them, **Back** takes the last digit back. Digits outside the radio's bands are refused as you type. A new RX moves TX with it, so a repeater keeps its offset. If the new RX is in another band (UHF to VHF), or TX would land outside the band, TX is set to the new RX |
 | Name | opens text entry (below) |
@@ -202,6 +202,9 @@ restart.
 1. **OK**, **4** (Zones). The VFO is the first row.
 2. Press **OK**. Home shows the frequency large, and the radio says "VFO: type a frequency".
 
+On a radio with a **VFO/MR** key, press it instead: it goes between the channel and the VFO. **Settings > Keys** can
+give any side key the same job, "VFO/Channel", on a press or a hold.
+
 <img src="../ux/screens/160x120i5/home_vfo.png" width="200" alt="Home in the VFO">
 
 ### Copy a channel to the VFO
@@ -235,7 +238,7 @@ what you typed as you go.
 |---|---|
 | **4** **4** **6** **0** **0** **0** | 446.000 MHz |
 | **1** **4** **6** **5** **2** | 146.520 MHz |
-| **4** **6** **1** **8** **6** **2** **5** | 461.8625 MHz |
+| **4** **3** **8** **2** **6** **2** **5** | 438.2625 MHz |
 | **0** **8** **8** **1** | 88.100 MHz (below 100 MHz, start with **0**) |
 
 - Type at least the three MHz digits, then press **OK** (or **#** where the radio has that key) to tune.
@@ -306,7 +309,8 @@ DMR ones:
 
 ### Leaving the VFO
 
-Press **OK**, **4**, then **OK** on the VFO row again ("Back to channels"). Or pick a zone or channel.
+Press **OK**, **4**, then **OK** on the VFO row again ("Back to channels"). Or pick a zone or channel. A **VFO/MR** key
+or a side key set to "VFO/Channel" goes back to the channel you came from.
 
 ## Air band and FM broadcast
 

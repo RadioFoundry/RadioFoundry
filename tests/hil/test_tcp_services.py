@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 """The radio's TCP services in the USB network personality (opt-in: --allow-usb-switch; firmware with CONFIG_NET_TCP,
-docs/spec/tcp-services.md): the HTTP status page and JSON, KISS over TCP, rigctld, and (only with
-RFOUNDRY_HIL_APRSIS_SERVER=a.b.c.d[:port] and NAT on the host, spec 7.1) the APRS-IS client.
+docs/spec/tcp-services.md): the HTTP status page and JSON, KISS over TCP, rigctld, and the APRS-IS client: logged in
+to a stand-in server the test runs on the host's end of the link, or with RFOUNDRY_HIL_APRSIS_SERVER=a.b.c.d[:port]
+(and NAT on the host, spec 7.1) to that server.
 
 The radio switches to the network adapter for the module and back to serial at the end, as test_usb_network does.
 Nothing is transmitted: the KISS frame sent has a foreign source callsign, which the APRS engine refuses (counted, not
@@ -15,13 +16,14 @@ import os
 import socket
 import struct
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
 
 import pytest
 
-from rfoundry_hil import DebugLink, DebugLinkError, find_ports, skip
+from rfoundry_hil import DebugLink, DebugLinkError, skip
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 FEND, FESC, TFEND, TFESC = 0xC0, 0xDB, 0xDC, 0xDD
@@ -37,15 +39,6 @@ def _udp_link(ip, timeout):
         except (DebugLinkError, OSError):
             time.sleep(0.5)
     return None
-
-
-def _serial_back(timeout):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        if find_ports():
-            return True
-        time.sleep(0.5)
-    return False
 
 
 @pytest.fixture(scope="module")
@@ -71,18 +64,12 @@ def net(radio, request):
             except (DebugLinkError, OSError):
                 pass
             udp.close()
-        if not _serial_back(20):
+        if not radio.serial_back(20):
             again = _udp_link(radio_ip, 10)
             if again is not None:
                 again.usb_network(False)
                 again.close()
-            assert _serial_back(20), "the radio didn't come back as a serial port"
-        for _ in range(40):
-            try:
-                radio.link = DebugLink(radio.port, timeout=1.5)
-                break
-            except DebugLinkError:
-                time.sleep(0.25)
+            assert radio.serial_back(20), "the radio didn't come back as a serial port"
 
 
 def _get(ip, path, timeout=10):
@@ -165,8 +152,9 @@ def test_kiss_tcp(net):
         with socket.create_connection((ip, 8001), timeout=5) as s:
             time.sleep(0.3)
             assert _net_view(link)["kiss.client"] == "1"
-            # A frame from a foreign callsign: taken by the TNC, refused by the APRS engine (nothing transmitted)
-            s.sendall(_kiss(_ui_frame("N0CALL", 0, b">RFOUNDRY HIL KISS-TCP")))
+            # A frame from a foreign callsign (Q9ZZZ: a Q prefix is never issued): taken by the TNC, refused by the
+            # APRS engine (nothing transmitted)
+            s.sendall(_kiss(_ui_frame("Q9ZZZ", 0, b">RFOUNDRY HIL KISS-TCP")))
             time.sleep(0.5)
             after = link.view(["aprs"])
             assert int(after["aprs.host_in"]) == int(before["aprs.host_in"]) + 1, (before, after)
@@ -227,17 +215,68 @@ def test_rigctl(net):
     assert r.returncode == 0 and r.stdout.strip().isdigit(), (r.stdout, r.stderr)
 
 
+class _AprsIsStandIn:
+    """An APRS-IS server for the client's login alone, on the host's end of the radio's link (the radio reaches it with
+    no NAT and no internet): sends a banner, takes the "user CALL pass N vers ..." line, answers "# logresp CALL
+    verified" whatever the passcode (a real server's check isn't the radio's), then holds the connection."""
+
+    def __init__(self, radio_ip):
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe.connect((radio_ip, 9))        # no packet: only picks the host's address on that link
+        host = probe.getsockname()[0]
+        probe.close()
+        self.sock = socket.create_server((host, 0))
+        self.sock.settimeout(1.0)
+        self.addr = f"{host}:{self.sock.getsockname()[1]}"
+        self.login = None
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self._serve, daemon=True)
+        self.thread.start()
+
+    def _serve(self):
+        while not self.stop.is_set():
+            try:
+                conn, _ = self.sock.accept()
+            except OSError:
+                continue
+            with conn:
+                conn.settimeout(1.0)
+                conn.sendall(b"# RadioFoundry HIL APRS-IS stand-in\r\n")
+                buf = b""
+                while not self.stop.is_set():
+                    try:
+                        data = conn.recv(512)
+                    except socket.timeout:
+                        continue
+                    except OSError:
+                        break
+                    if not data:
+                        break
+                    buf += data
+                    while b"\n" in buf:
+                        line, buf = buf.split(b"\n", 1)
+                        line = line.decode("ascii", "replace").strip()
+                        if line.startswith("user ") and self.login is None:
+                            self.login = line
+                            conn.sendall(f"# logresp {line.split()[1]} verified, server HIL\r\n".encode())
+
+    def close(self):
+        self.stop.set()
+        self.sock.close()
+        self.thread.join(timeout=3)
+
+
 @pytest.mark.feature("net_aprsis")
 @pytest.mark.usb_switch
 def test_aprsis(net):
-    server = os.environ.get("RFOUNDRY_HIL_APRSIS_SERVER")
-    why = "needs CONFIG_NET_APRSIS, RFOUNDRY_HIL_APRSIS_SERVER=a.b.c.d[:port] and NAT on the host (spec 7.1)"
+    """The client connects, logs in ("user CALL pass N vers RadioFoundry ...") and is online once the server's logresp
+    says verified. To the stand-in on the host, or to RFOUNDRY_HIL_APRSIS_SERVER when given (NAT on the host)."""
     if "NET_APRSIS" not in net["features"]:
-        skip("not_built", why)
-    if not server:
-        skip("opt_in", why)
+        skip("not_built", "built without CONFIG_NET_APRSIS")
     ip, link = net["ip"], net["link"]
-    st, ct, body = _get(ip, f"/api/aprsis?server={server}")
+    server = os.environ.get("RFOUNDRY_HIL_APRSIS_SERVER")
+    stand_in = None if server else _AprsIsStandIn(ip)
+    st, ct, body = _get(ip, f"/api/aprsis?server={server or stand_in.addr}")
     assert st == 200
     try:
         end = time.monotonic() + 60
@@ -248,5 +287,11 @@ def test_aprsis(net):
                 break
             time.sleep(1)
         assert state == "online", _net_view(link)
+        if stand_in:
+            words = stand_in.login.split()
+            assert words[0] == "user" and words[2] == "pass" and words[3].isdigit() and "vers" in words, \
+                stand_in.login
     finally:
         _get(ip, "/api/aprsis?server=off")
+        if stand_in:
+            stand_in.close()

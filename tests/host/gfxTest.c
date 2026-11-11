@@ -138,12 +138,12 @@ static void render_set(const char *cls)
 	strcpy(v.ch.name, "COUNTY DMR");
 	v.channel_number = 3;
 	v.ch.mode = RADIO_MODE_DMR;
-	v.ch.rx_hz = 467375000; v.ch.tx_hz = 467375000;
+	v.ch.rx_hz = 453625000; v.ch.tx_hz = 453625000;
 	v.ch.color_code = 2; v.ch.timeslot = 1;
 	v.ch.tx_tone.type = TONE_NONE;
-	v.dmr.active = true; v.dmr.codec = true; v.dmr.cc = 2; v.dmr.ts = 1; v.dmr.own_id = 3101276;
+	v.dmr.active = true; v.dmr.codec = true; v.dmr.cc = 2; v.dmr.ts = 1; v.dmr.own_id = 9996543;
 	v.dmr.target_id = 201; strcpy(v.dmr.target_name, "Main Ops");
-	v.dmr.last.src = 3101234; strcpy(v.dmr.last.src_name, "Joe"); v.dmr.last.dst = 91; v.dmr.last.group = true;
+	v.dmr.last.src = 9991234; strcpy(v.dmr.last.src_name, "Joe"); v.dmr.last.dst = 91; v.dmr.last.group = true;
 	v.dmr.last_ms = s.now_ms - 120000;
 	ui_draw_home(&v, &s);
 	snprintf(name, sizeof name, "%s_dmr_home", cls); save(name);
@@ -155,7 +155,7 @@ static void render_set(const char *cls)
 	ui_draw_home(&v, &s);
 	snprintf(name, sizeof name, "%s_dmr_nocodec", cls); save(name);
 	v.state = RS_RX; v.dmr.state = RDMR_RX; v.dmr.rssi_dbm = -71;
-	v.dmr.call.src = 3101234; strcpy(v.dmr.call.src_name, "JOE SMITH"); v.dmr.call.dst = 201; v.dmr.call.group = true;
+	v.dmr.call.src = 9991234; strcpy(v.dmr.call.src_name, "JOE SMITH"); v.dmr.call.dst = 201; v.dmr.call.group = true;
 	strcpy(v.dmr.call.dst_name, "Main Ops");
 	strcpy(v.dmr.alias, "Joe - Boston, MA");
 	ui_draw_home(&v, &s);
@@ -173,6 +173,9 @@ static void render_set(const char *cls)
 	v.dmr.state = RDMR_TX_WAIT; v.dmr.rmo = true;
 	ui_draw_home(&v, &s);
 	snprintf(name, sizeof name, "%s_dmr_tx_wake", cls); save(name);
+	v.dmr.state = RDMR_TX_PERMIT;	// admitted: the talk permit before keying
+	ui_draw_home(&v, &s);
+	snprintf(name, sizeof name, "%s_dmr_tx_admitted", cls); save(name);
 	v.dmr.rmo = false;
 	v.state = RS_TX_DENIED; v.tx_deny = TXDENY_NO_CODEC;
 	ui_draw_home(&v, &s);
@@ -184,7 +187,7 @@ static void render_set(const char *cls)
 	// Hotspot screen
 	hotspot_view_t h;
 	memset(&h, 0, sizeof h);
-	h.running = true; h.rx_hz = h.tx_hz = 438800000; h.cc = 1; h.src = 3101276; h.dst = 91; h.group = true;
+	h.running = true; h.rx_hz = h.tx_hz = 438800000; h.cc = 1; h.src = 9996543; h.dst = 91; h.group = true;
 	h.from_net = true; h.transmitting = true;
 	base_view(&v);
 	v.hotspot = true;
@@ -492,6 +495,24 @@ int main(void)
 	CHECK(strcmp(fit, "2d") == 0);
 	sb_init(&b, age, sizeof age); sb_age_long(&b, 30000u);
 	CHECK(strcmp(age, "30s ago") == 0);
+
+	// Ranges (sb_range, Stations heard and DMR GPS Info), BVA at each unit and rounding step and the compass's edges.
+	// 99950 m and up print 100.0 km: the 0.1 km rounding runs past the step to whole km (as before)
+	static const struct { uint32_t m; uint16_t deg; const char *want; } ranges[] = {
+		{ 0, 0, "0 m N" }, { 1, 0, "1 m N" }, { 999, 0, "999 m N" }, { 1000, 0, "1.0 km N" },
+		{ 1049, 0, "1.0 km N" }, { 1050, 0, "1.1 km N" }, { 9949, 0, "9.9 km N" }, { 9950, 0, "10.0 km N" },
+		{ 99949, 0, "99.9 km N" }, { 99950, 0, "100.0 km N" }, { 99999, 0, "100.0 km N" },
+		{ 100000, 0, "100 km N" }, { 100499, 0, "100 km N" }, { 100500, 0, "101 km N" },
+		{ 20015087, 0, "20015 km N" },
+		{ 5, 22, "5 m N" }, { 5, 23, "5 m NE" }, { 5, 67, "5 m NE" }, { 5, 68, "5 m E" }, { 5, 90, "5 m E" },
+		{ 5, 180, "5 m S" }, { 5, 270, "5 m W" }, { 5, 337, "5 m NW" }, { 5, 338, "5 m N" }, { 5, 359, "5 m N" },
+		{ 5, 360, "5 m N" },
+	};
+	for (size_t i = 0; i < sizeof ranges / sizeof ranges[0]; i++) {
+		sb_init(&b, age, sizeof age);
+		sb_range(&b, ranges[i].m, ranges[i].deg);
+		CHECK(strcmp(age, ranges[i].want) == 0);
+	}
 
 	// 160x120 color
 	ui_layout_init();

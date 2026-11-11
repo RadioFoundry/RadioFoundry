@@ -18,7 +18,7 @@ firmware and has a migration chapter is covered in [Moving from the stock firmwa
 
 | Item | Where it comes from |
 |---|---|
-| A computer with Windows, macOS or Linux | |
+| A computer with Windows, macOS or Linux, or an Android phone or tablet | Android: Chrome, and a USB OTG adapter for the cable ([FAQ](21-faq.md)) |
 | A Chromium-based browser | For the web installer |
 | Your radio's stock firmware file | The manufacturer's file, in a version the installer recognizes. Your radio's "Installing" section names it and where to find it |
 | The radio's USB or programming cable | The cable that came with the radio |
@@ -57,6 +57,21 @@ that runs RadioFoundry already: [Updating RadioFoundry](#updating-radiofoundry))
    The installer asks for the stock firmware file only when it needs it for the codec or the key. If you choose
    RadioFoundry and the radio runs an OpenGD77-family firmware, the installer says so and offers **Another open
    firmware** instead. A RadioFoundry build without the debug link answers the same way.
+
+   On some radios, **Original firmware** and **Other / Not sure** also offer **Back Up Now** before anything is
+   written (recommended). Connect the radio switched on normally and pick **Everything** (several minutes) or
+   **Channels and settings only** (under a minute). The installer reads the radio's factory data, the start of its
+   program memory and its memory chip, saves them as a `.zip` on your computer and restarts the radio. Nothing is
+   written to the radio and nothing is sent anywhere. In update mode the radio gives less (part of the memory chip);
+   the installer says so, and the installation can go on from there. Keep the file, and keep it private: it holds
+   your radio's calibration.
+
+   Some radios come in hardware revisions that RadioFoundry can't tell apart, while the version of their original
+   firmware does. On such a radio, **Original firmware** and **Other / Not sure** offer **Read Firmware Version**:
+   connect the radio switched on normally (not in its bootloader) and select it. Reading changes nothing on the radio.
+   After the installation the installer stores the revision on the radio, so you don't have to pick it. If the radio
+   already holds a different one, the installer shows both and keeps yours (Settings > Advanced > Hardware). The step
+   is optional: without it the radio uses its own choice until you set the revision there.
 4. **Back up.** The installer saves a backup file (a `.zip`) on your computer: the firmware, the channels and settings
    and the calibration. Keep it. Where the original firmware can't be read first, the installer backs the radio up
    right after the installation, before anything else changes.
@@ -86,8 +101,9 @@ that runs RadioFoundry already: [Updating RadioFoundry](#updating-radiofoundry))
 7. **Channels.** If the radio still holds its original firmware's codeplug, the installer converts it to the
    RadioFoundry layout and writes it to the radio, then reads it back and shows how many channels, zones and contacts
    came over. This runs on its own once the backup holds the original codeplug. If you skipped the backup, the installer
-   asks first: on some radios the converted codeplug replaces the original bytes. An update of RadioFoundry skips this
-   step. If the installer can't read, convert or write the original codeplug, it says so and the radio starts without
+   asks first: on some radios the converted codeplug replaces the original bytes. On radios that keep the original
+   codeplug apart from RadioFoundry's, it runs with or without a backup, and asks only before replacing a RadioFoundry
+   codeplug already on the radio. An update of RadioFoundry skips this step. If the installer can't read, convert or write the original codeplug, it says so and the radio starts without
    channels: convert the backup as described in [Backing up and restoring](#backing-up-and-restoring).
 
 On Windows the bootloader needs a driver once ([Windows: the bootloader driver](#windows-the-bootloader-driver)).
@@ -255,6 +271,10 @@ without touching the radio. Then it asks you to put the radio in its bootloader:
 rfoundry finds the bootloader, asks once more, and writes. When it finishes, the radio restarts into RadioFoundry, and
 rfoundry checks what the radio reports.
 
+On a radio whose hardware revision only its original firmware's version tells (above), rfoundry first offers to read
+that version: connect the radio switched on normally, before you enter the bootloader. It stores the revision once
+RadioFoundry runs, unless the radio already holds one. `--no-version-read` skips this.
+
 ### Keep the codec, or write it
 
 | The radio runs | rfoundry |
@@ -321,6 +341,15 @@ page walks through the update mode. See also [Troubleshooting](20-troubleshootin
 steps. You can add a message, an email address for a reply and the files it lists (the stock firmware file, a backup,
 the firmware read from the radio). A backup holds your channels, contacts and the radio's calibration: uncheck it to
 leave it out. Attached files and your email address are deleted within 90 days.
+
+**A radio left in update mode:** a backup or install interrupted by a cable pull, or a page closed in the middle, can leave
+a radio in its loader (update mode), where the power switch may do nothing. Choose **Radio Stuck in Update Mode** on the
+installer's first page and pick the radio. On a radio the installer programs through its cable, pick the cable too, and
+the installer restarts it into normal mode; for the others the page says how to restart it by hand. When you connect
+for any other task and the loader is already running, the connect step offers **Restart Radio** next to **Continue**.
+If the loader does not answer at all, turn the radio off and on; if the power switch does nothing, take the battery out
+for a few seconds. After a **Back Up**, **Restart Radio** ends the task on a finished screen that offers Install or
+Finish (and Update when the radio runs RadioFoundry).
 
 **Programming cables:** cables with a CH340 chip can be unreliable for backups and installs. If one fails, try a cable
 with an FTDI, CP210x or PL2303 chip. The installer warns when it sees a CH340 cable.

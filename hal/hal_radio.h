@@ -19,7 +19,7 @@ typedef struct {
 
 typedef struct {
 	int16_t rssi_dbm;
-	uint8_t noise;		// chip noise reading, larger = more noise (1 dB units where the chip allows)
+	uint8_t noise;		// chip noise reading, larger = more noise (1 dB units where the chip allows); UINT8_MAX when it can't hear
 	bool carrier;		// the chip's own squelch says carrier (if it has one)
 	bool tone_ok;		// the RX sub-audio tone or code matches (true when none is set)
 } radio_status_t;
@@ -33,6 +33,11 @@ typedef struct {
 	bool (*tx)(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_tone);
 	// Back to receive with the last rx() settings
 	void (*tx_off)(void);
+	// Optional (DMR): the end of a DMR transmission, once the stack is off the air. Ends it as tx_off() does, but
+	// leaves the receiver as the last burst's switch left it when that is on the last rx() settings: a reply can come
+	// 30 ms after our terminator, in our own timeslot, and a receive set-up then misses it. The modem glue implements
+	// it (hrc_dmr_tx_end, stm32_hrc_dmr_tx_end). False: nothing done, the core calls tx_off(). NULL = always tx_off()
+	bool (*dmr_tx_end)(void);
 	void (*status)(radio_status_t *st);
 	// Speaker path (amp and mute) for received audio
 	void (*audio)(bool on);
@@ -61,9 +66,10 @@ typedef struct {
 	// last rx() settings
 	void (*rx_sleep)(bool sleep);
 	// Optional (CAP_AM_RX): tune and receive AM (the air band) instead of FM. Receive only: the core never calls tx()
-	// while AM is on. The board leaves AM at the next rx() or set_mode(). No sub-audio in AM; status() reports
-	// tone_ok = true and an RSSI the core's AM squelch uses (noise isn't meaningful in AM). False: out of band or the
-	// board can't. NULL = no AM on this radio
+	// while AM is on. The board leaves AM at the next rx() or set_mode(). No sub-audio in AM (the core takes
+	// tone_ok as true). In AM status() reports noise on the squelch's scale (larger = weaker) from whichever of its
+	// receiver's readings tells a carrier from an empty channel in AM, with its own scale and receiver gain taken into
+	// account. False: out of band or the board can't. NULL = no AM on this radio
 	bool (*rx_am)(uint32_t hz, radio_bw_t bw);
 	// Optional: the microphone gain of FM and DMR transmissions, db relative to the board's own levels (the Mic gain
 	// setting, -10..+10; core/radio/mic_gain.h). The board only stores it and applies it at the next transmission
@@ -75,6 +81,13 @@ typedef struct {
 	// it now (false) or at the next tune (true: the caller asks the radio task for one, radio_req_retune). NULL = the
 	// radio has no trim
 	bool (*ref_trim)(int16_t ppb);
+	// Optional, both or neither: the PA drive, in the board's own units (its power control DAC counts), for transmit
+	// power calibration with a wattmeter (docs/testing/power-calibration.md). tx_drive_level: the drive the board uses
+	// for a power level at a transmit frequency, 0 when it has none (no calibration, out of band). tx_drive: the drive
+	// for the next transmission instead of its level's, from the next tx() until tx_off() (one transmission); 0 = the
+	// level's again. False: over the board's hardware limit. Any task may call it
+	uint16_t (*tx_drive_level)(uint32_t hz, uint8_t level);
+	bool (*tx_drive)(uint16_t drive);
 } hal_radio_t;
 
 #endif

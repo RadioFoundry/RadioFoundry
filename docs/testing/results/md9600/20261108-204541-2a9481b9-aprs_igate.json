@@ -1,0 +1,74 @@
+{
+ "board": "md9600",
+ "commit": "2a9481b92916acb1028942628b5e3b48b5605f1a",
+ "date": "2026-11-08T20:45:41Z",
+ "dirty": false,
+ "features": [
+  "aprs_igate"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "da54663a",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "microphone",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 2,
+  "dmr-freq": 461.4625,
+  "dmr-tg": 201,
+  "fm-mhz": 461.4625,
+  "tx-power": 40
+ },
+ "sources": {
+  "aprs_igate": {
+   "core/aprs/aprs.c": "3de791aad0314e4b12486e0a3a25a2bee85f5d16",
+   "core/debuglink/debuglink_aprs.c": "0f8daeecddc035a1d1a946cdb63662cd74e0bb12",
+   "core/hostlink/build_info.c": "73dbddd5cf176f0f93346325160724c27b1f2652",
+   "core/net/aprsis.c": "4286a4c6c52d9015e108369dc742c66c2d05158b",
+   "docs/spec/aprs.md": "aa057fdc8d33b8a1e118ecaeee688ec8c0698831"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "aprs_igate"
+   ],
+   "id": "tests/hil/test_aprs.py::test_aprs_igate_on_air[aprsis]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "aprs_igate"
+   ],
+   "id": "tests/hil/test_aprs.py::test_aprs_igate_on_air[kiss_tcp]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

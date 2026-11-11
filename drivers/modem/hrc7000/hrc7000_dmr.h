@@ -84,12 +84,14 @@ typedef struct {
 	uint32_t slot_abnormal;	// bits 5, 6, 16
 	uint32_t rx_restarts;
 	uint32_t rx_lost, rx_stale;	// receiver restarts: reception over, stale slot timing
+	uint32_t rx_holds;	// direct transmissions ended without the restart, held for an answer (5.2a)
 	uint32_t cc_scan_steps;
 	uint32_t ev_overflow;
 	uint32_t tx_bursts, tx_underrun, tx_rejected, tx_done;
 	uint32_t tx_empty;	// our slots left empty on request (DMR_BURST_EMPTY): received like the other slot
 	uint32_t rx_in_tx[2];	// bursts deframed while we send, by ticks since our last arming (even, odd)
 	uint32_t stalls;
+	uint32_t sys_stuck;	// system requests pending with no handler run, dropped (hrc7000_dmr_poll)
 	uint32_t last_rx_type_info;
 	uint32_t last_sys_list;
 	uint32_t last_l2_status;
@@ -133,12 +135,15 @@ typedef struct {
 	uint32_t tick;
 	uint32_t t_tick;
 	uint32_t t_rx_tick;	// time of the last receive-vector tick
+	uint32_t sys_seen, t_sys_seen;	// the stuck request check: sys_ints, and since when a request has waited
+	bool sys_waiting;	// a request seen pending with sys_ints at sys_seen (since t_sys_seen)
 	bool tick_tx;		// the last tick came on the TX vector
 	bool timing;
 	// Receive
 	uint32_t rx_tick;	// tick of the last burst taken
 	bool rx_any;
-	uint32_t resync_tick;	// tick of the last receiver restart for lost or stale timing
+	uint32_t resync_tick;	// tick of the last receiver restart for lost or stale timing, or of the post-TX hold
+	uint8_t idle_ticks;	// quiet ticks before the stale restart: RX_IDLE_TICKS, POST_TX_HOLD_TICKS after a hold
 	uint8_t rx_chip_slot;	// chip slot of the last burst taken (an aligned start's reference)
 	int8_t voice_chip_slot;	// chip slot of the voice call being received, -1 none
 	uint32_t voice_tick;

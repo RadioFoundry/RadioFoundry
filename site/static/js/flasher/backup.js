@@ -41,8 +41,9 @@ export async function readRadio(link, board, radio, { what = {}, progress = () =
 	const parts = [];
 	const want = { internal: true, spi: "full", security: true, ...what };
 	const step = (name) => (done, total) => progress(name, done, total);
-	// a build without the codeplug protocol's areas refuses these, or doesn't answer them
-	const cps = async (area, addr, len) => { try { return await link.cpsRead(area, addr, len); } catch (e) { return null; } };
+	// a build without the codeplug protocol's areas refuses these, or doesn't answer them: not the long retries of a
+	// read that must finish
+	const cps = async (area, addr, len) => { try { return await link.cpsRead(area, addr, len, 3); } catch (e) { return null; } };
 	const info = await cps(CPS_INFO, 0, 128);
 	if (info) parts.push({ file: "radio-info.bin", what: "radio-info", addr: 0, data: info, complete: true });
 	let security = null;
@@ -152,11 +153,15 @@ export function describeFirmware(f) {
 }
 
 // The name people see in their downloads or on the desktop: the model and the local date, letters and digits only,
-// always .zip (DM1801Pro_Backup_2026-10-16.zip)
+// always .zip (DM1801Pro_Backup_2026-10-16.zip). A backup taken before the install from the original firmware or the
+// bootloader (origbackup.js) says so and names the radio by the end of its chip UID, one file per radio
+// (MD9600_Original_1a2b3c4d_2026-11-02.zip)
 export function bundleName(meta, when = new Date()) {
 	const p = (n) => String(n).padStart(2, "0");
 	const model = String(meta.radio.model || meta.radio.board).replace(/[^A-Za-z0-9]/g, "") || "Radio";
-	return `${model}_Backup_${when.getFullYear()}-${p(when.getMonth() + 1)}-${p(when.getDate())}.zip`;
+	const uid = String(meta.radio.uid || "").replace(/[^0-9a-fA-F]/g, "").slice(-8);
+	const kind = meta.original_backup ? `Original${uid ? "_" + uid : ""}` : "Backup";
+	return `${model}_${kind}_${when.getFullYear()}-${p(when.getMonth() + 1)}-${p(when.getDate())}.zip`;
 }
 
 // Where a zip's files (name -> bytes) keep backup.json: "" at the top, "name/" for a backup unpacked and zipped again

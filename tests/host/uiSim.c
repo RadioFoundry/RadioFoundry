@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // The UI host simulator's command line (docs/spec/ui.md 7):
 //
-//   uiSim [--geom 160x120i5|160x128|128x64|240x320|WxH[iN|m]] [--map K|M|V|F] [--scale N] [--out FILE.png]
+//   uiSim [--geom 160x120i5|160x128|128x64|240x320|WxH[iN|m]] [--map K|M|V|F|P] [--scale N] [--out FILE.png]
 //         [--script "ok 4 down ok expect:zone=1"]
 //   uiSim --gallery DIR      every screen at every display class: DIR/<geom>/<screen>.png, plus the contact sheets
 //                            in DIR/sheets. A color page is drawn again in each highlight color UI_GALLERY_COLORS
@@ -36,8 +36,8 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "boot", "splash" },
 	{ "stub_entry", "splash:loader" },	// while the flashing tools have the radio (web flasher)
 	{ "home_dmr", "" },
-	{ "home_dmr_lastheard", "call:3101234,91,g wait:11000" },
-	{ "home_reply", "call:3101234,91,g" },
+	{ "home_dmr_lastheard", "call:9991234,91,g wait:11000" },
+	{ "home_reply", "call:9991234,91,g" },
 	{ "home_fm", "down" },
 	{ "home_temporary", "down quick 1 2 up back" },
 	{ "home_vfo", "ok 4 up ok" },
@@ -49,15 +49,15 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "home_locked", "long:quick 5" },
 	{ "home_usb_ip", "usbnet:on" },
 	{ "home_usb_ip_up", "usbnet:up" },
-	{ "rx_group", "rx:3101234,91,g,K1ABC_Joe_-_Boston,_MA" },
-	{ "rx_private", "rx:3105678,0,p" },
+	{ "rx_group", "rx:9991234,91,g,Q1ABC_Joe_-_Boston,_MA" },
+	{ "rx_private", "rx:9995678,0,p" },
 	{ "tx", "pttdown" },
 	{ "tx_private", "5 6 3 ok wait:5000 pttdown" },
 	{ "tx_dtmf", "down pttdown dtmf:5551234#" },	// DTMF sent on FM (radio-features.md 3.7)
-	{ "banner_message", "msg:3101234,Meet_at_the_north_lot_in_15_minutes._Bring_the_spare_battery." },
-	{ "banner_call_alert", "alert:3105678" },
-	{ "banner_radio_check", "call:3101234,91,g wait:11000 ctx 4 wait:1000" },
-	{ "message_view", "msg:3101234,Meet_at_the_north_lot_in_15_minutes._Bring_the_spare_battery. ctx" },
+	{ "banner_message", "msg:9991234,Meet_at_the_north_lot_in_15_minutes._Bring_the_spare_battery." },
+	{ "banner_call_alert", "alert:9995678" },
+	{ "banner_radio_check", "call:9991234,91,g wait:11000 ctx 4 wait:1000" },
+	{ "message_view", "msg:9991234,Meet_at_the_north_lot_in_15_minutes._Bring_the_spare_battery. ctx" },
 	{ "quick_dmr", "quick" },
 	{ "quick_fm", "down quick" },
 	{ "quick_fm_squelch", "down quick 2 up" },
@@ -74,20 +74,20 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "find_number", "3 1 0 0" },
 	{ "find_channel", "1 2" },
 	{ "find_frequency", "4 6 1 4 6 2" },	// Tune VFO to 461.462
-	{ "find_new_contact", "3 1 0 9 8 7 6 down down" },	// Create contact 3109876
+	{ "find_new_contact", "9 9 9 9 8 7 6 down down" },	// Create contact 9999876
 #if CONFIG_CONTACT_EDIT
-	{ "contact_edit", "3 1 0 9 8 7 6 down down ok" },
-	{ "contact_edit_save", "call:3101999,91,g wait:11000 ctx 7" },	// Save as contact from a caller's actions
+	{ "contact_edit", "9 9 9 9 8 7 6 down down ok" },
+	{ "contact_edit_save", "call:9991999,91,g wait:11000 ctx 7" },	// Save as contact from a caller's actions
 #endif
-	{ "caller_actions", "call:3101234,91,g wait:11000 ctx" },
-	{ "compose", "call:3101234,91,g wait:11000 ctx 3" },
+	{ "caller_actions", "call:9991234,91,g wait:11000 ctx" },
+	{ "compose", "call:9991234,91,g wait:11000 ctx 3" },
 	{ "hub", "ok" },
 	{ "contacts", "ok 1" },
 	{ "contacts_find", "ok 1 5 6" },
 	{ "contact_actions", "ok 1 5 6 ctx" },
-	{ "messages", "msg:3101234,Meet_at_the_north_lot msg:3105678,On_my_way wait:9000 ok 2" },
+	{ "messages", "msg:9991234,Meet_at_the_north_lot msg:9995678,On_my_way wait:9000 ok 2" },
 	{ "messages_empty", "ok 2" },
-	{ "recent", "call:3101234,91,g call:3105678,3100,g call:3102222,0,p ok 3" },
+	{ "recent", "call:9991234,91,g call:9995678,3100,g call:9992222,0,p ok 3" },
 	{ "zones", "ok 4" },
 	{ "channels", "ok 5" },
 	{ "channel", "ok 5 ok" },
@@ -108,19 +108,19 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "zone_channels", "ok 4 ctx" },
 #if CONFIG_ZONE_EDIT
 	{ "zone_share_to", "ok 4 ctx down down ctx 5" },	// Channel actions' Share channel to...
-	{ "zone_share_to_id", "ok 4 ctx down down ctx 5 3 1 0 9 8 7 6" },	// a typed ID that isn't a contact
+	{ "zone_share_to_id", "ok 4 ctx down down ctx 5 9 9 9 9 8 7 6" },	// a typed ID that isn't a contact
 	{ "zone_share_sending", "ok 4 ctx down down ctx 5 2 ok" },	// "Sending to ... via ..."
 #else
 	{ "zone_share", "ok 4 ctx down down ctx" },
 	{ "zone_share_to", "ok 4 ctx down down ctx 1" },
 #endif
-	{ "banner_zone_offer", "zoneoffer:3101234" },
-	{ "zone_offer", "zoneoffer:3101234 ctx" },
-	{ "zone_offer_preview", "zoneoffer:3101234 ctx 2" },
-	{ "zone_offer_ch", "zoneoffer:3101234,c ctx" },
-	{ "tools_zone_offer", "zoneoffer:3101234 back ok 6 down down down down down down down down down" },	// Tools > Zones/Chs Received
-	{ "zone_offer_channel", "zoneoffer:3101234,c ctx 1" },
-	{ "zone_imported", "zoneoffer:3101234 ctx 1 wait:300" },
+	{ "banner_zone_offer", "zoneoffer:9991234" },
+	{ "zone_offer", "zoneoffer:9991234 ctx" },
+	{ "zone_offer_preview", "zoneoffer:9991234 ctx 2" },
+	{ "zone_offer_ch", "zoneoffer:9991234,c ctx" },
+	{ "tools_zone_offer", "zoneoffer:9991234 back ok 6 down down down down down down down down down" },	// Tools > Zones/Chs Received
+	{ "zone_offer_channel", "zoneoffer:9991234,c ctx 1" },
+	{ "zone_imported", "zoneoffer:9991234 ctx 1 wait:300" },
 #if CONFIG_ZONE_EDIT
 	// The zone editor (ui.md 2.2)
 	{ "zone_actions", "ok 4 ctx ctx" },
@@ -143,16 +143,16 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "settings", "ok 7" },
 	{ "settings_display", "ok 7 2" },
 	{ "settings_editor", "ok 7 2 ok up" },
-	{ "settings_freq_trim", "trim ok 7 0 up" },	// on a radio with a reference trim (radio-features.md 6.1)
-	{ "freq_trim", "trim ok 7 0 up ok ctx 4 5 ok" },
-	{ "freq_trim_typing", "trim ok 7 0 up ok 1 2" },
-	{ "settings_advanced", "ok 7 0" },
-	{ "factory_reset", "ok 7 0 down down down ok" },
-	{ "about", "ok 7 0 ok" },
-	{ "crash_log", "crash:on ok 7 0 down down down down ok" },
+	{ "settings_freq_trim", "trim ok 7 up ok up" },	// on a radio with a reference trim (radio-features.md 6.1)
+	{ "freq_trim", "trim ok 7 up ok up ok ctx 4 5 ok" },
+	{ "freq_trim_typing", "trim ok 7 up ok up ok 1 2" },
+	{ "settings_advanced", "ok 7 up ok" },
+	{ "factory_reset", "ok 7 up ok down down down ok" },
+	{ "about", "ok 7 up ok ok" },
+	{ "crash_log", "crash:on ok 7 up ok down down down down ok" },
 	{ "crash_prompt", "crash:ask wait:2500" },
-	{ "crash_send_to", "crash:on ok 7 0 down down down down ok 2" },
-	{ "talk_target_picker", "call:3101234,91,g tt" },
+	{ "crash_send_to", "crash:on ok 7 up ok down down down down ok 2" },
+	{ "talk_target_picker", "call:9991234,91,g tt" },
 	{ "talk_target_picker_vfo", "ok 4 up ok quick 4 tt" },
 	{ "scan_actions", "ok 6 1 ctx" },
 #if CONFIG_DUAL_WATCH
@@ -160,31 +160,41 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "dual_pick", "quick 7 ctx 3" },
 	{ "dual_zones", "quick 7 ctx 3 up up up up ok" },
 	{ "home_dual", "quick 7 ctx 3 5 ok wait:3000" },
-	{ "home_dual_rx_b", "quick 7 ctx 3 5 ok wait:3000 tune:b call:3101234,91,g tune:a call:3107777,3100,g wait:4000 tune:b rx:3101234,91,g wait:2500" },
-	{ "home_dual_heard", "quick 7 ctx 3 5 ok wait:3000 tune:b call:3101234,91,g tune:a call:3107777,3100,g wait:4000" },
+	{ "home_dual_rx_b", "quick 7 ctx 3 5 ok wait:3000 tune:b call:9991234,91,g tune:a call:9997777,3100,g wait:4000 tune:b rx:9991234,91,g wait:2500" },
+	{ "home_dual_heard", "quick 7 ctx 3 5 ok wait:3000 tune:b call:9991234,91,g tune:a call:9997777,3100,g wait:4000" },
 	// The wait after a call on B: a look at A found a signal there
-	{ "home_dual_busy", "quick 7 ctx 3 5 ok wait:3000 tune:b call:3101234,91,g busy:a" },
-	{ "home_dual_on_b", "quick 7 ctx 3 5 ok wait:3000 tune:b call:3101234,91,g tune:a call:3107777,3100,g wait:4000 ctx 1 wait:3000" },
+	{ "home_dual_busy", "quick 7 ctx 3 5 ok wait:3000 tune:b call:9991234,91,g busy:a" },
+	{ "home_dual_on_b", "quick 7 ctx 3 5 ok wait:3000 tune:b call:9991234,91,g tune:a call:9997777,3100,g wait:4000 ctx 1 wait:3000" },
 	{ "home_dual_tx", "quick 7 ctx 3 5 ok wait:3000 pttdown" },
 	{ "home_dual_vfo", "quick 7 ctx 1 vfokey ctx 1 wait:3000" },
+	{ "home_dual_vfo_entry", "quick 7 ctx 1 vfokey tune:a 1 4 6 5" },
+	{ "home_dual_vfo_entry_large_text", "ok 7 2 down down down down down ok long:back quick 7 ctx 1 vfokey 1 4 6 5" },
 	// A name that needs row 1 whole beside the PTT pill: the pill moves to row 3 where there is one
 	{ "home_dual_pill_row3", "quick 7 ctx 1 wait:3000" },
 	{ "home_dual_other_zone", "quick 7 ctx 1 zone+ ctx 1 wait:3000 tune:b fmrx" },
 	{ "home_dual_fm", "quick 7 ctx 3 2 ok wait:3000" },
-	{ "home_dual_large_text", "ok 7 2 down down down down down ok long:back quick 7 ctx 3 5 ok wait:3000 tune:b rx:3101234,91,g" },
+	{ "home_dual_large_text", "ok 7 2 down down down down down ok long:back quick 7 ctx 3 5 ok wait:3000 tune:b rx:9991234,91,g" },
 	// A radio with a receiver per channel: calls on both at once, the second one muted
-	{ "home_dual_two_rx", "receivers:2 quick 7 ctx 3 5 ok wait:3000 rxa:3101234,3100,g rxb:3107777,91,g wait:1000" },
+	{ "home_dual_two_rx", "receivers:2 quick 7 ctx 3 5 ok wait:3000 rxa:9991234,3100,g rxb:9997777,91,g wait:1000" },
 	// Talking on B while a call arrives on A
-	{ "home_dual_tx_b", "receivers:2 quick 7 ctx 3 5 ok wait:3000 ctx 1 wait:500 rxa:3101234,3100,g wait:1000 pttdown" },
-	{ "home_dual_two_rx_large_text", "ok 7 2 down down down down down ok long:back receivers:2 quick 7 ctx 3 5 ok wait:3000 rxa:3101234,3100,g rxb:3107777,91,g wait:1000" },
-	{ "home_dual_talk_back", "ok 7 3 down down down down down down ok long:back quick 7 ctx 3 5 ok wait:3000 tune:b call:3101234,91,g wait:4000" },
-	{ "dual_actions", "quick 7 ctx 3 5 ok wait:3000 tune:b call:3101234,91,g tune:a call:3107777,3100,g wait:4000 ctx" },
+	{ "home_dual_tx_b", "receivers:2 quick 7 ctx 3 5 ok wait:3000 ctx 1 wait:500 rxa:9991234,3100,g wait:1000 pttdown" },
+	{ "home_dual_two_rx_large_text", "ok 7 2 down down down down down ok long:back receivers:2 quick 7 ctx 3 5 ok wait:3000 rxa:9991234,3100,g rxb:9997777,91,g wait:1000" },
+	{ "home_dual_talk_back", "ok 7 3 down down down down down down ok long:back quick 7 ctx 3 5 ok wait:3000 tune:b call:9991234,91,g wait:4000" },
+	{ "dual_actions", "quick 7 ctx 3 5 ok wait:3000 tune:b call:9991234,91,g tune:a call:9997777,3100,g wait:4000 ctx" },
 #endif
-	{ "emergency", "emergency:3101234" },
+	{ "emergency", "emergency:9991234" },
 	{ "volume", "softvol volkey up up" },
+#if CONFIG_VOLUME_BAR
+	// A knob radio: the knob turned, over Home and over a call (#354)
+	{ "volume_bar", "knob:50 knob:62" },
+	{ "volume_bar_quick", "quick knob:50 knob:62" },	// Quick's tiles fill the bottom at 160x128: the strip
 #if CONFIG_DMR
-	{ "dmr_id", "ok 7 9 ok" },		// Settings > My radio
-	{ "dmr_id_entry", "ok 7 9 ok 3 1 0 9" },
+	{ "volume_bar_call", "rx:9991234,3100,g wait:500 knob:50 knob:31" },
+#endif
+#endif
+#if CONFIG_DMR
+	{ "dmr_id", "ok 7 0 ok" },		// Settings > My radio
+	{ "dmr_id_entry", "ok 7 0 ok 3 1 0 9" },
 #endif
 	{ "volume_muted", "softvol volkey down down down down down down down down" },
 	{ "hotspot", "hotspot:on" },
@@ -204,45 +214,45 @@ static const struct { const char *name, *script; } audit_extra[] = {
 	{ "settings_connections", "ok 7 6" DOWN12 },
 	{ "settings_power", "ok 7 7" DOWN12 },
 	{ "settings_keys", "ok 7 8" DOWN12 },
-	{ "settings_my_radio", "ok 7 9" DOWN12 },
-	{ "settings_advanced", "ok 7 0" DOWN12 },
-	{ "about_scrolled", "ok 7 0 ok" DOWN12 DOWN12 },
-	{ "codeplug", "ok 7 0 down ok" },
+	{ "settings_my_radio", "ok 7 0" DOWN12 },
+	{ "settings_advanced", "ok 7 up ok" DOWN12 },
+	{ "about_scrolled", "ok 7 up ok ok" DOWN12 DOWN12 },
+	{ "codeplug", "ok 7 up ok down ok" },
 	{ "battery", "ok 6 9" },
-	{ "my_radio", "ok 7 9 ok" },
-	{ "caller_actions", "call:3101234,91,g wait:11000 ctx" DOWN12 },
+	{ "my_radio", "ok 7 0 ok" },
+	{ "caller_actions", "call:9991234,91,g wait:11000 ctx" DOWN12 },
 	{ "contact_actions", "ok 1 5 6 ctx" DOWN12 },
-	{ "recent", "call:3101234,91,g call:3105678,3100,g call:3102222,0,p ok 3" DOWN12 },
+	{ "recent", "call:9991234,91,g call:9995678,3100,g call:9992222,0,p ok 3" DOWN12 },
 	{ "quick_dmr_all", "quick" DOWN12 },
 	{ "quick_fm_all", "down quick" DOWN12 },
-	{ "picker", "call:3101234,91,g tt" DOWN12 },
+	{ "picker", "call:9991234,91,g tt" DOWN12 },
 };
 
 // Worst-case screens for --layout (they run with sim_worst on, as the gallery screens do a second time)
 #define LONG_MSG "Meet_at_the_north_lot_of_the_county_fairgrounds_at_1500._Bring_the_spare_battery,_the_mag_mount_" \
 	"antenna_and_the_printed_ICS-205_for_the_net_control."
 static const struct { const char *name, *script; } worst_screens[] = {
-	{ "w_rx_alias", "rx:3109999,16776415,g,KD9ABC_Christopher_W,_Boston_MA" },
-	{ "w_rx_unknown", "rx:3101999,16776414,g,KD9ABC_Christopher_W,_Boston_MA" },
-	{ "w_rx_private", "rx:3108765,0,p" },
-	{ "w_reply", "call:3109999,16776415,g" },
-	{ "w_lastheard", "call:3109999,16776415,g wait:11000" },
-	{ "w_lastheard_unknown", "call:3101999,16776414,g wait:11000" },
-	{ "w_status_marks", "msg:3109999," LONG_MSG " msg:3108765,OK wait:9000 quick 5 6 back ok 6 1 power:3 "
+	{ "w_rx_alias", "rx:9999999,16776415,g,QD9ABC_Christopher_W,_Boston_MA" },
+	{ "w_rx_unknown", "rx:9991999,16776414,g,QD9ABC_Christopher_W,_Boston_MA" },
+	{ "w_rx_private", "rx:9998765,0,p" },
+	{ "w_reply", "call:9999999,16776415,g" },
+	{ "w_lastheard", "call:9999999,16776415,g wait:11000" },
+	{ "w_lastheard_unknown", "call:9991999,16776414,g wait:11000" },
+	{ "w_status_marks", "msg:9999999," LONG_MSG " msg:9998765,OK wait:9000 quick 5 6 back ok 6 1 power:3 "
 		"battery:5 long:quick" },
 	{ "w_fm_marks", "down quick 5 7 1 back battery:100" },
 	{ "w_tx", "power:3 pttdown" },
-	{ "w_tx_private", "3 1 0 9 9 9 9 ok wait:5000 pttdown" },
-	{ "w_banner_message", "msg:3109999," LONG_MSG },
-	{ "w_banner_unknown", "msg:3101999," LONG_MSG },
-	{ "w_message_view", "msg:3109999," LONG_MSG " ctx" },
-	{ "w_messages", "msg:3109999," LONG_MSG " msg:3101999,On_my_way wait:9000 ok 2" },
-	{ "w_banner_alert", "alert:3109999" },
-	{ "w_banner_check", "call:3109999,16776415,g wait:11000 ctx 4 wait:1000" },
-	{ "w_caller_actions", "call:3109999,16776415,g wait:11000 ctx" },
-	{ "w_compose", "call:3109999,16776415,g wait:11000 ctx 3" },
-	{ "w_recent", "call:3109999,16776415,g call:3108765,9100091,g call:3101999,0,p call:3102999,16776414,g ok 3" },
-	{ "w_picker", "call:3109999,16776415,g tt" },
+	{ "w_tx_private", "9 9 9 9 9 9 9 ok wait:5000 pttdown" },
+	{ "w_banner_message", "msg:9999999," LONG_MSG },
+	{ "w_banner_unknown", "msg:9991999," LONG_MSG },
+	{ "w_message_view", "msg:9999999," LONG_MSG " ctx" },
+	{ "w_messages", "msg:9999999," LONG_MSG " msg:9991999,On_my_way wait:9000 ok 2" },
+	{ "w_banner_alert", "alert:9999999" },
+	{ "w_banner_check", "call:9999999,16776415,g wait:11000 ctx 4 wait:1000" },
+	{ "w_caller_actions", "call:9999999,16776415,g wait:11000 ctx" },
+	{ "w_compose", "call:9999999,16776415,g wait:11000 ctx 3" },
+	{ "w_recent", "call:9999999,16776415,g call:9998765,9100091,g call:9991999,0,p call:9992999,16776414,g ok 3" },
+	{ "w_picker", "call:9999999,16776415,g tt" },
 	{ "w_contacts", "ok 1" },
 	{ "w_contact_actions", "ok 1 ctx" },
 	{ "w_find", "2 7" },
@@ -257,8 +267,8 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_quick", "quick" },
 	{ "w_quick_fm", "down quick" },
 	{ "w_quick_cc", "quick 3 1 5" },
-	{ "w_emergency", "emergency:3109999" },
-	{ "w_emergency_unknown", "emergency:3101999" },
+	{ "w_emergency", "emergency:9999999" },
+	{ "w_emergency_unknown", "emergency:9991999" },
 	{ "w_vfo", "ok 4 up ok 4 4 6 0 0 6 2 5 ok" },
 	{ "w_vfo_entry", "ok 4 up ok 4 4 6 0 0 6 2" },
 	{ "w_temporary", "quick 1 2 3 1 5 ok back" },
@@ -268,19 +278,20 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_large_fm", "ok 7 2 down down down down down ok long:back down" },
 	{ "w_off_banner", "offfailed" },
 	{ "w_low_battery", "battery:5" },
-	{ "w_hub_unread", "msg:3109999,OK msg:3108765,OK wait:9000 ok 6 1 ok" },
+	{ "w_hub_unread", "msg:9999999,OK msg:9998765,OK wait:9000 ok 6 1 ok" },
 	{ "w_roaming", "ok 6 6 1 wait:4000" },
 	{ "w_aprs", "ok 6 8" },
 	{ "w_aprs_nocall", "aprs:nocall ok 6 8" },
 	{ "w_aprs_position", "ok 6 8 9 2 3 3 7 4 9 0 ok 3 8 4 3 8 8 0 down ok wait:3000" },
 	{ "w_aprs_position_edit", "ok 6 8 9 2 3 3 7" },
+	{ "w_aprs_heard", "ok 6 8 up ok" },
 	{ "w_usb", "ok 6 4" },
 	{ "w_sfr", "ok 6 5" },
 	{ "w_battery", "battery:5 ok 6 9" },
-	{ "w_my_radio", "ok 7 9 ok" },
-	{ "w_codeplug", "ok 7 0 down ok" },
+	{ "w_my_radio", "ok 7 0 ok" },
+	{ "w_codeplug", "ok 7 up ok down ok" },
 	{ "w_settings_number", "ok 7 3 ok up" },
-	{ "w_freq_trim", "trim ok 7 0 up ok ctx 1 0 0 ok" },
+	{ "w_freq_trim", "trim ok 7 up ok up ok ctx 1 0 0 ok" },
 	{ "w_settings_privacy", "ok 7 4 ok ok down ok up" },
 	{ "w_settings_range", "ok 7 7 down down ok 9 9 ok" },
 	{ "w_hotspot", "hotspot:on" },
@@ -638,10 +649,10 @@ int main(int argc, char **argv)
 			}
 			i++;
 		} else if (strcmp(a, "--map") == 0 && v != NULL) {
-			const char *maps = "KMVF";
+			const char *maps = "KMVFP";
 			const char *p = strchr(maps, v[0]);
 			if (p == NULL || v[0] == 0) {
-				fprintf(stderr, "key map is one of K M V F\n");
+				fprintf(stderr, "key map is one of K M V F P\n");
 				return 2;
 			}
 			map = (sim_map_t)(p - maps);

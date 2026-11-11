@@ -16,7 +16,7 @@ when it passes the filters, and shown either way:
 |---|---|
 | Group (FLCO 0) | its talkgroup is the talk target's, all call (0xFFFFFF), in the channel's RX group list (listen list), the reply target's during the reply window, or hear all, "digital monitor" in the UI (the hear-all latch: the MONITOR key's press toggles it on a DMR channel, its release does nothing (#19); Quick 5; `radio_req_dmr_hear_all`; until the channel changes, DMR stops (a mode change), or BACK on Home; the end of a call doesn't end it) |
 | Private (FLCO 3) | addressed to our ID (the channel's DMR ID override, else the radio's), or all call, or hear all |
-| Our own ID as source | never (our call echoed by a repeater) |
+| Our own ID as source | not while we transmit or for `DMR_CALL_OWN_ECHO_MS` (700 ms) after our call ended or was cut short (the repeater's echo of it); later it is judged as any other call, so a parrot's playback of our call plays (#294). A terminator from our ID ends only the call with its LC, never another station's |
 | Encrypted | only with a privacy key, and never after a PI header (section 5) |
 
 A call that doesn't pass is shown as busy ("not played") while it lasts, and counts for polite channel access.
@@ -184,6 +184,10 @@ in two superframes. Playback starts at the burst that completed the LC. A new ta
 passing overs without a header) switches the caller from the embedded LC. The host tests cover joining at burst C,
 the lone burst, the stale LC needing confirmation, a fresh LC taken at once, and a talker change.
 
+A call lost for a moment, with no terminator heard, ends and has to be joined again. Where the modem can prove the
+same call is back, that takes one superframe instead of two, and it counts as one call
+([dmr-modem.md](dmr-modem.md) 2.4).
+
 ## 5. Privacy
 
 Basic privacy (`CONFIG_DMR_PRIVACY`): Motorola BP (key 1-255) and Anytone 16-bit BP (`dmrPrivacy.c`). The keystream
@@ -235,8 +239,8 @@ own in the VFO), op 15 the talk target and op 32 copies the channel to the VFO (
 `emergency`, `pi_header`, `alias_complete`, `fid`, `svc`, `pi_alg`, `pi_key`; the counters `rx_private_calls`,
 `rx_emergency_calls`, `rx_encrypted_calls`, `rx_pi_headers`, `rx_alias_complete`, `tx_alias_lcs`, `rx_gps`,
 `tx_gps_lcs`; GPS Info as `call.gps_valid gps_lat gps_lon gps_err gps_dist_m gps_bearing` (and `last.`). HIL tests:
-`tests/hil/test_dmr_call_features.py` (`test_gps_info`: the bench sends a call with a GPS block, `tools/bench/
-bench_tx.py voice --gps LAT,LON[,ERR]`), `tests/hil/test_dmr_tx.py` (`test_dmr_gps_tx`: our GPS Info decoded by the
+`tests/hil/test_dmr_call_features.py` (`test_gps_info`: the bench sends a call with a GPS block, a `bench_tx`
+`voice --gps LAT,LON[,ERR]` job), `tests/hil/test_dmr_tx.py` (`test_dmr_gps_tx`: our GPS Info decoded by the
 bench modem's listener).
 
 ## 8. Open points

@@ -34,12 +34,14 @@
 #define DMR_CALL_TX_HEADERS		3	// voice LC headers before burst A
 #define DMR_CALL_TX_TERMINATORS		1
 #define DMR_CALL_FADE_MS		390	// no voice burst on the call for this long ends it (13 slots)
+#define DMR_CALL_RESUME_MS		1500	// the same LC this soon after a call faded is that call, not a new one
 #define DMR_CALL_WAKEUP_ATTEMPTS	3
 #define DMR_CALL_WAKEUP_LISTEN_MS	600	// after each BS_Dwn_Act
 #define DMR_CALL_REPEATER_HOLD_MS	300	// the repeater counts as up this long after its outbound was last seen
 #define DMR_CALL_LBT_DMO_MS		120	// machine traffic: quiet needed before sending (gotcha 3.6)
 #define DMR_CALL_LBT_RMO_MS		180
 #define DMR_CALL_RMO_HANG_MS		3000	// machine traffic waits this long after a call through a repeater
+#define DMR_CALL_PERMIT_MAX_MS		400	// the talk permit hold keys after this long whatever permit_busy says
 // SFR user: which copies of a call are heard (dmr_call_config_t.sfr_rx)
 typedef enum {
 	DMR_SFR_RX_REPEATER,	// the repeat only: the talker's own copy is dropped
@@ -49,6 +51,7 @@ typedef enum {
 } dmr_sfr_rx_t;
 #define DMR_SFR_DUALPATH_MS		120	// a burst with a failed frame waits this long for the other copy (90 ms behind)
 
+#define DMR_CALL_OWN_ECHO_MS		700	// a call from our own ID this soon after we stopped transmitting is the repeater's echo of it; later, a parrot's playback
 #define DMR_CALL_ALIGN_MS		300	// DMO: reply aligned to a station heard this recently (within the modem's slot memory, 390 ms on the HR_C6000)
 #define DMR_CALL_TX_DONE_GUARD_MS	1500	// tx_done overdue after the last burst: force receive
 #define DMR_CALL_TX_MAX_INFLIGHT	4	// bursts queued ahead of the air at most
@@ -112,6 +115,11 @@ typedef struct {
 	uint8_t rx_sync;		// the repeat's sync: DMR_SYNC_TS1 / TS2 (TS framing), BS, or MS (the copies look alike)
 	uint8_t sfr_rx;			// dmr_sfr_rx_t
 	int8_t cc2;			// a second color code heard (an ERDM repeater's outbound), -1 = none
+	// Talk permit before keying (radios whose beeps can't sound on air): once a voice call is admitted (the channel
+	// free, the repeater up) it waits, receiving, at least permit_hold_ms and while permit_busy() is true, at most
+	// DMR_CALL_PERMIT_MAX_MS, then keys. Each hold counts in view.permit_seq: the tone's cue. 0 = keys at once
+	uint16_t permit_hold_ms;
+	bool (*permit_busy)(void);	// NULL = the minimum alone
 } dmr_call_config_t;
 
 // Caller info for the UI
@@ -164,6 +172,7 @@ typedef enum {
 	DMR_CALL_PHASE_TX_ENDING,	// terminator queued, waiting for the modem's tx_done
 	DMR_CALL_PHASE_TX_DENIED,	// PTT still held after a refusal: release to clear
 	DMR_CALL_PHASE_TX_DATA,		// sending a data / CSBK burst list (dmr_call_data_tx), its repeater wake-up included
+	DMR_CALL_PHASE_TX_PERMIT,	// admitted, still receiving: the talk permit hold before keying (permit_hold_ms)
 } dmr_call_phase_t;
 
 typedef enum {
@@ -197,6 +206,8 @@ typedef struct {
 	uint32_t evq_overflows;		// diagnostics
 	uint32_t tx_underruns;		// voice frames replaced with silence
 	uint8_t wake_admits;		// counts repeater wake-ups answered after PTT was let go: the call would have been admitted
+	uint8_t permit_seq;		// counts talk permit holds (permit_hold_ms): play the talk permit now
+	uint8_t wake_sent;		// counts BS_Dwn_Act bursts sent (repeater wake-ups): the red LED blinks once per burst
 } dmr_call_view_t;
 
 void dmr_call_config_default(dmr_call_config_t *cfg);
@@ -220,12 +231,18 @@ void dmr_call_set_tx_gps(const dmr_gps_t *gps);
 void dmr_call_reply_cancel(void);
 // The whole stack runs here: queued modem events, PTT, timeouts, TX queue filling. Call every 10-25 ms with the time
 void dmr_call_poll(uint32_t now_ms);
+// Called when a transmission ends (the modem's DMR_EV_TX_DONE or DMR_EV_TX_REJECTED, already queued): poll now rather
+// than at the next tick, so the receiver is back before a reply 30 ms after the last burst (a confirmed data ACK). From
+// the modem's event callback, at task level (hal_dmr_modem.h): post, never poll or block. NULL: none. Kept across
+// dmr_call_init
+void dmr_call_set_wake(void (*fn)(void));
 
 const dmr_call_view_t *dmr_call_view(void);
 
 // Diagnostics counters (the debug link's GET_DIAG / RESET_COUNTERS; wrap freely)
 typedef struct {
 	uint32_t rx_calls;		// calls heard on our slot (a new voice LC, header or late entry)
+	uint32_t rx_calls_resumed;	// faded calls that came back by late entry within DMR_CALL_RESUME_MS: not in rx_calls
 	uint32_t rx_calls_played;	// ... of those, passed the filters and played
 	uint32_t rx_late_entries;	// ... of those, started from the embedded LC (no header seen)
 	uint32_t rx_voice_bursts;	// voice bursts handed to the sink (3 frames each)

@@ -28,8 +28,8 @@ import split_duplex_host as sdh  # noqa: E402
 
 WRAP = 1 << 32
 STEP_US = 5000
-LC1 = bytes([0, 0, 0, 0, 0, 0x09, 0x2F, 0x5A, 0x01])     # group call TG 9 from 0x2F5A01
-LC2 = bytes([0, 0, 0, 0, 0, 0x5B, 0x2F, 0x5A, 0x02])     # TG 91
+LC1 = bytes([0, 0, 0, 0, 0, 0x09, 0x98, 0x7C, 0x11])     # group call TG 9 from 0x987C11
+LC2 = bytes([0, 0, 0, 0, 0, 0x5B, 0x98, 0x7C, 0x12])     # TG 91
 KIND_VOICE, KIND_HEADER, KIND_TERM, KIND_IDLE = 0x10, 1, 2, 9
 
 checks = failures = 0
@@ -202,7 +202,7 @@ class Host:
             if mask != mask_old:
                 self.send_at()
             if cmd in (sdh.DMR_DATA1, sdh.DMR_DATA2) and not self.silent:
-                # The duplex host repeats the RF call on its own slot (8.4), as MMDVMHost does: DMR_START, then the
+                # The duplex host repeats the RF call on its own slot (8.4), as a standard host does: DMR_START, then the
                 # bursts (control byte and 33 bytes, without the RSSI)
                 if not self.tx_keyed:
                     self.w.send(self.w.tx, sdh.frame(sdh.DMR_START, b"\x01"))

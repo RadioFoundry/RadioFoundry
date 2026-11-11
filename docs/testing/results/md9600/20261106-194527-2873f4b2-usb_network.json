@@ -1,0 +1,83 @@
+{
+ "board": "md9600",
+ "commit": "2873f4b27ae46450819b3ddb408b49dfa99b0dd0",
+ "date": "2026-11-06T19:45:27Z",
+ "dirty": false,
+ "features": [
+  "usb_network"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,DMR_CONFIRMED,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "2873f4b2",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.075,
+  "dmr-tg": 202,
+  "fm-mhz": 446.1,
+  "tx-power": 40
+ },
+ "sources": {
+  "usb_network": {
+   "core/debuglink/debuglink.c": "86e811c30150ee9f44f3b7b78a892e57c0b7c52b",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/hostlink/hostlink.c": "4139e8fa9bc4f91906044f0536b0cb65d8c1eac8",
+   "core/hostlink/hostlink.h": "6c5aadae1a43f01ff534755f52d3497ff6db9dc2",
+   "core/ui/ui_app.c": "4d3b519ccf6cfed60992ba29084894dde1b4dcf9",
+   "core/ui/ui_menus.c": "0234ba2358034fb13ab0173e19ea80eae360ec92",
+   "core/ui/ui_screens.c": "f7bfa3dd2960f22ee0e88e84c0294699b5728e4c",
+   "core/ui/ui_svc_storage.c": "fd7044aa12498a245883412cb537d5fa74eed8bd",
+   "docs/spec/usb-network.md": "3650061b7ce6be9425c862da53968437ff9919a6",
+   "drivers/usb/tusb_config.h": "56a278735f867583b90bffd24fb2ee05aaf2da0b",
+   "drivers/usb/usb_device.c": "8cbe5f27e947f8a0dc0dae5f61647b6d83d5af22",
+   "drivers/usb/usb_device.h": "61803eb30fb81dc6d5b8a7f6e196fd19394dbde9",
+   "drivers/usb/usb_ncm.c": "9fae9705d13fafb919a3e711149aaf4d9572d420",
+   "drivers/usb/usb_ncm.h": "dc4084832b521efdbca8e9aa778ad4f0d7dc745f",
+   "platform/stm32f4/platform.mk": "00cf03b37bf6c1e44f8deae00a990b13ee49d8cb"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "usb_network"
+   ],
+   "id": "tests/hil/test_ui.py::test_usb_network_switch_row",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "usb_network"
+   ],
+   "id": "tests/hil/test_usb_network.py::test_usb_network_roundtrip",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

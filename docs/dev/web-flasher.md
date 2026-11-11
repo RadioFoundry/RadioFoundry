@@ -21,6 +21,8 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `dfu.js` | The AnyRoad DFU bootloader over WebUSB. `WebUsbTransport.open` refuses the radio switched on normally (`normalMode`: the board's `dfu_layout`, else a layout of only the bootloader's sectors) before it claims the interface | `rfoundry/dfu.py` |
 | `codecsave.js` | The codec read back from a radio that runs RadioFoundry (where stock keeps it, or where the merge placed it), checked against the profile's hashes, and a copy kept in IndexedDB: before every update that erases it, elsewhere once, so an install that can't keep or check the codec (a radio back on stock firmware, in its bootloader, or after an interrupted install) needs no stock file | `rfoundry/codecsave.py` |
 | `bootkey.js` | The bootloader key from a radio that runs RadioFoundry: the bootloader read over READ_MEM, the block with the key's SHA-256 | `rfoundry/bootkey.py` |
+| `origbackup.js` | The backup before the install through the original firmware's or the bootloader's DFU device, behind an allowlist (below) | |
+| `origversion.js` | The original firmware's version read before an install, and the hardware option it settles (below) | `rfoundry/origversion.py` |
 | `link.js` | The debug link and open-firmware CPS reads and writes over Web Serial | `rfoundry/debuglink.py`, [open-firmware-cps.md](../spec/open-firmware-cps.md) |
 | `backends.js` | The radio access backend registry: which steps and views a radio's family uses (below) | |
 | `readers.js` | Bulk memory readers for backups: the debug link and the STM32F4 loader (below) | |
@@ -252,6 +254,11 @@ locally (`practiceFetch`) and sends nothing.
 Where it is offered: the button under every failure notice (`errorNotice()`, `problemNotice()`), the failed checks of
 the install, cable radio and loader routes, and the quiet "Something wrong? Report a Problem" link on Verify.
 
+Every failure says what to do next: the message itself, or `errorNotice(text, { next })` beside it. Where the step can
+run again in place, `{ retry }` puts Try Again in the notice. Pressing it removes the notice first, so a second
+failure replaces the first instead of stacking under it. A step that shows its result in a status area clears that
+area at the start of each run.
+
 ## The Update task
 
 **Update** reaches a radio that runs RadioFoundry with one port chooser (its USB port and the programming cables),
@@ -278,6 +285,63 @@ is new. A release from before manifests carried `off` names only its variants' f
 on in no variant reads as new, once.
 
 The Codeplug Editor's **Update Firmware** opens `flash/index.html#update` and closes its own connection.
+
+## The original firmware version
+
+A board with `[flash.original_version]` ([board-registry.md](board-registry.md#original-firmware-version)) has a
+hardware option RadioFoundry can't detect but its original firmware's version settles. The install learns it before
+the write and stores it after the first start, so nobody picks it. The web flasher (`origversion.js`) and rfoundry
+(`origversion.py`) do the same steps:
+
+| Step | Web flasher | rfoundry `flash` |
+|---|---|---|
+| 1. Read | Current firmware step, under **Original firmware** and **Other / Not sure**: **Read Firmware Version** opens the WebUSB chooser on the bootloader's USB IDs; a device showing `interface` gets the read, any other (the bootloader) gets nothing. Optional | Before it asks for the bootloader, when no RadioFoundry answered the probe: reads a device with the bootloader's IDs that is connected and shows `interface`, or asks to connect the radio switched on normally (`--yes`: only one already there). `--no-version-read` skips it |
+| 2. Map | `major` gives the choice. The bootloader (by its strings, or its 0x54 answer) is told as "in update mode already"; a version not listed or no answer (a stall) is unknown. None of them settles anything, and none is an alarm | The same, as a `version` line |
+| 3. Bootloader | **Connect** refuses a device showing `interface` (and the very WebUSB device that answered): the original firmware has the bootloader's USB IDs | `check_bootloader` refuses a device showing `interface`; `wait_for_dfu` passes over the device that answered (its bus and address) and waits for the bootloader |
+| 4. Store | After the install, once the check reads the radio: HWOPT LIST, then SET when no choice is stored. A stored choice that differs is shown and kept: a person set it | The same, after `verify_after`'s probe. `--no-verify` (or no debug link) prints how to set it on the radio instead |
+
+Only the requests of the read are sent: GETSTATUS, CLRSTATUS or ABORT to reach dfuIDLE, DNLOAD block 0 `A2 02`, two
+GETSTATUS, ABORT, UPLOAD block 0 of 1024 bytes. The fakes (`fake.js` with `originalVersion`, rfoundry's
+`fakedfu.FakeOriginalFirmware`) fail on any other request; `site/tests/origversion.test.mjs` and
+`tools/rfoundry/tests/test_origversion.py` check the sequence, the parse, the table and the store.
+
+## Backup before the install
+
+A board with `[flash.original_backup]` ([board-registry.md](board-registry.md#backup-before-the-install)) is backed up
+before anything is written, through the DFU device its original firmware or its bootloader shows (`origbackup.js`).
+The Current firmware step offers it under **Original firmware** and **Other / Not sure**, above the version read:
+recommended, never required.
+
+1. **Back Up Now** opens the WebUSB chooser on the bootloader's USB IDs. The interface strings say which device it is
+   (`deviceKind`): the original firmware (`original_version.interface`), the bootloader (`loader_interface`), or
+   neither (refused, nothing sent).
+2. The info blocks (`info`), each a block 0 command `A2 ss` and an UPLOAD of block 0.
+3. Before program mode, one snapshot of the internal flash from its start: 65535 bytes, then 32768, 16384, 8192 and
+   4096 until the host passes one (Linux stops at 4096). It holds the radio's bootloader.
+4. **Everything** (`spi`, about 6 minutes) or **Channels and settings only** (`quick`): program mode (`91 01`), the
+   address set to 0, then 1 KB blocks with a progress bar. **Stop** ends the read early; the part read is kept. The
+   bootloader gives `loader_spi` at most, and the page says a full backup needs the radio switched on normally.
+5. The original firmware is left with `91 05`: it restarts and runs normally again. The bootloader stays in program
+   mode: the page remembers that USB device, and a write to it starts at `91 31` (`Dfu.run` `programMode`), since the
+   bootloader takes `91 01` once. A power cycle makes a new device and the whole sequence.
+6. The bundle is a backup bundle (`rfoundry-backup/1`, below): `info/info-<ss>.bin` (`info-<ss>`),
+   `bootloader-<bytes>.bin` (`internal-flash-mirror`, at 0x08000000), `spi-flash.bin` or `spi-flash-0-<n>MB.bin`
+   (`spi-flash`, complete only when it is all of `spi`). `backup.json` carries `original_backup` (the device, the
+   version, the bootloader's version, the choice, whether the radio restarted, the browser) and `firmware_now` /
+   `firmware_before` (`stock` with the version when the original firmware answered). Named
+   `<model>_Original_<last 8 UID digits>_<date>.zip`. The Codeplug Editor's import and the channel conversion read
+   `spi-flash` from it as from any bundle; Restore offers only putting the original firmware back from a file.
+
+`Guard` is an allowlist in front of the transport: GETSTATUS, CLRSTATUS, ABORT, UPLOAD (1024 bytes, or the one
+snapshot of block 2 before program mode), and DNLOAD block 0 with exactly `A2 ss`, `21` + address, `91 01`, or `91 05`
+(original firmware only). Anything else throws before it is sent. The fake radio (`fake.js`) models both devices: the
+mode byte and its gates, the ignored block number of the snapshot, the bootloader's 1 MB, the restart on `91 05`, a
+host's transfer cap (`usbCap`), and a list of every request outside the allowlist that reached it (`forbidden`).
+`site/tests/origbackup.test.mjs` checks the allowlist, the order, both devices, the bundle, and a write after a
+bootloader backup.
+
+The bundle holds the radio's calibration and its bootloader. It is saved as a download only: it is not kept for the
+report attachments (`S.lastBackup`), and the flash log and breadcrumbs get only its size and part count.
 
 ## Radio access backends
 
@@ -349,14 +413,21 @@ What can be read depends on the firmware running:
 | Radio runs | Read |
 |---|---|
 | RadioFoundry | Everything, through the CPS reads (areas 1, 5, 9 and 10): the whole SPI flash, the internal flash, the security registers |
-| RadioFoundry with stub entry (STM32F4) | The same. The radio info comes over the debug link; the internal flash, the SPI flash and the security registers come through the STM32F4 loader, once it has taken the radio's board record, every 4 KB block checked against the radio's CRC, and the radio then restarts into RadioFoundry. The codeplug choice stays on the debug link (the hand-over would cost more than it saves). A loader that doesn't start leaves RadioFoundry running, and the debug link reads everything. A build whose codeplug protocol has no area 10 still gets the security registers, through the loader's SREAD (protocol 5). When both read them and the copies differ, the loader's checked copy is `security-registers.bin` and the other is kept as `security-registers-codeplug-protocol.bin`, marked incomplete |
+| RadioFoundry with stub entry (STM32F4) | The same. The radio info comes over the debug link; the internal flash, the SPI flash and the security registers come through the STM32F4 loader, once it has taken the radio's board record, every 4 KB block checked against the radio's CRC, and the radio then restarts into RadioFoundry. The codeplug choice stays on the debug link (the hand-over would cost more than it saves). A loader that doesn't start leaves RadioFoundry running, and the debug link reads everything. After a first install the hand-over is the one the build just written offers: Verify asks it (`afterOffer`), since the probe before the install found the original firmware. A build whose codeplug protocol has no area 10 still gets the security registers, through the loader's SREAD (protocol 5). When both read them and the copies differ, the loader's checked copy is `security-registers.bin` and the other is kept as `security-registers-codeplug-protocol.bin`, marked incomplete |
 | Another open firmware (OpenGD77 family) | Everything but the security registers, over that firmware's CPS (`openfw.js`, below) |
 | Stock (STM32F4) | Nothing: the bootloader can't read flash (read protection level 1) and the stock firmware's own USB protocol has no spec here. The install therefore backs up right after writing RadioFoundry: flashing never touches the SPI flash, and RadioFoundry doesn't write to a foreign settings region until it is claimed, so the stock codeplug, calibration and resources are still intact |
+
+A CPS read the radio doesn't answer is tried up to five times, 0.3, 1, 2 and 3 s apart (`link.js` `cpsRead`): a radio
+quiet for a few seconds must not end a backup halfway. A read answered after a retry goes on the trail. Reads a build
+may not answer at all (the radio info and security registers in `backup.js`, the `openfw.js` probe) keep 3 tries, and a
+probe asks once.
 
 ## Channels after an install (`migrate.js`)
 
 A radio installed from its stock firmware still holds the stock codeplug, in a layout RadioFoundry does not read. The
-last step of the install brings it over by default, on every radio whose stock codeplug the browser converts:
+last step of the install brings it over by default, on every radio whose stock codeplug the browser converts. The
+backup panel before it says so (`flash.backup.after_channels`). With a backup that holds the stock codeplug the step
+writes without asking; without one it asks first:
 
 | Step | What happens |
 |---|---|
@@ -377,7 +448,21 @@ sectors with RadioFoundry's codeplug, the write replaces them. A failure at any 
 channels and says so. With the backup, the Codeplug Editor converts the original codeplug from there; without one, the
 message says whether the original is still on the radio (a read or conversion failure writes nothing).
 
-The boards whose stock codeplug the browser converts are those in the TYT family layouts of `codeplug/stock_tyt.js`.
+The boards whose stock codeplug the browser converts are those in the TYT family layouts of `codeplug/stock_tyt.js`,
+and those whose paged stock codeplug `codeplug/stock_baofeng.js` reads ([feature-matrix.md](../feature-matrix.md)).
+
+### HR_C7000 radios (`c7000ui.js` `bringChannels`)
+
+The stock codeplug sits in its own pages of the data flash, below RadioFoundry's codeplug, and no step of the install
+writes there. So the step needs no backup and loses nothing:
+
+| Step | What happens |
+|---|---|
+| 0. Skip | Not an install, a radio that ran RadioFoundry before, or a board without a paged stock area (`calibration.area`) or a codeplug base |
+| 1. Read | The stock area as this visit's check step read it (`c.calArea`). Without one (the factory update mode route reads no data memory), RadioFoundry reads it over the CPS, area 1 at its physical addresses |
+| 2. Convert | `convertPagedStock`. No stock codeplug, or one without channels, ends the step |
+| 3. Write | `writeConverted` through the Codeplug Editor's transport (`CpsSerial`), which adds the board's codeplug base: the settings area claimed when foreign, the radio's codeplug read, the bytes that differ written and read back. A codeplug with channels already on the radio is replaced only when the user says so |
+| 4. Check | The radio's codeplug read again and counted. A mismatch is reported as a problem |
 The HR_C7000 backend has no conversion: its stock codeplug stays in the data flash and in the backup
 (`original-channels.bin`), and `tools/backup_codeplug.py` ports it.
 
@@ -387,12 +472,13 @@ A bundle can hold both codeplugs, the stock one and RadioFoundry's:
 |---|---|
 | RadioFoundry's | The Tools page's `backup-to-image` (`codeplug.js`) and the Codeplug Editor's open (`editor/files.js`): the `spi-flash` part, from address 0 |
 | A stock TYT-family codeplug | The same, converted by `codeplug/stock_tyt.js` ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md)) |
+| A stock Baofeng codeplug with a spec in `docs/spec/` | The same, converted by `codeplug/stock_baofeng.js` (the first 84 channels) |
 | Any other stock codeplug | Nowhere: no spec in `docs/spec/` describes its records, and only `dmrconf` (GPL, never in the page) decodes it |
 
 `tools/backup_codeplug.py` extracts both offline, from any data flash part, at the board's `openfw_eeprom` and through
 the board's `[stock_codeplug]` page layout, and decodes them with `dmrconf` ([codeplug-port.md](../spec/codeplug-port.md)
-5). The Codeplug Editor opens the YAML it writes. Doing it in the page needs a clean-room spec of that stock layout
-first (issue #228).
+5). The Codeplug Editor opens the YAML it writes. For a stock layout with no spec yet, that is the only way; doing it in
+the page needs a clean-room spec of the layout first (issue #228).
 
 ## Another open firmware (`openfw.js`)
 

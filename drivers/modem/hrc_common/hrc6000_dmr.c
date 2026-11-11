@@ -82,8 +82,11 @@
 #define PA_MIN_ON_US		20000u
 #define PA_FORCE_OFF_US		40000u	// poll fallback when no timeslot interrupt came to drop the PA
 #define STALL_US		200000u
+#define HOLD_NO_TICK_US		35000u	// a hold after our transmission whose slot ticks stopped
+#define HOLD_REPORT_US		8000u	// a slot's report comes this long after the tick that ends it, if at all
 #define RX_LOST_TICKS		13u	// a reception is over (390 ms)
 #define RX_IDLE_TICKS		20u	// nothing taken while idle: restart the receiver
+#define RX_RESUME_TICKS		50u	// a call with no terminator can come back this long after its voice (1.5 s, 5.6)
 #define CC_MATCH_US		200000u
 #define CC_SET_MATCHES		2u
 #define CC_HOLD_MATCHES		8u
@@ -94,6 +97,11 @@
 #define ALIGN_TIMEOUT_TICKS	50u	// 1.5 s for a slot to align to
 #define DONE_FALLBACK_TICKS	4u
 #define STALE_LC_VOICE		6u	// voice bursts after which the embedded LC is trusted even if unchanged
+#define SLOT_LC_GAP_TICKS	12u	// a slot's call is over after this long without its voice (360 ms)
+#define SLOT_LC_BUSY_TICKS	72u	// a slot is busy this long after its LC or voice was last seen (2.2 s, 6 superframes)
+#define SLOT_LC_OTHER_TICKS	2000u	// its voice not taken, a slot's call may go on this long after its header or LC (60 s)
+#define SLOT_LC_AGAIN_TICKS	8u	// an LC neither call had counts when read again this much later (the next superframe)
+#define SLOT_LC_ADOPT_READS	8u	// reads at F showing only the other slot's LC: this slot's call has the same one
 // Voice read at the ticks (chips with rx_voice_read, hardware-md380.md 4.8)
 #define TR_FIND_TICKS		40u	// reads to find the call's slot in (1.2 s) before the call counts as none
 #define TR_END_MISSES		6u	// reads on the call's slot in a row without a new burst (360 ms): the call is over
@@ -370,11 +378,37 @@ static void do_restart(hrc6000_dmr_t *e, uint8_t why)
 	e->voice_valid = false;
 	e->out_of_step_run = 0;
 	e->restart_pending = false;
+	e->tx_hold = false;
 	e->st.rx_restarts++;
+}
+
+// The end of a direct transmission (modem-hrc6000.md 6.6): receive on in passive timing for the next slot, without
+// the restart. An answer that starts as our last burst ends (on the SDR bench, an MS simulator's link ACK to our
+// confirmed data) came while a restart had the chip search for the sync again, and was missed on most tries. The
+// software state is reset as at a restart. Nothing taken in that slot: the restart once its report is no longer due
+// (HOLD_REPORT_US after the tick that ends it, from the poll; a restart at the tick lost that report), in time for an
+// answer a slot later off our timing, which the held timing did not decode (late class 0 reports only)
+static void tx_hold(hrc6000_dmr_t *e)
+{
+	w(e->dev, R_L2_CTL, L2_PASSIVE);	// passive timing from our active one
+	set_ctl(e, rx_ctl(e));
+	forget_slots(e);
+	e->held[0].valid = false;
+	e->held[1].valid = false;
+	e->rx_any = false;
+	e->rx_tick = e->tick;
+	e->report_valid = false;
+	e->voice_valid = false;
+	e->out_of_step_run = 0;
+	e->restart_pending = false;
+	e->tx_hold = true;
+	e->hold_due = false;
+	e->st.rx_holds++;
 }
 
 static void pa_drop(hrc6000_dmr_t *e, uint32_t t)
 {
+
 	if (!e->ops->rf(e->ops->ctx, false)) {
 		e->st.rf_fail++;
 	}
@@ -478,8 +512,10 @@ static void tx_finish(hrc6000_dmr_t *e)
 		w(e->dev, R_L2_CTL, L2_PASSIVE);	// passive timing again, CRC_MCU_Control clear
 		set_ctl(e, rx_ctl(e));
 		e->rx_tick = e->tick;
+	} else if (!rmo(e) && e->tx_any_setup) {
+		tx_hold(e);	// direct: an answer comes on our timing; then follow whoever talks next
 	} else {
-		do_restart(e, HRC6000_RS_TX_END);	// direct mode: follow whoever talks next
+		do_restart(e, HRC6000_RS_TX_END);
 	}
 	txq_flush(e);
 	if (e->dev->chip->tx_end != NULL) {
@@ -537,6 +573,17 @@ static void tx_slot(hrc6000_dmr_t *e)
 	}
 }
 
+// Over only once the last burst's slot has gone by: its PA dropped, the slot starting not a TX slot (gotchas 3.1, 3.2)
+static void tx_end_check(hrc6000_dmr_t *e, uint8_t r42)
+{
+	uint32_t since = e->tick - e->tx_last_setup;
+	bool done = !e->tx_any_setup || (since >= 2u && !e->pa_on && (r42 & STAT_TX_SLOT) == 0)
+		|| since >= DONE_FALLBACK_TICKS;
+	if (done) {
+		tx_finish(e);
+	}
+}
+
 static void tx_tick(hrc6000_dmr_t *e, uint8_t r42)
 {
 	uint8_t next_phase = (uint8_t)((e->tick + 1u) & 1u);
@@ -582,32 +629,44 @@ static void tx_tick(hrc6000_dmr_t *e, uint8_t r42)
 	case TXS_RUN:
 		if (next_phase == e->tx_phase) {
 			tx_slot(e);
+			if (e->tx_state == TXS_ENDING) {
+				// Nothing more to send: over at this tick if the last burst's slot has gone by. Waiting for the
+				// next tick left our next slot closed and the RF on the carrier: an answer one frame after our
+				// last burst (a confirmed data link ACK, 30 ms after its end) was missed on every try
+				tx_end_check(e, r42);
+			}
 		} else {
 			// The other slot: an SFR's inbound one is received (the PA dropped at its timeslot interrupt puts the
 			// RF back to receive), else left closed
 			set_ctl(e, e->tx_listen ? rx_ctl(e) : CTL_NONE);
 		}
 		return;
-	case TXS_ENDING: {
+	case TXS_ENDING:
 		if (e->ctl_next != CTL_NONE) {
 			set_ctl(e, CTL_NONE);
 		}
-		uint32_t since = e->tick - e->tx_last_setup;
-		// Over only once the last burst's slot has gone by: its PA dropped, the slot starting not a TX slot
-		// (gotchas 3.1, 3.2)
-		bool done = !e->tx_any_setup || (since >= 2u && !e->pa_on && (r42 & STAT_TX_SLOT) == 0)
-			|| since >= DONE_FALLBACK_TICKS;
-		if (done) {
-			tx_finish(e);
-		}
+		tx_end_check(e, r42);
 		return;
-	}
 	default:
 		return;
 	}
 }
 
 // --- Engine: receive ---
+
+// Voice read at the ticks: may a search lock the call on phase ph? On a repeater channel only once the TC names it
+// the channel's slot: taken with no slot number, the other slot's call could start ours (issue 279)
+static bool tr_slot_ok(const hrc6000_dmr_t *e, uint8_t ph)
+{
+	return e->lock_ts == 0 || e->phase_ts[ph] == e->lock_ts;
+}
+
+// ... and does the TC name phase ph as the other slot of a repeater channel's? (Unknown is not: a short TC loss keeps
+// a lock and a header)
+static bool tr_slot_other(const hrc6000_dmr_t *e, uint8_t ph)
+{
+	return e->lock_ts != 0 && e->phase_ts[ph] != 0 && e->phase_ts[ph] != e->lock_ts;
+}
 
 // CACH TC tracking at the timeslot interrupt (5.3); only in slots being received, while a repeater is heard
 static void track_tc(hrc6000_dmr_t *e)
@@ -796,13 +855,25 @@ static void capture_if_fresh(hrc6000_dmr_t *e, char how)
 		e->lc_given = false;
 		e->lc_kept = false;
 		e->f_crc_bad = false;
+		for (int i = 0; i < 2; i++) {	// a new reception: its call's F reads count from here (5.2)
+			e->slot_lc[i].other_reads = 0;
+			e->slot_lc[i].cand_ok = false;
+		}
 		e->st.lc_n = 0;
 		e->st.lc_cap_how = how;
 		e->st.lc_cap_src = lc_src(e->stale_lc);
 		e->st.lc_cap_seq++;
 		e->st.lc_serial++;
 		if (e->pa_any && (uint32_t)(e->tick - e->pa_tick) <= RX_LOST_TICKS) {
-			lc_note(e, 'p', e->pa_src != e->st.lc_cap_src ? 'n' : 's', e->pa_src);
+			lc_note(e, 'p', e->pa_new ? 'k' : e->pa_src != e->st.lc_cap_src ? 'n' : 's', e->pa_src);
+			// A chip whose decoder starts at this interrupt has the LC before its first burst, and the capture
+			// then holds it: it differed from what page 2 held before, so it isn't sticky
+			if (e->pa_new) {
+				memcpy(e->lc_keep, e->pa_lc, sizeof(e->lc_keep));
+				e->lc_kept = true;
+				e->st.lc_pa_new++;
+			}
+			e->pa_new = false;
 		}
 	}
 	e->heard_tick = e->tick;
@@ -826,6 +897,149 @@ static void lc_look_again(hrc6000_dmr_t *e, char ev, const uint8_t lc[9], uint32
 	lc_note(e, ev, !changed ? 's' : keep ? 'k' : 'c', lc_src(lc));
 }
 
+// Two calls, one on each slot (issue 279; modem-hrc6000.md 5.2): page 2 holds the LC the chip assembled last, of
+// either call, and on the bench the other slot's LC was there at this slot's F as often as not, so the core took it
+// for a new call and the wanted call went quiet. An embedded voice LC read for a voice burst on ts is held back when it
+// is the other slot's call's, or, with a different call on each slot, when it is neither (it may be the other slot's
+// next talker; a new call on this slot comes with its header, or after a gap). Talker alias and GPS blocks (other
+// FLCOs, also in page 2) can't be told apart by slot: they are held back while the other slot is busy, and never
+// become a slot's call LC. Bursts with no slot number are left alone. The slots' LCs outlast a reception: with the
+// voice read locked to one slot (the HR_C5000) or the other slot closed (a repeater channel), the other call's bursts
+// are never taken, so the reception seems over while that call goes on. Its LC is then kept up to a long call's
+// length after its header or LC was taken, and page 2 showing it keeps it busy. A call ended by its terminator, or
+// one whose voice is taken, is only kept while busy. A new frequency or channel, or a start, forgets them
+static bool slot_voice_taken(const hrc6000_dmr_t *e)
+{
+	return e->dev->chip->rx_voice_read == NULL && e->lock_ts == 0;
+}
+
+// Slot i's call LC was seen lately (its header, voice or LC, or page 2)
+static bool slot_lc_busy(const hrc6000_dmr_t *e, int i)
+{
+	return e->slot_lc[i].known && (uint32_t)(e->tick - e->slot_lc[i].seen_tick) <= SLOT_LC_BUSY_TICKS;
+}
+
+// Slot i's call may still be going on, its LC in page 2
+static bool slot_lc_live(const hrc6000_dmr_t *e, int i)
+{
+	const bool ended = !e->slot_lc[i].open;	// its terminator was heard
+	return slot_lc_busy(e, i) || (e->slot_lc[i].known && !ended && !slot_voice_taken(e) &&
+				      (uint32_t)(e->tick - e->slot_lc[i].call_tick) <= SLOT_LC_OTHER_TICKS);
+}
+
+// Slot i's call is going on: open, and its voice not gone quiet (it may have ended with no terminator heard)
+static bool slot_lc_open(const hrc6000_dmr_t *e, int i)
+{
+	return e->slot_lc[i].open && (uint32_t)(e->tick - e->slot_lc[i].voice_tick) <= SLOT_LC_GAP_TICKS;
+}
+
+static void slot_lc_forget(hrc6000_dmr_t *e)
+{
+	memset(e->slot_lc, 0, sizeof(e->slot_lc));
+}
+
+// Group or unit voice channel user (FLCO 0 or 3): a call's LC, not an alias or GPS block (the core's dmr_lc_is_voice;
+// the driver doesn't include core headers)
+static bool lc_is_voice(const uint8_t lc[9])
+{
+	uint8_t flco = lc[0] & 0x3Fu;
+	return flco == 0x00u || flco == 0x03u;
+}
+
+// at_f: the read at this slot's F (once per superframe)
+static bool lc_slot_ok(hrc6000_dmr_t *e, int8_t ts, const uint8_t lc[9], bool at_f)
+{
+	if (ts != 1 && ts != 2) {
+		return true;
+	}
+	int me = ts - 1, other = 2 - ts;
+	if (!lc_is_voice(lc)) {
+		return !slot_lc_busy(e, other);
+	}
+	bool open = slot_lc_open(e, me);
+	if (open && memcmp(lc, e->slot_lc[me].lc, 9) == 0) {
+		return true;	// this slot's own call, even when the other slot's carries the same LC (a bridged group)
+	}
+	if (slot_lc_live(e, other) && memcmp(lc, e->slot_lc[other].lc, 9) == 0) {
+		if (e->slot_lc[other].open && !slot_voice_taken(e)) {
+			e->slot_lc[other].seen_tick = e->tick;	// still talking, as far as can be told
+		}
+		// This slot's own LC is normally found at F, at the A after it, or at F's repeat or the post-access
+		// interrupt. Only the other's, at 8 F reads in a row: it is this call's too (a group on both slots, or the
+		// other call over unseen)
+		if (!open && at_f && e->slot_lc[me].other_reads < SLOT_LC_ADOPT_READS) {
+			e->slot_lc[me].other_reads++;
+		}
+		return !open && e->slot_lc[me].other_reads >= SLOT_LC_ADOPT_READS;
+	}
+	if (at_f) {
+		e->slot_lc[me].other_reads = 0;
+	}
+	// Neither call's: with one call it is that slot's next talker (no header, a terminator missed)
+	if (!slot_lc_live(e, other)) {
+		return true;
+	}
+	// This slot's call goes on: its talker can't change without a gap, and a locked slot never sees the other's voice,
+	// so that call's busy window may have lapsed while it still talks (bench: a mix of the two handed over
+	// mid-call, 2.2 s into it)
+	if (open) {
+		return false;
+	}
+	// With the other slot's call maybe going on, page 2 once held an LC neither call had (bench: a mix
+	// of the two). A real LC comes again with the next superframe: handed over when it is read again a superframe
+	// later (at F or the A after it)
+	if (e->slot_lc[me].cand_ok && memcmp(lc, e->slot_lc[me].cand, 9) == 0) {
+		return (uint32_t)(e->tick - e->slot_lc[me].cand_tick) >= SLOT_LC_AGAIN_TICKS;
+	}
+	memcpy(e->slot_lc[me].cand, lc, 9);
+	e->slot_lc[me].cand_ok = true;
+	e->slot_lc[me].cand_tick = e->tick;
+	return false;
+}
+
+// ts's call has this LC (open: its voice goes on; a terminator closes it). Only voice LCs
+static void lc_slot_set(hrc6000_dmr_t *e, int8_t ts, const uint8_t lc[9], bool open)
+{
+	if ((ts != 1 && ts != 2) || !lc_is_voice(lc)) {
+		return;
+	}
+	int i = ts - 1;
+	memcpy(e->slot_lc[i].lc, lc, 9);
+	e->slot_lc[i].known = true;
+	e->slot_lc[i].open = open;
+	e->slot_lc[i].seen_tick = e->tick;
+	e->slot_lc[i].voice_tick = e->tick;
+	e->slot_lc[i].call_tick = e->tick;
+	e->slot_lc[i].other_reads = 0;
+	e->slot_lc[i].cand_ok = false;
+}
+
+// A call that stopped with no terminator and comes back (modem-hrc6000.md 5.6). Page 2 is sticky, so its LC being the
+// call's proves nothing, but this interrupt comes once the chip has assembled the LC of what is on air now. Reads a
+// superframe apart both showing the interrupted call's LC: the same call. One read isn't enough, as page 2 may lag
+// the interrupt (gotchas 1.4a), and another caller's voice must never be played under the old LC. True on that second
+// read and after it
+static bool lc_resume_look(hrc6000_dmr_t *e, const uint8_t lc[9])
+{
+	bool same = false;
+	for (int i = 0; i < 2; i++) {
+		same |= e->slot_lc[i].known && e->slot_lc[i].open &&
+			(uint32_t)(e->tick - e->slot_lc[i].voice_tick) <= RX_RESUME_TICKS &&
+			memcmp(lc, e->slot_lc[i].lc, 9) == 0;
+	}
+	uint32_t since = e->tick - e->resume_tick;
+	if (!same || e->resume_reads == 0 || since > RX_LOST_TICKS) {
+		e->resume_reads = same ? 1u : 0u;
+		e->resume_tick = e->tick;
+		return false;
+	}
+	if (since >= SLOT_LC_AGAIN_TICKS) {
+		e->resume_reads = 2u;
+		e->resume_tick = e->tick;
+	}
+	return e->resume_reads >= 2u;
+}
+
 // The post-access interrupt (0x82 bit 4)
 static void lc_post_access(hrc6000_dmr_t *e)
 {
@@ -834,6 +1048,20 @@ static void lc_post_access(hrc6000_dmr_t *e)
 	e->pa_tick = e->tick;
 	e->pa_any = true;
 	e->pa_src = lc_src(lc);
+	e->pa_new = false;
+	bool resumed = lc_resume_look(e, lc);
+	if (!lc_in_reception(e)) {
+		e->pa_new = lc_is_voice(lc) && memcmp(lc, e->stale_lc, 9) != 0;
+		memcpy(e->pa_lc, lc, sizeof(e->pa_lc));
+		return;
+	}
+	if (resumed && !e->lc_given && !e->lc_kept) {
+		memcpy(e->lc_keep, lc, sizeof(e->lc_keep));
+		e->lc_kept = true;
+		e->st.lc_resumed++;
+		lc_note(e, 'P', 'r', lc_src(lc));
+		return;
+	}
 	bool was = e->f_crc_bad;
 	e->f_crc_bad = false;	// the chip's own word that the embedded LC is complete
 	lc_look_again(e, 'P', lc, &e->st.lc_pa_new);
@@ -863,11 +1091,14 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 		}
 	}
 
-	if (e->tr_active && e->tr_ph < 0 && s->kind == DMR_BURST_VOICE_LC_HEADER) {
+	if (e->tr_active && e->tr_ph < 0 && s->kind == DMR_BURST_VOICE_LC_HEADER && !tr_slot_other(e, ph)) {
 		e->tr_hdr_ph = (int8_t)ph;
+		e->tr_skip_ph = (int8_t)ph;	// its voice skipped while the slot is unknown still counts A-F
+		e->tr_skip_all = false;
 	}
 	e->rx_tick = e->tick;
 	e->rx_any = true;
+	e->tx_hold = false;	// an answer: the reception holds the timing as any does
 	e->idle_restarted = false;
 	if (voice && e->voice_since_start < 255u) {
 		e->voice_since_start++;
@@ -902,34 +1133,56 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	b->pi = s->pi;
 	b->in_step = in_step && !tx;	// what the chip says while it sends is suspect (7.8)
 	if (voice) {
+		// A call on the other slot: the LC given for the reception may be that call's, so this slot's call has its own
+		// to find, and an unchanged page 2 at A counts after STALE_LC_VOICE as at F (the capture may have been taken
+		// just after this call's F, when page 2 already held its LC)
+		int8_t ts = b->ts;
+		bool two = (ts == 1 || ts == 2) && slot_lc_live(e, 2 - ts);
+		bool looking = !e->lc_given || (two && !slot_lc_open(e, ts - 1));
+		bool counted = e->voice_since_start > STALE_LC_VOICE;
 		if (s->voice_index == 5) {	// the embedded LC of B-E is assembled by F
 			bool changed = lc_read(e, b->lc);
-			b->lc_valid = s->crc_ok && (changed || e->voice_since_start > STALE_LC_VOICE);
+			bool mine = lc_slot_ok(e, ts, b->lc, s->crc_ok);
+			b->lc_valid = s->crc_ok && (changed || counted) && mine;
+			e->st.lc_other_slot += s->crc_ok && (changed || counted) && !mine;
 			e->f_crc_bad = !s->crc_ok;
 			if (!e->lc_given) {
-				char res = !s->crc_ok ? 'c' : changed ? 'n' : b->lc_valid ? 'v' : 's';
+				char res = !s->crc_ok ? 'c' : !mine ? 'o' : changed ? 'n' : b->lc_valid ? 'v' : 's';
 				e->st.lc_f_new += res == 'n';
 				e->st.lc_f_stale += res == 's';
 				e->st.lc_f_count += res == 'v';
 				e->st.lc_f_crc += res == 'c';
 				lc_note(e, 'F', res, lc_src(b->lc));
 			}
-		} else if (s->voice_index == 0 && !e->lc_given && !e->lc_kept) {
+		} else if (s->voice_index == 0 && looking && !e->lc_kept) {
 			// No LC yet: the last superframe's may have reached page 2 only after its F was read
 			bool changed = lc_read(e, b->lc);
-			b->lc_valid = changed && !e->f_crc_bad;
+			bool mine = lc_slot_ok(e, ts, b->lc, false);
+			b->lc_valid = (changed || (two && counted)) && !e->f_crc_bad && mine;
 			e->st.lc_a_new += b->lc_valid;
-			lc_note(e, 'A', !changed ? 's' : b->lc_valid ? 'n' : 'c', lc_src(b->lc));
+			e->st.lc_other_slot += (changed || (two && counted)) && !e->f_crc_bad && !mine;
+			lc_note(e, 'A', !mine ? 'o' : b->lc_valid ? 'n' : !changed ? 's' : 'c', lc_src(b->lc));
 			e->f_crc_bad = false;
 		}
 		if (!b->lc_valid && e->lc_kept && !e->lc_given) {
-			memcpy(b->lc, e->lc_keep, sizeof(b->lc));	// seen at F's repeat or the post-access interrupt
-			b->lc_valid = true;
-			e->st.lc_kept++;
+			e->lc_kept = false;
+			if (lc_slot_ok(e, ts, e->lc_keep, false)) {
+				memcpy(b->lc, e->lc_keep, sizeof(b->lc));	// seen at F's repeat or the post-access interrupt
+				b->lc_valid = true;
+				e->st.lc_kept++;
+			} else {
+				e->st.lc_other_slot++;
+			}
 		}
 		if (b->lc_valid) {
 			e->lc_given = true;
 			e->lc_kept = false;
+		}
+		if (b->lc_valid && lc_is_voice(b->lc)) {
+			lc_slot_set(e, ts, b->lc, true);
+		} else if ((ts == 1 || ts == 2) && slot_lc_open(e, ts - 1)) {
+			e->slot_lc[ts - 1].voice_tick = e->tick;
+			e->slot_lc[ts - 1].seen_tick = e->tick;
 		}
 	} else if (s->kind == DMR_BURST_VOICE_LC_HEADER || s->kind == DMR_BURST_TERMINATOR_LC) {
 		memcpy(b->lc, b->payload, sizeof(b->lc));
@@ -942,6 +1195,7 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 			e->voice_since_start = STALE_LC_VOICE + 1u;
 			e->lc_given = true;
 			e->lc_kept = false;
+			lc_slot_set(e, b->ts, b->lc, s->kind == DMR_BURST_VOICE_LC_HEADER);
 		}
 	}
 	if (s->kind == DMR_BURST_TERMINATOR_LC) {
@@ -1171,7 +1425,8 @@ static void tr_end(hrc6000_dmr_t *e)
 // A sending radio repeats its header for about 600 ms before the voice. Until the call's slot is found each header
 // starts the decoder again and restarts the search window. What the port holds when the decoder starts is the last
 // burst of an earlier call: it is no burst of this one, or it would lock a slot and end the call once it never changes
-static void tr_begin(hrc6000_dmr_t *e)
+// late: a late entry report, a call already in its voice: no longer only the phase of a header heard before it
+static void tr_begin(hrc6000_dmr_t *e, bool late)
 {
 	if (e->dev->chip->rx_voice_read == NULL || e->tx_state != TXS_IDLE) {
 		return;
@@ -1180,6 +1435,10 @@ static void tr_begin(hrc6000_dmr_t *e)
 		if (e->tr_ph < 0) {
 			e->dev->chip->rx_decode(e->dev, true);
 			e->tr_wait = 0;
+			if (late && e->tr_hdr_ph >= 0) {
+				e->tr_hdr_ph = -1;
+				e->tr_skip_ph = -1;
+			}
 		}
 		return;
 	}
@@ -1187,6 +1446,8 @@ static void tr_begin(hrc6000_dmr_t *e)
 	e->tr_active = true;
 	e->tr_ph = -1;
 	e->tr_hdr_ph = -1;
+	e->tr_skip_ph = -1;
+	e->tr_skip_all = false;
 	e->tr_index = 0;
 	e->tr_miss = 0;
 	e->tr_wait = 0;
@@ -1196,26 +1457,56 @@ static void tr_begin(hrc6000_dmr_t *e)
 	e->st.tr_calls++;
 }
 
+// A burst is in the port one tick after its slot's report (hardware-md380.md 4.9): the read at tick t is the burst
+// reported at t - 1, so it is named and counted from t - 1, and its phase is the tick's own. Learned from the first read
+// that checked, this relation took the other call's bursts for ours with traffic on both slots (issue 279)
 static void tr_tick(hrc6000_dmr_t *e)
 {
-	uint8_t ph = (uint8_t)(e->tick & 1u);
-	if (e->tr_ph >= 0 && ph != (uint8_t)e->tr_ph) {
-		return;
+	uint32_t rtick = e->tick - 1u;
+	if (rtick == 0u) {
+		return;		// no report tick before the first: the slot counter is never 0
 	}
+	uint8_t ph = (uint8_t)(e->tick & 1u);
+	if (e->tr_ph >= 0 && tr_slot_other(e, (uint8_t)e->tr_ph)) {
+		// The TC now names the call's phase the other slot (a resync): look for the channel's slot again. The
+		// header's phase goes too (it was that call's), and the frames go on counting A-F at the old phase, so
+		// a lock back on it keeps its burst index
+		e->tr_skip_ph = e->tr_ph;
+		e->tr_skip_all = true;
+		e->tr_ph = -1;
+		e->tr_hdr_ph = -1;
+		e->tr_wait = 0;
+	}
+	// Every tick, the other slot's too. A silent talker's bursts are the same bytes every time, so a read is compared
+	// with the last tick's, not with this slot's last burst: the port moving at the tick between says the chip wrote
+	// it, and only a port that stopped is a lost burst
 	dmr_burst_t nb;
 	memset(&nb, 0, sizeof(nb));
 	nb.len = DMR_VOICE_BYTES;
 	int good = e->dev->chip->rx_voice_read(e->dev, nb.payload);
 	bool fresh = good >= 0 && memcmp(nb.payload, e->tr_last, sizeof(e->tr_last)) != 0;
+	if (good >= 0) {
+		memcpy(e->tr_last, nb.payload, sizeof(e->tr_last));
+	}
+	if (e->tr_ph >= 0 && ph != (uint8_t)e->tr_ph) {
+		return;
+	}
 	if (e->tr_ph < 0) {
-		if (fresh && good >= TR_LOCK_FRAMES) {
+		// With a call on each slot both phases hold bursts, and the first read that checks may be the other call's
+		// (issue 279): the lock goes to the phase of the header that started the read, and on a repeater channel
+		// only to the channel's slot. A header the TC names the other slot's is forgotten
+		if (e->tr_hdr_ph >= 0 && tr_slot_other(e, (uint8_t)e->tr_hdr_ph)) {
+			e->tr_hdr_ph = -1;
+		}
+		bool burst = fresh && good >= TR_LOCK_FRAMES;
+		if (burst && (e->tr_hdr_ph < 0 || ph == (uint8_t)e->tr_hdr_ph) && tr_slot_ok(e, ph)) {
 			e->tr_ph = (int8_t)ph;
-			if (e->tr_hdr_ph >= 0) {
-				// This read holds a burst of the call whose header came at phase tr_hdr_ph: take() names
-				// the read from (tick - 1), so flip the parity when the two disagree
-				e->tr_ph_flip = (uint8_t)((((e->tick - 1u) & 1u) ^ (uint8_t)e->tr_hdr_ph) & 1u);
-			}
 		} else {
+			// Frames not taken on the phase still counted (a header's call before its slot is known, a lock
+			// dropped): the index moves on as it would have
+			if (ph == (uint8_t)e->tr_skip_ph && (e->tr_skip_all || burst)) {
+				e->tr_index = (uint8_t)((e->tr_index + 1u) % 6u);
+			}
 			if (++e->tr_wait >= TR_FIND_TICKS) {
 				tr_end(e);
 			}
@@ -1226,12 +1517,16 @@ static void tr_tick(hrc6000_dmr_t *e)
 		// A burst lost or the call over (the port keeps its last read, or holds noise with no frame that checks):
 		// the index moves on either way, one burst per frame
 		e->tr_index = (uint8_t)((e->tr_index + 1u) % 6u);
+		if (fresh) {
+			e->st.tr_miss_bad++;
+		} else {
+			e->st.tr_miss_same++;
+		}
 		if (++e->tr_miss >= TR_END_MISSES) {
 			tr_end(e);
 		}
 		return;
 	}
-	memcpy(e->tr_last, nb.payload, sizeof(e->tr_last));
 	e->tr_miss = 0;
 	hrc6000_rx_status_t s;
 	memset(&s, 0, sizeof(s));
@@ -1241,8 +1536,7 @@ static void tr_tick(hrc6000_dmr_t *e)
 	s.cc = e->cc_cur;
 	s.crc_ok = good >= TR_LOCK_FRAMES;
 	e->st.tr_bursts++;
-	// The read names its call's slot: the parity flip learned from the call's header (tr_begin, tr_tick)
-	take(e, &s, &nb, e->tick ^ e->tr_ph_flip, true, true, 0, false);
+	take(e, &s, &nb, rtick, true, true, 0, false);
 	e->tr_index = (uint8_t)((e->tr_index + 1u) % 6u);
 }
 
@@ -1369,6 +1663,8 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 		if (e->restart_pending) {
 			do_restart(e, e->restart_why);
 			push(e, DMR_EV_SYNC_LOST, 0, e->tick);
+		} else if (e->tx_hold && !e->rx_any && quiet > 0 && !e->hold_due) {
+			e->hold_due = true;	// the answer slot is over: the restart once its report is no longer due (poll)
 		} else if (e->rx_any && quiet > RX_LOST_TICKS) {
 			do_restart(e, HRC6000_RS_LOST);		// a reception is over (5.5)
 			e->idle_restarted = true;
@@ -1435,7 +1731,7 @@ static void sys_service(hrc6000_dmr_t *e, uint32_t t, bool at_tick)
 #endif
 		// A call's header, late entry or information report: its voice is read at the ticks from now on
 		if ((flags & (INT_RX_DATA | INT_RX_INFO | INT_LATE_ENTRY)) != 0) {
-			tr_begin(e);
+			tr_begin(e, (flags & INT_LATE_ENTRY) != 0);
 		}
 		if ((flags & INT_REJECTED) != 0 && e->tx_state != TXS_IDLE && e->tx_access != DMR_ACCESS_IMPOLITE
 		    && !e->tx_abort_req) {
@@ -1545,8 +1841,10 @@ void hrc6000_dmr_run(hrc6000_dmr_t *e)
 	e->cc_matches = 0;
 	e->heard_any = false;
 	e->idle_restarted = false;
+	e->tx_hold = false;
 	memset(e->vs, 0, sizeof(e->vs));
 	memset(e->held, 0, sizeof(e->held));
+	slot_lc_forget(e);	// their ticks are from before the tick restarted
 	hrc6000_dmr_set_sync(e->dev, DMR_SYNC_MS);
 	if (e->cc_filter >= 0) {
 		e->cc_cur = (uint8_t)e->cc_filter;
@@ -1611,11 +1909,16 @@ void hrc6000_dmr_poll(hrc6000_dmr_t *e)
 		if (e->pa_on && (uint32_t)(t - e->t_pa_on) > PA_FORCE_OFF_US) {
 			pa_drop(e, t);
 		}
+		if (e->tx_hold && !e->rx_any && e->tx_state == TXS_IDLE
+		    && (uint32_t)(t - e->t_tick) > (e->hold_due ? HOLD_REPORT_US : HOLD_NO_TICK_US)) {
+			do_restart(e, HRC6000_RS_TX_END);	// no answer on our timing: follow whoever talks next
+		}
 		if (e->timing && (uint32_t)(t - e->t_tick) > STALL_US) {
 			e->timing = false;
 			bool busy = e->tx_state != TXS_IDLE || (e->rx_any && (uint32_t)(e->tick - e->rx_tick) <= RX_LOST_TICKS);
 			if (e->tx_state != TXS_IDLE) {
 				e->tx_any_setup = false;	// nothing more will go out
+				e->st.tx_stalls++;
 				tx_finish(e);
 			} else if (busy) {
 				do_restart(e, HRC6000_RS_STALL);
@@ -1632,6 +1935,9 @@ void hrc6000_dmr_poll(hrc6000_dmr_t *e)
 void hrc6000_dmr_configure(hrc6000_dmr_t *e, const dmr_config_t *cfg)
 {
 	lock(e);
+	if (cfg->cc != e->cfg.cc || cfg->repeater != e->cfg.repeater) {
+		slot_lc_forget(e);	// another channel: its slots carry other calls
+	}
 	e->cfg = *cfg;
 	hrc_set_dmr_id(e->dev, cfg->own_id);
 	if (e->dev->chip->mode_per_channel) {
@@ -1652,6 +1958,7 @@ void hrc6000_dmr_configure(hrc6000_dmr_t *e, const dmr_config_t *cfg)
 void hrc6000_dmr_rx_restart(hrc6000_dmr_t *e)
 {
 	lock(e);
+	slot_lc_forget(e);	// a new frequency (or a scan step): its slots carry other calls
 	if (e->running) {
 		if (e->tx_state == TXS_IDLE) {
 			do_restart(e, HRC6000_RS_CMD);
@@ -1799,6 +2106,11 @@ void hrc6000_dmr_set_cc_filter(hrc6000_dmr_t *e, int8_t cc)
 		e->restart_why = HRC6000_RS_CMD;
 	}
 	unlock(e);
+}
+
+bool hrc6000_dmr_tx_last_out(const hrc6000_dmr_t *e)
+{
+	return (e->tx_state == TXS_RUN || e->tx_state == TXS_ENDING) && e->tx_end_req && !e->tx_listen && txq_count(e) == 0;
 }
 
 bool hrc6000_dmr_is_transmitting(const hrc6000_dmr_t *e)

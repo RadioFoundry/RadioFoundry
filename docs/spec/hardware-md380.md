@@ -104,7 +104,7 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 | PC3 | ADC1 IN13: 2T/5T (FM discriminator audio) | (unverified); unused |
 | PC4 | RF_APC_SW, PA power loop on | (unverified) |
 | PC5 | 5TC, transmitter supply | (unverified) |
-| PC6 | LAMP, LCD backlight (TIM8 CH1 PWM, AF3) | (unverified); PWM is our choice |
+| PC6 | LAMP, LCD backlight (TIM8 CH1 PWM, AF3) | (unverified); PWM is our choice: 40 kHz, far above the FM transmit audio band (#330) |
 | PC7 | CTC/DCS_OUT, sub-audio tone output (PWM) | (unverified); TIM3 CH2 (AF2) with `CONFIG_SUBTONE` (section 6.4), otherwise released (open drain, high): it tunes the reference (5.2) |
 | PC8 | BEEP (TIM8 CH3) | (unverified); unused |
 | PC9 | 5RC, receiver supply | (unverified) |
@@ -358,9 +358,63 @@ frames checked at any bit offset); with it, the read at the tick after the call'
 The slot engine does this for chips with `rx_voice_read` (`hrc_chip_t`): a header, late entry or information report
 starts the decoder (0x22 = 0x27, bits 2-0 keeping the 0x11 block's 0x07), the voice port is read at every tick, the
 first read whose frames check (two of three C0 words with at most one error) locks the slot, and that slot's reads
-go to the stack as bursts A to F. A read that hasn't changed, or has no frame that checks, is a lost burst; six in a
-row end the reception (0x22 = 0x17). The chip's voice class reports are ignored, and its 25 ms report delay doesn't
-count as out of step.
+go to the stack as bursts A to F. A read that hasn't changed since the last tick, or has no frame that checks, is a
+lost burst; six in a row end the reception (0x22 = 0x17). The port is read at every tick, the other slot's too: a
+silent talker's bursts are the same bytes every time, so only a port that stopped moving is a lost burst. A read
+compared with this slot's last burst lost every burst of a silent call after the first ([gotchas 1.11](gotchas.md)).
+That the port moves at the other slot's tick on a direct channel with nothing on that slot comes from the on-air
+table above; if it doesn't, the same bytes stay lost bursts. The diagnostics line `tr c b same bad` counts receptions,
+bursts and lost reads by cause. The chip's voice class reports are ignored, and its 25 ms report delay doesn't count
+as out of step.
+
+So on this chip an empty `drx` trace shows only that no read was taken. It doesn't show that the chip went quiet.
+
+A reception lost mid-call costs more than its gap (`drx` and log times of a bench run, two gaps alike;
+[gotchas 1.12](gotchas.md)):
+
+| Step | Time after the last burst | What happens |
+|---|---|---|
+| Six lost reads | 360 ms | DecodeStop. Nothing is read until the next chip interrupt |
+| 13 ticks without a burst | 420 ms | `rs l`: the receiver restarts, which drops the chip's sync |
+| Hunting for sync | about 660 ms | The timeslot interrupts stop for about 240 ms, so the tick count falls behind the air |
+| Late entry report | about 1 s | The chip has assembled the LC. The first read after it is burst F (the trace's slot counts fit that, and the bursts are numbered from A, so they stay one off until the call ends) |
+
+A burst is in the port one tick after its slot's report, so the read at a tick holds the burst of the slot that
+started two ticks before. The engine takes this as fixed: the read is named, and given its slot counter, from the
+tick before it. It used to learn the relation from the first read that checked after a header, which with traffic on
+both slots can be the other call's (issue 279). With traffic on both slots both phases hold bursts that check, so the
+search for the call's phase is limited:
+
+| Rule | Detail |
+|---|---|
+| A header started the read | Lock only the header's phase. A late entry report while searching drops that limit |
+| Repeater channel (`rx_lock_slot` 1 or 2) | Lock only a phase the CACH TC names as the channel's slot, never one with the slot unknown. A header is kept unless the TC names its phase the other slot |
+| A lock whose phase the TC names the other slot | Search again, without the header's phase. The burst index goes on counting one per frame, so a lock back on the same phase keeps A-F |
+| The slot unknown while locked (a receiver restart) | The lock stays; its bursts carry no slot number until the TC locks again |
+| The call's own bursts skipped while its slot is unknown | Counted, so the index stays A-F. After a quiet-period restart that costs the first bursts of a call (two in the host test, about 150 ms until the TC locks) |
+
+All of these are host-tested (`hrc5000Test` `test_two_slots`: a call on each slot, a restart mid-call, a TC wrong
+from the start, both slots heard with `rx_lock_slot` 0). On air (the SDR bench sending repeater bursts
+with the CACH on both slots): the reads alternate as above (phase 0 TS1's frames, phase 1 TS2's), and the wanted call
+plays with the other slot already talking (77 of 78 bursts; 0 before the fix).
+
+The embedded LC isn't per slot (page 2, [modem-hrc6000.md](modem-hrc6000.md) 5.2). On the same bench run, the other
+call's LC was in page 2 at the wanted call's F: the core took it for a new call, and the wanted call went quiet with
+the other call's source shown (23 of 78 bursts when the wanted call started first). The engine keeps each slot's
+call LC and holds back an embedded LC that is the other slot's call's (the rules are in modem-hrc6000.md 5.2).
+Host-tested (`test_two_slots`, the `LC`, `alias` and `mixed LC` cases: page 2 gets a call's LC or alias block the
+tick after its F). On air (the SDR bench, a call on each slot, 78 bursts sent to the wanted slot, two
+runs each):
+
+| Case | Before | After |
+|---|---|---|
+| Wanted call first, the other starts beside it | 23 | 78, 78 (both slots) |
+| Other call first, wanted call with its headers | 75-77, TS2 once 13-19 | 73-77 (both slots) |
+| Wanted call joined mid-stream (no header) beside the other, TS1 | 0 played | 56-57 |
+| Single call: headers, late entry, no header | 77-78, 38, 68 | the same |
+
+Left as they were: both calls joined at once after a channel switch (0-20 bursts) and TS2 joined mid-stream beside a
+call (0) play as before.
 
 On air with this (2026-10-18): calls are taken with the caller and talk group, and 393 frames reached the codec with
 2 bit errors in all. The decoded audio is speech (peak 3521 of 32767) and streams to the chip (`aud blk` climbing),
@@ -407,7 +461,7 @@ pull request. Each test started from a power-on, and register reads confirmed th
 while a call played. `hrc5000_speaker_voice()` now writes, when a DMR PCM stream opens the route: 0x0D = 0x9C, 0x0E = 0x4C
 (HPMute stays set, HPoutEn stays off, Mic1En on) and 0x37 = 0xC2, with 0x36 = 0x00 already written; it writes 0x0D = 0x8C and
 0x0E = 0x44 back when the route closes, which should also end the buzz after a call. `-DHRC5000_SPK_VOICE=0` leaves it out.
-On an MD-380 (UHF, D002.032 codec) against an AT-D878UV on 446.075 TS1, with the build at 17d89001 plus the codec
+On an MD-380 (UHF, D002.032 codec) against an AT-D878UV on a 70 cm test frequency, TS1, with the build at 17d89001 plus the codec
 move: received speech plays clear from the speaker and transmit is clear (one 10 s call: 498 frames, 10 bit errors, 3
 concealed, 0 lost). Why both bits are needed together isn't in the manual (unverified). Not yet checked with it: the buzz after
 a call or after our own transmit, the key beep in DMR and FM, and FM receive.
@@ -434,7 +488,7 @@ Skyworks SKY72310-11 (unverified as the part fitted to this radio). From the dat
 - **The driver uses the signed mode** (register 14 bit 5): N_reg = round(N) - 32 and a two's complement dividend for a
   fraction of -0.5..+0.5. Sent unsigned, every channel whose fraction was over one half came out one phase detector
   step (8.4 MHz) low with lock detect high: at 443.7, 444.0-444.5, 435 and 450 MHz the radio received nothing, at
-  440, 445 and 446.075 it did (DM-32UV as the sender, 2026-10-20, issue 108). Either the unsigned-mode write doesn't
+  440, 445 and 446 MHz it did (DM-32UV as the sender, 2026-10-20, issue 108). Either the unsigned-mode write doesn't
   take or the part runs signed; signed encoding is right in both cases on air.
 - A new ratio takes effect on the dividend MSB write: order divider, LSB, MSB.
 - Lock detect high = locked (on the Mux_out / LD pin, wired to PD10 (unverified)). The pin is the PS output, open collector
@@ -556,8 +610,11 @@ interrupt, the first burst went out unlocked and a one-burst wake-up never reach
 | Own timing (simplex, the repeater wake-up) | at the modem's `tx_begin`, or at radio `tx()` if that comes later |
 | Aligned to a repeater's slots | at the engine's `tx_slot_found`, two ticks before the first burst. Until then the receiver stays on: the engine needs the downlink's TC to find the slot (4, the CACH TC row) |
 
-On a split channel the synthesizer returns to RX at the engine's TX done, so the radio hears the repeater's answer to
-its wake-up; simplex stays on TX until `tx_off()`.
+The synthesizer returns to RX at the engine's TX done, on every channel. On a split channel the radio then hears the
+repeater's answer to its wake-up. On simplex the receive LO is 49.95 MHz from the carrier, and a confirmed data
+response comes in the next frame, 30 ms after our last burst. Left on TX until `tx_off()` (the radio task), the radio
+missed nearly every such response (a receive CRC error instead), and the TX VCO kept leaking the carrier about 34 dB
+below the burst while TX_5V discharged (about 20 ms). `rx()` then keeps the synthesizer where TX done put it.
 
 ### 5.7 The 5C rail (SAVE)
 
@@ -989,6 +1046,10 @@ configuration registers, audio routing), and [gotchas.md](gotchas.md) 2.6, 3.3, 
 Flash: the table in [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380) and the per-feature figures in
 [feature-matrix.md](../feature-matrix.md). Measured 2026-10-19 with LTO: default UHF image 320,236 B of 475,136 B
 (464 KB), 107,120 B of 131,068 B SRAM, 59,640 B of 64 KB CCM; maximal 327,064 B flash.
+
+`CONFIG_NET_WEBCTL` follows `CONFIG_NET_HTTP_GZIP` on this radio (`boards/md380/config.mk`): web control's files,
+stored uncompressed, need more flash than the default image leaves free. With gzip off the radio serves the plain
+status page.
 
 
 ## 20. Facts moved from the shared specs

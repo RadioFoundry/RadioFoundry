@@ -89,7 +89,7 @@ repository with read access; `ci.yml`, `nightly.yml` and `release.yml` then log 
 ## HIL runner
 
 `hil.yml` runs the hardware-in-the-loop suite (`tests/hil/README.md`) on a self-hosted runner labeled `rfoundry-hil`,
-which has to be the machine with the radio on USB and SSH access to the SDR bench. To set
+which has to be the machine with the radio on USB and network access to the bench board. To set
 one up on the bench Mac:
 
 - **Gitea** (the primary): download `gitea-runner` (act_runner) for macOS arm64, then
@@ -106,7 +106,7 @@ The runner's environment (the LaunchAgent's, or a `.env` file next to `gitea-run
 
 | Variable | What |
 |---|---|
-| `RFOUNDRY_SDR_BENCH_HOST` | the SDR bench's SSH host or alias (default `sdr-bench`); passwordless SSH from the runner's user |
+| `RFOUNDRY_BENCH_API` | the bench board, `HOST[:PORT]` |
 | `RFOUNDRY_PORT` | the radio's serial port when several are present |
 | `RFOUNDRY_HIL_AMBE` | the speech recording for `test_dmr_voice` (outside the repository) |
 | `RFOUNDRY_RADIO_LOCK` | the lock file everyone at the bench takes before using the radio (default `~/.rfoundry-radio.lock`); the job holds it with `lockf` for the whole run. `tools/bringup.py run` takes the same file, with `{port}` in it replaced by the radio's port; without the variable it locks `~/.rfoundry-radio-<port>.lock`, so a bench with two radios runs a bring-up on each |
@@ -126,7 +126,7 @@ Gotchas:
   and back. When macOS misses the NCM carrier the radio can stay a network adapter, and only a power cycle brings the
   serial port back; later tests then skip with "no radio". Leave `usb_switch` off for unattended runs.
 - **Transmitting stays on the approved test frequencies.** The RF tests use the defaults in `tests/hil/conftest.py`
-  (DMR and FM at 461.6875 MHz at the lowest power, APRS AFSK at 446.050 MHz with the operator's call). Never pass
+  (DMR, FM and APRS AFSK at the lowest power; APRS sends the operator's call). Never pass
   other frequencies in the `extra` input, and run `rf` only with the dummy load or antenna of the bench set-up.
 - **One radio, one run.** The workflow's concurrency group keeps HIL runs one at a time and never cancels a running
   one (it might be transmitting or restoring a codeplug); the lock keeps people and agents off the radio meanwhile.
