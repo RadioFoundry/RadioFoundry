@@ -69,6 +69,7 @@ import time
 
 import pytest
 
+from dmr_packets import crc16_ccitt, crc32_dmr, data_packets, lrrp_position, udt_position
 from rfoundry_hil import DebugLinkError, skip
 from hil_config import rig, tx_allowed
 
@@ -512,82 +513,6 @@ def _link_answers(radio, aprs_air, send):
 
 
 # ── digital APRS: positions over DMR ────────────────────────────────────────
-
-def crc16_ccitt(data, mask):
-    crc = 0
-    for b in data[:10]:
-        crc ^= b << 8
-        for _ in range(8):
-            crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
-    return (~crc ^ ((mask << 8) | mask)) & 0xFFFF
-
-
-def crc32_dmr(data):
-    """ETSI TS 102 361-1 B.3.8: the octets of each 16 bit word swapped, polynomial 0x04C11DB7, initial 0."""
-    crc = 0
-    n = len(data) + (len(data) & 1)
-    for i in range(n):
-        j = i ^ 1
-        crc ^= (data[j] if j < len(data) else 0) << 24
-        for _ in range(8):
-            crc = ((crc << 1) ^ 0x04C11DB7) & 0xFFFFFFFF if crc & 0x80000000 else (crc << 1) & 0xFFFFFFFF
-    return crc
-
-
-def data_packets(lines):
-    """Data headers heard (dt 6) with the rate 1/2 blocks (dt 7) that follow: dicts with the header fields."""
-    out, cur = [], None
-    for r in lines:
-        dt, info = r.get("dt"), r.get("info")
-        if not info:
-            continue
-        b = bytes.fromhex(info)
-        if dt == 6:
-            dpf = b[0] & 0x0F
-            n = (b[8] & 0x7F) if dpf == 2 else (b[8] & 0x03) + 1 if dpf == 0 else 0
-            cur = {"dpf": dpf, "sap": b[1] >> 4, "dst": int.from_bytes(b[2:5], "big"),
-                   "src": int.from_bytes(b[5:8], "big"), "pad": (b[0] & 0x10) | (b[1] & 0x0F), "fmt": b[1] & 0x0F,
-                   "crc_ok": crc16_ccitt(b, 0xCC) == int.from_bytes(b[10:12], "big"), "need": n, "blocks": []}
-            out.append(cur)
-        elif dt == 7 and cur is not None and len(cur["blocks"]) < cur["need"]:
-            cur["blocks"].append(b)
-    return out
-
-
-def lrrp_position(user):
-    """(lat, lon) of an LRRP triggered location report in IPv4 / UDP to port 4001; asserts the layers."""
-    assert user[0] >> 4 == 4 and user[9] == 17, f"not IPv4 / UDP: {user.hex()}"
-    ihl = (user[0] & 0x0F) * 4
-    udp = user[ihl:]
-    assert int.from_bytes(udp[2:4], "big") == 4001, f"UDP port {int.from_bytes(udp[2:4], 'big')}"
-    doc = udp[8:]
-    assert doc[0] == 0x0D, f"LRRP document {doc[0]:#x} (0x0D: triggered location report): {doc.hex()}"
-    i = 2 if doc[1] < 0x80 else 3
-    while i < len(doc):
-        t = doc[i]
-        if t == 0x22:
-            i += 2 + doc[i + 1]
-        elif t == 0x34:
-            i += 6
-        elif t == 0x51:
-            la, lo = int.from_bytes(doc[i + 1:i + 5], "big"), int.from_bytes(doc[i + 5:i + 9], "big", signed=True)
-            lat = (la & 0x7FFFFFFF) * 90.0 / 2 ** 31
-            return (-lat if la & 0x80000000 else lat), lo * 360.0 / 2 ** 32
-        else:
-            break
-    raise AssertionError(f"no position token in the LRRP report: {doc.hex()}")
-
-
-def udt_position(block):
-    bits = int.from_bytes(block[:10], "big")
-
-    def f(pos, width):
-        return (bits >> (80 - pos - width)) & ((1 << width) - 1)
-    north, east, valid = f(1, 1), f(2, 1), f(3, 1)
-    lat = f(11, 7) + (f(18, 6) + f(24, 14) / 10000.0) / 60.0
-    lon = f(38, 8) + (f(46, 6) + f(52, 14) / 10000.0) / 60.0
-    return valid, (lat if north else -lat), (lon if east else -lon)
-
 
 @pytest.mark.feature("dmr_lrrp")
 @pytest.mark.feature("aprs", optional=True)

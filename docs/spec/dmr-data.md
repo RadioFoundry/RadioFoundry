@@ -386,8 +386,8 @@ that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for
 | `arsServer` | 0 (off) | no transmission the user didn't ask for (`docs/ux/principles.md`) |
 | `radioCheckReply` | on | a radio check is how another user finds out whether this radio is on and in range; the answer is one short CSBK. A settings record saved before this default (no `SETTINGS_DS_CHECK_SET` in `ds_ip_cnf`, `settings-store.md` 3) answers too |
 | `callAlertAck` | on | the ack is what makes a call alert work for the caller |
-| `lrrpReply` | on | answers only a dispatcher's request; without GPS it says "no fix" |
-| `hasGps` | false | the radio core sets it false on every radio today, GPS models included (`data_init` in `core/radio/radio_sm.c`) |
+| `lrrpReply` | on | answers only a dispatcher's request; without a position (no fix, no fixed position) it says "no fix" |
+| `hasGps` | true with `CONFIG_DMR_LRRP` | the position service answers (7); a source can come after start-up (`data_init` in `core/radio/radio_sm.c`) |
 | `smsFormat` | ETSI IP text | the standard text application (5.4); ETSI short data and Motorola TMS (`CONFIG_DMR_TMS`) for radios that need them. A settings record from before this default (no format bit in `ds_flags`, `settings-store.md` 3) keeps TMS: only the default changed |
 | `radioCheckEtsi` | off | the Motorola form is what most radios answer |
 | `udpCompress` | auto | SAP 3 saves 19-23 octets per UDP packet; auto leaves the DMR application ports (MOTOTRBO servers) on the full header (11.2) |
