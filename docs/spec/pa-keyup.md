@@ -126,8 +126,14 @@ Measured on a dummy load, per burst, against the first symbol found from the bur
 | Measure | Target |
 |---|---|
 | The −3 dB point | 0.25 ms before the first symbol; never after it, never more than 0.6 ms before |
+| On the air (within 20 dB of the burst's level) | not before the slot's start, 1.25 ms before the first symbol |
 | The first symbol's level against the settled level | within 3 dB |
 | Overshoot above the settled level | 3 dB at most |
+
+A level may creep: within 6 dB at once, then its last dB over milliseconds (a PA held just over its turn-on edge).
+Its −3 dB point then lies on the creep, anywhere within a millisecond, and neither lead nor a boost moves the creep.
+Such a level is timed by its edge: the point 0.15 ms after its −6 dB crossing stands in for the −3 dB point when that
+comes later (a plain edge's is 0.04 to 0.13 ms after), and its first symbol may be 4.5 dB under the settled level.
 
 Each band that has its own PA has its own constants: the knee of one band's PA can be several times another's on the
 same radio.
@@ -200,7 +206,9 @@ Per band:
 | Verify | one per level, up to four rounds | Every level as the radio keys it. Without slow levels: each level's error goes back into the knee and slope. A level on the edge, or slow on its own drive and not right as the law keys it, has the boost it needs read from its own measurements, on the law's 1 / (b − dead) scale and no further than twice the last step past the drives tried. The constants are then solved over all levels (least squares per dead zone; the smallest worst error, then the smallest sum) to give those boosts and keep the other levels on the law's line. A boost that overshoots while on time ends earlier: `settle_us` up 0.1 ms, and as much again per 3 dB over the limit. The round that held best stands; a round ends the run when every level is up at least 60 us early with half a dB of overshoot to spare |
 | Confirm | one per level | The result again: it has to pass again, a level on its own drive within 0.1 ms |
 
-A boosted level may come up early, since it never starts before the window. An overshoot a drive has when written
+A boosted level may come up early, since it never starts before the window; no level, boosted or not, may be on
+the air before the slot's start (`before-slot`). A creeping level (5) is reported with its edge, and its −3 dB point
+and first symbol beside it. An overshoot a drive has when written
 alone is the PA loop's, which no constant changes: the result notes it and doesn't count it. The same holds in the
 as-is step for a level the board keys at its own drive.
 

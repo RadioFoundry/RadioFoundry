@@ -195,3 +195,27 @@ def test_judge_own_overshoot():
     assert "overshoot" in pa_cal.judge(m)                               # the key-up's
     assert pa_cal.judge(m, False, 5.0) == []                            # the drive's own: noted, not counted
     assert "overshoot" in pa_cal.judge(dict(m, over_db=6.5), True, 5.0)  # a boost added to it
+
+
+def _ramp(rise3, rise6, on, sym1):
+    return {"ramp": {"rise_ms": {"-3": rise3, "-6": rise6, "-20": on}, "overshoot_db": 0.0, "sym1_db": sym1,
+                     "settled_db": -20.0}}
+
+
+def test_a_creeping_level_is_timed_by_its_edge():
+    a = types.SimpleNamespace(dbfs_to_dbm=None)
+    # A plain edge: the -3 dB point, 0.06 ms after the -6 dB crossing
+    m = pa_cal.summarize([_ramp(-0.25, -0.31, -0.45, -0.3)] * 3, a)
+    assert not m["creep"] and m["rise_us"] == pytest.approx(-250)
+    # Within 6 dB at once, the last 3 dB over a millisecond: the edge stands in, and the -3 dB point is kept beside it
+    m = pa_cal.summarize([_ramp(0.55, -0.43, -0.62, -3.3)] * 3, a)
+    assert m["creep"] and m["rise_us"] == pytest.approx(-430 + pa_cal.CREEP_US) and m["rise3_us"] == pytest.approx(550)
+    assert pa_cal.judge(m) == []                                        # not late, and its first symbol is the creep's
+    assert "sym1" in pa_cal.judge(dict(m, sym1_db=-5.0))                # but not any level
+    assert "sym1" in pa_cal.judge(dict(m, creep=False))                 # and a plain edge that low is the key-up's
+
+
+def test_judge_on_the_air_before_the_slot():
+    m = {"rise_us": -540.0, "over_db": 0.0, "sym1_db": -2.5, "on_us": -1308.0}
+    assert pa_cal.judge(m, True) == ["before-slot"]                     # boosted or not
+    assert pa_cal.judge(dict(m, on_us=-1042.0), True) == []
