@@ -1431,7 +1431,7 @@ def cmd_radio(link, a):
     elif op == "ts":                  # ts 1|2
         link.dmr_fields(ts=num(0))
     elif op == "sfr":                 # sfr off|user|user-erdm|rpt|rpt-erdm [ts=1|2] [framing=0..3] [hang=0..3]
-        if not args or (args[0] not in SFR_ROLES and not args[0].isdigit()):
+        if not args or (args[0] not in SFR_ROLES and not (args[0].isdigit() and int(args[0]) in SFR_ROLES.values())):
             raise SystemExit("sfr ROLE [ts=1|2] [framing=N] [hang=N]: ROLE " + "|".join(SFR_ROLES))
         kw = dict(a.split("=", 1) for a in args[1:] if "=" in a)
         link.vfo_sfr(args[0] if not args[0].isdigit() else int(args[0]), int(kw.get("ts", 1)),

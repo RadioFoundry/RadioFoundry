@@ -4779,6 +4779,20 @@ static void test_sfr_vfo(void)
 	boot();
 	run(50);
 	CHECK(sm.view.vfo && sm.sfr_rpt && sm.view.dmr.sfr_role == SFR_ROLE_RPT_STANDARD);
+	// The same role again: no retune, the repeater keeps the modem
+	int offs = hw.tx_off_calls;
+	req(RREQ_VFO_SFR, SFR_ROLE_RPT_STANDARD);
+	run(50);
+	CHECK(sm.sfr_rpt && hw.tx_off_calls == offs);
+#if CONFIG_VFO_FM
+	// FM: no role in force, the stored one kept for DMR
+	req(RREQ_MODE, RADIO_MODE_FM);
+	run(50);
+	CHECK(!sm.sfr_rpt && sm.view.dmr.sfr_role == SFR_ROLE_OFF && sm.vfo_ch.sfr_a == SFR_ROLE_RPT_STANDARD);
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	run(50);
+	CHECK(sm.sfr_rpt && sm.view.dmr.sfr_role == SFR_ROLE_RPT_STANDARD);
+#endif
 
 	// User, inbound TS2: the call stack on TS2
 	req(RREQ_VFO_SFR, SFR_ROLE_USER_STANDARD | 0x20);

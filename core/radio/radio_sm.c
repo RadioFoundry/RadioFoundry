@@ -731,10 +731,6 @@ radio_vfo_copy_t radio_vfo_copy_check(const channel_t *ch, bool in_vfo)
 	return VFO_COPY_OK;
 }
 
-// Copy to VFO: the channel as it is in effect now (view.ch holds the temporary bandwidth, tones, mode, color code and
-// timeslot; the temporary power is view.power; a talk target chosen for now counts, a one-shot or reply target does
-// not) becomes the VFO's own settings, which are saved like any VFO change. Not copied, the VFO has nothing to hold
-// them: the RX group list, the privacy key, roaming, data and emergency settings, the squelch level
 // The VFO's SFR role from byte A (sfr.h), as a channel's: role bits 0 = none, the flag clear. No byte B: the outbound
 // color code is the VFO's own
 static void vfo_sfr_set(channel_t *c, uint8_t a)
@@ -745,6 +741,10 @@ static void vfo_sfr_set(channel_t *c, uint8_t a)
 	c->sfr_b = 0;
 }
 
+// Copy to VFO: the channel as it is in effect now (view.ch holds the temporary bandwidth, tones, mode, color code and
+// timeslot; the temporary power is view.power; a talk target chosen for now counts, a one-shot or reply target does
+// not) becomes the VFO's own settings, which are saved like any VFO change. Not copied, the VFO has nothing to hold
+// them: the RX group list, the privacy key, roaming, data and emergency settings, the squelch level
 static void vfo_copy(radio_sm_t *sm, uint32_t now_ms)
 {
 	const channel_t *c = &sm->view.ch;
@@ -768,12 +768,13 @@ static void vfo_copy(radio_sm_t *sm, uint32_t now_ms)
 		sm->vfo_talk_id = sm->manual ? sm->manual_id : sm->talk_id;
 		sm->vfo_talk_private = sm->manual ? sm->manual_private : sm->talk_private;
 #endif
-		// The channel's SFR role too (it acts on a simplex VFO only, as on a channel), with the VFO's color code
-		vfo_sfr_set(v, (c->sfr_flag1 & SFR_CHANNEL_FLAG1_ENABLED) ? c->sfr_a : 0);
 	} else {
 		v->rx_tone = c->rx_tone;	// a DMR channel has no tones: the VFO keeps its own for its FM mode
 		v->tx_tone = c->tx_tone;
 	}
+	// The channel's SFR role too (it acts on a simplex VFO only, as on a channel), with the VFO's color code; an FM
+	// channel has none, so the VFO's old role doesn't come back at the next switch to DMR
+	vfo_sfr_set(v, (c->sfr_flag1 & SFR_CHANNEL_FLAG1_ENABLED) ? c->sfr_a : 0);
 	sm->vfo_seeded = true;
 	enter_vfo(sm, now_ms);
 }
@@ -1400,7 +1401,7 @@ static void dmr_begin(radio_sm_t *sm)
 static void dmr_reconfigure_sfr(radio_sm_t *sm)
 {
 #if CONFIG_SFR
-	if (sm->view.ch.mode == RADIO_MODE_DMR && (sm->sfr_rpt || sm->view.ch.sfr_flag1 != 0)) {
+	if (sm->view.vfo && sm->view.ch.mode == RADIO_MODE_DMR && (sm->sfr_rpt || sm->view.ch.sfr_flag1 != 0)) {
 		dmr_begin(sm);
 		changed(sm);
 		return;
@@ -1423,6 +1424,10 @@ static void dmr_end(radio_sm_t *sm)
 		board.radio->tx_off();
 	}
 	sm->dmr_running = false;
+#if CONFIG_SFR
+	sm->view.dmr.sfr_role = SFR_ROLE_OFF;	// no role in force outside DMR (the VFO keeps its stored one in FM)
+	sm->view.dmr.sfr_inbound = 0;
+#endif
 	sm->manual = false;		// a chosen talk target ends with the channel
 	sm->view.dmr.target_manual = false;
 	sm->one_shot = false;
@@ -5392,6 +5397,9 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		uint8_t a = (uint8_t)req->arg;
 		if (busy || !sm->view.vfo || req->arg < 0 || req->arg > 0xFF || (a & 0x07u) >= SFR_ROLE_NUM_STORED) {
 			break;
+		}
+		if (((a & 0x07u) != 0 ? a : 0) == sm->vfo_ch.sfr_a) {
+			break;		// the same role again: a retune would only interrupt a running repeater
 		}
 		vfo_sfr_set(&sm->vfo_ch, a);
 		vfo_sfr_set(&sm->view.ch, a);
