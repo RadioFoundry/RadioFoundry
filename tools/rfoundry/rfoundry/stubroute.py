@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""The flash stub route for the STM32F4 and K22F radios: a radio that runs RadioFoundry built with
+"""The flash stub route for the boards whose platform builds the STM32F4 or the K22F flash stub: a radio that runs RadioFoundry built with
 CONFIG_STUB_ENTRY=y takes the stub into RAM over its USB debug link (stub/stubtool.py --rfoundry-enter), the stub writes the
 sectors that differ and restarts the radio (docs/spec/stub-stm32f4.md, docs/spec/stub-k22f.md). No bootloader key press
 and no key file. The radio's codec stays: a sector that holds both application and codec bytes is saved first.
@@ -13,9 +13,9 @@ import tempfile
 
 from . import boards, serialflash
 
-# The radios whose platform's stub takes this route: the boards with a profile for the STM32F4 or the K22F stub (the
-# registry's [flash.stub]); the HR_C7000 stub goes through serialflash.py
-BOARDS = tuple(sorted(b.id for b in boards.BOARDS.values() if b.stub and b.stub["tool"] in ("f4stub", "k22stub")))
+# The boards whose platform builds the STM32F4 or the K22F stub (the board registry); the HR_C7000 stub goes through
+# serialflash.py
+BOARDS = tuple(b.id for b in boards.BOARDS.values() if {"stub/stm32f4", "stub/k22f"} & set(b.platform_stubs))
 
 
 class StubRouteError(Exception):

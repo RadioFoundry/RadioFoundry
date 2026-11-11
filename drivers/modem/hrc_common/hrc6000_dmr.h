@@ -104,7 +104,7 @@ typedef struct {
 			// interrupt, p post-access shortly before the reception started, H voice LC header
 	char res;	// n differs from the capture (taken), s same as the capture (held back), v same but taken (more than
 			// STALE_LC_VOICE voice bursts), c CRC error flagged, k kept for the next voice burst, o maybe the
-			// other slot's (held back, modem-hrc6000.md 5.2), - not used
+			// other slot's (held back, modem-hrc6000.md 5.2), r an interrupted call's, read twice (5.6), - not used
 	uint8_t tk;	// ticks since the capture (255: 255 or more)
 	uint8_t vss;	// voice bursts taken in this reception at the time
 	uint32_t src;	// page 2's source ID (LC octets 6-8)
@@ -118,6 +118,9 @@ typedef struct {
 	uint32_t rx_voice;	// voice bursts delivered
 	uint32_t tr_calls;	// receptions whose voice is read at the ticks (rx_voice_read chips)
 	uint32_t tr_bursts;	// voice bursts read at the ticks
+	uint32_t tr_miss_same;	// reads on the call's slot lost because the port had not changed since the last tick
+	uint32_t tr_miss_bad;	// ... because the read changed but no frame checked
+	uint32_t lc_resumed;	// interrupted calls taken back from two late entry reports with their LC (modem-hrc6000.md 5.6)
 	uint32_t rx_lc_header;	// voice LC headers
 	uint32_t rx_terminator;
 	uint32_t rx_csbk;	// CSBK, MBC
@@ -150,6 +153,8 @@ typedef struct {
 	uint32_t tx_empty;	// slots left empty on request (DMR_BURST_EMPTY)
 	uint32_t rf_fail;	// RF switches the board could not do
 	uint32_t stalls;	// timing stopped while busy (200 ms without a timeslot interrupt)
+	uint32_t rx_holds;	// direct transmissions ended without the restart, held for an answer (modem-hrc6000.md)
+	uint32_t tx_stalls;	// ... of those: while sending, the transmission dropped (a lost timeslot interrupt)
 	uint32_t rs_why[HRC6000_RS_COUNT];	// receiver restarts by reason
 	uint32_t by_class[4];	// every received-data report by 0x51 bits 1-0, before any filtering
 	uint32_t by_type[16];	// ... by 0x51 bits 7-4
@@ -260,6 +265,10 @@ typedef struct {
 	uint32_t pa_tick;	// tick of the last post-access interrupt
 	bool pa_any;
 	uint32_t pa_src;	// page 2's source ID then
+	uint8_t pa_lc[9];	// ... page 2 then, with no reception going on
+	bool pa_new;		// ... a voice LC that differs from the last capture: kept when the reception starts
+	uint8_t resume_reads;	// post-access reads a superframe apart showing an interrupted call's LC, last at resume_tick
+	uint32_t resume_tick;
 	// Each slot's call LC (index ts - 1), so the other slot's is never handed over for this one's (5.2)
 	struct {
 		uint8_t lc[9];
@@ -281,6 +290,8 @@ typedef struct {
 	bool restart_pending;
 	uint8_t restart_why;
 	bool idle_restarted;	// the quiet-period restart has been done
+	bool hold_due;		// ... its answer slot is over: the restart once the slot's report is no longer due
+	bool tx_hold;		// a direct transmission ended on our slot timing: restart if nothing comes (tx_hold)
 	// The burst taken last (repeat check)
 	uint32_t t_report;
 	uint8_t report_dms;	// ms after the tick of the report being handled (255 unknown)
@@ -377,6 +388,9 @@ void hrc6000_dmr_tx_abort(hrc6000_dmr_t *e);
 void hrc6000_dmr_set_embedded_lc(hrc6000_dmr_t *e, const uint8_t lc[9]);
 void hrc6000_dmr_set_cc_filter(hrc6000_dmr_t *e, int8_t cc);
 bool hrc6000_dmr_is_transmitting(const hrc6000_dmr_t *e);
+// The end is asked for and every queued burst is set up: a PA drop now ends the last one (interrupt context, the
+// board's rf switch: it may put the receiver back at once). Never during an SFR's transmission (tx_listen)
+bool hrc6000_dmr_tx_last_out(const hrc6000_dmr_t *e);
 
 void hrc6000_dmr_stats(const hrc6000_dmr_t *e, hrc6000_dmr_stats_t *out);
 

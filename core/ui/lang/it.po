@@ -441,6 +441,10 @@ msgid "No match: Back deletes a key"
 msgstr "Nessun risultato: Indietro cancella"
 
 #: core/ui/ui_app.c
+msgid "Receive only. Sensitivity not rated"
+msgstr "Solo ricezione. Sensibilità non specificata"
+
+#: core/ui/ui_app.c
 msgid "Emergency: not in this build"
 msgstr "Emergenza: non in questa build"
 
@@ -755,6 +759,14 @@ msgstr "Indietro"
 #: core/ui/ui_aprs.c
 msgid "Nothing heard yet"
 msgstr "Ancora niente sentito"
+
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgid "Message"
+msgstr "Messaggio"
+
+#: core/ui/ui_aprs.c
+msgid "OK choose  Back"
+msgstr "OK scegli  Indietro"
 
 #: core/ui/ui_dual.c core/ui/ui_screens.c
 msgid "No tone"
@@ -1145,10 +1157,6 @@ msgid "Private call"
 msgstr "Chiamata privata"
 
 #: core/ui/ui_menus.c
-msgid "Message"
-msgstr "Messaggio"
-
-#: core/ui/ui_menus.c
 msgid "Radio check"
 msgstr "Controllo radio"
 
@@ -1229,8 +1237,24 @@ msgid "Can't talk now"
 msgstr "Non posso parlare"
 
 #: core/ui/ui_menus.c
+msgid "To callsign"
+msgstr "Al nominativo"
+
+#: core/ui/ui_menus.c
+msgid "Enter"
+msgstr "Inserisci"
+
+#: core/ui/ui_menus.c
 msgid "Write..."
 msgstr "Scrivi..."
+
+#: core/ui/ui_menus.c
+msgid "Request acknowledgment"
+msgstr "Richiedi conferma"
+
+#: core/ui/ui_menus.c
+msgid "Include position"
+msgstr "Includi posizione"
 
 #: core/ui/ui_menus.c
 msgid "Couldn't send: try again"
@@ -1241,8 +1265,8 @@ msgid "Sending to "
 msgstr "Invio a "
 
 #: core/ui/ui_menus.c
-msgid "Typing: not in this build"
-msgstr "Digitazione: non in questa build"
+msgid "Callsign"
+msgstr "Nominativo"
 
 #: core/ui/ui_menus.c
 msgid "To"
@@ -1277,6 +1301,10 @@ msgid "Contacts: not in this build"
 msgstr "Contatti: non in questa build"
 
 #: core/ui/ui_menus.c
+msgid "New APRS message"
+msgstr "Nuovo messaggio APRS"
+
+#: core/ui/ui_menus.c
 msgid "OK open  # reply  Back"
 msgstr "OK apri  # rispondi  Indietro"
 
@@ -1309,12 +1337,12 @@ msgid "Couldn't delete: try again"
 msgstr "Eliminazione non riuscita: riprova"
 
 #: core/ui/ui_menus.c
-msgid "To "
-msgstr "A "
-
-#: core/ui/ui_menus.c
 msgid "From "
 msgstr "Da "
+
+#: core/ui/ui_menus.c
+msgid "To "
+msgstr "A "
 
 #: core/ui/ui_menus.c
 msgid "OK choose  # more  Back"
@@ -1533,6 +1561,22 @@ msgid "Empty zone"
 msgstr "Zona vuota"
 
 #: core/ui/ui_menus.c
+msgid "That's the most it can hold"
+msgstr "Non ne entrano di più"
+
+#: core/ui/ui_menus.c
+msgid "Name"
+msgstr "Nome"
+
+#: core/ui/ui_menus.c
+msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
+msgstr "{Indietro canc.  # ABC/123/abc  OK tieni|Indietro canc  # modo  OK}"
+
+#: core/ui/ui_menus.c
+msgid "{Back delete  # ABC/123/abc  OK send|Back del  # mode  OK}"
+msgstr "{Indietro canc.  # ABC/123/abc  OK invia|Indietro canc  # modo  OK}"
+
+#: core/ui/ui_menus.c
 msgid "New from current"
 msgstr "Nuova da attuale"
 
@@ -1567,10 +1611,6 @@ msgstr " zone"
 #: core/ui/ui_menus.c
 msgid "Radio's"
 msgstr "Della radio"
-
-#: core/ui/ui_menus.c
-msgid "Name"
-msgstr "Nome"
 
 #: core/ui/ui_menus.c
 msgid "Number"
@@ -1775,14 +1815,6 @@ msgstr "Modifiche non salvate"
 #: core/ui/ui_menus.c
 msgid "{OK choose  Back keep editing|OK choose  Back}"
 msgstr "{OK scegli  Indietro continua|OK scegli  Indietro}"
-
-#: core/ui/ui_menus.c
-msgid "That's the most it can hold"
-msgstr "Non ne entrano di più"
-
-#: core/ui/ui_menus.c
-msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
-msgstr "{Indietro canc.  # ABC/123/abc  OK tieni|Indietro canc  # modo  OK}"
 
 #: core/ui/ui_menus.c
 msgid "Type"
@@ -2005,6 +2037,22 @@ msgid "Single-Freq Repeater"
 msgstr "Ripetitore freq. unica"
 
 #: core/ui/ui_menus.c
+msgid "User"
+msgstr "Utente"
+
+#: core/ui/ui_menus.c
+msgid "User (ERDM)"
+msgstr "Utente (ERDM)"
+
+#: core/ui/ui_menus.c
+msgid "Repeater"
+msgstr "Ripetitore"
+
+#: core/ui/ui_menus.c
+msgid "Repeater (ERDM style)"
+msgstr "Ripetitore (stile ERDM)"
+
+#: core/ui/ui_menus.c
 msgid "Supply"
 msgstr "Alimentaz."
 
@@ -2073,16 +2121,16 @@ msgid "USB network: not in this build"
 msgstr "Rete USB: non in questa build"
 
 #: core/ui/ui_menus.c
+msgid "The VFO has no SFR role. Pick one below."
+msgstr "Il VFO non ha ruolo SFR. Scegline uno qui sotto."
+
+#: core/ui/ui_menus.c
+msgid "Off here: the role needs DMR and one frequency (no split)."
+msgstr "Inattivo qui: il ruolo richiede DMR e una sola frequenza (senza TX separata)."
+
+#: core/ui/ui_menus.c
 msgid "This channel has no SFR role. Set Repeater or User in the Codeplug Editor, on a channel with one frequency."
 msgstr "Questo canale non ha ruolo SFR. Imposta Ripetitore o Utente nel Codeplug Editor, su un canale con una sola frequenza."
-
-#: core/ui/ui_menus.c
-msgid "Repeater (ERDM style)"
-msgstr "Ripetitore (stile ERDM)"
-
-#: core/ui/ui_menus.c
-msgid "Repeater"
-msgstr "Ripetitore"
 
 #: core/ui/ui_menus.c
 msgid "In TS"
@@ -2137,6 +2185,14 @@ msgid "Single-freq repeater: not in this build"
 msgstr "Ripetitore freq. unica: non in questa build"
 
 #: core/ui/ui_menus.c
+msgid "Role"
+msgstr "Ruolo"
+
+#: core/ui/ui_menus.c
+msgid "Inbound slot"
+msgstr "TS in ingresso"
+
+#: core/ui/ui_menus.c
 msgid "Switch USB to serial"
 msgstr "Passa USB a seriale"
 
@@ -2147,6 +2203,10 @@ msgstr "Passa USB a rete"
 #: core/ui/ui_menus.c
 msgid "Stop hotspot"
 msgstr "Ferma hotspot"
+
+#: core/ui/ui_menus.c
+msgid "Pick a role first"
+msgstr "Scegli prima un ruolo"
 
 #: core/ui/ui_menus.c
 msgid "No USB network on this radio"
@@ -2195,6 +2255,10 @@ msgstr "Gli ID partono da 1"
 #: core/ui/ui_menus.c
 msgid "DMR ID saved"
 msgstr "ID DMR salvato"
+
+#: core/ui/ui_menus.c
+msgid "Typing: not in this build"
+msgstr "Digitazione: non in questa build"
 
 #: core/ui/ui_menus.c
 msgid "My Radio"
@@ -2541,6 +2605,22 @@ msgid "Serial"
 msgstr "Seriale"
 
 #: core/ui/ui_menus.c
+msgid "10s/dim"
+msgstr "10s/fioca"
+
+#: core/ui/ui_menus.c
+msgid "30s/dim"
+msgstr "30s/fioca"
+
+#: core/ui/ui_menus.c
+msgid "1m/dim"
+msgstr "1m/fioca"
+
+#: core/ui/ui_menus.c
+msgid "2m/dim"
+msgstr "2m/fioca"
+
+#: core/ui/ui_menus.c
 msgid "Never"
 msgstr "Mai"
 
@@ -2637,8 +2717,16 @@ msgid "Home zone"
 msgstr "Zona casa"
 
 #: core/ui/ui_menus.c
+msgid "Tone burst"
+msgstr "Tono di apertura"
+
+#: core/ui/ui_menus.c
 msgid "Copy to VFO"
 msgstr "Copia su VFO"
+
+#: core/ui/ui_menus.c
+msgid "VFO/Channel"
+msgstr "VFO/Canale"
 
 #: core/ui/ui_menus.c
 msgid "Call back"
@@ -2801,6 +2889,10 @@ msgid "PTT when locked"
 msgstr "PTT da bloccata"
 
 #: core/ui/ui_menus.c
+msgid "Knob when locked"
+msgstr "Manopola da bloccata"
+
+#: core/ui/ui_menus.c
 msgid "Position format"
 msgstr "Formato posiz."
 
@@ -2887,6 +2979,10 @@ msgstr "Ripristino fabbrica"
 #: core/ui/ui_menus.c
 msgid "Crash log"
 msgstr "Log crash"
+
+#: core/ui/ui_menus.c
+msgid "RX past bands"
+msgstr "RX fuori banda"
 
 #: core/ui/ui_menus.c
 msgid "Freq trim"
@@ -3519,6 +3615,10 @@ msgstr "EMERGENZA"
 #: core/ui/ui_screens.c
 msgid "OK acknowledge  Back hide"
 msgstr "OK conferma  Indietro nascondi"
+
+#: core/ui/ui_screens.c
+msgid "Vol"
+msgstr "Vol"
 
 #: core/ui/ui_screens.c
 msgid "Muted"

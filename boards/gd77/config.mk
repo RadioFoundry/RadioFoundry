@@ -28,7 +28,6 @@ BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is a SPI NOR (docs/spec/hardw
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (docs/spec/hardware-gd77.md 3.1)
 BOARD_UNSUPPORTED += FONT_XL	# the 128x64 panel is too small for the large font (it is for 240 px and wider)
 BOARD_UNSUPPORTED += FONT_AA	# a 1 bit panel: no edge grays
-BOARD_UNSUPPORTED += FONT_BIG	# the 128x64 panel is too small for the big font
 BOARD_UNSUPPORTED += UI_COLOR	# monochrome panel
 BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB only
 # What the hardware can do but this radio's driver or glue doesn't yet, the same way. The watchdog is the platform's

@@ -23,8 +23,8 @@ def gd77(radio):
 
 def board(r):
     v = r.view(["board"])
-    if v.get("board.built") != "1":
-        skip("not_built", "firmware without the board view section")
+    if not any(k.startswith("board.") and k != "board.name" for k in v):
+        skip("not_built", "firmware without the board's own view keys")
     return v
 
 

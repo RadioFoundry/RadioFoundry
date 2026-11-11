@@ -150,7 +150,7 @@ int sfrUserRxColorCode(const sfrConfig_t *cfg, uint8_t rxCC);
 typedef struct
 {
 	uint8_t kind;				// SFR_BURST_VOICE or SFR_BURST_DATA
-	uint8_t type;				// voice: burst A-F 0-5; data: DT_xxx (voice LC header, terminator, CSBK, data, idle)
+	uint8_t type;				// voice: burst A-F 0-5; data: DMR_TYPE_xxx (voice LC header, terminator, CSBK, data, idle)
 	uint8_t length;				// payload bytes: 27 voice, 12 / 18 / 24 data
 	uint8_t flags;				// SFR_BURST_FLAG_xxx
 	uint8_t payload[SFR_VOICE_LENGTH];

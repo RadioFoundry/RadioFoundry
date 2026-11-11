@@ -9,10 +9,20 @@
 #include "board.h"
 #include "storage/storage.h"
 
-// Where the two open-firmware images sit in the data flash when the board gives no map: the STM32 family puts the 64 KB
-// EEPROM image at 0 and the flash image at +128 KB
+// Where the two open-firmware images sit in the data flash when the board gives no map (a driver drops a map its chip
+// is too small for): the board's own bases from board.mk, as dmr_iddb.c reads them, so a board whose low flash holds
+// the radio's own data never has that read as a codeplug. Without them, the STM32 family's: the 64 KB EEPROM image at
+// 0 and the flash image at +128 KB
+#ifdef CODEPLUG_OPENFW_EEPROM_BASE
+#define DEFAULT_EEPROM_BASE	CODEPLUG_OPENFW_EEPROM_BASE
+#else
 #define DEFAULT_EEPROM_BASE	0x000000u
+#endif
+#ifdef CODEPLUG_OPENFW_FLASH_BASE
+#define DEFAULT_FLASH_BASE	CODEPLUG_OPENFW_FLASH_BASE
+#else
 #define DEFAULT_FLASH_BASE	0x020000u
+#endif
 
 static uint32_t ee_base = DEFAULT_EEPROM_BASE;
 static uint32_t fl_base = DEFAULT_FLASH_BASE;
@@ -470,7 +480,7 @@ static void index_builtin(void)
 {
 	builtin_count = 0;
 	for (unsigned i = 0; i < BUILTIN_COUNT; i++) {
-		if (board.band_count == 0 || board_in_band(builtin[i].hz, false)) {
+		if (board_band_count() == 0 || board_in_band(builtin[i].hz, false)) {
 			builtin_map[builtin_count++] = (uint8_t)i;
 		}
 	}
@@ -598,7 +608,7 @@ static bool builtin_channel(uint16_t number, channel_t *out)
 	out->mode = RADIO_MODE_FM;
 	out->bw = b->bw;
 	out->power = CODEPLUG_POWER_DEFAULT;
-	out->rx_only = board.band_count != 0 && !board_in_band(b->hz, true);
+	out->rx_only = board_band_count() != 0 && !board_in_band(b->hz, true);
 	out->color_code = 1;
 	out->timeslot = 1;
 	return true;

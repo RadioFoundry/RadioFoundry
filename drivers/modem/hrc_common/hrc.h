@@ -70,6 +70,7 @@ struct hrc {
 	const hrc_chip_t *chip;
 	uint8_t mic_input;	// HRC_MIC_*: set in 0xE0 whenever the microphone is on
 	uint8_t mic_gain_base;	// HR_C6000 0xE4 = this + the mic gain: the LINEOUT gain and mic stages a board wants (0x20)
+	bool rx_iq_straight;	// HR_C6000: 4:0x01 bit 6 clear, receive I and Q not swapped (hrc6000_rx_iq_swap)
 };
 
 // Bind a chip driver's description to a bus. Called by hrc6000_attach and hrc5000_attach, not by the boards

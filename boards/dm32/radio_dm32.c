@@ -15,15 +15,43 @@
 #include "fm_rx_audio.h"
 #include "hrc_afsk.h"
 #include "radio/ref_trim.h"
+#include "radio/pa_keyup.h"
 
 #define DAC_C_INIT		0x06E2u
 
 #define UHF_FROM_HZ		280000000u	// PA / LNA band split (8.5)
 #define MIC_GAIN_DB		11u		// GCR_ADCL at init (9.1)
-#define DMR_PA_DELAY_US		28000u		// "DMR PA" default (8.6)
-// RF TX interrupt 0.4 ms before our burst, not the driver's 3.1 ms: earlier, the per-burst switch cut the tail of the
-// inbound burst an SFR receives before ours (swept 0.4-2.0 ms in hardware-dm32.md 8.5)
-#define RF_TX_LEAD		4u
+// DMR bursts on the shared RF-burst task (dmr_rfburst.h), timed from the RF TX interrupt (hardware-dm32.md 8.5). The PA
+// keys up from the power cal table (radio/pa_keyup.h): a drive boost whose length follows the step, a hold, then the
+// step's drive. A low step's drive alone took 3-4 ms to full power; with the boost every step is up by the first
+// symbol. The boost charges the control before the PA is selected; the FD6818 goes to TX 0.3 ms before the PA: 1.2 ms
+// before the first symbol on a simplex channel (two state writes, 0.1 ms). Earlier, the receive loses the end of the
+// inbound burst before ours, and an SFR repeater the burst (at 1.8 ms it repeated about half a call). A split
+// channel's retune holds the task 1.1-1.4 ms, so it runs before the boost. The lead leaves the task's wake (up to
+// 0.42 ms) room before that
+#define RF_TX_LEAD		26u		// 100 us steps (RF_CONTROL b13:8)
+#define SWITCH_AHEAD_US		300u		// the FD6818 to TX this long before the PA
+#define SWITCH_AHEAD_SIMPLEX_MAX_US 1200u	// the simplex switch's longest lead: earlier cuts the inbound burst before ours
+#define SWITCH_AHEAD_SPLIT_US	1450u		// the same with the synthesizer's move to the TX frequency, before the boost
+#define TASK_WAKE_US		420u		// the RF task's latest wake after the interrupt
+// The earliest key-up point: the split's switch still after the task's wake
+#define KEYUP_MAX_AHEAD_US	(RF_TX_LEAD * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US - TASK_WAKE_US - SWITCH_AHEAD_SPLIT_US)
+// The key-up constants (docs/spec/pa-keyup.md): measured on the SDR bench at UHF, every step measured up 0.1-0.5 ms
+// before the first symbol and no more than 3 dB over (hardware-dm32.md 8.5). The knee goes with pa_us: the control
+// charges less with the PA selected, so a later PA wants a smaller knee (1450 with the PA at the boost)
+#define KEYUP_BOOST_US		1500u
+#define KEYUP_PA_US		900u
+#define KEYUP_DRIVE_US		500u
+_Static_assert(KEYUP_BOOST_US <= KEYUP_MAX_AHEAD_US && KEYUP_PA_US <= KEYUP_BOOST_US && KEYUP_DRIVE_US <= KEYUP_BOOST_US,
+	       "the key-up's points must come after the split's switch, in order (pa_keyup_valid)");
+_Static_assert(SWITCH_AHEAD_US + KEYUP_PA_US <= SWITCH_AHEAD_SIMPLEX_MAX_US,
+	       "the simplex switch to TX must come after the inbound burst before ours");
+#if CONFIG_DMR
+static const pa_keyup_cfg_t keyup_cfg = {
+	.dead = 680, .knee = 1250, .slope_us = 600, .boost_pct = 120, .hold_pct = 80,
+	.boost_us = KEYUP_BOOST_US, .pa_us = KEYUP_PA_US, .drive_us = KEYUP_DRIVE_US,
+};
+#endif
 // TX data advance (hrc7000_t.tx_pre_on): the chip's 0.4 ms until the inbound burst's offset against the outbound is
 // measured here. The other FD6818 board needed 1.1 ms
 #define TX_PRE_ON		4u
@@ -47,9 +75,11 @@ static bool have_rx;
 static bool transmitting;
 static uint32_t tx_hz;		// TX frequency: the FM tone deviation, the LNA band between DMR bursts
 static bool tx_wide;
-static volatile bool dmr_keyed;		// DMR transmission on: the PA timer may key the PA
+static volatile bool dmr_keyed;		// DMR transmission on: the burst sequence may key the PA
 static volatile bool tx_uhf;
 static volatile uint16_t tx_drive;	// DAC B value for the transmission
+static pa_keyup_cfg_t ku_cfg;		// the transmission's DMR key-up, set before the RF task is armed
+static pa_keyup_t ku;
 static uint16_t last_rssi_raw, last_noise_raw;
 static bool pcm_on;		// a beep or DMR voice plays through the codec
 static bool rx_audio;		// the squelch is open (the radio's audio hook)
@@ -102,9 +132,14 @@ static void lna(uint32_t hz, bool on)
 	hrc_pin_write(PIN_VHF_LNA, on && !uhf);
 }
 
-static void pa_key(void)
+static void pa_select(void)
 {
 	hrc_pin_write(tx_uhf ? PIN_UHF_PA : PIN_VHF_PA, true);
+}
+
+static void pa_key(void)
+{
+	pa_select();
 	DAC_DATA_B = tx_drive;
 }
 
@@ -158,33 +193,96 @@ static bool ref_trim(int16_t ppb)
 }
 #endif
 
-// RF TX interrupt (tx): LNA off, FD6818 idle then TX for our burst. After the burst: PA off, FD6818 and the LNA back
-// to RX, so the radio hears the other slot (the hotspot listens while keyed)
-static void dmr_rf_switch(bool tx)
+// The LNA off and the FD6818 idle then TX, on the TX frequency (a split channel's one synthesizer moves for the burst
+// and back)
+static void burst_switch(void)
 {
-	if (!tx) {
-		pa_off();
-	} else {
-		lna(tx_hz, false);
-	}
-	// A split channel (repeater, duplex hotspot): the one synthesizer moves to the TX frequency for the burst and back
-	fd6818_dmr_burst_at(&fd, tx, FD6818_BW_DMR, synth_hz(tx ? tx_hz : rx_hz));
-	if (!tx) {
-		lna(rx_hz, true);
+	lna(tx_hz, false);
+	fd6818_dmr_burst_at(&fd, true, FD6818_BW_DMR, synth_hz(tx_hz));
+}
+
+// One burst's TX on, from the RF task (dmr_rfburst.h): the key-up's points in time order (the boost, the PA on, the
+// hold, the drive to the step's), with the switch to TX before the PA, or before them all on a split channel; every
+// point from the RF TX interrupt. Without a boost the PA is keyed at its point at the step's drive
+static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
+{
+	(void)wait;
+	bool boost = dmr_keyed && ku.boost != 0u;
+	bool split = tx_hz != rx_hz;
+	enum { P_SWITCH, P_BOOST, P_PA, P_HOLD, P_DRIVE, P_COUNT };	// on a tie in this order
+	// The switch to TX: ahead of the PA, or ahead of every point on a split channel (its retune holds the task)
+	uint32_t sw = split ? SWITCH_AHEAD_SPLIT_US + (boost ? ku_cfg.boost_us : ku_cfg.pa_us) : SWITCH_AHEAD_US + ku_cfg.pa_us;
+	const uint32_t ahead[P_COUNT] = { sw, ku_cfg.boost_us, ku_cfg.pa_us, ku.hold_us, ku_cfg.drive_us };
+	bool done[P_COUNT] = { false, !boost, false, !boost, !boost };
+	for (;;) {
+		int8_t next = -1;
+		for (int8_t i = 0; i < P_COUNT; i++) {
+			if (!done[i] && (next < 0 || ahead[i] > ahead[next])) {
+				next = i;
+			}
+		}
+		if (next < 0) {
+			break;
+		}
+		done[next] = true;
+		at(hrc_rfburst_pa_at_us(RF_TX_LEAD, ahead[next]));
+		if (next == P_SWITCH) {
+			burst_switch();
+			continue;
+		}
+		if (!dmr_keyed) {
+			// Disarmed in the sequence: the drive may be at the boost, so the PA goes off now, not at burst_off
+			if (boost) {
+				pa_off();
+			}
+			continue;
+		}
+		switch (next) {
+		case P_BOOST:
+			DAC_DATA_B = ku.boost;
+			break;
+		case P_HOLD:
+			DAC_DATA_B = ku.hold;
+			break;
+		case P_DRIVE:
+			DAC_DATA_B = tx_drive;
+			break;
+		default:
+			if (boost) {
+				pa_select();	// the drive has its own points
+			} else {
+				pa_key();
+			}
+			break;
+		}
 	}
 }
 
-// The PA one-shot expired: key the PA if the transmission is still on
-static void dmr_pa_on(void)
+// The burst's TX off, after the task's hold to its last symbol: PA off, the FD6818 and the LNA back to RX, so the
+// radio hears the other slot (the hotspot listens while keyed)
+static void burst_off(void)
 {
-	if (dmr_keyed) {
-		pa_key();
-	}
+	pa_off();
+	fd6818_dmr_burst_at(&fd, false, FD6818_BW_DMR, synth_hz(rx_hz));
+	lna(rx_hz, true);
 }
 
-static const hrc_dmr_board_t dmr_board = {
-	.rf_switch = dmr_rf_switch, .pa_on = dmr_pa_on, .pa_delay_us = DMR_PA_DELAY_US,
-};
+static const hrc_rfburst_board_t rf_board = { .on = burst_on, .off = burst_off };
+
+static void dmr_tx_end(void);
+
+static const hrc_dmr_board_t dmr_board = { .burst = &rf_board, .tx_end = dmr_tx_end };
+
+// Per-burst keying off (task level): waits for the RF task to finish the burst it is in and leave the RF receiving
+static void dmr_disarm(void)
+{
+	dmr_keyed = false;
+#if CONFIG_DMR
+	if (hrc_rfburst_armed()) {
+		hrc_rfburst_disarm();
+	}
+#endif
+}
 
 #if CONFIG_APRS
 static bool afsk_tx_route(bool on);
@@ -210,6 +308,9 @@ static void init(void)
 	modem.fm_tx_limit[0] = FM_TX_LIMIT_12K5;
 	modem.fm_tx_limit[1] = FM_TX_LIMIT_25K;
 	hrc7000_set_rf_tx_lead(&modem, RF_TX_LEAD);
+#if CONFIG_DMR
+	pa_keyup_init(&keyup_cfg, KEYUP_MAX_AHEAD_US, DAC_MAX);
+#endif
 
 	hrc_pin_out(PIN_FD_CS, true);
 	hrc_pin_out(PIN_FD_CLK, false);
@@ -249,8 +350,8 @@ static void set_mode(radio_mode_t m)
 		mode = RADIO_MODE_DMR;
 		hrc_dmr_enter();
 	} else {
+		dmr_disarm();
 		hrc_dmr_leave();
-		dmr_keyed = false;
 		pa_off();
 		fd6818_set_mode(&fd, FD6818_MODE_FM);
 		hrc7000_fm_idle(&modem);
@@ -259,20 +360,26 @@ static void set_mode(radio_mode_t m)
 	have_rx = false;	// the next rx() retunes everything
 }
 
-// FM (or DMR) receive, or AM in FM mode: the same set-up, only the FD6818's AF output differs
-static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am)
+// FM (or DMR) receive, or AM in FM mode: the same set-up, only the FD6818's AF output differs. keep (the end of a DMR
+// transmission, dmr_tx_end): the burst switch already put the FD6818 in RX; on the same channel it stays as it is
+static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, bool keep)
 {
 	if (!board_in_band(hz, false) || (am && mode != RADIO_MODE_FM)) {
 		return false;
 	}
+	dmr_disarm();	// a retune ends DMR TX (the hotspot's rx() disarms too)
+	bool back = keep && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && !asleep;
 	wake();
 	pa_off();
 	lna(hz, true);
-	fd6818_set_freq(&fd, synth_hz(hz));
-	if (mode == RADIO_MODE_DMR) {
+	if (back) {
+		// receiving already
+	} else if (mode == RADIO_MODE_DMR) {
+		fd6818_set_freq(&fd, synth_hz(hz));
 		fd6818_set_bandwidth(&fd, FD6818_BW_DMR);
 		fd6818_set_state(&fd, FD6818_STATE_RX);
 	} else {
+		fd6818_set_freq(&fd, synth_hz(hz));
 #if CONFIG_AM_RX
 		fd6818_set_bandwidth(&fd, am ? FD6818_BW_AM : fm_bw_reg(bw));
 #else
@@ -301,7 +408,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am)
 
 static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 {
-	return rx_tune(hz, bw, tone, false);
+	return rx_tune(hz, bw, tone, false, false);
 }
 
 #if CONFIG_AM_RX
@@ -310,16 +417,31 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 // as in FM receive (speaker_source); no sub-audio. The 108-136 MHz signal comes in through the VHF LNA
 static bool rx_am(uint32_t hz, radio_bw_t bw)
 {
-	return rx_tune(hz, bw, NULL, true);
+	return rx_tune(hz, bw, NULL, true, false);
 }
 #endif
 
-// Back on the frequency, mode and demodulator the receiver had (after a transmission or the receiver's sleep)
-static void retune(void)
+// Back on the frequency, mode and demodulator the receiver had (after a transmission or the receiver's sleep); keep as
+// in rx_tune
+static void retune(bool keep)
 {
 	subtone_t t = rx_tone;
-	rx_tune(rx_hz, rx_bw, &t, fd6818_am_on(&fd));
+	rx_tune(rx_hz, rx_bw, &t, fd6818_am_on(&fd), keep);
 }
+
+#if CONFIG_DMR
+// The key-up drives from the cal table at the TX frequency (radio/pa_keyup.h), before the RF task is armed
+static void keyup_plan(uint32_t hz)
+{
+	uint16_t top = 0u;
+	for (uint8_t l = 0u; l < board.power_count; l++) {
+		uint16_t v = bf_cal_power_level(hz, l);
+		top = v > top ? v : top;
+	}
+	ku_cfg = keyup_cfg;			// pa_keyup_plan leaves it when no key-up is set up (no boost then)
+	ku = pa_keyup_plan(tx_drive, top, &ku_cfg);	// the plan and its points from one set of constants
+}
+#endif
 
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 {
@@ -329,21 +451,29 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	wake();
 	tx_uhf = hz >= UHF_FROM_HZ;
 	tx_drive = bf_cal_power_level(hz, power);
+#if CONFIG_DMR
+	if (mode == RADIO_MODE_DMR) {
+		keyup_plan(hz);
+	}
+#endif
 	tx_hz = hz;
 	write_mod_bias(hz);
-	// DMR keeps listening on the RX frequency until a burst (dmr_rf_switch retunes per burst); on a split channel the
+	// DMR keeps listening on the RX frequency until a burst (burst_on retunes per burst); on a split channel the
 	// synthesizer on the TX frequency here left the radio deaf to the repeater's downlink
 	fd6818_set_freq(&fd, synth_hz(mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz));
 	hrc_dac_b_power(true);
 	if (mode == RADIO_MODE_DMR) {
-		// 8.5 "Enter DMR TX": the PA select and drive wait for the PA one-shot of each burst. Between bursts the radio
-		// receives: the FD6818 in RX and the LNA on until the RF TX interrupt switches to the first burst
-		// (dmr_rf_switch). In TX here, the hotspot, which keys to listen, heard nothing until its first burst
+		// 8.5 "Enter DMR TX": the PA select and drive wait for each burst's sequence. Between bursts the radio
+		// receives: the FD6818 in RX and the LNA on until the RF task switches to the first burst (burst_on). In TX
+		// here, the hotspot, which keys to listen, heard nothing until its first burst
 		hrc_pin_write(PIN_MIC_PATH, false);
 		lna(have_rx ? rx_hz : hz, true);
 		fd6818_set_bandwidth(&fd, FD6818_BW_DMR);
 		fd6818_set_state(&fd, FD6818_STATE_RX);
 		dmr_keyed = true;
+#if CONFIG_DMR
+		hrc_rfburst_arm();
+#endif
 	} else {
 		lna(hz, false);
 		fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);	// 0x51's enable would add the FD6818's tone to the C7000's
@@ -362,9 +492,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	return true;
 }
 
-static void tx_off(void)
+static void tx_end(bool keep)
 {
-	dmr_keyed = false;
+	dmr_disarm();
 	pa_off();
 #if CONFIG_APRS
 	if (afsk_tx) {
@@ -377,8 +507,19 @@ static void tx_off(void)
 	transmitting = false;
 	ring_play();
 	if (have_rx) {
-		retune();
+		retune(keep);
 	}
+}
+
+static void tx_off(void)
+{
+	tx_end(false);
+}
+
+// hrc_dmr_board_t.tx_end: the burst switch left the FD6818 receiving
+static void dmr_tx_end(void)
+{
+	tx_end(true);
 }
 
 // FM TX tone (1750 Hz burst, roger beep, Morse): the modem's DTMF sender as a single tone (modem-hrc7000.md 8.3).
@@ -576,7 +717,7 @@ static void rx_sleep(bool sleep)
 		lna(rx_hz, false);
 		asleep = true;
 	} else {
-		retune();
+		retune(false);
 	}
 }
 
@@ -602,6 +743,7 @@ const hal_radio_t dm32_radio = {
 	.rx = rx,
 	.tx = tx,
 	.tx_off = tx_off,
+	.dmr_tx_end = hrc_dmr_tx_end,
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,

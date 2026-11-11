@@ -4,7 +4,7 @@
 // ID form, triggers, the tokens that are skipped, document lengths shorter and longer than the datagram, malformed
 // uintvars, request IDs empty / too long / past the end, unknown tokens), the answers built within LRRP_MAX_DOCUMENT
 // for the longest request ID and every optional field, the distance; then mutated requests (fuzz.h; RFOUNDRY_FUZZ_ITERS),
-// each decoded one answered within bounds. Vectors are the token layouts dmrLrrp.h names (rfoundry_sdrbench's codec).
+// each decoded one answered within bounds. Vectors are the token layouts dmrLrrp.h names.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -205,6 +205,13 @@ static void test_build(void)
 	p.location.lonDegrees = 180;
 	n = lrrpBuildTriggeredReport(r.requestId, 1, 0, &p, out);
 	CHECK(n > 0 && out[5 + 6] == 0x51 && out[5 + 7] == 0xFF && out[5 + 8] == 0xFF);	// -90: 0x7FFFFFFF | sign
+	CHECK(out[5 + 9] == 0xFF && out[5 + 10] == 0xFF);
+	CHECK(out[5 + 11] == 0x80 && out[5 + 12] == 0x00 && out[5 + 13] == 0x00 && out[5 + 14] == 0x00);	// -180
+	// Exact values: 33 deg 45 min north is 3/8 of 2^31; 84 deg 23 min west rounds to -0x3C01845D
+	p = position();
+	n = lrrpBuildTriggeredReport(r.requestId, 1, 0, &p, out);
+	CHECK(n > 0 && out[5 + 6] == 0x51 && out[5 + 7] == 0x30 && out[5 + 8] == 0x00 && out[5 + 9] == 0x00 && out[5 + 10] == 0x00);
+	CHECK(out[5 + 11] == 0xC3 && out[5 + 12] == 0xFE && out[5 + 13] == 0x7B && out[5 + 14] == 0xA3);
 
 	// Distance: one minute of latitude is 1852 m; nothing between a place and itself
 	dmrDataLocation_t a = position().location, b = a;

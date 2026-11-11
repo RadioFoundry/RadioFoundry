@@ -6,9 +6,20 @@ A test plays a known sequence of tones and silences (a beep pattern, or a bench 
 speaker. check_tones() finds the sequence in the recording and measures each tone between the points where its
 amplitude rises and falls fastest (the direct sound's edges: a room's echo builds up and dies away slower), so a lost
 start or end shows as a short tone.
-It also asks that the plateau be flat (no step at the amplifier's start, no fade), that each silence be silent, and
+It also asks that the tone hold (no rise as an amplifier comes up, no dropout), that each silence be silent, and
 that nothing between or around the tones is a pop: broadband energy outside the tones' harmonics far above the
-recording's own floor. Pure Python and numpy, no radio: test_audio_check.py runs it on synthetic signals."""
+recording's own floor. Pure Python and numpy, no radio: test_audio_check.py runs it on synthetic signals.
+
+A microphone with its own processing (a headset's noise suppression) fades a steady tone by 20 dB or more after a
+few tens of ms and lets it back up at once, more so the quieter it hears it; a room swells and fades one too. Neither
+is the radio's: a fade is reported, not failed. What the radio does differs in kind: a lost block or a muted
+amplifier takes the level to the floor within a millisecond or two, an amplifier coming up late puts it above where
+the tone started, and a stream that stops early leaves only the room's echo, dying away, until the tone's time is up.
+A fade instead leaves the tone sounding until its end, where its direct sound stops at once (DIRECT_DB).
+
+Some headsets go further: they cut a tone short and let it back up in the silence after it, so that no length or
+silence in the recording means anything. Each tone's start still does. check_onsets() asks only for those: each tone at
+its frequency, where the sequence puts it. What it can't see, the test takes from the radio's own stream counters."""
 import os
 import re
 import wave
@@ -20,18 +31,25 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 WIN_MS = 15.0           # tone level analysis window (Blackman: tones 300 Hz apart and 25 dB apart stay apart)
 HOP_MS = 1.0
-STEP_WIN_MS = 5.0       # the window steps on a plateau are measured with (at least three periods of the tone)
 POP_WIN_MS = 10.0       # pop analysis frames
+ABRUPT_MS = 3.0         # a change within this long is abrupt: a lost block or an amplifier, not a room or a microphone
+ONSET_RISE_MS = 10.0    # a tone's start: its level this long after against this long before
+GONE_DB = 20.0          # a tone within this of the floor is gone: a dropout, not a microphone's fade
+# A sound that stops falls this far at once (its direct sound); what follows is the room's echo dying away, at a rate
+# that depends on the room and the microphone's place, not on the radio
+DIRECT_DB = 10.0
 HARMONICS = 6           # harmonics of each tone kept out of the pop measure (the speaker distorts)
+SWEEP_HZ = -1           # beep_patterns' hz for the sweep segment (beep.h BEEP_HZ_SWEEP)
 
 
 def beep_patterns(root=ROOT):
     """The beep patterns from core/radio/beep.c, so the tests copy none: {name: [(hz, ms), ...]} with the
-    debug link's names (BEEP_TX_PERMIT -> tx_permit); hz 0 is a silence."""
+    debug link's names (BEEP_TX_PERMIT -> tx_permit); hz 0 is a silence, SWEEP_HZ the speaker test's sweep."""
     src = open(os.path.join(root, "core", "radio", "beep.c")).read()
     tables = {}
     for name, body in re.findall(r"static const beep_seg_t (p_\w+)\[\]\s*=\s*\{(.*?)\};", src, re.S):
-        tables[name] = [(int(h), int(m)) for h, m in re.findall(r"\{\s*(\d+)\s*,\s*(\d+)\s*\}", body)]
+        tables[name] = [(SWEEP_HZ if h == "BEEP_HZ_SWEEP" else int(h), int(m))
+                        for h, m in re.findall(r"\{\s*(\d+|BEEP_HZ_SWEEP)\s*,\s*(\d+)\s*\}", body)]
     out = {}
     for beep, table in re.findall(r"\[BEEP_(\w+)\]\s*=\s*PAT\((p_\w+)\)", src):
         out[beep.lower()] = tables[table]
@@ -73,6 +91,22 @@ def tone_level(x, fs, hz, win_ms=WIN_MS, hop_ms=HOP_MS):
     return db(np.concatenate([np.full(pad, amp[0]), amp]))
 
 
+def tone_envelope(x, fs, hz, hop_ms=HOP_MS):
+    """The amplitude of the hz component (dBFS) averaged over whole periods, at least 2 ms: fine enough in time to
+    show a few ms lost, where tone_level's window would smooth them over. Index i is centered at i * hop_ms."""
+    per = max(int(round(fs / hz)), 1)
+    span = per * max(1, int(np.ceil(0.002 * fs / per)))
+    z = x * np.exp(-2j * np.pi * hz * np.arange(len(x)) / fs)
+    c = np.concatenate([[0.0], np.cumsum(z)])
+    amp = 2 * np.abs((c[span:] - c[:-span]) / span)       # amp[k]: samples k .. k + span, centered at k + span / 2
+    hop = max(int(fs * hop_ms / 1000), 1)
+    k = np.arange(0, len(x), hop) - span // 2
+    out = np.full(len(k), amp[0] if len(amp) else 0.0)
+    ok = (k >= 0) & (k < len(amp))
+    out[ok] = amp[k[ok]]
+    return db(out)
+
+
 def residual_level(x, fs, freqs, win_ms=POP_WIN_MS):
     """Per frame (win_ms long, every win_ms / 2: a click on one frame's edge is in the middle of the next): the
     energy (dBFS rms) left once the bins near each tone's harmonics and below 150 Hz are taken out. A pop or a noise
@@ -104,11 +138,13 @@ class Tone:
     end_s: float = None
     plateau_db: float = None
     ripple_db: float = None     # max - min on the plateau
-    step_db: float = None       # the largest change on the plateau within a few ms
+    step_db: float = None       # the largest abrupt fall on the plateau (ABRUPT_MS)
+    rise_db: float = None       # the most it rises over where it started (an amplifier coming up)
+    fade_db: float = None       # a fall that left it sounding (a microphone's processing, the room), or None
 
     @property
     def got_ms(self):
-        return None if self.start_s is None else (self.end_s - self.start_s) * 1000
+        return None if self.start_s is None or self.end_s is None else (self.end_s - self.start_s) * 1000
 
 
 @dataclass
@@ -127,15 +163,44 @@ class Result:
         for t in self.tones:
             if t.start_s is None:
                 rows.append(f"  {t.hz} Hz {t.want_ms:.0f} ms: not found")
+            elif t.end_s is None:       # check_onsets: only the start is measured
+                rows.append(f"  {t.hz} Hz {t.want_ms:.0f} ms: starts at {t.start_s:.3f} s, {t.plateau_db:.1f} dBFS, "
+                            f"rise {t.rise_db:.1f} dB")
             else:
                 rows.append(f"  {t.hz} Hz {t.want_ms:.0f} ms: got {t.got_ms:.1f} ms at {t.start_s:.3f} s, "
-                            f"{t.plateau_db:.1f} dBFS, ripple {t.ripple_db:.1f} dB, step {t.step_db:.1f} dB")
+                            f"{t.plateau_db:.1f} dBFS, ripple {t.ripple_db:.1f} dB, step {t.step_db:.1f} dB, "
+                            f"rise {t.rise_db:.1f} dB" +
+                            (f", faded {t.fade_db:.0f} dB (the microphone or the room)" if t.fade_db else ""))
         for want, got, depth in self.gaps:
             rows.append(f"  gap {want:.0f} ms: got {got:.1f} ms, {depth:.0f} dB down")
         for t, over, ms in self.pops:
             rows.append(f"  pop at {t:.3f} s: {ms:.0f} ms, +{over:.0f} dB")
         rows += [f"  PROBLEM: {p}" for p in self.problems]
         return "\n".join(r for r in rows if r)
+
+
+def _past_fade(lv, d, e, near_a, e_hi, win_half, floor_db, gone_db=GONE_DB, hold_db=DIRECT_DB * 0.6, fade_max_db=35.0):
+    """(end, fade dB or None). e is the steepest fall after the tone's middle. When it comes well before the end asked
+    for, and the level after it holds (a tone still sounding: gone_db over the floor, at most fade_max_db under where
+    it was, hold_db over what follows) until
+    a fall of hold_db near the end asked for, that fall is the end: the earlier one was a fade (a microphone's
+    processing). A stream that stopped at e leaves only its echo, dying away with no such fall."""
+    if e >= near_a:         # the fall is where the tone should end: it did
+        return e, None
+    a = max(near_a, int(e + 2 * win_half))
+    if e_hi <= a + 1:
+        return e, None
+    e2 = a + int(np.argmin(d[a:e_hi])) + 0.5
+    k = int(win_half + 3)
+    before, after = int(e2) - k, int(e2) + k + 1
+    held = lv[int(e + win_half + 2):before]
+    if before < 0 or after >= len(lv) or len(held) < 3:
+        return e, None
+    hold = float(np.median(held))
+    was = float(lv[max(int(e) - k, 0)])
+    if hold < floor_db + gone_db or hold < was - fade_max_db or lv[before] - lv[after] < hold_db or hold - lv[after] < hold_db:
+        return e, None
+    return e2, was - hold
 
 
 def _crossing_up(lv, a, b, thr, hold=1):
@@ -153,15 +218,15 @@ def _crossing_up(lv, a, b, thr, hold=1):
 
 def check_tones(x, fs, segs, search=None, dur_tol_ms=10.0, ripple_db=12.0, step_db=8.0, gap_db=8.0, pop_db=20.0,
                 min_snr_db=30.0, edge_ms=4.0, guard_ms=(150.0, 300.0), long_tol_ms=40.0, rel_db=10.0, ring_ms=60.0,
-                edge_db=6.0):
+                edge_db=6.0, gone_db=GONE_DB):
     """Find segs ([(hz, ms)], hz 0 a silence) in x and check it. search (start_s, end_s) limits where the first tone
     may start. Problems:
     - a tone shorter than asked by more than dur_tol_ms (a lost start or end), or longer by more than long_tol_ms
       (a speaker and a room ring on after a tone, so a recording's tone is often a little long);
-    - its level moving by more than ripple_db over the length asked for (a room swells and fades a tone by several
-      dB as its echoes add up), by more than step_db within a few ms (a step as an amplifier comes up,
-      a dropout; measured in a short window), or differing by ripple_db from another tone at its frequency (edge_ms plus half a window in from each
-      edge, so the fades don't count): a step as the amplifier comes up, a fade;
+    - over the length asked for (edge_ms plus half a window in from each edge): its level rising more than step_db
+      over where it started (an amplifier coming up), or falling by more than step_db within ABRUPT_MS to within
+      gone_db of the floor (a dropout: a lost block, a muted amplifier); or its level differing by ripple_db from
+      another tone at its frequency. A fall that leaves the tone sounding is a fade (the module's notes): reported;
     - a silence longer than asked by dur_tol_ms, shorter by long_tol_ms (the ring), or less than gap_db below its
       louder neighbor;
     - a pop or noise burst from guard_ms[0] before the first tone to guard_ms[1] after the last: residual_level more
@@ -247,6 +312,8 @@ def check_tones(x, fs, segs, search=None, dur_tol_ms=10.0, ripple_db=12.0, step_
             e_hi = int(min(s + span + (long_tol_ms + WIN_MS / 2) / HOP_MS, n - 2))
             if e_hi > e_lo + 1:
                 e = e_lo + int(np.argmin(d[e_lo:e_hi])) + 0.5
+                e, t.fade_db = _past_fade(lv, d, e, int(s + span - (dur_tol_ms + WIN_MS / 2) / HOP_MS), e_hi, win_half,
+                                          r.floor_db, gone_db)
         if s is None or e is None:
             r.problems.append(f"{hz} Hz {ms} ms: no clean rise and fall around {expect * hop:.3f} s")
             r.tones.append(t)
@@ -257,23 +324,31 @@ def check_tones(x, fs, segs, search=None, dur_tol_ms=10.0, ripple_db=12.0, step_
         inner = int(edge_ms / HOP_MS + win_half)
         pa, pb = int(s) + inner, int(min(e, s + span)) - inner     # the length asked for: a ring after isn't the plateau
         t.ripple_db = float(lv[pa:pb].max() - lv[pa:pb].min()) if pb > pa + 2 else 0.0
-        # steps by a short window (no other tone is near on the plateau): a room swells a tone slowly, an amplifier
-        # coming up or a lost block changes it at once
-        sw = max(STEP_WIN_MS, 3000.0 / hz)
-        short = tone_level(x, fs, hz, win_ms=sw)
-        w = int(sw / HOP_MS)
-        qa, qb = pa, min(pb, len(short))
-        t.step_db = float(np.abs(short[qa + w:qb] - short[qa:qb - w]).max()) if qb > qa + w else 0.0
+        # an amplifier coming up late leaves the tone's start low; a room or a microphone only fades it from there
+        early = float(np.median(lv[pa:pa + int(10 / HOP_MS)])) if pb > pa + int(10 / HOP_MS) else plateau
+        t.rise_db = max(float(lv[pa:pb].max()) - early, 0.0) if pb > pa + 2 else 0.0
+        # a dropout by the fine envelope: an abrupt fall to near the floor (no other tone is near on the plateau)
+        fine = tone_envelope(x, fs, hz)
+        f_floor = float(np.percentile(fine[a:b], 10))
+        w = int(ABRUPT_MS / HOP_MS)
+        qa, qb = pa, min(pb, len(fine))
+        t.step_db, gone = 0.0, False
+        if qb > qa + w:
+            seg = fine[qa:qb]
+            low = np.array([seg[i + 1:i + w + 1].min() for i in range(len(seg) - w)])
+            fall = seg[:len(low)] - low
+            t.step_db = float(fall.max())
+            gone = bool(((fall > step_db) & (low < f_floor + gone_db)).any())
         if t.got_ms < ms - dur_tol_ms:
             r.problems.append(f"{hz} Hz: {t.got_ms:.1f} ms, want {ms:.0f} ms (cut by {ms - t.got_ms:.1f} ms)")
         elif t.got_ms > ms + long_tol_ms:
             r.problems.append(f"{hz} Hz: {t.got_ms:.1f} ms, want {ms:.0f} ms ({t.got_ms - ms:.1f} ms long)")
-        if t.ripple_db > ripple_db:
-            r.problems.append(f"{hz} Hz {ms} ms: the level moves by {t.ripple_db:.1f} dB on the plateau "
-                              f"(at most {ripple_db:.0f})")
-        if t.step_db > step_db:
-            r.problems.append(f"{hz} Hz {ms} ms: a step or dropout of {t.step_db:.1f} dB within {sw:.0f} ms "
-                              f"(at most {step_db:.0f})")
+        if t.rise_db > step_db:
+            r.problems.append(f"{hz} Hz {ms} ms: a step: it rises {t.rise_db:.1f} dB over where it started (at most "
+                              f"{step_db:.0f}): an amplifier coming up")
+        if gone:
+            r.problems.append(f"{hz} Hz {ms} ms: a dropout: {t.step_db:.1f} dB down within {ABRUPT_MS:.0f} ms, to "
+                              f"within {gone_db:.0f} dB of the floor")
         if prev and prev[0] == "gap":
             _, gms, _ = prev
             before = r.tones[-1] if r.tones else None
@@ -342,9 +417,114 @@ def check_tones(x, fs, segs, search=None, dur_tol_ms=10.0, ripple_db=12.0, step_
     return r
 
 
+
+def check_onsets(x, fs, segs, min_snr_db=20.0, tol_ms=15.0, min_rise_db=10.0, min_over_db=GONE_DB):
+    """The start of each tone in segs ([(hz, ms)], hz 0 a silence), for a microphone whose processing makes the rest
+    of the recording meaningless (the module's notes). The first tone must rise min_rise_db out of silence to
+    min_over_db over its frequency's floor and hold a few ms; each later one must be sounding that far over its floor
+    within tol_ms of its place. Doesn't measure lengths, silences or pops. Tone.end_s stays None."""
+    r = Result()
+    tones = [(h, m) for h, m in segs if h]
+    if not tones:
+        raise ValueError("no tone in the sequence")
+    levels = {h: tone_level(x, fs, h) for h in {h for h, _ in tones}}
+    n = min(len(v) for v in levels.values())
+    span = int(sum(m for _, m in segs) / HOP_MS)
+    if n <= span:
+        raise ValueError("the recording is shorter than the sequence")
+    w = int(ONSET_RISE_MS / HOP_MS)
+    floor = {h: float(np.percentile(v[:n], 10)) for h, v in levels.items()}
+    # under the floor is nothing: the zeros while a capture device opens would read as a huge rise
+    levels = {h: np.maximum(v[:n], floor[h]) for h, v in levels.items()}
+    rise = {}
+    for h, v in levels.items():
+        rise[h] = np.zeros(n)
+        rise[h][w:n - w] = v[2 * w:n] - v[:n - 2 * w]
+    first = tones[0][0]
+    r.floor_db = floor[first]
+    r.snr_db = float(levels[first].max()) - r.floor_db
+    if r.snr_db < min_snr_db:
+        r.quiet = True
+        r.problems.append(f"the first tone ({first} Hz) is only {r.snr_db:.0f} dB over the floor (at least "
+                          f"{min_snr_db:.0f} needed): too quiet, or not played")
+        r.tones = [Tone(h, m) for h, m in tones]
+        return r
+    offs, t = [], 0.0
+    for h, m in segs:
+        if h:
+            offs.append((h, m, int(t / HOP_MS)))
+        t += m
+    # how far over its floor each tone holds from its start, at least for the first few ms (a click doesn't hold)
+    held = {}
+    for h, m, _ in offs:
+        ln = max(int(min(m / 2, 15.0) / HOP_MS), 1)
+        v = np.lib.stride_tricks.sliding_window_view(levels[h], ln).min(axis=1) - floor[h]
+        held[(h, m)] = np.concatenate([v[w:], np.zeros(w + ln - 1)])
+    # a start counts for no more than the level it holds, so a noise bump isn't taken for a start with a louder tone
+    # falling on a later place; the small unclipped term picks the steepest point among rises that all reach the clip
+    last = n - span - w
+    score = np.zeros(last)
+    for h, m, o in offs:
+        up = rise[h][o:o + last]
+        score += np.minimum(np.minimum(up, held[(h, m)][o:o + last]), 30.0) + 0.01 * up
+    # the sequence starts out of silence, so the first tone anchors it. A headset's release after each tone rises as
+    # steeply as the tones do and just as evenly spaced, but a tone came just before it
+    h0, m0, _ = offs[0]
+    q = int(200 / HOP_MS)
+    before = np.array([levels[h0][max(i - q, 0):max(i - w, 1)].max() - floor[h0] for i in range(last)])
+    # (near the floor for the 200 ms before it, or far under the tone: a room's noise peaks over its 10th percentile)
+    h = held[(h0, m0)][:last]
+    quiet = (before <= min_over_db + 10.0) | (h - before >= min_over_db)
+    can = quiet & (rise[h0][:last] >= min_rise_db) & (h >= min_over_db)
+    if not can.any():
+        r.problems.append(f"the first tone ({h0} Hz) never rises out of silence: not played, or at another pitch")
+        r.tones = [Tone(h, m) for h, m, _ in offs]
+        return r
+    score[~can] = -1e9
+    i0 = int(np.argmax(score))
+    tol = int(tol_ms / HOP_MS)
+    for n_tone, (h, m, o) in enumerate(offs):
+        k0 = i0 + o
+        a, b = max(k0 - tol, 0), min(k0 + tol + 1, n - w)
+        k = a + int(np.argmax(rise[h][a:b]))
+        over = float(held[(h, m)][k])
+        if n_tone:      # past where a headset's release before it can reach
+            ln = max(int(min(m / 2, 15.0) / HOP_MS), 1)
+            over = float(levels[h][k0 + tol:k0 + tol + ln].min()) - floor[h]
+        t = Tone(h, m, start_s=k * HOP_MS / 1000, rise_db=float(rise[h][k]), plateau_db=floor[h] + over)
+        r.tones.append(t)
+        # a later tone may rise out of the headset's release, or hardly at all: it has to be sounding at its place
+        if (n_tone == 0 and t.rise_db < min_rise_db) or over < min_over_db:
+            t.start_s = None
+            r.problems.append(f"{h} Hz {m} ms: no start at {k0 * HOP_MS / 1000:.3f} s (+-{tol_ms:.0f} ms): rises "
+                              f"{float(rise[h][k]):.0f} dB (at least {min_rise_db:.0f}), to "
+                              f"{over:.0f} dB over its floor (at least {min_over_db:.0f})")
+    return r
+
+
+def burst_ms(x, fs, freqs, t0_s, ms, drop_db=DIRECT_DB):
+    """A noise burst's own length (one of check_tones' pops: start t0_s, ms long): from its start to the last frame
+    within drop_db of its peak. The pop's length runs on until the echo falls to the floor's limit, so a louder burst
+    (the volume, the microphone closer) measures longer; this doesn't. A room that drops less than drop_db at once
+    only makes it longer, never shorter"""
+    res = residual_level(x, fs, freqs)
+    fr = POP_WIN_MS / 2000
+    a = max(int(round(t0_s / fr)), 0)
+    seg = res[a:min(a + int(round(ms / 1000 / fr)), len(res))]
+    if len(seg) == 0:
+        return ms
+    keep = np.nonzero(seg >= seg.max() - drop_db)[0]
+    return float((keep[-1] + 1) * fr * 1000)
+
+
 def check_wav(path, segs, **kw):
     x, fs = load_wav(path)
     return check_tones(x, fs, segs, **kw)
+
+
+def check_wav_onsets(path, segs, **kw):
+    x, fs = load_wav(path)
+    return check_onsets(x, fs, segs, **kw)
 
 
 def program_segs(program):
@@ -360,10 +540,124 @@ def program_segs(program):
     return out
 
 
-if __name__ == "__main__":      # by hand: audio_check.py FILE.wav BEEP|HZ:MS,...
+def sweep_spec(root=ROOT):
+    """The sweep (beep.h BEEP_SWEEP): (lowest Hz, highest Hz, its length in ms)"""
+    src = open(os.path.join(root, "core", "radio", "beep.h")).read()
+    lo, hi = (int(re.search(rf"#define BEEP_SWEEP_{k}_HZ\s+(\d+)", src).group(1)) for k in ("LO", "HI"))
+    ms = [m for h, m in beep_patterns(root)["sweep"] if h == SWEEP_HZ]
+    if len(ms) != 1:
+        raise ValueError("core/radio/beep.c: the sweep pattern has no single sweep segment")
+    return lo, hi, ms[0]
+
+
+@dataclass
+class Sweep:
+    start_s: float = None           # where the sweep starts in the recording
+    frames: int = 0                 # analysis frames inside it
+    broken: int = 0                 # of those, frames with the sweep jumping (energy just above its frequency)
+    off_db: float = None            # median energy 150-600 Hz above the sweep (harmonics excluded), relative to it
+    response: list = field(default_factory=list)    # (Hz, dB relative to the loudest band): the speaker as heard
+    snr_db: float = None
+    problems: list = field(default_factory=list)
+    quiet: bool = False
+
+    def report(self):
+        if self.start_s is None:
+            return "  sweep not found\n" + "\n".join(f"  PROBLEM: {p}" for p in self.problems)
+        rows = [f"sweep at {self.start_s:.3f} s, SNR {self.snr_db:.0f} dB; {self.broken}/{self.frames} frames broken, "
+                f"median energy above the sweep {self.off_db:.1f} dB",
+                "  response: " + " ".join(f"{hz:.0f}:{d:+.0f}" for hz, d in self.response)]
+        rows += [f"  PROBLEM: {p}" for p in self.problems]
+        return "\n".join(rows)
+
+
+def check_sweep(x, fs, lo, hi, ms, off_db=-30.0, max_broken=0.05, min_snr_db=30.0):
+    """The speaker test's sweep (BEEP_SWEEP), lo to hi Hz over ms, in a recording: where it is, the speaker's response
+    along it, and whether it plays whole. A sweep played whole has nearly all its energy at its frequency and the
+    speaker's harmonics of it. One whose audio jumps (samples lost, repeated or played out of order) spreads energy
+    on both sides of it at every jump. The room can't fake that above the sweep: its echoes arrive at the pitch the
+    sweep had a moment ago, below it. So a frame counts as broken when the energy 150-600 Hz above the sweep (its
+    harmonics excluded) is within off_db of the sweep's. More than max_broken of the frames broken is a problem."""
+    r = Sweep()
+    n = 1024 if fs > 12000 else 512
+    hop = n // 4
+    win = np.hanning(n)
+    fr = np.fft.rfftfreq(n, 1 / fs)
+    rate = (hi - lo) / (ms / 1000)
+    frames = np.array([np.abs(np.fft.rfft(x[k:k + n] * win)) ** 2 for k in range(0, len(x) - n, hop)])
+    if not len(frames):
+        r.problems.append("the recording is shorter than one analysis frame")
+        return r
+    t = (np.arange(len(frames)) * hop + n / 2) / fs
+    band = (fr > lo * 0.8) & (fr < min(hi * 1.05, fs / 2))
+    peak = fr[np.argmax(frames * band, axis=1)]
+    power = frames[:, band].sum(axis=1)
+    floor = max(np.percentile(power, 10), 1e-30)     # the quiet before and after the sweep
+    loud = power > floor * 1e3
+    inside = loud & (peak > lo + 0.1 * (hi - lo)) & (peak < hi - 0.1 * (hi - lo))
+    if inside.sum() < 10:
+        r.quiet = loud.sum() < 10
+        r.problems.append("no sweep found: " + ("the microphone hears too little of the speaker" if r.quiet else
+                                                "sound, but no tone rising through the band"))
+        return r
+    r.start_s = float(np.median(t[inside] - (peak[inside] - lo) / rate))
+    r.snr_db = float(10 * np.log10(np.percentile(power[inside], 90) / floor))
+    ratios = []
+    resp = []
+    for i in range(len(frames)):
+        f0 = lo + rate * (t[i] - r.start_s)
+        if f0 < lo + 50 or f0 > hi - 50 or t[i] - n / 2 / fs < r.start_s:
+            continue
+        width = max(120.0, 3 * fs / n)
+        on = np.abs(fr - f0) < width
+        e_on = frames[i][on].sum()
+        resp.append((f0, e_on))
+        if f0 + 600 > min(4000.0, fs / 2):
+            continue        # nothing above it left in the band to look at
+        above = (fr > f0 + 150) & (fr < f0 + 600)
+        for h in range(2, HARMONICS + 1):
+            above &= np.abs(fr - h * f0) >= width
+        ratios.append((e_on, 10 * np.log10(max(frames[i][above].sum(), 1e-30) / max(e_on, 1e-30))))
+    # Only where the speaker plays the sweep within 25 dB of its loudest: below that (a small speaker's low end) the
+    # room's floor alone is close to the sweep
+    e_max = max(v for f, v in resp)
+    ratios = np.array([d for v, d in ratios if v > e_max * 10 ** -2.5])
+    r.frames = len(ratios)
+    r.broken = int((ratios > off_db).sum())
+    r.off_db = float(np.median(ratios))
+    # The response in third-octave bands from the first frames' level per band, relative to the loudest
+    centers = [c for c in 200 * 2 ** (np.arange(0, 15) / 3) if lo * 1.12 < c < hi / 1.12]
+    levels = []
+    for c in centers:
+        e = [v for f, v in resp if c / 1.12 <= f < c * 1.12]
+        levels.append(10 * np.log10(np.mean(e)) if e else -300.0)
+    top = max(levels) if levels else 0
+    r.response = [(c, lv - top) for c, lv in zip(centers, levels)]
+    # The radio plays an 8 kHz stream: above its band is only the codec's images, a few percent of the energy. Much
+    # more is the capture's fault (such a recording also falls below the sweep's lowest pitch), not the radio's
+    e_hi = frames[:, fr > 4300].sum()
+    above = e_hi / max(e_hi + frames[:, (fr > 100) & (fr < 4000)].sum(), 1e-30)    # a share of the energy
+    if fs > 9000 and above > 0.25:
+        r.problems.append(f"{100 * above:.0f} % of the energy is above 4.3 kHz, which the radio's 8 kHz audio can't "
+                          "make: the recording is broken (microphone capture), record again")
+    elif r.snr_db < min_snr_db:
+        r.quiet = True
+        r.problems.append(f"the sweep is only {r.snr_db:.0f} dB over the floor (want {min_snr_db:.0f})")
+    elif r.broken > max_broken * r.frames:
+        r.problems.append(f"the sweep breaks up: {r.broken} of {r.frames} frames have energy just above its frequency within "
+                          f"{-off_db:.0f} dB of it (audio jumping: samples lost, repeated or out of order)")
+    return r
+
+
+if __name__ == "__main__":      # by hand: audio_check.py FILE.wav BEEP|sweep|HZ:MS,...
     import sys
     pats = beep_patterns()
     spec = sys.argv[2]
+    if spec == "sweep":
+        x, fs = load_wav(sys.argv[1])
+        res = check_sweep(x, fs, *sweep_spec())
+        print(res.report())
+        sys.exit(1 if res.problems else 0)
     segs = pats[spec] if spec in pats else [tuple(float(v) for v in s.split(":")) for s in spec.split(",")]
     res = check_wav(sys.argv[1], [(int(h), m) for h, m in segs])
     print(res.report())

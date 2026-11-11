@@ -15,8 +15,8 @@ import uuid
 from . import __version__, boards, bootkey, codecsave, debuglink, manifest as mf, plan as planmod, state, stockfw
 from . import dfu as dfumod
 from . import release as relmod
-from . import serialflash
-from . import k22fcodec, hidboot, stubroute, updatefile
+from . import origversion, serialflash, stubroute
+from . import k22fcodec, hidboot, updatefile
 
 EPILOG = """\
 examples:
@@ -210,7 +210,8 @@ def stock_board(stock, board_id):
     """The board a stock file or flash readout is for (its codec profile), checked against --board when both are
     given."""
     try:
-        prof = stock_codec(stock, None)[0] if not stockfw.is_container(stock) else stockfw.find_profile(stock)
+        prof = stock_codec(stock, None)[0] if not stockfw.is_container(stock) else stockfw.find_profile(
+            stock, board=boards.get(board_id).id if board_id else None)
     except (stockfw.StockError, UsageError):
         return pick_board(board_id, "an unknown stock file")
     board = boards.get(prof["board"])
@@ -320,7 +321,10 @@ def get_key(args, board, stock, sim_key=None):
         return sim_key
     if args.key:
         return dfumod.load_key(args.key, board)
-    prof = stockfw.PROFILES.get(stockfw.sha256(stock)) if isinstance(stock, bytes) else None
+    prof = None
+    if isinstance(stock, bytes):
+        sha = stockfw.sha256(stock)
+        prof = stockfw.PROFILES.get(stockfw.profile_key(sha, board.id)) or stockfw.PROFILES.get(sha)
     if prof is not None and stockfw.codec_only(prof):
         # another radio's file that gives this radio's codec: the key comes from elsewhere
         say("key      %s" % stockfw.codec_only(prof))
@@ -357,7 +361,13 @@ def get_saved_codec(args, board, probe):
     saved = codecsave.load(board)
     has_codec = bool(probe) and probe.get("codec") == board.codec.id
     if has_codec and not args.no_probe and (not board.keep_codec_supported or saved is None):
-        got = codecsave.from_radio(board, args.port)
+        say("codec    reading it back from the radio over the debug link (a read, nothing is written to the radio); "
+            "this can take a few minutes")
+        progress, finish = _read_progress()
+        try:
+            got = codecsave.from_radio(board, args.port, progress=progress)
+        finally:
+            finish()
         if got:
             say("codec    read back from the radio (debug link) and checked; saved in %s" % codecsave.save(board, got[1]))
             return got
@@ -491,8 +501,16 @@ def get_probe(args, log=say):
     return p
 
 
-def wait_for_dfu(usb, board, wait_s, log=say):
-    devs = dfumod.find(usb, board)
+def _usb_where(dev):
+    return (getattr(dev, "bus", None), getattr(dev, "address", None))
+
+
+def wait_for_dfu(usb, board, wait_s, log=say, gone=None):
+    """The bootloader's device. gone: a device with the same USB IDs that is not the bootloader (the original firmware
+    running normally, learn_original_version): it is passed over until the radio comes back as another device."""
+    def find():
+        return [d for d in dfumod.find(usb, board) if gone is None or _usb_where(d) != _usb_where(gone)]
+    devs = find()
     if not devs and wait_s > 0:
         log("")
         log("Put the %s in its bootloader now: %s" % (board.name, bootloader_steps(board)))
@@ -500,7 +518,7 @@ def wait_for_dfu(usb, board, wait_s, log=say):
         end = time.monotonic() + wait_s
         while not devs and time.monotonic() < end:
             time.sleep(0.5)
-            devs = dfumod.find(usb, board)
+            devs = find()
     if not devs:
         win = "\n" + dfumod.WINDOWS_DRIVER_STEPS if sys.platform == "win32" else ""
         raise UsageError("no radio bootloader found (USB %04X:%04X). Check that the cable carries data and that the "
@@ -508,6 +526,98 @@ def wait_for_dfu(usb, board, wait_s, log=say):
     if len(devs) > 1:
         raise UsageError("%d bootloaders found; connect only one radio" % len(devs))
     return devs[0]
+
+
+def learn_original_version(args, usb, board, log=say, ask=None, sleep=time.sleep):
+    """A board with [flash.original_version]: before the bootloader, read the version the radio's original firmware
+    reports (origversion.py) and the hardware option choice it settles. Returns {"version", "choice", "dev"} (choice None
+    for a version the board doesn't list; dev: the device that answered, which isn't the bootloader), or None: nothing
+    declared, skipped, or no version (a radio already in its bootloader, say), which the radio settles itself."""
+    spec = board.original_version
+    if not spec or getattr(args, "no_version_read", False):
+        return None
+    what = spec["hwopt"].lower()
+    devs = dfumod.find(usb, board)
+    if not devs and ask and ask("Read the radio's firmware version first, so RadioFoundry knows its %s? Connect the "
+                                "radio switched on normally (not in its bootloader)" % what, default=True):
+        log("Waiting up to %d s for the radio..." % args.wait)
+        end = time.monotonic() + args.wait
+        while not devs and time.monotonic() < end:
+            sleep(0.5)
+            devs = dfumod.find(usb, board)
+    if len(devs) != 1:
+        return None
+    dev = devs[0]
+    try:
+        fp = dfumod.fingerprint(usb, dev)
+    except dfumod.DfuError as e:
+        log("version  not read: %s" % str(e).splitlines()[0])
+        return None
+    # the strings tell the original firmware from the bootloader before anything is sent
+    if not origversion.runs_original(spec, fp["interfaces"]):
+        log("version  the radio is not running its original firmware (in its bootloader already?): the %s is not "
+            "read from here" % what)
+        return None
+    try:
+        intf = dfumod.open_device(usb, dev)
+    except dfumod.DfuError as e:
+        log("version  not read: %s" % str(e).splitlines()[0])
+        return None
+    try:
+        kind, v = origversion.read_dfu_info(dev, intf, log=lambda m: log("         " + m))
+    finally:
+        dfumod.release(usb, dev)
+    if kind == origversion.BOOTLOADER:
+        log("version  the radio is in its bootloader already: the %s is not read from here" % what)
+        return None
+    if v is None:
+        log("version  no original firmware version from the radio")
+        return None
+    choice = origversion.choice_for(spec, v)
+    if choice is None:
+        log("version  original firmware %s: not a version rfoundry knows the %s of; the radio settles it itself"
+            % (v, what))
+    else:
+        log("version  original firmware %s: %s %s (stored once RadioFoundry runs)" % (v, what, choice))
+    return {"version": v, "choice": choice, "dev": dev}
+
+
+def learned_hint(board, learned):
+    """How to set a learned choice by hand, when rfoundry couldn't store it."""
+    return ("set %s to %s on the radio: Settings > Advanced > Hardware" % (board.original_version["hwopt"],
+                                                                            learned["choice"]))
+
+
+def store_learned(port, board, learned, log=say, link_fn=None):
+    """After RadioFoundry's first start: store the choice the original firmware's version settled, unless the radio
+    already holds one. A different stored choice is reported and kept: a person set it."""
+    if not learned or not learned.get("choice"):
+        return
+    name, choice = board.original_version["hwopt"], learned["choice"]
+    try:
+        link = (link_fn or debuglink.Link)(port)
+    except Exception as e:
+        warn("could not open %s to store the %s (%s): %s" % (port, name.lower(), e, learned_hint(board, learned)))
+        return
+    try:
+        opts = link.hwopts()
+        action, i, c, held = origversion.hwopt_action(opts, name, choice)
+        if action == "store":
+            link.hwopt_set(i, c)
+            log("stored   %s %s, from original firmware %s%s" % (name.lower(), choice, learned["version"],
+                "; it applies from the next start: switch the radio off and on" if opts[i]["restart"] else ""))
+        elif action == "same":
+            log("ok       the radio already holds %s %s" % (name.lower(), choice))
+        elif action == "mismatch":
+            warn("the radio holds %s %s, but its original firmware %s says %s. Left as it is: if %s is wrong, change "
+                 "it on the radio (Settings > Advanced > Hardware)" % (name.lower(), held, learned["version"], choice,
+                                                                     held))
+        else:
+            log("note     this RadioFoundry build has no %s %s: nothing stored" % (name.lower(), choice))
+    except (debuglink.LinkError, OSError) as e:
+        warn("could not store the %s (%s): %s" % (name.lower(), e, learned_hint(board, learned)))
+    finally:
+        link.close()
 
 
 def check_bootloader(usb, dev, board, log=say):
@@ -518,6 +628,9 @@ def check_bootloader(usb, dev, board, log=say):
     if board.dfu_string1 and board.dfu_string1.split()[0] not in (fp["string1"] or ""):
         raise UsageError("this is not the radio's own bootloader (string 1 is %r, expected %r). ST's ROM bootloader "
                          "would write the encrypted image as is: refusing" % (fp["string1"], board.dfu_string1))
+    if board.original_version and origversion.runs_original(board.original_version, fp["interfaces"]):
+        raise UsageError("the radio is running its original firmware, not its bootloader (the same USB IDs): put it "
+                         "in its bootloader (%s) and run the same command" % bootloader_steps(board))
     if dfumod.normal_mode(fp["interfaces"], board):
         raise UsageError("the radio is switched on normally, not in its bootloader (its layout reads %r). Writing "
                          "through it could erase the bootloader: refusing. Switch it off, put it in its bootloader "
@@ -624,7 +737,10 @@ def cmd_flash(args):
     if board.family != "usb-dfu":
         raise UsageError("flashing the %s isn't supported by rfoundry yet" % board.name)
 
+    learned = None
     if sim:
+        if sim == "stock":	# the original firmware answers the version read before the radio enters its bootloader
+            learned = learn_original_version(args, fakedfu.FakeUsb([fakedfu.FakeOriginalFirmware(board)]), board)
         flash = fakedfu.stock_flash(board, random.Random(3), [] if sim == "blank" else
                                     [(a, stockfw.random_bytes(random.Random(a), n))
                                      for a, n in board.codec.windows])
@@ -633,7 +749,10 @@ def cmd_flash(args):
         before = bytes(dev.flash)
     else:
         usb = dfumod.import_usb()
-        dev = wait_for_dfu(usb, board, args.wait)
+        # a radio already running RadioFoundry has no original firmware to ask
+        if not probe:
+            learned = learn_original_version(args, usb, board, ask=interactive)
+        dev = wait_for_dfu(usb, board, args.wait, gone=learned["dev"] if learned else None)
     check_bootloader(usb, dev, board)
     if not args.yes and not sim and not ask_yes("Erase and write %d sector(s) now?" % len(p.erase), default=True):
         say("nothing done")
@@ -670,10 +789,15 @@ def cmd_flash(args):
     say("done     the radio restarts into RadioFoundry %s" % man.get("version"))
 
     if sim:
+        if learned and learned["choice"]:
+            say("radio    (simulated) after the first start rfoundry stores %s %s over the debug link"
+                % (board.original_version["hwopt"].lower(), learned["choice"]))
         return report_simulation(board, p, dev, before, d)
     if args.no_verify:
+        if learned and learned["choice"]:
+            say("note     " + learned_hint(board, learned))
         return 0
-    return verify_after(args, board, man, d)
+    return verify_after(args, board, man, d, learned=learned)
 
 
 def _progress(unit):
@@ -720,7 +844,7 @@ def hid_update_file(args, board, image):
 
 
 def cmd_flash_stub(args, board, image, merged):
-    """The STM32F4 and K22F radios through the flash stub (stubroute.py): RadioFoundry must be running with stub entry."""
+    """A radio with a flash stub route (stubroute.py): RadioFoundry must be running with stub entry."""
     if board.id not in stubroute.BOARDS:
         raise UsageError("the %s has no flash stub; use the bootloader route" % board.name)
     if args.simulate:
@@ -781,6 +905,23 @@ def cmd_flash_hid(args, board, image):
         raise UsageError("simulation: the model loader received something else than the file's body")
     say("done     the radio restarts by itself")
     return 0
+
+
+def _read_progress():
+    """(progress, finish) for codecsave.read_codec: one dot for each window read (the read searches the layouts the board has
+    and stops at the first that matches, so there is no total), the line ended by finish."""
+    dots = []
+
+    def progress():
+        sys.stdout.write("." if dots else "reading  .")
+        sys.stdout.flush()
+        dots.append(1)
+
+    def finish():
+        if dots:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+    return progress, finish
 
 
 def cmd_flash_serial(args, board, man, app, slot):
@@ -911,10 +1052,14 @@ def report_simulation(board, p, dev, before, d):
     return 0 if ok else 1
 
 
-def verify_after(args, board, man, d, wait_s=25):
-    """After the reset: wait for RadioFoundry's debug link and compare its git and codec with what was flashed."""
+def verify_after(args, board, man, d, wait_s=25, learned=None):
+    """After the reset: wait for RadioFoundry's debug link and compare its git and codec with what was flashed; store
+    what the original firmware's version settled (learned, store_learned)."""
+    hint = learned_hint(board, learned) if learned and learned["choice"] else None
     if debuglink.find_ports() is None:
         say("(install pyserial to have rfoundry check the radio after flashing)")
+        if hint:
+            say("note     " + hint)
         return 0
     say("checking the radio after the restart (up to %d s; --no-verify skips this)..." % wait_s)
     end = time.monotonic() + wait_s
@@ -925,8 +1070,11 @@ def verify_after(args, board, man, d, wait_s=25):
     if p is None:
         say("the radio did not answer on its debug link. If its screen shows RadioFoundry, all is well (an FM-only build "
             "without USB has no debug link). If the screen stays dark, flash again from the bootloader.")
+        if hint:
+            say("note     " + hint)
         return 0
     state.remember_probe(p)
+    store_learned(p["port"], board, learned)
     want_git = man.get("git")
     if want_git and want_git != "unknown" and not (p.get("git") or "").startswith(want_git):
         warn("the radio reports git %s, the image is %s" % (p.get("git"), want_git))
@@ -1117,6 +1265,9 @@ def build_parser():
                    help="DM-1801 Pro, DM-32UV: auto (default): the stub when the radio runs RadioFoundry with stub entry, else "
                         "Baofeng's update mode; stub; bootloader (update mode, PTT and SK1 at power-on)")
     f.add_argument("--no-verify", action="store_true", help="don't check the radio after it restarts")
+    f.add_argument("--no-version-read", action="store_true",
+                   help="a radio whose hardware revision follows its original firmware (board.toml "
+                        "[flash.original_version]): don't read that firmware's version before the bootloader")
     f.add_argument("--no-reporting", action="store_true",
                    help="don't send the RadioFoundry project the radio model, build and result of this flash")
     f.add_argument("--simulate", choices=("stock", "rfoundry-codec", "rfoundry-nocodec", "blank"),

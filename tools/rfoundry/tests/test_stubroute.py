@@ -49,7 +49,7 @@ class Route(unittest.TestCase):
         stubroute.serialflash.tool = self._tool
 
     def image(self, n=30000):
-        p = os.path.join(self.tmp, "rfoundry.bin")
+        p = os.path.join(self.tmp, "odr.bin")
         with open(p, "wb") as f:
             f.write(bytes(random.Random(4).getrandbits(8) for _ in range(n)))
         return p
