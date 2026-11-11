@@ -430,11 +430,16 @@ def mid_trace(ramps, name):
 def off_air_us(tail):
     """When a key-down's envelope (`tail`, from the last symbol's end) leaves the air: the last point before it stays
     more than ON_AIR_DB under the burst's level for OFF_HOLD_MS, us. A weak signal's noise comes back over that level
-    in single points long after the carrier is gone. None without an envelope; its end when the carrier never left."""
+    in single points long after the carrier is gone. A signal so weak that the noise after it is within 3 dB of that
+    level is judged 6 dB over its noise instead, as long as that is a fall of 6 dB or more. None without an envelope;
+    its end when the carrier never left."""
     if not tail or not tail.get("db"):
         return None
     db, n = tail["db"], max(1, int(round(OFF_HOLD_MS / tail["dt_ms"])))
     th = float(ON_AIR_DB)
+    floor = statistics.median(db[-max(1, int(round(0.5 / tail["dt_ms"]))):])
+    if th - 3.0 < floor <= -12.0:
+        th = floor + 6.0
     for i in range(1, len(db) - n + 1):
         if db[i - 1] >= th and all(v < th for v in db[i:i + n]):
             return (tail["t0_ms"] + (i - 1) * tail["dt_ms"]) * 1000.0

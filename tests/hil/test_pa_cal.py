@@ -242,3 +242,12 @@ def test_a_key_down_in_the_slot_after_fails_the_band():
     noisy["db"][100] = -12.0                                            # one point of noise 3 ms after the carrier
     assert round(pa_cal.off_air_us(noisy)) == 450
     assert round(pa_cal.off_air_us(tail(9.0))) == 3950                  # never left: the envelope's end
+
+
+def test_a_weak_signals_key_down_is_judged_over_its_noise():
+    # 16 dB over the noise: the carrier falls at +0.25 ms and the noise stays within 20 dB of the burst's level
+    dt = 0.05
+    db = [0.0] * 45 + [-16.0 + (i % 3) for i in range(75)]
+    weak = {"t0_ms": -2.0, "dt_ms": dt, "db": db}
+    assert round(pa_cal.off_air_us(weak)) == 200
+    assert pa_cal.overrun({"off_us": pa_cal.off_air_us(weak)}) == []
