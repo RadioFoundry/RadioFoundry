@@ -178,12 +178,13 @@ Pads needed: top power in dBm + 13. A 5 W radio (37 dBm) needs 50 dB, a 50 W rad
 One band at a time, near its center:
 
 ```
-tools/bench/pa_keyup_autocal.py --radio-port PORT --sdr-uri usb:1.2.5 \
+tools/bench/pa_keyup_autocal.py --allow-rf --radio-port PORT --sdr-uri usb:1.2.5 \
     --freq 446.05 --pad-db 57 --max-w 5 --boost-us 2550 --log uhf.jsonl
 ```
 
 | Option | Value |
 |---|---|
+| `--allow-rf` | Required: the radio transmits into the load |
 | `--radio-port` | The radio's debug link port |
 | `--sdr-uri` | The SDR's libiio context (`iio_info -s` lists them) |
 | `--freq` | MHz |

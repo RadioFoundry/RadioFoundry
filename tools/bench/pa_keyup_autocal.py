@@ -18,7 +18,7 @@ board's constants and the lowest power level at the end.
 The radio and the SDR may be on other hosts (--radio-ssh, --sdr-ssh): the debug link runs where the radio is plugged in,
 the capture and its analysis where the SDR is. This file and burstramp.py are copied to --sdr-dir there.
 
-    pa_keyup_autocal.py --radio-port PORT --sdr-uri usb:1.2.5 --freq 446.05 --pad-db 57 --max-w 5 --boost-us 2550
+    pa_keyup_autocal.py --allow-rf --radio-port PORT --sdr-uri usb:1.2.5 --freq 446.05 --pad-db 57 --max-w 5 --boost-us 2550
 
 `analyze` is the capture host's half (cs16 capture -> one JSON line).
 """
@@ -354,6 +354,7 @@ class Cal:
 				except Stop as e:
 					if "debug link" not in str(e):
 						raise
+					self.dbg("version")	# the radio still answers: it refused the nine values, not a lost link
 					print("  this firmware has no late: kept 0")
 					c[8], late_ok = 0, False
 		return self.verify(levels, c, base)
@@ -407,7 +408,10 @@ def main(argv):
 	               help="skip the loop fit: DEAD,KNEE,SLOPE,BOOST,HOLD,BOOST_US,PA_US,DRIVE_US,LATE "
 	                    "(BOOST_US 0: only verify them)")
 	g.add_argument("--log", default="", help="JSON lines, one per try")
+	g.add_argument("--allow-rf", action="store_true", help="required: the radio transmits into the load")
 	a = ap.parse_args(argv)
+	if not a.allow_rf:
+		raise SystemExit("pa_keyup_autocal: transmits; pass --allow-rf (a dummy load and the pads to the SDR)")
 	if not a.radio_ssh and not a.radio_tools:
 		a.radio_python = sys.executable
 	cal = Cal(a)
