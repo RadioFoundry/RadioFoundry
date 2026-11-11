@@ -230,7 +230,7 @@ against a wattmeter.
 
 | File | Shows |
 |---|---|
-| `pa_cal_<MHz>_ramps.png` | The burst's envelope at the lowest, a middle and the top level in one picture, a color each. When the run changed the constants, the board's are dashed (before); a run that kept them draws its one measurement. Key-up: the slot before, the slot's start, the 1.25 ms guard time, the key-up window, the planned boost, PA and drive points, the first symbol, the −3 dB target and the measured −3 dB points. Key-down: the last symbol's end and the slot's end |
+| `pa_cal_<MHz>_ramps.png` | The burst's envelope at the lowest, a middle and the top level in one picture, a color each. When the run changed the constants, the board's are dashed (before); a run that kept them draws its one measurement. The slot's timing (ETSI TS 102 361-1) is shaded and named along the top: the neighbor slot, the slot boundary and the 1.25 ms guard time. Key-up: the slot before, the slot's start, the guard time, the key-up window, the planned boost, PA and drive points, the first symbol, the −3 dB target and the measured −3 dB points. Key-down: the last symbol's end and the slot's end |
 | `pa_cal_<MHz>_fit.png` | Each open-loop drive's time with the fitted law, the window and the dead zone; each level's −3 dB point, with the board's (before) when the run changed the constants |
 
 Without `bursts_trace` on the gateway only the measured points are drawn.
