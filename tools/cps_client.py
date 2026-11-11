@@ -80,6 +80,10 @@ class SerialTransport:
             import serial  # pyserial
             self.s = serial.serial_for_url(port, 115200, timeout=0.05)	# a device, or a URL such as rfc2217://host:port
         self.s.reset_input_buffer()
+        try:    # an FTDI cable passes received bytes on after 1 ms, not 16 (Linux only)
+            self.s.set_low_latency_mode(True)
+        except (AttributeError, NotImplementedError, OSError, ValueError):
+            pass
 
     def write(self, b):
         self.s.write(b)

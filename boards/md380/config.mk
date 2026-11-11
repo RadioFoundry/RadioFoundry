@@ -58,3 +58,5 @@ MAXIMAL_VARS := CONFIG_USB_SERIAL_REQUEST=n
 # only for the same reason), then USRP or SNMP. Each serves its own kind of user over the same USB network link, so
 # dropping one costs the others nothing. USB_SERIAL_REQUEST stays while USB_NETWORK does: without it a radio in network
 # mode can't be reached by the web pages
+CONFIG_RX_EXT ?= n
+BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)
