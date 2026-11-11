@@ -11,9 +11,19 @@
 #include "hostlink/hostlink_ppp.h"
 #endif
 
+#if CONFIG_RX_EXT
+static bool rx_ext_on;
+#endif
+
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 	{ 400000000, 480000000, true },
+#if CONFIG_RX_EXT
+	// Receive only past the rated bands, while the user turns it on: what both fitted chips cover, the BK4819 (18-660 MHz) and the FD6818. Keep these last
+	{ 18000000, 136000000, false },
+	{ 174000000, 400000000, false },
+	{ 480000000, 660000000, false },
+#endif
 };
 
 // Nominal 20 W mobile. The radio refuses TX until the PA calibration can be read (radio_db25d.c)
@@ -73,6 +83,10 @@ const board_t board = {
 	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
+#if CONFIG_RX_EXT
+	.rx_ext_count = 3,
+	.rx_ext_on = &rx_ext_on,
+#endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
 	.power_default = 0,

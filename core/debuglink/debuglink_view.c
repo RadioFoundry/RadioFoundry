@@ -122,7 +122,7 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 #endif
 	// The board's bands in Hz, so a HIL test skips a frequency the radio can't tune instead of failing on it
 	dl_text(t, "bands=");
-	for (uint8_t i = 0; i < board.band_count; i++) {
+	for (uint8_t i = 0; i < board_band_count(); i++) {
 		dl_text(t, "%s%u-%u", i != 0 ? "," : "", (unsigned)board.bands[i].lo_hz, (unsigned)board.bands[i].hi_hz);
 	}
 	dl_text(t, "\n");

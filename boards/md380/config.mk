@@ -54,3 +54,5 @@ BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 # not only skipped
 MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT NET_APRSIS
 MAXIMAL_VARS := CONFIG_NET_APRSIS=n
+CONFIG_RX_EXT ?= n
+BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)
