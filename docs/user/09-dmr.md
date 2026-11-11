@@ -291,8 +291,9 @@ Some DMR radios send their position inside a voice call (ETSI GPS Info). When a 
 how far away it is and in which direction, for example "12.3 km NE". When the radio doesn't know your own position,
 it shows the caller's coordinates. Recent keeps the distance with the call.
 
-Your own position goes into your calls when **Tools > APRS > Position in DMR calls** is on (off by default) and the
-radio knows where it is (see [APRS](13-aprs.md#position)). Every other superframe carries it, taking turns with your
+Your own position goes into your calls when **Settings > Location > Send in DMR calls** is on (off by default) and the
+radio knows where it is (see [Position](17-settings.md#position)). This works on a radio without APRS, and on a radio
+without a GPS when you set a fixed position. Every other superframe carries it, taking turns with your
 talker alias.
 
 ## Talker alias

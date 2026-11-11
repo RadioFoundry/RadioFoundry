@@ -365,14 +365,17 @@ that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for
 
 - Immediate location requests to us are answered; triggered requests (periodic, distance) start a trigger (2 at
   most, reports at most every 5 s) with a start response, then reports.
-- Without a position source (`hasGps` false) every immediate request is answered with
-  result 0x10 (no fix) and a triggered request is refused with 0x10: no trigger is started, so nothing is sent
+- The position is the position service's ([position.md](position.md)), through the `ownPosition` hook the radio
+  core sets (`position_report`: the board GPS, the host's NMEA or the fixed position, ambiguity applied). It needs no
+  APRS and no GPS receiver: `CONFIG_DMR_LRRP` builds the service, and `hasGps` is set in every such build.
+- While there is no position (no fix and no fixed position) an immediate request is answered with result 0x10 (no
+  fix). A triggered request starts its trigger; a report due without a position is skipped.
+- Built without a position source (`hasGps` false: a platform that sets no hook) every immediate request is answered
+  with result 0x10 (no fix) and a triggered request is refused with 0x10: no trigger is started, so nothing is sent
   later on its behalf.
 - `lrrpReply` off: requests are counted, not answered.
-- `dmrDataServiceGetPosition` is weak: a platform with a GPS overrides it and sets `hasGps`.
 - Positions elsewhere: the ETSI GPS Info LC in voice calls is in `dmr-voice.md` 3.1, positions to an APRS gateway ID
-  (LRRP triggered report or UDT location) in `aprs.md` 8. Neither feeds the LRRP answers yet (open: answer with the
-  APRS position when there is no GPS).
+  (LRRP triggered report or UDT location) in `aprs.md` 8. All of them read the same position.
 - Not ported: the UDT location reports and the GPS power management (`dmrDataServiceLocationNeededInMs` exists for
   it).
 

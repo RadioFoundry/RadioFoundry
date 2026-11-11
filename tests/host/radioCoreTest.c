@@ -3215,7 +3215,7 @@ static void test_position(void)
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.hasGps);			// LRRP takes triggered requests: a GPS is there
 
-	// DMR GPS Info: off until Settings > Location > Position in DMR calls says so, then our position goes out in the
+	// DMR GPS Info: off until Settings > Location > Send in DMR calls says so, then our position goes out in the
 	// call. The setting is the position service's own: saved without APRS, back after a restart
 	CHECK(position_now(&lat, &lon, &err, &send, now) && !send && lat == 481173000 && err == 20);
 	CHECK(ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 0 && ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 1));

@@ -89,7 +89,20 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | GPS | On, Off | On | The GPS receiver, on radios that have one ([Radio reference](23-radios.md)). Off powers the module down and the radio has no fix (APRS and DMR use the computer's or the fixed position); the change takes effect at once. Without GPS the row is dimmed and says "No GPS on this radio" | Dimmed without GPS |
 | Position format | Degrees, Deg min sec, Grid | Degrees | How positions are shown | Dimmed without GPS |
 | Send position | Off, 1 min, 5 min, 15 min | Off | Send your position at this interval | Dimmed without GPS |
-| Answer GPS requests | On, Off | On | Answer LRRP location requests (Find also finds it as "position"). Without GPS the answer is "no fix" | Works |
+| Answer GPS requests | On, Off | On | Answer LRRP location requests (Find also finds it as "position"). With no position the answer is "no fix" | Works |
+| Position source | Auto, GPS, Computer, Fixed | Auto | Where your position comes from, for DMR calls, location requests and APRS. See Position below | Works |
+| Fixed position | Latitude, Longitude | Not set | A position you type in, for a radio without GPS or one that stays in place ([how to type it](13-aprs.md#position)) | Works |
+| Send in DMR calls | On, Off | Off | Put your position into your DMR voice calls ([DMR](09-dmr.md#position-in-calls)) | Works |
+
+#### Position
+
+Your position is used by DMR calls (Send in DMR calls), by location requests from a dispatcher (Answer GPS requests)
+and by APRS. None of them needs the others: a radio without APRS still reports its position over DMR.
+
+- **Auto** takes a fresh GPS position, else the computer's, else the fixed one.
+- **GPS**, **Computer** and **Fixed** take only that one.
+- Computer is offered on firmware with APRS, which reads the computer's GPS over USB ([APRS](13-aprs.md#position)).
+- The settings are saved and are back after the radio restarts.
 
 ### Connections (key 6)
 
