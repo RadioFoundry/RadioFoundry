@@ -122,6 +122,10 @@ class Radio:
             except ImportError:
                 sys.exit("needs pyserial for a serial port: pip install pyserial")
             self.ser = serial.Serial(port, 115200, timeout=0)
+            try:    # an FTDI cable passes received bytes on after 1 ms, not 16 (Linux only)
+                self.ser.set_low_latency_mode(True)
+            except (AttributeError, NotImplementedError, OSError, ValueError):
+                pass
             self.fileobj = self.ser
 
     def read(self) -> bytes:
