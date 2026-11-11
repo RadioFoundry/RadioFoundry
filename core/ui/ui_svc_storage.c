@@ -134,18 +134,27 @@ int32_t ui_svc_setting_get(uint8_t id)
 			return (rs.beep_level + 5) / 10;
 		if (id == UI_SET_TOT_S)
 			return rs.tot_s;
-		if (id == UI_SET_BACKLIGHT_S)
-			return rs.backlight_dim_s;
+		if (id == UI_SET_BACKLIGHT_S)	// < 0: dims, never goes off
+			return rs.backlight_off_s == 0 && rs.backlight_dim_s != 0 ? -(int32_t)rs.backlight_dim_s
+										    : rs.backlight_dim_s;
 		return rs.rx_save != 0;
 	case UI_SET_VOLUME:
 		settings_read(&st);
 		return radio_volume_step(st.volume);
+	case UI_SET_KNOB_WHEN_LOCKED:
+		settings_read(&st);
+		return (st.knob_flags & SETTINGS_KNOB_LOCK) == 0;	// stored as the lock, shown as the knob working
 	case UI_SET_BRIGHTNESS:
 		settings_read(&st);
 		return st.brightness >= 10 && st.brightness <= 100 ? st.brightness : 100;
 	case UI_SET_SQUELCH:
 		settings_read(&st);
 		return st.squelch <= 9 ? st.squelch : ui_svc_ram_get(id);
+#if CONFIG_RX_EXT
+	case UI_SET_RX_EXT:
+		settings_read(&st);
+		return (st.cp_flags & SETTINGS_CP_RX_EXT) != 0;
+#endif
 	case UI_SET_HOTSPOT_AUTO:
 		settings_read(&st);
 		return st.hotspot_allowed != 0;
@@ -284,15 +293,22 @@ int32_t ui_svc_setting_get(uint8_t id)
 #if CONFIG_DMR_DATA_CORE
 	case UI_SET_CHECK_REPLY:
 	case UI_SET_ALERT_ANSWER:
-	case UI_SET_POS_REPLY:
-	case UI_SET_MSG_FORMAT: {
+	case UI_SET_POS_REPLY: {
 		dmrDataSettings_t ds;
 		dmr_data_get_settings(&ds);
-		if (id == UI_SET_MSG_FORMAT)
-			return ds.smsFormat;
 		return id == UI_SET_CHECK_REPLY ? ds.radioCheckReply : id == UI_SET_ALERT_ANSWER ? ds.callAlertAck :
 			ds.lrrpReply;
 	}
+#endif
+	case UI_SET_MSG_FORMAT:
+#if CONFIG_DMR_SMS
+		{
+			dmrDataSettings_t ds;
+			dmr_data_get_settings(&ds);
+			return ds.smsFormat;
+		}
+#else
+		return 2;
 #endif
 #if CONFIG_CRASH_REPORT
 	case UI_SET_CRASH_MODE:
@@ -453,6 +469,12 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		st->lang[1] = (char)value;
 		settings_end(hal_millis());
 		return true;
+	case UI_SET_KNOB_WHEN_LOCKED:
+		st = settings_begin();
+		st->knob_flags = (uint8_t)(value == 0 ? st->knob_flags | SETTINGS_KNOB_LOCK :
+							st->knob_flags & ~SETTINGS_KNOB_LOCK);
+		settings_end(hal_millis());
+		return true;
 	case UI_SET_VOLUME:
 		st = settings_begin();
 		st->volume = radio_volume_stored((uint8_t)clamp16(value, 0, RADIO_VOLUME_MAX));
@@ -470,6 +492,15 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		settings_end(hal_millis());
 		radio_req_reload();	// the default squelch is a preference the radio core reads on reload
 		return true;
+#if CONFIG_RX_EXT
+	case UI_SET_RX_EXT:
+		st = settings_begin();
+		st->cp_flags = (uint8_t)(value != 0 ? (st->cp_flags | SETTINGS_CP_RX_EXT) : (st->cp_flags & ~SETTINGS_CP_RX_EXT));
+		settings_end(hal_millis());
+		board_rx_ext_set(value != 0);
+		radio_req_reload();	// a VFO past the table goes back in band when this goes off
+		return true;
+#endif
 	case UI_SET_HOTSPOT_AUTO:
 		st = settings_begin();
 		st->hotspot_allowed = value != 0;
@@ -526,16 +557,21 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		dmr_data_set_settings(&ds);	// the radio core saves the data service's settings when they change
 		return true;
 	}
-	case UI_SET_MSG_FORMAT: {
-		dmrDataSettings_t ds;
+#endif
+	case UI_SET_MSG_FORMAT:
+#if CONFIG_DMR_SMS
 		if ((value != DMR_SMS_FORMAT_ETSI_IP) && (value != DMR_SMS_FORMAT_ETSI) &&
 		    !(CONFIG_DMR_TMS && (value == DMR_SMS_FORMAT_TMS)))
 			return false;
-		dmr_data_get_settings(&ds);
-		ds.smsFormat = (uint8_t)value;
-		dmr_data_set_settings(&ds);
+		{
+			dmrDataSettings_t ds;
+			dmr_data_get_settings(&ds);
+			ds.smsFormat = (uint8_t)value;
+			dmr_data_set_settings(&ds);
+		}
 		return true;
-	}
+#else
+		return false;
 #endif
 #if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
 	case UI_SET_USB_BOOT_NET:
@@ -983,6 +1019,7 @@ static void factory_reset_job(void *ctx)
 	(void)ctx;
 	settings_t *st = settings_begin();
 	settings_defaults(st);	// cp_flags too: "Use anyway" doesn't outlive a reset
+	board_rx_ext_set(false);
 	settings_end(hal_millis());
 	codeplug_accept(false);
 	bool saved = settings_flush();

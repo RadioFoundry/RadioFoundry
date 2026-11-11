@@ -2,7 +2,7 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """The DMR VFO (docs/spec/dmr-voice.md 2.1), radio only, nothing transmitted: the VFO's mode, color code, slot and
 talk target are set over the debug link (RADIO ops 31 and 15) and read back from the `core` and `dmr` views; they
-are the VFO's own settings (no temporary flag), and a channel change and back keeps them. The VFO is put back to FM
+are the VFO's own settings (no temporary bit added), and a channel change and back keeps them. The VFO is put back to FM
 with color code 1, slot 1 and talkgroup 9 (the defaults) afterwards, which is what a VFO that was never touched has."""
 from rfoundry_hil import skip
 
@@ -17,7 +17,20 @@ def test_vfo_dmr_settings(radio):
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
     L = radio.link
-    with radio.vfo_session():
+    with radio.vfo_session() as hz:
+        # A VFO left in a receive-only band (air, broadcast) takes no DMR: a 70 cm frequency for the test, which
+        # vfo_session puts back. Nothing is transmitted
+        if not 400000000 <= hz <= 480000000 and not 136000000 <= hz <= 174000000:
+            uhf = 446000000
+            radio.skip_out_of_band(uhf)
+            L.vfo_set(uhf)
+            radio.wait_for(lambda v: v.get("rx_hz") == str(uhf), what="the VFO on 446 MHz")
+        # The VFO's settings are its own, not temporary changes: no temporary bit beyond those set before (an earlier
+        # change, such as the lowest power the TX tests set, may already be one; a channel change may clear it)
+        before = int(radio.core().get("temp") or "0", 0)
+
+        def no_new_temp(v):
+            return int(v.get("temp") or "0", 0) & ~before == 0
         try:
             L.dmr_fields(mode="dmr", cc=7, ts=2)
             radio.wait_for(lambda v: v.get("mode") == "dmr" and v.get("dmr.cc") == "7" and v.get("dmr.ts") == "2",
@@ -25,7 +38,7 @@ def test_vfo_dmr_settings(radio):
             L.dmr_target(3100)
             v = radio.wait_for(lambda v: v.get("dmr.target_id") == "3100", sections=("core", "dmr"),
                                what="talk target 3100")
-            assert v["temporary"] == "0" and v["dmr.target_manual"] == "0" and v["dmr.target_private"] == "0"
+            assert no_new_temp(v) and v["dmr.target_manual"] == "0" and v["dmr.target_private"] == "0", v
             assert v["vfo"] == "1" and v["dmr.active"] == "1"
             L.dmr_target(9990777, private=True)
             radio.wait_for(lambda v: v.get("dmr.target_id") == "9990777" and v.get("dmr.target_private") == "1",
@@ -37,7 +50,7 @@ def test_vfo_dmr_settings(radio):
             v = radio.wait_for(lambda v: v.get("vfo") == "1" and v.get("mode") == "dmr", sections=("core", "dmr"),
                                what="the DMR VFO again")
             assert v["dmr.cc"] == "7" and v["dmr.ts"] == "2" and v["dmr.target_id"] == "9990777"
-            assert v["dmr.target_private"] == "1" and v["temporary"] == "0"
+            assert v["dmr.target_private"] == "1" and no_new_temp(v), v
             # Back to FM stops the call stack
             L.dmr_fields(mode="fm")
             radio.wait_for(lambda v: v.get("mode") == "fm" and v.get("dmr.active") == "0", sections=("core", "dmr"),

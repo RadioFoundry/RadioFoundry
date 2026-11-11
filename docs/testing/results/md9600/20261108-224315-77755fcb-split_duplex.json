@@ -1,0 +1,181 @@
+{
+ "board": "md9600",
+ "commit": "77755fcbd6be91767a53d4c5f4145a1453486f02",
+ "date": "2026-11-08T22:43:15Z",
+ "dirty": false,
+ "features": [
+  "split_duplex"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "da54663a",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "microphone",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 2,
+  "dmr-freq": 461.4625,
+  "dmr-tg": 201,
+  "fm-mhz": 461.4625
+ },
+ "sources": {
+  "split_duplex": {
+   "core/dmr/bsOutbound.c": "2a3aae452963660b4f245f9c92f19b6b3f8c0a10",
+   "core/dmr/slotEpoch.c": "bf4a0593c7ba811659bee8913b042e908a1897f7",
+   "core/hotspot": "f7a44e9e5db9c6181477224f364759497b18e440",
+   "docs/spec/split-duplex.md": "ff2e3b774b2b7fe3bdb4c222ff6dedde407fcfa9",
+   "drivers/modem": "ce23b72d23d097d915168c44e7e3273d0bdafb0c",
+   "hal/hal_dmr_modem.h": "ef1e463062602df0db0ebe01ebbaa7344488f1fe",
+   "tools/split_duplex_host.py": "87010c3461e128cacf494dfcfe96939948f2dc2f"
+  }
+ },
+ "tests": [
+  {
+   "features": [],
+   "id": "tests/hil/test_dmr_tx.py::test_dmr_tx_split_repeater",
+   "optional": [
+    "split_duplex"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_capability",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_protocol",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_rx_half_labels",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_standard_host",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_state_cleanup",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_tx_half_continuous",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_tx_half_off_air",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_split_duplex.py:455: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_tx_half_voice",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": false,
+   "features": [],
+   "id": "tests/hil/test_split_pair.py::test_split_pair_handheld",
+   "optional": [
+    "split_duplex"
+   ],
+   "outcome": "skipped",
+   "reason": "[opt_in] needs the RX half (--split-rx-port), a subscriber radio (--split-ms-port) and the repeater output (--split-out-mhz)",
+   "required": false,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_pair.py::test_split_pair_repeat",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] needs a second radio as the RX half (--split-rx-port) and the repeater output (--split-out-mhz)",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_usb_network_services.py::test_net_split_protocol",
+   "optional": [
+    "split_duplex"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_usb_network_services.py::test_net_split_rx_half_labels",
+   "optional": [
+    "split_duplex"
+   ],
+   "outcome": "passed",
+   "required": false
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

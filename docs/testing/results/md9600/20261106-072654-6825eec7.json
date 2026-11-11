@@ -1,0 +1,154 @@
+{
+ "board": "md9600",
+ "commit": "6825eec713e4c9b8c705b7bf233d965e56485011",
+ "date": "2026-11-06T07:26:54Z",
+ "dirty": false,
+ "features": [
+  "dmr_control_station",
+  "net_usrp"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,DMR_CONFIRMED,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "6825eec7",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.075,
+  "dmr-tg": 202,
+  "fm-mhz": 446.1,
+  "tx-power": 40
+ },
+ "sources": {
+  "dmr_control_station": {
+   "core/debuglink/debuglink.c": "7bb9e44fee4adb7372e22164deff07e73bfd7716",
+   "core/dmr/dmrDataService.c": "400f017efee84beb8cf94adf8fc28b4bfd377891",
+   "core/dmr/dmrDataService.h": "4685c666b3ce5c4728bcb2af634cde6feb8dd217",
+   "core/hostlink/hostlink_net.c": "ed73b49cdc0cad3dee846549e16947bcfb137957",
+   "core/hostlink/hostlink_net.h": "1e778c8717782f88effa7e2fa8d4023e17c0e622",
+   "core/ui/ui_menus.c": "baa2fdc644157efcf8e71a919e4b5487ef08f836",
+   "core/ui/ui_svc_storage.c": "fd7044aa12498a245883412cb537d5fa74eed8bd",
+   "docs/spec/usb-network.md": "3650061b7ce6be9425c862da53968437ff9919a6"
+  },
+  "net_usrp": {
+   "core/net/net.c": "fc98537b8dd138bd0b972138b3ccf7b515e40cdb",
+   "core/usbaudio/audio_mux.c": "3855c4aba9d8b9b85c62d0ca87c1931fd56f4f87",
+   "core/usbaudio/pcm_slip.c": "d512726008073e7b09e8ac10f5ff6a9d540befeb",
+   "core/usbaudio/usrp.c": "b4eaf1ba56613261af041d0789747fc8e3f5adcc",
+   "core/usbaudio/usrp_net.c": "20a40cb4dacc44ee21f0070c4fff70d161ab9c5c",
+   "docs/spec/usb-audio.md": "09eb10c500bebfd256913e72949d4df09e77d5f1"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "dmr_control_station"
+   ],
+   "id": "tests/hil/test_control_station.py::test_boot_network",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_control_station"
+   ],
+   "id": "tests/hil/test_control_station.py::test_fixed_link",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_control_station"
+   ],
+   "id": "tests/hil/test_control_station.py::test_passthrough_reply",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_control_station"
+   ],
+   "id": "tests/hil/test_control_station.py::test_passthrough_text",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_control_station"
+   ],
+   "id": "tests/hil/test_control_station.py::test_usb_settings_stored",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "net_usrp"
+   ],
+   "id": "tests/hil/test_usrp.py::test_usrp_dmr_rx",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": false,
+   "features": [],
+   "id": "tests/hil/test_usrp.py::test_usrp_fm_rx",
+   "optional": [
+    "net_usrp"
+   ],
+   "outcome": "skipped",
+   "reason": "[bench] NOAA on 162.475 MHz doesn't open the squelch here",
+   "required": false,
+   "skip_kind": "bench"
+  },
+  {
+   "features": [
+    "net_usrp"
+   ],
+   "id": "tests/hil/test_usrp.py::test_usrp_fm_rx_bench",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "net_usrp"
+   ],
+   "id": "tests/hil/test_usrp.py::test_usrp_fm_tx",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board lost samples in the capture (gap_samples 33, 0.000 s of zero runs); it can't judge the radio",
+   "required": true,
+   "skip_kind": "bench"
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

@@ -13,7 +13,8 @@ import time
 
 import pytest
 
-from rfoundry_hil import LONG, as_int, skip, skip_if
+from hil_config import rig
+from rfoundry_hil import HIL_SMS_PREFIX, LONG, as_int, bench_sms, skip, skip_if
 from rfoundry_debug import DOWN, UP
 
 
@@ -33,9 +34,7 @@ def wait_screen(r, name, what=None):
 @pytest.fixture
 def home(radio):
     radio.ensure_awake()
-    if ui(radio).get("ui.locked") == "1":
-        radio.press("quick", LONG)
-        radio.wait_for(lambda v: v.get("ui.locked") == "0", sections=("link",), what="keys unlocked")
+    radio.unlock()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
     if radio.screen() != "home":
@@ -46,8 +45,7 @@ def home(radio):
         radio.wait_for(lambda v: v.get("vfo") == "0", what="VFO off")
     yield radio
     # Leave the radio on Home with the keys unlocked whatever the test did
-    if ui(radio).get("ui.locked") == "1":
-        radio.press("quick", LONG)
+    radio.unlock()
     radio.press("back", LONG)
 
 
@@ -68,11 +66,12 @@ def test_keys_move_the_channel(home):
 @pytest.mark.feature("ui_navigation")
 def test_hub_and_back(home):
     """OK opens the Hub (seven destinations, numbered); a digit opens one; BACK goes up one level; long BACK goes Home
-    from any depth (information-architecture.md, key meanings)."""
+    from any depth (information-architecture.md, key meanings). A radio without a CONTEXT key has Last caller first,
+    number 0; the others keep their numbers."""
     r = home
     r.press("ok")
     s = wait_screen(r, "hub", "the Hub on OK")
-    assert s["ui.depth"] == "1" and s["ui.count"] == "7", s
+    assert s["ui.depth"] == "1" and s["ui.count"] in ("7", "8"), s
     r.press("1")
     s = wait_screen(r, "contacts", "Contacts on 1")
     assert s["ui.depth"] == "2"
@@ -125,10 +124,12 @@ def test_find_by_digits(home, shots):
     wait_screen(r, "home")
 
 
-@pytest.mark.feature("ui_navigation")
+@pytest.mark.feature("key_lock")
 def test_key_lock(home):
     """Long QUICK locks the keys; while locked, a key only explains how to unlock; long QUICK unlocks."""
     r = home
+    if r.unlock_key() != "quick":
+        skip("no_hw", "the radio has no QUICK key: a side key set to key lock locks it")
     r.press("quick", LONG)
     r.wait_for(lambda v: v.get("ui.locked") == "1", sections=("link",), what="keys locked")
     r.press("ok")
@@ -140,11 +141,10 @@ def test_key_lock(home):
 
 
 @pytest.mark.feature("ui_navigation")
+@pytest.mark.needs_switch("DMR")
 def test_talk_target_picker_on_long_context(home):
     """Long # opens the talk target picker on a DMR channel (Recent is Hub 3)."""
-    r = home
-    if r.core().get("mode") != "dmr":
-        skip("state", "the channel isn't DMR")
+    r = dmr_home(home)
     r.press("context", LONG)
     wait_screen(r, "picker", "talk target picker on long #")
     r.press("back")
@@ -227,16 +227,28 @@ def test_injected_keys_count_as_activity(home):
 # on the host in uiFlowTest.c.
 
 
-def dmr_home(r):
-    if r.core().get("mode") != "dmr":
-        skip("state", "the current channel isn't DMR")
+def on_mode(r, mode):
+    """Home on a channel in mode ('fm' / 'dmr'): the current one, else the first such channel in any zone (restore()
+    puts the zone and channel back). Skips (state) when the codeplug has none"""
+    if r.core().get("vfo") != "1" and r.core().get("mode") == mode:
+        return r
+    try:
+        r.find_channel(None, mode)
+    except AssertionError as e:
+        skip("state", f"no {mode.upper()} channel to test on: {e}")
+    wait_screen(r, "home")
     return r
+
+
+def dmr_home(r):
+    """The home screen on a DMR channel. A test that uses it carries @pytest.mark.needs_switch("DMR")."""
+    if "DMR" not in r.features():
+        skip("not_built", "built without DMR")
+    return on_mode(r, "dmr")
 
 
 def fm_home(r):
-    if r.core().get("mode") != "fm":
-        skip("state", "the current channel isn't FM")
-    return r
+    return on_mode(r, "fm")
 
 
 def temp_bits(v):
@@ -250,6 +262,7 @@ def leave_quick(r):
 
 
 @pytest.mark.feature("dmr_voice", optional=True)
+@pytest.mark.needs_switch("DMR")
 def test_quick_timeslot_for_now(home):
     """Quick 2 flips the timeslot for now (temp bit 0x20); BACK on Home undoes it."""
     r = dmr_home(home)
@@ -267,6 +280,7 @@ def test_quick_timeslot_for_now(home):
 
 
 @pytest.mark.feature("dmr_voice", optional=True)
+@pytest.mark.needs_switch("DMR")
 def test_quick_color_code_for_now(home):
     """Quick 3, a digit, OK: the color code for now (temp bit 0x40)."""
     r = dmr_home(home)
@@ -292,6 +306,28 @@ VFO_KEYS = ("mode", "rx_hz", "ch.bw", "ch.rx_tone", "ch.tx_tone", "dmr.cc", "dmr
 def vfo_state(r):
     v = r.view(["core", "channel", "dmr"])
     return {k: v.get(k) for k in VFO_KEYS}
+
+
+@pytest.mark.feature("vfo")
+def test_vfo_toggle_key(home):
+    """VFO/Channel (a side key function, or a VFO/MR key): a press opens the VFO, the next one goes back to the channel
+    it left. Only a press: on a radio with a VFO/MR key an injected long press holds that key, whose long press is Copy
+    to VFO (the host flows check the long press). Nothing is transmitted or written."""
+    r = home
+    feats = r.features()
+    if "VFO_FM" not in feats and "VFO_DMR" not in feats:
+        skip("not_built", "built without a VFO")
+    chan = r.core()
+    try:
+        r.press("vfo_toggle")
+        r.wait_for(lambda x: x.get("vfo") == "1", what="the VFO")
+        r.press("vfo_toggle")
+        v = r.wait_for(lambda x: x.get("vfo") == "0", what="the channel again")
+        assert v["zone_pos"] == chan["zone_pos"], v
+    finally:
+        if r.core().get("vfo") == "1":
+            r.link.vfo(False)
+            r.wait_for(lambda x: x.get("vfo") == "0", what="VFO off")
 
 
 @pytest.mark.feature("vfo")
@@ -324,7 +360,8 @@ def test_quick_copy_to_vfo(home):
         if before["mode"] == "dmr":
             L.dmr_fields(mode="dmr", cc=int(before["dmr.cc"]), ts=int(before["dmr.ts"]))
             L.dmr_target(int(before["dmr.target_id"]), private=before["dmr.target_private"] == "1")
-        L.dmr_fields(mode=before["mode"])
+        if "DMR" in feats:      # an FM-only build's VFO is FM, and it has no DMR command
+            L.dmr_fields(mode=before["mode"])
         L.vfo_set(int(before["rx_hz"]))
         L.bandwidth(before["ch.bw"] == "25k")
         for which, key in ((2, "ch.rx_tone"), (1, "ch.tx_tone")):
@@ -334,6 +371,7 @@ def test_quick_copy_to_vfo(home):
 
 
 @pytest.mark.feature("dmr_voice", optional=True)
+@pytest.mark.needs_switch("DMR")
 def test_quick_hear_all_latch(home):
     """Quick 5 latches hear all (every talkgroup on the slot); Quick 5 again or BACK on Home drops it."""
     r = dmr_home(home)
@@ -386,6 +424,7 @@ def test_quick_vox_toggle(home):
 
 
 @pytest.mark.feature("ui_navigation")
+@pytest.mark.needs_switch("DMR")
 def test_picker_focus_target(home):
     """The talk target picker tells the radio core which row has the focus (the one-shot PTT target); long BACK
     clears it. Nothing transmits: the one-shot only arms on PTT (radio_tx tests key it)."""
@@ -417,7 +456,10 @@ def test_picker_focus_target(home):
 
 
 def settings_keys(r, keys):
-    """Run a key sequence from Home (Settings is Hub 7; groups 1-9 then 0), then go Home."""
+    """Run a key sequence from Home (Settings is Hub 7; groups 1-9 then 0), then go Home. A test that uses it for a
+    feature other than ui_settings carries @pytest.mark.needs_switch("UI_SETTINGS")."""
+    if "UI_SETTINGS" not in r.features():
+        skip("not_built", "built without CONFIG_UI_SETTINGS: no Settings menu")
     for k in keys.split():
         r.press(*((k[5:], LONG) if k.startswith("long:") else (k,)))
     r.press("back", LONG)
@@ -444,13 +486,15 @@ def test_long_press_time_reaches_input(home):
     r.wait_for(lambda x: as_int(x.get("input.long_ms")) == before, sections=("link",), what="long press time back")
 
 
-@pytest.mark.feature("ui_settings")
+@pytest.mark.feature("key_lock")
 def test_auto_lock(home):
-    """Settings > Privacy > Auto lock 30 s locks the keys after 30 s without a key; set back to Off after."""
+    """Settings > Key lock > Auto lock 30 s locks the keys after 30 s without a key; set back to Off after."""
     r = home
+    if r.unlock_key() == "none":
+        skip("no_hw", "no key on the radio unlocks: auto lock never locks it")
     if as_int(r.view(["storage"]).get("settings.auto_lock_s"), 0) != 0:
         skip("state", "auto lock is already on")
-    settings_keys(r, "ok 7 4 down down ok")
+    settings_keys(r, "ok 7 9 ok")
     try:
         r.wait_for(lambda x: x.get("settings.auto_lock_s") == "30", sections=("storage",), what="auto lock 30 s")
         assert ui(r)["ui.locked"] == "0"
@@ -515,12 +559,17 @@ def test_updown_changes_the_zone(home):
 
 
 @pytest.mark.feature("dmr_privacy")
+@pytest.mark.needs_switch("UI_SETTINGS")
 def test_privacy_key_entry(home):
     """Settings > Privacy: key type Motorola, key typed 123 (slot 1); type Off again removes it."""
     r = home
+    if "DMR_PRIVACY" not in r.features():
+        skip("not_built", "built without CONFIG_DMR_PRIVACY")
     s = storage(r)
     if "settings.privacy_type" not in s:
         skip("not_built", "firmware without settings.privacy_type")
+    if "UI_SETTINGS" not in r.features():
+        skip("not_built", "built without CONFIG_UI_SETTINGS: no Settings menu")
     if s["settings.privacy_type"] != "0":
         skip("state", "a privacy key is set already: not overwriting it")
     settings_keys(r, "ok 7 4 ok down ok 1 2 3 ok")
@@ -538,19 +587,25 @@ def test_privacy_key_entry(home):
     r.wait_for(lambda x: x.get("settings.privacy_type") == "0", sections=("storage",), what="the key removed")
 
 
-@pytest.mark.feature("ui_settings")
+@pytest.mark.feature("key_lock")
 @pytest.mark.radio_tx
-def test_ptt_when_locked_off(home):
-    """Settings > Privacy > PTT when locked Off: with the keys locked an injected PTT doesn't transmit and the UI
-    says how to unlock. Marked radio_tx: if the block failed the radio would key up (lowest power)."""
+def test_ptt_when_locked_off(home, pytestconfig):
+    """Settings > Key lock > PTT when locked Off: with the keys locked an injected PTT doesn't transmit and the UI
+    says how to unlock. Marked radio_tx: if the block failed the radio would key up (lowest power), so it does that
+    on the DMR test channel (--dmr-freq), not on whatever channel the radio was left on (a receive-only one is refused
+    by the TX guard before the radio sees the PTT)."""
     r = home
+    r.find_channel(round(rig(pytestconfig, "dmr-freq") * 1e6), "dmr")
+    r.go_home()
     flags = ui_flags(r)
     if flags is None:
         skip("not_built", "firmware without settings.ui_flags")
     if not flags & 0x10:
         skip("state", "PTT when locked is already off")
+    if r.unlock_key() != "quick":
+        skip("no_hw", "the radio has no QUICK key to lock and unlock it with")
     r.lowest_power()
-    settings_keys(r, "ok 7 4 down down down ok")
+    settings_keys(r, "ok 7 9 down ok")
     try:
         r.wait_for(lambda x: not as_int(x.get("settings.ui_flags"), 0x10) & 0x10, sections=("storage",),
                    what="PTT when locked off")
@@ -569,7 +624,7 @@ def test_ptt_when_locked_off(home):
     finally:
         if ui(r).get("ui.locked") == "1":
             r.press("quick", LONG)
-        settings_keys(r, "ok 7 4 down down down ok")
+        settings_keys(r, "ok 7 9 down ok")
     r.wait_for(lambda x: as_int(x.get("settings.ui_flags"), 0) & 0x10, sections=("storage",),
                what="PTT when locked on again")
 
@@ -594,6 +649,7 @@ def test_usb_network_switch_row(home):
 
 @pytest.mark.feature("channel_edit")
 @pytest.mark.codeplug_write
+@pytest.mark.needs_switch("DMR")
 def test_save_timeslot_to_channel(home):
     """Quick 2 then hold OK saves the timeslot into the channel off the UI task (storage.job_busy), the temporary mark
     goes, and the channel keeps the new slot; the test saves the old slot back the same way."""
@@ -657,14 +713,24 @@ def test_zone_editor_moves_a_channel(home):
 
 
 @pytest.mark.feature("dmr_sms")
-@skip_if(os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") != "1", "opt_in",
-         "deletes the newest inbox message: set RFOUNDRY_HIL_DELETE_MESSAGE=1")
-def test_delete_message(home):
-    """Hub 2 (Messages), OK on the newest, Delete (the fourth action): the inbox has one message less."""
+def test_delete_message(home, request, pytestconfig):
+    """Hub 2 (Messages), OK on the newest, Delete (the fourth action): the inbox has one message less. Only a message
+    a HIL test sent (its text starting HIL_SMS_PREFIX) is deleted without asking: when the newest isn't one, the bench
+    sends one first (with --allow-rf; the radio only receives). To delete one of the owner's instead set
+    RFOUNDRY_HIL_DELETE_MESSAGE=1."""
     r = home
+    if r.data_view().get("data.built") != 1:
+        skip("not_built", "built without the DMR data features")
     n = as_int(r.view(["dmr_data"]).get("data.inbox_count"))
+    newest = (r.link.inbox(0) or {}) if n else {}
+    if not newest.get("text", "").startswith(HIL_SMS_PREFIX) and os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") != "1":
+        if not pytestconfig.getoption("--allow-rf"):
+            skip("opt_in", "the newest inbox message isn't a HIL test's: give --allow-rf (the bench sends one) or set "
+                           "RFOUNDRY_HIL_DELETE_MESSAGE=1 to delete it")
+        n = bench_sms(r, request.getfixturevalue("sdr_bench"), rig(pytestconfig, "dmr-freq"),
+                      rig(pytestconfig, "dmr-cc"))
     if not n:
-        skip("state", "the inbox is empty (or no data core)")
+        skip("state", "the inbox is empty")
     r.press("ok")
     wait_screen(r, "hub")
     r.press("2")
@@ -680,23 +746,31 @@ def test_delete_message(home):
 
 @pytest.mark.feature("ui_settings")
 @pytest.mark.reboot
+@pytest.mark.factory_reset
 @skip_if(os.environ.get("RFOUNDRY_HIL_FACTORY_RESET") != "1", "opt_in",
          "erases the settings and the native area: set RFOUNDRY_HIL_FACTORY_RESET=1 (and --allow-reboot)")
 def test_factory_reset(home):
     """Settings > Advanced (0) > Factory reset > Yes: the settings go back to their defaults, the native area is erased
     (never the codeplug or calibration), and the radio restarts. The channel position survives only as the default."""
-    from test_cps import reconnect
     r = home
-    zone_size = r.core().get("zone_size")
-    for k in ("ok", "6", "0", "down", "down", "down", "ok"):
+    r.version()     # known before the restart: reconnect() checks a radio on another port against it
+    zones = r.core().get("zone_count")
+    # Hub digits are the entry numbers in every build (Settings 7), Advanced is group 0, Factory reset its fourth row
+    for k, screen in (("ok", "hub"), ("7", "settings"), ("0", "group")):
+        r.press(k)
+        wait_screen(r, screen)
+    for k in ("down", "down", "down", "ok"):
         r.press(k)
     wait_screen(r, "confirm", "the confirmation (defaults to No)")
     assert ui(r)["ui.focus"] == "0"
     r.press("down")
-    r.press("ok", settle=0)
+    up0 = as_int(r.link.view(["link"]).get("uptime_ms"), 0)
+    r.link.key("ok")    # not press(): it waits for the keys to go idle, and the radio is restarting then
     time.sleep(2.0)
-    reconnect(r)
+    r.reconnect(20.0)
     s = r.view(["storage", "link"])
+    assert as_int(s.get("uptime_ms"), up0) < up0, f"the radio did not restart: {s.get('uptime_ms')} ms up"
     assert as_int(s.get("settings.long_press_ms")) in (0, 600) and s.get("settings.auto_lock_s") == "0", s
     assert as_int(s.get("settings.failures"), 0) == 0, s
-    assert r.core().get("zone_size") == zone_size, "the codeplug changed"
+    # The channel position goes back to the default (another zone), so the zone count says the codeplug stayed
+    assert r.core().get("zone_count") == zones, "the codeplug changed"

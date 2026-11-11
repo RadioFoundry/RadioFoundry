@@ -19,6 +19,9 @@ Each key does the same kind of thing on every screen.
 The bottom line of most screens is the hint row. It shows what the nearest keys do there. What **Back** does is at
 its right end, above the **Back** key.
 
+Menus initially select the first available item. You can still move to a dimmed item and press **OK** to see why
+it is unavailable. **Back** restores your previous menu selection.
+
 ## Key reference
 
 The keys are named by their job ([Conventions](01-introduction.md#conventions-in-this-manual)).
@@ -45,7 +48,7 @@ The side keys (**Monitor**, **Talk target** and **Power level** on most radios) 
 
 Each key press gives a short key beep unless **Settings > Sound > Key tones** is off.
 
-While the keys are locked (hold **\***), **PTT** still works. When **Settings > Privacy > PTT when locked** is off,
+While the keys are locked (hold **\***), **PTT** still works. When **Settings > Key lock > PTT when locked** is off,
 **PTT** gives an error beep and "PTT is off while locked: hold * to unlock".
 
 ## Moving around
@@ -120,10 +123,12 @@ write is in progress, it says "Save busy: try again"; wait a moment and hold **O
 ## Key lock
 
 On Home, hold **\*** to lock the keys. The screen shows "Keys locked: hold * to unlock" and an "L" in the status line.
-While locked, **PTT** and **Monitor** still work. Any other key shows the unlock hint. Hold **\*** again to unlock.
+While locked, **PTT** and **Monitor** still work. Any other key, and the channel knob, shows the unlock hint. Hold
+**\*** again to unlock. The volume knob still works, unless **Settings > Key lock > Knob when locked** is Off.
 In menus holding **\*** doesn't lock, so a slow press can't lock the keys in the middle of a task.
 
-**Settings > Privacy > Auto lock** locks the keys by itself after a time without a key press.
+**Settings > Key lock > Auto lock** locks the keys by itself after a time without a key press. A radio with only
+side keys (no keypad, no Back key) never locks by itself: nothing could unlock it.
 
 <img src="../ux/screens/160x120i5/home_locked.png" width="200" alt="Home with the keys locked">
 

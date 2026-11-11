@@ -1035,6 +1035,9 @@ behind a 3 kHz 4th-order IIR low-pass; each decoded code raises an interrupt.
 
 The 4-bit codes for 0, *, #, A-D are not stated (the manual shows only the standard keypad grid).
 
+Seen on air (2026-11-03): one code at 0xA4 = 0xFF lasts 510 ms and ends in about 20 ms of silence even with 0xA3 = 0,
+so a digit held longer than one code has a short dropout every 510 ms. 0xD1 = 16 sends 16 codes, 8.16 s.
+
 | Hz | RX coefficient (aux, 24 bit) | Address | TX phase step (aux, 16 bit) | Address |
 |---|---|---|---|---|
 | 697 | 0x7ECD9D | 0x104-0x102 | 0x0593 | 0x11B-0x11A |
@@ -1095,6 +1098,10 @@ is then set up as in A1; 0x37 = 0x00.
 | E | 1358 | 0x7B7A03 | 0x110-0x10E | 0x0ADD | 0x123-0x122 |
 
 Each sequence goes out once per PTT.
+
+Seen on air (2026-11-03): the code nibbles are the tones' hex letters. 0xAF bits 3-0 = 0xA (with 0xAE bits 7-4 = 0xB or
+0) sends; 0, 1 and 2 send nothing. With every tone entry set to one frequency and 0xA4 = 0xA5 = 0xFF, a 2-tone sequence
+is one gapless tone of at least 25.5 s, used for single tones (1750 Hz burst, roger beep, AFSK).
 
 ### 7.9 MSK (chapter 7)
 

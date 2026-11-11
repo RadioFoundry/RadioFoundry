@@ -462,7 +462,7 @@ static void test_tx(void)
 	tick(true);
 	CHECK(REG(C7_LAYER2_SEND_TYPE) == 0x2B && buf[C7_VOICE_RAM] == 0xB9 && eng.st.tx_underrun == 1);
 
-	// End: a terminator queued, then tx_end; it goes out, then the drain, then TX_DONE and the receiver restart
+	// End: a terminator queued, then tx_end; it goes out, then the drain, then TX_DONE and the post-TX hold
 	dmr_tx_burst_t term = { .kind = DMR_BURST_TERMINATOR_LC, .len = 9 };
 	CHECK(hrc7000_dmr_tx_queue(&eng, &term));
 	hrc7000_dmr_tx_end(&eng);
@@ -474,11 +474,66 @@ static void test_tx(void)
 	tick(true);	// other slot
 	tick(true);	// our slot, nothing left and the end asked for: drain
 	CHECK(hrc7000_dmr_is_transmitting(&eng) && eng.st.tx_underrun == underruns);
+	uint32_t rs = eng.st.rx_restarts;
 	tick(true);
 	CHECK(!hrc7000_dmr_is_transmitting(&eng));
 	CHECK(count_kind(DMR_EV_TX_DONE, NULL) == 1);
 	CHECK(REG(C7_LAYER2_CONTROL) == 0xC0 && REG(C7_LAYER2_TXRX_CTRL) == 0x40 && REG(C7_LAYER2_SLOTON) == 0x05);
+	CHECK(eng.st.rx_holds == 1 && eng.st.rx_restarts == rs);
 	CHECK(lock_depth == 0);
+}
+
+// The end of a direct transmission holds the receiver on our slot timing instead of restarting it (5.2a): the restart
+// came in the middle of an answer 30 ms after our terminator, which the chip then reported with BS sync. The answer is
+// taken; with none, the restart comes once the channel has been quiet for the hold
+static void test_tx_end_hold(void)
+{
+	for (int answer = 0; answer < 2; answer++) {
+		setup();
+		hrc7000_dmr_run(&eng);
+		const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = false };
+		hrc7000_dmr_configure(&eng, &cfg);
+		tick(false);
+		count_kind(0xFF, NULL);
+		CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+		dmr_tx_burst_t d = { .kind = DMR_BURST_DATA_HEADER, .len = 10 };
+		CHECK(hrc7000_dmr_tx_queue(&eng, &d));
+		for (int i = 0; i < 8 && hrc7000_dmr_is_transmitting(&eng); i++) {
+			tick(true);
+		}
+		uint32_t rs = eng.st.rx_restarts;
+		CHECK(!hrc7000_dmr_is_transmitting(&eng) && eng.st.rx_holds == 1 && eng.st.rx_restarts == rs);
+		CHECK(REG(C7_LAYER2_CONTROL) == 0xC0 && REG(C7_LAYER2_TXRX_CTRL) == 0x40);
+		count_kind(0xFF, NULL);
+		tick(false);
+		if (answer) {
+			// The answer: an MS data header, taken; the reception then ends as any other (390 ms)
+			deframe(rti(0, DMR_BURST_DATA_HEADER, 1, 0, 0, 0));
+			CHECK(count_kind(DMR_EV_BURST_RX, NULL) == 1 && eng.st.rx_restarts == rs);
+			for (int i = 0; i < 13; i++) {
+				tick(false);
+			}
+			CHECK(eng.st.rx_restarts == rs);
+			tick(false);
+			CHECK(eng.st.rx_restarts == rs + 1 && eng.st.rx_lost == 1);
+		} else {
+			// None: the restart after the hold, then the stale timing rule as before
+			for (int i = 0; i < 4; i++) {
+				tick(false);
+			}
+			CHECK(eng.st.rx_restarts == rs);
+			tick(false);
+			CHECK(eng.st.rx_restarts == rs + 1 && eng.st.rx_stale == 1);
+			CHECK(REG(C7_LAYER2_SLOTON) == 0x05 && REG(C7_LAYER2_CONTROL) == 0xC0);
+			for (int i = 0; i < 20; i++) {
+				tick(false);
+			}
+			CHECK(eng.st.rx_stale == 1);
+			tick(false);
+			CHECK(eng.st.rx_stale == 2);
+		}
+		count_kind(0xFF, NULL);
+	}
 }
 
 static void test_tx_edges(void)
@@ -1349,6 +1404,7 @@ int main(void)
 	test_rx_resync();
 	test_cc_scan();
 	test_tx();
+	test_tx_end_hold();
 	test_tx_edges();
 	test_lost_requests();
 	test_tx_sync_and_listen();

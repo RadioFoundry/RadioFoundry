@@ -290,19 +290,38 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 		if (i == DIAG_DMR_FIRST + HRC_DMR_DIAG_LINES + 1) {
 			// DMR TX bursts (4.5): TX-on and TX-off sequences run, RF RX interrupts seen, what woke the last TX-off
 			// (R: RF RX interrupt, T: slot tick, A: abort), and how many ramp downs started late, the last by how much
-			db25d_dmr_tx_stats_t t;
-			db25d_dmr_tx_stats(&t);
+			hrc_rfburst_stats_t t;
+			hrc_rfburst_stats(&t);
 			put(&o, "b");
 			put_u(&o, t.bursts);
 			put(&o, "/");
 			put_u(&o, t.ends);
 			put(&o, " rx");
 			put_u(&o, t.rfrx_ints);
-			put(&o, t.last_by == 'R' ? " R" : t.last_by == 'T' ? " T" : t.last_by == 'A' ? " A" : " -");
+			char by[3] = { ' ', t.last_by != 0 ? t.last_by : '-', '\0' };	// R, T, A or B (dmr_rfburst.h)
+			put(&o, by);
 			put(&o, " L");
 			put_u(&o, t.late);
 			put(&o, "/");
 			put_u(&o, t.last_late_us);
+			break;
+		}
+		if (i == DIAG_DMR_FIRST + HRC_DMR_DIAG_LINES + 2) {
+			// The TX-on timing since the key-up (hrc_rfburst_stats_t), in us: the RF task's wake (largest), the PA up
+			// after the RF TX interrupt (smallest..largest; the first symbol is at lead x 100 + 850), an interrupt off
+			// its grid
+			hrc_rfburst_stats_t t;
+			hrc_rfburst_stats(&t);
+			put(&o, "up w");
+			put_u(&o, t.wake_max_us);
+			put(&o, " u");
+			put_u(&o, t.up_min_us);
+			put(&o, "..");
+			put_u(&o, t.up_max_us);
+			put(&o, " g");
+			put_u(&o, t.grid_max_us);
+			put(&o, "/");
+			put_u(&o, t.regridded);
 			break;
 		}
 #endif

@@ -10,8 +10,8 @@ The channel sits --offset Hz from the tuner center (an offset keeps it away from
 keyed segment (carrier above the capture's noise floor) it reports:
   - level (dBFS, 10 ms power) and length
   - carrier offset from the channel; with --center and --ppm also corrected for the SDR's own frequency error
-    (corrected = measured - f_channel x ppm x 1e-6). Both default to the capture's CAPTURE.json (sdrmon.py capture
-    records the tuner center and the SDR bench's calibrated ppm there)
+    (corrected = measured - f_channel x ppm x 1e-6). Both default to the capture's CAPTURE.json, when
+    it records the tuner center and the SDR's calibrated ppm
   - voice band 300-3000 Hz deviation: peak (99.5th and 99.9th percentile of |dev|) and RMS
   - the 4-7.5 kHz band RMS of the discriminator output, a reference for the noise / residual FM floor
   - sub-audio: a CTCSS tone (60-260 Hz) with its frequency and peak deviation, or a DCS code (134.4 bit/s NRZ,

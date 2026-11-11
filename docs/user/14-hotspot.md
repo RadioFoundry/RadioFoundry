@@ -109,6 +109,11 @@ fails, on which radio, and the workarounds are in [Known issues by radio](../spe
 A channel can be a single frequency repeater, or a radio using one, without a host. Set the channel's SFR role in the
 Codeplug Editor. The channel must have one frequency (receive = transmit).
 
+The VFO can take a role too, with no codeplug change. In the DMR VFO open **Tools > Single-freq repeater**: **Role**
+steps through Off, User, User (ERDM), Repeater and Repeater (ERDM style); **Inbound slot** switches TS1 and TS2. The
+VFO keeps its role, also after power off. It works only in DMR with one frequency: with a TX offset the page says the
+role is off. The VFO's color code is the repeater's on both slots. **Copy to VFO** brings a channel's role along.
+
 | Role | What the radio does |
 |---|---|
 | Repeater (Rpt, Rpt Moto) | Repeats every call heard on the inbound slot on the other slot, 90 ms later. PTT is off ("Repeater channel"). The radio shows receiving while it repeats; the red LED lights while it sends. It stays an ordinary channel while transmit is inhibited, the battery is critical or a scan or dual watch runs, and repeats again once that clears. **Settings > Talk & listen > SFR CW ID** makes it send its callsign in Morse every 5 to 30 minutes, after traffic |
