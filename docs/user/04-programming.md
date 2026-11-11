@@ -108,7 +108,9 @@ Check the result before writing it to the radio. The radio's codeplug stays as i
 the editor can't open yet can be converted with qdmr first (`dmrconf decode`), then opened as YAML.
 
 **Save** writes a codeplug file, a qdmr codeplug (`.yaml`), the open table as CSV, every table as a `.zip` of CSV files,
-or `codeplug.bin` for USB network mode.
+or `codeplug.bin` for USB network mode. Every save but `codeplug.bin` is named after the codeplug with the date and time
+added, such as `dm32-codeplug-2026-11-10-2215.yaml`, so saves never overwrite each other. Opening a dated file and
+saving it again replaces the date and time.
 
 CSV files have a header row with the column names, and refer to other records by name (a channel's TX contact, a
 zone's channels). Save a table first to see the columns. An import matches rows to existing records by number, then by

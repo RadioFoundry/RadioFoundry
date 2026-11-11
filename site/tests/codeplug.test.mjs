@@ -645,8 +645,18 @@ test("changed runs stay inside their ranges and sectors", () => {
 	assert.ok(writeRanges().every(([x, y]) => y <= 0x604B || x >= 0x6060));
 });
 
-import { tftpBytes } from "../static/js/editor/files.js";
+import { tftpBytes, datedName } from "../static/js/editor/files.js";
 import { TFTP_SIZE } from "../static/js/codeplug/image.js";
+
+test("saved files are named after the codeplug with the local date and time, replacing a date already there", () => {
+	const when = new Date(2026, 10, 10, 22, 15);	// local time, month from 0
+	assert.equal(datedName("dm32-codeplug", when), "dm32-codeplug-2026-11-10-2215");
+	assert.equal(datedName("dm32-codeplug-2026-11-09-0805", when), "dm32-codeplug-2026-11-10-2215");
+	assert.equal(datedName("", when), "codeplug-2026-11-10-2215");
+	assert.equal(datedName(undefined, when), "codeplug-2026-11-10-2215");
+	assert.equal(datedName("2026-11-09-0805", when), "2026-11-09-0805-2026-11-10-2215");	// only a suffix is a date
+	assert.equal(datedName("trip 2026", new Date(2027, 0, 2, 3, 4)), "trip 2026-2027-01-02-0304");
+});
 
 test("codeplug.bin for USB network mode carries the ID database when there is one", () => {
 	const plain = CodeplugImage.from(new Uint8Array(0));
