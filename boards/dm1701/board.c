@@ -26,9 +26,6 @@ const uint8_t uvf_key_matrix[3][8] = {
 	{ KEY_3, KEY_6, KEY_9, KEY_HASH, STM32_KEYPAD_NO_KEY, KEY_SK1, KEY_SK3, KEY_SK2 },
 };
 
-// hardware-dm1701.md: 9.2 (type 2 is "vertically flipped; treated as type 3 with RGB order": the bench radio reports 2,
-// and the type 2 MADCTL showed the picture mirrored top to bottom), 11.1 (raw / 37.5 per 0.1 V), 11.2 (measured on the
-// bench: 26 at the bottom, 2063 at the top; spec 29..2075), 7 and 12.1 (the DM-1701 rows)
 // DMR key-up (docs/spec/pa-keyup.md, hardware-dm1701.md 7). UHF: measured with tools/bench/pa_cal.py, then the knee
 // and slope taken 3-9 % under the fit: every level up 0.19-0.40 ms before the first symbol, the boosted lower three with
 // 1.2-2.2 dB of overshoot (the fit's own gave them 1.7-3.3 dB: the boost's charge carries on after its end). VHF:
@@ -47,6 +44,9 @@ static const uvf_power_band_t power5[2] = {
 	{ .low = { 339, 620 }, .frac = { 838, 809 } },
 };
 
+// hardware-dm1701.md: 9.2 (type 2 is "vertically flipped; treated as type 3 with RGB order": the bench radio reports 2,
+// and the type 2 MADCTL showed the picture mirrored top to bottom), 11.1 (raw / 37.5 per 0.1 V), 11.2 (measured on the
+// bench: 26 at the bottom, 2063 at the top; spec 29..2075), 7 and 12.1 (the DM-1701 rows)
 const uvf_variant_t uvf_variant = {
 	.panel_type = { 0, 1, 3, 3 },
 	.panel_rgb = { false, false, true, false },
