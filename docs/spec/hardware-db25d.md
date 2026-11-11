@@ -1078,3 +1078,7 @@ carrier: try `DB25D_DMR_TX_INVERT=1`. Low deviation: compare the page's modulati
 | 14 | Answered (4.5): single-point modulation on the TCXO, the per-burst sequence, decoded on the SDR bench; deviation 101 % of nominal | - |
 | 15 | The 020 codec's windows, entry points and a RAM layout for its run address (a separate compile at 0x030C142C, 8.1) | A 020 vendor firmware file, or a read of 0x0300C000-0x0300CFFF |
 | 16 | The FD6818 batches (4.8) on a radio: FM receive and transmit, the PTB27 tone-heard flag, the PA gain from 0x09B, DMR | Yes, a D64, D66 or D6T radio |
+
+## Receive past the rated bands
+
+18-136, 174-400 and 480-660 MHz: what both fitted chips cover, the BK4819 (18-660 MHz in its data sheet) and the FD6818. Receive only, FM, off by default ([radio-features.md](radio-features.md) 6.2). Not measured on the radio.

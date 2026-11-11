@@ -18,6 +18,7 @@
 #include "hal_time.h"
 #include "hal_dtmf.h"
 #include "settings/settings.h"
+#include "dmr/sfr.h"
 #include "input/input.h"
 #if CONFIG_KEY_ASSIGN
 #include "input/keyassign.h"
@@ -61,7 +62,7 @@ void debuglink_view_audio(dl_text_t *t)
 	(void)t;
 }
 
-// The last PA drive sweep (RADIO op 38): the points it ran and the top level's drive it counted from
+// The last PA drive sweep (RADIO op 39): the points it ran and the top level's drive it counted from
 static uint8_t pa_sweep_last_n;
 static uint16_t pa_sweep_last_top;
 
@@ -337,6 +338,18 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		if (a[2] != 0) {
 			radio_req_dmr_timeslot(a[2]);
 		}
+		return DL_ST_OK;
+#else
+		return DL_ST_UNAVAILABLE;
+#endif
+	case DL_OP_VFO_SFR:
+		// u8: the VFO's SFR role as a channel's SFR byte A (sfr.h; role bits 0 = none). The radio core refuses it
+		// outside the VFO; dmr.sfr_role shows what it took
+		if (len < 1 || (a[0] & 0x07u) >= SFR_ROLE_NUM_STORED) {
+			return DL_ST_BAD_ARG;
+		}
+#if CONFIG_SFR
+		radio_req_vfo_sfr(a[0]);
 		return DL_ST_OK;
 #else
 		return DL_ST_UNAVAILABLE;

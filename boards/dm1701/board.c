@@ -61,9 +61,19 @@ const uvf_variant_t uvf_variant = {
 #endif
 };
 
+#if CONFIG_RX_EXT
+static bool rx_ext_on;
+#endif
+
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 	{ 400000000, 480000000, true },
+#if CONFIG_RX_EXT
+	// Receive only past the rated bands, while the user turns it on: the AT1846S data sheet. Keep these last
+	{ 134000000, 136000000, false },
+	{ 200000000, 260000000, false },
+	{ 480000000, 520000000, false },
+#endif
 };
 
 static const char *const power_names[] = { "100mW", "500mW", "1W", "2.5W", "5W" };
@@ -134,6 +144,10 @@ const board_t board = {
 	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
+#if CONFIG_RX_EXT
+	.rx_ext_count = 3,
+	.rx_ext_on = &rx_ext_on,
+#endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
 	.power_default = 2,	// 1 W

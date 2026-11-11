@@ -134,6 +134,17 @@ bool ui_svc_dmr_color_code(uint8_t cc)
 	return true;
 }
 
+bool ui_svc_vfo_sfr(uint8_t a)
+{
+#if CONFIG_SFR
+	radio_req_vfo_sfr(a);
+	return true;
+#else
+	(void)a;
+	return false;
+#endif
+}
+
 #if CONFIG_FM
 bool ui_svc_mode(uint8_t mode)
 {

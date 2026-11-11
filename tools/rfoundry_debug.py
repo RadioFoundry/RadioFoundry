@@ -176,7 +176,10 @@ OP_DTMF = 34
 OP_TX_LIMIT = 35
 OP_TX_DRIVE = 36
 OP_PA_KEYUP = 37
-OP_PA_SWEEP = 38
+OP_VFO_SFR = 38
+# The VFO's SFR role names (sfrRole_t, docs/spec/sfr.md 4): off, user, user of an ERDM repeater, repeater, ERDM style
+SFR_ROLES = {"off": 0, "user": 1, "user-erdm": 2, "rpt": 3, "rpt-erdm": 4}
+OP_PA_SWEEP = 39
 TX_LIMIT_MAX = 10       # frequencies in the test TX limit's list (core/radio/tx_limit.h)
 DTMF_DIGITS = "0123456789*#ABCD"
 VOLUME_KNOB = 0xFF
@@ -234,6 +237,16 @@ def as_int(v, default=None):
         return int(v, 0)
     except (TypeError, ValueError):
         return default
+
+
+def low_latency(s):
+    """A USB-serial cable's FTDI chip holds received bytes for its latency timer (16 ms) before passing them on; 1 ms
+    halves a request's round trip on a radio linked by the programming cable. Linux only; elsewhere, and on ports
+    without the setting, nothing changes."""
+    try:
+        s.set_low_latency_mode(True)
+    except (AttributeError, NotImplementedError, OSError, ValueError):
+        pass
 
 
 def find_ports():
@@ -311,6 +324,7 @@ class DebugLink:
                 self.s = serial.serial_for_url(self.port, 115200, timeout=0.02)	# a device, or a URL such as rfc2217://host:port
             except serial.SerialException as e:
                 raise DebugLinkError(f"can't open {self.port}: {e}")
+            low_latency(self.s)
 
     def close(self):
         self.s.close()
@@ -925,6 +939,20 @@ class DebugLink:
         m = 0xFF if mode is None else {"fm": 0, "dmr": 1}[mode]
         self.radio(OP_DMR_FIELDS, bytes([m, 0xFF if cc is None else int(cc), 0 if ts is None else int(ts)]))
 
+    def vfo_sfr(self, role, inbound_ts=1, framing=0, hang=0):
+        """The VFO's SFR role (RADIO op 38; sfr.md 4), saved with the VFO: role a SFR_ROLES name or 0..4, the inbound
+        slot 1 / 2, framing 0..3, hang 0..3: a codeplug channel's SFR byte A. The outbound color code is the VFO's own.
+        The radio core takes it in the VFO only (dmr.sfr_role shows it)."""
+        r = SFR_ROLES[role] if isinstance(role, str) else int(role)
+        if not 0 <= r <= 4 or inbound_ts not in (1, 2) or not 0 <= framing <= 3 or not 0 <= hang <= 3:
+            raise ValueError("vfo_sfr: role 0..4, inbound_ts 1|2, framing 0..3, hang 0..3")
+        a = r | framing << 3 | (0x20 if inbound_ts == 2 else 0) | hang << 6
+        self.vfo_sfr_byte(a)
+
+    def vfo_sfr_byte(self, a):
+        """The VFO's SFR role as byte A itself (RADIO op 38), as the view's ch.sfr shows it first."""
+        self.radio(OP_VFO_SFR, bytes([int(a) & 0xFF]))
+
     def vfo_copy(self):
         """Copy the channel on view to the VFO and open it (RADIO op 32). Raises DebugLinkError "refused" for a channel
         the VFO can't hold (a mode this build lacks, a frequency outside the bands) and "unavailable" without a VFO or
@@ -984,7 +1012,7 @@ class DebugLink:
         self.radio(OP_PA_KEYUP, struct.pack(f"<{len(v)}H", *(int(x) for x in v)))
 
     def pa_sweep(self, start, step, count, on_ms, off_ms, ceiling=100, mark_ms=0):
-        """One PA drive sweep (RADIO op 38; docs/spec/pa-keyup.md 7) on the FM carrier the radio transmits now: the drive
+        """One PA drive sweep (RADIO op 39; docs/spec/pa-keyup.md 7) on the FM carrier the radio transmits now: the drive
         at 0 for off_ms, then start + i x step for on_ms, for count points, with the timing marker mark_ms after each
         write and before each drop (0: none). The firmware caps the drive at ceiling % (at most 115) of the top level's
         drive, the points over that drive and one sweep's length (1 s): returns (points run, the top level's drive).
@@ -1453,6 +1481,12 @@ def cmd_radio(link, a):
         link.dmr_fields(cc=num(0))
     elif op == "ts":                  # ts 1|2
         link.dmr_fields(ts=num(0))
+    elif op == "sfr":                 # sfr off|user|user-erdm|rpt|rpt-erdm [ts=1|2] [framing=0..3] [hang=0..3]
+        if not args or (args[0] not in SFR_ROLES and not (args[0].isdigit() and int(args[0]) in SFR_ROLES.values())):
+            raise SystemExit("sfr ROLE [ts=1|2] [framing=N] [hang=N]: ROLE " + "|".join(SFR_ROLES))
+        kw = dict(a.split("=", 1) for a in args[1:] if "=" in a)
+        link.vfo_sfr(args[0] if not args[0].isdigit() else int(args[0]), int(kw.get("ts", 1)),
+                     int(kw.get("framing", 0)), int(kw.get("hang", 0)))
     elif op == "dtmf":                # dtmf DIGITS [ms]: key taps during FM TX (PTT held)
         if not args or any(c not in DTMF_DIGITS for c in args[0].upper()):
             raise SystemExit("dtmf DIGITS [ms]: digits from " + DTMF_DIGITS)
@@ -2191,7 +2225,7 @@ def main(argv=None):
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
-                                  "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "copy-vfo", "voice-test", "dtmf",
+                                  "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "sfr", "copy-vfo", "voice-test", "dtmf",
                                   "tx-limit", "tx-drive", "pa-keyup", "pa-sweep"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")

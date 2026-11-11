@@ -1844,3 +1844,7 @@ is well above the "mic muted, no tone" row.
   `dm1701-v0206-csv`. An interrupted update writes sector 3 (the vector table) last, so a cut before it leaves the
   bootloader in DFU; a later half application may crash but never bricks. Enter the bootloader by hand (PTT and side
   key 1 at power-on) and flash again.
+
+## Receive past the rated bands
+
+134-136, 200-260 and 480-520 MHz: the AT1846S data sheet. Receive only, FM, off by default ([radio-features.md](radio-features.md) 6.2). Not measured on the radio.

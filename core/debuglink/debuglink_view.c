@@ -126,7 +126,7 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 #endif
 	// The board's bands in Hz, so a HIL test skips a frequency the radio can't tune instead of failing on it
 	dl_text(t, "bands=");
-	for (uint8_t i = 0; i < board.band_count; i++) {
+	for (uint8_t i = 0; i < board_band_count(); i++) {
 		dl_text(t, "%s%u-%u", i != 0 ? "," : "", (unsigned)board.bands[i].lo_hz, (unsigned)board.bands[i].hi_hz);
 	}
 	dl_text(t, "\n");
@@ -165,6 +165,8 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "ch.color_code=%u\nch.timeslot=%u\n", c->color_code, c->timeslot);
 	dl_text(t, "ch.contact=%u\nch.listen_list=%u\n", c->contact, c->listen_list);
 	dl_text(t, "ch.dmr_id=%u\nch.dmo=%u\n", (unsigned)c->dmr_id, c->dmo);
+	// The SFR bytes A and B as stored (sfr.h; 0,0 = none); dmr.sfr_role is the role in force
+	dl_text(t, "ch.sfr=%u,%u\n", c->sfr_flag1 ? c->sfr_a : 0u, c->sfr_flag1 ? c->sfr_b : 0u);
 }
 
 // mtu_lines and ppp_lines are not inlined: net_link_section is, into debuglink_view_section, which is on the host
