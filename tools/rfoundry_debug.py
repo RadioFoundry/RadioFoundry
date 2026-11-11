@@ -175,6 +175,7 @@ OP_VOICE_TEST = 33
 OP_DTMF = 34
 OP_TX_LIMIT = 35
 OP_TX_DRIVE = 36
+OP_PA_KEYUP = 37
 TX_LIMIT_MAX = 10       # frequencies in the test TX limit's list (core/radio/tx_limit.h)
 DTMF_DIGITS = "0123456789*#ABCD"
 VOLUME_KNOB = 0xFF
@@ -975,6 +976,21 @@ class DebugLink:
         view's tx_drive lists each level's drive. Raises DebugLinkError over the board's limit or without the hook."""
         self.radio(OP_TX_DRIVE, struct.pack("<H", int(drive)))
 
+    def pa_keyup(self, dead=None, knee=None, slope_us=None, boost=None, hold=None, boost_us=None, pa_us=None,
+                 drive_us=None):
+        """The DMR PA key-up constants (RADIO op 37; docs/spec/pa-keyup.md), RAM only, from the next key-up: the drive
+        that does nothing (dead), the knee (counts x ms), the slope (us), the boost (% of the top step's drive) and the
+        hold (% of the step's drive), then the boost, PA and drive points in us before the first symbol. No arguments:
+        the board's again. The core view shows them (pa_keyup) and the last key-up (pa_keyup.last: boost, hold, drive
+        and the hold's point). Raises DebugLinkError out of range or on a radio without it."""
+        v = (dead, knee, slope_us, boost, hold, boost_us, pa_us, drive_us)
+        if all(x is None for x in v):
+            self.radio(OP_PA_KEYUP, b"")
+            return
+        if any(x is None for x in v):
+            raise ValueError("pa_keyup: all eight values, or none")
+        self.radio(OP_PA_KEYUP, struct.pack("<HHHBBHHH", *(int(x) for x in v)))
+
     def tone_burst(self, on, max_ms=0):
         """The 1750 Hz burst (FM): keys up and sends the tone while on. The firmware ends it by itself after max_ms
         (0: inject_max_ms, the cap as for PTT), so a lost "off" can't leave the radio keyed."""
@@ -1425,6 +1441,8 @@ def cmd_radio(link, a):
             link.tx_limit(mhz=[float(f) for f in ",".join(args).split(",") if f])
     elif op == "tx-drive":            # tx-drive N|off (the next transmission's PA drive, power calibration)
         link.tx_drive(0 if args[:1] in ([], ["off"]) else num(0))
+    elif op == "pa-keyup":            # pa-keyup DEAD KNEE SLOPE_US BOOST HOLD BOOST_US PA_US DRIVE_US|default (RAM only)
+        link.pa_keyup(*([] if args[:1] in ([], ["default"]) else [num(i) for i in range(8)]))
     elif op == "set":                 # set NAME VALUE
         link.setting(args[0], num(1))
     elif op == "usb":                 # usb network|serial
@@ -2144,7 +2162,7 @@ def main(argv=None):
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
                                   "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "copy-vfo", "voice-test", "dtmf",
-                                  "tx-limit", "tx-drive"])
+                                  "tx-limit", "tx-drive", "pa-keyup"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",
