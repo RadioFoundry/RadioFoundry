@@ -302,9 +302,16 @@ static void keyup_plan(uint32_t hz, uint8_t power)
 		key_delay_us = KEYUP_INT_AHEAD_US - MD9600_BURST_T5_US - c.pa_us;
 		return;
 	}
-	// The supply ahead of the PA's point by T5, and ahead of any point at its time
-	uint8_t n = pa_keyup_insert(key_pt, pa_keyup_points(&c, &ku, key_pt), (uint16_t)(c.pa_us + MD9600_BURST_T5_US),
-				    KEY_PT_SUPPLY);
+	// The supply ahead of the PA's point by T5, and ahead of any point at its time. The PA's point, not pa_us: a later
+	// boost (late) moves it
+	uint8_t n = pa_keyup_points(&c, &ku, key_pt);
+	uint16_t pa = c.pa_us;
+	for (uint8_t i = 0; i < n; i++) {
+		if (key_pt[i].kind == PA_KEYUP_PT_PA) {
+			pa = key_pt[i].us;
+		}
+	}
+	n = pa_keyup_insert(key_pt, n, (uint16_t)(pa + MD9600_BURST_T5_US), KEY_PT_SUPPLY);
 	key_ns = pa_keyup_steps(key_pt, n, KEYUP_INT_AHEAD_US, 0u, key_st);
 }
 

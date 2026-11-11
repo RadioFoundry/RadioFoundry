@@ -26,9 +26,6 @@ const uint8_t uvf_key_matrix[3][8] = {
 	{ KEY_3, KEY_6, KEY_9, KEY_HASH, STM32_KEYPAD_NO_KEY, KEY_SK1, KEY_SK3, KEY_SK2 },
 };
 
-// hardware-dm1701.md: 9.2 (type 2 is "vertically flipped; treated as type 3 with RGB order": the bench radio reports 2,
-// and the type 2 MADCTL showed the picture mirrored top to bottom), 11.1 (raw / 37.5 per 0.1 V), 11.2 (measured on the
-// bench: 26 at the bottom, 2063 at the top; spec 29..2075), 7 and 12.1 (the DM-1701 rows)
 // DMR key-up (docs/spec/pa-keyup.md, hardware-dm1701.md 7): measured on the SDR bench at every step. The top
 // step's PA 0.8 ms (VHF) and 1.0 ms (UHF) after the RF TX interrupt: 0.6 ms cut the end of the burst an SFR repeater
 // receives just before. The VHF PA needs about three times the UHF knee
@@ -46,6 +43,9 @@ static const uvf_power_band_t power5[2] = {
 	{ .low = { 339, 620 }, .frac = { 838, 809 } },
 };
 
+// hardware-dm1701.md: 9.2 (type 2 is "vertically flipped; treated as type 3 with RGB order": the bench radio reports 2,
+// and the type 2 MADCTL showed the picture mirrored top to bottom), 11.1 (raw / 37.5 per 0.1 V), 11.2 (measured on the
+// bench: 26 at the bottom, 2063 at the top; spec 29..2075), 7 and 12.1 (the DM-1701 rows)
 const uvf_variant_t uvf_variant = {
 	.panel_type = { 0, 1, 3, 3 },
 	.panel_rgb = { false, false, true, false },
