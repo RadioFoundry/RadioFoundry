@@ -285,6 +285,8 @@ value: run `aprs set dmr_dst <MCC>999` (US: `aprs set dmr_dst 310999`).
 - Motorola LRRP triggered location report (the default): UDP port 4001, built by `dmrLrrp.c`.
 - ETSI UDT location (`dmr_udt` on): `dmrDataBuildUDTLocation`. BrandMeister forwards the position reports of Motorola
   (LRRP) and Hytera radios to APRS, so use LRRP, not UDT, for BrandMeister.
+- The position in either report has the ambiguity setting applied (`position_blur`, [position.md](position.md) 3), as
+  the AX.25 packets and the other DMR reports do.
 
 ### 8.1 LRRP details
 

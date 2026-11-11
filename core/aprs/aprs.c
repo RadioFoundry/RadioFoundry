@@ -275,8 +275,10 @@ void aprs_tick(const aprs_radio_t *r, uint32_t now_ms)
 	aprs_dmr_pos_t dp;
 	memset(&dp, 0, sizeof(dp));
 	if (dmr_due && f != NULL) {
+		uint32_t err_m;
 		dp.lat = f->lat;
 		dp.lon = f->lon;
+		position_blur(&dp.lat, &dp.lon, src, &err_m);	// the ambiguity setting's blur, as LRRP and GPS Info get
 		dp.speed_kn = aprs_kmh_to_kn(f->speed_kmh);
 		dp.course = f->course;
 		dp.utc_hms = src == POSITION_SRC_FIXED ? 0xFFFFFFFFu : f->utc_hms;

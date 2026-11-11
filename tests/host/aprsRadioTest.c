@@ -872,7 +872,7 @@ static void test_stations_digi_igate(void)
 #endif
 
 #if CONFIG_APRS_RX
-// The range Stations heard shows (ui_svc_aprs_range): from our position as aprs_position_now gives it, to the
+// The range Stations heard shows (ui_svc_aprs_range): from our position as position_now gives it, to the
 // station's. EP: our position none / fixed / GPS (GPS wins in Auto) x the station's none / valid. BVA: the same
 // spot is 0 m; 10 minutes of latitude due north is 18.5 km at bearing 0
 static void test_station_range(void)
@@ -978,6 +978,11 @@ static void test_dmr_position(void)
 	position_set_cfg(&pc, now);
 	CHECK(position_now(&lat, &lon, &err, &send, now) && send && err == 1852);
 	CHECK(lat == 490583334 && lon == -720250000);	// 49 03.5 N (already mid-minute), 072 01.5 W
+	// APRS over DMR blurs the exact position the same way (position_blur)
+	int32_t blat = 490583333, blon = -720291667;
+	uint32_t berr = 0;
+	position_blur(&blat, &blon, POSITION_SRC_FIXED, &berr);
+	CHECK(blat == lat && blon == lon && berr == 1852);
 	// An APRS save leaves the position settings as they are, and both come back from the store
 	aprs_get_cfg(&c);
 	c.via = APRS_VIA_BOTH;

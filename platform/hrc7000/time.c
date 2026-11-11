@@ -72,10 +72,11 @@ void hal_delay_us(uint32_t n)
 {
 	while (n > 0) {
 		uint32_t step = n < 1000u ? n : 1000u;	// in steps: the count can't overflow, and the fold sees every wrap
-		uint32_t end = hal_micros() + step;
-		while ((int32_t)(hal_micros() - end) < 0) {
+		uint32_t start = hrc_cycles();	// the cycle counter itself: hal_micros() counts whole microseconds, a 1 us delay could end at once
+		while (hrc_cycles() - start < step * CYCLES_PER_US) {
 		}
 		n -= step;
+		fold();
 	}
 }
 

@@ -16,7 +16,7 @@ the UI in `core/ui/ui_position.c` and Settings > Location, the debug link in `co
 |---|---|---|
 | DMR GPS Info in voice calls ([dmr-voice.md](dmr-voice.md) 3.1) | `CONFIG_DMR_GPS` | `position_now`: the position, its error, the "Send in DMR calls" setting. A channel's codeplug setting turns it on for that channel too |
 | LRRP answers and triggered reports ([dmr-data.md](dmr-data.md) 6) | `CONFIG_DMR_LRRP` | `position_report` through the data service's `ownPosition` hook |
-| APRS beacons ([aprs.md](aprs.md) 7) | `CONFIG_APRS` | `position_fix` (exact; APRS formats its own ambiguity) |
+| APRS beacons ([aprs.md](aprs.md) 7) | `CONFIG_APRS` | `position_fix` (exact; the AX.25 packet formats its own ambiguity, the DMR report gets `position_blur`) |
 | Tools > Position ([ui.md](ui.md) 2.3) | `CONFIG_GPS` | `position_gps`, `position_gps_sat` |
 
 | Switch | Set by | Builds |

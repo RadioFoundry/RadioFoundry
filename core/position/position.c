@@ -218,12 +218,28 @@ static int32_t blur(int32_t v, int32_t grid)
 	return v < 0 ? -m : m;
 }
 
+// Position ambiguity (APRS101 ch. 8): the same blur for DMR. Grid in 1e-7 degree and the error it means
+static void blur_fix(int32_t *lat, int32_t *lon, uint8_t src, uint8_t amb, uint32_t *err_m)
+{
+	static const int32_t grid[] = { 1, 16667, 166667, 1666667, 10000000 };
+	static const uint32_t blur_m[] = { 0, 185, 1852, 18520, 111120 };
+	*err_m = src == POSITION_SRC_FIXED ? 200u : 20u;	// GPS / host fixes: tens of meters; a typed position: less sure
+	if (amb != 0) {
+		*lat = blur(*lat, grid[amb]);
+		*lon = blur(*lon, grid[amb]);
+		*err_m = blur_m[amb];
+	}
+}
+
+void position_blur(int32_t *lat, int32_t *lon, uint8_t src, uint32_t *err_m)
+{
+	uint8_t amb = p.cfg.ambiguity;	// one byte: no lock
+	blur_fix(lat, lon, src, amb <= 4 ? amb : 0, err_m);
+}
+
 // The position for a DMR report and the "send in DMR calls" setting, in one locked read
 static uint8_t report(position_fix_t *out, uint32_t *err_m, bool *dmr_gps, uint32_t now_ms)
 {
-	// Position ambiguity (APRS101 ch. 8): the same blur for DMR. Grid in 1e-7 degree and the error it means
-	static const int32_t grid[] = { 1, 16667, 166667, 1666667, 10000000 };
-	static const uint32_t blur_m[] = { 0, 185, 1852, 18520, 111120 };
 	LOCK();
 	uint8_t src = choose(out, now_ms);
 	uint8_t amb = p.cfg.ambiguity;
@@ -232,12 +248,7 @@ static uint8_t report(position_fix_t *out, uint32_t *err_m, bool *dmr_gps, uint3
 	if (src == POSITION_SRC_NONE) {
 		return src;
 	}
-	*err_m = src == POSITION_SRC_FIXED ? 200u : 20u;	// GPS / host fixes: tens of meters; a typed position: less sure
-	if (amb != 0) {
-		out->lat = blur(out->lat, grid[amb]);
-		out->lon = blur(out->lon, grid[amb]);
-		*err_m = blur_m[amb];
-	}
+	blur_fix(&out->lat, &out->lon, src, amb, err_m);
 	return src;
 }
 

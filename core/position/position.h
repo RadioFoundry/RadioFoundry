@@ -71,6 +71,9 @@ uint8_t position_fix(position_fix_t *out, uint32_t now_ms);
 // The same for a DMR report (LRRP), with the ambiguity setting applied; err_m the error estimate in meters, the blur
 // included
 uint8_t position_report(position_fix_t *out, uint32_t *err_m, uint32_t now_ms);
+// The ambiguity setting applied to a position from position_fix (src as it returned), for a DMR report built from it
+// (APRS over DMR); err_m the error estimate in meters, the blur included
+void position_blur(int32_t *lat, int32_t *lon, uint8_t src, uint32_t *err_m);
 // Its position only (DMR GPS Info): false when there is none. dmr_gps the "send position in DMR calls" setting (set
 // even when false)
 bool position_now(int32_t *lat, int32_t *lon, uint32_t *err_m, bool *dmr_gps, uint32_t now_ms);

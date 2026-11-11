@@ -71,11 +71,11 @@ void aprs_host_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 	for (size_t i = 0; i < len; i++) {
 		uint8_t b = buf[i];
 #if CONFIG_APRS_AFSK
-		bool free = kiss.len == 0 && !kiss.esc;
+		bool idle = kiss.len == 0 && !kiss.esc;
 #else
-		bool free = true;
+		bool idle = true;
 #endif
-		if (!nmea_on && b == '$' && free) {
+		if (!nmea_on && b == '$' && idle) {
 			nmea_on = true;
 			nmea_len = 0;
 		}
