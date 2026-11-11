@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // A radio in USB network mode (docs/spec/usb-network.md 1) has no serial port, and a page can send it neither UDP nor,
 // from an https page, a plain http fetch. Two ways are left to ask it for the serial personality, which lasts until
-// the radio restarts or is switched back (Link.usbNetwork):
+// the radio restarts:
 //   - WebUSB: a vendor request on endpoint 0 (drivers/usb/usb_device.h USB_REQ_SERIAL_MODE). Works where the browser
 //     can open a device whose interfaces the OS network driver holds (Android, macOS), not on Windows (no WinUSB
 //     driver on it) or on Linux without a udev rule for the device.

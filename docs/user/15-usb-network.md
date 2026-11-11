@@ -70,7 +70,7 @@ The project's own tools need no address and no change on the radio:
 |---|---|
 | `tools/rfoundry_debug.py`, `tools/cps_client.py`, `rfoundry.py` | With no `--port` and no serial radio plugged in, they find the radio on the network link and use it |
 | `stub/stubtool.py --rfoundry-enter --write-app ...` (no port) | Updates the firmware and restarts the radio, which comes back in network mode |
-| The web installer and the codeplug editor | They ask the radio to become a serial port for the job. Some browsers do it unseen. Otherwise press **Switch the radio to USB serial**: a tab opens on the radio's own page (`http://12.255.255.254/`, every radio's address on its own USB link) and closes again. Then connect. The radio returns to network mode when it restarts, or with **Return it to network mode now** |
+| The web installer and the codeplug editor | They ask the radio to become a serial port for the job. Some browsers do it unseen. Otherwise press **Switch the radio to USB serial**: a tab opens on the radio's own page (`http://12.255.255.254/`, every radio's address on its own USB link) and closes again. Then connect. The radio returns to network mode when it restarts |
 
 If the button can't reach the radio (the tab shows an error: the computer hasn't set the adapter up, or sends 12.x
 addresses elsewhere), switch on the radio: **Tools > USB network**.

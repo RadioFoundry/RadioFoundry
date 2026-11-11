@@ -939,7 +939,6 @@
  "flash.net.switched": "La radio ora è una porta seriale USB. Collega di nuovo. Torna in modalità rete al riavvio.",
  "flash.net.switch_unseen": "Se si è aperta una scheda che diceva che la radio sta cambiando modalità, collega di nuovo e scegli la radio. Se la scheda ha mostrato un errore, la pagina della radio non era raggiungibile: segui i passaggi sulla radio.",
  "flash.net.switched_note": "La radio era in modalità rete USB e per ora è una porta seriale. Torna in modalità rete al riavvio.",
- "flash.net.back_now": "Riportala ora in modalità rete",
  "flash.net.manual": "Se non funziona, cambiala sulla radio:",
  "flash.net.offer": "Radio in modalità rete USB? Passala a USB seriale",
  "flash.net.not_secure": "Si apre una scheda sulla pagina della radio stessa e si richiude. Il browser può dire che quella pagina non è sicura: è la radio sul tuo cavo USB e nulla esce dal computer. Se il browser lo chiede, scegli di continuare.",

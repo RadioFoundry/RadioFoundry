@@ -939,7 +939,6 @@
  "flash.net.switched": "The radio is a USB serial port now. Connect again. It returns to network mode when it restarts.",
  "flash.net.switch_unseen": "If a tab opened and said the radio is switching, connect again and choose the radio. If the tab showed an error, the radio's page could not be reached: use the steps on the radio.",
  "flash.net.switched_note": "The radio was in USB network mode and is a serial port for now. It returns to network mode when it restarts.",
- "flash.net.back_now": "Return it to network mode now",
  "flash.net.manual": "If that doesn't work, switch it on the radio:",
  "flash.net.offer": "Radio in USB network mode? Switch it to USB serial",
  "flash.net.not_secure": "A tab opens on the radio's own page and closes again. Your browser may say that page is not secure: it is the radio on your USB cable, and nothing leaves the computer. If the browser asks, choose to continue.",

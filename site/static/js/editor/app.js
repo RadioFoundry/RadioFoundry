@@ -508,7 +508,7 @@ async function connect() {
 				say(t("editor.connect.none"), "warn");
 				// the message says a radio in network mode isn't listed: the radio's own page switches it where
 				// WebUSB couldn't (netmode.js). A tab, so from a click
-				const go = button(t("flash.net.offer"), async () => {
+				const go = button(t("flash.net.switch"), async () => {
 					go.disabled = true;
 					const r = await toSerial();
 					say(t(r.back ? "flash.net.switched" : "flash.net.switch_unseen"), r.back ? "info" : "warn");

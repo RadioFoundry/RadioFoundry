@@ -517,21 +517,12 @@ async function leaveNetworkMode() {
 	return r.how !== null;
 }
 
-// The radio was taken out of network mode for this page: say so until it is back there, with the way back. A restart
-// (the end of an update) puts it back by itself when USB network at start is on
+// The radio was taken out of network mode for this page: say so. No way back is offered: a restart (the end of an
+// update, or the user's) puts it back by itself when USB network at start is on
 let netBar = null;
 function switchedToSerial() {
 	if (netBar) return;
-	const back = button(t("flash.net.back_now"), async () => {
-		back.disabled = true;
-		try {
-			await (await connectSerial()).usbNetwork(true);
-		} catch (e) { /* it restarted meanwhile and is there already, or it is off: nothing to put back */ }
-		await dropSerial();
-		netBar?.remove();
-		netBar = null;
-	}, { quiet: true });
-	netBar = h("div", { class: "notice info" }, h("p", {}, t("flash.net.switched_note"), " ", back));
+	netBar = h("div", { class: "notice info" }, h("p", {}, t("flash.net.switched_note")));
 	app.before(netBar);
 }
 

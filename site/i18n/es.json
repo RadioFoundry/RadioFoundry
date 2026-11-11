@@ -939,7 +939,6 @@
  "flash.net.switched": "La radio es ahora un puerto serie USB. Conecta de nuevo. Volverá al modo de red cuando se reinicie.",
  "flash.net.switch_unseen": "Si se abrió una pestaña que decía que la radio está cambiando, conecta de nuevo y elige la radio. Si la pestaña mostró un error, no se pudo acceder a la página de la radio: sigue los pasos en la radio.",
  "flash.net.switched_note": "La radio estaba en modo de red USB y por ahora es un puerto serie. Volverá al modo de red cuando se reinicie.",
- "flash.net.back_now": "Devolverla al modo de red ahora",
  "flash.net.manual": "Si eso no funciona, cámbiala en la radio:",
  "flash.net.offer": "¿La radio está en modo de red USB? Cámbiala a USB serie",
  "flash.net.not_secure": "Se abre una pestaña con la página de la propia radio y se cierra de nuevo. El navegador puede decir que esa página no es segura: es la radio en tu cable USB y nada sale del ordenador. Si el navegador pregunta, elige continuar.",
