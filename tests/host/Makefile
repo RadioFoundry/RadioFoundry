@@ -85,8 +85,8 @@ dmrDataServiceTestNoTms: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrData
 
 # LRRP on its own: request decoding (malformed and mutated too), the answers' bounds, the distance
 TESTS   += lrrpTest
-lrrpTest: lrrpTest.c fuzz.h $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmrLrrp.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ lrrpTest.c $(CORE)/dmr/dmrLrrp.c -lm
+lrrpTest: lrrpTest.c fuzz.h $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmrLrrp.h $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c
+	$(CC) $(CFLAGS) -Wshadow -o $@ lrrpTest.c $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c -lm
 
 # The air queue on a fake data service (docs/spec/dmr-data.md 12): byte ring, order, wrap, refusals, timing
 TESTS   += airQueueTest

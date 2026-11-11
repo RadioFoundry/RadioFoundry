@@ -630,9 +630,10 @@ void dmr_gps_range(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2, uint3
 		dlon -= 3600000000LL;
 	if (dlon < -1800000000LL)
 		dlon += 3600000000LL;
-	float mid = (float)(((int64_t)lat1 + lat2) / 2) * rad;
-	float x = (float)dlon * rad * gps_cos(mid);	// radians of arc, east
-	float y = (float)((int64_t)lat2 - lat1) * rad;	// north
+	// Each difference fits an int32 for latitudes in range: a float made from an int64 costs a library call (540 B)
+	float mid = (float)(int32_t)(((int64_t)lat1 + lat2) / 2) * rad;
+	float x = (float)(int32_t)dlon * rad * gps_cos(mid);	// radians of arc, east
+	float y = (float)(int32_t)((int64_t)lat2 - lat1) * rad;	// north
 	float d = gps_sqrt(x * x + y * y) * 6371008.8f;
 
 	*meters = d > 4.0e9f ? 4000000000u : (uint32_t)(d + 0.5f);
