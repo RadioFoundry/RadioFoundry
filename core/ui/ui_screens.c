@@ -215,12 +215,14 @@ static uint8_t channel_power(const radio_view_t *v)
 	return v->ch.power == CODEPLUG_POWER_DEFAULT ? board.power_default : v->ch.power;
 }
 
-void ui_bands_text(char *out, size_t len)
+void ui_bands_text(char *out, size_t len, bool tx)
 {
 	sbuf_t b;
 	sb_init(&b, out, len);
 	for (int i = 0; i < board_band_count(); i++) {
-		if (i)
+		if (tx && !board.bands[i].tx)
+			continue;	// a TX refusal lists only where it can transmit, not the receive-only ranges
+		if (b.p != out)
 			sb_chr(&b, ' ');
 		sb_u32(&b, board.bands[i].lo_hz / 1000000u, 1);
 		sb_chr(&b, '-');
@@ -1090,7 +1092,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_RX_ONLY: sb_str(&b, TR("This channel is RX only")); break;
 	case TXDENY_BAND: {
 		char bands[32];
-		ui_bands_text(bands, sizeof bands);
+		ui_bands_text(bands, sizeof bands, true);
 		sb_str(&b, TR("Bands "));
 		sb_str(&b, bands);
 		break;

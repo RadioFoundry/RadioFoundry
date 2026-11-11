@@ -789,7 +789,7 @@ bool ui_freq_entry_digit(char *digits, uint8_t *len, char d)
 	}
 	digits[*len] = 0;
 	char bands[32];
-	ui_bands_text(bands, sizeof bands);
+	ui_bands_text(bands, sizeof bands, false);
 	sbuf_t b;
 	sb_init(&b, hint, sizeof hint);
 	sb_str(&b, TR("Bands: "));
