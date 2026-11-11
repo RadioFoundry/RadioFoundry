@@ -446,19 +446,26 @@ void rx2_main_speaker(rx2_main_t *m, bool on)
 	}
 }
 
-bool rx2_main_tx(rx2_main_t *m, uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us)
+bool rx2_main_tx(rx2_main_t *m, uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us, const rx2_tx_key_t *key)
 {
 	m->tx_acked = false;
-	if (!m->up) {
+	bool points = key != NULL && key->drive_at_us != 0;
+	// A receiver that doesn't time the points would ramp instead, at its own time: nothing is sent
+	if (!m->up || (points && (m->flags & RX2_HELLO_TX_KEY) == 0)) {
 		return false;
 	}
-	uint8_t p[10];
+	uint8_t p[16];
 	put32(&p[0], hz);
 	put16(&p[4], pa);
 	put16(&p[6], on_us);
 	put16(&p[8], off_us);
+	if (points) {
+		put16(&p[10], key->boost);
+		put16(&p[12], key->boost_at_us);
+		put16(&p[14], key->drive_at_us);
+	}
 	m->tx_seq = m->seq;
-	main_send(m, RX2_TX, p, 10);
+	main_send(m, RX2_TX, p, points ? 16 : 10);
 	return true;
 }
 
@@ -659,7 +666,8 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms)
 			r->ops->path(false, 0);
 		}
 		if (r->ops->tx != NULL) {
-			r->ops->tx(0, 0, 0, 0);
+			const rx2_tx_key_t none = { 0, 0, 0 };
+			r->ops->tx(0, 0, 0, 0, &none);
 		}
 		if (r->ops->dmr != NULL) {
 			r->ops->dmr(NULL, 0);
@@ -710,8 +718,12 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms)
 		break;
 	case RX2_TX: {
 		uint8_t res = 1;
+		rx2_tx_key_t key = { 0, 0, 0 };
+		if (p->len >= 16) {
+			key = (rx2_tx_key_t){ get16(&p->buf[10]), get16(&p->buf[12]), get16(&p->buf[14]) };
+		}
 		if (p->len >= 10 && r->ops->tx != NULL &&
-		    r->ops->tx(get32(&p->buf[0]), get16(&p->buf[4]), get16(&p->buf[6]), get16(&p->buf[8]))) {
+		    r->ops->tx(get32(&p->buf[0]), get16(&p->buf[4]), get16(&p->buf[6]), get16(&p->buf[8]), &key)) {
 			res = 0;
 		}
 		uint8_t a[2] = { p->seq, res };

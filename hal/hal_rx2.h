@@ -7,6 +7,7 @@
 #ifndef HAL_RX2_H
 #define HAL_RX2_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include "hal_radio.h"

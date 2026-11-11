@@ -4,11 +4,57 @@
 // formats), 7 (data extensions, altitude), 8 (position reports), 9 (compressed), 10 (Mic-E), 11 (objects and items),
 // 14 (messages), 16 (status); the 1.1 addendum for the reply-ack form of message numbers.
 #include <string.h>
-#include <math.h>
 #include "aprs/aprs_fmt.h"
 
 #define PI_F	3.14159265f
 #define EARTH_M	6371000.0f
+
+// --- Compressed course and speed, and altitude: no libm (logf and powf cost several KB of flash) ---
+
+// The compressed speed byte is round(log(knots + 1) / log(1.08)), at most 89 (chapter 9). speed_step[j - 1] is the
+// lowest speed whose byte is j or more. The float formula's nearest tie is 0.0007 of a step away (at 264 knots), far
+// beyond any logf's error, so this is the same byte for every speed from 0 to 65535 (tests/host/aprsTest.c)
+static const uint16_t speed_step[89] = {
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 10, 11, 12, 13, 14, 15,
+	16, 17, 19, 20, 22, 24, 26, 28, 30, 33, 35, 38, 41, 45, 48, 52, 56, 61, 66, 71, 77, 83, 90, 97, 105, 113, 122,
+	132, 143, 154, 166, 180, 194, 210, 227, 245, 264, 286, 309, 333, 360, 389, 420, 454, 490, 529, 572, 617, 667,
+	720, 778, 840, 907,
+};
+
+// A power of 1.002 or 1.08 (the float constants the formula has always used: 1.002f is 1.0019999743) as a Q24 number,
+// by squaring a table: base^(2^k) as a 32-bit mantissa m and exponent e, value m * 2^(e - 31). The 2^k terms of n
+// multiply, each step rounding by 2^-32, so the result is good to a few parts in 1e8
+static const uint32_t alt_mant[14] = {
+	0x80418900u, 0x8083338Eu, 0x8106ED97u, 0x820FF744u, 0x84287041u, 0x8873744Cu, 0x9175BF45u,
+	0xA54D31AAu, 0xD5793297u, 0xB202E791u, 0xF790141Cu, 0xEF6757E4u, 0xDFE21FD4u, 0xC3CBBB30u,
+};
+static const uint8_t alt_exp[14] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 5, 11, 23 };
+static const uint32_t spd_mant[7] = {
+	0x8A3D7100u, 0x954C9926u, 0xAE248263u, 0xECEB4CE8u, 0xDB42AE12u, 0xBBCB2730u, 0x89C26C78u,
+};
+static const uint8_t spd_exp[7] = { 0, 0, 0, 0, 1, 3, 7 };
+
+static uint64_t pow_q24(const uint32_t *tm, const uint8_t *te, uint32_t n)
+{
+	uint32_t m = 0x80000000u;	// 1.0
+	int e = 0;
+	for (uint32_t k = 0; n >> k; k++) {
+		if (!((n >> k) & 1u)) {
+			continue;
+		}
+		uint64_t q = (uint64_t)m * tm[k];	// 2^62 .. 2^64: the top bit decides the shift
+		uint32_t sh = q >> 63 ? 32u : 31u;
+		q = (q + (1ull << (sh - 1u))) >> sh;
+		e += te[k] + (int)(sh - 31u);
+		if (q >> 32) {	// rounded up to 2^32
+			q >>= 1;
+			e++;
+		}
+		m = (uint32_t)q;
+	}
+	// value = m * 2^(e - 31), in Q24 that is m * 2^(e - 7)
+	return e >= 7 ? (uint64_t)m << (e - 7) : (uint64_t)m >> (7 - e);
+}
 
 // --- Small text helpers ---
 
@@ -147,10 +193,12 @@ size_t aprs_build_position(const aprs_report_t *r, char *out, size_t max)
 		put_c(&o, p->sym_code);
 		if (cse) {
 			uint16_t c = p->course % 360u;
-			float s = logf((float)p->speed_kn + 1.0f) / logf(1.08f);
-			uint32_t si = (uint32_t)(s + 0.5f);
+			uint32_t si = 0;
+			while (si < 89u && p->speed_kn >= speed_step[si]) {
+				si++;
+			}
 			put_c(&o, (char)(33 + c / 4u));
-			put_c(&o, (char)(33 + (si > 89u ? 89u : si)));
+			put_c(&o, (char)(33 + si));
 		} else {
 			put_c(&o, ' ');
 			put_c(&o, ' ');
@@ -340,14 +388,15 @@ static bool parse_position(const char *s, size_t n, aprs_parsed_t *p)
 		if (c != ' ' && c >= 33 && c <= 123 && sp >= 33 && sp <= 123 && t >= 33 && t <= 123) {
 			uint8_t tv = (uint8_t)(t - 33);
 			if (((tv >> 3) & 3u) == 2u) {		// GGA source: cs is the altitude
-				float ft = powf(1.002f, (float)((c - 33) * 91 + (sp - 33)));
-				q->alt_m = (int32_t)(ft * 0.3048f + 0.5f);
+				// 1.002^n feet, as meters rounded: 0.3048 m a foot, in Q24 (the float version is within a meter)
+				uint64_t ft = pow_q24(alt_mant, alt_exp, (uint32_t)((c - 33) * 91 + (sp - 33)));
+				q->alt_m = (int32_t)((ft * 3048u + ((uint64_t)5000u << 24)) / ((uint64_t)10000u << 24));
 			} else if (c - 33 <= 89) {
 				q->course = (uint16_t)((c - 33) * 4);
 				if (q->course == 0) {
 					q->course = APRS_COURSE_NONE;
 				}
-				q->speed_kn = (uint16_t)(powf(1.08f, (float)(sp - 33)) - 1.0f + 0.5f);
+				q->speed_kn = (uint16_t)((pow_q24(spd_mant, spd_exp, (uint32_t)(sp - 33)) - (1u << 24) + (1u << 23)) >> 24);
 			}
 		}
 		used = 13;
@@ -620,29 +669,109 @@ bool aprs_parse(const ax25_addr_t *dst, const uint8_t *info, size_t n, aprs_pars
 
 // --- Geometry ---
 
+// Single-precision polynomials instead of libm's sinf, cosf, atan2f and sqrtf (4 KB of flash with their range
+// reduction, which angles of at most pi never need). Each is good to 1e-5 rad or better; the haversine and the
+// bearing below are written without the cancellations the textbook forms have, so a station a few meters away
+// still gets a true bearing
+
+// sin x for |x| <= pi / 2: the Taylor series to x^13, error under 1e-9 (less than the float's own step)
+static float sin_h(float x)
+{
+	float x2 = x * x;
+	return x * (1.0f - x2 / 6.0f * (1.0f - x2 / 20.0f * (1.0f - x2 / 42.0f * (1.0f - x2 / 72.0f * (1.0f - x2 / 110.0f *
+		(1.0f - x2 / 156.0f))))));
+}
+
+// cos x for |x| <= pi / 2: to x^12, error under 7e-9
+static float cos_h(float x)
+{
+	float x2 = x * x;
+	return 1.0f - x2 / 2.0f * (1.0f - x2 / 12.0f * (1.0f - x2 / 30.0f * (1.0f - x2 / 56.0f * (1.0f - x2 / 90.0f *
+		(1.0f - x2 / 132.0f)))));
+}
+
+// sqrt of v >= 0: a bit-pattern first guess (within 4 %) and three Newton steps, exact to the float's last bit or two
+static float sqrt_f(float v)
+{
+	if (!(v > 0.0f)) {
+		return 0.0f;
+	}
+	union { float f; uint32_t u; } g = { v };
+	g.u = 0x1FBD1DF5u + (g.u >> 1);
+	for (int i = 0; i < 3; i++) {
+		g.f = 0.5f * (g.f + v / g.f);
+	}
+	return g.f;
+}
+
+// atan2(y, x) in radians, (-pi, pi], 0 for (0, 0): atan on the octant 0..1 by Abramowitz and Stegun 4.4.49, error
+// under 1e-5 rad
+static float atan2_f(float y, float x)
+{
+	float ax = x < 0.0f ? -x : x, ay = y < 0.0f ? -y : y;
+	if (ax == 0.0f && ay == 0.0f) {
+		return 0.0f;
+	}
+	bool swap = ay > ax;
+	float t = swap ? ax / ay : ay / ax, t2 = t * t;
+	float a = t * (0.9998660f - t2 * (0.3302995f - t2 * (0.1801410f - t2 * (0.0851330f - t2 * 0.0208351f))));
+	if (swap) {
+		a = PI_F / 2.0f - a;
+	}
+	if (x < 0.0f) {
+		a = PI_F - a;
+	}
+	return y < 0.0f ? -a : a;
+}
+
+// The longitude difference to the short way round, 1e-7 degree, at most 180 degrees
+static int32_t dlon_e7(int32_t lon1, int32_t lon2)
+{
+	int64_t d = (int64_t)lon2 - lon1;
+	if (d > 180LL * APRS_DEG) {
+		d -= 360LL * APRS_DEG;
+	} else if (d < -180LL * APRS_DEG) {
+		d += 360LL * APRS_DEG;
+	}
+	return (int32_t)d;
+}
+
 static float rad(int32_t e7)
 {
 	return (float)e7 * (PI_F / 180.0f / (float)APRS_DEG);
 }
 
-uint32_t aprs_distance_m(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2)
+// The haversine's central angle in radians
+static float central(int32_t lat1, int32_t lat2, int32_t dlon)
 {
-	float p1 = rad(lat1), p2 = rad(lat2);
-	float dp = p2 - p1, dl = rad(lon2) - rad(lon1);
-	float a = sinf(dp / 2.0f) * sinf(dp / 2.0f) + cosf(p1) * cosf(p2) * sinf(dl / 2.0f) * sinf(dl / 2.0f);
+	float sp = sin_h(rad(lat2 - lat1) / 2.0f), sl = sin_h(rad(dlon) / 2.0f);
+	float a = sp * sp + cos_h(rad(lat1)) * cos_h(rad(lat2)) * sl * sl;
 	if (a > 1.0f) {
 		a = 1.0f;
 	}
-	float c = 2.0f * atan2f(sqrtf(a), sqrtf(1.0f - a));
+	return 2.0f * atan2_f(sqrt_f(a), sqrt_f(1.0f - a));
+}
+
+uint32_t aprs_distance_m(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2)
+{
+	int32_t dl = dlon_e7(lon1, lon2);
+	float c = central(lat1, lat2, dl);
+	if (c > PI_F / 2.0f) {
+		// Past a quarter of the globe the float cannot resolve 1 - a (a step of 1.2e-7 is km of arc near the
+		// antipode): measure to the antipode instead, which is a short distance, and take it from pi
+		c = PI_F - central(lat1, -lat2, dl > 0 ? dl - 180 * APRS_DEG : dl + 180 * APRS_DEG);
+	}
 	return (uint32_t)(EARTH_M * c + 0.5f);
 }
 
 uint16_t aprs_bearing_deg(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2)
 {
-	float p1 = rad(lat1), p2 = rad(lat2), dl = rad(lon2) - rad(lon1);
-	float y = sinf(dl) * cosf(p2);
-	float x = cosf(p1) * sinf(p2) - sinf(p1) * cosf(p2) * cosf(dl);
-	float b = atan2f(y, x) * (180.0f / PI_F);
+	// y = sin(dl) cos(p2); x = cos(p1) sin(p2) - sin(p1) cos(p2) cos(dl) = sin(dp) + 2 sin(p1) cos(p2) sin(dl/2)^2
+	float hp = rad(lat2 - lat1) / 2.0f, hl = rad(dlon_e7(lon1, lon2)) / 2.0f;
+	float sl = sin_h(hl), c2 = cos_h(rad(lat2));
+	float y = 2.0f * sl * cos_h(hl) * c2;
+	float x = 2.0f * sin_h(hp) * cos_h(hp) + 2.0f * sin_h(rad(lat1)) * c2 * sl * sl;
+	float b = atan2_f(y, x) * (180.0f / PI_F);
 	if (b < 0.0f) {
 		b += 360.0f;
 	}

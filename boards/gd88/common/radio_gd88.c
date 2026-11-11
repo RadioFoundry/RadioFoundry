@@ -13,7 +13,8 @@
 // every transmission), then raises its TX line PTB2; B keys the PA on that edge and ramps its DAC B, and drops it on
 // the falling edge. A never writes DAC B. TX is refused without a valid page, outside the bands, with a tone other
 // than CTCSS, or when B doesn't take the drive. DMR transmit runs the same sequence once per burst (gd88_burst_on /
-// gd88_burst_off, on the shared RF-burst task).
+// gd88_burst_off, on the shared RF-burst task), with the drive stepped at the key-up rule's points instead of ramped
+// (radio/pa_keyup.h): A plans them and sends B their times after the TX line's edge.
 #include "gd88_rf.h"
 #include "config.h"
 #include "hal_dtmf.h"
@@ -32,6 +33,9 @@
 #include "audio/afsk_tonegen/afsk_tonegen.h"
 #if CONFIG_DMR && GD88_TX && CONFIG_SFR
 #include "rx2/rx2_dmr.h"
+#endif
+#if CONFIG_DMR && GD88_DMR_TX && GD88_TX
+#include "radio/pa_keyup.h"
 #endif
 
 // TODO(gd88): unknown, needs a radio: DAC C's role on each SoC. These are hardware-db25d.md's levels. Not receive gain
@@ -125,9 +129,41 @@ static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_gd88
 static uint16_t tx_off_us;
 #endif
 #if CONFIG_DMR && GD88_DMR_TX
+#if !GD88_TX
 static uint16_t tx_on_us;
+#endif
 static uint32_t tx_hz;
 static void dmr_disarm(void);
+#endif
+#if GD88_TX
+// The PA drive set over the debug link for the next transmission (power calibration; hal_radio_t.tx_drive), 0 = the
+// level's. Any task sets it; tx_off clears it
+static volatile uint16_t drive_override;
+#endif
+#if CONFIG_DMR && GD88_DMR_TX && GD88_TX
+// The DMR key-up (radio/pa_keyup.h, docs/spec/pa-keyup.md). B selects the PA and its supply ahead of the rule's
+// points, so they are drive writes only, on B: the level's drive at its lead, or a boost and then the drive. B times
+// them from the TX line's edge, so the edge has its own fixed time after the RF TX interrupt: later than a late
+// interrupt (a few hundred us, dmr_rfburst.c) and the task's wake, which then don't move the points. The earliest
+// point sets the RF TX interrupt's lead with the page's TX-on delay (gd88_dmr_key_rf_tx_lead).
+// No knee measured: every level's drive goes on where the ramp began (GD88_DMR_DRIVE_US), on both bands
+#define KEY_EDGE_AT_US		300u
+// The earliest point: the modem's longest lead (6.3 ms) has to hold the sequence, the page's longest TX-on delay
+// and this
+#define KEYUP_MAX_AHEAD_US	3000u
+_Static_assert(GD88_DMR_SEQ_US + GD88_CAL_TX_DELAY_MAX_US + KEYUP_MAX_AHEAD_US <=
+	       63u * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US, "the earliest key-up point fits the modem's longest lead");
+_Static_assert(KEY_EDGE_AT_US + 50u + 200u < GD88_DMR_SEQ_US, "B's sequence after the edge ends before the first point");
+static const pa_keyup_cfg_t keyup_cfg = PA_KEYUP_FIXED(GD88_DMR_DRIVE_US);
+static pa_keyup_t ku;		// the transmission's, set before the RF task is armed
+static uint8_t tx_lead;		// the RF TX interrupt's lead, 100 us steps
+
+// A point us before the first symbol as B's time after the TX line's edge (never 0: that asks for the ramp)
+static uint16_t key_at(uint16_t us)
+{
+	uint32_t at = hrc_rfburst_pa_at_us(tx_lead, us);
+	return (uint16_t)(at > KEY_EDGE_AT_US ? at - KEY_EDGE_AT_US : 1u);
+}
 #endif
 #if CONFIG_DMR && GD88_TX && CONFIG_SFR
 static bool dmr_remote;		// DMR TX armed on B's transmitter (gd88_dmr_split)
@@ -248,6 +284,9 @@ static void init(void)
 	// use it
 	hrc_modem_analog_init(DAC_C_INIT);
 	hrc_dac_b_power(false);
+#if CONFIG_DMR && GD88_DMR_TX && GD88_TX
+	pa_keyup_init(&keyup_cfg, KEYUP_MAX_AHEAD_US, 4095u);	// DAC B's range (B's)
+#endif
 
 	// The modem block powered as the DMR glue does, so the reference trim reaches the TCXO in FM builds too
 	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
@@ -474,14 +513,33 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	}
 	tx_power = power;
 #endif
-	if (!gd88_pa_arm(hz, plan.pa, plan.on_us, DMR_OFF_DELAY_US)) {
+#if GD88_TX
+	uint16_t pa = drive_override != 0u ? drive_override : plan.pa;
+	// The key-up against the high table's drive here; the low table's is the dead zone's anchor
+	gd88_tx_plan_t other;
+	uint16_t top = gd88_cal_tx_plan(hz, true, GD88_TX_DRIVE_PCT, &other) && other.pa > pa ? other.pa : pa;
+	uint16_t ref = gd88_cal_tx_plan(hz, false, GD88_TX_DRIVE_PCT, &other) ? other.pa : 0u;
+	ku = pa_keyup_plan(pa, top, ref);
+	tx_lead = gd88_dmr_key_rf_tx_lead(ku.boost != 0u ? ku.boost_us : ku.pa_us, plan.on_us);
+	const rx2_tx_key_t key = {
+		.boost = ku.boost,
+		.boost_at_us = ku.boost != 0u ? key_at(ku.boost_us) : 0u,
+		.drive_at_us = key_at(ku.boost != 0u ? ku.drive_us : ku.pa_us),
+	};
+	if (!gd88_pa_arm(hz, pa, plan.on_us, DMR_OFF_DELAY_US, &key)) {
+		return false;
+	}
+#else
+	if (!gd88_pa_arm(hz, plan.pa, plan.on_us, DMR_OFF_DELAY_US, NULL)) {
 		return false;
 	}
 	tx_on_us = plan.on_us;
+	uint8_t tx_lead = gd88_dmr_own_rf_tx_lead(plan.on_us);
+#endif
 	tx_off_us = DMR_OFF_DELAY_US;
 	tx_hz = hz;
 	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias_dc(gd88_cal_tx_center(), gd88_cal_mod(hz)));
-	hrc7000_set_rf_tx_lead(&modem, GD88_TX ? gd88_dmr_rf_tx_lead(plan.on_us) : gd88_dmr_own_rf_tx_lead(plan.on_us));
+	hrc7000_set_rf_tx_lead(&modem, tx_lead);
 	bk4819_dmr_tx_prepare(&rf_main);
 	dmr_armed = true;
 	gd88_dmr_tx_arm();
@@ -523,16 +581,17 @@ void gd88_dmr_split(bool on)
 #endif
 
 #if GD88_TX
-// One burst: the TX line high (B starts its PA sequence: the page's TX-on delay, PA select, 200 us, supply, ramp),
-// 50 us, main chip to f and the LO off, then as long as B's sequence takes
+// One burst: the TX line high at its time after the RF TX interrupt (B starts its PA sequence: the page's TX-on delay,
+// PA select, 200 us, supply, then the drive at the key-up's points, counted from this edge), 50 us, main chip to f and
+// the LO off, then until B's last point
 void gd88_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 {
-	(void)at;
+	at(KEY_EDGE_AT_US);
 	gd88_path_rx_front_off();
 	wait(TX_RX_OFF_US);
 	bk4819_burst_tune(&rf_main, synth_hz(tx_hz), BK4819_STATE_TX_MAIN);
 	lo_off();
-	wait(tx_on_us + TX_SUPPLY_US + PA_RAMP_US);
+	at(hrc_rfburst_pa_at_us(tx_lead, ku.boost != 0u ? ku.drive_us : ku.pa_us));
 }
 
 // After a burst, from the task's hold (GD88_DMR_OFF_AHEAD_US before the last symbol): the TX line low (B waits the
@@ -608,7 +667,10 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		return false;
 	}
 	tx_stop();
-	if (!gd88_pa_arm(hz, plan.pa, plan.on_us, plan.off_us)) {
+	if (drive_override != 0u) {
+		plan.pa = drive_override;
+	}
+	if (!gd88_pa_arm(hz, plan.pa, plan.on_us, plan.off_us, NULL)) {
 		return false;
 	}
 	tx_off_us = plan.off_us;
@@ -668,7 +730,27 @@ static void tx_end(bool keep)
 static void tx_off(void)
 {
 	tx_end(false);
+#if GD88_TX
+	drive_override = 0u;
+#endif
 }
+
+#if GD88_TX
+static uint16_t tx_drive_level(uint32_t hz, uint8_t level)
+{
+	gd88_tx_plan_t plan;
+	return supported && gd88_cal_tx_plan(hz, level >= 1, GD88_TX_DRIVE_PCT, &plan) ? plan.pa : 0u;
+}
+
+static bool tx_drive(uint16_t drive)
+{
+	if (drive > 4095u) {	// DAC B is 12 bits
+		return false;
+	}
+	drive_override = drive;
+	return true;
+}
+#endif
 
 #if CONFIG_DMR && GD88_DMR_TX
 // hrc_dmr_board_t.tx_end (dmr_gd88.c): the last burst's TX off left the receiver on
@@ -914,6 +996,10 @@ const hal_radio_t gd88_radio = {
 	.rx = rx,
 	.tx = tx,
 	.tx_off = tx_off,
+#if GD88_TX
+	.tx_drive_level = tx_drive_level,
+	.tx_drive = tx_drive,
+#endif
 	.dmr_tx_end = hrc_dmr_tx_end,
 	.status = status,
 	.audio = audio,

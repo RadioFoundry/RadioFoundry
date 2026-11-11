@@ -12,6 +12,7 @@
 #include "board.h"
 #include "config.h"
 #include "gd88_cal.h"
+#include "rx2/rx2_link.h"
 
 // Transmit (config.mk GD88_TX=1, A only; B is built as a receiver). A's main chip makes the signal; its PA, PA
 // supplies and PA drive (DAC B) are B's, keyed by B on A's TX line PTB2 with the drive A sends (hardware-gd88.md 10)
@@ -71,8 +72,9 @@ void gd88_path_tx_off(void);			// TX switches off (A: PTB2 low). Any task
 #if GD88_DMR_TX
 // The PA for the next transmissions: the drive and the page's delays on hz. A: B's PA (rx2_gd88.c, RX2_TX), false when
 // B is down or didn't take it within a short wait: nothing may transmit then. B: its own (pa_gd88b.c). Disarm after the
-// last one
-bool gd88_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us);
+// last one. key: the drive's points from A's TX line edge, for a DMR burst keyed by the key-up rule (radio/pa_keyup.h);
+// NULL: the ramp. B's own transmitter ramps
+bool gd88_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us, const rx2_tx_key_t *key);
 void gd88_pa_disarm(void);
 #endif
 #if GD88_DMR_TX && !GD88_TX

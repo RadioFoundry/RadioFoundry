@@ -21,6 +21,7 @@
 #include "hal_dtmf.h"
 #include "radio/radio.h"
 #include "radio/ref_trim.h"
+#include "radio/pa_keyup.h"
 #include "pins.h"
 #include "platform.h"
 #include "hal_time.h"
@@ -61,6 +62,7 @@
 #define TX_RX_OFF_US		50u		// 3.2: RX paths off, then this long before the transmitter is tuned
 #define TX_SETTLE_MS		3u		// ours: the chip's VCO calibration, before the PA is selected. The stock has none beyond the page's delay
 #define TX_SUPPLY_US		200u		// 3.2: PA select and PTA23 low, then this long before the TX supply
+_Static_assert(TX_SUPPLY_US == DB25D_DMR_SUPPLY_US, "the DMR lead counts the same wait");
 #define TX_END_PATH_US		300u		// 3.2: PA select off and PTA23 high, then this long before the receiver is retuned
 #define TX_END_RX_US		200u		// after the RX path is switched on again
 // TX data advance (hrc7000_t.tx_pre_on) 0.6 ms, not the chip's 0.4 ms: at 0.4 ms the inbound burst came 0.17 ms late
@@ -87,11 +89,27 @@ static uint8_t vol_gain = DB25D_VOL_GAIN_DEFAULT;	// the AF DAC gain nibble the 
 static uint8_t vol_dac;		// the modem's line out gain code the volume step selects (0 = 0 dB, the default step)
 static bool tx_uhf;
 static uint16_t tx_pa;
+// An FM transmission's highest level drive at its frequency (hal_radio_t.tx_drive_top), 0 when not transmitting FM
+static volatile uint16_t fm_top;
 static uint16_t tx_off_us;
 #if CONFIG_DMR && DB25D_DMR_TX
 static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_db25d.c)
 static uint16_t tx_on_us;
 static uint8_t tx_lead;		// the RF TX interrupt's lead, 100 us steps (db25d_dmr_rf_tx_lead)
+#if CONFIG_DMR && DB25D_DMR_TX
+// The DMR key-up (radio/pa_keyup.h, docs/spec/pa-keyup.md), [VHF, UHF]. The TX on sequence selects the PA and its
+// supply ahead of the rule's points, so they are drive writes only: the level's drive at its lead, or a boost and
+// then the drive. The earliest of them sets the RF TX interrupt's lead with the page's TX-on delay. The drive is
+// stepped, not ramped: the PA loop's low-pass shapes the rise, and the rule times a step. The dead zone is 68 % of
+// the low table's drive; a level's lead is 0.3 ms and 75 ms per count over it (the top level 0.4 ms, the lowest
+// 1.4 ms)
+#define KEYUP_MAX_AHEAD_US	3000u
+static const pa_keyup_cfg_t keyup_cfg[2] = {
+	{ .dead_pm = 684, .knee_us = 100, .slope_us = 300, .window_us = 1500, .settle_us = 300, .pa_us = 0xFFFF },
+	{ .dead_pm = 684, .knee_us = 100, .slope_us = 300, .window_us = 1500, .settle_us = 300, .pa_us = 0xFFFF },
+};
+static pa_keyup_t ku;			// the transmission's, set before the RF task is armed
+#endif
 static uint32_t tx_hz;
 static void dmr_disarm(void);
 #endif
@@ -117,6 +135,10 @@ static void rx_paths(uint32_t hz, bool on)
 	hrc_pin_write(PIN_UHF_RX, on && uhf);
 	hrc_pin_write(PIN_VHF_RX, on && !uhf);
 }
+
+// The PA drive set over the debug link for the next transmission (power calibration; hal_radio_t.tx_drive), 0 = the
+// level's. Any task sets it; tx_off clears it
+static volatile uint16_t drive_override;
 
 // The PA control DAC is powered only for a transmission
 static void apc_ramp(uint16_t target, bool up)
@@ -174,6 +196,9 @@ static void init(void)
 	// The modem block powered as the DMR glue does, so the reference trim reaches the TCXO in FM builds too
 	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
 	modem.tx_pre_on = TX_PRE_ON;
+#if CONFIG_DMR && DB25D_DMR_TX
+	pa_keyup_init(&keyup_cfg[1], KEYUP_MAX_AHEAD_US, DAC_MAX);
+#endif
 	hrc7000_set_dac_gain(&modem, vol_dac);	// before the init, which writes it: a volume given before init() holds
 	hrc7000_power_on_init(&modem, db25d_cal_tx_center(), DB25D_MIC_GAIN_DB);
 	write_bias(BIAS_DEFAULT_HZ);
@@ -332,22 +357,50 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 
 static void audio(bool on);
 
+// A power level's PA drive (hardware-db25d.md, power levels): five levels from the calibration's two tables. Level 2
+// is the low table and level 4 the high one (the stock's level 1, table 0x045); levels 0 and 1 are fractions of the
+// low table's drive, level 3 is halfway between the tables. Draft values, to be set with a wattmeter
+static bool level_plan(uint32_t hz, uint8_t power, db25d_tx_plan_t *p)
+{
+	static const uint8_t low_pct[3] = { 75, 87, 100 };
+	if (power >= 4u) {
+		return db25d_cal_tx_plan(hz, true, DB25D_TX_DRIVE_PCT, p);
+	}
+	if (power < 3u) {
+		return db25d_cal_tx_plan(hz, false, (uint8_t)(low_pct[power] * DB25D_TX_DRIVE_PCT / 100u), p);
+	}
+	db25d_tx_plan_t high;
+	if (!db25d_cal_tx_plan(hz, false, DB25D_TX_DRIVE_PCT, p) || !db25d_cal_tx_plan(hz, true, DB25D_TX_DRIVE_PCT, &high)) {
+		return false;
+	}
+	p->pa = (uint16_t)((p->pa + high.pa) / 2u);
+	return true;
+}
+
 #if CONFIG_DMR && DB25D_DMR_TX
 // DMR TX, armed at the key-up (4.5). The RF stays as it is, receiving, until the first burst's RF TX interrupt; the
 // modem's bias gets the modulation level for the TX frequency, the main chip the digital TX words (deviation off)
 static bool dmr_tx(uint32_t hz, uint8_t power)
 {
 	db25d_tx_plan_t plan;
-	if (!supported || !board_in_band(hz, true) || !db25d_cal_tx_plan(hz, power >= 1, DB25D_TX_DRIVE_PCT, &plan)) {
+	if (!supported || !board_in_band(hz, true) || !level_plan(hz, power, &plan)) {
 		return false;
 	}
 	if (dmr_armed) {
 		hrc_rfburst_disarm();
 	}
 	tx_uhf = hz >= UHF_FROM_HZ;
-	tx_pa = plan.pa;
+	tx_pa = drive_override != 0u ? drive_override : plan.pa;
 	tx_on_us = plan.on_us;
-	tx_lead = db25d_dmr_rf_tx_lead(plan.on_us);
+	// The key-up against the high level's drive here
+	db25d_tx_plan_t high;
+	uint16_t top = db25d_cal_tx_plan(hz, true, DB25D_TX_DRIVE_PCT, &high) && high.pa > tx_pa ? high.pa : tx_pa;
+	// and the low table's, the dead zone's anchor
+	db25d_tx_plan_t low;
+	uint16_t ref = db25d_cal_tx_plan(hz, false, DB25D_TX_DRIVE_PCT, &low) ? low.pa : 0u;
+	pa_keyup_select(&keyup_cfg[tx_uhf ? 1 : 0]);
+	ku = pa_keyup_plan(tx_pa, top, ref);
+	tx_lead = db25d_dmr_rf_tx_lead(ku.boost != 0u ? ku.boost_us : ku.pa_us, plan.on_us);
 	tx_hz = hz;
 	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias_dc(db25d_cal_tx_center(), db25d_cal_mod(hz)));
 	hrc7000_set_rf_tx_lead(&modem, tx_lead);
@@ -386,10 +439,18 @@ void db25d_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 	hrc_pin_write(tx_uhf ? PIN_VHF_TX : PIN_UHF_TX, false);
 	hrc_pin_write(tx_uhf ? PIN_UHF_TX : PIN_VHF_TX, true);
 	hrc_pin_write(PIN_RX_SUPPLY, false);
-	wait(TX_SUPPLY_US);
+	wait(DB25D_DMR_SUPPLY_US);
 	hrc_pin_write(tx_uhf ? PIN_TX_SUPPLY_B : PIN_TX_SUPPLY_A, false);
 	hrc_pin_write(tx_uhf ? PIN_TX_SUPPLY_A : PIN_TX_SUPPLY_B, true);
-	apc_ramp(tx_pa, true);
+	if (ku.boost == 0u) {
+		at(hrc_rfburst_pa_at_us(tx_lead, ku.pa_us));	// the lead leaves the sequence done by then
+		DAC_DATA_B = tx_pa;
+		return;
+	}
+	at(hrc_rfburst_pa_at_us(tx_lead, ku.boost_us));
+	DAC_DATA_B = ku.boost;
+	at(hrc_rfburst_pa_at_us(tx_lead, ku.drive_us));
+	DAC_DATA_B = tx_pa;
 }
 
 // TX off after a burst, after the RF task's hold to its last symbol: the ramp down,
@@ -426,13 +487,12 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		return false;
 	}
 	db25d_tx_plan_t plan;
-	// Power index 1 ("H") is the stock's level 1, table 0x045; "L" the other table
-	if (!supported || !board_in_band(hz, true) || !db25d_cal_tx_plan(hz, power >= 1, DB25D_TX_DRIVE_PCT, &plan)) {
+	if (!supported || !board_in_band(hz, true) || !level_plan(hz, power, &plan)) {
 		return false;
 	}
 	tx_stop();
 	tx_uhf = hz >= UHF_FROM_HZ;
-	tx_pa = plan.pa;
+	tx_pa = drive_override != 0u ? drive_override : plan.pa;
 	tx_off_us = plan.off_us;
 	// Deviation and sub-audio words go in while the chip is still receiving, as the stock firmware does
 	db25d_main_tx_prepare(tone.type, tone.value, hz, bw);
@@ -465,6 +525,8 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	hrc_pin_write(tx_uhf ? PIN_TX_SUPPLY_A : PIN_TX_SUPPLY_B, true);
 	transmitting = true;
 	apc_ramp(tx_pa, true);
+	db25d_tx_plan_t high;
+	fm_top = db25d_cal_tx_plan(hz, true, DB25D_TX_DRIVE_PCT, &high) ? high.pa : 0u;
 	return true;
 }
 
@@ -476,6 +538,7 @@ static bool tx_stop(void)
 	if (!transmitting) {
 		return false;
 	}
+	fm_top = 0u;	// before the ramp down: a drive sweep's next write is refused
 	db25d_main_tx_end();	// ends a DCS tail still on
 	hal_delay_us(tx_off_us);
 	apc_ramp(tx_pa, false);
@@ -507,6 +570,50 @@ static void tx_end(bool keep)
 static void tx_off(void)
 {
 	tx_end(false);
+	drive_override = 0u;
+}
+
+static uint16_t tx_drive_level(uint32_t hz, uint8_t level)
+{
+	db25d_tx_plan_t plan;
+	return supported && level_plan(hz, level, &plan) ? plan.pa : 0u;
+}
+
+static bool tx_drive(uint16_t drive)
+{
+	if (drive > 4095u) {	// DAC B is 12 bits
+		return false;
+	}
+	drive_override = drive;
+	return true;
+}
+
+// The PA drive sweep (radio/pa_sweep.h): the drive at once during an FM transmission; the PA stays where the sweep
+// leaves it until the transmission ends. The marker steps the modem's bias, the TCXO's control voltage (4.6), by one
+// TX center step (a few ppm, so the carrier moves a few kHz); 0 writes back what rx() wrote
+static uint16_t tx_drive_top(void)
+{
+	return fm_top;
+}
+
+static bool tx_drive_now(uint16_t drive)
+{
+	if (fm_top == 0u || drive > DAC_MAX) {
+		return false;
+	}
+	DAC_DATA_B = drive;
+	return true;
+}
+
+static bool tx_mark(int8_t step)
+{
+	if (fm_top == 0u) {
+		return false;
+	}
+	uint8_t c = (uint8_t)(db25d_cal_tx_center() + step);
+	hrc7000_wr(&modem, C7_SIG_CENTER, hrc7000_sig_center_dc(c));
+	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias_dc(c, db25d_cal_mod(rx_hz)));
+	return true;
 }
 
 #if CONFIG_DMR && DB25D_DMR_TX
@@ -673,6 +780,11 @@ const hal_radio_t db25d_radio = {
 #if CONFIG_REF_TRIM
 	.ref_trim = ref_trim,
 #endif
+	.tx_drive_level = tx_drive_level,
+	.tx_drive = tx_drive,
+	.tx_drive_top = tx_drive_top,
+	.tx_drive_now = tx_drive_now,
+	.tx_mark = tx_mark,
 };
 
 // The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt), FM or DMR

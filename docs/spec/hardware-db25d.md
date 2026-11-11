@@ -268,6 +268,11 @@ The ramp is a 180-entry table in the radio's firmware; RadioFoundry uses a smoot
 steps. `DB25D_TX_DRIVE_PCT` defaults to 100 (the page's value, the PA measured working); the high and low power levels are table
 0x045 and 0x056.
 
+Five power levels: 2 ("L") is table 0x056 and 4 ("H") table 0x045. Levels 0 and 1 are 75 % and 87 % of the low
+table's drive, level 3 is halfway between the tables. Drafts, to be set with a wattmeter
+([power-calibration.md](../testing/power-calibration.md)). On the SDR bench at 445 MHz (DMR bursts, relative to "L",
+drive 999): drive 750 gave -12.9 dB and 600 gave -21.9 dB. Level 1 and level 3 are not measured.
+
 **FM TX tone** (`tx_tone` / `tx_tone_key`: the 1750 Hz burst, roger beep, CW ID, a test tone). Single tone, in TX
 with the main chip at 0xC3FE:
 

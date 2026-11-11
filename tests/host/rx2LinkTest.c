@@ -81,11 +81,13 @@ static void b_do_speaker(bool on)
 // The PA for the main SoC's transmitter: refused above 4095 (a DAC's range)
 static uint32_t b_tx_hz = 1;
 static uint16_t b_tx_pa, b_tx_on, b_tx_off;
-static bool b_do_tx(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us)
+static rx2_tx_key_t b_tx_key;
+static bool b_do_tx(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us, const rx2_tx_key_t *key)
 {
 	if (pa > 4095u) {
 		return false;
 	}
+	b_tx_key = *key;
 	b_tx_hz = hz;
 	b_tx_pa = pa;
 	b_tx_on = on_us;
@@ -366,13 +368,32 @@ static void test_link(void)
 	CHECK(b_speaker);
 
 	// TX: armed with the drive and delays, acknowledged; a refused one isn't; disarmed; HELLO_REQ disarms
-	CHECK(rx2_main_tx(&m, 461462500u, 1234, 300, 150) && !m.tx_acked);
+	CHECK(rx2_main_tx(&m, 461462500u, 1234, 300, 150, NULL) && !m.tx_acked);
 	now = run(now, 40, true);
 	CHECK(m.tx_acked && b_tx_hz == 461462500u && b_tx_pa == 1234 && b_tx_on == 300 && b_tx_off == 150);
-	CHECK(rx2_main_tx(&m, 461462500u, 5000, 300, 150));
+	CHECK(b_tx_key.boost == 0 && b_tx_key.boost_at_us == 0 && b_tx_key.drive_at_us == 0);
+	CHECK(rx2_main_tx(&m, 461462500u, 5000, 300, 150, NULL));
 	now = run(now, 40, true);
 	CHECK(!m.tx_acked && b_tx_pa == 1234);
-	CHECK(rx2_main_tx(&m, 0, 0, 0, 0));
+	// The drive's points: not sent to a receiver that doesn't time them, which would ramp at its own time instead;
+	// points without a time are none
+	{
+		const rx2_tx_key_t key = { 2000, 700, 1900 }, none = { 2000, 700, 0 };
+		CHECK(!rx2_main_tx(&m, 461462500u, 900, 300, 0, &key) && !m.tx_acked);
+		now = run(now, 40, true);
+		CHECK(!m.tx_acked && b_tx_pa == 1234);
+		uint8_t flags = m.flags;
+		m.flags |= RX2_HELLO_TX_KEY;
+		CHECK(rx2_main_tx(&m, 461462500u, 900, 300, 0, &key));
+		now = run(now, 40, true);
+		CHECK(m.tx_acked && b_tx_pa == 900 && b_tx_off == 0);
+		CHECK(b_tx_key.boost == 2000 && b_tx_key.boost_at_us == 700 && b_tx_key.drive_at_us == 1900);
+		CHECK(rx2_main_tx(&m, 461462500u, 901, 300, 0, &none));
+		now = run(now, 40, true);
+		CHECK(m.tx_acked && b_tx_pa == 901 && b_tx_key.boost == 0 && b_tx_key.drive_at_us == 0);
+		m.flags = flags;
+	}
+	CHECK(rx2_main_tx(&m, 0, 0, 0, 0, NULL));
 	now = run(now, 40, true);
 	CHECK(m.tx_acked && b_tx_hz == 0);
 	b_tx_hz = 1;

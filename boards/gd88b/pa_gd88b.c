@@ -7,6 +7,9 @@
 //
 //   rising:  path pins for A's chip in its TX band, A's RX path off; 50 us + the TX-on delay; PA select; 200 us; PA
 //            supply; DAC B ramped up to the drive (180 steps of 4 us)
+//            With the drive's points (rx2_tx_key_t: a DMR burst A keys by the key-up rule, docs/spec/pa-keyup.md) no
+//            ramp: DAC B steps to the drive at its time after the edge, after a boost when A sent one. The PA loop's
+//            low-pass shapes the rise, and the rule times a step
 //   falling: the TX-off delay; DAC B ramped down; supply and select off; 300 + 1000 + 300 us; the path pins back; 200 us
 //
 // B's own transmitter (GD88_DMR_TX: A's second transmitter for an SFR's repeat, the original firmware's path 1) uses
@@ -32,6 +35,7 @@
 #define UHF_FROM_HZ		280000000u
 #define PA_DRIVE_MAX		4095u	// DAC B's range
 #define PA_DELAY_MAX_US		5000u	// the page's delays; longer ones are refused
+#define PA_KEY_AT_MAX_US	8000u	// a drive point after the edge: the modem's longest lead is 6.3 ms + 0.85 ms
 #define TX_RX_OFF_US		50u
 #define TX_SUPPLY_US		200u
 #define TX_OFF_PATH_US		(300u + 1000u + 300u)
@@ -41,7 +45,11 @@ static TaskHandle_t task;
 static volatile bool armed;
 static volatile uint32_t arm_hz;
 static volatile uint16_t arm_pa, arm_on_us, arm_off_us;
+static volatile rx2_tx_key_t arm_key;	// drive_at_us 0: the ramp
+static volatile uint32_t edge_us;	// hrc_micros() at the TX line's last rising edge
 static bool keyed, key_uhf;
+// Keys with the drive's points, those whose first point had passed when the sequence got there, and the most by
+static uint32_t key_pts, key_late, key_late_max_us;
 #if GD88_DMR_TX
 static volatile bool own_armed;
 static volatile bool own_keyed;
@@ -60,11 +68,24 @@ static void ramp(uint16_t target, bool up)
 	}
 }
 
+// Until us after the TX line's edge; at once when that is past. Returns by how much it was
+static uint32_t wait_edge(uint32_t t0, uint16_t us)
+{
+	uint32_t e = hrc_micros() - t0;
+	if (e >= us) {
+		return e - us;
+	}
+	hal_delay_us(us - e);
+	return 0;
+}
+
 static void key_on(void)
 {
 	uint32_t s = hrc_irq_save();
 	uint32_t hz = arm_hz;
 	uint16_t on_us = arm_on_us;
+	rx2_tx_key_t key = arm_key;
+	uint32_t t0 = edge_us;
 	key_pa = arm_pa;
 	hrc_irq_restore(s);
 	key_uhf = hz >= UHF_FROM_HZ;
@@ -75,7 +96,27 @@ static void key_on(void)
 	gd88b_path_pa(key_uhf, true, false);
 	hal_delay_us(TX_SUPPLY_US);
 	gd88b_path_pa(key_uhf, true, true);
-	ramp(key_pa, true);
+	if (key.drive_at_us == 0) {
+		ramp(key_pa, true);
+	} else {
+		// A keyed without an edge seen (the poll) has an old edge time: every point is past and goes at once
+		uint32_t late = 0;
+		if (key.boost != 0) {
+			late = wait_edge(t0, key.boost_at_us);
+			DAC_DATA_B = key.boost;
+			(void)wait_edge(t0, key.drive_at_us);
+		} else {
+			late = wait_edge(t0, key.drive_at_us);
+		}
+		DAC_DATA_B = key_pa;
+		key_pts++;
+		if (late != 0) {
+			key_late++;
+			if (late > key_late_max_us) {
+				key_late_max_us = late;
+			}
+		}
+	}
 	keyed = true;
 	keys++;
 }
@@ -112,6 +153,9 @@ static void gpiob_isr(void)
 	uint32_t pending = hrc_gpio_pending(GPIOB_BASE);
 	hrc_gpio_ack(GPIOB_BASE, pending);
 	if ((pending & hrc_gpio_bit(PIN_TX_LINE)) != 0 && task != NULL) {
+		if (hrc_pin_read(PIN_TX_LINE)) {
+			edge_us = hrc_micros();	// the drive's points count from here
+		}
 		edges++;
 		BaseType_t woken = pdFALSE;
 		vTaskNotifyGiveFromISR(task, &woken);
@@ -142,9 +186,11 @@ void gd88b_pa_init(void)
 	hrc_irq_enable(IRQ_GPIOB, true);
 }
 
-bool gd88b_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us)
+bool gd88b_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us, const rx2_tx_key_t *key)
 {
-	if (hz != 0 && (pa > PA_DRIVE_MAX || on_us > PA_DELAY_MAX_US || off_us > PA_DELAY_MAX_US)) {
+	if (hz != 0 && (pa > PA_DRIVE_MAX || on_us > PA_DELAY_MAX_US || off_us > PA_DELAY_MAX_US ||
+			key->boost > PA_DRIVE_MAX || key->drive_at_us > PA_KEY_AT_MAX_US ||
+			(key->boost != 0 && key->boost_at_us > key->drive_at_us))) {
 		refused++;
 		return false;
 	}
@@ -153,6 +199,7 @@ bool gd88b_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us)
 	arm_pa = pa;
 	arm_on_us = on_us;
 	arm_off_us = off_us;
+	arm_key = *key;
 	armed = hz != 0;
 	hrc_irq_restore(s);
 	if (task != NULL) {
@@ -166,10 +213,11 @@ bool gd88b_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us)
 
 
 // The drive for B's own bursts (radio_gd88.c dmr_tx, B's calibration); the delays are the radio code's
-bool gd88_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us)
+bool gd88_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us, const rx2_tx_key_t *key)
 {
 	(void)on_us;
 	(void)off_us;
+	(void)key;	// B's own bursts ramp
 	if (pa > PA_DRIVE_MAX) {
 		refused++;
 		return false;
@@ -225,15 +273,17 @@ void gd88b_pa_own_counts(uint32_t *keys_out, uint32_t *skips_out)
 
 bool gd88b_pa_diag_line(char *buf, uint8_t len)
 {
-#if GD88_DMR_TX
 	// B's own transmitter: the dmrtx.* view keys (the line is full)
-	dl_fmt(buf, len, "b pa %s %s drive %u on %u off %u keys %u edges %u ref %u", armed ? "armed" : "off",
-	       keyed ? "keyed" : "idle", arm_pa, arm_on_us, arm_off_us, (unsigned)keys, (unsigned)edges,
-	       (unsigned)refused);
-#else
-	dl_fmt(buf, len, "b pa %s %s drive %u on %u off %u keys %u edges %u ref %u", armed ? "armed" : "off",
-	       keyed ? "keyed" : "idle", arm_pa, arm_on_us, arm_off_us, (unsigned)keys, (unsigned)edges,
-	       (unsigned)refused);
-#endif
+	if (key_pts == 0) {
+		dl_fmt(buf, len, "b pa %s %s drive %u on %u off %u keys %u edges %u ref %u", armed ? "armed" : "off",
+		       keyed ? "keyed" : "idle", arm_pa, arm_on_us, arm_off_us, (unsigned)keys, (unsigned)edges,
+		       (unsigned)refused);
+		return true;
+	}
+	// Once a burst was keyed with the drive's points (rx2_tx_key_t): how many were, how many reached their first
+	// point late and the most in us
+	dl_fmt(buf, len, "b pa %s %s drive %u keys %u pts %u late %u max %u", armed ? "armed" : "off",
+	       keyed ? "keyed" : "idle", arm_pa, (unsigned)keys, (unsigned)key_pts, (unsigned)key_late,
+	       (unsigned)key_late_max_us);
 	return true;
 }

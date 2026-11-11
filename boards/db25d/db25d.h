@@ -82,13 +82,23 @@ uint16_t db25d_apc_level(uint16_t target, uint16_t step);
 uint8_t db25d_cal_squelch_db(uint32_t hz, uint8_t level);
 
 // --- DMR burst timing (hardware-db25d.md 4.5; the arithmetic is platform/hrc7000/dmr_rfburst_timing.h) ---
-// After the RF TX interrupt plus the page's TX-on delay, the TX on sequence has the PA within 1 dB of the plateau at
-// 1.7-2.1 ms (the analog ramp varies). 2.3 ms keeps the 1 dB point at least 0.2 ms ahead of the first symbol
+// The PA's point (pa_us, the key-up rule's) comes after the TX on sequence: the main chip's tune and the LO off end
+// up to DB25D_DMR_TUNE_US after the RF TX interrupt (the task's wake, 50 us, the RF bus writes), or at the page's
+// TX-on delay if that is later, then 200 us to the TX supply. The lead has the sequence done by the PA's point, so the
+// rule's points are on time; with the PA's point counted from the end of the sequence instead, a low level's boost
+// came after its hold point and was lost. Measured: the sequence ends 1.33-1.42 ms after the interrupt (TX-on delay 0)
 #define DB25D_DMR_SYMBOL_AFTER_LEAD_US	HRC_RFBURST_SYMBOL_AFTER_LEAD_US
-#define DB25D_DMR_PA_UP_US		2300u
-static inline uint8_t db25d_dmr_rf_tx_lead(uint16_t on_us)
+#define DB25D_DMR_TUNE_US		1250u
+#define DB25D_DMR_SUPPLY_US		200u
+// The PA's point before the first symbol with no boost: the ramp (0.72 ms) and the loop have the PA within 1 dB
+// 0.2 ms ahead of it at 1.8 W and up (4.5)
+#define DB25D_DMR_PA_UP_US		1000u
+// The VHF PA comes up faster (4.5)
+#define DB25D_DMR_PA_UP_VHF_US		1250u
+static inline uint8_t db25d_dmr_rf_tx_lead(uint16_t pa_us, uint16_t on_us)
 {
-	return hrc_rfburst_lead(DB25D_DMR_PA_UP_US + on_us);
+	uint32_t seq = (on_us > DB25D_DMR_TUNE_US ? on_us : DB25D_DMR_TUNE_US) + DB25D_DMR_SUPPLY_US;
+	return hrc_rfburst_lead((uint32_t)pa_us + seq);
 }
 static inline uint32_t db25d_dmr_off_at_us(uint8_t lead)
 {

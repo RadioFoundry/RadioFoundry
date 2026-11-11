@@ -267,13 +267,13 @@ static size_t forward(const uint8_t *req, uint8_t len, uint8_t *out, size_t cap)
 }
 
 #if GD88_TX
-bool gd88_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us)
+bool gd88_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us, const rx2_tx_key_t *key)
 {
 	if (lock == NULL) {
 		return false;
 	}
 	take();
-	bool sent = rx2_main_tx(&link, hz, pa, on_us, off_us);
+	bool sent = rx2_main_tx(&link, hz, pa, on_us, off_us, key);
 	give();
 	if (!sent) {
 		return false;
@@ -297,7 +297,7 @@ void gd88_pa_disarm(void)
 		return;
 	}
 	take();
-	rx2_main_tx(&link, 0, 0, 0, 0);
+	rx2_main_tx(&link, 0, 0, 0, 0, NULL);
 	give();
 }
 #endif

@@ -720,6 +720,70 @@ Interpolation fractions (empirical):
 On the 10 W radio levels 5-8 are 2 W, 3 W, 5 W, 10 W: level 5 = low + (mid - low) x f2, level 6 = low + (mid - low) x
 f3, level 7 = mid, level 8 = high. Clamp to 4095.
 
+### 7.1 Five levels (DM-1701)
+
+The DM-1701 uses five levels in place of the nine above ([power-calibration.md](../testing/power-calibration.md)): the
+two low levels are fixed DAC values per band, the next two lie between factory rows, the top level is the high row.
+
+| Level | Name | VHF | UHF |
+|---|---|---|---|
+| 0 | 100 mW | 517 | 339 |
+| 1 | 500 mW | 800 | 620 |
+| 2 | 1 W | very low + (low - very low) x 0.723 | very low + (low - very low) x 0.838 |
+| 3 | 2.5 W | low + (mid - low) x 0.791 | low + (mid - low) x 0.809 |
+| 4 | 5 W | high | high |
+
+These values are a draft: they come from the SDR bench's relative levels at 145.51 and 449.9 MHz with the high row
+taken as 5 W, and came out within 0.2 dB of their spacing there. No wattmeter reading backs them yet, and the zero
+point and cliff of the procedure are not measured.
+
+Relative output against the DAC value, same radio and frequencies (dB below the high row):
+
+| DAC | UHF | DAC | VHF |
+|---|---|---|---|
+| 250 | -21.3 | 350 | -25.2 |
+| 350 | -16.5 | 490 | -18.1 |
+| 500 | -12.3 | 640 | -13.0 |
+| 650 | -9.5 | 830 | -9.5 |
+| 895 | -6.4 | 1081 | -6.9 |
+| 1200 | -3.9 | 1400 | -4.4 |
+| 1669 | -1.2 | 1882 | -1.1 |
+| 2080 | 0 | 2062 | 0 |
+| 2800 | +0.5 | 2800 | +1.7 |
+
+### 7.2 DMR key-up
+
+The PA is keyed by the shared rule ([pa-keyup.md](pa-keyup.md)), with constants per band
+(`boards/dm1701/board.c`). No step's drive starts earlier than the window, which is 1.0 ms (UHF) and 0.8 ms (VHF)
+after the RF TX interrupt:
+
+| Band | dead_pm | knee_us | slope_us | window_us | settle_us | pa_us |
+|---|---|---|---|---|---|---|
+| VHF | 0 | 760 | 850 | 1730 | 300 | 1730 |
+| UHF | 0 | 250 | 780 | 1530 | 300 | 1530 |
+
+These are converted from the constants of an earlier form of the rule (one boost level for every step, a hold, a
+later start for the lower steps) and are untested on the radio. With that form, every level measured on the SDR
+bench:
+
+| Band | -3 dB point before the first symbol | First symbol against the settled level | Overshoot |
+|---|---|---|---|
+| UHF | 0.16-0.34 ms | within 0.7 dB | under 1 dB |
+| VHF | 0.08-0.14 ms | within 0.6 dB up to 1 W; the two top levels not measured with this set (1.1 and 1.5 dB low with the sets next to it) | under 2 dB |
+
+What set the points, measured with the earlier form (its `late %`: how much later a lower step started; its knee in
+drive counts × ms):
+
+| Setting | Result |
+|---|---|
+| PA 0.6 ms after the interrupt (`pa_us` 1930) | an SFR repeater loses the end of the burst it receives just before: 16-24 corrected bits in the last voice frame of each burst over a 72-frame call, none at 0.8 or 1.0 ms |
+| Every level started at `boost_us` (late 0 %) | the low levels rise early: at UHF the lowest 0.70 ms before the first symbol with the top at 0.34 ms |
+| VHF at late 100 % | the low levels rise 0.1 ms after the first symbol, which is 3.5 dB low |
+| VHF with a longer low-level boost (knee 1800-2055) | the lowest level overshoots 4-6 dB |
+
+Keyed at the level's drive 1 ms after the interrupt, as before the rule, the lowest level's first symbol was 13 dB low
+at UHF and 24 dB low at VHF.
+
 Without a loaded calibration RadioFoundry drives a fixed DAC value of 300 (`DM1701_DAC_UNCALIBRATED` in
 `boards/dm1701/radio_dm1701.c`), a very low drive.
 

@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "rx2/rx2_link.h"
 
 // B's audio to A held off (true) or as the radio sets it: A gives B the speaker with RX2_AUDIO (paths_gd88b.c)
 void gd88b_path_mute(bool mute);
@@ -20,7 +21,7 @@ void gd88b_path_a_tx(bool on, bool uhf);
 void gd88b_path_pa(bool uhf, bool select, bool supply);
 // A's PA (pa_gd88b.c): pa_init at start-up; pa_arm is RX2_TX (hz 0 disarms, and stops a transmission in progress)
 void gd88b_pa_init(void);
-bool gd88b_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us);
+bool gd88b_pa_arm(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us, const rx2_tx_key_t *key);
 bool gd88b_pa_diag_line(char *buf, uint8_t len);
 // B's own transmitter, for the debug view: its path switched to it (and refused: A's transmission had it), its PA
 // keyed (and skipped: not armed, or A's transmission had the PA)

@@ -437,7 +437,7 @@ static void task_fn(void *arg)
 #else
 #define HELLO_DMR_TX	0u
 #endif
-	rx2_recv_init(&link, send, &ops, (CONFIG_DMR ? RX2_HELLO_DMR : 0u) | RX2_HELLO_STAY | HELLO_DMR_TX, RFOUNDRY_GIT);
+	rx2_recv_init(&link, send, &ops, (CONFIG_DMR ? RX2_HELLO_DMR : 0u) | RX2_HELLO_STAY | RX2_HELLO_TX_KEY | HELLO_DMR_TX, RFOUNDRY_GIT);
 #if CONFIG_RX2_DL_SERVER
 	rx2_dl_init(&link, view);
 #endif

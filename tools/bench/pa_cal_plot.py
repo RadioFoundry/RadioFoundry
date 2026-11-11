@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+"""
+pa_cal_plot: a pa_cal.py run as pictures (docs/spec/pa-keyup.md 6). Needs matplotlib; pa_cal.py itself doesn't.
+
+    pa_cal.py ... --plot DIR            draws at the end of the run
+    pa_cal_plot.py RESULT.json DIR      draws a run's --out file again
+
+Per band two files:
+
+  pa_cal_<MHz>_ramps.png   the burst's envelope at the lowest, a middle and the top power level, with the board's
+                           constants (before) and the run's (after): the key-up against the slot's start, the guard
+                           time, the key-up window, the planned drive points and the first symbol; the key-down
+                           against the last symbol and the slot's end. Without envelopes from the gateway (`trace`)
+                           only the measured -3 dB points are drawn.
+  pa_cal_<MHz>_fit.png     the open-loop time of each drive with the fitted law, and every level's -3 dB point
+                           before and after.
+
+Times are from the first symbol's start (the key-up) or the last symbol's end (the key-down), ms.
+"""
+import json
+import os
+import sys
+
+# A DMR burst is 27.5 ms in a 30 ms slot: 1.25 ms of guard on either side (ETSI TS 102 361-1, 4.2)
+GUARD_MS = 1.25
+BEFORE, AFTER, INK, FAINT = "#8a8f98", "#1f6fd1", "#30343b", "#c9ced6"
+
+
+def law(c, d, top, ref):
+    """The key-up law's time for a drive d written alone, us; None in the dead zone."""
+    dead = ref * c["dead_pm"] // 1000
+    return None if d <= dead else (c["knee_us"] * max(top - dead, 0) + c["slope_us"] * (d - dead)) / (d - dead)
+
+
+def _curve(ax, t, color, label, lw):
+    if not t:
+        return False
+    x = [t["t0_ms"] + i * t["dt_ms"] for i in range(len(t["db"]))]
+    ax.plot(x, t["db"], color=color, lw=lw, label=label)
+    return True
+
+
+def _marks(ax, start):
+    """The slot's own timing, the same on every panel."""
+    if start:
+        ax.axvspan(-GUARD_MS, 0, color="#f3e9c6", lw=0, label="guard time (1.25 ms)")
+        ax.axvspan(ax.get_xlim()[0], -GUARD_MS, color="#eceef1", lw=0, label="the slot before")
+        ax.axvline(-GUARD_MS, color=INK, lw=0.8, ls=":", label="slot start")
+        ax.axvline(0, color=INK, lw=1.0, label="first symbol")
+    else:
+        ax.axvspan(0, GUARD_MS, color="#f3e9c6", lw=0)
+        ax.axvspan(GUARD_MS, ax.get_xlim()[1], color="#eceef1", lw=0)
+        ax.axvline(GUARD_MS, color=INK, lw=0.8, ls=":", label="slot end")
+        ax.axvline(0, color=INK, lw=1.0, label="last symbol's end")
+    ax.axhline(-3, color=FAINT, lw=0.8)
+    ax.axhline(0, color=FAINT, lw=0.8)
+
+
+def _points(ax, k, color, y):
+    """A key-up's planned points as ticks under the curves: the boost (^), the PA (s), the drive (v)."""
+    if not k:
+        return
+    if k.get("boost"):
+        ax.plot([-k["boost_us"] / 1000], [y], "^", color=color, ms=6)
+        ax.plot([-k["drive_us"] / 1000], [y], "v", color=color, ms=6)
+    ax.plot([-k["pa_us"] / 1000], [y], "s", color=color, ms=5, mfc="none")
+
+
+def ramps(plt, band, keys, path):
+    shown = band.get("shown") or sorted(int(l) for l in band["levels"])[:3]
+    mhz = band["mhz"]
+    mine = [k for k in keys if k.get("mhz") == mhz]
+    fig, axes = plt.subplots(len(shown), 2, figsize=(11, 3.1 * len(shown)), squeeze=False,
+                             gridspec_kw={"width_ratios": [3, 2]})
+    for row, l in enumerate(shown):
+        lv = band["levels"].get(l) or band["levels"].get(str(l))
+        before = next((k for k in mine if k.get("tag") == "before" and k.get("level") == l), None)
+        after = next((k for k in reversed(mine) if k.get("after") and k.get("level") == l), None)
+        for col, name in enumerate(("trace", "tail")):
+            ax = axes[row][col]
+            ax.set_xlim((-4.0, 2.0) if col == 0 else (-2.0, 4.0))
+            ax.set_ylim(-45, 8)
+            _marks(ax, col == 0)
+            drawn = _curve(ax, before and before.get(name), BEFORE, "before", 1.3)
+            drawn |= _curve(ax, after and after.get(name), AFTER, "after (this run's)", 1.8)
+            if col == 0:
+                ax.axvline(-band["window_us"] / 1000, color=AFTER, lw=0.8, ls="--", label="key-up window")
+                ax.axvline(band["target_us"] / 1000, color="#2a9d5c", lw=0.8, ls="--", label="-3 dB target")
+                for k, color in ((before, BEFORE), (after, AFTER)):
+                    if k and k.get("rise_us") is not None:
+                        ax.plot([k["rise_us"] / 1000], [-3], "o", color=color, ms=5)
+                _points(ax, before and before.get("plan"), BEFORE, -41)
+                _points(ax, lv and lv.get("plan"), AFTER, -37)
+                note = []
+                for k, word in ((before, "before"), (after, "after")):
+                    if k and k.get("rise_us") is not None:
+                        note.append(f"{word}: -3 dB at {k['rise_us']:+.0f} us, overshoot {k.get('over_db') or 0:.1f} dB")
+                ax.text(0.01, 0.97, "\n".join(note), transform=ax.transAxes, va="top", fontsize=8, color=INK)
+                ax.set_ylabel("dB from the burst's level")
+                ax.set_title(f"level {l} ({lv['power'] if lv else '?'}), drive {lv['drive'] if lv else '?'}: key-up",
+                             fontsize=10, loc="left")
+            else:
+                ax.set_title("key-down", fontsize=10, loc="left")
+            if not drawn:
+                ax.text(0.5, 0.5, "no envelope from the gateway", transform=ax.transAxes, ha="center", color=BEFORE)
+            if row == len(shown) - 1:
+                ax.set_xlabel("ms from the first symbol" if col == 0 else "ms from the last symbol's end")
+            ax.grid(True, color="#e6e8ec", lw=0.5)
+    h, lab = axes[0][0].get_legend_handles_labels()
+    from matplotlib.lines import Line2D
+    h += [Line2D([], [], marker="^", ls="", color=INK), Line2D([], [], marker="s", ls="", color=INK, mfc="none"),
+          Line2D([], [], marker="v", ls="", color=INK), Line2D([], [], marker="o", ls="", color=INK)]
+    lab += ["boost written", "PA on", "drive to the level's", "measured -3 dB point"]
+    fig.legend(h, lab, loc="lower center", ncol=6, fontsize=8, frameon=False)
+    c = band["constants"]
+    fig.suptitle(f"{mhz:g} MHz key-up: dead {c['dead_pm']}/1000, knee {c['knee_us']} us, slope {c['slope_us']} us, "
+                 f"window {c['window_us']} us, settle {c['settle_us']} us  ({'PASS' if band['ok'] else 'CHECK'})",
+                 fontsize=11)
+    fig.tight_layout(rect=(0, 0.06, 1, 0.97))
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+
+
+def fit(plt, band, keys, path):
+    mhz, c, top, ref = band["mhz"], band["constants"], band["top"], band["ref"]
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4))
+    pts = band.get("open") or []
+    if pts:
+        lo, hi = min(d for d, _ in pts), max(max(d for d, _ in pts), top)
+        xs = [lo + (hi - lo) * i / 200 for i in range(201)]
+        ys = [law(c, x, top, ref) for x in xs]
+        a1.plot([x for x, y in zip(xs, ys) if y], [y for y in ys if y], color=AFTER, lw=1.5, label="the fitted law")
+        a1.plot([d for d, _ in pts], [t for _, t in pts], "o", color=INK, ms=5, label="open loop: the drive alone")
+        a1.set_ylim(0, max(max(t for _, t in pts) * 1.15, band["window_us"] * 1.3))
+    a1.axhline(band["window_us"], color=AFTER, lw=0.8, ls="--", label="key-up window: slower levels are boosted")
+    dead = ref * c["dead_pm"] // 1000
+    if dead:
+        a1.axvline(dead, color=BEFORE, lw=0.8, ls=":", label="dead zone's end")
+    for l, lv in band["levels"].items():
+        a1.axvline(lv["drive"], color=FAINT, lw=0.6)
+        a1.text(lv["drive"], a1.get_ylim()[1] * 0.97, f" {lv['power']}", rotation=90, va="top", fontsize=7, color=BEFORE)
+    a1.set_xlabel("drive (the radio's DAC counts)")
+    a1.set_ylabel("us from the drive's write to the level")
+    a1.set_title("time to come up against drive", fontsize=10, loc="left")
+    a1.legend(fontsize=8, frameon=False)
+    a1.grid(True, color="#e6e8ec", lw=0.5)
+
+    mine = [k for k in keys if k.get("mhz") == mhz]
+    names = sorted(band["levels"], key=int)
+    for i, l in enumerate(names):
+        lv = band["levels"][l]
+        b = next((k for k in mine if k.get("tag") in ("before", "check") and k.get("level") == int(l)), None)
+        if b and b.get("rise_us") is not None:
+            a2.plot([i - 0.12], [b["rise_us"]], "o", color=BEFORE, ms=7, label="before" if i == 0 else None)
+        a2.plot([i + 0.12], [lv["rise_us"]], "o", color=AFTER, ms=7, label="after" if i == 0 else None)
+    a2.axhspan(-600, 0, color="#e3f3e8", lw=0, label="in time: up before the first symbol")
+    a2.axhline(0, color=INK, lw=1.0)
+    a2.axhline(band["target_us"], color="#2a9d5c", lw=0.8, ls="--", label="target")
+    a2.set_xticks(range(len(names)))
+    a2.set_xticklabels([band["levels"][l]["power"] for l in names], fontsize=8)
+    a2.set_ylabel("-3 dB point, us (negative: before the first symbol)")
+    a2.set_title("each level's key-up", fontsize=10, loc="left")
+    a2.legend(fontsize=8, frameon=False)
+    a2.grid(True, color="#e6e8ec", lw=0.5)
+    fig.suptitle(f"{mhz:g} MHz", fontsize=11)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+
+
+def draw(result, out_dir):
+    """Every band of a run into out_dir; returns the files. ImportError without matplotlib."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    os.makedirs(out_dir, exist_ok=True)
+    files = []
+    for band in result.get("bands", []):
+        band = dict(band, levels={int(l): v for l, v in band["levels"].items()})
+        band.setdefault("window_us", band["constants"]["window_us"])
+        band.setdefault("target_us", -250)
+        stem = os.path.join(out_dir, f"pa_cal_{band['mhz']:g}")
+        ramps(plt, band, result.get("keys", []), stem + "_ramps.png")
+        fit(plt, band, result.get("keys", []), stem + "_fit.png")
+        files += [stem + "_ramps.png", stem + "_fit.png"]
+    return files
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if len(argv) != 2:
+        print(__doc__)
+        return 2
+    with open(argv[0]) as f:
+        result = json.load(f)
+    try:
+        for name in draw(result, argv[1]):
+            print(name)
+    except ImportError as e:
+        print(f"{e}: pip install matplotlib")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

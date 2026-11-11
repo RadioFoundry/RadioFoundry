@@ -805,16 +805,20 @@ hotspot's downlink, never aligned to it, and its bursts were not taken. The radi
 
 **Burst TX-on timing.** The per-burst RF task ([modem-hrc7000.md](modem-hrc7000.md) 3.1a) runs the TX-on at points
 counted from the RF TX interrupt. The interrupt comes 2.6 ms ahead of the lead point (`rf_tx_lead` = 26), so the first
-symbol is 3.45 ms after it. The PA keys up from the power cal table ([pa-keyup.md](pa-keyup.md)): dead 680, knee 1450,
-slope 600 µs, boost 120 %, hold 80 %.
+symbol is 3.45 ms after it. The PA keys up from the power cal table ([pa-keyup.md](pa-keyup.md)): the dead
+zone 65 % of the low row's drive, slope 600 µs, a window of 1.5 ms; on UHF knee 650 µs, the PA at 0.9 ms and a
+boost's end at 0.5 ms, on VHF knee 520 µs, 0.5 ms and 0.4 ms. These are converted from the constants of an earlier
+form of the rule (one boost level, 1.2 × top, for a time per step, then a hold at 0.8 × d) and are untested on the
+radio; the measurements below were taken with that form, whose knee was in drive counts × ms.
 
 | Point | Before the first symbol | What |
 |---|---|---|
 | FD6818 to TX on a split channel (the synthesizer to the TX frequency first) | 2.95 ms | LNA off, idle, frequency words, TX: 1.1-1.4 ms, so before the boost |
-| FD6818 to TX on a simplex channel | 1.8 ms | LNA off, idle, TX: two state writes, 0.1 ms |
-| Boost, PA select high | 1.5 ms | DAC B = 1.2 × top |
-| Hold | 1.5 ms − t | DAC B = 0.8 × d; t = (1450 + 0.6 × (d − 680)) / (1.2 × top − 680) ms: 0.69 ms at drive 955, 0.92 ms at the H step on UHF |
-| Drive | 0.5 ms | DAC B = d |
+| Boost, a step too slow for the window | 1.5 ms | DAC B = the lowest drive that brings the step up in the window, at most 1.2 × top |
+| Drive, a step fast enough by itself | knee × (top − dead) / (d − dead) + slope, at most 1.5 ms | DAC B = d |
+| FD6818 to TX on a simplex channel | 1.2 ms | LNA off, idle, TX: two state writes, 0.1 ms; after the inbound burst before ours |
+| PA select high | 0.9 ms | |
+| Drive after a boost | 0.5 ms (UHF), 0.4 ms (VHF) | DAC B = d |
 
 d is the step's drive (11.3) and top the H step's, at the TX frequency. The earliest point the sequence may take is
 1.58 ms (the split's switch after the task's latest wake, 0.42 ms after the interrupt); RADIO op 37 refuses an earlier
@@ -833,8 +837,9 @@ compressing at the H step, so their H figures may read early):
 | A boost of fixed length (1 ms, ending 0.5 ms ahead, its level 55 % of the way from d to 1.11 × top), PA 0.15 ms ahead | 0.30 ms | not measured without receiver compression |
 | The key-up above | -0.23 to -0.33 ms | -0.60 ms |
 
-The key-up per step and channel: the -3 dB point against the first symbol (ms) / the overshoot above the settled level
-(dB) / the first symbol against the settled level (dB). The same constants throughout.
+The key-up per step and channel, with the PA selected at the boost (pa 1.5 ms, knee 1450, the constants before the
+SFR fix below): the -3 dB point against the first symbol (ms) / the overshoot above the settled level (dB) / the first
+symbol against the settled level (dB). The same constants throughout.
 
 | Channel | Low | L- | L3 | H |
 |---|---|---|---|---|
@@ -856,8 +861,80 @@ The key-up per step and channel: the -3 dB point against the first symbol (ms) /
   0.6 ms after its start came up at -0.43 ms with 3.8 dB; a 0.51 ms boost with the PA selected at its start came up at
   +0.55 ms with 0.7 dB. The knee above goes with the PA selected at the boost.
 - The L- drive sits on the PA's turn-on knee, where 50 DAC counts move the output by about 8 dB.
-- Not measured with the key-up yet: the other steps, split channels, the first burst of a call, decoding, spurs,
-  receiver desense while the drive is held before the slot, and SFR with the simplex switch at 1.8 ms.
+- Not measured with the key-up yet: split channels, the first burst of a call, decoding, spurs and receiver desense
+  while the drive is held before the slot.
+
+**The simplex switch and SFR.** With the PA at the boost (1.5 ms), the simplex switch came 1.8 ms before our first
+symbol, and an SFR repeater lost about half of each call: the runner decoded 0-45 of the call's 72 inbound frames and
+repeated 19-23 bursts, with no frame failing its FEC. The inbound bursts it missed were never handed over, so the
+switch cut their end. The RF TX interrupt's lead (2.6 ms) did not matter: the switch's time alone moved the result.
+`test_sfr_repeater_quality`, the radio on a simplex channel, the SDR bench talking at full power, six calls each:
+
+| Simplex switch before the first symbol | Calls passed | Frames decoded | Bit errors in the inbound frame before ours |
+|---|---|---|---|
+| 1.8 ms (PA 1.5 ms) | 0 of 6 | 0-45 | 18-34 |
+| 1.5 ms (PA 1.2 ms) | 5 of 6 | 48-72 | 45-73 |
+| 1.2 ms (PA 0.9 ms) | 5 of 6 | 54-72 | 5-23 |
+
+The PA now selects at 0.9 ms on UHF (0.5 ms on VHF, below), 0.6 ms after the boost, so the switch comes at 1.2 ms; a
+static assert keeps it no earlier on either band. With the PA selected later the boost charges the control more, so the knee went from 1450 to 1250. Raw I/Q on
+UHF (the radio 20 ft from the receiver, so no -30 dB point), the -3 dB point / overshoot:
+
+| Step | L- | L+ | M | M+ | M++ | H |
+|---|---|---|---|---|---|---|
+| PA 1.5 ms, knee 1450 | -0.58 to -0.60 / 1.6-1.9 | -0.22 / 0.0 | | | -0.14 / -0.1 | -0.14 to -0.16 / -0.1 |
+| PA 0.9 ms, knee 1250 | -0.50 / 1.5 | -0.23 to -0.26 / 0.0 | -0.21 / 0.0 | -0.16 / 0.0 | -0.16 / 0.0 | -0.22 / -0.1 |
+
+On VHF, every step, one call each:
+
+| Constants | L- | L | L+ | L++ | M | M+ | M++ | H- | H |
+|---|---|---|---|---|---|---|---|---|---|
+| PA 1.5 ms, knee 1450 | -0.64 / 1.0 | -0.66 / 0.4 | -0.67 / 0.2 | -0.81 / 0.4 | -0.78 / 0.4 | -0.82 / 0.4 | -0.80 / 0.4 | -0.83 / 0.4 | -0.80 / 0.4 |
+| PA 0.9 ms, knee 1250 | -0.72 / 2.8 | -0.71 / 2.0 | -0.71 / 0.4 | -0.64 / 0.3 | -0.72 / 0.4 | -0.75 / 0.4 | -0.79 / 0.4 | -0.79 / 0.5 | -0.80 / 0.4 |
+
+On VHF the low steps overshoot more with the later PA (2.8 dB at L-, inside the 3 dB limit). Not measured with these
+constants on UHF: L, L++ and H-. The other knees at PA 0.9 ms (950, 1100) and PA 1.1 ms (knee 1100, 1250) were also up
+before the first symbol on every step measured, with less overshoot at L-.
+
+**Each band's constants.** The VHF PA comes up about 0.15 ms after it is selected, whatever the boost: with the PA
+at 0.9 ms, knees from 600 to 1250 all put L- at -0.70 to -0.73 ms and H at -0.78 to -0.81 ms, and L- still
+overshot 2.3-3.1 dB. So VHF has its own constants: the PA at 0.5 ms, the drive at 0.4 ms and knee 1000. The UHF set
+stays as above. On both bands the low levels rise later than H, so no level's boost starts late (late 0 %).
+The VHF PA point and knee at L- (PA 0.5 ms):
+
+| Knee | L- | L | H |
+|---|---|---|---|
+| 800 | +0.10 / 0.1, first symbol 2.9 dB low | | -0.53 / 0.2 |
+| 950 | -0.12 to -0.13 / 0.2 | -0.24 / 0.2 | |
+| 1000 | -0.08 to -0.20 / 0.2-0.3 | -0.20 to -0.28 / 0.2-0.4 | -0.52 / 0.3 |
+| 1100 | -0.24 to -0.40 / 1.3-2.9 | -0.33 to -0.35 / 1.0 | -0.48 to -0.53 / 0.2 |
+| 1250 | -0.38 / 2.4 | -0.40 / 1.6 | |
+
+The PA at 0.4 ms put H at -0.42 ms and L- (knee 800) at +0.17 ms. The five power levels with the built-in
+constants, the -3 dB point / overshoot, one or two calls each (raw I/Q from an 8-bit receiver on the SDR bench, the radio into
+a dummy load at full power):
+
+| Channel | L- | L | M | M+ | H |
+|---|---|---|---|---|---|
+| 146.000 | -0.16 / 0.1 | -0.26 / 0.5 | -0.46 / 0.2 | -0.42 / 0.2 | -0.53 / 0.2 |
+| 432.000 | -0.26 / 1.1 | -0.24 / 0.5 | | | -0.17 / 0.5 |
+| 445.000 | -0.15 to -0.23 / 0.3-0.6 | -0.18 to -0.23 / 0.2 | -0.29 to -0.38 / 0.1 | -0.42 to -0.47 / 0.1 | -0.50 to -0.53 / 0.1 |
+| 449.900 | -0.47 / 0.5 | -0.49 / 0.0 | | | -0.53 / 0.0 |
+
+Every level is up before the first symbol, at most 0.53 ms early and 1.1 dB over. The first symbol is within 1.2 dB
+of the settled level. The simplex switch on VHF comes at 0.8 ms, later than UHF's
+1.2 ms. The levels' output against H is not measured: the dummy load's leak to the receiver moved up to 4 dB between
+runs. That needs a wattmeter.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../dev/img/dm32-keyup-sfr-ramp-dark.png">
+  <img alt="The key-up's rise at L-, M and H with the PA at 1.5 ms and at 0.9 ms, against where receive stops" src="../dev/img/dm32-keyup-sfr-ramp-light.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../dev/img/dm32-keyup-sfr-timing-dark.png">
+  <img alt="The key-up's points before and after: receive stopping, the boost, the PA, the hold and the drive" src="../dev/img/dm32-keyup-sfr-timing-light.png">
+</picture>
 
 The measurements below were made with the PA keyed 1.5 ms ahead at d, before the key-up.
 
@@ -883,9 +960,8 @@ bursts 27.29 ms), so that burst's key-up and key-down came 0.42 ms late on every
 burst's interrupt looked early against it. The first burst is now timed from the slot tick
 ([modem-hrc7000.md](modem-hrc7000.md) 3.1a); the `up` line's `f` is by how much. The carrier
 still ramps down from the last symbol (the shared model); the decode is clean with it. The switch moved earlier only
-on a split channel, where no inbound burst is heard on the TX frequency. On a simplex channel it is at 1.8 ms, after
-the inbound burst before ours (it ends about 2.3-2.5 ms before our first symbol), as an SFR needs; SFR on this radio
-is not checked with it.
+on a split channel, where no inbound burst is heard on the TX frequency. On a simplex channel it is at 1.2 ms, after
+the inbound burst before ours, as an SFR needs (8.5, the simplex switch and SFR).
 
 Before this, RadioFoundry switched to TX **0.4 ms** before the lead point of each burst, not at the driver's 3.1 ms.
 The switch leaves receive, and earlier it cut off the end of the inbound burst before ours. The sweep below moved the

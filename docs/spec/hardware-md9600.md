@@ -1087,6 +1087,18 @@ it, between bursts the carrier is below the measuring receiver's floor (26 dB do
 -13 dB (T5), then full power 0.4 ms later; key-down takes 0.4 ms. On-time 30.7 ms, same-slot spacing 60.0 ms, outer
 symbol deviation 1933 Hz, every burst of a 3 s call decoded (headers, 9 superframes, terminator).
 
+The key-up follows the key-up rule ([pa-keyup.md](pa-keyup.md)): the rule's points run on the key timer, with the
+band's T5 supply 500 us ahead of the loop. Neither band's loop has a knee: on a conducted path every level reaches
+-3 dB 0.5-0.75 ms after the loop closes. So the board's constants have no boost, only the loop's point per band
+(`PA_KEYUP_FIXED`, [pa-keyup.md](pa-keyup.md) 2). The debug link's `radio pa-keyup` changes them for tuning.
+
+| Band | Loop closed before the first symbol | Power | -3 dB before the first symbol | Overshoot |
+|---|---|---|---|---|
+| VHF (146 MHz) | 0.94 ms | 422 mW / 681 mW / 3.3 W / 18.8 W | 0.27 / 0.23 / 0.20 / 0.27 ms | none (first symbol up to 1.4 dB low) |
+| UHF (445 MHz) | 0.85 ms | 484 mW / 982 mW / 4.2 W / 19.1 W | 0.34 / 0.29 / 0.18 / 0.21 ms | 0.2 dB or less |
+
+With the earlier single point (1.35 ms), each level was up 0.6-0.85 ms early, on the carrier alone.
+
 At power-up, with the revision known: receivers on, then on V1-V4 the AK2365A reset (PE15 low for 10 us), and on V4
 the VHF synthesizer set for 145 MHz receive. On V4A / V5 the LMX2571 reset goes to both chips, then 10 ms; PE15 stays
 an input.

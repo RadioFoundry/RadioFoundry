@@ -10,6 +10,7 @@
 #ifndef RX2_LINK_H
 #define RX2_LINK_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include "hal_rx2.h"
@@ -32,7 +33,8 @@ enum {
 	RX2_DL		= 0x08,	// u8 tag, u8 part, a debug link request: command u8, its payload (rx2-link.md 2.3)
 	RX2_PATH	= 0x09,	// u8 on, u32 Hz: the main SoC's own receiver, whose path runs through the receiver's SoC
 	RX2_TX		= 0x0A,	// u32 Hz (0: disarm), u16 PA drive, u16 on us, u16 off us: the main SoC's transmitter,
-				// whose PA the receiver's SoC keys on the main SoC's TX line (acknowledged)
+				// whose PA the receiver's SoC keys on the main SoC's TX line (acknowledged). Then,
+				// optional, rx2_tx_key_t: u16 boost, u16 boost at us, u16 drive at us
 	RX2_DMR		= 0x0B,	// the receiver's transmitter as the main SoC's second one (rx2_dmr.h): its request
 	RX2_SPEAKER	= 0x0C,	// u8 on: the main SoC's loudspeaker is in use, on a board whose speaker path has a switch
 				// on the receiver's SoC
@@ -50,6 +52,15 @@ enum {
 #define RX2_HELLO_STAY		0x02u	// RX2_STUB reaches the first stage's long window (rx2-link.md 4); else the main SoC
 				// restarts the receiver for the update
 #define RX2_HELLO_DMR_TX	0x04u	// the receiver transmits DMR for the main SoC (RX2_DMR, rx2-link.md 2.4)
+#define RX2_HELLO_TX_KEY	0x08u	// the receiver times RX2_TX's drive points (rx2_tx_key_t)
+// RX2_TX's drive points for a transmission keyed by a key-up rule (radio/pa_keyup.h), each counted from the rising edge
+// of the main SoC's TX line: the drive steps to pa at drive_at_us, after a boost from boost_at_us when boost isn't 0.
+// drive_at_us 0: no points, the receiver ramps the drive up after its own sequence
+typedef struct {
+	uint16_t boost;
+	uint16_t boost_at_us;
+	uint16_t drive_at_us;
+} rx2_tx_key_t;
 
 // The debug link through the main SoC (rx2-link.md 2.3)
 #define RX2_DL_LAST		0x80u	// part: the last one; bits 0-6 its index
@@ -147,8 +158,9 @@ void rx2_main_path(rx2_main_t *m, bool on, uint32_t hz);
 // The main SoC's loudspeaker in use (RX2_SPEAKER): sent on a change and again when the receiver comes back
 void rx2_main_speaker(rx2_main_t *m, bool on);
 // RX2_TX: arm the receiver's SoC to key the PA for the main SoC's transmission on hz with drive pa and the delays
-// (hz 0: disarm). tx_acked turns true when the receiver took it. False when the receiver is down
-bool rx2_main_tx(rx2_main_t *m, uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us);
+// (hz 0: disarm). key: the drive's points (NULL or drive_at_us 0: the receiver's own ramp). tx_acked turns true when
+// the receiver took it. False when the receiver is down, or doesn't time the points key asks for (RX2_HELLO_TX_KEY)
+bool rx2_main_tx(rx2_main_t *m, uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us, const rx2_tx_key_t *key);
 // RX2_DMR: a request to the receiver's transmitter (rx2_dmr.h). False when it is down or doesn't offer one
 bool rx2_main_dmr(rx2_main_t *m, const uint8_t *p, uint8_t len);
 // Send RX2_STUB or RX2_RESET (the receiver's update route through the main SoC)
@@ -194,9 +206,9 @@ typedef struct {
 	size_t (*dl)(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 	// RX2_PATH: the main SoC's receiver on hz (on) or off; off again at HELLO_REQ. NULL: the board has no shared path
 	void (*path)(bool on, uint32_t hz);
-	// RX2_TX: arm (hz != 0) or disarm the PA for the main SoC's transmitter; false refuses. Disarmed again at
-	// HELLO_REQ. NULL: refused
-	bool (*tx)(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us);
+	// RX2_TX: arm (hz != 0) or disarm the PA for the main SoC's transmitter; false refuses. key is never NULL (all 0
+	// when the main SoC sent none). Disarmed again at HELLO_REQ. NULL: refused
+	bool (*tx)(uint32_t hz, uint16_t pa, uint16_t on_us, uint16_t off_us, const rx2_tx_key_t *key);
 	// RX2_DMR: a request to its transmitter (rx2_dmr.h); (NULL, 0) at HELLO_REQ: the main SoC restarted, all off.
 	// NULL: dropped (offer it with RX2_HELLO_DMR_TX)
 	void (*dmr)(const uint8_t *p, uint8_t len);

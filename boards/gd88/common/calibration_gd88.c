@@ -23,7 +23,7 @@
 #define HEADER_LEN		8u		// "TUNE" and the save counter
 
 #define VHF_BELOW_HZ		280000000u
-#define TX_DELAY_MAX_US		2000u		// a larger value counts as 0
+#define TX_DELAY_MAX_US		GD88_CAL_TX_DELAY_MAX_US	// a larger value counts as 0
 #define DAC_MAX			4095u
 #define SQUELCH_LEVEL0_DB	136u
 

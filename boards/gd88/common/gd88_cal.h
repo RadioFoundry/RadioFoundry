@@ -28,6 +28,7 @@ uint32_t gd88_cal_counter(void);
 uint16_t gd88_cal_pa(uint32_t hz, bool high);		// DAC B at the top of the ramp
 uint16_t gd88_cal_rx_tune(uint32_t hz);			// DAC A while receiving
 uint8_t gd88_cal_mod(uint32_t hz);			// modcal for hrc7000_mod_bias_dc
+#define GD88_CAL_TX_DELAY_MAX_US	2000u			// the longest delay the page can give
 void gd88_cal_tx_delays(uint32_t hz, uint16_t *on_us, uint16_t *off_us);
 uint8_t gd88_cal_tx_center(void);			// 128 without a page
 // What a transmission at hz needs from the page. high = power level 1 (table 0x045), else the other table (0x056).
@@ -57,6 +58,16 @@ uint8_t gd88_cal_squelch_db(uint32_t hz, uint8_t level);
 static inline uint8_t gd88_dmr_rf_tx_lead(uint16_t on_us)
 {
 	return hrc_rfburst_lead(GD88_DMR_PA_UP_US + on_us);
+}
+// A's bursts by the key-up rule (radio/pa_keyup.h): B steps the drive at the rule's points instead of ramping it. The
+// ramp took 0.75-0.85 ms (hardware-gd88.md), so the drive started that long before the PA was up; the rest of the
+// 2.4 ms is the sequence before it: A's TX line edge, B's wake on it, its 50 us, PA select, 200 us, supply, with room.
+// The lead for a key-up whose first point is first_us before the first symbol: the same 2.4 ms at GD88_DMR_DRIVE_US
+#define GD88_DMR_DRIVE_US	800u
+#define GD88_DMR_SEQ_US		(GD88_DMR_PA_UP_US - GD88_DMR_DRIVE_US)
+static inline uint8_t gd88_dmr_key_rf_tx_lead(uint16_t first_us, uint16_t on_us)
+{
+	return hrc_rfburst_lead(GD88_DMR_SEQ_US + (uint32_t)on_us + first_us);
 }
 // B's own transmitter (an SFR's repeat): the sequence runs one step after the other on B, its chip tuned first, where
 // on A's bursts the tune and B's PA sequence overlap. With A's lead the first four symbols of every burst were lost
