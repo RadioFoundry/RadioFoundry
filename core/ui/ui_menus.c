@@ -5505,8 +5505,10 @@ static bool set_hidden(const set_item_t *s)
 		return !(feats() & UI_FEAT_VOLUME_KNOB);	// only where the MCU reads the knob
 	if (s->type != ST_ACTION && s->id == UI_SET_BCAST_STEP)
 		return !(feats() & UI_FEAT_BCAST);
+#if CONFIG_RX_EXT
 	if (s->type != ST_ACTION && s->id == UI_SET_RX_EXT)
 		return board.rx_ext_count == 0;	// a board with no measured range past its bands
+#endif
 	if (s->type != ST_ACTION && s->id == UI_SET_REF_TRIM)
 		return !(feats() & UI_FEAT_REF_TRIM);	// only a radio whose board has the trim
 	return !board_has_battery() && s->type != ST_ACTION &&

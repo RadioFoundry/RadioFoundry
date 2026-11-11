@@ -1858,10 +1858,12 @@ static uint16_t clamp_u16(int32_t v) { return (uint16_t)(v < 0 ? 0 : v > 0xFFFF 
 void ui_apply_setting(uint8_t id, int32_t v)
 {
 	switch (id) {
+#if CONFIG_RX_EXT
 	case UI_SET_RX_EXT:
 		if (v != 0)
 			ui_toast(TR("Receive only. Sensitivity not rated"));
 		break;
+#endif
 	case UI_SET_BRIGHTNESS: ui_st.brightness = (uint8_t)(v >= 10 && v <= 100 ? v : 100); break;
 	case UI_SET_HINTS: ui_st.hints = v != 0; break;
 	case UI_SET_LARGE_TEXT: ui_st.large_text = v != 0; break;

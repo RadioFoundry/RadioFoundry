@@ -147,12 +147,19 @@ extern const board_t board;
 // The entries of board.bands in force now: the receive-only extension counts only while it is on
 static inline uint8_t board_band_count(void)
 {
+#if defined(CONFIG_RX_EXT) && !CONFIG_RX_EXT
+	return board.band_count;	// a build without the switch: the table as it is, no test on every band lookup
+#endif
 	return (board.rx_ext_count != 0u && !*board.rx_ext_on) ? (uint8_t)(board.band_count - board.rx_ext_count)
 							       : board.band_count;
 }
 
 static inline void board_rx_ext_set(bool on)
 {
+#if defined(CONFIG_RX_EXT) && !CONFIG_RX_EXT
+	(void)on;
+	return;
+#endif
 	if (board.rx_ext_count != 0u) {
 		*board.rx_ext_on = on;
 	}
