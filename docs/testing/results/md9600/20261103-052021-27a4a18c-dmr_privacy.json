@@ -1,0 +1,76 @@
+{
+ "board": "md9600",
+ "commit": "27a4a18ccf7b506baf6921a4d66371b023ba45a4",
+ "date": "2026-11-03T05:20:21Z",
+ "dirty": false,
+ "features": [
+  "dmr_privacy"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,DMR_UDP_COMPRESS,DMR_CONFIRMED,IDDB_COMPACT,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "ffdb37d0-dirty",
+  "proto": "1",
+  "view": "4"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "radio"
+ ],
+ "kind": "run",
+ "options": {
+  "dmr-cc": 2,
+  "dmr-freq": 461.6875,
+  "dmr-tg": 9,
+  "fm-mhz": 461.6875,
+  "tx-power": 40
+ },
+ "sources": {
+  "dmr_privacy": {
+   "core/dmr/dmrPrivacy.c": "473a8bf7c16c280479babb2bdf154f220c4adb1d",
+   "docs/spec/dmr-voice.md": "a7cbb138e7cb8fbb450610956e7456158e5acfd2"
+  }
+ },
+ "tests": [
+  {
+   "excused": true,
+   "features": [
+    "dmr_privacy"
+   ],
+   "id": "tests/hil/test_dmr_call_features.py::test_privacy_service_option",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_privacy"
+   ],
+   "id": "tests/hil/test_dmr_tx.py::test_dmr_privacy_tx",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "dmr_privacy"
+   ],
+   "id": "tests/hil/test_ui.py::test_privacy_key_entry",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

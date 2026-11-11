@@ -24,6 +24,12 @@
 #define RADIO_POLL_MS		25	// status poll and squelch period
 #define RADIO_RETUNE_SETTLE_MS	400	// RREQ_RETUNE: tune once the reference trim has held this long
 #define RADIO_TICK_MS		10	// DMR call stack poll (radio_sm_tick)
+// The LEDs on a repeater wake-up and a TX deny (docs/spec/radio-features.md 5.7): while the radio waits for a
+// repeater to wake, red blinks once per wake-up burst sent, not solid (a burst is 30 ms: stretched to be seen); a
+// deny flashes red, green, red, green, red, green, RADIO_LED_DENY_STEP_MS each
+#define RADIO_LED_WAKE_MS	100
+#define RADIO_LED_DENY_STEP_MS	100
+#define RADIO_LED_DENY_STEPS	6
 #define RADIO_TOT_DEFAULT_S	180	// TX time-out
 #define RADIO_SQUELCH_DEFAULT	5
 #define RADIO_SQUELCH_MAX	9
@@ -36,6 +42,10 @@
 #define RADIO_SQL_DB_PER_STEP	3
 #define RADIO_SQL_HYST_DB	3
 #define RADIO_SQL_CLOSE_POLLS	2
+// A carrier that goes: the noise jumps far over the line at once, while a fade crosses it by a little. A reading this
+// far above the close line (open threshold + RADIO_SQL_HYST_DB) closes after one poll, which halves the squelch tail
+// (radio-features.md 3.5)
+#define RADIO_SQL_FAST_CLOSE_DB	12
 // DMR scan: a stop also hears a carrier by its signal strength, as the squelch levels do on noise: level 1 above
 // RADIO_DMR_SQL_L1_DBM, RADIO_SQL_DB_PER_STEP more a level (5, the default, above -100 dBm). Some receivers' noise
 // reading doesn't follow a DMR signal (gotchas 17.3)
@@ -84,6 +94,7 @@
 
 // FM transmit tones
 #define RADIO_BURST_HZ		1750
+#define RADIO_BURST_MIN_MS	1000
 #define RADIO_ROGER_HZ1		1200
 #define RADIO_ROGER_HZ2		900
 #define RADIO_ROGER_STEP_MS	100	// each of the two roger tones
@@ -127,8 +138,9 @@ typedef enum {
 	RREQ_HS_LEAVE,		// hotspot: back to the channel
 	RREQ_SCAN,		// arg: radio_scan_cmd_t, arg2: dual watch position
 	RREQ_SCAN_VFO,		// arg: low Hz, arg2: high Hz (both 0: the VFO's band)
-	RREQ_BEEP,		// arg: beep_t
+	RREQ_BEEP,		// arg: beep_t, arg2: delay in ms (0 = now)
 	RREQ_TONE_BURST,	// arg: 1 on, 0 off; arg2: the burst's longest time in ms (0 = until off or the TX time-out)
+	RREQ_TONE_BURST_KEY,	// arg: 1 down, 0 up; at least RADIO_BURST_MIN_MS
 	RREQ_SETTINGS,		// radio_task.c: the pending settings were copied with radio_sm_set_settings
 	RREQ_POWER_OFF,		// switching off: ARS deregistration (radio_power_off_busy until done); arg 1 = canceled
 	RREQ_RELOAD,		// the settings' preferences changed: read them again (codeplug changes are noticed alone)
@@ -148,6 +160,8 @@ typedef enum {
 	RREQ_DUAL,		// dual watch (CONFIG_DUAL_WATCH): arg channel A, arg2 channel B, radio_dual_arg()
 	RREQ_RETUNE,		// tune the current frequency again (the reference trim changed: radio/ref_trim.h)
 	RREQ_VFO_TX,		// arg: the VFO's TX Hz, 0 = simplex (its RX frequency)
+	RREQ_WAKE,		// radio_task.c: tick now (a DMR transmission ended: dmr_call_set_wake); never radio_sm_request
+	RREQ_VOLUME_HOLD,	// arg: 1 hold the level and ignore the knob (keys locked), 0 follow it again
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -239,6 +253,8 @@ typedef struct {
 	uint8_t vol_step;		// the volume step of a radio without a knob
 	int8_t vol_override;		// the debug link's step over the knob, -1 = none
 	int16_t volume_sent;		// last level given to board.radio->volume, -1 = none yet
+	int16_t knob_seen;		// the knob's position last put in view.volume_knob, -1 = none yet
+	bool vol_hold;			// RREQ_VOLUME_HOLD: the level stays, the knob is ignored
 
 	bool ptt;			// PTT held
 	bool host_audio;		// this PTT is a host audio session's (USRP): its audio, not the microphone
@@ -264,6 +280,15 @@ typedef struct {
 #endif
 	int8_t green_out;
 	int8_t red_out;
+	// The LEDs' timed signals (outputs()): led_now is the time of the entry point that runs last (poll, tick,
+	// request), since outputs() is called from everywhere without one
+	uint32_t led_now;
+	uint32_t deny_led_ms;		// a TX deny: red, green, red, green, red, green from here
+	bool deny_led;
+	uint32_t wake_led_ms;		// a repeater wake-up burst went out here: red for RADIO_LED_WAKE_MS
+	bool wake_led;
+	uint8_t wake_seen;		// dmr_call_view_t.wake_sent last seen
+	bool led_timed;			// a timed signal was showing at the last outputs(): the tick keeps calling it
 	bool hotspot;			// hotspot mode: the host link owns the modem
 
 	radio_settings_t set;		// the settings in effect
@@ -292,7 +317,14 @@ typedef struct {
 	batt_t batt;
 	uint32_t batt_ms;		// last battery reading
 	uint32_t tx_end_ms;		// end of the last transmission (battery readings wait)
+#if CONFIG_BEEP
+	uint8_t beep_due;		// a beep asked for later (RREQ_BEEP arg2), BEEP_NONE = none
+	uint32_t beep_due_ms;		// when it plays
+#endif
 #if CONFIG_FM_TX_TONES
+	bool burst_timed, burst_held;
+	bool burst_key_owned;		// side-key release owns the burst or its TX denial
+	uint32_t burst_ms;		// start of the side-key burst
 	bool burst_keyed;		// the 1750 Hz burst keyed the transmitter (not PTT)
 	uint32_t burst_end_ms;		// the burst ends by itself at this time (RREQ_TONE_BURST arg2), 0 = no limit
 	uint32_t roger_ms;		// roger beep start, 0 = none

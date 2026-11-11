@@ -13,6 +13,9 @@
 #include "hotspot/hotspot.h"
 #include "radio/radio_hotspot.h"
 #endif
+#if CONFIG_DMR
+#include "dmr/call/dmr_call.h"
+#endif
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmrDataService.h"
 #endif
@@ -72,6 +75,24 @@ static void send(const radio_req_t *req, TickType_t wait)
 	}
 }
 
+#if CONFIG_DMR
+// The DMR stack's wake (dmr_call_set_wake): the end of a transmission is acted on at once, not at the next tick up to
+// RADIO_TICK_MS later, so the receiver is back for a reply 30 ms after the last burst. One in the queue at a time.
+// Only the modem's event callback posts it, from one task, so the flag needs no atomics
+static volatile bool wake_posted;
+
+static void wake(void)
+{
+	if (!wake_posted) {
+		wake_posted = true;
+		radio_req_t req = { .type = RREQ_WAKE };
+		if (xQueueSend(requests, &req, 0) != pdTRUE) {
+			wake_posted = false;	// the queue was full: the tick comes anyway
+		}
+	}
+}
+#endif
+
 #if CONFIG_HOTSPOT
 // radio_hotspot.c's way into the queue: from the host link task, never waiting except for a request that must not be
 // lost (the leave: the channel comes back with it)
@@ -128,10 +149,16 @@ static void radio_task(void *arg)
 		TickType_t due = (int32_t)(next_tick - next_poll) < 0 ? next_tick : next_poll;
 		int32_t left = (int32_t)(due - xTaskGetTickCount());
 		radio_req_t req;
+		bool woken = false;
 		if (xQueueReceive(requests, &req, left > 0 ? (TickType_t)left : 0) == pdTRUE) {
 			do {
 				req_handled++;
-				if (req.type == RREQ_SETTINGS) {
+				if (req.type == RREQ_WAKE) {
+#if CONFIG_DMR
+					wake_posted = false;
+#endif
+					woken = true;
+				} else if (req.type == RREQ_SETTINGS) {
 					radio_settings_t set;
 					xSemaphoreTake(view_lock, portMAX_DELAY);
 					set = pending_settings;
@@ -144,11 +171,11 @@ static void radio_task(void *arg)
 			} while (xQueueReceive(requests, &req, 0) == pdTRUE);
 		}
 		TickType_t now = xTaskGetTickCount();
-		if ((int32_t)(now - next_tick) >= 0) {
+		if (woken || (int32_t)(now - next_tick) >= 0) {
 			radio_sm_tick(&sm, hal_millis());
 			next_tick += tick_period;
-			if ((int32_t)(now - next_tick) >= 0) {
-				next_tick = now + tick_period;
+			if (woken || (int32_t)(now - next_tick) >= 0) {
+				next_tick = now + tick_period;	// a wake's tick counts as the next one
 			}
 		}
 		if ((int32_t)(now - next_poll) >= 0) {
@@ -198,6 +225,9 @@ void radio_core_start(void)
 	zone_edit_settle();
 #endif
 	radio_sm_init(&sm, hal_millis());
+#if CONFIG_DMR
+	dmr_call_set_wake(wake);
+#endif
 	shared_view = sm.view;
 	shared_serial = sm.serial;
 	shared_settings = sm.set;
@@ -286,6 +316,7 @@ void radio_req_squelch(int8_t dir) { post(RREQ_SQUELCH, dir, 0); }
 // The level must not be lost: the user looks at the bar, and the setting is already saved
 void radio_req_volume(uint8_t step) { post(RREQ_VOLUME, step, pdMS_TO_TICKS(50)); }
 void radio_req_volume_override(int8_t step) { post(RREQ_VOLUME_OVERRIDE, step, pdMS_TO_TICKS(50)); }
+void radio_req_volume_hold(bool hold) { post(RREQ_VOLUME_HOLD, hold, pdMS_TO_TICKS(50)); }
 void radio_req_clear_temporary(void) { post(RREQ_CLEAR_TEMP, 0, 0); }
 void radio_req_retune(void) { post(RREQ_RETUNE, 0, pdMS_TO_TICKS(50)); }
 void radio_req_reload(void) { post(RREQ_RELOAD, 0, pdMS_TO_TICKS(50)); }
@@ -383,10 +414,12 @@ bool radio_get_dual(radio_dual_ref_t ref[2], uint8_t *sel, uint8_t *at)
 #endif
 }
 void radio_req_beep(uint8_t b) { post(RREQ_BEEP, b, 0); }
+void radio_req_beep_after(uint8_t b, uint32_t delay_ms) { post_pair(RREQ_BEEP, b, delay_ms, 0); }
 void radio_req_vibrate(uint8_t pattern) { post(RREQ_VIBRATE, pattern, 0); }
 void radio_req_roam(uint8_t cmd) { post(RREQ_ROAM, cmd, 0); }
 // A lost release would leave the burst keyed until the time-out
 void radio_req_tone_burst(bool on, uint32_t max_ms) { post_pair(RREQ_TONE_BURST, on, max_ms, pdMS_TO_TICKS(50)); }
+void radio_req_tone_burst_key(bool down) { post(RREQ_TONE_BURST_KEY, down, pdMS_TO_TICKS(50)); }
 
 void radio_set_settings(const radio_settings_t *s)
 {

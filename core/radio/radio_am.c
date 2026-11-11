@@ -25,15 +25,6 @@ bool radio_am_tx_refused(uint32_t hz)
 	return radio_am_capable() && radio_am_band(hz);
 }
 
-uint8_t radio_am_noise(int16_t rssi_dbm)
-{
-	int32_t n = RADIO_AM_SQL_REF_DBM - (int32_t)rssi_dbm;
-	if (n < 0) {
-		return 0;
-	}
-	return n > 255 ? 255 : (uint8_t)n;
-}
-
 uint32_t radio_am_step(uint32_t hz, int dir, uint32_t step_hz)
 {
 	if (step_hz != RADIO_AM_STEP_833) {

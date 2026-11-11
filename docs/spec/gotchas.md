@@ -83,7 +83,7 @@ Radios: HR_C6000.
 
 **1.4b Page 2 isn't per slot.**
 Symptom: with a call on each slot, the wanted call went quiet with the other call's source shown (23 of 78 bursts
-played; HIL 2026-11-04 on the HR_C5000). Cause: page 2 holds the embedded LC (or alias or GPS block) the chip
+played; HIL on the HR_C5000). Cause: page 2 holds the embedded LC (or alias or GPS block) the chip
 assembled last, of either slot, so at one call's F it held the other's, and the core took it for a new call. Rule:
 keep each slot's call LC and check every embedded LC against both before handing it over; only voice LCs (FLCO 0, 3)
 become a slot's call LC, and alias and GPS blocks wait while the other slot is busy. While a slot's call goes on,
@@ -103,6 +103,28 @@ the time (5485 reads), against 557 of 557 for reads after two received slots (be
 the same weakness in another form: its TC stops changing while a slot is closed (`tc_last_rx`). Rule: compare only
 when the slot that ended and the one before it were both opened for receive; after our own transmission, a closed
 slot or a lock, skip the first read. Radios: HR_C6000, HR_C5000.
+
+**1.11 The HR_C5000 lost every silent burst.**
+Symptom: bench calls played 2-17 of 120 voice bursts, in a trace with the headers, one burst A, then nothing. Cause: a
+burst on this chip is a change in the voice port, read at the ticks, and the read was compared with this slot's last
+burst. A silent talker's bursts are the same bytes every time (the bench sends one AMBE+2 silence frame throughout), so
+each looked like a port that had stopped, and six ended the reception. Bit errors made a few reads differ, which is
+why some got through. Speech never showed it, and a pause in speech can. Rule: read the port at every tick and compare
+with the last tick's read; only a port that stopped moving is a lost burst. Test with bursts that repeat, not only
+with varied ones. The host test reproduces it (1 of 36 bursts before, 36 after), and on the radio on air a silent
+call played 94 of 120 bursts, up from 2-10.
+Radios: HR_C5000.
+
+**1.12 A short dropout costs a second, and the restart is most of it.**
+Symptom: bursts stop mid-call, and voice plays again about 1.7 s later, on a stream the radio otherwise took
+whole. Cause: the wait for the loss (420 ms) is the smaller part. The restart drops the chip's sync: it needs the next
+voice sync (up to 360 ms) and a superframe of embedded LC before its late entry report. Then the sticky rule (1.4)
+waited 22 more ticks for an LC the radio already knew. What starts the gap isn't known: neither the driver nor the chip
+reports it. Rule: count lost reads by cause (`tr same bad`), don't read an empty trace as a quiet chip on a chip that
+doesn't report voice (1.11), and take a call back only on proof it's the same call
+([modem-hrc6000.md](modem-hrc6000.md) 5.6). The LC wait is shorter now. The restart still costs what it did: holding
+it off helps only if the chip keeps its sync through a gap, which isn't known. Radios: HR_C5000 measured; the LC rule
+applies to any chip with a post-access interrupt.
 
 ## 2. DMR modem timing: HR_C7000
 
@@ -154,6 +176,25 @@ and rises. A modem request whose cause stays set (the system interrupt handler s
 still listed) leaves its source silent for good. A dead timeslot interrupt means no repeater wake-up is ever sent. Rule: drop every pending modem request at each receiver restart and after a stalled
 transmission; drop a system request pending for 50 ms with no handler run; count both and keep the first one's PIC
 state (`modem-hrc7000.md` 3.3). Radios: the HR_C7000 boards; one report.
+
+**2.10 A receiver restart in the middle of a burst.**
+Symptom: a direct answer in the other timeslot, right after our terminator (30 ms after its start), was lost: decoded but with BS sync, its timeslot
+taken from a TC bit there is none of in direct mode and so often the wrong one, and on some radios with a header CRC
+error. Answers 60 and 90 ms after, and the same bursts sent unsolicited, were taken. Cause: the end of a
+transmission comes on the TX tick a slot after the terminator, about 25 ms into the answer's slot, and the full
+receiver restart there (the WORK_MODE pass, passive timing, both slot syncs released) leaves the chip to report the
+burst it is in the middle of with a reset state. Dropping only the WORK_MODE pass didn't help. Rule: a direct
+transmission ends with receive in passive timing and the slot syncs kept, and the restart waits until the channel
+has been quiet for 150 ms (`modem-hrc7000.md` 5.2a). Any restart from a tick can land in a burst: keep them to
+quiet channels. Radios: the HR_C7000 boards.
+
+**2.11 A prompt FIFO push right after the half switch.**
+Symptom: beeps and speaker audio with a faint buzz under low tones, some beeps and not others, for seconds at a time;
+on a swept tone, stretches with broadband energy as loud as the tone. Cause: the prompt FIFO is two 32-sample halves;
+a push in the first microseconds after AUDIO_CONTROL b31 clears lands in the half being played, and every chunk then
+plays 4 ms early or late until the halves line up again. No samples are lost, so the queue counters stay clean. Rule:
+every push waits 200 µs after it saw the bit clear (`platform/hrc7000/prompt_fifo.h`, `modem-hrc7000.md` 8.4); check
+speaker audio with the sweep (`test_speaker_sweep`), not with steady tones alone. Radios: the HR_C7000 boards.
 
 ## 3. TX/RX state and PA handling
 
@@ -236,6 +277,21 @@ pin set-up ran after the clock set-up. Rule: every fault handler, crash hook, so
 `board_rf_safe()` first, and so does `main()` before the clocks ([crash-log.md](crash-log.md) 8). A new board must
 provide it, and a new reset or jump path must call it.
 
+**3.14 No receive set-up at the end of a DMR transmission.** Symptom: a MOTOTRBO portable's link ACK to our confirmed
+data, which comes one frame after our terminator in our own timeslot, was missed on every try on several radios. Cause: the board's `tx_off()` set the receiver up again
+(idle, synthesizer, receive) just as the answer came in; the per-burst switch had already left the receiver on the
+channel. Each radio that had fixed it did so with its own check in `rx()`. Rule: the radio core ends a DMR
+transmission through `hal_radio_t.dmr_tx_end`; the modem glue implements it once and has the board's `tx_end` keep the
+RF when the last burst's switch left it on the last `rx()` settings ([modem-hrc7000.md](modem-hrc7000.md) 5.2a).
+`rx()` is always a full set-up. Radios: the boards on both DMR modem glues. Test: `test_dmr_tx_end` (radioCoreTest).
+
+**3.15 End the HR_C6000 transmission at the interrupt its queue runs dry.** Symptom: a link ACK starting as our last
+data burst ended was missed on every try; one a slot later was taken. Cause: the slot engine went to its ending state
+at that interrupt, closed the next slot, and finished only at the interrupt after. Then a receiver restart at the end
+lost the answer that had already started. Rule: finish at that interrupt, hold the receiver on our timing for one slot
+in direct mode, and restart only after that slot's report is no longer due ([modem-hrc6000.md](modem-hrc6000.md) 6.6).
+Radios: the boards on the HR_C6000 glue. Test: `test_tx_end_hold` (hrc6000DmrTest).
+
 ## 4. AMBE codec calling
 
 **4.1 The STM32 codec glue must be built at -O0.** The codec entry calls were inline assembly that depended on the
@@ -293,15 +349,24 @@ old code compared with the preamble's count and stopped after the header (blocks
 complete or 180 ms after its last frame, max 64 bursts (`DMR_DATA_MAX_BURSTS`); frames that can't be sent are NAKed, not silently ACKed.
 
 **5.6 TMS ACK sequence number is 7 bits.** The ACK carried only the low 5 bits, so senders numbering past 31 never
-matched. Bytes must equal a MOTOTRBO capture (example 00 04 9F 00 95 20 for s/n 53), sent as its own transmission after
-the ETSI response, with preambles.
+matched. Bytes must equal what MOTOTRBO radios and BrandMeister send (00 04 BF 00 9E 60 for s/n 126; header 0xBF,
+not 0x9F: the 0x20 bit is set in every TMS header), sent as its own transmission after the ETSI response, with
+preambles. Confirmed data from BrandMeister has N(S) 0 every time: a repeat must match the data too, not only N(S).
 
 **5.7 Reply queue, not a single slot.** ACKs written by the modem task and read by the main task in one slot were
 overwritten by a second message. Use a single-producer / single-consumer queue (4 entries usable with one slot kept
 free, entries older than 5 s dropped), with compiler barriers so the entry is written before the index store.
 
 **5.8 Duplicate message suppression.** A sender that missed our ACK resends: ACK again but don't store or ring again
-when radio, sequence number and text match within 60 s.
+when radio and text match within 60 s. Not the sequence number: BrandMeister resends an unacknowledged text with a
+new one.
+
+**5.9 BrandMeister ignores data with few preambles.** Confirmed TMS sent with 2 preamble CSBKs reached BrandMeister
+intact and got nothing back: no link ACK, no NACK. The same packet with 16 got its link ACK in under a second. Text and
+IP packets go with 16 where the burst list has room ([dmr-data.md](dmr-data.md) 12.6.4). The hotspot reaches
+BrandMeister over UDP, often on Wi-Fi, so a single unanswered packet may just be lost; the preamble rule rests on 10
+unanswered sends in a row and one identical pair. The TMS ACK goes with 16 too, 1.5 s after our link ACK, and confirmed,
+as MOTOTRBO radios send it: BrandMeister ignored an unconfirmed one with 16 preambles twice ([dmr-data.md](dmr-data.md) 5.1).
 
 ## 6. Privacy
 
@@ -350,7 +415,7 @@ shot refused (0x0A).
 **8.1 The host's terminator ends the call.** The old hotspot ignored terminators and ran a 360 ms network timeout plus a
 720 ms stop delay. A call shorter than the buffering minimum starts on its terminator.
 
-**8.2 Type frames from the burst, not the control byte.** MMDVMHost writes control byte 0 on every frame; typing from
+**8.2 Type frames from the burst, not the control byte.** A host may write control byte 0 on every frame; typing from
 it sent data as voice, ignored terminators, and NAKed the 6 idle frames before each call. Terminator / start detection
 by slot type only matched color code 1. Rule: classify from the sync (BS, MS, TS1, TS2; voice or data) and the slot
 type's systematic bits; ACK and drop idle frames and PI headers.
@@ -363,9 +428,9 @@ then key again with the new headers. Another call's header while buffering must 
 negative (255); the serial / UDP receive ring overwrote unread frames on bursts over about 2 KB. NAK (5) or drop and
 count.
 
-**8.5 RF uplink: every header, late entry, fill, LOST.** MMDVMHost and Motorola send up to 8 headers; sending one and
+**8.5 RF uplink: every header, late entry, fill, LOST.** A sender may send up to 8 headers; sending one and
 then a 300 ms timer produced DMR_LOST mid-call and two network calls. Send every header; late entry gets a header made
-from the embedded LC, and the superframe so far as silence from A so the voice sync resets MMDVMHost's sequence (MMDVMHost
+from the embedded LC, and the superframe so far as silence from A so the voice sync resets the host's sequence (a host
 drops the rest of a superframe after a gap); one terminator; DMR_LOST 500 ms after the last burst; keep FID and service
 options from the heard header.
 
@@ -581,8 +646,13 @@ cleared). The raw 264-bit RX RAM areas (0x30 / 0x60) only held a fill pattern in
 
 **14.5 Late entry needs A then B 60 ms later** (a lone voice A is noise).
 
-**14.6 A synthesizer retuned per burst** is the open risk (about 1.25 ms guard time); the HR_C5000 isn't ported
-(register page 0 and no CRC_MCU_Control). The HR_C7000 is (14.11).
+**14.6 A synthesizer retuned per burst** has about 1.25 ms of guard time; the HR_C5000 isn't ported
+(register page 0 and no CRC_MCU_Control). The HR_C7000 is (14.11). On an HR_C6000 board with one synthesizer for
+receive and transmit, the end of each burst (the engine's `rf(false)`) retunes to the receive LO without waiting, and
+the RF TX interrupt retunes to the carrier and waits for the lock before the PA. RF_TX_INTER's advance (0x12 bits
+5-0, 100 us steps) gives that time; it is set only while the transmission listens (`tx_listen`) and cleared after.
+Too much lead cuts the end of the inbound burst: its last voice frame takes the errors (`sfr.rx_fec_pos`). The
+board's hardware page has the values.
 
 **14.7 SFR channels never switch to repeater mode on BS sync.** RMO slot lock needs a CACH every slot and an SFR sends
 none. On an MK22 board the repeater ends its own burst at the RF RX interrupt once the PA has been on 20 ms.
@@ -692,7 +762,7 @@ read the low bits of the first byte of a burst 65 ms after the last one, before 
 debounce the shared pin by time, not by scan count. The pin must read low, and not gated, for 20 ms
 (`SHARED_PTT_HOLD_MS`). `tests/hil/test_ptt_host_traffic.py` checks it on the radio. The radio's own transmission,
 picked up on a coiled cable, also reads as a press: the line goes low with flagged characters and no good byte, and
-the press keeps the radio keyed, a latch (2026-11-05: a minute keyed, nothing touched). Rule: while the radio
+the press keeps the radio keyed, a latch (measured: a minute keyed, nothing touched). Rule: while the radio
 transmits, no new press starts on the shared line, and a held press ends at a flagged character after its own break,
 since a grounded line receives nothing. RF that holds a released line steadily low, with no character, still reads
 as held, and the transmit time-out ends it.

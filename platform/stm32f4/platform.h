@@ -27,6 +27,12 @@ bool stm32_clock_init(const stm32_clock_t *c);
 extern const hal_system_t stm32_system;
 // First thing in main(): enters the ROM bootloader when a REBOOT ROM-DFU request armed it (does not return then)
 void stm32_sysboot_check(void);
+// The main stack, the interrupt handlers' once the scheduler runs (irq_stack.c): fill its free part (first thing in
+// main()), check its lowest words (a stack overflow crash, task "irq"; every tick), and its bytes never written since
+// the fill (hal_system_t.irq_stack_free)
+void stm32_irq_stack_fill(void);
+void stm32_irq_stack_check(void);
+uint32_t stm32_irq_stack_free(void);
 // Optional board hook, called before the ROM bootloader entry: the board's reset-time pin levels (power latch high,
 // transmitter off). Weak default does nothing
 void board_sysboot_prepare(void);

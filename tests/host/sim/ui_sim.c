@@ -35,7 +35,8 @@
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   timeout             the TX timeout cuts the transmission off while PTT is still held (shows the timeout deny)
-//   pttlocked:on|off    turns Settings > Privacy > PTT when locked on or off
+//   pttlocked:on|off    turns Settings > Key lock > PTT when locked on or off
+//   autolock:<s>        Settings > Keys > Auto lock: s seconds, 0 off
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
@@ -333,19 +334,36 @@ static const keymap_entry_t map_f[] = {	// few keys (7.5): Up / Down / Select / 
 	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
 	{ K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
+// The MD-9600's front panel as boards/md9600/board.c maps it, the hand-mic keypad not read (7.4): Enter, Back, P1 /
+// P2 as QUICK / CONTEXT, Up / Down, P3 monitor (SK1), P4 talk target (SK2), the orange key (SK3), no digits
+static const keymap_entry_t map_p[] = {
+	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 }, { K_RED, ACT_BACK, ACT_BACK, false, false, 0 },
+	{ K_P1, ACT_QUICK, ACT_QUICK, false, false, 0 }, { K_P2, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },
+	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ K_SK3, ACT_USER_3, ACT_USER_3, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
+};
+static const keymap_entry_t map_s[] = {	// side keys only, no display to navigate: two side keys and PTT
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_USER_1, ACT_USER_2, false, false, 0 },
+	{ K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
+};
 static const uint8_t side_k[] = { K_SK1, K_SK2, K_SK3 }, side_m[] = { K_SK1, K_SK2 };	// board.side_keys
 static const char *const side_names[] = { "SK1", "SK2", "SK3" };
+static const char *const side_names_p[] = { "P3", "P4", "Orange" };	// the MD-9600 (boards/md9600/board.c)
 static const struct {
 	const keymap_entry_t *m;
 	uint8_t n;
 	uint32_t caps;
 	const uint8_t *side;
 	uint8_t side_n;
+	const char *const *names;
 } maps[SIM_MAP_COUNT] = {
-	{ map_k, sizeof map_k / sizeof map_k[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR, side_k, 3 },	// the DM-1701 has the channel knob
-	{ map_m, sizeof map_m / sizeof map_m[0], CAP_KEYPAD | CAP_DMR, side_m, 2 },
-	{ map_v, sizeof map_v / sizeof map_v[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR, side_m, 2 },
-	{ map_f, sizeof map_f / sizeof map_f[0], CAP_ENCODER | CAP_DMR, NULL, 0 },
+	{ map_k, sizeof map_k / sizeof map_k[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR, side_k, 3, side_names },	// the DM-1701 has the channel knob
+	{ map_m, sizeof map_m / sizeof map_m[0], CAP_KEYPAD | CAP_DMR, side_m, 2, side_names },
+	{ map_v, sizeof map_v / sizeof map_v[0], CAP_KEYPAD | CAP_ENCODER | CAP_DMR, side_m, 2, side_names },
+	{ map_f, sizeof map_f / sizeof map_f[0], CAP_ENCODER | CAP_DMR, NULL, 0, NULL },
+	{ map_p, sizeof map_p / sizeof map_p[0], CAP_ENCODER | CAP_DMR, side_k, 3, side_names_p },
+	{ map_s, sizeof map_s / sizeof map_s[0], 0, side_m, 2, side_names },
 };
 
 static void d_init(void) {}
@@ -402,6 +420,10 @@ static bool usb_up;	// the computer has brought the network adapter up (hal_neti
 static struct {
 	bool off;		// "aprs:off": not in this build
 	bool no_call;		// "aprs:nocall": no callsign anywhere
+	bool message;		// "aprs:message": an unread APRS message
+	bool message_read;
+	uint32_t message_ms;
+	bool no_pos;		// "aprs:nopos": no position of our own (no GPS fix, no fixed position)
 	aprs_cfg_t cfg;
 	uint32_t sent;
 } aprs_sim;
@@ -423,13 +445,15 @@ bool ui_svc_aprs_view(aprs_view_t *v)
 		strcpy(v->call, "Q0SIM-7");
 	v->block = aprs_sim.no_call ? APRS_NO_CALL : APRS_OK;
 	v->freq_hz = aprs_sim.cfg.region == APRS_REGION_CUSTOM ? aprs_sim.cfg.freq_hz : hz[aprs_sim.cfg.region % APRS_REGION_COUNT];
-	v->pos_valid = !aprs_sim.no_call;
+	v->pos_valid = !aprs_sim.no_call && !aprs_sim.no_pos;
 	v->pos_src = APRS_SRC_FIXED;
 	v->lat = 337000000;
 	v->lon = -841000000;
 	v->next_s = aprs_sim.cfg.tx_on ? 245 : 0xFFFFu;
 	v->rf_sent = aprs_sim.sent;
 	v->stations = 2;
+	v->messages = aprs_sim.message ? 1 : 0;
+	v->unread = aprs_sim.message && !aprs_sim.message_read ? 1 : 0;
 	return true;
 }
 void ui_svc_aprs_cfg(aprs_cfg_t *c) { *c = aprs_sim.cfg; }
@@ -444,13 +468,47 @@ bool ui_svc_aprs_send_now(void)
 uint8_t ui_svc_aprs_station_count(void) { return aprs_sim.off ? 0 : 2; }
 bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out)
 {
-	static const char *const calls[] = { "Q4WAB-9", "QJ4XYZ" };
+	static const char *const calls[] = { "Q4WABC-15", "QJ4XYZ" };	// the longest call there is, and one without a position
 	if (aprs_sim.off || i >= 2)
 		return false;
 	memset(out, 0, sizeof *out);
 	strcpy(out->call, calls[i]);
 	out->heard_ms = now_ms > 60000u * (i + 1u) ? now_ms - 60000u * (i + 1u) : 0;
 	out->direct = i == 0;
+	out->has_pos = i == 0;
+	out->lat = 338000000;	// 14.5 km NE of our fixed position (ui_svc_aprs_view)
+	out->lon = -840000000;
+	out->pos_ms = 0;	// the position heard at start, the packets since (heard_ms) without one
+	return true;
+}
+// The engine's range for station 0 from our position (the sim has no aprs_fmt.c: the figures, not the math)
+bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg)
+{
+	if (aprs_sim.off || aprs_sim.no_call || aprs_sim.no_pos || !s->has_pos)
+		return false;
+	*m = 14461;
+	*deg = 40;
+	return true;
+}
+uint8_t ui_svc_aprs_msg_count(void) { return aprs_sim.message ? 1 : 0; }
+bool ui_svc_aprs_msg(uint8_t i, aprs_msg_t *out, bool read)
+{
+	if (i != 0 || !aprs_sim.message)
+		return false;
+	memset(out, 0, sizeof *out);
+	strcpy(out->from, "Q4WAB-9");
+	strcpy(out->text, "Hello APRS");
+	out->ms = aprs_sim.message_ms;
+	out->read = aprs_sim.message_read;
+	if (read)
+		aprs_sim.message_read = true;
+	return true;
+}
+bool ui_svc_aprs_msg_delete(uint8_t i)
+{
+	if (i != 0 || !aprs_sim.message)
+		return false;
+	aprs_sim.message = false;
 	return true;
 }
 bool hostlink_request_usb_network(bool network) { usb_net = network; return true; }
@@ -1374,12 +1432,30 @@ static uint16_t n_inbox;
 static bool soft_volume;
 // The broadcast receiver (Settings > Talk & listen > FM broadcast step) only with the "bcast" token, the same way
 static bool bcast_rx;
+// Hardware options (Settings > Advanced > Hardware, hal_hwopt.h) only with the "hwopt" token: a revision that starts
+// unset and a plain option
+static int8_t hwopt_val[2];
+static const char *const hwopt_revs[] = { "V1", "V2", "V3" };
+static const char *const hwopt_onoff[] = { "Off", "On" };
+static int8_t hwopt_get0(void) { return hwopt_val[0]; }
+static int8_t hwopt_get1(void) { return hwopt_val[1]; }
+static bool hwopt_set0(uint8_t c) { hwopt_val[0] = (int8_t)c; return true; }
+static bool hwopt_set1(uint8_t c) { hwopt_val[1] = (int8_t)c; return true; }
+static const hal_hwopt_t sim_hwopts[] = {
+	{ .name = "Board revision", .count = 3, .choices = hwopt_revs, .get = hwopt_get0, .set = hwopt_set0, .restart = true },
+	{ .name = "Option", .count = 2, .choices = hwopt_onoff, .get = hwopt_get1, .set = hwopt_set1 },
+};
+
 // A reference trim (Settings > Advanced > Freq trim) only with the "trim" token, the same way
 static bool ref_trim;
+// A volume knob the MCU reads (Settings > Key lock > Knob when locked) only with a "knob:<percent>" token
+static bool knob_radio;
+static bool vol_held;		// ui_svc_volume_hold: the radio ignores the volume knob
 uint32_t ui_svc_features(void)
 {
 	return 0xFFFFFFFFu & ~(soft_volume ? 0 : UI_FEAT_VOLUME) & ~(bcast_rx ? 0 : UI_FEAT_BCAST) &
-	       ~(ref_trim ? 0 : UI_FEAT_REF_TRIM);
+	       ~(ref_trim ? 0 : UI_FEAT_REF_TRIM) &
+	       ~(knob_radio ? 0 : UI_FEAT_VOLUME_KNOB);
 }
 // My radio's names (ui_svc_name_*): placeholders, as the user's own would be; a save writes at once
 static char sim_names[UI_NAME_COUNT][17];
@@ -1647,6 +1723,7 @@ void ui_svc_beep(uint8_t beep)
 void ui_svc_vibrate(uint8_t vibe) { sim_rec.vibes++; sim_rec.last_vibe = vibe; }
 static bool ptt_blocked;	// ui_svc_ptt_block: the input layer keeps PTT presses from the radio
 void ui_svc_ptt_block(bool blocked) { ptt_blocked = blocked; }
+void ui_svc_volume_hold(bool hold) { vol_held = hold; }
 void ui_svc_apply(uint8_t id, int32_t value)
 {
 	if (id == UI_SET_LONG_PRESS_MS)
@@ -1654,7 +1731,7 @@ void ui_svc_apply(uint8_t id, int32_t value)
 	else if (id == UI_SET_TOT_S)
 		sim_rec.tot_s = (uint32_t)value;
 	else if (id == UI_SET_BACKLIGHT_S)
-		sim_rec.backlight_s = (uint32_t)value;
+		sim_rec.backlight_s = value;
 	else if (id == UI_SET_VFO_STEP) {
 		sim_step = value;
 		changed();
@@ -1817,6 +1894,16 @@ bool ui_svc_msg_send(uint32_t dst, bool group, const char *text)
 	sim_rec.messages_sent++;
 	strncpy(sim_rec.last_text, text, sizeof sim_rec.last_text - 1);
 	sim_rec.tx_id = dst;
+	return true;
+}
+bool ui_svc_aprs_send_message(const char *to, const char *text, uint8_t flags)
+{
+	if (to[0] == '\0')
+		return false;
+	sim_rec.messages_sent++;
+	strncpy(sim_rec.last_aprs_to, to, sizeof(sim_rec.last_aprs_to) - 1);
+	strncpy(sim_rec.last_text, text, sizeof(sim_rec.last_text) - 1);
+	sim_rec.last_aprs_flags = flags;
 	return true;
 }
 bool ui_svc_radio_check(uint32_t id) { sim_rec.radio_checks++; check_id = id; check_due = now_ms + 800; return true; }
@@ -2004,10 +2091,13 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.keymap = maps[map].m;
 	board.keymap_len = maps[map].n;
 	board.side_keys = maps[map].side;
-	board.side_key_names = side_names;
+	board.side_key_names = maps[map].names;
 	board.side_key_count = maps[map].side_n;
 	board.caps = maps[map].caps;
 	power.supply_mv = NULL;
+	// The MD-9600's panel names its QUICK and CONTEXT keys in the hints
+	board.quick_label = map == SIM_MAP_P ? "P1" : NULL;
+	board.context_label = map == SIM_MAP_P ? "P2" : NULL;
 	cur_map = map;
 	gfx_init(&disp);
 	gfx_invalidate();
@@ -2052,8 +2142,17 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	now_ms = 1000;
 	load_channel();
 	soft_volume = false;
+	view.volume = -1;	// no level passed on yet (power-up)
+	view.volume_src = RVOL_KNOB;
 	bcast_rx = false;
 	ref_trim = false;
+	knob_radio = false;
+	vol_held = false;
+	ui_svc_setting_set(UI_SET_KNOB_WHEN_LOCKED, 1);
+	board.hwopts = NULL;
+	board.hwopt_count = 0;
+	hwopt_val[0] = HWOPT_NONE;
+	hwopt_val[1] = 0;
 	ui_svc_setting_set(UI_SET_VOLUME, RADIO_VOLUME_DEFAULT);
 	ui_svc_setting_set(UI_SET_HINTS, 1);
 	ui_svc_setting_set(UI_SET_LARGE_TEXT, 0);
@@ -2079,6 +2178,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_STRIP, 1);
 	ui_svc_setting_set(UI_SET_ALIAS_SHOW, 1);
 	ui_svc_setting_set(UI_SET_MESSAGE_TONE, 1);
+	ui_svc_setting_set(UI_SET_MSG_FORMAT, 2);
 	ui_svc_setting_set(UI_SET_VIBRATE, 1);
 	ui_svc_setting_set(UI_SET_PRIVACY_TYPE, 0);
 	ui_svc_setting_set(UI_SET_PRIVACY_KEY, 0);
@@ -2116,7 +2216,7 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	{ "lockkey", ACT_LOCK }, { "cbkey", ACT_CALL_BACK },
 	{ "homekey", ACT_HOME_ZONE }, { "copykey", ACT_COPY_VFO },
 	{ "dualkey", ACT_DUAL_WATCH }, { "abkey", ACT_AB },	// dual watch's side key functions
-	{ "vfokey", ACT_VFO_TOGGLE },		// the VFO/MR key: a key map entry of the board (DM-1801 Pro), not a side key function
+	{ "vfokey", ACT_VFO_TOGGLE },		// a VFO/MR key in the board's key map, or a side key set to VFO/Channel
 	{ "volkey", ACT_VOLUME },
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
 	{ "5", ACT_DIGIT_5 }, { "6", ACT_DIGIT_6 }, { "7", ACT_DIGIT_7 }, { "8", ACT_DIGIT_8 }, { "9", ACT_DIGIT_9 },
@@ -2216,7 +2316,7 @@ static bool check(const char *kv, char *err, size_t len)
 	key[eq - kv] = 0;
 	snprintf(want, sizeof want, "%s", eq + 1);
 	for (char *p = want; *p; p++)
-		if (*p == '_')
+		if (*p == '_' && strcmp(key, "showsraw") != 0)
 			*p = ' ';
 	ui_app_status_t s;
 	ui_app_status(&s);
@@ -2235,6 +2335,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "talk") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.dmr.target_id);
 	else if (strcmp(key, "vol") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_VOLUME));
 	else if (strcmp(key, "locked") == 0) snprintf(got, sizeof got, "%u", s.locked);
+	else if (strcmp(key, "volhold") == 0) snprintf(got, sizeof got, "%u", vol_held);
 	else if (strcmp(key, "query") == 0) snprintf(got, sizeof got, "%s", s.query);
 	else if (strcmp(key, "banner") == 0) { snprintf(got, sizeof got, "%s", s.banner[0] ? s.banner : "none"); prefix = true; }
 	else if (strcmp(key, "toast") == 0) { snprintf(got, sizeof got, "%s", s.toast[0] ? s.toast : "none"); prefix = true; }
@@ -2247,6 +2348,8 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "checks") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.radio_checks);
 	else if (strcmp(key, "sent") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.messages_sent);
 	else if (strcmp(key, "text") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_text);
+	else if (strcmp(key, "aprs_to") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_aprs_to);
+	else if (strcmp(key, "aprs_flags") == 0) snprintf(got, sizeof got, "%u", sim_rec.last_aprs_flags);
 	else if (strcmp(key, "scanning") == 0) snprintf(got, sizeof got, "%u", view.scan != 0 && view.scan != 3);
 #if CONFIG_DUAL_WATCH
 	else if (strcmp(key, "dual") == 0) snprintf(got, sizeof got, "%u", ui_st.dual.on && view.scan == 3);
@@ -2256,6 +2359,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "bvfo") == 0) snprintf(got, sizeof got, "%u", sim_dual[1].vfo);
 	else if (strcmp(key, "bpos") == 0) snprintf(got, sizeof got, "%u", sim_dual[1].pos + 1u);
 	else if (strcmp(key, "avfo") == 0) snprintf(got, sizeof got, "%u", sim_dual[0].vfo);
+	else if (strcmp(key, "bfreq") == 0) snprintf(got, sizeof got, "%u", (unsigned)ui_st.dual.pane[1].rx_hz);
 	// What the UI works from (ui_view): in dual watch, the selected channel wherever the receiver is
 	else if (strcmp(key, "uipos") == 0) snprintf(got, sizeof got, "%u", ui_view()->zone_pos + 1u);
 	else if (strcmp(key, "uitemp") == 0) snprintf(got, sizeof got, "%u", ui_view()->temporary);
@@ -2275,7 +2379,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "beep") == 0) snprintf(got, sizeof got, "%u", sim_rec.last_beep);	// ui_beep_t
 	else if (strcmp(key, "vibes") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.vibes);
 	else if (strcmp(key, "vibe") == 0) snprintf(got, sizeof got, "%u", sim_rec.last_vibe);	// ui_vibe_t
-	else if (strcmp(key, "shows") == 0) {	// a text on the screen (as drawn, after fitting) contains the value
+	else if (strcmp(key, "shows") == 0 || strcmp(key, "showsraw") == 0) {	// drawn text contains the value
 		got[0] = 0;
 		for (int i = 0; i < live_n; i++) {
 			if (strstr(live[i].s, want) != NULL) {
@@ -2323,13 +2427,15 @@ static bool check(const char *kv, char *err, size_t len)
 			if (strstr(live[i].s, want) != NULL)
 				snprintf(got, sizeof got, "shown in \"%s\"", live[i].s);
 	}
+	else if (strcmp(key, "volbar_at") == 0) snprintf(got, sizeof got, "%s", s.volbar_top ? "top" : "bottom");
+	else if (strcmp(key, "volbar") == 0) snprintf(got, sizeof got, "%d", s.volbar);	// the knob's bar, -1 = none
 	else if (strcmp(key, "pttblock") == 0) snprintf(got, sizeof got, "%u", ptt_blocked);
 	else if (strcmp(key, "poweroff") == 0) snprintf(got, sizeof got, "%u", ui_app_power_off_due());
 	else if (strcmp(key, "wake") == 0) snprintf(got, sizeof got, "%u", ui_app_take_wake());	// the backlight asked for
 	else if (strncmp(key, "set", 3) == 0 && key[3] >= '0' && key[3] <= '9')	// set<N>: ui_setting_t N's value
 		snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get((uint8_t)atoi(key + 3)));
 	else if (strcmp(key, "radio_tot") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tot_s);
-	else if (strcmp(key, "radio_backlight") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.backlight_s);
+	else if (strcmp(key, "radio_backlight") == 0) snprintf(got, sizeof got, "%ld", (long)sim_rec.backlight_s);
 	else if (strcmp(key, "count") == 0) snprintf(got, sizeof got, "%u", s.count);
 	else if (strcmp(key, "depth") == 0) snprintf(got, sizeof got, "%u", s.depth);
 	else if (strcmp(key, "hotspot") == 0) snprintf(got, sizeof got, "%u", hotspot_on);
@@ -2437,7 +2543,25 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
-	if (strcmp(t, "pttlocked") == 0 && arg != NULL) {	// Settings > Privacy > PTT when locked
+	if (strcmp(t, "autolock") == 0 && arg != NULL) {	// Settings > Keys > Auto lock
+		int32_t sec = atoi(arg);
+		ui_svc_setting_set(UI_SET_AUTO_LOCK_S, sec);
+		ui_apply_setting(UI_SET_AUTO_LOCK_S, sec);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "hints") == 0 && arg != NULL) {	// Settings > Display > Hint row
+		bool on = strcmp(arg, "on") == 0;
+		if (!on && strcmp(arg, "off") != 0) {
+			snprintf(err, len, "hints: expected on or off, got %s", arg);
+			return false;
+		}
+		ui_svc_setting_set(UI_SET_HINTS, on);
+		ui_apply_setting(UI_SET_HINTS, on);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "pttlocked") == 0 && arg != NULL) {	// Settings > Key lock > PTT when locked
 		bool on = strcmp(arg, "on") == 0;
 		if (!on && strcmp(arg, "off") != 0) {
 			snprintf(err, len, "pttlocked: expected on or off, got %s", arg);
@@ -2664,9 +2788,13 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
-	if (strcmp(t, "aprs") == 0 && arg != NULL) {	// aprs:off (not built), aprs:nocall, aprs:custom (a custom frequency set)
+	if (strcmp(t, "aprs") == 0 && arg != NULL) {	// aprs:off (not built), aprs:nocall, aprs:nopos, aprs:custom (a custom frequency set)
 		aprs_sim.off = strcmp(arg, "off") == 0;
 		aprs_sim.no_call = strcmp(arg, "nocall") == 0;
+		aprs_sim.message = strcmp(arg, "message") == 0;
+		if (aprs_sim.message)
+			aprs_sim.message_ms = now_ms;
+		aprs_sim.no_pos = strcmp(arg, "nopos") == 0;
 		if (strcmp(arg, "custom") == 0)
 			aprs_sim.cfg.freq_hz = 144930000;
 		return true;
@@ -2772,6 +2900,24 @@ static bool run_token(char *t, char *err, size_t len)
 		}
 		return true;
 	}
+	if ((strcmp(t, "knob") == 0 || strcmp(t, "override") == 0) && arg != NULL) {
+		// The level the radio core passed on (radio_view_t.volume) and where from: the knob a radio's MCU reads,
+		// the debug link's override, or the stored step of a radio without a knob ("softvol"). "knob" also makes
+		// this a radio whose MCU reads the knob; while the keys hold the level (ui_svc_volume_hold) the core
+		// keeps it and only the knob's position moves
+		int8_t level = (int8_t)atoi(arg);
+		if (t[0] == 'k') {
+			knob_radio = true;
+			view.volume_knob = level;
+		}
+		if (t[0] != 'k' || !vol_held) {
+			view.volume = level;
+			view.volume_src = soft_volume ? RVOL_SOFT : t[0] == 'k' ? RVOL_KNOB : RVOL_OVERRIDE;
+		}
+		changed();
+		step();
+		return true;
+	}
 	if (strcmp(t, "softvol") == 0) {	// this radio has no volume knob: the board sets the speaker volume
 		soft_volume = true;
 		advance(200);
@@ -2779,6 +2925,11 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "bcast") == 0) {		// this radio has a broadcast FM receiver
 		bcast_rx = true;
+		return true;
+	}
+	if (strcmp(t, "hwopt") == 0) {		// this radio has hardware options (sim_hwopts)
+		board.hwopts = sim_hwopts;
+		board.hwopt_count = 2;
 		return true;
 	}
 	if (strcmp(t, "trim") == 0) {		// this radio has a reference trim (hal_radio_t.ref_trim)
