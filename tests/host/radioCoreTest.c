@@ -3253,6 +3253,22 @@ static void test_position(void)
 	run(1000);
 	dmr_call_get_stats(&cs0);
 	CHECK(cs0.tx_gps_lcs == cs1.tx_gps_lcs);
+	// The codeplug can ask for it per channel and timeslot (what a CPS sets): sent with the radio's setting off
+	chans[4].alias_tx = CODEPLUG_ALIAS_TS2_GPS;	// a TS1 channel: not on this one
+	reload_channel();
+	CHECK(!sm.view.dmr.gps_tx_channel);
+	chans[4].alias_tx = CODEPLUG_ALIAS_TS1_GPS;
+	reload_channel();
+	CHECK(sm.view.dmr.gps_tx_channel);
+	position_nmea(rmc, strlen(rmc), true, now);
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs1);
+	CHECK(cs1.tx_gps_lcs - cs0.tx_gps_lcs >= 1);
+	chans[4].alias_tx = 0;
+	reload_channel();
 	CHECK(ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 1));
 
 	// Settings > Location > GPS off: the fix goes at once

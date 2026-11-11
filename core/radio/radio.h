@@ -151,6 +151,7 @@ typedef struct {
 	bool target_manual;	// a talk target chosen for now (contact, typed ID, call back), until the channel changes
 	bool privacy;		// a privacy key is loaded: encrypted calls play, our calls go out encrypted
 	bool alias_tx;		// our talker alias goes out on this channel
+	bool gps_tx_channel;	// the channel's codeplug setting asks for our position in its calls (CONFIG_DMR_GPS)
 	bool hear_all;		// every talkgroup on our slot: MONITOR held, or the hear all latch
 	bool hear_all_latch;	// hear all latched (radio_req_dmr_hear_all), until the channel changes
 	uint32_t focus_id;	// the focused row's target (radio_req_dmr_focus), 0 = none: PTT talks to it once

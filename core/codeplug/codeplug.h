@@ -52,6 +52,10 @@ typedef struct {
 // channel_t.alias_tx: what the channel sends as talker alias on each timeslot (text = our radio name)
 #define CODEPLUG_ALIAS_TS1_TEXT	0x01u
 #define CODEPLUG_ALIAS_TS2_TEXT	0x02u
+// ... and whether its calls on that timeslot carry our position (GPS Info, docs/spec/dmr-voice.md 3.1), whatever the
+// radio-wide "Send in DMR calls" setting says. The codeplug's own name for the bit is APRS
+#define CODEPLUG_ALIAS_TS1_GPS	0x04u
+#define CODEPLUG_ALIAS_TS2_GPS	0x08u
 
 #define CODEPLUG_POWER_DEFAULT	0xFF
 

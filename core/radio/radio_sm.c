@@ -1129,6 +1129,12 @@ static void dmr_configure(radio_sm_t *sm)
 	}
 	sm->win_group_s = cfg.reply_window_s;
 	sm->win_private_s = cfg.reply_window_private_s != 0 ? cfg.reply_window_private_s : cfg.reply_window_s;
+#if CONFIG_DMR_GPS
+	// The channel's own position setting for its timeslot (the codeplug): GPS Info in its calls with the radio-wide
+	// setting off too
+	sm->view.dmr.gps_tx_channel = !sm->view.vfo &&
+		(ch->alias_tx & (cfg.ts == 2 ? CODEPLUG_ALIAS_TS2_GPS : CODEPLUG_ALIAS_TS1_GPS)) != 0;
+#endif
 	bool alias = false;
 #if CONFIG_DMR_TALKER_ALIAS
 	alias = sm->radio_name[0] != '\0' && !sm->view.vfo &&
@@ -1481,13 +1487,14 @@ static bool own_position(int32_t *lat, int32_t *lon, uint32_t *err_m, bool *send
 #endif
 }
 
-// At PTT: our GPS Info for this transmission, or none
-static void dmr_gps_tx(uint32_t now_ms)
+// At PTT: our GPS Info for this transmission, or none. It goes out when the radio-wide setting or the channel's own
+// (the codeplug) asks for it
+static void dmr_gps_tx(const radio_sm_t *sm, uint32_t now_ms)
 {
 	int32_t lat, lon;
 	uint32_t err_m;
 	bool send;
-	if (own_position(&lat, &lon, &err_m, &send, now_ms) && send) {
+	if (own_position(&lat, &lon, &err_m, &send, now_ms) && (send || sm->view.dmr.gps_tx_channel)) {
 		dmr_gps_t g = { .err = dmr_gps_err_code(err_m), .lat = lat, .lon = lon };
 		dmr_call_set_tx_gps(&g);
 	} else {
@@ -1829,7 +1836,7 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	sm->tx_start_ms = now_ms;
 	changed(sm);
 #if CONFIG_DMR_GPS
-	dmr_gps_tx(now_ms);
+	dmr_gps_tx(sm, now_ms);
 #endif
 	dmr_call_ptt(true);
 	dmr_call_poll(now_ms);

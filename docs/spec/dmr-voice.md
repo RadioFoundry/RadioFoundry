@@ -166,7 +166,14 @@ our own position (the position service, [position.md](position.md)) in `radio_dm
 (or the coordinates when we have no position of our own), Recent keeps the distance with the entry, and in
 `CONFIG_APRS_RX` builds the caller goes into the APRS station list (named by its alias's callsign, else its DMR ID).
 
-Transmit: Settings > Location > "Send in DMR calls" (radio-wide, off by default, `position_cfg_t.dmr_gps`, P7). At
+Transmit, when either asks for it:
+
+| Setting | Where | Scope |
+|---|---|---|
+| "Send in DMR calls" | Settings > Location (`position_cfg_t.dmr_gps`, off by default, P7) | every DMR call |
+| The channel's talker alias field for its timeslot: APRS or Both | the codeplug (`open-firmware-cps.md` 7.3.3, offset 0x30; `channel_t.alias_tx` `CODEPLUG_ALIAS_TS1_GPS` / `_TS2_GPS`), so a CPS sets it | calls on that channel; not the VFO |
+
+At
 PTT the radio core takes the position in use (`position_now`: GPS on boards with one, the host's NMEA, else the fixed
 position; position ambiguity applied) and hands it to the stack (`dmr_call_set_tx_gps`); no position, no GPS Info. The GPS Info
 LC is one more entry at the end of the talker alias rotation in the odd superframes: LC, header, LC, block 1, LC,
@@ -234,7 +241,7 @@ codec bits.
 ## 7. Observing it
 
 Debug link (`debuglink.md`): the `core` view's `mode` and `vfo`, the `dmr` view's `dmr.cc`, `dmr.ts`, `dmr.target_id`,
-`dmr.target_private`, `dmr.target_manual`, `dmr.privacy`, `dmr.alias_tx`; RADIO op 31 sets the mode, color code and timeslot (the VFO's
+`dmr.target_private`, `dmr.target_manual`, `dmr.privacy`, `dmr.alias_tx`, `dmr.gps_tx_channel` (the channel's own position setting); RADIO op 31 sets the mode, color code and timeslot (the VFO's
 own in the VFO), op 15 the talk target and op 32 copies the channel to the VFO (2.2); the `dmr_call` view's
 `emergency`, `pi_header`, `alias_complete`, `fid`, `svc`, `pi_alg`, `pi_key`; the counters `rx_private_calls`,
 `rx_emergency_calls`, `rx_encrypted_calls`, `rx_pi_headers`, `rx_alias_complete`, `tx_alias_lcs`, `rx_gps`,

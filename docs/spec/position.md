@@ -14,7 +14,7 @@ the UI in `core/ui/ui_position.c` and Settings > Location, the debug link in `co
 
 | User | Switch | What it takes |
 |---|---|---|
-| DMR GPS Info in voice calls ([dmr-voice.md](dmr-voice.md) 3.1) | `CONFIG_DMR_GPS` | `position_now`: the position, its error, the "Send in DMR calls" setting |
+| DMR GPS Info in voice calls ([dmr-voice.md](dmr-voice.md) 3.1) | `CONFIG_DMR_GPS` | `position_now`: the position, its error, the "Send in DMR calls" setting. A channel's codeplug setting turns it on for that channel too |
 | LRRP answers and triggered reports ([dmr-data.md](dmr-data.md) 6) | `CONFIG_DMR_LRRP` | `position_report` through the data service's `ownPosition` hook |
 | APRS beacons ([aprs.md](aprs.md) 7) | `CONFIG_APRS` | `position_fix` (exact; APRS formats its own ambiguity) |
 | Tools > Position ([ui.md](ui.md) 2.3) | `CONFIG_GPS` | `position_gps`, `position_gps_sat` |
@@ -115,7 +115,7 @@ Settings > Location, with `CONFIG_POSITION`:
 |---|---|
 | Position source | Auto, GPS, Computer, Fixed (Computer only with the host half) |
 | Fixed position | opens the page below |
-| Send in DMR calls | on: our position goes into our DMR voice calls. "DMR position: not in this build" without `CONFIG_DMR_GPS` |
+| Send in DMR calls | on: our position goes into every DMR voice call. Off: only on channels whose codeplug setting asks for it ([dmr-voice.md](dmr-voice.md) 3.1). "DMR position: not in this build" without `CONFIG_DMR_GPS` |
 
 Fixed position (`fixed-pos`, `ui_position.c`). Rows: Latitude and Longitude ("Not set" while both are 0). OK opens an
 editor in decimal degrees to 4 places (about 11 m): the digits fill `DD.DDDD` or `DDD.DDDD` from the left (a
