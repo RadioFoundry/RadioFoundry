@@ -147,7 +147,7 @@ bool codeplug_set_boot_text(const char *line1, const char *line2);
 bool codeplug_quick_keys(uint16_t out[CODEPLUG_QUICK_KEYS]);
 bool codeplug_set_quick_keys(const uint16_t in[CODEPLUG_QUICK_KEYS]);
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 // An open-firmware codeplug APRS configuration (open-firmware-cps.md 7.3.8; qdmr writes them): what the APRS engine
 // takes from it. Not read: the fixed position and the frequency (their encodings aren't in the interop spec yet)
 #define CODEPLUG_APRS_CONFIGS	8

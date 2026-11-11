@@ -19,7 +19,7 @@ typedef struct {
 } aprs_dmr_pos_t;
 
 // Queue the report to dst (a private call) from own_id. False when the data service can't take it now (busy, not on
-// a DMR channel, or built without DMR data)
+// a DMR channel). Built with CONFIG_APRS_DMR
 bool aprs_dmr_send(bool udt, uint32_t dst, uint32_t own_id, const aprs_dmr_pos_t *pos);
 
 #endif

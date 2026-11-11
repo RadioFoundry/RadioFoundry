@@ -39,6 +39,30 @@ WEAK bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg)
 
 enum { AP_SEND, AP_AUTO, AP_FREQ, AP_POWER, AP_PATH, AP_INTERVAL, AP_SMART, AP_VIA, AP_KISS, AP_HEARD, AP_COUNT };
 
+// The rows this build shows, in order: the packet rows only with the AX.25 backend (CONFIG_APRS_AFSK), "Send via"
+// only when there is a choice (both backends built)
+static const uint8_t rows[] = {
+	AP_SEND, AP_AUTO,
+#if CONFIG_APRS_AFSK
+	AP_FREQ, AP_POWER, AP_PATH,
+#endif
+	AP_INTERVAL, AP_SMART,
+#if CONFIG_APRS_AFSK && CONFIG_APRS_DMR
+	AP_VIA,
+#endif
+	AP_KISS,
+#if CONFIG_APRS_AFSK
+	AP_HEARD,
+#endif
+};
+#define N_ROWS	((uint16_t)(sizeof(rows) / sizeof(rows[0])))
+
+// Beacons go out on RF only: no DMR backend, or the setting says so
+static bool rf_only(const aprs_cfg_t *c)
+{
+	return !CONFIG_APRS_DMR || c->via == APRS_VIA_RF;
+}
+
 static const uint16_t intervals[] = { 0, 60, 120, 300, 600, 1800 };
 static const char *const interval_names[] = { TRN("Off"), TRN("1 min"), TRN("2 min"), TRN("5 min"),
 						       TRN("10 min"), TRN("30 min") };
@@ -79,18 +103,20 @@ static const char *aprs_body(void)
 		sb_str(&b, TR("APRS: not in this build"));
 		return t;
 	}
-	sb_str(&b, v.call[0] != '\0' ? v.call : TR("No callsign"));
-	sb_str(&b, TR(" on "));
-	sb_freq(&b, v.freq_hz);
-	if (v.rf_active) {
-		sb_str(&b, TR(" (sending)"));
-	}
-	const char *why = why_text(v.block);
-	if (why != NULL) {
+	if (CONFIG_APRS_AFSK) {		// who and where on RF: the AX.25 backend's
+		sb_str(&b, v.call[0] != '\0' ? v.call : TR("No callsign"));
+		sb_str(&b, TR(" on "));
+		sb_freq(&b, v.freq_hz);
+		if (v.rf_active) {
+			sb_str(&b, TR(" (sending)"));
+		}
+		const char *why = why_text(v.block);
+		if (why != NULL) {
+			sb_chr(&b, '\n');
+			sb_str(&b, why);
+		}
 		sb_chr(&b, '\n');
-		sb_str(&b, why);
 	}
-	sb_chr(&b, '\n');
 	if (v.pos_valid) {
 		sb_str(&b, tr(pos_names[v.pos_src < 4 ? v.pos_src : 0]));
 		sb_chr(&b, ' ');
@@ -112,7 +138,7 @@ static const char *aprs_body(void)
 	return t;
 }
 
-static uint16_t aprs_count(void) { return AP_COUNT; }
+static uint16_t aprs_count(void) { return N_ROWS; }
 
 static uint8_t interval_index(uint16_t s)
 {
@@ -133,8 +159,13 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 	aprs_cfg_t c;
 	bool built = ui_svc_aprs_view(&v);
 	ui_svc_aprs_cfg(&c);
-	str_copy(it->label, sizeof it->label, tr(names[i]));
 	it->num = i < 10u ? (char)('0' + (i + 1u) % 10u) : 0;	// rows after the 10th have no digit
+	i = i < N_ROWS ? rows[i] : AP_COUNT;
+	if (i >= AP_COUNT) {
+		return;
+	}
+	// Without the AX.25 backend the host port is no TNC: it only takes NMEA positions
+	str_copy(it->label, sizeof it->label, i == AP_KISS && !CONFIG_APRS_AFSK ? TR("NMEA on USB") : tr(names[i]));
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
 	if (!built) {
@@ -143,7 +174,7 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 	}
 	switch (i) {
 	case AP_SEND:
-		if (v.block != APRS_OK && c.via == APRS_VIA_RF) {
+		if (v.block != APRS_OK && rf_only(&c)) {
 			it->flags |= UI_ITEM_DIM;
 		}
 		break;
@@ -196,7 +227,7 @@ static void aprs_select(uint16_t i, bool hold)
 		return;
 	}
 	ui_svc_aprs_cfg(&c);
-	switch (i) {
+	switch (i < N_ROWS ? rows[i] : AP_COUNT) {
 	case AP_SEND:
 		if (ui_svc_aprs_send_now()) {
 			ui_toast(TR("Sending position"));

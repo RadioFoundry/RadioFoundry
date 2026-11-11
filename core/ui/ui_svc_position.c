@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The UI's Position screen over core/position (ui_svc.h): the board GPS, whatever else is built
+// The UI's Position screen over core/position (ui_svc.h): the board GPS, whatever else is built. Without CONFIG_GPS
+// the weak stand-ins answer "no GPS" (ui_svc_stub.c)
 #include "config.h"
-#if CONFIG_POSITION
+#if CONFIG_GPS
 #include "ui_svc.h"
 #include "position/position.h"
 #include "board.h"

@@ -163,6 +163,12 @@ static bool fixed_set(void)
 
 static bool allows(uint8_t pref)
 {
+#if !CONFIG_POSITION_HOST
+	// "Computer" stored by a build that had the host half: there is none here, so it would mean no position at all
+	if (p.cfg.pref == POSITION_HOST) {
+		return true;
+	}
+#endif
 	return p.cfg.pref == POSITION_AUTO || p.cfg.pref == pref;
 }
 

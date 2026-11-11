@@ -348,10 +348,10 @@ static char aprs_to[AX25_CALL_LEN + 4];
 static char aprs_compose_to[AX25_CALL_LEN + 4];
 static uint8_t aprs_message_flags;
 static bool aprs_composing;
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 static void ui_text_open_to(char *target, uint8_t max);
 #endif
-#if CONFIG_DMR_SMS || CONFIG_APRS
+#if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
 static void ui_text_open_message(bool aprs);
 #endif
 static bool compose_aprs(void) { return aprs_composing; }
@@ -427,7 +427,7 @@ static void compose_select(uint16_t i, bool hold)
 	(void)hold;
 	if (compose_aprs()) {
 		if (i == 0) {
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 			ui_text_open_to(aprs_to, sizeof(aprs_to) - 1u);
 #endif
 			return;
@@ -439,7 +439,7 @@ static void compose_select(uint16_t i, bool hold)
 		send_text(tr(canned[i]), aprs);
 	}
 	else if (i == CANNED_N) {
-#if CONFIG_DMR_SMS || CONFIG_APRS
+#if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
 		ui_text_open_message(compose_aprs());
 	#endif
 	} else if (compose_aprs()) {
@@ -663,7 +663,7 @@ static const ui_scr_def_t contacts_screen = {
 
 static bool aprs_new_available(void)
 {
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	aprs_view_t v;
 	return ui_svc_aprs_view(&v) && v.call[0] != '\0';
 #else
@@ -1862,7 +1862,7 @@ uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint3
 }
 #endif
 
-#if CONFIG_CHANNEL_EDIT || CONFIG_APRS || CONFIG_DMR_SMS
+#if CONFIG_CHANNEL_EDIT || CONFIG_APRS_AFSK || CONFIG_DMR_SMS
 // ======================= Text entry: keypad letters (ui.md 2.1) =======================
 // Phone keypad: in ABC / abc, 2-9 cycle their letters, the digit, then the letters in the other case (ABC: A B C 2 a b
 // c); 1 cycles punctuation and 0 a space, 0 and a few signs. The same key within 1 s takes the next one, another key
@@ -1895,7 +1895,7 @@ static void text_open(char *target, uint8_t max, uint8_t screen)
 	ui_push(screen, 0);
 }
 
-#if CONFIG_DMR_SMS || CONFIG_APRS
+#if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
 static void message_text_kept(void)
 {
 	if (message_buffer[0] != '\0')
@@ -1913,7 +1913,7 @@ static void ui_text_open_message(bool aprs)
 #if CONFIG_CHANNEL_EDIT
 static void ui_text_open(char *target, uint8_t max) { text_open(target, max, SCR_TEXT); }
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 static void ui_text_open_to(char *target, uint8_t max) { text_open(target, max, SCR_APRS_TO); }
 #endif
 
@@ -2061,7 +2061,7 @@ static const ui_scr_def_t text_screen = {
 };
 #endif
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 static const ui_scr_def_t aprs_to_screen = {
 	.name = "aprs-to", .flags = SF_LIST, .prefix = TRN("Callsign"), .title = text_title,
 	.hint = TRN(TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
@@ -2069,7 +2069,7 @@ static const ui_scr_def_t aprs_to_screen = {
 };
 #endif
 
-#if CONFIG_DMR_SMS || CONFIG_APRS
+#if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
 static const ui_scr_def_t message_text_screen = {
 	.name = "message-text", .flags = SF_LIST, .prefix = TRN("Message"), .title = text_title,
 	.hint = TRN(TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK send" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
@@ -5713,7 +5713,7 @@ static const char *set_why_not(const set_item_t *s)
 	case UI_SET_TALK_PERMIT:
 		return CONFIG_DMR && CONFIG_BEEP ? NULL : TR("Talk permit tone: not in this build");
 	case UI_SET_MESSAGE_TONE:
-		return (feats() & UI_FEAT_SMS) || CONFIG_APRS ? NULL : TR("Messages: not in this build");
+		return (feats() & UI_FEAT_SMS) || CONFIG_APRS_AFSK ? NULL : TR("Messages: not in this build");
 	case UI_SET_VIBRATE:
 		return feats() & UI_FEAT_VIBRATE ? NULL : TR("This radio has no vibration motor");
 	case UI_SET_THEME:
@@ -6360,10 +6360,10 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #if CONFIG_REF_TRIM
 	[SCR_REF_TRIM] = &trim_screen,
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	[SCR_APRS_TO] = &aprs_to_screen,
 #endif
-#if CONFIG_DMR_SMS || CONFIG_APRS
+#if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
 	[SCR_MESSAGE_TEXT] = &message_text_screen,
 #endif
 #if CONFIG_CHANNEL_LIST

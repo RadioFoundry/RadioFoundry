@@ -1227,8 +1227,8 @@ void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_N
 	storage_unlock();
 }
 
-#if CONFIG_APRS
-// APRS configuration records (open-firmware-cps.md 7.3.8)
+#if CONFIG_APRS_AFSK
+// APRS configuration records (the AX.25 half reads them) (open-firmware-cps.md 7.3.8)
 #define APRS_BASE	EE(0x1588u)
 #define APRS_SIZE	0x40u
 #define APRS_MAGIC	0x4153u	// 0x4152: the older layout, ambiguity one bit lower

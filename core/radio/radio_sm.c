@@ -68,7 +68,7 @@ static void cw_cancel(radio_sm_t *sm);
 #if CONFIG_BCAST_FM
 #include "radio/radio_bcast.h"	// broadcast FM receive (docs/spec/airband-and-broadcast.md 4)
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 #include "aprs/afsk.h"			// AFSK_BAUD, the tones
 #endif
 #if CONFIG_POSITION
@@ -349,7 +349,7 @@ static bool bcast_listening(const radio_sm_t *sm)
 {
 #if CONFIG_BCAST_FM
 	bool own_rx = true;	// an APRS job has the channel receiver on its own frequency
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	own_rx = sm->aprs_phase == APRS_RF_OFF;
 #endif
 	return own_rx && sm->view.bcast && !sm->view.bcast_fault && !scan_on(&sm->scan);
@@ -3430,7 +3430,7 @@ static inline void roam_cancel(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (voi
 void radio_sm_shown_view(const radio_sm_t *sm, radio_view_t *v) { (void)sm; (void)v; }
 #endif
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 // --- APRS transmissions (core/aprs, docs/spec/aprs.md 6) ---
 // The engine (aprs_tick) decides what to send; here the radio leaves the user's channel for the APRS frequency (FM,
 // no subtone), waits for a clear channel (p-persistent CSMA on the noise reading), keys up, lets board.afsk send the
@@ -3600,31 +3600,41 @@ static void aprs_rf_service(radio_sm_t *sm, const radio_status_t *st, uint32_t n
 	}
 }
 
+#else
+static inline void aprs_rf_abort(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (void)now_ms; }
+#endif
+
+#if CONFIG_APRS
 // Every poll, before anything else: the engine, the "after PTT" trigger, a transmission to start
 static void aprs_poll(radio_sm_t *sm, uint32_t now_ms)
 {
-	bool tx_now = sm->view.state == RS_TX && !sm->tx_no_ptt && sm->aprs_phase == APRS_RF_OFF;
+	bool tx_now = sm->view.state == RS_TX && !sm->tx_no_ptt;
+#if CONFIG_APRS_AFSK
+	tx_now = tx_now && sm->aprs_phase == APRS_RF_OFF;
+#endif
 	if (sm->aprs_was_tx && !tx_now) {
 		aprs_ptt_end(now_ms);
 	}
 	sm->aprs_was_tx = tx_now;
 	aprs_radio_t r;
 	memset(&r, 0, sizeof(r));
+#if CONFIG_APRS_AFSK
 	r.can_rf = aprs_can_start(sm);
 	r.fm_rx = sm->aprs_phase == APRS_RF_OFF && sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot &&
 		  sm->view.state != RS_TX;
 	r.rx_hz = sm->view.ch.rx_hz;
+#endif
 #if CONFIG_DMR
 	r.on_dmr = sm->dmr_running && !sm->hotspot;
 	r.own_dmr_id = sm->own_id;
 #endif
 	aprs_tick(&r, now_ms);
+#if CONFIG_APRS_AFSK
 	if (r.can_rf && aprs_rf_pending()) {
 		aprs_rf_start(sm, now_ms);
 	}
+#endif
 }
-#else
-static inline void aprs_rf_abort(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (void)now_ms; }
 #endif
 
 // --- DTMF (CONFIG_DTMF; radio-features.md 3.7): a digit key held during an FM transmission sends its pair ---
@@ -5782,7 +5792,7 @@ static bool save_allowed(const radio_sm_t *sm, uint32_t now_ms)
 			sm->view.state != RS_IDLE || sm->view.monitor || sm->ptt || sm->view.ch.no_eco || sm->view.bcast) {
 		return false;
 	}
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	if (sm->aprs_phase != APRS_RF_OFF || aprs_rf_pending() || aprs_rx_listening()) {
 		return false;	// a sleeping receiver misses packets
 	}
@@ -5991,7 +6001,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	// not at every step. It waits for an APRS job; while transmitting or a hotspot, for the end of it
 	if (sm->retune_due && (int32_t)(now_ms - sm->retune_due_ms) >= 0) {
 		bool aprs = false;
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 		aprs = sm->aprs_phase != APRS_RF_OFF;
 #endif
 		if (sm->view.state == RS_TX || sm->hotspot) {
@@ -6009,7 +6019,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #endif
 	// An APRS job has the channel receiver on its own frequency in FM: its carrier sense reads that receiver as is
 	bool own_rx = true;
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	own_rx = sm->aprs_phase == APRS_RF_OFF;
 #endif
 	(void)own_rx;
@@ -6044,7 +6054,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		sm->rssi_published = sm->view.rssi_dbm;
 		changed(sm);
 	}
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	if (sm->aprs_phase != APRS_RF_OFF) {
 		aprs_rf_service(sm, &st, now_ms);	// on the APRS frequency: no squelch, scan or time-out here
 		outputs(sm);

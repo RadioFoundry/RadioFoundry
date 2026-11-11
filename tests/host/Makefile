@@ -194,11 +194,19 @@ radioCoreTestNoVfoDmr: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)
 
 # The same with APRS: what the data service hears goes into the station list (a DMR APRS position, docs/spec/aprs.md 8.2)
 TESTS   += radioCoreTestAprs
-RCAPRS  := $(RCORE) $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
+RCAPRS  := $(RCORE) $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_ax25.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
            $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c
 radioCoreTestAprs: $(RCAPRS) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                    $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/aprs/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -o $@ $(RCAPRS) -lm
+
+# The same with APRS over DMR only (CONFIG_APRS_AFSK=0): the engine and the DMR backend, nothing of AX.25 compiled
+TESTS   += radioCoreTestAprsDmr
+RCAPRSD := $(RCORE) $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(CORE)/aprs/aprs_fmt.c \
+           $(CORE)/aprs/aprs_beacon.c
+radioCoreTestAprsDmr: $(RCAPRSD) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
+                      $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/aprs/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS_AFSK=0 -o $@ $(RCAPRSD) -lm
 
 # The everyday features (scan, beeps, battery, TOT warning, BCL, roger beep, 1750 Hz burst, VOX, battery saving)
 TESTS   += radioFeaturesTest
@@ -246,7 +254,7 @@ FMONLY  := -DCONFIG_DMR=0 -DCONFIG_DMR_PRIVACY=0 -DCONFIG_DMR_TALKER_ALIAS=0 -DC
 APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(CORE)/radio/tx_limit.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c \
            $(CORE)/radio/vibe.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c \
            $(CORE)/radio/battery.c $(CORE)/radio/morse.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
-           $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
+           $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_ax25.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
            $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c $(CORE)/ui/ui_svc_aprs.c \
            $(POSLIB) $(CORE)/ui/ui_svc_position.c
 
@@ -302,12 +310,13 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestAprs radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
           rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
 	./radioCoreTestAprs
+	./radioCoreTestAprsDmr
 	./radioFeaturesTest
 	./radioFeaturesTestNoDual
 	./roamTest

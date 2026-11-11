@@ -9,7 +9,7 @@
 #include "gps/gps_rx/gps_baud.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#if CONFIG_POSITION
+#if CONFIG_GPS
 #include "position/position.h"
 #endif
 
@@ -100,7 +100,7 @@ static uint32_t activity(void)
 
 static void sentence(const char *s, uint8_t len, uint32_t now_ms)
 {
-#if CONFIG_POSITION
+#if CONFIG_GPS
 	if (enabled) {
 		position_nmea(s, len, true, now_ms);
 	}

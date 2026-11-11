@@ -506,7 +506,7 @@ void ui_svc_apply(uint8_t id, int32_t value)
 #endif
 	case UI_SET_GPS:		// the module's power and the position sources, now (not a radio core setting)
 		board_gps_enable(value != 0);
-#if CONFIG_POSITION
+#if CONFIG_GPS
 		position_gps_enable(value != 0);
 #endif
 		return;

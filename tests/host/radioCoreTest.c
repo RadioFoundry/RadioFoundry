@@ -6,6 +6,9 @@
 #include <string.h>
 #include "board.h"
 #include "radio/radio_sm.h"
+#if CONFIG_APRS
+#include "aprs/aprs_beacon.h"	// APRS_WHY_*
+#endif
 #include "radio/radio_sfr.h"
 #include "radio/tones.h"
 #include "dmr/call/dmr_call.h"
@@ -260,10 +263,13 @@ bool codeplug_set_dmr_id(uint32_t id)
 }
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]) { line1[0] = line2[0] = 0; }
 void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]) { out[0] = 0; }
-#if CONFIG_APRS
-// APRS (radioCoreTestAprs): no APRS channel in the codeplug, no host link
+#if CONFIG_APRS_AFSK
+// APRS (radioCoreTestAprs): no APRS channel in the codeplug
 bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out) { memset(out, 0, sizeof(*out)); return false; }
 bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2) { return false; }
+#endif
+#if CONFIG_APRS
+// ... and no host link
 #include "hostlink/hostlink.h"
 void hostlink_set_tnc(const hostlink_tnc_t *tnc) { (void)tnc; }
 #endif
@@ -2470,6 +2476,65 @@ static void test_dmr_contact_added(void)
 	memset(&added_contact, 0, sizeof(added_contact));
 }
 
+#if CONFIG_APRS_DMR
+// APRS over DMR (docs/spec/aprs.md 8): a beacon goes to the data service as a position report, from a build with
+// the AX.25 backend and from one without it (radioCoreTestAprsDmr: no callsign, no APRS frequency, nothing of FM
+// APRS in the way). Where there is no choice the stored "Send via" is not asked
+static void test_aprs_dmr_beacon(void)
+{
+	aprs_view_t v0, v1;
+	aprs_cfg_t c;
+
+	boot();
+	dmr_start(true);
+	CHECK(ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 337490000) && ui_svc_setting_set(UI_SET_POS_FIXED_LON, -843880000));
+	aprs_get_cfg(&c);
+	c.via = CONFIG_APRS_AFSK ? APRS_VIA_DMR : APRS_VIA_RF;	// DMR only: "radio" stored by another build still goes out
+	c.dmr_dst = 310999;
+	c.dmr_udt = false;
+	aprs_set_cfg(&c, now);
+	run(50);
+	aprs_get_view(&v0);
+	CHECK(v0.pos_valid && v0.lat == 337490000);
+	CHECK(aprs_send_now());
+	run(3000);
+	aprs_get_view(&v1);
+	CHECK(v1.dmr_sent == v0.dmr_sent + 1 && v1.dmr_failed == v0.dmr_failed && v1.rf_sent == v0.rf_sent);
+	CHECK(v1.last_why == APRS_WHY_MANUAL);
+	// The short UDT form too
+	c.dmr_udt = true;
+	aprs_set_cfg(&c, now);
+	CHECK(aprs_send_now());
+	run(3000);
+	aprs_get_view(&v0);
+	CHECK(v0.dmr_sent == v1.dmr_sent + 1 && v0.dmr_failed == v1.dmr_failed);
+	// Automatic beacons: the interval sends without anyone asking
+	c.tx_on = true;
+	c.smart = false;
+	c.interval_s = 60;
+	aprs_set_cfg(&c, now);
+	run(130000);
+	aprs_get_view(&v1);
+	CHECK(v1.dmr_sent >= v0.dmr_sent + 2 && v1.rf_sent == v0.rf_sent);
+	c.tx_on = false;
+	aprs_set_cfg(&c, now);
+	// Off a DMR channel there is nowhere to send it: counted as failed, nothing keyed
+	req(RREQ_ZONE_POS, 0);
+	run(200);
+	aprs_get_view(&v0);
+	if (!CONFIG_APRS_AFSK) {
+		CHECK(aprs_send_now());
+		run(1000);
+		aprs_get_view(&v1);
+		CHECK(v1.dmr_sent == v0.dmr_sent && v1.dmr_failed == v0.dmr_failed + 1);
+	}
+	position_cfg_t pc;
+	position_get_cfg(&pc);
+	pc.fix_lat = pc.fix_lon = 0;
+	position_set_cfg(&pc, now);
+}
+#endif
+
 #if CONFIG_APRS_RX
 // One NMEA sentence from src to dst (a private call) on UDP 10110 (SAP 3), as the data service hears it
 static void hear_dmr_nmea(uint32_t src, uint32_t dst, const char *sentence, size_t length)
@@ -3220,6 +3285,11 @@ static void test_position(void)
 	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_GPS) && ui_svc_setting_get(UI_SET_POS_SOURCE) == POSITION_GPS);
 	CHECK(!dmrDataServiceOwnPosition(&lp) && !position_now(&lat, &lon, &err, &send, now));
 	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_FIXED) && dmrDataServiceOwnPosition(&lp));
+#if !CONFIG_POSITION_HOST
+	// "Computer" left by a build that takes a computer's NMEA: here it counts as Auto, not as no position
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_HOST) && dmrDataServiceOwnPosition(&lp));
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_FIXED));
+#endif
 	// A record APRS stored before the position service had its own marker still counts
 	settings_t *st = settings_begin();
 	st->aprs_misc &= (uint8_t)~SETTINGS_APRS_MISC_POSITION;
@@ -5222,6 +5292,9 @@ int main(void)
 	test_sfr_cwid();
 #endif
 	test_dmr_emergency();
+#if CONFIG_APRS_DMR
+	test_aprs_dmr_beacon();
+#endif
 #if CONFIG_APRS_RX
 	test_dmr_aprs_position();
 #endif

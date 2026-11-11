@@ -4,7 +4,7 @@
 #include <string.h>
 #include "config.h"
 #include "aprs/aprs_dmr.h"
-#if CONFIG_DMR_DATA_CORE
+#if CONFIG_APRS_DMR
 #include "dmr/dmrData.h"
 #include "dmr/dmrLrrp.h"
 #include "dmr/dmrDataService.h"
@@ -30,17 +30,6 @@ bool aprs_dmr_send(bool udt, uint32_t dst, uint32_t own_id, const aprs_dmr_pos_t
 	uint8_t wanted = LRRP_WANT_SPEED | LRRP_WANT_DIRECTION | (p.utcYear != 0 ? LRRP_WANT_TIME : 0);
 	int n = lrrpBuildTriggeredReport(report_id, (int)sizeof(report_id), wanted, &p, doc);
 	return n > 0 && dmrDataServiceSendUDP(false, dst, DMR_UDP_PORT_LRRP, DMR_UDP_PORT_LRRP, doc, n);
-}
-
-#else
-
-bool aprs_dmr_send(bool udt, uint32_t dst, uint32_t own_id, const aprs_dmr_pos_t *pos)
-{
-	(void)udt;
-	(void)dst;
-	(void)own_id;
-	(void)pos;
-	return false;
 }
 
 #endif

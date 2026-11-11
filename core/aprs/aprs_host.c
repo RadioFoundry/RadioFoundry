@@ -7,26 +7,41 @@
 #include "aprs/aprs.h"
 #include "position/nmea.h"
 #include "position/position.h"
+#if CONFIG_APRS_AFSK
 #include "aprs/kiss.h"
+#endif
 #if CONFIG_HOSTLINK
 #include "hostlink/hostlink.h"
 #endif
 
+// Without the AX.25 half (CONFIG_APRS_AFSK) there is no TNC: the port takes only NMEA lines, the position for
+// reports over DMR
+#if CONFIG_APRS_AFSK
 static kiss_dec_t kiss;
+#endif
 static char nmea[NMEA_LINE_MAX + 1];
 static uint8_t nmea_len;
 static bool nmea_on;		// collecting a '$' line
 
 bool aprs_host_claims(uint8_t b)
 {
+#if CONFIG_APRS_AFSK
 	return aprs_host_enabled() && (b == KISS_FEND || b == '$');
+#else
+	return aprs_host_enabled() && b == '$';
+#endif
 }
 
 bool aprs_host_in_frame(void)
 {
+#if CONFIG_APRS_AFSK
 	return nmea_on || !kiss_dec_idle(&kiss);
+#else
+	return nmea_on;
+#endif
 }
 
+#if CONFIG_APRS_AFSK
 void aprs_host_kiss_frame(const uint8_t *f, size_t n, uint32_t now_ms)
 {
 	uint8_t type = f[0];
@@ -49,11 +64,18 @@ void aprs_host_kiss_frame(const uint8_t *f, size_t n, uint32_t now_ms)
 	}
 }
 
+#endif
+
 void aprs_host_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 {
 	for (size_t i = 0; i < len; i++) {
 		uint8_t b = buf[i];
-		if (!nmea_on && b == '$' && kiss.len == 0 && !kiss.esc) {
+#if CONFIG_APRS_AFSK
+		bool free = kiss.len == 0 && !kiss.esc;
+#else
+		bool free = true;
+#endif
+		if (!nmea_on && b == '$' && free) {
 			nmea_on = true;
 			nmea_len = 0;
 		}
@@ -68,10 +90,12 @@ void aprs_host_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 			}
 			continue;
 		}
+#if CONFIG_APRS_AFSK
 		size_t n = kiss_dec_byte(&kiss, b);
 		if (n != 0) {
 			aprs_host_kiss_frame(kiss.buf, n, now_ms);
 		}
+#endif
 	}
 }
 
@@ -85,12 +109,16 @@ static const hostlink_tnc_t tnc = {
 
 void aprs_host_start(void)
 {
+#if CONFIG_APRS_AFSK
 	kiss_dec_init(&kiss);
+#endif
 	hostlink_set_tnc(&tnc);
 }
 #else
 void aprs_host_start(void)
 {
+#if CONFIG_APRS_AFSK
 	kiss_dec_init(&kiss);
+#endif
 }
 #endif

@@ -585,6 +585,21 @@ static void test_manual_and_ptt_trigger(void)
 	req(RREQ_PTT, 0);
 	run(5000);
 	CHECK(hw.starts == 2);
+#if !CONFIG_APRS_DMR
+	// A build without the DMR backend (this one) has one way out: "Send via: DMR" left in the settings by another
+	// build is not asked, and the beacon goes out on RF
+	c.tx_on = false;
+	c.via = APRS_VIA_DMR;
+	aprs_set_cfg(&c, now);
+	run(200u * 1000u);
+	CHECK(aprs_send_now());
+	CHECK(wait_start(3, 5000));
+	wait_idle();
+	aprs_get_view(&v);
+	CHECK(v.dmr_sent == 0 && v.dmr_failed == 0);
+	c.via = APRS_VIA_RF;
+	aprs_set_cfg(&c, now);
+#endif
 }
 
 // APRS keys at the radio's current power level, a temporary change included (it used the settings' default, so a
