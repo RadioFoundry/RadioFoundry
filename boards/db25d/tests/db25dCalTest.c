@@ -246,25 +246,28 @@ static void test_apc(void)
 	CHECK(db25d_apc_level(4095, 1) < 4 && db25d_apc_level(4095, 179) > 4095 - 4);
 }
 
-// DMR burst timing (4.5): the shortest lead that has the PA up (2.4 ms + the page's TX-on delay) when the first symbol
+// DMR burst timing (4.5): the shortest lead that has the PA up (2.3 ms + the page's TX-on delay) when the first symbol
 // goes out 0.85 ms after the lead; the ramp down at the last symbol, 27.5 ms later, whatever woke the TX-off. A
 // trigger after that point ramps at once and counts as late
 static void test_dmr_timing(void)
 {
-	CHECK(db25d_dmr_rf_tx_lead(1) == 16);			// UHF page: 1.6 ms, not the driver's 3.1 ms
-	CHECK(db25d_dmr_rf_tx_lead(0) == 16);
-	CHECK(db25d_dmr_rf_tx_lead(1000) == 26);		// VHF page
+	CHECK(db25d_dmr_rf_tx_lead(1) == 15);			// UHF page: 1.5 ms, not the driver's 3.1 ms
+	CHECK(db25d_dmr_rf_tx_lead(0) == 15);
+	CHECK(db25d_dmr_rf_tx_lead(1000) == 25);		// VHF page
+	// A PA up before the first symbol with no lead still gets the shortest one: 0 is the driver's default, 3.1 ms
+	CHECK(hrc_rfburst_lead(0) == 1 && hrc_rfburst_lead(HRC_RFBURST_SYMBOL_AFTER_LEAD_US) == 1);
+	CHECK(hrc_rfburst_lead(HRC_RFBURST_SYMBOL_AFTER_LEAD_US + 1u) == 1 && hrc_rfburst_lead(HRC_RFBURST_SYMBOL_AFTER_LEAD_US + 101u) == 2);
 	for (uint16_t on = 0; on <= 3000; on += 50) {
 		uint8_t lead = db25d_dmr_rf_tx_lead(on);
 		CHECK(lead * 100u + DB25D_DMR_SYMBOL_AFTER_LEAD_US >= DB25D_DMR_PA_UP_US + on);	// PA up in time
 		CHECK(lead * 100u + DB25D_DMR_SYMBOL_AFTER_LEAD_US < DB25D_DMR_PA_UP_US + on + 100u);	// and no earlier
 	}
 	CHECK(db25d_dmr_off_at_us(16) == 29950u);
-	CHECK(db25d_dmr_hold_us(0, 16) == 29950u);
-	CHECK(db25d_dmr_hold_us(29000, 16) == 950u);		// woken by the RF RX interrupt (27.4 ms + the lead)
-	CHECK(db25d_dmr_hold_us(29950, 16) == 0 && db25d_dmr_late_us(29950, 16) == 0);
-	CHECK(db25d_dmr_hold_us(30850, 16) == 0 && db25d_dmr_late_us(30850, 16) == 900u);
-	CHECK(db25d_dmr_late_us(20000, 16) == 0);
+	CHECK(hrc_rfburst_hold_us(0, 16) == 29950u);
+	CHECK(hrc_rfburst_hold_us(29000, 16) == 950u);		// woken by the RF RX interrupt (27.4 ms + the lead)
+	CHECK(hrc_rfburst_hold_us(29950, 16) == 0 && hrc_rfburst_late_us(29950, 16) == 0);
+	CHECK(hrc_rfburst_hold_us(30850, 16) == 0 && hrc_rfburst_late_us(30850, 16) == 900u);
+	CHECK(hrc_rfburst_late_us(20000, 16) == 0);
 }
 
 int main(void)

@@ -29,8 +29,25 @@ typedef struct {
 	uint8_t mic_gain;	// 0..31
 } hrc6000_fm_tx_t;
 
+// The FM TX signaling generator used for single tones and DTMF (hrc6000_tx_pair): the registers it borrows, kept
+// to give back when the tone ends
+typedef struct {
+	bool on;
+	uint8_t dev;		// 4:0xA0 while the tone sounds
+	bool single;		// one tone (the 2-tone mode), else a DTMF pair
+	uint8_t a0, a1, a3, a4, a5, a6, d1, e0;	// the values before the tone
+	uint8_t code[8];	// 4:0xA8-0xAF before the tone (shared with the CTCSS index and DCS code)
+	bool timed;		// hrc6000_tx_sig_service has seen this sequence start, at t_ms
+	uint32_t t_ms;
+} hrc6000_tx_sig_t;
+
 // Bind the HR_C6000's chip description to a bus
 void hrc6000_attach(hrc_t *dev, const hrc_bus_t *bus);
+// The receive I/Q order, 4:0x01 bit 6 (modem-hrc6000.md 2): swapped (the default) or not. With an IF input it
+// inverts the received spectrum, so it must match the radio's mixers; a board whose first LO is above the signal on
+// one band and below it on another sets it per band. Kept for every later write of 0x01; dmr: also write it now (the
+// chip is in DMR receive)
+bool hrc6000_rx_iq_swap(hrc_t *dev, bool swap, bool dmr);
 
 // Power-on initialization, modem-hrc6000.md section 3 steps 1-14. The board has already taken PWD low and waited
 // 10 ms. Leaves the chip in its DMR layer 2 receive set-up; call a hrc6000_set_mode_*() next
@@ -44,8 +61,38 @@ bool hrc6000_set_mode_fm_tx(hrc_t *dev, const hrc6000_fm_tx_t *cfg);
 bool hrc6000_fm_audio(hrc_t *dev, bool on);
 // Reference oscillator offset (hardware-dm1701.md 12.4). fm_tx: the FM TX form (0x48 = 0)
 bool hrc6000_set_ref_offset(hrc_t *dev, int8_t offset, bool fm_tx);
+// 4:0xA1 = 0x00 (modem-hrc6000.md 8). The power-on init leaves 0x80, whose bit 7 the manual marks reserved, must be 0.
+// The other boards receive DMR with it; on a board that feeds the chip a 450 kHz IF it stops every DMR sync
+bool hrc6000_tones_off(hrc_t *dev);
+// FM receive on a board whose FM audio doesn't pass through the chip: the modulator back to DMR (4:0x10 bit 7 clear).
+// In FM mode the codec's line out carries only the chip's own FM receive audio, gated by 4:0x36 bit 1, so PCM (beeps,
+// prompts) plays silent there; in DMR mode it plays (modem-hrc6000.md 8). After hrc6000_set_mode_fm_rx()
+bool hrc6000_fm_rx_pcm(hrc_t *dev);
 // RX audio gain, -31..+31 dB (4:0x37 = 0x80 + 0x40 if positive + the low 5 bits of the gain, modem-hrc6000.md 2)
 bool hrc6000_set_rx_gain(hrc_t *dev, int8_t db);
+
+// During FM TX: send the pair low_hz + high_hz (a DTMF digit; the same frequency twice is one tone, the 1750 Hz burst
+// or a roger beep) from the chip's DTMF generator at deviation coefficient dev (4:0xA0) in place of the microphone,
+// until called with 0, 0. The generator sends digit "1" with its 697 and 1209 Hz table entries rewritten, so any
+// pair needs no digit codes (modem-hrc6000.md 8; the manual states only some of them). One code lasts at most 510 ms,
+// with about 20 ms of silence in it, so a pair is 16 codes: HRC6000_TX_SIG_MS, then the generator stops. A single
+// tone (low_hz == high_hz) comes from the 2-tone mode instead, gapless, at least 25.5 s. hrc6000_tx_sig_service
+// starts the sequence again before either runs out
+#define HRC6000_TX_SIG_MS	8160u	// 16 codes of 510 ms
+#define HRC6000_TX_SIG_RENEW_MS	7500u	// hrc6000_tx_sig_service restarts a pair's sequence this old
+#define HRC6000_TX_TONE_MS	25500u	// the 2-tone mode's first tone
+#define HRC6000_TX_TONE_RENEW_MS	24000u	// and a single tone's this old
+bool hrc6000_tx_pair(hrc_t *dev, hrc6000_tx_sig_t *s, uint16_t low_hz, uint16_t high_hz, uint8_t dev_coef);
+// While hrc6000_tx_pair's tone runs: the tone (down) or a silent carrier, the microphone still off (Morse keying)
+bool hrc6000_tx_sig_key(hrc_t *dev, hrc6000_tx_sig_t *s, bool down);
+// While hrc6000_tx_pair's tone runs: change its frequencies only (the table entries: four single-register writes for
+// a pair, ten for a single tone, each atomic on the bus), for AFSK symbol by symbol from an interrupt. False when no tone runs
+bool hrc6000_tx_sig_retune(hrc_t *dev, hrc6000_tx_sig_t *s, uint16_t low_hz, uint16_t high_hz);
+// While a tone runs, from a task-level poll (more often than every 600 ms): the sequence started again before its
+// 16 codes run out, so the tone lasts until hrc6000_tx_pair(0, 0). The first call after a start only notes now_ms
+bool hrc6000_tx_sig_service(hrc_t *dev, hrc6000_tx_sig_t *s, uint32_t now_ms);
+// Pure: the generator's phase step for hz, f x 65536 / 32000 rounded (modem-hrc6000.md 8)
+uint16_t hrc6000_tone_step(uint16_t hz);
 
 // Pure: the FM TX deviation coefficients for a band and bandwidth
 hrc6000_fm_dev_t hrc6000_fm_deviation(bool uhf, bool wide);

@@ -104,7 +104,7 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 | PC3 | ADC1 IN13: 2T/5T (FM discriminator audio) | (unverified); unused |
 | PC4 | RF_APC_SW, PA power loop on | (unverified) |
 | PC5 | 5TC, transmitter supply | (unverified) |
-| PC6 | LAMP, LCD backlight (TIM8 CH1 PWM, AF3) | (unverified); PWM is our choice |
+| PC6 | LAMP, LCD backlight (TIM8 CH1 PWM, AF3) | (unverified); PWM is our choice: 40 kHz, far above the FM transmit audio band (#330) |
 | PC7 | CTC/DCS_OUT, sub-audio tone output (PWM) | (unverified); TIM3 CH2 (AF2) with `CONFIG_SUBTONE` (section 6.4), otherwise released (open drain, high): it tunes the reference (5.2) |
 | PC8 | BEEP (TIM8 CH3) | (unverified); unused |
 | PC9 | 5RC, receiver supply | (unverified) |
@@ -394,7 +394,7 @@ search for the call's phase is limited:
 | The call's own bursts skipped while its slot is unknown | Counted, so the index stays A-F. After a quiet-period restart that costs the first bursts of a call (two in the host test, about 150 ms until the TC locks) |
 
 All of these are host-tested (`hrc5000Test` `test_two_slots`: a call on each slot, a restart mid-call, a TC wrong
-from the start, both slots heard with `rx_lock_slot` 0). On air (2026-11-04, the SDR bench sending repeater bursts
+from the start, both slots heard with `rx_lock_slot` 0). On air (the SDR bench sending repeater bursts
 with the CACH on both slots): the reads alternate as above (phase 0 TS1's frames, phase 1 TS2's), and the wanted call
 plays with the other slot already talking (77 of 78 bursts; 0 before the fix).
 
@@ -403,7 +403,7 @@ call's LC was in page 2 at the wanted call's F: the core took it for a new call,
 the other call's source shown (23 of 78 bursts when the wanted call started first). The engine keeps each slot's
 call LC and holds back an embedded LC that is the other slot's call's (the rules are in modem-hrc6000.md 5.2).
 Host-tested (`test_two_slots`, the `LC`, `alias` and `mixed LC` cases: page 2 gets a call's LC or alias block the
-tick after its F). On air (2026-11-04, the SDR bench, a call on each slot, 78 bursts sent to the wanted slot, two
+tick after its F). On air (the SDR bench, a call on each slot, 78 bursts sent to the wanted slot, two
 runs each):
 
 | Case | Before | After |
@@ -1043,6 +1043,10 @@ configuration registers, audio routing), and [gotchas.md](gotchas.md) 2.6, 3.3, 
 Flash: the table in [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380) and the per-feature figures in
 [feature-matrix.md](../feature-matrix.md). Measured 2026-10-19 with LTO: default UHF image 320,236 B of 475,136 B
 (464 KB), 107,120 B of 131,068 B SRAM, 59,640 B of 64 KB CCM; maximal 327,064 B flash.
+
+`CONFIG_NET_WEBCTL` follows `CONFIG_NET_HTTP_GZIP` on this radio (`boards/md380/config.mk`): web control's files,
+stored uncompressed, need more flash than the default image leaves free. With gzip off the radio serves the plain
+status page.
 
 
 ## 20. Facts moved from the shared specs

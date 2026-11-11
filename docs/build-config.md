@@ -116,7 +116,7 @@ below are for an STM32F4 radio.
 | `CONFIG_NET_TCP` | = DMR_IP_GATEWAY | a minimal TCP for the radio's own services on the USB network link, never over RF (`core/net`, `docs/spec/tcp-services.md`). About 4.6 KB RAM (4 connections) |
 | `CONFIG_NET_KISS` | = NET_TCP and APRS | KISS over TCP on port 8001 for APRS programs, bridged to the APRS KISS TNC (`docs/spec/tcp-services.md` 4). About 0.8 KB RAM |
 | `CONFIG_NET_HTTP` | = NET_TCP | the HTTP status server on port 80: a page, the status and the debug link's view sections as JSON, the screen as a BMP (`docs/spec/tcp-services.md` 5). About 3.2 KB RAM |
-| `CONFIG_NET_HTTP_GZIP` | = NET_HTTP | the status server's static files (`core/net/http_assets/`) stored gzip compressed at build time and served with `Content-Encoding: gzip` (`tools/gen_http_assets.py`, `docs/spec/tcp-services.md` 5); off: stored and served as they are |
+| `CONFIG_NET_HTTP_GZIP` | = NET_HTTP | the status server's static files (`core/net/http_assets/`) stored gzip compressed at build time and served with `Content-Encoding: gzip` (`tools/gen_http_assets.py`, `docs/spec/tcp-services.md` 5); off: stored and served as they are, about 19 KB more flash with `CONFIG_NET_WEBCTL` |
 | `CONFIG_NET_WEBCTL` | = NET_HTTP | web control on the status server: `/ws` (WebSocket, RFC 6455) for the radio's front panel page, keys, status and receive audio (`docs/spec/tcp-services.md` 5.1). About 12 KB flash with the page, 1 KB RAM |
 | `CONFIG_NET_RIGCTL` | = NET_TCP | Hamlib rigctld on port 4532: frequency, mode, PTT (from the host only, rate limited), S meter for loggers and SDR programs (`docs/spec/tcp-services.md` 6). About 0.8 KB RAM |
 | `CONFIG_NET_USRP` | = DMR_IP_GATEWAY | USRP voice over UDP on port 34001: the receiver's audio to AllStarLink / DVSwitch / a bridge with the squelch as keyup, the peer's keyup frames transmitted (FM through the board's audio tap, DMR through the encoder; `docs/spec/usb-audio.md` 9.1). About 5.6 KB RAM |
@@ -155,6 +155,7 @@ below are for an STM32F4 radio.
 | `CONFIG_NAND_STORAGE` | n (y on a radio with SPI NAND) | the core's storage (settings, sector journal, codeplug areas) on SPI NAND: the NOR-like 4 KB sector layer over the board's own block range (`drivers/flash/nand_sectors`, `docs/spec/nand-sectors.md`) and the NAND driver's write side. Off, a NAND radio runs on the default settings and stores nothing. Radios with SPI NOR don't use it. About 6.6 KB flash and 1.5 KB RAM where used (no page buffer) |
 | `CONFIG_CHANNEL_LIST` | y | the hub's Channels list: every codeplug channel by number, and a channel's settings (`docs/spec/ui.md` 2) |
 | `CONFIG_CHANNEL_EDIT` | = `CHANNEL_LIST` | editing a channel on the radio, New channel from current settings, keypad text entry (`docs/spec/ui.md` 2.1). Needs `CONFIG_CHANNEL_LIST`; without it the channel's settings are read only |
+| `CONFIG_VOLUME_BAR` | y | the volume bar over the screen for 3 s when a knob the MCU reads turns (`docs/spec/radio-features.md` 4.2). About 0.3 KB flash. Off, turning the knob shows nothing |
 | `CONFIG_ZONE_EDIT` | = `CHANNEL_EDIT` | the zone editor in a zone's list: add, move, copy here and remove channels; rename, copy and delete zones (`docs/spec/ui.md` 2.2). Needs `CONFIG_CHANNEL_EDIT`; without it a zone's list only goes to its channels |
 | `CONFIG_CONTACT_EDIT` | = `CHANNEL_EDIT` and `DMR` | the contact editor: a new contact from Find's Create contact or Save as contact in actions (`docs/spec/ui.md` 2.4). Needs `CONFIG_CHANNEL_EDIT` and `CONFIG_DMR`; without it contacts come only from a CPS |
 | `CONFIG_KEY_ASSIGN` | y | key assignment: Settings > Keys and the codeplug's quick-key slots say what the board's programmable keys do (`docs/spec/ui.md` 3.1) |
@@ -199,7 +200,7 @@ Not feature switches: they pick the hardware variant or set bench knobs, and `pr
 | `TCP_CONNS` | HR_C7000 platform | TCP connections in all states (`core/net/tcp.h`, 4 elsewhere): 3 by default on the HR_C7000 platform, about 1.5 KB RAM each across TCP, HTTP and rigctld |
 | `MAXIMAL_VARS` | a board's own | set in a board's `config.mk`: make variables `tools/ci.sh` adds to that board's maximal build (`make print-maximal-vars`) |
 | `BOARD_UNSUPPORTED` | a board's own | set in a board's or platform's `config.mk`, one switch a line with the reason in its comment: switches the radio's hardware can't do ([above](#unsupported-not-written-unconfirmed)); the maximal build leaves them off (`make print-unsupported`) |
-| `BOARD_NOT_WRITTEN` | a board's own | the same form: switches the hardware can do but whose driver or glue isn't written for the radio yet; the maximal build leaves them off too (`make print-not-written`) |
+| `BOARD_NOT_WRITTEN` | a board's own | the same form: switches the hardware can do but whose driver or glue isn't written for the radio yet; the maximal build leaves them off too (`make print-not-written`), and every switch that needs one of them |
 | `BOARD_REQUIRED` | a board's own | set in a board's `config.mk`: switches the board can't build without; ci.sh builds no `no-` configuration for them (`make print-required`) |
 | `MAXIMAL_SKIP` | a board's own | set in a board's `config.mk`: switches that work on the radio but that it doesn't need, which the maximal build leaves off too (`make print-maximal-skip`). `NET_PPP` stands in for the USB network adapter on UART-only radios. The maximal build also leaves `CONFIG_AUDIO_PROBE` off on every board (`MAXIMAL_SKIP` in `tools/ci.sh`); one board's `audio-probe` build covers it |
 
@@ -232,3 +233,5 @@ most boards are `CONFIG_AUDIO_PROBE` (a bench diagnostic) and the ones that need
    can't do, such as SFR on a modem chip lacking what the glue uses) or `BOARD_NOT_WRITTEN` (what its code doesn't do yet). Leaving the not-written switches out keeps the maximal build to code that
    runs on the radio: built on, they can fill a radio's memory (one radio's maximal build reached 99% of its CCM
    RAM), and any shared addition would then fail CI on unrelated pull requests.
+   A switch that needs a left-out one is off too: `tools/ci.sh` drops each switch the checks in `config/features.mk`
+   name until the set passes them (DMR not written takes all of DMR's family with it).

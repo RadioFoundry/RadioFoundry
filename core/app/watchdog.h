@@ -22,7 +22,13 @@ typedef struct {
 	bool seen;		// the idle task has run at least once
 	bool starving;		// a bench test stopped the feeds: the chip resets within the timeout
 	uint32_t starve_ms;	// when it did (the last feed before the reset)
+	uint32_t last_pass_ms;	// the host link task's last loop pass (watchdog_task_pass)
+	bool passed;		// it has passed once: the stall check runs from then on
 } watchdog_state_t;
+
+// The stall check's limit: the host link's task blocked this long (waiting, so the idle task still feeds) is stuck. Far
+// above any request it serves; a stuck task otherwise leaves the radio running with its computer link dead for good
+#define WATCHDOG_STALL_MS	60000u
 
 // The idle hook's work (vApplicationIdleHook calls it with hal_millis()): note the gap, feed unless starving
 void watchdog_idle(uint32_t now_ms);
@@ -34,12 +40,17 @@ void watchdog_starve(uint32_t now_ms);
 void watchdog_kick(uint32_t now_ms);
 // Restart the longest-gap measurement
 void watchdog_clear_gap(void);
+// The host link's task, on every pass of its loop (5 ms at most apart while it works)
+void watchdog_task_pass(uint32_t now_ms);
+// The stall check's test: true once the host link's task last passed WATCHDOG_STALL_MS ago or more, after its first
+// pass and unless a bench test starves the watchdog
+bool watchdog_stalled(uint32_t now_ms);
 // The hang check's test: true once the last feed is at least three quarters of timeout_ms ago, after the idle task has
 // run once and unless a bench test starves the watchdog on purpose (that test times the hardware reset). timeout_ms 0
 // (not running) never hangs
 bool watchdog_hung(uint32_t now_ms, uint32_t timeout_ms);
 // From the RTOS tick interrupt (vPortTickHandler, SysTick_Handler), never the tick hook, which xTaskResumeAll also
-// calls from a task: watchdog_hung, then hal_crash_hang. Only with CONFIG_CRASH_LOG
+// calls from a task: watchdog_hung and watchdog_stalled, then hal_crash_hang. Only with CONFIG_CRASH_LOG
 void watchdog_tick(void);
 const watchdog_state_t *watchdog_state(void);
 

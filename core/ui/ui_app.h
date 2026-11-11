@@ -35,6 +35,7 @@ typedef struct {
 	uint16_t focus;		// focused row / tile
 	uint16_t count;		// rows on a list screen
 	bool locked;
+	const char *unlock_key;	// the key held to unlock: "quick", "back", or "none" (auto lock never locks then)
 	bool field_use;		// the screen is tagged "field use" (depth rule, usability-tests.md 2)
 	const char *banner;	// banner title, "" = none
 	const char *toast;	// "" = none
@@ -42,6 +43,8 @@ typedef struct {
 	uint32_t draws;		// frames drawn so far
 	bool strip_drawn;	// the last frame drew the status strip with the state pill or a merged title (P2)
 	bool dual;		// the UI runs dual watch: it has taken over a watch the debug link started
+	int8_t volbar;		// the knob's volume bar shows this step, -1 = not shown
+	bool volbar_top;	// ... in the status strip: the last frame drew no hint row
 } ui_app_status_t;
 void ui_app_status(ui_app_status_t *st);
 // The label of the focused row on a list screen ("" otherwise), for scripted checks

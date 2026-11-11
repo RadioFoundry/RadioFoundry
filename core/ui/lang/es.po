@@ -756,6 +756,14 @@ msgstr "Atrás"
 msgid "Nothing heard yet"
 msgstr "Aún nada oído"
 
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgid "Message"
+msgstr "Mensaje"
+
+#: core/ui/ui_aprs.c
+msgid "OK choose  Back"
+msgstr "OK elegir  Atrás"
+
 #: core/ui/ui_dual.c core/ui/ui_screens.c
 msgid "No tone"
 msgstr "Sin tono"
@@ -1145,10 +1153,6 @@ msgid "Private call"
 msgstr "Llamada privada"
 
 #: core/ui/ui_menus.c
-msgid "Message"
-msgstr "Mensaje"
-
-#: core/ui/ui_menus.c
 msgid "Radio check"
 msgstr "Prueba de radio"
 
@@ -1229,8 +1233,24 @@ msgid "Can't talk now"
 msgstr "No puedo hablar"
 
 #: core/ui/ui_menus.c
+msgid "To callsign"
+msgstr "Al indicativo"
+
+#: core/ui/ui_menus.c
+msgid "Enter"
+msgstr "Introducir"
+
+#: core/ui/ui_menus.c
 msgid "Write..."
 msgstr "Escribir..."
+
+#: core/ui/ui_menus.c
+msgid "Request acknowledgment"
+msgstr "Pedir confirmación"
+
+#: core/ui/ui_menus.c
+msgid "Include position"
+msgstr "Incluir posición"
 
 #: core/ui/ui_menus.c
 msgid "Couldn't send: try again"
@@ -1241,8 +1261,8 @@ msgid "Sending to "
 msgstr "Enviando a "
 
 #: core/ui/ui_menus.c
-msgid "Typing: not in this build"
-msgstr "Teclado: no disponible"
+msgid "Callsign"
+msgstr "Indicativo"
 
 #: core/ui/ui_menus.c
 msgid "To"
@@ -1277,6 +1297,10 @@ msgid "Contacts: not in this build"
 msgstr "Contactos: no disponible"
 
 #: core/ui/ui_menus.c
+msgid "New APRS message"
+msgstr "Nuevo mensaje APRS"
+
+#: core/ui/ui_menus.c
 msgid "OK open  # reply  Back"
 msgstr "OK abrir  # responder  Atrás"
 
@@ -1309,12 +1333,12 @@ msgid "Couldn't delete: try again"
 msgstr "No se pudo borrar: reintenta"
 
 #: core/ui/ui_menus.c
-msgid "To "
-msgstr "A "
-
-#: core/ui/ui_menus.c
 msgid "From "
 msgstr "De "
+
+#: core/ui/ui_menus.c
+msgid "To "
+msgstr "A "
 
 #: core/ui/ui_menus.c
 msgid "OK choose  # more  Back"
@@ -1533,6 +1557,22 @@ msgid "Empty zone"
 msgstr "Zona vacía"
 
 #: core/ui/ui_menus.c
+msgid "That's the most it can hold"
+msgstr "Máximo alcanzado"
+
+#: core/ui/ui_menus.c
+msgid "Name"
+msgstr "Nombre"
+
+#: core/ui/ui_menus.c
+msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
+msgstr "{Atrás borrar  # ABC/123/abc  OK listo|Atrás borr.  # modo  OK}"
+
+#: core/ui/ui_menus.c
+msgid "{Back delete  # ABC/123/abc  OK send|Back del  # mode  OK}"
+msgstr "{Atrás borrar  # ABC/123/abc  OK enviar|Atrás borr.  # modo  OK}"
+
+#: core/ui/ui_menus.c
 msgid "New from current"
 msgstr "Nuevo desde actual"
 
@@ -1567,10 +1607,6 @@ msgstr " zonas"
 #: core/ui/ui_menus.c
 msgid "Radio's"
 msgstr "De radio"
-
-#: core/ui/ui_menus.c
-msgid "Name"
-msgstr "Nombre"
 
 #: core/ui/ui_menus.c
 msgid "Number"
@@ -1775,14 +1811,6 @@ msgstr "Cambios sin guardar"
 #: core/ui/ui_menus.c
 msgid "{OK choose  Back keep editing|OK choose  Back}"
 msgstr "{OK elegir  Atrás seguir editando|OK elegir  Atrás}"
-
-#: core/ui/ui_menus.c
-msgid "That's the most it can hold"
-msgstr "Máximo alcanzado"
-
-#: core/ui/ui_menus.c
-msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
-msgstr "{Atrás borrar  # ABC/123/abc  OK listo|Atrás borr.  # modo  OK}"
 
 #: core/ui/ui_menus.c
 msgid "Type"
@@ -2197,6 +2225,10 @@ msgid "DMR ID saved"
 msgstr "ID DMR guardado"
 
 #: core/ui/ui_menus.c
+msgid "Typing: not in this build"
+msgstr "Teclado: no disponible"
+
+#: core/ui/ui_menus.c
 msgid "My Radio"
 msgstr "Mi radio"
 
@@ -2573,6 +2605,22 @@ msgid "Serial"
 msgstr "Serie"
 
 #: core/ui/ui_menus.c
+msgid "10s/dim"
+msgstr "10s/tenue"
+
+#: core/ui/ui_menus.c
+msgid "30s/dim"
+msgstr "30s/tenue"
+
+#: core/ui/ui_menus.c
+msgid "1m/dim"
+msgstr "1m/tenue"
+
+#: core/ui/ui_menus.c
+msgid "2m/dim"
+msgstr "2m/tenue"
+
+#: core/ui/ui_menus.c
 msgid "Never"
 msgstr "Nunca"
 
@@ -2669,8 +2717,16 @@ msgid "Home zone"
 msgstr "Zona de inicio"
 
 #: core/ui/ui_menus.c
+msgid "Tone burst"
+msgstr "Ráfaga de tono"
+
+#: core/ui/ui_menus.c
 msgid "Copy to VFO"
 msgstr "Copiar a VFO"
+
+#: core/ui/ui_menus.c
+msgid "VFO/Channel"
+msgstr "VFO/Canal"
 
 #: core/ui/ui_menus.c
 msgid "Call back"
@@ -2831,6 +2887,10 @@ msgstr "Bloqueo auto"
 #: core/ui/ui_menus.c
 msgid "PTT when locked"
 msgstr "PTT si bloqueado"
+
+#: core/ui/ui_menus.c
+msgid "Knob when locked"
+msgstr "Perilla si bloqueado"
 
 #: core/ui/ui_menus.c
 msgid "Position format"
@@ -3555,6 +3615,10 @@ msgstr "EMERGENCIA"
 #: core/ui/ui_screens.c
 msgid "OK acknowledge  Back hide"
 msgstr "OK aceptar  Atrás"
+
+#: core/ui/ui_screens.c
+msgid "Vol"
+msgstr "Vol"
 
 #: core/ui/ui_screens.c
 msgid "Muted"

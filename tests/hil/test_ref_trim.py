@@ -8,8 +8,8 @@ trim in effect before is put back. Skipped on a radio without the trim (`ref_tri
 
 test_ref_trim_moves_carrier (radio_tx, --allow-rf; the SDR bench): the FM VFO on --fm-mhz, lowest power, no tone,
 keyed at trims 0, +5.0 and -5.0 ppm. Each trim moves the carrier from the one at 0 by trim x f within
-CARRIER_TOL_HZ (5.0 ppm of a UHF carrier is about 2.3 kHz): the board's scale, its sign and that the trim reaches the
-transmitter. The trim in effect before is put back.
+CARRIER_TOL_PPB of the carrier (5.0 ppm of a UHF carrier is about 2.3 kHz): the board's scale, its sign and that the
+trim reaches the transmitter. The trim in effect before is put back.
 """
 import time
 
@@ -17,14 +17,16 @@ import pytest
 
 from rfoundry_hil import skip
 from rfoundry_debug import DebugLinkError
-from test_fm_tx import PTT_S, fm_vfo, parse_fm, set_fm  # noqa: F401  (fm_vfo: the fixture)
+from test_fm_tx import PTT_S, fm_vfo, set_fm  # noqa: F401  (fm_vfo: the fixture)
 from hil_config import rig
 
 TRIMS_PPB = (5000, -5000)
 # The retune the trim asks for, and time for the RF supply to settle before the key-up: a radio keyed right after a
 # retune can dip its supply and restart
 TRIM_SETTLE_S = 3.0
-CARRIER_TOL_HZ = 120		# the SDR's carrier estimate and, on a board with a reference control, its scale
+# The SDR's carrier estimate, on a board with a reference control its scale, and the reference's drift over the
+# test's key-ups: 120 Hz at 461 MHz, in ppb so a higher band gets the same share (the drift is a part of the frequency)
+CARRIER_TOL_PPB = 260
 
 
 def trim_view(radio):
@@ -60,20 +62,16 @@ def test_ref_trim_setting(radio):
     assert trim_view(radio) == (str(before), stored)
 
 
-def carrier_hz(radio, sdr_bench, pytestconfig, mhz, tag):
-    """One keyed segment's carrier, Hz from mhz (the SDR bench's own error corrected)."""
-    rdir = sdr_bench.run_dir(tag)
+def carrier_hz(radio, sdr_bench, mhz, tag):
+    """One keyed segment's carrier, Hz from mhz (the bench board's demodulator; its own crystal taken out)."""
     with sdr_bench.lease():
-        cap = sdr_bench.capture_start(rdir, mhz, seconds=PTT_S + 5)
+        job = sdr_bench.fm_over_start(mhz, PTT_S + 5, bw_khz=25)
         radio.ptt_for(PTT_S)
         radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
-        sdr_bench.capture_wait()
-    _, text = sdr_bench.analyze_fm(cap, bw_khz=25, ppm=pytestconfig.getoption("--sdr-ppm"), freq=mhz)
-    r = parse_fm(text)
-    assert r["segments"] >= 1, f"no keyed segment at {tag}: {text[-600:]}"
-    hz = r.get("carrier_corrected_hz", r.get("carrier_hz"))
-    assert hz is not None, f"no carrier at {tag}: {text[-600:]}"
-    return hz
+        r = sdr_bench.fm_over_result(job)
+    assert r["segments"] >= 1, f"no keyed segment at {tag}: {r}"
+    assert r["carrier_hz"] is not None, f"no carrier at {tag}: {r}"
+    return r["carrier_hz"]
 
 
 @pytest.mark.feature("ref_trim")
@@ -93,16 +91,17 @@ def test_ref_trim_moves_carrier(fm_vfo, sdr_bench, pytestconfig):
     try:
         radio.link.setting("ref_trim", 0)
         time.sleep(TRIM_SETTLE_S)
-        base = carrier_hz(radio, sdr_bench, pytestconfig, mhz, "trim0")
+        base = carrier_hz(radio, sdr_bench, mhz, "trim0")
         print(f"trim 0: carrier {base:+d} Hz")
         for ppb in TRIMS_PPB:
             radio.link.setting("ref_trim", ppb)
             time.sleep(TRIM_SETTLE_S)
-            hz = carrier_hz(radio, sdr_bench, pytestconfig, mhz, f"trim{ppb:+d}")
+            hz = carrier_hz(radio, sdr_bench, mhz, f"trim{ppb:+d}")
             want = round(ppb * mhz / 1000)
+            tol = round(CARRIER_TOL_PPB * mhz / 1000)
             print(f"trim {ppb / 1000:+.1f} ppm: carrier {hz:+d} Hz, moved {hz - base:+d} Hz (want {want:+d})")
-            assert abs(hz - base - want) <= CARRIER_TOL_HZ, \
-                f"trim {ppb} ppb moved the carrier {hz - base:+d} Hz, want {want:+d} +-{CARRIER_TOL_HZ}"
+            assert abs(hz - base - want) <= tol, \
+                f"trim {ppb} ppb moved the carrier {hz - base:+d} Hz, want {want:+d} +-{tol}"
     finally:
         radio.link.setting("ref_trim", before)
         time.sleep(0.06)

@@ -16,6 +16,7 @@
 #include <string.h>
 #define DMR_DATA_SERVICE_TEST
 #include "../../core/dmr/dmrDataService.c"
+#include "../../core/aprs/aprs_nmea.h"
 
 static int failures = 0;
 
@@ -99,7 +100,7 @@ static bool fakeTxStart(const dmrBurst_t *bursts, int count, void *ctx)
 		txOpen = true;
 		return true;
 	}
-	if ((count == 1) && (bursts[0].dataType == DT_CSBK))
+	if ((count == 1) && (bursts[0].dataType == DMR_TYPE_CSBK))
 	{
 		kind = 'C';
 		seq = bursts[0].payload[0] & 0x3F;
@@ -189,8 +190,23 @@ static void fakeNotify(const dmrDataEvent_t *e, void *ctx) { if (e->kind < 16) e
 static int packetsHeard;
 static void fakePacket(const dmrDataPacket_t *p, void *ctx) { packetsHeard++; }
 
+static int positionsHeard;
+static uint32_t positionSrc;
+static uint8_t positionText[96];
+static int positionLength;
+static nmea_fix_t positionFix;
+static bool positionParsed;
+static void fakePosition(uint32_t src, const uint8_t *nmea, int length, uint32_t nowMs, void *ctx)
+{
+	positionsHeard++;
+	positionSrc = src;
+	positionParsed = nmea_parse_unchecked(nmea, length, &positionFix);// as radio_sm's hook parses it
+	positionLength = (length < (int)sizeof(positionText)) ? length : (int)sizeof(positionText);
+	memcpy(positionText, nmea, positionLength);
+}
+
 static const dmrDataEnv_t fakeEnv = { .txStart = fakeTxStart, .channelClear = fakeClear, .inRxGroup = fakeInRxGroup,
-									  .notify = fakeNotify, .packet = fakePacket };
+									  .notify = fakeNotify, .packet = fakePacket, .position = fakePosition };
 
 // The radio task: ticks every 10 ms for a while, everything queued goes out
 static void runMainTask(int ms)
@@ -221,7 +237,7 @@ static void rxBursts(const dmrBurst_t *bursts, int count)
 static void receiveTMS(uint32_t src, const char *text, uint8_t seq)
 {
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
-	int count = dmrDataBuildTMS(false, OUR_ID, src, text, seq, true, DT_RATE_12_DATA, 1, bursts, DMR_DATA_MAX_BURSTS);
+	int count = dmrDataBuildTMS(false, OUR_ID, src, text, seq, true, DMR_TYPE_RATE_1_2, 1, bursts, DMR_DATA_MAX_BURSTS);
 
 	CHECK(count > 0);
 	rxBursts(bursts, count);
@@ -234,7 +250,7 @@ static void receiveConfirmedTMS(uint32_t src, const char *text, uint8_t seq, uin
 {
 	dmrDataPacket_t packet;
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
-	int count = dmrDataBuildTMS(false, OUR_ID, src, text, seq, true, DT_RATE_12_DATA, 0, bursts, DMR_DATA_MAX_BURSTS);
+	int count = dmrDataBuildTMS(false, OUR_ID, src, text, seq, true, DMR_TYPE_RATE_1_2, 0, bursts, DMR_DATA_MAX_BURSTS);
 	dmrDataRxResult_t result = DMR_DATA_RX_NONE;
 
 	dmrDataRxReset();
@@ -280,7 +296,7 @@ static void reset(void)
 static void receiveARS(const uint8_t *pdu, int length)
 {
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
-	int count = dmrDataBuildUDP(false, OUR_ID, ARS_SERVER, DMR_UDP_PORT_ARS, DMR_UDP_PORT_ARS, pdu, length, DT_RATE_12_DATA, 1,
+	int count = dmrDataBuildUDP(false, OUR_ID, ARS_SERVER, DMR_UDP_PORT_ARS, DMR_UDP_PORT_ARS, pdu, length, DMR_TYPE_RATE_1_2, 1,
 								bursts, DMR_DATA_MAX_BURSTS);
 
 	CHECK(count > 0);
@@ -515,7 +531,7 @@ static void receiveLrrp(const char *hex)
 		sscanf(&hex[i * 2], "%2hhx", &doc[i]);
 	}
 
-	int count = dmrDataBuildUDP(false, OUR_ID, LRRP_SERVER, DMR_UDP_PORT_LRRP, DMR_UDP_PORT_LRRP, doc, n, DT_RATE_12_DATA, 1, bursts, DMR_DATA_MAX_BURSTS);
+	int count = dmrDataBuildUDP(false, OUR_ID, LRRP_SERVER, DMR_UDP_PORT_LRRP, DMR_UDP_PORT_LRRP, doc, n, DMR_TYPE_RATE_1_2, 1, bursts, DMR_DATA_MAX_BURSTS);
 
 	rxBursts(bursts, count);
 }
@@ -531,7 +547,7 @@ static int countLrrp(uint8_t docId)
 	return n;
 }
 
-// Requests made by rfoundry_sdrbench's encoder (rfoundry_sdrbench.dmr.location.encode_lrrp_*)
+// LRRP requests from a bench encoder
 static void testLrrp(void)
 {
 	reset();
@@ -731,7 +747,7 @@ static void testOurSms(void)
 	CHECK(txHeader() == &lastTx[DMR_DATA_TX_PREAMBLES]);
 	for (int i = 0; i < DMR_DATA_TX_PREAMBLES; i++)
 	{
-		CHECK(lastTx[i].dataType == DT_CSBK && (lastTx[i].payload[0] & 0x3F) == DMR_CSBKO_PREAMBLE &&
+		CHECK(lastTx[i].dataType == DMR_TYPE_CSBK && (lastTx[i].payload[0] & 0x3F) == DMR_CSBKO_PREAMBLE &&
 		      lastTx[i].payload[3] == lastTxCount - 1 - i);
 	}
 	uint8_t seq = sent[0].seq;
@@ -843,7 +859,7 @@ static void testOurSms(void)
 static void testBlockWindow(void)
 {
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
-	int count = dmrDataBuildTMS(false, OUR_ID, RADIO_A, "late blocks", 31, true, DT_RATE_12_DATA, 0, bursts, DMR_DATA_MAX_BURSTS);
+	int count = dmrDataBuildTMS(false, OUR_ID, RADIO_A, "late blocks", 31, true, DMR_TYPE_RATE_1_2, 0, bursts, DMR_DATA_MAX_BURSTS);
 	int before = dmrDataServiceMessageCount() < DMR_DATA_INBOX_SIZE ? dmrDataServiceMessageCount() : 0;
 	uint32_t received = stats.smsReceived;
 
@@ -862,13 +878,13 @@ static void testBlockWindow(void)
 	(void)before;
 
 	// Group 91 is in the listen list: kept, not ACKed (group)
-	count = dmrDataBuildTMS(true, 91, RADIO_A, "to 91", 32, false, DT_RATE_34_DATA, 1, bursts, DMR_DATA_MAX_BURSTS);
+	count = dmrDataBuildTMS(true, 91, RADIO_A, "to 91", 32, false, DMR_TYPE_RATE_3_4, 1, bursts, DMR_DATA_MAX_BURSTS);
 	rxBursts(bursts, count);
 	runMainTask(500);
 	CHECK(stats.smsReceived == received + 1);
 	CHECK(sentCount == 0);
 	// Group 92 isn't
-	count = dmrDataBuildTMS(true, 92, RADIO_A, "to 92", 33, false, DT_RATE_1_DATA, 1, bursts, DMR_DATA_MAX_BURSTS);
+	count = dmrDataBuildTMS(true, 92, RADIO_A, "to 92", 33, false, DMR_TYPE_RATE_1, 1, bursts, DMR_DATA_MAX_BURSTS);
 	rxBursts(bursts, count);
 	runMainTask(500);
 	CHECK(stats.smsReceived == received + 1);
@@ -1045,7 +1061,7 @@ static const dmrBurst_t *txHeader(void)
 {
 	for (int i = 0; i < lastTxCount; i++)
 	{
-		if (lastTx[i].dataType == DT_DATA_HEADER)
+		if (lastTx[i].dataType == DMR_TYPE_DATA_HEADER)
 		{
 			return &lastTx[i];
 		}
@@ -1094,7 +1110,7 @@ static void testIpTx(void)
 	runMainTask(SEND_MS);
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
 	CHECK(lastTxCount == DMR_DATA_TX_PREAMBLES + 1 + 7 && txHeader() != NULL && (txHeader()->payload[0] & 0x0F) == DMR_DPF_UNCONFIRMED &&
-	      (txHeader()->payload[1] >> 4) == DMR_SAP_UDPIP_COMPRESSION && lastTx[lastTxCount - 1].dataType == DT_RATE_12_DATA);
+	      (txHeader()->payload[1] >> 4) == DMR_SAP_UDPIP_COMPRESSION && lastTx[lastTxCount - 1].dataType == DMR_TYPE_RATE_1_2);
 
 	// Confirmed for UDP port 161 (at rate 3/4: a MOTOTRBO radio refuses rate 1/2 confirmed, docs/spec/dmr-data.md 12.9): C_HEAD with F and N(S), the blocks, the data terminator (direct mode); the ACK ends it
 	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, DMR_IPC_PORT | 161, RADIO_B);
@@ -1104,8 +1120,8 @@ static void testIpTx(void)
 	CHECK(h != NULL && (h->payload[0] & 0x4F) == (0x40 | DMR_DPF_CONFIRMED) && (h->payload[8] & 0x80) &&
 	      (h->payload[8] & 0x7F) == 5 && (h->payload[9] & 0x0F) == 0x08);// rate 3/4: 73 octets in 16: 5 blocks
 	uint8_t ns = (h->payload[9] >> 4) & 7;
-	CHECK(lastTx[lastTxCount - 1].dataType == DT_TERMINATOR_WITH_LC && (lastTx[lastTxCount - 1].payload[8] & 0x67) == (0x60 | ns));
-	CHECK(lastTxCount == DMR_DATA_TX_PREAMBLES + 1 + 5 + 1 && h[1].dataType == DT_RATE_34_DATA);
+	CHECK(lastTx[lastTxCount - 1].dataType == DMR_TYPE_TERMINATOR_LC && (lastTx[lastTxCount - 1].payload[8] & 0x67) == (0x60 | ns));
+	CHECK(lastTxCount == DMR_DATA_TX_PREAMBLES + 1 + 5 + 1 && h[1].dataType == DMR_TYPE_RATE_3_4);
 	CHECK(dmrDataServiceIpBusy());
 	dmrDataServiceGetStats(&st);
 	uint32_t other = st.ipCnfOther;
@@ -1159,7 +1175,7 @@ static void testIpTx(void)
 	runMainTask(SEND_MS);
 	h = txHeader();
 	CHECK(h != NULL && !(h->payload[8] & 0x80) && (h->payload[8] & 0x7F) == 2 && ((h->payload[9] >> 4) & 7) == ns);
-	CHECK(h != NULL && h[1].dataType == DT_RATE_34_DATA && (h[1].payload[0] >> 1) == 1 && (h[2].payload[0] >> 1) == 3);
+	CHECK(h != NULL && h[1].dataType == DMR_TYPE_RATE_3_4 && (h[1].payload[0] >> 1) == 1 && (h[2].payload[0] >> 1) == 3);
 	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK(ns), NULL);
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
 
@@ -1190,7 +1206,7 @@ static void testIpTx(void)
 	lists = txLists;
 	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
 	runMainTask(SEND_MS);
-	CHECK(lastTx[lastTxCount - 1].dataType == DT_RATE_34_DATA && (txHeader()->payload[1] >> 4) == DMR_SAP_IP);
+	CHECK(lastTx[lastTxCount - 1].dataType == DMR_TYPE_RATE_3_4 && (txHeader()->payload[1] >> 4) == DMR_SAP_IP);
 	runMainTask(3 * DMR_IPC_RESPONSE_MS);
 	CHECK(dmrDataServiceIpResult() == DMR_REQ_FAILED && txLists - lists == 2);
 	ch.rmo = false;
@@ -1336,8 +1352,8 @@ static void testIpAirMtu(void)
 	reset();
 	decodeTx = false;
 	CHECK(DMR_DATA_IP_MTU == 596 && DMR_DATA_IP_MTU >= 586);// as the spec gives it; IPGW_LINK_MTU
-	CHECK(dmrDataPacketBursts(DMR_DATA_IP_MTU, DT_RATE_12_DATA) == 1 + blocks);
-	CHECK(dmrDataConfirmedBlocks(DMR_DATA_IP_MTU, DT_RATE_34_DATA) == cnfBlocks);
+	CHECK(dmrDataPacketBursts(DMR_DATA_IP_MTU, DMR_TYPE_RATE_1_2) == 1 + blocks);
+	CHECK(dmrDataConfirmedBlocks(DMR_DATA_IP_MTU, DMR_TYPE_RATE_3_4) == cnfBlocks);
 	CHECK(DMR_DATA_TX_PREAMBLES + 1 + cnfBlocks + 1 <= DMR_DATA_MAX_BURSTS);
 	for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++)
 	{
@@ -1370,7 +1386,7 @@ static void testIpAirMtu(void)
 				{
 					// Unanswered: one try, then given up
 					CHECK(h != NULL && (h->payload[0] & 0x0F) == DMR_DPF_CONFIRMED && (h->payload[8] & 0x7F) == cnfBlocks);
-					CHECK(lastTxCount == DMR_DATA_TX_PREAMBLES + 1 + cnfBlocks + 1 && lastTx[lastTxCount - 1].dataType == DT_TERMINATOR_WITH_LC);
+					CHECK(lastTxCount == DMR_DATA_TX_PREAMBLES + 1 + cnfBlocks + 1 && lastTx[lastTxCount - 1].dataType == DMR_TYPE_TERMINATOR_LC);
 					runMainTask(2 * DMR_IPC_RESPONSE_MS);
 					dmrDataServiceGetStats(&st);
 					CHECK(!dmrDataServiceIpBusy() && st.ipConfirmed - st0.ipConfirmed == 1);
@@ -1437,7 +1453,7 @@ static void testIpAddresses(void)
 		uint32_t dstIp = to[i] ? to[i] : dmrDataIdAddress(false, OUR_ID);
 		int n = dmrDataEncodeIP(false, OUR_ID, LRRP_SERVER, dstIp, dmrDataIdAddress(false, LRRP_SERVER), DMR_IP_TTL_DEFAULT,
 								DMR_IP_PROTO_UDP, l4, sizeof(l4), false, 1, &pdu, &sap);
-		int count = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, false, OUR_ID, LRRP_SERVER, pdu, n, DT_RATE_12_DATA, 1,
+		int count = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, false, OUR_ID, LRRP_SERVER, pdu, n, DMR_TYPE_RATE_1_2, 1,
 									   bursts, DMR_DATA_MAX_BURSTS);
 		int heard = packetsHeard;
 
@@ -1463,7 +1479,7 @@ static void testConfirmedRx(void)
 	decodeTx = false;
 	dmrDataServiceGetStats(&st0);
 	for (int i = 0; i < (int)sizeof(pdu); i++) pdu[i] = (uint8_t)(i + 1);
-	int n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_A, pdu, sizeof(pdu), DT_RATE_12_DATA, 6, true, 0, 1, b, DMR_DATA_MAX_BURSTS);
+	int n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_A, pdu, sizeof(pdu), DMR_TYPE_RATE_1_2, 6, true, 0, 1, b, DMR_DATA_MAX_BURSTS);
 	CHECK(n == 1 + 1 + 7);
 	b[4].payload[7] ^= 0x04;// block 2
 	int heard = packetsHeard;
@@ -1472,19 +1488,19 @@ static void testConfirmedRx(void)
 	CHECK(packetsHeard == heard && lastTxCount == 2);
 	CHECK((lastTx[0].payload[0] & 0x0F) == DMR_DPF_RESPONSE && lastTx[0].payload[9] == DMR_RESPONSE_SACK(6) &&
 	      lastTx[1].payload[0] == 0xFB && lastTx[1].payload[1] == 0xFF);
-	n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_A, pdu, sizeof(pdu), DT_RATE_12_DATA, 6, false, 1ULL << 2, 0, b, DMR_DATA_MAX_BURSTS);
+	n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_A, pdu, sizeof(pdu), DMR_TYPE_RATE_1_2, 6, false, 1ULL << 2, 0, b, DMR_DATA_MAX_BURSTS);
 	rxBursts(b, n);
 	runMainTask(200);
 	CHECK(packetsHeard == heard + 1 && lastTxCount == 1 && lastTx[0].payload[9] == DMR_RESPONSE_ACK(6));
 
 	// Our ACK lost: the sender sends it all again (F clear), the same N(S): ACKed, not passed on
-	n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_A, pdu, sizeof(pdu), DT_RATE_12_DATA, 6, false, ~0ULL, 0, b, DMR_DATA_MAX_BURSTS);
+	n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_A, pdu, sizeof(pdu), DMR_TYPE_RATE_1_2, 6, false, ~0ULL, 0, b, DMR_DATA_MAX_BURSTS);
 	rxBursts(b, n);
 	runMainTask(200);
 	CHECK(packetsHeard == heard + 1 && lastTx[0].payload[9] == DMR_RESPONSE_ACK(6));
 
 	// The next packet, its last two bursts lost: after the stall the selective ACK asks for blocks 5 and 6
-	n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_A, pdu, sizeof(pdu), DT_RATE_12_DATA, 7, true, 0, 0, b, DMR_DATA_MAX_BURSTS);
+	n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_A, pdu, sizeof(pdu), DMR_TYPE_RATE_1_2, 7, true, 0, 0, b, DMR_DATA_MAX_BURSTS);
 	rxBursts(b, n - 2);
 	runMainTask(CNF_RX_STALL_MS + 200);
 	CHECK(lastTx[0].payload[9] == DMR_RESPONSE_SACK(7) && lastTx[1].payload[0] == 0x9F);
@@ -1494,7 +1510,7 @@ static void testConfirmedRx(void)
 	{
 		uint8_t big[150];
 		for (int i = 0; i < (int)sizeof(big); i++) big[i] = (uint8_t)(i * 7 + 3);
-		n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_C, big, sizeof(big), DT_RATE_34_DATA, 0, true, 0, 1, b, DMR_DATA_MAX_BURSTS);
+		n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_C, big, sizeof(big), DMR_TYPE_RATE_3_4, 0, true, 0, 1, b, DMR_DATA_MAX_BURSTS);
 		dmrBurst_t lost[DMR_DATA_MAX_BURSTS];
 		int m = 0;
 		for (int i = 0; i < n; i++) if (i != 5) lost[m++] = b[i];
@@ -1502,7 +1518,7 @@ static void testConfirmedRx(void)
 		rxBursts(lost, m);
 		runMainTask(CNF_RX_STALL_MS + 200);
 		CHECK(lastTxCount == 2 && lastTx[0].payload[9] == DMR_RESPONSE_SACK(0) && lastTx[1].payload[0] == 0xF7);
-		n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_C, big, sizeof(big), DT_RATE_34_DATA, 0, false, 1ULL << 3, 1, b, DMR_DATA_MAX_BURSTS);
+		n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_C, big, sizeof(big), DMR_TYPE_RATE_3_4, 0, false, 1ULL << 3, 1, b, DMR_DATA_MAX_BURSTS);
 		rxBursts(b, n);
 		runMainTask(200);
 		CHECK(packetsHeard == heard + 1 && lastTx[0].payload[9] == DMR_RESPONSE_ACK(0));
@@ -1512,19 +1528,19 @@ static void testConfirmedRx(void)
 	{
 		uint8_t big[128];
 		for (int i = 0; i < (int)sizeof(big); i++) big[i] = (uint8_t)(i * 5 + 1);
-		n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_C, big, sizeof(big), DT_RATE_34_DATA, 0, true, 0, 1, b, DMR_DATA_MAX_BURSTS);
+		n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_C, big, sizeof(big), DMR_TYPE_RATE_3_4, 0, true, 0, 1, b, DMR_DATA_MAX_BURSTS);
 		heard = packetsHeard;
 		rxBursts(b, n - 1);
 		runMainTask(CNF_RX_STALL_MS + 200);
 		CHECK(lastTxCount == 2 && lastTx[0].payload[9] == DMR_RESPONSE_SACK(0) && lastTx[1].payload[0] == 0xFF && lastTx[1].payload[1] == 0xFE);
-		n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_C, big, sizeof(big), DT_RATE_34_DATA, 0, false, 1ULL << 8, 1, b, DMR_DATA_MAX_BURSTS);
+		n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_C, big, sizeof(big), DMR_TYPE_RATE_3_4, 0, false, 1ULL << 8, 1, b, DMR_DATA_MAX_BURSTS);
 		rxBursts(b, n);
 		runMainTask(200);
 		CHECK(packetsHeard == heard + 1 && lastTx[0].payload[9] == DMR_RESPONSE_ACK(0));
 	}
 
 	// Every block good, the CRC-32 not: NACK
-	n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_B, pdu, sizeof(pdu), DT_RATE_12_DATA, 0, true, 0, 0, b, DMR_DATA_MAX_BURSTS);
+	n = dmrDataBuildConfirmed(DMR_SAP_IP, OUR_ID, RADIO_B, pdu, sizeof(pdu), DMR_TYPE_RATE_1_2, 0, true, 0, 0, b, DMR_DATA_MAX_BURSTS);
 	b[3].payload[4] ^= 0x80;
 	uint16_t c9 = dmrDataCRC9(&b[3].payload[2], 10, 2) ^ DMR_CRC9_MASK_RATE_12;
 	b[3].payload[0] = (2 << 1) | (c9 >> 8);
@@ -1567,7 +1583,7 @@ static void receiveBuilt(const dmrBurst_t *bursts, int count, bool confirmed, ui
 static void receiveIPText(bool group, uint32_t dst, uint32_t src, const char *text, bool confirmed)
 {
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
-	int count = dmrDataBuildIPText(group, dst, src, text, DT_RATE_12_DATA, 1, bursts, DMR_DATA_MAX_BURSTS);
+	int count = dmrDataBuildIPText(group, dst, src, text, DMR_TYPE_RATE_1_2, 1, bursts, DMR_DATA_MAX_BURSTS);
 
 	CHECK(count > 0);
 	receiveBuilt(bursts, count, confirmed, 3);
@@ -1584,7 +1600,7 @@ static void testIpText(void)
 	CHECK(settings.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
 
 	// The builder: UTF-16BE, UDP 5016 to 5016, full IPv4 header (SAP 4), unconfirmed
-	int count = dmrDataBuildIPText(false, RADIO_A, OUR_ID, "Hi\xE9", DT_RATE_12_DATA, 0, bursts, DMR_DATA_MAX_BURSTS);
+	int count = dmrDataBuildIPText(false, RADIO_A, OUR_ID, "Hi\xE9", DMR_TYPE_RATE_1_2, 0, bursts, DMR_DATA_MAX_BURSTS);
 	dmrDataRxResult_t r = DMR_DATA_RX_NONE;
 
 	dmrDataRxReset();
@@ -1596,7 +1612,7 @@ static void testIpText(void)
 	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && (udp.srcPort == 5016) && (udp.dstPort == 5016) && (udp.length == 6));
 	CHECK((udp.payload[0] == 0x00) && (udp.payload[1] == 'H') && (udp.payload[4] == 0x00) && (udp.payload[5] == 0xE9));
 	dmrDataRxReset();
-	CHECK(dmrDataBuildIPText(false, RADIO_A, OUR_ID, "", DT_RATE_12_DATA, 0, bursts, DMR_DATA_MAX_BURSTS) == 0);
+	CHECK(dmrDataBuildIPText(false, RADIO_A, OUR_ID, "", DMR_TYPE_RATE_1_2, 0, bursts, DMR_DATA_MAX_BURSTS) == 0);
 
 	// The decoder: big endian, a byte order mark either way, characters outside Latin-1
 	char text[32];
@@ -1781,6 +1797,266 @@ static void testUdpSend(void)
 }
 #endif
 
+// DMR APRS as a stock radio sends it (#401, heard on air): 4 preambles, an unconfirmed SAP 3 header, 7 rate 1/2
+// blocks, pad 5. User data: the compressed UDP/IP header (UDP 10110 to 10110) and an NMEA RMC sentence. Built here
+// with placeholder IDs; the blocks and their CRC-32 match the ones heard (the IDs are only in the header)
+static const char nmeaSentence[] = "$GPRMC,062544.000,A,3000.0000,N,8700.0000\0,W,0.00,0.00,051126,,,A\0";
+
+// The compressed UDP/IP header (IPID 1, SPID / DPID 0: both ports follow) and the first length octets of the sentence
+static int nmeaPacket(uint8_t *data, uint16_t srcPort, uint16_t dstPort, int length)
+{
+	static const uint8_t head[5] = { 0x00, 0x01, 0x00, 0x00, 0x00 };
+
+	memcpy(data, head, 5);
+	data[5] = srcPort >> 8;
+	data[6] = srcPort & 0xFF;
+	data[7] = dstPort >> 8;
+	data[8] = dstPort & 0xFF;
+	memcpy(&data[9], nmeaSentence, length);
+	return 9 + length;
+}
+
+static void testNmeaPosition(void)
+{
+	static const uint8_t heardCrc[4] = { 0x05, 0x8a, 0x05, 0xd6 };
+	const int full = (int)sizeof(nmeaSentence) - 1;
+	uint8_t data[9 + sizeof(nmeaSentence)];
+	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+
+	// Report 4 as heard (bytes in the comment above): the same header fields, blocks and CRC-32
+	int n = nmeaPacket(data, 10110, 10110, full);
+	CHECK((n == 75) && (data[5] == 0x27) && (data[6] == 0x7e));
+	int count = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_UDPIP_COMPRESSION, false, OUR_ID, RADIO_A, data, n,
+								   DMR_TYPE_RATE_1_2, 4, bursts, DMR_DATA_MAX_BURSTS);
+	const uint8_t *h = bursts[4].payload;
+	CHECK((count == 4 + 1 + 7) && (bursts[4].dataType == DMR_TYPE_DATA_HEADER));
+	CHECK((h[0] == 0x02) && (h[1] == 0x35) && (h[8] == 0x87) && (h[9] == 0x00));// as heard: pad 5, FMF, 7 blocks
+	CHECK(memcmp(&bursts[count - 1].payload[8], heardCrc, 4) == 0);
+	positionsHeard = 0;
+	rxBursts(bursts, count);
+	CHECK((positionsHeard == 1) && (positionSrc == RADIO_A) && (positionLength == full) &&
+		  (memcmp(positionText, nmeaSentence, positionLength) == 0));
+	CHECK(positionParsed && positionFix.fix && (positionFix.lat == 300000000) && (positionFix.lon == -870000000));
+
+	// EP: who it is for, passthrough, the ports. BVA: the ports either side of 10110
+	enum { U = DMR_DPF_UNCONFIRMED, C = DMR_DPF_CONFIRMED, PT = !CONFIG_DMR_CONTROL_STATION };
+	static const struct
+	{
+		bool group;
+		uint32_t dst;
+		uint16_t srcPort, dstPort;
+		bool passthrough;
+		bool heard;
+		uint32_t src;
+		uint8_t dpf;
+	} ep[] = {
+		{ false, OUR_ID, 10110, 10110, false, true, RADIO_A, U },	// to us
+		{ true, 91, 10110, 10110, false, true, RADIO_A, U },		// to a talkgroup we listen to
+		{ true, 9, 10110, 10110, false, true, RADIO_A, U },			// to the channel's talkgroup
+		// Whoever it is addressed to, as FM APRS hears every station: the stock setting sends it to the APRS gateway
+		{ false, 310999, 10110, 10110, false, true, RADIO_A, U },	// BrandMeister's APRS gateway (<MCC>999)
+		{ true, 92, 10110, 10110, false, true, RADIO_A, U },		// a talkgroup we don't listen to
+		{ false, RADIO_B, 10110, 10110, false, true, RADIO_A, U },	// another radio
+		{ false, RADIO_B, 10110, 10110, false, true, RADIO_A, C },	// confirmed, not ours: no ACK
+		{ false, OUR_ID, 10110, 10110, false, true, RADIO_A, C },	// confirmed to us: ACKed (below)
+		{ false, 310999, 10110, 10110, false, false, OUR_ID, U },	// our own, repeated back
+		{ false, OUR_ID, 10110, 10110, true, PT, RADIO_A, U },		// passthrough: the PC's
+		{ false, 310999, 10110, 10110, true, PT, RADIO_A, U },
+		{ false, OUR_ID, 10110, 5016, false, false, RADIO_A, U },	// another service's port
+		{ false, OUR_ID, 10110, 10109, false, false, RADIO_A, U },
+		{ false, OUR_ID, 10110, 10111, false, false, RADIO_A, U },
+		{ false, OUR_ID, 10109, 10110, false, false, RADIO_A, U },
+		{ false, OUR_ID, 10111, 10110, false, false, RADIO_A, U },
+		{ false, 310999, 10110, 4001, false, false, RADIO_A, U },	// LRRP to the gateway: not ours to answer
+	};
+	reset();
+	for (unsigned i = 0; i < sizeof(ep) / sizeof(ep[0]); i++)
+	{
+		bool forUs = !ep[i].group ? (ep[i].dst == OUR_ID) : ((ep[i].dst == 91) || (ep[i].dst == 9));
+		dmrDataStats_t st0, st1;
+
+		n = nmeaPacket(data, ep[i].srcPort, ep[i].dstPort, full);
+		count = (ep[i].dpf == DMR_DPF_CONFIRMED) ?
+				dmrDataBuildConfirmed(DMR_SAP_UDPIP_COMPRESSION, ep[i].dst, ep[i].src, data, n, DMR_TYPE_RATE_1_2, 3, true,
+									  0, 1, bursts, DMR_DATA_MAX_BURSTS) :
+				dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_UDPIP_COMPRESSION, ep[i].group, ep[i].dst, ep[i].src,
+								   data, n, DMR_TYPE_RATE_1_2, 1, bursts, DMR_DATA_MAX_BURSTS);
+		CHECK(count > 0);
+		dmrDataServiceSetPassthrough(ep[i].passthrough);
+		dmrDataServiceGetStats(&st0);
+		int inbox = dmrDataServiceMessageCount(), heardBefore = packetsHeard, sentBefore = sentCount;
+		positionsHeard = 0;
+		rxBursts(bursts, count);
+		runMainTask(3000);// a reply, if one were queued, goes out here
+		dmrDataServiceGetStats(&st1);
+		dmrDataServiceSetPassthrough(false);
+		if (positionsHeard != (ep[i].heard ? 1 : 0))
+		{
+			printf("FAIL %s:%d: packet class %u: heard %d\n", __FILE__, __LINE__, i, positionsHeard);
+			failures++;
+		}
+		// The IP gateway hook gets every packet, as before; a packet not for us gets nothing else: not counted for us,
+		// no reply or ACK, no message, no LRRP request
+		CHECK(packetsHeard == heardBefore + 1);
+		CHECK(!forUs || (ep[i].dpf != C) || (sentCount > sentBefore));// ours confirmed: still ACKed
+		if (!forUs && ((st1.rxForUs != st0.rxForUs) || (sentCount != sentBefore) || (st1.txLists != st0.txLists) ||
+				(dmrDataServiceMessageCount() != inbox) || (st1.lrrpRequests != st0.lrrpRequests)))
+		{
+			printf("FAIL %s:%d: packet class %u not for us got a reaction\n", __FILE__, __LINE__, i);
+			failures++;
+		}
+	}
+
+	// EP: the compressed header's destination network (DAID, TS 102 361-3 7.2.4.2). The stock radio sends 0 (its
+	// octet 3 is 00: SAID 0, DAID 0); 2 is a group's; 1 (USB network) is a host behind the radio, not a position for us
+	static const struct
+	{
+		uint8_t daid;
+		bool group;
+		uint32_t dst;
+		bool heard;
+	} daids[] = {
+		{ 0, false, OUR_ID, true }, { 0, false, 310999, true }, { 2, true, 91, true }, { 2, true, 92, true },
+		{ 1, false, OUR_ID, false }, { 1, false, 310999, false }, { 1, true, 91, false },
+	};
+	for (unsigned i = 0; i < sizeof(daids) / sizeof(daids[0]); i++)
+	{
+		n = nmeaPacket(data, 10110, 10110, full);
+		data[2] = daids[i].daid;
+		count = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_UDPIP_COMPRESSION, daids[i].group, daids[i].dst,
+								   RADIO_A, data, n, DMR_TYPE_RATE_1_2, 1, bursts, DMR_DATA_MAX_BURSTS);
+		positionsHeard = 0;
+		rxBursts(bursts, count);
+		if (positionsHeard != (daids[i].heard ? 1 : 0))
+		{
+			printf("FAIL %s:%d: DAID class %u: heard %d\n", __FILE__, __LINE__, i, positionsHeard);
+			failures++;
+		}
+	}
+
+	// BVA: the UDP payload length. Every one is handed on; the hook's parse decides (the RMC's last field, the mode,
+	// may be cut: 1 short still gives the position)
+	static const struct
+	{
+		int length;
+		bool parsed;
+	} bva[] = { { 0, false }, { 1, false }, { 64, true }, { 65, true }, { 66, true } };
+	for (unsigned i = 0; i < sizeof(bva) / sizeof(bva[0]); i++)
+	{
+		n = nmeaPacket(data, 10110, 10110, bva[i].length);
+		count = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_UDPIP_COMPRESSION, false, OUR_ID, RADIO_A, data, n,
+								   DMR_TYPE_RATE_1_2, 1, bursts, DMR_DATA_MAX_BURSTS);
+		positionsHeard = 0;
+		rxBursts(bursts, count);
+		if ((positionsHeard != 1) || (positionLength != bva[i].length) || (positionParsed != bva[i].parsed) ||
+				(bva[i].parsed && (positionFix.lat != 300000000)))
+		{
+			printf("FAIL %s:%d: payload %d: heard %d length %d parsed %d\n", __FILE__, __LINE__, bva[i].length,
+				   positionsHeard, positionLength, positionParsed);
+			failures++;
+		}
+	}
+}
+
+// A packet heard but not for us (what the position hook lets through) gets nothing else (#401): no selective ACK for a
+// damaged block or missing blocks, no NACK for a CRC-32 failure, no ACK when whole; no LRRP answer, no ARS, no zone
+static void testNotForUsIsolation(void)
+{
+	static const uint32_t dsts[] = { RADIO_B, 310999 };
+	uint8_t data[9 + sizeof(nmeaSentence)];
+	dmrBurst_t b[DMR_DATA_MAX_BURSTS];
+	dmrDataStats_t st0, st;
+	int n = nmeaPacket(data, 10110, 10110, (int)sizeof(nmeaSentence) - 1);
+	int c;
+
+	(void)n;			// only the confirmed cases use it
+	reset();
+	decodeTx = false;
+	for (unsigned d = 0; d < sizeof(dsts) / sizeof(dsts[0]); d++)
+	{
+		dmrDataServiceGetStats(&st0);
+		int sent = sentCount;
+		positionsHeard = 0;
+#if CONFIG_DMR_CONFIRMED
+		// A damaged block
+		c = dmrDataBuildConfirmed(DMR_SAP_UDPIP_COMPRESSION, dsts[d], RADIO_A, data, n, DMR_TYPE_RATE_1_2, 6, true, 0,
+									  1, b, DMR_DATA_MAX_BURSTS);
+		b[4].payload[7] ^= 0x04;
+		rxBursts(b, c);
+		runMainTask(200);
+		// The last two blocks lost: the stall
+		c = dmrDataBuildConfirmed(DMR_SAP_UDPIP_COMPRESSION, dsts[d], RADIO_A, data, n, DMR_TYPE_RATE_1_2, 7, true, 0, 0, b,
+								  DMR_DATA_MAX_BURSTS);
+		rxBursts(b, c - 2);
+		runMainTask(CNF_RX_STALL_MS + 200);
+		// Every block good, the CRC-32 not
+		c = dmrDataBuildConfirmed(DMR_SAP_UDPIP_COMPRESSION, dsts[d], RADIO_A, data, n, DMR_TYPE_RATE_1_2, 0, true, 0, 0, b,
+								  DMR_DATA_MAX_BURSTS);
+		b[3].payload[4] ^= 0x80;
+		uint16_t c9 = dmrDataCRC9(&b[3].payload[2], 10, 2) ^ DMR_CRC9_MASK_RATE_12;
+		b[3].payload[0] = (2 << 1) | (c9 >> 8);
+		b[3].payload[1] = c9 & 0xFF;
+		rxBursts(b, c);
+		runMainTask(200);
+		dmrDataServiceGetStats(&st);
+		CHECK((positionsHeard == 0) && (st.rxCrcErrors > st0.rxCrcErrors));// none of the three passed on
+		// Whole: the position, still no ACK
+		c = dmrDataBuildConfirmed(DMR_SAP_UDPIP_COMPRESSION, dsts[d], RADIO_A, data, n, DMR_TYPE_RATE_1_2, 1, true, 0, 1, b,
+								  DMR_DATA_MAX_BURSTS);
+		rxBursts(b, c);
+		runMainTask(3000);
+		CHECK(positionsHeard == 1);
+#endif
+		dmrDataServiceGetStats(&st);
+		CHECK((sentCount == sent) && (st.txLists == st0.txLists) && (st.rxSacksSent == st0.rxSacksSent) &&
+			  (st.rxNacksSent == st0.rxNacksSent) && (st.rxForUs == st0.rxForUs) && (replyReadIdx == replyWriteIdx));
+
+		// A real LRRP request (immediate, as testLrrp's) to that ID: not ours to answer
+		static const uint8_t lrrp[] = { 0x05, 0x09, 0x22, 0x04, 0x0a, 0x0b, 0x0c, 0x0d, 0x51, 0x62, 0x57 };
+		lrrpPendingRequest_t probe;
+		CHECK(lrrpDecodeRequest(lrrp, sizeof(lrrp), &probe.request));
+		c = dmrDataBuildUDP(false, dsts[d], LRRP_SERVER, DMR_UDP_PORT_LRRP, DMR_UDP_PORT_LRRP, lrrp, sizeof(lrrp),
+							DMR_TYPE_RATE_1_2, 1, b, DMR_DATA_MAX_BURSTS);
+		rxBursts(b, c);
+		runMainTask(3000);
+		dmrDataServiceGetStats(&st);
+		CHECK((st.lrrpRequests == st0.lrrpRequests) && (sentCount == sent) && (lrrpWriteIdx == lrrpReadIdx));
+
+		// ARS from our server to that ID: neither its ACK nor its query is ours
+		static const uint8_t arsAck[] = { 0x00, 0x01, 0x3F }, arsQuery[] = { 0x00, 0x01, 0x34 };
+		uint32_t server = ars.server;
+		ars.server = ARS_SERVER;
+		c = dmrDataBuildUDP(false, dsts[d], ARS_SERVER, DMR_UDP_PORT_ARS, DMR_UDP_PORT_ARS, arsAck, sizeof(arsAck),
+							DMR_TYPE_RATE_1_2, 1, b, DMR_DATA_MAX_BURSTS);
+		rxBursts(b, c);
+		c = dmrDataBuildUDP(false, dsts[d], ARS_SERVER, DMR_UDP_PORT_ARS, DMR_UDP_PORT_ARS, arsQuery, sizeof(arsQuery),
+							DMR_TYPE_RATE_1_2, 1, b, DMR_DATA_MAX_BURSTS);
+		rxBursts(b, c);
+		dmrDataServiceGetStats(&st);
+		CHECK(!arsAckReceived && !arsNakReceived && !arsQueryReceived && (st.arsAcks == st0.arsAcks));
+		// ... the same query to us is (the check above can fail)
+		c = dmrDataBuildUDP(false, OUR_ID, ARS_SERVER, DMR_UDP_PORT_ARS, DMR_UDP_PORT_ARS, arsQuery, sizeof(arsQuery),
+							DMR_TYPE_RATE_1_2, 1, b, DMR_DATA_MAX_BURSTS);
+		rxBursts(b, c);
+		CHECK(arsQueryReceived);
+		arsQueryReceived = false;
+		ars.server = server;
+#if CONFIG_ZONE_SHARE
+		static const uint8_t zs[] = { 1, 2, 7, 1, 0 };
+		int calls = zsRxCalls;
+		c = dmrDataBuildUDP(false, dsts[d], RADIO_A, ZS_PORT, ZS_PORT, zs, sizeof(zs), DMR_TYPE_RATE_1_2, 1, b,
+							DMR_DATA_MAX_BURSTS);
+		rxBursts(b, c);
+		CHECK(zsRxCalls == calls);
+#endif
+		runMainTask(3000);
+		dmrDataServiceGetStats(&st);
+		CHECK((sentCount == sent) && (st.txLists == st0.txLists) && (st.rxForUs == st0.rxForUs + 1));// the query
+	}
+	decodeTx = true;
+	reset();
+}
+
 // Control station passthrough (docs/spec/usb-network.md 5): IP based packets to us are the PC's; the link layer stays
 static void testPassthrough(void)
 {
@@ -1847,7 +2123,7 @@ static void testPassthrough(void)
 	reset();
 	{
 		dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
-		int n = dmrDataBuildTMS(false, OUR_ID, RADIO_A, "TMS for the PC", 12, true, DT_RATE_12_DATA, 1, bursts,
+		int n = dmrDataBuildTMS(false, OUR_ID, RADIO_A, "TMS for the PC", 12, true, DMR_TYPE_RATE_1_2, 1, bursts,
 								DMR_DATA_MAX_BURSTS);
 
 		rxBursts(bursts, n);
@@ -1912,7 +2188,7 @@ static int chainRead(uint8_t *first, bool *group, uint32_t *dst, bool *cbfOk)
 	dmrDataRxReset();
 	for (int i = 0; i < lastTxCount; i++)
 	{
-		if (lastTx[i].dataType == DT_CSBK)
+		if (lastTx[i].dataType == DMR_TYPE_CSBK)
 		{
 			*cbfOk = *cbfOk && ((lastTx[i].payload[0] & 0x3F) == DMR_CSBKO_PREAMBLE) && (lastTx[i].payload[3] == lastTxCount - 1 - i);
 		}
@@ -1962,9 +2238,9 @@ static void testChain(void)
 	CHECK(dmrDataServiceIpBusy());
 	runMainTask(SEND_MS);
 	CHECK(txLists == lists + 1 && !dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
-	CHECK(lastTx[0].dataType == DT_CSBK && lastTx[DMR_DATA_TX_PREAMBLES - 1].dataType == DT_CSBK &&
-	      lastTx[DMR_DATA_TX_PREAMBLES].dataType == DT_DATA_HEADER);
-	CHECK(lastTx[lastTxCount - 1].dataType == DT_RATE_12_DATA);		// unconfirmed: no terminator
+	CHECK(lastTx[0].dataType == DMR_TYPE_CSBK && lastTx[DMR_DATA_TX_PREAMBLES - 1].dataType == DMR_TYPE_CSBK &&
+	      lastTx[DMR_DATA_TX_PREAMBLES].dataType == DMR_TYPE_DATA_HEADER);
+	CHECK(lastTx[lastTxCount - 1].dataType == DMR_TYPE_RATE_1_2);		// unconfirmed: no terminator
 	CHECK(chainRead(first, &group, &dst, &cbfOk) == 3 && cbfOk && !group && dst == RADIO_A);
 	CHECK(first[0] == 0 && first[1] == 16 && first[2] == 32);
 
@@ -2058,7 +2334,7 @@ static void testChainRx(void)
 		for (int k = 0; k < 3; k++)
 		{
 			memset(msg[k], (int)(k + 1), sizeof(msg[k]));
-			int n = dmrDataBuildUDP(group, dst, RADIO_A, ZS_PORT, ZS_PORT, msg[k], sizeof(msg[k]), DT_RATE_12_DATA, 0,
+			int n = dmrDataBuildUDP(group, dst, RADIO_A, ZS_PORT, ZS_PORT, msg[k], sizeof(msg[k]), DMR_TYPE_RATE_1_2, 0,
 									&b[at], DMR_DATA_MAX_BURSTS - at);
 
 			CHECK(n > 0);
@@ -2120,7 +2396,7 @@ static void testZoneShareHook(void)
 {
 	static const uint8_t msg[] = { 1, 2, 7, 1, 0 };
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
-	int n = dmrDataBuildUDP(false, OUR_ID, RADIO_A, ZS_PORT, ZS_PORT, msg, sizeof(msg), DT_RATE_12_DATA, 1, bursts,
+	int n = dmrDataBuildUDP(false, OUR_ID, RADIO_A, ZS_PORT, ZS_PORT, msg, sizeof(msg), DMR_TYPE_RATE_1_2, 1, bursts,
 							DMR_DATA_MAX_BURSTS);
 
 	reset();
@@ -2128,20 +2404,20 @@ static void testZoneShareHook(void)
 	receiveBuilt(bursts, n, false, 0);
 	CHECK(zsRxCalls == 1 && zsRxSrc == RADIO_A && !zsRxGroup && zsRxLength == (int)sizeof(msg) && zsRxFirst == 1);
 
-	n = dmrDataBuildUDP(true, 91, RADIO_B, ZS_PORT, ZS_PORT, msg, sizeof(msg), DT_RATE_12_DATA, 1, bursts,
+	n = dmrDataBuildUDP(true, 91, RADIO_B, ZS_PORT, ZS_PORT, msg, sizeof(msg), DMR_TYPE_RATE_1_2, 1, bursts,
 						DMR_DATA_MAX_BURSTS);
 	receiveBuilt(bursts, n, false, 0);
 	CHECK(zsRxCalls == 2 && zsRxSrc == RADIO_B && zsRxGroup);
 
 	// Another port: not zone sharing's
-	n = dmrDataBuildUDP(false, OUR_ID, RADIO_A, ZS_PORT, ZS_PORT + 1, msg, sizeof(msg), DT_RATE_12_DATA, 1, bursts,
+	n = dmrDataBuildUDP(false, OUR_ID, RADIO_A, ZS_PORT, ZS_PORT + 1, msg, sizeof(msg), DMR_TYPE_RATE_1_2, 1, bursts,
 						DMR_DATA_MAX_BURSTS);
 	receiveBuilt(bursts, n, false, 0);
 	CHECK(zsRxCalls == 2);
 
 #if CONFIG_DMR_CONTROL_STATION
 	dmrDataServiceSetPassthrough(true);
-	n = dmrDataBuildUDP(false, OUR_ID, RADIO_A, ZS_PORT, ZS_PORT, msg, sizeof(msg), DT_RATE_12_DATA, 1, bursts,
+	n = dmrDataBuildUDP(false, OUR_ID, RADIO_A, ZS_PORT, ZS_PORT, msg, sizeof(msg), DMR_TYPE_RATE_1_2, 1, bursts,
 						DMR_DATA_MAX_BURSTS);
 	receiveBuilt(bursts, n, false, 0);
 	CHECK(zsRxCalls == 2);			// the PC's
@@ -2158,7 +2434,7 @@ static void testTmsOff(void)
 {
 	static const uint8_t tms[] = { 0x00, 0x08, 0xE0, 0x00, 0x85, 0x04, 'h', 0x00, 'i', 0x00 };
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
-	int n = dmrDataBuildUDP(false, OUR_ID, RADIO_A, DMR_UDP_PORT_TMS, DMR_UDP_PORT_TMS, tms, sizeof(tms), DT_RATE_12_DATA,
+	int n = dmrDataBuildUDP(false, OUR_ID, RADIO_A, DMR_UDP_PORT_TMS, DMR_UDP_PORT_TMS, tms, sizeof(tms), DMR_TYPE_RATE_1_2,
 							1, bursts, DMR_DATA_MAX_BURSTS);
 	uint32_t received = stats.smsReceived;
 
@@ -2201,6 +2477,8 @@ int main(void)
 	testIpAddresses();
 	testConfirmedRx();
 	testIpText();
+	testNmeaPosition();
+	testNotForUsIsolation();
 	testPassthrough();
 	testTxGuard();
 	testChain();

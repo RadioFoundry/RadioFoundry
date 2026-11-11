@@ -84,6 +84,11 @@ dmr_data_api.h (UI, debug link)                  sms_inbox_*, sms_send, dmr_sign
 - Text to us (any format, 5): kept in the inbox (4 messages, newest first, the oldest replaced). A TMS ACK request is
   answered with a TMS ACK. The same message again from the same radio within 60 s (sender, format, text; the
   sequence number may differ) is a retry: answered again, not kept twice (gotcha 5.8).
+- An NMEA sentence from and to UDP port 10110 (a DMR APRS position), whoever it is addressed to (usually the APRS
+  gateway's ID), outside passthrough and not our own; a compressed header's DAID must be 0 (radio) or 2 (group), not
+  1 (USB network, a host behind the radio): to the host's `position` hook, for the APRS station list
+  (`aprs.md` 8.2). The one exception to "addressed to us": nothing else looks at a packet not for us, and it gets no
+  response. The IP gateway still gets the packet, as every other.
 - Control station passthrough (`usb-network.md` 5.2): IP based packets to us are left to the PC; only the ETSI
   response above is still sent.
 - Replies (responses, TMS ACKs, CSBK answers) wait in a 4-entry queue; one still queued after 5 s, or not started
@@ -778,13 +783,14 @@ portable (confirmed: also its TMS ACK back). Each failing case was sent at least
   been in the standard since V1.2.1 (2006), and the portable never sends it itself: likely its firmware.
 - Rate 3/4 unconfirmed: nothing comes back (none is due), and the portable shows nothing.
 - One portable on one firmware version: more radios and versions are needed before calling this MOTOTRBO behavior.
-- The portable's link response comes in the next frame, 30 ms after our data terminator. A radio still switching
+- The portable's link response comes in the next frame in our timeslot: its first burst starts 60 ms after our data
+  terminator's start, about 29 ms after the terminator's end (measured off air). A radio still switching
   back from transmit misses it: one that returned to receive only from the radio task decoded it 1 time in about 30
   (a receive CRC error instead); returning at the slot engine's TX done, 4 of 4 on the first try. Radios whose burst
   switch already puts the receiver back after each burst missed it too (0 of 16 each), because the radio task's
   `rx()` at the end of the transmission set the receiver up again (idle, synthesizer, receive) just as it came. The
-  modem glue now keeps a back-to-receive flag and `rx()` leaves the receiver as it is on the same channel
-  ([dmr-modem.md](dmr-modem.md) 6.4): 4 of 4 on the first try on each of five radios, on both glues.
+  modem glue now keeps a back-to-receive flag, and the end of the transmission leaves the receiver as it is on the same
+  channel ([dmr-modem.md](dmr-modem.md) 6.4): 4 of 4 on the first try on each of five radios, on both glues.
 - Before the glue flag and the TX-done wake, with two of the three HR_C7000 radios tried, the portable sent its TMS
   ACK a second time 2.5 s later on most sends (9 of 10): it missed our link ACK to the first. With both, one of the
   two got a single TMS ACK on 8 sends of 8, and a third radio listening decoded our link ACK every time.
@@ -819,4 +825,4 @@ portable (confirmed: also its TMS ACK back). Each failing case was sent at least
 - `tests/hil/test_dmr_ip_burst.py`: datagrams back to back each way (radio, host and bench) and the air MTU on air
   (12.8): the largest datagram each way, the receiver's limit and one block more; one octet more to the air and the
   ICMP reply to the host on firmware with a narrower air MTU only. The
-  bench sends UDP with `tools/bench/bench_tx.py data --udp-port` (its offline check: `bench_tx.py selftest`).
+  bench board sends UDP with a `bench_tx` `data --udp-port` job.

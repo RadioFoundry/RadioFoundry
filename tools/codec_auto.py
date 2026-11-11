@@ -18,6 +18,7 @@ ROOT = os.path.dirname(TOOLS)
 sys.path.insert(0, TOOLS)
 sys.path.insert(0, os.path.join(TOOLS, "rfoundry"))
 from rfoundry import boards  # noqa: E402  (the board registry)
+from rfoundry import stockfw  # noqa: E402  (stock file profiles)
 
 # Board -> codec tool, the registry's [codec] tool (each takes --stock, --image, -o and keeps its supported stock files
 # in PROFILES)
@@ -54,27 +55,64 @@ def find_key(folder, board):
     return None
 
 
+def board_profiles(profiles, board):
+    """The profiles that count for a board: its own and those that name no board"""
+    return {h: p for h, p in profiles.items() if p.get("board", board) == board}
+
+
+def profile_shas(profiles):
+    """The stock files' SHA-256 values of PROFILES keys. A file with its own placement on a board is keyed
+    "<sha>@<board>" (stockfw.profile_key), so the key itself never equals a file's hash"""
+    return {stockfw.key_sha(h) for h in profiles}
+
+
+def self_test():
+    sha = "ab" * 32
+    fake = {sha: {"board": "one"}, stockfw.profile_key(sha, "two"): {"board": "two"}}
+    fails = []
+    for board in ("one", "two"):
+        if profile_shas(board_profiles(fake, board)) != {sha}:
+            fails.append("a file keyed for %s is not found by its SHA-256" % board)
+    for b, t in CODEC_TOOLS.items():	# every board with a codec tool finds each of its stock files
+        if t is None:
+            continue
+        profs = board_profiles(__import__(t).PROFILES, b)
+        if profs and not all(stockfw.key_sha(h) in profile_shas(profs) for h in profs):
+            fails.append("%s: a stock file is not found" % b)
+    for f in fails:
+        print("FAIL:", f)
+    print("codec_auto self-test %s" % ("PASSED" if not fails else "FAILED"))
+    return 1 if fails else 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--board", required=True)
-    ap.add_argument("--image", required=True, help="the built image")
+    ap.add_argument("--board")
+    ap.add_argument("--image", help="the built image")
+    ap.add_argument("--self-test", action="store_true", help="check the profile matching, no files needed")
     ap.add_argument("--dir", default=os.path.join(ROOT, "codecs"), help="where to look (default: codecs/)")
     ap.add_argument("-o", "--output", help="merged image (default: <image>_codec.bin)")
     args = ap.parse_args()
+    if args.self_test:
+        return self_test()
+    if not args.board or not args.image:
+        ap.error("--board and --image are required")
 
     tool = CODEC_TOOLS.get(args.board)
     if tool is None or not os.path.isdir(args.dir):
         return 0
     # one tool may serve several boards: only this board's stock files count
     mod = __import__(tool)
-    profiles = {h: p for h, p in mod.PROFILES.items() if p.get("board", args.board) == args.board}
+    profiles = board_profiles(mod.PROFILES, args.board)
     if hasattr(mod, "identify"):	# a tool that knows a file by more than its SHA-256 (a program flash dump)
         def known(path):
             with open(path, "rb") as f:
                 return mod.identify(f.read(), board=args.board) is not None
     else:
+        shas = profile_shas(profiles)
+
         def known(path):
-            return sha256_file(path) in profiles
+            return sha256_file(path) in shas
     stock = next((p for p in candidates(args.dir) if os.path.getsize(p) > 4096 and known(p)), None)
     out = args.output or os.path.splitext(args.image)[0] + "_codec.bin"
     if stock is None:

@@ -358,10 +358,12 @@ interrupt.
 - A `burst_rx` event for every burst heard on a slot being received, within 10 ms of its slot.
 - `tx_done` only once the final burst (terminator, last data block) has left the antenna.
 - Receiving again within a few milliseconds of the last burst: a confirmed data response comes in the next frame,
-  30 ms after our terminator ([dmr-data.md](dmr-data.md) 12.9). The glue keeps a back-to-receive flag
-  (`hrc_dmr_rf_on_rx`, `stm32_hrc_dmr_rf_on_rx`): set when the last burst switch, or `tx_done` on a board that keeps
-  the synthesizer on TX between bursts, put the receiver back; cleared by the next burst, a new channel and entering
-  or leaving DMR. A board's `rx()` for the same DMR channel leaves the receiver as it is while the flag is set.
+  30 ms after our terminator ([dmr-data.md](dmr-data.md) 12.9). The glue keeps a back-to-receive flag: set when the
+  last burst switch, or `tx_done` on a board that keeps the synthesizer on TX between bursts, put the receiver back;
+  cleared by the next burst, a new channel and entering or leaving DMR. The core ends the transmission through
+  `hal_radio_t.dmr_tx_end` (`hrc_dmr_tx_end`, `stm32_hrc_dmr_tx_end`): while the flag is set, the board's `tx_end`
+  hook ends it and leaves the receiver as it is on the same channel; otherwise the core calls `tx_off()`. `rx()` is
+  always a full set-up ([gotchas.md](gotchas.md) 3.14).
 - Recovery: a stalled modem (no tick for 200 ms) re-initialized by the driver, reported as `sync_lost`.
 
 ### 6.5 What the stack must not assume
