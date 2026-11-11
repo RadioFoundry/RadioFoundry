@@ -184,6 +184,9 @@ pa_keyup_t pa_keyup_plan(uint16_t d, uint16_t top, uint16_t ref)
 		if (last.pa_us > ahead_limit) {
 			last.pa_us = ahead_limit;
 		}
+		if (last.drive_us > last.pa_us) {
+			last.drive_us = last.pa_us;
+		}
 	}
 	last_top = top;
 	last_ref = ref;

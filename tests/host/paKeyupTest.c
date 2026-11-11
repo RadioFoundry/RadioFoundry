@@ -152,6 +152,12 @@ static uint8_t random_points(pa_keyup_point_t *pt)
 			CHECK(k.boost == d || (k.boost_us == c.window_us && k.drive_us <= c.settle_us));
 		}
 	}
+	// An eased level may start ahead of the window: the board's earliest point bounds it, as pa_keyup_plan does
+	if (k.boost_us > max_ahead) {
+		k.boost_us = max_ahead;
+		k.pa_us = k.pa_us > max_ahead ? max_ahead : k.pa_us;
+		k.drive_us = k.drive_us > k.pa_us ? k.pa_us : k.drive_us;
+	}
 	return pa_keyup_points(&k, pt);
 }
 
