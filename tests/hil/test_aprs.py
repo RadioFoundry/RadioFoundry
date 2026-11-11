@@ -262,7 +262,7 @@ class AprsSession:
                 "pos_src": _n(v, "set.aprs_pos_src"), "dmr_dst": _n(v, "set.aprs_dmr_dst"),
                 "dmr_udt": _n(v, "set.aprs_dmr_udt"), "via": VIAS[v["set.aprs_via"]],
                 "path": PATHS.index(v["set.aprs_path"]), "rx": _n(v, "set.aprs_rx"), "digi": _n(v, "set.aprs_digi"),
-                "power": _n(v, "set.aprs_power")}
+                "power": _n(v, "set.aprs_power"), "ambiguity": _n(v, "set.pos_ambiguity")}
         assert back == k, f"APRS settings not restored: {back} != {k}"
 
 
@@ -526,7 +526,8 @@ def _link_answers(radio, aprs_air, send):
 def test_aprs_dmr_position(radio, sdr_bench, pytestconfig, form):
     """The position as an LRRP report or a UDT location over DMR at the lowest power, decoded from the bench modem."""
     _need_aprs(radio)
-    if "APRS_DMR" not in radio.features():
+    feats = radio.features()
+    if "APRS_DMR" not in feats:
         skip("not_built", "built without CONFIG_APRS_DMR (APRS over DMR)")
     if form == "lrrp" and "DMR_LRRP" not in feats:
         skip("not_built", "built without CONFIG_DMR_LRRP")
