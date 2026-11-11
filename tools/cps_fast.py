@@ -336,11 +336,14 @@ class FastLink:
         """Block addresses whose bytes inside the regions differ from img (the VFO A record aside)"""
         bad = []
         sums = self.sums(blocks_of(regions))
+        area = cps_client.SETTINGS_AREA[0]
         for a, (crc, blank) in sums.items():
             want = bytes(img[a:a + BLOCK])
             if crc32(want) == crc:
                 continue
             got = BLANK if blank else self.read_block(a)
+            if a == area and cps_client.area_kept(want, got):
+                continue        # a write leaves the radio's settings area, so verify does too
             for s, e in regions:
                 lo, hi = max(s, a), min(e, a + BLOCK)
                 if lo < hi and not cps_client.same_but_vfo(got[lo - a:hi - a], want[lo - a:hi - a], lo):

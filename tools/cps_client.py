@@ -280,9 +280,9 @@ class Cps:
         sent."""
         jobs = plan_write(img, regions, base)
         area = SETTINGS_AREA[0] // SECTOR
+        lo, hi = SETTINGS_AREA
         if any(s == area for s, _, _ in jobs) and (
-                area_state(img[SETTINGS_AREA[0]:SETTINGS_AREA[1]]) != "valid" or
-                area_state(self.read_image([SETTINGS_AREA])[SETTINGS_AREA[0]:SETTINGS_AREA[1]]) == "newer"):
+                area_state(img[lo:hi]) != "valid" or area_kept(img[lo:hi], self.read_image([SETTINGS_AREA])[lo:hi])):
             jobs = [j for j in jobs if j[0] != area]     # the radio keeps its settings area
         for sector, _, _ in jobs:
             wire = sector * SECTOR + self.offset
@@ -536,6 +536,12 @@ def load_image(path):
     return d
 
 
+def area_kept(mine, radio):
+    """True when a write leaves the radio's settings area as it is (codeplug-settings.md 4): the area being written
+    (mine) isn't valid, or the radio's is of a newer version. verify then leaves the area out, as write does"""
+    return area_state(mine) != "valid" or area_state(radio) == "newer"
+
+
 def compare(a, b, regions, skip=()):
     """Differences of b against a inside the regions, as (address, a byte, b byte); the ranges in skip left out"""
     diffs = []
@@ -615,7 +621,8 @@ def main(argv=None):
         elif a.cmd == "verify":
             img = load_image(a.image)
             back = cps.read_image(regions, block=a.block, progress=progress)
-            d = compare(img, back, regions)
+            lo, hi = SETTINGS_AREA
+            d = compare(img, back, regions, skip=[SETTINGS_AREA] if area_kept(img[lo:hi], back[lo:hi]) else ())
             for addr, x, y in d[:20]:
                 print(f"{addr:#08x}: file {x:#04x} radio {y:#04x}")
             print("match" if not d else f"{len(d)} bytes differ")

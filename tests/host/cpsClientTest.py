@@ -36,6 +36,11 @@ def area_cases(sim, open_fn, read_area, write):
     A, B = cps_client.SETTINGS_AREA
     check(cps_client.area_state(make_area(5)) == "valid" and cps_client.area_state(b"\xff" * 4096) == "empty",
           "area_state valid / empty")
+    newer = bytearray(make_area(5))
+    newer[4] = 2
+    check(cps_client.area_kept(b"\xff" * 4096, make_area(5)) and not cps_client.area_kept(make_area(6), make_area(5))
+          and cps_client.area_kept(make_area(6), bytes(newer)),
+          "area_kept: an empty file area or a newer radio area keeps the radio's (verify leaves it out)")
     with tempfile.TemporaryDirectory() as d:
         dump = os.path.join(d, "flash.bin")
         subprocess.run([sim, "--populate", "--dump", dump], stdin=subprocess.DEVNULL, check=True)
