@@ -64,6 +64,7 @@ CREEP_US = 150
 SYM1_CREEP_MIN_DB = -4.5    # a creeping level's first symbol: under its settled level by the creep, not by the key-up
 GUARD_US = 1250             # the slot starts this long before the first symbol (ETSI TS 102 361-1, 4.2)
 ON_AIR_DB = "-20"           # on the air: the carrier within 20 dB of the burst's level
+OFF_HOLD_MS = 0.3           # off the air: under that level this long
 END_MIN_DB = -3.0           # the carrier at the last symbol's end: lower, and the key-down cut the symbol
 BOOST_MAX_PCT = 120     # PA_KEYUP_BOOST_MAX_PCT
 NAMES = ("dead_pm", "knee_us", "slope_us", "window_us", "settle_us", "pa_us")
@@ -416,12 +417,17 @@ def mid_trace(ramps, name):
 
 
 def off_air_us(tail):
-    """When a key-down's envelope (`tail`, from the last symbol's end) is last within ON_AIR_DB of the burst's level,
-    us. None without one."""
+    """When a key-down's envelope (`tail`, from the last symbol's end) leaves the air: the last point before it stays
+    more than ON_AIR_DB under the burst's level for OFF_HOLD_MS, us. A weak signal's noise comes back over that level
+    in single points long after the carrier is gone. None without an envelope; its end when the carrier never left."""
     if not tail or not tail.get("db"):
         return None
-    last = max((i for i, v in enumerate(tail["db"]) if v >= float(ON_AIR_DB)), default=None)
-    return None if last is None else (tail["t0_ms"] + last * tail["dt_ms"]) * 1000.0
+    db, n = tail["db"], max(1, int(round(OFF_HOLD_MS / tail["dt_ms"])))
+    th = float(ON_AIR_DB)
+    for i in range(1, len(db) - n + 1):
+        if db[i - 1] >= th and all(v < th for v in db[i:i + n]):
+            return (tail["t0_ms"] + (i - 1) * tail["dt_ms"]) * 1000.0
+    return None if db[0] < th else (tail["t0_ms"] + (len(db) - 1) * tail["dt_ms"]) * 1000.0
 
 
 def end_db(tail):

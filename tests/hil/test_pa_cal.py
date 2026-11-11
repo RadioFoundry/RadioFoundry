@@ -228,3 +228,7 @@ def test_a_key_down_in_the_slot_after_fails_the_band():
     assert pa_cal.overrun({"off_us": pa_cal.off_air_us(tail(1.9))}) == ["after-slot"]
     assert pa_cal.off_air_us(None) is None and pa_cal.overrun({}) == []
     assert pa_cal.end_db(tail(0.5)) == 0.0 and pa_cal.overrun({"end_db": pa_cal.end_db(tail(-0.2))}) == ["cut-short"]
+    noisy = tail(0.5)
+    noisy["db"][100] = -12.0                                            # one point of noise 3 ms after the carrier
+    assert round(pa_cal.off_air_us(noisy)) == 450
+    assert round(pa_cal.off_air_us(tail(9.0))) == 3950                  # never left: the envelope's end
