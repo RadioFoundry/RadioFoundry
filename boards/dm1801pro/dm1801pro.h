@@ -67,4 +67,6 @@ int16_t dm1801pro_accel_id(void);	// WHO_AM_I, -1 = no acknowledge
 bool dm1801pro_diag_line(uint8_t i, char *buf, uint8_t len);
 void dm1801pro_diag_reset(void);
 
+bool dm1801pro_radio_transmitting(void);	// the radio is keyed (the shared PTT line's gate)
+
 #endif

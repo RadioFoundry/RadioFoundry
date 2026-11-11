@@ -17,6 +17,7 @@
 #include "ui_app.h"
 #include "ui_nav.h"
 #include "ui_svc.h"
+#include "ui_svc_aprs.h"
 #include "fmt.h"
 #include "i18n.h"
 #include "input/input.h"
@@ -31,7 +32,7 @@
 
 #define UI_STACK_MAX		6
 #define TOAST_MS		1800
-#define VOLUME_MS		3000	// the volume screen closes this long after the last key
+#define VOLUME_MS		3000	// the volume screen closes this long after the last key, the knob's bar after its last turn
 #define ENTRY_TIMEOUT_MS	10000
 #define BANNER_MS		8000
 #define REFRESH_MS		1000
@@ -51,9 +52,17 @@ static radio_view_t view_none;		// until the first tick
 static ui_frame_t stack[UI_STACK_MAX];
 static uint8_t sp;			// stack[sp] is on screen; stack[0] is Home
 static uint32_t toast_until, entry_last, last_refresh, now;
+#if CONFIG_VOLUME_BAR
+static uint32_t volbar_until;
+#endif
+static int8_t knob_seen;		// the knob's last level (percent) the UI saw, -1 = none yet: no bar for the first
 static bool dirty = true;
 static uint32_t draws;
 static bool has_quick_key, has_context_key;
+// Long QUICK or long Back unlocks the keys. A radio with neither (side keys only) is never locked by auto lock: only a
+// side key set to key lock could unlock it
+static bool has_unlock_key;
+static int16_t knob_last = -1;	// the volume knob's position last seen, -1 = none since start-up
 static char home_hint[32];
 
 // The hint's keys part, in the language in use: the quick settings key, or holding OK on a radio without it
@@ -108,7 +117,7 @@ static void entry_cancel(void)
 	dirty = true;
 }
 
-// Lock or unlock the keys; PTT goes with them when Settings > Privacy > PTT when locked is off
+// Lock or unlock the keys; PTT goes with them when Settings > Key lock > PTT when locked is off
 static void set_locked(bool locked)
 {
 	ui_st.locked = locked;
@@ -118,6 +127,7 @@ static void set_locked(bool locked)
 	}
 	ui_svc_ptt_block(locked && !ui_st.ptt_locked);
 	ui_svc_dtmf_block(locked);
+	ui_svc_volume_hold(locked && ui_st.knob_lock);
 	dirty = true;
 }
 
@@ -147,29 +157,44 @@ void ui_push(uint8_t scr, uint16_t arg)
 	}
 	if (ui_scr[scr]->enter != NULL)
 		ui_scr[scr]->enter();	// may focus a row (the current zone in Channels)
-	// Else the first row that can be focused
+	// Else the first row that is available, or failing that the first that can be focused: a dimmed row is still
+	// reachable to explain itself, a text row never is
 	const ui_scr_def_t *d = ui_scr[scr];
 	if ((d->flags & SF_LIST) && d->count != NULL && d->item != NULL && stack[sp].focus == 0) {
 		uint16_t n = d->count();
+		uint16_t dim = n;
 		while (stack[sp].focus < n) {
 			ui_item_t it;
 			it.flags = 0;
 			it.label[0] = it.value[0] = 0;
 			it.num = 0;
 			d->item(stack[sp].focus, &it);
-			if (!(it.flags & UI_ITEM_INFO))
+			if (!(it.flags & (UI_ITEM_INFO | UI_ITEM_DIM)))
 				break;
+			if (!(it.flags & UI_ITEM_INFO) && dim == n)
+				dim = stack[sp].focus;
 			stack[sp].focus++;
 		}
 		if (stack[sp].focus >= n)
-			stack[sp].focus = 0;
+			stack[sp].focus = dim < n ? dim : 0;
 	}
 	update_focus_target();
 	dirty = true;
 }
 
+// The foreign codeplug question leaves the stack unanswered (BACK, Home): the write it holds is dropped. After an
+// answer it fails harmlessly (nothing held, or the answer's job is pending)
+static void cp_question_gone(uint8_t from)
+{
+	for (uint8_t i = from; i <= sp; i++) {
+		if (stack[i].scr == SCR_CP_FOREIGN && ui_svc_codeplug_answer(UI_CP_CANCEL))
+			ui_toast(TR("Not saved"));
+	}
+}
+
 void ui_pop(void)
 {
+	cp_question_gone(sp);
 	if (sp > 0)
 		sp--;
 	if (ui_scr[stack[sp].scr]->flags & SF_FILTER)
@@ -184,6 +209,7 @@ void ui_pop(void)
 
 void ui_go_home(void)
 {
+	cp_question_gone(1);
 	sp = 0;
 	ui_st.quick_edit = false;
 	entry_cancel();
@@ -193,13 +219,67 @@ void ui_go_home(void)
 
 // --- filtered lists (SF_FILTER): the rows whose label matches the T9 keys typed ---
 
+// With keys typed the list is the first UI_FILTER_MAX matches. With none it is every row, so a long list (1024
+// contacts) scrolls to its end without the RAM for its index: the first UI_FILTER_MAX - 2 rows are in filter_idx, and
+// in a longer list its last two slots are a cursor, row WALK_I at raw row WALK_RAW, moved by stepping raw rows.
+// Scrolling and drawing move it a few rows at a time; a jump from the top to the end steps through every raw row once,
+// as typing a key does. RAM is short (no static of its own), and the list's screen is the one on top (only it calls
+// this)
 static uint16_t filter_idx[UI_FILTER_MAX];
-static uint16_t filter_n;
+static uint16_t filter_n;		// the rows in the list
+#define WALK_I		filter_idx[UI_FILTER_MAX - 2]	// past UI_FILTER_MAX: the cursor's row
+#define WALK_RAW	filter_idx[UI_FILTER_MAX - 1]	// and its raw row
 static char filter_keys[UI_FILTER_KEYS + 1];
 
 uint16_t ui_filter_count(void) { return filter_n; }
-uint16_t ui_filter_raw(uint16_t i) { return i < filter_n ? filter_idx[i] : 0; }
 const char *ui_filter_text(void) { return filter_keys; }
+
+uint16_t ui_filter_raw(uint16_t i)
+{
+	if (i >= filter_n)
+		return 0;
+	if (filter_n <= UI_FILTER_MAX || i < UI_FILTER_MAX - 2u)
+		return filter_idx[i];
+	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
+	if (!(d->flags & SF_FILTER) || d->raw_count == NULL || d->raw_label == NULL)
+		return 0;
+	uint16_t n = d->raw_count();
+	uint16_t raw = WALK_RAW;
+	char label[40];
+	while (WALK_I != i) {	// never below UI_FILTER_MAX - 2, one under where the cursor started
+		bool up = i > WALK_I;
+		do {
+			if (up ? raw + 1u >= n : raw == 0)
+				return 0;	// the rows changed under the list: the next rebuild puts it right
+			raw = up ? (uint16_t)(raw + 1u) : (uint16_t)(raw - 1u);
+		} while (d->raw_used != NULL ? !d->raw_used(raw) : !d->raw_label(raw, label, sizeof label));
+		WALK_RAW = raw;
+		WALK_I = up ? (uint16_t)(WALK_I + 1u) : (uint16_t)(WALK_I - 1u);
+	}
+	return raw;
+}
+
+static bool filter_row(uint16_t raw, const char *label, void *ctx)
+{
+	(void)ctx;
+	if (label == NULL || (filter_keys[0] != 0 && !ui_t9_match(label, filter_keys)))
+		return true;
+	if (filter_n < UI_FILTER_MAX)
+		filter_idx[filter_n] = raw;
+	filter_n++;
+	return filter_keys[0] == 0 || filter_n < UI_FILTER_MAX;	// typed: the first matches
+}
+
+// A row at a time, for a list without raw_each. Its own frame: the label stays off the stack of raw_each's pass
+static void __attribute__((noinline)) filter_rows(const ui_scr_def_t *d)
+{
+	uint16_t n = d->raw_count();
+	char label[40];
+	for (uint16_t i = 0; i < n; i++) {
+		if (!filter_row(i, d->raw_label(i, label, sizeof label) ? label : NULL, NULL))
+			break;
+	}
+}
 
 void ui_filter_rebuild(void)
 {
@@ -207,14 +287,12 @@ void ui_filter_rebuild(void)
 	filter_n = 0;
 	if (d->raw_count == NULL || d->raw_label == NULL)
 		return;
-	uint16_t n = d->raw_count();
-	char label[40];
-	for (uint16_t i = 0; i < n && filter_n < UI_FILTER_MAX; i++) {
-		if (!d->raw_label(i, label, sizeof label))
-			continue;
-		if (filter_keys[0] == 0 || ui_t9_match(label, filter_keys))
-			filter_idx[filter_n++] = i;
-	}
+	if (d->raw_each != NULL)
+		d->raw_each(filter_row, NULL, filter_keys[0] != 0);
+	else
+		filter_rows(d);
+	if (filter_n > UI_FILTER_MAX)
+		WALK_I = UI_FILTER_MAX - 1u;	// the cursor starts on that row, its raw row already in WALK_RAW
 }
 
 void ui_filter_reset(void)
@@ -337,13 +415,9 @@ bool ui_contact_name(uint32_t id, bool group, char *out)
 	out[0] = 0;
 #if CONFIG_DMR
 	contact_t c;
-	for (uint16_t i = 1; i <= CODEPLUG_CONTACTS_MAX; i++) {
-		if (!codeplug_contact(i, &c))
-			continue;
-		if (c.id == id && (c.type == CONTACT_GROUP) == group) {
-			strcpy(out, c.name);
-			return true;
-		}
+	if (codeplug_contact_find(id, group, &c)) {
+		strcpy(out, c.name);
+		return true;
 	}
 #else
 	(void)id;
@@ -603,6 +677,12 @@ static void handle_event(const ui_event_t *ev)
 		ui_menus_save_failed();
 		break;
 	}
+	case UI_EV_CODEPLUG_FOREIGN:
+		ui_st.toast = NULL;	// the screen that asked may have said "Saved": the question says what happens
+		if (stack[sp].scr != SCR_CP_FOREIGN)
+			ui_push(SCR_CP_FOREIGN, 0);
+		wake_req = true;
+		break;
 	case UI_EV_CALL_ALERT_RESULT:
 		if (ev->ok) {
 			station(&b, ev);
@@ -701,7 +781,7 @@ bool ui_freq_entry_digit(char *digits, uint8_t *len, char d)
 	digits[*len] = d;
 	uint32_t lo, hi;
 	entry_range(digits, *len + 1, &lo, &hi);
-	for (int i = 0; i < board.band_count; i++) {
+	for (int i = 0; i < board_band_count(); i++) {
 		if (lo <= board.bands[i].hi_hz && hi >= board.bands[i].lo_hz) {
 			digits[++*len] = 0;
 			return true;
@@ -709,7 +789,7 @@ bool ui_freq_entry_digit(char *digits, uint8_t *len, char d)
 	}
 	digits[*len] = 0;
 	char bands[32];
-	ui_bands_text(bands, sizeof bands);
+	ui_bands_text(bands, sizeof bands, false);
 	sbuf_t b;
 	sb_init(&b, hint, sizeof hint);
 	sb_str(&b, TR("Bands: "));
@@ -814,15 +894,25 @@ static int digit_of(const input_event_t *ev)
 	return ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 ? ev->action - ACT_DIGIT_0 : -1;
 }
 
-static void save_channel(void)
+bool ui_try_save_channel(void)
 {
-	if (!view->temporary && !ui_st.privacy) {
+	if (view->vfo) {
+		ui_toast(TR("VFO settings save automatically"));
+	} else if (view->hotspot) {
+		ui_toast(TR("Stop hotspot to save"));
+	} else if (!view->temporary && !ui_st.privacy) {
 		ui_toast(TR("Nothing to save"));
+	} else if (view->channel_number == 0) {
+		ui_toast(TR("Pick a saved channel"));
+	} else if (!(ui_svc_features() & UI_FEAT_SAVE_CHANNEL)) {
+		ui_toast(TR("Channel saving unavailable"));
 	} else if (ui_svc_save_channel()) {
 		ui_toast(TR("Saved to channel"));
+		return true;
 	} else {
-		ui_toast(TR("Can't save here: use qdmr"));
+		ui_toast(TR("Save busy: try again"));
 	}
+	return false;
 }
 
 // --- Home (information-architecture.md 3) ---
@@ -1024,7 +1114,7 @@ bool ui_home_key(const input_event_t *ev)
 			if (!has_quick_key)
 				ui_push(SCR_QUICK, 0);	// few-key boards: long SELECT is QUICK
 			else
-				save_channel();
+				ui_try_save_channel();
 			return true;
 		}
 		return false;
@@ -1345,7 +1435,7 @@ static void quick_activate(int tile)
 		sbuf_t b;
 		sb_init(&b, msg, sizeof msg);
 		sb_str(&b, TR("Power "));
-		sb_str(&b, ui_power_name(next));
+		sb_str(&b, ui_power_name(next, view->ch.tx_hz));
 		ui_toast(msg);
 		break;
 	}
@@ -1415,7 +1505,7 @@ bool ui_quick_key(const input_event_t *ev)
 			if (ui_st.quick_edit)
 				quick_close_editor();
 			if (!ui_st.quick_edit)	// a value the editor refused (Split's TX) keeps it open, unsaved
-				save_channel();
+				ui_try_save_channel();
 		} else if (press && ui_st.quick_edit) {
 			quick_close_editor();
 		} else if (press) {
@@ -1717,6 +1807,8 @@ void ui_app_init(void)
 #endif
 	view = &view_none;
 	memset(&ui_st, 0, sizeof ui_st);
+	ui_st.volbar = -1;
+	knob_seen = -1;
 	wake_req = false;
 #if CONFIG_DUAL_WATCH
 	ui_dual_reset();
@@ -1733,6 +1825,7 @@ void ui_app_init(void)
 					  UI_SET_ALIAS_SHOW, UI_SET_PTT_LOCKED, UI_SET_HEAR_ALL_DEFAULT, UI_SET_MESSAGE_TONE,
 					  UI_SET_UPDOWN_HOME, UI_SET_LOW_BATTERY, UI_SET_AUTO_OFF_MIN, UI_SET_THEME, UI_SET_ACCENT,
 					  UI_SET_STRIP, UI_SET_VIBRATE, UI_SET_VOLUME, UI_SET_LANGUAGE,
+					  UI_SET_KNOB_WHEN_LOCKED,
 #if CONFIG_DUAL_WATCH
 					  UI_SET_DUAL_TALK_BACK,
 #endif
@@ -1740,10 +1833,12 @@ void ui_app_init(void)
 	for (uint8_t i = 0; i < sizeof ui_ids; i++)
 		ui_apply_setting(ui_ids[i], ui_svc_setting_get(ui_ids[i]));
 	lock_armed = false;
+	knob_last = -1;
 	ptt_held = false;
 	off_warned = power_off_due = batt_warned = false;
 	hear_all_key = 0;
 	has_quick_key = ui_has_action(ACT_QUICK);
+	has_unlock_key = has_quick_key || ui_has_action(ACT_BACK);
 	has_context_key = ui_has_action(ACT_CONTEXT);
 	// ui_app_tick builds it again each tick, in the language in use then
 	str_copy(home_hint, sizeof home_hint, home_hint_keys());
@@ -1763,6 +1858,12 @@ static uint16_t clamp_u16(int32_t v) { return (uint16_t)(v < 0 ? 0 : v > 0xFFFF 
 void ui_apply_setting(uint8_t id, int32_t v)
 {
 	switch (id) {
+#if CONFIG_RX_EXT
+	case UI_SET_RX_EXT:
+		if (v != 0)
+			ui_toast(TR("Receive only. Sensitivity not rated"));
+		break;
+#endif
 	case UI_SET_BRIGHTNESS: ui_st.brightness = (uint8_t)(v >= 10 && v <= 100 ? v : 100); break;
 	case UI_SET_HINTS: ui_st.hints = v != 0; break;
 	case UI_SET_LARGE_TEXT: ui_st.large_text = v != 0; break;
@@ -1775,6 +1876,10 @@ void ui_apply_setting(uint8_t id, int32_t v)
 	case UI_SET_DUAL_TALK_BACK: ui_st.dual.talk_back = v != 0; break;
 #endif
 	case UI_SET_VOLUME: ui_st.volume = (uint8_t)(v >= 0 && v <= RADIO_VOLUME_MAX ? v : RADIO_VOLUME_DEFAULT); break;
+	case UI_SET_KNOB_WHEN_LOCKED:
+		ui_st.knob_lock = v == 0;	// Off: the knob does nothing while the keys are locked
+		ui_svc_volume_hold(ui_st.locked && ui_st.knob_lock);
+		break;
 	case UI_SET_UPDOWN_HOME: ui_st.updown = (uint8_t)(v >= 0 && v <= 2 ? v : 0); break;
 	case UI_SET_LOW_BATTERY: ui_st.low_batt_pct = (uint8_t)(v >= 0 && v <= 50 ? v : 15); batt_warned = false; break;
 	case UI_SET_AUTO_OFF_MIN: ui_st.auto_off_min = clamp_u16(v); off_warned = false; break;
@@ -1848,7 +1953,7 @@ void ui_app_key(const input_event_t *ev)
 	last_use_ms = now;
 	off_warned = false;
 	if (ev->action == ACT_PTT && ev->gesture == GESTURE_DOWN && ui_st.locked && !ui_st.ptt_locked) {
-		// The input layer kept this press from the radio (Settings > Privacy > PTT when locked)
+		// The input layer kept this press from the radio (Settings > Key lock > PTT when locked)
 		ui_svc_beep(UI_BEEP_ERROR);
 		ui_toast(has_quick_key ? TR("PTT is off while locked: hold * to unlock") :
 			TR("PTT is off while locked: hold Back to unlock"));
@@ -1866,7 +1971,7 @@ void ui_app_key(const input_event_t *ev)
 		return;
 	if (ev->action == ACT_PTT)
 		ptt_held = ev->gesture == GESTURE_DOWN;	// PTT sends only DOWN and UP (raw edges)
-	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR)
+	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR || ev->action == ACT_TONE_BURST)
 		return;		// the input layer already sent these to the radio
 	// While PTT keys the radio the digit keys do nothing: no Find, channel entry or speed dial under the TX screen.
 	// On FM with DTMF the input task gives them (and * and #) to the radio core instead and they never get here
@@ -1881,7 +1986,8 @@ void ui_app_key(const input_event_t *ev)
 	// Key lock: only long QUICK (and PTT, MONITOR, emergency) get through
 	// Long * locks only from Home (principles 3): in a menu it would lock the keys mid-task, and in text entry a slow *
 	// is a delete. It unlocks from anywhere (auto lock can lock with a menu open)
-	bool typing = stack[sp].scr == SCR_TEXT;
+	bool typing = stack[sp].scr == SCR_TEXT || stack[sp].scr == SCR_APRS_TO ||
+		stack[sp].scr == SCR_MESSAGE_TEXT;
 	bool lock_key = has_quick_key ? (ev->action == ACT_QUICK && ev->gesture == GESTURE_LONG && (sp == 0 || ui_st.locked)) :
 		(ev->action == ACT_BACK && ev->gesture == GESTURE_LONG && ui_st.locked);
 	// A side key set to key lock (keyassign.h) locks and unlocks on a press or a long press, as long QUICK does
@@ -1973,7 +2079,8 @@ void ui_app_key(const input_event_t *ev)
 			break;
 		}
 	}
-	if (ev->action == ACT_VFO_TOGGLE && ev->gesture == GESTURE_PRESS) {
+	// A VFO/MR key (its long press is COPY_VFO) or a side key set to VFO/Channel, on either slot
+	if (ev->action == ACT_VFO_TOGGLE && (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)) {
 		vfo_key();
 		return;
 	}
@@ -2027,8 +2134,8 @@ void ui_app_key(const input_event_t *ev)
 		ui_toast(TR("Not used here"));
 }
 
-// Auto power off (Settings > Power): after auto_off_min without a key press, a call, a scan or the hotspot, a banner
-// a minute before, then the housekeeping task switches off (ui_app_power_off_due)
+// Auto power off (Settings > Power saving): after auto_off_min without a key press, a call, a scan or the hotspot, a
+// banner a minute before, then the housekeeping task switches off (ui_app_power_off_due)
 static void use_tick(const radio_view_t *v)
 {
 	if (v->state != RS_IDLE || v->scan != 0 || v->hotspot) {
@@ -2047,8 +2154,8 @@ static void use_tick(const radio_view_t *v)
 		power_off_due = true;
 }
 
-// Low battery warning (Settings > Power): a banner when the battery falls to the level, again every 5 min while it
-// stays there, with the low battery tone unless the radio core's own voltage warning has sounded (view.battery)
+// Low battery warning (Settings > Power saving): a banner when the battery falls to the level, again every 5 min while
+// it stays there, with the low battery tone unless the radio core's own voltage warning has sounded (view.battery)
 static void battery_tick(const radio_view_t *v)
 {
 	static char text[UI_BANNER_TEXT];
@@ -2107,6 +2214,43 @@ static uint8_t usb_net_state(void)
 }
 #endif
 
+// The volume knob turned (the radio core's view.volume_knob, filtered there) while the keys are locked with Settings >
+// Key lock > Knob when locked Off: the unlock hint, as for a key. The first reading after start-up only sets the reference
+static void knob_moved(const radio_view_t *v)
+{
+	int16_t k = v->volume_knob;
+	if (k < 0 || k == knob_last) {
+		return;
+	}
+	bool first = knob_last < 0;
+	knob_last = k;
+	if (!first && ui_st.locked && ui_st.knob_lock) {
+		ui_toast(locked_text(has_quick_key));
+	}
+}
+
+// The knob turned (#354): the level the radio core passed on changed, from the knob both times. Read from the radio's
+// own view, not dual watch's per-side one. The first level (power-up) and a change of source (the debug link taking
+// over or giving back) set the reference without a bar. The bar wakes the backlight: turning the knob is using the
+// radio
+#if CONFIG_VOLUME_BAR
+__attribute__((noinline)) static void knob_tick(const radio_view_t *v)
+{
+	int8_t lvl = v->volume_src == RVOL_KNOB ? v->volume : -1;
+	if (lvl >= 0 && knob_seen >= 0 && lvl != knob_seen) {
+		ui_st.volbar = (int8_t)radio_volume_step_of((uint8_t)lvl);
+		volbar_until = now + VOLUME_MS;
+		wake_req = true;
+		dirty = true;
+	}
+	if (lvl < 0 && ui_st.volbar >= 0) {	// the debug link took over (or the knob is gone): its old level is wrong
+		ui_st.volbar = -1;
+		dirty = true;
+	}
+	knob_seen = lvl;
+}
+#endif
+
 bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 {
 	static uint32_t serial_seen;
@@ -2118,6 +2262,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 #endif
 	now = now_ms;
 	ui_st.now_ms = now_ms;
+#if CONFIG_VOLUME_BAR
+	knob_tick(v);
+#endif
 	ui_svc_poll();
 	ui_svc_keys_poll();
 #if CONFIG_ZONE_EDIT
@@ -2203,6 +2350,13 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ui_st.toast = NULL;
 		dirty = true;
 	}
+	knob_moved(v);
+#if CONFIG_VOLUME_BAR
+	if (ui_st.volbar >= 0 && (int32_t)(now - volbar_until) >= 0) {
+		ui_st.volbar = -1;
+		dirty = true;
+	}
+#endif
 	if (stack[sp].scr == SCR_VOLUME && now - last_key_ms >= VOLUME_MS) {
 		ui_pop();
 	}
@@ -2220,6 +2374,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	if (ui_st.entry && (now - entry_last >= ENTRY_TIMEOUT_MS || !view->vfo))
 		entry_cancel();
 	uint16_t unread = ui_svc_msg_unread();
+	aprs_view_t aprs_view;
+	if (ui_svc_aprs_view(&aprs_view))
+		unread += aprs_view.unread;
 	if (unread != ui_st.unread) {
 		ui_st.unread = unread;
 		dirty = true;
@@ -2263,7 +2420,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		last_key_ms = now;
 		last_use_ms = now;
 	}
-	if (ui_st.auto_lock_s != 0 && !ui_st.locked && v->state != RS_TX &&
+	if (ui_st.auto_lock_s != 0 && has_unlock_key && !ui_st.locked && v->state != RS_TX &&
 			now - last_key_ms >= (uint32_t)ui_st.auto_lock_s * 1000u) {
 		set_locked(true);
 	}
@@ -2319,7 +2476,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	return d;
 }
 
-static bool strip_ok;
+static bool strip_ok, volbar_top;
 
 static void draw_screen(void);
 
@@ -2328,7 +2485,15 @@ void ui_app_draw(void)
 	uint32_t before = ui_strip_draws;
 	dirty = false;
 	draws++;
+#if CONFIG_VOLUME_BAR
+	uint32_t hints = ui_hint_draws;
+#endif
 	draw_screen();
+#if CONFIG_VOLUME_BAR
+	volbar_top = ui_hint_draws == hints;
+	if (ui_st.volbar >= 0 && stack[sp].scr != SCR_VOLUME)
+		ui_draw_volume_bar(&ui_st, volbar_top);
+#endif
 	strip_ok = ui_strip_draws != before;
 }
 
@@ -2379,6 +2544,7 @@ void ui_app_status(ui_app_status_t *s)
 	s->focus = stack[sp].scr == SCR_QUICK ? ui_st.quick_focus : stack[sp].focus;
 	s->count = (d->flags & SF_LIST) && d->count != NULL ? d->count() : 0;
 	s->locked = ui_st.locked;
+	s->unlock_key = has_quick_key ? "quick" : has_unlock_key ? "back" : "none";
 	s->field_use = (d->flags & SF_FIELD) != 0;
 	s->banner = ui_st.banner.kind != UI_BANNER_NONE ? ui_st.banner.title : "";
 	s->toast = ui_st.toast != NULL ? ui_st.toast : "";
@@ -2392,4 +2558,11 @@ void ui_app_status(ui_app_status_t *s)
 	s->query = stack[sp].scr == SCR_FIND ? ui_find_query() : (d->flags & SF_FILTER) ? filter_keys : "";
 	s->draws = draws;
 	s->strip_drawn = strip_ok;
+#if CONFIG_DUAL_WATCH
+	s->dual = ui_st.dual.on;
+#else
+	s->dual = false;
+#endif
+	s->volbar = ui_st.volbar;
+	s->volbar_top = volbar_top;
 }

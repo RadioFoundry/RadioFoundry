@@ -17,8 +17,8 @@ stub/USER-GUIDE.md in the RadioFoundry repository.
     stubtool.py --self-test                                     against a simulated radio, no hardware
 
 Radio OFF, cable in, run the script, then switch the radio ON within --wait seconds (or --rfoundry-enter with the radio running RadioFoundry).
-Reads never write. Only --write-app (the application area from 0xC000, never the bootloader) and --write-test (two reserved
-test sectors per chip) write flash. The monitor the script loads into the radio's RAM is embedded below (source: the stub's own repository folder), so this file
+Reads never write. Only --write-app (the application area from 0xC000, never the bootloader) and --write-test (reserved
+test sectors: the program flash's, and the data flash's the board names in board.toml [flash.stub] write_test) write flash. The monitor the script loads into the radio's RAM is embedded below (source: the stub's own repository folder), so this file
 needs only Python 3 and pyserial.
 """
 import argparse
@@ -402,6 +402,10 @@ CRASH_BOOT_SOFT = 0x54464F53        # "SOFT": the reset was asked for, so RadioF
 TIMER2_VALUE = 0x14000018           # timer 2 current value (counts down; the stub runs it free)
 LED_RED, LED_GREEN = 33, 32         # PTB1 = red, PTB0 = green on the DM-1801 Pro and the DM-32UV (both checked on the radio)
 OK, BADSUM, BADOP, SPITIMEOUT, TOOLONG, NOWEL = 0x05, 0x0A, 0x0B, 0x0C, 0x0E, 0x0F
+# A NAND sector read or checksum (NAND_FLAG): a page of it has more bit errors than the chip's ECC corrects. It reads the
+# same every time, so it is never asked for again: nand_raw takes the pages as the chip holds them instead
+ECC = 0x0D
+NAND_PAGE = 2048
 WRITE_VERSION = 7                   # the stub has op 0E (WRITE): a sector erased, programmed and read back in one request,
                                     # and goes back to its home rate by itself when a raised rate's link goes quiet
 # Raised rates (protocol 7): the UART has whole divisors only, so the stub offers clock / (16 * d). Auto tries those in
@@ -421,8 +425,10 @@ MEM = {"progmem": (SSI_PROG, True, None, 0x100000, "program flash"),
 NAND_FLAG = 4
 
 
-# Writes are only allowed here (chosen 2026-10-15 from the dumps: blank in every dump, away from RadioFoundry)
-WRITE_OK = {"progmem": [(0xF0000, 0xF4000)], "q128": [(0xC00000, 0xC04000)]}
+# Writes are only allowed here (chosen from the dumps: blank in every dump, away from RadioFoundry). The data flash has
+# no fixed region: each board's map differs, so its profile names one ([flash.stub] write_test, start and end from the
+# registry, checked by tools/boards.py against the map) and a radio without one gets no data flash writes
+WRITE_OK = {"progmem": [(0xF0000, 0xF4000)]}
 PAGE = 256
 # The application area of the program flash: an RadioFoundry image is linked for 0x0300C000, which is flash offset 0xC000. The
 # bootloader below it (0..0xC000) is never written, so the radio can always be put in update mode by hand.
@@ -438,6 +444,18 @@ class DumpError(Exception):
 
 class FrameError(DumpError):
     """A damaged, short or missing frame, or a sector that failed its CRC: worth asking again."""
+
+
+class StatusError(DumpError):
+    """The stub answered a request with a status other than OK."""
+
+    def __init__(self, msg, status):
+        DumpError.__init__(self, msg)
+        self.status = status
+
+
+class EccError(StatusError):
+    """The NAND's ECC failed on the sector being read (status ECC): not worth asking again."""
 
 
 def stub_image():
@@ -541,13 +559,23 @@ def check_univ_load(image, load, window=None):
 # program flash size. VERSION's board= names them on the RadioFoundry route; --board at power-on. Unknown radio: GENERIC (no
 # pins, nothing echoed but 0).
 C7_BOARDS = {b.id: {"id": b.stub["id"], "name": b.model, "names": tuple(b.debuglink_names), "latch": b.stub["latch"],
-                    "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"], "protect": b.protect}
+                    "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"], "protect": b.protect,
+                    "write_test": b.stub.get("write_test")}
              for b in rfoundryboards.BOARDS.values() if b.stub and b.stub["tool"] == "stubtool"}
 GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000,
-           "protect": []}
+           "protect": [], "write_test": None}
 # This tool's memory names as board.toml [[flash.protect]] names them
 PROTECT_MEM = {"progmem": "progmem", "q128": "data", "nand": "nand"}
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
+
+
+def jedec_size(id_):
+    """The bytes a 3-byte SPI NOR JEDEC ID's capacity code gives, as the firmware's driver reads it (drivers/flash/spi_nor):
+    2^n for 0x10-0x18, 16 MB for a larger part (3-byte addresses reach no further), None for a code it doesn't know."""
+    c = id_[2] if len(id_) >= 3 else 0
+    if 0x10 <= c <= 0x18:
+        return 1 << c
+    return 0x1000000 if 0x19 <= c <= 0x22 else None
 
 
 def image_board_check(image, board):
@@ -677,6 +705,8 @@ class Radio:
         self.echo = False               # the cable sends back what the host sends (seen in the boot ROM load)
         self.retries = retries
         self.retried = 0
+        self.ecc = []                   # the last NAND dump's sectors whose ECC fails (read raw)
+        self.ecc_failed = []            # the last verify's sectors whose ECC fails (no CRC to compare)
         self.stub_head = b""
         self.stub_base = LOAD_ADDR
         self.v6 = None                  # the universal stub's HELLO fields (protocol 6), None for an older stub
@@ -903,7 +933,7 @@ class Radio:
                 self.link_score = max(0, self.link_score - 1)
                 return body
             if status is not None:
-                raise DumpError("stub op 0x%02X refused: status 0x%02X" % (op, status))
+                raise StatusError("stub op 0x%02X refused: status 0x%02X" % (op, status), status)
             why = body
             self.retried += 1
             if self.raised():
@@ -1218,15 +1248,24 @@ class Radio:
             raise DumpError(str(e))
         if mem == "nand":
             raise DumpError("the NAND is read only here")
-        ok = WRITE_OK.get(mem, []) + ([(APP_START, APP_END)] if app and mem == "progmem" else [])
+        ok = self.write_ok(mem) + ([(APP_START, APP_END)] if app and mem == "progmem" else [])
         if not any(a <= start and end <= b for a, b in ok):
-            raise DumpError("%s 0x%X-0x%X is outside the allowed write regions %s" %
-                            (MEM[mem][4], start, end, ", ".join("0x%X-0x%X" % r for r in WRITE_OK.get(mem, []))))
+            raise DumpError("%s 0x%X-0x%X is outside the allowed write regions: %s" %
+                            (MEM[mem][4], start, end, ", ".join("0x%X-0x%X" % r for r in self.write_ok(mem))
+                             or "none for the %s (board.toml [flash.stub] write_test)" % self.profile["name"]))
+
+    def write_ok(self, mem):
+        """The regions a write or erase may touch besides the application: the program flash's test sectors, and the data
+        flash's the board profile names (none on a radio without one)."""
+        if mem == "q128":
+            wt = self.profile.get("write_test")
+            return [tuple(wt)] if wt is not None else []
+        return list(WRITE_OK.get(mem, []))
 
     def erase_sectors(self, mem, start, end):
         self.check_writable()
         self.check_write_range(mem, start, end)
-        self.check_id(mem)
+        self.check_id(mem, end)
         for a in range(start, end, SECTOR):
             if self.sector_op:
                 self.write_sector(mem, a, None)
@@ -1310,7 +1349,7 @@ class Radio:
         end = start + len(data)
         self.check_writable()
         self.check_write_range(mem, start, end)
-        self.check_id(mem)
+        self.check_id(mem, end)
         self.write_sectors(mem, data, start, range(start, end, SECTOR))
         bad = self.verify(mem, data, start)
         if bad:
@@ -1537,6 +1576,8 @@ class Radio:
             if status != OK:
                 if status in (BADOP, TOOLONG):
                     raise DumpError("stub op 0x09 refused: status 0x%02X" % status)
+                if status == ECC and mem == "nand":
+                    raise EccError("0x%X: the NAND's ECC fails" % (addr + i * SECTOR), status)
                 raise FrameError("stub op 0x09: status 0x%02X" % status)
             if len(r) < 7 or len(r) != 7 + ((r[5] << 8) | r[6]):
                 raise FrameError("sector record malformed")
@@ -1555,12 +1596,19 @@ class Radio:
             return None
         return sec if len(sec) == SECTOR and zlib.crc32(sec) == crc else None
 
-    def check_id(self, mem):
+    def check_id(self, mem, end=None):
+        """The chip answers its ID; with end (a data flash write or erase up to it), the ID's capacity holds end: a smaller
+        chip wraps an address past its end to a low one, the radio's own data."""
         id_ = self.jedec(mem)
         self.log("%s JEDEC ID %s" % (MEM[mem][4], id_.hex()))
         if id_ in (b"\xff" * len(id_), b"\x00" * len(id_)):
             raise DumpError("%s does not answer the ID command (%s): chip select or pin mux wrong, nothing was dumped"
                             % (MEM[mem][4], id_.hex()))
+        if end is not None and mem == "q128":
+            size = jedec_size(id_)
+            if size is None or end > size:
+                raise DumpError("%s up to 0x%X: the chip (JEDEC %s) is %s" % (MEM[mem][4], end, id_.hex(),
+                                "of unknown size" if size is None else "only 0x%X bytes" % size))
 
     def windows(self, mem, start, end):
         size = self.mem_size(mem)
@@ -1573,7 +1621,8 @@ class Radio:
         """The radio reads each sector, CRCs it and sends it blank (a flag), LZ4-compressed or raw; every sector must
         match the radio's CRC-32. A sector that doesn't is asked for again, uncompressed from the second try. A record
         carries no address, so one left over from a stream cut short could pass for another sector: at the end every
-        sector is checked against the radio's sector CRCs (op 07) and read again until it matches."""
+        sector is checked against the radio's sector CRCs (op 07) and read again until it matches. A NAND sector whose ECC
+        fails is taken as the chip holds it (nand_raw), without a CRC to check it by; self.ecc lists them after the read."""
         self.check_id(mem)
         size = self.mem_size(mem)
         if not 0 <= start < end <= size:
@@ -1585,6 +1634,8 @@ class Radio:
         total = fails = 0
         sa = lo = start // SECTOR * SECTOR
         full = bytearray((end + SECTOR - 1) // SECTOR * SECTOR - lo)
+        ecc = set() if mem == "nand" else None
+        self.ecc = []
         want = compress
         while sa < end:
             count = min(PACK, (end - sa + SECTOR - 1) // SECTOR)
@@ -1604,6 +1655,13 @@ class Radio:
                     want = compress
                     if progress and total % 64 == 0:
                         progress(sa, end)
+            except EccError:
+                self.drain(0.1)                     # the stub sends nothing after its error; this only makes sure
+                self.put(out, full, lo, start, end, sa, self.ecc_sector(ecc, sa))
+                sa += SECTOR
+                total += 1
+                fails = 0
+                want = compress
             except FrameError as e:
                 fails += 1
                 self.retried += 1
@@ -1616,7 +1674,7 @@ class Radio:
                     self.log("0x%X: %s, resuming here (%d of %d)" % (sa, e, fails, self.retries))
                 want = compress and fails < 2       # a second failure at the same sector: ask for it uncompressed
         for attempt in range(self.retries + 1):
-            bad = self.verify(mem, bytes(full), lo)
+            bad = self.verify(mem, bytes(full), lo, ecc)
             if not bad:
                 break
             if attempt == self.retries:
@@ -1629,13 +1687,54 @@ class Radio:
                         sec = self.unpack(crc, method, data)
                         if sec is not None:
                             self.put(out, full, lo, start, end, sa, sec)
+                except EccError:
+                    self.drain(0.1)
+                    self.put(out, full, lo, start, end, sa, self.ecc_sector(ecc, sa))
                 except FrameError as e:
                     self.log("0x%X: %s" % (sa, e))
                     self.drain()
                     self.stream_damaged(str(e))
         out.flush()
+        if ecc:
+            self.ecc = sorted(ecc)
+            self.log("%d NAND sector(s) fail the chip's ECC, kept as the chip holds them: %s"
+                     % (len(self.ecc), ", ".join("0x%X" % a for a in self.ecc)))
         if total == self.skipped:
             self.log("warning: every sector was blank (0xFF)")
+
+    def ecc_sector(self, ecc, sa):
+        """A NAND sector whose ECC fails: its pages as the chip holds them, recorded in ecc."""
+        sec = self.nand_raw(sa)
+        ecc.add(sa)
+        self.log("0x%X: the NAND's ECC can't correct this sector; kept as the chip holds it" % sa)
+        return sec
+
+    def nand_raw(self, addr):
+        """The 4 KB at addr of the SPI NAND as the chip holds it, whatever its ECC says, by generic SPI requests: for each
+        2 KB page a page read (0x13 and the page), the status feature (0x0F 0xC0) until it is not busy, then the cache
+        (0x03, a column, a dummy byte) in halves that fit a reply: the standard SPI NAND commands, as the stub's own NAND
+        reads use them. Read twice; both must be the same."""
+        base, ser, cs, _, _ = MEM["nand"]
+
+        def once():
+            out = bytearray()
+            for h in range(SECTOR // NAND_PAGE):
+                pg = (addr + h * NAND_PAGE) // NAND_PAGE
+                self.spi(base, bytes([0x13]) + pg.to_bytes(3, "big"), 0, ser, cs)
+                n = 0
+                while self.spi(base, b"\x0F\xC0", 1, ser, cs)[0] & 1:
+                    n += 1
+                    if n > 50:
+                        raise DumpError("0x%X: the NAND stays busy after a page read" % addr)
+                for col in range(0, NAND_PAGE, CHUNK):
+                    out += self.spi(base, bytes([0x03, col >> 8, col & 0xFF, 0]), CHUNK, ser, cs)
+            return bytes(out)
+
+        for _ in range(self.retries + 1):
+            a, b = once(), once()
+            if a == b:
+                return a
+        raise DumpError("0x%X: the NAND's ECC fails here and the page reads differently each time" % addr)
 
     @staticmethod
     def put(out, full, lo, start, end, sa, sec):
@@ -1645,17 +1744,38 @@ class Radio:
         out.seek(a - start)
         out.write(sec[a - sa:b - sa])
 
-    def verify(self, mem, data, start=0):
+    def verify(self, mem, data, start=0, ecc=None):
         """Sector addresses where the flash differs from `data` (a multiple of 4096 bytes at a 4096 boundary), by
-        comparing CRC-32s: no flash data crosses the cable."""
+        comparing CRC-32s: no flash data crosses the cable. ecc: a NAND's sectors whose ECC fails (dump), which have no
+        CRC of the radio's: a window holding one is summed sector by sector without them, and a sector that fails its
+        ECC only now counts as differing (read again, it joins them). Those are also in self.ecc_failed."""
         if start % SECTOR or len(data) % SECTOR:
             raise DumpError("verify needs whole 4 KB sectors")
         self.check_id(mem)
+        ecc = set() if ecc is None and mem == "nand" else ecc
         bad = []
+        self.ecc_failed = []
         for w, count in self.windows(mem, start, start + len(data)):
-            for i, (crc, _) in enumerate(self.sums(mem, w, count)):
+            try:
+                sums = self.sums(mem, w, count)
+            except StatusError as e:
+                if ecc is None or e.status != ECC:
+                    raise
+                sums = []
+                for a in range(w, w + count * SECTOR, SECTOR):
+                    if a in ecc:
+                        sums.append(None)
+                        continue
+                    try:
+                        sums.append(self.sums(mem, a, 1)[0])
+                    except StatusError as e1:
+                        if e1.status != ECC:
+                            raise
+                        self.ecc_failed.append(a)
+                        sums.append((-1, False))
+            for i, sum_ in enumerate(sums):
                 off = w + i * SECTOR - start
-                if zlib.crc32(data[off:off + SECTOR]) != crc:
+                if sum_ is not None and zlib.crc32(data[off:off + SECTOR]) != sum_[0]:
                     bad.append(w + i * SECTOR)
         return bad
 
@@ -1767,8 +1887,13 @@ def lz4_encode(src):
 
 class FakeRadio:
     def __init__(self, images, drop=None, flip=(), silent=(), swap=(), misplace=(), stub_len=1536, load=LOAD_ADDR,
-                 rom_echo=False, rom_nak=False, rom_late=False):
+                 rom_echo=False, rom_nak=False, rom_late=False, ecc=()):
         self.images = images                # {"progmem": bytes, "q128": bytes}
+        self.data_code = 0x18               # the data flash's JEDEC capacity code: 16 MB
+        self.id_reads = 0                   # JEDEC ID requests answered
+        self.ecc = set(ecc)                 # NAND sectors whose ECC fails: reads and sums of them answer status ECC
+        self.nand_page = None               # the page a generic SPI NAND page read (0x13) put in the chip's cache
+        self.ecc_reads = 0                  # sector reads (op 09) that ended in status ECC
         self.rom_echo = rom_echo            # the cable sends back every byte written while the boot ROM listens
         self.rom_nak = rom_nak              # the boot ROM answers the load with something other than its ack
         self.rom_late = rom_late            # the answer to the greeting comes too late: the ROM stops waiting
@@ -1970,9 +2095,12 @@ class FakeRadio:
             addr, cnt = int.from_bytes(payload[6:10], "big"), int.from_bytes(payload[10:12], "big")
             mem = "progmem" if base == SSI_PROG else "nand" if flags & NAND_FLAG else "q128"
             sel = bool(flags & 1) and (mem == "progmem" or (flags & 2 and cs == 18))
+            self.nand_page = None
             for i in range(cnt):
                 sec = self.images[mem][addr + i * SECTOR:addr + (i + 1) * SECTOR] if sel else b"\xff" * SECTOR
                 body += zlib.crc32(sec).to_bytes(4, "big") + bytes([1 if sec == b"\xff" * SECTOR else 0])
+            if mem == "nand" and sel and any(addr + i * SECTOR in self.ecc for i in range(cnt)):
+                status, body = ECC, b""
         elif op == 0x03:
             a = int.from_bytes(payload[:4], "big")
             for i in range(0, len(payload) - 4, 4):
@@ -1996,8 +2124,13 @@ class FakeRadio:
             mem = "progmem" if base == SSI_PROG else "nand" if flags & NAND_FLAG else "q128"
             sel = bool(flags & 1) and (mem == "progmem" or (flags & 2 and cs == 18))
             frames = bytearray()
+            self.nand_page = None
             for i in range(cnt):
                 at = addr + (i + 1 if i == 0 and n in self.misplace else i) * SECTOR
+                if mem == "nand" and sel and at in self.ecc:
+                    frames += self.frame(ECC, b"")             # the stub stops the stream at its error
+                    self.ecc_reads += 1
+                    break
                 sec = self.images[mem][at:at + SECTOR] if sel else b"\xff" * SECTOR
                 crc = zlib.crc32(sec).to_bytes(4, "big")
                 if sec == b"\xff" * SECTOR:
@@ -2031,6 +2164,13 @@ class FakeRadio:
             selected = bool(flags & 1) and (mem == "progmem" or (flags & 2 and cs == 18))
             if not selected:
                 body = b"\xff" * rxn
+            elif tx[:1] == b"\x13" and "nand" in self.images:     # SPI NAND page read into the chip's cache
+                self.nand_page = int.from_bytes(tx[1:4], "big")
+            elif tx == b"\x0F\xC0" and "nand" in self.images:     # SPI NAND status feature: never busy here
+                body = b"\x00"
+            elif tx[:1] == b"\x03" and self.nand_page is not None:  # SPI NAND cache read: column, dummy byte
+                a = self.nand_page * NAND_PAGE + ((tx[1] << 8) | tx[2])
+                body = self.images["nand"][a:a + rxn]
             elif tx[:1] == b"\x03":
                 a = int.from_bytes(tx[1:4], "big")
                 body = self.images[mem][a:a + rxn]
@@ -2052,7 +2192,8 @@ class FakeRadio:
                 self.wel = False
                 self.writes.append((mem, tx[0], a))
             elif tx[:1] == b"\x9F":
-                body = bytes([0xC8, 0x40, 0x14 if mem == "progmem" else 0x18])[:rxn]
+                self.id_reads += 1
+                body = bytes([0xC8, 0x40, 0x14 if mem == "progmem" else self.data_code])[:rxn]
             else:
                 self.errors.append("unknown flash command %s" % tx.hex())
         else:
@@ -2127,9 +2268,19 @@ def rxn_big(payload):
     return int.from_bytes(payload[8:10], "big") >= 256
 
 
+def low_latency(port):
+    """An FTDI cable holds received bytes for its latency timer, 16 ms by default; 1 ms halves every request's round
+    trip. pyserial sets it on Linux only; elsewhere, and on URLs and fakes, nothing changes."""
+    try:
+        port.set_low_latency_mode(True)
+    except (AttributeError, NotImplementedError, OSError, ValueError):
+        pass
+    return port
+
+
 def open_port(serial, path):
     """A device or a pyserial URL: rfc2217://HOST:PORT reaches a radio on a networked serial server."""
-    return serial.serial_for_url(path, 115200, timeout=0.1)
+    return low_latency(serial.serial_for_url(path, 115200, timeout=0.1))
 
 
 def self_test():
@@ -2276,9 +2427,30 @@ def self_test():
                       stub_len=len(stub))
     r = Radio(radio, log=quiet)
     r.start(wait=2, stub=stub)
-    lo, hi = WRITE_OK["q128"][0]
+    try:                                    # no board, no data flash test region
+        r.write_flash("q128", 0xC00000, b"\0" * SECTOR)
+        check(False, "a data flash write without the board's test region refused")
+    except DumpError as e:
+        check("write_test" in str(e) and radio.writes == [], "a data flash write without the board's test region refused (%s)" % e)
+    r.profile = dict(GENERIC, write_test=[0x71C000, 0x720000])
+    lo, hi = r.write_ok("q128")[0]
+    check((lo, hi) == (0x71C000, 0x720000), "the data flash test region comes from the board profile")
+    for code, why in ((0x15, "only 0x200000 bytes"), (0x0F, "unknown size")):
+        radio.data_code = code              # a smaller chip: 0x71C000 would wrap to 0x11C000
+        try:
+            r.write_flash("q128", lo, b"\0" * SECTOR)
+            check(False, "a data flash write past a %s chip refused" % why)
+        except DumpError as e:
+            check(why in str(e) and radio.writes == [], "a data flash write past the chip refused (%s)" % e)
+    radio.data_code = 0x18
+    check(jedec_size(bytes([0xC8, 0x40, 0x18])) == 0x1000000 and jedec_size(bytes([0xEF, 0x40, 0x20])) == 0x1000000
+          and jedec_size(bytes([0x85, 0x20, 0x15])) == 0x200000 and jedec_size(b"\xff\xff\xff") is None,
+          "jedec_size reads the capacity code as the firmware's driver does")
     pat = bytes((i * 3 + 1) & 0xFF for i in range(hi - lo))
+    radio.id_reads = 0
     r.write_flash("q128", lo, pat)
+    check(radio.id_reads == 2, "a data flash write reads the chip's ID once before (its answer and its size) and once in "
+          "the verify (%d)" % radio.id_reads)
     check(radio.images["q128"][lo:hi] == pat, "write_flash programs and verifies a test region")
     r.erase_sectors("q128", lo, lo + SECTOR)
     check(radio.images["q128"][lo:lo + SECTOR] == b"\xff" * SECTOR and radio.images["q128"][lo + SECTOR:hi] == pat[SECTOR:],
@@ -2311,7 +2483,7 @@ def self_test():
                        ("write_flash over a protected sector", lambda: r.write_flash("q128", lo, pat)),
                        ("erase of a protected sector", lambda: r.erase_sectors("q128", lo + SECTOR, lo + 2 * SECTOR)),
                        ("a raw sector erase in a protected region", lambda: r._write_cmd(
-                           "q128", bytes([0x20, (lo + SECTOR) >> 16 & 0xFF, 0x10, 0]), "erase", 1.0)),
+                           "q128", bytes([0x20]) + (lo + SECTOR).to_bytes(3, "big"), "erase", 1.0)),
                        ("a chip erase of a memory with a protected region", lambda: r._write_cmd(
                            "q128", b"\x60", "chip erase", 1.0))):
         try:
@@ -2547,6 +2719,17 @@ def self_test():
             out = io.BytesIO()
             r.dump(out, "nand", 0, 16 * SECTOR)
             check(out.getvalue() == bytes(nand), "NAND read through the stub's NAND path")
+            # a block whose ECC fails: op 09 and op 07 answer ECC there; its sectors are read raw, listed, and verify
+            # passes without them
+            radio.ecc = {5 * SECTOR, 6 * SECTOR, 12 * SECTOR}
+            out = io.BytesIO()
+            r.dump(out, "nand", 0, 16 * SECTOR)
+            check(out.getvalue() == bytes(nand), "NAND sectors whose ECC fails are read as the chip holds them")
+            check(r.ecc == sorted(radio.ecc) and radio.ecc_reads == 3, "the ECC sectors are listed, each asked for once")
+            check(r.verify("nand", bytes(nand), 0, set(r.ecc)) == [], "verify skips the known ECC sectors")
+            check(r.verify("nand", bytes(nand), 0) == sorted(radio.ecc) and r.ecc_failed == sorted(radio.ecc),
+                  "verify without them counts them as differing and names them")
+            radio.ecc = set()
         else:
             try:
                 r.dump(io.BytesIO(), "nand", 0, SECTOR)
@@ -2817,7 +3000,8 @@ def main(argv=None):
                     "whole divisors only: clock / (16 * d)), remembered per port and radio; if it stops holding the link "
                     "goes back to the starting rate by itself. N asks for one rate (tested before it is kept); off stays")
     ap.add_argument("--write-test", choices=("progmem", "q128", "both"), help="erase, program a test pattern into, read back and erase "
-                    "again the sectors reserved for write tests (see WRITE_OK); nothing else is touched")
+                    "again the sectors reserved for write tests (WRITE_OK; the data flash's from the board's [flash.stub] "
+                    "write_test, refused on a radio without one); nothing else is touched")
     ap.add_argument("--rfoundry-enter", action="store_true", help="the radio is ON and runs RadioFoundry (built with CONFIG_STUB_ENTRY=y): load "
                     "the stub into its RAM over the debug link and jump to it, instead of the boot-ROM load")
     ap.add_argument("--rfoundry-stub", metavar="FILE", help="with --rfoundry-enter: this stub image instead of the embedded one (which is chosen by the RAM span the "
@@ -2972,11 +3156,19 @@ def main(argv=None):
             if not a.boot:
                 print("run again with --attach --boot reset (or power-cycle) to start the new firmware")
         if a.write_test:
+            regions = {}
             for mem in (("progmem", "q128") if a.write_test == "both" else (a.write_test,)):
-                lo, hi = WRITE_OK[mem][0]
+                ok = radio.write_ok(mem)        # every memory's region before the first write, so "both" writes all or none
+                if not ok:
+                    raise DumpError("the %s has no %s test region (board.toml [flash.stub] write_test; --board names the "
+                                    "radio): nothing written" % (radio.profile["name"], MEM[mem][4]))
+                lo, hi = regions[mem] = ok[0]
+                radio.check_write_range(mem, lo, hi)
+                radio.check_id(mem, hi)                     # the chip's size, before anything is read there
                 before = b"".join(radio.read_flash(mem, x, CHUNK) for x in range(lo, hi, CHUNK))
                 if before != b"\xff" * (hi - lo):
                     raise DumpError("%s 0x%X-0x%X is not blank any more: something else uses it, pick another region" % (MEM[mem][4], lo, hi))
+            for mem, (lo, hi) in regions.items():
                 pattern = bytes((i * 131 + (i >> 8) * 7 + 5) & 0xFF for i in range(hi - lo))
                 radio.write_flash(mem, lo, pattern)
                 back = b"".join(radio.read_flash(mem, x, CHUNK) for x in range(lo, hi, CHUNK))
@@ -3004,8 +3196,12 @@ def main(argv=None):
                 data += b"\xff" * (-len(data) % SECTOR)
                 start = parse_range(a.nand_range, radio.mem_size(mem))[0] if mem == "nand" and a.nand_range else 0
                 bad = radio.verify(mem, data, start)
+                ecc = [x for x in bad if x in radio.ecc_failed]     # no CRC of the radio's to compare them by
+                bad = [x for x in bad if x not in ecc]
                 print("%s vs %s: %s" % (MEM[mem][4], path, "identical" if not bad else
                       "%d sectors differ, first at 0x%X" % (len(bad), bad[0])))
+                if ecc:
+                    print("  %d sector(s) not compared, their ECC fails: %s" % (len(ecc), ", ".join("0x%X" % x for x in ecc)))
         if radio.v6 is not None and (jobs or a.write_app or a.verify_progmem or a.verify_nand):
             print("stub RAM:", radio.footprint())
         for mem, path, start, end in jobs:
@@ -3017,6 +3213,9 @@ def main(argv=None):
             print("%s: %d bytes in %.0f s, %d retries; %d blank sectors not sent, %d LZ4-compressed, %d bytes on the cable"
                   % (path, end - start, time.monotonic() - t0, radio.retried, radio.skipped, radio.packed, radio.wire))
             print("sha256", fingerprint(path))
+            if radio.ecc:
+                print("%d sector(s) fail the NAND's ECC, kept as the chip holds them: %s"
+                      % (len(radio.ecc), ", ".join("0x%X" % x for x in radio.ecc)))
         if jobs and a.done_led != "none" and not a.boot:
             radio.led_sequence(*parse_led_spec(a.done_led))
         if a.boot:

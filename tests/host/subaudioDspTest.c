@@ -180,6 +180,7 @@ typedef struct {
 	double phase;	// in bits
 	uint32_t word;
 	double level, amp, nz, skew;
+	double hp_a, hp_in, hp_out;	// a single-pole high-pass after the smoothing; hp_a 0 = none
 } dcs_gen_t;
 
 static void dcs_gen_init(dcs_gen_t *g, uint16_t code, bool inverted, double amp, double nz, double skew, double start)
@@ -191,6 +192,14 @@ static void dcs_gen_init(dcs_gen_t *g, uint16_t code, bool inverted, double amp,
 	g->amp = amp;
 	g->nz = nz;
 	g->skew = skew;
+	g->hp_a = 0;
+	g->hp_in = g->hp_out = 0;
+}
+
+// Add a single-pole high-pass at hz, as a sub-audio input coupled through a capacitor
+static void dcs_gen_high_pass(dcs_gen_t *g, double hz)
+{
+	g->hp_a = 1.0 / (1.0 + 2.0 * 3.14159265358979 * hz / FS);
 }
 
 static int16_t dcs_gen_next(dcs_gen_t *g)
@@ -199,7 +208,13 @@ static int16_t dcs_gen_next(dcs_gen_t *g)
 	double target = (g->word >> bit) & 1u ? g->amp : -g->amp;
 	g->level += (target - g->level) * 0.25;	// a corner near 150 Hz at this rate
 	g->phase += 134.4 * g->skew / FS;
-	return counts(g->level + g->nz * noise());
+	double v = g->level;
+	if (g->hp_a > 0) {
+		g->hp_out = g->hp_a * (g->hp_out + v - g->hp_in);
+		g->hp_in = v;
+		v = g->hp_out;
+	}
+	return counts(v + g->nz * noise());
 }
 
 static double run_dcs(subaudio_rx_t *d, dcs_gen_t *g, double seconds)
@@ -281,6 +296,34 @@ static void test_dcs_rate_error_and_noise(void)
 		CHECK(run_dcs(&d, &g, 3.0) >= 0);
 		CHECK(subaudio_rx_match(&d));
 	}
+}
+
+// A sub-audio input with a high-pass corner near 18 Hz (as measured on one radio's tone line): a run of equal bits sags
+// toward zero within a few bits, so a slicer at the middle of the peaks reads the run's tail wrong. Every code, both
+// polarities
+static void test_dcs_high_passed(void)
+{
+	for (unsigned i = 0; i < TONES_DCS_COUNT; i++) {
+		for (int inv = 0; inv < 2; inv++) {
+			subaudio_rx_t d;
+			dcs_gen_t g;
+			subaudio_rx_init(&d, FS, 0);
+			subaudio_rx_set(&d, inv ? SUBAUDIO_DCS_INV : SUBAUDIO_DCS, tones_dcs[i], false);
+			dcs_gen_init(&g, tones_dcs[i], inv, 300, 30, 1.0, (double)(i * 7 % 23) + 0.61);
+			dcs_gen_high_pass(&g, 18.0);
+			double first = run_dcs(&d, &g, 2.0);
+			CHECK(first >= 0 && first < 1.2);
+			CHECK(subaudio_rx_match(&d));
+		}
+	}
+	// ... and it still tells the other polarity apart
+	subaudio_rx_t d;
+	dcs_gen_t g;
+	subaudio_rx_init(&d, FS, 0);
+	subaudio_rx_set(&d, SUBAUDIO_DCS, 0114, false);
+	dcs_gen_init(&g, 0114, true, 300, 30, 1.0, 0);
+	dcs_gen_high_pass(&g, 18.0);
+	CHECK(run_dcs(&d, &g, 3.0) < 0);
 }
 
 static void test_dcs_drop(void)
@@ -488,6 +531,7 @@ int main(void)
 	test_dcs_rejects();
 	test_dcs_invert_knob();
 	test_dcs_rate_error_and_noise();
+	test_dcs_high_passed();
 	test_dcs_drop();
 	test_none_and_reset();
 	test_tx_ctcss_frequency_and_shape();

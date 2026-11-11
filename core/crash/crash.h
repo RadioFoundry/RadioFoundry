@@ -77,9 +77,9 @@ uint32_t crash_build_id(const char *version, bool *dirty);
 size_t crash_pack(const crash_record_t *r, uint8_t *out, size_t max, bool (*is_code)(uint32_t addr));
 
 // One line for the screen: "Fault 3 at 0800C1A4 in radio", "Stack overflow in ui", "Assert line 712 at 03012A40",
-// "Hang at 03012A40 for 3000 ms in radio"
+// "Hang at 03012A40 for 3000 ms in radio", "Stall at 03012A40 for 60000 ms in IDLE" (the host link's task stalled)
 void crash_summary(const crash_record_t *r, char *out, size_t len);
-// What kind of crash, in words ("Fault", "Stack overflow", "Out of memory", "Assert", "Hang", "Crash")
+// What kind of crash, in words ("Fault", "Stack overflow", "Out of memory", "Assert", "Hang", "Stall", "Crash")
 const char *crash_kind_name(uint8_t kind);
 
 // --- The fault trace (crash_trace.c, CONFIG_FAULT_TRACE, with or without CONFIG_CRASH_LOG) ---

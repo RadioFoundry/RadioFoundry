@@ -96,7 +96,8 @@ Status per modem driver:
 | HR_C7000 (`drivers/modem/hrc7000/hrc7000_dmr.c`) | HR_C7000 boards | all: `sync_override`, `DMR_TIMING_ALIGNED` (the TX slot built from the receive slot, ours picked by slot number), `tx_listen` (with the voice-access flag during a call), `DMR_BURST_EMPTY`, `tx_fill`, the TX slot events; headers and terminators heard while sending are passed on with the chip's CRC verdict. On air (gotchas 14.11) |
 
 The board switches the RF per burst: the RF TX interrupt keys the PA, the timeslot interrupt that starts the next slot
-drops it (the AT1846S goes back to RX about 1.3 ms into the slot, gotchas 3.4). The rest of this
+drops it (the AT1846S goes back to RX about 1.3 ms into the slot, gotchas 3.4). A board with one synthesizer for
+receive and transmit retunes it per burst as well (gotchas 14.6). The rest of this
 section is the HR_C6000 bring-up, measured on an AT1846S board. Item 1 was missing in the chip: the slot between our bursts was written
 "no receive" (0x41 = 0x00), so nothing was heard there and MMDVM SFR repeated only what it heard before
 keying (HIL 2026-10-10: mode switching and the first repeat on TS2 passed, the rest of the call failed). With
@@ -115,8 +116,17 @@ headers, and the gap left two placeholders queued ahead of the voice (gotchas 14
 A channel's role comes from its codeplug bytes (`sfrChannelDecode`, `docs/spec/open-firmware-cps.md` 7.3.3: flag 1
 bit 1, SFR bytes A and B; the CPS keeps them as read, the Codeplug Editor sets them). `codeplug.c` hands them to the
 core as read (`channel_t.sfr_flag1 / sfr_a / sfr_b`); `radio_sfr_channel()` turns them into a role and an
-`sfrConfig_t`. A role needs one frequency: RX = TX (a user may have no TX frequency). On a two-frequency channel, or
-in the VFO, the bytes are ignored and the channel is an ordinary one.
+`sfrConfig_t`. A role needs one frequency: RX = TX (a user may have no TX frequency). On a two-frequency channel the
+bytes are ignored and the channel is an ordinary one.
+
+The VFO has a role of its own: byte A only, stored per VFO in the settings (`vfo_sfr`, `vfo2_sfr`,
+[settings-store.md](settings-store.md) 3), with no byte B, so the outbound color code is the VFO's color code. It is
+set by `radio_req_vfo_sfr` (RREQ_VFO_SFR: refused outside the VFO, while transmitting and in hotspot mode; the debug
+link's RADIO op 38) and by Copy to VFO, which takes the channel's byte A. The radio core tunes again on a change, and
+looks at the role again when the VFO's split or color code changes, so a repeater stops on a split and starts once
+the VFO is on one frequency again. In FM the role is kept and does nothing. Tools > Single-freq repeater, opened in
+the VFO, has a Role row (Off, User, User ERDM, Repeater, Repeater ERDM style) and an Inbound slot row; SELECT steps
+each.
 
 | Role | Behavior |
 |---|---|
@@ -177,7 +187,9 @@ On air (SDR bench, 2026-10-19), the numbers on the radios' own hardware pages:
   calls) the HR_C7000 listener's `voice.rx_repeats` was 0 on every call.
 
 Not built: the HR_C6000 driver level parts (raw RX RAM classification, `sfrRawClassify`; the register switches of
-command 0xD5); a setting on the radio for the role (the Codeplug Editor sets it). On the radio, Tools > Single-freq repeater shows the
+command 0xD5); a setting on the radio for a channel's role (the Codeplug Editor sets it; the VFO's is set on the radio,
+above), and the framing and hang time of the VFO's role on the radio (the debug link sets them). On the radio, Tools >
+Single-freq repeater shows the
 channel's role, slots and the repeater's state, and a repeater channel's Home screen says "SFR repeater" or "Repeating"
 where a DMR channel shows its talk target.
 
@@ -198,7 +210,7 @@ is active the SFR stays off, and without a role the SFR works exactly as describ
   `tests/host/roamTest.c` (the `sfr_cwid` bits stored and clamped).
 - HIL: `tests/hil/test_hotspot_sfr.py` (MMDVM SFR on and off through MMDVM on the radio's channel, no traffic sent;
   marked `radio_tx` because a call heard would be repeated). On-air repeat tests need the driver work of section 3
-  and the SDR bench (`tools/bench/mmdvm_hotspot.py --sfr`, `tools/bench/sfr_call.sh`).
+  and the SDR bench (`tools/bench/mmdvm_hotspot.py --sfr`).
   `tests/hil/test_sfr_standalone.py` runs the standalone roles from codeplug channels: the repeater's inbound quality
   (`sfr.rx_fec`, `sfr.rx_fec_pos`), TX inhibit, the CW ID and the user's receive modes against the bench talker, and
   `test_sfr_chain_rfoundry_user`, a whole chain of RadioFoundry radios (talker, repeater, listener) judged by what the
@@ -207,8 +219,8 @@ is active the SFR stays off, and without a role the SFR works exactly as describ
 ## 6. Known issues by radio
 
 Standalone SFR is experimental. This section names radios on purpose (an owner-approved exception to the generic-docs
-rule, `tools/generic_allow.txt`); keep each radio's details on its hardware page. Unless noted: SDR bench, 461.1375
-MHz, CC 2, the bench's MMDVM talker sending a 4-superframe group call (72 voice frames). "Bits" are AMBE bits the
+rule, `tools/generic_allow.txt`); keep each radio's details on its hardware page. Unless noted: SDR bench, a UHF test
+frequency, CC 2, the bench's MMDVM talker sending a 4-superframe group call (72 voice frames). "Bits" are AMBE bits the
 receiving radio's Golay decoders corrected (`sfr.rx_fec`, by frame place `sfr.rx_fec_pos`).
 
 | Radio | Role | What fails | How often | Evidence | Workaround |
@@ -219,6 +231,6 @@ receiving radio's Golay decoders corrected (`sfr.rx_fec`, by frame place `sfr.rx
 | DM-1801 Pro | Repeater | The repeat carries the inbound bit errors on: a listener playing the repeat corrects about 1.1-1.9 bits a frame, against 0-0.03 for one playing the talker's own copy | Every call | Gotchas 14.13; `test_sfr_chain_rfoundry_user` 2026-10-25 (receive mode Repeater against First copy and Dual-path RX) | Receive mode First copy or Dual-path RX where the talker is in range |
 | DM-1801 Pro, DM-32UV | User | Fixed: the listener played the call's first decoded burst over and over (stale voice RAM: the voice-access flag on the wrong chip slot) | Hand test 2026-10-20: most calls. After the fix: none in 12 calls (`voice.rx_repeats` 0) | Gotchas 14.15; `hrc7000DmrTest` test_rx_sfr_both_copies | - |
 | DM-32UV | Repeater | Repeat quality falls with a weak, fading inbound path | One site: 39 of 72 frames repeated | `hardware-dm32.md` 8.9 | Put the repeater where it hears the users well |
-| DB25-D PRO | Repeater | Inbound bit errors sit in the first and third frame of each burst: the receive chain settling after the per-burst retune of its superhet. The repeat carries them on | Every call: 170-194 bits per 72 frames (98-120 / 22-30 / 48-54 by frame place), no frame lost (8 calls, 2026-10-25, 461.0875 MHz); the same call received without transmitting: 29-37 bits | With the stock burst timing 10-13 frames were lost per call; the shorter RF TX lead and the TX off at the last symbol fixed that. Moving the switch points further and keeping the LO running changed nothing; the modem's phase averaging off made it worse (51 of 72 frames) (`hardware-db25d.md` 4.5) | None needed to play: the errors are corrected |
+| DB25-D PRO | Repeater | Inbound bit errors sit in the first and third frame of each burst: the receive chain settling after the per-burst retune of its superhet. The repeat carries them on | Every call: 170-194 bits per 72 frames (98-120 / 22-30 / 48-54 by frame place), no frame lost (8 calls, 2026-10-25, another test frequency); the same call received without transmitting: 29-37 bits | With the stock burst timing 10-13 frames were lost per call; the shorter RF TX lead and the TX off at the last symbol fixed that. Moving the switch points further and keeping the LO running changed nothing; the modem's phase averaging off made it worse (51 of 72 frames) (`hardware-db25d.md` 4.5) | None needed to play: the errors are corrected |
 | DB25-D PRO | MMDVM SFR | The hotspot's SFR mode repeats the bench call on air only some of the time: two runs failed the SDR's check for the repeat's LC on the other slot, one sent only 7 of 18 voice frames up to the host | `test_sfr_repeats_bench_call` passed 1 of 4 runs (2026-10-25); `test_hotspot_sfr_mode` passes | Not chased yet | Use the standalone repeater role |
 | MD-380 | Any | Not available: the HR_C5000 lacks what the SFR uses (section 3) | - | Gotchas 14.6 | None |

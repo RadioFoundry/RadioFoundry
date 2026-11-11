@@ -146,7 +146,7 @@ static void test_settings_basic(void)
 	settings_t *w = settings_begin();
 	w->vfo_rx_hz = 146520000;
 	w->squelch = 3;
-	strcpy(w->radio_name, "N0CALL");
+	strcpy(w->radio_name, "Q0TEST");
 	w->accent = SETTINGS_AUDIO_NO_NOISE_REDUCTION | SETTINGS_AUDIO_AGC | 3u;	// beside a highlight color
 	settings_end(1000);
 	settings_poll(1500);			// not rested yet
@@ -172,7 +172,7 @@ static void test_settings_basic(void)
 	settings_get_stats(&st);
 	settings_read(&s);
 	CHECK(st.load == SETTINGS_LOADED && st.seq == 2);
-	CHECK(s.vfo_rx_hz == 146520000 && s.squelch == 4 && strcmp(s.radio_name, "N0CALL") == 0);
+	CHECK(s.vfo_rx_hz == 146520000 && s.squelch == 4 && strcmp(s.radio_name, "Q0TEST") == 0);
 	CHECK(s.accent == (SETTINGS_AUDIO_NO_NOISE_REDUCTION | SETTINGS_AUDIO_AGC | 3u));
 
 	// A change undone before the save: nothing written
@@ -595,13 +595,37 @@ static void test_settings_gateway_upgrade(void)
 	CHECK(st.load == SETTINGS_UPGRADED && st.seq == 2 && s.squelch == 4 && s.ds_stored == 1 &&
 	      s.vfo2_rx_hz == 446006250u && s.ds_ip_gateway == 0);
 	// The next save stores it, and it loads whole
-	settings_begin()->ds_ip_gateway = 3101276u;
+	settings_begin()->ds_ip_gateway = 9996543u;
 	settings_end(1);
 	CHECK(settings_flush());
 	boot();
 	settings_read(&s);
 	settings_get_stats(&st);
-	CHECK(st.load == SETTINGS_LOADED && s.ds_ip_gateway == 3101276u && s.vfo2_rx_hz == 446006250u);
+	CHECK(st.load == SETTINGS_LOADED && s.ds_ip_gateway == 9996543u && s.vfo2_rx_hz == 446006250u);
+}
+
+// hal_flash_map_end: where a map's highest area ends, so a driver can refuse a map its chip is too small for
+static void test_map_end(void)
+{
+	hal_flash_map_t m = { .settings_addr = 0x711000u, .settings_size = 0x8000u, .journal_addr = 0x719000u,
+			      .openfw_eeprom = 0x700000u, .openfw_flash = 0x720000u, .openfw_end = 0xF00000u,
+			      .native_addr = 0xF00000u, .native_size = 0x100000u };
+	CHECK(hal_flash_map_end(&m, 4096) == 0x1000000u);	// a 16 MB chip holds it, an 8 MB one doesn't
+	m.native_size = 0;
+	CHECK(hal_flash_map_end(&m, 4096) == 0xF00000u);
+	m.staging_addr = 0xF40000u;
+	m.staging_size = 0x40000u;
+	CHECK(hal_flash_map_end(&m, 4096) == 0xF80000u);
+	hal_flash_map_t low = { .settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
+				.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x10000u };
+	CHECK(hal_flash_map_end(&low, 4096) == 0x1B000u);		// the journal's 2 erase units end it
+	CHECK(hal_flash_map_end(&low, 0x10000u) == 0x39000u);
+	low.calibration_addr = 0x40000u;
+	low.calibration_size = 0x1000u;
+	CHECK(hal_flash_map_end(&low, 4096) == 0x41000u);
+	low.calibration_size = 0;			// an area of size 0 is none, wherever its address points
+	low.staging_addr = 0x80000u;
+	CHECK(hal_flash_map_end(&low, 4096) == 0x1B000u);
 }
 
 // The crash report's mode and target live in spare bits of accent, theme and updown_home (settings.h): each field
@@ -651,7 +675,7 @@ static void test_settings_pages(void)
 	w->dual_b = 1026;
 	w->dual_state = SETTINGS_DUAL_ON | SETTINGS_DUAL_B_SEL;
 	w->vfo2_rx_hz = 446006250u;
-	w->vfo2_talk = 0x80000000u | 3101276u;
+	w->vfo2_talk = 0x80000000u | 9996543u;
 	settings_end(1);
 	CHECK(settings_flush());
 	boot();
@@ -659,7 +683,7 @@ static void test_settings_pages(void)
 	settings_get_stats(&st);
 	CHECK(st.load == SETTINGS_LOADED && s.squelch == 6 && s.dual_b == 1026 &&
 	      s.dual_state == (SETTINGS_DUAL_ON | SETTINGS_DUAL_B_SEL) && s.vfo2_rx_hz == 446006250u &&
-	      s.vfo2_talk == (0x80000000u | 3101276u));
+	      s.vfo2_talk == (0x80000000u | 9996543u));
 
 	// An older firmware saves page 0 only (seq 3, after this firmware's 1 and 2)
 	pl = s;
@@ -845,9 +869,9 @@ static void test_settings_layout(void)
 	      settings_vfo_talk_private(&s));
 	settings_set_vfo_mode_bw(&s, 1, 1);
 	CHECK(settings_vfo_mode(&s) == 1 && settings_vfo_bw(&s) == 1 && settings_vfo_talk_id(&s) == 0xABCDEFu);
-	settings_set_vfo_talk(&s, 3101276, false);
-	CHECK(settings_vfo_cc(&s) == 15 && settings_vfo_ts(&s) == 1 && settings_vfo_talk_id(&s) == 3101276 &&
-	      !settings_vfo_talk_private(&s) && s.vfo_talk_lo == (3101276 & 0xFF) && settings_vfo_mode(&s) == 1 &&
+	settings_set_vfo_talk(&s, 9996543, false);
+	CHECK(settings_vfo_cc(&s) == 15 && settings_vfo_ts(&s) == 1 && settings_vfo_talk_id(&s) == 9996543 &&
+	      !settings_vfo_talk_private(&s) && s.vfo_talk_lo == (9996543 & 0xFF) && settings_vfo_mode(&s) == 1 &&
 	      settings_vfo_bw(&s) == 1);
 }
 
@@ -1097,6 +1121,7 @@ int main(void)
 	test_native_and_jobs();
 	test_settings_layout();
 	test_crash_bits();
+	test_map_end();
 	test_settings_pages();
 	test_settings_gateway_upgrade();
 	test_settings_bad_records();

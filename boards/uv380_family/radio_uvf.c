@@ -288,7 +288,7 @@ static uint32_t power_to_dac(const uvf_cal_point_t *cal, uint8_t level, bool uhf
 
 static const band_t *find_band(uint32_t hz)
 {
-	for (uint8_t i = 0; i < board.band_count; i++) {
+	for (uint8_t i = 0; i < board_band_count(); i++) {
 		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz) {
 			return &board.bands[i];
 		}
@@ -479,12 +479,15 @@ void uvf_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_retr
 	*rx_retries = r.rf_rx_retries;
 }
 
+static void dmr_tx_end(void);
+
 // The shared DMR glue's view of this board: the modem's interrupt lines are PC0-PC2
 static const stm32_hrc_dmr_board_t dmr_board = {
 	.int_port = GPIOC,
 	.rf_switch = uvf_rf_dmr_switch,
 	.ts_service = uvf_rf_dmr_service,
 	.rf_counters = uvf_rf_dmr_counters,
+	.tx_end = dmr_tx_end,
 };
 
 // Stop per-burst keying (task level): disarm, drop a transmission still running, PA off
@@ -743,8 +746,10 @@ static bool ref_trim(int16_t ppb)
 }
 #endif
 
-// Enter RX (hardware-dm1701.md 6): PA off first, RX supply for the band, AT1846S to RX, then the HR_C6000
-static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
+// Enter RX (hardware-dm1701.md 6): PA off first, RX supply for the band, AT1846S to RX, then the HR_C6000. keep (the
+// end of a DMR transmission, dmr_tx_end): the burst switch already put the AT1846S in RX; on the same channel (registers
+// as the driver's cache has them) its frequency and state stay as they are
+static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone, bool keep)
 {
 	if (find_band(hz) == NULL) {
 		return false;
@@ -754,6 +759,8 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	if (r.mode == RADIO_MODE_DMR) {
 		dmr_disarm();
 	}
+	bool back = keep && same && r.mode == RADIO_MODE_DMR && r.rf_tuned_hz == hz &&
+		    !r.rf_rx_pending && !r.asleep;
 	r.asleep = false;
 	tone_restore();
 	inject_stop();
@@ -767,9 +774,13 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	rx_supply(true, uhf);
 	count(at1846s_set_bandwidth(r.rf, rf_bw(bw)));
 	count(at1846s_set_mode(r.rf, r.mode == RADIO_MODE_DMR ? AT1846S_MODE_DMR : AT1846S_MODE_FM));
-	count(at1846s_set_freq(r.rf, hz));
+	if (!back) {
+		count(at1846s_set_freq(r.rf, hz));
+	}
 	apply_rx_tone();
-	count(at1846s_set_state(r.rf, AT1846S_STATE_RX));
+	if (!back) {
+		count(at1846s_set_state(r.rf, AT1846S_STATE_RX));
+	}
 	r.rf_tuned_hz = hz;
 	r.rf_isr_dirty = false;
 	r.rf_rx_pending = false;
@@ -790,6 +801,11 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	}
 	r.tx_on = false;
 	return true;
+}
+
+static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
+{
+	return rx_set(hz, bw, rx_tone, false);
 }
 
 // Enter FM TX (hardware-dm1701.md 6): RX supplies off, HR_C6000 FM TX, AT1846S tuned with the receiver off and
@@ -858,7 +874,8 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	return true;
 }
 
-static void tx_off(void)
+// keep: as in rx_set
+static void tx_end(bool keep)
 {
 	if (r.mode == RADIO_MODE_DMR) {
 		dmr_disarm();	// after DMR_EV_TX_DONE this only disarms; before it, the transmission is cut
@@ -869,13 +886,24 @@ static void tx_off(void)
 	inject_stop();
 	if (r.rx_valid) {
 		subtone_t tone = r.rx_tone;
-		rx(r.rx_hz, r.rx_bw, &tone);
+		rx_set(r.rx_hz, r.rx_bw, &tone, keep);
 		return;
 	}
 	count(at1846s_set_tx_tone(r.rf, AT1846S_TONE_NONE, 0));
 	count(at1846s_set_state(r.rf, AT1846S_STATE_IDLE));
 	count(hrc6000_set_mode_fm_rx(&r.modem));
 	r.tx_on = false;
+}
+
+static void tx_off(void)
+{
+	tx_end(false);
+}
+
+// stm32_hrc_dmr_board_t.tx_end: the burst switch left the AT1846S receiving
+static void dmr_tx_end(void)
+{
+	tx_end(true);
 }
 
 static void status(radio_status_t *st)
@@ -1065,6 +1093,7 @@ const hal_radio_t uvf_radio = {
 	.rx = rx,
 	.tx = tx,
 	.tx_off = tx_off,
+	.dmr_tx_end = stm32_hrc_dmr_tx_end,
 	.status = status,
 	.audio = audio,
 	.volume = volume,

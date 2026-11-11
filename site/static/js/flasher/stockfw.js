@@ -53,10 +53,14 @@ export function decrypt(data, off, length, key, fb) {
 // Why a file known to hold no codec (an entry of fb.no_codec_files) can't be used: stockfw.no_codec's words
 export const noCodec = (f) => `this file is ${f.name}: ${f.why}. The codec comes from the manufacturer's firmware file or a readout of a radio that holds it`;
 
+// A file's profile: the one it has on the radio being flashed (a file placed differently on a board is keyed
+// "<sha>@<board>", stockfw.profile_key), else its bare one
+export const profileFor = (profiles, sha, boardId = null) => (boardId && profiles[`${sha}@${boardId}`]) || profiles[sha] || null;
+
 // What a file is: {sha, known: "DM-1701 V02.06 CSV" | null, profile | null}
-export async function identify(data, fb) {
+export async function identify(data, fb, boardId = null) {
 	const sha = await sha256(data);
-	return { sha, known: fb.known_files[sha] || null, profile: fb.profiles[sha] || null };
+	return { sha, known: fb.known_files[sha] || null, profile: profileFor(fb.profiles, sha, boardId) };
 }
 
 // Where the merge puts a profile's codec (stockfw.placed_windows): [[addr, length, sha256]], code first, then the
@@ -126,7 +130,7 @@ export async function place(prof, segs, fb) {
 // match a failure is the flasher's, not the file's: the file is exactly the one the profile describes
 export async function extract(data, key, fb, profiles = fb.profiles, boardId = null) {
 	const sha = await sha256(data);
-	const prof = profiles[sha];
+	const prof = profileFor(profiles, sha, boardId);
 	if (!prof) {
 		const bare = fb.no_codec_files?.[sha];
 		if (bare) throw new StockError(noCodec(bare), "not-vendor", { known: bare.name });

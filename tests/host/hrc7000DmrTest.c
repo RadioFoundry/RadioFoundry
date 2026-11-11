@@ -117,7 +117,7 @@ static void test_pure(void)
 	CHECK(hrc7000_sig_center_dc(0) == (381u & 0xFF) * 0x0101u);
 	CHECK(hrc7000_mod_bias_dc(128, 45) == (512u << 16 | 45u));
 	CHECK(hrc7000_mod_bias_dc(255, 0x4D4D) == (641u << 16 | 0x4D4Du));
-	// The DB25-D owner's page: TX center 106 = 1.577 V = 489 (0x1E9), modulation balance 0x21 at 461.4625 MHz: the two
+	// The DB25-D owner's page: TX center 106 = 1.577 V = 489 (0x1E9), modulation balance 0x21 at the test frequency: the two
 	// words the stock firmware writes at every receive set-up (hardware-db25d.md 4.6)
 	CHECK(hrc7000_mod_dc(106) == 489);
 	CHECK(hrc7000_sig_center_dc(106) == 0x6A6AE9E9u);
@@ -462,7 +462,7 @@ static void test_tx(void)
 	tick(true);
 	CHECK(REG(C7_LAYER2_SEND_TYPE) == 0x2B && buf[C7_VOICE_RAM] == 0xB9 && eng.st.tx_underrun == 1);
 
-	// End: a terminator queued, then tx_end; it goes out, then the drain, then TX_DONE and the receiver restart
+	// End: a terminator queued, then tx_end; it goes out, then the drain, then TX_DONE and the post-TX hold
 	dmr_tx_burst_t term = { .kind = DMR_BURST_TERMINATOR_LC, .len = 9 };
 	CHECK(hrc7000_dmr_tx_queue(&eng, &term));
 	hrc7000_dmr_tx_end(&eng);
@@ -474,11 +474,66 @@ static void test_tx(void)
 	tick(true);	// other slot
 	tick(true);	// our slot, nothing left and the end asked for: drain
 	CHECK(hrc7000_dmr_is_transmitting(&eng) && eng.st.tx_underrun == underruns);
+	uint32_t rs = eng.st.rx_restarts;
 	tick(true);
 	CHECK(!hrc7000_dmr_is_transmitting(&eng));
 	CHECK(count_kind(DMR_EV_TX_DONE, NULL) == 1);
 	CHECK(REG(C7_LAYER2_CONTROL) == 0xC0 && REG(C7_LAYER2_TXRX_CTRL) == 0x40 && REG(C7_LAYER2_SLOTON) == 0x05);
+	CHECK(eng.st.rx_holds == 1 && eng.st.rx_restarts == rs);
 	CHECK(lock_depth == 0);
+}
+
+// The end of a direct transmission holds the receiver on our slot timing instead of restarting it (5.2a): the restart
+// came in the middle of an answer 30 ms after our terminator, which the chip then reported with BS sync. The answer is
+// taken; with none, the restart comes once the channel has been quiet for the hold
+static void test_tx_end_hold(void)
+{
+	for (int answer = 0; answer < 2; answer++) {
+		setup();
+		hrc7000_dmr_run(&eng);
+		const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = false };
+		hrc7000_dmr_configure(&eng, &cfg);
+		tick(false);
+		count_kind(0xFF, NULL);
+		CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+		dmr_tx_burst_t d = { .kind = DMR_BURST_DATA_HEADER, .len = 10 };
+		CHECK(hrc7000_dmr_tx_queue(&eng, &d));
+		for (int i = 0; i < 8 && hrc7000_dmr_is_transmitting(&eng); i++) {
+			tick(true);
+		}
+		uint32_t rs = eng.st.rx_restarts;
+		CHECK(!hrc7000_dmr_is_transmitting(&eng) && eng.st.rx_holds == 1 && eng.st.rx_restarts == rs);
+		CHECK(REG(C7_LAYER2_CONTROL) == 0xC0 && REG(C7_LAYER2_TXRX_CTRL) == 0x40);
+		count_kind(0xFF, NULL);
+		tick(false);
+		if (answer) {
+			// The answer: an MS data header, taken; the reception then ends as any other (390 ms)
+			deframe(rti(0, DMR_BURST_DATA_HEADER, 1, 0, 0, 0));
+			CHECK(count_kind(DMR_EV_BURST_RX, NULL) == 1 && eng.st.rx_restarts == rs);
+			for (int i = 0; i < 13; i++) {
+				tick(false);
+			}
+			CHECK(eng.st.rx_restarts == rs);
+			tick(false);
+			CHECK(eng.st.rx_restarts == rs + 1 && eng.st.rx_lost == 1);
+		} else {
+			// None: the restart after the hold, then the stale timing rule as before
+			for (int i = 0; i < 4; i++) {
+				tick(false);
+			}
+			CHECK(eng.st.rx_restarts == rs);
+			tick(false);
+			CHECK(eng.st.rx_restarts == rs + 1 && eng.st.rx_stale == 1);
+			CHECK(REG(C7_LAYER2_SLOTON) == 0x05 && REG(C7_LAYER2_CONTROL) == 0xC0);
+			for (int i = 0; i < 20; i++) {
+				tick(false);
+			}
+			CHECK(eng.st.rx_stale == 1);
+			tick(false);
+			CHECK(eng.st.rx_stale == 2);
+		}
+		count_kind(0xFF, NULL);
+	}
 }
 
 static void test_tx_edges(void)
@@ -583,6 +638,44 @@ static void test_polite_and_repeater(void)
 	hrc7000_dmr_tx_abort(&eng);
 	tick(false);
 	count_kind(0xFF, NULL);
+}
+
+// A receiver restart forgets what was heard: an empty channel gives no timeslot interrupts after it, so a station
+// heard just before stayed "busy" for good and every polite start was refused. Seen after an aligned one-burst data
+// response (the restart at the end of the transmission) and after a frequency change (rx_restart)
+static void test_polite_after_restart(void)
+{
+	for (int via_tx = 0; via_tx < 2; via_tx++) {
+		setup();
+		hrc7000_dmr_run(&eng);
+		const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
+		hrc7000_dmr_configure(&eng, &cfg);
+		tick(false);
+		deframe(rti(0, DMR_BURST_DATA_HEADER, 1, 2, 0, 0));	// own color code, TS1 sync: the SMS to us
+		count_kind(0xFF, NULL);
+		if (via_tx) {
+			CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 1, DMR_ACCESS_IMPOLITE));
+			dmr_tx_burst_t r = { .kind = DMR_BURST_DATA_HEADER, .len = 10 };	// the one-burst response
+			CHECK(hrc7000_dmr_tx_queue(&eng, &r));
+			hrc7000_dmr_tx_end(&eng);
+			REG(C7_LAYER2_STATUS) = 0;
+			for (int i = 0; i < 8 && hrc7000_dmr_is_transmitting(&eng); i++) {
+				tick(true);
+			}
+			CHECK(!hrc7000_dmr_is_transmitting(&eng) && eng.st.tx_bursts == 1);
+		} else {
+			hrc7000_dmr_rx_restart(&eng);
+		}
+		CHECK(eng.tick - eng.rx_tick < 12u);	// the busy window hasn't run out in ticks: none come any more
+		count_kind(0xFF, NULL);
+		now += 5000000;
+		hrc7000_dmr_poll(&eng);
+		CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_POLITE_CC));
+		CHECK(count_kind(DMR_EV_TX_REJECTED, NULL) == 0 && eng.st.tx_rejected == 0);
+		hrc7000_dmr_tx_abort(&eng);
+		tick(true);
+		count_kind(0xFF, NULL);
+	}
 }
 
 static void test_event_overflow(void)
@@ -755,12 +848,31 @@ static void test_rf_tx_lead(void)
 	CHECK(REG(C7_RF_CONTROL) == 0x00041F1Au);
 }
 
+// RF_CONTROL b20:16: the board's TX data advance from power-on, the chip's 0.4 ms when it set none, the other fields kept
+static void test_tx_pre_on(void)
+{
+	setup();
+	dev.tx_pre_on = 11;
+	hrc7000_power_on_init(&dev, 128, 20);
+	CHECK(REG(C7_RF_CONTROL) == 0x000B1F1Au);
+	hrc7000_set_rf_tx_lead(&dev, 6);
+	CHECK(REG(C7_RF_CONTROL) == 0x000B061Au);
+	dev.tx_pre_on = 0;
+	hrc7000_power_on_init(&dev, 128, 20);
+	CHECK(REG(C7_RF_CONTROL) == 0x0004061Au);
+	dev.tx_pre_on = 0xFF;			// out of range: held to the 5-bit field, nothing above b20 set
+	hrc7000_set_rf_tx_lead(&dev, 6);
+	CHECK(REG(C7_RF_CONTROL) == 0x001F061Au);
+	dev.tx_pre_on = 0;
+	hrc7000_set_rf_tx_lead(&dev, 0);
+}
+
 // FM TX tone: DTMF digit 1 with both tones at the step for hz, the DTMF deviation while it plays, everything back after
 static void test_tx_tone(void)
 {
 	setup();
 	REG(C7_SUBVOICE_COEF) = 0x07D00930u;
-	hrc7000_tx_tone(&dev, 1750, hrc7000_dtmf_dev(467375000u, false));
+	hrc7000_tx_tone(&dev, 1750, hrc7000_dtmf_dev(453625000u, false));
 	CHECK(REG(C7_FM_TONE1) >> 16 == 3584u && REG(C7_FM_TONE3) >> 16 == 3584u);	// round(1750 x 2.048)
 	CHECK((REG(C7_FM_TONE1) & 0xFFFFu) == 0x0629u && (REG(C7_FM_TONE3) & 0xFFFFu) == 0x0AB0u);
 	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D0C030u);
@@ -1195,6 +1307,82 @@ static void test_rx_voice_ram_call(void)
 }
 
 // LAYER2_BS_MODE survives a chip reset (modem-hrc7000.md 2.9): the power-on set-up writes it back to its reset value
+// Lost interrupts (gotchas 2.9): a receiver restart drops every pending modem request but the board's and the
+// audio's, and the poll drops a system request left pending with no handler run
+static void test_lost_requests(void)
+{
+	setup();
+	REG(C7_SYS_INTERP_MASK) = 0x1187Fu;
+	REG(C7_SYS_INTERP_LIST) = 1u << 3;
+	hrc7000_dmr_run(&eng);
+	CHECK(REG(C7_INTERP_CLEAR) == (C7_INT_TS_TX | C7_INT_TS_RX | C7_INT_RF_TX));
+	CHECK(REG(C7_SYS_INTERP_CLEAR) == (1u << 3));
+
+	// Still pending (the array keeps it), no handler run: dropped once it has waited 50 ms, counted once
+	REG(C7_SYS_INTERP_CLEAR) = 0;
+	hrc7000_dmr_poll(&eng);
+	CHECK(eng.st.sys_stuck == 0 && REG(C7_SYS_INTERP_CLEAR) == 0);
+	now += 30000;
+	hrc7000_dmr_poll(&eng);
+	CHECK(eng.st.sys_stuck == 0 && REG(C7_SYS_INTERP_CLEAR) == 0);
+	now += 30000;
+	hrc7000_dmr_poll(&eng);
+	CHECK(eng.st.sys_stuck == 1 && REG(C7_SYS_INTERP_CLEAR) == (1u << 3));
+	now += 30000;
+	hrc7000_dmr_poll(&eng);
+	CHECK(eng.st.sys_stuck == 1);	// the next 50 ms start from the drop
+
+	// A handler ran between the polls: the request is a new one each time
+	REG(C7_SYS_INTERP_CLEAR) = 0;
+	for (int i = 0; i < 6; i++) {
+		now += 30000;
+		eng.st.sys_ints++;
+		hrc7000_dmr_poll(&eng);
+	}
+	CHECK(eng.st.sys_stuck == 1 && REG(C7_SYS_INTERP_CLEAR) == 0);
+
+	// A late poll (the one before, 80 ms ago, saw nothing pending): a request pending now is a new one, not lost
+	REG(C7_SYS_INTERP_LIST) = 0;
+	hrc7000_dmr_poll(&eng);
+	now += 80000;
+	REG(C7_SYS_INTERP_LIST) = 1u << 3;
+	hrc7000_dmr_poll(&eng);
+	CHECK(eng.st.sys_stuck == 1 && REG(C7_SYS_INTERP_CLEAR) == 0);
+
+	// A cause the chip doesn't interrupt for (its mask bit off) is never a lost interrupt
+	REG(C7_SYS_INTERP_LIST) = C7_SYS_FM_RX;
+	for (int i = 0; i < 6; i++) {
+		now += 30000;
+		hrc7000_dmr_poll(&eng);
+	}
+	CHECK(eng.st.sys_stuck == 1);
+
+	// Halted (FM receive owns the system interrupt): not checked
+	REG(C7_SYS_INTERP_LIST) = 1u << 3;
+	hrc7000_dmr_halt(&eng);
+	for (int i = 0; i < 6; i++) {
+		now += 30000;
+		hrc7000_dmr_poll(&eng);
+	}
+	CHECK(eng.st.sys_stuck == 1);
+
+	// A run long after: the check starts over rather than counting the time halted
+	now += 10000000;
+	REG(C7_SYS_INTERP_LIST) = 1u << 3;
+	hrc7000_dmr_run(&eng);
+	REG(C7_SYS_INTERP_LIST) = 1u << 3;	// came again just after the restart
+	hrc7000_dmr_poll(&eng);
+	CHECK(eng.st.sys_stuck == 1);
+
+	// A stalled transmission drops the pending requests too (the restart after it)
+	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	REG(C7_INTERP_CLEAR) = 0;
+	REG(C7_SYS_INTERP_LIST) = 0;
+	now += 250000;
+	hrc7000_dmr_poll(&eng);
+	CHECK(eng.st.stalls == 1 && REG(C7_INTERP_CLEAR) == (C7_INT_TS_TX | C7_INT_TS_RX | C7_INT_RF_TX));
+}
+
 static void test_bs_mode_cleared(void)
 {
 	setup();
@@ -1216,12 +1404,15 @@ int main(void)
 	test_rx_resync();
 	test_cc_scan();
 	test_tx();
+	test_tx_end_hold();
 	test_tx_edges();
+	test_lost_requests();
 	test_tx_sync_and_listen();
 	test_tx_aligned();
 	test_tx_repeater_lock();
 	test_tx_empty_and_fill();
 	test_polite_and_repeater();
+	test_polite_after_restart();
 	test_event_overflow();
 	test_fm_rx_keeps_pcm();
 	test_mic_gain();
@@ -1230,6 +1421,7 @@ int main(void)
 	test_audio_lock();
 	test_fm_tx_limit();
 	test_rf_tx_lead();
+	test_tx_pre_on();
 	test_tx_tone();
 	test_subtone();
 	test_fm_rx_audio();

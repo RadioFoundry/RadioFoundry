@@ -21,6 +21,7 @@ body:
         - Radioddity DB25-D PRO / Kydera CDR-300UV
         - TYT MD-380 / MD-390 / Retevis RT3
         - TYT MD-UV380 / MD-UV390 / Retevis RT3S / MD-UV390 Plus 10 W
+        - TYT MD-9600 / Retevis RT90
         - TYT MD-2017 / Retevis RT82
         # end generated
         - Not radio-specific (tools, web site, docs)
@@ -82,7 +83,7 @@ body:
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. Channel "Local" (DMR, 446.0125, CC 1, TS 1, TG 9)
+        1. Channel "Local" (DMR, CC 1, TS 1, TG 9)
         2. Press PTT for 5 seconds
         3. ...
     validations:

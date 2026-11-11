@@ -28,6 +28,7 @@ WEAK void ui_svc_focus_target(uint32_t id, bool private_call) { (void)id; (void)
 
 WEAK bool ui_svc_dmr_timeslot(uint8_t ts) { (void)ts; return false; }
 WEAK bool ui_svc_dmr_color_code(uint8_t cc) { (void)cc; return false; }
+WEAK bool ui_svc_vfo_sfr(uint8_t a) { (void)a; return false; }
 WEAK bool ui_svc_mode(uint8_t mode) { (void)mode; return false; }
 WEAK uint8_t ui_svc_vfo_copy(const radio_view_t *v) { (void)v; return VFO_COPY_NO_VFO; }
 WEAK bool ui_svc_hear_all(bool on) { (void)on; return false; }
@@ -56,6 +57,7 @@ WEAK void ui_svc_beep(uint8_t beep) { (void)beep; }
 WEAK void ui_svc_vibrate(uint8_t vibe) { (void)vibe; }
 WEAK void ui_svc_ptt_block(bool blocked) { (void)blocked; }
 WEAK void ui_svc_dtmf_block(bool blocked) { (void)blocked; }
+WEAK void ui_svc_volume_hold(bool hold) { (void)hold; }
 WEAK void ui_svc_poll(void) { }
 WEAK void ui_svc_keys_poll(void) { }
 WEAK void ui_svc_apply(uint8_t id, int32_t value) { (void)id; (void)value; }
@@ -75,6 +77,7 @@ WEAK bool ui_svc_emergency(bool on) { (void)on; return false; }
 WEAK void ui_svc_emergency_dismiss(void) { }
 WEAK bool ui_svc_emergency_active(void) { return false; }
 WEAK bool ui_svc_factory_reset(void) { return false; }
+WEAK bool ui_svc_codeplug_answer(uint8_t answer) { (void)answer; return false; }
 
 WEAK bool ui_svc_crash_get(ui_crash_t *out) { (void)out; return false; }
 WEAK void ui_svc_crash_seen(void) { }

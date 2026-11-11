@@ -13,8 +13,9 @@
 #include "rf/subaudio/subaudio_tx.h"
 
 // Bench knobs (docs/testing/md380-bringup.md): the tone's share of the PWM swing, and whether the analog path inverts
-// the waveform (DCS polarity only: a CTCSS tone does not care). Both are guesses until a radio shows the deviation and
-// polarity
+// the waveform (DCS polarity only: a CTCSS tone does not care). The transmit path inverts: PC7 enters the oscillator's
+// tuning amplifier on its inverting input (hardware-md380.md 5.2), and D023N went out as D023I on air (2026-11-02).
+// 30 % gives 0.60 kHz of CTCSS deviation and about 0.72 kHz of DCS (2026-11-02)
 #ifndef MD380_SUBTONE_PERCENT
 #define MD380_SUBTONE_PERCENT	30
 #endif
@@ -22,7 +23,7 @@
 #define MD380_SUBTONE_RX_INVERT	0
 #endif
 #ifndef MD380_SUBTONE_TX_INVERT
-#define MD380_SUBTONE_TX_INVERT	0
+#define MD380_SUBTONE_TX_INVERT	1
 #endif
 // Smallest tone amplitude the detector accepts, in ADC counts (12 bit): a guess until the level on PA2 is measured
 #ifndef MD380_SUBTONE_MIN_AMP
@@ -124,7 +125,7 @@ void md380_subtone_tx_stop(void)
 	TIM3->CR1 = 0;
 	TIM3->DIER = 0;
 	TIM3->SR = 0;
-	stm32_pin_out(PIN_PORT(PIN_CTCSS_PWM), PIN_MASK(PIN_CTCSS_PWM), false, false);	// back to the idle level
+	stm32_pin_out(PIN_PORT(PIN_CTCSS_PWM), PIN_MASK(PIN_CTCSS_PWM), true, true);	// released, as board.c leaves it
 }
 
 bool md380_subtone_tx_tail(bool on)

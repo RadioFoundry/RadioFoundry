@@ -3,7 +3,7 @@
 # MMDVM implementation audit (2d45a21)
 
 An audit of the MMDVM modem implementation at commit 2d45a21 against `docs/spec/mmdvm-protocol.md`: its section 7 test
-list and the per-client needs of MMDVMHost, rfoundry_sdrbench (the SDR bench's modem driver), the bench tools and the
+list and the per-client needs of a standard host, the bench tools and the
 behavior of the aftermarket firmware. Done by reading the code; nothing was run on a radio.
 
 Files: `core/hotspot/{mmdvm.c,mmdvm.h,hotspot.c,hotspot.h}`, the carried-over `hotspotUplink.c`, `hotspotData.c`,
@@ -31,7 +31,6 @@ The findings below are as written at 2d45a21. Where they stand now, checked agai
 | A-4 silence fill across a superframe | fixed (modulo 6) | test_uplink_wrapped_gap |
 | A-5 DMR_SHORTLC NAK, I-2 DMR_START NAK | fixed: taken silently (ACKed in SFR mode) | test_config, `hotspotSfrTest` |
 | A-6 SEND_CWID NAK | fixed: ACKed in idle; keyed in Morse on FM on boards with `tx_tone` (the DM-1701 so far; radio core CW keyer, `tx_tone_key`; host-tested, not yet on air) | test_cwid, radioCoreTest test_hotspot_cwid, tests/hil/test_hotspot_cwid.py |
-| A-7 rfoundry_sdrbench doesn't know the description | open, on rfoundry_sdrbench's side | |
 | A-8 slot 1 space / SFR hook | the hook exists (`mmdvm_ext_t.space`); simplex keeps 0, which the spec allows | test_ext_space, `hotspotSfrTest` |
 | A-9 no RSSI after uplink bursts | fixed (AT1846S raw scale) | test_uplink_rssi |
 | A-10 no DMR_LOST on SET_FREQ mid-call | fixed | test_retune_lost |
@@ -48,9 +47,9 @@ Found since:
   `hs.running=0`.** The test's MMDVM client opened the port with pyserial's default DTR set; closing it dropped DTR,
   and the host link leaves hotspot mode on that edge (spec 5.1). By the time the debug link looked, the session was
   over. `hs.enter_attempts` counts every session since boot, so 2 meant two sessions that had each taken the modem,
-  not two refused attempts. The radio core path was reproduced on the host (DMR channel at 467.375 MHz, the radio
+  not two refused attempts. The radio core path was reproduced on the host (a DMR channel, the radio
   task above and below the host link task in priority): the modem is taken on the first frame or on the retry 1 s
-  later. Fix: `tests/hil/test_hotspot.py` opens with DTR clear (as MMDVMHost on Windows does) and checks the slot 2
+  later. Fix: `tests/hil/test_hotspot.py` opens with DTR clear (as a Windows host may) and checks the slot 2
   space, `hs.running` and `hs.starts`; new view keys `hostlink.left` (why the last session ended), `hs.starts`,
   `hs.stops`.
 - **SFR mode**: built behind `CONFIG_SFR` (`docs/spec/sfr.md`): spec 6.1-6.4 answered by `core/hotspot/hotspotSfr.c`,
@@ -58,10 +57,8 @@ Found since:
 - **Network transport**: MMDVM over UDP 3334 in the USB network personality (`docs/spec/usb-network.md`); the DTR
   rule does not apply there, the 20 s idle timeout does.
 
-Updated per-client view: MMDVMHost on Linux and Windows and rfoundry_sdrbench in simplex should work for voice and data in
-simplex (rfoundry_sdrbench still needs the radio profile set by hand until A-7); CW ID keyed on boards with `tx_tone` (the
-DM-1701 so far; host-tested only); rfoundry_sdrbench SFR answers correctly but repeats only what it heard before keying
-until the driver work lands.
+Updated per-client view: A standard host on Linux and Windows should work for voice and data in
+simplex; CW ID keyed on boards with `tx_tone` (the DM-1701 so far; host-tested only).
 
 ## Summary
 
@@ -79,14 +76,11 @@ The protocol responder is sound:
 
 What needs fixing:
 - On the radio the hotspot can't start: no board registers the radio operations (A-1).
-- A host that clears DTR (MMDVMHost on Windows) knocks the radio out of hotspot mode on every poll (A-2).
+- A host that clears DTR (a Windows host) knocks the radio out of hotspot mode on every poll (A-2).
 - Uplink voice bursts B-F have a malformed EMB and zeroed embedded signaling (A-3).
 - The uplink silence fill doesn't handle a superframe boundary (A-4).
-- DMR_SHORTLC, which MMDVMHost sends on every call even in simplex, gets a NAK (A-5).
-- SEND_CWID gets a NAK, which breaks rfoundry_sdrbench whenever a CW ID is configured (A-6).
-- rfoundry_sdrbench doesn't recognize the new description (A-7, a change on rfoundry_sdrbench's side).
-
-Structural copying scan: no copying from the GPL trees found (section 3).
+- DMR_SHORTLC, which a standard host sends on every call even in simplex, gets a NAK (A-5).
+- SEND_CWID gets a NAK (A-6).
 
 ## 1. Findings
 
@@ -96,8 +90,7 @@ Structural copying scan: no copying from the GPL trees found (section 3).
   it, `hotspot_start()` returns false (`hotspot.c:270-272`), and `mmdvm.c:281-283` tries again on every frame.
 - **Spec**: 2.4 (space), 2.8 (DMR data), 7.4 and 7.5. The hotspot must take the modem and run.
 - **Code**: on the radio, GET_VERSION is answered, but status always reports slot 2 space 0 and every DMR_DATA2 gets
-  NAK 2. MMDVMHost logs a NAK for every frame of every network call; rfoundry_sdrbench never sees space and its calls stall
-  until its stream timeout.
+  NAK 2. A host logs a NAK for every frame of every network call.
 - **Fix**: the radio core implements the radio operations: enter, set_freq, set_power, leave, carrier and changed.
   `enter` stops FM and the DMR call stack and hands over the modem; `carrier` comes from the receiver's noise level.
   Register them at startup on every board that builds the hotspot. Until then, the description or the docs should
@@ -107,11 +100,11 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 
 - **Where**: `core/hostlink/hostlink.c:172` (`!port->connected()`). `connected` is TinyUSB's DTR test
   (`drivers/usb/usb_device.c:170-173`). `tools/mmdvm_probe.py:41` sets DTR for this reason.
-- **Spec**: 5.1. Don't gate anything on DTR. MMDVMHost on Windows opens the port with DTR cleared. Test T-USB-2.
+- **Spec**: 5.1. Don't gate anything on DTR. A host on Windows may open the port with DTR cleared. Test T-USB-2.
 - **Code**: with DTR clear, the first frame enters hotspot mode and is answered, and then the next pass of the task
   calls `leave_hotspot()`. That resets the configuration (`mmdvm_end`) and gives the modem back. Every frame enters
   and leaves again, so SET_CONFIG and SET_FREQ never stick and calls can't work. Linux and macOS raise DTR on open,
-  so MMDVMHost and pyserial there aren't affected.
+  so hosts there aren't affected.
 - **Fix**: never require DTR. Leave hotspot mode only after 20 s without a frame (already there), on USB unmount or
   suspend, on the user's exit, or on a DTR drop from set to clear (a POSIX host closing the port). Never because DTR
   has not been set. TinyUSB 0.21.0 keeps sending while DTR is clear (its TX FIFO only becomes overwritable,
@@ -123,13 +116,10 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 - **Spec**: 2.8, modem to host. The 33 bytes must be a well-formed burst: correct EMB (color code, LCSS, QR(16,7)
   parity) and the embedded signaling for B-E made from the call's LC, as the aftermarket firmware did. Test U-10.
 - **Code**: the EMB's 7 information bits are set, but its 9 parity bits and all 32 embedded-signaling bits are 0.
-  MMDVMHost decodes the EMB with error correction, so with zero parity it "corrects" most bursts to a wrong color
-  code or LCSS. Then:
-  - Its own late entry fails, because it requires the EMB color code to match.
-  - It collects embedded fragments in the wrong order.
-  - For some color codes the decoded LCSS sequence lines up, and the all-zero fragments form a valid embedded LC
-    (all-zero rows are valid Hamming codewords, and the checksum of nine zero octets is 0). MMDVMHost then accepts
-    an LC of group, TG 0, source 0 and puts it into later superframes going to the network.
+  With zero parity the EMB doesn't give the color code and LCSS the burst should carry.
+  Then:
+  - A host's late entry fails.
+  - Embedded fragments are collected in the wrong order.
   - Talker alias and in-call GPS from the sender never reach the host.
 - **Fix**:
   - Build B-F the way a transmitter does. The EMB is color code, PI 0 and the LCSS of the position, with QR(16,7,6)
@@ -145,20 +135,18 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 - **Where**: `core/hotspot/hotspot.c:722-726`. The fill runs from the first missing position up to, but not
   including, the received burst's position, by increasing position only.
 - **Spec**: 2.8 and gotchas 8.5. Missed bursts are filled with silence at their positions, so the B-F sequence
-  MMDVMHost checks carries on. `hotspotUplink.h:48` and `hotspotUplink.c:228-238` give the fill range modulo 6.
+  the host expects carries on. `hotspotUplink.h:48` and `hotspotUplink.c:228-238` give the fill range modulo 6.
 - **Code**: when the range wraps (E received, then F and A missed, then B), nothing is filled. B arrives right after
-  E, MMDVMHost drops it and the rest of the superframe (360 ms of audio), and the bench case `rf_voice8`, `rf_long`
-  or `rf_late` can lose bursts.
+  E, a host drops it and the rest of the superframe (360 ms of audio).
 - **Fix**: fill every position from the first missing one, stepping modulo 6, up to the received burst's position.
   An A in the fill gets the voice sync, as now. Add a host test with a wrapped gap.
 
 ### A-5 Medium: DMR_SHORTLC gets NAK 2
 
 - **Where**: `core/hotspot/mmdvm.c:308-311`.
-- **Spec**: 2.10. MMDVMHost sends DMR_SHORTLC at the start and end of every call, in simplex too (it isn't gated on
-  duplex). Accept and ignore it, with no NAK. Test D-8.
-- **Code**: NAK 2. MMDVMHost logs "Received a NAK from the MMDVM, command = 0x1C, reason = 2" at least twice per call,
-  and Pi-Star style dashboards show those warnings.
+- **Spec**: 2.10. A standard host sends DMR_SHORTLC around every call, in simplex too.
+  Accept and ignore it, with no NAK. Test D-8.
+- **Code**: NAK 2. A warning per call in the host's log, shown by Pi-Star style dashboards.
 - **Fix**: take DMR_SHORTLC of any length silently (no ACK needed).
 
 ### A-6 Medium: SEND_CWID gets NAK 2
@@ -166,54 +154,24 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 - **Where**: `core/hotspot/mmdvm.c:312-313`.
 - **Spec**: 2.11. In idle, ACK it and send the callsign in Morse on FM, with the TX bit set while keying. In any
   other state, NAK 5.
-- **Code**: always NAK 2.
-  - rfoundry_sdrbench waits for an ACK to SEND_CWID. A NAK raises an error in its simplex and SFR loops, which drops the
-    connection and reconnects with backoff. This happens every time a CW ID is due (default every 15 minutes) when
-    `cwid` is configured, and the ID is never sent.
-  - MMDVMHost with CW ID enabled logs a NAK every time, and no station ID goes out. The operator may count on that
-    ID for licensing.
+- **Code**: always NAK 2. A standard host with CW ID enabled logs a NAK every time, and no station ID goes out. The
+  operator may count on that ID for licensing.
 - **Fix**: implement CW ID per 2.11: accept only in idle, ACK, key FM, send the Morse (about 20 wpm), keep the TX bit
   set until done, then restore the DMR setup fully (gotchas 8.13). Until then, list it as a limitation in
-  the feature matrix and the rfoundry_sdrbench docs ("set no cwid").
-
-### A-7 Medium: rfoundry_sdrbench doesn't recognize the description (change on rfoundry_sdrbench's side)
-
-- **Where**: `core/hostlink/hostlink.c:77-89`. The description is `RadioFoundry <board name> <git version>`, for
-  example `RadioFoundry DM-1701 2d45a21`.
-- **Spec**: 2.3.2 and section 4, row 1.
-- **Code**: the string itself meets the spec: printable ASCII, under 64 bytes, and none of the MMDVM_HS-type names.
-  With no SFR in this build, the missing SFR suffix is right.
-- **rfoundry_sdrbench today**: its `detect()` (`rfoundry_sdrbench/mmdvm/radio.py`) returns nothing, and with `radio.type: auto`
-  rfoundry_sdrbench stops with "can't tell what 'RadioFoundry ...' is: set radio.type". The workaround is setting the
-  radio profile by hand in the rfoundry_sdrbench config, which gives the 1-header / 1-terminator profile and simplex
-  operation. SFR stays impossible: `sfr_slots()` requires the aftermarket firmware's name in the description, and the
-  config can't override that.
-- **Fix, in rfoundry_sdrbench**:
-  - (a) `detect()`: a description containing `RadioFoundry` (case-insensitive) gives the same radio kind as the
-    aftermarket firmware, checked before the MMDVM names.
-  - (b) `sfr_slots()`: accept `RadioFoundry` wherever it accepts the aftermarket firmware's name. `sfr_framing()`
-    needs no change.
-  - (c) The `config.py` error texts that name the aftermarket firmware.
-  - (d) rfoundry_sdrbench's tests: a fake modem entry with the new description, plus `detect` and `sfr_slots` cases (in
-    `tests/mmdvm_fakes.py`, `test_mmdvm_hardware.py`, `test_mmdvm_sfr.py`).
-  - (e) rfoundry_sdrbench's RSSI conversion for that kind assumes the AT1846S raw scale (see A-9).
-- **Firmware side**: keep `RadioFoundry` as the first word, unchanged. When SFR is ported, append ` SFR
-  TS<in>>TS<out> <framing>` through the extension hook. Putting the aftermarket firmware's name in the description
-  isn't allowed: `tools/license_grep.sh` rejects it in sources.
+  the feature matrix.
 
 ### A-8 Low: slot 1 space reported as 0 in simplex (spec says 10); no SFR hook for it
 
 - **Where**: `core/hotspot/mmdvm.c:180`.
-- **Spec**: 2.4 says the constant 10, as MMDVM, MMDVM_HS and the aftermarket firmware send. 6.2 says both space bytes
+- **Spec**: 2.4 says the constant 10. 6.2 says both space bytes
   carry the outbound slot's space in SFR mode.
 - **Code**: 0.
-  - MMDVMHost then never writes DMR_DATA1. That is harmless, even better, since it would only get NAK 2.
-  - rfoundry_sdrbench's simplex driver reads only slot 2's byte.
+  - A standard host then never writes DMR_DATA1. That is harmless, even better, since it would only get NAK 2.
   - The bench tools only print it.
   - **Confirmed deviation, accepted**: the spec will say "0 or 10 in simplex".
 - **Problem left for SFR**: the extension interface (`mmdvm.h:123-129`) can append bytes and OR flags, but can't set
-  offset 7. When SFR is ported with an outbound TS1, rfoundry_sdrbench writes DMR_DATA1 gated on offset 7 and would never
-  send.
+  offset 7. When SFR is ported with an outbound TS1, a host that writes DMR_DATA1 gated on offset 7 would
+  never send.
 - **Fix**: keep 0 in plain simplex. When SFR is on, report the outbound slot's space at offsets 7 and 8 (an
   extension hook for the space values).
 
@@ -221,9 +179,8 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 
 - **Where**: `core/hotspot/hotspot.c:171-179`. Frames go up with length 37.
 - **Spec**: 2.8 and 5.4. Optional. The aftermarket firmware sent 2 bytes (00, then the AT1846S register 0x1B high
-  byte), and rfoundry_sdrbench converts that scale to dBm (raw − 151 at 300 MHz and up, −164 + raw × 32 / 27 below). Test
-  U-8.
-- **Code**: none. rfoundry_sdrbench gets no signal strength for anything the radio hears; MMDVMHost shows none.
+  byte). On that raw scale, dBm = raw − 151 at 300 MHz and up, −164 + raw × 32 / 27 below. Test U-8.
+- **Code**: none.
 - **Fix**: when the modem reports an RSSI for the burst (`rssi_dbm` in `dmr_burst_t` is non-zero), send two bytes
   after the burst (frame length 39), big endian: 00, then the raw value on the AT1846S scale. Use the raw reading
   directly if the board can pass it, otherwise invert the formula above for the band in use. Leave them off when
@@ -232,10 +189,9 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 ### A-10 Low: no DMR_LOST when SET_FREQ interrupts a call being heard
 
 - **Where**: `core/hotspot/hotspot.c:331-355`. The uplink call is reset with no DMR_LOST.
-- **Spec**: 2.7 and test C-16. If an uplink call is open, send DMR_LOST2 before the SET_FREQ ACK. MMDVMHost has no
-  RF watchdog, so it keeps such a call open until its 180 s timeout.
-- **Code**: silent reset. MMDVMHost never retunes in operation; rfoundry_sdrbench retunes only after 1 s of quiet, so the
-  effect is small.
+- **Spec**: 2.7 and test C-16. If an uplink call is open, send DMR_LOST2 before the SET_FREQ ACK. A host may
+  otherwise keep such a call open.
+- **Code**: silent reset. A standard host doesn't retune in operation, so the effect is small.
 - **Fix**: if the uplink call is open when SET_FREQ arrives, send DMR_LOST2 first, then reset, retune and ACK.
 
 ### A-11 Low: SET_MODE idle doesn't stop a transmission
@@ -243,16 +199,15 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 - **Where**: `core/hotspot/mmdvm.c:245`. Only the state byte changes.
 - **Spec**: 2.6 and test D-12. Idle stops new traffic for TX, ends a call in progress with a terminator within a
   superframe, clears the queue, and the TX bit clears once off air.
-- **Code**: a buffered or running call carries on. MMDVMHost sends idle only after its mode hang (3 s after network
-  traffic), and rfoundry_sdrbench only after the TX bit has cleared, so neither normally hits this.
+- **Code**: a buffered or running call carries on. A standard host sends idle only after its mode hang (3 s after network
+  traffic), so it doesn't normally hit this.
 - **Fix**: on SET_MODE idle, end a call in progress (our terminator), drop what's queued, then ACK.
 
 ### A-12 Low: SET_MODE and SET_CONFIG refuse POCSAG (06)
 
 - **Where**: `core/hotspot/mmdvm.c:194` and `:237`.
 - **Spec**: 2.5 and 2.6. Accept 06, keep receiving, report POCSAG space 0 or 1, never transmit pages.
-- **Code**: NAK 4. MMDVMHost with POCSAG enabled (the Pi-Star default) logs a NAK each time a page arrives from
-  DAPNET. Its behavior is otherwise the same: it drops RF DMR while in its POCSAG mode either way.
+- **Code**: NAK 4. A host with POCSAG enabled (the Pi-Star default) logs a NAK each time a page arrives.
 - **Fix**: ACK 06 and treat it like DMR for reception; leave POCSAG space at 0.
 
 ### A-13 Low: values the spec says to NAK are accepted, and vice versa
@@ -260,11 +215,11 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 - **Color code**: above 15 is masked to 4 bits instead of NAK 4 (`mmdvm.c:201`; test C-4). Fix: NAK 4.
 - **DMR_DATA length**: payloads longer than 34 bytes are accepted (`mmdvm.c:255`; test D-6). Fix: NAK 4 unless the
   frame is exactly 37 bytes.
-- **SERIAL and TRANSPARENT**: get NAK 1 (`mmdvm.c:332-336`). The spec says drop silently (2.12): MMDVMHost sends them
-  for a Nextion on the modem port and for transparent data, and logs every NAK. Fix: drop both silently, as
+- **SERIAL and TRANSPARENT**: get NAK 1 (`mmdvm.c:332-336`). The spec says drop silently (2.12): hosts send them
+  for a Nextion on the modem port and for transparent data, and log every NAK. Fix: drop both silently, as
   QSO_INFO already is.
-- **FM_PARAMS1-4**: get NAK 2. A host configured with FM sends them during startup and stops on the NAK (MMDVM_HS
-  behaves the same, so this is a config error either way). The spec says ACK and ignore (2.14). Fix: ACK and ignore.
+- **FM_PARAMS1-4**: get NAK 2. A host configured with FM sends them during startup and stops on the NAK 
+  The spec says ACK and ignore (2.14). Fix: ACK and ignore.
 
 ### A-14 Low: no margin in the reported space
 
@@ -281,7 +236,7 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 - **Spec**: 2.4 and 3.1. Status replies within tens of milliseconds; the version reply within about 300 ms.
 - **Code**: today `hotspot_start()` fails at once (A-1). Once wired, the radio core's `enter` (stopping FM and the
   DMR call stack, a retune) runs before every reply for as long as the radio refuses (transmitting, in a menu, DMR
-  disabled). If it blocks, it delays every GET_STATUS and can trip MMDVMHost's 2 s reset.
+  disabled). If it blocks, it delays every GET_STATUS and can trip a host's 2 s reset.
 - **Fix**: `enter` must not block (post a request and return). Try it again at most about once a second, not per
   frame. Always answer GET_VERSION and GET_STATUS first.
 
@@ -293,7 +248,7 @@ requirement is met. Still run T-USB-1 on the radio.
 
 ### I-2 Info: DMR_START gets NAK 2
 
-`mmdvm.c:308-311`. MMDVMHost sends DMR_START only in duplex, and rfoundry_sdrbench doesn't send it in SFR, so no current
+`mmdvm.c:308-311`. A standard host sends DMR_START only in duplex, so no current
 client is affected. The spec says ignore it. Low priority: take it silently along with DMR_SHORTLC (A-5).
 
 ### I-3 Info: DMR_LOST timing correct
@@ -315,7 +270,7 @@ Confirm on air that TX_DONE comes after the terminator slot (gotchas 3.2, test D
   - F-1 to F-8 by construction: resync on bytes other than 0xE0, length below 3 resynced, long frames skipped whole,
     unknown command NAK 1.
   - F-9: nothing goes up before the first frame (the uplink runs only while the hotspot runs).
-- **Version and status**: V-1 and V-3. S-1: 13 bytes, byte 3 = 02, byte 12 = 0; byte 7 differs, see A-8. S-3 and S-4
+- **Version and status**: V-1. S-1: 13 bytes, byte 3 = 02, byte 12 = 0; byte 7 differs, see A-8. S-3 and S-4
   (overflow flags reported once). S-5.
 - **Configuration**: C-1, C-2 (SET_MODE DMR before SET_CONFIG is ACKed), C-3 (other mode bits ignored), C-5, C-7, C-8,
   C-9 (POCSAG frequency ignored, only the board's range applies), C-10, C-12.
@@ -344,33 +299,12 @@ Missing:
 - RSSI bytes (A-9).
 - A host link test with DTR clear (A-2).
 - A slow `enter` (A-15).
-- The probe always raises DTR. Add a `--no-dtr` run (T-USB-2) and an rfoundry_sdrbench-order run (`--order sdrbench`)
-  (GET_VERSION, SET_MODE DMR, then SET_FREQ, SET_CONFIG, SET_MODE).
+- The probe always raises DTR. Add a `--no-dtr` run (T-USB-2).
 
 ## 2. Per-client verdict at 2d45a21
 
 | Client | Verdict | Blocking items |
 | --- | --- | --- |
-| MMDVMHost, Linux / Pi-Star | handshake and polling OK; no calls until A-1; then voice works, with a malformed uplink EMB, NAK warnings per call and lost bursts at wrapped gaps | A-1, A-3, A-5, A-4 |
-| MMDVMHost, Windows | broken: config never sticks | A-2 (and the above) |
-| rfoundry_sdrbench simplex | needs the radio profile set by hand until rfoundry_sdrbench accepts RadioFoundry's name; no CW ID; no RSSI | A-1, A-7, A-6, A-9 |
-| rfoundry_sdrbench SFR | not available (SFR not ported; rfoundry_sdrbench refuses the description; offset 7 hook missing) | A-7, A-8 |
-| Bench tools (`hs_normal.py`, copies) | UDP transport not in this build; over serial, `rf_*` cases are at risk from A-4 and `net_*` from A-1 | A-1, A-4 |
-
-## 3. Structural copying scan
-
-The audited files were compared with MMDVMHost, MMDVM and MMDVM_HS (all GPL-2) by token shingles: the repository's
-`tools/similarity_scan.py` at 25, 15 and 10 tokens, plus a listing of the shared runs at 12 tokens. The scan found:
-
-- `core/hotspot/mmdvm.c` shares nothing with them, even at 10 tokens. Its command dispatch is the shape the public
-  protocol itself dictates.
-- `core/hotspot/hotspot.c`, `core/hostlink/hostlink.c`, `drivers/usb/usb_device.c` and `platform/stm32f4/usb.c` share
-  only generic idioms at 10-15 tokens: runs of include lines, zero-filled initializers, counted loops, and a
-  shift-and-xor GF(256) multiply.
-- `core/hotspot/hotspotUplink.c` (carried over, ours) shares one run at 15 tokens: a comparison listing the three DMR
-  data-block types. That is protocol vocabulary, not structure.
-- `tests/host/mmdvmTest.c` shares nothing at 15 tokens or more.
-
-Conclusion: no structural copying from the GPL trees in the MMDVM implementation. Hits elsewhere in the tree at 10
-tokens (FEC, UI and test files) are the same kind of idiom noise and are outside this audit. The pointers are in the
-dirty-side notes, not here.
+| Standard host, Linux / Pi-Star | handshake and polling OK; no calls until A-1; then voice works, with a malformed uplink EMB, NAK warnings per call and lost bursts at wrapped gaps | A-1, A-3, A-5, A-4 |
+| Standard host, Windows | broken: config never sticks | A-2 (and the above) |
+| Bench tools (`hs_normal.py`, copies) | UDP transport not in this build; over serial, uplink cases are at risk from A-4 and downlink cases from A-1 | A-1, A-4 |

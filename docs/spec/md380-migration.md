@@ -22,7 +22,7 @@ reads its manual and `--help`, and contains none of its code. Facts below marked
 | Over RadioFoundry's limits | `encode --radio openuv380` silently keeps the first 68 zones and 76 RX group lists (T). The tool reports what would be dropped before it flashes |
 | Callsign DB, md390 | `encode-db --radio md390` fails: "Not implemented for 'md390'" (T). Not needed: the database goes to the radio once it runs RadioFoundry |
 | Callsign DB, openuv380 | `write-db --radio openuv380 --id ID [--database FILE] [--limit N]`. Without `--database`, dmrconf downloads the public database itself |
-| `--database` JSON | `{"users": [{"id": 3100001, "callsign": "N0CALL", "fname": "Alice", "surname": "Smith", "city": "Denver", "state": "CO", "country": "US"}]}`. `id` must be a number. Records come out as `CALL Fname City State Country`, format `N`, 27-byte records (T, decoded per [open-firmware-cps.md](open-firmware-cps.md) 7.5). Files keyed `radio_id`, or `{"results": [...]}`, load 0 entries (T) |
+| `--database` JSON | `{"users": [{"id": 9990001, "callsign": "Q0TST", "fname": "Alice", "surname": "Smith", "city": "Denver", "state": "CO", "country": "US"}]}`. `id` must be a number. Records come out as `CALL Fname City State Country`, format `N`, 27-byte records (T, decoded per [open-firmware-cps.md](open-firmware-cps.md) 7.5). Files keyed `radio_id`, or `{"results": [...]}`, load 0 entries (T) |
 
 ## 2. What RadioFoundry presents
 
@@ -80,7 +80,9 @@ Every step stops on failure. The work directory (`~/RadioFoundry-MD380-migration
 ## 5. Open points (need a radio)
 
 - Does `dmrconf read --radio md390` read an MD-380 and an RT3?
-- The USB strings of the TYT bootloader compared with normal programming mode.
+- The manufacturer and product strings of an unpatched original firmware switched on normally. The layouts of both
+  modes were read on an MD-380 ([hardware-md380.md](hardware-md380.md) 14.3), and the tool accepts only the
+  bootloader's alt 0, so this no longer decides anything.
 - Whether qdmr's OpenUV380 driver accepts radio type 7 from RadioFoundry without `--radio`. The tool always passes it.
 - How long `write-db` takes over RadioFoundry's shim with a full database. Expect minutes.
 - Windows: dmrconf's TyT access, and Zadig's WinUSB binding for the bootloader.

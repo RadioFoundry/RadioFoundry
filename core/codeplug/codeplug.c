@@ -9,10 +9,20 @@
 #include "board.h"
 #include "storage/storage.h"
 
-// Where the two open-firmware images sit in the data flash when the board gives no map: the STM32 family puts the 64 KB
-// EEPROM image at 0 and the flash image at +128 KB
+// Where the two open-firmware images sit in the data flash when the board gives no map (a driver drops a map its chip
+// is too small for): the board's own bases from board.mk, as dmr_iddb.c reads them, so a board whose low flash holds
+// the radio's own data never has that read as a codeplug. Without them, the STM32 family's: the 64 KB EEPROM image at
+// 0 and the flash image at +128 KB
+#ifdef CODEPLUG_OPENFW_EEPROM_BASE
+#define DEFAULT_EEPROM_BASE	CODEPLUG_OPENFW_EEPROM_BASE
+#else
 #define DEFAULT_EEPROM_BASE	0x000000u
+#endif
+#ifdef CODEPLUG_OPENFW_FLASH_BASE
+#define DEFAULT_FLASH_BASE	CODEPLUG_OPENFW_FLASH_BASE
+#else
 #define DEFAULT_FLASH_BASE	0x020000u
+#endif
 
 static uint32_t ee_base = DEFAULT_EEPROM_BASE;
 static uint32_t fl_base = DEFAULT_FLASH_BASE;
@@ -70,6 +80,7 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 #define GEN_DMR_ID	EE(0x00E8u)
 #define GEN_GROUP_HANG	0x18u	// offsets in the block
 #define GEN_PRIV_HANG	0x19u
+#define GEN_CLEAR	0x1Au	// the bytes up to the hang times: what the radio reads of the block
 #define GEN_HANG_UNIT_MS 500u	// assumed, not confirmed: no unit in the interop spec, the ref notes or the vendor
 				// guide (docs/spec/dmr-voice.md 8); check with the vendor CPS on the bench
 
@@ -79,6 +90,8 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 #define LIST_COUNTS	FL(0x8D620u)
 #define LIST_BASE	FL(0x8D6A0u)
 #define LIST_SIZE	80u
+#define CONTACT_COUNT	1024u	// CODEPLUG_CONTACTS_MAX, CODEPLUG_LISTS_MAX: the layout's, built with DMR or not
+#define LIST_COUNT	76u
 
 // Zones (7.2, 7.3.4)
 #define ZONE_SLOTS	CODEPLUG_ZONES_MAX
@@ -90,9 +103,18 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 
 static codeplug_source_t source = CODEPLUG_NONE;
 static uint32_t serial;
+// Open-firmware evidence (codeplug-stock-tyt.md 2, step 1), which codeplug_foreign() decides from (no flag of its own:
+// RAM is tight on some radios)
+static uint16_t ev_good, ev_bad;
+static uint8_t accept;	// codeplug_accept_t: the owner's "Use anyway", which turns the verdict off; | ACCEPT_UNSTORED
+#define ACCEPT_UNSTORED	0x80u	// changed since codeplug_accept_take
 
 // Open-firmware codeplug index
 static uint8_t used[CH_MAX / 8];	// bit set = channel record passed the checks
+// Bit per bank where a read failed at the index (its in-use bitmap, or a record it marks): which of its channels exist
+// isn't known, so until an index reads it nothing writes that bitmap (it would clear their bits) or a free slot there
+static uint8_t banks_unread;
+_Static_assert(CH_BANKS <= 8u, "banks_unread");
 static uint16_t channel_max;		// highest used channel number
 static uint8_t zone_slot[ZONE_SLOTS];
 static uint8_t zone_count;
@@ -289,6 +311,67 @@ static void set_used(uint16_t number, bool on)
 	}
 }
 
+// A Latin-1 name field (codeplug-stock-tyt.md 2): printable text (0x20-0x7E, 0xA0-0xFE) up to the first 0x00 or
+// 0xFF, only 0x00 or 0xFF after it. A UTF-16 name fails: its second byte is 0x00 and printable bytes follow
+static bool latin_name(const uint8_t *p, unsigned len, bool *empty)
+{
+	unsigned n = 0;
+	while (n < len && p[n] != 0x00 && p[n] != 0xFF) {
+		if (p[n] < 0x20u || (p[n] > 0x7Eu && p[n] < 0xA0u)) {
+			return false;
+		}
+		n++;
+	}
+	*empty = n == 0;
+	for (unsigned i = n; i < len; i++) {
+		if (p[i] != 0x00 && p[i] != 0xFF) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// A record that counts by its name: good when the name is valid and not empty
+static void named(const uint8_t *p)
+{
+	bool empty;
+	if (latin_name(p, CODEPLUG_NAME_LEN, &empty) && !empty) {
+		ev_good++;
+	} else {
+		ev_bad++;
+	}
+}
+
+static bool all_ff(const uint8_t *p, unsigned len)
+{
+	while (len > 0 && p[len - 1u] == 0xFF) {
+		len--;
+	}
+	return len == 0;
+}
+
+// Erased flash (all 0xFF), read in pieces; a read that fails counts as erased (the record isn't counted)
+static bool erased(uint32_t addr, unsigned len, uint8_t *buf, unsigned size)
+{
+	while (len > 0) {
+		unsigned n = len < size ? len : size;
+		if (!flash_read(addr, buf, n)) {
+			return true;
+		}
+		if (!all_ff(buf, n)) {
+			return false;
+		}
+		addr += n;
+		len -= n;
+	}
+	return true;
+}
+
+static bool bank_known(uint16_t number)
+{
+	return (banks_unread & (1u << ((number - 1u) / CH_PER_BANK))) == 0;
+}
+
 static void find_max(void)
 {
 	channel_max = 0;
@@ -300,13 +383,19 @@ static void find_max(void)
 	}
 }
 
-// In-use bitmaps, then the frequencies of every marked record: an erased bank (all 0xFF) fails the BCD check
+// In-use bitmaps, then the frequencies of every marked record: an erased bank (all 0xFF) fails the BCD check. Counts
+// the channels' evidence on the way: a marked record that isn't erased is good with valid frequencies and name. A read
+// that fails is no evidence that a record is unused: what it hides is left out and its bank marked unknown
+// (banks_unread). Otherwise a save in the bank would write the drop to flash and a new channel could take the slot
 static void index_channels(void)
 {
+	uint8_t r[CH_SIZE];
+
 	for (unsigned bank = 0; bank < CH_BANKS; bank++) {
 		uint8_t *bits = &used[bank * (CH_PER_BANK / 8u)];
 		if (!flash_read(bank_bitmap(bank), bits, CH_PER_BANK / 8u)) {
 			memset(bits, 0, CH_PER_BANK / 8u);
+			banks_unread |= (uint8_t)(1u << bank);
 			continue;
 		}
 		for (unsigned k = 0; k < CH_PER_BANK; k++) {
@@ -314,10 +403,17 @@ static void index_channels(void)
 			if (!is_used(number)) {
 				continue;
 			}
-			uint8_t f[8];
 			uint32_t rx, tx;
-			if (!flash_read(channel_addr(number) + CH_RX, f, sizeof(f)) || !freq(&f[0], &rx) || !freq(&f[4], &tx)) {
+			if (!flash_read(channel_addr(number), r, sizeof(r))) {
 				set_used(number, false);
+				banks_unread |= (uint8_t)(1u << bank);
+				continue;
+			}
+			if (!freq(&r[CH_RX], &rx) || !freq(&r[CH_TX], &tx)) {
+				set_used(number, false);
+				ev_bad += all_ff(r, sizeof(r)) ? 0u : 1u;
+			} else {
+				named(&r[CH_NAME]);
 			}
 		}
 	}
@@ -346,11 +442,45 @@ static void index_zones(void)
 	}
 }
 
+// The rest of the open-firmware evidence (codeplug-stock-tyt.md 2, step 1, the web editor's rule in
+// site/static/js/codeplug/detect.js) for what the radio shows from the codeplug: the zones and the RX group lists. Not
+// the contacts or the general settings: another firmware's contacts left beside a codeplug edited on the radio
+// mustn't hide it, and the checks cost flash
+static void index_evidence(void)
+{
+	uint8_t r[CH_SIZE];
+
+	// Zones whose in-use bit is set and whose record isn't erased
+	uint8_t layout, bits[(ZONE_SLOTS + 7u) / 8u];
+	if (flash_read(ZONE_LAYOUT, &layout, 1) && flash_read(ZONE_BITMAP, bits, sizeof(bits))) {
+		uint32_t rec = ZONE_NAME_LEN + 2u * (layout <= 0x04 ? 80u : 16u);
+		for (unsigned slot = 0; slot < ZONE_SLOTS; slot++) {
+			uint32_t a = ZONE_DATA + slot * rec;
+			if ((bits[slot / 8u] & (1u << (slot % 8u))) != 0 && !erased(a, rec, r, sizeof(r)) &&
+			    flash_read(a, r, ZONE_NAME_LEN)) {
+				named(r);
+			}
+		}
+	}
+	// RX group lists whose count is set: a count past 32 members is bad
+	for (unsigned i = 0; i < LIST_COUNT; i++) {
+		uint8_t n;
+		if (!flash_read(LIST_COUNTS + i, &n, 1) || n == 0 || n == 0xFF) {
+			continue;
+		}
+		if (n > 33u) {
+			ev_bad++;
+		} else if (flash_read(LIST_BASE + i * LIST_SIZE, r, CODEPLUG_NAME_LEN)) {
+			named(r);
+		}
+	}
+}
+
 static void index_builtin(void)
 {
 	builtin_count = 0;
 	for (unsigned i = 0; i < BUILTIN_COUNT; i++) {
-		if (board.band_count == 0 || board_in_band(builtin[i].hz, false)) {
+		if (board_band_count() == 0 || board_in_band(builtin[i].hz, false)) {
 			builtin_map[builtin_count++] = (uint8_t)i;
 		}
 	}
@@ -363,11 +493,20 @@ static codeplug_source_t index_all(void)
 	ee_base = m != NULL ? m->openfw_eeprom : DEFAULT_EEPROM_BASE;
 	fl_base = m != NULL ? m->openfw_flash : DEFAULT_FLASH_BASE;
 	memset(used, 0, sizeof(used));
+	banks_unread = 0;
 	channel_max = 0;
 	zone_count = 0;
+	ev_good = ev_bad = 0;
 	index_builtin();
 	if (have_flash()) {
 		index_channels();
+		index_evidence();
+	}
+	// Records in use that fail the rule are another firmware's codeplug: shown as none (the built-in set), the bytes
+	// left alone
+	if (codeplug_foreign()) {
+		memset(used, 0, sizeof(used));
+		channel_max = 0;
 	}
 	if (channel_max > 0) {
 		index_zones();
@@ -400,6 +539,46 @@ codeplug_source_t codeplug_source(void)
 	return source;
 }
 
+// At least one good record and at most one bad one for every four good: the open-firmware layout. No record in use:
+// blank
+bool codeplug_foreign(void)
+{
+	return codeplug_acceptance() != CODEPLUG_ACCEPT_YES && ev_bad != 0 && (uint32_t)ev_bad * 4u > ev_good;
+}
+
+void codeplug_accept(bool on)
+{
+	accept = (uint8_t)((on ? CODEPLUG_ACCEPT_YES : CODEPLUG_ACCEPT_NO) | ACCEPT_UNSTORED);
+}
+
+codeplug_accept_t codeplug_acceptance(void)
+{
+	return (codeplug_accept_t)(accept & ~ACCEPT_UNSTORED);
+}
+
+bool codeplug_accept_take(codeplug_accept_t *store)
+{
+	uint8_t a = accept;
+	if ((a & ACCEPT_UNSTORED) == 0) {
+		return false;
+	}
+	*store = (a & ~ACCEPT_UNSTORED) == CODEPLUG_ACCEPT_YES ? CODEPLUG_ACCEPT_YES : CODEPLUG_ACCEPT_NO;
+	accept = (uint8_t)*store;
+	return true;
+}
+
+codeplug_source_t codeplug_written(void)
+{
+	accept = CODEPLUG_ACCEPT_DROPPED | ACCEPT_UNSTORED;
+	return codeplug_reload();
+}
+
+void codeplug_evidence(uint16_t *good, uint16_t *bad)
+{
+	*good = ev_good;
+	*bad = ev_bad;
+}
+
 uint32_t codeplug_serial(void)
 {
 	return serial;
@@ -429,7 +608,7 @@ static bool builtin_channel(uint16_t number, channel_t *out)
 	out->mode = RADIO_MODE_FM;
 	out->bw = b->bw;
 	out->power = CODEPLUG_POWER_DEFAULT;
-	out->rx_only = board.band_count != 0 && !board_in_band(b->hz, true);
+	out->rx_only = board_band_count() != 0 && !board_in_band(b->hz, true);
 	out->color_code = 1;
 	out->timeslot = 1;
 	return true;
@@ -520,14 +699,16 @@ void codeplug_openfw_encode(const channel_t *ch, uint8_t *r)
 	r[CH_POWER] = ch->power == CODEPLUG_POWER_DEFAULT ? 0 : power_to_byte(ch->power);
 	put16(&r[CH_RX_TONE], tone_word(&ch->rx_tone));
 	put16(&r[CH_TX_TONE], tone_word(&ch->tx_tone));
-	r[CH_FLAG4] = (uint8_t)((r[CH_FLAG4] & ~(FLAG4_RX_ONLY | FLAG4_25K)) | (ch->rx_only ? FLAG4_RX_ONLY : 0) |
-				(ch->bw == RADIO_BW_25K ? FLAG4_25K : 0));
+	r[CH_FLAG4] = (uint8_t)((r[CH_FLAG4] & ~(FLAG4_VOX | FLAG4_ZONE_SKIP | FLAG4_RX_ONLY | FLAG4_25K)) |
+				(ch->vox ? FLAG4_VOX : 0) | (ch->scan_skip ? FLAG4_ZONE_SKIP : 0) |
+				(ch->rx_only ? FLAG4_RX_ONLY : 0) | (ch->bw == RADIO_BW_25K ? FLAG4_25K : 0));
 	r[CH_FLAG2] = (uint8_t)((r[CH_FLAG2] & ~FLAG2_TS2) | (ch->timeslot == 2 ? FLAG2_TS2 : 0));
 	r[CH_CC] = ch->color_code & 0x0Fu;
 	put16(&r[CH_CONTACT], ch->contact);
 	r[CH_RX_GROUP] = (uint8_t)(ch->listen_list <= 0xFFu ? ch->listen_list : 0);
-	r[CH_LFLAG1] = (uint8_t)((r[CH_LFLAG1] & ~(LFLAG1_ID | LFLAG1_DMO)) | (ch->dmr_id != 0 ? LFLAG1_ID : 0) |
-				 (ch->dmo ? LFLAG1_DMO : 0));
+	r[CH_LFLAG1] = (uint8_t)((r[CH_LFLAG1] & ~(LFLAG1_ID | LFLAG1_NO_BEEP | LFLAG1_NO_ECO | LFLAG1_DMO)) |
+				 (ch->dmr_id != 0 ? LFLAG1_ID : 0) | (ch->no_beep ? LFLAG1_NO_BEEP : 0) |
+				 (ch->no_eco ? LFLAG1_NO_ECO : 0) | (ch->dmo ? LFLAG1_DMO : 0));
 	uint32_t tot = (ch->tot_s + 14u) / 15u;
 	r[CH_TOT] = (uint8_t)(tot > 255u ? 255u : tot);
 	// The text bit of each timeslot's talker alias field; the APRS bit is kept
@@ -583,6 +764,86 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 	return ok;
 }
 
+// The scans' block buffer (codeplug_contacts_each, codeplug_channel_names_each). Static, used only under the storage
+// lock: on the stack it overflowed the radio task, whose DMR set-up scans through codeplug_contact_find (a DMR VFO whose
+// talk target is a contact, at boot). in_scan marks it in use, so a scan nested in a scan's callback (same task: the
+// lock is recursive) reads record by record instead of reusing it
+#define CONTACTS_PER_READ	32u	// records per flash read in a scan: 768 bytes
+#define CHANNELS_PER_READ	13u	// 728 bytes
+static uint8_t scan_blk[CONTACTS_PER_READ * CONTACT_SIZE];
+static bool in_scan;
+_Static_assert(CHANNELS_PER_READ * CH_SIZE <= sizeof scan_blk, "channel block");
+
+bool codeplug_channel_used(uint16_t number)
+{
+	return source == CODEPLUG_BUILTIN ? number >= 1 && number <= builtin_count : source == CODEPLUG_OPENFW && is_used(number);
+}
+
+bool codeplug_channel_name(uint16_t number, char out[CODEPLUG_NAME_LEN + 1])
+{
+	if (source == CODEPLUG_BUILTIN) {
+		if (number < 1 || number > builtin_count) {
+			return false;
+		}
+		strncpy(out, builtin[builtin_map[number - 1u]].name, CODEPLUG_NAME_LEN);
+		out[CODEPLUG_NAME_LEN] = '\0';
+		return true;
+	}
+	if (source != CODEPLUG_OPENFW) {
+		return false;
+	}
+	uint8_t r[CODEPLUG_NAME_LEN];
+	storage_lock();
+	bool ok = is_used(number) && flash_read(channel_addr(number) + CH_NAME, r, sizeof(r));
+	storage_unlock();
+	if (ok) {
+		copy_name(out, r, CODEPLUG_NAME_LEN);
+	}
+	return ok;
+}
+
+bool codeplug_channel_names_each(codeplug_name_fn fn, void *ctx, bool names)
+{
+	char name[CODEPLUG_NAME_LEN + 1];
+	uint16_t top = codeplug_channel_count();
+	bool ok = true, go = true;
+	uint16_t n;
+	for (uint16_t first = 1; first <= top && ok && go; first = (uint16_t)(first + n)) {
+		// A block never crosses a bank: the next one starts after the bitmap
+		n = (uint16_t)(CH_PER_BANK - (first - 1u) % CH_PER_BANK);
+		n = n < CHANNELS_PER_READ ? n : CHANNELS_PER_READ;
+		n = n < top - first + 1u ? n : (uint16_t)(top - first + 1u);
+		storage_lock();
+		bool table = source == CODEPLUG_BUILTIN, nested = in_scan;
+		// Only the span from the first used record to the last
+		uint16_t lo = first, hi = (uint16_t)(first + n - 1u);
+		while (!table && lo <= hi && !is_used(lo)) {
+			lo++;
+		}
+		while (!table && hi >= lo && !is_used(hi)) {
+			hi--;
+		}
+		in_scan = true;
+		ok = table || !names || nested || lo > hi ||
+		     flash_read(channel_addr(lo), scan_blk, (uint32_t)(hi - lo + 1u) * CH_SIZE);
+		for (uint16_t k = first; k < first + n && ok && go; k++) {
+			const char *got = NULL;
+			if (!names && (table || is_used(k))) {
+				got = "";
+			} else if (table || nested) {
+				got = codeplug_channel_name(k, name) ? name : NULL;
+			} else if (is_used(k)) {
+				copy_name(name, &scan_blk[(k - lo) * CH_SIZE + CH_NAME], CODEPLUG_NAME_LEN);
+				got = name;
+			}
+			go = fn(k, got, ctx);
+		}
+		in_scan = nested;
+		storage_unlock();
+	}
+	return ok;
+}
+
 uint16_t codeplug_zone_count(void)
 {
 	if (source == CODEPLUG_NONE) {
@@ -597,9 +858,11 @@ bool codeplug_zones_stored(void)
 }
 
 // The virtual zone: every used channel, as many as a zone_t holds
+#define ALL_CHANNELS	"All channels"	// the zone there is without stored ones
+
 static void all_channels(zone_t *out)
 {
-	strncpy(out->name, "All channels", CODEPLUG_NAME_LEN);
+	strncpy(out->name, ALL_CHANNELS, CODEPLUG_NAME_LEN);
 	uint16_t top = codeplug_channel_count();
 	for (uint16_t n = 1; n <= top && out->count < CODEPLUG_ZONE_MAX; n++) {
 		if (source == CODEPLUG_BUILTIN || is_used(n)) {
@@ -639,30 +902,47 @@ bool codeplug_zone(uint16_t index, zone_t *out)
 	return ok;
 }
 
+bool codeplug_zone_name(uint16_t index, char out[CODEPLUG_NAME_LEN + 1])
+{
+	uint8_t r[ZONE_NAME_LEN];
+	bool ok;
+	storage_lock();
+	if (index >= codeplug_zone_count()) {
+		ok = false;
+	} else if (zone_count == 0) {
+		strncpy(out, ALL_CHANNELS, CODEPLUG_NAME_LEN + 1);
+		ok = true;
+	} else {
+		ok = flash_read(ZONE_DATA + zone_slot[index] * zone_record, r, sizeof(r));
+		if (ok) {
+			copy_name(out, r, ZONE_NAME_LEN);
+		}
+	}
+	storage_unlock();
+	return ok;
+}
+
 // --- Editing ---
 
+static const uint8_t zero[32];	// what the bitmaps and the quick keys are cleared with
+
 // A codeplug to edit: the built-in set first becomes a stored one (its channels written, the bitmaps, zones and
-// lists that may hold junk from other firmware cleared)
+// lists that may hold junk from other firmware cleared). Never over another firmware's codeplug (foreign): only
+// codeplug_start_new clears that
 static bool materialize(void)
 {
 	if (source == CODEPLUG_OPENFW) {
 		return true;
 	}
-	if (source != CODEPLUG_BUILTIN || !storage_ready()) {
+	// An unread bitmap may be what made it look blank: clearing the bitmaps could drop a whole codeplug
+	if (source != CODEPLUG_BUILTIN || !storage_ready() || codeplug_foreign() || banks_unread != 0) {
 		return false;
 	}
-	static const uint8_t zero[32];
 	bool ok = true;
 	for (unsigned bank = 0; bank < CH_BANKS && ok; bank++) {
 		ok = flash_write(bank_bitmap(bank), zero, CH_PER_BANK / 8u);
 	}
-	ok = ok && flash_write(ZONE_BITMAP, zero, sizeof(zero));
-#if CONFIG_DMR
-	for (unsigned off = 0; off < CODEPLUG_LISTS_MAX && ok; off += sizeof(zero)) {
-		uint32_t n = CODEPLUG_LISTS_MAX - off < sizeof(zero) ? CODEPLUG_LISTS_MAX - off : sizeof(zero);
-		ok = flash_write(LIST_COUNTS + off, zero, n);
-	}
-#endif
+	ok = ok && flash_write(ZONE_BITMAP, zero, sizeof(zero)) && flash_write(LIST_COUNTS, NULL, LIST_COUNT);
 	memset(used, 0, sizeof(used));
 	channel_max = 0;
 	zone_count = 0;
@@ -680,6 +960,28 @@ static bool materialize(void)
 	return ok;
 }
 
+// Also the rest the evidence reads (the callsign and DMR ID, the contacts) and what the radio reads (boot text, quick
+// keys), so the codeplug made is a clean one and the next start-up finds it ours
+bool codeplug_start_new(void)
+{
+	_Static_assert(sizeof(zero) >= CODEPLUG_QUICK_KEYS * 2u, "zero clears the quick keys");
+	storage_lock();
+	bool ok = !codeplug_foreign();	// nothing to clear: the edit makes the codeplug as for a blank flash
+	if (!ok && storage_ready()) {
+		ok = flash_write(GEN_BASE, NULL, GEN_CLEAR) && flash_write(BOOT_TEXT, NULL, 2u * CODEPLUG_NAME_LEN) &&
+		     flash_write(QUICK_KEYS, zero, CODEPLUG_QUICK_KEYS * 2u) &&
+		     flash_write(CONTACT_BASE, NULL, CONTACT_COUNT * CONTACT_SIZE);
+		ev_bad = 0;	// cleared: ours from now on (a failure re-reads it, materialize)
+		banks_unread = 0;	// the owner chose to clear it: materialize writes every bitmap
+		ok = ok && materialize();
+		if (!ok) {
+			index_all();
+		}
+	}
+	storage_unlock();
+	return ok;
+}
+
 static bool write_bitmap(uint16_t number)
 {
 	unsigned bank = (number - 1u) / CH_PER_BANK;
@@ -690,7 +992,7 @@ uint16_t codeplug_free_channel(void)
 {
 	uint16_t n;
 	storage_lock();
-	for (n = 1; n <= CH_MAX && (source == CODEPLUG_BUILTIN ? n <= builtin_count : is_used(n)); n++) {
+	for (n = 1; n <= CH_MAX && (source == CODEPLUG_BUILTIN ? n <= builtin_count : is_used(n) || !bank_known(n)); n++) {
 	}
 	storage_unlock();
 	return n <= CH_MAX ? n : 0;
@@ -704,8 +1006,13 @@ bool codeplug_set_channel(uint16_t number, const channel_t *ch)
 		return false;
 	}
 	storage_lock();
-	bool ok = materialize() && flash_read(channel_addr(number), r, sizeof(r));
+	// A channel shown may be rewritten in an unknown bank: its in-use bit is set already, the bitmap isn't written
+	bool ok = materialize() && (is_used(number) || bank_known(number)) &&
+		  flash_read(channel_addr(number), r, sizeof(r));
 	if (ok) {
+		if (!is_used(number)) {
+			blank_channel(r);	// a free slot's bytes aren't ours to keep (another firmware's, or deleted)
+		}
 		codeplug_openfw_encode(ch, r);
 		ok = flash_write(channel_addr(number), r, sizeof(r));
 	}
@@ -730,7 +1037,7 @@ bool codeplug_delete_channel(uint16_t number)
 		return false;
 	}
 	storage_lock();
-	bool ok = materialize();
+	bool ok = materialize() && bank_known(number);
 	if (ok && is_used(number)) {
 		set_used(number, false);
 		ok = write_bitmap(number);
@@ -768,6 +1075,21 @@ bool codeplug_set_zone(uint16_t index, const zone_t *z)
 	// Every channel must exist
 	for (uint16_t i = 0; ok && i < z->count; i++) {
 		ok = is_used(z->channels[i]);
+	}
+	// A bank with a read that failed at the index: the virtual zone, or a stored one listing the bank's channels,
+	// was read without the ones it hides, and written back would lose them
+	if (ok && banks_unread != 0) {
+		ok = zone_count > 0;
+		if (ok && index < zone_count) {
+			ok = flash_read(ZONE_DATA + zone_slot[index] * zone_record, r, zone_record);
+			for (unsigned i = 0; ok && i < zone_channels; i++) {
+				uint16_t n = le16(&r[ZONE_NAME_LEN + 2u * i]);
+				if (n == 0) {
+					break;
+				}
+				ok = n > CH_MAX || bank_known(n);
+			}
+		}
 	}
 	// The old 16-channel layout holds at most 16 per zone; switching layouts would need every zone rewritten
 	if (ok && zone_channels != 80 && zone_count > 0 && z->count > zone_channels) {
@@ -1086,14 +1408,10 @@ bool codeplug_set_dmr_id(uint32_t id)
 	return ok;
 }
 
-bool codeplug_contact(uint16_t index, contact_t *out)
+// One contact record decoded; false for an empty or unusable slot
+static bool contact_decode(const uint8_t *r, contact_t *out)
 {
-	uint8_t r[CONTACT_SIZE];
-	storage_lock();
-	bool ok = source == CODEPLUG_OPENFW && index >= 1 && index <= CODEPLUG_CONTACTS_MAX &&
-		  flash_read(CONTACT_BASE + (index - 1u) * CONTACT_SIZE, r, sizeof(r));
-	storage_unlock();
-	if (!ok || r[0] == 0xFF || r[0x14] > CONTACT_ALL_CALL) {
+	if (r[0] == 0xFF || r[0x14] > CONTACT_ALL_CALL) {
 		return false;
 	}
 	memset(out, 0, sizeof(*out));
@@ -1107,6 +1425,43 @@ bool codeplug_contact(uint16_t index, contact_t *out)
 		out->timeslot = (r[0x17] & 0x02u) ? 2 : 1;
 	}
 	return true;
+}
+
+bool codeplug_contact(uint16_t index, contact_t *out)
+{
+	uint8_t r[CONTACT_SIZE];
+	storage_lock();
+	bool ok = source == CODEPLUG_OPENFW && index >= 1 && index <= CODEPLUG_CONTACTS_MAX &&
+		  flash_read(CONTACT_BASE + (index - 1u) * CONTACT_SIZE, r, sizeof(r));
+	storage_unlock();
+	return ok && contact_decode(r, out);
+}
+
+
+bool codeplug_contacts_each(codeplug_contact_fn fn, void *ctx)
+{
+	if (source != CODEPLUG_OPENFW) {
+		return false;
+	}
+	contact_t c;
+	bool ok = true, go = true;
+	// The lock is taken per read, so the radio task's own reads wait for one block's callbacks at most
+	for (unsigned first = 0; first < CODEPLUG_CONTACTS_MAX && ok && go; first += CONTACTS_PER_READ) {
+		unsigned n = CODEPLUG_CONTACTS_MAX - first < CONTACTS_PER_READ ? CODEPLUG_CONTACTS_MAX - first
+									  : CONTACTS_PER_READ;
+		storage_lock();
+		bool nested = in_scan;
+		in_scan = true;
+		ok = nested || flash_read(CONTACT_BASE + first * CONTACT_SIZE, scan_blk, n * CONTACT_SIZE);
+		for (unsigned i = 0; i < n && ok && go; i++) {
+			uint16_t index = (uint16_t)(first + i + 1u);
+			bool have = nested ? codeplug_contact(index, &c) : contact_decode(&scan_blk[i * CONTACT_SIZE], &c);
+			go = fn(index, have ? &c : NULL, ctx);
+		}
+		in_scan = nested;
+		storage_unlock();
+	}
+	return ok;
 }
 
 bool codeplug_set_contact(uint16_t index, const contact_t *c)
@@ -1216,39 +1571,38 @@ bool codeplug_delete_listen_list(uint16_t index)
 	return ok;
 }
 
-bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
-{
-	enum { PER_READ = 32 };	// records per flash read
-	// Static, used only under the storage lock: on the stack it overflowed the radio task, whose DMR set-up calls
-	// this through find_name (a DMR VFO whose talk target is a contact, at boot)
-	static uint8_t r[PER_READ * CONTACT_SIZE];
+typedef struct {
+	uint32_t id;
+	bool group;
+	contact_t *out;
+	uint16_t index;
+} find_t;
 
-	if (source != CODEPLUG_OPENFW || id == 0 || id > 0xFFFFFFu) {
-		return false;
+static bool find_one(uint16_t index, const contact_t *c, void *ctx)
+{
+	find_t *f = ctx;
+	if (c == NULL || c->id != f->id || (c->type == CONTACT_PRIVATE) == f->group) {
+		return true;
+	}
+	*f->out = *c;
+	f->index = index;
+	return false;
+}
+
+uint16_t codeplug_contact_find_index(uint32_t id, bool group, contact_t *out)
+{
+	if (id == 0 || id > 0xFFFFFFu) {
+		return 0;
 	}
 	// Locked like every other reader: the radio task and the UI task both search, and an edit may be writing
-	bool found = false, done = false;
-	storage_lock();
-	for (unsigned first = 0; first < CODEPLUG_CONTACTS_MAX && !done; first += PER_READ) {
-		if (!flash_read(CONTACT_BASE + first * CONTACT_SIZE, r, sizeof(r))) {
-			break;
-		}
-		for (unsigned i = 0; i < PER_READ; i++) {
-			const uint8_t *c = &r[i * CONTACT_SIZE];
-			uint8_t type = c[0x14];
-			if (c[0] == 0xFF || type > CONTACT_ALL_CALL || (type == CONTACT_PRIVATE) == group) {
-				continue;
-			}
-			uint32_t cid = type == CONTACT_ALL_CALL ? 0xFFFFFFu : bcd_id(&c[0x10]);
-			if (cid == id) {
-				found = codeplug_contact((uint16_t)(first + i + 1u), out);	// the lock is recursive
-				done = true;
-				break;
-			}
-		}
-	}
-	storage_unlock();
-	return found;
+	find_t f = { .id = id, .group = group, .out = out };
+	codeplug_contacts_each(find_one, &f);
+	return f.index;
+}
+
+bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
+{
+	return codeplug_contact_find_index(id, group, out) != 0;
 }
 
 bool codeplug_dmr_settings(codeplug_dmr_settings_t *out)

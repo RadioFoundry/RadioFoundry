@@ -272,7 +272,9 @@ UV390 (no known model byte) (?).
 ## 11. Bootloader and stock images
 
 Entering the bootloader: hold PTT and the top side key (SK1) at power on (unverified). The TYT/AnyRoad DFU
-loader, protocol and sector list are the DM-1701's ([hardware-dm1701.md](hardware-dm1701.md) 15.2). The image is XOR-encrypted with the MD-UV380 key, SHA-256
+loader, protocol and sector list are the DM-1701's ([hardware-dm1701.md](hardware-dm1701.md) 15.2). Switched on
+normally, the original firmware is a DFU device with the same IDs, told apart by alt 0's layout and refused by the
+flashers (15.1). The MD-UV380's bootloader strings have not been read on a radio (?): the generic rule applies. The image is XOR-encrypted with the MD-UV380 key, SHA-256
 `739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991`, first bytes 00 AA 89 89, the same key for the
 MD-UV390 and the MD-2017 ([hardware-dm1701.md](hardware-dm1701.md) 15.3). `stockfw.derive_key` recovers exactly this
 key from every vendor file listed in [codec-mduv380.md](codec-mduv380.md), TYT's and Retevis's (measured).
@@ -368,3 +370,7 @@ there.
 ## 15. Sources
 
 This repo: [hardware-dm1701.md](hardware-dm1701.md) (sections cited) and [codec-mduv380.md](codec-mduv380.md). Everything else on this page is unverified.
+
+## Receive past the rated bands
+
+134-136, 200-260 and 480-520 MHz: the AT1846S data sheet. Receive only, FM, off by default ([radio-features.md](radio-features.md) 6.2). Not measured on the radio.

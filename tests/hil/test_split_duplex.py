@@ -8,16 +8,35 @@ test skips on a build without it.
 - test_split_protocol (no RF): GET_VERSION announces " SPLIT1"; INFO offers the TX and RX halves; SET_ROLE 2 (the RX
   half never transmits) and back to 0; STATUS; an unknown 0xD6 sub-command answers result 1; an unknown command is
   still NAKed 1; the debug link's SPLIT view answers.
+- test_split_standard_host (no RF): a plain MMDVM session, MMDVMHost with Duplex=0, that never sends 0xD6
+  (split-duplex.md 2.1-2.3). GET_VERSION: protocol 1, a printable description of at most 120 bytes that ends in
+  " SPLIT1" (the one visible difference, after any SFR suffix) and holds no "MMDVM"; SET_FREQ, SET_CONFIG (simplex)
+  and SET_MODE DMR ACKed; GET_STATUS every 250 ms answered within 250 ms, 13 or 14 bytes, DMR enabled and in the DMR
+  state, slot 2 space once the hotspot has the modem, no TX, overflow or lockout flag; an unknown command NAKed 1.
+  After it the SPLIT view shows role normal and no new lease expiry: no role without SET_ROLE.
+- test_split_state_cleanup (no RF): a split host sets the RX half (it never transmits) with the default 10 s lease
+  and goes away without a word, DTR clear so the radio never sees the port close (split-duplex.md 2.3). A standard
+  host connects at once: its start-up is ACKed while the role still holds, and its GET_STATUS polls show the RX half
+  (no space, 4.2) until the lease runs out, then the normal hotspot (slot 2 space, a simplex reply), between 9.5 and
+  11 s after the split host's last 0xD6 request. The SPLIT view then shows role normal and one more lease expiry.
 - test_split_tx_half_off_air (radio_tx, bench_service: --allow-rf --allow-service-stop): the radio as the TX half on
   --dmr-freq at its lowest power for 10 s, idle bursts with a short LC, SET_AT toggled every 2 s, the framing variant
   from $RFOUNDRY_SPLIT_VARIANT (default 0, ours; on the DM-1701 1 is the chip's, whose CACH is empty; on the HR_C7000
-  radios a bit field of physical layer options, modem-hrc7000.md 2.10). The SDR bench captures and decodes it
-  (sdrmon.py analyze --cach). Asserted: BS sync only, one burst every 30 ms on both slots (same-slot spacing 60 ms),
+  radios a bit field of physical layer options, modem-hrc7000.md 2.10). The bench board decodes it (bursts with the
+  CACH and the carrier envelope). Asserted: BS sync only, one burst every 30 ms on both slots (same-slot spacing 60 ms),
   one key-up edge for the whole outbound, the channel's color code, no driver underruns in STATUS; with our framing
   also the CACH: TC alternating, AT following SET_AT, the short LC decoding.
 - test_split_tx_half_voice (radio_tx, bench_service): the same outbound (our framing) with a group call from the host
   on TS2: three LC headers, three superframes A-F with the embedded LC in each, the terminator, decoded off air on
   one slot without sync errors; the CACH stays right.
+- test_split_tx_half_continuous (radio_tx: --allow-rf): the radio as the TX half on --dmr-freq at its lowest power,
+  keyed by DMR_START 01 with nothing queued, for 10 s past the TX time-out in effect (the radio's set to 5 s for the
+  test and put back; a channel's own time-out wins), the role's longest key-up (SET_ROLE byte 4) just past that.
+  Only DMR_START 00, SET_MODE idle, the aborts, the role's end, host silence and that guard unkey a TX half
+  (split-duplex.md 5.6). STATUS every 0.5 s (which keeps the lease and the host-silence rule): keyed and not cooling
+  down at every poll, GET_STATUS's TX flag set (4.1), the CACH counter rising at the slot rate (a burst with its CACH
+  every 30 ms, 5.1: at least half that in every half second, 90 % over the key-up), no underruns, the keyed seconds
+  past the time-out. Then DMR_START 00: unkeyed within 1 s (4.1), the TX flag clear, no cool-down, no lease expiry.
 - test_split_align (no RF): the radio as the TX half, never keyed; ALIGN snaps its slot clock onto a grid of the
   host's clock (slot n at host n x 30 ms) three times. Each time STATUS must show aligned with the counter base, and
   GET_EPOCH's boundary, brought back into host time, must lie on the grid within the clock sync's error bound plus
@@ -38,13 +57,16 @@ test skips on a build without it.
   slewing mode (3.8 byte 14 = 1) to a grid 1.5 ms later: the reply says slewing, not snapping; the slot clock must
   reach the grid by slot trims, STATUS aligned and no longer slewing within 5 s, split.slew_us about the shift.
 """
+import math
 import os
+import statistics
 import sys
 import time
 
 import pytest
 
 from rfoundry_hil import skip
+from hil_config import rig
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -68,6 +90,48 @@ def need_role(r, sdh, role):
 def leave_hotspot(radio):
     radio.link.hotspot_exit()
     radio.wait_for(lambda x: x.get("hostlink") == "idle", 5, sections=("hotspot",), what="hotspot left")
+
+
+def mmdvm_status(r):
+    """GET_STATUS: (reply time in s, the reply frame)"""
+    import split_duplex_host as sdh
+    t1, t4, f = r.request(sdh.frame(sdh.GET_STATUS), lambda x: x[2] == sdh.GET_STATUS)
+    return (t4 - t1) / 1e6, f
+
+
+def poll_status(r, seconds, until=None):
+    """GET_STATUS every 250 ms, as MMDVMHost polls (mmdvm-protocol.md 2.4), for up to seconds or until until(frame) is
+    true: [(time.monotonic() at the reply, reply time in s, frame)]"""
+    out = []
+    end = time.monotonic() + seconds
+    while True:
+        dt, f = mmdvm_status(r)
+        out.append((time.monotonic(), dt, f))
+        if (until is not None and until(f)) or time.monotonic() >= end:
+            return out
+        time.sleep(0.25)
+
+
+def standard_start(r, hz, cc=1):
+    """A standard host's start-up (MMDVMHost with Duplex=0, mmdvm-protocol.md 3.1), never command 0xD6: GET_VERSION,
+    SET_FREQ (RX = TX, the lowest RF level), SET_CONFIG with the simplex flag, SET_MODE DMR, each ACKed. Returns the
+    description."""
+    import split_duplex_host as sdh
+    v = r.version()
+    assert v[3] == 1, f"GET_VERSION protocol {v[3]}"
+    for cmd, p in ((sdh.SET_FREQ, sdh.freq_payload(hz, hz, 0)), (sdh.SET_CONFIG, sdh.config_payload(cc, simplex=True)),
+                   (sdh.SET_MODE, b"\x02")):
+        nak = r.command(cmd, p)
+        assert nak == 0, f"command 0x{cmd:02X}: NAK {nak}"
+    return bytes(v[4:])
+
+
+def standard_status(f):
+    """A GET_STATUS reply as a standard simplex host reads it (mmdvm-protocol.md 2.4, 7.2): returns slot 2's space"""
+    assert 10 <= len(f) <= 14, f"GET_STATUS {f.hex()}: a simplex reply is 13 or 14 bytes"
+    assert f[3] & 0x02 and f[4] == 0x02, f"GET_STATUS {f.hex()}: DMR enabled and the DMR state"
+    assert not f[5] & 0x33, f"GET_STATUS {f.hex()}: TX, overflow or lockout flag set with nothing to send"
+    return f[8]
 
 
 @pytest.mark.feature("split_duplex", gate=True)
@@ -119,6 +183,103 @@ def test_split_protocol(radio):
     leave_hotspot(radio)
 
 
+@pytest.mark.feature("split_duplex")
+def test_split_standard_host(radio):
+    """A host that never sends 0xD6 finds the simplex hotspot it knows, the description suffix aside"""
+    need_split(radio)
+    import split_duplex_host as sdh
+    hz = int(radio.core()["rx_hz"])
+    before = radio.link.split_view()
+    with radio.released() as port:
+        # The split host's port client used for plain MMDVM only: nothing below sends command 0xD6
+        r = sdh.Radio(port, "standard host", dtr=False)
+        try:
+            desc = standard_start(r, hz)
+            # The hotspot takes the modem after the first commands; slot 2 has space from then on (test_hotspot.py)
+            taken = poll_status(r, 2.0, until=lambda f: f[8] > 0)
+            polls = poll_status(r, 2.0)
+            unknown = r.command(0xC3)
+        finally:
+            r.close()
+    v = radio.link.split_view()
+    hs = radio.view(["hotspot"])
+    leave_hotspot(radio)
+    print(f"description {desc!r}; {len(polls)} status polls, slowest reply {max(dt for _, dt, _ in polls) * 1000:.0f} "
+          f"ms, last {polls[-1][2].hex()}")
+    # The one difference a standard host sees: the suffix, appended after any SFR suffix and named so that no host's
+    # modem type detection changes (split-duplex.md 2.2, 3.7; mmdvm-protocol.md 2.3.2)
+    assert len(desc) <= 120 and all(0x20 <= c < 0x7F for c in desc), desc
+    assert [m.group(1) for m in sdh.SUFFIX_RE.finditer(desc)] == [b"1"] and desc.endswith(b" SPLIT1"), desc
+    assert b"MMDVM" not in desc.upper(), desc
+    assert taken[-1][2][8] > 0, f"the hotspot never took the modem (slot 2 space stayed 0): {taken[-1][2].hex()}"
+    for _, dt, f in polls:
+        assert standard_status(f) > 0, f.hex()
+        assert dt < 0.25, f"a status reply took {dt * 1000:.0f} ms (MMDVMHost polls every 250 ms)"
+    assert unknown == 1, f"an unknown command: NAK {unknown}, not 1 (split-duplex.md 2.4)"
+    assert hs.get("hs.running") == "1", hs
+    # Roles start only with SET_ROLE (2.3): none started, so none expired
+    assert v.get("split.role") == "normal", v
+    assert v.get("split.lease_expiries") == before.get("split.lease_expiries"), (before, v)
+
+
+LEASE_S = 10        # the role lease when SET_ROLE leaves it at 0 (split-duplex.md 2.3, 3.2)
+
+
+@pytest.mark.feature("split_duplex")
+def test_split_state_cleanup(radio):
+    """A split host that dies without a word: the lease gives the next standard host the normal hotspot"""
+    need_split(radio)
+    import split_duplex_host as sdh
+    hz = int(radio.core()["rx_hz"])
+    before = radio.link.split_view()
+    with radio.released() as port:
+        # The split host sets the RX half (no RF: it never transmits) with the default lease and goes away. The port
+        # stays open and DTR clear, so the radio never sees it close, as on a radio without DTR (a UART): only the
+        # lease ends it. The next host takes the open port: a close and reopen through a network serial hub, which
+        # opens the device only while a client is connected, dropped DTR and ended the role at once
+        r = sdh.Radio(port, "split host", dtr=False)
+        handoff = None
+        try:
+            need_role(r, sdh, sdh.ROLE_RX)
+            sdh.setup_half(r, hz, hz, 0, 1)
+            assert sdh.set_role(r, sdh.ROLE_RX)["role"] == sdh.ROLE_RX
+            t_last, _, res, d = r.split(sdh.SUB_STATUS)       # its last 0xD6 request: the lease runs from here
+            assert res == 0
+            held = sdh.parse_status(d)
+            handoff = r.detach()
+        finally:
+            if handoff is None:
+                r.close()
+        s = sdh.Radio(port, "standard host", dtr=False, ser=handoff)
+        try:
+            # Its start-up comes while the dead host's role still holds: the standard commands keep their meaning in a
+            # role (2.4). Its polls then show the RX half (no space, 4.2) until the lease runs out, then the hotspot
+            desc = standard_start(s, hz)
+            polls = poll_status(s, LEASE_S + 3, until=lambda f: f[8] > 0)
+            after = poll_status(s, 1.0)
+        finally:
+            s.close()
+    v = radio.link.split_view()
+    leave_hotspot(radio)
+    t_last /= 1e6           # host µs, the clock of time.monotonic()
+    gone = [(t - t_last, f) for t, _, f in polls]
+    print(f"split host's last STATUS {held}; standard host: {len(polls)} polls, the first at {gone[0][0]:.2f} s, "
+          f"slot 2 space from {gone[-1][0]:.2f} s ({gone[-1][1].hex()}); lease expiries "
+          f"{before.get('split.lease_expiries')} -> {v.get('split.lease_expiries')}")
+    assert held["role"] == sdh.ROLE_RX, held
+    assert b" SPLIT1" in desc
+    assert gone[0][1][8] == 0, f"the RX half was gone {gone[0][0]:.2f} s after the last 0xD6, before its lease ran out"
+    assert gone[-1][1][8] > 0, f"still the RX half {gone[-1][0]:.1f} s after the split host's last 0xD6: no lease"
+    # The role holds for the whole lease and no longer: the last poll that found it, the first that didn't
+    assert len(gone) >= 2 and gone[-2][0] >= LEASE_S - 0.5, f"the role ended early, at {gone[-2][0]:.2f}-" \
+                                                            f"{gone[-1][0]:.2f} s"
+    assert gone[-1][0] <= LEASE_S + 1.0, f"the role ended {gone[-1][0]:.2f} s after the last 0xD6 (lease {LEASE_S} s)"
+    for _, dt, f in after:
+        assert standard_status(f) > 0, f.hex()
+    assert v.get("split.role") == "normal", v
+    assert int(v["split.lease_expiries"]) == int(before["split.lease_expiries"]) + 1, (before, v)
+
+
 def test_split_align(radio):
     need_split(radio)
     import split_duplex_host as sdh
@@ -139,7 +300,7 @@ def test_split_align(radio):
                 _, _, res, d = r.split(sdh.SUB_ALIGN, sdh.align_payload(sync.to_modem(n * 30_000), n))
                 assert res == 0, f"ALIGN result {res}"
                 al = sdh.parse_align(d)
-                deadline = time.monotonic() + 1.5
+                deadline = time.monotonic() + 3.0      # a snap may take up to nine restarts (split-duplex.md 3.8)
                 while True:
                     sdh.sync_burst(r, sync, n=4)
                     st = sdh.get_status(r)
@@ -175,21 +336,36 @@ CALL = ([(0x41, CALL_HEADER)] * 3 + [(0x20 if n == 0 else n, CALL_VOICE) for _ i
         + [(0x42, CALL_TERM)])
 
 
+def sample_time_ms(bursts):
+    """The bursts' times in ms, on the receive board's sample clock when its records carry the sample counter: the
+    board's time stamps can step (112 ms once, every burst there, 30 ms apart in samples), which reads as a gap the
+    radio never left. The rate is the median of samples per ms between neighbors."""
+    t = [b["t_ms"] for b in bursts]
+    sc = [b.get("sc") for b in bursts]
+    if len(t) < 3 or any(x is None for x in sc):
+        return t
+    d = [((y - x) & 0xFFFFFFFF, b - a) for x, y, a, b in zip(sc, sc[1:], t, t[1:]) if b - a > 0]
+    per_ms = statistics.median(n / ms for n, ms in d)
+    out, acc = [t[0]], t[0]
+    for x, y in zip(sc, sc[1:]):
+        acc += ((y - x) & 0xFFFFFFFF) / per_ms
+        out.append(acc)
+    return out
+
+
 def tx_half_run(radio, sdr_bench, pytestconfig, variant, regs=(), call=()):
     """The radio as the TX half for TX_SECONDS at its lowest power: idle bursts and a short LC, SET_AT toggled every
     2 s, the host frames of call on TS2 half a second in. Returns the SDR decode and STATUS keyed / after unkey."""
     import split_duplex_host as sdh
     dmr_cach = sdh.dmr_cach
-    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     hz = round(freq * 1e6)
     radio.link.split_variant(variant, regs)
-    sdr_bench.sync_tool(os.path.join(ROOT, "tools", "bench", "sdrmon.py"))
-    sdr_bench.sync_tool(os.path.join(ROOT, "tools", "bench", "dmr_cach.py"))
-    rdir = sdr_bench.run_dir("hil_split_tx")
+    sdr_bench.need_bursts_cach(freq)
+    sdr_bench.need_dmr_waveform(freq)
     call = list(call)
-    # Raw I/Q on purpose: sdrmon analyze --cach decodes the CACH from the waveform, which the burst records lack
     with sdr_bench.lease():
-        cap = sdr_bench.capture_start(rdir, freq, seconds=TX_SECONDS + 6)
+        watch = sdr_bench.dmr_watch_start(None, freq, TX_SECONDS + 6, cc, waveform=True)
         with radio.released() as port:
             r = sdh.Radio(port, "tx", dtr=False)
             try:
@@ -220,12 +396,7 @@ def tx_half_run(radio, sdr_bench, pytestconfig, variant, regs=(), call=()):
                 sdh.set_role(r, sdh.ROLE_NORMAL)
             finally:
                 r.close()
-        sdr_bench.capture_wait()
-    txt = sdr_bench.ssh(f"cd ~/{sdr_bench.dir} && {sdr_bench.py} sdrmon.py analyze {cap} --freq {freq} --cc {cc} "
-                        f"--cach --json {cap}.json > {cap}.txt 2>&1; tail -40 {cap}.txt", timeout=600)
-    print(txt)
-    import json
-    sdr = json.loads(sdr_bench.ssh(f"cat {cap}.json"))
+        sdr = sdr_bench.dmr_watch_result(watch)
     leave_hotspot(radio)
     return sdr, st, end
 
@@ -235,8 +406,16 @@ def tx_half_cach(bs):
     cach = [b["cach"] for b in bs if b.get("cach")]
     ok = [c for c in cach if c["ok"]]
     alt = sum(1 for x, y in zip(ok, ok[1:]) if x["tc"] != y["tc"])
-    slcs = [c["slc"] for c in cach if "slc" in c]
+    # a short LC takes four CACHs; the transmitter stops wherever the test ends it, and the last ones ramp down
+    slcs = [c["slc"] for c in cach[:-4] if "slc" in c]
     good = sum(1 for _, g in slcs if g)
+    # Where a bad short LC falls (CACH index, the ones decoded around it): at a change of content (a call's start
+    # or end) or in the middle of an unchanged run
+    at = [i for i, c in enumerate(cach) if "slc" in c]
+    for k, i in enumerate(at):
+        if not cach[i]["slc"][1]:
+            near = [f"{cach[j]['slc'][0]:07X}{'' if cach[j]['slc'][1] else '!'}" for j in at[max(k - 2, 0):k + 3]]
+            print(f"bad short LC at CACH {i} of {len(cach)}: {' '.join(near)}")
     return cach, ok, alt, {c["at"] for c in ok}, good, len(slcs) - good
 
 
@@ -247,7 +426,7 @@ def tx_half_cach(bs):
 def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
     need_split(radio)
     import split_duplex_host as sdh
-    cc = pytestconfig.getoption("--dmr-cc")
+    cc = rig(pytestconfig, "dmr-cc")
     variant = int(os.environ.get("RFOUNDRY_SPLIT_VARIANT", "0"), 0)
     regs = [tuple(int(x, 0) for x in kv.split("=")) for kv in os.environ.get("RFOUNDRY_SPLIT_REGS", "").split()]
     sdr, st, end = tx_half_run(radio, sdr_bench, pytestconfig, variant, regs)   # $RFOUNDRY_SPLIT_REGS: "REG=VAL ..."
@@ -260,22 +439,26 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
     assert len(bs) >= 0.9 * TX_SECONDS / 0.03, f"BS bursts {len(bs)}"
     assert all(b["family"] == "bs" for b in bursts), {b["family"] for b in bursts}
     assert all(b["cc"] in (None, cc) for b in bs)
-    # Both slots are filled, so neighbors are 30 ms apart and the same slot is two bursts on (sdrmon's
-    # same_slot_spacing only pairs neighbors, which suits a one-slot capture)
-    t = [b["t_ms"] for b in bs]
+    # Both slots are filled, so neighbors are 30 ms apart and the same slot is two bursts on
+    t = sample_time_ms(bs)
     nb = [b - a for a, b in zip(t, t[1:])]
     same = [b - a for a, b in zip(t, t[2:])]
     print(f"BS burst spacing: neighbors {min(nb):.2f}-{max(nb):.2f} ms, same slot mean "
           f"{sum(same) / len(same):.3f} ms; kinds {sdr['summary']['counts']}")
-    assert all(abs(x - 30.0) < 0.5 for x in nb), f"a gap or overlap in the outbound: {sorted(set(round(x) for x in nb))}"
+    holes = [(round(a - t[0]), round(b - a)) for a, b in zip(t, t[1:]) if abs(b - a - 30.0) >= 0.5]
+    assert not holes, f"a gap or overlap in the outbound (ms into the capture, length): {holes}; " \
+                      f"bench {sdr.get('bursts_summary')}"
     assert abs(sum(same) / len(same) - 60.0) < 0.05
-    # Key-ups of our carrier only: the SDR also reports sub-millisecond blips some 50 dB below it
+    # Key-ups of our carrier only: the receiver also reports blips at its keying threshold, 10 dB over the floor
+    assert sdr["edges"], f"the bench board reported no key-up edge: {sdr['bursts_summary'].get('envelope')}"
     top = max(e["level_dbfs"] for e in sdr["edges"])
-    ups = [e for e in sdr["edges"] if e["level_dbfs"] > top - 20]
-    assert len(ups) == 1, f"key-up edges: {[(e['up_ms'], e['level_dbfs']) for e in ups]} (the outbound must stay keyed)"
+    cut = max(top - 20, sdr["bursts_summary"]["envelope"]["floor_db"] + 16)
+    ups = [e for e in sdr["edges"] if e["level_dbfs"] > cut]
+    assert len(ups) == 1, f"key-up edges: {[(e['up_ms'], e['level_dbfs']) for e in ups]} (it must stay keyed)"
     other = [b for b in bs if b["kind"] != "IDLE" and not b["kind"].startswith("slottype?")]   # an undecoded slot type
     assert not other, f"only idle bursts were queued: {sdr['summary']['counts']}"
     cach, ok, alt, at_seen, slc_good, slc_bad = tx_half_cach(bs)
+    assert cach, "no CACH decoded on the outbound"
     _, cnt = radio.counters()
     bs_cnt = {k: v for k, v in cnt.items() if k.startswith("bs.")}
     print(f"BS framing variant {variant}: tact ok {len(ok)}/{len(cach)}, TC alternating {alt} of "
@@ -317,6 +500,94 @@ def test_split_tx_half_voice(radio, sdr_bench, pytestconfig):
     assert len(term) == 1 and term[0]["lc"]["src"] == 9990301, term
     cach, ok, alt, _, slc_good, slc_bad = tx_half_cach([b for b in sdr["bursts"] if b.get("cach")])
     assert len(ok) >= 0.98 * len(cach) and alt >= 0.98 * (len(ok) - 1) and slc_bad == 0
+
+
+CONT_TOT_S = 5      # the radio's TX time-out while test_split_tx_half_continuous runs (a setting, put back after)
+CONT_PAST_S = 10    # how long past the time-out in effect the TX half stays keyed
+UNKEY_S = 1.0       # DMR_START 00: unkeyed once drained, at most this late (split-duplex.md 4.1, 5.6)
+
+
+@pytest.mark.feature("split_duplex")
+@pytest.mark.radio_tx
+def test_split_tx_half_continuous(radio, pytestconfig):
+    """The TX half keyed past the radio's TX time-out with nothing queued: a burst in every slot all along, until
+    DMR_START 00 unkeys it within 1 s"""
+    need_split(radio)
+    import split_duplex_host as sdh
+    from test_radio_features import settings
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
+    hz = round(freq * 1e6)
+    radio.link.split_variant(0, [])     # our framing, whatever an experiment left (split-duplex.md 10.1)
+    polls = []
+    with settings(radio, tot_s=CONT_TOT_S):
+        # A channel's own time-out wins over the radio's (dmr-voice.md): key past whichever is in effect
+        for _ in range(10):
+            tot = int(radio.core().get("tot_s") or 0)
+            if tot == CONT_TOT_S:
+                break
+            time.sleep(0.1)
+        key_s = max(tot, CONT_TOT_S) + CONT_PAST_S
+        # The role's own guard (SET_ROLE byte 4, 10 s units) just past the key-up: DMR_START 00 must be what ends it,
+        # and a run that dies keyed is cut off soon after (so is it by the 2 s host-silence rule and the lease)
+        max_key = math.ceil((key_s + 10) / 10)
+        if max_key > 60:
+            skip("state", f"the channel's own TX time-out is {tot} s, past the TX half's longest key-up (600 s)")
+        before = radio.link.split_view()
+        with radio.released() as port:
+            r = sdh.Radio(port, "tx", dtr=False)
+            try:
+                need_role(r, sdh, sdh.ROLE_TX)
+                sdh.setup_half(r, hz, hz, 0, cc)        # RF level 0: the lowest step (the role's cap is 64)
+                sdh.set_role(r, sdh.ROLE_TX, power_cap=1, max_key_10s=max_key)
+                st0 = sdh.get_status(r)
+                assert r.command(sdh.DMR_START, b"\x01") == 0
+                t0 = time.monotonic()
+                while time.monotonic() - t0 < key_s:
+                    time.sleep(0.5)
+                    # STATUS is a 0xD6 request, so it also renews the lease and keeps the 2 s host-silence rule (5.6)
+                    # from unkeying; nothing is queued, so every slot carries an idle burst (5.1)
+                    st = sdh.get_status(r)
+                    polls.append((time.monotonic() - t0, st, mmdvm_status(r)[1][5]))
+                t_un = time.monotonic()
+                assert r.command(sdh.DMR_START, b"\x00") == 0
+                while True:
+                    end = sdh.get_status(r)
+                    took = time.monotonic() - t_un
+                    if not end["flags"] & sdh.FLAG_KEYED or took > 3 * UNKEY_S:
+                        break
+                    time.sleep(0.05)
+                end_tx = mmdvm_status(r)[1][5] & 0x01
+            finally:
+                try:
+                    sdh.set_role(r, sdh.ROLE_NORMAL)    # off air at once, whatever failed above
+                except Exception:
+                    pass
+                r.close()
+        v = radio.link.split_view()
+        leave_hotspot(radio)
+    print(f"time-out in effect {tot} s, keyed {key_s} s (role guard {max_key * 10} s); {len(polls)} polls, STATUS "
+          f"last keyed {polls[-1][1]}; unkeyed {took:.2f} s after DMR_START 00: {end}")
+    assert polls, "no STATUS while keyed"
+    assert all(st["flags"] & sdh.FLAG_KEYED for _, st, _ in polls), \
+        f"unkeyed at {[round(t, 1) for t, st, _ in polls if not st['flags'] & sdh.FLAG_KEYED]} s"
+    assert not any(st["flags"] & sdh.FLAG_COOLDOWN for _, st, _ in polls), "the duty guard cut in"
+    assert all(fl & 0x01 for _, _, fl in polls), "GET_STATUS's TX flag must stay set while keyed (4.1)"
+    # A burst with its CACH in every 30 ms slot (5.1): no stall in any half second, the slot rate over the key-up
+    for (ta, a, _), (tb, b, _) in zip(polls, polls[1:]):
+        n = (b["cach"] - a["cach"]) & 0xFFFF
+        assert n >= 0.5 * (tb - ta) / 0.03, f"{n} CACH bursts in {tb - ta:.2f} s at {ta:.1f} s: the outbound stalled"
+    n = (polls[-1][1]["cach"] - polls[0][1]["cach"]) & 0xFFFF
+    span = polls[-1][0] - polls[0][0]
+    assert n >= 0.9 * span / 0.03, f"{n} CACH bursts in {span:.1f} s"
+    last = polls[-1][1]
+    assert all((last[k] - st0[k]) & 0xFFFF == 0 for k in ("underruns1", "underruns2")), (st0, last)
+    assert last["keyed_s"] >= key_s - 1 and last["keyed_s"] > tot, f"one key-up of {last['keyed_s']} s"
+    assert not end["flags"] & sdh.FLAG_KEYED and took <= UNKEY_S + 0.15, \
+        f"still keyed {took:.2f} s after DMR_START 00 (at most {UNKEY_S} s)"
+    assert not end_tx, "GET_STATUS's TX flag must clear with the unkey"
+    assert not end["flags"] & sdh.FLAG_COOLDOWN, "DMR_START 00 unkeys without a cool-down"
+    assert v.get("split.role") == "normal", v
+    assert v.get("split.lease_expiries") == before.get("split.lease_expiries"), "STATUS kept the lease"
 
 
 def test_split_slew(radio):
@@ -375,12 +646,11 @@ def test_split_slew(radio):
 def test_split_tx_sched(radio, sdr_bench, pytestconfig):
     need_split(radio)
     import split_duplex_host as sdh
-    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     hz = round(freq * 1e6)
     radio.link.split_variant(0, [])
-    sdr_bench.sync_tool(os.path.join(ROOT, "tools", "bench", "sdrmon.py"))
-    sdr_bench.sync_tool(os.path.join(ROOT, "tools", "bench", "dmr_cach.py"))
-    rdir = sdr_bench.run_dir("hil_split_sched")
+    sdr_bench.need_bursts_cach(freq)
+    sdr_bench.need_dmr_waveform(freq)
     outcomes = []
     with sdr_bench.lease():
         with radio.released() as port:
@@ -396,10 +666,13 @@ def test_split_tx_sched(radio, sdr_bench, pytestconfig):
                 n = (sdh.Radio.host_us() + 200_000) // 30_000
                 _, _, res, _ = r.split(sdh.SUB_ALIGN, sdh.align_payload(sync.to_modem(n * 30_000), n))
                 assert res == 0
-                time.sleep(0.3)
-                assert sdh.get_status(r)["align"] & sdh.AL_ALIGNED
+                # The snap may restart the clock a few times while it learns the chip's delay (split-duplex.md 3.8)
+                t0 = time.monotonic()
+                while not sdh.get_status(r)["align"] & sdh.AL_ALIGNED and time.monotonic() - t0 < 3:
+                    time.sleep(0.1)
+                assert sdh.get_status(r)["align"] & sdh.AL_ALIGNED, f"not aligned 3 s after ALIGN: {sdh.get_status(r)}"
                 st0 = sdh.get_status(r)        # the counters run since boot
-                cap = sdr_bench.capture_start(rdir, freq, seconds=8)
+                watch = sdr_bench.dmr_watch_start(None, freq, 8, cc, waveform=True)
                 time.sleep(1.0)
                 first = (sdh.Radio.host_us() + 600_000) // 30_000 | 1      # an odd counter: TS2
                 for i, (c, f) in enumerate(CALL):
@@ -424,29 +697,26 @@ def test_split_tx_sched(radio, sdr_bench, pytestconfig):
                 sdh.set_role(r, sdh.ROLE_NORMAL)
             finally:
                 r.close()
-        sdr_bench.capture_wait()
-    txt = sdr_bench.ssh(f"cd ~/{sdr_bench.dir} && {sdr_bench.py} sdrmon.py analyze {cap} --freq {freq} --cc {cc} "
-                        f"--cach --json {cap}.json > {cap}.txt 2>&1; tail -40 {cap}.txt", timeout=600)
-    print(txt)
-    import json
-    sdr = json.loads(sdr_bench.ssh(f"cat {cap}.json"))
+        sdr = sdr_bench.dmr_watch_result(watch)
     leave_hotspot(radio)
     print(f"outcomes {outcomes}\nSTATUS {st}\nafter {end}")
     assert outcomes.count(0) == len(CALL) and outcomes.count(3) == 1 and outcomes.count(1) == 1, outcomes
     d = {k: (st[k] - st0[k]) & 0xFFFF for k in ("sched_sent", "sched_late", "sched_replaced")}
     assert d == {"sched_sent": len(CALL), "sched_late": 1, "sched_replaced": 1}, (d, st)
     assert st["flags"] & sdh.FLAG_KEYED and not end["flags"] & sdh.FLAG_KEYED, (st, end)
+    # Keyed, the slot clock must stay on the grid: a key-up that moves it puts the call in the other grid slot
+    assert st["align"] & sdh.AL_ALIGNED, f"keyed off the grid: {st}"
     bursts = [b for b in sdr["bursts"] if b["family"] in ("bs", "emb")]
     ours = [b for b in bursts if b["kind"] != "IDLE"]
     kinds = [b["kind"] for b in ours]
     print("call on air:", kinds)
     assert all(b["sync_errors"] == 0 for b in ours)
     assert len({b["slot"] for b in ours}) == 1, "the call must stay on one slot"
-    # The TX half marks AT busy in the CACH before each non-idle burst (no SET_AT here): the busy CACHs name the call's
-    # slot. (Which CACH the analysis pairs with a burst depends on where the capture starts.)
+    # The TX half marks the call's channel busy (no SET_AT here, the automatic rule): the bit goes out in the CACH
+    # before the other outbound slot (split-duplex.md 3.6, 5.2), so for a TS2 call every busy CACH says TC 0
     cach = [b["cach"] for b in sdr["bursts"] if b.get("cach") and b["cach"]["ok"]]
     tc = {c["tc"] for c in cach if c["at"]}
-    assert tc == {1}, f"the call's CACH must say TS2: TC of the busy CACHs {tc}"
+    assert tc == {0}, f"a TS2 call's busy bit goes in the CACH before TS1: TC of the busy CACHs {tc}"
     voice = [b["kind"][-1] for b in ours if b["kind"].startswith("VOICE_")]
     assert len([b for b in ours if b["kind"] == "VLC_HDR"]) == 3 and "".join(voice) == "ABCDEF" * 3, kinds
     assert len([b for b in ours if b["kind"] == "TERM_LC"]) == 1, kinds
@@ -563,8 +833,8 @@ def check_rx_labels(first, marks, ups, results, meta=None):
 @pytest.mark.bench_modem
 def test_split_rx_half_labels(radio, sdr_bench, pytestconfig):
     need_split(radio)
-    freq, cc, tg = (pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc"),
-                    pytestconfig.getoption("--dmr-tg"))
+    freq, cc, tg = (rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc"),
+                    rig(pytestconfig, "dmr-tg"))
     with sdr_bench.lease():
         with radio.released() as port:
             got = rx_half_labels(port, sdr_bench, freq, cc, tg)

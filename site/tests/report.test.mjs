@@ -53,7 +53,7 @@ console.debug = () => {};
 process.on("exit", () => { console.debug = quiet; });
 const en = JSON.parse(strings);
 
-const { initReporting, reportDialog, scrubEvent } = await import("../static/js/report.js");
+const { initReporting, reportDialog, scrubEvent, captureOptions } = await import("../static/js/report.js");
 const { cableBanner } = await import("../static/js/flasher/c7000ui.js");
 const diag = await import("../static/js/diag.js");
 
@@ -232,6 +232,22 @@ const clean = (el, what) => {
 	return s;
 };
 
+// A failure says what to do next and offers Try Again in the notice itself: pressing it takes the notice away first,
+// so a second failure replaces the first rather than stacking a second card under it
+test("an error notice gives the way on and a Try Again that removes it before retrying", async () => {
+	const { errorNotice } = await import("../static/js/report.js?retry");
+	const plain = errorNotice("It failed.");
+	assert.equal(find(plain, (e) => e.tagName === "BUTTON" && e.textContent === en["report.try_again"]).length, 0, "no retry, no button");
+	const order = [];
+	const el = errorNotice("It failed.", { next: "Turn it off and on.", retry: () => order.push("retry") });
+	el.remove = () => order.push("removed");
+	assert.ok(clean(el, "notice with retry").includes("Turn it off and on."));
+	const [again] = find(el, (e) => e.tagName === "BUTTON" && e.textContent === en["report.try_again"]);
+	assert.ok(again, "Try Again in the notice");
+	await press(again);
+	assert.deepEqual(order, ["removed", "retry"]);
+});
+
 test("Report a Problem renders cleanly in every state: no files, some files, sending, sent, a refused file, failed", async () => {
 	// the plain dialog (no backend, no Sentry: the editor with reporting off): a fresh module
 	const plain = await import("../static/js/report.js?plain");
@@ -279,10 +295,34 @@ test("Report a Problem renders cleanly in every state: no files, some files, sen
 });
 
 test("a Sentry event's context is scrubbed value by value: an ID in a list stays valid, a callsign and an email go", () => {
-	const ev = scrubEvent({ message: "N4NQV failed", contexts: { rfoundry: { iddb: [3101276, 12], dirty: false, step: 0,
+	const ev = scrubEvent({ message: "Q0TST failed", contexts: { rfoundry: { iddb: [9991234, 12], dirty: false, step: 0,
 		trail: ["0.1s contact a@b.com, call W1AW", { n: 7 }] } } });
 	assert.equal(ev.message, "[call] failed");
 	assert.deepEqual(ev.contexts.rfoundry, { iddb: ["[id]", 12], dirty: false, step: 0, trail: ["0.1s contact [email], call [call]", { n: 7 }] });
+});
+
+test("a Sentry event keeps a file's size: a picked stock file's size is not taken for a DMR ID", () => {
+	const ev = scrubEvent({ contexts: { rfoundry: { vendor_file: { picked: { name: "Stock-V02.06.bin", size: 1048832 }, id: 9991234 },
+		trail: ['113.6s file picked {"name":"Stock-V02.06.bin","size":1048832}'] } } });
+	assert.equal(ev.contexts.rfoundry.vendor_file.picked.size, 1048832);
+	assert.equal(ev.contexts.rfoundry.vendor_file.id, "[id]");
+	const line = ev.contexts.rfoundry.trail[0];
+	assert.equal(JSON.parse(line.slice(line.indexOf("{"))).size, 1048832);
+});
+
+test("an error with a catalog key is grouped by the key, so a translated message is the same issue as the English one", () => {
+	const rec = { stage: "update/update", params: { kind: "silent" } };
+	const es = Object.assign(new Error("La radio no respondió."), { key: "flash.err.no_answer" });
+	const en = Object.assign(new Error("The radio did not respond."), { key: "flash.err.no_answer" });
+	const a = captureOptions(rec, es, { radio: "r1" }), b = captureOptions(rec, en, { radio: "r1" });
+	assert.deepEqual(a.fingerprint, ["msg_key", "flash.err.no_answer"]);
+	assert.deepEqual(a.fingerprint, b.fingerprint);
+	assert.equal(a.tags.msg_key, "flash.err.no_answer");
+	assert.deepEqual(a.contexts.rfoundry, { radio: "r1", params: { kind: "silent" } });
+	// any other error keeps Sentry's own grouping
+	const plain = captureOptions({ stage: "x", code: 5 }, new Error("boom"), {});
+	assert.equal(plain.fingerprint, undefined);
+	assert.deepEqual(plain.tags, { stage: "x", code: "5" });
 });
 
 test("the report line under a failure links the community group and the GitHub issues, when the site names them", async () => {

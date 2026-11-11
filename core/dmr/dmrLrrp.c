@@ -238,7 +238,7 @@ bool lrrpDecodeRequest(const uint8_t *payload, int length, lrrpRequest_t *reques
 			case 0x76:
 				break;
 			default:
-				r.i = r.end;// a token we don't know: what came before is still used, as rfoundry_sdrbench does
+				r.i = r.end;// a token we don't know: what came before is still used
 				break;
 		}
 	}
@@ -297,16 +297,27 @@ static int putPosition(uint8_t *out, uint8_t wanted, const lrrpPosition_t *posit
 		}
 	}
 
-	double lat = degreesOf(loc->latDegrees, loc->latMinutes10000, loc->north);
-	double lon = degreesOf(loc->lonDegrees, loc->lonMinutes10000, loc->east);
-	uint32_t latRaw = (uint32_t)((fabs(lat) * 2147483648.0 / 90.0) + 0.5);
-	int32_t lonRaw = (int32_t)lround(lon * 4294967296.0 / 360.0);
+	// Integer math, not double (the soft-float library costs about 2 KB of flash). A coordinate is N = degrees *
+	// 600000 + minutes10000 in units of 1/600000 degree, and its raw value is N * 2^k / 421875 rounded half up
+	// (lat: 2^31 per 90 degrees, 54e6 = 2^7 * 421875; lon: 2^32 per 360 degrees, 216e6 = 2^9 * 421875). The
+	// denominator is odd, so no quotient ends in exactly one half. Gives what the double formula gave for every
+	// degrees and minutes value, and saturates the same way past the range
+	uint64_t latN = (uint64_t)loc->latDegrees * 600000u + loc->latMinutes10000;
+	uint64_t lonN = (uint64_t)loc->lonDegrees * 600000u + loc->lonMinutes10000;
+	uint64_t latMag = ((latN << 25) + 421875u) / (2u * 421875u);
+	uint64_t lonMag = ((lonN << 24) + 421875u) / (2u * 421875u);
+	uint32_t latRaw = latMag > 0x7FFFFFFFu ? 0x7FFFFFFFu : (uint32_t)latMag;
+	int32_t lonRaw;
 
-	if (latRaw > 0x7FFFFFFF)
+	if (loc->east)
 	{
-		latRaw = 0x7FFFFFFF;
+		lonRaw = lonMag > 0x7FFFFFFFu ? INT32_MAX : (int32_t)lonMag;
 	}
-	if (lat < 0)
+	else
+	{
+		lonRaw = lonMag > 0x80000000u ? INT32_MIN : (int32_t)-(int64_t)lonMag;
+	}
+	if (!loc->north && latN != 0)
 	{
 		latRaw |= 0x80000000;
 	}
@@ -325,7 +336,7 @@ static int putPosition(uint8_t *out, uint8_t wanted, const lrrpPosition_t *posit
 
 	if ((wanted & LRRP_WANT_SPEED) && (loc->speedKnots != DMR_LOCATION_SPEED_UNKNOWN))
 	{
-		uint32_t mps128 = (uint32_t)((loc->speedKnots * 0.514444 * 128.0) + 0.5);// m/s in 1/128
+		uint32_t mps128 = (uint32_t)(((uint64_t)loc->speedKnots * 65848832u + 500000u) / 1000000u);// m/s in 1/128: knots * 0.514444 * 128, rounded
 
 		out[n++] = TOK_SPEED_HOR;
 		n += putUintvar(&out[n], mps128 >> 7);

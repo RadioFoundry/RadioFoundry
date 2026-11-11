@@ -32,7 +32,7 @@ static struct {
 static bool a_start(audio_block_cb_t cb, void *ctx) { (void)ctx; hw.starts++; if (hw.fail) { return false; } hw.cb = cb; hw.streaming = true; return true; }
 static void a_stop(void) { hw.stops++; hw.streaming = false; hw.cb = NULL; }
 static void a_pcm(bool on) { (void)on; }
-static const hal_audio_t fake_audio = { a_start, a_stop, a_pcm };
+static const hal_audio_t fake_audio = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm, .speaker_lead_ms = 60 };
 
 static int16_t mic[AUDIO_BLOCK_SAMPLES], spk[AUDIO_BLOCK_SAMPLES];
 
@@ -164,6 +164,7 @@ static void test_mux_passthrough(void)
 	reset();
 	// The radio's own user alone: start / stop reach the board as before, its callback runs
 	CHECK(radio_audio != NULL && radio_audio != &fake_audio);
+	CHECK(radio_audio->speaker_lead_ms == 60);	// the board's amplifier lead-in reaches the beep player
 	CHECK(radio_audio->start(prim, NULL) && hw.starts == 1 && hw.streaming);
 	block();
 	CHECK(prim_blocks == 1 && spk[0] == 7);

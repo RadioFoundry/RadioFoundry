@@ -282,7 +282,11 @@ def flash_boards():
 			"debuglink_names": list(b.debuglink_names), "releasable": b.releasable,
 			"keep_codec_supported": b.keep_codec_supported, "key_sha256": b.key_sha256,
 			"dfu_ids": list(b.dfu_ids) if b.dfu_ids else None, "dfu_string1": b.dfu_string1,
-			"dfu_product": b.dfu_product,
+			"dfu_product": b.dfu_product, "dfu_layout": b.dfu_layout,
+			# a hardware option the original firmware's version settles before an install (origversion.js), or null
+			"original_version": b.original_version,
+			# the backup before the install (origbackup.js), or null
+			"original_backup": b.original_backup,
 			"protected": [list(p) for p in b.protected], "protect": b.protect,
 			# for a backup over another open firmware's CPS (openfw.js): area 5's base and the radio types
 			"rom_base": b.rom_base, "cps_radio_types": list(b.cps_radio_types)}

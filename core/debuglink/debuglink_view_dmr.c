@@ -16,14 +16,14 @@
 static const char *dmr_state_key(uint8_t s)
 {
 	static const char *const names[] = { "idle", "rx", "rx_other", "tx_wait", "tx", "tx_ending",
-					     "tx_data" };
+					     "tx_data", "tx_permit" };
 	return s < sizeof(names) / sizeof(names[0]) ? names[s] : "?";
 }
 
 static const char *phase_key(uint8_t p)
 {
 	static const char *const names[] = { "idle", "rx_voice", "rx_busy", "tx_access", "tx_wakeup", "tx_voice",
-					     "tx_ending", "tx_denied", "tx_data" };
+					     "tx_ending", "tx_denied", "tx_data", "tx_permit" };
 	return p < sizeof(names) / sizeof(names[0]) ? names[p] : "?";
 }
 
@@ -104,6 +104,17 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "dmr.target_manual=%u\ndmr.privacy=%u\ndmr.alias_tx=%u\n", d->target_manual, d->privacy,
 			d->alias_tx);
 		dl_text(t, "dmr.underruns=%u\n", (unsigned)d->underruns);
+		if (board.dmr != NULL && board.dmr->health != NULL) {
+			// Modem interrupts the driver found lost and recovered from; the first one's controller words
+			dmr_modem_health_t h;
+			board.dmr->health(&h);
+			dl_text(t, "dmr.modem_stalls=%u\ndmr.modem_stuck=%u\n", (unsigned)h.stalls, (unsigned)h.stuck);
+			if (h.first_ms != 0) {
+				dl_text(t, "dmr.modem_lost_ms=%u\ndmr.modem_lost_regs=%x,%x,%x,%x\n", (unsigned)h.first_ms,
+					(unsigned)h.first_regs[0], (unsigned)h.first_regs[1], (unsigned)h.first_regs[2],
+					(unsigned)h.first_regs[3]);
+			}
+		}
 		// The mic content of the latest transmission: here, not in dmr_stats, which is near the reply size
 		{
 			ambe_voice_stats_t a;
@@ -132,6 +143,7 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		ambeVoiceGetStats(&a);
 		dl_text(t, "call.rx_calls=%u\ncall.rx_calls_played=%u\ncall.rx_late_entries=%u\n", (unsigned)c.rx_calls,
 			(unsigned)c.rx_calls_played, (unsigned)c.rx_late_entries);
+		dl_text(t, "call.rx_calls_resumed=%u\n", (unsigned)c.rx_calls_resumed);
 		dl_text(t, "call.rx_voice_bursts=%u\ncall.rx_lost_frames=%u\n", (unsigned)c.rx_voice_bursts,
 			(unsigned)c.rx_lost_frames);
 		dl_text(t, "call.rx_dup_dropped=%u\ncall.rx_enc_dropped=%u\ncall.rx_term_dropped=%u\n",

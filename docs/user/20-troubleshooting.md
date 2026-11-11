@@ -13,6 +13,7 @@ The web installer's "Select the Symptom" step covers most of these on screen. Th
 | "the bootloader is busy" | Another program has it open (a CPS, a virtual machine with USB passthrough). Close it and replug |
 | The web installer says the radio's port or USB connection is in use | Close the other program or browser tab that uses the radio (a CPS, qdmr, a hotspot host, a second installer tab), then try again. Windows: the bootloader's driver ([steps](02-installing.md#windows-the-bootloader-driver)). Linux: your user needs access to the device |
 | The web installer can't use a firmware file | It says why: another radio's file, not the manufacturer's file, a version without a recipe yet, a damaged download. [What each one means](02-installing.md#when-the-installer-cant-use-a-file) |
+| The radio stays in update mode after an interrupted backup or install, and the power switch does nothing | Choose **Radio Stuck in Update Mode** in the web installer, pick the radio (and the cable, if it asks), and it restarts the radio into normal mode or says how ([details](02-installing.md#if-something-goes-wrong)). If the loader does not answer, take the battery out for a few seconds |
 | The screen stays dark after flashing | The radio is still in its bootloader. Turn it off and on again without holding any key |
 | A white, backlit screen and a solid red LED at every power-on, and the radio never starts | The radio is stuck in its factory update mode because the application is missing or incomplete. Nothing else is damaged. Install again with the web installer ([Radio reference](23-radios.md), your radio's "Installing" section says whether this applies) |
 | "Preparing the radio failed", or the radio does not respond on its programming cable | Push the cable plug fully in and try again, or try a cable with an FTDI, CP210x or PL2303 chip. Slow cable mode is always on now: there is no separate button. If it still fails, select **Use Factory Update Mode**: hold the radio's update mode keys while you turn it on ([Radio reference](23-radios.md), your radio's "Installing" section). It needs the stock firmware file or a program memory backup for the codec ([Installing](02-installing.md#if-something-goes-wrong)) |
@@ -35,13 +36,13 @@ also from the installer's [manual install kit](02-installing.md#install-from-the
 | Problem | Cause and fix |
 |---|---|
 | DMR calls show but there is no audio, "No codec: voice off" | The radio has no usable codec. See [Installing, no codec](02-installing.md#no-codec-no-codec-voice-off) |
-| A DMR call shows "Other TG: not played" | Its talkgroup isn't the talk target, in the listen list or the reply target. Press **Monitor** (digital monitor), or add the talkgroup to the channel's RX group list in qdmr |
+| A DMR call shows "Other TG: not played" | Its talkgroup isn't the talk target, in the listen list or the reply target. Press **Monitor** (digital monitor), or add the talkgroup to the channel's RX group list in qdmr. A parrot's playback of your own call (your own ID as the source) plays like any other call |
 | "Encrypted: not played" | The call uses basic privacy and the radio has no matching key, or stronger encryption the radio can't play |
 | "No DMR ID in codeplug" when transmitting | Write a codeplug with your DMR ID ([Programming the radio](04-programming.md)) |
 | "Channel busy" | Someone is talking on the timeslot. Wait for the call to end |
 | "No repeater answered" | The repeater didn't respond. Check the frequency, the color code, the timeslot and your distance to the repeater |
 | No audio on FM | The squelch is closed or the channel needs a tone. Hold **Monitor** to open the squelch. Check the tone with **\***, **3** |
-| A key does nothing and the screen says "Keys locked" | Hold **\*** to unlock. Check **Settings > Privacy > Auto lock** |
+| A key does nothing and the screen says "Keys locked" | Hold **\*** to unlock. Check **Settings > Key lock > Auto lock** |
 | "Not used here" | That key has no function on this screen |
 | "...: not in this build" | The feature is switched off in this build, or isn't built yet |
 | The radio is stuck on the hotspot screen | A host has the serial port open. Press **OK**, or stop the host program. Turn **Settings > Connections > Hotspot allowed** off to prevent it |
@@ -84,7 +85,7 @@ GitHub issues under every error message.
 
 ## Reporting a problem
 
-Open an issue in the [project repository](https://github.com/radiofoundry/radiofoundry/issues/new/choose). Include the firmware version (**Settings > Advanced > About**), the radio
+Open an issue in the [project repository](https://github.com/radiofoundry/radiofoundry/issues/new/choose). Include the firmware version (**Settings > My radio > About**), the radio
 model, what you did, what you expected and what happened. A screenshot helps: `tools/rfoundry_debug.py screenshot -o
 screen.png` saves one over USB.
 

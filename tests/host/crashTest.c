@@ -4,6 +4,7 @@
 // the build ID, the start-up side on a fake store, the packed report and the summary line; the UI's side
 // (core/ui/ui_svc_crash.c): the record for the screen, seen and clear, the report sent and its progress; the debug
 // link's (core/debuglink/debuglink_crash.c): the view section, DL_CMD_CRASH's checks and the deferred crash test
+#include <setjmp.h>
 #include <stdio.h>
 #include <string.h>
 #include "crash/crash.h"
@@ -311,6 +312,10 @@ static void test_summary(void)
 	crash_summary(&r, s, sizeof s);
 	CHECK(strcmp(s, "Hang at 0802C4A9 for 3000 ms in radio") == 0);
 	CHECK(strcmp(crash_kind_name(CRASH_KIND_HANG), "Hang") == 0);
+	r.kind = CRASH_KIND_STALL;
+	r.cause = 60005;
+	crash_summary(&r, s, sizeof s);
+	CHECK(strcmp(s, "Stall at 0802C4A9 for 60005 ms in radio") == 0);
 	CHECK(strcmp(crash_kind_name(0), "Crash") == 0);
 
 	// Cut to the buffer, always terminated
@@ -422,7 +427,7 @@ static void test_ui_svc(void)
 	CHECK(udp.calls == 0);
 
 	// The data service refuses it (one still going): false, and the state stays idle
-	fake_contact.id = 3101234;
+	fake_contact.id = 9991234;
 	fake_udp_ok = false;
 	CHECK(!ui_svc_crash_send());
 	CHECK(udp.calls == 1 && ui_svc_crash_tx_state() == UI_CRASH_TX_IDLE);
@@ -430,7 +435,7 @@ static void test_ui_svc(void)
 
 	// A private contact: the packed report to its ID, port 4090 both ends
 	CHECK(ui_svc_crash_send());
-	CHECK(udp.calls == 2 && udp.dst == 3101234u && !udp.group);
+	CHECK(udp.calls == 2 && udp.dst == 9991234u && !udp.group);
 	CHECK(udp.src_port == CRASH_UDP_PORT && udp.dst_port == CRASH_UDP_PORT);
 	uint8_t want[CRASH_PACK_MAX];
 	size_t n = crash_pack(&store, want, sizeof want, hal_crash_code_addr);
@@ -484,7 +489,16 @@ void radio_get_view(radio_view_t *v)
 	v->state = fake_radio_state;
 }
 
-void hal_delay_ms(uint32_t ms) { (void)ms; delays++; }
+// The stall test waits for good: after a few waits the fake leaves it, as the stall check's restart would
+static jmp_buf stall_jmp;
+static bool stall_escape;
+void hal_delay_ms(uint32_t ms)
+{
+	(void)ms;
+	delays++;
+	if (stall_escape && delays >= 5)
+		longjmp(stall_jmp, 1);
+}
 void dlog(const char *fmt, ...) { (void)fmt; }
 // The host build has no noreturn (CFLAGS): the fake comes back, so the service's path after it can be checked
 void crash_assert(unsigned line) { asserts++; assert_line = line; }
@@ -600,7 +614,7 @@ static void test_debuglink(void)
 	CHECK(crash_cmd(test, 5, &st) == 1 && st == DL_ST_BAD_ARG);
 	test[1] = 0;
 	CHECK(crash_cmd(test, 6, &st) == 1 && st == DL_ST_BAD_ARG);		// no such test
-	test[1] = DL_CRASH_TEST_HANG + 1;
+	test[1] = DL_CRASH_TEST_STALL + 1;
 	CHECK(crash_cmd(test, 6, &st) == 1 && st == DL_ST_BAD_ARG);
 	test[1] = DL_CRASH_TEST_HANG;
 	test[5] = 0;
@@ -635,6 +649,23 @@ static void test_debuglink(void)
 	fake_radio_state = RS_RX;
 	debuglink_crash_service();
 	CHECK(asserts == 1 && delays == 2);
+
+	// The stall test: the same token, then the service waits and never returns, with no assert or trap
+	test[1] = DL_CRASH_TEST_STALL;
+	test[5] = 0;
+	CHECK(crash_cmd(test, 6, &st) == 1 && st == DL_ST_REFUSED);
+	test[5] = 0x48;
+	CHECK(crash_cmd(test, 6, &st) == 1 && st == DL_ST_OK);
+	delays = 0;
+	stall_escape = true;
+	if (setjmp(stall_jmp) == 0) {
+		debuglink_crash_service();
+		CHECK(false);						// it came back
+	}
+	stall_escape = false;
+	CHECK(asserts == 1 && delays == 5);				// the 100 ms delay, then waits
+	debuglink_crash_service();					// not pending any more
+	CHECK(delays == 5);
 
 	// Clear: the record goes
 	const uint8_t clear[] = { DL_CRASH_OP_CLEAR };

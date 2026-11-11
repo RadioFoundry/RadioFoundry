@@ -16,7 +16,8 @@ import time
 
 import pytest
 
-from rfoundry_hil import DebugLink, DebugLinkError, find_ports, skip
+from rfoundry_hil import DebugLink, DebugLinkError, need_radio_tx, skip
+from hil_config import rig
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 FIXED_RADIO = "192.168.10.1"     # IPGW_FIXED_LINK_DEFAULT
@@ -43,28 +44,9 @@ def _udp_link(ip, timeout):
     return None
 
 
-def _serial_back(timeout):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        if find_ports():
-            return True
-        time.sleep(0.5)
-    return False
-
-
-def _reconnect(radio):
-    for _ in range(40):
-        try:
-            radio.link = DebugLink(radio.port, timeout=1.5)
-            return
-        except DebugLinkError:
-            time.sleep(0.25)
-    raise AssertionError("no debug link on the serial port")
-
-
 def _back_to_serial(radio, ips):
     """Settings all off and the serial personality again, over whichever UDP address answers."""
-    if not _serial_back(5):
+    if not radio.serial_back(5):
         for ip in ips:
             again = _udp_link(ip, 15)
             if again is not None:
@@ -74,8 +56,7 @@ def _back_to_serial(radio, ips):
                 finally:
                     again.close()
                 break
-        assert _serial_back(20), "the radio didn't come back as a serial port"
-    _reconnect(radio)
+        assert radio.serial_back(20), "the radio didn't come back as a serial port"
     radio.link.usb_net_settings()
 
 
@@ -87,12 +68,13 @@ def _addresses(radio):
 
 
 @pytest.mark.feature("dmr_control_station")
+@pytest.mark.needs_switch("USB")
 def test_usb_settings_stored(radio):
     """Radio only: op 27 stores each setting, the view keys follow; nothing re-enumerates (the power-on setting acts
     at the next boot only)."""
     _need(radio)
     if "USB" not in radio.features():
-        skip("no_hw", "no USB on this radio: no USB network settings")
+        skip("not_built", "built without CONFIG_USB: no USB network settings")
     try:
         radio.link.usb_net_settings(boot_network=True)
         v = radio.view(["hotspot"])
@@ -166,7 +148,7 @@ def test_boot_network(radio):
     finally:
         if udp is not None:
             udp.close()
-        _serial_back(60)            # the restart takes a while; _back_to_serial tries UDP if it stays a network adapter
+        radio.serial_back(60)              # the restart takes a while; _back_to_serial tries UDP if it stays a network adapter
         _back_to_serial(radio, [radio_ip])
     assert radio.view(["hotspot"]).get("usb.boot_network") == "0"
 
@@ -174,7 +156,7 @@ def test_boot_network(radio):
 def _passthrough_session(radio, pytestconfig):
     """Network mode with passthrough on, on the DMR test channel: (udp debug link, own ID, host IP, radio IP)."""
     _need(radio)
-    freq = pytestconfig.getoption("--dmr-freq")
+    freq = rig(pytestconfig, "dmr-freq")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
     own, host_ip, radio_ip = _addresses(radio)
@@ -186,6 +168,9 @@ def _passthrough_session(radio, pytestconfig):
         _back_to_serial(radio, [radio_ip])
         raise AssertionError(f"no debug link over UDP at {radio_ip} within 40 s")
     return udp, own, host_ip, radio_ip
+
+
+BENCH_JOB_GAP_S = 2.0     # between two bench transmissions to the radio (test_passthrough_text)
 
 
 def _counters(udp):
@@ -223,7 +208,7 @@ def _received(sock, seconds):
 def test_passthrough_text(radio, sdr_bench, pytestconfig):
     """Passthrough: an ETSI IP text and a TMS with an ACK request from the bench to the radio's ID reach the PC's
     sockets (UDP 5016, 4007) and only them: the inbox count stays, no TMS ACK goes out, data.pt_yielded counts both."""
-    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     udp, own, host_ip, radio_ip = _passthrough_session(radio, pytestconfig)
     try:
         assert udp.view(["hotspot"])["net.passthrough_active"] == "1"
@@ -233,6 +218,9 @@ def test_passthrough_text(radio, sdr_bench, pytestconfig):
             text = f"RadioFoundry CS {int(time.time()) % 10000}"
             with sdr_bench.lease():
                 sdr_bench.data(freq, cc, own, ip_text=text, src=BENCH_SRC)
+                # A bench board refuses a call while its transceiver heard anything in the last second (it goes back to
+                # its idle channel after a job): sent at once, the second packet never went on the air
+                time.sleep(BENCH_JOB_GAP_S)
                 sdr_bench.data(freq, cc, own, tms=text, tms_seq=(int(time.time()) % 31) + 1, src=BENCH_SRC,
                                listen_after=3)
             got5016, got4007 = _received(s5016, 3), _received(s4007, 1)
@@ -240,8 +228,8 @@ def test_passthrough_text(radio, sdr_bench, pytestconfig):
             s5016.close()
             s4007.close()
         after = _counters(udp)
-        print("deltas:", {k: after.get(k, 0) - before.get(k, 0) for k in
-                          ("data.sms_received", "data.tms_acks_sent", "data.pt_yielded", "data.ip_text_received")})
+        # every counter that moved: whether a lost message was never decoded (data.rx_*) or not handed on
+        print("deltas:", {k: after[k] - before.get(k, 0) for k in sorted(after) if after[k] != before.get(k, 0)})
         assert any(p.decode("utf-16-be", "replace") == text for p, _a in got5016), got5016
         assert got4007, "the TMS didn't reach the PC's socket on 4007"
         assert after["data.sms_received"] == before["data.sms_received"], (before, after)
@@ -259,10 +247,12 @@ def test_passthrough_text(radio, sdr_bench, pytestconfig):
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
+@pytest.mark.radio_tx
 def test_passthrough_reply(radio, sdr_bench, pytestconfig):
     """The PC's datagram to the bench's ID goes over the air from the radio's own DMR ID; a confirmed packet from the
     bench still gets the radio's ETSI response in passthrough."""
-    freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
+    need_radio_tx(radio)
+    freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     udp, own, host_ip, radio_ip = _passthrough_session(radio, pytestconfig)
     try:
         bench_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | BENCH_SRC))

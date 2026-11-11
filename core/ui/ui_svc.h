@@ -35,6 +35,7 @@
 #define UI_FEAT_VOLUME		(1u << 17)	// the volume is the radio's to set: no knob (radio_volume_soft), VOL key + Settings
 #define UI_FEAT_BCAST		(1u << 18)	// a broadcast FM receiver (radio_bcast_capable): its VFO step setting
 #define UI_FEAT_ZONE_SHARE	(1u << 19)	// ui_svc_zone_* (zone sharing over DMR data, CONFIG_ZONE_SHARE)
+#define UI_FEAT_VOLUME_KNOB	(1u << 21)	// the MCU reads a volume knob (radio_volume_knob): Settings > Key lock > Knob when locked
 #define UI_FEAT_REF_TRIM	(1u << 20)	// a reference trim (hal_radio_t.ref_trim, radio/ref_trim.h): Freq trim setting
 uint32_t ui_svc_features(void);
 // The parts of it each package reports (ui_svc_features ORs them): dmr-voice / radio core, dmr-data, storage-cps,
@@ -61,6 +62,8 @@ void ui_svc_focus_target(uint32_t id, bool private_call);
 // --- On-the-fly channel changes (temporary, P7) ---
 bool ui_svc_dmr_timeslot(uint8_t ts);
 bool ui_svc_dmr_color_code(uint8_t cc);
+// The VFO's SFR role (CONFIG_SFR, sfr.md 4): a as a channel's SFR byte A; false: not in this build
+bool ui_svc_vfo_sfr(uint8_t a);
 bool ui_svc_mode(uint8_t mode);			// radio_mode_t: the VFO's mode (a channel's goes through Copy to VFO)
 // Copy to VFO: the channel on view into the VFO, which opens (CONFIG_VFO). Returns a radio_vfo_copy_t: VFO_COPY_OK
 // when the request went to the radio core, else why nothing changed
@@ -69,7 +72,7 @@ bool ui_svc_hear_all(bool on);
 bool ui_svc_privacy(bool on);			// false also when there is no key: the UI says how to add one
 bool ui_svc_monitor(bool on);			// FM monitor latch
 bool ui_svc_vox(bool on);
-// Make the temporary changes permanent (storage-cps): false if the codeplug can't be written
+// Make temporary channel changes permanent (storage-cps): false when busy, off a stored channel, or unavailable
 bool ui_svc_save_channel(void);
 // Store a whole channel (the channel editor, ui.md 2.1) at number 1..CODEPLUG_CHANNELS_MAX, as a storage job like
 // ui_svc_save_channel. false: a write is still going on, or no codeplug storage in this build
@@ -129,11 +132,14 @@ void ui_svc_beep(uint8_t beep);
 // Vibrate is on. Weak no-op without CONFIG_VIBRATE ---
 typedef enum { UI_VIBE_MESSAGE, UI_VIBE_CALL, UI_VIBE_EMERGENCY } ui_vibe_t;
 void ui_svc_vibrate(uint8_t vibe);
-// PTT while the keys are locked (Settings > Privacy > PTT when locked): blocked = the input layer doesn't hand PTT
+// PTT while the keys are locked (Settings > Key lock > PTT when locked): blocked = the input layer doesn't hand PTT
 // presses to the radio core (a PTT already held is still released). Weak no-op without the input layer
 void ui_svc_ptt_block(bool blocked);
 // Keys locked: DTMF keys send nothing during FM TX (radio-features.md 3.7). Weak no-op without the input layer
 void ui_svc_dtmf_block(bool blocked);
+// Keys locked with Settings > Key lock > Knob when locked Off: the radio holds its level and ignores the volume knob; false
+// follows the knob again. Weak no-op without the radio core
+void ui_svc_volume_hold(bool hold);
 
 // --- Messages and signaling (dmr-data) ---
 #define UI_MSG_TEXT_MAX	143
@@ -196,6 +202,13 @@ void ui_svc_emergency_dismiss(void);
 // calibration: those would need a second, explicit confirmation), then the radio restarts. Done by the housekeeping
 // task, not the UI's; false if it can't be started (no flash, or a save still going on)
 bool ui_svc_factory_reset(void);
+// Another firmware's codeplug (codeplug_foreign, docs/spec/codeplug-native.md 2): the codeplug write the UI asks for
+// is held, not made, and UI_EV_CODEPLUG_FOREIGN asks the owner. The answer: UI_CP_CANCEL drops the write; UI_CP_NEW
+// clears the old codeplug, starts a new one and makes the write; UI_CP_USE keeps the old codeplug as the radio's own,
+// erasing nothing, and drops the write (it was made on the built-in channels shown until then). Storage jobs. false:
+// nothing held, or a write still going on
+enum { UI_CP_CANCEL, UI_CP_NEW, UI_CP_USE };
+bool ui_svc_codeplug_answer(uint8_t answer);
 
 // --- The crash log (CONFIG_CRASH_LOG) and its report (CONFIG_CRASH_REPORT; ui_svc_crash.c, docs/spec/crash-log.md) ---
 typedef struct {
@@ -318,6 +331,10 @@ typedef enum {
 	UI_SET_DMR_ID,		// the radio's own DMR ID in the codeplug, 1..CODEPLUG_DMR_ID_MAX (a set is a codeplug write job)
 	UI_SET_REF_TRIM,	// reference oscillator trim, ppb -10000..+10000 (Settings > Advanced; settings_t.ref_trim_ppb)
 	UI_SET_LANGUAGE,	// the UI's language, i18n.h lang_value: "en" English, 0 never picked (Settings > Display; settings_t.lang)
+	UI_SET_RX_EXT,		// receive past the band table (Settings > Advanced; settings_t.cp_flags, CONFIG_RX_EXT)
+	// Knob when locked: 1 the volume knob works while the keys are locked (the default), 0 it does nothing
+	// (UI_FEAT_VOLUME_KNOB; settings_t.knob_flags bit SETTINGS_KNOB_LOCK, stored inverted)
+	UI_SET_KNOB_WHEN_LOCKED,
 	UI_SET_COUNT
 } ui_setting_t;
 
@@ -355,6 +372,7 @@ typedef enum {
 	UI_EV_ZONE_SENT,	// our zone to id (index 1: a talkgroup): ok = it went out whole
 	UI_EV_ZONE_IMPORTED,	// the import ended: ok with name (the zone here), index (channels), id 1 for an update; else
 				// text says why
+	UI_EV_CODEPLUG_FOREIGN,	// a codeplug write is held: ask what to do with another firmware's codeplug
 } ui_event_kind_t;
 
 typedef struct {

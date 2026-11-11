@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""The radio's own services in USB network mode (opt-in: --allow-usb-switch): mDNS / DNS-SD (docs/spec/mdns.md) and
-TFTP (docs/spec/tftp.md). Each test switches the radio to the network adapter, works over UDP at its address, and
-switches it back to serial, as test_usb_network.py does.
+"""The radio's own services in USB network mode, or over PPP on a radio without USB (opt-in: --allow-usb-switch):
+mDNS / DNS-SD (docs/spec/mdns.md) and TFTP (docs/spec/tftp.md). Each test switches the radio to the network adapter
+(or brings PPP up), works over UDP at its address, and switches it back to serial, as test_usb_network.py does.
 
   test_mdns          rfoundry-<id>.local resolves to the radio's address (the system resolver: mDNSResponder on macOS,
                      nss-mdns on Linux), and the _rfoundry-debug._udp instance is browsed and resolved to port 3334 with
@@ -26,11 +26,11 @@ import time
 
 import pytest
 
-from rfoundry_hil import DebugLink, as_int, skip
+from rfoundry_hil import as_int, host_network_kind, ppp_network, skip
 import cps_client
 import tftp_client
 
-from test_usb_network import INDIVIDUAL_NET, _serial_back, _udp_link
+from test_usb_network import INDIVIDUAL_NET, _udp_link
 
 QDMR = cps_client.REGIONS["qdmr"]
 IMAGE = 0xAEE60
@@ -39,9 +39,14 @@ BLKSIZE = 554           # the largest the radio takes (docs/spec/tftp.md 1)
 
 @contextlib.contextmanager
 def network_mode(radio):
-    """The radio as a network adapter for the duration: yields (debug link over UDP, radio address, DMR ID)"""
+    """The radio as a network adapter for the duration, or PPP on its serial host port on a radio without one
+    (rfoundry_hil.host_network_kind): yields (debug link over UDP, radio address, DMR ID)"""
     own_id = int(radio.view(["dmr"]).get("dmr.own_id", "0"))
     assert 0 < own_id < (1 << 24), "no DMR ID: the gateway can't make an address"
+    if host_network_kind(radio) == "ppp":
+        with ppp_network(radio, own_id) as (udp, _, radio_ip):
+            yield udp, radio_ip, own_id
+        return
     host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | own_id)
     radio_ip = str(ipaddress.IPv4Address(int(host_ip) ^ 1))
     radio.link.usb_network(True)
@@ -58,18 +63,12 @@ def network_mode(radio):
             except Exception:
                 pass
             udp.close()
-        if not _serial_back(20):
+        if not radio.serial_back(20):
             again = _udp_link(radio_ip, 10)
             if again is not None:
                 again.usb_network(False)
                 again.close()
-            assert _serial_back(20), "the radio didn't come back as a serial port"
-        for _ in range(40):
-            try:
-                radio.link = DebugLink(radio.port, timeout=1.5)
-                break
-            except Exception:
-                time.sleep(0.25)
+            assert radio.serial_back(20), "the radio didn't come back as a serial port"
 
 
 def need(radio, feature):

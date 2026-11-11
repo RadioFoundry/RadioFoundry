@@ -100,6 +100,7 @@ static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, NULL, NULL, NULL, NULL
 
 static dmr_event_cb_t stack_cb;
 static void *stack_ctx;
+static bool refuse_tx;
 
 static bool m_start(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx)
 {
@@ -112,7 +113,10 @@ static void m_stop(void) { stack_cb = NULL; }
 static void m_configure(const dmr_config_t *cfg) { hrc6000_dmr_configure(&eng, cfg); }
 static void m_rx_restart(void) { hrc6000_dmr_rx_restart(&eng); }
 static void m_rx_lock_slot(int8_t ts) { hrc6000_dmr_rx_lock_slot(&eng, ts); }
-static bool m_tx_begin(dmr_timing_t t, int8_t ts, dmr_access_t a) { return hrc6000_dmr_tx_begin(&eng, t, ts, a); }
+static bool m_tx_begin(dmr_timing_t t, int8_t ts, dmr_access_t a)
+{
+	return !refuse_tx && hrc6000_dmr_tx_begin(&eng, t, ts, a);
+}
 static bool m_tx_queue(const dmr_tx_burst_t *b) { return hrc6000_dmr_tx_queue(&eng, b); }
 static uint8_t m_tx_queue_space(void) { return hrc6000_dmr_tx_queue_space(&eng); }
 static void m_tx_end(void) { hrc6000_dmr_tx_end(&eng); }
@@ -274,6 +278,7 @@ static void setup(void)
 	ntx = 0;
 	rxq_n = rxq_next = 0;
 	tx_starts = 0;
+	refuse_tx = false;
 	pa_on_calls = 0;
 	cur_tick = 0;
 	t_us = 1000000;
@@ -364,6 +369,37 @@ static void test_call_alert_in(void)
 		CHECK(id24(&txl[0].payload[4]) == OTHER_ID && id24(&txl[0].payload[7]) == OUR_ID);
 	}
 	CHECK(pa_on_calls >= 1 && eng.st.tx_done == 1 && !hrc6000_dmr_is_transmitting(&eng));
+	CHECK(!dmr_call_data_busy() && !dmrDataServiceIsBusy());
+}
+
+// A modem refusal completes inside txStart; a later reply must work without resetting the service.
+static void test_refused_reply_recovers(void)
+{
+	setup();
+	refuse_tx = true;
+	dmrBurst_t b;
+	csbk_burst(DMR_CSBKO_CALL_ALERT, DMR_FID_ETSI, 0, OUR_ID, OTHER_ID, &b);
+	queue_rx(&b, 1);
+	run(1500);
+	dmrDataStats_t st;
+	dmrDataServiceGetStats(&st);
+	CHECK(st.txLists == 1 && st.txFailed == 1 && st.txOk == 0);
+	CHECK(st.txLastError == DMR_TX_ERR_REJECTED);
+	CHECK(ntx == 0 && pa_on_calls == 0);
+	CHECK(!dmr_call_data_busy() && !dmrDataServiceIsBusy());
+
+	refuse_tx = false;
+	queue_rx(&b, 1);
+	run(1500);
+	dmrDataServiceGetStats(&st);
+	CHECK(st.txLists == 2 && st.txFailed == 1 && st.txOk == 1);
+	CHECK(ntx == 1);
+	if (ntx == 1) {
+		CHECK(txl[0].kind == DMR_BURST_CSBK && txl[0].mcu_crc);
+		CHECK((txl[0].payload[0] & 0x3F) == DMR_CSBKO_CALL_ALERT_ACK);
+		CHECK(dmrDataCheckCRC16(txl[0].payload, 0xA5));
+		CHECK(id24(&txl[0].payload[4]) == OTHER_ID && id24(&txl[0].payload[7]) == OUR_ID);
+	}
 	CHECK(!dmr_call_data_busy() && !dmrDataServiceIsBusy());
 }
 
@@ -576,7 +612,7 @@ static int build_dd(uint8_t dd, const uint8_t *data, int len, uint8_t extra_pad_
 	crc = (uint16_t)(~crc ^ 0xCCCC);
 	h[10] = (uint8_t)(crc >> 8);
 	h[11] = (uint8_t)crc;
-	out[0].dataType = DT_DATA_HEADER;
+	out[0].dataType = DMR_TYPE_DATA_HEADER;
 	out[0].length = 12;
 	out[0].flags = 0;
 	memcpy(out[0].payload, h, 12);
@@ -588,7 +624,7 @@ static int build_dd(uint8_t dd, const uint8_t *data, int len, uint8_t extra_pad_
 	pkt[len + pad + 2] = (uint8_t)(c32 >> 16);
 	pkt[len + pad + 3] = (uint8_t)(c32 >> 24);
 	for (int i = 0; i < blocks; i++) {
-		out[1 + i].dataType = DT_RATE_12_DATA;
+		out[1 + i].dataType = DMR_TYPE_RATE_1_2;
 		out[1 + i].length = 12;
 		out[1 + i].flags = 0;
 		memcpy(out[1 + i].payload, &pkt[i * 12], 12);
@@ -635,13 +671,13 @@ static void test_etsi_text_formats(void)
 	dmrDataRxReset();
 }
 
-// "ETSI TXT 541" from 9990301 to 3101276, response requested, as ETSI TS 102 361-1 V2.7.1 lays it out, computed apart
+// "ETSI TXT 541" from 9998301 to 9996543, response requested, as ETSI TS 102 361-1 V2.7.1 lays it out, computed apart
 // from this code (a short script from the clauses): DD_HEAD (Figure 8.9, 9.2.12) with the DD format 0x03 for ISO/IEC
 // 8859-1 (Table 9.50; 0x02 is the 7-bit format), S 0, F 1, 64 bits of padding (9.3.44), CRC-CCITT (B.3.8) masked
 // 0xCCCC; then the text, 8 pad octets and the CRC-32 (B.3.9) in two rate 1/2 blocks. HIL 2026-10-10: the bench sent
 // this text with DD format 0x02, and the radio rightly read it as 7-bit characters ('Q"(S$HS!)
 static const uint8_t etsi_vec[3][12] = {
-	{ 0x4D, 0xA2, 0x2F, 0x52, 0x5C, 0x98, 0x70, 0x9D, 0x0D, 0x40, 0x26, 0xB0 },
+	{ 0x4D, 0xA2, 0x98, 0x88, 0xFF, 0x98, 0x8F, 0xDD, 0x0D, 0x40, 0x91, 0x13 },
 	{ 0x45, 0x54, 0x53, 0x49, 0x20, 0x54, 0x58, 0x54, 0x20, 0x35, 0x34, 0x31 },
 	{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1E, 0x08, 0x34, 0x8E },
 };
@@ -651,22 +687,22 @@ static void test_etsi_text_vector(void)
 	char text[64];
 	dmrBurst_t b[8];
 	for (int i = 0; i < 3; i++) {
-		b[i].dataType = i == 0 ? DT_DATA_HEADER : DT_RATE_12_DATA;
+		b[i].dataType = i == 0 ? DMR_TYPE_DATA_HEADER : DMR_TYPE_RATE_1_2;
 		b[i].length = 12;
 		b[i].flags = 0;
 		memcpy(b[i].payload, etsi_vec[i], 12);
 	}
 	CHECK(decode_bursts(b, 3, text, sizeof(text)) && strcmp(text, "ETSI TXT 541") == 0);
-	CHECK(dmrDataRxPacket.ddFormat == DMR_DD_ISO8859_1 && dmrDataRxPacket.src == 9990301 &&
-	      dmrDataRxPacket.dst == 3101276 && dmrDataRxPacket.responseRequested);
+	CHECK(dmrDataRxPacket.ddFormat == DMR_DD_ISO8859_1 && dmrDataRxPacket.src == 9998301 &&
+	      dmrDataRxPacket.dst == 9996543 && dmrDataRxPacket.responseRequested);
 	dmrDataRxReset();
 	// Our own ETSI text goes out the same, octet for octet
-	int n = dmrDataBuildEtsiText(false, 3101276, 9990301, "ETSI TXT 541", true, 0, b, 8);
+	int n = dmrDataBuildEtsiText(false, 9996543, 9998301, "ETSI TXT 541", true, 0, b, 8);
 	CHECK(n == 3);
 	for (int i = 0; i < n && i < 3; i++) {
 		CHECK(b[i].length == 12 && memcmp(b[i].payload, etsi_vec[i], 12) == 0);
 	}
-	CHECK(b[0].dataType == DT_DATA_HEADER && b[1].dataType == DT_RATE_12_DATA && b[2].dataType == DT_RATE_12_DATA);
+	CHECK(b[0].dataType == DMR_TYPE_DATA_HEADER && b[1].dataType == DMR_TYPE_RATE_1_2 && b[2].dataType == DMR_TYPE_RATE_1_2);
 }
 
 // An ETSI text message to us with a response requested: kept in the inbox as ETSI, the ETSI response (ACK) goes out
@@ -705,8 +741,8 @@ static void test_etsi_sms_out(void)
 	run(1500);
 	CHECK(sms_send_state() == DMR_REQ_SENDING);
 	char text[64];
-	dmrBurst_t b[16];
-	int n = captured(0, b, 16);
+	dmrBurst_t b[32];
+	int n = captured(0, b, 32);
 	CHECK(n >= 3 && decode_bursts(b, n, text, sizeof(text)) && strcmp(text, "Out in ETSI form") == 0);
 	CHECK(dmrDataRxPacket.dst == OTHER_ID && dmrDataRxPacket.src == OUR_ID && dmrDataRxPacket.responseRequested);
 	dmrDataRxReset();
@@ -760,9 +796,9 @@ int main(void)
 {
 	hrc6000_attach(&dev, &bus);
 	test_call_alert_in();
-	test_sms_in(DT_RATE_12_DATA, "Hello from the chain");
-	test_sms_in(DT_RATE_34_DATA, "Rate three quarters, a little longer text");
-	test_sms_in(DT_RATE_1_DATA, "Rate one");
+	test_sms_in(DMR_TYPE_RATE_1_2, "Hello from the chain");
+	test_sms_in(DMR_TYPE_RATE_3_4, "Rate three quarters, a little longer text");
+	test_sms_in(DMR_TYPE_RATE_1, "Rate one");
 	test_radio_check_out();
 	test_radio_check_etsi();	// before a check is left unanswered (the state carries over)
 	test_call_alert_out_no_answer();
@@ -773,6 +809,7 @@ int main(void)
 	test_etsi_text_vector();
 	test_etsi_sms_in();
 	test_etsi_sms_out();
+	test_refused_reply_recovers();
 	if (failures) {
 		printf("# dmrDataChainTest: %d FAILED\n", failures);
 		return 1;
