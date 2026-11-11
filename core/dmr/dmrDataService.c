@@ -1791,7 +1791,9 @@ static bool lrrpHandleRequest(const lrrpPendingRequest_t *pending)
 	return true;
 }
 
-static void lrrpTick(void)
+// noinline: inlined into the service's tick it puts the position and the report document in the radio task's own
+// frame, under everything that task calls (the stack check's deepest path)
+__attribute__((noinline)) static void lrrpTick(void)
 {
 	if (!CONFIG_DMR_LRRP || passthrough)
 	{
