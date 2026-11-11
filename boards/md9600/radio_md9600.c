@@ -275,6 +275,14 @@ static volatile uint8_t key_st_next;	// 1 + the step the timer runs to, 0 none
 static pa_keyup_t ku;
 static uint16_t ku_floor;
 static uint32_t key_delay_us = MD9600_BURST_KEY_DELAY_US;	// the stepped ramp's start after the interrupt
+// The burst's PA drop from the same timer, KEY_HOLD_US after the RF TX interrupt: the ramp down starts at the last
+// symbol's end and the carrier is off inside the slot's guard. The modem's interrupt for the burst's end comes 1.85 ms
+// after the last symbol: dropped there, the carrier was at full power 0.6 ms into the slot after. An SFR keeps the
+// drop at that interrupt (ended earlier, its receiver lost more of the inbound voice: hardware-md9600.md 19.8)
+#define KEY_HOLD_US		(KEYUP_INT_AHEAD_US + 27500u)
+static volatile bool key_drop;		// the timer's next update is the PA drop
+static bool key_timed;			// this burst's drop is the timer's
+static uint32_t key_since_us;		// the timer's waits since the interrupt
 
 // The transmission's key-up from the calibration at its frequency (task level, before it is armed)
 static void keyup_plan(uint32_t hz, uint8_t power)
@@ -322,6 +330,7 @@ static void key_timer_stop(void)
 	TIM5->CR1 = 0;
 	TIM5->SR = 0;
 	key_pending = false;
+	key_drop = false;
 }
 
 static void key_timer_start(uint32_t us)
@@ -339,6 +348,7 @@ static void key_timer_start(uint32_t us)
 		HAL_NVIC_EnableIRQ(TIM5_IRQn);
 		key_timer_ready = true;
 	}
+	key_since_us += us;
 	TIM5->CR1 = 0;
 	TIM5->ARR = (us > 1u ? us : 2u) - 1u;
 	TIM5->CNT = 0;
@@ -346,10 +356,31 @@ static void key_timer_start(uint32_t us)
 	TIM5->CR1 = TIM_CR1_OPM | TIM_CR1_CEN;
 }
 
+// The key-up is done: the timer on to the PA drop (KEY_HOLD_US), unless the modem's interrupt ends this burst
+static void key_hold(void)
+{
+	bool timed = key_timed && key_since_us < KEY_HOLD_US;
+#if CONFIG_SFR
+	timed = timed && !stm32_hrc_dmr_tx_listening();
+#endif
+	if (timed) {
+		key_drop = true;
+		key_timer_start(KEY_HOLD_US - key_since_us);
+	} else {
+		key_pending = false;
+	}
+}
+
 void TIM5_IRQHandler(void)
 {
 	TIM5->SR = 0;
 	if (!key_pending) {
+		return;
+	}
+	if (key_drop) {
+		key_drop = false;
+		key_pending = false;
+		(void)md9600_rf_pa_burst(&rf, false);
 		return;
 	}
 	if (key_st_next != 0u) {
@@ -367,7 +398,11 @@ void TIM5_IRQHandler(void)
 			return;
 		}
 		key_st_next = 0;
-		key_pending = false;
+		if (ok) {
+			key_hold();
+		} else {
+			key_pending = false;
+		}
 		return;
 	}
 	uint32_t us = 0;
@@ -377,7 +412,7 @@ void TIM5_IRQHandler(void)
 	} else if (us != 0) {
 		key_timer_start(us);
 	} else {
-		key_pending = false;
+		key_hold();
 	}
 }
 
@@ -450,7 +485,10 @@ bool md9600_rf_dmr_key(bool tx)
 	key_step = 0;
 	key_st_next = 0;
 	key_pending = true;
+	key_drop = false;
+	key_since_us = 0;
 	uint32_t until;
+	key_timed = !stm32_hrc_dmr_bs_boundary_us(&until);	// a BS outbound keys once: no drop per burst
 
 	if (stm32_hrc_dmr_bs_boundary_us(&until)) {
 		// The split duplex BS outbound keys once, and its slot starts with the CACH, not a guard. Its RF TX interrupt
