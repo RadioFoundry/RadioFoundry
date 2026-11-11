@@ -70,7 +70,7 @@ void debuglink_dmr_reset(void);
 
 // The radio features (debuglink_view_radio.c): the "features" section, and the RADIO operations for scan, beeps, the
 // tone burst, one setting, roaming, vibration, volume, the DMR voice test signal, DTMF keys, the test TX limit, the PA
-// drive and the DMR PA key-up constants (DL_OP_*;
+// drive, the DMR PA key-up constants and the VFO's SFR role (DL_OP_*;
 // returns a DL_ST_* status)
 void debuglink_view_radio(const radio_view_t *v, dl_text_t *t);
 void debuglink_view_audio(dl_text_t *t);
@@ -83,6 +83,7 @@ enum {
 	DL_OP_TX_LIMIT = 35,
 	DL_OP_TX_DRIVE = 36,
 	DL_OP_PA_KEYUP = 37,
+	DL_OP_VFO_SFR = 38,
 };
 uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *args, uint16_t len);
 // RADIO ops the dispatcher hands to debuglink_radio_feature_op: a new DL_OP_* goes here too
@@ -90,7 +91,7 @@ static inline bool debuglink_is_feature_op(uint8_t op)
 {
 	return (op >= DL_OP_SCAN && op <= DL_OP_SETTING) || op == DL_OP_ROAM || op == DL_OP_VIBRATE || op == DL_OP_VOLUME ||
 	       op == DL_OP_DMR_FIELDS || op == DL_OP_VFO_COPY || op == DL_OP_VOICE_TEST || op == DL_OP_DTMF ||
-	       op == DL_OP_TX_LIMIT || op == DL_OP_TX_DRIVE || op == DL_OP_PA_KEYUP;
+	       op == DL_OP_TX_LIMIT || op == DL_OP_TX_DRIVE || op == DL_OP_PA_KEYUP || op == DL_OP_VFO_SFR;
 }
 // VERSION's codec= for a vocoder (hal_vocoder_id; the name the host tests use); the board's is board_codec_id()
 static inline const char *debuglink_codec_id(const hal_vocoder_t *v)

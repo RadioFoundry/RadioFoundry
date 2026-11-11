@@ -62,6 +62,8 @@ void ui_svc_focus_target(uint32_t id, bool private_call);
 // --- On-the-fly channel changes (temporary, P7) ---
 bool ui_svc_dmr_timeslot(uint8_t ts);
 bool ui_svc_dmr_color_code(uint8_t cc);
+// The VFO's SFR role (CONFIG_SFR, sfr.md 4): a as a channel's SFR byte A; false: not in this build
+bool ui_svc_vfo_sfr(uint8_t a);
 bool ui_svc_mode(uint8_t mode);			// radio_mode_t: the VFO's mode (a channel's goes through Copy to VFO)
 // Copy to VFO: the channel on view into the VFO, which opens (CONFIG_VFO). Returns a radio_vfo_copy_t: VFO_COPY_OK
 // when the request went to the radio core, else why nothing changed
@@ -330,6 +332,7 @@ typedef enum {
 	UI_SET_DMR_ID,		// the radio's own DMR ID in the codeplug, 1..CODEPLUG_DMR_ID_MAX (a set is a codeplug write job)
 	UI_SET_REF_TRIM,	// reference oscillator trim, ppb -10000..+10000 (Settings > Advanced; settings_t.ref_trim_ppb)
 	UI_SET_LANGUAGE,	// the UI's language, i18n.h lang_value: "en" English, 0 never picked (Settings > Display; settings_t.lang)
+	UI_SET_RX_EXT,		// receive past the band table (Settings > Advanced; settings_t.cp_flags, CONFIG_RX_EXT)
 	// Knob when locked: 1 the volume knob works while the keys are locked (the default), 0 it does nothing
 	// (UI_FEAT_VOLUME_KNOB; settings_t.knob_flags bit SETTINGS_KNOB_LOCK, stored inverted)
 	UI_SET_KNOB_WHEN_LOCKED,

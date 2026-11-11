@@ -158,7 +158,9 @@ static const band_t bands[] = {
 	{ 108000000, 135999999, false },	// receive only
 	{ 136000000, 174000000, true },
 	{ 400000000, 480000000, true },
+	{ 480000000, 520000000, false },	// the receive-only extension (test_rx_ext), off unless a test turns it on
 };
+static bool rx_ext_on;
 static const char *const power_names[] = { "L", "M", "H" };
 // Keys: only what the side key glue (ui_svc_storage.c) needs, two side keys
 static const keymap_entry_t keymap[] = {
@@ -186,7 +188,9 @@ board_t board = {
 	.caps = FAKE_MODEM_VOICE ? CAP_MODEM_VOICE : 0,
 	.gps_enable = fake_gps_enable,
 	.bands = bands,
-	.band_count = 3,
+	.band_count = 4,
+	.rx_ext_count = 1,
+	.rx_ext_on = &rx_ext_on,
 	.power_count = 3,
 	.power_names = power_names,
 	.power_default = 1,
@@ -2912,6 +2916,7 @@ void radio_req_dmr_target(uint32_t id, bool p) { req(RREQ_DMR_TARGET, (int32_t)(
 void radio_req_dmr_target_clear(void) { req(RREQ_DMR_TARGET_CLEAR, 0); }
 void radio_req_dmr_timeslot(uint8_t ts) { req(RREQ_DMR_TS, ts); }
 void radio_req_dmr_color_code(uint8_t cc) { req(RREQ_DMR_CC, cc); }
+void radio_req_vfo_sfr(uint8_t a) { req(RREQ_VFO_SFR, a); }
 void radio_req_mode(uint8_t mode) { req(RREQ_MODE, mode); }
 void radio_req_vfo_copy(void) { req(RREQ_VFO_COPY, 0); }
 radio_vfo_copy_t radio_req_vfo_copy_checked(void)
@@ -4385,6 +4390,45 @@ static void test_dmr_data_glue(void)
 	CHECK(hw.tx_calls == tx0);
 }
 
+// Receive past the band table: the VFO tunes there only while the extension is on, and it never transmits
+// board.h's band helpers are compiled here against board_as_declared (the writable board above), so the test reads
+// the table itself: the receive-only extension counts only while rx_ext_on
+static bool rx_band_has(uint32_t hz)
+{
+	uint8_t n = rx_ext_on ? board.band_count : (uint8_t)(board.band_count - board.rx_ext_count);
+	for (uint8_t i = 0; i < n; i++) {
+		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void test_rx_ext(void)
+{
+	setup_codeplug();
+	start();
+	req(RREQ_VFO, 1);
+	run(20);
+	req(RREQ_VFO_SET, 500000000);
+	run(20);
+	CHECK(sm.view.ch.rx_hz != 500000000);	// off: refused like any frequency outside the table
+	rx_ext_on = true;
+	req(RREQ_VFO_SET, 500000000);
+	run(20);
+	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 500000000);
+	int tx0 = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && hw.tx_calls == tx0);
+	req(RREQ_PTT, 0);
+	run(20);
+	rx_ext_on = false;
+	CHECK(!rx_band_has(500000000));
+	req(RREQ_RELOAD, 0);	// what turning it off in Settings does: a VFO left past the table returns to a band
+	run(20);
+	CHECK(sm.view.vfo && rx_band_has(sm.view.ch.rx_hz));
+}
+
 // ---- Error paths: the radio refuses to key, a channel without a TX frequency, retuning or scanning while
 // transmitting, the stack's own refusals, targets that end with their channel, stored emergency settings ----
 static void test_error_paths(void)
@@ -4776,6 +4820,91 @@ static void test_sfr_roles(void)
 	CHECK(sm.view.dmr.sfr_role == SFR_ROLE_OFF && dmr_call_view()->ts == 1);
 	chans[4].sfr_a = 0;
 }
+
+#if CONFIG_VFO_DMR
+// The VFO's SFR role (RREQ_VFO_SFR, sfr.md 4): a channel's SFR bytes, taken as a channel's and saved with the VFO
+static void test_sfr_vfo(void)
+{
+	dmr_start(true);
+	req(RREQ_VFO_SFR, SFR_ROLE_RPT_STANDARD);	// on a channel: refused (its role is the codeplug's)
+	run(50);
+	CHECK(!sm.sfr_rpt && sm.view.dmr.sfr_role == SFR_ROLE_OFF);
+	req(RREQ_VFO_COPY, 0);				// channel 4: 438.5 MHz simplex, DMR, CC 2; no role
+	run(50);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_DMR && sm.view.dmr.sfr_role == SFR_ROLE_OFF);
+
+	// Repeater: the runner takes the modem on the VFO's frequency, the stack stops; saved
+	req(RREQ_VFO_SFR, SFR_ROLE_RPT_STANDARD);
+	run(50);
+	CHECK(sm.sfr_rpt && sm.dmr_keyed && !sm.view.dmr.active && sm.view.dmr.sfr_role == SFR_ROLE_RPT_STANDARD);
+	CHECK(hw.tx_hz == 438500000 && sim.cc_filter == 2);
+	settings_t st;
+	settings_read(&st);
+	CHECK(st.vfo_sfr == SFR_ROLE_RPT_STANDARD);
+
+	// A new color code: the repeater takes it
+	req(RREQ_DMR_CC, 5);
+	run(50);
+	CHECK(sm.sfr_rpt && sim.cc_filter == 5);
+	// A split: an ordinary repeater channel, the stack back; one frequency again: the role again
+	req(RREQ_VFO_TX, 433500000);
+	run(50);
+	CHECK(!sm.sfr_rpt && !sm.dmr_keyed && sm.view.dmr.active && sm.view.dmr.sfr_role == SFR_ROLE_OFF);
+	req(RREQ_VFO_TX, 0);
+	run(50);
+	CHECK(sm.sfr_rpt && sm.dmr_keyed && hw.tx_hz == 438500000);
+
+	// Kept over a restart
+	boot();
+	run(50);
+	CHECK(sm.view.vfo && sm.sfr_rpt && sm.view.dmr.sfr_role == SFR_ROLE_RPT_STANDARD);
+	// The same role again: no retune, the repeater keeps the modem
+	int offs = hw.tx_off_calls;
+	req(RREQ_VFO_SFR, SFR_ROLE_RPT_STANDARD);
+	run(50);
+	CHECK(sm.sfr_rpt && hw.tx_off_calls == offs);
+#if CONFIG_VFO_FM
+	// FM: no role in force, the stored one kept for DMR
+	req(RREQ_MODE, RADIO_MODE_FM);
+	run(50);
+	CHECK(!sm.sfr_rpt && sm.view.dmr.sfr_role == SFR_ROLE_OFF && sm.vfo_ch.sfr_a == SFR_ROLE_RPT_STANDARD);
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	run(50);
+	CHECK(sm.sfr_rpt && sm.view.dmr.sfr_role == SFR_ROLE_RPT_STANDARD);
+#endif
+
+	// User, inbound TS2: the call stack on TS2
+	req(RREQ_VFO_SFR, SFR_ROLE_USER_STANDARD | 0x20);
+	run(50);
+	CHECK(!sm.sfr_rpt && sm.view.dmr.active && sm.view.dmr.sfr_role == SFR_ROLE_USER_STANDARD);
+	CHECK(dmr_call_view()->ts == 2);
+	req(RREQ_VFO_SFR, SFR_ROLE_NUM_STORED);	// not a stored role: refused
+	run(50);
+	CHECK(sm.view.dmr.sfr_role == SFR_ROLE_USER_STANDARD);
+
+	// Off: the VFO's own slot again, saved
+	req(RREQ_VFO_SFR, 0);
+	run(50);
+	CHECK(sm.view.dmr.sfr_role == SFR_ROLE_OFF && sm.vfo_ch.sfr_flag1 == 0 && dmr_call_view()->ts == 1);
+	settings_read(&st);
+	CHECK(st.vfo_sfr == 0);
+
+	// Copy to VFO brings the channel's role
+	req(RREQ_VFO, 0);
+	chans[4].sfr_flag1 = SFR_CHANNEL_FLAG1_ENABLED;
+	chans[4].sfr_a = SFR_ROLE_RPT_STANDARD;
+	reload_channel();
+	CHECK(sm.sfr_rpt && !sm.view.vfo);
+	req(RREQ_VFO_COPY, 0);
+	run(50);
+	CHECK(sm.view.vfo && sm.sfr_rpt && sm.vfo_ch.sfr_a == SFR_ROLE_RPT_STANDARD);
+	chans[4].sfr_flag1 = 0;
+	chans[4].sfr_a = 0;
+	req(RREQ_VFO_SFR, 0);
+	run(50);
+	CHECK(!sm.sfr_rpt);
+}
+#endif
 #if CONFIG_SFR_CWID
 // A call through the repeater role: the repeater transmits, its hang ends and it goes quiet
 static void sfr_call_through(void)
@@ -5022,6 +5151,7 @@ int main(void)
 	test_ui_settings();
 	test_soft_volume();
 	test_side_keys();
+	test_rx_ext();
 	test_error_paths();
 	test_hotspot();
 	test_hotspot_session();
@@ -5029,6 +5159,9 @@ int main(void)
 #if CONFIG_SFR
 	test_sfr_led();
 	test_sfr_roles();
+#if CONFIG_VFO_DMR
+	test_sfr_vfo();
+#endif
 #endif
 #if CONFIG_SFR_CWID
 	test_sfr_cwid();

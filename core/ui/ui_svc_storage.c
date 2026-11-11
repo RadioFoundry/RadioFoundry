@@ -147,6 +147,11 @@ __attribute__((noinline)) static int32_t stored_get(uint8_t id)
 	case UI_SET_SQUELCH:
 		settings_read(&st);
 		return st.squelch <= 9 ? st.squelch : ui_svc_ram_get(id);
+#if CONFIG_RX_EXT
+	case UI_SET_RX_EXT:
+		settings_read(&st);
+		return (st.cp_flags & SETTINGS_CP_RX_EXT) != 0;
+#endif
 	case UI_SET_HOTSPOT_AUTO:
 		settings_read(&st);
 		return st.hotspot_allowed != 0;
@@ -496,6 +501,15 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		settings_end(hal_millis());
 		radio_req_reload();	// the default squelch is a preference the radio core reads on reload
 		return true;
+#if CONFIG_RX_EXT
+	case UI_SET_RX_EXT:
+		st = settings_begin();
+		st->cp_flags = (uint8_t)(value != 0 ? (st->cp_flags | SETTINGS_CP_RX_EXT) : (st->cp_flags & ~SETTINGS_CP_RX_EXT));
+		settings_end(hal_millis());
+		board_rx_ext_set(value != 0);
+		radio_req_reload();	// a VFO past the table goes back in band when this goes off
+		return true;
+#endif
 	case UI_SET_HOTSPOT_AUTO:
 		st = settings_begin();
 		st->hotspot_allowed = value != 0;
@@ -1014,6 +1028,7 @@ static void factory_reset_job(void *ctx)
 	(void)ctx;
 	settings_t *st = settings_begin();
 	settings_defaults(st);	// cp_flags too: "Use anyway" doesn't outlive a reset
+	board_rx_ext_set(false);
 	settings_end(hal_millis());
 	codeplug_accept(false);
 	bool saved = settings_flush();

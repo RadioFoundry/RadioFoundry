@@ -2268,9 +2268,19 @@ def rxn_big(payload):
     return int.from_bytes(payload[8:10], "big") >= 256
 
 
+def low_latency(port):
+    """An FTDI cable holds received bytes for its latency timer, 16 ms by default; 1 ms halves every request's round
+    trip. pyserial sets it on Linux only; elsewhere, and on URLs and fakes, nothing changes."""
+    try:
+        port.set_low_latency_mode(True)
+    except (AttributeError, NotImplementedError, OSError, ValueError):
+        pass
+    return port
+
+
 def open_port(serial, path):
     """A device or a pyserial URL: rfc2217://HOST:PORT reaches a radio on a networked serial server."""
-    return serial.serial_for_url(path, 115200, timeout=0.1)
+    return low_latency(serial.serial_for_url(path, 115200, timeout=0.1))
 
 
 def self_test():

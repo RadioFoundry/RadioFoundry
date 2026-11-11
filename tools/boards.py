@@ -915,9 +915,11 @@ def load(root=ROOT, only=None):
                  for lit, macro in board_t_names(srcs)]
         out[bid] = Board(data, plat, mk, _layout(root, bid, mk), names,
                          pin_defines(os.path.join(bdir, "pins.h")),
-                         # the platform's config.mk adds its own switches (no USB on a platform without it); the
-                         # board's reason wins for a switch both list
-                         {**unsupported_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
+                         # config/features.mk lists the switches a build rules out for every board (FONT_BIG on a
+                         # narrow panel); the platform's config.mk adds its own (no USB on a platform without it);
+                         # the board's reason wins for a switch both list
+                         {**unsupported_reasons(os.path.join(root, "config", "features.mk")),
+                          **unsupported_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
                           **unsupported_reasons(os.path.join(bdir, "config.mk"))}, flash_map(srcs))
         out[bid].write_floor = write_floor(srcs)
         out[bid].volts = source_volts(srcs)

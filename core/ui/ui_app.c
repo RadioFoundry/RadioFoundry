@@ -783,7 +783,7 @@ bool ui_freq_entry_digit(char *digits, uint8_t *len, char d)
 	digits[*len] = d;
 	uint32_t lo, hi;
 	entry_range(digits, *len + 1, &lo, &hi);
-	for (int i = 0; i < board.band_count; i++) {
+	for (int i = 0; i < board_band_count(); i++) {
 		if (lo <= board.bands[i].hi_hz && hi >= board.bands[i].lo_hz) {
 			digits[++*len] = 0;
 			return true;
@@ -791,7 +791,7 @@ bool ui_freq_entry_digit(char *digits, uint8_t *len, char d)
 	}
 	digits[*len] = 0;
 	char bands[32];
-	ui_bands_text(bands, sizeof bands);
+	ui_bands_text(bands, sizeof bands, false);
 	sbuf_t b;
 	sb_init(&b, hint, sizeof hint);
 	sb_str(&b, TR("Bands: "));
@@ -1860,6 +1860,12 @@ static uint16_t clamp_u16(int32_t v) { return (uint16_t)(v < 0 ? 0 : v > 0xFFFF 
 void ui_apply_setting(uint8_t id, int32_t v)
 {
 	switch (id) {
+#if CONFIG_RX_EXT
+	case UI_SET_RX_EXT:
+		if (v != 0)
+			ui_toast(TR("Receive only. Sensitivity not rated"));
+		break;
+#endif
 	case UI_SET_BRIGHTNESS: ui_st.brightness = (uint8_t)(v >= 10 && v <= 100 ? v : 100); break;
 	case UI_SET_HINTS: ui_st.hints = v != 0; break;
 	case UI_SET_LARGE_TEXT: ui_st.large_text = v != 0; break;

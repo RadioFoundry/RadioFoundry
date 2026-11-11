@@ -586,7 +586,17 @@ class PortFollower:
                     self.said = alt.device
                     self.log("%s did not answer; trying %s (same USB device)" % (self.path, alt.device))
                 path = alt.device
-        return self.serial.serial_for_url(path, self.baud, timeout=0.1)
+        return low_latency(self.serial.serial_for_url(path, self.baud, timeout=0.1))
+
+
+def low_latency(port):
+    """An FTDI cable holds received bytes for its latency timer, 16 ms by default; 1 ms halves every request's round
+    trip. pyserial sets it on Linux only; elsewhere, and on URLs and fakes, nothing changes."""
+    try:
+        port.set_low_latency_mode(True)
+    except (AttributeError, NotImplementedError, OSError, ValueError):
+        pass
+    return port
 
 
 def board_for(name):
