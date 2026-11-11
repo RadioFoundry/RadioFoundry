@@ -226,7 +226,8 @@ against a wattmeter.
 
 ### Plots
 
-`--plot DIR` draws two files per band; `tools/bench/pa_cal_plot.py RESULT.json DIR` draws a saved `--out` again.
+`--plot DIR` draws two files per band; `tools/bench/pa_cal_plot.py RESULT.json DIR [NAME]` draws a saved `--out` again.
+The titles name the radio: the board and build the radio reported, or NAME.
 
 | File | Shows |
 |---|---|

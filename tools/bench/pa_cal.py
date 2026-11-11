@@ -491,6 +491,11 @@ class Cal:
         self.bench = Bench(a, self.say)
         self.radio = Radio(a)
         self.keys_n = 0
+        try:
+            v = self.radio.link.version()
+        except Exception:       # a name for the result and the plots only
+            v = {}
+        self.who = {"board": v.get("board", ""), "git": v.get("git", "")}
 
     def say(self, s):
         print(s, flush=True)
@@ -868,11 +873,11 @@ def main(argv=None):
             cal.end()
             if a.out:
                 with open(a.out, "w") as f:
-                    json.dump({"bands": res, "keys": cal.rows}, f, indent=1)
+                    json.dump({"radio": cal.who, "bands": res, "keys": cal.rows}, f, indent=1)
             if a.plot and res:
                 try:
                     import pa_cal_plot
-                    for f in pa_cal_plot.draw({"bands": res, "keys": cal.rows}, a.plot):
+                    for f in pa_cal_plot.draw({"radio": cal.who, "bands": res, "keys": cal.rows}, a.plot):
                         print(f"plot: {f}")
                 except ImportError as e:
                     print(f"no plots: {e} (pip install matplotlib)")
