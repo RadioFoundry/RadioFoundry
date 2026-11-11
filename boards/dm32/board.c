@@ -103,7 +103,7 @@ const board_t board = {
 	.audio = &hrc_audio_pcm,
 	.vocoder = &hrc_vocoder,
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	.afsk = &hrc_afsk,
 #endif
 #if CONFIG_HOSTLINK

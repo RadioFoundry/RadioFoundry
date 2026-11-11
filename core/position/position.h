@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // Where the radio is (docs/spec/position.md): the board GPS, a host feeding NMEA, or a typed fixed position, chosen by
-// the Position source setting. One service for every protocol that reports a position (APRS, LRRP, DMR GPS Info) and
-// for the Position screen, so none of them needs another one built in. Built with CONFIG_POSITION (GPS or APRS).
+// the Position source setting. One service for every protocol that reports a position (DMR GPS Info, LRRP, APRS) and
+// for the Position screen, so none of them needs another one built in. Built with CONFIG_POSITION (any of them, or the
+// GPS). The board GPS half is there with CONFIG_GPS, the host half with CONFIG_POSITION_HOST (what feeds it).
+//
+// It owns its settings (position_cfg_t): loaded from the settings store at start-up, changed and saved with
+// position_set_cfg.
 //
 // NMEA comes from the GPS driver's task, readers are the radio, UI and debug link tasks: every call takes the lock set
 // with position_set_lock (short copies only).
@@ -44,16 +48,23 @@ typedef struct {
 } position_fix_t;
 
 void position_set_lock(void (*lock)(void), void (*unlock)(void));
+// Start-up: no fix, the settings as defaults until position_load
 void position_init(void);
-// The settings the position comes from: the stored ones (position_cfg_from_settings), or APRS's when its settings
-// change
-void position_set_cfg(const position_cfg_t *c);
-void position_cfg_from_settings(const settings_t *s, position_cfg_t *c);
+// The stored position settings (start-up, and when the settings were replaced)
+void position_load(const settings_t *s);
+void position_get_cfg(position_cfg_t *c);
+// New settings: in use at once and saved (never call it with the lock held: it writes the settings store)
+void position_set_cfg(const position_cfg_t *c, uint32_t now_ms);
+// The settings in use into a settings record about to be saved, marked as stored. For a writer of the fields next to
+// them (APRS), so its first save doesn't leave them unset
+void position_cfg_store(settings_t *s);
+// The ambiguity setting, 0-4 (APRS formats its own packets with it)
+uint8_t position_ambiguity(void);
 
+#if CONFIG_GPS || CONFIG_POSITION_HOST
 // An NMEA sentence from the host, or (gps true) from a board GPS driver
 void position_nmea(const char *s, size_t n, bool gps, uint32_t now_ms);
-// Settings > Location > GPS: off drops the board GPS fix and ignores its sentences, so the position falls back at once
-void position_gps_enable(bool on);
+#endif
 
 // The position in use now, exact (APRS applies its own ambiguity as it formats). POSITION_SRC_NONE: there is none
 uint8_t position_fix(position_fix_t *out, uint32_t now_ms);
@@ -63,6 +74,9 @@ uint8_t position_report(position_fix_t *out, uint32_t *err_m, uint32_t now_ms);
 // Its position only (DMR GPS Info): false when there is none. dmr_gps the "send position in DMR calls" setting (set
 // even when false)
 bool position_now(int32_t *lat, int32_t *lon, uint32_t *err_m, bool *dmr_gps, uint32_t now_ms);
+#if CONFIG_GPS
+// Settings > Location > GPS: off drops the board GPS fix and ignores its sentences, so the position falls back at once
+void position_gps_enable(bool on);
 // The board GPS as it is now, for the Position screen: false when it is off or has sent nothing for a minute
 typedef struct {
 	bool fix;		// a position under a minute old
@@ -79,6 +93,7 @@ bool position_gps(position_gps_t *out, uint32_t now_ms);
 #if CONFIG_GPS_SKY
 // Satellite i of the board GPS's table (0 .. in_view - 1) and whether the fix uses it; false past the end
 bool position_gps_sat(uint8_t i, sky_sat_t *out, bool *used);
+#endif
 #endif
 
 #endif

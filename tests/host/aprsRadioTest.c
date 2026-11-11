@@ -330,16 +330,34 @@ static void reset(void)
 	aprs_set_test_call("");
 }
 
+// The fixed position (the position service's setting)
+static void fixed_position(int32_t lat, int32_t lon)
+{
+	position_cfg_t pc;
+	position_get_cfg(&pc);
+	pc.fix_lat = lat;
+	pc.fix_lon = lon;
+	position_set_cfg(&pc, now);
+}
+
+// The settings read again, as the radio core does when they were replaced (RREQ_RELOAD)
+static void reload_settings(void)
+{
+	settings_t st;
+	settings_read(&st);
+	position_load(&st);
+	aprs_reload();
+}
+
 // Callsign, a fixed position, automatic beacons every interval_s
 static void configure(uint16_t interval_s, bool smart)
 {
 	aprs_cfg_t c;
+	fixed_position(490583333, -720291667);	// 49 03.50 N, 072 01.75 W
 	aprs_get_cfg(&c);
 	c.tx_on = true;
 	c.interval_s = interval_s;
 	c.smart = smart;
-	c.fix_lat = 490583333;		// 49 03.50 N
-	c.fix_lon = -720291667;		// 072 01.75 W
 	c.compressed = false;
 	aprs_set_cfg(&c, now);
 }
@@ -380,8 +398,7 @@ static void test_defaults(void)
 	CHECK(!c.tx_on && c.region == APRS_REGION_NA && aprs_cfg_freq(&c) == APRS_HZ && c.ssid == 7);
 	// Callsign and a position, but transmit off: nothing in an hour
 	strcpy(cp_name, "Q1TST");
-	c.fix_lat = 490583333;
-	c.fix_lon = -720291667;
+	fixed_position(490583333, -720291667);
 	aprs_set_cfg(&c, now);
 	run(3600u * 1000u);
 	CHECK(hw.tx_calls == 0 && hw.starts == 0);
@@ -743,15 +760,9 @@ static void test_message_options(void)
 	reset();
 	aprs_set_test_call("N0TST");
 	configure(0, false);
-	aprs_cfg_t c;
-	aprs_get_cfg(&c);
-	c.fix_lat = 0;
-	c.fix_lon = 0;
-	aprs_set_cfg(&c, now);
+	fixed_position(0, 0);
 	CHECK(!aprs_send_message_opts("K1ABC-9", "Here", APRS_MSG_POSITION));
-	c.fix_lat = 490583333;
-	c.fix_lon = -720291667;
-	aprs_set_cfg(&c, now);
+	fixed_position(490583333, -720291667);
 	char long_text[APRS_MSG_TEXT_MAX + 1];
 	memset(long_text, 'x', sizeof(long_text) - 1u);
 	long_text[sizeof(long_text) - 1u] = '\0';
@@ -945,14 +956,22 @@ static void test_dmr_position(void)
 	configure(0, false);
 	CHECK(position_now(&lat, &lon, &err, &send, now) && lat == 490583333 && lon == -720291667 && err == 200 &&
 	      !send);
-	aprs_get_cfg(&c);
-	c.dmr_gps = true;
-	c.ambiguity = 2;	// whole minutes: the middle of the minute, about 1.9 km
-	aprs_set_cfg(&c, now);
+	position_cfg_t pc;
+	position_get_cfg(&pc);
+	pc.dmr_gps = true;
+	pc.ambiguity = 2;	// whole minutes: the middle of the minute, about 1.9 km
+	position_set_cfg(&pc, now);
 	CHECK(position_now(&lat, &lon, &err, &send, now) && send && err == 1852);
 	CHECK(lat == 490583334 && lon == -720250000);	// 49 03.5 N (already mid-minute), 072 01.5 W
+	// An APRS save leaves the position settings as they are, and both come back from the store
 	aprs_get_cfg(&c);
-	CHECK(c.dmr_gps);	// saved and read back
+	c.via = APRS_VIA_BOTH;
+	aprs_set_cfg(&c, now);
+	reload_settings();
+	run(200);
+	position_get_cfg(&pc);
+	aprs_get_cfg(&c);
+	CHECK(pc.dmr_gps && pc.ambiguity == 2 && pc.fix_lat == 490583333 && c.via == APRS_VIA_BOTH);
 #if CONFIG_APRS_RX
 	uint8_t n0 = aprs_station_count();
 	aprs_dmr_heard(9997040, "qd9xyz Bob", 337490000, -843880000, now);
@@ -1062,18 +1081,16 @@ static void test_cfg_store(void)
 	aprs_cfg_t c, b;
 	aprs_get_cfg(&c);
 	c.tx_on = c.smart = c.compressed = c.after_ptt = c.boot = c.kiss = c.narrow = c.rx_on = true;
-	c.igate = c.igate_tx = c.messaging = c.dmr_udt = c.to_is = c.dmr_gps = true;
+	c.igate = c.igate_tx = c.messaging = c.dmr_udt = c.to_is = true;
 	c.region = APRS_REGION_CUSTOM;
 	c.freq_hz = 145825000;
 	c.ssid = 9;
 	c.sym_table = '\\';
 	c.sym_code = 'k';
 	c.path = APRS_PATH_WIDE2_2;
-	c.ambiguity = 3;
-	c.pos_src = POSITION_FIXED;
-	c.fix_lat = -337000000;
-	c.fix_lon = 1512000000;
-	c.fix_alt_m = -12;
+	position_cfg_t pc = { .pref = POSITION_FIXED, .fix_lat = -337000000, .fix_lon = 1512000000, .fix_alt_m = -12,
+			      .ambiguity = 3, .dmr_gps = true }, pb;
+	position_set_cfg(&pc, now);
 	c.interval_s = 900;
 	c.distance_m = 2500;
 	c.level = 63;
@@ -1082,23 +1099,26 @@ static void test_cfg_store(void)
 	c.dmr_dst = 5057;
 	c.digi = 2;
 	aprs_set_cfg(&c, now);
-	aprs_reload();
+	reload_settings();
 	run(200);			// (taken on the radio task's next tick)
 	aprs_get_cfg(&b);
+	position_get_cfg(&pb);
 	CHECK(b.tx_on && b.smart && b.compressed && b.after_ptt && b.boot && b.kiss && b.narrow && b.rx_on);
-	CHECK(b.igate && b.igate_tx && b.messaging && b.dmr_udt && b.to_is && b.dmr_gps);
+	CHECK(b.igate && b.igate_tx && b.messaging && b.dmr_udt && b.to_is && pb.dmr_gps);
 	CHECK(b.region == APRS_REGION_CUSTOM && b.freq_hz == 145825000 && b.ssid == 9 && b.sym_table == '\\' &&
-	      b.sym_code == 'k' && b.path == APRS_PATH_WIDE2_2 && b.ambiguity == 3 && b.pos_src == POSITION_FIXED);
-	CHECK(b.fix_lat == -337000000 && b.fix_lon == 1512000000 && b.fix_alt_m == -12 && b.interval_s == 900 &&
+	      b.sym_code == 'k' && b.path == APRS_PATH_WIDE2_2 && pb.ambiguity == 3 && pb.pref == POSITION_FIXED);
+	CHECK(pb.fix_lat == -337000000 && pb.fix_lon == 1512000000 && pb.fix_alt_m == -12 && b.interval_s == 900 &&
 	      b.distance_m == 2500 && b.level == 63 && b.txdelay == 45 && b.via == APRS_VIA_BOTH && b.dmr_dst == 5057 &&
 	      b.digi == 2);
 	// Out of range on the way in: kept in range
 	c.ssid = 40;
 	c.level = 200;
-	c.ambiguity = 9;
+	pc.ambiguity = 9;
 	aprs_set_cfg(&c, now);
+	position_set_cfg(&pc, now);
 	aprs_get_cfg(&b);
-	CHECK(b.ssid == 7 && b.level <= 100 && b.ambiguity == 4);
+	position_get_cfg(&pb);
+	CHECK(b.ssid == 7 && b.level <= 100 && pb.ambiguity == 4);
 	// A damaged record
 	settings_t *st = settings_begin();
 	st->aprs_region = 99;
@@ -1112,15 +1132,16 @@ static void test_cfg_store(void)
 	st->aprs_txdelay = 0;
 	st->aprs_misc = 3u | (3u << 2) | (7u << 4);	// via, digipeater mode and ambiguity all out of range
 	settings_end(now);
-	aprs_reload();
+	reload_settings();
 	run(200);			// (taken on the radio task's next tick)
 	aprs_get_cfg(&b);
+	position_get_cfg(&pb);
 	aprs_cfg_t d;
 	aprs_cfg_default(&d);
 	CHECK(b.region == APRS_REGION_NA && b.ssid == d.ssid && b.dmr_dst == d.dmr_dst && b.sym_code == d.sym_code &&
 	      b.sym_table == d.sym_table);
-	CHECK(b.path == APRS_PATH_WIDE1_WIDE2 && b.pos_src == POSITION_AUTO && b.level == d.level &&
-	      b.txdelay == d.txdelay && b.via == APRS_VIA_RF && b.digi == 0 && b.ambiguity == 0);
+	CHECK(b.path == APRS_PATH_WIDE1_WIDE2 && pb.pref == POSITION_AUTO && b.level == d.level &&
+	      b.txdelay == d.txdelay && b.via == APRS_VIA_RF && b.digi == 0 && pb.ambiguity == 0);
 	CHECK(b.tx_on && b.freq_hz == 145825000);	// the good fields stay
 	// Not stored at all: the defaults
 	st = settings_begin();

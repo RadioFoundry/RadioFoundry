@@ -3150,20 +3150,27 @@ static void test_position(void)
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.hasGps);			// LRRP takes triggered requests: a GPS is there
 
-	// DMR GPS Info: off until the setting says so, then our position goes out in the call
+	// DMR GPS Info: off until Settings > Location > Position in DMR calls says so, then our position goes out in the
+	// call. The setting is the position service's own: saved without APRS, back after a restart
 	CHECK(position_now(&lat, &lon, &err, &send, now) && !send && lat == 481173000 && err == 20);
-	settings_t *st = settings_begin();
-	st->aprs_stored = 1;
-	st->aprs_flags2 |= SETTINGS_APRS2_DMR_GPS;
-	st->aprs_misc = (uint8_t)(2u << 4);	// ambiguity: whole minutes
-	settings_end(now);
+	CHECK(ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 0 && ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 1));
+	position_cfg_t pc;
+	position_get_cfg(&pc);
+	pc.ambiguity = 2;			// whole minutes
+	position_set_cfg(&pc, now);
+	settings_t sr;
+	settings_read(&sr);
+	CHECK(sr.aprs_stored != 1 && (sr.aprs_misc & SETTINGS_APRS_MISC_POSITION));	// its own marker, not APRS's
 	boot();
+	CHECK(ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 1);
 	position_nmea(rmc, strlen(rmc), true, now);
 	CHECK(position_now(&lat, &lon, &err, &send, now) && send && err == 1852);
 	CHECK(lat == 481250002);		// 48 07.038 -> the middle of its minute, 48 07.5
-	dmr_start(true);
-	position_cfg_t pc = { .pref = POSITION_AUTO, .fix_alt_m = INT16_MIN, .dmr_gps = true };
-	position_set_cfg(&pc);
+	position_get_cfg(&pc);
+	pc.ambiguity = 0;
+	position_set_cfg(&pc, now);
+	req(RREQ_ZONE_POS, 3);			// the DMR channel again (dmr_start would start from new settings)
+	run(50);
 	position_nmea(rmc, strlen(rmc), true, now);
 	dmr_call_stats_t cs0, cs1;
 	dmr_call_get_stats(&cs0);
@@ -3173,12 +3180,60 @@ static void test_position(void)
 	run(1000);
 	dmr_call_get_stats(&cs1);
 	CHECK(cs1.tx_gps_lcs - cs0.tx_gps_lcs >= 1);
+	// ... and with the setting off again, none
+	CHECK(ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 0));
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs0);
+	CHECK(cs0.tx_gps_lcs == cs1.tx_gps_lcs);
+	CHECK(ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 1));
 
 	// Settings > Location > GPS off: the fix goes at once
 	position_gps_enable(false);
 	CHECK(!ui_svc_position(&up) && !dmrDataServiceOwnPosition(&lp));
 	position_gps_enable(true);
+
+	// A radio without a GPS: the fixed position typed in Settings > Location is what LRRP answers with and what
+	// goes out in calls, after a restart too
 	gps_here = false;
+	CHECK(!dmrDataServiceOwnPosition(&lp));
+	CHECK(ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 337490000) && ui_svc_setting_set(UI_SET_POS_FIXED_LON, -843880000));
+	CHECK(!ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 900000001) && !ui_svc_setting_set(UI_SET_POS_SOURCE, 9));
+	boot();
+	req(RREQ_ZONE_POS, 3);
+	run(50);
+	CHECK(ui_svc_setting_get(UI_SET_POS_FIXED_LAT) == 337490000 && ui_svc_setting_get(UI_SET_POS_FIXED_LON) == -843880000);
+	CHECK(dmrDataServiceOwnPosition(&lp) && lp.location.fixValid && lp.location.north && !lp.location.east);
+	CHECK(lp.location.latDegrees == 33 && lp.location.latMinutes10000 == 449400 && lp.location.lonDegrees == 84 &&
+	      lp.location.lonMinutes10000 == 232800 && lp.utcYear == 0 && !lp.hasCourse);
+	CHECK(position_now(&lat, &lon, &err, &send, now) && send && lat == 337490000 && lon == -843880000 && err == 200);
+	dmr_call_get_stats(&cs0);
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs1);
+	CHECK(cs1.tx_gps_lcs - cs0.tx_gps_lcs >= 1);
+	// The source set to GPS only: the fixed position doesn't count
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_GPS) && ui_svc_setting_get(UI_SET_POS_SOURCE) == POSITION_GPS);
+	CHECK(!dmrDataServiceOwnPosition(&lp) && !position_now(&lat, &lon, &err, &send, now));
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_FIXED) && dmrDataServiceOwnPosition(&lp));
+	// A record APRS stored before the position service had its own marker still counts
+	settings_t *st = settings_begin();
+	st->aprs_misc &= (uint8_t)~SETTINGS_APRS_MISC_POSITION;
+	st->aprs_stored = 1;
+	settings_end(now);
+	boot();
+	CHECK(ui_svc_setting_get(UI_SET_POS_FIXED_LAT) == 337490000 && ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 1);
+	// ... and with neither, the defaults
+	st = settings_begin();
+	st->aprs_stored = 0;
+	settings_end(now);
+	boot();
+	CHECK(ui_svc_setting_get(UI_SET_POS_FIXED_LAT) == 0 && ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 0 &&
+	      ui_svc_setting_get(UI_SET_POS_SOURCE) == POSITION_AUTO);
 	settings_init();
 	boot();
 }

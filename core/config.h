@@ -261,8 +261,16 @@
 #ifndef CONFIG_APRS
 #define CONFIG_APRS			CONFIG_FM
 #endif
+// APRS's two ways out (docs/spec/aprs.md 1): AX.25 / AFSK on FM with everything packet (KISS, messages, receive), and
+// position reports over DMR. CONFIG_APRS alone is the engine: the beacon triggers, the settings, the page
+#ifndef CONFIG_APRS_AFSK
+#define CONFIG_APRS_AFSK		(CONFIG_APRS && CONFIG_FM)
+#endif
+#ifndef CONFIG_APRS_DMR
+#define CONFIG_APRS_DMR			(CONFIG_APRS && CONFIG_DMR)
+#endif
 #ifndef CONFIG_APRS_RX
-#define CONFIG_APRS_RX			CONFIG_APRS
+#define CONFIG_APRS_RX			CONFIG_APRS_AFSK
 #endif
 #ifndef CONFIG_APRS_IGATE
 #define CONFIG_APRS_IGATE		(CONFIG_APRS_RX && CONFIG_HOSTLINK)
@@ -273,10 +281,10 @@
 #define CONFIG_GPS_SKY			CONFIG_GPS
 #endif
 #ifndef CONFIG_NET_KISS
-#define CONFIG_NET_KISS			(CONFIG_NET_TCP && CONFIG_APRS)
+#define CONFIG_NET_KISS			(CONFIG_NET_TCP && CONFIG_APRS_AFSK)
 #endif
 #ifndef CONFIG_NET_APRSIS
-#define CONFIG_NET_APRSIS		(CONFIG_NET_TCP && CONFIG_APRS)
+#define CONFIG_NET_APRSIS		(CONFIG_NET_TCP && CONFIG_APRS_AFSK)
 #endif
 
 // Large state that only the CPU touches (never a DMA buffer) can go in RAM the board keeps for that, the STM32F4's
@@ -298,13 +306,16 @@
 #define CONFIG_NET_LOCAL		(CONFIG_NET_TCP || CONFIG_MDNS || CONFIG_TFTP || CONFIG_NET_USRP)
 #ifndef CONFIG_DMR_DATA_CORE
 #define CONFIG_DMR_DATA_CORE		(CONFIG_DMR_SMS || CONFIG_DMR_ARS || CONFIG_DMR_LRRP || CONFIG_DMR_SIGNALING || \
-					 CONFIG_DMR_EMERGENCY || CONFIG_DMR_IP_GATEWAY || CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT)
+					 CONFIG_DMR_EMERGENCY || CONFIG_DMR_IP_GATEWAY || CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT || \
+					 CONFIG_APRS_DMR)
 #endif
-// The position service (core/position): the board GPS, a host's NMEA, the fixed position; APRS, LRRP and DMR GPS Info
-// read it
+// The position service (core/position): the board GPS, a host's NMEA, the fixed position. Built for the GPS and for
+// everything that reports our position (DMR GPS Info, LRRP, APRS), so each works without the others
 #ifndef CONFIG_POSITION
-#define CONFIG_POSITION			(CONFIG_GPS || CONFIG_APRS)
+#define CONFIG_POSITION			(CONFIG_GPS || CONFIG_APRS || CONFIG_DMR_LRRP || CONFIG_DMR_GPS)
 #endif
+// ... and its host source: NMEA from a computer comes in through APRS's host link and debug link command only
+#define CONFIG_POSITION_HOST		CONFIG_APRS
 // The air queue (core/dmr/dmrAirQueue.c): what the IP gateway and zone sharing send, in order with the guard
 #define CONFIG_DMR_AIR_QUEUE		(CONFIG_DMR_IP_GATEWAY || CONFIG_ZONE_SHARE)
 
@@ -371,8 +382,8 @@
 #if (CONFIG_NET_HTTP || CONFIG_NET_RIGCTL) && !CONFIG_NET_TCP
 #error "CONFIG_NET_HTTP and CONFIG_NET_RIGCTL need CONFIG_NET_TCP"
 #endif
-#if (CONFIG_NET_KISS || CONFIG_NET_APRSIS) && !(CONFIG_NET_TCP && CONFIG_APRS)
-#error "CONFIG_NET_KISS and CONFIG_NET_APRSIS need CONFIG_NET_TCP and CONFIG_APRS"
+#if (CONFIG_NET_KISS || CONFIG_NET_APRSIS) && !(CONFIG_NET_TCP && CONFIG_APRS_AFSK)
+#error "CONFIG_NET_KISS and CONFIG_NET_APRSIS need CONFIG_NET_TCP and CONFIG_APRS_AFSK"
 #endif
 #if (CONFIG_MDNS || CONFIG_TFTP) && !CONFIG_DMR_IP_GATEWAY
 #error "CONFIG_MDNS and CONFIG_TFTP need CONFIG_DMR_IP_GATEWAY (the IP stack they run on)"
@@ -413,14 +424,17 @@
 #if CONFIG_STUB_ENTRY && !CONFIG_HOSTLINK
 #error "CONFIG_STUB_ENTRY needs CONFIG_HOSTLINK"
 #endif
-#if CONFIG_APRS && !CONFIG_FM
-#error "CONFIG_APRS needs CONFIG_FM"
+#if (CONFIG_APRS_AFSK && !(CONFIG_APRS && CONFIG_FM)) || (CONFIG_APRS_DMR && !(CONFIG_APRS && CONFIG_DMR))
+#error "an APRS backend is on without its parents (APRS_AFSK needs APRS and FM; APRS_DMR needs APRS and DMR)"
+#endif
+#if CONFIG_APRS && !CONFIG_APRS_AFSK && !CONFIG_APRS_DMR
+#error "CONFIG_APRS needs a backend: CONFIG_APRS_AFSK or CONFIG_APRS_DMR"
 #endif
 #if CONFIG_GPS_SKY && !CONFIG_GPS
 #error "CONFIG_GPS_SKY needs CONFIG_GPS"
 #endif
-#if (CONFIG_APRS_RX && !CONFIG_APRS) || (CONFIG_APRS_IGATE && !(CONFIG_APRS_RX && CONFIG_HOSTLINK))
-#error "an APRS sub-feature is on without its parent (APRS_RX needs APRS; APRS_IGATE needs APRS_RX and HOSTLINK)"
+#if (CONFIG_APRS_RX && !CONFIG_APRS_AFSK) || (CONFIG_APRS_IGATE && !(CONFIG_APRS_RX && CONFIG_HOSTLINK))
+#error "an APRS sub-feature is on without its parent (APRS_RX needs APRS_AFSK; APRS_IGATE needs APRS_RX and HOSTLINK)"
 #endif
 #if !CONFIG_FM && !CONFIG_DMR
 #error "at least one of CONFIG_FM and CONFIG_DMR"

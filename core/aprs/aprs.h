@@ -48,11 +48,7 @@ typedef struct {
 	char sym_table, sym_code;
 	uint8_t path;		// aprs_path_t
 	bool compressed;
-	uint8_t ambiguity;	// 0-4
 	bool messaging;		// we take messages
-	uint8_t pos_src;	// position_pref_t (position.h)
-	int32_t fix_lat, fix_lon;	// 1e-7 degree, both 0 = none
-	int16_t fix_alt_m;	// INT16_MIN = none
 	uint16_t interval_s;	// 0 = none
 	bool smart;
 	uint16_t distance_m;	// 0 = off
@@ -70,8 +66,7 @@ typedef struct {
 	bool igate;		// RF -> APRS-IS
 	bool igate_tx;		// APRS-IS -> RF
 	uint8_t digi;		// aprs_digi_mode_t
-	bool dmr_gps;		// our position in DMR voice calls (ETSI GPS Info LC; Settings > DMR, CONFIG_DMR_GPS)
-} aprs_cfg_t;
+} aprs_cfg_t;	// where our position comes from and its ambiguity: the position service's settings (position.h)
 
 void aprs_cfg_default(aprs_cfg_t *c);
 // The APRS frequency c selects (0 = none)

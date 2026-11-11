@@ -1625,7 +1625,7 @@ static lrrpTrigger_t lrrpTriggers[LRRP_TRIGGERS_MAX];
 static bool havePosition(lrrpPosition_t *position)
 {
 	memset(position, 0, sizeof(*position));
-	return settings.hasGps && (env.ownPosition != NULL) && env.ownPosition(position, env.ctx);
+	return settings.hasGps && (env.ownPosition != NULL) && env.ownPosition(position, now, env.ctx);
 }
 
 bool dmrDataServiceOwnPosition(lrrpPosition_t *position)

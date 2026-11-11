@@ -130,7 +130,7 @@ typedef struct
 	void (*position)(uint32_t src, const uint8_t *nmea, int length, uint32_t nowMs, void *ctx);
 	// Our position for LRRP (docs/spec/position.md): false for none, and NULL for none ever. Only asked when the
 	// settings say hasGps
-	bool (*ownPosition)(lrrpPosition_t *position, void *ctx);
+	bool (*ownPosition)(lrrpPosition_t *position, uint32_t nowMs, void *ctx);
 	void *ctx;
 } dmrDataEnv_t;
 

@@ -51,8 +51,9 @@ void dmrDataServiceZoneShareRx(uint32_t src, bool group, const uint8_t *payload,
 
 static bool haveLocation = false;
 static int positionLatMinutes = 0;// the test moves the radio north by this many 1/10000 minutes
-static bool fakeOwnPosition(lrrpPosition_t *position, void *ctx)
+static bool fakeOwnPosition(lrrpPosition_t *position, uint32_t nowMs, void *ctx)
 {
+	(void)nowMs;
 	(void)ctx;
 	if (!haveLocation)
 	{

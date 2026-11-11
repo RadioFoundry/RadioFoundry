@@ -39,7 +39,10 @@
 #endif
 
 extern const ui_scr_def_t ui_find_screen;
-extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_pos_screen, ui_aprs_station_screen;	// ui_aprs.c
+extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_station_screen;	// ui_aprs.c
+#if CONFIG_POSITION
+extern const ui_scr_def_t ui_fixed_pos_screen;	// ui_position.c
+#endif
 extern const ui_scr_def_t ui_gps_screen;	// ui_gps.c
 #if CONFIG_DUAL_WATCH
 extern const ui_scr_def_t ui_dual_screen, ui_dual_pick_screen, ui_dual_zone_screen;	// ui_dual.c
@@ -5197,7 +5200,7 @@ static const ui_scr_def_t tools_screen = {
 #if CONFIG_UI_SETTINGS
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
-enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE };
+enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE, SA_FIXED_POS };
 
 typedef struct {
 	const char *name;
@@ -5238,6 +5241,16 @@ static const char *const n_lock[] = { TRN("Off"), "30 s", TRN("1 min"), TRN("5 m
 static const int16_t v_posfmt[] = { 0, 1, 2 };
 static const char *const n_posfmt[] = { TRN("Degrees"), TRN("Deg min sec"), TRN("Grid") };
 static const int16_t v_possend[] = { 0, 60, 300, 900 };
+#if CONFIG_POSITION
+// position_pref_t: where our position comes from. A computer's NMEA only where something takes it in
+#if CONFIG_POSITION_HOST
+static const int16_t v_possrc[] = { 0, 1, 2, 3 };
+static const char *const n_possrc[] = { TRN("Auto"), "GPS", TRN("Computer"), TRN("Fixed") };
+#else
+static const int16_t v_possrc[] = { 0, 1, 3 };
+static const char *const n_possrc[] = { TRN("Auto"), "GPS", TRN("Fixed") };
+#endif
+#endif
 static const char *const n_possend[] = { TRN("Off"), TRN("1 min"), TRN("5 min"), TRN("15 min") };
 #if CONFIG_KEY_ASSIGN
 // Side keys (core/input/keyassign.h, KEYFN_* values): monitor needs the key held, so it is a press only;
@@ -5428,6 +5441,13 @@ static const set_item_t s_location[] = {
 	LIST(TRN("Position format"), NULL, UI_SET_POS_FORMAT, v_posfmt, n_posfmt),
 	LIST(TRN("Send position"), "APRS", UI_SET_POS_SEND_S, v_possend, n_possend),
 	TOGGLE(TRN("Answer GPS requests"), "LRRP position location", UI_SET_POS_REPLY),
+#if CONFIG_POSITION
+	// What every position report sends (docs/spec/position.md): DMR GPS Info, LRRP, APRS. After the rows above, so
+	// they keep their places
+	LIST(TRN("Position source"), "GPS computer fixed auto", UI_SET_POS_SOURCE, v_possrc, n_possrc),
+	ACTION(TRN("Fixed position"), "latitude longitude coordinates", SA_FIXED_POS),
+	TOGGLE(TRN("Send in DMR calls"), "GPS info position location talker", UI_SET_POS_DMR_CALLS),
+#endif
 };
 static const set_item_t s_connections[] = {
 	TOGGLE(TRN("Hotspot allowed"), "MMDVM", UI_SET_HOTSPOT_AUTO),
@@ -5726,6 +5746,8 @@ static const char *set_why_not(const set_item_t *s)
 	case UI_SET_POS_FORMAT:
 	case UI_SET_POS_SEND_S:
 		return board_has_gps() ? NULL : TR("No GPS on this radio");
+	case UI_SET_POS_DMR_CALLS:
+		return CONFIG_DMR_GPS ? NULL : TR("DMR position: not in this build");
 	default:
 		return NULL;
 	}
@@ -5830,6 +5852,9 @@ static void group_select(uint16_t i, bool hold)
 		case SA_CRASH: ui_push(SCR_CRASH, 0); break;
 #endif
 		case SA_HARDWARE: ui_push(SCR_HWOPT, 0); break;
+#if CONFIG_POSITION
+		case SA_FIXED_POS: ui_push(SCR_FIXED_POS, 0); break;
+#endif
 		default: break;
 		}
 		break;
@@ -6325,7 +6350,10 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_DIAG] = &diag_screen, [SCR_EMERGENCY] = &emergency_screen, [SCR_SCAN] = &scan_screen,
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
 	[SCR_APRS_STATION] = &ui_aprs_station_screen,
-	[SCR_APRS_POS] = &ui_aprs_pos_screen, [SCR_ABOUT] = &about_screen,
+	[SCR_ABOUT] = &about_screen,
+#if CONFIG_POSITION
+	[SCR_FIXED_POS] = &ui_fixed_pos_screen,
+#endif
 	[SCR_VOLUME] = &volume_screen, [SCR_LANGUAGE] = &lang_screen,
 	[SCR_DMR_ID] = &dmr_id_screen,
 	[SCR_CP_FOREIGN] = &cpf_screen,

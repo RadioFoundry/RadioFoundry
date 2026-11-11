@@ -12,7 +12,7 @@
 // Receive: the HR_C7000 copies its demodulated FM audio to the CPU (fm_rx_audio.c); the board's listen hook keeps the
 // receiver's audio on the HR_C7000's input. Needs the DMR glue's system interrupt (CONFIG_DMR).
 #include "config.h"
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 #include "hrc_afsk.h"
 #include "platform.h"
 #include "audio_pcm.h"

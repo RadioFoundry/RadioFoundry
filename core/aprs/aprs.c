@@ -176,8 +176,6 @@ void aprs_cfg_default(aprs_cfg_t *c)
 	c->path = APRS_PATH_WIDE1_WIDE2;
 	c->compressed = true;
 	c->messaging = aprs_can_receive();
-	c->pos_src = POSITION_AUTO;
-	c->fix_alt_m = INT16_MIN;
 	c->interval_s = APRS_INTERVAL_DEFAULT;
 	c->smart = true;
 	c->level = APRS_LEVEL_DEFAULT;
@@ -207,13 +205,9 @@ static void cfg_from_settings(const settings_t *s, aprs_cfg_t *c)
 	c->messaging = (f2 & SETTINGS_APRS2_MESSAGING) != 0;
 	c->dmr_udt = (f2 & SETTINGS_APRS2_DMR_UDT) != 0;
 	c->to_is = (f2 & SETTINGS_APRS2_TO_IS) != 0;
-	c->dmr_gps = (f2 & SETTINGS_APRS2_DMR_GPS) != 0;
 	c->region = s->aprs_region < APRS_REGION_COUNT ? s->aprs_region : APRS_REGION_NA;
 	c->ssid = s->aprs_ssid <= 15 ? s->aprs_ssid : APRS_SSID_DEFAULT;
 	c->freq_hz = s->aprs_freq_hz;
-	c->fix_lat = s->aprs_lat;
-	c->fix_lon = s->aprs_lon;
-	c->fix_alt_m = s->aprs_alt_m;
 	c->dmr_dst = s->aprs_dmr_dst != 0 && s->aprs_dmr_dst <= 0xFFFFFFu ? s->aprs_dmr_dst : APRS_DMR_DST_DEFAULT;
 	c->interval_s = s->aprs_interval_s;
 	c->distance_m = s->aprs_distance_m;
@@ -222,7 +216,6 @@ static void cfg_from_settings(const settings_t *s, aprs_cfg_t *c)
 		c->sym_code = s->aprs_symbol[1];
 	}
 	c->path = s->aprs_path < APRS_PATH_COUNT ? s->aprs_path : APRS_PATH_WIDE1_WIDE2;
-	c->pos_src = s->aprs_pos_src < POSITION_PREF_COUNT ? s->aprs_pos_src : POSITION_AUTO;
 	c->level = s->aprs_level <= 100 ? s->aprs_level : APRS_LEVEL_DEFAULT;
 	c->power = s->aprs_power;
 	c->txdelay = s->aprs_txdelay != 0 ? s->aprs_txdelay : APRS_TXDELAY_DEFAULT;
@@ -232,12 +225,13 @@ static void cfg_from_settings(const settings_t *s, aprs_cfg_t *c)
 	if (c->digi > APRS_DIGI_WIDE) {
 		c->digi = APRS_DIGI_OFF;
 	}
-	uint8_t amb = (uint8_t)((s->aprs_misc >> 4) & 7u);
-	c->ambiguity = amb <= 4 ? amb : 0;
 }
 
+// The position settings share this block (the fixed position, the source, the ambiguity, the DMR GPS Info flag): the
+// position service's, written by it so a first save here leaves them set
 static void cfg_to_settings(const aprs_cfg_t *c, settings_t *s)
 {
+	position_cfg_store(s);
 	s->aprs_flags = (uint8_t)((c->tx_on ? SETTINGS_APRS_TX : 0) | (c->smart ? SETTINGS_APRS_SMART : 0) |
 				  (c->compressed ? SETTINGS_APRS_COMPRESSED : 0) |
 				  (c->after_ptt ? SETTINGS_APRS_AFTER_PTT : 0) | (c->boot ? SETTINGS_APRS_BOOT : 0) |
@@ -246,24 +240,20 @@ static void cfg_to_settings(const aprs_cfg_t *c, settings_t *s)
 	s->aprs_flags2 = (uint8_t)((c->igate ? SETTINGS_APRS2_IGATE : 0) | (c->igate_tx ? SETTINGS_APRS2_IGATE_TX : 0) |
 				   (c->messaging ? SETTINGS_APRS2_MESSAGING : 0) |
 				   (c->dmr_udt ? SETTINGS_APRS2_DMR_UDT : 0) | (c->to_is ? SETTINGS_APRS2_TO_IS : 0) |
-				   (c->dmr_gps ? SETTINGS_APRS2_DMR_GPS : 0));
+				   (s->aprs_flags2 & SETTINGS_APRS2_DMR_GPS));
 	s->aprs_region = c->region;
 	s->aprs_ssid = c->ssid;
 	s->aprs_freq_hz = c->freq_hz;
-	s->aprs_lat = c->fix_lat;
-	s->aprs_lon = c->fix_lon;
 	s->aprs_dmr_dst = c->dmr_dst;
-	s->aprs_alt_m = c->fix_alt_m;
 	s->aprs_interval_s = c->interval_s;
 	s->aprs_distance_m = c->distance_m;
 	s->aprs_symbol[0] = c->sym_table;
 	s->aprs_symbol[1] = c->sym_code;
 	s->aprs_path = c->path;
-	s->aprs_pos_src = c->pos_src;
 	s->aprs_level = c->level;
 	s->aprs_power = c->power;
 	s->aprs_txdelay = c->txdelay;
-	s->aprs_misc = (uint8_t)((c->via & 3u) | ((c->digi & 3u) << 2) | ((c->ambiguity & 7u) << 4));
+	s->aprs_misc = (uint8_t)((s->aprs_misc & 0xF0u) | (c->via & 3u) | ((c->digi & 3u) << 2));
 	s->aprs_stored = 1;
 }
 
@@ -271,10 +261,6 @@ static void cfg_to_settings(const aprs_cfg_t *c, settings_t *s)
 static void apply_cfg(void)
 {
 	const aprs_cfg_t *c = &a.cfg;
-	// The position settings are APRS's on its page, used by every position report (position.h)
-	position_cfg_t pc = { .pref = c->pos_src, .fix_lat = c->fix_lat, .fix_lon = c->fix_lon, .fix_alt_m = c->fix_alt_m,
-			      .ambiguity = c->ambiguity, .dmr_gps = c->dmr_gps };
-	position_set_cfg(&pc);
 	aprs_beacon_cfg_t *b = &a.bcfg;
 	memset(b, 0, sizeof(*b));
 	b->auto_on = c->tx_on;
@@ -631,7 +617,7 @@ static size_t build_beacon(const position_fix_t *f)
 	r.pos.sym_code = a.cfg.sym_code;
 	r.compressed = a.cfg.compressed;
 	r.messaging = a.cfg.messaging;
-	r.ambiguity = a.cfg.compressed ? 0 : a.cfg.ambiguity;
+	r.ambiguity = a.cfg.compressed ? 0 : position_ambiguity();
 	r.comment = a.comment;
 	return aprs_build_position(&r, a.info, sizeof(a.info));
 }
@@ -1325,9 +1311,6 @@ void aprs_set_cfg(const aprs_cfg_t *c, uint32_t now_ms)
 	}
 	if (v.level > 100) {
 		v.level = APRS_LEVEL_DEFAULT;
-	}
-	if (v.ambiguity > 4) {
-		v.ambiguity = 4;
 	}
 	settings_t *s = settings_begin();
 	cfg_to_settings(&v, s);

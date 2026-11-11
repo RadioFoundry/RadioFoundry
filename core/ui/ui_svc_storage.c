@@ -6,7 +6,8 @@
 //     core saves and restores itself (ui_svc_apply sends changes there); the preferences in settings_t (brightness,
 //     default squelch, hotspot allowed) directly; the DMR data service's answers (radio check, call alert, LRRP) from
 //     its settings, which the radio core saves; the UI's own (reply window, mic gain, auto lock, key timing, GPS
-//     options) from their settings_t fields. Settings nobody stores yet stay in the stub's RAM table.
+//     options) from their settings_t fields; the position settings from the position service, which saves them.
+//     Settings nobody stores yet stay in the stub's RAM table.
 //   - save to channel, the permanent talk target and the factory reset: the UI task only takes a copy of what to
 //     write and hands a job to the housekeeping task (storage_job_post), so the UI never waits for a flash erase. The
 //     channel is written with codeplug_set_channel; the radio core re-reads it when codeplug_serial() changes. A job
@@ -36,6 +37,9 @@
 #endif
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
+#endif
+#if CONFIG_POSITION
+#include "position/position.h"
 #endif
 #if CONFIG_KEY_ASSIGN
 #include "input/input.h"
@@ -329,6 +333,17 @@ int32_t ui_svc_setting_get(uint8_t id)
 		settings_read(&st);
 		return (st.net_flags & SETTINGS_NET_FIXED_LINK) != 0;
 #endif
+#if CONFIG_POSITION
+	case UI_SET_POS_SOURCE:
+	case UI_SET_POS_FIXED_LAT:
+	case UI_SET_POS_FIXED_LON:
+	case UI_SET_POS_DMR_CALLS: {
+		position_cfg_t pc;
+		position_get_cfg(&pc);
+		return id == UI_SET_POS_SOURCE ? pc.pref : id == UI_SET_POS_FIXED_LAT ? pc.fix_lat :
+		       id == UI_SET_POS_FIXED_LON ? pc.fix_lon : pc.dmr_gps;
+	}
+#endif
 	default:
 		return ui_svc_ram_get(id);
 	}
@@ -598,6 +613,32 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 					   ((value & UI_DUAL_B_SEL) ? SETTINGS_DUAL_B_SEL : 0));
 		settings_end(hal_millis());
 		return true;
+#endif
+#if CONFIG_POSITION
+	case UI_SET_POS_SOURCE:
+	case UI_SET_POS_FIXED_LAT:
+	case UI_SET_POS_FIXED_LON:
+	case UI_SET_POS_DMR_CALLS: {
+		position_cfg_t pc;
+		position_get_cfg(&pc);
+		if (id == UI_SET_POS_SOURCE) {
+			if (value < 0 || value >= POSITION_PREF_COUNT)
+				return false;
+			pc.pref = (uint8_t)value;
+		} else if (id == UI_SET_POS_FIXED_LAT) {
+			if (value < -900000000 || value > 900000000)
+				return false;
+			pc.fix_lat = value;
+		} else if (id == UI_SET_POS_FIXED_LON) {
+			if (value < -1800000000 || value > 1800000000)
+				return false;
+			pc.fix_lon = value;
+		} else {
+			pc.dmr_gps = value != 0;
+		}
+		position_set_cfg(&pc, hal_millis());	// in use at once, and saved
+		return true;
+	}
 #endif
 	default:
 		return ui_svc_ram_set(id, value);

@@ -202,19 +202,19 @@ static void data_lock(void) { vTaskSuspendAll(); }
 static void data_unlock(void) { (void)xTaskResumeAll(); }
 #endif
 
-#if CONFIG_APRS || CONFIG_POSITION
-// The APRS engine's and the position service's any-task calls (aprs.h, position.h): short copies, the same way
-static void aprs_lock(void) { vTaskSuspendAll(); }
-static void aprs_unlock(void) { (void)xTaskResumeAll(); }
+#if CONFIG_POSITION
+// The position service's and the APRS engine's any-task calls (position.h, aprs.h): short copies, the same way
+static void copy_lock(void) { vTaskSuspendAll(); }
+static void copy_unlock(void) { (void)xTaskResumeAll(); }
 #endif
 
 void radio_core_start(void)
 {
 #if CONFIG_APRS
-	aprs_set_lock(aprs_lock, aprs_unlock);
+	aprs_set_lock(copy_lock, copy_unlock);
 #endif
 #if CONFIG_POSITION
-	position_set_lock(aprs_lock, aprs_unlock);
+	position_set_lock(copy_lock, copy_unlock);
 #endif
 #if CONFIG_DMR_DATA_CORE
 	dmrDataServiceSetLock(data_lock, data_unlock);

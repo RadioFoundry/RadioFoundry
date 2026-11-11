@@ -20,7 +20,11 @@ static void (*unlock_fn)(void) = nolock;
 
 static struct {
 	position_cfg_t cfg;
-	fix_t host, gps;
+#if CONFIG_POSITION_HOST
+	fix_t host;
+#endif
+#if CONFIG_GPS
+	fix_t gps;
 	bool gps_off;		// Settings > Location > GPS is off: the board's fix doesn't count (position_gps_enable)
 	bool gps_heard;		// the board GPS has sent a valid sentence (fix or not), last at gps_heard_ms
 	uint32_t gps_heard_ms;
@@ -29,8 +33,10 @@ static struct {
 #if CONFIG_GPS_SKY
 	nmea_sky_t sky;		// the satellites (GSV, GSA) for the GPS screen
 #endif
+#endif
 } p;
 
+#if CONFIG_GPS || CONFIG_POSITION_HOST
 static void clear_fix(fix_t *f)
 {
 	memset(f, 0, sizeof(*f));
@@ -40,46 +46,50 @@ static void clear_fix(fix_t *f)
 	f->f.course = 0xFFFFu;
 }
 
+static bool fresh(const fix_t *f, uint32_t now_ms)
+{
+	return f->valid && (int32_t)(now_ms - f->f.ms) < (int32_t)POSITION_STALE_MS;	// a fix newer than now_ms too
+}
+#endif
+
 void position_set_lock(void (*lock)(void), void (*unlock)(void))
 {
 	lock_fn = lock != NULL ? lock : nolock;
 	unlock_fn = unlock != NULL ? unlock : nolock;
 }
 
+static void cfg_default(position_cfg_t *c)
+{
+	memset(c, 0, sizeof(*c));
+	c->pref = POSITION_AUTO;
+	c->fix_alt_m = INT16_MIN;
+}
+
 void position_init(void)
 {
 	LOCK();
 	memset(&p, 0, sizeof(p));
-	p.cfg.fix_alt_m = INT16_MIN;
+	cfg_default(&p.cfg);
+#if CONFIG_POSITION_HOST
 	clear_fix(&p.host);
+#endif
+#if CONFIG_GPS
 	clear_fix(&p.gps);
 	p.gps_hdop10 = 0xFFFFu;
 #if CONFIG_GPS_SKY
 	nmea_sky_init(&p.sky);
 #endif
+#endif
 	UNLOCK();
 }
 
-void position_set_cfg(const position_cfg_t *c)
+// The position settings sit in the settings store's APRS block (docs/spec/settings-store.md), where they were first
+// kept, with a marker of their own: they are there without APRS, and a record APRS wrote before the marker existed
+// still counts
+static void cfg_from_settings(const settings_t *s, position_cfg_t *c)
 {
-	LOCK();
-	p.cfg = *c;
-	if (p.cfg.pref >= POSITION_PREF_COUNT) {
-		p.cfg.pref = POSITION_AUTO;
-	}
-	if (p.cfg.ambiguity > 4) {
-		p.cfg.ambiguity = 0;
-	}
-	UNLOCK();
-}
-
-// The position settings are stored with APRS's (docs/spec/settings-store.md), read here so they apply without APRS
-void position_cfg_from_settings(const settings_t *s, position_cfg_t *c)
-{
-	memset(c, 0, sizeof(*c));
-	c->pref = POSITION_AUTO;
-	c->fix_alt_m = INT16_MIN;
-	if (s->aprs_stored != 1) {
+	cfg_default(c);
+	if ((s->aprs_misc & SETTINGS_APRS_MISC_POSITION) == 0 && s->aprs_stored != 1) {
 		return;
 	}
 	c->pref = s->aprs_pos_src < POSITION_PREF_COUNT ? s->aprs_pos_src : POSITION_AUTO;
@@ -91,9 +101,59 @@ void position_cfg_from_settings(const settings_t *s, position_cfg_t *c)
 	c->dmr_gps = (s->aprs_flags2 & SETTINGS_APRS2_DMR_GPS) != 0;
 }
 
-static bool fresh(const fix_t *f, uint32_t now_ms)
+static void cfg_to_settings(const position_cfg_t *c, settings_t *s)
 {
-	return f->valid && (int32_t)(now_ms - f->f.ms) < (int32_t)POSITION_STALE_MS;	// a fix newer than now_ms too
+	s->aprs_pos_src = c->pref;
+	s->aprs_lat = c->fix_lat;
+	s->aprs_lon = c->fix_lon;
+	s->aprs_alt_m = c->fix_alt_m;
+	s->aprs_misc = (uint8_t)((s->aprs_misc & 0x0Fu) | ((c->ambiguity & 7u) << 4) | SETTINGS_APRS_MISC_POSITION);
+	s->aprs_flags2 = (uint8_t)((s->aprs_flags2 & ~SETTINGS_APRS2_DMR_GPS) | (c->dmr_gps ? SETTINGS_APRS2_DMR_GPS : 0));
+}
+
+void position_load(const settings_t *s)
+{
+	position_cfg_t c;
+	cfg_from_settings(s, &c);
+	LOCK();
+	p.cfg = c;
+	UNLOCK();
+}
+
+void position_get_cfg(position_cfg_t *c)
+{
+	LOCK();
+	*c = p.cfg;
+	UNLOCK();
+}
+
+void position_set_cfg(const position_cfg_t *c, uint32_t now_ms)
+{
+	position_cfg_t v = *c;
+	if (v.pref >= POSITION_PREF_COUNT) {
+		v.pref = POSITION_AUTO;
+	}
+	if (v.ambiguity > 4) {
+		v.ambiguity = 4;
+	}
+	settings_t *s = settings_begin();
+	cfg_to_settings(&v, s);
+	settings_end(now_ms);
+	LOCK();
+	p.cfg = v;
+	UNLOCK();
+}
+
+void position_cfg_store(settings_t *s)
+{
+	position_cfg_t c;
+	position_get_cfg(&c);
+	cfg_to_settings(&c, s);
+}
+
+uint8_t position_ambiguity(void)
+{
+	return p.cfg.ambiguity;		// one byte: no lock
 }
 
 static bool fixed_set(void)
@@ -109,14 +169,18 @@ static bool allows(uint8_t pref)
 // The position in use (lock held)
 static uint8_t choose(position_fix_t *out, uint32_t now_ms)
 {
+#if CONFIG_GPS
 	if (allows(POSITION_GPS) && board_has_gps() && fresh(&p.gps, now_ms)) {
 		*out = p.gps.f;
 		return POSITION_SRC_GPS;
 	}
+#endif
+#if CONFIG_POSITION_HOST
 	if (allows(POSITION_HOST) && fresh(&p.host, now_ms)) {
 		*out = p.host.f;
 		return POSITION_SRC_HOST;
 	}
+#endif
 	if (allows(POSITION_FIXED) && fixed_set()) {
 		out->lat = p.cfg.fix_lat;
 		out->lon = p.cfg.fix_lon;
@@ -148,7 +212,8 @@ static int32_t blur(int32_t v, int32_t grid)
 	return v < 0 ? -m : m;
 }
 
-uint8_t position_report(position_fix_t *out, uint32_t *err_m, uint32_t now_ms)
+// The position for a DMR report and the "send in DMR calls" setting, in one locked read
+static uint8_t report(position_fix_t *out, uint32_t *err_m, bool *dmr_gps, uint32_t now_ms)
 {
 	// Position ambiguity (APRS101 ch. 8): the same blur for DMR. Grid in 1e-7 degree and the error it means
 	static const int32_t grid[] = { 1, 16667, 166667, 1666667, 10000000 };
@@ -156,6 +221,7 @@ uint8_t position_report(position_fix_t *out, uint32_t *err_m, uint32_t now_ms)
 	LOCK();
 	uint8_t src = choose(out, now_ms);
 	uint8_t amb = p.cfg.ambiguity;
+	*dmr_gps = p.cfg.dmr_gps;
 	UNLOCK();
 	if (src == POSITION_SRC_NONE) {
 		return src;
@@ -169,13 +235,16 @@ uint8_t position_report(position_fix_t *out, uint32_t *err_m, uint32_t now_ms)
 	return src;
 }
 
+uint8_t position_report(position_fix_t *out, uint32_t *err_m, uint32_t now_ms)
+{
+	bool dmr_gps;
+	return report(out, err_m, &dmr_gps, now_ms);
+}
+
 bool position_now(int32_t *lat, int32_t *lon, uint32_t *err_m, bool *dmr_gps, uint32_t now_ms)
 {
 	position_fix_t f;
-	LOCK();
-	*dmr_gps = p.cfg.dmr_gps;
-	UNLOCK();
-	if (position_report(&f, err_m, now_ms) == POSITION_SRC_NONE) {
+	if (report(&f, err_m, dmr_gps, now_ms) == POSITION_SRC_NONE) {
 		return false;
 	}
 	*lat = f.lat;
@@ -183,14 +252,25 @@ bool position_now(int32_t *lat, int32_t *lon, uint32_t *err_m, bool *dmr_gps, ui
 	return true;
 }
 
+#if CONFIG_GPS || CONFIG_POSITION_HOST
 void position_nmea(const char *s, size_t n, bool gps, uint32_t now_ms)
 {
 	nmea_fix_t x;
 	bool pos = nmea_parse(s, n, &x);
+#if !CONFIG_GPS
+	if (gps) {
+		return;
+	}
+#elif !CONFIG_POSITION_HOST
+	if (!gps) {
+		return;
+	}
+#endif
 	if (!pos && !(CONFIG_GPS_SKY && gps)) {
 		return;
 	}
 	LOCK();
+#if CONFIG_GPS
 	if (gps && p.gps_off) {
 		UNLOCK();
 		return;
@@ -201,12 +281,7 @@ void position_nmea(const char *s, size_t n, bool gps, uint32_t now_ms)
 		p.gps_heard_ms = now_ms;
 	}
 #endif
-	if (!pos) {
-		UNLOCK();
-		return;
-	}
-	fix_t *f = gps ? &p.gps : &p.host;
-	if (gps) {
+	if (gps && pos) {
 		p.gps_heard = true;
 		p.gps_heard_ms = now_ms;
 		if (x.kind == NMEA_GGA) {
@@ -214,6 +289,18 @@ void position_nmea(const char *s, size_t n, bool gps, uint32_t now_ms)
 			p.gps_hdop10 = x.hdop10;
 		}
 	}
+#endif
+	if (!pos) {
+		UNLOCK();
+		return;
+	}
+#if CONFIG_GPS && CONFIG_POSITION_HOST
+	fix_t *f = gps ? &p.gps : &p.host;
+#elif CONFIG_GPS
+	fix_t *f = &p.gps;
+#else
+	fix_t *f = &p.host;
+#endif
 	if (!x.fix) {
 		f->valid = false;
 	} else {
@@ -236,7 +323,9 @@ void position_nmea(const char *s, size_t n, bool gps, uint32_t now_ms)
 	}
 	UNLOCK();
 }
+#endif
 
+#if CONFIG_GPS
 void position_gps_enable(bool on)
 {
 	LOCK();
@@ -289,4 +378,5 @@ bool position_gps_sat(uint8_t i, sky_sat_t *out, bool *used)
 	UNLOCK();
 	return ok;
 }
+#endif
 #endif

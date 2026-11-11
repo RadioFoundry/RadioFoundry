@@ -2068,17 +2068,15 @@ static void emergency_tick(radio_sm_t *sm, uint32_t now_ms)
 }
 #endif
 
-#if CONFIG_DMR_LRRP && CONFIG_POSITION
-static uint32_t lrrp_now_ms;	// the radio task's time, for the data service's position hook (radio_sm_poll)
-
+#if CONFIG_DMR_LRRP
 // LRRP's position (dmrDataEnv_t.ownPosition): the position service's, with the ambiguity setting applied as for DMR
 // GPS Info
-static bool data_own_position(lrrpPosition_t *position, void *ctx)
+static bool data_own_position(lrrpPosition_t *position, uint32_t now_ms, void *ctx)
 {
 	(void)ctx;
 	position_fix_t f;
 	uint32_t err_m;
-	if (position_report(&f, &err_m, lrrp_now_ms) == POSITION_SRC_NONE) {
+	if (position_report(&f, &err_m, now_ms) == POSITION_SRC_NONE) {
 		return false;
 	}
 	uint16_t kn = f.speed_kmh == 0xFFFFu ? 0xFFFFu : (uint16_t)(((uint32_t)f.speed_kmh * 1000u + 926u) / 1852u);
@@ -2097,7 +2095,7 @@ static void data_init(radio_sm_t *sm)
 #if CONFIG_APRS_RX
 	env.position = data_position;
 #endif
-#if CONFIG_DMR_LRRP && CONFIG_POSITION
+#if CONFIG_DMR_LRRP
 	env.ownPosition = data_own_position;
 #endif
 #if CONFIG_DMR_IP_GATEWAY
@@ -2111,8 +2109,10 @@ static void data_init(radio_sm_t *sm)
 	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = true, .callAlertAck = true, .lrrpReply = true,
 				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
 				  .ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
-#if CONFIG_DMR_LRRP && CONFIG_POSITION
-	set.hasGps = true;	// a source can come later (a GPS found after start-up, a host fix): no fix until then
+#if CONFIG_DMR_LRRP
+	// The position service answers (data_own_position). A source can come later (a GPS found after start-up, a fixed
+	// position typed in): no fix until then
+	set.hasGps = true;
 #endif
 	settings_t *st = &st_copy;
 	settings_read(st);
@@ -4920,10 +4920,8 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	settings_t st;
 	settings_read(&st);	// a zone add or delete a power cut interrupted is settled first (radio_core_start)
 #if CONFIG_POSITION
-	position_cfg_t pc;
 	position_init();
-	position_cfg_from_settings(&st, &pc);	// APRS sets it again from its own settings (aprs_init), the same ones
-	position_set_cfg(&pc);
+	position_load(&st);
 #endif
 
 	memset(sm, 0, sizeof(*sm));
@@ -5551,6 +5549,13 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		sm->power_off_busy = CONFIG_DMR_DATA_CORE;	// data_tick clears it once the deregistration is out
 		break;
 	case RREQ_RELOAD:
+#if CONFIG_POSITION
+		{
+			settings_t st;
+			settings_read(&st);
+			position_load(&st);	// the settings may have been replaced
+		}
+#endif
 #if CONFIG_APRS
 		aprs_reload();
 #endif
@@ -5947,9 +5952,6 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 {
 	radio_status_t st;
 	sm->led_now = now_ms;
-#if CONFIG_DMR_LRRP && CONFIG_POSITION
-	lrrp_now_ms = now_ms;
-#endif
 	if (sm->led_timed || sm->deny_led) {
 		outputs(sm);	// as in radio_sm_tick: some paths below return before their outputs()
 	}
