@@ -117,6 +117,26 @@ class Images(unittest.TestCase):
         self.assertEqual(name, real["name"])
 
 
+class LowLatency(unittest.TestCase):
+    """open_port asks for the 1 ms FTDI latency timer, and a port that can't take it still opens."""
+    def opened(self, port):
+        serial = mock.MagicMock(Serial=mock.Mock(return_value=port), SerialException=OSError)
+        with mock.patch.dict(sys.modules, {"serial": serial}):
+            return sf.open_port("/dev/ttyUSB0")
+
+    def test_asks_for_it(self):
+        port = mock.Mock()
+        self.assertIs(self.opened(port), port)
+        port.set_low_latency_mode.assert_called_once_with(True)
+
+    def test_a_port_without_it_still_opens(self):
+        for err in (OSError("not a tty"), NotImplementedError(), ValueError("closed")):
+            port = mock.Mock(**{"set_low_latency_mode.side_effect": err})
+            self.assertIs(self.opened(port), port)
+        port = mock.Mock(spec=["read", "write", "close"])     # rfc2217 and the like: no such method
+        self.assertIs(self.opened(port), port)
+
+
 class Decisions(unittest.TestCase):
     def test_route(self):
         self.assertEqual(sf.choose_route("auto", rfoundry(), True)[0], sf.STUB)

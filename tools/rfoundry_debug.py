@@ -175,6 +175,10 @@ OP_VOICE_TEST = 33
 OP_DTMF = 34
 OP_TX_LIMIT = 35
 OP_TX_DRIVE = 36
+OP_PA_KEYUP = 37
+OP_VFO_SFR = 38
+# The VFO's SFR role names (sfrRole_t, docs/spec/sfr.md 4): off, user, user of an ERDM repeater, repeater, ERDM style
+SFR_ROLES = {"off": 0, "user": 1, "user-erdm": 2, "rpt": 3, "rpt-erdm": 4}
 TX_LIMIT_MAX = 10       # frequencies in the test TX limit's list (core/radio/tx_limit.h)
 DTMF_DIGITS = "0123456789*#ABCD"
 VOLUME_KNOB = 0xFF
@@ -934,6 +938,20 @@ class DebugLink:
         m = 0xFF if mode is None else {"fm": 0, "dmr": 1}[mode]
         self.radio(OP_DMR_FIELDS, bytes([m, 0xFF if cc is None else int(cc), 0 if ts is None else int(ts)]))
 
+    def vfo_sfr(self, role, inbound_ts=1, framing=0, hang=0):
+        """The VFO's SFR role (RADIO op 38; sfr.md 4), saved with the VFO: role a SFR_ROLES name or 0..4, the inbound
+        slot 1 / 2, framing 0..3, hang 0..3: a codeplug channel's SFR byte A. The outbound color code is the VFO's own.
+        The radio core takes it in the VFO only (dmr.sfr_role shows it)."""
+        r = SFR_ROLES[role] if isinstance(role, str) else int(role)
+        if not 0 <= r <= 4 or inbound_ts not in (1, 2) or not 0 <= framing <= 3 or not 0 <= hang <= 3:
+            raise ValueError("vfo_sfr: role 0..4, inbound_ts 1|2, framing 0..3, hang 0..3")
+        a = r | framing << 3 | (0x20 if inbound_ts == 2 else 0) | hang << 6
+        self.vfo_sfr_byte(a)
+
+    def vfo_sfr_byte(self, a):
+        """The VFO's SFR role as byte A itself (RADIO op 38), as the view's ch.sfr shows it first."""
+        self.radio(OP_VFO_SFR, bytes([int(a) & 0xFF]))
+
     def vfo_copy(self):
         """Copy the channel on view to the VFO and open it (RADIO op 32). Raises DebugLinkError "refused" for a channel
         the VFO can't hold (a mode this build lacks, a frequency outside the bands) and "unavailable" without a VFO or
@@ -972,6 +990,21 @@ class DebugLink:
         its power level's; it lasts until that transmission ends. 0: the level's again. Set it before key-up. The core
         view's tx_drive lists each level's drive. Raises DebugLinkError over the board's limit or without the hook."""
         self.radio(OP_TX_DRIVE, struct.pack("<H", int(drive)))
+
+    def pa_keyup(self, dead=None, knee=None, slope_us=None, boost=None, hold=None, boost_us=None, pa_us=None,
+                 drive_us=None):
+        """The DMR PA key-up constants (RADIO op 37; docs/spec/pa-keyup.md), RAM only, from the next key-up: the drive
+        that does nothing (dead), the knee (counts x ms), the slope (us), the boost (% of the top step's drive) and the
+        hold (% of the step's drive), then the boost, PA and drive points in us before the first symbol. No arguments:
+        the board's again. The core view shows them (pa_keyup) and the last key-up (pa_keyup.last: boost, hold, drive
+        and the hold's point). Raises DebugLinkError out of range or on a radio without it."""
+        v = (dead, knee, slope_us, boost, hold, boost_us, pa_us, drive_us)
+        if all(x is None for x in v):
+            self.radio(OP_PA_KEYUP, b"")
+            return
+        if any(x is None for x in v):
+            raise ValueError("pa_keyup: all eight values, or none")
+        self.radio(OP_PA_KEYUP, struct.pack("<HHHBBHHH", *(int(x) for x in v)))
 
     def tone_burst(self, on, max_ms=0):
         """The 1750 Hz burst (FM): keys up and sends the tone while on. The firmware ends it by itself after max_ms
@@ -1408,6 +1441,12 @@ def cmd_radio(link, a):
         link.dmr_fields(cc=num(0))
     elif op == "ts":                  # ts 1|2
         link.dmr_fields(ts=num(0))
+    elif op == "sfr":                 # sfr off|user|user-erdm|rpt|rpt-erdm [ts=1|2] [framing=0..3] [hang=0..3]
+        if not args or (args[0] not in SFR_ROLES and not (args[0].isdigit() and int(args[0]) in SFR_ROLES.values())):
+            raise SystemExit("sfr ROLE [ts=1|2] [framing=N] [hang=N]: ROLE " + "|".join(SFR_ROLES))
+        kw = dict(a.split("=", 1) for a in args[1:] if "=" in a)
+        link.vfo_sfr(args[0] if not args[0].isdigit() else int(args[0]), int(kw.get("ts", 1)),
+                     int(kw.get("framing", 0)), int(kw.get("hang", 0)))
     elif op == "dtmf":                # dtmf DIGITS [ms]: key taps during FM TX (PTT held)
         if not args or any(c not in DTMF_DIGITS for c in args[0].upper()):
             raise SystemExit("dtmf DIGITS [ms]: digits from " + DTMF_DIGITS)
@@ -1423,6 +1462,8 @@ def cmd_radio(link, a):
             link.tx_limit(mhz=[float(f) for f in ",".join(args).split(",") if f])
     elif op == "tx-drive":            # tx-drive N|off (the next transmission's PA drive, power calibration)
         link.tx_drive(0 if args[:1] in ([], ["off"]) else num(0))
+    elif op == "pa-keyup":            # pa-keyup DEAD KNEE SLOPE_US BOOST HOLD BOOST_US PA_US DRIVE_US|default (RAM only)
+        link.pa_keyup(*([] if args[:1] in ([], ["default"]) else [num(i) for i in range(8)]))
     elif op == "set":                 # set NAME VALUE
         link.setting(args[0], num(1))
     elif op == "usb":                 # usb network|serial
@@ -2141,8 +2182,8 @@ def main(argv=None):
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
-                                  "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "copy-vfo", "voice-test", "dtmf",
-                                  "tx-limit", "tx-drive"])
+                                  "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "sfr", "copy-vfo", "voice-test", "dtmf",
+                                  "tx-limit", "tx-drive", "pa-keyup"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",

@@ -3803,6 +3803,21 @@ static const char *const info_titles[] = { TRN("Position"), TRN("Hotspot"), TRN(
 // The USB personality can be switched here (the host link's network adapter, CONFIG_USB_NETWORK)
 #define USB_NET_UI	(CONFIG_USB_NETWORK && CONFIG_HOSTLINK)
 
+#if CONFIG_SFR && CONFIG_VFO_DMR
+// Opened in the VFO, the SFR page sets the VFO's own role (sfr.md 4): a Role row and an Inbound slot row, SELECT steps
+// each. The VFO's stored bytes are in the view's channel; the role in force (dmr.sfr_role) is off on a split or in FM
+#define SFR_VFO_UI	(ui_frame()->arg == INFO_SFR && ui_view()->vfo)
+static const char *const sfr_role_names[SFR_ROLE_NUM_STORED] = { TRN("Off"), TRN("User"), TRN("User (ERDM)"),
+								 TRN("Repeater"), TRN("Repeater (ERDM style)") };
+static uint8_t sfr_vfo_a(void)
+{
+	const channel_t *c = &ui_view()->ch;
+	return (c->sfr_flag1 & SFR_CHANNEL_FLAG1_ENABLED) ? c->sfr_a : 0;
+}
+#else
+#define SFR_VFO_UI	false
+#endif
+
 static const char *info_title(void)
 {
 	uint16_t a = ui_frame()->arg;
@@ -3897,6 +3912,12 @@ static const char *info_body(void)
 		const radio_dmr_view_t *d = &ui_view()->dmr;
 		char in = d->sfr_inbound ? '2' : '1', out = d->sfr_inbound ? '1' : '2';
 
+#if CONFIG_VFO_DMR
+		if (ui_view()->vfo && d->sfr_role == SFR_ROLE_OFF) {
+			sb_str(&b, (sfr_vfo_a() & 0x07u) == 0 ? TR("The VFO has no SFR role. Pick one below.") :
+				TR("Off here: the role needs DMR and one frequency (no split)."));
+		} else
+#endif
 		if (ui_view()->ch.mode != RADIO_MODE_DMR || d->sfr_role == SFR_ROLE_OFF) {
 			sb_str(&b, TR("This channel has no SFR role. Set Repeater or User in the Codeplug Editor, on a channel "
 				"with one frequency."));
@@ -3933,6 +3954,8 @@ static const char *info_body(void)
 
 static uint16_t info_count(void)
 {
+	if (SFR_VFO_UI)
+		return 2;
 #if CONFIG_HOTSPOT
 	if (ui_frame()->arg == INFO_HOTSPOT && hostlink_mode() == HOSTLINK_HOTSPOT)
 		return 1;
@@ -3946,6 +3969,17 @@ static uint16_t info_count(void)
 
 static void info_item(uint16_t i, ui_item_t *it)
 {
+#if CONFIG_SFR && CONFIG_VFO_DMR
+	if (SFR_VFO_UI) {
+		uint8_t a = sfr_vfo_a(), role = a & 0x07u;
+		str_copy(it->label, sizeof it->label, i == 0 ? TR("Role") : TR("Inbound slot"));
+		str_copy(it->value, sizeof it->value, i == 0 ? tr(sfr_role_names[role < SFR_ROLE_NUM_STORED ? role : 0]) :
+			 (a & 0x20u) ? "TS2" : "TS1");
+		if (i == 1 && role == SFR_ROLE_OFF)
+			it->flags |= UI_ITEM_DIM;
+		return;
+	}
+#endif
 #if USB_NET_UI
 	if (ui_frame()->arg == INFO_USB_NET) {
 		str_copy(it->label, sizeof it->label, hostlink_network_mode() ? TR("Switch USB to serial") :
@@ -3959,6 +3993,22 @@ static void info_item(uint16_t i, ui_item_t *it)
 static void info_select(uint16_t i, bool hold)
 {
 	(void)hold;
+#if CONFIG_SFR && CONFIG_VFO_DMR
+	if (SFR_VFO_UI) {
+		uint8_t a = sfr_vfo_a(), role = a & 0x07u;
+		if (i == 0) {
+			a = (uint8_t)((a & ~0x07u) | (role + 1u) % SFR_ROLE_NUM_STORED);	// the next role, Off after the last
+		} else if (role != SFR_ROLE_OFF) {
+			a ^= 0x20u;		// the inbound slot: TS1 <-> TS2
+		} else {
+			ui_toast(TR("Pick a role first"));
+			return;
+		}
+		if (!ui_svc_vfo_sfr(a))
+			ui_toast(TR("Single-freq repeater: not in this build"));
+		return;
+	}
+#endif
 #if USB_NET_UI
 	if (ui_frame()->arg == INFO_USB_NET) {
 		bool net = !hostlink_network_mode();
@@ -5460,6 +5510,9 @@ static const set_item_t s_advanced[] = {
 #if CONFIG_CRASH_SCREEN
 	ACTION(TRN("Crash log"), "crash report fault debug", SA_CRASH),
 #endif
+#if CONFIG_RX_EXT
+	TOGGLE(TRN("RX past bands"), "extended out of band receive range", UI_SET_RX_EXT),
+#endif
 #if CONFIG_REF_TRIM
 	NUMBER(TRN("Freq trim"), "frequency offset reference oscillator calibration ppm", UI_SET_REF_TRIM, -REF_TRIM_MAX_PPB,
 	       REF_TRIM_MAX_PPB, REF_TRIM_STEP_PPB, NULL),	// its own page (trim_screen); last: Up from the top
@@ -5502,6 +5555,10 @@ static bool set_hidden(const set_item_t *s)
 		return !(feats() & UI_FEAT_VOLUME_KNOB);	// only where the MCU reads the knob
 	if (s->type != ST_ACTION && s->id == UI_SET_BCAST_STEP)
 		return !(feats() & UI_FEAT_BCAST);
+#if CONFIG_RX_EXT
+	if (s->type != ST_ACTION && s->id == UI_SET_RX_EXT)
+		return board.rx_ext_count == 0;	// a board with no measured range past its bands
+#endif
 	if (s->type != ST_ACTION && s->id == UI_SET_REF_TRIM)
 		return !(feats() & UI_FEAT_REF_TRIM);	// only a radio whose board has the trim
 	return !board_has_battery() && s->type != ST_ACTION &&
