@@ -10,7 +10,8 @@ pa_cal_plot: a pa_cal.py run as pictures (docs/spec/pa-keyup.md 6). Needs matplo
 Per band two files:
 
   pa_cal_<MHz>_ramps.png   the burst's envelope at the lowest, a middle and the top power level over each other, a
-                           color each: the key-up against the slot's start, the guard time, the key-up window, the
+                           color each: the key-up against the slot's start and the 1.25 ms guard time (ETSI TS
+                           102 361-1, shaded and named along the top), the key-up window, the
                            planned drive points and the first symbol; the key-down against the last symbol and the
                            slot's end. When the run changed the constants, the board's (before) are dashed; a run
                            that kept them has one measurement and draws one. Without envelopes from the gateway
@@ -27,7 +28,9 @@ import sys
 # A DMR burst is 27.5 ms in a 30 ms slot: 1.25 ms of guard on either side (ETSI TS 102 361-1, 4.2)
 GUARD_MS = 1.25
 BEFORE, AFTER, INK, FAINT = "#8a8f98", "#1f6fd1", "#30343b", "#c9ced6"
-LEVELS = ("#1f6fd1", "#d9622b", "#7a3fb8", "#12857a", "#b3261e")    # a color per shown power level
+GUARD, OTHER, SLOT = "#f6e3a1", "#e4e7ec", "#b3261e"     # the guard time, the neighbor slot, the slot boundary
+STRIP_DB = 8                                            # the timing strip sits above this, dB
+LEVELS = ("#1f6fd1", "#d9622b", "#7a3fb8", "#12857a", "#5b6470")    # a color per shown power level
 
 
 def law(c, d, top, ref):
@@ -46,17 +49,28 @@ def _curve(ax, t, color, label, before=False):
 
 
 def _marks(ax, start):
-    """The slot's own timing."""
-    if start:
-        ax.axvspan(-GUARD_MS, 0, color="#f3e9c6", lw=0, label="guard time (1.25 ms)")
-        ax.axvspan(ax.get_xlim()[0], -GUARD_MS, color="#eceef1", lw=0, label="the slot before")
-        ax.axvline(-GUARD_MS, color=INK, lw=0.8, ls=":", label="slot start")
-        ax.axvline(0, color=INK, lw=1.0, label="first symbol")
-    else:
-        ax.axvspan(0, GUARD_MS, color="#f3e9c6", lw=0)
-        ax.axvspan(GUARD_MS, ax.get_xlim()[1], color="#eceef1", lw=0)
-        ax.axvline(GUARD_MS, color=INK, lw=0.8, ls=":", label="slot end")
-        ax.axvline(0, color=INK, lw=1.0, label="last symbol's end")
+    """The slot's own timing (ETSI TS 102 361-1, 4.2: a 27.5 ms burst centered in a 30 ms slot), shaded and named
+    in a strip along the top."""
+    lo, hi = ax.get_xlim()
+    # key-up: the slot before | guard | burst; key-down: burst | guard | the slot after
+    edge, sym = (-GUARD_MS, 0.0) if start else (GUARD_MS, 0.0)
+    other = (lo, edge) if start else (edge, hi)
+    guard = (edge, sym) if start else (sym, edge)
+    burst = (sym, hi) if start else (lo, sym)
+    ax.axvspan(*other, color=OTHER, lw=0, label="the neighbor slot")
+    ax.axvspan(*guard, color=GUARD, lw=0, label="ETSI guard time, 1.25 ms")
+    ax.axvline(edge, color=SLOT, lw=1.6, label="slot boundary (ETSI)")
+    ax.axvline(sym, color=INK, lw=1.0, label="first symbol" if start else "last symbol's end")
+    ax.axhline(STRIP_DB, color=INK, lw=0.6)
+    for (x0, x1), text, color in ((other, "the slot before" if start else "the slot after", BEFORE),
+                                  (guard, "guard\n1.25 ms", "#8a6d00"),
+                                  (burst, "our burst: 27.5 ms of symbols", INK)):
+        ax.text((x0 + x1) / 2, STRIP_DB + 5.5, text, ha="center", va="center", fontsize=8, color=color,
+                fontweight="bold" if "guard" in text else "normal", linespacing=0.95)
+    ax.annotate("", xy=(guard[0], STRIP_DB + 1.2), xytext=(guard[1], STRIP_DB + 1.2),
+                arrowprops={"arrowstyle": "<->", "color": "#8a6d00", "lw": 1.0, "shrinkA": 0, "shrinkB": 0})
+    ax.text(edge, -44, " slot start" if start else "slot end ", rotation=90, va="bottom",
+            ha="right" if start else "left", fontsize=8, color=SLOT, fontweight="bold")
     ax.axhline(-3, color=FAINT, lw=0.8)
     ax.axhline(0, color=FAINT, lw=0.8)
 
@@ -91,7 +105,7 @@ def ramps(plt, band, keys, path):
     up.set_xlim(-4.0, 2.0)
     down.set_xlim(-2.0, 4.0)
     for ax, name in ((up, "trace"), (down, "tail")):
-        ax.set_ylim(-45, 8)
+        ax.set_ylim(-45, STRIP_DB + 9)
         _marks(ax, ax is up)
         drawn = False
         for i, (l, lv, before, after) in enumerate(pairs):
@@ -122,7 +136,7 @@ def ramps(plt, band, keys, path):
                  if k and k.get("rise_us") is not None]
         note.append((f"{power}: " + "; ".join(words), color))
     for i, (text, color) in enumerate(note):
-        up.text(0.01, 0.97 - 0.05 * i, text, transform=up.transAxes, va="top", fontsize=8, color=color)
+        up.text(0.01, 0.80 - 0.05 * i, text, transform=up.transAxes, va="top", fontsize=8, color=color)
     up.set_ylabel("dB from the burst's level")
     up.set_xlabel("ms from the first symbol")
     down.set_xlabel("ms from the last symbol's end")
