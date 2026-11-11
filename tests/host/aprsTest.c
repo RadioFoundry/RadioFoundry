@@ -624,7 +624,11 @@ static void test_geo_accuracy(void)
 		uint32_t d = aprs_distance_m(la1, lo1, la2, lo2);
 		long double e = d > m ? d - m : m - d;
 		bool ok = e <= 2.0L + m / 5000.0L;
-		if (m > 20.0L && la1 < LAT_MAX - 10000000 && la1 > -LAT_MAX + 10000000 && la2 < LAT_MAX - 10000000 &&
+		// Nor near the antipode: the course to a point on the far side of the globe is any of them. The bearing's y
+		// and x both go to zero there and their signs are rounding noise (on the equator, 180 degrees of longitude
+		// away: 270 degrees on one libm and compiler, 90 on another), so the reference is as free to pick a side
+		// as the code is. The distance is checked all the same
+		if (m > 20.0L && m < 20015087.0L - 1000.0L && la1 < LAT_MAX - 10000000 && la1 > -LAT_MAX + 10000000 && la2 < LAT_MAX - 10000000 &&
 		    la2 > -LAT_MAX + 10000000) {
 			long double eb = fabsl((long double)aprs_bearing_deg(la1, lo1, la2, lo2) - deg);
 			ok = ok && (eb <= 0.6L || eb >= 359.4L);
