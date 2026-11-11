@@ -449,6 +449,26 @@ UHF only: on 2 m it split each of these calls in two, lost the terminator and co
 SDR's own decode of the same transmissions found every frame clean, so `test_dmr_tx_off_air`'s bench modem checks fail
 there and its waveform checks are the ones to read.
 
+**Key-up constants** (`radio/pa_keyup.h`, [pa-keyup.md](pa-keyup.md); `tools/bench/pa_cal.py` into a dummy load at
+each band's center, every level):
+
+| Band | dead_pm | knee_us | slope_us | window_us | settle_us | pa_us |
+|---|---|---|---|---|---|---|
+| VHF | 0 | 205 | 261 | 1250 | 300 | with the drive |
+| UHF | 196 | 333 | 117 | 1250 | 0 | with the drive |
+
+No level is boosted on either band: each comes up on its own drive, written 0.4 ms (the top level) to 0.85 ms (the
+lowest) before the first symbol. Measured, every level: the −3 dB point 0.25 to 0.29 ms before the first symbol, no
+overshoot, on the air (within 20 dB) 0.35 to 0.62 ms before it, so nothing before the slot's start.
+
+UHF, the lowest level: the output is within 6 dB 0.4 ms after the drive is written, then gains its last 3 dB over
+milliseconds. More lead buys about 0.15 dB per 0.1 ms at the first symbol (3.6 dB under the settled level with 0.8 ms
+of lead, 2.5 dB with 1.5 ms), and a boost before the level's drive buys nothing: with boosts of 4 to 30 % held for 0.3
+to 1.2 ms the output was back at 3 dB under 0.5 ms after the boost's end. So this level is timed by its edge (6 dB
+under 0.43 ms before the first symbol) and its first symbol is 3.3 to 3.7 dB under the settled level. The two levels
+above it creep the same way by less (2.3 and 1.2 dB under at the first symbol). An earlier set keyed the lowest level
+from a 1.5 ms window with a boost: it was 10 dB under its level at the slot's start, 0.25 ms into the slot before.
+
 Tried and dropped (no change in the inbound counts): keeping the LO chip running through TX, a ramp down 0.45 ms before
 the last symbol (16 bits fewer per 72 frames, our last symbols at reduced power), and shorter waits in the TX on
 sequence. The modem's RF_MODE b25 phase averaging off made it worse (51 of 72 frames decoded). The extra errors stay in

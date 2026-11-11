@@ -101,14 +101,16 @@ static uint8_t tx_lead;		// the RF TX interrupt's lead, 100 us steps (db25d_dmr_
 // supply ahead of the rule's points, so they are drive writes only: the level's drive at its lead, or a boost and
 // then the drive. The earliest of them sets the RF TX interrupt's lead with the page's TX-on delay. The drive is
 // stepped, not ramped: the PA loop's low-pass shapes the rise, and the rule times a step. The constants are
-// tools/bench/pa_cal.py's, measured into a dummy load at each band's center. UHF: the lowest level's drive sits on the
-// PA's turn-on edge (the dead zone ends at 71 % of the low table's drive), so it is boosted; the others come up on
-// their own drive in 0.4 to 0.7 ms. VHF: no dead zone to speak of, every level on its own drive in 0.4 to 0.9 ms
+// tools/bench/pa_cal.py's, measured into a dummy load at each band's center. No level is boosted: each comes up on
+// its own drive, 0.4 ms (the top level) to 0.9 ms (the lowest) before the first symbol, inside the slot's guard time.
+// UHF, the lowest levels: the output is within 6 dB 0.4 ms after the drive, then gains its last 3 dB over
+// milliseconds whatever the lead (0.15 dB per 0.1 ms of it) and whatever a boost before it. So the constants time
+// the edge, not the -3 dB point, and the window is the guard time: nothing is on the air before the slot starts
 // The earliest point: a drive written earlier than this acts no earlier (measured: 1.8 ms on both bands)
 #define KEYUP_MAX_AHEAD_US	1800u
 static const pa_keyup_cfg_t keyup_cfg[2] = {
-	{ .dead_pm = 0, .knee_us = 205, .slope_us = 261, .window_us = 1500, .settle_us = 300, .pa_us = 0xFFFF },
-	{ .dead_pm = 713, .knee_us = 62, .slope_us = 383, .window_us = 1500, .settle_us = 0, .pa_us = 0xFFFF },
+	{ .dead_pm = 0, .knee_us = 205, .slope_us = 261, .window_us = 1250, .settle_us = 300, .pa_us = 0xFFFF },
+	{ .dead_pm = 196, .knee_us = 333, .slope_us = 117, .window_us = 1250, .settle_us = 0, .pa_us = 0xFFFF },
 };
 static pa_keyup_t ku;			// the transmission's, set before the RF task is armed
 #endif
