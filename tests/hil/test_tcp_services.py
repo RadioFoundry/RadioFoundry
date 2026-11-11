@@ -297,7 +297,7 @@ def test_aprsis(net):
             stand_in.close()
 
 
-@pytest.mark.feature("net_http", "usb_network")
+@pytest.mark.feature("net_http", "usb_network", "usb_serial_request")
 @pytest.mark.usb_switch
 def test_http_usb_serial(net, radio):
     """Last in this module (it ends network mode): the request a web page uses to get the serial port back

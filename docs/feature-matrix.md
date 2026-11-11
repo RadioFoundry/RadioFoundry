@@ -99,6 +99,7 @@ is `tools/bringup.py list --radio <id>`.
 | `watchdog` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `fault_trace` | not recorded | ✕ | not recorded | not recorded | ✕ | ✕ | ✕ |
 | `usb_network` | ✕ | pass (seed) | ✕ | ✕ | not recorded | not recorded | pass, needs re-run |
+| `usb_serial_request` | off | not recorded | off | off | not recorded | not recorded | not recorded |
 | `dmr_ip_gateway` | not recorded | not recorded | pass (seed) | not recorded | not recorded | not recorded | pass, needs re-run |
 | `dmr_tx_spacing` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass |
 | `zone_share` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial |
@@ -166,6 +167,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 <!-- generated: tools/boards.py docs feature-defaults; edit config/features.mk and boards/*/config.mk -->
 | Feature switch | DM-32UV | DM-1701 | DM-1801 Pro | DB25-D PRO | MD-380 | MD-UV380 | MD-9600 |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| `USB_SERIAL_REQUEST` | ○ | ● | ○ | ○ | ● | ● | ● |
 | `FM` | ● | ● | ● | ● | ● | ● | ● |
 | `SUBTONE` | ● | ● | ● | ● | ● | ● | ● |
 | `DMR` | ● | ● | ● | ● | ● | ● | ● |

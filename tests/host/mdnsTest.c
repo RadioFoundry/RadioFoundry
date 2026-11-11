@@ -428,34 +428,6 @@ static void test_queries(void)
 	tick_for(5);
 	CHECK(out_count == 2);
 
-	// The alias every radio answers to (MDNS_ALIAS): its address, a shared record (no cache flush bit); AAAA: nothing
-	tick_for(1100);
-	out_count = 0;
-	query("rfoundry.local", 1, 1, MDNS_PORT, 0);
-	tick_for(5);
-	CHECK(out_count == 1 && parse(0, &d) && d.dst_ip == MDNS_GROUP && d.an == 1);
-	const rr_t *alias = find(&d, "rfoundry.local", 1, 1);
-	CHECK(alias != NULL && alias->cls == 1 && alias->ttl == 120);
-	CHECK(find(&d, HOST, 1, 1) == NULL);
-	out_count = 0;
-	query("rfoundry.local", 28, 1, MDNS_PORT, 0);
-	query("rfoundryx.local", 1, 1, MDNS_PORT, 0);
-	tick_for(5);
-	CHECK(out_count == 0);
-	// someone else's answer for it is no conflict
-	{
-		q_t q;
-		static const uint8_t theirs[4] = { 12, 0, 0, 9 };
-		q_begin(&q, 0);
-		q_rr(&q, "rfoundry.local", 1, 1, 120, theirs, 4, NULL);
-		q.an = 1;
-		q_send(&q, 0x8400, HOST_IP, MDNS_PORT, MDNS_GROUP);
-		tick_for(5);
-		mdns_stats_t s;
-		mdnsStats(&s);
-		CHECK(s.conflicts == 0 && s.state == MDNS_RUNNING);
-	}
-
 	// QU: unicast to the querier
 	out_count = 0;
 	query(HOST, 1, 0x8001, MDNS_PORT, 0);

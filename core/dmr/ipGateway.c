@@ -970,7 +970,10 @@ static bool deliverLocal(uint8_t protocol, uint32_t src, uint32_t dst, const uin
 
 	if (protocol == IP_PROTO_TCP)
 	{
-		if ((radio || (dst == IPGW_ANY_RADIO_IP)) && (ipGatewayRadioIP() != 0) && (localTCP != NULL))
+#if CONFIG_USB_SERIAL_REQUEST
+		radio = radio || ((dst == IPGW_ANY_RADIO_IP) && (ipGatewayRadioIP() != 0));	// the address a web page uses
+#endif
+		if (radio && (localTCP != NULL))
 		{
 			localTCP(src, dst, l4, length);
 		}

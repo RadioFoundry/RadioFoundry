@@ -133,7 +133,11 @@ static bool io_send(uint32_t dst, int length)
 	return io_send_from(ipGatewayRadioIP(), dst, length);
 }
 
-static const tcp_io_t io = { .buffer = io_buffer, .send = io_send, .local_ip = ipGatewayRadioIP, .send_from = io_send_from };
+static const tcp_io_t io = { .buffer = io_buffer, .send = io_send, .local_ip = ipGatewayRadioIP,
+#if CONFIG_USB_SERIAL_REQUEST
+			     .send_from = io_send_from,
+#endif
+};
 
 static void tcp_in(uint32_t src, uint32_t dst, const uint8_t *seg, int length)
 {

@@ -49,4 +49,6 @@ BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
 # radios (docs/spec/ppp.md), and this one has the adapter. Every switch on doesn't fit the 464 KB of flash with two
 # translations: maximal keeps Spanish, as the default build does (Italian builds on the other boards)
-MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT
+# The web pages' switch to serial (USB_SERIAL_REQUEST) is on in the default build, which has 3.6 KB left; the maximal image
+# had 156 bytes
+MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT USB_SERIAL_REQUEST
