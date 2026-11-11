@@ -95,8 +95,9 @@ static uint16_t tx_on_us;
 static uint8_t tx_lead;		// the RF TX interrupt's lead, 100 us steps (db25d_dmr_rf_tx_lead)
 #if CONFIG_DMR && DB25D_DMR_TX
 // The DMR key-up (radio/pa_keyup.h, docs/spec/pa-keyup.md), [VHF, UHF]. pa_us is the TX on sequence's time: it sets
-// the RF TX interrupt's lead with the page's TX-on delay. With a boost the ramp goes to the boost drive, and the
-// hold and the drive follow at their points; boost_us is where that ramp ends
+// the RF TX interrupt's lead with the page's TX-on delay. With a boost the drive is stepped at the rule's points
+// in place of the shaped ramp: the ramp takes longer than a low level's boost, and the PA loop's low-pass
+// (about 2 ms) shapes the rise by itself
 #define KEYUP_MAX_AHEAD_US	3000u
 static const pa_keyup_cfg_t keyup_cfg[2] = {
 	{ .dead = 0, .knee = 0, .slope_us = 0, .boost_pct = 100, .hold_pct = 100,
@@ -105,7 +106,7 @@ static const pa_keyup_cfg_t keyup_cfg[2] = {
 	  .boost_us = 0, .pa_us = DB25D_DMR_PA_UP_US, .drive_us = 0 },
 };
 static pa_keyup_t ku;			// the transmission's, set before the RF task is armed
-static uint16_t ku_drive_us;
+static uint16_t ku_boost_us, ku_drive_us;
 #endif
 static uint32_t tx_hz;
 static void dmr_disarm(void);
@@ -395,6 +396,7 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	pa_keyup_cfg_t c = keyup_cfg[tx_uhf ? 1 : 0];	// the plan and its points from one set of constants
 	pa_keyup_select(&keyup_cfg[tx_uhf ? 1 : 0]);
 	ku = pa_keyup_plan(tx_pa, top, 0u, &c);
+	ku_boost_us = (uint16_t)(c.boost_us - ku.late_us);
 	ku_drive_us = c.drive_us;
 	tx_lead = db25d_dmr_rf_tx_lead(c.pa_us, plan.on_us);
 	tx_hz = hz;
@@ -442,7 +444,8 @@ void db25d_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 		apc_ramp(tx_pa, true);
 		return;
 	}
-	apc_ramp(ku.boost, true);
+	at(hrc_rfburst_pa_at_us(tx_lead, ku_boost_us));
+	DAC_DATA_B = ku.boost;
 	at(hrc_rfburst_pa_at_us(tx_lead, ku.hold_us));
 	DAC_DATA_B = ku.hold;
 	at(hrc_rfburst_pa_at_us(tx_lead, ku_drive_us));
