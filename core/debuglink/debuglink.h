@@ -82,6 +82,7 @@ enum {
 	DL_OP_TX_LIMIT = 35,
 	DL_OP_TX_DRIVE = 36,
 	DL_OP_PA_KEYUP = 37,
+	DL_OP_PA_SWEEP = 38,
 };
 uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *args, uint16_t len);
 // RADIO ops the dispatcher hands to debuglink_radio_feature_op: a new DL_OP_* goes here too
@@ -89,7 +90,7 @@ static inline bool debuglink_is_feature_op(uint8_t op)
 {
 	return (op >= DL_OP_SCAN && op <= DL_OP_SETTING) || op == DL_OP_ROAM || op == DL_OP_VIBRATE || op == DL_OP_VOLUME ||
 	       op == DL_OP_DMR_FIELDS || op == DL_OP_VFO_COPY || op == DL_OP_VOICE_TEST || op == DL_OP_DTMF ||
-	       op == DL_OP_TX_LIMIT || op == DL_OP_TX_DRIVE || op == DL_OP_PA_KEYUP;
+	       op == DL_OP_TX_LIMIT || op == DL_OP_TX_DRIVE || op == DL_OP_PA_KEYUP || op == DL_OP_PA_SWEEP;
 }
 // VERSION's codec= (hal_vocoder_id; the name the host tests use)
 static inline const char *debuglink_codec_id(const hal_vocoder_t *v)

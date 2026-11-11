@@ -92,6 +92,8 @@ class Stop(Exception):
 
 
 class Cal:
+	FILES = ("pa_keyup_autocal.py", "burstramp.py")     # what the capture host needs (copied to --sdr-dir)
+
 	def __init__(self, a):
 		self.a = a
 		self.pw = {}            # level -> its measured output (label)
@@ -134,7 +136,7 @@ class Cal:
 		                       "python3 -c 'import numpy'")
 		if rc:
 			raise Stop(f"the SDR host needs iio_readdev, python3 and numpy: {err or out}")
-		files = [os.path.join(HERE, "pa_keyup_autocal.py"), os.path.join(HERE, "burstramp.py")]
+		files = [os.path.join(HERE, f) for f in self.FILES]
 		if a.sdr_ssh:
 			if subprocess.run(["scp", "-q", *files, f"{a.sdr_ssh}:{a.sdr_dir}/"]).returncode:
 				raise Stop(f"can't copy the analysis to {a.sdr_ssh}:{a.sdr_dir}")

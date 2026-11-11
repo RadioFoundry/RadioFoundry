@@ -606,13 +606,19 @@ TESTS   += paKeyupTest
 paKeyupTest: paKeyupTest.c $(CORE)/radio/pa_keyup.c $(CORE)/radio/pa_keyup.h
 	$(CC) $(CFLAGS) -Wshadow -DCONFIG_DMR=1 -o $@ paKeyupTest.c $(CORE)/radio/pa_keyup.c
 
+# The PA drive sweep (core/radio/pa_sweep.c): the grid's limits and what a run writes when
+TESTS   += paSweepTest
+paSweepTest: paSweepTest.c $(CORE)/radio/pa_sweep.c $(CORE)/radio/pa_sweep.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ paSweepTest.c $(CORE)/radio/pa_sweep.c
+
 run: run-ambe
-run-ambe: ambeFecTest ambeVoiceTest micGainTest refTrimTest paKeyupTest
+run-ambe: ambeFecTest ambeVoiceTest micGainTest refTrimTest paKeyupTest paSweepTest
 	./ambeFecTest
 	./ambeVoiceTest
 	./micGainTest
 	./refTrimTest
 	./paKeyupTest
+	./paSweepTest
 .PHONY: run-ambe
 
 # The DMR voice call stack (core/dmr/call) against a simulated modem; LC coding cross-checked with sfr.c and dmrData.c

@@ -62,6 +62,7 @@
 #define TX_RX_OFF_US		50u		// 3.2: RX paths off, then this long before the transmitter is tuned
 #define TX_SETTLE_MS		3u		// ours: the chip's VCO calibration, before the PA is selected. The stock has none beyond the page's delay
 #define TX_SUPPLY_US		200u		// 3.2: PA select and PTA23 low, then this long before the TX supply
+_Static_assert(TX_SUPPLY_US == DB25D_DMR_SUPPLY_US, "the DMR lead counts the same wait");
 #define TX_END_PATH_US		300u		// 3.2: PA select off and PTA23 high, then this long before the receiver is retuned
 #define TX_END_RX_US		200u		// after the RX path is switched on again
 // TX data advance (hrc7000_t.tx_pre_on) 0.6 ms, not the chip's 0.4 ms: at 0.4 ms the inbound burst came 0.17 ms late
@@ -88,6 +89,8 @@ static uint8_t vol_gain = DB25D_VOL_GAIN_DEFAULT;	// the AF DAC gain nibble the 
 static uint8_t vol_dac;		// the modem's line out gain code the volume step selects (0 = 0 dB, the default step)
 static bool tx_uhf;
 static uint16_t tx_pa;
+// An FM transmission's highest level drive at its frequency (hal_radio_t.tx_drive_top), 0 when not transmitting FM
+static volatile uint16_t fm_top;
 static uint16_t tx_off_us;
 #if CONFIG_DMR && DB25D_DMR_TX
 static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_db25d.c)
@@ -106,7 +109,7 @@ static const pa_keyup_cfg_t keyup_cfg[2] = {
 	  .boost_us = 0, .pa_us = DB25D_DMR_PA_UP_US, .drive_us = 0 },
 };
 static pa_keyup_t ku;			// the transmission's, set before the RF task is armed
-static uint16_t ku_boost_us, ku_drive_us;
+static uint16_t ku_boost_us, ku_drive_us, ku_pa_us;
 #endif
 static uint32_t tx_hz;
 static void dmr_disarm(void);
@@ -398,6 +401,7 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	ku = pa_keyup_plan(tx_pa, top, 0u, &c);
 	ku_boost_us = (uint16_t)(c.boost_us - ku.late_us);
 	ku_drive_us = c.drive_us;
+	ku_pa_us = c.pa_us;
 	tx_lead = db25d_dmr_rf_tx_lead(c.pa_us, plan.on_us);
 	tx_hz = hz;
 	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias_dc(db25d_cal_tx_center(), db25d_cal_mod(hz)));
@@ -437,10 +441,11 @@ void db25d_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 	hrc_pin_write(tx_uhf ? PIN_VHF_TX : PIN_UHF_TX, false);
 	hrc_pin_write(tx_uhf ? PIN_UHF_TX : PIN_VHF_TX, true);
 	hrc_pin_write(PIN_RX_SUPPLY, false);
-	wait(TX_SUPPLY_US);
+	wait(DB25D_DMR_SUPPLY_US);
 	hrc_pin_write(tx_uhf ? PIN_TX_SUPPLY_B : PIN_TX_SUPPLY_A, false);
 	hrc_pin_write(tx_uhf ? PIN_TX_SUPPLY_A : PIN_TX_SUPPLY_B, true);
 	if (ku.boost == 0u) {
+		at(hrc_rfburst_pa_at_us(tx_lead, ku_pa_us));	// the lead leaves the sequence done by then
 		apc_ramp(tx_pa, true);
 		return;
 	}
@@ -523,6 +528,8 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	hrc_pin_write(tx_uhf ? PIN_TX_SUPPLY_A : PIN_TX_SUPPLY_B, true);
 	transmitting = true;
 	apc_ramp(tx_pa, true);
+	db25d_tx_plan_t high;
+	fm_top = db25d_cal_tx_plan(hz, true, DB25D_TX_DRIVE_PCT, &high) ? high.pa : 0u;
 	return true;
 }
 
@@ -534,6 +541,7 @@ static bool tx_stop(void)
 	if (!transmitting) {
 		return false;
 	}
+	fm_top = 0u;	// before the ramp down: a drive sweep's next write is refused
 	db25d_main_tx_end();	// ends a DCS tail still on
 	hal_delay_us(tx_off_us);
 	apc_ramp(tx_pa, false);
@@ -580,6 +588,34 @@ static bool tx_drive(uint16_t drive)
 		return false;
 	}
 	drive_override = drive;
+	return true;
+}
+
+// The PA drive sweep (radio/pa_sweep.h): the drive at once during an FM transmission; the PA stays where the sweep
+// leaves it until the transmission ends. The marker steps the modem's bias, the TCXO's control voltage (4.6), by one
+// TX center step (a few ppm, so the carrier moves a few kHz); 0 writes back what rx() wrote
+static uint16_t tx_drive_top(void)
+{
+	return fm_top;
+}
+
+static bool tx_drive_now(uint16_t drive)
+{
+	if (fm_top == 0u || drive > DAC_MAX) {
+		return false;
+	}
+	DAC_DATA_B = drive;
+	return true;
+}
+
+static bool tx_mark(int8_t step)
+{
+	if (fm_top == 0u) {
+		return false;
+	}
+	uint8_t c = (uint8_t)(db25d_cal_tx_center() + step);
+	hrc7000_wr(&modem, C7_SIG_CENTER, hrc7000_sig_center_dc(c));
+	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias_dc(c, db25d_cal_mod(rx_hz)));
 	return true;
 }
 
@@ -749,6 +785,9 @@ const hal_radio_t db25d_radio = {
 #endif
 	.tx_drive_level = tx_drive_level,
 	.tx_drive = tx_drive,
+	.tx_drive_top = tx_drive_top,
+	.tx_drive_now = tx_drive_now,
+	.tx_mark = tx_mark,
 };
 
 // The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt), FM or DMR

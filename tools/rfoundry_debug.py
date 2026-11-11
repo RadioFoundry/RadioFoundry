@@ -176,6 +176,7 @@ OP_DTMF = 34
 OP_TX_LIMIT = 35
 OP_TX_DRIVE = 36
 OP_PA_KEYUP = 37
+OP_PA_SWEEP = 38
 TX_LIMIT_MAX = 10       # frequencies in the test TX limit's list (core/radio/tx_limit.h)
 DTMF_DIGITS = "0123456789*#ABCD"
 VOLUME_KNOB = 0xFF
@@ -980,6 +981,41 @@ class DebugLink:
             raise ValueError("pa_keyup: the eight values (and late), or none")
         self.radio(OP_PA_KEYUP, struct.pack("<HHHBBHHH", *(int(x) for x in v)) + (bytes([int(late)]) if late else b""))
 
+    def pa_sweep(self, start, step, count, on_ms, off_ms, ceiling=100, mark_ms=0):
+        """One PA drive sweep (RADIO op 38; docs/spec/pa-keyup.md 7) on the FM carrier the radio transmits now: the drive
+        at 0 for off_ms, then start + i x step for on_ms, for count points, with the timing marker mark_ms after each
+        write and before each drop (0: none). The firmware caps the drive at ceiling % (at most 115) of the top level's
+        drive, the points over that drive and one sweep's length (1 s): returns (points run, the top level's drive).
+        Raises DebugLinkError when the radio isn't transmitting FM or has no sweep."""
+        args = struct.pack("<HhBBBBB", int(start), int(step), int(count), int(on_ms), int(off_ms), int(ceiling),
+                           int(mark_ms))
+        self.request(RADIO, bytes([OP_PA_SWEEP]) + args, timeout=self.timeout + 1.5)
+        n, top = self.view(["features"]).get("pa_sweep.last", "0/0/0").split("/")[:2]
+        return int(n), int(top)
+
+    def pa_sweep_grid(self, start, step, count, on_ms, off_ms, ceiling=100, mark_ms=0):
+        """A grid of any length as back-to-back sweeps on one key-up (keyed here, released at the end), about 0.2 s
+        apart: returns [(first drive, points run)] per sweep. Stops early where the firmware's limits end a sweep
+        short. The key-up is at most 10 s, which holds about 9 s of points."""
+        per = (on_ms + off_ms) / 1000.0
+        chunk = max(1, min(int(0.95 / per), 255))
+        sweeps = -(-count // chunk)
+        done, runs = 0, []
+        self.ptt(True, min(int((count * per + sweeps * 0.25) * 1000) + 1500, 10000))
+        try:
+            time.sleep(0.3)
+            while done < count:
+                n = min(chunk, count - done)
+                first = start + done * step
+                got, _ = self.pa_sweep(first, step, n, on_ms, off_ms, ceiling, mark_ms)
+                runs.append((first, got))
+                done += got
+                if got != n:
+                    break
+        finally:
+            self.ptt(False)
+        return runs
+
     def tone_burst(self, on, max_ms=0):
         """The 1750 Hz burst (FM): keys up and sends the tone while on. The firmware ends it by itself after max_ms
         (0: inject_max_ms, the cap as for PTT), so a lost "off" can't leave the radio keyed."""
@@ -1430,6 +1466,9 @@ def cmd_radio(link, a):
             link.tx_limit(mhz=[float(f) for f in ",".join(args).split(",") if f])
     elif op == "tx-drive":            # tx-drive N|off (the next transmission's PA drive, power calibration)
         link.tx_drive(0 if args[:1] in ([], ["off"]) else num(0))
+    elif op == "pa-sweep":            # pa-sweep START STEP COUNT ON_MS OFF_MS [CEILING_PCT] [MARK_MS] (keys FM itself)
+        runs = link.pa_sweep_grid(*[num(i) for i in range(len(args))])
+        print("points", sum(n for _, n in runs), "sweeps", " ".join(f"{d}:{n}" for d, n in runs))
     elif op == "pa-keyup":            # pa-keyup DEAD KNEE SLOPE_US BOOST HOLD BOOST_US PA_US DRIVE_US [LATE]|default (RAM only)
         link.pa_keyup(*([] if args[:1] in ([], ["default"]) else [num(i) for i in range(max(len(args), 8))]))
     elif op == "set":                 # set NAME VALUE
@@ -2151,7 +2190,7 @@ def main(argv=None):
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
                                   "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "copy-vfo", "voice-test", "dtmf",
-                                  "tx-limit", "tx-drive", "pa-keyup"])
+                                  "tx-limit", "tx-drive", "pa-keyup", "pa-sweep"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",
