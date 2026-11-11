@@ -72,6 +72,11 @@ typedef struct {
 	uint32_t caps;
 	const band_t *bands;
 	uint8_t band_count;
+	// Optional: the last rx_ext_count entries of bands are a receive-only range past the radio's rated bands, in force
+	// only while *rx_ext_on (Settings > Advanced, off by default; docs/spec/radio-features.md). Read the table through
+	// board_band_count(), and never set tx on these entries
+	uint8_t rx_ext_count;
+	bool *rx_ext_on;
 	uint8_t power_count;
 	const char *const *power_names;	// short labels for the status line, power_count entries
 	// Optional: the labels per band, where a level's power differs between bands (a top level of 45 W on one band and
@@ -169,6 +174,27 @@ static inline const char *board_codec_id(void)
 	return hal_vocoder_id(board.vocoder);
 }
 
+// The entries of board.bands in force now: the receive-only extension counts only while it is on
+static inline uint8_t board_band_count(void)
+{
+#if defined(CONFIG_RX_EXT) && !CONFIG_RX_EXT
+	return board.band_count;	// a build without the switch: the table as it is, no test on every band lookup
+#endif
+	return (board.rx_ext_count != 0u && !*board.rx_ext_on) ? (uint8_t)(board.band_count - board.rx_ext_count)
+							       : board.band_count;
+}
+
+static inline void board_rx_ext_set(bool on)
+{
+#if defined(CONFIG_RX_EXT) && !CONFIG_RX_EXT
+	(void)on;
+	return;
+#endif
+	if (board.rx_ext_count != 0u) {
+		*board.rx_ext_on = on;
+	}
+}
+
 // The radio runs from a battery (every handheld). False for a mobile on a fixed supply (CAP_NO_BATTERY)
 static inline bool board_has_battery(void)
 {
@@ -178,7 +204,7 @@ static inline bool board_has_battery(void)
 // hz is in one of the radio's bands (board.bands), and one that may transmit when need_tx
 static inline bool board_in_band(uint32_t hz, bool need_tx)
 {
-	for (uint8_t i = 0; i < board.band_count; i++) {
+	for (uint8_t i = 0; i < board_band_count(); i++) {
 		const band_t *b = &board.bands[i];
 		if (hz >= b->lo_hz && hz <= b->hi_hz && (b->tx || !need_tx)) {
 			return true;
@@ -190,7 +216,7 @@ static inline bool board_in_band(uint32_t hz, bool need_tx)
 // Some band may transmit: false on a radio whose transmitter isn't written yet
 static inline bool board_can_tx(void)
 {
-	for (uint8_t i = 0; i < board.band_count; i++) {
+	for (uint8_t i = 0; i < board_band_count(); i++) {
 		if (board.bands[i].tx) {
 			return true;
 		}
@@ -201,7 +227,7 @@ static inline bool board_can_tx(void)
 // The transmit band hz is in (an index into board.bands), or -1
 static inline int board_tx_band(uint32_t hz)
 {
-	for (uint8_t i = 0; i < board.band_count; i++) {
+	for (uint8_t i = 0; i < board_band_count(); i++) {
 		const band_t *b = &board.bands[i];
 		if (b->tx && hz >= b->lo_hz && hz <= b->hi_hz) {
 			return i;

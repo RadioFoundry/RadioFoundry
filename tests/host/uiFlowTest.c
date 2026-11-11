@@ -376,6 +376,13 @@ static const flow_t flows[] = {
 	{ "13 unlock", "long:quick", "long:quick", "locked=0", 1, false },
 	{ "14 GPS details", "", "ok 6 2", "screen=gps", 3, false },
 	{ "15 hotspot page", "", "ok 6 3", "screen=info", 4, false },
+#if CONFIG_SFR && CONFIG_VFO_DMR
+	// Tools > Single-freq repeater in the VFO sets its role (docs/spec/sfr.md 4): SELECT steps Role and Inbound slot
+	{ "15 VFO SFR page", "ok 4 up ok", "ok 6 5", "screen=info focus=Role shows=Off", 3, false },
+	{ "15 VFO SFR role: User, then TS2", "ok 4 up ok ok 6 5", "ok down ok", "screen=info shows=User shows=TS2", 3,
+	  false },
+	{ "15 VFO SFR slot needs a role", "ok 4 up ok ok 6 5", "down ok", "toast=Pick_a_role_first", 2, false },
+#endif
 	{ "15 stop hotspot", "hotspot:on", "ok", "hotspot=0", 2, false },
 	// Tile 4 on a channel copies it to the VFO (docs/spec/dmr-voice.md 2.2); the VFO's own tile 4 stays Mode
 	// The VFO's TX freq tile (5 on FM, 6 on DMR, where a channel has Monitor / Privacy): Up / Down walk the band's

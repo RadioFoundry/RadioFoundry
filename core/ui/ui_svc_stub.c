@@ -28,6 +28,7 @@ WEAK void ui_svc_focus_target(uint32_t id, bool private_call) { (void)id; (void)
 
 WEAK bool ui_svc_dmr_timeslot(uint8_t ts) { (void)ts; return false; }
 WEAK bool ui_svc_dmr_color_code(uint8_t cc) { (void)cc; return false; }
+WEAK bool ui_svc_vfo_sfr(uint8_t a) { (void)a; return false; }
 WEAK bool ui_svc_mode(uint8_t mode) { (void)mode; return false; }
 WEAK uint8_t ui_svc_vfo_copy(const radio_view_t *v) { (void)v; return VFO_COPY_NO_VFO; }
 WEAK bool ui_svc_hear_all(bool on) { (void)on; return false; }

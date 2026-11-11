@@ -370,3 +370,7 @@ there.
 ## 15. Sources
 
 This repo: [hardware-dm1701.md](hardware-dm1701.md) (sections cited) and [codec-mduv380.md](codec-mduv380.md). Everything else on this page is unverified.
+
+## Receive past the rated bands
+
+134-136, 200-260 and 480-520 MHz: the AT1846S data sheet. Receive only, FM, off by default ([radio-features.md](radio-features.md) 6.2). Not measured on the radio.

@@ -49,6 +49,8 @@ BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# the split duplex glue is HR_C6000 and HR_C7
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
 # radios (docs/spec/ppp.md), and this one has the adapter. Every switch on doesn't fit the 464 KB of flash: maximal
-# keeps Spanish, as the default build does, and leaves out Italian and the smoothed fonts (FONT_AA, and FONT_BIG with
-# it), which are off by default here and build on the other boards
+# keeps Spanish, as the default build does, and leaves out Italian and the smoothed
+# fonts (FONT_AA), which are off by default here and build on the other boards
 MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT FONT_AA
+CONFIG_RX_EXT ?= n
+BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)

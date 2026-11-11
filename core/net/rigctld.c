@@ -190,7 +190,7 @@ static void dump_state(void)
 {
 	dl_text(&ot, "0\n2\n2\n");	// protocol version 0, rig model 2 (NET rigctl), ITU region 2
 	for (int tx = 0; tx < 2; tx++) {
-		for (uint8_t i = 0; i < board.band_count; i++) {
+		for (uint8_t i = 0; i < board_band_count(); i++) {
 			const band_t *b = &board.bands[i];
 
 			if (!tx || b->tx) {

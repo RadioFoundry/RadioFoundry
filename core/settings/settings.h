@@ -226,7 +226,11 @@ typedef struct {
 	// The volume knob's options (Settings > Sound on a radio whose MCU reads the knob; appended): SETTINGS_KNOB_*,
 	// 0 = all off, as an older record reads
 	uint8_t knob_flags;
-	uint8_t reserved9[3];
+	// The VFOs' SFR role (docs/spec/sfr.md 4): byte A of a codeplug channel's SFR bytes (core/dmr/sfr.h), role bits 0 =
+	// none (was reserved9[0..1]: an older record reads none). The VFO's outbound color code is its own (no byte B)
+	uint8_t vfo_sfr;		// the first VFO
+	uint8_t vfo2_sfr;		// the second
+	uint8_t reserved9;
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
@@ -239,6 +243,7 @@ typedef struct {
 // cp_flags: the owner kept another firmware's codeplug as the radio's own ("Use anyway", docs/spec/codeplug-native.md
 // 2); app.c keeps it equal to codeplug_acceptance(), which a codeplug written by a CPS or TFTP drops
 #define SETTINGS_CP_ACCEPTED		0x01u
+#define SETTINGS_CP_RX_EXT		0x02u	// receive past the band table is on (not about the codeplug: the free bit here)
 
 #define SETTINGS_ZONE_JRN_NONE		0u	// zone_jrn_kind
 #define SETTINGS_ZONE_JRN_ADD		1u

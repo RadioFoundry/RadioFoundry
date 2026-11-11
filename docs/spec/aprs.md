@@ -112,6 +112,20 @@ fake board whose AFSK output is demodulated back to frames.
 - Path: none, WIDE1-1, WIDE1-1,WIDE2-1 (the default), WIDE2-1, WIDE2-2. Set on the APRS page (section 10), over the
   debug link, or in the codeplug's APRS record (section 11).
 
+### 4.1.1 Arithmetic
+
+No libm: the 32-bit math library costs flash on every board and nothing here needs it.
+
+| Value | Method | Accuracy |
+|---|---|---|
+| Compressed speed byte `round(ln(knots + 1) / ln 1.08)`, at most 89 | table of the lowest speed for each byte value | the formula's byte for all 65536 speeds (the nearest tie is 0.0007 of a step away) |
+| Compressed speed read back `1.08^k - 1` | squared table, 32-bit mantissas | the formula's knots for every byte |
+| Compressed altitude read back `1.002^n` feet, as meters | the same table method, Q24 | within 1 m |
+| Distance (haversine, 6371 km) and bearing | float polynomials (sine and cosine to the 13th and 12th power, arctangent to 1e-5 rad); past a quarter of the globe the arc to the antipode, subtracted from pi | distance under 1 m below 1 km, 14 m to 100 km, 150 m beyond; bearing within the rounding to a whole degree for stations 20 m or more away |
+
+The bearing uses `x = sin(dp) + 2 sin(p1) cos(p2) sin(dl / 2)^2`, which has no cancellation, so a station tens of
+meters away gets a true bearing. The longitude difference is wrapped to the short way round first.
+
 ### 4.2 Tocall
 
 Destination `APZRDF`: the APZ block is the experimental range anyone may use. A registered tocall (APxxxx from the

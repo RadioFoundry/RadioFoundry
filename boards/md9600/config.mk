@@ -42,7 +42,6 @@ CONFIG_BCAST_FM ?= n
 BOARD_UNSUPPORTED += UI_COLOR	# a 128x64 monochrome panel
 BOARD_UNSUPPORTED += FONT_XL	# the large font is for 240 px and wider panels; this one is 128x64
 BOARD_UNSUPPORTED += FONT_AA	# a monochrome panel draws anti-aliased fonts as plain ink and gains nothing
-BOARD_UNSUPPORTED += FONT_BIG	# for 240 px and wider color panels (and needs FONT_AA)
 BOARD_UNSUPPORTED += AM_RX	# no air band receiver (docs/spec/airband-and-broadcast.md)
 BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver (docs/spec/airband-and-broadcast.md)
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor
@@ -57,3 +56,5 @@ BOARD_REQUIRED := FM
 MAXIMAL_SKIP := NET_PPP
 # English only (the owner's choice, 2026-11-03)
 CONFIG_LANG_ES ?= n
+CONFIG_RX_EXT ?= n
+BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)

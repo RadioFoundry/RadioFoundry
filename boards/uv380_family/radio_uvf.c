@@ -269,7 +269,7 @@ static uint32_t power_to_dac(const uvf_cal_point_t *cal, uint8_t level, bool uhf
 
 static const band_t *find_band(uint32_t hz)
 {
-	for (uint8_t i = 0; i < board.band_count; i++) {
+	for (uint8_t i = 0; i < board_band_count(); i++) {
 		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz) {
 			return &board.bands[i];
 		}
