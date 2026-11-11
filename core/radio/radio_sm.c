@@ -651,13 +651,13 @@ static uint32_t vfo_default_hz(void)
 			return vfo_start_hz[i];
 		}
 	}
-	for (uint8_t i = 0; i < board.band_count; i++) {
+	for (uint8_t i = 0; i < board_band_count(); i++) {
 		if (board.bands[i].tx) {
 			uint32_t mid = board.bands[i].lo_hz + (board.bands[i].hi_hz - board.bands[i].lo_hz) / 2;
 			return mid - mid % RADIO_VFO_STEP_HZ;
 		}
 	}
-	return board.band_count > 0 ? board.bands[0].lo_hz : 0;
+	return board_band_count() > 0 ? board.bands[0].lo_hz : 0;
 }
 
 // A new RX frequency. A split VFO keeps its offset within one transmit band (board_offset_carries); otherwise it is
@@ -782,7 +782,7 @@ static uint32_t band_wrap(uint32_t hz, int dir)
 {
 	bool found = false;
 	uint32_t best = 0;
-	for (uint8_t i = 0; i < board.band_count; i++) {
+	for (uint8_t i = 0; i < board_band_count(); i++) {
 		const band_t *b = &board.bands[i];
 		if (dir > 0 && b->lo_hz > hz && (!found || b->lo_hz < best)) {
 			best = b->lo_hz;
@@ -795,7 +795,7 @@ static uint32_t band_wrap(uint32_t hz, int dir)
 	if (found) {
 		return best;
 	}
-	for (uint8_t i = 0; i < board.band_count; i++) {
+	for (uint8_t i = 0; i < board_band_count(); i++) {
 		const band_t *b = &board.bands[i];
 		uint32_t edge = dir > 0 ? b->lo_hz : b->hi_hz;
 		if (!found || (dir > 0 ? edge < best : edge > best)) {
@@ -2599,7 +2599,7 @@ static void scan_start(radio_sm_t *sm, uint8_t kind, uint32_t lo_hz, uint32_t hi
 		}
 		if (lo_hz == 0 && hi_hz == 0) {
 			// The band the VFO is in
-			for (uint8_t i = 0; i < board.band_count; i++) {
+			for (uint8_t i = 0; i < board_band_count(); i++) {
 				if (sm->view.ch.rx_hz >= board.bands[i].lo_hz && sm->view.ch.rx_hz <= board.bands[i].hi_hz) {
 					lo_hz = board.bands[i].lo_hz;
 					hi_hz = board.bands[i].hi_hz;
@@ -2608,7 +2608,7 @@ static void scan_start(radio_sm_t *sm, uint8_t kind, uint32_t lo_hz, uint32_t hi
 		}
 		// Both ends in one band, and room for two stops
 		bool same_band = false;
-		for (uint8_t i = 0; i < board.band_count; i++) {
+		for (uint8_t i = 0; i < board_band_count(); i++) {
 			const band_t *b = &board.bands[i];
 			if (lo_hz >= b->lo_hz && hi_hz <= b->hi_hz) {
 				same_band = true;
@@ -4824,6 +4824,17 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	radio_settings_t rs;
 	settings_to_radio(st, &rs);
 	use_settings(sm, &rs, now_ms);
+#if CONFIG_RX_EXT
+	// A VFO left in the receive range past the table, now off, goes back to a band the next time it is used
+	if (sm->vfo_seeded && !board_in_band(sm->vfo_ch.rx_hz, false)) {
+		sm->vfo_seeded = false;
+	}
+#if CONFIG_DUAL_WATCH
+	if (sm->vfo_other.seeded && !board_in_band(sm->vfo_other.ch.rx_hz, false)) {
+		sm->vfo_other.seeded = false;
+	}
+#endif
+#endif
 	if (vfo || !sm->have_channels) {
 		if (VFO_AVAILABLE) {
 			enter_vfo(sm, now_ms);
