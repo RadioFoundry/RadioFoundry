@@ -141,7 +141,7 @@ plus the board's switch time under that.
 `tools/bench/pa_cal.py` measures a band's constants in one run. It needs a radio whose firmware keys by this rule
 (`pa_keyup` in the `core` view) and a bench gateway whose bench line (TCP 7373) lists `bursts_raw` and `bursts_ramp`
 in its `info`. The gateway measures every burst's ramp itself; the tool keys the radio over the debug link and fits
-the constants. It is written but not yet run against a radio.
+the constants. A gateway that also lists `bursts_trace` sends each burst's envelope, which the plots need.
 
 ### Setup
 
@@ -151,6 +151,7 @@ the constants. It is written but not yet run against a radio.
 | Tap | Fixed pads to the gateway's SDR. Pads so the top level gives at most −13 dBm at the SDR |
 | SDR gain | Manual, `--gain` (default 0 dB) |
 | Frequency | One the radio may key into the load. The tool claims it on the gateway for the run |
+| Over the air | An antenna on the SDR instead of the pads works for the times: give `--pad-db` the path's rough loss and lower `--gain` until the input doesn't clip. The printed powers then mean nothing |
 
 Pads needed: top power in dBm + 13. A 5 W radio (37 dBm) needs 50 dB, a 50 W radio 60 dB.
 
@@ -169,22 +170,39 @@ tools/bench/pa_cal.py --radio PORT --bench HOST --freq 446.05,146.535 --pad-db 5
 | `--max-w` | The highest level's output, W. Checked against `--max-in-dbm` (−13) before any key |
 | `--allow-rf` | Required: the radio transmits |
 | `--levels` | Optional: the power levels to use, `0,1,2`. Leave out a level that is over the SDR's limit |
+| `--max-pct` | Optional: the highest open-loop drive, % of the top level's |
+| `--channel` | Optional: key on the channel the radio is on, for a radio without a VFO. It must be a DMR channel that transmits on `--freq`; `--cc` is its color code |
 | `--rx-port` | Optional: the SDR's receive port the pads feed, on a gateway that lists `rx_port` |
 | `--window-us`, `--settle-us`, `--pa-us` | Optional: the board's values are kept otherwise |
 | `--arm`, `--disarm` | Optional: debug link commands a radio needs before and after keying |
 | `--out` | Optional: a JSON file with the result and every key's measurement |
+| `--plot` | Optional: a directory for the run's plots (below). Needs matplotlib; the tool itself doesn't |
+| `--before` | Optional: six constants the plots compare with, instead of the board's |
+| `--refit` | Optional: measure new constants even when the board's hold |
+| `--rounds` | Optional: verify rounds that may change the constants (4) |
+| `--batch` | Optional: keys per capture (6). A step's keys share one capture; 0 or 1 takes a capture for each |
+| `--key-s` | Optional: each key's length in seconds (0.5, about 8 bursts) |
 
 ### What it does
 
-Every key is a DMR transmission of half a second. Per band:
+Every key is a DMR transmission of half a second (`--key-s`). A step's keys share one capture, up to `--batch` (6)
+of them: the capture's start costs more than a key. A capture that doesn't show every key is keyed again one by one.
+Per band:
 
 | Step | Keys | What |
 |---|---|---|
 | Check | 1 | The lowest level with the board's constants: the path, the SDR's input level, `top` and `ref` |
-| Open loop | 6 | The drive alone from the board's earliest point, at the levels' drives and some between (RADIO op 36), never over `top`. Each gives T(d, d) |
+| As is | one per level | Every level with the board's constants. If all are in time the constants are kept and the run ends (`--refit` goes on): a board may time its key-up by more than the constants say, and a radio that is right needs no new ones |
+| Open loop | 6 | The drive alone from the window's start, at the levels' drives and some between (RADIO op 36), never over `top`. Each gives T(d, d) and the overshoot that drive has by itself. Levels that share one drive: drives down to 60 % of it |
+| Limit | 1 | The top drive from the board's earliest point. It has to come up that much earlier; if it doesn't, the board's burst sequence can't run a point that early, and the tool says how far it reaches |
 | Fit | 0 | `dead_pm`, `knee_us` and `slope_us`: a line through 1 / (d − dead), the dead zone searched. Times that don't fall with the drive give no knee: one lead for every level |
-| Verify | one per level, up to four rounds | Every level as the radio keys it. An error at a level on its own drive goes back into the knee and slope; a boosted level's, and an overshoot, into `settle_us` |
-| Confirm | one per level | The result again: it has to repeat within 0.1 ms |
+| Edge | 0 | A level whose own time moves more than 100 us per 1 % of drive sits on the PA's turn-on edge: its time doesn't hold from key to key, so it is boosted whatever the fit says |
+| Verify | one per level, up to four rounds | Every level as the radio keys it. Without slow levels: each level's error goes back into the knee and slope. A level on the edge, or slow on its own drive and not right as the law keys it, has the boost it needs read from its own measurements, on the law's 1 / (b − dead) scale and no further than twice the last step past the drives tried. The constants are then solved over all levels (least squares per dead zone; the smallest worst error, then the smallest sum) to give those boosts and keep the other levels on the law's line. A boost that overshoots while on time ends earlier: `settle_us` up 0.1 ms, and as much again per 3 dB over the limit. The round that held best stands; a round ends the run when every level is up at least 60 us early with half a dB of overshoot to spare |
+| Confirm | one per level | The result again: it has to pass again, a level on its own drive within 0.1 ms |
+
+A boosted level may come up early, since it never starts before the window. An overshoot a drive has when written
+alone is the PA loop's, which no constant changes: the result notes it and doesn't count it. The same holds in the
+as-is step for a level the board keys at its own drive.
 
 It stops before the next key when the SDR's input clips or is over `--max-in-dbm`. It always restores the board's
 constants, the drive and the lowest level at the end. Nothing is written to the radio.
@@ -205,3 +223,14 @@ constants, the drive and the lowest level at the end. Nothing is written to the 
 
 Levels print as their measured output (W, mW) when the gateway knows its SDR's level; `--dbfs-to-dbm` sets it
 against a wattmeter.
+
+### Plots
+
+`--plot DIR` draws two files per band; `tools/bench/pa_cal_plot.py RESULT.json DIR` draws a saved `--out` again.
+
+| File | Shows |
+|---|---|
+| `pa_cal_<MHz>_ramps.png` | The burst's envelope at the lowest, a middle and the top level, before and after. Key-up: the slot before, the slot's start, the 1.25 ms guard time, the key-up window, the planned boost, PA and drive points, the first symbol, the −3 dB target and the measured −3 dB points. Key-down: the last symbol's end and the slot's end |
+| `pa_cal_<MHz>_fit.png` | Each open-loop drive's time with the fitted law, the window and the dead zone; each level's −3 dB point before and after |
+
+Without `bursts_trace` on the gateway only the measured points are drawn.

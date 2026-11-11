@@ -412,13 +412,6 @@ access, debuglink.md 3.24): a rise while the source is masked sets its INT_ST bi
 after the request is taken, a line still high does not interrupt again, unmasked and with the INT_ST bit still set,
 until it falls and rises. A handler must clear its device's cause, or the source stays silent (gotchas 2.9).
 
-A vector can arrive for a masked source (measured): after a watchdog restart, a UART that kept its interrupt enable and
-kept receiving (a second SoC's link) had its source requesting before `main`. `hrc_irq_init` masked every source and
-cleared the request record, the UART's cause was gone, and still the first time the first task turned interrupts on,
-the CPU took that source's vector. Turning the UART's interrupt enable off in `hrc_irq_init` didn't stop it: the request
-is held from before. The fallback handler ignores a vector whose source is masked as it arrives; a source that is
-enabled with no handler is still masked and counted.
-
 Dispatch: all 64 user vectors (32–95) point at one common entry; it saves context, writes 0x04 to PIC_COW1, takes the
 vector number from PSR bits 23:16, subtracts 32 and calls through a 64-entry software table.
 
@@ -806,10 +799,14 @@ hotspot's downlink, never aligned to it, and its bursts were not taken. The radi
 **Burst TX-on timing.** The per-burst RF task ([modem-hrc7000.md](modem-hrc7000.md) 3.1a) runs the TX-on at points
 counted from the RF TX interrupt. The interrupt comes 2.6 ms ahead of the lead point (`rf_tx_lead` = 26), so the first
 symbol is 3.45 ms after it. The PA keys up from the power cal table ([pa-keyup.md](pa-keyup.md)): the dead
-zone 65 % of the low row's drive, slope 600 µs, a window of 1.5 ms; on UHF knee 650 µs, the PA at 0.9 ms and a
-boost's end at 0.5 ms, on VHF knee 520 µs, 0.5 ms and 0.4 ms. These are converted from the constants of an earlier
-form of the rule (one boost level, 1.2 × top, for a time per step, then a hold at 0.8 × d) and are untested on the
-radio; the measurements below were taken with that form, whose knee was in drive counts × ms.
+window is 1.5 ms on both bands. UHF is measured with `tools/bench/pa_cal.py` ([pa-keyup.md](pa-keyup.md) 6) over the
+air on the SDR bench: dead zone 79.3 % of the low row's drive, knee 574 µs, slope 927 µs, the PA at 0.9 ms and a
+boost's end at 0.5 ms; every level's -3 dB point 0.06-0.25 ms before the first symbol with under 1 dB of overshoot.
+The set converted from the earlier form (dead zone 65 %, knee 650 µs, slope 600 µs) keyed the two top levels
+0.27-0.36 ms late. VHF is still that conversion (dead zone 65 %, knee 520 µs, slope 600 µs, the PA at 0.5 ms, a
+boost's end at 0.4 ms; the earlier form: one boost level, 1.2 × top, for a time per step, then a hold at 0.8 × d)
+and is untested on the radio. The measurements below were taken with the earlier form, whose knee was in drive
+counts × ms.
 
 | Point | Before the first symbol | What |
 |---|---|---|

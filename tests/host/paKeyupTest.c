@@ -4,6 +4,7 @@
 // drives, their limits, and the checks on the constants the debug link may set
 #include <stdio.h>
 #include "radio/pa_keyup.h"
+#include "radio/apc_ramp.h"
 
 static int failures;
 
@@ -181,6 +182,22 @@ static void check_walks(void)
 	CHECK(compared == 20000 && merged > 1000);	// the merging was exercised
 }
 
+// A key-up's ramp from the dead zone's drive (radio/apc_ramp.h): the steps in proportion, the ends exact
+static void test_ramp_from(void)
+{
+	uint16_t base, span;
+	CHECK(apc_ramp_from(1104, 607, 180, &base, &span) == 81 && base == 607 && span == 497);
+	CHECK(base + apc_ramp_level(span, 0, 81) == 607 && base + apc_ramp_level(span, 81, 81) == 1104);
+	for (uint16_t i = 1; i <= 81; i++) {	// never down, never past the target
+		CHECK(apc_ramp_level(span, i, 81) >= apc_ramp_level(span, (uint16_t)(i - 1), 81) && apc_ramp_level(span, i, 81) <= span);
+	}
+	CHECK(apc_ramp_from(1104, 0, 180, &base, &span) == 180 && base == 0 && span == 1104);	// no dead zone: the full ramp
+	CHECK(apc_ramp_from(1104, 1104, 180, &base, &span) == 180 && base == 0 && span == 1104);	// a floor at the target
+	CHECK(apc_ramp_from(1104, 2000, 180, &base, &span) == 180 && base == 0);		// or over it: from 0
+	CHECK(apc_ramp_from(1104, 1103, 180, &base, &span) == 1 && base == 1103 && span == 1);	// at least one step
+	CHECK(apc_ramp_from(0, 0, 180, &base, &span) == 1 && span == 0);
+}
+
 int main(void)
 {
 	// Five levels of a table whose top drive is 1448: each keyed (knee * (top - dead) + slope * (d - dead)) / (d - dead)
@@ -307,6 +324,7 @@ int main(void)
 	CHECK(pa_keyup_step_wait(2500, 2489, 0, 30) == 0 && pa_keyup_step_wait(2489, 500, 0, 30) == 1989);
 	CHECK(pa_keyup_step_wait(2489, 500, 1959, 30) == 0 && pa_keyup_step_wait(2489, 500, 1958, 30) == 1989);
 	check_walks();
+	test_ramp_from();
 
 	if (failures == 0) {
 		printf("paKeyupTest: all passed\n");

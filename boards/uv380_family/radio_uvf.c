@@ -50,6 +50,9 @@
 // same, without a delay frames were lost. So the PA point's default is 1 ms after the interrupt
 #define DMR_KEY_INT_AHEAD_US	2530u
 #define DMR_KEY_MIN_US		30u	// the key timer's shortest step; closer points run together
+// The PA is dropped this long after the RF TX interrupt (gotchas.md 3.4): the burst's last symbol ends 30.03 ms after
+// it. Left to the timeslot interrupt, the carrier fell 1.7 ms after the last symbol, 0.45 ms into the next slot
+#define PA_HOLD_US		30000u
 // The earliest key-up point (radio/pa_keyup.h): the timer's first step after the interrupt
 #define KEYUP_MAX_AHEAD_US	(DMR_KEY_INT_AHEAD_US - DMR_KEY_MIN_US)
 // The key-up constants (docs/spec/pa-keyup.md): every level keyed at its drive 1 ms after the interrupt
@@ -476,6 +479,11 @@ void TIM7_IRQHandler(void)
 		TIM7->CR1 = 0;
 		return;
 	}
+	if (r.key_i >= r.key_ns) {	// the burst is over: the PA off; the timeslot interrupt does the rest (rf_to_rx)
+		key_timer_stop();
+		pa_off();
+		return;
+	}
 	for (;;) {
 		uint8_t i = r.key_i;
 		for (uint8_t p = i != 0u ? r.key_st[i - 1u].end : 0u; p < r.key_st[i].end; p++) {
@@ -484,11 +492,12 @@ void TIM7_IRQHandler(void)
 				return;
 			}
 		}
-		if (++i >= r.key_ns) {
-			key_timer_stop();
+		r.key_i = ++i;
+		if (i >= r.key_ns) {
+			// The PA drop, PA_HOLD_US after the interrupt
+			TIM7->ARR = PA_HOLD_US - (DMR_KEY_INT_AHEAD_US - r.key_base_us) - 1u;
 			return;
 		}
-		r.key_i = i;
 		// From the last update; a step already due goes now
 		uint32_t step = pa_keyup_step_wait(r.key_base_us, r.key_st[i].us, TIM7->CNT, DMR_KEY_MIN_US);
 		if (step != 0u) {
@@ -499,9 +508,9 @@ void TIM7_IRQHandler(void)
 	}
 }
 
-// The RF TX interrupt starts the burst's key-up points (the engine counts the burst as keyed from here: the PA drop at
-// the timeslot interrupt more than 20 ms later is unchanged); the timeslot interrupt drops the PA, points still
-// pending included
+// The RF TX interrupt starts the burst's key-up points and, after them, the PA drop PA_HOLD_US later (the engine
+// counts the burst as keyed from here); the timeslot interrupt more than 20 ms later puts the receiver back, and
+// drops the PA if the timer hasn't (points still pending included)
 bool uvf_rf_dmr_switch(bool tx)
 {
 	if (!tx) {

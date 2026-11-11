@@ -37,11 +37,12 @@
 // The earliest key-up point: the split's switch still after the task's wake
 #define KEYUP_MAX_AHEAD_US	(RF_TX_LEAD * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US - TASK_WAKE_US - SWITCH_AHEAD_SPLIT_US)
 // The key-up constants (docs/spec/pa-keyup.md), [VHF, UHF]: converted from the constants measured with the rule's
-// earlier form (hardware-dm32.md 8.5); tools/bench/pa_cal.py measures them again. The knee goes with pa_us:
+// earlier form (hardware-dm32.md 8.5) for VHF, and measured with tools/bench/pa_cal.py for UHF (every level up
+// 0.07-0.27 ms before the first symbol, under 1 dB of overshoot). The knee goes with pa_us:
 // the control charges less with the PA selected, so a later PA wants a smaller knee (UHF: 1450 with the PA at the
 // boost). The VHF PA comes up about 0.15 ms after it is selected whatever the boost, so its point sets the top
-// level's rise. The dead zone is 65 % of the low row's drive; the top level takes knee + slope with its own drive,
-// the low ones get a boost over the whole window
+// level's rise. The dead zone is dead_pm/1000 of the low row's drive; the top level takes knee + slope with its own
+// drive, the low ones get a boost over the whole window
 #define KEYUP_BOOST_US		1500u
 #define KEYUP_PA_US_VHF		500u
 #define KEYUP_PA_US_UHF		900u
@@ -58,7 +59,7 @@ _Static_assert(SWITCH_AHEAD_US + KEYUP_PA_US_VHF <= SWITCH_AHEAD_SIMPLEX_MAX_US 
 static const pa_keyup_cfg_t keyup_cfg[2] = {
 	{ .dead_pm = 650, .knee_us = 520, .slope_us = 600, .window_us = KEYUP_BOOST_US,
 	  .settle_us = KEYUP_DRIVE_US_VHF, .pa_us = KEYUP_PA_US_VHF },
-	{ .dead_pm = 650, .knee_us = 650, .slope_us = 600, .window_us = KEYUP_BOOST_US,
+	{ .dead_pm = 793, .knee_us = 574, .slope_us = 927, .window_us = KEYUP_BOOST_US,	// measured: pa_cal.py
 	  .settle_us = KEYUP_DRIVE_US_UHF, .pa_us = KEYUP_PA_US_UHF },
 };
 #endif
@@ -267,9 +268,8 @@ static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 
 // The burst's TX off, after the task's hold to its last symbol: PA off, the FD6818 and the LNA back to RX, so the
 // radio hears the other slot (the hotspot listens while keyed)
-static void burst_off(hrc_rfburst_wait_fn wait)
+static void burst_off(void)
 {
-	(void)wait;
 	pa_off();
 	fd6818_dmr_burst_at(&fd, false, FD6818_BW_DMR, synth_hz(rx_hz));
 	lna(rx_hz, true);

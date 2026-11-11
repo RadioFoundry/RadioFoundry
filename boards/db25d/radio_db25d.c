@@ -100,13 +100,15 @@ static uint8_t tx_lead;		// the RF TX interrupt's lead, 100 us steps (db25d_dmr_
 // The DMR key-up (radio/pa_keyup.h, docs/spec/pa-keyup.md), [VHF, UHF]. The TX on sequence selects the PA and its
 // supply ahead of the rule's points, so they are drive writes only: the level's drive at its lead, or a boost and
 // then the drive. The earliest of them sets the RF TX interrupt's lead with the page's TX-on delay. The drive is
-// stepped, not ramped: the PA loop's low-pass shapes the rise, and the rule times a step. The dead zone is 68 % of
-// the low table's drive; a level's lead is 0.3 ms and 75 ms per count over it (the top level 0.4 ms, the lowest
-// 1.4 ms)
-#define KEYUP_MAX_AHEAD_US	3000u
+// stepped, not ramped: the PA loop's low-pass shapes the rise, and the rule times a step. The constants are
+// tools/bench/pa_cal.py's, measured into a dummy load at each band's center. UHF: the lowest level's drive sits on the
+// PA's turn-on edge (the dead zone ends at 71 % of the low table's drive), so it is boosted; the others come up on
+// their own drive in 0.4 to 0.7 ms. VHF: no dead zone to speak of, every level on its own drive in 0.4 to 0.9 ms
+// The earliest point: a drive written earlier than this acts no earlier (measured: 1.8 ms on both bands)
+#define KEYUP_MAX_AHEAD_US	1800u
 static const pa_keyup_cfg_t keyup_cfg[2] = {
-	{ .dead_pm = 684, .knee_us = 100, .slope_us = 300, .window_us = 1500, .settle_us = 300, .pa_us = 0xFFFF },
-	{ .dead_pm = 684, .knee_us = 100, .slope_us = 300, .window_us = 1500, .settle_us = 300, .pa_us = 0xFFFF },
+	{ .dead_pm = 0, .knee_us = 205, .slope_us = 261, .window_us = 1500, .settle_us = 300, .pa_us = 0xFFFF },
+	{ .dead_pm = 713, .knee_us = 62, .slope_us = 383, .window_us = 1500, .settle_us = 0, .pa_us = 0xFFFF },
 };
 static pa_keyup_t ku;			// the transmission's, set before the RF task is armed
 #endif
@@ -457,9 +459,8 @@ void db25d_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 // supplies and PA selects off with PTA23 high, the main chip back to the IF and the LO on again, the RX path of the
 // band. The stock's waits between these steps (300, 300 and 200 us) are left out: they kept the receiver off for the
 // start of the next slot's burst, which an SFR repeater has to hear (hardware-db25d.md 4.5)
-void db25d_burst_off(hrc_rfburst_wait_fn wait)
+void db25d_burst_off(void)
 {
-	(void)wait;
 	apc_ramp(tx_pa, false);
 	tx_paths_off();
 	hrc_pin_write(PIN_RX_SUPPLY, true);
