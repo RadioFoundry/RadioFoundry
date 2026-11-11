@@ -189,6 +189,9 @@
 #ifndef CONFIG_CHANNEL_EDIT
 #define CONFIG_CHANNEL_EDIT		CONFIG_CHANNEL_LIST
 #endif
+#ifndef CONFIG_VOLUME_BAR
+#define CONFIG_VOLUME_BAR		1
+#endif
 #ifndef CONFIG_ZONE_EDIT
 #define CONFIG_ZONE_EDIT		CONFIG_CHANNEL_EDIT
 #endif
@@ -251,6 +254,9 @@
 #endif
 #ifndef CONFIG_BCAST_FM
 #define CONFIG_BCAST_FM			1
+#endif
+#ifndef CONFIG_RX_EXT
+#define CONFIG_RX_EXT			1
 #endif
 #ifndef CONFIG_APRS
 #define CONFIG_APRS			CONFIG_FM

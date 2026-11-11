@@ -316,6 +316,7 @@ void radio_req_squelch(int8_t dir) { post(RREQ_SQUELCH, dir, 0); }
 // The level must not be lost: the user looks at the bar, and the setting is already saved
 void radio_req_volume(uint8_t step) { post(RREQ_VOLUME, step, pdMS_TO_TICKS(50)); }
 void radio_req_volume_override(int8_t step) { post(RREQ_VOLUME_OVERRIDE, step, pdMS_TO_TICKS(50)); }
+void radio_req_volume_hold(bool hold) { post(RREQ_VOLUME_HOLD, hold, pdMS_TO_TICKS(50)); }
 void radio_req_clear_temporary(void) { post(RREQ_CLEAR_TEMP, 0, 0); }
 void radio_req_retune(void) { post(RREQ_RETUNE, 0, pdMS_TO_TICKS(50)); }
 void radio_req_reload(void) { post(RREQ_RELOAD, 0, pdMS_TO_TICKS(50)); }
@@ -333,6 +334,7 @@ void radio_req_dmr_target_clear(void) { post(RREQ_DMR_TARGET_CLEAR, 0, 0); }
 void radio_req_dmr_timeslot(uint8_t ts) { post(RREQ_DMR_TS, ts, 0); }
 void radio_req_dmr_color_code(uint8_t cc) { post(RREQ_DMR_CC, cc, 0); }
 void radio_req_mode(uint8_t mode) { post(RREQ_MODE, mode, 0); }
+void radio_req_vfo_sfr(uint8_t a) { post(RREQ_VFO_SFR, a, 0); }
 void radio_req_dmr_hear_all(bool on) { post(RREQ_DMR_HEAR_ALL, on, 0); }
 // A lost focus change would send the next PTT to the wrong target: wait a little for room in the queue
 void radio_req_dmr_focus(uint32_t id, bool private_call)
@@ -418,6 +420,7 @@ void radio_req_vibrate(uint8_t pattern) { post(RREQ_VIBRATE, pattern, 0); }
 void radio_req_roam(uint8_t cmd) { post(RREQ_ROAM, cmd, 0); }
 // A lost release would leave the burst keyed until the time-out
 void radio_req_tone_burst(bool on, uint32_t max_ms) { post_pair(RREQ_TONE_BURST, on, max_ms, pdMS_TO_TICKS(50)); }
+void radio_req_tone_burst_key(bool down) { post(RREQ_TONE_BURST_KEY, down, pdMS_TO_TICKS(50)); }
 
 void radio_set_settings(const radio_settings_t *s)
 {

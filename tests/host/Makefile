@@ -72,7 +72,8 @@ ipGatewayTestAir440: $(IPGW) $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -DIPGW_AIR_MTU=440 '-DPCAP_NAME="ipGatewayTestAir440.pcap"' -o $@ $(IPGW)
 
 # The data service (replies, signaling, our SMS, ARS, LRRP, the API mailbox) on a fake host
-SVC     := dmrDataServiceTest.c $(DATA) $(FRAME) $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmr_emergency.c $(CORE)/dmr/call/dmr_lc.c
+SVC     := dmrDataServiceTest.c $(DATA) $(FRAME) $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmr_emergency.c $(CORE)/dmr/call/dmr_lc.c \
+           $(CORE)/aprs/aprs_nmea.c
 
 dmrDataServiceTest: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataService.h $(CORE)/dmr/dmr_data_api.h
 	$(CC) $(CFLAGS) -o $@ $(SVC) -lm
@@ -84,8 +85,8 @@ dmrDataServiceTestNoTms: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrData
 
 # LRRP on its own: request decoding (malformed and mutated too), the answers' bounds, the distance
 TESTS   += lrrpTest
-lrrpTest: lrrpTest.c fuzz.h $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmrLrrp.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ lrrpTest.c $(CORE)/dmr/dmrLrrp.c -lm
+lrrpTest: lrrpTest.c fuzz.h $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmrLrrp.h $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c
+	$(CC) $(CFLAGS) -Wshadow -o $@ lrrpTest.c $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c -lm
 
 # The air queue on a fake data service (docs/spec/dmr-data.md 12): byte ring, order, wrap, refusals, timing
 TESTS   += airQueueTest
@@ -163,7 +164,7 @@ TESTS   += radioCoreTest inputTest quadratureTest serialmicTest
 
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
 RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
-           $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/radio/ref_trim.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c \
+           $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/radio/ref_trim.c $(CORE)/radio/pa_keyup.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c \
            $(CORE)/codeplug/zone_settle.c \
            $(CORE)/radio/radio_sfr.c $(CORE)/radio/radio_cwid.c $(CORE)/radio/tx_limit.c
 RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
@@ -187,6 +188,14 @@ TESTS   += radioCoreTestNoVfoDmr
 radioCoreTestNoVfoDmr: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                        $(CORE)/ui/ui_svc.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 -DCONFIG_VFO_DMR=0 -o $@ $(RCORE) -lm
+
+# The same with APRS: what the data service hears goes into the station list (a DMR APRS position, docs/spec/aprs.md 8.2)
+TESTS   += radioCoreTestAprs
+RCAPRS  := $(RCORE) $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
+           $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c
+radioCoreTestAprs: $(RCAPRS) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
+                   $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/aprs/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -o $@ $(RCAPRS) -lm
 
 # The everyday features (scan, beeps, battery, TOT warning, BCL, roger beep, 1750 Hz burst, VOX, battery saving)
 TESTS   += radioFeaturesTest
@@ -227,7 +236,7 @@ roamTest: $(ROAMT) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 -o $@ \
 		$(ROAMT) -lm
 
-# APRS through the radio core, FM only (the engine, radio_sm.c's APRS block, a fake AFSK transmitter)
+# APRS through the radio core, FM only (the engine, radio_sm.c's APRS block, a fake AFSK transmitter, the UI's APRS service)
 TESTS   += aprsRadioTest
 FMONLY  := -DCONFIG_DMR=0 -DCONFIG_DMR_PRIVACY=0 -DCONFIG_DMR_TALKER_ALIAS=0 -DCONFIG_DMR_SMS=0 -DCONFIG_DMR_ARS=0 \
            -DCONFIG_DMR_LRRP=0 -DCONFIG_DMR_SIGNALING=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=0 -DCONFIG_HOTSPOT=0
@@ -235,7 +244,7 @@ APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(CORE
            $(CORE)/radio/vibe.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c \
            $(CORE)/radio/battery.c $(CORE)/radio/morse.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
            $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
-           $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c
+           $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c $(CORE)/ui/ui_svc_aprs.c
 
 aprsRadioTest: $(APRSRT) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/aprs/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. $(FMONLY) -o $@ $(APRSRT) -lm
@@ -254,9 +263,9 @@ inputTest: inputTest.c $(CORE)/input/input_engine.c $(CORE)/input/input_engine.h
 TESTS   += keyassignTest
 # It reads every board's board.c key map: BOARD_IDS lists them, from boards/ (a new board is checked with no edit here)
 KEYASSIGN_BOARDS := $(wildcard $(ROOT)/boards/*/board.c)
-keyassignTest: keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/keyassign.h $(CORE)/input/input_engine.c $(KEYASSIGN_BOARDS)
+keyassignTest: $(CORE)/input/input_forward.c $(CORE)/input/input_forward.h keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/keyassign.h $(CORE)/input/input_engine.c $(KEYASSIGN_BOARDS)
 	$(CC) $(CFLAGS) $(CORE_HAL) '-DBOARD_IDS=$(foreach f,$(KEYASSIGN_BOARDS),"$(notdir $(patsubst %/,%,$(dir $(f))))",)' \
-		-o $@ keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/input_engine.c
+		-o $@ keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/input_engine.c $(CORE)/input/input_forward.c
 
 # The rotary encoder's quadrature decoder (drivers/input/quadrature), shared by the boards
 quadratureTest: quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c $(ROOT)/drivers/input/quadrature/quadrature.h
@@ -289,11 +298,12 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestAprs radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
           rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
+	./radioCoreTestAprs
 	./radioFeaturesTest
 	./radioFeaturesTestNoDual
 	./roamTest
@@ -591,12 +601,18 @@ run-crash: crashTest crashCaptureTest
 	else echo "# rfoundry_fault_trace selftest: skipped (no python3)"; fi
 .PHONY: run-crash
 
+# The DMR PA key-up (core/radio/pa_keyup.c): the boost and hold from the cal table's drives, the constants' checks
+TESTS   += paKeyupTest
+paKeyupTest: paKeyupTest.c $(CORE)/radio/pa_keyup.c $(CORE)/radio/pa_keyup.h
+	$(CC) $(CFLAGS) -Wshadow -DCONFIG_DMR=1 -o $@ paKeyupTest.c $(CORE)/radio/pa_keyup.c
+
 run: run-ambe
-run-ambe: ambeFecTest ambeVoiceTest micGainTest refTrimTest
+run-ambe: ambeFecTest ambeVoiceTest micGainTest refTrimTest paKeyupTest
 	./ambeFecTest
 	./ambeVoiceTest
 	./micGainTest
 	./refTrimTest
+	./paKeyupTest
 .PHONY: run-ambe
 
 # The DMR voice call stack (core/dmr/call) against a simulated modem; LC coding cross-checked with sfr.c and dmrData.c
@@ -968,6 +984,12 @@ TESTS   += hrc7000UartFormatTest
 hrc7000UartFormatTest: hrc7000UartFormatTest.c $(ROOT)/platform/hrc7000/uart_format.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000UartFormatTest.c
 
+# The per-burst RF task's first-burst timing (platform/hrc7000/dmr_rfburst_timing.h)
+TESTS   += hrc7000RfburstTest
+
+hrc7000RfburstTest: hrc7000RfburstTest.c $(ROOT)/platform/hrc7000/dmr_rfburst_timing.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000RfburstTest.c
+
 # The GPIO interrupt watch's lost-interrupt test (platform/hrc7000/irq_stall.h)
 TESTS   += hrc7000IrqStallTest
 
@@ -983,7 +1005,7 @@ hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot
 
 run: run-platform
 run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest \
-		hrc7000IrqStallTest
+		hrc7000IrqStallTest hrc7000RfburstTest
 	./bk4819Test
 	./at1141Test
 	./fd6818shTest
@@ -991,6 +1013,7 @@ run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest h
 	./hrc7000ClockTest
 	./hrc7000UartFormatTest
 	./hrc7000IrqStallTest
+	./hrc7000RfburstTest
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin
 	./hrc7000CodecSlotTest hrc7000_test_slot.bin
 .PHONY: run-platform

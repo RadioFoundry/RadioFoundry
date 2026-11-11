@@ -5,8 +5,8 @@
  */
 
 #include <string.h>
-#include <math.h>
 #include "dmr/dmrLrrp.h"
+#include "dmr/call/dmr_lc.h"
 
 // Document IDs: requests come with or without a constant data table (even / odd), the answers are sent without
 #define DOC_IMMEDIATE_RESPONSE		0x07
@@ -272,11 +272,13 @@ static int putRequestId(uint8_t *out, const uint8_t *requestId, int requestIdLen
 	return n + requestIdLength;
 }
 
-static double degreesOf(uint8_t degrees, uint32_t minutes10000, bool positive)
+// A coordinate in 1e-7 degree, as dmr_gps_range takes it: minutes10000 / 600000 degree is minutes10000 * 50 / 3 in
+// 1e-7, rounded half up
+static int32_t e7Of(uint8_t degrees, uint32_t minutes10000, bool positive)
 {
-	double d = degrees + (minutes10000 / 600000.0);
+	int32_t v = (int32_t)(degrees * 10000000u + (minutes10000 * 50u + 1u) / 3u);
 
-	return positive ? d : -d;
+	return positive ? v : -v;
 }
 
 // Info time, latitude / longitude with a radius, and speed and direction when asked for and known
@@ -297,16 +299,27 @@ static int putPosition(uint8_t *out, uint8_t wanted, const lrrpPosition_t *posit
 		}
 	}
 
-	double lat = degreesOf(loc->latDegrees, loc->latMinutes10000, loc->north);
-	double lon = degreesOf(loc->lonDegrees, loc->lonMinutes10000, loc->east);
-	uint32_t latRaw = (uint32_t)((fabs(lat) * 2147483648.0 / 90.0) + 0.5);
-	int32_t lonRaw = (int32_t)lround(lon * 4294967296.0 / 360.0);
+	// Integer math, not double (the soft-float library costs about 2 KB of flash). A coordinate is N = degrees *
+	// 600000 + minutes10000 in units of 1/600000 degree, and its raw value is N * 2^k / 421875 rounded half up
+	// (lat: 2^31 per 90 degrees, 54e6 = 2^7 * 421875; lon: 2^32 per 360 degrees, 216e6 = 2^9 * 421875). The
+	// denominator is odd, so no quotient ends in exactly one half. Gives what the double formula gave for every
+	// degrees and minutes value, and saturates the same way past the range
+	uint64_t latN = (uint64_t)loc->latDegrees * 600000u + loc->latMinutes10000;
+	uint64_t lonN = (uint64_t)loc->lonDegrees * 600000u + loc->lonMinutes10000;
+	uint64_t latMag = ((latN << 25) + 421875u) / (2u * 421875u);
+	uint64_t lonMag = ((lonN << 24) + 421875u) / (2u * 421875u);
+	uint32_t latRaw = latMag > 0x7FFFFFFFu ? 0x7FFFFFFFu : (uint32_t)latMag;
+	int32_t lonRaw;
 
-	if (latRaw > 0x7FFFFFFF)
+	if (loc->east)
 	{
-		latRaw = 0x7FFFFFFF;
+		lonRaw = lonMag > 0x7FFFFFFFu ? INT32_MAX : (int32_t)lonMag;
 	}
-	if (lat < 0)
+	else
+	{
+		lonRaw = lonMag > 0x80000000u ? INT32_MIN : (int32_t)-(int64_t)lonMag;
+	}
+	if (!loc->north && latN != 0)
 	{
 		latRaw |= 0x80000000;
 	}
@@ -325,7 +338,7 @@ static int putPosition(uint8_t *out, uint8_t wanted, const lrrpPosition_t *posit
 
 	if ((wanted & LRRP_WANT_SPEED) && (loc->speedKnots != DMR_LOCATION_SPEED_UNKNOWN))
 	{
-		uint32_t mps128 = (uint32_t)((loc->speedKnots * 0.514444 * 128.0) + 0.5);// m/s in 1/128
+		uint32_t mps128 = (uint32_t)(((uint64_t)loc->speedKnots * 65848832u + 500000u) / 1000000u);// m/s in 1/128: knots * 0.514444 * 128, rounded
 
 		out[n++] = TOK_SPEED_HOR;
 		n += putUintvar(&out[n], mps128 >> 7);
@@ -405,11 +418,13 @@ int lrrpBuildTriggeredStopResponse(const uint8_t *requestId, int requestIdLength
 
 uint32_t lrrpDistanceMeters(const dmrDataLocation_t *a, const dmrDataLocation_t *b)
 {
-	double lat1 = degreesOf(a->latDegrees, a->latMinutes10000, a->north) * (M_PI / 180.0);
-	double lat2 = degreesOf(b->latDegrees, b->latMinutes10000, b->north) * (M_PI / 180.0);
-	double dLon = (degreesOf(b->lonDegrees, b->lonMinutes10000, b->east) - degreesOf(a->lonDegrees, a->lonMinutes10000, a->east)) * (M_PI / 180.0);
-	double x = dLon * cos((lat1 + lat2) / 2.0);
-	double y = lat2 - lat1;
+	// dmr_gps_range's single-precision math: double cos and sqrt cost about 8 KB of flash (libm and the soft-float
+	// library) on a build without LTO to drop them
+	uint32_t meters;
+	uint16_t bearing;
 
-	return (uint32_t)(sqrt((x * x) + (y * y)) * 6371000.0);
+	dmr_gps_range(e7Of(a->latDegrees, a->latMinutes10000, a->north), e7Of(a->lonDegrees, a->lonMinutes10000, a->east),
+			e7Of(b->latDegrees, b->latMinutes10000, b->north), e7Of(b->lonDegrees, b->lonMinutes10000, b->east),
+			&meters, &bearing);
+	return meters;
 }

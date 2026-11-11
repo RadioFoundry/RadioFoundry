@@ -50,7 +50,9 @@ so the docs never understate what a radio can do.
 Both `config.mk` lists take one switch a line with the reason in its comment (`tools/boards.py check` fails on one
 without a reason, or on a switch in both). Either one turns the switch off by default (`CONFIG_X ?= n` next to it),
 keeps it out of ci's maximal configuration, and satisfies a hardware switch's check. A platform's `config.mk` can
-list switches for all of its radios. The feature matrix and the web site show the mark. Say "untested" in bring-up
+list switches for all of its radios, and `config/features.mk` lists the ones a build rules out by itself: `FONT_BIG` on a
+panel under 220 px wide, the width taken from the `hardware.gallery` class in `board.toml`, so a new small-panel board
+needs no line for it. The feature matrix and the web site show the mark. Say "untested" in bring-up
 records and pull requests, never in `config.mk`.
 
 ## Variants
@@ -116,7 +118,7 @@ below are for an STM32F4 radio.
 | `CONFIG_NET_TCP` | = DMR_IP_GATEWAY | a minimal TCP for the radio's own services on the USB network link, never over RF (`core/net`, `docs/spec/tcp-services.md`). About 4.6 KB RAM (4 connections) |
 | `CONFIG_NET_KISS` | = NET_TCP and APRS | KISS over TCP on port 8001 for APRS programs, bridged to the APRS KISS TNC (`docs/spec/tcp-services.md` 4). About 0.8 KB RAM |
 | `CONFIG_NET_HTTP` | = NET_TCP | the HTTP status server on port 80: a page, the status and the debug link's view sections as JSON, the screen as a BMP (`docs/spec/tcp-services.md` 5). About 3.2 KB RAM |
-| `CONFIG_NET_HTTP_GZIP` | = NET_HTTP | the status server's static files (`core/net/http_assets/`) stored gzip compressed at build time and served with `Content-Encoding: gzip` (`tools/gen_http_assets.py`, `docs/spec/tcp-services.md` 5); off: stored and served as they are |
+| `CONFIG_NET_HTTP_GZIP` | = NET_HTTP | the status server's static files (`core/net/http_assets/`) stored gzip compressed at build time and served with `Content-Encoding: gzip` (`tools/gen_http_assets.py`, `docs/spec/tcp-services.md` 5); off: stored and served as they are, about 19 KB more flash with `CONFIG_NET_WEBCTL` |
 | `CONFIG_NET_WEBCTL` | = NET_HTTP | web control on the status server: `/ws` (WebSocket, RFC 6455) for the radio's front panel page, keys, status and receive audio (`docs/spec/tcp-services.md` 5.1). About 12 KB flash with the page, 1 KB RAM |
 | `CONFIG_NET_RIGCTL` | = NET_TCP | Hamlib rigctld on port 4532: frequency, mode, PTT (from the host only, rate limited), S meter for loggers and SDR programs (`docs/spec/tcp-services.md` 6). About 0.8 KB RAM |
 | `CONFIG_NET_USRP` | = DMR_IP_GATEWAY | USRP voice over UDP on port 34001: the receiver's audio to AllStarLink / DVSwitch / a bridge with the squelch as keyup, the peer's keyup frames transmitted (FM through the board's audio tap, DMR through the encoder; `docs/spec/usb-audio.md` 9.1). About 5.6 KB RAM |
@@ -132,6 +134,7 @@ below are for an STM32F4 radio.
 | `CONFIG_SFR_DUALPATH_RX` | = SFR | the SFR user receive mode "Dual-path RX": a voice frame whose FEC failed is taken from the other copy of the call. Off: the mode isn't offered |
 | `CONFIG_AM_RX` | = `CONFIG_FM` | air band AM receive: an FM channel or the VFO in 108-137 MHz is received in AM on a board with `CAP_AM_RX` and `rx_am`, transmit there refused, the board's AM squelch value, 8.33 kHz steps (`docs/spec/airband-and-broadcast.md` 3); needs FM. Off on boards whose receiver has no AM (`BOARD_UNSUPPORTED`) |
 | `CONFIG_BCAST_FM` | y | broadcast FM receive: an FM channel or the VFO in the range of a second receiver chip (`hal_bcast.h`) plays on it, transmit there refused, the FM broadcast step setting (`core/radio/radio_bcast.c`, the board's tuner glue; `docs/spec/airband-and-broadcast.md` 4). Off on boards without one |
+| `CONFIG_RX_EXT` | y (n on a radio whose chip documents give no range) | receive past the band table: the board's receive-only range, switched on in Settings > Advanced ([radio-features.md](spec/radio-features.md) 6.2) |
 | `CONFIG_USB` | y (n on a radio without a USB data connector) | USB device (CDC serial) |
 | `CONFIG_HOSTLINK` | = USB (y on a radio whose host port is a UART) | the host link (`core/hostlink`) on the board's host port: USB CDC, or the programming cable's UART on radios without USB |
 | `CONFIG_USB_NETWORK` | = USB and HOSTLINK | USB network adapter personality: CDC-NCM, switched with the serial one at run time (debug link op 25) or chosen at power-on by the stored setting (`docs/spec/usb-network.md` 1) |
@@ -155,6 +158,7 @@ below are for an STM32F4 radio.
 | `CONFIG_NAND_STORAGE` | n (y on a radio with SPI NAND) | the core's storage (settings, sector journal, codeplug areas) on SPI NAND: the NOR-like 4 KB sector layer over the board's own block range (`drivers/flash/nand_sectors`, `docs/spec/nand-sectors.md`) and the NAND driver's write side. Off, a NAND radio runs on the default settings and stores nothing. Radios with SPI NOR don't use it. About 6.6 KB flash and 1.5 KB RAM where used (no page buffer) |
 | `CONFIG_CHANNEL_LIST` | y | the hub's Channels list: every codeplug channel by number, and a channel's settings (`docs/spec/ui.md` 2) |
 | `CONFIG_CHANNEL_EDIT` | = `CHANNEL_LIST` | editing a channel on the radio, New channel from current settings, keypad text entry (`docs/spec/ui.md` 2.1). Needs `CONFIG_CHANNEL_LIST`; without it the channel's settings are read only |
+| `CONFIG_VOLUME_BAR` | y | the volume bar over the screen for 3 s when a knob the MCU reads turns (`docs/spec/radio-features.md` 4.2). About 0.3 KB flash. Off, turning the knob shows nothing |
 | `CONFIG_ZONE_EDIT` | = `CHANNEL_EDIT` | the zone editor in a zone's list: add, move, copy here and remove channels; rename, copy and delete zones (`docs/spec/ui.md` 2.2). Needs `CONFIG_CHANNEL_EDIT`; without it a zone's list only goes to its channels |
 | `CONFIG_CONTACT_EDIT` | = `CHANNEL_EDIT` and `DMR` | the contact editor: a new contact from Find's Create contact or Save as contact in actions (`docs/spec/ui.md` 2.4). Needs `CONFIG_CHANNEL_EDIT` and `CONFIG_DMR`; without it contacts come only from a CPS |
 | `CONFIG_KEY_ASSIGN` | y | key assignment: Settings > Keys and the codeplug's quick-key slots say what the board's programmable keys do (`docs/spec/ui.md` 3.1) |
@@ -163,7 +167,7 @@ below are for an STM32F4 radio.
 | `CONFIG_BEEP` | y | key, TX permit / deny, call end, time-out warning, battery and scan beeps (`docs/spec/radio-features.md` 4) |
 | `CONFIG_FONT_XL` | n (y on a 240 px color radio) | 16x32 font, for 240 px and wider displays |
 | `CONFIG_FONT_AA` | n (y on a color radio) | the fonts from 6x12 up anti-aliased (JetBrains Mono Bold, 2 bits a pixel) on color panels instead of the bitmap ones; a mono panel would draw them as plain ink, so mono radios leave it off. Glyphs: 15.6 KB with `FONT_XL` (8.2 KB without) in place of 9.2 KB (5.3 KB) of bitmap ones (`core/ui/fonts.c`). On a 4 bpp panel (every color board) the edge grays share the 16 palette entries with the screen's own colors; a screen that already uses many colors loses some of them, and some font sizes or colors can then be slightly harder to read (`docs/spec/ui.md` 5) |
-| `CONFIG_FONT_BIG` | n (y on a 240 px color radio) | larger text on 240 px and wider color panels: lists, labels, the status strip and hints in a 9x18 font instead of 8x16 (24 characters a line instead of 27 on a 240 px panel; the 8x16 one takes the small print). Needs `FONT_AA`; 3.5 KB of flash |
+| `CONFIG_FONT_BIG` | n (y on a 240 px color radio) | larger text on 240 px and wider color panels: lists, labels, the status strip and hints in a 9x18 font instead of 8x16 (24 characters a line instead of 27 on a 240 px panel; the 8x16 one takes the small print). Needs `FONT_AA`; 3.5 KB of flash. Unsupported on a panel under 220 px wide (the board's `hardware.gallery`), and so off in its maximal build |
 | `CONFIG_LANG_ES` | y | Spanish on the radio: Settings > Display > Language (`docs/spec/ui.md` 2.5, `core/ui/lang/es.po`). The first language also brings the accented letters of every font (`CONFIG_LANG_ANY`); each further language adds only its text. Off: Spanish is listed but dimmed. One switch per language, [translating.md](dev/translating.md) |
 | `CONFIG_LANG_IT` | n | Italian on the radio (`core/ui/lang/it.po`), as `CONFIG_LANG_ES`. Off: Italian is listed but dimmed |
 | `CONFIG_LANG_DEFAULT_ES` | n | The radio starts in Spanish until the user picks a language (an empty language setting means the build's default). Needs `CONFIG_LANG_ES`. Off, for every `CONFIG_LANG_DEFAULT_*`: English. With more than one on, the first in `config/features.mk` wins. No flash cost |

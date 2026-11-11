@@ -134,6 +134,17 @@ bool ui_svc_dmr_color_code(uint8_t cc)
 	return true;
 }
 
+bool ui_svc_vfo_sfr(uint8_t a)
+{
+#if CONFIG_SFR
+	radio_req_vfo_sfr(a);
+	return true;
+#else
+	(void)a;
+	return false;
+#endif
+}
+
 #if CONFIG_FM
 bool ui_svc_mode(uint8_t mode)
 {
@@ -192,8 +203,10 @@ bool ui_svc_roam(uint8_t cmd)
 uint32_t ui_svc_feat_radio(void)
 {
 	bool motor = CONFIG_VIBRATE && board.power != NULL && board.power->vibrate != NULL;
+	bool knob = radio_volume_knob();
 	return (CONFIG_SCAN ? UI_FEAT_SCAN : 0) | (CONFIG_DMR_ROAMING ? UI_FEAT_ROAMING : 0) |
 	       (motor ? UI_FEAT_VIBRATE : 0) | (radio_volume_soft() ? UI_FEAT_VOLUME : 0) |
+	       (knob ? UI_FEAT_VOLUME_KNOB : 0) |
 	       (radio_bcast_capable() ? UI_FEAT_BCAST : 0) | (CONFIG_APRS && board_has_gps() ? UI_FEAT_GPS : 0) |
 	       (ref_trim_available() ? UI_FEAT_REF_TRIM : 0);
 }
@@ -363,6 +376,11 @@ void ui_svc_dtmf_block(bool blocked)
 	input_set_dtmf_block(blocked);
 }
 
+void ui_svc_volume_hold(bool hold)
+{
+	radio_req_volume_hold(hold);
+}
+
 // The reply window the Settings screen shows: the radio's setting, else the codeplug's group hang time, else the
 // call stack's 10 s
 int32_t ui_svc_reply_shown(const radio_settings_t *s)
@@ -445,7 +463,12 @@ void ui_svc_apply(uint8_t id, int32_t value)
 		rs.dual_delay_ms = v16;
 		break;
 #endif
-	case UI_SET_BACKLIGHT_S:		// dims after this, goes off after four times as long (0 = always on)
+	case UI_SET_BACKLIGHT_S:		// dims after this, goes off after four times as long (0 = always on; < 0: dims
+		if (value < 0) {		// after -value, never goes off)
+			rs.backlight_dim_s = (uint16_t)(value < -0xFFFF ? 0xFFFF : -value);
+			rs.backlight_off_s = 0;
+			break;
+		}
 		rs.backlight_dim_s = v16;
 		rs.backlight_off_s = (uint16_t)(v16 > 0x3FFF ? 0xFFFF : v16 * 4u);
 		break;
