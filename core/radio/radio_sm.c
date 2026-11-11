@@ -5560,11 +5560,8 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		break;
 	case RREQ_RELOAD:
 #if CONFIG_POSITION
-		{
-			settings_t st;
-			settings_read(&st);
-			position_load(&st);	// the settings may have been replaced
-		}
+		settings_read(&st_copy);	// the task's scratch copy: a settings_t is too big for this frame
+		position_load(&st_copy);	// the settings may have been replaced
 #endif
 #if CONFIG_APRS
 		aprs_reload();
