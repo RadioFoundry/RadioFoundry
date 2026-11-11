@@ -77,6 +77,11 @@ the cable's latency timer (16 ms on an FTDI). Timing to the reply read an 84 MHz
 divisor but the first came out 5 % off. Both hosts round the measured clock to whole MHz (every APB clock here is:
 24, 36 or 84 MHz), so the same rates come out every run.
 
+The latency timer is most of each request's round trip at 115200: a 64-byte debug link ping took 32 ms at 16 ms and
+17 ms at 1 ms. `stubtool.py` and `f4stub.py` set it to 1 ms on Linux (pyserial's low latency mode); on macOS and
+Windows it stays at the driver's setting (Windows: Device Manager, the port's Advanced settings). The web flasher sets
+2 ms where it drives the cable itself (WebUSB, `usbserial.js`); Web Serial can't set it.
+
 ### RAM placement
 
 The HR_C7000's RAM is IRAM 0x10000-0x57FFF (288 KB). The 32 KB SRAM at 0x18000000 is shared with the modem and is not

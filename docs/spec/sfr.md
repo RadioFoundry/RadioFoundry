@@ -121,8 +121,17 @@ headers, and the gap left two placeholders queued ahead of the voice (gotchas 14
 A channel's role comes from its codeplug bytes (`sfrChannelDecode`, `docs/spec/open-firmware-cps.md` 7.3.3: flag 1
 bit 1, SFR bytes A and B; the CPS keeps them as read, the Codeplug Editor sets them). `codeplug.c` hands them to the
 core as read (`channel_t.sfr_flag1 / sfr_a / sfr_b`); `radio_sfr_channel()` turns them into a role and an
-`sfrConfig_t`. A role needs one frequency: RX = TX (a user may have no TX frequency). On a two-frequency channel, or
-in the VFO, the bytes are ignored and the channel is an ordinary one.
+`sfrConfig_t`. A role needs one frequency: RX = TX (a user may have no TX frequency). On a two-frequency channel the
+bytes are ignored and the channel is an ordinary one.
+
+The VFO has a role of its own: byte A only, stored per VFO in the settings (`vfo_sfr`, `vfo2_sfr`,
+[settings-store.md](settings-store.md) 3), with no byte B, so the outbound color code is the VFO's color code. It is
+set by `radio_req_vfo_sfr` (RREQ_VFO_SFR: refused outside the VFO, while transmitting and in hotspot mode; the debug
+link's RADIO op 38) and by Copy to VFO, which takes the channel's byte A. The radio core tunes again on a change, and
+looks at the role again when the VFO's split or color code changes, so a repeater stops on a split and starts once
+the VFO is on one frequency again. In FM the role is kept and does nothing. Tools > Single-freq repeater, opened in
+the VFO, has a Role row (Off, User, User ERDM, Repeater, Repeater ERDM style) and an Inbound slot row; SELECT steps
+each.
 
 | Role | Behavior |
 |---|---|
@@ -183,7 +192,9 @@ On air (SDR bench, 2026-10-19), the numbers on the radios' own hardware pages:
   calls) the HR_C7000 listener's `voice.rx_repeats` was 0 on every call.
 
 Not built: the HR_C6000 driver level parts (raw RX RAM classification, `sfrRawClassify`; the register switches of
-command 0xD5); a setting on the radio for the role (the Codeplug Editor sets it). On the radio, Tools > Single-freq repeater shows the
+command 0xD5); a setting on the radio for a channel's role (the Codeplug Editor sets it; the VFO's is set on the radio,
+above), and the framing and hang time of the VFO's role on the radio (the debug link sets them). On the radio, Tools >
+Single-freq repeater shows the
 channel's role, slots and the repeater's state, and a repeater channel's Home screen says "SFR repeater" or "Repeating"
 where a DMR channel shows its talk target.
 

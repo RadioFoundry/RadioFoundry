@@ -73,6 +73,9 @@ export const MEM = {
 	nand: { base: SSI_DATA, cs: 18, size: 0x10000000, name: "NAND", nand: true },
 };
 const NAND_FLAG = 4;
+// A write resolves when the bytes reach the computer's USB-serial driver, before the USB transfer: a margin for that
+// queue. A cable's latency timer delays only what comes back from the radio, never a write
+const NOREPLY_DRAIN_MS = 50;
 // played when a run finishes: three green flashes, then the slow yellow blink resumes
 export const DONE_LED = [[0, 255, 150], [0, 0, 150], [0, 255, 150], [0, 0, 150], [0, 255, 150], [0, 0, 150]];
 
@@ -445,9 +448,9 @@ export class Stub {
 		throw new StubError(`op 0x${op.toString(16)}: no clean reply after ${retries + 1} tries (${why})`);
 	}
 
-	// A request the radio won't answer (a reset, a jump). The write resolves once the bytes are handed to the cable, not
-	// once they are on the line: wait out the frame at the line rate and the cable's latency, or a port closed next
-	// (Restart Radio) discards it and the radio stays in the stub (a GD-88 reset was lost that way, 2026-10-26)
+	// The write resolves once the bytes are handed to the cable's driver, not once they are on the line: wait out the
+	// frame at the line rate and the driver's queue, or a port closed next (Restart Radio) discards it and the radio stays
+	// in the stub
 	async sendNoReply(op, payload) {
 		this.s.clear();
 		const frame = concat(new Uint8Array([0x02, op, payload.length >> 8, payload.length & 0xFF, sum8(payload), 0x03]), payload);

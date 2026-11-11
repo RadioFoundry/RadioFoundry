@@ -24,27 +24,31 @@
 // DMR bursts on the shared RF-burst task (dmr_rfburst.h), timed from the RF TX interrupt (hardware-dm32.md 8.5). The PA
 // keys up from the power cal table (radio/pa_keyup.h): a drive boost whose length follows the step, a hold, then the
 // step's drive. A low step's drive alone took 3-4 ms to full power; with the boost every step is up by the first
-// symbol. The PA is selected with the boost, so the FD6818 goes to TX 0.3 ms before that: 1.8 ms before the first
-// symbol on a simplex channel (two state writes, 0.1 ms), after the inbound burst before ours (it ends about 2.3 ms
-// before our first symbol). A split channel's retune holds the task 1.1-1.4 ms, so it runs before the boost. The lead
-// leaves the task's wake (up to 0.42 ms) room before that
+// symbol. The boost charges the control before the PA is selected; the FD6818 goes to TX 0.3 ms before the PA: 1.2 ms
+// before the first symbol on a simplex channel (two state writes, 0.1 ms). Earlier, the receive loses the end of the
+// inbound burst before ours, and an SFR repeater the burst (at 1.8 ms it repeated about half a call). A split
+// channel's retune holds the task 1.1-1.4 ms, so it runs before the boost. The lead leaves the task's wake (up to
+// 0.42 ms) room before that
 #define RF_TX_LEAD		26u		// 100 us steps (RF_CONTROL b13:8)
 #define SWITCH_AHEAD_US		300u		// the FD6818 to TX this long before the PA
+#define SWITCH_AHEAD_SIMPLEX_MAX_US 1200u	// the simplex switch's longest lead: earlier cuts the inbound burst before ours
 #define SWITCH_AHEAD_SPLIT_US	1450u		// the same with the synthesizer's move to the TX frequency, before the boost
 #define TASK_WAKE_US		420u		// the RF task's latest wake after the interrupt
 // The earliest key-up point: the split's switch still after the task's wake
 #define KEYUP_MAX_AHEAD_US	(RF_TX_LEAD * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US - TASK_WAKE_US - SWITCH_AHEAD_SPLIT_US)
-// The key-up constants (docs/spec/pa-keyup.md): measured on the SDR bench at UHF and VHF, every step up 0.1-0.8 ms
+// The key-up constants (docs/spec/pa-keyup.md): measured on the SDR bench at UHF, every step measured up 0.1-0.5 ms
 // before the first symbol and no more than 3 dB over (hardware-dm32.md 8.5). The knee goes with pa_us: the control
-// charges less with the PA selected, so a later PA wants a smaller knee
+// charges less with the PA selected, so a later PA wants a smaller knee (1450 with the PA at the boost)
 #define KEYUP_BOOST_US		1500u
-#define KEYUP_PA_US		1500u
+#define KEYUP_PA_US		900u
 #define KEYUP_DRIVE_US		500u
 _Static_assert(KEYUP_BOOST_US <= KEYUP_MAX_AHEAD_US && KEYUP_PA_US <= KEYUP_BOOST_US && KEYUP_DRIVE_US <= KEYUP_BOOST_US,
 	       "the key-up's points must come after the split's switch, in order (pa_keyup_valid)");
+_Static_assert(SWITCH_AHEAD_US + KEYUP_PA_US <= SWITCH_AHEAD_SIMPLEX_MAX_US,
+	       "the simplex switch to TX must come after the inbound burst before ours");
 #if CONFIG_DMR
 static const pa_keyup_cfg_t keyup_cfg = {
-	.dead = 680, .knee = 1450, .slope_us = 600, .boost_pct = 120, .hold_pct = 80,
+	.dead = 680, .knee = 1250, .slope_us = 600, .boost_pct = 120, .hold_pct = 80,
 	.boost_us = KEYUP_BOOST_US, .pa_us = KEYUP_PA_US, .drive_us = KEYUP_DRIVE_US,
 };
 #endif

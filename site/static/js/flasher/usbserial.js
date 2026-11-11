@@ -20,9 +20,14 @@ const SIO_MODEM_CTRL = 0x01;
 const SIO_SET_FLOW_CTRL = 0x02;
 const SIO_SET_BAUD_RATE = 0x03;
 const SIO_SET_DATA = 0x04;
+const SIO_SET_LATENCY_TIMER = 0x09;	// wValue: ms
 const FTDI_DTR_RTS_ON = 0x0303;		// high byte: which lines to change, low byte: their levels
 const FTDI_DTR_RTS_OFF = 0x0300;
 const FTDI_8N1 = 0x0008;
+// The chip holds received bytes for its latency timer, 16 ms by default, before it sends a bulk IN packet: on a link
+// of requests and answers that is most of each round trip (a 64-byte debug link ping: 32 ms at 16, 17 ms at 1). At
+// 2 ms an idle cable's status-only packets stay at 500 a second for the reads kept queued below
+export const FTDI_LATENCY_MS = 2;
 
 const READ_SIZE = 4096;			// bytes asked per bulk IN transfer
 const READS_IN_FLIGHT = 4;		// bulk IN transfers kept queued on the device
@@ -193,6 +198,8 @@ export class UsbSerialPort {
 		await this.ftdiOut(SIO_SET_DATA, FTDI_8N1);
 		await this.ftdiOut(SIO_SET_FLOW_CTRL, 0);
 		await this.ftdiModem(FTDI_DTR_RTS_ON);
+		// A cable that refuses it still works, at the default 16 ms
+		try { await this.ftdiOut(SIO_SET_LATENCY_TIMER, FTDI_LATENCY_MS); } catch { /* stays at 16 ms */ }
 	}
 
 	// Bulk IN transfers stay queued on the device whether or not the page is reading: an FTDI chip keeps 256 bytes,

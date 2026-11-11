@@ -44,6 +44,7 @@
 #if CONFIG_SFR
 #include "radio/radio_sfr.h"		// standalone SFR roles (docs/spec/sfr.md 4)
 #endif
+#include "dmr/sfr.h"			// the SFR bytes the VFO keeps in every build (vfo_sfr_set)
 #if CONFIG_HOTSPOT
 #include "radio/radio_hotspot.h"	// the CW ID handover
 #endif
@@ -650,13 +651,13 @@ static uint32_t vfo_default_hz(void)
 			return vfo_start_hz[i];
 		}
 	}
-	for (uint8_t i = 0; i < board.band_count; i++) {
+	for (uint8_t i = 0; i < board_band_count(); i++) {
 		if (board.bands[i].tx) {
 			uint32_t mid = board.bands[i].lo_hz + (board.bands[i].hi_hz - board.bands[i].lo_hz) / 2;
 			return mid - mid % RADIO_VFO_STEP_HZ;
 		}
 	}
-	return board.band_count > 0 ? board.bands[0].lo_hz : 0;
+	return board_band_count() > 0 ? board.bands[0].lo_hz : 0;
 }
 
 // A new RX frequency. A split VFO keeps its offset within one transmit band (board_offset_carries); otherwise it is
@@ -730,6 +731,16 @@ radio_vfo_copy_t radio_vfo_copy_check(const channel_t *ch, bool in_vfo)
 	return VFO_COPY_OK;
 }
 
+// The VFO's SFR role from byte A (sfr.h), as a channel's: role bits 0 = none, the flag clear. No byte B: the outbound
+// color code is the VFO's own
+static void vfo_sfr_set(channel_t *c, uint8_t a)
+{
+	bool on = (a & 0x07u) != 0;
+	c->sfr_flag1 = on ? SFR_CHANNEL_FLAG1_ENABLED : 0;
+	c->sfr_a = on ? a : 0;
+	c->sfr_b = 0;
+}
+
 // Copy to VFO: the channel as it is in effect now (view.ch holds the temporary bandwidth, tones, mode, color code and
 // timeslot; the temporary power is view.power; a talk target chosen for now counts, a one-shot or reply target does
 // not) becomes the VFO's own settings, which are saved like any VFO change. Not copied, the VFO has nothing to hold
@@ -761,6 +772,9 @@ static void vfo_copy(radio_sm_t *sm, uint32_t now_ms)
 		v->rx_tone = c->rx_tone;	// a DMR channel has no tones: the VFO keeps its own for its FM mode
 		v->tx_tone = c->tx_tone;
 	}
+	// The channel's SFR role too (it acts on a simplex VFO only, as on a channel), with the VFO's color code; an FM
+	// channel has none, so the VFO's old role doesn't come back at the next switch to DMR
+	vfo_sfr_set(v, (c->sfr_flag1 & SFR_CHANNEL_FLAG1_ENABLED) ? c->sfr_a : 0);
 	sm->vfo_seeded = true;
 	enter_vfo(sm, now_ms);
 }
@@ -781,7 +795,7 @@ static uint32_t band_wrap(uint32_t hz, int dir)
 {
 	bool found = false;
 	uint32_t best = 0;
-	for (uint8_t i = 0; i < board.band_count; i++) {
+	for (uint8_t i = 0; i < board_band_count(); i++) {
 		const band_t *b = &board.bands[i];
 		if (dir > 0 && b->lo_hz > hz && (!found || b->lo_hz < best)) {
 			best = b->lo_hz;
@@ -794,7 +808,7 @@ static uint32_t band_wrap(uint32_t hz, int dir)
 	if (found) {
 		return best;
 	}
-	for (uint8_t i = 0; i < board.band_count; i++) {
+	for (uint8_t i = 0; i < board_band_count(); i++) {
 		const band_t *b = &board.bands[i];
 		uint32_t edge = dir > 0 ? b->lo_hz : b->hi_hz;
 		if (!found || (dir > 0 ? edge < best : edge > best)) {
@@ -1088,7 +1102,7 @@ static void dmr_configure(radio_sm_t *sm)
 #if CONFIG_SFR
 	// A user of a single frequency repeater: the inbound slot and its sync, the copies heard (sfr.md 4)
 	sfrConfig_t sc;
-	sm->view.dmr.sfr_role = radio_sfr_channel(ch, sm->view.vfo, &sc);
+	sm->view.dmr.sfr_role = radio_sfr_channel(ch, &sc);
 	sm->view.dmr.sfr_inbound = sc.inboundSlot;
 	if (sfrRoleIsUser(sm->view.dmr.sfr_role) && !cfg.rmo) {
 		cfg.sfr_user = true;
@@ -1320,7 +1334,7 @@ static bool sfr_rpt_begin(radio_sm_t *sm)
 	const channel_t *ch = &sm->view.ch;
 	sfrConfig_t sc;
 
-	sm->view.dmr.sfr_role = radio_sfr_channel(ch, sm->view.vfo, &sc);
+	sm->view.dmr.sfr_role = radio_sfr_channel(ch, &sc);
 	sm->view.dmr.sfr_inbound = sc.inboundSlot;
 	sfr_rpt_end(sm);
 	sm->sfr_denied = false;
@@ -1382,6 +1396,20 @@ static void dmr_begin(radio_sm_t *sm)
 	sm->dmr_serial = dmr_call_view()->serial - 1u;	// copy the stack's view at the next tick
 }
 
+// A split or color code change in the VFO, whose SFR role reads both (radio_sfr_channel): the role is looked at again,
+// so a repeater stops on a split and starts on one frequency, and takes a new color code
+static void dmr_reconfigure_sfr(radio_sm_t *sm)
+{
+#if CONFIG_SFR
+	if (sm->view.vfo && sm->view.ch.mode == RADIO_MODE_DMR && (sm->sfr_rpt || sm->view.ch.sfr_flag1 != 0)) {
+		dmr_begin(sm);
+		changed(sm);
+		return;
+	}
+#endif
+	dmr_reconfigure(sm);
+}
+
 // Leaving DMR (or into hotspot mode): drop any transmission, stop the stack and the PCM stream
 static void dmr_end(radio_sm_t *sm)
 {
@@ -1396,6 +1424,10 @@ static void dmr_end(radio_sm_t *sm)
 		board.radio->tx_off();
 	}
 	sm->dmr_running = false;
+#if CONFIG_SFR
+	sm->view.dmr.sfr_role = SFR_ROLE_OFF;	// no role in force outside DMR (the VFO keeps its stored one in FM)
+	sm->view.dmr.sfr_inbound = 0;
+#endif
 	sm->manual = false;		// a chosen talk target ends with the channel
 	sm->view.dmr.target_manual = false;
 	sm->one_shot = false;
@@ -2572,7 +2604,7 @@ static void scan_start(radio_sm_t *sm, uint8_t kind, uint32_t lo_hz, uint32_t hi
 		}
 		if (lo_hz == 0 && hi_hz == 0) {
 			// The band the VFO is in
-			for (uint8_t i = 0; i < board.band_count; i++) {
+			for (uint8_t i = 0; i < board_band_count(); i++) {
 				if (sm->view.ch.rx_hz >= board.bands[i].lo_hz && sm->view.ch.rx_hz <= board.bands[i].hi_hz) {
 					lo_hz = board.bands[i].lo_hz;
 					hi_hz = board.bands[i].hi_hz;
@@ -2581,7 +2613,7 @@ static void scan_start(radio_sm_t *sm, uint8_t kind, uint32_t lo_hz, uint32_t hi
 		}
 		// Both ends in one band, and room for two stops
 		bool same_band = false;
-		for (uint8_t i = 0; i < board.band_count; i++) {
+		for (uint8_t i = 0; i < board_band_count(); i++) {
 			const band_t *b = &board.bands[i];
 			if (lo_hz >= b->lo_hz && hi_hz <= b->hi_hz) {
 				same_band = true;
@@ -4313,6 +4345,7 @@ typedef struct {
 	uint32_t talk;		// ID in bits 0-23, bit 31 private call
 	uint16_t rx_tone, tx_tone;
 	uint8_t mode, bw, power, cc, ts, rx_tone_type, tx_tone_type;
+	uint8_t sfr_a;		// its SFR role: a channel's SFR byte A, role 0 none
 } vfo_saved_t;
 
 static void vfo_saved_get(const settings_t *st, uint8_t idx, vfo_saved_t *o)
@@ -4321,7 +4354,7 @@ static void vfo_saved_get(const settings_t *st, uint8_t idx, vfo_saved_t *o)
 	if (idx != 0) {
 		*o = (vfo_saved_t){ st->vfo2_rx_hz, st->vfo2_tx_hz, st->vfo2_talk, st->vfo2_rx_tone, st->vfo2_tx_tone,
 				    st->vfo2_mode, st->vfo2_bw, st->vfo2_power, st->vfo2_cc, st->vfo2_ts,
-				    st->vfo2_rx_tone_type, st->vfo2_tx_tone_type };
+				    st->vfo2_rx_tone_type, st->vfo2_tx_tone_type, st->vfo2_sfr };
 		return;
 	}
 #endif
@@ -4329,7 +4362,8 @@ static void vfo_saved_get(const settings_t *st, uint8_t idx, vfo_saved_t *o)
 	*o = (vfo_saved_t){ st->vfo_rx_hz, st->vfo_tx_hz,
 			    settings_vfo_talk_id(st) | (settings_vfo_talk_private(st) ? 0x80000000u : 0),
 			    st->vfo_rx_tone, st->vfo_tx_tone, settings_vfo_mode(st), settings_vfo_bw(st), st->vfo_power,
-			    settings_vfo_cc(st), settings_vfo_ts(st), st->vfo_rx_tone_type, st->vfo_tx_tone_type };
+			    settings_vfo_cc(st), settings_vfo_ts(st), st->vfo_rx_tone_type, st->vfo_tx_tone_type,
+			    st->vfo_sfr };
 }
 
 static void restore_vfo(radio_sm_t *sm, const settings_t *st, uint8_t idx)
@@ -4356,6 +4390,7 @@ static void restore_vfo(radio_sm_t *sm, const settings_t *st, uint8_t idx)
 	subtone_t rx = { v.rx_tone_type, v.rx_tone }, tx = { v.tx_tone_type, v.tx_tone };
 	sm->vfo_ch.rx_tone = tones_valid(&rx) ? rx : (subtone_t){ TONE_NONE, 0 };
 	sm->vfo_ch.tx_tone = tones_valid(&tx) ? tx : (subtone_t){ TONE_NONE, 0 };
+	vfo_sfr_set(&sm->vfo_ch, v.sfr_a);
 	sm->vfo_seeded = true;
 }
 
@@ -4378,6 +4413,7 @@ static void persist_vfo(const radio_sm_t *sm, settings_t *st, uint8_t idx)
 			st->vfo2_rx_tone = v->rx_tone.value;
 			st->vfo2_tx_tone_type = v->tx_tone.type;
 			st->vfo2_tx_tone = v->tx_tone.value;
+			st->vfo2_sfr = v->sfr_a;
 		}
 #if CONFIG_VFO_DMR
 		st->vfo2_talk = sm->vfo_talk_id | (sm->vfo_talk_private ? 0x80000000u : 0);
@@ -4396,6 +4432,7 @@ static void persist_vfo(const radio_sm_t *sm, settings_t *st, uint8_t idx)
 		st->vfo_rx_tone = v->rx_tone.value;
 		st->vfo_tx_tone_type = v->tx_tone.type;
 		st->vfo_tx_tone = v->tx_tone.value;
+		st->vfo_sfr = v->sfr_a;
 	}
 #if CONFIG_VFO_DMR
 	settings_set_vfo_talk(st, sm->vfo_talk_id, sm->vfo_talk_private);
@@ -4794,6 +4831,17 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	radio_settings_t rs;
 	settings_to_radio(st, &rs);
 	use_settings(sm, &rs, now_ms);
+#if CONFIG_RX_EXT
+	// A VFO left in the receive range past the table, now off, goes back to a band the next time it is used
+	if (sm->vfo_seeded && !board_in_band(sm->vfo_ch.rx_hz, false)) {
+		sm->vfo_seeded = false;
+	}
+#if CONFIG_DUAL_WATCH
+	if (sm->vfo_other.seeded && !board_in_band(sm->vfo_other.ch.rx_hz, false)) {
+		sm->vfo_other.seeded = false;
+	}
+#endif
+#endif
 	if (vfo || !sm->have_channels) {
 		if (VFO_AVAILABLE) {
 			enter_vfo(sm, now_ms);
@@ -4993,6 +5041,7 @@ static bool retunes(uint8_t type)
 	switch (type) {
 	case RREQ_CH_STEP: case RREQ_ZONE_POS: case RREQ_ZONE: case RREQ_VFO: case RREQ_VFO_STEP: case RREQ_VFO_SET:
 	case RREQ_VFO_TX: case RREQ_BANDWIDTH: case RREQ_TONE: case RREQ_MODE: case RREQ_DMR_TS: case RREQ_DMR_CC: case RREQ_VFO_COPY:
+	case RREQ_VFO_SFR:
 		return true;
 	default:
 		return false;
@@ -5128,7 +5177,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		sm->vfo_ch.tx_hz = tx;
 		sm->view.ch.tx_hz = tx;
 #if CONFIG_DMR
-		dmr_reconfigure(sm);
+		dmr_reconfigure_sfr(sm);
 #else
 		changed(sm);
 #endif
@@ -5350,8 +5399,25 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 			sm->vfo_ch.color_code = sm->view.ch.color_code;	// the VFO's own, not a temporary change
 		}
 		set_temporary(sm);
-		dmr_reconfigure(sm);
+		dmr_reconfigure_sfr(sm);
 		break;
+#if CONFIG_SFR
+	case RREQ_VFO_SFR: {
+		// The VFO's SFR role (sfr.md 4): byte A as a channel's, taken as a channel's at a tune (a repeater role takes
+		// the modem, a user role the inbound slot). Kept in DMR and FM alike: it acts only in DMR
+		uint8_t a = (uint8_t)req->arg;
+		if (busy || !sm->view.vfo || req->arg < 0 || req->arg > 0xFF || (a & 0x07u) >= SFR_ROLE_NUM_STORED) {
+			break;
+		}
+		if (((a & 0x07u) != 0 ? a : 0) == sm->vfo_ch.sfr_a) {
+			break;		// the same role again: a retune would only interrupt a running repeater
+		}
+		vfo_sfr_set(&sm->vfo_ch, a);
+		vfo_sfr_set(&sm->view.ch, a);
+		tune(sm, now_ms);
+		break;
+	}
+#endif
 	case RREQ_MODE:
 		if (busy || (req->arg != RADIO_MODE_FM && req->arg != RADIO_MODE_DMR) || req->arg == sm->view.ch.mode ||
 				(req->arg == RADIO_MODE_FM && !(sm->view.vfo ? CONFIG_VFO_FM : CONFIG_FM)) ||
