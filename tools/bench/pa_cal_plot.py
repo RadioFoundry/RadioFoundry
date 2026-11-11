@@ -5,7 +5,8 @@
 pa_cal_plot: a pa_cal.py run as pictures (docs/spec/pa-keyup.md 6). Needs matplotlib; pa_cal.py itself doesn't.
 
     pa_cal.py ... --plot DIR            draws at the end of the run
-    pa_cal_plot.py RESULT.json DIR      draws a run's --out file again
+    pa_cal_plot.py RESULT.json DIR [NAME]   draws a run's --out file again; NAME: the radio in the titles, in
+                                            place of the board the run recorded
 
 Per band two files:
 
@@ -92,7 +93,7 @@ def _pair(mine, l):
     return (None if before is after else before), after
 
 
-def ramps(plt, band, keys, path):
+def ramps(plt, band, keys, path, who=""):
     """One picture: the shown levels over each other, a color each; the constants before as dashed lines, only when
     the run changed them."""
     from matplotlib.lines import Line2D
@@ -153,14 +154,14 @@ def ramps(plt, band, keys, path):
     fig.legend(h, lab, loc="lower center", ncol=5, fontsize=8, frameon=False)
     c = band["constants"]
     state = "kept: the board's constants hold" if band.get("kept") else "PASS" if band["ok"] else "CHECK"
-    fig.suptitle(f"{mhz:g} MHz key-up: dead {c['dead_pm']}/1000, knee {c['knee_us']} us, slope {c['slope_us']} us, "
+    fig.suptitle(f"{who}{mhz:g} MHz key-up: dead {c['dead_pm']}/1000, knee {c['knee_us']} us, slope {c['slope_us']} us, "
                  f"window {c['window_us']} us, settle {c['settle_us']} us  ({state})", fontsize=11)
     fig.tight_layout(rect=(0, 0.09, 1, 0.96))
     fig.savefig(path, dpi=130)
     plt.close(fig)
 
 
-def fit(plt, band, keys, path):
+def fit(plt, band, keys, path, who=""):
     mhz, c, top, ref = band["mhz"], band["constants"], band["top"], band["ref"]
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4))
     pts = band.get("open") or []
@@ -201,39 +202,43 @@ def fit(plt, band, keys, path):
     a2.set_title("each level's key-up", fontsize=10, loc="left")
     a2.legend(fontsize=8, frameon=False)
     a2.grid(True, color="#e6e8ec", lw=0.5)
-    fig.suptitle(f"{mhz:g} MHz", fontsize=11)
+    fig.suptitle(f"{who}{mhz:g} MHz", fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(path, dpi=130)
     plt.close(fig)
 
 
-def draw(result, out_dir):
-    """Every band of a run into out_dir; returns the files. ImportError without matplotlib."""
+def draw(result, out_dir, name=""):
+    """Every band of a run into out_dir; returns the files. ImportError without matplotlib. name: the radio in the
+    titles, in place of the board the run recorded."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     os.makedirs(out_dir, exist_ok=True)
     files = []
+    radio = result.get("radio") or {}
+    who = name or radio.get("board", "")
+    who = (f"{who} ({radio['git']}), " if radio.get("git") else f"{who}, ") if who else ""
     for band in result.get("bands", []):
         band = dict(band, levels={int(l): v for l, v in band["levels"].items()})
         band.setdefault("window_us", band["constants"]["window_us"])
         band.setdefault("target_us", -250)
         stem = os.path.join(out_dir, f"pa_cal_{band['mhz']:g}")
-        ramps(plt, band, result.get("keys", []), stem + "_ramps.png")
-        fit(plt, band, result.get("keys", []), stem + "_fit.png")
+        ramps(plt, band, result.get("keys", []), stem + "_ramps.png", who)
+        fit(plt, band, result.get("keys", []), stem + "_fit.png", who)
         files += [stem + "_ramps.png", stem + "_fit.png"]
     return files
 
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    if len(argv) != 2:
+    if len(argv) not in (2, 3):
         print(__doc__)
         return 2
     with open(argv[0]) as f:
         result = json.load(f)
     try:
-        for name in draw(result, argv[1]):
+        for name in draw(result, argv[1], argv[2] if len(argv) == 3 else ""):
             print(name)
     except ImportError as e:
         print(f"{e}: pip install matplotlib")
