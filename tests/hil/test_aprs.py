@@ -307,8 +307,8 @@ def aprs_air(radio, pytestconfig, request):
     start = getattr(request, "param", "channel")
     _need_aprs(radio)
     call = rig(pytestconfig, "callsign", "an amateur transmission: needs a licensed operator's callsign,")
-    if "FM" not in radio.features():
-        skip("not_built", "built without FM")
+    if "APRS_AFSK" not in radio.features():
+        skip("not_built", "built without CONFIG_APRS_AFSK (APRS on FM)")
     hz = round(rig(pytestconfig, "aprs-test-mhz") * 1e6)
     if not allowed_test_hz(hz):
         pytest.fail(f"--aprs-test-mhz {hz / 1e6:.4f}: an APRS frequency, or not one of the rig's transmit frequencies (tx_mhz)")
@@ -407,6 +407,7 @@ def check_tones(f):
 
 
 @pytest.mark.feature("aprs")
+@pytest.mark.feature("aprs_afsk")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
@@ -421,6 +422,7 @@ def test_aprs_on_air_position(radio, sdr_bench, aprs_air):
 
 
 @pytest.mark.feature("aprs")
+@pytest.mark.feature("aprs_afsk")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
@@ -432,6 +434,7 @@ def test_aprs_on_air_status(radio, sdr_bench, aprs_air):
 
 
 @pytest.mark.feature("aprs")
+@pytest.mark.feature("aprs_afsk")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
@@ -453,6 +456,7 @@ def test_aprs_on_air_message(radio, sdr_bench, aprs_air):
 
 
 @pytest.mark.feature("aprs")
+@pytest.mark.feature("aprs_afsk")
 @pytest.mark.radio_tx
 @pytest.mark.parametrize("over", ["serial", pytest.param("network", marks=pytest.mark.usb_switch),
                                   pytest.param("kiss_tcp", marks=pytest.mark.usb_switch)])
@@ -587,7 +591,8 @@ def udt_position(block):
 
 @pytest.mark.feature("dmr_lrrp")
 @pytest.mark.feature("aprs", optional=True)
-@pytest.mark.needs_switch("APRS")
+@pytest.mark.feature("aprs_dmr")
+@pytest.mark.needs_switch("APRS_DMR")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
@@ -595,9 +600,8 @@ def udt_position(block):
 def test_aprs_dmr_position(radio, sdr_bench, pytestconfig, form):
     """The position as an LRRP report or a UDT location over DMR at the lowest power, decoded from the bench modem."""
     _need_aprs(radio)
-    feats = radio.features()
-    if "DMR" not in feats or "DMR_DATA_CORE" not in feats:
-        skip("not_built", "built without DMR data")
+    if "APRS_DMR" not in radio.features():
+        skip("not_built", "built without CONFIG_APRS_DMR (APRS over DMR)")
     if form == "lrrp" and "DMR_LRRP" not in feats:
         skip("not_built", "built without CONFIG_DMR_LRRP")
     freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
