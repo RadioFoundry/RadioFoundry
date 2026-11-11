@@ -17,6 +17,14 @@
 //				PA_KEYUP_BOOST_MAX_PCT of the top level's drive
 //	the PA on		at pa_us before, or with the first drive when that comes later
 //
+// A loop that comes up fast runs past its level: the faster the approach, the further, and most at the low levels
+// where the PA's output is steepest against the loop's control. ease (a drive over the dead zone, as a part of ref)
+// is the fastest approach a board allows. A level over it comes up on the drive a = dead + ease, like a level of
+// that drive, and takes its own drive once the loop regulates there, slope * (d - a) / (d - dead) before the first
+// symbol: the time the law gives d to carry the loop from a's level to its own. It starts that much ahead of a's own
+// key-up, before the window when it has to (the window is the boosts'): the board's earliest point bounds it. A boost
+// stops at a as well
+//
 // So a level that is fast by itself leaves its time to the receiver, a slow one gets only the boost it needs (a
 // short high boost overshoots with the timer's jitter), and no level starts earlier than the window.
 //
@@ -46,17 +54,18 @@ typedef struct {
 	uint16_t window_us;	// the earliest a key-up starts before the first symbol; a level slower than this is boosted
 	uint16_t settle_us;	// a boost ends this long before the first symbol (under window_us)
 	uint16_t pa_us;		// the PA on this long before, or with the first drive when that is later
+	uint16_t ease_pm;	// the fastest approach: at most this drive over the dead zone, in 1/1000 of ref (0: no limit)
 } pa_keyup_cfg_t;
 
 // A board that keys its PA with the drive, one fixed time before the first symbol at every level
-#define PA_KEYUP_FIXED(us)	{ .dead_pm = 0, .knee_us = 0, .slope_us = (us), .window_us = (us), .settle_us = 0, .pa_us = (us) }
+#define PA_KEYUP_FIXED(us)	{ .dead_pm = 0, .knee_us = 0, .slope_us = (us), .window_us = (us), .settle_us = 0, .pa_us = (us), .ease_pm = 0 }
 
 // The boost's ceiling: a little over the top level, never far over what the cal table drives
 #define PA_KEYUP_BOOST_MAX_PCT	120u
 
 // All times before the first symbol
 typedef struct {
-	uint16_t boost;		// 0 = none: the PA keyed at pa_us at d
+	uint16_t boost;		// the first drive, 0 = none (the PA keyed at pa_us at d): over d a boost, under d an eased approach
 	uint16_t drive;		// d
 	uint16_t boost_us;	// the boost starts
 	uint16_t pa_us;		// the PA on (never before the boost)
@@ -64,8 +73,8 @@ typedef struct {
 } pa_keyup_t;
 
 // The key-up for a level (pure): d the level's drive, top the table's top drive at the transmit frequency, ref the
-// calibration's anchor for the dead zone there (0: none), max the board's drive limit. d <= boost within max,
-// drive_us <= pa_us <= boost_us <= window_us
+// calibration's anchor for the dead zone there (0: none), max the board's drive limit. boost within max (under d
+// only when eased), drive_us <= pa_us <= boost_us, and boost_us <= window_us unless eased
 pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, uint16_t ref, uint16_t max);
 
 // A burst's points in time order, earliest first, for a board's burst sequence (a task's waits or a timer's steps).

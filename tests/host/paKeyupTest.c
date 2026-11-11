@@ -135,15 +135,22 @@ static uint8_t random_points(pa_keyup_point_t *pt)
 	};
 	c.settle_us = (uint16_t)next_rand(c.window_us);
 	c.pa_us = next_rand(3) == 0 ? 0xFFFF : (uint16_t)next_rand(max_ahead + 1u);
+	c.ease_pm = next_rand(2) == 0 ? 0 : (uint16_t)next_rand(1500);
 	CHECK(pa_keyup_valid(&c, max_ahead));
 	uint16_t top = (uint16_t)(500 + next_rand(3500));
 	uint16_t d = (uint16_t)(1 + next_rand(top)), max = (uint16_t)(top + next_rand(4096u - top));
-	pa_keyup_t k = pa_keyup_drives(&c, d, top, (uint16_t)next_rand(top), max);
+	uint16_t ref = (uint16_t)next_rand(top);
+	pa_keyup_t k = pa_keyup_drives(&c, d, top, ref, max);
 	// What every key-up keeps, whatever the constants
-	CHECK(k.drive == d && k.pa_us <= c.window_us && k.pa_us <= c.pa_us);
+	CHECK(k.drive == d && k.pa_us <= c.pa_us && (k.pa_us <= c.window_us || (k.boost != 0u && k.boost < d)));
 	if (k.boost != 0u) {
-		CHECK(k.boost >= d && k.boost <= max && k.drive_us <= k.pa_us && k.pa_us <= k.boost_us && k.boost_us <= c.window_us);
-		CHECK(k.boost == d || (k.boost_us == c.window_us && k.drive_us <= c.settle_us));
+		CHECK(k.boost <= max && k.drive_us <= k.pa_us && k.pa_us <= k.boost_us && (k.boost_us <= c.window_us || k.boost < d));
+		if (k.boost < d) {	// eased: on the fastest approach's drive, and only a level over it
+			uint32_t dead = (uint32_t)ref * c.dead_pm / 1000u, ease = (uint32_t)ref * c.ease_pm / 1000u;
+			CHECK(ease != 0u && k.boost == dead + ease && k.drive_us <= c.slope_us);
+		} else {
+			CHECK(k.boost == d || (k.boost_us == c.window_us && k.drive_us <= c.settle_us));
+		}
 	}
 	return pa_keyup_points(&k, pt);
 }
@@ -214,6 +221,37 @@ int main(void)
 	// A level too slow for the window: the lowest boost that fits it, from the window to the settle time, then d
 	pa_keyup_t k = pa_keyup_drives(&dflt, 700, 1448, 760, 4095);
 	CHECK(k.boost == 764 && k.drive == 700 && k.boost_us == 1500 && k.pa_us == 1500 && k.drive_us == 300);
+	// The fastest approach, 152 counts over the dead zone (684): a level over it comes up on drive 836, timed as
+	// that drive's own key-up, and takes its own drive slope * (d - 836) / (d - 684) before the first symbol. The
+	// levels under it are keyed as without it
+	pa_keyup_cfg_t e = dflt;
+	e.ease_pm = 200;
+	static const uint16_t e_start[5] = { 0, 918, 990, 1034, 1053 }, e_step[5] = { 0, 65, 137, 181, 200 };
+	for (int i = 0; i < 5; i++) {
+		k = pa_keyup_drives(&e, d[i], 1448, 760, 4095);
+		if (i == 0) {
+			CHECK(k.boost == 0 && k.pa_us == lead[0]);
+		} else {
+			CHECK(k.boost == 836 && k.drive == d[i] && k.boost_us == e_start[i] && k.pa_us == e_start[i] &&
+			      k.drive_us == e_step[i]);
+		}
+	}
+	k = pa_keyup_drives(&e, 700, 1448, 760, 4095);	// a boost under the fastest approach: unchanged
+	CHECK(k.boost == 764 && k.boost_us == 1500 && k.drive_us == 300);
+	e.knee_us = 2000;				// and one over it stops there
+	k = pa_keyup_drives(&e, 700, 1448, 760, 4095);
+	CHECK(k.boost == 836 && k.boost_us == 1500 && k.drive_us == 300);
+	e = dflt;
+	e.ease_pm = 200;
+	e.pa_us = 400;					// a PA point of its own: the approach drive ahead of it
+	k = pa_keyup_drives(&e, 1448, 1448, 760, 4095);
+	CHECK(k.boost == 836 && k.boost_us == 1053 && k.pa_us == 400 && k.drive_us == 200);
+	e.pa_us = 0xFFFF;
+	e.window_us = 600;				// the window is the boosts': an eased level starts ahead of it
+	e.settle_us = 100;
+	k = pa_keyup_drives(&e, 1448, 1448, 760, 4095);
+	CHECK(k.boost == 836 && k.boost_us == 1053 && k.pa_us == 1053 && k.drive_us == 200);
+	CHECK(pa_keyup_drives(&e, 1448, 1448, 0, 4095).boost == 0);	// no anchor: no dead zone and no limit
 	pa_keyup_cfg_t c = dflt;
 	c.knee_us = 2000;
 	k = pa_keyup_drives(&c, 767, 1448, 760, 4095);

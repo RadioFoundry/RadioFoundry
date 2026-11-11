@@ -617,13 +617,15 @@ drive 1115; the 5 W row is 2119):
 | dB | -42.8 | -32.2 | -18.7 | -12.4 | -8.2 | -4.8 | -2.1 |
 
 DMR: the PA follows the bursts, keyed by the key-up rule ([pa-keyup.md](pa-keyup.md)) with constants measured by
-`tools/bench/pa_cal.py` on a UHF radio up to its 2.5 W level (dead zone 56.2 % of the anchor, knee 90 µs, slope
-1013 µs, settle 306 µs): the lowest level, 0.95 ms late on its own drive, gets a boost; the others key at their own
-drive. Over the air on the SDR bench every level measured was up 0.12-0.41 ms before the first symbol. The level
-at drive 972 overshoots 5.5 dB written alone: the power loop's, not the key-up's. An earlier fixed boost for every
-level overshot the low levels by 7 dB and more. Keyed at the RF TX
-interrupt, the PA was up 1.1-1.6 ms before the first symbol, so the PA point is 1 ms after the interrupt (`pa_us`
-1530, the interrupt taken as 2.53 ms before the first symbol). On the SDR bench (UHF radio, 432 MHz), every level at
+`tools/bench/pa_cal.py` on a UHF radio up to its 2.5 W level (dead zone 56.3 % of the anchor, knee 96 µs, slope
+1002 µs, settle 506 µs, fastest approach 30.4 % of the anchor over the dead zone): the two lowest levels get a
+boost; the levels from 1 W up come in on the approach drive (842 on the radio measured) and then take their own.
+Over the air on the SDR bench every level measured was up 0.16-0.41 ms before the first symbol and 0.8-1.4 dB
+over its power, on the air no earlier than 1.07 ms before the first symbol. The level at drive 972 written alone
+ran 4.5 dB past its power, and a boost made it worse (6-8 dB): the cure is the slower approach. The 5 W level is
+not measured. An earlier fixed boost for every level overshot the low levels by 7 dB and more. Keyed at the RF TX
+interrupt, the PA was up 1.1-1.6 ms before the first symbol, so the window is 1 ms after the interrupt (`window_us`
+1530, the interrupt taken as 2.53 ms before the first symbol) and the PA goes on with the first drive. On the SDR bench (UHF radio, 432 MHz), every level at
 its own drive from that point:
 
 | Level | -3 dB point before the first symbol | First symbol against the settled level | Overshoot |

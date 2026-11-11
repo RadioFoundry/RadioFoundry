@@ -155,13 +155,14 @@ def ramps(plt, band, keys, path, who=""):
     h, lab = up.get_legend_handles_labels()
     h += [Line2D([], [], marker="^", ls="", color=INK), Line2D([], [], marker="s", ls="", color=INK, mfc="none"),
           Line2D([], [], marker="v", ls="", color=INK), Line2D([], [], marker="o", ls="", color=INK)]
-    lab += ["boost written", "PA on", "drive to the level's", "measured -3 dB point (or edge)"]
+    lab += ["first drive written (boost or eased)", "PA on", "drive to the level's", "measured -3 dB point (or edge)"]
     fig.legend(h, lab, loc="lower center", ncol=5, fontsize=8, frameon=False)
     c = band["constants"]
     state = "kept: the board's constants hold" if band.get("kept") else "PASS" if band["ok"] else "CHECK"
     # Two lines: one ran off a long radio name's figure
     fig.suptitle(f"{who}{mhz:g} MHz key-up  ({state})\ndead {c['dead_pm']}/1000, knee {c['knee_us']} us, "
-                 f"slope {c['slope_us']} us, window {c['window_us']} us, settle {c['settle_us']} us", fontsize=10.5)
+                 f"slope {c['slope_us']} us, window {c['window_us']} us, settle {c['settle_us']} us"
+                 + (f", ease {c['ease_pm']}/1000" if c.get("ease_pm") else ""), fontsize=10.5)
     fig.tight_layout(rect=(0, 0.09, 1, 0.96))
     fig.savefig(path, dpi=130)
     plt.close(fig)

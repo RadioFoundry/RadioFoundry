@@ -28,6 +28,16 @@ def test_plan_is_the_firmwares():
     assert (k["boost"], k["pa_us"], k["drive_us"]) == (764, 200, 200)
     k = pa_cal.plan(DFLT, 600, 1448, 760, 4095)                         # in the dead zone
     assert (k["boost"], k["pa_us"]) == (0, 1500)
+    # the fastest approach: a level over it up on drive 836, then its own; the levels under it as before
+    e = dict(DFLT, ease_pm=200)
+    assert pa_cal.plan(e, 767, 1448, 760, 4095) == pa_cal.plan(DFLT, 767, 1448, 760, 4095)
+    assert pa_cal.plan(e, 700, 1448, 760, 4095) == pa_cal.plan(DFLT, 700, 1448, 760, 4095)
+    assert pa_cal.plan(e, 1023, 1448, 760, 4095) == {"boost": 836, "drive": 1023, "boost_us": 990, "pa_us": 990, "drive_us": 137}
+    assert pa_cal.plan(dict(e, pa_us=400), 1448, 1448, 760, 4095) == {"boost": 836, "drive": 1448, "boost_us": 1053, "pa_us": 400, "drive_us": 200}
+    assert pa_cal.plan(dict(e, knee_us=2000), 700, 1448, 760, 4095)["boost"] == 836    # a boost stops there too
+    short = dict(e, window_us=600, settle_us=100)                       # the window is the boosts'
+    assert pa_cal.plan(short, 1448, 1448, 760, 4095)["boost_us"] == 1053
+    assert pa_cal.plan(short, 1448, 1448, 760, 4095, 800)["boost_us"] == 800    # the board's earliest point
     fixed = {"dead_pm": 0, "knee_us": 0, "slope_us": 936, "window_us": 936, "settle_us": 0, "pa_us": 936}
     for d in (100, 880, 1725):
         k = pa_cal.plan(fixed, d, 1725, 870, 4095)
@@ -109,7 +119,7 @@ class FakeRadio:
 
     def view(self):
         k = self.last or {"boost": 0, "drive": 0, "boost_us": 0, "pa_us": 0, "drive_us": 0}
-        return {"pa_keyup": "/".join(str(self.c[n]) for n in pa_cal.NAMES),
+        return {"pa_keyup": "/".join(str(self.c.get(n, 0)) for n in pa_cal.NAMES),
                 "pa_keyup.limits": f"{self.ahead}/{self.max_drive}", "tx_drive": "/".join(map(str, self.drives)),
                 "pa_keyup.last": "/".join(str(k[n]) for n in ("boost", "drive", "boost_us", "pa_us", "drive_us"))
                                  + f"/{self.top}/{self.ref}"}
@@ -148,7 +158,7 @@ class FakeBench:
 
 def run_band(loop, drives, top, ref, board, ahead=2500, max_drive=4095, **opts):
     a = types.SimpleNamespace(levels="all", plot="", before=None, channel=False, refit=True, batch=0, key_s=0.5, max_in_dbm=-13.0, pad_db=57.0, window_us=0, settle_us=None,
-                              pa_us=None, max_pct=100, points=6, rounds=4, confirm=True, cc=1, ts=1)
+                              pa_us=None, ease_pm=None, max_pct=100, points=6, rounds=4, confirm=True, cc=1, ts=1)
     a.__dict__.update(opts)
     cal = pa_cal.Cal.__new__(pa_cal.Cal)
     cal.a, cal.rows, cal.keys_n, cal.say = a, [], 0, lambda s: None
@@ -228,3 +238,16 @@ def test_a_key_down_in_the_slot_after_fails_the_band():
     assert pa_cal.overrun({"off_us": pa_cal.off_air_us(tail(1.9))}) == ["after-slot"]
     assert pa_cal.off_air_us(None) is None and pa_cal.overrun({}) == []
     assert pa_cal.end_db(tail(0.5)) == 0.0 and pa_cal.overrun({"end_db": pa_cal.end_db(tail(-0.2))}) == ["cut-short"]
+    noisy = tail(0.5)
+    noisy["db"][100] = -12.0                                            # one point of noise 3 ms after the carrier
+    assert round(pa_cal.off_air_us(noisy)) == 450
+    assert round(pa_cal.off_air_us(tail(9.0))) == 3950                  # never left: the envelope's end
+
+
+def test_a_weak_signals_key_down_is_judged_over_its_noise():
+    # 16 dB over the noise: the carrier falls at +0.25 ms and the noise stays within 20 dB of the burst's level
+    dt = 0.05
+    db = [0.0] * 45 + [-16.0 + (i % 3) for i in range(75)]
+    weak = {"t0_ms": -2.0, "dt_ms": dt, "db": db}
+    assert round(pa_cal.off_air_us(weak)) == 200
+    assert pa_cal.overrun({"off_us": pa_cal.off_air_us(weak)}) == []
