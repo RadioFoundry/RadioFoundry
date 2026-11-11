@@ -123,7 +123,12 @@ def ramps(plt, band, keys, path, who=""):
         color = LEVELS[i % len(LEVELS)]
         for k, old in ((before, True), (after, False)):
             if k and k.get("rise_us") is not None:
-                up.plot([k["rise_us"] / 1000], [-3], "o", color=color, ms=5, mfc="none" if old else color,
+                # A creeping level is timed by its edge, under -3 dB: the dot goes on the curve there
+                t, y = k.get("trace"), -3.0
+                if k.get("creep") and t:
+                    at = int(round((k["rise_us"] / 1000 - t["t0_ms"]) / t["dt_ms"]))
+                    y = t["db"][at] if 0 <= at < len(t["db"]) else y
+                up.plot([k["rise_us"] / 1000], [y], "o", color=color, ms=5, mfc="none" if old else color,
                         alpha=0.55 if old else 1)
         y = -42 + 3 * i
         _points(up, before and before.get("plan"), color, y, 0.45)
@@ -132,7 +137,7 @@ def ramps(plt, band, keys, path, who=""):
         power = "lowest level" if i == 0 else "top level" if i == len(pairs) - 1 else f"level {l}"
         meas = f", {lv['power']}" if lv and not lv["power"].startswith("0 ") else ""
         names.append(Line2D([], [], color=color, lw=1.7, label=f"{power} (drive {lv['drive'] if lv else '?'}{meas})"))
-        words = [f"{w}{k['rise_us']:+.0f} us, {k.get('over_db') or 0:.1f} dB over"
+        words = [f"{w}{'edge ' if k.get('creep') else ''}{k['rise_us']:+.0f} us, {k.get('over_db') or 0:.1f} dB over"
                  for k, w in ((before, "before "), (after, "after " if compared else ""))
                  if k and k.get("rise_us") is not None]
         note.append((f"{power}: " + "; ".join(words), color))
@@ -150,7 +155,7 @@ def ramps(plt, band, keys, path, who=""):
     h, lab = up.get_legend_handles_labels()
     h += [Line2D([], [], marker="^", ls="", color=INK), Line2D([], [], marker="s", ls="", color=INK, mfc="none"),
           Line2D([], [], marker="v", ls="", color=INK), Line2D([], [], marker="o", ls="", color=INK)]
-    lab += ["boost written", "PA on", "drive to the level's", "measured -3 dB point"]
+    lab += ["boost written", "PA on", "drive to the level's", "measured -3 dB point (or edge)"]
     fig.legend(h, lab, loc="lower center", ncol=5, fontsize=8, frameon=False)
     c = band["constants"]
     state = "kept: the board's constants hold" if band.get("kept") else "PASS" if band["ok"] else "CHECK"
