@@ -21,12 +21,12 @@ static sfr_ev_t evq[RADIO_SFR_EVQ_DEPTH] RFOUNDRY_CPU_RAM;	// CPU only: the boar
 static uint8_t evq_head, evq_tail;
 static uint32_t evq_drops;
 
-uint8_t radio_sfr_channel(const channel_t *ch, bool vfo, sfrConfig_t *cfg)
+uint8_t radio_sfr_channel(const channel_t *ch, sfrConfig_t *cfg)
 {
 	sfrChannelSettings_t s;
 
 	memset(cfg, 0, sizeof(*cfg));	// SFR_ROLE_OFF reads as a cleared configuration (the view's inbound slot)
-	if (vfo || ch->mode != RADIO_MODE_DMR || !sfrChannelDecode(ch->sfr_flag1, ch->sfr_a, ch->sfr_b, &s)) {
+	if (ch->mode != RADIO_MODE_DMR || !sfrChannelDecode(ch->sfr_flag1, ch->sfr_a, ch->sfr_b, &s)) {
 		return SFR_ROLE_OFF;
 	}
 	// One frequency: a repeater needs it to send on; a user may have no TX frequency (receive only)

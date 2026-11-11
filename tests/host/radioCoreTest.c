@@ -2907,6 +2907,7 @@ void radio_req_dmr_target(uint32_t id, bool p) { req(RREQ_DMR_TARGET, (int32_t)(
 void radio_req_dmr_target_clear(void) { req(RREQ_DMR_TARGET_CLEAR, 0); }
 void radio_req_dmr_timeslot(uint8_t ts) { req(RREQ_DMR_TS, ts); }
 void radio_req_dmr_color_code(uint8_t cc) { req(RREQ_DMR_CC, cc); }
+void radio_req_vfo_sfr(uint8_t a) { req(RREQ_VFO_SFR, a); }
 void radio_req_mode(uint8_t mode) { req(RREQ_MODE, mode); }
 void radio_req_vfo_copy(void) { req(RREQ_VFO_COPY, 0); }
 radio_vfo_copy_t radio_req_vfo_copy_checked(void)
@@ -4770,6 +4771,91 @@ static void test_sfr_roles(void)
 	CHECK(sm.view.dmr.sfr_role == SFR_ROLE_OFF && dmr_call_view()->ts == 1);
 	chans[4].sfr_a = 0;
 }
+
+#if CONFIG_VFO_DMR
+// The VFO's SFR role (RREQ_VFO_SFR, sfr.md 4): a channel's SFR bytes, taken as a channel's and saved with the VFO
+static void test_sfr_vfo(void)
+{
+	dmr_start(true);
+	req(RREQ_VFO_SFR, SFR_ROLE_RPT_STANDARD);	// on a channel: refused (its role is the codeplug's)
+	run(50);
+	CHECK(!sm.sfr_rpt && sm.view.dmr.sfr_role == SFR_ROLE_OFF);
+	req(RREQ_VFO_COPY, 0);				// channel 4: 438.5 MHz simplex, DMR, CC 2; no role
+	run(50);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_DMR && sm.view.dmr.sfr_role == SFR_ROLE_OFF);
+
+	// Repeater: the runner takes the modem on the VFO's frequency, the stack stops; saved
+	req(RREQ_VFO_SFR, SFR_ROLE_RPT_STANDARD);
+	run(50);
+	CHECK(sm.sfr_rpt && sm.dmr_keyed && !sm.view.dmr.active && sm.view.dmr.sfr_role == SFR_ROLE_RPT_STANDARD);
+	CHECK(hw.tx_hz == 438500000 && sim.cc_filter == 2);
+	settings_t st;
+	settings_read(&st);
+	CHECK(st.vfo_sfr == SFR_ROLE_RPT_STANDARD);
+
+	// A new color code: the repeater takes it
+	req(RREQ_DMR_CC, 5);
+	run(50);
+	CHECK(sm.sfr_rpt && sim.cc_filter == 5);
+	// A split: an ordinary repeater channel, the stack back; one frequency again: the role again
+	req(RREQ_VFO_TX, 433500000);
+	run(50);
+	CHECK(!sm.sfr_rpt && !sm.dmr_keyed && sm.view.dmr.active && sm.view.dmr.sfr_role == SFR_ROLE_OFF);
+	req(RREQ_VFO_TX, 0);
+	run(50);
+	CHECK(sm.sfr_rpt && sm.dmr_keyed && hw.tx_hz == 438500000);
+
+	// Kept over a restart
+	boot();
+	run(50);
+	CHECK(sm.view.vfo && sm.sfr_rpt && sm.view.dmr.sfr_role == SFR_ROLE_RPT_STANDARD);
+	// The same role again: no retune, the repeater keeps the modem
+	int offs = hw.tx_off_calls;
+	req(RREQ_VFO_SFR, SFR_ROLE_RPT_STANDARD);
+	run(50);
+	CHECK(sm.sfr_rpt && hw.tx_off_calls == offs);
+#if CONFIG_VFO_FM
+	// FM: no role in force, the stored one kept for DMR
+	req(RREQ_MODE, RADIO_MODE_FM);
+	run(50);
+	CHECK(!sm.sfr_rpt && sm.view.dmr.sfr_role == SFR_ROLE_OFF && sm.vfo_ch.sfr_a == SFR_ROLE_RPT_STANDARD);
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	run(50);
+	CHECK(sm.sfr_rpt && sm.view.dmr.sfr_role == SFR_ROLE_RPT_STANDARD);
+#endif
+
+	// User, inbound TS2: the call stack on TS2
+	req(RREQ_VFO_SFR, SFR_ROLE_USER_STANDARD | 0x20);
+	run(50);
+	CHECK(!sm.sfr_rpt && sm.view.dmr.active && sm.view.dmr.sfr_role == SFR_ROLE_USER_STANDARD);
+	CHECK(dmr_call_view()->ts == 2);
+	req(RREQ_VFO_SFR, SFR_ROLE_NUM_STORED);	// not a stored role: refused
+	run(50);
+	CHECK(sm.view.dmr.sfr_role == SFR_ROLE_USER_STANDARD);
+
+	// Off: the VFO's own slot again, saved
+	req(RREQ_VFO_SFR, 0);
+	run(50);
+	CHECK(sm.view.dmr.sfr_role == SFR_ROLE_OFF && sm.vfo_ch.sfr_flag1 == 0 && dmr_call_view()->ts == 1);
+	settings_read(&st);
+	CHECK(st.vfo_sfr == 0);
+
+	// Copy to VFO brings the channel's role
+	req(RREQ_VFO, 0);
+	chans[4].sfr_flag1 = SFR_CHANNEL_FLAG1_ENABLED;
+	chans[4].sfr_a = SFR_ROLE_RPT_STANDARD;
+	reload_channel();
+	CHECK(sm.sfr_rpt && !sm.view.vfo);
+	req(RREQ_VFO_COPY, 0);
+	run(50);
+	CHECK(sm.view.vfo && sm.sfr_rpt && sm.vfo_ch.sfr_a == SFR_ROLE_RPT_STANDARD);
+	chans[4].sfr_flag1 = 0;
+	chans[4].sfr_a = 0;
+	req(RREQ_VFO_SFR, 0);
+	run(50);
+	CHECK(!sm.sfr_rpt);
+}
+#endif
 #if CONFIG_SFR_CWID
 // A call through the repeater role: the repeater transmits, its hang ends and it goes quiet
 static void sfr_call_through(void)
@@ -4999,6 +5085,9 @@ int main(void)
 	test_hotspot_cwid();
 #if CONFIG_SFR
 	test_sfr_roles();
+#if CONFIG_VFO_DMR
+	test_sfr_vfo();
+#endif
 #endif
 #if CONFIG_SFR_CWID
 	test_sfr_cwid();
