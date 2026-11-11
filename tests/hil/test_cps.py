@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from rfoundry_hil import DebugLink, DebugLinkError, as_int, board_entry, board_id, find_ports, skip
+from rfoundry_hil import DebugLinkError, as_int, board_entry, board_id, skip
 import cps_client
 
 QDMR = cps_client.REGIONS["qdmr"]
@@ -65,7 +65,7 @@ def test_cps_readback_matches(radio, tmp_path):
     d = cps_client.compare(a, b, QDMR, skip=())
     assert not d, f"{len(d)} bytes differ between two reads, first {[(hex(x), y, z) for x, y, z in d[:4]]}"
 
-    v = radio.core()
+    v = radio.leave_vfo()
     if v.get("codeplug") != "open-firmware":
         skip("state", f"the radio runs the {v.get('codeplug')} codeplug: nothing stored to compare with")
     if v.get("vfo") == "1" or as_int(v.get("channel_number"), 0) == 0:
@@ -84,7 +84,7 @@ def test_cps_readback_matches(radio, tmp_path):
 @pytest.mark.feature("settings_store")
 def test_settings_saved(radio):
     """A channel change is saved within SETTINGS_SAVE_DELAY_MS (2 s); no failures or torn records"""
-    v = radio.core()
+    v = radio.leave_vfo()
     if v.get("vfo") == "1" or as_int(v.get("zone_size"), 0) < 2:
         skip("state", "needs a zone with two channels or more, on a channel")
     s0 = storage(radio)
@@ -101,24 +101,12 @@ def test_settings_saved(radio):
     assert as_int(s1["settings.failures"]) == 0 and as_int(s1["storage.errors"]) == 0, s1
 
 
-def reconnect(radio, timeout=20.0):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        for port in [radio.port] + find_ports():
-            try:
-                radio.link = DebugLink(port, timeout=1.5)
-                radio.link.ping()
-                radio.port = port
-                return
-            except (DebugLinkError, OSError):
-                time.sleep(0.5)
-    raise AssertionError("the radio did not come back after the restart")
 
 
 @pytest.mark.feature("settings_store")
 @pytest.mark.reboot
 def test_settings_survive_restart(radio):
-    v = radio.core()
+    v = radio.leave_vfo()
     if v.get("vfo") == "1" or as_int(v.get("zone_size"), 0) < 2:
         skip("state", "needs a zone with two channels or more, on a channel")
     pos = (as_int(v["zone_pos"]) + 1) % as_int(v["zone_size"])
@@ -128,7 +116,7 @@ def test_settings_survive_restart(radio):
     radio.link.reboot(0, radio.link.chip()["token"])
     radio.link.close()
     time.sleep(2.0)
-    reconnect(radio)
+    radio.reconnect(20.0)
     after = radio.wait_for(lambda c: c.get("state") is not None, timeout=5.0)
     assert after["zone_index"] == v["zone_index"] and after["zone_pos"] == str(pos), (v, after)
     s = storage(radio)

@@ -9,6 +9,7 @@
 #include "hal_time.h"
 #include "input/input.h"
 #include "input/input_engine.h"
+#include "input/input_forward.h"
 #include "radio/radio.h"
 #include "debuglink/dlog.h"
 #include "FreeRTOS.h"
@@ -54,15 +55,7 @@ static void emit(const input_event_t *ev, void *ctx)
 		dlog("input: PTT down (%s, keys 0x%08x%s)", last_source == INPUT_SRC_HOST ? "host" : "keys",
 		     (unsigned)raw_keys, ptt_blocked ? ", blocked" : "");
 	}
-	if (ev->action == ACT_PTT && (ev->gesture == GESTURE_UP || (ev->gesture == GESTURE_DOWN && !ptt_blocked))) {
-		radio_req_ptt(ev->gesture == GESTURE_DOWN);
-	} else if (ev->action == ACT_MONITOR && (ev->gesture == GESTURE_DOWN || ev->gesture == GESTURE_UP)) {
-		if (ev->gesture == GESTURE_UP && ev->value != 0) {
-			radio_req_monitor_held_up();	// its hold function ran: not a press (DMR doesn't toggle)
-		} else {
-			radio_req_monitor(ev->gesture == GESTURE_DOWN);
-		}
-	}
+	input_forward(ev, ptt_blocked);
 	if (xQueueSend(events, ev, 0) != pdTRUE && ev->action == ACT_ENC_STEP) {
 		// The UI is behind: keep the detents for the next scan instead of losing them (a full queue drops key
 		// events, but a lost encoder step is a wrong channel or row)
@@ -169,6 +162,11 @@ bool input_next(input_event_t *ev, uint32_t wait_ms)
 	}
 	TickType_t wait = wait_ms == UINT32_MAX ? portMAX_DELAY : pdMS_TO_TICKS(wait_ms);
 	return xQueueReceive(events, ev, wait) == pdTRUE;
+}
+
+bool input_pending(void)
+{
+	return events != NULL && uxQueueMessagesWaiting(events) != 0;
 }
 
 uint32_t input_idle_ms(void)

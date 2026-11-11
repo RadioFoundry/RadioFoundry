@@ -2,8 +2,10 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """The SFR roles of a codeplug channel, without the hotspot (docs/spec/sfr.md 4). The bench modem is the talker: a
 group call on the channel's timeslot with direct mode sync. The tests judge by the radio's own counters (sfr.*,
-dmr.*, call.*), not the SDR. They need a channel with the role on --sfr-freq (default --dmr-freq) in the current zone,
-set in the codeplug (the tests don't write it), and skip without one. Every setting they change is put back.
+dmr.*, call.*), not the SDR. They take a channel with the role on --sfr-freq (default --dmr-freq) in any zone, set
+in the codeplug. Without one the --radio-port radio's DMR VFO takes the role (RADIO op 38) on that frequency with the
+bench color code, one frequency; its frequency, mode, color code and role are put back after the test (the talker and
+listener of the chain test still need channels). Every setting they change is put back.
 
 test_sfr_repeater_quality (rf, radio_tx, bench_service): a repeater-role channel (Rpt or Rpt Moto) repeats a 4
 superframe call. Pass: at least 19 bursts repeated (18 voice and a header); the inbound frames the runner decoded
@@ -40,6 +42,7 @@ import pytest
 from _pytest.outcomes import Skipped
 
 from rfoundry_hil import counter_deltas, skip
+from hil_config import rig
 
 RPT_ROLES = (3, 4)  # sfrRole_t: RPT_STANDARD, RPT_MOTOROLA
 USER_ROLES = (1, 2)  # USER_STANDARD, USER_ERDM
@@ -47,27 +50,86 @@ SRC = 9990302
 
 
 def _freq(pytestconfig):
-    f = pytestconfig.getoption("--sfr-freq") or pytestconfig.getoption("--dmr-freq")
-    return f, pytestconfig.getoption("--dmr-cc"), pytestconfig.getoption("--dmr-tg")
+    f = pytestconfig.getoption("--sfr-freq") or rig(pytestconfig, "dmr-freq")
+    return f, rig(pytestconfig, "dmr-cc"), rig(pytestconfig, "dmr-tg")
 
 
-def _sfr_channel(radio, hz, roles):
-    """Select the first channel of the current zone on hz whose SFR role is in roles; its dmr view, or skip."""
+# The running test's ExitStack (_vfo_restore): what the VFO fallback changed is put back through it
+_vfo_back = None
+
+
+@pytest.fixture(autouse=True)
+def _vfo_restore(radio):
+    """Puts back what _vfo_role changed, before the radio fixture's restore() puts the zone and the VFO switch back."""
+    global _vfo_back
+    with contextlib.ExitStack() as stack:
+        _vfo_back = stack
+        try:
+            yield
+        finally:
+            _vfo_back = None
+
+
+def _vfo_role(radio, hz, role, cc):
+    """The DMR VFO on hz, one frequency, color code cc, with the SFR role (RADIO op 38, docs/spec/sfr.md 4); its dmr
+    view, or skip. The VFO's frequency, mode, tones (vfo_session), color code and role are put back after the test."""
+    L = radio.link
+    stack = _vfo_back
+    stack.enter_context(radio.vfo_session())       # in the VFO, FM, no tones
+    ch = radio.view(["channel"])
+    if "ch.sfr" not in ch:
+        skip("not_built", "the firmware has no VFO SFR role (ch.sfr missing)")
+    old_sfr, old_cc = ch["ch.sfr"], ch.get("ch.color_code")
+
+    def back():
+        if radio.core().get("vfo") != "1":
+            radio._req_until(lambda: L.vfo(True), lambda v: v.get("vfo") == "1", "VFO on")
+        L.vfo_sfr_byte(int(old_sfr.split(",")[0]))
+        radio.wait_for(lambda v: v.get("ch.sfr") == old_sfr, 5, sections=("channel",), what="VFO SFR role back")
+        if old_cc is not None and radio.view(["channel"]).get("ch.color_code") != old_cc:
+            radio._req_until(lambda: L.dmr_fields(mode="dmr", cc=int(old_cc)),
+                             lambda v: v.get("mode") == "dmr", "VFO color code back")
+    stack.callback(back)        # before vfo_session's own (the mode back last)
+    radio._req_until(lambda: L.vfo_set(int(hz)), lambda v: v.get("rx_hz") == str(int(hz)), "VFO frequency")
+    radio._req_until(lambda: L.dmr_fields(mode="dmr", cc=int(cc)), lambda v: v.get("mode") == "dmr", "DMR VFO")
+    ch = radio.view(["channel"])
+    if ch.get("ch.tx_hz") != ch.get("ch.rx_hz"):
+        skip("state", f"the VFO has a split (TX {int(ch['ch.tx_hz']) / 1e6:.5f} MHz): an SFR role needs one frequency")
+    L.vfo_sfr(role, inbound_ts=1)
+    d = radio.wait_for(lambda v: v.get("dmr.sfr_role") == str(role), 5, sections=("dmr",),
+                       what=f"VFO SFR role {role}")
+    print(f"no channel with the role: the VFO on {hz / 1e6:.5f} MHz, role {role}, CC {cc}")
+    return d
+
+
+def _sfr_channel(radio, hz, roles, cc=None):
+    """Select the first channel on hz whose SFR role is in roles, the current zone first, then the others (restore()
+    puts the zone back); its dmr view. None: with cc (the bench color code) the VFO takes roles[0] (_vfo_role), else
+    skip."""
     radio.go_home()
     L = radio.link
     if radio.core().get("vfo") == "1":
         radio._req_until(lambda: L.vfo(False), lambda v: v.get("vfo") == "0", "VFO off")
-    size = int(radio.core().get("zone_size") or 0)
-    for pos in range(size):
-        v = radio._req_until(lambda: L.zone_pos(pos), lambda x: x.get("zone_pos") == str(pos), f"position {pos}")
-        if int(v["rx_hz"]) != int(hz) or v.get("mode") != "dmr":
-            continue
-        d = radio.view(["dmr"])
-        if d.get("dmr.sfr_role") is None:
-            skip("not_built", "built without the SFR (dmr.sfr_role missing)")
-        if int(d["dmr.sfr_role"]) in roles:
-            return d
-    skip("state", f"no channel with SFR role {roles} on {hz / 1e6:.5f} MHz in zone {radio.core().get('zone_name')!r}")
+    start = int(radio.core().get("zone_index") or 0)
+    count = int(radio.core().get("zone_count") or 1)
+    searched = []
+    for zone in [start] + [z for z in range(count) if z != start]:
+        if radio.core().get("zone_index") != str(zone):
+            radio._req_until(lambda: L.zone(zone), lambda v: v.get("zone_index") == str(zone), f"zone {zone}")
+        size = int(radio.core().get("zone_size") or 0)
+        for pos in range(size):
+            v = radio._req_until(lambda: L.zone_pos(pos), lambda x: x.get("zone_pos") == str(pos), f"position {pos}")
+            if int(v["rx_hz"]) != int(hz) or v.get("mode") != "dmr":
+                continue
+            d = radio.view(["dmr"])
+            if d.get("dmr.sfr_role") is None:
+                skip("not_built", "built without the SFR (dmr.sfr_role missing)")
+            if int(d["dmr.sfr_role"]) in roles:
+                return d
+        searched.append(repr(radio.core().get("zone_name")))
+    if cc is not None and _vfo_back is not None:
+        return _vfo_role(radio, hz, roles[0], cc)
+    skip("state", f"no channel with SFR role {roles} on {hz / 1e6:.5f} MHz in any zone ({', '.join(searched)})")
 
 
 def _setting(radio, name, value):
@@ -106,7 +168,7 @@ def tx_allowed(radio):
 @pytest.mark.feature("sfr")
 def test_sfr_repeater_quality(radio, sdr_bench, pytestconfig, tx_allowed):
     freq, cc, tg = _freq(pytestconfig)
-    d = _sfr_channel(radio, round(freq * 1e6), RPT_ROLES)
+    d = _sfr_channel(radio, round(freq * 1e6), RPT_ROLES, cc)
     radio.wait_for(lambda x: x.get("dmr.sfr_rpt") == "1", 5, sections=("dmr",), what="repeater role running")
     ts = _inbound_ts(radio, d)
     v0 = radio.view(["sfr"])
@@ -131,7 +193,7 @@ def test_sfr_repeater_quality(radio, sdr_bench, pytestconfig, tx_allowed):
 @pytest.mark.feature("sfr")
 def test_sfr_repeater_tx_inhibit(radio, sdr_bench, pytestconfig, tx_allowed):
     freq, cc, tg = _freq(pytestconfig)
-    d = _sfr_channel(radio, round(freq * 1e6), RPT_ROLES)
+    d = _sfr_channel(radio, round(freq * 1e6), RPT_ROLES, cc)
     radio.wait_for(lambda x: x.get("dmr.sfr_rpt") == "1", 5, sections=("dmr",), what="repeater role running")
     ts = _inbound_ts(radio, d)
     _setting(radio, "tx_inhibit", 1)
@@ -150,7 +212,7 @@ def test_sfr_repeater_tx_inhibit(radio, sdr_bench, pytestconfig, tx_allowed):
 @pytest.mark.feature("sfr_cwid")
 def test_sfr_cwid(radio, sdr_bench, pytestconfig, tx_allowed):
     freq, cc, tg = _freq(pytestconfig)
-    d = _sfr_channel(radio, round(freq * 1e6), RPT_ROLES)
+    d = _sfr_channel(radio, round(freq * 1e6), RPT_ROLES, cc)
     old = int(d.get("dmr.sfr_cwid", 0))
     try:
         _setting(radio, "sfr_cwid", 1)
@@ -175,7 +237,7 @@ def test_sfr_cwid(radio, sdr_bench, pytestconfig, tx_allowed):
 @pytest.mark.feature("sfr")
 def test_sfr_user_modes(radio, sdr_bench, pytestconfig):
     freq, cc, tg = _freq(pytestconfig)
-    d = _sfr_channel(radio, round(freq * 1e6), USER_ROLES)
+    d = _sfr_channel(radio, round(freq * 1e6), USER_ROLES, cc)
     ts = int(d.get("dmr.ts", 1))
     old = int(d.get("dmr.sfr_rx", 0))
     keys = ("call.rx_sfr_direct", "call.rx_voice_bursts", "call.rx_calls")
@@ -233,6 +295,7 @@ def _user_radio(port, hz, what):
 
 @pytest.mark.rf
 @pytest.mark.radio_tx
+@pytest.mark.radio_chain
 @pytest.mark.feature("sfr")
 def test_sfr_chain_rfoundry_user(radio, pytestconfig, request, tx_allowed):
     talker_port = pytestconfig.getoption("--sfr-talker-port")

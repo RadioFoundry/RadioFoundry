@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 """Just enough of the debug link (docs/spec/debuglink.md) to ask a running RadioFoundry radio what it is: VERSION (board,
-git, codec=) and INFO_CHIP (the chip UID, to tell radios apart), and READ_MEM for the bootloader key (bootkey.py).
-Read only: no command here changes the radio.
+git, codec=) and INFO_CHIP (the chip UID, to tell radios apart), and READ_MEM for the bootloader key (bootkey.py),
+and HWOPT (3.25) for a hardware option an install learned (origversion.py). Only hwopt_set changes the radio.
 Needs pyserial; without it, probing is skipped.
 """
 import struct
@@ -10,7 +10,8 @@ import time
 
 VID, PID = 0x1FC9, 0x0094
 SOF1, SOF2 = 0xA5, 0x5A
-CMD_VERSION, CMD_INFO_CHIP, CMD_READ_MEM = 0x02, 0x0B, 0x0C
+CMD_VERSION, CMD_INFO_CHIP, CMD_READ_MEM, CMD_HWOPT = 0x02, 0x0B, 0x0C, 0x21
+HWOPT_LIST, HWOPT_SET = 0, 1
 
 
 class LinkError(Exception):
@@ -71,6 +72,10 @@ class Link:
     def __init__(self, port, timeout=1.0):
         import serial
         self.s = serial.Serial(port, 115200, timeout=0.05)
+        try:    # an FTDI cable passes received bytes on after 1 ms, not 16 (Linux only)
+            self.s.set_low_latency_mode(True)
+        except (AttributeError, NotImplementedError, OSError, ValueError):
+            pass
         self.timeout = timeout
         self.seq = 0x40
 
@@ -108,6 +113,18 @@ class Link:
                 raise LinkError("READ_MEM answer doesn't match 0x%08X" % (addr + len(out)))
             out += r[4:]
         return bytes(out)
+
+    def hwopts(self):
+        """The board's hardware options: [{name, value (-1: none stored), restart, choices}]"""
+        kv = parse_kv(self.request(CMD_HWOPT, bytes([HWOPT_LIST])).decode("ascii", "replace"))
+        return [{"name": kv.get("hwopt.%d.name" % i, ""), "value": int(kv.get("hwopt.%d.value" % i, "-1")),
+                 "restart": kv.get("hwopt.%d.restart" % i) == "1",
+                 "choices": kv.get("hwopt.%d.choices" % i, "").split("|")}
+                for i in range(int(kv.get("hwopt.count", "0")))]
+
+    def hwopt_set(self, option, choice):
+        """Store a choice; LinkError when the radio refuses it (status 7: transmitting, or the board can't store it)."""
+        self.request(CMD_HWOPT, bytes([HWOPT_SET, option, choice]))
 
     def chip_uid(self):
         """The 96-bit chip UID as hex, or None (INFO_CHIP: idcode u32, flash_kb u16, uid 12 bytes, ...)."""

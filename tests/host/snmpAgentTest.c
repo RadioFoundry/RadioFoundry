@@ -211,7 +211,7 @@ static void air_poll(void)
 
 static void from_air(uint32_t src, const uint8_t *p, int n)
 {
-	handler(true, src, 41000, 3100001, 161, p, n);
+	handler(true, src, 41000, 9990001, 161, p, n);
 }
 
 static void reset_io(void)
@@ -344,11 +344,11 @@ static void test_rf(void)
 	reset_io();
 	now_ms += 5000;
 	snmp_agent_stats(&s0);
-	from_air(3100009, q, qn);
+	from_air(9990009, q, qn);
 	CHECK(air_sent == 0);	// waits for the host link task
-	from_air(3100010, q, qn);	// the mailbox is full: dropped
+	from_air(9990010, q, qn);	// the mailbox is full: dropped
 	air_poll();
-	CHECK(air_sent == 1 && air_dst == 3100009);
+	CHECK(air_sent == 1 && air_dst == 9990009);
 	// the UDP header: 161 -> the requester's port, its length; the message after it within SNMP_RF_MAX
 	CHECK(air_len > 8 && air_len <= 8 + SNMP_RF_MAX && air_buf[0] == 0 && air_buf[1] == 161 && air_buf[2] == (41000 >> 8) &&
 	      air_buf[3] == (41000 & 0xFF) && ((air_buf[4] << 8) | air_buf[5]) == air_len);
@@ -357,11 +357,11 @@ static void test_rf(void)
 	CHECK(s1.rf_requests == s0.rf_requests + 2 && s1.rf_answers == s0.rf_answers + 1 && s1.rf_dropped == s0.rf_dropped + 1);
 
 	// Within the answer gap: dropped; after it: answered
-	from_air(3100009, q, qn);
+	from_air(9990009, q, qn);
 	now_ms += 500;
 	air_poll();
 	CHECK(air_sent == 1);
-	from_air(3100009, q, qn);
+	from_air(9990009, q, qn);
 	now_ms += 600;
 	air_poll();
 	CHECK(air_sent == 2);
@@ -369,22 +369,22 @@ static void test_rf(void)
 	// Sizes: empty and longer than SNMP_RF_REQ_MAX are dropped at once; exactly SNMP_RF_REQ_MAX is taken (and,
 	// being padding after the message, answered)
 	snmp_agent_stats(&s0);
-	from_air(3100009, q, 0);
+	from_air(9990009, q, 0);
 	uint8_t big[SNMP_RF_REQ_MAX + 1];
 	memset(big, 0, sizeof(big));
 	memcpy(big, q, (size_t)qn);
-	from_air(3100009, big, sizeof(big));
+	from_air(9990009, big, sizeof(big));
 	snmp_agent_stats(&s1);
 	CHECK(s1.rf_dropped == s0.rf_dropped + 2);
 	now_ms += 1100;
-	from_air(3100009, big, SNMP_RF_REQ_MAX);
+	from_air(9990009, big, SNMP_RF_REQ_MAX);
 	air_poll();
 	CHECK(air_sent == 3);
 
 	// A GetBulk of 32 over RF: capped at 8 repetitions and SNMP_RF_MAX
 	now_ms += 1100;
 	qn = request(q, "public", 0xA5, 0, 32, START, 1, 1, 0x05, NULL, 0);
-	from_air(3100009, q, qn);
+	from_air(9990009, q, qn);
 	air_poll();
 	CHECK(air_sent == 4 && air_len <= 8 + SNMP_RF_MAX && answer(air_buf + 8, air_len - 8, NULL, &nb) == 0 && nb <= 8 && nb > 2);
 
@@ -392,7 +392,7 @@ static void test_rf(void)
 	now_ms += 1100;
 	snmp_agent_set_community(true, "private", 7);
 	qn = request(q, "private", 0xA3, 0, 0, SYS_NAME, sizeof(SYS_NAME), 1, 0x04, "RFNAME", 6);
-	from_air(3100009, q, qn);
+	from_air(9990009, q, qn);
 	air_poll();
 	CHECK(air_sent == 5 && answer(air_buf + 8, air_len - 8, NULL, NULL) == 6 && memcmp(stored.radio_name, "RFNAME", 6) != 0);
 	snmpConfig_t c;
@@ -400,7 +400,7 @@ static void test_rf(void)
 	c.flags |= SNMP_CFG_RF_WRITE;
 	snmp_agent_set_config(&c);
 	now_ms += 1100;
-	from_air(3100009, q, qn);
+	from_air(9990009, q, qn);
 	air_poll();
 	CHECK(air_sent == 6 && answer(air_buf + 8, air_len - 8, NULL, NULL) == 0 && memcmp(stored.radio_name, "RFNAME", 7) == 0);
 	c.flags &= (uint8_t)~SNMP_CFG_RF_WRITE;
@@ -411,11 +411,11 @@ static void test_rf(void)
 	now_ms += 1100;
 	qn = request(q, "public", 0xA0, 0, 0, SYS_DESCR, sizeof(SYS_DESCR), 1, 0x05, NULL, 0);
 	air_busy = true;
-	from_air(3100009, q, qn);
+	from_air(9990009, q, qn);
 	snmp_agent_poll(now_ms);	// answered into the staging buffer
 	snmp_agent_poll(now_ms);	// not taken
 	snmp_agent_stats(&s0);
-	from_air(3100011, q, qn);	// in the mailbox behind it
+	from_air(9990011, q, qn);	// in the mailbox behind it
 	now_ms += SNMP_RF_GIVE_UP_MS - 1;
 	snmp_agent_poll(now_ms);
 	snmp_agent_stats(&s1);
@@ -426,14 +426,14 @@ static void test_rf(void)
 	CHECK(air_sent == 6 && s1.rf_dropped == s0.rf_dropped + 1);
 	air_busy = false;
 	air_poll();	// the waiting request (the gap since the last answer has passed)
-	CHECK(air_sent == 7 && air_dst == 3100011);
+	CHECK(air_sent == 7 && air_dst == 9990011);
 
 	// RF answers off: requests over the air dropped; the host still answered
 	snmp_agent_get_config(&c);
 	c.flags |= SNMP_CFG_RF_OFF;
 	snmp_agent_set_config(&c);
 	now_ms += 1100;
-	from_air(3100009, q, qn);
+	from_air(9990009, q, qn);
 	air_poll();
 	CHECK(air_sent == 7);
 	reset_io();
@@ -486,7 +486,7 @@ static void test_traps_and_off(void)
 	reset_io();
 	from_host(q, qn);
 	now_ms += 1100;
-	from_air(3100009, q, qn);
+	from_air(9990009, q, qn);
 	snmp_agent_poll(now_ms);
 	CHECK(usb_sent == 0 && air_sent == 0);
 	c.flags &= (uint8_t)~SNMP_CFG_OFF;
@@ -526,7 +526,7 @@ static void test_fuzz(void)
 			}
 		} else {
 			now_ms += 1100;
-			from_air(3100009, p, n);
+			from_air(9990009, p, n);
 			air_poll();
 			if ((air_sent > 0) && ((air_len > 8 + SNMP_RF_MAX) || (((air_buf[4] << 8) | air_buf[5]) != air_len) ||
 					       (answer(air_buf + 8, air_len - 8, NULL, NULL) < 0))) {
@@ -540,7 +540,7 @@ static void test_fuzz(void)
 
 int main(void)
 {
-	fake_view.dmr.own_id = 3100001;
+	fake_view.dmr.own_id = 9990001;
 	strcpy(fake_view.zone_name, "Zone");
 	strcpy(fake_view.ch.name, "Chan");
 	fake_view.power = 1;

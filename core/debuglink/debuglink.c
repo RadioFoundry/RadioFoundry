@@ -122,8 +122,7 @@ static const char *state_name(uint8_t s)
 
 static bool summary_line(uint8_t i, char *buf, uint8_t len)
 {
-	const char *pw = (view.power < board.power_count && board.power_names != NULL) ? board.power_names[view.power]
-										       : "?";
+	const char *pw = board_power_name(view.power, view.ch.tx_hz);
 	switch (i) {
 	case 0:
 		dl_fmt(buf, len, "radio %s %s ch %u '%s' %u.%05u %s%s", view.ch.mode == RADIO_MODE_DMR ? "DMR" : "FM",
@@ -238,6 +237,9 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 	}
 	dl_text(&t, "uptime_ms=%u\nreq_max=%u\nreply_max=%u\ninject_max_ms=%u\n", (unsigned)hal_millis(), DL_REQ_MAX,
 		DL_REPLY_MAX, INPUT_INJECT_MAX_MS);
+	if (CONFIG_FM_TX_TONES) {
+		dl_text(&t, "tone_burst_max_ms=%u\n", INPUT_INJECT_MAX_MS);	// the burst ends by itself (TONE_BURST, op 23)
+	}
 	// last: a long list that doesn't fit drops only itself (a host then treats the build as unknown). dl_text, not
 	// dl_text_kv_str: that cuts a value at 39 characters, and a cut off= list would read as complete
 	dl_text(&t, "preset=%s\n", build_preset);
@@ -648,7 +650,7 @@ static size_t cmd_read_mem(const uint8_t *req, uint16_t len, uint8_t *out, size_
 	return 5u + n;
 }
 
-static bool transmitting(void)
+bool debuglink_transmitting(void)
 {
 	radio_get_view(&view);
 	if (view.state == RS_TX) {
@@ -668,7 +670,7 @@ static uint8_t reboot_gate(uint8_t mode, uint32_t token)
 {
 	hal_chip_t c;
 	bool have = read_chip(&c);
-	return dl_reboot_check(mode, token, have ? &c : NULL, transmitting());
+	return dl_reboot_check(mode, token, have ? &c : NULL, debuglink_transmitting());
 }
 
 static size_t cmd_reboot(const uint8_t *req, uint16_t len, uint8_t *out)
@@ -842,6 +844,10 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_rx2(req, len, out, cap);
 	case DL_CMD_IDDB:
 		return debuglink_cmd_iddb(req, len, out, cap);
+	case DL_CMD_CHIP_REG:
+		return debuglink_cmd_chip_reg(req, len, out, cap);
+	case DL_CMD_HWOPT:
+		return debuglink_cmd_hwopt(req, len, out, cap);
 	case DL_CMD_CODEPLUG:
 #if CONFIG_CPS_FAST
 		return cps_fast_cmd(req, len, out, cap, hal_millis());

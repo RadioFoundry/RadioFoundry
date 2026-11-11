@@ -8,7 +8,8 @@ import os
 import pytest
 
 import bringup_plugin
-from rfoundry_hil import DebugLinkError, Radio, SdrBench, board_id, find_ports, skip, skip_kind, skip_mark
+from rfoundry_hil import (DebugLinkError, Radio, SdrBench, board_id, find_ports, need_radio_tx, skip, skip_kind,
+                          skip_mark)
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
@@ -34,8 +35,10 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip_mark("opt_in", "writes the codeplug: run with --allow-codeplug-write"))
         elif "reboot" in item.keywords and not config.getoption("--allow-reboot"):
             item.add_marker(skip_mark("opt_in", "restarts the radio: run with --allow-reboot"))
-        elif "manual" in item.keywords and not config.getoption("--manual"):
-            item.add_marker(skip_mark("opt_in", "needs a person at the radio: run with --manual -s"))
+        elif "manual" in item.keywords and not config.getoption("--manual") and \
+                not ("by_ear" in item.keywords and config.getoption("--microphone")):
+            item.add_marker(skip_mark("opt_in", "needs a person at the radio: run with --manual -s" +
+                                      (", or --microphone to listen with it" if "by_ear" in item.keywords else "")))
 
 
 @pytest.hookimpl(wrapper=True)
@@ -72,7 +75,13 @@ def radio(pytestconfig):
     lang = r.language_english()
     if lang:
         print(f"rfoundry-hil: the radio's language was {lang}: set back to English (the tests read English text)")
+    r.tx_gate(False)        # blocked from the start: module fixtures run before any test's own gate
+    r.hwopt_baseline()
     yield r
+    try:
+        r.tx_gate_end()
+    except (DebugLinkError, OSError) as e:     # serial errors are OSErrors: the port may be gone
+        print(f"rfoundry-hil: couldn't clear the test TX limit ({e}); a restart clears it")
     r.close()
 
 
@@ -93,14 +102,26 @@ def only_on(bid, radio):
 
 
 @pytest.fixture(autouse=True)
+def radio_can_tx(request):
+    """A radio_tx test on a radio that can't transmit: not_built."""
+    if "radio_tx" in request.keywords and "radio" in request.fixturenames:
+        need_radio_tx(request.getfixturevalue("radio"))
+
+
+@pytest.fixture(autouse=True)
 def restore_radio(request):
-    """Every test that uses the radio leaves it as it found it (channel / VFO, zone, power, squelch, monitor)."""
+    """Every test that uses the radio leaves it as it found it (channel / VFO, zone, power, squelch, monitor), and runs
+    with every transmission blocked unless marked radio_tx (Radio.tx_gate). A radio_tx test is blocked again after it,
+    so nothing between tests (module fixtures, a module without the radio's serial link) can transmit."""
     # test_tcp_services.py's module fixture "net" has the radio on the network (its serial link closed) for the whole
-    # module and puts it back on serial itself: nothing to snapshot over serial then
-    if "radio" not in request.fixturenames or "net" in request.fixturenames:
+    # module and puts it back on serial itself: nothing to snapshot over serial then. test_ppp_link.py's "ppp" has PPP
+    # on the serial port, which a debug link frame there would end (ppp.md 4); its tests change nothing
+    if "radio" not in request.fixturenames or "net" in request.fixturenames or "ppp" in request.fixturenames:
         yield
         return
     r = request.getfixturevalue("radio")
+    may_transmit = "radio_tx" in request.keywords
+    r.tx_gate(may_transmit)
     snap = r.snapshot()
     try:
         yield
@@ -110,49 +131,26 @@ def restore_radio(request):
         except DebugLinkError:
             pass
         r.restore(snap)
+        if may_transmit:
+            try:
+                r.tx_gate(False)
+            except DebugLinkError:
+                pass
 
 
 @pytest.fixture(scope="session")
 def sdr_bench(pytestconfig):
     b = SdrBench(allow_rf=pytestconfig.getoption("--allow-rf"),
-                 allow_service_stop=pytestconfig.getoption("--allow-service-stop"),
-                 tx_power=pytestconfig.getoption("--tx-power"), gain=pytestconfig.getoption("--sdr-gain"),
-                 wait_max=pytestconfig.getoption("--bench-wait-max"))
+                 wait_max=pytestconfig.getoption("--bench-wait-max"), api=pytestconfig.getoption("--bench-api"),
+                 api_rx=pytestconfig.getoption("--bench-api-rx"),
+                 api_level=pytestconfig.getoption("--bench-api-level"))
+    if not b.api:
+        skip("bench", "no bench board: give --bench-api HOST[:PORT] (no bench test runs, the DMR audio smoke neither)")
     if not b.reachable():
-        skip("bench", f"SDR bench {b.host} not reachable over ssh, or its tools missing (tools/bench/dmr_bench.py "
-                      "sync): no bench test runs, the DMR audio smoke neither")
+        skip("bench", f"bench board {b.api} (receive {b.api_rx}) not answering on the line protocol, with a TX "
+                      "frequency and its receiver running")
     yield b
     b.remove_run_dirs()
-
-
-@pytest.fixture(autouse=True)
-def bench_hardware(request):
-    """Skips a test marked sdr_rx / bench_modem / sdr_or_modem when the SDR bench lacks that piece (SdrBench.lacks).
-    Unmarked tests need neither and don't touch the bench here."""
-    kw = request.node.keywords
-    sdr, modem, either = "sdr_rx" in kw, "bench_modem" in kw, "sdr_or_modem" in kw
-    if not (sdr or modem or either):
-        yield
-        return
-    if "radio" in request.fixturenames:
-        request.getfixturevalue("radio")        # no radio: skip for that first, without asking the bench
-    bench = request.getfixturevalue("sdr_bench")
-    why = bench.lacks(sdr=sdr, modem=modem, either=either)
-    if why:
-        skip("bench", why)
-    yield
-
-
-@pytest.fixture(scope="session")
-def bench_station(pytestconfig, sdr_bench):
-    """The name of the bench station to use as the second radio (--bench-station); skips without one."""
-    name = pytestconfig.getoption("--bench-station")
-    if not name:
-        skip("opt_in", "no bench station: give --bench-station NAME (rfoundry-bench info on the bench lists them)")
-    st = next((s for s in sdr_bench.info().get("stations", []) if s["name"] == name), None)
-    if st is None or not st.get("present"):
-        skip("bench", f"bench station {name} is not on the bench (or the bench has no rfoundry-benchd)")
-    return name
 
 
 @pytest.fixture

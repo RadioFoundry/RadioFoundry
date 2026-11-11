@@ -29,7 +29,7 @@ const uint8_t dmr_ambe_silence[DMR_AMBE_FRAME_BYTES] = { 0xB9, 0xE8, 0x81, 0x52,
 #endif
 
 enum { RXC_NONE, RXC_PLAY, RXC_OTHER };
-enum { TX_NONE, TX_ACCESS, TX_WAKE, TX_WAKE_LISTEN, TX_ON, TX_END, TX_DENIED, TX_DATA, TX_DATA_END };
+enum { TX_NONE, TX_ACCESS, TX_WAKE, TX_WAKE_LISTEN, TX_PERMIT, TX_ON, TX_END, TX_DENIED, TX_DATA, TX_DATA_END };
 
 #define VOICE_PERIOD_MS		60	// one burst per frame on our slot
 #define DUPLICATE_MS		40	// no slot counter from the modem: the same burst index again within this is a repeat
@@ -54,6 +54,7 @@ static uint32_t evq_drops_base, tx_underruns_base;	// at the last dmr_call_reset
 static uint32_t tick_count;	// slot ticks, counted by the producer
 static uint8_t tick_alt;	// consecutive ticks with the slot number alternating 1 / 2
 static int8_t tick_ts;
+static void (*wake_fn)(void);	// dmr_call_set_wake; outlives dmr_call_init
 
 // --- Stack state ---
 
@@ -135,6 +136,8 @@ static struct {
 	uint32_t deadline;
 	uint32_t wake_sent_ms;
 	uint8_t wake_tries;
+	uint32_t permit_ms;	// the talk permit hold's start (TX_PERMIT)
+	bool permit_done;	// this PTT press had its hold
 	uint32_t tx_start_ms;
 	uint32_t tx_end_ms;	// the last voice call of ours ended (DMR_CALL_OWN_ECHO_MS)
 	bool tx_end_seen;
@@ -439,6 +442,10 @@ static void on_event(const dmr_event_t *ev, void *ctx)
 	if (it->has_burst)
 		it->burst = *ev->burst;
 	__atomic_store_n(&evq_head, (uint8_t)(head + 1), __ATOMIC_RELEASE);
+	// The end of a transmission: the receiver goes back at the next poll, and a reply can start 30 ms after the last
+	// burst. Queued first, so the poll the wake brings sees it
+	if ((ev->kind == DMR_EV_TX_DONE || ev->kind == DMR_EV_TX_REJECTED) && wake_fn != NULL)
+		wake_fn();
 }
 
 static void evq_reset(void)
@@ -518,6 +525,16 @@ static void rx_end(uint32_t now)
 	s.dirty = true;
 }
 
+// The call that faded a moment ago, back by late entry with its own LC: one call with a hole in it, not two (a
+// terminator did end it). Only the books: it plays as any late entry does
+static bool rx_resuming(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, uint32_t now)
+{
+	return !elapsed(now, s.last_call_end_ms, s.call_end_seen, DMR_CALL_RESUME_MS) && b->ts == s.call_ts &&
+	       memcmp(lc, s.call_lc, DMR_LC_BYTES) == 0 &&
+	       (!s.term_seen || elapsed(now, s.term_ms, true, DMR_CALL_RESUME_MS) ||
+		memcmp(lc, s.term_lc, DMR_LC_BYTES) != 0);
+}
+
 // A voice LC (header, or embedded) for our slot: a new call, or a new talker on the call being heard
 static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool late, uint32_t now)
 {
@@ -531,6 +548,7 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 
 	bool continuing = s.rx != RXC_NONE;
 	bool new_talker = !continuing || l.src != s.view.caller.src;
+	bool resumed = late && !continuing && rx_resuming(lc, b, now);
 
 	if (s.rx == RXC_PLAY) {
 		dual_flush();
@@ -569,19 +587,23 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 			c->pi_key = s.pi_pending_key;
 			c->encrypted = true;
 		}
-		s.view.call_start_ms = now;
 #if CONFIG_SFR
 		sfrDedupReset(&s.sfr_dd);
 #endif
-		stats.rx_calls++;
-		if (late)
-			stats.rx_late_entries++;
-		if (!c->group)
-			stats.rx_private_calls++;
-		if (c->emergency)
-			stats.rx_emergency_calls++;
-		if (c->encrypted)
-			stats.rx_encrypted_calls++;
+		if (resumed) {
+			stats.rx_calls_resumed++;
+		} else {
+			s.view.call_start_ms = now;
+			stats.rx_calls++;
+			if (late)
+				stats.rx_late_entries++;
+			if (!c->group)
+				stats.rx_private_calls++;
+			if (c->emergency)
+				stats.rx_emergency_calls++;
+			if (c->encrypted)
+				stats.rx_encrypted_calls++;
+		}
 	} else if (c->encrypted && !was_encrypted) {
 		stats.rx_encrypted_calls++;
 	}
@@ -590,7 +612,7 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 		s.view.cc = b->cc;
 
 	s.rx = rx_accept(&l, now) ? RXC_PLAY : RXC_OTHER;
-	if (s.rx == RXC_PLAY && !continuing)
+	if (s.rx == RXC_PLAY && !continuing && !resumed)
 		stats.rx_calls_played++;
 	if (s.rx == RXC_PLAY && s.sink && s.sink->begin)
 		s.sink->begin(c, s.sink->ctx);
@@ -1291,6 +1313,7 @@ static void tx_wakeup(uint32_t now)
 	tx_put(DMR_BURST_CSBK, 0, true, csbk, sizeof(csbk));
 	s.modem->tx_end();
 	s.wake_tries++;
+	s.view.wake_sent++;
 	s.wake_sent_ms = now;
 	s.tx = TX_WAKE;
 	s.deadline = now + DMR_CALL_TX_DONE_GUARD_MS;
@@ -1310,10 +1333,17 @@ static void tx_access(uint32_t now)
 			tx_deny(DMR_TX_ERR_BUSY);
 		return;
 	}
-	if (s.cfg.rmo && !repeater_up(now))
+	if (s.cfg.rmo && !repeater_up(now)) {
 		tx_wakeup(now);
-	else
+	} else if (s.cfg.permit_hold_ms != 0 && !s.permit_done) {
+		s.tx = TX_PERMIT;	// admitted: the talk permit sounds now, while we still receive
+		s.permit_ms = now;
+		s.permit_done = true;
+		s.view.permit_seq++;
+		s.dirty = true;
+	} else {
 		tx_start_voice(now);
+	}
 }
 
 // --- Data TX: a burst list from the data service, one burst per frame on our slot (dmr-modem.md 2.6) ---
@@ -1392,6 +1422,7 @@ static void tx_ptt_pressed(uint32_t now)
 	s.view.tx_error = DMR_TX_OK;
 	s.tx_since = now;
 	s.wake_tries = 0;
+	s.permit_done = false;
 	s.tx = TX_ACCESS;
 	s.dirty = true;
 	tx_access(now);
@@ -1401,6 +1432,7 @@ static void tx_ptt_released(void)
 {
 	switch (s.tx) {
 	case TX_ACCESS:
+	case TX_PERMIT:
 	case TX_DENIED:
 		s.tx = TX_NONE;
 		break;
@@ -1464,6 +1496,22 @@ static void tx_poll(uint32_t now)
 				tx_deny(DMR_TX_ERR_NO_REPEATER);
 		}
 		break;
+	case TX_PERMIT: {
+		uint32_t held = now - s.permit_ms;
+
+		if (voice_channel_busy(now) || (s.cfg.rmo && !repeater_up(now))) {
+			// A call began in the hold: access again, as if it had been there at PTT (through a repeater the key-up
+			// is impolite, so it would go over the call). A new permit plays once the channel is free. The hold can
+			// outlast DMR_CALL_REPEATER_HOLD_MS: a repeater that dropped in it is woken again, not keyed blind
+			s.tx = TX_ACCESS;
+			s.permit_done = false;
+			s.dirty = true;
+			tx_access(now);
+		} else if (held >= DMR_CALL_PERMIT_MAX_MS ||
+		    (held >= s.cfg.permit_hold_ms && !(s.cfg.permit_busy != NULL && s.cfg.permit_busy())))
+			tx_start_voice(now);
+		break;
+	}
 	case TX_ON:
 		// PTT release and the time-out end the call at a superframe boundary, which only a modem that sends bursts
 		// reaches: one without slot timing would hold us here, keyed, for good
@@ -1720,7 +1768,7 @@ static void view_update(uint32_t now)
 	dmr_call_view_t *v = &s.view;
 	uint8_t state, phase;
 
-	if (transmitting() || s.tx == TX_WAKE_LISTEN)
+	if (transmitting() || s.tx == TX_WAKE_LISTEN || s.tx == TX_PERMIT)
 		state = DMR_CALL_STATE_TX;
 	else
 		state = s.rx != RXC_NONE || data_receiving(now) ? DMR_CALL_STATE_RX : DMR_CALL_STATE_IDLE;
@@ -1728,6 +1776,9 @@ static void view_update(uint32_t now)
 	switch (s.tx) {
 	case TX_ACCESS:
 		phase = DMR_CALL_PHASE_TX_ACCESS;
+		break;
+	case TX_PERMIT:		// still receiving: not on air yet
+		phase = DMR_CALL_PHASE_TX_PERMIT;
 		break;
 	case TX_WAKE:
 	case TX_WAKE_LISTEN:
@@ -1867,6 +1918,11 @@ void dmr_call_reset_stats(void)
 	memset(&stats, 0, sizeof(stats));
 	tx_underruns_base = s.view.tx_underruns;
 	evq_drops_base = evq_drops;
+}
+
+void dmr_call_set_wake(void (*fn)(void))
+{
+	wake_fn = fn;
 }
 
 void dmr_call_set_data_rx(dmr_data_rx_fn fn, void *ctx)

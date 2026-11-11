@@ -53,6 +53,11 @@ The hint row is groups separated by two spaces (`"OK open  # more  Back"`). The 
 are left out whole from the right. A toast is one centered line instead. A banner or a two-line toast starts in a gap
 between lines of the screen under it (a row all one color), never through a line of text.
 
+Hints and toasts call the QUICK and CONTEXT keys `*` and `#`. A radio without those keys gives its own names
+(`board.quick_label`, `board.context_label`: for example a front panel's own key names), and each `*` or `#` that stands alone is
+drawn as that name ("OK Menu  P1 Quick"). On a radio with no digit keys a hint group that starts with a digit
+("0-9 find") is left out. Toasts keep their numbers.
+
 Text is shortened with a middle ellipsis only as a last resort (P5 allows it for names on Home). Before that:
 
 - A list row keeps its label whole and gives the value the room left: values carry text alternates (`font.h`) down to
@@ -64,17 +69,25 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
 - Home's talk target line (DMR target or FM frequency) drops to the small font as a whole, then takes the target's
   short form; a frequency is never shortened. Large-text Home picks the largest font each line fits in, and takes the
   short form before it would go below the medium font. The short form of a talkgroup is its number ("TG 91 World"
-  becomes "TG 91"); of a private contact, its name ("Joe Smith 3101234" becomes "Joe Smith"). A contact's ID alone
+  becomes "TG 91"); of a private contact, its name ("Joe Smith 9991234" becomes "Joe Smith"). A contact's ID alone
   says nothing at a glance, so it is what goes. An ID without a contact is shown as the ID.
+- While a VFO frequency is being typed in dual watch, its selected pane shows the digits and blanks for the remaining
+  places in place of the old frequency, including on Large text Home. The other pane keeps its frequency. Back removes
+  a digit; OK or # tunes the selected pane.
 - The RX and TX screens put the number in the title ("TG 91") and the talkgroup's or contact's name on a line of its
   own; a talker alias takes two lines when it needs them. A private call's title says "Private" where a group call's
-  says "TG": "Private 3101234" while transmitting (just "Private" where that doesn't fit), "Private to you" or
+  says "TG": "Private 9991234" while transmitting (just "Private" where that doesn't fit), "Private to you" or
   "Private to Joe Smith" while receiving. The TX screen's target line follows the short form rule above, and its
   detail line ends in "Private" or "Group". The word is the cue, not a color: the privacy (encryption) marker is
   "Priv" in blue, and a private call is not encrypted.
 
 `uiSim --ellipsis` (section 7) lists what is still shortened; `uiSim --layout` fails the build on a middle ellipsis
 with ordinary content.
+
+When entering a list screen, if the screen has not set a nonzero focus, select the first row that is neither
+informational nor disabled. If every row is one or the other, select the first disabled row (a text row is never
+focused). Returning with Back preserves the parent focus; manual navigation can still reach disabled rows to explain
+why they are unavailable.
 
 Core code never includes a board header and never tests a radio define. What differs by radio comes from the board
 descriptor: the display geometry and insets (`hal_display_t`), and the key map (`board.keymap`), which turns keys
@@ -85,13 +98,20 @@ into logical actions (`hal_input.h`).
 The stack holds up to 6 frames; Home is frame 0. Each screen is a `ui_scr_def_t` (`ui_nav.h`): a name (the debug
 link's `ui.screen`), flags, and callbacks for list rows, SELECT, CONTEXT, the talk target of the focused row, a title,
 a body, raw keys, drawing and entry. List screens need only `count` and `item`; the generic list code does focus,
-scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and the long-press target.
+scrolling, numbered shortcuts (`SF_NUMBERED`: 1-9, then 0 for the 10th row; later rows have none), T9 filtering (`SF_FILTER`), and the long-press target.
 
 A filtered list's rows are raw rows (`raw_count`, `raw_label`) that have a label and, with keys typed, match them.
 With keys typed the list is the first `UI_FILTER_MAX` (128) matches. With none it is every row: the first 126 are kept
 in an index, and in a longer list its last two slots are a cursor (its row and raw row) stepped over the raw rows, so a list of 1024 contacts
-scrolls to its end (and Up from the top wraps to it) without RAM for a full index. A jump to the end reads every raw
-row once, as a typed key does.
+scrolls to its end (and Up from the top wraps to it) without RAM for a full index. A jump to the end steps over every
+raw row once.
+
+A record a row costs a flash read a row, about 0.2-0.3 ms each on a radio with polled SPI flash, so the long lists
+(every contact, every channel) give two more callbacks. `raw_each` gives every row's label in one pass, a block of
+records a read (`codeplug_contacts_each`, `codeplug_channel_names_each`); with no key typed only which rows exist
+counts, and a list of channels then reads nothing (the in-use map is in RAM). `raw_used` says whether a row exists
+without its label, for the cursor's steps. With 1024 channels a key took 0.34 s before, 0.11 s after; opening the list
+0.29 s before, under 10 ms after. A list without them reads its rows one by one.
 
 | Screen | Name | Reached by |
 |---|---|---|
@@ -108,7 +128,7 @@ row once, as a typed key does.
 | In Zones | `chzones` | the channel editor's Zones row (2.1, `CONFIG_ZONE_EDIT`): every zone, "In" where it holds the channel. OK puts the channel in (at the end) or takes it out, at once, as the zone editor's changes (2.2) |
 | Zone options | `zoneedit` | "Zone options" in a zone's list: Rename, Copy as new zone, Share zone to... (with `CONFIG_ZONE_SHARE`), Delete zone (2.2) |
 | Delete Zone | `zonedel` | Delete zone in Zone options: the confirmation, "No, keep it" first (P7) |
-| Channels | `channels` | Hub 5: every codeplug channel as number and name, in number order, filtered by T9. The value (also in a zone's list): RX frequency and talkgroup, "467.375 TG3100", or FM; beside a long name "467.375 3100", then "TG3100" (the name is never cut for it). The first row is "New from current", New channel from current settings (2.1). OK opens the channel (`channel`), CONTEXT goes to it |
+| Channels | `channels` | Hub 5: every codeplug channel as number and name, in number order, filtered by T9. The value (also in a zone's list): RX frequency and talkgroup, "438.250 TG3100", or FM; beside a long name "438.250 3100", then "TG3100" (the name is never cut for it). The first row is "New from current", New channel from current settings (2.1). OK opens the channel (`channel`), CONTEXT goes to it |
 | Channel | `channel` | OK in Channels: the channel's settings, editable (2.1). The last rows go to it (in the zone in use if it holds the channel, else the first zone that does; in none, "Not in any zone"), share it (with `CONFIG_ZONE_SHARE`), save, and save as a new channel |
 | Text entry | `text` | OK on a text row (a channel's name): keypad letters, 2.1 |
 | Unsaved Changes | `discard` | BACK in the channel editor with unsaved changes (2.1), or in the contact editor (2.4) |
@@ -117,7 +137,7 @@ row once, as a typed key does.
 | Talk target picker | `picker` | long CONTEXT on a DMR channel (else "Talk target: DMR channels only"), TALK_TARGET (a side key set to it), Quick 8. Its last rows: "Type a number..." (Find) and "Select contact..." (Contacts, whose keys are the picker's) |
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
 | Share | `zone_share` | without `CONFIG_ZONE_EDIT`: CONTEXT in a zone's channels (`zone`): Share zone to..., Share channel to... ([zone-share.md](zone-share.md) 7). With the zone editor these are rows of Zone options and Channel actions (2.2) |
-| Share To | `zone_share_to` | a pick in Share, Channel actions, Zone options or the channel editor: the contacts, T9 filtered. Digits that make an ID add "Private ID 3101234" and "TG 3101234" after the contacts ("Not saved"), so a station that isn't a contact can be sent to. OK sends and returns to the zone's list (to the channel editor from there) |
+| Share To | `zone_share_to` | a pick in Share, Channel actions, Zone options or the channel editor: the contacts, T9 filtered. Digits that make an ID add "Private ID 9991234" and "TG 9991234" after the contacts ("Not saved"), so a station that isn't a contact can be sent to. OK sends and returns to the zone's list (to the channel editor from there) |
 | Zone Share Received | `zone_offer` | CONTEXT on the offer's banner, or Tools > Zones/Chs Received while one waits; titled Channel Share Received (shorter where it doesn't fit) for one channel: the offer's text, then Import, Preview, Reject ([zone-share.md](zone-share.md) 5.2) |
 | Offer preview | `zone_offer_preview` | Preview in Zone Share Received: the offered channels, "Not in band" dimmed |
 | Add to zone | `zone_offer_zone` | Import of a one-channel offer: the zone it goes in |
@@ -127,6 +147,7 @@ row once, as a typed key does.
 | My Radio | `dmr-id` | Settings > My radio > DMR ID and name: the radio model above the rows DMR ID (`CONFIG_DMR`), Radio name, Boot 1 and Boot 2, from the codeplug. On DMR ID, digits type an ID as the channel editor's Own ID (2.1): the first digit replaces the shown one, a digit that would take it past `CODEPLUG_DMR_ID_MAX` (16776415) is refused, BACK takes the last digit back and with none typed leaves the ID as it was, OK writes it into the codeplug (with nothing typed, leaves it; 0 is refused: "IDs start at 1"). OK on a name row opens Text entry (2.1, `CONFIG_CHANNEL_EDIT`; without it "Typing: not in this build"); OK there writes the radio name (`codeplug_set_radio_name`) or the boot line (`codeplug_set_boot_text`) as a storage job (`ui_svc_name_set`), "Saved" |
 | Language | `language` | Settings > Display > Language (the last row; its value is the language in use): every language the firmware has a catalog for, each in its own name ("English", "Español"), the one in use marked "In use". OK switches at once and goes back; a language this image was built without is dimmed and OK says "Not in this build" (2.5) |
 | About | `about` | Settings > My radio > About, and Settings > Advanced > About: a text page (`ui_draw_text_page`) in the smallest font, word-wrapped and never shortened, Up / Down / the knob scroll a line. `SF_NO_STRIP`: no status strip while the radio is idle (the owner's request); RX or TX draws it again, so the TX / RX pill still shows (P2) |
+| Hardware | `hwopt` | Settings > Advanced > Hardware, only on a radio with hardware options (`hal/hal_hwopt.h`, such as a board revision): each option with the stored choice, "Not set" (warning) without one. OK shows the next choice (marked `*` until stored), long OK stores it; a toast says when it applies from the next start-up. The simulator has no options, so the gallery has no picture of it |
 
 The gallery (section 7) shows every screen at every display class.
 
@@ -289,7 +310,7 @@ The name starts as the target's name, else "TG 3100" for a talkgroup or the ID f
 
 - Long SELECT anywhere saves. BACK opens Unsaved Changes ("Discard this new contact?"), "No, keep editing" first.
 - Save checks first and names the first problem in a toast: an empty name, a private ID past 16776415
-  (`CODEPLUG_DMR_ID_MAX`), a contact with the same ID and type ("Already a contact: K1ABC Joe"), no free contact
+  (`CODEPLUG_DMR_ID_MAX`), a contact with the same ID and type ("Already a contact: Q1AAA Joe"), no free contact
   ("No room for more contacts", 1024).
 - Save writes the lowest free contact with `codeplug_set_contact` as a storage job (`ui_svc_write_contact`). A failed
   write raises `UI_EV_SAVE_FAILED`. The radio core's name cache follows `codeplug_serial()`.
@@ -337,11 +358,11 @@ channel's contact and its listen list; the arrow keys only: the channel knob, EN
 VFO frequency, #25), USER_1 / USER_4 the zone, USER_3 the power, long USER_3 speaks the status (a
 toast until voice prompts exist).
 
-VFO_TOGGLE is the VFO / MR key's short press (a board key map entry, not a side key function): between the channel
-and the VFO, "VFO" and "Back to channels". Its long press, COPY_VFO, copies the channel to the VFO (`dmr-voice.md`
-2.2). A board with a dedicated VFO/MR key gives its long press to COPY_VFO,
-and `keyassignTest` checks every board's key map for it. The key is a key map entry with fixed meanings (not one of the
-`board.side_keys`), so Settings > Keys doesn't change it.
+VFO_TOGGLE goes between the channel and the VFO, "VFO" and "Back to channels" (in dual watch, on the selected side).
+It is the VFO / MR key's short press, and any side key can send it with the VFO/Channel function (3.1). The VFO / MR
+key's long press, COPY_VFO, copies the channel to the VFO (`dmr-voice.md` 2.2). A board with a dedicated VFO/MR key
+gives its long press to COPY_VFO, and `keyassignTest` checks every board's key map for it. That key is a key map entry
+with fixed meanings (not one of the `board.side_keys`), so Settings > Keys doesn't change it.
 
 EMERGENCY is hold-to-activate (principles P2): a key whose long action is EMERGENCY needs `INPUT_HOLD_MS` (1.5 s)
 whatever the long press time (`input_long_threshold`, core/input). Which key carries it is the board's key map
@@ -349,9 +370,10 @@ whatever the long press time (`input_long_threshold`, core/input). Which key car
 "EMERGENCY sent: hold again to cancel", "Emergency canceled" (`ui_svc_emergency_active` reads the radio core's state,
 so a cancel from elsewhere counts). A board whose key map has no EMERGENCY entry has no emergency key (for example a board whose third side key isn't located yet).
 
-PTT while the keys are locked works unless Settings > Privacy > PTT when locked is off: the UI then tells the input
+PTT while the keys are locked works unless Settings > Key lock > PTT when locked is off: the UI then tells the input
 layer (`ui_svc_ptt_block`, `input_set_ptt_block`), which keeps PTT DOWN from the radio core (UP always passes), and the
 UI gives an error beep and "PTT is off while locked: hold * to unlock".
+The same setting blocks Tone burst DOWN; UP always passes so locking cannot prevent an existing burst from ending.
 
 The state pill follows `radio_view_t.state`. RX also shows while the monitor holds an FM squelch open (MON stays beside
 the mode). DMR's monitor key is digital monitor and leaves it IDLE.
@@ -366,7 +388,7 @@ stays for a call being played.
 Small displays (under 200 px tall) merge a screen's title into the status strip: the state pill shows only when not
 idle, the bars and the battery (icon and percent) give way, so the title is centered across the whole row; the lock
 and the unread count stay. Home shows the battery, and the low battery banner warns on any screen. On a radio without
-a battery, `CAP_NO_BATTERY`, the battery is drawn nowhere, and Tools > Battery, Settings > Power > Battery saver and Low battery warning are left
+a battery, `CAP_NO_BATTERY`, the battery is drawn nowhere, and Tools > Battery, Settings > Power saving > Battery saver and Low battery warning are left
 out of their lists, so the other Tools rows move up), and only the name part of the title is
 shortened with a middle ellipsis (the prefix stays whole: "Quick COUNTY DMR", not "Quick ..tions").
 
@@ -394,12 +416,17 @@ position in the list is its role. Each role has a press and a long press, and ea
 | Call back (12) | CALL_BACK: talk for now to the last call heard, its talkgroup or, for a private call, its caller (`dmr-voice.md` 2) | yes | yes |
 | Home zone (13) | HOME_ZONE: the codeplug's first zone (the CPS's zone order picks it; no setting, the settings record has no byte to spare). Leaves the VFO; "Home zone: <name>" | yes | yes |
 | Copy to VFO (14) | COPY_VFO: copy the channel in effect to the VFO and open it (`dmr-voice.md` 2.2). In the VFO: "Already in VFO". A channel the VFO can't hold gets a "VFO: ..." toast and nothing changes. Offered in builds with a VFO (`CONFIG_VFO_FM` or `CONFIG_VFO_DMR`) | yes | yes |
+| VFO/Channel (17) | VFO_TOGGLE: between the channel and the VFO, as a VFO / MR key does ("VFO", "Back to channels"; in dual watch, the selected side). Offered in builds with a VFO | yes | yes |
+| Tone burst (18) | TONE_BURST raw edges: FM repeater access, at least 1 s; offered with `CONFIG_FM_TX_TONES` | yes | no |
 
-POWER, ZONE_UP, ZONE_DOWN, SCAN, CALL_BACK, HOME_ZONE and COPY_VFO do the same on a press and a long press and
-work on any screen. LOCK also gets through while the keys are locked, to unlock them. TALK_TARGET opens the picker on
+POWER, ZONE_UP, ZONE_DOWN, SCAN, CALL_BACK, HOME_ZONE, COPY_VFO and VFO_TOGGLE do the same on a press and a long
+press and work on any screen. LOCK also gets through while the keys are locked, to unlock them. TALK_TARGET opens the picker on
 a long press too. A monitor key given a press of its own loses its hold: its long press is nothing until set. A Monitor press with a hold
 function: the input engine sends DOWN, the LONG (value 1) at the threshold and UP (value 1 when the LONG ran); the
 radio core then doesn't toggle digital monitor (RREQ_MONITOR 2), and the UI drops the LONG on FM.
+
+Tone burst uses both edges of the press key and suppresses its long-press function. A tap sends 1 s; a longer hold
+sends until release. Timing, PTT interaction and refusals are in [radio-features.md](radio-features.md#33-roger-beep-and-1750-hz-burst-config_fm_tx_tones).
 
 Storage: the open-firmware codeplug's ten quick-key slots (EEPROM 0x7524, 2 bytes LE each,
 `open-firmware-cps.md` 7.2). Slot 0 is the marker 0x4B02 ("K", layout 2); slot 1 + k is role k, its press in the low
@@ -452,12 +479,12 @@ A request to save channel changes reports the reason when it cannot start: the V
 automatically, hotspot mode must end first, a stored channel must be selected, or another storage job must finish.
 The Home and Quick save keys and Actions > Save to channel use the same messages.
 
-Auto power off is the UI's: `ui_app_power_off_due()` turns true after Settings > Power > Auto power off without use
+Auto power off is the UI's: `ui_app_power_off_due()` turns true after Settings > Power saving > Auto power off without use
 (keys, RX, TX, scan and hotspot count as use), with a banner and beep one minute before; the housekeeping loop
 (core/app) then powers off as for the knob, except that if the power is still on 2 s after releasing the latch it
 latches again, cancels the radio core's power off (`radio_req_power_off_cancel`) and raises `UI_EV_POWER_OFF_FAILED`
 ("Couldn't switch off / Turn the knob off"). The low battery warning is the UI's too: a banner (and the low beep
-while the radio core's level is still OK) at Settings > Power > Low battery warning, repeated every 5 minutes, reset
+while the radio core's level is still OK) at Settings > Power saving > Low battery warning, repeated every 5 minutes, reset
 3 % above it.
 
 Inbound events go through `ui_notify()` (a ring of 4, safe from any task) or, for packages the UI polls, through
@@ -509,7 +536,8 @@ pixels, so they hold on any display.
 ## 7. Host simulator and tests
 
 `tests/host/sim/` runs the real `core/ui` files against a simulated board (any display geometry, any of the key
-maps K for a three-key board, M for a GD-77 style map, V for a two-key map, F few keys), radio core, the usability-test codeplug (3 zones,
+maps K full keypad, M navigation keys, V a mobile's front panel with a hand-mic keypad, F few keys, P that front
+panel alone), radio core, the usability-test codeplug (3 zones,
 40 channels, 30 contacts) and the services of section 4.
 
 ```
@@ -550,10 +578,11 @@ draw the anti-aliased fonts (`CONFIG_FONT_AA`), and `240x320i10x5` the larger te
 | `expect:<key>=<value>` | check: `screen focus depth count zone pos vfo freq mode tx txid txpriv talk locked query banner toast power sq ts cc temporary writes checks sent text scanning privacy hearall monitor hotspot beeps radio_tot radio_backlight beep pttblock poweroff wake usbnet set<id>` (`wake` 1 when a banner or the emergency screen asked for the backlight since the last check, `beep` the last beep kind, `set<id>` a setting's stored value; `_` = space, `*` = anything) |
 
 `uiFlowTest` runs every task flow of `task-flows.md` with the press budgets of `usability-tests.md` on four display
-and key map pairs (K at 160x120i5, M at 128x64, V at 160x128, K at 240x320) plus the few-key fallbacks: 160 flow runs.
+and key map pairs (K at 160x120i5, M at 128x64, V at 128x64, K at 240x320) plus the few-key fallbacks and the
+front panel alone (P at 128x64: no digits, the panel's key names in the hints).
 A crawler then visits every reachable screen and checks the rules that hold everywhere: BACK leaves every screen, long
 BACK reaches Home, long QUICK locks on Home and nowhere else, long CONTEXT opens the talk target picker on a DMR channel, the status strip is drawn (except About while idle),
-PTT shows TX, and every field-use screen is at most 3 presses deep. The About check scrolls the page to its end at
+PTT shows TX, and every field-use screen is at most 3 presses deep. The crawler runs with K, M, F and P. The About check scrolls the page to its end at
 every display class and fails if any text was shortened.
 
 `uiSim --ellipsis [GEOM]` lists every text shortened with a middle ellipsis on the gallery screens and the settings
@@ -580,7 +609,8 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   into Home.
 - The long-press and key-repeat times are stored in `settings_t` and handed to the input layer (`input_set_timing`,
   clamped to 200..3000 ms and 40..1000 ms); auto lock locks the keys after its time without a key press (counted on
-  Home and in menus alike; injected keys count).
+  Home and in menus alike; injected keys count). A key map with neither QUICK nor BACK (side keys only) is never
+  locked by auto lock, since no key there unlocks it; a side key set to key lock still locks and unlocks.
 - Mic AGC and mic noise reduction are the vocoder's (DMR only). Each is dimmed ("Not on this radio") when the board's
   vocoder lacks the option (`hal_vocoder_t.options`), and in a build without DMR. While Mic AGC is on, Mic gain shows
   "AGC", is dimmed, OK says "Mic AGC sets the level"

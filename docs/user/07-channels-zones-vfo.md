@@ -202,6 +202,9 @@ restart.
 1. **OK**, **4** (Zones). The VFO is the first row.
 2. Press **OK**. Home shows the frequency large, and the radio says "VFO: type a frequency".
 
+On a radio with a **VFO/MR** key, press it instead: it goes between the channel and the VFO. **Settings > Keys** can
+give any side key the same job, "VFO/Channel", on a press or a hold.
+
 <img src="../ux/screens/160x120i5/home_vfo.png" width="200" alt="Home in the VFO">
 
 ### Copy a channel to the VFO
@@ -235,7 +238,7 @@ what you typed as you go.
 |---|---|
 | **4** **4** **6** **0** **0** **0** | 446.000 MHz |
 | **1** **4** **6** **5** **2** | 146.520 MHz |
-| **4** **6** **1** **8** **6** **2** **5** | 461.8625 MHz |
+| **4** **3** **8** **2** **6** **2** **5** | 438.2625 MHz |
 | **0** **8** **8** **1** | 88.100 MHz (below 100 MHz, start with **0**) |
 
 - Type at least the three MHz digits, then press **OK** (or **#** where the radio has that key) to tune.
@@ -306,7 +309,8 @@ DMR ones:
 
 ### Leaving the VFO
 
-Press **OK**, **4**, then **OK** on the VFO row again ("Back to channels"). Or pick a zone or channel.
+Press **OK**, **4**, then **OK** on the VFO row again ("Back to channels"). Or pick a zone or channel. A **VFO/MR** key
+or a side key set to "VFO/Channel" goes back to the channel you came from.
 
 ## Air band and FM broadcast
 

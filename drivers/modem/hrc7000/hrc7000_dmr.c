@@ -59,11 +59,13 @@
 #define BUSY_TICKS		12u	// polite access: activity in the last 360 ms
 #define RX_LOST_TICKS		13u	// a reception is over (390 ms without a burst taken)
 #define RX_IDLE_TICKS		20u	// slot timing but nothing taken for 600 ms: the timing is stale
+#define POST_TX_HOLD_TICKS	5u	// after a direct transmission: an answer is awaited on our slot timing for 150 ms
 #define SLOT_US			30000u
 #define TC_LOCK			4u	// a repeater's slot numbering: this many BS bursts in a row with TC alternating
 #define TC_LOCK_WAIT_TICKS	33u	// an aligned start through a repeater waits this long for the lock (1 s)
 #define PA_OFF_US		20000u	// the PA goes off at the first tick at least this long after the RF TX interrupt
 #define STALL_US		200000u
+#define SYS_STUCK_US		50000u	// a system request pending this long with no handler run: its interrupt was lost
 #define SYS_LOOPS		4u
 
 // TXS_LOCK: an aligned start through a repeater waits, still receiving, for the TC lock before it arms
@@ -215,8 +217,18 @@ static uint32_t l2_rx(const hrc7000_dmr_t *e)
 	return e->cfg.repeater ? L2_RX_FOLLOW : L2_PASSIVE;
 }
 
+// Every modem interrupt request still pending, dropped. If the interrupt controller misses a request (gotchas 2.9),
+// the request keeps its line high, and a controller that acts on the line rising then never sees that source again.
+// Not RF RX (a board's own handler may have it armed) nor the PCM pair (the audio driver's)
+static void clear_requests(hrc7000_dmr_t *e)
+{
+	w(e, C7_INTERP_CLEAR, C7_INT_TS_TX | C7_INT_TS_RX | C7_INT_RF_TX);
+	w(e, C7_SYS_INTERP_CLEAR, r(e, C7_SYS_INTERP_LIST));
+}
+
 static void chip_rx_restart(hrc7000_dmr_t *e)
 {
+	clear_requests(e);	// the restart discards what they would report; a stale one would keep its source dead
 	w(e, C7_WORK_MODE, C7_WORK_MODE_FM);
 	w(e, C7_WORK_MODE, C7_WORK_MODE_DMR);
 	w(e, C7_VOICE_EMB_CTRL, 0x02);
@@ -239,7 +251,29 @@ static void chip_rx_restart(hrc7000_dmr_t *e)
 	// data response was refused until the radio left DMR (on the SDR bench, 2026-11-03)
 	e->rx_any = false;
 	e->resync_tick = e->tick;
+	e->idle_ticks = RX_IDLE_TICKS;
 	e->st.rx_restarts++;
+}
+
+// The end of a direct transmission (5.2a): receive on, in passive timing from the next slot, without the restart. A
+// restart there came about 25 ms into the slot after our terminator, where a confirmed data answer is already being
+// received: the chip then reported it with BS sync (a timeslot from a TC bit there is none of) and on some radios a
+// header CRC error, and the answer was lost (on the SDR bench, an MS simulator answering 30 ms after the start of our
+// terminator). The slot syncs stay at our timing, on which a direct answer comes, until the channel has been quiet for
+// POST_TX_HOLD_TICKS: rx_resync then restarts the receiver, so a station on a timing of its own is taken from then on
+static void rx_hold(hrc7000_dmr_t *e)
+{
+	w(e, C7_LAYER2_CONTROL, L2_PASSIVE);
+	w(e, C7_LAYER2_TXRX_CTRL, TXRX_RX);
+	e->voice_chip_slot = -1;
+	e->voice_slots = 0;
+	e->tc_slot[0] = e->tc_slot[1] = 0;
+	e->tc_agree = 0;
+	e->emb_pending = false;
+	e->rx_any = false;	// the polite check's busy window starts again, as after a restart
+	e->resync_tick = e->tick;
+	e->idle_ticks = POST_TX_HOLD_TICKS;
+	e->st.rx_holds++;
 }
 
 // The receiver's slot timing is dropped (5.2) when it stops giving bursts: at the end of a reception, and while the
@@ -252,7 +286,7 @@ static void rx_resync(hrc7000_dmr_t *e)
 		return;
 	}
 	uint32_t quiet = e->tick - (e->rx_any ? e->rx_tick : e->resync_tick);
-	if (quiet > (e->rx_any ? RX_LOST_TICKS : RX_IDLE_TICKS)) {
+	if (quiet > (e->rx_any ? RX_LOST_TICKS : e->idle_ticks)) {
 		if (e->rx_any) {
 			e->st.rx_lost++;
 		} else {
@@ -279,8 +313,9 @@ static void rf_off(hrc7000_dmr_t *e)
 	}
 }
 
-// End of a transmission: RF off, queue emptied, TX_DONE, receiver back (6.3)
-static void tx_finish(hrc7000_dmr_t *e)
+// End of a transmission: RF off, queue emptied, TX_DONE, receiver back (6.3); restart: the full receiver restart
+// even on a direct channel (a stall: it drops a lost interrupt request)
+static void tx_finish(hrc7000_dmr_t *e, bool restart)
 {
 	w(e, C7_LAYER2_TXRX_CTRL, TXRX_NONE);
 	rf_off(e);
@@ -288,9 +323,13 @@ static void tx_finish(hrc7000_dmr_t *e)
 	e->tx_state = TXS_IDLE;
 	e->tx_listen = false;
 	e->st.tx_done++;
-	// Through a repeater too, as stock does: both slot syncs released and a new TC lock, so the next transmission's
-	// slots come from the repeater's timing, not ours (issue 72)
-	chip_rx_restart(e);
+	// Through a repeater the restart at once, as the original firmware does: both slot syncs released and a new TC
+	// lock, so the next transmission's slots come from the repeater's timing, not ours (issue 72). Direct: the hold
+	if (restart || e->cfg.repeater || BS_ACTIVE(e)) {
+		chip_rx_restart(e);
+	} else {
+		rx_hold(e);
+	}
 	ev_simple(e, DMR_EV_TX_DONE, e->tx_ts, tick_arg(e));
 }
 
@@ -440,7 +479,7 @@ static void aligned_arm(hrc7000_dmr_t *e)
 static void lock_tick(hrc7000_dmr_t *e)
 {
 	if (e->tx_abort_req) {
-		tx_finish(e);
+		tx_finish(e, false);
 	} else if (tc_locked(e)) {
 		e->st.txb_lock_wait = e->tx_wait;
 		e->st.txb_tc_agree = e->tc_agree;
@@ -453,14 +492,14 @@ static void lock_tick(hrc7000_dmr_t *e)
 		e->st.tx_rejected++;
 		e->st.txb_lock_wait = e->tx_wait;
 		ev_simple(e, DMR_EV_TX_REJECTED, e->tx_ts, 1u);	// arg 1: no slot timing to align to
-		tx_finish(e);
+		tx_finish(e, false);
 	}
 }
 
 static void tx_tick(hrc7000_dmr_t *e)
 {
 	if (e->tx_abort_req) {
-		tx_finish(e);
+		tx_finish(e, false);
 		return;
 	}
 	switch (e->tx_state) {
@@ -531,7 +570,7 @@ static void tx_tick(hrc7000_dmr_t *e)
 		// The burst armed at tick k is on air in the slot from tick k+1 to k+2
 		w(e, C7_LAYER2_TXRX_CTRL, TXRX_NONE);
 		if ((uint32_t)(e->tick - e->tx_last_arm) >= 2u) {
-			tx_finish(e);
+			tx_finish(e, false);
 		}
 		break;
 	default:
@@ -832,6 +871,7 @@ void hrc7000_dmr_init(hrc7000_dmr_t *e, hrc7000_t *dev, const hrc7000_dmr_ops_t 
 	e->cc_filter = -1;
 	e->cfg.cc = -1;
 	e->voice_chip_slot = -1;
+	e->idle_ticks = RX_IDLE_TICKS;
 	e->cc_cur = 1;
 }
 
@@ -845,6 +885,8 @@ void hrc7000_dmr_run(hrc7000_dmr_t *e)
 	e->cc_tick = e->tick;
 	set_cc(e, e->cc_filter >= 0 ? (uint8_t)e->cc_filter : e->cc_cur);
 	chip_rx_restart(e);
+	e->sys_seen = e->st.sys_ints;	// the stuck request check starts over
+	e->sys_waiting = false;
 	e->running = true;
 	unlock(e);
 }
@@ -897,10 +939,27 @@ void hrc7000_dmr_poll(hrc7000_dmr_t *e)
 #endif
 	if (e->running && e->tx_state != TXS_IDLE && (uint32_t)(now(e) - e->t_tick) > STALL_US) {
 		// No timeslot interrupt for 200 ms while sending: drop the transmission and restart the receiver
+		// (tx_finish restarts the receiver, which drops every pending request: a lost one is why it stalled)
 		e->st.stalls++;
 		e->t_tick = now(e);
-		tx_finish(e);
+		tx_finish(e, true);
 		ev_simple(e, DMR_EV_SYNC_LOST, 0, tick_arg(e));
+	}
+	// A system request pending since an earlier poll with no handler run in between: its interrupt was lost, and
+	// with its line kept high no later one would come (received bursts gone for good). Dropped, so the next rises.
+	// The 50 ms count from the first poll that saw it pending, not from the poll before: after a late poll a request
+	// that came just now (its handler held off by this poll's lock) isn't a lost one
+	uint32_t pend = e->running ? r(e, C7_SYS_INTERP_LIST) & r(e, C7_SYS_INTERP_MASK) : 0u;
+	if (pend == 0u || e->st.sys_ints != e->sys_seen) {
+		e->sys_seen = e->st.sys_ints;
+		e->sys_waiting = false;
+	} else if (!e->sys_waiting) {
+		e->sys_waiting = true;
+		e->t_sys_seen = now(e);
+	} else if ((uint32_t)(now(e) - e->t_sys_seen) > SYS_STUCK_US) {
+		e->st.sys_stuck++;
+		w(e, C7_SYS_INTERP_CLEAR, r(e, C7_SYS_INTERP_LIST));
+		e->sys_waiting = false;
 	}
 	unlock(e);
 }
@@ -1045,7 +1104,7 @@ void hrc7000_dmr_tx_end(hrc7000_dmr_t *e)
 	lock(e);
 	e->tx_end_req = true;
 	if (e->tx_state != TXS_IDLE && !e->tx_any && txq_count(e) == 0) {
-		tx_finish(e);	// nothing queued and nothing sent
+		tx_finish(e, false);	// nothing queued and nothing sent
 	}
 	unlock(e);
 }

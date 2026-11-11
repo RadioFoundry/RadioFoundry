@@ -139,7 +139,7 @@ static zsContact_t zct(const char *name, uint32_t id, uint8_t type)
 	return c;
 }
 
-// Contacts: 1 TG 91 "World", 2 TG 91 again "Dup", 3 private 1234567 "Bob" (only an out-of-band channel uses it),
+// Contacts: 1 TG 91 "World", 2 TG 91 again "Dup", 3 private 9997001 "Bob" (only an out-of-band channel uses it),
 // 4 TG 3100 "USA". Channels: FM with tones and a repeater offset; DMR on 1; DMR on 2; 900 MHz DMR on 3; DMR on 4;
 // 300 MHz FM
 static int build_record(uint32_t zoneId, const char *name, uint8_t *out)
@@ -153,7 +153,7 @@ static int build_record(uint32_t zoneId, const char *name, uint8_t *out)
 	zsWriterContact(&w, &c);
 	c = zct("Dup", 91, ZS_CONTACT_GROUP);
 	zsWriterContact(&w, &c);
-	c = zct("Bob", 1234567, ZS_CONTACT_PRIVATE);
+	c = zct("Bob", 9997001, ZS_CONTACT_PRIVATE);
 	zsWriterContact(&w, &c);
 	c = zct("USA", 3100, ZS_CONTACT_GROUP);
 	zsWriterContact(&w, &c);
@@ -194,7 +194,7 @@ static void test_import(void)
 	CHECK(codeplug_set_contact(5, &mine));
 	int len = build_record(0x11223344, "Club", recbuf);
 
-	CHECK(zone_import_zone(recbuf, len, 3101276, imports, &r) == ZI_OK);
+	CHECK(zone_import_zone(recbuf, len, 9996543, imports, &r) == ZI_OK);
 	CHECK(r.channels == 4 && r.out_of_band == 2 && !r.updated);
 	CHECK(r.zone == 1 && strcmp(r.name, "Club") == 0);
 	// TG 91 (twice in the record) is the user's contact; USA is new; Bob, only used out of band, isn't added
@@ -224,9 +224,32 @@ static void test_import(void)
 	CHECK(ch.mode == RADIO_MODE_DMR && ch.color_code == 3 && ch.timeslot == 2 && ch.contact == 5 && ch.tx_hz == 446000000);
 	CHECK(codeplug_channel(z.channels[2], &ch) && ch.contact == 5);// the duplicate folded into the same contact
 	CHECK(codeplug_channel(z.channels[3], &ch) && ch.contact == usa);
-	CHECK(imports[0].key == zone_import_key(3101276, 0x11223344) && memcmp(imports[0].zone, "Club", 5) == 0);
+	CHECK(imports[0].key == zone_import_key(9996543, 0x11223344) && memcmp(imports[0].zone, "Club", 5) == 0);
 	// Home untouched
 	CHECK(codeplug_zone(0, &z) && z.count == 1 && z.channels[0] == 1 && strcmp(z.name, "Home") == 0);
+}
+
+// A contact block that can't be read fails the import, with nothing written: the match it hid would be added twice
+static void test_contacts_unread(void)
+{
+	zone_import_result_t r;
+
+	fresh();
+	with_zones();
+	contact_t mine = contact("Worldwide", 91, CONTACT_GROUP);
+	CHECK(codeplug_set_contact(300, &mine));
+	int len = build_record(0x11223344, "Club", recbuf);
+	int channels = used_channels();
+
+	// Contact 300: a later block of the scan, and another flash sector than the free slots the import writes
+	sim_flash_bad_read(FL + 0x87620u + 24u * 299u, 24u);
+	CHECK(zone_import_zone(recbuf, len, 3101276, imports, &r) == ZI_FLASH);
+	sim_flash_bad_read(0, 0);
+	CHECK(codeplug_zone_count() == 1 && used_channels() == channels && used_contacts() == 1);
+	CHECK(imports[0].key == 0);
+	// Readable again: TG 91 is the user's contact 300, only USA is added
+	CHECK(zone_import_zone(recbuf, len, 3101276, imports, &r) == ZI_OK);
+	CHECK(r.contacts_added == 1 && used_contacts() == 2);
 }
 
 static void test_update(void)
@@ -240,7 +263,7 @@ static void test_update(void)
 	with_zones();
 	int len = build_record(0x11223344, "Club", recbuf);
 
-	CHECK(zone_import_zone(recbuf, len, 3101276, imports, &r) == ZI_OK);
+	CHECK(zone_import_zone(recbuf, len, 9996543, imports, &r) == ZI_OK);
 	CHECK(codeplug_zone(1, &before) && before.count == 4);
 	int channels = used_channels(), contacts = used_contacts();
 
@@ -273,7 +296,7 @@ static void test_update(void)
 	zc = zch("New B", 435000000, 0, false, 0);
 	zsWriterChannel(&w, &zc);
 	len = zsWriterEnd(&w);
-	CHECK(zone_import_zone(recbuf, len, 3101276, imports, &r) == ZI_OK);
+	CHECK(zone_import_zone(recbuf, len, 9996543, imports, &r) == ZI_OK);
 	CHECK(r.updated && r.zone == 1 && r.channels == 2);
 	CHECK(strcmp(r.name, "Club") == 0);// the name it got here stays
 	CHECK(codeplug_zone_count() == 3);
@@ -285,25 +308,25 @@ static void test_update(void)
 	CHECK(codeplug_channel(before.channels[3], &ch) && strcmp(ch.name, "DMR USA") == 0);
 	CHECK(!codeplug_channel(before.channels[0], &ch) || strcmp(ch.name, "Rpt FM") != 0);
 	CHECK(used_contacts() == contacts);// contacts are never deleted by an update
-	CHECK(imports[0].key == zone_import_key(3101276, 0x11223344) && imports[1].key == 0);
+	CHECK(imports[0].key == zone_import_key(9996543, 0x11223344) && imports[1].key == 0);
 	CHECK(imports[0].count == 2);
 	// Sent once more: the two it wrote lead the zone untouched, so they are replaced and Mine stays again
 	channels = used_channels();
-	CHECK(zone_import_zone(recbuf, len, 3101276, imports, &r) == ZI_OK && r.updated);
+	CHECK(zone_import_zone(recbuf, len, 9996543, imports, &r) == ZI_OK && r.updated);
 	CHECK(codeplug_zone(1, &z) && z.count == 3 && z.channels[2] == mine && codeplug_channel(mine, &ch));
 	CHECK(used_channels() == channels);
 	// The same zone ID from another sender is another zone; its name is taken, so it gets a suffix
-	CHECK(zone_import_zone(recbuf, len, 3101277, imports, &r) == ZI_OK);
+	CHECK(zone_import_zone(recbuf, len, 9991277, imports, &r) == ZI_OK);
 	CHECK(!r.updated && r.zone == 3 && strcmp(r.name, "Club v2") == 0);
-	CHECK(zone_import_zone(recbuf, len, 3101278, imports, &r) == ZI_OK);
+	CHECK(zone_import_zone(recbuf, len, 9991278, imports, &r) == ZI_OK);
 	CHECK(!r.updated && r.zone == 4 && strcmp(r.name, "Club v2 2") == 0);
-	CHECK(imports[0].key == zone_import_key(3101278, 0x11223344));
-	CHECK(imports[2].key == zone_import_key(3101276, 0x11223344));
+	CHECK(imports[0].key == zone_import_key(9991278, 0x11223344));
+	CHECK(imports[2].key == zone_import_key(9996543, 0x11223344));
 	// The user renamed the import: sent again, it comes in as a new zone
 	CHECK(codeplug_zone(1, &z));
 	strcpy(z.name, "Mine");
 	CHECK(codeplug_set_zone(1, &z));
-	CHECK(zone_import_zone(recbuf, len, 3101276, imports, &r) == ZI_OK);
+	CHECK(zone_import_zone(recbuf, len, 9996543, imports, &r) == ZI_OK);
 	CHECK(!r.updated && r.zone == 5);
 }
 
@@ -319,7 +342,7 @@ static void test_update_user_changes(void)
 	with_zones();
 	int len = build_record(0x5555, "Club", recbuf);
 
-	CHECK(zone_import_zone(recbuf, len, 3101276, imports, &r) == ZI_OK);
+	CHECK(zone_import_zone(recbuf, len, 9996543, imports, &r) == ZI_OK);
 	CHECK(codeplug_zone(1, &before) && before.count == 4);
 	// Transmit on for the second
 	CHECK(codeplug_channel(before.channels[1], &ch) && ch.rx_only);
@@ -340,7 +363,7 @@ static void test_update_user_changes(void)
 
 	// The same record again: three of the earlier channels are identical to new ones and go; the changed one and Mine
 	// stay, after the new four, in their order
-	CHECK(zone_import_zone(recbuf, len, 3101276, imports, &r) == ZI_OK && r.updated && r.channels == 4);
+	CHECK(zone_import_zone(recbuf, len, 9996543, imports, &r) == ZI_OK && r.updated && r.channels == 4);
 	CHECK(codeplug_zone(1, &z) && z.count == 6);
 	CHECK(z.channels[4] == mine && z.channels[5] == before.channels[1]);
 	CHECK(codeplug_channel(mine, &ch) && strcmp(ch.name, "Mine") == 0);
@@ -357,7 +380,7 @@ static void test_update_user_changes(void)
 	zsWriterChannel(&w, &zc);
 	len = zsWriterEnd(&w);
 	channels = used_channels();
-	CHECK(zone_import_zone(recbuf, len, 3101276, imports, &r) == ZI_OK && r.updated);
+	CHECK(zone_import_zone(recbuf, len, 9996543, imports, &r) == ZI_OK && r.updated);
 	CHECK(codeplug_zone(1, &z) && z.count == 3 && z.channels[1] == mine && z.channels[2] == before.channels[1]);
 	CHECK(used_channels() == channels - 4 + 1);
 }
@@ -610,6 +633,7 @@ static void test_export(void)
 int main(void)
 {
 	test_import();
+	test_contacts_unread();
 	test_update();
 	test_update_user_changes();
 	test_names_and_list();

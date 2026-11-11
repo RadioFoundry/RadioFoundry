@@ -17,8 +17,8 @@ stub/USER-GUIDE.md in the RadioFoundry repository.
     stubtool.py --self-test                                     against a simulated radio, no hardware
 
 Radio OFF, cable in, run the script, then switch the radio ON within --wait seconds (or --rfoundry-enter with the radio running RadioFoundry).
-Reads never write. Only --write-app (the application area from 0xC000, never the bootloader) and --write-test (two reserved
-test sectors per chip) write flash. The monitor the script loads into the radio's RAM is embedded below (source: the stub's own repository folder), so this file
+Reads never write. Only --write-app (the application area from 0xC000, never the bootloader) and --write-test (reserved
+test sectors: the program flash's, and the data flash's the board names in board.toml [flash.stub] write_test) write flash. The monitor the script loads into the radio's RAM is embedded below (source: the stub's own repository folder), so this file
 needs only Python 3 and pyserial.
 """
 import argparse
@@ -425,8 +425,10 @@ MEM = {"progmem": (SSI_PROG, True, None, 0x100000, "program flash"),
 NAND_FLAG = 4
 
 
-# Writes are only allowed here (chosen 2026-10-15 from the dumps: blank in every dump, away from RadioFoundry)
-WRITE_OK = {"progmem": [(0xF0000, 0xF4000)], "q128": [(0xC00000, 0xC04000)]}
+# Writes are only allowed here (chosen from the dumps: blank in every dump, away from RadioFoundry). The data flash has
+# no fixed region: each board's map differs, so its profile names one ([flash.stub] write_test, start and end from the
+# registry, checked by tools/boards.py against the map) and a radio without one gets no data flash writes
+WRITE_OK = {"progmem": [(0xF0000, 0xF4000)]}
 PAGE = 256
 # The application area of the program flash: an RadioFoundry image is linked for 0x0300C000, which is flash offset 0xC000. The
 # bootloader below it (0..0xC000) is never written, so the radio can always be put in update mode by hand.
@@ -557,13 +559,23 @@ def check_univ_load(image, load, window=None):
 # program flash size. VERSION's board= names them on the RadioFoundry route; --board at power-on. Unknown radio: GENERIC (no
 # pins, nothing echoed but 0).
 C7_BOARDS = {b.id: {"id": b.stub["id"], "name": b.model, "names": tuple(b.debuglink_names), "latch": b.stub["latch"],
-                    "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"], "protect": b.protect}
+                    "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"], "protect": b.protect,
+                    "write_test": b.stub.get("write_test")}
              for b in rfoundryboards.BOARDS.values() if b.stub and b.stub["tool"] == "stubtool"}
 GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000,
-           "protect": []}
+           "protect": [], "write_test": None}
 # This tool's memory names as board.toml [[flash.protect]] names them
 PROTECT_MEM = {"progmem": "progmem", "q128": "data", "nand": "nand"}
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
+
+
+def jedec_size(id_):
+    """The bytes a 3-byte SPI NOR JEDEC ID's capacity code gives, as the firmware's driver reads it (drivers/flash/spi_nor):
+    2^n for 0x10-0x18, 16 MB for a larger part (3-byte addresses reach no further), None for a code it doesn't know."""
+    c = id_[2] if len(id_) >= 3 else 0
+    if 0x10 <= c <= 0x18:
+        return 1 << c
+    return 0x1000000 if 0x19 <= c <= 0x22 else None
 
 
 def image_board_check(image, board):
@@ -1236,15 +1248,24 @@ class Radio:
             raise DumpError(str(e))
         if mem == "nand":
             raise DumpError("the NAND is read only here")
-        ok = WRITE_OK.get(mem, []) + ([(APP_START, APP_END)] if app and mem == "progmem" else [])
+        ok = self.write_ok(mem) + ([(APP_START, APP_END)] if app and mem == "progmem" else [])
         if not any(a <= start and end <= b for a, b in ok):
-            raise DumpError("%s 0x%X-0x%X is outside the allowed write regions %s" %
-                            (MEM[mem][4], start, end, ", ".join("0x%X-0x%X" % r for r in WRITE_OK.get(mem, []))))
+            raise DumpError("%s 0x%X-0x%X is outside the allowed write regions: %s" %
+                            (MEM[mem][4], start, end, ", ".join("0x%X-0x%X" % r for r in self.write_ok(mem))
+                             or "none for the %s (board.toml [flash.stub] write_test)" % self.profile["name"]))
+
+    def write_ok(self, mem):
+        """The regions a write or erase may touch besides the application: the program flash's test sectors, and the data
+        flash's the board profile names (none on a radio without one)."""
+        if mem == "q128":
+            wt = self.profile.get("write_test")
+            return [tuple(wt)] if wt is not None else []
+        return list(WRITE_OK.get(mem, []))
 
     def erase_sectors(self, mem, start, end):
         self.check_writable()
         self.check_write_range(mem, start, end)
-        self.check_id(mem)
+        self.check_id(mem, end)
         for a in range(start, end, SECTOR):
             if self.sector_op:
                 self.write_sector(mem, a, None)
@@ -1328,7 +1349,7 @@ class Radio:
         end = start + len(data)
         self.check_writable()
         self.check_write_range(mem, start, end)
-        self.check_id(mem)
+        self.check_id(mem, end)
         self.write_sectors(mem, data, start, range(start, end, SECTOR))
         bad = self.verify(mem, data, start)
         if bad:
@@ -1575,12 +1596,19 @@ class Radio:
             return None
         return sec if len(sec) == SECTOR and zlib.crc32(sec) == crc else None
 
-    def check_id(self, mem):
+    def check_id(self, mem, end=None):
+        """The chip answers its ID; with end (a data flash write or erase up to it), the ID's capacity holds end: a smaller
+        chip wraps an address past its end to a low one, the radio's own data."""
         id_ = self.jedec(mem)
         self.log("%s JEDEC ID %s" % (MEM[mem][4], id_.hex()))
         if id_ in (b"\xff" * len(id_), b"\x00" * len(id_)):
             raise DumpError("%s does not answer the ID command (%s): chip select or pin mux wrong, nothing was dumped"
                             % (MEM[mem][4], id_.hex()))
+        if end is not None and mem == "q128":
+            size = jedec_size(id_)
+            if size is None or end > size:
+                raise DumpError("%s up to 0x%X: the chip (JEDEC %s) is %s" % (MEM[mem][4], end, id_.hex(),
+                                "of unknown size" if size is None else "only 0x%X bytes" % size))
 
     def windows(self, mem, start, end):
         size = self.mem_size(mem)
@@ -1861,6 +1889,8 @@ class FakeRadio:
     def __init__(self, images, drop=None, flip=(), silent=(), swap=(), misplace=(), stub_len=1536, load=LOAD_ADDR,
                  rom_echo=False, rom_nak=False, rom_late=False, ecc=()):
         self.images = images                # {"progmem": bytes, "q128": bytes}
+        self.data_code = 0x18               # the data flash's JEDEC capacity code: 16 MB
+        self.id_reads = 0                   # JEDEC ID requests answered
         self.ecc = set(ecc)                 # NAND sectors whose ECC fails: reads and sums of them answer status ECC
         self.nand_page = None               # the page a generic SPI NAND page read (0x13) put in the chip's cache
         self.ecc_reads = 0                  # sector reads (op 09) that ended in status ECC
@@ -2162,7 +2192,8 @@ class FakeRadio:
                 self.wel = False
                 self.writes.append((mem, tx[0], a))
             elif tx[:1] == b"\x9F":
-                body = bytes([0xC8, 0x40, 0x14 if mem == "progmem" else 0x18])[:rxn]
+                self.id_reads += 1
+                body = bytes([0xC8, 0x40, 0x14 if mem == "progmem" else self.data_code])[:rxn]
             else:
                 self.errors.append("unknown flash command %s" % tx.hex())
         else:
@@ -2237,9 +2268,19 @@ def rxn_big(payload):
     return int.from_bytes(payload[8:10], "big") >= 256
 
 
+def low_latency(port):
+    """An FTDI cable holds received bytes for its latency timer, 16 ms by default; 1 ms halves every request's round
+    trip. pyserial sets it on Linux only; elsewhere, and on URLs and fakes, nothing changes."""
+    try:
+        port.set_low_latency_mode(True)
+    except (AttributeError, NotImplementedError, OSError, ValueError):
+        pass
+    return port
+
+
 def open_port(serial, path):
     """A device or a pyserial URL: rfc2217://HOST:PORT reaches a radio on a networked serial server."""
-    return serial.serial_for_url(path, 115200, timeout=0.1)
+    return low_latency(serial.serial_for_url(path, 115200, timeout=0.1))
 
 
 def self_test():
@@ -2386,9 +2427,30 @@ def self_test():
                       stub_len=len(stub))
     r = Radio(radio, log=quiet)
     r.start(wait=2, stub=stub)
-    lo, hi = WRITE_OK["q128"][0]
+    try:                                    # no board, no data flash test region
+        r.write_flash("q128", 0xC00000, b"\0" * SECTOR)
+        check(False, "a data flash write without the board's test region refused")
+    except DumpError as e:
+        check("write_test" in str(e) and radio.writes == [], "a data flash write without the board's test region refused (%s)" % e)
+    r.profile = dict(GENERIC, write_test=[0x71C000, 0x720000])
+    lo, hi = r.write_ok("q128")[0]
+    check((lo, hi) == (0x71C000, 0x720000), "the data flash test region comes from the board profile")
+    for code, why in ((0x15, "only 0x200000 bytes"), (0x0F, "unknown size")):
+        radio.data_code = code              # a smaller chip: 0x71C000 would wrap to 0x11C000
+        try:
+            r.write_flash("q128", lo, b"\0" * SECTOR)
+            check(False, "a data flash write past a %s chip refused" % why)
+        except DumpError as e:
+            check(why in str(e) and radio.writes == [], "a data flash write past the chip refused (%s)" % e)
+    radio.data_code = 0x18
+    check(jedec_size(bytes([0xC8, 0x40, 0x18])) == 0x1000000 and jedec_size(bytes([0xEF, 0x40, 0x20])) == 0x1000000
+          and jedec_size(bytes([0x85, 0x20, 0x15])) == 0x200000 and jedec_size(b"\xff\xff\xff") is None,
+          "jedec_size reads the capacity code as the firmware's driver does")
     pat = bytes((i * 3 + 1) & 0xFF for i in range(hi - lo))
+    radio.id_reads = 0
     r.write_flash("q128", lo, pat)
+    check(radio.id_reads == 2, "a data flash write reads the chip's ID once before (its answer and its size) and once in "
+          "the verify (%d)" % radio.id_reads)
     check(radio.images["q128"][lo:hi] == pat, "write_flash programs and verifies a test region")
     r.erase_sectors("q128", lo, lo + SECTOR)
     check(radio.images["q128"][lo:lo + SECTOR] == b"\xff" * SECTOR and radio.images["q128"][lo + SECTOR:hi] == pat[SECTOR:],
@@ -2421,7 +2483,7 @@ def self_test():
                        ("write_flash over a protected sector", lambda: r.write_flash("q128", lo, pat)),
                        ("erase of a protected sector", lambda: r.erase_sectors("q128", lo + SECTOR, lo + 2 * SECTOR)),
                        ("a raw sector erase in a protected region", lambda: r._write_cmd(
-                           "q128", bytes([0x20, (lo + SECTOR) >> 16 & 0xFF, 0x10, 0]), "erase", 1.0)),
+                           "q128", bytes([0x20]) + (lo + SECTOR).to_bytes(3, "big"), "erase", 1.0)),
                        ("a chip erase of a memory with a protected region", lambda: r._write_cmd(
                            "q128", b"\x60", "chip erase", 1.0))):
         try:
@@ -2938,7 +3000,8 @@ def main(argv=None):
                     "whole divisors only: clock / (16 * d)), remembered per port and radio; if it stops holding the link "
                     "goes back to the starting rate by itself. N asks for one rate (tested before it is kept); off stays")
     ap.add_argument("--write-test", choices=("progmem", "q128", "both"), help="erase, program a test pattern into, read back and erase "
-                    "again the sectors reserved for write tests (see WRITE_OK); nothing else is touched")
+                    "again the sectors reserved for write tests (WRITE_OK; the data flash's from the board's [flash.stub] "
+                    "write_test, refused on a radio without one); nothing else is touched")
     ap.add_argument("--rfoundry-enter", action="store_true", help="the radio is ON and runs RadioFoundry (built with CONFIG_STUB_ENTRY=y): load "
                     "the stub into its RAM over the debug link and jump to it, instead of the boot-ROM load")
     ap.add_argument("--rfoundry-stub", metavar="FILE", help="with --rfoundry-enter: this stub image instead of the embedded one (which is chosen by the RAM span the "
@@ -3093,11 +3156,19 @@ def main(argv=None):
             if not a.boot:
                 print("run again with --attach --boot reset (or power-cycle) to start the new firmware")
         if a.write_test:
+            regions = {}
             for mem in (("progmem", "q128") if a.write_test == "both" else (a.write_test,)):
-                lo, hi = WRITE_OK[mem][0]
+                ok = radio.write_ok(mem)        # every memory's region before the first write, so "both" writes all or none
+                if not ok:
+                    raise DumpError("the %s has no %s test region (board.toml [flash.stub] write_test; --board names the "
+                                    "radio): nothing written" % (radio.profile["name"], MEM[mem][4]))
+                lo, hi = regions[mem] = ok[0]
+                radio.check_write_range(mem, lo, hi)
+                radio.check_id(mem, hi)                     # the chip's size, before anything is read there
                 before = b"".join(radio.read_flash(mem, x, CHUNK) for x in range(lo, hi, CHUNK))
                 if before != b"\xff" * (hi - lo):
                     raise DumpError("%s 0x%X-0x%X is not blank any more: something else uses it, pick another region" % (MEM[mem][4], lo, hi))
+            for mem, (lo, hi) in regions.items():
                 pattern = bytes((i * 131 + (i >> 8) * 7 + 5) & 0xFF for i in range(hi - lo))
                 radio.write_flash(mem, lo, pattern)
                 back = b"".join(radio.read_flash(mem, x, CHUNK) for x in range(lo, hi, CHUNK))

@@ -17,6 +17,10 @@
 #include "hostlink/hostlink_ppp.h"
 #endif
 
+#if CONFIG_RX_EXT
+static bool rx_ext_on;
+#endif
+
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 	{ 400000000, 480000000, true },
@@ -25,6 +29,12 @@ static const band_t bands[] = {
 #endif
 #if CONFIG_BCAST_FM
 	{ 65000000, 108000000, false },		// the broadcast band, on the RDA5807M (airband-and-broadcast.md 4)
+#endif
+#if CONFIG_RX_EXT
+	// Receive only past the rated bands, while the user turns it on: the FD6818 band table (hardware-dm32.md 8.3). Keep these last
+	{ 16000000, 65000000, false },
+	{ 174000000, 400000000, false },
+	{ 480000000, 740000000, false },
 #endif
 };
 
@@ -63,10 +73,14 @@ static const char *const side_key_names[] = { "SK1", "SK2" };
 
 const board_t board = {
 	.name = "DM-32UV",
-	.caps = CAP_KEYPAD | CAP_ENCODER | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0) |
+	.caps = CAP_KEYPAD | CAP_ENCODER | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0) |
 		(CONFIG_AM_RX ? CAP_AM_RX : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
+#if CONFIG_RX_EXT
+	.rx_ext_count = 3,
+	.rx_ext_on = &rx_ext_on,
+#endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
 	.power_default = 1,	// low
@@ -103,6 +117,7 @@ const board_t board = {
 	.gps_present = hrc_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
 #endif
 	.system = &hrc_system,
+	.chip_reg = dm32_chip_reg,
 #if CONFIG_BCAST_FM
 	.bcast = &rda5807m_hal,
 #endif
@@ -190,10 +205,10 @@ void board_early_init(void)
 }
 
 // Everything the core stores lives above the write floor (hardware-dm32.md 10.1): the open-firmware codeplug's 64 KB
-// "EEPROM" image at 0x700000 (CODEPLUG_OPENFW_EEPROM_BASE in board.mk), a decoded calibration copy from other firmware left alone at
-// 0x710000, the settings ring and the sector journal after it, the 1 MB open-firmware "flash" image at 0x720000
-// (CODEPLUG_OPENFW_FLASH_BASE) with room above it for the DMR ID database, the native codeplug in the last 1 MB. The
-// factory calibration is read only, so the open-firmware CPS gets no calibration window
+// "EEPROM" image at 0x700000, a decoded calibration copy from other firmware left alone at 0x710000, the settings ring
+// and the sector journal after it, the 1 MB open-firmware "flash" image at 0x720000 with room above it for the DMR ID
+// database, the native codeplug in the last 1 MB. The factory calibration is read only, so the open-firmware CPS gets
+// no calibration window
 static const hal_flash_map_t flash_map = {
 	.settings_addr = 0x711000u,
 	.settings_size = 0x008000u,	// 8 sectors

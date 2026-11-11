@@ -11,15 +11,24 @@
 #include "config.h"
 #include "hal_dmr_modem.h"
 #include "modem/hrc7000/hrc7000.h"
+#include "dmr_rfburst.h"
 
 typedef struct {
-	// From the modem interrupts (ISR context, interrupts off): the RF chip to TX for our burst or back to RX after it.
-	// After a burst the board also drops the PA drive
+	// The board's per-burst TX on and TX off sequences (dmr_rfburst.h): the glue runs them on the RF-burst task, timed
+	// from the RF TX interrupt, and rf_switch and pa_on are not used. The board arms and disarms the task itself
+	// (hrc_rfburst_arm, hrc_rfburst_disarm) from tx(), tx_off() and rx()
+	const hrc_rfburst_board_t *burst;
+	// Without burst. From the modem interrupts (ISR context, interrupts off): the RF chip to TX for our burst or back to
+	// RX after it. After a burst the board also drops the PA drive
 	void (*rf_switch)(bool tx);
-	// The PA one-shot expired (ISR context): key the PA if the transmission is still on
+	// Without burst. The PA one-shot expired (ISR context): key the PA if the transmission is still on
 	void (*pa_on)(void);
 	// Microseconds from the start of a burst to the PA one-shot (a stock "DMR PA" setting, default 28 ms)
 	uint32_t pa_delay_us;
+	// Optional (task level, hrc_dmr_tx_end): the end of our DMR transmission with the last burst's switch back on
+	// receive. End it as tx_off() does, but leave the RF receiving as it is when it is on the last rx() settings (same
+	// frequency, trim, awake); else set receive up again as tx_off() does. NULL: the glue leaves it to tx_off()
+	void (*tx_end)(void);
 } hrc_dmr_board_t;
 
 #if CONFIG_DMR
@@ -28,6 +37,9 @@ void hrc_dmr_board_init(hrc7000_t *modem, const hrc_dmr_board_t *hooks);
 void hrc_dmr_enter(void);		// the modem has just entered DMR: engine on, interrupts on
 void hrc_dmr_leave(void);
 void hrc_dmr_rx_restart(void);
+// hal_radio_t.dmr_tx_end: when the last burst's switch put the RF back to receive (no burst, new channel or DMR entered
+// or left since), the board's tx_end ends the transmission and true; else false (the core calls tx_off())
+bool hrc_dmr_tx_end(void);
 bool hrc_dmr_tx_active(void);
 void hrc_dmr_tx_drop(void);
 // FM receive audio (fm_rx_audio.c): fn runs from the modem's system interrupt for each half the modem fills; NULL
@@ -38,9 +50,9 @@ extern const hal_dmr_modem_t hrc_dmr;
 
 // Bring-up counters: lines of at most about 20 characters, and the reset
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
-#define HRC_DMR_DIAG_LINES	14	// and the split duplex TX half's BS outbound (two "bs" lines)
+#define HRC_DMR_DIAG_LINES	15	// and the split duplex TX half's BS outbound (two "bs" lines)
 #else
-#define HRC_DMR_DIAG_LINES	12
+#define HRC_DMR_DIAG_LINES	13
 #endif
 bool hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len);
 void hrc_dmr_stats_reset(void);
@@ -49,6 +61,7 @@ static inline void hrc_dmr_board_init(hrc7000_t *modem, const hrc_dmr_board_t *h
 static inline void hrc_dmr_enter(void) {}
 static inline void hrc_dmr_leave(void) {}
 static inline void hrc_dmr_rx_restart(void) {}
+static inline bool hrc_dmr_tx_end(void) { return false; }
 static inline bool hrc_dmr_tx_active(void) { return false; }
 static inline void hrc_dmr_tx_drop(void) {}
 static inline bool hrc_dmr_fm_rx_hook(void (*fn)(void)) { (void)fn; return false; }

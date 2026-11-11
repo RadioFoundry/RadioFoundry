@@ -149,7 +149,7 @@ int dmrDataServiceSendShortData(bool group, uint32_t dst, uint32_t src, const ui
 	if (service_busy) {
 		return 0;
 	}
-	int count = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, group, dst, src, data, length, DT_RATE_12_DATA,
+	int count = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, group, dst, src, data, length, DMR_TYPE_RATE_1_2,
 				       preambles, svc_bursts, DMR_DATA_MAX_BURSTS);
 	if (count <= 0) {
 		return -1;
@@ -178,7 +178,7 @@ bool dmrDataServiceSendIP(bool group, uint32_t dst, uint32_t srcIp, uint32_t dst
 	bool compress = (protocol == DMR_IP_PROTO_UDP) && (length >= 8) && dmrDataUdpCompress(get16(&l4[0]), get16(&l4[2]));
 	int n = dmrDataEncodeIP(group, dst, RADIO_ID, dstIp, srcIp, ttl, protocol, l4, length, compress, dmrDataNextIpId(),
 							&pdu, &sap);
-	svc_count = (n > 0) ? dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, group, dst, RADIO_ID, pdu, n, DT_RATE_12_DATA, 2,
+	svc_count = (n > 0) ? dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, group, dst, RADIO_ID, pdu, n, DMR_TYPE_RATE_1_2, 2,
 											 svc_bursts, DMR_DATA_MAX_BURSTS) : 0;
 	svc_lists++;
 	return svc_count > 0;
@@ -371,13 +371,13 @@ int main(void)
 	memset(&p, 0, sizeof(p));
 	p.sap = DMR_SAP_IP;
 	p.dst = RADIO_ID;
-	p.src = 3101234;
+	p.src = 9991234;
 	uint8_t *pip = p.data;
 	pip[0] = 0x45;
 	put16(pip + 2, (uint16_t)(20 + 8 + sizeof(hello)));
 	pip[8] = 64;
 	pip[9] = 17;
-	put32(pip + 12, IPGW_INDIVIDUAL_NET | 3101234u);
+	put32(pip + 12, IPGW_INDIVIDUAL_NET | 9991234u);
 	put32(pip + 16, IPGW_INDIVIDUAL_NET | RADIO_ID);
 	put16(pip + 10, ip_checksum(pip, 20));
 	put16(pip + 20, 4000);
@@ -394,7 +394,7 @@ int main(void)
 	CHECK(sent_count == 1);
 	ip = sent[0] + 14;
 	udp = ip + 20;
-	CHECK(memcmp(sent[0], HOST_MAC, 6) == 0 && ip[9] == 17 && get32(ip + 12) == (IPGW_INDIVIDUAL_NET | 3101234u) &&
+	CHECK(memcmp(sent[0], HOST_MAC, 6) == 0 && ip[9] == 17 && get32(ip + 12) == (IPGW_INDIVIDUAL_NET | 9991234u) &&
 	      get32(ip + 16) == HOST_IP && get16(udp) == 4000 && get16(udp + 2) == 4001);
 	CHECK(memcmp(udp + 8, hello, sizeof(hello)) == 0 && ip_checksum(ip, 20) == 0);
 
@@ -402,7 +402,7 @@ int main(void)
 	memset(&p, 0, sizeof(p));
 	p.sap = DMR_SAP_SHORT_DATA;
 	p.dst = RADIO_ID;
-	p.src = 3101234;
+	p.src = 9991234;
 	memcpy(p.data, hello, sizeof(hello));
 	p.length = sizeof(hello);
 	sent_count = 0;
@@ -435,12 +435,12 @@ int main(void)
 	memset(&p, 0, sizeof(p));
 	p.sap = DMR_SAP_IP;
 	p.dst = RADIO_ID;
-	p.src = 3101234;
+	p.src = 9991234;
 	pip[0] = 0x45;
 	put16(pip + 2, (uint16_t)(20 + 8 + sizeof(hello)));
 	pip[8] = 64;
 	pip[9] = 17;
-	put32(pip + 12, IPGW_INDIVIDUAL_NET | 3101234u);
+	put32(pip + 12, IPGW_INDIVIDUAL_NET | 9991234u);
 	put32(pip + 16, IPGW_INDIVIDUAL_NET | RADIO_ID);
 	put16(pip + 10, ip_checksum(pip, 20));
 	put16(pip + 20, 4321);
@@ -453,7 +453,7 @@ int main(void)
 	hostlink_net_packet(&p);
 	link_up = true;
 	hostlink_net_poll(now_ms);
-	CHECK(local.calls == 2 && local.from_air && local.src == 3101234 && local.port == 4321 &&
+	CHECK(local.calls == 2 && local.from_air && local.src == 9991234 && local.port == 4321 &&
 	      local.len == (int)sizeof(hello) && sent_count == 0);
 	// ... but not when it is for a talkgroup, or for another ID: those go to the host as before
 	p.group = true;
@@ -646,13 +646,13 @@ int main(void)
 
 	// Off-net through the gateway ID: the queue carries the real destination and the TTL to the service, which sends
 	// the full header to the gateway radio from our ID's address
-	ipGatewaySetOffNetId(3100500);
+	ipGatewaySetOffNetId(9990500);
 	int lists0 = svc_lists;
 	from_host(f, host_udp(f, 0xC0A80A05u, 5000, 5001, hello, sizeof(hello)));
 	air_tick(now_ms);
 	CHECK(svc_lists == lists0 + 1);
 	pk = svc_packet();
-	CHECK(pk != NULL && pk->sap == DMR_SAP_IP && pk->dst == 3100500 && !pk->group && pk->data[8] == 63);
+	CHECK(pk != NULL && pk->sap == DMR_SAP_IP && pk->dst == 9990500 && !pk->group && pk->data[8] == 63);
 	CHECK(pk != NULL && dmrDataGetUDP(pk, &u) && u.dstIp == 0xC0A80A05u && u.srcIp == dmrDataIdAddress(false, RADIO_ID));
 	ipGatewaySetOffNetId(0);
 	air_tick(now_ms);
@@ -661,7 +661,7 @@ int main(void)
 	memset(&p, 0, sizeof(p));
 	p.sap = DMR_SAP_SHORT_DATA;
 	p.dst = RADIO_ID;
-	p.src = 3101234;
+	p.src = 9991234;
 	memcpy(p.data, hello, sizeof(hello));
 	p.length = sizeof(hello);
 	sent_count = 0;
@@ -711,7 +711,7 @@ int main(void)
 	hostlink_net_poll(now_ms);
 	CHECK(ipGatewayRadioIP() == IPGW_FIXED_LINK_DEFAULT && ipGatewayHostIP() == IPGW_FIXED_LINK_DEFAULT + 1);
 	dmrBurst_t tb[DMR_DATA_MAX_BURSTS];
-	int tn = dmrDataBuildIPText(false, RADIO_ID, 3101234, "to the dispatcher", DT_RATE_12_DATA, 0, tb, DMR_DATA_MAX_BURSTS);
+	int tn = dmrDataBuildIPText(false, RADIO_ID, 9991234, "to the dispatcher", DMR_TYPE_RATE_1_2, 0, tb, DMR_DATA_MAX_BURSTS);
 	const dmrDataPacket_t *rx = NULL;
 	dmrDataRxReset();
 	for (int i = 0; i < tn; i++) {
@@ -728,16 +728,16 @@ int main(void)
 	ip = sent[0] + 14;
 	udp = ip + 20;
 	CHECK(sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 && get32(ip + 16) == IPGW_FIXED_LINK_DEFAULT + 1 &&
-	      get32(ip + 12) == (IPGW_INDIVIDUAL_NET | 3101234u) && get16(udp + 2) == DMR_UDP_PORT_ETSI_TEXT);
+	      get32(ip + 12) == (IPGW_INDIVIDUAL_NET | 9991234u) && get16(udp + 2) == DMR_UDP_PORT_ETSI_TEXT);
 	// ... and the PC's answer from there goes over the air from the radio's own ID
 	static const uint8_t answer[] = { 0x00, 'O', 0x00, 'K' };
 	host_src = IPGW_FIXED_LINK_DEFAULT + 1;
 	svc_lists = 0;
-	from_host(f, host_udp(f, IPGW_INDIVIDUAL_NET | 3101234u, DMR_UDP_PORT_ETSI_TEXT, DMR_UDP_PORT_ETSI_TEXT, answer,
+	from_host(f, host_udp(f, IPGW_INDIVIDUAL_NET | 9991234u, DMR_UDP_PORT_ETSI_TEXT, DMR_UDP_PORT_ETSI_TEXT, answer,
 			      sizeof(answer)));
 	air_tick(now_ms);
 	pk = svc_packet();
-	CHECK(svc_lists == 1 && pk != NULL && pk->src == RADIO_ID && pk->dst == 3101234 && !pk->group);
+	CHECK(svc_lists == 1 && pk != NULL && pk->src == RADIO_ID && pk->dst == 9991234 && !pk->group);
 	CHECK(pk != NULL && dmrDataGetUDP(pk, &u) && u.dstPort == DMR_UDP_PORT_ETSI_TEXT && u.length == 4 &&
 	      memcmp(u.payload, answer, 4) == 0);
 	// The serial protocols at the fixed address
