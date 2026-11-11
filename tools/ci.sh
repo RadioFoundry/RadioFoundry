@@ -104,6 +104,9 @@ bad()  { echo "ci: FAIL  $*"; FAILED="$FAILED
   $*"; }
 skip() { echo "ci: skip  $*"; SKIPPED="$SKIPPED
   $*"; }
+WARNED=""
+warn() { echo "ci: warn  $*"; WARNED="$WARNED
+  $*"; }
 # The registry tools (tools/boards.py) read TOML: Python 3.11 or later. Empty when there is none (the steps that need it
 # fail with the reason)
 REG_PY=$(tools/rfoundry_python.sh 2> "$OUT/rfoundry-python.log") || REG_PY=""
@@ -418,6 +421,14 @@ build() {
 			bad "$b $name: stack check (see $dir.stack.log)"
 		fi
 	fi
+	# double and libm in a release image: a warning, not a failure (docs/spec/gotchas.md 13.12)
+	if [ "$name" = default ] || [ "$name" = maximal ]; then
+		cross=$(make -s BOARD="$b" BUILD="$dir" "$@" print-vars VARS=CROSS | sed 's/^CROSS=//')
+		soft=$("${cross}nm" "$target.elf" 2>/dev/null | awk '$2 ~ /^[TtWw]$/ { print $3 }' |
+			grep -E '^(__aeabi_(d[a-z]+|[iu]?l?2d|f2d|d2[a-z]+)|__(add|sub|mul|div|extendsf|truncdf|float[a-z]*|fix[a-z]*)df[0-9]?|(sin|cos|tan|asin|acos|atan2?|sqrt|pow|exp|log|log10|floor|ceil|fmod|round|hypot)f?)$' |
+			sort -u | tr '\n' ' ')
+		if [ -n "$soft" ]; then warn "$b $name: links double or libm code: $soft(docs/spec/gotchas.md 13.12)"; fi
+	fi
 	bin=$target.bin
 	bytes=$(wc -c < "$bin" | tr -d ' ')
 	# --print-memory-usage: "FLASH:  123024 B  336 KB  35.76%" (the app region, codec sectors excluded)
@@ -582,6 +593,9 @@ else
 fi
 
 echo
+if [ -n "$WARNED" ]; then
+	echo "ci: warnings:$WARNED"
+fi
 if [ -n "$SKIPPED" ]; then
 	echo "ci: skipped:$SKIPPED"
 fi
