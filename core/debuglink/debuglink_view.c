@@ -111,13 +111,16 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 #if CONFIG_DMR
 	const pa_keyup_cfg_t *ku = pa_keyup_cfg();
 	if (ku != NULL) {
-		// The DMR PA key-up's constants (RADIO op 37) and the last key-up's drives
-		pa_keyup_t k = pa_keyup_last();
-		dl_text(t, "pa_keyup=%u/%u/%u/%u/%u/%u/%u/%u/%u\n", (unsigned)ku->dead, (unsigned)ku->knee,
-			(unsigned)ku->slope_us, (unsigned)ku->boost_pct, (unsigned)ku->hold_pct, (unsigned)ku->boost_us,
-			(unsigned)ku->pa_us, (unsigned)ku->drive_us, (unsigned)ku->late_pct);
-		dl_text(t, "pa_keyup.last=%u/%u/%u/%u/%u\n", (unsigned)k.boost, (unsigned)k.hold, (unsigned)k.drive,
-			(unsigned)k.hold_us, (unsigned)k.late_us);
+		// The DMR PA key-up's constants (RADIO op 37), the board's limits (the earliest point, the highest drive) and
+		// the last key-up: its drives and times, and the table's top drive and anchor it was planned against
+		uint16_t top, ref, ahead, max;
+		pa_keyup_t k = pa_keyup_last(&top, &ref);
+		pa_keyup_limits(&ahead, &max);
+		dl_text(t, "pa_keyup=%u/%u/%u/%u/%u/%u\n", (unsigned)ku->dead_pm, (unsigned)ku->knee_us,
+			(unsigned)ku->slope_us, (unsigned)ku->window_us, (unsigned)ku->settle_us, (unsigned)ku->pa_us);
+		dl_text(t, "pa_keyup.limits=%u/%u\n", (unsigned)ahead, (unsigned)max);
+		dl_text(t, "pa_keyup.last=%u/%u/%u/%u/%u/%u/%u\n", (unsigned)k.boost, (unsigned)k.drive, (unsigned)k.boost_us,
+			(unsigned)k.pa_us, (unsigned)k.drive_us, (unsigned)top, (unsigned)ref);
 	}
 #endif
 	// The board's bands in Hz, so a HIL test skips a frequency the radio can't tune instead of failing on it

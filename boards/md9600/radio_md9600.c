@@ -258,16 +258,14 @@ static bool key_timer_ready;
 // The burst's key-up by the key-up rule (radio/pa_keyup.h, hardware-md9600.md 19.8): its points, and the band's
 // transmitter supply MD9600_BURST_T5_US ahead of the loop, in time order from the same timer. The RF TX interrupt
 // comes KEYUP_INT_AHEAD_US before the burst's first symbol (SDR bench: the loop closed 1.2 ms after the interrupt
-// put the carrier up 1.35 ms before it). Without a boost (boost_us 0) the key-up is the stepped ramp, its loop closed
+// put the carrier up 1.35 ms before it). Without a boost the key-up is the stepped ramp, its loop closed
 // at pa_us. [VHF, UHF]: neither loop has a knee (every level up 0.5-0.75 ms after its point on a conducted path),
 // so no boost, only the loop's point: each level up 0.18-0.34 ms before the first symbol (hardware-md9600.md 19.8)
 #define KEYUP_INT_AHEAD_US	2550u
 #define KEYUP_MAX_AHEAD_US	(KEYUP_INT_AHEAD_US - MD9600_BURST_T5_US - 50u)	// the supply's point after the interrupt
 static const pa_keyup_cfg_t keyup_cfg[2] = {
-	[MD9600_VHF] = { .dead = 0, .knee = 0, .slope_us = 0, .boost_pct = 100, .hold_pct = 100,
-			 .boost_us = 0, .pa_us = 936, .drive_us = 0 },
-	[MD9600_UHF] = { .dead = 0, .knee = 0, .slope_us = 0, .boost_pct = 100, .hold_pct = 100,
-			 .boost_us = 0, .pa_us = 850, .drive_us = 0 },
+	[MD9600_VHF] = PA_KEYUP_FIXED(936),
+	[MD9600_UHF] = PA_KEYUP_FIXED(850),
 };
 enum { KEY_PT_SUPPLY = PA_KEYUP_PT_BOARD };
 static pa_keyup_point_t key_pt[PA_KEYUP_POINTS_MAX];	// the transmission's, set before it is armed
@@ -289,7 +287,6 @@ static void keyup_plan(uint32_t hz, uint8_t power)
 		return;
 	}
 	pa_keyup_select(&keyup_cfg[band]);
-	pa_keyup_cfg_t c = keyup_cfg[band];	// the plan and its points from one set of constants
 	if (!op_apc(NULL, hz, power, &d) || !md9600_cal_apc(hz, MD9600_POWER_LEVELS - 1u, &top)) {
 		return;
 	}
@@ -297,13 +294,14 @@ static void keyup_plan(uint32_t hz, uint8_t power)
 	if (ku_floor >= d) {
 		ku_floor = 0;	// as the RF sequence takes it (md9600_rf_tx_tune)
 	}
-	ku = pa_keyup_plan(d, top, ku_floor, &c);
+	// The dead zone's anchor: the drive where the band's loop gives no output
+	ku = pa_keyup_plan(d, top, ku_floor);
 	if (ku.boost == 0u) {
-		key_delay_us = KEYUP_INT_AHEAD_US - MD9600_BURST_T5_US - c.pa_us;
+		key_delay_us = KEYUP_INT_AHEAD_US - MD9600_BURST_T5_US - ku.pa_us;
 		return;
 	}
 	// The supply ahead of the PA's point by T5, and ahead of any point at its time
-	uint8_t n = pa_keyup_insert(key_pt, pa_keyup_points(&c, &ku, key_pt), (uint16_t)(c.pa_us + MD9600_BURST_T5_US),
+	uint8_t n = pa_keyup_insert(key_pt, pa_keyup_points(&ku, key_pt), (uint16_t)(ku.pa_us + MD9600_BURST_T5_US),
 				    KEY_PT_SUPPLY);
 	key_ns = pa_keyup_steps(key_pt, n, KEYUP_INT_AHEAD_US, 0u, key_st);
 }
@@ -314,7 +312,6 @@ static bool key_point(uint8_t kind)
 	switch (kind) {
 	case KEY_PT_SUPPLY: return md9600_rf_pa_supply(&rf) == MD9600_RF_OK;
 	case PA_KEYUP_PT_BOOST: return md9600_rf_pa_ref(&rf, ku.boost) == MD9600_RF_OK;
-	case PA_KEYUP_PT_HOLD: return md9600_rf_pa_ref(&rf, ku.hold) == MD9600_RF_OK;
 	case PA_KEYUP_PT_DRIVE: return md9600_rf_pa_ref(&rf, ku.drive) == MD9600_RF_OK;
 	default: return md9600_rf_pa_loop(&rf) == MD9600_RF_OK;
 	}

@@ -50,13 +50,13 @@
 // same, without a delay frames were lost. So the PA point's default is 1 ms after the interrupt
 #define DMR_KEY_INT_AHEAD_US	2530u
 #define DMR_KEY_MIN_US		30u	// the key timer's shortest step; closer points run together
+// The PA is dropped this long after the RF TX interrupt (gotchas.md 3.4): the burst's last symbol ends 30.03 ms after
+// it. Left to the timeslot interrupt, the carrier fell 1.7 ms after the last symbol, 0.45 ms into the next slot
+#define PA_HOLD_US		30000u
 // The earliest key-up point (radio/pa_keyup.h): the timer's first step after the interrupt
 #define KEYUP_MAX_AHEAD_US	(DMR_KEY_INT_AHEAD_US - DMR_KEY_MIN_US)
-// The key-up constants (docs/spec/pa-keyup.md). No boost: the PA keyed at the step's drive, 1 ms after the interrupt
-static const pa_keyup_cfg_t keyup_cfg = {
-	.dead = 0, .knee = 0, .slope_us = 0, .boost_pct = 100, .hold_pct = 100,
-	.boost_us = 0, .pa_us = DMR_KEY_INT_AHEAD_US - 1000u, .drive_us = 0,
-};
+// The key-up constants (docs/spec/pa-keyup.md): every level keyed at its drive 1 ms after the interrupt
+static const pa_keyup_cfg_t keyup_cfg = PA_KEYUP_FIXED(DMR_KEY_INT_AHEAD_US - 1000u);
 
 // Voice SPI2 (hardware-dm1701.md 4.3): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C6000_VCS
 #define VOICE_SPI_PINS		(GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15)
@@ -463,9 +463,6 @@ static bool key_point(uint8_t kind)
 			return false;
 		}
 		return true;
-	case PA_KEYUP_PT_HOLD:
-		r.key_apc = r.ku.hold;
-		break;
 	default:
 		r.key_apc = r.ku.drive;
 		break;
@@ -482,6 +479,11 @@ void TIM7_IRQHandler(void)
 		TIM7->CR1 = 0;
 		return;
 	}
+	if (r.key_i >= r.key_ns) {	// the burst is over: the PA off; the timeslot interrupt does the rest (rf_to_rx)
+		key_timer_stop();
+		pa_off();
+		return;
+	}
 	for (;;) {
 		uint8_t i = r.key_i;
 		for (uint8_t p = i != 0u ? r.key_st[i - 1u].end : 0u; p < r.key_st[i].end; p++) {
@@ -490,11 +492,12 @@ void TIM7_IRQHandler(void)
 				return;
 			}
 		}
-		if (++i >= r.key_ns) {
-			key_timer_stop();
+		r.key_i = ++i;
+		if (i >= r.key_ns) {
+			// The PA drop, PA_HOLD_US after the interrupt
+			TIM7->ARR = PA_HOLD_US - (DMR_KEY_INT_AHEAD_US - r.key_base_us) - 1u;
 			return;
 		}
-		r.key_i = i;
 		// From the last update; a step already due goes now
 		uint32_t step = pa_keyup_step_wait(r.key_base_us, r.key_st[i].us, TIM7->CNT, DMR_KEY_MIN_US);
 		if (step != 0u) {
@@ -505,9 +508,9 @@ void TIM7_IRQHandler(void)
 	}
 }
 
-// The RF TX interrupt starts the burst's key-up points (the engine counts the burst as keyed from here: the PA drop at
-// the timeslot interrupt more than 20 ms later is unchanged); the timeslot interrupt drops the PA, points still
-// pending included
+// The RF TX interrupt starts the burst's key-up points and, after them, the PA drop PA_HOLD_US later (the engine
+// counts the burst as keyed from here); the timeslot interrupt more than 20 ms later puts the receiver back, and
+// drops the PA if the timer hasn't (points still pending included)
 bool uvf_rf_dmr_switch(bool tx)
 {
 	if (!tx) {
@@ -901,14 +904,15 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		// The burst's key-up points from the cal table at the TX frequency (radio/pa_keyup.h)
 		uint16_t top = calibrated ? (uint16_t)power_to_dac(&cal, UVF_POWER_TOP, uhf) : (uint16_t)drive;
 		const pa_keyup_cfg_t *kb = uvf_variant.keyup != NULL ? &uvf_variant.keyup[uhf ? 1 : 0] : &keyup_cfg;
-		pa_keyup_cfg_t c = *kb;	// the plan and its points from one set of constants
+		// The dead zone's anchor: the calibration's low row
+		uint16_t ref = calibrated ? cal.power_dac[1] : (uint16_t)drive;
 #if CONFIG_DMR
 		pa_keyup_select(kb);
-		r.ku = pa_keyup_plan((uint16_t)drive, top, 0u, &c);
+		r.ku = pa_keyup_plan((uint16_t)drive, top, ref);
 #else
-		r.ku = pa_keyup_drives(&c, (uint16_t)drive, top, 0u, DAC_MAX);
+		r.ku = pa_keyup_drives(kb, (uint16_t)drive, top, ref, DAC_MAX);
 #endif
-		r.key_ns = pa_keyup_steps(r.key_pt, pa_keyup_points(&c, &r.ku, r.key_pt), DMR_KEY_INT_AHEAD_US, DMR_KEY_MIN_US,
+		r.key_ns = pa_keyup_steps(r.key_pt, pa_keyup_points(&r.ku, r.key_pt), DMR_KEY_INT_AHEAD_US, DMR_KEY_MIN_US,
 					  r.key_st);
 		__DMB();
 		r.dmr_armed = true;

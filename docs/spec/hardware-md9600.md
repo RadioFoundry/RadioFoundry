@@ -1089,8 +1089,8 @@ symbol deviation 1933 Hz, every burst of a 3 s call decoded (headers, 9 superfra
 
 The key-up follows the key-up rule ([pa-keyup.md](pa-keyup.md)): the rule's points run on the key timer, with the
 band's T5 supply 500 us ahead of the loop. Neither band's loop has a knee: on a conducted path every level reaches
--3 dB 0.5-0.75 ms after the loop closes. So the board's constants have no boost, only the loop's point per band, set
-with the automatic tuning ([pa-keyup.md](pa-keyup.md) 6). The debug link's `radio pa-keyup` changes them for tuning.
+-3 dB 0.5-0.75 ms after the loop closes. So the board's constants have no boost, only the loop's point per band
+(`PA_KEYUP_FIXED`, [pa-keyup.md](pa-keyup.md) 2). The debug link's `radio pa-keyup` changes them for tuning.
 
 | Band | Loop closed before the first symbol | Power | -3 dB before the first symbol | Overshoot |
 |---|---|---|---|---|

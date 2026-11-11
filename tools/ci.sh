@@ -227,7 +227,7 @@ for f in sys.argv[1:]:
 	fi
 	if python3 -c 'import pytest' 2>/dev/null; then
 		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_skip_kinds.py tests/hil/test_radio_reconnect.py tests/hil/test_bench_line.py \
-			tests/hil/test_bench_envelope.py \
+			tests/hil/test_bench_envelope.py tests/hil/test_pa_cal.py \
 			tests/hil/test_tx_guard.py tests/hil/test_rig_state.py \
 			> "$OUT/hil-skip-test.log" 2>&1; then
 			ok "HIL skip, reconnect, TX guard, rig state and bench line helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"

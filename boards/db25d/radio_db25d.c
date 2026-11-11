@@ -97,19 +97,20 @@ static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_db25
 static uint16_t tx_on_us;
 static uint8_t tx_lead;		// the RF TX interrupt's lead, 100 us steps (db25d_dmr_rf_tx_lead)
 #if CONFIG_DMR && DB25D_DMR_TX
-// The DMR key-up (radio/pa_keyup.h, docs/spec/pa-keyup.md), [VHF, UHF]. pa_us is the TX on sequence's time: it sets
-// the RF TX interrupt's lead with the page's TX-on delay. With a boost the drive is stepped at the rule's points
-// in place of the shaped ramp: the ramp takes longer than a low level's boost, and the PA loop's low-pass
-// (about 2 ms) shapes the rise by itself
-#define KEYUP_MAX_AHEAD_US	3000u
+// The DMR key-up (radio/pa_keyup.h, docs/spec/pa-keyup.md), [VHF, UHF]. The TX on sequence selects the PA and its
+// supply ahead of the rule's points, so they are drive writes only: the level's drive at its lead, or a boost and
+// then the drive. The earliest of them sets the RF TX interrupt's lead with the page's TX-on delay. The drive is
+// stepped, not ramped: the PA loop's low-pass shapes the rise, and the rule times a step. The constants are
+// tools/bench/pa_cal.py's, measured into a dummy load at each band's center. UHF: the lowest level's drive sits on the
+// PA's turn-on edge (the dead zone ends at 71 % of the low table's drive), so it is boosted; the others come up on
+// their own drive in 0.4 to 0.7 ms. VHF: no dead zone to speak of, every level on its own drive in 0.4 to 0.9 ms
+// The earliest point: a drive written earlier than this acts no earlier (measured: 1.8 ms on both bands)
+#define KEYUP_MAX_AHEAD_US	1800u
 static const pa_keyup_cfg_t keyup_cfg[2] = {
-	{ .dead = 0, .knee = 0, .slope_us = 0, .boost_pct = 100, .hold_pct = 100,
-	  .boost_us = 0, .pa_us = DB25D_DMR_PA_UP_VHF_US, .drive_us = 0 },
-	{ .dead = 0, .knee = 0, .slope_us = 0, .boost_pct = 100, .hold_pct = 100,
-	  .boost_us = 0, .pa_us = DB25D_DMR_PA_UP_US, .drive_us = 0 },
+	{ .dead_pm = 0, .knee_us = 205, .slope_us = 261, .window_us = 1500, .settle_us = 300, .pa_us = 0xFFFF },
+	{ .dead_pm = 713, .knee_us = 62, .slope_us = 383, .window_us = 1500, .settle_us = 0, .pa_us = 0xFFFF },
 };
 static pa_keyup_t ku;			// the transmission's, set before the RF task is armed
-static uint16_t ku_boost_us, ku_drive_us, ku_pa_us;
 #endif
 static uint32_t tx_hz;
 static void dmr_disarm(void);
@@ -396,13 +397,12 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	// The key-up against the high level's drive here
 	db25d_tx_plan_t high;
 	uint16_t top = db25d_cal_tx_plan(hz, true, DB25D_TX_DRIVE_PCT, &high) && high.pa > tx_pa ? high.pa : tx_pa;
-	pa_keyup_cfg_t c = keyup_cfg[tx_uhf ? 1 : 0];	// the plan and its points from one set of constants
+	// and the low table's, the dead zone's anchor
+	db25d_tx_plan_t low;
+	uint16_t ref = db25d_cal_tx_plan(hz, false, DB25D_TX_DRIVE_PCT, &low) ? low.pa : 0u;
 	pa_keyup_select(&keyup_cfg[tx_uhf ? 1 : 0]);
-	ku = pa_keyup_plan(tx_pa, top, 0u, &c);
-	ku_boost_us = (uint16_t)(c.boost_us - ku.late_us);
-	ku_drive_us = c.drive_us;
-	ku_pa_us = c.pa_us;
-	tx_lead = db25d_dmr_rf_tx_lead(c.pa_us, plan.on_us);
+	ku = pa_keyup_plan(tx_pa, top, ref);
+	tx_lead = db25d_dmr_rf_tx_lead(ku.boost != 0u ? ku.boost_us : ku.pa_us, plan.on_us);
 	tx_hz = hz;
 	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias_dc(db25d_cal_tx_center(), db25d_cal_mod(hz)));
 	hrc7000_set_rf_tx_lead(&modem, tx_lead);
@@ -445,15 +445,13 @@ void db25d_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 	hrc_pin_write(tx_uhf ? PIN_TX_SUPPLY_B : PIN_TX_SUPPLY_A, false);
 	hrc_pin_write(tx_uhf ? PIN_TX_SUPPLY_A : PIN_TX_SUPPLY_B, true);
 	if (ku.boost == 0u) {
-		at(hrc_rfburst_pa_at_us(tx_lead, ku_pa_us));	// the lead leaves the sequence done by then
-		apc_ramp(tx_pa, true);
+		at(hrc_rfburst_pa_at_us(tx_lead, ku.pa_us));	// the lead leaves the sequence done by then
+		DAC_DATA_B = tx_pa;
 		return;
 	}
-	at(hrc_rfburst_pa_at_us(tx_lead, ku_boost_us));
+	at(hrc_rfburst_pa_at_us(tx_lead, ku.boost_us));
 	DAC_DATA_B = ku.boost;
-	at(hrc_rfburst_pa_at_us(tx_lead, ku.hold_us));
-	DAC_DATA_B = ku.hold;
-	at(hrc_rfburst_pa_at_us(tx_lead, ku_drive_us));
+	at(hrc_rfburst_pa_at_us(tx_lead, ku.drive_us));
 	DAC_DATA_B = tx_pa;
 }
 

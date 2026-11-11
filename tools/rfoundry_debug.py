@@ -964,22 +964,21 @@ class DebugLink:
         view's tx_drive lists each level's drive. Raises DebugLinkError over the board's limit or without the hook."""
         self.radio(OP_TX_DRIVE, struct.pack("<H", int(drive)))
 
-    def pa_keyup(self, dead=None, knee=None, slope_us=None, boost=None, hold=None, boost_us=None, pa_us=None,
-                 drive_us=None, late=0):
-        """The DMR PA key-up constants (RADIO op 37; docs/spec/pa-keyup.md), RAM only, from the next key-up: the drive
-        that does nothing (dead), the knee (counts x ms), the slope (us), the boost (% of the top step's drive) and the
-        hold (% of the step's drive), then the boost, PA and drive points in us before the first symbol, and how much
-        later a lower step starts (late, % of what its boost is shorter than the top step's; 0: not sent, for a radio
-        with the eight-value op). No arguments: the board's again. The core view shows them (pa_keyup) and the last
-        key-up (pa_keyup.last: boost, hold, drive, the hold's point and the later start in us). Raises DebugLinkError
-        out of range or on a radio without it."""
-        v = (dead, knee, slope_us, boost, hold, boost_us, pa_us, drive_us)
+    def pa_keyup(self, dead_pm=None, knee_us=None, slope_us=None, window_us=None, settle_us=None, pa_us=None):
+        """The DMR PA key-up constants (RADIO op 37; docs/spec/pa-keyup.md), RAM only, from the next key-up: the dead
+        zone (1/1000 of the calibration's anchor drive), the knee and the slope (us), the window (the earliest start
+        before the first symbol), the boost's end before it (settle) and the PA's point. No arguments: the board's
+        again. The core view shows them (pa_keyup), the board's limits (pa_keyup.limits: the earliest point in us and
+        the highest drive) and the last key-up (pa_keyup.last: boost, drive, the boost's, PA's and drive's points in
+        us, then the top drive and the anchor it was planned against). Raises DebugLinkError out of range or on a
+        radio without it."""
+        v = (dead_pm, knee_us, slope_us, window_us, settle_us, pa_us)
         if all(x is None for x in v):
             self.radio(OP_PA_KEYUP, b"")
             return
         if any(x is None for x in v):
-            raise ValueError("pa_keyup: the eight values (and late), or none")
-        self.radio(OP_PA_KEYUP, struct.pack("<HHHBBHHH", *(int(x) for x in v)) + (bytes([int(late)]) if late else b""))
+            raise ValueError("pa_keyup: the six values, or none")
+        self.radio(OP_PA_KEYUP, struct.pack("<6H", *(int(x) for x in v)))
 
     def pa_sweep(self, start, step, count, on_ms, off_ms, ceiling=100, mark_ms=0):
         """One PA drive sweep (RADIO op 38; docs/spec/pa-keyup.md 7) on the FM carrier the radio transmits now: the drive
@@ -1469,8 +1468,8 @@ def cmd_radio(link, a):
     elif op == "pa-sweep":            # pa-sweep START STEP COUNT ON_MS OFF_MS [CEILING_PCT] [MARK_MS] (keys FM itself)
         runs = link.pa_sweep_grid(*[num(i) for i in range(len(args))])
         print("points", sum(n for _, n in runs), "sweeps", " ".join(f"{d}:{n}" for d, n in runs))
-    elif op == "pa-keyup":            # pa-keyup DEAD KNEE SLOPE_US BOOST HOLD BOOST_US PA_US DRIVE_US [LATE]|default (RAM only)
-        link.pa_keyup(*([] if args[:1] in ([], ["default"]) else [num(i) for i in range(max(len(args), 8))]))
+    elif op == "pa-keyup":            # pa-keyup DEAD_PM KNEE_US SLOPE_US WINDOW_US SETTLE_US PA_US|default (RAM only)
+        link.pa_keyup(*([] if args[:1] in ([], ["default"]) else [num(i) for i in range(6)]))
     elif op == "set":                 # set NAME VALUE
         link.setting(args[0], num(1))
     elif op == "usb":                 # usb network|serial

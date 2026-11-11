@@ -71,11 +71,12 @@
 #define DMR_KEY_MIN_US		30u	// the key timer's shortest step; closer points run together
 // The earliest key-up point (radio/pa_keyup.h): the timer's first step after the interrupt
 #define KEYUP_MAX_AHEAD_US	(DMR_KEY_INT_AHEAD_US - DMR_KEY_MIN_US)
-// The key-up constants (docs/spec/pa-keyup.md). No boost: the PA keyed at the step's drive, 1 ms after the interrupt
-static const pa_keyup_cfg_t keyup_cfg = {
-	.dead = 0, .knee = 0, .slope_us = 0, .boost_pct = 100, .hold_pct = 100,
-	.boost_us = 0, .pa_us = DMR_KEY_INT_AHEAD_US - 1000u, .drive_us = 0,
-};
+// The key-up constants (docs/spec/pa-keyup.md), measured with tools/bench/pa_cal.py on a UHF radio up to its 2.5 W
+// level: the window and the PA 1 ms after the interrupt as before; the lowest level, 0.95 ms late on its own drive,
+// gets a boost
+static const pa_keyup_cfg_t keyup_cfg = { .dead_pm = 562, .knee_us = 90, .slope_us = 1013,
+					  .window_us = DMR_KEY_INT_AHEAD_US - 1000u, .settle_us = 306,
+					  .pa_us = DMR_KEY_INT_AHEAD_US - 1000u };
 
 // Voice SPI2 (hardware-md380.md 4.4): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C5000_VCS
 #define VOICE_SPI_PINS		(GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15)
@@ -295,9 +296,6 @@ static void key_point(uint8_t kind)
 	case PA_KEYUP_PT_PA:
 		pa_on(r.key_apc);
 		return;
-	case PA_KEYUP_PT_HOLD:
-		r.key_apc = r.ku.hold;
-		break;
 	default:
 		r.key_apc = r.ku.drive;
 		break;
@@ -875,13 +873,13 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		r.dmr_mod1 = cal.dmr_q;
 		// The burst's key-up points (radio/pa_keyup.h), against the top level's drive here
 		uint16_t top = (uint16_t)power_to_dac(&cal, (uint8_t)(board.power_count - 1));
-		pa_keyup_cfg_t c = keyup_cfg;	// the plan and its points from one set of constants
+		uint16_t ref = cal.power_dac[0];	// the dead zone's anchor: the calibration's low power drive
 #if CONFIG_DMR
-		r.ku = pa_keyup_plan((uint16_t)drive, top, 0u, &c);
+		r.ku = pa_keyup_plan((uint16_t)drive, top, ref);
 #else
-		r.ku = pa_keyup_drives(&c, (uint16_t)drive, top, 0u, DAC_MAX);
+		r.ku = pa_keyup_drives(&keyup_cfg, (uint16_t)drive, top, ref, DAC_MAX);
 #endif
-		r.key_ns = pa_keyup_steps(r.key_pt, pa_keyup_points(&c, &r.ku, r.key_pt), DMR_KEY_INT_AHEAD_US, DMR_KEY_MIN_US,
+		r.key_ns = pa_keyup_steps(r.key_pt, pa_keyup_points(&r.ku, r.key_pt), DMR_KEY_INT_AHEAD_US, DMR_KEY_MIN_US,
 					  r.key_st);
 		__DMB();
 		r.dmr_armed = true;

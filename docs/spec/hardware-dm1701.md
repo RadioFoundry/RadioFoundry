@@ -754,22 +754,36 @@ Relative output against the DAC value, same radio and frequencies (dB below the 
 ### 7.2 DMR key-up
 
 The PA is keyed by the shared rule ([pa-keyup.md](pa-keyup.md)), with constants per band
-(`boards/dm1701/board.c`). The top level's PA comes on 1.0 ms (UHF) and 0.8 ms (VHF) after the RF TX interrupt, and a
-lower level's later, by `late %` of what its boost is shorter:
+(`boards/dm1701/board.c`). No step's drive starts earlier than the window, which is 1.0 ms (UHF) and 0.8 ms (VHF)
+after the RF TX interrupt:
 
-| Band | dead | knee | slope_us | boost % | hold % | boost_us | pa_us | drive_us | late % |
-|---|---|---|---|---|---|---|---|---|---|
-| VHF | 0 | 1520 | 850 | 120 | 100 | 1730 | 1730 | 300 | 50 |
-| UHF | 0 | 500 | 780 | 120 | 100 | 1530 | 1530 | 300 | 100 |
+| Band | dead_pm | knee_us | slope_us | window_us | settle_us | pa_us |
+|---|---|---|---|---|---|---|
+| VHF | 0 | 760 | 850 | 1730 | 300 | 1730 |
+| UHF | 348 | 280 | 1210 | 1530 | 700 | 1530 |
 
-Measured on the SDR bench with these, every level:
+UHF is measured with `tools/bench/pa_cal.py` ([pa-keyup.md](pa-keyup.md) 6) over the air on the SDR bench: every
+level's -3 dB point 0.24-0.44 ms before the first symbol, the two top levels with under 1 dB of overshoot, the
+boosted lower three with 1.7-3.3 dB (they vary from run to run around the tool's 3 dB limit; a refit ends on the
+same constants within a few percent). The set converted
+from the earlier form (knee 250, slope 780, no dead zone, settle 300) keyed every level 0.1-0.6 ms late. VHF is still
+that conversion (one boost level for every step, a hold, a later start for the lower steps) and is untested on the
+radio.
+
+Key-down: TIM7 drops the PA 30 ms after the RF TX interrupt, when the burst's last symbol ends
+([gotchas.md](gotchas.md) 3.4); the timeslot interrupt after it puts the receiver back and stays the fallback. The
+carrier is 30 dB down 0.5-0.9 ms after the last symbol's end, inside the 1.25 ms guard time. Dropped at the timeslot
+interrupt alone it fell 1.7-1.8 ms after the last symbol, about 0.5 ms into the next slot.
+
+With the earlier form, every level measured on the SDR bench:
 
 | Band | -3 dB point before the first symbol | First symbol against the settled level | Overshoot |
 |---|---|---|---|
 | UHF | 0.16-0.34 ms | within 0.7 dB | under 1 dB |
 | VHF | 0.08-0.14 ms | within 0.6 dB up to 1 W; the two top levels not measured with this set (1.1 and 1.5 dB low with the sets next to it) | under 2 dB |
 
-What sets the points:
+What set the points, measured with the earlier form (its `late %`: how much later a lower step started; its knee in
+drive counts × ms):
 
 | Setting | Result |
 |---|---|

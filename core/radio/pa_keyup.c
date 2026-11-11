@@ -5,65 +5,53 @@
 #include "config.h"
 #include <stddef.h>
 
-pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, uint16_t floor, uint16_t max)
+pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, uint16_t ref, uint16_t max)
 {
-	pa_keyup_t k = { .boost = 0, .hold = 0, .drive = d, .hold_us = 0, .late_us = 0 };
-	if (c == NULL || c->boost_us == 0u || d == 0u || d < floor) {
+	pa_keyup_t k = { .boost = 0, .drive = d, .boost_us = 0, .pa_us = 0, .drive_us = 0 };
+	if (c == NULL) {
 		return k;
 	}
-	// 32-bit integer math: drives <= 4095 or so, knee and slope_us 16 bits, so every product stays below 2^32
-	uint32_t boost = (uint32_t)top * c->boost_pct / 100u;
-	if (boost > max) {
-		boost = max;
-	}
-	uint32_t dead = (uint32_t)floor + c->dead;
-	if (boost <= dead + 1u || boost < d) {
-		return k;	// a boost that would do nothing, or one under the step's drive: key at d
-	}
+	// 32-bit integer math: drives 12 bits (the DACs'), the constants 16, so every product stays below 2^32
+	uint32_t dead = (uint32_t)ref * c->dead_pm / 1000u;
 	uint32_t over = d > dead ? (uint32_t)d - dead : 0u;
-	uint32_t t = ((uint32_t)c->knee * 1000u + (uint32_t)c->slope_us * over) / (boost - dead);
-	uint32_t room = (uint32_t)c->boost_us - c->drive_us;	// the boost ends by the point the drive goes to d
-	if (t > room) {
-		t = room;
+	uint32_t span = top > dead ? (uint32_t)top - dead : 0u;
+	uint32_t q = (uint32_t)c->knee_us * span + (uint32_t)c->slope_us * over;	// us x counts
+	uint32_t lead = over != 0u ? q / over : c->window_us;	// a drive in the dead zone: nothing to time, the earliest
+	uint32_t b = d;
+	if (lead > c->window_us) {
+		lead = c->window_us;
+		uint32_t room = (uint32_t)c->window_us - c->settle_us;	// pa_keyup_valid: above 0
+		uint32_t ceiling = (uint32_t)top * PA_KEYUP_BOOST_MAX_PCT / 100u;
+		if (ceiling > max) {
+			ceiling = max;
+		}
+		b = dead + (q + room - 1u) / room;	// rounded up: the boost never short of the window
+		if (b > ceiling) {
+			b = ceiling;	// the level comes up late: the window is too short for it
+		}
 	}
-	// Just in time: late_pct of what the step's boost is shorter than the top step's goes to a later start, and the
-	// receiver keeps that time. At 100 every boost ends where the top step's does
-	uint32_t t_top = ((uint32_t)c->knee * 1000u + (uint32_t)c->slope_us * (top > dead ? (uint32_t)top - dead : 0u)) /
-		(boost - dead);
-	if (t_top > room) {
-		t_top = room;
+	uint32_t pa = c->pa_us < lead ? c->pa_us : lead;
+	k.pa_us = (uint16_t)pa;
+	if (b > d || pa < lead) {	// a boost, or the drive ahead of the PA: the loop charged at d before the PA is on
+		k.boost = (uint16_t)(b > d ? b : d);
+		k.boost_us = (uint16_t)lead;
+		k.drive_us = (uint16_t)(b > d ? c->settle_us : pa);
+		if (k.drive_us > k.pa_us) {
+			k.drive_us = k.pa_us;	// the PA no later than the drive's return: the points in the enum's order
+		}
 	}
-	uint32_t late = t_top > t ? (t_top - t) * c->late_pct / 100u : 0u;
-	k.boost = (uint16_t)boost;
-	// The hold stays above the dead zone: under it the loop loses the boost's charge (pa-keyup.md 2). A step whose
-	// own drive is in the dead zone holds at d. On a board with a floor both count from it
-	uint32_t hold = floor + (uint32_t)(d - floor) * c->hold_pct / 100u;
-	if (hold <= dead) {
-		hold = d > dead ? dead + 1u : d;
-	}
-	k.hold = (uint16_t)hold;
-	k.hold_us = (uint16_t)(c->boost_us - late - t);
-	k.late_us = (uint16_t)late;
 	return k;
 }
 
-uint8_t pa_keyup_points(const pa_keyup_cfg_t *c, const pa_keyup_t *k, pa_keyup_point_t out[PA_KEYUP_POINTS])
+uint8_t pa_keyup_points(const pa_keyup_t *k, pa_keyup_point_t out[PA_KEYUP_POINTS])
 {
 	if (k->boost == 0u) {
-		out[0] = (pa_keyup_point_t){ .us = c->pa_us, .kind = PA_KEYUP_PT_PA };
+		out[0] = (pa_keyup_point_t){ .us = k->pa_us, .kind = PA_KEYUP_PT_PA };
 		return 1u;
 	}
-	const uint16_t boost_us = (uint16_t)(c->boost_us - k->late_us);
-	// in the enum's order; the PA never before the boost
-	const uint16_t us[PA_KEYUP_POINTS] = { boost_us, c->pa_us < boost_us ? c->pa_us : boost_us, k->hold_us, c->drive_us };
-	for (uint8_t i = 0; i < PA_KEYUP_POINTS; i++) {
-		uint8_t at = i;	// insertion keeps the enum's order among equal times
-		while (at > 0u && out[at - 1u].us < us[i]) {
-			out[at] = out[at - 1u];
-			at--;
-		}
-		out[at] = (pa_keyup_point_t){ .us = us[i], .kind = i };
-	}
+	out[0] = (pa_keyup_point_t){ .us = k->boost_us, .kind = PA_KEYUP_PT_BOOST };
+	out[1] = (pa_keyup_point_t){ .us = k->pa_us, .kind = PA_KEYUP_PT_PA };
+	out[2] = (pa_keyup_point_t){ .us = k->drive_us, .kind = PA_KEYUP_PT_DRIVE };
 	return PA_KEYUP_POINTS;
 }
 
@@ -103,13 +91,7 @@ uint8_t pa_keyup_steps(const pa_keyup_point_t *pt, uint8_t n, uint16_t ref_us, u
 
 bool pa_keyup_valid(const pa_keyup_cfg_t *c, uint16_t max_ahead_us)
 {
-	if (c == NULL || c->hold_pct > 100u || c->late_pct > 100u || c->boost_pct < 50u || c->boost_pct > PA_KEYUP_BOOST_MAX_PCT) {
-		return false;
-	}
-	if (c->pa_us > max_ahead_us) {
-		return false;
-	}
-	return c->boost_us == 0u || (c->boost_us <= max_ahead_us && c->pa_us <= c->boost_us && c->drive_us <= c->boost_us);
+	return c != NULL && c->window_us <= max_ahead_us && (c->settle_us < c->window_us || c->window_us == 0u);
 }
 
 #if CONFIG_DMR
@@ -122,6 +104,7 @@ static uint16_t ahead_limit, drive_limit;
 static bool on;
 static bool custom;	// the debug link's constants: a band's don't replace them
 static pa_keyup_t last;
+static uint16_t last_top, last_ref;
 
 void pa_keyup_init(const pa_keyup_cfg_t *defaults, uint16_t max_ahead_us, uint16_t max_drive)
 {
@@ -172,18 +155,29 @@ void pa_keyup_select(const pa_keyup_cfg_t *defaults)
 	}
 }
 
-pa_keyup_t pa_keyup_plan(uint16_t d, uint16_t top, uint16_t floor, pa_keyup_cfg_t *used)
+pa_keyup_t pa_keyup_plan(uint16_t d, uint16_t top, uint16_t ref)
 {
 	pa_keyup_cfg_t c = cfgs[cur];
-	if (used != NULL && on) {
-		*used = c;
-	}
-	last = pa_keyup_drives(on ? &c : NULL, d, top, floor, drive_limit);
+	last = pa_keyup_drives(on ? &c : NULL, d, top, ref, drive_limit);
+	last_top = top;
+	last_ref = ref;
 	return last;
 }
 
-pa_keyup_t pa_keyup_last(void)
+pa_keyup_t pa_keyup_last(uint16_t *top, uint16_t *ref)
 {
+	if (top != NULL) {
+		*top = last_top;
+	}
+	if (ref != NULL) {
+		*ref = last_ref;
+	}
 	return last;
+}
+
+void pa_keyup_limits(uint16_t *max_ahead_us, uint16_t *max_drive)
+{
+	*max_ahead_us = ahead_limit;
+	*max_drive = drive_limit;
 }
 #endif

@@ -54,9 +54,7 @@
 // No boost: the output follows the drive about 0.65 ms later at every drive, on both bands, so the drive only has to
 // come earlier. At 0.5 ms the first symbol was 5-18 dB low; from 0.8 ms it is within 1 dB and the -3 dB point 0.15 ms
 // before it, at 1.0 ms 0.3 ms before (hardware-dm1801pro.md 5.6)
-static const pa_keyup_cfg_t keyup_cfg = {
-	.boost_pct = 100, .hold_pct = 100, .boost_us = 0, .pa_us = PA_AHEAD_US, .drive_us = 0,
-};
+static const pa_keyup_cfg_t keyup_cfg = PA_KEYUP_FIXED(PA_AHEAD_US);
 // TX data advance (hrc7000_t.tx_pre_on) 1.1 ms, not the chip's 0.4 ms: at 0.4 ms the inbound burst came 0.71 ms late
 // against the outbound, about 0.11 ms less per step (hardware-dm1801pro.md 5.6)
 #define TX_PRE_ON		11u
@@ -243,9 +241,6 @@ static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 		switch (key_pt[i].kind) {
 		case PA_KEYUP_PT_BOOST:
 			DAC_DATA_B = ku.boost;
-			break;
-		case PA_KEYUP_PT_HOLD:
-			DAC_DATA_B = ku.hold;
 			break;
 		case PA_KEYUP_PT_DRIVE:
 			DAC_DATA_B = tx_drive;
@@ -460,14 +455,14 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		tx_hz = hz;	// for burst_on's TX path
 		rx_path(rx_hz, true);
 		// The burst's key-up points from the cal table at the TX frequency
-		pa_keyup_cfg_t c = keyup_cfg;	// the plan and its points from one set of constants
-		uint16_t top = dm1801pro_pa_drive(hz, 0xFFu);
+		// against the calibration's high row, the dead zone's anchor its low row
+		uint16_t top = dm1801pro_pa_drive(hz, 0xFFu), ref = dm1801pro_pa_drive(hz, 2u);
 #if CONFIG_DMR
-		ku = pa_keyup_plan(tx_drive, top, 0u, &c);
+		ku = pa_keyup_plan(tx_drive, top, ref);
 #else
-		ku = pa_keyup_drives(&c, tx_drive, top, 0u, 4095u);
+		ku = pa_keyup_drives(&keyup_cfg, tx_drive, top, ref, 4095u);
 #endif
-		key_n = pa_keyup_points(&c, &ku, key_pt);
+		key_n = pa_keyup_points(&ku, key_pt);
 		dmr_keyed = true;
 #if CONFIG_DMR
 		hrc_rfburst_arm();

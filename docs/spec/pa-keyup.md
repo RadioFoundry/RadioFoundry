@@ -13,60 +13,65 @@ Code: `core/radio/pa_keyup.h`. A radio's hardware page says whether it keys this
 
 ## 1. How the loop behaves
 
-Three things, each seen in key-up sweeps on a radio, shape the rule:
+A PA power loop takes its reference from the drive through a low-pass, and gives no output until that reference has
+added up to a fixed amount. Two things follow, each seen in key-up captures:
 
 | What | Effect |
 |---|---|
 | A dead zone | a drive under a certain value does nothing to the loop |
-| A knee | no output until the drive above the dead zone has added up to a fixed amount (drive counts × ms). A low step's own drive takes milliseconds to get there |
-| A memory | the loop follows the drive through a low-pass of about 1 ms. Once the output is there it follows that filtered drive, so what is left of a boost when the output appears is overshoot |
+| A knee | no output until the drive above the dead zone has added up to a fixed amount (drive counts × time). A low step's own drive takes milliseconds to get there, a high drive a fraction of one |
 
-So the boost carries the knee's amount in a short time, and ends early enough for the low-pass to forget it.
+So a drive `b`, written with the output off, brings the output to a step's power after
+
+```
+T(d, b) = (knee × (top − dead) + slope × (d − dead)) / (b − dead)
+```
+
+`d` is the step's drive from the power cal table at the transmit frequency, `top` the highest step's drive there and
+`dead` the dead zone's edge. `knee` is the time the knee takes at the top drive, `slope` the extra time a step needs
+at its own drive. At `b = d` the top step is up after `knee + slope`; a low step takes far longer.
 
 ## 2. The sequence
 
-`d` is the step's drive from the power cal table at the transmit frequency and `top` the highest step's drive there.
 All times are before the burst's first symbol.
 
-| Point | PA drive | PA |
-|---|---|---|
-| `boost_us` − late | boost = boost% × top | |
-| `pa_us`, or with the boost when that starts later | | on |
-| `boost_us` − late − t | hold = hold% × d | |
-| `drive_us` | d | |
+| Case | PA drive |
+|---|---|
+| T(d, d) ≤ `window_us` | d, T(d, d) before the first symbol. Nothing else |
+| otherwise | a boost b from `window_us`, then d from `settle_us`. b is the lowest drive that fits: T(d, b) = `window_us` − `settle_us` |
 
-t = (knee + slope × (d − dead)) / (boost − dead), at most `boost_us` − `drive_us`. late = late% × (t_top − t), where
-t_top is t for the top step.
+The PA is switched on at `pa_us`, or with the first drive when that comes later.
 
-A lower step's boost is shorter, so it starts later, and the PA with it. Each step is keyed just in time: its output
-rises where the top step's does, and the receiver keeps the time a fixed start would take from it. `boost_us` is the
-top step's start, the earliest of all. At `late_pct` 100 every boost ends at the same point. A PA whose low steps
-come up slower after the boost takes less. 0 starts every step at `boost_us`.
+A step that is fast by itself is keyed late and leaves its time to the receiver. A slow one gets only the boost it
+needs: a short high boost overshoots with the timer's jitter, a long low one doesn't. No step starts earlier than
+the window. The boost is never over `PA_KEYUP_BOOST_MAX_PCT` (120 %) of the top step's drive or the board's drive
+limit; a step that needs more comes up late, and the window is too short for it.
 
 | Constant | What it sets |
 |---|---|
-| `dead` | the drive under which the loop does nothing, in drive counts |
-| `knee` | what the boost has to carry before the PA gives output, in drive counts above `dead` × ms |
-| `slope_us` | more boost time for a higher step, in µs × counts per count of (d − dead) |
-| `hold_pct` | the hold between the boost and d, % of d, 0-100 %. It lets the low-pass forget the boost |
-| `boost_pct` | the boost, % of the top step's drive, 50-120 %. A limit more than a tuning value |
-| `late_pct` | how much later a lower step starts, % of what its boost is shorter than the top step's, 0-100 % |
-| `boost_us`, `pa_us`, `drive_us` | the points; `boost_us` 0 = no boost or hold: the PA keyed at `pa_us` at d |
+| `dead_pm` | the dead zone's edge, in 1/1000 of `ref` |
+| `knee_us` | the time the top step's drive takes to bring the loop to the PA's knee |
+| `slope_us` | the time a step's own drive takes from there to the step |
+| `window_us` | the earliest a key-up starts. A step slower than this is boosted |
+| `settle_us` | a boost ends this long before the first symbol (under `window_us`) |
+| `pa_us` | the PA on this long before, or with the first drive when that is later |
 
-Every step gets the same boost level for a time of its own: a low step a short, late boost, the top step a long one
-from `boost_us`. No step is driven over `boost_pct` of the top step's drive, and
-only for about a millisecond. Nothing is stored per frequency or per step: the cal table already has the drives.
+Six 16-bit values per band with its own PA. None is a drive count. `ref` is a drive the radio's own power
+calibration gives at the transmit frequency: its lowest step's drive, or the drive where its table says the output
+reaches zero (0: no dead zone). `top` and `d` come from the same table. So one set of constants serves every radio of
+a design: what differs from radio to radio is in its calibration table, and nothing is stored per step or per
+frequency.
 
-Integer math, 32-bit: `t_us = (knee * 1000 + slope_us * (d - dead)) / (top * boost_pct / 100 - dead)`, one divide per
-key-up. A boost inside the dead zone or under d gives no boost: the PA is keyed at `pa_us` at d.
+A board that keys its PA with the drive at one fixed time uses `PA_KEYUP_FIXED(us)`: no knee, every step `us` ahead.
 
-Two rules for the hold:
+Integer math, 32-bit, one or two divides per key-up:
 
-- Keep it above the dead zone at the lowest step. A hold far under it (drive 0) for more than a few hundred µs loses
-  the boost's charge, and the step comes up milliseconds late. `pa_keyup_drives` holds at `dead + 1` when
-  `hold_pct` of d is at or under it, and at d for a step whose drive is in the dead zone.
-- The lowest drive sits on an edge. After the boost it adds to the knee only at its own small rate, so a boost a few
-  percent short comes up late and one a few percent long overshoots. Higher steps have several times the margin.
+```
+dead = ref * dead_pm / 1000
+q    = knee_us * (top - dead) + slope_us * (d - dead)
+lead = q / (d - dead)                              // d in the dead zone: window_us
+b    = dead + ceil(q / (window_us - settle_us))    // only when lead > window_us
+```
 
 ## 3. What a board does
 
@@ -76,8 +81,8 @@ A board with per-burst keying opts in; one that doesn't call it keys its PA as b
 |---|---|
 | Start-up | `pa_keyup_init(defaults, max_ahead_us, max_drive)`: its constants, the earliest point its burst sequence can run (after the burst task's wake and any switching that has to go first) and its drive limit |
 | Key-up (radio task), a board whose bands have their own PA | `pa_keyup_select(constants)` with the transmit band's, before the plan |
-| Key-up (radio task) | `pa_keyup_plan(d, top, floor, &cfg)` with its cal table's drives at the transmit frequency; keep the result and the constants it returns in `cfg` for the bursts, so the points and the plan come from one set |
-| Key-up (radio task) | `pa_keyup_points(&cfg, &plan, pts)`: the points in time order; `pa_keyup_insert(pts, n, us, kind)` adds a board's own point (the RF switch to transmit, a supply) at its time, ahead of the points at that time, with a kind from `PA_KEYUP_PT_BOARD` on |
+| Key-up (radio task) | `pa_keyup_plan(d, top, ref)` with its cal table's drives at the transmit frequency; keep the result for the bursts |
+| Key-up (radio task) | `pa_keyup_points(&plan, pts)`: the points in time order; `pa_keyup_insert(pts, n, us, kind)` adds a board's own point (the RF switch to transmit, a supply) at its time, ahead of the points at that time, with a kind from `PA_KEYUP_PT_BOARD` on |
 | Each burst | the points in time order, by the board's burst task or its timer |
 
 A board that times the points with a hardware timer from a reference event a fixed time before the first symbol (an
@@ -99,122 +104,133 @@ switch, the more of the inbound burst before ours the radio still hears.
 
 ## 4. Debug link
 
-The constants are RAM: RADIO op 37 ([debuglink.md](debuglink.md)) changes them for tuning, from the next key-up, and a
-restart restores the board's. Constants set this way apply on every band until `default` gives the board's back. The `core` view shows `pa_keyup` (the constants) and `pa_keyup.last` (the last key-up's
-boost, hold and drive, the hold's point and the later start). RADIO op 36 sets a drive that is not in the table.
+The constants are RAM: RADIO op 37 ([debuglink.md](debuglink.md)) changes them, from the next key-up, and a restart
+restores the board's. Constants set this way apply on every band until `default` gives the board's back. RADIO op 36
+sets a drive that is not in the table, for one transmission; the key-up is planned for that drive.
+
+| `core` view key | Values |
+|---|---|
+| `pa_keyup` | the six constants, in the table's order |
+| `pa_keyup.limits` | the board's earliest point (µs) and its drive limit |
+| `pa_keyup.last` | the last key-up: boost, drive, `boost_us`, `pa_us`, `drive_us`, then the `top` and `ref` it was planned against |
 
 ```
-rfoundry_debug.py radio pa-keyup 680 1250 600 120 80 1500 900 500 100
+rfoundry_debug.py radio pa-keyup 900 120 250 1500 300 400
 rfoundry_debug.py radio pa-keyup default
 ```
 
-## 5. Tuning a radio
+## 5. Targets
 
-Tune on a dummy load, with raw I/Q from the SDR bench at 1 MS/s or more, about 20 bursts per setting, and a receive
-level that stays linear at the top step (check that the steps come out at their expected spacing first). For each
-burst, find the first symbol from the sync, and take the median power envelope against it.
+Measured on a dummy load, per burst, against the first symbol found from the burst's sync:
 
 | Measure | Target |
 |---|---|
-| The -3 dB point | at or before the first symbol, every step, and no step more than about 0.3 ms before |
+| The −3 dB point | 0.25 ms before the first symbol; never after it, never more than 0.6 ms before |
 | The first symbol's level against the settled level | within 3 dB |
-| Overshoot above the settled level | 3 dB at most; the lowest step overshoots most |
+| Overshoot above the settled level | 3 dB at most |
 
-Tune each band that has its own PA: the knee of one band's PA can be several times another's on the same radio.
+Each band that has its own PA has its own constants: the knee of one band's PA can be several times another's on the
+same radio.
 
-1. Characterize the loop with the boost off (`boost_us` 0): the time from the PA's point to the output at three or
-   four drives. Two drives give `dead` and `knee`: the knee is (d − dead) × (that time − the low-pass's time), the same
-   at every drive. The decay of an overshoot gives the low-pass's time; start `slope_us` there.
-2. Set `boost_pct` 120, `hold_pct` 80 (higher if that is under the dead zone at the lowest step), the boost at the earliest point the board allows, the PA with it or later (no earlier than step 7 allows), and
-   `drive_us` about a third of the boost's.
-3. At the lowest drive, step `knee` until the -3 dB point is 0.2-0.3 ms before the first symbol. Too little comes up
-   late with no overshoot, too much early and over. Repeat the chosen value: it should hold within 0.1 ms.
-4. At the top step: late or low at the first symbol, raise `slope_us` or `hold_pct`; overshooting, lower `slope_us`.
-5. Check every step at both band edges and the band center, on every band, then split channels and the first burst of
-   a call. A band whose low drive wants a knee more than a few percent away needs its own.
-6. With the top step right, look at where the lower steps rise. Earlier than the top step: raise `late_pct` until
-   they line up with it. Later, or low at the first symbol: lower it. Then move `boost_us` and `pa_us` together as
-   late as the top step allows.
-7. `knee` goes with `pa_us`: the control charges less with the PA selected, so moving the PA's point later wants a
-   smaller knee. Retune after moving it.
-8. On a simplex channel the board's switch to TX before the PA must come after the inbound burst before ours, or an
-   SFR repeater misses that burst. Keep `pa_us` plus the board's switch time under that, and check an SFR call.
+`window_us` and `pa_us` are the board's choices, not measurements. On a simplex channel the board's switch to TX
+before the PA must come after the inbound burst before ours, or an SFR repeater misses that burst: keep the window
+plus the board's switch time under that.
 
-The charts show a radio at a low drive and its top step: the estimated PA output (a curve fit of the measured median),
-and the drive through each sequence. Three sequences: the PA keyed at d with no boost, an earlier form of this rule (a
-boost of fixed length blended from d and the top step, then a hold, the PA keyed last), and the rule above.
+## 6. Calibration
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../dev/img/dmr-pa-keyup-ramp-dark.png">
-  <img alt="Estimated PA output through a key-up at a low drive and the top step: no boost, an earlier form of the rule, and this rule" src="../dev/img/dmr-pa-keyup-ramp-light.png">
-</picture>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../dev/img/dmr-pa-keyup-drive-dark.png">
-  <img alt="PA drive through a key-up at a low drive and the top step for the same three sequences" src="../dev/img/dmr-pa-keyup-drive-light.png">
-</picture>
-
-The earlier form's boost was the same length at every step, so it was too short for the low drive and left the PA
-coming up at the first symbol. Sizing the boost by the step brings every step up before it.
-
-## 6. Automatic tuning
-
-`tools/bench/pa_keyup_autocal.py` does section 5 by itself: about 25 s per try, 10-20 min per band.
+`tools/bench/pa_cal.py` measures a band's constants in one run. It needs a radio whose firmware keys by this rule
+(`pa_keyup` in the `core` view) and a bench gateway whose bench line (TCP 7373) lists `bursts_raw` and `bursts_ramp`
+in its `info`. The gateway measures every burst's ramp itself; the tool keys the radio over the debug link and fits
+the constants. A gateway that also lists `bursts_trace` sends each burst's envelope, which the plots need.
 
 ### Setup
 
 | What | How |
 |---|---|
 | Load | The radio into a dummy load rated for its top power |
-| Tap | Fixed pads to an AD936x SDR's receive port (libiio). Pads so the top level gives at most −13 dBm at the SDR |
-| SDR gain | 0 dB, manual. The tool sets it and checks it before every key |
-| Firmware | A build with `pa_keyup` in the `core` view (RADIO op 37) |
-| Frequency | One the radio may key into the load. Needs `--lease-cmd` if the bench has frequency leases |
+| Tap | Fixed pads to the gateway's SDR. Pads so the top level gives at most −13 dBm at the SDR |
+| SDR gain | Manual, `--gain` (default 0 dB) |
+| Frequency | One the radio may key into the load. The tool claims it on the gateway for the run |
+| Over the air | An antenna on the SDR instead of the pads works for the times: give `--pad-db` the path's rough loss and lower `--gain` until the input doesn't clip. The printed powers then mean nothing |
 
 Pads needed: top power in dBm + 13. A 5 W radio (37 dBm) needs 50 dB, a 50 W radio 60 dB.
 
 ### Run
 
-One band at a time, near its center:
-
 ```
-tools/bench/pa_keyup_autocal.py --radio-port PORT --sdr-uri usb:1.2.5 \
-    --freq 446.05 --pad-db 57 --max-w 5 --boost-us 2550 --log uhf.jsonl
+tools/bench/pa_cal.py --radio PORT --bench HOST --freq 446.05,146.535 --pad-db 57 --max-w 5 --allow-rf
 ```
 
 | Option | Value |
 |---|---|
-| `--radio-port` | The radio's debug link port |
-| `--sdr-uri` | The SDR's libiio context (`iio_info -s` lists them) |
-| `--freq` | MHz |
+| `--radio` | The radio's debug link port |
+| `--bench` | The bench gateway, `HOST[:PORT]` |
+| `--freq` | MHz, one per band with its own PA |
 | `--pad-db` | The pads' total |
-| `--max-w` | The highest level's output, W |
-| `--boost-us` | The board's earliest point: the `max_ahead_us` it passes to `pa_keyup_init` |
-| `--levels` | Optional: the levels to tune on, `0,1,2,3`. Leave out a level that is over the SDR's limit |
-| `--radio-ssh`, `--sdr-ssh` | Optional: the hosts the radio and the SDR are plugged into |
+| `--max-w` | The highest level's output, W. Checked against `--max-in-dbm` (−13) before any key |
+| `--allow-rf` | Required: the radio transmits |
+| `--levels` | Optional: the power levels to use, `0,1,2`. Leave out a level that is over the SDR's limit |
+| `--max-pct` | Optional: the highest open-loop drive, % of the top level's |
+| `--channel` | Optional: key on the channel the radio is on, for a radio without a VFO. It must be a DMR channel that transmits on `--freq`; `--cc` is its color code |
+| `--rx-port` | Optional: the SDR's receive port the pads feed, on a gateway that lists `rx_port` |
+| `--window-us`, `--settle-us`, `--pa-us` | Optional: the board's values are kept otherwise |
 | `--arm`, `--disarm` | Optional: debug link commands a radio needs before and after keying |
+| `--out` | Optional: a JSON file with the result and every key's measurement |
+| `--plot` | Optional: a directory for the run's plots (below). Needs matplotlib; the tool itself doesn't |
+| `--before` | Optional: six constants the plots compare with, instead of the board's |
+| `--refit` | Optional: measure new constants even when the board's hold |
+| `--rounds` | Optional: verify rounds that may change the constants (4) |
+| `--batch` | Optional: keys per capture (6). A step's keys share one capture; 0 or 1 takes a capture for each |
+| `--key-s` | Optional: each key's length in seconds (0.5, about 8 bursts) |
 
 ### What it does
 
-1. Preflight: SDR gain and LO, the input level, the radio's test TX limit set to `--freq` only.
-2. Baseline: every level with the board's constants.
-3. Fits the loop with the boost off: `dead`, `knee`, the low-pass.
-4. With a knee: tunes `knee` (lowest level), `slope_us` (top level), `late_pct` (the levels between).
-5. With no knee (every level up the same time after the PA's point): no boost, only `pa_us`.
-6. Verifies every level twice against section 5's targets.
+Every key is a DMR transmission of half a second (`--key-s`). A step's keys share one capture, up to `--batch` (6)
+of them: the capture's start costs more than a key. A capture that doesn't show every key is keyed again one by one.
+Per band:
 
-It always restores the board's constants and the lowest level at the end.
+| Step | Keys | What |
+|---|---|---|
+| Check | 1 | The lowest level with the board's constants: the path, the SDR's input level, `top` and `ref` |
+| As is | one per level | Every level with the board's constants. If all are in time the constants are kept and the run ends (`--refit` goes on): a board may time its key-up by more than the constants say, and a radio that is right needs no new ones |
+| Open loop | 6 | The drive alone from the window's start, at the levels' drives and some between (RADIO op 36), never over `top`. Each gives T(d, d) and the overshoot that drive has by itself. Levels that share one drive: drives down to 60 % of it |
+| Limit | 1 | The top drive from the board's earliest point. It has to come up that much earlier; if it doesn't, the board's burst sequence can't run a point that early, and the tool says how far it reaches |
+| Fit | 0 | `dead_pm`, `knee_us` and `slope_us`: a line through 1 / (d − dead), the dead zone searched. Times that don't fall with the drive give no knee: one lead for every level |
+| Edge | 0 | A level whose own time moves more than 100 us per 1 % of drive sits on the PA's turn-on edge: its time doesn't hold from key to key, so it is boosted whatever the fit says |
+| Verify | one per level, up to four rounds | Every level as the radio keys it. Without slow levels: each level's error goes back into the knee and slope. A level on the edge, or slow on its own drive and not right as the law keys it, has the boost it needs read from its own measurements, on the law's 1 / (b − dead) scale and no further than twice the last step past the drives tried. The constants are then solved over all levels (least squares per dead zone; the smallest worst error, then the smallest sum) to give those boosts and keep the other levels on the law's line. A boost that overshoots while on time ends earlier: `settle_us` up 0.1 ms, and as much again per 3 dB over the limit. The round that held best stands; a round ends the run when every level is up at least 60 us early with half a dB of overshoot to spare |
+| Confirm | one per level | The result again: it has to pass again, a level on its own drive within 0.1 ms |
+
+A boosted level may come up early, since it never starts before the window. An overshoot a drive has when written
+alone is the PA loop's, which no constant changes: the result notes it and doesn't count it. The same holds in the
+as-is step for a level the board keys at its own drive.
+
+It stops before the next key when the SDR's input clips or is over `--max-in-dbm`. It always restores the board's
+constants, the drive and the lowest level at the end. Nothing is written to the radio.
 
 ### Result
 
 ```
-PASS: dead 0 knee 0 slope_us 0 boost 100 hold 100 boost_us 0 pa_us 951 drive_us 0 late 0
-  rfoundry_debug.py radio pa-keyup 0 0 0 100 100 0 951 0
+  PASS 446.05 MHz
+    level 0 (1.0 W): -3 dB -241 us, over 0.5 dB  OK
+    { .dead_pm = 733, .knee_us = 250, .slope_us = 280, .window_us = 1500, .settle_us = 300, .pa_us = 400 }
+    rfoundry_debug.py radio pa-keyup 733 250 280 1500 300 400
 ```
 
-1. `PASS`: put the constants in the board's key-up table for that band. `CHECK`: the verify table names the level
-   and the target it missed.
-2. Repeat for each band with its own PA.
-3. Check a set of constants again: `--start DEAD,KNEE,...,LATE` with `BOOST_US` 0 only verifies.
+1. `PASS`: put the initializer in the board's key-up constants for that band. `CHECK`: the level's line names the
+   target it missed (`late`, `early`, `overshoot`, `sym1`, or `window`: the level is at the boost's ceiling and
+   needs a longer window).
+2. Check a second radio of the design with the same constants (`pa-keyup` on the debug link, then a verify run).
 
-Levels print as their measured output (W, mW). For exact watts, set `--dbfs-to-dbm` for the SDR against a wattmeter.
+Levels print as their measured output (W, mW) when the gateway knows its SDR's level; `--dbfs-to-dbm` sets it
+against a wattmeter.
+
+### Plots
+
+`--plot DIR` draws two files per band; `tools/bench/pa_cal_plot.py RESULT.json DIR` draws a saved `--out` again.
+
+| File | Shows |
+|---|---|
+| `pa_cal_<MHz>_ramps.png` | The burst's envelope at the lowest, a middle and the top level, before and after. Key-up: the slot before, the slot's start, the 1.25 ms guard time, the key-up window, the planned boost, PA and drive points, the first symbol, the −3 dB target and the measured −3 dB points. Key-down: the last symbol's end and the slot's end |
+| `pa_cal_<MHz>_fit.png` | Each open-loop drive's time with the fitted law, the window and the dead zone; each level's −3 dB point before and after |
+
+Without `bursts_trace` on the gateway only the measured points are drawn.

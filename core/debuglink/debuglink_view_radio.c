@@ -392,10 +392,9 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		}
 		return board.radio->tx_drive((uint16_t)(a[0] | (a[1] << 8))) ? DL_ST_OK : DL_ST_BAD_ARG;
 	case DL_OP_PA_KEYUP: {
-		// dead u16, knee u16, slope_us u16, boost u8, hold u8 (%), boost_us u16, pa_us u16, drive_us u16, then
-		// late u8 (%; left out: 0): the DMR PA key-up constants (radio/pa_keyup.h), RAM only, from the next key-up;
-		// no argument = the board's again
-		if (len != 0 && len != 14 && len != 15) {
+		// dead_pm, knee_us, slope_us, window_us, settle_us, pa_us, each u16: the DMR PA key-up constants
+		// (radio/pa_keyup.h), RAM only, from the next key-up; no argument = the board's again
+		if (len != 0 && len != 12) {
 			return DL_ST_BAD_ARG;
 		}
 #if !CONFIG_DMR
@@ -408,10 +407,9 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			return pa_keyup_set(NULL) ? DL_ST_OK : DL_ST_BAD_ARG;
 		}
 		pa_keyup_cfg_t c = {
-			.dead = (uint16_t)(a[0] | (a[1] << 8)), .knee = (uint16_t)(a[2] | (a[3] << 8)),
-			.slope_us = (uint16_t)(a[4] | (a[5] << 8)), .boost_pct = a[6], .hold_pct = a[7],
-			.boost_us = (uint16_t)(a[8] | (a[9] << 8)), .pa_us = (uint16_t)(a[10] | (a[11] << 8)),
-			.drive_us = (uint16_t)(a[12] | (a[13] << 8)), .late_pct = len > 14 ? a[14] : 0u,
+			.dead_pm = (uint16_t)(a[0] | (a[1] << 8)), .knee_us = (uint16_t)(a[2] | (a[3] << 8)),
+			.slope_us = (uint16_t)(a[4] | (a[5] << 8)), .window_us = (uint16_t)(a[6] | (a[7] << 8)),
+			.settle_us = (uint16_t)(a[8] | (a[9] << 8)), .pa_us = (uint16_t)(a[10] | (a[11] << 8)),
 		};
 		return pa_keyup_set(&c) ? DL_ST_OK : DL_ST_BAD_ARG;
 #endif
