@@ -64,6 +64,7 @@ CREEP_US = 150
 SYM1_CREEP_MIN_DB = -4.5    # a creeping level's first symbol: under its settled level by the creep, not by the key-up
 GUARD_US = 1250             # the slot starts this long before the first symbol (ETSI TS 102 361-1, 4.2)
 ON_AIR_DB = "-20"           # on the air: the carrier within 20 dB of the burst's level
+END_MIN_DB = -3.0           # the carrier at the last symbol's end: lower, and the key-down cut the symbol
 BOOST_MAX_PCT = 120     # PA_KEYUP_BOOST_MAX_PCT
 NAMES = ("dead_pm", "knee_us", "slope_us", "window_us", "settle_us", "pa_us")
 FEATURES = ("bursts_raw", "bursts_ramp")
@@ -414,6 +415,30 @@ def mid_trace(ramps, name):
             "db": [round(statistics.median(v), 1) for v in zip(*(t["db"] for t in ts))]}
 
 
+def off_air_us(tail):
+    """When a key-down's envelope (`tail`, from the last symbol's end) is last within ON_AIR_DB of the burst's level,
+    us. None without one."""
+    if not tail or not tail.get("db"):
+        return None
+    last = max((i for i, v in enumerate(tail["db"]) if v >= float(ON_AIR_DB)), default=None)
+    return None if last is None else (tail["t0_ms"] + last * tail["dt_ms"]) * 1000.0
+
+
+def end_db(tail):
+    """A key-down's level at the last symbol's end, dB from the burst's. None without an envelope there."""
+    if not tail or not tail.get("db"):
+        return None
+    i = int(round(-tail["t0_ms"] / tail["dt_ms"]))
+    return tail["db"][i] if 0 <= i < len(tail["db"]) else None
+
+
+def overrun(m):
+    """What a key-down did wrong: still on the air after the slot's end, or down before the last symbol's. No key-up
+    constant moves either: they fail the band and start no refit."""
+    bad = ["after-slot"] if m.get("off_us") is not None and m["off_us"] > GUARD_US else []
+    return bad + (["cut-short"] if m.get("end_db") is not None and m["end_db"] < END_MIN_DB else [])
+
+
 def summarize(replies, a):
     """A capture's replies as one measurement: the medians over its bursts, the first of the key-up left out when
     there are others (it follows the radio's whole key-up, not a slot's)."""
@@ -434,6 +459,7 @@ def summarize(replies, a):
             "settled_dbfs": settled, "dbm": None if settled is None or off is None else settled + off,
             "clip_pct": max([cap.get("clip_pct") or 0] + [1 if r.get("clipped") else 0 for r in use]),
             "peak_dbfs": cap.get("peak_dbfs"), "trace": mid_trace(use, "trace"), "tail": mid_trace(use, "tail"),
+            "off_us": off_air_us(mid_trace(use, "tail")), "end_db": end_db(mid_trace(use, "tail")),
             "edge_res_us": ((done.get("envelope") or {}).get("ramp") or {}).get("edge_res_us")}
 
 
@@ -566,7 +592,7 @@ class Cal:
         f = lambda v, n=1: "-" if v is None else f"{v:.{n}f}"
         self.say(f"  {tag:9s} level {level} drive {drive or '-':>5} {self.watts(m):>8s}  n={m['n']:2d}  "
                  f"{'edge ' if m.get('creep') else '-3 dB'} {f(m['rise_us'], 0):>6s} us  over {f(m['over_db']):>4s} dB  "
-                 f"sym1 {f(m['sym1_db']):>5s} dB  on air {f(m.get('on_us'), 0):>6s} us")
+                 f"sym1 {f(m['sym1_db']):>5s} dB  on air {f(m.get('on_us'), 0):>6s} us  off {f(m.get('off_us'), 0):>5s} us")
         if m["clip_pct"]:
             raise Stop(f"the SDR's input clipped ({m['clip_pct']} %): more pads or less gain")
         if m["dbm"] is not None and m["dbm"] > a.max_in_dbm:
@@ -625,13 +651,13 @@ class Cal:
             self.bench.close()
             for x in asis.values():
                 x["after"] = True
-            return {"mhz": mhz, "ok": True, "kept": True, "shown": shown, "window_us": board["window_us"],
+            return {"mhz": mhz, "ok": not any(overrun(x) for x in asis.values()), "kept": True, "shown": shown, "window_us": board["window_us"],
                     "target_us": TARGET_US, "constants": board, "board": board, "top": top, "ref": ref,
                     "ahead_us": ahead, "reach_us": ahead, "max_drive": max_drive, "fit_rms_us": None, "open": [],
                     "levels": {l: {"drive": drives[l], "plan": x["plan"], "rise_us": x["rise_us"],
                                    "over_db": x["over_db"], "sym1_db": x["sym1_db"], "power": self.watts(x),
                                    "creep": x.get("creep"), "rise3_us": x.get("rise3_us"), "on_us": x.get("on_us"),
-                                   "bad": [], "own_over_db": x["own_over_db"]} for l, x in asis.items()}}
+                                   "off_us": x.get("off_us"), "end_db": x.get("end_db"), "bad": overrun(x), "own_over_db": x["own_over_db"]} for l, x in asis.items()}}
 
         window = min(a.window_us or board["window_us"] or ahead, ahead)
         # Open loop at the window the radio will use, not at the board's earliest point: the same points of its burst
@@ -788,11 +814,12 @@ class Cal:
         self.bench.close()
         for l in levels:
             res[l]["after"] = True      # the measurement the result stands on, for the plots
-        return {"mhz": mhz, "ok": ok, "shown": shown, "window_us": window, "target_us": TARGET_US, "constants": c, "board": board, "top": top, "ref": ref, "ahead_us": ahead, "reach_us": reach,
+        return {"mhz": mhz, "ok": ok and not any(overrun(res[l]) for l in levels), "shown": shown, "window_us": window, "target_us": TARGET_US, "constants": c, "board": board, "top": top, "ref": ref, "ahead_us": ahead, "reach_us": reach,
                 "max_drive": max_drive, "fit_rms_us": rms, "open": pts,
                 "levels": {l: {"drive": drives[l], "plan": plan(c, drives[l], top, ref, max_drive),
                                "rise_us": res[l]["rise_us"], "over_db": res[l]["over_db"], "sym1_db": res[l]["sym1_db"],
-                               "power": self.watts(res[l]), "bad": res[l]["bad"],
+                               "power": self.watts(res[l]), "bad": res[l]["bad"] + overrun(res[l]),
+                               "off_us": res[l].get("off_us"), "end_db": res[l].get("end_db"),
                                "creep": res[l].get("creep"), "rise3_us": res[l].get("rise3_us"),
                                "on_us": res[l].get("on_us"),
                                "own_over_db": res[l]["own_over_db"]} for l in levels}}
@@ -817,6 +844,7 @@ class Cal:
                              f"its edge)" if x.get("rise3_us") is not None else " (creeps; timed by its edge)")
                 self.say(f"    level {l} ({x['power']}): {'edge' if x.get('creep') else '-3 dB'} {x['rise_us']:+.0f} us, "
                          f"over {x['over_db'] or 0:.1f} dB, on air {x.get('on_us') or 0:+.0f} us"
+                         + (f", off {x['off_us']:+.0f} us" if x.get("off_us") is not None else "") +
                          f"  {' '.join(x['bad']) or 'OK'}{note}")
             self.say("    { " + ", ".join(f".{n} = {c[n]}" for n in NAMES) + " }")
             self.say("    rfoundry_debug.py radio pa-keyup " + " ".join(str(c[n]) for n in NAMES))

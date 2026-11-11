@@ -219,3 +219,12 @@ def test_judge_on_the_air_before_the_slot():
     m = {"rise_us": -540.0, "over_db": 0.0, "sym1_db": -2.5, "on_us": -1308.0}
     assert pa_cal.judge(m, True) == ["before-slot"]                     # boosted or not
     assert pa_cal.judge(dict(m, on_us=-1042.0), True) == []
+
+
+def test_a_key_down_in_the_slot_after_fails_the_band():
+    tail = lambda end_ms: {"t0_ms": -2.0, "dt_ms": 0.05, "db": [0.0 if -2.0 + i * 0.05 < end_ms else -50.0 for i in range(120)]}
+    assert round(pa_cal.off_air_us(tail(0.5))) == 450                   # the last sample within 20 dB
+    assert pa_cal.overrun({"off_us": pa_cal.off_air_us(tail(0.5))}) == []
+    assert pa_cal.overrun({"off_us": pa_cal.off_air_us(tail(1.9))}) == ["after-slot"]
+    assert pa_cal.off_air_us(None) is None and pa_cal.overrun({}) == []
+    assert pa_cal.end_db(tail(0.5)) == 0.0 and pa_cal.overrun({"end_db": pa_cal.end_db(tail(-0.2))}) == ["cut-short"]

@@ -1039,8 +1039,12 @@ DMR transmit (`CONFIG_MD9600_DMR_TX`): the HR_C6000 glue's prepare hook runs ste
 carrier, receivers off) at the start of a transmission, and the task waits the synthesizer's transmit settle (step 4)
 plus 1 ms. Each burst then, 0.7 ms after the RF TX interrupt (a timer, no waits in an interrupt): the band's
 T5 on, 500 us,
-RF_APC_SW on, the APC reference up in 4 steps of 100 us; at its end (the timeslot interrupt) the same ramp down,
-RF_APC_SW off, T5 off. T5 alone leaks the carrier about 13 dB under full power, and that counts as on air: keyed at the
+RF_APC_SW on, the APC reference up in 4 steps of 100 us; at its end the same ramp down, RF_APC_SW off, T5 off. The
+end is timed too: the key timer starts the ramp down at the last symbol's end (27.5 ms after the first, from the RF TX
+interrupt), and the carrier is off 0.85 ms after it, inside the slot's guard. The modem's timeslot interrupt comes
+1.85 ms after the last symbol: dropped there, the carrier stayed at full power 0.6 ms into the slot after and was off
+2.0 ms after the last symbol (SDR bench, the three lowest levels). The interrupt still ends a burst the timer did not
+(an SFR's, a BS outbound's). T5 alone leaks the carrier about 13 dB under full power, and that counts as on air: keyed at the
 interrupt itself (about 1.3 ms ahead of the slot), every burst was 31.7-31.9 ms long at floor + 10 dB on the SDR bench
 (2026-11-06, 461.4625 MHz, lowest power; the bench allows 27-31.5 ms). Delayed, full power still comes about 0.2 ms
 after the slot boundary, inside the guard ahead of the payload. The split duplex TX half (a BS outbound) keys once and
