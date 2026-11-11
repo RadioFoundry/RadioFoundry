@@ -1,0 +1,170 @@
+{
+ "board": "md9600",
+ "commit": "2a9481b92916acb1028942628b5e3b48b5605f1a",
+ "date": "2026-11-08T20:45:10Z",
+ "dirty": false,
+ "features": [
+  "aprs"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "da54663a",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "microphone",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 2,
+  "dmr-freq": 461.4625,
+  "dmr-tg": 201,
+  "fm-mhz": 461.4625,
+  "tx-power": 40
+ },
+ "sources": {
+  "aprs": {
+   "core/aprs": "847f51b370be64f3ccce2f514e6a53725f1d3357",
+   "docs/spec/aprs.md": "aa057fdc8d33b8a1e118ecaeee688ec8c0698831"
+  }
+ },
+ "tests": [
+  {
+   "features": [],
+   "id": "tests/hil/test_aprs.py::test_aprs_dmr_position[lrrp]",
+   "optional": [
+    "aprs"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_aprs.py::test_aprs_dmr_position[udt]",
+   "optional": [
+    "aprs"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "excused": true,
+   "features": [
+    "aprs"
+   ],
+   "id": "tests/hil/test_aprs.py::test_aprs_on_air_message",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the shared SDR bench stayed busy: FM receive on 146.535 MHz: 146.5350 MHz is outside the receiver's window, and another request is using it",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": true,
+   "features": [
+    "aprs"
+   ],
+   "id": "tests/hil/test_aprs.py::test_aprs_on_air_position[channel]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the shared SDR bench stayed busy: FM receive on 146.535 MHz: 146.5350 MHz is outside the receiver's window, and another request is using it",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "features": [
+    "aprs"
+   ],
+   "id": "tests/hil/test_aprs.py::test_aprs_on_air_position[fm_vfo]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "aprs"
+   ],
+   "id": "tests/hil/test_aprs.py::test_aprs_on_air_status",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the shared SDR bench stayed busy: FM receive on 146.535 MHz: 146.5350 MHz is outside the receiver's window, and another request is using it",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "features": [
+    "aprs"
+   ],
+   "id": "tests/hil/test_aprs.py::test_aprs_test_call_and_nmea",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "aprs"
+   ],
+   "id": "tests/hil/test_aprs.py::test_aprs_tx_link_answers[kiss_tcp]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "aprs"
+   ],
+   "id": "tests/hil/test_aprs.py::test_aprs_tx_link_answers[network]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "aprs"
+   ],
+   "id": "tests/hil/test_aprs.py::test_aprs_tx_link_answers[serial]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "aprs"
+   ],
+   "id": "tests/hil/test_aprs.py::test_aprs_view_and_settings",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "aprs"
+   ],
+   "id": "tests/hil/test_usb_network_services.py::test_net_kiss",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

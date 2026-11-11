@@ -206,11 +206,16 @@ export function reportedLine(rec = diag.currentError()) {
 	return el;
 }
 
-// A failure shown to the user: the message (what happened and the likely cause, from the tool's error text) and,
-// under it, that it was reported (reportedLine)
-export function errorNotice(text, rec = diag.currentError()) {
+// A failure shown to the user: the message (what happened and the likely cause, from the tool's error text), what to
+// do now, and under it that it was reported (reportedLine). next: the way on, when the message doesn't say it.
+// retry: what Try Again does; the notice goes first, so a second failure replaces it rather than piling up under it.
+// rec: the record of the error shown (diag.error's return); by default the error handled last
+export function errorNotice(text, { next = null, retry = null, rec = diag.currentError() } = {}) {
 	stopBars();
-	return h("div", { class: "notice bad" }, h("p", {}, text), reportedLine(rec));
+	const el = h("div", { class: "notice bad" }, h("p", {}, text), next ? h("p", {}, next) : null,
+		retry ? h("p", { class: "actions" }, button(t("report.try_again"), () => { el.remove(); retry(); }, { primary: true })) : null,
+		reportedLine(rec));
+	return el;
 }
 
 const kb = (n) => (n >= 1048576 ? `${num(n / 1048576, { maximumFractionDigits: 1, minimumFractionDigits: 1 })} MB` : `${num(Math.max(1, Math.round(n / 1024)))} KB`);

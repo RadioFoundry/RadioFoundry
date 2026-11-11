@@ -22,7 +22,10 @@ extern const hal_display_t dm32_display;
 extern const hal_input_t dm32_input;
 // Key scans with the PTT pin low that were ignored as host serial data (hardware-dm32.md 6.2)
 uint32_t dm32_input_ptt_ignored(void);
+bool dm32_radio_transmitting(void);	// the radio is keyed (the shared PTT line's gate)
 extern const hal_radio_t dm32_radio;
+// The debug link's CHIP_REG for the FD6818 (board.chip_reg)
+bool dm32_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 extern const hal_power_t dm32_power;
 
 // Physical key bits returned by dm32_input.scan() (matrix in docs/spec/hardware-dm32.md 6.1, 6.2)

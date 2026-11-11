@@ -70,7 +70,7 @@ static const char *const side_key_names[] = { "P3", "TONE", "Mic P4", "Mic P5" }
 
 const board_t board = {
 	.name = "DB25-D",
-	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
+	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -95,7 +95,7 @@ const board_t board = {
 #endif
 #if CONFIG_DMR
 	.dmr = &hrc_dmr,
-	.audio = &hrc_audio_pcm,
+	.audio = &db25d_audio,
 	.vocoder = &hrc_vocoder,
 #endif
 #if CONFIG_HOSTLINK

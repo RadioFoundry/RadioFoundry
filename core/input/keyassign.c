@@ -6,14 +6,18 @@
 #include <string.h>
 #include "input/keyassign.h"
 
-// The input action each function sends (MONITOR as raw edges, the rest as a press or a long press)
+// The input action each function sends (Monitor and Tone burst as raw edges, the rest as a press or long press)
 static const uint8_t fn_action[KEYFN_COUNT] = {
 	[KEYFN_DEFAULT] = ACT_NONE, [KEYFN_NONE] = ACT_NONE, [KEYFN_MONITOR] = ACT_MONITOR,
 	[KEYFN_TALK_TARGET] = ACT_TALK_TARGET, [KEYFN_POWER] = ACT_POWER, [KEYFN_ZONE_UP] = ACT_ZONE_UP,
 	[KEYFN_ZONE_DOWN] = ACT_ZONE_DOWN, [KEYFN_SCAN] = ACT_SCAN, [KEYFN_EMERGENCY] = ACT_EMERGENCY,
 	[KEYFN_KEY_LOCK] = ACT_LOCK,
+#if CONFIG_FM_TX_TONES
+	[KEYFN_TONE_BURST] = ACT_TONE_BURST,
+#endif
 	[KEYFN_CALL_BACK] = ACT_CALL_BACK, [KEYFN_HOME_ZONE] = ACT_HOME_ZONE,
 	[KEYFN_COPY_VFO] = ACT_COPY_VFO, [KEYFN_DUAL_WATCH] = ACT_DUAL_WATCH, [KEYFN_AB] = ACT_AB,
+	[KEYFN_VFO_TOGGLE] = ACT_VFO_TOGGLE,
 	[KEYFN_TALK_LABEL] = ACT_TALK_LABEL,
 };
 
@@ -25,7 +29,12 @@ bool keyassign_allowed(uint8_t fn, bool hold)
 	if (fn == KEYFN_MONITOR_LATCH || fn == KEYFN_HEAR_ALL) {
 		return false;	// retired
 	}
-	return hold ? fn != KEYFN_MONITOR : fn != KEYFN_EMERGENCY;
+#if !CONFIG_FM_TX_TONES
+	if (fn == KEYFN_TONE_BURST) {
+		return false;
+	}
+#endif
+	return hold ? fn != KEYFN_MONITOR && fn != KEYFN_TONE_BURST : fn != KEYFN_EMERGENCY;
 }
 
 #define V1_ROLES	3
@@ -77,6 +86,14 @@ void keyassign_build(const keymap_entry_t *base, uint8_t base_len, const uint8_t
 			if (m->bit != side_keys[role]) {
 				continue;
 			}
+#if CONFIG_FM_TX_TONES
+			if (press == KEYFN_TONE_BURST) {
+				m->short_action = m->long_action = ACT_TONE_BURST;
+				m->raw_edges = true;
+				m->repeat = false;
+				break;
+			}
+#endif
 			if (press == KEYFN_MONITOR || (press == KEYFN_DEFAULT && m->raw_edges)) {
 				m->short_action = press == KEYFN_MONITOR ? ACT_MONITOR : m->short_action;
 				// Held for as long as the key is. A hold function of its own also runs (DMR channels: on FM the

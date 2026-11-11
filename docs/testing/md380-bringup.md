@@ -154,7 +154,7 @@ With `CONFIG_SUBTONE` (on by default; sub-audio, [hardware-md380.md](../spec/har
 |---|---|
 | Receive: a generator sending 100.0 Hz CTCSS at about 15 % deviation opens a channel with that RX tone and no other (try 97.4 and 103.5); the Home screen shows "tone" | `MD380_SUBTONE_MIN_AMP` (the level on PA2: read `md380_adc_raw` of IN2 with and without the tone), the ADC rate (`md380_adc_scan_rate_hz`), whether PA2 sees the audio at all |
 | Receive: DCS 023N and 023I from a generator each open only their own channel | `MD380_SUBTONE_RX_INVERT=1` if they are swapped |
-| Transmit: CTCSS 100.0 Hz on a dummy load, an SDR or service monitor shows the tone at 0.5 to 0.75 kHz deviation (CTCSS) and the channel's DCS decodes on another radio | `MD380_SUBTONE_PERCENT` for the deviation; no tone at all: whether PC7 reaches the modulator (scope on PC7 first, 17.6 kHz PWM with a 100 Hz envelope), `MD380_SUBTONE_TX_INVERT=1` for DCS polarity |
+| Transmit: CTCSS 100.0 Hz on a dummy load, an SDR or service monitor shows the tone at 0.5 to 0.75 kHz deviation (CTCSS) and the channel's DCS decodes on another radio | `MD380_SUBTONE_PERCENT` for the deviation; no tone at all: whether PC7 reaches the modulator (scope on PC7 first, 17.6 kHz PWM with a 100 Hz envelope), `MD380_SUBTONE_TX_INVERT=0` if the DCS polarity is swapped (on by default: this radio inverts) |
 | Voice still clean with the tone on, and the squelch tail short | the tone level; the turn-off burst is not written |
 
 ## 7. DMR receive

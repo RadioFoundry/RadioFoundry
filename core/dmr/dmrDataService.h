@@ -21,6 +21,7 @@
 
 #define DMR_DATA_INBOX_SIZE			4
 #define DMR_DATA_SMS_PREAMBLES		2		// preamble CSBKs before an SMS, gives receivers time to sync
+#define DMR_DATA_TX_PREAMBLES		16		// as many before a text or IP packet where it fits (docs/spec/dmr-data.md 12.6)
 #define DMR_DATA_TEXT_MAX			(sizeof(((dmrDataTMS_t *)0)->text) - 1)
 
 typedef struct
@@ -43,7 +44,8 @@ typedef struct
 #define DMR_IPC_PORT				0x80000000u	// rule: a UDP port (source or destination), else a radio ID
 #define DMR_IPC_TRIES_DEFAULT		4			// the first transmission and 3 retries (N_RtryLmt 8 at most)
 #define DMR_IPC_TRIES_MAX			8
-#define DMR_IPC_RESPONSE_MS			1500		// T_RspnsWait: our transmission over to the response
+#define DMR_IPC_RESPONSE_MS			3000		// T_RspnsWait: our transmission over to the response (through a hotspot
+													// the answer comes from the network: dmr-data.md 12.4)
 
 // What the service needs to know about the channel, from its host at every tick
 typedef struct
@@ -123,6 +125,9 @@ typedef struct
 	void (*notify)(const dmrDataEvent_t *event, void *ctx);
 	// Every packet received (to us or not), for the IP gateway when it is ported (may be NULL)
 	void (*packet)(const dmrDataPacket_t *packet, void *ctx);
+	// An NMEA sentence heard on UDP DMR_UDP_PORT_NMEA, whoever it is addressed to (outside passthrough, not our own,
+	// DAID 0 or 2): a position report. The one hook called for packets not to us (may be NULL)
+	void (*position)(uint32_t src, const uint8_t *nmea, int length, uint32_t nowMs, void *ctx);
 	void *ctx;
 } dmrDataEnv_t;
 
@@ -196,7 +201,10 @@ typedef struct
 	uint32_t ipCnfTimeouts;					// no response within DMR_IPC_RESPONSE_MS
 	uint32_t ipCnfFailed;					// confirmed packets given up after the tries (or refused)
 	uint32_t ipCnfTooLong;					// wanted confirmed but too long for it: sent unconfirmed
-	// Confirmed data to us (CONFIG_DMR_CONFIRMED)
+	uint32_t ipCnfOther;					// responses to us that didn't answer our confirmed packet
+	uint32_t ipCnfOtherLast;				// ... the last: response octet 7:0, its SAP 11:8, ours 15:12, our N(S)
+											// 18:16, its source ours 19, our state 21:20 (3 waiting), confirmed 22
+	// Confirmed data to us
 	uint32_t rxSacksSent;					// selective ACKs asking for bad or lost blocks
 	uint32_t rxNacksSent;					// NACKs (every block good, the CRC-32 not)
 	uint32_t rxConfirmedDuplicates;			// a packet again with the N(S) we last ACKed: ACKed, not passed on

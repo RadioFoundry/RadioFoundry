@@ -57,7 +57,7 @@ radio or in a datasheet.
 | Bit-banged display | Each phase of the clock line is written `hrc_bitbang_repeat(APB)` times (3 at 84 MHz, 2 at 36), so the phases stay over about 30 ns. Used only when the ADC 2 strap reads 50 or more (3.1) (measured) |
 | Not clock dependent | The BK4819 3-wire bus, key scan, APC ramp and TX settling use `hal_delay_us` (timer 2). ADC conversions run from the 24 MHz oscillator (user guide clock tree: oscillator / 10); the ADC and UART wait loops are counted, and are shorter in wall time at 168 MHz, still several ms (measured) |
 | Modem | The modem and codec clocks come from the APLL and the oscillator, not the BPLL (user guide clock tree), and `hrc_clock_init` doesn't touch them; the DMR code's assumptions are the DM-32's, which are 168 / 84 (datasheet) |
-| Hand-over | `enter_stub` and `hrc_soft_reset` (the REBOOT path) call `hrc_clock_restore_loader()` first: SoC clock to the oscillator, the saved CLK_MGR words back, lock, SoC clock to the PLL, so the loader (which finds the clock manager as it left it, a soft reset only resets the CPU side) and the runtime stub see the clocks they expect (the universal stub measures timer 2 anyway and gets the rates in CONFIG, 7; it measured 35.6 MHz). Before it the UART drains; after it the divisor is set for 36 MHz (20). A power cycle resets the clock manager (hard reset), and the first stage (boot/db25d) runs before any RadioFoundry code, so the power-on stage catch always sees the loader's clocks even if RadioFoundry hangs at 168 MHz (measured) |
+| Hand-over | `enter_stub` and `hrc_restart` (the REBOOT path) call `hrc_clock_restore_loader()` first: SoC clock to the oscillator, the saved CLK_MGR words back, lock, SoC clock to the PLL, so the loader (which finds the clock manager as it left it, a soft reset only resets the CPU side) and the runtime stub see the clocks they expect (the universal stub measures timer 2 anyway and gets the rates in CONFIG, 7; it measured 35.6 MHz). Before it the UART drains; after it the divisor is set for 36 MHz (20). A power cycle resets the clock manager (hard reset), and the first stage (boot/db25d) runs before any RadioFoundry code, so the power-on stage catch always sees the loader's clocks even if RadioFoundry hangs at 168 MHz (measured) |
 
 Check the clock on a radio: the debug link's `uptime_ms` has to advance one second per second (timer 2 counts APB cycles, so a
 wrong APB shows at once) and the host link has to answer at 115200 (the UART divisor assumes 84 MHz).
@@ -137,6 +137,13 @@ gain (GCR_DACL, `hrc7000_volume_db`): 0 dB at the default step 8, 3 dB less a st
 `DB25D_PCM_VOL_TOP_DB` (12 dB) at step 16; step 0 keeps the amplifier off. The radio sets `volume_pcm`, so beeps play at
 `beep_level` and the volume scales them on the way out. The dB at the speaker is not measured (unverified).
 
+Switching the amplifier on (PTA24 low) pops, whatever the order of the other speaker pins (measured). So the board
+gives the radio core an amplifier hang (`hal_audio_t.speaker_warm`, `speaker_hang_s` 5 s, `radio-features.md` 4):
+after a key, PTT, reception or beep, PTA24 stays low with the source muted (PTB15 high) for 5 s, and the beeps and
+calls in that time play without the enable's pop. Only the first sound after a quiet spell still pops. On the radio
+the debug link's `beep.warm` went to 1 on a key and on a beep and back to 0 after 5 s, and the warm beeps carried no
+pop at the amplifier's turn-on (measured; `test_speaker_beeps`, a microphone at the speaker).
+
 The front keys are power (PTB12), P1, P2, P3, VOL/SQL, TONE/T.SEL, B/E and the encoder push; there's no separate
 Menu/OK key (measured). Their matrix positions, found by pressing each key on the radio, with the key code the vendor firmware uses
 for the same position:
@@ -201,7 +208,7 @@ The register meanings are the BK4819's public ones; the values are what the vend
 |---|---|
 | 0x00 | bit 15 soft reset |
 | 0x30 | Enables. **Main chip** (bit 9 set in every state): 0x0200 idle, 0xBFF1 RX, 0xC3FE TX (VCO calibration, PLL / VCO, PA gain, mic ADC, TX DSP), 0xC3FA TX with the mic ADC (bit 2) off for a tone, 0x0302 during init. **LO chip** (bit 9 never set): 0x0000 idle, 0xC1FE its carrier-only transmitter stage |
-| 0x33 | GPIO outputs: bits 14:8 disable an output, bits 6:0 its level. Pin p is bits 14 - p and 6 - p; written only when the value changes. The band flags, high for VHF (as GPIO3 on the older batches, 4.8): **LO chip pin 1 is the RX band** (bits 13 and 5), set before every LO tune; **main chip pin 2 is the TX band** (bits 12 and 4), set at every receive set-up and TX prepare. With the LO flag low, VHF receive is about 45 dB deaf: builds that never drove it read -124 dBm on 2 m with UHF working (issue #299). On the bench a 146.535 MHz carrier read -119 dBm without the LO flag and -75 dBm with it, and the VHF noise floor rose from -124 to -105 dBm (UHF, unchanged, -53 dBm from the same source). The main flag alone changed nothing on receive. RadioFoundry: `db25d_lo_tune`, `db25d_main_band` |
+| 0x33 | GPIO outputs: bits 14:8 disable an output, bits 6:0 its level. Pin p is bits 14 - p and 6 - p; written only when the value changes. The band flags, high for VHF (as GPIO3 on the older batches, 4.8): **LO chip pin 1 is the RX band** (bits 13 and 5), set before every LO tune; **main chip pin 2 is the TX band** (bits 12 and 4), set at every receive set-up and TX prepare. With the LO flag low, VHF receive is about 45 dB deaf: builds that never drove it read -124 dBm on 2 m with UHF working (issue #299). On the bench a VHF carrier read -119 dBm without the LO flag and -75 dBm with it, and the VHF noise floor rose from -124 to -105 dBm (UHF, unchanged, -53 dBm from the same source). The main flag alone changed nothing on receive. RadioFoundry: `db25d_lo_tune`, `db25d_main_band` |
 | 0x36 | PA bias and gain. Both chips: 0xBF (level 15 of 15), written once at detection / init and never changed, in TX too: the main chip drives the PA at 0xBF |
 | 0x37 | Power-up of the LDOs, bandgap and crystal (0x1D0F normal, 0x1D00 off) |
 | 0x38 / 0x39 | Frequency, 10 Hz units, low / high 16 bits |
@@ -340,12 +347,12 @@ RadioFoundry (`bk4819_dmr_rx_enter`, `db25d_dmr_enter`, tests/host/bk4819Test.c)
 | Speaker in DMR | The PCM stream (`db25d_speaker_pcm`, from the modem's playback callback) turns the amplifier on and PTC18 low, as `audio()` does for an open squelch. The radio core never opens the squelch path for DMR voice, so before this every call played into a muted amplifier; beeps went silent the same way |
 | Voice-access slot | `HRC7000_RX_NEXT_SLOT_XOR=0` (the driver's default since 2026-10-22; it was 1): the flag (modem-hrc7000.md 5.3) belongs on the slot LAYER2_STATUS b30 shows at this board's RX timeslot interrupt. With 1 the chip never wrote received voice to its voice RAM: every frame was the same stale bytes, decoded to silence (peak 6 of 32767) with every counter clean. With 0, bench speech decodes with peaks near 16,000 (measured, 2026-10-17) |
 
-Radio results before the digital set (bench MS voice, 461.4625 MHz, CC 2): RF_MODE 0x03269860 gave no sync; 0x03261860 (b15 clear) gave
+Radio results before the digital set (bench MS voice, the test frequency, CC 2): RF_MODE 0x03269860 gave no sync; 0x03261860 (b15 clear) gave
 sync, the right color code and slot, but no usable burst; a larger AF gain held sync on noise. The PHASE_OUT range read exactly 32 times
 the RF_MODE gain field (saturated), so on this board it doesn't measure the AF level (measured).
 
 With the set and word above (2026-10-16, same bench call, 191 bursts): 180 voice bursts, 8 LC headers, 3 terminators, CC 2,
-no CRC errors, the call decoded (source, talkgroup 201, group), and 540 of 540 AMBE frames with none lost or concealed (measured). With
+no CRC errors, the call decoded (source, the test talkgroup, group), and 540 of 540 AMBE frames with none lost or concealed (measured). With
 the BK4819 digital set, b15 set is right; b15 clear (0x034C1860) syncs but deframes no usable burst.
 
 The diagnostics page (CONFIG_DIAG) lists the modem counters after the TX line 11 and the storage lines 12-15 (from line 12 when
@@ -353,8 +360,8 @@ The diagnostics page (CONFIG_DIAG) lists the modem counters after the TX line 11
 range (HR_C7000 PHASE_OUT, 0x128).
 
 **DMR transmit.** On by default (`DB25D_DMR_TX=1`); `DB25D_DMR_TX=0` builds receive only, and then `tx()` refuses in DMR
-mode. Checked on the SDR bench 2026-10-16 (measured): a 3 s key-up on 461.4625 MHz, low power into a dummy load, decoded by the
-bench modem as one call from the radio's ID to TG 201 (3 LC headers, 54 voice bursts, terminator, 162 AMBE frames with 12 FEC
+mode. Checked on the SDR bench 2026-10-16 (measured): a 3 s key-up on the test frequency, low power into a dummy load, decoded by the
+bench modem as one call from the radio's ID to the test talkgroup (3 LC headers, 54 voice bursts, terminator, 162 AMBE frames with 12 FEC
 bits corrected); the diagnostics line showed 57 bursts keyed and ended, each ended by the RF RX interrupt, none late. Analog FM transmit is 4.4. How a burst is keyed:
 
 | Item | Sequence |
@@ -372,21 +379,22 @@ bits corrected); the diagnostics line showed 57 bursts keyed and ended, each end
 | Mic and vocoder | The microphone reaches the modem's codec ADC with no pin to switch: PTB14 / PTB15 appear only in the audio on / off routines (3.3), never in a TX path. Mic gain (GCR_ADCL) on a digital channel comes from a setting (0 dB when unset); an analog channel sets +12 dB. WORK_MODE bit 7 cleared (DMR modulator) |
 | Analog PTT routine | Not used for a digital channel: the RF follows the bursts only (unverified) |
 
-RadioFoundry (`boards/db25d/dmr_db25d.c`, `radio_db25d.c`; tests in `tests/host/bk4819Test.c` and `boards/db25d/tests/db25dCalTest.c`):
+RadioFoundry (`boards/db25d/dmr_db25d.c`, `radio_db25d.c` on the shared RF-burst task, [modem-hrc7000.md](modem-hrc7000.md) 3.1a; tests in `tests/host/bk4819Test.c` and `boards/db25d/tests/db25dCalTest.c`):
 
 | Step | RadioFoundry |
 |---|---|
-| `tx()` in DMR mode | Checks band and page as FM does, keeps the TX plan (PA drive, TX-on and TX-off delays), writes RF_MOD_BIAS_CTRL with the modulation byte for the TX frequency, main chip 0x40 = 0 and 0x51 = 0 (`bk4819_dmr_tx_prepare`), powers DAC B at 0, clears RF_MODE bit 7 (`make DB25D_DMR_TX_INVERT=1` sets it, to try the other 4FSK polarity), sets the RF TX interrupt's lead (RF_CONTROL b13:8, `db25d_dmr_rf_tx_lead`: 1.6 ms with the UHF page, below) and arms. The RF stays receiving until the first burst |
-| RF TX interrupt | The glue's `rf_switch(true)` records the time and wakes the RF task (priority above every other task), which runs the TX on sequence (`db25d_burst_on`) |
-| End of a burst | Woken by the modem's RF RX interrupt (enabled while armed) or by the engine's `rf_switch(false)` at the first slot tick 20 ms after the RF TX interrupt, whichever comes first. The task then waits for the burst's last symbol, lead + 0.85 ms + 27.5 ms after the RF TX interrupt (`db25d_dmr_hold_us`), and runs the TX off sequence (`db25d_burst_off`) without the stock's 300, 300 and 200 us waits. A wake-up after that point ramps down at once and counts as late |
+| `tx()` in DMR mode | Checks band and page as FM does, keeps the TX plan (PA drive, TX-on and TX-off delays), writes RF_MOD_BIAS_CTRL with the modulation byte for the TX frequency, main chip 0x40 = 0 and 0x51 = 0 (`bk4819_dmr_tx_prepare`), powers DAC B at 0, clears RF_MODE bit 7 (`make DB25D_DMR_TX_INVERT=1` sets it, to try the other 4FSK polarity), sets the RF TX interrupt's lead (RF_CONTROL b13:8, `db25d_dmr_rf_tx_lead`: 1.5 ms with the UHF page, below) and arms. The RF stays receiving until the first burst |
+| RF TX interrupt | The glue (the board's sequences in `hrc_dmr_board_t.burst`) records the time and wakes the RF task (priority above every other task), which runs the TX on sequence (`db25d_burst_on`). The page's TX-on delay counts from the interrupt, and a late interrupt is timed from the frame grid (modem-hrc7000.md 3.1a) |
+| End of a burst | Woken by the modem's RF RX interrupt (enabled while armed) or by the engine's `rf_switch(false)` at the first slot tick 20 ms after the RF TX interrupt, whichever comes first. The task then waits for the burst's last symbol, lead + 0.85 ms + 27.5 ms after the RF TX interrupt (`hrc_rfburst_hold_us`), and runs the TX off sequence (`db25d_burst_off`) without the stock's 300, 300 and 200 us waits. A wake-up after that point ramps down at once and counts as late |
 | Waits | Below 50 us a spin; from 50 us TIMER_BOARD (timer 5) while the task sleeps |
 | `tx_off()`, `rx()`, leaving DMR | Disarm: TX off at once (no hold) if a burst is on, wait for the task, DAC B powered down, then the normal receive set-up |
+| End of a DMR transmission (`hrc_dmr_board_t.tx_end`) | Disarm as above; on the same channel and trim the receiver stays as the last burst's TX off left it (modem-hrc7000.md 5.2a) |
 | PA one-shot | The glue still arms it per burst; the board's hook does nothing |
-| Diagnostics | The line after the codec line: `b<on>/<off> rx<RF RX interrupts> <R/T/A> L<late>/<last late us>`. R, T or A says what woke the last TX off. `rx` that stays at 0 while transmitting means the RF RX interrupt doesn't fire in TX, and the slot tick ends the bursts; L counts the ramp downs that started after that point |
+| Diagnostics | The line after the codec line: `b<on>/<off> rx<RF RX interrupts> <R/T/A> L<late>/<last late us>`. R, T or A says what woke the last TX off. `rx` that stays at 0 while transmitting means the RF RX interrupt doesn't fire in TX, and the slot tick ends the bursts; L counts the ramp downs that started after that point. The line after it: `up w<largest wake> u<PA up, smallest>..<largest> g<largest grid error>/<bursts timed from the grid>`, in us after the RF TX interrupt, since the key-up |
 
 Answered by the bench check above: 0x40 = 0 with the rest of the analog set gives a carrier the modem's 4FSK decodes,
 the polarity with RF_MODE bit 7 clear is right, and the RF RX interrupt ends every TX burst. Deviation with the
-page's modulation byte (2026-10-17, 461.4625 MHz, low power, SDR bench, instantaneous frequency inside the bursts): the
+page's modulation byte (2026-10-17, the test frequency, low power, SDR bench, instantaneous frequency inside the bursts): the
 four symbol levels at -1970, -653, +676 and +1970 Hz around the carrier, so the outer deviation is 101 % of the
 standard's 1944 Hz and the outer / inner ratio 2.97 (3.00 ideal); carrier 187 Hz high (0.4 ppm) (measured).
 
@@ -394,23 +402,28 @@ The receive and transmit checks are at the end of section 9.
 
 **Burst timing for receiving between bursts (SFR).** The stock timing above keeps the receiver off from 3.95 ms
 before our burst's first symbol to 1 ms or more into the next slot's burst: an SFR repeater lost 10-13 of the
-inbound call's 72 voice frames. Measured on the SDR bench (461.0875 MHz, low power, our idle bursts during the hang,
-2026-10-25), against our first symbol:
+inbound call's 72 voice frames. Measured on the SDR bench (a UHF test frequency, low power, into a dummy load), against
+our first symbol:
 
-| Point | Stock timing (lead 3.1 ms) | RadioFoundry (lead 1.6 ms) |
+| Point | Original firmware (lead 3.1 ms) | RadioFoundry (lead 1.5 ms) |
 |---|---|---|
-| RF TX interrupt, receiver off | -3.95 ms | -2.45 ms |
-| First carrier (main chip in TX, PA supply off) | -3.0 ms | -1.5 ms |
-| PA fully up (1 dB below the plateau) | -1.5 ms | -0.25..0 ms |
+| RF TX interrupt, receiver off | -3.95 ms | -2.35 ms |
+| First carrier (main chip in TX, PA supply off) | -3.0 ms | -2.0..-1.45 ms |
+| PA fully up (1 dB below the plateau) | -1.5 ms | -0.58..-0.25 ms (117 bursts) |
 | Ramp down starts | +28.25 ms | +27.5 ms (the last symbol) |
-| Carrier gone | +30.0 ms | +29.3..29.5 ms |
-| Receiver back (from the sequence: the 0.72 ms ramp, the waits, the register writes) | about +29.6 ms | about +28.3 ms |
+| Carrier gone | +30.0 ms | +28.55..28.95 ms (median +28.67) |
+| Receiver back (from the sequence: the 0.72 ms ramp, the waits, the register writes) | about +29.6 ms | about +28.0 ms |
 
 The inbound bursts lie from -32.5 to -2.5 ms and from +30.0 ms on (about 0.2 ms later in practice: our bursts sit
-0.15-0.24 ms behind the inbound grid). The first symbol comes 0.85 ms after the lead and the PA is up 2.4 ms after the
-RF TX interrupt with the UHF page's 1 us TX-on delay, so the lead is the shortest 100 us step that has the PA up for
-the first symbol: `db25d_dmr_rf_tx_lead` = (2.4 ms + the page's TX-on delay - 0.85 ms), rounded up (1.6 ms UHF; 2.6 ms
-with the VHF page's 1000 us, not measured). The same timing serves every DMR transmission (simplex, split, hotspot,
+0.15-0.24 ms behind the inbound grid). The first symbol comes 0.85 ms after the lead. After the RF TX interrupt plus
+the page's TX-on delay the PA is within 1 dB at 1.7-2.1 ms (the analog ramp varies from burst to burst; 0.94-1.6 ms
+from the first carrier), so the lead is the shortest 100 us step that has the PA up 0.2 ms ahead of the first symbol:
+`db25d_dmr_rf_tx_lead` = (2.3 ms + the page's TX-on delay - 0.85 ms), rounded up (1.5 ms UHF; 2.5 ms with the VHF
+page's 1000 us, which gives the VHF figures in the table below). At 1.3 ms (a 2.1 ms model) one burst in 114 had the 1 dB point only 0.04 ms ahead. The
+ramp's 180 steps of 4 us take 0.72 ms plus the level's arithmetic, which is 32-bit (`core/radio/apc_ramp.h`): a 64-bit
+divide per step made the ramp 0.3 ms longer, and the lead was 1.6 ms with it. The page's TX-on delay counts from the
+RF TX interrupt, and a late interrupt (up to 0.12 ms, a few bursts per key-up) is timed from the frame grid
+(modem-hrc7000.md 3.1a). The SFR counts below were measured with the 1.6 ms lead. The same timing serves every DMR transmission (simplex, split, hotspot,
 SFR).
 
 | Measurement (SDR bench, bench talker at low level, 4-superframe call) | Stock timing | RadioFoundry |
@@ -419,11 +432,17 @@ SFR).
 | SFR repeater, inbound AMBE bits corrected per 72 (first / second / third frame of each burst) | 155-200 (97-117 / 24-40 / 34-58) | 170-194 (98-120 / 22-30 / 48-54) |
 | The same call received without transmitting (TX inhibit, plain receive) | 29-37 | - |
 | Our idle bursts: symbol error, sync errors, carrier vs the bench | 0.10, 0, +15..20 Hz | 0.05-0.12, 0, +13 Hz |
-| Plain simplex call (`test_dmr_tx_off_air`): burst on-time, ramps up / down | 32.76-33.27 ms, 1.62 / 1.65 ms, carrier after the call | 30.38-30.60 ms, 1.56-1.58 / 1.17-1.23 ms, none |
+| Plain simplex call (`test_dmr_tx_off_air`): burst on-time, ramps up / down | 32.76-33.27 ms, 1.62 / 1.65 ms, carrier after the call | 29.67-30.12 ms, 1.31-1.54 / 1.02-1.15 ms (5 calls, 1.5 ms lead, the 32-bit ramp), none |
+| The same on the VHF page (2 m, lowest power, 2.5 ms lead) | - | 29.58-30.09 ms, 0.77 / 0.73 ms (52 bursts), none |
+| VHF page, the call's content (SDR decode of the same calls) | - | three voice LC headers, embedded LC in every superframe, voice A-F in order, terminator; AMBE FEC: 240 frames in two calls, 0 corrected (UHF: 396 frames, 0) |
 
-The key-up ramp (1.56-1.62 ms either way) is longer than the 1.5 ms ramp regions of the ETSI power mask (TS 102 361-1
-clause 10.2.3.1.1, figure 10.3); it comes from the TX on sequence, not the burst timing. `board.toml` `[hil.limits]`
-holds this radio to 1.75 ms in the bench's check until the ramp is shortened.
+The key-up ramp (1.31-1.54 ms; 1.56-1.62 ms before the ramp's 32-bit math) is at the edge of the 1.5 ms ramp regions of
+the ETSI power mask (TS 102 361-1 clause 10.2.3.1.1, figure 10.3), and over it in some calls; it comes from the TX on
+sequence, not the burst timing. `board.toml` `[hil.limits]` holds this radio to 1.75 ms in the bench's check until the
+ramp stays under 1.5 ms. The VHF page's key-up ramp is about half as long (0.77 ms, table above), inside the mask. The SDR bench's DMR modem covers
+UHF only: on 2 m it split each of these calls in two, lost the terminator and corrected 72-142 AMBE bits, while the
+SDR's own decode of the same transmissions found every frame clean, so `test_dmr_tx_off_air`'s bench modem checks fail
+there and its waveform checks are the ones to read.
 
 Tried and dropped (no change in the inbound counts): keeping the LO chip running through TX, a ramp down 0.45 ms before
 the last symbol (16 bits fewer per 72 frames, our last symbols at reduced power), and shorter waits in the TX on
@@ -445,7 +464,7 @@ inbound burst against the outbound (burst start from the sync correlation, alone
 
 ### 4.6 Frequency reference: the modem's bias
 
-On the owner's radio both receive and transmit read 23 ppm low (10.6 kHz at 461.4625 MHz) and DAC C changes nothing. The
+On the owner's radio both receive and transmit read 23 ppm low (10.6 kHz near 461 MHz) and DAC C changes nothing. The
 C7000 modem's DC bias registers are written at every receive set-up, in FM as well as DMR: SIG_CENTER
 0x11000108 and RF_MOD_BIAS_CTRL 0x11000114 as in 6.4. The BK4819s have no VCO input, so the modem's two-point modulation
 puts its low-frequency half on the TCXO's control pin and this DC level sets the TCXO frequency; both chips share that TCXO,
@@ -453,7 +472,7 @@ so receive and transmit move together (unverified; matches the measurement). The
 nothing else on the page trims the frequency. RadioFoundry powers the modem
 (`hrc7000_power_on_init`) at init in every build and writes both words at init and at every `rx()`.
 
-| Page TX center c (0x43F) | m | 0x11000108 | 0x11000114 (mod byte 0x21 at 461.4625 MHz) |
+| Page TX center c (0x43F) | m | 0x11000108 | 0x11000114 (mod byte 0x21 at the test frequency) |
 |---|---|---|---|
 | 106 (owner's radio) | 489 (0x1E9) | 0x6A6AE9E9 | 0x01E90021 |
 
@@ -462,8 +481,8 @@ nothing else on the page trims the frequency. RadioFoundry powers the modem
 The user's reference trim ([radio-features.md](radio-features.md) 6.1) leaves this bias alone: it is the factory's tune
 and the DMR modulation rides on it. RadioFoundry retunes the BK4819s instead. Receive: the LO at f x (1 + trim) + IF,
 which leaves the signal on the main chip's IF. Transmit: the main chip at f x (1 + trim), FM and every DMR burst. The next
-tune applies a new trim. Measured on the SDR bench at 461.4625 MHz (2026-10-30): +5.0 ppm moved the carrier +2309 Hz and
--5.0 ppm -2311 Hz (2307 Hz expected). The trim covers +-10 ppm, less than the 23 ppm this radio read before the bias
+tune applies a new trim. Measured on the SDR bench (2026-10-30): +5.0 ppm moved the carrier +5.004 Hz per MHz and
+-5.0 ppm -5.008 Hz per MHz (5.000 expected). The trim covers +-10 ppm, less than the 23 ppm this radio read before the bias
 was set, so a radio that far off needs the bias first.
 
 A key-up now and then restarts the radio (`reset.cause` warm, no fault trace): a supply dip at TX on, also without the
@@ -994,12 +1013,12 @@ State on a radio:
 | Codeplug over the cable | `CONFIG_CPS_OPENFW` (on): the open-firmware CPS on the host link (UART1, 115200) over the codeplug areas of 6.6, at the STM32 radios' addresses (EEPROM part at 0, flash part at 0x20000, no `--offset`). Radio info reports type 6; no MCU ROM or flash security register area; no calibration window. `tools/cps_client.py --port /dev/ttyUSB1 read / write / verify`, qdmr should work as well (not tried). The channels and zones come from the stored codeplug (`core/codeplug`), which the radio re-reads at the end of a session. Host-tested on a simulated NAND with power cuts; read, write and verify run on the owner's radio (read 63 s, write 76 s). `CONFIG_APRS_RX` and `CONFIG_APRS_IGATE` are off (no FM receive PCM on this radio) |
 | Codec | Profiles for three 018 vendor firmware files and the 020 program flash read (8); `make` merges one into `rfoundry_db25d_codec.bin` when its file is in `codecs/`. On the owner's radio (2026-10-19), with the code moved to the codec window: the 020 read and the 2024-09-23 file each give VERSION `codec=db25d-020` / `db25d-2409` and decode a bench voice call with every one of its 234 AMBE frames |
 | DMR | `CONFIG_DMR=y` (default on): the shared HR_C7000 glue of the DM-32UV with the main BK4819's digital set (4.5). Receive works on the radio: a bench voice call decodes with every AMBE frame, and a bench SMS arrives (4.5). Speaker audio for DMR not yet heard. Transmit (`DB25D_DMR_TX=1`, default on): the per-burst TX sequence from an RF task (4.5), checked on the SDR bench; `DB25D_DMR_TX=0` builds receive only. Builds clean with every DMR feature, the network ones included (the next rows) |
-| Hotspot | `CONFIG_HOTSPOT=y` (default on): the MMDVM host port on UART1, simplex. The core's hotspot drives the same `hal_dmr_modem_t` as a call (`tx_begin`, `tx_queue`, `tx_end`) and keys through `hal_radio_t.tx()` in DMR mode, so it runs on the per-burst TX path of 4.5 (the `dmrrf` RF task) with nothing added to the board: whole calls and data go out as the host sends them, and a retune (`rx()`) disarms the keying until the hotspot arms it again. A split RX / TX frequency pair works as a call's does (each burst tunes to the TX frequency, then back). Not offered: the split-duplex roles (`CONFIG_HOTSPOT_SPLIT=n`: the driver has no continuous BS outbound, so the core would refuse the role). SFR (`CONFIG_SFR`, on) runs on the burst timing of 4.5: `test_hotspot_sfr.py` on the radio (2026-10-25, 461.2375 MHz) passes the mode test; the repeat test passed 1 of 4 runs. A passing run sent the call up and repeated it (24 bursts, 0 of 54 frames lost, about 130 bits corrected, the repeat on the received slot grid); two runs failed the SDR's check for the repeat's LC on TS2, and one sent only 7 of 18 voice frames up. Not chased yet. Checked on the radio with `tools/bench/hotspot_cases.py` against the SDR bench modem (frequency 461.4625 MHz, color code 2): GET_VERSION, SET_FREQ, SET_CONFIG, SET_MODE and GET_STATUS answer (status DMR, TS2 space 22); all 13 cases pass (`rf_voice8`, `rf_late`, `rf_long`, `rf_lost`, `rf_b2b`, `rf_csbk`, `rf_data_unconf`, `rf_data_conf` for uplink frames; `net_voice`, `net_voice_ctl`, `net_data`, `net_data_conf`, `net_b2b` for calls sent from the host and heard on air). The radio is back on its channel within 25 s of the last frame |
-| DMR VFO | `CONFIG_VFO_DMR=y` follows the default: the core's DMR VFO (`dmr-voice.md` 2.1; the VFO quick menu's Mode tile switches it FM / DMR). On the radio (2026-10-17, debug link): mode, color code, slot and a group or private target set and kept across leaving the VFO and a restart; at 461.4625 MHz CC 2 TS 1 TG 201 a bench call received with every voice burst (120 voice, 8 headers, 3 terminators), and a 4 s key-up decoded by the bench modem as a group call to TG 201 (72 voice bursts, 216 AMBE frames). A record written by an older build keeps the color code its FM VFO stored (often 0) until the user sets one |
+| Hotspot | `CONFIG_HOTSPOT=y` (default on): the MMDVM host port on UART1, simplex. The core's hotspot drives the same `hal_dmr_modem_t` as a call (`tx_begin`, `tx_queue`, `tx_end`) and keys through `hal_radio_t.tx()` in DMR mode, so it runs on the per-burst TX path of 4.5 (the `dmrrf` RF task) with nothing added to the board: whole calls and data go out as the host sends them, and a retune (`rx()`) disarms the keying until the hotspot arms it again. A split RX / TX frequency pair works as a call's does (each burst tunes to the TX frequency, then back). Not offered: the split-duplex roles (`CONFIG_HOTSPOT_SPLIT=n`: the driver has no continuous BS outbound, so the core would refuse the role). SFR (`CONFIG_SFR`, on) runs on the burst timing of 4.5: `test_hotspot_sfr.py` on the radio (2026-10-25, a UHF test frequency) passes the mode test; the repeat test passed 1 of 4 runs. A passing run sent the call up and repeated it (24 bursts, 0 of 54 frames lost, about 130 bits corrected, the repeat on the received slot grid); two runs failed the SDR's check for the repeat's LC on TS2, and one sent only 7 of 18 voice frames up. Not chased yet. Checked on the radio against the SDR bench modem (the test frequency, color code 2): GET_VERSION, SET_FREQ, SET_CONFIG, SET_MODE and GET_STATUS answer (status DMR, TS2 space 22); all 13 cases pass (`rf_voice8`, `rf_late`, `rf_long`, `rf_lost`, `rf_b2b`, `rf_csbk`, `rf_data_unconf`, `rf_data_conf` for uplink frames; `net_voice`, `net_voice_ctl`, `net_data`, `net_data_conf`, `net_b2b` for calls sent from the host and heard on air). The radio is back on its channel within 25 s of the last frame |
+| DMR VFO | `CONFIG_VFO_DMR=y` follows the default: the core's DMR VFO (`dmr-voice.md` 2.1; the VFO quick menu's Mode tile switches it FM / DMR). On the radio (2026-10-17, debug link): mode, color code, slot and a group or private target set and kept across leaving the VFO and a restart; on the test frequency, CC 2, TS 1 and the test talkgroup a bench call received with every voice burst (120 voice, 8 headers, 3 terminators), and a 4 s key-up decoded by the bench modem as a group call to the test talkgroup (72 voice bursts, 216 AMBE frames). A record written by an older build keeps the color code its FM VFO stored (often 0) until the user sets one |
 | IP link | `CONFIG_NET_PPP=y` (default on): PPP on the host port's UART1 (`board_t.netif` is `hostlink_ppp_netif`, as on the DM-32UV), and with it `CONFIG_DMR_IP_GATEWAY` and the services on it: UDP compression, DMR confirmed data, TCP (3 connections, `TCP_CONNS`), KISS, HTTP (gzip), rigctl, APRS-IS, mDNS, TFTP, SNMP and the control station. USRP is off (`CONFIG_NET_USRP=n`): its 8 kHz 16-bit PCM is 128 kbit/s plus headers, more than the 115200 baud host port carries, and a heard call started the stream. Checked on the radio with pppd and `tools/rfoundry_ppp.sh`: LCP and IPCP come up, ping 30 ms, 5/5; HTTP 200 (also gzip); rigctl `f` answers the channel frequency over TCP 4532; SNMP `sysName.0` answers; the debug link over UDP answers; 48 HTTP requests in six parallel loops all succeed with no PPP errors and no TCP retransmits (six clients against three connection slots: `tcp.no_slot` counted 7 SYNs that found no slot, and curl retried them); `rfoundry_ppp.sh --stop` sends the LCP Terminate and the debug link answers on the serial port again. Found on the radio: with the USRP stream on, a bench DMR call heard while PPP was up wedged the host link task (`send_rx()` in `core/usbaudio/usrp_net.c` never left its loop, because a frame takes 30 ms to clock out of the UART and holds 20 ms of audio); the radio stopped answering LCP and the debug link until a power cycle. `send_rx()` now gives up after 20 ms of sending per poll (host test `usrpNetTest`). Not checked: mDNS, TFTP, APRS-IS, KISS and the control station; a DMR call heard while PPP is up, after the fix |
 | RAM | Main RAM (above the codec window, 165,424 B) was 139,952 B used with DMR alone and is 150,080 B with the network and hotspot, USRP off (15.3 KB free; 155,704 B with USRP, 9.5 KB free); RAM_LO (52,912 B) went from 19,024 B to 28,584 B used (24 KB free). The network's buffers sit in RAM_LO (`.ram_lo`, as `RFOUNDRY_CPU_RAM` marks them). The RTOS heap is 40 KB, the DM-32UV's, and holds the task stacks. Costs from the ci builds: IP gateway and PPP 15.0 KB main + 6.7 KB RAM_LO; TCP 5.0 KB + 3.4 KB; USRP 5.6 KB; SNMP 3.2 KB; HTTP 2.5 KB; hotspot 2.6 KB + 2.8 KB; roaming 2.2 KB + 0.9 KB; the rest under 1 KB each |
 | GPS | `CAP_GPS`, reported once the module is heard. `platform/hrc7000/gps_hrc.c` (shared with the DM-32UV, [hardware-dm32.md](hardware-dm32.md) 12) powers it in `board_init`, listens 5 s on UART2 for one checksum-valid sentence, feeds every sentence to the APRS position source, and powers it off again when nothing is heard. Once heard, the module is powered only while Settings > Location > GPS is on (`board_t.gps_enable` = `hrc_gps_enable`, applied at start-up and on each change). The diagnostics page line `gps yes` (or `gps no`) `GOOD/BAD bBYTES on|off` (after the storage lines) shows valid and bad sentences, bytes received and whether the module is powered now. Run on the radio 2026-10-17: module heard, `gps yes 171/0 b7735` (171 good, 0 bad sentences); the switch turned it off and on again live, and the setting held across a restart. `b0` with the module fitted would mean the RXD mux (PTA11) or the power level is wrong |
-| SFR | `CONFIG_SFR`, `CONFIG_SFR_DUALPATH_RX` and `CONFIG_SFR_CWID` follow the default (on). Standalone SFR on the SDR bench (2026-10-25, 461.0875 MHz, CC 2): `test_sfr_standalone.py` repeater quality (0 inbound frames lost per 72, 170-194 bits), TX inhibit, CW ID and user receive modes pass; dual-path RX receive mode not run on air. Burst timing and measurements: 4.5 |
+| SFR | `CONFIG_SFR`, `CONFIG_SFR_DUALPATH_RX` and `CONFIG_SFR_CWID` follow the default (on). Standalone SFR on the SDR bench (2026-10-25, a UHF test frequency, CC 2): `test_sfr_standalone.py` repeater quality (0 inbound frames lost per 72, 170-194 bits), TX inhibit, CW ID and user receive modes pass; dual-path RX receive mode not run on air. Burst timing and measurements: 4.5 |
 | Left off | `CONFIG_APRS_RX` and `CONFIG_APRS_IGATE` (no FM receive PCM), USB and USB network (no data port), broadcast FM (not wired), air band AM (no air band receive), `FONT_XL` and `AUDIO_PROBE` |
 | Older batches (FD6818 main) | Driven from the same image (4.8): the chips are identified at start-up and the diagnostics page shows the batch code. Untested on a radio |
 
@@ -1031,6 +1050,6 @@ carrier: try `DB25D_DMR_TX_INVERT=1`. Low deviation: compare the page's modulati
 | 11 | Which NAND address ranges the vendor bad-block skip covers (6.5) | Yes |
 | 12 | Answered (4.5): the digital set with RF_MODE 0x034C9860 decodes every frame | - |
 | 13 | The modem's input is the main chip's AF output (4.5, decodes on the radio). The voice output's speaker route (PTC18 low) still needs a listen | Yes, a listen |
-| 14 | Answered (4.5): single-point modulation on the TCXO, the per-burst sequence, decoded on the SDR bench; deviation 101 % of nominal at 461.4625 MHz | - |
+| 14 | Answered (4.5): single-point modulation on the TCXO, the per-burst sequence, decoded on the SDR bench; deviation 101 % of nominal | - |
 | 15 | The 020 codec's windows, entry points and a RAM layout for its run address (a separate compile at 0x030C142C, 8.1) | A 020 vendor firmware file, or a read of 0x0300C000-0x0300CFFF |
 | 16 | The FD6818 batches (4.8) on a radio: FM receive and transmit, the PTB27 tone-heard flag, the PA gain from 0x09B, DMR | Yes, a D64, D66 or D6T radio |

@@ -4,20 +4,17 @@
 """
 Adapted from our earlier bench tool hotspot_test.py.
 
-Talk to the radio under test as an MMDVM modem (the public MMDVM serial protocol, as MMDVMHost drives a modem), for
+Talk to the radio under test as an MMDVM modem (the public MMDVM serial protocol, as a standard host drives a modem), for
 bench tests of its hotspot and single frequency repeater (SFR) modes (CONFIG_HOTSPOT, CONFIG_SFR).
 
     mmdvm_hotspot.py [--port /dev/tty.usbmodemXXXX | --udp 192.168.x.y:3334 [--local :3335]]
-                     [--freq 461.6875] [--cc 2] [--power 12] [--seconds 20] [--simplex | --sfr]
-                     [--send [--send-at 3]] [--debug flags,framing[,reg10[,reg12[,rssiMin[,reg11[,flags2]]]]]]
+                     --freq MHZ --cc CC [--power 12] [--seconds 20] [--simplex | --sfr]
+                     [--debug flags,framing[,reg10[,reg12[,rssiMin[,reg11[,flags2]]]]]]
                      [--json]
 
 What it does: SET_FREQ, SET_CONFIG (simplex flag set with --simplex, the default; duplex with RX = TX with --sfr,
 which is how our firmware's SFR is turned on: core/dmr/sfr.c sfrMmdvmTrigger), SET_MODE DMR; then GET_STATUS every
 250 ms, logging every frame the radio sends up (DMR_DATA1/2, DMR_LOST1/2, NAK) and status changes, for --seconds.
---send sends a short network voice call after --send-at seconds (simplex: MS sync on DMR_DATA2; SFR: BS sync on the
-outbound slot 2), paced at 60 ms; it needs the rfoundry_sdrbench package (installed, or a checkout in $RFOUNDRY_SDRBENCH) for
-burst building.
 
 Transports: --port is a serial port (USB CDC ACM, 115200 8N1, the standard MMDVM link). --udp is MMDVMHost's UDP
 modem transport (MMDVMHost [Modem] Protocol=udp, ModemAddress / ModemPort; also what the bench gateway's UDP port speaks), for a
@@ -33,7 +30,6 @@ import argparse
 import json
 import os
 import socket
-import sys
 import threading
 import time
 
@@ -46,7 +42,6 @@ RFOUNDRY_SFR_DEBUG = 0xD5          # our extension
 NAMES = {0x00: "VERSION", 0x01: "STATUS", 0x02: "SET_CONFIG", 0x03: "SET_MODE", 0x04: "SET_FREQ",
          0x18: "DMR_DATA1", 0x19: "DMR_LOST1", 0x1A: "DMR_DATA2", 0x1B: "DMR_LOST2", 0x1C: "DMR_SHORTLC",
          0x1D: "DMR_START", 0x1E: "DMR_ABORT", 0x70: "ACK", 0x7F: "NAK", 0xD5: "RFOUNDRY_SFR_DEBUG"}
-SYNC_DATA, SYNC_AUDIO = 0x40, 0x20
 
 # hrcSfrDebug_t (drivers/modem/hrc6000/sfr_glue/hrcSfr.h), from GET_STATUS frame offset 13. (name, length, hex?)
 SFR_STATUS = [
@@ -87,7 +82,7 @@ def parse_sfr_status(d: bytes):
 
 
 class Transport:
-    """One MMDVM link: a serial port or MMDVMHost's UDP modem transport. recv() returns whole frames or None."""
+    """One MMDVM link: a serial port or the UDP modem transport. recv() returns whole frames or None."""
 
     def __init__(self, port: str = None, udp: str = None, local: str = ":3335"):
         self.buf = bytearray()
@@ -149,7 +144,7 @@ def freq_payload(hz: int, power: int) -> bytes:
 
 
 class MmdvmLink:
-    """The radio as MMDVMHost's modem: configured, polled every 250 ms, everything it sends recorded."""
+    """The radio as a standard host's modem: configured, polled every 250 ms, everything it sends recorded."""
 
     def __init__(self, transport: Transport, freq_hz: int, cc: int, power: int, simplex: bool = True,
                  debug: bytes = None, log=None):
@@ -218,7 +213,7 @@ class MmdvmLink:
     def take_space(self, slot: int = 2) -> bool:
         with self.lock:
             if self.space[slot - 1] > 1:
-                self.space[slot - 1] -= 1     # as MMDVMHost's CModem: one less per frame until the next status
+                self.space[slot - 1] -= 1     # one less per frame until the next status
                 return True
             return False
 
@@ -227,39 +222,20 @@ class MmdvmLink:
             return bool(self.flags & 0x01)
 
 
-def sdrbench_path():
-    # A checkout of rfoundry_sdrbench named by $RFOUNDRY_SDRBENCH, when the package isn't installed in this Python
-    d = os.environ.get("RFOUNDRY_SDRBENCH")
-    if d and os.path.expanduser(d) not in sys.path:
-        sys.path.insert(0, os.path.expanduser(d))
-
-
-def network_call(cc: int, sfr: bool):
-    sdrbench_path()
-    from rfoundry_sdrbench import sim
-    from rfoundry_sdrbench.dmr import pdu
-    call = sim.voice_call(3101999, 215, cc, 2, family="bs" if sfr else "ms", slot=2, voice=[sim.AMBE_SILENCE] * 36)
-    out = []
-    for tb in call:
-        c = SYNC_AUDIO if tb.dt == pdu.DT_VOICE_SYNC else (tb.n if tb.dt == pdu.DT_VOICE else SYNC_DATA | tb.dt)
-        out.append(frame(DMR_DATA2, bytes([c]) + tb.burst))
-    return out
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", default=None, help="serial port of the radio's USB CDC MMDVM link")
     ap.add_argument("--udp", default=None, help="host:port of an MMDVM UDP modem (optional transport)")
     ap.add_argument("--local", default=":3335", help="local host:port for --udp")
-    ap.add_argument("--freq", type=float, default=461.6875)
-    ap.add_argument("--cc", type=int, default=2)
+    ap.add_argument("--freq", type=float, default=os.environ.get("RFOUNDRY_BENCH_FREQ"), required="RFOUNDRY_BENCH_FREQ" not in os.environ,
+                    help="MHz ($RFOUNDRY_BENCH_FREQ): the rig's test frequency, no default")
+    ap.add_argument("--cc", type=int, default=os.environ.get("RFOUNDRY_BENCH_CC"), required="RFOUNDRY_BENCH_CC" not in os.environ,
+                    help="color code ($RFOUNDRY_BENCH_CC), no default")
     ap.add_argument("--power", type=int, default=12, help="SET_FREQ RF level 0-255")
     ap.add_argument("--seconds", type=float, default=20)
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument("--simplex", action="store_true", help="normal simplex hotspot (default)")
     mode.add_argument("--sfr", action="store_true", help="duplex with RX = TX: our SFR mode")
-    ap.add_argument("--send", action="store_true")
-    ap.add_argument("--send-at", type=float, default=3)
     ap.add_argument("--debug", default=None, help="our 0xD5 extension: hex bytes, e.g. 04,00")
     ap.add_argument("--json", action="store_true", help="log lines as JSON")
     args = ap.parse_args()
@@ -278,16 +254,10 @@ def main():
     debug = bytes(int(x, 16) for x in args.debug.split(",")) if args.debug else None
     link = MmdvmLink(Transport(args.port, args.udp, args.local), int(round(args.freq * 1e6)), args.cc, args.power,
                      simplex=not args.sfr, debug=debug, log=log)
-    calls = network_call(args.cc, args.sfr) if args.send else []
-    sent = 0
     while time.monotonic() - t0 < args.seconds:
-        now = time.monotonic() - t0
-        if calls and sent < len(calls) and now >= args.send_at + max(0, sent - 4) * 0.06:
-            link.send(calls[sent])
-            sent += 1
         time.sleep(0.005)
     link.stop = True
-    log("done, sent", sent, "network bursts")
+    log("done")
 
 
 if __name__ == "__main__":

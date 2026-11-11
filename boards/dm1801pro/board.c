@@ -71,7 +71,7 @@ static const char *const side_key_names[] = { "SK1", "SK2", "SOS", "A/B", "VFO/M
 
 const board_t board = {
 	.name = "DM-1801 Pro",
-	.caps = CAP_KEYPAD | (CONFIG_DMR ? CAP_DMR : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0) |
+	.caps = CAP_KEYPAD | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0) |
 		(CONFIG_AM_RX ? CAP_AM_RX : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
@@ -132,11 +132,11 @@ static void io_init(void)
 	hrc_pin_in(PIN_POWER_KEY);
 }
 
-// Everything the core stores lives above the write floor (hardware-dm1801pro.md 6.1): the data flash holds the
-// radio's own data below 0x700000 (settings, contacts, fonts, voice prompts, recordings), so the open-firmware
-// codeplug's 64 KB "EEPROM" image sits at 0x700000 (CODEPLUG_OPENFW_EEPROM_BASE in board.mk), the settings ring and the
-// sector journal after it, the 1 MB open-firmware "flash" image at 0x720000 (CODEPLUG_OPENFW_FLASH_BASE) and the native
-// codeplug in the last 1 MB. The factory calibration is read only, so the open-firmware CPS gets no calibration window
+// Everything the core stores lives above the write floor (hardware-dm1801pro.md 6.1): the data flash holds the radio's
+// own data below 0x700000 (settings, contacts, fonts, voice prompts, recordings), so the open-firmware codeplug's 64 KB
+// "EEPROM" image sits at 0x700000, the settings ring and the sector journal after it, the 1 MB open-firmware "flash"
+// image at 0x720000 (where the DMR ID database is read too) and the native codeplug in the last 1 MB. The factory
+// calibration is read only, so the open-firmware CPS gets no calibration window
 static const hal_flash_map_t flash_map = {
 	.settings_addr = 0x711000u,
 	.settings_size = 0x008000u,	// 8 sectors

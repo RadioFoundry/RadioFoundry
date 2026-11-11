@@ -371,6 +371,61 @@ def set_channel_tx(img, number, hz):
     img[a + 0x14:a + 0x18] = _bcd_freq(hz)
 
 
+def set_channel_rx(img, number, hz):
+    """Set the channel's RX frequency."""
+    _, a = channel_addr(number)
+    img[a + 0x10:a + 0x14] = _bcd_freq(hz)
+
+
+CH_POWER = 0x19                 # 0: the radio's master power, else the 10-step scale (open-firmware-cps.md 7.3.3)
+
+
+def power_byte(level, count):
+    """The power byte that reads as power level `level` on a radio with `count` levels (core/codeplug power_to_byte)"""
+    if count < 2 or count >= 9:
+        return level + 1
+    return (level * 9 + (count - 1) // 2) // (count - 1) + 1
+
+
+def set_channel_power(img, number, level, count):
+    """Set the channel's power to level `level` of a radio with `count` levels."""
+    _, a = channel_addr(number)
+    img[a + CH_POWER] = power_byte(level, count)
+
+
+def channel_dmr(img, number):
+    """(DMR, color code, TX contact index) of a channel record (open-firmware-cps.md 7.3.3)"""
+    _, a = channel_addr(number)
+    return img[a + 0x18] == 1, img[a + 0x2C], int.from_bytes(img[a + 0x2E:a + 0x30], "little")
+
+
+def set_channel_cc(img, number, cc):
+    _, a = channel_addr(number)
+    img[a + 0x2C] = cc
+
+
+def zones(img):
+    """[(slot, name, [channel numbers])] of the zones in use, in slot order (open-firmware-cps.md 7.3.4; 0x806F picks
+    the 80- or 16-channel layout). An erased slot (name 0xFF) is not a zone, and an erased number ends the list, as
+    in a blank image whose bitmap is still 0xFF"""
+    per, size = (80, 0xB0) if img[0x806F] <= 4 else (16, 0x30)
+    out = []
+    for z in range(68):
+        if not img[ZONE_BITMAP + z // 8] & (1 << (z % 8)):
+            continue
+        base = ZONE_DATA + z * size
+        if img[base] == 0xFF:
+            continue
+        members = []
+        for k in range(per):
+            n = int.from_bytes(img[base + 16 + 2 * k:base + 18 + 2 * k], "little")
+            if n in (0, 0xFFFF):
+                break
+            members.append(n)
+        out.append((z, bytes(img[base:base + 16]).split(b"\xff")[0].decode("ascii", "replace"), members))
+    return out
+
+
 # ── a small test codeplug: one FM and one DMR channel, a contact, a zone ──
 CONTACT_BASE = 0xA7620          # contact 1 (flash image 0x87620 + the 128 KB offset), 24 bytes each
 ZONE_BITMAP = 0x8010
@@ -407,7 +462,7 @@ def _channel_record(name, rx_hz, tx_hz, dmr, cc=1, ts=1, contact=0, wide=False):
     return r
 
 
-def make_test_codeplug(img, rx_mhz=461.4625, tg=201, cc=2, ts=1, dmr_id=None, callsign=None):
+def make_test_codeplug(img, rx_mhz, tg, cc, ts=1, dmr_id=None, callsign=None):
     """Edit img (a flat image, file offset = flash address) so the radio has channel 1 (FM, 12.5 kHz, simplex), channel
     2 (DMR on the same frequency, color code cc, timeslot ts, talk target group tg = contact 1) and zone 1 holding both.
     Everything else in img stays; zone slot 0 and contact 1 are replaced. dmr_id and callsign set the radio's own."""
@@ -489,9 +544,9 @@ def main(argv=None):
     t = sub.add_parser("test-channels", help="edit an image (a new blank one if the file is missing): an FM and a DMR "
                        "test channel, a talk group contact and a zone")
     t.add_argument("image")
-    t.add_argument("--rx", type=float, default=461.4625, help="MHz, simplex (default 461.4625)")
-    t.add_argument("--tg", type=int, default=201)
-    t.add_argument("--cc", type=int, default=2)
+    t.add_argument("--rx", type=float, required=True, help="MHz, simplex: a frequency the rig may use")
+    t.add_argument("--tg", type=int, required=True, help="the talk group of the DMR channel")
+    t.add_argument("--cc", type=int, required=True, help="the DMR channel's color code")
     t.add_argument("--ts", type=int, choices=(1, 2), default=1)
     t.add_argument("--id", type=int, help="the radio's DMR ID")
     t.add_argument("--call", help="the radio's name / callsign")

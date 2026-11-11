@@ -676,13 +676,7 @@ def cmd_package(sess, args):
     for helper in ("serial_loader.py", "cps_client.py", "codeplug_port.py", "rfoundry_debug.py", "md380_migrate.py",
                    "hrc7000_codec.py"):
         files[os.path.join(HERE, helper)] = helper
-    # what serial_loader.py and hrc7000_codec.py import from rfoundry: the board registry and the codec maps
-    pkg = os.path.join(HERE, "rfoundry", "rfoundry")
-    for rel in ["__init__.py", "boards.py", "codecmap.py", "registry.json"] + sorted(
-            os.path.join("codec_maps", d, f) for d in os.listdir(os.path.join(pkg, "codec_maps"))
-            if os.path.isdir(os.path.join(pkg, "codec_maps", d)) for f in os.listdir(os.path.join(pkg, "codec_maps", d))
-            if f.endswith(".json")):
-        files[os.path.join(pkg, rel)] = os.path.join("rfoundry", "rfoundry", rel)
+    files.update(cp.kit_package_files())
     bringup = os.path.join(os.path.dirname(HERE), "docs", "testing", "dm32-bringup.md")
     if os.path.isfile(bringup):
         files[bringup] = "dm32-bringup.md"
@@ -811,12 +805,12 @@ SAMPLE_STOCK_YAML = """version: 0.15.1
 settings:
   defaultID: id1
 radioIDs:
-  - dmr: {id: id1, name: N0CALL, number: 3100001}
-  - dmr: {id: id2, name: N0CALL-2, number: 3100009}
+  - dmr: {id: id1, name: Q1AAA, number: 9990001}
+  - dmr: {id: id2, name: Q1AAA-2, number: 9990009}
 contacts:
   - dmr: {id: cont1, name: Local, ring: false, type: GroupCall, number: 9}
   - dmr: {id: cont2, name: "Worldwide Talkgroup 91", ring: false, type: GroupCall, number: 91}
-  - dmr: {id: cont3, name: "René", ring: false, type: PrivateCall, number: 3100002}
+  - dmr: {id: cont3, name: "René", ring: false, type: PrivateCall, number: 9990002}
 groupLists:
   - id: grp1
     name: Local
@@ -865,7 +859,7 @@ def sample_rfoundry_yaml():
         "Simplex FM 2m calling", "Simplex FM 2m ca")
     y = y.split("zones:\n")[0] + "zones:\n" + "".join("  - id: zone%d\n    name: Z%d\n    A: [ch1, ch2]\n" % (i, i)
                                                        for i in range(1, 69))
-    return y.replace("  - dmr: {id: id2, name: N0CALL-2, number: 3100009}\n", "")
+    return y.replace("  - dmr: {id: id2, name: Q1AAA-2, number: 9990009}\n", "")
 
 
 def self_test():
@@ -925,7 +919,7 @@ def self_test():
     check(rep["non_ascii"] == [["contacts", "René"]], "non-ASCII names %r" % rep["non_ascii"])
     check(len(rep["renamed"]) == 2, "renamed after the round trip %r" % rep["renamed"])
     check(sorted(x[0] for x in rep["out_of_band"]) == ["6m FM", "Air"], "out of band %r" % rep["out_of_band"])
-    check(rep["radio_ids"] == [3100001, 3100009], "radio IDs")
+    check(rep["radio_ids"] == [9990001, 9990009], "radio IDs")
     text = format_report(rep)
     check("left out: Z69, Z70" in text and "scanLists" in text and "6m FM" in text, "report text")
     check(parse_freq("462562.5 kHz") == 462562500 and parse_freq("441 MHz") == 441000000 and parse_freq("x") is None,
@@ -961,6 +955,10 @@ def self_test():
 
     rc = mod("serial_loader").self_test()
     check(rc == 0, "serial_loader self-test")
+    err = cp.kit_error(__file__, b"\x01" * 64, "import dm32_migrate as d\n"
+                       "for n in ('serial_loader', 'cps_client', 'hrc7000_codec', 'md380_migrate'):\n    d.mod(n)")
+    check(not err, "a kit runs on its own: %s" % err)
+
     print("dm32_migrate self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                                       "" if len(fails) == 1 else "s"))
     return 0 if not fails else 1

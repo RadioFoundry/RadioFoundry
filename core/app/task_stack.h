@@ -7,6 +7,7 @@
 #ifndef TASK_STACK_H
 #define TASK_STACK_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #define TASK_STACK_MAX		16	// tasks tracked; more are counted in task_stack_snapshot's untracked
@@ -26,6 +27,9 @@ void task_stack_deleted(void *task);
 unsigned task_stack_snapshot(task_stack_t *out, unsigned max, unsigned *untracked);
 // The RTOS heap (every task stack and queue): its free bytes now and the least since start (firmware only)
 void task_stack_heap(uint32_t *free_now, uint32_t *least_free);
+// The interrupt stack's bytes never written since start, where the platform's handlers have a stack of their own
+// (hal_system_t.irq_stack_free); false where they share the task stacks (firmware only)
+bool task_stack_irq(uint32_t *free_bytes);
 // Slot i's handle (a TCB), NULL for an empty slot or i >= TASK_STACK_MAX. No lock: the crash capture
 // (core/crash/crash_capture.c) reads the table with interrupts off
 void *task_stack_handle(unsigned i);

@@ -1,0 +1,99 @@
+{
+ "board": "md9600",
+ "commit": "aaf1f3f1f612680405316d41c5f0bea1ea58a4b0",
+ "date": "2026-11-06T13:00:11Z",
+ "dirty": false,
+ "features": [
+  "beep"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,DMR_CONFIRMED,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "aaf1f3f1",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.075,
+  "dmr-tg": 202,
+  "fm-mhz": 446.1,
+  "tx-power": 40
+ },
+ "sources": {
+  "beep": {
+   "core/debuglink/debuglink.c": "7bb9e44fee4adb7372e22164deff07e73bfd7716",
+   "core/debuglink/debuglink_view_radio.c": "afeb89716ee59800be172b1c6681c056e29a6175",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/beep.c": "d04eeec4eb03c7666c7dbd574064a935b9b78884",
+   "core/radio/radio.h": "c5861a96058d46bb9cd780744ceb5ce3f257350c",
+   "core/radio/radio_sm.c": "1d686257536727a8a95ce65be61ffff9702a5e10",
+   "core/ui/ui_menus.c": "baa2fdc644157efcf8e71a919e4b5487ef08f836",
+   "core/ui/ui_svc_radio.c": "fe4fdd57dc9ce54d80a58370ec6c60b6fccbb7cc",
+   "docs/spec/radio-features.md": "a97cd7348dacf2564d3d735998844f927783da33"
+  }
+ },
+ "tests": [
+  {
+   "excused": true,
+   "features": [
+    "beep"
+   ],
+   "id": "tests/hil/test_dmr_tx.py::test_dmr_tx_permit_before_key",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[other_board] no TX gate (pg) line: this board's beeps may sound on air, so it plays the permit on air",
+   "required": true,
+   "skip_kind": "other_board"
+  },
+  {
+   "features": [
+    "beep"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_beep_counts",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "beep"
+   ],
+   "id": "tests/hil/test_speaker.py::test_speaker_beep_cold",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "bring-up: a required test of beep skipped (state), which its needs don't excuse: Skipped: [state] key: the microphone hears too little of the speaker (volume, beep level, placement)",
+   "required": true
+  },
+  {
+   "features": [
+    "beep"
+   ],
+   "id": "tests/hil/test_speaker.py::test_speaker_beeps",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

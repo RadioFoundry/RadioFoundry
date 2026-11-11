@@ -6,9 +6,10 @@ import time
 
 import pytest
 
-from rfoundry_hil import DebugLink, DebugLinkError, as_int, find_ports, skip
+from rfoundry_hil import DebugLinkError, as_int, skip
 
-CRASH_KIND_FAULT, CRASH_KIND_ASSERT, CRASH_KIND_HANG = 1, 4, 5
+CRASH_KIND_FAULT, CRASH_KIND_ASSERT, CRASH_KIND_HANG, CRASH_KIND_STALL = 1, 4, 5, 6
+STALL_MS = 60000        # WATCHDOG_STALL_MS (core/app/watchdog.h)
 
 
 def _need(radio):
@@ -16,35 +17,19 @@ def _need(radio):
         skip("not_built", "built without CONFIG_CRASH_LOG")
 
 
-def _reconnect(radio, timeout=30.0):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        for port in [radio.port] + find_ports():
-            link = None
-            try:
-                link = DebugLink(port, timeout=1.5)
-                link.ping()
-                radio.link, radio.port = link, port
-                return
-            except (DebugLinkError, OSError):
-                # A serial hub takes one client per port: a link left open would lock out every later try.
-                if link is not None:
-                    link.close()
-                time.sleep(0.5)
-    raise AssertionError("the radio did not come back after the crash")
 
 
-def _crash(radio, kind):
-    """Crash on purpose, wait for the restart, return the crash view."""
+def _crash(radio, kind, wait_s=30.0):
+    """Crash on purpose, wait for the restart (up to wait_s), return the crash view."""
     radio.link.crash_clear()
     assert radio.view(["crash"]).get("crash.valid") == "0"
     up_before = as_int(radio.view(["link"])["uptime_ms"])
     radio.link.crash_test(kind)
     radio.link.close()
     time.sleep(2.0)
-    _reconnect(radio)
+    radio.reconnect(wait_s, "the crash")
     up_after = as_int(radio.view(["link"])["uptime_ms"])
-    assert up_after < up_before or up_after < 30000, "the radio didn't restart"
+    assert up_after < up_before, f"the radio didn't restart (uptime {up_before} ms, then {up_after})"
     return radio.view(["crash"])
 
 
@@ -118,8 +103,33 @@ def test_crash_hang_kept(radio):
     if tasks_built:
         n = as_int(v["crash.tasks"])
         others = dict(v[f"crash.t{k}"].rsplit(",", 1) for k in range(n))
-        assert n >= 2 and "ui" in others and "radi" in others, v
+        # The record has room for a few (crash-log.md 1.2): a radio with more tasks lists the first and says so
+        more = as_int(v.get("crash.tasks_more"), 0) != 0
+        assert n >= 2 and all(t in others or more for t in ("ui", "radi")), v
         assert "host" not in others and "IDLE" not in others, v
         where = [int(w, 16) for w in others.values()]
         assert all(where) and any(w & 1 for w in where), others
+    radio.link.crash_clear()
+
+
+@pytest.mark.feature("crash_log")
+def test_crash_stall_kept(radio):
+    """The stall check (crash-log.md 1.1.1): the host link's task waits for good while the idle task still feeds; a
+    minute later the tick keeps a stall record and restarts the radio, so the link comes back with no power cycle."""
+    _need(radio)
+    wd = radio.view(["watchdog"])
+    if wd.get("watchdog.built") != "1":
+        skip("not_built", "built without CONFIG_WATCHDOG: nothing would end the wait")
+    tasks_built = radio.view(["tasks"]).get("tasks.built") != "0"
+    v = _crash(radio, "stall", wait_s=STALL_MS / 1000 + 45)
+    assert v.get("crash.valid") == "1", "no stall record " + str(v)
+    assert as_int(v["crash.kind"]) == CRASH_KIND_STALL, v
+    assert STALL_MS <= as_int(v["crash.cause"]) < STALL_MS + 2000, v
+    # The host task waited, so it wasn't the one the tick interrupted: the snapshot has it, at a kernel wait
+    if tasks_built:
+        n = as_int(v["crash.tasks"])
+        others = dict(v[f"crash.t{k}"].rsplit(",", 1) for k in range(n))
+        # The snapshot keeps the first tasks in creation order: on a radio with more, the host task may be past its end
+        if "host" in others or v.get("crash.tasks_more") != "1":
+            assert "host" in others and int(others["host"], 16) != 0, v
     radio.link.crash_clear()

@@ -8,6 +8,9 @@
 #include "board.h"
 #include "ui_nav.h"
 #include "ui_svc.h"
+#include "ui_svc_aprs.h"
+#include "aprs/aprs_fmt.h"
+#include "font.h"
 #include "fmt.h"
 #include "codeplug/codeplug.h"
 #include "config.h"
@@ -36,7 +39,7 @@
 #endif
 
 extern const ui_scr_def_t ui_find_screen;
-extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_pos_screen;	// ui_aprs.c
+extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_pos_screen, ui_aprs_station_screen;	// ui_aprs.c
 extern const ui_scr_def_t ui_gps_screen;	// ui_gps.c
 #if CONFIG_DUAL_WATCH
 extern const ui_scr_def_t ui_dual_screen, ui_dual_pick_screen, ui_dual_zone_screen;	// ui_dual.c
@@ -44,7 +47,7 @@ extern const ui_scr_def_t ui_dual_screen, ui_dual_pick_screen, ui_dual_zone_scre
 
 static void item_num(ui_item_t *it, uint16_t n)
 {
-	it->num = (char)('0' + n % 10u);
+	it->num = n >= 1u && n <= 10u ? (char)('0' + n % 10u) : 0;	// rows after the 10th have no digit
 }
 
 void item_num_set(ui_item_t *it, uint16_t n)
@@ -167,6 +170,7 @@ static bool act_target(uint16_t i, ui_target_t *t)
 }
 
 static uint32_t feats(void) { return ui_svc_features(); }
+static bool compose_aprs(void);
 
 static void act_item(uint16_t i, ui_item_t *it)
 {
@@ -333,32 +337,77 @@ static const ui_scr_def_t actions_screen = {
 
 // ======================= Message composer (canned first) =======================
 
-// Sent in the language in use (the text goes out as UTF-16, Latin-1 included)
 static const char *const canned[] = { TRN("OK"), TRN("On my way"), TRN("Call me"), TRN("Can't talk now") };
 #define CANNED_N	(sizeof canned / sizeof canned[0])
+// The inbox body and composer cannot be on screen at the same time.
+static char message_buffer[UI_MSG_TEXT_MAX + 48];
+static char aprs_to[AX25_CALL_LEN + 4];
+static char aprs_compose_to[AX25_CALL_LEN + 4];
+static uint8_t aprs_message_flags;
+static bool aprs_composing;
+#if CONFIG_APRS
+static void ui_text_open_to(char *target, uint8_t max);
+#endif
+#if CONFIG_DMR_SMS || CONFIG_APRS
+static void ui_text_open_message(bool aprs);
+#endif
+static bool compose_aprs(void) { return aprs_composing; }
 
-static uint16_t compose_count(void) { return CANNED_N + 1; }
+void ui_aprs_compose(const char *call)
+{
+	str_copy(aprs_compose_to, sizeof aprs_compose_to, call);
+	ui_push(SCR_COMPOSE, 1);
+}
+
+static uint16_t compose_count(void) { return CANNED_N + 1u + (compose_aprs() ? 3u : 0u); }
 
 static void compose_item(uint16_t i, ui_item_t *it)
 {
+	if (compose_aprs()) {
+		if (i == 0) {
+			str_copy(it->label, sizeof it->label, TR("To callsign"));
+			str_copy(it->value, sizeof it->value, aprs_to[0] ? aprs_to : TR("Enter"));
+			return;
+		}
+		i--;
+	}
 	if (i < CANNED_N) {
 		sbuf_t b;
 		sb_init(&b, it->label, sizeof it->label);
 		sb_chr(&b, '"');
 		sb_str(&b, tr(canned[i]));
 		sb_chr(&b, '"');
-	} else {
+	} else if (i == CANNED_N) {
 		str_copy(it->label, sizeof it->label, TR("Write..."));
-		it->flags |= UI_ITEM_DIM;
+	} else if (i == CANNED_N + 1u) {
+		str_copy(it->label, sizeof it->label, TR("Request acknowledgment"));
+		str_copy(it->value, sizeof it->value, tr((aprs_message_flags & APRS_MSG_ACK) ? TRN("On") : TRN("Off")));
+	} else {
+		str_copy(it->label, sizeof it->label, TR("Include position"));
+		str_copy(it->value, sizeof it->value, tr((aprs_message_flags & APRS_MSG_POSITION) ? TRN("On") : TRN("Off")));
 	}
 }
 
-static void send_text(const char *text)
+static void send_text(const char *text, bool aprs)
 {
 	static char msg[40];
 	char name[24];
-	ui_sb_target(name, sizeof name, &ui_target);
-	if (!ui_svc_msg_send(ui_target.id, ui_target.group, text)) {
+	if (aprs) {
+		str_copy(name, sizeof name, aprs_to);
+		if (text != message_buffer)
+			str_copy(message_buffer, sizeof message_buffer, text);
+		for (char *p = message_buffer; *p != '\0'; p++) {
+			if ((uint8_t)*p >= 0x80u)
+				*p = font_fold(*p);
+			if ((uint8_t)*p < 0x20u || (uint8_t)*p > 0x7eu)
+				*p = '?';
+		}
+		text = message_buffer;
+	} else {
+		ui_sb_target(name, sizeof name, &ui_target);
+	}
+	if (aprs ? !ui_svc_aprs_send_message(aprs_to, text, aprs_message_flags) :
+	    !ui_svc_msg_send(ui_target.id, ui_target.group, text)) {
 		ui_toast(TR("Couldn't send: try again"));
 		return;
 	}
@@ -373,22 +422,49 @@ static void send_text(const char *text)
 static void compose_select(uint16_t i, bool hold)
 {
 	(void)hold;
-	if (i < CANNED_N)
-		send_text(tr(canned[i]));
-	else
-		ui_toast(TR("Typing: not in this build"));
+	if (compose_aprs()) {
+		if (i == 0) {
+#if CONFIG_APRS
+			ui_text_open_to(aprs_to, sizeof(aprs_to) - 1u);
+#endif
+			return;
+		}
+		i--;
+	}
+	if (i < CANNED_N) {
+		bool aprs = compose_aprs();
+		send_text(tr(canned[i]), aprs);
+	}
+	else if (i == CANNED_N) {
+#if CONFIG_DMR_SMS || CONFIG_APRS
+		ui_text_open_message(compose_aprs());
+	#endif
+	} else if (compose_aprs()) {
+		aprs_message_flags ^= i == CANNED_N + 1u ? APRS_MSG_ACK : APRS_MSG_POSITION;
+	}
 }
 
 static const char *compose_title(void)
 {
 	static char t[32];
-	ui_sb_target(t, sizeof t, &ui_target);
+	if (compose_aprs())
+		str_copy(t, sizeof t, aprs_to[0] ? aprs_to : TR("Callsign"));
+	else
+		ui_sb_target(t, sizeof t, &ui_target);
 	return t;
+}
+
+static void compose_enter(void)
+{
+	aprs_composing = ui_frame()->arg == 1u;
+	str_copy(aprs_to, sizeof aprs_to, compose_aprs() ? aprs_compose_to : "");
+	aprs_compose_to[0] = 0;
+	aprs_message_flags = APRS_MSG_ACK;
 }
 
 static const ui_scr_def_t compose_screen = {
 	.name = "compose", .flags = SF_LIST | SF_FIELD, .prefix = TRN("To"), .hint = TRN("OK send  Back"),
-	.count = compose_count, .item = compose_item, .select = compose_select, .title = compose_title,
+	.count = compose_count, .item = compose_item, .select = compose_select, .title = compose_title, .enter = compose_enter,
 };
 
 // ======================= Contacts (type to find) =======================
@@ -396,17 +472,50 @@ static const ui_scr_def_t compose_screen = {
 #if CONFIG_DMR
 static uint16_t contacts_raw_count(void) { return CODEPLUG_CONTACTS_MAX; }
 
+static void contact_label(const contact_t *c, char *buf, uint8_t len, bool with_id)
+{
+	sbuf_t b;
+	sb_init(&b, buf, len);
+	sb_str(&b, c->name);
+	if (with_id) {
+		sb_chr(&b, ' ');
+		sb_u32(&b, c->id, 1);	// digits find by ID too
+	}
+}
+
 static bool contacts_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
 	contact_t c;
 	if (!codeplug_contact((uint16_t)(raw + 1u), &c))
 		return false;
-	sbuf_t b;
-	sb_init(&b, buf, len);
-	sb_str(&b, c.name);
-	sb_chr(&b, ' ');
-	sb_u32(&b, c.id, 1);	// digits find by ID too
+	contact_label(&c, buf, len, true);
 	return true;
+}
+
+// Every contact as raw rows from first on (raw_each): one pass of block reads (codeplug_contacts_each)
+typedef struct {
+	ui_raw_fn fn;
+	void *ctx;
+	uint16_t first;
+	bool with_id, stopped;
+} ct_rows_t;
+
+static bool ct_row(uint16_t index, const contact_t *c, void *p)
+{
+	ct_rows_t *r = p;
+	char label[40];
+	if (c != NULL)
+		contact_label(c, label, sizeof label, r->with_id);
+	r->stopped = !r->fn((uint16_t)(r->first + index - 1u), c != NULL ? label : NULL, r->ctx);
+	return !r->stopped;
+}
+
+// false: fn stopped the pass. with_id: the label is the name and the ID (contacts_raw_label), else the name
+static bool contacts_rows(uint16_t first, ui_raw_fn fn, void *ctx, bool with_id)
+{
+	ct_rows_t r = { .fn = fn, .ctx = ctx, .first = first, .with_id = with_id };
+	codeplug_contacts_each(ct_row, &r);
+	return !r.stopped;
 }
 
 // Contact raw + 1 (raw 0 is contact 1) as a target
@@ -423,11 +532,13 @@ static bool contact_target_raw(uint16_t raw, ui_target_t *t)
 	return true;
 }
 
+#if CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT	// the lists that use these: Share To, the crash report's Send To
 // Share To's rows: raw rows are the contacts
 static bool contacts_target(uint16_t i, ui_target_t *t)
 {
 	return i < ui_filter_count() && contact_target_raw(ui_filter_raw(i), t);
 }
+#endif
 
 static void contact_row(const ui_target_t *tp, ui_item_t *it)
 {
@@ -451,12 +562,14 @@ static void contact_row(const ui_target_t *tp, ui_item_t *it)
 	}
 }
 
+#if CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT
 static void contacts_item(uint16_t i, ui_item_t *it)
 {
 	ui_target_t t;
 	if (contacts_target(i, &t))
 		contact_row(&t, it);
 }
+#endif
 
 // Contacts: with the contact editor raw row 0 is New contact, first so a long list (and a typed filter's first matches)
 // keeps it in reach; the contacts follow it
@@ -474,6 +587,16 @@ static bool contacts_list_raw_label(uint16_t raw, char *buf, uint8_t len)
 	}
 #endif
 	return contacts_raw_label((uint16_t)(raw - CONTACTS_NEW), buf, len);
+}
+
+static void contacts_list_raw_each(ui_raw_fn fn, void *ctx, bool labels)
+{
+	(void)labels;
+#if CONFIG_CONTACT_EDIT
+	if (!fn(0, TR("New contact"), ctx))
+		return;
+#endif
+	contacts_rows(CONTACTS_NEW, fn, ctx, true);
 }
 
 static bool contacts_list_target(uint16_t i, ui_target_t *t)
@@ -520,6 +643,7 @@ static const ui_scr_def_t contacts_screen = {
 	.empty = CONFIG_CONTACT_EDIT ? TRN("No contact matches") : TRN("No contacts: add them in qdmr"),
 	.count = ui_filter_count, .item = contacts_list_item, .select = contacts_select, .context = contacts_context,
 	.target = contacts_list_target, .raw_count = contacts_list_raw_count, .raw_label = contacts_list_raw_label,
+	.raw_each = contacts_list_raw_each,
 };
 #else
 static uint16_t none_count(void) { return 0; }
@@ -532,12 +656,81 @@ static const ui_scr_def_t contacts_screen = {
 
 // ======================= Messages =======================
 
-static uint16_t msgs_count(void) { return ui_svc_msg_count(); }
+#define MSG_APRS_ARG	0x8000u
+
+static bool aprs_new_available(void)
+{
+#if CONFIG_APRS
+	aprs_view_t v;
+	return ui_svc_aprs_view(&v) && v.call[0] != '\0';
+#else
+	return false;
+#endif
+}
+
+static uint16_t msgs_count(void)
+{
+	return ui_svc_msg_count() + ui_svc_aprs_msg_count() + (aprs_new_available() ? 1u : 0u);
+}
+
+// Both inboxes are newest first. Merge their small RAM lists by age for the shared Messages screen.
+static bool msg_row(uint16_t row, bool *aprs, uint16_t *index)
+{
+	uint16_t d = 0, a = 0;
+	uint16_t nd = ui_svc_msg_count(), na = ui_svc_aprs_msg_count();
+	if (row >= nd + na)
+		return false;
+	for (uint16_t n = 0; n <= row; n++) {
+		bool take_aprs = d == nd;
+		if (!take_aprs && a < na) {
+			// One message at a time: both copies at once put this list on the UI task's deepest chain
+			uint32_t dmr_age;
+			{
+				ui_msg_t dm;
+				if (!ui_svc_msg_get(d, &dm))
+					return false;
+				dmr_age = dm.age_ms;
+			}
+			aprs_msg_t am;
+			if (!ui_svc_aprs_msg((uint8_t)a, &am, false))
+				return false;
+			take_aprs = ui_st.now_ms - am.ms < dmr_age;
+		}
+		*aprs = take_aprs;
+		*index = take_aprs ? a++ : d++;
+	}
+	return true;
+}
 
 static void msgs_item(uint16_t i, ui_item_t *it)
 {
+	uint16_t dmr_count = ui_svc_msg_count();
+	uint16_t aprs_count = ui_svc_aprs_msg_count();
+	if (aprs_new_available() && i == dmr_count + aprs_count) {
+		str_copy(it->label, sizeof it->label, TR("New APRS message"));
+		return;
+	}
+	bool aprs;
+	uint16_t index;
+	if (!msg_row(i, &aprs, &index))
+		return;
+	if (aprs) {
+		aprs_msg_t m;
+		if (!ui_svc_aprs_msg((uint8_t)index, &m, false))
+			return;
+		sbuf_t b;
+		sb_init(&b, it->label, sizeof it->label);
+		sb_str(&b, m.from);
+		sb_str(&b, ": ");
+		sb_str(&b, m.text);
+		ui_sb_age(it->value, sizeof it->value, ui_st.now_ms - m.ms);
+		it->flags |= UI_ITEM_PREVIEW;
+		if (!m.read)
+			it->flags |= UI_ITEM_WARN;
+		return;
+	}
 	ui_msg_t m;
-	if (!ui_svc_msg_get(i, &m))
+	if (!ui_svc_msg_get(index, &m))
 		return;
 	sbuf_t b;
 	sb_init(&b, it->label, sizeof it->label);
@@ -558,7 +751,14 @@ static void msgs_item(uint16_t i, ui_item_t *it)
 static void msgs_select(uint16_t i, bool hold)
 {
 	(void)hold;
-	ui_push(SCR_MESSAGE, i);
+	if (aprs_new_available() && i == ui_svc_msg_count() + ui_svc_aprs_msg_count())
+		ui_aprs_compose("");
+	else {
+		bool aprs;
+		uint16_t index;
+		if (msg_row(i, &aprs, &index))
+			ui_push(SCR_MESSAGE, aprs ? (uint16_t)(MSG_APRS_ARG | index) : index);
+	}
 }
 
 static void msg_target_of(uint16_t i, ui_target_t *t)
@@ -574,8 +774,18 @@ static void msg_target_of(uint16_t i, ui_target_t *t)
 
 static void msgs_context(uint16_t i)
 {
+	bool aprs;
+	uint16_t index;
+	if (!msg_row(i, &aprs, &index))
+		return;
+	if (aprs) {
+		aprs_msg_t m;
+		if (ui_svc_aprs_msg((uint8_t)index, &m, false))
+			ui_aprs_compose(m.from);
+		return;
+	}
 	ui_target_t t;
-	msg_target_of(i, &t);
+	msg_target_of(index, &t);
 	ui_open_actions(&t);
 }
 
@@ -589,9 +799,17 @@ static const ui_scr_def_t messages_screen = {
 
 enum { MV_REPLY_OK, MV_REPLY_WAY, MV_CALL, MV_DELETE, MV_COUNT };
 
+static bool message_aprs(void) { return (ui_frame()->arg & MSG_APRS_ARG) != 0; }
+static uint8_t message_aprs_index(void) { return (uint8_t)(ui_frame()->arg & ~MSG_APRS_ARG); }
+
 static void msg_enter(void)
 {
-	ui_svc_msg_read(ui_frame()->arg);
+	if (message_aprs()) {
+		aprs_msg_t m;
+		(void)ui_svc_aprs_msg(message_aprs_index(), &m, true);
+	} else {
+		ui_svc_msg_read(ui_frame()->arg);
+	}
 }
 
 static uint16_t msg_count(void) { return MV_COUNT; }
@@ -601,24 +819,38 @@ static void msg_item(uint16_t i, ui_item_t *it)
 	static const char *const names[] = { TRN("Reply \"OK\""), TRN("Reply \"On my way\""), TRN("Call"),
 					     TRN("Delete") };
 	str_copy(it->label, sizeof it->label, tr(names[i]));
-	if (i <= MV_REPLY_WAY && !(feats() & UI_FEAT_SMS))
+	if (i <= MV_REPLY_WAY && !message_aprs() && !(feats() & UI_FEAT_SMS))
+		it->flags |= UI_ITEM_DIM;
+	if (i == MV_CALL && message_aprs())
 		it->flags |= UI_ITEM_DIM;
 }
 
 static void msg_select(uint16_t i, bool hold)
 {
 	(void)hold;
-	msg_target_of(ui_frame()->arg, &ui_target);
+	if (!message_aprs())
+		msg_target_of(ui_frame()->arg, &ui_target);
 	switch (i) {
 	case MV_REPLY_OK:
 	case MV_REPLY_WAY:
-		send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]));
+		if (message_aprs()) {
+			aprs_msg_t m;
+			if (ui_svc_aprs_msg(message_aprs_index(), &m, false)) {
+				str_copy(aprs_to, sizeof aprs_to, m.from);
+				aprs_message_flags = APRS_MSG_ACK;
+				send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]), true);
+			}
+		} else {
+			send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]), false);
+		}
 		break;
 	case MV_CALL:
-		ui_talk(&ui_target, false);
+		if (!message_aprs())
+			ui_talk(&ui_target, false);
 		break;
 	case MV_DELETE:
-		if (ui_svc_msg_delete(ui_frame()->arg)) {
+		if (message_aprs() ? ui_svc_aprs_msg_delete(message_aprs_index()) :
+		    ui_svc_msg_delete(ui_frame()->arg)) {
 			ui_pop();
 			ui_toast(TR("Message deleted"));
 		} else {
@@ -633,8 +865,24 @@ static void msg_select(uint16_t i, bool hold)
 static bool msg_target(uint16_t i, ui_target_t *t)
 {
 	(void)i;
+	if (message_aprs())
+		return false;
 	msg_target_of(ui_frame()->arg, t);
 	return t->id != 0;
+}
+
+static void msg_context(uint16_t i)
+{
+	(void)i;
+	if (message_aprs()) {
+		aprs_msg_t m;
+		if (ui_svc_aprs_msg(message_aprs_index(), &m, false))
+			ui_aprs_compose(m.from);
+	} else {
+		ui_target_t t;
+		msg_target_of(ui_frame()->arg, &t);
+		ui_open_actions(&t);
+	}
 }
 
 static const char *msg_title(void)
@@ -642,21 +890,39 @@ static const char *msg_title(void)
 	static char t[24];
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
-	sb_u32(&b, ui_frame()->arg + 1u, 1);
+	uint16_t row = 0, index;
+	bool aprs;
+	while (msg_row(row, &aprs, &index) &&
+	       (aprs != message_aprs() || index != (ui_frame()->arg & ~MSG_APRS_ARG)))
+		row++;
+	sb_u32(&b, row + 1u, 1);
 	sb_str(&b, TR(" of "));
-	sb_u32(&b, ui_svc_msg_count(), 1);
+	sb_u32(&b, ui_svc_msg_count() + ui_svc_aprs_msg_count(), 1);
 	return t;
 }
 
 static const char *msg_body(void)
 {
-	static char t[UI_MSG_TEXT_MAX + 48];
+	if (message_aprs()) {
+		aprs_msg_t m;
+		if (!ui_svc_aprs_msg(message_aprs_index(), &m, false))
+			return TR("Message deleted");
+		sbuf_t b;
+		sb_init(&b, message_buffer, sizeof message_buffer);
+		sb_str(&b, TR("From "));
+		sb_str(&b, m.from);
+		sb_str(&b, ", ");
+		sb_age_long(&b, ui_st.now_ms - m.ms);
+		sb_chr(&b, '\n');
+		sb_str(&b, m.text);
+		return message_buffer;
+	}
 	ui_msg_t m;
 	if (!ui_svc_msg_get(ui_frame()->arg, &m))
 		return TR("Message deleted");
 	// "From Joe Smith, 2m ago" (the ID where there is no name; # gives the station's actions), then the text
 	sbuf_t b;
-	sb_init(&b, t, sizeof t);
+	sb_init(&b, message_buffer, sizeof message_buffer);
 	sb_str(&b, m.sent ? TR("To ") : TR("From "));
 	if (m.name[0])
 		sb_str(&b, m.name);
@@ -666,12 +932,12 @@ static const char *msg_body(void)
 	sb_age_long(&b, m.age_ms);
 	sb_chr(&b, '\n');
 	sb_str(&b, m.text);
-	return t;
+	return message_buffer;
 }
 
 static const ui_scr_def_t message_screen = {
 	.name = "message", .flags = SF_LIST | SF_FIELD, .prefix = TRN("Message"), .hint = TRN("OK choose  # more  Back"),
-	.count = msg_count, .item = msg_item, .select = msg_select, .context = msgs_context, .target = msg_target,
+	.count = msg_count, .item = msg_item, .select = msg_select, .context = msg_context, .target = msg_target,
 	.title = msg_title, .body = msg_body, .enter = msg_enter,
 };
 
@@ -771,7 +1037,7 @@ static void zones_new(void);
 
 static bool chans_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
-	static zone_t z;
+	char name[CODEPLUG_NAME_LEN + 1];
 	if (chans_is_vfo(raw)) {
 		strncpy(buf, "VFO", len);
 		return true;
@@ -780,10 +1046,9 @@ static bool chans_raw_label(uint16_t raw, char *buf, uint8_t len)
 		str_copy(buf, len, TR("Create New Zone"));
 		return true;
 	}
-	if (!codeplug_zone((uint16_t)(raw - CH_VFO), &z))
+	if (!codeplug_zone_name((uint16_t)(raw - CH_VFO), name))
 		return false;
-	strncpy(buf, z.name, len - 1);
-	buf[len - 1] = 0;
+	str_copy(buf, len, name);
 	return true;
 }
 
@@ -898,7 +1163,7 @@ static const ui_scr_def_t channels_screen = {
 	.enter = chans_enter, .raw_count = chans_raw_count, .raw_label = chans_raw_label,
 };
 
-// A channel row's value: its RX frequency and what it talks to, the talkgroup on DMR ("TG3113", "ID3101234" for a
+// A channel row's value: its RX frequency and what it talks to, the talkgroup on DMR ("TG3113", "ID9991234" for a
 // private contact) or "FM". The whole name comes first; where both don't fit beside it, the frequency and the bare
 // number, then the talkgroup alone (text alternates)
 static void sb_channel_row(sbuf_t *b, const channel_t *ch)
@@ -1007,7 +1272,7 @@ static const char *zone_edit_row(uint16_t raw)
 
 static bool zone_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
-	static channel_t ch;
+	char name[CODEPLUG_NAME_LEN + 1];
 	const zone_t *z = zone_of_frame();
 	sbuf_t b;
 	sb_init(&b, buf, len);
@@ -1018,11 +1283,11 @@ static bool zone_raw_label(uint16_t raw, char *buf, uint8_t len)
 	}
 #endif
 	uint16_t pos = (uint16_t)(raw - ZE_ADD);
-	if (pos >= z->count || !codeplug_channel(z->channels[pos], &ch))
+	if (pos >= z->count || !codeplug_channel_name(z->channels[pos], name))
 		return false;
 	sb_u32(&b, pos + 1u, 1);
 	sb_chr(&b, ' ');
-	sb_str(&b, ch.name);
+	sb_str(&b, name);
 	return true;
 }
 
@@ -1250,6 +1515,18 @@ static bool share_raw_label(uint16_t raw, char *buf, uint8_t len)
 	return true;
 }
 
+static void share_raw_each(ui_raw_fn fn, void *ctx, bool labels)
+{
+	(void)labels;
+	if (!contacts_rows(0, fn, ctx, true))
+		return;
+	char label[40];
+	for (uint16_t raw = SHARE_TYPED; raw < share_raw_count(); raw++) {
+		if (!fn(raw, share_raw_label(raw, label, sizeof label) ? label : NULL, ctx))
+			return;
+	}
+}
+
 static bool share_target(uint16_t i, ui_target_t *t)
 {
 	if (i >= ui_filter_count())
@@ -1336,7 +1613,7 @@ static const ui_scr_def_t share_to_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "0-9 find or ID  OK send  Back" TEXT_ALT_NEXT "0-9 find or ID  OK send" TEXT_ALT_CLOSE),
 	.empty = TRN("No contacts: type an ID"),
 	.count = ui_filter_count, .item = share_to_item, .select = share_to_select,
-	.raw_count = share_raw_count, .raw_label = share_raw_label,
+	.raw_count = share_raw_count, .raw_label = share_raw_label, .raw_each = share_raw_each,
 };
 
 // --- An offer from another radio ---
@@ -1407,7 +1684,7 @@ static void offer_select(uint16_t i, bool hold)
 	}
 }
 
-// "Zone Club, 24 channels, from Joe 3101234" and how many can't be received here
+// "Zone Club, 24 channels, from Joe 9991234" and how many can't be received here
 static const char *offer_body(void)
 {
 	static char body[96];
@@ -1582,6 +1859,223 @@ uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint3
 }
 #endif
 
+#if CONFIG_CHANNEL_EDIT || CONFIG_APRS || CONFIG_DMR_SMS
+// ======================= Text entry: keypad letters (ui.md 2.1) =======================
+// Phone keypad: in ABC / abc, 2-9 cycle their letters, the digit, then the letters in the other case (ABC: A B C 2 a b
+// c); 1 cycles punctuation and 0 a space, 0 and a few signs. The same key within 1 s takes the next one, another key
+// or the pause moves on. In 123 a digit types itself, as a held digit does
+// in any mode. # cycles ABC -> 123 -> abc. BACK deletes the last character and leaves once the field is empty, without
+// a change (the phone convention; the one exception to P4, principles 4); * or Left delete too. OK keeps. Without a
+// keypad Up / Down step the last character (down past the space deletes it), OK adds one and long OK keeps
+
+#define TEXT_MULTI_MS	1000u
+
+static char *text_target;
+static void (*text_done)(void);		// called once the text is kept (NULL: none)
+static uint8_t text_max;
+static char text_name_buf[CODEPLUG_NAME_LEN + 1];
+static char *text_buf;
+static uint8_t text_len;
+static int8_t text_key = -1;		// the key that typed the last character, -1 = none to cycle
+static uint8_t text_idx;
+static uint32_t text_ms;
+enum { TEXT_UPPER, TEXT_DIGITS, TEXT_LOWER, TEXT_MODES };	// the order # cycles through
+static uint8_t text_mode;
+
+static void text_open(char *target, uint8_t max, uint8_t screen)
+{
+	text_target = target;
+	text_done = NULL;
+	text_buf = screen == SCR_MESSAGE_TEXT ? message_buffer : text_name_buf;
+	text_max = screen == SCR_MESSAGE_TEXT ? max :
+		(max < CODEPLUG_NAME_LEN ? max : CODEPLUG_NAME_LEN);
+	ui_push(screen, 0);
+}
+
+#if CONFIG_DMR_SMS || CONFIG_APRS
+static void message_text_kept(void)
+{
+	if (message_buffer[0] != '\0')
+		send_text(message_buffer, compose_aprs());
+}
+
+static void ui_text_open_message(bool aprs)
+{
+	message_buffer[0] = '\0';
+	text_open(message_buffer, aprs ? APRS_MSG_TEXT_MAX : UI_MSG_TEXT_MAX, SCR_MESSAGE_TEXT);
+	text_done = message_text_kept;
+}
+#endif
+
+#if CONFIG_CHANNEL_EDIT
+static void ui_text_open(char *target, uint8_t max) { text_open(target, max, SCR_TEXT); }
+#endif
+#if CONFIG_APRS
+static void ui_text_open_to(char *target, uint8_t max) { text_open(target, max, SCR_APRS_TO); }
+#endif
+
+static void text_enter(void)
+{
+	if (text_buf != text_target)
+		strncpy(text_buf, text_target, text_max);
+	text_buf[text_max] = 0;
+	text_len = (uint8_t)strlen(text_buf);
+	text_key = -1;
+	text_mode = TEXT_UPPER;
+}
+
+static uint16_t text_count(void) { return 1; }
+
+static void text_item(uint16_t i, ui_item_t *it)
+{
+	(void)i;
+	sbuf_t b;
+	sb_init(&b, it->label, sizeof it->label);
+	sb_str(&b, text_len >= sizeof it->label ? text_buf + text_len - sizeof it->label + 2u : text_buf);
+	sb_chr(&b, '_');	// the cursor; the mode is in the title
+}
+
+static char text_case(char c)
+{
+	return text_mode == TEXT_LOWER && c >= 'A' && c <= 'Z' ? (char)(c - 'A' + 'a') : c;
+}
+
+// The keys with letters cycle letters, digit, then the letters again in the other case; the others their set as is
+static uint8_t text_cycle_len(const char *set)
+{
+	uint8_t n = (uint8_t)strlen(set);
+	return set[0] >= 'A' && set[0] <= 'Z' ? (uint8_t)(2u * n - 1u) : n;
+}
+
+static char text_char(const char *set, uint8_t idx)
+{
+	uint8_t n = (uint8_t)strlen(set);
+	if (!(set[0] >= 'A' && set[0] <= 'Z'))
+		return set[idx];
+	if (idx < n)
+		return idx == n - 1u ? set[idx] : text_case(set[idx]);	// the letters in the mode's case, then the digit
+	char c = set[idx - n];
+	return text_mode == TEXT_LOWER ? c : (char)(c - 'A' + 'a');	// then the other case
+}
+
+static void text_append(char c)
+{
+	if (text_len >= text_max) {
+		ui_toast(TR("That's the most it can hold"));
+		return;
+	}
+	text_buf[text_len++] = c;
+	text_buf[text_len] = 0;
+}
+
+static bool text_key_fn(const input_event_t *ev)
+{
+	// A key's characters within the timing window: its letters, its digit, its letters in the other case (text_char)
+	static const char *const keys[10] = { " 0+#*", ".-/,'&()@_!?1", "ABC2", "DEF3", "GHI4", "JKL5", "MNO6", "PQRS7",
+		"TUV8", "WXYZ9" };
+	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
+	uint32_t now = hal_millis();
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press) {
+		int8_t k = (int8_t)(ev->action - ACT_DIGIT_0);
+		const char *set = keys[k];
+		if (text_mode == TEXT_DIGITS || ev->gesture == GESTURE_LONG) {
+			text_append((char)('0' + k));	// 123, or a held digit: the digit itself
+			text_key = -1;
+		} else if (k == text_key && text_len > 0 && now - text_ms < TEXT_MULTI_MS) {
+			text_idx = (uint8_t)((text_idx + 1u) % text_cycle_len(set));
+			text_buf[text_len - 1] = text_char(set, text_idx);
+			text_key = k;
+		} else {
+			text_idx = 0;
+			text_append(text_char(set, 0));
+			text_key = k;
+		}
+		text_ms = now;
+		ui_dirty();
+		return true;
+	}
+	int dir = ev->action == ACT_NAV_UP ? 1 : ev->action == ACT_NAV_DOWN ? -1 :
+		ev->action == ACT_ENC_STEP ? (ev->value > 0 ? 1 : -1) : 0;
+	if (dir != 0 && ev->gesture != GESTURE_UP) {
+		// Step the last character through the printable ones (the way in without a keypad); down past the space
+		// deletes it
+		if (text_len == 0)
+			text_append('A');
+		else if (dir < 0 && text_buf[text_len - 1] == ' ')
+			text_buf[--text_len] = 0;
+		else
+			text_buf[text_len - 1] = (char)(' ' + (text_buf[text_len - 1] - ' ' + dir + 95) % 95);
+		text_key = -1;
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_CONTEXT && ev->gesture == GESTURE_PRESS) {
+		text_mode = (uint8_t)((text_mode + 1u) % TEXT_MODES);
+		text_key = -1;	// the next key starts a new character
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS && text_len == 0) {
+		ui_pop();	// an empty field: BACK leaves, the name as it was
+		return true;
+	}
+	if (((ev->action == ACT_BACK || ev->action == ACT_NAV_LEFT) && ev->gesture == GESTURE_PRESS) ||
+			(ev->action == ACT_QUICK && press)) {	// a slow * deletes too (it doesn't lock here)
+		if (text_len > 0)
+			text_buf[--text_len] = 0;
+		text_key = -1;
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_SELECT && press) {
+		if (!(board.caps & CAP_KEYPAD) && ev->gesture == GESTURE_PRESS) {
+			text_append(text_len > 0 ? text_buf[text_len - 1] : 'A');	// the next character, started as this one
+		} else {
+			if (text_target != text_buf)
+				strcpy(text_target, text_buf);
+			ui_pop();
+			if (text_done != NULL)
+				text_done();
+		}
+		ui_dirty();
+		return true;
+	}
+	return false;
+}
+
+// The title carries the mode, so it shows however long the name is: "Name Â· ABC"
+static const char *text_title(void)
+{
+	static const char *const modes[TEXT_MODES] = { "ABC", "123", "abc" };
+	return modes[text_mode];
+}
+
+#if CONFIG_CHANNEL_EDIT
+static const ui_scr_def_t text_screen = {
+	.name = "text", .flags = SF_LIST, .prefix = TRN("Name"), .title = text_title,
+	.hint = TRN(TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
+	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
+};
+#endif
+
+#if CONFIG_APRS
+static const ui_scr_def_t aprs_to_screen = {
+	.name = "aprs-to", .flags = SF_LIST, .prefix = TRN("Callsign"), .title = text_title,
+	.hint = TRN(TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
+	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
+};
+#endif
+
+#if CONFIG_DMR_SMS || CONFIG_APRS
+static const ui_scr_def_t message_text_screen = {
+	.name = "message-text", .flags = SF_LIST, .prefix = TRN("Message"), .title = text_title,
+	.hint = TRN(TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK send" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
+	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
+};
+#endif
+
+#endif
+
 #if CONFIG_CHANNEL_LIST
 // ======================= Channels: every codeplug channel by number (hub 5) =======================
 // The raw row is the channel number - 1 (with CONFIG_CHANNEL_EDIT, raw 0 is "New from current" and the raw
@@ -1612,29 +2106,76 @@ static uint16_t chlist_raw_count(void)
 	return (uint16_t)(codeplug_channel_count() + CHLIST_NEW);
 }
 
-static bool chlist_raw_label(uint16_t raw, char *buf, uint8_t len)
+// A channel row's label, "12 Name": a search finds it by number and name
+static void ch_label(uint16_t num, const char *name, char *buf, uint8_t len)
 {
-	static channel_t ch;
 	sbuf_t b;
 	sb_init(&b, buf, len);
+	sb_u32(&b, num, 1);
+	sb_chr(&b, ' ');
+	sb_str(&b, name);
+}
+
+static bool chlist_raw_label(uint16_t raw, char *buf, uint8_t len)
+{
+	char name[CODEPLUG_NAME_LEN + 1];
 	if (CHLIST_NEW && raw == 0) {
-		sb_str(&b, TR("New from current"));
+		str_copy(buf, len, TR("New from current"));
 		return true;
 	}
-	if (!codeplug_channel(CHLIST_NUM(raw), &ch))
+	if (!codeplug_channel_name(CHLIST_NUM(raw), name))
 		return false;
-	sb_u32(&b, CHLIST_NUM(raw), 1);
-	sb_chr(&b, ' ');
-	sb_str(&b, ch.name);
+	ch_label(CHLIST_NUM(raw), name, buf, len);
 	return true;
+}
+
+// Every channel as raw rows, raw = number - 1 + first (raw_each): one pass of block reads of the names
+// (codeplug_channel_names_each). The channels in skip have no row
+typedef struct {
+	ui_raw_fn fn;
+	void *ctx;
+	uint16_t first;
+	const zone_t *skip;
+} ch_rows_t;
+
+static bool ch_row(uint16_t num, const char *name, void *p)
+{
+	const ch_rows_t *r = p;
+	char label[40];
+	if (name != NULL && r->skip != NULL && zone_list_find(r->skip, num) >= 0)
+		name = NULL;
+	if (name != NULL)
+		ch_label(num, name, label, sizeof label);
+	return r->fn((uint16_t)(r->first + num - 1u), name != NULL ? label : NULL, r->ctx);
+}
+
+static void ch_rows(uint16_t first, const zone_t *skip, ui_raw_fn fn, void *ctx, bool labels)
+{
+	ch_rows_t r = { .fn = fn, .ctx = ctx, .first = first, .skip = skip };
+	codeplug_channel_names_each(ch_row, &r, labels);
+}
+
+static bool chlist_raw_used(uint16_t raw)
+{
+	return (CHLIST_NEW && raw == 0) || codeplug_channel_used(CHLIST_NUM(raw));
+}
+
+static void chlist_raw_each(ui_raw_fn fn, void *ctx, bool labels)
+{
+	if (CHLIST_NEW && !fn(0, TR("New from current"), ctx))
+		return;
+	ch_rows(CHLIST_NEW, NULL, fn, ctx, labels);
 }
 
 static void chlist_enter(void)
 {
 	uint16_t cur = chlist_current();
-	for (uint16_t i = 0; cur != 0 && i < ui_filter_count(); i++)
-		if (CHLIST_NUM(ui_filter_raw(i)) == cur)
+	for (uint16_t i = 0; cur != 0 && i < ui_filter_count(); i++) {
+		if (CHLIST_NUM(ui_filter_raw(i)) == cur) {
 			ui_frame()->focus = i;
+			break;
+		}
+	}
 }
 
 static void chlist_item(uint16_t i, ui_item_t *it)
@@ -1647,11 +2188,8 @@ static void chlist_item(uint16_t i, ui_item_t *it)
 	uint16_t num = CHLIST_NUM(ui_filter_raw(i));
 	if (!codeplug_channel(num, &ch))
 		return;
+	ch_label(num, ch.name, it->label, sizeof it->label);
 	sbuf_t b;
-	sb_init(&b, it->label, sizeof it->label);
-	sb_u32(&b, num, 1);
-	sb_chr(&b, ' ');
-	sb_str(&b, ch.name);
 	sb_init(&b, it->value, sizeof it->value);
 	sb_channel_row(&b, &ch);
 	if (num == chlist_current())
@@ -1715,7 +2253,8 @@ static const ui_scr_def_t chlist_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "OK details  # go  0-9 find" TEXT_ALT_NEXT "OK details  # go" TEXT_ALT_CLOSE),
 	.empty = TRN("No channels"),
 	.count = ui_filter_count, .item = chlist_item, .select = chlist_select, .context = chlist_context,
-	.enter = chlist_enter, .raw_count = chlist_raw_count, .raw_label = chlist_raw_label,
+	.enter = chlist_enter, .raw_count = chlist_raw_count, .raw_label = chlist_raw_label, .raw_each = chlist_raw_each,
+	.raw_used = chlist_raw_used,
 };
 
 // ======================= One channel's settings, edited in place (ui.md 2.1) =======================
@@ -1943,9 +2482,9 @@ static void sb_onoff(sbuf_t *b, bool on)
 	sb_str(b, on ? TR("On") : TR("Off"));
 }
 
-static void sb_ced_power(sbuf_t *b, int32_t level)
+static void sb_ced_power(sbuf_t *b, int32_t level, uint32_t tx_hz)
 {
-	sb_str(b, level < 0 || level >= board.power_count ? TR("Radio's") : ui_power_name((uint8_t)level));
+	sb_str(b, level < 0 || level >= board.power_count ? TR("Radio's") : ui_power_name((uint8_t)level, tx_hz));
 }
 
 static void sb_ced_tot(sbuf_t *b, int32_t s)
@@ -2035,11 +2574,11 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 	case CE_POWER:
 #if CONFIG_CHANNEL_EDIT
 		if (editing) {
-			sb_ced_power(&b, ced_val);
+			sb_ced_power(&b, ced_val, ch->tx_hz);
 			break;
 		}
 #endif
-		sb_ced_power(&b, ch->power == CODEPLUG_POWER_DEFAULT ? -1 : ch->power);
+		sb_ced_power(&b, ch->power == CODEPLUG_POWER_DEFAULT ? -1 : ch->power, ch->tx_hz);
 		break;
 	case CE_RX_ONLY:
 		sb_str(&b, ch->rx_only ? TR("Yes") : TR("No"));
@@ -2530,176 +3069,6 @@ static const ui_scr_def_t discard_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "OK choose  Back keep editing" TEXT_ALT_NEXT "OK choose  Back" TEXT_ALT_CLOSE),
 	.count = discard_count, .item = discard_item, .select = discard_select, .body = discard_body,
 };
-
-// ======================= Text entry: keypad letters (ui.md 2.1) =======================
-// Phone keypad: in ABC / abc, 2-9 cycle their letters, the digit, then the letters in the other case (ABC: A B C 2 a b
-// c); 1 cycles punctuation and 0 a space, 0 and a few signs. The same key within 1 s takes the next one, another key
-// or the pause moves on. In 123 a digit types itself, as a held digit does
-// in any mode. # cycles ABC -> 123 -> abc. BACK deletes the last character and leaves once the field is empty, without
-// a change (the phone convention; the one exception to P4, principles 4); * or Left delete too. OK keeps. Without a
-// keypad Up / Down step the last character (down past the space deletes it), OK adds one and long OK keeps
-
-#define TEXT_MULTI_MS	1000u
-
-static char *text_target;
-static void (*text_done)(void);		// called once the text is kept (NULL: none)
-static uint8_t text_max;
-static char text_buf[CODEPLUG_NAME_LEN + 1];
-static uint8_t text_len;
-static int8_t text_key = -1;		// the key that typed the last character, -1 = none to cycle
-static uint8_t text_idx;
-static uint32_t text_ms;
-enum { TEXT_UPPER, TEXT_DIGITS, TEXT_LOWER, TEXT_MODES };	// the order # cycles through
-static uint8_t text_mode;
-
-static void ui_text_open(char *target, uint8_t max)
-{
-	text_target = target;
-	text_done = NULL;
-	text_max = max < CODEPLUG_NAME_LEN ? max : CODEPLUG_NAME_LEN;
-	ui_push(SCR_TEXT, 0);
-}
-
-static void text_enter(void)
-{
-	strncpy(text_buf, text_target, text_max);
-	text_buf[text_max] = 0;
-	text_len = (uint8_t)strlen(text_buf);
-	text_key = -1;
-	text_mode = TEXT_UPPER;
-}
-
-static uint16_t text_count(void) { return 1; }
-
-static void text_item(uint16_t i, ui_item_t *it)
-{
-	(void)i;
-	sbuf_t b;
-	sb_init(&b, it->label, sizeof it->label);
-	sb_str(&b, text_buf);
-	sb_chr(&b, '_');	// the cursor; the mode is in the title
-}
-
-static char text_case(char c)
-{
-	return text_mode == TEXT_LOWER && c >= 'A' && c <= 'Z' ? (char)(c - 'A' + 'a') : c;
-}
-
-// The keys with letters cycle letters, digit, then the letters again in the other case; the others their set as is
-static uint8_t text_cycle_len(const char *set)
-{
-	uint8_t n = (uint8_t)strlen(set);
-	return set[0] >= 'A' && set[0] <= 'Z' ? (uint8_t)(2u * n - 1u) : n;
-}
-
-static char text_char(const char *set, uint8_t idx)
-{
-	uint8_t n = (uint8_t)strlen(set);
-	if (!(set[0] >= 'A' && set[0] <= 'Z'))
-		return set[idx];
-	if (idx < n)
-		return idx == n - 1u ? set[idx] : text_case(set[idx]);	// the letters in the mode's case, then the digit
-	char c = set[idx - n];
-	return text_mode == TEXT_LOWER ? c : (char)(c - 'A' + 'a');	// then the other case
-}
-
-static void text_append(char c)
-{
-	if (text_len >= text_max) {
-		ui_toast(TR("That's the most it can hold"));
-		return;
-	}
-	text_buf[text_len++] = c;
-	text_buf[text_len] = 0;
-}
-
-static bool text_key_fn(const input_event_t *ev)
-{
-	// A key's characters within the timing window: its letters, its digit, its letters in the other case (text_char)
-	static const char *const keys[10] = { " 0+#*", ".-/,'&()@_!?1", "ABC2", "DEF3", "GHI4", "JKL5", "MNO6", "PQRS7",
-		"TUV8", "WXYZ9" };
-	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
-	uint32_t now = hal_millis();
-	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press) {
-		int8_t k = (int8_t)(ev->action - ACT_DIGIT_0);
-		const char *set = keys[k];
-		if (text_mode == TEXT_DIGITS || ev->gesture == GESTURE_LONG) {
-			text_append((char)('0' + k));	// 123, or a held digit: the digit itself
-			text_key = -1;
-		} else if (k == text_key && text_len > 0 && now - text_ms < TEXT_MULTI_MS) {
-			text_idx = (uint8_t)((text_idx + 1u) % text_cycle_len(set));
-			text_buf[text_len - 1] = text_char(set, text_idx);
-			text_key = k;
-		} else {
-			text_idx = 0;
-			text_append(text_char(set, 0));
-			text_key = k;
-		}
-		text_ms = now;
-		ui_dirty();
-		return true;
-	}
-	int dir = ev->action == ACT_NAV_UP ? 1 : ev->action == ACT_NAV_DOWN ? -1 :
-		ev->action == ACT_ENC_STEP ? (ev->value > 0 ? 1 : -1) : 0;
-	if (dir != 0 && ev->gesture != GESTURE_UP) {
-		// Step the last character through the printable ones (the way in without a keypad); down past the space
-		// deletes it
-		if (text_len == 0)
-			text_append('A');
-		else if (dir < 0 && text_buf[text_len - 1] == ' ')
-			text_buf[--text_len] = 0;
-		else
-			text_buf[text_len - 1] = (char)(' ' + (text_buf[text_len - 1] - ' ' + dir + 95) % 95);
-		text_key = -1;
-		ui_dirty();
-		return true;
-	}
-	if (ev->action == ACT_CONTEXT && ev->gesture == GESTURE_PRESS) {
-		text_mode = (uint8_t)((text_mode + 1u) % TEXT_MODES);
-		text_key = -1;	// the next key starts a new character
-		ui_dirty();
-		return true;
-	}
-	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS && text_len == 0) {
-		ui_pop();	// an empty field: BACK leaves, the name as it was
-		return true;
-	}
-	if (((ev->action == ACT_BACK || ev->action == ACT_NAV_LEFT) && ev->gesture == GESTURE_PRESS) ||
-			(ev->action == ACT_QUICK && press)) {	// a slow * deletes too (it doesn't lock here)
-		if (text_len > 0)
-			text_buf[--text_len] = 0;
-		text_key = -1;
-		ui_dirty();
-		return true;
-	}
-	if (ev->action == ACT_SELECT && press) {
-		if (!(board.caps & CAP_KEYPAD) && ev->gesture == GESTURE_PRESS) {
-			text_append(text_len > 0 ? text_buf[text_len - 1] : 'A');	// the next character, started as this one
-		} else {
-			strcpy(text_target, text_buf);
-			ui_pop();
-			if (text_done != NULL)
-				text_done();
-		}
-		ui_dirty();
-		return true;
-	}
-	return false;
-}
-
-// The title carries the mode, so it shows however long the name is: "Name · ABC"
-static const char *text_title(void)
-{
-	static const char *const modes[TEXT_MODES] = { "ABC", "123", "abc" };
-	return modes[text_mode];
-}
-
-static const ui_scr_def_t text_screen = {
-	.name = "text", .flags = SF_LIST, .prefix = TRN("Name"), .title = text_title,
-	.hint = TRN(TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
-	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
-};
-
 #if CONFIG_CONTACT_EDIT
 // ======================= The contact editor (ui.md 2.4) =======================
 // A new contact: from Find's "Create contact" on a typed number, or a station's actions (Save as contact). Name (text
@@ -2728,7 +3097,7 @@ void ui_new_contact(const ui_target_t *t)
 	} else if (t->id != 0) {
 		if (t->group)
 			sb_str(&b, "TG ");
-		sb_u32(&b, t->id, 1);	// "TG 3100", "3101234": a name to save with, or to type over
+		sb_u32(&b, t->id, 1);	// "TG 3100", "9991234": a name to save with, or to type over
 	}
 	ct_edit = CT_NONE;
 	ui_push(SCR_CONTACT_EDIT, 0);
@@ -2773,6 +3142,28 @@ static void ct_item(uint16_t i, ui_item_t *it)
 	}
 }
 
+typedef struct {
+	bool group, dup_found;
+	uint16_t free;		// the first empty slot, 0 for none
+	contact_t *dup;
+} ct_scan_t;
+
+static bool ct_scan(uint16_t index, const contact_t *c, void *ctx)
+{
+	ct_scan_t *sc = ctx;
+	if (c == NULL) {
+		if (sc->free == 0)
+			sc->free = index;
+		return true;
+	}
+	if (c->id == ct.id && (c->type != CONTACT_PRIVATE) == sc->group) {
+		*sc->dup = *c;
+		sc->dup_found = true;
+		return false;
+	}
+	return true;
+}
+
 // The first problem that keeps the contact from being saved, as a toast; NULL when it can be saved. *slot: a free
 // contact index. Reads every contact (the duplicate and the free slot)
 static const char *ct_problem(uint16_t *slot)
@@ -2787,21 +3178,18 @@ static const char *ct_problem(uint16_t *slot)
 		return TR("Private IDs go up to 16776415");
 	if (group && ct.id > CT_GROUP_MAX)
 		return TR("Talkgroups go up to 16777214");
-	*slot = 0;
-	for (uint16_t i = 1; i <= CODEPLUG_CONTACTS_MAX; i++) {
-		if (!codeplug_contact(i, &c)) {
-			if (*slot == 0)
-				*slot = i;
-			continue;
-		}
-		if (c.id == ct.id && (c.type != CONTACT_PRIVATE) == group) {
-			sbuf_t b;
-			sb_init(&b, toast_msg, sizeof toast_msg);
-			sb_str(&b, TR("Already a contact: "));
-			sb_str(&b, c.name);
-			return toast_msg;
-		}
+	ct_scan_t sc = { .group = group, .dup = &c };
+	bool read = codeplug_contacts_each(ct_scan, &sc);
+	*slot = sc.free;
+	if (sc.dup_found) {
+		sbuf_t b;
+		sb_init(&b, toast_msg, sizeof toast_msg);
+		sb_str(&b, TR("Already a contact: "));
+		sb_str(&b, c.name);
+		return toast_msg;
 	}
+	if (!read)
+		return TR("Couldn't save now: try again");	// the duplicate may be in a block not read
 	return *slot == 0 ? TR("No room for more contacts") : NULL;
 }
 
@@ -3041,28 +3429,38 @@ static uint16_t zpick_raw_count(void)
 	return codeplug_channel_count();
 }
 
-static channel_t zpick_ch;	// the channel zpick_raw_label read last
-
 static bool zpick_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
 	uint16_t num = (uint16_t)(raw + 1u);
-	if (zone_list_find(&ze_z, num) >= 0 || !codeplug_channel(num, &zpick_ch))
+	char name[CODEPLUG_NAME_LEN + 1];
+	if (zone_list_find(&ze_z, num) >= 0 || !codeplug_channel_name(num, name))
 		return false;
-	sbuf_t b;
-	sb_init(&b, buf, len);
-	sb_u32(&b, num, 1);
-	sb_chr(&b, ' ');
-	sb_str(&b, zpick_ch.name);
+	ch_label(num, name, buf, len);
 	return true;
+}
+
+static bool zpick_raw_used(uint16_t raw)
+{
+	uint16_t num = (uint16_t)(raw + 1u);
+	return zone_list_find(&ze_z, num) < 0 && codeplug_channel_used(num);
+}
+
+static void zpick_raw_each(ui_raw_fn fn, void *ctx, bool labels)
+{
+	ze_read();
+	ch_rows(0, &ze_z, fn, ctx, labels);
 }
 
 static void zpick_item(uint16_t i, ui_item_t *it)
 {
-	if (!zpick_raw_label(ui_filter_raw(i), it->label, sizeof it->label))
+	static channel_t ch;
+	uint16_t num = (uint16_t)(ui_filter_raw(i) + 1u);
+	if (!codeplug_channel(num, &ch))
 		return;
+	ch_label(num, ch.name, it->label, sizeof it->label);
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
-	sb_channel_row(&b, &zpick_ch);
+	sb_channel_row(&b, &ch);
 }
 
 static void zpick_select(uint16_t i, bool hold)
@@ -3091,7 +3489,8 @@ static const ui_scr_def_t zpick_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "OK add  0-9 find  Back" TEXT_ALT_NEXT "OK add  Back" TEXT_ALT_CLOSE),
 	.empty = TRN("Every channel is in it"),
 	.count = ui_filter_count, .item = zpick_item, .select = zpick_select,
-	.raw_count = zpick_raw_count, .raw_label = zpick_raw_label,
+	.raw_count = zpick_raw_count, .raw_label = zpick_raw_label, .raw_each = zpick_raw_each,
+	.raw_used = zpick_raw_used,
 };
 
 // --- The channel editor's Zones: every zone, and whether the channel is in it; OK puts it in or takes it out ---
@@ -3331,6 +3730,21 @@ static bool chpick_raw_label(uint16_t raw, char *buf, uint8_t len)
 	return true;
 }
 
+static void chpick_raw_each(ui_raw_fn fn, void *ctx, bool labels)
+{
+	(void)labels;
+	if (ui_frame()->arg == 0) {
+		if (fn(0, TR("None"), ctx))
+			contacts_rows(1, fn, ctx, false);	// raw = contact number
+		return;
+	}
+	char label[40];
+	for (uint16_t raw = 0; raw < chpick_raw_count(); raw++) {	// the RX group lists: few, read one by one
+		if (!fn(raw, chpick_raw_label(raw, label, sizeof label) ? label : NULL, ctx))
+			return;
+	}
+}
+
 static uint16_t chpick_current(void)
 {
 	return ui_frame()->arg == 0 ? ced_ch.contact : ced_ch.listen_list;
@@ -3372,7 +3786,7 @@ static const char *chpick_title(void) { return ui_frame()->arg == 0 ? TR("TX Con
 static const ui_scr_def_t chpick_screen = {
 	.name = "chpick", .flags = SF_LIST | SF_FILTER, .hint = TRN("OK pick  0-9 find  Back"), .empty = TRN("None stored"),
 	.count = ui_filter_count, .item = chpick_item, .select = chpick_select, .title = chpick_title,
-	.enter = chpick_enter, .raw_count = chpick_raw_count, .raw_label = chpick_raw_label,
+	.enter = chpick_enter, .raw_count = chpick_raw_count, .raw_label = chpick_raw_label, .raw_each = chpick_raw_each,
 };
 #endif
 #endif
@@ -4505,11 +4919,13 @@ static void crash_to_select(uint16_t i, bool hold)
 	ui_toast(msg);
 }
 
+static void crash_to_raw_each(ui_raw_fn fn, void *ctx, bool labels) { (void)labels; contacts_rows(0, fn, ctx, true); }
+
 static const ui_scr_def_t crash_to_screen = {
 	.name = "crash_to", .flags = SF_LIST | SF_FILTER, .prefix = TRN("Send To"),
 	.hint = TRN("0-9 find  OK pick  Back"), .empty = TRN("No contacts: add them in qdmr"),
 	.count = ui_filter_count, .item = contacts_item, .select = crash_to_select,
-	.raw_count = contacts_raw_count, .raw_label = contacts_raw_label,
+	.raw_count = contacts_raw_count, .raw_label = contacts_raw_label, .raw_each = crash_to_raw_each,
 };
 #endif
 
@@ -4731,7 +5147,7 @@ static const ui_scr_def_t tools_screen = {
 #if CONFIG_UI_SETTINGS
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
-enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE };
+enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE };
 
 typedef struct {
 	const char *name;
@@ -4752,9 +5168,10 @@ typedef struct {
 	uint8_t count;
 } set_group_t;
 
-static const int16_t v_backlight[] = { 5, 10, 30, 60, 120, 0 };
+static const int16_t v_backlight[] = { 5, 10, 30, 60, 120, -10, -30, -60, -120, 0 };	// < 0: dims, never off
 // Dim after / off after (four times as long): both times shown, so that the dim step isn't taken for the time-out
-static const char *const n_backlight[] = { "5s/20s", "10s/40s", "30s/2m", "1m/4m", "2m/8m", TRN("Never") };
+static const char *const n_backlight[] = { "5s/20s", "10s/40s", "30s/2m", "1m/4m", "2m/8m", TRN("10s/dim"), TRN("30s/dim"),
+	TRN("1m/dim"), TRN("2m/dim"), TRN("Never") };
 #if CONFIG_UI_COLOR
 static const int16_t v_theme[] = { 0, 1, 2 };
 static const char *const n_theme[] = { TRN("Dark"), TRN("Light"), TRN("High contrast") };
@@ -4778,8 +5195,11 @@ static const char *const n_possend[] = { TRN("Off"), TRN("1 min"), TRN("5 min"),
 static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITOR, KEYFN_TALK_TARGET, KEYFN_POWER,
 					 KEYFN_ZONE_UP, KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_KEY_LOCK,
 					 KEYFN_HOME_ZONE,
+#if CONFIG_FM_TX_TONES
+					 KEYFN_TONE_BURST,
+#endif
 #if CONFIG_VFO_FM || CONFIG_VFO_DMR
-					 KEYFN_COPY_VFO,
+					 KEYFN_COPY_VFO, KEYFN_VFO_TOGGLE,
 #endif
 #if CONFIG_DMR
 					 KEYFN_CALL_BACK, KEYFN_TALK_LABEL,
@@ -4791,8 +5211,11 @@ static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITO
 static const char *const n_keyfn_press[] = { TRN("Default"), TRN("Nothing"), TRN("Monitor"), TRN("Talk target"),
 					     TRN("Power level"), TRN("Next zone"), TRN("Previous zone"), TRN("Scan"),
 					     TRN("Key lock"), TRN("Home zone"),
+#if CONFIG_FM_TX_TONES
+					     TRN("Tone burst"),
+#endif
 #if CONFIG_VFO_FM || CONFIG_VFO_DMR
-					     TRN("Copy to VFO"),
+					     TRN("Copy to VFO"), TRN("VFO/Channel"),
 #endif
 #if CONFIG_DMR
 					     TRN("Call back"), TRN("TG name / number"),
@@ -4808,7 +5231,7 @@ static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TA
 #endif
 					KEYFN_KEY_LOCK, KEYFN_HOME_ZONE,
 #if CONFIG_VFO_FM || CONFIG_VFO_DMR
-					KEYFN_COPY_VFO,
+					KEYFN_COPY_VFO, KEYFN_VFO_TOGGLE,
 #endif
 #if CONFIG_DMR
 					KEYFN_CALL_BACK, KEYFN_TALK_LABEL,
@@ -4824,7 +5247,7 @@ static const char *const n_keyfn_hold[] = { TRN("Default"), TRN("Nothing"), TRN(
 #endif
 					    TRN("Key lock"), TRN("Home zone"),
 #if CONFIG_VFO_FM || CONFIG_VFO_DMR
-					    TRN("Copy to VFO"),
+					    TRN("Copy to VFO"), TRN("VFO/Channel"),
 #endif
 #if CONFIG_DMR
 					    TRN("Call back"), TRN("TG name / number"),
@@ -4852,12 +5275,18 @@ static const char *const n_dual_wait[] = { "0.5 s", "1 s", "1.5 s", "2 s", "3 s"
 static const int16_t v_autooff[] = { 0, 30, 60, 120 };
 static const char *const n_autooff[] = { TRN("Off"), TRN("30 min"), "1 h", "2 h" };
 #if CONFIG_DMR_SMS
-static const int16_t v_msgfmt[] = { 2, 1,	// dmr_sms_format_t: ETSI IP text, ETSI short data, Motorola TMS
+static const int16_t v_msgfmt[] = {
+	2, 1,	// dmr_sms_format_t: ETSI IP text, ETSI short data, Motorola TMS
 #if CONFIG_DMR_TMS
-				    0,
+	0,
 #endif
 };
-static const char *const n_msgfmt[] = { "ETSI", TRN("ETSI short"), "Motorola" };
+static const char *const n_msgfmt[] = {
+	"ETSI", TRN("ETSI short"),
+#if CONFIG_DMR_TMS
+	"Motorola",
+#endif
+};
 #endif
 #if CONFIG_DMR_CONTROL_STATION
 static const int16_t v_netlink[] = { 0, 1 };
@@ -4940,8 +5369,12 @@ static const set_item_t s_talk[] = {
 static const set_item_t s_privacy[] = {
 	LIST(TRN("Key type"), "privacy encryption", UI_SET_PRIVACY_TYPE, v_ptype, n_ptype),
 	NUMBER(TRN("Key"), "privacy BP", UI_SET_PRIVACY_KEY, 1, 255, 1, NULL),	// the range follows the type (set_range)
+};
+// The key lock's rules: when it locks by itself and what still works while locked
+static const set_item_t s_lock[] = {
 	LIST(TRN("Auto lock"), "keylock", UI_SET_AUTO_LOCK_S, v_lock, n_lock),
 	TOGGLE(TRN("PTT when locked"), NULL, UI_SET_PTT_LOCKED),
+	TOGGLE(TRN("Knob when locked"), "volume knob key lock", UI_SET_KNOB_WHEN_LOCKED),
 };
 static const set_item_t s_location[] = {
 	TOGGLE("GPS", NULL, UI_SET_GPS),
@@ -5034,6 +5467,8 @@ static const set_item_t s_advanced[] = {
 	NUMBER(TRN("Freq trim"), "frequency offset reference oscillator calibration ppm", UI_SET_REF_TRIM, -REF_TRIM_MAX_PPB,
 	       REF_TRIM_MAX_PPB, REF_TRIM_STEP_PPB, NULL),	// its own page (trim_screen); last: Up from the top
 #endif
+	// Only on radios with hardware options (hal_hwopt.h): last, so the rows above keep their places
+	ACTION("Hardware", "board revision", SA_HARDWARE),
 };
 
 #define GROUP(nm, a)		{ nm, nm, a, sizeof a / sizeof a[0] }
@@ -5041,8 +5476,10 @@ static const set_item_t s_advanced[] = {
 static const set_group_t groups[] = {
 	GROUP(TRN("Sound"), s_sound), GROUP(TRN("Display"), s_display),
 	GROUP_T(TRN("Talk & listen"), TRN("Talk & Listen"), s_talk), GROUP(TRN("Privacy"), s_privacy),
-	GROUP(TRN("Location"), s_location), GROUP(TRN("Connections"), s_connections), GROUP(TRN("Power"), s_power),
-	GROUP(TRN("Keys"), s_keys), GROUP_T(TRN("My radio"), TRN("My Radio"), s_my_radio), GROUP(TRN("Advanced"), s_advanced),
+	GROUP(TRN("Location"), s_location), GROUP(TRN("Connections"), s_connections),
+	GROUP_T(TRN("Power saving"), TRN("Power Saving"), s_power),
+	GROUP(TRN("Keys"), s_keys), GROUP(TRN("Key lock"), s_lock),
+	GROUP_T(TRN("My radio"), TRN("My Radio"), s_my_radio), GROUP(TRN("Advanced"), s_advanced),
 };
 #define GROUPS	(sizeof groups / sizeof groups[0])
 
@@ -5054,6 +5491,8 @@ const char *ui_set_group_name(uint8_t g) { return g < GROUPS ? groups[g].name : 
 // shown disabled
 static bool set_hidden(const set_item_t *s)
 {
+	if (s->type == ST_ACTION && s->id == SA_HARDWARE)
+		return board.hwopts == NULL || board.hwopt_count == 0;
 #if CONFIG_KEY_ASSIGN
 	if (s->type != ST_ACTION && s->id >= UI_SET_KEY_FIRST && s->id <= UI_SET_KEY_LAST) {
 		key_labels();
@@ -5062,6 +5501,8 @@ static bool set_hidden(const set_item_t *s)
 #endif
 	if (s->type != ST_ACTION && s->id == UI_SET_VOLUME)
 		return !(feats() & UI_FEAT_VOLUME);	// a knob sets the volume on the other radios
+	if (s->type != ST_ACTION && s->id == UI_SET_KNOB_WHEN_LOCKED)
+		return !(feats() & UI_FEAT_VOLUME_KNOB);	// only where the MCU reads the knob
 	if (s->type != ST_ACTION && s->id == UI_SET_BCAST_STEP)
 		return !(feats() & UI_FEAT_BCAST);
 	if (s->type != ST_ACTION && s->id == UI_SET_REF_TRIM)
@@ -5198,7 +5639,7 @@ static const char *set_why_not(const set_item_t *s)
 	case UI_SET_TALK_PERMIT:
 		return CONFIG_DMR && CONFIG_BEEP ? NULL : TR("Talk permit tone: not in this build");
 	case UI_SET_MESSAGE_TONE:
-		return feats() & UI_FEAT_SMS ? NULL : TR("Messages: not in this build");
+		return (feats() & UI_FEAT_SMS) || CONFIG_APRS ? NULL : TR("Messages: not in this build");
 	case UI_SET_VIBRATE:
 		return feats() & UI_FEAT_VIBRATE ? NULL : TR("This radio has no vibration motor");
 	case UI_SET_THEME:
@@ -5334,6 +5775,7 @@ static void group_select(uint16_t i, bool hold)
 #if CONFIG_CRASH_SCREEN
 		case SA_CRASH: ui_push(SCR_CRASH, 0); break;
 #endif
+		case SA_HARDWARE: ui_push(SCR_HWOPT, 0); break;
 		default: break;
 		}
 		break;
@@ -5417,6 +5859,72 @@ static const ui_scr_def_t group_screen = {
 	.name = "group", .flags = SF_LIST, .hint = TRN("OK change  Back"),
 	.count = group_count, .item = group_item, .select = group_select, .key = group_key, .enter = group_enter,
 	.title = group_title,
+};
+
+// ======================= Hardware options (hal_hwopt.h) =======================
+// OK steps through an option's choices without storing; holding OK stores the one shown. A choice the board marks
+// "restart" applies from the next start-up. One row at a time shows an unstored choice, kept in the screen's frame
+// argument (no static: RAM is tight on some radios): the row + 1 in the high byte, 0 = none, the choice in the low one.
+// Stepping another row drops it
+
+#define HWOPT_ROWS_MAX		15
+
+static void hwopt_enter(void)
+{
+	ui_frame()->arg = 0;
+}
+
+static uint16_t hwopt_count(void)
+{
+	return board.hwopts != NULL ? (board.hwopt_count < HWOPT_ROWS_MAX ? board.hwopt_count : HWOPT_ROWS_MAX) : 0;
+}
+
+static int8_t hwopt_shown(uint16_t i, int8_t stored)
+{
+	uint16_t p = ui_frame()->arg;
+	return (p >> 8) == i + 1u ? (int8_t)(p & 0xFFu) : stored;
+}
+
+static void hwopt_item(uint16_t i, ui_item_t *it)
+{
+	const hal_hwopt_t *o = &board.hwopts[i];
+	int8_t stored = o->get();
+	int8_t c = hwopt_shown(i, stored);
+	sbuf_t b;
+	sb_init(&b, it->label, sizeof it->label);
+	sb_str(&b, o->name);
+	sb_init(&b, it->value, sizeof it->value);
+	sb_str(&b, c >= 0 && c < o->count ? o->choices[c] : "Not set");
+	if (c != stored)
+		sb_chr(&b, '*');	// shown, not stored yet
+	if (stored == HWOPT_NONE)
+		it->flags |= UI_ITEM_WARN;
+}
+
+static void hwopt_select(uint16_t i, bool hold)
+{
+	const hal_hwopt_t *o = &board.hwopts[i];
+	int8_t stored = o->get();
+	int8_t c = hwopt_shown(i, stored);
+	if (!hold) {
+		ui_frame()->arg = (uint16_t)(((i + 1u) << 8) | (uint8_t)(c < 0 ? 0 : (c + 1) % o->count));
+		return;
+	}
+	if (c < 0) {
+		ui_toast("Press OK to choose first");
+	} else if (c == stored) {
+		ui_toast("Already stored");
+	} else if (!o->set((uint8_t)c)) {
+		ui_toast("Not stored");
+	} else {
+		ui_frame()->arg = 0;
+		ui_toast(o->restart ? "Stored: restart to apply" : "Stored");
+	}
+}
+
+static const ui_scr_def_t hwopt_screen = {
+	.name = "hwopt", .flags = SF_LIST, .prefix = "Hardware", .hint = "OK next  Hold OK store",
+	.count = hwopt_count, .item = hwopt_item, .select = hwopt_select, .enter = hwopt_enter,
 };
 
 // ======================= Confirmation (destructive only, defaults to No; P7) =======================
@@ -5762,12 +6270,19 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_PICKER] = &picker_screen, [SCR_INFO] = &info_screen, [SCR_CONFIRM] = &confirm_screen,
 	[SCR_DIAG] = &diag_screen, [SCR_EMERGENCY] = &emergency_screen, [SCR_SCAN] = &scan_screen,
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
+	[SCR_APRS_STATION] = &ui_aprs_station_screen,
 	[SCR_APRS_POS] = &ui_aprs_pos_screen, [SCR_ABOUT] = &about_screen,
 	[SCR_VOLUME] = &volume_screen, [SCR_LANGUAGE] = &lang_screen,
 	[SCR_DMR_ID] = &dmr_id_screen,
 	[SCR_CP_FOREIGN] = &cpf_screen,
 #if CONFIG_REF_TRIM
 	[SCR_REF_TRIM] = &trim_screen,
+#endif
+#if CONFIG_APRS
+	[SCR_APRS_TO] = &aprs_to_screen,
+#endif
+#if CONFIG_DMR_SMS || CONFIG_APRS
+	[SCR_MESSAGE_TEXT] = &message_text_screen,
 #endif
 #if CONFIG_CHANNEL_LIST
 	[SCR_CHANNELS] = &chlist_screen, [SCR_CHANNEL] = &chinfo_screen,
@@ -5790,6 +6305,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #endif
 #if CONFIG_CRASH_SCREEN
 	[SCR_CRASH] = &crash_screen,
+#endif
+#if CONFIG_UI_SETTINGS
+	[SCR_HWOPT] = &hwopt_screen,
 #endif
 #if CONFIG_CRASH_REPORT && CONFIG_DMR
 	[SCR_CRASH_TO] = &crash_to_screen,

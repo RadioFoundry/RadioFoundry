@@ -3,17 +3,21 @@
 // Talking to a radio that runs RadioFoundry, over its USB serial port (WebSerial): the debug link (docs/spec/debuglink.md:
 // VERSION, INFO_CHIP, READ_MEM) and the open-firmware CPS reads (docs/spec/open-firmware-cps.md 2.1 and 3: area 1 the
 // SPI flash, 5 the MCU flash, 9 the radio info, 10 the flash security registers). Read only, apart from the CPS
-// codeplug writes restore uses (X 1-3), which the radio limits to the codeplug areas.
+// codeplug writes restore uses (X 1-3), which the radio limits to the codeplug areas, and HWOPT SET for a hardware
+// option an install learned (origversion.js).
 
 import { be32, concat, le32, sleep, u16be, u16le, u32le, toHex } from "./bytes.js";
 import { wire, note } from "../diag.js";
+import { serialApi, usbSerialNeeded } from "./usbserial.js";
+
+export { serialApi };
 
 export const RFOUNDRY_USB = { usbVendorId: 0x1FC9, usbProductId: 0x0094 };
 // The same radio as a USB network adapter (CDC-NCM, docs/spec/usb-network.md 1): no serial port, and the OS network
 // driver owns the interfaces, so a page can only see that it is there (WebUSB lists it without claiming it)
 export const RFOUNDRY_NET = { vendorId: 0x1FC9, productId: 0x0096 };
 const SOF1 = 0xA5, SOF2 = 0x5A;
-export const CMD = { PING: 0x01, VERSION: 0x02, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F };
+export const CMD = { PING: 0x01, VERSION: 0x02, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F, HWOPT: 0x21 };
 // The status a command not built in, or with nothing to act on, answers (debuglink.md 2)
 const DL_UNAVAILABLE = 4;
 
@@ -33,11 +37,14 @@ export function browserErrorKey(e) {
 	case "NotAllowedError": return "flash.err.not_allowed";
 	case "NetworkError": return /open serial port/i.test(raw) ? "flash.err.port_busy" : /claim|access denied/i.test(raw) ? "flash.err.usb_busy" : "flash.err.connection_lost";
 	case "BufferOverrunError": case "BreakError": case "FramingError": case "ParityError": return "flash.err.connection_lost";
+	// usbserial.js on a USB-serial chip it has no driver for (CH340, CP210x, PL2303)
+	case "NotSupportedError": return /serial device this page/i.test(raw) ? "flash.err.usb_chip" : null;
 	default: return null;
 	}
 }
 
-export const serialSupported = () => typeof navigator !== "undefined" && "serial" in navigator;
+// Web Serial, or WebUSB standing in for it where Web Serial reaches no USB device (usbserial.js)
+export const serialSupported = () => typeof navigator !== "undefined" && ("serial" in navigator || usbSerialNeeded());
 
 // CRC-16/CCITT-FALSE
 export function crc16(data, crc = 0xFFFF) {
@@ -103,13 +110,13 @@ export class SerialStream {
 	}
 
 	static async request() {
-		const port = await navigator.serial.requestPort({ filters: [RFOUNDRY_USB] });
+		const port = await serialApi().requestPort({ filters: [RFOUNDRY_USB] });
 		return SerialStream.open(port);
 	}
 
 	// Any serial port (USB-serial programming cables on radios without USB)
 	static async requestAny() {
-		return SerialStream.open(await navigator.serial.requestPort());
+		return SerialStream.open(await serialApi().requestPort());
 	}
 
 	// Chrome's default 255 byte buffer stops the USB reads whenever the page is busy for a moment; the radio gives up
@@ -190,6 +197,9 @@ export class SerialStream {
 	}
 }
 
+// Between the tries of a codeplug read, in ms: about 13 s of silence in all before it gives up
+const CPS_RETRY_WAIT = [300, 1000, 2000, 3000];
+
 export class Link {
 	constructor(stream, { timeout = 1500 } = {}) {
 		this.s = stream;
@@ -229,6 +239,19 @@ export class Link {
 
 	async version() {
 		return parseKv(new TextDecoder().decode(await this.request(CMD.VERSION)));
+	}
+
+	// HWOPT LIST (debuglink.md 3.25): [{name, value (-1: none stored), restart, choices}]
+	async hwopts() {
+		const kv = parseKv(new TextDecoder().decode(await this.request(CMD.HWOPT, new Uint8Array([0]))));
+		return Array.from({ length: Number(kv["hwopt.count"] || 0) }, (_, i) => ({
+			name: kv[`hwopt.${i}.name`] || "", value: Number(kv[`hwopt.${i}.value`] ?? -1),
+			restart: kv[`hwopt.${i}.restart`] === "1", choices: (kv[`hwopt.${i}.choices`] || "").split("|") }));
+	}
+
+	// HWOPT SET: store a choice (LinkError status 7 when the radio refuses: transmitting, or the board can't store it)
+	async hwoptSet(option, choice) {
+		await this.request(CMD.HWOPT, new Uint8Array([1, option, choice]));
 	}
 
 	// INFO_CHIP (debuglink.md 3.9), offsets after the status byte
@@ -291,10 +314,11 @@ export class Link {
 	// ---- open-firmware CPS
 
 	// R area addr len: the reply is "R" + length (BE) + data, or "-" when refused. A read changes nothing, so one
-	// that went unanswered or came back short is asked again, after the rest of a broken reply has drained.
-	async cpsRead(area, addr, len, tries = 3) {
+	// that went unanswered or came back short is asked again, after the rest of a broken reply has drained. The waits
+	// grow: a radio busy for a few seconds (a memory chip erase) must not end a minute-long backup halfway
+	async cpsRead(area, addr, len, tries = 5) {
 		for (let i = 0; i < tries; i++) {
-			if (i) await sleep(300);
+			if (i) await sleep(CPS_RETRY_WAIT[Math.min(i, CPS_RETRY_WAIT.length) - 1]);
 			this.s.clear();
 			await this.s.write(concat(new Uint8Array([0x52, area]), be32(addr), new Uint8Array([len >> 8, len & 0xFF])));
 			const got = await this.waitFor((buf) => {
@@ -304,7 +328,11 @@ export class Link {
 			});
 			this.s.clear();
 			wire(`R ${area} 0x${addr.toString(16)} ${len}: ${got === undefined ? "no answer" : got === null ? "refused" : `${got.length} bytes`}`);
-			if (got !== undefined) return got;	// null: refused (out of range, not offered)
+			if (got !== undefined) {
+				// a radio that went quiet and came back: the trail keeps it, for the report of a later failure
+				if (i) note("codeplug read answered after retries", { addr: `0x${addr.toString(16)}`, tries: i + 1 });
+				return got;	// null: refused (out of range, not offered)
+			}
 		}
 		throw new LinkError(`no answer to a codeplug read at 0x${addr.toString(16)}`);
 	}
@@ -390,8 +418,8 @@ export async function probe(link) {
 // Ports this site was granted before and that are plugged in now (the browser's chooser marks them paired), as a
 // chooser with these filters would list them
 export async function grantedPorts(filters) {
-	if (!navigator.serial?.getPorts) return [];
-	return (await navigator.serial.getPorts()).filter((p) => {
+	if (!serialSupported()) return [];
+	return (await serialApi().getPorts()).filter((p) => {
 		const i = p.getInfo();
 		return filters.some((f) => i.usbVendorId === f.usbVendorId && (f.usbProductId === undefined || i.usbProductId === f.usbProductId));
 	});

@@ -30,12 +30,12 @@ the board delivered during the over (voice.tx_mic_peak) is printed: with a speak
 0, and that alone doesn't fail. The test signal is turned off in a finally block (it is RAM only).
 """
 import os
-import subprocess
 import time
 
 import pytest
 
 from rfoundry_hil import counter_deltas, skip
+from hil_config import rig
 
 PRIME = 3                   # AMBE_VOICE_PRIME in core/dmr/ambe/ambeVoice.h
 PEAK_MIN = 1000             # decoded speech peaks at thousands; the stale voice RAM gave 6
@@ -84,7 +84,7 @@ def dmr_channel(radio, pytestconfig):
     (freq, cc, dst, private, own_id). Fails (not skips) when the radio has DMR but can't play a call."""
     if "DMR" not in radio.features():
         skip("not_built", "DMR AUDIO NOT CHECKED: firmware built without DMR")
-    freq = pytestconfig.getoption("--dmr-freq")
+    freq = rig(pytestconfig, "dmr-freq")
     radio.go_home()
     find_dmr_channel(radio, round(freq * 1e6))
     d = radio.view(["dmr"])
@@ -146,7 +146,7 @@ def check_played(d, stats, sent, allowed_repeats, what, bit_errors=True):
 
 
 def padded(frames):
-    return 18 * -(-frames // 18)         # bench_tx.py pads a call to whole superframes with silence
+    return 18 * -(-frames // 18)         # the bench_tx job pads a call to whole superframes with silence
 
 
 @pytest.mark.rf
@@ -183,7 +183,9 @@ def test_dmr_audio_tx(radio, sdr_bench, pytestconfig, tmp_path):
         radio.link.voice_test(True)
         assert radio.view(["dmr"]).get("voice.tx_test") == "1", "the voice test signal didn't turn on"
         with sdr_bench.lease():
-            lis = sdr_bench.listen_start(freq, cc, seconds=TX_S + 6, ambe_out=f"~/{sdr_bench.dir}/{rdir}/heard")
+            # The bench board sends the file back into the local run directory
+            lis = sdr_bench.listen_start(freq, cc, seconds=TX_S + 6,
+                                         ambe_out=sdr_bench.run_path(rdir, "heard"))
             radio.ptt_for(TX_S)
             radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
             heard = sdr_bench.listen_result(lis)
@@ -203,9 +205,8 @@ def test_dmr_audio_tx(radio, sdr_bench, pytestconfig, tmp_path):
     assert calls, f"the bench modem heard no call from the radio's ID {own}"
     c = calls[0]
     assert any(f.endswith(".ambe") for f in c.get("files", [])), f"the bench recorded no AMBE for the call: {c}"
-    remote = f"{rdir}/heard_{c['call']}.ambe"           # relative to the bench directory, as upload() gives
-    local = tmp_path / "heard.ambe"
-    subprocess.run(["scp", "-q", f"{sdr_bench.host}:{sdr_bench.dir}/{remote}", str(local)], check=True, timeout=120)
+    local = os.path.join(rdir, f"heard_{c['call']}.ambe")
+    remote = sdr_bench.upload(local, os.path.basename(local))
     frames = read_frames(local)
     n = len(frames)
     rep, distinct, silence = frame_repeats(frames), len(set(frames)), c.get("ambe_silence_frames", 0)

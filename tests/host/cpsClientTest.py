@@ -24,28 +24,61 @@ def check(cond, what):
 
 def test_channels(sim):
     """cps_client.py test-channels: the image it makes, written through the shim into an empty flash, comes up as the
-    FM and the DMR channel, the talk group contact and the zone the DB25-D bench test uses (461.4625 MHz, TG 201)"""
+    FM and the DMR channel, the talk group contact and the zone (433.4500 MHz, TG 91, CC 1)"""
     regions = cps_client.REGIONS["qdmr"]
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "test.bin")
         dump = os.path.join(d, "flash.bin")
-        rc = cps_client.main(["test-channels", path, "--id", "3101276", "--call", "N4NQV"])
+        rc = cps_client.main(["test-channels", path, "--rx", "433.45", "--tg", "91", "--cc", "1", "--id", "9990276",
+                               "--call", "Q0TST"])
         check(rc == 0 and os.path.getsize(path) == cps_client.IMAGE_SIZE, "test-channels makes an image")
         img = cps_client.load_image(path)
-        check(cps_client.decode_channel(img, 1) == {"name": "Test FM 461.4625", "rx_hz": 461462500, "tx_hz": 461462500},
+        check(cps_client.decode_channel(img, 1) == {"name": "Test FM 433.4500", "rx_hz": 433450000, "tx_hz": 433450000},
               "FM channel in the image")
+        check(cps_client.zones(img) == [(0, "Test zone", [1, 2])], f"zones {cps_client.zones(img)}")
+        check(cps_client.channel_dmr(img, 1) == (False, 0, 0) and cps_client.channel_dmr(img, 2) == (True, 1, 1),
+              "channel_dmr")
+        moved = bytearray(img)          # a site moved onto another pair and color code (test_roaming's bench site)
+        cps_client.set_channel_rx(moved, 2, 461462500)
+        cps_client.set_channel_tx(moved, 2, 451875000)
+        cps_client.set_channel_cc(moved, 2, 2)
+        check(cps_client.decode_channel(moved, 2)["rx_hz"] == 461462500 and
+              cps_client.decode_channel(moved, 2)["tx_hz"] == 451875000 and
+              cps_client.channel_dmr(moved, 2) == (True, 2, 1), "set_channel_rx / _tx / _cc")
         cps = cps_client.open_cps(exec_cmd=f"{sim} --dump {dump}")
         cps.write_image(img, regions, reboot=False)
         check(not cps_client.compare(img, cps.read_image(regions), regions), "the image reads back")
         cps.close()
         out = subprocess.run([sim, "--image", dump, "--list"], capture_output=True, text=True).stdout.splitlines()
         check("source 2 channels 2" in out, f"two channels stored: {out[:2]}")
-        check('channel 1 "Test FM 461.4625" rx 461462500 tx 461462500 mode 0 bw 0 cc 0 ts 1 contact 0' in out,
+        check('channel 1 "Test FM 433.4500" rx 433450000 tx 433450000 mode 0 bw 0 cc 0 ts 1 contact 0' in out,
               f"FM channel: {out}")
-        check('channel 2 "Test DMR TG201" rx 461462500 tx 461462500 mode 1 bw 0 cc 2 ts 1 contact 1' in out,
+        check('channel 2 "Test DMR TG91" rx 433450000 tx 433450000 mode 1 bw 0 cc 1 ts 1 contact 1' in out,
               f"DMR channel: {out}")
         check('zone 0 "Test zone" 2: 1 2' in out, f"zone: {out}")
-        check('contact 1 "TG 201" id 201 type 0' in out, f"contact: {out}")
+        check('contact 1 "TG 91" id 91 type 0' in out, f"contact: {out}")
+
+
+def firmware_power(n, count):
+    """The level the firmware reads from power byte n (core/codeplug power_from_byte)"""
+    step = n - 1
+    if count == 0 or count >= 9:
+        return count - 1 if count and step >= count else step
+    return (min(step, 9) * (count - 1) + 4) // 9
+
+
+def test_power_byte():
+    """power_byte reads back as the same level on every level count, and set_channel_power writes it (test_roaming's
+    sites at the bench level)"""
+    for count in range(1, 17):
+        for level in range(count):
+            n = cps_client.power_byte(level, count)
+            check(1 <= n <= max(10, count) and firmware_power(n, count) == level,
+                  f"power_byte({level}, {count}) = {n} reads as {firmware_power(n, count)}")
+    img = bytearray(b"\xff" * cps_client.IMAGE_SIZE)
+    cps_client.set_channel_power(img, 2, 1, 5)
+    _, a = cps_client.channel_addr(2)
+    check(img[a + 0x19] == 3, f"set_channel_power: byte {img[a + 0x19]}")
 
 
 def main():
@@ -59,7 +92,7 @@ def main():
         img = cps.read_image(regions)
         name = bytes(img[0x3790:0x37A0]).rstrip(b"\xff")
         check(name == b"Sim 1", f"channel 1 name {name!r}")
-        check(bytes(img[0xE0:0xE5]) == b"N0SIM", "radio name")
+        check(bytes(img[0xE0:0xE5]) == b"Q0SIM", "radio name")
         ch = cps_client.decode_channel(img, 2)
         check(ch == {"name": "Sim 2", "rx_hz": 446025000, "tx_hz": 446025000}, f"decode_channel {ch}")
         check(cps_client.decode_channel(img, 41) is None, "channel 41 unused")
@@ -137,6 +170,7 @@ def main():
         rc = cps_client.main(["--exec", f"{sim} --image {dump}", "--quiet", "verify", path])
         check(rc == 0, "cps_client verify")
     test_channels(sim)
+    test_power_byte()
     print(f"# cpsClientTest {'FAILED' if failures else 'PASSED'} ({failures} failures)")
     return 1 if failures else 0
 

@@ -21,7 +21,7 @@
 
 #define APRS_TOCALL		"APZRDF"	// destination: the experimental APZ block (docs/spec/aprs.md 4.2)
 #define APRS_SSID_DEFAULT	7		// handheld
-#define APRS_DMR_DST_DEFAULT	5057u		// BrandMeister's APRS location service, "person" icon
+#define APRS_DMR_DST_DEFAULT	310999u		// BrandMeister's APRS gateway, <master MCC>999 (310999 for US masters); 5057 retired 2019-03-01
 #define APRS_LEVEL_DEFAULT	50
 #define APRS_TXDELAY_DEFAULT	30		// 300 ms of flags
 #define APRS_INTERVAL_DEFAULT	600		// s, when automatic beacons are turned on without SmartBeaconing
@@ -101,7 +101,7 @@ typedef enum {
 } aprs_rf_result_t;
 
 typedef struct {
-	char call[AX25_CALL_LEN + 4];	// "N0CALL-7", "" = none
+	char call[AX25_CALL_LEN + 4];	// "Q0TST-7", "" = none
 	uint8_t block;		// aprs_block_t for RF
 	uint32_t freq_hz;
 	uint8_t pos_src;	// aprs_src_t in use
@@ -134,6 +134,7 @@ typedef struct {
 	bool direct;		// heard without a digipeater
 	bool has_pos;
 	int32_t lat, lon;
+	uint32_t pos_ms;	// when the position was heard (heard_ms moves on with every packet; the position only with one)
 	char sym_table, sym_code;
 	uint16_t course, speed_kn;
 	uint8_t type;		// aprs_type_t of the last packet
@@ -201,10 +202,11 @@ bool aprs_rx_listening(void);
 #if CONFIG_APRS_RX
 #if CONFIG_APRS_RX
 // The receive path's diagnostics (debug link): the largest sample since it started (0: only silence, the squelch never
-// opened or no audio arrives), tone decisions, and the HDLC decoder's good frames, FCS errors and aborts
+// opened or no audio arrives), tone decisions, the HDLC decoder's good frames, FCS errors and aborts, and the starts
+// the board's receive path refused
 typedef struct {
 	uint16_t peak;
-	uint32_t bits, frames, fcs_errors, aborts;
+	uint32_t bits, frames, fcs_errors, aborts, start_fails;
 } aprs_rx_stats_t;
 void aprs_rx_stats(aprs_rx_stats_t *out);
 #endif
@@ -228,8 +230,12 @@ void aprs_set_cfg(const aprs_cfg_t *c, uint32_t now_ms);
 bool aprs_send_now(void);
 // A status packet (">text")
 bool aprs_send_status(const char *text);
+// Message options. Position appends a coordinate snapshot to the text; ACK adds a message number and retries.
+#define APRS_MSG_ACK		0x01u
+#define APRS_MSG_POSITION	0x02u
 // A message with acks and retries; false when one is still waiting or the text is unusable
 bool aprs_send_message(const char *to, const char *text);
+bool aprs_send_message_opts(const char *to, const char *text, uint8_t flags);
 // The position in use now (GPS, host or fixed, as the beacons use it) for DMR: false when there is none. err_m is the
 // error estimate in meters (position ambiguity included), dmr_gps the "send position in DMR calls" setting
 bool aprs_position_now(int32_t *lat, int32_t *lon, uint32_t *err_m, bool *dmr_gps);
@@ -240,6 +246,8 @@ uint8_t aprs_station_count(void);
 bool aprs_station(uint8_t i, aprs_station_t *out);	// 0 = most recent
 uint8_t aprs_msg_count(void);
 bool aprs_msg(uint8_t i, aprs_msg_t *out);		// 0 = newest; marks it read
+bool aprs_msg_peek(uint8_t i, aprs_msg_t *out);	// leaves unread state alone
+bool aprs_msg_delete(uint8_t i);
 #endif
 
 // --- The host link (aprs_host.c) and a board GPS ---

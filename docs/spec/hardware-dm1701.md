@@ -667,7 +667,7 @@ Ordering:
     from RX to DMR TX, HR_C6000 4:0x04 (MOD1 offset) = calibrated value + 42, both RX supplies off, then the PA. Back to
     RX: the PA enables low, 4:0x04 = calibrated value, the RX supply, reg 0x30 RX on. RX straight to TX puts the
     carrier about 3.07 kHz low, and a frequency write can't correct it (the AT1846S applies one only coming out of
-    idle); 42 steps of about 75 Hz put it back (measured at 461.1375 MHz: +16..+60 Hz). The idle step that the other
+    idle); 42 steps of about 75 Hz put it back (measured near 461 MHz: +16..+60 Hz). The idle step that the other
     sequence takes every slot makes the synthesizer settle again, and an SFR lost the first and last frames of its
     inbound bursts to it: about 190 bit errors and 5-10 lost frames per 72 repeated frames, against about 60 and none
     direct (SDR bench, 2026-10-19).
@@ -871,6 +871,18 @@ Inversion: 0x21 / 0x20.
 PD8 (PC6 on Plus 10 W), active high. Dimming: a 101-entry table of 32-bit words is sent by DMA2 Stream1 (TIM1 CC1
 request, circular, 100 transfers) to the port's BSRR register: entry 0 sets the pin, entry N resets it, all others are
 0, so the duty is N %. 0 % and 100 % stop the DMA and drive the pin directly.
+
+RadioFoundry dims at 40 kHz with two one-word DMA writes per cycle instead (`boards/uv380_family/backlight_uvf.h`):
+TIM1 counts 1800 per cycle, its update request (DMA2 Stream5 channel 6) writes the set bit and its CC1 request (DMA2
+Stream1 channel 6) the reset bit, so CCR1 is the duty at any percent, 80,000 transfers a second. The ripple of the
+switched backlight current reaches the FM transmit audio. Measured on a DM-1701, Brightness 10 %, 50 mW, FM
+demodulated from a separate receiver, peak deviation:
+
+| PWM | 101 Hz | 304 Hz | 1420 Hz | At the PWM frequency |
+|---|---|---|---|---|
+| 101 Hz, the 100-entry table | 8 Hz | 15 Hz | 13-15 Hz | (it is the 101 Hz line: an audible buzz, #330) |
+| 10 kHz (tried) | 0.5 Hz | 1.9 Hz | 1.1 Hz | 470 Hz: sidebands about 33 dB down at ±10 kHz, in the adjacent 12.5 kHz channel |
+| 40 kHz | 0.6-0.7 Hz | 1.6-2.3 Hz | 1.6 Hz | 99-206 Hz: sidebands 52-58 dB down at ±40 kHz |
 
 
 ---
@@ -1132,7 +1144,7 @@ sign-extended to 10 bits, so receive and transmit sit at the same level.
 
 The user's reference trim ([radio-features.md](radio-features.md) 6.1) adds to this offset at every tune:
 `uvf_ref_trimmed` turns ppb into steps at 160 ppb a step and clamps to -128..127. The scale comes from the direct
-keying measurement in section 6 (41 and 43 steps put the carrier 149 Hz apart at 461.1375 MHz, about 74 Hz a step).
+keying measurement in section 6 (41 and 43 steps put the carrier 149 Hz apart near 461 MHz, about 74 Hz a step).
 A step is 0.16 ppm, so the 0.1 ppm trim steps round to it. With a blank band (12.1) the offset is 0 and the trim still
 applies.
 
@@ -1530,12 +1542,12 @@ Verified on one radio with the new firmware; they override the unverified notes 
   until it is cleared (RAM only). The knob has no analog path around the gain, so the override fully takes its place (HW,
   not yet run on a radio).
 - **HR_C6000**: 4:0x10 reads back 0x80 after FM RX set-up (the config port works with the 4.2 timing).
-- **FM TX** (VFO 461.8625 MHz, 12.5 kHz, 1 W, measured with an RTL-SDR, 2026-10-09): with the TX sequence of
+- **FM TX** (VFO on a UHF test frequency, 12.5 kHz, 1 W, measured with an RTL-SDR, 2026-10-09): with the TX sequence of
   `radio_dm1701.c` (frequency written with the receiver off, straight to TX) the carrier is within about 50 Hz of the
   channel, so no TX offset is added. Unmodulated carrier residual FM 41 Hz RMS, no hum or tone. Voice at normal level:
   2.5 kHz peak deviation (99.5th percentile), 636 Hz RMS, about 7 kHz occupied at -26 dB. The FM I calibration row of 0
   (Mod2 amplitude) does not stop voice modulation.
-- **DMR TX** (Ch 1 467.375 MHz, cc 2, 1 W, SDR bench + an MMDVM_HS receiver, 2026-10-10): switching per burst from
+- **DMR TX** (a UHF test channel, cc 2, 1 W, SDR bench + an MMDVM_HS receiver, 2026-10-10): switching per burst from
   RX on straight to TX on the already-tuned frequency put the carrier 3.07 kHz low (an ADF7021-based receiver
   decoded nothing; a wide-AFC SDR decoder still did). Retuning with the receiver off before every burst (as FM TX
   does) brings it to about +65 Hz, and the MMDVM_HS receiver decodes headers, all superframes with the embedded LC
@@ -1631,7 +1643,7 @@ What the HR_C6000 manual says:
 
 ### 21.3.1 Bench results (2026-10-12)
 
-Probe firmware, `tests/hil/test_audio_probe.py`, NOAA WX3 (162.475 MHz) for receive, 467.375 MHz into the SDR bench
+Probe firmware, `tests/hil/test_audio_probe.py`, a NOAA station for receive, a UHF test frequency into the SDR bench
 for transmit.
 
 | Question | Result |
@@ -1646,7 +1658,7 @@ for transmit.
 | FM TX from the chip's tone generator | **yes, AFSK-class.** 2-tone mode (0xA1 = 0x10, 0xA0 = 0x39), "long A", retriggered by 0x60 0x00 -> 0x80 while keyed: tone A comes from its 16-bit phase step at aux 0x11A (f / 32000 x 2^16, written through page 1 with an extended address). Rewritten every 100 ms from the host it switches cleanly between 1200 and 2200 Hz at about 2.2 kHz rms deviation: a phase-continuous AFSK generator inside the FM chain |
 | FM TX source switch | 0x06 bit 2 (external codec) moves the FM chain's input off the built-in codec: LINEIN2's tone stops the moment it is set. The external port (pins 16-20) isn't wired to the MCU, and the MCU's I2S tone doesn't reach the air in that mode (with 0x36 bit 7 and 0x22 bits 1-2 too). A wire from the MCU's PCM output (PC11) to ADCDAT (pin 19) would make it a full-quality path (candidate D) |
 | PC8 into MIC_P / MIC_N | **yes, no mod.** A 1 kHz square wave on PC8 (the beep PWM, TIM8 CH3, probe op 12) goes on air as a 1 kHz tone at 3.0 kHz rms deviation (SINAD 8.1 dB: a square wave's harmonics) once 0xE0 bits 1-2 (MIC_P, MIC_N) are on; nothing with only LINEIN1 or LINEIN2 on. The beep net reaches the differential mic input, so PWM at a high carrier with the duty set by each sample feeds the chip's own FM chain (pre-emphasis, limiter, CTCSS) through the codec ADC |
-| PWM audio on PC8 | **the best path so far.** A sine by PWM (probe op 14: TIM8 CH3, the duty rewritten each carrier period by DMA) into MIC_P / MIC_N: 1 kHz at 1 kHz rms deviation (4 % of the PWM range) 14.1 dB SINAD; at 2.6 kHz rms (10 %, mic first stage -12 dB) 15.6 dB; more drives the limiter. The carrier (17.6-140 kHz) makes no difference: the board and the codec filter it. The floor with MIC_P / MIC_N on and no audio is 115 Hz rms in the voice band (50 Hz with them off). Flat (0x34 bits 7-5 off) the response is 300 Hz 0 dB, 1 kHz 0 dB, 2 kHz -3.5 dB, 2.5 kHz -5.3 dB, 3 kHz -7 dB, 3.5 kHz -14 dB, nothing at 3.8 kHz: the codec's 8 kHz sampling. Fine for voice and 1200 / 4800 baud (equalized); not 9600 |
+| PWM audio on PC8 | **the best path so far.** A sine by PWM (probe op 14: TIM8 CH3, the duty rewritten each carrier period by DMA) into MIC_P / MIC_N: 1 kHz at 1 kHz rms deviation (4 % of the PWM range) 14.1 dB SINAD; at 2.6 kHz rms (10 %, mic first stage -12 dB) 15.6 dB; more drives the limiter. The carrier (17.6-140 kHz) makes no difference: the board and the codec filter it. The floor with MIC_P / MIC_N on and no audio is 115 Hz rms in the voice band (50 Hz with them off). Flat (0x34 bits 7-5 off) the response is 300 Hz 0 dB, 1 kHz 0 dB, 2 kHz -3.5 dB, 2.5 kHz -5.3 dB, 3 kHz -7 dB, 3.5 kHz -14 dB, nothing at 3.8 kHz: the codec's 8 kHz sampling. Fine for voice and 1200 / 4800 baud (equalized); not 9600. Host FM transmit (`fm_tx_inject`, `audio_uvf.c`) uses it at 72 kHz, nine carrier periods a sample, full scale ±50 steps (about 2.6 kHz rms before the limiter), `fm_tx_nominal_peak` 13800: a host 1 kHz tone at 13800 went out at 1.1-1.2 kHz rms (1.68 kHz peak), 13-14 dB SINAD (2026-10-13) |
 | 0x04 response | **flat to 6 kHz**: 16 steps give 689, 661, 650, 633 and 599 Hz rms deviation at 1, 3, 3.8, 4.8 and 6 kHz. It skips the codec, so it is the only no-mod transmit path wide enough for 9600 baud FSK (flat to 4.8 kHz; a 25 kHz channel, 0x34 bit 4). Its resolution (about 6 bits) and the CPU it takes (32,700 bus writes a second) remain; receiving 9600 needs the AT1846S audio output on an MCU ADC (a mod), the RX RAM tap being 8 kHz |
 | SINAD reference | not settled: the tone generator's "long A" plays in bursts of about 0.5 s, so its 10.6 dB SINAD (2.2 kHz rms) mixes tone and gaps. The bench's own ceiling still needs a steady clean source (a signal generator, or the bench's own modem board in FM) |
 | Pins 16-20 wiring | **not wired to the MCU.** External-codec mode (0x06 bit 2) stops the I2S lines the MCU sees (PA15 WS, PC10 CK, PC12 SD) and starts none; pins 16-20 as the chip's timed GPIO outputs (0xC7-0xD0), keyed, move no MCU pin (probe op 13 scans) |
@@ -1746,7 +1758,7 @@ is well above the "mic muted, no tone" row.
 - On air since 2026-10-10: receiver sleep (`test_battery_save*`: cycles when idle, monitor and a call wake it), the
   1750 Hz burst, the roger beep and APRS AFSK (HIL). VOX was checked in silence only (`test_vox_quiet`).
 - AFSK TX retunes the AT1846S tone generator per symbol. The AFSK RX audio comes from the HR_C6000 FM audio on I2S
-  (squelch gated, 8 kHz, de-emphasized). DMR LRRP and UDT passed on air at 467.375 MHz, CC 2, 50 mW. An AFSK tone level
+  (squelch gated, 8 kHz, de-emphasized). DMR LRRP and UDT passed on air on a UHF test frequency, CC 2, 50 mW. An AFSK tone level
   of 0x1C gives about 3.1 kHz peak deviation (0x40 gave 7.2 kHz).
 - `REBOOT` mode 1 enters the ROM DFU with a flag in an RTC backup register (15.4). The spare beep PWM pin is PC8
   (TIM8 CH3, 72 MHz carrier, DMA2 stream 2), used by AUDIO_PROBE PIN_TONE / PIN_PWM at about 37,000 MOD writes a second.
