@@ -5,6 +5,7 @@
 // hold is listed afterwards.
 
 import { register } from "./extensions.js";
+import { timestampedName } from "./filename.js";
 import { importQdmr, exportQdmr, QdmrError } from "../codeplug/qdmr.js";
 
 register({
@@ -21,7 +22,7 @@ register({
 
 function save(api) {
 	const { text, notes } = exportQdmr(api.model);
-	api.download(`${api.fileName || "codeplug"}.yaml`, new TextEncoder().encode(text));
+	api.download(timestampedName(`${api.fileName || "codeplug"}.yaml`), new TextEncoder().encode(text));
 	if (notes.length) report(api, api.t("editor.qdmr.saved_title"), api.t("editor.qdmr.saved_notes"), notes);
 }
 

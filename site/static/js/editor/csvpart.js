@@ -4,6 +4,7 @@
 // File takes either back. An import is one undoable change, and its problems are listed by row and column.
 
 import { register } from "./extensions.js";
+import { timestampedName } from "./filename.js";
 import { exportTable, exportAll, importTable, importAll, TABLES, CsvError } from "../codeplug/csv.js";
 import { zip } from "../flasher/zip.js";
 
@@ -41,11 +42,11 @@ const base = (api) => api.fileName || "codeplug";
 
 function saveTable(api, table) {
 	// a byte order mark, so spreadsheet programs read the names as UTF-8
-	api.download(`${base(api)}-${TABLES[table].file}`, new TextEncoder().encode("﻿" + exportTable(api.model, table)));
+	api.download(timestampedName(`${base(api)}-${TABLES[table].file}`), new TextEncoder().encode("﻿" + exportTable(api.model, table)));
 }
 
 async function saveAll(api) {
-	api.download(`${base(api)}-csv.zip`, await zip(exportAll(api.model)));
+	api.download(timestampedName(`${base(api)}-csv.zip`), await zip(exportAll(api.model)));
 }
 
 function run(api, name, fn) {
