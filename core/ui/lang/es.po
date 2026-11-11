@@ -548,11 +548,11 @@ msgstr "Ambos"
 msgid "Auto"
 msgstr "Auto"
 
-#: core/ui/ui_aprs.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgid "Computer"
 msgstr "PC"
 
-#: core/ui/ui_aprs.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgid "Fixed"
 msgstr "Fija"
 
@@ -660,14 +660,6 @@ msgstr "SmartBeaconing"
 msgid "Send via"
 msgstr "Enviar por"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c
-msgid "Position"
-msgstr "Posición"
-
-#: core/ui/ui_aprs.c
-msgid "Position in DMR calls"
-msgstr "Pos. en llamadas DMR"
-
 #: core/ui/ui_aprs.c
 msgid "KISS on USB"
 msgstr "KISS por USB"
@@ -675,6 +667,10 @@ msgstr "KISS por USB"
 #: core/ui/ui_aprs.c
 msgid "Stations heard"
 msgstr "Estaciones oídas"
+
+#: core/ui/ui_aprs.c
+msgid "NMEA on USB"
+msgstr "NMEA por USB"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "On"
@@ -705,44 +701,8 @@ msgid "Beacons off"
 msgstr "Balizas off"
 
 #: core/ui/ui_aprs.c
-msgid "DMR position: not in this build"
-msgstr "Posición DMR: no disponible"
-
-#: core/ui/ui_aprs.c
-msgid "Position goes out in DMR calls"
-msgstr "Posición va en llamadas DMR"
-
-#: core/ui/ui_aprs.c
-msgid "No position in DMR calls"
-msgstr "Sin posición en llamadas DMR"
-
-#: core/ui/ui_aprs.c
 msgid "This radio can't receive APRS"
 msgstr "Esta radio no recibe APRS"
-
-#: core/ui/ui_aprs.c
-msgid "Source"
-msgstr "Origen"
-
-#: core/ui/ui_aprs.c
-msgid "Latitude"
-msgstr "Latitud"
-
-#: core/ui/ui_aprs.c
-msgid "Longitude"
-msgstr "Longitud"
-
-#: core/ui/ui_aprs.c core/ui/ui_menus.c
-msgid "Not set"
-msgstr "Sin definir"
-
-#: core/ui/ui_aprs.c
-msgid "Up to 90 N/S, 180 E/W"
-msgstr "Hasta 90 N/S, 180 E/W"
-
-#: core/ui/ui_aprs.c core/ui/ui_menus.c
-msgid "OK change  Back"
-msgstr "OK cambiar  Atrás"
 
 #: core/ui/ui_aprs.c
 msgid "0-9 pick  Back"
@@ -965,10 +925,6 @@ msgid "Roaming"
 msgstr "Roaming"
 
 #: core/ui/ui_find.c
-msgid "APRS position"
-msgstr "Posición APRS"
-
-#: core/ui/ui_find.c
 msgid "Ch "
 msgstr "Can "
 
@@ -1163,6 +1119,10 @@ msgstr "Prueba de radio"
 #: core/ui/ui_menus.c
 msgid "Call alert"
 msgstr "Alerta"
+
+#: core/ui/ui_menus.c
+msgid "Position"
+msgstr "Posición"
 
 #: core/ui/ui_menus.c
 msgid "In contacts"
@@ -2224,6 +2184,10 @@ msgstr "USB vuelve a ser puerto serie"
 msgid "DMR ID"
 msgstr "ID DMR"
 
+#: core/ui/ui_menus.c core/ui/ui_position.c
+msgid "Not set"
+msgstr "Sin definir"
+
 #: core/ui/ui_menus.c
 msgid "Radio name"
 msgstr "Nombre de radio"
@@ -2905,6 +2869,18 @@ msgid "Answer GPS requests"
 msgstr "Responder pet. GPS"
 
 #: core/ui/ui_menus.c
+msgid "Position source"
+msgstr "Origen posición"
+
+#: core/ui/ui_menus.c core/ui/ui_position.c
+msgid "Fixed position"
+msgstr "Posición fija"
+
+#: core/ui/ui_menus.c
+msgid "Send in DMR calls"
+msgstr "Enviar en llam. DMR"
+
+#: core/ui/ui_menus.c
 msgid "Hotspot allowed"
 msgstr "Hotspot permitido"
 
@@ -3089,6 +3065,10 @@ msgid "No GPS on this radio"
 msgstr "Sin GPS en esta radio"
 
 #: core/ui/ui_menus.c
+msgid "DMR position: not in this build"
+msgstr "Posición DMR: no disponible"
+
+#: core/ui/ui_menus.c
 msgid "Diagnostics: not in this build"
 msgstr "Diagnóstico: no disponible"
 
@@ -3107,6 +3087,10 @@ msgstr " a "
 #: core/ui/ui_menus.c
 msgid ", steps of "
 msgstr ", pasos de "
+
+#: core/ui/ui_menus.c core/ui/ui_position.c
+msgid "OK change  Back"
+msgstr "OK cambiar  Atrás"
 
 #: core/ui/ui_menus.c
 msgid "No, keep settings"
@@ -3223,6 +3207,18 @@ msgstr "¿Codeplug de otro firmware? Crear nuevo borra contactos, indicativo e I
 #: core/ui/ui_menus.c
 msgid "Old codeplug"
 msgstr "Codeplug anterior"
+
+#: core/ui/ui_position.c
+msgid "Latitude"
+msgstr "Latitud"
+
+#: core/ui/ui_position.c
+msgid "Longitude"
+msgstr "Longitud"
+
+#: core/ui/ui_position.c
+msgid "Up to 90 N/S, 180 E/W"
+msgstr "Hasta 90 N/S, 180 E/W"
 
 #: core/ui/ui_screens.c
 msgid "IDLE"
