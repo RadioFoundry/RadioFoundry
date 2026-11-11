@@ -33,6 +33,9 @@ const char build_features[] =
 #if CONFIG_DMR_GPS
 	"DMR_GPS,"
 #endif
+#if CONFIG_GPS
+	"GPS,"
+#endif
 #if CONFIG_APRS
 	"APRS,"
 #endif
