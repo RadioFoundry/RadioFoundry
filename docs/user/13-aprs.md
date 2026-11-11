@@ -72,7 +72,8 @@ the frequency shown in **Frequency** on the APRS page (your region's, 144.390 MH
 the VFO there, and leave the radio on it. If the packets are sent on another frequency, set **Frequency** to Custom
 and enter it first. Heard
 stations go into **Stations heard**, messages to your callsign appear in **Messages** and are acknowledged, and the digipeater (if you
-turned it on) passes packets on.
+turned it on) passes packets on. Messages from internet stations (an APRS messaging service, for example) reach you
+through a nearby iGate. They appear under the sender's callsign, and the acknowledgment goes back to that sender.
 
 - It listens only on the APRS frequency, in FM, and the tuned frequency must equal the APRS **Frequency** exactly.
   On other FM channels nothing is decoded.
