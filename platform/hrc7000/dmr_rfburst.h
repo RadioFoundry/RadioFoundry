@@ -37,6 +37,9 @@ typedef struct {
 	// How long before the burst's last symbol the hold ends and off starts, for a board whose PA keys down a delay
 	// into off. 0: with the last symbol
 	uint16_t off_ahead_us;
+	// off this long after the last symbol's point, for a PA that drops at once: one with a ramp of its own is still
+	// up at the symbol's end, and needs none
+	uint16_t off_after_us;
 } hrc_rfburst_board_t;
 
 typedef struct {

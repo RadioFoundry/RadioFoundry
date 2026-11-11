@@ -209,7 +209,7 @@ static void rf_task_fn(void *arg)
 			if (!now) {	// the ramp down with the burst's last symbol, so the receiver is back for the next slot
 				uint32_t e = hrc_micros() - t_on + board->off_ahead_us;
 				late = hrc_rfburst_late_us(e, lead_steps());
-				rf_wait(hrc_rfburst_hold_us(e, lead_steps()));
+				rf_wait(hrc_rfburst_hold_us(e, lead_steps()) + board->off_after_us);
 			}
 			board->off(rf_wait);
 			rf_tx = false;

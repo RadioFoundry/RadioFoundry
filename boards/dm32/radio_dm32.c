@@ -275,7 +275,9 @@ static void burst_off(void)
 	lna(rx_hz, true);
 }
 
-static const hrc_rfburst_board_t rf_board = { .on = burst_on, .off = burst_off };
+// The PA drops at once: off at the task's point, the carrier was 5 dB down 0.2 ms before the last symbol's end and
+// 10 to 28 dB down at its end (SDR bench, every level). 300 us later it holds to the end and is off inside the guard
+static const hrc_rfburst_board_t rf_board = { .on = burst_on, .off = burst_off, .off_after_us = 300 };
 
 static void dmr_tx_end(void);
 

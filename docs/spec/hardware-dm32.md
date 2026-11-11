@@ -955,8 +955,10 @@ ms, the same as the other radio). The diagnostics' `up` line shows the PA's time
 raises the first burst's RF TX interrupt late (0.42 ms at lead 26: 27.71 ms after the slot tick before it, the later
 bursts 27.29 ms), so that burst's key-up and key-down came 0.42 ms late on every step and both bands, and the second
 burst's interrupt looked early against it. The first burst is now timed from the slot tick
-([modem-hrc7000.md](modem-hrc7000.md) 3.1a); the `up` line's `f` is by how much. The carrier
-still ramps down from the last symbol (the shared model); the decode is clean with it. The switch moved earlier only
+([modem-hrc7000.md](modem-hrc7000.md) 3.1a); the `up` line's `f` is by how much. The PA
+drops at once, so it is switched off 0.3 ms after the last symbol's point (`off_after_us`): off at the point, the
+carrier was 5 dB down 0.2 ms before the last symbol's end and 10 to 28 dB down at its end, at every level. With
+the delay it holds to within 0.2 dB at the symbol's end and is off the air 0.17 to 0.44 ms after it. The switch moved earlier only
 on a split channel, where no inbound burst is heard on the TX frequency. On a simplex channel it is at 1.2 ms, after
 the inbound burst before ours, as an SFR needs (8.5, the simplex switch and SFR).
 
@@ -985,7 +987,7 @@ outbound through a repeater is not measured on this radio yet ([modem-hrc7000.md
 
 The original firmware's PA timing. RadioFoundry keys the PA from the per-burst RF task instead: the key-up from the
 power cal table (PA select and a boost 1.5 ms before the burst's first symbol, a hold, then DAC B at the step's drive
-0.5 ms before), timed from the RF TX interrupt, and both off with its last symbol (8.5, [pa-keyup.md](pa-keyup.md), [modem-hrc7000.md](modem-hrc7000.md)
+0.5 ms before), timed from the RF TX interrupt, and both off 0.3 ms after its last symbol's point (8.5, [pa-keyup.md](pa-keyup.md), [modem-hrc7000.md](modem-hrc7000.md)
 3.1a). At 0.5 ms with the step's drive alone the carrier was still rising for the first symbols (8.5).
 
 | Item | Value |
