@@ -72,11 +72,12 @@
 // The earliest key-up point (radio/pa_keyup.h): the timer's first step after the interrupt
 #define KEYUP_MAX_AHEAD_US	(DMR_KEY_INT_AHEAD_US - DMR_KEY_MIN_US)
 // The key-up constants (docs/spec/pa-keyup.md), measured with tools/bench/pa_cal.py on a UHF radio up to its 2.5 W
-// level: the window and the PA 1 ms after the interrupt as before; the lowest level, 0.95 ms late on its own drive,
-// gets a boost
-static const pa_keyup_cfg_t keyup_cfg = { .dead_pm = 562, .knee_us = 90, .slope_us = 1013,
-					  .window_us = DMR_KEY_INT_AHEAD_US - 1000u, .settle_us = 306,
-					  .pa_us = DMR_KEY_INT_AHEAD_US - 1000u };
+// level. The lowest level, late on its own drive, gets a boost. The 1 W level's drive written alone ran 4.5 dB past
+// its power, so the levels from there up come in on a lower drive first (ease_pm), up to 2.2 ms ahead. The window
+// (the boost's) is 1 ms after the interrupt as before, and the PA goes on with the first drive
+static const pa_keyup_cfg_t keyup_cfg = { .dead_pm = 563, .knee_us = 96, .slope_us = 1002,
+					  .window_us = DMR_KEY_INT_AHEAD_US - 1000u, .settle_us = 506,
+					  .pa_us = KEYUP_MAX_AHEAD_US, .ease_pm = 304 };
 
 // Voice SPI2 (hardware-md380.md 4.4): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C5000_VCS
 #define VOICE_SPI_PINS		(GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15)

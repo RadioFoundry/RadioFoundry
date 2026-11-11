@@ -18,12 +18,32 @@ pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, ui
 	uint32_t q = (uint32_t)c->knee_us * span + (uint32_t)c->slope_us * over;	// us x counts
 	uint32_t lead = over != 0u ? q / over : c->window_us;	// a drive in the dead zone: nothing to time, the earliest
 	uint32_t b = d;
+	uint32_t ease = (uint32_t)ref * c->ease_pm / 1000u;
+	if (ease != 0u && over > ease) {
+		// Over the fastest approach: up on a = dead + ease as a level of that drive would be, then its own drive
+		// for the time the law gives it from a's level to its own
+		uint32_t step = (uint32_t)c->slope_us * (over - ease) / over;
+		// Not a boost, so not the window's: the board's earliest point bounds it (pa_keyup_plan, pa_keyup_steps)
+		uint32_t start = ((uint32_t)c->knee_us * span + (uint32_t)c->slope_us * ease) / ease + step;
+		if (start > 0xFFFFu) {
+			start = 0xFFFFu;
+		}
+		uint32_t on = c->pa_us < start ? c->pa_us : start;
+		k.boost = (uint16_t)(dead + ease);
+		k.boost_us = (uint16_t)start;
+		k.pa_us = (uint16_t)on;
+		k.drive_us = (uint16_t)(step < on ? step : on);
+		return k;
+	}
 	if (lead > c->window_us) {
 		lead = c->window_us;
 		uint32_t room = (uint32_t)c->window_us - c->settle_us;	// pa_keyup_valid: above 0
 		uint32_t ceiling = (uint32_t)top * PA_KEYUP_BOOST_MAX_PCT / 100u;
 		if (ceiling > max) {
 			ceiling = max;
+		}
+		if (ease != 0u && ceiling > dead + ease) {
+			ceiling = dead + ease;	// d or over: this level is not over the fastest approach
 		}
 		b = dead + (q + room - 1u) / room;	// rounded up: the boost never short of the window
 		if (b > ceiling) {
@@ -159,6 +179,12 @@ pa_keyup_t pa_keyup_plan(uint16_t d, uint16_t top, uint16_t ref)
 {
 	pa_keyup_cfg_t c = cfgs[cur];
 	last = pa_keyup_drives(on ? &c : NULL, d, top, ref, drive_limit);
+	if (last.boost_us > ahead_limit) {	// an eased level over the board's earliest point: from there, and late
+		last.boost_us = ahead_limit;
+		if (last.pa_us > ahead_limit) {
+			last.pa_us = ahead_limit;
+		}
+	}
 	last_top = top;
 	last_ref = ref;
 	return last;

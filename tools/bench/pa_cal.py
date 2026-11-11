@@ -67,7 +67,9 @@ ON_AIR_DB = "-20"           # on the air: the carrier within 20 dB of the burst'
 OFF_HOLD_MS = 0.3           # off the air: under that level this long
 END_MIN_DB = -3.0           # the carrier at the last symbol's end: lower, and the key-down cut the symbol
 BOOST_MAX_PCT = 120     # PA_KEYUP_BOOST_MAX_PCT
-NAMES = ("dead_pm", "knee_us", "slope_us", "window_us", "settle_us", "pa_us")
+NAMES = ("dead_pm", "knee_us", "slope_us", "window_us", "settle_us", "pa_us", "ease_pm")
+EASE_START_PCT = 80     # the fastest approach to start from: this much of the lowest overshooting level's own drive
+EASE_STEP_PCT = 85      # and of itself, each round an eased level still overshoots
 FEATURES = ("bursts_raw", "bursts_ramp")
 
 
@@ -77,19 +79,28 @@ class Stop(Exception):
 
 # ---- the rule and the fit (pure) ---------------------------------------------------------------------------------
 
-def plan(c, d, top, ref, max_drive):
+def plan(c, d, top, ref, max_drive, ahead=0):
     """pa_keyup_drives(): c the six constants (a dict), all integer math as the firmware's. Returns a dict with
-    boost (0: none), drive, boost_us, pa_us, drive_us."""
+    boost (0: none), drive, boost_us, pa_us, drive_us. ahead: the board's earliest point, which bounds an eased
+    level's start as pa_keyup_plan() does (0: unbounded, as pa_keyup_drives())."""
     dead = ref * c["dead_pm"] // 1000
     over = d - dead if d > dead else 0
     span = top - dead if top > dead else 0
     q = c["knee_us"] * span + c["slope_us"] * over
     lead = q // over if over else c["window_us"]
     b = d
+    ease = ref * c.get("ease_pm", 0) // 1000
+    if ease and over > ease:
+        step = c["slope_us"] * (over - ease) // over
+        start = min((c["knee_us"] * span + c["slope_us"] * ease) // ease + step, ahead or 0xFFFF)
+        on = min(c["pa_us"], start)
+        return {"boost": dead + ease, "drive": d, "boost_us": start, "pa_us": on, "drive_us": min(step, on)}
     if lead > c["window_us"]:
         lead = c["window_us"]
         room = c["window_us"] - c["settle_us"]
         b = min(dead + (q + room - 1) // room, top * BOOST_MAX_PCT // 100, max_drive)
+        if ease:
+            b = min(b, dead + ease)
     pa = min(c["pa_us"], lead)
     k = {"boost": 0, "drive": d, "boost_us": 0, "pa_us": pa, "drive_us": 0}
     if b > d or pa < lead:
@@ -494,11 +505,13 @@ class Radio:
     def view(self):
         return self.link.view()
 
-    def ints(self, v, key, n):
+    def ints(self, v, key, n, least=None):
         try:
             x = [int(s) for s in v[key].split("/")]
         except (KeyError, ValueError):
             x = []
+        if least is not None and least <= len(x) < n:
+            x += [0] * (n - len(x))     # an older firmware's shorter list: the values it lacks are 0
         if len(x) != n:
             raise Stop(f"the radio's view has no {key} with {n} values ({v.get(key)!r}): its firmware doesn't key "
                        "by this rule, or is older than this tool")
@@ -518,7 +531,7 @@ class Radio:
         self.link.dmr_fields("dmr", a.cc, a.ts)
 
     def setup(self, c, level, drive=0):
-        self.link.pa_keyup(*([c[n] for n in NAMES] if c else []))
+        self.link.pa_keyup(*([c.get(n, 0) for n in NAMES] if c else []))
         self.link.power_level(level)
         self.link.tx_drive(drive)
 
@@ -615,7 +628,8 @@ class Cal:
         self.bench.open([mhz])
         radio.tune(mhz)
         v = radio.view()
-        board = dict(zip(NAMES, radio.ints(v, "pa_keyup", 6)))
+        eases = len(v.get("pa_keyup", "").split("/")) >= len(NAMES)    # the firmware has the fastest approach
+        board = dict(zip(NAMES, radio.ints(v, "pa_keyup", len(NAMES), 6)))
         ahead, max_drive = radio.ints(v, "pa_keyup.limits", 2)
         drives = [int(x) for x in v.get("tx_drive", "").split("/") if x]
         if not drives or not any(drives):
@@ -630,7 +644,7 @@ class Cal:
         top, ref = last[5], last[6]
         # A board with a set of constants per band selects the band's at the key-up: the view before it showed the
         # band keyed last
-        board = dict(zip(NAMES, radio.ints(v, "pa_keyup", 6)))
+        board = dict(zip(NAMES, radio.ints(v, "pa_keyup", len(NAMES), 6)))
         if top == 0 or max(drives[l] for l in levels) > top:
             raise Stop(f"the radio's top drive {top} is under a level's ({drives}): its view is not this key-up's")
         self.say(f"  drives {[drives[l] for l in levels]}, top {top}, anchor {ref}, limits {ahead} us / {max_drive}; "
@@ -639,19 +653,20 @@ class Cal:
         # Every level as the board keys it now. Constants that hold are kept: a board may time its key-up by more
         # than the rule's constants say (a ramp of its own), and a radio that is right needs no new ones
         shown = sorted({levels[0], levels[len(levels) // 2], levels[-1]})   # for the plots
-        old = dict(zip(NAMES, a.before)) if a.plot and a.before else None   # constants to compare with, not the board's
+        old = dict(zip(NAMES, a.before + [0])) if a.plot and a.before else None   # constants to compare with, not the board's
         asis = {levels[0]: m}
         asis.update(zip(levels[1:], self.keys(mhz, "board" if old else "before", [(None, l, 0) for l in levels[1:]],
                                               need=False)))
         m["tag"] = "board" if old else "before"
         for l, x in asis.items():
-            x["plan"] = plan(board, drives[l], top, ref, max_drive)
-            # A level keyed at its own drive overshoots by what its drive does: the power loop's, no constant's
+            x["plan"] = plan(board, drives[l], top, ref, max_drive, ahead)
+            # A level keyed at its own drive overshoots by what its drive does. A firmware with the fastest approach
+            # cures that (ease_pm), so it counts; on an older one it is the power loop's, no constant's
             boosted = x["plan"]["boost"] > drives[l]
-            x["own_over_db"] = 0.0 if boosted else x["over_db"] or 0.0
+            x["own_over_db"] = 0.0 if boosted or eases else x["over_db"] or 0.0
             x["bad"] = (judge(x, boosted, x["own_over_db"]) if x["n"] and x["rise_us"] is not None else ["none"])
         for l in shown if old else []:
-            self.key(mhz, "before", old, l, need=False)["plan"] = plan(old, drives[l], top, ref, max_drive)
+            self.key(mhz, "before", old, l, need=False)["plan"] = plan(old, drives[l], top, ref, max_drive, ahead)
         if not a.refit and not any(x["bad"] for x in asis.values()):
             self.say("  the board's constants hold at every level: kept (--refit measures new ones)")
             self.bench.close()
@@ -668,7 +683,8 @@ class Cal:
         window = min(a.window_us or board["window_us"] or ahead, ahead)
         # Open loop at the window the radio will use, not at the board's earliest point: the same points of its burst
         # sequence as a real key-up, so whatever the sequence adds is in the times
-        fixed = lambda w: {"dead_pm": 0, "knee_us": 0, "slope_us": w, "window_us": w, "settle_us": 0, "pa_us": 0xFFFF}
+        fixed = lambda w: {"dead_pm": 0, "knee_us": 0, "slope_us": w, "window_us": w, "settle_us": 0, "pa_us": 0xFFFF,
+                           "ease_pm": 0}
         pts, top_rise, own_over = [], None, {}
         limit = top * a.max_pct // 100
         ds = grid([drives[l] for l in levels if drives[l] <= limit], limit, a.points)
@@ -699,7 +715,21 @@ class Cal:
         c = {"dead_pm": dead_pm, "knee_us": knee, "slope_us": slope, "window_us": window,
              "settle_us": min(a.settle_us if a.settle_us is not None else board["settle_us"] or window // 5,
                               max(window - 1, 0)),
-             "pa_us": a.pa_us if a.pa_us is not None else board["pa_us"]}
+             "pa_us": a.pa_us if a.pa_us is not None else board["pa_us"], "ease_pm": 0}
+        # A level that runs far past its power on its own drive came up too fast: the fastest approach starts under
+        # the lowest such level's drive, and every level over it comes up on that drive first (pa-keyup.md 2)
+        if a.ease_pm is not None:
+            c["ease_pm"] = a.ease_pm
+        elif eases and ref:
+            dead = ref * dead_pm // 1000
+            fast = [d for d in sorted(own_over) if own_over[d] > OVER_MAX_DB - 0.5 and d > dead
+                    and d in [drives[l] for l in levels]]
+            if fast:
+                c["ease_pm"] = max((fast[0] - dead) * EASE_START_PCT * 10 // ref, 1)
+                self.say(f"  drive {fast[0]} runs {own_over[fast[0]]:.1f} dB past its level written alone: the fastest "
+                         f"approach is {c['ease_pm']}/1000 of the anchor over the dead zone")
+        if eases:
+            own_over = {}       # no level is excused its own drive's overshoot: the approach is the cure
         self.say(f"  fit: dead {dead_pm}/1000 of the anchor ({ref * dead_pm // 1000}), knee {knee} us, slope {slope} us "
                  f"(rms {rms:.0f} us over {len(pts)} drives)")
 
@@ -726,16 +756,20 @@ class Cal:
         else:
             edgy = []
         ok, res, good, near, slow_set = False, {}, None, None, set()
+        eased = lambda cc, l: 0 < plan(cc, drives[l], top, ref, max_drive, ahead)["boost"] < drives[l]
         for rnd in range(a.rounds + 1):
-            own, res, over = [], {}, 0.0
+            own, res, over, fast = [], {}, 0.0, False
             for l, m in zip(levels, self.keys(mhz, "verify", [(c, l, 0) for l in levels])):
                 d = drives[l]
-                k = plan(c, d, top, ref, max_drive)
+                k = plan(c, d, top, ref, max_drive, ahead)
                 b = max(k["boost"], d)
                 m["bad"] = judge(m, b > d, own_over.get(d, 0.0))
                 m["own_over_db"] = own_over.get(d, 0.0)
                 res[l] = m
-                if b > d:
+                if 0 < k["boost"] < d:
+                    # Eased: its time is the approach drive's, not its own, so it is not a point of the law's line
+                    fast = fast or "overshoot" in m["bad"]
+                elif b > d:
                     seen[l][b] = m["rise_us"]
                     # An overshoot with the level up early is too much boost, which the next round takes back; only
                     # one that is on time needs the boost to end earlier
@@ -776,7 +810,7 @@ class Cal:
             # and no overshoot within half a dB of the limit, which the next key-up may cross
             done = ok and all((res[l]["rise_us"] <= -TOL_US and
                                (res[l]["over_db"] or 0) <= max(OVER_MAX_DB - 0.5, res[l]["own_over_db"] + OWN_OVER_TOL_DB))
-                              if slow else abs(res[l]["rise_us"] - TARGET_US) <= TOL_US for l in levels)
+                              if slow or eased(c, l) else abs(res[l]["rise_us"] - TARGET_US) <= TOL_US for l in levels)
             if done or rnd == a.rounds:
                 break
             # Two errors, two cures. A level too slow for the window is boosted, and close over the dead zone the
@@ -803,15 +837,20 @@ class Cal:
                                                  ref * was["dead_pm"] // 1000) for l in slow})
             elif any(abs(r[2]) > TOL_US for r in own):
                 c["knee_us"], c["slope_us"] = refit(c, own, top, ref)
+            if c["ease_pm"] and ref:
+                # The approach drive stays where it was measured when the dead zone under it moves; an eased level
+                # that still runs past its power gets a slower one
+                over = ref * was["dead_pm"] // 1000 + ref * was["ease_pm"] // 1000 - ref * c["dead_pm"] // 1000
+                c["ease_pm"] = max(-(-max(over, 1) * 1000 // ref) * (EASE_STEP_PCT if fast else 100) // 100, 1)
             if c == was:
                 break                       # nothing left to change
             self.say(f"  round {rnd + 1}: dead {c['dead_pm']}, knee {c['knee_us']} us, slope {c['slope_us']} us, "
-                     f"settle {c['settle_us']} us")
+                     f"settle {c['settle_us']} us" + (f", ease {c['ease_pm']}" if c["ease_pm"] else ""))
         if not ok and near:
             c, res = near                   # no round held: the nearest one is the result to look at
         if a.confirm and ok:
             for l, m in zip(levels, self.keys(mhz, "confirm", [(c, l, 0) for l in levels])):
-                boosted = plan(c, drives[l], top, ref, max_drive)["boost"] > drives[l]
+                boosted = plan(c, drives[l], top, ref, max_drive, ahead)["boost"] > drives[l]
                 again = judge(m, boosted, own_over.get(drives[l], 0.0))
                 if again or (not boosted and abs(m["rise_us"] - res[l]["rise_us"]) > 100):
                     ok = False
@@ -822,7 +861,7 @@ class Cal:
             res[l]["after"] = True      # the measurement the result stands on, for the plots
         return {"mhz": mhz, "ok": ok and not any(overrun(res[l]) for l in levels), "shown": shown, "window_us": window, "target_us": TARGET_US, "constants": c, "board": board, "top": top, "ref": ref, "ahead_us": ahead, "reach_us": reach,
                 "max_drive": max_drive, "fit_rms_us": rms, "open": pts,
-                "levels": {l: {"drive": drives[l], "plan": plan(c, drives[l], top, ref, max_drive),
+                "levels": {l: {"drive": drives[l], "plan": plan(c, drives[l], top, ref, max_drive, ahead),
                                "rise_us": res[l]["rise_us"], "over_db": res[l]["over_db"], "sym1_db": res[l]["sym1_db"],
                                "power": self.watts(res[l]), "bad": res[l]["bad"] + overrun(res[l]),
                                "off_us": res[l].get("off_us"), "end_db": res[l].get("end_db"),
@@ -900,6 +939,8 @@ def main(argv=None):
     g.add_argument("--window-us", type=int, default=0, help="the window (default: the board's, within its limit)")
     g.add_argument("--settle-us", type=int, default=None, help="the settle time to start from (default: the board's)")
     g.add_argument("--pa-us", type=int, default=None, help="the PA's point (default: the board's)")
+    g.add_argument("--ease-pm", type=int, default=None,
+                   help="the fastest approach, in 1/1000 of the anchor over the dead zone (default: measured; 0: none)")
     g.add_argument("--channel", action="store_true",
                    help="key on the channel the radio is on (a radio without a VFO); --cc is that channel's")
     g.add_argument("--cc", type=int, default=1)
@@ -913,7 +954,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if not a.allow_rf:
         ap.error("the radio transmits: give --allow-rf when it is on a dummy load and the frequency is yours to key")
-    if a.before is not None and len(a.before) != len(NAMES):
+    if a.before is not None and len(a.before) != 6:
         ap.error("--before takes six constants")
     if not 1 <= a.max_pct <= 100 or a.points < 3 or not 0.2 <= a.key_s <= 5:
         ap.error("--max-pct 1..100, --points 3 or more, --key-s 0.2..5")

@@ -116,8 +116,9 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 		uint16_t top, ref, ahead, max;
 		pa_keyup_t k = pa_keyup_last(&top, &ref);
 		pa_keyup_limits(&ahead, &max);
-		dl_text(t, "pa_keyup=%u/%u/%u/%u/%u/%u\n", (unsigned)ku->dead_pm, (unsigned)ku->knee_us,
-			(unsigned)ku->slope_us, (unsigned)ku->window_us, (unsigned)ku->settle_us, (unsigned)ku->pa_us);
+		dl_text(t, "pa_keyup=%u/%u/%u/%u/%u/%u/%u\n", (unsigned)ku->dead_pm, (unsigned)ku->knee_us,
+			(unsigned)ku->slope_us, (unsigned)ku->window_us, (unsigned)ku->settle_us, (unsigned)ku->pa_us,
+			(unsigned)ku->ease_pm);
 		dl_text(t, "pa_keyup.limits=%u/%u\n", (unsigned)ahead, (unsigned)max);
 		dl_text(t, "pa_keyup.last=%u/%u/%u/%u/%u/%u/%u\n", (unsigned)k.boost, (unsigned)k.drive, (unsigned)k.boost_us,
 			(unsigned)k.pa_us, (unsigned)k.drive_us, (unsigned)top, (unsigned)ref);

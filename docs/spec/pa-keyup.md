@@ -42,8 +42,20 @@ All times are before the burst's first symbol.
 
 The PA is switched on at `pa_us`, or with the first drive when that comes later.
 
+A loop that comes up fast runs past its power, most at the low steps, where the PA's output is steepest against
+the loop's control. `ease_pm` sets the fastest approach, the drive a = dead + `ease_pm` × `ref` / 1000:
+
+| Case | PA drive |
+|---|---|
+| d ≤ a | as above; a boost stops at a |
+| d > a | a from T(a, a) + s before the first symbol, then d from s, with s = `slope_us` × (d − a) / (d − dead) |
+
+So a step over the approach drive comes up as a step of that drive would, regulates there, and takes its own drive
+for the time the law gives it from a's power to its own. It starts ahead of the window when it has to: the window
+is the boosts', and the board's earliest point bounds it. The carrier is on the air at a's power during s.
+
 A step that is fast by itself is keyed late and leaves its time to the receiver. A slow one gets only the boost it
-needs: a short high boost overshoots with the timer's jitter, a long low one doesn't. No step starts earlier than
+needs: a short high boost overshoots with the timer's jitter, a long low one doesn't. No boost starts earlier than
 the window. The boost is never over `PA_KEYUP_BOOST_MAX_PCT` (120 %) of the top step's drive or the board's drive
 limit; a step that needs more comes up late, and the window is too short for it.
 
@@ -55,8 +67,9 @@ limit; a step that needs more comes up late, and the window is too short for it.
 | `window_us` | the earliest a key-up starts. A step slower than this is boosted |
 | `settle_us` | a boost ends this long before the first symbol (under `window_us`) |
 | `pa_us` | the PA on this long before, or with the first drive when that is later |
+| `ease_pm` | the fastest approach: the drive over the dead zone a key-up comes up on, in 1/1000 of `ref` (0: no limit) |
 
-Six 16-bit values per band with its own PA. None is a drive count. `ref` is a drive the radio's own power
+Seven 16-bit values per band with its own PA. None is a drive count. `ref` is a drive the radio's own power
 calibration gives at the transmit frequency: its lowest step's drive, or the drive where its table says the output
 reaches zero (0: no dead zone). `top` and `d` come from the same table. So one set of constants serves every radio of
 a design: what differs from radio to radio is in its calibration table, and nothing is stored per step or per
@@ -71,6 +84,9 @@ dead = ref * dead_pm / 1000
 q    = knee_us * (top - dead) + slope_us * (d - dead)
 lead = q / (d - dead)                              // d in the dead zone: window_us
 b    = dead + ceil(q / (window_us - settle_us))    // only when lead > window_us
+ease = ref * ease_pm / 1000                        // d - dead > ease: the eased key-up
+s    = slope_us * (d - dead - ease) / (d - dead)
+t    = (knee_us * (top - dead) + slope_us * ease) / ease + s
 ```
 
 ## 3. What a board does
@@ -110,12 +126,13 @@ sets a drive that is not in the table, for one transmission; the key-up is plann
 
 | `core` view key | Values |
 |---|---|
-| `pa_keyup` | the six constants, in the table's order |
+| `pa_keyup` | the seven constants, in the table's order |
 | `pa_keyup.limits` | the board's earliest point (µs) and its drive limit |
-| `pa_keyup.last` | the last key-up: boost, drive, `boost_us`, `pa_us`, `drive_us`, then the `top` and `ref` it was planned against |
+| `pa_keyup.last` | the last key-up: the first drive (a boost, or under the step's drive the approach drive; 0: none), drive, `boost_us`, `pa_us`, `drive_us`, then the `top` and `ref` it was planned against |
 
 ```
-rfoundry_debug.py radio pa-keyup 900 120 250 1500 300 400
+rfoundry_debug.py radio pa-keyup 900 120 250 1500 300 400        # six values: no fastest approach
+rfoundry_debug.py radio pa-keyup 900 120 250 1500 300 400 350    # with ease_pm
 rfoundry_debug.py radio pa-keyup default
 ```
 
@@ -202,6 +219,7 @@ Per band:
 | Open loop | 6 | The drive alone from the window's start, at the levels' drives and some between (RADIO op 36), never over `top`. Each gives T(d, d) and the overshoot that drive has by itself. Levels that share one drive: drives down to 60 % of it |
 | Limit | 1 | The top drive from the board's earliest point. It has to come up that much earlier; if it doesn't, the board's burst sequence can't run a point that early, and the tool says how far it reaches |
 | Fit | 0 | `dead_pm`, `knee_us` and `slope_us`: a line through 1 / (d − dead), the dead zone searched. Times that don't fall with the drive give no knee: one lead for every level |
+| Ease | 0 | A level whose drive alone ran more than 2.5 dB past its power came up too fast: `ease_pm` starts at 80 % of the lowest such level's drive over the dead zone, and an eased level that still overshoots in a verify round takes it down to 85 % |
 | Edge | 0 | A level whose own time moves more than 100 us per 1 % of drive sits on the PA's turn-on edge: its time doesn't hold from key to key, so it is boosted whatever the fit says |
 | Verify | one per level, up to four rounds | Every level as the radio keys it. Without slow levels: each level's error goes back into the knee and slope. A level on the edge, or slow on its own drive and not right as the law keys it, has the boost it needs read from its own measurements, on the law's 1 / (b − dead) scale and no further than twice the last step past the drives tried. The constants are then solved over all levels (least squares per dead zone; the smallest worst error, then the smallest sum) to give those boosts and keep the other levels on the law's line. A boost that overshoots while on time ends earlier: `settle_us` up 0.1 ms, and as much again per 3 dB over the limit. The round that held best stands; a round ends the run when every level is up at least 60 us early with half a dB of overshoot to spare |
 | Confirm | one per level | The result again: it has to pass again, a level on its own drive within 0.1 ms |
@@ -209,9 +227,9 @@ Per band:
 A boosted level may come up early, since it never starts before the window; no level, boosted or not, may be on
 the air before the slot's start (`before-slot`). A key-down still on the air after the slot's end (`after-slot`), or more than
 3 dB down at the last symbol's end (`cut-short`), fails the band and starts no refit: no key-up constant moves it. A creeping level (5) is reported with its edge, and its −3 dB point
-and first symbol beside it. An overshoot a drive has when written
-alone is the PA loop's, which no constant changes: the result notes it and doesn't count it. The same holds in the
-as-is step for a level the board keys at its own drive.
+and first symbol beside it. An overshoot a drive has when written alone
+counts: `ease_pm` is its cure. Only on a firmware without `ease_pm` (a view with six constants) is it noted and not
+counted.
 
 It stops before the next key when the SDR's input clips or is over `--max-in-dbm`. It always restores the board's
 constants, the drive and the lowest level at the end. Nothing is written to the radio.
@@ -221,8 +239,8 @@ constants, the drive and the lowest level at the end. Nothing is written to the 
 ```
   PASS 446.05 MHz
     level 0 (1.0 W): -3 dB -241 us, over 0.5 dB  OK
-    { .dead_pm = 733, .knee_us = 250, .slope_us = 280, .window_us = 1500, .settle_us = 300, .pa_us = 400 }
-    rfoundry_debug.py radio pa-keyup 733 250 280 1500 300 400
+    { .dead_pm = 733, .knee_us = 250, .slope_us = 280, .window_us = 1500, .settle_us = 300, .pa_us = 400, .ease_pm = 0 }
+    rfoundry_debug.py radio pa-keyup 733 250 280 1500 300 400 0
 ```
 
 1. `PASS`: put the initializer in the board's key-up constants for that band. `CHECK`: the level's line names the
