@@ -3,7 +3,8 @@
 Text messages, packet data answers, CSBK call alert and radio check, ARS registration and LRRP location answers on
 the DMR call stack; IP packets with compressed headers and confirmed delivery (11, 12). Status: built and host-tested
 (`dmrDataServiceTest`, `dmrDataChainTest`). On air against the SDR bench (measured): text messages,
-call alert and radio check, both ways (`tests/hil/test_dmr_data.py`); ARS and LRRP not yet (`docs/testing/on-air-coverage.md`);
+call alert and radio check, both ways, and LRRP immediate answers with and without a position (`tests/hil/test_dmr_data.py`);
+ARS not yet (`docs/testing/on-air-coverage.md`);
 IP over DMR: 11.4.
 
 Sources: ETSI TS 102 361-1 (bursts, data headers, blocks, CRCs, CSBK), TS 102 361-2 (call alert, radio check),
