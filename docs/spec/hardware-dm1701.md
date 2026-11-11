@@ -760,12 +760,14 @@ after the RF TX interrupt:
 | Band | dead_pm | knee_us | slope_us | window_us | settle_us | pa_us |
 |---|---|---|---|---|---|---|
 | VHF | 0 | 760 | 850 | 1730 | 300 | 1730 |
-| UHF | 348 | 280 | 1210 | 1530 | 700 | 1530 |
+| UHF | 348 | 255 | 1180 | 1530 | 700 | 1530 |
 
 UHF is measured with `tools/bench/pa_cal.py` ([pa-keyup.md](pa-keyup.md) 6) over the air on the SDR bench: every
-level's -3 dB point 0.24-0.44 ms before the first symbol, the two top levels with under 1 dB of overshoot, the
-boosted lower three with 1.7-3.3 dB (they vary from run to run around the tool's 3 dB limit; a refit ends on the
-same constants within a few percent). The set converted
+level's -3 dB point 0.19-0.40 ms before the first symbol, the two top levels with under 1 dB of overshoot, the
+boosted lower three with 1.2-2.2 dB. The knee and slope are 3-9 % under the tool's fit (280, 1210), which gave the
+boosted levels 1.7-3.3 dB: the charge a boost leaves in the power loop carries the output past the level after the
+boost's end, so a little less of it lowers the overshoot and brings the level up about 0.1 ms later. A longer settle
+time did the same, but put the lowest level late at 1100 us; a later PA point brought every level up late. The set converted
 from the earlier form (knee 250, slope 780, no dead zone, settle 300) keyed every level 0.1-0.6 ms late. VHF is still
 that conversion (one boost level for every step, a hold, a later start for the lower steps) and is untested on the
 radio.
