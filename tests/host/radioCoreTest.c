@@ -4392,6 +4392,9 @@ static void test_rx_ext(void)
 	run(20);
 	board_rx_ext_set(false);
 	CHECK(!board_in_band(500000000, false));
+	req(RREQ_RELOAD, 0);	// what turning it off in Settings does: a VFO left past the table returns to a band
+	run(20);
+	CHECK(sm.view.vfo && board_in_band(sm.view.ch.rx_hz, false));
 }
 
 // ---- Error paths: the radio refuses to key, a channel without a TX frequency, retuning or scanning while

@@ -4794,6 +4794,15 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	radio_settings_t rs;
 	settings_to_radio(st, &rs);
 	use_settings(sm, &rs, now_ms);
+	// A VFO left in the receive range past the table, now off, goes back to a band the next time it is used
+	if (sm->vfo_seeded && !board_in_band(sm->vfo_ch.rx_hz, false)) {
+		sm->vfo_seeded = false;
+	}
+#if CONFIG_DUAL_WATCH
+	if (sm->vfo_other.seeded && !board_in_band(sm->vfo_other.ch.rx_hz, false)) {
+		sm->vfo_other.seeded = false;
+	}
+#endif
 	if (vfo || !sm->have_channels) {
 		if (VFO_AVAILABLE) {
 			enter_vfo(sm, now_ms);
