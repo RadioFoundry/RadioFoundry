@@ -126,7 +126,7 @@ Measured on a dummy load, per burst, against the first symbol found from the bur
 | Measure | Target |
 |---|---|
 | The −3 dB point | 0.25 ms before the first symbol; never after it, never more than 0.6 ms before |
-| On the air (within 20 dB of the burst's level) | not before the slot's start, 1.25 ms before the first symbol |
+| On the air (within 20 dB of the burst's level) | not before the slot's start, 1.25 ms before the first symbol; not after its end, 1.25 ms after the last symbol |
 | The first symbol's level against the settled level | within 3 dB |
 | Overshoot above the settled level | 3 dB at most |
 
@@ -207,7 +207,8 @@ Per band:
 | Confirm | one per level | The result again: it has to pass again, a level on its own drive within 0.1 ms |
 
 A boosted level may come up early, since it never starts before the window; no level, boosted or not, may be on
-the air before the slot's start (`before-slot`). A creeping level (5) is reported with its edge, and its −3 dB point
+the air before the slot's start (`before-slot`). A key-down still on the air after the slot's end (`after-slot`), or more than
+3 dB down at the last symbol's end (`cut-short`), fails the band and starts no refit: no key-up constant moves it. A creeping level (5) is reported with its edge, and its −3 dB point
 and first symbol beside it. An overshoot a drive has when written
 alone is the PA loop's, which no constant changes: the result notes it and doesn't count it. The same holds in the
 as-is step for a level the board keys at its own drive.

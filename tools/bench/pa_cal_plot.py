@@ -159,8 +159,9 @@ def ramps(plt, band, keys, path, who=""):
     fig.legend(h, lab, loc="lower center", ncol=5, fontsize=8, frameon=False)
     c = band["constants"]
     state = "kept: the board's constants hold" if band.get("kept") else "PASS" if band["ok"] else "CHECK"
-    fig.suptitle(f"{who}{mhz:g} MHz key-up: dead {c['dead_pm']}/1000, knee {c['knee_us']} us, slope {c['slope_us']} us, "
-                 f"window {c['window_us']} us, settle {c['settle_us']} us  ({state})", fontsize=11)
+    # Two lines: one ran off a long radio name's figure
+    fig.suptitle(f"{who}{mhz:g} MHz key-up  ({state})\ndead {c['dead_pm']}/1000, knee {c['knee_us']} us, "
+                 f"slope {c['slope_us']} us, window {c['window_us']} us, settle {c['settle_us']} us", fontsize=10.5)
     fig.tight_layout(rect=(0, 0.09, 1, 0.96))
     fig.savefig(path, dpi=130)
     plt.close(fig)
