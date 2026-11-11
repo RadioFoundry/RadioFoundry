@@ -146,7 +146,9 @@ static volatile uint16_t drive_override;
 // them from the TX line's edge, so the edge has its own fixed time after the RF TX interrupt: later than a late
 // interrupt (a few hundred us, dmr_rfburst.c) and the task's wake, which then don't move the points. The earliest
 // point sets the RF TX interrupt's lead with the page's TX-on delay (gd88_dmr_key_rf_tx_lead).
-// No knee measured: every level's drive goes on where the ramp began (GD88_DMR_DRIVE_US), on both bands
+// Measured (tools/bench/pa_cal.py, UHF, both levels): the output is up 0.1 to 0.2 ms after its drive, the higher
+// level sooner. With every drive on where the ramp began (GD88_DMR_DRIVE_US) the levels were up 0.65 and 0.88 ms
+// before the first symbol; with these, 0.30 and 0.25 ms. VHF uses the same (not measured there)
 #define KEY_EDGE_AT_US		300u
 // The earliest point: the modem's longest lead (6.3 ms) has to hold the sequence, the page's longest TX-on delay
 // and this
@@ -154,7 +156,8 @@ static volatile uint16_t drive_override;
 _Static_assert(GD88_DMR_SEQ_US + GD88_CAL_TX_DELAY_MAX_US + KEYUP_MAX_AHEAD_US <=
 	       63u * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US, "the earliest key-up point fits the modem's longest lead");
 _Static_assert(KEY_EDGE_AT_US + 50u + 200u < GD88_DMR_SEQ_US, "B's sequence after the edge ends before the first point");
-static const pa_keyup_cfg_t keyup_cfg = PA_KEYUP_FIXED(GD88_DMR_DRIVE_US);
+static const pa_keyup_cfg_t keyup_cfg = { .dead_pm = 0, .knee_us = 189, .slope_us = 22, .window_us = GD88_DMR_DRIVE_US,
+					  .settle_us = 160, .pa_us = GD88_DMR_DRIVE_US };
 static pa_keyup_t ku;		// the transmission's, set before the RF task is armed
 static uint8_t tx_lead;		// the RF TX interrupt's lead, 100 us steps
 
