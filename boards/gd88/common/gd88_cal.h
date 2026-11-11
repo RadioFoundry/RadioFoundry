@@ -77,7 +77,8 @@ static inline uint8_t gd88_dmr_own_rf_tx_lead(uint16_t on_us)
 	return hrc_rfburst_lead(GD88_DMR_OWN_PA_UP_US + on_us);
 }
 // The ramp down starts with the burst's last symbol, with no page TX-off delay: that delay held the carrier 0.75 ms
-// past the data. A's TX line falls this long before it, B's wake on the edge (hrc_rfburst_board_t.off_ahead_us)
-#define GD88_DMR_OFF_AHEAD_US	150u
+// past the data. A's TX line falls this long before the last symbol's end (hrc_rfburst_board_t.off_ahead_us). B
+// takes the edge at once: with 150 us the VHF carrier was 4.9 dB down at the symbol's end (UHF 0.4 dB)
+#define GD88_DMR_OFF_AHEAD_US	0u
 
 #endif

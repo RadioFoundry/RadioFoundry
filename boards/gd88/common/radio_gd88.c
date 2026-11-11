@@ -146,9 +146,12 @@ static volatile uint16_t drive_override;
 // them from the TX line's edge, so the edge has its own fixed time after the RF TX interrupt: later than a late
 // interrupt (a few hundred us, dmr_rfburst.c) and the task's wake, which then don't move the points. The earliest
 // point sets the RF TX interrupt's lead with the page's TX-on delay (gd88_dmr_key_rf_tx_lead).
-// Measured (tools/bench/pa_cal.py, UHF, both levels): the output is up 0.1 to 0.2 ms after its drive, the higher
-// level sooner. With every drive on where the ramp began (GD88_DMR_DRIVE_US) the levels were up 0.65 and 0.88 ms
-// before the first symbol; with these, 0.30 and 0.25 ms. VHF uses the same (not measured there)
+// Measured (tools/bench/pa_cal.py), [VHF, UHF]. UHF, both levels: the output is up 0.1 to 0.2 ms after its drive,
+// the higher level sooner. With every drive on where the ramp began (GD88_DMR_DRIVE_US) the levels were up 0.65 and
+// 0.88 ms before the first symbol; with these, 0.32 and 0.27 ms. VHF comes up 0.76 ms (the top drive) to 0.98 ms
+// (the low table's) after its drive, and a boost doesn't shorten that: its window holds the slowest drive, so no
+// level is boosted. With the drive at GD88_DMR_DRIVE_US the low level was up 0.18 ms after the first symbol; with
+// these, 0.25 ms before it (the low level measured, the others by the fit over six drives)
 #define KEY_EDGE_AT_US		300u
 // The earliest point: the modem's longest lead (6.3 ms) has to hold the sequence, the page's longest TX-on delay
 // and this
@@ -156,8 +159,11 @@ static volatile uint16_t drive_override;
 _Static_assert(GD88_DMR_SEQ_US + GD88_CAL_TX_DELAY_MAX_US + KEYUP_MAX_AHEAD_US <=
 	       63u * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US, "the earliest key-up point fits the modem's longest lead");
 _Static_assert(KEY_EDGE_AT_US + 50u + 200u < GD88_DMR_SEQ_US, "B's sequence after the edge ends before the first point");
-static const pa_keyup_cfg_t keyup_cfg = { .dead_pm = 0, .knee_us = 189, .slope_us = 22, .window_us = GD88_DMR_DRIVE_US,
-					  .settle_us = 160, .pa_us = GD88_DMR_DRIVE_US };
+static const pa_keyup_cfg_t keyup_cfg[2] = {
+	{ .dead_pm = 383, .knee_us = 105, .slope_us = 892, .window_us = 1250, .settle_us = 160, .pa_us = GD88_DMR_DRIVE_US },
+	{ .dead_pm = 0, .knee_us = 189, .slope_us = 22, .window_us = GD88_DMR_DRIVE_US, .settle_us = 160,
+	  .pa_us = GD88_DMR_DRIVE_US },
+};
 static pa_keyup_t ku;		// the transmission's, set before the RF task is armed
 static uint8_t tx_lead;		// the RF TX interrupt's lead, 100 us steps
 
@@ -288,7 +294,7 @@ static void init(void)
 	hrc_modem_analog_init(DAC_C_INIT);
 	hrc_dac_b_power(false);
 #if CONFIG_DMR && GD88_DMR_TX && GD88_TX
-	pa_keyup_init(&keyup_cfg, KEYUP_MAX_AHEAD_US, 4095u);	// DAC B's range (B's)
+	pa_keyup_init(&keyup_cfg[1], KEYUP_MAX_AHEAD_US, 4095u);	// DAC B's range (B's)
 #endif
 
 	// The modem block powered as the DMR glue does, so the reference trim reaches the TCXO in FM builds too
@@ -522,6 +528,7 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	gd88_tx_plan_t other;
 	uint16_t top = gd88_cal_tx_plan(hz, true, GD88_TX_DRIVE_PCT, &other) && other.pa > pa ? other.pa : pa;
 	uint16_t ref = gd88_cal_tx_plan(hz, false, GD88_TX_DRIVE_PCT, &other) ? other.pa : 0u;
+	pa_keyup_select(&keyup_cfg[hz >= UHF_FROM_HZ ? 1 : 0]);
 	ku = pa_keyup_plan(pa, top, ref);
 	tx_lead = gd88_dmr_key_rf_tx_lead(ku.boost != 0u ? ku.boost_us : ku.pa_us, plan.on_us);
 	const rx2_tx_key_t key = {
