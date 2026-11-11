@@ -717,7 +717,8 @@ test("merge on a radio without a codec, then restore stock from the bundle's sto
 	radio.afterExit = "stock";
 	await new Dfu(radio.dfuTransport(), noWait).run(plan, key);
 	const [, app] = stockfw.stockApplication(sim.stock, key, sim.board, sim.fb);
-	assert.deepEqual(radio.flash.subarray(0xC000, 0xC000 + app.length), app);
+	// Node's diff for mismatched firmware-sized arrays can exhaust memory.
+	assert.equal(await sha256(radio.flash.subarray(0xC000, 0xC000 + app.length)), await sha256(app));
 	assert.deepEqual(radio.violations, []);
 });
 
