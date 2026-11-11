@@ -209,7 +209,7 @@ sees the radio's bytes.
 The host tools apply the rule as well, before they send: the Codeplug Editor writes the area only when one of its
 fields changed (7), and `tools/cps_client.py` (default regions `radio`) and `tools/cps_fast.py` send it only when the
 file's is valid and the radio's isn't of a newer version. That covers radios on firmware from before the radio-side
-rule.
+rule. Their `verify` leaves the area out by the same rule, so a kept area isn't reported as a difference.
 
 ## 7. Codeplug Editor
 
