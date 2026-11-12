@@ -1293,6 +1293,14 @@ run: run-t3access
 run-t3access: t3AccessTest
 	./t3AccessTest
 .PHONY: run-t3access
+# The engine with the radio's receive chain (CACH, short LC, slot type, BPTC) on raw control channel bursts
+TESTS   += t3SiteTest
+t3SiteTest: t3SiteTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c $(wildcard $(CORE)/dmr/trunk/*.h) data/t3_site_tscc.jsonl
+	$(CC) $(CFLAGS) -o $@ t3SiteTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c
+run: run-t3site
+run-t3site: t3SiteTest
+	./t3SiteTest
+.PHONY: run-t3site
 # The same engine on off-air recordings (not in the repository): skips unless RFOUNDRY_T3_RECORDINGS names a manifest
 TESTS   += t3ReplayTest
 t3ReplayTest: t3ReplayTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c $(wildcard $(CORE)/dmr/trunk/*.h)
