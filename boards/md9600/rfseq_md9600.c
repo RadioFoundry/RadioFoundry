@@ -284,29 +284,21 @@ md9600_rf_err_t md9600_rf_rx(md9600_rf_t *rf, uint32_t hz, bool wide)
 
 // --- Transmit ---
 
-bool md9600_rf_tx_arm(md9600_rf_t *rf, bool on)
+void md9600_rf_confirm(md9600_rf_t *rf, bool on)
 {
 	if (!on) {
-		// Lines and the DAC only (no bus), so any task may disarm: a running transmission loses its PA at once and
-		// the radio task's tx_off retunes later
-		rf->tx_armed = false;
+		// Lines and the DAC only (no bus), like the end of any path: nothing keys from here on
+		rf->confirmed = false;
 		md9600_rf_pa_safe(rf);
-		return true;
+	} else if (rf->desc != NULL) {
+		rf->confirmed = true;
 	}
-	if (!CONFIG_MD9600_TX || rf->desc == NULL || !rf->confirmed) {
-		return false;
-	}
-	rf->tx_armed = true;
-	return true;
 }
 
 md9600_rf_err_t md9600_rf_tx_check(const md9600_rf_t *rf, uint32_t hz, uint8_t power)
 {
 	if (!CONFIG_MD9600_TX) {
 		return MD9600_RF_E_TX_BUILD;
-	}
-	if (!rf->tx_armed) {
-		return MD9600_RF_E_TX_ARM;
 	}
 	if (rf->desc == NULL) {
 		return MD9600_RF_E_REV;
@@ -398,9 +390,11 @@ md9600_rf_err_t md9600_rf_pa(md9600_rf_t *rf, bool on)
 		md9600_rf_pa_safe(rf);
 		return MD9600_RF_OK;
 	}
-	if (rf->state != MD9600_RF_TX || !rf->tx_armed || !CONFIG_MD9600_TX) {
+	// confirmed again here: a confirmation dropped (md9600_rf_confirm) while a transmission runs must stop its next key-up
+	if (rf->state != MD9600_RF_TX || !CONFIG_MD9600_TX || !rf->confirmed) {
 		md9600_rf_pa_safe(rf);
-		return fail(rf, rf->state != MD9600_RF_TX ? MD9600_RF_E_STATE : MD9600_RF_E_TX_ARM);
+		return fail(rf, rf->state != MD9600_RF_TX ? MD9600_RF_E_STATE
+			       : !CONFIG_MD9600_TX ? MD9600_RF_E_TX_BUILD : MD9600_RF_E_TX_REV);
 	}
 	if (rf->pa_on) {
 		return MD9600_RF_OK;
@@ -457,9 +451,11 @@ md9600_rf_err_t md9600_rf_pa_step(md9600_rf_t *rf, uint32_t step, uint32_t *next
 {
 	const md9600_rf_ops_t *o = rf->ops;
 	*next_us = 0;
-	if (rf->state != MD9600_RF_TX || !rf->tx_armed || !CONFIG_MD9600_TX) {
+	// confirmed again here: a confirmation dropped (md9600_rf_confirm) while a transmission runs must stop its next key-up
+	if (rf->state != MD9600_RF_TX || !CONFIG_MD9600_TX || !rf->confirmed) {
 		md9600_rf_pa_safe(rf);
-		return fail(rf, rf->state != MD9600_RF_TX ? MD9600_RF_E_STATE : MD9600_RF_E_TX_ARM);
+		return fail(rf, rf->state != MD9600_RF_TX ? MD9600_RF_E_STATE
+			       : !CONFIG_MD9600_TX ? MD9600_RF_E_TX_BUILD : MD9600_RF_E_TX_REV);
 	}
 	if (step == 0) {
 		if (rf->pa_on) {
@@ -486,9 +482,11 @@ md9600_rf_err_t md9600_rf_pa_step(md9600_rf_t *rf, uint32_t step, uint32_t *next
 
 static md9600_rf_err_t pa_point_check(md9600_rf_t *rf)
 {
-	if (rf->state != MD9600_RF_TX || !rf->tx_armed || !CONFIG_MD9600_TX) {
+	// confirmed again here: a confirmation dropped (md9600_rf_confirm) while a transmission runs must stop its next key-up
+	if (rf->state != MD9600_RF_TX || !CONFIG_MD9600_TX || !rf->confirmed) {
 		md9600_rf_pa_safe(rf);
-		return fail(rf, rf->state != MD9600_RF_TX ? MD9600_RF_E_STATE : MD9600_RF_E_TX_ARM);
+		return fail(rf, rf->state != MD9600_RF_TX ? MD9600_RF_E_STATE
+			       : !CONFIG_MD9600_TX ? MD9600_RF_E_TX_BUILD : MD9600_RF_E_TX_REV);
 	}
 	return MD9600_RF_OK;
 }
@@ -614,6 +612,37 @@ md9600_rev_t md9600_rf_probe(const md9600_rf_ops_t *o, uint32_t hz, uint16_t thr
 	return md9600_rev_probe_pick(base, level, cand, n, threshold);
 }
 
+// --- AK2365A read test ---
+
+#define IF_SOFT_RESET	0x08AAu		// register 4 = 0xAA: every register back to its default (hardware-md9600.md 5.4)
+
+md9600_if_t md9600_rf_if_detect(const md9600_rf_ops_t *o)
+{
+	if (o->if_read == NULL || o->if_rst_pull == NULL) {
+		return MD9600_IF_UNKNOWN;
+	}
+	uint16_t r[2][2][MD9600_IF_PATTERNS] = { 0 };
+	bool ok = true;
+	receivers_on(o);
+	wait_us(o, MD9600_RX_SETTLE_US);	// the AK2365A runs from the receiver supply
+	// The reset low pulse (at least 1 us) from the pulls alone: on V5 nobody knows what PE15 reaches
+	o->if_rst_pull(o->ctx, false);
+	wait_us(o, MD9600_IF_PULL_US);
+	o->if_rst_pull(o->ctx, true);
+	wait_us(o, MD9600_IF_PULL_US);
+	for (uint8_t band = 0; band < 2u; band++) {
+		for (uint8_t k = 0; k < MD9600_IF_PATTERNS; k++) {
+			ok = o->ifw(o->ctx, band, (uint16_t)(MD9600_IF_TEST_REG << 9 | md9600_if_patterns[k])) && ok;
+			for (uint8_t pull = 0; pull < 2u; pull++) {
+				ok = o->if_read(o->ctx, band, MD9600_IF_TEST_REG, pull != 0, &r[band][pull][k]) && ok;
+			}
+		}
+		(void)o->ifw(o->ctx, band, IF_SOFT_RESET);
+	}
+	receivers_off(o);
+	return ok ? md9600_if_verdict(r) : MD9600_IF_UNKNOWN;
+}
+
 // --- Readings ---
 
 // hardware-md9600.md 5.7: dBm = floor + raw8 / 2 (V4A / V5: / 1.95), raw8 = the 12-bit average >> 4. A fit, unverified
@@ -694,7 +723,7 @@ uint8_t md9600_rf_squelch_noise(md9600_noise_win_t *w, bool receiving, uint16_t 
 const char *md9600_rf_err_name(uint8_t err)
 {
 	static const char *const names[MD9600_RF_E_COUNT] = {
-		"ok", "no rev", "band", "bus", "lock", "tx not built", "tx not armed", "rev not set", "no PA cal", "state",
+		"ok", "no rev", "band", "bus", "lock", "tx not built", "rev not set", "no PA cal", "state",
 	};
 	return err < MD9600_RF_E_COUNT ? names[err] : "?";
 }

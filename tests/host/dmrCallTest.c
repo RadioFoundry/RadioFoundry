@@ -2019,6 +2019,11 @@ static void test_gps_lc(void)
 	CHECK(m > 111000 && m < 111400 && b == 90);
 	dmr_gps_range(100, 100, 100, 100, &m, &b);
 	CHECK(m == 0 && b == 0);
+	// A latitude difference past 32 bits (no real position, but any int32 may arrive): converted whole, not cut
+	dmr_gps_range(INT32_MIN, 0, INT32_MAX, 0, &m, &b);
+	CHECK(m > 47750000 && m < 47766000 && b == 0);
+	dmr_gps_range(2000000000, 5, -2000000001, 0, &m, &b);
+	CHECK(m > 44470000 && m < 44486000 && b == 180);
 }
 
 // GPS Info on the air: a caller's position is collected per call (and kept with the last heard), ours rides in the

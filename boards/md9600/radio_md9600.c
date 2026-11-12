@@ -5,9 +5,9 @@
 //
 // Each band has its own synthesizer, RX and TX VCOs, IF receiver and supplies; the HR_C6000 isn't in the FM receive
 // path (the IF chip's discriminator feeds the audio switches). This file maps the sequencer's lines to pins, its buses
-// to the bit-banged three-wire writer, and picks the revision at start-up: the stored record, the optional receiver
-// probe, the build default (rev_md9600.c). Transmit stays refused unless the build has CONFIG_MD9600_TX, a person
-// armed it for this power cycle and the revision is a stored one (rfseq_md9600.h).
+// to the bit-banged three-wire bus, and picks the revision at start-up: the AK2365A read test, the stored record, the
+// optional receiver probe, the build default (rev_md9600.c). Transmit stays refused unless the build has
+// CONFIG_MD9600_TX and the revision is detected or stored (rfseq_md9600.h).
 //
 // Both synthesizers share one bit-banged bus (chip selects PD8 / PD9), and so do both IF chips (PE11 / PE12). Only the
 // radio task and board_init use them.
@@ -175,6 +175,25 @@ static uint16_t op_noise(void *ctx, uint8_t band)
 	return md9600_adc_raw(band == MD9600_VHF ? MD9600_ADC_NOISE_V : MD9600_ADC_NOISE_U);
 }
 
+static void op_if_rst_pull(void *ctx, bool up)
+{
+	(void)ctx;
+	stm32_pin_in(PIN_PORT(PIN_IF_RST), PIN_MASK(PIN_IF_RST), up ? GPIO_PULLUP : GPIO_PULLDOWN);
+}
+
+#define IF_READ_SETTLE_US	20u	// the released data line under the pin's pull, with the board's capacitance
+
+static bool op_if_read(void *ctx, uint8_t band, uint8_t addr, bool pull_up, uint16_t *bits)
+{
+	(void)ctx;
+	uint32_t v = 0;
+	// R/W 1 and the 6-bit address: 7 bits (hardware-md9600.md 5.4)
+	bool ok = stm32_wire3_read((void *)&if_wire, band, 0x40u | (addr & 0x3Fu), 7, pull_up, IF_READ_SETTLE_US,
+				   MD9600_IF_READ_BITS, &v);
+	*bits = (uint16_t)v;
+	return ok;
+}
+
 static const md9600_rf_ops_t ops = {
 	.line = op_line,
 	.pll = op_pll,
@@ -186,6 +205,8 @@ static const md9600_rf_ops_t ops = {
 	.apc = op_apc,
 	.apc_floor = op_apc_floor,
 	.noise = op_noise,
+	.if_rst_pull = op_if_rst_pull,
+	.if_read = op_if_read,
 };
 
 // --- State for the diagnostics page and the board option ---
@@ -193,6 +214,17 @@ static const md9600_rf_ops_t ops = {
 md9600_rev_state_t md9600_rev_state(void)
 {
 	return rev;
+}
+
+void md9600_radio_rev_confirm(bool on)
+{
+	if (!on) {
+		rev.confirmed = false;
+		md9600_rf_confirm(&rf, false);
+	} else if (rev.usable) {
+		rev.confirmed = true;
+		md9600_rf_confirm(&rf, true);
+	}
 }
 
 void md9600_radio_diag(md9600_radio_diag_t *d)
@@ -204,19 +236,9 @@ void md9600_radio_diag(md9600_radio_diag_t *d)
 	d->refused = rf.refused;
 	d->errors = rf.errors;
 	d->last_err = rf.last_err;
-	d->tx_armed = rf.tx_armed;
 	d->probe = probe_result;
 	d->apc = rf.apc;
 	d->rx_hz = rf.rx_hz;
-}
-
-bool md9600_radio_tx_arm(bool on)
-{
-	bool ok = md9600_rf_tx_arm(&rf, on);
-#if CONFIG_MD9600_DMR_TX
-	md9600_dmr_tx_allow(on && ok);	// DMR bursts follow the same arm
-#endif
-	return ok;
 }
 
 // --- DMR transmit: the per-burst RF switching (hardware-md9600.md 5.5, 19.8) ---
@@ -586,13 +608,15 @@ void md9600_radio_early(void)
 
 	md9600_rev_t probed = MD9600_REV_UNKNOWN;
 	md9600_rev_t stored = md9600_flash_rev_load();
+	// Every start: a board without an AK2365A is V4A / V5 whatever is stored, and one with it can't be
+	md9600_if_t if_chip = md9600_rf_if_detect(&ops);
 #if MD9600_REV_PROBE
-	if (stored == MD9600_REV_UNKNOWN) {
+	if (stored == MD9600_REV_UNKNOWN && if_chip != MD9600_IF_ABSENT) {
 		probed = md9600_rf_probe(&ops, MD9600_PROBE_HZ, MD9600_PROBE_THRESHOLD);
 		probe_result = (int16_t)probed;
 	}
 #endif
-	rev = md9600_rev_resolve(stored, probed, MD9600_REV_DEFAULT);
+	rev = md9600_rev_resolve(stored, if_chip, probed, MD9600_REV_DEFAULT);
 	const md9600_rev_desc_t *d = rev.usable ? md9600_rev_desc(rev.rev) : NULL;
 	if (d != NULL && d->if_chip) {
 		PIN_OUT(PIN_IF_RST, true);	// V1-V4: the AK2365A reset; left an input on V5 (use unknown)

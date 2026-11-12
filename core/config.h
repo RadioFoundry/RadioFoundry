@@ -159,7 +159,11 @@
 #ifndef CONFIG_LANG_IT
 #define CONFIG_LANG_IT			0
 #endif
-#define CONFIG_LANG_ANY			(CONFIG_LANG_ES || CONFIG_LANG_IT)
+// Chinese brings its own 16x16 glyphs (core/ui/cjk_font_data.c) and UTF-8 text the text layer decodes (core/ui/gfx.c)
+#ifndef CONFIG_LANG_ZH
+#define CONFIG_LANG_ZH			0
+#endif
+#define CONFIG_LANG_ANY			(CONFIG_LANG_ES || CONFIG_LANG_IT || CONFIG_LANG_ZH)
 // The language the radio starts in until the user picks one (CONFIG_LANG_DEFAULT_<CODE>, needs its CONFIG_LANG_<CODE>):
 // all 0 = English
 #ifndef CONFIG_LANG_DEFAULT_ES
@@ -167,6 +171,9 @@
 #endif
 #ifndef CONFIG_LANG_DEFAULT_IT
 #define CONFIG_LANG_DEFAULT_IT		0
+#endif
+#ifndef CONFIG_LANG_DEFAULT_ZH
+#define CONFIG_LANG_DEFAULT_ZH		0
 #endif
 #ifndef CONFIG_UI_COLOR
 #define CONFIG_UI_COLOR			1

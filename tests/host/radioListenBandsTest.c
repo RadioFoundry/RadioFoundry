@@ -14,6 +14,7 @@
 #include "dmr/ambe/ambeVoice.h"
 #include "sim/dmr_sim_modem.h"
 #include "settings/settings.h"
+#include "codeplug/codeplug_kv.h"	// the settings area fakes
 
 static int failures;
 static int checks;
@@ -205,6 +206,12 @@ bool codeplug_zone(uint16_t i, zone_t *out)
 	return true;
 }
 uint32_t codeplug_dmr_id(void) { return 9996543; }
+int codeplug_kv_get(uint16_t key, void *buf, uint16_t max) { (void)key; (void)buf; (void)max; return -1; }	// no settings area
+bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n) { (void)ops; (void)n; return false; }
+void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi) { (void)c; (void)lo; (void)hi; }
+int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
+	{ (void)c; (void)key; (void)buf; (void)max; return -1; }
+uint8_t codeplug_kv_serial(void) { return 0; }
 bool codeplug_contact(uint16_t index, contact_t *out) { (void)index; (void)out; return false; }
 bool codeplug_listen_list(uint16_t index, listen_list_t *out) { (void)index; (void)out; return false; }
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out) { (void)id; (void)group; (void)out; return false; }
