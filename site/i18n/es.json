@@ -358,6 +358,8 @@
  "screen.volume_bar": "Barra de volumen: mando girado",
  "screen.volume_bar_call": "Barra de volumen durante una llamada",
  "screen.volume_bar_quick": "Barra de volumen sobre los ajustes rápidos",
+ "screen.volume_bar_ab": "Barras de volumen: mando del lado B girado",
+ "screen.volume_bar_ab_dual": "Barras de volumen en doble escucha",
  "screen.settings": "Ajustes",
  "screen.talk_target_picker": "Destino de habla",
  "screen.talk_target_picker_vfo": "Destino de habla, VFO DMR",

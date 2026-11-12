@@ -278,9 +278,10 @@ class Site:
 
 	def has_screen(self, board, name):
 		"""The board's build shows this gallery screen: its gallery has the shot and the full build has every switch
-		the screen needs."""
+		the screen needs; a screen with "boards" (hardware no switch says, such as a second volume knob) only on those."""
 		s = self.screen(name)
-		return name in board["screens"] and s is not None and all(x in board["config"]["full"] for x in s["needs"])
+		return (name in board["screens"] and s is not None and all(x in board["config"]["full"] for x in s["needs"])
+			and board["id"] in s.get("boards", [board["id"]]))
 
 	def screen_caption(self, lang, name):
 		page, _, color = name.partition("__")

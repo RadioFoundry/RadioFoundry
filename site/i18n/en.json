@@ -358,6 +358,8 @@
  "screen.volume_bar": "Volume bar: the knob turned",
  "screen.volume_bar_call": "Volume bar during a call",
  "screen.volume_bar_quick": "Volume bar over Quick settings",
+ "screen.volume_bar_ab": "Volume bars: side B's knob turned",
+ "screen.volume_bar_ab_dual": "Volume bars in dual watch",
  "screen.settings": "Settings",
  "screen.talk_target_picker": "Talk target",
  "screen.talk_target_picker_vfo": "Talk target, DMR VFO",

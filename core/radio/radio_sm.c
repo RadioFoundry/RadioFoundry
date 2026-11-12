@@ -5131,6 +5131,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->vol_hold = false;
 	sm->view.volume = -1;
 	sm->view.volume_knob = -1;
+	sm->view.volume_b = -1;
 	sm->view.volume_override = -1;
 	sm->view.volume_step = RADIO_VOLUME_DEFAULT;
 	sm->base_squelch = RADIO_SQUELCH_DEFAULT;
@@ -5874,6 +5875,22 @@ uint8_t radio_volume_stored(uint8_t step)
 	return (uint8_t)(0x80u | ((step > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : step) + 1u));
 }
 
+// A second volume knob (side B's): its position in the view for the UI, with the 2 % filter and the ends exactly. The
+// board sets that side's level itself
+static void follow_volume_b(radio_sm_t *sm)
+{
+	if (board.power == NULL || board.power->volume_b == NULL) {
+		return;
+	}
+	int v = board.power->volume_b();
+	int seen = sm->view.volume_b;
+	int d = v - seen;
+	if (v >= 0 && (seen < 0 || d >= 2 || d <= -2 || ((v == 0 || v == 100) && v != seen))) {
+		sm->view.volume_b = (int8_t)v;
+		changed(sm);
+	}
+}
+
 // Follow a volume knob the MCU reads (soft volume): pass changes of 2 % or more, and the ends exactly. A radio with
 // no knob (volume() = -1) gets the stored step instead, and a knob radio the debug link's override
 // (radio-features.md 4.2)
@@ -6155,6 +6172,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		persist(sm, now_ms);
 	}
 	follow_volume(sm);
+	follow_volume_b(sm);
 	battery_poll(sm, now_ms);
 #if CONFIG_BEEP
 	bool shared = false;

@@ -2181,6 +2181,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	load_channel();
 	soft_volume = false;
 	view.volume = -1;	// no level passed on yet (power-up)
+	view.volume_b = -1;	// one knob, until a "knobb" token
 	view.volume_src = RVOL_KNOB;
 	bcast_rx = false;
 	board.radio = NULL;
@@ -2475,6 +2476,8 @@ static bool check(const char *kv, char *err, size_t len)
 	}
 	else if (strcmp(key, "volbar_at") == 0) snprintf(got, sizeof got, "%s", s.volbar_top ? "top" : "bottom");
 	else if (strcmp(key, "volbar") == 0) snprintf(got, sizeof got, "%d", s.volbar);	// the knob's bar, -1 = none
+	else if (strcmp(key, "volbar_b") == 0) snprintf(got, sizeof got, "%d", s.volbar_b);	// side B's, stacked; -1 = one bar
+	else if (strcmp(key, "volbar_side") == 0) snprintf(got, sizeof got, "%s", s.volbar_side ? "b" : "a");	// the side marked
 	else if (strcmp(key, "pttblock") == 0) snprintf(got, sizeof got, "%u", ptt_blocked);
 	else if (strcmp(key, "poweroff") == 0) snprintf(got, sizeof got, "%u", ui_app_power_off_due());
 	else if (strcmp(key, "wake") == 0) snprintf(got, sizeof got, "%u", ui_app_take_wake());	// the backlight asked for
@@ -2968,6 +2971,13 @@ static bool run_token(char *t, char *err, size_t len)
 			view.volume = level;
 			view.volume_src = soft_volume ? RVOL_SOFT : t[0] == 'k' ? RVOL_KNOB : RVOL_OVERRIDE;
 		}
+		changed();
+		step();
+		return true;
+	}
+	if (strcmp(t, "knobb") == 0 && arg != NULL) {
+		// A second knob, side B's (hal_power_t.volume_b): its position as the radio core passes it on
+		view.volume_b = (int8_t)atoi(arg);
 		changed();
 		step();
 		return true;

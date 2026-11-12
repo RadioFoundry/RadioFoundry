@@ -192,6 +192,11 @@ static const struct { const char *name, *script; } gallery[] = {
 #if CONFIG_DMR
 	{ "volume_bar_call", "rx:9991234,3100,g wait:500 knob:50 knob:31" },
 #endif
+	// A knob per side (the AT-D578UV): side B's turned, both stacked, B marked; side A's in dual watch, A marked
+	{ "volume_bar_ab", "knob:50 knobb:40 knobb:62" },
+#if CONFIG_DUAL_WATCH
+	{ "volume_bar_ab_dual", "quick 7 ctx 3 5 ok wait:3000 knob:50 knobb:40 knob:75" },
+#endif
 #endif
 #if CONFIG_DMR
 	{ "dmr_id", "ok 7 0 ok" },		// Settings > My radio

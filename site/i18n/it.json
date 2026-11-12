@@ -358,6 +358,8 @@
  "screen.volume_bar": "Barra del volume: manopola girata",
  "screen.volume_bar_call": "Barra del volume durante una chiamata",
  "screen.volume_bar_quick": "Barra del volume sulle impostazioni rapide",
+ "screen.volume_bar_ab": "Barre del volume: manopola del lato B girata",
+ "screen.volume_bar_ab_dual": "Barre del volume in doppio ascolto",
  "screen.settings": "Impostazioni",
  "screen.talk_target_picker": "Destinazione di trasmissione",
  "screen.talk_target_picker_vfo": "Destinazione di trasmissione, VFO DMR",

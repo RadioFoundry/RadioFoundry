@@ -81,10 +81,16 @@ uint8_t d578uv_pot_percent(uint32_t v)
 	return (uint8_t)((v - 0x96u) * 100u / (0xF60u - 0x96u));
 }
 
-// The A channel's pot: the core's volume. Side B's pot sets side B's level in the board (radio_d578uv.c)
+// The A channel's pot: the core's volume. Side B's pot sets side B's level in the board (radio_d578uv.c); the core
+// reads it only for the volume bar
 static int8_t volume(void)
 {
 	return (int8_t)d578uv_pot_percent(mcu_adc_read(ADC_VOL_A));
+}
+
+static int8_t volume_b(void)
+{
+	return (int8_t)d578uv_pot_percent(mcu_adc_read(ADC_VOL_B));
 }
 
 static bool switch_on(void)
@@ -133,6 +139,7 @@ const hal_power_t d578uv_power = {
 	.init = init,
 	.latch = latch,
 	.volume = volume,
+	.volume_b = volume_b,
 	.switch_on = switch_on,
 	.led = led,
 	.supply_mv = supply_mv,

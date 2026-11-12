@@ -780,6 +780,27 @@
     "VOLUME_BAR"
    ]
   },
+  "volume_bar_ab": {
+   "group": "home",
+   "needs": [
+    "VOLUME_BAR"
+   ],
+   "boards": [
+    "d578uv",
+    "d578uva"
+   ]
+  },
+  "volume_bar_ab_dual": {
+   "group": "home",
+   "needs": [
+    "VOLUME_BAR",
+    "DUAL_WATCH"
+   ],
+   "boards": [
+    "d578uv",
+    "d578uva"
+   ]
+  },
   "factory_reset": {
    "group": "settings",
    "needs": []

@@ -57,6 +57,7 @@ static uint32_t toast_until, entry_last, last_refresh, now;
 static uint32_t volbar_until;
 #endif
 static int8_t knob_seen;		// the knob's last level (percent) the UI saw, -1 = none yet: no bar for the first
+static int8_t knob_b_seen;		// the same for a second knob (side B's, radio_view_t.volume_b)
 static bool dirty = true;
 static uint32_t draws;
 static bool has_quick_key, has_context_key;
@@ -1812,7 +1813,9 @@ void ui_app_init(void)
 	view = &view_none;
 	memset(&ui_st, 0, sizeof ui_st);
 	ui_st.volbar = -1;
+	ui_st.volbar_b = -1;
 	knob_seen = -1;
+	knob_b_seen = -1;
 	wake_req = false;
 #if CONFIG_DUAL_WATCH
 	ui_dual_reset();
@@ -2249,21 +2252,42 @@ static void knob_moved(const radio_view_t *v)
 // own view, not dual watch's per-side one. The first level (power-up) and a change of source (the debug link taking
 // over or giving back) set the reference without a bar. The bar wakes the backlight: turning the knob is using the
 // radio
+//
+// A radio with a second knob (side B's, view.volume_b >= 0) shows both bars stacked when that one turns, when the main
+// one turns in dual watch, and while they show; the side whose knob moved is marked. Side A's row shows the level in
+// force (the debug link's too). A radio with one knob never gets there
 #if CONFIG_VOLUME_BAR
+static bool dual_on(void)
+{
+#if CONFIG_DUAL_WATCH
+	return ui_st.dual.on;
+#else
+	return false;
+#endif
+}
+
 __attribute__((noinline)) static void knob_tick(const radio_view_t *v)
 {
 	int8_t lvl = v->volume_src == RVOL_KNOB ? v->volume : -1;
-	if (lvl >= 0 && knob_seen >= 0 && lvl != knob_seen) {
-		ui_st.volbar = (int8_t)radio_volume_step_of((uint8_t)lvl);
+	int8_t lb = v->volume_b;
+	bool moved_b = lb >= 0 && knob_b_seen >= 0 && lb != knob_b_seen;
+	if ((lvl >= 0 && knob_seen >= 0 && lvl != knob_seen) || moved_b) {
+		if (lb >= 0 && (moved_b || dual_on() || ui_st.volbar_b >= 0)) {
+			ui_st.volbar_b = (int8_t)radio_volume_step_of((uint8_t)lb);
+			ui_st.volbar_side = moved_b ? 1u : 0u;
+		}
+		ui_st.volbar = (int8_t)(lvl >= 0 ? radio_volume_step_of((uint8_t)lvl) :
+					v->volume >= 0 ? radio_volume_step_of((uint8_t)v->volume) : 0);
 		volbar_until = now + VOLUME_MS;
 		wake_req = true;
 		dirty = true;
 	}
-	if (lvl < 0 && ui_st.volbar >= 0) {	// the debug link took over (or the knob is gone): its old level is wrong
+	if (lvl < 0 && ui_st.volbar >= 0 && ui_st.volbar_b < 0) {	// the debug link took over (or the knob is gone): its old level is wrong
 		ui_st.volbar = -1;
 		dirty = true;
 	}
 	knob_seen = lvl;
+	knob_b_seen = lb;
 }
 #endif
 
@@ -2382,6 +2406,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 #if CONFIG_VOLUME_BAR
 	if (ui_st.volbar >= 0 && (int32_t)(now - volbar_until) >= 0) {
 		ui_st.volbar = -1;
+		ui_st.volbar_b = -1;
 		dirty = true;
 	}
 #endif
@@ -2590,5 +2615,7 @@ void ui_app_status(ui_app_status_t *s)
 	s->dual = false;
 #endif
 	s->volbar = ui_st.volbar;
+	s->volbar_b = ui_st.volbar_b;
+	s->volbar_side = ui_st.volbar_side;
 	s->volbar_top = volbar_top;
 }
