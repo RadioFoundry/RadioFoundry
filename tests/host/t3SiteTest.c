@@ -10,7 +10,8 @@
 // Without RFOUNDRY_T3_SITE the test runs on data/t3_site_tscc.jsonl. A record is one JSON object per line:
 //   {"t": <seconds>, "raw_hex": "<33 octets hex>", "cach": "<3 octets hex>", ...}
 // The site's facts (system code, color code, control channel) come from the environment, with the defaults of the
-// recording in data/: RFOUNDRY_T3_SITE_SYS="<model> <net> <site>", RFOUNDRY_T3_SITE_CC, RFOUNDRY_T3_SITE_HZ.
+// recording in data/: RFOUNDRY_T3_SITE_SYS="<model> <net> <site>", RFOUNDRY_T3_SITE_CC, RFOUNDRY_T3_SITE_HZ. The site must
+// broadcast Chan_Freq (C_BCAST MBC) for the radio to learn a channel; RFOUNDRY_T3_SITE_LEARN=0 skips that check.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -75,7 +76,6 @@ static struct {
 	uint32_t cach_ok, cach_bad, slc_ok, slc_bad, sysparms, bursts, data, bptc_bad, slot_type_bad;
 	uint32_t at_busy[2], at_free[2];
 	uint32_t slc_last;
-	uint32_t mbc_masked;	// MBC last blocks with the header's CRC mask on (an older site image did that)
 } st;
 
 static t3_ms_t ms;
@@ -150,9 +150,6 @@ static void burst_in(uint32_t now, uint8_t slot, const uint8_t b[DMR_FEC_BURST_B
 	if (dmrFecBptcDecode(b, d) < 0) {
 		st.bptc_bad++;
 		return;
-	}
-	if (dt == T3_DT_MBC_CONT && !t3_crc_ok(d, 0) && t3_crc_ok(d, T3_CRC_MASK_MBC_HDR)) {
-		st.mbc_masked++;	// TS 102 361-1 7.4.1 masks only the header's CRC
 	}
 	t3_ms_rx(&ms, now, slot, dt, cc, d);
 }
@@ -254,17 +251,11 @@ int main(void)
 	CHECK(st.cach_bad == 0, "every CACH TACT decoded");
 	CHECK(st.slc_ok > 0 && st.sysparms > 0, "C_SYS_Parms short LCs decoded");
 	CHECK(ms.csc_valid, "Common_Slot_Counter taken from C_SYS_Parms");
-	// The recording in data/ is of a site that masked the MBC last block's CRC too: those blocks are counted apart,
-	// and the engine drops them (so it learns no channel from that recording). Any other bad CRC fails
-	if (st.mbc_masked > 0) {
-		printf("  note: %u MBC last blocks carry the header's CRC mask (site bug, 361-1 7.4.1): dropped\n",
-		       (unsigned)st.mbc_masked);
-	}
-	CHECK(ms.st.crc_bad == st.mbc_masked, "no CSBK / MBC with a bad CRC (%u, %u masked MBC)", (unsigned)ms.st.crc_bad,
-	      (unsigned)st.mbc_masked);
+	CHECK(ms.st.crc_bad == 0, "no CSBK / MBC with a bad CRC (%u)", (unsigned)ms.st.crc_bad);
 	CHECK(ms.st.foreign == 0 && ms.st.foreign_slc == 0, "nothing from another system");
 	CHECK(ms.reg == T3_REG_LISTEN || ms.reg == T3_REG_NOT_NEEDED, "listen only: reg %s", t3_reg_name(ms.reg));
-	if (getenv("RFOUNDRY_T3_SITE_LEARN") != NULL) {
+	e = getenv("RFOUNDRY_T3_SITE_LEARN");
+	if (e == NULL || atoi(e) != 0) {
 		CHECK(ms.learned.n > 0, "a channel learned from Chan_Freq");
 	}
 	printf("t3SiteTest: %d checks, %d failures\n", checks, failures);
