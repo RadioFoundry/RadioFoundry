@@ -466,6 +466,13 @@ static void test_tx_gates(void)
 	CHECK(count(EV_PLL, -1) == 0 && pa_off_now());
 	// The PA alone outside transmit
 	CHECK(md9600_rf_pa(&rf, true) == MD9600_RF_E_STATE && pa_off_now());
+	// A confirmation dropped while tuned for transmit (a running DMR transmission's next burst): no key-up
+	CHECK(md9600_rf_tx_tune(&rf, 446000000u, 0, true) == MD9600_RF_OK && rf.state == MD9600_RF_TX);
+	md9600_rf_confirm(&rf, false);
+	uint32_t next_us;
+	CHECK(md9600_rf_pa_step(&rf, 0, &next_us) == MD9600_RF_E_TX_REV && pa_off_now());
+	CHECK(md9600_rf_pa(&rf, true) == MD9600_RF_E_TX_REV && pa_off_now());
+	CHECK(md9600_rf_rx(&rf, 446000000u, true) == MD9600_RF_OK);
 #endif
 	CHECK(rf.state != MD9600_RF_TX);
 }

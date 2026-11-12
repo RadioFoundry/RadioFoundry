@@ -390,9 +390,11 @@ md9600_rf_err_t md9600_rf_pa(md9600_rf_t *rf, bool on)
 		md9600_rf_pa_safe(rf);
 		return MD9600_RF_OK;
 	}
-	if (rf->state != MD9600_RF_TX || !CONFIG_MD9600_TX) {
+	// confirmed again here: a confirmation dropped (md9600_rf_confirm) while a transmission runs must stop its next key-up
+	if (rf->state != MD9600_RF_TX || !CONFIG_MD9600_TX || !rf->confirmed) {
 		md9600_rf_pa_safe(rf);
-		return fail(rf, rf->state != MD9600_RF_TX ? MD9600_RF_E_STATE : MD9600_RF_E_TX_BUILD);
+		return fail(rf, rf->state != MD9600_RF_TX ? MD9600_RF_E_STATE
+			       : !CONFIG_MD9600_TX ? MD9600_RF_E_TX_BUILD : MD9600_RF_E_TX_REV);
 	}
 	if (rf->pa_on) {
 		return MD9600_RF_OK;
@@ -449,9 +451,11 @@ md9600_rf_err_t md9600_rf_pa_step(md9600_rf_t *rf, uint32_t step, uint32_t *next
 {
 	const md9600_rf_ops_t *o = rf->ops;
 	*next_us = 0;
-	if (rf->state != MD9600_RF_TX || !CONFIG_MD9600_TX) {
+	// confirmed again here: a confirmation dropped (md9600_rf_confirm) while a transmission runs must stop its next key-up
+	if (rf->state != MD9600_RF_TX || !CONFIG_MD9600_TX || !rf->confirmed) {
 		md9600_rf_pa_safe(rf);
-		return fail(rf, rf->state != MD9600_RF_TX ? MD9600_RF_E_STATE : MD9600_RF_E_TX_BUILD);
+		return fail(rf, rf->state != MD9600_RF_TX ? MD9600_RF_E_STATE
+			       : !CONFIG_MD9600_TX ? MD9600_RF_E_TX_BUILD : MD9600_RF_E_TX_REV);
 	}
 	if (step == 0) {
 		if (rf->pa_on) {

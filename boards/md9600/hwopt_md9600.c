@@ -33,8 +33,10 @@ static bool rev_set(uint8_t choice)
 {
 	md9600_rev_t r = (md9600_rev_t)(choice + 1u);
 	md9600_rev_state_t s = md9600_rev_state();
-	// An AK2365A answered: the board is V1-V3 or V4, never V4A / V5
+	// An AK2365A answered: the board is V1-V3 or V4, never V4A / V5; none did: V4A / V5 (a detected one is hidden, and
+	// storing another would only refuse transmit with nothing to fix it)
 	if (md9600_rev_desc(r) == NULL || (s.if_chip == MD9600_IF_PRESENT && r == MD9600_REV_V5) ||
+	    (s.if_chip == MD9600_IF_ABSENT && r != MD9600_REV_V5) ||
 	    !md9600_flash_rev_store(r)) {
 		return false;
 	}
