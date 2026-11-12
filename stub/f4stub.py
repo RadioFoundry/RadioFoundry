@@ -14,7 +14,7 @@ had to enumerate again, on a port with the same serial number). stubtool.py hand
     stubtool.py PORT --rfoundry-enter --q128 spi.bin                           back up the external SPI flash (16 MB)
     stubtool.py PORT --rfoundry-enter --write-q128 spi.bin                     put it back (changed 4 KB sectors only)
     stubtool.py PORT --rfoundry-enter --secreg secreg.bin                      back up the SPI flash's security registers
-    stubtool.py PORT --attach --write-secreg secreg.bin --confirm-secreg       put them back (changed registers only)
+    stubtool.py PORT --attach --board md380 --write-secreg secreg.bin --confirm-secreg   put them back (changed registers only)
     stubtool.py PORT --attach --board md380 --boot reset                  restart into the firmware
     f4stub.py --self-test                                                 against a simulated radio, no hardware
     f4stub.py --embed build/stub-stm32f4/f4stub.bin                       put a new stub build into this file
@@ -907,6 +907,12 @@ def embed(path):
     print("embedded %s: %d bytes, sha256 %s" % (path, len(blob), hashlib.sha256(blob).hexdigest()))
 
 
+def leave_hint(board):
+    """What to say when a run ends with the stub still up: the radio sits in the loader (its power key does nothing)."""
+    return ("the radio is still in the loader: restart it with stubtool.py PORT --attach --board %s --boot reset"
+            % (board or "<id>"))
+
+
 def run(a, port, reopen, log=print):
     """stubtool.py's STM32 branch: a is its parsed arguments, port the open serial port."""
     radio = F4Radio(port, log=log, retries=a.retries, reopen=reopen)
@@ -1000,6 +1006,8 @@ def run(a, port, reopen, log=print):
             raise F4Error("on the STM32 radios --boot takes only reset")
         radio.reset_chip()
         log("reset sent: the bootloader starts the application (or stays in DFU if none is committed)")
+    else:
+        log(leave_hint(board))
     return 0
 
 
@@ -1175,6 +1183,10 @@ def self_test():
             print("FAIL: " + what)
 
     quiet = lambda *a: None
+    # A run that leaves the stub up says how to leave the loader, and the command names the board (#501: without
+    # --board, --attach looks for the HR_C7000 serial stub and finds none)
+    check("--attach --board md380 --boot reset" in leave_hint("md380"), "the way out of the loader names the board")
+    check("--board <id>" in leave_hint(None), "no board known: the hint says to name one")
     # The image header: RadioFoundry with CONFIG_WATCHDOG enters only a stub whose header says it feeds the IWDG
     # (docs/spec/watchdog.md 3.1). The numbers here match f4stub_header.h, and the embedded image has the header
     import re

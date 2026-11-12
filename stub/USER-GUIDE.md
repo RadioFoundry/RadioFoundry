@@ -71,6 +71,9 @@ switching off.
    python3 stubtool.py PORT --attach --boot reset
    ```
 
+   (A radio that runs an `f4stub.py` stub, such as the MD-380 or DM-1701, needs `--board` here, or `--attach` finds
+   no stub: see [Leave loader mode](#leave-loader-mode).)
+
 `rfoundry flash rfoundry_dm1801pro.bin --board dm1801pro --port PORT` does steps 2 to 4 in one run, and checks the radio
 afterwards ([tools/rfoundry/README.md](../tools/rfoundry/README.md#the-dm-1801-pro)).
 
@@ -140,6 +143,17 @@ python3 stubtool.py PORT --attach --boot reset
 ```
 
 The radio restarts into its normal firmware. If neither works, remove and refit the battery.
+
+The radios on the `f4stub.py` stub (the STM32F4 boards, for example the MD-380 or the DM-1701)
+need the radio named. `--attach` alone looks for the HR_C7000 stub and ends with "no stub answers" while the radio sits
+in the loader. Give the board id, the radio's folder name under `boards/`:
+
+```
+python3 stubtool.py PORT --attach --board md380 --boot reset
+```
+
+An install or backup that ends without `--boot reset` leaves the radio in the loader. These stubs print this command
+when they finish; `--rfoundry-enter ... --write-app IMAGE --boot reset` writes and restarts in one run.
 
 ## What the LED means
 
