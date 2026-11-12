@@ -1091,17 +1091,24 @@ it, between bursts the carrier is below the measuring receiver's floor (26 dB do
 -13 dB (T5), then full power 0.4 ms later; key-down takes 0.4 ms. On-time 30.7 ms, same-slot spacing 60.0 ms, outer
 symbol deviation 1933 Hz, every burst of a 3 s call decoded (headers, 9 superframes, terminator).
 
-The key-up follows the key-up rule ([pa-keyup.md](pa-keyup.md)): the rule's points run on the key timer, with the
-band's T5 supply 500 us ahead of the loop. Neither band's loop has a knee: on a conducted path every level reaches
--3 dB 0.5-0.75 ms after the loop closes. So the board's constants have no boost, only the loop's point per band
-(`PA_KEYUP_FIXED`, [pa-keyup.md](pa-keyup.md) 2). The debug link's `radio pa-keyup` changes them for tuning.
+The key-up follows the key-up rule ([pa-keyup.md](pa-keyup.md)): the rule's points run on the key timer. The loop
+closes (RF_APC_SW, the APC reference at the level's drive) 500 us ahead of the rule's PA point, and the PA point is the
+band's T5 supply. Every level comes up a fixed time after T5, whatever its drive (UHF 0.42 ms, VHF 0.62 ms on a
+conducted path): no knee, so the board's constants have no boost, only the PA's point per band (`PA_KEYUP_FIXED`,
+[pa-keyup.md](pa-keyup.md) 2). The debug link's `radio pa-keyup` changes them for tuning.
 
-| Band | Loop closed before the first symbol | Power | -3 dB before the first symbol | Overshoot |
-|---|---|---|---|---|
-| VHF (146 MHz) | 0.94 ms | 422 mW / 681 mW / 3.3 W / 18.8 W | 0.27 / 0.23 / 0.20 / 0.27 ms | none (first symbol up to 1.4 dB low) |
-| UHF (445 MHz) | 0.85 ms | 484 mW / 982 mW / 4.2 W / 19.1 W | 0.34 / 0.29 / 0.18 / 0.21 ms | 0.2 dB or less |
+The order matters. With T5 first and the loop closed at the PA point (the stepped ramp's order), the PA passed the
+carrier at a fixed -5 dBm from the loop's closing until it came up 0.42 ms later: a step 31 dB under the lowest level,
+with a 3-5 dB hook at its start. With the loop closed first nothing comes out until T5, then one rise.
 
-With the earlier single point (1.35 ms), each level was up 0.6-0.85 ms early, on the carrier alone.
+| Band | PA point (T5) before the first symbol | Power | -3 dB before the first symbol | -30 to -3 dB | Overshoot |
+|---|---|---|---|---|---|
+| UHF (445 MHz) | 0.80 ms | 473 mW / 938 mW / 4.1 W / 18.4 W / 28.5 W | 0.24 / 0.23 / 0.22 / 0.22 / 0.21 ms | 76-129 us | 0.3 dB or less |
+| VHF (146 MHz) | 0.94 ms | 368 mW / 600 mW | at the first symbol / 0.04 ms | 270-310 us | none: 1.3-1.4 dB low over the first 10 symbols |
+
+On VHF the two lowest levels are drives 10 and 22 counts over the band's zero point: the loop barely regulates there,
+and they come up 1.3 dB short and stay short for the first symbols (the same with the earlier order). A boost of a few
+counts overshot 15 dB, so the key-up constants don't fix it; the levels above 1 W were not measured with this order.
 
 At power-up, with the revision known: receivers on, then on V1-V4 the AK2365A reset (PE15 low for 10 us), and on V4
 the VHF synthesizer set for 145 MHz receive. On V4A / V5 the LMX2571 reset goes to both chips, then 10 ms; PE15 stays
