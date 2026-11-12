@@ -447,7 +447,7 @@ export class Stub {
 
 	// A request the radio won't answer (a reset, a jump). The write resolves once the bytes are handed to the cable, not
 	// once they are on the line: wait out the frame at the line rate and the cable's latency, or a port closed next
-	// (Restart Radio) discards it and the radio stays in the stub (a GD-88 reset was lost that way, 2026-10-26)
+	// (Restart Radio) discards it and the radio stays in the stub (a reset was lost that way)
 	async sendNoReply(op, payload) {
 		this.s.clear();
 		const frame = concat(new Uint8Array([0x02, op, payload.length >> 8, payload.length & 0xFF, sum8(payload), 0x03]), payload);

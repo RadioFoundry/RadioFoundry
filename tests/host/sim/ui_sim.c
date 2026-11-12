@@ -1626,6 +1626,21 @@ bool ui_svc_dmr_color_code(uint8_t cc)
 	}
 	return true;
 }
+// The VFO's SFR role, as the radio core takes it (radio_sfr_channel): in force in DMR on one frequency
+bool ui_svc_vfo_sfr(uint8_t a)
+{
+	if (!view.vfo)
+		return true;	// the radio core refuses it quietly
+	bool on = (a & 0x07u) != 0;
+	view.ch.sfr_flag1 = on ? 0x02u : 0;
+	view.ch.sfr_a = on ? a : 0;
+	view.ch.sfr_b = 0;
+	bool simplex = view.ch.tx_hz == view.ch.rx_hz || view.ch.tx_hz == 0;
+	view.dmr.sfr_role = on && view.ch.mode == RADIO_MODE_DMR && simplex ? (uint8_t)(a & 0x07u) : 0;
+	view.dmr.sfr_inbound = (a & 0x20u) != 0;
+	changed();
+	return true;
+}
 bool ui_svc_mode(uint8_t mode)
 {
 	retune();

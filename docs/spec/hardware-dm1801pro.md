@@ -853,3 +853,7 @@ run, also right after a fresh start. The DM-32UV on the same test: 25 received, 
 terminators). Our bursts: RF on to off 32-33 ms, the RF switch 2.06 ms with interrupts off, the PA keyed 2.1-3.2 ms
 after RF on. Fixed by switching the FD6818 straight between RX and TX per burst (5.6): 28 heard, 24 sent up (section
 10).
+
+## Receive past the rated bands
+
+16-65, 174-400 and 470-740 MHz: the FD6818 band table. Receive only, FM, off by default ([radio-features.md](radio-features.md) 6.2). Not measured on the radio.

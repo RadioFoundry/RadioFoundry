@@ -54,6 +54,8 @@ EARLY_MAX_US = -600     # verify: no level up earlier than this (the ramp belong
 OVER_MAX_DB = 3.0
 KEY_SETUP_S = 0.25          # a key's set-up and its PTT requests over the debug link, at most
 KEY_GAP_S = 0.35            # between the keys of one capture: the radio's key-down, and the next key's set-up
+LINK_BACK_S = 15.0          # how long a debug link lost while keying may take to answer again
+REPLUG_S = 300.0            # after a key run (--key-run): past LINK_BACK_S the tool asks for a replug and waits this long
 OWN_OVER_TOL_DB = 1.0       # over what the level's drive overshoots by itself: the key-up's doing
 SYM1_MIN_DB = -3.0
 # A level whose output creeps: within 6 dB at once, then its last dB over milliseconds (a PA held just over its turn-on
@@ -492,6 +494,9 @@ class Radio:
         import rfoundry_debug
         self.a, self.link = a, rfoundry_debug.DebugLink(a.radio)
         self.err = rfoundry_debug.DebugLinkError
+        self.keyrun_max = rfoundry_debug.PA_KEYRUN_MAX
+        self.drives = []        # each level's drive at the band's frequency (the view's tx_drive), for --key-run
+        self.keep_last = False  # --key-run restart: this key run reattaches (the band's first key)
 
     def cli(self, cmd):
         """A debug link command line (--arm, --disarm) on its own connection."""
@@ -510,6 +515,41 @@ class Radio:
     def view(self):
         return self.link.view()
 
+    def ptt_for(self, seconds):
+        """One key. A radio whose debug link drops while it transmits (its own RF in the USB cable) still ends the key
+        itself: the firmware's PTT time-out is set just past the hold. So a lost release is waited out, the link
+        opened again, and the radio checked idle before the run goes on."""
+        try:
+            self.link.ptt_for(seconds)
+        except self.err as e:
+            print(f"  the debug link dropped during the key ({e}): waiting for it", flush=True)
+            self.reconnect()
+            if self.view().get("state") == "tx":
+                self.link.ptt(False)
+                raise Stop("the radio was still keyed after the debug link came back: released")
+            self.drops = getattr(self, "drops", 0) + 1
+
+    def reconnect(self, wait_s=LINK_BACK_S):
+        import rfoundry_debug
+        t0 = time.monotonic()
+        end, told = t0 + wait_s, False
+        while True:
+            if not told and wait_s > LINK_BACK_S and time.monotonic() - t0 > LINK_BACK_S:
+                print(f"  the radio's USB port didn't come back: replug it (waiting {wait_s:g} s)", flush=True)
+                told = True
+            time.sleep(1.0)
+            try:
+                self.link.close()
+            except Exception:
+                pass
+            try:
+                self.link = rfoundry_debug.DebugLink(self.a.radio)
+                self.link.version()
+                return
+            except (self.err, OSError):
+                if time.monotonic() > end:
+                    raise Stop(f"the debug link did not come back within {wait_s:g} s: restart the radio")
+
     def ints(self, v, key, n, least=None):
         try:
             x = [int(s) for s in v[key].split("/")]
@@ -524,6 +564,7 @@ class Radio:
 
     def tune(self, mhz):
         a = self.a
+        self.mhz = mhz
         self.link.tx_limit(mhz=[mhz])
         if a.channel:                       # a radio without a VFO: the channel it is on, checked
             v = self.view()
@@ -535,12 +576,54 @@ class Radio:
         self.link.vfo_set(round(mhz * 1e6))
         self.link.dmr_fields("dmr", a.cc, a.ts)
 
+    def key_run(self, specs, key_s, gap_s):
+        """Keys specs [(constants, drive)] by RADIO op 40: the radio keys each run's drives by itself, one run per
+        stretch of equal constants, and the link is quiet while it transmits. A link lost during a run is waited out
+        (the radio carries on) and opened again; the run is then checked whole by the view's pa_keyrun.last."""
+        i = 0
+        while i < len(specs):
+            c = specs[i][0]
+            j = i
+            while j < len(specs) and specs[j][0] == c and j - i < self.keyrun_max:
+                j += 1
+            drives = [d for _, d in specs[i:j]]
+            if c is None:
+                self.link.pa_keyup()
+            cv = None if c is None else [c.get(n, 0) for n in NAMES]
+            t0 = time.monotonic()
+            run_s = len(drives) * (key_s + gap_s + 1.0)
+            try:
+                # The radio's USB port comes back after the run by itself: a host that dropped it during the radio's
+                # own transmission finds it again with no replug
+                # The band's first key reads the top drive and the anchor after it (pa_keyup.last), which a restart
+                # clears: that one key reattaches
+                restart = self.a.key_run == "restart" and not self.keep_last
+                self.link.pa_keyrun(drives, round(key_s * 1000), round(gap_s * 1000), cv, reattach=not restart,
+                                    restart=restart)
+            except (self.err, OSError) as e:
+                self.drops = getattr(self, "drops", 0) + 1
+                print(f"  the debug link dropped during a key run ({e}): waiting for the run to end", flush=True)
+                time.sleep(max(run_s - (time.monotonic() - t0), 0.0))
+            self.reconnect(REPLUG_S)          # a host that ignores the port's return needs a replug
+            if restart:
+                self.tune(self.mhz)          # a restart cleared the test TX limit and the VFO's test settings
+                i = j
+                continue                    # and the count: the capture shows the keys
+            n, of = (int(x) for x in self.link.view(["features"]).get("pa_keyrun.last", "0/0").split("/")[:2])
+            if (n, of) != (len(drives), len(drives)):
+                raise Stop(f"the key run keyed {n} of {of} (asked {len(drives)})")
+            i = j
+
     def setup(self, c, level, drive=0):
         self.link.pa_keyup(*([c.get(n, 0) for n in NAMES] if c else []))
         self.link.power_level(level)
         self.link.tx_drive(drive)
 
     def restore(self):
+        try:
+            self.link.version()
+        except self.err:
+            self.reconnect()
         self.link.tx_drive(0)
         self.link.pa_keyup()
         self.link.power_level("lowest")
@@ -570,14 +653,30 @@ class Cal:
         w = 10 ** ((m["dbm"] + self.a.pad_db) / 10) / 1000
         return f"{w:.1f} W" if w >= 1 else f"{w * 1000:.0f} mW"
 
-    def key(self, mhz, tag, c, level, drive=0, need=True):
+    def key_fn(self, specs):
+        """What keys specs [(constants, level, drive)] in one capture: by a key run (--key-run), or one at a time"""
         a = self.a
-        self.radio.setup(c, level, drive)
-        m = self.bench.measure(mhz, lambda: self.radio.link.ptt_for(a.key_s))
+        if a.key_run:
+            runs = [(c, d or self.radio.drives[l]) for c, l, d in specs]
+            return lambda: self.radio.key_run(runs, a.key_s, KEY_GAP_S)
+
+        def run():
+            for c, l, d in specs:
+                self.radio.setup(c, l, d)
+                self.radio.ptt_for(a.key_s)
+                if len(specs) > 1:
+                    time.sleep(KEY_GAP_S)
+        if len(specs) == 1:
+            self.radio.setup(*specs[0])
+            return lambda: self.radio.ptt_for(a.key_s)
+        return run
+
+    def key(self, mhz, tag, c, level, drive=0, need=True):
+        m = self.bench.measure(mhz, self.key_fn([(c, level, drive)]))
         self.keys_n += 1
         if need and not m["n"]:             # one capture without bursts may be the capture's: once more
             self.say(f"  {tag:9s} level {level}: no bursts, keyed again")
-            m = self.bench.measure(mhz, lambda: self.radio.link.ptt_for(a.key_s))
+            m = self.bench.measure(mhz, self.key_fn([(c, level, drive)]))
             self.keys_n += 1
         return self.note(m, mhz, tag, c, level, drive, need)
 
@@ -588,16 +687,10 @@ class Cal:
         if len(specs) < 2 or not a.batch:
             return [self.key(mhz, tag, c, l, d, need) for c, l, d in specs]
 
-        def run(part):
-            for c, l, d in part:
-                self.radio.setup(c, l, d)
-                self.radio.link.ptt_for(a.key_s)
-                time.sleep(KEY_GAP_S)
-
         out = []
         for i in range(0, len(specs), a.batch):
             part = specs[i:i + a.batch]
-            ms = self.bench.measure_many(mhz, len(part), lambda: run(part)) if len(part) > 1 else None
+            ms = self.bench.measure_many(mhz, len(part), self.key_fn(part)) if len(part) > 1 else None
             if ms is None:
                 if len(part) > 1:
                     self.keys_n += len(part)
@@ -637,13 +730,18 @@ class Cal:
         board = dict(zip(NAMES, radio.ints(v, "pa_keyup", len(NAMES), 6)))
         ahead, max_drive = radio.ints(v, "pa_keyup.limits", 2)
         drives = [int(x) for x in v.get("tx_drive", "").split("/") if x]
+        radio.drives = drives
         if not drives or not any(drives):
             raise Stop("the radio has no power calibration here (the view's tx_drive)")
         levels = [l for l in (range(len(drives)) if a.levels == "all" else map(int, a.levels.split(",")))
                   if drives[l]]
         # The first key, at the lowest level with the board's constants: the path, the SDR's input level, and the top
         # drive and the anchor the radio plans against (pa_keyup.last)
-        m = self.key(mhz, "check", None, levels[0])
+        radio.keep_last = True
+        try:
+            m = self.key(mhz, "check", None, levels[0])
+        finally:
+            radio.keep_last = False
         v = radio.view()
         last = radio.ints(v, "pa_keyup.last", 7)
         top, ref = last[5], last[6]
@@ -937,6 +1035,10 @@ def main(argv=None):
     g.add_argument("--batch", type=int, default=6,
                    help="keys per capture (0 or 1: a capture each); a step's keys share one, which is most of a key's time")
     g.add_argument("--key-s", type=float, default=0.5, help="each key, s (about 8 bursts)")
+    g.add_argument("--key-run", nargs="?", const="reattach", choices=("reattach", "restart"),
+                   help="the radio keys each capture's keys by itself (RADIO op 40), the debug link quiet while it "
+                        "transmits, then its USB port leaves the bus and comes back (reattach, the default) or the "
+                        "radio restarts (restart): for a radio whose own RF upsets its USB link")
     g.add_argument("--refit", action="store_true",
                    help="measure new constants even when the board's hold at every level")
     g.add_argument("--rounds", type=int, default=4, help="verify rounds that may change the constants")

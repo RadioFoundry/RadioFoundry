@@ -26,17 +26,15 @@ const uint8_t uvf_key_matrix[3][8] = {
 	{ KEY_3, KEY_6, KEY_9, KEY_HASH, STM32_KEYPAD_NO_KEY, KEY_SK1, KEY_SK3, KEY_SK2 },
 };
 
-// hardware-dm1701.md: 9.2 (type 2 is "vertically flipped; treated as type 3 with RGB order": the bench radio reports 2,
-// and the type 2 MADCTL showed the picture mirrored top to bottom), 11.1 (raw / 37.5 per 0.1 V), 11.2 (measured on the
-// bench: 26 at the bottom, 2063 at the top; spec 29..2075), 7 and 12.1 (the DM-1701 rows)
 // DMR key-up (docs/spec/pa-keyup.md, hardware-dm1701.md 7). UHF: measured with tools/bench/pa_cal.py, then the knee
 // and slope taken 3-9 % under the fit: every level up 0.19-0.40 ms before the first symbol, the boosted lower three with
 // 1.2-2.2 dB of overshoot (the fit's own gave them 1.7-3.3 dB: the boost's charge carries on after its end). VHF:
-// converted from the constants measured with the rule's earlier form, not measured again. The window and the
-// top step's PA 0.8 ms (VHF) and 1.0 ms (UHF) after the RF TX interrupt: 0.6 ms cut the end of the burst an SFR repeater
-// receives just before. The VHF PA needs about three times the UHF knee
+// measured with the tool, every level up 0.04-0.28 ms before the first symbol with at most 2.2 dB of overshoot. Its
+// lowest level is far too slow on its own drive, so it is boosted from the board's earliest point (2.5 ms), and the
+// boost ends 0.6 ms before the first symbol: at 0.3 ms the same boost overshot 4 dB. The PA 0.8 ms (VHF) and 1.0 ms
+// (UHF) after the RF TX interrupt: 0.6 ms cut the end of the burst an SFR repeater receives just before
 static const pa_keyup_cfg_t keyup[2] = {
-	{ .dead_pm = 0, .knee_us = 760, .slope_us = 850, .window_us = 1730, .settle_us = 300, .pa_us = 1730 },
+	{ .dead_pm = 1, .knee_us = 1106, .slope_us = 1433, .window_us = 2500, .settle_us = 600, .pa_us = 1730 },
 	{ .dead_pm = 348, .knee_us = 255, .slope_us = 1180, .window_us = 1530, .settle_us = 700, .pa_us = 1530 },
 };
 
@@ -47,6 +45,9 @@ static const uvf_power_band_t power5[2] = {
 	{ .low = { 339, 620 }, .frac = { 838, 809 } },
 };
 
+// hardware-dm1701.md: 9.2 (type 2 is "vertically flipped; treated as type 3 with RGB order": the bench radio reports 2,
+// and the type 2 MADCTL showed the picture mirrored top to bottom), 11.1 (raw / 37.5 per 0.1 V), 11.2 (measured on the
+// bench: 26 at the bottom, 2063 at the top; spec 29..2075), 7 and 12.1 (the DM-1701 rows)
 const uvf_variant_t uvf_variant = {
 	.panel_type = { 0, 1, 3, 3 },
 	.panel_rgb = { false, false, true, false },
@@ -61,9 +62,19 @@ const uvf_variant_t uvf_variant = {
 #endif
 };
 
+#if CONFIG_RX_EXT
+static bool rx_ext_on;
+#endif
+
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 	{ 400000000, 480000000, true },
+#if CONFIG_RX_EXT
+	// Receive only past the rated bands, while the user turns it on: the AT1846S data sheet. Keep these last
+	{ 134000000, 136000000, false },
+	{ 200000000, 260000000, false },
+	{ 480000000, 520000000, false },
+#endif
 };
 
 static const char *const power_names[] = { "100mW", "500mW", "1W", "2.5W", "5W" };
@@ -134,6 +145,10 @@ const board_t board = {
 	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
+#if CONFIG_RX_EXT
+	.rx_ext_count = 3,
+	.rx_ext_on = &rx_ext_on,
+#endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
 	.power_default = 2,	// 1 W

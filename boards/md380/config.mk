@@ -54,3 +54,5 @@ BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 # full, and the other radios' maximal builds still cover it
 MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT TFTP_IDDB
 MAXIMAL_VARS := CONFIG_TFTP_IDDB=n
+CONFIG_RX_EXT ?= n
+BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)

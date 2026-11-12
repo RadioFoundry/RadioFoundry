@@ -5,8 +5,8 @@
  */
 
 #include <string.h>
-#include <math.h>
 #include "dmr/dmrLrrp.h"
+#include "dmr/call/dmr_lc.h"
 
 // Document IDs: requests come with or without a constant data table (even / odd), the answers are sent without
 #define DOC_IMMEDIATE_RESPONSE		0x07
@@ -272,11 +272,13 @@ static int putRequestId(uint8_t *out, const uint8_t *requestId, int requestIdLen
 	return n + requestIdLength;
 }
 
-static double degreesOf(uint8_t degrees, uint32_t minutes10000, bool positive)
+// A coordinate in 1e-7 degree, as dmr_gps_range takes it: minutes10000 / 600000 degree is minutes10000 * 50 / 3 in
+// 1e-7, rounded half up
+static int32_t e7Of(uint8_t degrees, uint32_t minutes10000, bool positive)
 {
-	double d = degrees + (minutes10000 / 600000.0);
+	int32_t v = (int32_t)(degrees * 10000000u + (minutes10000 * 50u + 1u) / 3u);
 
-	return positive ? d : -d;
+	return positive ? v : -v;
 }
 
 // Info time, latitude / longitude with a radius, and speed and direction when asked for and known
@@ -416,11 +418,13 @@ int lrrpBuildTriggeredStopResponse(const uint8_t *requestId, int requestIdLength
 
 uint32_t lrrpDistanceMeters(const dmrDataLocation_t *a, const dmrDataLocation_t *b)
 {
-	double lat1 = degreesOf(a->latDegrees, a->latMinutes10000, a->north) * (M_PI / 180.0);
-	double lat2 = degreesOf(b->latDegrees, b->latMinutes10000, b->north) * (M_PI / 180.0);
-	double dLon = (degreesOf(b->lonDegrees, b->lonMinutes10000, b->east) - degreesOf(a->lonDegrees, a->lonMinutes10000, a->east)) * (M_PI / 180.0);
-	double x = dLon * cos((lat1 + lat2) / 2.0);
-	double y = lat2 - lat1;
+	// dmr_gps_range's single-precision math: double cos and sqrt cost about 8 KB of flash (libm and the soft-float
+	// library) on a build without LTO to drop them
+	uint32_t meters;
+	uint16_t bearing;
 
-	return (uint32_t)(sqrt((x * x) + (y * y)) * 6371000.0);
+	dmr_gps_range(e7Of(a->latDegrees, a->latMinutes10000, a->north), e7Of(a->lonDegrees, a->lonMinutes10000, a->east),
+			e7Of(b->latDegrees, b->latMinutes10000, b->north), e7Of(b->lonDegrees, b->lonMinutes10000, b->east),
+			&meters, &bearing);
+	return meters;
 }
