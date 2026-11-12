@@ -2207,6 +2207,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_ARS_SERVER, 0);
 	ui_svc_setting_set(UI_SET_IP_GATEWAY, 0);
 	ui_svc_setting_set(UI_SET_PTT_LOCKED, 1);
+	for (uint8_t id = UI_SET_CALL_END_TONE; id <= UI_SET_EMERGENCY_TONE; id++)
+		ui_svc_setting_set(id, id != UI_SET_SCAN_TONE);	// as on a new radio: the scan stop tone off, the rest on
 	ui_svc_setting_set(UI_SET_HEAR_ALL_DEFAULT, 0);
 	ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 1);
 	ui_svc_setting_set(UI_SET_MIC_AGC, 0);
