@@ -11,6 +11,7 @@
 #include "ui/fmt.h"
 #include "ui/ui_screens.h"
 #include "ui/ui_svc.h"
+#include "ui/i18n.h"
 #include "ui/cjk_font.h"
 
 static int fails;
@@ -484,6 +485,31 @@ static void test_cjk_text(void)
 	str_copy(cut, sizeof cut, "\xE4\xBF\xA1\xE9\x81\x93");
 	CHECK(strcmp(cut, "\xE4\xBF\xA1") == 0);
 }
+
+// The 160 px class in a wide language: a CJK character is 16 px tall, so the class's words move up from the 6x12 font to
+// the 8x16 one and no line clips one; English and Spanish keep the tighter layout in the same build (ui_screens.c,
+// docs/spec/ui.md 2.5)
+static void test_cjk_layout(void)
+{
+	hal_display_t d = disp;
+	d.width = 160; d.height = 120; d.bpp = 16;
+	d.inset_top = d.inset_bottom = d.inset_left = d.inset_right = 0;
+	CHECK(gfx_init(&d));
+	uint8_t zh = lang_find('z' << 8 | 'h');
+	CHECK(lang_built(zh) && lang_wide(zh) && lang_set(zh));
+	ui_layout_init();
+	CHECK(ui_layout.small->h == CJK_FONT_H && ui_layout.tiny->h == CJK_FONT_H);
+	CHECK(ui_layout.small->w == 8 && ui_layout.row_h == CJK_FONT_H + 1);
+	// Home gives up its zone line for the 16 px rows, and its activity region still holds one
+	CHECK(ui_layout.zone_y < 0 && ui_layout.hint_y - ui_layout.activity_y >= CJK_FONT_H);
+	// A list row is one 16 px line and a pixel: 5 rows where the 6x12 font fits 7
+	CHECK((ui_layout.hint_y - ui_layout.strip_h) / ui_layout.row_h == 5);
+	CHECK(lang_set(LANG_ENGLISH));
+	ui_layout_init();
+	CHECK(ui_layout.small->w == 6 && ui_layout.small->h == 12 && ui_layout.tiny->w == 5 && ui_layout.zone_y >= 0);
+	gfx_init(&disp);
+	ui_layout_init();
+}
 #endif
 
 int main(void)
@@ -635,6 +661,7 @@ int main(void)
 	render_set("128x64");
 #if CONFIG_LANG_ZH
 	test_cjk_text();
+	test_cjk_layout();
 #endif
 
 	// 240x320 color doesn't fit the frame buffer: gfx refuses it instead of overrunning

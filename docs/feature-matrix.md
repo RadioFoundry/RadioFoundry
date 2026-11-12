@@ -133,10 +133,10 @@ is `tools/bringup.py list --radio <id>`.
 | `font_big` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `lang_es` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `lang_it` | off | off | off | off | off | off | off |
-| `lang_zh` | off | ✕ | ✕ | ✕ | ✕ | ✕ | off |
+| `lang_zh` | off | off | ✕ | ✕ | ✕ | ✕ | off |
 | `lang_default_es` | off | off | off | off | off | off | off |
 | `lang_default_it` | off | off | off | off | off | off | off |
-| `lang_default_zh` | off | ✕ | ✕ | ✕ | ✕ | ✕ | off |
+| `lang_default_zh` | off | off | ✕ | ✕ | ✕ | ✕ | off |
 | `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run |
 | `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run |
 | `codeplug_foreign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
@@ -224,10 +224,10 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `FONT_BIG` | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `LANG_ES` | ● | ● | ● | ● | ● | ● | ○ |
 | `LANG_IT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
-| `LANG_ZH` | ○ | ✕ | ✕ | ✕ | ✕ | ✕ | ○ |
+| `LANG_ZH` | ○ | ○ | ✕ | ✕ | ✕ | ✕ | ○ |
 | `LANG_DEFAULT_ES` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `LANG_DEFAULT_IT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
-| `LANG_DEFAULT_ZH` | ○ | ✕ | ✕ | ✕ | ✕ | ✕ | ○ |
+| `LANG_DEFAULT_ZH` | ○ | ○ | ✕ | ✕ | ✕ | ✕ | ○ |
 | `UI_COLOR` | ● | ● | ✕ | ● | ● | ● | ✕ |
 | `UI_SETTINGS` | ● | ● | ● | ● | ● | ● | ● |
 | `SCAN` | ● | ● | ● | ● | ● | ● | ● |
@@ -376,7 +376,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Larger text | `FONT_BIG` | — | — | 9x18 lists and labels on 240 px color panels (needs `FONT_AA`); 3,588 B on the DM-32 (measured 2026-10-17) |
 | Spanish on the radio | `LANG_ES` | 28,456 | 28,348 | The first language brings the lookup and the accented letters of every font (about 7.5 KB); the rest is its text. Measured 2026-10-31 |
 | Italian on the radio | `LANG_IT` | 17,304 | 17,304 | Off by default; measured with Spanish on (its text, and the hashes of strings Spanish leaves untranslated). Alone it costs about as much as Spanish |
-| Chinese on the radio | `LANG_ZH` | 32,856 | 32,856 | Off by default. Not the text alone: 15,360 B of 16x16 glyphs (480 characters, `core/ui/cjk_font_data.c`) and about 17 KB of UTF-8 text, with the text layer's decoder. Needs a 16 px line height: a 240 px color radio draws its words in 8x16 and shows Chinese on every screen, while a layout whose words use the 5x8 or 6x12 font (128x64, 160x128) has no room for it and must not build it. Measured with Spanish on, 2026-11-04 |
+| Chinese on the radio | `LANG_ZH` | 32,856 | 32,856 | Off by default. Not the text alone: 15,360 B of 16x16 glyphs (480 characters, `core/ui/cjk_font_data.c`) and about 17 KB of UTF-8 text, with the text layer's decoder. Needs a 16 px line height: a 240 px color radio draws its words in 8x16 and shows Chinese on every screen, the 160 px class moves its words up to 8x16 while a wide language is in use (2 rows fewer on a 160x120 panel, Home without its zone line), and a 128x64 panel has no room for it and must not build it. Measured with Spanish on, 2026-11-04 |
 | Start in Spanish | `LANG_DEFAULT_ES` | 0 | 0 | The language the radio starts in until the user picks one (needs `LANG_ES`); the web flasher sets it from its Radio language choice |
 | Start in Italian | `LANG_DEFAULT_IT` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_IT`) |
 | Start in Chinese | `LANG_DEFAULT_ZH` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_ZH`) |
@@ -405,6 +405,14 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 
 Link time optimization is on by default on both radios. The DM-1701 has run with it since 2026-10-13 (the HIL suite
 passed); `LTO_3P=1` would take another 3 KB or so off by optimizing the third-party code too.
+
+The DM-1701's app region is sectors 3-9, 0x0800C000..0x080BFFFF, 344,064 bytes (336 KB); the two default measurements
+above leave 11,532 B and 13,240 B free. That region holds one non-English language, so the radio takes Chinese in
+Spanish's place (`boards/dm1701/config.mk`): Chinese costs 32,856 B on top of the lookup and Latin-1 glyphs Spanish
+already brings, against Spanish's 28,456 B, so `CONFIG_LANG_ZH=y CONFIG_LANG_ES=n` is 11,900 B more than the default
+image, by these figures 368 B over the larger measurement and 1,340 B under the smaller one. It is at the wall either
+way: `CONFIG_DEBUGLINK=n` (32,376 B, tools and HIL only) is what makes it fit for certain, and the image's size is not
+measured yet.
 
 The MD-380's app region is sectors 3-7, 0x0800C000..0x0807FFFF, 475,136 bytes (464 KB). The codec runs in place in
 sectors 8, 10 and 11 ([codec-md380.md](spec/codec-md380.md)). Measured 2026-10-19 with link time optimization, its

@@ -214,6 +214,22 @@ can't, the radio comes back after 2 s and shows "Couldn't switch off / Turn the 
 A 160 x 128 color screen with the top 8 rows hidden: 160 x 120 visible. The screenshots in this
 manual are this size.
 
+### DM-1701 languages
+
+The default image is English and Spanish. Chinese takes Spanish's place, not a seat beside it: it needs about 12 KB
+more than Spanish, and the radio's 336 KB of program space has 11.5 to 13.2 KB free
+([the feature matrix](../feature-matrix.md#whole-images)). Build it with Spanish off, and with the debug link off too
+if the linker says it doesn't fit:
+
+```
+make BOARD=dm1701 CONFIG_LANG_ZH=y CONFIG_LANG_DEFAULT_ZH=y CONFIG_LANG_ES=n
+```
+
+The CI build (`board.toml [ci] extra`) adds `CONFIG_DEBUGLINK=n` for a margin. In the web flasher a browser that asks
+for Chinese is offered it ([Installing](02-installing.md)); the build then says it doesn't fit, and Spanish comes off
+in **Custom**. A Chinese line is 16 pixels high, so while the radio is in Chinese the screen shows 5 list rows instead
+of 7 and Home has no zone line; English and Spanish keep the tighter layout.
+
 ### What the DM-1701 lacks
 
 - No GPS from the factory. LRRP location requests get "no fix". APRS positions come from a computer or a fixed

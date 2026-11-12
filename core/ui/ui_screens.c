@@ -176,14 +176,22 @@ void ui_layout_init(void)
 	}
 
 #if CONFIG_LANG_ZH
-	// A CJK character is 16 px tall (core/ui/cjk_font.h), so a line that may hold Chinese needs a 16 px font. Where the
+	// A CJK character is 16 px tall (core/ui/cjk_font.h), so a line that may hold Chinese needs a 16 px font, and only
+	// while the language in use is a wide one: English and Spanish keep the tighter layout in the same build. Where the
 	// layout already draws its words in one (the 240 px class), only the smallest font, which text pages use, moves up to
-	// it - and only while the language in use is a wide one, so English and Spanish keep their layout in the same build.
-	// Where the layout draws its words in the 5x8 or 6x12 font (the 128x64 and 160x128 classes) Chinese cannot be shown
-	// at all: there is no room for 16 px lines, so the layout stays as it is and the board must not build the language
-	// in (BOARD_UNSUPPORTED, docs/build-config.md)
-	if (L->small->h >= CJK_FONT_H && L->tiny->h < CJK_FONT_H && lang_wide(lang_current()))
-		L->tiny = L->small;
+	// it. Where it draws them in the 6x12 font (the 160 px class), those words move up to the 8x16 one, which costs Home
+	// its zone line and a list two rows on a 160x120 panel (docs/spec/ui.md 2.5). A 128x64 panel has no room for a 16 px
+	// line at all: its layout stays as it is and the board must not build the language in (BOARD_UNSUPPORTED,
+	// docs/build-config.md)
+	if (lang_wide(lang_current())) {
+		if (L->small->h >= CJK_FONT_H) {
+			if (L->tiny->h < CJK_FONT_H)
+				L->tiny = L->small;
+		} else if (w >= 150) {		// the 160 px class: 8x16 for lists, labels, the strip and the hints
+			L->small = f8;
+			L->tiny = f8;
+		}
+	}
 #endif
 
 	// A pixel between the status strip and what is below it, and a pixel between list rows on displays 100 px and
