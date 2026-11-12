@@ -34,6 +34,7 @@
 #      (tools/rfoundry/tests) and every tool's --self-test (the tools under tools/ and stub/ that have one); the stack
 #      check's self-test
 #      (tools/stack_check.py); every relative link, image and anchor in the Markdown resolves (tools/check_doc_links.py);
+#      the codeplug settings area's keys agree in the spec, the firmware and the Codeplug Editor (tools/check_keys.py);
 #      the glossary data is sound and its pages current (tools/glossary.py); the web site builds without a warning (site/build.py, needs markdown-it-py or uv) and the web flasher's tests
 #      pass against rfoundry (site/tests/run.sh, needs Node 20+)
 #   3. firmware, for every boards/<b>/board.mk whose compiler is installed (a board without one is skipped with a
@@ -306,6 +307,12 @@ for f in sys.argv[1:]:
 	else
 		head -20 "$OUT/doc-links.log"
 		bad "doc links (see $OUT/doc-links.log)"
+	fi
+	if python3 tools/check_keys.py > "$OUT/keys.log" 2>&1; then
+		ok "settings area keys: $(tail -1 "$OUT/keys.log" | sed 's/^check_keys: //')"
+	else
+		head -20 "$OUT/keys.log"
+		bad "settings area keys (see $OUT/keys.log)"
 	fi
 	if python3 tools/glossary.py --check > "$OUT/glossary.log" 2>&1; then
 		ok "glossary: $(tail -1 "$OUT/glossary.log" | sed 's/^glossary: //')"

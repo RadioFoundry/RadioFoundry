@@ -37,6 +37,7 @@
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"	// dmr_sms_format_t
 #include "position/nmea.h"	// DMR APRS positions heard (data_position)
+#include "radio/radio_keys.h"
 #endif
 #if CONFIG_DMR_EMERGENCY
 #include "dmr/dmr_emergency.h"
@@ -1972,6 +1973,25 @@ static bool data_in_rx_group(uint32_t tg, void *ctx)
 // noted in the settings store from data_tick
 static dmrDataSettings_t data_saved;
 
+// The ARS server and the IP gateway as the codeplug's settings area gives them (docs/spec/codeplug-settings.md 5),
+// read at start, whenever codeplug_serial() (a codeplug written) or codeplug_kv_serial() (a key written) moves on and
+// whenever the settings change. A key that is present holds its
+// setting: a change made another way is put back at the next tick, before it is saved. An absent key leaves the
+// setting as the radio has it (the settings store's copy), so a codeplug from a tool that doesn't carry the area
+// changes nothing. No copy of the keys in RAM: a read is a few bytes of flash, and only on those events. The keys are the
+// table in radio_keys.h (codeplug_keys_apply)
+static uint8_t data_kv_seen;	// codeplug_kv_serial() at the last load: it moves when the keys may read differently
+
+static void data_kv_load(void)
+{
+	data_kv_seen = codeplug_kv_serial();
+	dmrDataSettings_t set;
+	dmrDataServiceGetSettings(&set);
+	if (codeplug_keys_apply(radio_keys, RADIO_KEYS_N, &set)) {
+		dmrDataServiceSetSettings(&set);
+	}
+}
+
 static void data_save_settings(uint32_t now_ms)
 {
 	dmrDataSettings_t cur;
@@ -1983,6 +2003,9 @@ static void data_save_settings(uint32_t now_ms)
 	    cur.ipConfirmedTries == data_saved.ipConfirmedTries && cur.ipGatewayId == data_saved.ipGatewayId &&
 	    memcmp(cur.ipConfirmedRule, data_saved.ipConfirmedRule, sizeof(cur.ipConfirmedRule)) == 0) {
 		return;
+	}
+	if (codeplug_keys_apply(radio_keys, RADIO_KEYS_N, &cur)) {
+		dmrDataServiceSetSettings(&cur);	// the codeplug's key holds against the change
 	}
 	data_saved = cur;
 	settings_t *st = settings_begin();
@@ -2144,7 +2167,11 @@ static void data_init(radio_sm_t *sm)
 		memcpy(set.ipConfirmedRule, st->ds_ip_rule, sizeof(set.ipConfirmedRule));
 		set.ipGatewayId = st->ds_ip_gateway & 0xFFFFFFu;	// 0 in a record from before it (off)
 	}
+	// The settings store's copy as saved, then the keys over it: a key it doesn't hold yet (a factory reset leaves the
+	// codeplug, a power cut before the copy was saved) differs from data_saved, so the first tick saves the copy
+	// (docs/spec/codeplug-settings.md 5.2: the radio's own copy follows the key)
 	data_saved = set;
+	codeplug_keys_apply(radio_keys, RADIO_KEYS_N, &set);
 	data_tx.list = NULL;
 	dmrDataServiceInit(&env);
 	dmrDataServiceSetSettings(&set);
@@ -2188,6 +2215,9 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_ZONE_SHARE
 	zone_share_tick(now_ms);
 #endif
+	if (codeplug_kv_serial() != data_kv_seen) {
+		data_kv_load();	// a key written (menu, debug link): its value only, without a codeplug reload
+	}
 	data_save_settings(now_ms);
 	if (sm->power_off_req && sm->power_off_busy) {
 		sm->power_off_busy = dmrDataServicePowerOff();	// ARS deregistration, until it has gone out
@@ -4847,6 +4877,9 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	sm->reload_pending = false;
 	sm->codeplug_serial = codeplug_serial();
 	sm->view.source = codeplug_source();
+#if CONFIG_DMR_DATA_CORE
+	data_kv_load();
+#endif
 #if CONFIG_DMR
 	// The cached names may be gone or new now ("" is cached too): a contact added after its ID was heard or called
 	// would otherwise stay a bare ID on the screens until it fell out of the cache

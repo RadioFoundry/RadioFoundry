@@ -2253,6 +2253,38 @@ msgid "OK edit  Back"
 msgstr "OK modifica  Indietro"
 
 #: core/ui/ui_menus.c
+msgid "ARS server"
+msgstr "Server ARS"
+
+#: core/ui/ui_menus.c
+msgid "IP gateway"
+msgstr "Gateway IP"
+
+#: core/ui/ui_menus.c
+msgid "Registering"
+msgstr "Registrazione"
+
+#: core/ui/ui_menus.c
+msgid "Registered"
+msgstr "Registrato"
+
+#: core/ui/ui_menus.c
+msgid "Refused"
+msgstr "Rifiutato"
+
+#: core/ui/ui_menus.c
+msgid "No answer"
+msgstr "Nessuna risposta"
+
+#: core/ui/ui_menus.c
+msgid "ARS: "
+msgstr "ARS: "
+
+#: core/ui/ui_menus.c
+msgid "Data Services"
+msgstr "Servizi dati"
+
+#: core/ui/ui_menus.c
 msgid "Freq Trim"
 msgstr "Trim freq."
 
@@ -2939,6 +2971,10 @@ msgstr "PC risponde dati"
 #: core/ui/ui_menus.c
 msgid "USB address"
 msgstr "Indirizzo USB"
+
+#: core/ui/ui_menus.c
+msgid "Data services"
+msgstr "Servizi dati"
 
 #: core/ui/ui_menus.c
 msgid "Auto power off"
