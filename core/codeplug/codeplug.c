@@ -311,15 +311,59 @@ static void set_used(uint16_t number, bool on)
 	}
 }
 
-// A Latin-1 name field (codeplug-stock-tyt.md 2): printable text (0x20-0x7E, 0xA0-0xFE) up to the first 0x00 or
-// 0xFF, only 0x00 or 0xFF after it. A UTF-16 name fails: its second byte is 0x00 and printable bytes follow
-static bool latin_name(const uint8_t *p, unsigned len, bool *empty)
+// A name field's text is Latin-1 (codeplug-stock-tyt.md 2): printable bytes 0x20-0x7E and 0xA0-0xFE
+static bool latin_ok(const uint8_t *p, unsigned n)
+{
+	for (unsigned i = 0; i < n; i++) {
+		if (p[i] < 0x20u || (p[i] > 0x7Eu && p[i] < 0xA0u)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// A name field's text is UTF-8 (a Chinese name the CPS wrote): every sequence well-formed, no overlong form, no
+// surrogate. The CPS writes Latin-1 letters and ASCII one byte each, so a name is either all Latin-1 or all UTF-8
+static bool utf8_ok(const uint8_t *p, unsigned n)
+{
+	unsigned i = 0;
+	while (i < n) {
+		uint8_t c = p[i];
+		if (c < 0x80u) {
+			i++;
+			continue;
+		}
+		unsigned need, lo;
+		uint32_t cp;
+		if ((c & 0xE0u) == 0xC0u) { need = 2; cp = c & 0x1Fu; lo = 0x80u; }
+		else if ((c & 0xF0u) == 0xE0u) { need = 3; cp = c & 0x0Fu; lo = 0x800u; }
+		else if ((c & 0xF8u) == 0xF0u) { need = 4; cp = c & 0x07u; lo = 0x10000u; }
+		else { return false; }
+		if (i + need > n) {
+			return false;
+		}
+		for (unsigned j = 1; j < need; j++) {
+			uint8_t b = p[i + j];
+			if ((b & 0xC0u) != 0x80u) {
+				return false;
+			}
+			cp = (cp << 6) | (b & 0x3Fu);
+		}
+		if (cp < lo || cp > 0x10FFFFu || (cp >= 0xD800u && cp <= 0xDFFFu)) {
+			return false;
+		}
+		i += need;
+	}
+	return true;
+}
+
+// A name field: printable text up to the first 0x00 or 0xFF, only 0x00 or 0xFF after it. The text is Latin-1 (the
+// historical format) or UTF-8 (a Chinese name the CPS wrote); a UTF-16 name fails (its second byte is 0x00 and
+// printable bytes follow)
+static bool name_field_ok(const uint8_t *p, unsigned len, bool *empty)
 {
 	unsigned n = 0;
 	while (n < len && p[n] != 0x00 && p[n] != 0xFF) {
-		if (p[n] < 0x20u || (p[n] > 0x7Eu && p[n] < 0xA0u)) {
-			return false;
-		}
 		n++;
 	}
 	*empty = n == 0;
@@ -328,14 +372,14 @@ static bool latin_name(const uint8_t *p, unsigned len, bool *empty)
 			return false;
 		}
 	}
-	return true;
+	return n == 0 || latin_ok(p, n) || utf8_ok(p, n);
 }
 
 // A record that counts by its name: good when the name is valid and not empty
 static void named(const uint8_t *p)
 {
 	bool empty;
-	if (latin_name(p, CODEPLUG_NAME_LEN, &empty) && !empty) {
+	if (name_field_ok(p, CODEPLUG_NAME_LEN, &empty) && !empty) {
 		ev_good++;
 	} else {
 		ev_bad++;
