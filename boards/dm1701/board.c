@@ -30,12 +30,13 @@ const uint8_t uvf_key_matrix[3][8] = {
 // ramp's shape: every level up 0.14-0.45 ms before the first symbol, the lowest with 0.6 dB of overshoot, the next
 // two with 2.0-3.3 dB (their boosts are tied to the lowest's and the top's timing; a lower knee and slope put the
 // lowest level or the fourth late). VHF:
-// measured with the tool, every level up 0.04-0.28 ms before the first symbol with at most 2.2 dB of overshoot. Its
-// lowest level is far too slow on its own drive, so it is boosted from the board's earliest point (2.5 ms), and the
-// boost ends 0.6 ms before the first symbol: at 0.3 ms the same boost overshot 4 dB. The PA 0.8 ms (VHF) and 1.0 ms
+// set by hand on a cable (the tool's fit comes out late): levels 0-3 up 0.10-0.17 ms before the first symbol with at
+// most 1.1 dB of overshoot, the top level at it (its boost is capped). The lowest level is far too slow on its own
+// drive, so every level is boosted from the board's earliest point (2.5 ms) until 0.6 ms before the first symbol; the
+// knee sets how much more the low levels get (hardware-dm1701.md 7). The PA 0.8 ms (VHF) and 1.0 ms
 // (UHF) after the RF TX interrupt: 0.6 ms cut the end of the burst an SFR repeater receives just before
 static const pa_keyup_cfg_t keyup[2] = {
-	{ .dead_pm = 1, .knee_us = 1106, .slope_us = 1433, .window_us = 2500, .settle_us = 600, .pa_us = 1730 },
+	{ .dead_pm = 1, .knee_us = 638, .slope_us = 2398, .window_us = 2500, .settle_us = 600, .pa_us = 1730 },
 	{ .dead_pm = 349, .knee_us = 247, .slope_us = 1248, .window_us = 1530, .settle_us = 800, .pa_us = 1530 },
 };
 

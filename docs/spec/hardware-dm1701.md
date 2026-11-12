@@ -760,7 +760,7 @@ interrupt; at VHF it is the board's earliest point, 2.5 ms before the first symb
 
 | Band | dead_pm | knee_us | slope_us | window_us | settle_us | pa_us |
 |---|---|---|---|---|---|---|
-| VHF | 1 | 1106 | 1433 | 2500 | 600 | 1730 |
+| VHF | 1 | 638 | 2398 | 2500 | 600 | 1730 |
 | UHF | 349 | 247 | 1248 | 1530 | 800 | 1530 |
 
 UHF is measured with `tools/bench/pa_cal.py` ([pa-keyup.md](pa-keyup.md) 6) over the air on the SDR bench and
@@ -779,12 +779,24 @@ boosts of the two levels between. Against the same keys:
 A wider window (2000-2400 us) put the lowest level early with 5 dB of overshoot; an approach drive (`ease_pm`) never
 reaches the levels that overshoot.
 
-VHF is measured the same way, into the dummy load: every level's -3 dB point 0.04-0.28 ms before the first symbol,
-with at most 2.2 dB of overshoot (the lowest level), the top three under 1 dB. The lowest level's own drive, written
-1.73 ms ahead, brings the output up 1.3 ms after the first symbol, so it needs a large boost. Ended 0.3 ms before the
-first symbol, a boost that brings it up in time overshoots 4-7 dB; ended 0.6 ms before, a boost of 1300 counts
-overshoots 0.8 dB. The longer settle time needs the longer window to keep the boost low. The set converted from the
-earlier form overshot 6-7 dB at the lowest level, its first symbol 5-6 dB high.
+VHF is measured the same way, on a cable into the SDR bench through 57 dB of attenuation. The lowest level's own
+drive, written 2.5 ms ahead, brings the output up 0.8 ms after the first symbol, so every level is boosted. With the
+board's earliest point and settle time fixed, the boost over the level is (knee x top + slope x drive) / ((window -
+settle) x drive): the knee sets how much more the low levels get. A boost 2.6 times the lowest level's drive brings it
+up in time; 2.0 times leaves it 0.7-1.0 ms late, 3.1 times overshoots 4.5 dB. The top level's boost is capped at 1.2
+times its drive and its PA point can't move earlier (SFR, below), so it is 2 dB short at the first symbol in every set.
+Against the same keys:
+
+| Set | -3 dB, levels 0-4 (ms) | Overshoot, levels 0-4 (dB) |
+|---|---|---|
+| This one | -0.10 / -0.14 / -0.17 / -0.15 / -0.01 | 1.1 / 0.9 / 1.0 / 0.4 / 0.2 |
+| Knee 1106, slope 1433 (the one before) | -0.26 / -0.20 / -0.16 / -0.12 / +0.20 (edge) | 4.5 / 1.6 / 0.9 / 0.3 / 0.2 |
+| Knee 496, slope 2583 | +0.13 / -0.07 / -0.14 / -0.15 / -0.02 | 0.1 / 0.6 / 0.9 / 0.4 / 0.2 |
+| Knee 548, slope 2855, settle 400 | -0.07 / -0.11 / -0.16 / -0.15 / -0.05 | 3.2 / 2.5 / 2.3 / 0.9 / 0.2 |
+| Knee 213, slope 2953 | +0.97 / +0.12 / -0.08 / -0.15 / -0.02 | 0.1 / 0.2 / 0.6 / 0.4 / 0.2 |
+
+The fit of `pa_cal.py` doesn't find this set: its open-loop points are each a level's own drive, which never brings the
+lowest level up in time, and its rounds come out 0.4-1.8 ms late.
 
 The radio's USB link drops while it transmits at VHF above 100 mW, and the host then ignores the port until the radio
 restarts or the cable is replugged. VHF is therefore measured with `--key-run restart`
