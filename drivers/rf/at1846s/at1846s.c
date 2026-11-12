@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT1846S RF transceiver driver (docs/spec/hardware-dm1701.md section 5; AT1846S datasheet and programming guide)
+#include <stddef.h>
 #include "at1846s.h"
 #include "rf/subaudio/subaudio.h"
 
@@ -12,11 +13,7 @@ typedef struct {
 	uint16_t val;
 } reg_val_t;
 
-typedef struct {
-	uint8_t page;
-	uint8_t reg;
-	uint16_t val[2];	// 12.5 kHz, 25 kHz
-} bw_row_t;
+typedef at1846s_bw_row_t bw_row_t;
 
 // 5.2 steps 3-30, after the soft reset
 static const reg_val_t init_regs[] = {
@@ -105,7 +102,7 @@ static const reg_val_t dmr_regs[] = {
 };
 
 // 5.3: [state][bw]
-static const uint16_t ctrl_values[][2] = {
+static const uint16_t ctrl_values[AT1846S_STATE_COUNT][2] = {
 	[AT1846S_STATE_OFF] = { 0x4006, 0x7006 },
 	[AT1846S_STATE_IDLE] = { 0x6006, 0x7006 },
 	[AT1846S_STATE_RX] = { 0x6026, 0x7026 },
@@ -130,6 +127,19 @@ uint32_t at1846s_freq_word(uint32_t hz)
 uint16_t at1846s_state_value(at1846s_bw_t bw, at1846s_state_t state)
 {
 	return ctrl_values[state][bw == AT1846S_BW_25K ? 1 : 0];
+}
+
+uint16_t at1846s_ctrl_value(const at1846s_t *dev, at1846s_bw_t bw, at1846s_state_t state)
+{
+	if (dev->prof == NULL) {
+		return at1846s_state_value(bw, state);
+	}
+	return dev->prof->ctrl[state][bw == AT1846S_BW_25K ? 1 : 0];
+}
+
+uint16_t at1846s_reg05_value(const at1846s_t *dev, uint32_t hz)
+{
+	return dev->prof != NULL && dev->prof->reg05 != NULL ? dev->prof->reg05(hz) : 0x8763u;
 }
 
 uint8_t at1846s_ctcss_threshold(uint16_t tone_reg)
@@ -185,10 +195,18 @@ void at1846s_cache_clear(at1846s_t *dev)
 void at1846s_attach(at1846s_t *dev, const at1846s_bus_t *bus)
 {
 	dev->bus = bus;
+	dev->prof = NULL;
 	at1846s_cache_clear(dev);
 	dev->bw = -1;
 	dev->mode = -1;
 	dev->state = AT1846S_STATE_OFF;
+}
+
+void at1846s_set_profile(at1846s_t *dev, const at1846s_profile_t *prof)
+{
+	dev->prof = prof;
+	dev->bw = -1;
+	dev->mode = -1;
 }
 
 static bool select_page(at1846s_t *dev, uint8_t page)
@@ -270,10 +288,20 @@ bool at1846s_init(at1846s_t *dev)
 	dev->bus->delay_ms(50);
 	at1846s_cache_clear(dev);	// the reset put every register back to its default
 	ok &= select_page(dev, 0);
-	ok &= write_list(dev, init_regs, sizeof(init_regs) / sizeof(init_regs[0]));
-	dev->bus->delay_ms(100);
-	ok &= at1846s_write(dev, 0, REG_CTRL, 0x4006);		// calibration done
-	dev->bus->delay_ms(10);
+	if (dev->prof != NULL) {
+		for (uint32_t i = 0; i < dev->prof->init_len; i++) {
+			const at1846s_step_t *st = &dev->prof->init[i];
+			ok &= at1846s_write_force(dev, 0, st->reg, st->val);
+			if (st->wait_ms != 0) {
+				dev->bus->delay_ms(st->wait_ms);
+			}
+		}
+	} else {
+		ok &= write_list(dev, init_regs, sizeof(init_regs) / sizeof(init_regs[0]));
+		dev->bus->delay_ms(100);
+		ok &= at1846s_write(dev, 0, REG_CTRL, 0x4006);		// calibration done
+		dev->bus->delay_ms(10);
+	}
 	ok &= at1846s_set_bandwidth(dev, AT1846S_BW_12K5);
 	dev->bus->delay_ms(200);
 	dev->state = AT1846S_STATE_IDLE;
@@ -291,12 +319,14 @@ bool at1846s_set_bandwidth(at1846s_t *dev, at1846s_bw_t bw)
 		return true;
 	}
 	int col = bw == AT1846S_BW_25K ? 1 : 0;
+	const bw_row_t *rows = dev->prof != NULL ? dev->prof->bw : bw_rows;
+	uint32_t n = dev->prof != NULL ? dev->prof->bw_len : sizeof(bw_rows) / sizeof(bw_rows[0]);
 	bool ok = true;
-	for (uint32_t i = 0; i < sizeof(bw_rows) / sizeof(bw_rows[0]); i++) {
-		ok &= at1846s_write(dev, bw_rows[i].page, bw_rows[i].reg, bw_rows[i].val[col]);
+	for (uint32_t i = 0; i < n; i++) {
+		ok &= at1846s_write(dev, rows[i].page, rows[i].reg, rows[i].val[col]);
 	}
 	ok &= select_page(dev, 0);
-	ok &= at1846s_write_force(dev, 0, REG_CTRL, at1846s_state_value(bw, AT1846S_STATE_IDLE));
+	ok &= at1846s_write_force(dev, 0, REG_CTRL, at1846s_ctrl_value(dev, bw, AT1846S_STATE_IDLE));
 	dev->state = AT1846S_STATE_IDLE;
 	dev->bw = ok ? (int8_t)bw : -1;
 	dev->mode = -1;		// the table overwrote mode registers (0x15, 0x32, 0x3A, ...)
@@ -306,6 +336,10 @@ bool at1846s_set_bandwidth(at1846s_t *dev, at1846s_bw_t bw)
 bool at1846s_set_mode(at1846s_t *dev, at1846s_mode_t mode)
 {
 	if (dev->mode == (int8_t)mode) {
+		return true;
+	}
+	if (dev->prof != NULL && dev->prof->no_mode_tables) {
+		dev->mode = (int8_t)mode;
 		return true;
 	}
 	bool ok = mode == AT1846S_MODE_DMR ? write_list(dev, dmr_regs, sizeof(dmr_regs) / sizeof(dmr_regs[0]))
@@ -322,9 +356,9 @@ static at1846s_bw_t cur_bw(const at1846s_t *dev)
 bool at1846s_set_freq(at1846s_t *dev, uint32_t hz)
 {
 	uint32_t word = at1846s_freq_word(hz);
-	bool ok = at1846s_write_force(dev, 0, REG_CTRL, at1846s_state_value(cur_bw(dev), AT1846S_STATE_IDLE));
+	bool ok = at1846s_write_force(dev, 0, REG_CTRL, at1846s_ctrl_value(dev, cur_bw(dev), AT1846S_STATE_IDLE));
 	dev->state = AT1846S_STATE_IDLE;
-	ok &= at1846s_write_force(dev, 0, 0x05, 0x8763);
+	ok &= at1846s_write_force(dev, 0, 0x05, at1846s_reg05_value(dev, hz));
 	ok &= at1846s_write_force(dev, 0, 0x29, (uint16_t)((word >> 16) & 0x3FFFu));
 	ok &= at1846s_write_force(dev, 0, 0x2A, (uint16_t)(word & 0xFFFFu));
 	ok &= at1846s_write(dev, 0, 0x49, 0x0C15);	// squelch open / shut thresholds
@@ -333,7 +367,7 @@ bool at1846s_set_freq(at1846s_t *dev, uint32_t hz)
 
 bool at1846s_set_state(at1846s_t *dev, at1846s_state_t state)
 {
-	bool ok = at1846s_write_force(dev, 0, REG_CTRL, at1846s_state_value(cur_bw(dev), state));
+	bool ok = at1846s_write_force(dev, 0, REG_CTRL, at1846s_ctrl_value(dev, cur_bw(dev), state));
 	dev->state = (uint8_t)state;
 	return ok;
 }
@@ -421,6 +455,21 @@ bool at1846s_set_rx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value)
 		ok &= at1846s_modify(dev, 0, 0x3A, (uint16_t)~RX_DETECT_MASK, RX_DETECT_BASE);
 		return ok;
 	}
+}
+
+bool at1846s_set_tx_cal(at1846s_t *dev, const at1846s_tx_cal_t *cal)
+{
+	bool ok = at1846s_modify(dev, 0, 0x0A, 0x803Fu,
+				 (uint16_t)(((cal->pa_drv & 0x0Fu) << 11) | ((cal->mic_pga & 0x1Fu) << 6)));
+	ok &= at1846s_modify(dev, 0, 0x41, 0xFF80u, (uint16_t)(cal->voice_gain & 0x7Fu));
+	ok &= at1846s_modify(dev, 0, 0x44, 0xF0FFu, (uint16_t)((cal->gain_tx & 0x0Fu) << 8));
+	ok &= at1846s_write(dev, 0, 0x59, (uint16_t)(((cal->fm_dev & 0x3FFu) << 6) | (cal->tone_dev & 0x3Fu)));
+	return ok;
+}
+
+bool at1846s_set_rx_volume(at1846s_t *dev, uint8_t dac_gain, uint8_t volume)
+{
+	return at1846s_modify(dev, 0, 0x44, 0xFF00u, (uint16_t)(((dac_gain & 0x0Fu) << 4) | (volume & 0x0Fu)));
 }
 
 bool at1846s_read_signal(at1846s_t *dev, uint8_t *rssi_db, uint8_t *noise_db)

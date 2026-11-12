@@ -66,7 +66,7 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | Feature groups, titles, flash cost, notes | The tables in [feature-matrix.md](../feature-matrix.md) |
 | Variants and why each leaves a feature out | `config/variants/<id>.mk` ([build-config.md](../build-config.md)) |
 | Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), six per radio page in two rows of three: the first of `featured` in `site/data/screens.json` the radio has. The Screenshots page (`/screenshots/`) shows every screen each radio's build has, a section per board, under the `groups` headings of `screens.json`, in its order. The home page's carousel lists its screens in `site/templates/home.html`, from every gallery, one height. Every page shows the scaled copies ([Screenshot copies](#screenshot-copies)) |
-| Flash layout, codec profiles, stock files, key hashes | The board registry (`tools/rfoundry/rfoundry/registry.json`, read through `boards.py`) and `stockfw.py`, exported to `data/flash-boards.json` |
+| Flash layout, codec profiles, stock files, key hashes | The board registry (`tools/rfoundry/rfoundry/registry.json`, read through `boards.py`) and `stockfw.py` (the USB HID update route: `k22fcodec.py`, `updatefile.py`, `hidboot.py`), exported to `data/flash-boards.json` |
 | Documentation | Every Markdown file under `docs/` |
 | Firmware images | Release manifests and images (`--firmware`; the workflow downloads the newest release) |
 

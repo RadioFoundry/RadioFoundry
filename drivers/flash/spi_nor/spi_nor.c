@@ -8,8 +8,11 @@
 
 enum {
 	CMD_READ		= 0x03,
+	CMD_FAST_READ		= 0x0B,
 	CMD_PAGE_PROGRAM	= 0x02,
 	CMD_SECTOR_ERASE	= 0x20,
+	CMD_BLOCK_ERASE		= 0xD8,
+	CMD_CHIP_ERASE		= 0xC7,
 	CMD_WRITE_ENABLE	= 0x06,
 	CMD_STATUS1		= 0x05,
 	CMD_STATUS2		= 0x35,
@@ -22,9 +25,12 @@ enum {
 #define STATUS1_BUSY	0x01u
 #define STATUS1_WEL	0x02u
 
-// Busy limits in 1 ms polls (datasheet maximums: page program 3 ms, 4 KB erase 400 ms)
+// Busy limits in 1 ms polls (datasheet maximums: page program 3 ms, 4 KB erase 400 ms, 64 KB erase 2 s, chip erase
+// 200 s on a 16 MB part)
 #define PROGRAM_POLLS	20u
 #define ERASE_POLLS	1000u
+#define BLOCK_POLLS	4000u
+#define CHIP_POLLS	250000u
 
 static void addr_bytes(uint8_t *p, uint8_t cmd, uint32_t addr)
 {
@@ -106,12 +112,13 @@ bool spi_nor_probe(spi_nor_t *nor)
 
 bool spi_nor_read(const spi_nor_t *nor, uint32_t addr, void *buf, uint32_t len)
 {
-	uint8_t hdr[4];
+	uint8_t hdr[5];
 	if (len == 0) {
 		return true;
 	}
-	addr_bytes(hdr, CMD_READ, addr);
-	return command(nor, hdr, sizeof(hdr), NULL, buf, len);
+	addr_bytes(hdr, nor->fast_read ? CMD_FAST_READ : CMD_READ, addr);
+	hdr[4] = 0xFF;	// the fast read's dummy byte
+	return command(nor, hdr, nor->fast_read ? 5u : 4u, NULL, buf, len);
 }
 
 bool spi_nor_read_security(const spi_nor_t *nor, uint32_t addr, void *buf, uint32_t len)
@@ -154,4 +161,17 @@ bool spi_nor_erase_sector(const spi_nor_t *nor, uint32_t addr)
 	uint8_t hdr[4];
 	addr_bytes(hdr, CMD_SECTOR_ERASE, addr & ~(SPI_NOR_SECTOR_SIZE - 1u));
 	return write_enable(nor) && command(nor, hdr, sizeof(hdr), NULL, NULL, 0) && wait_ready(nor, ERASE_POLLS);
+}
+
+bool spi_nor_erase_block(const spi_nor_t *nor, uint32_t addr)
+{
+	uint8_t hdr[4];
+	addr_bytes(hdr, CMD_BLOCK_ERASE, addr & ~(SPI_NOR_BLOCK_SIZE - 1u));
+	return write_enable(nor) && command(nor, hdr, sizeof(hdr), NULL, NULL, 0) && wait_ready(nor, BLOCK_POLLS);
+}
+
+bool spi_nor_erase_chip(const spi_nor_t *nor)
+{
+	static const uint8_t cmd = CMD_CHIP_ERASE;
+	return write_enable(nor) && command(nor, &cmd, 1, NULL, NULL, 0) && wait_ready(nor, CHIP_POLLS);
 }

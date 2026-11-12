@@ -41,8 +41,35 @@ typedef enum { AT1846S_TONE_NONE, AT1846S_TONE_CTCSS, AT1846S_TONE_DCS, AT1846S_
 // The CTCSS register value used to send DCS (134.4 Hz, the DCS bit rate)
 #define AT1846S_DCS_TONE_REG	13440u
 
+#define AT1846S_STATE_COUNT	5
+
+// A radio's own register values for the chip, where its design differs from the defaults (hardware-dm1701.md 5.2-5.5):
+// the init list, the bandwidth table, reg 0x30 per state and the reg 0x05 rule. Board data; the driver only walks it
+typedef struct {
+	uint8_t reg;		// page 0
+	uint16_t val;
+	uint16_t wait_ms;	// after the write
+} at1846s_step_t;
+
+typedef struct {
+	uint8_t page;
+	uint8_t reg;
+	uint16_t val[2];	// 12.5 kHz, 25 kHz
+} at1846s_bw_row_t;
+
+typedef struct {
+	const at1846s_step_t *init;	// after the soft reset and its 50 ms, in order
+	uint8_t init_len;
+	const at1846s_bw_row_t *bw;	// written in order on a bandwidth change, then reg 0x30 idle
+	uint8_t bw_len;
+	uint16_t ctrl[AT1846S_STATE_COUNT][2];	// reg 0x30 per at1846s_state_t, 12.5 / 25 kHz
+	bool no_mode_tables;		// set_mode writes nothing: the init and bandwidth values serve FM and DMR
+	uint16_t (*reg05)(uint32_t hz);	// reg 0x05 for a frequency; NULL: 0x8763
+} at1846s_profile_t;
+
 typedef struct {
 	const at1846s_bus_t *bus;
+	const at1846s_profile_t *prof;	// NULL: the driver's defaults
 	uint16_t cache[2][128];
 	uint32_t valid[2][4];	// one bit per cached register
 	int8_t page;		// selected page, -1 unknown
@@ -68,6 +95,12 @@ bool at1846s_tone_match(uint16_t flags, at1846s_tone_t type);
 // --- Register access ---
 
 void at1846s_attach(at1846s_t *dev, const at1846s_bus_t *bus);
+// A radio's own values (before at1846s_init); NULL goes back to the defaults
+void at1846s_set_profile(at1846s_t *dev, const at1846s_profile_t *prof);
+// Reg 0x30 for a state at a bandwidth with this device's profile (at1846s_state_value() is the defaults')
+uint16_t at1846s_ctrl_value(const at1846s_t *dev, at1846s_bw_t bw, at1846s_state_t state);
+// Reg 0x05 for a frequency with this device's profile
+uint16_t at1846s_reg05_value(const at1846s_t *dev, uint32_t hz);
 // Cached write: skipped when the cache already holds the value
 bool at1846s_write(at1846s_t *dev, uint8_t page, uint8_t reg, uint16_t val);
 // Always written
@@ -99,6 +132,20 @@ bool at1846s_set_tx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value);
 // 134.4 Hz (the DCS bit rate) as a tone; off goes back to the code. False with no DCS set (nothing written)
 bool at1846s_tx_tail(at1846s_t *dev, bool on);
 bool at1846s_set_rx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value);
+// A radio's calibrated TX values, with the register map's field names. Each goes into its bit field only; the other
+// bits of the register keep their value
+typedef struct {
+	uint8_t pa_drv;		// reg 0x0A bits 14:11, PA driver current (padrv_ibit)
+	uint8_t mic_pga;	// reg 0x0A bits 10:6, microphone PGA gain (pga_gain)
+	uint8_t voice_gain;	// reg 0x41 bits 6:0, digital TX voice gain (voice_gain_tx)
+	uint8_t gain_tx;	// reg 0x44 bits 11:8, digital gain after the TX ADC (gain_tx)
+	uint16_t fm_dev;	// reg 0x59 bits 15:6, FM deviation (xmitter_dev)
+	uint8_t tone_dev;	// reg 0x59 bits 5:0, CTCSS / DCS deviation (c_dev)
+} at1846s_tx_cal_t;
+
+bool at1846s_set_tx_cal(at1846s_t *dev, const at1846s_tx_cal_t *cal);
+// RX audio levels: reg 0x44 bits 7:4 (DAC analog gain) and 3:0 (digital volume)
+bool at1846s_set_rx_volume(at1846s_t *dev, uint8_t dac_gain, uint8_t volume);
 // Reg 0x1B: rssi_db (high byte) and noise_db (low byte), 1 dB units, chip scale (5.9)
 bool at1846s_read_signal(at1846s_t *dev, uint8_t *rssi_db, uint8_t *noise_db);
 // Reg 0x1C flags (AT1846S_FLAG_*)

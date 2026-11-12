@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include "bus/i2c_bus.h"
 
 typedef struct {
 	void (*scl)(bool high);
@@ -25,5 +26,10 @@ bool i2c_gpio_write(const i2c_gpio_t *bus, uint8_t addr7, const uint8_t *data, s
 bool i2c_gpio_write_read(const i2c_gpio_t *bus, uint8_t addr7, const uint8_t *w, size_t wn, uint8_t *r, size_t rn);
 // Nine clocks with SDA released and a STOP: frees a slave left holding SDA by an interrupted transfer (power-up)
 void i2c_gpio_recover(const i2c_gpio_t *bus);
+
+// The software master behind the generic interface (bus/i2c_bus.h): ctx is the i2c_gpio_t
+bool i2c_gpio_bus_write(void *ctx, uint8_t addr7, const uint8_t *data, size_t n);
+bool i2c_gpio_bus_write_read(void *ctx, uint8_t addr7, const uint8_t *w, size_t wn, uint8_t *r, size_t rn);
+#define I2C_GPIO_BUS(gpio)	{ .write = i2c_gpio_bus_write, .write_read = i2c_gpio_bus_write_read, .ctx = (void *)(gpio) }
 
 #endif
