@@ -492,7 +492,15 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			.on_ms = a[5], .off_ms = a[6], .ceiling_pct = a[7], .mark_ms = a[8],
 		};
 		const pa_sweep_io_t io = { .drive = r->tx_drive_now, .mark = r->tx_mark, .delay_ms = hal_delay_ms };
-		pa_sweep_last_n = pa_sweep_run(&q, top, UINT16_MAX, &io);
+		uint16_t max = UINT16_MAX;	// the board's drive limit, as the key-up's (pa_keyup_init)
+#if CONFIG_DMR
+		uint16_t ahead, lim;
+		pa_keyup_limits(&ahead, &lim);
+		if (lim != 0u) {
+			max = lim;
+		}
+#endif
+		pa_sweep_last_n = pa_sweep_run(&q, top, max, &io);
 		pa_sweep_last_top = top;
 		return DL_ST_OK;
 	}

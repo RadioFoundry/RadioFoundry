@@ -37,7 +37,7 @@ pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, ui
 	}
 	if (lead > c->window_us) {
 		lead = c->window_us;
-		uint32_t room = (uint32_t)c->window_us - c->settle_us;	// pa_keyup_valid: above 0
+		uint32_t room = (uint32_t)c->window_us - c->settle_us;	// pa_keyup_valid: above 0, or a window of 0
 		uint32_t ceiling = (uint32_t)top * PA_KEYUP_BOOST_MAX_PCT / 100u;
 		if (ceiling > max) {
 			ceiling = max;
@@ -45,7 +45,8 @@ pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, ui
 		if (ease != 0u && ceiling > dead + ease) {
 			ceiling = dead + ease;	// d or over: this level is not over the fastest approach
 		}
-		b = dead + (q + room - 1u) / room;	// rounded up: the boost never short of the window
+		// rounded up: the boost never short of the window. No window, no boost: the level comes up late
+		b = room != 0u ? dead + (q + room - 1u) / room : d;
 		if (b > ceiling) {
 			b = ceiling;	// the level comes up late: the window is too short for it
 		}

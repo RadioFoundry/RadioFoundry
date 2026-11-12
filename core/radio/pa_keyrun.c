@@ -51,8 +51,16 @@ uint8_t pa_keyrun_run(const pa_keyrun_req_t *r, const pa_keyrun_io_t *io)
 		if (d == 0u || !io->drive(d) || !io->ptt(true, r->key_ms + 300u)) {
 			break;
 		}
-		io->delay_ms(r->key_ms);
+		bool on = false;	// a key counts only when the radio transmitted: PTT is refused without an error
+		for (uint32_t t = 0u; t < r->key_ms; t += 10u) {
+			uint32_t step = r->key_ms - t < 10u ? r->key_ms - t : 10u;
+			io->delay_ms(step);
+			on = on || io->keyed();
+		}
 		io->ptt(false, 0u);
+		if (!on) {
+			break;
+		}
 		uint32_t waited = 0u;
 		while (io->keyed() && waited < PA_KEYRUN_END_MS) {	// the next key's drive only after this key-down
 			io->delay_ms(10u);

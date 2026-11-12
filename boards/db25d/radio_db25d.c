@@ -362,7 +362,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 static void audio(bool on);
 
 // A power level's PA drive (hardware-db25d.md, power levels): five levels from the calibration's two tables. Level 2
-// is the low table and level 4 the high one (the stock's level 1, table 0x045); levels 0 and 1 are fractions of the
+// is the low table and level 4 the high one (the calibration page's table 0x045); levels 0 and 1 are fractions of the
 // low table's drive, level 3 is halfway between the tables. Draft values, to be set with a wattmeter
 static bool level_plan(uint32_t hz, uint8_t power, db25d_tx_plan_t *p)
 {
@@ -430,7 +430,7 @@ static void dmr_disarm(void)
 
 // One burst, the stock TX on (3.2, 4.4 steps 2-7 without the audio): RX paths off, 50 us, main chip to f and the LO
 // off, the page's TX-on delay, the RX supply off, 200 us, the band's TX supply, the ramp up. The PA select goes on
-// DB25D_DMR_SELECT_US ahead of the first drive, not with the RX supply as the stock's does: selected, the PA passes
+// DB25D_DMR_SELECT_US ahead of the first drive, not with the RX supply off: selected, the PA passes
 // the carrier 15-31 dB under the level before any drive, a step that from the sequence's end put the lowest level on
 // the air in the slot before and a knee into every level's rise (hardware-db25d.md 4.5)
 void db25d_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
@@ -610,6 +610,7 @@ static bool tx_drive_now(uint16_t drive)
 		return false;
 	}
 	DAC_DATA_B = drive;
+	tx_pa = drive;	// tx_stop's ramp down starts from the drive on the DAC, not the level's
 	return true;
 }
 

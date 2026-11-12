@@ -50,9 +50,9 @@
 // same, without a delay frames were lost. So the PA point's default is 1 ms after the interrupt
 #define DMR_KEY_INT_AHEAD_US	2530u
 #define DMR_KEY_MIN_US		30u	// the key timer's shortest step; closer points run together
-// The PA is dropped this long after the RF TX interrupt (gotchas.md 3.4): the burst's last symbol ends 30.03 ms after
-// it. Left to the timeslot interrupt, the carrier fell 1.7 ms after the last symbol, 0.45 ms into the next slot
-#define PA_HOLD_US		30000u
+// The PA is dropped this long after the RF TX interrupt (gotchas.md 3.4), at the burst's last symbol's end. Left to the
+// timeslot interrupt, the carrier fell 1.7 ms after the last symbol, 0.45 ms into the next slot
+#define PA_HOLD_US		(DMR_KEY_INT_AHEAD_US + 27500u)
 // The earliest key-up point (radio/pa_keyup.h): the timer's first step after the interrupt
 #define KEYUP_MAX_AHEAD_US	(DMR_KEY_INT_AHEAD_US - DMR_KEY_MIN_US)
 // The key-up constants (docs/spec/pa-keyup.md): every level keyed at its drive 1 ms after the interrupt
@@ -100,6 +100,7 @@ static struct {
 	pa_keyup_t ku;
 	volatile uint8_t key_i;		// the next step
 	volatile uint16_t key_base_us;	// the point the timer last counted from
+	bool key_timed;		// this burst's drop is the timer's
 	volatile uint32_t key_apc;	// the drive now: what the PA point keys with
 	uint32_t rf_skipped, rf_unarmed, rf_rx_retries;
 } r = { .rf_page = 0xFF };
@@ -494,6 +495,10 @@ void TIM7_IRQHandler(void)
 		}
 		r.key_i = ++i;
 		if (i >= r.key_ns) {
+			if (!r.key_timed) {	// a BS outbound keys once for all its slots: its end drops the PA
+				key_timer_stop();
+				return;
+			}
 			// The PA drop, PA_HOLD_US after the interrupt
 			TIM7->ARR = PA_HOLD_US - (DMR_KEY_INT_AHEAD_US - r.key_base_us) - 1u;
 			return;
@@ -508,7 +513,8 @@ void TIM7_IRQHandler(void)
 	}
 }
 
-// The RF TX interrupt starts the burst's key-up points and, after them, the PA drop PA_HOLD_US later (the engine
+// The RF TX interrupt starts the burst's key-up points and, after them, the PA drop PA_HOLD_US later (not for a split
+// duplex BS outbound, keyed once for all its slots; the engine
 // counts the burst as keyed from here); the timeslot interrupt more than 20 ms later puts the receiver back, and
 // drops the PA if the timer hasn't (points still pending included)
 bool uvf_rf_dmr_switch(bool tx)
@@ -522,6 +528,8 @@ bool uvf_rf_dmr_switch(bool tx)
 		return false;
 	}
 	uint16_t first = r.key_st[0].us;	// no earlier than DMR_KEY_MIN_US after the interrupt
+	uint32_t until;
+	r.key_timed = !stm32_hrc_dmr_bs_boundary_us(&until);
 	TIM7->CR1 = 0;
 	TIM7->CNT = 0;
 	TIM7->ARR = (uint32_t)(DMR_KEY_INT_AHEAD_US - first) - 1u;

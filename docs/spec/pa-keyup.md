@@ -141,7 +141,7 @@ constants (set first, as op 37), and up to 21 drives (28 without the constants; 
 radio sets it (as op 36), holds PTT for the key (its time-out just past it), waits for the key-down and the gap, then
 takes the next. The host link is held until the run ends and nothing is sent while the radio transmits, so a radio
 whose own RF upsets its USB link (VHF near the cable) still runs every key in time. Nothing is kept in RAM: the drives
-are read from the request as the keys run. The `features` view's `pa_keyrun.last` is the keys run and the keys asked.
+are read from the request as the keys run. The `features` view's `pa_keyrun.last` is the keys run and the keys asked. A key counts only when the radio transmitted during it: a channel it can't transmit on (receive only, past the test TX limit) stops the run at the first key, with none run.
 After the reply, flag bit 1 has the host port leave the bus and come back (`hal_stream_t.reattach`: a USB port stops
 its stack, resets the controller and starts again, every 4 s for about a minute until a host takes it). Flag bit 2
 restarts the radio instead. A restart loses the RAM settings: the constants, the test TX limit and `pa_keyrun.last`.

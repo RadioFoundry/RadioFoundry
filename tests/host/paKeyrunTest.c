@@ -16,6 +16,7 @@ static int nlog;
 static unsigned now, keyed_until, keydown_ms = 30;
 static int refuse_drive_after = -1, drives;
 static bool stuck;	// the radio never keys down
+static bool refuse_tx;	// PTT is taken, the radio never transmits (RX only, TX inhibited)
 static pa_keyup_cfg_t got_cfg;
 
 static void rec(char w, unsigned v)
@@ -48,7 +49,9 @@ static bool keyup(const pa_keyup_cfg_t *c)
 static bool ptt(bool down, uint32_t max_ms)
 {
 	rec(down ? 'P' : 'p', max_ms);
-	if (!down) {
+	if (down) {
+		keyed_until = refuse_tx ? 0u : 0xFFFFFFFFu;
+	} else if (!refuse_tx) {
 		keyed_until = stuck ? 0xFFFFFFFFu : now + keydown_ms;
 	}
 	return true;
@@ -73,6 +76,7 @@ static void reset(void)
 	drives = 0;
 	refuse_drive_after = -1;
 	stuck = false;
+	refuse_tx = false;
 }
 
 static uint16_t req(uint8_t *b, uint16_t key, uint16_t gap, bool cfg, const uint16_t *d, uint8_t n)
@@ -154,6 +158,11 @@ int main(void)
 		ptts += logv[i].what == 'P';
 	}
 	CHECK(ptts == 1 && now >= 300u + PA_KEYRUN_END_MS);
+
+	// PTT taken but nothing transmitted: no key counts, the run stops after the first, the override cleared
+	reset();
+	refuse_tx = true;
+	CHECK(pa_keyrun_run(&r, &io) == 0 && logv[nlog - 1].what == 'd' && logv[nlog - 1].v == 0u);
 
 	if (failures == 0) {
 		printf("paKeyrunTest: all passed\n");

@@ -227,6 +227,12 @@ int main(void)
 	// A level too slow for the window: the lowest boost that fits it, from the window to the settle time, then d
 	pa_keyup_t k = pa_keyup_drives(&dflt, 700, 1448, 760, 4095);
 	CHECK(k.boost == 764 && k.drive == 700 && k.boost_us == 1500 && k.pa_us == 1500 && k.drive_us == 300);
+	// No window (pa_keyup_valid takes 0): no room for a boost, no division by it; keyed at the first symbol on d
+	pa_keyup_cfg_t w0 = dflt;
+	w0.window_us = 0;
+	w0.settle_us = 0;
+	k = pa_keyup_drives(&w0, 700, 1448, 760, 4095);
+	CHECK(pa_keyup_valid(&w0, 2500) && k.boost == 0 && k.drive == 700 && k.pa_us == 0);
 	// The fastest approach, 152 counts over the dead zone (684): a level over it comes up on drive 836, timed as
 	// that drive's own key-up, and takes its own drive slope * (d - 836) / (d - 684) before the first symbol. The
 	// levels under it are keyed as without it

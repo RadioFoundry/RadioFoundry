@@ -40,6 +40,10 @@ static volatile usb_mode_t mode = USB_MODE_SERIAL;
 static SemaphoreHandle_t rx_ready;
 static volatile bool started;
 static volatile bool reinit_pending;	// cdc_reattach asked the USB task to start the stack again
+// The stack is up: false while a reattach takes it down and starts it again. The CDC calls of other tasks run under
+// stack_lock, so none is inside the stack while it is taken down
+static volatile bool live;
+static SemaphoreHandle_t stack_lock;
 
 void usb_device_set_mode(usb_mode_t m)
 {
@@ -264,6 +268,7 @@ static void usb_task(void *arg)
 	const tusb_rhport_init_t init = { .role = TUSB_ROLE_DEVICE, .speed = TUSB_SPEED_FULL };
 
 	tusb_init(0, &init);	// in the task that runs tud_task (TinyUSB's rule with an RTOS)
+	live = true;
 	started = true;
 	uint8_t tries = 0;
 	TickType_t at = 0;
@@ -281,23 +286,47 @@ static void usb_task(void *arg)
 			// Again until a host takes the port: one that gave up on it while the radio transmitted may ignore the
 			// first comeback, as it does a replug made too soon
 			tries--;
+			xSemaphoreTake(stack_lock, portMAX_DELAY);	// a CDC call still running ends first
+			live = false;
+			xSemaphoreGive(stack_lock);
 			tud_deinit(0);
 			vTaskDelay(pdMS_TO_TICKS(REATTACH_GAP_MS));
 			usb_port_init();
 			tusb_init(0, &init);
+			live = true;
 		}
 	}
 }
 
 // ---- The CDC-ACM stream ----
 
+// A CDC call into the stack: false (nothing to do) while it is down
+static bool stack_enter(void)
+{
+	if (!live) {
+		return false;
+	}
+	xSemaphoreTake(stack_lock, portMAX_DELAY);
+	if (!live) {
+		xSemaphoreGive(stack_lock);
+		return false;
+	}
+	return true;
+}
+
+static void stack_leave(void)
+{
+	xSemaphoreGive(stack_lock);
+}
+
 static bool cdc_start(void)
 {
 	if (rx_ready != NULL) {
 		return true;
 	}
+	stack_lock = xSemaphoreCreateMutex();
 	rx_ready = xSemaphoreCreateBinary();
-	if (rx_ready == NULL) {
+	if (rx_ready == NULL || stack_lock == NULL) {
 		return false;
 	}
 	usb_port_init();
@@ -306,20 +335,37 @@ static bool cdc_start(void)
 
 static bool cdc_connected(void)
 {
-	return started && (mode == USB_MODE_SERIAL) && tud_cdc_connected();
+	if (mode != USB_MODE_SERIAL || !stack_enter()) {
+		return false;
+	}
+	bool c = tud_cdc_connected();
+	stack_leave();
+	return c;
+}
+
+static bool cdc_rx_waiting(void)
+{
+	if (!stack_enter()) {
+		return false;
+	}
+	bool any = tud_cdc_available() > 0;
+	stack_leave();
+	return any;
 }
 
 static size_t cdc_read(uint8_t *buf, size_t max)
 {
-	if (!started || (tud_cdc_available() == 0)) {
+	if (!stack_enter()) {
 		return 0;
 	}
-	return tud_cdc_read(buf, (uint32_t)max);
+	size_t n = tud_cdc_available() != 0 ? tud_cdc_read(buf, (uint32_t)max) : 0u;
+	stack_leave();
+	return n;
 }
 
 static bool cdc_wait_rx(uint32_t timeout_ms)
 {
-	if (started && (tud_cdc_available() > 0)) {
+	if (cdc_rx_waiting()) {
 		return true;
 	}
 	if (rx_ready == NULL) {
@@ -327,7 +373,7 @@ static bool cdc_wait_rx(uint32_t timeout_ms)
 		return false;
 	}
 	xSemaphoreTake(rx_ready, pdMS_TO_TICKS(timeout_ms));
-	return started && (tud_cdc_available() > 0);
+	return cdc_rx_waiting();
 }
 
 static size_t cdc_write(const uint8_t *buf, size_t len)
@@ -335,7 +381,7 @@ static size_t cdc_write(const uint8_t *buf, size_t len)
 	size_t done = 0;
 	uint32_t waited = 0;
 
-	if (!started) {
+	if (!stack_enter()) {
 		return 0;
 	}
 	while (done < len) {
@@ -353,6 +399,7 @@ static size_t cdc_write(const uint8_t *buf, size_t len)
 			waited++;
 		}
 	}
+	stack_leave();
 	return done;
 }
 

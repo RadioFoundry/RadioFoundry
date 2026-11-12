@@ -255,7 +255,7 @@ TX on f (the order the radio's firmware uses; RadioFoundry differs where noted):
 | 3 | 50 us |
 | 4 | Main chip: 38 / 39 = f / 10 Hz (truncated), 37:1D0F, 30:0200, 30:C3FE (RadioFoundry writes the idle word before the frequency, not after). Then the LO chip 30:0000 only. 0x36 stays 0xBF |
 | 5 | The page's TX-on delay for f (1 us UHF, 1000 us VHF on the first unit). There is no other wait. RadioFoundry adds 3 ms (`TX_SETTLE_MS`) for the VCO calibration: no measurement says it can go, and a PA that comes up before the PLL has settled puts a carrier off frequency |
-| 6 | DAC B powered up at 0 (RadioFoundry only; the vendor firmware leaves it on), PA select of the band (UHF PTA26 high, PTB3 low; VHF PTB3 high, PTA26 low), PTA23 low, 200 us, the band's single TX supply (UHF PTA27 high, PTB2 low; VHF PTB2 high, PTA27 low). DMR bursts: PTA23 low 200 us before the first drive, the PA select 30 us before it, the TX supply with it (4.5) |
+| 6 | DAC B powered up at 0 (powered only for a transmission), PA select of the band (UHF PTA26 high, PTB3 low; VHF PTB3 high, PTA26 low), PTA23 low, 200 us, the band's single TX supply (UHF PTA27 high, PTB2 low; VHF PTB2 high, PTA27 low). DMR bursts: PTA23 low 200 us before the first drive, the PA select 30 us before it, the TX supply with it (4.5) |
 | 7 | DAC B ramps from 0 to the drive in 180 steps of 4 us |
 
 TX end: the main chip to its RX state on the TX frequency (47:6042, 50:3B18, 70:0, 37:1D0F, 30:0200, 30:BFF1), the page's

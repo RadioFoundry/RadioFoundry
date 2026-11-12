@@ -63,7 +63,7 @@
 #define PLL_LOCK_US		5000u	// task-level wait for lock detect after a retune
 #define C5000_MIC_GAIN		0xC8	// HR_C5000 4:0x0F, the value the MD-380 sets
 #define C5000_PWD_WAIT_MS	12	// at least 10 ms after PWD low before the first access (?)
-#define PA_HOLD_US		30000u	// TIM7 at 1 MHz: the PA is dropped 30 ms after the RF TX interrupt
+#define PA_HOLD_US		(DMR_KEY_INT_AHEAD_US + 27500u)	// TIM7 at 1 MHz: the PA drop, at the last symbol's end
 #define PA_TIMER_PRIORITY	5	// the modem interrupts' level
 // The RF TX interrupt comes about this long before the burst's first symbol (the figure of the HR_C6000 radios; the
 // key-up points count back from it). Keyed at the interrupt, the PA was up 1.1-1.6 ms before the first symbol
