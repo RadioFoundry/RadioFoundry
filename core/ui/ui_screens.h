@@ -112,6 +112,9 @@ typedef struct {
 	bool large_text;	// Home shows only the channel and the talk target (Settings > Display)
 	bool privacy;		// the next DMR transmission is encrypted
 	bool hear_all;		// hear all latched (quick tile 5 on DMR); follows the radio view where the radio has it
+	// Here, in the byte before auto_lock_s that was padding: the radio with the least RAM has none to spare in its
+	// maximal build
+	bool label_first;	// Home's talk line: the talkgroup's name before its number (Settings > Display, a side key)
 	uint16_t auto_lock_s;	// lock the keys after this long without a key press, 0 = never (Settings > Keys)
 	bool alias_show;	// show received talker aliases (Settings > Talk & listen)
 	bool ptt_locked;	// PTT works while the keys are locked (Settings > Privacy)

@@ -25,6 +25,9 @@
 #if CONFIG_APRS
 #include "aprs/aprs.h"
 #endif
+#if CONFIG_POSITION
+#include "position/position.h"
+#endif
 #if CONFIG_ZONE_WRITE
 #include "codeplug/zone_edit.h"
 #endif
@@ -199,16 +202,19 @@ static void data_lock(void) { vTaskSuspendAll(); }
 static void data_unlock(void) { (void)xTaskResumeAll(); }
 #endif
 
-#if CONFIG_APRS
-// The APRS engine's any-task calls (core/aprs/aprs.h): short copies, the same way
-static void aprs_lock(void) { vTaskSuspendAll(); }
-static void aprs_unlock(void) { (void)xTaskResumeAll(); }
+#if CONFIG_POSITION
+// The position service's and the APRS engine's any-task calls (position.h, aprs.h): short copies, the same way
+static void copy_lock(void) { vTaskSuspendAll(); }
+static void copy_unlock(void) { (void)xTaskResumeAll(); }
 #endif
 
 void radio_core_start(void)
 {
 #if CONFIG_APRS
-	aprs_set_lock(aprs_lock, aprs_unlock);
+	aprs_set_lock(copy_lock, copy_unlock);
+#endif
+#if CONFIG_POSITION
+	position_set_lock(copy_lock, copy_unlock);
 #endif
 #if CONFIG_DMR_DATA_CORE
 	dmrDataServiceSetLock(data_lock, data_unlock);
@@ -334,6 +340,7 @@ void radio_req_dmr_target_clear(void) { post(RREQ_DMR_TARGET_CLEAR, 0, 0); }
 void radio_req_dmr_timeslot(uint8_t ts) { post(RREQ_DMR_TS, ts, 0); }
 void radio_req_dmr_color_code(uint8_t cc) { post(RREQ_DMR_CC, cc, 0); }
 void radio_req_mode(uint8_t mode) { post(RREQ_MODE, mode, 0); }
+void radio_req_vfo_sfr(uint8_t a) { post(RREQ_VFO_SFR, a, 0); }
 void radio_req_dmr_hear_all(bool on) { post(RREQ_DMR_HEAR_ALL, on, 0); }
 // A lost focus change would send the next PTT to the wrong target: wait a little for room in the queue
 void radio_req_dmr_focus(uint32_t id, bool private_call)

@@ -480,6 +480,14 @@ msgstr "Tasti sbloccati"
 msgid "Talk target: DMR channels only"
 msgstr "Destinaz.: solo canali DMR"
 
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgid "Talkgroup name first"
+msgstr "Prima il nome del gruppo"
+
+#: core/ui/ui_app.c
+msgid "Talkgroup number first"
+msgstr "Prima il numero del gruppo"
+
 #: core/ui/ui_app.c
 msgid "Volume: use the knob"
 msgstr "Volume: usa la manopola"
@@ -548,11 +556,11 @@ msgstr "Entrambi"
 msgid "Auto"
 msgstr "Auto"
 
-#: core/ui/ui_aprs.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgid "Computer"
 msgstr "Computer"
 
-#: core/ui/ui_aprs.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgid "Fixed"
 msgstr "Fisso"
 
@@ -660,14 +668,6 @@ msgstr "SmartBeaconing"
 msgid "Send via"
 msgstr "Invia via"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c
-msgid "Position"
-msgstr "Posizione"
-
-#: core/ui/ui_aprs.c
-msgid "Position in DMR calls"
-msgstr "Posizione nelle chiamate DMR"
-
 #: core/ui/ui_aprs.c
 msgid "KISS on USB"
 msgstr "KISS su USB"
@@ -675,6 +675,10 @@ msgstr "KISS su USB"
 #: core/ui/ui_aprs.c
 msgid "Stations heard"
 msgstr "Stazioni sentite"
+
+#: core/ui/ui_aprs.c
+msgid "NMEA on USB"
+msgstr "NMEA su USB"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "On"
@@ -705,44 +709,8 @@ msgid "Beacons off"
 msgstr "Beacon off"
 
 #: core/ui/ui_aprs.c
-msgid "DMR position: not in this build"
-msgstr "Posizione DMR: non in questa build"
-
-#: core/ui/ui_aprs.c
-msgid "Position goes out in DMR calls"
-msgstr "La posizione esce nelle chiamate DMR"
-
-#: core/ui/ui_aprs.c
-msgid "No position in DMR calls"
-msgstr "Nessuna posizione in DMR"
-
-#: core/ui/ui_aprs.c
 msgid "This radio can't receive APRS"
 msgstr "Questa radio non riceve APRS"
-
-#: core/ui/ui_aprs.c
-msgid "Source"
-msgstr "Sorgente"
-
-#: core/ui/ui_aprs.c
-msgid "Latitude"
-msgstr "Latitudine"
-
-#: core/ui/ui_aprs.c
-msgid "Longitude"
-msgstr "Longitudine"
-
-#: core/ui/ui_aprs.c core/ui/ui_menus.c
-msgid "Not set"
-msgstr "Non impostato"
-
-#: core/ui/ui_aprs.c
-msgid "Up to 90 N/S, 180 E/W"
-msgstr "Fino a 90 N/S, 180 E/O"
-
-#: core/ui/ui_aprs.c core/ui/ui_menus.c
-msgid "OK change  Back"
-msgstr "OK cambia  Indietro"
 
 #: core/ui/ui_aprs.c
 msgid "0-9 pick  Back"
@@ -965,10 +933,6 @@ msgid "Roaming"
 msgstr "Roaming"
 
 #: core/ui/ui_find.c
-msgid "APRS position"
-msgstr "Posizione APRS"
-
-#: core/ui/ui_find.c
 msgid "Ch "
 msgstr "Ch "
 
@@ -1163,6 +1127,10 @@ msgstr "Controllo radio"
 #: core/ui/ui_menus.c
 msgid "Call alert"
 msgstr "Avviso chiamata"
+
+#: core/ui/ui_menus.c
+msgid "Position"
+msgstr "Posizione"
 
 #: core/ui/ui_menus.c
 msgid "In contacts"
@@ -2037,6 +2005,22 @@ msgid "Single-Freq Repeater"
 msgstr "Ripetitore freq. unica"
 
 #: core/ui/ui_menus.c
+msgid "User"
+msgstr "Utente"
+
+#: core/ui/ui_menus.c
+msgid "User (ERDM)"
+msgstr "Utente (ERDM)"
+
+#: core/ui/ui_menus.c
+msgid "Repeater"
+msgstr "Ripetitore"
+
+#: core/ui/ui_menus.c
+msgid "Repeater (ERDM style)"
+msgstr "Ripetitore (stile ERDM)"
+
+#: core/ui/ui_menus.c
 msgid "Supply"
 msgstr "Alimentaz."
 
@@ -2105,16 +2089,16 @@ msgid "USB network: not in this build"
 msgstr "Rete USB: non in questa build"
 
 #: core/ui/ui_menus.c
+msgid "The VFO has no SFR role. Pick one below."
+msgstr "Il VFO non ha ruolo SFR. Scegline uno qui sotto."
+
+#: core/ui/ui_menus.c
+msgid "Off here: the role needs DMR and one frequency (no split)."
+msgstr "Inattivo qui: il ruolo richiede DMR e una sola frequenza (senza TX separata)."
+
+#: core/ui/ui_menus.c
 msgid "This channel has no SFR role. Set Repeater or User in the Codeplug Editor, on a channel with one frequency."
 msgstr "Questo canale non ha ruolo SFR. Imposta Ripetitore o Utente nel Codeplug Editor, su un canale con una sola frequenza."
-
-#: core/ui/ui_menus.c
-msgid "Repeater (ERDM style)"
-msgstr "Ripetitore (stile ERDM)"
-
-#: core/ui/ui_menus.c
-msgid "Repeater"
-msgstr "Ripetitore"
 
 #: core/ui/ui_menus.c
 msgid "In TS"
@@ -2169,6 +2153,14 @@ msgid "Single-freq repeater: not in this build"
 msgstr "Ripetitore freq. unica: non in questa build"
 
 #: core/ui/ui_menus.c
+msgid "Role"
+msgstr "Ruolo"
+
+#: core/ui/ui_menus.c
+msgid "Inbound slot"
+msgstr "TS in ingresso"
+
+#: core/ui/ui_menus.c
 msgid "Switch USB to serial"
 msgstr "Passa USB a seriale"
 
@@ -2179,6 +2171,10 @@ msgstr "Passa USB a rete"
 #: core/ui/ui_menus.c
 msgid "Stop hotspot"
 msgstr "Ferma hotspot"
+
+#: core/ui/ui_menus.c
+msgid "Pick a role first"
+msgstr "Scegli prima un ruolo"
 
 #: core/ui/ui_menus.c
 msgid "No USB network on this radio"
@@ -2195,6 +2191,10 @@ msgstr "USB è di nuovo una porta seriale"
 #: core/ui/ui_menus.c
 msgid "DMR ID"
 msgstr "ID DMR"
+
+#: core/ui/ui_menus.c core/ui/ui_position.c
+msgid "Not set"
+msgstr "Non impostato"
 
 #: core/ui/ui_menus.c
 msgid "Radio name"
@@ -2307,6 +2307,10 @@ msgstr "Font Spleen: BSD-2-Clause"
 #: core/ui/ui_menus.c
 msgid "JetBrains Mono font: OFL-1.1"
 msgstr "Font JetBrains Mono: OFL-1.1"
+
+#: core/ui/ui_menus.c
+msgid "Noto Sans CJK SC font: OFL-1.1"
+msgstr "Font Noto Sans CJK SC: OFL-1.1"
 
 #: core/ui/ui_menus.c
 msgid "AMBE+2 codec: DVSI (stock)"
@@ -2704,6 +2708,10 @@ msgstr "VFO/Canale"
 msgid "Call back"
 msgstr "Richiama"
 
+#: core/ui/ui_menus.c
+msgid "TG name / number"
+msgstr "Nome / numero TG"
+
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "Emergency"
 msgstr "Emergenza"
@@ -2875,6 +2883,18 @@ msgstr "Invia posizione"
 #: core/ui/ui_menus.c
 msgid "Answer GPS requests"
 msgstr "Rispondi a GPS"
+
+#: core/ui/ui_menus.c
+msgid "Position source"
+msgstr "Origine posizione"
+
+#: core/ui/ui_menus.c core/ui/ui_position.c
+msgid "Fixed position"
+msgstr "Posizione fissa"
+
+#: core/ui/ui_menus.c
+msgid "Send in DMR calls"
+msgstr "Invia in chiam. DMR"
 
 #: core/ui/ui_menus.c
 msgid "Hotspot allowed"
@@ -3061,6 +3081,10 @@ msgid "No GPS on this radio"
 msgstr "Niente GPS su questa radio"
 
 #: core/ui/ui_menus.c
+msgid "DMR position: not in this build"
+msgstr "Posizione DMR: non in questa build"
+
+#: core/ui/ui_menus.c
 msgid "Diagnostics: not in this build"
 msgstr "Diagnostica: non in questa build"
 
@@ -3079,6 +3103,10 @@ msgstr " a "
 #: core/ui/ui_menus.c
 msgid ", steps of "
 msgstr ", passi di "
+
+#: core/ui/ui_menus.c core/ui/ui_position.c
+msgid "OK change  Back"
+msgstr "OK cambia  Indietro"
 
 #: core/ui/ui_menus.c
 msgid "No, keep settings"
@@ -3195,6 +3223,18 @@ msgstr "Codeplug di un altro firmware? Crea nuovo cancella contatti, nominativo 
 #: core/ui/ui_menus.c
 msgid "Old codeplug"
 msgstr "Codeplug precedente"
+
+#: core/ui/ui_position.c
+msgid "Latitude"
+msgstr "Latitudine"
+
+#: core/ui/ui_position.c
+msgid "Longitude"
+msgstr "Longitudine"
+
+#: core/ui/ui_position.c
+msgid "Up to 90 N/S, 180 E/W"
+msgstr "Fino a 90 N/S, 180 E/O"
 
 #: core/ui/ui_screens.c
 msgid "IDLE"
@@ -3351,10 +3391,6 @@ msgstr "Privata per te"
 #: core/ui/ui_screens.c
 msgid "Private to "
 msgstr "Privata a "
-
-#: core/ui/ui_screens.c
-msgid "Reply→ "
-msgstr "Risp.→ "
 
 #: core/ui/ui_screens.c
 msgid "Sending ID"

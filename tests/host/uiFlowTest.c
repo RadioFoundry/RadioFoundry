@@ -376,6 +376,13 @@ static const flow_t flows[] = {
 	{ "13 unlock", "long:quick", "long:quick", "locked=0", 1, false },
 	{ "14 GPS details", "", "ok 6 2", "screen=gps", 3, false },
 	{ "15 hotspot page", "", "ok 6 3", "screen=info", 4, false },
+#if CONFIG_SFR && CONFIG_VFO_DMR
+	// Tools > Single-freq repeater in the VFO sets its role (docs/spec/sfr.md 4): SELECT steps Role and Inbound slot
+	{ "15 VFO SFR page", "ok 4 up ok", "ok 6 5", "screen=info focus=Role shows=Off", 3, false },
+	{ "15 VFO SFR role: User, then TS2", "ok 4 up ok ok 6 5", "ok down ok", "screen=info shows=User shows=TS2", 3,
+	  false },
+	{ "15 VFO SFR slot needs a role", "ok 4 up ok ok 6 5", "down ok", "toast=Pick_a_role_first", 2, false },
+#endif
 	{ "15 stop hotspot", "hotspot:on", "ok", "hotspot=0", 2, false },
 	// Tile 4 on a channel copies it to the VFO (docs/spec/dmr-voice.md 2.2); the VFO's own tile 4 stays Mode
 	// The VFO's TX freq tile (5 on FM, 6 on DMR, where a channel has Monitor / Privacy): Up / Down walk the band's
@@ -558,6 +565,10 @@ static const flow_t flows[] = {
 	{ "S message failed text", "", "", "screen=home", 0, false },
 	// APRS (docs/spec/aprs.md 10): Tools 9, one row each
 	{ "A APRS page", "", "ok 6 8", "screen=aprs", 3, false },
+	{ "A APRS RF keeps Home with a TX APRS pill", "", "aprstx",
+	  "screen=home shows=TX_APRS shows=SENDING hides=144.390 hides=0:00 hides=left_of", 0, false },
+	{ "A APRS RF returns to the channel", "aprstx", "aprsend",
+	  "screen=home hides=TX_APRS hides=SENDING", 0, false },
 	{ "A send position now", "", "ok 6 8 1", "aprs_sent=1 toast=Sending_position", 4, false },
 	{ "A send without a callsign", "aprs:nocall", "ok 6 8 1", "aprs_sent=0 toast=Set_your_callsign", 4, false },
 	{ "A beacons on", "", "ok 6 8 2", "aprs_auto=1 toast=Beacons_on", 4, false },
@@ -574,21 +585,24 @@ static const flow_t flows[] = {
 	{ "A interval", "", "ok 6 8 6", "aprs_interval=60", 4, false },
 	{ "A SmartBeaconing", "", "ok 6 8 7", "aprs_smart=1", 4, false },
 	{ "A send via DMR", "", "ok 6 8 8", "aprs_via=1", 4, false },
-	{ "A position page", "", "ok 6 8 9", "screen=aprs-pos", 4, false },
-	{ "A position source", "ok 6 8 9", "1", "aprs_pos=1", 1, false },
-	{ "A no fixed position yet", "", "ok 6 8 9", "shows=Not_set", 4, false },
-	{ "A position page found by latitude", "", "5 2 8 4 8 8 3 3", "shows=APRS_position", 8, false },
-	{ "A latitude while typed", "ok 6 8 9", "2 3 3 7 4", "shows=33.74 aprs_lat=0", 5, false },
-	{ "A fixed latitude", "ok 6 8 9", "2 3 3 7 4 9 0 ok", "aprs_lat=337490000", 8, false },
-	{ "A fixed longitude west", "ok 6 8 9", "3 0 8 4 3 8 8 0 down ok", "aprs_lon=-843880000", 10, false },
-	{ "A longitude's leading zero by itself", "ok 6 8 9", "3 8 4 3 8 8 0 down ok", "aprs_lon=-843880000", 9, false },
-	{ "A longitude of 100 or more", "ok 6 8 9", "3 1 2 2 5 ok", "aprs_lon=1225000000", 6, false },
-	{ "A latitude digits not typed are zeros", "ok 6 8 9", "2 4 5 ok", "aprs_lat=450000000", 4, false },
-	{ "A latitude past 90 refused", "ok 6 8 9", "2 9 5", "toast=Up_to_90", 3, false },
-	{ "A latitude after a refused digit", "ok 6 8 9", "2 9 5 ok", "aprs_lat=900000000", 4, false },
-	{ "A latitude BACK takes a digit back", "ok 6 8 9", "2 3 9 back 3 ok", "aprs_lat=330000000", 6, false },
-	{ "A latitude BACK leaves unchanged", "ok 6 8 9", "2 1 back back", "aprs_lat=0 screen=aprs-pos", 4, false },
-	{ "A position in DMR calls", "", "ok 6 8 0", "aprs_dmrgps=1 toast=Position_goes_out", 4, false },
+	// Settings > Location: what every position report sends (the position service; ui_position.c). The page opens on
+	// Answer GPS requests (no GPS here: the rows above are dimmed); the position rows follow it
+	{ "L position source", "ok 7 5 down", "ok", "pos_source=1 shows=GPS", 1, false },
+	{ "L position source wraps to auto", "ok 7 5 down ok ok ok", "ok", "pos_source=0 shows=Auto", 1, false },
+	{ "L position in DMR calls", "ok 7 5 down down down", "ok", "pos_dmrgps=1 focus=Send_in_DMR_calls", 1, false },
+	{ "L fixed position page", "ok 7 5 down down", "ok", "screen=fixed-pos", 1, false },
+	{ "L no fixed position yet", "ok 7 5 down down", "ok", "shows=Not_set", 1, false },
+	{ "L fixed position found by latitude", "", "5 2 8 4 8 8 3 3", "shows=Fixed_position", 8, false },
+	{ "L latitude while typed", "ok 7 5 down down ok", "1 3 3 7 4", "shows=33.74 pos_lat=0", 5, false },
+	{ "L fixed latitude", "ok 7 5 down down ok", "1 3 3 7 4 9 0 ok", "pos_lat=337490000", 8, false },
+	{ "L fixed longitude west", "ok 7 5 down down ok", "2 0 8 4 3 8 8 0 down ok", "pos_lon=-843880000", 10, false },
+	{ "L longitude's leading zero by itself", "ok 7 5 down down ok", "2 8 4 3 8 8 0 down ok", "pos_lon=-843880000", 9, false },
+	{ "L longitude of 100 or more", "ok 7 5 down down ok", "2 1 2 2 5 ok", "pos_lon=1225000000", 6, false },
+	{ "L latitude digits not typed are zeros", "ok 7 5 down down ok", "1 4 5 ok", "pos_lat=450000000", 4, false },
+	{ "L latitude past 90 refused", "ok 7 5 down down ok", "1 9 5", "toast=Up_to_90", 3, false },
+	{ "L latitude after a refused digit", "ok 7 5 down down ok", "1 9 5 ok", "pos_lat=900000000", 4, false },
+	{ "L latitude BACK takes a digit back", "ok 7 5 down down ok", "1 3 9 back 3 ok", "pos_lat=330000000", 6, false },
+	{ "L latitude BACK leaves unchanged", "ok 7 5 down down ok", "1 1 back back", "pos_lat=0 screen=fixed-pos", 4, false },
 	// Tools > Position's pages (CONFIG_GPS_SKY, ui_gps.c): Up / Down or the digits turn them
 	{ "G GPS status page", "", "ok 6 2", "shows=3D_Fix", 3, false },
 	{ "G GPS sky page", "ok 6 2", "down", "screen=gps shows=Sky", 1, false },
@@ -793,6 +807,15 @@ static const flow_t flows[] = {
 static const flow_t flows_mono[] = {
 	{ "2 Right steps to the next zone on Home", "", "right", "zone=1 screen=home", 1, false },
 	{ "2 Left steps back a zone", "right", "left", "zone=0 screen=home", 1, false },
+	// The talk line on the smallest display (#336): an icon, not "PTT->" or "Reply->", so the label keeps its room
+	{ "2 the talk line: an arrow, no PTT word", "", "", "screen=home shows=TG_3100_USA hides=PTT", 0, false },
+	{ "4 reply window: a long label is cut, not dropped", "call:3101234,201,g", "", "shows=TG_201_Main_O hides=Reply", 0, false },
+	// The side key's TG name / number (Settings > Display > Talkgroup name first): the name leads. The choice is saved,
+	// so the next flow starts with it and turns it back off
+	{ "4 a side key puts the TG name first", "call:3101234,201,g", "labelkey",
+	  "shows=Main_Ops hides=TG_201_Main toast=Talkgroup_name_first", 1, false },
+	{ "4 kept, and pressed again: the number first", "call:3101234,201,g", "labelkey",
+	  "shows=TG_201_Main toast=Talkgroup_number_first", 1, false },
 #if CONFIG_UI_COLOR
 	{ "S theme on a monochrome screen: dimmed", "", "ok 7 2 down down ok", "toast=Colors_are_for set7=0", 6, false },
 	{ "S highlight color on a monochrome screen: dimmed", "", "ok 7 2 down down down ok",
@@ -850,8 +873,10 @@ static const flow_t flows_k[] = {
 	  "set47=17 shows=VFO/Channel", 1, false },
 	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back",
 	  1, false },
-	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
+	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
 	  false },
+	{ "K top key hold: TG name / number after call back", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok", "ok",
+	  "set47=19 shows=TG_name", 1, false },
 	{ "K a key set to power", "", "powerkey", "power=5", 1, false },
 	{ "K a key set to power, long", "", "long:powerkey", "power=5", 1, false },
 	{ "K a key set to the next zone", "", "zone+", "zone=1", 1, false },
