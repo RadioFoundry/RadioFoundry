@@ -18,7 +18,7 @@ Each fact is in one file. A value another file already holds is derived from it,
 |---|---|
 | `boards/<id>/board.toml` | Identity, status, build option text, CI extras, flashing family, bootloader and stub data, codec route, the site's data |
 | `platform/<p>/platform.toml` | ISA, CPU, toolchain, platform stubs, flash base, sector geometries, codec symbols |
-| `boards/<id>/board.mk` | `PLATFORM`, `APP_BASE` (the image address), `HSE_VALUE` (the crystal, for the STM32F4 stub), `BOOT_*`, `BOARD_DIRS`, `BUILD_OPTIONS` and each option's `<NAME>_VALUES`, read with `make print-vars` so the board's and the platform's `config.mk` and their conditionals count. `LDSCRIPT` defaults to `memory.ld` |
+| `boards/<id>/board.mk` | `PLATFORM`, `APP_BASE` (the image address), `HSE_VALUE` (the crystal, for the STM32F4 stub), `BOOT_*`, `BOARD_DIRS`, `BOARD_HWOPTS := y` on a board with hardware options (`board_t.hwopts`, `hal/hal_hwopt.h`: the others build none of that code), `BUILD_OPTIONS` and each option's `<NAME>_VALUES`, read with `make print-vars` so the board's and the platform's `config.mk` and their conditionals count. `LDSCRIPT` defaults to `memory.ld` |
 | `boards/<id>/memory.ld` | The application region (`MEMORY FLASH`, from `__app_start`) and the codec symbols (`__codec_*`). Every `*.ld` in the board directory is read for the codec symbols |
 | `boards/<id>/*.c` | The `board_t` `.name` values: the names the debug link reports |
 | `boards/<id>/pins.h` | The pins the stub uses: the power latch and key (HR_C7000), the SPI flash's `PIN_FLASH_SCK`, `_MISO`, `_MOSI`, `_CS` and the `idle_cs` pins (STM32F4), each as `GPIOx, GPIO_PIN_n` on STM32F4 |

@@ -11,9 +11,9 @@
 static void list(dl_text_t *t)
 {
 	static const char *const states[] = { "ok", "ask", "restart", "hidden" };
-	dl_text(t, "hwopt.count=%u\n", board.hwopts != NULL ? board.hwopt_count : 0u);
-	for (uint8_t i = 0; board.hwopts != NULL && i < board.hwopt_count; i++) {
-		const hal_hwopt_t *o = &board.hwopts[i];
+	dl_text(t, "hwopt.count=%u\n", board_hwopt_count());
+	for (uint8_t i = 0; i < board_hwopt_count(); i++) {
+		const hal_hwopt_t *o = board_hwopt(i);
 		char key[24];
 		uint8_t st = hwopt_state(o);
 		dl_text(t, "hwopt.%u.value=%d\nhwopt.%u.restart=%u\nhwopt.%u.state=%s\n", i, o->get(), i, o->restart, i,
@@ -38,7 +38,7 @@ size_t debuglink_cmd_hwopt(const uint8_t *req, uint16_t len, uint8_t *out, size_
 		return 1 + t.len;
 	}
 	if (len == 3 && req[0] == DL_HWOPT_OP_SET) {
-		if (board.hwopts == NULL || req[1] >= board.hwopt_count || req[2] >= board.hwopts[req[1]].count) {
+		if (req[1] >= board_hwopt_count() || req[2] >= board_hwopt(req[1])->count) {
 			out[0] = DL_ST_BAD_ARG;
 			return 1;
 		}
@@ -48,7 +48,7 @@ size_t debuglink_cmd_hwopt(const uint8_t *req, uint16_t len, uint8_t *out, size_
 			out[0] = DL_ST_REFUSED;		// never change the hardware's description under a transmission
 			return 1;
 		}
-		out[0] = board.hwopts[req[1]].set(req[2]) ? DL_ST_OK : DL_ST_REFUSED;
+		out[0] = board_hwopt(req[1])->set(req[2]) ? DL_ST_OK : DL_ST_REFUSED;
 		return 1;
 	}
 	out[0] = DL_ST_BAD_ARG;

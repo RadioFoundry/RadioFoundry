@@ -5742,8 +5742,10 @@ static const set_item_t s_advanced[] = {
 	NUMBER(TRN("Freq trim"), "frequency offset reference oscillator calibration ppm", UI_SET_REF_TRIM, -REF_TRIM_MAX_PPB,
 	       REF_TRIM_MAX_PPB, REF_TRIM_STEP_PPB, NULL),	// its own page (trim_screen); last: Up from the top
 #endif
+#if RFOUNDRY_HWOPTS
 	// Only on radios with hardware options (hal_hwopt.h): last, so the rows above keep their places
 	ACTION("Hardware", "board revision", SA_HARDWARE),
+#endif
 };
 
 #define GROUP(nm, a)		{ nm, nm, a, sizeof a / sizeof a[0] }
@@ -5762,24 +5764,28 @@ uint8_t ui_set_group_count(void) { return GROUPS; }
 // In English, as Find matches the name in the language in use and in English (it calls tr() on it)
 const char *ui_set_group_name(uint8_t g) { return g < GROUPS ? groups[g].name : ""; }
 
+#if RFOUNDRY_HWOPTS
 #define HWOPT_ROWS_MAX		15
 
 // The hardware options Settings > Advanced > Hardware lists (hal_hwopt.h): those the board didn't detect
 static uint16_t hwopt_visible(void)
 {
 	uint16_t n = 0;
-	for (uint8_t k = 0; board.hwopts != NULL && k < board.hwopt_count && n < HWOPT_ROWS_MAX; k++) {
-		n += hwopt_state(&board.hwopts[k]) != HWOPT_ST_HIDDEN;
+	for (uint8_t k = 0; k < board_hwopt_count() && n < HWOPT_ROWS_MAX; k++) {
+		n += hwopt_state(board_hwopt(k)) != HWOPT_ST_HIDDEN;
 	}
 	return n;
 }
+#endif
 
 // Settings a radio without a battery (or a broadcast receiver, or the key) doesn't have are left out of the list, not
 // shown disabled
 static bool set_hidden(const set_item_t *s)
 {
+#if RFOUNDRY_HWOPTS
 	if (s->type == ST_ACTION && s->id == SA_HARDWARE)
 		return hwopt_visible() == 0;	// none, or every one detected
+#endif
 #if CONFIG_KEY_ASSIGN
 	if (s->type != ST_ACTION && s->id >= UI_SET_KEY_FIRST && s->id <= UI_SET_KEY_LAST) {
 		key_labels();
@@ -6071,7 +6077,9 @@ static void group_select(uint16_t i, bool hold)
 #if CONFIG_CRASH_SCREEN
 		case SA_CRASH: ui_push(SCR_CRASH, 0); break;
 #endif
+#if RFOUNDRY_HWOPTS
 		case SA_HARDWARE: ui_push(SCR_HWOPT, 0); break;
+#endif
 #if CONFIG_POSITION
 		case SA_FIXED_POS: ui_push(SCR_FIXED_POS, 0); break;
 #endif
@@ -6160,6 +6168,7 @@ static const ui_scr_def_t group_screen = {
 	.title = group_title,
 };
 
+#if RFOUNDRY_HWOPTS
 // ======================= Hardware options (hal_hwopt.h) =======================
 // OK steps through an option's choices without storing; holding OK stores the one shown. A choice the board marks
 // "restart" applies from the next start-up. One row at a time shows an unstored choice, kept in the screen's frame
@@ -6180,12 +6189,12 @@ static uint16_t hwopt_count(void)
 // Row i's option
 static const hal_hwopt_t *hwopt_row(uint16_t i)
 {
-	for (uint8_t k = 0; board.hwopts != NULL && k < board.hwopt_count; k++) {
-		if (hwopt_state(&board.hwopts[k]) != HWOPT_ST_HIDDEN && i-- == 0) {
-			return &board.hwopts[k];
+	for (uint8_t k = 0; k < board_hwopt_count(); k++) {
+		if (hwopt_state(board_hwopt(k)) != HWOPT_ST_HIDDEN && i-- == 0) {
+			return board_hwopt(k);
 		}
 	}
-	return &board.hwopts[0];	// not reached: i < hwopt_count()
+	return board_hwopt(0);	// not reached: i < hwopt_count()
 }
 
 static int8_t hwopt_shown(uint16_t i, int8_t stored)
@@ -6237,6 +6246,7 @@ static const ui_scr_def_t hwopt_screen = {
 	.name = "hwopt", .flags = SF_LIST, .prefix = "Hardware", .hint = "OK next  Hold OK store",
 	.count = hwopt_count, .item = hwopt_item, .select = hwopt_select, .enter = hwopt_enter,
 };
+#endif
 
 // ======================= Confirmation (destructive only, defaults to No; P7) =======================
 
@@ -6623,7 +6633,7 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #if CONFIG_CRASH_SCREEN
 	[SCR_CRASH] = &crash_screen,
 #endif
-#if CONFIG_UI_SETTINGS
+#if CONFIG_UI_SETTINGS && RFOUNDRY_HWOPTS
 	[SCR_HWOPT] = &hwopt_screen,
 #endif
 #if CONFIG_CRASH_REPORT && CONFIG_DMR
