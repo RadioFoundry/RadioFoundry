@@ -197,6 +197,7 @@ static void ev_simple(hrc7000_dmr_t *e, uint8_t kind, int8_t ts, uint32_t arg)
 	}
 	s->ev.kind = kind;
 	s->ev.ts = ts;
+	s->ev.flags = 0;
 	s->ev.arg = arg;
 	ev_commit(e);
 }
@@ -742,6 +743,7 @@ static void rx_burst(hrc7000_dmr_t *e)
 	}
 	slot->ev.kind = DMR_EV_BURST_RX;
 	slot->ev.ts = ts;
+	slot->ev.flags = 0;
 	// The slot after the burst's (hrc7000_dmr.h): a deframe late in a slot is that slot's burst
 	slot->ev.arg = tick_arg(e) + ((now(e) - e->t_tick >= SLOT_US / 2u) ? 1u : 0u);
 	ev_commit(e);

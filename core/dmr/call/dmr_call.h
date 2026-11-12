@@ -326,5 +326,7 @@ void dmr_call_set_rx_tap(dmr_rx_tap_fn fn, void *ctx);
 // Slot boundaries the modem has reported since the stack started (DMR_EV_SLOT_TICK), and the slot of the last one
 // (1, 2, 0 unknown). A trunked system paces its slot work by them
 uint32_t dmr_call_ticks(int8_t *ts);
+// Tick n's (a dmr_call_ticks count) slot (0: unknown) and DMR_TICK_* flags; 0 and ts 0 once it is out of the last few
+uint8_t dmr_call_tick_at(uint32_t n, int8_t *ts);
 
 #endif

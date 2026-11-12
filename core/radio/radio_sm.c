@@ -2576,12 +2576,22 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	if (n > 8u) {
 		n = 8u;		// a stall: the engine only needs the frames to count, not every one
 	}
+	(void)ts;
 	for (uint32_t i = 0; i < n; i++) {
-		// The tick's slot when the modem knows it (only the last one of a batch), else alternating
-		uint8_t slot = (i + 1u == n && (ts == 1 || ts == 2)) ? (uint8_t)ts : (sm->t3_slot == 1 ? 2u : 1u);
+		// The tick's slot when the modem knows it, else alternating; its CACH's AT bit when the modem reads it. A
+		// modem that never reports AT gets every slot as free, so random access still runs (docs 7)
+		int8_t kts;
+		uint8_t fl = dmr_call_tick_at(tc - n + 1u + i, &kts);
+		uint8_t slot = (kts == 1 || kts == 2) ? (uint8_t)kts : (sm->t3_slot == 1 ? 2u : 1u);
 		sm->t3_slot = slot;
-		// The CACH's AT bit isn't reported by the modem yet: every inbound slot counts as free (docs 11.3)
-		t3_ms_slot(&t3m, now_ms, slot, true, false);
+		bool known = (fl & DMR_TICK_AT_KNOWN) != 0;
+		if (known) {
+			sm->view.t3.at_known++;
+			if (fl & DMR_TICK_AT_BUSY) {
+				sm->view.t3.at_busy++;
+			}
+		}
+		t3_ms_slot(&t3m, now_ms, slot, true, known && (fl & DMR_TICK_AT_BUSY) != 0);
 	}
 	sm->t3_ticks = tc;
 	sm->view.t3.ticks += n;

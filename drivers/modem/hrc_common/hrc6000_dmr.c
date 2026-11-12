@@ -310,10 +310,29 @@ static void push(hrc6000_dmr_t *e, uint8_t kind, int8_t ts, uint32_t arg)
 	if (s != NULL) {
 		s->ev.kind = kind;
 		s->ev.ts = ts;
+		s->ev.flags = 0;
 		s->ev.arg = arg;
 		s->ev.burst = NULL;
 		ev_commit(e);
 	}
+}
+
+// A slot tick, with the AT bit of the slot's last CACH when one was read in the last two frames
+static void push_tick(hrc6000_dmr_t *e, int8_t ts)
+{
+	hrc6000_dmr_evslot_t *s = ev_begin(e);
+	if (s == NULL) {
+		return;
+	}
+	s->ev.kind = DMR_EV_SLOT_TICK;
+	s->ev.ts = ts;
+	s->ev.flags = 0;
+	if ((ts == 1 || ts == 2) && e->at_tick[ts - 1] != 0 && (uint32_t)(e->tick - e->at_tick[ts - 1]) <= 4u) {
+		s->ev.flags = (uint8_t)(DMR_TICK_AT_KNOWN | (e->at_busy[ts - 1] ? DMR_TICK_AT_BUSY : 0u));
+	}
+	s->ev.arg = e->tick;
+	s->ev.burst = NULL;
+	ev_commit(e);
 }
 
 static uint8_t txq_count(const hrc6000_dmr_t *e)
@@ -360,6 +379,8 @@ static void forget_slots(hrc6000_dmr_t *e)
 	e->own_ts = 0;
 	e->tc_agree = 0;
 	e->tc_disagree = 0;
+	e->at_tick[0] = 0;
+	e->at_tick[1] = 0;
 }
 
 static void do_restart(hrc6000_dmr_t *e, uint8_t why)
@@ -673,6 +694,9 @@ static void track_tc(hrc6000_dmr_t *e)
 {
 	uint8_t r52 = r(e->dev, R_RX_CC);
 	int8_t heard = (int8_t)(((r52 >> 2) & 1u) ? 2 : 1);
+	// The same CACH's AT bit (bit 3): kept for the slot its TC names, for the slot ticks (DMR_TICK_AT_*)
+	e->at_tick[heard - 1] = e->tick;
+	e->at_busy[heard - 1] = ((r52 >> 3) & 1u) != 0;
 	if (!HRC6000_DMR_TC_IS_SLOT_NOW && !e->dev->chip->tc_last_rx) {
 		heard = (int8_t)(3 - heard);	// it was the slot that ended: the one starting is the other
 	}
@@ -1203,6 +1227,7 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	}
 	slot->ev.kind = DMR_EV_BURST_RX;
 	slot->ev.ts = b->ts;
+	slot->ev.flags = 0;
 	slot->ev.arg = tick;	// DMR_EV_BURST_RX: the slot counter of the report (never 0); the stack orders bursts by it
 	slot->ev.burst = NULL;
 	slot->dms = dms;
@@ -1647,7 +1672,7 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 		track_tc(e);
 	}
 	uint8_t ph = (uint8_t)(e->tick & 1u);
-	push(e, DMR_EV_SLOT_TICK, e->phase_ts[ph], e->tick);
+	push_tick(e, e->phase_ts[ph]);
 	for (int k = 0; k < 2; k++) {	// a lone burst A whose B (one frame later) did not come
 		if (e->held[k].valid && (uint32_t)(e->tick - e->held[k].tick) > 2u) {
 			held_drop(e, &e->held[k]);

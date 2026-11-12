@@ -76,9 +76,14 @@ typedef enum {
 	DMR_EV_SYNC_LOST,	// receiver restarted after a stall
 } dmr_event_kind_t;
 
+// DMR_EV_SLOT_TICK flags: the AT bit of the last CACH that named this slot (ETSI TS 102 361-1 9.3.5, the inbound
+// slot's access type), when the driver reads it and the reading is fresh
+enum { DMR_TICK_AT_KNOWN = 1u, DMR_TICK_AT_BUSY = 2u };
+
 typedef struct {
 	uint8_t kind;		// dmr_event_kind_t
 	int8_t ts;
+	uint8_t flags;		// DMR_EV_SLOT_TICK: DMR_TICK_*; 0 otherwise
 	uint32_t arg;
 	const dmr_burst_t *burst;	// DMR_EV_BURST_RX only, valid during the callback
 } dmr_event_t;

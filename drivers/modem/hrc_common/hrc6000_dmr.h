@@ -239,6 +239,8 @@ typedef struct {
 	// CACH TC tracking (5.3)
 	int8_t own_ts;
 	uint8_t tc_agree, tc_disagree;
+	uint32_t at_tick[2];	// per TS: the tick its last CACH AT bit was read at (0: never)
+	bool at_busy[2];
 	uint32_t bs_tick;	// tick of the last BS-sync burst heard
 	bool rmo_seen;
 

@@ -54,6 +54,9 @@ static uint32_t evq_drops_base, tx_underruns_base;	// at the last dmr_call_reset
 static uint32_t tick_count;	// slot ticks, counted by the producer
 static uint8_t tick_alt;	// consecutive ticks with the slot number alternating 1 / 2
 static int8_t tick_ts;
+// The last ticks' slot and flags (DMR_TICK_*), by tick number (tick_count after it) mod TICK_RING: dmr_call_tick_at
+#define TICK_RING	8u
+static uint8_t tick_ring[TICK_RING];
 static void (*wake_fn)(void);	// dmr_call_set_wake; outlives dmr_call_init
 
 // --- Stack state ---
@@ -424,6 +427,7 @@ static void on_event(const dmr_event_t *ev, void *ctx)
 			tick_alt = 0;
 		}
 		tick_ts = ts;
+		tick_ring[(tick_count + 1u) % TICK_RING] = (uint8_t)((uint8_t)(ts & 3) | (uint8_t)(ev->flags << 2));
 		__atomic_store_n(&tick_count, tick_count + 1, __ATOMIC_RELEASE);
 		return;
 	}
@@ -1971,4 +1975,16 @@ uint32_t dmr_call_ticks(int8_t *ts)
 	if (ts)
 		*ts = tick_ts;
 	return __atomic_load_n(&tick_count, __ATOMIC_ACQUIRE);
+}
+
+uint8_t dmr_call_tick_at(uint32_t n, int8_t *ts)
+{
+	uint32_t now = __atomic_load_n(&tick_count, __ATOMIC_ACQUIRE);
+	if (n == 0 || n > now || now - n >= TICK_RING - 1u) {
+		*ts = 0;	// not counted yet, or written over (one entry kept spare for the producer)
+		return 0;
+	}
+	uint8_t v = tick_ring[n % TICK_RING];
+	*ts = (int8_t)(v & 3u);
+	return (uint8_t)(v >> 2);
 }

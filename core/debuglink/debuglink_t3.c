@@ -188,8 +188,9 @@ void debuglink_view_t3(const radio_view_t *v, dl_text_t *t)
 		"t3.last_unmapped=%u\n", (unsigned)x->ticks, (unsigned)x->csbk, (unsigned)x->crc_bad,
 		(unsigned)x->grants, (unsigned)x->followed, (unsigned)x->unmapped, x->last_unmapped);
 	dl_text(t, "t3.returns=%u\nt3.hunts=%u\nt3.foreign=%u\nt3.learned=%u\nt3.sent=%u\nt3.ra_tries=%u\n"
-		"t3.send_fail=%u\n", (unsigned)x->returns, (unsigned)x->hunts, (unsigned)x->foreign,
-		(unsigned)x->learned, (unsigned)x->sent, (unsigned)x->ra_tries, (unsigned)x->send_fail);
+		"t3.send_fail=%u\nt3.at_known=%u\nt3.at_busy=%u\n", (unsigned)x->returns, (unsigned)x->hunts,
+		(unsigned)x->foreign, (unsigned)x->learned, (unsigned)x->sent, (unsigned)x->ra_tries,
+		(unsigned)x->send_fail, (unsigned)x->at_known, (unsigned)x->at_busy);
 #else
 	(void)v;
 	dl_text(t, "t3.built=0\n");

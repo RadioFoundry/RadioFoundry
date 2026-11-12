@@ -829,6 +829,39 @@ the same list less the hidden ones; a radio without options has no such row and 
 
 `rfoundry_debug.py hwopt` lists them; `rfoundry_debug.py hwopt "Board revision" V4A/V5` sets one.
 
+### 3.26 T3
+
+A DMR Tier III trunked system ([dmr-trunking.md](dmr-trunking.md)), staged in RAM until the codeplug has keys for it.
+Stage it with RESET, SYSTEM, CTRL (and CHAN, TG, SITE, PLAN), then START: the radio hunts for the control channel on
+the channel it is on. STOP, or another channel, leaves the system. Built with `CONFIG_DMR_TRUNK`; otherwise every op
+answers unavailable (3). Each op answers OK or bad argument (2), with no reply bytes. Little endian.
+
+| Op | Name | Arguments |
+|---|---|---|
+| 1 | RESET | none: the staged system back to empty |
+| 2 | SYSTEM | own ID u32 (0: the radio's), model u8 (0 tiny .. 3 huge), net u16, category u8 (1 A, 2 B), opts u16 (`T3_OPT_*`), color code u8, talk ID u32 (0: the first talkgroup with the talk flag), talk private u8 |
+| 3 | CTRL | a control channel: LCN u16, RX Hz u32, TX Hz u32 (as the radio sees them), color code u8 (0xFF: the system's). Also a channel of the plan |
+| 4 | CHAN | a channel of the plan, as CTRL (8 channels at most) |
+| 5 | TG | talkgroup u32, flags u8 (1 listen, 2 talk) |
+| 6 | SITE | a SITE the radio may use, u16 (none staged: any) |
+| 7 | PLAN | the fixed plan: base Hz u32, first LCN u16, separation code u8, MS TX low u8, split Hz u32 |
+| 8 | START | select the staged system |
+| 9 | STOP | leave it: back to the channel or VFO |
+| 10 | DEREG | de-register, staying on the system (`CONFIG_DMR_TRUNK_TX`) |
+| 11 | END | end the call being followed (`CONFIG_DMR_TRUNK_TX`) |
+
+The `t3` view section has the engine's state as the radio core last published it, all keys `t3.`-prefixed: `built`,
+`tx_built`, `on`, `state` (off, hunt, camped, follow), `reg`, `confirmed`, `syscode`, `own_id`, `tscc_lcn`, `rx_hz`,
+`tx_hz`, `slot` (0: both), `cc`; the last Aloha (`aloha_mask`, `aloha_sf`, `aloha_nrand`, `aloha_backoff`,
+`aloha_reg`); the call followed (`call_dst`, `call_src`, `call_group`, `call_ours`); the access in progress (`ax_svc`,
+`ax_state`, `ax_result`, `ax_reason`, `ptt_wait`, `can_talk`); the last CSBK heard and sent (`last_rx_op`,
+`last_rx_slot`, `last_rx_age_ms`, `last_tx_op`, `last_tx_age_ms`; age -1: none); counters (`ticks`, `csbk`, `crc_bad`,
+`grants`, `followed`, `unmapped`, `last_unmapped`, `returns`, `hunts`, `foreign`, `learned`, `sent`, `ra_tries`,
+`send_fail`, `at_known`, `at_busy`).
+
+`rfoundry_debug.py t3 setup --model 1 --net 5 --cc 2 --ctrl 1:RX_MHZ:TX_MHZ --tg 1` stages and starts one;
+`rfoundry_debug.py t3 [show|start|stop|dereg|end]`.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
