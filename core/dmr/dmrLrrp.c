@@ -428,3 +428,45 @@ uint32_t lrrpDistanceMeters(const dmrDataLocation_t *a, const dmrDataLocation_t 
 			&meters, &bearing);
 	return meters;
 }
+
+static uint32_t minutesOf(uint32_t e7)
+{
+	uint32_t m = (e7 % 10000000u * 60u + 500u) / 1000u;
+	return m < 600000u ? m : 599999u;
+}
+
+void lrrpPositionFromE7(int32_t lat, int32_t lon, uint16_t speedKnots, uint16_t course, uint32_t utcHms, uint32_t date,
+		lrrpPosition_t *out)
+{
+	dmrDataLocation_t *l = &out->location;
+	uint32_t la = lat < 0 ? 0u - (uint32_t)lat : (uint32_t)lat;
+	uint32_t lo = lon < 0 ? 0u - (uint32_t)lon : (uint32_t)lon;
+
+	memset(out, 0, sizeof(*out));
+	l->fixValid = true;
+	l->north = lat >= 0;
+	l->east = lon >= 0;
+	l->latDegrees = (uint8_t)(la / 10000000u);
+	l->lonDegrees = (uint8_t)(lo / 10000000u);
+	// 1e-7 degree -> 1e-4 minute: x 60 / 1000 rounded (under 6e8: 32 bits do), at most 59.9999
+	l->latMinutes10000 = minutesOf(la);
+	l->lonMinutes10000 = minutesOf(lo);
+	l->speedKnots = speedKnots < DMR_LOCATION_SPEED_UNKNOWN ? speedKnots : DMR_LOCATION_SPEED_UNKNOWN;
+	if (utcHms != 0xFFFFFFFFu)
+	{
+		l->utcHours = (uint8_t)(utcHms / 10000u);
+		l->utcMinutes = (uint8_t)(utcHms / 100u % 100u);
+		l->utcSeconds = (uint8_t)(utcHms % 100u);
+		if (date != 0)
+		{
+			out->utcDay = (uint8_t)(date / 10000u);
+			out->utcMonth = (uint8_t)(date / 100u % 100u);
+			out->utcYear = (uint16_t)(2000u + date % 100u);
+		}
+	}
+	if (course != 0xFFFFu)
+	{
+		out->hasCourse = true;
+		out->courseDegrees = course;
+	}
+}

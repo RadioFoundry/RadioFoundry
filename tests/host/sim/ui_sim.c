@@ -446,7 +446,7 @@ bool ui_svc_aprs_view(aprs_view_t *v)
 	v->block = aprs_sim.no_call ? APRS_NO_CALL : APRS_OK;
 	v->freq_hz = aprs_sim.cfg.region == APRS_REGION_CUSTOM ? aprs_sim.cfg.freq_hz : hz[aprs_sim.cfg.region % APRS_REGION_COUNT];
 	v->pos_valid = !aprs_sim.no_call && !aprs_sim.no_pos;
-	v->pos_src = APRS_SRC_FIXED;
+	v->pos_src = POSITION_SRC_FIXED;
 	v->lat = 337000000;
 	v->lon = -841000000;
 	v->next_s = aprs_sim.cfg.tx_on ? 245 : 0xFFFFu;
@@ -2175,6 +2175,10 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_TOT_S, 180);
 	ui_svc_setting_set(UI_SET_BACKLIGHT_S, 30);
 	ui_svc_setting_set(UI_SET_REF_TRIM, 0);
+	ui_svc_setting_set(UI_SET_POS_SOURCE, 0);
+	ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 0);
+	ui_svc_setting_set(UI_SET_POS_FIXED_LON, 0);
+	ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 0);
 	ui_svc_setting_set(UI_SET_LONG_PRESS_MS, 600);	// settings a flow changes start from their defaults
 	ui_svc_setting_set(UI_SET_AUTO_LOCK_S, 0);
 	ui_svc_setting_set(UI_SET_PTT_LOCKED, 1);
@@ -2468,12 +2472,12 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "aprs_interval") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.interval_s);
 	else if (strcmp(key, "aprs_smart") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.smart);
 	else if (strcmp(key, "aprs_via") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.via);
-	else if (strcmp(key, "aprs_pos") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.pos_src);
+	else if (strcmp(key, "pos_source") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_SOURCE));
 	else if (strcmp(key, "aprs_power") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.power);
 	else if (strcmp(key, "aprs_path") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.path);
-	else if (strcmp(key, "aprs_lat") == 0) snprintf(got, sizeof got, "%d", (int)aprs_sim.cfg.fix_lat);
-	else if (strcmp(key, "aprs_lon") == 0) snprintf(got, sizeof got, "%d", (int)aprs_sim.cfg.fix_lon);
-	else if (strcmp(key, "aprs_dmrgps") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.dmr_gps);
+	else if (strcmp(key, "pos_lat") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_FIXED_LAT));
+	else if (strcmp(key, "pos_lon") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_FIXED_LON));
+	else if (strcmp(key, "pos_dmrgps") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_DMR_CALLS));
 	else if (strcmp(key, "aprs_kiss") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.kiss);
 #if CONFIG_DMR_ROAMING
 	else if (strcmp(key, "roam") == 0) snprintf(got, sizeof got, "%u", view.roam.state);	// RROAM_STATE_*

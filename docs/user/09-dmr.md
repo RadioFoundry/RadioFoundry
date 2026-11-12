@@ -291,8 +291,16 @@ Some DMR radios send their position inside a voice call (ETSI GPS Info). When a 
 how far away it is and in which direction, for example "12.3 km NE". When the radio doesn't know your own position,
 it shows the caller's coordinates. Recent keeps the distance with the call.
 
-Your own position goes into your calls when **Tools > APRS > Position in DMR calls** is on (off by default) and the
-radio knows where it is (see [APRS](13-aprs.md#position)). Every other superframe carries it, taking turns with your
+Your own position goes into your calls when the radio knows where it is (see [Position](17-settings.md#position))
+and one of these asks for it:
+
+| Where | Applies to |
+|---|---|
+| **Settings > Location > Send in DMR calls** (off by default) | every DMR call |
+| The codeplug: a channel's talker alias setting for its timeslot set to APRS or Both | calls on that channel |
+
+The codeplug setting is the one to use when radios are programmed from a computer: nothing has to be set on the radio. This works on a radio without APRS, and on a radio
+without a GPS when you set a fixed position. Every other superframe carries it, taking turns with your
 talker alias.
 
 ## Talker alias

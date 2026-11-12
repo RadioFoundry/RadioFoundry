@@ -241,7 +241,7 @@ void md9600_c6000_tx_service(uint32_t now_ms)
 	}
 }
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 // APRS: the first symbol's tone at level percent of the band's tone deviation x 2 (50 = the nominal); then
 // md9600_c6000_afsk_tone from the symbol timer's interrupt
 bool md9600_c6000_afsk_begin(uint16_t hz, uint8_t level)
