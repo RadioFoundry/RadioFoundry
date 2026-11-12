@@ -874,6 +874,7 @@ static size_t side_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 	debuglink_crash_service();	// a crash test asked for (noreturn); else a no-op
 	debuglink_watchdog_service();	// a watchdog test asked for (ends in a reset); else a no-op
 	debuglink_rx2_service();	// the second SoC's update bridge asked for (noreturn); else a no-op
+	debuglink_keyrun_service();	// the host port's reattach a key run asked for; else a no-op
 	return took;
 }
 

@@ -180,6 +180,8 @@ OP_VFO_SFR = 38
 # The VFO's SFR role names (sfrRole_t, docs/spec/sfr.md 4): off, user, user of an ERDM repeater, repeater, ERDM style
 SFR_ROLES = {"off": 0, "user": 1, "user-erdm": 2, "rpt": 3, "rpt-erdm": 4}
 OP_PA_SWEEP = 39
+OP_PA_KEYRUN = 40
+PA_KEYRUN_MAX = 21       # keys in one key run with the constants (28 without): a request is 64 bytes
 TX_LIMIT_MAX = 10       # frequencies in the test TX limit's list (core/radio/tx_limit.h)
 DTMF_DIGITS = "0123456789*#ABCD"
 VOLUME_KNOB = 0xFF
@@ -1023,6 +1025,32 @@ class DebugLink:
         n, top = self.view(["features"]).get("pa_sweep.last", "0/0/0").split("/")[:2]
         return int(n), int(top)
 
+    def pa_keyrun(self, drives, key_ms, gap_ms, constants=None, reattach=False, restart=False):
+        """One PA key run (RADIO op 40; docs/spec/pa-keyup.md 7): the radio keys DMR on its channel once per drive, for
+        key_ms each with gap_ms between, by itself: the link is quiet until it is done, for a radio whose own RF upsets
+        its USB link. constants: the seven key-up constants set first (as pa_keyup), or None to keep the ones it has.
+        reattach: after the reply the radio's USB port leaves the bus and comes back (what a replug does), for a host
+        that gave up on the port while the radio transmitted; the link is then closed here, and the caller opens it
+        again and reads pa_keyrun.last itself. restart: the radio restarts after the reply instead (a USB controller
+        that only a restart brings back; RAM settings such as the constants and the test TX limit are lost, and so is
+        pa_keyrun.last). Returns the keys run (the view's pa_keyrun.last; None with reattach).
+        Raises DebugLinkError when it is refused or stops short."""
+        drives = [int(d) for d in drives]
+        if not drives or len(drives) > (PA_KEYRUN_MAX if constants is not None else 28):
+            raise ValueError(f"pa_keyrun: 1..{PA_KEYRUN_MAX} drives with the constants, 28 without")
+        flags = (1 if constants is not None else 0) | (2 if reattach else 0) | (4 if restart else 0)
+        args = struct.pack("<HHBB", int(key_ms), int(gap_ms), flags, len(drives))
+        if constants is not None:
+            c = [int(x) for x in constants] + [0] * (7 - len(constants))
+            args += struct.pack("<7H", *c[:7])
+        args += struct.pack(f"<{len(drives)}H", *drives)
+        run_s = len(drives) * (key_ms + gap_ms + 1000) / 1000.0
+        self.request(RADIO, bytes([OP_PA_KEYRUN]) + args, timeout=self.timeout + run_s)
+        if reattach or restart:
+            self.close()
+            return None
+        return int(self.view(["features"]).get("pa_keyrun.last", "0/0").split("/")[0])
+
     def pa_sweep_grid(self, start, step, count, on_ms, off_ms, ceiling=100, mark_ms=0):
         """A grid of any length as back-to-back sweeps on one key-up (keyed here, released at the end), about 0.2 s
         apart: returns [(first drive, points run)] per sweep. Stops early where the firmware's limits end a sweep
@@ -1502,6 +1530,10 @@ def cmd_radio(link, a):
             link.tx_limit(mhz=[float(f) for f in ",".join(args).split(",") if f])
     elif op == "tx-drive":            # tx-drive N|off (the next transmission's PA drive, power calibration)
         link.tx_drive(0 if args[:1] in ([], ["off"]) else num(0))
+    elif op == "pa-keyrun":           # pa-keyrun KEY_MS GAP_MS DRIVE... (keys DMR itself, the board's constants)
+        if len(args) < 3:
+            raise SystemExit("pa-keyrun KEY_MS GAP_MS DRIVE...")
+        print("keys run:", link.pa_keyrun([num(i) for i in range(2, len(args))], num(0), num(1)))
     elif op == "pa-sweep":            # pa-sweep START STEP COUNT ON_MS OFF_MS [CEILING_PCT] [MARK_MS] (keys FM itself)
         runs = link.pa_sweep_grid(*[num(i) for i in range(len(args))])
         print("points", sum(n for _, n in runs), "sweeps", " ".join(f"{d}:{n}" for d, n in runs))
@@ -2226,7 +2258,7 @@ def main(argv=None):
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
                                   "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "sfr", "copy-vfo", "voice-test", "dtmf",
-                                  "tx-limit", "tx-drive", "pa-keyup", "pa-sweep"])
+                                  "tx-limit", "tx-drive", "pa-keyup", "pa-sweep", "pa-keyrun"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",

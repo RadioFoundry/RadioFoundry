@@ -109,6 +109,9 @@ class FakeRadio:
         self.c, self.level, self.drive, self.last, self.restored = dict(board), 0, 0, None, False
         self.link = types.SimpleNamespace(ptt_for=lambda s: None)
 
+    def ptt_for(self, seconds):
+        pass
+
     def cli(self, cmd):
         pass
 
@@ -131,6 +134,12 @@ class FakeRadio:
 
     def restore(self):
         self.restored = True
+
+    def key_run(self, runs, key_s, gap_s):
+        assert len(runs) == 1 and gap_s >= 0.1     # one key per capture here (batch 0)
+        c, d = runs[0]
+        assert d and d <= self.top, "a key run's drive is the level's own, never over the top"
+        self.c, self.drive, self.runs = dict(c or self.board), d, getattr(self, "runs", 0) + 1
 
     def keyed(self):
         self.last = pa_cal.plan(self.c, self.drive or self.drives[self.level], self.top, self.ref, self.max_drive)
@@ -158,7 +167,7 @@ class FakeBench:
 
 def run_band(loop, drives, top, ref, board, ahead=2500, max_drive=4095, **opts):
     a = types.SimpleNamespace(levels="all", plot="", before=None, channel=False, refit=True, batch=0, key_s=0.5, max_in_dbm=-13.0, pad_db=57.0, window_us=0, settle_us=None,
-                              pa_us=None, ease_pm=None, max_pct=100, points=6, rounds=4, confirm=True, cc=1, ts=1)
+                              pa_us=None, ease_pm=None, max_pct=100, points=6, rounds=4, confirm=True, cc=1, ts=1, key_run=None)
     a.__dict__.update(opts)
     cal = pa_cal.Cal.__new__(pa_cal.Cal)
     cal.a, cal.rows, cal.keys_n, cal.say = a, [], 0, lambda s: None
@@ -183,6 +192,14 @@ def test_a_band_ends_on_time(eff, noise):
     assert r["levels"][3]["plan"]["boost"] == 0                 # the top one is not
     assert cal.keys_n <= 1 + 6 + 1 + 5 * 4 + 4                        # check, open loop, at most four verifies, confirm
     assert r["levels"][0]["rise_us"] <= -pa_cal.TOL_US        # a boosted level: early, by a margin
+
+
+def test_a_key_run_gives_the_same_band():
+    # --key-run: the radio keys by itself at each level's drive; the result is the one the keys one by one give
+    loop = Loop(700, 250, 280, 2615)
+    one, _ = run_band(loop, [955, 1300, 1900, 2615], 2615, 955, DFLT)
+    run, cal = run_band(loop, [955, 1300, 1900, 2615], 2615, 955, DFLT, key_run="reattach")
+    assert cal.radio.runs == cal.keys_n and run["constants"] == one["constants"] and run["ok"]
 
 
 def test_a_band_without_a_knee_gets_one_lead():

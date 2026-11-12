@@ -136,6 +136,24 @@ rfoundry_debug.py radio pa-keyup 900 120 250 1500 300 400 350    # with ease_pm
 rfoundry_debug.py radio pa-keyup default
 ```
 
+RADIO op 40, the key run, keys the radio by itself: one request carries the key and gap lengths, optionally the seven
+constants (set first, as op 37), and up to 21 drives (28 without the constants; a request is 64 bytes). Per drive the
+radio sets it (as op 36), holds PTT for the key (its time-out just past it), waits for the key-down and the gap, then
+takes the next. The host link is held until the run ends and nothing is sent while the radio transmits, so a radio
+whose own RF upsets its USB link (VHF near the cable) still runs every key in time. Nothing is kept in RAM: the drives
+are read from the request as the keys run. The `features` view's `pa_keyrun.last` is the keys run and the keys asked.
+After the reply, flag bit 1 has the host port leave the bus and come back (`hal_stream_t.reattach`: a USB port stops
+its stack, resets the controller and starts again, every 4 s for about a minute until a host takes it). Flag bit 2
+restarts the radio instead. A restart loses the RAM settings: the constants, the test TX limit and `pa_keyrun.last`.
+A host can give up on a radio's USB port while the radio transmits, and then ignore the port's return for a while.
+A restart brings it back where a reattach doesn't. `--key-run` (`reattach`) or `--key-run restart` asks for one after
+every run and opens the link again. After a restart it tunes the radio again and counts the keys in the capture. A
+radio whose USB drops at every key is calibrated by one command.
+
+```
+rfoundry_debug.py radio pa-keyrun 300 350 517 800 1073           # three keys, the constants the radio has
+```
+
 ## 5. Targets
 
 Measured on a dummy load, per burst, against the first symbol found from the burst's sync:
@@ -205,6 +223,7 @@ tools/bench/pa_cal.py --radio PORT --bench HOST --freq 446.05,146.535 --pad-db 5
 | `--rounds` | Optional: verify rounds that may change the constants (4) |
 | `--batch` | Optional: keys per capture (6). A step's keys share one capture; 0 or 1 takes a capture for each |
 | `--key-s` | Optional: each key's length in seconds (0.5, about 8 bursts) |
+| `--key-run` | Optional: a capture's keys go to the radio as one key run (op 40, section 4), the debug link quiet while it transmits. For a radio whose USB link drops while it transmits: a link lost during a run is waited out and opened again, and the run is checked whole |
 
 ### What it does
 
