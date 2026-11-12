@@ -37,7 +37,11 @@ for panel edges hidden by the case (for example 5 px left and right under a lens
 `uiSim --layout` fails a class whose row pitch drops below these. A narrow portrait panel (120x160) keeps the 128 px
 class's small font (24 characters a line) and takes the 160 px class's channel and talk target fonts. Home's Activity region shows the last caller on two lines
 (name, then "TG 91 11s ago") where it has the rows for them, else one line where the name gives way first; a single
-line ("No calls heard yet") is centered in the region. Text that doesn't fit is shortened (an alternate, the name
+line ("No calls heard yet") is centered in the region. While a hardware option is pending (`board_hwopt_pending`: one
+the board asks for, or one waiting for a restart) the idle region says so first, in the warning color ("Set: Board
+revision", or "Restart to apply"), with "Transmit waits for it" under it where there is a second line, and the hint
+row gives the place to set it ("Settings>Advanced>Hardware") or "Turn the radio off and on". PTT then shows the same
+reason (`TXDENY_HWOPT`). Text that doesn't fit is shortened (an alternate, the name
 dropped, then an ellipsis), never drawn in a smaller font.
 
 A page title is in Title Case: every word capitalized except a, an, the, and, or, to, of, in, on, for and by
@@ -148,7 +152,7 @@ without its label, for the cursor's steps. With 1024 channels a key took 0.34 s 
 | Data Services | `data-services` | Settings > Connections > Data services (`CONFIG_DMR_ARS` or `CONFIG_DMR_IP_GATEWAY`): the rows ARS server and IP gateway, each a DMR ID or Off, and above them "Saved in the codeplug" and the ARS state (Off, Registering, Registered, Refused, No answer). Digits type an ID as My Radio's DMR ID; 0 is Off. OK sets it as a storage job, "Saved": the key goes into the codeplug's settings area when the area can be written, and the setting is saved as the radio's own ([codeplug-settings.md](codeplug-settings.md) 5.2). It isn't a codeplug write that asks about another firmware's codeplug. Only a key that is present and can't be updated refuses it: "Couldn't write the codeplug: not saved" |
 | Language | `language` | Settings > Display > Language (the last row; its value is the language in use): every language the firmware has a catalog for, each in its own name ("English", "Español"), the one in use marked "In use". OK switches at once and goes back; a language this image was built without is dimmed and OK says "Not in this build" (2.5) |
 | About | `about` | Settings > My radio > About, and Settings > Advanced > About: a text page (`ui_draw_text_page`) in the smallest font, word-wrapped and never shortened, Up / Down / the knob scroll a line. `SF_NO_STRIP`: no status strip while the radio is idle (the owner's request); RX or TX draws it again, so the TX / RX pill still shows (P2) |
-| Hardware | `hwopt` | Settings > Advanced > Hardware, only on a radio with hardware options (`hal/hal_hwopt.h`, such as a board revision): each option with the stored choice, "Not set" (warning) without one. OK shows the next choice (marked `*` until stored), long OK stores it; a toast says when it applies from the next start-up. The simulator has no options, so the gallery has no picture of it |
+| Hardware | `hwopt` | Settings > Advanced > Hardware, only on a radio with hardware options (`hal/hal_hwopt.h`, such as a board revision) the board didn't detect (`HWOPT_ST_HIDDEN` rows are left out, and with none left the row is too): each option with the stored choice, "Not set" in the warning color while the board asks for it (`HWOPT_ST_ASK`). OK shows the next choice (marked `*` until stored), long OK stores it; the toast says "Stored: restart to apply" when a restart is still due (a board without a state hook: whenever the option applies from the next start-up). The simulator has no options, so the gallery has no picture of it |
 
 The gallery (section 7) shows every screen at every display class.
 

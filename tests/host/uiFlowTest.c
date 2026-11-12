@@ -120,6 +120,10 @@ static const flow_t flows[] = {
 	{ "S hardware option stepped, not stored", "hwopt ok 7 up ok up ok", "ok ok", "shows=V2*", 2, false },
 	{ "S hardware option stored on hold", "hwopt ok 7 up ok up ok", "ok long:ok", "toast=Stored:_restart hides=V1*", 2, false },
 	{ "S stepping another row drops the first", "hwopt ok 7 up ok up ok ok", "down ok", "shows=Not_set shows=On*", 2, false },
+	// An option the radio still needs (board_hwopt_pending): the home screen says what and where, until it is stored
+	{ "S unset hardware option on the home screen", "hwopt", "wait:1000", "screen=home shows=Set:_Board_revision", 0, false },
+	{ "S stored hardware option leaves the home screen", "hwopt ok 7 up ok up ok ok long:ok", "long:back",
+	  "screen=home hides=Set:_Board_revision", 1, false },
 	{ "S freq trim opens its page", "trim", "ok 7 up ok up ok", "screen=freq-trim shows=440_MHz shows=144_MHz", 9, false },
 	{ "S freq trim: Down steps 0.1 ppm at once", "trim ok 7 up ok up ok", "down down",
 	  "set77=-200 shows=-0.2 shows=-88_Hz", 2, false },

@@ -509,10 +509,6 @@ checks reported as not judged when the receiver clips, and the bench modem's tri
   channel). The session puts the VFO in FM and puts its frequency and mode back afterwards; `vfo_session(mode=None)`
   keeps the mode. The VFO's mode, color code, slot and talk target are its own settings and outlive a power cycle,
   so a test that changes them (Copy to VFO does) puts them back itself.
-- `restore_radio` and `Radio.reconnect` (the reopen after a restart) also set back a hardware option (`hwopt`) a
-  restart reset to its default: one that holds for a power cycle only (a transmit arm) is otherwise lost after a
-  restart, and a test that keys right after it, and every later test, fails as if the firmware did. An option that
-  needs a restart to apply is left alone.
 - Don't depend on the state the radio starts in: an earlier test or run may leave a temporary change (the lowest
   power the TX tests set is one) or any zone and channel. A test that keys picks its channel (`find_channel` on
   `--dmr-freq` or `--fm-mhz`), and one that checks a flag checks what it changed (the bits it added), not the

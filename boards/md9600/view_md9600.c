@@ -12,7 +12,8 @@
 #include "debuglink/dl_fmt.h"
 #include "gps_uart/gps_uart.h"
 
-static const char *const sources[] = { "none", "stored", "probe", "default" };
+static const char *const sources[] = { "none", "stored", "probe", "default", "detected" };
+static const char *const if_chips[] = { "unknown", "yes", "no" };
 static const char *const adc_names[MD9600_ADC_COUNT] = { "noise_u", "noise_v", "rssi_u", "rssi_v", "mic", "supply",
 							 "mic_row", "mic_col" };
 
@@ -106,7 +107,7 @@ bool md9600_view_line(uint8_t i, char *buf, uint8_t len)
 		dl_fmt(buf, len, "rev=%s", rev_name(r.rev));
 		return true;
 	case 1:
-		dl_fmt(buf, len, "rev.source=%s", r.source < 4 ? sources[r.source] : "?");
+		dl_fmt(buf, len, "rev.source=%s", r.source < 5 ? sources[r.source] : "?");
 		return true;
 	case 2:
 		dl_fmt(buf, len, "rev.usable=%u", r.usable ? 1u : 0u);
@@ -191,10 +192,13 @@ bool md9600_view_line(uint8_t i, char *buf, uint8_t len)
 		dl_fmt(buf, len, "cal.pa=%u/%u/%u/%u", (unsigned)pa[0], (unsigned)pa[1], (unsigned)pa[2], (unsigned)pa[3]);
 		return true;
 	}
+	case 27:	// the start-up AK2365A read test: yes V1-V4, no V4A / V5, unknown no verdict
+		dl_fmt(buf, len, "rev.ak2365=%s", r.if_chip < 3 ? if_chips[r.if_chip] : "?");
+		return true;
 	default:
 		break;
 	}
-	uint8_t a = (uint8_t)(i - 27u);
+	uint8_t a = (uint8_t)(i - 28u);
 	if (a < MD9600_ADC_COUNT) {
 		dl_fmt(buf, len, "adc.%s=%u", adc_names[a], md9600_adc_raw(a));
 		return true;

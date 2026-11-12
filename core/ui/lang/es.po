@@ -3321,6 +3321,22 @@ msgid "Broadcast FM"
 msgstr "FM comercial"
 
 #: core/ui/ui_screens.c
+msgid "Restart to apply"
+msgstr "Reinicia para aplicar"
+
+#: core/ui/ui_screens.c
+msgid "Set: "
+msgstr "Configura: "
+
+#: core/ui/ui_screens.c
+msgid "Turn the radio off and on"
+msgstr "Apaga y enciende la radio"
+
+#: core/ui/ui_screens.c
+msgid "Settings>Advanced>Hardware"
+msgstr "Ajustes>Avanzado>Hardware"
+
+#: core/ui/ui_screens.c
 msgid "This channel is RX only"
 msgstr "Este canal es solo RX"
 
@@ -3371,6 +3387,10 @@ msgstr "Sin ID DMR en codeplug"
 #: core/ui/ui_screens.c
 msgid "Repeater channel: PTT off"
 msgstr "Canal repetidor: sin PTT"
+
+#: core/ui/ui_screens.c
+msgid "Radio refused to send"
+msgstr "La radio no quiso transmitir"
 
 #: core/ui/ui_screens.c
 msgid "Not allowed here"
@@ -3547,6 +3567,10 @@ msgstr "Sin tiempo límite"
 #: core/ui/ui_screens.c
 msgid "Can't transmit"
 msgstr "No se puede transmitir"
+
+#: core/ui/ui_screens.c
+msgid "Transmit waits for it"
+msgstr "Sin TX hasta entonces"
 
 #: core/ui/ui_screens.c
 msgid "Last activity "
