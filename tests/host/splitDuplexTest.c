@@ -262,8 +262,8 @@ static void test_short_lc(void)
 		CHECK(memcmp(back, rows, sizeof(back)) == 0);
 		(void)again;
 	}
-	// One flipped bit in a payload row: a column of the BPTC matrix holds bits of several CACH rows, so the Hamming
-	// rows correct it (when it lands in rows 1-3 of the encode matrix) or the column parity catches it
+	// One flipped bit in a payload row: a column of the BPTC matrix holds bits of several CACH rows. The Hamming rows
+	// correct it when it lands in rows 1-3 of the encode matrix; in row 4 (column parity) it breaks only that row
 	uint32_t rows[4], slc;
 
 	dmrShortLcEncode(dmrShortLcActivity(8, 9, 0x12, 0x34), rows);
@@ -275,13 +275,10 @@ static void test_short_lc(void)
 			hit[r] ^= 1u << i;
 			bool ok = dmrShortLcDecode(hit, &slc);
 
-			// transmit bit t = 17 r + 16 - i sits in encode row t % 4: rows 0-2 correct it, row 3 (parity) fails
-			int t = 17 * r + 16 - i;
-
-			CHECK(ok == ((t % 4) != 3));
-			if (ok) {
-				CHECK(slc == dmrShortLcActivity(8, 9, 0x12, 0x34));
-			}
+			// transmit bit t = 17 r + 16 - i sits in encode row t % 4: rows 0-2 correct it, row 3 (parity) is only
+			// its own error. Rejecting that one lost a quarter of the short LCs with a bit error on air
+			CHECK(ok);
+			CHECK(slc == dmrShortLcActivity(8, 9, 0x12, 0x34));
 		}
 	}
 }
