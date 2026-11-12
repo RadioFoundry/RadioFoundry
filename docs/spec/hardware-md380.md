@@ -36,12 +36,14 @@ needed bypass) before staying on HSI. LSE: a 32.768 kHz crystal is assumed (unve
 | Sectors | Addresses | Use |
 |---|---|---|
 | 0-2 (3 x 16 KB) | 0x08000000-0x0800BFFF | TYT bootloader, never written (unverified) |
-| 3-7 | 0x0800C000-0x0807FFFF | RadioFoundry application, 464 KB in one piece (`boards/md380/memory.ld`) |
-| 8-11 | see [codec-md380.md](codec-md380.md) | The codec as the merge places it. From D002.032: the table windows at their original addresses (sectors 8, 10, 11), the code moved to 0x080E0000 (sector 11). From D35.14 / S35.14: the main table window at its original address (from sector 9 into sector 10), the code right after it, the small ones in sector 11. Then the descriptor at 0x080FFF80 |
+| 3-10 | 0x0800C000-0x080DFFFF | RadioFoundry application, 848 KB in one piece (`boards/md380/memory.ld`) |
+| 11 | 0x080E0000-0x080FFFFF | The codec as the merge places it: every window moved into this sector, the code first, then the tables ([codec-md380.md](codec-md380.md)). Then the descriptor at 0x080FFF80 |
 
 The application starts at 0x0800C000 with its vector table there (VECT_TAB_OFFSET 0xC000) (unverified).
 
-`boards/md380/memory.ld` asserts that the image ends before 0x08080000. The default UHF image takes 320,236 bytes with link time
+`boards/md380/memory.ld` asserts that the image ends before 0x080E0000. Earlier releases gave the application sectors
+3-7 and kept the codec tables at their original addresses in sectors 8-11; the flashing tools move such a radio's codec
+on the first install ([codec-placement.md](codec-placement.md), "Moving to a new layout"). Image sizes with link time
 optimization, on by default here: [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380). The manufacturer's firmware keeps
 the codec code at 0x08050C44 (sectors 6 and 7), so the merge moves it.
 
@@ -945,7 +947,7 @@ Entered by holding PTT and the upper side key while switching on (unverified). U
 non-standard commands; the same erase-by-sector and block-write protocol as the DM-1701's loader (unverified). Flash a RadioFoundry
 image with `tools/stm32_dfu.py --model md380 --key KEY rfoundry_md380.bin`. The image is plain, starts at 0x0800C000, and the
 tool encrypts it for the loader. rfoundry knows the board (`boards/md380/board.toml`: release `stable`, an update writes
-sectors 3-7 and keeps the codec).
+sectors 3-10 and keeps the codec).
 
 Switched on normally, the original firmware is also a DFU device with the same IDs. The flashers tell it from the
 bootloader by alt 0's layout and refuse it ([hardware-dm1701.md](hardware-dm1701.md) 15.1). The MD-380's bootloader,
@@ -975,9 +977,10 @@ and S35.14 (MD-390) files work too: they carry the MD-UV380 family's codec, plac
 10 (untested on the radio). Entry points,
 calling convention, state sizes, the placement and the extraction recipe are in [codec-md380.md](codec-md380.md).
 `stockfw.PROFILES` has the profiles, the codec maps (`rfoundry/codec_maps/md380/`, one per build) the rewrites,
-`boards/md380/memory.ld` keeps the application out of sectors 8-11, `vocoder_md380.c` checks and hosts the codec, and
+`boards/md380/memory.ld` keeps the application out of sector 11, `vocoder_md380.c` checks and hosts the codec, and
 `make BOARD=md380` merges it when the firmware file is in `codecs/`. The debug link reports the codec as
-`md380-d2032-s11`; a build from before the move reports `md380-d2032`. Without the codec merged the radio is FM only.
+`md380-d2032-s11v2`; a release with the codec in sectors 8-11 reports `md380-d2032-s11`, and a build from before
+the first move `md380-d2032`. Without the codec merged the radio is FM only.
 
 ---
 
@@ -1044,8 +1047,7 @@ configuration registers, audio routing), and [gotchas.md](gotchas.md) 2.6, 3.3, 
 ## 19. Sizes
 
 Flash: the table in [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380) and the per-feature figures in
-[feature-matrix.md](../feature-matrix.md). Measured 2026-10-19 with LTO: default UHF image 320,236 B of 475,136 B
-(464 KB), 107,120 B of 131,068 B SRAM, 59,640 B of 64 KB CCM; maximal 327,064 B flash.
+[feature-matrix.md](../feature-matrix.md). With LTO: default UHF image 470,884 B of 868,352 B (848 KB), maximal 474,116 B.
 
 `CONFIG_NET_WEBCTL` follows `CONFIG_NET_HTTP_GZIP` on this radio (`boards/md380/config.mk`): web control's files,
 stored uncompressed, need more flash than the default image leaves free. With gzip off the radio serves the plain
@@ -1068,6 +1070,6 @@ status page.
   tone path yet, so AFSK TX is not written (`boards/md380/config.mk`). Without a calibration the board refuses to
   transmit.
 - Release: `[status] release = "stable"`, both band images (`rfoundry-md380-<version>.bin` UHF, `rfoundry-md380-vhf-<version>.bin`).
-  Application sectors 3-7 (464 KB), codec sectors 8-11 (D002.032: 8, 10, 11; 35.14: 9-11), so an update keeps the
-  codec. Profile `md380-d2032-s11` (a build from before the move reports `md380-d2032`). `tools/md380_migrate.py` flashes it and keeps
+  Application sectors 3-10 (848 KB), codec sector 11, so an update keeps the codec. Profile `md380-d2032-s11v2`
+  (`md380-d2032-s11` from releases with the codec in sectors 8-11, `md380-d2032` from a build before the first move). `tools/md380_migrate.py` flashes it and keeps
   the codeplug.

@@ -131,22 +131,68 @@ the builds apart. A release accepts only the tags it was built with:
 The flashing tools see the same id either way, so they keep the codec. Going back to such a release needs the codec
 merged again from a stock file that release supports.
 
-Later step: rewrite the `table_refs` and pack code and table objects into one sector (sector 11). The maps hold what
-that needs (objects, groups, compaction), so no further analysis of the stock builds is required.
+Second step, window moves: every codec window moves as one block, the code and each table window, so a board can
+give the codec only its last sector or two and the application everything below. The merge rewrites every address
+that points into a moved window: `self_refs`, `table_refs` (literal words and movw/movt pairs), `island_ptrs`,
+`island_refs`, and the islands' calls into the code (`branches`). Each window keeps its stock address modulo 16 and
+its bytes in order, so nothing inside a window is repacked. Every site must hold exactly the value the source layout
+implies before it is rewritten, which refuses a wrong build, a wrong layout or a damaged copy. The same rewrite run
+backwards takes a placed copy back to the stock windows (`codecmap.relocate`). Which boards use it is in
+[feature-matrix.md](../feature-matrix.md); each radio's codec page has its layout.
 
-**Moving to the new layout.** The application now covers the sectors where stock firmware, and RadioFoundry builds from before
-the move, keep the codec code. Updates from such a build erase it, so the flashing tools need the codec from somewhere
-else:
+The placed CRC-32 of each window follows from a known layout's CRC-32 and the map alone, without the codec bytes
+(`codecmap.relocate_crcs`: CRC-32 is affine over XOR, and only the listed sites change). A profile whose placed
+windows have no SHA-256 is checked by these CRCs at the merge, and a copy read from a radio is checked by taking it
+back to the stock windows and comparing their SHA-256s.
 
-* The copy they keep. rfoundry and the web flasher read the codec from every radio running RadioFoundry over the debug link
-  (READ_MEM), in the stock or the placed layout, check it against the profile, and store it on the user's machine.
-  The copy is written as the stock file's merge would write it.
-* Otherwise the stock file, as for a first install. There is no read-back during the update itself: only developer
-  radios carry the old layout.
+Later step, not planned: pack code and table objects into fewer bytes. The maps hold what that needs (objects,
+groups, compaction), but it rewrites far more of the codec than window moves do.
+
+## Layouts
+
+A board's layout is where its merge puts the codec: the application region in `memory.ld`, the placement of each
+stock profile in `tools/rfoundry/rfoundry/stockfw.py`, and the profiles the firmware pins in
+`boards/<radio>/vocoder_<radio>.c`. They change together, and a changed layout gets a new codec id, so a radio
+reports which layout it holds.
+
+A profile lists the layouts earlier releases used as `former` entries: their codec id, placement and placed CRCs. The
+board's former ids follow from them (`boards.Board.codec_former`). The firmware accepts only its current layout: a
+descriptor that names a window below the board's codec flash (`flash_lo`) is refused before any byte of the codec is
+read, and the radio runs FM only and says "No codec: voice off".
+
+### Moving to a new layout
+
+When a layout gives the application flash that held the codec, the first install of the new layout moves it. The
+flashing tools (rfoundry and the web flasher) do this inside the normal install:
+
+| Step | What happens | If it stops here |
+|---|---|---|
+| 1. Probe | The radio reports a former codec id over the debug link | Nothing written |
+| 2. Read back | READ_MEM reads every window where the descriptor says the codec is; the copy is checked against the profile (stock SHA-256s after taking it back, every rewritten site) | Nothing written |
+| 3. Save | The copy is stored on the user's machine (rfoundry: `<config>/codecs/<board>-<codec id>.bin`; the web flasher: the browser) and never deleted | Nothing written |
+| 4. Plan | A merge from the saved copy, moved to the current layout; else from the stock file; with neither, the install is refused | Nothing written |
+| 5. Write | Bootloader route: the plan's sectors are erased, then written in address order, the descriptor last. Stub route: sector 3 erased first, the other sectors, sector 3 without its first word, a CRC check, the first word | The bootloader starts (sector 3 blank or the image incomplete), or the new application starts with no valid descriptor and runs FM only |
+| 6. Check | The radio reports the current codec id | |
+
+Resume rule: after any stop the radio is in its bootloader or runs the new application without voice. The same
+install, run again, finds no codec to keep (no probe, or no codec reported) and merges from the saved copy, so it
+finishes the move. The bootloader (sectors 0-2) and the stub are never written: every plan is checked against the
+board's protected ranges before the first erase.
+
+A plain image (no codec merged in) written through the stub over flash whose descriptor names a codec window is
+refused before anything is erased (`stub/f4stub.py`, the web flasher's `f4stub.js`): such an install would lose the
+codec without a copy.
 
 ## Open items
 
 * A hardware test of voice TX and RX with the moved code on each STM32 radio that has not had one (see the radios' codec
   pages). An emulator run with only the placed windows mapped gives the same air bits and PCM as the stock code at its
   stock address (60 frames, plain and stressed).
-* The later step above (table moves and one-sector packing).
+* Window moves: an emulator run of each build in the new layout against its stock address, as for the code-only
+  move. The table references the maps list
+  have not been exercised by a move before; the placed CRCs agree with the maps, the bytes have not been run.
+* Window moves on a radio: voice RX and TX after the move, an update in keep mode after it, and a move stopped at
+  each step and run again (the radios' codec pages).
+* The bootloader route writes in address order, the application's first sector first. Power lost while that sector
+  is half written may leave a start the bootloader runs; the bootloader key combination still recovers the radio. The
+  stub route writes the first sector last for that reason.

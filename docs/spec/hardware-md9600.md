@@ -854,7 +854,7 @@ the original firmware sounds the same on this radio is not checked); UHF receive
 | Power | no battery (`CAP_NO_BATTERY`). "Off" saves, sets a flag in RTC backup register 18 and resets; at start-up the flag holds the radio until the power key is pressed and released. Supply voltage from ADC1 IN1 |
 | Flash | SPI NOR with the DM-1701's map (settings 0x011000, journal 0x019000, open-firmware codeplug at 0 and 0x020000); the board revision record at 0x01F000, appended. Security registers read only: calibration and option block (19.5) |
 | Receive | FM on both bands, every revision (19.3). Front-end tuning from calibration rows 0x30 / 0x39 (11.2) when they aren't blank, else mid scale |
-| DMR | receive on the shared HR_C6000 glue (configuration port PE2-PE5, voice port SPI1 at 4.5 MHz, interrupts PC0-PC2, I2S3 PCM). Reference offset and DMR modulation pair (11.2 rows 0x130-0x149) rewritten at each retune. The two codec profiles (tags 0x0609 and 0x1645, one id `md9600-s11`) run the stock codec from flash: code at 0x080E0000, tables in sector 9, descriptor at 0x080FFF80 ([codec-md9600.md](codec-md9600.md)) |
+| DMR | receive on the shared HR_C6000 glue (configuration port PE2-PE5, voice port SPI1 at 4.5 MHz, interrupts PC0-PC2, I2S3 PCM). Reference offset and DMR modulation pair (11.2 rows 0x130-0x149) rewritten at each retune. The two codec profiles (tags 0x0609 and 0x1645, one id `md9600-s11v2`) run the codec from flash: code at 0x080E0000, tables at the start of sector 10, descriptor at 0x080FFF80 ([codec-md9600.md](codec-md9600.md)) |
 | Audio | FM from the IF chip (FM_MUTE high), PCM (DMR voice, beeps) from the HR_C6000 line out with FM held back, AF_SW muting otherwise (`boards/md9600/speaker_md9600.h`). A host audio session (`NET_USRP`) hears FM from PC3 and DMR from the stream, and transmits FM as PWM on PC8 into the HR_C6000's microphone input (19.9) |
 | GPS | USART1 RX (PA10), receive interrupt; 9600 baud first, then 4800, 19200, 38400, 57600, 115200, 3 s each. A silent line ends the search after the first window; a module once heard feeds APRS positions. PA9 stays on (it also powers the mic) |
 | Hand mic | the keypad of 9.3 through `drivers/input/adckeys`, three equal scans per key. Key roles of A-D and A/B are a proposal (unverified). No `CAP_KEYPAD`: a mic may have no keypad |
@@ -868,7 +868,7 @@ the original firmware sounds the same on this radio is not checked); UHF receive
 | HSE | 8 MHz crystal; bypass mode tried if it doesn't start; HSI 16 MHz (no USB) as the last resort |
 | PLL | M 4, N 72, P 2, Q 3: SYSCLK 72 MHz, USB 48 MHz |
 | Buses | AHB 72 MHz, APB1 36 MHz (timers 72 MHz), APB2 72 MHz |
-| Flash | 0x0800C000-0x0809FFFF application (sectors 3-8, 592 KB); sectors 9-11 kept free for the codec |
+| Flash | 0x0800C000-0x080BFFFF application (sectors 3-9, 720 KB); sectors 10-11 kept for the codec |
 | RAM | 128 KB main SRAM (DMA buffers), 64 KB CCM (RTOS heap and task stacks, `RFOUNDRY_CPU_RAM`) |
 
 ### 19.3 Board revisions in one image
