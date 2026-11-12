@@ -169,7 +169,8 @@ second for the next character; another key, or a pause, moves on. **1** types pu
 and 1), **0** a space, 0, `+`, `#` and `*`. The title shows the mode.
 
 **#** switches the mode: ABC (capitals, the start), then 123 (each key types its digit), then abc (lower case), then
-back to ABC. Holding a digit key types the digit in any mode. **Back** deletes the last character (**\*** does too).
+back to ABC. Holding a digit key types the digit in any mode. **Back** deletes the last character (**\*** does too;
+on the AT-D578UV **\*** types a space and holding it deletes).
 **OK** keeps the name. To leave without changing it, press **Back** until the field is empty and once more. Names hold
 up to 16 characters.
 

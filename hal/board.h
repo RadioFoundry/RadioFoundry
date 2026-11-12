@@ -106,6 +106,8 @@ typedef struct {
 	// The backlight's default dims after 30 s and never goes off (Settings > Display > Backlight Dim/Off "30s/dim"),
 	// for a mobile on vehicle power; false: dims at 30 s, off at 2 min
 	bool backlight_dims_only;
+	// In text entry * types a space (the AnyTone microphones' convention), held it deletes; false: * deletes
+	bool text_star_space;
 	const hal_radio_t *radio;
 	const hal_power_t *power;
 	const hal_flash_t *flash;
