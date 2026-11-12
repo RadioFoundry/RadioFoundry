@@ -151,6 +151,7 @@ typedef struct {
 	bool target_manual;	// a talk target chosen for now (contact, typed ID, call back), until the channel changes
 	bool privacy;		// a privacy key is loaded: encrypted calls play, our calls go out encrypted
 	bool alias_tx;		// our talker alias goes out on this channel
+	bool gps_tx_channel;	// the channel's codeplug setting asks for our position in its calls (CONFIG_DMR_GPS)
 	bool hear_all;		// every talkgroup on our slot: MONITOR held, or the hear all latch
 	bool hear_all_latch;	// hear all latched (radio_req_dmr_hear_all), until the channel changes
 	uint32_t focus_id;	// the focused row's target (radio_req_dmr_focus), 0 = none: PTT talks to it once
@@ -390,6 +391,9 @@ void radio_req_dmr_target_clear(void);
 void radio_req_dmr_timeslot(uint8_t ts);	// 1 or 2
 void radio_req_dmr_color_code(uint8_t cc);	// 0..15
 void radio_req_mode(uint8_t mode);		// radio_mode_t: FM or DMR on the current channel or the VFO
+// The VFO's SFR role (CONFIG_SFR, docs/spec/sfr.md 4): a as a codeplug channel's SFR byte A, role bits 0 = none; the
+// outbound color code is the VFO's own. Saved with the VFO; refused outside it, while transmitting and in hotspot mode
+void radio_req_vfo_sfr(uint8_t a);
 // Hear all latched on (every talkgroup on our slot, as while MONITOR is held) until off or the channel changes
 void radio_req_dmr_hear_all(bool on);
 // The talk target focused in a list (the UI calls it on every focus change; id 0 = none). A PTT press while one is

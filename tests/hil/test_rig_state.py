@@ -3,6 +3,7 @@
 """What keeps one run like the next (README.md, "The rig's configuration" and "Restored after every test"): a
 board's table in the rig's file gives every run of that radio the same values, and a hardware option a restart reset
 is set back. No radio: these run anywhere, and tools/ci.sh runs them."""
+import sys
 import types
 
 import pytest
@@ -26,6 +27,10 @@ class FakeConfig:
         return getattr(self.option, hil_config.key(name.lstrip("-")))
 
 
+# reading a rig file needs tomllib (Python 3.11)
+needs_toml = H.skip_if(sys.version_info < (3, 11), "bench", "reading the rig's file needs Python 3.11 or later")
+
+
 def rig_file(tmp_path, text):
     p = tmp_path / "hil.toml"
     p.write_text(text)
@@ -42,6 +47,7 @@ bench_api = "bench-a"
 '''
 
 
+@needs_toml
 def test_board_table_applies_to_its_board_only(tmp_path):
     path = rig_file(tmp_path, BOARDS)
     c = FakeConfig(path, "radio_a")
@@ -55,12 +61,14 @@ def test_board_table_applies_to_its_board_only(tmp_path):
     assert c.option.dmr_freq == 446.075
 
 
+@needs_toml
 def test_command_line_beats_the_board_table(tmp_path):
     c = FakeConfig(rig_file(tmp_path, BOARDS), "radio_a", dmr_freq=446.1, bench_api="bench-b")
     hil_config.configure(c)
     assert c.option.dmr_freq == 446.1 and c.option.bench_api == "bench-b"
 
 
+@needs_toml
 @pytest.mark.parametrize("line", ["allow_reboot = true", "radio_port = \"/dev/x\"", "no_such_option = 1"])
 def test_board_table_refuses_flags_ports_and_unknown_keys(tmp_path, line):
     c = FakeConfig(rig_file(tmp_path, f"[board.radio_a]\n{line}\n"), "radio_a")

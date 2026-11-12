@@ -18,8 +18,8 @@
 #include "aprs/afsk.h"
 #include "aprs/kiss.h"
 #include "aprs/aprs_fmt.h"
-#include "aprs/aprs_nmea.h"
-#include "aprs/nmea_sky.h"
+#include "position/nmea.h"
+#include "position/nmea_sky.h"
 #include "aprs/aprs_beacon.h"
 #include "aprs/aprs_igate.h"
 #include "fuzz.h"
@@ -549,6 +549,142 @@ static void test_geo_props(void)
 			bad++;
 			CHECK(false, "geo props (%d,%d)-(%d,%d)-(%d,%d): %u/%u m, %u deg, %u+%u", la1, lo1, la2, lo2, la3,
 			      lo3, d12, d21, b, d13, d23);
+		}
+	}
+}
+
+// The reference the integer and polynomial math is held to: the haversine and the initial bearing in long double
+static void geo_ref(int32_t la1, int32_t lo1, int32_t la2, int32_t lo2, long double *m, long double *deg)
+{
+	const long double k = 3.14159265358979323846264338327950288L / 180.0L / 1e7L;
+	long double p1 = la1 * k, p2 = la2 * k, dp = p2 - p1, dl = ((long double)lo2 - lo1) * k;
+	long double a = sinl(dp / 2) * sinl(dp / 2) + cosl(p1) * cosl(p2) * sinl(dl / 2) * sinl(dl / 2);
+	if (a > 1)
+		a = 1;
+	*m = 6371000.0L * 2 * atan2l(sqrtl(a), sqrtl(1 - a));
+	long double b = atan2l(sinl(dl) * cosl(p2), cosl(p1) * sinl(p2) - sinl(p1) * cosl(p2) * cosl(dl)) * 180 /
+		3.14159265358979323846264338327950288L;
+	*deg = b < 0 ? b + 360 : b;
+}
+
+// Known pairs (the reference values are the haversine on a 6371 km sphere, worked out by hand with 1e-7 degree
+// inputs): ranges from 50 m to nearly half the globe, the date line, the antipode region and a pole
+static void test_geo_known(void)
+{
+	static const struct {
+		const char *name;
+		int32_t lat1, lon1, lat2, lon2;
+		uint32_t m;	// meters
+		int deg;	// whole degrees, rounded
+	} cases[] = {
+		{ "50 m east at 33.7 N", 337000000, -841000000, 337000000, -840994601, 50, 90 },
+		{ "London to Paris", 515074000, -1278000, 488566000, 23522000, 343556, 148 },
+		{ "Anchorage to Tokyo, over the date line", 612181000, -1499003000, 356762000, 1396503000, 5565987, 273 },
+		{ "Sydney to Santiago", -338688000, 1512093000, -334489000, -706693000, 11346715, 145 },
+		{ "Quito to Singapore", -1800000, -784700000, 13500000, 1038200000, 19729165, 297 },
+		{ "over the pole", 899000000, 100000000, 899000000, -1700000000, 22239, 0 },
+	};
+	for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+		uint32_t d = aprs_distance_m(cases[i].lat1, cases[i].lon1, cases[i].lat2, cases[i].lon2);
+		uint16_t b = aprs_bearing_deg(cases[i].lat1, cases[i].lon1, cases[i].lat2, cases[i].lon2);
+		uint32_t tol = 2u + cases[i].m / 5000u;	// 2e-4 of the range (the measured worst: 1.4e-4 at 100 km)
+		CHECK(d + tol >= cases[i].m && d <= cases[i].m + tol, "known %s: %u m, want %u", cases[i].name, d,
+		      cases[i].m);
+		CHECK(b == cases[i].deg, "known %s: %u deg, want %d", cases[i].name, b, cases[i].deg);
+	}
+}
+
+// Against the reference over seeded random pairs at every range from a few meters to the globe: the distance within
+// 2 m + 2e-4 of itself (the polynomials give 150 m at worst; the poles are left to test_geo_limits), the bearing
+// within the rounding to a degree, wherever it means something
+static void test_geo_accuracy(void)
+{
+	fuzz_t f;
+	fuzz_init(&f, 0x6E1);
+	long n = fuzz_iters(100000), bad = 0;
+	for (long i = 0; i < n && bad < 5; i++) {
+		int32_t la1 = fuzz_coord(&f, LAT_MAX), lo1 = fuzz_coord(&f, LON_MAX), la2, lo2;
+		static const int32_t span[] = { 100, 10000, 1000000, 100000000, 1000000000 };	// 1e-7 degree
+		int32_t sp = span[fuzz_below(&f, 5)];
+		int64_t a = (int64_t)la1 + (int64_t)fuzz_below(&f, 2u * (uint32_t)sp + 1u) - sp;
+		int64_t b = (int64_t)lo1 + (int64_t)fuzz_below(&f, 2u * (uint32_t)sp + 1u) - sp;
+		la2 = (int32_t)(a > LAT_MAX ? LAT_MAX : a < -LAT_MAX ? -LAT_MAX : a);
+		lo2 = (int32_t)(b > LON_MAX ? b - 2 * (int64_t)LON_MAX : b < -LON_MAX ? b + 2 * (int64_t)LON_MAX : b);
+		if (i % 5 == 4) {
+			la2 = fuzz_coord(&f, LAT_MAX);
+			lo2 = fuzz_coord(&f, LON_MAX);
+		}
+		long double m, deg;
+		geo_ref(la1, lo1, la2, lo2, &m, &deg);
+		// not within a kilometer of a pole: the float's step in the latitude is a few meters of cosine there
+		if (la1 > LAT_MAX - 10000 || la1 < -LAT_MAX + 10000 || la2 > LAT_MAX - 10000 ||
+		    la2 < -LAT_MAX + 10000) {
+			continue;
+		}
+		uint32_t d = aprs_distance_m(la1, lo1, la2, lo2);
+		long double e = d > m ? d - m : m - d;
+		bool ok = e <= 2.0L + m / 5000.0L;
+		// Nor near the antipode: the course to a point on the far side of the globe is any of them. The bearing's y
+		// and x both go to zero there and their signs are rounding noise (on the equator, 180 degrees of longitude
+		// away: 270 degrees on one libm and compiler, 90 on another), so the reference is as free to pick a side
+		// as the code is. The distance is checked all the same
+		if (m > 20.0L && m < 20015087.0L - 1000.0L && la1 < LAT_MAX - 10000000 && la1 > -LAT_MAX + 10000000 && la2 < LAT_MAX - 10000000 &&
+		    la2 > -LAT_MAX + 10000000) {
+			long double eb = fabsl((long double)aprs_bearing_deg(la1, lo1, la2, lo2) - deg);
+			ok = ok && (eb <= 0.6L || eb >= 359.4L);
+		}
+		if (!ok) {
+			bad++;
+			CHECK(false, "geo accuracy (%d,%d)-(%d,%d): %u m, ref %.1Lf, %u deg, ref %.2Lf", la1, lo1, la2, lo2, d,
+			      m, aprs_bearing_deg(la1, lo1, la2, lo2), deg);
+		}
+	}
+}
+
+// What goes on the air: the compressed speed byte for every speed from 0 knots up to (not including) unknown is round(ln(knots + 1) /
+// ln 1.08), at most 89, as the formula in the reference gives it (checked here in double; its nearest tie to a whole
+// byte is 0.0007 away, so any float evaluation gives the same byte)
+static void test_compressed_speed_byte(void)
+{
+	for (uint32_t kn = 0; kn < APRS_SPEED_NONE; kn++) {
+		aprs_report_t r = { .compressed = true, .pos = { .lat = 337000000, .lon = -841000000, .course = 90,
+			.speed_kn = (uint16_t)kn, .alt_m = APRS_ALT_NONE, .sym_table = '/', .sym_code = '>' } };
+		char o[64];
+		size_t len = aprs_build_position(&r, o, sizeof o);
+		double s = floor(log((double)kn + 1.0) / log(1.08) + 0.5);
+		char want = (char)(33 + (s > 89.0 ? 89 : (int)s));
+		if (len != 14 || o[11] != '!' + 22 || o[12] != want) {	// '!', table, 8 chars, symbol, then c and s
+			CHECK(false, "speed byte for %u kn: '%c' want '%c' (len %zu)", kn, len > 12 ? o[12] : '?', want, len);
+			break;
+		}
+	}
+}
+
+// What is heard: every course / speed pair of a compressed position gives the knots 1.08^s - 1 rounded and the course
+// 4 degrees a step, and every GGA altitude pair gives 1.002f^n feet in meters rounded (1.002f, the single-precision
+// constant the formula was always evaluated with, is 1.0019999743) exactly
+static void test_compressed_decode_all(void)
+{
+	ax25_addr_t dst = addr("APRS");
+	for (int c = 33; c <= 123; c++) {
+		for (int sp = 33; sp <= 123; sp++) {
+			char s[16];
+			aprs_parsed_t p;
+			snprintf(s, sizeof s, "=/5L!!<*e7>%c%c%c", c, sp, '!' + 0x22);
+			bool ok = aprs_parse(&dst, (const uint8_t *)s, 14, &p);
+			uint32_t kn = (uint32_t)floor(pow(1.08, sp - 33) - 1.0 + 0.5);
+			int crs = (c - 33) * 4;
+			if (c - 33 <= 89 && (!ok || p.pos.speed_kn != kn || p.pos.course != (crs ? (uint16_t)crs : (uint16_t)APRS_COURSE_NONE))) {
+				CHECK(false, "cs %d %d: %u kn %u deg, want %u kn %d", c, sp, p.pos.speed_kn, p.pos.course, kn, crs);
+				return;
+			}
+			snprintf(s, sizeof s, "=/5L!!<*e7>%c%c%c", c, sp, '!' + 0x10);	// source GGA: cs is the altitude
+			ok = aprs_parse(&dst, (const uint8_t *)s, 14, &p);
+			long double m = powl(1.00199997425079345703125L, (c - 33) * 91 + (sp - 33)) * 0.3048L;
+			if (!ok || p.pos.alt_m != (int32_t)floorl(m + 0.5L)) {
+				CHECK(false, "alt %d %d: %d m, want %Lf", c, sp, p.pos.alt_m, m);
+				return;
+			}
 		}
 	}
 }
@@ -1350,6 +1486,10 @@ int main(int argc, char **argv)
 	test_geo();
 	test_geo_limits();
 	test_geo_props();
+	test_geo_known();
+	test_geo_accuracy();
+	test_compressed_speed_byte();
+	test_compressed_decode_all();
 	test_nmea();
 	test_nmea_unchecked();
 	test_nmea_sky();

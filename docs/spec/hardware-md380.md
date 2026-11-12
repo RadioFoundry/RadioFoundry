@@ -904,7 +904,7 @@ The same board ships with and without the module, and PD8 (the module's power sw
 second flash chip select on others 13.7. So nothing drives PD8 until the module has been heard:
 `gps_md380.c` enables USART3 RX on PD9 at start-up and listens for 5 s. One checksum-valid sentence (any talker, up to
 82 characters plus CR LF; `drivers/gps/nmea_line`) makes the module present: PD8 is then held at the level it already
-had, and every sentence goes to the APRS position source (`aprs_nmea`, CONFIG_APRS). Nothing heard: the UART is
+had, and every sentence goes to the position service (`position_nmea`, CONFIG_GPS). Nothing heard: the UART is
 switched off and `board.gps_present()` stays false, so `board_has_gps()` hides the GPS features. UART errors are
 counted and cleared in the interrupt, so one framing error never stops reception ( 13.7).
 

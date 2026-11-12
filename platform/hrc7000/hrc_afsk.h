@@ -21,7 +21,7 @@ typedef struct {
 	int16_t amp_per_level;
 } hrc_afsk_board_t;
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 // Once, from the radio init, after the modem is attached
 void hrc_afsk_attach(hrc7000_t *modem, const hrc_afsk_board_t *board);
 

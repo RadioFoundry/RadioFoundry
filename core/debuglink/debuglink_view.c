@@ -161,6 +161,8 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "ch.color_code=%u\nch.timeslot=%u\n", c->color_code, c->timeslot);
 	dl_text(t, "ch.contact=%u\nch.listen_list=%u\n", c->contact, c->listen_list);
 	dl_text(t, "ch.dmr_id=%u\nch.dmo=%u\n", (unsigned)c->dmr_id, c->dmo);
+	// The SFR bytes A and B as stored (sfr.h; 0,0 = none); dmr.sfr_role is the role in force
+	dl_text(t, "ch.sfr=%u,%u\n", c->sfr_flag1 ? c->sfr_a : 0u, c->sfr_flag1 ? c->sfr_b : 0u);
 }
 
 // mtu_lines and ppp_lines are not inlined: net_link_section is, into debuglink_view_section, which is on the host
@@ -583,9 +585,11 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		// it before keying)
 		dl_text(t, "aprs.tx_power=%u\n", aprs_tx_power(v->power));
 #endif
+		debuglink_view_position(0, t);
 		break;
 	case DL_VIEW_APRS_SET:
 		debuglink_view_aprs(1, t);
+		debuglink_view_position(1, t);
 		break;
 	case DL_VIEW_DMR_IP:
 		debuglink_view_dmr_data(2, t);
