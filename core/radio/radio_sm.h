@@ -86,6 +86,9 @@
 #define RADIO_RX2_REFRESH_MS	2000
 #define RADIO_RX2_TUNE_MS	1500
 #define RADIO_RX2_RETRY_MS	10000
+// ... one that only senses a DMR channel (rx2_status_t.sense): after a look there found no call for us, the next look
+// waits for its carrier to drop or this long
+#define RADIO_RX2_RELOOK_MS	5000
 #define RADIO_SCAN_HOLD_S	5
 #define RADIO_SCAN_DELAY_MS	2000
 
@@ -310,6 +313,9 @@ typedef struct {
 	uint32_t rx2_try_ms;		// last time it was given the other channel, or found down
 	uint32_t rx2_refresh_ms;	// last time its settings went again
 	int8_t rx2_audio_out;		// last board.rx2->audio(), -1 = none yet
+	bool rx2_look;			// the second receiver only senses its channel: the main one went there to decode
+	bool rx2_relook;		// ... its carrier dropped since the last look ended: the next one goes at once
+	uint32_t rx2_look_ms;		// ... when the last look ended
 	// One receiver, in the wait after a signal: on the other channel for a look (scan.tuned_ms its start), the wait's
 	// start to go back to, and whether this look heard a signal
 	bool dual_peek;

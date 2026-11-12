@@ -2515,8 +2515,60 @@ static bool rx2_engage(radio_sm_t *sm, uint32_t now_ms)
 	}
 	sm->dual_at = sm->dual_sel;
 	sm->rx2_on = true;
+	sm->rx2_look = false;
+	sm->rx2_relook = true;
 	rx2_publish(sm);
 	return true;
+}
+
+// The selected channel has a signal, a call or its reply window, or the monitor is on: it keeps the main receiver
+static bool dual_sel_busy(const radio_sm_t *sm)
+{
+	if (sm->view.monitor || sm->view.state == RS_RX) {
+		return true;
+	}
+#if CONFIG_DMR
+	if (sm->view.ch.mode == RADIO_MODE_DMR &&
+	    (sm->view.dmr.state == RDMR_RX || sm->view.dmr.reply_active)) {
+		return true;
+	}
+#endif
+	return false;
+}
+
+// The second receiver only senses its channel (rx2_status_t.sense: DMR with one decoder). On a carrier there while
+// the selected channel is quiet, the main receiver goes to decode it: a look, which the scan runs as on one receiver
+// (a hold on the call, the wait after it), and its step brings the main receiver back. A look that found no call for
+// us isn't repeated until the carrier drops, or for RADIO_RX2_RELOOK_MS. True: the main receiver is on the selected
+// channel (nothing for the scan to do)
+static bool rx2_sense(radio_sm_t *sm, const rx2_status_t *st, uint32_t now_ms)
+{
+	if (!dual_here(sm, sm->dual_sel)) {
+		if (sm->rx2_look) {
+			return false;
+		}
+		if (dual_tune(sm, sm->dual_sel, now_ms)) {
+			scan_tuned(&sm->scan, now_ms);
+		}
+		return true;
+	}
+	if (sm->rx2_look) {
+		sm->rx2_look = false;
+		sm->rx2_look_ms = now_ms;
+		sm->rx2_relook = false;
+	}
+	if (!st->active) {
+		sm->rx2_relook = true;
+		return true;
+	}
+	if (dual_sel_busy(sm) || (!sm->rx2_relook && now_ms - sm->rx2_look_ms < RADIO_RX2_RELOOK_MS)) {
+		return true;
+	}
+	if (dual_tune(sm, (uint8_t)!sm->dual_sel, now_ms)) {
+		scan_tuned(&sm->scan, now_ms);
+		sm->rx2_look = true;
+	}
+	return true;	// this poll's readings are from before the retune
 }
 
 // Every poll in dual watch on a radio with a second receiver. True: it has the other channel (nothing to alternate)
@@ -2544,6 +2596,9 @@ static bool rx2_service(radio_sm_t *sm, uint32_t now_ms)
 		if (rx2_settings(sm, (uint8_t)!sm->dual_sel, &t)) {
 			board.rx2->tune(&t);	// a codeplug edit or a squelch change; the same settings again send nothing
 		}
+	}
+	if (st.sense) {
+		return rx2_sense(sm, &st, now_ms);
 	}
 	if (!dual_here(sm, sm->dual_sel) && dual_tune(sm, sm->dual_sel, now_ms)) {
 		scan_tuned(&sm->scan, now_ms);
@@ -2915,7 +2970,8 @@ static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_
 		scan_publish(sm);
 		return;
 	}
-	if (sc->kind == SCAN_DUAL && dual_wait_service(sm, st, now_ms)) {
+	// The second receiver only senses its channel and the main one looks there: no looks back from the look
+	if (sc->kind == SCAN_DUAL && !sm->rx2_on && dual_wait_service(sm, st, now_ms)) {
 		scan_publish(sm);
 		return;
 	}
