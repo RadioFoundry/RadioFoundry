@@ -41,9 +41,10 @@ Pass criteria:
   two VFOs, B on --fm-mhz and A 25 kHz above, both FM; while the bench sends FM on B the second receiver shows
   rx2.active=1 and rx2.heard=1 (its audio on the speaker) and dual.at stays a; after it, rx2.active=0.
 - test_dual_watch_second_receiver_dmr_bench (rf, a radio with dual.receivers=2, bench modem): dual watch with another
-  channel of the DMR test channel's zone selected (A) and the DMR test channel as B. Before the call rx2.tuned=1; where
-  the second receiver only senses B (rx2.sense=1), the bench's group call on B is decoded with the main receiver on B:
-  dual.at=b with dmr.state=rx; within 6 s of the call's end dual.at=a again. Positions stay the two.
+  channel of the DMR test channel's zone selected (A) and the DMR test channel as B, twice: A as in the codeplug, then
+  A made a DMR channel (a temporary change). Before the call rx2.tuned=1; where the second receiver only senses B
+  (rx2.sense=1), the bench's group call on B is decoded with the main receiver on B: dual.at=b with dmr.state=rx;
+  within 6 s of the call's end dual.at=a again. Positions stay the two.
 - test_tx_inhibit (radio_tx): set.tx_inhibit=1, PTT: tx_deny=inhibit, the state never shows tx; input.ptt_downs
   counts the press and the debug log has "input: PTT down (host".
 - test_tx_limit (radio_tx): the test TX limit (RADIO op 35) set to block, then to a list without the VFO's
@@ -779,6 +780,7 @@ def test_dual_watch_second_receiver_dmr_bench(radio, sdr_bench, pytestconfig):
     if "DMR" not in radio.features():
         skip("not_built", "built without DMR")
     hz = round(rig(pytestconfig, "dmr-freq") * 1e6)
+    cc = int(pytestconfig.getoption("--dmr-cc"))
     radio.go_home()
     pos = radio.find_channel(hz, "dmr")
     size = as_int(radio.core().get("zone_size"), 0)
@@ -791,33 +793,47 @@ def test_dual_watch_second_receiver_dmr_bench(radio, sdr_bench, pytestconfig):
             break
     if other is None:
         skip("state", "no other channel in the DMR test channel's zone on another frequency")
-    with settings(radio, scan_resume=1):
-        radio.link.scan("dual", pos)
-        try:
-            wait_features(radio, lambda v: v.get("scan") == "dual", 1.0, "scan=dual")
-            radio.wait_for(lambda v: v.get("rx2.tuned") == "1", 3.0, what="the second receiver on B")
-            sense = radio.core().get("rx2.sense") == "1"
-            seen, t0 = _bench_call_watch(radio, sdr_bench, pytestconfig, keys=("core", "features", "dmr"))
-            back = None
-            t_end = time.monotonic()
-            while time.monotonic() - t_end < 6.0:
-                if features(radio).get("dual.at") == "a":
-                    back = time.monotonic() - t_end
-                    break
-                time.sleep(0.1)
-        finally:
-            scan_off(radio)
-    positions = {v.get("zone_pos") for _, v in seen}
-    on_b = [(t - t0, v.get("dmr.state")) for t, v in seen if v.get("dual.at") == "b"]
-    played = [t for t, s in on_b if s == "rx"]
-    print(f"sense {sense}; positions {sorted(positions)}; on B from {on_b[0][0] if on_b else None} s, "
-          f"call from {played[0] if played else None} s; back on A {back} s after the call")
-    assert positions <= {str(pos), str(other)}, positions
-    if sense:
-        assert played, f"the call on B was never decoded: {on_b[:10]}"
-        assert back is not None, "the main receiver didn't come back to A"
-    else:
-        assert any(v.get("rx2.active") == "1" for _, v in seen), "the second receiver never heard the call on B"
+    results = []
+    # A as it is in the codeplug, then A as a DMR channel too (a temporary change: both channels digital)
+    for a_dmr in (False, True):
+        radio.link.zone_pos(other)
+        radio.wait_for(lambda v: v.get("zone_pos") == str(other), what=f"zone position {other}")
+        if a_dmr and radio.core().get("mode") != "dmr":
+            radio.link.dmr_fields(mode="dmr", cc=cc, ts=1)
+            radio.wait_for(lambda v: v.get("mode") == "dmr", what="A as a DMR channel")
+        with settings(radio, scan_resume=1):
+            radio.link.scan("dual", pos)
+            try:
+                wait_features(radio, lambda v: v.get("scan") == "dual", 1.0, "scan=dual")
+                radio.wait_for(lambda v: v.get("rx2.tuned") == "1", 3.0, what="the second receiver on B")
+                sense = radio.core().get("rx2.sense") == "1"
+                calls0 = as_int(radio.link.view(["dmr_stats"]).get("call.rx_calls_played"), 0)
+                seen, t0 = _bench_call_watch(radio, sdr_bench, pytestconfig, keys=("core", "features", "dmr"))
+                back = None
+                t_end = time.monotonic()
+                while time.monotonic() - t_end < 6.0:
+                    if features(radio).get("dual.at") == "a":
+                        back = time.monotonic() - t_end
+                        break
+                    time.sleep(0.1)
+                st = radio.link.view(["dmr_stats"])
+            finally:
+                scan_off(radio)
+        positions = {v.get("zone_pos") for _, v in seen}
+        on_b = [(t - t0, v.get("dmr.state")) for t, v in seen if v.get("dual.at") == "b"]
+        played = [t for t, s in on_b if s == "rx"]
+        print(f"A {'DMR' if a_dmr else 'as set'}: sense {sense}; positions {sorted(positions)}; on B from "
+              f"{on_b[0][0] if on_b else None} s, call from {played[0] if played else None} s; back on A {back} s "
+              f"after the call; calls played {as_int(st.get('call.rx_calls_played'), 0) - calls0}, late entries "
+              f"{st.get('call.rx_late_entries')}, lost frames {st.get('call.rx_lost_frames')}")
+        results.append((a_dmr, sense, positions, played, back, seen))
+    for a_dmr, sense, positions, played, back, seen in results:
+        assert positions <= {str(pos), str(other)}, positions
+        if sense:
+            assert played, f"A {'DMR' if a_dmr else 'as set'}: the call on B was never decoded"
+            assert back is not None, "the main receiver didn't come back to A"
+        else:
+            assert any(v.get("rx2.active") == "1" for _, v in seen), "the second receiver never heard the call on B"
 
 
 @pytest.mark.feature("dual_watch")
