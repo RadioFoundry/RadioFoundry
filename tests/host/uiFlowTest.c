@@ -506,16 +506,16 @@ static const flow_t flows[] = {
 	{ "S DMR ID: past the last is refused", "ok 7 0 ok", "1 6 7 7 6 4 1 6", "toast=IDs_go_up", 8, false },
 	{ "S DMR ID: the refused digit isn't kept", "ok 7 0 ok", "1 6 7 7 6 4 1 6 ok", "set76=1677641", 9, false },
 	{ "S DMR ID 0 is refused", "ok 7 0 ok 3 1 ok", "0 ok", "set76=31 toast=IDs_start screen=dmr-id", 2, false },
-	// Data services (Settings > Connections, the last row; set81 ARS server, set82 IP gateway, the codeplug's settings
+	// Data services (Settings > Connections, the last row; set86 ARS server, set87 IP gateway, the codeplug's settings
 	// area): typed as the DMR ID, 0 turns the service off
 	{ "S data services opens", "", "ok 7 6 up ok", "screen=data-services shows=ARS_server shows=IP_gateway shows=Off", 5,
 	  false },
-	{ "S ARS server typed and saved", "ok 7 6 up ok", "3 1 0 0 9 9 9 ok", "set81=3100999 toast=Saved shows=3100999", 8,
+	{ "S ARS server typed and saved", "ok 7 6 up ok", "3 1 0 0 9 9 9 ok", "set86=3100999 toast=Saved shows=3100999", 8,
 	  false },
-	{ "S IP gateway typed and saved", "ok 7 6 up ok", "down 3 1 0 0 5 0 0 ok", "set82=3100500 set81=0 toast=Saved", 9,
+	{ "S IP gateway typed and saved", "ok 7 6 up ok", "down 3 1 0 0 5 0 0 ok", "set87=3100500 set86=0 toast=Saved", 9,
 	  false },
-	{ "S ARS server 0 turns it off", "ok 7 6 up ok 3 1 ok", "0 ok", "set81=0 shows=Off", 2, false },
-	{ "S ARS server: BACK with none typed leaves it", "ok 7 6 up ok 3 1 ok", "3 back back", "set81=31 screen=data-services",
+	{ "S ARS server 0 turns it off", "ok 7 6 up ok 3 1 ok", "0 ok", "set86=0 shows=Off", 2, false },
+	{ "S ARS server: BACK with none typed leaves it", "ok 7 6 up ok 3 1 ok", "3 back back", "set86=31 screen=data-services",
 	  3, false },
 	{ "S ARS server: past the last ID is refused", "ok 7 6 up ok", "1 6 7 7 6 4 1 6", "toast=IDs_go_up", 8, false },
 	// My radio's names (the codeplug's radio name and boot lines): OK types the row's text, OK saves it
