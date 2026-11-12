@@ -1971,7 +1971,6 @@ static void text_draw(void)
 	uint8_t line_len;
 
 	gfx_clear(ui_col.bg);
-	text_len = (uint8_t)strlen(text_buf);
 
 	int y = ui_draw_top(ui_view(), &ui_st, tr(prefixes[text_prefix]), modes[text_mode]) + 2;
 	// The count sits bottom right of the entry area, on a line of its own so the text never runs under it
