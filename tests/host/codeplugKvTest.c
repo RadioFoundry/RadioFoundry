@@ -2,8 +2,9 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // The codeplug settings area (core/codeplug/codeplug_kv.c, docs/spec/codeplug-settings.md) on a simulated NOR flash:
 // reads of a blank, valid, invalid and newer area, writes that keep unknown keys and drop duplicates, values longer
-// than a reader knows, a full area, batches of sets and removes, walks over a key range, the raw write rule
-// (codeplug_kv_keep), and power cuts during a write
+// than a reader knows, scalars of every width, a record's fields set from the front, a full area, batches of sets and
+// removes, walks over a key range, the raw write rule (codeplug_kv_keep, codeplug_kv_commit), the serial, and power
+// cuts during a write
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -132,13 +133,13 @@ static void test_foreign(void)
 	uint8_t d[64], gw[8] = { 0x10, 0x27, 0, 0, 0xAA, 0xBB, 0xCC, 0xDD }, odd[3] = { 7, 8, 9 }, four[4] = { 1, 0, 0, 0 };
 	uint16_t len = 0;
 	len += entry(&d[len], 0x7123, odd, sizeof(odd));
-	len += entry(&d[len], CODEPLUG_KEY_IP_GATEWAY, gw, sizeof(gw));	// 10000, plus fields a later version added
+	len += entry(&d[len], CODEPLUG_KEY_IP_GATEWAY, gw, sizeof(gw));	// a number past 32 bits: no ID this reader holds
 	len += entry(&d[len], CODEPLUG_KEY_IP_GATEWAY, four, sizeof(four));	// a duplicate: not read
 	raw_area(d, len, 1, 20, false);
 	uint32_t id;
 	uint16_t l, n;
 	CHECK(codeplug_kv_info(&l, &n) == CODEPLUG_KV_VALID && l == len && n == 3);
-	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_IP_GATEWAY, &id) && id == 10000);
+	CHECK(!codeplug_kv_get_id(CODEPLUG_KEY_IP_GATEWAY, &id));	// read as absent, and kept
 	uint8_t back[8];
 	CHECK(codeplug_kv_get(0x7123, back, sizeof(back)) == 3 && memcmp(back, odd, 3) == 0);
 	// A write keeps the unknown key and the longer header, drops the duplicate
@@ -187,6 +188,14 @@ static void test_invalid(void)
 	raw_area(d, len, 1, 16, false);
 	sim_flash_data[AREA + 5] = 12;
 	CHECK(codeplug_kv_info(&l, &n) == CODEPLUG_KV_BAD);
+
+	// Version 0 was never written: a damaged byte, not a later firmware's area. Read as empty, and a write starts
+	// over, so the area can't be stuck
+	fresh();
+	raw_area(d, len, 0, 16, false);
+	CHECK(codeplug_kv_info(&l, &n) == CODEPLUG_KV_BAD && codeplug_kv_check(&sim_flash_data[AREA]) == CODEPLUG_KV_BAD);
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_IP_GATEWAY, 78));
+	CHECK(codeplug_kv_info(&l, &n) == CODEPLUG_KV_VALID && n == 1);
 
 	// A later version: read as empty and never rewritten
 	fresh();
@@ -441,6 +450,91 @@ static void test_keep(void)
 	CHECK(!codeplug_kv_keep(AREA, file));
 }
 
+// A scalar is 1 to 8 bytes, zero-extended; what a u32 reader can't hold reads as absent (spec 3.1)
+static void test_scalar(void)
+{
+	uint32_t id;
+	int32_t x;
+	fresh();
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_ARS_SERVER, "\x39\x30", 2));
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 12345);
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_ARS_SERVER, "\x39\x30\0\0\0\0\0\0", 8));	// a later version's width
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 12345);
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_ARS_SERVER, "\x39\x30\0\0\0\0\0\0\0", 9));	// not a scalar
+	CHECK(!codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id));
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_ARS_SERVER, "\x39\x30\0\0\x01", 5));	// past 32 bits
+	CHECK(!codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id));
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_ARS_SERVER, "", 0));
+	CHECK(!codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id));
+	// A scalar set replaces the whole value: the width it was stored in doesn't stay
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_ARS_SERVER, "\x39\x30\0\0\0\0\0\0", 8) && codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 7));
+	uint8_t back[8];
+	CHECK(codeplug_kv_get(CODEPLUG_KEY_ARS_SERVER, back, sizeof(back)) == 4);
+	// An int sign-extends from its stored length
+	CHECK(codeplug_kv_int((const uint8_t *)"\xFE", 1, &x) && x == -2);
+	CHECK(codeplug_kv_int((const uint8_t *)"\xFE\x00", 2, &x) && x == 254);
+	CHECK(codeplug_kv_int((const uint8_t *)"\x00\x00\x00\x80\xFF\xFF\xFF\xFF", 8, &x) && x == INT32_MIN);
+	CHECK(!codeplug_kv_int((const uint8_t *)"\x00\x00\x00\x80\x00", 5, &x));	// +2^31
+	CHECK(!codeplug_kv_int((const uint8_t *)"\xFF\xFF\xFF\x7F\xFF", 5, &x));	// below -2^31
+	CHECK(!codeplug_kv_int((const uint8_t *)"", 0, &x));
+}
+
+// A record's fields set from the front (CODEPLUG_KV_HEAD): a writer that knows fewer fields than the value holds
+// keeps the later ones (spec 4)
+static void test_head(void)
+{
+	uint8_t back[8];
+	fresh();
+	// Absent: the fields become the value
+	CHECK(codeplug_kv_set(0x7001, "\x01\x02", 2 | CODEPLUG_KV_HEAD));
+	CHECK(codeplug_kv_get(0x7001, back, sizeof(back)) == 2 && memcmp(back, "\x01\x02", 2) == 0);
+	// A longer stored value (a later version's): its first bytes set, the rest kept, the length too
+	CHECK(codeplug_kv_set(0x7001, "\x01\x02\x03\x04\x05", 5));
+	CHECK(codeplug_kv_set(0x7002, "\xAA", 1));
+	uint32_t w = sector_writes();
+	CHECK(codeplug_kv_set(0x7001, "\x09\x08", 2 | CODEPLUG_KV_HEAD));
+	CHECK(codeplug_kv_get(0x7001, back, sizeof(back)) == 5 && memcmp(back, "\x09\x08\x03\x04\x05", 5) == 0);
+	CHECK(codeplug_kv_get(0x7002, back, sizeof(back)) == 1 && back[0] == 0xAA && sector_writes() == w + 1);
+	// The same fields again: nothing written
+	uint8_t serial = codeplug_kv_serial();
+	CHECK(codeplug_kv_set(0x7001, "\x09\x08", 2 | CODEPLUG_KV_HEAD) && sector_writes() == w + 1 &&
+	      codeplug_kv_serial() == serial);
+	// A writer that knows more fields than are stored: the value grows
+	CHECK(codeplug_kv_set(0x7001, "\x01\x02\x03\x04\x05\x06", 6 | CODEPLUG_KV_HEAD));
+	CHECK(codeplug_kv_get(0x7001, back, sizeof(back)) == 6 && back[5] == 6);
+	// Without the flag the value is replaced whole
+	CHECK(codeplug_kv_set(0x7001, "\x01", 1) && codeplug_kv_get(0x7001, back, sizeof(back)) == 1);
+	uint16_t l, n;
+	CHECK(codeplug_kv_info(&l, &n) == CODEPLUG_KV_VALID && n == 2);
+}
+
+// The serial moves whenever the keys may read differently: a key written, and every change of the codeplug (a raw
+// write's reload, another firmware's codeplug judged again). The commit of a raw sector follows codeplug_kv_keep
+static void test_serial_commit(void)
+{
+	static uint8_t file[STORAGE_SECTOR];
+	uint32_t id;
+	fresh();
+	uint8_t serial = codeplug_kv_serial();
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 1) && codeplug_kv_serial() != serial);
+	serial = codeplug_kv_serial();
+	codeplug_reload();
+	CHECK(codeplug_kv_serial() != serial);
+	// A file without the area: acknowledged, the radio's sector stays
+	memset(file, 0xFF, sizeof(file));
+	uint32_t w = sector_writes();
+	CHECK(codeplug_kv_commit(AREA, file) && sector_writes() == w);
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 1);
+	// A valid area in the file goes in; so does any other sector
+	memcpy(file, &sim_flash_data[AREA], sizeof(file));
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 2));
+	w = sector_writes();
+	CHECK(codeplug_kv_commit(AREA, file) && sector_writes() == w + 1);
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 1);
+	memset(file, 0x12, sizeof(file));
+	CHECK(codeplug_kv_commit(AREA + STORAGE_SECTOR, file) && sector_writes() == w + 2);
+}
+
 // A rewrite keeps the header as it found it (spec 2.4): its length, the continuation in bytes 12-15 and a later
 // version's fields after them
 static void test_header_kept(void)
@@ -505,6 +599,9 @@ int main(void)
 	test_remove();
 	test_walk();
 	test_keep();
+	test_scalar();
+	test_head();
+	test_serial_commit();
 	test_power_cut();
 	sim_flash_free();
 	if (failures) {

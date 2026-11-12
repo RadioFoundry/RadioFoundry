@@ -216,7 +216,7 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		set.lrrpReply = (a[4] & 4u) != 0;
 		set.smsFormat = (a[4] & 32u) ? DMR_SMS_FORMAT_ETSI_IP : (a[4] & 8u) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
 		set.radioCheckEtsi = (a[4] & 16u) != 0;
-		if (!radio_keys_to_codeplug(&was, &set)) {
+		if (!codeplug_keys_store(radio_keys, RADIO_KEYS_N, &was, &set)) {
 			st = DL_ST_BUSY;
 			break;
 		}
@@ -310,7 +310,7 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 			st = DL_ST_BAD_ARG;	// as DL_DATA_OP_SETTINGS: only a new ID out of range
 			break;
 		}
-		if (!radio_keys_to_codeplug(&was, &set)) {
+		if (!codeplug_keys_store(radio_keys, RADIO_KEYS_N, &was, &set)) {
 			st = DL_ST_BUSY;
 			break;
 		}

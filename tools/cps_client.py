@@ -306,12 +306,12 @@ class Cps:
 
 def area_state(b):
     """The codeplug settings area's state in a sector's bytes, as the radio reads it (codeplug-settings.md 2.3):
-    "valid", "empty" (erased), "bad" or "newer" (our magic, a version this doesn't know)"""
+    "valid", "empty" (erased), "bad" (version 0 too: never written) or "newer" (our magic, a later version)"""
     b = bytes(b)
     if b[:4] != b"RFKV":
         return "empty" if b[:16] == b"\xff" * 16 else "bad"
     if b[4] != 1:
-        return "newer"
+        return "newer" if b[4] > 1 else "bad"
     hdr, n = b[5], int.from_bytes(b[6:8], "little")
     if hdr < 16 or hdr + n > SECTOR or zlib.crc32(b[hdr:hdr + n]) != int.from_bytes(b[8:12], "little"):
         return "bad"

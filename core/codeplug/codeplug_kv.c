@@ -41,7 +41,8 @@ static codeplug_kv_state_t header(const uint8_t h[CODEPLUG_KV_HDR], uint16_t *hd
 		return CODEPLUG_KV_EMPTY;
 	}
 	if (h[4] != CODEPLUG_KV_VERSION) {
-		return CODEPLUG_KV_NEWER;
+		// No version 0 was ever written: a damaged byte, not a later firmware's area that must be left alone
+		return h[4] > CODEPLUG_KV_VERSION ? CODEPLUG_KV_NEWER : CODEPLUG_KV_BAD;
 	}
 	*hdr = h[5];
 	*len = get16(&h[6]);
@@ -196,7 +197,7 @@ static uint8_t kv_serial;	// codeplug_kv_serial(): one byte, only compared for a
 
 uint8_t codeplug_kv_serial(void)
 {
-	return kv_serial;
+	return (uint8_t)(kv_serial + codeplug_serial());	// both only go up: the sum moves when either does
 }
 
 int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
@@ -209,7 +210,7 @@ int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 
 bool codeplug_kv_get_id(uint16_t key, uint32_t *id)
 {
-	uint8_t v[4];
+	uint8_t v[CODEPLUG_KV_SCALAR];
 	return codeplug_kv_id(v, codeplug_kv_get(key, v, sizeof(v)), id);
 }
 
@@ -238,6 +239,11 @@ bool codeplug_kv_keep(uint32_t addr, const uint8_t *sector)
 	return s == CODEPLUG_KV_NEWER || (s == CODEPLUG_KV_VALID && codeplug_kv_check(sector) != CODEPLUG_KV_VALID);
 }
 
+bool codeplug_kv_commit(uint32_t addr, const uint8_t *sector)
+{
+	return codeplug_kv_keep(addr, sector) || storage_sector_write(addr, sector);
+}
+
 // Whether an entry before the one at end has key k
 static bool seen(const uint8_t *d, uint32_t end, uint16_t k)
 {
@@ -256,11 +262,18 @@ static uint32_t cut(uint8_t *d, uint32_t len, uint32_t at, uint32_t next)
 	return len - (next - at);
 }
 
-// One op on the entries d[0..*len): a set replaces the key's first entry in place or appends one, a remove takes out
-// every entry of the key. *changed when a byte changed. False if a set doesn't fit in room
-static bool apply(uint8_t *d, uint16_t *len, uint32_t room, const codeplug_kv_op_t *op, bool *changed)
+// One op on the entries d[0..*len): a set replaces the key's first entry in place or appends one (with
+// CODEPLUG_KV_HEAD only its first bytes, the stored value's later ones kept), a remove takes out every entry of the
+// key. *changed when a byte changed. False if a set doesn't fit in room
+static bool apply(uint8_t *d, uint16_t *len, uint32_t room, const codeplug_kv_op_t *o, bool *changed)
 {
 	uint32_t l = *len, at = 0;
+	codeplug_kv_op_t set = *o;
+	const codeplug_kv_op_t *op = &set;
+	bool head = set.len != CODEPLUG_KV_REMOVE && (set.len & CODEPLUG_KV_HEAD) != 0;
+	if (head) {
+		set.len &= (uint16_t)~CODEPLUG_KV_HEAD;
+	}
 	while (at < l && get16(&d[at]) != op->key) {
 		at += ENTRY_HDR + get16(&d[at + 2]);
 	}
@@ -277,7 +290,12 @@ static bool apply(uint8_t *d, uint16_t *len, uint32_t room, const codeplug_kv_op
 	} else if (at < l) {
 		uint16_t n = get16(&d[at + 2]);
 		uint32_t next = at + ENTRY_HDR + n;
-		if (n != op->len || (n != 0 && memcmp(&d[at + ENTRY_HDR], op->value, n) != 0)) {
+		if (head && n > op->len) {	// the fields this writer knows; the later ones stay
+			if (op->len != 0 && memcmp(&d[at + ENTRY_HDR], op->value, op->len) != 0) {
+				memcpy(&d[at + ENTRY_HDR], op->value, op->len);
+				*changed = true;
+			}
+		} else if (n != op->len || (n != 0 && memcmp(&d[at + ENTRY_HDR], op->value, n) != 0)) {
 			if (l - n + op->len > room) {
 				return false;
 			}
@@ -354,8 +372,8 @@ bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n)
 {
 	uint32_t a;
 	for (uint8_t i = 0; i < n; i++) {
-		if (ops[i].key == 0 || ops[i].key == 0xFFFFu ||
-		    (ops[i].len != CODEPLUG_KV_REMOVE && ops[i].len != 0 && ops[i].value == NULL)) {
+		uint16_t len = ops[i].len != CODEPLUG_KV_REMOVE ? (uint16_t)(ops[i].len & ~CODEPLUG_KV_HEAD) : 0;
+		if (ops[i].key == 0 || ops[i].key == 0xFFFFu || (len != 0 && ops[i].value == NULL)) {
 			return false;
 		}
 	}

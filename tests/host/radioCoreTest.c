@@ -253,17 +253,18 @@ uint32_t codeplug_dmr_id(void) { return own_dmr_id; }
 static bool kv_ars_present;
 static uint8_t kv_serial;
 static uint32_t kv_ars;
-bool codeplug_kv_get_id(uint16_t key, uint32_t *id)
+static bool kv_held;	// a CPS session holds the flash, or another firmware's codeplug: no key can be written
+int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 {
 	if (key != CODEPLUG_KEY_ARS_SERVER || !kv_ars_present) {
-		return false;
+		return -1;
 	}
-	*id = kv_ars;
-	return true;
+	memcpy(buf, &kv_ars, max < 4 ? max : 4);
+	return 4;
 }
-bool codeplug_kv_set_u32(uint16_t key, uint32_t value)
+static bool kv_set_u32(uint16_t key, uint32_t value)
 {
-	if (key != CODEPLUG_KEY_ARS_SERVER) {
+	if (key != CODEPLUG_KEY_ARS_SERVER || kv_held) {
 		return false;
 	}
 	kv_ars_present = true;
@@ -293,7 +294,7 @@ bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n)
 	for (uint8_t i = 0; i < n; i++) {
 		const uint8_t *v = ops[i].value;
 		if (ops[i].len != 4 ||
-		    !codeplug_kv_set_u32(ops[i].key, v[0] | (uint32_t)v[1] << 8 | (uint32_t)v[2] << 16 | (uint32_t)v[3] << 24)) {
+		    !kv_set_u32(ops[i].key, v[0] | (uint32_t)v[1] << 8 | (uint32_t)v[2] << 16 | (uint32_t)v[3] << 24)) {
 			return false;
 		}
 	}
@@ -3339,15 +3340,31 @@ static void test_ui_glue(void)
 	CHECK(ui_svc_write_channel(6, &ed) && n_ev == 3 && ui_svc_codeplug_answer(UI_CP_NEW));
 	storage_job_poll();
 	CHECK(cp_new == 1 && cp_writes == w + 2 && chans[6].color_code == 4 && !codeplug_foreign());
-	// The settings area's keys are codeplug writes too: held for the same question, written after Start new
+	// A keyed setting isn't a codeplug write that asks (docs/spec/codeplug-settings.md 5): with another firmware's
+	// codeplug the area can't be written and holds no key, so the setting is saved as the radio's own, no question
 	cp_foreign = true;
 	kv_ars_present = false;
-	CHECK(ui_svc_setting_set(UI_SET_ARS_SERVER, 3100123) && n_ev == 4 && last_ev.kind == UI_EV_CODEPLUG_FOREIGN);
+	kv_held = true;
+	CHECK(ui_svc_setting_set(UI_SET_ARS_SERVER, 3100123) && n_ev == 3);
 	storage_job_poll();
-	CHECK(!kv_ars_present);
-	CHECK(ui_svc_codeplug_answer(UI_CP_NEW));
+	run(100);
+	CHECK(!kv_ars_present && cp_new == 1 && n_ev == 3);
+	CHECK(ui_svc_setting_get(UI_SET_ARS_SERVER) == 3100123);
+	{
+		settings_t own;
+		settings_read(&own);
+		CHECK(own.ds_ars_server == 3100123);
+	}
+	cp_foreign = false;
+	// A key that is present and can't be updated (a CPS session holds the flash) refuses the change: it would put
+	// the old value back
+	kv_ars_present = true;
+	kv_ars = 3100123;
+	CHECK(ui_svc_setting_set(UI_SET_ARS_SERVER, 3100124));
 	storage_job_poll();
-	CHECK(cp_new == 2 && kv_ars_present && kv_ars == 3100123);
+	run(100);
+	CHECK(kv_ars == 3100123 && ui_svc_setting_get(UI_SET_ARS_SERVER) == 3100123 && last_ev.kind == UI_EV_SAVE_FAILED);
+	kv_held = false;
 	kv_ars_present = false;
 	n_ev = 0;
 	run(100);

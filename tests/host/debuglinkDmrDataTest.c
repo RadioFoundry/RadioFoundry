@@ -69,15 +69,15 @@ static struct {
 	uint32_t id;
 	int writes;
 } kv;
-bool codeplug_kv_get_id(uint16_t key, uint32_t *id)
+int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 {
 	if (key != CODEPLUG_KEY_IP_GATEWAY || !kv.present) {
-		return false;
+		return -1;
 	}
-	*id = kv.id;
-	return true;
+	memcpy(buf, &kv.id, max < 4 ? max : 4);
+	return 4;
 }
-bool codeplug_kv_set_u32(uint16_t key, uint32_t value)
+static bool kv_set_u32(uint16_t key, uint32_t value)
 {
 	if (key != CODEPLUG_KEY_IP_GATEWAY || kv.fail) {
 		return false;
@@ -93,11 +93,17 @@ bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n)
 	for (uint8_t i = 0; i < n; i++) {
 		const uint8_t *v = ops[i].value;
 		if (ops[i].len != 4 ||
-		    !codeplug_kv_set_u32(ops[i].key, v[0] | (uint32_t)v[1] << 8 | (uint32_t)v[2] << 16 | (uint32_t)v[3] << 24)) {
+		    !kv_set_u32(ops[i].key, v[0] | (uint32_t)v[1] << 8 | (uint32_t)v[2] << 16 | (uint32_t)v[3] << 24)) {
 			return false;
 		}
 	}
 	return true;
+}
+void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi) { (void)c; (void)lo; (void)hi; }	// no walk here
+int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
+{
+	(void)c; (void)key; (void)buf; (void)max;
+	return -1;
 }
 codeplug_kv_state_t codeplug_kv_info(uint16_t *length, uint16_t *entries)
 {

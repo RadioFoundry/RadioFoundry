@@ -119,7 +119,7 @@ static uint16_t data_row_key(uint8_t id)
 {
 	return id == UI_SET_ARS_SERVER ? CODEPLUG_KEY_ARS_SERVER : id == UI_SET_IP_GATEWAY ? CODEPLUG_KEY_IP_GATEWAY : 0;
 }
-static bool data_id_post(uint16_t key, uint32_t id);	// the same, for a key of the codeplug's settings area
+static bool data_id_post(uint16_t key, uint32_t id);	// a job too: the key's write is the housekeeping task's
 #endif
 
 int32_t ui_svc_setting_get(uint8_t id)
@@ -309,8 +309,8 @@ int32_t ui_svc_setting_get(uint8_t id)
 		dmrDataSettings_t ds;
 		dmr_data_get_settings(&ds);
 		if (data_row_key(id) != 0) {
-			const radio_key_t *k = radio_key_find(data_row_key(id));
-			return k != NULL ? (int32_t)radio_key_value(k, &ds) : 0;
+			const codeplug_key_row_t *k = codeplug_keys_find(radio_keys, RADIO_KEYS_N, data_row_key(id));
+			return k != NULL ? (int32_t)codeplug_keys_field(k, &ds) : 0;
 		}
 		return id == UI_SET_CHECK_REPLY ? ds.radioCheckReply : id == UI_SET_ALERT_ANSWER ? ds.callAlertAck :
 			ds.lrrpReply;
@@ -683,9 +683,6 @@ static void zone_edit_job(void *ctx);
 #if CONFIG_KEY_ASSIGN
 static void key_write_job(void *ctx);
 #endif
-#if CONFIG_DMR_DATA_CORE
-static void data_id_job(void *ctx);
-#endif
 static void (*const cp_jobs[])(void *ctx) = {
 	save_channel_job, write_channel_job, name_job,
 #if CONFIG_DMR
@@ -699,9 +696,6 @@ static void (*const cp_jobs[])(void *ctx) = {
 #endif
 #if CONFIG_KEY_ASSIGN
 	key_write_job,
-#endif
-#if CONFIG_DMR_DATA_CORE
-	data_id_job,
 #endif
 };
 
@@ -805,23 +799,34 @@ static bool dmr_id_post(uint32_t id)
 #endif
 
 #if CONFIG_DMR_DATA_CORE
-// The ARS server or the IP gateway, written into the codeplug's settings area (Settings > Connections > Data
-// services): the radio core takes it when codeplug_kv_serial() changes, and a CPS read shows it. The key in
-// job.channel, the ID in job.id
+// The ARS server or the IP gateway (Settings > Connections > Data services), set as every keyed setting is
+// (docs/spec/codeplug-settings.md 5): the key is written when the settings area can be, so a CPS read shows it, and
+// the data service takes the setting, which the radio core saves as the radio's own. Not a codeplug write that asks
+// about another firmware's codeplug: there the area can't be written and holds no key, so the setting is only the
+// radio's own. Refused only when the codeplug has the key and it couldn't be updated (a CPS session holds the
+// flash), since the key would put the old value back. The key in job.channel, the ID in job.id
 static void data_id_job(void *ctx)
 {
 	(void)ctx;
-	if (!codeplug_kv_set_u32(job.channel, job.id))
+	const codeplug_key_row_t *row = codeplug_keys_find(radio_keys, RADIO_KEYS_N, job.channel);
+	dmrDataSettings_t was, set;
+	dmr_data_get_settings(&set);
+	was = set;
+	codeplug_keys_set_field(row, &set, job.id);
+	if (!codeplug_keys_store(radio_keys, RADIO_KEYS_N, &was, &set))
 		save_failed(TRN("Couldn't write the codeplug: not saved"));
+	else
+		dmr_data_set_settings(&set);
 }
 
 static bool data_id_post(uint16_t key, uint32_t id)
 {
-	if (radio_key_find(key) == NULL || id > CODEPLUG_DMR_ID_MAX || job_busy())
+	const codeplug_key_row_t *row = codeplug_keys_find(radio_keys, RADIO_KEYS_N, key);
+	if (row == NULL || !codeplug_keys_valid(row, id) || job_busy())
 		return false;
 	job.channel = key;
 	job.id = id;
-	return cp_post(data_id_job);
+	return storage_job_post(data_id_job, NULL);
 }
 #endif
 

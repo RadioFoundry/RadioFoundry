@@ -27,32 +27,74 @@ enum {
 	CODEPLUG_T_ENUM,	// a small uint, values only appended
 	CODEPLUG_T_ID,		// a uint DMR ID, above CODEPLUG_DMR_ID_MAX reads as absent
 	CODEPLUG_T_STRING,	// the bytes of the value, no terminator
+	CODEPLUG_T_RECORD,	// fixed fields in order, grown by appending: settings that are only valid together
 	CODEPLUG_T_LIST,	// a key family: one key per record (3)
 };
 
 typedef enum {
 	CODEPLUG_KV_EMPTY,	// no area (erased, or no flash map): no key is present
 	CODEPLUG_KV_VALID,
-	CODEPLUG_KV_BAD,	// something there that isn't a valid area: read as empty, a write starts a new one
-	CODEPLUG_KV_NEWER,	// our magic with a version we don't know: read as empty and never written
+	CODEPLUG_KV_BAD,	// something there that isn't a valid area (version 0 too): read as empty, a write starts a new one
+	CODEPLUG_KV_NEWER,	// our magic with a later version: read as empty and never written
 } codeplug_kv_state_t;
 
 // The value's length (at most max bytes are copied to buf), or -1 when the key is absent or the area isn't valid. Each
 // call checks the whole area: to read several keys, walk them with codeplug_kv_next
 int codeplug_kv_get(uint16_t key, void *buf, uint16_t max);
-// A value that is a DMR ID, 1-4 bytes zero-extended: false when absent, empty or above CODEPLUG_DMR_ID_MAX (as if
-// absent)
+// A value that is a DMR ID: false when absent, empty, not a scalar or above CODEPLUG_DMR_ID_MAX (as if absent)
 bool codeplug_kv_get_id(uint16_t key, uint32_t *id);
 
-// The same from a value already read: v holds its first min(n, 4) bytes, n its length (from codeplug_kv_next). A longer
-// value is a later version's: its first 4 bytes are the ID
+// A scalar's widest value (docs/spec/codeplug-settings.md 3.1); a reader gives codeplug_kv_next a buffer of this size
+#define CODEPLUG_KV_SCALAR	8
+
+// A uint from a value already read: v holds its first min(n, CODEPLUG_KV_SCALAR) bytes, n its length (from
+// codeplug_kv_next). A shorter value zero-extends. False, as if the key were absent, for a value this reader can't
+// hold: empty, longer than a scalar or past 32 bits
+static inline bool codeplug_kv_uint(const uint8_t *v, int n, uint32_t *x)
+{
+	uint32_t u = 0;
+	if (n < 1 || n > CODEPLUG_KV_SCALAR) {
+		return false;
+	}
+	for (int i = 0; i < n; i++) {
+		if (i < 4) {
+			u |= (uint32_t)v[i] << (8 * i);
+		} else if (v[i] != 0) {
+			return false;
+		}
+	}
+	*x = u;
+	return true;
+}
+
+// The same for an int: a shorter value sign-extends from its stored length
+static inline bool codeplug_kv_int(const uint8_t *v, int n, int32_t *x)
+{
+	if (n < 1 || n > CODEPLUG_KV_SCALAR) {
+		return false;
+	}
+	uint8_t fill = (v[n - 1] & 0x80u) != 0 ? 0xFFu : 0u;
+	uint32_t u = 0;
+	for (int i = 0; i < 4; i++) {
+		u |= (uint32_t)(i < n ? v[i] : fill) << (8 * i);
+	}
+	for (int i = 4; i < n; i++) {
+		if (v[i] != fill) {
+			return false;
+		}
+	}
+	if (n > 4 && ((u >> 31) != 0) != (fill != 0)) {
+		return false;	// past 32 bits
+	}
+	*x = (int32_t)u;
+	return true;
+}
+
+// The same for a DMR ID: above CODEPLUG_DMR_ID_MAX reads as absent too
 static inline bool codeplug_kv_id(const uint8_t *v, int n, uint32_t *id)
 {
-	uint32_t x = 0;
-	for (int i = 0; i < n && i < 4; i++) {
-		x |= (uint32_t)v[i] << (8 * i);	// a shorter value zero-extends (docs/spec/codeplug-settings.md 3.1)
-	}
-	if (n < 1 || x > CODEPLUG_DMR_ID_MAX) {
+	uint32_t x;
+	if (!codeplug_kv_uint(v, n, &x) || x > CODEPLUG_DMR_ID_MAX) {
 		return false;
 	}
 	*id = x;
@@ -77,8 +119,11 @@ void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi);
 // the area isn't valid or changed since the walk began
 int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max);
 
-// One change of a batch (codeplug_kv_write): set key to len bytes at value, or with len CODEPLUG_KV_REMOVE remove it
+// One change of a batch (codeplug_kv_write): set key to len bytes at value, or with len CODEPLUG_KV_REMOVE remove it.
+// len | CODEPLUG_KV_HEAD sets the first len bytes and keeps what the stored value has after them: a record's fields
+// from a writer that knows fewer than the value holds (docs/spec/codeplug-settings.md 4). A scalar is set whole
 #define CODEPLUG_KV_REMOVE	0xFFFFu		// longer than any value can be
+#define CODEPLUG_KV_HEAD	0x8000u		// a flag in len; a value is at most a sector
 typedef struct {
 	uint16_t key;
 	uint16_t len;
@@ -94,14 +139,18 @@ bool codeplug_kv_set_u32(uint16_t key, uint32_t value);
 bool codeplug_kv_remove(uint16_t key);
 // The state of an area held whole in RAM (a STORAGE_SECTOR), as a reader would find it in flash. No lock
 codeplug_kv_state_t codeplug_kv_check(const uint8_t *sector);
+// A raw write of sector (STORAGE_SECTOR bytes) at flash address addr, for every path that commits the EEPROM image's
+// sectors (CPS shim, fast CPS, TFTP): the sector is written through the journal unless codeplug_kv_keep says the
+// radio's stays, which counts as written. False only when the write failed
+bool codeplug_kv_commit(uint32_t addr, const uint8_t *sector);
 // Whether a raw write of sector (STORAGE_SECTOR bytes) at flash address addr must leave the radio's sector as it is
 // (docs/spec/codeplug-settings.md 6): addr is the area's sector and the radio's area is CODEPLUG_KV_NEWER, or
-// CODEPLUG_KV_VALID while sector isn't. For every path that writes the EEPROM image's sectors (CPS shim, fast CPS,
-// TFTP), so a file without the area never erases the radio's keys
+// CODEPLUG_KV_VALID while sector isn't, so a file without the area never erases the radio's keys
 bool codeplug_kv_keep(uint32_t addr, const uint8_t *sector);
-// Moves on with every write of the area through codeplug_kv_write, so the radio core takes the new values without the
-// whole codeplug's reload that codeplug_serial() brings. A raw write of the sector (CPS, TFTP) moves codeplug_serial()
-// instead, whose reload reads the keys too
+// Moves on whenever the keys may read differently: a write through codeplug_kv_write, and every change of
+// codeplug_serial() (a raw write of the sector by a CPS or TFTP commit, another firmware's codeplug found, accepted or
+// replaced). The one thing an owner of keyed settings watches. A key written moves only this, so the radio core
+// takes the new values without the whole codeplug's reload
 uint8_t codeplug_kv_serial(void);
 
 // For the debug link: the area's state, its data length and how many entries it holds (0 unless valid)

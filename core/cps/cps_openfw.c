@@ -453,7 +453,7 @@ static void cmd_write(void)
 		cps_openfw_vfo_written(sector_addr, sector, last_rx_ms);
 		// A settings area sector that would wipe or overwrite the radio's keys against the transfer rule (a tool
 		// without the area writes it 0xFF) is acknowledged and left as it is (codeplug-settings.md 6)
-		bool ok = codeplug_kv_keep(sector_addr, sector) || storage_sector_write(sector_addr, sector);
+		bool ok = codeplug_kv_commit(sector_addr, sector);
 		drop_sector();
 		if (!ok) {
 			refuse();
