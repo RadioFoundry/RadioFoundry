@@ -184,6 +184,16 @@ static void ui_task(void *arg)
 	}
 }
 
+void ui_boot_splash(void)
+{
+	if (!gfx_init(board.display))
+		return;
+	ui_layout_init();
+	gfx_frame_begin();
+	ui_draw_splash(board.name, RFOUNDRY_RELEASE[0] != '\0' ? RFOUNDRY_RELEASE : RFOUNDRY_GIT, "", "");
+	gfx_flush();
+}
+
 void ui_start(void)
 {
 	xTaskCreate(ui_task, "ui", UI_TASK_STACK_WORDS, NULL, UI_TASK_PRIORITY, NULL);
