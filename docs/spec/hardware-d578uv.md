@@ -643,17 +643,15 @@ parameter 0x1C). With an FM channel on either side the flag stays clear. The fla
 | --- | --- | --- |
 | DMR_CALL_OPTION byte 3 | bit 0 clear | bit 0 set (every LC terminator reported) |
 | DMR_CALL_OPTION byte 4 | 0x08 | 0x29 (bits 5 and 0 added); the Packet Interface document calls the byte reserved |
-| Side A's chip 0 in DMR (5.1) | 0x13 = 0x0375, 0x73 = 0x4E8A | 0x13 = 0x0396, 0x73 = 0x569A |
+| DMR register set (5.1) | 0x13 = 0x0375, 0x73 = 0x4E8A on both chips | chip 0's 0x13 = 0x0396 (chip 1 keeps 0x0375); 0x73 = 0x569A on both chips |
 
-A change of the flag resends the call option. A digital side B sets chip 1's 0x47 to 0x4840 or 0x6840 instead of
+Read as the BK4819's registers (inferred for these chips), 0x13 is the top step of the receive AGC table, 0x0396 about 6 dB more gain, and 0x569A turns the automatic frequency correction off (bit 4) and narrows its range. Both are written at set-up, not on each switch. A change of the flag resends the call option. A digital side B sets chip 1's 0x47 to 0x4840 or 0x6840 instead of
 0x6140, the values chip 0 takes in DMR.
 
 The baseband has one input. Shift register bit 0x04 picks the RF chip that feeds it: set, chip 0; clear, chip 1 (the
 stock code sets it for a digital main channel and clears it for an analog main channel with a digital side B; which
 level picks which chip is inferred from side A needing it set). The codec's input set-up doesn't change. With both
-channels digital the stock firmware time-shares the one baseband: it alternates which side the baseband serves,
-switching bit 0x04 and sending that side's DMR parameters, and holds a side while chip 0's or chip 1's RSSI shows a
-carrier there. It doesn't decode both at once. The stock "Path MAIN/SUB" text is a menu label, not a switch.
+channels digital the stock firmware time-shares the one baseband and doesn't decode both at once. With the second-receiver flag set, bit 0x04 stays clear and chip 1 alone feeds the baseband: each switch retunes chip 1 between the main and the sub frequency and sends the baseband nothing, while chip 0 stays on the main frequency for transmit and feeds nothing. A side is held 100 ms after a switch, longer while chip 1's RSSI or signal flag shows a carrier, and after a call for the stay time setting (3 s at least). With both sides on one frequency it doesn't switch and tells the calls apart by timeslot. With the flag clear it alternates bit 0x04 between the two chips, each on its own frequency, and sends the served side's DMR parameters on each switch. The stock "Path MAIN/SUB" text is a menu label, not a switch.
 
 RadioFoundry (`radio_d578uv.c`, `CONFIG_DUAL_WATCH`): side B is the core's second receiver (`board.rx2`). An FM
 channel is received and played on chip 1. A DMR channel is only sensed (`rx2_status_t.sense`): chip 1 is set up for
@@ -661,7 +659,8 @@ DMR and its RSSI is the carrier, against a threshold set as side A's DMR carrier
 quiet, the core moves the main receiver to side B ([radio-features.md](radio-features.md) 2.2); `rx()` to side B's
 DMR channel then retunes nothing: it clears bit 0x04, so the baseband takes chip 1, and leaves chip 0 on side A. Back
 on side A it sets the bit again, and chip 0 still has side A's set-up, so nothing is retuned either way. The call
-option keeps the single receiver's values. The squelch is the
+option and the DMR register set keep the single receiver's values: no chip changes frequency, so frequency
+correction stays on. The squelch is the
 core's noise levels with its hysteresis, and the tone flags of 0x60. Side B gets the speaker only while side A is
 quiet (the core's rule): then side A's level goes to 0 and side B's to the volume. Side
 B stops while side A transmits and comes back after. The AGC bytes and tables, the band pair's sense and the level
