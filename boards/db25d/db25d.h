@@ -90,6 +90,8 @@ uint8_t db25d_cal_squelch_db(uint32_t hz, uint8_t level);
 #define DB25D_DMR_SYMBOL_AFTER_LEAD_US	HRC_RFBURST_SYMBOL_AFTER_LEAD_US
 #define DB25D_DMR_TUNE_US		1250u
 #define DB25D_DMR_SUPPLY_US		200u
+// The PA select this far ahead of the first drive (radio_db25d.c, db25d_burst_on)
+#define DB25D_DMR_SELECT_US		30u
 // The PA's point before the first symbol with no boost: the ramp (0.72 ms) and the loop have the PA within 1 dB
 // 0.2 ms ahead of it at 1.8 W and up (4.5)
 #define DB25D_DMR_PA_UP_US		1000u

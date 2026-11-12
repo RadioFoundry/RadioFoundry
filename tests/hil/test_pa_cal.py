@@ -268,3 +268,14 @@ def test_a_weak_signals_key_down_is_judged_over_its_noise():
     weak = {"t0_ms": -2.0, "dt_ms": dt, "db": db}
     assert round(pa_cal.off_air_us(weak)) == 200
     assert pa_cal.overrun({"off_us": pa_cal.off_air_us(weak)}) == []
+
+
+def test_score_weighs_how_far_a_level_misses():
+    # A bench run's two sets: the board's, every level on time with two over the limit, and a round that took one of
+    # them under it and put the lowest level 0.47 ms late. The board's is the nearer
+    lv = lambda rise, over, bad: {"rise_us": rise, "over_db": over, "bad": bad}
+    board = {0: lv(-131, 0.5, ["knee"]), 1: lv(-334, 1.9, ["overshoot"]), 2: lv(-409, 3.2, ["overshoot"]),
+             3: lv(-451, 0.5, []), 4: lv(-305, 0.4, [])}
+    late = {0: lv(468, 0.4, ["late", "knee"]), 1: lv(-322, 1.2, []), 2: lv(-463, 2.8, ["overshoot"]),
+            3: lv(-442, 0.5, []), 4: lv(-299, 0.3, [])}
+    assert pa_cal.score(board) < pa_cal.score(late)

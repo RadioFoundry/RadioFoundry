@@ -97,9 +97,9 @@ static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_db25
 static uint16_t tx_on_us;
 static uint8_t tx_lead;		// the RF TX interrupt's lead, 100 us steps (db25d_dmr_rf_tx_lead)
 #if CONFIG_DMR && DB25D_DMR_TX
-// The DMR key-up (radio/pa_keyup.h, docs/spec/pa-keyup.md), [VHF, UHF]. The TX on sequence selects the PA and its
-// supply ahead of the rule's points, so they are drive writes only: the level's drive at its lead, or a boost and
-// then the drive. The earliest of them sets the RF TX interrupt's lead with the page's TX-on delay. The drive is
+// The DMR key-up (radio/pa_keyup.h, docs/spec/pa-keyup.md), [VHF, UHF]. The TX on sequence selects the PA and turns
+// its supply on with the first of the rule's points, so they are drive writes only: the level's drive at its lead, or
+// a boost and then the drive. The earliest of them sets the RF TX interrupt's lead with the page's TX-on delay. The drive is
 // stepped, not ramped: the PA loop's low-pass shapes the rise, and the rule times a step. The constants are
 // tools/bench/pa_cal.py's, measured into a dummy load at each band's center. No level is boosted: each comes up on
 // its own drive, 0.4 ms (the top level) to 0.9 ms (the lowest) before the first symbol, inside the slot's guard time.
@@ -429,7 +429,10 @@ static void dmr_disarm(void)
 }
 
 // One burst, the stock TX on (3.2, 4.4 steps 2-7 without the audio): RX paths off, 50 us, main chip to f and the LO
-// off, the page's TX-on delay, PA select and the RX supply off, 200 us, the band's TX supply, the ramp up
+// off, the page's TX-on delay, the RX supply off, 200 us, the band's TX supply, the ramp up. The PA select goes on
+// DB25D_DMR_SELECT_US ahead of the first drive, not with the RX supply as the stock's does: selected, the PA passes
+// the carrier 15-31 dB under the level before any drive, a step that from the sequence's end put the lowest level on
+// the air in the slot before and a knee into every level's rise (hardware-db25d.md 4.5)
 void db25d_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 {
 	hrc_pin_write(PIN_RX_FRONT_END, false);
@@ -440,18 +443,20 @@ void db25d_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 	db25d_lo_off();
 	at(tx_on_us);	// the key-up delay counts from the RF TX interrupt
 	DAC_DATA_B = 0;
+	// The lead leaves the sequence done by the first drive's point
+	uint32_t first = hrc_rfburst_pa_at_us(tx_lead, ku.boost != 0u ? ku.boost_us : ku.pa_us);
+	at(first > DB25D_DMR_SUPPLY_US ? first - DB25D_DMR_SUPPLY_US : 0u);
+	hrc_pin_write(PIN_RX_SUPPLY, false);
+	at(first > DB25D_DMR_SELECT_US ? first - DB25D_DMR_SELECT_US : 0u);
 	hrc_pin_write(tx_uhf ? PIN_VHF_TX : PIN_UHF_TX, false);
 	hrc_pin_write(tx_uhf ? PIN_UHF_TX : PIN_VHF_TX, true);
-	hrc_pin_write(PIN_RX_SUPPLY, false);
-	wait(DB25D_DMR_SUPPLY_US);
+	at(first);
 	hrc_pin_write(tx_uhf ? PIN_TX_SUPPLY_B : PIN_TX_SUPPLY_A, false);
 	hrc_pin_write(tx_uhf ? PIN_TX_SUPPLY_A : PIN_TX_SUPPLY_B, true);
 	if (ku.boost == 0u) {
-		at(hrc_rfburst_pa_at_us(tx_lead, ku.pa_us));	// the lead leaves the sequence done by then
 		DAC_DATA_B = tx_pa;
 		return;
 	}
-	at(hrc_rfburst_pa_at_us(tx_lead, ku.boost_us));
 	DAC_DATA_B = ku.boost;
 	at(hrc_rfburst_pa_at_us(tx_lead, ku.drive_us));
 	DAC_DATA_B = tx_pa;

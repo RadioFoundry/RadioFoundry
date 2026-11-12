@@ -255,7 +255,7 @@ TX on f (the order the radio's firmware uses; RadioFoundry differs where noted):
 | 3 | 50 us |
 | 4 | Main chip: 38 / 39 = f / 10 Hz (truncated), 37:1D0F, 30:0200, 30:C3FE (RadioFoundry writes the idle word before the frequency, not after). Then the LO chip 30:0000 only. 0x36 stays 0xBF |
 | 5 | The page's TX-on delay for f (1 us UHF, 1000 us VHF on the first unit). There is no other wait. RadioFoundry adds 3 ms (`TX_SETTLE_MS`) for the VCO calibration: no measurement says it can go, and a PA that comes up before the PLL has settled puts a carrier off frequency |
-| 6 | DAC B powered up at 0 (RadioFoundry only; the vendor firmware leaves it on), PA select of the band (UHF PTA26 high, PTB3 low; VHF PTB3 high, PTA26 low), PTA23 low, 200 us, the band's single TX supply (UHF PTA27 high, PTB2 low; VHF PTB2 high, PTA27 low) |
+| 6 | DAC B powered up at 0 (RadioFoundry only; the vendor firmware leaves it on), PA select of the band (UHF PTA26 high, PTB3 low; VHF PTB3 high, PTA26 low), PTA23 low, 200 us, the band's single TX supply (UHF PTA27 high, PTB2 low; VHF PTB2 high, PTA27 low). DMR bursts: PTA23 low 200 us before the first drive, the PA select 30 us before it, the TX supply with it (4.5) |
 | 7 | DAC B ramps from 0 to the drive in 180 steps of 4 us |
 
 TX end: the main chip to its RX state on the TX frequency (47:6042, 50:3B18, 70:0, 37:1D0F, 30:0200, 30:BFF1), the page's
@@ -460,6 +460,15 @@ each band's center, every level):
 No level is boosted on either band: each comes up on its own drive, written 0.4 ms (the top level) to 0.85 ms (the
 lowest) before the first symbol. Measured, every level: the −3 dB point 0.25 to 0.29 ms before the first symbol, no
 overshoot, on the air (within 20 dB) 0.35 to 0.62 ms before it, so nothing before the slot's start.
+
+**PA select per burst.** Selected, the PA passes the carrier before any drive: 15 dB under the lowest UHF level, 31
+dB under the top one, whether the TX supply is on or not. With the select at the TX on sequence's end, 0.4-0.6 ms
+ahead of the drive, every level rose in two steps (a flat step at that level, then the drive's rise) and the lowest
+level was on the air at -15 dB from 0.15 ms before the slot's start. So a DMR burst selects the PA 30 us before its
+first drive and turns the TX supply on with it; PTA23 still goes low 200 us before the supply. Measured into the
+dummy load, every level then rises once from under -57 dB: at 146 MHz its -3 dB point 0.25-0.33 ms before the first
+symbol with 0.2 dB of overshoot, at 445 MHz 0.24-0.29 ms (the lowest level by its edge, below). The carrier is down
+0.40-0.73 ms after the last symbol on both bands.
 
 UHF, the lowest level: the output is within 6 dB 0.4 ms after the drive is written, then gains its last 3 dB over
 milliseconds. More lead buys about 0.15 dB per 0.1 ms at the first symbol (3.6 dB under the settled level with 0.8 ms

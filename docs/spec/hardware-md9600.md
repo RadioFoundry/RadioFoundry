@@ -1104,10 +1104,11 @@ with a 3-5 dB hook at its start. With the loop closed first nothing comes out un
 | Band | PA point (T5) before the first symbol | Power | -3 dB before the first symbol | -30 to -3 dB | Overshoot |
 |---|---|---|---|---|---|
 | UHF (445 MHz) | 0.80 ms | 473 mW / 938 mW / 4.1 W / 18.4 W / 28.5 W | 0.24 / 0.23 / 0.22 / 0.22 / 0.21 ms | 76-129 us | 0.3 dB or less |
-| VHF (146 MHz) | 0.94 ms | 368 mW / 600 mW | at the first symbol / 0.04 ms | 270-310 us | none: 1.3-1.4 dB low over the first 10 symbols |
+| VHF (146 MHz) | 1.24 ms | 368 mW / 600 mW | 0.30 / 0.34 ms | 270-300 us | none: 1.2 dB low over the first 10 symbols |
 
 On VHF the two lowest levels are drives 10 and 22 counts over the band's zero point: the loop barely regulates there,
-and they come up 1.3 dB short and stay short for the first symbols (the same with the earlier order). A boost of a few
+and they come up 1.2 dB short and stay short for the first symbols (the same with the earlier order, and with the PA
+point 1.24, 1.44 or 1.64 ms ahead). At 0.94 ms their -3 dB point was at the first symbol. A boost of a few
 counts overshot 15 dB, so the key-up constants don't fix it; the levels above 1 W were not measured with this order.
 
 At power-up, with the revision known: receivers on, then on V1-V4 the AK2365A reset (PE15 low for 10 us), and on V4

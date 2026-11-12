@@ -305,11 +305,15 @@ def grid(levels, top, n):
     return sorted(ds)
 
 
+FAULT_US = 50       # a level's fault (a knee, a step) in score(), as much as being this late
+
+
 def score(res):
-    """How far a set's verified levels miss (lower is nearer): the levels with a fault, then how late and how far
-    over they are."""
-    return (sum(1 for m in res.values() if m["bad"]),
-            sum(max(m["rise_us"], 0) + 100 * max((m["over_db"] or 0) - OVER_MAX_DB, 0) for m in res.values()))
+    """How far a set's verified levels miss (lower is nearer): how late each is, 100 us per dB it runs past the
+    overshoot limit and FAULT_US for each level with a fault. Not the count of levels with a fault first: that took a
+    set with the lowest level 0.5 ms late over one with a level 0.4 dB further over."""
+    return sum(max(m["rise_us"], 0) + 100 * max((m["over_db"] or 0) - OVER_MAX_DB, 0) + (FAULT_US if m["bad"] else 0)
+               for m in res.values())
 
 
 def judge(m, boosted=False, own_db=0.0):
