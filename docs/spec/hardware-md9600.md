@@ -774,10 +774,11 @@ The original firmware does report its version over USB (15.1), and its major ver
 V1-V3, 16.xx V4, 26.xx V4A/V5. Any other major says nothing about the revision. A radio someone moved to another
 revision's firmware would report that firmware's line (unverified whether that boots, 14.3).
 
-**Detection:** no ID pin or register is known. A run-time probe is possible because the families differ in the bus
-they need, but every candidate needs a radio: for example, program the V1/V2 SKY72310 words and watch RSSI / noise on
-a known signal, then the V5 words. The safer first design is one image with the revision as a setting chosen at first
-boot (or in the bring-up menu), defaulting to V5, with TX blocked until RX works (?: our proposal).
+**Detection:** no ID pin or register is known, and every synthesizer is write-only. The AK2365A IF chips can be read
+back (data sheet MS1591-E-03: a read frame is the R/W bit set and a 6-bit address on 7 rising clock edges, then the
+chip drives SDATA after each falling edge, one unstable bit before D7), so their presence tells V1-V4 from V4A / V5.
+Nothing tells V1-V3 from V4: a person states it, or the original firmware's version does (15.1). RadioFoundry's read
+test is in 19.3.
 
 **Target first:** V5 / V4A. It is the current production board (the codec comes from the "2571V5" file), GPS
 models report V5, and it has the simplest IF path. V1/V2 come next (SKY72310: the driver exists from the MD-380). V4
@@ -857,7 +858,7 @@ the original firmware sounds the same on this radio is not checked); UHF receive
 | Audio | FM from the IF chip (FM_MUTE high), PCM (DMR voice, beeps) from the HR_C6000 line out with FM held back, AF_SW muting otherwise (`boards/md9600/speaker_md9600.h`). A host audio session (`NET_USRP`) hears FM from PC3 and DMR from the stream, and transmits FM as PWM on PC8 into the HR_C6000's microphone input (19.9) |
 | GPS | USART1 RX (PA10), receive interrupt; 9600 baud first, then 4800, 19200, 38400, 57600, 115200, 3 s each. A silent line ends the search after the first window; a module once heard feeds APRS positions. PA9 stays on (it also powers the mic) |
 | Hand mic | the keypad of 9.3 through `drivers/input/adckeys`, three equal scans per key. Key roles of A-D and A/B are a proposal (unverified). No `CAP_KEYPAD`: a mic may have no keypad |
-| Transmit | FM and DMR on UHF and VHF, checked off air into a dummy load (19.8, 19.9; VHF 19.9.1). On in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`); it still needs the run-time arm, a stored revision and plausible PA rows. Sub-audio: CTCSS and DCS from the PWM generator on PC7, with the DCS turn-off tail |
+| Transmit | FM and DMR on UHF and VHF, checked off air into a dummy load (19.8, 19.9; VHF 19.9.1). On in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`); it still needs a confirmed revision (19.3) and plausible PA rows. Sub-audio: CTCSS and DCS from the PWM generator on PC7, with the DCS turn-off tail |
 | Not yet | Transmit power per level (a power meter), split duplex and the two-PLL burst switching (17 #17), the CPS's own command set, update packaging |
 
 ### 19.2 Clock plan and memory map
@@ -878,26 +879,55 @@ the original firmware sounds the same on this radio is not checked); UHF receive
 | V4 | "PLL1590", 24-bit words, the VHF synthesizer set at power-on | AK2365A | `CONFIG_MD9600_V4` |
 | V4A / V5 | LMX2571, 24-bit words | PE11-PE14 filter and route lines | `CONFIG_MD9600_V5` |
 
-All three are on by default; a build with fewer drives only those boards. The revision in use comes from, in order:
+All three are on by default; a build with fewer drives only those boards.
 
-1. The stored record (8 bytes at 0x01F000: "M96R", a format byte, the revision and its complement). Only a stored
-   record confirms the revision; transmit will need it.
-2. The receiver probe, when built with `MD9600_REV_PROBE=1`. With the transmitter supplies and the PA loop held off and
-   the RX VCOs selected, it programs the UHF synthesizer with each built revision's words for 446.0 MHz receive and
-   reads the UHF noise level against the unprogrammed baseline. A revision wins when its change is at least the
-   threshold and twice every other one's. It never drives PE15. The thresholds are unmeasured, so it is off by default.
-3. The build default, `MD9600_REV_DEFAULT` (v5).
+**The AK2365A read test.** At every start, before anything else on the RF side, the radio checks for the AK2365A IF
+chips (`md9600_rf_if_detect`). With the transmitter supplies and the PA loop held off, it powers both receivers (the
+chips' supply), resets the chips by pulsing PE15 with the MCU's own pull-down and then pull-up (never driven: on V4A /
+V5 the line is unused), and on each band writes 0x5A and then 0xA5 to register 0x0B and reads each back twice, once
+with the data line pulled up and once pulled down. Each chip is soft reset (0x04 = 0xAA) afterwards and the receivers
+go off. The verdict:
 
-A stored revision this image can't drive leaves the receiver off rather than programming the wrong chip. The record
-is set with Settings > Advanced > Hardware > Board revision or the debug link's HWOPT (`rfoundry_debug.py hwopt "Board
-revision" V4A/V5`); it applies from the next start-up. The installers set it themselves: before the install they read
-the original firmware's version (15.1, 16), and after the first start they store the revision it gives when the
-radio holds none (board.toml `[flash.original_version]`, [web-flasher.md](../dev/web-flasher.md#the-original-firmware-version)).
-A stored revision that differs is reported and kept. A version read by the installer counts as a person's statement:
-the record it stores confirms the revision like one set by hand. The open-firmware CPS has no item for it. Until a record is
-stored the radio receives with the probe's or the default's revision and never transmits, and the diagnostics page
-asks for one ("Set rev: Adv>Hardware"). Its first three lines show the revision and its source ("unbuilt" for a
-stored revision this image doesn't drive), that prompt or "rev confirmed", and the probe ("off" when not built).
+| Verdict | When | Meaning |
+|---|---|---|
+| present | either chip reads back both patterns, with both pulls, at one of the bit alignments the data sheet allows | V1-V3 or V4 |
+| absent | on both bands every sample follows the pull | V4A / V5 |
+| unknown | anything else, or a bus failure | no verdict |
+
+**The revision in use:**
+
+| Read test | Revision | Confirmed |
+|---|---|---|
+| absent | V4A / V5 (`detected`), whatever is stored | yes |
+| present | the stored record if it is V1-V3 or V4 (a stored V4A / V5 is ignored); else the probe's pick among those two; else the first of V1-V3 and V4 this image drives (V1-V3 boards are the common ones) | only from the record |
+| unknown | the stored record; else the receiver probe; else the build default `MD9600_REV_DEFAULT` (v5) | only from the record |
+
+The stored record is 8 bytes at 0x01F000: "M96R", a format byte, the revision and its complement. The receiver probe
+runs only when built with `MD9600_REV_PROBE=1` and nothing is stored: with the transmitter held off and the RX VCOs
+selected, it programs the UHF synthesizer with each built revision's words for 446.0 MHz receive and reads the UHF
+noise level against the unprogrammed baseline. A revision wins when its change is at least the threshold and twice
+every other one's. It never drives PE15. Its thresholds are unmeasured, so it is off by default. A stored revision this
+image can't drive leaves the receiver off rather than programming the wrong chip.
+
+Transmit needs a confirmed revision. On V4A / V5 nothing is asked: the hardware option is hidden. On V1-V4 the radio
+asks until a record is stored: Settings > Advanced > Hardware > Board revision (warning color), the home screen
+("Set: Board revision", "Transmit waits for it", with the menu path as the hint) and PTT ("Can't transmit", the same
+line). Storing the revision the radio runs confirms it at once, without a restart; storing another one applies from
+the next start, and until then nothing transmits (the running revision is no longer confirmed, so the board refuses
+every path, the hotspot's too) and the home screen and PTT say "Restart to apply". The radio refuses V4A / V5 when an
+AK2365A answered. The debug link's HWOPT sets it too (`rfoundry_debug.py hwopt "Board revision" V4`) and reports the
+state (`hwopt.0.state`: `ask`, `restart`, `ok`, `hidden`; [debuglink.md](debuglink.md#325-hwopt)).
+
+The installers set it themselves when they can: before the install they read the original firmware's version (15.1,
+16), and after the first start they store the revision it gives when the radio holds none (board.toml
+`[flash.original_version]`, [web-flasher.md](../dev/web-flasher.md#the-original-firmware-version)). A stored revision
+that differs is reported and kept. A version read by the installer counts as a person's statement. When the radio
+still asks after the install (moved from another open firmware, or a version that says nothing), both installers ask
+for it at once, listing the original firmware version behind each choice. The open-firmware CPS has no item for it.
+
+The diagnostics page's first three lines show the revision and its source ("detected", "stored", "probe", "default";
+"unbuilt" for a stored revision this image doesn't drive), "Set rev: Adv>Hardware" or "rev confirmed", and the read
+test and the probe ("ak yes probe off").
 
 The default is one constant, `MD9600_REV_DEFAULT` in `boards/md9600/board.mk`. It is v5, the current production
 board.
@@ -909,13 +939,13 @@ board.
 | PA0, PA1, PA3, PA6, PA7, PB0, PB1, PC5 | analog in | - | ADC1 scan: RSSI, supply, mic level, mic keypad, noise | unverified |
 | PA4, PA5 | analog out | 0 | DAC1 UHF tuning, DAC2 VHF tuning / APC | unverified |
 | PA8, PC9, PA13, PA14 | out | low, then high in receive | C5 and R5 supplies (PA13 / PA14 are SWD: connect under reset) | unverified |
-| PD5, PD6, PC4 | out | low | T5 supplies, PA loop: high only in an armed `CONFIG_MD9600_TX` build (19.8) | unverified |
+| PD5, PD6, PC4 | out | low | T5 supplies, PA loop: high only while transmitting, in a `CONFIG_MD9600_TX` build (19.8) | unverified |
 | PD15 | out | low, high in receive | Power_Control | unverified |
 | PE8, PE9 | out | high | RX VCOs | unverified |
 | PB7 | out | low | MOD2 routing | unverified |
 | PD8-PD11 | out | CS high, clock and data low | synthesizer bus, bit-banged | unverified |
 | PE11-PE14 | out | CS high, clock and data low (V5: filter and route levels) | IF bus or V5 lines | unverified |
-| PE15 | in, out on V1-V4 | high after the reset pulse | AK2365A reset | unverified |
+| PE15 | in, out on V1-V4 | high after the reset pulse | AK2365A reset; at start-up only pulled (internal pull-down, then pull-up) for the read test (19.3) | unverified |
 | PB2, PB6, PC13, PE7 | out | low, PB6 high (muted) | FM stages, amplifier mute, audio band, FM mute | unverified |
 | PC6 | TIM8 CH1 | off | backlight | unverified |
 | PC7 | open drain, TIM8 CH2 when driven | released (high) | sub-audio tone PWM into the reference oscillator's modulation input (19.9). Driven low it pulls the reference: FM still receives, DMR never syncs (first radio, 2026-11-02) | checked |
@@ -978,7 +1008,7 @@ voltage is the generic `supply_mv` key instead (`hal_power_t.supply_mv`; the div
 
 | Key | Value |
 |---|---|
-| `rev`, `rev.source`, `rev.usable`, `rev.confirmed` | the revision in use (`V1-V3`, `V4`, `V4A/V5`, `none`), where it came from (`stored`, `probe`, `default`, `none`), whether this image drives it, whether a person set it |
+| `rev`, `rev.source`, `rev.usable`, `rev.confirmed` | the revision in use (`V1-V3`, `V4`, `V4A/V5`, `none`), where it came from (`detected`, `stored`, `probe`, `default`, `none`), whether this image drives it, whether it is confirmed (detected, or set by a person) |
 | `rev.stored` | the board record now (a change takes effect at the next start) |
 | `probe` | `off`, or the revision the receiver probe picked (`none`: no verdict) |
 | `clock`, `sysclk_hz` | `crystal`, `bypass` (an external clock on the HSE pin), `hsi_pll` or `hsi`; the core clock |
@@ -990,6 +1020,7 @@ voltage is the generic `supply_mv` key instead (`hal_power_t.supply_mv`; the div
 | `lo_hz`, `retunes`, `refused` | the synthesizer's last frequency, retunes and refused retunes |
 | `apc`, `cal.pa` | the APC DAC value of the last transmission; the calibrated PA drive per power level (5, 10, 25, 40 W labels) at the receive frequency as `a/b/c/d`, 0 where the calibration refuses it (19.8) |
 | `pin.power`, `pin.c5`, `pin.r5`, `pin.tx` | output levels: Power_Control; C5 UHF and VHF; R5 UHF and VHF; T5 UHF, T5 VHF and the PA loop enable (`000` in this build) |
+| `rev.ak2365` | the start-up AK2365A read test (19.3): `yes` (V1-V4), `no` (V4A / V5), `unknown` |
 | `adc.noise_u`, `adc.noise_v`, `adc.rssi_u`, `adc.rssi_v`, `adc.mic`, `adc.supply`, `adc.mic_row`, `adc.mic_col` | the ADC1 scan, raw 12-bit (10.3) |
 | `c6000`, `c6000.dmr`, `c6000.errors`, `c6000.tx_refused` | the HR_C6000 answered after set-up (with 4:0x10), in DMR, failed transfers, bursts the RF switch refused |
 | `speaker` | bit 0 amplifier on, bit 1 FM audio through, bit 2 codec line out, bit 3 amplifier held warm (`speaker_hang_s`) |
@@ -1021,7 +1052,7 @@ The rfoundry board entry, the web flasher's radio entry and the release images c
 the pins of 19.4. No synthesizer has a lock detect line (5.3), so each gets a fixed settle time after its words. All
 times are unverified on a radio; the V4A / V5 transmit settle and reset wait are V26.45's (5.3, 5.5).
 
-| Step | Receive | Transmit (`CONFIG_MD9600_TX`, armed) |
+| Step | Receive | Transmit (`CONFIG_MD9600_TX`) |
 |---|---|---|
 | 1 | PA loop and both T5 off, APC reference 0 | the same |
 | 2 | Power_Control, both R5, both C5 on | both R5 off, FM stages off |
@@ -1115,18 +1146,17 @@ At power-up, with the revision known: receivers on, then on V1-V4 the AK2365A re
 the VHF synthesizer set for 145 MHz receive. On V4A / V5 the LMX2571 reset goes to both chips, then 10 ms; PE15 stays
 an input.
 
-Transmit is refused unless all hold: the build has `CONFIG_MD9600_TX` (on by default); a person armed it for this
-power cycle (Settings > Advanced > Hardware > Transmit, or HWOPT; every start is unarmed); the revision comes from a
-stored record; the frequency is in a band; the calibration's PA rows are present at every point and rise with the
-power level (11.2). A refusal or a bus failure leaves the PA loop and both T5 off and the receiver back on. Disarming
-drops the PA at once.
+Transmit is refused unless all hold: the build has `CONFIG_MD9600_TX` (on by default); the revision is confirmed
+(19.3); the frequency is in a band; the calibration's PA rows are present at every point and rise with the power
+level (11.2). A refusal or a bus failure leaves the PA loop and both T5 off and the receiver back on. While the
+revision isn't confirmed, PTT says what to set (the core's `TXDENY_HWOPT`), never a band.
 
 Calibration as the RF code uses it (11.2, all unverified): front-end tuning, PA drive per level (5 W row 0x20, 10 W
 0x1A0, 25 W 0x190, 40 W 0x10, VHF 9 bytes later), squelch level 1 and level 9 opening thresholds. DAC values and noise
 thresholds are the byte x 16. The noise reading maps linearly onto the core's squelch scale through the two
 thresholds: level 1's maps to 64, level 9's to 40. Without them it is the 12-bit reading / 16. RSSI uses the curves of
-5.7. The diagnostics page shows which row groups each band accepts ("calrf V RPS U RPS"), the sequencer state, the
-arm and the last refusal.
+5.7. The diagnostics page shows which row groups each band accepts ("calrf V RPS U RPS"), the sequencer state and
+the last refusal.
 
 ### 19.9 Other RF-side lines
 
@@ -1157,11 +1187,11 @@ The board's own switches, in `boards/md9600/board.mk` and `config.mk` (the share
 
 | Switch | Values |
 |---|---|
-| `MD9600_REV_DEFAULT` | `v5` (default), `v4` or `v1v3`: the board revision driven when none is stored and the probe gives no verdict (19.3) |
+| `MD9600_REV_DEFAULT` | `v5` (default), `v4` or `v1v3`: the board revision driven when the AK2365A read test gives no verdict, none is stored and the probe gives none either (19.3) |
 | `MD9600_REV_PROBE` | `1`: the receiver probe at start-up picks the revision when none is stored. Off (`0`) until its thresholds are measured |
 | `CONFIG_MD9600_V1V3` / `_V4` / `_V5` | `y` (default) or `n`: the synthesizer driver per board revision: V1-V3 (SKY72310 and the AK2365A IF receivers), V4 (the 24-bit "PLL1590" part and the AK2365A), V4A / V5 (LMX2571). All on, one image runs every revision; fewer make a smaller image for those boards. At least one must be on (19.3) |
-| `CONFIG_MD9600_TX` | `y` (default) or `n`: the transmit sequence (`boards/md9600/rfseq_md9600.c`). Built, transmit is still refused until it is armed for the power cycle (Settings > Advanced > Hardware, or the debug link) on a radio whose board revision is stored, and the PA calibration rows look plausible (19.8) |
-| `CONFIG_MD9600_DMR_TX` | `y` (default) or `n`: DMR transmit, the per-burst RF keying of 19.8 from the HR_C6000 glue. Needs `CONFIG_MD9600_TX`, and keys only while transmit is armed |
+| `CONFIG_MD9600_TX` | `y` (default) or `n`: the transmit sequence (`boards/md9600/rfseq_md9600.c`). Built, transmit is still refused until the board revision is confirmed (detected, or set by a person: 19.3) and the PA calibration rows look plausible (19.8) |
+| `CONFIG_MD9600_DMR_TX` | `y` (default) or `n`: DMR transmit, the per-burst RF keying of 19.8 from the HR_C6000 glue. Needs `CONFIG_MD9600_TX`, and keys only where it allows transmit |
 
 The 16.8 MHz TCXO has no control line (5.2), so the reference trim (`REF_TRIM`) programs each synthesizer for
 f x (1 + trim) at every tune and burst, the IF unchanged (`rfseq_md9600.c`; radio-features.md 6.1).

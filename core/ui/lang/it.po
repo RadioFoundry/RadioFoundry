@@ -1736,6 +1736,14 @@ msgstr "CTCSS va da 60.0 a 260.0"
 msgid "Save first: hold OK"
 msgstr "Salva prima: tieni OK"
 
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Air band: receive only"
+msgstr "Banda aerea: solo ricezione"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Broadcast: receive only"
+msgstr "Broadcast: solo ricezione"
+
 #: core/ui/ui_menus.c
 msgid "Tones: not in this build"
 msgstr "Toni: non in questa build"
@@ -2245,6 +2253,38 @@ msgid "OK edit  Back"
 msgstr "OK modifica  Indietro"
 
 #: core/ui/ui_menus.c
+msgid "ARS server"
+msgstr "Server ARS"
+
+#: core/ui/ui_menus.c
+msgid "IP gateway"
+msgstr "Gateway IP"
+
+#: core/ui/ui_menus.c
+msgid "Registering"
+msgstr "Registrazione"
+
+#: core/ui/ui_menus.c
+msgid "Registered"
+msgstr "Registrato"
+
+#: core/ui/ui_menus.c
+msgid "Refused"
+msgstr "Rifiutato"
+
+#: core/ui/ui_menus.c
+msgid "No answer"
+msgstr "Nessuna risposta"
+
+#: core/ui/ui_menus.c
+msgid "ARS: "
+msgstr "ARS: "
+
+#: core/ui/ui_menus.c
+msgid "Data Services"
+msgstr "Servizi dati"
+
+#: core/ui/ui_menus.c
 msgid "Freq Trim"
 msgstr "Trim freq."
 
@@ -2307,6 +2347,10 @@ msgstr "Font Spleen: BSD-2-Clause"
 #: core/ui/ui_menus.c
 msgid "JetBrains Mono font: OFL-1.1"
 msgstr "Font JetBrains Mono: OFL-1.1"
+
+#: core/ui/ui_menus.c
+msgid "Noto Sans CJK SC font: OFL-1.1"
+msgstr "Font Noto Sans CJK SC: OFL-1.1"
 
 #: core/ui/ui_menus.c
 msgid "AMBE+2 codec: DVSI (stock)"
@@ -2929,6 +2973,10 @@ msgid "USB address"
 msgstr "Indirizzo USB"
 
 #: core/ui/ui_menus.c
+msgid "Data services"
+msgstr "Servizi dati"
+
+#: core/ui/ui_menus.c
 msgid "Auto power off"
 msgstr "Spegnim. auto"
 
@@ -3273,6 +3321,22 @@ msgid "Broadcast FM"
 msgstr "FM broadcast"
 
 #: core/ui/ui_screens.c
+msgid "Restart to apply"
+msgstr "Riavvia per applicare"
+
+#: core/ui/ui_screens.c
+msgid "Set: "
+msgstr "Imposta: "
+
+#: core/ui/ui_screens.c
+msgid "Turn the radio off and on"
+msgstr "Spegni e riaccendi la radio"
+
+#: core/ui/ui_screens.c
+msgid "Settings>Advanced>Hardware"
+msgstr "Impostazioni>Avanzate>Hardware"
+
+#: core/ui/ui_screens.c
 msgid "This channel is RX only"
 msgstr "Questo canale è solo RX"
 
@@ -3321,16 +3385,12 @@ msgid "No DMR ID in codeplug"
 msgstr "Nessun ID DMR nel codeplug"
 
 #: core/ui/ui_screens.c
-msgid "Air band: receive only"
-msgstr "Banda aerea: solo ricezione"
-
-#: core/ui/ui_screens.c
-msgid "Broadcast: receive only"
-msgstr "Broadcast: solo ricezione"
-
-#: core/ui/ui_screens.c
 msgid "Repeater channel: PTT off"
 msgstr "Canale ripetitore: PTT off"
+
+#: core/ui/ui_screens.c
+msgid "Radio refused to send"
+msgstr "La radio ha rifiutato di trasmettere"
 
 #: core/ui/ui_screens.c
 msgid "Not allowed here"
@@ -3507,6 +3567,10 @@ msgstr "Nessun limite"
 #: core/ui/ui_screens.c
 msgid "Can't transmit"
 msgstr "Non puoi trasmettere"
+
+#: core/ui/ui_screens.c
+msgid "Transmit waits for it"
+msgstr "Niente TX fino ad allora"
 
 #: core/ui/ui_screens.c
 msgid "Last activity "

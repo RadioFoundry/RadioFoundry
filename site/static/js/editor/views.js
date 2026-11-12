@@ -8,6 +8,7 @@ import { h, button } from "../flasher/dom.js";
 import { parseFreq, parseTone, mhz } from "../codeplug/fields.js";
 import { LIMITS, POWER_NAMES } from "../codeplug/records.js";
 import { refNumber, listenBand } from "../codeplug/model.js";
+import { keyValid } from "../codeplug/kv.js";
 
 // --- Parsers shared by the columns and the forms ---
 
@@ -74,6 +75,16 @@ const dmrId = (t) => (r, k, v) => {
 	if (!Number.isInteger(n) || n < 1 || n > 0xFFFFFF) return t("editor.err.id_range");
 	r[k] = n;
 };
+
+// A settings area key that is a number (kv.js KEYS: a uint, int, enum or id row; codeplug-settings.md 3) as typed on
+// the Radio tab: {value} or {error}. Empty is an absent key (null: the radio keeps its own setting); for an ID, 0
+// turns the setting off
+export function parseAreaKey(row, v, t) {
+	const s = String(v ?? "").trim();
+	if (s === "") return { value: null };
+	const n = Number(s);
+	return keyValid(row, n) ? { value: n } : { error: t("editor.err.range", { min: row.min, max: row.max }) };
+}
 
 const pick = (r, k, v) => {
 	r[k] = v;

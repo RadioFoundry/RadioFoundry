@@ -57,7 +57,7 @@ import * as crumbs from "./trail.js";
 import { missingApi, kitPanel, kitLine } from "./manual.js";
 import { showBetaNotice } from "./beta.js";
 import { currentBuild, planUpdate } from "./update.js";
-import { readDfuInfo, choiceFor, hwoptAction, runsOriginal, BOOTLOADER } from "./origversion.js";
+import { readDfuInfo, choiceFor, hwoptAction, pendingHwopt, majorsFor, runsOriginal, BOOTLOADER } from "./origversion.js";
 import { readOriginal, deviceKind, spiSeconds, Guard } from "./origbackup.js";
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1404,6 +1404,10 @@ function nowView() {
 		} else if (openfwShown()) {
 			detail.append(openfwDetail({ draw, check: checkRFoundry, setRun: (b) => { runBackup = b; } }));
 		}
+		if (S.board.original_version && openfwShown()) {
+			// another open firmware: no original version to read, so the revision may be a question after the install
+			detail.append(notice(t("flash.hwopt.ahead", { option: S.board.original_version.hwopt }), "warn"));
+		}
 		if (S.board.original_version && (S.now?.kind === "stock" || (S.now?.kind === "unknown" && !openfwShown()))) {
 			if (S.board.original_backup) detail.append(originalBackupPanel());
 			detail.append(originalVersionPanel());
@@ -1447,7 +1451,8 @@ function nowView() {
 
 // A board whose hardware revision follows its original firmware (board.toml [flash.original_version], origversion.js):
 // read that firmware's version while it runs, so the install stores the revision and nobody has to pick it. Optional:
-// without it, or with a version the board doesn't list, the radio settles the revision itself
+// without it, or with a version the board doesn't list, the radio tells what it can by itself, and what it can't the
+// page asks for after the install (hwoptPrompt)
 function originalVersionPanel() {
 	const spec = S.board.original_version;
 	const box = h("div", { class: "notice info" });
@@ -1585,7 +1590,9 @@ async function storeLearned(link) {
 		if (a.action === "store") {
 			await link.hwoptSet(a.option, a.choice);
 			L.stored = true;
-			return notice(t(opts[a.option].restart ? "flash.orig.stored_restart" : "flash.orig.stored", args), "ok");
+			// the radio says whether a restart is still due (none when it already runs that choice)
+			const now = (await link.hwopts())[a.option];
+			return notice(t(now?.state === "restart" ? "flash.orig.stored_restart" : "flash.orig.stored", args), "ok");
 		}
 		if (a.action === "same") {
 			L.stored = true;
@@ -1596,6 +1603,52 @@ async function storeLearned(link) {
 	} catch (e) {
 		return notice(t("flash.orig.store_failed", { ...args, error: errorText(e) }));
 	}
+}
+
+// A hardware option the radio still needs from a person after the install (HWOPT state ask: the board can't tell it
+// and the install didn't learn it) or that waits for a restart: said plainly, first, with a button per choice and the
+// original firmware versions that mean each. The radio won't transmit until it is set, and its home screen says so
+async function hwoptPrompt(link) {
+	let opts;
+	try {
+		opts = await link.hwopts();
+	} catch (e) {
+		return null;	// a firmware without HWOPT
+	}
+	const p = pendingHwopt(opts);
+	if (!p) return null;
+	diag.note("hwopt", { action: "ask", state: p.state, option: p.name });
+	const spec = S.board.original_version;
+	const box = h("div", { class: "notice warn" });
+	const status = h("div");
+	const restart = (o) => box.replaceChildren(h("p", {}, h("b", {}, t("flash.hwopt.restart_title"))),
+		h("p", {}, t("flash.hwopt.restart", { option: o.name })));
+	const pick = async (i) => {
+		status.replaceChildren(h("p", { class: "muted" }, t("flash.hwopt.storing")));
+		const args = { option: p.name, choice: p.choices[i] };
+		try {
+			await link.hwoptSet(p.option, i);
+			diag.note("hwopt", { action: "picked", choice: p.choices[i] });
+			const o = (await link.hwopts())[p.option];
+			if (o?.state === "restart") return restart(o);
+			box.className = "notice ok";
+			box.replaceChildren(h("p", {}, t("flash.hwopt.stored", args)));
+		} catch (e) {
+			status.replaceChildren(errorNotice(t("flash.hwopt.refused", { ...args, error: errorText(e) })));
+		}
+	};
+	if (p.state === "restart") {
+		restart(p);
+		return box;
+	}
+	const versions = spec?.hwopt === p.name ? p.choices.map((c) => [c, majorsFor(spec, c)]).filter(([, m]) => m.length)
+		.map(([c, m]) => `${m.map((x) => x + ".xx").join(", ")}: ${c}`).join("; ") : "";
+	box.append(h("p", {}, h("b", {}, t("flash.hwopt.title", { option: p.name }))),
+		h("p", {}, t("flash.hwopt.lead", { option: p.name })),
+		versions ? h("p", {}, t("flash.hwopt.by_version", { list: versions })) : null,
+		h("p", {}, t("flash.hwopt.unsure")),
+		h("p", {}, ...p.choices.flatMap((c, i) => [button(c, () => pick(i), { primary: i === 0 }), " "])), status);
+	return box;
 }
 
 // What the radio's codec report means to a user
@@ -2285,6 +2338,9 @@ function doneView() {
 			notice(good ? t("flash.done.ready") : t("flash.done.no_codec"), good ? "ok" : "bad"), ...(good ? [] : [helpLink(), reportLine()]));	// the DOM writes a null as "null"
 			const learnedNote = await storeLearned(link);
 			if (learnedNote) status.append(learnedNote);
+			// what the radio still needs from a person goes first, where the eye lands
+			const ask = await hwoptPrompt(link);
+			if (ask) status.prepend(ask);
 			const channels = () => bringChannels(status, { finish });
 			if (!S.backupDone) {
 				S.now = { ...S.now, probe: S.now?.kind === "rfoundry" ? p : S.now?.probe, after: p,

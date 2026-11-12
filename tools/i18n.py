@@ -114,6 +114,59 @@ def text_to_bytes(text, where):
     return bytes(out)
 
 
+# A CJK catalog: the Latin fonts have no glyph for it, so the catalog says its text is UTF-8 that the text layer
+# decodes, and the glyphs come from core/ui/cjk_font_data.c, which tools/cjkfont.py builds from the catalogs
+# themselves. Every other catalog stays one byte a character (ASCII, Latin-1, font.h's glyphs).
+CJK_LANGS = ("zh", "ja", "ko")
+WIDE_HEADER = "X-Glyphs"
+# A CJK catalog names itself in its own script, which a build without the CJK face draws as boxes: this header is the
+# name such a build lists instead (Settings > Display > Language, docs/dev/translating.md)
+LATIN_NAME_HEADER = "X-Language-Name-Latin"
+CJK_TABLE = os.path.join(ROOT, "core", "ui", "cjk_font_data.c")
+cjk_cps = None
+
+
+def cjk_codepoints():
+    """The code points the generated CJK font has; empty when it hasn't been built"""
+    global cjk_cps
+    if cjk_cps is None:
+        try:
+            with open(CJK_TABLE, encoding="utf-8") as f:
+                src = f.read()
+        except OSError:
+            cjk_cps = frozenset()
+            return cjk_cps
+        m = re.search(r"cjk_font_cp\[\]\s*=\s*\{(.*?)\};", src, re.S)
+        cjk_cps = frozenset(int(v, 16) for v in re.findall(r"0x([0-9A-Fa-f]{1,4})\b", m.group(1))) if m else frozenset()
+    return cjk_cps
+
+
+def text_to_bytes_wide(text, where):
+    """A CJK catalog's string as the firmware stores it: UTF-8, each character either a byte the Latin font draws or a
+    glyph of the CJK table. A character with no glyph is an error: the font is built from the catalogs themselves."""
+    out = bytearray()
+    have = cjk_codepoints()
+    for ch in text:
+        if ch in TEXT_TO_BYTE:
+            out.append(TEXT_TO_BYTE[ch])
+        elif 0x20 <= ord(ch) < 0x7F:
+            out.append(ord(ch))
+        elif ord(ch) <= 0x7FF:
+            # The text layer reads only three-byte sequences as UTF-8; a two-byte one would be two Latin-1 bytes, and
+            # Latin-1 text (a name, a message, the Spanish catalog) must stay readable in a build with the CJK face
+            raise I18nError("%s: %r (U+%04X) is a two-byte UTF-8 character: a CJK catalog can't carry it (write it "
+                            "in ASCII)" % (where, ch, ord(ch)))
+        elif ord(ch) in have:
+            out += ch.encode("utf-8")
+        elif not have:
+            raise I18nError("%s: %r (U+%04X) has no CJK glyph: build core/ui/cjk_font_data.c with tools/cjkfont.py "
+                    "--po <catalog>" % (where, ch, ord(ch)))
+        else:
+            raise I18nError("%s: %r (U+%04X) has no CJK glyph: run tools/cjkfont.py --po <catalog> to add it"
+                    % (where, ch, ord(ch)))
+    return bytes(out)
+
+
 def source_files():
     files = []
     for d in SOURCE_DIRS:
@@ -249,8 +302,8 @@ def read_po(path):
     return headers, body
 
 
-HEADER_ORDER = ["Project-Id-Version", "Language", "X-Language-Name", "MIME-Version", "Content-Type",
-        "Content-Transfer-Encoding"]
+HEADER_ORDER = ["Project-Id-Version", "Language", "X-Language-Name", LATIN_NAME_HEADER, "MIME-Version",
+        "Content-Type", "Content-Transfer-Encoding"]
 
 
 def write_po(path, headers, entries, refs):
@@ -283,7 +336,7 @@ def write_po(path, headers, entries, refs):
         with open(path, encoding="utf-8") as f:
             old = f.read()
     if old != text:
-        with open(path, "w", encoding="utf-8") as f:
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
         return True
     return False
@@ -353,11 +406,11 @@ def alt_groups(text):
     return groups
 
 
-def check_translation(en, tr, where):
+def check_translation(en, tr, where, wide=False):
     """Problems of one translation (a list of strings)"""
     errs = []
     try:
-        b = text_to_bytes(tr, where)
+        b = text_to_bytes_wide(tr, where) if wide else text_to_bytes(tr, where)
         if len(b) > MAX_BYTES:
             errs.append("%s: longer than %d bytes" % (where, MAX_BYTES))
     except I18nError as e:
@@ -459,11 +512,22 @@ def tables():
     """What core/ui/i18n.c searches. Every language shares one sorted list of the hashes of the English any catalog
     translates; each language has its translations in that order, "" where it has none (or the English itself), and
     where every LANG_STRIDE-th one starts. Flash per string: 4 bytes once, the text and its NUL per language, plus 2
-    bytes per LANG_STRIDE strings. Returns (keys, [(code, name, switch, translations by hash, text, offsets)])"""
+    bytes per LANG_STRIDE strings. Returns (keys, [(code, name, name in this build, switch, translations by hash, text,
+    offsets)])"""
     langs, owner, seen = [], set(), {}
     for code, path in catalogs().items():
         headers, body = read_po(path)
         name = headers.get("X-Language-Name", code)
+        wide = headers.get(WIDE_HEADER) == "utf8"
+        wide_name = text_to_bytes_wide(name, code) if wide else text_to_bytes(name, code)
+        if wide:
+            latin_name = headers.get(LATIN_NAME_HEADER, "")
+            if not latin_name:
+                raise I18nError("%s: a UTF-8 catalog needs a \"%s\" header (the name a build without the CJK face "
+                                "lists, docs/dev/translating.md)" % (os.path.relpath(path, ROOT), LATIN_NAME_HEADER))
+            text_to_bytes(latin_name, "%s: %s" % (os.path.relpath(path, ROOT), LATIN_NAME_HEADER))
+        else:
+            latin_name = name
         pairs = {}
         for msgid, msgstr, fz in body:
             where = "%s: %r" % (os.path.relpath(path, ROOT), msgid)
@@ -474,17 +538,17 @@ def tables():
                 raise I18nError("%s: hash collides with %r: reword one of them" % (where, seen[h]))
             if not msgstr or fz:
                 continue
-            if check_translation(msgid, msgstr, where):
+            if check_translation(msgid, msgstr, where, wide):
                 continue    # --check reports it; the build shows the English
-            tr = text_to_bytes(msgstr, where)
+            tr = text_to_bytes_wide(msgstr, where) if wide else text_to_bytes(msgstr, where)
             if tr == en:
                 continue    # the English is shown anyway
             owner.add(h)
             pairs[h] = tr
-        langs.append((code, name, "CONFIG_LANG_" + code.upper(), pairs))
+        langs.append((code, name, wide_name, latin_name, "CONFIG_LANG_" + code.upper(), pairs, wide))
     keys = sorted(owner)
     out = []
-    for code, name, sw, pairs in langs:
+    for code, name, wide_name, latin_name, sw, pairs, wide in langs:
         blob, offs = bytearray(), []
         for i, h in enumerate(keys):
             if i % LANG_STRIDE == 0:
@@ -492,7 +556,7 @@ def tables():
             blob += pairs.get(h, b"") + b"\0"
         if len(blob) > 0xFFFF:
             raise I18nError("%s: more than 64 KB of text" % code)
-        out.append((code, name, sw, pairs, bytes(blob), offs))
+        out.append((code, name, wide_name, latin_name, sw, pairs, bytes(blob), offs, wide))
     return keys, out
 
 
@@ -512,7 +576,7 @@ def lookup(keys, blob, offs, en):
 def generate(out_path):
     lines = ["// Generated by tools/i18n.py from core/ui/lang/*.po; do not edit", ""]
     keys, built = tables()
-    langs = [(code, name, sw) for code, name, sw, _, _, _ in built]
+    langs = [(code, name, wide_name, sw) for code, name, wide_name, _, sw, _, _, _, _ in built]
     if keys:
         lines.append("#if CONFIG_LANG_ANY")
         lines.append("// The English any catalog translates, by hash: %d strings" % len(keys))
@@ -524,7 +588,7 @@ def generate(out_path):
         lines.append("};")
         lines.append("#endif")
         lines.append("")
-    for code, name, sw, pairs, blob, offs in built:
+    for code, name, wide_name, latin_name, sw, pairs, blob, offs, wide in built:
         if not pairs:
             lines.append("// %s: no translations, every lookup the English" % name)
             lines.append("#define LANG_%s_TABLE\tNULL" % code.upper())
@@ -546,16 +610,27 @@ def generate(out_path):
         lines.append("#define LANG_%s_TABLE\tNULL" % code.upper())
         lines.append("#endif")
         lines.append("")
-    lines.append("// Every language a catalog exists for, English first; built = its switch is on")
+    # A CJK language names itself in its own script; a build without the CJK face would draw those bytes as boxes in
+    # Settings > Display > Language, so it lists the Latin name instead
+    for code, name, wide_name, latin_name, sw, pairs, blob, offs, wide in built:
+        if not wide:
+            continue
+        lines.append("#if %s" % sw)
+        lines.append("#define LANG_%s_NAME\t%s" % (code.upper(), c_bytes(wide_name)))
+        lines.append("#else")
+        lines.append("#define LANG_%s_NAME\t%s" % (code.upper(), c_bytes(text_to_bytes(latin_name, code))))
+        lines.append("#endif")
+    lines.append("// Every language a catalog exists for, English first; built = its switch is on, wide = its text is UTF-8")
     lines.append("#define LANG_KNOWN\t%d" % (len(langs) + 1))
     lines.append("#define LANG_LIST\t{ \\")
-    lines.append("\t{ \"en\", \"English\", true, NULL }, \\")
-    for code, name, sw in langs:
-        lines.append("\t{ \"%s\", %s, %s, LANG_%s_TABLE }, \\" % (code, c_bytes(text_to_bytes(name, code)), sw,
-                                       code.upper()))
+    lines.append("\t{ \"en\", \"English\", true, false, NULL }, \\")
+    for code, name, wide_name, latin_name, sw, pairs, blob, offs, wide in built:
+        lines.append("\t{ \"%s\", %s, %s, %s, LANG_%s_TABLE }, \\" % (
+            code, "LANG_%s_NAME" % code.upper() if wide else c_bytes(wide_name), sw,
+            "true" if wide else "false", code.upper()))
     lines.append("}")
     lines.append("// The language an empty setting means: the first CONFIG_LANG_DEFAULT_<CODE> on, else English")
-    for i, (code, _, _) in enumerate(langs):
+    for i, (code, _, _, _) in enumerate(langs):
         lines.append("#%s CONFIG_LANG_DEFAULT_%s" % ("if" if i == 0 else "elif", code.upper()))
         lines.append("#define LANG_DEFAULT\t%d" % (i + 1))
     if langs:
@@ -567,10 +642,12 @@ def generate(out_path):
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     old = None
     if os.path.exists(out_path):
-        with open(out_path, encoding="latin-1") as f:
+        # UTF-8 since a CJK language's name is in the comments (the strings themselves are escaped bytes); replace keeps
+        # a header written by an older version readable
+        with open(out_path, encoding="utf-8", errors="replace") as f:
             old = f.read()
     if old != text:
-        with open(out_path, "w", encoding="latin-1") as f:
+        with open(out_path, "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
         print("changed")
 
@@ -583,23 +660,36 @@ def main():
         if args[:1] == ["--gen"] and len(args) == 2:
             generate(args[1])
             return 0
-        if args[:1] == ["--new"] and len(args) == 3:
+        if args[:1] == ["--new"] and len(args) in (3, 4):
             code, name = args[1], args[2]
             if not re.fullmatch(r"[a-z]{2}", code) or code == "en":
                 raise I18nError("CODE: an ISO 639-1 code other than en, two lower-case letters")
+            wide = code in CJK_LANGS
+            if wide:
+                if not name.strip():
+                    raise I18nError("NAME: the language's own name")
+                if len(args) != 4:
+                    raise I18nError("LATIN-NAME: the name as a build without the CJK face lists it (ASCII, "
+                                    "\"Chinese\" for 中文)")
+                text_to_bytes(args[3], "LATIN-NAME")
+            else:
+                text_to_bytes(name, "NAME")
             path = os.path.join(LANG_DIR, code + ".po")
             if os.path.exists(path):
                 raise I18nError("%s exists" % os.path.relpath(path, ROOT))
-            text_to_bytes(name, "NAME")
             os.makedirs(LANG_DIR, exist_ok=True)
             source = extract()
-            write_po(path, {"Project-Id-Version": "RadioFoundry", "Language": code, "X-Language-Name": name,
+            headers = {"Project-Id-Version": "RadioFoundry", "Language": code, "X-Language-Name": name,
                     "MIME-Version": "1.0", "Content-Type": "text/plain; charset=UTF-8",
-                    "Content-Transfer-Encoding": "8bit"},
-                 [(t, "", False) for t, _ in source], dict(source))
+                    "Content-Transfer-Encoding": "8bit"}
+            if wide:
+                headers[WIDE_HEADER] = "utf8"
+                headers[LATIN_NAME_HEADER] = args[3]
+            write_po(path, headers, [(t, "", False) for t, _ in source], dict(source))
             print("wrote %s; next: add the build switches CONFIG_LANG_%s and CONFIG_LANG_DEFAULT_%s "
-                  "(docs/dev/translating.md, step 2)"
-                  % (os.path.relpath(path, ROOT), code.upper(), code.upper()))
+                  "(docs/dev/translating.md, step 2)%s"
+                  % (os.path.relpath(path, ROOT), code.upper(), code.upper(),
+                     "; its glyphs come from tools/cjkfont.py --po %s" % os.path.relpath(path, ROOT) if wide else ""))
             return 0
         if args[:1] in (["--sync"], ["--check"], ["--stats"]):
             only = [a for a in args[1:] if not a.startswith("--")]
@@ -614,6 +704,15 @@ def main():
                     errs.append("%s: its Language header isn't %s" % (rel, code))
                 if not headers.get("X-Language-Name"):
                     errs.append("%s: no X-Language-Name header (the language's own name)" % rel)
+                wide = headers.get(WIDE_HEADER) == "utf8"
+                if wide and not headers.get(LATIN_NAME_HEADER):
+                    errs.append("%s: no %s header (the name a build without the CJK face lists, e.g. \"Chinese\")"
+                                % (rel, LATIN_NAME_HEADER))
+                if not wide:
+                    bad = [c for _, s, _ in entries for c in s if ord(c) > 0xFF and c not in TEXT_TO_BYTE]
+                    if bad:
+                        errs.append("%s: %r can't be drawn by the Latin fonts: give the catalog a \"%s: utf8\" "
+                                    "header and build the CJK font with tools/cjkfont.py" % (rel, bad[0], WIDE_HEADER))
                 if args[0] == "--sync":
                     if write_po(path, headers, entries, refs):
                         print("updated %s" % rel)
@@ -623,7 +722,7 @@ def main():
                         errs.append("%s: out of date with the source: run tools/i18n.py --sync" % rel)
                     for msgid, msgstr, fz in entries:
                         if msgstr and not fz:
-                            errs += check_translation(msgid, msgstr, "%s: %r" % (rel, msgid))
+                            errs += check_translation(msgid, msgstr, "%s: %r" % (rel, msgid), wide)
                     errs += check_switches(code)
                     if "--allow-pending" not in sys.argv:
                         errs += pending(rel, entries)
