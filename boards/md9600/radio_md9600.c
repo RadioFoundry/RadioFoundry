@@ -255,22 +255,24 @@ static volatile bool key_pending;
 static uint32_t key_step;
 static bool key_timer_ready;
 
-// The burst's key-up by the key-up rule (radio/pa_keyup.h, hardware-md9600.md 19.8): its points, and the band's
-// transmitter supply MD9600_BURST_T5_US ahead of the loop, in time order from the same timer. The RF TX interrupt
-// comes KEYUP_INT_AHEAD_US before the burst's first symbol (SDR bench: the loop closed 1.2 ms after the interrupt
-// put the carrier up 1.35 ms before it). Without a boost the key-up is the stepped ramp, its loop closed
-// at pa_us. [VHF, UHF]: neither loop has a knee (every level up 0.5-0.75 ms after its point on a conducted path),
-// so no boost, only the loop's point: each level up 0.18-0.34 ms before the first symbol (hardware-md9600.md 19.8)
+// The burst's key-up by the key-up rule (radio/pa_keyup.h, hardware-md9600.md 19.8): its points, in time order from
+// the same timer. The loop closes at the first drive MD9600_BURST_T5_US ahead of the PA's point, and the PA's point
+// is the band's transmitter supply: the PA comes up 0.42 ms after its supply, one clean rise. The other way round (the
+// supply first, the loop at the PA's point, as the stepped ramp keys) the PA passed the carrier at a fixed -5 dBm for
+// those 0.42 ms, 31 dB under the lowest level: a step and a hook ahead of its rise (SDR bench, UHF). The RF TX interrupt
+// comes KEYUP_INT_AHEAD_US before the burst's first symbol. [VHF, UHF]: neither PA has a knee (every level comes up a
+// fixed time after its supply, whatever the drive, on a conducted path), so no boost: one point per band, each level's
+// -3 dB point about 0.25 ms before the first symbol (hardware-md9600.md 19.8)
 #define KEYUP_INT_AHEAD_US	2550u
-#define KEYUP_MAX_AHEAD_US	(KEYUP_INT_AHEAD_US - MD9600_BURST_T5_US - 50u)	// the supply's point after the interrupt
+#define KEYUP_MAX_AHEAD_US	(KEYUP_INT_AHEAD_US - MD9600_BURST_T5_US - 50u)	// the loop's point after the interrupt
 static const pa_keyup_cfg_t keyup_cfg[2] = {
 	[MD9600_VHF] = PA_KEYUP_FIXED(936),
-	[MD9600_UHF] = PA_KEYUP_FIXED(850),
+	[MD9600_UHF] = PA_KEYUP_FIXED(800),
 };
-enum { KEY_PT_SUPPLY = PA_KEYUP_PT_BOARD };
+enum { KEY_PT_LOOP = PA_KEYUP_PT_BOARD };
 static pa_keyup_point_t key_pt[PA_KEYUP_POINTS_MAX];	// the transmission's, set before it is armed
 static pa_keyup_step_t key_st[PA_KEYUP_POINTS_MAX];	// and as TIM5's steps: points at one time together
-static uint8_t key_ns;			// 0: the stepped ramp
+static uint8_t key_ns;			// 0: the stepped ramp (no key-up constants)
 static volatile uint8_t key_st_next;	// 1 + the step the timer runs to, 0 none
 static pa_keyup_t ku;
 static uint16_t ku_floor;
@@ -304,13 +306,9 @@ static void keyup_plan(uint32_t hz, uint8_t power)
 	}
 	// The dead zone's anchor: the drive where the band's loop gives no output
 	ku = pa_keyup_plan(d, top, ku_floor);
-	if (ku.boost == 0u) {
-		key_delay_us = KEYUP_INT_AHEAD_US - MD9600_BURST_T5_US - ku.pa_us;
-		return;
-	}
-	// The supply ahead of the PA's point by T5, and ahead of any point at its time
+	// The loop closed at the first drive T5 ahead of the PA's point, which is the band's supply (key_point)
 	uint8_t n = pa_keyup_insert(key_pt, pa_keyup_points(&ku, key_pt), (uint16_t)(ku.pa_us + MD9600_BURST_T5_US),
-				    KEY_PT_SUPPLY);
+				    KEY_PT_LOOP);
 	key_ns = pa_keyup_steps(key_pt, n, KEYUP_INT_AHEAD_US, 0u, key_st);
 }
 
@@ -318,10 +316,12 @@ static void keyup_plan(uint32_t hz, uint8_t power)
 static bool key_point(uint8_t kind)
 {
 	switch (kind) {
-	case KEY_PT_SUPPLY: return md9600_rf_pa_supply(&rf) == MD9600_RF_OK;
+	case KEY_PT_LOOP:
+		return md9600_rf_pa_ref(&rf, ku.boost != 0u ? ku.boost : ku.drive) == MD9600_RF_OK &&
+		       md9600_rf_pa_loop(&rf) == MD9600_RF_OK;
 	case PA_KEYUP_PT_BOOST: return md9600_rf_pa_ref(&rf, ku.boost) == MD9600_RF_OK;
 	case PA_KEYUP_PT_DRIVE: return md9600_rf_pa_ref(&rf, ku.drive) == MD9600_RF_OK;
-	default: return md9600_rf_pa_loop(&rf) == MD9600_RF_OK;
+	default: return md9600_rf_pa_supply(&rf) == MD9600_RF_OK;	// the PA's point
 	}
 }
 

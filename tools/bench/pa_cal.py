@@ -45,24 +45,28 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 
+import pa_shape  # noqa: E402
+
 TARGET_US = -250        # the -3 dB point against the first symbol's leading edge (pa-keyup.md 5)
 TOL_US = 60
 BOOST_TARGET_US = -500  # a boosted level: its own drive sits on the PA's turn-on edge, where a few counts are
                         # half a millisecond, so it is aimed early by that much; the window bounds how early
 EDGE_MAX_US = 100       # a level whose key-up moves more than this per 1 % of drive is boosted, late or not
 EARLY_MAX_US = -600     # verify: no level up earlier than this (the ramp belongs in the 1.5 ms before the burst)
-OVER_MAX_DB = 3.0
+OVER_MAX_DB = pa_shape.PEAK_DB  # over the level at any point of the key-up
 KEY_SETUP_S = 0.25          # a key's set-up and its PTT requests over the debug link, at most
 KEY_GAP_S = 0.35            # between the keys of one capture: the radio's key-down, and the next key's set-up
 LINK_BACK_S = 15.0          # how long a debug link lost while keying may take to answer again
 REPLUG_S = 300.0            # after a key run (--key-run): past LINK_BACK_S the tool asks for a replug and waits this long
 OWN_OVER_TOL_DB = 1.0       # over what the level's drive overshoots by itself: the key-up's doing
 SYM1_MIN_DB = -3.0
-# A level whose output creeps: within 6 dB at once, then its last dB over milliseconds (a PA held just over its turn-on
-# edge). Lead buys such a level next to nothing and a boost nothing at all (the output is back on the creep as soon
-# as the boost ends), so its key-up is timed by the edge: the point this long after the -6 dB crossing stands in for
-# the -3 dB point when that comes later. A plain edge's -3 dB point is 0.04 to 0.13 ms after its -6 dB crossing
+# A level whose output creeps or sags: within 6 dB at once, then its last dB over milliseconds. A level's own key-up
+# is timed by when it is within 1 dB for good (pa_shape's up1_ms), less UP1_US: so it is late until it is at its level
+# by the first symbol, and gets the boost that brings it there. An open-loop drive (the fit's points) and a key without
+# an envelope are timed by the edge: the point CREEP_US after the -6 dB crossing, when the -3 dB point comes later (a
+# plain edge's is 0.04 to 0.13 ms after it)
 CREEP_US = 150
+UP1_US = 100
 SYM1_CREEP_MIN_DB = -4.5    # a creeping level's first symbol: under its settled level by the creep, not by the key-up
 GUARD_US = 1250             # the slot starts this long before the first symbol (ETSI TS 102 361-1, 4.2)
 ON_AIR_DB = "-20"           # on the air: the carrier within 20 dB of the burst's level
@@ -301,6 +305,13 @@ def grid(levels, top, n):
     return sorted(ds)
 
 
+def score(res):
+    """How far a set's verified levels miss (lower is nearer): the levels with a fault, then how late and how far
+    over they are."""
+    return (sum(1 for m in res.values() if m["bad"]),
+            sum(max(m["rise_us"], 0) + 100 * max((m["over_db"] or 0) - OVER_MAX_DB, 0) for m in res.values()))
+
+
 def judge(m, boosted=False, own_db=0.0):
     """What is wrong with a verified level's measurement (a list of words; empty: fine). A boosted level may be
     early: it starts at the window, never before. own_db: the overshoot the level's drive gives written alone (the
@@ -316,7 +327,7 @@ def judge(m, boosted=False, own_db=0.0):
         bad.append("sym1")
     if m.get("on_us") is not None and m["on_us"] < -GUARD_US:
         bad.append("before-slot")   # on the air in the slot before, boosted or not
-    return bad
+    return bad + [w for w in m.get("faults", []) if w not in bad]
 
 
 # ---- the bench line and the radio ----------------------------------------------------------------------------------
@@ -333,7 +344,10 @@ class Bench:
         have = info.get("features", [])
         if isinstance(have, dict):          # name: true or false
             have = [k for k, v in have.items() if v]
-        self.trace = bool(a.plot) and (have.get("bursts_trace") if isinstance(have, dict) else "bursts_trace" in have)
+        # The envelopes are what the ramp's shape is judged on (pa_shape.py), plot or not
+        self.trace = bool(have.get("bursts_trace") if isinstance(have, dict) else "bursts_trace" in have)
+        if not self.trace:
+            print("  the gateway sends no burst envelopes (bursts_trace): timing only, the ramps' shape isn't judged")
         need = FEATURES + (("rx_port",) if a.rx_port else ())
         missing = [f for f in need if f not in have]
         if missing:
@@ -477,14 +491,37 @@ def summarize(replies, a):
     settled = med([r.get("settled_db") for r in use])
     off = (done.get("envelope") or {}).get("dbm_offset")
     off = a.dbfs_to_dbm if a.dbfs_to_dbm is not None else off
-    return {"n": len(use), "rise_us": None if rise is None else rise * 1000.0, "creep": creep,
+    sh = shape_of(use)
+    up1 = None
+    if {"creep", "sag"} & set(sh.get("faults", [])) and sh["shape"].get("up1_ms") is not None:
+        up1 = max(sh["shape"]["up1_ms"] - UP1_US / 1000.0, rise if rise is not None else -1e9) * 1000.0
+    return {"n": len(use), "rise_us": None if rise is None else rise * 1000.0, "creep": creep, "up1_rise_us": up1,
             "rise3_us": None if rise3 is None else rise3 * 1000.0, "on_us": None if on is None else on * 1000.0,
             "over_db": med([r.get("overshoot_db") for r in use]), "sym1_db": med([r.get("sym1_db") for r in use]),
             "settled_dbfs": settled, "dbm": None if settled is None or off is None else settled + off,
             "clip_pct": max([cap.get("clip_pct") or 0] + [1 if r.get("clipped") else 0 for r in use]),
             "peak_dbfs": cap.get("peak_dbfs"), "trace": mid_trace(use, "trace"), "tail": mid_trace(use, "tail"),
             "off_us": off_air_us(mid_trace(use, "tail")), "end_db": end_db(mid_trace(use, "tail")),
-            "edge_res_us": ((done.get("envelope") or {}).get("ramp") or {}).get("edge_res_us")}
+            "edge_res_us": ((done.get("envelope") or {}).get("ramp") or {}).get("edge_res_us"), **sh}
+
+
+def shape_of(use):
+    """The bursts' ramp shapes (pa_shape.py): the median envelope's numbers ("shape", "down") and faults ("faults"),
+    and how far the bursts differ (the -3 dB point's spread, the worst burst's first-symbol RMS). Empty without
+    envelopes."""
+    tr, tl = mid_trace(use, "trace"), mid_trace(use, "tail")
+    up = pa_shape.key_up(tr, tl)
+    if not up:
+        return {}
+    down = pa_shape.key_down(tl, up[0]["floor_db"])
+    each = [pa_shape.key_up(r["trace"], r.get("tail")) for r in use if r.get("trace") and r["trace"].get("db")]
+    m3 = [e[0]["m3_ms"] for e in each if e and e[0]["m3_ms"] is not None]
+    sh = dict(up[0], m3_sd_us=round(statistics.pstdev(m3) * 1000.0) if len(m3) > 1 else 0,
+              worst_rms_db=max([e[0].get("sym_rms_db", 0.0) for e in each if e] or [0.0]))
+    faults = up[1] + (down[1] if down else [])
+    if sh["m3_sd_us"] > pa_shape.JITTER_US:
+        faults.append("jitter")
+    return {"shape": sh, "down": down[0] if down else None, "faults": faults}
 
 
 class Radio:
@@ -707,6 +744,9 @@ class Cal:
         """A key's measurement into the run's record and the log, with the stops every key is checked for."""
         a = self.a
         m.update(tag=tag, mhz=mhz, level=level, drive=drive, c=c)
+        if not drive and m.get("up1_rise_us") is not None:
+            # A level's own key-up (not an open-loop drive, whose edge the fit wants) is timed by its arrival
+            m.update(rise_us=m["up1_rise_us"], creep=True)
         self.rows.append(m)
         f = lambda v, n=1: "-" if v is None else f"{v:.{n}f}"
         self.say(f"  {tag:9s} level {level} drive {drive or '-':>5} {self.watts(m):>8s}  n={m['n']:2d}  "
@@ -783,7 +823,7 @@ class Cal:
                     "levels": {l: {"drive": drives[l], "plan": x["plan"], "rise_us": x["rise_us"],
                                    "over_db": x["over_db"], "sym1_db": x["sym1_db"], "power": self.watts(x),
                                    "creep": x.get("creep"), "rise3_us": x.get("rise3_us"), "on_us": x.get("on_us"),
-                                   "off_us": x.get("off_us"), "end_db": x.get("end_db"), "bad": overrun(x), "own_over_db": x["own_over_db"]} for l, x in asis.items()}}
+                                   "off_us": x.get("off_us"), "end_db": x.get("end_db"), "bad": overrun(x), "own_over_db": x["own_over_db"], "shape": x.get("shape"), "faults": x.get("faults", [])} for l, x in asis.items()}}
 
         window = min(a.window_us or board["window_us"] or ahead, ahead)
         # Open loop at the window the radio will use, not at the board's earliest point: the same points of its burst
@@ -890,8 +930,6 @@ class Cal:
                     own.append((d, k, m["rise_us"] - TARGET_US))
             ok = not any(m["bad"] for m in res.values())
             latest = lambda r: max(m["rise_us"] for m in r.values())
-            score = lambda r: (sum(1 for m in r.values() if m["bad"]),
-                               sum(max(m["rise_us"], 0) + 100 * max((m["over_db"] or 0) - OVER_MAX_DB, 0) for m in r.values()))
             if not ok and (near is None or score(res) < score(near[1])):
                 near = (c, res)             # the nearest miss, should no round hold
             if ok and (good is None or latest(res) < latest(good[1])):
@@ -953,6 +991,13 @@ class Cal:
                      f"settle {c['settle_us']} us" + (f", ease {c['ease_pm']}" if c["ease_pm"] else ""))
         if not ok and near:
             c, res = near                   # no round held: the nearest one is the result to look at
+        if not ok and not old and all(x["n"] and x["rise_us"] is not None for x in asis.values()) and \
+                score(asis) <= score(res):
+            # Nor is it nearer than the board's own: those stand
+            self.say("  no round is nearer than the board's constants: they stand")
+            c, res = board, asis
+            for l in levels:
+                res[l].setdefault("own_over_db", 0.0)
         if a.confirm and ok:
             for l, m in zip(levels, self.keys(mhz, "confirm", [(c, l, 0) for l in levels])):
                 boosted = plan(c, drives[l], top, ref, max_drive, ahead)["boost"] > drives[l]
@@ -972,7 +1017,7 @@ class Cal:
                                "off_us": res[l].get("off_us"), "end_db": res[l].get("end_db"),
                                "creep": res[l].get("creep"), "rise3_us": res[l].get("rise3_us"),
                                "on_us": res[l].get("on_us"),
-                               "own_over_db": res[l]["own_over_db"]} for l in levels}}
+                               "own_over_db": res[l]["own_over_db"], "shape": res[l].get("shape"), "faults": res[l].get("faults", [])} for l in levels}}
 
     def run(self):
         a, t0, out = self.a, time.monotonic(), []
@@ -996,6 +1041,10 @@ class Cal:
                          f"over {x['over_db'] or 0:.1f} dB, on air {x.get('on_us') or 0:+.0f} us"
                          + (f", off {x['off_us']:+.0f} us" if x.get("off_us") is not None else "") +
                          f"  {' '.join(x['bad']) or 'OK'}{note}")
+                sh = x.get("shape")
+                if sh:
+                    self.say(f"      {pa_shape.line(sh, x.get('faults', []))}; bursts: -3 dB spread {sh['m3_sd_us']} us")
+                    self.say(f"      {pa_shape.bins_line(sh)}")
             self.say("    { " + ", ".join(f".{n} = {c[n]}" for n in NAMES) + " }")
             self.say("    rfoundry_debug.py radio pa-keyup " + " ".join(str(c[n]) for n in NAMES))
         self.say(f"{self.keys_n} keys, {time.monotonic() - t0:.0f} s")

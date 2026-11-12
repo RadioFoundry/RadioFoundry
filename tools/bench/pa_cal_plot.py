@@ -26,6 +26,9 @@ import json
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pa_shape  # noqa: E402
+
 # A DMR burst is 27.5 ms in a 30 ms slot: 1.25 ms of guard on either side (ETSI TS 102 361-1, 4.2)
 GUARD_MS = 1.25
 BEFORE, AFTER, INK, FAINT = "#8a8f98", "#1f6fd1", "#30343b", "#c9ced6"
@@ -145,6 +148,7 @@ def ramps(plt, band, keys, path, who=""):
         meas = f", {_power(lv, l)}" if _power(lv, l) != f"level {l}" else ""
         names.append(Line2D([], [], color=color, lw=1.7, label=f"{power} (drive {lv['drive'] if lv else '?'}{meas})"))
         words = [f"{w}{'edge ' if k.get('creep') else ''}{k['rise_us']:+.0f} us, {k.get('over_db') or 0:.1f} dB over"
+                 + _faults(k)
                  for k, w in ((before, "before "), (after, "after " if compared else ""))
                  if k and k.get("rise_us") is not None]
         note.append((f"{power}: " + "; ".join(words), color))
@@ -173,6 +177,18 @@ def ramps(plt, band, keys, path, who=""):
     fig.tight_layout(rect=(0, 0.09, 1, 0.96))
     fig.savefig(path, dpi=130)
     plt.close(fig)
+
+
+def _faults(k):
+    """The drawn envelope's shape faults (pa_shape.py), for its label: the plot says what is wrong with it."""
+    up = pa_shape.key_up(k.get("trace"), k.get("tail"))
+    if not up:
+        return ""
+    down = pa_shape.key_down(k.get("tail"), up[0]["floor_db"])
+    f = up[1] + (down[1] if down else [])
+    r = up[0]
+    sym = f", 10 sym rms {r['sym_rms_db']:.1f} dB" if "sym_rms_db" in r else ""
+    return f"{sym}; " + (" ".join(f).upper() if f else "clean")
 
 
 def fit(plt, band, keys, path, who=""):
