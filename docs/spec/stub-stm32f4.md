@@ -417,7 +417,7 @@ Then, with RadioFoundry running (PORT is its USB serial port, `/dev/cu.usbmodem�
 | 8 | `python3 stub/stubtool.py PORT --attach --board <id> --boot reset` | RadioFoundry starts; `rfoundry_debug.py version` shows the new `git=` |
 | 9 | `python3 stub/stubtool.py PORT --rfoundry-enter --write-app ...` with yet another build, USB unplugged during the write, then a power cycle | the radio comes up in the bootloader with no keys held; rfoundry restores it |
 | 10 | `rfoundry_debug.py radio usb network`, then `python3 stub/stubtool.py udp:RADIO_IP --rfoundry-enter --peek 0x08000000:64` | the hand-over goes over UDP; the stub comes up as a serial port (`--stub-port`, default the one 1FC9:0094 port) and answers |
-| 11 | `python3 stub/stubtool.py PORT --rfoundry-enter --q128 ~/spi.bin`, then `--attach --verify-q128 ~/spi.bin` | "SPI flash 16384 KB (JEDEC …)" in the "configured" line; 16 MB read, identical |
+| 11 | `python3 stub/stubtool.py PORT --rfoundry-enter --q128 ~/spi.bin`, then `--attach --board <id> --verify-q128 ~/spi.bin` | "SPI flash 16384 KB (JEDEC …)" in the "configured" line; 16 MB read, identical |
 | 12 | write a pattern to a blank 4 KB sector with `--write-q128 pat.bin --q128-range ADDR:ADDR+0x1000`, read it back, write 0xFF back the same way, then `--verify-q128 ~/spi.bin` | 1 sector written each time; the pattern reads back; the whole chip matches the first read; RadioFoundry starts with its codeplug |
 
 Steps 4 and 5 write the dump outside the repository. Step 9 needs rfoundry and the stock firmware file at hand. The HIL suite

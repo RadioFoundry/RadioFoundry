@@ -9,6 +9,9 @@
 #include "board.h"
 #undef board
 #include "radio/radio_sm.h"
+#if CONFIG_APRS
+#include "aprs/aprs_beacon.h"	// APRS_WHY_*
+#endif
 #include "radio/radio_sfr.h"
 #include "radio/tones.h"
 #include "dmr/call/dmr_call.h"
@@ -23,6 +26,7 @@
 #include "dmr/dmr_emergency.h"
 #include "ui/ui_svc.h"
 #include "storage/storage.h"
+#include "codeplug/codeplug_kv.h"
 #include "dmr/dmrPrivacy.h"
 #include "dmr/dmrData.h"
 #include "sim/sim_flash.h"
@@ -33,6 +37,7 @@
 #include "radio/tx_limit.h"
 #include "radio/battery.h"
 #include "fuzz.h"
+#include "position/position.h"
 
 static int failures;
 static int checks;
@@ -172,11 +177,23 @@ static const uint8_t side_keys[] = { 1, 2 };
 
 static int gps_enable_calls;
 static bool gps_enabled;
+static bool gps_here;	// the module answered (board_has_gps): only test_position has one
+static bool fake_gps_present(void) { return gps_here; }
 static void fake_gps_enable(bool on)
 {
 	gps_enable_calls++;
 	gps_enabled = on;
 }
+
+// A hardware option (hal_hwopt.h) whose state the tests set; hidden (detected) unless a test says otherwise
+static uint8_t fake_hwopt_st = HWOPT_ST_HIDDEN;
+static const char *const fake_hwopt_choices[] = { "A", "B" };
+static int8_t fake_hwopt_get(void) { return 0; }
+static bool fake_hwopt_set(uint8_t c) { (void)c; return true; }
+static uint8_t fake_hwopt_state(void) { return fake_hwopt_st; }
+static const hal_hwopt_t fake_hwopts[] = {
+	{ "Revision", 2, fake_hwopt_choices, fake_hwopt_get, fake_hwopt_set, true, fake_hwopt_state },
+};
 
 // FAKE_MODEM_VOICE: a modem that plays the voice itself (CAP_MODEM_VOICE); that build runs test_modem_voice only
 #ifndef FAKE_MODEM_VOICE
@@ -185,8 +202,11 @@ static void fake_gps_enable(bool on)
 
 board_t board = {
 	.name = "fake",
-	.caps = FAKE_MODEM_VOICE ? CAP_MODEM_VOICE : 0,
+	.hwopts = fake_hwopts,
+	.hwopt_count = 1,
+	.caps = CAP_GPS | (FAKE_MODEM_VOICE ? CAP_MODEM_VOICE : 0),
 	.gps_enable = fake_gps_enable,
+	.gps_present = fake_gps_present,
 	.bands = bands,
 	.band_count = 4,
 	.rx_ext_count = 1,
@@ -256,6 +276,58 @@ static const contact_t contacts[] = {
 	{ "Local", 9, CONTACT_GROUP, 0 },
 };
 uint32_t codeplug_dmr_id(void) { return own_dmr_id; }
+
+// The codeplug's settings area: only the ARS server key here (the gateway's is built out, CONFIG_DMR_IP_GATEWAY=0)
+static bool kv_ars_present;
+static uint8_t kv_serial;
+static uint32_t kv_ars;
+static bool kv_held;	// a CPS session holds the flash, or another firmware's codeplug: no key can be written
+int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
+{
+	if (key != CODEPLUG_KEY_ARS_SERVER || !kv_ars_present) {
+		return -1;
+	}
+	memcpy(buf, &kv_ars, max < 4 ? max : 4);
+	return 4;
+}
+static bool kv_set_u32(uint16_t key, uint32_t value)
+{
+	if (key != CODEPLUG_KEY_ARS_SERVER || kv_held) {
+		return false;
+	}
+	kv_ars_present = true;
+	kv_ars = value;
+	kv_serial++;	// as codeplug_kv_write: the area's serial, no codeplug reload
+	return true;
+}
+uint8_t codeplug_kv_serial(void) { return kv_serial; }
+void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi)
+{
+	c->done = !(lo <= CODEPLUG_KEY_ARS_SERVER && CODEPLUG_KEY_ARS_SERVER <= hi);
+}
+int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
+{
+	uint8_t v[4] = { (uint8_t)kv_ars, (uint8_t)(kv_ars >> 8), (uint8_t)(kv_ars >> 16), (uint8_t)(kv_ars >> 24) };
+	if (c->done || !kv_ars_present) {
+		return -1;
+	}
+	c->done = 1;
+	*key = CODEPLUG_KEY_ARS_SERVER;
+	memcpy(buf, v, max < 4 ? max : 4);
+	return 4;
+}
+bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n)
+{
+	// each op a u32 set, through the one-key fake
+	for (uint8_t i = 0; i < n; i++) {
+		const uint8_t *v = ops[i].value;
+		if (ops[i].len != 4 ||
+		    !kv_set_u32(ops[i].key, v[0] | (uint32_t)v[1] << 8 | (uint32_t)v[2] << 16 | (uint32_t)v[3] << 24)) {
+			return false;
+		}
+	}
+	return true;
+}
 bool codeplug_set_dmr_id(uint32_t id)
 {
 	own_dmr_id = id;
@@ -264,10 +336,13 @@ bool codeplug_set_dmr_id(uint32_t id)
 }
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]) { line1[0] = line2[0] = 0; }
 void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]) { out[0] = 0; }
-#if CONFIG_APRS
-// APRS (radioCoreTestAprs): no APRS channel in the codeplug, no host link
+#if CONFIG_APRS_AFSK
+// APRS (radioCoreTestAprs): no APRS channel in the codeplug
 bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out) { memset(out, 0, sizeof(*out)); return false; }
 bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2) { return false; }
+#endif
+#if CONFIG_APRS
+// ... and no host link
 #include "hostlink/hostlink.h"
 void hostlink_set_tnc(const hostlink_tnc_t *tnc) { (void)tnc; }
 #endif
@@ -2270,6 +2345,67 @@ static void test_persist(void)
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
 
+	// The codeplug's settings area (docs/spec/codeplug-settings.md 5): a key that is present sets the ARS server, at
+	// start and when the codeplug changes, and the radio's own copy follows it
+	ds.arsServer = 3100999;
+	dmr_data_set_settings(&ds);
+	run(50);
+	kv_ars_present = true;
+	kv_ars = 3100777;
+	cp_serial++;			// as a CPS commit or a TFTP write
+	run(100);
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100777);
+	settings_read(&cur);
+	CHECK(cur.ds_ars_server == 3100777);
+	// A change that isn't a codeplug write doesn't hold against the key
+	ds.arsServer = 5;
+	dmr_data_set_settings(&ds);
+	run(50);
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100777);
+	// The menu writes the key (a codeplug job), 0 turns ARS off, and a reboot reads it back
+	CHECK(ui_svc_setting_get(UI_SET_ARS_SERVER) == 3100777);
+	CHECK(ui_svc_setting_set(UI_SET_ARS_SERVER, 0) && storage_job_busy());
+	CHECK(!ui_svc_setting_set(UI_SET_ARS_SERVER, 1));	// one job at a time
+	uint32_t cp_was = cp_serial;
+	storage_job_poll();
+	CHECK(kv_ars_present && kv_ars == 0 && !storage_job_busy());
+	run(100);
+	CHECK(ui_svc_setting_get(UI_SET_ARS_SERVER) == 0);
+	CHECK(cp_serial == cp_was);	// the key's value taken without a codeplug reload
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 0);
+	CHECK(!ui_svc_setting_set(UI_SET_ARS_SERVER, CODEPLUG_DMR_ID_MAX + 1));
+	// Absent (a codeplug from a tool that doesn't carry the area): the radio keeps what it has, and a change holds
+	kv_ars_present = false;
+	cp_serial++;
+	run(100);
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 0);
+	ds.arsServer = 3100888;
+	dmr_data_set_settings(&ds);
+	run(50);
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100888);
+	// A key present at start that the radio's own copy doesn't hold (a factory reset leaves the codeplug, a power
+	// cut before the copy was saved): the copy follows it, so the radio keeps the key's value once the key is gone
+	kv_ars_present = true;
+	kv_ars = 3100555;
+	boot();
+	run(100);
+	settings_read(&cur);
+	CHECK(cur.ds_ars_server == 3100555);
+	kv_ars_present = false;
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100555);
+	settings_begin()->ds_stored = 0;
+	settings_end(now);
+	boot();
+
 	// Power off: nothing to deregister, so the radio core is done at once
 	req(RREQ_POWER_OFF, 0);
 	run(50);
@@ -2473,6 +2609,65 @@ static void test_dmr_contact_added(void)
 	CHECK(d->target_id == 9996001 && d->target_private && strcmp(d->target_name, "Charlie Harper") == 0);
 	memset(&added_contact, 0, sizeof(added_contact));
 }
+
+#if CONFIG_APRS_DMR
+// APRS over DMR (docs/spec/aprs.md 8): a beacon goes to the data service as a position report, from a build with
+// the AX.25 backend and from one without it (radioCoreTestAprsDmr: no callsign, no APRS frequency, nothing of FM
+// APRS in the way). Where there is no choice the stored "Send via" is not asked
+static void test_aprs_dmr_beacon(void)
+{
+	aprs_view_t v0, v1;
+	aprs_cfg_t c;
+
+	boot();
+	dmr_start(true);
+	CHECK(ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 337490000) && ui_svc_setting_set(UI_SET_POS_FIXED_LON, -843880000));
+	aprs_get_cfg(&c);
+	c.via = CONFIG_APRS_AFSK ? APRS_VIA_DMR : APRS_VIA_RF;	// DMR only: "radio" stored by another build still goes out
+	c.dmr_dst = 310999;
+	c.dmr_udt = false;
+	aprs_set_cfg(&c, now);
+	run(50);
+	aprs_get_view(&v0);
+	CHECK(v0.pos_valid && v0.lat == 337490000);
+	CHECK(aprs_send_now());
+	run(3000);
+	aprs_get_view(&v1);
+	CHECK(v1.dmr_sent == v0.dmr_sent + 1 && v1.dmr_failed == v0.dmr_failed && v1.rf_sent == v0.rf_sent);
+	CHECK(v1.last_why == APRS_WHY_MANUAL);
+	// The short UDT form too
+	c.dmr_udt = true;
+	aprs_set_cfg(&c, now);
+	CHECK(aprs_send_now());
+	run(3000);
+	aprs_get_view(&v0);
+	CHECK(v0.dmr_sent == v1.dmr_sent + 1 && v0.dmr_failed == v1.dmr_failed);
+	// Automatic beacons: the interval sends without anyone asking
+	c.tx_on = true;
+	c.smart = false;
+	c.interval_s = 60;
+	aprs_set_cfg(&c, now);
+	run(130000);
+	aprs_get_view(&v1);
+	CHECK(v1.dmr_sent >= v0.dmr_sent + 2 && v1.rf_sent == v0.rf_sent);
+	c.tx_on = false;
+	aprs_set_cfg(&c, now);
+	// Off a DMR channel there is nowhere to send it: counted as failed, nothing keyed
+	req(RREQ_ZONE_POS, 0);
+	run(200);
+	aprs_get_view(&v0);
+	if (!CONFIG_APRS_AFSK) {
+		CHECK(aprs_send_now());
+		run(1000);
+		aprs_get_view(&v1);
+		CHECK(v1.dmr_sent == v0.dmr_sent && v1.dmr_failed == v0.dmr_failed + 1);
+	}
+	position_cfg_t pc;
+	position_get_cfg(&pc);
+	pc.fix_lat = pc.fix_lon = 0;
+	position_set_cfg(&pc, now);
+}
+#endif
 
 #if CONFIG_APRS_RX
 // One NMEA sentence from src to dst (a private call) on UDP 10110 (SAP 3), as the data service hears it
@@ -3128,6 +3323,150 @@ static void test_dual_two_vfos(void)
 }
 #endif
 
+// The board GPS for everything that reports a position (#466): the Position screen, LRRP's answer and DMR GPS Info
+// read the position service, and the stored position settings apply. radioCoreTest builds it without APRS,
+// radioCoreTestAprs with
+static void test_position(void)
+{
+	static const char gga[] = "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47";
+	static const char rmc[] = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
+	lrrpPosition_t lp;
+	ui_position_t up;
+	int32_t lat, lon;
+	uint32_t err;
+	bool send = true;
+
+	CHECK(CONFIG_POSITION);
+	gps_here = false;
+	dmr_start(true);
+	CHECK(!(ui_svc_feat_radio() & UI_FEAT_GPS) && !ui_svc_position(&up));
+	CHECK(!dmrDataServiceOwnPosition(&lp));
+	gps_here = true;
+	CHECK(ui_svc_feat_radio() & UI_FEAT_GPS);
+	CHECK(!ui_svc_position(&up));		// nothing heard yet
+	position_nmea(gga, strlen(gga), true, now);
+	position_nmea(rmc, strlen(rmc), true, now);
+	CHECK(ui_svc_position(&up) && up.fix && up.sats == 8 && up.lat_e7 == 481173000 && up.lon_e7 == 115166666);
+	CHECK(up.alt_ok && up.alt_m == 545 && up.course == 84);
+	run(10);
+	CHECK(dmrDataServiceOwnPosition(&lp) && lp.location.fixValid && lp.location.north && lp.location.east);
+	CHECK(lp.location.latDegrees == 48 && lp.location.latMinutes10000 == 70380 && lp.location.lonDegrees == 11 &&
+	      lp.location.lonMinutes10000 == 310000);
+	CHECK(lp.location.speedKnots == 22 && lp.hasCourse && lp.courseDegrees == 84 && lp.utcYear == 2094 &&
+	      lp.utcMonth == 3 && lp.utcDay == 23 && lp.location.utcHours == 12 && lp.location.utcMinutes == 35);
+	dmrDataSettings_t ds;
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.hasGps);			// LRRP takes triggered requests: a GPS is there
+
+	// DMR GPS Info: off until Settings > Location > Send in DMR calls says so, then our position goes out in the
+	// call. The setting is the position service's own: saved without APRS, back after a restart
+	CHECK(position_now(&lat, &lon, &err, &send, now) && !send && lat == 481173000 && err == 20);
+	CHECK(ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 0 && ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 1));
+	position_cfg_t pc;
+	position_get_cfg(&pc);
+	pc.ambiguity = 2;			// whole minutes
+	position_set_cfg(&pc, now);
+	settings_t sr;
+	settings_read(&sr);
+	CHECK(sr.aprs_stored != 1 && (sr.aprs_misc & SETTINGS_APRS_MISC_POSITION));	// its own marker, not APRS's
+	boot();
+	CHECK(ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 1);
+	position_nmea(rmc, strlen(rmc), true, now);
+	CHECK(position_now(&lat, &lon, &err, &send, now) && send && err == 1852);
+	CHECK(lat == 481250002);		// 48 07.038 -> the middle of its minute, 48 07.5
+	position_get_cfg(&pc);
+	pc.ambiguity = 0;
+	position_set_cfg(&pc, now);
+	req(RREQ_ZONE_POS, 3);			// the DMR channel again (dmr_start would start from new settings)
+	run(50);
+	position_nmea(rmc, strlen(rmc), true, now);
+	dmr_call_stats_t cs0, cs1;
+	dmr_call_get_stats(&cs0);
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs1);
+	CHECK(cs1.tx_gps_lcs - cs0.tx_gps_lcs >= 1);
+	// ... and with the setting off again, none
+	CHECK(ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 0));
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs0);
+	CHECK(cs0.tx_gps_lcs == cs1.tx_gps_lcs);
+	// The codeplug can ask for it per channel and timeslot (what a CPS sets): sent with the radio's setting off
+	chans[4].alias_tx = CODEPLUG_ALIAS_TS2_GPS;	// a TS1 channel: not on this one
+	reload_channel();
+	CHECK(!sm.view.dmr.gps_tx_channel);
+	chans[4].alias_tx = CODEPLUG_ALIAS_TS1_GPS;
+	reload_channel();
+	CHECK(sm.view.dmr.gps_tx_channel);
+	position_nmea(rmc, strlen(rmc), true, now);
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs1);
+	CHECK(cs1.tx_gps_lcs - cs0.tx_gps_lcs >= 1);
+	chans[4].alias_tx = 0;
+	reload_channel();
+	CHECK(ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 1));
+
+	// Settings > Location > GPS off: the fix goes at once
+	position_gps_enable(false);
+	CHECK(!ui_svc_position(&up) && !dmrDataServiceOwnPosition(&lp));
+	position_gps_enable(true);
+
+	// A radio without a GPS: the fixed position typed in Settings > Location is what LRRP answers with and what
+	// goes out in calls, after a restart too
+	gps_here = false;
+	CHECK(!dmrDataServiceOwnPosition(&lp));
+	CHECK(ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 337490000) && ui_svc_setting_set(UI_SET_POS_FIXED_LON, -843880000));
+	CHECK(!ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 900000001) && !ui_svc_setting_set(UI_SET_POS_SOURCE, 9));
+	boot();
+	req(RREQ_ZONE_POS, 3);
+	run(50);
+	CHECK(ui_svc_setting_get(UI_SET_POS_FIXED_LAT) == 337490000 && ui_svc_setting_get(UI_SET_POS_FIXED_LON) == -843880000);
+	CHECK(dmrDataServiceOwnPosition(&lp) && lp.location.fixValid && lp.location.north && !lp.location.east);
+	CHECK(lp.location.latDegrees == 33 && lp.location.latMinutes10000 == 449400 && lp.location.lonDegrees == 84 &&
+	      lp.location.lonMinutes10000 == 232800 && lp.utcYear == 0 && !lp.hasCourse);
+	CHECK(position_now(&lat, &lon, &err, &send, now) && send && lat == 337490000 && lon == -843880000 && err == 200);
+	dmr_call_get_stats(&cs0);
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs1);
+	CHECK(cs1.tx_gps_lcs - cs0.tx_gps_lcs >= 1);
+	// The source set to GPS only: the fixed position doesn't count
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_GPS) && ui_svc_setting_get(UI_SET_POS_SOURCE) == POSITION_GPS);
+	CHECK(!dmrDataServiceOwnPosition(&lp) && !position_now(&lat, &lon, &err, &send, now));
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_FIXED) && dmrDataServiceOwnPosition(&lp));
+#if !CONFIG_POSITION_HOST
+	// "Computer" left by a build that takes a computer's NMEA: here it counts as Auto, not as no position
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_HOST) && dmrDataServiceOwnPosition(&lp));
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_FIXED));
+#endif
+	// A record APRS stored before the position service had its own marker still counts
+	settings_t *st = settings_begin();
+	st->aprs_misc &= (uint8_t)~SETTINGS_APRS_MISC_POSITION;
+	st->aprs_stored = 1;
+	settings_end(now);
+	boot();
+	CHECK(ui_svc_setting_get(UI_SET_POS_FIXED_LAT) == 337490000 && ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 1);
+	// ... and with neither, the defaults
+	st = settings_begin();
+	st->aprs_stored = 0;
+	settings_end(now);
+	boot();
+	CHECK(ui_svc_setting_get(UI_SET_POS_FIXED_LAT) == 0 && ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 0 &&
+	      ui_svc_setting_get(UI_SET_POS_SOURCE) == POSITION_AUTO);
+	settings_init();
+	boot();
+}
+
 static void test_ui_glue(void)
 {
 	const radio_dmr_view_t *d = &sm.view.dmr;
@@ -3257,6 +3596,32 @@ static void test_ui_glue(void)
 	CHECK(ui_svc_write_channel(6, &ed) && n_ev == 3 && ui_svc_codeplug_answer(UI_CP_NEW));
 	storage_job_poll();
 	CHECK(cp_new == 1 && cp_writes == w + 2 && chans[6].color_code == 4 && !codeplug_foreign());
+	// A keyed setting isn't a codeplug write that asks (docs/spec/codeplug-settings.md 5): with another firmware's
+	// codeplug the area can't be written and holds no key, so the setting is saved as the radio's own, no question
+	cp_foreign = true;
+	kv_ars_present = false;
+	kv_held = true;
+	CHECK(ui_svc_setting_set(UI_SET_ARS_SERVER, 3100123) && n_ev == 3);
+	storage_job_poll();
+	run(100);
+	CHECK(!kv_ars_present && cp_new == 1 && n_ev == 3);
+	CHECK(ui_svc_setting_get(UI_SET_ARS_SERVER) == 3100123);
+	{
+		settings_t own;
+		settings_read(&own);
+		CHECK(own.ds_ars_server == 3100123);
+	}
+	cp_foreign = false;
+	// A key that is present and can't be updated (a CPS session holds the flash) refuses the change: it would put
+	// the old value back
+	kv_ars_present = true;
+	kv_ars = 3100123;
+	CHECK(ui_svc_setting_set(UI_SET_ARS_SERVER, 3100124));
+	storage_job_poll();
+	run(100);
+	CHECK(kv_ars == 3100123 && ui_svc_setting_get(UI_SET_ARS_SERVER) == 3100123 && last_ev.kind == UI_EV_SAVE_FAILED);
+	kv_held = false;
+	kv_ars_present = false;
 	n_ev = 0;
 	run(100);
 	req(RREQ_CLEAR_TEMP, 0);
@@ -4451,10 +4816,27 @@ static void test_error_paths(void)
 	run(20);
 	tx_fail = true;
 	req(RREQ_PTT, 1);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED);
 	run(RADIO_LED_DENY_STEPS * RADIO_LED_DENY_STEP_MS);
 	CHECK(!hw.led[LED_RED]);	// after the deny flash: dark, nothing on air
 	req(RREQ_PTT, 0);
+	// A hardware option still unset or not applied: the refusal names it, never the band
+	for (uint8_t st = HWOPT_ST_ASK; st <= HWOPT_ST_RESTART; st++) {
+		fake_hwopt_st = st;
+		req(RREQ_PTT, 1);
+		CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HWOPT);
+		req(RREQ_PTT, 0);
+	}
+	// The core refuses it itself, even where the board would key (a restart due, the old choice still confirmed)
+	tx_fail = false;
+	for (uint8_t st = HWOPT_ST_ASK; st <= HWOPT_ST_RESTART; st++) {
+		fake_hwopt_st = st;
+		int calls = hw.tx_calls;
+		req(RREQ_PTT, 1);
+		CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HWOPT && hw.tx_calls == calls);
+		req(RREQ_PTT, 0);
+	}
+	fake_hwopt_st = HWOPT_ST_HIDDEN;
 	tx_fail = false;
 
 	// No retuning while transmitting: channel, zone, VFO and scan requests wait for the release
@@ -4495,10 +4877,19 @@ static void test_error_paths(void)
 	tx_fail = true;
 	req(RREQ_PTT, 1);
 	run(100);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && sim.tx_begins == 0);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && sim.tx_begins == 0);
 	req(RREQ_PTT, 0);
 	run(100);
-	tx_fail = false;
+	tx_fail = false;	// the core refuses a pending option even where the board would key
+	for (uint8_t st = HWOPT_ST_ASK; st <= HWOPT_ST_RESTART; st++) {
+		fake_hwopt_st = st;
+		req(RREQ_PTT, 1);
+		run(100);
+		CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HWOPT && sim.tx_begins == 0);
+		req(RREQ_PTT, 0);
+		run(100);
+	}
+	fake_hwopt_st = HWOPT_ST_HIDDEN;
 	sim.reject_next = true;
 	req(RREQ_PTT, 1);
 	run(300);
@@ -5144,6 +5535,7 @@ int main(void)
 	test_dmr_contact_added();
 	test_ui_requests();
 	test_ui_glue();
+	test_position();
 #if CONFIG_DUAL_WATCH
 	test_ui_dual();
 	test_dual_two_vfos();
@@ -5167,6 +5559,9 @@ int main(void)
 	test_sfr_cwid();
 #endif
 	test_dmr_emergency();
+#if CONFIG_APRS_DMR
+	test_aprs_dmr_beacon();
+#endif
 #if CONFIG_APRS_RX
 	test_dmr_aprs_position();
 #endif

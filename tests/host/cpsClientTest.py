@@ -7,6 +7,7 @@ import os
 import sys
 import subprocess
 import tempfile
+import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "tools"))
@@ -20,6 +21,52 @@ def check(cond, what):
     if not cond:
         print(f"FAIL {what}")
         failures += 1
+
+
+def make_area(ars):
+    """A valid codeplug settings area (codeplug-settings.md 2) holding the ARS server key, as a 4 KB sector"""
+    data = (1).to_bytes(2, "little") + (4).to_bytes(2, "little") + ars.to_bytes(4, "little")
+    head = b"RFKV" + bytes([1, 16]) + len(data).to_bytes(2, "little") + zlib.crc32(data).to_bytes(4, "little") + bytes(4)
+    return (head + data).ljust(4096, b"\xff")
+
+
+def area_cases(sim, open_fn, read_area, write):
+    """The settings area through a client: a valid one in the file is written, an erased or damaged one leaves the
+    radio's, and the radio's of a newer version is never written over"""
+    A, B = cps_client.SETTINGS_AREA
+    check(cps_client.area_state(make_area(5)) == "valid" and cps_client.area_state(b"\xff" * 4096) == "empty",
+          "area_state valid / empty")
+    newer = bytearray(make_area(5))
+    newer[4] = 2
+    check(cps_client.area_kept(b"\xff" * 4096, make_area(5)) and not cps_client.area_kept(make_area(6), make_area(5))
+          and cps_client.area_kept(make_area(6), bytes(newer)),
+          "area_kept: an empty file area or a newer radio area keeps the radio's (verify leaves it out)")
+    with tempfile.TemporaryDirectory() as d:
+        dump = os.path.join(d, "flash.bin")
+        subprocess.run([sim, "--populate", "--dump", dump], stdin=subprocess.DEVNULL, check=True)
+        link = open_fn(f"{sim} --image {dump} --dump {dump}")
+        img = bytearray(read_area(link))
+        check(bytes(img[A:B]) == b"\xff" * 4096, "no area on a new radio")
+        img[A:B] = make_area(3100111)
+        write(link, img)
+        check(bytes(read_area(link)[A:B]) == make_area(3100111), "a valid area is written")
+        img[A:B] = b"\xff" * 4096
+        write(link, img)
+        check(bytes(read_area(link)[A:B]) == make_area(3100111), "an erased area in the file keeps the radio's")
+        bad = bytearray(make_area(3100222))
+        bad[20] ^= 1
+        img[A:B] = bad
+        write(link, img)
+        check(bytes(read_area(link)[A:B]) == make_area(3100111), "a damaged area in the file keeps the radio's")
+        link.close()
+        with open(dump, "r+b") as f:
+            f.seek(A + 4)
+            f.write(b"\x02")                           # a later firmware's area
+        link = open_fn(f"{sim} --image {dump} --dump {dump}")
+        img[A:B] = make_area(3100333)
+        write(link, img)
+        check(read_area(link)[A + 4] == 2, "a newer area is never written over")
+        link.close()
 
 
 def test_channels(sim):
@@ -205,6 +252,9 @@ def main():
         check(rc == 0, "cps_client verify")
     test_channels(sim)
     test_power_byte()
+    radio = cps_client.REGIONS["radio"]
+    area_cases(sim, lambda cmd: cps_client.open_cps(exec_cmd=cmd), lambda c: c.read_image(radio),
+               lambda c, img: c.write_image(img, radio, reboot=False))
     print(f"# cpsClientTest {'FAILED' if failures else 'PASSED'} ({failures} failures)")
     return 1 if failures else 0
 

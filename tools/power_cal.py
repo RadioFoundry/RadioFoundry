@@ -10,8 +10,7 @@
 A STEP is a PA drive in the board's units (debug link RADIO op 36), or Ln for power level n as the radio drives it;
 DRIVE@Ln keys a drive with level n's other settings (a board may set more than the drive per level; default level 0);
 STEP:S keys it for S seconds (default 2). The radio goes to the VFO on MHZ, FM, no sub-audio tone, with the test TX
-limit on MHZ alone. A board hardware option named "Transmit..." with an "Armed" choice is armed for the run and turned
-off after. --no-prompt keys the steps without asking (another person reads the meter); check then takes the readings
+limit on MHZ alone. --no-prompt keys the steps without asking (another person reads the meter); check then takes the readings
 with --readings W,W,... afterwards. Each reading is the average power at the end of the key-up, in watts.
 """
 import argparse
@@ -47,7 +46,6 @@ def in_tolerance(watts, target):
 class Radio:
     def __init__(self, link, mhz):
         self.link, self.hz = link, round(mhz * 1e6)
-        self.arm = None
 
     def view(self):
         return self.link.view(["core"])
@@ -62,10 +60,6 @@ class Radio:
         raise SystemExit(f"power_cal: timeout waiting for {what}")
 
     def setup(self):
-        for i, o in enumerate(self.link.hwopts() if hasattr(self.link, "hwopts") else []):   # board hardware options
-            if o["name"].startswith("Transmit") and "Armed" in o["choices"]:
-                self.arm = (i, o["choices"])
-                self.link.hwopt_set(i, o["choices"].index("Armed"))
         if self.view().get("vfo") != "1":
             self.link.vfo(True)
             self.wait(lambda v: v.get("vfo") == "1", "the VFO")
@@ -84,21 +78,10 @@ class Radio:
         try:
             self.link.ptt(False)
             self.link.tx_drive(0)
-            # The transmit arm refuses a change while the radio transmits (an FM tail runs on after PTT)
+            # The level is set back once the transmission is over (an FM tail runs on after PTT)
             self.wait(lambda v: v.get("state") not in ("tx", "tx_tail"), "the end of the transmission")
             self.set_level(0)
         finally:
-            if self.arm:
-                i, choices = self.arm
-                off = choices.index("Off") if "Off" in choices else 0
-                for _ in range(10):
-                    try:
-                        self.link.hwopt_set(i, off)
-                        break
-                    except dl.DebugLinkError:
-                        time.sleep(0.5)
-                else:
-                    print("power_cal: transmit still ARMED: disarm it by hand", file=sys.stderr)
             self.link.tx_limit()
 
     def levels(self):
@@ -135,7 +118,7 @@ class Radio:
         finally:
             self.link.ptt(False)
         if st != "tx":
-            raise SystemExit(f"power_cal: the radio didn't transmit (state {st}): arm, TX limit, calibration?")
+            raise SystemExit(f"power_cal: the radio didn't transmit (state {st}): TX limit, calibration?")
 
 
 class Session:

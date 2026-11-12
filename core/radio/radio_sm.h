@@ -447,12 +447,14 @@ typedef struct {
 	uint32_t em_cfg_serial;		// dmr_emergency_config_serial() the call stack was configured with
 #endif
 #if CONFIG_APRS
-	// APRS transmissions (core/aprs, docs/spec/aprs.md 6): the radio leaves the channel for the APRS frequency
+	bool aprs_was_tx;		// our own transmission (not APRS) at the last poll: the "after PTT" trigger
+#endif
+#if CONFIG_APRS_AFSK
+	// APRS transmissions on FM (core/aprs, docs/spec/aprs.md 6): the radio leaves the channel for the APRS frequency
 	uint8_t aprs_phase;		// APRS_RF_* in radio_sm.c, 0 = not on the APRS frequency
 	uint32_t aprs_ms;		// start of the current phase (LISTEN: of the current slot)
 	uint32_t aprs_listen_ms;	// start of the wait for a clear channel
 	uint32_t aprs_rand;		// p-persistence
-	bool aprs_was_tx;		// our own transmission (not APRS) at the last poll: the "after PTT" trigger
 	aprs_rf_job_t aprs_job;
 #endif
 	bool tx_no_ptt;		// on the air without PTT (a DMR data burst list): not the user's transmission, no "after PTT"

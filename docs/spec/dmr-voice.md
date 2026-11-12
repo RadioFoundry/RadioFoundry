@@ -169,17 +169,24 @@ not a position.
 
 Receive: `dmr_call` decodes every GPS Info LC on the call into `dmr_caller_t.gps` / `gps_valid` (counter `rx_gps`);
 a new talker clears it, and `last_heard` keeps it after the call. The radio core adds the distance and bearing from
-our own position (the APRS position source, `aprs.md` 7) in `radio_dmr_call_t`, the receive screen shows "12.3 km NE"
+our own position (the position service, [position.md](position.md)) in `radio_dmr_call_t`, the receive screen shows "12.3 km NE"
 (or the coordinates when we have no position of our own), Recent keeps the distance with the entry, and in
 `CONFIG_APRS_RX` builds the caller goes into the APRS station list (named by its alias's callsign, else its DMR ID).
 
-Transmit: Tools > APRS > "Position in DMR calls" (radio-wide, off by default, `aprs_cfg_t.dmr_gps`, P7). At PTT the
-radio core takes the APRS position in use (GPS on boards with one, the host's NMEA, else the fixed position;
-position ambiguity applied) and hands it to the stack (`dmr_call_set_tx_gps`); no position, no GPS Info. The GPS Info
+Transmit, when either asks for it:
+
+| Setting | Where | Scope |
+|---|---|---|
+| "Send in DMR calls" | Settings > Location (`position_cfg_t.dmr_gps`, off by default, P7) | every DMR call |
+| The channel's talker alias field for its timeslot: APRS or Both | the codeplug (`open-firmware-cps.md` 7.3.3, offset 0x30; `channel_t.alias_tx` `CODEPLUG_ALIAS_TS1_GPS` / `_TS2_GPS`), so a CPS sets it | calls on that channel; not the VFO |
+
+At
+PTT the radio core takes the position in use (`position_now`: GPS on boards with one, the host's NMEA, else the fixed
+position; position ambiguity applied) and hands it to the stack (`dmr_call_set_tx_gps`); no position, no GPS Info. The GPS Info
 LC is one more entry at the end of the talker alias rotation in the odd superframes: LC, header, LC, block 1, LC,
 block 2, LC, GPS, ... with an alias, or LC, GPS, LC, GPS without (counter `tx_gps_lcs`). The position error says 20 m
-for GPS and host fixes, 200 m for a typed position, or the ambiguity's blur. Without `CONFIG_APRS` there is no
-position source, so nothing is sent (receive still works).
+for GPS and host fixes, 200 m for a typed position, or the ambiguity's blur. It needs no APRS: the setting and the
+position are the position service's, built with `CONFIG_DMR_GPS`. A radio without a GPS sends its fixed position.
 
 The hotspot already passes FLCO 4-8 embedded LCs through to the host (`hotspot.c`).
 
@@ -241,7 +248,7 @@ codec bits.
 ## 7. Observing it
 
 Debug link (`debuglink.md`): the `core` view's `mode` and `vfo`, the `dmr` view's `dmr.cc`, `dmr.ts`, `dmr.target_id`,
-`dmr.target_private`, `dmr.target_manual`, `dmr.privacy`, `dmr.alias_tx`; RADIO op 31 sets the mode, color code and timeslot (the VFO's
+`dmr.target_private`, `dmr.target_manual`, `dmr.privacy`, `dmr.alias_tx`, `dmr.gps_tx_channel` (the channel's own position setting); RADIO op 31 sets the mode, color code and timeslot (the VFO's
 own in the VFO), op 15 the talk target and op 32 copies the channel to the VFO (2.2); the `dmr_call` view's
 `emergency`, `pi_header`, `alias_complete`, `fid`, `svc`, `pi_alg`, `pi_key`; the counters `rx_private_calls`,
 `rx_emergency_calls`, `rx_encrypted_calls`, `rx_pi_headers`, `rx_alias_complete`, `tx_alias_lcs`, `rx_gps`,

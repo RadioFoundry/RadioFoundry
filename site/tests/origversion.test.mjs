@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { parseVersion, choiceFor, readDfuInfo, hwoptAction, answerKind, runsOriginal, READS } from "../static/js/flasher/origversion.js";
+import { parseVersion, choiceFor, readDfuInfo, hwoptAction, pendingHwopt, majorsFor, answerKind, runsOriginal, READS } from "../static/js/flasher/origversion.js";
 import { Link } from "../static/js/flasher/link.js";
 import { FakeRadio, simulation } from "../static/js/flasher/fake.js";
 
@@ -92,7 +92,7 @@ test("an odd answer is no version", async () => {
 });
 
 test("what to do with a choice, given the radio's options", () => {
-	const opts = (value) => [{ name: "Transmit", value: 0, restart: false, choices: ["Off", "On"] },
+	const opts = (value) => [{ name: "Mode", value: 0, restart: false, choices: ["Off", "On"] },
 		{ name: "Board revision", value, restart: true, choices: ["A", "B", "C"] }];
 	assert.deepEqual(hwoptAction(opts(-1), "Board revision", "B"), { action: "store", option: 1, choice: 1, held: null });
 	assert.deepEqual(hwoptAction(opts(1), "Board revision", "B"), { action: "same", option: 1, choice: 1, held: "B" });
@@ -109,11 +109,13 @@ test("HWOPT over the debug link: list, store, and a mismatch left alone", async 
 	const r = await radio({ state: "rfoundry" });
 	const link = new Link(r.serialStream());
 	const opts = await link.hwopts();
-	assert.deepEqual(opts, [{ name: spec.hwopt, value: -1, restart: true, choices }]);
+	assert.deepEqual(opts, [{ name: spec.hwopt, value: -1, restart: true, choices, state: "ask" }]);
+	assert.equal(pendingHwopt(opts).option, 0);
 	const a = hwoptAction(opts, spec.hwopt, choices[0]);
 	assert.equal(a.action, "store");
 	await link.hwoptSet(a.option, a.choice);
 	assert.equal((await link.hwopts())[0].value, 0);
+	assert.equal(pendingHwopt(await link.hwopts()), null);
 	assert.deepEqual(r.events, [`hwopt ${choices[0]}`]);
 	if (choices.length > 1) {
 		const m = hwoptAction(await link.hwopts(), spec.hwopt, choices[1]);
@@ -121,6 +123,41 @@ test("HWOPT over the debug link: list, store, and a mismatch left alone", async 
 		assert.equal(m.held, choices[0]);
 	}
 	await assert.rejects(link.hwoptSet(0, choices.length), /status 2/);
+});
+
+test("what the radio still needs from a person: a question, a restart due, nothing", () => {
+	const o = (state) => ({ name: "Board revision", value: -1, restart: true, choices: ["A", "B"], state });
+	assert.equal(pendingHwopt([]), null);
+	assert.equal(pendingHwopt([o("ok"), o("hidden")]), null);
+	assert.deepEqual(pendingHwopt([o("hidden"), o("ask")]), { option: 1, ...o("ask") });
+	assert.equal(pendingHwopt([o("restart")]).state, "restart");
+	assert.deepEqual(majorsFor(SPEC, "B"), ["16"]);
+	assert.deepEqual(majorsFor({ major: { "26": "C", "06": "C" } }, "C"), ["06", "26"]);
+	assert.deepEqual(majorsFor(null, "A"), []);
+});
+
+test("a radio the install couldn't tell: asked, refused, restart due, stored", async () => {
+	const spec = declared[0].original_version;
+	const choices = [...new Set(Object.values(spec.major))];
+	if (choices.length < 3) return;
+	// runs the first choice; refuses the last (as a radio that found a chip the last never has)
+	const r = await radio({ state: "rfoundry", hwoptRunning: 0, hwoptRefuse: choices.length - 1 });
+	const link = new Link(r.serialStream());
+	assert.equal(pendingHwopt(await link.hwopts()).state, "ask");
+	await assert.rejects(link.hwoptSet(0, choices.length - 1), /status 7/);
+	await link.hwoptSet(0, 1);
+	assert.equal(pendingHwopt(await link.hwopts()).state, "restart");
+	await link.hwoptSet(0, 0);
+	assert.equal(pendingHwopt(await link.hwopts()), null);
+});
+
+// A firmware without the state key: a question while nothing is stored
+test("HWOPT without a state: derived from the stored value", async () => {
+	const r = await radio({ state: "rfoundry" });
+	const link = new Link(r.serialStream());
+	const orig = link.request.bind(link);
+	link.request = async (...a) => new TextEncoder().encode(new TextDecoder().decode(await orig(...a)).replace(/hwopt\.0\.state=\w+\n/, ""));
+	assert.equal((await link.hwopts())[0].state, "ask");
 });
 
 test("the original firmware refuses what the bootloader would take for a write", async () => {
