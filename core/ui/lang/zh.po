@@ -2247,6 +2247,38 @@ msgid "OK edit  Back"
 msgstr "OK 编辑  返回"
 
 #: core/ui/ui_menus.c
+msgid "ARS server"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "IP gateway"
+msgstr "IP 网关"
+
+#: core/ui/ui_menus.c
+msgid "Registering"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "Registered"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "Refused"
+msgstr "已拒绝"
+
+#: core/ui/ui_menus.c
+msgid "No answer"
+msgstr "无应答"
+
+#: core/ui/ui_menus.c
+msgid "ARS: "
+msgstr "ARS： "
+
+#: core/ui/ui_menus.c
+msgid "Data Services"
+msgstr ""
+
+#: core/ui/ui_menus.c
 msgid "Freq Trim"
 msgstr "频率微调"
 
@@ -2933,6 +2965,10 @@ msgstr "PC 应答数据"
 #: core/ui/ui_menus.c
 msgid "USB address"
 msgstr "USB 地址"
+
+#: core/ui/ui_menus.c
+msgid "Data services"
+msgstr ""
 
 #: core/ui/ui_menus.c
 msgid "Auto power off"
