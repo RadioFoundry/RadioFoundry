@@ -358,7 +358,7 @@ def get_saved_codec(args, board, probe):
     this codec hands over a copy: before every update where an update erases it, once on the other boards. Else the
     copy an earlier run saved (an update that stopped halfway, a radio back on stock firmware or in its bootloader)."""
     saved = codecsave.load(board)
-    has_codec = bool(probe) and probe.get("codec") == board.codec.id
+    has_codec = bool(probe) and board.codec_present(probe.get("codec"))
     if has_codec and not args.no_probe and (not board.keep_codec_supported or saved is None):
         say("codec    reading it back from the radio over the debug link (a read, nothing is written to the radio); "
             "this can take a few minutes")
@@ -419,7 +419,7 @@ def decide_codec(board, manifest, requested, have_stock, probe, stock_installed,
             raise UsageError("the radio reported board %r over its debug link, but this image is for the %s: refusing"
                              % (probe.get("board"), board.name))
         codec = probe.get("codec")
-        if codec == profile:
+        if codec == profile or board.codec_present(codec):
             return Decision(planmod.KEEP, "RadioFoundry on the radio checked its codec (%s: where it is and every window's CRC) "
                             "and the codec sectors are left alone" % codec)
         if codec is None:
