@@ -9,7 +9,9 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
   A parent switch's figure includes its children (turning `FM` off also drops VOX, APRS, ...).
 - Figures from tools/ci.sh at 3ec14e3 (2026-10-11).
   - DM-1701: plain build (LTO off), default image 340,680 B of 344,064 B (3,384 free). Since USRP (2026-10-13) the
-    default build uses link time optimization: 330,824 B (13,240 free). The per-feature figures stay the plain ones.
+    default build uses link time optimization: 330,824 B (13,240 free). Both figures are from the 336 KB app region
+    the radio had before the codec moved; its app region is now sectors 3-9, 720 KB. The per-feature figures stay the
+    plain ones.
   - MD-380: link time optimization on (`LTO=1 LTO_3P=1`, its default), default image 279,444 B of 281,668 B, the
     region it had then. With LTO a switch also changes what gets inlined elsewhere, so small MD-380 figures are
     approximate. Since the codec moved (2026-10-19) the region is 464 KB and the switches that were off for flash are
@@ -133,10 +135,10 @@ is `tools/bringup.py list --radio <id>`.
 | `font_big` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `lang_es` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `lang_it` | off | off | off | off | off | off | off |
-| `lang_zh` | off | off | ✕ | ✕ | ✕ | ✕ | off |
+| `lang_zh` | off | off | ✕ | ✕ | off | off | off |
 | `lang_default_es` | off | off | off | off | off | off | off |
 | `lang_default_it` | off | off | off | off | off | off | off |
-| `lang_default_zh` | off | off | ✕ | ✕ | ✕ | ✕ | off |
+| `lang_default_zh` | off | off | ✕ | ✕ | off | off | off |
 | `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run |
 | `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run |
 | `codeplug_foreign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
@@ -151,9 +153,9 @@ What the records don't hold yet: limits and known problems from the bring-up pag
 |---|---|---|
 | DM-1701 | Not yet checked: split duplex with a real pair of radios, standalone SFR, roaming to a repeater, IP over DMR end to end, VOX with a voice, privacy scrambling against another radio | [on-air-coverage](testing/on-air-coverage.md) |
 | DM-32UV | GPS data seen, no fix yet. The transmit half of a split duplex pair not checked. FM transmit deviation at 12.5 kHz, both slots through a duplex hotspot. A DMR receive fault after hours of uptime (2026-10-16, cause unknown). USB not available | [dm32-bringup](testing/dm32-bringup.md) |
-| DM-1801 Pro | The receive half of a split duplex pair, VHF transmit, VOX and APRS receive not checked | [hardware-dm1801pro](spec/hardware-dm1801pro.md) |
+| DM-1801 Pro | The receive half of a split duplex pair, VHF transmit, VOX and APRS receive not checked. Chinese is unavailable: the 5x8 words leave no 16 px line for a CJK glyph, so a hand-tuned small-height CJK face and a layout to match are needed, not a switch ([UI spec](spec/ui.md) 2.5) | [hardware-dm1801pro](spec/hardware-dm1801pro.md) |
 | DB25-D PRO | The older FD6818 batches (D64, D66, D6T) are driven by the same image, untested on a radio. Split duplex not built. Standalone and MMDVM SFR checked on the SDR bench (experimental). DMR audio from the speaker, a GPS fix and settings kept across power off not confirmed | [hardware-db25d](spec/hardware-db25d.md) |
-| MD-380 | Fully operational (UHF)¹. DCS, the VHF image, tone deviation and data from a DMR VFO not checked. Split duplex and SFR not available (HR_C5000) | [md380-bringup](testing/md380-bringup.md) |
+| MD-380 | Fully operational (UHF)¹. DCS, the VHF image, tone deviation and data from a DMR VFO not checked. Split duplex and SFR not available (HR_C5000). The Chinese image builds in ci but is untested on a radio | [md380-bringup](testing/md380-bringup.md) |
 
 ¹ Frequency accuracy depends on each radio's factory calibration: confirm it against an external reference (frequency counter, service monitor, or a hotspot's MMDVMCal BER test). Two MD-380s measured 2-2.5 kHz high, outside an MMDVM hotspot's decode window; Settings > Advanced > Freq trim corrects receive and transmit together ([radio-features](spec/radio-features.md) 6.1, [hardware-md380](spec/hardware-md380.md)). The `ref_trim` row above lists the radios that have the trim.
 
@@ -224,10 +226,10 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `FONT_BIG` | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `LANG_ES` | ● | ● | ● | ● | ● | ● | ○ |
 | `LANG_IT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
-| `LANG_ZH` | ○ | ○ | ✕ | ✕ | ✕ | ✕ | ○ |
+| `LANG_ZH` | ○ | ○ | ✕ | ✕ | ○ | ○ | ○ |
 | `LANG_DEFAULT_ES` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `LANG_DEFAULT_IT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
-| `LANG_DEFAULT_ZH` | ○ | ○ | ✕ | ✕ | ✕ | ✕ | ○ |
+| `LANG_DEFAULT_ZH` | ○ | ○ | ✕ | ✕ | ○ | ○ | ○ |
 | `UI_COLOR` | ● | ● | ✕ | ● | ● | ● | ✕ |
 | `UI_SETTINGS` | ● | ● | ● | ● | ● | ● | ● |
 | `SCAN` | ● | ● | ● | ● | ● | ● | ● |
@@ -406,13 +408,13 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 Link time optimization is on by default on both radios. The DM-1701 has run with it since 2026-10-13 (the HIL suite
 passed); `LTO_3P=1` would take another 3 KB or so off by optimizing the third-party code too.
 
-The DM-1701's app region is sectors 3-9, 0x0800C000..0x080BFFFF, 344,064 bytes (336 KB); the two default measurements
-above leave 11,532 B and 13,240 B free. That region holds one non-English language, so the radio takes Chinese in
-Spanish's place (`boards/dm1701/config.mk`): Chinese costs 32,856 B on top of the lookup and Latin-1 glyphs Spanish
-already brings, against Spanish's 28,456 B, so `CONFIG_LANG_ZH=y CONFIG_LANG_ES=n` is 11,900 B more than the default
-image, by these figures 368 B over the larger measurement and 1,340 B under the smaller one. It is at the wall either
-way: `CONFIG_DEBUGLINK=n` (32,376 B, tools and HIL only) is what makes it fit for certain, and the image's size is not
-measured yet.
+The DM-1701's app region is sectors 3-9, 0x0800C000..0x080BFFFF, 737,280 bytes (720 KB). The codec runs in place in
+sectors 10 and 11, which the app never links into ([codec-dm1701.md](spec/codec-dm1701.md)). The measurements above
+date from before the codec moved, when the app had sectors 3-6 (336 KB) and the default image was within a few KB of
+that wall; they are kept as measured, not as a statement about the region today. Chinese builds beside Spanish: its
+32,856 B on top of the lookup and Latin-1 glyphs Spanish brings (28,456 B) leaves well over 350 KB of the 720 KB
+region free, even with the debug link on, so `CONFIG_LANG_ES=n` and `CONFIG_DEBUGLINK=n` are not needed. The Chinese
+image's size is not measured yet; the `chinese` ci extra builds it with both languages and the debug link on.
 
 The MD-380's app region is sectors 3-7, 0x0800C000..0x0807FFFF, 475,136 bytes (464 KB). The codec runs in place in
 sectors 8, 10 and 11 ([codec-md380.md](spec/codec-md380.md)). Measured 2026-10-19 with link time optimization, its

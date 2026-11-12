@@ -122,7 +122,7 @@ DMR 语音需要 DVSI 的专有 AMBE+2 声码器。RadioFoundry 从不随本项�
 
 ```
 tools/boards.py list        # 列出板级 id
-make BOARD=dm1701           # 构建一个板级镜像；没有默认板级
+make BOARD=<board-id>       # 用列表中的一个 id 替换 <board-id>；没有默认板级
 make -C tests/host          # 主机测试
 tools/ci.sh                 # 一个 PR 必须全部通过的项目
 ```

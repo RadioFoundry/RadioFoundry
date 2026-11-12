@@ -14,8 +14,9 @@ CONFIG_DISPLAY_INSET_LEFT ?= 2
 CONFIG_APRS_IGATE ?= n
 MAXIMAL_VARS := LTO=1
 # Left out of tools/ci.sh's maximal configuration: PPP stands in for the USB network adapter on UART-only radios
-# (docs/spec/ppp.md), and this one has the adapter; the APRS iGate is off by default (above)
-MAXIMAL_SKIP := NET_PPP APRS_IGATE
+# (docs/spec/ppp.md), and this one has the adapter; the APRS iGate is off by default (above). Chinese is left out too:
+# it is off by default on every radio, and board.toml's "chinese" ci extra builds it beside Spanish instead
+MAXIMAL_SKIP := NET_PPP APRS_IGATE LANG_ZH LANG_DEFAULT_ZH
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
 # docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off
 BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)
@@ -27,7 +28,7 @@ BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is a 16 MB SPI NOR (docs/spec
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (docs/user/23-radios.md, What the MD-UV380 lacks)
 BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and the one UART is the G models' GPS line
 
-# A Chinese character is 16 px tall (core/ui/cjk_font.h) and these layouts draw their words in the 6x12 font:
-# there is no room for a 16 px line, and the CJK face must not be built in (docs/build-config.md)
-BOARD_UNSUPPORTED += LANG_ZH	# a Chinese line needs 16 px; this layout draws its words in a smaller font
-BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH
+# Chinese (CONFIG_LANG_ZH): a 160x128 panel is the 160 px class, whose layout moves its words up to the 8x16 font while
+# a wide language is in use (core/ui/ui_screens.c, docs/spec/ui.md 2.5), so a 16 px CJK glyph fits; Home then has no
+# zone line and a list shows 5 rows instead of 7. Off by default like on every radio. The 720 KB region has room for it
+# beside Spanish (docs/feature-matrix.md); board.toml's "chinese" ci extra builds that image

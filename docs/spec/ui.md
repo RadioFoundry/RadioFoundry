@@ -340,6 +340,12 @@ abbreviations), is shown as it is. The tables are built by `tools/i18n.py` from 
 | Lengths | A translation may be longer than its English. Text goes into fixed buffers through `str_copy` or `sb_str`, which cut it; a row too long for the screen is shortened as any row is (`gfx_text_fit`, text alternates) |
 | Not translated | Search words of the settings (Find matches the English words and the shown name), debug link names and values, protocol text sent off the radio (APRS, the debug link). The canned text messages are the exception: sent in the language in use |
 
+A panel whose words stay shorter than 16 px needs its own CJK face and a layout to go with it. The face is a
+hand-tuned bitmap at that line height: an outline font scaled to 12x12 loses the strokes of all but the simplest
+characters (`tools/cjkfont.py`). It needs an advance width and row pitch of its own in `ui_layout_init`, and every
+screen that draws words needs checking at the new pitch. The generated 16x16 face is cropped there and cannot be
+reused, so a board with such a panel keeps `CONFIG_LANG_ZH` unsupported until a face with a suitable license exists.
+
 ## 3. Key meanings
 
 The same on every screen (information-architecture.md, key maps 7.1 to 7.5):

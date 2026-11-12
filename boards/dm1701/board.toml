@@ -33,11 +33,11 @@ duplex half and the USB network services work on air. Open: standalone SFR and a
 release = "stable"
 
 # The audio tap's probe build: without LTO it no longer fits, so ci keeps it building with LTO=1. The Chinese image is
-# built too: in Spanish's place, with the debug link off so the image keeps a margin in the 336 KB region
+# built beside Spanish with the debug link on: the 720 KB app region has room for both (boards/dm1701/memory.ld)
 [ci]
 extra = [
 	{ name = "audio-probe", make = ["CONFIG_AUDIO_PROBE=y", "CONFIG_APRS_RX=n", "LTO=1"] },
-	{ name = "chinese", make = ["CONFIG_LANG_ZH=y", "CONFIG_LANG_DEFAULT_ZH=y", "CONFIG_LANG_ES=n", "CONFIG_DEBUGLINK=n"] },
+	{ name = "chinese", make = ["CONFIG_LANG_ZH=y", "CONFIG_LANG_DEFAULT_ZH=y"] },
 ]
 
 [flash]

@@ -433,7 +433,7 @@ build() {
 	fi
 	bin=$target.bin
 	bytes=$(wc -c < "$bin" | tr -d ' ')
-	# --print-memory-usage: "FLASH:  123024 B  336 KB  35.76%" (the app region, codec sectors excluded)
+	# --print-memory-usage: "FLASH:  <used> B  <region> KB  <pct>%" (the app region, codec sectors excluded)
 	set -- $(grep -E '^ *FLASH:' "$log" | head -1)
 	used=$(tobytes "${2:-}" "${3:-}"); size=$(tobytes "${4:-}" "${5:-}")
 	if [ -n "$size" ] && [ "$used" -le "$size" ] 2>/dev/null; then
