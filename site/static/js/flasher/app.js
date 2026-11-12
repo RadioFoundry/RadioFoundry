@@ -46,7 +46,7 @@ import { FakeC7000, c7000Simulation, fakeC7000Options } from "./fakec7000.js";
 import { APP_ENTRY } from "./iap.js";
 import { slotBytes, locateCodec } from "./c7000.js";
 import { Stub, StubError } from "./stub.js";
-import { F4Stub, f4Image, registerShort } from "./f4stub.js";
+import { F4Stub, f4Image, registerShort, withCodec } from "./f4stub.js";
 import { f4LoaderReader } from "./readers.js";
 import * as openfw from "./openfw.js";
 import { register, backendOf, bundleBackend, allBackends } from "./backends.js";
@@ -415,8 +415,15 @@ register({
 const f4Board = () => fb().f4stub?.boards[S.board?.id];
 // A chip whose flash size register reads less than the firmware's flash: the loader would refuse the top sectors
 const shortRegister = () => !!(f4Board() && S.now?.kind === "rfoundry" && registerShort(S.now.flashKb, f4Board().owned));
+// The radio reports a codec where an earlier release kept it (board.codec.former): partly in flash this release's
+// application uses, so the install moves it, from the copy read back from the radio before anything is erased
+const codecMoves = (probe = S.now?.probe) => !!probe?.codec && (S.board?.codec.former || []).includes(probe.codec);
+// A codec that moves takes the loader route only with the copy kept in this browser (stubSegments), so a move that
+// stops halfway is finished from it; without one the bootloader route asks for the stock file or says the copy is
+// not kept
 const stubRoute = () => !!((S.task === "install" || S.task === "update") && f4Board() && S.now?.kind === "rfoundry" && S.now.stubOffer && !S.requested
-	&& S.now.probe?.codec === S.board.codec.id && !S.firmware?.manifest.codec?.included && !shortRegister());
+	&& (S.now.probe?.codec === S.board.codec.id || (codecMoves() && (S.savedCodec?.stored || (S.sim && S.savedCodec))))
+	&& !S.firmware?.manifest.codec?.included && !shortRegister());
 // The loader hand-over RadioFoundry offers now: the one probed before the install, or after a first install (doneView)
 // the one the build just written offers, while S.now still says what ran before it
 const loaderOffer = () => (!f4Board() ? null : S.now?.kind === "rfoundry" ? S.now.stubOffer : S.now?.afterOffer || null);
@@ -629,12 +636,18 @@ async function keyFromRadio(link) {
 }
 
 // A radio running RadioFoundry with its codec hands it over (codecsave.js), and this browser keeps a copy: where an update
-// erases the codec (keep_codec_supported false) before anything is erased, elsewhere once, for an install that can't
-// keep it (a radio back on stock firmware, an interrupted install, a radio in its bootloader). Quiet when it can't:
-// the stock file still works.
+// erases the codec (keep_codec_supported false) or moves it (a codec where an earlier release kept it, codecMoves())
+// before anything is erased, elsewhere once, for an install that can't keep it (a radio back on stock firmware, an
+// interrupted install, a radio in its bootloader). Quiet when it can't: the stock file still works. The copy is never
+// deleted: an install that stops halfway is finished from it
 async function codecFromRadio(link, probe, status) {
-	if (probe?.codec !== S.board.codec.id || S.savedCodec?.from === "radio") return;
-	if (S.board.keep_codec_supported && !S.sim && (await loadCodec(S.board, fb()))) return;
+	const moves = codecMoves(probe);
+	if ((probe?.codec !== S.board.codec.id && !moves) || S.savedCodec?.from === "radio") return;
+	if (S.board.keep_codec_supported && !S.sim) {
+		const saved = await loadCodec(S.board, fb());
+		if (saved && moves) S.savedCodec = { ...saved, from: "browser", stored: true };
+		if (saved) return;
+	}
 	status?.replaceChildren(h("p", { class: "muted" }, t("flash.now.reading_codec")));
 	const got = await readCodec(link, S.board, fb());
 	if (got) S.savedCodec = { ...got, from: "radio", stored: S.sim ? false : await saveCodec(S.board, got.segments) };
@@ -2197,6 +2210,20 @@ function writeView() {
 	return h("div", { class: "flasher" }, stubPanel(fallback, next, what), fallback);
 }
 
+// The segments the loader writes: the build, and where the radio's codec moves (codecMoves) the codec too, from the copy
+// read back from the radio, placed where this build keeps it (codecsave.js): the loader writes the codec's sectors
+// whole from it (f4stub.js withCodec). The loader erases sector 3 first, so a radio that stops halfway starts in its
+// bootloader, and the bootloader route finishes the move from the same copy
+async function stubSegments(fw, log) {
+	const segs = segments(fw.manifest, fw.image);
+	if (!codecMoves()) return segs;
+	S.decision = decideCodec(S.board, fw.manifest, { haveSaved: !!S.savedCodec, probe: S.now.probe });
+	noteDecision();
+	log.add(said(S.decision.whyKey, S.decision.args));
+	if (S.decision.mode !== MERGE) return segs;	// the loader refuses a plain image over the codec (f4stub.js guardCodec)
+	return withCodec(segs, await codecSegments(S.savedCodec.profile, S.savedCodec.segments, fb()), f4Board().codec);
+}
+
 // Install through the STM32F4 loader on a radio running RadioFoundry (f4stub.js). fallback: the bootloader route's details,
 // opened when the loader can't finish
 function stubPanel(fallback, onDone, what) {
@@ -2213,7 +2240,7 @@ function stubPanel(fallback, onDone, what) {
 			started = flashStarted(what);
 			await stub.configure();	// the radio's board record, its echo checked before any write
 			prog.set(0, 1, t("flash.f4.reading"));
-			const r = await stub.writeImage(f4Board().owned, segments(fw.manifest, fw.image), {
+			const r = await stub.writeImage(f4Board().owned, await stubSegments(fw, log), {
 				// bytes in a rewritten sector that aren't the firmware's (no radio has them since the codec moved): a copy first
 				onKept: async (sec) => {
 					const file = `${S.board.id}_sector${sec.index}_${hex(sec.addr)}.bin`;

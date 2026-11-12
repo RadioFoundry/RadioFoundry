@@ -1,62 +1,86 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The codec read back from a radio that runs RadioFoundry and kept in this browser (IndexedDB), so that a later install needs
-// no stock file: where an update erases part of it (the MD-380: RadioFoundry's image shares a flash sector with the codec,
-// keep_codec_supported false), and on every other radio for when it can't be kept (a radio back on stock firmware, an
-// install that stopped halfway, a radio in its bootloader). Every codec window is read over the debug link (READ_MEM,
-// docs/spec/debuglink.md 3.10) and checked against the stock profile's SHA-256, either where stock firmware keeps it or
-// where the merge placed it (stockfw.placedWindows: the DM-1701's code in sector 11). It is checked again when loaded.
-// The same rules as rfoundry/codecsave.py.
+// no stock file: where an update erases part of it (keep_codec_supported false), where the codec moves to a new layout
+// (a radio whose codec is where an earlier release put it: board.codec.former), and on every radio for when it can't
+// be kept (a radio back on stock firmware, an install that stopped halfway, a radio in its bootloader). Every codec
+// window is read over the debug link (READ_MEM, docs/spec/debuglink.md 3.10) and checked against the stock profile:
+// where stock firmware keeps it, where the merge places it now (stockfw.placedWindows) or where an earlier release
+// placed it (stockfw.forms, "former"), a placed window by its SHA-256 or by taking it back to the stock windows'
+// (stockfw.checkForm). It is checked again when loaded. A copy in a stock or former layout is moved to the current one
+// before it is written (codecSegments). The copy is never deleted: it is what lets an install that stopped halfway, at
+// any step, be run again (docs/spec/codec-placement.md, "Moving to a new layout"). The same rules as rfoundry/codecsave.py.
 
-import { sha256, u32le } from "./bytes.js";
-import { descriptor, place, placedWindows } from "./stockfw.js";
+import { u32le } from "./bytes.js";
+import { checkForm, forms, fromForm, placedWindows } from "./stockfw.js";
 
 // The stock profiles whose codec this board runs
 export const profilesFor = (board, fb) =>
 	Object.values(fb.profiles).filter((p) => p.board === board.id && p.codec_profile === board.codec.id);
 
-// Where a profile's codec can be in a radio: [[addr, length, sha256], ...] where stock firmware keeps it, and where the
-// merge placed it when the profile moves the code
-const forms = (prof) => (prof.placement ? [prof.windows, placedWindows(prof)] : [prof.windows]);
+// Where a profile's codec can be in a radio: [[form, [[addr, length, sha256], ...]]], the stock windows (form null)
+// first, then the current placement and each former one
+const formsOf = (prof) => [[null, prof.windows], ...forms(prof).map((f) => [f, placedWindows(prof, f)])];
 
-// [[addr, bytes], ...] when every window matches its hash and the code starts with the codec's signature, else null
-async function check(wins, parts, fb) {
-	if (parts.length !== wins.length) return null;
-	for (const [i, [addr, length, want]] of wins.entries()) {
-		const [a, d] = parts[i];
-		if (a !== addr || d.length !== length || (await sha256(d)) !== want) return null;
+// [tag, [window addresses]] from the descriptor in the radio's flash, or null (none there, or it can't be read)
+async function described(link, fb) {
+	const d = fb.descriptor;
+	let b;
+	try {
+		b = await link.readMem(d.addr, d.len);
+	} catch (e) {
+		return null;
 	}
-	return u32le(parts[0][1], 0) === fb.codec_sig ? parts : null;
+	if (!b || b.length !== d.len || u32le(b, 0) !== d.magic) return null;
+	const n = u32le(b, 24);
+	if (n < 1 || n > d.windows) return null;
+	return [u32le(b, 8), [u32le(b, 12), ...Array.from({ length: n }, (_, i) => u32le(b, 28 + 12 * i))]];
 }
 
-// {profile, segments} through an open debug link, or null when the flash doesn't hold this codec or can't be read
+// {profile, segments} through an open debug link, or null when the flash doesn't hold this codec or can't be read. Each
+// layout the board has is tried in turn, the ones the radio's descriptor names first (it isn't trusted: the windows
+// are checked as for any other)
 export async function readCodec(link, board, fb) {
-	for (const prof of profilesFor(board, fb)) {
-		for (const wins of forms(prof)) {
-			const parts = [];
-			try {
-				for (const [addr, length] of wins) parts.push([addr, await link.readMem(addr, length)]);
-			} catch (e) {
-				return null;
-			}
-			if (await check(wins, parts, fb)) return { profile: prof, segments: parts };
+	const desc = await described(link, fb);
+	const named = ([, form, wins]) => !!desc && !!form && form.placement.tag === desc[0] && wins.map(([a]) => a).join() === desc[1].join();
+	const cands = profilesFor(board, fb).flatMap((prof) => formsOf(prof).map(([form, wins]) => [prof, form, wins]));
+	cands.sort((x, y) => named(y) - named(x));
+	for (const [prof, form, wins] of cands) {
+		const parts = [];
+		try {
+			for (const [addr, length] of wins) parts.push([addr, await link.readMem(addr, length)]);
+		} catch (e) {
+			return null;
 		}
+		if (await checkForm(prof, form, parts, fb)) return { profile: prof, segments: parts };
 	}
 	return null;
 }
 
-// A copy (readCodec, loadCodec) as the merge writes it: windows at their stock addresses placed (stockfw.place), placed
-// windows with their descriptor
+// The form (stockfw.forms, null for the stock windows) a copy's window addresses are in
+function formOfCopy(prof, parts) {
+	const at = parts.map(([a]) => a).join();
+	const f = formsOf(prof).find(([, wins]) => wins.map(([a]) => a).join() === at);
+	if (!f) throw new Error(`a codec copy at addresses no layout of ${prof.name} has`);
+	return f[0];
+}
+
+// True when a copy is not in the current placement: writing it moves the codec (from a former layout or stock's)
+export const needsMove = (prof, parts) => !!prof.placement && !formOfCopy(prof, parts)?.current;
+
+// A copy (readCodec, loadCodec) as the merge writes it now: in the current placement with its descriptor. A copy in
+// the stock windows or a former placement is moved there (stockfw.fromForm)
 export async function codecSegments(prof, segments, fb) {
 	if (!prof.placement) return segments;
-	if (segments[0][0] === prof.windows[0][0]) return place(prof, segments, fb);
-	return [...segments, [fb.descriptor.addr, descriptor(prof, fb)]];
+	const out = await fromForm(prof, formOfCopy(prof, segments), segments, fb);
+	if (!out) throw new Error(`the codec copy doesn't check against ${prof.name}`);
+	return out;
 }
 
 // --- the copy in this browser: one record per board and codec, the windows concatenated in profile order
 
 const DB = "rfoundry-flasher", STORE = "codecs";
-const recordId = (board) => `${board.id}-${board.codec.id}`;
+const recordId = (board, id = board.codec.id) => `${board.id}-${id}`;
 
 function open() {
 	return new Promise((resolve, reject) => {
@@ -117,24 +141,27 @@ export async function saveCodec(board, segments) {
 	}
 }
 
-// {profile, segments} from the saved copy, checked against the profile, or null
+// {profile, segments} from the saved copy, checked against the profile, or null. A copy saved under an id an earlier
+// release reported (board.codec.former) is found too: the codec is the same, only where it was read
 export async function loadCodec(board, fb) {
-	let blob;
-	try {
-		blob = await tx("readonly", (s) => s.get(recordId(board)));
-	} catch (e) {
-		return null;
-	}
-	if (!(blob instanceof Uint8Array)) return null;
-	for (const prof of profilesFor(board, fb)) {
-		for (const wins of forms(prof)) {
-			const parts = [];
-			let off = 0;
-			for (const [addr, length] of wins) {
-				parts.push([addr, blob.subarray(off, off + length)]);
-				off += length;
+	for (const id of [board.codec.id, ...(board.codec.former || [])]) {
+		let blob;
+		try {
+			blob = await tx("readonly", (s) => s.get(recordId(board, id)));
+		} catch (e) {
+			return null;
+		}
+		if (!(blob instanceof Uint8Array)) continue;
+		for (const prof of profilesFor(board, fb)) {
+			for (const [form, wins] of formsOf(prof)) {
+				const parts = [];
+				let off = 0;
+				for (const [addr, length] of wins) {
+					parts.push([addr, blob.subarray(off, off + length)]);
+					off += length;
+				}
+				if (off === blob.length && (await checkForm(prof, form, parts, fb))) return { profile: prof, segments: parts };
 			}
-			if (off === blob.length && (await check(wins, parts, fb))) return { profile: prof, segments: parts };
 		}
 	}
 	return null;

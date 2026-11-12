@@ -269,3 +269,68 @@ export function relocations(m) {
 	if ((m.self_refs || []).some((r) => kind(r) !== "word") || (m.islands || []).length) throw new MapError(`${m.profile}: the code can't be moved by adding to words`);
 	return (m.self_refs || []).map((r) => r.off).sort((a, b) => a - b);
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Layouts: every codec window moved as its own block (docs/spec/codec-placement.md, "Layouts")
+
+// The index of the window [[addr, length]] an address lies in, or -1
+const windowOf = (wins, addr) => wins.findIndex(([a, n]) => a <= addr && addr < a + n);
+
+// Every site a layout change rewrites (codecmap._layout_sites): [window index, offset in it, ref, value at src, value
+// at dst]. wins: the stock windows [[addr, length]], the code first, as the profile carves them; src, dst: the address
+// of each window in the two layouts. A "bl" site's values are [address of the bl, target]. Throws MapError when a site
+// or a value lies in no window: such a codec can't be moved window by window
+function layoutSites(m, wins, src, dst) {
+	const p = m.profile;
+	if (src.length !== wins.length || dst.length !== wins.length) throw new MapError(`${p}: a layout names ${src.length} windows, the profile has ${wins.length}`);
+	if (wins[0][0] !== m.code.run || wins[0][1] !== m.code.len) throw new MapError(`${p}: the first window is not the map's code`);
+	const align = m.code.move_alignment || 4;
+	for (const [i, [a]] of wins.entries()) {
+		for (const lay of [src, dst]) if ((lay[i] - a) % (i === 0 ? align : 4)) throw new MapError(`${p}: window ${i} moved by ${lay[i] - a} breaks its alignment`);
+	}
+	const moved = (v, lay, what) => {
+		const w = windowOf(wins, v);
+		if (w < 0) throw new MapError(`${p}: ${what} ${hex(v)} lies in no codec window`);
+		return (v + lay[w] - wins[w][0]) >>> 0;
+	};
+	const out = [];
+	for (const r of m.self_refs || []) out.push([0, r.off, r, moved(r.value, src, "self ref"), moved(r.value, dst, "self ref")]);
+	for (const r of [...(m.island_ptrs || []), ...(m.table_refs || [])]) out.push([0, r.off, r, moved(r.target, src, "table ref"), moved(r.target, dst, "table ref")]);
+	for (const r of m.island_refs || []) {
+		const w = windowOf(wins, r.at);
+		if (w <= 0) throw new MapError(`${p}: island ref at ${hex(r.at)} lies in no table window`);
+		out.push([w, r.at - wins[w][0], { kind: "word" }, moved(r.target, src, "island ref"), moved(r.target, dst, "island ref")]);
+	}
+	for (const b of m.branches || []) {
+		const w = windowOf(wins, b.at);
+		if (w <= 0) throw new MapError(`${p}: branch at ${hex(b.at)} lies in no table window`);
+		const off = b.at - wins[w][0];
+		out.push([w, off, { kind: "bl" }, [src[w] + off, moved(b.target, src, "branch")], [dst[w] + off, moved(b.target, dst, "branch")]]);
+	}
+	return out;
+}
+
+// A site's ref with its offsets at off (a movw/movt pair keeps its gap)
+const at = (r, off) => ({ ...r, off, off2: off + (r.off2 ?? r.off) - r.off });
+
+// The codec's windows moved from layout src to layout dst, each window as one block (codecmap.relocate): every address in
+// the code and the table windows rewritten for where its target window goes. parts: the bytes of each window as they
+// are at src, in wins order. Every site must hold exactly what layout src implies, so the wrong build, a wrong layout or
+// damaged bytes stop here. The stock layout is wins' own addresses, so this both places a stock codec and takes a placed
+// one back to stock. Returns the bytes of each window for dst
+export function relocate(m, wins, parts, src, dst) {
+	if (parts.length !== wins.length || parts.some((d, i) => d.length !== wins[i][1]))
+		throw new MapError(`${m.profile}: the windows are [${parts.map((d) => d.length)}] bytes, the profile says [${wins.map(([, n]) => n)}]`);
+	const out = parts.map((d) => d.slice());
+	for (const [w, off, r, have, want] of layoutSites(m, wins, src, dst)) {
+		if (kind(r) === "bl") {
+			if (blTarget(out[w], off, have[0]) !== have[1] >>> 0) throw new MapError(`${m.profile}: no bl to ${hex(have[1])} at ${hex(have[0])}`);
+			putBl(out[w], off, want[0], want[1]);
+			continue;
+		}
+		const ref = at(r, off);
+		if (read(out[w], ref) !== have) throw new MapError(`${m.profile}: window ${w} +${hex(off, 1)} doesn't hold ${hex(have)}`);
+		write(out[w], ref, want);
+	}
+	return out;
+}

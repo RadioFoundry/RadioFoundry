@@ -48,6 +48,17 @@ export function decideCodec(board, manifest, { requested = null, haveStock = fal
 		if (!board.debuglink_names.includes(probe.board)) throw new DecisionError(`The radio reports that it is a ${probe.board}, but this firmware is for the ${board.name}.`, undefined,
 			{ key: E + "wrong_radio", args: { reported: probe.board, board: board.name } });
 		if (probe.codec === profile) return { mode: KEEP, why: "the radio has its codec, which is kept", whyKey: W + "kept", expectCodec: true };
+		if ((board.codec.former || []).includes(probe.codec) && requested !== KEEP) {
+			// the codec is where an earlier release put it, partly in flash this release's application uses: it moves.
+			// The copy was read back and saved before this (codecsave.js), so an install that stops at any step is
+			// finished by running it again
+			const moved = `the radio's codec is where earlier releases kept it (${probe.codec}), in flash this release's firmware uses, so it moves to where this release keeps it`;
+			const args = { codec: probe.codec };
+			if (haveSaved) return { mode: MERGE, source: "saved", why: `${moved}: it is written from the copy read back from your radio`, whyKey: W + "moved_saved", args, expectCodec: true };
+			if (haveStock) return { mode: MERGE, source: "stock", why: `${moved}: it is taken from your stock file`, whyKey: W + "moved_stock", args, expectCodec: true };
+			const why = `The radio's codec is where earlier releases kept it (${probe.codec}), in flash this release's firmware uses, and it could not be read back from the radio: nothing was written.`;
+			throw new DecisionError(`${why.slice(0, -1)}; ${mergeHint}.`, why, { key: E + "moved", args, hint: true });
+		}
 		const what = probe.codec ? `it reports ${probe.codec}` : "its firmware is too old to report it";
 		const args = { what: probe.codec ? { key: W + "what_reports", args: { codec: probe.codec } } : { key: W + "what_old" } };
 		if (haveSaved && requested !== KEEP) return { mode: MERGE, source: "saved", why: `the radio has no codec (${what}), so the copy saved from your radio is used`, whyKey: W + "missing_saved", args, expectCodec: true };
