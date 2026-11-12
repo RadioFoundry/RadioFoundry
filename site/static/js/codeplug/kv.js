@@ -13,21 +13,30 @@ export const KV_VERSION = 1;
 export const KV_HDR = 16;	// the header length this version writes
 const MAGIC = [0x52, 0x46, 0x4B, 0x56];	// "RFKV"
 
-// Keys (3): a key's meaning never changes
-export const KEY = { arsServer: 0x0001, ipGateway: 0x0002 };
 // The highest DMR ID a key may hold (CODEPLUG_DMR_ID_MAX); above it the key reads as absent
 export const ID_MAX = 16776415;
+
+// The scalar keys the editor knows (3), one row each: the codeplug model's field, the key, its type (3.1: uint, int,
+// bool, enum or id), the bytes a writer stores and the setting's range. A key's meaning never changes. A new key is
+// a row here, a row in the spec's table and a field on the Radio tab; decoding, encoding and validation follow the row
+export const KEYS = [
+	{ name: "arsServer", key: 0x0001, type: "id", size: 4, min: 0, max: ID_MAX },
+	{ name: "ipGateway", key: 0x0002, type: "id", size: 4, min: 0, max: ID_MAX },
+];
+export const KEY = Object.fromEntries(KEYS.map((k) => [k.name, k.key]));
+const SCALAR_MAX = 8;	// a scalar's widest value
 
 const u16 = (b, o) => b[o] | (b[o + 1] << 8);
 const u32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
 
 // The area in an image's bytes: {state, entries}. state: "valid"; "empty" (an erased sector); "bad" (anything else
-// that isn't a valid area); "newer" (our magic with a version this reader doesn't know). Only a valid area has entries
+// that isn't a valid area, version 0 too); "newer" (our magic with a later version). Only a valid area has entries
 export function decodeArea(bytes) {
 	const s = bytes.subarray(KV_ADDR, KV_ADDR + KV_SIZE);
 	if (s.length < KV_SIZE) return { state: "empty", entries: [] };
 	if (!MAGIC.every((x, i) => s[i] === x)) return { state: s.every((x) => x === 0xFF) ? "empty" : "bad", entries: [] };
-	if (s[4] !== KV_VERSION) return { state: "newer", entries: [] };
+	// no version 0 was ever written: a damaged byte, not a later version's area that must be left alone
+	if (s[4] !== KV_VERSION) return { state: s[4] > KV_VERSION ? "newer" : "bad", entries: [] };
 	const hdr = s[5], len = u16(s, 6);
 	if (hdr < KV_HDR || hdr + len > KV_SIZE) return { state: "bad", entries: [] };
 	const data = s.subarray(hdr, hdr + len);
@@ -74,13 +83,33 @@ export function dedupe(entries) {
 	return entries.filter((e) => !seen.has(e.key) && seen.add(e.key));
 }
 
-// A DMR ID key: the ID, or null when absent, empty or above ID_MAX. A value of 1-3 bytes zero-extends (3.1: an ID fits
-// in 3); a longer value is a later version's: its first 4 bytes are the ID
-export function getId(entries, key) {
-	const v = getValue(entries, key);
-	if (!v || v.length === 0) return null;
-	const id = v.length >= 4 ? u32(v, 0) : v.reduce((n, x, i) => n + x * 2 ** (8 * i), 0);
-	return id > ID_MAX ? null : id;
+// Whether v is a value row's setting takes: a bool is true or false, the others an integer in the row's range
+export function keyValid(row, v) {
+	return row.type === "bool" ? typeof v === "boolean" : Number.isInteger(v) && v >= row.min && v <= row.max;
+}
+
+// A scalar key's setting as row describes it: a number, or true or false for a bool; null when the key is absent or
+// holds a value the setting can't take (empty, longer than a scalar, past 32 bits, outside the range), which reads as
+// absent (3.1). A shorter value zero-extends, an int sign-extends from its stored length
+export function getKey(entries, row) {
+	const v = getValue(entries, row.key);
+	if (!v || v.length === 0 || v.length > SCALAR_MAX) return null;
+	if (row.type === "bool") return v.some((x) => x !== 0);
+	const fill = row.type === "int" && (v[v.length - 1] & 0x80) ? 0xFF : 0;
+	let n = 0;
+	for (let i = 0; i < 4; i++) n += (i < v.length ? v[i] : fill) * 2 ** (8 * i);
+	for (let i = 4; i < v.length; i++) if (v[i] !== fill) return null;
+	if (row.type === "int") {
+		if (v.length > 4 && (n >= 2 ** 31) !== (fill !== 0)) return null;
+		if (n >= 2 ** 31) n -= 2 ** 32;
+	}
+	return keyValid(row, n) ? n : null;
+}
+
+// The value a writer stores for a scalar: row.size bytes, little endian. A scalar is written whole (4)
+export function keyValue(row, v) {
+	const n = row.type === "bool" ? (v ? 1 : 0) : v;
+	return Uint8Array.from({ length: row.size }, (_, i) => Math.floor(n / 2 ** (8 * i)) & 0xFF);
 }
 
 export function idValue(id) {
@@ -128,36 +157,47 @@ export function putArea(bytes, entries) {
 	return true;
 }
 
-// The ID keys an edit changes, written onto the area: ids is {key: id or null (absent)}. The area is left alone when
-// every key already reads as asked, and refused when it is newer (false)
-export function putIds(bytes, ids) {
+// The keys an edit changes, written onto the area: vals is {name: value, or null for absent}, the names KEYS'. The
+// area is left alone when every key already reads as asked, and refused when it is newer (false)
+export function putKeys(bytes, vals) {
 	const area = decodeArea(bytes);
-	const todo = Object.entries(ids).map(([k, v]) => [Number(k), v]).filter(([k, v]) => getId(area.entries, k) !== v);
+	const todo = KEYS.filter((row) => row.name in vals && getKey(area.entries, row) !== vals[row.name]);
 	if (!todo.length) return true;
 	if (area.state === "newer") return false;
 	// an invalid area starts a new one: nothing in it could be read (4)
 	let entries = dedupe(area.entries);
-	for (const [k, v] of todo) {
-		if (v == null) {
-			entries = deleteValue(entries, k);
-			continue;
-		}
-		// a longer value is a later version's: the ID replaced, the fields after it kept
-		const was = getValue(entries, k);
-		const value = was && was.length > 4 ? was.slice() : new Uint8Array(4);
-		value.set(idValue(v), 0);
-		entries = setValue(entries, k, value);
+	for (const row of todo) {
+		const v = vals[row.name];
+		entries = v == null ? deleteValue(entries, row.key) : setValue(entries, row.key, keyValue(row, v));
 	}
 	return putArea(bytes, entries);
 }
 
-// The area a write to a radio sends (6, 7): the file's when it is valid, the radio's isn't of a newer version and the
-// edit changed it from base (the image the editor opened, when given), else the radio's own, put into file's bytes.
-// A file without an area (another tool's, 0xFF there) never erases the keys, and a file opened before the radio's
-// menu or debug link changed a key doesn't put the old value back
+const sameBytes = (a, b) => a === b || (a != null && b != null && a.length === b.length && a.every((x, i) => x === b[i]));
+
+// The area a write to a radio sends (6, 7), put into file's bytes. base is the image the editor opened.
+// - The radio's area is of a newer version: the radio's, as it is.
+// - The edit didn't change the area from base, or the file's isn't valid: the radio's. A file without an area
+//   (another tool's, 0xFF there) never erases the keys.
+// - The edit changed it and the radio has a valid area: the radio's area with only the keys the edit changed, set or
+//   removed. A key the radio's menu or debug link changed since the file was read keeps the radio's value.
+// - The radio has no valid area, or no base is given (a file sent as it is): the file's.
+// Throws RangeError when the radio's keys and the edit's don't fit together
 export function areaForWrite(file, radio, base = null) {
 	const sector = (b) => b.subarray(KV_ADDR, KV_ADDR + KV_SIZE);
+	const f = decodeArea(file), r = decodeArea(radio);
 	const edited = !base || !sector(file).every((x, i) => x === sector(base)[i]);
-	if (edited && decodeArea(file).state === "valid" && decodeArea(radio).state !== "newer") return;
-	file.subarray(KV_ADDR, KV_ADDR + KV_SIZE).set(radio.subarray(KV_ADDR, KV_ADDR + KV_SIZE));
+	if (r.state === "newer" || !edited || f.state !== "valid") {
+		sector(file).set(sector(radio));
+		return;
+	}
+	if (!base || r.state !== "valid") return;
+	const was = decodeArea(base).entries;
+	let entries = dedupe(r.entries);
+	for (const key of new Set([...was, ...f.entries].map((e) => e.key))) {
+		const now = getValue(f.entries, key);
+		if (sameBytes(getValue(was, key), now)) continue;
+		entries = now == null ? deleteValue(entries, key) : setValue(entries, key, now);
+	}
+	sector(file).set(encodeArea(entries, sector(radio)));
 }

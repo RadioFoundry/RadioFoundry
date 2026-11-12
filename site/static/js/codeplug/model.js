@@ -16,7 +16,7 @@ import {
 } from "./records.js";
 import { parseTone } from "./fields.js";
 import { readHeader } from "./iddb.js";
-import { decodeArea, ID_MAX } from "./kv.js";
+import { decodeArea, keyValid, KEYS } from "./kv.js";
 
 const REFS = ["contact", "rxList", "aprs"];
 
@@ -287,13 +287,13 @@ export function validate(m, { bands = null } = {}) {
 	if (!g.dmrId) warn("general", null, "dmrId", "no_dmr_id");
 	else if (g.dmrId > 0xFFFFFF) err("general", null, "dmrId", "id_range");
 	if (g.radioName.length > LIMITS.radioName) err("general", null, "radioName", "too_long", { max: LIMITS.radioName });
-	// the settings area's IDs (codeplug-settings.md 3): null is an absent key, 0 off
-	const areaIds = ["arsServer", "ipGateway"].filter((f) => g[f] != null);
-	for (const f of areaIds) {
-		if (!(Number.isInteger(g[f]) && g[f] >= 0 && g[f] <= ID_MAX)) err("general", null, f, "range", { min: 0, max: ID_MAX });
+	// the settings area's keys (codeplug-settings.md 3): null is an absent key
+	const areaKeys = KEYS.filter((row) => g[row.name] != null);
+	for (const row of areaKeys) {
+		if (!keyValid(row, g[row.name])) err("general", null, row.name, "range", { min: row.min, max: row.max });
 	}
 	// an area of a version the editor doesn't know reads as empty and is never written: a value set here is lost
-	if (areaIds.length && m.base && decodeArea(m.base.bytes).state === "newer") warn("general", null, areaIds[0], "settings_area_newer");
+	if (areaKeys.length && m.base && decodeArea(m.base.bytes).state === "newer") warn("general", null, areaKeys[0].name, "settings_area_newer");
 
 	const counts = [["channels", LIMITS.channels], ["contacts", LIMITS.contacts], ["rxLists", LIMITS.rxLists],
 		["zones", LIMITS.zones], ["dtmfContacts", LIMITS.dtmfContacts], ["aprs", LIMITS.aprs]];

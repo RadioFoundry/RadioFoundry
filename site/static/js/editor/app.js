@@ -12,13 +12,13 @@ import { decode, encode, empty, remove, validate, newChannel, newContact, number
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
 import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
 import { FastError } from "../codeplug/fastlink.js";
-import { areaForWrite } from "../codeplug/kv.js";
+import { areaForWrite, KEYS } from "../codeplug/kv.js";
 import { convert as convertDb, readHeader as dbHeader } from "../codeplug/iddb.js";
 import { convertIddb, iddbEnd } from "../codeplug/sources/output.js";
 import { FakeCpsRadio } from "../codeplug/fakecps.js";
 import { Grid } from "./grid.js";
 import { History } from "./undo.js";
-import { bulkColumns, columns, channelForm, formDialog, membersDialog, refLabel, parseAreaId } from "./views.js";
+import { bulkColumns, columns, channelForm, formDialog, membersDialog, refLabel, parseAreaKey } from "./views.js";
 import { openFile, saveBytes, tftpBytes, FileError, imageFrom, saveDraft, loadDraft, clearDraft } from "./files.js";
 import { extensions } from "./extensions.js";
 import "./parts.js";
@@ -383,6 +383,8 @@ function radioTab() {
 		const n = Number(v.trim() || 0);
 		return Number.isInteger(n) && n >= lo && n <= hi ? { value: n } : { error: t("editor.err.range", { min: lo, max: hi }) };
 	};
+	// a number kept as a key of the settings area (kv.js KEYS): the row gives its range, empty is an absent key
+	const areaKey = (name) => (v) => parseAreaKey(KEYS.find((row) => row.name === name), v, t);
 	const parts = [
 		h("div", { class: "form-grid ed-radio-form" },
 			field("dmrId", t("editor.general.dmr_id"), 8, t("editor.general.dmr_id_help"), num(0, 0xFFFFFF)),
@@ -391,8 +393,8 @@ function radioTab() {
 			field("bootLine2", t("editor.general.boot2"), LIMITS.bootText, null, text(LIMITS.bootText)),
 			field("groupHang", t("editor.general.group_hang"), 3, t("editor.general.hang_help"), num(0, 255)),
 			field("privateHang", t("editor.general.private_hang"), 3, t("editor.general.hang_help"), num(0, 255)),
-			field("arsServer", t("editor.general.ars_server"), 8, t("editor.general.ars_server_help"), (v) => parseAreaId(v, t)),
-			field("ipGateway", t("editor.general.ip_gateway"), 8, t("editor.general.ip_gateway_help"), (v) => parseAreaId(v, t))),
+			field("arsServer", t("editor.general.ars_server"), 8, t("editor.general.ars_server_help"), areaKey("arsServer")),
+			field("ipGateway", t("editor.general.ip_gateway"), 8, t("editor.general.ip_gateway_help"), areaKey("ipGateway"))),
 	];
 	if (S.conn) {
 		const p = S.conn.probe;

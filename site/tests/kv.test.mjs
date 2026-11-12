@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 
 import { CodeplugImage, REGIONS, EDITOR_REGIONS, SETTINGS_AREA } from "../static/js/codeplug/image.js";
 import {
-	KV_ADDR, KV_SIZE, KEY, ID_MAX, decodeArea, encodeArea, getValue, setValue, deleteValue, getId, idValue, putArea, putIds, areaForWrite,
+	KV_ADDR, KV_SIZE, KEY, ID_MAX, decodeArea, encodeArea, getValue, setValue, deleteValue, getKey, keyValue, keyValid, idValue, putArea, putKeys, areaForWrite, KEYS,
 } from "../static/js/codeplug/kv.js";
 import { decode, encode, empty, validate } from "../static/js/codeplug/model.js";
 import { CpsSerial, writeRanges } from "../static/js/codeplug/transport.js";
@@ -18,6 +18,7 @@ import { crc32 } from "../static/js/flasher/bytes.js";
 
 const area = (img) => img.bytes.subarray(KV_ADDR, KV_ADDR + KV_SIZE);
 const e = (key, ...bytes) => ({ key, value: Uint8Array.from(bytes) });
+const [ARS, GW] = KEYS;	// the rows of the two ID keys
 
 // An image whose area holds entries, written by kv.js
 function withArea(entries) {
@@ -41,8 +42,8 @@ test("settings area: header, entries, CRC and erased bytes after the data", () =
 	const d = decodeArea(img.bytes);
 	assert.equal(d.state, "valid");
 	assert.deepEqual(d.entries, [e(1, 0x39, 0x30, 0, 0), e(0x7001, 0xAA)]);
-	assert.equal(getId(d.entries, KEY.arsServer), 12345);
-	assert.equal(getId(d.entries, KEY.ipGateway), null);
+	assert.equal(getKey(d.entries, ARS), 12345);
+	assert.equal(getKey(d.entries, GW), null);
 
 	// an empty valid area: a header with no data
 	assert.deepEqual(decodeArea(withArea([]).bytes), { state: "valid", entries: [] });
@@ -85,15 +86,16 @@ test("settings area: erased, invalid and newer areas", () => {
 	s.fill(0x77, 16, 24);
 	s[5] = 24;
 	area(img).set(s);
-	assert.equal(getId(decodeArea(img.bytes).entries, KEY.ipGateway), 0x030201);
+	assert.equal(getKey(decodeArea(img.bytes).entries, GW), 0x030201);
 });
 
 test("settings area: a newer area is never written", () => {
 	const img = withArea([e(KEY.arsServer, 1, 0, 0, 0)]);
 	area(img)[4] = 2;
 	const before = img.bytes.slice();
+	assert.equal(decodeArea(img.bytes).state, "newer");
 	assert.equal(putArea(img.bytes, [e(KEY.arsServer, 2, 0, 0, 0)]), false);
-	assert.equal(putIds(img.bytes, { [KEY.arsServer]: 5 }), false);
+	assert.equal(putKeys(img.bytes, { arsServer: 5 }), false);
 	assert.deepEqual(img.bytes, before);
 
 	// through the model: the value is kept out and the Problems tab says so
@@ -110,12 +112,12 @@ test("settings area: unknown keys kept in order, duplicates, removal", () => {
 	const img = withArea([e(0x7001, 1, 2, 3), e(KEY.ipGateway, 9, 0, 0, 0), e(0x8000), e(KEY.ipGateway, 7, 0, 0, 0), e(0x7002, 4)]);
 	const d = decodeArea(img.bytes);
 	// one entry per key: the first wins
-	assert.equal(getId(d.entries, KEY.ipGateway), 9);
-	assert.equal(putIds(img.bytes, { [KEY.ipGateway]: 3100500, [KEY.arsServer]: 0 }), true);
+	assert.equal(getKey(d.entries, GW), 9);
+	assert.equal(putKeys(img.bytes, { ipGateway: 3100500, arsServer: 0 }), true);
 	// replaced in place, the later duplicate dropped, the new key appended, unknown keys byte for byte
 	assert.deepEqual(decodeArea(img.bytes).entries, [
 		e(0x7001, 1, 2, 3), { key: KEY.ipGateway, value: idValue(3100500) }, e(0x8000), e(0x7002, 4), e(KEY.arsServer, 0, 0, 0, 0)]);
-	assert.equal(putIds(img.bytes, { [KEY.ipGateway]: null }), true);
+	assert.equal(putKeys(img.bytes, { ipGateway: null }), true);
 	assert.deepEqual(decodeArea(img.bytes).entries, [e(0x7001, 1, 2, 3), e(0x8000), e(0x7002, 4), e(KEY.arsServer, 0, 0, 0, 0)]);
 
 	// the list helpers
@@ -129,19 +131,59 @@ test("settings area: unknown keys kept in order, duplicates, removal", () => {
 	assert.deepEqual(decodeArea(withArea(list).bytes).entries, [e(1, 1), e(2, 2)]);
 });
 
-test("settings area: a value that grew keeps its later fields; empty and out-of-range IDs read absent", () => {
-	const img = withArea([e(KEY.arsServer, 0x10, 0, 0, 0, 0xA1, 0xA2), e(KEY.ipGateway, 1, 2)]);
+test("settings area: an ID of any width; a value the setting can't take reads absent; a set replaces the value whole", () => {
+	const img = withArea([e(KEY.arsServer, 0x10, 0, 0, 0, 0, 0, 0, 0), e(KEY.ipGateway, 1, 2)]);
 	const d = decodeArea(img.bytes).entries;
-	assert.equal(getId(d, KEY.arsServer), 0x10);
-	assert.equal(getId(d, KEY.ipGateway), 0x0201, "shorter than a u32: zero-extended");
-	assert.equal(getId([e(1, 0x40, 0x42, 0x0F)], 1), 1000000, "a 3-byte ID");
-	assert.equal(getId([e(1)], 1), null, "empty");
-	putIds(img.bytes, { [KEY.arsServer]: 0x20 });
-	assert.deepEqual(getValue(decodeArea(img.bytes).entries, KEY.arsServer), Uint8Array.of(0x20, 0, 0, 0, 0xA1, 0xA2));
+	assert.equal(getKey(d, ARS), 0x10, "stored in 8 bytes: a later version's width");
+	assert.equal(getKey(d, GW), 0x0201, "shorter than a u32: zero-extended");
+	assert.equal(getKey([e(1, 0x40, 0x42, 0x0F)], ARS), 1000000, "a 3-byte ID");
+	assert.equal(getKey([e(1)], ARS), null, "empty");
+	assert.equal(getKey([e(1, 0x10, 0, 0, 0, 1)], ARS), null, "past 32 bits");
+	assert.equal(getKey([e(1, 0x10, 0, 0, 0, 0, 0, 0, 0, 0)], ARS), null, "longer than a scalar");
+	// a scalar is written whole, in the width this writer stores (4)
+	putKeys(img.bytes, { arsServer: 0x20 });
+	assert.deepEqual(getValue(decodeArea(img.bytes).entries, KEY.arsServer), Uint8Array.of(0x20, 0, 0, 0));
 
-	assert.equal(getId([{ key: 1, value: idValue(ID_MAX) }], 1), ID_MAX);
-	assert.equal(getId([{ key: 1, value: idValue(ID_MAX + 1) }], 1), null);
-	assert.equal(getId([{ key: 1, value: idValue(0xFFFFFFFF) }], 1), null);
+	assert.equal(getKey([{ key: 1, value: idValue(ID_MAX) }], ARS), ID_MAX);
+	assert.equal(getKey([{ key: 1, value: idValue(ID_MAX + 1) }], ARS), null);
+	assert.equal(getKey([{ key: 1, value: idValue(0xFFFFFFFF) }], ARS), null);
+});
+
+test("settings area: every scalar type follows its row (3.1)", () => {
+	const uint = { name: "tries", key: 0x7010, type: "uint", size: 1, min: 1, max: 10 };
+	const bool = { name: "tone", key: 0x7011, type: "bool", size: 1 };
+	const en = { name: "mode", key: 0x7012, type: "enum", size: 1, min: 0, max: 2 };
+	const int = { name: "trim", key: 0x7013, type: "int", size: 2, min: -1000, max: 1000 };
+	const at = (row, ...bytes) => getKey([e(row.key, ...bytes)], row);
+	assert.equal(at(uint, 10), 10);
+	assert.equal(at(uint, 7, 0, 0, 0), 7, "a wider value that fits");
+	assert.equal(at(uint, 0), null, "below the range");
+	assert.equal(at(uint, 11), null, "above the range");
+	assert.equal(getKey([], uint), null, "absent");
+	assert.equal(at(bool, 0), false);
+	assert.equal(at(bool, 0, 0, 4, 0), true, "anything but 0 is on");
+	assert.equal(at(bool), null, "empty");
+	assert.equal(at(en, 2), 2);
+	assert.equal(at(en, 3), null, "a value this editor doesn't know");
+	assert.equal(at(int, 0xFB), -5, "sign-extended from one byte");
+	assert.equal(at(int, 0xFE, 0), 254);
+	assert.equal(at(int, 0x18, 0xFC, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF), -1000);
+	assert.equal(at(int, 0xE9, 0x03), null, "1001");
+	assert.equal(at(int, 0, 0, 0, 0x80, 0), null, "past 32 bits");
+	// what a writer stores
+	assert.deepEqual(keyValue(uint, 9), Uint8Array.of(9));
+	assert.deepEqual(keyValue(bool, true), Uint8Array.of(1));
+	assert.deepEqual(keyValue(int, -300), Uint8Array.of(0xD4, 0xFE));
+	assert.deepEqual(keyValue(ARS, 3100444), idValue(3100444));
+	for (const [row, v] of [[uint, 9], [bool, false], [en, 1], [int, -300], [ARS, ID_MAX]]) {
+		assert.equal(getKey([{ key: row.key, value: keyValue(row, v) }], row), v);
+		assert.ok(keyValid(row, v));
+	}
+	assert.ok(!keyValid(uint, 0) && !keyValid(bool, 1) && !keyValid(int, 1.5) && !keyValid(ARS, ID_MAX + 1));
+	// the rows the editor ships: unique names and keys in the assigned range, a size and a range each
+	assert.equal(new Set(KEYS.map((k) => k.key)).size, KEYS.length);
+	assert.equal(new Set(KEYS.map((k) => k.name)).size, KEYS.length);
+	for (const k of KEYS) assert.ok(k.key >= 1 && k.key <= 0x7FFF && k.size >= 1 && k.size <= 8 && (k.type === "bool" || k.min <= k.max), k.name);
 });
 
 test("settings area: writing over an invalid area starts a new one", () => {
@@ -149,7 +191,7 @@ test("settings area: writing over an invalid area starts a new one", () => {
 	area(img).fill(0x5A, 0, 64);
 	const g = decode(img).general;
 	assert.equal(g.arsServer, null);
-	putIds(img.bytes, { [KEY.arsServer]: 42 });
+	putKeys(img.bytes, { arsServer: 42 });
 	const d = decodeArea(img.bytes);
 	assert.equal(d.state, "valid");
 	assert.deepEqual(d.entries, [{ key: KEY.arsServer, value: idValue(42) }]);
@@ -179,8 +221,8 @@ test("general settings: arsServer and ipGateway, absent apart from 0", () => {
 });
 
 test("general settings: an unchanged codeplug keeps its area byte for byte", () => {
-	// unknown keys, a duplicate and a later value: a write of anything else leaves them
-	const img = withArea([e(0x7001, 1, 2, 3), e(KEY.arsServer, 5, 0, 0, 0, 0xEE)]);
+	// unknown keys and a value stored wider than the editor writes: a write of anything else leaves them
+	const img = withArea([e(0x7001, 1, 2, 3), e(KEY.arsServer, 5, 0, 0, 0, 0)]);
 	area(img).set([0x01, 0x70, 0, 0], 16 + 7 + 9 + 4);	// bytes after the data: outside the CRC, kept all the same
 	const m = decode(img);
 	m.general = { ...m.general, radioName: "N0CALL" };
@@ -247,15 +289,15 @@ test("settings area: a rewrite keeps the header length and the reserved bytes (2
 	later.set(s.subarray(16, 16 + 8), 24);
 	area(img).set(later);
 	assert.equal(decodeArea(img.bytes).state, "valid");
-	assert.equal(putIds(img.bytes, { [KEY.ipGateway]: 7 }), true);
+	assert.equal(putKeys(img.bytes, { ipGateway: 7 }), true);
 	const a = area(img);
 	assert.equal(a[5], 24);
 	assert.deepEqual([...a.subarray(12, 24)], [1, 2, 3, 4, ...new Array(8).fill(0x5A)]);
-	assert.equal(getId(decodeArea(img.bytes).entries, KEY.arsServer), 1);
-	assert.equal(getId(decodeArea(img.bytes).entries, KEY.ipGateway), 7);
+	assert.equal(getKey(decodeArea(img.bytes).entries, ARS), 1);
+	assert.equal(getKey(decodeArea(img.bytes).entries, GW), 7);
 	// a new area: 16 bytes, reserved 0
 	const fresh = CodeplugImage.blank();
-	putIds(fresh.bytes, { [KEY.arsServer]: 3 });
+	putKeys(fresh.bytes, { arsServer: 3 });
 	assert.equal(area(fresh)[5], 16);
 	assert.deepEqual([...area(fresh).subarray(12, 16)], [0, 0, 0, 0]);
 });
@@ -269,7 +311,7 @@ test("settings area: a write sends the file's area only when valid and the radio
 	// a valid file area goes
 	const file = withArea([e(KEY.arsServer, 5, 0, 0, 0)]);
 	areaForWrite(file.bytes, radio.bytes);
-	assert.equal(getId(decodeArea(file.bytes).entries, KEY.arsServer), 5);
+	assert.equal(getKey(decodeArea(file.bytes).entries, ARS), 5);
 	// over a newer area, never
 	const newer = withArea([e(KEY.arsServer, 9, 0, 0, 0)]);
 	area(newer)[4] = 2;
@@ -285,10 +327,46 @@ test("settings area: the editor sends the file's area only when the edit changed
 	// a channel edit leaves the area as opened: the radio's own stays
 	const same = base.clone();
 	areaForWrite(same.bytes, radio.bytes, base.bytes);
-	assert.equal(getId(decodeArea(same.bytes).entries, KEY.arsServer), 200);
+	assert.equal(getKey(decodeArea(same.bytes).entries, ARS), 200);
 	// an ARS edit goes
 	const edited = base.clone();
-	assert.ok(putIds(edited.bytes, { [KEY.arsServer]: 300 }));
+	assert.ok(putKeys(edited.bytes, { arsServer: 300 }));
 	areaForWrite(edited.bytes, radio.bytes, base.bytes);
-	assert.equal(getId(decodeArea(edited.bytes).entries, KEY.arsServer), 300);
+	assert.equal(getKey(decodeArea(edited.bytes).entries, ARS), 300);
+});
+
+test("settings area: an edit sends only the keys it changed, onto the radio's area", () => {
+	// opened with ARS 100, gateway 5 and a key the editor doesn't know
+	const base = withArea([e(KEY.arsServer, 100, 0, 0, 0), e(KEY.ipGateway, 5, 0, 0, 0), e(0x7001, 1)]);
+	// since then the radio's menu set the gateway, a later firmware changed its key and added one
+	const radio = withArea([e(0x7002, 9, 9), e(KEY.arsServer, 100, 0, 0, 0), e(KEY.ipGateway, 6, 0, 0, 0), e(0x7001, 2)]);
+	radio.bytes.subarray(KV_ADDR + 12, KV_ADDR + 16).set([0, 0xF0, 0, 0]);	// and named a continuation
+	const edited = base.clone();
+	assert.ok(putKeys(edited.bytes, { arsServer: 300 }));
+	areaForWrite(edited.bytes, radio.bytes, base.bytes);
+	// only the ARS server is the edit's: the rest is the radio's, in the radio's order, its header kept
+	assert.deepEqual(decodeArea(edited.bytes).entries, [
+		e(0x7002, 9, 9), { key: KEY.arsServer, value: idValue(300) }, e(KEY.ipGateway, 6, 0, 0, 0), e(0x7001, 2)]);
+	assert.deepEqual([...area(edited).subarray(12, 16)], [0, 0xF0, 0, 0]);
+	// a key the edit removed is removed from the radio's; one it added is added
+	const cleared = base.clone();
+	assert.ok(putKeys(cleared.bytes, { ipGateway: null }));
+	areaForWrite(cleared.bytes, radio.bytes, base.bytes);
+	assert.deepEqual(decodeArea(cleared.bytes).entries, [e(0x7002, 9, 9), e(KEY.arsServer, 100, 0, 0, 0), e(0x7001, 2)]);
+	const none = CodeplugImage.blank();	// opened without an area
+	const added = none.clone();
+	assert.ok(putKeys(added.bytes, { ipGateway: 8 }));
+	areaForWrite(added.bytes, radio.bytes, none.bytes);
+	assert.deepEqual(decodeArea(added.bytes).entries, [
+		e(0x7002, 9, 9), e(KEY.arsServer, 100, 0, 0, 0), { key: KEY.ipGateway, value: idValue(8) }, e(0x7001, 2)]);
+	// a radio without a valid area takes the file's as edited
+	const blank = CodeplugImage.blank();
+	const whole = base.clone();
+	assert.ok(putKeys(whole.bytes, { arsServer: 300 }));
+	const sent = whole.clone();
+	areaForWrite(sent.bytes, blank.bytes, base.bytes);
+	assert.deepEqual(area(sent), area(whole));
+	// the radio's keys and the edit's don't fit together: refused, not cut
+	const full = withArea([e(0x7003, ...new Uint8Array(KV_SIZE - 16 - 4 - 8))]);
+	assert.throws(() => areaForWrite(added.bytes, full.bytes, none.bytes), RangeError);
 });
