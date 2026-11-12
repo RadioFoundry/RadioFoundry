@@ -2248,7 +2248,7 @@ msgstr "OK 编辑  返回"
 
 #: core/ui/ui_menus.c
 msgid "ARS server"
-msgstr ""
+msgstr "ARS 服务器"
 
 #: core/ui/ui_menus.c
 msgid "IP gateway"
@@ -2256,11 +2256,11 @@ msgstr "IP 网关"
 
 #: core/ui/ui_menus.c
 msgid "Registering"
-msgstr ""
+msgstr "正在注册"
 
 #: core/ui/ui_menus.c
 msgid "Registered"
-msgstr ""
+msgstr "已注册"
 
 #: core/ui/ui_menus.c
 msgid "Refused"
@@ -2276,7 +2276,7 @@ msgstr "ARS： "
 
 #: core/ui/ui_menus.c
 msgid "Data Services"
-msgstr ""
+msgstr "数据服务"
 
 #: core/ui/ui_menus.c
 msgid "Freq Trim"
@@ -2968,7 +2968,7 @@ msgstr "USB 地址"
 
 #: core/ui/ui_menus.c
 msgid "Data services"
-msgstr ""
+msgstr "数据服务"
 
 #: core/ui/ui_menus.c
 msgid "Auto power off"
