@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The AnyTone serial hand microphone (drivers/input/anytone_mic): presence, PTT and keys from 'A' frames, the other
-// frame types skipped whole, broken frames and UART errors dropped; the radio's answers and status frames, the poll
-// that keeps a silent microphone present, and the microphone dropped with its PTT once it stops answering
+// frame types skipped whole, broken frames and UART errors dropped (and PTT with them); the radio's answers and status
+// frames, the poll that keeps a silent microphone present, and the microphone dropped with its PTT once it stops
+// answering; the bytes from a DMA ring with the UART's error marks
 #include <stdio.h>
 #include "input/anytone_mic/anytone_mic.h"
 
@@ -70,19 +71,135 @@ static void test_other_frames_and_errors(void)
 	const uint8_t ack = 0x06;
 	CHECK(feed(&m, &ack, 1, 30) == 0);
 	CHECK(frame(&m, 1, 0, 0, 40) == 1 && m.ptt);
-	// A frame without 0x06 at its end is dropped
+	// A frame without 0x06 at its end is dropped and counted, and lets go of PTT: it may have been the release
 	const uint8_t bad[8] = { 'A', 0, 1, 1, 0x0E, 0, 0, 0x07 };
 	CHECK(feed(&m, bad, sizeof(bad), 50) == 0);
-	CHECK(m.ptt && m.key == ANYTONE_MIC_KEY_NONE);
-	// Bytes that start no frame are skipped; a UART error ends the frame under way
+	CHECK(!m.ptt && m.key == ANYTONE_MIC_KEY_NONE && m.errors == 1);
+	// Bytes that start no frame are skipped and counted; a UART error ends the frame under way
 	const uint8_t junk[3] = { 0x00, 0xFF, 0x55 };
 	CHECK(feed(&m, junk, sizeof(junk), 60) == 0);
-	CHECK(m.errors == 3);
+	CHECK(m.errors == 4);
 	const uint8_t half[4] = { 'A', 0, 1, 1 };
 	CHECK(feed(&m, half, sizeof(half), 70) == 0);
 	anytone_mic_error(&m);
 	CHECK(frame(&m, 0, 1, ANYTONE_MIC_KEY_MENU, 80) == 1);
 	CHECK(!m.ptt && m.key == ANYTONE_MIC_KEY_MENU);
+}
+
+// Whatever may have lost a frame lets go of PTT and the key, since the microphone sends nothing more until the next
+// change: a UART error, a byte that starts no frame, a broken microphone frame
+static void test_loss_releases(void)
+{
+	anytone_mic_t m;
+	anytone_mic_init(&m);
+	CHECK(frame(&m, 0, 0, ANYTONE_MIC_ID, 0) == 1);
+	CHECK(frame(&m, 1, 0, 0, 10) == 1 && m.ptt);
+	anytone_mic_error(&m);
+	CHECK(!m.ptt && m.errors == 1 && m.present);
+	CHECK(frame(&m, 1, 1, ANYTONE_MIC_KEY_PA, 20) == 1 && m.ptt && m.key == ANYTONE_MIC_KEY_PA);
+	const uint8_t stray = 0x00;
+	CHECK(feed(&m, &stray, 1, 30) == 0);
+	CHECK(!m.ptt && m.key == ANYTONE_MIC_KEY_NONE && m.errors == 2);
+	// The microphone's answers (0x06 runs) and other devices' frames don't
+	CHECK(frame(&m, 1, 0, 0, 40) == 1 && m.ptt);
+	const uint8_t run[4] = { 0x06, 0x06, 0x06, 0x06 };
+	CHECK(feed(&m, run, sizeof(run), 50) == 0);
+	const uint8_t f[7] = { 'F', 0, 0, 0, 0, 0, ANYTONE_MIC_END };
+	CHECK(feed(&m, f, sizeof(f), 60) == 0);
+	CHECK(m.ptt && m.errors == 2);
+	// A UART error with no microphone (a plain microphone's PTT is a break) only counts
+	anytone_mic_t q;
+	anytone_mic_init(&q);
+	anytone_mic_error(&q);
+	CHECK(q.errors == 1 && !q.present && !q.ptt);
+}
+
+// A frame one byte short: the next frame's 'A' ends it, and starts that frame, so a release right after a damaged press
+// still gets through
+static void test_resync(void)
+{
+	anytone_mic_t m;
+	anytone_mic_init(&m);
+	CHECK(frame(&m, 0, 0, ANYTONE_MIC_ID, 0) == 1);
+	const uint8_t short_press[7] = { 'A', 1, 0, 0, 0, 0, ANYTONE_MIC_END };	// byte 3 lost
+	CHECK(feed(&m, short_press, sizeof(short_press), 10) == 0);
+	// The release's 'A' ends the broken frame and starts its own: accepted
+	CHECK(frame(&m, 0, 0, 0, 20) == 1);
+	CHECK(m.errors == 1 && !m.ptt && m.frames == 2);
+	// Two bytes short: the 'A' is found further in
+	const uint8_t shorter[6] = { 'A', 0, 1, 0, 0x10, 0 };
+	CHECK(feed(&m, shorter, sizeof(shorter), 30) == 0);
+	CHECK(frame(&m, 1, 0, 0, 40) == 1);
+	CHECK(m.errors == 2 && m.frames == 3 && m.ptt);
+	// No 'A' in a broken frame: the parser waits for a type byte as usual
+	const uint8_t broken[8] = { 'A', 0, 0, 0, 0, 0, 0, 0x00 };
+	CHECK(feed(&m, broken, sizeof(broken), 50) == 0);
+	CHECK(m.len == 0 && m.n == 0 && !m.ptt);
+	CHECK(frame(&m, 1, 0, 0, 60) == 1 && m.ptt);
+}
+
+// Bytes through a DMA ring: in order across the wrap and across drains, a frame split between two drains, and the bytes
+// the UART's error interrupt marked dropped as errors, their marks cleared
+static void test_ring(void)
+{
+	enum { LEN = 64 };
+	uint8_t ring[LEN];
+	uint32_t err[LEN / 32] = { 0 };
+	uint16_t rd = 0, wr = 0;
+	anytone_mic_t m;
+	anytone_mic_init(&m);
+	// What the DMA does: the next byte at wr, wrapping
+	#define PUT(b) do { ring[wr] = (uint8_t)(b); wr = (uint16_t)((wr + 1) % LEN); } while (0)
+	const uint8_t presence[8] = { 'A', 0, 0, 0, ANYTONE_MIC_ID, 0, 0, ANYTONE_MIC_END };
+	const uint8_t press[8] = { 'A', 1, 0, 0, 0, 0, 0, ANYTONE_MIC_END };
+	const uint8_t release[8] = { 'A', 0, 0, 0, 0, 0, 0, ANYTONE_MIC_END };
+	CHECK(anytone_mic_ring(&m, ring, err, LEN, &rd, wr, 0) == 0 && rd == 0);
+	for (unsigned i = 0; i < 8; i++) {
+		PUT(presence[i]);
+	}
+	CHECK(anytone_mic_ring(&m, ring, err, LEN, &rd, wr, 5) == 8 && rd == 8 && m.present && m.frames == 1);
+	// Answers run the ring round: 0x06 bytes up to 4 before the end
+	while (wr != LEN - 4) {
+		PUT(0x06);
+	}
+	CHECK(anytone_mic_ring(&m, ring, err, LEN, &rd, wr, 6) == LEN - 12 && rd == LEN - 4);
+	// The press across the wrap, drained in two parts
+	for (unsigned i = 0; i < 5; i++) {
+		PUT(press[i]);
+	}
+	CHECK(anytone_mic_ring(&m, ring, err, LEN, &rd, wr, 7) == 5 && rd == 1 && !m.ptt);
+	for (unsigned i = 5; i < 8; i++) {
+		PUT(press[i]);
+	}
+	CHECK(anytone_mic_ring(&m, ring, err, LEN, &rd, wr, 8) == 3 && rd == 4 && m.ptt && m.frames == 2 && m.errors == 0);
+	// A byte of the release marked (a noise error): dropped with its frame, PTT let go all the same
+	for (unsigned i = 0; i < 8; i++) {
+		PUT(release[i]);
+	}
+	anytone_mic_ring_mark(err, (uint16_t)(rd + 3));
+	CHECK(anytone_mic_ring(&m, ring, err, LEN, &rd, wr, 9) == 7 && m.frames == 2 && !m.ptt);
+	CHECK(m.errors == 4 && err[0] == 0 && err[1] == 0);	// the mark, then three zeros that start no frame
+	uint32_t errors = m.errors;
+	// A mark on the last slot (the wrap) and on slot 32 (the second word): the next lap's bytes there are clean
+	anytone_mic_ring_mark(err, LEN - 1);
+	anytone_mic_ring_mark(err, 32);
+	CHECK(err[0] == 0 && err[1] == (1u << 31 | 1u));
+	while (wr != 33) {
+		PUT(0x06);
+	}
+	CHECK(anytone_mic_ring(&m, ring, err, LEN, &rd, wr, 10) == (uint16_t)((33 - 12 + LEN) % LEN) - 1);
+	CHECK(m.errors == errors + 1 && err[1] == (1u << 31));
+	while (wr != 0) {
+		PUT(0x06);
+	}
+	CHECK(anytone_mic_ring(&m, ring, err, LEN, &rd, wr, 11) == LEN - 33 - 1 && rd == 0);
+	CHECK(m.errors == errors + 2 && err[0] == 0 && err[1] == 0);
+	// A frame after the marks: clean
+	for (unsigned i = 0; i < 8; i++) {
+		PUT(press[i]);
+	}
+	CHECK(anytone_mic_ring(&m, ring, err, LEN, &rd, wr, 12) == 8 && m.ptt);
+	#undef PUT
 }
 
 static void test_timeout(void)
@@ -221,6 +338,9 @@ int main(void)
 {
 	test_presence_ptt_keys();
 	test_other_frames_and_errors();
+	test_loss_releases();
+	test_resync();
+	test_ring();
 	test_timeout();
 	test_answers();
 	test_held_ptt();

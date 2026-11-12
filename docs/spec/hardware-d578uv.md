@@ -178,11 +178,18 @@ while idle and none while PTT is held. It answers each status frame with a run o
 
 RadioFoundry reads both microphones without a setting (`boards/d578uv/input_d578uv.c`,
 `drivers/input/anytone_mic`). Pull-ups on PA9 and PA10, so without a microphone both lines are high and nothing keys
-the transmitter. The USART receives on PA10 all the time. Once a frame is accepted the keys and PTT come from the
+the transmitter. The USART receives on PA10 all the time, by DMA into a 64-byte ring (USART0 on DMA0 channel 4; on
+the AT32 builds USART1 on DMA1 channel 1, request 24): the USART holds a single byte, 87 us at 115200, and an interrupt
+held up longer than that by others at its level or by a critical section lost one. The key scan (every 10 ms) and the
+DMA's half and full interrupts parse what the ring holds. The USART's error interrupt (priority 2, above the RTOS's
+mask) marks the byte a framing or noise error came with, and the parser drops it. Once a frame is accepted the keys and PTT come from the
 frames and PA9 becomes the USART's transmit line. The key scan sends the answers and the status frames: one after
 each presence frame and one a second after that, no closer than 200 ms. Any byte from the microphone, its 0x06 runs
 too, keeps it present, so PTT held for minutes stays on. After 3 s without a byte the microphone counts as gone, with
-its PTT and key, and PA9 is an input again: a microphone pulled out mid-transmission unkeys within 3 s. For 50 ms
+its PTT and key, and PA9 is an input again: a microphone pulled out mid-transmission unkeys within 3 s. Since the
+microphone sends nothing while PTT is held, a lost frame could be the release: a UART error, a byte that starts no frame
+or an `A` frame that doesn't end in 0x06 lets go of PTT and the key, and the user presses again. A broken `A` frame's
+bytes from the next `A` on start the next frame, so a frame short of a byte doesn't take the release after it along. For 50 ms
 after any byte the two lines aren't read as keys, so a frame's bits never look like PTT; a plain microphone's PTT is a
 break to the USART, which counts as no byte. The core debounces all of them as the other keys. The status frame carries the
 microphone's lights (a change goes out within 200 ms). The sides are the ones the user selects: the main side is the selected one,

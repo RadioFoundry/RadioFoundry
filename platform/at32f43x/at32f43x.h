@@ -45,6 +45,7 @@ typedef enum {
 	UART5_IRQn = 53,
 	TMR6_DAC_GLOBAL_IRQn = 54,
 	TMR7_GLOBAL_IRQn = 55,
+	DMA1_Channel1_IRQn = 56,
 	OTGFS1_IRQn = 67,
 	OTGFS2_IRQn = 77,
 } IRQn_Type;
@@ -241,6 +242,8 @@ typedef struct {
 #define USART_CTRL1_TEN		(1u << 3)
 #define USART_CTRL1_RDBFIEN	(1u << 5)
 #define USART_CTRL1_UEN		(1u << 13)
+#define USART_CTRL3_ERRIEN	(1u << 0)	// the error interrupt while DMAREN is set
+#define USART_CTRL3_DMAREN	(1u << 6)	// DMA receive
 
 // WDT: the watchdog on the 40 kHz LICK, the STM32's IWDG layout and keys
 #define WDT_BASE		0x40003000u

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The AnyTone serial hand microphone: its frames from the microphone, taken a byte at a time from a UART interrupt
-// (115200 8N1 on the radio's microphone lines), and what the radio sends back. Pure and allocation free, so the host
-// tests run it.
+// The AnyTone serial hand microphone: its frames from the microphone, taken a byte at a time (115200 8N1 on the radio's
+// microphone lines; anytone_mic_ring takes them from a DMA ring), and what the radio sends back. Pure and allocation
+// free, so the host tests run it.
 //
 // From the microphone (measured on its line; the board's hardware page has the details): a frame starts with its type
 // byte, which gives its length: 'A' 8 bytes (the microphone's), 'F' 7, '+' 31 (the PC link's), 0x06 one (the
@@ -18,6 +18,11 @@
 // and with it PTT and the key, so a microphone pulled out mid-transmission doesn't hold the transmitter on. The bytes
 // to send come from anytone_mic_out, called from a task, so an answer never lands inside a status frame. A change of
 // the microphone's lights (a TX, RX or side change) sends a status frame at once, within ANYTONE_MIC_STATUS_GAP_MS.
+//
+// Since the microphone sends nothing while PTT is held, a lost frame can be its release. So anything that may have lost
+// one lets go of PTT and the key held: a UART error, a byte that starts no frame and a microphone frame that doesn't
+// end in 0x06. The user presses again. A broken microphone frame's bytes from the next 'A' on start the next frame,
+// so a frame short of a byte doesn't take the following one with it.
 #ifndef ANYTONE_MIC_H
 #define ANYTONE_MIC_H
 
@@ -107,12 +112,20 @@ static inline uint8_t anytone_mic_frame_len(uint8_t type)
 	}
 }
 
+// A byte lost or broken: counted, and PTT and the key let go (it may have been their release)
+static inline void anytone_mic_lost(anytone_mic_t *m)
+{
+	m->errors++;
+	m->ptt = false;
+	m->key = ANYTONE_MIC_KEY_NONE;
+}
+
 // A UART error (overrun, framing, noise): the frame under way is lost
 static inline void anytone_mic_error(anytone_mic_t *m)
 {
 	m->n = 0;
 	m->len = 0;
-	m->errors++;
+	anytone_mic_lost(m);
 }
 
 // One received byte at now_ms. True when it completed an accepted microphone frame (anytone_mic_out answers it)
@@ -124,7 +137,7 @@ static inline bool anytone_mic_byte(anytone_mic_t *m, uint8_t c, uint32_t now_ms
 	if (m->len == 0) {
 		m->len = anytone_mic_frame_len(c);
 		if (m->len == 0) {
-			m->errors++;
+			anytone_mic_lost(m);
 			return false;
 		}
 		m->n = 0;
@@ -138,8 +151,23 @@ static inline bool anytone_mic_byte(anytone_mic_t *m, uint8_t c, uint32_t now_ms
 	bool mic = m->buf[0] == ANYTONE_MIC_FRAME && m->buf[ANYTONE_MIC_FRAME_LEN - 1u] == ANYTONE_MIC_END;
 	m->len = 0;
 	m->n = 0;
+	if (!mic && m->buf[0] == ANYTONE_MIC_FRAME) {
+		// A broken microphone frame. Its bytes from the next 'A' on are the start of the next frame
+		anytone_mic_lost(m);
+		for (uint8_t i = 1; i < ANYTONE_MIC_FRAME_LEN; i++) {
+			if (m->buf[i] == ANYTONE_MIC_FRAME) {
+				for (uint8_t j = i; j < ANYTONE_MIC_FRAME_LEN; j++) {
+					m->buf[j - i] = m->buf[j];
+				}
+				m->len = ANYTONE_MIC_FRAME_LEN;
+				m->n = (uint8_t)(ANYTONE_MIC_FRAME_LEN - i);
+				break;
+			}
+		}
+		return false;
+	}
 	if (!mic) {
-		return false;	// another device's frame, an acknowledgement or a broken frame
+		return false;	// another device's frame or an acknowledgement
 	}
 	m->present = true;
 	m->last_ms = now_ms;
@@ -239,6 +267,36 @@ static inline bool anytone_mic_poll(anytone_mic_t *m, uint32_t now_ms)
 		m->key = ANYTONE_MIC_KEY_NONE;
 	}
 	return m->present;
+}
+
+// Bytes from a circular DMA ring of len bytes: from *rd up to wr, the index the DMA writes next, into the parser; *rd
+// then is wr. err has a bit per ring slot (bit i % 32 of word i / 32), set by anytone_mic_ring_mark from the UART's
+// error interrupt for the byte an error came with: that byte goes as anytone_mic_error instead, and its bit is cleared.
+// The bytes taken as bytes (not errors)
+static inline uint16_t anytone_mic_ring(anytone_mic_t *m, const volatile uint8_t *ring, uint32_t *err, uint16_t len,
+					uint16_t *rd, uint16_t wr, uint32_t now_ms)
+{
+	uint16_t taken = 0;
+	uint16_t i = *rd;
+	while (i != wr && i < len) {
+		uint32_t bit = 1u << (i & 31u);
+		if ((__atomic_load_n(&err[i >> 5], __ATOMIC_RELAXED) & bit) != 0) {
+			(void)__atomic_fetch_and(&err[i >> 5], ~bit, __ATOMIC_RELAXED);
+			anytone_mic_error(m);
+		} else {
+			(void)anytone_mic_byte(m, ring[i], now_ms);
+			taken++;
+		}
+		i = (uint16_t)(i + 1u == len ? 0u : i + 1u);
+	}
+	*rd = wr < len ? wr : 0u;
+	return taken;
+}
+
+// From the UART's error interrupt: the byte at ring index i came with an error
+static inline void anytone_mic_ring_mark(uint32_t *err, uint16_t i)
+{
+	(void)__atomic_fetch_or(&err[i >> 5], 1u << (i & 31u), __ATOMIC_RELAXED);
 }
 
 #endif
