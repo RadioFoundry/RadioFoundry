@@ -246,14 +246,23 @@ static struct { uint32_t hz; radio_bw_t bw; bool digital; subtone_t tone; int16_
 static bool transmitting;
 static uint8_t sr;			// the shift register's outputs
 static bool main_audio;			// side A's audio to the speaker (audio())
+// After a retune the chip's noise reading dips while it settles, and the squelch opened on it for a moment (heard on a
+// radio: a burst of noise as side A was set to another channel): no carrier for RX_SETTLE_MS after each set-up, on
+// either side
+#define RX_SETTLE_MS	40u
+static uint32_t rx_setup_ms;		// hal_millis() at side A's last receive set-up, 0 before any
+static uint32_t b_setup_ms;		// ... side B's
 static bool beeping;			// side A's chip sounds a beep instead of its receiver (beep_tone())
 static bool beep_quiet;			// side A's level held at its lowest while a beep starts or stops
+static uint16_t beep_hz;		// the beep sounding: its tone and the chip's gain, for a set-up during it
+static uint8_t beep_gain;
 static uint8_t level_a_want;		// the level code audio_route() gives side A
 static bool dmr_heard;			// in DMR side A hears a signal (status()): no beep then (beep_tone())
 static int16_t level_code_vol = -1;	// the speaker level code for the volume, -1 until the core sets one
 static bool vol_zero;			// the volume (knob A) is 0: side A and the KTMicro receiver stay silent
 static int16_t level_code_b = -1;	// side B's level code from knob B, -1 until side B's poll reads it
 static bool vol_b_zero;			// knob B is at 0: side B stays silent
+static bool knobs_swapped;		// dual watch with chip 0 on side B: chip 0 takes knob B, chip 1 knob A
 #if D578UV_LEVEL_IC
 static int16_t level_last[2] = { -1, -1 };	// level codes written, side A and B; -1 = none
 #endif
@@ -585,22 +594,27 @@ static void audio_route(void)
 {
 	bool b = b_heard();
 	bool kt_out = (AM_ON && main_audio) || BC_HEARD;
-	// Each side's knob sets its level (knob A the core's volume, knob B read in side B's poll); the KTMicro
+	// Each side's knob sets its level (knob A the core's volume, knob B read in side B's poll), by the side each
+	// receiver is on: with chip 0 on side B (knobs_swapped) chip 0 takes knob B and chip 1 knob A. The KTMicro
 	// receiver takes knob A's on both channels
-	int16_t code_b = kt_out || level_code_b < 0 ? level_code_vol : level_code_b;
+	bool swap = knobs_swapped && level_code_b >= 0 && !kt_out;
+	int16_t code_a = swap ? level_code_b : level_code_vol;
+	int16_t code_b = swap ? level_code_vol : kt_out || level_code_b < 0 ? level_code_vol : level_code_b;
+	bool zero_a = swap ? vol_b_zero : vol_zero;
+	bool zero_b = swap ? vol_zero : level_code_b < 0 ? vol_zero : vol_b_zero;
 	// In DMR side A's RF chip audio is the demodulator's 4FSK, which the gate keeps off the speaker but for a beep or
 	// the KTMicro receiver; the baseband's voice reaches the speaker without it
 	bool a_rf = beeping || kt_out || (mode != RADIO_MODE_DMR && main_audio);
 	if (level_code_vol >= 0) {
-		level_a_want = a_rf || !b ? (uint8_t)level_code_vol : 0;
+		level_a_want = a_rf || !b ? (uint8_t)code_a : 0;
 		level_set(0, beep_quiet ? 0 : level_a_want);
 		level_set(1, (b || kt_out) && code_b >= 0 ? (uint8_t)code_b : 0);
 	}
 	if (chips_ready && !transmitting) {
-		chip1_gpio(GPIO_B_A_AUDIO, a_rf || b ? GPIO_B_A_AUDIO : 0);
+		chip1_gpio(GPIO_B_A_AUDIO, a_rf ? GPIO_B_A_AUDIO : 0);
 	}
-	bool b_loud = b && (level_code_b < 0 ? !vol_zero : !vol_b_zero);
-	mcu_pin_write(PIN_SPK_MUTE, spk_amp_off(transmitting, beeping || kt_out || main_audio || b, !vol_zero || b_loud));
+	bool b_loud = b && !zero_b;
+	mcu_pin_write(PIN_SPK_MUTE, spk_amp_off(transmitting, beeping || kt_out || main_audio || b, !zero_a || b_loud));
 }
 
 static void volume(uint8_t percent)
@@ -1084,6 +1098,9 @@ static void rx_setup(void)
 	bool digital = mode == RADIO_MODE_DMR;
 	bool from_b = src_b;
 	asleep = false;
+	if (beeping) {		// a retune during a beep: the speaker off until the tone is back (audio_route() below)
+		mcu_pin_write(PIN_SPK_MUTE, spk_amp_off(true, false, false));
+	}
 #if CONFIG_DUAL_WATCH
 	src_b = digital && b_on && b_dmr && rx_hz == b_hz && !AM_ON;
 	if (src_b) {
@@ -1139,6 +1156,12 @@ static void rx_setup(void)
 	a_set.tone = rx_tone;
 	a_set.trim = trim_ppb;
 	a_kept = true;
+	// A set-up during a beep (the A/B key's beep, then side A retuned) left the chip in plain receive: the tone again,
+	// else the open gate plays the receiver's noise for the rest of the beep
+	if (beeping) {
+		qa4818_beep(&chip_if, beep_hz, beep_gain, qa4818_af_rx(digital, rx_hz));
+	}
+	rx_setup_ms = hal_millis() | 1u;
 	audio_route();		// side B may need the RF audio with side A on DMR
 }
 
@@ -1184,6 +1207,7 @@ static void b_setup(void)
 	trims_b();
 	b_open = false;
 	b_close_polls = 0;
+	b_setup_ms = hal_millis();
 }
 
 // Side A transmits: side B stops until tx_off()
@@ -1245,6 +1269,7 @@ static void b_stop(void)
 	}
 	b_on = false;
 	b_open = false;
+	knobs_swapped = false;
 	b_src_end();
 	if (!AM_ON) {
 		b_chips_off();
@@ -1280,6 +1305,14 @@ static void b_status(rx2_status_t *st)
 	if (b_task != NULL && xTaskGetCurrentTaskHandle() == b_task) {
 		rx2_status_t n = { .up = true, .tuned = b_on, .rssi_dbm = -160, .noise = 127 };
 		if (b_on && !transmitting && !AM_ON) {
+			// Which side chip 0 is on: the core's dual watch state, read here (not under the bus lock)
+			radio_dual_ref_t ref[2];
+			uint8_t sel = 0, at = 0;
+			bool swapped = radio_get_dual(ref, &sel, &at) && at == 1;
+			if (swapped != knobs_swapped) {
+				knobs_swapped = swapped;
+				audio_route();
+			}
 			b_knob();
 			qa4818_status_t s;
 			qa4818_status(&chip_b, &s);
@@ -1290,7 +1323,7 @@ static void b_status(rx2_status_t *st)
 			if (b_dmr) {
 				b_open = false;		// nothing of chip 1's to the speaker: the baseband plays the call
 			} else if (!b_open) {
-				b_open = noise < open_below && tone;
+				b_open = noise < open_below && tone && hal_millis() - b_setup_ms >= RX_SETTLE_MS;
 				b_close_polls = 0;
 			} else if (!tone || noise >= open_below + RADIO_SQL_HYST_DB) {
 				if (++b_close_polls >= RADIO_SQL_CLOSE_POLLS) {
@@ -2107,7 +2140,8 @@ static void status(radio_status_t *st)
 #if CONFIG_VOX
 	mic_poll();
 #endif
-	if (transmitting || !have_rx || asleep || (rx_back_ms != 0 && hal_millis() - rx_back_ms < RX_BACK_MS)) {
+	if (transmitting || !have_rx || asleep || (rx_back_ms != 0 && hal_millis() - rx_back_ms < RX_BACK_MS) ||
+	    (rx_setup_ms != 0 && hal_millis() - rx_setup_ms < RX_SETTLE_MS)) {
 		st->rssi_dbm = -160;
 		st->noise = 127;
 		st->carrier = false;
@@ -2163,9 +2197,10 @@ static void beep_tone(uint16_t hz, uint8_t level)
 	if (!beeping) {
 		audio_route();	// the gate shuts first: the chip's output goes back to the receiver below
 	}
+	beep_hz = hz;
+	beep_gain = (uint8_t)((level * 0x7Fu + 50u) / 100u);
 	if (!transmitting && have_rx) {
-		qa4818_beep(&chip_if, hz, (uint8_t)((level * 0x7Fu + 50u) / 100u), qa4818_af_rx(mode == RADIO_MODE_DMR,
-			rx_hz));
+		qa4818_beep(&chip_if, hz, beep_gain, qa4818_af_rx(mode == RADIO_MODE_DMR, rx_hz));
 	}
 	if (beeping) {
 		audio_route();	// ... and opens once the tone is on
