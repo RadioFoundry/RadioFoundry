@@ -13,6 +13,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// Built only where the board has some: its board.mk says BOARD_HWOPTS := y, which the Makefile passes as
+// RFOUNDRY_HWOPTS. Not given (the host tests): on
+#ifndef RFOUNDRY_HWOPTS
+#define RFOUNDRY_HWOPTS	1
+#endif
+
 #define HWOPT_NONE	(-1)	// get(): nothing stored
 
 // state(): what the radio needs from a person for this option

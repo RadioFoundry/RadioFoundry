@@ -3,7 +3,6 @@
 // Zone sharing's codeplug side (zone_import.h, docs/spec/zone-share.md 4 and 5)
 #include "config.h"
 #if CONFIG_ZONE_SHARE	// the whole file
-#include <stdio.h>
 #include <string.h>
 #include "codeplug/zone_import.h"
 #include "codeplug/zone_edit.h"
@@ -18,6 +17,27 @@ static uint16_t contact_index[ZS_CONTACTS_MAX];		// the record's contacts here (
 static uint16_t added_ct[ZS_CONTACTS_MAX];			// contacts this import added
 static uint8_t added_ct_count;
 static zsRecord_t rec;
+
+// prefix, then v in decimal, into a buffer of cap bytes: cut to fit and terminated. Returns the length written.
+// Not snprintf: these names would be the image's only use of the C library's printf, and of the allocator behind it
+static int name_number(char *dst, size_t cap, const char *prefix, uint32_t v)
+{
+	char digits[10];
+	size_t n = 0, len = 0;
+
+	do {
+		digits[n++] = (char)('0' + v % 10u);
+		v /= 10u;
+	} while (v != 0);
+	while (*prefix != '\0' && len + 1 < cap) {
+		dst[len++] = *prefix++;
+	}
+	while (n > 0 && len + 1 < cap) {
+		dst[len++] = digits[--n];
+	}
+	dst[len] = '\0';
+	return (int)len;
+}
 
 static uint32_t fnv1a(uint32_t h, const uint8_t *p, int n)
 {
@@ -155,8 +175,7 @@ static zone_import_status_t map_contacts(zone_import_result_t *res)
 		if (c.name[0] != '\0') {
 			strncpy(nc.name, c.name, CODEPLUG_NAME_LEN);
 		} else {
-			snprintf(nc.name, sizeof(nc.name), "%s %lu", (c.type == ZS_CONTACT_PRIVATE) ? "ID" : "TG",
-				 (unsigned long)c.id);
+			name_number(nc.name, sizeof(nc.name), (c.type == ZS_CONTACT_PRIVATE) ? "ID " : "TG ", c.id);
 		}
 		nc.id = c.id;
 		nc.type = c.type;
@@ -208,7 +227,7 @@ static void channel_here(const zsChannel_t *z, int position, channel_t *ch)
 	if (z->name[0] != '\0') {
 		strncpy(ch->name, z->name, CODEPLUG_NAME_LEN);
 	} else {
-		snprintf(ch->name, sizeof(ch->name), "Channel %d", position + 1);
+		name_number(ch->name, sizeof(ch->name), "Channel ", (uint32_t)position + 1u);
 	}
 	ch->rx_hz = z->rxHz;
 	ch->tx_hz = (uint32_t)((int64_t)z->rxHz + z->txOffsetHz);
@@ -284,7 +303,7 @@ static void unique_name(const char *want, int skip, char out[CODEPLUG_NAME_LEN +
 	strcpy(out, base);
 	for (int n = 2; n < 100 && find_zone(out, skip) >= 0; n++) {
 		char suffix[4];
-		int sl = snprintf(suffix, sizeof(suffix), " %d", n);
+		int sl = name_number(suffix, sizeof(suffix), " ", (uint32_t)n);
 		int bl = (int)strlen(base);
 
 		if (bl + sl > CODEPLUG_NAME_LEN) {

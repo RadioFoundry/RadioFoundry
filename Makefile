@@ -65,6 +65,9 @@ $(foreach o,$(BUILD_OPTIONS),$(if $(filter $($(o)),$($(o)_VALUES)),,$(error $(o)
 OPTION_SUFFIX := $(subst $() ,,$(foreach o,$(BUILD_OPTIONS),$(if $(filter-out $(firstword $($(o)_VALUES)),$($(o))),-$($(o)))))
 OPTION_DEFS := $(foreach o,$(BUILD_OPTIONS),$(foreach x,$($(o)_VALUES),-DRFOUNDRY_$(call upper,$(o)_$(x))=$(if $(filter $(x),$($(o))),1,0)))
 MCU_DEFS += $(OPTION_DEFS)
+# Hardware options (hal/hal_hwopt.h): a board that has some says BOARD_HWOPTS := y in its board.mk. The others build
+# none of the code that lists, asks for and stores them
+MCU_DEFS += -DRFOUNDRY_HWOPTS=$(if $(filter y,$(BOARD_HWOPTS)),1,0)
 
 BUILD := build/$(BOARD)$(if $(VARIANT),-$(VARIANT))$(OPTION_SUFFIX)
 TARGET := $(BUILD)/rfoundry_$(BOARD)$(OPTION_SUFFIX)

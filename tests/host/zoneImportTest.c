@@ -385,6 +385,42 @@ static void test_update_user_changes(void)
 	CHECK(used_channels() == channels - 4 + 1);
 }
 
+// A channel or contact the record gives no name gets one: "Channel" and its place in the record (a channel left out
+// still counts), "TG" or "ID" and the number
+static void test_default_names(void)
+{
+	zone_import_result_t r;
+	zsWriter_t w;
+	zsChannel_t zc;
+	zsContact_t c;
+	zone_t z;
+	channel_t ch;
+	contact_t ct;
+
+	fresh();
+	with_zones();
+	zsWriterBegin(&w, recbuf, sizeof(recbuf), 11, 0, "Bare");
+	c = zct("", 3100, ZS_CONTACT_GROUP);
+	zsWriterContact(&w, &c);
+	c = zct("", 9997001, ZS_CONTACT_PRIVATE);
+	zsWriterContact(&w, &c);
+	zc = zch("", 441000000, 0, true, 1);
+	zsWriterChannel(&w, &zc);
+	zc = zch("", 300000000, 0, false, 0);	// out of band
+	zsWriterChannel(&w, &zc);
+	zc = zch("", 442000000, 0, true, 2);
+	zsWriterChannel(&w, &zc);
+	int len = zsWriterEnd(&w);
+
+	CHECK(zone_import_zone(recbuf, len, 1, imports, &r) == ZI_OK);
+	CHECK(r.channels == 2 && r.out_of_band == 1 && r.contacts_added == 2);
+	CHECK(codeplug_zone(r.zone, &z) && z.count == 2);
+	CHECK(codeplug_channel(z.channels[0], &ch) && strcmp(ch.name, "Channel 1") == 0);
+	CHECK(codeplug_contact(ch.contact, &ct) && strcmp(ct.name, "TG 3100") == 0);
+	CHECK(codeplug_channel(z.channels[1], &ch) && strcmp(ch.name, "Channel 3") == 0);
+	CHECK(codeplug_contact(ch.contact, &ct) && strcmp(ct.name, "ID 9997001") == 0);
+}
+
 static void test_names_and_list(void)
 {
 	zone_import_result_t r;
@@ -636,6 +672,7 @@ int main(void)
 	test_contacts_unread();
 	test_update();
 	test_update_user_changes();
+	test_default_names();
 	test_names_and_list();
 	test_band_and_room();
 	test_virtual_zone();

@@ -5,7 +5,6 @@
  * dmr_data_api.h calls at the end, which only touch the mailbox and copies under the lock.
  */
 
-#include <stdio.h>
 #include <string.h>
 #include "config.h"
 #include "dmr/dmrDataService.h"
@@ -1164,7 +1163,8 @@ bool dmrDataServiceSendSMSFormat(bool group, uint32_t dst, const char *text, boo
 	sms.format = format;
 	sms.tries = 0;
 	sms.waiting = false;
-	snprintf(sms.text, sizeof(sms.text), "%s", text);
+	strncpy(sms.text, text, sizeof(sms.text) - 1u);	// no snprintf: it would bring the C library's printf in
+	sms.text[sizeof(sms.text) - 1u] = '\0';
 	sms.state = DMR_REQ_QUEUED;
 	if (!canTransmit())
 	{
@@ -2880,7 +2880,8 @@ bool sms_send(uint32_t dst, bool group, const char *text, bool ack_requested, dm
 		mailbox.smsGroup = group;
 		mailbox.smsAck = ack_requested;
 		mailbox.smsFormat = format;
-		snprintf(mailbox.smsText, sizeof(mailbox.smsText), "%s", text);
+		strncpy(mailbox.smsText, text, sizeof(mailbox.smsText) - 1u);
+		mailbox.smsText[sizeof(mailbox.smsText) - 1u] = '\0';
 		mailbox.smsPending = true;
 		ok = true;
 	}
