@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import struct
+import zlib
 
 FORMAT = "rfoundry-codec-map/1"
 ISAS = ("thumb2", "csky")
@@ -435,3 +436,123 @@ def relocations(m):
     if any(r["kind"] != "word" for r in m["self_refs"]) or m["islands"]:
         raise MapError("%s: the code can't be moved by adding to words" % m["profile"])
     return sorted(r["off"] for r in m["self_refs"])
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Layouts: every codec window moved as its own block (docs/spec/codec-placement.md, "Layouts")
+
+def _window_of(wins, addr):
+    """The index of the stock window [(addr, length)] an address lies in, or None"""
+    for i, (a, n) in enumerate(wins):
+        if a <= addr < a + n:
+            return i
+    return None
+
+
+def _layout_sites(m, wins, src, dst):
+    """Every site a layout change rewrites: (window index, offset in it, kind, value at src, value at dst). wins: the
+    stock windows [(addr, length)], the code first, as the profile carves them; src, dst: the address of each window in
+    the two layouts (the stock layout is [a for a, _ in wins]). kind: "word", "movw_movt" (offset of the movw, the movt
+    at offset + (off2 - off)) or "bl". Raises MapError when a site or a value lies in no window: such a codec can't be
+    moved window by window"""
+    p = m["profile"]
+    if len(src) != len(wins) or len(dst) != len(wins):
+        raise MapError("%s: a layout names %d windows, the profile has %d" % (p, len(src), len(wins)))
+    if wins[0][0] != m["code"]["run"] or wins[0][1] != m["code"]["len"]:
+        raise MapError("%s: the first window is not the map's code" % p)
+    align = m["code"].get("move_alignment", 4)
+    for i, (a, _) in enumerate(wins):
+        for lay in (src, dst):
+            if (lay[i] - a) % (align if i == 0 else 4):
+                raise MapError("%s: window %d moved by 0x%X breaks its alignment" % (p, i, lay[i] - a))
+
+    def moved(v, lay, what):
+        w = _window_of(wins, v)
+        if w is None:
+            raise MapError("%s: %s 0x%08X lies in no codec window" % (p, what, v))
+        return (v + lay[w] - wins[w][0]) & 0xFFFFFFFF
+
+    out = []
+    for r in m["self_refs"]:
+        v = r["value"]
+        out.append((0, r["off"], r, moved(v, src, "self ref"), moved(v, dst, "self ref")))
+    for r in m["island_ptrs"] + m["table_refs"]:
+        v = r["target"]
+        out.append((0, r["off"], r, moved(v, src, "table ref"), moved(v, dst, "table ref")))
+    for r in m["island_refs"]:
+        w = _window_of(wins, r["at"])
+        if w is None or w == 0:
+            raise MapError("%s: island ref at 0x%08X lies in no table window" % (p, r["at"]))
+        out.append((w, r["at"] - wins[w][0], dict(kind="word"), moved(r["target"], src, "island ref"),
+                    moved(r["target"], dst, "island ref")))
+    for b in m["branches"]:
+        w = _window_of(wins, b["at"])
+        if w is None or w == 0:
+            raise MapError("%s: branch at 0x%08X lies in no table window" % (p, b["at"]))
+        off = b["at"] - wins[w][0]
+        out.append((w, off, dict(kind="bl"), (src[w] + off, moved(b["target"], src, "branch")),
+                    (dst[w] + off, moved(b["target"], dst, "branch"))))
+    return out
+
+
+def _get(buf, off, r):
+    if r["kind"] == "word":
+        return _word(buf, off)
+    if r["kind"] == "bl":
+        return None
+    return pair_value(buf, dict(r, off=off, off2=off + r["off2"] - r["off"]))
+
+
+def _put(buf, off, r, v):
+    if r["kind"] == "word":
+        struct.pack_into("<I", buf, off, v & 0xFFFFFFFF)
+    elif r["kind"] == "bl":
+        put_bl(buf, off, v[0], v[1])
+    else:
+        _put_pair(buf, dict(r, off=off, off2=off + r["off2"] - r["off"]), v)
+
+
+def relocate(m, wins, parts, src, dst):
+    """The codec's windows moved from layout src to layout dst, each window as one block: every address in the code and
+    the table windows (self refs, table refs, island pointers and refs, the islands' calls into the code) rewritten for
+    where its target window goes. parts: the bytes of each window as they are at src, in wins order. Every site must
+    hold exactly what layout src implies, so the wrong build, a wrong layout or damaged bytes stop here. The stock layout
+    is [a for a, _ in wins], so this both places a stock codec and takes a placed one back to stock. Returns the bytes of
+    each window for dst."""
+    if [len(d) for d in parts] != [n for _, n in wins]:
+        raise MapError("%s: the windows are %s bytes, the profile says %s"
+                       % (m["profile"], [len(d) for d in parts], [n for _, n in wins]))
+    out = [bytearray(d) for d in parts]
+    for w, off, r, have, want in _layout_sites(m, wins, src, dst):
+        if r["kind"] == "bl":
+            got = bl_target(out[w], off, have[0])
+            if got is None or got & 0xFFFFFFFF != have[1]:
+                raise MapError("%s: no bl to 0x%08X at 0x%08X" % (m["profile"], have[1], have[0]))
+        elif _get(out[w], off, r) != have:
+            raise MapError("%s: window %d +0x%X doesn't hold 0x%08X" % (m["profile"], w, off, have))
+        _put(out[w], off, r, want)
+    return [bytes(d) for d in out]
+
+
+def relocate_crcs(m, wins, crcs, src, dst):
+    """The CRC-32 of each window after relocate(src -> dst), from its CRC-32 at src, without the bytes. CRC-32 is affine
+    over XOR for messages of one length (crc(a ^ b) = crc(a) ^ crc(b) ^ crc(zeros)), and relocate changes only the
+    listed sites, from values the map and the two layouts give. So a new layout's CRCs, which the firmware pins, follow
+    from a known one's and the map alone."""
+    diffs = [bytearray(n) for _, n in wins]
+    for w, off, r, have, want in _layout_sites(m, wins, src, dst):
+        a, b = bytearray(8), bytearray(8)
+        if r["kind"] == "movw_movt":
+            r2 = dict(r, off=0, off2=4)		# the immediates only; the opcode bits are the same in both
+            _put_pair(a, r2, have)
+            _put_pair(b, r2, want)
+            gap = r["off2"] - r["off"]
+            for k, o in ((0, 0), (4, gap)):
+                for j in range(4):
+                    diffs[w][off + o + j] ^= a[k + j] ^ b[k + j]
+            continue
+        _put(a, 0, r, have)
+        _put(b, 0, r, want)
+        for j in range(4):
+            diffs[w][off + j] ^= a[j] ^ b[j]
+    return [(c ^ zlib.crc32(bytes(d)) ^ zlib.crc32(bytes(len(d)))) & 0xFFFFFFFF for c, d in zip(crcs, diffs)]
