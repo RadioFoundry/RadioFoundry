@@ -68,6 +68,8 @@ def key(name):
 
 def _file(config):
     path = config.getoption("--hil-config") or os.environ.get("RFOUNDRY_HIL_CONFIG")
+    if path == "none":          # no rig file (tools/ci.sh: the checks don't depend on the rig)
+        return {}, None
     explicit = path is not None
     path = os.path.expanduser(path or DEFAULT_FILE)
     if not os.path.exists(path):

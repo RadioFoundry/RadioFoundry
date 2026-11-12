@@ -672,7 +672,9 @@ bool codeplug_openfw_decode(const uint8_t *r, channel_t *out)
 		out->sfr_b = r[CH_SFR_B];
 	}
 	out->alias_tx = (uint8_t)(((r[CH_FLAG1] & 0x02u) ? CODEPLUG_ALIAS_TS1_TEXT : 0u) |
-				  ((r[CH_FLAG1] & 0x08u) ? CODEPLUG_ALIAS_TS2_TEXT : 0u));
+				  ((r[CH_FLAG1] & 0x08u) ? CODEPLUG_ALIAS_TS2_TEXT : 0u) |
+				  ((r[CH_FLAG1] & 0x01u) ? CODEPLUG_ALIAS_TS1_GPS : 0u) |
+				  ((r[CH_FLAG1] & 0x04u) ? CODEPLUG_ALIAS_TS2_GPS : 0u));
 	return true;
 }
 
@@ -711,9 +713,11 @@ void codeplug_openfw_encode(const channel_t *ch, uint8_t *r)
 				 (ch->no_eco ? LFLAG1_NO_ECO : 0) | (ch->dmo ? LFLAG1_DMO : 0));
 	uint32_t tot = (ch->tot_s + 14u) / 15u;
 	r[CH_TOT] = (uint8_t)(tot > 255u ? 255u : tot);
-	// The text bit of each timeslot's talker alias field; the APRS bit is kept
-	r[CH_FLAG1] = (uint8_t)((r[CH_FLAG1] & ~0x0Au) | ((ch->alias_tx & CODEPLUG_ALIAS_TS1_TEXT) ? 0x02u : 0u) |
-				((ch->alias_tx & CODEPLUG_ALIAS_TS2_TEXT) ? 0x08u : 0u));
+	// Each timeslot's talker alias field: its text bit and its position (APRS) bit
+	r[CH_FLAG1] = (uint8_t)((r[CH_FLAG1] & ~0x0Fu) | ((ch->alias_tx & CODEPLUG_ALIAS_TS1_TEXT) ? 0x02u : 0u) |
+				((ch->alias_tx & CODEPLUG_ALIAS_TS2_TEXT) ? 0x08u : 0u) |
+				((ch->alias_tx & CODEPLUG_ALIAS_TS1_GPS) ? 0x01u : 0u) |
+				((ch->alias_tx & CODEPLUG_ALIAS_TS2_GPS) ? 0x04u : 0u));
 	if (ch->dmr_id != 0) {
 		r[CH_DMR_ID] = (uint8_t)(ch->dmr_id >> 16);
 		r[CH_DMR_ID + 1] = (uint8_t)(ch->dmr_id >> 8);
@@ -1227,8 +1231,8 @@ void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_N
 	storage_unlock();
 }
 
-#if CONFIG_APRS
-// APRS configuration records (open-firmware-cps.md 7.3.8)
+#if CONFIG_APRS_AFSK
+// APRS configuration records (the AX.25 half reads them) (open-firmware-cps.md 7.3.8)
 #define APRS_BASE	EE(0x1588u)
 #define APRS_SIZE	0x40u
 #define APRS_MAGIC	0x4153u	// 0x4152: the older layout, ambiguity one bit lower

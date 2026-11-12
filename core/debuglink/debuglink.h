@@ -117,6 +117,10 @@ void debuglink_view_roam(const radio_view_t *v, dl_text_t *t);
 // APRS (debuglink_aprs.c): the aprs section and the APRS command; without CONFIG_APRS "aprs.built=0" / unavailable
 void debuglink_view_aprs(uint8_t part, dl_text_t *t);	// part 0: state and counters, 1: settings
 size_t debuglink_cmd_aprs(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+// The position service (debuglink_position.c): the pos keys of the aprs sections, and its part of the APRS command
+// (the position settings' fields, NMEA as from the host). True: the request was its own, *st the answer
+void debuglink_view_position(uint8_t part, dl_text_t *t);
+bool debuglink_cmd_position(const uint8_t *req, uint16_t len, uint8_t *st);
 
 // The net section (debuglink_view_net.c); built without any of the radio's own services (CONFIG_NET_LOCAL) it says "net.built=0"
 void debuglink_view_net(dl_text_t *t);

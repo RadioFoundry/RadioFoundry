@@ -363,6 +363,7 @@
  "screen.talk_target_picker_vfo": "Talk target, DMR VFO",
  "screen.tools": "Tools",
  "screen.tx": "Transmitting",
+ "screen.tx_aprs": "Sending an APRS beacon",
  "screen.tx_private": "Transmitting a private call",
  "screen.tx_dtmf": "Sending touch tones (DTMF) on FM",
  "screen.zone_channels": "Channels in a zone",

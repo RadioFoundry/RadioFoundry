@@ -86,6 +86,13 @@ def _points(ax, k, color, y, alpha=1.0):
     ax.plot([-k["pa_us"] / 1000], [y], "s", color=color, ms=5, mfc="none", alpha=alpha)
 
 
+def _power(lv, l):
+    """A level's measured power, or its number when the run measured none ("-"; "0 mW" in older results: an
+    over-the-air path, where --pad-db isn't the loss)"""
+    p = (lv or {}).get("power") or "-"
+    return f"level {l}" if p == "-" or p.startswith("0 ") else p
+
+
 def _pair(mine, l):
     """A level's keys: (before, after). before is None when the run kept the board's constants: one measurement."""
     after = next((k for k in reversed(mine) if k.get("after") and k.get("level") == l), None)
@@ -135,7 +142,7 @@ def ramps(plt, band, keys, path, who=""):
         _points(up, lv and lv.get("plan"), color, y)
         # The level by its place and drive: the measured power is only as good as the run's --pad-db
         power = "lowest level" if i == 0 else "top level" if i == len(pairs) - 1 else f"level {l}"
-        meas = f", {lv['power']}" if lv and not lv["power"].startswith("0 ") else ""
+        meas = f", {_power(lv, l)}" if _power(lv, l) != f"level {l}" else ""
         names.append(Line2D([], [], color=color, lw=1.7, label=f"{power} (drive {lv['drive'] if lv else '?'}{meas})"))
         words = [f"{w}{'edge ' if k.get('creep') else ''}{k['rise_us']:+.0f} us, {k.get('over_db') or 0:.1f} dB over"
                  for k, w in ((before, "before "), (after, "after " if compared else ""))
@@ -185,7 +192,7 @@ def fit(plt, band, keys, path, who=""):
         a1.axvline(dead, color=BEFORE, lw=0.8, ls=":", label="dead zone's end")
     for l, lv in band["levels"].items():
         a1.axvline(lv["drive"], color=FAINT, lw=0.6)
-        a1.text(lv["drive"], a1.get_ylim()[1] * 0.97, f" {lv['power']}", rotation=90, va="top", fontsize=7, color=BEFORE)
+        a1.text(lv["drive"], a1.get_ylim()[1] * 0.97, f" {_power(lv, l)}", rotation=90, va="top", fontsize=7, color=BEFORE)
     a1.set_xlabel("drive (the radio's DAC counts)")
     a1.set_ylabel("us from the drive's write to the level")
     a1.set_title("time to come up against drive", fontsize=10, loc="left")
@@ -204,7 +211,7 @@ def fit(plt, band, keys, path, who=""):
     a2.axhline(0, color=INK, lw=1.0)
     a2.axhline(band["target_us"], color="#2a9d5c", lw=0.8, ls="--", label="target")
     a2.set_xticks(range(len(names)))
-    a2.set_xticklabels([band["levels"][l]["power"] for l in names], fontsize=8)
+    a2.set_xticklabels([_power(band["levels"][l], l) for l in names], fontsize=8)
     a2.set_ylabel("-3 dB point, us (negative: before the first symbol)")
     a2.set_title("each level's key-up", fontsize=10, loc="left")
     a2.legend(fontsize=8, frameon=False)

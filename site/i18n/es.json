@@ -363,6 +363,7 @@
  "screen.talk_target_picker_vfo": "Destino de habla, VFO DMR",
  "screen.tools": "Herramientas",
  "screen.tx": "Transmitiendo",
+ "screen.tx_aprs": "Enviando una baliza APRS",
  "screen.tx_private": "Transmitiendo una llamada privada",
  "screen.tx_dtmf": "Enviar tonos de marcación (DTMF) en FM",
  "screen.zone_channels": "Canales de una zona",

@@ -642,6 +642,13 @@ boot, before the display or USB came up: a black screen that only the update mod
 let correctness depend on two interrupts one apart (4 and 5, 6 and 7) preempting each other: on the clone they are
 one level. STM32F4 boards; built, not run on a clone.
 
+**13.12 No double or 64-bit division in firmware code.** No core has a double-precision FPU; the Cortex-M4F's is
+single precision, the C-SKY core has none. A `double` constant, `sqrt()` or `cos()` pulls in soft-float calls and
+libm (several KB) and is slow; LTO only drops it when every caller is dead. A 64-bit division is a library call too,
+on every read of a hot clock. Rule: integer fixed point (1e-7 degree, x10 units, carried remainders); float only where
+a single-precision FPU does it in hardware. `tools/ci.sh` warns when a default or maximal image links double or libm
+code.
+
 ## 14. SFR (single frequency repeater)
 
 **14.1 The HR_C6000's RX status is unreliable while it transmits.** CRC flag, color code (reg 0x52), sync type

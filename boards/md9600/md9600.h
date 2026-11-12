@@ -113,7 +113,7 @@ extern const hal_afsk_t md9600_afsk;
 #define MD9600_FM_RX_TAP	(CONFIG_DMR && CONFIG_NET_USRP)
 // The discriminator capture (disc_md9600.c): PC3 on ADC3 at MD9600_DISC_RATE_HZ into a ring each reader keeps its own
 // tail on, running while a reader wants it; ADC3 is the capture's meanwhile. Radio task
-#define MD9600_DISC		(MD9600_FM_RX_TAP || (CONFIG_APRS && CONFIG_APRS_RX))
+#define MD9600_DISC		(MD9600_FM_RX_TAP || (CONFIG_APRS_AFSK && CONFIG_APRS_RX))
 #define MD9600_DISC_RATE_HZ	((72000000u / 8u / 492u + 1u) / 2u)	// 9146 Hz
 #define MD9600_DISC_RING	1024u					// 112 ms, a power of two
 enum { MD9600_DISC_APRS = 1u << 0, MD9600_DISC_STREAM = 1u << 1 };
@@ -162,14 +162,14 @@ void md9600_speaker_fm(bool on, bool vhf);	// the core's FM squelch (hal_radio_t
 void md9600_c6000_fm_tx(uint32_t hz, bool wide);
 void md9600_c6000_fm_tx_end(void);
 // The chip's tone generator in FM TX: the 1750 Hz burst, the roger beep, DTMF and APRS
-#define MD9600_TX_SIG	(CONFIG_MD9600_TX && (CONFIG_FM_TX_TONES || CONFIG_DTMF || CONFIG_APRS))
+#define MD9600_TX_SIG	(CONFIG_MD9600_TX && (CONFIG_FM_TX_TONES || CONFIG_DTMF || CONFIG_APRS_AFSK))
 // During FM TX: the chip's tone generator sends low_hz + high_hz in place of the microphone (0, 0: the microphone
 // again); tx_key keys that tone on and off (CONFIG_FM_TX_TONES, CONFIG_DTMF)
 bool md9600_c6000_tx_pair(uint16_t low_hz, uint16_t high_hz);
 bool md9600_c6000_tx_key(bool down);
 // From the radio task's poll (radio status): keeps a tone from tx_pair going past the generator's 16 codes
 void md9600_c6000_tx_service(uint32_t now_ms);
-// APRS transmit (CONFIG_APRS): the tone generator at level (hal_afsk.h), then retuned symbol by symbol from an
+// APRS transmit (CONFIG_APRS_AFSK): the tone generator at level (hal_afsk.h), then retuned symbol by symbol from an
 // interrupt; md9600_c6000_tx_pair(0, 0) or the end of FM TX stops it
 bool md9600_c6000_afsk_begin(uint16_t hz, uint8_t level);
 bool md9600_c6000_afsk_tone(uint16_t hz);

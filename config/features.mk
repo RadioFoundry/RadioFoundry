@@ -23,8 +23,8 @@ CONFIG_DMR ?= y
 CONFIG_DMR_PRIVACY ?= $(CONFIG_DMR)
 # talker alias decode and TX of our radio name (needs DMR)
 CONFIG_DMR_TALKER_ALIAS ?= $(CONFIG_DMR)
-# ETSI GPS Info in the embedded LC (FLCO 8): the caller's position decoded and shown, ours sent from the APRS
-# position source when the radio-wide setting is on (needs DMR)
+# ETSI GPS Info in the embedded LC (FLCO 8): the caller's position decoded and shown, ours sent from the position
+# service (core/position) when Settings > Location > Position in DMR calls is on (needs DMR)
 CONFIG_DMR_GPS ?= $(CONFIG_DMR)
 # DMR text messages (SMS; needs DMR): ETSI IP text and ETSI defined short data, sent and received (docs/spec/dmr-data.md 5)
 CONFIG_DMR_SMS ?= $(CONFIG_DMR)
@@ -54,8 +54,8 @@ CONFIG_DMR_UDP_COMPRESS ?= $(CONFIG_DMR)
 # a minimal TCP for the radio's own services on the USB network link, never over RF (needs DMR_IP_GATEWAY, whose IPv4
 # layer it uses; core/net, docs/spec/tcp-services.md)
 CONFIG_NET_TCP ?= $(CONFIG_DMR_IP_GATEWAY)
-# KISS over TCP on port 8001, bridged to the APRS KISS TNC (needs NET_TCP and APRS; core/net/kiss_tcp.c)
-CONFIG_NET_KISS ?= $(if $(and $(filter y,$(CONFIG_NET_TCP)),$(filter y,$(CONFIG_APRS))),y,n)
+# KISS over TCP on port 8001, bridged to the APRS KISS TNC (needs NET_TCP and APRS_AFSK; core/net/kiss_tcp.c)
+CONFIG_NET_KISS ?= $(if $(and $(filter y,$(CONFIG_NET_TCP)),$(filter y,$(CONFIG_APRS_AFSK))),y,n)
 # the HTTP status server on port 80: a page, JSON status and view sections, the screen (needs NET_TCP; core/net/http.c)
 CONFIG_NET_HTTP ?= $(CONFIG_NET_TCP)
 # the status server's static files (core/net/http_assets) stored gzip compressed at build time and served with
@@ -68,8 +68,8 @@ CONFIG_NET_WEBCTL ?= $(CONFIG_NET_HTTP)
 # core/net/rigctld.c)
 CONFIG_NET_RIGCTL ?= $(CONFIG_NET_TCP)
 # the radio's own APRS-IS client through the host: our beacons and the iGate's lines, off until a server is set
-# (needs NET_TCP and APRS; core/net/aprsis.c)
-CONFIG_NET_APRSIS ?= $(if $(and $(filter y,$(CONFIG_NET_TCP)),$(filter y,$(CONFIG_APRS))),y,n)
+# (needs NET_TCP and APRS_AFSK; core/net/aprsis.c)
+CONFIG_NET_APRSIS ?= $(if $(and $(filter y,$(CONFIG_NET_TCP)),$(filter y,$(CONFIG_APRS_AFSK))),y,n)
 # audio linking for AllStarLink, DVSwitch and bridges (USRP voice over UDP, port 34001): the radio sends what it
 # receives, with the squelch as keyup, and transmits what the computer sends. DMR works both ways on every radio; FM
 # needs the radio's audio paths to the processor, which radios have both ways, DMR only or FM one way
@@ -206,7 +206,8 @@ CONFIG_BATTERY_SAVE ?= $(CONFIG_FM)
 # config.mk); a board without one shows the setting dimmed
 CONFIG_VIBRATE ?= n
 # the GPS receiver: the board's module driver and its NMEA parsing (drivers/gps, platform/*/gps*, CAP_GPS). Off, the
-# radio has no GPS: DMR_GPS, LRRP and APRS keep a fixed position and answer "no fix". Off where the radio has none
+# radio has no GPS: DMR_GPS, LRRP and APRS send the fixed position when one is set (core/position), else none. Off
+# where the radio has none
 CONFIG_GPS ?= y
 # air band AM receive: FM channels and the VFO in 108-137 MHz are received in AM, receive only, on radios whose
 # receiver does AM (CAP_AM_RX; needs FM; docs/spec/airband-and-broadcast.md). Off where the receiver can't
@@ -253,22 +254,28 @@ CONFIG_FAULT_TRACE ?= y
 # (docs/feature-matrix.md); off, such a radio runs on the default settings and stores nothing. Radios with SPI NOR don't use it
 CONFIG_NAND_STORAGE ?= n
 
-# APRS (core/aprs, docs/spec/aprs.md): position, status and message packets as AX.25 / 1200 baud AFSK on FM, positions
-# over DMR (LRRP / UDT), a KISS TNC on the host port. Transmit stays off until the user turns it on (needs FM)
+# APRS (core/aprs, docs/spec/aprs.md): our position sent by the beacon triggers, its settings and its page. The engine
+# only: it sends through the two backends below, and needs at least one. Transmit stays off until the user turns it on
 CONFIG_APRS ?= $(CONFIG_FM)
-# APRS receive: the AFSK demodulator, station list, messages to us, digipeater (needs APRS; useful only on boards
+# APRS on FM: position, status and message packets as AX.25 / 1200 baud AFSK through board.afsk, a KISS TNC on the host
+# port (needs APRS and FM). Off, APRS goes over DMR only and nothing of AX.25 is built
+CONFIG_APRS_AFSK ?= $(if $(and $(filter y,$(CONFIG_APRS)),$(filter y,$(CONFIG_FM))),y,n)
+# APRS over DMR: positions as LRRP or UDT reports to a gateway ID (core/aprs/aprs_dmr.c; needs APRS and DMR). It builds
+# the DMR data service by itself
+CONFIG_APRS_DMR ?= $(if $(and $(filter y,$(CONFIG_APRS)),$(filter y,$(CONFIG_DMR))),y,n)
+# APRS receive: the AFSK demodulator, station list, messages to us, digipeater (needs APRS_AFSK; useful only on boards
 # whose board.afsk can sample received audio)
-CONFIG_APRS_RX ?= $(CONFIG_APRS)
+CONFIG_APRS_RX ?= $(CONFIG_APRS_AFSK)
 # APRS iGate rules, RF <-> APRS-IS through the host helper tools/aprs_gate.py (needs APRS_RX and HOSTLINK)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
-# the GPS status screen: satellites on a sky plot and signal bars, fix quality, grid locator (core/aprs/nmea_sky.c,
-# core/ui/ui_gps.c, docs/spec/aprs.md 7.1). Needs GPS and APRS; off, Tools > Position is a page of text
-CONFIG_GPS_SKY ?= $(if $(and $(filter y,$(CONFIG_GPS)),$(filter y,$(CONFIG_APRS))),y,n)
+# the GPS status screen: satellites on a sky plot and signal bars, fix quality, grid locator (core/position/nmea_sky.c,
+# core/ui/ui_gps.c, docs/spec/position.md 3). Needs GPS; off, Tools > Position is a page of text
+CONFIG_GPS_SKY ?= $(CONFIG_GPS)
 
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS DEBUG_MEM \
 	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG LANG_ES LANG_IT LANG_DEFAULT_ES LANG_DEFAULT_IT UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP FM_TX_TONES DTMF \
-	RX_EXT VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE GPS_SKY KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT CONTACT_EDIT VOLUME_BAR
+	RX_EXT VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_AFSK APRS_DMR APRS_RX APRS_IGATE GPS_SKY KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT CONTACT_EDIT VOLUME_BAR
 
 # The panel's width in pixels: the display class the board's board.toml names (hardware.gallery = "160x128", the width
 # first). Empty when it names none, which counts as a narrow panel
@@ -287,7 +294,7 @@ ifneq ($(call feature_on,SUBTONE),)
     $(error CONFIG_SUBTONE=y needs CONFIG_FM=y)
   endif
 endif
-$(foreach f,IDDB_COMPACT DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP SFR HOTSPOT,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
+$(foreach f,IDDB_COMPACT DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP SFR HOTSPOT APRS_DMR,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
 $(if $(and $(call feature_on,LANG_DEFAULT_ES),$(if $(call feature_on,LANG_ES),,x)),$(error CONFIG_LANG_DEFAULT_ES=y needs CONFIG_LANG_ES=y))
 $(if $(and $(call feature_on,LANG_DEFAULT_IT),$(if $(call feature_on,LANG_IT),,x)),$(error CONFIG_LANG_DEFAULT_IT=y needs CONFIG_LANG_IT=y))
 $(foreach f,SFR_DUALPATH_RX SFR_CWID,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,SFR),,x)),$(error CONFIG_$(f)=y needs CONFIG_SFR=y)))
@@ -373,7 +380,7 @@ ifneq ($(call feature_on,NET_TCP),)
 endif
 $(foreach f,NET_HTTP_GZIP NET_WEBCTL,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_HTTP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_HTTP=y)))
 $(foreach f,NET_HTTP NET_RIGCTL,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_TCP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y)))
-$(foreach f,NET_KISS NET_APRSIS,$(if $(call feature_on,$(f)),$(if $(and $(call feature_on,NET_TCP),$(call feature_on,APRS)),,$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y and CONFIG_APRS=y))))
+$(foreach f,NET_KISS NET_APRSIS,$(if $(call feature_on,$(f)),$(if $(and $(call feature_on,NET_TCP),$(call feature_on,APRS_AFSK)),,$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y and CONFIG_APRS_AFSK=y))))
 $(foreach f,MDNS TFTP NET_USRP,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR_IP_GATEWAY),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR_IP_GATEWAY=y)))
 $(foreach f,TFTP_IDDB,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,TFTP),,x)),$(error CONFIG_$(f)=y needs CONFIG_TFTP=y)))
 ifneq ($(call feature_on,DMR_TMS),)
@@ -407,7 +414,7 @@ ifneq ($(call feature_on,VFO_DMR),)
     $(error CONFIG_VFO_DMR=y needs CONFIG_DMR=y)
   endif
 endif
-$(foreach f,FM_TX_TONES DTMF VOX BATTERY_SAVE AM_RX APRS,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,FM),,x)),$(error CONFIG_$(f)=y needs CONFIG_FM=y)))
+$(foreach f,FM_TX_TONES DTMF VOX BATTERY_SAVE AM_RX APRS_AFSK,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,FM),,x)),$(error CONFIG_$(f)=y needs CONFIG_FM=y)))
 ifneq ($(call feature_on,AUDIO_PROBE),)
   ifeq ($(call feature_on,DEBUGLINK)$(call feature_on,DMR),yy)
   else
@@ -430,9 +437,15 @@ ifneq ($(call feature_on,CRASH_REPORT),)
     $(error CONFIG_CRASH_REPORT=y needs CONFIG_CRASH_SCREEN=y and CONFIG_DMR=y)
   endif
 endif
+$(foreach f,APRS_AFSK APRS_DMR,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,APRS),,x)),$(error CONFIG_$(f)=y needs CONFIG_APRS=y)))
+ifneq ($(call feature_on,APRS),)
+  ifeq ($(call feature_on,APRS_AFSK)$(call feature_on,APRS_DMR),)
+    $(error CONFIG_APRS=y needs CONFIG_APRS_AFSK=y (with FM) or CONFIG_APRS_DMR=y (with DMR))
+  endif
+endif
 ifneq ($(call feature_on,APRS_RX),)
-  ifeq ($(call feature_on,APRS),)
-    $(error CONFIG_APRS_RX=y needs CONFIG_APRS=y)
+  ifeq ($(call feature_on,APRS_AFSK),)
+    $(error CONFIG_APRS_RX=y needs CONFIG_APRS_AFSK=y)
   endif
 endif
 ifneq ($(call feature_on,APRS_IGATE),)
@@ -441,8 +454,8 @@ ifneq ($(call feature_on,APRS_IGATE),)
   endif
 endif
 ifneq ($(call feature_on,GPS_SKY),)
-  ifeq ($(and $(call feature_on,GPS),$(call feature_on,APRS)),)
-    $(error CONFIG_GPS_SKY=y needs CONFIG_GPS=y and CONFIG_APRS=y)
+  ifeq ($(call feature_on,GPS),)
+    $(error CONFIG_GPS_SKY=y needs CONFIG_GPS=y)
   endif
 endif
 ifeq ($(call feature_on,FM)$(call feature_on,DMR),)
@@ -450,9 +463,12 @@ ifeq ($(call feature_on,FM)$(call feature_on,DMR),)
 endif
 
 # Derived: the shared packet data / CSBK code is built when any data feature is on (the emergency alarm is a CSBK)
-CONFIG_DMR_DATA_CORE := $(if $(strip $(foreach f,DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_IP_GATEWAY ZONE_SHARE CRASH_REPORT,$(call feature_on,$(f)))),y,n)
+CONFIG_DMR_DATA_CORE := $(if $(strip $(foreach f,DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_IP_GATEWAY ZONE_SHARE CRASH_REPORT APRS_DMR,$(call feature_on,$(f)))),y,n)
 
-FEATURE_DEFS := $(foreach f,$(FEATURES) DMR_DATA_CORE,-DCONFIG_$(f)=$(if $(call feature_on,$(f)),1,0))
+# Derived: the position service (core/position) is built for the GPS and for everything that reports our position
+CONFIG_POSITION := $(if $(strip $(foreach f,GPS APRS DMR_LRRP DMR_GPS,$(call feature_on,$(f)))),y,n)
+
+FEATURE_DEFS := $(foreach f,$(FEATURES) DMR_DATA_CORE POSITION,-DCONFIG_$(f)=$(if $(call feature_on,$(f)),1,0))
 
 ## Numeric build values (board config.mk sets the defaults; the command line overrides)
 # Display safe area in pixels: edges hidden by the bezel or lens. CONFIG_DISPLAY_INSET sets all four

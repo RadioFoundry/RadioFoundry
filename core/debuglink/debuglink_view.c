@@ -609,9 +609,11 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		// it before keying)
 		dl_text(t, "aprs.tx_power=%u\n", aprs_tx_power(v->power));
 #endif
+		debuglink_view_position(0, t);
 		break;
 	case DL_VIEW_APRS_SET:
 		debuglink_view_aprs(1, t);
+		debuglink_view_position(1, t);
 		break;
 	case DL_VIEW_DMR_IP:
 		debuglink_view_dmr_data(2, t);

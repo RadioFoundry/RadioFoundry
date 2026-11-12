@@ -923,7 +923,10 @@ size.
 
 On a 16 MB part RadioFoundry uses the DM-1701's map (settings 0x011000, journal 0x019000, open-firmware codeplug 0x000000 and
 0x020000-0xE00000, native area 0xE00000, TFTP staging 0xF00000), so the open-firmware CPS works the same. The TYT codeplug at 0 is overwritten
-by the first open-firmware write: read it out with the manufacturer's CPS first if it matters ([md380-migration.md](md380-migration.md) does that, converts it with qdmr and writes it back). There is no calibration window in the
+by the first open-firmware write, and writing the TYT codeplug again (stock firmware, its CPS) replaces the open-firmware
+radio ID, zones and first channels while the rest stays, a mixed codeplug ([codeplug-port.md](codeplug-port.md) 5.2;
+measured in a backup, 2026-10-21). `board.toml` `[stock_codeplug]` gives the TYT codeplug's span, 0x2000-0x3FFFF, decoded
+with qdmr's md380 driver. Read it out with the manufacturer's CPS first if it matters ([md380-migration.md](md380-migration.md) does that, converts it with qdmr and writes it back). There is no calibration window in the
 main array (11.1). On a smaller part the core gets no areas: settings live in RAM and nothing is written. The CPS still
 reads the chip (area 1, up to its end) and the radio info gives its size, so a backup saves all of it; the Codeplug
 Editor and the flasher's channel step say that the radio stores no codeplug.
@@ -942,7 +945,7 @@ The same board ships with and without the module, and PD8 (the module's power sw
 second flash chip select on others 13.7. So nothing drives PD8 until the module has been heard:
 `gps_md380.c` enables USART3 RX on PD9 at start-up and listens for 5 s. One checksum-valid sentence (any talker, up to
 82 characters plus CR LF; `drivers/gps/nmea_line`) makes the module present: PD8 is then held at the level it already
-had, and every sentence goes to the APRS position source (`aprs_nmea`, CONFIG_APRS). Nothing heard: the UART is
+had, and every sentence goes to the position service (`position_nmea`, CONFIG_GPS). Nothing heard: the UART is
 switched off and `board.gps_present()` stays false, so `board_has_gps()` hides the GPS features. UART errors are
 counted and cleared in the interrupt, so one framing error never stops reception ( 13.7).
 
