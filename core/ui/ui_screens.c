@@ -8,6 +8,7 @@
 #include "fmt.h"
 #include "i18n.h"
 #include "ui_svc.h"
+#include "cjk_font.h"	// CJK_FONT_H: the line height a CJK language needs (CONFIG_LANG_ZH)
 #include "config.h"
 
 ui_layout_t ui_layout;
@@ -174,6 +175,17 @@ void ui_layout_init(void)
 		L->tiny = &font_5x8; L->small = &font_5x8; L->medium = f6; L->large = f8;
 	}
 
+#if CONFIG_LANG_ZH
+	// A CJK character is 16 px tall (core/ui/cjk_font.h), so a line that may hold Chinese needs a 16 px font. Where the
+	// layout already draws its words in one (the 240 px class), only the smallest font, which text pages use, moves up to
+	// it - and only while the language in use is a wide one, so English and Spanish keep their layout in the same build.
+	// Where the layout draws its words in the 5x8 or 6x12 font (the 128x64 and 160x128 classes) Chinese cannot be shown
+	// at all: there is no room for 16 px lines, so the layout stays as it is and the board must not build the language
+	// in (BOARD_UNSUPPORTED, docs/build-config.md)
+	if (L->small->h >= CJK_FONT_H && L->tiny->h < CJK_FONT_H && lang_wide(lang_current()))
+		L->tiny = L->small;
+#endif
+
 	// A pixel between the status strip and what is below it, and a pixel between list rows on displays 100 px and
 	// higher (3 on tall ones, 6 in the 240 px class): easy to read comes before one more row
 	bool tall = h >= UI_TALL_PX;
@@ -284,7 +296,7 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 #endif
 	switch (st) {
 	case RS_RX: word = "RX"; pbg = ui_col.rx; pfg = ui_col.pill_dark_fg; break;
-	case RS_TX: word = "TX"; pbg = ui_col.tx; break;
+	case RS_TX: word = v->aprs_tx ? "TX APRS" : "TX"; pbg = ui_col.tx; break;
 	case RS_TX_DENIED: word = TR("NO TX"); pbg = ui_col.warn; pfg = ui_col.pill_dark_fg; break;
 	default: break;
 	}
@@ -390,12 +402,14 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 	// mode is the selected channel's (the tuned one alternates) and the word is DUAL
 	const char *mw = mode_word(v);
 #if CONFIG_DUAL_WATCH
-	if (s->dual.on)
+	if (s->dual.on && !v->aprs_tx)
 		mw = s->dual.pane[s->dual.sel].mode == RADIO_MODE_DMR ? "DMR" : "FM";
 #endif
+	if (v->aprs_tx)
+		mw = "FM";
 	int lx = gfx_text(f, x, ty, mw, sfg);
 #if CONFIG_DUAL_WATCH
-	if (s->dual.on && strip_fits(f, lx, rx, TR("DUAL")))
+	if (s->dual.on && !v->aprs_tx && strip_fits(f, lx, rx, TR("DUAL")))
 		lx = gfx_text(f, lx + f->w, ty, TR("DUAL"), swarn);
 	else
 #endif
@@ -405,7 +419,7 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 	else if (v->roam.state == RROAM_STATE_SEARCH && strip_fits(f, lx, rx, TR("ROAM")))
 		lx = gfx_text(f, lx + f->w, ty, TR("ROAM"), swarn);	// searching the zone's sites
 #endif
-	else if (v->monitor && strip_fits(f, lx, rx, "MON"))
+	else if (v->monitor && !v->aprs_tx && strip_fits(f, lx, rx, "MON"))
 		lx = gfx_text(f, lx + f->w, ty, "MON", swarn);
 #if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
 	// USB as a network adapter (Tools > USB network): the serial tools are off. IP, and once the PC has the link up an
@@ -872,7 +886,7 @@ static void home_entry_text(const ui_state_t *s, char *buf, size_t len)
 }
 
 #if CONFIG_DMR
-static void draw_talk_dmr(const radio_view_t *v);
+static void draw_talk_dmr(const radio_view_t *v, bool label_first);
 static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s);
 #endif
 
@@ -962,13 +976,15 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 		gfx_text(L->medium, x, base - L->medium->ascent, GLYPH_DOT, ui_col.warn);
 }
 
-static void draw_talk(const radio_view_t *v)
+static void draw_talk(const radio_view_t *v, bool label_first)
 {
 #if CONFIG_DMR
 	if (v->ch.mode == RADIO_MODE_DMR) {
-		draw_talk_dmr(v);
+		draw_talk_dmr(v, label_first);
 		return;
 	}
+#else
+	(void)label_first;
 #endif
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->medium;
@@ -994,7 +1010,7 @@ static void draw_talk(const radio_view_t *v)
 		sb_str(&b, TEXT_ALT_CLOSE);
 	}
 	// Too wide: shorter text, never a smaller font
-	int x = gfx_text(f, 0, L->talk_y, "PTT" GLYPH_ARROW " ", ui_col.dim);
+	int x = gfx_text(f, 0, L->talk_y, GLYPH_ARROW, ui_col.dim);	// no space, on purpose: as on DMR's talk line
 	char fit[40];
 	gfx_text_fit(f, buf, gfx_width() - x, fit, sizeof fit);
 	gfx_text(f, x, L->talk_y, fit, c);
@@ -1228,6 +1244,67 @@ static void sb_target_alts(sbuf_t *b, uint32_t id, bool private_call, const char
 		sb_str(b, TEXT_ALT_CLOSE);
 }
 
+// For the talk line: a named talkgroup as text alternates, longest first ("TG 201 Main Ops (8s)", "TG 201 Main Ops",
+// "TG 201 Main O…" cut to room cells, "TG 201"), so the reply seconds go before the label and the label is cut before
+// it goes. The cut form only when two letters of the label fit. label_first (Settings > Display, a side key) puts the
+// name first and drops the number before the name. Anything else: sb_target_alts
+static void sb_talk_alts(sbuf_t *b, uint32_t id, bool private_call, const char *name, const char *tail, size_t room,
+			 bool label_first)
+{
+	bool named = name[0] != '\0' && id != 0xFFFFFFu && !ui_name_is_id(name, id, private_call);
+	if (private_call || !named) {
+		sb_target_alts(b, id, private_call, name, tail);
+		return;
+	}
+	char num[16];
+	sbuf_t nb;
+	sb_init(&nb, num, sizeof num);
+	sb_target(&nb, id, false, "");
+	size_t len = strlen(name);
+	sb_str(b, TEXT_ALT_OPEN);
+	if (label_first) {
+		// "Main Ops TG 201 (9s)", "Main Ops TG 201", "Main Ops", "Main O…": the name is what the user reads
+		if (tail[0]) {
+			sb_str(b, name);
+			sb_chr(b, ' ');
+			sb_str(b, num);
+			sb_str(b, tail);
+			sb_str(b, TEXT_ALT_NEXT);
+		}
+		sb_str(b, name);
+		sb_chr(b, ' ');
+		sb_str(b, num);
+		sb_str(b, TEXT_ALT_NEXT);
+		sb_str(b, name);
+		if (room >= 2 && room < len) {
+			sb_str(b, TEXT_ALT_NEXT);
+			for (size_t i = 0; i < room - 1; i++)
+				sb_chr(b, name[i]);
+			sb_str(b, GLYPH_ELLIPSIS);
+		}
+		sb_str(b, TEXT_ALT_CLOSE);
+		return;
+	}
+	size_t lead = strlen(num) + 1;	// "TG 201 "
+	if (tail[0]) {
+		sb_target(b, id, false, name);
+		sb_str(b, tail);
+		sb_str(b, TEXT_ALT_NEXT);
+	}
+	sb_target(b, id, false, name);
+	if (room >= lead + 3 && room < lead + len) {
+		sb_str(b, TEXT_ALT_NEXT);
+		sb_str(b, num);
+		sb_chr(b, ' ');
+		for (size_t i = 0; i < room - lead - 1; i++)
+			sb_chr(b, name[i]);
+		sb_str(b, GLYPH_ELLIPSIS);
+	}
+	sb_str(b, TEXT_ALT_NEXT);
+	sb_str(b, num);
+	sb_str(b, TEXT_ALT_CLOSE);
+}
+
 // The caller as the big line: the contact name, else the ID
 static void sb_caller(sbuf_t *b, const radio_dmr_call_t *c)
 {
@@ -1255,17 +1332,18 @@ static void sb_call_dst(sbuf_t *b, const radio_dmr_call_t *c)
 
 static bool dmr_call_screen(const radio_view_t *v)
 {
-	if (v->ch.mode != RADIO_MODE_DMR || !v->dmr.active || v->hotspot)
+	if (v->aprs_tx || v->ch.mode != RADIO_MODE_DMR || !v->dmr.active || v->hotspot)
 		return false;
 	if (v->state == RS_TX)
 		return !sending_data(v);	// data has no talk target to show: Home stays, its activity line says so
 	return v->state == RS_RX && (v->dmr.state == RDMR_RX || v->dmr.state == RDMR_RX_OTHER);
 }
 
-// Talk target line on Home: "PTT-> TG 123 Main Ops", or "Reply-> TG 9 (8s)" during the reply window
+// Talk target line on Home: an arrow and "TG 201 Main Ops", or an inverted return arrow and "TG 9 (8s)" in warn color
+// during the reply window. Icons, not words, so a small display keeps room for the label (#336)
 static bool ui_st_dmr_off;		// ui_state_t.dmr_off of the frame being drawn
 
-static void draw_talk_dmr(const radio_view_t *v)
+static void draw_talk_dmr(const radio_view_t *v, bool label_first)
 {
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->medium;
@@ -1274,7 +1352,13 @@ static void draw_talk_dmr(const radio_view_t *v)
 	sbuf_t b;
 	color_t c = ui_col.fg;
 
-	const char *prefix = d->reply_active ? TR("Reply" GLYPH_ARROW " ") : "PTT" GLYPH_ARROW " ";
+	int w = gfx_width();
+	// the reply window's icon inverted, so it stands out on a monochrome display as well. No space after either icon,
+	// on purpose: the glyph's own blank column (or the inverted cell) sets it apart, and the space is one more
+	// character of the label on a small display
+	int x = d->reply_active ? gfx_text_bg(f, 0, L->talk_y, GLYPH_REPLY, ui_col.bg, ui_col.warn)
+		: gfx_text(f, 0, L->talk_y, GLYPH_ARROW, ui_col.dim);
+	size_t room = x < w ? (size_t)((w - x) / f->w) : 0;
 	sb_init(&b, buf, sizeof buf);
 	if (v->ch.rx_only) {
 		sb_str(&b, TR("RX only"));
@@ -1285,7 +1369,7 @@ static void draw_talk_dmr(const radio_view_t *v)
 		sb_str(&b, TR("DMR modem off"));
 		c = ui_col.warn;
 	} else {
-		// The target, and its short form as an alternate: "TG 91 World (9s)", "TG 91 (9s)"; "Joe 9991234", "Joe"
+		// The target and its shorter forms: "TG 91 World (9s)", "TG 91 World", "TG 91 Wo…", "TG 91"; "Joe 3101234", "Joe"
 		char secs[8] = "";
 		if (d->reply_active) {
 			sbuf_t sb;
@@ -1296,11 +1380,9 @@ static void draw_talk_dmr(const radio_view_t *v)
 			c = ui_col.warn;
 		}
 		// and last without the reply seconds (the hint still says the reply is on)
-		sb_target_alts(&b, d->target_id, d->target_private, d->target_name, secs);
+		sb_talk_alts(&b, d->target_id, d->target_private, d->target_name, secs, room, label_first);
 	}
-	// Too wide: the shorter alternate (a talkgroup drops its name, a contact its ID), never a smaller font
-	int w = gfx_width();
-	int x = gfx_text(f, 0, L->talk_y, prefix, d->reply_active ? ui_col.warn : ui_col.dim);
+	// Too wide: the shorter alternate (a talkgroup's label cut, then dropped; a contact its ID), never a smaller font
 	gfx_text_fit(f, buf, w - x, fit, sizeof fit);
 	gfx_text(f, x, L->talk_y, fit, c);
 }
@@ -1570,10 +1652,14 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 		break;
 	}
 	case RS_TX: {
+		if (v->aprs_tx) {
+			gfx_text(big, 0, y, TR("SENDING"), ui_col.tx);
+			break;
+		}
 		sb_mmss(&b, v->tx_elapsed_ms / 1000u);
 		int tw = gfx_text_width(big, buf);
 		gfx_text(big, w - tw, y, buf, ui_col.fg);
-		gfx_text(big, 0, y, sending_data(v) ? TR("SENDING") : TR("TALKING"), ui_col.tx);	// data: ARS, SMS, IP
+		gfx_text(big, 0, y, sending_data(v) ? TR("SENDING") : TR("TALKING"), ui_col.tx);
 		if (two) {
 			sb_init(&b, buf, sizeof buf);
 			if (v->dtmf_digits[0] != 0) {
@@ -1746,7 +1832,7 @@ void ui_draw_home(const radio_view_t *v, const ui_state_t *s)
 		draw_home_large(v, s);
 	} else {
 		draw_place(v, s);
-		draw_talk(v);
+		draw_talk(v, s->label_first);
 		draw_chips(v, s);
 		if (ui_layout.sep_y >= 0)
 			gfx_hline(0, ui_layout.sep_y, gfx_width(), ui_col.line);
@@ -1789,7 +1875,8 @@ static int dual_right(const font_t *rf, int x_end, int y, int row_h, int min_x, 
 	bool more = true;
 	int tw = 0;
 	for (int level = 0; more; level++) {	// the longest alternate that fits
-		tw = (int)gfx_text_alt(text, level, fit, sizeof fit, &more) * rf->w;
+		gfx_text_alt(text, level, fit, sizeof fit, &more);
+		tw = gfx_text_width(rf, fit);	// pixels: a CJK character is not one cell wide
 		if (tw <= room)
 			break;
 	}
@@ -2156,12 +2243,18 @@ static void dual_activity(const radio_view_t *v, const ui_state_t *s, int y, int
 	// A transmission or a call coming in takes the first line
 	sb_init(&b, buf, sizeof buf);
 	if (v->state == RS_TX) {
-		sb_str(&b, sending_data(v) ? TR("SENDING on ") : TR("TALKING on "));
-		sb_str(&b, d->sel ? "B" : "A");
+		if (v->aprs_tx)
+			sb_str(&b, TR("SENDING"));
+		else {
+			sb_str(&b, sending_data(v) ? TR("SENDING on ") : TR("TALKING on "));
+			sb_str(&b, d->sel ? "B" : "A");
+		}
 		gfx_text(sm, 0, y, buf, ui_col.tx);
-		sb_init(&b, buf, sizeof buf);
-		sb_mmss(&b, v->tx_elapsed_ms / 1000u);
-		gfx_text(sm, w - gfx_text_width(sm, buf), y, buf, ui_col.fg);
+		if (!v->aprs_tx) {
+			sb_init(&b, buf, sizeof buf);
+			sb_mmss(&b, v->tx_elapsed_ms / 1000u);
+			gfx_text(sm, w - gfx_text_width(sm, buf), y, buf, ui_col.fg);
+		}
 		y += sm->h;
 		lines--;
 	} else if (d->pane[0].rx && d->pane[1].rx && lines == 1) {
@@ -2383,6 +2476,43 @@ static int list_bottom(const ui_state_t *s)
 // word longer than the line, never shortening), returns where the next line starts
 static const char *wrap_line(const font_t *f, const char *t, int max_w, char *line, size_t cap)
 {
+#if CONFIG_LANG_ZH
+	// A character at a time: a CJK character may end a line as well as a space, and the width is measured on whole
+	// characters, so a line never holds half of one
+	int n = 0, cut = 0;
+	while (t[n] && t[n] != '\n') {
+		int seq;
+		uint32_t cp = gfx_utf8_next(t + n, &seq);
+		if (n + seq > (int)cap - 1)
+			break;
+		memcpy(line + n, t + n, (size_t)seq);
+		n += seq;
+		line[n] = 0;
+		if (gfx_text_width(f, line) > max_w) {
+			n -= seq;
+			line[n] = 0;
+			break;
+		}
+		if (t[n - seq] == ' ' || cp > 0xFF)
+			cut = n;
+	}
+	bool fits_all = t[n] == 0 || t[n] == '\n';
+	if (!fits_all && cut > 0)
+		n = cut;
+	if (n == 0 && t[0] && t[0] != '\n') {
+		int seq;
+		gfx_utf8_next(t, &seq);		// narrower than one character: still move on
+		n = seq < (int)cap ? seq : (int)cap - 1;
+	}
+	line[n] = 0;
+	t += n;
+	if (*t == '\n')
+		t++;		// an empty line ("\n\n") stays one line
+	else
+		while (*t == ' ')
+			t++;
+	return t;
+#else
 	int n = 0, cut = 0;
 	while (t[n] && t[n] != '\n' && n < (int)cap - 1) {
 		line[n] = t[n];
@@ -2406,6 +2536,7 @@ static const char *wrap_line(const font_t *f, const char *t, int max_w, char *li
 		while (*t == ' ')
 			t++;
 	return t;
+#endif
 }
 
 // Word wrap into lines of the screen's width; draws them (when draw) and returns the y after the last line
@@ -2496,6 +2627,11 @@ int ui_draw_text_page(const radio_view_t *v, const ui_state_t *s, const char *ti
 // message), where the start is what matters
 static void fit_end(const font_t *f, const char *s, int max_w, char *out, size_t len)
 {
+#if CONFIG_LANG_ZH
+	// Chinese has no spaces to break at, and a character is not one byte: a line with a wide character is cut by whole
+	// characters at the end; Latin text keeps the word cut below
+	gfx_text_fit_end(f, s, max_w, out, len);
+#else
 	size_t n = strlen(s), fit = max_w <= 0 ? 0 : (size_t)(max_w / f->w);
 	if (fit >= len)
 		fit = len - 1;
@@ -2521,6 +2657,7 @@ static void fit_end(const font_t *f, const char *s, int max_w, char *out, size_t
 #ifdef GFX_FIT_TRACE
 	gfx_fit_trace(s, out);
 #endif
+#endif	// CONFIG_LANG_ZH
 }
 
 // A row's label (left) and value (right, may hold text alternates). The label says what the row is, so it is kept
@@ -2538,8 +2675,8 @@ static void row_text(const font_t *f, int x, int y, int w, const char *label, co
 	val[0] = 0;
 	// The longest value alternate that fits next to the whole label (or the shortest one there is)
 	for (int level = 0; value[0] && more; level++) {
-		size_t n = gfx_text_alt(value, level, val, sizeof val, &more);
-		vw = (int)n * f->w;
+		gfx_text_alt(value, level, val, sizeof val, &more);
+		vw = gfx_text_width(f, val);
 		if (x + lw + (vw ? gap + vw : 0) <= w)
 			break;
 	}

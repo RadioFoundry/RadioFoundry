@@ -154,8 +154,12 @@ def source(path):
 
 
 def pack(data, use_gzip):
-    # gzip.compress with mtime 0 writes no file name and a fixed OS byte: the same bytes on every machine
-    return gzip.compress(data, compresslevel=9, mtime=0) if use_gzip else data
+    # gzip.compress with mtime 0 writes no file name. The OS byte (header byte 9) is 255 before Python 3.11 and zlib's
+    # own after (3 on Linux, 19 on macOS): set it to 255 (unknown), so every machine and Python gives the same bytes
+    if not use_gzip:
+        return data
+    z = gzip.compress(data, compresslevel=9, mtime=0)
+    return z[:9] + b"\xff" + z[10:]
 
 
 def generate(out, files, use_gzip):
