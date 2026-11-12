@@ -34,6 +34,7 @@ registry (board.toml [flash.stub], pins.h, board.mk; tools/boards.py) into BOARD
 record (config_record) right after HELLO; the stub writes nothing until it has one, and the
 tool checks its echo in the next HELLO. The board comes from the running RadioFoundry's VERSION reply, or from --board.
 """
+import argparse
 import base64
 import hashlib
 import os
@@ -243,6 +244,10 @@ def board_by_id(num):
 
 class F4Error(stubtool.DumpError):
     pass
+
+
+class CodecGuardError(F4Error):
+    """guard_codec's refusal: raised before any erase, so the radio's flash is as it was."""
 
 
 STUB_USB_ID = (0x1FC9, 0x0094)	# RadioFoundry's and the stub's USB identity (same serial number too)
@@ -636,7 +641,7 @@ class F4Radio(stubtool.Radio):
         wins = [(w[3], w[4])] + [(w[7 + 3 * i], w[8 + 3 * i]) for i in range(w[6])]
         hit = sorted({i for i in changed for a, n in wins if a < sum(sec[i]) and a + n > sec[i][0]})
         if hit:
-            raise F4Error("sector(s) %s hold the radio's codec (its descriptor at 0x%08X says so), which this build "
+            raise CodecGuardError("sector(s) %s hold the radio's codec (its descriptor at 0x%08X says so), which this build "
                           "would erase: nothing was written. Install with rfoundry flash or the web flasher, which read "
                           "the codec back and move it, or write a build merged with the codec (_codec.bin)"
                           % (", ".join(map(str, hit)), at))
@@ -928,6 +933,18 @@ def embed(path):
     print("embedded %s: %d bytes, sha256 %s" % (path, len(blob), hashlib.sha256(blob).hexdigest()))
 
 
+def leave_stub(radio, a, board, log=print):
+    """After a refusal that wrote nothing: reset the radio out of the stub, so it starts its firmware as before, and
+    say how to leave the stub by hand if the reset did not get through."""
+    cmd = "stubtool.py %s --attach --board %s --boot reset" % (getattr(a, "port", None) or "PORT", board)
+    try:
+        radio.reset_chip()
+        log("nothing was written; the radio was reset out of the stub and starts its firmware as before")
+    except (stubtool.DumpError, OSError) as e:
+        log("nothing was written, but the reset out of the stub failed (%s)" % e)
+    log("if the radio still runs the stub, leave it with: %s" % cmd)
+
+
 def run(a, port, reopen, log=print):
     """stubtool.py's STM32 branch: a is its parsed arguments, port the open serial port."""
     radio = F4Radio(port, log=log, retries=a.retries, reopen=reopen)
@@ -952,8 +969,12 @@ def run(a, port, reopen, log=print):
             raise F4Error("which radio? pass --board (%s)" % ", ".join(sorted(BOARDS)))
         segs = load_segments(a.write_app, board)
         t0 = time.monotonic()
-        nw, nk = radio.write_image(board, segs, backup_dir=a.backup_dir or os.path.expanduser("~"),
-                                   progress=lambda i, n: log("sector step %d of %d" % (i, n)))
+        try:
+            nw, nk = radio.write_image(board, segs, backup_dir=a.backup_dir or os.path.expanduser("~"),
+                                       progress=lambda i, n: log("sector step %d of %d" % (i, n)))
+        except CodecGuardError:
+            leave_stub(radio, a, board, log)
+            raise
         log("%s: %s, %d sector(s) written, %d unchanged, verified by CRC, %.0f s" % (
             a.write_app, " + ".join("%d bytes at 0x%08X" % (len(d), ad) for ad, d in segs), nw, nk, time.monotonic() - t0))
     if a.peek:
@@ -1361,6 +1382,11 @@ def self_test():
     except F4Error as e:
         check(fake.erased == [] and "sector(s) 8 hold the radio's codec" in str(e),
               "md380: a plain build over a codec in sector 8 refused before any erase (%s)" % e)
+    lines = []
+    leave_stub(r, argparse.Namespace(port="/dev/ttyACM0"), "md380", log=lines.append)
+    check(fake.resets == 1 and fake.erased == []
+          and any("stubtool.py /dev/ttyACM0 --attach --board md380 --boot reset" in x for x in lines),
+          "md380: after the refusal the radio is reset out of the stub and the command to leave it is shown (%s)" % lines)
     moved = app(0x08100000 - APP_BASE, 6)
     nw, _ = r.write_image("md380", [(APP_BASE, moved[:0xE0000 - 0xC000]), (0x080E0000, moved[0xE0000 - 0xC000:])],
                           backup_dir=tmp)

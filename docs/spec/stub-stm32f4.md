@@ -362,8 +362,10 @@ that reaches outside the owned range (the wrong board) is refused before anythin
 
 When a board's owned range grows into sectors an earlier layout gave the codec, a plain image would erase the codec.
 Before it erases anything for an image without the codec, the tool reads the descriptor at the end of flash: if a
-window it names lies in a sector the plan erases, it refuses and writes nothing. The image merged with the codec in
-the new layout is what moves it ([codec-placement.md](codec-placement.md), "Moving to a new layout").
+window it names lies in a sector the plan erases, it refuses and writes nothing. Since nothing was erased, the tool
+then resets the radio out of the stub (it starts its firmware as before) and prints the command that leaves the stub
+by hand, `stubtool.py PORT --attach --board <id> --boot reset`, for a reset that did not get through; the web
+flasher restarts the radio the same way. The image merged with the codec in the new layout is what moves it ([codec-placement.md](codec-placement.md), "Moving to a new layout").
 
 No radio shares a sector between the firmware and the codec. The rule for one that would stays in the code: a sector
 that is rewritten and holds bytes the firmware doesn't own is read back and written again with those bytes unchanged.
