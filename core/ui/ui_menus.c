@@ -2276,6 +2276,13 @@ static uint16_t ced_num;		// its number, 0 = no such channel
 static uint8_t ced_rows[CE_COUNT];
 static uint8_t ced_n;
 
+// The radio receives this RX in AM or on the broadcast receiver whatever the channel's mode, never in DMR, and ignores
+// sub-audio there (radio_sm.c listen_band)
+static bool ced_listen_band(const channel_t *c)
+{
+	return radio_am_tx_refused(c->rx_hz) || radio_bcast_band(c->rx_hz);
+}
+
 #if CONFIG_CHANNEL_EDIT
 #define CE_TOT_MAX	495
 #define CE_TOT_STEP	15
@@ -2343,13 +2350,6 @@ static void ced_rx_band(channel_t *c)
 	c->rx_only = true;
 	c->tx_hz = c->rx_hz;
 	c->mode = RADIO_MODE_FM;
-}
-
-// The radio receives this RX in AM or on the broadcast receiver whatever the channel's mode, never in DMR, and ignores
-// sub-audio there (radio_sm.c listen_band)
-static bool ced_listen_band(const channel_t *c)
-{
-	return radio_am_tx_refused(c->rx_hz) || radio_bcast_band(c->rx_hz);
 }
 
 // A copy of what the radio uses now (temporary changes included), named after it: "Name 2", or the frequency
