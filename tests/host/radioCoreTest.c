@@ -6,6 +6,9 @@
 #include <string.h>
 #include "board.h"
 #include "radio/radio_sm.h"
+#if CONFIG_APRS
+#include "aprs/aprs_beacon.h"	// APRS_WHY_*
+#endif
 #include "radio/radio_sfr.h"
 #include "radio/tones.h"
 #include "dmr/call/dmr_call.h"
@@ -28,6 +31,9 @@
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dl_fmt.h"
 #include "radio/tx_limit.h"
+#include "radio/battery.h"
+#include "fuzz.h"
+#include "position/position.h"
 
 static int failures;
 static int checks;
@@ -153,7 +159,9 @@ static const band_t bands[] = {
 	{ 108000000, 135999999, false },	// receive only
 	{ 136000000, 174000000, true },
 	{ 400000000, 480000000, true },
+	{ 480000000, 520000000, false },	// the receive-only extension (test_rx_ext), off unless a test turns it on
 };
+static bool rx_ext_on;
 static const char *const power_names[] = { "L", "M", "H" };
 // Keys: only what the side key glue (ui_svc_storage.c) needs, two side keys
 static const keymap_entry_t keymap[] = {
@@ -165,6 +173,8 @@ static const uint8_t side_keys[] = { 1, 2 };
 
 static int gps_enable_calls;
 static bool gps_enabled;
+static bool gps_here;	// the module answered (board_has_gps): only test_position has one
+static bool fake_gps_present(void) { return gps_here; }
 static void fake_gps_enable(bool on)
 {
 	gps_enable_calls++;
@@ -173,9 +183,13 @@ static void fake_gps_enable(bool on)
 
 const board_t board = {
 	.name = "fake",
+	.caps = CAP_GPS,
 	.gps_enable = fake_gps_enable,
+	.gps_present = fake_gps_present,
 	.bands = bands,
-	.band_count = 3,
+	.band_count = 4,
+	.rx_ext_count = 1,
+	.rx_ext_on = &rx_ext_on,
 	.power_count = 3,
 	.power_names = power_names,
 	.power_default = 1,
@@ -249,6 +263,16 @@ bool codeplug_set_dmr_id(uint32_t id)
 }
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]) { line1[0] = line2[0] = 0; }
 void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]) { out[0] = 0; }
+#if CONFIG_APRS_AFSK
+// APRS (radioCoreTestAprs): no APRS channel in the codeplug
+bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out) { memset(out, 0, sizeof(*out)); return false; }
+bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2) { return false; }
+#endif
+#if CONFIG_APRS
+// ... and no host link
+#include "hostlink/hostlink.h"
+void hostlink_set_tnc(const hostlink_tnc_t *tnc) { (void)tnc; }
+#endif
 bool codeplug_set_radio_name(const char *name) { (void)name; return false; }
 bool codeplug_set_boot_text(const char *line1, const char *line2) { (void)line1; (void)line2; return false; }
 bool codeplug_contact(uint16_t index, contact_t *out)
@@ -403,7 +427,7 @@ static void poll_for(uint32_t ms)
 	}
 }
 
-static void signal(uint8_t noise, bool tone_ok)
+static void rx_signal(uint8_t noise, bool tone_ok)
 {
 	hw.st.noise = noise;
 	hw.st.tone_ok = tone_ok;
@@ -422,7 +446,7 @@ static void boot(void)
 	memset(&aud, 0, sizeof(aud));
 	sim_reset();
 	memset(&hw, 0, sizeof(hw));
-	signal(120, true);
+	rx_signal(120, true);
 	radio_sm_init(&sm, now);
 }
 
@@ -433,7 +457,7 @@ static void start(void)
 	memset(&aud, 0, sizeof(aud));
 	sim_reset();
 	memset(&hw, 0, sizeof(hw));
-	signal(120, true);
+	rx_signal(120, true);
 	now = 1000;
 	radio_sm_init(&sm, now);
 }
@@ -527,52 +551,52 @@ static void test_squelch(void)
 
 	poll_for(100);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio);
-	signal(thr, true);			// at the threshold: still closed
+	rx_signal(thr, true);			// at the threshold: still closed
 	poll_for(50);
 	CHECK(sm.view.state == RS_IDLE);
-	signal(thr - 10, true);
+	rx_signal(thr - 10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX && hw.audio && hw.led[LED_GREEN]);
 	CHECK(sm.view.rssi_dbm == -80);
 	CHECK(radio_view_wakes(&sm.view));	// FM: what opens the squelch plays, so it lights the screen
-	signal(thr + RADIO_SQL_HYST_DB - 1, true);	// inside the hysteresis: stays open
+	rx_signal(thr + RADIO_SQL_HYST_DB - 1, true);	// inside the hysteresis: stays open
 	poll_for(200);
 	CHECK(sm.view.state == RS_RX);
 	CHECK(sm.view.last_rx_ms == 0);
-	signal(thr + RADIO_SQL_HYST_DB, true);
+	rx_signal(thr + RADIO_SQL_HYST_DB, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);		// one poll above is not enough
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio && !hw.led[LED_GREEN]);
 	CHECK(sm.view.last_rx_ms == now);
 	// The carrier goes: the noise jumps far over the line, and one poll closes it (a shorter squelch tail)
-	signal(thr - 10, true);
+	rx_signal(thr - 10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
-	signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB - 1, true);	// just short of it: two polls as before
+	rx_signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB - 1, true);	// just short of it: two polls as before
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
-	signal(thr - 10, true);
+	rx_signal(thr - 10, true);
 	poll_for(RADIO_POLL_MS);
-	signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB, true);
+	rx_signal(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio);
 
-	signal(10, false);			// no RX tone on this channel: the board's tone flag doesn't matter
+	rx_signal(10, false);			// no RX tone on this channel: the board's tone flag doesn't matter
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
-	signal(120, true);
+	rx_signal(120, true);
 	poll_for(100);
 	CHECK(sm.view.state == RS_IDLE);
 	req(RREQ_SQUELCH, -(int)(RADIO_SQUELCH_DEFAULT - 1));	// the most open level short of 0
-	signal(UINT8_MAX, true);		// a receiver that can't hear (an RF chip the board doesn't drive): never opens
+	rx_signal(UINT8_MAX, true);		// a receiver that can't hear (an RF chip the board doesn't drive): never opens
 	poll_for(200);
 	CHECK(sm.view.squelch == 1 && sm.view.state == RS_IDLE && !radio_view_wakes(&sm.view));
 	req(RREQ_CLEAR_TEMP, 0);
 
 	req(RREQ_SQUELCH, -9);			// to 0: always open
 	CHECK(sm.view.squelch == 0 && sm.view.temporary);
-	signal(200, true);
+	rx_signal(200, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX && hw.audio);
 	req(RREQ_CLEAR_TEMP, 0);
@@ -590,7 +614,7 @@ static void test_squelch(void)
 
 	// A DMR channel: the state follows the call stack, not the carrier, and the FM speaker stays shut
 	req(RREQ_ZONE_POS, 3);
-	signal(10, true);
+	rx_signal(10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio);
 }
@@ -599,7 +623,7 @@ static void test_tx(void)
 {
 	setup_codeplug();
 	start();
-	signal(10, true);
+	rx_signal(10, true);
 	poll_for(50);
 	CHECK(sm.view.state == RS_RX);
 	req(RREQ_PTT, 1);
@@ -833,10 +857,10 @@ static void test_tone_squelch(void)
 	req(RREQ_CH_STEP, 1);			// RX DCS 754
 	uint8_t thr = radio_sm_squelch_open_below(RADIO_SQUELCH_DEFAULT);
 
-	signal(thr - 20, false);		// carrier, no code: closed
+	rx_signal(thr - 20, false);		// carrier, no code: closed
 	poll_for(500);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio && !sm.view.tone_ok);
-	signal(thr - 20, true);
+	rx_signal(thr - 20, true);
 	poll_for(RADIO_POLL_MS);		// one poll of a match is not enough
 	CHECK(sm.view.state == RS_IDLE);
 	poll_for(RADIO_POLL_MS * (RADIO_TONE_ON_POLLS - 1));
@@ -844,34 +868,34 @@ static void test_tone_squelch(void)
 
 	// The flag chatters: short drop-outs keep the squelch open
 	for (int i = 0; i < 20; i++) {
-		signal(thr - 20, i % 3 != 0);
+		rx_signal(thr - 20, i % 3 != 0);
 		poll_for(RADIO_POLL_MS * (1 + i % 4 % 3));
 		CHECK(sm.view.state == RS_RX);
 	}
-	signal(thr - 20, true);
+	rx_signal(thr - 20, true);
 	poll_for(RADIO_POLL_MS);
 	// The tone goes away for good, carrier stays: closes after the debounce and the close count
-	signal(thr - 20, false);
+	rx_signal(thr - 20, false);
 	poll_for(RADIO_POLL_MS * (RADIO_TONE_OFF_POLLS - 1));
 	CHECK(sm.view.state == RS_RX);
 	poll_for(RADIO_POLL_MS * (1 + RADIO_SQL_CLOSE_POLLS));
 	CHECK(sm.view.state == RS_IDLE && !hw.audio && !sm.view.tone_ok);
 
 	// Tone without a carrier (noise above the threshold): closed
-	signal(thr + 20, true);
+	rx_signal(thr + 20, true);
 	poll_for(500);
 	CHECK(sm.view.state == RS_IDLE && sm.view.tone_ok);
 	// Carrier back with the tone: opens at once (the tone is already heard)
-	signal(thr - 20, true);
+	rx_signal(thr - 20, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
 	// Carrier gone: closes on the noise alone
-	signal(thr + 20, true);
+	rx_signal(thr + 20, true);
 	poll_for(RADIO_POLL_MS * RADIO_SQL_CLOSE_POLLS);
 	CHECK(sm.view.state == RS_IDLE);
 
 	// Monitor overrides tone squelch
-	signal(thr - 20, false);
+	rx_signal(thr - 20, false);
 	poll_for(500);
 	req(RREQ_MONITOR, 1);
 	CHECK(hw.audio && sm.view.state == RS_IDLE);
@@ -880,10 +904,10 @@ static void test_tone_squelch(void)
 
 	// Squelch level 0 with an RX tone: the tone alone decides
 	req(RREQ_SQUELCH, -9);
-	signal(200, false);
+	rx_signal(200, false);
 	poll_for(200);
 	CHECK(sm.view.state == RS_IDLE);
-	signal(200, true);
+	rx_signal(200, true);
 	poll_for(RADIO_POLL_MS * RADIO_TONE_ON_POLLS);
 	CHECK(sm.view.state == RS_RX);
 	req(RREQ_CLEAR_TEMP, 0);
@@ -891,7 +915,7 @@ static void test_tone_squelch(void)
 	// A channel without an RX tone ignores the board's tone flag
 	req(RREQ_CH_STEP, 1);
 	CHECK(sm.view.channel_number == 7 && sm.view.tone_ok);
-	signal(thr - 20, false);
+	rx_signal(thr - 20, false);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);
 }
@@ -1908,10 +1932,10 @@ static void test_hotspot(void)
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HOTSPOT);
 	req(RREQ_PTT, 0);
 	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == off0);
-	signal(10, true);
+	rx_signal(10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.hs_carrier && sm.view.state == RS_IDLE);
-	signal(120, true);
+	rx_signal(120, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(!sm.hs_carrier);
 
@@ -2452,6 +2476,119 @@ static void test_dmr_contact_added(void)
 	memset(&added_contact, 0, sizeof(added_contact));
 }
 
+#if CONFIG_APRS_DMR
+// APRS over DMR (docs/spec/aprs.md 8): a beacon goes to the data service as a position report, from a build with
+// the AX.25 backend and from one without it (radioCoreTestAprsDmr: no callsign, no APRS frequency, nothing of FM
+// APRS in the way). Where there is no choice the stored "Send via" is not asked
+static void test_aprs_dmr_beacon(void)
+{
+	aprs_view_t v0, v1;
+	aprs_cfg_t c;
+
+	boot();
+	dmr_start(true);
+	CHECK(ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 337490000) && ui_svc_setting_set(UI_SET_POS_FIXED_LON, -843880000));
+	aprs_get_cfg(&c);
+	c.via = CONFIG_APRS_AFSK ? APRS_VIA_DMR : APRS_VIA_RF;	// DMR only: "radio" stored by another build still goes out
+	c.dmr_dst = 310999;
+	c.dmr_udt = false;
+	aprs_set_cfg(&c, now);
+	run(50);
+	aprs_get_view(&v0);
+	CHECK(v0.pos_valid && v0.lat == 337490000);
+	CHECK(aprs_send_now());
+	run(3000);
+	aprs_get_view(&v1);
+	CHECK(v1.dmr_sent == v0.dmr_sent + 1 && v1.dmr_failed == v0.dmr_failed && v1.rf_sent == v0.rf_sent);
+	CHECK(v1.last_why == APRS_WHY_MANUAL);
+	// The short UDT form too
+	c.dmr_udt = true;
+	aprs_set_cfg(&c, now);
+	CHECK(aprs_send_now());
+	run(3000);
+	aprs_get_view(&v0);
+	CHECK(v0.dmr_sent == v1.dmr_sent + 1 && v0.dmr_failed == v1.dmr_failed);
+	// Automatic beacons: the interval sends without anyone asking
+	c.tx_on = true;
+	c.smart = false;
+	c.interval_s = 60;
+	aprs_set_cfg(&c, now);
+	run(130000);
+	aprs_get_view(&v1);
+	CHECK(v1.dmr_sent >= v0.dmr_sent + 2 && v1.rf_sent == v0.rf_sent);
+	c.tx_on = false;
+	aprs_set_cfg(&c, now);
+	// Off a DMR channel there is nowhere to send it: counted as failed, nothing keyed
+	req(RREQ_ZONE_POS, 0);
+	run(200);
+	aprs_get_view(&v0);
+	if (!CONFIG_APRS_AFSK) {
+		CHECK(aprs_send_now());
+		run(1000);
+		aprs_get_view(&v1);
+		CHECK(v1.dmr_sent == v0.dmr_sent && v1.dmr_failed == v0.dmr_failed + 1);
+	}
+	position_cfg_t pc;
+	position_get_cfg(&pc);
+	pc.fix_lat = pc.fix_lon = 0;
+	position_set_cfg(&pc, now);
+}
+#endif
+
+#if CONFIG_APRS_RX
+// One NMEA sentence from src to dst (a private call) on UDP 10110 (SAP 3), as the data service hears it
+static void hear_dmr_nmea(uint32_t src, uint32_t dst, const char *sentence, size_t length)
+{
+	uint8_t data[9 + 96] = { 0x00, 0x01, 0x00, 0x00, 0x00, 0x27, 0x7e, 0x27, 0x7e };
+	static dmrBurst_t b[DMR_DATA_MAX_BURSTS];
+
+	memcpy(&data[9], sentence, length);
+	int nb = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_UDPIP_COMPRESSION, false, dst, src, data,
+				    (int)(9 + length), DMR_TYPE_RATE_1_2, 4, b, DMR_DATA_MAX_BURSTS);
+	CHECK(nb > 0);
+	for (int i = 0; i < nb; i++) {
+		now += 60;
+		dmrDataServiceRxBurst(&b[i], now);
+	}
+	run(20);
+}
+
+// DMR APRS as a stock radio sends it (#401): through radio_sm's hook into the APRS station list under the sender's
+// callsign in the ID database (else its DMR ID), to us or to anyone else (the APRS gateway). A sentence without a
+// fix, or out of range, neither adds a station nor moves one
+static void test_dmr_aprs_position(void)
+{
+	static const char heard[] = "$GPRMC,062544.000,A,3000.0000,N,8700.0000\0,W,0.00,0.00,051126,,,A\0";
+	static const char *const none[] = {
+		"$GPRMC,062544.000,V,3100.0000,N,08600.0000,W,,,051126,,,N",	// void status: no fix
+		"$GPRMC,062544.000,A,9100.0000,N,08600.0000,W,,,051126,,,A",	// past 90 degrees
+	};
+	aprs_station_t st;
+
+	dmr_start(false);
+	uint8_t before = aprs_station_count();
+	hear_dmr_nmea(9991234, 9996543, heard, sizeof(heard) - 1);
+	CHECK(aprs_station_count() == before + 1);
+	CHECK(aprs_station(0, &st) && strcmp(st.call, "9991234") == 0 && st.has_pos && st.lat == 300000000 &&
+	      st.lon == -870000000);
+	for (unsigned i = 0; i < sizeof(none) / sizeof(none[0]); i++) {
+		hear_dmr_nmea(9991234, 9996543, none[i], strlen(none[i]));	// the same station: not moved
+		hear_dmr_nmea(9991235, 9996543, none[i], strlen(none[i]));	// another: not added
+		CHECK(aprs_station_count() == before + 1);
+		CHECK(aprs_station(0, &st) && strcmp(st.call, "9991234") == 0 && st.lat == 300000000 && st.lon == -870000000);
+	}
+	// The usual case: another radio's report to the APRS gateway (BrandMeister's <MCC>999), heard on the channel
+	hear_dmr_nmea(9991236, 310999, heard, sizeof(heard) - 1);
+	CHECK(aprs_station_count() == before + 2);
+	CHECK(aprs_station(0, &st) && strcmp(st.call, "9991236") == 0 && st.lat == 300000000 && st.lon == -870000000);
+
+	// EP, the name: an ID in the ID database is listed under its callsign, one not in it under the number (above)
+	hear_dmr_nmea(9995555, 310999, heard, sizeof(heard) - 1);
+	CHECK(aprs_station_count() == before + 3);
+	CHECK(aprs_station(0, &st) && strcmp(st.call, "QD9XYZ") == 0 && st.lat == 300000000 && st.lon == -870000000);
+}
+#endif
+
 static void test_dmr_emergency(void)
 {
 	dmr_lc_t l;
@@ -2789,6 +2926,7 @@ void radio_req_monitor(bool down) { req(RREQ_MONITOR, down); }
 void radio_req_reload(void) { req(RREQ_RELOAD, 0); }
 void radio_req_volume(uint8_t step) { req(RREQ_VOLUME, step); }
 void radio_req_volume_override(int8_t step) { req(RREQ_VOLUME_OVERRIDE, step); }
+void radio_req_volume_hold(bool hold) { req(RREQ_VOLUME_HOLD, hold); }
 void radio_req_clear_temporary(void) { req(RREQ_CLEAR_TEMP, 0); }
 void radio_req_retune(void) { req(RREQ_RETUNE, 0); }
 // Not under test here: debuglink_view_radio.c, linked for the volume operation, refers to them
@@ -2839,6 +2977,7 @@ void radio_req_dmr_target(uint32_t id, bool p) { req(RREQ_DMR_TARGET, (int32_t)(
 void radio_req_dmr_target_clear(void) { req(RREQ_DMR_TARGET_CLEAR, 0); }
 void radio_req_dmr_timeslot(uint8_t ts) { req(RREQ_DMR_TS, ts); }
 void radio_req_dmr_color_code(uint8_t cc) { req(RREQ_DMR_CC, cc); }
+void radio_req_vfo_sfr(uint8_t a) { req(RREQ_VFO_SFR, a); }
 void radio_req_mode(uint8_t mode) { req(RREQ_MODE, mode); }
 void radio_req_vfo_copy(void) { req(RREQ_VFO_COPY, 0); }
 radio_vfo_copy_t radio_req_vfo_copy_checked(void)
@@ -3040,6 +3179,150 @@ static void test_dual_two_vfos(void)
 	CHECK(ui_svc_vfo_get(0, &c0) && c0.rx_hz == 146550000);
 }
 #endif
+
+// The board GPS for everything that reports a position (#466): the Position screen, LRRP's answer and DMR GPS Info
+// read the position service, and the stored position settings apply. radioCoreTest builds it without APRS,
+// radioCoreTestAprs with
+static void test_position(void)
+{
+	static const char gga[] = "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47";
+	static const char rmc[] = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
+	lrrpPosition_t lp;
+	ui_position_t up;
+	int32_t lat, lon;
+	uint32_t err;
+	bool send = true;
+
+	CHECK(CONFIG_POSITION);
+	gps_here = false;
+	dmr_start(true);
+	CHECK(!(ui_svc_feat_radio() & UI_FEAT_GPS) && !ui_svc_position(&up));
+	CHECK(!dmrDataServiceOwnPosition(&lp));
+	gps_here = true;
+	CHECK(ui_svc_feat_radio() & UI_FEAT_GPS);
+	CHECK(!ui_svc_position(&up));		// nothing heard yet
+	position_nmea(gga, strlen(gga), true, now);
+	position_nmea(rmc, strlen(rmc), true, now);
+	CHECK(ui_svc_position(&up) && up.fix && up.sats == 8 && up.lat_e7 == 481173000 && up.lon_e7 == 115166666);
+	CHECK(up.alt_ok && up.alt_m == 545 && up.course == 84);
+	run(10);
+	CHECK(dmrDataServiceOwnPosition(&lp) && lp.location.fixValid && lp.location.north && lp.location.east);
+	CHECK(lp.location.latDegrees == 48 && lp.location.latMinutes10000 == 70380 && lp.location.lonDegrees == 11 &&
+	      lp.location.lonMinutes10000 == 310000);
+	CHECK(lp.location.speedKnots == 22 && lp.hasCourse && lp.courseDegrees == 84 && lp.utcYear == 2094 &&
+	      lp.utcMonth == 3 && lp.utcDay == 23 && lp.location.utcHours == 12 && lp.location.utcMinutes == 35);
+	dmrDataSettings_t ds;
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.hasGps);			// LRRP takes triggered requests: a GPS is there
+
+	// DMR GPS Info: off until Settings > Location > Send in DMR calls says so, then our position goes out in the
+	// call. The setting is the position service's own: saved without APRS, back after a restart
+	CHECK(position_now(&lat, &lon, &err, &send, now) && !send && lat == 481173000 && err == 20);
+	CHECK(ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 0 && ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 1));
+	position_cfg_t pc;
+	position_get_cfg(&pc);
+	pc.ambiguity = 2;			// whole minutes
+	position_set_cfg(&pc, now);
+	settings_t sr;
+	settings_read(&sr);
+	CHECK(sr.aprs_stored != 1 && (sr.aprs_misc & SETTINGS_APRS_MISC_POSITION));	// its own marker, not APRS's
+	boot();
+	CHECK(ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 1);
+	position_nmea(rmc, strlen(rmc), true, now);
+	CHECK(position_now(&lat, &lon, &err, &send, now) && send && err == 1852);
+	CHECK(lat == 481250002);		// 48 07.038 -> the middle of its minute, 48 07.5
+	position_get_cfg(&pc);
+	pc.ambiguity = 0;
+	position_set_cfg(&pc, now);
+	req(RREQ_ZONE_POS, 3);			// the DMR channel again (dmr_start would start from new settings)
+	run(50);
+	position_nmea(rmc, strlen(rmc), true, now);
+	dmr_call_stats_t cs0, cs1;
+	dmr_call_get_stats(&cs0);
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs1);
+	CHECK(cs1.tx_gps_lcs - cs0.tx_gps_lcs >= 1);
+	// ... and with the setting off again, none
+	CHECK(ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 0));
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs0);
+	CHECK(cs0.tx_gps_lcs == cs1.tx_gps_lcs);
+	// The codeplug can ask for it per channel and timeslot (what a CPS sets): sent with the radio's setting off
+	chans[4].alias_tx = CODEPLUG_ALIAS_TS2_GPS;	// a TS1 channel: not on this one
+	reload_channel();
+	CHECK(!sm.view.dmr.gps_tx_channel);
+	chans[4].alias_tx = CODEPLUG_ALIAS_TS1_GPS;
+	reload_channel();
+	CHECK(sm.view.dmr.gps_tx_channel);
+	position_nmea(rmc, strlen(rmc), true, now);
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs1);
+	CHECK(cs1.tx_gps_lcs - cs0.tx_gps_lcs >= 1);
+	chans[4].alias_tx = 0;
+	reload_channel();
+	CHECK(ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 1));
+
+	// Settings > Location > GPS off: the fix goes at once
+	position_gps_enable(false);
+	CHECK(!ui_svc_position(&up) && !dmrDataServiceOwnPosition(&lp));
+	position_gps_enable(true);
+
+	// A radio without a GPS: the fixed position typed in Settings > Location is what LRRP answers with and what
+	// goes out in calls, after a restart too
+	gps_here = false;
+	CHECK(!dmrDataServiceOwnPosition(&lp));
+	CHECK(ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 337490000) && ui_svc_setting_set(UI_SET_POS_FIXED_LON, -843880000));
+	CHECK(!ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 900000001) && !ui_svc_setting_set(UI_SET_POS_SOURCE, 9));
+	boot();
+	req(RREQ_ZONE_POS, 3);
+	run(50);
+	CHECK(ui_svc_setting_get(UI_SET_POS_FIXED_LAT) == 337490000 && ui_svc_setting_get(UI_SET_POS_FIXED_LON) == -843880000);
+	CHECK(dmrDataServiceOwnPosition(&lp) && lp.location.fixValid && lp.location.north && !lp.location.east);
+	CHECK(lp.location.latDegrees == 33 && lp.location.latMinutes10000 == 449400 && lp.location.lonDegrees == 84 &&
+	      lp.location.lonMinutes10000 == 232800 && lp.utcYear == 0 && !lp.hasCourse);
+	CHECK(position_now(&lat, &lon, &err, &send, now) && send && lat == 337490000 && lon == -843880000 && err == 200);
+	dmr_call_get_stats(&cs0);
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs1);
+	CHECK(cs1.tx_gps_lcs - cs0.tx_gps_lcs >= 1);
+	// The source set to GPS only: the fixed position doesn't count
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_GPS) && ui_svc_setting_get(UI_SET_POS_SOURCE) == POSITION_GPS);
+	CHECK(!dmrDataServiceOwnPosition(&lp) && !position_now(&lat, &lon, &err, &send, now));
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_FIXED) && dmrDataServiceOwnPosition(&lp));
+#if !CONFIG_POSITION_HOST
+	// "Computer" left by a build that takes a computer's NMEA: here it counts as Auto, not as no position
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_HOST) && dmrDataServiceOwnPosition(&lp));
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_FIXED));
+#endif
+	// A record APRS stored before the position service had its own marker still counts
+	settings_t *st = settings_begin();
+	st->aprs_misc &= (uint8_t)~SETTINGS_APRS_MISC_POSITION;
+	st->aprs_stored = 1;
+	settings_end(now);
+	boot();
+	CHECK(ui_svc_setting_get(UI_SET_POS_FIXED_LAT) == 337490000 && ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 1);
+	// ... and with neither, the defaults
+	st = settings_begin();
+	st->aprs_stored = 0;
+	settings_end(now);
+	boot();
+	CHECK(ui_svc_setting_get(UI_SET_POS_FIXED_LAT) == 0 && ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 0 &&
+	      ui_svc_setting_get(UI_SET_POS_SOURCE) == POSITION_AUTO);
+	settings_init();
+	boot();
+}
 
 static void test_ui_glue(void)
 {
@@ -3540,6 +3823,30 @@ static void test_ui_settings(void)
 	CHECK(ui_svc_setting_get(UI_SET_KEY_TONES) == 1 && ui_svc_setting_get(UI_SET_TONE_VOLUME) == 7);
 	CHECK(ui_svc_setting_get(UI_SET_TOT_S) == 90 && ui_svc_setting_get(UI_SET_BACKLIGHT_S) == 20);
 	CHECK(ui_svc_setting_get(UI_SET_BATTERY_SAVER) == 1);
+	// Backlight (EP): > 0 dims then goes off at 4x, 0 always on, < 0 dims after -value and never goes off
+	static const struct { int32_t v; uint16_t dim, off; int32_t back; } bl[] = {
+		{ 30, 30, 120, 30 }, { 0, 0, 0, 0 }, { -30, 30, 0, -30 },
+		{ 1, 1, 4, 1 }, { -1, 1, 0, -1 },				// BVA: the smallest times
+		{ 0x3FFF, 0x3FFF, 0xFFFC, 0x3FFF }, { 0x4000, 0x4000, 0xFFFF, 0x4000 },	// off saturates
+		{ -0xFFFF, 0xFFFF, 0, -0xFFFF }, { -0x10000, 0xFFFF, 0, -0xFFFF },	// dim saturates
+	};
+	for (size_t i = 0; i < sizeof bl / sizeof bl[0]; i++) {
+		ui_svc_apply(UI_SET_BACKLIGHT_S, bl[i].v);
+		radio_get_settings(&rs);
+		CHECK(rs.backlight_dim_s == bl[i].dim && rs.backlight_off_s == bl[i].off);
+		CHECK(ui_svc_setting_get(UI_SET_BACKLIGHT_S) == bl[i].back);
+	}
+	// PBT: every value in the menu's range reads back as set, and a negative one never turns the backlight off
+	fuzz_t bf;
+	fuzz_init(&bf, 0xB1);
+	for (long i = 0; i < fuzz_iters(500); i++) {
+		int32_t v = (int32_t)fuzz_below(&bf, 2 * 0x3FFF + 1) - 0x3FFF;
+		ui_svc_apply(UI_SET_BACKLIGHT_S, v);
+		radio_get_settings(&rs);
+		CHECK(ui_svc_setting_get(UI_SET_BACKLIGHT_S) == v);
+		CHECK(v >= 0 || batt_backlight_pct(100, rs.backlight_dim_s, rs.backlight_off_s, 0xFFFFFFFFu, BATT_OK) == 20);
+	}
+	ui_svc_apply(UI_SET_BACKLIGHT_S, 20);
 	CHECK(ui_svc_setting_get(UI_SET_ROAM_SURVEY) == 2 && ui_svc_setting_get(UI_SET_ROAM_BEACON_S) == 120 &&
 	      ui_svc_setting_get(UI_SET_ROAM_BEACON_LEN) == 6 && ui_svc_setting_get(UI_SET_ROAM_PROBE) == 1);
 	// ... which the store leaves to ui_svc_apply (nothing written here)
@@ -3891,6 +4198,24 @@ static void test_soft_volume(void)
 	CHECK(debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ RADIO_VOLUME_KNOB }, 1) == DL_ST_OK);
 	run(100);
 	CHECK(vol_last == 90 && sm.view.volume_src == RVOL_KNOB && sm.view.volume_override == -1);
+	// The knob lock (keys locked, Settings > Key lock > Knob when locked Off): the level stays while the knob moves, the view
+	// still tracks the knob, and letting go takes the knob's level at once
+	CHECK(radio_volume_knob() && (ui_svc_feat_radio() & UI_FEAT_VOLUME_KNOB) && sm.view.volume_knob == 90);
+	radio_req_volume_hold(true);
+	run(100);
+	vol_calls = 0;
+	vol_knob = 30;
+	run(100);
+	CHECK(vol_calls == 0 && vol_last == 90 && sm.view.volume_src == RVOL_HOLD && sm.view.volume_knob == 30);
+	radio_req_volume_hold(false);
+	run(100);
+	CHECK(vol_calls == 1 && vol_last == 30 && sm.view.volume_src == RVOL_KNOB);
+	// A 1 % wobble is not a move
+	vol_knob = 31;
+	run(100);
+	CHECK(sm.view.volume_knob == 30);
+	vol_knob = 90;
+	run(100);
 	CHECK(debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ 0 }, 1) == DL_ST_OK);
 	run(100);
 	CHECK(vol_last == 0);
@@ -4261,6 +4586,32 @@ static void test_dmr_data_glue(void)
 	CHECK(hw.tx_calls == tx0);
 }
 
+// Receive past the band table: the VFO tunes there only while the extension is on, and it never transmits
+static void test_rx_ext(void)
+{
+	setup_codeplug();
+	start();
+	req(RREQ_VFO, 1);
+	run(20);
+	req(RREQ_VFO_SET, 500000000);
+	run(20);
+	CHECK(sm.view.ch.rx_hz != 500000000);	// off: refused like any frequency outside the table
+	board_rx_ext_set(true);
+	req(RREQ_VFO_SET, 500000000);
+	run(20);
+	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 500000000);
+	int tx0 = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && hw.tx_calls == tx0);
+	req(RREQ_PTT, 0);
+	run(20);
+	board_rx_ext_set(false);
+	CHECK(!board_in_band(500000000, false));
+	req(RREQ_RELOAD, 0);	// what turning it off in Settings does: a VFO left past the table returns to a band
+	run(20);
+	CHECK(sm.view.vfo && board_in_band(sm.view.ch.rx_hz, false));
+}
+
 // ---- Error paths: the radio refuses to key, a channel without a TX frequency, retuning or scanning while
 // transmitting, the stack's own refusals, targets that end with their channel, stored emergency settings ----
 static void test_error_paths(void)
@@ -4429,7 +4780,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(432);	// the settings records (page 1: 172 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
+	sim_flash_cut_after(436);	// the settings records (page 1: 176 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);
@@ -4634,6 +4985,91 @@ static void test_sfr_roles(void)
 	CHECK(sm.view.dmr.sfr_role == SFR_ROLE_OFF && dmr_call_view()->ts == 1);
 	chans[4].sfr_a = 0;
 }
+
+#if CONFIG_VFO_DMR
+// The VFO's SFR role (RREQ_VFO_SFR, sfr.md 4): a channel's SFR bytes, taken as a channel's and saved with the VFO
+static void test_sfr_vfo(void)
+{
+	dmr_start(true);
+	req(RREQ_VFO_SFR, SFR_ROLE_RPT_STANDARD);	// on a channel: refused (its role is the codeplug's)
+	run(50);
+	CHECK(!sm.sfr_rpt && sm.view.dmr.sfr_role == SFR_ROLE_OFF);
+	req(RREQ_VFO_COPY, 0);				// channel 4: 438.5 MHz simplex, DMR, CC 2; no role
+	run(50);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_DMR && sm.view.dmr.sfr_role == SFR_ROLE_OFF);
+
+	// Repeater: the runner takes the modem on the VFO's frequency, the stack stops; saved
+	req(RREQ_VFO_SFR, SFR_ROLE_RPT_STANDARD);
+	run(50);
+	CHECK(sm.sfr_rpt && sm.dmr_keyed && !sm.view.dmr.active && sm.view.dmr.sfr_role == SFR_ROLE_RPT_STANDARD);
+	CHECK(hw.tx_hz == 438500000 && sim.cc_filter == 2);
+	settings_t st;
+	settings_read(&st);
+	CHECK(st.vfo_sfr == SFR_ROLE_RPT_STANDARD);
+
+	// A new color code: the repeater takes it
+	req(RREQ_DMR_CC, 5);
+	run(50);
+	CHECK(sm.sfr_rpt && sim.cc_filter == 5);
+	// A split: an ordinary repeater channel, the stack back; one frequency again: the role again
+	req(RREQ_VFO_TX, 433500000);
+	run(50);
+	CHECK(!sm.sfr_rpt && !sm.dmr_keyed && sm.view.dmr.active && sm.view.dmr.sfr_role == SFR_ROLE_OFF);
+	req(RREQ_VFO_TX, 0);
+	run(50);
+	CHECK(sm.sfr_rpt && sm.dmr_keyed && hw.tx_hz == 438500000);
+
+	// Kept over a restart
+	boot();
+	run(50);
+	CHECK(sm.view.vfo && sm.sfr_rpt && sm.view.dmr.sfr_role == SFR_ROLE_RPT_STANDARD);
+	// The same role again: no retune, the repeater keeps the modem
+	int offs = hw.tx_off_calls;
+	req(RREQ_VFO_SFR, SFR_ROLE_RPT_STANDARD);
+	run(50);
+	CHECK(sm.sfr_rpt && hw.tx_off_calls == offs);
+#if CONFIG_VFO_FM
+	// FM: no role in force, the stored one kept for DMR
+	req(RREQ_MODE, RADIO_MODE_FM);
+	run(50);
+	CHECK(!sm.sfr_rpt && sm.view.dmr.sfr_role == SFR_ROLE_OFF && sm.vfo_ch.sfr_a == SFR_ROLE_RPT_STANDARD);
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	run(50);
+	CHECK(sm.sfr_rpt && sm.view.dmr.sfr_role == SFR_ROLE_RPT_STANDARD);
+#endif
+
+	// User, inbound TS2: the call stack on TS2
+	req(RREQ_VFO_SFR, SFR_ROLE_USER_STANDARD | 0x20);
+	run(50);
+	CHECK(!sm.sfr_rpt && sm.view.dmr.active && sm.view.dmr.sfr_role == SFR_ROLE_USER_STANDARD);
+	CHECK(dmr_call_view()->ts == 2);
+	req(RREQ_VFO_SFR, SFR_ROLE_NUM_STORED);	// not a stored role: refused
+	run(50);
+	CHECK(sm.view.dmr.sfr_role == SFR_ROLE_USER_STANDARD);
+
+	// Off: the VFO's own slot again, saved
+	req(RREQ_VFO_SFR, 0);
+	run(50);
+	CHECK(sm.view.dmr.sfr_role == SFR_ROLE_OFF && sm.vfo_ch.sfr_flag1 == 0 && dmr_call_view()->ts == 1);
+	settings_read(&st);
+	CHECK(st.vfo_sfr == 0);
+
+	// Copy to VFO brings the channel's role
+	req(RREQ_VFO, 0);
+	chans[4].sfr_flag1 = SFR_CHANNEL_FLAG1_ENABLED;
+	chans[4].sfr_a = SFR_ROLE_RPT_STANDARD;
+	reload_channel();
+	CHECK(sm.sfr_rpt && !sm.view.vfo);
+	req(RREQ_VFO_COPY, 0);
+	run(50);
+	CHECK(sm.view.vfo && sm.sfr_rpt && sm.vfo_ch.sfr_a == SFR_ROLE_RPT_STANDARD);
+	chans[4].sfr_flag1 = 0;
+	chans[4].sfr_a = 0;
+	req(RREQ_VFO_SFR, 0);
+	run(50);
+	CHECK(!sm.sfr_rpt);
+}
+#endif
 #if CONFIG_SFR_CWID
 // A call through the repeater role: the repeater transmits, its hang ends and it goes quiet
 static void sfr_call_through(void)
@@ -4793,6 +5229,24 @@ static void test_tx_limit_op(void)
 	CHECK(!l.on && tx_limit_allows(461475000u));
 }
 
+// The knob's percent as a step of the volume scale (the bar the UI shows when the knob turns): 0 only when silent,
+// the ends exact, every step round-trips, and never a step back as the knob goes up
+static void test_volume_step_of(void)
+{
+	static const struct { uint8_t pct, step; } ep[] = {
+		{ 0, 0 }, { 1, 1 }, { 3, 1 }, { 9, 1 }, { 10, 2 }, { 50, 8 }, { 96, 15 }, { 97, 16 }, { 100, 16 }, { 101, 16 },
+		{ 255, 16 },
+	};
+	for (size_t i = 0; i < sizeof ep / sizeof ep[0]; i++)
+		CHECK(radio_volume_step_of(ep[i].pct) == ep[i].step);
+	for (uint8_t s = 0; s <= RADIO_VOLUME_MAX; s++)
+		CHECK(radio_volume_step_of(radio_volume_percent(s)) == s);
+	for (int p = 1; p <= 255; p++) {
+		uint8_t a = radio_volume_step_of((uint8_t)(p - 1)), b = radio_volume_step_of((uint8_t)p);
+		CHECK(b >= a && b - a <= 1 && b >= 1 && b <= RADIO_VOLUME_MAX);
+	}
+}
+
 int main(void)
 {
 	test_tx_limit_op();
@@ -4831,6 +5285,7 @@ int main(void)
 	test_dmr_contact_added();
 	test_ui_requests();
 	test_ui_glue();
+	test_position();
 #if CONFIG_DUAL_WATCH
 	test_ui_dual();
 	test_dual_two_vfos();
@@ -4838,23 +5293,34 @@ int main(void)
 	test_ui_settings();
 	test_soft_volume();
 	test_side_keys();
+	test_rx_ext();
 	test_error_paths();
 	test_hotspot();
 	test_hotspot_session();
 	test_hotspot_cwid();
 #if CONFIG_SFR
 	test_sfr_roles();
+#if CONFIG_VFO_DMR
+	test_sfr_vfo();
+#endif
 #endif
 #if CONFIG_SFR_CWID
 	test_sfr_cwid();
 #endif
 	test_dmr_emergency();
+#if CONFIG_APRS_DMR
+	test_aprs_dmr_beacon();
+#endif
+#if CONFIG_APRS_RX
+	test_dmr_aprs_position();
+#endif
 	test_power_off_ars();
 #if CONFIG_VFO_DMR
 	test_vfo_dmr_data();
 #endif
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();
+	test_volume_step_of();
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

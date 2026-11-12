@@ -12,11 +12,15 @@
 #include "bcast/rda5807m/rda5807m_hal.h"
 #include "hrc_bcast.h"
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 #include "hrc_afsk.h"
 #endif
 #if CONFIG_NET_PPP
 #include "hostlink/hostlink_ppp.h"
+#endif
+
+#if CONFIG_RX_EXT
+static bool rx_ext_on;
 #endif
 
 static const band_t bands[] = {
@@ -27,6 +31,12 @@ static const band_t bands[] = {
 #endif
 #if CONFIG_BCAST_FM
 	{ 65000000, 108000000, false },		// the broadcast band, on the tuner (airband-and-broadcast.md 4)
+#endif
+#if CONFIG_RX_EXT
+	// Receive only past the rated bands, while the user turns it on: the FD6818 band table. Keep these last
+	{ 16000000, 65000000, false },
+	{ 174000000, 400000000, false },
+	{ 470000000, 740000000, false },
 #endif
 };
 
@@ -75,6 +85,10 @@ const board_t board = {
 		(CONFIG_AM_RX ? CAP_AM_RX : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
+#if CONFIG_RX_EXT
+	.rx_ext_count = 3,
+	.rx_ext_on = &rx_ext_on,
+#endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
 	.power_default = 0,	// low
@@ -107,7 +121,7 @@ const board_t board = {
 #if CONFIG_BCAST_FM
 	.bcast = &rda5807m_hal,
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	.afsk = &hrc_afsk,
 #endif
 };

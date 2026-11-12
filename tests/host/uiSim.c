@@ -143,15 +143,15 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "settings", "ok 7" },
 	{ "settings_display", "ok 7 2" },
 	{ "settings_editor", "ok 7 2 ok up" },
-	{ "settings_freq_trim", "trim ok 7 0 up" },	// on a radio with a reference trim (radio-features.md 6.1)
-	{ "freq_trim", "trim ok 7 0 up ok ctx 4 5 ok" },
-	{ "freq_trim_typing", "trim ok 7 0 up ok 1 2" },
-	{ "settings_advanced", "ok 7 0" },
-	{ "factory_reset", "ok 7 0 down down down ok" },
-	{ "about", "ok 7 0 ok" },
-	{ "crash_log", "crash:on ok 7 0 down down down down ok" },
+	{ "settings_freq_trim", "trim ok 7 up ok up" },	// on a radio with a reference trim (radio-features.md 6.1)
+	{ "freq_trim", "trim ok 7 up ok up ok ctx 4 5 ok" },
+	{ "freq_trim_typing", "trim ok 7 up ok up ok 1 2" },
+	{ "settings_advanced", "ok 7 up ok" },
+	{ "factory_reset", "ok 7 up ok down down down ok" },
+	{ "about", "ok 7 up ok ok" },
+	{ "crash_log", "crash:on ok 7 up ok down down down down ok" },
 	{ "crash_prompt", "crash:ask wait:2500" },
-	{ "crash_send_to", "crash:on ok 7 0 down down down down ok 2" },
+	{ "crash_send_to", "crash:on ok 7 up ok down down down down ok 2" },
 	{ "talk_target_picker", "call:9991234,91,g tt" },
 	{ "talk_target_picker_vfo", "ok 4 up ok quick 4 tt" },
 	{ "scan_actions", "ok 6 1 ctx" },
@@ -167,6 +167,8 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "home_dual_on_b", "quick 7 ctx 3 5 ok wait:3000 tune:b call:9991234,91,g tune:a call:9997777,3100,g wait:4000 ctx 1 wait:3000" },
 	{ "home_dual_tx", "quick 7 ctx 3 5 ok wait:3000 pttdown" },
 	{ "home_dual_vfo", "quick 7 ctx 1 vfokey ctx 1 wait:3000" },
+	{ "home_dual_vfo_entry", "quick 7 ctx 1 vfokey tune:a 1 4 6 5" },
+	{ "home_dual_vfo_entry_large_text", "ok 7 2 down down down down down ok long:back quick 7 ctx 1 vfokey 1 4 6 5" },
 	// A name that needs row 1 whole beside the PTT pill: the pill moves to row 3 where there is one
 	{ "home_dual_pill_row3", "quick 7 ctx 1 wait:3000" },
 	{ "home_dual_other_zone", "quick 7 ctx 1 zone+ ctx 1 wait:3000 tune:b fmrx" },
@@ -182,9 +184,17 @@ static const struct { const char *name, *script; } gallery[] = {
 #endif
 	{ "emergency", "emergency:9991234" },
 	{ "volume", "softvol volkey up up" },
+#if CONFIG_VOLUME_BAR
+	// A knob radio: the knob turned, over Home and over a call (#354)
+	{ "volume_bar", "knob:50 knob:62" },
+	{ "volume_bar_quick", "quick knob:50 knob:62" },	// Quick's tiles fill the bottom at 160x128: the strip
 #if CONFIG_DMR
-	{ "dmr_id", "ok 7 9 ok" },		// Settings > My radio
-	{ "dmr_id_entry", "ok 7 9 ok 3 1 0 9" },
+	{ "volume_bar_call", "rx:9991234,3100,g wait:500 knob:50 knob:31" },
+#endif
+#endif
+#if CONFIG_DMR
+	{ "dmr_id", "ok 7 0 ok" },		// Settings > My radio
+	{ "dmr_id_entry", "ok 7 0 ok 3 1 0 9" },
 #endif
 	{ "volume_muted", "softvol volkey down down down down down down down down" },
 	{ "hotspot", "hotspot:on" },
@@ -204,12 +214,12 @@ static const struct { const char *name, *script; } audit_extra[] = {
 	{ "settings_connections", "ok 7 6" DOWN12 },
 	{ "settings_power", "ok 7 7" DOWN12 },
 	{ "settings_keys", "ok 7 8" DOWN12 },
-	{ "settings_my_radio", "ok 7 9" DOWN12 },
-	{ "settings_advanced", "ok 7 0" DOWN12 },
-	{ "about_scrolled", "ok 7 0 ok" DOWN12 DOWN12 },
-	{ "codeplug", "ok 7 0 down ok" },
+	{ "settings_my_radio", "ok 7 0" DOWN12 },
+	{ "settings_advanced", "ok 7 up ok" DOWN12 },
+	{ "about_scrolled", "ok 7 up ok ok" DOWN12 DOWN12 },
+	{ "codeplug", "ok 7 up ok down ok" },
 	{ "battery", "ok 6 9" },
-	{ "my_radio", "ok 7 9 ok" },
+	{ "my_radio", "ok 7 0 ok" },
 	{ "caller_actions", "call:9991234,91,g wait:11000 ctx" DOWN12 },
 	{ "contact_actions", "ok 1 5 6 ctx" DOWN12 },
 	{ "recent", "call:9991234,91,g call:9995678,3100,g call:9992222,0,p ok 3" DOWN12 },
@@ -272,15 +282,16 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_roaming", "ok 6 6 1 wait:4000" },
 	{ "w_aprs", "ok 6 8" },
 	{ "w_aprs_nocall", "aprs:nocall ok 6 8" },
-	{ "w_aprs_position", "ok 6 8 9 2 3 3 7 4 9 0 ok 3 8 4 3 8 8 0 down ok wait:3000" },
-	{ "w_aprs_position_edit", "ok 6 8 9 2 3 3 7" },
+	{ "w_fixed_position", "ok 7 5 down down ok 1 3 3 7 4 9 0 ok 2 8 4 3 8 8 0 down ok wait:3000" },
+	{ "w_fixed_position_edit", "ok 7 5 down down ok 1 3 3 7" },
+	{ "w_aprs_heard", "ok 6 8 up ok" },
 	{ "w_usb", "ok 6 4" },
 	{ "w_sfr", "ok 6 5" },
 	{ "w_battery", "battery:5 ok 6 9" },
-	{ "w_my_radio", "ok 7 9 ok" },
-	{ "w_codeplug", "ok 7 0 down ok" },
+	{ "w_my_radio", "ok 7 0 ok" },
+	{ "w_codeplug", "ok 7 up ok down ok" },
 	{ "w_settings_number", "ok 7 3 ok up" },
-	{ "w_freq_trim", "trim ok 7 0 up ok ctx 1 0 0 ok" },
+	{ "w_freq_trim", "trim ok 7 up ok up ok ctx 1 0 0 ok" },
 	{ "w_settings_privacy", "ok 7 4 ok ok down ok up" },
 	{ "w_settings_range", "ok 7 7 down down ok 9 9 ok" },
 	{ "w_hotspot", "hotspot:on" },

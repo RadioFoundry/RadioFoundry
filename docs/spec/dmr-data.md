@@ -3,7 +3,8 @@
 Text messages, packet data answers, CSBK call alert and radio check, ARS registration and LRRP location answers on
 the DMR call stack; IP packets with compressed headers and confirmed delivery (11, 12). Status: built and host-tested
 (`dmrDataServiceTest`, `dmrDataChainTest`). On air against the SDR bench (measured): text messages,
-call alert and radio check, both ways (`tests/hil/test_dmr_data.py`); ARS and LRRP not yet (`docs/testing/on-air-coverage.md`);
+call alert and radio check, both ways, and LRRP immediate answers with and without a position (`tests/hil/test_dmr_data.py`);
+ARS not yet (`docs/testing/on-air-coverage.md`);
 IP over DMR: 11.4.
 
 Sources: ETSI TS 102 361-1 (bursts, data headers, blocks, CRCs, CSBK), TS 102 361-2 (call alert, radio check),
@@ -84,6 +85,11 @@ dmr_data_api.h (UI, debug link)                  sms_inbox_*, sms_send, dmr_sign
 - Text to us (any format, 5): kept in the inbox (4 messages, newest first, the oldest replaced). A TMS ACK request is
   answered with a TMS ACK. The same message again from the same radio within 60 s (sender, format, text; the
   sequence number may differ) is a retry: answered again, not kept twice (gotcha 5.8).
+- An NMEA sentence from and to UDP port 10110 (a DMR APRS position), whoever it is addressed to (usually the APRS
+  gateway's ID), outside passthrough and not our own; a compressed header's DAID must be 0 (radio) or 2 (group), not
+  1 (USB network, a host behind the radio): to the host's `position` hook, for the APRS station list
+  (`aprs.md` 8.2). The one exception to "addressed to us": nothing else looks at a packet not for us, and it gets no
+  response. The IP gateway still gets the packet, as every other.
 - Control station passthrough (`usb-network.md` 5.2): IP based packets to us are left to the PC; only the ETSI
   response above is still sent.
 - Replies (responses, TMS ACKs, CSBK answers) wait in a 4-entry queue; one still queued after 5 s, or not started
@@ -360,14 +366,17 @@ that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for
 
 - Immediate location requests to us are answered; triggered requests (periodic, distance) start a trigger (2 at
   most, reports at most every 5 s) with a start response, then reports.
-- Without a position source (`hasGps` false) every immediate request is answered with
-  result 0x10 (no fix) and a triggered request is refused with 0x10: no trigger is started, so nothing is sent
+- The position is the position service's ([position.md](position.md)), through the `ownPosition` hook the radio
+  core sets (`position_report`: the board GPS, the host's NMEA or the fixed position, ambiguity applied). It needs no
+  APRS and no GPS receiver: `CONFIG_DMR_LRRP` builds the service, and `hasGps` is set in every such build.
+- While there is no position (no fix and no fixed position) an immediate request is answered with result 0x10 (no
+  fix). A triggered request starts its trigger; a report due without a position is skipped.
+- Built without a position source (`hasGps` false: a platform that sets no hook) every immediate request is answered
+  with result 0x10 (no fix) and a triggered request is refused with 0x10: no trigger is started, so nothing is sent
   later on its behalf.
 - `lrrpReply` off: requests are counted, not answered.
-- `dmrDataServiceGetPosition` is weak: a platform with a GPS overrides it and sets `hasGps`.
 - Positions elsewhere: the ETSI GPS Info LC in voice calls is in `dmr-voice.md` 3.1, positions to an APRS gateway ID
-  (LRRP triggered report or UDT location) in `aprs.md` 8. Neither feeds the LRRP answers yet (open: answer with the
-  APRS position when there is no GPS).
+  (LRRP triggered report or UDT location) in `aprs.md` 8. All of them read the same position.
 - Not ported: the UDT location reports and the GPS power management (`dmrDataServiceLocationNeededInMs` exists for
   it).
 
@@ -378,8 +387,8 @@ that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for
 | `arsServer` | 0 (off) | no transmission the user didn't ask for (`docs/ux/principles.md`) |
 | `radioCheckReply` | on | a radio check is how another user finds out whether this radio is on and in range; the answer is one short CSBK. A settings record saved before this default (no `SETTINGS_DS_CHECK_SET` in `ds_ip_cnf`, `settings-store.md` 3) answers too |
 | `callAlertAck` | on | the ack is what makes a call alert work for the caller |
-| `lrrpReply` | on | answers only a dispatcher's request; without GPS it says "no fix" |
-| `hasGps` | false | the radio core sets it false on every radio today, GPS models included (`data_init` in `core/radio/radio_sm.c`) |
+| `lrrpReply` | on | answers only a dispatcher's request; without a position (no fix, no fixed position) it says "no fix" |
+| `hasGps` | true with `CONFIG_DMR_LRRP` | the radio core sets it when the position service answers (`data_init` in `core/radio/radio_sm.c`, `ownPosition`); a source can come after start-up (7) |
 | `smsFormat` | ETSI IP text | the standard text application (5.4); ETSI short data and Motorola TMS (`CONFIG_DMR_TMS`) for radios that need them. A settings record from before this default (no format bit in `ds_flags`, `settings-store.md` 3) keeps TMS: only the default changed |
 | `radioCheckEtsi` | off | the Motorola form is what most radios answer |
 | `udpCompress` | auto | SAP 3 saves 19-23 octets per UDP packet; auto leaves the DMR application ports (MOTOTRBO servers) on the full header (11.2) |

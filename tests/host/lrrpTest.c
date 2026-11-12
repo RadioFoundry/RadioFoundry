@@ -5,6 +5,7 @@
 // uintvars, request IDs empty / too long / past the end, unknown tokens), the answers built within LRRP_MAX_DOCUMENT
 // for the longest request ID and every optional field, the distance; then mutated requests (fuzz.h; RFOUNDRY_FUZZ_ITERS),
 // each decoded one answered within bounds. Vectors are the token layouts dmrLrrp.h names.
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -205,6 +206,13 @@ static void test_build(void)
 	p.location.lonDegrees = 180;
 	n = lrrpBuildTriggeredReport(r.requestId, 1, 0, &p, out);
 	CHECK(n > 0 && out[5 + 6] == 0x51 && out[5 + 7] == 0xFF && out[5 + 8] == 0xFF);	// -90: 0x7FFFFFFF | sign
+	CHECK(out[5 + 9] == 0xFF && out[5 + 10] == 0xFF);
+	CHECK(out[5 + 11] == 0x80 && out[5 + 12] == 0x00 && out[5 + 13] == 0x00 && out[5 + 14] == 0x00);	// -180
+	// Exact values: 33 deg 45 min north is 3/8 of 2^31; 84 deg 23 min west rounds to -0x3C01845D
+	p = position();
+	n = lrrpBuildTriggeredReport(r.requestId, 1, 0, &p, out);
+	CHECK(n > 0 && out[5 + 6] == 0x51 && out[5 + 7] == 0x30 && out[5 + 8] == 0x00 && out[5 + 9] == 0x00 && out[5 + 10] == 0x00);
+	CHECK(out[5 + 11] == 0xC3 && out[5 + 12] == 0xFE && out[5 + 13] == 0x7B && out[5 + 14] == 0xA3);
 
 	// Distance: one minute of latitude is 1852 m; nothing between a place and itself
 	dmrDataLocation_t a = position().location, b = a;
@@ -212,6 +220,51 @@ static void test_build(void)
 	b.latMinutes10000 += 10000;
 	uint32_t m = lrrpDistanceMeters(&a, &b);
 	CHECK(m > 1840 && m < 1865);
+}
+
+// A signed coordinate in 1/600000 degree to the location's degrees, minutes and hemisphere
+static void set_coord(uint8_t *deg, uint32_t *min10000, bool *pos, int32_t n)
+{
+	uint32_t m = (uint32_t)(n < 0 ? -n : n);
+
+	*pos = n >= 0;
+	*deg = (uint8_t)(m / 600000u);
+	*min10000 = m % 600000u;
+}
+
+// The distance against the double formula it replaced (equirectangular, mean latitude): within 0.5 % (the sphere and
+// the float) plus 2 m, from meters to a few hundred km, both hemispheres, across the equator and the prime meridian
+static void test_distance(void)
+{
+	int worst = 0;
+
+	for (int32_t lat = -80 * 600000; lat <= 80 * 600000; lat += 7 * 600000 + 123457) {
+		for (int32_t lon = -170 * 600000; lon <= 170 * 600000; lon += 41 * 600000 + 98765) {
+			static const int32_t d[] = { 0, 1, 37, 600, 10000, 600000, 2400000 };	// up to 4 degrees
+			for (unsigned i = 0; i < sizeof(d) / sizeof(d[0]); i++) {
+				for (int dir = 0; dir < 3; dir++) {
+					int32_t lat2 = lat + (dir != 1 ? d[i] : 0), lon2 = lon + (dir != 0 ? d[i] : 0);
+					dmrDataLocation_t a, b;
+
+					memset(&a, 0, sizeof(a));
+					memset(&b, 0, sizeof(b));
+					set_coord(&a.latDegrees, &a.latMinutes10000, &a.north, lat);
+					set_coord(&a.lonDegrees, &a.lonMinutes10000, &a.east, lon);
+					set_coord(&b.latDegrees, &b.latMinutes10000, &b.north, lat2);
+					set_coord(&b.lonDegrees, &b.lonMinutes10000, &b.east, lon2);
+					double r = M_PI / 180.0 / 600000.0, x = (lon2 - lon) * r * cos((lat + lat2) / 2.0 * r);
+					double y = (lat2 - lat) * r, want = sqrt(x * x + y * y) * 6371000.0;
+					double got = lrrpDistanceMeters(&a, &b), err = fabs(got - want);
+
+					if (err > want * 0.005 + 2.0 && worst++ < 5) {
+						printf("FAIL distance %d,%d +%d dir %d: %.0f m, want %.0f m\n", lat, lon, d[i], dir, got, want);
+					}
+				}
+			}
+		}
+	}
+	checks++;
+	failures += worst != 0;
 }
 
 // Mutated requests: a decoded one has a request ID within bounds and every answer to it fits
@@ -258,6 +311,7 @@ int main(void)
 {
 	test_decode();
 	test_build();
+	test_distance();
 	test_fuzz();
 	printf("lrrpTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;

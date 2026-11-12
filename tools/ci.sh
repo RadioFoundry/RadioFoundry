@@ -104,6 +104,9 @@ bad()  { echo "ci: FAIL  $*"; FAILED="$FAILED
   $*"; }
 skip() { echo "ci: skip  $*"; SKIPPED="$SKIPPED
   $*"; }
+WARNED=""
+warn() { echo "ci: warn  $*"; WARNED="$WARNED
+  $*"; }
 # The registry tools (tools/boards.py) read TOML: Python 3.11 or later. Empty when there is none (the steps that need it
 # fail with the reason)
 REG_PY=$(tools/rfoundry_python.sh 2> "$OUT/rfoundry-python.log") || REG_PY=""
@@ -186,6 +189,8 @@ fi
 if step python; then
 echo "== python"
 PY_FILES=$(git ls-files 'tools/*.py' 'tools/**/*.py' 'tests/hil/*.py' 'boards/*/hil/*.py' 2>/dev/null)
+# The HIL checks below read no rig file: the result doesn't depend on the rig, and it needs no tomllib
+export RFOUNDRY_HIL_CONFIG=none
 if command -v python3 > /dev/null; then
 	if python3 -c 'import ast, sys
 for f in sys.argv[1:]:
@@ -228,12 +233,12 @@ for f in sys.argv[1:]:
 	if python3 -c 'import pytest' 2>/dev/null; then
 		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_skip_kinds.py tests/hil/test_radio_reconnect.py tests/hil/test_bench_line.py \
 			tests/hil/test_bench_envelope.py \
-			tests/hil/test_tx_guard.py \
+			tests/hil/test_tx_guard.py tests/hil/test_rig_state.py tests/hil/test_dmr_packets.py \
 			> "$OUT/hil-skip-test.log" 2>&1; then
-			ok "HIL skip, reconnect, TX guard and bench line helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
+			ok "HIL skip, reconnect, TX guard, rig state, bench line and DMR packet helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
 		else
 			tail -20 "$OUT/hil-skip-test.log"
-			bad "HIL skip, reconnect, TX guard and bench line helper tests (see $OUT/hil-skip-test.log)"
+			bad "HIL skip, reconnect, TX guard, rig state and bench line helper tests (see $OUT/hil-skip-test.log)"
 		fi
 	fi
 	# the feature checklist (tests/hil/README.md, "Bring-up mode"): tools/bringup.py check, and the bring-up
@@ -418,6 +423,14 @@ build() {
 			bad "$b $name: stack check (see $dir.stack.log)"
 		fi
 	fi
+	# double and libm in a release image: a warning, not a failure (docs/spec/gotchas.md 13.12)
+	if [ "$name" = default ] || [ "$name" = maximal ]; then
+		cross=$(make -s BOARD="$b" BUILD="$dir" "$@" print-vars VARS=CROSS | sed 's/^CROSS=//')
+		soft=$("${cross}nm" "$target.elf" 2>/dev/null | awk '$2 ~ /^[TtWw]$/ { print $3 }' |
+			grep -E '^(__aeabi_(d[a-z]+|[iu]?l?2d|f2d|d2[a-z]+)|__(add|sub|mul|div|extendsf|truncdf|float[a-z]*|fix[a-z]*)df[0-9]?|(sin|cos|tan|asin|acos|atan2?|sqrt|pow|exp|log|log10|floor|ceil|fmod|round|hypot)f?)$' |
+			sort -u | tr '\n' ' ')
+		if [ -n "$soft" ]; then warn "$b $name: links double or libm code: $soft(docs/spec/gotchas.md 13.12)"; fi
+	fi
 	bin=$target.bin
 	bytes=$(wc -c < "$bin" | tr -d ' ')
 	# --print-memory-usage: "FLASH:  123024 B  336 KB  35.76%" (the app region, codec sectors excluded)
@@ -582,6 +595,9 @@ else
 fi
 
 echo
+if [ -n "$WARNED" ]; then
+	echo "ci: warnings:$WARNED"
+fi
 if [ -n "$SKIPPED" ]; then
 	echo "ci: skipped:$SKIPPED"
 fi

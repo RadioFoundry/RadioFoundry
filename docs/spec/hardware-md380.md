@@ -104,7 +104,7 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 | PC3 | ADC1 IN13: 2T/5T (FM discriminator audio) | (unverified); unused |
 | PC4 | RF_APC_SW, PA power loop on | (unverified) |
 | PC5 | 5TC, transmitter supply | (unverified) |
-| PC6 | LAMP, LCD backlight (TIM8 CH1 PWM, AF3) | (unverified); PWM is our choice |
+| PC6 | LAMP, LCD backlight (TIM8 CH1 PWM, AF3) | (unverified); PWM is our choice: 40 kHz, far above the FM transmit audio band (#330) |
 | PC7 | CTC/DCS_OUT, sub-audio tone output (PWM) | (unverified); TIM3 CH2 (AF2) with `CONFIG_SUBTONE` (section 6.4), otherwise released (open drain, high): it tunes the reference (5.2) |
 | PC8 | BEEP (TIM8 CH3) | (unverified); unused |
 | PC9 | 5RC, receiver supply | (unverified) |
@@ -904,7 +904,7 @@ The same board ships with and without the module, and PD8 (the module's power sw
 second flash chip select on others 13.7. So nothing drives PD8 until the module has been heard:
 `gps_md380.c` enables USART3 RX on PD9 at start-up and listens for 5 s. One checksum-valid sentence (any talker, up to
 82 characters plus CR LF; `drivers/gps/nmea_line`) makes the module present: PD8 is then held at the level it already
-had, and every sentence goes to the APRS position source (`aprs_nmea`, CONFIG_APRS). Nothing heard: the UART is
+had, and every sentence goes to the position service (`position_nmea`, CONFIG_GPS). Nothing heard: the UART is
 switched off and `board.gps_present()` stays false, so `board_has_gps()` hides the GPS features. UART errors are
 counted and cleared in the interrupt, so one framing error never stops reception ( 13.7).
 
@@ -1043,6 +1043,10 @@ configuration registers, audio routing), and [gotchas.md](gotchas.md) 2.6, 3.3, 
 Flash: the table in [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380) and the per-feature figures in
 [feature-matrix.md](../feature-matrix.md). Measured 2026-10-19 with LTO: default UHF image 320,236 B of 475,136 B
 (464 KB), 107,120 B of 131,068 B SRAM, 59,640 B of 64 KB CCM; maximal 327,064 B flash.
+
+`CONFIG_NET_WEBCTL` follows `CONFIG_NET_HTTP_GZIP` on this radio (`boards/md380/config.mk`): web control's files,
+stored uncompressed, need more flash than the default image leaves free. With gzip off the radio serves the plain
+status page.
 
 
 ## 20. Facts moved from the shared specs

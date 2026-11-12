@@ -535,6 +535,24 @@ int main(void)
 	sb_init(&b, age, sizeof age); sb_age_long(&b, 30000u);
 	CHECK(strcmp(age, "30s ago") == 0);
 
+	// Ranges (sb_range, Stations heard and DMR GPS Info), BVA at each unit and rounding step and the compass's edges.
+	// 99950 m and up print 100.0 km: the 0.1 km rounding runs past the step to whole km (as before)
+	static const struct { uint32_t m; uint16_t deg; const char *want; } ranges[] = {
+		{ 0, 0, "0 m N" }, { 1, 0, "1 m N" }, { 999, 0, "999 m N" }, { 1000, 0, "1.0 km N" },
+		{ 1049, 0, "1.0 km N" }, { 1050, 0, "1.1 km N" }, { 9949, 0, "9.9 km N" }, { 9950, 0, "10.0 km N" },
+		{ 99949, 0, "99.9 km N" }, { 99950, 0, "100.0 km N" }, { 99999, 0, "100.0 km N" },
+		{ 100000, 0, "100 km N" }, { 100499, 0, "100 km N" }, { 100500, 0, "101 km N" },
+		{ 20015087, 0, "20015 km N" },
+		{ 5, 22, "5 m N" }, { 5, 23, "5 m NE" }, { 5, 67, "5 m NE" }, { 5, 68, "5 m E" }, { 5, 90, "5 m E" },
+		{ 5, 180, "5 m S" }, { 5, 270, "5 m W" }, { 5, 337, "5 m NW" }, { 5, 338, "5 m N" }, { 5, 359, "5 m N" },
+		{ 5, 360, "5 m N" },
+	};
+	for (size_t i = 0; i < sizeof ranges / sizeof ranges[0]; i++) {
+		sb_init(&b, age, sizeof age);
+		sb_range(&b, ranges[i].m, ranges[i].deg);
+		CHECK(strcmp(age, ranges[i].want) == 0);
+	}
+
 	// 160x120 color
 	ui_layout_init();
 	render_set("160x120");

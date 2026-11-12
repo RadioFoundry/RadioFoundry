@@ -1622,18 +1622,15 @@ typedef struct
 } lrrpTrigger_t;
 static lrrpTrigger_t lrrpTriggers[LRRP_TRIGGERS_MAX];
 
-// The platform's position for LRRP. Weak: none (the host test brings its own)
-#if !defined(DMR_DATA_SERVICE_TEST)
-__attribute__((weak)) bool dmrDataServiceGetPosition(lrrpPosition_t *position)
-{
-	memset(position, 0, sizeof(*position));
-	return false;
-}
-#endif
-
 static bool havePosition(lrrpPosition_t *position)
 {
-	return settings.hasGps && dmrDataServiceGetPosition(position);
+	memset(position, 0, sizeof(*position));
+	return settings.hasGps && (env.ownPosition != NULL) && env.ownPosition(position, now, env.ctx);
+}
+
+bool dmrDataServiceOwnPosition(lrrpPosition_t *position)
+{
+	return havePosition(position);
 }
 
 static void lrrpReceived(uint32_t src, const uint8_t *payload, int length)
@@ -1794,7 +1791,9 @@ static bool lrrpHandleRequest(const lrrpPendingRequest_t *pending)
 	return true;
 }
 
-static void lrrpTick(void)
+// noinline: inlined into the service's tick it puts the position and the report document in the radio task's own
+// frame, under everything that task calls (the stack check's deepest path)
+__attribute__((noinline)) static void lrrpTick(void)
 {
 	if (!CONFIG_DMR_LRRP || passthrough)
 	{
@@ -2280,6 +2279,20 @@ static void handlePacket(const dmrDataPacket_t *packet)
 	if (env.packet)
 	{
 		env.packet(packet, env.ctx);
+	}
+
+	// A position as an NMEA sentence (DMR APRS from other makes' radios) for the station list, whoever it is addressed
+	// to: usually the APRS gateway's ID, as FM APRS hears every station. Only this hook sees a packet not for us.
+	// Both ports, not appPort: 10110 isn't one of the well known ports appPort picks, and the radios send from it too.
+	// A compressed header names its destination network: only DAID 0 (radio) or 2 (group) is the ID's own, 1 (USB
+	// network, TS 102 361-3 7.2.4.2) a host behind it (dmrDataGetUDP takes the address from the ID either way)
+	uint8_t daid = (isUDP && (packet->sap == DMR_SAP_UDPIP_COMPRESSION)) ? (packet->data[2] & 0x0F) : 0;
+	if (isUDP && (udp.dstPort == DMR_UDP_PORT_NMEA) && (udp.srcPort == DMR_UDP_PORT_NMEA) &&
+			((daid == 0) || (daid == 2)) && dmrDataIpIsId(udp.dstIp, packet->group, packet->dst) &&
+			(packet->src != channel.ownId) &&
+			!(CONFIG_DMR_CONTROL_STATION && passthrough) && (env.position != NULL))
+	{
+		env.position(packet->src, udp.payload, udp.length, now, env.ctx);
 	}
 
 	if (!forUs)

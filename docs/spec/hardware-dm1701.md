@@ -872,6 +872,18 @@ PD8 (PC6 on Plus 10 W), active high. Dimming: a 101-entry table of 32-bit words 
 request, circular, 100 transfers) to the port's BSRR register: entry 0 sets the pin, entry N resets it, all others are
 0, so the duty is N %. 0 % and 100 % stop the DMA and drive the pin directly.
 
+RadioFoundry dims at 40 kHz with two one-word DMA writes per cycle instead (`boards/uv380_family/backlight_uvf.h`):
+TIM1 counts 1800 per cycle, its update request (DMA2 Stream5 channel 6) writes the set bit and its CC1 request (DMA2
+Stream1 channel 6) the reset bit, so CCR1 is the duty at any percent, 80,000 transfers a second. The ripple of the
+switched backlight current reaches the FM transmit audio. Measured on a DM-1701, Brightness 10 %, 50 mW, FM
+demodulated from a separate receiver, peak deviation:
+
+| PWM | 101 Hz | 304 Hz | 1420 Hz | At the PWM frequency |
+|---|---|---|---|---|
+| 101 Hz, the 100-entry table | 8 Hz | 15 Hz | 13-15 Hz | (it is the 101 Hz line: an audible buzz, #330) |
+| 10 kHz (tried) | 0.5 Hz | 1.9 Hz | 1.1 Hz | 470 Hz: sidebands about 33 dB down at ±10 kHz, in the adjacent 12.5 kHz channel |
+| 40 kHz | 0.6-0.7 Hz | 1.6-2.3 Hz | 1.6 Hz | 99-206 Hz: sidebands 52-58 dB down at ±40 kHz |
+
 
 ---
 
@@ -1755,3 +1767,7 @@ is well above the "mic muted, no tone" row.
   `dm1701-v0206-csv`. An interrupted update writes sector 3 (the vector table) last, so a cut before it leaves the
   bootloader in DFU; a later half application may crash but never bricks. Enter the bootloader by hand (PTT and side
   key 1 at power-on) and flash again.
+
+## Receive past the rated bands
+
+134-136, 200-260 and 480-520 MHz: the AT1846S data sheet. Receive only, FM, off by default ([radio-features.md](radio-features.md) 6.2). Not measured on the radio.

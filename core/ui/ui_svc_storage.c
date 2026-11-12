@@ -6,7 +6,8 @@
 //     core saves and restores itself (ui_svc_apply sends changes there); the preferences in settings_t (brightness,
 //     default squelch, hotspot allowed) directly; the DMR data service's answers (radio check, call alert, LRRP) from
 //     its settings, which the radio core saves; the UI's own (reply window, mic gain, auto lock, key timing, GPS
-//     options) from their settings_t fields. Settings nobody stores yet stay in the stub's RAM table.
+//     options) from their settings_t fields; the position settings from the position service, which saves them.
+//     Settings nobody stores yet stay in the stub's RAM table.
 //   - save to channel, the permanent talk target and the factory reset: the UI task only takes a copy of what to
 //     write and hands a job to the housekeeping task (storage_job_post), so the UI never waits for a flash erase. The
 //     channel is written with codeplug_set_channel; the radio core re-reads it when codeplug_serial() changes. A job
@@ -36,6 +37,9 @@
 #endif
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
+#endif
+#if CONFIG_POSITION
+#include "position/position.h"
 #endif
 #if CONFIG_KEY_ASSIGN
 #include "input/input.h"
@@ -134,18 +138,27 @@ int32_t ui_svc_setting_get(uint8_t id)
 			return (rs.beep_level + 5) / 10;
 		if (id == UI_SET_TOT_S)
 			return rs.tot_s;
-		if (id == UI_SET_BACKLIGHT_S)
-			return rs.backlight_dim_s;
+		if (id == UI_SET_BACKLIGHT_S)	// < 0: dims, never goes off
+			return rs.backlight_off_s == 0 && rs.backlight_dim_s != 0 ? -(int32_t)rs.backlight_dim_s
+										    : rs.backlight_dim_s;
 		return rs.rx_save != 0;
 	case UI_SET_VOLUME:
 		settings_read(&st);
 		return radio_volume_step(st.volume);
+	case UI_SET_KNOB_WHEN_LOCKED:
+		settings_read(&st);
+		return (st.knob_flags & SETTINGS_KNOB_LOCK) == 0;	// stored as the lock, shown as the knob working
 	case UI_SET_BRIGHTNESS:
 		settings_read(&st);
 		return st.brightness >= 10 && st.brightness <= 100 ? st.brightness : 100;
 	case UI_SET_SQUELCH:
 		settings_read(&st);
 		return st.squelch <= 9 ? st.squelch : ui_svc_ram_get(id);
+#if CONFIG_RX_EXT
+	case UI_SET_RX_EXT:
+		settings_read(&st);
+		return (st.cp_flags & SETTINGS_CP_RX_EXT) != 0;
+#endif
 	case UI_SET_HOTSPOT_AUTO:
 		settings_read(&st);
 		return st.hotspot_allowed != 0;
@@ -284,15 +297,22 @@ int32_t ui_svc_setting_get(uint8_t id)
 #if CONFIG_DMR_DATA_CORE
 	case UI_SET_CHECK_REPLY:
 	case UI_SET_ALERT_ANSWER:
-	case UI_SET_POS_REPLY:
-	case UI_SET_MSG_FORMAT: {
+	case UI_SET_POS_REPLY: {
 		dmrDataSettings_t ds;
 		dmr_data_get_settings(&ds);
-		if (id == UI_SET_MSG_FORMAT)
-			return ds.smsFormat;
 		return id == UI_SET_CHECK_REPLY ? ds.radioCheckReply : id == UI_SET_ALERT_ANSWER ? ds.callAlertAck :
 			ds.lrrpReply;
 	}
+#endif
+	case UI_SET_MSG_FORMAT:
+#if CONFIG_DMR_SMS
+		{
+			dmrDataSettings_t ds;
+			dmr_data_get_settings(&ds);
+			return ds.smsFormat;
+		}
+#else
+		return 2;
 #endif
 #if CONFIG_CRASH_REPORT
 	case UI_SET_CRASH_MODE:
@@ -312,6 +332,17 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_USB_FIXED_LINK:
 		settings_read(&st);
 		return (st.net_flags & SETTINGS_NET_FIXED_LINK) != 0;
+#endif
+#if CONFIG_POSITION
+	case UI_SET_POS_SOURCE:
+	case UI_SET_POS_FIXED_LAT:
+	case UI_SET_POS_FIXED_LON:
+	case UI_SET_POS_DMR_CALLS: {
+		position_cfg_t pc;
+		position_get_cfg(&pc);
+		return id == UI_SET_POS_SOURCE ? pc.pref : id == UI_SET_POS_FIXED_LAT ? pc.fix_lat :
+		       id == UI_SET_POS_FIXED_LON ? pc.fix_lon : pc.dmr_gps;
+	}
 #endif
 	default:
 		return ui_svc_ram_get(id);
@@ -453,6 +484,12 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		st->lang[1] = (char)value;
 		settings_end(hal_millis());
 		return true;
+	case UI_SET_KNOB_WHEN_LOCKED:
+		st = settings_begin();
+		st->knob_flags = (uint8_t)(value == 0 ? st->knob_flags | SETTINGS_KNOB_LOCK :
+							st->knob_flags & ~SETTINGS_KNOB_LOCK);
+		settings_end(hal_millis());
+		return true;
 	case UI_SET_VOLUME:
 		st = settings_begin();
 		st->volume = radio_volume_stored((uint8_t)clamp16(value, 0, RADIO_VOLUME_MAX));
@@ -470,6 +507,15 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		settings_end(hal_millis());
 		radio_req_reload();	// the default squelch is a preference the radio core reads on reload
 		return true;
+#if CONFIG_RX_EXT
+	case UI_SET_RX_EXT:
+		st = settings_begin();
+		st->cp_flags = (uint8_t)(value != 0 ? (st->cp_flags | SETTINGS_CP_RX_EXT) : (st->cp_flags & ~SETTINGS_CP_RX_EXT));
+		settings_end(hal_millis());
+		board_rx_ext_set(value != 0);
+		radio_req_reload();	// a VFO past the table goes back in band when this goes off
+		return true;
+#endif
 	case UI_SET_HOTSPOT_AUTO:
 		st = settings_begin();
 		st->hotspot_allowed = value != 0;
@@ -526,16 +572,21 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		dmr_data_set_settings(&ds);	// the radio core saves the data service's settings when they change
 		return true;
 	}
-	case UI_SET_MSG_FORMAT: {
-		dmrDataSettings_t ds;
+#endif
+	case UI_SET_MSG_FORMAT:
+#if CONFIG_DMR_SMS
 		if ((value != DMR_SMS_FORMAT_ETSI_IP) && (value != DMR_SMS_FORMAT_ETSI) &&
 		    !(CONFIG_DMR_TMS && (value == DMR_SMS_FORMAT_TMS)))
 			return false;
-		dmr_data_get_settings(&ds);
-		ds.smsFormat = (uint8_t)value;
-		dmr_data_set_settings(&ds);
+		{
+			dmrDataSettings_t ds;
+			dmr_data_get_settings(&ds);
+			ds.smsFormat = (uint8_t)value;
+			dmr_data_set_settings(&ds);
+		}
 		return true;
-	}
+#else
+		return false;
 #endif
 #if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
 	case UI_SET_USB_BOOT_NET:
@@ -562,6 +613,32 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 					   ((value & UI_DUAL_B_SEL) ? SETTINGS_DUAL_B_SEL : 0));
 		settings_end(hal_millis());
 		return true;
+#endif
+#if CONFIG_POSITION
+	case UI_SET_POS_SOURCE:
+	case UI_SET_POS_FIXED_LAT:
+	case UI_SET_POS_FIXED_LON:
+	case UI_SET_POS_DMR_CALLS: {
+		position_cfg_t pc;
+		position_get_cfg(&pc);
+		if (id == UI_SET_POS_SOURCE) {
+			if (value < 0 || value >= POSITION_PREF_COUNT)
+				return false;
+			pc.pref = (uint8_t)value;
+		} else if (id == UI_SET_POS_FIXED_LAT) {
+			if (value < -900000000 || value > 900000000)
+				return false;
+			pc.fix_lat = value;
+		} else if (id == UI_SET_POS_FIXED_LON) {
+			if (value < -1800000000 || value > 1800000000)
+				return false;
+			pc.fix_lon = value;
+		} else {
+			pc.dmr_gps = value != 0;
+		}
+		position_set_cfg(&pc, hal_millis());	// in use at once, and saved
+		return true;
+	}
 #endif
 	default:
 		return ui_svc_ram_set(id, value);
@@ -983,6 +1060,7 @@ static void factory_reset_job(void *ctx)
 	(void)ctx;
 	settings_t *st = settings_begin();
 	settings_defaults(st);	// cp_flags too: "Use anyway" doesn't outlive a reset
+	board_rx_ext_set(false);
 	settings_end(hal_millis());
 	codeplug_accept(false);
 	bool saved = settings_flush();

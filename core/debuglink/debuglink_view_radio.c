@@ -12,11 +12,17 @@
 #include "radio/mic_gain.h"
 #include "radio/ref_trim.h"
 #include "radio/tx_limit.h"
+#include "radio/pa_keyup.h"
 #include "radio/radio_cwid.h"
 #include "hal_time.h"
 #include "hal_dtmf.h"
 #include "settings/settings.h"
+#include "dmr/sfr.h"
 #include "input/input.h"
+#if CONFIG_KEY_ASSIGN
+#include "input/keyassign.h"
+#include "codeplug/codeplug.h"
+#endif
 #if CONFIG_DMR
 #include "dmr/ambe/ambeVoice.h"
 #if CONFIG_ZONE_SHARE
@@ -120,9 +126,9 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	else
 		dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n",
 			board_has_battery() ? word(v->battery, batt, 3) : "none", v->battery_pct, v->battery_mv, v->power_off);
-	static const char *const vsrc[] = { "none", "knob", "soft", "override" };
+	static const char *const vsrc[] = { "none", "knob", "soft", "override", "hold" };
 	dl_text(t, "volume.soft=%u\nvolume.sent=%d\nvolume.src=%s\nvolume.max=%u\nvolume.step=%u\nvolume.override=%d\n",
-		radio_volume_soft(), v->volume, word(v->volume_src, vsrc, 4), RADIO_VOLUME_MAX, v->volume_step, v->volume_override);
+		radio_volume_soft(), v->volume, word(v->volume_src, vsrc, 5), RADIO_VOLUME_MAX, v->volume_step, v->volume_override);
 #if CONFIG_BEEP
 	beep_stats_t b;
 	beep_get_stats(&b);
@@ -155,6 +161,20 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	} else {
 		dl_text(t, "set.reply_s=codeplug\n");
 	}
+}
+
+void debuglink_view_keys(dl_text_t *t)
+{
+#if CONFIG_KEY_ASSIGN
+	if (board.side_key_count != 0) {
+		uint16_t slots[CODEPLUG_QUICK_KEYS];
+		(void)codeplug_quick_keys(slots);
+		// The saved assignment lets HIL restore the key through Settings after exercising its physical bit.
+		dl_text(t, "key.first.bit=%u\nkey.first.press=%u\n", board.side_keys[0], keyassign_get(slots, 0, false));
+	}
+#else
+	(void)t;
+#endif
 }
 
 // One setting by id (DL radio op SETTING; docs/spec/debuglink.md 3.8)
@@ -313,6 +333,18 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 #else
 		return DL_ST_UNAVAILABLE;
 #endif
+	case DL_OP_VFO_SFR:
+		// u8: the VFO's SFR role as a channel's SFR byte A (sfr.h; role bits 0 = none). The radio core refuses it
+		// outside the VFO; dmr.sfr_role shows what it took
+		if (len < 1 || (a[0] & 0x07u) >= SFR_ROLE_NUM_STORED) {
+			return DL_ST_BAD_ARG;
+		}
+#if CONFIG_SFR
+		radio_req_vfo_sfr(a[0]);
+		return DL_ST_OK;
+#else
+		return DL_ST_UNAVAILABLE;
+#endif
 	case DL_OP_VFO_COPY: {
 		// Copy to VFO, as the quick menu's tile does: refused with a status when the VFO can't hold the channel
 		// (the check is the radio core's), nothing sent then
@@ -363,6 +395,30 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			return DL_ST_UNAVAILABLE;
 		}
 		return board.radio->tx_drive((uint16_t)(a[0] | (a[1] << 8))) ? DL_ST_OK : DL_ST_BAD_ARG;
+	case DL_OP_PA_KEYUP: {
+		// dead u16, knee u16, slope_us u16, boost u8, hold u8 (%), boost_us u16, pa_us u16, drive_us u16: the DMR
+		// PA key-up constants (radio/pa_keyup.h), RAM only, from the next key-up; no argument = the board's again
+		if (len != 0 && len != 14) {
+			return DL_ST_BAD_ARG;
+		}
+#if !CONFIG_DMR
+		return DL_ST_UNAVAILABLE;
+#else
+		if (pa_keyup_cfg() == NULL) {
+			return DL_ST_UNAVAILABLE;
+		}
+		if (len == 0) {
+			return pa_keyup_set(NULL) ? DL_ST_OK : DL_ST_BAD_ARG;
+		}
+		pa_keyup_cfg_t c = {
+			.dead = (uint16_t)(a[0] | (a[1] << 8)), .knee = (uint16_t)(a[2] | (a[3] << 8)),
+			.slope_us = (uint16_t)(a[4] | (a[5] << 8)), .boost_pct = a[6], .hold_pct = a[7],
+			.boost_us = (uint16_t)(a[8] | (a[9] << 8)), .pa_us = (uint16_t)(a[10] | (a[11] << 8)),
+			.drive_us = (uint16_t)(a[12] | (a[13] << 8)),
+		};
+		return pa_keyup_set(&c) ? DL_ST_OK : DL_ST_BAD_ARG;
+#endif
+	}
 	case DL_OP_DTMF:
 		// digit u8 (ASCII), down u8: as a DTMF key's edge, so the same rules and timing apply. Refused unless a key
 		// would send now (dtmf_ready); an up is always taken

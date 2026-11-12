@@ -44,6 +44,10 @@ spec = "docs/spec/radio-features.md"
 switch = "FM_TX_TONES"
 spec = "docs/spec/radio-features.md"
 
+[feature.tone_burst_key]
+spec = "docs/spec/radio-features.md"
+source = ["core/input", "core/ui/ui_menus.c", "core/ui/ui_svc_storage.c", "core/radio", "core/debuglink"]
+
 [feature.dtmf]
 switch = "DTMF"
 spec = "docs/spec/radio-features.md"
@@ -65,6 +69,11 @@ spec = "docs/spec/airband-and-broadcast.md"
 switch = "BCAST_FM"
 hardware = "a broadcast FM receiver"
 spec = "docs/spec/airband-and-broadcast.md"
+
+[feature.rx_ext]
+switch = "RX_EXT"
+hardware = "a receiver chip whose documents give a range past the rated bands"
+spec = "docs/spec/radio-features.md"
 
 [feature.dmr_voice]
 switch = "DMR"
@@ -123,6 +132,13 @@ spec = "docs/spec/ui.md"
 switch = "CONTACT_EDIT"
 spec = "docs/spec/ui.md"
 
+[feature.volume_bar]
+switch = "VOLUME_BAR"
+spec = "docs/spec/radio-features.md"
+
+[feature.volume_lock]
+spec = "docs/spec/radio-features.md"
+
 [feature.key_assign]
 switch = "KEY_ASSIGN"
 spec = "docs/spec/ui.md"
@@ -147,8 +163,13 @@ spec = "docs/spec/radio-features.md"
 [feature.gps]
 switch = "GPS"
 hardware = "a GPS receiver"
-spec = "docs/spec/aprs.md"
+spec = "docs/spec/position.md"
 source = ["drivers/gps", "platform/stm32f4/gps_uart", "platform/hrc7000/gps_hrc.c"]
+
+# The position service: built for GPS, APRS, DMR_LRRP or DMR_GPS, so it has no switch of its own
+[feature.position]
+spec = "docs/spec/position.md"
+source = ["core/position", "core/debuglink/debuglink_position.c", "core/ui/ui_position.c"]
 
 # ── DMR data ──
 
@@ -197,6 +218,14 @@ spec = "docs/spec/sfr.md"
 switch = "APRS"
 spec = "docs/spec/aprs.md"
 
+[feature.aprs_afsk]
+switch = "APRS_AFSK"
+spec = "docs/spec/aprs.md"
+
+[feature.aprs_dmr]
+switch = "APRS_DMR"
+spec = "docs/spec/aprs.md"
+
 [feature.aprs_rx]
 switch = "APRS_RX"
 hardware = "FM receive audio sampled by the processor (the AFSK input path)"
@@ -209,8 +238,8 @@ spec = "docs/spec/aprs.md"
 [feature.gps_sky]
 switch = "GPS_SKY"
 hardware = "a GPS receiver"
-spec = "docs/spec/aprs.md"
-source = ["core/aprs/nmea_sky.c", "core/ui/ui_gps.c"]
+spec = "docs/spec/position.md"
+source = ["core/position/nmea_sky.c", "core/ui/ui_gps.c"]
 
 # ── Host link and USB ──
 

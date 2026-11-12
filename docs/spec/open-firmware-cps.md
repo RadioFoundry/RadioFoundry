@@ -355,7 +355,7 @@ range without letting them corrupt the live settings. It can ignore the range, o
 | 0x7518 | 1 | Boot screen type: 0x01 text, 0x00 picture. This byte is also the start of the 7 byte boot PIN block read from 0x7518 |
 | 0x7519 | 1 | Bit 0: boot password (PIN) enabled |
 | 0x751C | 3 | Boot PIN as BCD digits, high nibble first. A nibble of 0xF ends the PIN. Up to 6 digits |
-| 0x7524 | 10 x 2 | Quick-key slots (LE). The CPS's function ids there aren't documented here. RadioFoundry uses the slots for its key assignment: slot 0 the marker 0x4B02, slots 1-9 one per assignable key, the press's `keyfn_t` in the low byte and the long press's in the high byte (`core/input/keyassign.h`, `ui.md` 3.1). Layout 1 (marker 0x4B01, a slot each for the press and long press of three keys) is read and rewritten as layout 2 on the first change |
+| 0x7524 | 10 x 2 | Quick-key slots (LE). The CPS's function ids there aren't documented here. RadioFoundry uses the slots for its key assignment: slot 0 the marker 0x4B02, slots 1-9 one per assignable key, the press's `keyfn_t` (including 17, Tone burst, press only) in the low byte and the long press's in the high byte (`core/input/keyassign.h`, `ui.md` 3.1). Layout 1 (marker 0x4B01, a slot each for the press and long press of three keys) is read and rewritten as layout 2 on the first change |
 | 0x7540 | 16 | Boot text line 1 |
 | 0x7550 | 16 | Boot text line 2 |
 | 0x7590 | 0x38 | VFO A, channel record format (7.3.3) |
@@ -433,7 +433,7 @@ assuming 500 ms steps (`codeplug.c` `GEN_HANG_UNIT_MS`, `dmr-voice.md` 7); that 
 | 0x2C | 1 | Color code 0-15 |
 | 0x2D | 1 | APRS configuration index, 1-based, 0 = none |
 | 0x2E | 2 | TX contact index, LE, 1-based, 0 = none |
-| 0x30 | 1 | flag1: bits 0-1 talker alias TX on TS1, bits 2-3 on TS2 (0 off, 1 APRS, 2 text, 3 both) |
+| 0x30 | 1 | flag1: bits 0-1 talker alias TX on TS1, bits 2-3 on TS2 (0 off, 1 APRS, 2 text, 3 both). RadioFoundry reads APRS as "our position in this channel's calls" (GPS Info, `dmr-voice.md` 3.1), in builds without APRS too |
 | 0x31 | 1 | flag2: bit 6 = timeslot 2 (clear = TS1) |
 | 0x32 | 1 | flag3: bits 6-7 = 0b11 STE, bit 5 non-STE.  |
 | 0x33 | 1 | flag4: bit 7 power (vendor; superseded by 0x19), bit 6 VOX, bit 5 zone scan skip, bit 4 all-channel scan skip, bit 3 talkaround (unused), bit 2 RX only, bit 1 bandwidth 25 kHz (clear = 12.5 kHz), bit 0 squelch (vendor) |

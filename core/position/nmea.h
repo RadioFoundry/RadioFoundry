@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // NMEA 0183 position sentences (RMC, GGA, any talker: GP, GN, GL, GA, BD) for the position sources (docs/spec/aprs.md
-// 6): a board GPS, or a phone / PC feeding its GPS over the USB link. The checksum is required.
-#ifndef RFOUNDRY_APRS_NMEA_H
-#define RFOUNDRY_APRS_NMEA_H
+// 6): a board GPS, or a phone / PC feeding its GPS over the USB link. The checksum is required (not in
+// nmea_parse_unchecked, for DMR APRS).
+#ifndef RFOUNDRY_POSITION_NMEA_H
+#define RFOUNDRY_POSITION_NMEA_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -29,6 +30,9 @@ typedef struct {
 // One sentence ("$GPRMC,...*hh", trailing CR / LF allowed). False for a bad checksum, another sentence or a malformed
 // field
 bool nmea_parse(const char *s, size_t n, nmea_fix_t *out);
+// The same for a sentence a link's own CRC already checked (DMR APRS on UDP 10110, docs/spec/aprs.md 8.2): the
+// checksum may be left out, NULs in it are skipped, it ends at the first CR / LF
+bool nmea_parse_unchecked(const uint8_t *s, size_t n, nmea_fix_t *out);
 
 // Check a sentence's checksum and split it at the commas: f[0] is the address ("GPGSV"), each field's length in fl.
 // Returns the field count (at most max), 0 for a bad sentence
