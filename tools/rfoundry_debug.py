@@ -96,6 +96,10 @@ RX2_TOKEN = 0x47445242              # 'BRDG'
 RX2_FLAGS = {1: "present", 2: "up", 4: "bridge", 8: "restart"}
 IDDB = 0x1F                         # the DMR ID database: format, records, an ID looked up (docs/spec/debuglink.md 3.23)
 CHIP_REG = 0x20                     # an RF chip or SoC register read or written (docs/spec/debuglink.md 3.24)
+T3 = 0x22                           # a Tier III trunked system: stage, select, leave (docs/spec/debuglink.md 3.26)
+T3_RESET, T3_SYSTEM, T3_CTRL, T3_CHAN, T3_TG, T3_SITE, T3_PLAN, T3_START, T3_STOP, T3_DEREG, T3_END = range(1, 12)
+T3_TG_LISTEN, T3_TG_TALK = 1, 2
+T3_PAR = {"a": 1, "b": 2}
 CHIP_SOC = 0xFF                     # CHIP_REG's chip number for the SoC's own registers
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
 SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
@@ -155,7 +159,7 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-                 "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio"]
+                 "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio", "t3"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -613,6 +617,40 @@ class DebugLink:
     def iddb(self, dmr_id=0):
         """The DMR ID database as the radio sees it, and the text it shows for dmr_id: {format, records, found, text}"""
         return decode_iddb(self.request(IDDB, struct.pack("<I", dmr_id))[1])
+
+    # A Tier III trunked system (docs/spec/debuglink.md 3.26): stage it with t3_reset, t3_system, t3_ctrl, t3_chan,
+    # t3_tg (t3_site, t3_plan), then t3_start. State: the t3 view section
+    def t3_op(self, op, args=b""):
+        self.request(T3, bytes([op]) + bytes(args))
+
+    def t3_reset(self):
+        self.t3_op(T3_RESET)
+
+    def t3_system(self, own_id=0, model=0, net=0, par="a", opts=1, cc=1, talk_id=0, talk_private=False):
+        """own_id 0: the radio's; model 0 tiny .. 3 huge; par a|b|1|2; opts bit 0 private calls (T3_OPT_*)"""
+        cat = T3_PAR[par] if isinstance(par, str) else par
+        self.t3_op(T3_SYSTEM, struct.pack("<IBHBHBIB", own_id, model, net, cat, opts, cc, talk_id, int(talk_private)))
+
+    def t3_ctrl(self, lcn, rx_hz, tx_hz, cc=0xFF):
+        """A control channel candidate (also a channel of the plan); rx/tx as the radio sees them; cc 0xFF: the
+        system's"""
+        self.t3_op(T3_CTRL, struct.pack("<HIIB", lcn, rx_hz, tx_hz, cc))
+
+    def t3_chan(self, lcn, rx_hz, tx_hz, cc=0xFF):
+        self.t3_op(T3_CHAN, struct.pack("<HIIB", lcn, rx_hz, tx_hz, cc))
+
+    def t3_tg(self, tg, listen=True, talk=False):
+        self.t3_op(T3_TG, struct.pack("<IB", tg, (T3_TG_LISTEN if listen else 0) | (T3_TG_TALK if talk else 0)))
+
+    def t3_site(self, site):
+        self.t3_op(T3_SITE, struct.pack("<H", site))
+
+    def t3_plan(self, base_hz, first=1, sep=0, tx_low=False, split_hz=0):
+        self.t3_op(T3_PLAN, struct.pack("<IHBBI", base_hz, first, sep, int(tx_low), split_hz))
+
+    def t3(self, cmd):
+        """start | stop | dereg | end"""
+        self.t3_op({"start": T3_START, "stop": T3_STOP, "dereg": T3_DEREG, "end": T3_END}[cmd])
 
     def chip_reg(self, chip, reg, value=None, page=0):
         """An RF chip register (the board's chip and page numbering): writes value when given, returns the read-back"""
@@ -2229,6 +2267,21 @@ def main(argv=None):
     p = sub.add_parser("hwopt", help="hardware options: list, or set OPTION CHOICE (docs/spec/debuglink.md 3.25)")
     p.add_argument("option", nargs="?", help="number or name, e.g. 'Board revision'")
     p.add_argument("choice", nargs="?", help="one of the option's choices, e.g. V4A/V5")
+    p = sub.add_parser("t3", help="a Tier III trunked system (docs/spec/debuglink.md 3.26): show (the t3 view), "
+                       "start, stop, dereg, end, or setup: reset then stage one from the options and start it")
+    p.add_argument("op", nargs="?", default="show", choices=["show", "setup", "start", "stop", "dereg", "end"])
+    p.add_argument("--own-id", type=int, default=0)
+    p.add_argument("--model", type=int, default=0)
+    p.add_argument("--net", type=int, default=0)
+    p.add_argument("--par", default="a")
+    p.add_argument("--cc", type=int, default=1)
+    p.add_argument("--opts", type=lambda x: int(x, 0), default=1)
+    p.add_argument("--ctrl", action="append", default=[], metavar="LCN:RX_MHZ:TX_MHZ[:CC]")
+    p.add_argument("--chan", action="append", default=[], metavar="LCN:RX_MHZ:TX_MHZ[:CC]")
+    p.add_argument("--tg", action="append", default=[], type=int, help="listen; the first also talks")
+    p.add_argument("--talk", type=int, default=0)
+    p.add_argument("--private", action="store_true")
+    p.add_argument("--no-start", action="store_true")
     p = sub.add_parser("iddb", help="the DMR ID database: its format and records, and the text for each ID given "
                        "(docs/spec/debuglink.md 3.23)")
     p.add_argument("ids", nargs="*", type=int)
@@ -2310,6 +2363,26 @@ def main(argv=None):
                 else:
                     flags = link.rx2_info()
                     print("rx2: " + (", ".join(n for n in RX2_FLAGS.values() if n in flags) or "none"))
+            elif a.cmd == "t3":
+                def chan(text):
+                    f = text.split(":")
+                    return (int(f[0]), round(float(f[1]) * 1e6), round(float(f[2]) * 1e6),
+                            int(f[3]) if len(f) > 3 else 0xFF)
+                if a.op == "setup":
+                    link.t3_reset()
+                    link.t3_system(a.own_id, a.model, a.net, a.par, a.opts, a.cc, a.talk, a.private)
+                    for c in a.ctrl:
+                        link.t3_ctrl(*chan(c))
+                    for c in a.chan:
+                        link.t3_chan(*chan(c))
+                    for i, tg in enumerate(a.tg):
+                        link.t3_tg(tg, True, i == 0)
+                    if not a.no_start:
+                        link.t3("start")
+                elif a.op != "show":
+                    link.t3(a.op)
+                for k, v in link.view(sections=["t3"]).items():
+                    print(f"{k}={v}")
             elif a.cmd == "iddb":
                 d = link.iddb()
                 print(f"format={d['format'] or 'none'} records={d['records']}")

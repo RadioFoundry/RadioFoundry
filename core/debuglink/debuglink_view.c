@@ -541,7 +541,7 @@ static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dm
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
 						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc",
-						  "net_link", "cps", "board", "audio" };
+						  "net_link", "cps", "board", "audio", "t3" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -651,6 +651,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_AUDIO:
 		debuglink_view_audio(t);
+		break;
+	case DL_VIEW_T3:
+		debuglink_view_t3(v, t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP

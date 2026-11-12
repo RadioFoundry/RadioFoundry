@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The RadioFoundry Authors
+// A DMR Tier III trunked system on the radio (docs/spec/dmr-trunking.md 11). The system is set up in RAM (the debug
+// link stages it: radio_t3_staged) until the codeplug has keys for it; RT3_START hands it to the radio core, which runs
+// the engine (dmr/trunk/t3_ms.h) on the channel the radio is on.
+#ifndef RFOUNDRY_RADIO_TRUNK_H
+#define RFOUNDRY_RADIO_TRUNK_H
+
+#include <stdbool.h>
+#include <stdint.h>
+#include "config.h"
+
+typedef enum {
+	RT3_START = 1,		// select the staged system: hunt for its TSCC
+	RT3_STOP,		// leave it: back to the channel or VFO
+	RT3_DEREG,		// de-register (when registered), staying on the system
+	RT3_END,		// end the call being followed (P_MAINT when it is ours or private)
+} radio_t3_cmd_t;
+
+#if CONFIG_DMR_TRUNK
+#include "dmr/trunk/t3_ms.h"
+
+#define RADIO_T3_CHANS	8	// programmed channels (the plan's table; control channels are among them)
+
+typedef struct {
+	t3_cfg_t cfg;		// cfg.auth.sites and cfg.plan.table point into this struct once taken (radio_t3_fix)
+	t3_chan_t chans[RADIO_T3_CHANS];
+	uint8_t nchans;
+	uint8_t cc;		// the system's color code, for channels programmed with T3_CC_ANY
+	uint32_t talk_id;	// PTT on the TSCC asks for a call to this (0: the first talkgroup with T3_TG_TALK)
+	bool talk_private;
+} radio_t3_setup_t;
+
+// The setup the debug link writes to (host link task); RT3_START copies it into the radio core
+radio_t3_setup_t *radio_t3_staged(void);
+void radio_t3_reset(radio_t3_setup_t *s);
+// Point cfg's internal pointers into s (after a copy)
+void radio_t3_fix(radio_t3_setup_t *s);
+#endif
+
+#endif

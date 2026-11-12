@@ -35,6 +35,22 @@ enum {
 	DL_CMD_IDDB		= 0x1F,	// the DMR ID database: its format, records and an ID looked up (debuglink_iddb.c, 3.23)
 	DL_CMD_CHIP_REG		= 0x20,	// an RF chip or SoC register read or written (debuglink_chipreg.c, 3.24)
 	DL_CMD_HWOPT		= 0x21,	// the board's hardware options: list, set (debuglink_hwopt.c, 3.25)
+	DL_CMD_T3		= 0x22,	// a Tier III trunked system: stage, select, leave (debuglink_t3.c, 3.26)
+};
+
+// DL_CMD_T3 operations (first payload byte; docs/spec/debuglink.md 3.26). Little endian
+enum {
+	DL_T3_RESET = 1,	// the staged system back to empty
+	DL_T3_SYSTEM = 2,	// own ID u32, model u8, net u16, category u8, opts u16, cc u8, talk ID u32, talk private u8
+	DL_T3_CTRL = 3,		// a control channel: lcn u16, rx Hz u32, tx Hz u32, cc u8 (0xFF: the TSCC's)
+	DL_T3_CHAN = 4,		// a channel of the plan, as DL_T3_CTRL
+	DL_T3_TG = 5,		// a talkgroup: id u32, flags u8 (1 listen, 2 talk)
+	DL_T3_SITE = 6,		// a SITE allowed: u16
+	DL_T3_PLAN = 7,		// the fixed plan: base Hz u32, first u16, separation code u8, MS TX low u8, split Hz u32
+	DL_T3_START = 8,	// select the staged system
+	DL_T3_STOP = 9,		// leave it
+	DL_T3_DEREG = 10,	// de-register
+	DL_T3_END = 11,		// end the call being followed
 };
 
 // DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.25)

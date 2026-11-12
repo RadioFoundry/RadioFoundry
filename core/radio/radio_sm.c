@@ -89,6 +89,12 @@ static void cw_cancel(radio_sm_t *sm);
 
 static const uint32_t vfo_start_hz[] = { 146520000, 145500000, 446000000, 433500000 };
 
+#if CONFIG_DMR_TRUNK
+// The engine and the system it runs, in plain RAM (radio_sm_t sits in the CPU-only RAM, which is full on some radios)
+static t3_ms_t t3m;
+static radio_t3_setup_t t3s;	// the system, copied from the staged one at RT3_START
+#endif
+
 // The VFO's step in use: auto follows the width (the air band's channels are 25 kHz apart); in the broadcast band
 // it is the broadcast step setting's
 static void step_update(radio_sm_t *sm)
@@ -617,8 +623,15 @@ static void set_zone(radio_sm_t *sm, uint16_t index, const zone_t *z)
 }
 
 // A channel change: the channel's own settings, temporary changes dropped (P7)
+#if CONFIG_DMR_TRUNK
+static void t3_leave(radio_sm_t *sm);
+#endif
+
 static void set_channel(radio_sm_t *sm, uint16_t pos, const channel_t *ch)
 {
+#if CONFIG_DMR_TRUNK
+	t3_leave(sm);		// another channel: the trunked system goes
+#endif
 	sm->view.ch = *ch;
 	sm->view.ch.name[CODEPLUG_NAME_LEN] = '\0';
 #if !CONFIG_SUBTONE
@@ -1188,6 +1201,20 @@ static void dmr_configure(radio_sm_t *sm)
 		cfg.permit_hold_ms = PERMIT_HOLD_MIN_MS;
 		cfg.permit_busy = permit_busy;
 	}
+#if CONFIG_DMR_TRUNK
+	// A trunked system: both slots on the control channel; on a payload channel the engine chose the call, so it
+	// plays whatever its talkgroup, and PTT talks to it
+	if (sm->t3_on) {
+		cfg.both_slots = sm->t3_both;
+		if (t3m.state == T3_FOLLOW) {
+			const t3_call_t *c = &t3m.call;
+			cfg.listen.hear_all = true;
+			cfg.talk_target.private_call = !c->group;
+			cfg.talk_target.id = c->group || c->src == cfg.own_id ? c->dst : c->src;
+		}
+		cfg.reply_window_s = cfg.reply_window_private_s = 0;
+	}
+#endif
 	dmr_call_configure(&cfg);
 	sm->view.dmr.own_id = cfg.own_id;
 	sm->view.dmr.hear_all = cfg.listen.hear_all;
@@ -2236,6 +2263,353 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR_IP_GATEWAY
 	ipGatewaySetOffNetId(data_saved.ipGatewayId);	// the setting in force (data_save_settings above follows it)
 #endif
+}
+#endif
+
+#if CONFIG_DMR_TRUNK
+// --- A Tier III trunked system (docs/spec/dmr-trunking.md 11). The engine (dmr/trunk/t3_ms.c) decides; this side tunes
+// where it says, hands it the control bursts the stack hears (the RX tap) and one tick per slot, sends its CSBKs through
+// the stack's data path, and turns PTT on the control channel into a call request ---
+
+static bool t3_send_next(dmr_tx_burst_t *out, void *ctx)
+{
+	radio_sm_t *sm = ctx;
+	if (sm->t3_send_left == 0) {
+		return false;
+	}
+	sm->t3_send_left--;
+	memset(out, 0, sizeof(*out));
+	out->kind = DMR_BURST_CSBK;
+	out->host_crc = true;
+	out->sync_override = DMR_SYNC_NONE;
+	out->len = T3_CSBK_BYTES;
+	memcpy(out->payload, sm->t3_send_burst, T3_CSBK_BYTES);
+	return true;
+}
+
+static void t3_send_done(uint8_t err, void *ctx)
+{
+	radio_sm_t *sm = ctx;
+	if (err != DMR_TX_OK) {
+		sm->view.t3.send_fail++;
+	}
+}
+
+// The color code a channel uses: its own, else the control channel's, else the system's
+static uint8_t t3_chan_cc(const radio_sm_t *sm, const t3_chan_t *c)
+{
+	if (c->cc != T3_CC_ANY) {
+		return c->cc & 0x0Fu;
+	}
+	if (t3m.confirmed && t3m.tscc.cc != T3_CC_ANY) {
+		return t3m.tscc.cc & 0x0Fu;
+	}
+	return t3s.cc & 0x0Fu;
+}
+
+static void t3_tune(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
+{
+	channel_t *ch = &sm->view.ch;
+	bool rf = ch->rx_hz != a->chan.rx_hz || sm->board_mode != RADIO_MODE_DMR || !sm->dmr_running;
+	ch->rx_hz = a->chan.rx_hz;
+	ch->tx_hz = a->chan.tx_hz;
+	ch->mode = RADIO_MODE_DMR;
+	ch->dmo = false;
+	ch->color_code = t3_chan_cc(sm, &a->chan);
+	ch->timeslot = a->slot == 2 ? 2 : 1;	// a control channel: its first slot carries the TSCC (dedicated)
+	sm->t3_cc = ch->color_code;
+	sm->t3_both = a->slot == 0;
+	sm->temp_ts = 0;
+	if (rf) {
+		tune(sm, now_ms);
+	} else {
+		dmr_reconfigure(sm);
+	}
+}
+
+static void t3_send(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
+{
+	if (sm->view.ch.timeslot != (a->slot == 2 ? 2 : 1) || sm->ptt || sm->view.state == RS_TX) {
+		sm->view.t3.send_fail++;	// not on the slot asked for, or talking: the engine retries what needs it
+		return;
+	}
+	if (!sm->dmr_keyed) {
+		static const subtone_t none = { TONE_NONE, 0 };
+		if (!key_tx(sm->view.ch.tx_hz, (radio_bw_t)sm->view.ch.bw, sm->view.power, &none)) {
+			sm->view.t3.send_fail++;
+			return;
+		}
+		sm->dmr_keyed = true;
+	}
+	memcpy(sm->t3_send_burst, a->burst, T3_CSBK_BYTES);
+	sm->t3_send_left = 1;
+	dmr_data_source_t src = { .next = t3_send_next, .done = t3_send_done, .ctx = sm, .count = 1, .tag = "t3" };
+	if (!dmr_call_data_tx(&src)) {
+		sm->t3_send_left = 0;
+		sm->view.t3.send_fail++;	// the keying is released by dmr_follow
+		return;
+	}
+	sm->view.t3.last_tx_op = a->burst[0] & 0x3Fu;
+	sm->view.t3.last_tx_ms = now_ms != 0 ? now_ms : 1;
+	(void)now_ms;
+}
+
+// The RX tap: control bursts to the engine, activity on the followed slot. Voice and the rest go on to the stack
+static bool t3_tap(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
+{
+	radio_sm_t *sm = ctx;
+	if (!sm->t3_on) {
+		return false;
+	}
+	uint8_t slot = (b->ts == 1 || b->ts == 2) ? (uint8_t)b->ts : 0;
+	if (b->kind != DMR_BURST_IDLE && slot != 0) {
+		t3_ms_activity(&t3m, now_ms, slot);
+	}
+	if (b->kind != DMR_BURST_CSBK && b->kind != DMR_BURST_MBC_HEADER && b->kind != DMR_BURST_MBC_CONT) {
+		return false;
+	}
+	if (slot == 0) {
+		slot = sm->view.ch.timeslot;	// not known: the slot we listen to
+	}
+	if (b->len >= T3_CSBK_BYTES) {
+		t3_ms_rx(&t3m, now_ms, slot, b->kind, b->cc, b->payload);
+		sm->view.t3.last_rx_op = b->payload[0] & 0x3Fu;
+		sm->view.t3.last_rx_slot = slot;
+		sm->view.t3.last_rx_ms = now_ms != 0 ? now_ms : 1;
+	}
+	return true;
+}
+
+static uint32_t t3_talk_id(const radio_sm_t *sm, bool *group)
+{
+	const radio_t3_setup_t *s = &t3s;
+	*group = !s->talk_private;
+	if (s->talk_id != 0) {
+		return s->talk_id;
+	}
+	*group = true;
+	for (uint8_t i = 0; i < s->cfg.ntg; i++) {
+		if (s->cfg.tg[i].flags & T3_TG_TALK) {
+			return s->cfg.tg[i].id;
+		}
+	}
+	return s->cfg.ntg != 0 ? s->cfg.tg[0].id : 0;
+}
+
+static void t3_publish(radio_sm_t *sm)
+{
+	radio_t3_view_t *v = &sm->view.t3;
+	const t3_ms_t *m = &t3m;
+	v->on = sm->t3_on;
+	v->state = (uint8_t)m->state;
+	v->reg = (uint8_t)m->reg;
+	v->confirmed = m->confirmed;
+	v->syscode = m->syscode;
+	v->tscc_lcn = m->tscc.lcn;
+	v->rx_hz = sm->view.ch.rx_hz;
+	v->tx_hz = sm->view.ch.tx_hz;
+	v->slot = sm->t3_both ? 0 : sm->view.ch.timeslot;
+	v->cc = sm->t3_cc;
+	v->aloha_mask = m->aloha.mask;
+	v->aloha_sf = m->aloha.service_fn;
+	v->aloha_nrand = m->aloha.nrand_wait;
+	v->aloha_backoff = m->aloha.backoff;
+	v->aloha_reg = m->aloha.reg;
+	v->call_dst = m->call.dst;
+	v->call_src = m->call.src;
+	v->call_group = m->call.group;
+	v->call_ours = m->call.ours;
+	v->ax_svc = (uint8_t)m->ax.svc;
+	v->ax_result = (uint8_t)m->ax.result;
+	v->ax_reason = m->ax.reason;
+	v->ax_state = (uint8_t)m->ax.state;
+	v->ptt_wait = sm->t3_ptt_wait;
+	v->can_talk = t3_ms_can_talk(m);
+	v->ticks = sm->t3_ticks;
+	v->csbk = m->st.csbk;
+	v->crc_bad = m->st.crc_bad;
+	v->grants = m->st.grants;
+	v->followed = m->st.followed;
+	v->unmapped = m->st.unmapped;
+	v->last_unmapped = m->st.last_unmapped;
+	v->returns = m->st.returns;
+	v->hunts = m->st.hunts;
+	v->foreign = m->st.foreign;
+	v->learned = m->st.learned;
+	v->sent = m->st.sent;
+	v->ra_tries = m->st.ra_tries;
+	v->own_id = t3s.cfg.own_id;
+}
+
+static void t3_start(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (sm->t3_on) {
+		t3_ms_stop(&t3m);
+	}
+	t3s = *radio_t3_staged();
+	radio_t3_fix(&t3s);
+	if (t3s.cfg.own_id == 0) {
+		t3s.cfg.own_id = sm->own_id;
+	}
+	if (t3s.cfg.nctrl == 0 || t3s.cfg.own_id == 0) {
+		return;		// nothing to hunt on, or no ID
+	}
+	memset(&sm->view.t3, 0, sizeof(sm->view.t3));
+	sm->view.t3.last_tx_op = 0xFF;
+	sm->t3_on = true;
+	sm->t3_ptt_wait = false;
+	sm->t3_talking = false;
+	sm->t3_ticks = dmr_call_ticks(NULL);
+	sm->t3_slot = 0;
+	sm->t3_cc = t3s.cc;
+	dmr_call_set_rx_tap(t3_tap, sm);
+	t3_ms_start(&t3m, &t3s.cfg, now_ms);
+	t3_publish(sm);
+	changed(sm);
+}
+
+static void t3_leave(radio_sm_t *sm)
+{
+	if (!sm->t3_on) {
+		return;
+	}
+	t3_ms_stop(&t3m);
+	sm->t3_on = false;
+	sm->t3_both = false;
+	sm->t3_ptt_wait = false;
+	dmr_call_set_rx_tap(NULL, NULL);
+	t3_publish(sm);
+}
+
+static void t3_stop(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->t3_on) {
+		return;
+	}
+	t3_leave(sm);
+	// Back to the channel or the VFO the user had
+	channel_t ch;
+	if (sm->view.vfo) {
+		sm->view.ch = sm->vfo_ch;
+	} else if (sm->have_channels && codeplug_channel(sm->view.channel_number, &ch)) {
+		sm->view.ch = ch;
+	}
+	tune(sm, now_ms);
+}
+
+static void t3_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
+{
+	switch (cmd) {
+	case RT3_START:
+		t3_start(sm, now_ms);
+		break;
+	case RT3_STOP:
+		t3_stop(sm, now_ms);
+		break;
+#if CONFIG_DMR_TRUNK_TX
+	case RT3_DEREG:
+		if (sm->t3_on) {
+			(void)t3_ms_deregister(&t3m, now_ms);
+		}
+		break;
+	case RT3_END:
+		if (sm->t3_on) {
+			t3_ms_end_call(&t3m, now_ms);
+		}
+		break;
+#endif
+	default:
+		break;
+	}
+}
+
+// PTT on a trunked system. True: handled here (a request on the control channel; PTT stays held while it runs)
+static bool t3_ptt_down(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->t3_on) {
+		return false;
+	}
+	if (t3_ms_can_talk(&t3m)) {
+		sm->t3_talking = true;
+		return false;	// on the payload channel: the stack sends the voice
+	}
+#if CONFIG_DMR_TRUNK_TX
+	bool group;
+	uint32_t dst = t3_talk_id(sm, &group);
+	if (t3m.state == T3_CAMPED && dst != 0 && t3_ms_request(&t3m, now_ms, dst, group, false)) {
+		sm->t3_ptt_wait = true;
+		sm->ptt = true;
+		changed(sm);
+		return true;
+	}
+#endif
+	deny(sm, TXDENY_NO_DMR);
+	return true;
+}
+
+static void t3_ptt_up(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->t3_on) {
+		return;
+	}
+#if CONFIG_DMR_TRUNK_TX
+	if (sm->t3_ptt_wait) {
+		sm->t3_ptt_wait = false;
+		if (t3m.ax.state != T3_AX_IDLE) {
+			t3_ms_cancel(&t3m, now_ms);
+		}
+	}
+#endif
+	sm->t3_talking = false;
+	(void)now_ms;
+}
+
+// Each radio tick while a system is selected: the slots since the last tick, then the engine's actions
+static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->t3_on) {
+		return;
+	}
+	int8_t ts;
+	uint32_t tc = dmr_call_ticks(&ts);
+	uint32_t n = tc - sm->t3_ticks;
+	if (n > 8u) {
+		n = 8u;		// a stall: the engine only needs the frames to count, not every one
+	}
+	for (uint32_t i = 0; i < n; i++) {
+		// The tick's slot when the modem knows it (only the last one of a batch), else alternating
+		uint8_t slot = (i + 1u == n && (ts == 1 || ts == 2)) ? (uint8_t)ts : (sm->t3_slot == 1 ? 2u : 1u);
+		sm->t3_slot = slot;
+		// The CACH's AT bit isn't reported by the modem yet: every inbound slot counts as free (docs 11.3)
+		t3_ms_slot(&t3m, now_ms, slot, true, false);
+	}
+	sm->t3_ticks = tc;
+	sm->view.t3.ticks += n;
+
+	t3_act_t a;
+	while (t3_ms_poll(&t3m, now_ms, &a)) {
+		if (a.type == T3_ACT_TUNE) {
+			t3_tune(sm, &a, now_ms);
+		} else if (a.type == T3_ACT_SEND) {
+			t3_send(sm, &a, now_ms);
+		}
+	}
+#if CONFIG_DMR_TRUNK_TX
+	// Our grant came while PTT is held: talk now
+	if (sm->t3_ptt_wait) {
+		if (t3_ms_can_talk(&t3m) && t3m.state == T3_FOLLOW) {
+			sm->t3_ptt_wait = false;
+			sm->t3_talking = true;
+			sm->ptt = false;	// ptt_down runs again on the payload channel
+			ptt_down(sm, now_ms);
+		} else if (t3m.ax.state == T3_AX_IDLE && t3m.ax.result != T3_RES_PENDING &&
+			   t3m.ax.result != T3_RES_GRANTED) {
+			sm->t3_ptt_wait = false;	// refused, no answer, timed out
+			deny(sm, TXDENY_NO_DMR);
+		}
+	}
+#endif
+	t3_publish(sm);
 }
 #endif
 
@@ -3975,6 +4349,11 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 #if CONFIG_DMR
+#if CONFIG_DMR_TRUNK
+	if (t3_ptt_down(sm, now_ms)) {
+		return;
+	}
+#endif
 	if (sm->view.ch.mode == RADIO_MODE_DMR) {
 		dmr_ptt_down(sm, now_ms);
 		return;
@@ -4060,6 +4439,9 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 
 static void ptt_up(radio_sm_t *sm, uint32_t now_ms)
 {
+#if CONFIG_DMR_TRUNK
+	t3_ptt_up(sm, now_ms);
+#endif
 	ptt_release(sm, true, now_ms);
 }
 
@@ -5589,6 +5971,11 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		roam_request(sm, (uint8_t)req->arg, now_ms);
 		break;
 #endif
+#if CONFIG_DMR_TRUNK
+	case RREQ_T3:
+		t3_request(sm, (uint8_t)req->arg, now_ms);
+		break;
+#endif
 	case RREQ_POWER_OFF:
 		if (req->arg != 0) {
 			// Still running after all (auto power off with the knob on): back to normal, registration kept
@@ -6305,6 +6692,9 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 #endif
 #if CONFIG_DMR_EMERGENCY
 	emergency_tick(sm, now_ms);
+#endif
+#if CONFIG_DMR_TRUNK
+	t3_tick(sm, now_ms);
 #endif
 #endif
 	if (sm->led_timed || sm->deny_led) {

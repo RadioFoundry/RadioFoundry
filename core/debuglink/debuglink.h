@@ -49,6 +49,7 @@ enum {
 	DL_VIEW_CPS,		// the CPS shims' counters (were in DL_VIEW_STORAGE until view version 5)
 	DL_VIEW_BOARD,		// the board's own keys (board.view_line): pins, ADC, clock, flash, calibration
 	DL_VIEW_AUDIO,		// the beeps' speaker route: stream, lead-in, amplifier hang
+	DL_VIEW_T3,		// a Tier III trunked system: engine state, call, access, counters (debuglink_t3.c)
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		5	// bumped when a key changes meaning or goes away (new keys don't bump it)
@@ -154,6 +155,11 @@ void debuglink_rx2_service(void);
 // The DMR ID database (debuglink_iddb.c, docs/spec/debuglink.md 3.23): DL_CMD_IDDB, id u32 -> format, records, found,
 // text. Without CONFIG_DMR, unavailable
 size_t debuglink_cmd_iddb(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+
+// A Tier III trunked system (debuglink_t3.c, docs/spec/debuglink.md 3.26): DL_CMD_T3 and the t3 section ("t3.built=0"
+// without CONFIG_DMR_TRUNK)
+size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+void debuglink_view_t3(const radio_view_t *v, dl_text_t *t);
 
 // The radio transmits: a call, or the hotspot (the gate of REBOOT and CHIP_REG's SoC writes). The debug link task only
 bool debuglink_transmitting(void);

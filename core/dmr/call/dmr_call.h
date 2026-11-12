@@ -120,6 +120,9 @@ typedef struct {
 	// DMR_CALL_PERMIT_MAX_MS, then keys. Each hold counts in view.permit_seq: the tone's cue. 0 = keys at once
 	uint16_t permit_hold_ms;
 	bool (*permit_busy)(void);	// NULL = the minimum alone
+	// Receive both slots through a repeater (rmo): a trunked control channel (CONFIG_DMR_TRUNK). The stack still
+	// takes calls on ts only; the other slot reaches the RX tap (dmr_call_set_rx_tap)
+	bool both_slots;
 } dmr_call_config_t;
 
 // Caller info for the UI
@@ -314,5 +317,14 @@ typedef struct {
 bool dmr_call_data_tx(const dmr_data_source_t *src);
 // A list is being sent (or its repeater woken)
 bool dmr_call_data_busy(void);
+
+// The RX tap (a trunked system, CONFIG_DMR_TRUNK): every burst heard, either slot, after the color code filter and
+// before the slot filter, never while we transmit, from dmr_call_poll(). True takes the burst: the stack doesn't look at
+// it further (control channel CSBKs aren't calls or data for the data service). NULL = no tap
+typedef bool (*dmr_rx_tap_fn)(const dmr_burst_t *b, uint32_t now_ms, void *ctx);
+void dmr_call_set_rx_tap(dmr_rx_tap_fn fn, void *ctx);
+// Slot boundaries the modem has reported since the stack started (DMR_EV_SLOT_TICK), and the slot of the last one
+// (1, 2, 0 unknown). A trunked system paces its slot work by them
+uint32_t dmr_call_ticks(int8_t *ts);
 
 #endif

@@ -163,6 +163,8 @@ static struct {
 	dmr_tx_burst_t data_stage;
 	dmr_data_rx_fn data_rx;
 	void *data_rx_ctx;
+	dmr_rx_tap_fn rx_tap;
+	void *rx_tap_ctx;
 } s;
 #if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
 // SFR user, dual-path RX: voice bursts taken but not played yet, oldest first (play order; s.vq_n of them). A burst waits
@@ -962,6 +964,8 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		s.rpt_last_ms = now;
 		s.rpt_seen = true;
 	}
+	if (s.rx_tap && s.rx_tap(b, now, s.rx_tap_ctx))
+		return;
 	// The slot number is only known through a repeater (CACH) or from the TDMA direct mode sync
 	bool ts_known = b->ts != 0 && (s.cfg.rmo || b->sync == DMR_SYNC_BS || b->sync == DMR_SYNC_TS1 ||
 				       b->sync == DMR_SYNC_TS2);
@@ -1657,7 +1661,7 @@ static void modem_apply(void)
 	modem_config(&mc);
 	s.modem->configure(&mc);
 	s.modem->set_cc_filter(mc.cc);
-	s.modem->rx_lock_slot(s.cfg.rmo ? (int8_t)s.cfg.ts : 0);
+	s.modem->rx_lock_slot(s.cfg.rmo && !s.cfg.both_slots ? (int8_t)s.cfg.ts : 0);
 }
 
 void dmr_call_configure(const dmr_call_config_t *cfg)
@@ -1665,7 +1669,8 @@ void dmr_call_configure(const dmr_call_config_t *cfg)
 	bool rf_change = !s.configured || cfg->cc != s.cfg.cc || cfg->ts != s.cfg.ts || cfg->rmo != s.cfg.rmo ||
 			 cfg->listen.any_cc != s.cfg.listen.any_cc || cfg->access != s.cfg.access ||
 			 cfg->own_id != s.cfg.own_id || cfg->sfr_user != s.cfg.sfr_user || cfg->tx_sync != s.cfg.tx_sync ||
-			 cfg->rx_sync != s.cfg.rx_sync || cfg->sfr_rx != s.cfg.sfr_rx || cfg->cc2 != s.cfg.cc2;
+			 cfg->rx_sync != s.cfg.rx_sync || cfg->sfr_rx != s.cfg.sfr_rx || cfg->cc2 != s.cfg.cc2 ||
+			 cfg->both_slots != s.cfg.both_slots;
 	bool target_change = !same_target(cfg->talk_target, s.cfg.talk_target);
 
 	if (rf_change && s.configured) {
@@ -1716,7 +1721,7 @@ bool dmr_call_start(void)
 		return false;
 	s.running = true;
 	s.modem->set_cc_filter(mc.cc);
-	s.modem->rx_lock_slot(s.cfg.rmo ? (int8_t)s.cfg.ts : 0);
+	s.modem->rx_lock_slot(s.cfg.rmo && !s.cfg.both_slots ? (int8_t)s.cfg.ts : 0);
 	s.dirty = true;
 	return true;
 }
@@ -1953,4 +1958,17 @@ bool dmr_call_data_tx(const dmr_data_source_t *src)
 bool dmr_call_data_busy(void)
 {
 	return s.data_active;
+}
+
+void dmr_call_set_rx_tap(dmr_rx_tap_fn fn, void *ctx)
+{
+	s.rx_tap = fn;
+	s.rx_tap_ctx = ctx;
+}
+
+uint32_t dmr_call_ticks(int8_t *ts)
+{
+	if (ts)
+		*ts = tick_ts;
+	return __atomic_load_n(&tick_count, __ATOMIC_ACQUIRE);
 }

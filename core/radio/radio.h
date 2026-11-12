@@ -221,6 +221,35 @@ typedef struct {
 } radio_roam_view_t;
 #endif
 
+#if CONFIG_DMR_TRUNK
+// A DMR Tier III trunked system (docs/spec/dmr-trunking.md 11) for the screens and the debug link
+typedef struct {
+	bool on;		// a trunked system is selected
+	uint8_t state;		// t3_state_t
+	uint8_t reg;		// t3_reg_t
+	bool confirmed;
+	uint16_t syscode;	// C_SYScode of the confirmed TSCC
+	uint16_t tscc_lcn;
+	uint32_t rx_hz, tx_hz;	// where the radio is tuned
+	uint8_t slot;		// 0 both (the TSCC), 1 / 2 a payload slot
+	uint8_t cc;
+	uint8_t aloha_mask, aloha_sf, aloha_nrand, aloha_backoff, aloha_reg;
+	uint32_t call_dst, call_src;
+	bool call_group, call_ours;
+	uint8_t ax_svc, ax_result, ax_reason, ax_state;
+	bool ptt_wait;		// PTT held, waiting for the grant
+	bool can_talk;
+	uint8_t last_rx_op, last_rx_slot;	// the last CSBK heard: opcode, slot
+	uint8_t last_tx_op;	// the last CSBK sent (0xFF none)
+	uint32_t last_rx_ms, last_tx_ms;
+	uint32_t ticks;		// slot ticks handed to the engine
+	uint32_t csbk, crc_bad, grants, followed, unmapped, returns, hunts, foreign, learned, sent, ra_tries;
+	uint32_t send_fail;	// sends the stack refused (busy) and dropped
+	uint16_t last_unmapped;
+	uint32_t own_id;
+} radio_t3_view_t;
+#endif
+
 #define RADIO_LED_GREEN		0x01u	// radio_view_t.leds
 #define RADIO_LED_RED		0x02u
 
@@ -305,6 +334,9 @@ typedef struct {
 #endif
 #if CONFIG_DMR_ROAMING
 	radio_roam_view_t roam;
+#endif
+#if CONFIG_DMR_TRUNK
+	radio_t3_view_t t3;
 #endif
 } radio_view_t;
 
@@ -437,6 +469,8 @@ typedef enum {
 	RROAM_ZONE_OFF, RROAM_ZONE_ON, RROAM_ZONE_TOGGLE, RROAM_NOW, RROAM_LOCK, RROAM_UNLOCK, RROAM_LOCK_TOGGLE,
 } radio_roam_cmd_t;
 void radio_req_roam(uint8_t cmd);
+// A trunked system (CONFIG_DMR_TRUNK, radio/radio_trunk.h): arg = radio_t3_cmd_t
+void radio_req_t3(uint8_t cmd);
 // A beep (radio/beep.h beep_t) at the settings' level: key beeps only when key_beep is set (CONFIG_BEEP)
 void radio_req_beep(uint8_t beep);
 // The same delay_ms later (0 = now): a speaker test can start on a radio whose cable mutes the speaker, after the

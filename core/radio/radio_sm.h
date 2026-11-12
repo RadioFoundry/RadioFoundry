@@ -17,6 +17,7 @@
 #endif
 #if CONFIG_DMR_ROAMING
 #include "radio/roam.h"
+#include "radio/radio_trunk.h"
 #include "settings/settings.h"	// SETTINGS_ROAM_ZONE_BYTES
 #endif
 
@@ -163,6 +164,7 @@ typedef enum {
 	RREQ_WAKE,		// radio_task.c: tick now (a DMR transmission ended: dmr_call_set_wake); never radio_sm_request
 	RREQ_VOLUME_HOLD,	// arg: 1 hold the level and ignore the knob (keys locked), 0 follow it again
 	RREQ_VFO_SFR,		// the VFO's SFR role (CONFIG_SFR): arg = byte A, as a channel's (sfr.h); VFO only
+	RREQ_T3,		// a trunked system (CONFIG_DMR_TRUNK): arg = radio_t3_cmd_t
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -419,6 +421,20 @@ typedef struct {
 #if CONFIG_SFR_CWID
 	radio_cwid_t cwid;		// the SFR repeater's ID schedule (the counts are in view.dmr)
 #endif
+#endif
+#if CONFIG_DMR_TRUNK
+	// A Tier III trunked system (radio_trunk.h): the engine drives the channel the radio is on
+	bool t3_on;
+	bool t3_both;			// on a control channel: both slots
+	bool t3_ptt_wait;		// PTT held on the TSCC: waiting for our grant
+	bool t3_talking;		// PTT went to the stack for a trunked call
+	uint32_t t3_ticks;		// the stack's tick count handed to the engine
+	uint8_t t3_slot;		// the slot of the last tick handed to it
+	uint8_t t3_cc;			// the color code of the channel being listened to
+	t3_act_t t3_send;		// a CSBK waiting for the stack (it was busy)
+	bool t3_send_pending;
+	uint8_t t3_send_left;		// the probe-style source's bursts left
+	uint8_t t3_send_burst[T3_CSBK_BYTES];
 #endif
 #if CONFIG_DMR_ROAMING
 	roam_t roam;
