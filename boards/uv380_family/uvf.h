@@ -71,6 +71,8 @@ extern const hal_audio_tap_t uvf_audio_tap;
 bool uvf_fm_tx_inject(audio_tap_pull_t pull, audio_tap_mode_t mode);
 void uvf_pwm_audio(audio_tap_pull_t pull);	// PWM audio on PC8: start (pull) or stop (NULL)
 #endif
+// The debug link's CHIP_REG (board.chip_reg): chip 0 the AT1846S, chip 1 the HR_C6000 (hardware-dm1701.md 5.12)
+bool uvf_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 #if CONFIG_AUDIO_PROBE
 bool uvf_modem_reg(uint8_t page, uint8_t reg, uint8_t *val, bool write);
 bool uvf_modem_ram(uint8_t page, uint16_t addr, uint8_t *buf, uint16_t len, bool write);

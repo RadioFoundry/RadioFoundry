@@ -1086,6 +1086,27 @@ void uvf_radio_diag(uvf_radio_diag_t *d)
 	d->bus_errors = r.bus_errors;
 }
 
+// The debug link's CHIP_REG (board.chip_reg, hardware-dm1701.md 5.12): chip 0 is the AT1846S, page 0, registers
+// 0x00-0x7E (0x7F selects the page, which the driver owns); chip 1 is the HR_C6000, pages 1 and 4 (2 and 3 are the
+// data and vocoder FIFOs, which a read would drain). Straight on the bus, as the probe's access: a write goes into the
+// AT1846S driver's cache, so its own cached writes don't skip the register, but its next set-up overwrites it
+bool uvf_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
+{
+	if (chip == 0 && page == 0 && reg < 0x7Fu && (!write || *val <= 0xFFFFu)) {
+		uint16_t v = (uint16_t)*val;
+		bool ok = (!write || at1846s_write_force(&r.rf, 0, reg, v)) && at1846s_read(&r.rf, 0, reg, &v);
+		*val = v;
+		return ok;
+	}
+	if (chip == 1 && (page == HRC_PAGE_AUX || page == HRC_PAGE_SYS) && (!write || *val <= 0xFFu)) {
+		uint8_t v = (uint8_t)*val;
+		bool ok = (!write || hrc_write(&r.modem, page, reg, v)) && hrc_read(&r.modem, page, reg, &v);
+		*val = v;
+		return ok;
+	}
+	return false;
+}
+
 #if CONFIG_AUDIO_PROBE
 // The audio probe's register access (hal_audio_tap_t.modem_reg, audio_uvf.c): one HR_C6000 register, any task.
 // Each access is one masked transaction (modem_transfer), so it can't tear a driver's; it can of course change state

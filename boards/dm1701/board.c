@@ -149,6 +149,7 @@ const board_t board = {
 	.dmr = &stm32_hrc_dmr,
 	.audio = &uvf_audio,
 	.vocoder = &stm32_vocoder,
+	.chip_reg = uvf_chip_reg,
 #if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP || CONFIG_APRS_RX
 	.audio_tap = &uvf_audio_tap,
 #endif

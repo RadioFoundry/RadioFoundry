@@ -640,6 +640,28 @@ set. An earlier build wrote bits 6:4 and keyed a silent carrier (`gotchas.md` 3.
 RadioFoundry's `rx_sleep(true)` (receiver battery save, `radio-features.md` 5.4) puts the AT1846S in idle and switches the
 receive supply off. `rx_sleep(false)` retunes.
 
+### 5.12 Bench register access
+
+The debug link's CHIP_REG ([debuglink.md 3.24](debuglink.md#324-chip_reg)) reaches both RF chips (`uvf_chip_reg`,
+the DM-1701 and the MD-UV380):
+
+| Chip | Pages | Registers | Width |
+|---|---|---|---|
+| 0, the AT1846S | 0 | 0x00-0x7E (0x7F selects the page; the driver owns it) | 16 bits |
+| 1, the HR_C6000 | 1 and 4 (2 and 3 are the data and vocoder FIFOs, which a read would drain) | 0x00-0xFF | 8 bits |
+
+`rfoundry_debug.py reg 0 0x44` reads the AT1846S AF gain; `reg 1 0x4E --page 4` the HR_C6000's ADC I offset. A
+write goes straight to the chip; the driver's next set-up of that register overwrites it.
+
+What the bench showed:
+
+| Access | Result |
+|---|---|
+| Read 0x29 / 0x2A | not the frequency word written (5.6): write the word, don't read it back |
+| Write 0x30 while receiving (another bandwidth's bits) | the receiver stays deaf, even after the old value is written back, until the next tune |
+| Tune by hand: 0x30 = 0x6006, 0x29, 0x2A, 0x30 = 0x6026 | retunes at once, in 62.5 Hz steps; the DMR receiver follows |
+| HR_C6000 4:0x4E / 4:0x4F in DMR receive | fixed (0x01 / 0x04 here), with or without a signal, whatever the carrier offset |
+
 ---
 
 ## 6. RF path control (PA, LNA, band)
