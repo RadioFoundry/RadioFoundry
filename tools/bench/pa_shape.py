@@ -233,16 +233,18 @@ def bins_line(r):
 
 
 def _pick(run):
-    """Per band and level, the key the result stands on (pa_cal.py's tags, best first)."""
-    rank = {"after": 4, "verify": 3, "board": 2, "confirm": 1, "before": 0}
+    """Per band and level, the key the result stands on: the one pa_cal.py marked (`after`), else by its tag, best
+    first."""
+    rank = {"verify": 3, "board": 2, "confirm": 1, "before": 0, "check": 0}
     best = {}
     for k in run.get("keys", []):
-        if not k.get("trace") or k.get("tag") not in rank:
+        if not k.get("trace") or (k.get("tag") not in rank and not k.get("after")):
             continue
         key = (round(k["mhz"], 4), k["level"])
-        if key not in best or rank[k["tag"]] >= rank[best[key]["tag"]]:
-            best[key] = k
-    return best
+        r = 9 if k.get("after") else rank[k["tag"]]
+        if key not in best or r >= best[key][0]:
+            best[key] = (r, k)
+    return {key: k for key, (_, k) in best.items()}
 
 
 def main(argv):
