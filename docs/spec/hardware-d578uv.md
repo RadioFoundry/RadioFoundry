@@ -194,7 +194,7 @@ RadioFoundry's key names (`d578uv.h`): `KEY_UP`, `KEY_DOWN`, `KEY_MENU`, `KEY_EX
 `KEY_C15`, `KEY_C17`, `KEY_C18`, `KEY_C19`, `KEY_C1E` (named by key code) for the others, `KEY_PTT`, `KEY_MIC_UP`,
 `KEY_MIC_DOWN` and `KEY_MIC_0`-`KEY_MIC_9`, `KEY_MIC_STAR`, `KEY_MIC_HASH`, `KEY_MIC_AB`, `KEY_MIC_PA`-`KEY_MIC_PD`
 for the microphones. The microphone's Up and Down act as the front Up and Down, its digits enter digits, `*` and `#`
-act as down and up, A/B switches the side and held starts or stops dual watch, and A-D follow their printed labels: confirm (MENU), zone up, zone down and
+open Quick settings and the context menu, as on the keypad radios, A/B switches the side and held starts or stops dual watch, and A-D follow their printed labels: confirm (MENU), zone up, zone down and
 back (EXIT). PUSH (`KEY_C1E`) confirms, as the menu key does.
 
 ### 3.3 Power
