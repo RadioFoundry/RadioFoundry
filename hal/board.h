@@ -100,6 +100,9 @@ typedef struct {
 	// ("P1", "P2"; docs/spec/ui.md 1); NULL: "*" and "#"
 	const char *quick_label;
 	const char *context_label;
+	// Optional: the key whose hold sends QUICK (the key lock) when it isn't the quick_label key ("MENU"), for the hints'
+	// "hold *"; NULL: quick_label
+	const char *lock_label;
 	const hal_radio_t *radio;
 	const hal_power_t *power;
 	const hal_flash_t *flash;

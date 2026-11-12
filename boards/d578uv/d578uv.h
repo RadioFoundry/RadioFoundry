@@ -22,15 +22,15 @@ extern const hal_bcast_t d578uv_bcast;	// the KTMicro receiver's broadcast FM (r
 
 // Key map bits (input_d578uv.c), named for their use in the radio's menus (hardware-d578uv.md 3.2). Ladder 0 from the
 // lowest voltage up gives key codes 0x14, 0x15, 0x16, 0x0E, ladder 1 0x17, 0x18, 0x19, 0x0F; PA1 is 0x1E. In menus
-// 0x14 and 0x16 are up and down, 0x0E confirms and 0x0F exits. Which printed key each is isn't known, so the others
-// keep their code. PTT and the microphone's Up and Down come from the plain
+// The front keys by their printed names (hardware-d578uv.md 3.2): P1-P3 and MENU on one ladder, P4-P6 and EXIT on the
+// other, PUSH the knob's switch. PTT and the microphone's Up and Down come from the plain
 // hand microphone's lines (front_io.h) or the serial microphone's frames, which add its keypad (the KEY_MIC_ digits,
 // '*', '#', the A/B button above PTT and the A..D keys; drivers/input/anytone_mic). The microphone's MENU and EXIT are
 // its A and D
 enum {
-	KEY_UP, KEY_C15, KEY_DOWN, KEY_MENU,
-	KEY_C17, KEY_C18, KEY_C19, KEY_EXIT,
-	KEY_C1E,
+	KEY_P1, KEY_P2, KEY_P3, KEY_MENU,
+	KEY_P4, KEY_P5, KEY_P6, KEY_EXIT,
+	KEY_PUSH,
 	KEY_PTT, KEY_MIC_UP, KEY_MIC_DOWN,
 	KEY_MIC_0, KEY_MIC_1, KEY_MIC_2, KEY_MIC_3, KEY_MIC_4, KEY_MIC_5, KEY_MIC_6, KEY_MIC_7, KEY_MIC_8, KEY_MIC_9,
 	KEY_MIC_STAR, KEY_MIC_HASH, KEY_MIC_AB, KEY_MIC_PA, KEY_MIC_PB, KEY_MIC_PC, KEY_MIC_PD,

@@ -197,12 +197,11 @@ transmit lights it, a playing reception lights the side the channel receiver is 
 side not selected (`anytone_mic_lights`). Not checked on a microphone. The diagnostics line `hmic` shows whether a serial microphone is
 present, its frames and dropped bytes and the key code held.
 
-RadioFoundry's key names (`d578uv.h`): `KEY_UP`, `KEY_DOWN`, `KEY_MENU`, `KEY_EXIT` for 0x14, 0x16, 0x0E and 0x0F,
-`KEY_C15`, `KEY_C17`, `KEY_C18`, `KEY_C19`, `KEY_C1E` (named by key code) for the others, `KEY_PTT`, `KEY_MIC_UP`,
+RadioFoundry's key names (`d578uv.h`) are the printed ones: `KEY_P1`-`KEY_P6`, `KEY_MENU`, `KEY_EXIT`, `KEY_PUSH`, `KEY_PTT`, `KEY_MIC_UP`,
 `KEY_MIC_DOWN` and `KEY_MIC_0`-`KEY_MIC_9`, `KEY_MIC_STAR`, `KEY_MIC_HASH`, `KEY_MIC_AB`, `KEY_MIC_PA`-`KEY_MIC_PD`
 for the microphones. The microphone's Up and Down act as the front Up and Down, its digits enter digits, `*` and `#`
 open Quick settings and the context menu, as on the keypad radios, A/B switches the side and held starts or stops dual watch, and A-D follow their printed labels: confirm (MENU), zone up, zone down and
-back (EXIT). PUSH (`KEY_C1E`) confirms, as the menu key does.
+back (EXIT). The front keys' roles are in `boards/d578uv/board.c` and the user guide (23-radios.md, "AT-D578UV keys").
 
 ### 3.3 Power
 
