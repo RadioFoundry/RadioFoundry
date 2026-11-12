@@ -29,11 +29,12 @@ const uint8_t uvf_key_matrix[3][8] = {
 // DMR key-up (docs/spec/pa-keyup.md, hardware-dm1701.md 7). UHF: measured with tools/bench/pa_cal.py, then the knee
 // and slope taken 3-9 % under the fit: every level up 0.19-0.40 ms before the first symbol, the boosted lower three with
 // 1.2-2.2 dB of overshoot (the fit's own gave them 1.7-3.3 dB: the boost's charge carries on after its end). VHF:
-// converted from the constants measured with the rule's earlier form, not measured again. The window and the
-// top step's PA 0.8 ms (VHF) and 1.0 ms (UHF) after the RF TX interrupt: 0.6 ms cut the end of the burst an SFR repeater
-// receives just before. The VHF PA needs about three times the UHF knee
+// measured with the tool, every level up 0.04-0.28 ms before the first symbol with at most 2.2 dB of overshoot. Its
+// lowest level is far too slow on its own drive, so it is boosted from the board's earliest point (2.5 ms), and the
+// boost ends 0.6 ms before the first symbol: at 0.3 ms the same boost overshot 4 dB. The PA 0.8 ms (VHF) and 1.0 ms
+// (UHF) after the RF TX interrupt: 0.6 ms cut the end of the burst an SFR repeater receives just before
 static const pa_keyup_cfg_t keyup[2] = {
-	{ .dead_pm = 0, .knee_us = 760, .slope_us = 850, .window_us = 1730, .settle_us = 300, .pa_us = 1730 },
+	{ .dead_pm = 1, .knee_us = 1106, .slope_us = 1433, .window_us = 2500, .settle_us = 600, .pa_us = 1730 },
 	{ .dead_pm = 348, .knee_us = 255, .slope_us = 1180, .window_us = 1530, .settle_us = 700, .pa_us = 1530 },
 };
 

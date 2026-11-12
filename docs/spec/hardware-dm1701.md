@@ -754,12 +754,13 @@ Relative output against the DAC value, same radio and frequencies (dB below the 
 ### 7.2 DMR key-up
 
 The PA is keyed by the shared rule ([pa-keyup.md](pa-keyup.md)), with constants per band
-(`boards/dm1701/board.c`). No step's drive starts earlier than the window, which is 1.0 ms (UHF) and 0.8 ms (VHF)
-after the RF TX interrupt:
+(`boards/dm1701/board.c`). No step's drive starts earlier than the window. At UHF it is 1.0 ms after the RF TX
+interrupt; at VHF it is the board's earliest point, 2.5 ms before the first symbol. The PA is keyed 1.0 ms (UHF) and
+0.8 ms (VHF) after the interrupt:
 
 | Band | dead_pm | knee_us | slope_us | window_us | settle_us | pa_us |
 |---|---|---|---|---|---|---|
-| VHF | 0 | 760 | 850 | 1730 | 300 | 1730 |
+| VHF | 1 | 1106 | 1433 | 2500 | 600 | 1730 |
 | UHF | 348 | 255 | 1180 | 1530 | 700 | 1530 |
 
 UHF is measured with `tools/bench/pa_cal.py` ([pa-keyup.md](pa-keyup.md) 6) over the air on the SDR bench: every
@@ -768,9 +769,18 @@ boosted lower three with 1.2-2.2 dB. The knee and slope are 3-9 % under the tool
 boosted levels 1.7-3.3 dB: the charge a boost leaves in the power loop carries the output past the level after the
 boost's end, so a little less of it lowers the overshoot and brings the level up about 0.1 ms later. A longer settle
 time did the same, but put the lowest level late at 1100 us; a later PA point brought every level up late. The set converted
-from the earlier form (knee 250, slope 780, no dead zone, settle 300) keyed every level 0.1-0.6 ms late. VHF is still
-that conversion (one boost level for every step, a hold, a later start for the lower steps) and is untested on the
-radio.
+from the earlier form (knee 250, slope 780, no dead zone, settle 300) keyed every level 0.1-0.6 ms late.
+
+VHF is measured the same way, into the dummy load: every level's -3 dB point 0.04-0.28 ms before the first symbol,
+with at most 2.2 dB of overshoot (the lowest level), the top three under 1 dB. The lowest level's own drive, written
+1.73 ms ahead, brings the output up 1.3 ms after the first symbol, so it needs a large boost. Ended 0.3 ms before the
+first symbol, a boost that brings it up in time overshoots 4-7 dB; ended 0.6 ms before, a boost of 1300 counts
+overshoots 0.8 dB. The longer settle time needs the longer window to keep the boost low. The set converted from the
+earlier form overshot 6-7 dB at the lowest level, its first symbol 5-6 dB high.
+
+The radio's USB link drops while it transmits at VHF above 100 mW, and the host then ignores the port until the radio
+restarts or the cable is replugged. VHF is therefore measured with `--key-run restart`
+([pa-keyup.md](pa-keyup.md) 4, 6).
 
 Key-down: TIM7 drops the PA 30 ms after the RF TX interrupt, when the burst's last symbol ends
 ([gotchas.md](gotchas.md) 3.4); the timeslot interrupt after it puts the receiver back and stays the fallback. The
