@@ -626,8 +626,9 @@ class DebugLink:
     def t3_reset(self):
         self.t3_op(T3_RESET)
 
-    def t3_system(self, own_id=0, model=0, net=0, par="a", opts=1, cc=1, talk_id=0, talk_private=False):
-        """own_id 0: the radio's; model 0 tiny .. 3 huge; par a|b|1|2; opts bit 0 private calls (T3_OPT_*)"""
+    def t3_system(self, own_id=0, model=0, net=0, par="a", opts=0x20, cc=1, talk_id=0, talk_private=False):
+        """own_id 0: the radio's; model 0 tiny .. 3 huge; par a|b|1|2; opts T3_OPT_* (core/dmr/trunk/t3_ms.h): 0x01
+        listen only, 0x20 private calls to the radio, 0x40 register with the talkgroup"""
         cat = T3_PAR[par] if isinstance(par, str) else par
         self.t3_op(T3_SYSTEM, struct.pack("<IBHBHBIB", own_id, model, net, cat, opts, cc, talk_id, int(talk_private)))
 
@@ -2275,7 +2276,8 @@ def main(argv=None):
     p.add_argument("--net", type=int, default=0)
     p.add_argument("--par", default="a")
     p.add_argument("--cc", type=int, default=1)
-    p.add_argument("--opts", type=lambda x: int(x, 0), default=1)
+    p.add_argument("--opts", type=lambda x: int(x, 0), default=0x21,
+                   help="T3_OPT_*; default 0x21: listen only (never transmits), private calls")
     p.add_argument("--ctrl", action="append", default=[], metavar="LCN:RX_MHZ:TX_MHZ[:CC]")
     p.add_argument("--chan", action="append", default=[], metavar="LCN:RX_MHZ:TX_MHZ[:CC]")
     p.add_argument("--tg", action="append", default=[], type=int, help="listen; the first also talks")
