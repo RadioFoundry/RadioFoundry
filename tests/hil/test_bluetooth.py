@@ -13,7 +13,7 @@ import pytest
 
 from rfoundry_hil import as_int, skip
 
-PRESSES = 4          # the module's key codes the stock firmware acts on: 01-04
+PRESSES = 4          # the module's key codes: 01-04
 
 
 def _bt(r):

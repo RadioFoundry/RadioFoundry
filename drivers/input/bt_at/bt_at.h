@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // A Bluetooth module that speaks AT lines on a UART: PTT and keys from its PTT button and its hand microphone, taken a
 // byte at a time from a UART interrupt. Pure and allocation free, so the host tests run it. The board's hardware page
-// has the module, its wiring and the stock firmware's reading of these lines (static analysis, untested on a radio).
+// has the module, its wiring and these lines (inferred, untested on a radio).
 //
 // The radio asks with BT_AT_PROBE ("AT+VER?"); the module answers lines that start with '+', 'O' (OK) or 'E' (ERR)
 // and end with LF (a CR before it is dropped). A line longer than BT_AT_LINE_MAX is dropped whole. Any line counts as
@@ -25,7 +25,7 @@
 
 #define BT_AT_PROBE		"AT+VER?\r\n"
 #define BT_AT_LINE_MAX		64u	// the longest line kept (a +CONN line with a device name)
-#define BT_AT_KEY_MIN		1u	// +KEY codes the stock firmware acts on
+#define BT_AT_KEY_MIN		1u	// +KEY codes acted on
 #define BT_AT_KEY_MAX		4u
 
 typedef struct {

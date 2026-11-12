@@ -42,7 +42,7 @@ pages (GD32F30x user manual, FMC). Each bank has its own key, status, control an
 |---|---|
 | Sector size | 4 KB everywhere: two 2 KB pages in bank 0, one page in bank 1 |
 | Sectors | the part's flash (the flash size register), up to the family's largest, 3 MB: at most 768 |
-| Above sector 255 | ERASE carries the sector in two bytes (`stub-stm32f4.md` 4). A stub before this reported at most 1 MB, so a host never asks it for more. Vendor data sits up there on some radios (a 3 MB part keeps a block at 0x082F5800) |
+| Above sector 255 | ERASE carries the sector in two bytes (`stub-stm32f4.md` 4). A stub before this reported at most 1 MB, so a host never asks it for more. Data sits up there on some radios (a 3 MB part keeps a block at 0x082F5800) |
 | Sector 0 | never writable: no record may name it as the application base (`GD32_MIN_APP_BASE`) |
 | Bootloader | below the record's application base, never erased or programmed (engine rule) |
 | Option bytes | never touched: the stub has no code that unlocks or writes them |

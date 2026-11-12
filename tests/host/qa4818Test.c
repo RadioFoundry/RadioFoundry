@@ -284,7 +284,7 @@ static void test_paths(void)
 	qa4818_fm_tx(&c, 446000000u);
 	CHECK(f.regs[0x28] == 0x0009);
 
-	// DMR TX: the stock digital order (output stage, 0x18, page 1 0x17, tone off, drive off), nothing of the FM set
+	// DMR TX: the digital order (output stage, 0x18, page 1 0x17, tone off, drive off), nothing of the FM set
 	f.regs[0x51] = 0x90C5;
 	n = f.n;
 	qa4818_dmr_tx(&c, 146520000u);
@@ -341,10 +341,10 @@ static void test_tones(void)
 	SEQ(&f, n, { 0x40, 0 }, { 0x51, 0x9080 });
 }
 
-// FM TX tones: the stock 1750 Hz burst's sequence and its DTMF set-up, then the microphone again
+// FM TX tones: the 1750 Hz burst's sequence and the DTMF set-up, then the microphone again
 static void test_tx_tones(void)
 {
-	CHECK(qa4818_tone_word(1750) == 0x2346);	// 18060 / 2: the stock firmware's 10.32 x Hz, halved
+	CHECK(qa4818_tone_word(1750) == 0x2346);	// 18060 / 2: 10.32 x Hz, halved
 	CHECK(qa4818_tone_word(1000) == 5160);
 	CHECK(qa4818_tone_word(2100) == 10836);
 	CHECK(qa4818_tone_word(1) == 5);		// 10.32 truncates to 10
@@ -354,7 +354,7 @@ static void test_tx_tones(void)
 	CHECK(qa4818_drive_raw(0x3900, 0xB4, false) == 0x3868);	// level << 1 carries: one step down
 	CHECK(qa4818_drive_raw(0x3900, 0xB4, true) == 0x3768);
 	CHECK(qa4818_tone_drive_word(446000000u, false) == 0x3964);
-	CHECK(qa4818_tone_drive_word(300000000u, false) == 0x3868);	// "above 300 MHz" in the stock compare
+	CHECK(qa4818_tone_drive_word(300000000u, false) == 0x3868);	// "above 300 MHz", not "at least"
 	CHECK(qa4818_tone_drive_word(222000000u, false) == 0x3868);
 	CHECK(qa4818_tone_drive_word(200000000u, false) == 0x3704);
 	CHECK(qa4818_tone_drive_word(146520000u, true) == 0x3604);
@@ -389,7 +389,7 @@ static void test_tx_tones(void)
 	    { 0x70, 0 }, { 0x40, 0x3980 }, { 0x51, 0x9092 });
 	CHECK(f.reads == reads + 1);
 
-	// The microphone's level: the stock arithmetic, both fields masked to their width
+	// The microphone's level: both fields masked to their width
 	n = f.n;
 	qa4818_mic_level(&c, 7, 0x15);
 	SEQ(&f, n, { 0x18, 0x3925 }, { 0x7F, 1 }, { 0x17, 0x02A8 }, { 0x7F, 0 });
@@ -397,7 +397,7 @@ static void test_tx_tones(void)
 	qa4818_mic_level(&c, 2, 0xFF);
 	SEQ(&f, n, { 0x18, 0x1125 }, { 0x7F, 1 }, { 0x17, 0x03F8 }, { 0x7F, 0 });
 
-	// The audio input pin (the stock DTMF): 0x18 and page 1 0x17 bit 0 as well
+	// The audio input pin (DTMF): 0x18 and page 1 0x17 bit 0 as well
 	n = f.n;
 	qa4818_tx_aux(&c, true, 0x3880);
 	SEQ(&f, n,

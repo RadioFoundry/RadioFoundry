@@ -28,9 +28,8 @@
 // No board record opens sector 0 (the vector table the chip boots from) for writing; each board's bootloader end
 // comes in its record
 #define AT32_MIN_APP_BASE	0x08001000u
-// Where bank 2 starts: on parts over 1 MB bank 1 is the first 2 MB (the vendor flash library in a stock image tests
-// these limits, docs/spec/stub-at32f43x.md 2); the 1 MB parts split into two 512 KB banks (reference manual); smaller
-// parts have one bank
+// Where bank 2 starts: on parts over 1 MB bank 1 is the first 2 MB (docs/spec/stub-at32f43x.md 2); the 1 MB parts split
+// into two 512 KB banks (reference manual); smaller parts have one bank
 #define AT32_BANK2_LARGE	0x08200000u
 #define AT32_BANK2_1MB		0x08080000u
 

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV audio synthesized on the MCU and fed to the RF chip's audio input: DTMF, as the stock firmware does it
-// (docs/spec/hardware-d578uv.md 5.3), and APRS's AFSK (hal_afsk.h transmit). TIM4 CH4 (the GD32 manual's TIMER3 CH3)
-// runs PB9 as an 8-bit PWM (period 256 at the core clock, about 470 kHz); TIM5's (TIMER4's) update interrupt, about
-// 26.1 kHz, writes the next duty from 16-bit phase accumulators and a quarter sine table. DTMF: the sum of the two
-// sines, the low group at 39/63 of the high group's amplitude, the stock firmware's twist (about 4.2 dB). AFSK: one
-// tone, phase continuous across the symbols (tone_synth.h; the core's modulator divides in 64 bits per sample, too
-// slow for this interrupt). The radio code sets the RF chip up for its audio input pin before either starts here.
+// AT-D578UV audio synthesized on the MCU and fed to the RF chip's audio input: DTMF (docs/spec/hardware-d578uv.md 5.3),
+// and APRS's AFSK (hal_afsk.h transmit). TIM4 CH4 (the GD32 manual's TIMER3 CH3) runs PB9 as an 8-bit PWM (period 256
+// at the core clock, about 470 kHz); TIM5's (TIMER4's) update interrupt, about 26.1 kHz, writes the next duty from
+// 16-bit phase accumulators and a quarter sine table. DTMF: the sum of the two sines, the low group at 39/63 of the
+// high group's amplitude, a twist of about 4.2 dB. AFSK: one tone, phase continuous across the symbols (tone_synth.h;
+// the core's modulator divides in 64 bits per sample, too slow for this interrupt). The radio code sets the RF chip up
+// for its audio input pin before either starts here.
 #include "d578uv.h"
 #include "config.h"
 #include "pins.h"
@@ -23,7 +23,7 @@
 #define PWM_TIMER		MCU_TIM(PWM_TIM_N)
 #define SAMPLE_TIMER		MCU_TIM(SAMPLE_TIM_N)
 #define TONE_AF			2u	// TIM4 CH4 on PB9 (the AT32's multiplexed function)
-// The stock sample period: 0x11EF + 1 timer clocks, 26,132 Hz at 120 MHz
+// The sample period: 0x11EF + 1 timer clocks, 26,132 Hz at 120 MHz
 #define SAMPLE_CLOCKS		4592u
 #define PWM_PERIOD		256u
 #define AMP_HIGH		63
@@ -37,7 +37,7 @@ static volatile bool afsk_on;
 
 #if CONFIG_APRS
 // The tones' PWM amplitude at the core's level 50 (its nominal deviation): near the DTMF pair's peak (102), whose
-// deviation the stock calibration sets through the same input. Inferred; the bench sets it, and the APRS level (a
+// deviation the factory calibration sets through the same input. Inferred; the bench sets it, and the APRS level (a
 // debug link setting) moves it until then. Full scale is 127
 #define AFSK_AMP_NOMINAL	90
 
@@ -109,8 +109,7 @@ void d578uv_dtmf_start(uint16_t low_hz, uint16_t high_hz)
 }
 #endif
 
-// Plain register writes (d578uv_rf_safe calls it): both timers stopped, PB9 back to analog as the stock firmware leaves
-// it between tones
+// Plain register writes (d578uv_rf_safe calls it): both timers stopped, PB9 back to analog between tones
 void d578uv_tone_stop(void)
 {
 	afsk_on = false;

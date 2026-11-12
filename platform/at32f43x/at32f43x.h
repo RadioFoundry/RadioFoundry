@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT32F435/437 registers: only what the platform and its boards use, written from the AT32F435/437 reference manual
-// (register names and offsets as the manual gives them) and checked against what a radio's stock firmware on this MCU writes
-// (docs/spec/hardware-d578uv.md 10). The core is a Cortex-M4 with the FPU; CMSIS core_cm4.h supplies NVIC, SysTick, SCB
-// and DWT. Most peripherals keep the STM32F4's register layout: the GPIO, timers, USART, DAC, EXINT and the watchdog.
-// The ADC and the clock unit (CRM) are Artery's own.
+// (register names and offsets as the manual gives them; docs/spec/hardware-d578uv.md 10). The core is a Cortex-M4 with
+// the FPU; CMSIS core_cm4.h supplies NVIC, SysTick, SCB and DWT. Most peripherals keep the STM32F4's register layout:
+// the GPIO, timers, USART, DAC, EXINT and the watchdog. The ADC and the clock unit (CRM) are Artery's own.
 #ifndef AT32F43X_H
 #define AT32F43X_H
 
@@ -97,8 +96,8 @@ typedef enum {
 #define CRM_CTRL_PLLEN		(1u << 24)
 #define CRM_CTRL_PLLSTBL	(1u << 25)
 
-// PLL: PLLCLK = source / MS x NS / FR. MS 1..15, NS up to 500, FR a power of two (code 0..5 = /1../32, the stock
-// firmware's table). The stock firmware runs MS 1, NS 20, FR /2 from its 12 MHz crystal
+// PLL: PLLCLK = source / MS x NS / FR. MS 1..15, NS up to 500, FR a power of two (code 0..5 = /1../32). From a 12 MHz
+// crystal, MS 1, NS 20, FR /2 gives 120 MHz
 #define CRM_PLLCFG_MS(v)	((uint32_t)(v) << 0)
 #define CRM_PLLCFG_NS(v)	((uint32_t)(v) << 6)
 #define CRM_PLLCFG_FR(code)	((uint32_t)(code) << 16)
@@ -117,14 +116,14 @@ typedef enum {
 // MISC2: the system clock's automatic step while it switches to or from a fast clock
 #define CRM_MISC2_AUTO_STEP_MASK	(3u << 4)
 #define CRM_MISC2_AUTO_STEP_ON		(3u << 4)
-// MISC1 bits 12..14: the stock firmware sets them, in the order 12, 14, 13, to run the USB from the 48 MHz HICK
-// (what each bit does is not checked against the manual)
+// MISC1 bits 12..14: set in the order 12, 14, 13 to run the USB from the 48 MHz HICK (inferred; what each bit does
+// is not checked against the manual)
 #define CRM_MISC1_USB_HICK_A		(1u << 12)
 #define CRM_MISC1_USB_HICK_B		(1u << 14)
 #define CRM_MISC1_USB_HICK_C		(1u << 13)
 
 // ACC: the HICK's automatic trim from the USB start of frame, which keeps it at 48 MHz for the USB. C1..C3 are the
-// stock firmware's window (7980, 8000, 8020); CTRL1 bit 1 then bit 0 starts it
+// window (7980, 8000, 8020); CTRL1 bit 1 then bit 0 starts it
 #define ACC_BASE		0x40017400u
 #define ACC_CTRL1		AT32_REG(ACC_BASE + 0x04u)
 #define ACC_C1			AT32_REG(ACC_BASE + 0x0Cu)

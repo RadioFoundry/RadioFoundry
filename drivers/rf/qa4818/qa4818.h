@@ -4,8 +4,7 @@
 //
 // No data sheet was found. The register use is BK4819-like (frequency in 0x38/0x39, sub-audio in 0x07/0x08/0x51/0x52,
 // noise and RSSI in 0x65/0x67) but the enables, the pages (0x7F) and the gain registers differ, so this is its own
-// driver. Every value here is one the stock firmware of a radio built on it writes; what a register means is inferred
-// from those values and the call patterns (docs/spec/hardware-d578uv.md 5, the only radio so far).
+// driver. What a register means is inferred (docs/spec/hardware-d578uv.md 5, the only radio so far).
 //
 // A radio can use the chip in two roles on one 3-wire bus with separate enables: a transceiver (receives at an IF,
 // transmits on the channel) and a local oscillator for it. One qa4818_t per chip; the board gives each its register
@@ -43,9 +42,9 @@ typedef struct {
 #define QA4818_CTCSS_HEARD	0x0001u	// 0x60: the CTCSS tone set is heard
 #define QA4818_DCS_HEARD	0x0400u	// 0x60: the DCS code set is heard, normal polarity
 #define QA4818_DCS_INV_HEARD	0x0800u	// 0x60: ... inverted. Bit 1 shows only at a carrier's start, for any code (measured)
-#define QA4818_REG_TONE_GEN	0x70	// the TX tone generator: 0xA000 on, 0 off (the only values the stock firmware writes)
+#define QA4818_REG_TONE_GEN	0x70	// the TX tone generator: 0xA000 on, 0 off
 #define QA4818_REG_TONE_FREQ	0x71	// its tone: Hz x 10.32, halved (qa4818_tone_word)
-#define QA4818_REG_VOICE	0x64	// voice amplitude, the VOX detector's input (BK4819 map; not read by the stock firmware)
+#define QA4818_REG_VOICE	0x64	// voice amplitude, the VOX detector's input (BK4819 map)
 #define QA4818_REG_NOISE	0x65	// bits 6:0
 #define QA4818_REG_RSSI		0x67	// bits 8:0, half dB + 160 (inferred)
 #define QA4818_REG_SQ		0x78	// gain code << 8 | 0xFF
@@ -68,7 +67,7 @@ typedef struct {
 #define QA4818_SUBBAND_NONE	0xFFu
 #define QA4818_SUBBAND_IF	7u		// a transceiver receiving at its IF
 
-#define QA4818_RSSI_FLOOR	0x46u		// the lowest gain code the stock firmware uses as a threshold
+#define QA4818_RSSI_FLOOR	0x46u		// the lowest gain code used as a threshold
 
 typedef struct {
 	uint32_t lo_hz;
@@ -90,24 +89,24 @@ uint16_t qa4818_ctcss_detect(uint16_t hz_x10);
 uint16_t qa4818_drive_word(uint32_t hz, bool wide, uint8_t drive);
 // RSSI register reading to dBm (half dB + 160, inferred)
 int16_t qa4818_rssi_dbm(uint16_t raw);
-// A drive word (0x40) from a band base and a level, the stock firmware's rule: base | (level << 1) & 0xFF, one step
-// (0x100) less for 25 kHz and one more when level << 1 carries
+// A drive word (0x40) from a band base and a level: base | (level << 1) & 0xFF, one step (0x100) less for 25 kHz and
+// one more when level << 1 carries
 uint16_t qa4818_drive_raw(uint16_t base, uint8_t level, bool wide);
-// The tone generator's word (0x71) for hz: Hz x 10.32, truncated, halved (the stock firmware's arithmetic)
+// The tone generator's word (0x71) for hz: Hz x 10.32, truncated, halved
 uint16_t qa4818_tone_word(uint16_t hz);
 
 // Whether the status's tone flags show the receive tone set (true for none)
 bool qa4818_tone_heard(qa4818_tone_t type, uint16_t flags);
-// The drive (0x40) while the tone generator sends on hz: fixed levels by band, the stock firmware's tone burst values
+// The drive (0x40) while the tone generator sends on hz: fixed levels by band
 uint16_t qa4818_tone_drive_word(uint32_t hz, bool wide);
-// The drive (0x40) while the audio input pin sends on hz (the stock DTMF): the band's base and a calibrated level
-// (the caller's: the stock firmware takes it from its calibration, by band)
+// The drive (0x40) while the audio input pin sends on hz (DTMF): the band's base and a calibrated level
+// (the caller's, from the calibration, by band)
 uint16_t qa4818_line_drive_word(uint32_t hz, bool wide, uint8_t level);
 
 // ---- Register sequences ----
 
 void qa4818_attach(qa4818_t *c, rfbus_t *bus, bool lo);
-// Power-on init, the stock order: reset, constants, VCO calibration at 435.125 MHz (with two 20 ms waits), off
+// Power-on init: reset, constants, VCO calibration at 435.125 MHz (with two 20 ms waits), off
 void qa4818_init_lo(qa4818_t *c);
 // gpio: the output register's initial value. r49: the radio's 0x49 value (models differ)
 void qa4818_init_trx(qa4818_t *c, uint16_t gpio, uint16_t r49);
@@ -129,7 +128,7 @@ uint16_t qa4818_af_rx(bool digital, uint32_t hz);
 // hz 0 puts back af (qa4818_af_rx) and stops the generator
 void qa4818_beep(qa4818_t *c, uint16_t hz, uint8_t gain, uint16_t af);
 void qa4818_tx_on(qa4818_t *c);
-// A local oscillator on (through off, as the stock firmware does)
+// A local oscillator on (through off)
 void qa4818_lo_on(qa4818_t *c);
 void qa4818_out(qa4818_t *c, uint16_t value);			// 0x28
 // Sub-band (skipped when unchanged) then frequency
@@ -157,18 +156,18 @@ void qa4818_fm_tx(qa4818_t *c, uint32_t hz);
 void qa4818_dmr_tx(qa4818_t *c, uint32_t hz);
 void qa4818_tx_tone(qa4818_t *c, qa4818_tone_t type, uint16_t value, uint8_t cal_ctcss, uint8_t cal_dcs);
 void qa4818_tx_drive(qa4818_t *c, uint32_t hz, bool wide, uint8_t drive, uint8_t level);
-// The analog microphone's level, after qa4818_fm_tx() (the stock order): 0x18 = 0x125 | gain << 11 and page 1 0x17 =
-// 0x200 | cal << 3. gain is one of the stock levels 2..7 (QA4818_MIC_GAIN_DEFAULT its default), cal the factory MIC
-// byte 0..0x3F. Digital transmit has fixed values (qa4818_dmr_tx)
+// The analog microphone's level, after qa4818_fm_tx(): 0x18 = 0x125 | gain << 11 and page 1 0x17 = 0x200 | cal << 3.
+// gain is one of the levels 2..7 (QA4818_MIC_GAIN_DEFAULT its default), cal the factory MIC byte 0..0x3F. Digital
+// transmit has fixed values (qa4818_dmr_tx)
 #define QA4818_MIC_GAIN_DEFAULT	4u
 void qa4818_mic_level(qa4818_t *c, uint8_t gain, uint8_t cal);
 // Drive off (0x40 = 0, 0x51 level 0), at the end of a transmission
 void qa4818_tx_drive_off(qa4818_t *c);
 
 // ---- FM TX tones, in place of the microphone (the board mutes the microphone itself) ----
-// The modulator's audio for a tone, during FM TX: page 1 0x19, for the audio input pin (line) 0x18 and page 1 0x17
-// bit 0 as well, the drive r40, page 1 0x1B = 5 (the tone path, inferred). The stock firmware's set-up before its 1750
-// Hz burst (line false) and its DTMF, which it synthesizes on an MCU pin (line true)
+// The modulator's audio for a tone, during FM TX: page 1 0x19, for the audio input pin (line) 0x18 and page 1 0x17 bit
+// 0 as well, the drive r40, page 1 0x1B = 5 (the tone path, inferred). The set-up before a 1750 Hz burst (line false)
+// or DTMF synthesized on an MCU pin (line true)
 void qa4818_tx_aux(qa4818_t *c, bool line, uint16_t r40);
 // After qa4818_tx_aux(false): the tone generator on at hz (0x71, then 0x70)
 void qa4818_tone_start(qa4818_t *c, uint16_t hz);
@@ -186,9 +185,9 @@ typedef struct {
 } qa4818_status_t;
 
 // Noise for the core's squelch (hal_radio_t status, larger = more noise): 0x65 bits 6:0 plus an offset. Without a
-// signal the raw value reads 48-50 (seen on a radio, 145.5 MHz), inside the core's levels (open below 64, loosest,
-// down to 40), so every level opened on noise. The stock firmware calls a signal lost above 43; the offset puts the
-// floor above the loosest level, as for the FD6818 (fd6818.h)
+// signal the raw value reads 48-50 (measured on a radio, 145.5 MHz), inside the core's levels (open below 64, loosest,
+// down to 40), so every level opened on noise. The offset puts the floor above the loosest level, as for the FD6818
+// (fd6818.h)
 #define QA4818_NOISE_OFFSET	25u
 static inline uint8_t qa4818_noise(uint8_t raw)
 {

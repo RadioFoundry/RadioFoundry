@@ -73,8 +73,8 @@ void gd32_swj(uint32_t mode)
 {
 	RCU_APB2EN |= RCU_APB2EN_AFEN;
 	(void)RCU_APB2EN;
-	// The field to 0 first, then the mode, as the vendor library writes it: a GD32F303 ignored a direct change from
-	// SW-DP only to off (seen on a radio; the pins stayed SWD)
+	// The field to 0 first, then the mode: a GD32F303 ignored a direct change from SW-DP only to off (measured on a
+	// radio; the pins stayed SWD)
 	uint32_t v = AFIO_PCF0 & ~AFIO_PCF0_SWJ_MASK;
 	AFIO_PCF0 = v;
 	AFIO_PCF0 = v | mode;

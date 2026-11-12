@@ -131,7 +131,7 @@ confirm on the radio: the `CHAN_D` frame format in DMR mode and its timing again
 | --- | --- |
 | PC link | Native USB on the MCU, a CDC serial port (`/dev/ttyACM*`). The cable is a plain USB cable; the baud setting makes no difference |
 | MCU update mode, 868/878 | Hold PTT + PF3 (top key) at power-on; the red LED blinks |
-| MCU update mode, 578 | Hold MENU + EXIT at power-on (or while switching off); the status LED blinks. The radio stays in update mode until an update is written. The application image reads no such combination, so the bootloader does ([hardware-d578uv.md](hardware-d578uv.md) 3.2) |
+| MCU update mode, 578 | Hold MENU + EXIT at power-on (or while switching off); the status LED blinks. The radio stays in update mode until an update is written. The bootloader reads it ([hardware-d578uv.md](hardware-d578uv.md) 3.2) |
 | Vendor tool | CPS → Tool → Firmware and Icon Update ("QX_Firmware_Update"): opens a `.spi` file, shows model and version, 921600 baud, a "Duplex" option and a grayed-out "Encrypt" option |
 | Update files | Three per update: `.spi` (14 or 51 bytes, the file the user opens), `.CDI` (278 bytes for firmware, about 11 KB for icon sets), `.CDD` (the payload). The icon (graphics) update uses the same tool and file set |
 | Image sizes (.CDD) | D878UV 3.08n: 939,168 bytes. D878UVII 3.08n: 939,240. D578UV2 GD 2.08: 1,020,408. D578UV2 AT 2.08: 1,040,008. Icon sets: 3.7 MB (878), 2.1–7.3 MB (578) |

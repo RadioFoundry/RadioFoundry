@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// QA4818N / WX4818N-class transceiver (qa4818.h). Sequences in the stock firmware's order; the register meanings in
-// the comments are inferred (docs/spec/hardware-d578uv.md 5)
+// QA4818N / WX4818N-class transceiver (qa4818.h). The register meanings in the comments are inferred
+// (docs/spec/hardware-d578uv.md 5)
 #include "qa4818.h"
 #include "rf/subaudio/subaudio.h"
 
@@ -65,7 +65,7 @@ static const uint16_t ctcss_detect[CTCSS_TONES + 1] = {
 #define TX_NO_TONE	0x0473u		// 0x07 transmitting without sub-audio (55.2 Hz, latched off with 0x51)
 #define TONE_GEN_ON	0xA000u		// 0x70: the tone generator on
 #define TX_AUDIO_MIC	0x03B8u		// page 1 0x17 in the FM TX table (qa4818_mic_level then sets it)
-#define TX_AUDIO_LINE	0x03B9u		// ... bit 0 set: the audio input pin (the stock DTMF, inferred)
+#define TX_AUDIO_LINE	0x03B9u		// ... bit 0 set: the audio input pin (DTMF, inferred)
 #define TX_PATH_VOICE	0x0004u		// page 1 0x1B in FM TX
 #define TX_PATH_TONE	0x0005u		// ... while a tone sends (inferred: the microphone's path off)
 #define P1_1D_ANALOG	0x39FDu		// page 1 0x1D on the analog path; with it the tone generator plays 12 dB louder
@@ -134,14 +134,13 @@ uint16_t qa4818_drive_raw(uint16_t base, uint8_t level, bool wide)
 	return (uint16_t)(base | (d & 0xFFu));
 }
 
-// Hz x 10.32 in integers: the stock firmware multiplies by the double 10.32 and truncates, which is the same for every
-// 16-bit hz (the double is a hair above 10.32, so exact products stay exact)
+// Hz x 10.32 in integers, truncated
 uint16_t qa4818_tone_word(uint16_t hz)
 {
 	return (uint16_t)((((uint32_t)hz * 1032u / 100u) & 0xFFFFu) >> 1);
 }
 
-// The stock firmware compares the frequency against 300 and 200 MHz with "above", not "at least", in both
+// The bands split above 300 and 200 MHz ("above", not "at least")
 uint16_t qa4818_tone_drive_word(uint32_t hz, bool wide)
 {
 	if (hz > MHZ(300)) {
@@ -400,12 +399,12 @@ void qa4818_path(qa4818_t *c, bool tx, bool digital, bool wide, uint16_t r49)
 {
 	if_constants(c, r49);
 	if (digital)
-		wr(c, 0x13, 0x0375);	// the digital path's IF value (0x0396 in the stock firmware only with a second receiver)
+		wr(c, 0x13, 0x0375);	// the digital path's IF value
 	path_page1(c, tx, digital);
 	wr(c, 0x44, digital ? 0x53EC : 0x43EC);
 	wr(c, 0x4B, 0x7EB7);
 	if (digital) {
-		wr(c, 0x73, 0x4E8A);	// 0x569A in the stock firmware only with the second receiver on
+		wr(c, 0x73, 0x4E8A);	// 0x569A with the second receiver on (inferred)
 		wr(c, 0x7E, 0x361E);
 	} else {
 		wr(c, 0x73, wide ? 0x564A : 0x464A);
@@ -525,7 +524,7 @@ void qa4818_fm_tx(qa4818_t *c, uint32_t hz)
 	qa4818_out(c, hz < MHZ(200) ? QA4818_OUT_TX_VHF : QA4818_OUT_TX_UHF);
 }
 
-// The stock digital TX skips the analog writes (page 1 TX set, audio, tone): the digital set from qa4818_path stays.
+// The digital TX skips the analog writes (page 1 TX set, audio, tone): the digital set from qa4818_path stays.
 // The baseband modulates, so no sub-audio and no drive word; the PA level is the board's
 void qa4818_dmr_tx(qa4818_t *c, uint32_t hz)
 {
@@ -617,8 +616,8 @@ void qa4818_tone_gen(qa4818_t *c, bool on)
 	wr(c, QA4818_REG_TONE_GEN, on ? TONE_GEN_ON : 0);
 }
 
-// The stock firmware ends its burst with page 1 0x1B, 0x70 and the drive; its DTMF end runs the microphone level's
-// routine between 0x1B and the drive, which puts back 0x18 and 0x17 after the audio input pin's values
+// Back to the microphone after a tone burst or DTMF: page 1 0x1B, the microphone level (0x18 and 0x17, after the
+// audio input pin's values), 0x70, then the drive
 void qa4818_tx_mic(qa4818_t *c, uint16_t r40, uint8_t level, uint8_t gain, uint8_t cal)
 {
 	page(c, 1);

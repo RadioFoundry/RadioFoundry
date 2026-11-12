@@ -981,7 +981,7 @@ def _anytone_write(args, board, man, radio, addr, data, what):
 
 
 def cmd_flash_anytone(args, board, man, app, block):
-    """The AnyTone update mode (anytone.py): the radio is identified as the vendor's updater does, and an image for
+    """The AnyTone update mode (anytone.py): the radio is identified by its model answer, and an image for
     another MCU is refused. The image goes with the DMR baseband's boot block, from the image (merged by
     tools/modem_boot.py) or from --stock (the radio's own .CDD or a program flash read)."""
     if args.simulate or args.key or args.stock_installed or args.route != serialflash.AUTO:

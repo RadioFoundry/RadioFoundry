@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// KTMicro AM/FM receiver: the stock firmware's register sequences (ktamfm.h)
+// KTMicro AM/FM receiver: register sequences (ktamfm.h)
 #include "ktamfm.h"
 
-#define READY_POLLS	10000u		// 0x1B bit 2, every 100 us: up to 1 s (the stock firmware waits up to 6.5 s)
+#define READY_POLLS	10000u		// 0x1B bit 2, every 100 us: up to 1 s
 
 static uint8_t rd(ktamfm_t *k, uint8_t reg)
 {
@@ -43,7 +43,7 @@ bool ktamfm_probe(ktamfm_t *k)
 	return k->ok && id == KTAMFM_ID;
 }
 
-// Out of standby (inferred from the order: two enables, then a power-down bit cleared)
+// Out of standby: two enables, then a power-down bit cleared (inferred)
 static void wake(ktamfm_t *k)
 {
 	upd(k, 0x0E, (uint8_t)~0x20u, 0);
@@ -132,8 +132,8 @@ bool ktamfm_fm(ktamfm_t *k)
 	return k->ok;
 }
 
-// The three channels the stock firmware treats apart (84.45, 103.70 and 105.60 MHz): 0x87 bit 3 set and 0x85's low
-// nibble; every other channel clears 0x87 bit 3 and leaves 0x85. What they avoid isn't known (spurs, inferred)
+// Three channels are treated apart (84.45, 103.70 and 105.60 MHz): 0x87 bit 3 set and 0x85's low nibble; every other
+// channel clears 0x87 bit 3 and leaves 0x85. What they avoid isn't known (spurs, inferred)
 #define CH_SPUR_A	0x699u
 #define CH_SPUR_B	0x81Au
 #define CH_SPUR_C	0x840u

@@ -8,7 +8,7 @@
 #define UNK	((int8_t)SCT_LEN_UNKNOWN)
 #define VAR	((int8_t)SCT_LEN_BYTE)
 static const int8_t field_len[128] = {
-	// 0x00: CHAN_D has a length byte; 0x08 VOCODE_TONE is variable in the datasheet, 3 in the firmware seen
+	// 0x00: CHAN_D has a length byte; 0x08 VOCODE_TONE is variable in the datasheet, 3 in use
 	[0x00] = 1, [0x01] = VAR, [0x02] = 1, [0x03] = UNK, [0x04] = UNK, [0x05] = 2, [0x06] = 7, [0x07] = 9,
 	[0x08] = 3, [0x09] = UNK, [0x0A] = 2, [0x0B] = UNK, [0x0C] = UNK, [0x0D] = UNK, [0x0E] = UNK, [0x0F] = UNK,
 	[0x10] = 1, [0x11] = UNK, [0x12] = 1, [0x13] = UNK, [0x14] = 0, [0x15] = 1, [0x16] = 1, [0x17] = 1,
@@ -26,7 +26,7 @@ static const int8_t field_len[128] = {
 	// 0x6A I2C_OPERATION: 3 for the register writes the firmware sends (variable in the datasheet)
 	[0x68] = 2, [0x69] = 2, [0x6A] = 3, [0x6B] = 12, [0x6C] = 12, [0x6D] = 2, [0x6E] = 4, [0x6F] = 1,
 	[0x70] = 11, [0x71] = UNK, [0x72] = UNK, [0x73] = 2, [0x74] = 5, [0x75] = 4, [0x76] = 3, [0x77] = 1,
-	// 0x78 DMR_CALL_START: the datasheet says 4 bytes, the firmware and the vendor scripts send the bare ID
+	// 0x78 DMR_CALL_START: the datasheet says 4 bytes, the chip vendor's scripts send the bare ID
 	[0x78] = 0, [0x79] = 5, [0x7A] = 8, [0x7B] = 1, [0x7C] = 1, [0x7D] = 4, [0x7E] = 4, [0x7F] = 1,
 };
 

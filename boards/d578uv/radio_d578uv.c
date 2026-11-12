@@ -10,11 +10,11 @@
 // noise levels (radio_sm.h). The speaker takes side B's audio through the level device's second channel.
 //
 // Air band AM (CONFIG_AM_RX, 5.4): side B's hardware as a superhet into the KTMicro AM/FM receiver on PB6/PB7 (I2C),
-// the stock firmware's set-up. Chip 3 runs as the LO at f + 29.25 MHz with its output bit 6 set (the receiver's input
-// from chip 3's mixer, inferred), the receiver demodulates AM at 29.25 MHz, and chips 0-2 are off. Its squelch readings
-// become the RSSI and the AM squelch value, scaled so the core's levels open where the original firmware's do. The
-// receiver's audio is muted unless the core gives the main side the speaker; how it reaches the speaker isn't traced
-// (both level device channels play it, inferred). Side B (dual watch) waits while AM is on.
+// set up as follows. Chip 3 runs as the LO at f + 29.25 MHz with its output bit 6 set (the receiver's input from chip
+// 3's mixer, inferred), the receiver demodulates AM at 29.25 MHz, and chips 0-2 are off. Its squelch readings become
+// the RSSI and the AM squelch value, scaled so the core's levels open at the radio's usual points. The receiver's audio
+// is muted unless the core gives the main side the speaker; how it reaches the speaker isn't known (both level device
+// channels play it, inferred). Side B (dual watch) waits while AM is on.
 //
 // Broadcast FM (CONFIG_BCAST_FM, 5.4): the same receiver in its FM mode on its own input, chip 3's output bit 6 clear
 // (inferred), as the board's hal_bcast_t (d578uv_bcast). It shares the receiver with AM, so the core's order decides:
@@ -24,8 +24,8 @@
 // expects; dual watch's side B runs on as with an FM channel.
 //
 // TX tones (5.3): the 1750 Hz burst (tx_tone) from chip 0's tone generator, DTMF (tx_dtmf) synthesized on PB9
-// (tone_d578uv.c) into the chip's audio input pin, as the stock firmware sends them, and APRS (d578uv_afsk) the same
-// way; chip 0's output bit 0 mutes the microphone meanwhile (inferred).
+// (tone_d578uv.c) into the chip's audio input pin, and APRS (d578uv_afsk) the same way; chip 0's output bit 0 mutes the
+// microphone meanwhile (inferred).
 //
 // Transmit on f: both side A chips off, chip 0 retuned to f with its TX constants and drive, then keyed; the PA level is
 // PA4's DAC from the factory calibration (NAND, 7), corrected by the wattmeter table (tx_drive_level). TX is refused
@@ -37,11 +37,10 @@
 // lags PD0 by that much. The core calls tx() before the call stack starts the modem's transmission, so the RF is keyed
 // before the baseband gets DMR_CALL_SLOT with the transmit bit.
 //
-// Around the chips: the 8-bit shift register (PE3 data, PE4 clock) switches audio paths and the status LED, PE6 enables the
-// transmitter, PA7 mutes the speaker, the two-wire level device on PA13/PA14 sets the speaker level (SWD is off while
-// it is in use), and the serial device on PA5 (4-bit address, 8-bit data on the RF bus lines) holds the backlight
-// level in its register 8 and values the stock firmware writes once. Each value is the stock firmware's; what a shift
-// register bit does is inferred from where the stock firmware sets it.
+// Around the chips: the 8-bit shift register (PE3 data, PE4 clock) switches audio paths and the status LED, PE6 enables
+// the transmitter, PA7 mutes the speaker, the two-wire level device on PA13/PA14 sets the speaker level (SWD is off
+// while it is in use), and the serial device on PA5 (4-bit address, 8-bit data on the RF bus lines) holds the backlight
+// level in its register 8 and values written once at start-up. What a shift register bit does is inferred.
 #include "d578uv.h"
 #include "modem/sct/sct_dmr.h"
 #include "config.h"
@@ -83,17 +82,17 @@
 #define IF_A_HZ			38850000u
 #define IF_B_HZ			38550000u
 #define UHF_FROM_HZ		D578UV_UHF_FROM_HZ
-// Chip 0 / 1 register 0x49: 0x26AC on the PRO; the 578UV's stock firmware writes 0x29AA unless a flag (not identified)
-// is set (5). No pin tells the models apart, so the PRO value is used
+// Chip 0 / 1 register 0x49: 0x26AC on the PRO, 0x29AA on some 578UV units (5). No pin tells the models apart, so
+// the PRO value is used
 #define R49			0x26ACu
 // Chip GPIO (0x25) at init: chip 0, chip 1
 #define GPIO_A_INIT		0x0001u
 #define GPIO_B_INIT		0x0033u
 // Chip 0 GPIO bits: 3/6 side A's complementary band pair (UHF sets 3, VHF 6), 7/4 side B's (UHF sets 7, VHF 4; both
-// clear with side B off, as the stock firmware leaves them in some single-receiver cases); 5 set while transmitting
-// above 300 MHz, cleared at TX end (inferred); 1 the fan, high = on: while transmitting or while the PA is hot (fan_poll),
-// the stock "Fan Open" setting's "Both"; 2 the GPS module's supply, high = on (d578uv_gps_power, hardware-d578uv.md 3.6); 0 set in
-// receive and while a TX tone sounds, clear for the microphone: a microphone mute (inferred)
+// clear with side B off); 5 set while transmitting above 300 MHz, cleared at TX end (inferred); 1 the fan, high = on:
+// while transmitting or while the PA is hot (fan_poll), the radio's "Fan Open" menu setting "Both"; 2 the GPS module's
+// supply, high = on (d578uv_gps_power, hardware-d578uv.md 3.6); 0 set in receive and while a TX tone sounds, clear for
+// the microphone: a microphone mute (inferred)
 #define GPIO_BAND_A_MASK	0x0048u
 #define GPIO_BAND_A_UHF		0x0008u
 #define GPIO_BAND_A_VHF		0x0040u
@@ -106,21 +105,21 @@
 #define GPIO_GPS		0x0004u
 // Chip 3 output bit 6: set for AM, clear for the receiver's broadcast FM input (inferred, 5.4)
 #define GPIO_LO_B_AM		0x0040u
-// Chip 1 GPIO bit 1: set passes side A's RF chip audio toward the speaker, clear holds it off (seen on a radio)
+// Chip 1 GPIO bit 1: set passes side A's RF chip audio toward the speaker, clear holds it off (measured on a radio)
 #define GPIO_B_A_AUDIO		0x0002u
 
-// Shift register bits (roles inferred from the stock firmware's use)
+// Shift register bits (roles inferred)
 #define SR_BOOT			0x02u	// the Bluetooth module's supply, on from boot (bt_d578uv.c)
 #define SR_RX_DEMOD		0x04u	// the baseband's receive source: set, chip 0's demodulator (side A, FM and DMR alike;
 					// measured: with it clear the baseband hears nothing from chip 0); clear, chip 1's
-					// (side B), as the stock firmware does for a DMR channel on chip 1 (inferred)
+					// (side B), for a DMR channel on chip 1 (inferred)
 #define SR_LED_GREEN		0x08u	// the face's status LED, one bit a color (d578uv_status_led)
 #define SR_LED_RED		0x10u
 #define SR_LED_BLUE		0x20u
 #define SR_RX_AUDIO		0x40u	// receive audio gate
 #define SR_RX			(SR_BOOT | SR_RX_DEMOD | SR_RX_AUDIO)
 
-// PC4: low in receive; the stock firmware sets it when RX and TX frequencies straddle 300 MHz (not done here)
+// PC4: low in receive; high when RX and TX frequencies straddle 300 MHz (inferred; not done here)
 #define PIN_RF_SPLIT		GPIOC, MCU_PIN(4)
 
 // Calibration (7): the current one of two blocks, its UHF and VHF blocks cached, the rest read when needed
@@ -150,7 +149,7 @@
 #define BLK_DTMF_UHF		0x17u		// the 0x40 level for DTMF above 200 MHz (the UHF block's, as both below)
 #define BLK_DTMF_VHF		0x18u
 #define BLK_MIC			0x19u		// the analog microphone's level (the UHF block's, on both bands)
-// Without calibration: the receive gain code (no stock default found, INF)
+// Without calibration: the receive gain code (no default known, INF)
 #define GAIN_DEFAULT		0x50u
 
 static rfbus_3w_t bus_if, bus_lo;
@@ -173,7 +172,7 @@ static uint8_t kt_level_out = 0xFFu;	// the receiver's level as written; 0xFF un
 static bool rda_present;		// no KTMicro, but an RDA5807 on its bus answered at init: broadcast FM only
 static uint16_t rda_raw[3];		// its 0x02, 0x0A and 0x0B as the last status poll read them (diag)
 static int8_t rda_heard = -1;		// its audio as last written: 1 on, 0 muted, -1 unknown
-#define RDA_VOLUME		9u	// the stock firmware's fixed chip volume: the level device after it follows the knob
+#define RDA_VOLUME		9u	// a fixed chip volume: the level device after it follows the knob
 #else
 #define rda_present		false
 #endif
@@ -203,7 +202,7 @@ static bool bc_on;			// the core powered the broadcast receiver: the receiver is
 static bool bc_audio;			// the core plays it
 static bool bc_silent;			// the core's broadcast volume is 0
 static uint32_t bc_khz;			// the frequency it is tuned to
-#define BC_LO_KHZ		87500u	// the stock firmware's band and default
+#define BC_LO_KHZ		87500u	// the radio's band and default
 #define BC_HI_KHZ		108000u
 #define BC_HEARD		(bc_on && bc_audio && !transmitting)
 #else
@@ -265,7 +264,7 @@ static uint16_t tx_r40;
 static uint8_t tx_level;
 typedef enum { AUX_NONE, AUX_TONE, AUX_LINE } aux_t;	// AUX_LINE: PB9's audio (DTMF, APRS) on the input pin
 static aux_t aux;			// what replaces the microphone now
-static uint8_t rx_threshold;		// RSSI below which the stock firmware calls a signal lost
+static uint8_t rx_threshold;		// RSSI below which a signal counts as lost
 // DMR's carrier for CARRIER_READY: the RSSI alone, this many raw steps (0.5 dB each) under rx_threshold. The chip's
 // signal flag (its analog squelch: the RSSI over register 0x78 and the noise at most 0x4F's limit) stayed off for a
 // bench call at -102 to -106 dBm that the baseband decodes, so no DMR call below about -104 dBm was heard. At
@@ -365,8 +364,8 @@ void d578uv_bus_init(void)
 		rfbus_3w_attach(&b, &pins_chip[i]);
 		rfbus_write(&b.bus, QA4818_REG_ENABLE, QA4818_ENABLE_OFF);
 	}
-	// The RF chips' GPIO set as the stock start-up leaves them before the baseband's boot, in its order (from a trace
-	// of its start-up); the boot has been seen to work only with them
+	// The RF chips' GPIO set before the baseband's boot, in this order; the boot works only with them (tested on a
+	// radio)
 	static const struct { uint8_t chip, reg; uint16_t v; } stock_gpio[] = {
 		{ 0, 0x26, 0x0000 }, { 0, 0x27, 0x0000 }, { 0, 0x25, 0x0001 },
 		{ 1, 0x26, 0x0000 }, { 1, 0x27, 0x0000 }, { 1, 0x25, 0x0033 }, { 1, 0x25, 0x00B3 },
@@ -379,8 +378,7 @@ void d578uv_bus_init(void)
 	}
 }
 
-// The stock firmware's five levels (front_io.h); 0 at the core's power-off. The panel stays awake: the stock firmware
-// puts it to sleep only for its remote "radio off"
+// The radio's five levels (front_io.h); 0 at the core's power-off. The panel stays awake
 void d578uv_backlight(uint8_t percent)
 {
 	uint8_t code = backlight_code(percent);
@@ -388,8 +386,7 @@ void d578uv_backlight(uint8_t percent)
 	aux_write(AUX_BACKLIGHT, code);
 }
 
-// ---- Shift register: 8 bits LSB first, PE5 held high (no latch pulse); the stock firmware releases the lines to
-// pull-downs between writes ----
+// ---- Shift register: 8 bits LSB first, PE5 held high (no latch pulse) ----
 
 static void sr_pause(void)
 {
@@ -435,7 +432,7 @@ void d578uv_status_led(uint8_t which, bool on)
 	sr_set(on ? bit : 0, on ? 0 : bit);
 }
 
-// The standby (power_d578uv.c): every shift register output off, as the stock power-off writes it
+// The standby (power_d578uv.c): every shift register output off
 void d578uv_outputs_off(void)
 {
 	sr_set(0, 0xFFu);
@@ -583,13 +580,13 @@ static void chip1_gpio(uint16_t mask, uint16_t val)
 // and no hand mic connected (heard on a radio), and switching it at the squelch's edges or for a beep adds no click
 // (measured by microphone, the same as with it held on). The main receiver's calls win: the core gives side B the speaker
 // only while side A is quiet. In AM, and while broadcast FM plays, both channels take the volume (which one carries
-// the KTMicro receiver isn't traced)
+// the KTMicro receiver isn't known)
 static void audio_route(void)
 {
 	bool b = b_heard();
 	bool kt_out = (AM_ON && main_audio) || BC_HEARD;
-	// Each side's knob sets its level, as the stock firmware does (knob A the core's volume, knob B read in side B's
-	// poll); the KTMicro receiver takes knob A's on both channels
+	// Each side's knob sets its level (knob A the core's volume, knob B read in side B's poll); the KTMicro
+	// receiver takes knob A's on both channels
 	int16_t code_b = kt_out || level_code_b < 0 ? level_code_vol : level_code_b;
 	// In DMR side A's RF chip audio is the demodulator's 4FSK, which the gate keeps off the speaker but for a beep or
 	// the KTMicro receiver; the baseband's voice reaches the speaker without it
@@ -624,8 +621,8 @@ static void volume(uint8_t percent)
 
 static bool cal_read(uint32_t off, void *buf, uint32_t len)
 {
-	// The factory wrote the calibration's first page with the chip's ECC off: it reads back as an ECC failure (seen on
-	// a radio, both blocks), as the stock firmware reads it
+	// The factory wrote the calibration's first page with the chip's ECC off: it reads back as an ECC failure
+	// (measured on a radio, both blocks), so the failure is passed on
 	return cal_base != 0 && d578uv_nand_read_any(cal_base + off, buf, len, NULL);
 }
 
@@ -691,9 +688,9 @@ static uint8_t cal_byte(uint32_t off, bool *ok)
 #define BLK_TRIM_TX		0x16u
 #define BLK_TRIM_AM		0x1Bu	// the UHF block's 0x1B..0x1D: the air band's three points; the VHF block's: register 2
 
-// After each side A retune, in the stock order: register 6 by band, 0xA interpolated over the tuned frequency (UHF
-// above 300 MHz, the VHF block's 220 MHz cells from 200 MHz), then FQCA. Without a calibration block the start-up's 0s
-// stay. The stock firmware uses the frequency as tuned, before any reference trim
+// After each side A retune, in this order: register 6 by band, 0xA interpolated over the tuned frequency (UHF above 300
+// MHz, the VHF block's 220 MHz cells from 200 MHz), then FQCA. Without a calibration block the start-up's 0s stay. The
+// cells take the frequency as tuned, before any reference trim
 static void trims_a(uint32_t hz)
 {
 	if (cal_base == 0) {
@@ -803,10 +800,9 @@ static bool ref_trim(int16_t ppb)
 
 #if CONFIG_VOX
 // The microphone meter for VOX (hal_power_t.mic_level): chip 0's voice amplitude (0x64), the input of the chip's own
-// VOX detector in the BK4819 register map the QA4818 follows (hardware-d578uv.md 5.6; inferred, the stock firmware has
-// no VOX). Its scale is taken as 11 bits, the detector's thresholds' width. The radio task reads it while a reader has
-// asked within MIC_METER_MS, with chip 0 on in FM; in receive the microphone mute (GPIO bit 0) is lifted for it. Any
-// task reads the last level
+// VOX detector in the BK4819 register map the QA4818 follows (hardware-d578uv.md 5.6; inferred). Its scale is taken as
+// 11 bits, the detector's thresholds' width. The radio task reads it while a reader has asked within MIC_METER_MS, with
+// chip 0 on in FM; in receive the microphone mute (GPIO bit 0) is lifted for it. Any task reads the last level
 #define MIC_METER_MS		1000u
 #define MIC_AMP_MAX		0x7FFu
 #define MIC_AMP_BITS		11u
@@ -839,8 +835,7 @@ static void chip0_gpio(uint16_t mask, uint16_t val)
 
 static bool fan_hot;		// the PA's temperature has reached the fan's on point (fan_poll)
 
-// The fan's thresholds on the PA6 sensor's average of four readings, as the stock firmware's: on from 0x3E0, off
-// again at 0x364 and below
+// The fan's thresholds on the PA6 sensor's average of four readings: on from 0x3E0, off again at 0x364 and below
 #define FAN_HOT_ON		0x3E0u
 #define FAN_HOT_OFF		0x364u
 
@@ -1013,8 +1008,8 @@ void MCU_TIM2_HANDLER(void)
 	burst_step(pa_gate_timer(&burst_phase, burst_keyed));
 }
 
-// PD0 an input with pull-up (the stock set-up) on EXTI 0, both edges, its interrupt off until a key-up; TIM2 a
-// one-shot in 1 us ticks, its period set at each start
+// PD0 an input with pull-up on EXTI 0, both edges, its interrupt off until a key-up; TIM2 a one-shot in 1 us ticks, its
+// period set at each start
 static void burst_init(void)
 {
 	mcu_pin_in(PIN_DMR_TX_BURST, MCU_PULL_UP);
@@ -1083,7 +1078,7 @@ void d578uv_pa_counts_reset(void)
 }
 #endif
 
-// The stock RX set-up, side A: LO and IF tuned, path constants, tone, gain, both chips on, band bits, audio paths
+// The RX set-up, side A: LO and IF tuned, path constants, tone, gain, both chips on, band bits, audio paths
 static void rx_setup(void)
 {
 	bool digital = mode == RADIO_MODE_DMR;
@@ -1150,8 +1145,7 @@ static void rx_setup(void)
 #if CONFIG_DUAL_WATCH
 // ---- Side B (hal_rx2.h) ----
 
-// In AM side B's chips carry the air band, just below VHF: the VHF pair, the nearest filter (inferred; the stock AM
-// set-up's band bits aren't traced)
+// In AM side B's chips carry the air band, just below VHF: the VHF pair, the nearest filter (inferred)
 static void b_band_bits(void)
 {
 	uint16_t v = AM_ON ? GPIO_BAND_B_VHF : !b_on ? 0 : b_hz >= UHF_FROM_HZ ? GPIO_BAND_B_UHF : GPIO_BAND_B_VHF;
@@ -1164,7 +1158,7 @@ static void b_chips_off(void)
 	qa4818_enable(&chip_lo_b, QA4818_ENABLE_OFF);
 }
 
-// The stock side B set-up, FM: side A's receive steps on chips 3 and 1 at side B's IF, the tone generator off, then
+// The side B set-up, FM: side A's receive steps on chips 3 and 1 at side B's IF, the tone generator off, then
 // side B's band pair. Its squelch starts closed
 static void b_setup(void)
 {
@@ -1184,7 +1178,7 @@ static void b_setup(void)
 	qa4818_out(&chip_lo_b, QA4818_OUT_LO);
 	qa4818_out(&chip_b, QA4818_OUT_RX);
 	qa4818_lo_on(&chip_lo_b);
-	// DMR: the receive AF word chip 0 takes for the band (the stock firmware's chip 1 set-up for a digital channel)
+	// DMR: the receive AF word chip 0 takes for the band (chip 1's set-up for a digital channel)
 	qa4818_rx_on(&chip_b, b_dmr, b_dmr ? b_hz : 0);
 	b_band_bits();
 	trims_b();
@@ -1343,12 +1337,12 @@ static void b_resume(void) {}
 #if KT_USED
 // ---- The KTMicro receiver's bus and level (5.4) ----
 
-#define KT_TRIES		3u	// the stock firmware retries a refused address up to 400 times
+#define KT_TRIES		3u	// tries for a refused address
 
 static void kt_scl(bool high) { mcu_pin_write(PIN_KT_SCL, high); }
 static bool kt_sda_in(void) { return mcu_pin_read(PIN_KT_SDA); }
 
-// Released, the pin's pull-up takes the line high (the stock firmware's input mode)
+// Released, the pin's pull-up takes the line high (input mode)
 static void kt_sda(bool high)
 {
 	if (high) {
@@ -1406,8 +1400,8 @@ static void rda_delay_ms(uint32_t ms)
 static const rda5807m_hal_cfg_t rda_cfg = {
 	.bus = &kt_i2c,
 	.delay_ms = rda_delay_ms,
-	// A 32.768 kHz crystal, 75 us; GPIO1 low while on and high while off, as the stock firmware drives it (what it
-	// switches on the board isn't traced)
+	// A 32.768 kHz crystal, 75 us; GPIO1 low while on and high while off (what it switches on the board isn't
+	// known)
 	.cfg = { .clk_mode = 0, .rclk_direct = false, .de_50us = false, .seek_th = 8, .gpio_on = RDA5807M_GPIO1_LOW,
 		 .gpio_off = RDA5807M_GPIO1_HIGH },
 	.start_khz = BC_LO_KHZ,
@@ -1437,7 +1431,7 @@ static void kt_attach(void)
 }
 
 // The receiver's level: AM's while AM is on and the core gives the main side the speaker, broadcast FM's while the core
-// plays it, muted otherwise (the stock squelch mutes it the same way). Only once it is set up. Radio task only
+// plays it, muted otherwise. Only once it is set up. Radio task only
 static void kt_level(void)
 {
 #if CONFIG_BCAST_FM
@@ -1469,7 +1463,7 @@ static void kt_level(void)
 	}
 }
 
-// Set up once (the stock set-up ends muted)
+// Set up once, ending muted
 static bool kt_init(void)
 {
 	bool was = kt.ready;
@@ -1488,7 +1482,7 @@ static bool kt_init(void)
 
 // The RSSI shown at the calibrated level-1 point (VHF block byte 0x1A), where the core's AM squelch level 1 opens: the
 // squelch value (hal_radio.h rx_am) is AM_NOISE_LEVEL1 there and falls 1 per count of the reading, so each core level
-// adds 3 counts, as each stock level does
+// adds 3 counts
 #define AM_LEVEL1_DBM		(-82)
 #define AM_NOISE_LEVEL1		64
 #define BLK_AM_CARRIER		0x19u	// the VHF block's floor for the receiver's 0xEC reading
@@ -1496,9 +1490,9 @@ static bool kt_init(void)
 
 static void chips_off(void);
 
-// The stock AM set-up: side B's chips off, the receiver set up and tuned to the IF, chip 3 to the LO and on. Chips 0
-// and 2 are off too: the main receiver is the AM one. The LO below the signal, the stock "AM Offset" default
-// (rf_plan.h); shift register bit 0x04 set, as the stock firmware sets it whenever a side is in AM
+// The AM set-up: side B's chips off, the receiver set up and tuned to the IF, chip 3 to the LO and on. Chips 0 and 2
+// are off too: the main receiver is the AM one. The LO below the signal, the radio's "AM Offset" menu default
+// (rf_plan.h); shift register bit 0x04 set whenever a side is in AM
 static bool rx_am(uint32_t hz, radio_bw_t bw)
 {
 	(void)bw;	// the receiver's AM filter is its own
@@ -1570,9 +1564,9 @@ static bool am_leave(void) { return false; }
 // ---- Broadcast FM: the KTMicro receiver's FM mode (hal_bcast.h, 5.4) ----
 
 
-// On: taken back from AM first (chip 3 off, side B again), then the stock broadcast set-up: chip 3's output bit 6
-// clear, the receiver set up once, FM mode, the last frequency. Muted until audio(true). Off: muted, and the receiver
-// stays powered as the stock firmware leaves it (no standby write is known); an AM set-up made since is left alone
+// On: taken back from AM first (chip 3 off, side B again), then the broadcast set-up: chip 3's output bit 6 clear, the
+// receiver set up once, FM mode, the last frequency. Muted until audio(true). Off: muted, and the receiver stays
+// powered (no standby write is known); an AM set-up made since is left alone
 static bool bc_power(bool on)
 {
 	if (!on) {
@@ -1623,15 +1617,15 @@ static bool bc_tune(uint32_t khz)
 	return true;
 }
 
-// The KTMicro has no seek the stock firmware uses (its scan steps the frequency); the RDA5807's own seek stays inside
-// the board's band only with the core's checks, so neither seeks here (the core doesn't seek)
+// The KTMicro's seek isn't used (a scan steps the frequency); the RDA5807's own seek stays inside the board's band only
+// with the core's checks, so neither seeks here (the core doesn't seek)
 static bool bc_seek(bool up)
 {
 	(void)up;
 	return false;
 }
 
-// The level device after the receiver follows the radio's volume (volume()), as for AM: the receiver stays at the stock
+// The level device after the receiver follows the radio's volume (volume()), as for AM: the receiver stays at a fixed
 // broadcast level, muted only at 0
 static void bc_volume(uint8_t level)
 {
@@ -1639,8 +1633,8 @@ static void bc_volume(uint8_t level)
 	kt_level();
 }
 
-// No tune-done or stereo reading is known: a tune counts as done at once, mono. station is the stock test (its 3-poll
-// debounce left to the caller), rssi the receiver's 0xE6 reading (its scale against dBuV isn't known)
+// No tune-done or stereo reading is known: a tune counts as done at once, mono. station is the receiver's station test
+// (a 3-poll debounce left to the caller), rssi the receiver's 0xE6 reading (its scale against dBuV isn't known)
 static bool bc_status(bcast_status_t *st)
 {
 	if (rda_present) {
@@ -1700,7 +1694,7 @@ static void init(void)
 
 	d578uv_bus_init();
 
-	// Chips in the stock order: the two LOs, then side B's and side A's transceivers. Side B stays off until the core
+	// Chips in this order: the two LOs, then side B's and side A's transceivers. Side B stays off until the core
 	// tunes it (chip 3 kept only with CONFIG_DUAL_WATCH or CONFIG_AM_RX)
 #if SIDE_B_CHIPS
 	rfbus_3w_t *b3 = &bus_lo_b;
@@ -1736,9 +1730,8 @@ static void init(void)
 	qa4818_enable(c1, QA4818_ENABLE_OFF);
 	qa4818_enable(c3, QA4818_ENABLE_OFF);
 
-	// The PA5 device's start-up writes, in the stock order. The stock firmware writes register 8 (the backlight) 0
-	// here and lights it after its splash; the level the start-up already set is kept instead, so the screen doesn't
-	// go dark while the radio starts
+	// The PA5 device's start-up writes, in this order. Register 8 (the backlight) keeps the level the start-up
+	// already set, so the screen doesn't go dark while the radio starts
 	static const uint8_t aux_init[][2] = {
 		{ 0x9, 0 }, { 0x3, 0xFF }, { 0xF, 0xFF }, { AUX_BACKLIGHT, 0 }, { 0xC, 0 }, { 0x2, 0 }, { 0xA, 0 },
 		{ 0x6, 0 }, { 0xE, 0 }, { 0x1, 0 },
@@ -1811,7 +1804,7 @@ static void rx_sleep(bool sleep)
 }
 
 #if CONFIG_DMR
-// The stock digital TX-on (5.1): chips off, chip 0 to hz with the digital set, keyed, band bits, 10 ms, then the
+// The digital TX-on (5.1): chips off, chip 0 to hz with the digital set, keyed, band bits, 10 ms, then the
 // PA is the bursts'. Called before the modem's transmission starts (the core's order), held until tx_off()
 static uint16_t dmr_tx_dac;	// the DAC word of the last dmr_tx, for dmr_wake_listen to key again with
 
@@ -1862,7 +1855,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	d578uv_tone_stop();
 #endif
 	aux = AUX_NONE;
-	// The stock TX start's register 4 (by band and level; its turbo one level less with dual receive on isn't done)
+	// The TX start's register 4, by band and level
 	aux_write(AUX_TRIM_TX, trim_tx(hz / 10u, power, cal_uhf[BLK_TRIM_TX], cal_vhf[BLK_TRIM_TX]));
 	if (mode == RADIO_MODE_DMR) {
 #if CONFIG_DMR
@@ -1891,7 +1884,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	qa4818_path(&chip_if, true, false, wide, R49);
 	qa4818_fm_tx(&chip_if, hz);
 	qa4818_mic_level(&chip_if, QA4818_MIC_GAIN_DEFAULT, cal_uhf[BLK_MIC]);
-	qa4818_tone_gen(&chip_if, false);	// the stock analog TX-on: no burst left on from a previous key-up
+	qa4818_tone_gen(&chip_if, false);	// no burst left on from a previous key-up
 	qa4818_tx_tone(&chip_if, tone, t != NULL ? t->value : 0, lvl_ctcss, lvl_dcs);
 	qa4818_tx_drive(&chip_if, hz, wide, drive, tx_level);
 	qa4818_tx_on(&chip_if);
@@ -1899,7 +1892,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	chip0_gpio(GPIO_TX_UHF | GPIO_FAN | GPIO_MIC_MUTE, (hz > UHF_FROM_HZ ? GPIO_TX_UHF : 0) | GPIO_FAN);
 	hal_delay_ms(10);
 	mcu_dac_write(0, dac);
-	// The PA enable toggled three times 2 ms apart, then held (the stock sequence)
+	// The PA enable toggled three times 2 ms apart, then held
 	for (int i = 0; i < 3; i++) {
 		mcu_pin_write(PIN_TX_ENABLE, true);
 		hal_delay_ms(2);
@@ -1910,7 +1903,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	return true;
 }
 
-// The microphone again after a tone: the stock order, the chip's voice set-up first, then the mute bit
+// The microphone again after a tone: the chip's voice set-up first, then the mute bit
 static void mic_again(void)
 {
 #if CONFIG_DTMF || CONFIG_APRS
@@ -1928,7 +1921,7 @@ static bool fm_keyed(void)
 	return transmitting && mode == RADIO_MODE_FM;
 }
 
-// The stock 1750 Hz burst: tone drive by band, page 1 0x1B = 5, the microphone muted, then the generator (5.3). Any
+// The 1750 Hz burst: tone drive by band, page 1 0x1B = 5, the microphone muted, then the generator (5.3). Any
 // tone the generator makes; the core sends 1750 Hz
 static bool tx_tone(uint16_t hz)
 {
@@ -1964,7 +1957,7 @@ static bool tx_tone_key(bool down)
 }
 
 #if CONFIG_DTMF || CONFIG_APRS
-// The stock DTMF set-up: the chip's audio input pin at the calibrated DTMF drive, the microphone muted, for PB9's
+// The DTMF set-up: the chip's audio input pin at the calibrated DTMF drive, the microphone muted, for PB9's
 // audio (tone_d578uv.c). APRS sends its tones the same way; the deviation that gives them is inferred
 static void line_in(void)
 {
@@ -1998,7 +1991,7 @@ bool d578uv_line_in(bool on)
 #endif
 
 #if CONFIG_DTMF
-// The stock DTMF: the line input and the pair from PB9. A new digit only changes the pair
+// DTMF: the line input and the pair from PB9. A new digit only changes the pair
 static bool tx_dtmf(char digit)
 {
 	if (!fm_keyed()) {

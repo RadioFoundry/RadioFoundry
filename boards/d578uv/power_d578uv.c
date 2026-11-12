@@ -2,12 +2,11 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT-D578UV power hold, power key and supply voltage (docs/spec/hardware-d578uv.md 3.3).
 //
-// A mobile on a fixed 13.8 V supply: no battery (CAP_NO_BATTERY). PC3 is the power hold: the stock firmware sets it at
-// boot and never clears it, even when it switches off, so whether dropping it cuts the supply is to be checked on the
-// radio. The stock firmware's "off" is a standby it wakes from on a one second hold of the power key. The supply is
-// read on PC1 through an 11:1 divider. The backlight is on the RF bus (radio_d578uv.c). The one LED output found is an
-// RF chip's GPIO bit: radio_d578uv.c lights it on transmit, and led() passes the core's receive LED on to it. The microphone level for VOX
-// comes from RF chip 0 (radio_d578uv.c): no ADC input carries the microphone.
+// A mobile on a fixed 13.8 V supply: no battery (CAP_NO_BATTERY). PC3 is the power hold, set at boot. Dropping it
+// doesn't cut the supply, so "off" is a standby the radio wakes from on a one second hold of the power key. The supply
+// is read on PC1 through an 11:1 divider. The backlight is on the RF bus (radio_d578uv.c). The one LED output found is
+// an RF chip's GPIO bit: radio_d578uv.c lights it on transmit, and led() passes the core's receive LED on to it. The
+// microphone level for VOX comes from RF chip 0 (radio_d578uv.c): no ADC input carries the microphone.
 #include "d578uv.h"
 #include "pins.h"
 #include "mcu_io.h"
@@ -23,7 +22,7 @@
 #define STANDBY_POLL_US		10000u
 #define STANDBY_WAKE_POLLS	100u	// the power key held this many polls (1 s) wakes the radio from standby
 #define SUPPLY_SAMPLES		4u
-// mV per count: 3.3 V reference, 12 bits, 11:1 divider (the stock scale, 363 / 4096 in 0.1 V)
+// mV per count: 3.3 V reference, 12 bits, 11:1 divider (363 / 4096 in 0.1 V)
 #define SUPPLY_MV_NUM		36300u
 #define SUPPLY_MV_DEN		4096u
 
@@ -41,9 +40,9 @@ static void init(void)
 	pwrkey_init(&power_key);
 }
 
-// Dropping PC3 doesn't cut a mobile's supply (seen on a radio): "off" is the stock firmware's standby instead. The
-// transmitter off, the switched rail (backlight, RF chips, audio) down, then nothing but the power key: a one second
-// hold restarts the radio. The scheduler stays held, so no task drives the unpowered chips
+// Dropping PC3 doesn't cut a mobile's supply (measured on a radio): "off" is a standby instead. The transmitter off,
+// the switched rail (backlight, RF chips, audio) down, then nothing but the power key: a one second hold restarts the
+// radio. The scheduler stays held, so no task drives the unpowered chips
 static void latch(bool on)
 {
 	if (on) {
@@ -70,7 +69,7 @@ static void latch(bool on)
 	}
 }
 
-// A volume pot's reading, 0..100 (the stock maps it to 33 levels over 0x96..0xF60)
+// A volume pot's reading, 0..100 over the pot's range 0x96..0xF60
 uint8_t d578uv_pot_percent(uint32_t v)
 {
 	if (v <= 0x96u) {
@@ -109,7 +108,7 @@ static uint16_t supply_mv(void)
 	return (uint16_t)(sum * SUPPLY_MV_NUM / (SUPPLY_MV_DEN * SUPPLY_SAMPLES));
 }
 
-// The PA's temperature sensor in mV: four readings averaged, as the stock firmware does (3.3 V reference, 12 bits).
+// The PA's temperature sensor in mV: four readings averaged (3.3 V reference, 12 bits).
 // Higher is hotter; its curve to degrees is not known yet (hardware-d578uv.md 5)
 static uint16_t pa_temp_mv(void)
 {

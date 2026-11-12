@@ -143,10 +143,10 @@ one of them, and which keys start the update mode. The steps differ from the lis
 
 1. **Radio** and **Build** as above.
 2. **Connect.** Turn the radio off, connect the USB cable, hold the update mode keys and turn the radio on. Choose
-   **Connect** and pick the radio's serial port. The installer asks the radio for its model, as the manufacturer's
-   updater does, and tells which hardware variant it is. If you know the variant, you can pick it first; the installer
-   stops if the radio reports another one. A variant RadioFoundry has no image for is refused: nothing is written, and
-   its original firmware can still be written back (below).
+   **Connect** and pick the radio's serial port. The installer asks the radio for its model and tells which hardware
+   variant it is. If you know the variant, you can pick it first; the installer stops if the radio reports another one.
+   A variant RadioFoundry has no image for is refused: nothing is written, and its original firmware can still be
+   written back (below).
 3. **Boot Block.** The radio's DMR chip needs a small boot block from the manufacturer's firmware at every power-up.
    RadioFoundry doesn't ship it. Pick your copy of the radio's original firmware file (`.CDD`, any version for the
    radio). The installer finds the block in it and checks it; the file stays on your computer, and the browser keeps
@@ -158,7 +158,7 @@ one of them, and which keys start the update mode. The steps differ from the lis
 These radios have no backup in the installer: back up the codeplug with the manufacturer's CPS first. To put the
 original firmware back, choose **Help**, pick the radio and the original firmware, and select the three files of one
 manufacturer firmware version at once (`.CDD`, `.CDI` and `.spi`). The installer writes them only if the `.spi` names
-the model the radio reports, as the manufacturer's updater checks.
+the model the radio reports.
 
 ### Updating RadioFoundry
 

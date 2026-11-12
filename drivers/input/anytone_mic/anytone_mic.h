@@ -4,11 +4,11 @@
 // (115200 8N1 on the radio's microphone lines), and what the radio sends back. Pure and allocation free, so the host
 // tests run it.
 //
-// From the microphone (seen on a radio; the board's hardware page has the details): a frame starts with its type byte,
-// which gives its length: 'A' 8 bytes (the microphone's), 'F' 7, '+' 31 (the PC link's), 0x06 one (the microphone's
-// acknowledgement). Only 'A' frames are used, and only with 0x06 in their last byte. Byte 4 0x82 is the microphone
-// saying it is there; otherwise byte 1 is PTT (nonzero = pressed), byte 2 the key (1 pressed, 0 released) and byte 4
-// its code (anytone_mic_key_t). Bytes 3, 5 and 6 are 0.
+// From the microphone (measured on its line; the board's hardware page has the details): a frame starts with its type
+// byte, which gives its length: 'A' 8 bytes (the microphone's), 'F' 7, '+' 31 (the PC link's), 0x06 one (the
+// microphone's acknowledgement). Only 'A' frames are used, and only with 0x06 in their last byte. Byte 4 0x82 is the
+// microphone saying it is there; otherwise byte 1 is PTT (nonzero = pressed), byte 2 the key (1 pressed, 0 released)
+// and byte 4 its code (anytone_mic_key_t). Bytes 3, 5 and 6 are 0.
 //
 // To the microphone: ANYTONE_MIC_ACK for each accepted frame, and after a presence frame a status frame
 // (anytone_mic_status). Without the status frame the microphone never gets past its presence frame: it sends that 10
@@ -16,9 +16,8 @@
 // nothing while PTT is held, but answers each status frame with a run of 0x06. So the radio sends one every
 // ANYTONE_MIC_POLL_MS, and any byte from the microphone keeps it present: ANYTONE_MIC_TIMEOUT_MS without one drops it
 // and with it PTT and the key, so a microphone pulled out mid-transmission doesn't hold the transmitter on. The bytes
-// to send come from anytone_mic_out, called from a task: the stock firmware too answers from its key loop, and this
-// way an answer never lands inside a status frame. A change of the microphone's lights sends a status frame at once
-// (the stock firmware's too, on every TX, RX or side change), within ANYTONE_MIC_STATUS_GAP_MS.
+// to send come from anytone_mic_out, called from a task, so an answer never lands inside a status frame. A change of
+// the microphone's lights (a TX, RX or side change) sends a status frame at once, within ANYTONE_MIC_STATUS_GAP_MS.
 #ifndef ANYTONE_MIC_H
 #define ANYTONE_MIC_H
 
@@ -33,16 +32,16 @@
 #define ANYTONE_MIC_MAX_LEN	31u	// the longest frame type ('+')
 // No byte for this long, three polls: the microphone is gone
 #define ANYTONE_MIC_TIMEOUT_MS	3000u
-// A status frame this often while the microphone is present, and never closer than ANYTONE_MIC_STATUS_GAP_MS (the
-// stock firmware's spacing, inferred: 20 passes of its key loop)
+// A status frame this often while the microphone is present, and never closer than ANYTONE_MIC_STATUS_GAP_MS
+// (inferred)
 #define ANYTONE_MIC_POLL_MS	1000u
 #define ANYTONE_MIC_STATUS_GAP_MS	200u
 #define ANYTONE_MIC_STATUS_LEN	16u
-// Byte 12 of the status frame: the stock firmware puts its long press setting there, in 100 ms steps less one (5:
-// 600 ms, the core's long press). What the microphone does with it isn't known
+// Byte 12 of the status frame: the long press time, in 100 ms steps less one (5: 600 ms, the core's long press;
+// inferred). What the microphone does with it isn't known
 #define ANYTONE_MIC_STATUS_LONG	5u
-// The status frame's light fields: bit n is byte n + 1 (1 or 0). The stock firmware's fields, not checked on the
-// microphone. The main side is A while ANYTONE_MIC_LIGHT_MAIN_B is clear
+// The status frame's light fields: bit n is byte n + 1 (1 or 0). Inferred, not checked on the microphone. The main side
+// is A while ANYTONE_MIC_LIGHT_MAIN_B is clear
 #define ANYTONE_MIC_LIGHT_A_BUSY	0x01u	// side A busy
 #define ANYTONE_MIC_LIGHT_MAIN_AUDIO	0x02u	// the main side's audio open
 #define ANYTONE_MIC_LIGHT_A_TX		0x04u	// side A transmitting
@@ -52,8 +51,8 @@
 #define ANYTONE_MIC_LIGHT_MAIN_B	0x40u	// the main side is B
 #define ANYTONE_MIC_LIGHT_FIELDS	7u
 
-// Key codes in byte 4 (the radio's own numbering). All but MENU and EXIT seen on a radio; those two are the stock
-// firmware's, which the keypad microphone's keys don't send (its A and D, labeled MENU and EXIT, are PA and PD)
+// Key codes in byte 4 (the radio's own numbering). All but MENU and EXIT measured on a radio; those two are
+// inferred, and the keypad microphone's keys don't send them (its A and D, labeled MENU and EXIT, are PA and PD)
 typedef enum {
 	ANYTONE_MIC_KEY_NONE = 0x00,
 	ANYTONE_MIC_KEY_0 = 0x01,

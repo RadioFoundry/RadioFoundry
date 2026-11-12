@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""The AnyTone update mode (boards.py family "anytone-update"): the vendor's own firmware update protocol on the
+"""The AnyTone update mode (boards.py family "anytone-update"): the radio's own firmware update protocol on the
 radio's USB serial port, which the bootloader runs when the radio is turned on with the board's keys held
 (docs/spec/hardware-d578uv.md 8). rfoundry (cli.py), tools/anytone_update.py and the web flasher
 (site/static/js/flasher/anytone.js) speak it the same way.
 
 The radio names its model when asked (byte 02), and the name differs by MCU: a GD32 radio and an Artery radio of the
 same model answer different names, as the vendor's files carry them (board.toml [flash.anytone] models, per [hardware]
-variants code). As the vendor's updater does, the tools write a vendor firmware set only to a radio whose model its
+variants code). The tools write a vendor firmware set only to a radio whose model its
 .spi names, and RadioFoundry only to a variant whose image this board is (an Artery radio has none: it is refused,
 while its own stock firmware can still go back).
 
@@ -23,7 +23,7 @@ from . import modemboot
 
 ACK, NAK = 0x06, 0x15
 HELLO = b"UPDATE"
-HELLO_REPLY = b"QX\x06"		# the stock firmware's answer (PROGRAM, END)
+HELLO_REPLY = b"QX\x06"		# the radio's answer (PROGRAM, END)
 # The bootloader answers UPDATE with the ACK alone (seen on a radio, bootloader V100); a QX before it is taken as well
 UPDATE_REPLIES = (bytes([ACK]), HELLO_REPLY)
 IDENTIFY = b"\x02"
@@ -35,13 +35,13 @@ FRAME_LEN = 40
 BAUD = 921600
 RETRIES = 3
 TIMEOUT = 2.0			# seconds for each answer
-# The stock firmware's PC mode (programming mode), with the radio on and running its stock firmware: the codeplug is
+# The radio's PC mode (programming mode), with the radio on and running its original firmware: the codeplug is
 # read before the install, since RadioFoundry no longer reads the stock tables (docs/spec/codeplug-stock-anytone.md)
 PROGRAM = b"PROGRAM"
 END = b"END"
 READ = 0x52			# 'R' + address (4 B big-endian) + count (1 B)
 READ_REPLY = 0x57		# 'W' + address + count + data + sum + 06
-READ_MAX = 16			# bytes per read, as the vendor's programming software asks for them
+READ_MAX = 16			# bytes per read
 SPI_HEADER = 14			# chunk size, block count, payload length, 0
 SPI_MODEL_LEN = 8
 SPI_MODEL2 = SPI_HEADER + 12	# the second model name: after the first and its 4-byte version
@@ -105,8 +105,7 @@ def check_radio(board, model, chosen=None):
 
 
 def check_install(board, model, chosen=None):
-    """check_radio, and the variant must run this board's image: an Artery radio of a GD32 board is refused (the
-    vendor's updater refuses a file for the other MCU too)"""
+    """check_radio, and the variant must run this board's image: an Artery radio of a GD32 board is refused"""
     got = check_radio(board, model, chosen)
     why = board.variant_blocked(got)
     if why:
@@ -124,11 +123,11 @@ def check_install(board, model, chosen=None):
 
 
 def check_restore(board, model, spi_models, chosen=None):
-    """check_radio, and the vendor set's .spi must name the radio's model, as the vendor's updater checks"""
+    """check_radio, and the vendor set's .spi must name the radio's model"""
     got = check_radio(board, model, chosen)
     if model not in spi_models:
-        raise UpdateError("this firmware is for %s, the radio answers %r (%s): refusing, as the vendor's updater "
-                          "does" % (" or ".join(sorted(spi_models)) or "no model", model, _named(board, got)))
+        raise UpdateError("this firmware is for %s, the radio answers %r (%s): refusing"
+                          % (" or ".join(sorted(spi_models)) or "no model", model, _named(board, got)))
     return got
 
 
@@ -309,7 +308,7 @@ def parse_read(addr, n, r):
 
 
 class Program(Radio):
-    """The stock firmware's PC mode on a serial port: read its memory, then END (the radio restarts)"""
+    """The radio's PC mode on a serial port: read its memory, then END (the radio restarts)"""
 
     def hello(self):
         self.port.reset_input_buffer()

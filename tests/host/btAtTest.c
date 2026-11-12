@@ -78,7 +78,7 @@ static void test_keys(void)
 	CHECK(b.key == 3 && b.key_events == 1);
 	tunnel(&b, "+KEY=01\r\n+KEY=02\r\n");
 	CHECK(b.key == 2 && b.key_events == 3);
-	// codes the stock firmware ignores, and malformed ones
+	// codes out of range, and malformed ones
 	tunnel(&b, "+KEY=05\r\n+KEY=1\r\n+KEY=0x\r\n");
 	CHECK(b.key == 2 && b.key_events == 3);
 }

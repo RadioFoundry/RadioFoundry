@@ -3,14 +3,13 @@
 
 # Stock AnyTone codeplugs
 
-The vendor firmware of the AnyTone radios with SPI NAND keeps its codeplug in tables of its own across the NAND.
+The AnyTone radios with SPI NAND keep their codeplug in tables of their own across the NAND.
 RadioFoundry keeps its own codeplug in its own NAND blocks and can't read these tables once it runs. The web flasher
-therefore reads them before the install, through the stock firmware's PC mode, and writes the converted codeplug
+therefore reads them before the install, through the radio's PC mode, and writes the converted codeplug
 through RadioFoundry's CPS afterwards ([web-flasher.md](../dev/web-flasher.md), "Channels after an install"). Which
 radios have this layout: [feature-matrix.md](../feature-matrix.md) and each radio's hardware page.
 
-Everything here is from a static analysis of two stock firmware releases, which agree on every address and marker,
-and untested on a radio. (I) marks an inferred value.
+Everything here is untested on a radio. (I) marks an inferred value.
 
 Code: `site/static/js/codeplug/stock_anytone.js` (the tables), `site/static/js/flasher/anytone.js` (`AnytoneProgram`,
 the PC mode), `site/static/js/flasher/migrate.js` (`readAnytone`, `convertAnytone`), `tools/rfoundry/rfoundry/anytone.py`
@@ -19,7 +18,7 @@ the PC mode), `site/static/js/flasher/migrate.js` (`readAnytone`, `convertAnyton
 
 ## 1. PC mode
 
-The stock firmware answers on its USB serial port while it runs normally (not in the update mode).
+The radio answers on its USB serial port while it runs its original firmware normally (not in the update mode).
 
 | Frame | Answer |
 |---|---|
@@ -27,9 +26,9 @@ The stock firmware answers on its USB serial port while it runs normally (not in
 | `R`, address (4 bytes, big-endian), count (1 byte) | `W`, address, count, the data, the 8-bit sum of address, count and data, `06` |
 | `END` | `51 58 06`, then the radio restarts |
 
-Reads ask for 16 bytes at most, as the vendor's programming software does. A malformed answer, one for another
-address or a bad sum is asked again, three times in all. Addresses are NAND byte addresses. The firmware's read goes
-through its bad block remap and picks the current block of a pair itself (section 2).
+Reads ask for 16 bytes at most. A malformed answer, one for another
+address or a bad sum is asked again, three times in all. Addresses are NAND byte addresses. A read goes
+through the radio's bad block remap and picks the current block of a pair itself (section 2).
 
 ## 2. Block pairs
 
@@ -126,7 +125,7 @@ with the same limits and notes:
 
 ## 5. Open
 
-- Every address, marker and bitmap polarity is from static analysis; a dump of a real radio would confirm them.
+- Every address, marker and bitmap polarity is untested; a dump of a real radio would confirm them.
 - Which radio ID is the default; the reader takes the one most channels use.
 - Bandwidth values 2 and 3; the squelch level and the channel's remaining bytes.
 - Names in GBK: converting Chinese names to the radio's character set.

@@ -772,7 +772,7 @@ static void test_dmr_tx_answer_on_air(void)
 }
 
 // A board's options: its call option and report bits, more start fields, and a codec write each way around a
-// transmission (the values of a radio whose stock firmware sends them)
+// transmission (a radio's values)
 static const uint8_t t_modout[5] = { 0x00, 0x10, 0x00, 0x00, 0x00 };
 static const uint8_t t_offset[8] = { 0x00, 0x82, 0x02, 0xD0, 0x02, 0xD0, 0x02, 0xD0 };
 static const uint8_t t_sq[12] = { 0x00, 0x02, 0x00, 0x3C, 0x17, 0x70, 0x15, 0x7C, 0x17, 0x70, 0x15, 0x7C };

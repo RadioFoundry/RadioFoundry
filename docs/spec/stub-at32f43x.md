@@ -43,13 +43,13 @@ registers; bank 2's are 0x40 above bank 1's.
 
 | Fact | Value | Source |
 |---|---|---|
-| Unlock | keys 0x45670123 then 0xCDEF89AB to UNLOCK (0x40023C04; bank 2 0x40023C44); OPLK (CTRL bit 7) set relocks | reference manual; a vendor image on this chip does the same |
-| Sector erase | CTRL bit 1 (SECERS), the address to ADDR (+0x14), then CTRL bit 6 (ERSTR); wait while STS bit 0 (OBF) | reference manual; a vendor image |
-| Program | CTRL bit 0 (FPRGM), then the write to the flash address; wait while OBF | reference manual; a vendor image (halfwords) |
-| Errors | STS bit 2 (PRGMERR), bit 4 (EPPERR), written 1 to clear; bit 5 (ODF) done | reference manual; a vendor image reads bits 0, 2, 4 |
-| Bank 2 on parts over 1 MB | from 0x08200000: bank 1 is the first 2 MB | a vendor image's flash library selects bank 2's registers for 0x08200000 to 0x083EFFFF |
-| Bank 2 on 1 MB parts | from 0x08080000 (two 512 KB banks) | reference manual, not checked against an image |
-| Sector size | 4 KB on parts over 1 MB, 2 KB on the others | reference manual, not checked on a part. A vendor image on a 4032 KB part erases in 2 KB steps |
+| Unlock | keys 0x45670123 then 0xCDEF89AB to UNLOCK (0x40023C04; bank 2 0x40023C44); OPLK (CTRL bit 7) set relocks | reference manual |
+| Sector erase | CTRL bit 1 (SECERS), the address to ADDR (+0x14), then CTRL bit 6 (ERSTR); wait while STS bit 0 (OBF) | reference manual |
+| Program | CTRL bit 0 (FPRGM), then the write to the flash address; wait while OBF | reference manual |
+| Errors | STS bit 2 (PRGMERR), bit 4 (EPPERR), written 1 to clear; bit 5 (ODF) done | reference manual |
+| Bank 2 on parts over 1 MB | from 0x08200000: bank 1 is the first 2 MB | reference manual, not checked on a part |
+| Bank 2 on 1 MB parts | from 0x08080000 (two 512 KB banks) | reference manual, not checked on a part |
+| Sector size | 4 KB on parts over 1 MB, 2 KB on the others | reference manual, not checked on a part |
 
 The engine's view:
 
@@ -149,7 +149,7 @@ carries this image under `targets.at32f43x`, but no flasher route offers the stu
 | Hardware | nothing has run on a radio: the hand-over, the adopted and the cold USB start, the erase and program |
 | Sector size | the erase works with 2 KB or 4 KB sectors, but which one a part has is not confirmed on a part |
 | The zero-wait area | the first part of the flash is read through a zero-wait copy in SRAM. That the controller keeps the copy in step with an erase or a program is taken from the manual and not checked: the stub reads back each erased half and the host verifies every write by CRC, so a stale copy would show as a failed install, not a silent one |
-| The flash size and UID words | the stub reads them at 0x1FFFF7E0 and 0x1FFFF7E8, the platform's addresses, which no vendor image confirms. A wrong size only narrows the map (it is cut to 1 MB either way) |
+| The flash size and UID words | the stub reads them at 0x1FFFF7E0 and 0x1FFFF7E8, the platform's addresses, not checked on a part. A wrong size only narrows the map (it is cut to 1 MB either way) |
 | The vendor bootloader with an erased application | the interlock assumes a bootloader that finds the first application word erased stays in its update mode, as on the GD32F30x radios |
 | A flasher route | the web flasher's update backends for these radios use the vendor update mode only |
 

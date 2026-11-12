@@ -229,7 +229,7 @@ def anytone(out):
 	r.hello()
 	ident = r.identify()
 	r.write(0x08006000, data)
-	# the stock firmware's PC mode: a read of 40 bytes across a record the fake holds, then END
+	# the radio's PC mode: a read of 40 bytes across a record the fake holds, then END
 	pc = Rec(memory={0x02600008: data[:24]})
 	p = at.Program(pc, log=lambda m: None, timeout=0.01)
 	p.hello()

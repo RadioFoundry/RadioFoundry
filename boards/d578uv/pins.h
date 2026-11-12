@@ -18,8 +18,8 @@
 #define PIN_LCD_CS		GPIOB, MCU_PIN(13)
 #define PIN_LCD_RD		GPIOE, MCU_PIN(15)
 
-// SPI NAND, bit-banged (the stock firmware drives these pins as GPIOs; no SPI peripheral has them as SCK, MOSI and
-// MISO). The clock is PB15 and the data out PB14 (read on a radio: the ID answered only this way round)
+// SPI NAND, bit-banged (no SPI peripheral has them as SCK, MOSI and MISO). The clock is PB15 and the data out PB14
+// (read on a radio: the ID answered only this way round)
 #define PIN_NAND_CS		GPIOB, MCU_PIN(8)
 #define PIN_NAND_CLK		GPIOB, MCU_PIN(15)
 #define PIN_NAND_MOSI		GPIOB, MCU_PIN(14)
@@ -51,8 +51,8 @@
 #define PIN_SCT_PC7		GPIOC, MCU_PIN(7)	// low in the reset sequence
 #define PIN_SCT_PIO1		GPIOC, MCU_PIN(12)	// boot strap, low in the reset sequence
 
-// The KTMicro AM/FM receiver on a bit-banged I2C bus (hardware-d578uv.md 5.4). The stock firmware switches PB6 between
-// output and input with pull-up: PB6 is the data line
+// The KTMicro AM/FM receiver on a bit-banged I2C bus (hardware-d578uv.md 5.4). PB6 is the data line, switched between
+// output and input with pull-up
 #define PIN_KT_SDA		GPIOB, MCU_PIN(6)
 #define PIN_KT_SCL		GPIOB, MCU_PIN(7)
 
@@ -75,8 +75,8 @@
 // Power: the hold output (high = stay on) and the power key (low = pressed)
 #define PIN_POWER_LATCH		GPIOC, MCU_PIN(3)
 #define PIN_POWER_KEY		GPIOA, MCU_PIN(0)
-// The switched rail of the LCD backlight, the RF chips and the audio (high = on): the stock firmware raises it at
-// boot and waits 150 ms (hardware-d578uv.md 3)
+// The switched rail of the LCD backlight, the RF chips and the audio (high = on): raised at boot, then 150 ms to settle
+// (hardware-d578uv.md 3)
 #define PIN_RAIL		GPIOE, MCU_PIN(0)
 
 // USB: the D+ pull-up's switch (high = seen by the host), on the GD32 builds (hardware-d578uv.md 3)
@@ -100,7 +100,7 @@
 #define ADC_VOL_A		12u
 #define PIN_VOL_B		GPIOC, MCU_PIN(5)
 #define ADC_VOL_B		15u
-// The PA's temperature sensor, higher = hotter: the stock firmware runs the fan from it (hardware-d578uv.md 5)
+// The PA's temperature sensor, higher = hotter: the fan runs from it (hardware-d578uv.md 5)
 #define PIN_PA_TEMP		GPIOA, MCU_PIN(6)
 #define ADC_PA_TEMP		6u
 // Demodulated receive audio, biased at mid-scale (hardware-d578uv.md 3.4): APRS receive samples it (afsk_d578uv.c)

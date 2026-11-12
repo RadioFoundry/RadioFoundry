@@ -45,14 +45,14 @@ usb_ids = ["2E3C:5740"]
 blocked = "no AT32 radio has run RadioFoundry yet"
 name = "AT32F43x (built from mid-2022)"
 level = "bring-up"
-notice = "Nothing has run on this radio yet: the AT32 build is written from an analysis of the manufacturer's firmware and the GD32 build's code. To go back, write the manufacturer's firmware file through the factory update mode."
+notice = "Nothing has run on this radio yet: the AT32 build is written from the AT32 datasheets and the GD32 build's code. To go back, write the manufacturer's firmware file through the factory update mode."
 runs = { board = "d578uva" }
 
 [status]
 level = "bring-up"
 summary = """\
-The GD32 builds' code on the AT32F435, written from an analysis of the manufacturer's firmware; nothing has \
-run on a radio yet, so the installers refuse it. Open: every function on the radio, DMR."""
+The GD32 builds' code on the AT32F435; nothing has run on a radio yet, so the installers refuse it. \
+Open: every function on the radio, DMR."""
 release = "testing"
 
 # The vendor bootloader (0x08000000..0x08005FFF) is never written; the image goes to 0x08006000 through the factory

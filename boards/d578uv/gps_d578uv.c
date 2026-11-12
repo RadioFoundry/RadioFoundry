@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT-D578UV GPS (docs/spec/hardware-d578uv.md 3.6): the module on USART2 (PA2 TX, PA3 RX), 9600 8N1, through the
-// platform's GPS driver (gps_uart/). The module's supply is RF chip 0's output bit 2, set through
-// the radio's shadow of that register (d578uv_gps_power, radio_d578uv.c), as the stock firmware does. A CASIC module
-// is known by its first $xxTXT sentence and gets the stock firmware's set-up; any other module's default output is
-// parsed as is
+// platform's GPS driver (gps_uart/). The module's supply is RF chip 0's output bit 2, set through the radio's shadow of
+// that register (d578uv_gps_power, radio_d578uv.c). A CASIC module is known by its first $xxTXT sentence and gets the
+// set-up below; any other module's default output is parsed as is
 #include "config.h"
 #include "d578uv.h"
 #include "pins.h"
@@ -18,11 +17,9 @@
 #define MASK_OF(p)		MASK_OF_(p)
 #define MASK_OF_(port, mask)	mask
 
-// The stock firmware's CASIC set-up, sent on the first $xxTXT: one fix a second, GGA and RMC only (what the position
-// source reads), and GPS alone, the stock satellite setting's default. The stock firmware turns GSV on only while its
-// satellite screen is open; the GPS status screen (CONFIG_GPS_SKY) reads GSV and GSA all the time, so they stay on with
-// it. Its MTK branch (on $PMTK010,001) is left out: it sends $PMTK225 with a $PMTK314 output list (3.6), which sets
-// nothing useful
+// The CASIC set-up, sent on the first $xxTXT: one fix a second, GGA and RMC only (what the position source reads), and
+// GPS alone, the radio's satellite menu default. The GPS status screen (CONFIG_GPS_SKY) reads GSV and GSA all the
+// time, so they stay on with it
 #if CONFIG_GPS_SKY
 #define PCAS03	"PCAS03,1,0,1,1,1,0,0,0\n"	// GGA, GSA, GSV, RMC
 #else

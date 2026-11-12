@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The pages of the AnyTone update mode backend (backends.js id "anytone-update", protocol in anytone.js): install
-// RadioFoundry, and put the original firmware back from the user's vendor firmware set. The radio is identified as the
-// manufacturer's updater does it (its model answer), mapped to a [hardware] variant; a variant the user picked is checked
+// RadioFoundry, and put the original firmware back from the user's vendor firmware set. The radio is identified by its
+// model answer, mapped to a [hardware] variant; a variant the user picked is checked
 // against it, and a variant without a RadioFoundry image is refused for the install (its original firmware may still go
 // back). docs/dev/web-flasher.md "Radio access backends".
 //

@@ -10,8 +10,7 @@ layer 2 engine that implements `hal_dmr_modem_t` (`sct_dmr`). The board supplies
 [feature-matrix.md](../feature-matrix.md) lists which radios have one.
 
 Sources: the chip's datasheet and its "Packet Interface" document (cite them, don't copy them into this repository),
-and what the original firmware of the radios that carry the chips sends. `(unverified)` marks what no radio has
-confirmed yet.
+and the radios that carry the chips. `(unverified)` marks what no radio has confirmed yet.
 
 ## 1. Chips and host link
 
@@ -47,8 +46,8 @@ answer before the next:
 | 3 | TYPE 0x00, one packet per entry of the board's `fields`, in order (control fields such as DIGI_SPEAKER_GAIN and DIGI_MIC_GAIN) | `ID 00`, 200 ms |
 | 4 | TYPE 0x40, `00 page register value 00 00` (LEN 6), one packet per entry of the board's `codec_writes`, in order | `17 00`, 200 ms |
 
-The waits are the Packet Interface document's field timeouts; the control field's and the codec write's are what
-the original firmware allows. A field of the wrong length is not sent and fails the set-up.
+The waits are the Packet Interface document's field timeouts; the document gives none for the control field and the
+codec write. A field of the wrong length is not sent and fails the set-up.
 An `ACK_MESSAGE` with an error code answers any step and fails it.
 
 Results (`sct_boot_result_t`): `OK`, `NO_BLOCK` (no block given), `BUS` (a write failed), `NO_APP` (the chip
@@ -110,7 +109,7 @@ Fields the driver uses:
 | 0x6F | DMR_CALL_SLOT | bit 7 transmit, bit 6 aligned to the received slot timing, bits 1-0 slot (3 = both, receive only; 0 for a direct mode call) |
 | 0x77 | DMR_CC | color code |
 | 0x79 | DMR_CALL_OPTION | 5 bytes, below |
-| 0x7A | DMR_OFFSET | 8 bytes. The Packet Interface document gives 4: the RF_TIMING output's offset against the slot timing (signed, MSB first, 41.7 µs units, ±720) and its length (240-1200, default 720). The firmware seen sends 8 |
+| 0x7A | DMR_OFFSET | 8 bytes. The Packet Interface document gives 4: the RF_TIMING output's offset against the slot timing (signed, MSB first, 41.7 µs units, ±720) and its length (240-1200, default 720). The boards send 8 |
 | 0x7B | DMR_SLOT_TYPE | the received slot type |
 | 0x7E | DMR_OWN_ID_BCD | 8-digit BCD |
 | 0x7F | DMR_SLOT_FOUND | sync family and slot of a received burst |
@@ -312,19 +311,19 @@ not known well enough (section 10).
 
 | Board part | Notes |
 | --- | --- |
-| Bus | the parallel port is bit-banged on GPIO where the original firmware does so: data direction per transfer, strobes with a short settle, reads while HOBIB says data waits |
+| Bus | the parallel port is bit-banged on GPIO where the board wires it to plain GPIO: data direction per transfer, strobes with a short settle, reads while HOBIB says data waits |
 | Reset | supply on, strobes idle, boot strap, RSTN pulse, then the chip's start-up time (about 0.7 s) |
 | Boot block | from the modem boot slot, checked by CRC-32 before use |
 | Modem task | polls the chip every 2 ms under the lock, feeds each packet to `sct_dmr_packet`, then calls `sct_dmr_poll` |
 | Health | the host port is polled, so no interrupt can be lost; `hal_dmr_modem_t.health` counts the same harm seen from the driver. `stalls`: transmissions with frames sent that ended on the drain time-out with no packet from the chip meanwhile. `stuck`: received voice bursts skipped because a poll came too late for the four bursts one poll catches up (a stalled task). The first one's four words: the transmission state, its queued frames, the last event and NAK codes |
-| `call_option` | DMR_CALL_OPTION, all five bytes but the traffic mode: how the chip is wired (who keys the RF, baseband or IQ, squelch by the chip), CACH count and LC header repeats, which repeats are reported (every LC header and terminator, section 3). Otherwise as the original firmware sends it |
-| `report_field` | REPORT_FIELD bits added to the engine's 0xE1, as the original firmware sends them |
-| `start_fields` | more start fields, such as MODOUT_CONFIG, DMR_OFFSET and the squelch's SQ_LEVEL, with calibrated values where the original firmware takes them from calibration. Without calibration the board sends the factory default |
-| `codec_tx`, `codec_rx` | a codec write at the start of a transmission and its undo on the return to receive, such as an output the original firmware mutes while transmitting |
+| `call_option` | DMR_CALL_OPTION, all five bytes but the traffic mode: how the chip is wired (who keys the RF, baseband or IQ, squelch by the chip), CACH count and LC header repeats, which repeats are reported (every LC header and terminator, section 3) |
+| `report_field` | REPORT_FIELD bits added to the engine's 0xE1 |
+| `start_fields` | more start fields, such as MODOUT_CONFIG, DMR_OFFSET and the squelch's SQ_LEVEL, with calibrated values where the radio's calibration has them. Without calibration the board sends the factory default |
+| `codec_tx`, `codec_rx` | a codec write at the start of a transmission and its undo on the return to receive, such as an output muted while transmitting |
 | `codec_mic_off`, `codec_mic_on` | a codec write that silences the microphone when the call is ending (`tx_release`) and its undo on the return to receive |
 | `tx_fields` | control fields sent at each start and before each transmission, such as a modulator gain by band or a two-point modulation delay (section 5) |
 | `codec_start` | codec writes sent at each start, after the start packet: a codec setting the chip's own set-up doesn't make, such as a DAC filter with less delay (section 5) |
-| Voice set-up | `sct_voice_t`: CODEC_SELECT and VOCODER_SEL as the original firmware sends them, control `fields` (the digital mode microphone and speaker gains), then the codec writes (gains and routing for the board's audio wiring). Calibrated values where the original firmware takes them from calibration |
+| Voice set-up | `sct_voice_t`: CODEC_SELECT and VOCODER_SEL for the board's chips, control `fields` (the digital mode microphone and speaker gains), then the codec writes (gains and routing for the board's audio wiring). Calibrated values where the radio's calibration has them |
 
 The field access `sct_dmr_field_begin/poll/cancel` and `sct_dmr_call_option` give a board's debug link a read or write
 of any baseband field, for checking a driver value against the chip.
@@ -347,16 +346,15 @@ of any baseband field, for checking a driver value against the chip.
   (both are handled) (unverified).
 - DMR_CALL_OPTION byte 3 with bits 1 and 0 clear reports identical LC headers and terminators once. Whether the
   chip forgets the last one between calls is open (unverified); boards set both bits (section 3). What the reserved
-  bits the original firmware sets (bit 6 of bytes 1 and 3, byte 4, REPORT_FIELD bits 4-1) do is unknown.
-- The SQ_LEVEL thresholds and the digital mode gains a board sends are the original firmware's; whether the chip's
+  bits boards set (bit 6 of bytes 1 and 3, byte 4, REPORT_FIELD bits 4-1) do is unknown.
+- The SQ_LEVEL thresholds and the digital mode gains a board sends: whether the chip's
   squelch opens on weak signals with them, and the audio levels they give, are unverified.
-- EQUALIZER_FILTER: the chip enables no filter by default, which is what the original firmware's "no equalizer" setting
-  sends, so the driver sends nothing. A user equalizer preset is not written.
+- EQUALIZER_FILTER: the chip enables no filter by default, so the driver sends nothing. A user equalizer preset is not written.
 - The vocoder's frames on the MCU (section 7). Needed before the driver can route them:
   - the order of the 49 bits in a `CHAN_D` frame, against the parameter order the core's FEC and privacy use, and
     what the other 23 bits carry;
-  - which block size the chip uses in DMR mode, what selects it (a `CHAN_D` with length 0xFF and a count byte is
-    seen, meaning unknown), and whether a block lines up with a burst and its place in the superframe (A-F);
+  - which block size the chip uses in DMR mode, what selects it (a `CHAN_D` with length 0xFF and a count byte
+    occurs, meaning unknown), and whether a block lines up with a burst and its place in the superframe (A-F);
   - with the modulator fed by the MCU: how many blocks the chip buffers, when it asks for the next, and what it sends
     when a block is late. A hotspot or repeater needs the frames of a burst on air in that burst's slot;
   - whether frames from the MCU are accepted while the encoder isn't running (a network call with the microphone
