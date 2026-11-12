@@ -1984,11 +1984,11 @@ static void text_draw(void)
 	uint8_t roomy = (L->hint_y - y) / L->small->h;	// number of lines of text we can show
 	uint16_t max_chars = roomy * text_linewidth;
 	uint16_t start_char;
-	if(max_chars >= text_len) {
+	if (max_chars >= text_len) {
 		start_char = 0;
 	} else {
 		// Ensure there is room for the "_" at the end of the message being entered
-		start_char = 1+text_len-max_chars;
+		start_char = 1 + text_len - max_chars;
 	}
 
 	const font_t *small = L->small;
