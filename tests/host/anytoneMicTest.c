@@ -318,18 +318,27 @@ static void test_lights_sides(void)
 {
 	// No dual watch: everything is side A
 	CHECK(anytone_mic_lights(&(anytone_mic_radio_t){ .rx = true, .sel = 1, .at = 1 }) ==
-		(ANYTONE_MIC_LIGHT_A_BUSY | ANYTONE_MIC_LIGHT_MAIN_AUDIO));
+		(ANYTONE_MIC_LIGHT_A_BUSY | ANYTONE_MIC_LIGHT_A_AUDIO));
+	// Seen on a microphone in dual watch: the green light is on the side the call is on, whichever is selected
+	CHECK(anytone_mic_lights(&(anytone_mic_radio_t){ .dual = true, .sel = 1, .at = 1, .rx = true }) ==
+		(ANYTONE_MIC_LIGHT_MAIN_B | ANYTONE_MIC_LIGHT_B_BUSY | ANYTONE_MIC_LIGHT_B_AUDIO));
+	CHECK(anytone_mic_lights(&(anytone_mic_radio_t){ .dual = true, .sel = 1, .at = 1, .rx2_busy = true,
+		.rx2_audio = true }) == (ANYTONE_MIC_LIGHT_MAIN_B | ANYTONE_MIC_LIGHT_A_BUSY | ANYTONE_MIC_LIGHT_A_AUDIO));
+	CHECK(anytone_mic_lights(&(anytone_mic_radio_t){ .dual = true, .sel = 0, .at = 0, .rx = true }) ==
+		(ANYTONE_MIC_LIGHT_A_BUSY | ANYTONE_MIC_LIGHT_A_AUDIO));
+	CHECK(anytone_mic_lights(&(anytone_mic_radio_t){ .dual = true, .sel = 0, .at = 0, .rx2_busy = true,
+		.rx2_audio = true }) == (ANYTONE_MIC_LIGHT_B_BUSY | ANYTONE_MIC_LIGHT_B_AUDIO));
 	CHECK(anytone_mic_lights(&(anytone_mic_radio_t){ .tx = true }) == ANYTONE_MIC_LIGHT_A_TX);
 	// B selected: the main light, and a transmission on B
 	CHECK(anytone_mic_lights(&(anytone_mic_radio_t){ .dual = true, .sel = 1, .at = 1 }) == ANYTONE_MIC_LIGHT_MAIN_B);
 	CHECK(anytone_mic_lights(&(anytone_mic_radio_t){ .dual = true, .sel = 1, .at = 1, .tx = true }) ==
 		(ANYTONE_MIC_LIGHT_MAIN_B | ANYTONE_MIC_LIGHT_B_TX));
-	// A selected, the receiver looking at B and hearing it: B busy, the other side's audio
+	// A selected, the receiver looking at B and hearing it: B busy, B's audio
 	CHECK(anytone_mic_lights(&(anytone_mic_radio_t){ .dual = true, .sel = 0, .at = 1, .rx = true }) ==
-		(ANYTONE_MIC_LIGHT_B_BUSY | ANYTONE_MIC_LIGHT_OTHER_AUDIO));
+		(ANYTONE_MIC_LIGHT_B_BUSY | ANYTONE_MIC_LIGHT_B_AUDIO));
 	// The second receiver has the side not selected
 	CHECK(anytone_mic_lights(&(anytone_mic_radio_t){ .dual = true, .sel = 0, .rx2_busy = true, .rx2_audio = true }) ==
-		(ANYTONE_MIC_LIGHT_B_BUSY | ANYTONE_MIC_LIGHT_OTHER_AUDIO));
+		(ANYTONE_MIC_LIGHT_B_BUSY | ANYTONE_MIC_LIGHT_B_AUDIO));
 	CHECK(anytone_mic_lights(&(anytone_mic_radio_t){ .dual = true, .sel = 1, .at = 1, .rx2_busy = true }) ==
 		(ANYTONE_MIC_LIGHT_MAIN_B | ANYTONE_MIC_LIGHT_A_BUSY));
 }

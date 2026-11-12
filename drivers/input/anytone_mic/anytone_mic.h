@@ -45,13 +45,14 @@
 // Byte 12 of the status frame: the long press time, in 100 ms steps less one (5: 600 ms, the core's long press;
 // inferred). What the microphone does with it isn't known
 #define ANYTONE_MIC_STATUS_LONG	5u
-// The status frame's light fields: bit n is byte n + 1 (1 or 0). Inferred, not checked on the microphone. The main side
-// is A while ANYTONE_MIC_LIGHT_MAIN_B is clear
+// The status frame's light fields: bit n is byte n + 1 (1 or 0). The main side is A while ANYTONE_MIC_LIGHT_MAIN_B is
+// clear. The audio fields light the green R/T light of side A and side B (seen on a microphone, in dual watch with
+// either side selected); the others are inferred
 #define ANYTONE_MIC_LIGHT_A_BUSY	0x01u	// side A busy
-#define ANYTONE_MIC_LIGHT_MAIN_AUDIO	0x02u	// the main side's audio open
+#define ANYTONE_MIC_LIGHT_A_AUDIO	0x02u	// side A's audio open
 #define ANYTONE_MIC_LIGHT_A_TX		0x04u	// side A transmitting
 #define ANYTONE_MIC_LIGHT_B_BUSY	0x08u	// side B busy
-#define ANYTONE_MIC_LIGHT_OTHER_AUDIO	0x10u	// the other side's audio open
+#define ANYTONE_MIC_LIGHT_B_AUDIO	0x10u	// side B's audio open
 #define ANYTONE_MIC_LIGHT_B_TX		0x20u	// side B transmitting
 #define ANYTONE_MIC_LIGHT_MAIN_B	0x40u	// the main side is B
 #define ANYTONE_MIC_LIGHT_FIELDS	7u
@@ -217,16 +218,16 @@ static inline uint8_t anytone_mic_lights(const anytone_mic_radio_t *r)
 	uint8_t l = sel != 0u ? ANYTONE_MIC_LIGHT_MAIN_B : 0u;
 	if (r->rx) {
 		l |= at != 0u ? ANYTONE_MIC_LIGHT_B_BUSY : ANYTONE_MIC_LIGHT_A_BUSY;
-		l |= at == sel ? ANYTONE_MIC_LIGHT_MAIN_AUDIO : ANYTONE_MIC_LIGHT_OTHER_AUDIO;
+		l |= at != 0u ? ANYTONE_MIC_LIGHT_B_AUDIO : ANYTONE_MIC_LIGHT_A_AUDIO;
 	}
 	if (r->tx) {
 		l |= sel != 0u ? ANYTONE_MIC_LIGHT_B_TX : ANYTONE_MIC_LIGHT_A_TX;
 	}
 	if (r->rx2_busy) {
-		l |= sel != 0u ? ANYTONE_MIC_LIGHT_A_BUSY : ANYTONE_MIC_LIGHT_B_BUSY;
+		l |= at != 0u ? ANYTONE_MIC_LIGHT_A_BUSY : ANYTONE_MIC_LIGHT_B_BUSY;
 	}
-	if (r->rx2_audio) {
-		l |= ANYTONE_MIC_LIGHT_OTHER_AUDIO;
+	if (r->rx2_audio) {	// the second receiver is on the side the channel receiver isn't
+		l |= at != 0u ? ANYTONE_MIC_LIGHT_A_AUDIO : ANYTONE_MIC_LIGHT_B_AUDIO;
 	}
 	return l;
 }
