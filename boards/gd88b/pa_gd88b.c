@@ -99,6 +99,7 @@ static void key_on(void)
 	hrc_irq_restore(s);
 	key_uhf = hz >= UHF_FROM_HZ;
 	gd88b_path_a_tx(true, key_uhf);
+	gd88_a_tx_band(key_uhf);	// a bus write only on a band change: inside the wait below
 	hal_delay_us(TX_RX_OFF_US + on_us);
 	DAC_DATA_B = 0;
 	hrc_dac_b_power(true);

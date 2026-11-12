@@ -983,6 +983,17 @@ void gd88_radio_diag(gd88_radio_diag_t *d)
 	d->pa_high = GD88_TX && have_rx && gd88_cal_tx_plan(rx_hz, true, GD88_TX_DRIVE_PCT, &plan) ? plan.pa : 0;
 }
 
+#if !GD88_TX
+// A transmits through B (pa_gd88b.c key_on): B's main chip's GPIO 1 (0x33 bit 5) passes A's VHF signal to the PA, low
+// on UHF; GPIO 0 (bit 6) stays low, A's chip and not B's (hardware-gd88.md 10). Written only when it changes, and left
+// after the transmission as the original firmware leaves it. Without it a VHF key had only a leak, some 70 dB down
+#define A_TX_GPIO_VHF		1u
+void gd88_a_tx_band(bool uhf)
+{
+	bk4819_gpio(&rf_main, A_TX_GPIO_VHF, !uhf);
+}
+#endif
+
 // The debug link's CHIP_REG (board.chip_reg, hardware-gd88.md 13): chip 0 is the main BK4819, chip 1 the LO when it
 // is a BK4819 (an AT1141 LO isn't offered), page 0 only, registers 0x00-0x7F. Through the driver, so its copies of the
 // enables, AF gain and GPIO words follow a write; its next set-up overwrites the register. A frame is atomic (rfbus.h),

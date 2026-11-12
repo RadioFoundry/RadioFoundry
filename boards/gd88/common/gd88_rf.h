@@ -62,6 +62,10 @@ bool gd88_radio_squelch_open(uint8_t level);
 uint8_t gd88_radio_volume(void);
 // The debug link's CHIP_REG for the main chip and a BK4819 LO (board.chip_reg)
 bool gd88_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
+#if !GD88_TX
+// B, as A's transmission keys its PA: its main chip's GPIO set for A's TX band (pa_gd88b.c)
+void gd88_a_tx_band(bool uhf);
+#endif
 
 // --- RF and audio paths, one implementation per SoC ---
 void gd88_path_init(void);			// every switch at its safe level: TX off, RX path off, speaker off
