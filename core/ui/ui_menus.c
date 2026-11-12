@@ -649,8 +649,9 @@ static const ui_scr_def_t contacts_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "0-9 find  OK talk  # more" TEXT_ALT_NEXT "0-9  OK talk  # more" TEXT_ALT_CLOSE),
 	.empty = CONFIG_CONTACT_EDIT ? TRN("No contact matches") : TRN("No contacts: add them in qdmr"),
 	.count = ui_filter_count, .item = contacts_list_item, .select = contacts_select, .context = contacts_context,
-	.target = contacts_list_target, .raw_count = contacts_list_raw_count, .raw_label = contacts_list_raw_label,
-	.raw_each = contacts_list_raw_each,
+	.target = contacts_list_target,
+	.filter = &(const ui_filter_def_t){ .raw_count = contacts_list_raw_count, .raw_label = contacts_list_raw_label,
+		.raw_each = contacts_list_raw_each },
 };
 #else
 static uint16_t none_count(void) { return 0; }
@@ -1167,7 +1168,8 @@ static const ui_scr_def_t channels_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "OK go  # channels  0-9 find" TEXT_ALT_NEXT "OK go  # channels" TEXT_ALT_CLOSE),
 	.empty = TRN("No zones"),
 	.count = ui_filter_count, .item = chans_item, .select = chans_select, .context = chans_context,
-	.enter = chans_enter, .raw_count = chans_raw_count, .raw_label = chans_raw_label,
+	.enter = chans_enter,
+	.filter = &(const ui_filter_def_t){ .raw_count = chans_raw_count, .raw_label = chans_raw_label },
 };
 
 // A channel row's value: its RX frequency and what it talks to, the talkgroup on DMR ("TG3113", "ID9991234" for a
@@ -1620,7 +1622,8 @@ static const ui_scr_def_t share_to_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "0-9 find or ID  OK send  Back" TEXT_ALT_NEXT "0-9 find or ID  OK send" TEXT_ALT_CLOSE),
 	.empty = TRN("No contacts: type an ID"),
 	.count = ui_filter_count, .item = share_to_item, .select = share_to_select,
-	.raw_count = share_raw_count, .raw_label = share_raw_label, .raw_each = share_raw_each,
+	.filter = &(const ui_filter_def_t){ .raw_count = share_raw_count, .raw_label = share_raw_label,
+		.raw_each = share_raw_each },
 };
 
 // --- An offer from another radio ---
@@ -1830,7 +1833,8 @@ static const ui_scr_def_t zone_screen = {
 	.name = "zone", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = NULL,
 	.hint = ZONE_HINT, .empty = TRN("Empty zone"),
 	.count = ui_filter_count, .item = zone_item, .select = zone_select, .context = ZONE_CONTEXT,
-	.title = zone_title, .enter = zone_enter, .raw_count = zone_raw_count, .raw_label = zone_raw_label,
+	.title = zone_title, .enter = zone_enter,
+	.filter = &(const ui_filter_def_t){ .raw_count = zone_raw_count, .raw_label = zone_raw_label },
 };
 
 #if CONFIG_ZONE_WRITE
@@ -2260,8 +2264,9 @@ static const ui_scr_def_t chlist_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "OK details  # go  0-9 find" TEXT_ALT_NEXT "OK details  # go" TEXT_ALT_CLOSE),
 	.empty = TRN("No channels"),
 	.count = ui_filter_count, .item = chlist_item, .select = chlist_select, .context = chlist_context,
-	.enter = chlist_enter, .raw_count = chlist_raw_count, .raw_label = chlist_raw_label, .raw_each = chlist_raw_each,
-	.raw_used = chlist_raw_used,
+	.enter = chlist_enter,
+	.filter = &(const ui_filter_def_t){ .raw_count = chlist_raw_count, .raw_label = chlist_raw_label,
+		.raw_each = chlist_raw_each, .raw_used = chlist_raw_used },
 };
 
 // ======================= One channel's settings, edited in place (ui.md 2.1) =======================
@@ -3516,8 +3521,8 @@ static const ui_scr_def_t zpick_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "OK add  0-9 find  Back" TEXT_ALT_NEXT "OK add  Back" TEXT_ALT_CLOSE),
 	.empty = TRN("Every channel is in it"),
 	.count = ui_filter_count, .item = zpick_item, .select = zpick_select,
-	.raw_count = zpick_raw_count, .raw_label = zpick_raw_label, .raw_each = zpick_raw_each,
-	.raw_used = zpick_raw_used,
+	.filter = &(const ui_filter_def_t){ .raw_count = zpick_raw_count, .raw_label = zpick_raw_label,
+		.raw_each = zpick_raw_each, .raw_used = zpick_raw_used },
 };
 
 // --- The channel editor's Zones: every zone, and whether the channel is in it; OK puts it in or takes it out ---
@@ -3813,7 +3818,9 @@ static const char *chpick_title(void) { return ui_frame()->arg == 0 ? TR("TX Con
 static const ui_scr_def_t chpick_screen = {
 	.name = "chpick", .flags = SF_LIST | SF_FILTER, .hint = TRN("OK pick  0-9 find  Back"), .empty = TRN("None stored"),
 	.count = ui_filter_count, .item = chpick_item, .select = chpick_select, .title = chpick_title,
-	.enter = chpick_enter, .raw_count = chpick_raw_count, .raw_label = chpick_raw_label, .raw_each = chpick_raw_each,
+	.enter = chpick_enter,
+	.filter = &(const ui_filter_def_t){ .raw_count = chpick_raw_count, .raw_label = chpick_raw_label,
+		.raw_each = chpick_raw_each },
 };
 #endif
 #endif
@@ -5177,7 +5184,8 @@ static const ui_scr_def_t crash_to_screen = {
 	.name = "crash_to", .flags = SF_LIST | SF_FILTER, .prefix = TRN("Send To"),
 	.hint = TRN("0-9 find  OK pick  Back"), .empty = TRN("No contacts: add them in qdmr"),
 	.count = ui_filter_count, .item = contacts_item, .select = crash_to_select,
-	.raw_count = contacts_raw_count, .raw_label = contacts_raw_label, .raw_each = crash_to_raw_each,
+	.filter = &(const ui_filter_def_t){ .raw_count = contacts_raw_count, .raw_label = contacts_raw_label,
+		.raw_each = crash_to_raw_each },
 };
 #endif
 
