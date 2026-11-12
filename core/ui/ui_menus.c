@@ -1973,15 +1973,15 @@ static void text_draw(void)
 	gfx_clear(ui_col.bg);
 	text_len = (uint8_t)strlen(text_buf);
 
+	int y = ui_draw_top(ui_view(), &ui_st, tr(prefixes[text_prefix]), modes[text_mode]) + 2;
+	// The count sits bottom right of the entry area, on a line of its own so the text never runs under it
+	int bottom = L->hint_y - L->small->h;
 	sb_init(&b, linebuf, sizeof linebuf);
-	sb_str(&b, prefixes[text_prefix]);
-	sb_chr(&b, ' ');
-	sb_u32(&b, text_len, 3);
+	sb_u32(&b, text_len, 1);
 	sb_chr(&b, '/');
-	sb_u32(&b, text_max, 3);
-	
-	int y = ui_draw_top(ui_view(), &ui_st, linebuf, modes[text_mode]) + 2;
-	uint8_t roomy = (L->hint_y - y) / L->small->h;	// number of lines of text we can show
+	sb_u32(&b, text_max, 1);
+	gfx_text(L->small, gfx_width() - gfx_text_width(L->small, linebuf) - 1, bottom, linebuf, ui_col.dim);
+	uint8_t roomy = (bottom - y) / L->small->h;	// number of lines of text we can show
 	uint16_t max_chars = roomy * text_linewidth;
 	uint16_t start_char;
 	if (max_chars >= text_len) {
