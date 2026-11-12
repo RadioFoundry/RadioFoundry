@@ -44,13 +44,6 @@ values = [
 	{ id = "vhf", title = "VHF", text = "136-174 MHz", board_name = "MD-380 VHF" },
 ]
 
-# The Chinese image beside Spanish: the 160 px class moves its words up to 8x16 while a wide language is in use, and
-# the 464 KB region has room for both (boards/md380/config.mk, docs/spec/ui.md 2.5). ci's maximal build skips both
-# switches; this extra builds them
-[ci]
-extra = [
-	{ name = "chinese", make = ["CONFIG_LANG_ZH=y", "CONFIG_LANG_DEFAULT_ZH=y"] },
-]
 
 [flash]
 family = "usb-dfu"

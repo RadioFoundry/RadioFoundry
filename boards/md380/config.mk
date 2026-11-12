@@ -48,17 +48,17 @@ BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# the split duplex glue is HR_C6000 and HR_C7
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
 # radios (docs/spec/ppp.md), and this one has the adapter. Maximal keeps Spanish, as the default build does: with every
-# other switch on it has 156 bytes left, so a third translation would not fit. Italian builds on the other boards, and
-# Chinese has its own "chinese" ci extra (board.toml), which builds it beside Spanish without the maximal switches
+# other switch on it has 156 bytes left, so a third translation would not fit. Italian builds on the other boards.
 # APRS-IS (about 2.7 KB) is left out of maximal too, which had 156 bytes left: with no APRS receive here it only gates
 # RF positions out, so it is the first IP service to go. The default build keeps it. It defaults on, so it is set off,
 # not only skipped
-MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT LANG_ZH LANG_DEFAULT_ZH NET_APRSIS
+MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT NET_APRSIS
 MAXIMAL_VARS := CONFIG_NET_APRSIS=n
 CONFIG_RX_EXT ?= n
 BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)
 
-# Chinese (CONFIG_LANG_ZH): a 160x128 panel is the 160 px class, whose layout moves its words up to the 8x16 font while
-# a wide language is in use (core/ui/ui_screens.c, docs/spec/ui.md 2.5), so a 16 px CJK glyph fits; Home then has no
-# zone line and a list shows 5 rows instead of 7. Off by default like on every radio. The 464 KB region has room for it
-# beside Spanish (docs/feature-matrix.md); board.toml's "chinese" ci extra builds that image
+# Chinese needs a 16x16 glyph for every character it draws (core/ui/cjk_font_data.c): the translation face plus a
+# GB2312 level-1 set for channel names is 3765 glyphs, about 128 KB, and this 464 KB region is already 99 % full
+# without it. Chinese must not build here (the 720 KB and 880 KB radios carry it)
+BOARD_UNSUPPORTED += LANG_ZH	# the 128 KB of CJK glyphs won't fit beside the default build in 464 KB
+BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH
