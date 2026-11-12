@@ -23,7 +23,7 @@ _Static_assert(sizeof(radio_keys) / sizeof(radio_keys[0]) <= CODEPLUG_KEYS_MAX, 
 // The tones Settings > Sound turns off, one bool key each (absent: the radio's own copy). The radio's own copy is
 // radio_settings_t.tones_off, bit n set when row n's tone is off; its owner unpacks it into this struct for the table
 // and packs it back (radio_tones_unpack, radio_tones_pack). Every build with tones has them: each is a beep the radio
-// core plays, FM or DMR
+// core plays, FM or DMR (the call end tone is DMR's, so it needs CONFIG_DMR too: the menu row says so)
 typedef struct {
 	bool call_end;		// on: the tone when a DMR call heard ends
 	bool tot_warn;
@@ -32,7 +32,7 @@ typedef struct {
 } radio_tones_t;
 
 static const codeplug_key_row_t radio_tone_rows[] = {
-	CODEPLUG_KEY_ROW(CODEPLUG_KEY_CALL_END_TONE, CODEPLUG_T_BOOL, CONFIG_BEEP, radio_tones_t, call_end, 0, 1),
+	CODEPLUG_KEY_ROW(CODEPLUG_KEY_CALL_END_TONE, CODEPLUG_T_BOOL, CONFIG_BEEP && CONFIG_DMR, radio_tones_t, call_end, 0, 1),
 	CODEPLUG_KEY_ROW(CODEPLUG_KEY_TOT_WARN_TONE, CODEPLUG_T_BOOL, CONFIG_BEEP, radio_tones_t, tot_warn, 0, 1),
 	CODEPLUG_KEY_ROW(CODEPLUG_KEY_BATTERY_TONE, CODEPLUG_T_BOOL, CONFIG_BEEP, radio_tones_t, battery, 0, 1),
 	CODEPLUG_KEY_ROW(CODEPLUG_KEY_TX_DENY_TONE, CODEPLUG_T_BOOL, CONFIG_BEEP, radio_tones_t, tx_deny, 0, 1),
