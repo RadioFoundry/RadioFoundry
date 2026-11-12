@@ -1738,6 +1738,14 @@ msgstr "CTCSS 范围 60.0-260.0"
 msgid "Save first: hold OK"
 msgstr "先保存：长按 OK"
 
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Air band: receive only"
+msgstr "航空波段：仅接收"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Broadcast: receive only"
+msgstr "广播：仅接收"
+
 #: core/ui/ui_menus.c
 msgid "Tones: not in this build"
 msgstr "亚音：本版本无"
@@ -3325,14 +3333,6 @@ msgstr "热点模式：PTT 关闭"
 #: core/ui/ui_screens.c
 msgid "No DMR ID in codeplug"
 msgstr "电台频率中无 DMR ID"
-
-#: core/ui/ui_screens.c
-msgid "Air band: receive only"
-msgstr "航空波段：仅接收"
-
-#: core/ui/ui_screens.c
-msgid "Broadcast: receive only"
-msgstr "广播：仅接收"
 
 #: core/ui/ui_screens.c
 msgid "Repeater channel: PTT off"
