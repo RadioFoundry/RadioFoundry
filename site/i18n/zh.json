@@ -363,6 +363,7 @@
  "screen.talk_target_picker_vfo": "通话目标，DMR VFO",
  "screen.tools": "工具",
  "screen.tx": "发射中",
+ "screen.tx_aprs": "正在发送 APRS 信标",
  "screen.tx_private": "正在发起个呼",
  "screen.tx_dtmf": "在 FM 上发送双音多频（DTMF）",
  "screen.zone_channels": "区域中的信道",
