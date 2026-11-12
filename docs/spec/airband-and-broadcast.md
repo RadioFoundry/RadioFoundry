@@ -21,7 +21,7 @@ audio path, open questions, bring-up checks) are on its hardware and bring-up pa
 | FD6818 | yes (inferred) | BK4819 class: the AF output type in 0x47 bits 11:8, type 7 = AM on the BK4819 (Apache-2.0 UV-K5 firmware). Unconfirmed on the FD6818 until a radio's bring-up |
 | BK4819 | yes | the same register, documented |
 | AT1846S | no | FM and the DMR baseband modes only (datasheet, our driver) |
-| KTMicro AM/FM receiver | yes | an I2C receiver chip (ID "KT" in registers 0x02/0x03), behind a mixer: tuned in AM to the IF. No public register map; `drivers/bcast/ktamfm` replays a stock firmware's writes (AM and broadcast FM) |
+| KTMicro AM/FM receiver | yes | an I2C receiver chip (ID "KT" in registers 0x02/0x03), behind a mixer: tuned in AM to the IF. No public register map; `drivers/bcast/ktamfm` drives AM and broadcast FM with register values whose roles are inferred |
 
 | Broadcast tuner | Driver |
 |---|---|
@@ -82,8 +82,8 @@ On an FD6818 (`fd6818_set_am`, `fd6818_am_status`, `fd6818_am_noise`):
 | 0x4A | 0x5450 | its value before AM, written back |
 | Squelch value | 0x65 bits 7:0 (noise_sq, 1 dB/step) + an offset that puts level 1 at the chip's own noise_sq_th_in, 0x4F bits 6:0 as the board's tables set it (`fd6818_am_noise_offset`: 64 - th_in; 17 with 0x4F = 0x302F); each level 3 dB lower | 0x65 bits 7:0 + 25 |
 
-The gain loop runs at the core's status poll (`RADIO_POLL_MS`). These are the air band settings an FD6818 radio's own
-firmware uses (its hardware page has them); the loop's tick there isn't known. `rx()` and `set_mode()` end AM.
+The gain loop runs at the core's status poll (`RADIO_POLL_MS`). The FD6818 radios' hardware pages have these air
+band settings. `rx()` and `set_mode()` end AM.
 
 With an AM receiver chip behind a mixer, `rx_am` tunes the mixer's LO to hz plus the IF and the chip to the IF, and
 `status()` turns the chip's level reading into the squelch value and the RSSI.
@@ -166,15 +166,15 @@ since alone. The chip's level follows whichever mode owns it.
 
 ### 4.6 KTMicro AM/FM receiver, FM mode (drivers/bcast/ktamfm)
 
-No public register map: the values are a stock firmware's, their roles inferred.
+No public register map: the values' roles are inferred.
 
 | Item | Value |
 |---|---|
-| Mode | 0x88 bit 6 clear (set: AM). The AM mode's other values stay, as in the stock firmware |
+| Mode | 0x88 bit 6 clear (set: AM). The AM mode's other values stay |
 | Tune | channel = kHz / 50 (12 bits): 0x2F bit 1 clear; 0x87 bit 3 clear; 0x89 = bits 7:0; 0x88 bits 3:0 = bits 11:8 with bit 7 (tune) set |
 | Set-apart channels | 0x699, 0x81A, 0x840 (84.45, 103.70, 105.60 MHz) set 0x87 bit 3 instead and 0x85 bits 3:0 to 3 (0x699) or 8 |
 | Readings | 0xE6 bits 6:0 (signal strength), 0xE2 bits 5:0, 0x79 bits 6:0 and 0xE9 |
-| Station | 0xE6 > 14, 0xE2 >= 12 and \|2 x 0x79 - 0xE9\| < 12; the stock firmware debounces it over 3 polls |
+| Station | 0xE6 > 14, 0xE2 >= 12 and \|2 x 0x79 - 0xE9\| < 12, three polls in a row (the board debounces it) |
 | Level | 0x0F bits 4:0, 0x1A while it plays, 1 muted |
 
 The driver has no seek, tune-done flag or stereo reading: none is known. The RSSI's scale against dBuV isn't known, so

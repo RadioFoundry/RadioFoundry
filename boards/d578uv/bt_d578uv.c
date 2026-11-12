@@ -2,10 +2,10 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT-D578UV Bluetooth PTT and keys (docs/spec/hardware-d578uv.md 3.7): the module on UART4 (PC10 TX, PC11 RX), 115200
 // 8N1, its AT lines read by drivers/input/bt_at. The module's supply is the shift register's bit 0x02, on from boot
-// (radio_d578uv.c). Not every model has the module and no pin tells: as the stock firmware does, the radio asks
-// BT_AT_PROBE a few times at start and takes any answer as the module. The APRS add-on board answers on the same UART
-// and is told apart by its answer; it isn't used. Pairing, audio and the module's settings aren't written: the module
-// keeps the pairings the stock firmware made (inferred)
+// (radio_d578uv.c). Not every model has the module and no pin tells: the radio asks BT_AT_PROBE a few times at start
+// and takes any answer as the module. The APRS add-on board answers on the same UART and is told apart by its answer;
+// it isn't used. Pairing, audio and the module's settings aren't written: the module keeps the pairings made before
+// (inferred)
 #include "config.h"
 #include "d578uv.h"
 #include "pins.h"
@@ -17,7 +17,7 @@
 
 #define BT_BAUD			115200u
 #define BT_IRQ_PRIORITY		6
-#define BT_PROBES		5u	// the stock firmware's count, 200 ms apart
+#define BT_PROBES		5u	// 200 ms apart
 #define BT_PROBE_MS		200u
 #define BT_KEY_MS		150u	// a key event holds its key bit this long, past the core's debounce
 
@@ -46,8 +46,8 @@ void d578uv_bt_init(void)
 	start_ms = hal_millis();
 }
 
-// The module's key events as the radio's keys: 01 and 02 as the microphone's Up and Down (the stock firmware posts
-// its encoder's two codes for them; inferred), 03 and 04 (Monitor in the stock firmware; inferred) have no key here
+// The module's key events as the radio's keys: 01 and 02 as the microphone's Up and Down (inferred), 03 and 04
+// (Monitor, inferred) have no key here
 static int8_t key_bit(uint8_t code)
 {
 	switch (code) {

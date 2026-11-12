@@ -77,12 +77,13 @@ static const st7735_bus_t bus = {
 	.delay_ms = hal_delay_ms,
 };
 
-// The ST7735 table (the stock init sends the same frame rate and power values). Landscape; the stock firmware writes
-// MADCTL 0x48 for a portrait 128x160 frame, so the orientation and offsets are to be checked on the radio
+// The ST7735 table. Landscape: the panel is mounted for a portrait 128x160 frame (MADCTL 0x48), so the orientation and
+// offsets are to be checked on the radio
 static const st7735_t panel = {
 	.bus = &bus,
 	.type = 0,
-	// Seen on a radio: the type's landscape is upside down (both axes flipped, 0xC0) and red and blue swapped (BGR, 0x08)
+	// Measured on a radio: the type's landscape is upside down (both axes flipped, 0xC0) and red and blue swapped
+	// (BGR, 0x08)
 	.madctl_xor = 0xC8,
 	.width = LCD_W,
 	.height = LCD_H,

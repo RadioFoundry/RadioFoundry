@@ -85,7 +85,7 @@ static int wait_ack(const sct_host_t *h, sct_rx_t *rx, uint32_t deadline)
 }
 
 // Answer times: the Packet Interface's field timeouts (CODEC_SELECT 1 s, VOCODER_SEL up to 3 s); a codec write is
-// one I2C transfer; other control fields get what the stock firmware allows them
+// one I2C transfer; other control fields get 200 ms
 #define CODEC_SELECT_MS		1000u
 #define VOCODER_SEL_MS		3000u
 #define CODEC_WRITE_MS		200u

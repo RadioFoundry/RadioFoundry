@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // Stock AnyTone codeplugs (codeplug/stock_anytone.js, docs/spec/codeplug-stock-anytone.md): the pair's current block,
-// tones, a channel record, the read of what the zones reach through the stock PC mode against the simulated radio
+// tones, a channel record, the read of what the zones reach through the PC mode against the simulated radio
 // (fakeanytone.js), and the conversion into a RadioFoundry codeplug image. Run with site/tests/run.sh.
 
 import { test } from "node:test";

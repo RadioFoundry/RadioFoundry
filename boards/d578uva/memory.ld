@@ -11,8 +11,8 @@ __codec_slot = 0x080FF000;
 __codec_slot_end = 0x08100000;
 
 /* SRAM: the part's option byte EOPB0 splits its 512 KB between SRAM and the flash's zero-wait area, leaving at least
- * 128 KB of SRAM in every setting. The stock firmware reads no option byte and uses under 96 KB, so the setting on
- * a radio is unknown: the image takes the 128 KB every setting has */
+ * 128 KB of SRAM in every setting. The setting on a radio is unknown: the image takes the 128 KB every setting
+ * has */
 MEMORY
 {
 	FLASH  (rx)  : ORIGIN = __app_start, LENGTH = __codec_slot - __app_start

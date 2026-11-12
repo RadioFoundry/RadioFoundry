@@ -20,10 +20,10 @@ extern const hal_rx2_t d578uv_rx2;	// side B (radio_d578uv.c, hardware-d578uv.md
 extern const hal_bcast_t d578uv_bcast;	// the KTMicro receiver's broadcast FM (radio_d578uv.c, hardware-d578uv.md 5.4)
 #endif
 
-// Key map bits (input_d578uv.c), named for what the stock firmware does with them (hardware-d578uv.md 3.2). Ladder 0
-// from the lowest voltage up gives the stock key codes 0x14, 0x15, 0x16, 0x0E, ladder 1 0x17, 0x18, 0x19, 0x0F; PA1 is
-// 0x1E. In menus the stock firmware takes 0x14 and 0x16 as up and down, 0x0E confirms and 0x0F exits. Which printed key
-// each is isn't traced, so the others keep their stock code. PTT and the microphone's Up and Down come from the plain
+// Key map bits (input_d578uv.c), named for their use in the radio's menus (hardware-d578uv.md 3.2). Ladder 0 from the
+// lowest voltage up gives key codes 0x14, 0x15, 0x16, 0x0E, ladder 1 0x17, 0x18, 0x19, 0x0F; PA1 is 0x1E. In menus
+// 0x14 and 0x16 are up and down, 0x0E confirms and 0x0F exits. Which printed key each is isn't known, so the others
+// keep their code. PTT and the microphone's Up and Down come from the plain
 // hand microphone's lines (front_io.h) or the serial microphone's frames, which add its keypad (the KEY_MIC_ digits,
 // '*', '#', the A/B button above PTT and the A..D keys; drivers/input/anytone_mic). The microphone's MENU and EXIT are
 // its A and D
@@ -117,14 +117,14 @@ void d578uv_tone_stop(void);
 
 // --- SPI NAND (nand_d578uv.c, hardware-d578uv.md 6) ---
 // RadioFoundry's own block range, the only blocks it programs or erases (hardware-d578uv.md 6.3): the top 32 blocks
-// (4 MB) of the 32 MB at 0x0E000000 the stock firmware never addresses. "Initialize radio" doesn't reach it either
+// (4 MB) of the 32 MB at 0x0E000000, unused by the radio's own data. "Initialize radio" doesn't reach it either
 #define D578UV_NAND_RFOUNDRY_FIRST	2016u
 #define D578UV_NAND_RFOUNDRY_BLOCKS	32u
 bool d578uv_nand_init(void);
 bool d578uv_nand_ready(void);
 uint16_t d578uv_nand_id(void);		// manufacturer << 8 | device, 0 if nothing answered
 bool d578uv_nand_read(uint32_t addr, void *buf, uint32_t len);
-// The same with a page whose ECC failed passed on (spi_nand_read_any): the stock calibration's first page reads so
+// The same with a page whose ECC failed passed on (spi_nand_read_any): the factory calibration's first page reads so
 bool d578uv_nand_read_any(uint32_t addr, void *buf, uint32_t len, uint32_t *ecc_failed);
 // The NAND's mutex (recursive): taken by every function here, and by the storage around each whole operation
 void d578uv_nand_lock(void);

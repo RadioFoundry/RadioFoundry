@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT32F43x internal flash: sector erase and word program through the flash controller (AT32F435/437 reference
-// manual, flash memory controller: the UNLOCK key sequence, SECERS / FPRGM with ERSTR, the STS busy and error flags,
-// written 1 to clear). Bank 2 has its own unlock, status, control and address registers 0x40 above bank 1's; a vendor
-// image on this chip drives them the same way (docs/spec/stub-at32f43x.md 2). The stub runs from SRAM, so the CPU
-// keeps going while the flash is busy; the erase wait services USB meanwhile. Nothing here touches the user system
-// data key or the user system data (access protection, erase/program protection, EOPB0).
+// AT32F43x internal flash: sector erase and word program through the flash controller (AT32F435/437 reference manual,
+// flash memory controller: the UNLOCK key sequence, SECERS / FPRGM with ERSTR, the STS busy and error flags, written 1
+// to clear). Bank 2 has its own unlock, status, control and address registers 0x40 above bank 1's
+// (docs/spec/stub-at32f43x.md 2). The stub runs from SRAM, so the CPU keeps going while the flash is busy; the erase
+// wait services USB meanwhile. Nothing here touches the user system data key or the user system data (access
+// protection, erase/program protection, EOPB0).
 #include "at32f43x.h"
 #include "at32stub.h"
 #include "at32stub_flash.h"

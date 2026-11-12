@@ -11,7 +11,7 @@
 // The logical device (hardware-d578uv.md 6.3), laid out as the SPI NOR radios' so the open-firmware codeplug images
 // sit at the addresses the core's defaults use: the 64 KB "EEPROM" image at 0, the settings ring and the sector
 // journal in the gap after it, the 1 MB "flash" image at 0x20000, then the native codeplug and the staging area. The
-// factory calibration stays in the stock NAND blocks, read only, so there is no calibration window
+// factory calibration stays in the factory NAND blocks, read only, so there is no calibration window
 #define SECTORS		(0x260000u / NAND_SECTORS_SECTOR)
 
 static const hal_flash_map_t map = {

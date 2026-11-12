@@ -14,7 +14,7 @@ rfoundry's (tools/rfoundry/rfoundry/anytone.py), which `rfoundry flash` uses too
 
 The radio names its model when asked (byte 02), and the name differs by MCU: a GD32 radio and an Artery radio of the
 same model answer different names, as the vendor's files carry them (board.toml [flash.anytone]). The tool writes only
-an image built for the MCU the radio reports, as the vendor's updater refuses a file for the other one.
+an image built for the MCU the radio reports.
 
 Needs Python 3.8+ and pyserial (pip install pyserial).
 """

@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV SPI NAND: Kioxia TC58CVG1S3HRAIG-class (2 Gbit) or the GigaDevice part the stock firmware also accepts
-// (manufacturer 0x98 or 0xC8), on GPIO pins the stock firmware bit-bangs as well (docs/spec/hardware-d578uv.md 6). The
-// factory calibration is read from it; with CONFIG_NAND_STORAGE the core's storage lives in RadioFoundry's own block
-// range (6.3, flash_d578uv.c), the only blocks the driver will program or erase. One recursive mutex serializes every
-// NAND transaction once the scheduler runs: the storage layer holds it across a whole read-modify-program sequence,
-// which uses the chip's page buffer.
+// AT-D578UV SPI NAND: Kioxia TC58CVG1S3HRAIG-class (2 Gbit) or a GigaDevice part (manufacturer 0x98 or 0xC8), on GPIO
+// pins, bit-banged (docs/spec/hardware-d578uv.md 6). The factory calibration is read from it; with CONFIG_NAND_STORAGE
+// the core's storage lives in RadioFoundry's own block range (6.3, flash_d578uv.c), the only blocks the driver will
+// program or erase. One recursive mutex serializes every NAND transaction once the scheduler runs: the storage layer
+// holds it across a whole read-modify-program sequence, which uses the chip's page buffer.
 #include "d578uv.h"
 #include "config.h"
 #include "pins.h"
@@ -58,7 +57,7 @@ static spi_nand_t nand = {
 	.pages_per_block = 64,
 	.blocks = 2048,
 #if CONFIG_NAND_STORAGE
-	// Feature 0xB0: ECC on (both parts' default; the stock firmware never writes it), Kioxia's high speed read off
+	// Feature 0xB0: ECC on (both parts' default), Kioxia's high speed read off
 	// (the internal data move needs it off). Every block locked (0xA0 = 0x38) except during a program or erase.
 	// Writes only in RadioFoundry's range
 	.config = 0x10,

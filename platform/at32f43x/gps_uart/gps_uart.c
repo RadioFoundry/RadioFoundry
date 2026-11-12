@@ -70,8 +70,8 @@ static void tx_byte(uint8_t c)
 	u->DT = c;
 }
 
-// The supply and the receive path together. The RX pin stays a floating input (the stock set-up of these radios): the
-// USART takes an input pin as is, and a pull-up would feed an unpowered module through its TX line
+// The supply and the receive path together. The RX pin stays a floating input: the USART takes an input pin as is, and
+// a pull-up would feed an unpowered module through its TX line
 static void gps_on(bool on)
 {
 	at32_usart_t *u = cfg->uart;

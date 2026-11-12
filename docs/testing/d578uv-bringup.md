@@ -161,7 +161,7 @@ Select a DMR channel and let the SDR bench send a call.
 | --- | --- | --- |
 | The call heard, the talker shown | `tests/hil` DMR receive cases | the digital register set (5.1), the call option bits (modem-sct.md 4) |
 | Every call decodes, not only the first | the debug link's call counters; diag line 0 (`cr` the last CARRIER_READY and how many went, `rx` frames, `fec` frames after an FEC error) | CARRIER_READY at each carrier edge, 2 on this radio; the RF chip's digital receive values (0x47, 0x43, hardware-d578uv.md 5.1); shift register bit 0x04 |
-| Every LC header and terminator reaches the stack | the debug link's DMR counters | call option byte 3 (0x47 here, 0x44 in the stock firmware) |
+| Every LC header and terminator reaches the stack | the debug link's DMR counters | call option byte 3 bits 1 and 0 (hardware-d578uv.md 4.4) |
 | Voice level right | | the codec levels and digital speaker gain from the calibration (4.4) |
 
 ## 9. DMR transmit (dummy load, then the SDR bench)

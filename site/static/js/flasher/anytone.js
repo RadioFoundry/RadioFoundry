@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The AnyTone update mode (radios.json flash.backend "anytone-update"): the vendor's own firmware update protocol on the
+// The AnyTone update mode (radios.json flash.backend "anytone-update"): the radio's own firmware update protocol on the
 // radio's USB serial port at 921600 baud, which the bootloader runs when the radio is turned on with the board's keys
 // held (docs/spec/hardware-d578uv.md 8). A port of rfoundry's anytone.py: the same frames, the same checks. No DOM
 // here, so the Node tests can use it (site/tests/anytone.test.mjs).
 //
 // The radio names its model when asked (02), and the name differs by MCU: the board's flash-boards.json anytone_models
-// map the names to [hardware] variants codes. As the vendor's updater does, the page writes a vendor firmware set only to
+// map the names to [hardware] variants codes. The page writes a vendor firmware set only to
 // a radio whose model its .spi names, and RadioFoundry only to a variant that runs this board's image.
 
 import { sha256, u32le, fromHex, sleep } from "./bytes.js";
@@ -16,13 +16,13 @@ export class AnytoneError extends Error {}
 export const ACK = 0x06, NAK = 0x15, DATA = 0x01;
 export const BAUD = 921600;
 export const HELLO = new TextEncoder().encode("UPDATE");
-export const HELLO_REPLY = Uint8Array.of(0x51, 0x58, ACK);	// "QX", ACK: the stock firmware's answer (PROGRAM, END)
+export const HELLO_REPLY = Uint8Array.of(0x51, 0x58, ACK);	// "QX", ACK: the radio's answer (PROGRAM, END)
 export const IDENTIFY = Uint8Array.of(0x02), IDENTIFY_LEN = 16;
 export const FINISH = Uint8Array.of(0x18);
 export const CHUNK = 32, FRAME_LEN = 40;
 export const RETRIES = 3;
 export const TIMEOUT = 2000;			// ms for each answer
-// The stock firmware's PC mode, with the radio on and running its stock firmware: the codeplug is read before the
+// The radio's PC mode, with the radio on and running its original firmware: the codeplug is read before the
 // install (docs/spec/codeplug-stock-anytone.md)
 export const PROGRAM = new TextEncoder().encode("PROGRAM"), END = new TextEncoder().encode("END");
 export const READ = 0x52, READ_REPLY = 0x57, READ_MAX = 16;
@@ -118,7 +118,7 @@ export function judge({ board, radio, model, task, chosen = null, spiModels = nu
 		if (runs && runs !== board.id) return { ok: false, code, why: "other_board", board: runs, text: `the radio is ${variantLabel(radio, code)}, which takes the ${runs} image, not the ${board.id} one` };
 		if (runs !== board.id) return { ok: false, code, why: "no_image", text: `the radio is ${variantLabel(radio, code)}, which RadioFoundry has no image for. Its original firmware can still be written back` };
 	} else if (!(spiModels || []).includes(model))
-		return { ok: false, code, why: "wrong_set", text: `this firmware is for ${(spiModels || []).join(" or ") || "no model"}, the radio answers ${model} (${variantLabel(radio, code)}): refused, as the manufacturer's updater refuses it` };
+		return { ok: false, code, why: "wrong_set", text: `this firmware is for ${(spiModels || []).join(" or ") || "no model"}, the radio answers ${model} (${variantLabel(radio, code)}): refused` };
 	return { ok: true, code, why: null, text: "" };
 }
 
@@ -268,7 +268,7 @@ export class AnytoneUpdate {
 	}
 }
 
-// The stock firmware's PC mode on a stream: read its memory, then END (the radio restarts)
+// The radio's PC mode on a stream: read its memory, then END (the radio restarts)
 export class AnytoneProgram extends AnytoneUpdate {
 	async hello() {
 		this.s.clear();

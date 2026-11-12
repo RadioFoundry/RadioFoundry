@@ -138,7 +138,7 @@ rfoundry restore-stock FIRMWARE.CDD --board BOARD              the stock firmwar
 
 The radio answers its model, and the model differs by MCU (board.toml `[flash.anytone] models`, per `[hardware]`
 variants code). rfoundry writes RadioFoundry only to a variant that runs the board's image, a stock set only to a radio
-whose model the set's `.spi` names (as the vendor's updater does), and with `--variant CODE` only when the radio is that
+whose model the set's `.spi` names, and with `--variant CODE` only when the radio is that
 variant. The image always carries the DMR baseband's boot block in the board's slot: from the image (`tools/modem_boot.py`
 merged it) or from `--stock`; `--codec keep` is refused. A frame the radio refuses is sent again (3 times); a failed or
 stopped write leaves the radio in update mode, and the same command writes again.

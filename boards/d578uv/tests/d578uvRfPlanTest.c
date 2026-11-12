@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The AT-D578UV's frequency plans outside the RF chips (rf_plan.h, hardware-d578uv.md 5.4, 5.5): the air band LO on
-// either side and its VCO sub-band at the stock limits; the PA5 trims' tables from the stock factory defaults, and
+// either side and its VCO sub-band at the radio's limits; the PA5 trims' tables from the factory defaults, and
 // lookups worked out apart from the code, rising and falling tables, at the cells' edges and outside the bands
 #include <stdio.h>
 #include "rf_plan.h"
@@ -32,7 +32,7 @@ static void check_table(trim_shape_t sh, const uint8_t p[3], const uint8_t *want
 	}
 }
 
-// The stock factory defaults' tables
+// The factory defaults' tables
 static void test_trim_tables(void)
 {
 	static const uint8_t ua[3] = { 0x1E, 0x87, 0xFF }, uc[3] = { 0x1E, 0x91, 0xFF };

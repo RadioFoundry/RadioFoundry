@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Stock AnyTone codeplugs (docs/spec/codeplug-stock-anytone.md): the tables the vendor firmware keeps in the radio's
+// Stock AnyTone codeplugs (docs/spec/codeplug-stock-anytone.md): the tables the radio keeps in its
 // SPI NAND, read through its PC mode before an install (flasher/anytone.js AnytoneProgram) and filled into the
 // editing model (model.js) the way a qdmr import fills it (qdmr.js), with the same note codes. RadioFoundry keeps its
 // own codeplug elsewhere in the NAND, so these tables can't be read once it runs.
@@ -105,7 +105,7 @@ export function readContact(r) {
 	return { name: text(r, 1, 17) || String(id), type, id };
 }
 
-// Every table the channels in zones reach, read through read(addr, n) (bytes from the radio's memory; the stock PC
+// Every table the channels in zones reach, read through read(addr, n) (bytes from the radio's memory; the PC
 // mode reads them). onBytes(done, total): total grows as the references are found
 export async function readAnytone(read, onBytes = () => {}) {
 	let done = 0, total = 0;

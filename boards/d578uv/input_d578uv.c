@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT-D578UV keys and encoder (docs/spec/hardware-d578uv.md 3.2). The front keys sit on two resistor ladders read by the
-// ADC, four keys each, with the stock firmware's windows (at or below 500, 1500, 2500 and 3500 counts; above: none);
-// one key has a pin of its own (PA1), low when pressed. The encoder's lines are PC8 and PC9, sampled on every edge of
-// either (EXTI 8 and 9). PTT and the microphone's Up and Down keys come from the plain hand microphone's two lines,
-// PA9 and PA10, read as the stock firmware reads them when its "Hand Type" isn't the serial microphone (front_io.h).
-// Pull-ups hold both lines high without a microphone, so nothing keys the transmitter at power-on. The Bluetooth
-// module's PTT and keys join the scan with CONFIG_BT_PTT (bt_d578uv.c).
+// ADC, four keys each, with these windows (at or below 500, 1500, 2500 and 3500 counts; above: none); one key has a pin
+// of its own (PA1), low when pressed. The encoder's lines are PC8 and PC9, sampled on every edge of either (EXTI 8 and
+// 9). PTT and the microphone's Up and Down keys come from the plain hand microphone's two lines, PA9 and PA10, as with
+// the radio's "Hand Type" menu setting on the plain microphone (front_io.h). Pull-ups hold both lines high without a
+// microphone, so nothing keys the transmitter at power-on. The Bluetooth module's PTT and keys join the scan with
+// CONFIG_BT_PTT (bt_d578uv.c).
 //
-// The serial keypad microphone (the stock default "Hand Type") sends frames on PA10 at 115200 (anytone_mic.h). The
+// The serial keypad microphone (the radio's default "Hand Type") sends frames on PA10 at 115200 (anytone_mic.h). The
 // USART listens on PA10 all the time, so either microphone works without a setting: once a frame is accepted the keys
 // come from the frames and PA9 becomes the USART's TX for the radio's answers and status frames, which the key scan
 // sends (anytone_mic_out); when the microphone stops answering for ANYTONE_MIC_TIMEOUT_MS, PA9 is an input again.
@@ -126,8 +126,7 @@ static void init(void)
 #if CONFIG_BT_PTT
 	d578uv_bt_init();
 #endif
-	// Two steps per detent, resting where the lines are equal: the stock decoder counts once per edge of A (to be
-	// checked on the radio)
+	// Two steps per detent, resting where the lines are equal (to be checked on the radio)
 	quad_init(&enc, 2, QUAD_REST_EQUAL, enc_ab());
 	mcu_exti_route(GPIOC, 8);
 	mcu_exti_route(GPIOC, 9);

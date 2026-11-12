@@ -114,7 +114,7 @@ class Protocol(unittest.TestCase):
             with self.assertRaisesRegex(at.UpdateError, "no image|has no image|RadioFoundry has no image"):
                 at.check_install(B, m)
             self.assertEqual(at.check_restore(B, m, {m}), code)
-            with self.assertRaisesRegex(at.UpdateError, "vendor's updater"):
+            with self.assertRaisesRegex(at.UpdateError, "refusing"):
                 at.check_restore(B, m, {"OTHER"})
 
     def test_other_board_variant_refused_but_restores(self):
@@ -221,7 +221,7 @@ class Protocol(unittest.TestCase):
 
 
 class ProgramMode(unittest.TestCase):
-    """The stock firmware's PC mode: reads in pieces of at most READ_MAX, the answer's checks, END"""
+    """The radio's PC mode: reads in pieces of at most READ_MAX, the answer's checks, END"""
 
     def test_request_and_answer(self):
         self.assertEqual(at.read_request(0x02540000, 16).hex(), "520254000010")
@@ -301,7 +301,7 @@ class Commands(unittest.TestCase):
                 rc, out = self.run_cli(["restore-stock", cdd, "--board", B.id, "--yes"], fake)
                 self.assertEqual(rc, 0, out)
                 self.assertEqual(fake.image()[:len(data)], data)
-                # the set of another variant: refused as the vendor's updater refuses it
+                # the set of another variant: refused
                 for other in B.anytone_models:
                     if other != code:
                         fake = at.FakeRadio(model=model_of(other))

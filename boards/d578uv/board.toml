@@ -24,9 +24,9 @@ power = "up to 50 W"
 display = "1.77\" color, 160 × 128"
 gallery = "160x128"
 clock = { rtc = "unknown", note = "the GD32F303 RTC; whether a crystal and a backup supply are fitted is not known (docs/spec/hardware-d578uv.md)" }
-# The radio was built with two MCUs (hardware-d578uv.md 1): the stock firmware's version screen names the one it runs
-# on, and the vendor update mode answers with a model name per MCU (8). This image runs on the GD32F303 only; the
-# AT32 builds take boards/d578uva's
+# The radio was built with two MCUs (hardware-d578uv.md 1): the radio's version screen names the one it runs on, and
+# the vendor update mode answers with a model name per MCU (8). This image runs on the GD32F303 only; the AT32 builds
+# take boards/d578uva's
 variant_pattern = '(GD|AT)_Ver'
 variant_check = "Open the version screen in the radio's menu. GD_Ver is the GD32 build, AT_Ver the AT32 build."
 
@@ -46,7 +46,7 @@ usb_ids = ["2E3C:5740"]
 blocked = "no AT32 radio has run RadioFoundry yet"
 name = "AT32F43x (built from mid-2022)"
 level = "bring-up"
-notice = "Nothing has run on this radio yet: the AT32 build is written from an analysis of the manufacturer's firmware and the GD32 build's code. To go back, write the manufacturer's firmware file through the factory update mode."
+notice = "Nothing has run on this radio yet: the AT32 build is written from the AT32 datasheets and the GD32 build's code. To go back, write the manufacturer's firmware file through the factory update mode."
 runs = { board = "d578uva" }
 
 [status]
@@ -69,7 +69,7 @@ backup = { stock = "none", rfoundry = "none", spi_size = 0 }
 [flash.stub]
 id = 6
 tested = true
-# The SPI NAND the stub reads as its external memory (pins from pins.h): 2 Gbit, dual SPI reads as the stock firmware
+# The SPI NAND the stub reads as its external memory (pins from pins.h): 2 Gbit, dual SPI reads
 spi_nand = { mb = 256, dual = true }
 
 # What no tool erases or writes, as offsets in the program flash. Not the modem boot slot (0xFF000-0x100000): every

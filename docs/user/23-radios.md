@@ -742,12 +742,12 @@ A keypad microphone unplugged while the radio is on stops its PTT within 3 secon
 - A Bluetooth PTT button or Bluetooth hand mic paired with the original firmware keys the radio, and the hand
   mic's channel keys work too. Pairing and Bluetooth audio aren't written: the microphone and speaker stay the
   radio's own. The built-in GPS works.
-- The original firmware has no VOX; RadioFoundry reads the microphone's level from the RF
+- For VOX, RadioFoundry reads the microphone's level from the RF
   chip, and how loud a voice must be to key it may need a different **VOX level** than on other radios.
 - APRS receive is written and untested, but this image leaves it out: it needs more memory than the GD32F303 has
-  left with DMR on. The AT32 image has it. RadioFoundry decodes the receive audio itself; the original firmware's APRS comes
-  from an add-on board, which RadioFoundry doesn't use.
-- The backlight has only the original firmware's five levels: **Brightness** picks one per 20 % (10-20 % the dimmest,
+  left with DMR on. The AT32 image has it. RadioFoundry decodes the receive audio itself and doesn't use
+  the radio's APRS add-on board.
+- The backlight has five levels: **Brightness** picks one per 20 % (10-20 % the dimmest,
   90-100 % the brightest). RadioFoundry doesn't control the status light yet, so its colors don't follow the radio's manual.
 - The hotspot, single frequency repeating, privacy, the USB network and zone sharing are left out: the
   radio's memory is too small for all of them, and the vocoder runs in the DMR chip, out of the processor's reach.
@@ -768,7 +768,7 @@ room for what the GD32F303 image leaves out:
   voice stays in the DMR chip.
 
 **RadioFoundry can't be installed on an AT32 radio yet.** Nothing has run on one, and its processor set-up (clock,
-USB) is written from an analysis of the original firmware alone
+USB) is untested
 ([hardware-d578uv.md](../spec/hardware-d578uv.md)). The installer and `rfoundry` name the radio and refuse it, with
 nothing written. The list above is what the image is built to have once one has been tested.
 

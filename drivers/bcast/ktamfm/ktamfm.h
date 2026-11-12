@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // KTMicro AM/FM receiver (chip ID "KT" in registers 0x02/0x03): chip driver, independent of the board. No public
-// register map was found; every register and value here is the sequence a stock radio firmware writes, read by
-// static analysis, and the role given to each is inferred (docs/spec/airband-and-broadcast.md 2). Two modes: AM, which
-// the radios that carry it use as the demodulator behind their RF chip's mixer (an air band superhet at an IF the chip
-// tunes as an AM station), and broadcast FM on the chip's own input. The chip has no seek and no tune-done flag the
-// stock firmware uses; it reads a station by its signal readings (ktamfm_fm_status).
+// register map was found; the role given to each register and value here is inferred
+// (docs/spec/airband-and-broadcast.md 2). Two modes: AM, which the radios that carry it use as the demodulator behind
+// their RF chip's mixer (an air band superhet at an IF the chip tunes as an AM station), and broadcast FM on the chip's
+// own input. No seek or tune-done flag is used; a station is read by its signal readings (ktamfm_fm_status).
 //
 // The board supplies 8-bit register access (I2C at 8-bit address 0x6A, register then data; a read is the register,
 // repeated START, one byte) and a delay. Changes read the register and write it back. Not reentrant: one task.
@@ -19,7 +18,7 @@
 #define KTAMFM_ID		0x4B54u	// registers 0x02 (high) and 0x03: "KT"
 
 #define KTAMFM_VOL_MASK		0x1Fu	// register 0x0F bits 4:0, the audio level
-#define KTAMFM_VOL_MUTE		0x01u	// the level the stock firmware writes to mute
+#define KTAMFM_VOL_MUTE		0x01u	// the level that mutes
 #define KTAMFM_VOL_AM		0x1Eu	// its AM listening level
 #define KTAMFM_VOL_FM		0x1Au	// its broadcast FM listening level
 
@@ -41,16 +40,16 @@ typedef struct {
 } ktamfm_t;
 
 typedef struct {
-	uint8_t level;		// 0xEA bits 6:0: rises with the signal (the stock squelch's level, 1 count per step of 3)
-	uint8_t carrier;	// 0xEC bits 6:0: the stock squelch's second reading, compared with a fixed calibrated floor
+	uint8_t level;		// 0xEA bits 6:0: rises with the signal (a squelch level, 1 count per step of 3)
+	uint8_t carrier;	// 0xEC bits 6:0: the squelch's second reading, compared with a fixed calibrated floor
 } ktamfm_status_t;
 
-// Broadcast FM readings and the stock firmware's station test on them (scales inferred)
+// Broadcast FM readings and a station test on them (scales inferred)
 typedef struct {
 	uint8_t rssi;		// 0xE6 bits 6:0: the signal strength
 	uint8_t snr;		// 0xE2 bits 5:0: rises with a clean signal
 	uint8_t offset;		// |2 x (0x79 bits 6:0) - 0xE9|: small on a station's center (a tuning offset, inferred)
-	bool station;		// rssi > 14, snr >= 12 and offset < 12 (the stock firmware debounces it over 3 polls)
+	bool station;		// rssi > 14, snr >= 12 and offset < 12 (debounced over 3 polls by the caller)
 } ktamfm_fm_status_t;
 
 void ktamfm_attach(ktamfm_t *k, const ktamfm_bus_t *bus);
@@ -58,12 +57,11 @@ void ktamfm_attach(ktamfm_t *k, const ktamfm_bus_t *bus);
 bool ktamfm_probe(ktamfm_t *k);
 // Wake and set up, once; leaves the audio muted. False on a bus error or when the chip never says it is ready
 bool ktamfm_init(ktamfm_t *k);
-// AM mode with the stock AM front-end values; the level stays as it was
+// AM mode with the AM front-end values; the level stays as it was
 bool ktamfm_am(ktamfm_t *k);
 // Tune AM to khz (up to 32767 kHz)
 bool ktamfm_tune_am(ktamfm_t *k, uint32_t khz);
-// Broadcast FM mode (0x88 bit 6 clear); the level stays as it was. The AM mode's other values stay too, as in the
-// stock firmware
+// Broadcast FM mode (0x88 bit 6 clear); the level stays as it was. The AM mode's other values stay too
 bool ktamfm_fm(ktamfm_t *k);
 // Tune broadcast FM to khz, a multiple of KTAMFM_FM_STEP_KHZ up to KTAMFM_FM_MAX_KHZ
 bool ktamfm_tune_fm(ktamfm_t *k, uint32_t khz);

@@ -5,7 +5,7 @@
 // layout RadioFoundry does not read, so the radio would start without channels. The install converts it into the
 // open-firmware layout (codeplug/stock_tyt.js, the same conversion as the Codeplug Editor's), writes the sectors that
 // change through the CPS, and reads them back. TYT-family stock codeplugs are read from the memory chip after the
-// install; AnyTone ones before it, through the stock firmware's PC mode (anytoneui.js), since RadioFoundry can't
+// install; AnyTone ones before it, through the radio's PC mode (anytoneui.js), since RadioFoundry can't
 // read them afterwards (codeplug/stock_anytone.js). On an HR_C7000 radio the stock codeplug stays in its own pages,
 // below RadioFoundry's codeplug (codeplug/stock_baofeng.js): the install converts the read its check step took and
 // writes it through the codeplug interface (writeConverted).

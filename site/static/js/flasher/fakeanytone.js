@@ -3,7 +3,7 @@
 // A simulated AnyTone update mode (anytone.js) for the tests and the practice run: a port of rfoundry's
 // anytone.FakeRadio. It answers the handshake and the identity, checks and keeps every frame, and can refuse a frame
 // now and then (nakEvery) or go silent (silentAfter frames). With memory ([[address, bytes], ...]) it also plays the
-// stock firmware's PC mode: PROGRAM, reads of that memory (unset bytes 0xFF), END. With pairs, a read in a block
+// radio's PC mode: PROGRAM, reads of that memory (unset bytes 0xFF), END. With pairs, a read in a block
 // that isn't current comes from the block after it, as the radio's does (codeplug/stock_anytone.js currentBlock). stream: what anytone.js reads and
 // writes, as a SerialStream's buffer and write().
 

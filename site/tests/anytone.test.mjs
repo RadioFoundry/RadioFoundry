@@ -216,7 +216,7 @@ test("anytone: a frame refused every time, a radio gone silent and a stop all en
 	assert.equal(await slow.u.write(BOARD.app_base, rand(64)), 2);
 });
 
-test("anytone: the stock PC mode's reads and answers, byte for byte as anytone.py sends and builds them", async () => {
+test("anytone: the PC mode's reads and answers, byte for byte as anytone.py sends and builds them", async () => {
 	const pg = fx.program;
 	for (const [a, d, want] of pg.replies) {
 		assert.equal(toHex(at.readReply(a, fromHex(d))), want);

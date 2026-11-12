@@ -41,9 +41,9 @@ static const board_power_band_t power_bands[] = {
 	{ 400000000u, 480000000u, power_names },
 };
 
-// Up, down, confirm and exit as the stock menus use them (the stock firmware locks the keys on exit held; here that is
-// the core's long QUICK, menu held, and a long exit goes home). The stock firmware's other front keys are programmable
-// (P2..P6 and PUSH, defaults Tx Power, TalkAround, Speaker Mode, APRS Set, Switch ChType and none), so they get the
+// Up, down, confirm and exit as the radio's menus use them (a key lock is the core's long QUICK, menu held, and a long
+// exit goes home). The radio's other front keys are programmable in its manual (P2..P6 and PUSH, defaults Tx Power,
+// TalkAround, Speaker Mode, APRS Set, Switch ChType and none), so they get the
 // core's other actions on a press and the user actions on a long press. PUSH (PA1, the knob's switch) confirms as the
 // menu key does, so the knob alone can work a list. The serial microphone's keypad: the digits (with their DTMF), '*'
 // and '#' as list down and up, A/B, and A..D by their printed labels (MENU, ZONE up, ZONE down, EXIT) with DTMF A..D
@@ -139,7 +139,7 @@ const board_t board = {
 #endif
 };
 
-// The 12 MHz crystal to 120 MHz, as the stock firmware runs (hardware-d578uv.md 2)
+// The 12 MHz crystal to 120 MHz (hardware-d578uv.md 2)
 #define CRYSTAL_HZ	12000000u
 #define CORE_HZ		120000000u
 

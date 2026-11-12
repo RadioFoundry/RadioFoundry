@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT-D578UV APRS (hal_afsk.h). Transmit: the tones on PB9 into the RF chip's audio input (tone_d578uv.c). Receive
-// (CONFIG_APRS_RX, docs/spec/hardware-d578uv.md 3.4): the demodulated receive audio on PC0, ADC channel 10, sampled
-// at 9600 Hz (eight samples a bit at 1200 baud) for the core's AFSK demodulator, where the stock firmware samples it
-// for its DTMF and selective call decoders.
+// (CONFIG_APRS_RX, docs/spec/hardware-d578uv.md 3.4): the demodulated receive audio on PC0, ADC channel 10, sampled at
+// 9600 Hz (eight samples a bit at 1200 baud) for the core's AFSK demodulator.
 //
-// TIM6 (the GD32 manual's TIMER5, the stock firmware's sampling timer) interrupts at the rate. Its handler reads the
-// conversion it started on the last tick and starts the next on the ADC's sampling channel (mcu_io.h: a channel with
-// its own trigger and data register, so the key ladders' and knobs' reads go on beside it), and puts the reading in a
-// ring (drivers/audio/adc_pcm) that the radio task reads as PCM with the bias removed. A DMA scan isn't used: the
-// regular group the DMA would take is the one mcu_adc_read shares between tasks.
+// TIM6 (the GD32 manual's TIMER5) interrupts at the rate. Its handler reads the conversion it started on the last tick
+// and starts the next on the ADC's sampling channel (mcu_io.h: a channel with its own trigger and data register, so the
+// key ladders' and knobs' reads go on beside it), and puts the reading in a ring (drivers/audio/adc_pcm) that the radio
+// task reads as PCM with the bias removed. A DMA scan isn't used: the regular group the DMA would take is the one
+// mcu_adc_read shares between tasks.
 //
 // The timer runs only between the core's rx_start and rx_stop, which it calls while the radio receives FM on the APRS
 // frequency. Readings reach the core only while side A is receiving FM (d578uv_fm_rx_a): while it transmits or side B

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV DMR baseband: the SCT3258 on its 8-bit host port (docs/spec/hardware-d578uv.md 4), bit-banged on GPIO as
-// the stock firmware does it, and the SCT driver (drivers/modem/sct) on top. The boot block comes from the codec slot
-// the flashing tool fills from the user's own stock file; without it the radio runs FM only.
+// AT-D578UV DMR baseband: the SCT3258 on its 8-bit host port (docs/spec/hardware-d578uv.md 4), bit-banged on GPIO, and
+// the SCT driver (drivers/modem/sct) on top. The boot block comes from the codec slot the flashing tool fills from the
+// user's own stock file; without it the radio runs FM only.
 #include <stddef.h>
 #include <string.h>
 #include "d578uv.h"
@@ -30,8 +30,7 @@
 
 extern const uint8_t __codec_slot[];
 
-// The voice set-up (hardware-d578uv.md 4.4): what the stock firmware sends after the boot. The codec is a
-// TLV320AIC3204, the vocoder AMBE+2
+// The voice set-up (hardware-d578uv.md 4.4), sent after the boot. The codec is a TLV320AIC3204, the vocoder AMBE+2
 #define VOICE_CODEC		1
 #define VOICE_VOCODER		4
 // The calibration block (hardware-d578uv.md 7): current copy marked at +CAL_MARKS. The audio bytes start at CAL_AUDIO:
@@ -44,12 +43,12 @@ extern const uint8_t __codec_slot[];
 #define CAL_SPK			7	// 0x0D9, from CAL_AUDIO
 #define CAL_MIC			9	// 0x0DB
 #define CAL_OFFSET		0x140u
-// No calibration: the stock factory defaults (0x0D7-0x0D8, a demodulator gain, goes unused: the stock firmware sends 0)
+// No calibration: factory defaults (0x0D7-0x0D8, a demodulator gain, goes unused: 0 is sent)
 static const uint8_t cal_audio_default[11] = {
 	0x08, 0x04, 0x14, 0x14, 0x00, 0x00, 0x00, 0x05, 0x46, 0x07, 0xD0,
 };
 static const uint8_t cal_offset_default[8] = { 0x00, 0x82, 0x02, 0xD0, 0x02, 0xD0, 0x02, 0xD0 };
-// The middle of the stock firmware's five microphone gain steps
+// The middle of five microphone gain steps
 #define MIC_GAIN		0x20
 
 static volatile bool boot_done;		// the boot has ended, either way (modem_task)
@@ -58,8 +57,7 @@ static sct_boot_result_t boot_result = SCT_BOOT_SILENT;
 static SemaphoreHandle_t lock;
 static sct_rx_t rx;
 
-// The bus has no wait line, so the stock firmware's timing is the guide: a counted loop of about 0.7 us inside each
-// strobe (0x080932C2). Strobes of about 30 ns got no answer on a radio
+// The bus has no wait line: about 1 us inside each strobe. Strobes of about 30 ns got no answer on a radio
 #define STROBE_US		1u
 #define RESET_RUN_MS		100u	// after RSTN goes high, before the boot block
 #define SUPPLY_OFF_MS		300u	// supply and lines held low before the power-up
@@ -68,7 +66,7 @@ static inline void settle(void)
 	hal_delay_us(STROBE_US);
 }
 
-// PD8-PD15: outputs only while a write runs; between writes inputs with pull-up, as the stock firmware leaves them
+// PD8-PD15: outputs only while a write runs; between writes inputs with pull-up
 static void data_dir(bool out)
 {
 	if (out) {
@@ -78,7 +76,7 @@ static void data_dir(bool out)
 	}
 }
 
-// The stock write (0x080933A0): CS low once for the whole transfer; per byte WR low, then the data, then WR high
+// A write: CS low once for the whole transfer; per byte WR low, then the data, then WR high
 // (the chip latches on WR's rise, inferred). No handshake: the boot block's 2048 bytes go out back to back
 static bool hpi_write(const uint8_t *buf, uint16_t len, void *ctx)
 {
@@ -126,13 +124,13 @@ static uint16_t hpi_read(uint8_t *buf, uint16_t max, void *ctx)
 	return n;
 }
 
-// The stock power-up: supply on, strobes idle high, PIO1 driven low (the Intel bus strap), RSTN high 100 ms, low
-// 500 ms (the reset), then high again: the chip runs and latches PIO1 (seen on a radio: left low, it never answered)
+// The power-up: supply on, strobes idle high, PIO1 driven low (the Intel bus strap), RSTN high 100 ms, low 500 ms (the
+// reset), then high again: the chip runs and latches PIO1 (measured on a radio: left low, it never answered)
 static void hpi_reset(void *ctx)
 {
 	(void)ctx;
-	// Off first, as the stock firmware starts (0x08092E98): supply low and every line low, so the chip powers up from
-	// cold even after a warm reset of the MCU (the GPIO reset state floats the supply enable and may leave it on)
+	// Off first: supply low and every line low, so the chip powers up from cold even after a warm reset of the MCU
+	// (the GPIO reset state floats the supply enable and may leave it on)
 	mcu_pin_out(PIN_SCT_ENABLE, false, false);
 	mcu_pin_out(PIN_HPI_CS, false, false);
 	mcu_pin_out(PIN_HPI_WR, false, false);
@@ -156,7 +154,7 @@ static void hpi_reset(void *ctx)
 	mcu_pin_out(PIN_SCT_PIO1, false, false);	// the strap: driven low through RSTN's rise selects the Intel bus
 	mcu_pin_out(PIN_SCT_PC7, false, false);
 	mcu_pin_out(PIN_SCT_PC6, true, false);
-	mcu_pin_in(PIN_HPI_HOBI, MCU_PULL_UP);	// as the stock firmware: an undriven line reads idle, not "a word waiting"
+	mcu_pin_in(PIN_HPI_HOBI, MCU_PULL_UP);	// an undriven line reads idle, not "a word waiting"
 	data_dir(false);
 	hal_delay_ms(100);
 	mcu_pin_out(PIN_HPI_RESET, true, false);
@@ -164,10 +162,10 @@ static void hpi_reset(void *ctx)
 	mcu_pin_write(PIN_HPI_RESET, false);
 	hal_delay_ms(500);
 	mcu_pin_write(PIN_HPI_RESET, true);
-	// The chip has latched PIO1: released to the pull-down, as the stock firmware does after the rise (0x0809304C);
-	// a pull-down alone loses to the chip's side and the strap read Motorola (seen on a radio: no answer)
+	// The chip has latched PIO1: released to the pull-down after the rise; a pull-down alone loses to the chip's
+	// side and the strap read Motorola (measured on a radio: no answer)
 	mcu_pin_in(PIN_SCT_PIO1, MCU_PULL_DOWN);
-	// The stock firmware sends the boot block from a task well after this; the chip's ROM gets time to start
+	// The chip's ROM gets time to start before the boot block
 	hal_delay_ms(RESET_RUN_MS);
 }
 
@@ -195,8 +193,7 @@ static sct_codec_write_t codec_writes[] = {
 	{ 0, 0x58, MIC_GAIN },
 };
 
-// The digital mode speaker and microphone gains (Q16.11, 2048 = 0 dB), from calibration. The stock firmware sends
-// others only for settings RadioFoundry doesn't have (a quieter "indoor" volume, an equalizer preset)
+// The digital mode speaker and microphone gains (Q16.11, 2048 = 0 dB), from calibration
 static uint8_t spk_gain[2];
 static uint8_t mic_gain[2];
 
@@ -207,9 +204,9 @@ static uint8_t mic_gain[2];
 static const uint8_t mod_gain_uhf[2] = { 0x0C, 0x60 };
 static const uint8_t mod_gain_vhf[2] = { 0x24, 0x75 };
 
-// MODOUT_CONFIG: byte 0 the delay of LOR against LOL in 10.4 us steps, signed; bytes 1-4 as the stock firmware sends
-// them. The 4FSK is on LOL, and LOL later by 21 steps (0xEB) puts the inbound burst on the repeater's grid with the DAC
-// filter of codec_start (hardware-d578uv.md 5.1). Positive values moved it by less than a sample
+// MODOUT_CONFIG: byte 0 the delay of LOR against LOL in 10.4 us steps, signed; bytes 1-4 fixed. The 4FSK is on LOL,
+// and LOL later by 21 steps (0xEB) puts the inbound burst on the repeater's grid with the DAC filter of codec_start
+// (hardware-d578uv.md 5.1). Positive values moved it by less than a sample
 static const uint8_t modout_config[5] = { 0xEB, 0x10, 0x00, 0x00, 0x00 };
 
 static const sct_field_t tx_uhf[] = {
@@ -255,9 +252,9 @@ static bool cal_current(uint32_t base)
 	return written && !superseded;
 }
 
-// The rest of the stock DMR start (hardware-d578uv.md 4.4) but MODOUT_CONFIG (in tx_fields): DMR_OFFSET from
-// calibration, the squelch's fixed levels (no gain adjustment, LNA 2, AGC, OOBE every 80 ms, carrier thresholds
-// 0x1770 / 0x157C for digital and analog) and the demodulator's auto calibration
+// The rest of the DMR start (hardware-d578uv.md 4.4) but MODOUT_CONFIG (in tx_fields): DMR_OFFSET from calibration, the
+// squelch's fixed levels (no gain adjustment, LNA 2, AGC, OOBE every 80 ms, carrier thresholds 0x1770 / 0x157C for
+// digital and analog) and the demodulator's auto calibration
 static uint8_t dmr_offset[8];
 static const uint8_t sq_level[12] = { 0x00, 0x02, 0x00, 0x3C, 0x17, 0x70, 0x15, 0x7C, 0x17, 0x70, 0x15, 0x7C };
 static const uint8_t demod_gain[2] = { 0x00, 0x00 };
@@ -338,15 +335,14 @@ static void port_unlock(void *ctx)
 		xSemaphoreGiveRecursive(lock);
 }
 
-// DMR_CALL_OPTION and REPORT_FIELD as the original firmware sends them (hardware-d578uv.md 4.4), but for bytes 0 and
-// 3. Byte 0: the chip's own squelch off (bit 6 clear), so the board's carrier (d578uv_modem_carrier) and the return
-// to receive below start the sync search; with it on, a lone burst soon after a transmission went undecoded. No RF
-// control (the MCU keys the RF chips). Byte 2: four good CACH, two LC header repeats. Byte 3: every idle frame, CSBK,
-// LC header and terminator reported. The stack takes a repeater as up for 300 ms after its last burst, so with idle
-// frames reported once a repeater's idle outbound never showed as up. The original 0x44 reports identical LC
-// headers and terminators once, and whether the chip forgets them between calls is not known: a second call with
-// the same LC could go unreported. The stack takes repeats as from a burst modem. Bit 6 of bytes 1 and 3 and byte 4
-// are reserved in the Packet Interface document; sent as the original firmware sends them.
+// DMR_CALL_OPTION and REPORT_FIELD (hardware-d578uv.md 4.4). Byte 0: the chip's own squelch off (bit 6 clear), so the
+// board's carrier (d578uv_modem_carrier) and the return to receive below start the sync search; with it on, a lone
+// burst soon after a transmission went undecoded. No RF control (the MCU keys the RF chips). Byte 2: four good CACH,
+// two LC header repeats. Byte 3: every idle frame, CSBK, LC header and terminator reported. The stack takes a repeater
+// as up for 300 ms after its last burst, so with idle frames reported once a repeater's idle outbound never showed as
+// up. A byte 3 of 0x44 reports identical LC headers and terminators once, and whether the chip forgets them between
+// calls is not known: a second call with the same LC could go unreported. The stack takes repeats as from a burst
+// modem. Bit 6 of bytes 1 and 3 and byte 4 are reserved in the Packet Interface document.
 // CARRIER_READY 2 (CR_READY below) 14 ms after each transmission. With the burst line's edges the transmission ends
 // about 2 ms after the last burst's fall and the receiver is set up about 8 ms after it, so CARRIER_READY goes out
 // about 16 ms after the fall. A one-burst reply 62.5 ms after our last burst then decodes; one 32.5 ms after it does
