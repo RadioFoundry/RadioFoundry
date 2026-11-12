@@ -27,9 +27,9 @@ const uint8_t uvf_key_matrix[3][8] = {
 };
 
 // DMR key-up (docs/spec/pa-keyup.md, hardware-dm1701.md 7). UHF: the fit of tools/bench/pa_cal.py, judged by the
-// ramp's shape: every level up 0.14-0.45 ms before the first symbol, the lowest with 0.6 dB of overshoot, the next
-// two with 2.0-3.3 dB (their boosts are tied to the lowest's and the top's timing; a lower knee and slope put the
-// lowest level or the fourth late). VHF:
+// ramp's shape; on a cable levels 1-3 come up 0.32-0.49 ms before the first symbol with at most 0.7 dB of overshoot,
+// the lowest within 1.6 dB of its level at the first symbol across the band, the top 1.6-2.5 dB short (its PA point
+// is the SFR limit below). VHF:
 // set by hand on a cable (the tool's fit comes out late): levels 0-3 up 0.10-0.17 ms before the first symbol with at
 // most 1.1 dB of overshoot, the top level at it (its boost is capped). The lowest level is far too slow on its own
 // drive, so every level is boosted from the board's earliest point (2.5 ms) until 0.6 ms before the first symbol; the

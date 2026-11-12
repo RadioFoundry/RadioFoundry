@@ -779,6 +779,13 @@ boosts of the two levels between. Against the same keys:
 A wider window (2000-2400 us) put the lowest level early with 5 dB of overshoot; an approach drive (`ease_pm`) never
 reaches the levels that overshoot.
 
+On a cable into the SDR bench (57 dB) the same set is cleaner than over the air: levels 1-3 come up 0.32-0.49 ms
+ahead with 0.3-0.7 dB of overshoot at both 445 and 461.4625 MHz, so the 2-3 dB above came from the path. The lowest
+level is 123 mW at 445 MHz and 33 mW at 461.4625 MHz (the radio's calibration tables): early with 1.5 dB of overshoot
+at the first, 1.6 dB short at the first symbol at the second. The top level is 1.6-2.5 dB short at the first symbol
+and settles after it: its PA point can't move earlier (SFR, below). A refit on the cable came out worse at every
+round.
+
 VHF is measured the same way, on a cable into the SDR bench through 57 dB of attenuation. The lowest level's own
 drive, written 2.5 ms ahead, brings the output up 0.8 ms after the first symbol, so every level is boosted. With the
 board's earliest point and settle time fixed, the boost over the level is (knee x top + slope x drive) / ((window -
