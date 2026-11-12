@@ -183,6 +183,18 @@ static inline bool board_in_band(uint32_t hz, bool need_tx)
 	return false;
 }
 
+// The first hardware option a person still has to act on (HWOPT_ST_ASK or HWOPT_ST_RESTART, hal_hwopt.h), or NULL
+static inline const hal_hwopt_t *board_hwopt_pending(void)
+{
+	for (uint8_t i = 0; board.hwopts != NULL && i < board.hwopt_count; i++) {
+		uint8_t st = hwopt_state(&board.hwopts[i]);
+		if (st == HWOPT_ST_ASK || st == HWOPT_ST_RESTART) {
+			return &board.hwopts[i];
+		}
+	}
+	return NULL;
+}
+
 // Some band may transmit: false on a radio whose transmitter isn't written yet
 static inline bool board_can_tx(void)
 {

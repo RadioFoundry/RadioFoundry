@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The board's hardware options on the debug link (DL_CMD_HWOPT, docs/spec/debuglink.md 3.25, hal/hal_hwopt.h): list
-// them with their choices and stored values, or store one. A radio without options answers an empty list.
+// them with their choices, stored values and states, or store one. A radio without options answers an empty list.
 #include "board.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
@@ -10,11 +10,14 @@
 
 static void list(dl_text_t *t)
 {
+	static const char *const states[] = { "ok", "ask", "restart", "hidden" };
 	dl_text(t, "hwopt.count=%u\n", board.hwopts != NULL ? board.hwopt_count : 0u);
 	for (uint8_t i = 0; board.hwopts != NULL && i < board.hwopt_count; i++) {
 		const hal_hwopt_t *o = &board.hwopts[i];
 		char key[24];
-		dl_text(t, "hwopt.%u.value=%d\nhwopt.%u.restart=%u\n", i, o->get(), i, o->restart);
+		uint8_t st = hwopt_state(o);
+		dl_text(t, "hwopt.%u.value=%d\nhwopt.%u.restart=%u\nhwopt.%u.state=%s\n", i, o->get(), i, o->restart, i,
+			st < 4 ? states[st] : "?");
 		(void)dl_fmt(key, sizeof(key), "hwopt.%u.name", i);
 		dl_text_kv_str(t, key, o->name);
 		dl_text(t, "hwopt.%u.choices=", i);

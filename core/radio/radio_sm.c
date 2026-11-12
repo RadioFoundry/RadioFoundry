@@ -924,6 +924,13 @@ static uint8_t tx_check(const radio_sm_t *sm)
 	return TXDENY_NONE;
 }
 
+// The board didn't key a frequency tx_check passed: a hardware option it still needs, or its own refusal (no
+// calibration there, for one), never the band
+static uint8_t board_refusal(void)
+{
+	return board_hwopt_pending() != NULL ? TXDENY_HWOPT : TXDENY_REFUSED;
+}
+
 static void deny(radio_sm_t *sm, uint8_t reason)
 {
 	sm->view.state = RS_TX_DENIED;
@@ -1822,7 +1829,7 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	if (!sm->dmr_keyed) {
 		static const subtone_t none = { TONE_NONE, 0 };
 		if (!key_tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
-			deny(sm, TXDENY_BAND);
+			deny(sm, board_refusal());
 			return;
 		}
 		sm->dmr_keyed = true;
@@ -3956,7 +3963,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	outputs(sm);
 	const channel_t *ch = &sm->view.ch;
 	if (!key_tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &ch->tx_tone)) {
-		deny(sm, TXDENY_BAND);
+		deny(sm, board_refusal());
 		return;
 	}
 #if CONFIG_NET_USRP

@@ -5564,12 +5564,24 @@ uint8_t ui_set_group_count(void) { return GROUPS; }
 // In English, as Find matches the name in the language in use and in English (it calls tr() on it)
 const char *ui_set_group_name(uint8_t g) { return g < GROUPS ? groups[g].name : ""; }
 
+#define HWOPT_ROWS_MAX		15
+
+// The hardware options Settings > Advanced > Hardware lists (hal_hwopt.h): those the board didn't detect
+static uint16_t hwopt_visible(void)
+{
+	uint16_t n = 0;
+	for (uint8_t k = 0; board.hwopts != NULL && k < board.hwopt_count && n < HWOPT_ROWS_MAX; k++) {
+		n += hwopt_state(&board.hwopts[k]) != HWOPT_ST_HIDDEN;
+	}
+	return n;
+}
+
 // Settings a radio without a battery (or a broadcast receiver, or the key) doesn't have are left out of the list, not
 // shown disabled
 static bool set_hidden(const set_item_t *s)
 {
 	if (s->type == ST_ACTION && s->id == SA_HARDWARE)
-		return board.hwopts == NULL || board.hwopt_count == 0;
+		return hwopt_visible() == 0;	// none, or every one detected
 #if CONFIG_KEY_ASSIGN
 	if (s->type != ST_ACTION && s->id >= UI_SET_KEY_FIRST && s->id <= UI_SET_KEY_LAST) {
 		key_labels();
@@ -5953,16 +5965,26 @@ static const ui_scr_def_t group_screen = {
 // argument (no static: RAM is tight on some radios): the row + 1 in the high byte, 0 = none, the choice in the low one.
 // Stepping another row drops it
 
-#define HWOPT_ROWS_MAX		15
-
 static void hwopt_enter(void)
 {
 	ui_frame()->arg = 0;
 }
 
+// The rows: the board's options less those it detected (HWOPT_ST_HIDDEN)
 static uint16_t hwopt_count(void)
 {
-	return board.hwopts != NULL ? (board.hwopt_count < HWOPT_ROWS_MAX ? board.hwopt_count : HWOPT_ROWS_MAX) : 0;
+	return hwopt_visible();
+}
+
+// Row i's option
+static const hal_hwopt_t *hwopt_row(uint16_t i)
+{
+	for (uint8_t k = 0; board.hwopts != NULL && k < board.hwopt_count; k++) {
+		if (hwopt_state(&board.hwopts[k]) != HWOPT_ST_HIDDEN && i-- == 0) {
+			return &board.hwopts[k];
+		}
+	}
+	return &board.hwopts[0];	// not reached: i < hwopt_count()
 }
 
 static int8_t hwopt_shown(uint16_t i, int8_t stored)
@@ -5973,7 +5995,7 @@ static int8_t hwopt_shown(uint16_t i, int8_t stored)
 
 static void hwopt_item(uint16_t i, ui_item_t *it)
 {
-	const hal_hwopt_t *o = &board.hwopts[i];
+	const hal_hwopt_t *o = hwopt_row(i);
 	int8_t stored = o->get();
 	int8_t c = hwopt_shown(i, stored);
 	sbuf_t b;
@@ -5983,13 +6005,13 @@ static void hwopt_item(uint16_t i, ui_item_t *it)
 	sb_str(&b, c >= 0 && c < o->count ? o->choices[c] : "Not set");
 	if (c != stored)
 		sb_chr(&b, '*');	// shown, not stored yet
-	if (stored == HWOPT_NONE)
+	if (hwopt_state(o) == HWOPT_ST_ASK)
 		it->flags |= UI_ITEM_WARN;
 }
 
 static void hwopt_select(uint16_t i, bool hold)
 {
-	const hal_hwopt_t *o = &board.hwopts[i];
+	const hal_hwopt_t *o = hwopt_row(i);
 	int8_t stored = o->get();
 	int8_t c = hwopt_shown(i, stored);
 	if (!hold) {
@@ -6004,7 +6026,9 @@ static void hwopt_select(uint16_t i, bool hold)
 		ui_toast("Not stored");
 	} else {
 		ui_frame()->arg = 0;
-		ui_toast(o->restart ? "Stored: restart to apply" : "Stored");
+		// A board that reports the state says whether a restart is still due (none when the choice is what runs)
+		bool restart = o->state != NULL ? hwopt_state(o) == HWOPT_ST_RESTART : o->restart;
+		ui_toast(restart ? "Stored: restart to apply" : "Stored");
 	}
 }
 
