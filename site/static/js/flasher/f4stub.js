@@ -361,7 +361,8 @@ export class F4Stub extends Stub {
 		if (w(0) !== DESC_MAGIC || w(1) !== 1 || w(6) < 1 || w(6) > 5) return;
 		const wins = [[w(3), w(4)], ...Array.from({ length: w(6) }, (_, i) => [w(7 + 3 * i), w(8 + 3 * i)])];
 		const hit = changed.filter((sec) => wins.some(([a, n]) => a < sec.addr + sec.size && a + n > sec.addr)).map((sec) => sec.index);
-		if (hit.length) throw new StubError(`sector(s) ${hit.join(", ")} hold the radio's codec (its descriptor at ${hex8(codec[1] - DESC_LEN)} says so), which this build would erase: nothing was written. Install through the bootloader route, which reads the codec back and moves it`);
+		// codecGuard: nothing was erased, so the page restarts the radio out of the loader into its firmware as it was
+		if (hit.length) throw Object.assign(new StubError(`sector(s) ${hit.join(", ")} hold the radio's codec (its descriptor at ${hex8(codec[1] - DESC_LEN)} says so), which this build would erase: nothing was written. Install with the codec read back from the radio or taken from the stock file, which moves it`), { codecGuard: true });
 	}
 
 	// Install a build, in the order the stub's interlock enforces: erase sector 3 (the bootloader stays in DFU from

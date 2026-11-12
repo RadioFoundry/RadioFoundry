@@ -111,6 +111,12 @@ test("the decision for a codec in an earlier layout: the copy read back, else th
 		const st = decideCodec(board, m, { probe, haveStock: true });
 		assert.deepEqual([st.mode, st.source, st.whyKey], [MERGE, "stock", "flash.codec.why.moved_stock"]);
 		assert.throws(() => decideCodec(board, m, { probe }), (e) => e instanceof DecisionError && e.key === "flash.codec.why_not.moved" && e.hint);
+		// a copy only in the page (the browser keeps nothing): a move cut short could not be finished from it, so the
+		// stock file, else nothing
+		const unkept = decideCodec(board, m, { probe, haveSaved: true, savedKept: false, haveStock: true });
+		assert.deepEqual([unkept.mode, unkept.source], [MERGE, "stock"]);
+		assert.throws(() => decideCodec(board, m, { probe, haveSaved: true, savedKept: false }),
+			(e) => e instanceof DecisionError && e.key === "flash.codec.why_not.moved_unkept" && e.hint);
 		// keeping it is the user's choice, with the risk said: the build overwrites part of it
 		const keep = decideCodec(board, m, { probe, requested: KEEP, haveSaved: true });
 		assert.deepEqual([keep.mode, keep.riskKey, keep.expectCodec], [KEEP, "flash.codec.risk.no_voice", false]);
@@ -217,4 +223,18 @@ test("the bootloader route erases the vector table's sector first and writes it 
 			assert.equal(radio.codecReport(), sim.board.codec.id, `${id} cut ${c}`);
 		}
 	}
+});
+
+// app.js needs the DOM, so its source is checked: every codec decision says whether the copy is kept in this browser, the
+// loader route takes a move whether or not it is (the stock file then), and a refusal by the codec guard restarts the radio
+test("the page: a move takes a copy only when this browser keeps it, through the loader when the radio offers it", () => {
+	const src = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
+	const calls = src.match(/decideCodec\(S\.board[^\n]*(?:\n[^\n]*){0,2}/g) || [];
+	assert.ok(calls.length >= 3);
+	for (const c of calls) assert.match(c, /savedKept: savedKept\(\)/, c);
+	const route = src.match(/const stubRoute = [^;]*;/)[0];
+	assert.match(route, /codecMoves\(\)\)/);
+	assert.doesNotMatch(route, /stored/);
+	assert.match(src, /stockfw\.extract\(S\.stock\.data, await getKey\(S\.board\)/, "the loader route takes the codec from the stock file");
+	assert.match(src, /e\.codecGuard[\s\S]{0,200}resetChip/, "a codec guard refusal restarts the radio out of the loader");
 });

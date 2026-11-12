@@ -140,7 +140,7 @@ test("a codec in an earlier layout: a plain build is refused before any erase, t
 		const { owned, codec: codecFlash } = fb.f4stub.boards[id];
 		const img = app(4, 0x50000);
 		const s = await enter(radio);
-		await assert.rejects(s.writeImage(owned, [[APP_BASE, img]]), /hold the radio's codec/, id);
+		await assert.rejects(s.writeImage(owned, [[APP_BASE, img]]), (e) => /hold the radio's codec/.test(e.message) && e.codecGuard === true, id);
 		assert.ok(!radio.events.some((e) => e.startsWith("erase")), `${id}: nothing erased`);
 		const copy = await readCodec({ readMem: async (a, n) => at(radio, a, n).slice() }, sim.board, sim.fb);
 		const codec = await codecSegments(copy.profile, copy.segments, sim.fb);

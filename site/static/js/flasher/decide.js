@@ -26,9 +26,11 @@ const W = "flash.codec.why.", R = "flash.codec.risk.", E = "flash.codec.why_not.
 // probe: what a running RadioFoundry radio said (link.probe), or null. stockInstalled: the stock version the user says the
 // radio runs, or null. runsStock: the user says the radio runs its original firmware, version known or not (implied by
 // stockInstalled). haveStock: the user gave a stock file that can be a codec source. haveSaved: the codec read
-// back from this radio (codecsave.js), used where an update can't keep it or the radio's codec can't be checked. A merge says where its codec comes from:
-// source "stock" or "saved".
-export function decideCodec(board, manifest, { requested = null, haveStock = false, probe = null, stockInstalled = null, runsStock = false, haveSaved = false }) {
+// back from this radio (codecsave.js), used where an update can't keep it or the radio's codec can't be checked. savedKept:
+// that copy is kept in this browser (IndexedDB), not only in the page: a codec move takes it only then, since a move cut
+// short leaves no codec in the radio and is finished from the copy or the stock file. A merge says where its codec comes
+// from: source "stock" or "saved".
+export function decideCodec(board, manifest, { requested = null, haveStock = false, probe = null, stockInstalled = null, runsStock = false, haveSaved = false, savedKept = true }) {
 	const profile = (manifest.codec || {}).profile || board.codec.id;
 	const mergeHint = "select your stock firmware file, and the codec is taken from it";
 	if (requested === MERGE) {
@@ -54,8 +56,12 @@ export function decideCodec(board, manifest, { requested = null, haveStock = fal
 			// finished by running it again
 			const moved = `the radio's codec is where earlier releases kept it (${probe.codec}), in flash this release's firmware uses, so it moves to where this release keeps it`;
 			const args = { codec: probe.codec };
-			if (haveSaved) return { mode: MERGE, source: "saved", why: `${moved}: it is written from the copy read back from your radio`, whyKey: W + "moved_saved", args, expectCodec: true };
+			if (haveSaved && savedKept) return { mode: MERGE, source: "saved", why: `${moved}: it is written from the copy read back from your radio`, whyKey: W + "moved_saved", args, expectCodec: true };
 			if (haveStock) return { mode: MERGE, source: "stock", why: `${moved}: it is taken from your stock file`, whyKey: W + "moved_stock", args, expectCodec: true };
+			if (haveSaved) {
+				const unkept = `The radio's codec is where earlier releases kept it (${probe.codec}), in flash this release's firmware uses, and this browser can't keep the copy read back from the radio (for example in a private window), so a move cut short could not be finished: nothing was written.`;
+				throw new DecisionError(`${unkept.slice(0, -1)}; ${mergeHint}.`, unkept, { key: E + "moved_unkept", args, hint: true });
+			}
 			const why = `The radio's codec is where earlier releases kept it (${probe.codec}), in flash this release's firmware uses, and it could not be read back from the radio: nothing was written.`;
 			throw new DecisionError(`${why.slice(0, -1)}; ${mergeHint}.`, why, { key: E + "moved", args, hint: true });
 		}

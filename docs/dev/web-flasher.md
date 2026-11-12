@@ -696,10 +696,10 @@ loader route is used when all of these hold:
 | Condition | Why |
 |---|---|
 | RadioFoundry offers stub entry (`CONFIG_STUB_ENTRY`) | the hand-over needs it |
-| RadioFoundry reports the radio's codec | the loader writes only the firmware's own flash, so the codec must already be in place |
+| RadioFoundry reports the radio's codec, or one where an earlier release kept it (`board.codec.former`) | the loader writes only the firmware's own flash, so the codec is either in place or moves with the install: from the copy kept in IndexedDB, else from the stock file the write step asks for (`stubSegments`; a copy only in the page is never used for a move, `decide.js` `savedKept`) |
 | the image has no codec in it, and no mode was forced under Advanced | a merge or a forced mode goes through the bootloader |
 
-The codec step then needs no stock file or key. The write step sends the embedded stub (`data/f4-stub.json`, from
+There is no codec step; only a codec move without a kept copy asks for the stock file (which also gives the key), on the write step. The write step sends the embedded stub (`data/f4-stub.json`, from
 `stub/f4stub.py`), finds it on the same port or, if it enumerated again, on the granted port with the same serial
 number (one click picks it when the browser didn't keep the grant), and sends it the radio's board record
 ([stub-stm32f4.md](../spec/stub-stm32f4.md) 5.2: SPI flash bus, mode and pins, chip select, chip selects held high,
@@ -715,6 +715,7 @@ power-on, which that route finishes.
 |---|---|
 | HELLO before CONFIG: application base 0, no SPI flash, configured flag clear | Expected for protocol 4: it sends CONFIG |
 | CONFIG refused (status `0D`) | Stops, nothing written; the bootloader route opens |
+| The codec guard refuses a plain image over a codec window (`f4stub.js` `guardCodec`, `codecGuard` set) | Nothing written: restarts the radio out of the loader into its firmware (or says to turn it off and on) and opens the bootloader route |
 | HELLO after CONFIG echoes other bytes, or another application base | Stops, nothing written |
 | A write answered `11` (not configured) | Stops; the page checks the echo before every write, so this means the loader lost its record |
 | Protocol 2 (an older loader still running from an earlier session) | No CONFIG: accepted only for a board whose record matches the wiring built into it (`v2_wiring`) |

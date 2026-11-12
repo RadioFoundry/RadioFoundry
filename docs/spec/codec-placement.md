@@ -170,9 +170,12 @@ flashing tools (rfoundry and the web flasher) do this inside the normal install:
 | 1. Probe | The radio reports a former codec id over the debug link | Nothing written |
 | 2. Read back | READ_MEM reads every window where the descriptor says the codec is; the copy is checked against the profile (stock SHA-256s after taking it back, every rewritten site) | Nothing written |
 | 3. Save | The copy is stored on the user's machine (rfoundry: `<config>/codecs/<board>-<codec id>.bin`; the web flasher: the browser) and never deleted | Nothing written |
-| 4. Plan | A merge from the saved copy, moved to the current layout; else from the stock file; with neither, the install is refused | Nothing written |
+| 4. Plan | A merge from the saved copy, moved to the current layout; else from the stock file; with neither, the install is refused. A copy the web flasher could not store (no IndexedDB, as in a private window) is not used: only the stock file moves the codec there | Nothing written |
 | 5. Write | Bootloader route: the plan's sectors are erased, sector 3 first, then the others are written, sector 3 last. Stub route: sector 3 erased first, the other sectors, sector 3 without its first word, a CRC check, the first word | The bootloader starts (sector 3 blank or the image incomplete), or the new application starts with no valid descriptor and runs FM only |
 | 6. Check | The radio reports the current codec id | |
+
+Both routes move the codec; where the radio offers the stub, the tools take that route (rfoundry `--route stub`, the
+web flasher's loader route), with the same sources: the saved copy, else the stock file.
 
 Resume rule: after any stop the radio is in its bootloader or runs the new application without voice. The same
 install, run again, finds no codec to keep (no probe, or no codec reported) and merges from the saved copy, so it
