@@ -385,7 +385,7 @@ spec = "docs/spec/ppp.md"
 
 [feature.ui_navigation]
 spec = "docs/spec/ui.md"
-source = ["core/ui", "core/input"]
+source = ["core/ui", "core/input", "drivers/input/steplines"]
 
 # Locking the keys by hand (long QUICK, a side key set to key lock) and by auto lock, and PTT while locked
 [feature.key_lock]

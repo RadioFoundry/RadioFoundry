@@ -160,7 +160,7 @@ clean:
 
 # The radio core's state machine and the input gesture engine, against a fake board and codeplug (no RTOS)
 CORE_HAL := -I$(ROOT)/hal -Wshadow
-TESTS   += radioCoreTest inputTest quadratureTest serialmicTest
+TESTS   += radioCoreTest inputTest quadratureTest steplinesTest serialmicTest
 
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
 RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
@@ -271,6 +271,10 @@ keyassignTest: $(CORE)/input/input_forward.c $(CORE)/input/input_forward.h keyas
 quadratureTest: quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c $(ROOT)/drivers/input/quadrature/quadrature.h
 	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c
 
+# Direction lines that change level once per step, as a navigation ring's (drivers/input/steplines)
+steplinesTest: steplinesTest.c $(ROOT)/drivers/input/steplines/steplines.c $(ROOT)/drivers/input/steplines/steplines.h
+	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ steplinesTest.c $(ROOT)/drivers/input/steplines/steplines.c
+
 # The hand mic key decoder on a UART shared with the PC link (drivers/input/serialmic)
 serialmicTest: serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c $(ROOT)/drivers/input/serialmic/serialmic.h
 	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c
@@ -298,7 +302,7 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestAprs radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestAprs radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest steplinesTest serialmicTest miclevelTest resampleTest \
           rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
@@ -310,6 +314,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestAprs radioFeaturesTes
 	./radioListenBandsTest
 	./inputTest
 	./quadratureTest
+	./steplinesTest
 	./serialmicTest
 	./miclevelTest
 	./resampleTest

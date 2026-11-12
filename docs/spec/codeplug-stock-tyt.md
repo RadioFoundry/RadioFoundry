@@ -25,11 +25,11 @@ addresses are the same addresses (T).
 
 | Family | dmrconf keys | Regions |
 |---|---|---|
-| UV380 | `uv390`, `md2017` and the keys of the radios sold under other names | 0x002000-0x03FFFF and 0x110000-0x19FFFF |
+| UV380 | `uv390`, the family's two-receiver model's key and the keys of the radios sold under other names | 0x002000-0x03FFFF and 0x110000-0x19FFFF |
 | 256 KB | the family's one key | 0x002000-0x03FFFF (the 256 KB codeplug image) |
 
-Radios sold under two names write the same bytes apart from the programming time (T). `uv390` and `md2017` write the
-same records at the same addresses as the base model, plus tables this spec doesn't cover (T).
+Radios sold under two names write the same bytes apart from the programming time (T). `uv390` and the two-receiver
+model's key write the same records at the same addresses as the base model, plus tables this spec doesn't cover (T).
 
 RadioFoundry's flash map on these radios puts its emulated EEPROM, settings ring, journal and second DMR ID database
 area at addresses that overlap the stock tables ([settings-store.md](settings-store.md) 1). Until the user writes a

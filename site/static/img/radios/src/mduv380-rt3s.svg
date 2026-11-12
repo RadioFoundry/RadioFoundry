@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SPDX-License-Identifier: MIT -->
 <!-- The Retevis RT3S body of the MD-UV380 board (board.toml looks): squarer case, raised face stepping in to the keypad -->
-<svg data-undrawn="fn_left fn_right sk3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 1130">
+<svg data-undrawn="fn_left fn_right sk3 left right ok top" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 1130">
 <defs>
 <linearGradient id="body" x1="0" x2="1"><stop offset="0" stop-color="#161819"/><stop offset=".5" stop-color="#2a2d30"/><stop offset="1" stop-color="#141617"/></linearGradient>
 <linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f3336"/><stop offset="1" stop-color="#1b1e20"/></linearGradient>

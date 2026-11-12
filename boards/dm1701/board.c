@@ -30,6 +30,7 @@ const uint8_t uvf_key_matrix[3][8] = {
 // and the type 2 MADCTL showed the picture mirrored top to bottom), 11.1 (raw / 37.5 per 0.1 V), 11.2 (measured on the
 // bench: 26 at the bottom, 2063 at the top; spec 29..2075), 7 and 12.1 (the DM-1701 rows)
 const uvf_variant_t uvf_variant = {
+	.rf_addr = { 0x2E },	// one AT1846S
 	.panel_type = { 0, 1, 3, 3 },
 	.panel_rgb = { false, false, true, false },
 	.bat_mul = 8, .bat_div = 3,
