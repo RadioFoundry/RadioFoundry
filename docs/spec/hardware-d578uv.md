@@ -646,10 +646,22 @@ parameter 0x1C). With an FM channel on either side the flag stays clear. The fla
 | Side A's chip 0 in DMR (5.1) | 0x13 = 0x0375, 0x73 = 0x4E8A | 0x13 = 0x0396, 0x73 = 0x569A |
 
 A change of the flag resends the call option. A digital side B sets chip 1's 0x47 to 0x4840 or 0x6840 instead of
-0x6140. How the baseband takes side B's signal, and how its reports name the side, is not known (section 9).
+0x6140, the values chip 0 takes in DMR.
 
-RadioFoundry (`radio_d578uv.c`, `CONFIG_DUAL_WATCH`): side B is the core's second receiver (`board.rx2`) for an FM
-channel; a DMR channel is refused, so dual watch alternates side A as on a one-receiver radio. The squelch is the
+The baseband has one input. Shift register bit 0x04 picks the RF chip that feeds it: set, chip 0; clear, chip 1 (the
+stock code sets it for a digital main channel and clears it for an analog main channel with a digital side B; which
+level picks which chip is inferred from side A needing it set). The codec's input set-up doesn't change. With both
+channels digital the stock firmware time-shares the one baseband: it alternates which side the baseband serves,
+switching bit 0x04 and sending that side's DMR parameters, and holds a side while chip 0's or chip 1's RSSI shows a
+carrier there. It doesn't decode both at once. The stock "Path MAIN/SUB" text is a menu label, not a switch.
+
+RadioFoundry (`radio_d578uv.c`, `CONFIG_DUAL_WATCH`): side B is the core's second receiver (`board.rx2`). An FM
+channel is received and played on chip 1. A DMR channel is only sensed (`rx2_status_t.sense`): chip 1 is set up for
+DMR and its RSSI is the carrier, against a threshold set as side A's DMR carrier. On a carrier there with side A
+quiet, the core moves the main receiver to side B ([radio-features.md](radio-features.md) 2.2); `rx()` to side B's
+DMR channel then retunes nothing: it clears bit 0x04, so the baseband takes chip 1, and leaves chip 0 on side A. Back
+on side A it sets the bit again, and chip 0 still has side A's set-up, so nothing is retuned either way. The call
+option keeps the single receiver's values. The squelch is the
 core's noise levels with its hysteresis, and the tone flags of 0x60. Side B gets the speaker only while side A is
 quiet (the core's rule): then side A's level goes to 0 and side B's to the volume. Side
 B stops while side A transmits and comes back after. The AGC bytes and tables, the band pair's sense and the level
@@ -1001,37 +1013,25 @@ The order to check it in on a radio, with the diagnostics lines and what to chan
 | NAND, core storage | written, untested |
 | Crash log | the platform's ([crash-log.md](crash-log.md) 2.4), untested: whether the record at the top of SRAM survives the bootloader |
 | DMR baseband | driver, voice set-up and DMR start as the stock firmware sends them (4.4) with the squelch levels and digital mode gains, every LC header and terminator reported, the headphone mute while transmitting; written and host tested, untested on the radio |
-| RF chips | `drivers/rf/qa4818` and `boards/d578uv/radio_d578uv.c`: FM receive and transmit and DMR receive and transmit keying (the PA per burst, 5.1) on side A; side B as the second receiver for FM (5.2); the 1750 Hz burst and DTMF (5.3). Host tested (the chip sequences), untested on the radio |
+| RF chips | `drivers/rf/qa4818` and `boards/d578uv/radio_d578uv.c`: FM receive and transmit and DMR receive and transmit keying (the PA per burst, 5.1) on side A; side B as the second receiver, FM played and DMR sensed (5.2); the 1750 Hz burst and DTMF (5.3). Host tested (the chip sequences), untested on the radio |
 | GPS | the module on USART1, powered by chip 0's register 0x25 bit 2, the CASIC set-up on its first `$xxTXT` (3.6); written, the set-up's framing host tested, untested on the radio |
 | Reference trim | the factory item "FQCA", the UHF block's byte 0 (default 0x23), is the reference oscillator's trim: PA5 register 1, sent after each side A retune (5.5); the frequency words carry no correction. RadioFoundry sends it the same way. Its own trim on top: each synthesizer is programmed at f x (1 + trim), side A's and B's LOs, the air band LO and the transmitter, with the IF chips at their IF ([radio-features.md](radio-features.md) 6.1). Measured: +2.3 ppm took a carrier on 446.075 MHz from -1018 Hz to +23 Hz |
 | Flash stub | `CONFIG_STUB_ENTRY` on: the GD32F30x stub ([stub-gd32f30x.md](stub-gd32f30x.md)) with board record id 6, application base 0x08006000; `stub/stubtool.py --board d578uv` drives it. Host tested, untested on the radio |
 | Air band AM | side B's chips and the KTMicro receiver (5.4); written, host tested (the receiver's sequences), untested on the radio |
 | Broadcast FM | the KTMicro receiver's FM mode, or the RDA5807 where it is fitted (5.4); written, host tested. The RDA5807 works on the radio; the KTMicro untested on the radio. No stereo, no seek |
 | Bluetooth | PTT and keys from the module's lines (3.7, `CONFIG_BT_PTT`); written, the line parser host tested, untested on the radio. Pairing, audio and the module's settings not written |
-| DMR on side B | not written: what is missing is listed below |
+| DMR on side B | sensed by chip 1; a call there is decoded by switching the one baseband to chip 1 while side A is quiet (5.2). Both sides' calls at once can't be decoded: one baseband input |
 | VOX | chip 0's voice amplitude as the microphone level (5.6); written, untested on the radio. The register and its scale are inferred from the BK4819 map |
 | APRS receive | PC0 sampled at 9600 Hz into the core's demodulator (3.4); written, the sample path host tested with the demodulator, untested on the radio. Off on the GD32 builds: it takes about 11.6 KB of RAM (the demodulator, the station list, the iGate and the 2 KB sample ring) and about 6.4 KB is free with DMR on. On in the AT32 builds (section 10) |
 | APRS transmit | the tones on PB9 into chip 0's audio input with the DTMF set-up (5.3); written, the tones host tested through the core's demodulator, untested on the radio. The deviation per APRS level is inferred |
 | AT32 variant | `boards/d578uva` on the AT32F43x platform (section 10): builds, untested on the radio |
 
-DMR on side B needs facts not in the stock code's static analysis or the documents, and a model the core doesn't have:
+Open for DMR on side B:
 
-- The baseband's input. The Packet Interface document gives the SCT3258 one demodulator: baseband on the codec's
-  right input channel, or one IF I/Q pair. It has no second-receiver mode, and calls DMR_CALL_OPTION byte 4 reserved.
-  What byte 4 bits 5 and 0 select, which input side B's discriminator reaches, and whether the chip decodes both
-  sides at once or one slot from each, are not known. There is no schematic.
-- The reports. Which field of DMR_SLOT_FOUND, the LC reports and DIGC_DATA_FRAME names the side a burst came from,
-  and whether the color code, the call slot and the call match apply to both sides or to each. The stock receive path
-  that reads the flag is not traced.
-- The voice. The baseband plays the voice to the codec itself (section 4). Which side's call it plays when both have
-  one is not known.
-- Side A with the flag set: what chip 0's 0x13 = 0x0396 and 0x73 = 0x569A change. RadioFoundry uses the values
-  without the flag, as the stock firmware does with an FM side B.
-- The core. `hal_rx2_t` is a second receiver that decodes DMR itself, matches the groups and plays the call, as the
-  GD-88's second SoC does. Here both sides' bursts would come through the one baseband and the one `hal_dmr_modem_t`
-  that the core's DMR stack owns. Side B's calls would need either their own LC decoding and call matching in the
-  board, which repeats the stack, or a second DMR receive path in the core. Neither exists, and about 6.4 KB of RAM
-  is free.
+- The second-receiver flag: what DMR_CALL_OPTION byte 4 bits 5 and 0, and chip 0's 0x13 = 0x0396 and 0x73 = 0x569A,
+  change. RadioFoundry keeps the single receiver's values.
+- Chip 1's other DMR constants (its 0x13 and 0x73) in the stock set-up are not traced: RadioFoundry sets chip 1 up as
+  chip 0 for DMR.
 
 Open on the radio:
 

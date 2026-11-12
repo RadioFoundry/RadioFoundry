@@ -111,8 +111,9 @@
 
 // Shift register bits (roles inferred from the stock firmware's use)
 #define SR_BOOT			0x02u	// the Bluetooth module's supply, on from boot (bt_d578uv.c)
-#define SR_RX_DEMOD		0x04u	// main side's demodulator to the codec, FM and DMR alike: with it clear the baseband
-					// hears nothing (measured; set on every receive start, as stock does)
+#define SR_RX_DEMOD		0x04u	// the baseband's receive source: set, chip 0's demodulator (side A, FM and DMR alike;
+					// measured: with it clear the baseband hears nothing from chip 0); clear, chip 1's
+					// (side B), as the stock firmware does for a DMR channel on chip 1 (inferred)
 #define SR_LED_GREEN		0x08u	// the face's status LED, one bit a color (d578uv_status_led)
 #define SR_LED_RED		0x10u
 #define SR_LED_BLUE		0x20u
@@ -220,6 +221,8 @@ static int16_t b_trim;			// the reference trim side B was set up with (synth_hz)
 static uint8_t b_bw;
 static uint8_t b_squelch;
 static subtone_t b_tone;
+static bool b_dmr;			// its channel is DMR: chip 1 only senses it, the baseband hears it through rx() (src_b)
+static uint8_t b_dmr_threshold;		// ... its carrier, as dmr_threshold for chip 0
 static rx2_status_t b_st = { .up = true };	// what status() gives other tasks
 #define B_ON			b_on
 #else
@@ -235,6 +238,12 @@ static radio_bw_t rx_bw = RADIO_BW_25K;
 static subtone_t rx_tone;
 static bool have_rx;
 static bool asleep;			// rx_sleep(true): side A's two chips off until rx_sleep(false) or the next set-up
+// The baseband takes side B's chip 1, already on rx_hz (rx() to side B's DMR channel: dual watch's look there). Chip
+// 0 is left as it was, on side A's channel: nothing is retuned either way, so no burst is lost to a retune
+static bool src_b;
+// Chip 0 is still set up for these (a_kept): the way back from src_b writes nothing to it
+static bool a_kept;
+static struct { uint32_t hz; radio_bw_t bw; bool digital; subtone_t tone; int16_t trim; } a_set;
 static bool transmitting;
 static uint8_t sr;			// the shift register's outputs
 static bool main_audio;			// side A's audio to the speaker (audio())
@@ -1078,7 +1087,32 @@ void d578uv_pa_counts_reset(void)
 static void rx_setup(void)
 {
 	bool digital = mode == RADIO_MODE_DMR;
+	bool from_b = src_b;
 	asleep = false;
+#if CONFIG_DUAL_WATCH
+	src_b = digital && b_on && b_dmr && rx_hz == b_hz && !AM_ON;
+	if (src_b) {
+		// Side B's DMR channel: chip 1 is on it; the baseband switches to it, chip 0 stays on side A
+		rx_threshold = b_dmr_threshold + DMR_CARRIER_BELOW;
+		dmr_threshold = b_dmr_threshold;
+		pa_off();
+		sr_set(SR_BOOT | SR_RX_AUDIO, SR_RX_DEMOD);
+		audio_route();
+		return;
+	}
+#endif
+	if (from_b && a_kept && a_set.hz == rx_hz && a_set.bw == rx_bw && a_set.digital == digital &&
+			a_set.tone.type == rx_tone.type && a_set.tone.value == rx_tone.value && a_set.trim == trim_ppb) {
+		// Back from side B's DMR channel to the one chip 0 kept: the baseband switches back, nothing retuned
+		uint8_t code = rx_gain_code(rx_hz, false);
+		rx_threshold = code < QA4818_RSSI_FLOOR + 3u ? QA4818_RSSI_FLOOR : (uint8_t)(code - 3u);
+		dmr_threshold = rx_threshold < QA4818_RSSI_FLOOR + DMR_CARRIER_BELOW ? QA4818_RSSI_FLOOR :
+			(uint8_t)(rx_threshold - DMR_CARRIER_BELOW);
+		pa_off();
+		sr_set(SR_RX, 0);
+		audio_route();
+		return;
+	}
 	qa4818_rx_plan_t plan;
 	qa4818_rx_plan(synth_hz(rx_hz), IF_A_HZ, &plan);
 	qa4818_tune(&chip_lo, plan.lo_subband, plan.lo_hz);
@@ -1104,6 +1138,12 @@ static void rx_setup(void)
 	pa_off();
 	mcu_pin_write(PIN_RF_SPLIT, false);
 	sr_set(SR_RX, 0);
+	a_set.hz = rx_hz;
+	a_set.bw = rx_bw;
+	a_set.digital = digital;
+	a_set.tone = rx_tone;
+	a_set.trim = trim_ppb;
+	a_kept = true;
 	audio_route();		// side B may need the RF audio with side A on DMR
 }
 
@@ -1133,15 +1173,19 @@ static void b_setup(void)
 	qa4818_rx_plan(synth_hz(b_hz), IF_B_HZ, &plan);
 	qa4818_tune(&chip_lo_b, plan.lo_subband, plan.lo_hz);
 	qa4818_tune(&chip_b, QA4818_SUBBAND_IF, IF_B_HZ);
-	qa4818_path(&chip_b, false, false, b_bw == RADIO_BW_25K, R49);
-	qa4818_rx_setup(&chip_b, false);
+	qa4818_path(&chip_b, false, b_dmr, b_bw == RADIO_BW_25K, R49);
+	qa4818_rx_setup(&chip_b, b_dmr);
 	qa4818_tone_gen(&chip_b, false);
-	qa4818_rx_tone(&chip_b, chip_tone(b_tone.type), b_tone.value);
-	qa4818_gain(&chip_b, rx_gain_code(b_hz, true));
+	qa4818_rx_tone(&chip_b, b_dmr ? QA4818_TONE_NONE : chip_tone(b_tone.type), b_tone.value);
+	uint8_t code = rx_gain_code(b_hz, true);
+	qa4818_gain(&chip_b, code);
+	uint8_t thr = code < QA4818_RSSI_FLOOR + 3u ? QA4818_RSSI_FLOOR : (uint8_t)(code - 3u);
+	b_dmr_threshold = thr < QA4818_RSSI_FLOOR + DMR_CARRIER_BELOW ? QA4818_RSSI_FLOOR : (uint8_t)(thr - DMR_CARRIER_BELOW);
 	qa4818_out(&chip_lo_b, QA4818_OUT_LO);
 	qa4818_out(&chip_b, QA4818_OUT_RX);
 	qa4818_lo_on(&chip_lo_b);
-	qa4818_rx_on(&chip_b, false, 0);
+	// DMR: the receive AF word chip 0 takes for the band (the stock firmware's chip 1 set-up for a digital channel)
+	qa4818_rx_on(&chip_b, b_dmr, b_dmr ? b_hz : 0);
 	b_band_bits();
 	trims_b();
 	b_open = false;
@@ -1164,24 +1208,35 @@ static void b_resume(void)
 	}
 }
 
-// FM only: how the one baseband takes side B's DMR isn't known, nor does the core have a DMR path for it
-// (hardware-d578uv.md 5.2, 9). The same settings again write nothing, unless the reference trim changed since: the
-// core's refresh then takes it
+// Side B's channel changed or stopped while the baseband had it: the main receiver's set-up again, on chip 0
+static void b_src_end(void)
+{
+	if (src_b && have_rx && !transmitting) {
+		rx_setup();
+	}
+}
+
+// FM: chip 1 receives and plays it. DMR: chip 1 only senses it (rx2_status_t.sense), as the one baseband has one
+// input; the core moves the main receiver to it to decode, and rx() then switches the baseband to chip 1 (src_b). The
+// same settings again write nothing, unless the reference trim changed since: the core's refresh then takes it
 static bool b_tune(const rx2_tune_t *t)
 {
 	b_task = xTaskGetCurrentTaskHandle();
 	b_squelch = t->squelch;
-	if (t->mode != RADIO_MODE_FM || !board_in_band(t->rx_hz, false)) {
+	bool dmr = t->mode == RADIO_MODE_DMR;
+	if ((t->mode != RADIO_MODE_FM && !(dmr && CONFIG_DMR)) || !board_in_band(t->rx_hz, false)) {
 		return false;
 	}
-	if (b_on && t->rx_hz == b_hz && t->bw == b_bw && t->rx_tone.type == b_tone.type &&
+	if (b_on && t->rx_hz == b_hz && t->bw == b_bw && dmr == b_dmr && t->rx_tone.type == b_tone.type &&
 			t->rx_tone.value == b_tone.value && b_trim == trim_ppb) {
 		return true;
 	}
 	b_hz = t->rx_hz;
 	b_bw = t->bw;
 	b_tone = t->rx_tone;
+	b_dmr = dmr;
 	b_on = true;
+	b_src_end();		// the main receiver had side B's old channel: chip 0 takes it
 	if (!transmitting && !AM_ON) {
 		b_setup();
 	}
@@ -1196,6 +1251,7 @@ static void b_stop(void)
 	}
 	b_on = false;
 	b_open = false;
+	b_src_end();
 	if (!AM_ON) {
 		b_chips_off();
 	}
@@ -1237,7 +1293,9 @@ static void b_status(rx2_status_t *st)
 			uint8_t open_below = radio_sm_squelch_open_below(b_squelch);
 			bool tone = qa4818_tone_heard(chip_tone(b_tone.type), s.tone_flags);
 			uint8_t noise = qa4818_noise(s.noise);
-			if (!b_open) {
+			if (b_dmr) {
+				b_open = false;		// nothing of chip 1's to the speaker: the baseband plays the call
+			} else if (!b_open) {
 				b_open = noise < open_below && tone;
 				b_close_polls = 0;
 			} else if (!tone || noise >= open_below + RADIO_SQL_HYST_DB) {
@@ -1252,7 +1310,8 @@ static void b_status(rx2_status_t *st)
 			}
 			n.rssi_dbm = qa4818_rssi_dbm(s.rssi);
 			n.noise = noise;
-			n.active = b_open;
+			n.active = b_dmr ? s.rssi >= b_dmr_threshold : b_open;
+			n.sense = b_dmr;
 			n.heard = b_heard();
 		}
 		uint32_t saved = bus_lock();
@@ -1731,6 +1790,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 
 static void chips_off(void)
 {
+	a_kept = false;
 	qa4818_enable(&chip_if, QA4818_ENABLE_OFF);
 	qa4818_enable(&chip_lo, QA4818_ENABLE_OFF);
 }
@@ -2069,7 +2129,7 @@ static void status(radio_status_t *st)
 	}
 #endif
 	qa4818_status_t s;
-	qa4818_status(&chip_if, &s);
+	qa4818_status(src_b ? &chip_b : &chip_if, &s);
 	diag_rx = (uint32_t)s.rssi | (uint32_t)(s.noise & 0x7FFFu) << 16 | (s.signal ? 1u << 31 : 0u);
 	st->rssi_dbm = qa4818_rssi_dbm(s.rssi);
 	st->noise = qa4818_noise(s.noise);
