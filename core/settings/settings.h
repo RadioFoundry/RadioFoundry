@@ -299,8 +299,10 @@ static inline void settings_set_vfo_talk(settings_t *s, uint32_t id, bool privat
 #define SETTINGS_ACCENT_COLOR	0x07u
 #define SETTINGS_ACCENT_PLAIN	0x08u
 
-// theme and updown_home hold 0..2 in bits 0-1; their upper bits hold the crash report's target (below)
+// theme and updown_home hold 0..2 in bits 0-1; their upper bits hold the crash report's target (below), and
+// updown_home bit 7 Home's talk line order (0, older records: talkgroup number first, 1: its name first)
 #define SETTINGS_SMALL_MASK	0x03u
+#define SETTINGS_HOME_LABEL_FIRST	0x80u
 static inline uint8_t settings_theme(const settings_t *s) { return (s->theme & 3u) <= 2u ? s->theme & 3u : 0; }
 static inline uint8_t settings_updown_home(const settings_t *s)
 {
