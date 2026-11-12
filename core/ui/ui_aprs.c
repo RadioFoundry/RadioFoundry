@@ -35,6 +35,7 @@ WEAK bool ui_svc_aprs_msg(uint8_t i, aprs_msg_t *out, bool read)
 WEAK bool ui_svc_aprs_msg_delete(uint8_t i) { (void)i; return false; }
 WEAK uint8_t ui_svc_aprs_station_count(void) { return 0; }
 WEAK bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out) { (void)i; (void)out; return false; }
+WEAK bool ui_svc_aprs_station_find(const char *call, aprs_station_t *out) { (void)call; (void)out; return false; }
 WEAK bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg) { (void)s; (void)m; (void)deg; return false; }
 
 enum { AP_SEND, AP_AUTO, AP_FREQ, AP_POWER, AP_PATH, AP_INTERVAL, AP_SMART, AP_VIA, AP_KISS, AP_HEARD, AP_COUNT };
@@ -284,12 +285,24 @@ const ui_scr_def_t ui_aprs_screen = {
 
 // --- Stations heard (receive builds) ---
 
+#if CONFIG_APRS_RX
+static char station_call[AX25_CALL_LEN + 4];
+#endif
+
 static uint16_t heard_count(void) { return ui_svc_aprs_station_count(); }
 
 static void heard_select(uint16_t i, bool hold)
 {
 	(void)hold;
+#if CONFIG_APRS_RX
+	aprs_station_t s;
+	if (ui_svc_aprs_station((uint8_t)i, &s)) {
+		str_copy(station_call, sizeof station_call, s.call);
+		ui_push(SCR_APRS_STATION, 0);
+	}
+#else
 	ui_push(SCR_APRS_STATION, i);
+#endif
 }
 
 static void heard_item(uint16_t i, ui_item_t *it)
@@ -322,6 +335,114 @@ const ui_scr_def_t ui_aprs_heard_screen = {
 	.count = heard_count, .item = heard_item, .select = heard_select,
 };
 
+#if CONFIG_APRS_RX
+enum { ST_MESSAGE, ST_RANGE, ST_HEARD, ST_PATH, ST_POS_AGE, ST_SPEED, ST_COURSE, ST_SYMBOL, ST_TEXT, ST_PACKETS, ST_COUNT };
+
+// Resolve the rows to show from the current record in one pass (the range once); no copy of the engine's station
+// table lives in the UI.
+static uint8_t station_rows(const aprs_station_t *s, uint8_t shown[ST_COUNT], uint32_t *m, uint16_t *deg)
+{
+	bool range = ui_svc_aprs_range(s, m, deg);
+	uint8_t n = 0;
+	for (uint8_t row = 0; row < ST_COUNT; row++) {
+		if ((row == ST_RANGE && !range) ||
+		    (row == ST_POS_AGE && (!s->has_pos || s->pos_ms == s->heard_ms)) ||
+		    (row == ST_SPEED && (!s->has_pos || s->speed_kn == 0xFFFFu)) ||
+		    (row == ST_COURSE && (!s->has_pos || s->course == 0xFFFFu)) ||
+		    (row == ST_SYMBOL && (!s->sym_table || !s->sym_code)) ||
+		    (row == ST_TEXT && !s->text[0])) {
+			continue;
+		}
+		shown[n++] = row;
+	}
+	return n;
+}
+
+static uint16_t station_count(void)
+{
+	aprs_station_t s;
+	if (!ui_svc_aprs_station_find(station_call, &s)) {
+		return 2;
+	}
+	uint8_t shown[ST_COUNT];
+	uint32_t m;
+	uint16_t deg;
+	return station_rows(&s, shown, &m, &deg);
+}
+
+static void station_item(uint16_t i, ui_item_t *it)
+{
+	aprs_station_t s;
+	bool found = ui_svc_aprs_station_find(station_call, &s);
+	if (i == 0) {
+		str_copy(it->label, sizeof it->label, TR("Message"));
+		return;
+	}
+	if (!found) {
+		str_copy(it->label, sizeof it->label, TR("No longer in list"));
+		return;
+	}
+	sbuf_t b;
+	sb_init(&b, it->value, sizeof it->value);
+	const char *label = "";
+	uint8_t shown[ST_COUNT];
+	uint32_t m;
+	uint16_t deg;
+	uint8_t n = station_rows(&s, shown, &m, &deg);
+	switch (i < n ? shown[i] : ST_COUNT) {
+	case ST_RANGE:
+		label = TR(TEXT_ALT_OPEN "Distance" TEXT_ALT_NEXT "Dist" TEXT_ALT_NEXT "" TEXT_ALT_CLOSE);
+		sb_range(&b, m, deg);
+		break;
+	case ST_HEARD:
+		label = TR("Heard");
+		ui_sb_age(it->value, sizeof it->value, ui_st.now_ms - s.heard_ms);
+		break;
+	case ST_PATH: label = s.direct ? TR("Direct") : TR("Via digipeater"); break;
+	case ST_POS_AGE:
+		label = TR(TEXT_ALT_OPEN "Position age" TEXT_ALT_NEXT "Pos age" TEXT_ALT_CLOSE);
+		ui_sb_age(it->value, sizeof it->value, ui_st.now_ms - s.pos_ms);
+		break;
+	case ST_SPEED:
+		label = TR("Speed");
+		sb_u32(&b, ((uint32_t)s.speed_kn * 1852u + 500u) / 1000u, 1);
+		sb_str(&b, " km/h");
+		break;
+	case ST_COURSE:
+		label = TR("Course");
+		sb_u32(&b, s.course, 1);
+		sb_str(&b, GLYPH_DEGREE " ");
+		sb_compass(&b, s.course);
+		break;
+	case ST_SYMBOL:
+		label = TR("Symbol");
+		sb_chr(&b, s.sym_table);
+		sb_chr(&b, s.sym_code);
+		break;
+	case ST_TEXT:
+		label = s.text;
+		it->flags |= UI_ITEM_PREVIEW;
+		break;
+	case ST_PACKETS:
+		label = TR("Packets");
+		sb_u32(&b, s.count, 1);
+		break;
+	default: break;
+	}
+	str_copy(it->label, sizeof it->label, label);
+}
+
+static const char *station_title(void) { return station_call; }
+static void station_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	if (i == 0) {
+		aprs_station_t s;
+		bool found = ui_svc_aprs_station_find(station_call, &s);
+		ui_aprs_compose(found ? s.call : station_call);
+	}
+}
+#else
 static uint16_t station_count(void) { return 1; }
 static void station_item(uint16_t i, ui_item_t *it)
 {
@@ -344,6 +465,7 @@ static void station_select(uint16_t i, bool hold)
 	if (ui_svc_aprs_station((uint8_t)ui_frame()->arg, &s))
 		ui_aprs_compose(s.call);
 }
+#endif
 const ui_scr_def_t ui_aprs_station_screen = {
 	.name = "aprs-station", .flags = SF_LIST | SF_FIELD, .prefix = TRN("Heard"), .hint = TRN("OK choose  Back"),
 	.count = station_count, .item = station_item, .select = station_select, .title = station_title,

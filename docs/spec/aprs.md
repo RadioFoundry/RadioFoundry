@@ -377,6 +377,17 @@ The page shows the rows the build has:
 The digit keys follow the rows shown. Where the position comes from, the fixed position and "Send in DMR calls" are
 in Settings > Location ([position.md](position.md) 6).
 
+Selecting a heard station opens `aprs-station`, a scrollable detail list. The UI retains its callsign in main RAM,
+not its row index, and resolves the current station through `ui_svc_aprs_station_find` on each draw. New packets
+can reorder the heard list without changing the open station or Message recipient. Message is the first row and
+opens the composer with that callsign. The remaining rows show distance and compass direction when both positions
+exist, heard age, Direct or Via digipeater, position age when different from heard age, speed in km/h and course
+when the retained position has them, symbol table and code, the retained comment/status text, and packet count.
+Unknown speed and course have no row. Text is limited to the engine's 24-byte field; no digipeater identity or
+additional comment text is retained. Detail rows scroll with Up / Down and do not perform actions. If the station
+is evicted, the screen says "No longer in list" and Message still addresses the saved callsign. This detail code
+and the saved callsign are guarded by `CONFIG_APRS_RX`; the engine storage is unchanged.
+
 The rest (symbol, comment, digital destination, ambiguity, iGate, digipeater, fixed altitude) is set over the
 debug link (`rfoundry_debug.py aprs set`) and later by qdmr through the native codeplug.
 

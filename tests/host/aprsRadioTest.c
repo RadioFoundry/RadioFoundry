@@ -876,6 +876,51 @@ static void test_stations_digi_igate(void)
 #endif
 
 #if CONFIG_APRS_RX
+static unsigned station_locks, station_unlocks;
+static bool station_locked;
+
+static void station_lock(void)
+{
+	CHECK(!station_locked);
+	station_locked = true;
+	station_locks++;
+}
+
+static void station_unlock(void)
+{
+	CHECK(station_locked);
+	station_locked = false;
+	if (++station_unlocks == 2) {
+		// Trap for a lookup that locks more than once (the old count-then-rows scan): a packet moves A to the
+		// front between reads, so that scan misses A and the find CHECK below fails. One locked copy never gets here.
+		aprs_set_lock(NULL, NULL);
+		rx_line("Q1ABC-9>APRS:>Moved");
+	}
+}
+
+static void test_station_lookup(void)
+{
+	reset();
+	rx_line("Q1ABC-9>APRS:>First");
+	rx_line("Q1ABC-8>APRS:>Second");
+	station_locks = station_unlocks = 0;
+	station_locked = false;
+	aprs_set_lock(station_lock, station_unlock);
+	aprs_station_t s;
+	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &s) && strcmp(s.call, "Q1ABC-9") == 0);
+	CHECK(station_locks == 1 && station_unlocks == 1 && !station_locked);
+	aprs_set_lock(NULL, NULL);
+	CHECK(aprs_station_count() == 2);
+	CHECK(!ui_svc_aprs_station_find("Q1ABC", &s));
+	CHECK(!ui_svc_aprs_station_find("Q1ABC-7", &s));
+	CHECK(!ui_svc_aprs_station_find("q1abc-9", &s));
+	// The 24-byte retained field holds 23 comment bytes and the terminator.
+	rx_line("Q1ABC-9>APRS:=4903.50N/07201.75W>12345678901234567890123EXCESS");
+	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &s));
+	CHECK(sizeof s.text == 24 && strlen(s.text) == 23);
+	CHECK(strcmp(s.text, "12345678901234567890123") == 0);
+}
+
 // The range Stations heard shows (ui_svc_aprs_range): from our position as position_now gives it, to the
 // station's. EP: our position none / fixed / GPS (GPS wins in Auto) x the station's none / valid. BVA: the same
 // spot is 0 m; 10 minutes of latitude due north is 18.5 km at bearing 0
@@ -891,6 +936,12 @@ static void test_station_range(void)
 	rx_line("Q1ABC-8>APZRDF:=4903.50N/07201.75W>Here");	// on it
 	rx_line("Q1ABC-7>APZRDF:>Status only");
 	CHECK(aprs_station_count() == 3);
+	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &far) && far.has_pos);
+	rx_line("Q1ABC-8>APZRDF:>New packet");
+	CHECK(aprs_station(0, &here) && strcmp(here.call, "Q1ABC-8") == 0);
+	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &far) && strcmp(far.call, "Q1ABC-9") == 0);
+	CHECK(!ui_svc_aprs_station_find("Q1NONE", &nopos));
+	rx_line("Q1ABC-7>APZRDF:>Status only");
 	CHECK(aprs_station(2, &far) && far.has_pos && aprs_station(1, &here) && here.has_pos);
 	CHECK(aprs_station(0, &nopos) && !nopos.has_pos);
 	// our position: none
@@ -1508,6 +1559,7 @@ int main(void)
 	test_stations_digi_igate();
 	test_rx_stream();
 	test_rx_board_only();
+	test_station_lookup();
 	test_station_range();
 #endif
 	printf("# aprsRadioTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
