@@ -7,8 +7,6 @@
 #include "rf/fd6818/fd6818.h"
 #include "rf/subaudio/subaudio.h"
 
-// A board's own set, the one other than the driver's default (boards/dm1801pro/rf_tables_dm1801pro.c)
-extern const fd6818_variant_t fd6818_variant_dm1801pro;
 
 static int failures;
 
@@ -357,7 +355,7 @@ static void test_am(void)
 
 	// A variant whose tables set 0x13 and 0x4A (the DM-1801 Pro's init: 0x03DF, 0x5430) gets those back, no read
 	reset_chip();
-	fd6818_attach_variant(&dev, bus(), &fd6818_variant_dm1801pro);
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b);
 	chip.regs[FD6818_REG_GAIN] = 0x1111;
 	chip.regs[FD6818_REG_AM_4A] = 0x2222;
 	fd6818_set_am(&dev, true);
@@ -480,7 +478,7 @@ static void test_dm1801pro(void)
 {
 	fd6818_t dev;
 	reset_chip();
-	fd6818_attach_variant(&dev, bus(), &fd6818_variant_dm1801pro);
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b);
 	fd6818_init(&dev);
 	CHECK(chip.log[0].reg == 0x00 && chip.log[0].val == 0x8000);
 	CHECK(chip.log[chip.n - 1].reg == 0x24 && chip.log[chip.n - 1].val == 0x8C7E);
@@ -535,7 +533,7 @@ static void test_burst_tables(void)
 {
 	static const fd6818_regval_t brx[] = { { 0x30, 0xBFF1 } };
 	static const fd6818_regval_t btx[] = { { 0x52, 0x028F }, { 0x30, 0xC1FE } };
-	fd6818_variant_t v = fd6818_variant_dm1801pro;
+	fd6818_variant_t v = fd6818_variant_b;
 	v.burst_rx = brx;
 	v.burst_rx_n = 1;
 	v.burst_tx = btx;
@@ -563,7 +561,7 @@ static void test_burst_tables(void)
 // frequency between bursts and never heard the hotspot's downlink)
 static void test_burst_split(void)
 {
-	const fd6818_variant_t *vars[] = { &fd6818_variant_default, &fd6818_variant_dm1801pro };
+	const fd6818_variant_t *vars[] = { &fd6818_variant_default, &fd6818_variant_b };
 	for (unsigned i = 0; i < 2; i++) {
 		fd6818_t dev;
 		reset_chip();
@@ -595,8 +593,34 @@ static void test_burst_split(void)
 	}
 }
 
+// The lock poll (0x0C bit 9) and set-up B's two DMR word sets: the newer DM-32UV RF section's differs from the DM-1801
+// Pro's only in 0x47 / 0x48 (hardware-dm32.md 8.10)
+static void test_setup_b(void)
+{
+	fd6818_t dev;
+	reset_chip();
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b_dmr6943);
+	chip.regs[0x0C] = 0x0280;
+	CHECK(fd6818_pll_locked(&dev, 0));
+	chip.regs[0x0C] = 0x0080;
+	CHECK(!fd6818_pll_locked(&dev, 3));
+	chip.regs[0x0C] = 0x0200;
+	CHECK(fd6818_pll_locked(&dev, 3));
+
+	fd6818_set_mode(&dev, FD6818_MODE_DMR);
+	CHECK(chip.regs[0x47] == 0x6943 && chip.regs[0x48] == 0xB2FD);
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b);
+	fd6818_set_mode(&dev, FD6818_MODE_DMR);
+	CHECK(chip.regs[0x47] == 0x0140 && chip.regs[0x48] == 0xB2F5);
+	const fd6818_variant_t *a = &fd6818_variant_b, *b = &fd6818_variant_b_dmr6943;
+	CHECK(a->init == b->init && a->fm == b->fm && a->rx == b->rx && a->tx == b->tx && a->burst_rx == b->burst_rx &&
+		a->burst_tx == b->burst_tx && a->bw_dmr == b->bw_dmr && a->dmr_n == b->dmr_n && a->dmr != b->dmr);
+	CHECK(chip.protocol_errors == 0);
+}
+
 int main(void)
 {
+	test_setup_b();
 	test_burst_split();
 	test_dm1801pro();
 	test_burst_tables();

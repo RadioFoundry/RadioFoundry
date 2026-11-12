@@ -1062,6 +1062,48 @@ repeat of a call sat 90.2 ms after the original on every voice burst (72 of 72).
 Golay corrections and 4 were uncorrectable, where the direct copy was clean: the receiver takes bit errors while it
 switches per burst. As a user it reports both copies of a call (gotchas 14.15).
 
+### 8.10 Two RF sections
+
+Newer DM-32UV radios have an RF section whose FD6818 needs another set-up. They ship with the stock build
+`DM32.NRFB.01.050`; the older stock builds (046 to 049) leave their receiver dead. On the classic set-up above, the
+newer part's synthesizer never locks: no receive anywhere, and transmit far off frequency (146.520 MHz set, 220.100 MHz
+out). The NRFB build carries only the new set-up and never checks which part is fitted. RadioFoundry checks at
+start-up.
+
+Set-up B's words are the NRFB build's; the ones marked "user" were checked on one user's radio with the newer section,
+not yet on a RadioFoundry test radio.
+
+| | Classic section (set-up A, 8.2-8.8) | Newer section (set-up B) |
+|---|---|---|
+| FD6818 tables | 8.2 | the DM-1801 Pro's (`hardware-dm1801pro.md` 5), `fd6818_variant_b_dmr6943` |
+| 0x37 | 0x1D0F / 0x1D1F / 0x1F0F / 0x1F1F | 0x9D1F (bit 15 set) |
+| 0x30 into RX / TX | idle, then 0xBFF1 / 0xC1FE | idle, 0x0200, then 0xBFF1 / 0xC1FE |
+| 0x1A, 0x40 | band words (8.3) | 0x1A not written; 0x40 = 0x34F0, on FM transmit 0x3480 + the calibration byte |
+| DMR 0x47 / 0x48 | 0x0140 / 0xBBBF | 0x6943 / 0xB2FD; the DM-1801 Pro's 0x0140 / 0xB2F5 gave no DMR sync (user) |
+| 0x50 after each switch to TX | not written | 0x3B20 (user) |
+| HR_C7000 RF_MODE bit 15 (RX IQ invert) | set | clear (user; set: DMR syncs but decodes nothing usable) |
+| 0x0C bit 9 (synthesizer locked) on set-up A | set at every frequency tried, 136-520 MHz | never set (user) |
+| 0x0C bit 9 on set-up B | set | set |
+| 0x3D | reads 0x2AAB | reads 0 (user) |
+
+The newer section's data flash is a Puya part (JEDEC 852018) on the radios seen so far; RadioFoundry doesn't use that
+to choose.
+
+Start-up check (`radio_dm32.c` `rf_detect`): set-up A, tuned to 145 MHz in RX, waits up to 20 ms for 0x0C bit 9. No
+lock: set-up B the same way. Set-up B locks on both sections, so A goes first. Neither locking leaves set-up A and
+refuses every transmission. The diagnostics line `flash ... cal ... rf X` names the result: `A`, `B`, or `-` for
+neither. Set-up B has no AM receive yet (8.7 is set-up A's), and its receiver sleep is idle only.
+
+Writes of the NRFB build that RadioFoundry doesn't make on set-up B:
+
+| Where | Writes |
+|---|---|
+| Receive sub-audio set | 0x2E / 0x2F = 0x8608 / 0x1890 with CTCSS, 0x9608 / 0x9890 with DCS; with none, one of the two by a setting |
+| FM transmit | 0x50 = 0xBB20 before the switch to TX (0x3B20 after, as above) |
+| DMR transmit | 0x50 = 0x3B18 after the switch to TX, where RadioFoundry writes 0x3B20 |
+| Receiver sleep | 0x30 = 0, then 0x37 = 0x9D17 (FM) or 0x9D00 (DMR); wake 0x37 = 0x9D1F, then 0x30 = 0xBFF1 |
+| Its tone generator (0x70 = 0xE000, the tone in 0x71) | 0x21 = 0x06FD, 0x24 = 0x8A2F or 0x8A23 at the start, 0x24 = 0 at the end, 0x50 = 0xBB18 / 0x3B18 around each tone |
+
 ## 9. Audio path
 
 | Element | Detail |

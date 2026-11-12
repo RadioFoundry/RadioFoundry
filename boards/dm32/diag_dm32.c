@@ -110,6 +110,9 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_x(&o, hrc_flash_spi0_jedec(), 6);
 		put(&o, " cal ");
 		put(&o, bf_cal_source());
+		dm32_radio_diag(&d);
+		put(&o, " rf ");
+		put(&o, (char[]){ d.rf_setup, '\0' });
 		break;
 	case 6:
 		put(&o, "txc ");

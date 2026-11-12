@@ -32,7 +32,7 @@ import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNo
 import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
-import { decideCodec, DecisionError } from "./decide.js";
+import { codecPresent, decideCodec, DecisionError } from "./decide.js";
 import { tooBig } from "./buildfit.js";
 import { suggestPack, packCode, startCode, startLanguages, startLanguage, setStartLanguage } from "./langsuggest.js";
 import { readBootKey } from "./bootkey.js";
@@ -416,7 +416,7 @@ const f4Board = () => fb().f4stub?.boards[S.board?.id];
 // A chip whose flash size register reads less than the firmware's flash: the loader would refuse the top sectors
 const shortRegister = () => !!(f4Board() && S.now?.kind === "rfoundry" && registerShort(S.now.flashKb, f4Board().owned));
 const stubRoute = () => !!((S.task === "install" || S.task === "update") && f4Board() && S.now?.kind === "rfoundry" && S.now.stubOffer && !S.requested
-	&& S.now.probe?.codec === S.board.codec.id && !S.firmware?.manifest.codec?.included && !shortRegister());
+	&& codecPresent(S.board, S.now.probe?.codec) && !S.firmware?.manifest.codec?.included && !shortRegister());
 // The loader hand-over RadioFoundry offers now: the one probed before the install, or after a first install (doneView)
 // the one the build just written offers, while S.now still says what ran before it
 const loaderOffer = () => (!f4Board() ? null : S.now?.kind === "rfoundry" ? S.now.stubOffer : S.now?.afterOffer || null);
@@ -633,7 +633,7 @@ async function keyFromRadio(link) {
 // keep it (a radio back on stock firmware, an interrupted install, a radio in its bootloader). Quiet when it can't:
 // the stock file still works.
 async function codecFromRadio(link, probe, status) {
-	if (probe?.codec !== S.board.codec.id || S.savedCodec?.from === "radio") return;
+	if (!codecPresent(S.board, probe?.codec) || S.savedCodec?.from === "radio") return;
 	if (S.board.keep_codec_supported && !S.sim && (await loadCodec(S.board, fb()))) return;
 	status?.replaceChildren(h("p", { class: "muted" }, t("flash.now.reading_codec")));
 	const got = await readCodec(link, S.board, fb());
@@ -1581,7 +1581,7 @@ async function storeLearned(link) {
 }
 
 // What the radio's codec report means to a user
-const codecText = (c) => (c === S.board.codec.id ? t("flash.now.codec_ok") : !c || c === "absent" ? t("flash.now.codec_none") : c);
+const codecText = (c) => (codecPresent(S.board, c) ? t("flash.now.codec_ok") : !c || c === "absent" ? t("flash.now.codec_none") : c);
 
 // The backup panel used on a RadioFoundry radio (before an update, the backup task, after a first install)
 // actions(run): where the "save a backup" button goes (the nav bar); without it, in the panel
@@ -2256,7 +2256,7 @@ function doneView() {
 			const p = await probe(link);
 			if (!p) throw await noAnswer(link, { written: S.firmware?.manifest });
 			// the loader route never touches the codec, so it is there afterwards as it was before
-			const good = !(S.decision ? S.decision.expectCodec : true) || p.codec === S.board.codec.id;
+			const good = !(S.decision ? S.decision.expectCodec : true) || codecPresent(S.board, p.codec);
 			diag.note(...crumbs.verify(p, good));
 			flashMark(S.lastStarted, "verify", { ok: good, reason: good ? "" : `codec ${p.codec || "none"}` });
 			S.reportResult = good ? "problem" : "failed";

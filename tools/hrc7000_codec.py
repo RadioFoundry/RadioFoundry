@@ -55,9 +55,9 @@ PROGMEM_BASE = 0x03000000   # a program flash dump starts here
 # Entry points, offsets from the codec start (codec-dm32.md "Entry points"); fec_init differs per version
 ENTRIES = ("decode", "encode", "dec_init", "dec_set", "enc_init", "enc_set", "fec_init")
 
-# The 049 entry points: every DM-32UV stock build from 032 to 049 carries the same codec code, byte for byte, except
-# for its table pointers (the NRF and fanti builds' tables sit 8 bytes higher) and stock code that lies inside the
-# window but isn't codec (codec-dm32.md "Stock versions")
+# The 049 entry points: every DM-32UV stock build from 032 to 049, and NRFB 050, carries the same codec code, byte for
+# byte, except for its table pointers (the NRF and fanti builds' tables sit 8 bytes higher, NRFB's 0x18 higher) and
+# stock code that lies inside the window but isn't codec (codec-dm32.md "Stock versions")
 ENTRIES_049 = {"decode": 0x0, "encode": 0x260, "dec_init": 0xB4, "dec_set": 0x84, "enc_init": 0x314,
                "enc_set": 0x2E4, "fec_init": 0x1BF8}
 
@@ -157,6 +157,18 @@ PROFILES = {
         "code": (0x030C7954, 0x14600, 0x00016CDC),
         "tables": (0x03072EC0, 0x2F78, 0x18000EB0),
         "code_sha256": "cd0820a18df0b53bf011907a02d5b649bfbccf030c3d0432f4e363077d67a2c0",
+        "tables_sha256": "10684c33e3cc8238376e455fd96b1c15a863a864420dbbaa4589803c4eb0b0e1",
+        "entries": ENTRIES_049,
+    },
+    # DM32.NRFB.01.050, known only from a program flash read: the key is the code window's SHA-256. Its codec is the
+    # 049 one (tables 10684c33...); the table pointers sit 0x10 above the NRF builds' and the tables end at 0x18003E38
+    # (docs/spec/codec-dm32.md)
+    "8d7f57eb84147dc6fc85d7ca4dd80fe6f2256cfb2cfe5b822bae07088a642db7": {
+        "name": "DM32.NRFB.01.050 program flash", "board": "dm32", "kind": "progmem", "tag": 50,
+        "size": 0x100000,
+        "code": (0x030C72D8, 0x14600, 0x00016CDC),
+        "tables": (0x03072810, 0x2F78, 0x18000EC0),
+        "code_sha256": "8d7f57eb84147dc6fc85d7ca4dd80fe6f2256cfb2cfe5b822bae07088a642db7",
         "tables_sha256": "10684c33e3cc8238376e455fd96b1c15a863a864420dbbaa4589803c4eb0b0e1",
         "entries": ENTRIES_049,
     },
@@ -554,6 +566,10 @@ def self_test():
         t0, tl, tr = prof["tables"]
         check(cl <= lay["run"][1] - lay["run"][0], "%s: code fits the codec window" % prof["name"])
         check(lay["tables"][0] <= tr and tr + tl <= lay["tables"][1], "%s: tables inside the table window" % prof["name"])
+        if "code_sha256" in prof:	# a build found by its code window needs its map, and the map must agree with the profile
+            found = codecmap.by_code_sha(codecmap.load_maps(), prof["code_sha256"])
+            check(found and found[0]["code"]["run"] == cr and found[0]["code"]["len"] == cl
+                  and found[0]["table_windows"][0]["run"] == tr, "%s: codec map agrees with the profile" % prof["name"])
     expect_error(lambda: extract(plain, {sha256(plain): dict(d25)}, board="dm32"), "DB25-D file refused for the DM-32")
 
     # The DB25-D's 020: no vendor file, found in a program flash read by its windows; another run address and entries

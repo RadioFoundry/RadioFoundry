@@ -199,6 +199,19 @@ void fd6818_set_freq(fd6818_t *dev, uint32_t hz)
 	dev->freq_10hz = f;
 }
 
+bool fd6818_pll_locked(fd6818_t *dev, uint32_t timeout_ms)
+{
+	for (uint32_t ms = 0;; ms++) {
+		if ((fd6818_read(dev, FD6818_REG_CSS_STATUS) & FD6818_CSS_PLL_LOCK) != 0u) {
+			return true;
+		}
+		if (ms >= timeout_ms) {
+			return false;
+		}
+		rfbus_delay_ms(dev->bus, 1);
+	}
+}
+
 void fd6818_set_bandwidth(fd6818_t *dev, uint16_t bw_reg)
 {
 	fd6818_write(dev, FD6818_REG_BANDWIDTH, bw_reg);
