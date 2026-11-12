@@ -47,6 +47,8 @@ typedef struct {
 	bool dual;		// the UI runs dual watch: it has taken over a watch the debug link started
 	int8_t volbar;		// the knob's volume bar shows this step, -1 = not shown
 	bool volbar_top;	// ... in the status strip: the last frame drew no hint row
+	int8_t volbar_b;	// a second knob's bar (side B's) stacked under it, -1 = one bar
+	uint8_t volbar_side;	// ... the side marked: 0 A, 1 B
 } ui_app_status_t;
 void ui_app_status(ui_app_status_t *st);
 // The label of the focused row on a list screen ("" otherwise), for scripted checks

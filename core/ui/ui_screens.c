@@ -2404,8 +2404,13 @@ void ui_draw_home_dual(const radio_view_t *v, const ui_state_t *s)
 		dual_pane(v, s, 0, top, ph, pad, ft);
 		gfx_hline(0, top + ph + gap / 2, w, ui_col.line);
 		dual_pane(v, s, 1, top + ph + gap, ph, pad, ft);
-		int ay = top + 2 * ph + gap + 2;
-		dual_activity(v, s, ay, ft->act ? (L->hint_y - ay) / sm->h : 0);
+		int ay = top + 2 * ph + gap + 2, bottom = L->hint_y;
+#if CONFIG_VOLUME_BAR
+		// The two volume bars on the bottom reach above the hint row: a line less, not a line cut
+		if (s->volbar_b >= 0 && ui_volume_bars_y() < bottom)
+			bottom = ui_volume_bars_y();
+#endif
+		dual_activity(v, s, ay, ft->act ? (bottom - ay) / sm->h : 0);
 	}
 	ui_draw_banner(s);
 	ui_draw_bottom(s, dual_hint(v, s));
@@ -2884,27 +2889,47 @@ static void volume_segments(int x, int y, int w, int h, int step)
 }
 
 #if CONFIG_VOLUME_BAR
+int ui_volume_bars_y(void)
+{
+	return gfx_height() - 2 * (ui_layout.tiny->h + 1);
+}
+
 // noinline: inlined into the frame code, its locals land in ui_task's deepest path, which has 8 bytes to spare on
 // the boards with the tightest UI stack (make stack-check)
 __attribute__((noinline)) void ui_draw_volume_bar(const ui_state_t *s, bool top)
 {
 	const ui_layout_t *L = &ui_layout;
-	const font_t *f = L->small;
-	int w = gfx_width();
+	// Two knobs (s->volbar_b): two rows in the smallest font, so on the bottom they fit under the last line Home lays
+	// out on every display class
+	bool two = s->volbar_b >= 0;
+	const font_t *f = two ? L->tiny : L->small;
+	int w = gfx_width(), pitch = f->h + 1;
 	// Rows no screen lays its content in, so nothing is cut on any display class: the hint row (its keys and toasts
 	// come back with it), or on a screen that fills the bottom (Quick's tiles, a list with hints off) the status strip
-	int y = top ? 0 : L->hint_y, y0 = top ? 0 : y - 1, bh = top ? L->strip_h : gfx_height() - y0;
-	char num[4];
-	sbuf_t b;
-	sb_init(&b, num, sizeof num);
-	sb_u32(&b, (uint32_t)s->volbar, 1);
+	int y = top ? 0 : two ? ui_volume_bars_y() + 1 : L->hint_y, y0 = top ? 0 : y - 1;
+	int bh = top ? (two ? 2 * pitch : L->strip_h) : gfx_height() - y0;
 	const char *label = TR("Vol");
-	int lw = gfx_text_width(f, label), nw = gfx_text_width(f, "16");
+	int lw = gfx_text_width(f, label) + (two ? gfx_text_width(f, " A") : 0), nw = gfx_text_width(f, "16");
 	gfx_fill(0, y0, w, bh, ui_col.bg);
 	gfx_hline(0, top ? y0 + bh - 1 : y0, w, ui_col.line);
-	gfx_text(f, 2, y, label, ui_col.fg);
-	gfx_text(f, w - 2 - gfx_text_width(f, num), y, num, ui_col.fg);
-	volume_segments(lw + 6, y + 1, w - lw - nw - 12, f->h - 2, s->volbar);
+	for (int i = 0; i <= two; i++, y += pitch) {
+		int step = i == 0 ? s->volbar : s->volbar_b;
+		color_t c = ui_col.fg;
+		if (two && i == s->volbar_side) {
+			// The side the last turn moved, in the focus highlight (inverse video on a 1 bpp panel)
+			gfx_fill(0, y, lw + 4, f->h, ui_col.focus);
+			c = gfx_bpp() == 1 ? ui_col.bg : ui_col.focus_fg;
+		}
+		int x = gfx_text(f, 2, y, label, c);
+		if (two)
+			gfx_text(f, x, y, i == 0 ? " A" : " B", c);
+		char num[4];
+		sbuf_t b;
+		sb_init(&b, num, sizeof num);
+		sb_u32(&b, (uint32_t)step, 1);
+		gfx_text(f, w - 2 - gfx_text_width(f, num), y, num, ui_col.fg);
+		volume_segments(lw + 6, y + 1, w - lw - nw - 12, f->h - 2, step);
+	}
 }
 #endif
 

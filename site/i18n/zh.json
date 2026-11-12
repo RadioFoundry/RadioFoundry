@@ -358,6 +358,8 @@
  "screen.volume_bar": "音量条：转动旋钮时",
  "screen.volume_bar_call": "通话中的音量条",
  "screen.volume_bar_quick": "快速设置上方的音量条",
+ "screen.volume_bar_ab": "音量条：转动 B 侧旋钮时",
+ "screen.volume_bar_ab_dual": "双守候时的音量条",
  "screen.settings": "设置",
  "screen.talk_target_picker": "通话目标",
  "screen.talk_target_picker_vfo": "通话目标，DMR VFO",

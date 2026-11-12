@@ -1486,6 +1486,15 @@ static void volume_bar_checks(void)
 		{ "Home: in the hint row", "knob:50 knob:60", "volbar_at=bottom" },
 		{ "over Quick", "quick knob:50 knob:60", "volbar=10 screen=quick" },
 		{ "hints off: in the strip", "hints:off knob:50 knob:60", "volbar=10 volbar_at=top" },
+		// A second knob (side B's, "knobb"): both bars stacked when it turns, A over B, the side that moved marked
+		{ "one knob: one bar", "knob:50 knob:75", "volbar=12 volbar_b=-1" },
+		{ "side B's first reading: none", "knob:50 knobb:40", "volbar=-1 volbar_b=-1" },
+		{ "side B turned: both, B marked", "knob:50 knobb:40 knobb:62", "volbar=8 volbar_b=10 volbar_side=b shows=Vol wake=1" },
+		{ "side A turned out of dual watch: one bar", "knob:50 knobb:40 knob:75", "volbar=12 volbar_b=-1" },
+		{ "side A turned while both show: A marked", "knob:50 knobb:40 knobb:62 knob:75", "volbar=12 volbar_b=10 volbar_side=a" },
+		{ "both gone at 3 s", "knob:50 knobb:40 knobb:62 wait:3000", "volbar=-1 volbar_b=-1 hides=Vol" },
+		{ "side B under the debug link's level", "knob:50 knobb:40 override:80 knobb:62", "volbar=13 volbar_b=10" },
+		{ "both in the strip with hints off", "hints:off knob:50 knobb:40 knobb:0", "volbar_b=0 volbar_at=top" },
 	};
 	char err[300];
 	for (int g = 0; g < sim_geom_count; g++) {
@@ -1501,6 +1510,14 @@ static void volume_bar_checks(void)
 		printf("FAIL volume bar Quick 160x128 in the strip: %s\n", err);
 		fails++;
 	}
+#if CONFIG_DUAL_WATCH
+	// In dual watch side A's knob shows both too
+	if (!vol_run(sim_geom_find("160x128"), "quick 7 ctx 3 5 ok wait:3000 knob:50 knobb:40 knob:75",
+		     "volbar=12 volbar_b=6 volbar_side=a", err, sizeof err)) {
+		printf("FAIL volume bar dual watch: %s\n", err);
+		fails++;
+	}
+#endif
 	// Property: random turns and pauses against a model of the rule
 	uint32_t seed = 0x354u;
 	const sim_geom_t *g = sim_geom_find("160x128");

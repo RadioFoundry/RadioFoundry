@@ -292,6 +292,7 @@ typedef struct {
 	uint8_t volume_step;	// the stored step (0..RADIO_VOLUME_MAX); in force when volume_src is RVOL_SOFT
 	int8_t volume_override;	// the debug link's step in force over the knob (RVOL_OVERRIDE), -1 = none
 	int8_t volume_knob;	// the volume knob's position 0..100 % in force or not, -1 = none read
+	int8_t volume_b;	// a second knob's position 0..100 % (side B, hal_power_t.volume_b), -1 = none
 	// Air band (CONFIG_AM_RX; docs/spec/airband-and-broadcast.md 3): the receiver demodulates AM on this channel or
 	// VFO frequency (an FM channel in 108-137 MHz on a radio that can); receive only. noise then holds the AM
 	// squelch's value from the RSSI (radio/radio_am.h)
