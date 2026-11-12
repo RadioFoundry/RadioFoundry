@@ -13,6 +13,14 @@
 #include <stdbool.h>
 #include "board.h"
 #include "spi_flash/spi_flash.h"
+#include "radio/pa_keyup.h"
+
+// One band's five power levels (docs/testing/power-calibration.md): the two low levels are fixed drives, the next two
+// lie between factory rows, the top level is the high row
+typedef struct {
+	uint16_t low[2];	// levels 0 and 1: DAC values
+	uint16_t frac[2];	// per mille: level 2 from the very low row to the low row, level 3 from the low row to the mid row
+} uvf_power_band_t;
 
 // What the family's radios differ in (hardware-mduv380.md 1), one const table in each board's board.c
 typedef struct {
@@ -26,8 +34,13 @@ typedef struct {
 	uint16_t vol_min, vol_break, vol_max;
 	// TX power interpolation fractions (7), per mille, f0..f3, [VHF, UHF]
 	uint16_t frac[2][4];
+	// Five levels in place of the nine from frac, [VHF, UHF], or NULL
+	const uvf_power_band_t *power5;
 	// Factory to working copy power conversion (12.1), per mille, k0..k3 (very low, low, mid, high), [VHF, UHF]
 	uint16_t cal_k[2][4];
+	// DMR key-up constants (radio/pa_keyup.h), [VHF, UHF], measured on the radio; NULL: the PA keyed at the step's
+	// drive 1 ms after the RF TX interrupt, as before the rule
+	const pa_keyup_cfg_t *keyup;
 	// The channel knob counts the other way: the same pins, the A and B phases swapped on the board (10.3)
 	bool enc_reverse;
 	// Board start-up after the shared one (board_init), or NULL: GPS and the radio's own checks

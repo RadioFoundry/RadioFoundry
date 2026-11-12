@@ -720,6 +720,120 @@ Interpolation fractions (empirical):
 On the 10 W radio levels 5-8 are 2 W, 3 W, 5 W, 10 W: level 5 = low + (mid - low) x f2, level 6 = low + (mid - low) x
 f3, level 7 = mid, level 8 = high. Clamp to 4095.
 
+### 7.1 Five levels (DM-1701)
+
+The DM-1701 uses five levels in place of the nine above ([power-calibration.md](../testing/power-calibration.md)): the
+two low levels are fixed DAC values per band, the next two lie between factory rows, the top level is the high row.
+
+| Level | Name | VHF | UHF |
+|---|---|---|---|
+| 0 | 100 mW | 517 | 339 |
+| 1 | 500 mW | 800 | 620 |
+| 2 | 1 W | very low + (low - very low) x 0.723 | very low + (low - very low) x 0.838 |
+| 3 | 2.5 W | low + (mid - low) x 0.791 | low + (mid - low) x 0.809 |
+| 4 | 5 W | high | high |
+
+These values are a draft: they come from the SDR bench's relative levels at 145.51 and 449.9 MHz with the high row
+taken as 5 W, and came out within 0.2 dB of their spacing there. No wattmeter reading backs them yet, and the zero
+point and cliff of the procedure are not measured.
+
+Relative output against the DAC value, same radio and frequencies (dB below the high row):
+
+| DAC | UHF | DAC | VHF |
+|---|---|---|---|
+| 250 | -21.3 | 350 | -25.2 |
+| 350 | -16.5 | 490 | -18.1 |
+| 500 | -12.3 | 640 | -13.0 |
+| 650 | -9.5 | 830 | -9.5 |
+| 895 | -6.4 | 1081 | -6.9 |
+| 1200 | -3.9 | 1400 | -4.4 |
+| 1669 | -1.2 | 1882 | -1.1 |
+| 2080 | 0 | 2062 | 0 |
+| 2800 | +0.5 | 2800 | +1.7 |
+
+### 7.2 DMR key-up
+
+The PA is keyed by the shared rule ([pa-keyup.md](pa-keyup.md)), with constants per band
+(`boards/dm1701/board.c`). No step's drive starts earlier than the window. At UHF it is 1.0 ms after the RF TX
+interrupt; at VHF it is the board's earliest point, 2.5 ms before the first symbol. The PA is keyed 1.0 ms (UHF) and
+0.8 ms (VHF) after the interrupt:
+
+| Band | dead_pm | knee_us | slope_us | window_us | settle_us | pa_us |
+|---|---|---|---|---|---|---|
+| VHF | 1 | 638 | 2398 | 2500 | 600 | 1730 |
+| UHF | 349 | 247 | 1248 | 1530 | 800 | 1530 |
+
+UHF is measured with `tools/bench/pa_cal.py` ([pa-keyup.md](pa-keyup.md) 6) over the air on the SDR bench and
+judged by the ramp's shape (`pa_shape.py`): every level's -3 dB point 0.14-0.45 ms before the first symbol, the two top
+levels and the lowest with under 1 dB of overshoot, the second and third with 2.0 and 3.3 dB. The rule can't do
+better on those two: the lowest level's boost and the top level's lead fix the knee and the slope, and with them the
+boosts of the two levels between. Against the same keys:
+
+| Set | -3 dB, levels 0-4 (ms) | Overshoot, levels 0-4 (dB) |
+|---|---|---|
+| This one | -0.14 / -0.34 / -0.41 / -0.45 / -0.31 | 0.6 / 2.0 / 3.3 / 0.5 / 0.3 |
+| Knee 255, slope 1180, settle 700 (the one before) | -0.20 / -0.28 / -0.33 / -0.42 / -0.25 | 1.8 / 2.3 / 3.0 / 0.6 / 0.4 |
+| Knee 230, slope 1100, settle 700 | -0.05 / -0.21 / -0.27 / +0.12 / -0.14 | 0.8 / 1.3 / 2.3 / 0.3 / 0.4 |
+| Knee 210, slope 1060, settle 1000 | the lowest level +0.63 | level 2 1.2 |
+
+A wider window (2000-2400 us) put the lowest level early with 5 dB of overshoot; an approach drive (`ease_pm`) never
+reaches the levels that overshoot.
+
+On a cable into the SDR bench (57 dB) the same set is cleaner than over the air: levels 1-3 come up 0.32-0.49 ms
+ahead with 0.3-0.7 dB of overshoot at both 445 and 461.4625 MHz, so the 2-3 dB above came from the path. The lowest
+level is 123 mW at 445 MHz and 33 mW at 461.4625 MHz (the radio's calibration tables): early with 1.5 dB of overshoot
+at the first, 1.6 dB short at the first symbol at the second. The top level is 1.6-2.5 dB short at the first symbol
+and settles after it: its PA point can't move earlier (SFR, below). A refit on the cable came out worse at every
+round.
+
+VHF is measured the same way, on a cable into the SDR bench through 57 dB of attenuation. The lowest level's own
+drive, written 2.5 ms ahead, brings the output up 0.8 ms after the first symbol, so every level is boosted. With the
+board's earliest point and settle time fixed, the boost over the level is (knee x top + slope x drive) / ((window -
+settle) x drive): the knee sets how much more the low levels get. A boost 2.6 times the lowest level's drive brings it
+up in time; 2.0 times leaves it 0.7-1.0 ms late, 3.1 times overshoots 4.5 dB. The top level's boost is capped at 1.2
+times its drive and its PA point can't move earlier (SFR, below), so it is 2 dB short at the first symbol in every set.
+Against the same keys:
+
+| Set | -3 dB, levels 0-4 (ms) | Overshoot, levels 0-4 (dB) |
+|---|---|---|
+| This one | -0.10 / -0.14 / -0.17 / -0.15 / -0.01 | 1.1 / 0.9 / 1.0 / 0.4 / 0.2 |
+| Knee 1106, slope 1433 (the one before) | -0.26 / -0.20 / -0.16 / -0.12 / +0.20 (edge) | 4.5 / 1.6 / 0.9 / 0.3 / 0.2 |
+| Knee 496, slope 2583 | +0.13 / -0.07 / -0.14 / -0.15 / -0.02 | 0.1 / 0.6 / 0.9 / 0.4 / 0.2 |
+| Knee 548, slope 2855, settle 400 | -0.07 / -0.11 / -0.16 / -0.15 / -0.05 | 3.2 / 2.5 / 2.3 / 0.9 / 0.2 |
+| Knee 213, slope 2953 | +0.97 / +0.12 / -0.08 / -0.15 / -0.02 | 0.1 / 0.2 / 0.6 / 0.4 / 0.2 |
+
+The fit of `pa_cal.py` doesn't find this set: its open-loop points are each a level's own drive, which never brings the
+lowest level up in time, and its rounds come out 0.4-1.8 ms late.
+
+The radio's USB link drops while it transmits at VHF above 100 mW, and the host then ignores the port until the radio
+restarts or the cable is replugged. VHF is therefore measured with `--key-run restart`
+([pa-keyup.md](pa-keyup.md) 4, 6).
+
+Key-down: TIM7 drops the PA 30 ms after the RF TX interrupt, when the burst's last symbol ends
+([gotchas.md](gotchas.md) 3.4); the timeslot interrupt after it puts the receiver back and stays the fallback. The
+carrier is 30 dB down 0.5-0.9 ms after the last symbol's end, inside the 1.25 ms guard time. Dropped at the timeslot
+interrupt alone it fell 1.7-1.8 ms after the last symbol, about 0.5 ms into the next slot.
+
+With the earlier form, every level measured on the SDR bench:
+
+| Band | -3 dB point before the first symbol | First symbol against the settled level | Overshoot |
+|---|---|---|---|
+| UHF | 0.16-0.34 ms | within 0.7 dB | under 1 dB |
+| VHF | 0.08-0.14 ms | within 0.6 dB up to 1 W; the two top levels not measured with this set (1.1 and 1.5 dB low with the sets next to it) | under 2 dB |
+
+What set the points, measured with the earlier form (its `late %`: how much later a lower step started; its knee in
+drive counts × ms):
+
+| Setting | Result |
+|---|---|
+| PA 0.6 ms after the interrupt (`pa_us` 1930) | an SFR repeater loses the end of the burst it receives just before: 16-24 corrected bits in the last voice frame of each burst over a 72-frame call, none at 0.8 or 1.0 ms |
+| Every level started at `boost_us` (late 0 %) | the low levels rise early: at UHF the lowest 0.70 ms before the first symbol with the top at 0.34 ms |
+| VHF at late 100 % | the low levels rise 0.1 ms after the first symbol, which is 3.5 dB low |
+| VHF with a longer low-level boost (knee 1800-2055) | the lowest level overshoots 4-6 dB |
+
+Keyed at the level's drive 1 ms after the interrupt, as before the rule, the lowest level's first symbol was 13 dB low
+at UHF and 24 dB low at VHF.
+
 Without a loaded calibration RadioFoundry drives a fixed DAC value of 300 (`DM1701_DAC_UNCALIBRATED` in
 `boards/dm1701/radio_dm1701.c`), a very low drive.
 

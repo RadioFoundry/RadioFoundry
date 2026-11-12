@@ -26,6 +26,27 @@ const uint8_t uvf_key_matrix[3][8] = {
 	{ KEY_3, KEY_6, KEY_9, KEY_HASH, STM32_KEYPAD_NO_KEY, KEY_SK1, KEY_SK3, KEY_SK2 },
 };
 
+// DMR key-up (docs/spec/pa-keyup.md, hardware-dm1701.md 7). UHF: the fit of tools/bench/pa_cal.py, judged by the
+// ramp's shape; on a cable levels 1-3 come up 0.32-0.49 ms before the first symbol with at most 0.7 dB of overshoot,
+// the lowest within 1.6 dB of its level at the first symbol across the band, the top 1.6-2.5 dB short (its PA point
+// is the SFR limit below). VHF:
+// set by hand on a cable (the tool's fit comes out late): levels 0-3 up 0.10-0.17 ms before the first symbol with at
+// most 1.1 dB of overshoot, the top level at it (its boost is capped). The lowest level is far too slow on its own
+// drive, so every level is boosted from the board's earliest point (2.5 ms) until 0.6 ms before the first symbol; the
+// knee sets how much more the low levels get (hardware-dm1701.md 7). The PA 0.8 ms (VHF) and 1.0 ms
+// (UHF) after the RF TX interrupt: 0.6 ms cut the end of the burst an SFR repeater receives just before
+static const pa_keyup_cfg_t keyup[2] = {
+	{ .dead_pm = 1, .knee_us = 638, .slope_us = 2398, .window_us = 2500, .settle_us = 600, .pa_us = 1730 },
+	{ .dead_pm = 349, .knee_us = 247, .slope_us = 1248, .window_us = 1530, .settle_us = 800, .pa_us = 1530 },
+};
+
+// The power levels (hardware-dm1701.md 7): draft drives from the SDR bench's relative levels with the high row taken
+// as 5 W; not yet measured with a wattmeter
+static const uvf_power_band_t power5[2] = {
+	{ .low = { 517, 800 }, .frac = { 723, 791 } },
+	{ .low = { 339, 620 }, .frac = { 838, 809 } },
+};
+
 // hardware-dm1701.md: 9.2 (type 2 is "vertically flipped; treated as type 3 with RGB order": the bench radio reports 2,
 // and the type 2 MADCTL showed the picture mirrored top to bottom), 11.1 (raw / 37.5 per 0.1 V), 11.2 (measured on the
 // bench: 26 at the bottom, 2063 at the top; spec 29..2075), 7 and 12.1 (the DM-1701 rows)
@@ -36,6 +57,8 @@ const uvf_variant_t uvf_variant = {
 	.vol_min = 26, .vol_break = 318, .vol_max = 2060,
 	.frac = { { 450, 750, 250, 530 }, { 460, 730, 140, 360 } },
 	.cal_k = { { 610, 1000, 850, 1300 }, { 650, 1000, 860, 1700 } },
+	.keyup = keyup,
+	.power5 = power5,
 #if CONFIG_GPS
 	.init = uvf_gps_init,	// an owner-fitted module on PA10 / PA9 (hardware-dm1701.md 14.2)
 #endif
@@ -56,7 +79,7 @@ static const band_t bands[] = {
 #endif
 };
 
-static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
+static const char *const power_names[] = { "100mW", "500mW", "1W", "2.5W", "5W" };
 
 // The side keys are SK1 (above PTT, row 2 D5; held with PTT at power-on it is the bootloader combination, which the
 // running firmware never sees), SK2 and SK3 (below PTT), top to bottom (hardware-dm1701.md 20). SK3: short = power
@@ -130,7 +153,7 @@ const board_t board = {
 #endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
-	.power_default = 4,	// 1 W
+	.power_default = 2,	// 1 W
 	.display = &uvf_display,
 	.input = &uvf_input,
 	.keymap = keymap,

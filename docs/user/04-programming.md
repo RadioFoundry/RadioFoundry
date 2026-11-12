@@ -39,7 +39,9 @@ server: files, the codeplug and your RadioID API key stay on your computer.
 After a read, the editor says when a newer RadioFoundry release is out for the radio, and what it adds to reading and
 writing (faster transfers, the compact ID database). **Update Firmware** opens the [web installer's Update](02-installing.md#updating-radiofoundry)
 in a new tab and lets go of the radio's port, so the installer can connect. The codeplug and settings stay on the radio
-through the update.
+through the update. If the update changes the radio's power levels, the power picked in Settings, for the VFOs and for
+APRS goes back to the radio's default: check it before you transmit. A channel's power in the codeplug maps to the
+nearest new level.
 
 ### Programming several radios
 

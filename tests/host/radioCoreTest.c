@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The radio core's state machine (core/radio/radio_sm.c) against a fake board and a fake codeplug
+#include "input/input.h"
 #include "input/keyassign.h"
 #include <stdio.h>
 #include <string.h>
@@ -3044,6 +3045,7 @@ static void test_ui_requests(void)
 // requests go straight into the state machine here instead of through radio_task.c's queue ----
 
 uint32_t hal_millis(void) { return now; }
+void hal_delay_ms(uint32_t ms) { now += ms; }	// the PA sweep op's wait
 void radio_get_view(radio_view_t *v) { *v = sm.view; }
 uint32_t radio_view_serial(void) { return sm.serial; }
 void radio_get_settings(radio_settings_t *s) { *s = sm.set; }
@@ -3063,6 +3065,8 @@ void radio_req_scan_vfo(uint32_t lo, uint32_t hi) { (void)lo; (void)hi; }
 void radio_req_tone_burst(bool on, uint32_t max_ms) { (void)on; (void)max_ms; }
 void radio_req_dtmf(char digit, bool down) { req(RREQ_DTMF, (uint8_t)digit | (down ? 0x100 : 0)); }
 bool radio_dtmf_ready(void) { return sm.view.dtmf_ready; }
+radio_state_t radio_get_state(void) { return (radio_state_t)sm.view.state; }
+input_inject_t input_inject_ptt(bool down, uint32_t max_ms) { (void)down; (void)max_ms; return INPUT_INJ_OK; }
 void radio_req_scan(uint8_t cmd) { req(RREQ_SCAN, cmd); }
 void radio_req_vfo_step_size(uint32_t hz) { req(RREQ_VFO_STEP_SIZE, (int32_t)hz); }
 void radio_req_dual(const radio_dual_ref_t ref[2], uint8_t sel)

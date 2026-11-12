@@ -188,6 +188,7 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_ke
            $(CORE)/ui/ui_svc_radio.c $(CORE)/ui/ui_svc_storage.c $(CORE)/ui/ui_svc_data.c \
            $(CORE)/ui/ui_svc_emergency.c $(CORE)/input/keyassign.c sim/sim_flash.c \
            $(CORE)/debuglink/debuglink_view_radio.c $(CORE)/debuglink/dl_fmt.c $(CORE)/codeplug/zone_edit.c \
+           $(CORE)/radio/pa_sweep.c $(CORE)/radio/pa_keyrun.c \
            $(POSLIB) $(CORE)/ui/ui_svc_position.c
 
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
@@ -635,13 +636,25 @@ TESTS   += paKeyupTest
 paKeyupTest: paKeyupTest.c $(CORE)/radio/pa_keyup.c $(CORE)/radio/pa_keyup.h
 	$(CC) $(CFLAGS) -Wshadow -DCONFIG_DMR=1 -o $@ paKeyupTest.c $(CORE)/radio/pa_keyup.c
 
+# The PA drive sweep (core/radio/pa_sweep.c): the grid's limits and what a run writes when
+TESTS   += paSweepTest
+paSweepTest: paSweepTest.c $(CORE)/radio/pa_sweep.c $(CORE)/radio/pa_sweep.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ paSweepTest.c $(CORE)/radio/pa_sweep.c
+
+# The PA key run (core/radio/pa_keyrun.c): the request's limits and what a run writes when
+TESTS   += paKeyrunTest
+paKeyrunTest: paKeyrunTest.c $(CORE)/radio/pa_keyrun.c $(CORE)/radio/pa_keyrun.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ paKeyrunTest.c $(CORE)/radio/pa_keyrun.c
+
 run: run-ambe
-run-ambe: ambeFecTest ambeVoiceTest micGainTest refTrimTest paKeyupTest
+run-ambe: ambeFecTest ambeVoiceTest micGainTest refTrimTest paKeyupTest paSweepTest paKeyrunTest
 	./ambeFecTest
 	./ambeVoiceTest
 	./micGainTest
 	./refTrimTest
 	./paKeyupTest
+	./paSweepTest
+	./paKeyrunTest
 .PHONY: run-ambe
 
 # The DMR voice call stack (core/dmr/call) against a simulated modem; LC coding cross-checked with sfr.c and dmrData.c

@@ -13,6 +13,8 @@
 #include "radio/ref_trim.h"
 #include "radio/tx_limit.h"
 #include "radio/pa_keyup.h"
+#include "radio/pa_sweep.h"
+#include "radio/pa_keyrun.h"
 #include "radio/radio_cwid.h"
 #include "hal_time.h"
 #include "hal_dtmf.h"
@@ -61,6 +63,50 @@ void debuglink_view_audio(dl_text_t *t)
 	(void)t;
 }
 
+// The last PA drive sweep (RADIO op 39): the points it ran and the top level's drive it counted from
+static uint8_t pa_sweep_last_n;
+static uint16_t pa_sweep_last_top;
+// The last PA key run (RADIO op 40): the keys it ran of those asked
+static uint8_t pa_keyrun_last_n, pa_keyrun_last_of;
+#define KEYRUN_RESTART_DELAY_MS	100u
+static bool keyrun_reattach;		// a key run asked for the host port to come back after its reply
+static bool keyrun_restart;		// or for the radio to restart
+
+void debuglink_keyrun_service(void)
+{
+	if (keyrun_restart) {
+		keyrun_restart = false;
+		keyrun_reattach = false;
+		hal_delay_ms(KEYRUN_RESTART_DELAY_MS);	// the reply on its way
+		if (board.system != NULL && board.system->reboot != NULL && radio_get_state() != RS_TX) {
+			(void)board.system->reboot(HAL_REBOOT_NORMAL);
+		}
+	}
+	if (keyrun_reattach) {
+		keyrun_reattach = false;
+		if (board.host_port != NULL && board.host_port->reattach != NULL) {
+			board.host_port->reattach();
+		}
+	}
+}
+
+#if CONFIG_DMR
+static bool keyrun_keyup(const pa_keyup_cfg_t *c)
+{
+	return pa_keyup_set(c);
+}
+
+static bool keyrun_ptt(bool down, uint32_t max_ms)
+{
+	return input_inject_ptt(down, max_ms) == INPUT_INJ_OK;
+}
+
+static bool keyrun_keyed(void)
+{
+	return radio_get_state() == RS_TX;
+}
+#endif
+
 void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 {
 	static const char *const kinds[] = { "off", "zone", "vfo", "dual" };
@@ -72,6 +118,13 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	radio_settings_t s;
 
 	dl_text(t, "scan.built=%u\n", CONFIG_SCAN);
+	if (board.radio != NULL && board.radio->tx_drive_now != NULL) {
+		dl_text(t, "pa_sweep.last=%u/%u/%u\n", (unsigned)pa_sweep_last_n, (unsigned)pa_sweep_last_top,
+			board.radio->tx_mark != NULL ? 1u : 0u);
+	}
+	if (CONFIG_DMR && board.radio != NULL && board.radio->tx_drive != NULL) {
+		dl_text(t, "pa_keyrun.last=%u/%u\n", (unsigned)pa_keyrun_last_n, (unsigned)pa_keyrun_last_of);
+	}
 	dl_text(t, "scan=%s\nscan_phase=%s\nscan_skipped=%u\n", word(v->scan, kinds, 4), word(v->scan_phase, phases, 5),
 		v->scan_skipped);
 	dl_text(t, "scan_probes=%u\nscan_synced=%u\n", v->scan_probes, v->scan_synced);
@@ -396,9 +449,9 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		}
 		return board.radio->tx_drive((uint16_t)(a[0] | (a[1] << 8))) ? DL_ST_OK : DL_ST_BAD_ARG;
 	case DL_OP_PA_KEYUP: {
-		// dead u16, knee u16, slope_us u16, boost u8, hold u8 (%), boost_us u16, pa_us u16, drive_us u16: the DMR
+		// dead_pm, knee_us, slope_us, window_us, settle_us, pa_us and (optional, else 0) ease_pm, each u16: the DMR
 		// PA key-up constants (radio/pa_keyup.h), RAM only, from the next key-up; no argument = the board's again
-		if (len != 0 && len != 14) {
+		if (len != 0 && len != 12 && len != 14) {
 			return DL_ST_BAD_ARG;
 		}
 #if !CONFIG_DMR
@@ -411,12 +464,68 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			return pa_keyup_set(NULL) ? DL_ST_OK : DL_ST_BAD_ARG;
 		}
 		pa_keyup_cfg_t c = {
-			.dead = (uint16_t)(a[0] | (a[1] << 8)), .knee = (uint16_t)(a[2] | (a[3] << 8)),
-			.slope_us = (uint16_t)(a[4] | (a[5] << 8)), .boost_pct = a[6], .hold_pct = a[7],
-			.boost_us = (uint16_t)(a[8] | (a[9] << 8)), .pa_us = (uint16_t)(a[10] | (a[11] << 8)),
-			.drive_us = (uint16_t)(a[12] | (a[13] << 8)),
+			.dead_pm = (uint16_t)(a[0] | (a[1] << 8)), .knee_us = (uint16_t)(a[2] | (a[3] << 8)),
+			.slope_us = (uint16_t)(a[4] | (a[5] << 8)), .window_us = (uint16_t)(a[6] | (a[7] << 8)),
+			.settle_us = (uint16_t)(a[8] | (a[9] << 8)), .pa_us = (uint16_t)(a[10] | (a[11] << 8)),
+			.ease_pm = len == 14 ? (uint16_t)(a[12] | (a[13] << 8)) : (uint16_t)0u,
 		};
 		return pa_keyup_set(&c) ? DL_ST_OK : DL_ST_BAD_ARG;
+#endif
+	}
+	case DL_OP_PA_SWEEP: {
+		// start u16, step i16, count u8, on_ms u8, off_ms u8, ceiling u8 (% of the top level's drive), mark_ms u8: the PA
+		// drive sweep on the FM carrier the radio transmits now (radio/pa_sweep.h). Returns when it is done (at most
+		// PA_SWEEP_MS_MAX); the view's pa_sweep.last says how many points ran and the top level's drive
+		if (len != 9) {
+			return DL_ST_BAD_ARG;
+		}
+		const hal_radio_t *r = board.radio;
+		if (r == NULL || r->tx_drive_top == NULL || r->tx_drive_now == NULL) {
+			return DL_ST_UNAVAILABLE;
+		}
+		uint16_t top = r->tx_drive_top();
+		if (top == 0u) {
+			return DL_ST_REFUSED;	// not transmitting FM
+		}
+		pa_sweep_req_t q = {
+			.start = (uint16_t)(a[0] | (a[1] << 8)), .step = (int16_t)(uint16_t)(a[2] | (a[3] << 8)), .count = a[4],
+			.on_ms = a[5], .off_ms = a[6], .ceiling_pct = a[7], .mark_ms = a[8],
+		};
+		const pa_sweep_io_t io = { .drive = r->tx_drive_now, .mark = r->tx_mark, .delay_ms = hal_delay_ms };
+		uint16_t max = UINT16_MAX;	// the board's drive limit, as the key-up's (pa_keyup_init)
+#if CONFIG_DMR
+		uint16_t ahead, lim;
+		pa_keyup_limits(&ahead, &lim);
+		if (lim != 0u) {
+			max = lim;
+		}
+#endif
+		pa_sweep_last_n = pa_sweep_run(&q, top, max, &io);
+		pa_sweep_last_top = top;
+		return DL_ST_OK;
+	}
+	case DL_OP_PA_KEYRUN: {
+		// key_ms u16, gap_ms u16, flags u8, n u8, [the key-up constants as op 37's 14 bytes], n drives u16: the radio
+		// keys n times at those drives on its channel (radio/pa_keyrun.h), the host link held until it is done. The
+		// view's pa_keyrun.last says how many ran
+#if !CONFIG_DMR
+		return DL_ST_UNAVAILABLE;
+#else
+		pa_keyrun_req_t q;
+		if (!pa_keyrun_parse(a, len, &q)) {
+			return DL_ST_BAD_ARG;
+		}
+		if (board.radio == NULL || board.radio->tx_drive == NULL) {
+			return DL_ST_UNAVAILABLE;
+		}
+		const pa_keyrun_io_t io = { .drive = board.radio->tx_drive, .keyup = keyrun_keyup, .ptt = keyrun_ptt,
+					    .keyed = keyrun_keyed, .delay_ms = hal_delay_ms };
+		pa_keyrun_last_of = q.n;
+		pa_keyrun_last_n = 0u;
+		pa_keyrun_last_n = pa_keyrun_run(&q, &io);
+		keyrun_reattach = q.reattach;	// after the reply (debuglink_keyrun_service)
+		keyrun_restart = q.restart;
+		return pa_keyrun_last_n == q.n ? DL_ST_OK : DL_ST_REFUSED;
 #endif
 	}
 	case DL_OP_DTMF:

@@ -23,6 +23,11 @@ enum { ITF_CDC_COMM, ITF_CDC_DATA, ITF_COUNT };
 #define STR_MS_OS		0xEE	// Microsoft OS 1.0 string descriptor: Windows 10 binds NCM from it (spec 16)
 #define MS_VENDOR_CODE		0x47
 #define RECONNECT_GAP_MS	100	// D+ released this long on a personality switch, so the host sees an unplug
+#define REATTACH_FLUSH_MS	50	// a reattach waits this long for the reply before it to leave
+#define REATTACH_GAP_MS		500	// and is off the bus this long: a host that gave up on the port drops it for good
+#define REINIT_POLL_MS		100	// how often the USB task looks for a reinit asked for
+#define REATTACH_RETRY_MS	4000	// a reattach no host took is made again this much later
+#define REATTACH_TRIES		15	// for about a minute
 
 // docs/spec/hardware-dm1701.md 16: interrupt IN 0x82 (8 bytes), bulk OUT 0x01 / IN 0x81 (64 bytes)
 #define EP_CDC_NOTIFY		0x82
@@ -34,6 +39,11 @@ enum { ITF_CDC_COMM, ITF_CDC_DATA, ITF_COUNT };
 static volatile usb_mode_t mode = USB_MODE_SERIAL;
 static SemaphoreHandle_t rx_ready;
 static volatile bool started;
+static volatile bool reinit_pending;	// cdc_reattach asked the USB task to start the stack again
+// The stack is up: false while a reattach takes it down and starts it again. The CDC calls of other tasks run under
+// stack_lock, so none is inside the stack while it is taken down
+static volatile bool live;
+static SemaphoreHandle_t stack_lock;
 
 void usb_device_set_mode(usb_mode_t m)
 {
@@ -258,21 +268,65 @@ static void usb_task(void *arg)
 	const tusb_rhport_init_t init = { .role = TUSB_ROLE_DEVICE, .speed = TUSB_SPEED_FULL };
 
 	tusb_init(0, &init);	// in the task that runs tud_task (TinyUSB's rule with an RTOS)
+	live = true;
 	started = true;
+	uint8_t tries = 0;
+	TickType_t at = 0;
 	for (;;) {
-		tud_task();	// blocks on the stack's event queue
+		tud_task_ext(REINIT_POLL_MS, false);	// the stack's events, and now and then a reinit asked for
+		if (reinit_pending) {
+			reinit_pending = false;
+			tries = REATTACH_TRIES;
+			at = xTaskGetTickCount();
+		} else if (tries > 0 && tud_mounted()) {
+			tries = 0;			// the host has the port again
+		}
+		if (tries > 0 && (xTaskGetTickCount() - at) >= pdMS_TO_TICKS(REATTACH_RETRY_MS) * (REATTACH_TRIES - tries)) {
+			// What a power-on does: the stack and the controller from reset, the host seeing an unplug for the gap.
+			// Again until a host takes the port: one that gave up on it while the radio transmitted may ignore the
+			// first comeback, as it does a replug made too soon
+			tries--;
+			xSemaphoreTake(stack_lock, portMAX_DELAY);	// a CDC call still running ends first
+			live = false;
+			xSemaphoreGive(stack_lock);
+			tud_deinit(0);
+			vTaskDelay(pdMS_TO_TICKS(REATTACH_GAP_MS));
+			usb_port_init();
+			tusb_init(0, &init);
+			live = true;
+		}
 	}
 }
 
 // ---- The CDC-ACM stream ----
+
+// A CDC call into the stack: false (nothing to do) while it is down
+static bool stack_enter(void)
+{
+	if (!live) {
+		return false;
+	}
+	xSemaphoreTake(stack_lock, portMAX_DELAY);
+	if (!live) {
+		xSemaphoreGive(stack_lock);
+		return false;
+	}
+	return true;
+}
+
+static void stack_leave(void)
+{
+	xSemaphoreGive(stack_lock);
+}
 
 static bool cdc_start(void)
 {
 	if (rx_ready != NULL) {
 		return true;
 	}
+	stack_lock = xSemaphoreCreateMutex();
 	rx_ready = xSemaphoreCreateBinary();
-	if (rx_ready == NULL) {
+	if (rx_ready == NULL || stack_lock == NULL) {
 		return false;
 	}
 	usb_port_init();
@@ -281,20 +335,37 @@ static bool cdc_start(void)
 
 static bool cdc_connected(void)
 {
-	return started && (mode == USB_MODE_SERIAL) && tud_cdc_connected();
+	if (mode != USB_MODE_SERIAL || !stack_enter()) {
+		return false;
+	}
+	bool c = tud_cdc_connected();
+	stack_leave();
+	return c;
+}
+
+static bool cdc_rx_waiting(void)
+{
+	if (!stack_enter()) {
+		return false;
+	}
+	bool any = tud_cdc_available() > 0;
+	stack_leave();
+	return any;
 }
 
 static size_t cdc_read(uint8_t *buf, size_t max)
 {
-	if (!started || (tud_cdc_available() == 0)) {
+	if (!stack_enter()) {
 		return 0;
 	}
-	return tud_cdc_read(buf, (uint32_t)max);
+	size_t n = tud_cdc_available() != 0 ? tud_cdc_read(buf, (uint32_t)max) : 0u;
+	stack_leave();
+	return n;
 }
 
 static bool cdc_wait_rx(uint32_t timeout_ms)
 {
-	if (started && (tud_cdc_available() > 0)) {
+	if (cdc_rx_waiting()) {
 		return true;
 	}
 	if (rx_ready == NULL) {
@@ -302,7 +373,7 @@ static bool cdc_wait_rx(uint32_t timeout_ms)
 		return false;
 	}
 	xSemaphoreTake(rx_ready, pdMS_TO_TICKS(timeout_ms));
-	return started && (tud_cdc_available() > 0);
+	return cdc_rx_waiting();
 }
 
 static size_t cdc_write(const uint8_t *buf, size_t len)
@@ -310,7 +381,7 @@ static size_t cdc_write(const uint8_t *buf, size_t len)
 	size_t done = 0;
 	uint32_t waited = 0;
 
-	if (!started) {
+	if (!stack_enter()) {
 		return 0;
 	}
 	while (done < len) {
@@ -328,7 +399,20 @@ static size_t cdc_write(const uint8_t *buf, size_t len)
 			waited++;
 		}
 	}
+	stack_leave();
 	return done;
+}
+
+// What a power-on does for the port, without one: the USB task stops the stack, resets the controller and starts it
+// again, and the host finds the port anew. A soft disconnect alone isn't enough: a controller upset by the radio's own
+// transmission can stay deaf to the host until it is reset
+static void cdc_reattach(void)
+{
+	if (!started) {
+		return;
+	}
+	vTaskDelay(pdMS_TO_TICKS(REATTACH_FLUSH_MS));	// the last reply on its way
+	reinit_pending = true;
 }
 
 const hal_stream_t usb_cdc_stream = {
@@ -337,4 +421,5 @@ const hal_stream_t usb_cdc_stream = {
 	.read = cdc_read,
 	.wait_rx = cdc_wait_rx,
 	.write = cdc_write,
+	.reattach = cdc_reattach,
 };

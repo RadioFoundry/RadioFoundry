@@ -179,6 +179,9 @@ OP_PA_KEYUP = 37
 OP_VFO_SFR = 38
 # The VFO's SFR role names (sfrRole_t, docs/spec/sfr.md 4): off, user, user of an ERDM repeater, repeater, ERDM style
 SFR_ROLES = {"off": 0, "user": 1, "user-erdm": 2, "rpt": 3, "rpt-erdm": 4}
+OP_PA_SWEEP = 39
+OP_PA_KEYRUN = 40
+PA_KEYRUN_MAX = 21       # keys in one key run with the constants (28 without): a request is 64 bytes
 TX_LIMIT_MAX = 10       # frequencies in the test TX limit's list (core/radio/tx_limit.h)
 DTMF_DIGITS = "0123456789*#ABCD"
 VOLUME_KNOB = 0xFF
@@ -997,20 +1000,85 @@ class DebugLink:
         view's tx_drive lists each level's drive. Raises DebugLinkError over the board's limit or without the hook."""
         self.radio(OP_TX_DRIVE, struct.pack("<H", int(drive)))
 
-    def pa_keyup(self, dead=None, knee=None, slope_us=None, boost=None, hold=None, boost_us=None, pa_us=None,
-                 drive_us=None):
-        """The DMR PA key-up constants (RADIO op 37; docs/spec/pa-keyup.md), RAM only, from the next key-up: the drive
-        that does nothing (dead), the knee (counts x ms), the slope (us), the boost (% of the top step's drive) and the
-        hold (% of the step's drive), then the boost, PA and drive points in us before the first symbol. No arguments:
-        the board's again. The core view shows them (pa_keyup) and the last key-up (pa_keyup.last: boost, hold, drive
-        and the hold's point). Raises DebugLinkError out of range or on a radio without it."""
-        v = (dead, knee, slope_us, boost, hold, boost_us, pa_us, drive_us)
+    def pa_keyup(self, dead_pm=None, knee_us=None, slope_us=None, window_us=None, settle_us=None, pa_us=None,
+                 ease_pm=0):
+        """The DMR PA key-up constants (RADIO op 37; docs/spec/pa-keyup.md), RAM only, from the next key-up: the dead
+        zone (1/1000 of the calibration's anchor drive), the knee and the slope (us), the window (the earliest start
+        before the first symbol), the boost's end before it (settle), the PA's point and the fastest approach (ease_pm,
+        1/1000 of the anchor over the dead zone; 0: no limit, and then not sent: an older firmware takes six). No arguments: the board's
+        again. The core view shows them (pa_keyup), the board's limits (pa_keyup.limits: the earliest point in us and
+        the highest drive) and the last key-up (pa_keyup.last: boost, drive, the boost's, PA's and drive's points in
+        us, then the top drive and the anchor it was planned against). Raises DebugLinkError out of range or on a
+        radio without it."""
+        v = (dead_pm, knee_us, slope_us, window_us, settle_us, pa_us)
         if all(x is None for x in v):
             self.radio(OP_PA_KEYUP, b"")
             return
         if any(x is None for x in v):
-            raise ValueError("pa_keyup: all eight values, or none")
-        self.radio(OP_PA_KEYUP, struct.pack("<HHHBBHHH", *(int(x) for x in v)))
+            raise ValueError("pa_keyup: the six values, or none")
+        v = v + (ease_pm,) if ease_pm else v
+        self.radio(OP_PA_KEYUP, struct.pack(f"<{len(v)}H", *(int(x) for x in v)))
+
+    def pa_sweep(self, start, step, count, on_ms, off_ms, ceiling=100, mark_ms=0):
+        """One PA drive sweep (RADIO op 39; docs/spec/pa-keyup.md 7) on the FM carrier the radio transmits now: the drive
+        at 0 for off_ms, then start + i x step for on_ms, for count points, with the timing marker mark_ms after each
+        write and before each drop (0: none). The firmware caps the drive at ceiling % (at most 115) of the top level's
+        drive, the points over that drive and one sweep's length (1 s): returns (points run, the top level's drive).
+        Raises DebugLinkError when the radio isn't transmitting FM or has no sweep."""
+        args = struct.pack("<HhBBBBB", int(start), int(step), int(count), int(on_ms), int(off_ms), int(ceiling),
+                           int(mark_ms))
+        self.request(RADIO, bytes([OP_PA_SWEEP]) + args, timeout=self.timeout + 1.5)
+        n, top = self.view(["features"]).get("pa_sweep.last", "0/0/0").split("/")[:2]
+        return int(n), int(top)
+
+    def pa_keyrun(self, drives, key_ms, gap_ms, constants=None, reattach=False, restart=False):
+        """One PA key run (RADIO op 40; docs/spec/pa-keyup.md 7): the radio keys DMR on its channel once per drive, for
+        key_ms each with gap_ms between, by itself: the link is quiet until it is done, for a radio whose own RF upsets
+        its USB link. constants: the seven key-up constants set first (as pa_keyup), or None to keep the ones it has.
+        reattach: after the reply the radio's USB port leaves the bus and comes back (what a replug does), for a host
+        that gave up on the port while the radio transmitted; the link is then closed here, and the caller opens it
+        again and reads pa_keyrun.last itself. restart: the radio restarts after the reply instead (a USB controller
+        that only a restart brings back; RAM settings such as the constants and the test TX limit are lost, and so is
+        pa_keyrun.last). Returns the keys run (the view's pa_keyrun.last; None with reattach).
+        Raises DebugLinkError when it is refused or stops short."""
+        drives = [int(d) for d in drives]
+        if not drives or len(drives) > (PA_KEYRUN_MAX if constants is not None else 28):
+            raise ValueError(f"pa_keyrun: 1..{PA_KEYRUN_MAX} drives with the constants, 28 without")
+        flags = (1 if constants is not None else 0) | (2 if reattach else 0) | (4 if restart else 0)
+        args = struct.pack("<HHBB", int(key_ms), int(gap_ms), flags, len(drives))
+        if constants is not None:
+            c = [int(x) for x in constants] + [0] * (7 - len(constants))
+            args += struct.pack("<7H", *c[:7])
+        args += struct.pack(f"<{len(drives)}H", *drives)
+        run_s = len(drives) * (key_ms + gap_ms + 1000) / 1000.0
+        self.request(RADIO, bytes([OP_PA_KEYRUN]) + args, timeout=self.timeout + run_s)
+        if reattach or restart:
+            self.close()
+            return None
+        return int(self.view(["features"]).get("pa_keyrun.last", "0/0").split("/")[0])
+
+    def pa_sweep_grid(self, start, step, count, on_ms, off_ms, ceiling=100, mark_ms=0):
+        """A grid of any length as back-to-back sweeps on one key-up (keyed here, released at the end), about 0.2 s
+        apart: returns [(first drive, points run)] per sweep. Stops early where the firmware's limits end a sweep
+        short. The key-up is at most 10 s, which holds about 9 s of points."""
+        per = (on_ms + off_ms) / 1000.0
+        chunk = max(1, min(int(0.95 / per), 255))
+        sweeps = -(-count // chunk)
+        done, runs = 0, []
+        self.ptt(True, min(int((count * per + sweeps * 0.25) * 1000) + 1500, 10000))
+        try:
+            time.sleep(0.3)
+            while done < count:
+                n = min(chunk, count - done)
+                first = start + done * step
+                got, _ = self.pa_sweep(first, step, n, on_ms, off_ms, ceiling, mark_ms)
+                runs.append((first, got))
+                done += got
+                if got != n:
+                    break
+        finally:
+            self.ptt(False)
+        return runs
 
     def tone_burst(self, on, max_ms=0):
         """The 1750 Hz burst (FM): keys up and sends the tone while on. The firmware ends it by itself after max_ms
@@ -1468,8 +1536,15 @@ def cmd_radio(link, a):
             link.tx_limit(mhz=[float(f) for f in ",".join(args).split(",") if f])
     elif op == "tx-drive":            # tx-drive N|off (the next transmission's PA drive, power calibration)
         link.tx_drive(0 if args[:1] in ([], ["off"]) else num(0))
-    elif op == "pa-keyup":            # pa-keyup DEAD KNEE SLOPE_US BOOST HOLD BOOST_US PA_US DRIVE_US|default (RAM only)
-        link.pa_keyup(*([] if args[:1] in ([], ["default"]) else [num(i) for i in range(8)]))
+    elif op == "pa-keyrun":           # pa-keyrun KEY_MS GAP_MS DRIVE... (keys DMR itself, the board's constants)
+        if len(args) < 3:
+            raise SystemExit("pa-keyrun KEY_MS GAP_MS DRIVE...")
+        print("keys run:", link.pa_keyrun([num(i) for i in range(2, len(args))], num(0), num(1)))
+    elif op == "pa-sweep":            # pa-sweep START STEP COUNT ON_MS OFF_MS [CEILING_PCT] [MARK_MS] (keys FM itself)
+        runs = link.pa_sweep_grid(*[num(i) for i in range(len(args))])
+        print("points", sum(n for _, n in runs), "sweeps", " ".join(f"{d}:{n}" for d, n in runs))
+    elif op == "pa-keyup":            # pa-keyup DEAD_PM KNEE_US SLOPE_US WINDOW_US SETTLE_US PA_US [EASE_PM]|default (RAM only)
+        link.pa_keyup(*([] if args[:1] in ([], ["default"]) else [num(i) for i in range(7 if len(args) > 6 else 6)]))
     elif op == "set":                 # set NAME VALUE
         link.setting(args[0], num(1))
     elif op == "usb":                 # usb network|serial
@@ -2190,7 +2265,7 @@ def main(argv=None):
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
                                   "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "sfr", "copy-vfo", "voice-test", "dtmf",
-                                  "tx-limit", "tx-drive", "pa-keyup"])
+                                  "tx-limit", "tx-drive", "pa-keyup", "pa-sweep", "pa-keyrun"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",
