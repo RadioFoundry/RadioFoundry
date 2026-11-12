@@ -30,8 +30,8 @@ export function xorBlock(block, key) {
 	return out;
 }
 
-// A transport has: out(request, value, data?) and in(request, length) -> Uint8Array, both class requests on the DFU
-// interface. WebUsbTransport is the real one; fake.js has a simulated bootloader.
+// A transport has: out(request, value, data?) and in(request, length, value = 0) -> Uint8Array, both class requests on
+// the DFU interface. WebUsbTransport is the real one; fake.js has a simulated bootloader.
 export class Dfu {
 	constructor(transport, { log = () => {}, wait = sleep } = {}) {
 		this.t = transport;
@@ -82,14 +82,16 @@ export class Dfu {
 		await this.waitDone(what);
 	}
 
-	// Erase the plan's sectors in the bootloader's order, write each, exit (the radio restarts).
-	async run(plan, key, progress = () => {}) {
+	// Erase the plan's sectors in the bootloader's order, write each, exit (the radio restarts). programMode: this
+	// bootloader session already took 91 01 (a backup read its SPI flash, origbackup.js); the bootloader takes 91 01 only
+	// once, so the write starts at 91 31
+	async run(plan, key, progress = () => {}, { programMode = false } = {}) {
 		const base = plan.board.app_base;
 		// makePlan refuses or carves these; a plan built another way is checked again before anything is sent
 		for (const s of plan.erase) protect.check(plan.board.protect, "progmem", s.addr - plan.board.rom_base, s.addr + s.size - plan.board.rom_base, "erase");
 		for (const st of plan.writes) if ((st.sector.addr - base) % KEY_LEN) throw new DfuError(`sector ${hex(st.sector.addr)} is not key-aligned`);
 		await this.waitIdle();
-		await this.vendor(0x91, 0x01);
+		if (!programMode) await this.vendor(0x91, 0x01);
 		await this.vendor(0x91, 0x31);
 		for (const s of plan.erase) {
 			this.log(`erase sector ${s.index} at ${hex(s.addr)}`);
@@ -198,8 +200,8 @@ export class WebUsbTransport {
 		return r.bytesWritten;
 	}
 
-	async in(request, length) {
-		const r = await this.device.controlTransferIn({ requestType: "class", recipient: "interface", request, value: 0, index: this.intf }, length);
+	async in(request, length, value = 0) {
+		const r = await this.device.controlTransferIn({ requestType: "class", recipient: "interface", request, value, index: this.intf }, length);
 		if (r.status !== "ok") throw new DfuError(`USB transfer ${r.status}`);
 		return new Uint8Array(r.data.buffer, r.data.byteOffset, r.data.byteLength);
 	}

@@ -292,8 +292,9 @@ static inline uint32_t hrc_cycles(void)
 }
 uint32_t hrc_micros(void);
 
-// Chip soft reset (QUAD_ENABLE = 0, LCSFC_BAUDR = 4, SYS_SOFT_RSTN = 0; hardware-dm32.md 1.1). Does not return
-void hrc_soft_reset(void) __attribute__((noreturn));
+// The chip restart: transmitter off, the loader's clocks and flash controller mode back, then a watchdog reset that
+// leaves the watchdog guarding the next start (system.c; docs/spec/watchdog.md 3). Does not return
+void hrc_restart(void) __attribute__((noreturn));
 
 // Runtime RAM-monitor (stub) entry (CONFIG_STUB_ENTRY, docs/spec/hardware-dm32.md 17.2). The host loads the stub here
 // and RadioFoundry jumps to it without a power cycle. The span is the codec window at the top of SRAM, which RadioFoundry never links
@@ -388,7 +389,7 @@ uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged));
 
 // A GPS module's NMEA output on one of the UARTs, 9600 8N1, receive only (gps_hrc.c; hardware-dm32.md 12, hardware-db25d.md
 // 3.1). The module is powered and listened for for 5 s at start-up; one checksum-valid sentence makes it present (and
-// every sentence then goes to the APRS position source, CONFIG_APRS), nothing heard powers it off and stops the UART
+// every sentence then goes to the position service, core/position), nothing heard powers it off and stops the UART
 typedef struct {
 	uint32_t uart_base;	// UART0_BASE ... UART2_BASE
 	uint8_t irq;		// the UART's interrupt source (IRQ_UARTn)

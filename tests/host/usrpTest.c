@@ -168,6 +168,17 @@ static void test_link(void)
 	t += 20;
 	CHECK(usrp_link_rx(&l, buf, frame(buf, 1, false), t, pcm, &voice) == USRP_EV_UNKEY);
 
+	// The poll read its clock before the frame came in (the host link's order): a frame newer than now is no timeout.
+	// The plain unsigned difference wrapped there and unkeyed a live transmission (HIL 2026-11-06: 3 timeouts, 4 keys)
+	t += 400;
+	CHECK(usrp_link_rx(&l, buf, frame(buf, 2, true), t, pcm, &voice) == USRP_EV_KEY);
+	CHECK(usrp_link_tick(&l, t - 1) == USRP_EV_NONE && l.keyed);
+	CHECK(usrp_link_tick(&l, t - 3) == USRP_EV_NONE && l.keyed);
+	CHECK(l.stats.timeouts == 1 && l.stats.tx_limits == 0);
+	CHECK(usrp_since(5, 10) == 0 && usrp_since(10, 5) == 5 && usrp_since(3, 0xFFFFFFFEu) == 5);
+	t += 20;
+	CHECK(usrp_link_rx(&l, buf, frame(buf, 3, false), t, pcm, &voice) == USRP_EV_UNKEY);
+
 	// Garbage
 	CHECK(usrp_link_rx(&l, (const uint8_t *)"hello", 5, t, pcm, &voice) == USRP_EV_NONE && !voice);
 	CHECK(l.stats.bad == 1);

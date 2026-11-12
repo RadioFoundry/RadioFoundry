@@ -57,6 +57,22 @@ that runs RadioFoundry already: [Updating RadioFoundry](#updating-radiofoundry))
    The installer asks for the stock firmware file only when it needs it for the codec or the key. If you choose
    RadioFoundry and the radio runs an OpenGD77-family firmware, the installer says so and offers **Another open
    firmware** instead. A RadioFoundry build without the debug link answers the same way.
+
+   On some radios, **Original firmware** and **Other / Not sure** also offer **Back Up Now** before anything is
+   written (recommended). Connect the radio switched on normally and pick **Everything** (several minutes) or
+   **Channels and settings only** (under a minute). The installer reads the radio's factory data, the start of its
+   program memory and its memory chip, saves them as a `.zip` on your computer and restarts the radio. Nothing is
+   written to the radio and nothing is sent anywhere. In update mode the radio gives less (part of the memory chip);
+   the installer says so, and the installation can go on from there. Keep the file, and keep it private: it holds
+   your radio's calibration.
+
+   Some radios come in hardware revisions that RadioFoundry can't always tell apart, while the version of their original
+   firmware does. On such a radio, **Original firmware** and **Other / Not sure** offer **Read Firmware Version**:
+   connect the radio switched on normally (not in its bootloader) and select it. Reading changes nothing on the radio.
+   After the installation the installer stores the revision on the radio, so you don't have to pick it. If the radio
+   already holds a different one, the installer shows both and keeps yours (Settings > Advanced > Hardware). The step
+   is optional: when the radio can't detect the revision itself, the installer asks for it right after the
+   installation, and the radio reminds you on its home screen until it is set. It won't transmit before that.
 4. **Back up.** The installer saves a backup file (a `.zip`) on your computer: the firmware, the channels and settings
    and the calibration. Keep it. Where the original firmware can't be read first, the installer backs the radio up
    right after the installation, before anything else changes.
@@ -255,6 +271,11 @@ without touching the radio. Then it asks you to put the radio in its bootloader:
 
 rfoundry finds the bootloader, asks once more, and writes. When it finishes, the radio restarts into RadioFoundry, and
 rfoundry checks what the radio reports.
+
+On a radio whose hardware revision only its original firmware's version tells (above), rfoundry first offers to read
+that version: connect the radio switched on normally, before you enter the bootloader. It stores the revision once
+RadioFoundry runs, unless the radio already holds one. `--no-version-read` skips this. When the radio still can't tell
+its revision after the installation, rfoundry asks for it on the terminal.
 
 ### Keep the codec, or write it
 

@@ -1,0 +1,9 @@
+{
+ "format": 1,
+ "kind": "seed",
+ "board": "md9600",
+ "source": "docs/spec/hardware-md9600.md",
+ "date": "2026-10-22",
+ "note": "Before the first recorded run: nothing has run on an MD-9600 yet (docs/spec/hardware-md9600.md 19)",
+ "features": {}
+}

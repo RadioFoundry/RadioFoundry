@@ -1,0 +1,179 @@
+{
+ "board": "md9600",
+ "commit": "5575c4a25e1347c6a583ed3f21fcbb7f5ca17d4a",
+ "date": "2026-11-07T23:39:42Z",
+ "dirty": false,
+ "features": [
+  "split_duplex"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,DMR_CONFIRMED,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "07cddbc5",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf",
+  "second_radio",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.075,
+  "dmr-tg": 202,
+  "fm-mhz": 446.1,
+  "tx-power": 40
+ },
+ "sources": {
+  "split_duplex": {
+   "core/dmr/bsOutbound.c": "2a3aae452963660b4f245f9c92f19b6b3f8c0a10",
+   "core/dmr/slotEpoch.c": "bf4a0593c7ba811659bee8913b042e908a1897f7",
+   "core/hotspot": "063d570c9751a6690effd4e5395e72df17fb966a",
+   "docs/spec/split-duplex.md": "cb49807a10c944a1507a840cbd8f9583fd370179",
+   "drivers/modem": "fc89f41bb31a6d0143315c631be7b69e8c5b6466",
+   "hal/hal_dmr_modem.h": "ef1e463062602df0db0ebe01ebbaa7344488f1fe",
+   "tools/split_duplex_host.py": "1a69f7c50e6e7d6568582b28ffdee23144db1c93"
+  }
+ },
+ "tests": [
+  {
+   "excused": false,
+   "features": [],
+   "id": "tests/hil/test_dmr_tx.py::test_dmr_tx_split_repeater",
+   "optional": [
+    "split_duplex"
+   ],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board can't do bench_repeater: this bench runs no duplex repeater jobs",
+   "required": false,
+   "skip_kind": "bench"
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_capability",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_protocol",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_rx_half_labels",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_standard_host",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_state_cleanup",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_tx_half_continuous",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_tx_half_off_air",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_duplex.py::test_split_tx_half_voice",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_split_pair.py::test_split_pair_handheld",
+   "optional": [
+    "split_duplex"
+   ],
+   "outcome": "failed",
+   "reason": "tools/rfoundry_debug.py:304: DebugLinkError",
+   "required": false
+  },
+  {
+   "features": [
+    "split_duplex"
+   ],
+   "id": "tests/hil/test_split_pair.py::test_split_pair_repeat",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_usb_network_services.py::test_net_split_protocol",
+   "optional": [
+    "split_duplex"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_usb_network_services.py::test_net_split_rx_half_labels",
+   "optional": [
+    "split_duplex"
+   ],
+   "outcome": "passed",
+   "required": false
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

@@ -89,7 +89,7 @@ repository with read access; `ci.yml`, `nightly.yml` and `release.yml` then log 
 ## HIL runner
 
 `hil.yml` runs the hardware-in-the-loop suite (`tests/hil/README.md`) on a self-hosted runner labeled `rfoundry-hil`,
-which has to be the machine with the radio on USB and SSH access to the SDR bench. To set
+which has to be the machine with the radio on USB and network access to the bench board. To set
 one up on the bench Mac:
 
 - **Gitea** (the primary): download `gitea-runner` (act_runner) for macOS arm64, then
@@ -106,7 +106,7 @@ The runner's environment (the LaunchAgent's, or a `.env` file next to `gitea-run
 
 | Variable | What |
 |---|---|
-| `RFOUNDRY_SDR_BENCH_HOST` | the SDR bench's SSH host or alias (default `sdr-bench`); passwordless SSH from the runner's user |
+| `RFOUNDRY_BENCH_API` | the bench board, `HOST[:PORT]` |
 | `RFOUNDRY_PORT` | the radio's serial port when several are present |
 | `RFOUNDRY_HIL_AMBE` | the speech recording for `test_dmr_voice` (outside the repository) |
 | `RFOUNDRY_RADIO_LOCK` | the lock file everyone at the bench takes before using the radio (default `~/.rfoundry-radio.lock`); the job holds it with `lockf` for the whole run. `tools/bringup.py run` takes the same file, with `{port}` in it replaced by the radio's port; without the variable it locks `~/.rfoundry-radio-<port>.lock`, so a bench with two radios runs a bring-up on each |

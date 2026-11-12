@@ -12,11 +12,17 @@
 #include "radio/mic_gain.h"
 #include "radio/ref_trim.h"
 #include "radio/tx_limit.h"
+#include "radio/pa_keyup.h"
 #include "radio/radio_cwid.h"
 #include "hal_time.h"
 #include "hal_dtmf.h"
 #include "settings/settings.h"
+#include "dmr/sfr.h"
 #include "input/input.h"
+#if CONFIG_KEY_ASSIGN
+#include "input/keyassign.h"
+#include "codeplug/codeplug.h"
+#endif
 #if CONFIG_DMR
 #include "dmr/ambe/ambeVoice.h"
 #if CONFIG_ZONE_SHARE
@@ -32,6 +38,27 @@
 static const char *word(uint8_t v, const char *const *names, uint8_t n)
 {
 	return v < n ? names[v] : "?";
+}
+
+// The speaker route of the beeps (section audio; the features section has no room left): which stream played them,
+// their lead-in and the amplifier hang (radio-features.md 4); and the PCM stream's timing, which a speaker test reads to
+// tell a block played late (heard as the sound before it again) from what its microphone does
+void debuglink_view_audio(dl_text_t *t)
+{
+#if CONFIG_BEEP
+	beep_stats_t b;
+	beep_get_stats(&b);
+	dl_text(t, "beep.shared=%u\nbeep.leads=%u\nbeep.warm=%u\nbeep.warms=%u\n", (unsigned)b.shared, (unsigned)b.leads,
+		beep_warm_on(), (unsigned)b.warms);
+#endif
+	const hal_audio_t *a = board.audio;
+	if (a != NULL && a->stream_stats != NULL) {
+		audio_stream_stats_t s;
+		a->stream_stats(&s);
+		dl_text(t, "audio.blocks=%u\naudio.late=%u\naudio.dropped=%u\n", (unsigned)s.blocks, (unsigned)s.late,
+			(unsigned)s.dropped);
+	}
+	(void)t;
 }
 
 void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
@@ -99,9 +126,9 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	else
 		dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n",
 			board_has_battery() ? word(v->battery, batt, 3) : "none", v->battery_pct, v->battery_mv, v->power_off);
-	static const char *const vsrc[] = { "none", "knob", "soft", "override" };
+	static const char *const vsrc[] = { "none", "knob", "soft", "override", "hold" };
 	dl_text(t, "volume.soft=%u\nvolume.sent=%d\nvolume.src=%s\nvolume.max=%u\nvolume.step=%u\nvolume.override=%d\n",
-		radio_volume_soft(), v->volume, word(v->volume_src, vsrc, 4), RADIO_VOLUME_MAX, v->volume_step, v->volume_override);
+		radio_volume_soft(), v->volume, word(v->volume_src, vsrc, 5), RADIO_VOLUME_MAX, v->volume_step, v->volume_override);
 #if CONFIG_BEEP
 	beep_stats_t b;
 	beep_get_stats(&b);
@@ -134,6 +161,20 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	} else {
 		dl_text(t, "set.reply_s=codeplug\n");
 	}
+}
+
+void debuglink_view_keys(dl_text_t *t)
+{
+#if CONFIG_KEY_ASSIGN
+	if (board.side_key_count != 0) {
+		uint16_t slots[CODEPLUG_QUICK_KEYS];
+		(void)codeplug_quick_keys(slots);
+		// The saved assignment lets HIL restore the key through Settings after exercising its physical bit.
+		dl_text(t, "key.first.bit=%u\nkey.first.press=%u\n", board.side_keys[0], keyassign_get(slots, 0, false));
+	}
+#else
+	(void)t;
+#endif
 }
 
 // One setting by id (DL radio op SETTING; docs/spec/debuglink.md 3.8)
@@ -228,7 +269,11 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		if (!CONFIG_BEEP) {
 			return DL_ST_UNAVAILABLE;
 		}
-		radio_req_beep(a[0]);
+		if (len >= 2 && a[1] != 0) {	// the delay in seconds: the cable can come out of a radio it mutes
+			radio_req_beep_after(a[0], (uint32_t)a[1] * 1000u);
+		} else {
+			radio_req_beep(a[0]);
+		}
 		return DL_ST_OK;
 	case DL_OP_VIBRATE:
 		if (len < 1 || a[0] == VIBE_NONE || a[0] >= VIBE_COUNT) {
@@ -288,6 +333,18 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 #else
 		return DL_ST_UNAVAILABLE;
 #endif
+	case DL_OP_VFO_SFR:
+		// u8: the VFO's SFR role as a channel's SFR byte A (sfr.h; role bits 0 = none). The radio core refuses it
+		// outside the VFO; dmr.sfr_role shows what it took
+		if (len < 1 || (a[0] & 0x07u) >= SFR_ROLE_NUM_STORED) {
+			return DL_ST_BAD_ARG;
+		}
+#if CONFIG_SFR
+		radio_req_vfo_sfr(a[0]);
+		return DL_ST_OK;
+#else
+		return DL_ST_UNAVAILABLE;
+#endif
 	case DL_OP_VFO_COPY: {
 		// Copy to VFO, as the quick menu's tile does: refused with a status when the VFO can't hold the channel
 		// (the check is the radio core's), nothing sent then
@@ -327,6 +384,40 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			hz[i] = (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 		}
 		return tx_limit_set((a[0] & 1u) != 0, hz, a[1]) ? DL_ST_OK : DL_ST_BAD_ARG;
+	}
+	case DL_OP_TX_DRIVE:
+		// drive u16: the PA drive of the next transmission in the board's units, 0 = its power level's again
+		// (hal_radio_t.tx_drive; power calibration). The radio's transmit rules still apply
+		if (len < 2) {
+			return DL_ST_BAD_ARG;
+		}
+		if (board.radio == NULL || board.radio->tx_drive == NULL) {
+			return DL_ST_UNAVAILABLE;
+		}
+		return board.radio->tx_drive((uint16_t)(a[0] | (a[1] << 8))) ? DL_ST_OK : DL_ST_BAD_ARG;
+	case DL_OP_PA_KEYUP: {
+		// dead u16, knee u16, slope_us u16, boost u8, hold u8 (%), boost_us u16, pa_us u16, drive_us u16: the DMR
+		// PA key-up constants (radio/pa_keyup.h), RAM only, from the next key-up; no argument = the board's again
+		if (len != 0 && len != 14) {
+			return DL_ST_BAD_ARG;
+		}
+#if !CONFIG_DMR
+		return DL_ST_UNAVAILABLE;
+#else
+		if (pa_keyup_cfg() == NULL) {
+			return DL_ST_UNAVAILABLE;
+		}
+		if (len == 0) {
+			return pa_keyup_set(NULL) ? DL_ST_OK : DL_ST_BAD_ARG;
+		}
+		pa_keyup_cfg_t c = {
+			.dead = (uint16_t)(a[0] | (a[1] << 8)), .knee = (uint16_t)(a[2] | (a[3] << 8)),
+			.slope_us = (uint16_t)(a[4] | (a[5] << 8)), .boost_pct = a[6], .hold_pct = a[7],
+			.boost_us = (uint16_t)(a[8] | (a[9] << 8)), .pa_us = (uint16_t)(a[10] | (a[11] << 8)),
+			.drive_us = (uint16_t)(a[12] | (a[13] << 8)),
+		};
+		return pa_keyup_set(&c) ? DL_ST_OK : DL_ST_BAD_ARG;
+#endif
 	}
 	case DL_OP_DTMF:
 		// digit u8 (ASCII), down u8: as a DTMF key's edge, so the same rules and timing apply. Refused unless a key

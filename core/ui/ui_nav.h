@@ -16,7 +16,7 @@
 typedef enum {
 	SCR_HOME, SCR_QUICK, SCR_HUB, SCR_FIND, SCR_ACTIONS, SCR_CONTACTS, SCR_MESSAGES, SCR_MESSAGE, SCR_COMPOSE,
 	SCR_RECENT, SCR_ZONES, SCR_ZONE, SCR_TOOLS, SCR_SETTINGS, SCR_GROUP, SCR_PICKER, SCR_INFO, SCR_CONFIRM,
-	SCR_DIAG, SCR_EMERGENCY, SCR_SCAN, SCR_ROAM, SCR_APRS, SCR_APRS_HEARD, SCR_APRS_POS, SCR_ABOUT,
+	SCR_DIAG, SCR_EMERGENCY, SCR_SCAN, SCR_ROAM, SCR_APRS, SCR_APRS_HEARD, SCR_FIXED_POS, SCR_ABOUT,
 	SCR_VOLUME,			// the volume editor (VOL key, radios without a knob)
 	SCR_CHANNELS, SCR_CHANNEL,	// every codeplug channel by number; one channel's settings (arg = its number)
 	SCR_CRASH,			// the crash log's record (arg 1: the prompt after the restart; CONFIG_CRASH_SCREEN)
@@ -26,6 +26,7 @@ typedef enum {
 	// Zone sharing (CONFIG_ZONE_SHARE): send the zone or channel (SCR_SHARE only without the zone editor, whose menus
 	// send them), to whom; an offer, its channels, the zone a channel joins
 	SCR_SHARE, SCR_SHARE_TO, SCR_OFFER, SCR_OFFER_PREVIEW, SCR_OFFER_ZONE,
+	SCR_HWOPT,			// the board's hardware options (Settings > Advanced > Hardware; hal_hwopt.h)
 	SCR_ZCHANNEL, SCR_ZPICK, SCR_ZONEEDIT, SCR_ZONEDEL,	// the zone editor (ui.md 2.2): Channel actions, Add
 								// channel, Zone options, Delete zone
 	SCR_CHZONES,			// the channel editor's Zones: in which zones the channel is (arg = its number)
@@ -35,6 +36,10 @@ typedef enum {
 	SCR_CONTACT_EDIT,		// the contact editor (CONFIG_CONTACT_EDIT): a new contact, from ui_target
 	SCR_LANGUAGE,			// Settings > Display > Language: every language, those not built dimmed
 	SCR_CP_FOREIGN,			// another firmware's codeplug: what the first edit does with it (ui_svc_codeplug_answer)
+	SCR_APRS_TO,			// destination callsign editor for APRS transmission
+	SCR_APRS_STATION,		// a heard station's actions
+	SCR_MESSAGE_TEXT,		// message body editor
+	SCR_DATA_SERVICES,		// Settings > Connections > Data services: ARS server, IP gateway (CONFIG_DMR_ARS / _IP_GATEWAY)
 	SCR_COUNT
 } ui_scr_t;
 
@@ -64,6 +69,20 @@ typedef struct {
 // A filtered list's raw row and its label (NULL: empty); false stops the pass
 typedef bool (*ui_raw_fn)(uint16_t raw, const char *label, void *ctx);
 
+// A filtered list's rows (SF_FILTER) before filtering, and the text each is matched by. Apart from the screen's
+// definition, which only a few screens need it in. raw_count and raw_label are required
+typedef struct {
+	uint16_t (*raw_count)(void);
+	bool (*raw_label)(uint16_t raw, char *buf, uint8_t len);
+	// Optional: every raw row's label in one pass, in order (NULL for an empty row), until fn returns false. A long
+	// list read a record at a time costs a flash read per row and key: 1024 contacts took 0.2 s a key. labels false:
+	// nothing is typed, only which rows exist counts, and a row's label may be any text
+	void (*raw_each)(ui_raw_fn fn, void *ctx, bool labels);
+	// Optional: whether a raw row exists, without its label. Past the first UI_FILTER_MAX rows of an unfiltered list
+	// the cursor steps row by row, so a list of 1024 channels read a name a row
+	bool (*raw_used)(uint16_t raw);
+} ui_filter_def_t;
+
 typedef struct {
 	const char *name;	// the debug link's / simulator's name for it
 	uint8_t flags;
@@ -80,16 +99,7 @@ typedef struct {
 	bool (*key)(const input_event_t *ev);		// screen keys before the list's own (true: used)
 	void (*draw)(void);				// own drawing instead of the list
 	void (*enter)(void);				// on push
-	// Filtered lists (SF_FILTER): rows before filtering and the text each is matched by
-	uint16_t (*raw_count)(void);
-	bool (*raw_label)(uint16_t raw, char *buf, uint8_t len);
-	// Optional: every raw row's label in one pass, in order (NULL for an empty row), until fn returns false. A long
-	// list read a record at a time costs a flash read per row and key: 1024 contacts took 0.2 s a key. labels false:
-	// nothing is typed, only which rows exist counts, and a row's label may be any text
-	void (*raw_each)(ui_raw_fn fn, void *ctx, bool labels);
-	// Optional: whether a raw row exists, without its label. Past the first UI_FILTER_MAX rows of an unfiltered list
-	// the cursor steps row by row, so a list of 1024 channels read a name a row
-	bool (*raw_used)(uint16_t raw);
+	const ui_filter_def_t *filter;			// SF_FILTER: the rows before filtering (NULL: not a filtered list)
 } ui_scr_def_t;
 
 extern const ui_scr_def_t *const ui_scr[SCR_COUNT];
@@ -110,6 +120,7 @@ void ui_dirty(void);
 void ui_focus_changed(void);
 // Open the actions for a target (SCR_ACTIONS)
 void ui_open_actions(const ui_target_t *t);
+void ui_aprs_compose(const char *call);
 #if CONFIG_CONTACT_EDIT
 // The contact editor on a new contact for t: its ID, type and name (a talkgroup or ID as its name when it has none)
 void ui_new_contact(const ui_target_t *t);

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Web control (CONFIG_NET_WEBCTL; docs/spec/tcp-services.md 5.1): the status server's /ws WebSocket, for the front panel
 // page the radio serves. One client. It gets the status as JSON when it changes and, when it asks, the receive audio
 // as binary frames; it sends the radio's keys (down and up) and encoder steps, which go through the input task like

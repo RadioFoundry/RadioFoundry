@@ -176,7 +176,7 @@ static void read_panel_id(void)
 	panel_id.id_read = true;
 }
 
-// ---- Backlight: TIM8 CH1 PWM on PC6 (AF3), 1 kHz, 100 steps ----
+// ---- Backlight: TIM8 CH1 PWM on PC6 (AF3), 40 kHz, 100 steps: far above the FM transmit audio band (#330) ----
 
 #define BL_STEPS	100u
 
@@ -185,8 +185,8 @@ static void bl_init(void)
 	__HAL_RCC_TIM8_CLK_ENABLE();
 	stm32_pin_af(PIN_PORT(PIN_LCD_BACKLIGHT), PIN_MASK(PIN_LCD_BACKLIGHT), GPIO_AF3_TIM8, false, GPIO_NOPULL);
 	TIM8->CR1 = 0;
-	TIM8->PSC = 720 - 1;		// APB2 timer clock 72 MHz -> 100 kHz
-	TIM8->ARR = BL_STEPS - 1;	// 1 kHz
+	TIM8->PSC = 18 - 1;		// APB2 timer clock 72 MHz -> 4 MHz
+	TIM8->ARR = BL_STEPS - 1;	// 40 kHz
 	TIM8->CCR1 = 0;
 	TIM8->CCMR1 = (6u << TIM_CCMR1_OC1M_Pos) | TIM_CCMR1_OC1PE;	// PWM mode 1, preload
 	TIM8->CCER = TIM_CCER_CC1E;

@@ -1,0 +1,58 @@
+{
+ "board": "md9600",
+ "commit": "aaf1f3f1f612680405316d41c5f0bea1ea58a4b0",
+ "date": "2026-11-06T09:23:24Z",
+ "dirty": false,
+ "features": [
+  "dmr_iddb"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,DMR_CONFIRMED,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "aaf1f3f1",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.075,
+  "dmr-tg": 202,
+  "fm-mhz": 446.1,
+  "tx-power": 40
+ },
+ "sources": {
+  "dmr_iddb": {
+   "core/codeplug/dmr_iddb.c": "7083de617f50d1deb97e37cd4d05a092c596ae55",
+   "core/codeplug/dmr_iddb.h": "57369f90ec3f2c20e7fdbc6e89bba178605911ba",
+   "core/debuglink/debuglink_iddb.c": "1f82f9dee494ca95239f80f3ad12f24dc421f681",
+   "docs/spec/open-firmware-cps.md": "9c1b25d1c94f2435556a7e5f21accc5bff11395a"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "dmr_iddb"
+   ],
+   "id": "tests/hil/test_iddb.py::test_iddb_lookup_format_n",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

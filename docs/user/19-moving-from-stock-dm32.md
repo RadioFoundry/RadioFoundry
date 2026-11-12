@@ -78,6 +78,19 @@ DMR ID and the boot text. Power, bandwidth, tones, time slot and color code come
 timeout and scan lists stay at RadioFoundry's defaults, and channels past the first 84 are not read yet
 ([the format](../spec/dm32-stock-codeplug.md)). qdmr 0.15 doesn't read the stock TX contacts, so this is the way to keep them.
 
+### From a web installer backup
+
+`tools/backup_codeplug.py BACKUP.zip -o DIR` gets the stock codeplug out of the same backup offline, through qdmr's
+`dmrconf` (0.15 or newer), with every channel and the TX contacts dmrconf alone loses put back:
+
+- `<name>-stock.yaml` and `.dfu`: the stock codeplug as qdmr reads it.
+- `<name>-ported.yaml`, `.dfu` and `.bin`: it ported to RadioFoundry. Open the YAML in the Codeplug Editor, or write
+  the `.bin` with `cps_client.py write`.
+- `<name>-rfoundry.yaml`: RadioFoundry's own codeplug, when the backup holds one.
+
+Checked on the owner's radio: the ported codeplug and the one the web installer wrote at the end of an install were the
+same, 24 channels, 5 zones and 21 contacts (the stock codeplug's two empty contacts are left out).
+
 ## What fits
 
 RadioFoundry holds 1024 channels, 68 zones of 80 channels, 1024 contacts and 76 RX group lists, with names of up to 16

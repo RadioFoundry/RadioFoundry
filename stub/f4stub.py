@@ -14,7 +14,7 @@ had to enumerate again, on a port with the same serial number). stubtool.py hand
     stubtool.py PORT --rfoundry-enter --q128 spi.bin                           back up the external SPI flash (16 MB)
     stubtool.py PORT --rfoundry-enter --write-q128 spi.bin                     put it back (changed 4 KB sectors only)
     stubtool.py PORT --rfoundry-enter --secreg secreg.bin                      back up the SPI flash's security registers
-    stubtool.py PORT --attach --write-secreg secreg.bin --confirm-secreg       put them back (changed registers only)
+    stubtool.py PORT --attach --board md380 --write-secreg secreg.bin --confirm-secreg   put them back (changed registers only)
     stubtool.py PORT --attach --board md380 --boot reset                  restart into the firmware
     f4stub.py --self-test                                                 against a simulated radio, no hardware
     f4stub.py --embed build/stub-stm32f4/f4stub.bin                       put a new stub build into this file
@@ -312,7 +312,17 @@ class PortFollower:
                     self.said = alt.device
                     self.log("%s did not answer; trying %s (same USB device)" % (self.path, alt.device))
                 path = alt.device
-        return self.serial.serial_for_url(path, self.baud, timeout=0.1)
+        return low_latency(self.serial.serial_for_url(path, self.baud, timeout=0.1))
+
+
+def low_latency(port):
+    """An FTDI cable holds received bytes for its latency timer, 16 ms by default; 1 ms halves every request's round
+    trip. pyserial sets it on Linux only; elsewhere, and on URLs and fakes, nothing changes."""
+    try:
+        port.set_low_latency_mode(True)
+    except (AttributeError, NotImplementedError, OSError, ValueError):
+        pass
+    return port
 
 
 def f405_sectors(flash_kb=1024):
@@ -990,6 +1000,8 @@ def run(a, port, reopen, log=print):
             raise F4Error("on the STM32 radios --boot takes only reset")
         radio.reset_chip()
         log("reset sent: the bootloader starts the application (or stays in DFU if none is committed)")
+    else:
+        log(stubtool.restart_hint(board))
     return 0
 
 

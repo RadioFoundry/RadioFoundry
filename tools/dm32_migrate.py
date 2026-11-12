@@ -676,13 +676,7 @@ def cmd_package(sess, args):
     for helper in ("serial_loader.py", "cps_client.py", "codeplug_port.py", "rfoundry_debug.py", "md380_migrate.py",
                    "hrc7000_codec.py"):
         files[os.path.join(HERE, helper)] = helper
-    # what serial_loader.py and hrc7000_codec.py import from rfoundry: the board registry and the codec maps
-    pkg = os.path.join(HERE, "rfoundry", "rfoundry")
-    for rel in ["__init__.py", "boards.py", "codecmap.py", "registry.json"] + sorted(
-            os.path.join("codec_maps", d, f) for d in os.listdir(os.path.join(pkg, "codec_maps"))
-            if os.path.isdir(os.path.join(pkg, "codec_maps", d)) for f in os.listdir(os.path.join(pkg, "codec_maps", d))
-            if f.endswith(".json")):
-        files[os.path.join(pkg, rel)] = os.path.join("rfoundry", "rfoundry", rel)
+    files.update(cp.kit_package_files())
     bringup = os.path.join(os.path.dirname(HERE), "docs", "testing", "dm32-bringup.md")
     if os.path.isfile(bringup):
         files[bringup] = "dm32-bringup.md"
@@ -961,6 +955,10 @@ def self_test():
 
     rc = mod("serial_loader").self_test()
     check(rc == 0, "serial_loader self-test")
+    err = cp.kit_error(__file__, b"\x01" * 64, "import dm32_migrate as d\n"
+                       "for n in ('serial_loader', 'cps_client', 'hrc7000_codec', 'md380_migrate'):\n    d.mod(n)")
+    check(not err, "a kit runs on its own: %s" % err)
+
     print("dm32_migrate self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                                       "" if len(fails) == 1 else "s"))
     return 0 if not fails else 1

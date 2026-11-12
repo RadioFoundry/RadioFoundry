@@ -385,6 +385,18 @@ static void test_chip(void)
 	CHECK(dl_mem_allowed(0x1FFFC000u, 16, stm1024) && !dl_mem_allowed(0x1FFFC000u, 17, stm1024), "option bytes");
 	CHECK(!dl_mem_allowed(0x20000000u, 4, stm1024) && !dl_mem_allowed(0x10000000u, 4, stm1024), "RAM, CCM refused");
 	CHECK(!dl_mem_allowed(0x40023C00u, 4, stm1024) && !dl_mem_allowed(0xE0042000u, 4, stm1024), "peripherals refused");
+	CHECK(dl_mem_allowed(0xE000ED00u, 4, stm1024) && dl_mem_allowed(0xE000ED00u, 0x40, stm1024), "SCB words");
+	CHECK(!dl_mem_allowed(0xE000ED00u, 2, stm1024) && !dl_mem_allowed(0xE000ED01u, 4, stm1024) &&
+	      !dl_mem_allowed(0xE000ED3Cu, 8, stm1024) && !dl_mem_allowed(0xE000ECFCu, 4, stm1024),
+	      "SCB: partial, unaligned or past the block refused");
+	// CHIP_REG's SoC registers (3.24): the peripheral buses, FSMC control and the private peripheral bus, words only
+	CHECK(stm32_reg_allowed(0x40000000u) && stm32_reg_allowed(0x40023C00u) && stm32_reg_allowed(0x5FFFFFFCu),
+	      "reg: peripherals");
+	CHECK(stm32_reg_allowed(0xA0000104u) && stm32_reg_allowed(0xE000ED00u) && stm32_reg_allowed(0xE0042000u) &&
+	      stm32_reg_allowed(0xE00FFFFCu), "reg: FSMC, SCB, DBGMCU");
+	CHECK(!stm32_reg_allowed(0x40000002u) && !stm32_reg_allowed(0x20000000u) && !stm32_reg_allowed(0x10000000u) &&
+	      !stm32_reg_allowed(0x08000000u) && !stm32_reg_allowed(0x60000000u) && !stm32_reg_allowed(0xA0001000u) &&
+	      !stm32_reg_allowed(0x3FFFFFFCu) && !stm32_reg_allowed(0xE0100000u), "reg: memory, unaligned, outside refused");
 	CHECK(!dl_mem_allowed(0xFFFFFFF0u, 0x20, stm1024) && !dl_mem_allowed(0x08000010u, 0xFFFFFFF8u, stm1024),
 	      "wrap-around refused");
 

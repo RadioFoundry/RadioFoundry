@@ -7,8 +7,11 @@ The radio sends APRS two ways:
 
 - **On FM**: as 1200 baud AFSK packets on the APRS frequency of your region. The radio leaves your channel for about
   a second, sends, and comes back.
-- **Over DMR**: as a position report to an APRS gateway ID (BrandMeister's 5057 by default). This works on DMR
-  channels.
+- **Over DMR**: as a position report to an APRS gateway ID (BrandMeister's 310999 by default; it works from any master, but your own master's MCC plus 999 is recommended, for example 204999). This works on DMR
+  channels. BrandMeister forwards Motorola (LRRP) and Hytera position reports to APRS, so keep the default LRRP format
+  (not UDT). A radio that already saved APRS settings keeps its stored ID: run `aprs set dmr_dst 310999` (US) or
+  `aprs set dmr_dst <MCC>999`. The position appears on APRS-IS as your callsign with the SSID from your BrandMeister
+  profile (aprs.fi may take a minute to show it).
 
 Not every radio does both. Some send only, some can't send APRS on FM yet, and a build can leave APRS out for flash
 room. The [Radio reference](23-radios.md) lists them and says where APRS is verified.
@@ -35,10 +38,12 @@ frequency, your position and its source, and when the next beacon goes out. If t
 | Interval | How often: Off, 1, 2, 5, 10 or 30 minutes |
 | SmartBeaconing | More often when you move fast, at once after a turn, rarely when you stand still |
 | Send via | AFSK (on FM), DMR, or both |
-| Position | Where the position comes from, and the fixed position (see Position below) |
-| Position in DMR calls | Your position in your DMR voice calls (see [DMR](09-dmr.md#position-in-calls)) |
 | KISS on USB | The radio works as a KISS TNC for APRS programs on the computer |
-| Stations heard | Stations the radio heard (radios that can receive APRS) |
+| Stations heard | Stations the radio heard (radios that can receive APRS), newest first. A station that sent its position shows how far away and which way it was from yours, when the radio has a position too; the age on that row is then the age of that position. Other rows show when the station was last heard. Objects and items a station sends don't count as its position, and a position more than a day old is dropped. Select one and choose Message to fill its callsign |
+
+A firmware built with only one way to send APRS shows only the rows for it. With APRS over DMR only there is no
+Frequency, Power, Path, Send via or Stations heard, and KISS on USB is called NMEA on USB (the computer can still give
+the radio its position).
 
 The symbol, comment and the DMR destination are set with the debug tool for now
 (`tools/rfoundry_debug.py aprs set ...`), later with qdmr.
@@ -68,15 +73,20 @@ On radios that can receive APRS, the radio decodes packets while you listen on t
 the frequency shown in **Frequency** on the APRS page (your region's, 144.390 MHz in North America) in FM, or tune
 the VFO there, and leave the radio on it. If the packets are sent on another frequency, set **Frequency** to Custom
 and enter it first. Heard
-stations go into **Stations heard**, messages to your callsign are kept and acknowledged, and the digipeater (if you
+stations go into **Stations heard**, messages to your callsign appear in **Messages** and are acknowledged, and the digipeater (if you
 turned it on) passes packets on.
 
 - It listens only on the APRS frequency, in FM, and the tuned frequency must equal the APRS **Frequency** exactly.
-  On other channels nothing is decoded.
+  On other FM channels nothing is decoded.
 - The volume knob doesn't matter: a radio turned all the way down still decodes.
 - On a radio that decodes only what opens the squelch ([Radio reference](23-radios.md)), a packet must be strong enough to open it. Keep the squelch at its usual level, not tight.
 - Battery saving pauses while the radio listens for APRS: a sleeping receiver misses packets.
-- Receiving is on by default. Turn it off with `tools/rfoundry_debug.py aprs set rx 0`.
+- Receiving is on by default. Turn it off with `tools/rfoundry_debug.py aprs set rx 0` (FM only).
+
+On a DMR channel, a DMR APRS position another radio sends (some makes send it as an NMEA position) also goes into
+**Stations heard**, whoever it is addressed to: usually the APRS gateway, as on FM every station heard is listed. It
+is listed under the sender's callsign when its DMR ID is in the radio's DMR ID database, else under the DMR ID. This
+works whatever the receive setting. **Stations heard** shows the station and when it was heard, not its position.
 
 ## Triggers
 
@@ -95,10 +105,11 @@ The position comes from:
 
 Auto takes a fresh GPS position, else the computer's, else the fixed one.
 
-APRS > Position has three rows: **Source** (press OK to step through Auto, GPS, Computer, Fixed), **Latitude** and
-**Longitude**. To set the fixed position:
+The position is not only APRS's: DMR calls and location requests (LRRP) use the same one. Its settings are under
+**Settings > Location**: **Position source** (Auto, GPS, Computer, Fixed) and **Fixed position**, a page with
+**Latitude** and **Longitude**. To set the fixed position:
 
-1. Select Latitude and press OK. The value opens for editing.
+1. Open Settings > Location > Fixed position, select Latitude and press OK. The value opens for editing.
 2. Type the degrees with the digits, decimal places included: `3`,`3`,`7`,`4`,`9`,`0` is 33.7490. The decimal point is
    already there. Longitude has three places before the point: 84.3880 is `8`,`4`,`3`,`8`,`8`,`0` (the radio puts the
    leading 0 in for you), and 122.4194 is `1`,`2`,`2`,`4`,`1`,`9`,`4`. For 10 to 19 degrees, type the 0 yourself.
@@ -106,7 +117,7 @@ APRS > Position has three rows: **Source** (press OK to step through Auto, GPS, 
 4. Press OK to save. Places you didn't type count as zeros. BACK removes the last digit; with nothing typed it closes
    the value unchanged.
 
-Four decimal places put you within about 11 m. You can also type "latitude" or "position" on Home to find the page.
+Four decimal places put you within about 11 m. You can also type "latitude" or "fixed" on Home to find the page.
 
 ## GPS status
 

@@ -16,6 +16,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [radio-features.md](radio-features.md) | Scan, the FM transmit extras (tones, burst, roger beep), beeps, battery and power management |
 | [airband-and-broadcast.md](airband-and-broadcast.md) | Air band AM receive and broadcast FM receive, chosen by the frequency |
 | [aprs.md](aprs.md) | APRS on FM and over DMR |
+| [position.md](position.md) | The radio's position: sources, settings, who reads it |
 | [ui.md](ui.md) | The user interface as built: screens, keys, the drawing layer ([docs/ux](../ux/) has the design) |
 
 ## DMR
@@ -39,6 +40,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [modem-hrc6000.md](modem-hrc6000.md) | HR_C6000 as a DMR modem (also the HR_C5000's base) |
 | [hrc6000-registers.md](hrc6000-registers.md) | HR_C6000 register reference |
 | [modem-hrc7000.md](modem-hrc7000.md) | HR_C7000 as a DMR modem |
+| [pa-keyup.md](pa-keyup.md) | DMR PA key-up per burst from the power cal table |
 | [rx2-link.md](rx2-link.md) | The link to a second receiver on another SoC: frames, messages, timing |
 
 ## Host link and network
@@ -65,6 +67,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [open-firmware-cps.md](open-firmware-cps.md) | The open-firmware codeplug format qdmr writes |
 | [qdmr-yaml.md](qdmr-yaml.md) | qdmr's YAML codeplug file and how the Codeplug Editor maps it |
 | [codeplug-native.md](codeplug-native.md) | The editing model and the native codeplug (draft) |
+| [codeplug-settings.md](codeplug-settings.md) | The codeplug settings area: keyed settings the open-firmware layout has no field for (ARS server, IP gateway) |
 | [settings-store.md](settings-store.md) | Settings store and safe flash writes |
 | [nand-sectors.md](nand-sectors.md) | NOR-like 4 KB sectors over NAND, for the settings store on NAND radios |
 

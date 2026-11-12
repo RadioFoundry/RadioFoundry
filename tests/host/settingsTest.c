@@ -604,6 +604,30 @@ static void test_settings_gateway_upgrade(void)
 	CHECK(st.load == SETTINGS_LOADED && s.ds_ip_gateway == 9996543u && s.vfo2_rx_hz == 446006250u);
 }
 
+// hal_flash_map_end: where a map's highest area ends, so a driver can refuse a map its chip is too small for
+static void test_map_end(void)
+{
+	hal_flash_map_t m = { .settings_addr = 0x711000u, .settings_size = 0x8000u, .journal_addr = 0x719000u,
+			      .openfw_eeprom = 0x700000u, .openfw_flash = 0x720000u, .openfw_end = 0xF00000u,
+			      .native_addr = 0xF00000u, .native_size = 0x100000u };
+	CHECK(hal_flash_map_end(&m, 4096) == 0x1000000u);	// a 16 MB chip holds it, an 8 MB one doesn't
+	m.native_size = 0;
+	CHECK(hal_flash_map_end(&m, 4096) == 0xF00000u);
+	m.staging_addr = 0xF40000u;
+	m.staging_size = 0x40000u;
+	CHECK(hal_flash_map_end(&m, 4096) == 0xF80000u);
+	hal_flash_map_t low = { .settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
+				.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x10000u };
+	CHECK(hal_flash_map_end(&low, 4096) == 0x1B000u);		// the journal's 2 erase units end it
+	CHECK(hal_flash_map_end(&low, 0x10000u) == 0x39000u);
+	low.calibration_addr = 0x40000u;
+	low.calibration_size = 0x1000u;
+	CHECK(hal_flash_map_end(&low, 4096) == 0x41000u);
+	low.calibration_size = 0;			// an area of size 0 is none, wherever its address points
+	low.staging_addr = 0x80000u;
+	CHECK(hal_flash_map_end(&low, 4096) == 0x1B000u);
+}
+
 // The crash report's mode and target live in spare bits of accent, theme and updown_home (settings.h): each field
 // keeps its own bits whatever the other one does
 static void test_crash_bits(void)
@@ -1097,6 +1121,7 @@ int main(void)
 	test_native_and_jobs();
 	test_settings_layout();
 	test_crash_bits();
+	test_map_end();
 	test_settings_pages();
 	test_settings_gateway_upgrade();
 	test_settings_bad_records();

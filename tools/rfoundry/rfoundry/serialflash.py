@@ -123,9 +123,14 @@ def open_port(dev):
     except ImportError:
         raise SerialError("pyserial is not installed (pip install pyserial, or use the rfoundry executable)")
     try:
-        return serial.Serial(dev, BAUD, timeout=0.1)
+        s = serial.Serial(dev, BAUD, timeout=0.1)
     except (serial.SerialException, OSError) as e:
         raise SerialError("can't open %s: %s (close the CPS, qdmr and any terminal using it)" % (dev, e))
+    try:    # an FTDI cable passes received bytes on after 1 ms, not 16 (Linux only)
+        s.set_low_latency_mode(True)
+    except (AttributeError, NotImplementedError, OSError, ValueError):
+        pass
+    return s
 
 
 def stub_offered(dev, opener=None):

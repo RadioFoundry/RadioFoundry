@@ -9,11 +9,12 @@ the fast codeplug protocol (`cps-fast.md`) moves little.
 
 - Firmware: `core/codeplug/dmr_iddb.c` reads both formats. Switch: `CONFIG_IDDB_COMPACT` (`docs/build-config.md`),
   on with `CONFIG_DMR`. A build with it lists `IDDB_COMPACT` in the debug link's VERSION features (`debuglink.md`).
-- Host: `site/static/js/codeplug/iddb.js` writes and reads both.
+- Host: `site/static/js/codeplug/iddb.js` writes and reads both. `tools/iddb_read.py` reads both and
+  `tools/iddb_write.py` writes both (fresh only, for the HIL test's synthetic databases).
 - Tests: `tests/host/codeplugTest.c` (the radio's lookup), `site/tests/codeplug.test.mjs` (the encoder against the
   radio's lookup through `cpsSim`, the compatibility cases of section 6), `tests/host/iddbLookupClientTest.py` (both
   formats built from the specs, `tools/iddb_read.py` and the debug link's IDDB command), `tests/hil/test_iddb.py` (the
-  radio's answers against the database it holds).
+  radio's answers against the database it holds, or a synthetic one written for the test and the original put back).
 
 ## 1. Why
 

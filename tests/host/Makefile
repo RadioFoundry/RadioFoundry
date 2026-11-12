@@ -44,7 +44,7 @@ HSDATA  := hotspotDataTest.c $(CORE)/hotspot/hotspotData.c $(DATA) $(FRAME)
 hotspotDataTest: $(HSDATA) $(CORE)/hotspot/hotspotData.h
 	$(CC) $(CFLAGS) -o $@ $(HSDATA)
 
-# The simplex hotspot's RF -> MMDVMHost call tracking, against a model of MMDVMHost's DMRSlot
+# The simplex hotspot's RF -> host call tracking, against a checker of the uplink stream
 hotspotUplinkTest: hotspotUplinkTest.c $(CORE)/hotspot/hotspotUplink.c $(CORE)/hotspot/hotspotUplink.h
 	$(CC) $(CFLAGS) -o $@ hotspotUplinkTest.c $(CORE)/hotspot/hotspotUplink.c
 
@@ -72,7 +72,8 @@ ipGatewayTestAir440: $(IPGW) $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -DIPGW_AIR_MTU=440 '-DPCAP_NAME="ipGatewayTestAir440.pcap"' -o $@ $(IPGW)
 
 # The data service (replies, signaling, our SMS, ARS, LRRP, the API mailbox) on a fake host
-SVC     := dmrDataServiceTest.c $(DATA) $(FRAME) $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmr_emergency.c $(CORE)/dmr/call/dmr_lc.c
+SVC     := dmrDataServiceTest.c $(DATA) $(FRAME) $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmr_emergency.c $(CORE)/dmr/call/dmr_lc.c \
+           $(CORE)/position/nmea.c
 
 dmrDataServiceTest: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataService.h $(CORE)/dmr/dmr_data_api.h
 	$(CC) $(CFLAGS) -o $@ $(SVC) -lm
@@ -84,13 +85,20 @@ dmrDataServiceTestNoTms: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrData
 
 # LRRP on its own: request decoding (malformed and mutated too), the answers' bounds, the distance
 TESTS   += lrrpTest
-lrrpTest: lrrpTest.c fuzz.h $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmrLrrp.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ lrrpTest.c $(CORE)/dmr/dmrLrrp.c -lm
+lrrpTest: lrrpTest.c fuzz.h $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmrLrrp.h $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c
+	$(CC) $(CFLAGS) -Wshadow -o $@ lrrpTest.c $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c -lm
 
 # The air queue on a fake data service (docs/spec/dmr-data.md 12): byte ring, order, wrap, refusals, timing
 TESTS   += airQueueTest
 airQueueTest: airQueueTest.c fuzz.h $(CORE)/dmr/dmrAirQueue.c $(CORE)/dmr/dmrAirQueue.h $(DATA) $(FRAME)
 	$(CC) $(CFLAGS) -Wshadow -o $@ airQueueTest.c $(CORE)/dmr/dmrAirQueue.c $(DATA) $(FRAME)
+
+# Tables of settings-area keys (core/codeplug/codeplug_keys.c) and the radio core's (core/radio/radio_keys.h): lookup,
+# the types and ranges, apply, write-back
+TESTS   += radioKeysTest
+radioKeysTest: radioKeysTest.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/codeplug/codeplug_keys.h $(CORE)/radio/radio_keys.h \
+               $(CORE)/codeplug/codeplug_kv.h $(CORE)/dmr/dmrDataService.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ radioKeysTest.c $(CORE)/codeplug/codeplug_keys.c
 
 # The zone share record and messages (docs/spec/zone-share.md): round trip, malformed input, fragments, fuzzing
 TESTS   += zoneShareSvcTest
@@ -114,11 +122,13 @@ sfrTest: $(SFRSRC) $(CORE)/dmr/sfr.h
 
 # APRS protocol layers (AX.25, HDLC, AFSK, KISS, formats, NMEA and its satellites, beacon triggers, iGate rules)
 TESTS   += aprsTest
+NMEALIB := $(CORE)/position/nmea.c $(CORE)/position/nmea_sky.c
+POSLIB  := $(CORE)/position/position.c $(NMEALIB)
 APRSLIB := $(CORE)/aprs/ax25.c $(CORE)/aprs/hdlc.c $(CORE)/aprs/afsk.c $(CORE)/aprs/kiss.c $(CORE)/aprs/aprs_fmt.c \
-           $(CORE)/aprs/aprs_nmea.c $(CORE)/aprs/nmea_sky.c $(CORE)/aprs/aprs_beacon.c $(CORE)/aprs/aprs_igate.c
+           $(CORE)/aprs/aprs_beacon.c $(CORE)/aprs/aprs_igate.c
 
-aprsTest: aprsTest.c $(APRSLIB) $(wildcard $(CORE)/aprs/*.h)
-	$(CC) $(CFLAGS) -o $@ aprsTest.c $(APRSLIB) -lm
+aprsTest: aprsTest.c $(APRSLIB) $(NMEALIB) $(wildcard $(CORE)/aprs/*.h)
+	$(CC) $(CFLAGS) -o $@ aprsTest.c $(APRSLIB) $(NMEALIB) -lm
 
 run: $(TESTS)
 	./dmrFecTest
@@ -130,6 +140,7 @@ run: $(TESTS)
 	./dmrPrivacyTest
 	./lrrpTest
 	./airQueueTest
+	./radioKeysTest
 	./zoneShareTest
 	./zoneShareSvcTest
 	./ipGatewayTest
@@ -163,10 +174,10 @@ TESTS   += radioCoreTest inputTest quadratureTest serialmicTest
 
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
 RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
-           $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/radio/ref_trim.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c \
+           $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/radio/ref_trim.c $(CORE)/radio/pa_keyup.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c \
            $(CORE)/codeplug/zone_settle.c \
            $(CORE)/radio/radio_sfr.c $(CORE)/radio/radio_cwid.c $(CORE)/radio/tx_limit.c
-RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
+RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
            $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \
            $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmr_emergency.c $(CORE)/radio/morse.c $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneShareSvc.c $(CORE)/dmr/dmrAirQueue.c \
@@ -176,7 +187,8 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEA
            $(CORE)/hotspot/hotspotSfr.c $(CORE)/dmr/sfrRunner.c $(CORE)/dmr/sfr.c \
            $(CORE)/ui/ui_svc_radio.c $(CORE)/ui/ui_svc_storage.c $(CORE)/ui/ui_svc_data.c \
            $(CORE)/ui/ui_svc_emergency.c $(CORE)/input/keyassign.c sim/sim_flash.c \
-           $(CORE)/debuglink/debuglink_view_radio.c $(CORE)/debuglink/dl_fmt.c $(CORE)/codeplug/zone_edit.c
+           $(CORE)/debuglink/debuglink_view_radio.c $(CORE)/debuglink/dl_fmt.c $(CORE)/codeplug/zone_edit.c \
+           $(POSLIB) $(CORE)/ui/ui_svc_position.c
 
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                $(CORE)/ui/ui_svc.h
@@ -188,14 +200,30 @@ radioCoreTestNoVfoDmr: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)
                        $(CORE)/ui/ui_svc.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 -DCONFIG_VFO_DMR=0 -o $@ $(RCORE) -lm
 
+# The same with APRS: what the data service hears goes into the station list (a DMR APRS position, docs/spec/aprs.md 8.2)
+TESTS   += radioCoreTestAprs
+RCAPRS  := $(RCORE) $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_ax25.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
+           $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c
+radioCoreTestAprs: $(RCAPRS) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
+                   $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/aprs/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -o $@ $(RCAPRS) -lm
+
+# The same with APRS over DMR only (CONFIG_APRS_AFSK=0): the engine and the DMR backend, nothing of AX.25 compiled
+TESTS   += radioCoreTestAprsDmr
+RCAPRSD := $(RCORE) $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(CORE)/aprs/aprs_fmt.c \
+           $(CORE)/aprs/aprs_beacon.c
+radioCoreTestAprsDmr: $(RCAPRSD) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
+                      $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/aprs/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS_AFSK=0 -o $@ $(RCAPRSD) -lm
+
 # The everyday features (scan, beeps, battery, TOT warning, BCL, roger beep, 1750 Hz burst, VOX, battery saving)
 TESTS   += radioFeaturesTest
-RFTEST  := radioFeaturesTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
+RFTEST  := radioFeaturesTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
            $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \
            $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmr_emergency.c $(CORE)/radio/morse.c $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneShareSvc.c $(CORE)/dmr/dmrAirQueue.c \
            $(CORE)/settings/settings.c $(CORE)/storage/storage.c $(CORE)/usbaudio/audio_mux.c \
-           $(CORE)/usbaudio/pcm_slip.c $(CORE)/dmr/sfrRunner.c $(CORE)/dmr/sfr.c
+           $(CORE)/usbaudio/pcm_slip.c $(CORE)/dmr/sfrRunner.c $(CORE)/dmr/sfr.c $(POSLIB)
 
 # CONFIG_NET_USRP without the gateway: only the radio core's half (host audio PTT, the shared stream) is tested here;
 # the network half is usrpNetTest
@@ -215,6 +243,10 @@ TESTS   += powerSwitchTest
 powerSwitchTest: powerSwitchTest.c $(CORE)/radio/power_switch.c $(CORE)/radio/power_switch.h
 	$(CC) $(CFLAGS) -o $@ powerSwitchTest.c $(CORE)/radio/power_switch.c
 
+TESTS   += powerKeyTest
+powerKeyTest: powerKeyTest.c $(CORE)/radio/power_key.c $(CORE)/radio/power_key.h
+	$(CC) $(CFLAGS) -o $@ powerKeyTest.c $(CORE)/radio/power_key.c
+
 # DMR repeater roaming: the engine, and through the radio core against fake repeaters on the simulated modem
 TESTS   += roamTest
 ROAMT   := roamTest.c $(filter-out radioFeaturesTest.c,$(RFTEST))
@@ -223,15 +255,16 @@ roamTest: $(ROAMT) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 -o $@ \
 		$(ROAMT) -lm
 
-# APRS through the radio core, FM only (the engine, radio_sm.c's APRS block, a fake AFSK transmitter)
+# APRS through the radio core, FM only (the engine, radio_sm.c's APRS block, a fake AFSK transmitter, the UI's APRS service)
 TESTS   += aprsRadioTest
 FMONLY  := -DCONFIG_DMR=0 -DCONFIG_DMR_PRIVACY=0 -DCONFIG_DMR_TALKER_ALIAS=0 -DCONFIG_DMR_SMS=0 -DCONFIG_DMR_ARS=0 \
            -DCONFIG_DMR_LRRP=0 -DCONFIG_DMR_SIGNALING=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=0 -DCONFIG_HOTSPOT=0
 APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(CORE)/radio/tx_limit.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c \
            $(CORE)/radio/vibe.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c \
            $(CORE)/radio/battery.c $(CORE)/radio/morse.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
-           $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
-           $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c
+           $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_ax25.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
+           $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c $(CORE)/ui/ui_svc_aprs.c \
+           $(POSLIB) $(CORE)/ui/ui_svc_position.c
 
 aprsRadioTest: $(APRSRT) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/aprs/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. $(FMONLY) -o $@ $(APRSRT) -lm
@@ -250,9 +283,9 @@ inputTest: inputTest.c $(CORE)/input/input_engine.c $(CORE)/input/input_engine.h
 TESTS   += keyassignTest
 # It reads every board's board.c key map: BOARD_IDS lists them, from boards/ (a new board is checked with no edit here)
 KEYASSIGN_BOARDS := $(wildcard $(ROOT)/boards/*/board.c)
-keyassignTest: keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/keyassign.h $(CORE)/input/input_engine.c $(KEYASSIGN_BOARDS)
+keyassignTest: $(CORE)/input/input_forward.c $(CORE)/input/input_forward.h keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/keyassign.h $(CORE)/input/input_engine.c $(KEYASSIGN_BOARDS)
 	$(CC) $(CFLAGS) $(CORE_HAL) '-DBOARD_IDS=$(foreach f,$(KEYASSIGN_BOARDS),"$(notdir $(patsubst %/,%,$(dir $(f))))",)' \
-		-o $@ keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/input_engine.c
+		-o $@ keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/input_engine.c $(CORE)/input/input_forward.c
 
 # The rotary encoder's quadrature decoder (drivers/input/quadrature), shared by the boards
 quadratureTest: quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c $(ROOT)/drivers/input/quadrature/quadrature.h
@@ -270,6 +303,10 @@ rx2LinkTest: rx2LinkTest.c $(CORE)/rx2/rx2_link.c $(CORE)/rx2/rx2_link.h $(ROOT)
 TESTS   += miclevelTest
 miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ miclevelTest.c -lm
+# The ring-to-block rate converter for ADC audio on the PCM stream (drivers/audio/resample)
+TESTS   += resampleTest
+resampleTest: resampleTest.c $(ROOT)/drivers/audio/resample/resample.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ resampleTest.c -lm
 
 # The battery average and charge estimate the radios share (drivers/power/battery)
 TESTS   += batteryTest
@@ -281,11 +318,13 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest \
-          rx2LinkTest keyassignTest powerSwitchTest boardBandTest batteryTest
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
+          rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
+	./radioCoreTestAprs
+	./radioCoreTestAprsDmr
 	./radioFeaturesTest
 	./radioFeaturesTestNoDual
 	./roamTest
@@ -294,9 +333,11 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTes
 	./quadratureTest
 	./serialmicTest
 	./miclevelTest
+	./resampleTest
 	./rx2LinkTest
 	./keyassignTest
 	./powerSwitchTest
+	./powerKeyTest
 	./boardBandTest
 	./batteryTest
 .PHONY: run-core
@@ -391,13 +432,20 @@ TESTS   += codecDescTest
 codecDescTest: codecDescTest.c $(ROOT)/platform/stm32f4/codec_desc.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ codecDescTest.c
 
+# The two-level analog keypad (drivers/input/adckeys) a hand microphone may use
+TESTS   += adckeysTest
+
+adckeysTest: adckeysTest.c $(ROOT)/drivers/input/adckeys/adckeys.c $(ROOT)/drivers/input/adckeys/adckeys.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ adckeysTest.c $(ROOT)/drivers/input/adckeys/adckeys.c
+
 run: run-chips
-run-chips: sky72310Test hrc5000Test nmeaLineTest gpsRxTest gpsBaudTest codecDescTest
+run-chips: sky72310Test hrc5000Test nmeaLineTest gpsRxTest gpsBaudTest adckeysTest codecDescTest
 	./sky72310Test
 	./hrc5000Test
 	./nmeaLineTest
 	./gpsRxTest
 	./gpsBaudTest
+	./adckeysTest
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_test.bin --board dm1701
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md380.bin --board md380
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md9600.bin --board dm1701 \
@@ -431,6 +479,13 @@ TESTS   += gfxTest
 gfxTest: gfxTest.c $(UI) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Iout/gen -Wshadow -DGFX_INDEXED=1 -DCONFIG_NET_WEBCTL=1 -o $@ gfxTest.c $(UI)
 
+# The same with a CJK catalog (CONFIG_LANG_ZH): text is UTF-8, a character of it is a 16 px glyph of the CJK face, widths
+# add up in pixels, and a cut keeps whole characters (core/ui/cjk_font.h, docs/spec/ui.md 2.5)
+CJK     := $(CORE)/ui/cjk_font.c $(CORE)/ui/cjk_font_data.c
+TESTS   += gfxTestZh
+gfxTestZh: gfxTest.c $(UI) $(CJK) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Iout/gen -Wshadow -DGFX_INDEXED=1 -DCONFIG_NET_WEBCTL=1 -DCONFIG_LANG_ZH=1 -o $@ gfxTest.c $(UI) $(CJK)
+
 # The language lookup and the fonts' Latin-1 glyphs, with Spanish, without, and with Spanish the default (core/ui/i18n.c,
 # docs/spec/ui.md 2.5)
 TESTS   += i18nTest i18nTestNoLang i18nTestDefault
@@ -448,7 +503,7 @@ i18nTestDefault: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/
 # the long-press rules; uiSim renders screens to PNG (make ui-gallery: docs/ux/screens/, contact sheets in
 # docs/ux/screens/sheets/). Built without the __attribute__ override above so the weak service stubs
 # (ui_svc_stub.c) give way to the simulator's.
-UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
+UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
            $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/radio/radio_am.c \
            $(CORE)/radio/radio_bcast.c sim/ui_sim.c sim/ui_png.c
 # The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
@@ -504,8 +559,9 @@ ui-sheets: uiSim
 	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: gfxTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiSim beepReel
+run-ui: gfxTest gfxTestZh i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiSim beepReel
 	./gfxTest
+	./gfxTestZh
 	./i18nTest
 	./i18nTestNoLang
 	./i18nTestDefault
@@ -531,6 +587,20 @@ TESTS   += micGainTest
 micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
 
+# The debug link's hardware options command (core/debuglink/debuglink_hwopt.c), with options and without
+TESTS   += hwoptTest hwoptTestNone
+HWOPTT  := hwoptTest.c $(CORE)/debuglink/debuglink_hwopt.c $(CORE)/debuglink/dl_fmt.c
+HWOPTT_H := $(ROOT)/hal/hal_hwopt.h $(ROOT)/hal/board.h $(CORE)/debuglink/debuglink.h $(CORE)/debuglink/debuglink_proto.h
+hwoptTest: $(HWOPTT) $(HWOPTT_H)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(HWOPTT)
+hwoptTestNone: $(HWOPTT) $(HWOPTT_H)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DHWOPT_NONE_BOARD -o $@ $(HWOPTT)
+
+run: run-hwopt
+run-hwopt: hwoptTest hwoptTestNone
+	./hwoptTest
+	./hwoptTestNone
+.PHONY: run-hwopt
 # The reference trim setting (core/radio/ref_trim.c): clamped, rounded to 100 ppb, to the board's hook
 TESTS   += refTrimTest
 refTrimTest: refTrimTest.c $(CORE)/radio/ref_trim.c $(CORE)/radio/ref_trim.h $(ROOT)/hal/hal_radio.h
@@ -560,12 +630,18 @@ run-crash: crashTest crashCaptureTest
 	else echo "# rfoundry_fault_trace selftest: skipped (no python3)"; fi
 .PHONY: run-crash
 
+# The DMR PA key-up (core/radio/pa_keyup.c): the boost and hold from the cal table's drives, the constants' checks
+TESTS   += paKeyupTest
+paKeyupTest: paKeyupTest.c $(CORE)/radio/pa_keyup.c $(CORE)/radio/pa_keyup.h
+	$(CC) $(CFLAGS) -Wshadow -DCONFIG_DMR=1 -o $@ paKeyupTest.c $(CORE)/radio/pa_keyup.c
+
 run: run-ambe
-run-ambe: ambeFecTest ambeVoiceTest micGainTest refTrimTest
+run-ambe: ambeFecTest ambeVoiceTest micGainTest refTrimTest paKeyupTest
 	./ambeFecTest
 	./ambeVoiceTest
 	./micGainTest
 	./refTrimTest
+	./paKeyupTest
 .PHONY: run-ambe
 
 # The DMR voice call stack (core/dmr/call) against a simulated modem; LC coding cross-checked with sfr.c and dmrData.c
@@ -589,9 +665,15 @@ HRC6K   := $(ROOT)/drivers/modem/hrc6000
 hrc6000DmrTest: hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc.h $(HRC6K)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
 
+# The HR_C6000's FM TX tone generator: the 1750 Hz burst, roger beep and DTMF pairs, and what it gives back
+TESTS   += hrc6000ToneTest
+hrc6000ToneTest: hrc6000ToneTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(HRCDMR)/hrc.h $(HRC6K)/hrc6000.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000ToneTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
+
 run: run-modem
-run-modem: hrc6000DmrTest
+run-modem: hrc6000DmrTest hrc6000ToneTest
 	./hrc6000DmrTest
+	./hrc6000ToneTest
 .PHONY: run-modem
 
 # The DMR receive chain: a model of the HR_C6000's reports through the slot engine, a batching board task and the call
@@ -789,7 +871,7 @@ run-debuglinkChipReg: debuglinkChipRegTest
 .PHONY: run-debuglinkChipReg
 
 # DL_CMD_DMR_DATA's IP operations (core/debuglink/debuglink_dmr_data.c): the settings' gateway ID and IP_SEND's parsing
-DLDATA  := debuglinkDmrDataTest.c $(CORE)/debuglink/debuglink_dmr_data.c $(CORE)/debuglink/dl_fmt.c $(DATA)
+DLDATA  := debuglinkDmrDataTest.c $(CORE)/debuglink/debuglink_dmr_data.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/debuglink/dl_fmt.c $(DATA)
 TESTS   += debuglinkDmrDataTest
 debuglinkDmrDataTest: $(DLDATA) $(CORE)/debuglink/debuglink.h $(CORE)/debuglink/debuglink_proto.h $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_DMR_IP_GATEWAY=1 -DCONFIG_DMR_EMERGENCY=0 -o $@ $(DLDATA)
@@ -931,6 +1013,12 @@ TESTS   += hrc7000UartFormatTest
 hrc7000UartFormatTest: hrc7000UartFormatTest.c $(ROOT)/platform/hrc7000/uart_format.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000UartFormatTest.c
 
+# The per-burst RF task's first-burst timing (platform/hrc7000/dmr_rfburst_timing.h)
+TESTS   += hrc7000RfburstTest
+
+hrc7000RfburstTest: hrc7000RfburstTest.c $(ROOT)/platform/hrc7000/dmr_rfburst_timing.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000RfburstTest.c
+
 # The GPIO interrupt watch's lost-interrupt test (platform/hrc7000/irq_stall.h)
 TESTS   += hrc7000IrqStallTest
 
@@ -946,7 +1034,7 @@ hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot
 
 run: run-platform
 run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest \
-		hrc7000IrqStallTest
+		hrc7000IrqStallTest hrc7000RfburstTest
 	./bk4819Test
 	./at1141Test
 	./fd6818shTest
@@ -954,6 +1042,7 @@ run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest h
 	./hrc7000ClockTest
 	./hrc7000UartFormatTest
 	./hrc7000IrqStallTest
+	./hrc7000RfburstTest
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin
 	./hrc7000CodecSlotTest hrc7000_test_slot.bin
 .PHONY: run-platform
@@ -1012,7 +1101,8 @@ run-ppp: pppTest pppPeer
 # TFTP server with codeplug.bin on a simulated flash. Their frames go to pcaps that tshark checks when it's there
 MDNST   := mdnsTest.c $(CORE)/net/mdns.c $(CORE)/dmr/ipGateway.c $(DATA)
 TFTPT   := tftpTest.c $(CORE)/net/tftp.c $(CORE)/net/tftp_codeplug.c $(CORE)/net/tftp_iddb.c $(CORE)/dmr/ipGateway.c $(DATA) \
-           $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c sim/sim_flash.c
+           $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c \
+           sim/sim_flash.c
 TESTS   += mdnsTest tftpTest
 
 mdnsTest: $(MDNST) $(CORE)/net/mdns.h $(CORE)/dmr/ipGateway.h
@@ -1073,7 +1163,7 @@ spiNandTest: spiNandTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand.c $(ROOT)/dri
 # of several kinds), then core/storage and core/settings on top across reboots and cuts
 # and the open-firmware CPS writing a whole codeplug through the DB25-D's sector replace, with cuts
 NSECT   := $(ROOT)/drivers/flash/nand_sectors/nand_sectors.c $(CORE)/storage/storage.c $(CORE)/settings/settings.c \
-           $(CORE)/cps/cps_openfw.c $(CORE)/codeplug/codeplug.c
+           $(CORE)/cps/cps_openfw.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c
 TESTS   += nandSectorsTest
 
 nandSectorsTest: nandSectorsTest.c $(NSECT) $(ROOT)/drivers/flash/nand_sectors/nand_sectors.h \
@@ -1092,6 +1182,17 @@ run: run-cpedit
 run-cpedit: codeplugEditTest
 	./codeplugEditTest
 .PHONY: run-cpedit
+
+# The codeplug settings area: keyed values, unknown keys kept, invalid and newer areas, power cuts during a write
+TESTS   += codeplugKvTest
+
+codeplugKvTest: codeplugKvTest.c $(CORE)/codeplug/codeplug_kv.c $(CPEDIT) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ codeplugKvTest.c $(CORE)/codeplug/codeplug_kv.c $(CPEDIT)
+
+run: run-cpkv
+run-cpkv: codeplugKvTest
+	./codeplugKvTest
+.PHONY: run-cpkv
 
 # Zone editing (core/codeplug/zone_edit.c) on the real codeplug over a simulated flash: add, move, remove, copy,
 # rename, delete, a new channel added in one step, the limits
@@ -1121,8 +1222,8 @@ run-zimport: zoneImportTest
 .PHONY: run-zimport
 
 # The open-firmware CPS shim against a simulated flash, driven like qdmr's UV380 driver (core/cps)
-CPS     := $(CORE)/cps/cps_openfw.c $(CORE)/codeplug/codeplug.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
-           sim/sim_flash.c
+CPS     := $(CORE)/cps/cps_openfw.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/settings/settings.c \
+           $(CORE)/storage/storage.c sim/sim_flash.c
 TESTS   += cpsTest
 
 cpsTest: cpsTest.c $(CPS) $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)

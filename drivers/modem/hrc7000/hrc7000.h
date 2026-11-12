@@ -289,8 +289,9 @@ bool hrc7000_tx_dtmf(hrc7000_t *d, char digit, uint8_t dev);
 uint8_t hrc7000_dtmf_dev(uint32_t hz, bool wide);
 // --- Prompt FIFO (8.4) ---
 
-// Push one chunk (C7_PROMPT_CHUNK samples, low byte first) when the FIFO has room; false when it is full. Inline: the
-// AFSK symbol interrupt uses it
+// Push one chunk (C7_PROMPT_CHUNK samples, low byte first) when the FIFO has room; false when it is full. Written at
+// once, a chunk can land in the half being played (8.4): callers push through the platform's wrapper, which waits
+// after the half switch (platform/hrc7000/prompt_fifo.h). Inline: the AFSK interrupt uses it through that wrapper
 static inline bool hrc7000_prompt_push(hrc7000_t *d, const int16_t *s)
 {
 	if ((hrc7000_rd(d, C7_AUDIO_CONTROL) & C7_AUDIO_RING_FULL) != 0) {

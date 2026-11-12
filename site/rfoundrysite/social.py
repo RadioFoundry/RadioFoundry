@@ -15,6 +15,7 @@ from . import device, repo, shots
 W, H = 1200, 630	# the size Facebook, LinkedIn and X ask for (1.91:1)
 ZOOM = 2	# rasterized at twice that: the screens' text stays legible on high-density displays
 MARGIN, GAP = 28, 24
+STACK = 3	# mobile radios stacked in one column before the next column starts
 # each radio shows the first of these its gallery has that no radio before it shows
 SCREENS = ("boot", "home_dual", "home_dmr", "rx_group", "message_view", "channels", "tools")
 
@@ -74,6 +75,7 @@ def with_screen(frame, geometry, png):
 
 def card(boards):
 	"""The card as SVG. boards: the site's boards, each with its render() result as b["render"]."""
+	stack_h = (H - 2 * MARGIN - GAP * (STACK - 1)) / STACK
 	used, items = set(), []
 	for b in boards:
 		have = set(repo.screens(b["gallery"]))
@@ -86,19 +88,34 @@ def card(boards):
 		# the drawings' viewBoxes pad them unevenly: crop to what is drawn, so the gaps between radios are equal
 		lo, hi = columns(rasterize(drawing, width=200))
 		vb = [vb[0] + lo * vb[2], vb[1], (hi - lo) * vb[2], vb[3]]
-		# handhelds as tall as the card; a mobile radio about as wide as two handhelds
+		# handhelds as tall as the card; mobile radios in stacks of STACK, each as tall as a third of the card less gaps
 		mobile = vb[2] > vb[3]
-		items.append({"vb": vb, "body": body, "scale": (H * 0.5 / vb[2]) if mobile else ((H - 2 * MARGIN) / vb[3])})
-	width = sum(i["vb"][2] * i["scale"] for i in items) + GAP * (len(items) - 1)
+		scale = (stack_h / vb[3]) if mobile else ((H - 2 * MARGIN) / vb[3])
+		items.append({"vb": vb, "body": body, "scale": scale, "mobile": mobile})
+	# a handheld takes a column; a mobile joins the last mobile column until it holds STACK, wherever the board order
+	# put the handhelds in between, so the mobiles stack instead of each taking a short column of its own
+	cols, open_col = [], None
+	for i in items:
+		if not i["mobile"]:
+			cols.append([i])
+		elif open_col is not None and len(open_col) < STACK:
+			open_col.append(i)
+		else:
+			open_col = [i]
+			cols.append(open_col)
+	colw = [max(i["vb"][2] * i["scale"] for i in c) for c in cols]
+	width = sum(colw) + GAP * (len(cols) - 1)
 	fit = min(1, (W - 2 * MARGIN) / width)
 	x = (W - width * fit) / 2
-	bottom = (H + max(i["vb"][3] * i["scale"] for i in items) * fit) / 2	# the row centered, its radios on one line
 	parts = []
-	for i in items:
-		w, h = i["vb"][2] * i["scale"] * fit, i["vb"][3] * i["scale"] * fit
-		parts.append('<svg x="%g" y="%g" width="%g" height="%g" viewBox="%s">%s</svg>'
-			     % (x, bottom - h, w, h, " ".join("%g" % v for v in i["vb"]), i["body"]))
-		x += w + GAP * fit
+	for c, cw in zip(cols, colw):
+		y = (H - (sum(i["vb"][3] * i["scale"] for i in c) + GAP * (len(c) - 1)) * fit) / 2	# a short stack centered
+		for i in c:
+			w, h = i["vb"][2] * i["scale"] * fit, i["vb"][3] * i["scale"] * fit
+			parts.append('<svg x="%g" y="%g" width="%g" height="%g" viewBox="%s">%s</svg>'
+				     % (x + (cw * fit - w) / 2, y, w, h, " ".join("%g" % v for v in i["vb"]), i["body"]))
+			y += h + GAP * fit
+		x += (cw + GAP) * fit
 	return ('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">'
 		'<defs><radialGradient id="glow" cx=".5" cy=".85" r=".7">'
 		'<stop offset="0" stop-color="#f2601f" stop-opacity=".45"/><stop offset="1" stop-color="#f2601f" stop-opacity="0"/>'

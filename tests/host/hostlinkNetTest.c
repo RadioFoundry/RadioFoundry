@@ -149,7 +149,7 @@ int dmrDataServiceSendShortData(bool group, uint32_t dst, uint32_t src, const ui
 	if (service_busy) {
 		return 0;
 	}
-	int count = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, group, dst, src, data, length, DT_RATE_12_DATA,
+	int count = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, group, dst, src, data, length, DMR_TYPE_RATE_1_2,
 				       preambles, svc_bursts, DMR_DATA_MAX_BURSTS);
 	if (count <= 0) {
 		return -1;
@@ -178,7 +178,7 @@ bool dmrDataServiceSendIP(bool group, uint32_t dst, uint32_t srcIp, uint32_t dst
 	bool compress = (protocol == DMR_IP_PROTO_UDP) && (length >= 8) && dmrDataUdpCompress(get16(&l4[0]), get16(&l4[2]));
 	int n = dmrDataEncodeIP(group, dst, RADIO_ID, dstIp, srcIp, ttl, protocol, l4, length, compress, dmrDataNextIpId(),
 							&pdu, &sap);
-	svc_count = (n > 0) ? dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, group, dst, RADIO_ID, pdu, n, DT_RATE_12_DATA, 2,
+	svc_count = (n > 0) ? dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, group, dst, RADIO_ID, pdu, n, DMR_TYPE_RATE_1_2, 2,
 											 svc_bursts, DMR_DATA_MAX_BURSTS) : 0;
 	svc_lists++;
 	return svc_count > 0;
@@ -711,7 +711,7 @@ int main(void)
 	hostlink_net_poll(now_ms);
 	CHECK(ipGatewayRadioIP() == IPGW_FIXED_LINK_DEFAULT && ipGatewayHostIP() == IPGW_FIXED_LINK_DEFAULT + 1);
 	dmrBurst_t tb[DMR_DATA_MAX_BURSTS];
-	int tn = dmrDataBuildIPText(false, RADIO_ID, 9991234, "to the dispatcher", DT_RATE_12_DATA, 0, tb, DMR_DATA_MAX_BURSTS);
+	int tn = dmrDataBuildIPText(false, RADIO_ID, 9991234, "to the dispatcher", DMR_TYPE_RATE_1_2, 0, tb, DMR_DATA_MAX_BURSTS);
 	const dmrDataPacket_t *rx = NULL;
 	dmrDataRxReset();
 	for (int i = 0; i < tn; i++) {

@@ -24,9 +24,11 @@ on:
 permissions:
   contents: read
 
-# one comment at a time: two runs for one pull request never race for the comment
+# One run at a time per pull request branch, so two runs never race for its comment; a newer one waits and replaces
+# a pending older one. Runs for different pull requests go at once (one shared group kept only one pending run, so
+# galleries that finished together lost their comments) and share ui-previews through the leased push below.
 concurrency:
-  group: ui-gallery-comment
+  group: ui-gallery-comment-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
 jobs:
@@ -175,21 +177,26 @@ jobs:
         run: |
           set -eu
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
-          git init -q previews
-          cd previews
-          git remote add origin "$SERVER/$REPO.git"
-          old=
-          if git -c http.extraheader="$auth" fetch -q --depth 1 origin ui-previews; then
-            git checkout -q FETCH_HEAD
-            old=$(git rev-parse 'FETCH_HEAD^{tree}')
-          fi
           # The branch never grows: it is rebuilt as one parentless commit on every run (force-pushed; it holds only
           # pictures that can be regenerated). It keeps the pull requests that are open, the newest KEEP_UNMERGED closed
           # without a merge and the newest KEEP_MERGED merged, among those that have pictures; this one is replaced.
-          git checkout -q --orphan fresh
-          echo "Pictures for the UI gallery comments (ui-gallery-comment.yml). Rebuilt on every run; nothing to merge." > README.md
-          rm -rf "pr-$PR"
-          python3 -I - <<'PY'
+          # Runs for other pull requests rebuild it at the same time, so the push is leased on the commit fetched: when
+          # another run pushed first, it fetches that and rebuilds, and no run's pictures are lost.
+          publish() {
+            rm -rf previews
+            git init -q previews && cd previews || return 1
+            git remote add origin "$SERVER/$REPO.git" || return 1
+            old= lease=
+            if git -c http.extraheader="$auth" fetch -q --depth 1 origin ui-previews; then
+              git checkout -q FETCH_HEAD
+              old=$(git rev-parse 'FETCH_HEAD^{tree}')
+              lease=$(git rev-parse FETCH_HEAD)
+            fi
+            git checkout -q --orphan fresh
+            echo "Pictures for the UI gallery comments (ui-gallery-comment.yml). Rebuilt on every run; nothing to merge." > README.md
+            rm -rf "pr-$PR"
+            # set -e doesn't apply inside the retry's `if`, so each step that can fail says so
+            python3 -I - <<'PY' || return 1
           import json, os, shutil, subprocess
 
           repo, cur = os.environ["REPO"], os.environ["PR"]
@@ -218,19 +225,30 @@ jobs:
                   print(f"dropped {d}")
           print(f"kept {sorted(keep)}")
           PY
-          mkdir -p "pr-$PR/$HEAD"
-          [ -d ../ui/compare ] && cp -r ../ui/compare "pr-$PR/$HEAD/"
-          cp ../ui/manifest.json "pr-$PR/$HEAD/"
-          git add -A .
-          new=$(git write-tree)
-          if [ "$new" = "$old" ]; then
-            echo "images for ${HEAD:0:7} are already published"
-            exit 0
-          fi
-          git -c user.name="github-actions[bot]" \
-              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-              commit -q -m "UI gallery: pull request #$PR at ${HEAD:0:7}"
-          git -c http.extraheader="$auth" push -q --force origin HEAD:ui-previews
+            mkdir -p "pr-$PR/$HEAD" || return 1
+            if [ -d ../ui/compare ]; then cp -r ../ui/compare "pr-$PR/$HEAD/" || return 1; fi
+            cp ../ui/manifest.json "pr-$PR/$HEAD/" || return 1
+            git add -A . || return 1
+            new=$(git write-tree)
+            if [ "$new" = "$old" ]; then
+              echo "images for ${HEAD:0:7} are already published"
+              return 0
+            fi
+            git -c user.name="github-actions[bot]" \
+                -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+                commit -q -m "UI gallery: pull request #$PR at ${HEAD:0:7}" || return 1
+            # an empty lease means the branch must not exist yet
+            git -c http.extraheader="$auth" push -q --force-with-lease="ui-previews:$lease" origin HEAD:ui-previews
+          }
+          for try in 1 2 3 4 5; do
+            if (publish); then
+              exit 0
+            fi
+            echo "::notice::ui-previews moved during try $try; fetching it again"
+            sleep $((try * 3))
+          done
+          echo "::error::couldn't publish to ui-previews after 5 tries"
+          exit 1
 
       - name: Post the comment
         if: steps.pr.outputs.skip == 'false'

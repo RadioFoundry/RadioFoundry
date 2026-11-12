@@ -7,7 +7,7 @@
 // reported as a flash chip select on others, so nothing drives it until NMEA has been heard: the UART listens for
 // LISTEN_MS after start-up with PD8 left as an input. One checksum-valid sentence makes the module present; PD8 is then
 // held at the level it already had (the level the module runs at, whatever its polarity), and every sentence goes to
-// the APRS position source (CONFIG_APRS). Nothing heard: the UART is switched off again and the radio has no GPS.
+// the position service (core/position). Nothing heard: the UART is switched off again and the radio has no GPS.
 #include "md380.h"
 #include "pins.h"
 #include "gps_uart/gps_uart.h"

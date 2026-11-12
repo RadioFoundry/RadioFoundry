@@ -1,0 +1,171 @@
+{
+ "board": "md9600",
+ "commit": "350c41de3ad55dbdefaa8f06d916913f35888330",
+ "date": "2026-11-03T03:40:18Z",
+ "dirty": false,
+ "features": [
+  "fm",
+  "subtone"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,DMR_UDP_COMPRESS,DMR_CONFIRMED,IDDB_COMPACT,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "350c41de",
+  "proto": "1",
+  "view": "4"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "radio"
+ ],
+ "kind": "run",
+ "options": {
+  "dmr-cc": 2,
+  "dmr-freq": 461.6875,
+  "dmr-tg": 9,
+  "fm-mhz": 461.6875,
+  "tx-power": 40
+ },
+ "sources": {
+  "fm": {
+   "core/radio": "938103470057107b6d953daecb336d85d363e038",
+   "docs/spec/radio-features.md": "1b348a2c29f14632698bd216354eeb53976eb2d5",
+   "drivers/rf": "2ec99c4c8595aa4a70ec2b709d7176fa153043a3",
+   "hal/hal_audio.h": "4f1c9061200c73144e87d9cb442eb0a65837929c",
+   "hal/hal_radio.h": "74e039e2420503182a4c16e1612cba7632162e65"
+  },
+  "subtone": {
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio_sm.c": "63bc512509446e8eefa07c885aae1cfbf28e0d39",
+   "core/radio/radio_sm.h": "89d12ef6b1e5166f4a0966c3d0a9629bc6496f2e",
+   "core/radio/tones.c": "c6daf2a82c8b505153dc602f75f7f137b431ed60",
+   "core/radio/tones.h": "48a6db4deab522e223b09b444d4e927b8d7da1d2",
+   "core/ui/ui_menus.c": "88cd3930a5304de6e5e33924b9793508b8ecd414",
+   "core/ui/ui_screens.c": "e0aab2ed9f1db861d6ad88c9f41c94d8ce8fb911",
+   "docs/spec/radio-features.md": "1b348a2c29f14632698bd216354eeb53976eb2d5"
+  }
+ },
+ "tests": [
+  {
+   "features": [],
+   "id": "boards/md9600/hil/test_md9600.py::test_calibration_and_options_read",
+   "optional": [
+    "fm"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "boards/md9600/hil/test_md9600.py::test_receiver_tuned",
+   "optional": [
+    "fm"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "boards/md9600/hil/test_md9600.py::test_transmitter_held_off",
+   "optional": [
+    "fm"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [
+    "fm"
+   ],
+   "id": "tests/hil/test_fm.py::test_noaa_receive",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "subtone"
+   ],
+   "id": "tests/hil/test_fm.py::test_rx_tone_squelch",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "fm"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_bandwidth",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "subtone"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_ctcss",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "subtone"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_dcs",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "fm"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_power_levels",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": false,
+   "features": [],
+   "id": "tests/hil/test_mic_gain.py::test_mic_gain_deviation",
+   "optional": [
+    "fm"
+   ],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": false,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "fm"
+   ],
+   "id": "tests/hil/test_ui.py::test_quick_monitor_latch",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

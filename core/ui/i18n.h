@@ -27,8 +27,10 @@ static inline const char *tr(const char *en) { return en; }
 // lists them all and dims the ones left out)
 uint8_t lang_count(void);
 const char *lang_code(uint8_t i);	// ISO 639-1: "en", "es"
-const char *lang_name(uint8_t i);	// in the language itself: "Español"
+const char *lang_name(uint8_t i);	// in the language itself: "Español", or "Chinese" in a build without the CJK face
 bool lang_built(uint8_t i);
+// True when the language's catalog is UTF-8 with a CJK face (X-Glyphs: utf8): its lines need a 16 px font
+bool lang_wide(uint8_t i);
 // The language in use; lang_set takes only a built one (false otherwise)
 uint8_t lang_current(void);
 bool lang_set(uint8_t i);

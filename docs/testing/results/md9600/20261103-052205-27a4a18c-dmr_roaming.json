@@ -1,0 +1,138 @@
+{
+ "board": "md9600",
+ "commit": "27a4a18ccf7b506baf6921a4d66371b023ba45a4",
+ "date": "2026-11-03T05:22:05Z",
+ "dirty": false,
+ "features": [
+  "dmr_roaming"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,DMR_UDP_COMPRESS,DMR_CONFIRMED,IDDB_COMPACT,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "ffdb37d0-dirty",
+  "proto": "1",
+  "view": "4"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "radio"
+ ],
+ "kind": "run",
+ "options": {
+  "dmr-cc": 2,
+  "dmr-freq": 461.6875,
+  "dmr-tg": 9,
+  "fm-mhz": 461.6875,
+  "tx-power": 40
+ },
+ "sources": {
+  "dmr_roaming": {
+   "core/debuglink/debuglink.h": "f3c7566b460c6096f857c8f3d00e1e577cad3bc2",
+   "core/debuglink/debuglink_view_radio.c": "174abcc249a5721a4070ebf254333c3744fb8227",
+   "core/debuglink/debuglink_view_roam.c": "ac3790ff5766f3b67d66705ee72d6b6ec49c8cce",
+   "core/hostlink/build_info.c": "3e597291aa2d5ff1f892655acee9af60b5822125",
+   "core/radio/radio.h": "9f189358a1c9aa740d0909eb178c43748b9f4369",
+   "core/radio/radio_sm.c": "63bc512509446e8eefa07c885aae1cfbf28e0d39",
+   "core/radio/radio_sm.h": "89d12ef6b1e5166f4a0966c3d0a9629bc6496f2e",
+   "core/radio/roam.c": "60129585c876312a06020003a395aab2e1970e81",
+   "core/radio/roam.h": "937b2a6413611d95f0680a819ee875bdb8bd356d",
+   "core/ui/ui_app.c": "886ce0d6753a6812e0431995f9f6a17373a3a8cf",
+   "core/ui/ui_find.c": "c800961cfa39b8a9981d8c45e6ce2a94056f05e1",
+   "core/ui/ui_menus.c": "88cd3930a5304de6e5e33924b9793508b8ecd414",
+   "core/ui/ui_screens.c": "e0aab2ed9f1db861d6ad88c9f41c94d8ce8fb911",
+   "core/ui/ui_svc_radio.c": "fe4fdd57dc9ce54d80a58370ec6c60b6fccbb7cc",
+   "core/ui/ui_svc_storage.c": "37a22dfff6452ea234de574fb02b298cd8e1e2d5",
+   "docs/spec/dmr-roaming.md": "b420d7793fbc9f42cbb22362b668a28da74eef88"
+  }
+ },
+ "tests": [
+  {
+   "excused": true,
+   "features": [
+    "dmr_roaming"
+   ],
+   "id": "tests/hil/test_roaming.py::test_roam_beacon_home",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_roaming"
+   ],
+   "id": "tests/hil/test_roaming.py::test_roam_beacon_other_site",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "dmr_roaming"
+   ],
+   "id": "tests/hil/test_roaming.py::test_roam_now_passive",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_roaming"
+   ],
+   "id": "tests/hil/test_roaming.py::test_roam_section",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_roaming"
+   ],
+   "id": "tests/hil/test_roaming.py::test_roam_settings_round_trip",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_roaming"
+   ],
+   "id": "tests/hil/test_roaming.py::test_roam_survey_settings_round_trip",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_roaming"
+   ],
+   "id": "tests/hil/test_roaming.py::test_roam_to_bench_repeater",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] transmits: run with --allow-rf",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "dmr_roaming"
+   ],
+   "id": "tests/hil/test_roaming.py::test_roam_zone_toggle",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

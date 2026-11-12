@@ -35,8 +35,11 @@ def _udp_link(ip, timeout):
 @pytest.mark.feature("usb_network")
 @pytest.mark.usb_switch
 def test_usb_network_roundtrip(radio):
-    if "DMR_IP_GATEWAY" not in radio.features():
+    feats = radio.features()
+    if "DMR_IP_GATEWAY" not in feats:
         skip("not_built", "built without CONFIG_DMR_IP_GATEWAY")
+    if "USB_NETWORK" not in feats:      # a radio with PPP only: the switch is accepted, but no adapter comes up
+        skip("not_built", "built without CONFIG_USB_NETWORK (PPP is test_net_services' and the others')")
     own_id = int(radio.view(["dmr"]).get("dmr.own_id", "0"))
     assert 0 < own_id < (1 << 24), "no DMR ID: the gateway can't make an address"
     host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | own_id)

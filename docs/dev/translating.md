@@ -35,6 +35,7 @@ With every language switched off, `TR()` is the text itself and the lookup is go
 
 1. Start the catalog: `python3 tools/i18n.py --new <code> <name>`. `<code>` is the ISO 639-1 code (`fr`), `<name>`
    the language's own name (`Français`). This writes `core/ui/lang/<code>.po` with every marked string, untranslated.
+   A CJK language adds its Latin name: `python3 tools/i18n.py --new zh 中文 Chinese` ([below](#chinese-and-other-cjk-languages)).
 2. Add the build switches: `CONFIG_LANG_FR` builds the language in, `CONFIG_LANG_DEFAULT_FR` makes it the one the
    radio starts in (for `fr`):
 
@@ -77,7 +78,7 @@ msgstr "Retroiluminación"
 | Keep it short. Most screens are 128 or 160 pixels wide: about 21 characters in the small font, 16 in the list font | A row too long is cut with an ellipsis; a toast or hint is cut |
 | Keep leading and trailing spaces, and the colon at the end | The code glues a number or a name to the text: `"Volume "` + `"5"` |
 | Keep `{a\|b}` groups as groups, with the same number of choices | A text alternate: the radio shows the first choice that fits, longest first. Write each choice shorter than the one before |
-| Use only ASCII and Latin-1 letters (á é í ó ú ñ ü ç ß ...) and `… · → ° ⤒ ⤓` | The radio draws one byte a character; `--check` rejects anything else |
+| Use only ASCII and Latin-1 letters (á é í ó ú ñ ü ç ß ...) and `… · → ° ⤒ ⤓` | The radio draws one byte a character; `--check` rejects anything else. A CJK catalog is the exception, and says so ([below](#chinese-and-other-cjk-languages)) |
 | Start every hint group that names the Back key with exactly your translation of `"Back"` | Hints keep the Back group at the right edge by matching that word: change it and every Back group must change with it |
 | Status strip words (IDLE, NO TX, SCAN, DUAL, ROAM) and chips (Lock, DMon, Priv) no longer than the English; keep the English when nothing fits | They sit in fixed slots of the status strip |
 | Don't translate the standard abbreviations the source leaves unmarked (TG, TS, CC, RX, TX, VFO, DMR, FM) | Radio operators know them; they aren't in the catalog |
@@ -89,6 +90,37 @@ way round.
 To see where a string goes, search for it in the file its `#:` line names: `grep -n -F '"Backlight"'
 core/ui/ui_menus.c`. The comments next to a `TR()` often say more. A string with a leading or trailing space is
 always such a piece.
+
+### Chinese and other CJK languages
+
+The Latin fonts have no glyph for Chinese, so such a catalog is UTF-8 and brings its own face. Everything else works as
+above: one catalog, one switch, the same checks.
+
+| Step | What |
+|---|---|
+| The catalog | `tools/i18n.py --new zh 中文 Chinese` writes it with an `X-Glyphs: utf8` header and an `X-Language-Name-Latin` one. A catalog with that header holds UTF-8: ASCII, `font.h`'s glyphs, and characters the CJK face has. Two-byte characters (Latin-1 letters with an accent) are not allowed: the text layer decodes only three-byte sequences, so that Latin-1 names, messages and the Spanish catalog keep working in a build with the CJK face. `--check` lists every character it rejects or the face lacks |
+| The list | A build without the CJK face (`CONFIG_LANG_ZH` off) still lists the language, dimmed: it shows `X-Language-Name-Latin` ("Chinese"), because the Latin font would draw the UTF-8 name as boxes |
+| The face | `tools/cjkfont.py` rasterizes every character the catalogs use into a 16x16 one-bit glyph and writes the table the firmware links. 480 characters are 15.4 KB; with the text, Chinese costs 32,856 bytes. Run it whenever a translation adds a character (`--check` fails until it does) and commit both |
+| The font | One whose license allows embedding bitmaps: an SIL OFL font such as Noto Sans CJK SC or Source Han Sans. The generated file carries the font's copyright, its full OFL text and the font file's SHA-256, because that data is under the font's license, not MIT (see the header of `core/ui/cjk_font_data.c`). Do not use a vendor font that forbids it |
+| Size | A CJK character is 16 px wide and 16 tall, the height of the 8x16 font: 8 characters a line on a 128 px screen, 10 on a 160 px one, 15 on a 240 px one. **A line must be at least 16 px high.** A 240 px color radio draws its words in 8x16 (a CJK build moves its text pages up to that font too) and shows Chinese everywhere; a layout whose words use the 5x8 or 6x12 font (a 128x64 display, and the 160x128 class) has no room for 16 px lines, so those boards list `LANG_ZH` and `LANG_DEFAULT_ZH` in `BOARD_UNSUPPORTED`, and CI's maximal build and the flasher leave the language out there |
+| Cutting | A string too long for its space is cut at the end, whole characters only (`gfx_text_fit_end` for a line that keeps its start, `gfx_text_fit` for a middle cut), because Chinese has no spaces to cut at a middle. A line wraps after any CJK character (`wrap_line`); Latin words inside it still wrap at their spaces |
+| Switch | `CONFIG_LANG_ZH` is off by default. Measure it like any switch and put the bytes in [the feature matrix](../feature-matrix.md) |
+
+The table in this tree comes from Noto Sans CJK SC 2.004 ([noto-cjk](https://github.com/notofonts/noto-cjk)), rendered
+with Pillow 12.1. Rebuild it with:
+
+```
+python3 tools/cjkfont.py --font NotoSansCJK-Regular.ttc --font-index 2 --weight 0 \
+    --font-name "Noto Sans CJK SC 2.004 (NotoSansCJK-Regular.ttc, index 2)" \
+    --copyright "2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'." \
+    --license LICENSES/OFL-1.1.txt --spdx OFL-1.1 \
+    --po core/ui/lang/zh.po --out-c core/ui/cjk_font_data.c --out-png /tmp/cjk.png
+```
+
+`--font-index 2` picks the Simplified Chinese face of a `.ttc` (0 is Japanese). The header records the font file's
+SHA-256: a different hash means a different font file, so say which one you used in the pull request. `--weight` picks
+a variable font's axis; 0 keeps a static face's own weight. A different Pillow can render slightly different bytes;
+commit the table it wrote.
 
 ### When the source changes
 

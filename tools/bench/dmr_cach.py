@@ -4,8 +4,7 @@
 """dmr_cach: the DMR CACH and short LC coding (ETSI TS 102 361-1 6.3, 9.1.4, B.3.5, B.3.7, B.4.1), the Python twin of
 core/dmr/fec/dmrCach.c: TACT Hamming(7,4,3), the CACH interleave of figure B.9, the short LC's CRC-8 and its BPTC of
 three Hamming(17,12,3) rows plus a column parity row sent by columns (figure B.6), and a decoder that assembles short
-LCs from successive CACHs (LCSS 1, 3, 3, 2). Used by split_duplex_host.py (DMR_SHORTLC frames) and sdrmon.py
-analyze --cach (the on-air check of the split duplex TX half, docs/spec/split-duplex.md 10.1).
+LCs from successive CACHs (LCSS 1, 3, 3, 2). Used by split_duplex_host.py (DMR_SHORTLC frames).
 
     dmr_cach.py selftest                          the standard's vectors and round trips
     dmr_cach.py decode BITS24_HEX [...]           TACT and payload of CACHs (24 bits each, TX(23) first)

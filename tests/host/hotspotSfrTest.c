@@ -254,7 +254,7 @@ static void lc_frame(uint8_t dt, const uint8_t *lc, uint8_t *frame)
 	b.dataType = dt;
 	b.length = 12;
 	b.flags = 0;
-	dmr_lc_encode_full(lc, (dt == DT_VOICE_LC_HEADER) ? DMR_RS_MASK_VOICE_HEADER : DMR_RS_MASK_TERMINATOR, b.payload);
+	dmr_lc_encode_full(lc, (dt == DMR_TYPE_VOICE_LC_HEADER) ? DMR_RS_MASK_VOICE_HEADER : DMR_RS_MASK_TERMINATOR, b.payload);
 	dmrDataBurstToFrame(&b, 1, frame);
 }
 
@@ -302,7 +302,7 @@ static void test_trigger(void)
 	st = status();
 	CHECK(st && st[1] == 13 && (st[5] & MMDVM_STATUS_INBOUND_BUSY) == 0);
 	int o = out_count;
-	net_lc(MMDVM_DMR_DATA1, DT_VOICE_LC_HEADER, LC1);
+	net_lc(MMDVM_DMR_DATA1, DMR_TYPE_VOICE_LC_HEADER, LC1);
 	CHECK(nak_reason(MMDVM_DMR_DATA1, o) == MMDVM_NAK_WRONG_MODE);
 
 	// Duplex with RX != TX: not SFR either
@@ -379,7 +379,7 @@ static void test_rf_call(void)
 		if (out[i].b[2] == MMDVM_DMR_DATA1) {
 			uint8_t info[12], lc[9];
 
-			CHECK(out[i].b[3] == (MMDVM_DMR_SYNC_DATA | DT_VOICE_LC_HEADER));
+			CHECK(out[i].b[3] == (MMDVM_DMR_SYNC_DATA | DMR_TYPE_VOICE_LC_HEADER));
 			dmrFecBptcDecode(out[i].b + 4, info);
 			CHECK(dmr_lc_decode_full(info, DMR_RS_MASK_VOICE_HEADER, lc) >= 0 && memcmp(lc, LC1, 9) == 0);
 			break;
@@ -434,13 +434,13 @@ static void test_net_stream(void)
 
 	sfr_on();
 	o = out_count;
-	net_lc(MMDVM_DMR_DATA2, DT_VOICE_LC_HEADER, LC2);
+	net_lc(MMDVM_DMR_DATA2, DMR_TYPE_VOICE_LC_HEADER, LC2);
 	for (uint8_t i = 0; i < 6; i++) {
 		net_voice(MMDVM_DMR_DATA2, i, (uint8_t)(0x40 + i));
 		slot();
 	}
-	net_lc(MMDVM_DMR_DATA2, DT_TERMINATOR_WITH_LC, LC2);
-	net_lc(MMDVM_DMR_DATA2, DT_TERMINATOR_WITH_LC, LC2);	// a repeat: ACKed and dropped
+	net_lc(MMDVM_DMR_DATA2, DMR_TYPE_TERMINATOR_LC, LC2);
+	net_lc(MMDVM_DMR_DATA2, DMR_TYPE_TERMINATOR_LC, LC2);	// a repeat: ACKed and dropped
 	CHECK(count_out(MMDVM_ACK, o) == 9 && nak_reason(MMDVM_DMR_DATA2, o) < 0);
 	slots(30);
 	CHECK(sim.first_timing == DMR_TIMING_OWN && sim.first_ts == 2);	// nothing heard: our own slot clock
@@ -462,7 +462,7 @@ static void test_net_stream(void)
 
 	// DATA1 is taken too (both offsets carry the outbound space)
 	o = out_count;
-	net_lc(MMDVM_DMR_DATA1, DT_VOICE_LC_HEADER, LC2);
+	net_lc(MMDVM_DMR_DATA1, DMR_TYPE_VOICE_LC_HEADER, LC2);
 	CHECK(reply(MMDVM_ACK, MMDVM_DMR_DATA1, o));
 	o = out_count;
 	host(MMDVM_DMR_ABORT, NULL, 0);
@@ -479,7 +479,7 @@ static void test_rf_priority(void)
 	rx_lc(DMR_BURST_VOICE_LC_HEADER, LC1, 1, DMR_SYNC_TS1);
 	slot();
 	o = out_count;
-	net_lc(MMDVM_DMR_DATA2, DT_VOICE_LC_HEADER, LC2);
+	net_lc(MMDVM_DMR_DATA2, DMR_TYPE_VOICE_LC_HEADER, LC2);
 	CHECK(nak_reason(MMDVM_DMR_DATA2, o) == MMDVM_NAK_RF_BUSY);
 	slot();
 	for (uint8_t i = 0; i < 6; i++) {
@@ -490,9 +490,9 @@ static void test_rf_priority(void)
 	slots(6);
 	// The terminator repeated: a new stream from the host is taken (it goes out in the hang)
 	o = out_count;
-	net_lc(MMDVM_DMR_DATA2, DT_VOICE_LC_HEADER, LC2);
+	net_lc(MMDVM_DMR_DATA2, DMR_TYPE_VOICE_LC_HEADER, LC2);
 	CHECK(reply(MMDVM_ACK, MMDVM_DMR_DATA2, o));
-	net_lc(MMDVM_DMR_DATA2, DT_TERMINATOR_WITH_LC, LC2);
+	net_lc(MMDVM_DMR_DATA2, DMR_TYPE_TERMINATOR_LC, LC2);
 	slots(6);
 	int h = -1;
 	for (unsigned i = 0; i < sim.air_count; i++) {
@@ -579,7 +579,7 @@ static void test_echo_and_late_entry(void)
 			break;
 		}
 	}
-	CHECK(first >= 0 && out[first].b[3] == (MMDVM_DMR_SYNC_DATA | DT_VOICE_LC_HEADER));
+	CHECK(first >= 0 && out[first].b[3] == (MMDVM_DMR_SYNC_DATA | DMR_TYPE_VOICE_LC_HEADER));
 
 	// Our own burst reported back as heard (the chip does, in an empty inbound slot): dropped
 	unsigned last_voice = 0;
@@ -653,8 +653,8 @@ static void test_vendor(void)
 	CHECK(hotspot_alt_active());
 
 	// MS framing: the outbound bursts carry MS sync
-	net_lc(MMDVM_DMR_DATA2, DT_VOICE_LC_HEADER, LC2);
-	net_lc(MMDVM_DMR_DATA2, DT_TERMINATOR_WITH_LC, LC2);
+	net_lc(MMDVM_DMR_DATA2, DMR_TYPE_VOICE_LC_HEADER, LC2);
+	net_lc(MMDVM_DMR_DATA2, DMR_TYPE_TERMINATOR_LC, LC2);
 	slots(8);
 	CHECK(air_find(DMR_BURST_VOICE_LC_HEADER, DMR_SYNC_MS, 0) >= 0);
 	slots(60);

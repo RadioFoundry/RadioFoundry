@@ -37,7 +37,7 @@
 #include <stddef.h>
 #include "config.h"
 
-#define HOSTLINK_HOTSPOT_IDLE_MS	20000	// MMDVMHost polls GET_STATUS every 250 ms; 20 s of nothing = gone
+#define HOSTLINK_HOTSPOT_IDLE_MS	20000	// a standard host polls GET_STATUS every 250 ms; 20 s of nothing = gone
 #define HOSTLINK_CPS_IDLE_MS		10000
 #define HOSTLINK_TNC_IDLE_MS		30000
 

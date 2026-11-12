@@ -223,13 +223,14 @@ void aprsis_poll(uint32_t now)
 			}
 		}
 		break;
+	// Signed: since and last_rx come from the TCP callbacks, which may have read the clock after the caller did
 	case APRSIS_LOGIN:
-		if ((now - since) >= APRSIS_LOGIN_MS) {
+		if ((int32_t)(now - since) >= (int32_t)APRSIS_LOGIN_MS) {
 			drop_conn(now);
 		}
 		break;
 	case APRSIS_ONLINE:
-		if ((now - last_rx) >= APRSIS_SILENCE_MS) {
+		if ((int32_t)(now - last_rx) >= (int32_t)APRSIS_SILENCE_MS) {
 			drop_conn(now);
 		}
 		break;

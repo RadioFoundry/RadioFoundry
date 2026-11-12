@@ -20,6 +20,7 @@
 // Rest-state masks: bit n set = AB state n is a detent position
 #define QUAD_REST_ALL	0x0Fu	// one step per detent (every state)
 #define QUAD_REST_EQUAL	0x09u	// two steps per detent, resting where A == B (00 and 11)
+#define QUAD_REST_DIFFER	0x06u	// two steps per detent, resting where A != B (01 and 10)
 #define QUAD_REST_11	0x08u	// four steps per detent, resting at 11 (both lines released, with pull-ups)
 
 typedef struct {

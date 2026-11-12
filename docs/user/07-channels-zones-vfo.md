@@ -202,6 +202,9 @@ restart.
 1. **OK**, **4** (Zones). The VFO is the first row.
 2. Press **OK**. Home shows the frequency large, and the radio says "VFO: type a frequency".
 
+On a radio with a **VFO/MR** key, press it instead: it goes between the channel and the VFO. **Settings > Keys** can
+give any side key the same job, "VFO/Channel", on a press or a hold.
+
 <img src="../ux/screens/160x120i5/home_vfo.png" width="200" alt="Home in the VFO">
 
 ### Copy a channel to the VFO
@@ -306,7 +309,8 @@ DMR ones:
 
 ### Leaving the VFO
 
-Press **OK**, **4**, then **OK** on the VFO row again ("Back to channels"). Or pick a zone or channel.
+Press **OK**, **4**, then **OK** on the VFO row again ("Back to channels"). Or pick a zone or channel. A **VFO/MR** key
+or a side key set to "VFO/Channel" goes back to the channel you came from.
 
 ## Air band and FM broadcast
 
@@ -318,9 +322,10 @@ no mode to pick and no menu: the frequency decides.
 | 108 to 137 MHz | Air band, in AM. Home shows "Air Band AM" and the squelch level, and "AM" in place of "FM" |
 | The broadcast band (65 to 108 MHz on most receivers) | FM broadcast, on the radio's broadcast receiver. Home shows "Broadcast FM" |
 
-Tune there in the VFO (type **1** **1** **8** **1**, or **0** **8** **8** **1**, and press **OK**). A DMR VFO switches to
-FM there and stays FM; DMR can't be picked in these bands. To keep a station, use **New from current** in the channel
-list (or type the RX frequency in the channel editor): the channel becomes FM and RX only, ready to save. A channel
+Tune there in the VFO (type **1** **1** **8** **1**, or **0** **8** **8** **1**, and press **OK**). A DMR VFO switches
+to FM there and stays FM; DMR can't be picked in these bands. To keep a station, use **New from current** in the channel
+list (or type the RX frequency in the channel editor): the channel becomes RX only, ready to save. Its Mode reads AM in
+the air band and FM in the broadcast band, and OK on it doesn't switch to DMR; the tone rows are hidden. A channel
 programmed on the frequency in the codeplug works too, even one stored as DMR. Both bands are receive only: PTT shows
 "Air band: receive only" or "Broadcast: receive only" and the radio doesn't transmit. Sub-audio tones are ignored.
 

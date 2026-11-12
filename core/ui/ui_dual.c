@@ -693,8 +693,9 @@ bool ui_dual_home_key(const input_event_t *ev)
 		ui_dual_select(ev->action == ACT_NAV_RIGHT ? 1 : 0);
 		return true;
 	case ACT_CONTEXT:
-		if (!press)
+		if (!press || ui_st.entry)
 			return false;
+		// Home commits typed VFO digits with #; the actions open only with no entry in progress.
 		ui_push(SCR_DUAL, 0);
 		return true;
 	default:
@@ -1338,7 +1339,8 @@ const ui_scr_def_t ui_dual_pick_screen = {
 	.name = "dual_pick", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = TRN("Watch on"),
 	.hint = TRN(TEXT_ALT_OPEN "OK watch  0-9 find  Back" TEXT_ALT_NEXT "OK watch  Back" TEXT_ALT_CLOSE),
 	.count = ui_filter_count, .item = pick_item, .select = pick_select, .title = pick_title,
-	.enter = pick_enter, .raw_count = pick_raw_count, .raw_label = pick_raw_label,
+	.enter = pick_enter,
+	.filter = &(const ui_filter_def_t){ .raw_count = pick_raw_count, .raw_label = pick_raw_label },
 };
 
 // ======================= The zone for the picker, or the VFO =======================

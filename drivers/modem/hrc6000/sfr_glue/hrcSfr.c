@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 /*
  * DMR single frequency repeater (SFR): the HR-C6000 glue for functions/sfr.h, see hrcSfr.h. The radio provides the RF
- * side (radioSfrSwitch() etc., hrcSfr.h); the rest is the same on the STM32 radios and the GD-77 (MK22)
+ * side (radioSfrSwitch() etc., hrcSfr.h); the rest is the same on every MCU
  */
 
 #if defined(HAS_SFR)
@@ -42,7 +42,7 @@ static const uint8_t SYNC_PATTERNS[4][6] = {
 #define REG10_RELAY							0x6E
 
 #define BURST_MAX_MS						20	// a burst of ours is over by the next timeslot interrupt after this long
-#define BURST_MIN_MS						20	// an RF RX interrupt (GD-77) ends a burst of ours on for this long
+#define BURST_MIN_MS						20	// an RF RX interrupt (where routed) ends a burst of ours on for this long
 #define BURST_STUCK_MS						100	// the timeslot interrupts stopped while a burst was on: back to receive
 #define NO_TIMESLOT_MS						100	// no timeslot interrupt for this long: the HR-C6000 has no slot timing
 
@@ -286,14 +286,14 @@ static void writeBurst(const sfrBurst_t *b)
 	}
 	else
 	{
-		sfr.outKind[sfr.outIdx & 1] = ((b->type == DT_IDLE) ? 3 : 2);
+		sfr.outKind[sfr.outIdx & 1] = ((b->type == DMR_TYPE_IDLE) ? 3 : 2);
 		// Reg 0x40 bit 3 (CRC_MCU_Control) seems to apply to the deframer too: every inbound header / terminator that
 		// came out bad was decoded while our idle burst, the only burst sent with it set, was framed (on-air test 9).
 		// The idle message has no checksum: it goes with the bit clear. Other data (CSBK, data) still needs it, verbatim
-		bool mcuCrc = (b->flags & SFR_BURST_FLAG_MCU_CRC) && ((b->type != DT_IDLE) || (debug.flags2 & HRC_SFR_DEBUG2_IDLE_MCU_CRC));
+		bool mcuCrc = (b->flags & SFR_BURST_FLAG_MCU_CRC) && ((b->type != DMR_TYPE_IDLE) || (debug.flags2 & HRC_SFR_DEBUG2_IDLE_MCU_CRC));
 		setMcuCrc(mcuCrc ? 0x08 : 0x00);
 
-		if (b->type == DT_IDLE)
+		if (b->type == DMR_TYPE_IDLE)
 		{
 			// The TX RAM's idle message has its own place: the LC at 0x00 stays, for the voice bursts after the gap
 			SPI0WritePageRegByteArray(0x02, 0x18, b->payload, b->length);
@@ -303,7 +303,7 @@ static void writeBurst(const sfrBurst_t *b)
 			SPI0WritePageRegByteArray(0x02, 0x00, b->payload, b->length);
 			sfr.lcWritten = false;
 
-			if ((b->type != DT_VOICE_LC_HEADER) && (b->type != DT_TERMINATOR_WITH_LC))
+			if ((b->type != DMR_TYPE_VOICE_LC_HEADER) && (b->type != DMR_TYPE_TERMINATOR_LC))
 			{
 				txDataRemember(b->payload);
 			}
@@ -359,7 +359,7 @@ static void writeIdle(void)
 	sfrBurst_t b;
 
 	b.kind = SFR_BURST_DATA;
-	b.type = DT_IDLE;
+	b.type = DMR_TYPE_IDLE;
 	b.length = sizeof(SFR_IDLE_INFO);
 	b.flags = SFR_BURST_FLAG_MCU_CRC;
 	memcpy(b.payload, SFR_IDLE_INFO, sizeof(SFR_IDLE_INFO));
@@ -480,7 +480,7 @@ static void testCallTick(void)
 	if ((sfr.testStep < 2) || (sfr.testStep == (TEST_CALL_BURSTS - 1)))
 	{
 		b.kind = SFR_BURST_DATA;
-		b.type = ((sfr.testStep < 2) ? DT_VOICE_LC_HEADER : DT_TERMINATOR_WITH_LC);
+		b.type = ((sfr.testStep < 2) ? DMR_TYPE_VOICE_LC_HEADER : DMR_TYPE_TERMINATOR_LC);
 		b.length = LC_DATA_LENGTH;
 		memcpy(b.payload, TEST_LC, SFR_LC_LENGTH);
 	}
@@ -772,7 +772,7 @@ static void capture(int syncClass, int dataType, int syncType, bool crcValid, ui
 		sfrBurst_t h;
 
 		h.kind = SFR_BURST_DATA;
-		h.type = DT_VOICE_LC_HEADER;
+		h.type = DMR_TYPE_VOICE_LC_HEADER;
 		h.length = 12;
 		h.flags = 0;
 		memset(h.payload, 0, sizeof(h.payload));
@@ -816,9 +816,9 @@ static void captureBurst(int syncClass, int dataType, int syncType, bool crcVali
 
 	if (syncClass == 2)// data
 	{
-		bool block = (dataType == DT_RATE_12_DATA) || (dataType == DT_RATE_34_DATA) || (dataType == DT_RATE_1_DATA);
+		bool block = (dataType == DMR_TYPE_RATE_1_2) || (dataType == DMR_TYPE_RATE_3_4) || (dataType == DMR_TYPE_RATE_1);
 
-		if ((dataType == DT_IDLE) || (dataType > DT_RATE_1_DATA))
+		if ((dataType == DMR_TYPE_IDLE) || (dataType > DMR_TYPE_RATE_1))
 		{
 			debug.rxIgnored++;
 			return;
@@ -826,13 +826,13 @@ static void captureBurst(int syncClass, int dataType, int syncType, bool crcVali
 
 		b.kind = SFR_BURST_DATA;
 		b.type = dataType;
-		b.length = (dataType == DT_RATE_1_DATA) ? 24 : ((dataType == DT_RATE_34_DATA) ? 18 : 12);
+		b.length = (dataType == DMR_TYPE_RATE_1) ? 24 : ((dataType == DMR_TYPE_RATE_3_4) ? 18 : 12);
 		// The voice header and terminator: the HR-C6000 adds their checksum, as for our own calls. Everything else is
 		// sent as received, CRC and mask included
-		b.flags = ((dataType == DT_VOICE_LC_HEADER) || (dataType == DT_TERMINATOR_WITH_LC)) ? 0 : SFR_BURST_FLAG_MCU_CRC;
+		b.flags = ((dataType == DMR_TYPE_VOICE_LC_HEADER) || (dataType == DMR_TYPE_TERMINATOR_LC)) ? 0 : SFR_BURST_FLAG_MCU_CRC;
 		SPI0ReadPageRegByteArray(0x02, 0x00, b.payload, b.length);
 
-		if (keyed && (dataType != DT_VOICE_LC_HEADER) && (dataType != DT_TERMINATOR_WITH_LC))
+		if (keyed && (dataType != DMR_TYPE_VOICE_LC_HEADER) && (dataType != DMR_TYPE_TERMINATOR_LC))
 		{
 			// The HR-C6000's report of the empty inbound slot with what we sent in it (as it does for voice): never
 			// repeated again
@@ -845,7 +845,7 @@ static void captureBurst(int syncClass, int dataType, int syncType, bool crcVali
 			// A data call starting in our hang time: heard while we send, its bursts come out with bit errors (on-air
 			// test 17: every CSBK and data header heard keyed failed its CRC, by 11-23 bits). The hang ends now, so the
 			// rest of the call is heard unkeyed (this burst only counts if its CRC checks)
-			if (((dataType == DT_CSBK) || (dataType == DT_MBC_HEADER) || (dataType == DT_DATA_HEADER)) && !engine.noDataHold &&
+			if (((dataType == DMR_TYPE_CSBK) || (dataType == DMR_TYPE_MBC_HEADER) || (dataType == DMR_TYPE_DATA_HEADER)) && !engine.noDataHold &&
 					sfrEngineEndHang(&engine))
 			{
 				sessionEnd();
@@ -1009,15 +1009,15 @@ static void queueHeard(const sfrBurst_t *heard, uint8_t colorCode, uint8_t sync,
 		sfr.rxAmbeHash[sfr.rxAmbeNext] = sfr.lastRxAmbeHash;
 		sfr.rxAmbeNext = (sfr.rxAmbeNext + 1) % 6;
 	}
-	else if (b.type == DT_VOICE_LC_HEADER)
+	else if (b.type == DMR_TYPE_VOICE_LC_HEADER)
 	{
 		sfr.lastHeaderMs = now;
 	}
-	else if (b.type == DT_TERMINATOR_WITH_LC)
+	else if (b.type == DMR_TYPE_TERMINATOR_LC)
 	{
 		sfr.lastTerminatorMs = now;
 	}
-	else if (b.type != DT_VOICE_PI_HEADER)
+	else if (b.type != DMR_TYPE_PI_HEADER)
 	{
 		sfr.lastDataMs = now;
 	}
@@ -1281,7 +1281,7 @@ static void capturePending(void)
 			sfrBurst_t h;
 
 			h.kind = SFR_BURST_DATA;
-			h.type = DT_VOICE_LC_HEADER;
+			h.type = DMR_TYPE_VOICE_LC_HEADER;
 			h.length = 12;
 			h.flags = 0;
 			memset(h.payload, 0, sizeof(h.payload));
@@ -1351,10 +1351,10 @@ static void capturePending(void)
 		b.kind = SFR_BURST_DATA;
 		b.type = dt[use];
 		b.length = 12;
-		b.flags = ((b.type == DT_VOICE_LC_HEADER) || (b.type == DT_TERMINATOR_WITH_LC)) ? 0 : SFR_BURST_FLAG_MCU_CRC;
+		b.flags = ((b.type == DMR_TYPE_VOICE_LC_HEADER) || (b.type == DMR_TYPE_TERMINATOR_LC)) ? 0 : SFR_BURST_FLAG_MCU_CRC;
 		memcpy(b.payload, info[use], 12);
 
-		if (((b.type == DT_RATE_12_DATA) || (b.type == DT_RATE_34_DATA) || (b.type == DT_RATE_1_DATA)) && !engine.rfCall)
+		if (((b.type == DMR_TYPE_RATE_1_2) || (b.type == DMR_TYPE_RATE_3_4) || (b.type == DMR_TYPE_RATE_1)) && !engine.rfCall)
 		{
 			return;// blocks only within a call
 		}

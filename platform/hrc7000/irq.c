@@ -147,7 +147,7 @@ void hrc_fault(const uint32_t *frame, uint32_t vector)
 #if CONFIG_CRASH_LOG
 	hrc_crash_frame(frame, CRASH_KIND_FAULT, vector);	// keeps the record and restarts
 #endif
-	hrc_soft_reset();	// without the crash log: restart too, rather than stay crashed
+	hrc_restart();	// without the crash log: restart too, rather than stay crashed
 }
 
 #if CONFIG_WATCHDOG && CONFIG_CRASH_LOG
@@ -155,7 +155,7 @@ void hrc_fault(const uint32_t *frame, uint32_t vector)
 // in a frame like hrc_fault's and wrote its address to the task's TCB, whose first word is the saved stack pointer
 // (pxTopOfStack). Interrupts don't nest, so that task is the one that kept the idle task out. The fault trace marks a
 // hang with vector 0
-void hal_crash_hang(uint32_t ms)
+void hal_crash_hang(uint8_t kind, uint32_t ms)
 {
 	__asm__ volatile ("psrclr ie");
 	hrc_rf_safe();
@@ -163,7 +163,7 @@ void hal_crash_hang(uint32_t ms)
 #if CONFIG_FAULT_TRACE
 	fault_trace(frame, 0);
 #endif
-	hrc_crash_frame(frame, CRASH_KIND_HANG, ms);
+	hrc_crash_frame(frame, kind, ms);
 }
 #endif
 

@@ -11,6 +11,7 @@
 #include "ui/fmt.h"
 #include "ui/ui_screens.h"
 #include "ui/ui_svc.h"
+#include "ui/cjk_font.h"
 
 static int fails;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
@@ -447,6 +448,44 @@ static void test_pass_wait(void)
 	CHECK(!gfx_held(5));
 }
 
+#if CONFIG_LANG_ZH
+// A CJK catalog's text (CONFIG_LANG_ZH): UTF-8 decoded one character at a time, 16 px a character, widths in pixels, and
+// a cut that keeps whole characters (docs/spec/ui.md 2.5, core/ui/cjk_font.h)
+static void test_cjk_text(void)
+{
+	const font_t *f = &font_6x12;
+	char buf[24];
+	// 信 is E4 BF A1, 道 is E9 81 93
+	CHECK(gfx_text_width(f, "A") == f->w);
+	CHECK(gfx_text_width(f, "\xE4\xBF\xA1\xE9\x81\x93") == 2 * CJK_FONT_W);
+	CHECK(gfx_text_width(f, "A\xE4\xBF\xA1") == f->w + CJK_FONT_W);
+	// Room for one character and the ellipsis: the second character goes, whole
+	gfx_text_fit(f, "\xE4\xBF\xA1\xE9\x81\x93", CJK_FONT_W + f->w, buf, sizeof buf);
+	CHECK(strcmp(buf, "\xE4\xBF\xA1" GLYPH_ELLIPSIS) == 0);
+	// A buffer that cannot hold two characters keeps the first whole: never half of one
+	char small[4];
+	gfx_text_fit(f, "\xE4\xBF\xA1\xE9\x81\x93", 100, small, sizeof small);
+	CHECK(strcmp(small, "\xE4\xBF\xA1") == 0);
+	// Latin-1 text stays one byte a character (Señal): a name, a message or the Spanish catalog in a build with the CJK
+	// face must not turn into boxes
+	CHECK(gfx_text_width(f, "Se\xF1" "al") == 5 * f->w);
+	CHECK(gfx_text_width(f, "A\xF1\xE4\xBF\xA1") == 2 * f->w + CJK_FONT_W);
+	CHECK(gfx_text_width(f, "\xE4") == f->w);	// not UTF-8 at all: a Latin-1 byte, not a box
+	// Drawing advances by each character's own width
+	CHECK(gfx_text(f, 0, 0, "\xE4\xBF\xA1\xE9\x81\x93", 0) == 2 * CJK_FONT_W);
+	CHECK(gfx_text(f, 0, 0, "Se\xF1" "al", 0) == 5 * f->w);
+	// The end cut keeps the start: Latin at a word (fit_end's job), Chinese by whole characters
+	gfx_text_fit_end(f, "Channel here now", 8 * f->w, buf, sizeof buf);
+	CHECK(strcmp(buf, "Channel" GLYPH_ELLIPSIS) == 0);
+	gfx_text_fit_end(f, "\xE4\xBF\xA1\xE9\x81\x93", CJK_FONT_W + f->w, buf, sizeof buf);
+	CHECK(strcmp(buf, "\xE4\xBF\xA1" GLYPH_ELLIPSIS) == 0);
+	// A byte buffer too small for a whole character keeps the characters before it, never half of one
+	char cut[4];
+	str_copy(cut, sizeof cut, "\xE4\xBF\xA1\xE9\x81\x93");
+	CHECK(strcmp(cut, "\xE4\xBF\xA1") == 0);
+}
+#endif
+
 int main(void)
 {
 	mkdir("out", 0755);
@@ -495,6 +534,24 @@ int main(void)
 	CHECK(strcmp(fit, "2d") == 0);
 	sb_init(&b, age, sizeof age); sb_age_long(&b, 30000u);
 	CHECK(strcmp(age, "30s ago") == 0);
+
+	// Ranges (sb_range, Stations heard and DMR GPS Info), BVA at each unit and rounding step and the compass's edges.
+	// 99950 m and up print 100.0 km: the 0.1 km rounding runs past the step to whole km (as before)
+	static const struct { uint32_t m; uint16_t deg; const char *want; } ranges[] = {
+		{ 0, 0, "0 m N" }, { 1, 0, "1 m N" }, { 999, 0, "999 m N" }, { 1000, 0, "1.0 km N" },
+		{ 1049, 0, "1.0 km N" }, { 1050, 0, "1.1 km N" }, { 9949, 0, "9.9 km N" }, { 9950, 0, "10.0 km N" },
+		{ 99949, 0, "99.9 km N" }, { 99950, 0, "100.0 km N" }, { 99999, 0, "100.0 km N" },
+		{ 100000, 0, "100 km N" }, { 100499, 0, "100 km N" }, { 100500, 0, "101 km N" },
+		{ 20015087, 0, "20015 km N" },
+		{ 5, 22, "5 m N" }, { 5, 23, "5 m NE" }, { 5, 67, "5 m NE" }, { 5, 68, "5 m E" }, { 5, 90, "5 m E" },
+		{ 5, 180, "5 m S" }, { 5, 270, "5 m W" }, { 5, 337, "5 m NW" }, { 5, 338, "5 m N" }, { 5, 359, "5 m N" },
+		{ 5, 360, "5 m N" },
+	};
+	for (size_t i = 0; i < sizeof ranges / sizeof ranges[0]; i++) {
+		sb_init(&b, age, sizeof age);
+		sb_range(&b, ranges[i].m, ranges[i].deg);
+		CHECK(strcmp(age, ranges[i].want) == 0);
+	}
 
 	// 160x120 color
 	ui_layout_init();
@@ -576,6 +633,9 @@ int main(void)
 	CHECK(gfx_init(&disp));
 	ui_layout_init();
 	render_set("128x64");
+#if CONFIG_LANG_ZH
+	test_cjk_text();
+#endif
 
 	// 240x320 color doesn't fit the frame buffer: gfx refuses it instead of overrunning
 	disp.width = 240; disp.height = 320; disp.bpp = 16;

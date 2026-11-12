@@ -101,8 +101,8 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "dmr.hear_all=%u\ndmr.hear_all_latch=%u\n", d->hear_all, d->hear_all_latch);
 		dl_text(t, "dmr.focus_id=%u\ndmr.focus_private=%u\ndmr.one_shot=%u\n", (unsigned)d->focus_id,
 			d->focus_private, d->one_shot);
-		dl_text(t, "dmr.target_manual=%u\ndmr.privacy=%u\ndmr.alias_tx=%u\n", d->target_manual, d->privacy,
-			d->alias_tx);
+		dl_text(t, "dmr.target_manual=%u\ndmr.privacy=%u\ndmr.alias_tx=%u\ndmr.gps_tx_channel=%u\n",
+			d->target_manual, d->privacy, d->alias_tx, d->gps_tx_channel);
 		dl_text(t, "dmr.underruns=%u\n", (unsigned)d->underruns);
 		if (board.dmr != NULL && board.dmr->health != NULL) {
 			// Modem interrupts the driver found lost and recovered from; the first one's controller words
@@ -143,6 +143,7 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		ambeVoiceGetStats(&a);
 		dl_text(t, "call.rx_calls=%u\ncall.rx_calls_played=%u\ncall.rx_late_entries=%u\n", (unsigned)c.rx_calls,
 			(unsigned)c.rx_calls_played, (unsigned)c.rx_late_entries);
+		dl_text(t, "call.rx_calls_resumed=%u\n", (unsigned)c.rx_calls_resumed);
 		dl_text(t, "call.rx_voice_bursts=%u\ncall.rx_lost_frames=%u\n", (unsigned)c.rx_voice_bursts,
 			(unsigned)c.rx_lost_frames);
 		dl_text(t, "call.rx_dup_dropped=%u\ncall.rx_enc_dropped=%u\ncall.rx_term_dropped=%u\n",

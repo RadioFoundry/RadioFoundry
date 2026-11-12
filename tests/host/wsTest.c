@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // WebSocket pieces (core/net/ws.c): SHA-1 against the FIPS 180-2 appendix examples, base64 against RFC 4648 10, the
 // handshake against RFC 6455 1.3, frame headers against RFC 6455 5.7 and the server's rules (5.1, 5.2, 5.5)
 #include <stdio.h>

@@ -4,7 +4,7 @@
 answered, and the radio's own call alert, radio check and text message on air.
 
 Opt-in RF. The bench-to-radio tests (rf + radio_tx + bench_service: --allow-rf --allow-service-stop) send from the SDR
-bench's modem with bench_tx.py data / csbk, then listen (--listen-after) for the radio's answer: radio_tx, as the
+bench's modem with a bench_tx data job / csbk, then listen (--listen-after) for the radio's answer: radio_tx, as the
 radio answers on air (outside radio_tx tests its TX inhibit is on). The radio-to-bench tests
 (radio_tx + bench_service) have the radio send through the debug link's DMR_DATA command while the bench modem listens.
 The radio's own counters (the dmr_data view section) are the pass criteria; an answer the bench modem did not hear is
@@ -13,19 +13,21 @@ are in README.md.
 
 The bench modem sits a meter from the radio and is overloaded by it even at the radio's lowest power: it misses some
 bursts and hears others with bit errors. So what it heard is judged like this (heard_tries, heard_header): only
-bursts whose CRC checks after the FEC count (bench_tx.py listen's "crc_ok"); every one of those must carry exactly the
+bursts whose CRC checks after the FEC count (a bench_tx listen job's "crc_ok"); every one of those must carry exactly the
 expected content (opcode, FID, addresses: a wrong one fails); when the radio's counters say it sent N tries, at least
 one and at most N must be heard, fewer than N is a warning. A single packet (a text message) the bench didn't hear is
 sent again, up to 3 times, each send checked on the radio's counters.
 
-LRRP and ARS need a dispatcher's packets and answers; they are covered on the host (dmrDataServiceTest,
-dmrDataChainTest), not here."""
+LRRP: the bench is the location server. It sends an immediate location request (UDP 4001), and the answer must
+carry the fixed position, or "no fix" without one (test_lrrp_immediate_on_air). Here the answer must be heard:
+it is the result. Triggered requests and ARS are covered on the host (dmrDataServiceTest, dmrDataChainTest)."""
 import time
 import warnings
 
 import pytest
 
-from rfoundry_hil import skip
+import dmr_packets as D
+from rfoundry_hil import HIL_SMS_PREFIX, need_radio_tx, skip
 from hil_config import rig
 
 BENCH_SRC = 9990301
@@ -48,6 +50,11 @@ def _setup(radio, pytestconfig, tx=False):
     own = int(radio.view(["dmr"])["dmr.own_id"])
     if own == 0:
         skip("state", "the radio has no DMR ID (dmr.own_id=0)")
+    # Nothing left from the test before: a confirmed packet of ours (a TMS ACK waits for its link ACK, then retries,
+    # about 4 x 3 s) keys the radio over this test's traffic, and it hears nothing while it transmits. data.busy covers
+    # only a transmission; ip.busy the whole confirmed exchange, the waits between tries too
+    radio.wait_for(lambda v: v.get("data.busy", "0") == "0" and v.get("ip.busy", "0") == "0", 20,
+                   sections=("dmr_data", "dmr_ip"), what="the data service idle")
     time.sleep(1.0)
     return freq, cc, own, feats
 
@@ -209,7 +216,9 @@ def test_confirmed_data_response(radio, sdr_bench, pytestconfig):
     d = _deltas(before, after, ["data.rx_packets", "data.rx_confirmed", "data.responses_sent", "data.tx_ok",
                                 "data.tx_failed"])
     print("radio deltas:", d)
-    assert d["data.rx_confirmed"] == 1 and d["data.responses_sent"] == 1, d
+    assert d["data.rx_confirmed"] == 1, d
+    need_radio_tx(radio)
+    assert d["data.responses_sent"] == 1, d
     assert d["data.tx_ok"] >= 1 and d["data.tx_failed"] == 0, d
     _soft((src, own) in _heard_headers(heard), "the response header to the bench")
 
@@ -224,7 +233,7 @@ def test_sms_rx(radio, sdr_bench, pytestconfig):
     TMS ACK sent back."""
     freq, cc, own, feats = _setup(radio, pytestconfig)
     _need(feats, "DMR_SMS")
-    text = f"RadioFoundry HIL {int(time.time()) % 10000}"
+    text = f"{HIL_SMS_PREFIX}{int(time.time()) % 10000}"
     before = radio.data_view()
     with sdr_bench.lease():
         heard = sdr_bench.data(freq, cc, own, tms=text, tms_seq=(int(time.time()) % 31) + 1, src=BENCH_SRC,
@@ -233,15 +242,19 @@ def test_sms_rx(radio, sdr_bench, pytestconfig):
     after = radio.data_view()
     d = _deltas(before, after, ["data.sms_received", "data.tms_acks_sent", "data.tx_ok", "data.tx_failed"])
     print("radio deltas:", d, "event:", after["data.event"], after["data.event_id"])
-    assert d["data.sms_received"] == 1 and d["data.tms_acks_sent"] == 1 and d["data.tx_failed"] == 0, d
-    # The ACK was the radio's own transmission: named in the data view, and not one that lights the screen
-    if "data.tx_last_kind" in after:
-        assert after["data.tx_last_kind"] == "reply" and after["data.tx_last_ms"] != before["data.tx_last_ms"], after
-        assert radio.view(["core"]).get("tx_auto") == "1"
+    assert d["data.sms_received"] == 1, d
     m = radio.link.inbox(0)
     assert m is not None and m["text"] == text and m["src"] == BENCH_SRC and m["unread"], m
     radio.link.mark_read(0)
     assert radio.link.inbox(0)["unread"] is False
+    need_radio_tx(radio)
+    assert d["data.tms_acks_sent"] == 1 and d["data.tx_failed"] == 0, d
+    # The ACK was the radio's own transmission: named in the data view, and not one that lights the screen. A
+    # confirmed TMS ACK goes as our own IP packet (dmr-data.md, TMS), an unconfirmed one as a reply
+    if "data.tx_last_kind" in after:
+        assert after["data.tx_last_kind"] in ("reply", "ip") and after["data.tx_last_ms"] != before["data.tx_last_ms"], \
+            after
+        assert radio.view(["core"]).get("tx_auto") == "1"
     _soft((BENCH_SRC, own) in _heard_headers(heard), "the TMS ACK packet's header to the bench")
 
 
@@ -263,8 +276,10 @@ def test_call_alert_rx(radio, sdr_bench, pytestconfig, data_settings):
     after = radio.data_view()
     d = _deltas(before, after, ["data.call_alerts_received", "data.csbk_answers_sent", "data.tx_ok"])
     print("radio deltas:", d)
-    assert d["data.call_alerts_received"] == 1 and d["data.csbk_answers_sent"] == 1 and d["data.tx_ok"] >= 1, d
+    assert d["data.call_alerts_received"] == 1, d
     assert after["data.event"] in ("call_alert",) and after["data.event_id"] == BENCH_SRC, after
+    need_radio_tx(radio)
+    assert d["data.csbk_answers_sent"] == 1 and d["data.tx_ok"] >= 1, d
     _soft(any(a == BENCH_SRC and b == own for _o3, a, b in _heard_csbks(heard, CSBK_CALL_ALERT_ACK)),
           "the call alert ack")
 
@@ -289,6 +304,7 @@ def test_radio_check_rx(radio, sdr_bench, pytestconfig, data_settings):
         print("reply off:", d)
         assert d["data.radio_checks_received"] == 1 and d["data.csbk_answers_sent"] == 0, d
 
+        need_radio_tx(radio)
         radio.link.data_settings(0, radio_check_reply=True)
         heard = sdr_bench.csbk(freq, cc, own, opcode=CSBK_RADIO_CHECK, fid=FID_MOTOROLA, octet3=0x80,
                                src=BENCH_SRC, listen_after=3)
@@ -412,10 +428,11 @@ def test_etsi_sms_rx(radio, sdr_bench, pytestconfig):
     e = _deltas(xb, xa, ["data.etsi_sms_received"])
     print("radio deltas:", d, e)
     assert d["data.sms_received"] == 1 and e["data.etsi_sms_received"] == 1, (d, e)
-    assert d["data.responses_sent"] == 1 and d["data.tms_acks_sent"] == 0 and d["data.tx_failed"] == 0, d
     m = radio.link.inbox(0)
     assert m is not None and m["text"] == text and m["src"] == BENCH_SRC and m["format"] == "etsi", m
     radio.link.mark_read(0)
+    need_radio_tx(radio)
+    assert d["data.responses_sent"] == 1 and d["data.tms_acks_sent"] == 0 and d["data.tx_failed"] == 0, d
     _soft((BENCH_SRC, own) in _heard_headers(heard), "the ETSI response header to the bench")
 
 
@@ -493,3 +510,98 @@ def test_radio_check_tx_etsi(radio, sdr_bench, pytestconfig, data_settings):
         (after, d)
     heard_tries(heard, CSBK_RADIO_CHECK, d["data.radio_checks_sent"],
                 lambda x: x[1] == 0 and x[3] == BENCH_SRC and x[4] == own, "ETSI radio check")
+
+
+# ── LRRP: the bench as the location server ──────────────────────────────────
+
+LRRP_LAT, LRRP_LON = 33.7490, -84.3880
+POS_FIXED = 3
+
+
+def _lrrp_setup(radio, pytestconfig):
+    """The radio on the test channel at its lowest power, LRRP answers on: (freq, cc, own, the position settings to put
+    back). Skips without LRRP or the position service."""
+    freq, cc, own, feats = _setup(radio, pytestconfig, tx=True)
+    _need(feats, "DMR_LRRP")
+    v = radio.view(["aprs"])
+    v.update(radio.view(["aprs_set"]))
+    if v.get("pos.built") != "1":
+        skip("not_built", "no position service")
+    d, x = radio.data_view(), radio.view(["dmr_ext"])
+    if d.get("data.lrrp_reply") != 1:
+        radio.link.data_settings(d["data.ars_server"], d["data.radio_check_reply"] == 1, d["data.call_alert_ack"] == 1,
+                                 True, radio_check_etsi=x.get("data.radio_check_etsi") == "1",
+                                 sms_format=x.get("data.sms_format", "etsi_ip"))
+    return freq, cc, own, v
+
+
+def _position_restore(radio, v):
+    def e7(k):
+        s = v.get(k, "0")
+        return round(float(s) * 1e7) if "." in s else int(s)
+    radio.link.aprs_set("lat", e7("set.pos_lat"))
+    radio.link.aprs_set("lon", e7("set.pos_lon"))
+    radio.link.aprs_set("pos_src", int(v.get("set.aprs_pos_src", "0")))
+    radio.link.aprs_set("ambiguity", int(v.get("set.pos_ambiguity", "0")))
+
+
+def _lrrp_ask(radio, sdr_bench, freq, cc, own):
+    """An immediate location request from the bench to us (UDP 4001, a request ID of its own per run): the radio's
+    counter deltas and the LRRP answer documents from us to the bench that the bench modem heard."""
+    src = BENCH_SRC + 200 + int(time.time()) % 100
+    req_id = int(time.time()).to_bytes(4, "big")
+    before = radio.data_view()
+    with sdr_bench.lease():
+        heard = sdr_bench.data(freq, cc, own, udp_port=D.LRRP_PORT, udp_src_port=D.LRRP_PORT,
+                               udp_payload=D.lrrp_immediate_request(req_id), src=src, listen_after=4)
+    radio.wait_for(lambda v: v.get("data.busy", "0") == "0", 10, sections=("dmr_data",), what="the answer sent")
+    d = _deltas(before, radio.data_view(), ["data.rx_for_us", "data.lrrp_requests", "data.lrrp_answers",
+                                            "data.lrrp_no_fix", "data.tx_ok", "data.tx_failed"])
+    print("radio deltas:", d)
+    pk = [p for p in D.data_packets(heard) if p["src"] == own and p["dst"] == src and p["crc_ok"]]
+    print(f"data headers heard: {[(p['src'], p['dst'], p['dpf'], p['sap'], len(p['blocks'])) for p in D.data_packets(heard)]}")
+    answers = []
+    for p in pk:
+        if len(p["blocks"]) == p["need"]:
+            a = D.lrrp_answer(D.udp_payload(D.packet_user(p), D.LRRP_PORT))
+            print(f"LRRP answer: {a}")
+            answers.append(a)
+    return d, req_id, answers
+
+
+@pytest.mark.feature("dmr_lrrp")
+@pytest.mark.feature("position", optional=True)
+@pytest.mark.rf
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.parametrize("fix", ["fixed", "none"])
+def test_lrrp_immediate_on_air(radio, sdr_bench, pytestconfig, data_settings, fix):
+    """An immediate location request from the bench (the location server) answered on air, with no APRS needed: with a
+    fixed position (fixed) the answer carries it; with none (none: the fixed position cleared, the source on fixed so
+    a GPS fix doesn't count) it says no fix (result 0x10)."""
+    freq, cc, own, v = _lrrp_setup(radio, pytestconfig)
+    try:
+        radio.link.aprs_set("pos_src", POS_FIXED)
+        radio.link.aprs_set("ambiguity", 0)
+        radio.link.aprs_set("lat", LRRP_LAT if fix == "fixed" else 0)
+        radio.link.aprs_set("lon", LRRP_LON if fix == "fixed" else 0)
+        p = radio.view(["aprs"])
+        assert p.get("pos.src") == ("fixed" if fix == "fixed" else "none"), p
+        d, req_id, answers = _lrrp_ask(radio, sdr_bench, freq, cc, own)
+    finally:
+        _position_restore(radio, v)
+    assert d["data.rx_for_us"] == 1 and d["data.lrrp_requests"] == 1, d
+    need_radio_tx(radio)
+    assert d["data.lrrp_answers"] == 1 and d["data.lrrp_no_fix"] == (1 if fix == "none" else 0), d
+    assert d["data.tx_ok"] >= 1 and d["data.tx_failed"] == 0, d
+    assert answers, "the bench modem heard no complete LRRP answer from us"
+    a = answers[0]
+    assert a["doc"] == D.LRRP_IMMEDIATE_RESPONSE and a["request_id"] == req_id, a
+    if fix == "fixed":
+        assert a["result"] in (None, 0), a
+        assert a["lat"] is not None, a
+        # 1/10000 minute (core/dmr/dmrLrrp.c), well under 2e-5 degree
+        assert abs(a["lat"] - LRRP_LAT) < 2e-5 and abs(a["lon"] - LRRP_LON) < 2e-5, a
+    else:
+        assert a["result"] == D.LRRP_RESULT_NO_FIX, a

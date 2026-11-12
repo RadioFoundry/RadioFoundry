@@ -1,0 +1,90 @@
+{
+ "board": "md9600",
+ "commit": "c3ef4d233d66fda322d5c1cb5566f28f0de78997",
+ "date": "2026-11-09T03:27:50Z",
+ "dirty": false,
+ "features": [
+  "dmr_confirmed"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "fe4492bc",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "radio",
+  "rf"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.075,
+  "dmr-tg": 202,
+  "fm-mhz": 446.1
+ },
+ "sources": {
+  "dmr_confirmed": {
+   "docs/spec/dmr-data.md": "6afdcd06d1c30ef5722a7ed3df6ac672bc93557f"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "dmr_confirmed"
+   ],
+   "id": "tests/hil/test_dmr_data.py::test_confirmed_data_response",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_dmr_ip.py::test_confirmed_tx_link_ack[1]",
+   "optional": [
+    "dmr_confirmed"
+   ],
+   "outcome": "failed",
+   "reason": "tests/hil/test_dmr_ip.py:375: AssertionError",
+   "required": false
+  },
+  {
+   "features": [
+    "dmr_confirmed"
+   ],
+   "id": "tests/hil/test_dmr_ip.py::test_confirmed_tx_link_ack[2]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_confirmed"
+   ],
+   "id": "tests/hil/test_dmr_ip.py::test_confirmed_tx_link_ack[6]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_confirmed"
+   ],
+   "id": "tests/hil/test_dmr_ip.py::test_confirmed_tx_unanswered",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

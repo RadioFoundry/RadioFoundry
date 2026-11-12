@@ -1,0 +1,134 @@
+{
+ "board": "md9600",
+ "commit": "77755fcbd6be91767a53d4c5f4145a1453486f02",
+ "date": "2026-11-08T22:38:22Z",
+ "dirty": false,
+ "features": [
+  "dmr_udp_compress"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "da54663a",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "microphone",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 2,
+  "dmr-freq": 461.4625,
+  "dmr-tg": 201,
+  "fm-mhz": 461.4625
+ },
+ "sources": {
+  "dmr_udp_compress": {
+   "core/debuglink/debuglink_dmr_data.c": "eaf91c4b5f34e01f9bc8d085fb9fe3b13ecf43bc",
+   "core/dmr/dmrData.c": "ed9363d1cae3025436618f27c130d2f25b938a14",
+   "core/dmr/dmrData.h": "b6cad017604664e6fd948f483349c62c463a4c02",
+   "core/dmr/ipGateway.c": "fa2bc666de344e44f0bd5f4fc39198a55c92cbba",
+   "core/hostlink/build_info.c": "73dbddd5cf176f0f93346325160724c27b1f2652",
+   "docs/spec/dmr-data.md": "934183c8ad26ad020e3d05fd281488ad19148a97"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "dmr_udp_compress"
+   ],
+   "id": "tests/hil/test_dmr_ip.py::test_udp_compressed_tx",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "dmr_udp_compress"
+   ],
+   "id": "tests/hil/test_dmr_ip.py::test_udp_full_header_tx",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_dmr_ip_burst.py::test_udp_burst_pc_to_air",
+   "optional": [
+    "dmr_udp_compress"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_dmr_ip_burst.py::test_udp_burst_radio_to_air",
+   "optional": [
+    "dmr_udp_compress"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_dmr_ip_burst.py::test_udp_max_pc_to_air[sap3]",
+   "optional": [
+    "dmr_udp_compress"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "features": [],
+   "id": "tests/hil/test_dmr_ip_burst.py::test_udp_max_pc_to_air[sap4]",
+   "optional": [
+    "dmr_udp_compress"
+   ],
+   "outcome": "passed",
+   "required": false
+  },
+  {
+   "excused": false,
+   "features": [],
+   "id": "tests/hil/test_dmr_ip_burst.py::test_udp_over_max_pc_to_air[sap3]",
+   "optional": [
+    "dmr_udp_compress"
+   ],
+   "outcome": "skipped",
+   "reason": "[not_built] the air MTU (596) is not below the link's (586): nothing from this host is too long for the air (firmware with a narrower IPGW_AIR_MTU tests it; ipGatewayTestAir440 covers it on the host)",
+   "required": false,
+   "skip_kind": "not_built"
+  },
+  {
+   "excused": false,
+   "features": [],
+   "id": "tests/hil/test_dmr_ip_burst.py::test_udp_over_max_pc_to_air[sap4]",
+   "optional": [
+    "dmr_udp_compress"
+   ],
+   "outcome": "skipped",
+   "reason": "[not_built] the air MTU (596) is not below the link's (586): nothing from this host is too long for the air (firmware with a narrower IPGW_AIR_MTU tests it; ipGatewayTestAir440 covers it on the host)",
+   "required": false,
+   "skip_kind": "not_built"
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

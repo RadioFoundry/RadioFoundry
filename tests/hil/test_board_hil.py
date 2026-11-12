@@ -138,3 +138,24 @@ def test_limit_overrides():
     for b in rfoundry_hil.board_names():
         for name, o in rfoundry_hil.board_hil(b).get("limits", {}).items():
             assert o.get("reason"), (b, name)
+
+
+def test_carrier_floor_db():
+    def sdr(floor, *levels):
+        return {"bursts_summary": {"envelope": {"floor_db": floor}}, "edges": [{"level_dbfs": x} for x in levels]}
+    bench = rfoundry_hil.SdrBench
+    assert bench.carrier_floor_db(sdr(-65.0, -54.0, -11.0)) == -51.0       # close: 40 dB under the carrier
+    assert bench.carrier_floor_db(sdr(-65.0, -40.0)) == -65.0              # weak: the channel's own floor
+    assert bench.carrier_floor_db(sdr(-65.0)) == -65.0                     # nothing keyed
+
+
+def test_link_ack_count():
+    from test_dmr_ip import _link_ack_problem
+
+    def d(tx, acks, timeouts, failed=0):
+        return {"ip.cnf_tx": tx, "ip.cnf_acks": acks, "ip.cnf_timeouts": timeouts, "ip.cnf_failed": failed}
+    assert _link_ack_problem(d(1, 1, 0), 1) is None
+    assert _link_ack_problem(d(2, 1, 1), 1) is None         # the responder never heard try 1: its log has one entry
+    assert _link_ack_problem(d(3, 1, 2), 1) is None
+    assert "1 of the responder's 2" in _link_ack_problem(d(2, 1, 1), 2)     # answered twice, the first one missed
+    assert "no ACK" in _link_ack_problem(d(3, 0, 3, 1), 2)

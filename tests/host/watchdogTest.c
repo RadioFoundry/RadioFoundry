@@ -43,14 +43,16 @@ uint32_t hal_watchdog_timeout_ms(void) { return timeout_ms; }
 static jmp_buf hang_jmp;
 static unsigned hangs;
 static uint32_t hang_ms;
+static uint8_t hang_kind;
 // The restart cause's uptime (core/crash/crash.c): what the tick last kept
 static uint32_t alive_ms;
 void crash_alive(uint32_t ms) { alive_ms = ms; }
 
-void hal_crash_hang(uint32_t ms)
+void hal_crash_hang(uint8_t kind, uint32_t ms)
 {
 	hangs++;
 	hang_ms = ms;
+	hang_kind = kind;
 	longjmp(hang_jmp, 1);
 }
 
@@ -171,7 +173,7 @@ static void test_hang_check(void)
 	CHECK(!tick() && hangs == 0);
 	CHECK(alive_ms == now_ms);	// every tick keeps the uptime, so a watchdog reset still says how long the run was
 	now_ms += 1;
-	CHECK(tick() && hangs == 1 && hang_ms == 3000);	// 4 s timeout: a record at 3 s, a second before the reset
+	CHECK(tick() && hangs == 1 && hang_ms == 3000 && hang_kind == CRASH_KIND_HANG);	// 4 s timeout: a record at 3 s, a second before the reset
 	watchdog_idle(now_ms);
 	now_ms += 2000;
 	unsigned before = feeds;
@@ -195,6 +197,35 @@ static void test_hang_check(void)
 	now_ms = saved_now;
 	watchdog_idle(now_ms);
 	watchdog_clear_gap();				// the gaps above aren't the next test's
+}
+
+// The stall check: the host link's task stops passing its loop while the idle task still feeds (it waits, it doesn't
+// spin): a record of kind STALL at WATCHDOG_STALL_MS, none before its first pass
+static void test_stall_check(void)
+{
+	uint32_t saved_now = now_ms;
+	unsigned before = hangs;
+	now_ms = 100000;
+	watchdog_idle(now_ms);
+	CHECK(!watchdog_stalled(now_ms + 10u * WATCHDOG_STALL_MS));	// never passed: not watched
+	watchdog_task_pass(now_ms);
+	for (uint32_t t = 0; t < WATCHDOG_STALL_MS - 1000u; t += 1000u) {	// the idle task feeds every second
+		now_ms += 1000;
+		watchdog_idle(now_ms);
+		CHECK(!tick());
+	}
+	CHECK(hangs == before && !watchdog_stalled(now_ms + 999u));
+	now_ms += 1000;
+	watchdog_idle(now_ms);
+	CHECK(tick() && hangs == before + 1 && hang_kind == CRASH_KIND_STALL && hang_ms == WATCHDOG_STALL_MS);
+	watchdog_task_pass(now_ms);		// passing again: nothing
+	now_ms += 1000;
+	watchdog_idle(now_ms);
+	CHECK(!tick() && hangs == before + 1);
+	now_ms = saved_now;
+	watchdog_idle(now_ms);
+	watchdog_task_pass(now_ms);
+	watchdog_clear_gap();
 }
 
 // The view: the keys a HIL test reads
@@ -278,6 +309,7 @@ static void test_load_then_starve(void)
 	unsigned hangs_before = hangs;
 	now_ms += 10000;
 	CHECK(!tick() && hangs == hangs_before);	// the starve times the hardware reset: no hang record ahead of it
+	CHECK(!watchdog_stalled(now_ms + 2u * WATCHDOG_STALL_MS));	// nor a stall record
 	now_ms -= 10000;
 	char buf[512];
 	now_ms += 2500;
@@ -293,6 +325,7 @@ int main(void)
 	test_refusals();
 	test_ptt_cancels();
 	test_hang_check();
+	test_stall_check();
 	test_load_then_starve();	// last: the starve is for good
 	printf("watchdogTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;

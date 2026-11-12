@@ -33,8 +33,17 @@ const char build_features[] =
 #if CONFIG_DMR_GPS
 	"DMR_GPS,"
 #endif
+#if CONFIG_GPS
+	"GPS,"
+#endif
 #if CONFIG_APRS
 	"APRS,"
+#endif
+#if CONFIG_APRS_AFSK
+	"APRS_AFSK,"
+#endif
+#if CONFIG_APRS_DMR
+	"APRS_DMR,"
 #endif
 #if CONFIG_APRS_RX
 	"APRS_RX,"
@@ -77,9 +86,6 @@ const char build_features[] =
 #endif
 #if CONFIG_DMR_UDP_COMPRESS && CONFIG_DMR_DATA_CORE
 	"DMR_UDP_COMPRESS,"
-#endif
-#if CONFIG_DMR_CONFIRMED && CONFIG_DMR_DATA_CORE
-	"DMR_CONFIRMED,"
 #endif
 #if CONFIG_NET_TCP
 	"NET_TCP,"
@@ -137,6 +143,12 @@ const char build_features[] =
 #endif
 #if CONFIG_DIAG
 	"DIAG,"
+#endif
+#if CONFIG_UI_SETTINGS
+	"UI_SETTINGS,"
+#endif
+#if CONFIG_CHANNEL_LIST
+	"CHANNEL_LIST,"
 #endif
 #if CONFIG_CRASH_LOG
 	"CRASH_LOG,"

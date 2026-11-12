@@ -109,8 +109,7 @@ static void fill(uint32_t now)
 	data.rxHz = view.ch.rx_hz;
 	data.txHz = view.ch.tx_hz;
 	data.power = view.power;
-	data.powerName = ((view.power < board.power_count) && (board.power_names != NULL)) ? board.power_names[view.power]
-											     : "";
+	data.powerName = view.power < board.power_count ? board_power_name(view.power, view.ch.tx_hz) : "";
 	data.cc = view.dmr.cc;
 	data.ts = view.dmr.ts;
 	data.talkTarget = view.dmr.target_id;

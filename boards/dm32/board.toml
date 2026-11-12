@@ -85,6 +85,9 @@ progmem = 0x100000
 tested = true
 # the factory calibration: the 4 KB page of the stock codeplug area whose last byte is 2 (hardware-dm32.md 11.1)
 calibration = { area = 0xC9000, page_id = 2 }
+# stubtool --write-test erases and programs these 16 KB: the gap between the sector journal and the open-firmware
+# flash image in board.c's flash map, which nothing stores in
+write_test = 0x71C000
 
 # The codec slot and windows come from boards/dm32/memory.ld (__codec_*); profile is the id rfoundry gives a merged codec
 [codec]
@@ -112,3 +115,10 @@ flash_jedec = ["C84018", "852018"]
 calibration = true
 battery_mv = [5500, 8800]
 codec = ["049", "046"]
+
+# The stock codeplug in a data flash backup (tools/backup_codeplug.py): the pages of its translation layer, each with
+# its logical block in its last byte (docs/spec/hardware-dm32.md 10.1), decoded by qdmr's dm32uv driver
+[stock_codeplug]
+dmrconf = "dm32uv"
+span = [0x1000, 0xC9000]
+pages = "block-id"

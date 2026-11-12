@@ -125,7 +125,8 @@ The block grew from 10 to 16 bytes without a new version: hosts read the bytes t
 | 7 | options: bit 0 RX_META events (RX half, 3.10). Other bits must be 0 | 0 | 0-1 |
 
 Result 2 when the hotspot hasn't taken the modem yet (send GET_VERSION or SET_FREQ first) or the driver lacks the
-operations of that role (INFO byte 1); 4 for a role above 2 or an unknown option bit. Setting the same role again only updates the parameters.
+operations of that role (INFO byte 1). Taking the modem can lag the first commands by a retune (about 50 ms on a radio
+whose synthesizer is slow to settle), so a host asks again for up to 2 s while INFO offers the role; 4 for a role above 2 or an unknown option bit. Setting the same role again only updates the parameters.
 Changing role drops whatever the previous role had (buffers, epoch, calls going up get their DMR_LOST). Role 0 is
 always accepted.
 
@@ -214,10 +215,16 @@ The reply's **phase_us** is the slot clock's boundary minus the grid's, folded t
 is changed. Flags: 01 aligned (|phase| < 1000 µs after this request), 02 slewing, 04 snapped, 08 period applied to the
 slot clock (else the period is stored for the phase only), 10 not applied (keyed).
 
-- **Not keyed**: the slot clock snaps: it restarts so that a boundary falls on the grid, and from then on GET_EPOCH's
+- **Not keyed**: the slot clock snaps: it restarts so that a boundary falls on the grid (unless it is already within
+  200 µs of the grid on the right slot: then it is only numbered, no restart, and the reply says aligned), and from then on GET_EPOCH's
   counter is the grid's number (counter base) and even counters are outbound TS1. The TX half checks the new clock
-  against the grid at its first boundaries and snaps again (up to three times) if it is off by 1000 µs or more or on
-  the wrong slot, with the chip's restart delay learned from the first boundary (kept for the role). STATUS 42-46 show
+  against the grid at its first boundaries and snaps again (up to twelve times) if it is off by 200 µs or more or on
+  the wrong slot, with the chip's restart delay learned as the mean of the last restarts' delays (up to eight, kept for the role; a landing more than
+  4 ms off starts the mean again from it). The delay
+  can pass half a slot, so the restart can fall a slot before the boundary it lands on: the slot named for it is the
+  grid slot nearest the instant the driver restarts (the first of the request plus whole slots at least 2 ms ahead). From the third
+  restart on, a landing inside the aligned bound (1000 µs) ends it too: a chip whose delay varies by ms from restart to
+  restart (`modem-hrc6000.md` 9.1) rarely lands within 200 µs, and a later try can land further off. STATUS 42-46 show
   the result: a clock that stays off keeps the counter base but not the aligned flag. Allowed in either stream mode.
 - **Keyed, or mode 1**: if the counter's parity matches the slot clock's and either |phase| < 1000 µs or the driver can
   slew (bit 2), the numbering changes at once (counter base, flag 01 when |phase| < 1000 µs) and, with bit 2, the
@@ -296,7 +303,7 @@ A burst that fails its CRC still gets its event (flag 01 clear), though no uplin
 | SET_CONFIG | duplex flag clear (simplex flag set is accepted too); color code for the outbound; the rest as `mmdvm-protocol.md` 2.5. The SFR trigger never fires in a role |
 | SET_MODE | 02 DMR: normal; 00 idle: buffers dropped, keying ends after the burst on air |
 | DMR_START `1D 01` / `1D 00` | key the continuous outbound / unkey once what is buffered has gone out (at most 1 s). ACKed |
-| DMR_DATA1 / DMR_DATA2 | one 33-byte burst for outbound slot 1 / 2, as MMDVMHost builds it (BS sync, control byte 00 allowed: classified from the burst as in 2.8). Queued per slot. The first frame while unkeyed keys up too. Silent on success (as MMDVM boards); NAK 5 when that slot's buffer is full, NAK 2 in the cool-down, NAK 4 wrong length |
+| DMR_DATA1 / DMR_DATA2 | one 33-byte burst for outbound slot 1 / 2, as a host builds it (BS sync, control byte 00 allowed: classified from the burst as in 2.8). Queued per slot. The first frame while unkeyed keys up too. Silent on success (as MMDVM boards); NAK 5 when that slot's buffer is full, NAK 2 in the cool-down, NAK 4 wrong length |
 | DMR_SHORTLC `1C <9 bytes>` | the CACH short LC, sent from the next 4-CACH boundary and repeated every 120 ms until replaced (section 5.3). ACKed |
 | DMR_ABORT `1E <slot>` | drop what is buffered for that slot (not yet on air). ACKed |
 | GET_STATUS | byte 5 flag 01 TX while keyed (and while buffered bursts wait); bytes 7 / 8 the free space of slot 1 / slot 2 less a margin of 2 (the hosts write while above 1); flag 08 TX overflow once after a NAK 5; nothing else changes |
@@ -358,7 +365,7 @@ first, most significant bit of byte 0 first, 4 zero pad bits at the end of byte 
 parity, Hamming rows, CRC-8); a frame that fails is counted (STATUS 28) and re-read as the 28-bit short LC in its first
 4 bytes (bits 27-0 right aligned, as -1 B.3.7 numbers them) if that form's CRC matches the 5th byte, else dropped (the
 previous short LC stays). It goes on air from the next CACH whose slot counter is a multiple of 4. The exact byte layout
-MMDVMHost sends is to be confirmed on the bench (section 11, open question 1): both forms are taken.
+a host sends is to be confirmed on the bench (section 11, open question 1): both forms are taken.
 
 ### 5.4 Making BS framing on the chips
 
@@ -376,7 +383,7 @@ The core hands the modem driver, for each slot, the burst and the CACH (fields a
   to TX RAM and the chip only modulates them (`modem-hrc7000.md` 2.10). INFO byte 4 says 1 (ours). The glue
   (`platform/hrc7000/dmr_glue.c`) wires `now_us` and `slot_clock` (the slot engine's tick and its time; a received
   burst's arg is the tick of the slot after its own, as on the HR_C6000), so the HR_C7000 radios offer both halves.
-- **Fallback when the chip can't make a CACH**: BS-synced continuous bursts without valid TACT bits. MMDVMHost-style
+- **Fallback when the chip can't make a CACH**: BS-synced continuous bursts without valid TACT bits. Standard host
   receivers and most radios still decode the bursts, but a subscriber radio in repeater mode takes its slot numbering
   from TC and its channel access from AT, so it may not tell TS1 from TS2 and talks on the wrong slot. That is not a
   usable repeater output; use a radio whose chip makes the CACH (HR_C7000 once specified) or an MMDVM board as the TX
@@ -481,11 +488,11 @@ the two radios.
 1. Open both ports. On each: GET_VERSION; require ` SPLIT1` in the description. SET_FREQ with the repeater pair (RX =
    f_in, TX = f_out, RF level from upstream) and SET_CONFIG (duplex flag clear, upstream's color code) to **both**.
 2. INFO on each; require bit 0 of byte 1 on TX, bit 1 on RX. SET_ROLE 1 on TX, SET_ROLE 2 on RX (lease 10 s; the power
-   cap and prebuffer you want).
+   cap and prebuffer you want), repeated on result 2 for up to 2 s (3.2).
 3. Time sync (section 6): TIME to each, at least 8 samples 20 ms apart, then every 1 s. GET_EPOCH from TX, SET_EPOCH to
    RX. Only then report the virtual modem ready upstream.
 4. Keep both leases: TIME every 1 s does it. If either radio fails (no TIME reply for 3 s, a role lost in INFO), report
-   the virtual modem dead upstream (stop answering status, so MMDVMHost resets it) and start again from 1.
+   the virtual modem dead upstream (stop answering status, so the host resets it) and start again from 1.
 
 ### 8.2 Upstream commands to the halves
 
@@ -519,7 +526,7 @@ the two radios.
 - AT: whenever RX's inbound busy mask changes (from STATUS byte 2, or from the uplink frames themselves: a call open on
   a slot is busy until its 42 terminator or DMR_LOST), send SET_AT with the mask to TX. Re-send at least every 1 s
   (TX drops a mask older than 2 s).
-- A duplex host repeats RF calls itself: MMDVMHost puts an RF call heard on slot N back out on slot N as DMR_DATA
+- A duplex host repeats RF calls itself: it puts an RF call heard on slot N back out on slot N as DMR_DATA
   frames with DMR_START; nothing in the radios repeats on its own.
 
 ### 8.5 Timing the host must keep
@@ -539,7 +546,7 @@ from the MMDVM board's slot timing, which MMDVM doesn't expose. Not supported by
 - **TX half frequency**: the continuous outbound keys once with the board's per-burst RX-to-TX sequence and then
   stays in TX, so it inherits that sequence's carrier error; no offset constant is added (the sequence and its
   measured error are on each radio's hardware page; gotcha 3.5). A continuous carrier warms the TCXO: measure on the
-  SDR bench after 5 minutes keyed (`sdrmon.py analyze` prints the frequency offset per burst) and, if it is outside
+  SDR bench after 5 minutes keyed (the burst records give the frequency offset per burst) and, if it is outside
   about ±300 Hz, correct the reference oscillator offset in the radio's calibration. An ADF7021-based receiver
   (MMDVM_HS) decodes nothing at -3 kHz, so check every TX half once with the bench.
 - **RX half**: uses the radio's receive calibration as is; the modem tolerates the ±1.5 kHz of a typical
@@ -558,8 +565,8 @@ view. Variants: 0 ours (the default: physical layer mode, the core's 288 bits pe
 framing (0x10 = 0x6E; AT / TC written to 0x52 and the short LC to TX RAM 0x24 for every burst), 255 ours with up to
 4 raw (page 4 register, value) pairs written at key-up (0x10 restored at unkey; 0x11 and 0x40 too when pairs were
 given). `tools/split_duplex_host.py --exp <variant>` or the HIL test (`RFOUNDRY_SPLIT_VARIANT`, `RFOUNDRY_SPLIT_REGS="REG=VAL
-..."`) keys the outbound with idle bursts and a short LC for 10 s; `sdrmon.py analyze --cach` on the SDR bench
-decodes per burst the family, the CACH (`tact ok AT TC LCSS`) and the short LC.
+..."`) keys the outbound with idle bursts and a short LC for 10 s; the receive board's burst records on the SDR
+bench give per burst the family, the CACH (`tact ok AT TC LCSS`) and the short LC.
 
 The results that led to the physical layer mode are in [modem-hrc6000.md](modem-hrc6000.md) 9.2. On the HR_C7000
 the variant is a bit field of physical layer options instead (`modem-hrc7000.md` 2.10: continuous mode, the autotest
@@ -615,8 +622,8 @@ runs a real pair (bring-up and timing readout, no upstream; `--repeat` repeats a
   (`modem-hrc6000.md` 9.1). The first snap of a boot lands off by the chip's delay and the second, with it learned,
   on the grid. HR_C7000 board B 3 of 3, -2 to +227 us, delay -1141 us; HR_C7000 board C 3 of 3, -77 to +84 us, delay -1137 us (both over a USB-serial cable, sync bound 5.4-5.6 ms).
 - `test_split_tx_sched` (radio_tx): the voice test's call as TX_SCHED for numbered TS2 slots, one resend, one late
-  burst, the key-up from the queued bursts; checked off air (one slot, TC 1, the call whole, one key-up, 60 ms
-  spacing) and in STATUS. Board A, 2026-10-21: passed (22 queued, 1 replaced, 1 late; the call decoded without sync errors in its TS2 slots); board B passed. Board C: the radio restarted during the call (no crash record); open.
+  burst, the key-up from the queued bursts; checked off air (one slot, the busy CACHs TC 0 as 3.6 puts them, the call whole, one key-up,
+  60 ms spacing) and in STATUS (aligned while keyed). Board A, 2026-10-21: passed (22 queued, 1 replaced, 1 late; the call decoded without sync errors in its TS2 slots); board B passed. Board C: the radio restarted during the call (no crash record); open.
 - `test_split_slew` (no RF): the TX half snapped onto the host's grid, then ALIGN mode 1 to a grid 1.5 ms later; the
   clock must reach it by slot trims within 5 s (aligned, not slewing, |phase| within 100 µs, `split.slew_us` about the
   shift). Skips without capability bit 2, which no driver sets yet: the HR_C7000's LAYER2_MAX_CNT trim was tried with
@@ -644,7 +651,7 @@ CACH coding, which is byte-identical with `core/dmr/fec/dmrCach.c`.
 
 ## 11. Open questions
 
-1. The 9-byte layout of DMR_SHORTLC as MMDVMHost sends it (5.3): both forms are accepted; the bench decode settles it.
+1. The 9-byte layout of DMR_SHORTLC as a host sends it (5.3): both forms are accepted; the bench decode settles it.
 2. HR_C6000 CACH (5.4, 10.1): AT / TC (0x52) and the short LC (TX RAM 0x24) are now written per the manual; open
    until the bench shows them on air: the 0x11 value, and where the chip takes the CACH LCSS from.
 3. HR_C7000 TX half: settled (`modem-hrc7000.md` 2.10, bench 2026-10-21): the physical layer's

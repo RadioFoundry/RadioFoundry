@@ -34,6 +34,7 @@
 #      (tools/rfoundry/tests) and every tool's --self-test (the tools under tools/ and stub/ that have one); the stack
 #      check's self-test
 #      (tools/stack_check.py); every relative link, image and anchor in the Markdown resolves (tools/check_doc_links.py);
+#      the codeplug settings area's keys agree in the spec, the firmware and the Codeplug Editor (tools/check_keys.py);
 #      the glossary data is sound and its pages current (tools/glossary.py); the web site builds without a warning (site/build.py, needs markdown-it-py or uv) and the web flasher's tests
 #      pass against rfoundry (site/tests/run.sh, needs Node 20+)
 #   3. firmware, for every boards/<b>/board.mk whose compiler is installed (a board without one is skipped with a
@@ -46,7 +47,8 @@
 #        maximal            every switch on, except those the board lists as unsupported (BOARD_UNSUPPORTED: the
 #                           hardware can't), not written yet (BOARD_NOT_WRITTEN) or not needed (the board's MAXIMAL_SKIP: NET_PPP on the radios with the USB network adapter)
 #                           and the bench diagnostics (MAXIMAL_SKIP here: AUDIO_PROBE), with the board's MAXIMAL_VARS
-#                           (the DM-1701: LTO=1)
+#                           (the DM-1701: LTO=1). A switch that needs one of those is off too (config/features.mk's
+#                           checks: all of DMR's family where DMR isn't written)
 #        <value>            each build option value but the first (board.toml [[build_options]], e.g. a band),
 #                           default config; not with --matrix
 #        <extra>            each board.toml [ci] extra configuration (e.g. a bench diagnostic with the variables it
@@ -102,6 +104,9 @@ ok()   { echo "ci: ok    $*"; }
 bad()  { echo "ci: FAIL  $*"; FAILED="$FAILED
   $*"; }
 skip() { echo "ci: skip  $*"; SKIPPED="$SKIPPED
+  $*"; }
+WARNED=""
+warn() { echo "ci: warn  $*"; WARNED="$WARNED
   $*"; }
 # The registry tools (tools/boards.py) read TOML: Python 3.11 or later. Empty when there is none (the steps that need it
 # fail with the reason)
@@ -185,6 +190,8 @@ fi
 if step python; then
 echo "== python"
 PY_FILES=$(git ls-files 'tools/*.py' 'tools/**/*.py' 'tests/hil/*.py' 'boards/*/hil/*.py' 2>/dev/null)
+# The HIL checks below read no rig file: the result doesn't depend on the rig, and it needs no tomllib
+export RFOUNDRY_HIL_CONFIG=none
 if command -v python3 > /dev/null; then
 	if python3 -c 'import ast, sys
 for f in sys.argv[1:]:
@@ -210,25 +217,29 @@ for f in sys.argv[1:]:
 		head -20 "$OUT/hil-skips.log"
 		bad "HIL skips without a kind (see $OUT/hil-skips.log)"
 	fi
-	# the speaker tests' analysis on synthetic recordings (no radio, needs numpy)
+	# the speaker tests' and the carrier floor analysis on synthetic data, the bench board's APRS and FM records
+	# parsed, the ID database encoders against iddb_read.py (no radio, needs numpy)
 	if python3 -c 'import pytest, numpy' 2>/dev/null; then
-		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_audio_check.py > "$OUT/hil-audio-check.log" 2>&1; then
-			ok "HIL speaker analysis tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-audio-check.log"))"
+		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_audio_check.py tests/hil/test_sdrmon_floor.py \
+			tests/hil/test_aprs_board.py tests/hil/test_fm_measure.py tests/hil/test_iddb_write.py \
+			> "$OUT/hil-audio-check.log" 2>&1; then
+			ok "HIL speaker, SDR floor, APRS, FM record and ID database tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-audio-check.log"))"
 		else
 			tail -20 "$OUT/hil-audio-check.log"
-			bad "HIL speaker analysis tests (see $OUT/hil-audio-check.log)"
+			bad "HIL speaker, SDR floor, APRS, FM record and ID database tests (see $OUT/hil-audio-check.log)"
 		fi
 	else
-		skip "HIL speaker analysis tests: pytest or numpy not installed"
+		skip "HIL speaker, SDR floor, APRS, FM record and ID database tests: pytest or numpy not installed"
 	fi
 	if python3 -c 'import pytest' 2>/dev/null; then
-		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_skip_kinds.py tests/hil/test_radio_reconnect.py \
-			tests/hil/test_tx_guard.py \
+		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_skip_kinds.py tests/hil/test_radio_reconnect.py tests/hil/test_bench_line.py \
+			tests/hil/test_bench_envelope.py \
+			tests/hil/test_tx_guard.py tests/hil/test_rig_state.py tests/hil/test_dmr_packets.py \
 			> "$OUT/hil-skip-test.log" 2>&1; then
-			ok "HIL skip, reconnect and TX guard helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
+			ok "HIL skip, reconnect, TX guard, rig state, bench line and DMR packet helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
 		else
 			tail -20 "$OUT/hil-skip-test.log"
-			bad "HIL skip, reconnect and TX guard helper tests (see $OUT/hil-skip-test.log)"
+			bad "HIL skip, reconnect, TX guard, rig state and bench line helper tests (see $OUT/hil-skip-test.log)"
 		fi
 	fi
 	# the feature checklist (tests/hil/README.md, "Bring-up mode"): tools/bringup.py check, and the bring-up
@@ -296,6 +307,12 @@ for f in sys.argv[1:]:
 	else
 		head -20 "$OUT/doc-links.log"
 		bad "doc links (see $OUT/doc-links.log)"
+	fi
+	if python3 tools/check_keys.py > "$OUT/keys.log" 2>&1; then
+		ok "settings area keys: $(tail -1 "$OUT/keys.log" | sed 's/^check_keys: //')"
+	else
+		head -20 "$OUT/keys.log"
+		bad "settings area keys (see $OUT/keys.log)"
 	fi
 	if python3 tools/glossary.py --check > "$OUT/glossary.log" 2>&1; then
 		ok "glossary: $(tail -1 "$OUT/glossary.log" | sed 's/^glossary: //')"
@@ -413,6 +430,14 @@ build() {
 			bad "$b $name: stack check (see $dir.stack.log)"
 		fi
 	fi
+	# double and libm in a release image: a warning, not a failure (docs/spec/gotchas.md 13.12)
+	if [ "$name" = default ] || [ "$name" = maximal ]; then
+		cross=$(make -s BOARD="$b" BUILD="$dir" "$@" print-vars VARS=CROSS | sed 's/^CROSS=//')
+		soft=$("${cross}nm" "$target.elf" 2>/dev/null | awk '$2 ~ /^[TtWw]$/ { print $3 }' |
+			grep -E '^(__aeabi_(d[a-z]+|[iu]?l?2d|f2d|d2[a-z]+)|__(add|sub|mul|div|extendsf|truncdf|float[a-z]*|fix[a-z]*)df[0-9]?|(sin|cos|tan|asin|acos|atan2?|sqrt|pow|exp|log|log10|floor|ceil|fmod|round|hypot)f?)$' |
+			sort -u | tr '\n' ' ')
+		if [ -n "$soft" ]; then warn "$b $name: links double or libm code: $soft(docs/spec/gotchas.md 13.12)"; fi
+	fi
 	bin=$target.bin
 	bytes=$(wc -c < "$bin" | tr -d ' ')
 	# --print-memory-usage: "FLASH:  123024 B  336 KB  35.76%" (the app region, codec sectors excluded)
@@ -501,9 +526,21 @@ for bm in boards/*/board.mk boards/*/; do
 		builds "$b" --extra
 		build "$b" fm-minimal CONFIG_DMR=n CONFIG_USB=n CONFIG_VFO=n CONFIG_DIAG=n CONFIG_SUBTONE=n CONFIG_FONT_XL=n
 	fi
+	# A switch whose parent is left out (everything that needs DMR on a board where DMR isn't written) is left out too:
+	# config/features.mk's checks name one such switch per pass, until the set passes them
+	maximal_vars=$(make -s BOARD="$b" print-maximal-vars 2>/dev/null)
+	dropped=""
+	# shellcheck disable=SC2086
+	while err=$(make -s BOARD="$b" $all_on $maximal_vars print-config 2>&1 >/dev/null); [ -n "$err" ]; do
+		f=$(printf '%s\n' "$err" | sed -n 's/.*CONFIG_\([A-Z0-9_]*\)=y needs .*/\1/p' | head -1)
+		case "$all_on " in *" CONFIG_$f=y "*) ;; *) break ;; esac	# not a dependency: the build reports it
+		all_on=$(printf '%s ' $all_on | sed "s/CONFIG_$f=y //")
+		dropped="$dropped $f"
+	done
+	[ -n "$dropped" ] && echo "ci: $b maximal: off, their parent left out:$dropped"
 	# Maximal with --quick too: its flash and the stack check's deepest chains are where a pull request runs out first
 	# shellcheck disable=SC2086
-	build "$b" maximal $all_on $(make -s BOARD="$b" print-maximal-vars 2>/dev/null)
+	build "$b" maximal $all_on $maximal_vars
 done
 # Each platform's flash stubs (platform.toml stubs), once, when any board on the platform was built: one image serves
 # every board on it. Built with that platform's compiler (the first board's print-cc), then the stub's own check target
@@ -565,6 +602,9 @@ else
 fi
 
 echo
+if [ -n "$WARNED" ]; then
+	echo "ci: warnings:$WARNED"
+fi
 if [ -n "$SKIPPED" ]; then
 	echo "ci: skipped:$SKIPPED"
 fi

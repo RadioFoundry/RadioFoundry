@@ -1,0 +1,111 @@
+{
+ "board": "md9600",
+ "commit": "32d071201e9b7b23dc40e5ea691763c59c1ac35f",
+ "date": "2026-11-06T09:17:56Z",
+ "dirty": false,
+ "features": [
+  "sfr"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,DMR_CONFIRMED,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "32d07120",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.075,
+  "dmr-tg": 202,
+  "fm-mhz": 446.1,
+  "tx-power": 40
+ },
+ "sources": {
+  "sfr": {
+   "core/dmr/sfr.c": "6d20ac020fbca369447f5e2e8858123d981e24b4",
+   "core/dmr/sfrRunner.c": "9544ca1ae7bfb1ff03819022aa57bb6f1687cce6",
+   "docs/spec/sfr.md": "23162eff95ffad96172b739580bfa08e30333923"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "sfr"
+   ],
+   "id": "tests/hil/test_hotspot_sfr.py::test_hotspot_sfr_mode",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "sfr"
+   ],
+   "id": "tests/hil/test_hotspot_sfr.py::test_sfr_repeats_bench_call",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "sfr"
+   ],
+   "id": "tests/hil/test_sfr_standalone.py::test_sfr_chain_rfoundry_user",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] needs a talker (--sfr-talker-port) and a listener (--sfr-listener-port) beside the repeater",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "sfr"
+   ],
+   "id": "tests/hil/test_sfr_standalone.py::test_sfr_repeater_quality",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_sfr_standalone.py:133: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "sfr"
+   ],
+   "id": "tests/hil/test_sfr_standalone.py::test_sfr_repeater_tx_inhibit",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "sfr"
+   ],
+   "id": "tests/hil/test_sfr_standalone.py::test_sfr_user_modes",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

@@ -1,0 +1,65 @@
+{
+ "board": "md9600",
+ "commit": "b043ff6e272309dd2a821996826819bedf6362e4",
+ "date": "2026-11-09T19:40:13Z",
+ "dirty": false,
+ "features": [
+  "net_aprsis"
+ ],
+ "firmware": {
+  "board": "MD-9600",
+  "codec": "md9600-s11",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,APRS,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,SFR,HOTSPOT,HOTSPOT_SPLIT,USB_NETWORK,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,NET_TCP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,NET_USRP,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "b043ff6e",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf",
+  "usb_switch"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "allow-usb-switch": true,
+  "dmr-cc": 2,
+  "dmr-freq": 461.4625,
+  "dmr-tg": 201,
+  "fm-mhz": 461.4625
+ },
+ "sources": {
+  "net_aprsis": {
+   "core/hostlink/build_info.c": "73dbddd5cf176f0f93346325160724c27b1f2652",
+   "core/net/aprsis.c": "4286a4c6c52d9015e108369dc742c66c2d05158b",
+   "core/net/aprsis.h": "7c3002f7f414cc1b1a9fe3ce19bb23011207f70e",
+   "core/net/http.c": "8d1bbd9956b5be0f0f5ce76e70942eb8a2d56f6d",
+   "core/net/net.c": "fc98537b8dd138bd0b972138b3ccf7b515e40cdb",
+   "core/settings/settings.h": "54acd6d1a017dc4cadf51faa0b5a20dba89dca11",
+   "docs/spec/aprs.md": "037378b1421c78ca48de69ce1967e7a7b7cb2af1"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "net_aprsis"
+   ],
+   "id": "tests/hil/test_tcp_services.py::test_aprsis",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

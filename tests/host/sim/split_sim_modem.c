@@ -133,11 +133,18 @@ static bool bs_restart(uint32_t t_us, int8_t ts)
 	if (ahead < 2000u) {
 		ahead += SSIM_SLOT_US;
 	}
+	if (ssim.restart_seq_n > 0) {
+		ssim.restart_err_us = ssim.restart_seq[(ssim.restarts) % ssim.restart_seq_n];
+	}
 	ssim.next_tick_us = ssim.now_us + ahead + (uint32_t)ssim.restart_err_us;
 	if (ssim.restart_flip) {
 		ssim.restart_err_us = -ssim.restart_err_us;
 	}
-	ssim.ts1_parity = (uint8_t)(((ssim.counter + 1u) & 1u) ^ ((ts == 1) ? 0u : 1u));
+	// (the HR_C6000 driver's way: the first boundary a slot or more after the instant has the slot counted on)
+	uint32_t on = (ssim.restart_ts_at_write && (ssim.restart_err_us > 0)) ?
+		((uint32_t)ssim.restart_err_us + SSIM_SLOT_US / 2u) / SSIM_SLOT_US : 0u;
+
+	ssim.ts1_parity = (uint8_t)(((ssim.counter + 1u) & 1u) ^ ((ts == 1) ? 0u : 1u) ^ (on & 1u));
 	ssim.on_air = false;
 	ssim.restarting = true;
 	ssim.restarts++;

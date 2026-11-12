@@ -22,11 +22,13 @@ typedef enum {
 // access), NO_REPEATER the repeater didn't wake, REJECTED the modem refused, HOTSPOT the radio is a hotspot now,
 // NO_ID no DMR ID in the codeplug, SFR_RPT the radio is the channel's single frequency repeater. BUSY on FM: busy channel lockout. INHIBIT: transmit is switched off in the
 // settings. BATTERY: the battery is critical. AM: the channel is received in AM (the air band, CONFIG_AM_RX): receive
-// only, the radio never transmits there. BCAST: the same for the broadcast band (CONFIG_BCAST_FM)
+// only, the radio never transmits there. BCAST: the same for the broadcast band (CONFIG_BCAST_FM). The board refused to
+// key in band: HWOPT while a hardware option still needs a person's answer (board_hwopt_pending, hal_hwopt.h),
+// otherwise REFUSED
 typedef enum {
 	TXDENY_NONE, TXDENY_RX_ONLY, TXDENY_BAND, TXDENY_TIMEOUT, TXDENY_NO_FREQ, TXDENY_MODE,
 	TXDENY_NO_CODEC, TXDENY_NO_DMR, TXDENY_BUSY, TXDENY_NO_REPEATER, TXDENY_REJECTED, TXDENY_HOTSPOT, TXDENY_NO_ID,
-	TXDENY_INHIBIT, TXDENY_BATTERY, TXDENY_AM, TXDENY_BCAST, TXDENY_SFR_RPT,
+	TXDENY_INHIBIT, TXDENY_BATTERY, TXDENY_AM, TXDENY_BCAST, TXDENY_SFR_RPT, TXDENY_HWOPT, TXDENY_REFUSED,
 } tx_deny_t;
 
 // Busy channel lockout (FM): CARRIER refuses PTT while anything is heard on the channel; WRONG_TONE only while a
@@ -151,6 +153,7 @@ typedef struct {
 	bool target_manual;	// a talk target chosen for now (contact, typed ID, call back), until the channel changes
 	bool privacy;		// a privacy key is loaded: encrypted calls play, our calls go out encrypted
 	bool alias_tx;		// our talker alias goes out on this channel
+	bool gps_tx_channel;	// the channel's codeplug setting asks for our position in its calls (CONFIG_DMR_GPS)
 	bool hear_all;		// every talkgroup on our slot: MONITOR held, or the hear all latch
 	bool hear_all_latch;	// hear all latched (radio_req_dmr_hear_all), until the channel changes
 	uint32_t focus_id;	// the focused row's target (radio_req_dmr_focus), 0 = none: PTT talks to it once
@@ -244,6 +247,7 @@ typedef struct {
 	uint32_t tx_elapsed_ms;	// time in TX, while RS_TX
 	bool tx_auto;		// that TX is the radio's own, not the user's: a data list (ARS, an ACK), a roaming probe, an
 				// APRS beacon. It doesn't light the screen (radio_view_wakes)
+	bool aprs_tx;		// APRS has keyed the FM transmitter; the channel in ch is not the one on air
 	uint32_t last_tx_ms;	// hal_millis() when the last transmission began, 0 = none yet
 	uint16_t tot_s;		// TX time-out, 0 = none
 	uint32_t last_rx_ms;	// hal_millis() at the end of the last reception, 0 = none yet
@@ -285,6 +289,7 @@ typedef struct {
 	uint8_t volume_src;	// radio_volume_src_t: where that level comes from
 	uint8_t volume_step;	// the stored step (0..RADIO_VOLUME_MAX); in force when volume_src is RVOL_SOFT
 	int8_t volume_override;	// the debug link's step in force over the knob (RVOL_OVERRIDE), -1 = none
+	int8_t volume_knob;	// the volume knob's position 0..100 % in force or not, -1 = none read
 	// Air band (CONFIG_AM_RX; docs/spec/airband-and-broadcast.md 3): the receiver demodulates AM on this channel or
 	// VFO frequency (an FM channel in 108-137 MHz on a radio that can); receive only. noise then holds the AM
 	// squelch's value from the RSSI (radio/radio_am.h)
@@ -389,6 +394,9 @@ void radio_req_dmr_target_clear(void);
 void radio_req_dmr_timeslot(uint8_t ts);	// 1 or 2
 void radio_req_dmr_color_code(uint8_t cc);	// 0..15
 void radio_req_mode(uint8_t mode);		// radio_mode_t: FM or DMR on the current channel or the VFO
+// The VFO's SFR role (CONFIG_SFR, docs/spec/sfr.md 4): a as a codeplug channel's SFR byte A, role bits 0 = none; the
+// outbound color code is the VFO's own. Saved with the VFO; refused outside it, while transmitting and in hotspot mode
+void radio_req_vfo_sfr(uint8_t a);
 // Hear all latched on (every talkgroup on our slot, as while MONITOR is held) until off or the channel changes
 void radio_req_dmr_hear_all(bool on);
 // The talk target focused in a list (the UI calls it on every focus change; id 0 = none). A PTT press while one is
@@ -431,12 +439,17 @@ typedef enum {
 void radio_req_roam(uint8_t cmd);
 // A beep (radio/beep.h beep_t) at the settings' level: key beeps only when key_beep is set (CONFIG_BEEP)
 void radio_req_beep(uint8_t beep);
+// The same delay_ms later (0 = now): a speaker test can start on a radio whose cable mutes the speaker, after the
+// cable is out. A later request replaces one not yet played
+void radio_req_beep_after(uint8_t beep, uint32_t delay_ms);
 // A vibration pattern (radio/vibe.h vibe_t) on the board's motor (CONFIG_VIBRATE; nothing on a radio without
 // hal_power_t.vibrate). Whether an alert vibrates is the caller's setting
 void radio_req_vibrate(uint8_t pattern);
 // FM 1750 Hz tone burst while on (CONFIG_FM_TX_TONES): keys up if not transmitting, stops when off or max_ms after
 // it started (0: no limit but the TX time-out), so a host that goes away can't leave the radio keyed
 void radio_req_tone_burst(bool on, uint32_t max_ms);
+// Side-key edges: send for at least RADIO_BURST_MIN_MS, then until released.
+void radio_req_tone_burst_key(bool down);
 // A DTMF key down / up (CONFIG_DTMF; radio-features.md 3.7): digit '0'-'9', '*', '#', 'A'-'D'. Ignored unless the
 // view's dtmf_ready; the tone lasts at least RADIO_DTMF_MIN_MS. The input task sends the keypad's edges (any task)
 void radio_req_dtmf(char digit, bool down);
@@ -455,14 +468,27 @@ typedef enum {
 	RVOL_KNOB,		// the MCU reads the knob and passes it on
 	RVOL_SOFT,		// no knob: the stored step
 	RVOL_OVERRIDE,		// a knob radio with the debug link's level in force
+	RVOL_HOLD,		// a knob radio holding its level while the keys are locked (radio_req_volume_hold)
 } radio_volume_src_t;
 void radio_req_volume(uint8_t step);
 // The level over the knob (step 0..RADIO_VOLUME_MAX), or -1 to give it back; RAM only. Does nothing without a knob
 void radio_req_volume_override(int8_t step);
+// Hold the level in force and ignore the knob (the keys are locked), or follow the knob again: it takes the knob's
+// level at once. RAM only. Does nothing without a knob
+void radio_req_volume_hold(bool hold);
+// Whether the MCU reads a volume knob (the level follows it): Settings > Key lock > Knob when locked is shown only then
+bool radio_volume_knob(void);
 bool radio_volume_soft(void);
 // Whether the MCU can set the speaker level at all (the board has the hook): knob radios accept an override
 bool radio_volume_settable(void);
 uint8_t radio_volume_percent(uint8_t step);
+// A level in percent (the knob) as a step: 0 only at 0 %, at least 1 above it, 100 % and over the top step. Inline:
+// the UI uses it without the radio core
+static inline uint8_t radio_volume_step_of(uint8_t percent)
+{
+	unsigned s = (percent * RADIO_VOLUME_MAX + 50u) / 100u;
+	return (uint8_t)(percent == 0 ? 0 : s < 1 ? 1 : s > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : s);
+}
 // settings_t.volume (0 = default, else a stored step) to a step, and back. A byte written by the 0..10 version (1..11)
 // is scaled to the new range; the new form has bit 7 set
 uint8_t radio_volume_step(uint8_t stored);

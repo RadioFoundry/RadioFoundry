@@ -34,6 +34,13 @@ enum {
 	DL_CMD_RX2		= 0x1E,	// the second receiver's SoC: state, the update bridge, restart (debuglink_rx2.c, 3.22)
 	DL_CMD_IDDB		= 0x1F,	// the DMR ID database: its format, records and an ID looked up (debuglink_iddb.c, 3.23)
 	DL_CMD_CHIP_REG		= 0x20,	// an RF chip or SoC register read or written (debuglink_chipreg.c, 3.24)
+	DL_CMD_HWOPT		= 0x21,	// the board's hardware options: list, set (debuglink_hwopt.c, 3.25)
+};
+
+// DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.25)
+enum {
+	DL_HWOPT_OP_LIST	= 0,	// none -> key=value text: hwopt.count, hwopt.<i>.name / value / restart / choices
+	DL_HWOPT_OP_SET		= 1,	// option u8, choice u8 -> none (refused: the board didn't store it, or on air)
 };
 
 // DL_CMD_CHIP_REG's chip number for the SoC's own registers (board.system->reg): an address u32 follows, not a page and
@@ -75,7 +82,7 @@ enum {
 };
 // HANG: the host link's task spins with interrupts on and the watchdog fed as usual, so the hang check (crash-log.md
 // 1.1) keeps the record; unavailable without CONFIG_WATCHDOG
-enum { DL_CRASH_TEST_TRAP = 1, DL_CRASH_TEST_ASSERT = 2, DL_CRASH_TEST_HANG = 3 };
+enum { DL_CRASH_TEST_TRAP = 1, DL_CRASH_TEST_ASSERT = 2, DL_CRASH_TEST_HANG = 3, DL_CRASH_TEST_STALL = 4 };
 // The test's guard, little endian in the payload: bytes 'C' 'R' 'S' 'H' (as CRASH_MAGIC), so a stray frame can't crash
 // the radio
 #define DL_CRASH_TOKEN		0x48535243u
@@ -130,7 +137,7 @@ enum {
 	DL_APRS_F_SSID,			// 0-15
 	DL_APRS_F_LAT,			// fixed position, 1e-7 degree
 	DL_APRS_F_LON,
-	DL_APRS_F_POS_SRC,		// aprs_pos_src_t
+	DL_APRS_F_POS_SRC,		// position_pref_t
 	DL_APRS_F_INTERVAL_S,		// 0 = none (the engine keeps its minimum)
 	DL_APRS_F_SMART,		// SmartBeaconing 0/1
 	DL_APRS_F_VIA,			// aprs_via_t
@@ -149,6 +156,7 @@ enum {
 	DL_APRS_F_DMR_GPS,		// our position in DMR voice calls (ETSI GPS Info) 0/1
 	DL_APRS_F_TO_IS,		// our own packets to APRS-IS (the host helper, or the radio's own client) 0/1
 	DL_APRS_F_POWER,		// RF power: 0 = the radio's current level, n = the board's level n - 1
+	DL_APRS_F_AMBIGUITY,		// position ambiguity 0-4 (APRS101 ch. 8), for APRS packets and DMR reports
 };
 
 // DL_CMD_SNMP operations (first payload byte; docs/spec/debuglink.md 3.17)

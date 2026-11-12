@@ -4,7 +4,7 @@
 // module power on PA9, high = on. A factory module on the MD-UV380 G models (hardware-mduv380.md 9); the DM-1701 has the
 // same two pins and no module, but an owner can fit one there (hardware-dm1701.md 14). Radios with and without a module
 // share an image, so the module is powered for the listen window only and switched off again when nothing is heard. A
-// sentence keeps it on, and every sentence goes to the APRS position source (CONFIG_APRS)
+// sentence keeps it on, and every sentence goes to the position service (core/position)
 #include "config.h"
 #include "uvf.h"
 #include "pins.h"

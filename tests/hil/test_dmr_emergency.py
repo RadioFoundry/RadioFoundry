@@ -4,7 +4,7 @@
 the radio's own alarm and emergency call go out on air.
 
 Opt-in RF like test_dmr_data.py. Bench-to-radio (rf + bench_service): the bench sends an emergency alarm CSBK
-(bench_tx.py csbk --opcode 27 --fid 10) or a voice call with the emergency service option (bench_tx.py voice
+(a bench_tx csbk job --opcode 27 --fid 10) or a voice call with the emergency service option (a bench_tx voice job
 --emergency) to the channel's talkgroup. Radio-to-bench (radio_tx + bench_service): the emergency key through the
 debug link (DMR_DATA op 7) while the bench modem listens. Pass criteria are the dmr_ext view section's em.* and
 data.emergency_* keys; what the bench heard is checked where its listen output carries it (CSBK info octets, the
@@ -71,19 +71,23 @@ def test_emergency_alarm_rx(radio, sdr_bench, pytestconfig, em_settings):
     alert of kind alarm from the bench; nothing is sent back."""
     freq, cc, own, tg, feats = _emergency_setup(radio, pytestconfig)
     radio.link.emergency("dismiss")
+    # A source of its own: an emergency from a source active in the last 30 s adds no alert, dismissed or not
+    # (dmr-emergency.md, DMR_EMERGENCY_REALERT_MS), and an earlier test's emergency call may come from the bench's
+    # default source
+    src = BENCH_SRC + 5
     xb = _ext(radio)
     db = radio.data_view()
     with sdr_bench.lease():
-        sdr_bench.csbk(freq, cc, tg, opcode=CSBK_EMERGENCY_ALARM, fid=FID_MOTOROLA, src=BENCH_SRC)
+        sdr_bench.csbk(freq, cc, tg, opcode=CSBK_EMERGENCY_ALARM, fid=FID_MOTOROLA, src=src)
     time.sleep(0.5)
     xa = _ext(radio)
     da = radio.data_view()
     print({k: xa[k] for k in xa if k.startswith("em.alert") or k.startswith("data.emergency")})
     assert xa["data.emergency_alarms_received"] - xb["data.emergency_alarms_received"] >= 1, xa
-    assert xa["em.alert"] == 1 and xa["em.alert_kind"] == "alarm" and xa["em.alert_src"] == BENCH_SRC, xa
+    assert xa["em.alert"] == 1 and xa["em.alert_kind"] == "alarm" and xa["em.alert_src"] == src, xa
     assert xa["em.alert_dst"] == tg and xa["em.alert_group"] == 1, xa
     assert da["data.tx_lists"] == db["data.tx_lists"], "the radio answered an emergency alarm"
-    assert da["data.event"] == "emergency_alarm" and da["data.event_id"] == BENCH_SRC, da
+    assert da["data.event"] == "emergency_alarm" and da["data.event_id"] == src, da
 
 
 @pytest.mark.feature("dmr_emergency")

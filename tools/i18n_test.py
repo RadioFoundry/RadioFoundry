@@ -74,7 +74,7 @@ class Generate(unittest.TestCase):
         self.assertNotIn('"Done"', h)
         keys, built = i18n.tables()
         got = {code: [i18n.lookup(keys, blob, offs, en) for en in (b"Done", b"Only here", b"Fuzzy")]
-               for code, _, _, _, blob, offs in built}
+               for code, _, _, _, _, _, blob, offs, _ in built}
         self.assertEqual(got, {"xx": [b"Hecho", None, None], "yy": [None, b"Solo qui", None]})
 
     def test_default_language_switch(self):
@@ -115,12 +115,13 @@ class Catalogs(unittest.TestCase):
         # The radio's catalogs through the lookup the firmware does: each usable translation at its place in the
         # stride, the rest the English
         keys, built = i18n.tables()
-        for code, _, _, _, blob, offs in built:
+        for code, _, _, _, _, _, blob, offs, wide in built:
             _, body = i18n.read_po(i18n.catalogs()[code])
+            to_bytes = i18n.text_to_bytes_wide if wide else i18n.text_to_bytes	# a CJK catalog is UTF-8
             for msgid, msgstr, fz in body:
                 en = i18n.text_to_bytes(msgid, msgid)
-                usable = msgstr and not fz and not i18n.check_translation(msgid, msgstr, msgid)
-                want = i18n.text_to_bytes(msgstr, msgid) if usable else None
+                usable = msgstr and not fz and not i18n.check_translation(msgid, msgstr, msgid, wide)
+                want = to_bytes(msgstr, msgid) if usable else None
                 self.assertEqual(i18n.lookup(keys, blob, offs, en), None if want == en else want, (code, msgid))
 
 

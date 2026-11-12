@@ -35,7 +35,10 @@ def test_dmr_rx_counters(radio, sdr_bench, pytestconfig):
     time.sleep(1.5)                      # the last call times out / ends in the radio
     _, after = radio.counters()
     d = counter_deltas(before, after, ["modem.voice", "modem.headers", "modem.terminators", "modem.crc",
-                                       "call.rx_calls", "call.rx_dup_dropped"])
+                                       "call.rx_calls", "call.rx_dup_dropped",
+                                       # a call counted twice: joined again by late entry after a gap, or another
+                                       # station's call on the channel
+                                       "call.rx_late_entries", "call.rx_calls_played"])
     print("bench:", recs[-1:] if recs else "no JSON", "radio deltas:", d)
     assert d["modem.voice"] == CALLS * SUPERFRAMES * 6, d
     assert CALLS * HEADERS - 2 <= d["modem.headers"] <= CALLS * HEADERS, d

@@ -21,7 +21,9 @@ Pure logic raises PortError; the tools catch it like their own errors.
 import os
 import re
 import struct
+import subprocess
 import sys
+import tempfile
 import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -36,6 +38,8 @@ class PortError(Exception):
 # What RadioFoundry's codeplug layout holds (docs/spec/open-firmware-cps.md 7.2-7.3, docs/user/04-programming.md).
 # dmrconf's OpenUV380 encoder drops what doesn't fit without an error, so these are checked before writing
 RFOUNDRY_LIMITS = {"channels": 1024, "zones": 68, "contacts": 1024, "groupLists": 76}
+# The highest individual DMR ID (0xFFFCDF): the IDs above it are reserved (gateways, all call)
+MAX_DMR_ID = 16776415
 SECTION_NAMES = {"channels": "channels", "zones": "zones", "contacts": "contacts", "groupLists": "RX group lists"}
 
 # The open-firmware channel record's TX contact: 16-bit little endian, 1-based, 0 = none (open-firmware-cps.md 7.2)
@@ -574,6 +578,44 @@ zones:
     A: [ch1, ch2, ch3, ch4, ch5]
 scanLists: []
 """
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# tester kits
+
+def kit_package_files():
+    """{source: path in the kit} for the rfoundry package. The tools' helpers import it with tools/rfoundry on sys.path,
+    so a kit keeps that layout, rfoundry/rfoundry beside the scripts. All of it, not the modules imported today: a list
+    goes stale, and a kit that doesn't import is found by the tester."""
+    pkg = os.path.join(HERE, "rfoundry", "rfoundry")
+    if not os.path.isfile(os.path.join(pkg, "__init__.py")):
+        raise PortError("the rfoundry package isn't at %s: make the kit from the repository" % pkg)
+    files = {}
+    for d, _, names in os.walk(pkg):
+        for name in names:
+            if name.endswith((".py", ".json")):
+                src = os.path.join(d, name)
+                files[src] = os.path.join("rfoundry", "rfoundry", os.path.relpath(src, pkg))
+    return files
+
+
+def kit_error(script, image, code):
+    """Make a kit with script's 'package' and run code in a fresh Python that sees only the kit: None, or what went
+    wrong. code is what the tool loads as it runs; the kit's own package and codec maps are checked after it."""
+    code += ("\nimport os, sys, rfoundry.codecmap\n"
+             "assert os.path.abspath(rfoundry.__file__).startswith(os.path.abspath(sys.argv[1])), rfoundry.__file__\n"
+             "assert rfoundry.codecmap.load_maps(), 'no codec maps'\n")
+    with tempfile.TemporaryDirectory() as tmp:
+        img, kit = os.path.join(tmp, "image.bin"), os.path.join(tmp, "kit")
+        with open(img, "wb") as f:
+            f.write(image)
+        for cmd in ([os.path.abspath(script), "package", kit, "--image", img],
+                    ["-I", "-c", "import sys; sys.path.insert(0, sys.argv[1])\n" + code, kit]):
+            r = subprocess.run([sys.executable] + cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               universal_newlines=True)
+            if r.returncode:
+                return r.stdout[-400:]
+    return None
 
 
 def self_test():

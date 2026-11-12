@@ -42,6 +42,9 @@
 #endif
 #include "debuglink/dlog.h"
 #include "settings/settings.h"
+#if CONFIG_WATCHDOG
+#include "app/watchdog.h"
+#endif
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -484,6 +487,10 @@ static void hostlink_task(void *arg)
 		bool more = port->wait_rx(POLL_MS);
 		uint32_t now = hal_millis();
 		bool exit_now = exit_requested;
+
+#if CONFIG_WATCHDOG
+		watchdog_task_pass(now);	// the stall check (watchdog.h): a pass that never comes back keeps a record
+#endif
 
 		exit_requested = false;
 		(void)exit_now;

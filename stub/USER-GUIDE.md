@@ -68,7 +68,7 @@ switching off.
 4. Start the new build:
 
    ```
-   python3 stubtool.py PORT --attach --boot reset
+   python3 stubtool.py PORT --attach --board dm1801pro --boot reset
    ```
 
 `rfoundry flash rfoundry_dm1801pro.bin --board dm1801pro --port PORT` does steps 2 to 4 in one run, and checks the radio
@@ -114,7 +114,7 @@ register 3 too on the DM-1701 and MD-UV380). Putting a saved copy back is theref
 is written, unless the register already holds the saved bytes. The command stays for a register that isn't listed:
 
 ```
-python3 stubtool.py PORT --attach --write-secreg secreg.bin --confirm-secreg
+python3 stubtool.py PORT --attach --board dm1701 --write-secreg secreg.bin --confirm-secreg
 ```
 
 The tool refuses a file that is not 768 bytes, writes only the registers that differ, saves what was there first (in your
@@ -133,10 +133,11 @@ the backup, small differences in settings are normal.
 
 ## Leave loader mode
 
-Switch the radio off and on again. If it will not switch off (the power key does nothing while the loader runs), run:
+Switch the radio off and on again. If it will not switch off (the power key does nothing while the loader runs), run
+this with your radio's `--board` id:
 
 ```
-python3 stubtool.py PORT --attach --boot reset
+python3 stubtool.py PORT --attach --board dm1801pro --boot reset
 ```
 
 The radio restarts into its normal firmware. If neither works, remove and refit the battery.

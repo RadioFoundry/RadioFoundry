@@ -3,5 +3,5 @@
 
 # Contributing
 
-See [docs/dev/contributing.md](../docs/dev/contributing.md). Security problems go through
-[SECURITY.md](SECURITY.md), not an issue.
+See [docs/dev/contributing.md](/docs/dev/contributing.md). Security problems go through
+[SECURITY.md](/.github/SECURITY.md), not an issue.
