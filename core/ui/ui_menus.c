@@ -2006,7 +2006,7 @@ static void text_draw(void)
 		}
 		gfx_text(small, 0, y, linebuf, ui_col.fg);
 		y += L->small->h;
-	} while(start_char < (text_len+1));
+	} while (start_char < text_len + 1);
 
 	// TRN only marks the text for the catalog: tr() translates it where it is shown (list_draw did this before)
 	if (text_prefix != TEXT_MESSAGE)
