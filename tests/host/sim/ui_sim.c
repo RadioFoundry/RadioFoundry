@@ -627,6 +627,23 @@ bool ui_svc_codeplug_answer(uint8_t answer)
 	return true;
 }
 
+// The settings past the stub's RAM table (UI_SET_RAM_COUNT): the firmware keeps them in the codeplug
+// (ui_svc_storage.c); here they are plain values
+static int32_t sim_late[UI_SET_COUNT - UI_SET_RAM_COUNT];
+
+int32_t ui_svc_setting_get(uint8_t id)
+{
+	return id >= UI_SET_RAM_COUNT && id < UI_SET_COUNT ? sim_late[id - UI_SET_RAM_COUNT] : ui_svc_ram_get(id);
+}
+
+bool ui_svc_setting_set(uint8_t id, int32_t value)
+{
+	if (id < UI_SET_RAM_COUNT || id >= UI_SET_COUNT)
+		return ui_svc_ram_set(id, value);
+	sim_late[id - UI_SET_RAM_COUNT] = value;
+	return true;
+}
+
 // Channels the channel editor saved (ui_svc_write_channel): they shadow the built-in ones and fill numbers past 40
 #define SIM_EDITS	8
 static struct { uint16_t number; channel_t ch; } sim_edits[SIM_EDITS];
@@ -2237,6 +2254,7 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	{ "homekey", ACT_HOME_ZONE }, { "copykey", ACT_COPY_VFO },
 	{ "dualkey", ACT_DUAL_WATCH }, { "abkey", ACT_AB },	// dual watch's side key functions
 	{ "vfokey", ACT_VFO_TOGGLE },		// a VFO/MR key in the board's key map, or a side key set to VFO/Channel
+	{ "labelkey", ACT_TALK_LABEL },
 	{ "volkey", ACT_VOLUME },
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
 	{ "5", ACT_DIGIT_5 }, { "6", ACT_DIGIT_6 }, { "7", ACT_DIGIT_7 }, { "8", ACT_DIGIT_8 }, { "9", ACT_DIGIT_9 },
@@ -2245,7 +2263,7 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 static bool on_map(uint8_t action, bool lng)
 {
 	if ((action >= ACT_POWER && action <= ACT_VOLUME) || action == ACT_VFO_TOGGLE || action == ACT_DUAL_WATCH ||
-	    action == ACT_AB || action == ACT_TALK_TARGET)
+	    action == ACT_AB || action == ACT_TALK_TARGET || action == ACT_TALK_LABEL)
 		// any side key can be set to send these; the few-key map has none, but a radio with side keys and no QUICK key
 		// is the case the key lock needs on it
 		return board.side_key_count != 0 || cur_map == SIM_MAP_F;

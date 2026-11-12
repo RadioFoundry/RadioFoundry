@@ -480,6 +480,14 @@ msgstr "Teclas desbloq."
 msgid "Talk target: DMR channels only"
 msgstr "Destino: solo canales DMR"
 
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgid "Talkgroup name first"
+msgstr "Nombre del grupo primero"
+
+#: core/ui/ui_app.c
+msgid "Talkgroup number first"
+msgstr "Número del grupo primero"
+
 #: core/ui/ui_app.c
 msgid "Volume: use the knob"
 msgstr "Volumen: usa la perilla"
@@ -2696,6 +2704,10 @@ msgstr "VFO/Canal"
 msgid "Call back"
 msgstr "Rellamar"
 
+#: core/ui/ui_menus.c
+msgid "TG name / number"
+msgstr "Nombre / número TG"
+
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "Emergency"
 msgstr "Emergencia"
@@ -3375,10 +3387,6 @@ msgstr "Privada para ti"
 #: core/ui/ui_screens.c
 msgid "Private to "
 msgstr "Privada a "
-
-#: core/ui/ui_screens.c
-msgid "Reply→ "
-msgstr "Resp→ "
 
 #: core/ui/ui_screens.c
 msgid "Sending ID"

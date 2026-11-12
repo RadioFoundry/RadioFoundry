@@ -339,6 +339,9 @@ typedef enum {
 	// position comes from (position_pref_t), the fixed position in 1e-7 degree (both 0 = not set), our position
 	// sent in DMR voice calls 0 / 1 (ETSI GPS Info, CONFIG_DMR_GPS)
 	UI_SET_POS_SOURCE, UI_SET_POS_FIXED_LAT, UI_SET_POS_FIXED_LON, UI_SET_POS_DMR_CALLS,
+	UI_SET_RAM_COUNT,	// the ids up to here have a slot in ui_svc_ram_get/set's table; those after live elsewhere only
+	// Home's talk line: the talkgroup's name first, 1 on (Settings > Display; updown_home bit 7, ui_svc_storage.c)
+	UI_SET_LABEL_FIRST = UI_SET_RAM_COUNT,
 	UI_SET_COUNT
 } ui_setting_t;
 
