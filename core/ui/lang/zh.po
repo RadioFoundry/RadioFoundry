@@ -482,6 +482,14 @@ msgstr "按键已解锁"
 msgid "Talk target: DMR channels only"
 msgstr "通话目标：仅 DMR 信道"
 
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgid "Talkgroup name first"
+msgstr "通话组名称在前"
+
+#: core/ui/ui_app.c
+msgid "Talkgroup number first"
+msgstr "通话组号码在前"
+
 #: core/ui/ui_app.c
 msgid "Volume: use the knob"
 msgstr "音量：请用旋钮"
@@ -2702,6 +2710,10 @@ msgstr "VFO/信道"
 msgid "Call back"
 msgstr "回呼"
 
+#: core/ui/ui_menus.c
+msgid "TG name / number"
+msgstr "TG 名称/号码"
+
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "Emergency"
 msgstr "紧急呼叫"
@@ -3381,10 +3393,6 @@ msgstr "发给你的个呼"
 #: core/ui/ui_screens.c
 msgid "Private to "
 msgstr "个呼至 "
-
-#: core/ui/ui_screens.c
-msgid "Reply→ "
-msgstr "回复→ "
 
 #: core/ui/ui_screens.c
 msgid "Sending ID"
