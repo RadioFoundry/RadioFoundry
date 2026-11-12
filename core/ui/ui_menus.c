@@ -649,8 +649,9 @@ static const ui_scr_def_t contacts_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "0-9 find  OK talk  # more" TEXT_ALT_NEXT "0-9  OK talk  # more" TEXT_ALT_CLOSE),
 	.empty = CONFIG_CONTACT_EDIT ? TRN("No contact matches") : TRN("No contacts: add them in qdmr"),
 	.count = ui_filter_count, .item = contacts_list_item, .select = contacts_select, .context = contacts_context,
-	.target = contacts_list_target, .raw_count = contacts_list_raw_count, .raw_label = contacts_list_raw_label,
-	.raw_each = contacts_list_raw_each,
+	.target = contacts_list_target,
+	.filter = &(const ui_filter_def_t){ .raw_count = contacts_list_raw_count, .raw_label = contacts_list_raw_label,
+		.raw_each = contacts_list_raw_each },
 };
 #else
 static uint16_t none_count(void) { return 0; }
@@ -1167,7 +1168,8 @@ static const ui_scr_def_t channels_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "OK go  # channels  0-9 find" TEXT_ALT_NEXT "OK go  # channels" TEXT_ALT_CLOSE),
 	.empty = TRN("No zones"),
 	.count = ui_filter_count, .item = chans_item, .select = chans_select, .context = chans_context,
-	.enter = chans_enter, .raw_count = chans_raw_count, .raw_label = chans_raw_label,
+	.enter = chans_enter,
+	.filter = &(const ui_filter_def_t){ .raw_count = chans_raw_count, .raw_label = chans_raw_label },
 };
 
 // A channel row's value: its RX frequency and what it talks to, the talkgroup on DMR ("TG3113", "ID9991234" for a
@@ -1620,7 +1622,8 @@ static const ui_scr_def_t share_to_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "0-9 find or ID  OK send  Back" TEXT_ALT_NEXT "0-9 find or ID  OK send" TEXT_ALT_CLOSE),
 	.empty = TRN("No contacts: type an ID"),
 	.count = ui_filter_count, .item = share_to_item, .select = share_to_select,
-	.raw_count = share_raw_count, .raw_label = share_raw_label, .raw_each = share_raw_each,
+	.filter = &(const ui_filter_def_t){ .raw_count = share_raw_count, .raw_label = share_raw_label,
+		.raw_each = share_raw_each },
 };
 
 // --- An offer from another radio ---
@@ -1830,7 +1833,8 @@ static const ui_scr_def_t zone_screen = {
 	.name = "zone", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = NULL,
 	.hint = ZONE_HINT, .empty = TRN("Empty zone"),
 	.count = ui_filter_count, .item = zone_item, .select = zone_select, .context = ZONE_CONTEXT,
-	.title = zone_title, .enter = zone_enter, .raw_count = zone_raw_count, .raw_label = zone_raw_label,
+	.title = zone_title, .enter = zone_enter,
+	.filter = &(const ui_filter_def_t){ .raw_count = zone_raw_count, .raw_label = zone_raw_label },
 };
 
 #if CONFIG_ZONE_WRITE
@@ -2260,8 +2264,9 @@ static const ui_scr_def_t chlist_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "OK details  # go  0-9 find" TEXT_ALT_NEXT "OK details  # go" TEXT_ALT_CLOSE),
 	.empty = TRN("No channels"),
 	.count = ui_filter_count, .item = chlist_item, .select = chlist_select, .context = chlist_context,
-	.enter = chlist_enter, .raw_count = chlist_raw_count, .raw_label = chlist_raw_label, .raw_each = chlist_raw_each,
-	.raw_used = chlist_raw_used,
+	.enter = chlist_enter,
+	.filter = &(const ui_filter_def_t){ .raw_count = chlist_raw_count, .raw_label = chlist_raw_label,
+		.raw_each = chlist_raw_each, .raw_used = chlist_raw_used },
 };
 
 // ======================= One channel's settings, edited in place (ui.md 2.1) =======================
@@ -3516,8 +3521,8 @@ static const ui_scr_def_t zpick_screen = {
 	.hint = TRN(TEXT_ALT_OPEN "OK add  0-9 find  Back" TEXT_ALT_NEXT "OK add  Back" TEXT_ALT_CLOSE),
 	.empty = TRN("Every channel is in it"),
 	.count = ui_filter_count, .item = zpick_item, .select = zpick_select,
-	.raw_count = zpick_raw_count, .raw_label = zpick_raw_label, .raw_each = zpick_raw_each,
-	.raw_used = zpick_raw_used,
+	.filter = &(const ui_filter_def_t){ .raw_count = zpick_raw_count, .raw_label = zpick_raw_label,
+		.raw_each = zpick_raw_each, .raw_used = zpick_raw_used },
 };
 
 // --- The channel editor's Zones: every zone, and whether the channel is in it; OK puts it in or takes it out ---
@@ -3813,7 +3818,9 @@ static const char *chpick_title(void) { return ui_frame()->arg == 0 ? TR("TX Con
 static const ui_scr_def_t chpick_screen = {
 	.name = "chpick", .flags = SF_LIST | SF_FILTER, .hint = TRN("OK pick  0-9 find  Back"), .empty = TRN("None stored"),
 	.count = ui_filter_count, .item = chpick_item, .select = chpick_select, .title = chpick_title,
-	.enter = chpick_enter, .raw_count = chpick_raw_count, .raw_label = chpick_raw_label, .raw_each = chpick_raw_each,
+	.enter = chpick_enter,
+	.filter = &(const ui_filter_def_t){ .raw_count = chpick_raw_count, .raw_label = chpick_raw_label,
+		.raw_each = chpick_raw_each },
 };
 #endif
 #endif
@@ -5177,7 +5184,8 @@ static const ui_scr_def_t crash_to_screen = {
 	.name = "crash_to", .flags = SF_LIST | SF_FILTER, .prefix = TRN("Send To"),
 	.hint = TRN("0-9 find  OK pick  Back"), .empty = TRN("No contacts: add them in qdmr"),
 	.count = ui_filter_count, .item = contacts_item, .select = crash_to_select,
-	.raw_count = contacts_raw_count, .raw_label = contacts_raw_label, .raw_each = crash_to_raw_each,
+	.filter = &(const ui_filter_def_t){ .raw_count = contacts_raw_count, .raw_label = contacts_raw_label,
+		.raw_each = crash_to_raw_each },
 };
 #endif
 
@@ -5406,12 +5414,20 @@ typedef struct {
 	const char *syn;		// another name Find knows it by
 	uint8_t type;			// set_type_t
 	uint8_t id;			// ui_setting_t, or SA_* for an action
-	int16_t min, max, step;		// ST_NUMBER
-	const int16_t *values;		// ST_LIST: the values ...
-	const char *const *names;	// ... and their names (NULL: number + unit)
-	uint8_t n;
-	const char *unit;
+	uint8_t n;			// ST_LIST: how many values
+	// By type, in the same bytes (24 a row, not 32: there are about 80 rows)
+	union {
+		struct {			// ST_NUMBER
+			int16_t min, max, step;
+			const char *unit;	// after the number, or NULL
+		};
+		struct {			// ST_LIST
+			const int16_t *values;
+			const char *const *names;
+		};
+	};
 } set_item_t;
+_Static_assert(sizeof(void *) != 4 || sizeof(set_item_t) == 24, "a settings row grew (on the radios; the host's is larger)");
 
 typedef struct {
 	const char *name;
@@ -5569,10 +5585,10 @@ static const char *const n_sfrcwid[] = { TRN("Off"), TRN("5 min"), TRN("10 min")
 static const int16_t v_ptype[] = { 0, 1, 2 };	// dmrPrivacyType_t
 static const char *const n_ptype[] = { TRN("Off"), "Motorola", "Anytone" };
 
-#define TOGGLE(nm, syn_, sid) { nm, syn_, ST_TOGGLE, sid, 0, 1, 1, NULL, NULL, 0, NULL }
-#define NUMBER(nm, syn_, sid, lo, hi, st, u) { nm, syn_, ST_NUMBER, sid, lo, hi, st, NULL, NULL, 0, u }
-#define LIST(nm, syn_, sid, v, n) { nm, syn_, ST_LIST, sid, 0, 0, 0, v, n, sizeof v / sizeof v[0], NULL }
-#define ACTION(nm, syn_, a) { nm, syn_, ST_ACTION, a, 0, 0, 0, NULL, NULL, 0, NULL }
+#define TOGGLE(nm, syn_, sid) { nm, syn_, ST_TOGGLE, sid, 0, { { 0, 1, 1, NULL } } }
+#define NUMBER(nm, syn_, sid, lo, hi, st, u) { nm, syn_, ST_NUMBER, sid, 0, { { lo, hi, st, u } } }
+#define LIST(nm, syn_, sid, v, nms) { nm, syn_, ST_LIST, sid, sizeof v / sizeof v[0], { .values = v, .names = nms } }
+#define ACTION(nm, syn_, a) { nm, syn_, ST_ACTION, a, 0, { { 0, 0, 0, NULL } } }
 
 static const set_item_t s_sound[] = {
 	NUMBER(TRN("Volume"), "speaker loudness", UI_SET_VOLUME, 0, RADIO_VOLUME_MAX, 1, NULL),
@@ -5748,8 +5764,10 @@ static const set_item_t s_advanced[] = {
 	NUMBER(TRN("Freq trim"), "frequency offset reference oscillator calibration ppm", UI_SET_REF_TRIM, -REF_TRIM_MAX_PPB,
 	       REF_TRIM_MAX_PPB, REF_TRIM_STEP_PPB, NULL),	// its own page (trim_screen); last: Up from the top
 #endif
+#if RFOUNDRY_HWOPTS
 	// Only on radios with hardware options (hal_hwopt.h): last, so the rows above keep their places
 	ACTION("Hardware", "board revision", SA_HARDWARE),
+#endif
 };
 
 #define GROUP(nm, a)		{ nm, nm, a, sizeof a / sizeof a[0] }
@@ -5768,24 +5786,28 @@ uint8_t ui_set_group_count(void) { return GROUPS; }
 // In English, as Find matches the name in the language in use and in English (it calls tr() on it)
 const char *ui_set_group_name(uint8_t g) { return g < GROUPS ? groups[g].name : ""; }
 
+#if RFOUNDRY_HWOPTS
 #define HWOPT_ROWS_MAX		15
 
 // The hardware options Settings > Advanced > Hardware lists (hal_hwopt.h): those the board didn't detect
 static uint16_t hwopt_visible(void)
 {
 	uint16_t n = 0;
-	for (uint8_t k = 0; board.hwopts != NULL && k < board.hwopt_count && n < HWOPT_ROWS_MAX; k++) {
-		n += hwopt_state(&board.hwopts[k]) != HWOPT_ST_HIDDEN;
+	for (uint8_t k = 0; k < board_hwopt_count() && n < HWOPT_ROWS_MAX; k++) {
+		n += hwopt_state(board_hwopt(k)) != HWOPT_ST_HIDDEN;
 	}
 	return n;
 }
+#endif
 
 // Settings a radio without a battery (or a broadcast receiver, or the key) doesn't have are left out of the list, not
 // shown disabled
 static bool set_hidden(const set_item_t *s)
 {
+#if RFOUNDRY_HWOPTS
 	if (s->type == ST_ACTION && s->id == SA_HARDWARE)
 		return hwopt_visible() == 0;	// none, or every one detected
+#endif
 #if CONFIG_KEY_ASSIGN
 	if (s->type != ST_ACTION && s->id >= UI_SET_KEY_FIRST && s->id <= UI_SET_KEY_LAST) {
 		key_labels();
@@ -6088,7 +6110,9 @@ static void group_select(uint16_t i, bool hold)
 #if CONFIG_CRASH_SCREEN
 		case SA_CRASH: ui_push(SCR_CRASH, 0); break;
 #endif
+#if RFOUNDRY_HWOPTS
 		case SA_HARDWARE: ui_push(SCR_HWOPT, 0); break;
+#endif
 #if CONFIG_POSITION
 		case SA_FIXED_POS: ui_push(SCR_FIXED_POS, 0); break;
 #endif
@@ -6177,6 +6201,7 @@ static const ui_scr_def_t group_screen = {
 	.title = group_title,
 };
 
+#if RFOUNDRY_HWOPTS
 // ======================= Hardware options (hal_hwopt.h) =======================
 // OK steps through an option's choices without storing; holding OK stores the one shown. A choice the board marks
 // "restart" applies from the next start-up. One row at a time shows an unstored choice, kept in the screen's frame
@@ -6197,12 +6222,12 @@ static uint16_t hwopt_count(void)
 // Row i's option
 static const hal_hwopt_t *hwopt_row(uint16_t i)
 {
-	for (uint8_t k = 0; board.hwopts != NULL && k < board.hwopt_count; k++) {
-		if (hwopt_state(&board.hwopts[k]) != HWOPT_ST_HIDDEN && i-- == 0) {
-			return &board.hwopts[k];
+	for (uint8_t k = 0; k < board_hwopt_count(); k++) {
+		if (hwopt_state(board_hwopt(k)) != HWOPT_ST_HIDDEN && i-- == 0) {
+			return board_hwopt(k);
 		}
 	}
-	return &board.hwopts[0];	// not reached: i < hwopt_count()
+	return board_hwopt(0);	// not reached: i < hwopt_count()
 }
 
 static int8_t hwopt_shown(uint16_t i, int8_t stored)
@@ -6254,6 +6279,7 @@ static const ui_scr_def_t hwopt_screen = {
 	.name = "hwopt", .flags = SF_LIST, .prefix = "Hardware", .hint = "OK next  Hold OK store",
 	.count = hwopt_count, .item = hwopt_item, .select = hwopt_select, .enter = hwopt_enter,
 };
+#endif
 
 // ======================= Confirmation (destructive only, defaults to No; P7) =======================
 
@@ -6640,7 +6666,7 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #if CONFIG_CRASH_SCREEN
 	[SCR_CRASH] = &crash_screen,
 #endif
-#if CONFIG_UI_SETTINGS
+#if CONFIG_UI_SETTINGS && RFOUNDRY_HWOPTS
 	[SCR_HWOPT] = &hwopt_screen,
 #endif
 #if CONFIG_CRASH_REPORT && CONFIG_DMR
