@@ -40,12 +40,21 @@ RIG = {
     "wattmeter-mhz": (str, "MHz, comma separated: where the wattmeter check keys every power level (test_fm_tx "
                            "--manual; default 445,146, the middle of where hams transmit on 70 cm and 2 m); each "
                            "must be in tx_mhz", True),
+    "t3-rx-mhz": (float, "MHz: a Tier III site's control channel as the radio receives it (test_t3_site; the site is "
+                         "the rig's own, always on the air)", False),
+    "t3-tx-mhz": (float, "MHz: that control channel's inbound frequency, where the radio transmits (test_t3_site)",
+                  True),
+    "t3-lcn": (int, "the Tier III control channel's logical channel number", False),
+    "t3-system": (str, "the Tier III site's identity MODEL,NET,SITE (model 0 tiny, 1 small, 2 large, 3 huge)", False),
+    "t3-cc": (int, "the Tier III site's color code", False),
+    "t3-tg": (int, "the talkgroup test_t3_site registers with and calls", False),
+    "t3-peer": (int, "a second radio ID the Tier III site grants individual calls to (test_t3_private_call)", False),
     "tx-mhz": (str, "MHz, comma separated: the frequencies this rig may transmit on (the radio and the bench); "
                     "--allow-rf needs it", False),
 }
 # the transmit frequencies among the other options (None when not given)
 TX_OPTIONS = ("dmr-freq", "fm-mhz", "aprs-test-mhz", "sfr-freq", "roam-rx", "roam-tx", "split-out-mhz",
-              "split-tx-mhz", "outbound-mhz", "am-mhz", "vhf-fm-mhz")
+              "split-tx-mhz", "outbound-mhz", "am-mhz", "vhf-fm-mhz", "t3-tx-mhz")
 
 
 def add_options(g):

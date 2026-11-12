@@ -81,13 +81,16 @@ skips (kind `opt_in`) and names the three ways to give it. `tests/hil/hil_config
 | `--aprs-dmr-dst` | the DMR position's destination ID (`test_aprs`) |
 | `--callsign` | the licensed operator's callsign: every transmission that carries one (APRS, CW ID, talker alias); RAM only on the radio |
 | `--wattmeter-mhz` | where the wattmeter check (`test_fm_tx_power_levels --manual`) keys every power level, comma separated; default 445 and 146, the middle of where hams transmit on 70 cm and 2 m. A frequency not in `tx_mhz` or not tuned by the radio is left out |
+| `--t3-rx-mhz` / `--t3-tx-mhz` | a DMR Tier III site's control channel as the radio receives it and where the radio transmits to it (`test_t3_site`; the site is the rig's own, on the air) |
+| `--t3-lcn` / `--t3-system` / `--t3-cc` | that control channel's logical channel number, the site's identity `MODEL,NET,SITE` (model 0 tiny .. 3 huge) and color code |
+| `--t3-tg` / `--t3-peer` | the talkgroup `test_t3_site` registers with and calls, and a second radio ID the site grants individual calls to |
 | `--tx-mhz` | the frequencies the rig may transmit on, comma separated (a TOML list in the file) |
 | `--microphone` | an ALSA capture device (`arecord -D`) whose microphone is at the radio's speaker: the speaker tests ([Speaker tests](#speaker-tests)) |
 | `--mic-processed` | `1` when that microphone has processing of its own (a headset's noise suppression): the speaker tests check tone starts only ([Speaker tests](#speaker-tests)) |
 
 With `--allow-rf`, every transmit frequency the run is given (`--dmr-freq`, `--fm-mhz`, `--aprs-test-mhz`,
 `--sfr-freq`, `--roam-rx` / `--roam-tx`, `--split-out-mhz`, `--split-tx-mhz`, `--outbound-mhz`, `--am-mhz`,
-`--vhf-fm-mhz`) must be in `tx_mhz`, or the run
+`--vhf-fm-mhz`, `--t3-tx-mhz`) must be in `tx_mhz`, or the run
 stops before the first test. The bench client refuses to key anywhere else. Example file (placeholder values: use
 your license's and your site's):
 
