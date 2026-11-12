@@ -349,6 +349,8 @@
  "screen.dual_zones": "Doble escucha: B de otra zona o el VFO",
  "screen.dual_actions": "Acciones de doble escucha",
  "screen.settings_advanced": "Ajustes avanzados",
+ "screen.settings_sound": "Ajustes de sonido",
+ "screen.settings_sound_tones": "Ajustes de sonido: tonos",
  "screen.settings_display": "Ajustes de pantalla",
  "screen.settings_editor": "Cambiar un ajuste",
  "screen.volume": "Volumen",

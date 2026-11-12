@@ -349,6 +349,8 @@
  "screen.dual_zones": "双守候：从其他区域或 VFO 选择 B",
  "screen.dual_actions": "双守候操作",
  "screen.settings_advanced": "高级设置",
+ "screen.settings_sound": "声音设置",
+ "screen.settings_sound_tones": "声音设置：提示音",
  "screen.settings_display": "显示设置",
  "screen.settings_editor": "更改设置",
  "screen.volume": "音量",
