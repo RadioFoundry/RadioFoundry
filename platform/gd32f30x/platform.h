@@ -96,6 +96,16 @@ void gd32_uart_start(gd32_usart_t *u, uint32_t baud, bool tx);
 void gd32_uart_stop(gd32_usart_t *u);
 int32_t gd32_uart_take(gd32_usart_t *u);
 void gd32_uart_put(gd32_usart_t *u, uint8_t c);
+// Or receive by DMA into ring (len bytes, circular), USART0 only, with the DMA's half and full transfer interrupts
+// (GD32_UART_RX_DMA_IRQn; the handler calls gd32_uart_dma_ack) and the USART's error interrupt on. dma_pos is the
+// index the DMA writes next. From the USART's handler, dma_error clears the error flags (framing, noise, overrun) and
+// gives the index of the byte they came with, or GD32_UART_NONE; it must run within a byte's time of the error
+#define GD32_UART_RX_DMA_IRQn	DMA0_Channel4_IRQn
+#define GD32_UART_RX_DMA_HANDLER	DMA0_Channel4_IRQHandler
+void gd32_uart_start_dma(gd32_usart_t *u, uint32_t baud, bool tx, uint8_t *ring, uint16_t len);
+uint16_t gd32_uart_dma_pos(uint16_t len);
+void gd32_uart_dma_ack(void);
+int32_t gd32_uart_dma_error(gd32_usart_t *u, uint16_t len);
 
 // USB identity (a board's board_usb_ids): the pair every RadioFoundry radio enumerates with (platform/stm32f4 has the
 // reasons), so the host tools find this one too

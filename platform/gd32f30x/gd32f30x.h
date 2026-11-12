@@ -303,6 +303,8 @@ typedef struct {
 #define USART_CTL0_RBNEIE	(1u << 5)
 #define USART_CTL0_TBEIE	(1u << 7)
 #define USART_CTL0_UEN		(1u << 13)
+#define USART_CTL2_ERRIE	(1u << 0)	// the error interrupt while DENR is set
+#define USART_CTL2_DENR		(1u << 6)	// DMA receive
 
 // FWDGT: the free watchdog, on the 40 kHz IRC40K
 #define FWDGT_BASE		0x40003000u

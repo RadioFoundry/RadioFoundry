@@ -9,7 +9,10 @@
 // CONFIG_BT_PTT (bt_d578uv.c).
 //
 // The serial keypad microphone (the radio's default "Hand Type") sends frames on PA10 at 115200 (anytone_mic.h). The
-// USART listens on PA10 all the time, so either microphone works without a setting: once a frame is accepted the keys
+// USART listens on PA10 all the time, by DMA into a ring that the key scan empties, and the DMA's half and full
+// interrupts too, so no interrupt latency loses a byte: the USART holds one byte, 87 us. Its error interrupt marks the
+// byte a framing or noise error came with, so the parser drops that one; it runs above the RTOS's interrupt mask, so
+// nothing delays it. Either microphone works without a setting: once a frame is accepted the keys
 // come from the frames and PA9 becomes the USART's TX for the radio's answers and status frames, which the key scan
 // sends (anytone_mic_out); when the microphone stops answering for ANYTONE_MIC_TIMEOUT_MS, PA9 is an input again.
 // While bytes arrive (MIC_ACTIVITY_MS after the last) the two lines aren't read as keys, so a frame's start bits never
@@ -26,7 +29,12 @@
 
 #define MIC_BAUD		115200u
 #define MIC_ACTIVITY_MS		50u
-#define MIC_IRQ_PRIORITY	6
+#define MIC_IRQ_PRIORITY	6	// the DMA's half and full interrupts, which empty the ring
+// The USART's error interrupt: above the RTOS's max syscall level (4), so no critical section holds it back. It makes
+// no RTOS calls
+#define MIC_ERR_IRQ_PRIORITY	2
+// The ring: 64 bytes, 5.6 ms of a line that never pauses, emptied by every key scan (10 ms) and every half ring
+#define MIC_RING_LEN		64u
 
 static const uint16_t ladder_max[4] = { 500, 1500, 2500, 3500 };
 #define ENC_LINES	((1u << 8) | (1u << 9))	// EXTI 8 and 9: PC8, PC9
@@ -34,6 +42,9 @@ static const uint16_t ladder_max[4] = { 500, 1500, 2500, 3500 };
 static quad_dec_t enc;
 static int32_t enc_taken;
 static anytone_mic_t mic;
+static volatile uint8_t mic_ring[MIC_RING_LEN];
+static uint32_t mic_err[MIC_RING_LEN / 32u];	// a bit per ring byte that came with an error
+static uint16_t mic_rd;			// the next ring byte to parse
 static volatile bool led_rx, led_tx;	// the core's green and red LEDs (d578uv_mic_led), for the microphone's lights
 static volatile uint32_t mic_byte_ms;	// when the USART last received a byte
 static volatile bool mic_byte_seen;
@@ -72,21 +83,32 @@ static int8_t mic_key_bit(uint8_t code)
 	}
 }
 
-// No RTOS calls; it only receives: the answers go out from the key scan
+// The bytes the DMA has written since the last time, into the parser, at now. From the DMA's interrupt, or with it off.
+// The error interrupt preempts this at once, so by the time a byte is in the ring index read here, its mark is set
+static void mic_drain(uint32_t now)
+{
+	uint16_t wr = mcu_uart_dma_pos(MIC_RING_LEN);
+	if (anytone_mic_ring(&mic, mic_ring, mic_err, MIC_RING_LEN, &mic_rd, wr, now) > 0) {
+		mic_byte_ms = now;
+		mic_byte_seen = true;
+	}
+}
+
+// Half or all of the ring written. No RTOS calls; it only receives: the answers go out from the key scan
+void MCU_UART_RX_DMA_HANDLER(void)
+{
+	mcu_uart_dma_ack();
+	mic_drain(hal_millis());
+}
+
+// A framing, noise or overrun error: the byte it came with is marked, for the parser to drop. A plain microphone's PTT
+// is a break, so a framing error. Registers and the mark only
 void MIC_USART_HANDLER(void)
 {
-	int32_t c = mcu_uart_take(MIC_USART);
-	if (c == MCU_UART_ERROR) {
-		anytone_mic_error(&mic);
-		return;
+	int32_t i = mcu_uart_dma_error(MIC_USART, MIC_RING_LEN);
+	if (i >= 0) {
+		anytone_mic_ring_mark(mic_err, (uint16_t)i);
 	}
-	if (c == MCU_UART_NONE) {
-		return;
-	}
-	uint32_t now = hal_millis();
-	mic_byte_ms = now;
-	mic_byte_seen = true;
-	(void)anytone_mic_byte(&mic, (uint8_t)c, now);
 }
 
 void d578uv_hand_mic(hal_hand_mic_stats_t *st)
@@ -119,8 +141,10 @@ static void init(void)
 	mcu_pin_in(PIN_ENC_A, MCU_PULL_UP);
 	mcu_pin_in(PIN_ENC_B, MCU_PULL_UP);
 	anytone_mic_init(&mic);
-	mcu_uart_start(MIC_USART, MIC_BAUD, true);
-	NVIC_SetPriority(MIC_USART_IRQn, MIC_IRQ_PRIORITY);
+	mcu_uart_start_dma(MIC_USART, MIC_BAUD, true, (uint8_t *)mic_ring, MIC_RING_LEN);
+	NVIC_SetPriority(MCU_UART_RX_DMA_IRQn, MIC_IRQ_PRIORITY);
+	NVIC_SetPriority(MIC_USART_IRQn, MIC_ERR_IRQ_PRIORITY);
+	NVIC_EnableIRQ(MCU_UART_RX_DMA_IRQn);
 	NVIC_EnableIRQ(MIC_USART_IRQn);
 	mcu_adc_init();
 #if CONFIG_BT_PTT
@@ -170,14 +194,15 @@ static uint32_t mic_scan(void)
 	}
 	d578uv_side_b_state(&state.rx2_busy, &state.rx2_audio);
 	uint8_t lights = anytone_mic_lights(&state);
-	NVIC_DisableIRQ(MIC_USART_IRQn);
+	NVIC_DisableIRQ(MCU_UART_RX_DMA_IRQn);
+	mic_drain(now);
 	bool present = anytone_mic_poll(&mic, now);
 	bool ptt = mic.ptt;
 	uint8_t key = mic.key;
-	bool busy = mic_byte_seen && now - mic_byte_ms < MIC_ACTIVITY_MS;
+	bool busy = mic_byte_seen && (int32_t)(now - mic_byte_ms) < (int32_t)MIC_ACTIVITY_MS;	// a byte after now too
 	uint8_t out[ANYTONE_MIC_STATUS_LEN + 4u];
 	uint8_t n = anytone_mic_out(&mic, now, lights, out, sizeof(out));
-	NVIC_EnableIRQ(MIC_USART_IRQn);
+	NVIC_EnableIRQ(MCU_UART_RX_DMA_IRQn);
 	if (present && !mic_tx) {
 		mcu_pin_af(PIN_MIC_LINE9, MIC_TX_AF, false);
 		mic_tx = true;

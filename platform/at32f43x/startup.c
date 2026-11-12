@@ -44,6 +44,7 @@ void TMR4_GLOBAL_IRQHandler(void) WEAK_ALIAS;
 void TMR5_GLOBAL_IRQHandler(void) WEAK_ALIAS;
 void TMR6_DAC_GLOBAL_IRQHandler(void) WEAK_ALIAS;
 void TMR7_GLOBAL_IRQHandler(void) WEAK_ALIAS;
+void DMA1_Channel1_IRQHandler(void) WEAK_ALIAS;
 void USART1_IRQHandler(void) WEAK_ALIAS;
 void USART2_IRQHandler(void) WEAK_ALIAS;
 void USART3_IRQHandler(void) WEAK_ALIAS;
@@ -88,6 +89,7 @@ __attribute__((section(".isr_vector"), used)) const vector_t at32_vectors[16 + A
 	IRQ(TMR5_GLOBAL_IRQn) = TMR5_GLOBAL_IRQHandler,
 	IRQ(TMR6_DAC_GLOBAL_IRQn) = TMR6_DAC_GLOBAL_IRQHandler,
 	IRQ(TMR7_GLOBAL_IRQn) = TMR7_GLOBAL_IRQHandler,
+	IRQ(DMA1_Channel1_IRQn) = DMA1_Channel1_IRQHandler,
 	IRQ(USART1_IRQn) = USART1_IRQHandler,
 	IRQ(USART2_IRQn) = USART2_IRQHandler,
 	IRQ(USART3_IRQn) = USART3_IRQHandler,

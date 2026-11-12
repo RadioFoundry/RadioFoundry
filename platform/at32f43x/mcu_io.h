@@ -158,6 +158,12 @@ static inline bool mcu_clock_init(uint32_t hxtal_hz, uint32_t sys_hz)
 #define mcu_uart_stop		at32_uart_stop
 #define mcu_uart_take		at32_uart_take
 #define mcu_uart_put		at32_uart_put
+#define mcu_uart_start_dma	at32_uart_start_dma	// MCU_USART1 only
+#define mcu_uart_dma_pos	at32_uart_dma_pos
+#define mcu_uart_dma_ack	at32_uart_dma_ack
+#define mcu_uart_dma_error	at32_uart_dma_error
+#define MCU_UART_RX_DMA_IRQn	AT32_UART_RX_DMA_IRQn
+#define MCU_UART_RX_DMA_HANDLER	AT32_UART_RX_DMA_HANDLER
 #define MCU_USART1		USART1
 #define MCU_USART1_IRQn		USART1_IRQn
 #define MCU_USART1_HANDLER	USART1_IRQHandler

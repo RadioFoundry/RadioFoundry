@@ -84,6 +84,16 @@ void at32_uart_start(at32_usart_t *u, uint32_t baud, bool tx);
 void at32_uart_stop(at32_usart_t *u);
 int32_t at32_uart_take(at32_usart_t *u);
 void at32_uart_put(at32_usart_t *u, uint8_t c);
+// Or receive by DMA into ring (len bytes, circular), USART1 only, with the DMA's half and full transfer interrupts
+// (AT32_UART_RX_DMA_IRQn; the handler calls at32_uart_dma_ack) and the USART's error interrupt on. dma_pos is the
+// index the DMA writes next. From the USART's handler, dma_error clears the error flags (framing, noise, overrun) and
+// gives the index of the byte they came with, or AT32_UART_NONE; it must run within a byte's time of the error
+#define AT32_UART_RX_DMA_IRQn	DMA1_Channel1_IRQn
+#define AT32_UART_RX_DMA_HANDLER	DMA1_Channel1_IRQHandler
+void at32_uart_start_dma(at32_usart_t *u, uint32_t baud, bool tx, uint8_t *ring, uint16_t len);
+uint16_t at32_uart_dma_pos(uint16_t len);
+void at32_uart_dma_ack(void);
+int32_t at32_uart_dma_error(at32_usart_t *u, uint16_t len);
 
 // USB identity (a board's board_usb_ids): the pair every RadioFoundry radio enumerates with (platform/stm32f4 has the
 // reasons), so the host tools find this one too
