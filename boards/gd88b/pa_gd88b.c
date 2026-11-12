@@ -8,8 +8,9 @@
 //   rising:  path pins for A's chip in its TX band, A's RX path off; 50 us + the TX-on delay; PA select; 200 us; PA
 //            supply; DAC B ramped up to the drive (180 steps of 4 us)
 //            With the drive's points (rx2_tx_key_t: a DMR burst A keys by the key-up rule, docs/spec/pa-keyup.md) no
-//            ramp: DAC B steps to the drive at its time after the edge, after a boost when A sent one. The PA loop's
-//            low-pass shapes the rise, and the rule times a step
+//            ramp: the PA select and supply wait until SUPPLY_AHEAD_US before the first point, and DAC B steps to the
+//            drive at its time after the edge, after a boost when A sent one. The PA loop's low-pass shapes the
+//            rise, and the rule times a step
 //   falling: the TX-off delay; DAC B ramped down; supply and select off; 300 + 1000 + 300 us; the path pins back; 200 us
 //
 // B's own transmitter (GD88_DMR_TX: A's second transmitter for an SFR's repeat, the original firmware's path 1) uses
@@ -40,6 +41,13 @@
 #define TX_SUPPLY_US		200u
 #define TX_OFF_PATH_US		(300u + 1000u + 300u)
 #define TX_OFF_END_US		200u
+// With the drive's points, the PA's supply comes on this long before the first of them. Sooner, the PA passes A's
+// carrier at drive 0 from the supply on: 40-44 dB under the level from 1.75 ms before the first symbol (in the slot
+// before) with the supply on at the sequence's start, a 0.3 ms step at -40 dB with it 300 us ahead. From 50 us to the
+// point itself the rise is the same (UHF, both levels: -3 dB 0.27-0.34 ms before the first symbol). Not static, so
+// the bench can try others through the debug link's poke
+#define SUPPLY_AHEAD_US		50u
+volatile uint16_t gd88b_supply_ahead_us = SUPPLY_AHEAD_US;
 
 static TaskHandle_t task;
 static volatile bool armed;
@@ -93,6 +101,13 @@ static void key_on(void)
 	hal_delay_us(TX_RX_OFF_US + on_us);
 	DAC_DATA_B = 0;
 	hrc_dac_b_power(true);
+	if (key.drive_at_us != 0) {
+		uint32_t first = key.boost != 0 ? key.boost_at_us : key.drive_at_us;
+		uint32_t ahead = (uint32_t)gd88b_supply_ahead_us + TX_SUPPLY_US;
+		if (first > ahead) {
+			(void)wait_edge(t0, (uint16_t)(first - ahead));
+		}
+	}
 	gd88b_path_pa(key_uhf, true, false);
 	hal_delay_us(TX_SUPPLY_US);
 	gd88b_path_pa(key_uhf, true, true);
