@@ -79,17 +79,16 @@ typedef struct {
 	uint8_t state;		// md9600_rf_state_t
 	uint32_t retunes, refused, errors;
 	uint8_t last_err;	// md9600_rf_err_t
-	bool tx_armed;
 	int16_t probe;		// receiver probe: -1 not run, else the md9600_rev_t it picked (0 = no verdict)
 	uint16_t apc;		// the APC DAC value of the last transmission
 	uint32_t rx_hz;		// the receive frequency (the calibration lookups' point)
 } md9600_radio_diag_t;
 void md9600_radio_diag(md9600_radio_diag_t *d);
 void md9600_radio_early(void);	// board_init: the revision and the power-on synthesizer set-up
-// Transmit arm for this power cycle (hwopt_md9600.c); false when refused (rfseq_md9600.h)
-bool md9600_radio_tx_arm(bool on);
-// Hardware options (hwopt_md9600.c, hal_hwopt.h): the board revision, and the transmit arm with CONFIG_MD9600_TX
-#define MD9600_HWOPT_COUNT	(CONFIG_MD9600_TX ? 2u : 1u)	// needs config.h
+// A person stored the revision running now (hwopt_md9600.c): transmit is allowed from now on, no restart
+void md9600_radio_rev_confirm(void);
+// Hardware options (hwopt_md9600.c, hal_hwopt.h): the board revision
+#define MD9600_HWOPT_COUNT	1u
 extern const hal_hwopt_t md9600_hwopts[];
 // TIM8 PWM outputs (pwm_md9600.c): CH2 PC7 the sub-audio tone, CH3 PC8 the beep. Duty in counts of 256 at about
 // 28 kHz; 0 = off (the pin a GPIO driven low). Needs the backlight's TIM8 set-up (display_md9600.c) first
@@ -184,8 +183,6 @@ typedef struct {
 void md9600_c6000_diag(md9600_c6000_diag_t *d);
 extern const hal_audio_t md9600_audio;
 #if CONFIG_MD9600_DMR_TX
-// The run-time gate on DMR transmit (off at start-up): follows the transmit arm (md9600_radio_tx_arm)
-void md9600_dmr_tx_allow(bool on);
 // The RF chain's DMR switching (radio_md9600.c): the per-burst keying from the modem interrupts, the transmit side
 // tuned ahead of the first burst (never blocks) and the task-level wait for it, the receiver back at a transmission's
 // end (task level), the end of the transmission with the receiver left on (the glue's tx_end), the counters for the glue

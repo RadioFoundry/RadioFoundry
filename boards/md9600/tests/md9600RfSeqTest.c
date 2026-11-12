@@ -88,11 +88,51 @@ static bool f_pll(void *ctx, uint8_t band, uint32_t word, uint8_t bits)
 	return !pll_fail && npll++ != pll_fail_after;
 }
 
+// The AK2365A read test's fake chips: PRESENT answers when both receiver supplies are on and its reset was released
+// by the pull, ABSENT leaves the data line to the pull (V5), STUCK holds it low
+enum { AK_PRESENT, AK_ABSENT, AK_STUCK };
+static int ak_mode = AK_ABSENT;
+static uint8_t ak_reg[2];
+static bool ak_rst_up, ak_rst_pulsed, ak_read_fail;
+static int ak_reads;
+
 static bool f_if(void *ctx, uint8_t band, uint16_t word)
 {
 	(void)ctx;
 	log_ev(EV_IF, band, word);
+	if ((word >> 9) == MD9600_IF_TEST_REG) {
+		ak_reg[band] = (uint8_t)word;
+	} else if (word == 0x08AAu) {
+		ak_reg[band] = 0;	// the soft reset
+	}
 	return !if_fail;
+}
+
+static void f_if_rst_pull(void *ctx, bool up)
+{
+	(void)ctx;
+	if (!up) {
+		ak_rst_pulsed = true;
+	}
+	ak_rst_up = up;
+}
+
+static bool f_if_read(void *ctx, uint8_t band, uint8_t addr, bool pull_up, uint16_t *bits)
+{
+	(void)ctx;
+	ak_reads++;
+	const uint16_t ones = (1u << MD9600_IF_READ_BITS) - 1u;
+	bool alive = level[MD9600_LN_R5_U] && level[MD9600_LN_R5_V] && ak_rst_up && ak_rst_pulsed;
+	if (ak_mode == AK_PRESENT && alive && addr == MD9600_IF_TEST_REG) {
+		// One unstable bit (here the pull's level), D7-D0, then D0 held
+		uint8_t d = ak_reg[band];
+		*bits = (uint16_t)((pull_up ? 1u << 9 : 0u) | (uint16_t)d << 1 | (d & 1u));
+	} else if (ak_mode == AK_STUCK) {
+		*bits = 0;
+	} else {
+		*bits = pull_up ? ones : 0u;
+	}
+	return !ak_read_fail;
 }
 
 static void f_dac(void *ctx, uint8_t ch, uint16_t v)
@@ -150,7 +190,7 @@ static uint16_t f_noise(void *ctx, uint8_t band)
 
 static md9600_rf_ops_t ops = {
 	.line = f_line, .pll = f_pll, .ifw = f_if, .dac = f_dac, .delay_us = f_delay, .locked = NULL,
-	.rx_tune = f_rx_tune, .apc = f_apc, .noise = f_noise,
+	.rx_tune = f_rx_tune, .apc = f_apc, .noise = f_noise, .if_rst_pull = f_if_rst_pull, .if_read = f_if_read,
 };
 
 // --- Log queries ---
@@ -230,7 +270,7 @@ static void test_init(void)
 	CHECK(ev[0].kind == EV_LINE && ev[0].a == MD9600_LN_APC && ev[0].v == 0);
 	CHECK(find(0, EV_LINE, MD9600_LN_T5_U, 0) < find(0, EV_LINE, MD9600_LN_POWER, 0));
 	CHECK(count(EV_PLL, -1) == 0 && count(EV_IF, -1) == 0);
-	CHECK(rf.state == MD9600_RF_OFF && !rf.tx_armed);
+	CHECK(rf.state == MD9600_RF_OFF);
 
 	// An unknown or unbuilt revision: everything off and every request refused
 	fresh(MD9600_REV_UNKNOWN, true);
@@ -391,26 +431,29 @@ static void test_tx_gates(void)
 	CHECK(md9600_rf_rx(&rf, 446000000u, true) == MD9600_RF_OK);
 	reset_log();
 #if !CONFIG_MD9600_TX
-	// Not in this build: nothing arms it, every request is refused, no line moves toward transmit
-	CHECK(!md9600_rf_tx_arm(&rf, true));
+	// Not in this build: every request is refused, no line moves toward transmit
 	md9600_rf_t c = rf;
-	c.tx_armed = true;
 	c.confirmed = true;
 	CHECK(md9600_rf_tx_check(&c, 446000000u, 0) == MD9600_RF_E_TX_BUILD);
 	CHECK(md9600_rf_tx(&c, 446000000u, true, 0) == MD9600_RF_E_TX_BUILD);
 	CHECK(md9600_rf_pa(&c, true) != MD9600_RF_OK);
 	CHECK(count(EV_PLL, -1) == 0 && pa_off_now());
 #else
-	// Unconfirmed revision: no arming, and the request names the arm first
-	CHECK(md9600_rf_tx(&rf, 446000000u, true, 0) == MD9600_RF_E_TX_ARM);
-	CHECK(!md9600_rf_tx_arm(&rf, true));
-	md9600_rf_t c = rf;
-	c.tx_armed = true;
-	CHECK(md9600_rf_tx_check(&c, 446000000u, 0) == MD9600_RF_E_TX_REV);
-	// Confirmed: arms; out of band and missing calibration refuse
+	// Unconfirmed revision: refused, nothing keyed
+	CHECK(md9600_rf_tx(&rf, 446000000u, true, 0) == MD9600_RF_E_TX_REV);
+	CHECK(md9600_rf_tx_check(&rf, 446000000u, 0) == MD9600_RF_E_TX_REV);
+	CHECK(count(EV_PLL, -1) == 0 && pa_off_now());
+	// Confirmed later (a person stored the revision running): allowed at once
+	md9600_rf_confirm(&rf);
+	CHECK(rf.confirmed && md9600_rf_tx_check(&rf, 446000000u, 0) == MD9600_RF_OK);
+	// No revision: nothing to confirm
+	fresh(MD9600_REV_UNKNOWN, false);
+	md9600_rf_confirm(&rf);
+	CHECK(!rf.confirmed && md9600_rf_tx_check(&rf, 446000000u, 0) == MD9600_RF_E_REV);
+	// Confirmed: out of band and missing calibration refuse
 	fresh(MD9600_REV_V5, true);
-	CHECK(md9600_rf_tx_check(&rf, 446000000u, 0) == MD9600_RF_E_TX_ARM);
-	CHECK(md9600_rf_tx_arm(&rf, true));
+	CHECK(md9600_rf_rx(&rf, 446000000u, true) == MD9600_RF_OK);
+	reset_log();
 	CHECK(md9600_rf_tx(&rf, 300000000u, true, 0) == MD9600_RF_E_BAND);
 	apc_ok = false;
 	CHECK(md9600_rf_tx(&rf, 446000000u, true, 0) == MD9600_RF_E_TX_CAL);
@@ -428,7 +471,6 @@ static void check_tx(md9600_rev_t r, uint32_t rx_hz, uint32_t tx_hz, uint8_t pow
 {
 	fresh(r, true);
 	CHECK(md9600_rf_rx(&rf, rx_hz, true) == MD9600_RF_OK);
-	CHECK(md9600_rf_tx_arm(&rf, true));
 	reset_log();
 	pa_allowed = true;
 	md9600_pll_plan_t p;
@@ -508,7 +550,6 @@ static void check_dmr_tx(md9600_rev_t r, uint32_t hz, uint8_t power)
 {
 	fresh(r, true);
 	CHECK(md9600_rf_rx(&rf, hz, false) == MD9600_RF_OK);
-	CHECK(md9600_rf_tx_arm(&rf, true));
 	reset_log();
 	pa_allowed = true;
 	md9600_pll_plan_t p;
@@ -550,12 +591,11 @@ static void check_dmr_tx(md9600_rev_t r, uint32_t hz, uint8_t power)
 	// Ended after the supply step (the burst's end came first): all off
 	CHECK(md9600_rf_pa_step(&rf, 0, &us) == MD9600_RF_OK && level[t5]);
 	CHECK(md9600_rf_pa_burst(&rf, false) == MD9600_RF_OK && pa_off_now());
-	// Disarmed: no burst keys, the PA stays safe
-	CHECK(md9600_rf_tx_arm(&rf, false));
-	CHECK(md9600_rf_pa_burst(&rf, true) != MD9600_RF_OK && pa_off_now());
-	CHECK(md9600_rf_pa_step(&rf, 1, &us) != MD9600_RF_OK && us == 0 && pa_off_now());
+	// Back in receive: no burst keys, the PA stays safe
 	md9600_rf_tx_off(&rf);
 	CHECK(pa_off_now() && rf.state == MD9600_RF_RX);
+	CHECK(md9600_rf_pa_burst(&rf, true) != MD9600_RF_OK && pa_off_now());
+	CHECK(md9600_rf_pa_step(&rf, 1, &us) != MD9600_RF_OK && us == 0 && pa_off_now());
 	pa_allowed = false;
 }
 
@@ -566,7 +606,6 @@ static void check_dmr_rx_back(md9600_rev_t r, uint32_t rx_hz, uint32_t tx_hz)
 {
 	fresh(r, true);
 	CHECK(md9600_rf_rx(&rf, rx_hz, false) == MD9600_RF_OK);
-	CHECK(md9600_rf_tx_arm(&rf, true));
 	pa_allowed = true;
 	md9600_pll_plan_t rxp, txp;
 	CHECK(md9600_pll_plan(r, rx_hz, false, &rxp) && md9600_pll_plan(r, tx_hz, true, &txp));
@@ -624,7 +663,7 @@ static void test_tx_floor(void)
 	apc_floor_value = fl;
 	fresh(MD9600_REV_V5, true);
 	pa_allowed = true;
-	CHECK(md9600_rf_rx(&rf, 446000000u, true) == MD9600_RF_OK && md9600_rf_tx_arm(&rf, true));
+	CHECK(md9600_rf_rx(&rf, 446000000u, true) == MD9600_RF_OK);
 	reset_log();
 	CHECK(md9600_rf_tx(&rf, 446000000u, true, 1) == MD9600_RF_OK);
 	int t5 = find(0, EV_LINE, MD9600_LN_T5_U, 1), lp = find(0, EV_LINE, MD9600_LN_APC, 1);
@@ -677,28 +716,18 @@ static void test_tx(void)
 	// A bus failure in transmit: the PA never comes on and the receiver returns
 	fresh(MD9600_REV_V5, true);
 	CHECK(md9600_rf_rx(&rf, 446000000u, true) == MD9600_RF_OK);
-	CHECK(md9600_rf_tx_arm(&rf, true));
 	reset_log();
 	pll_fail_after = 2;
 	CHECK(md9600_rf_tx(&rf, 446000000u, true, 1) == MD9600_RF_E_BUS);
 	CHECK(find(0, EV_LINE, MD9600_LN_APC, 1) < 0 && find(0, EV_LINE, MD9600_LN_T5_U, 1) < 0 && pa_off_now() && rf.state == MD9600_RF_RX && rf.errors == 1);
 	CHECK(rf.last_err == MD9600_RF_E_BUS && level[MD9600_LN_VCO_U]);
 
-	// Disarming during a transmission drops the PA at once and refuses it again
 	fresh(MD9600_REV_V5, true);
 	pa_allowed = true;
-	CHECK(md9600_rf_rx(&rf, 446000000u, true) == MD9600_RF_OK && md9600_rf_tx_arm(&rf, true));
-	CHECK(md9600_rf_tx(&rf, 446000000u, true, 2) == MD9600_RF_OK && level[MD9600_LN_APC]);
-	reset_log();
-	CHECK(md9600_rf_tx_arm(&rf, false));
-	CHECK(pa_off_now() && dac_now[MD9600_DAC_APC_TUNE_V] == 0 && count(EV_PLL, -1) == 0);
-	CHECK(md9600_rf_pa(&rf, true) == MD9600_RF_E_TX_ARM && pa_off_now());
-	md9600_rf_tx_off(&rf);
-	CHECK(rf.state == MD9600_RF_RX);
+	CHECK(md9600_rf_rx(&rf, 446000000u, true) == MD9600_RF_OK);
 
 	// A retune in transmit (a new frequency, or a power step) and sleep with the PA on: each ramps the PA down first,
 	// the loop opening only at the end of the ramp
-	CHECK(md9600_rf_tx_arm(&rf, true));
 	for (int k = 0; k < 2; k++) {
 		CHECK(md9600_rf_tx(&rf, 446000000u, true, 2) == MD9600_RF_OK && level[MD9600_LN_APC]);
 		reset_log();
@@ -717,7 +746,6 @@ static void test_tx(void)
 	CHECK(md9600_rf_rx(&rf, 446000000u, true) == MD9600_RF_OK);
 
 	// A receive request in transmit ends the transmission first
-	CHECK(md9600_rf_tx_arm(&rf, true));
 	CHECK(md9600_rf_tx(&rf, 446000000u, true, 2) == MD9600_RF_OK);
 	reset_log();
 	CHECK(md9600_rf_rx(&rf, 440000000u, true) == MD9600_RF_OK);
@@ -725,7 +753,6 @@ static void test_tx(void)
 	// tx_off without a stored receive frequency still powers the receivers
 	fresh(MD9600_REV_V5, true);
 	pa_allowed = true;
-	CHECK(md9600_rf_tx_arm(&rf, true));
 	CHECK(md9600_rf_tx(&rf, 446000000u, true, 0) == MD9600_RF_OK);
 	md9600_rf_tx_off(&rf);
 	CHECK(rf.state == MD9600_RF_RX && level[MD9600_LN_R5_U] && pa_off_now());
@@ -756,6 +783,85 @@ static void test_probe(void)
 	CHECK(md9600_rf_probe(&ops, 300000000u, MD9600_PROBE_THRESHOLD) == MD9600_REV_UNKNOWN);
 }
 
+// The AK2365A read test: present on V1-V4, absent on V5, no verdict for anything else; never drives PE15 or a
+// transmitter line, and leaves the radio off
+static md9600_if_t if_detect(int mode)
+{
+	ak_mode = mode;
+	ak_rst_up = ak_rst_pulsed = false;
+	ak_reads = 0;
+	memset(level, 0, sizeof(level));
+	reset_log();
+	return md9600_rf_if_detect(&ops);
+}
+
+static void test_if_detect(void)
+{
+	CHECK(if_detect(AK_PRESENT) == MD9600_IF_PRESENT);
+	CHECK(ak_reads == 2 * 2 * MD9600_IF_PATTERNS);
+	CHECK(find(0, EV_LINE, MD9600_LN_APC, 1) < 0 && find(0, EV_LINE, MD9600_LN_T5_U, 1) < 0 &&
+	      find(0, EV_LINE, MD9600_LN_T5_V, 1) < 0);
+	CHECK(count(EV_LINE, MD9600_LN_IF_RST) == 0 && !level[MD9600_LN_POWER] && !level[MD9600_LN_R5_U]);
+	CHECK(count(EV_PLL, -1) == 0);
+	// Each chip back to its defaults at the end
+	CHECK(find(0, EV_IF, MD9600_VHF, 0x08AAu) >= 0 && find(0, EV_IF, MD9600_UHF, 0x08AAu) >= 0);
+	CHECK(ak_reg[0] == 0 && ak_reg[1] == 0);
+	CHECK(if_detect(AK_ABSENT) == MD9600_IF_ABSENT);
+	CHECK(if_detect(AK_STUCK) == MD9600_IF_UNKNOWN);
+	// A failed frame or bus write: no verdict, never "absent"
+	ak_read_fail = true;
+	CHECK(if_detect(AK_ABSENT) == MD9600_IF_UNKNOWN);
+	ak_read_fail = false;
+	if_fail = true;
+	CHECK(if_detect(AK_ABSENT) == MD9600_IF_UNKNOWN);
+	if_fail = false;
+	// A board without the read ops
+	ops.if_read = NULL;
+	CHECK(if_detect(AK_PRESENT) == MD9600_IF_UNKNOWN && ak_reads == 0);
+	ops.if_read = f_if_read;
+}
+
+// The verdict over hand-made frames: each alignment the data sheet allows, one band alone, mixed or wrong answers
+static void test_if_verdict(void)
+{
+	const uint16_t ones = (1u << MD9600_IF_READ_BITS) - 1u;
+	uint16_t r[2][2][MD9600_IF_PATTERNS];
+	for (uint8_t a = 0; a <= MD9600_IF_READ_BITS - 8u; a++) {
+		for (uint8_t b = 0; b < 2u; b++) {
+			for (uint8_t pull = 0; pull < 2u; pull++) {
+				for (uint8_t k = 0; k < MD9600_IF_PATTERNS; k++) {
+					// UHF answers; VHF floats
+					r[b][pull][k] = b == MD9600_UHF ?
+						(uint16_t)(md9600_if_patterns[k] << (MD9600_IF_READ_BITS - 8u - a)) :
+						(pull ? ones : 0u);
+				}
+			}
+		}
+		CHECK(md9600_if_verdict(r) == MD9600_IF_PRESENT);
+	}
+	// Both float: V5
+	for (uint8_t b = 0; b < 2u; b++) {
+		for (uint8_t k = 0; k < MD9600_IF_PATTERNS; k++) {
+			r[b][0][k] = 0;
+			r[b][1][k] = ones;
+		}
+	}
+	CHECK(md9600_if_verdict(r) == MD9600_IF_ABSENT);
+	// One sample against the pull on one band: something drives the line, so not V5
+	r[MD9600_VHF][1][1] = (uint16_t)(ones & ~1u);
+	CHECK(md9600_if_verdict(r) == MD9600_IF_UNKNOWN);
+	// The patterns swapped (a chip echoing something else): no verdict
+	for (uint8_t pull = 0; pull < 2u; pull++) {
+		r[MD9600_UHF][pull][0] = (uint16_t)(md9600_if_patterns[1] << 1);
+		r[MD9600_UHF][pull][1] = (uint16_t)(md9600_if_patterns[0] << 1);
+	}
+	CHECK(md9600_if_verdict(r) == MD9600_IF_UNKNOWN);
+	// Only one pull answered: no verdict
+	r[MD9600_UHF][0][0] = (uint16_t)(md9600_if_patterns[0] << 1);
+	r[MD9600_UHF][0][1] = (uint16_t)(md9600_if_patterns[1] << 1);
+	CHECK(md9600_if_verdict(r) == MD9600_IF_UNKNOWN);
+}
+
 // The reference trim: every synthesizer frequency is f x (1 + trim), the IF unchanged; the band check and the
 // calibration lookups stay on f
 static void test_ref_trim(void)
@@ -773,7 +879,6 @@ static void test_ref_trim(void)
 		rf.trim_ppb = -5000;
 		CHECK(md9600_rf_rx(&rf, 145500000u, true) == MD9600_RF_OK && rf.lo_hz == 145499272u + MD9600_IF_HZ);
 #if CONFIG_MD9600_TX
-		CHECK(md9600_rf_tx_arm(&rf, true));
 		pa_allowed = true;
 		CHECK(md9600_rf_tx(&rf, 146520000u, true, 0) == MD9600_RF_OK && rf.lo_hz == 146519267u);
 		CHECK(rf.tx_hz == 146520000u);
@@ -959,10 +1064,11 @@ static void test_rev_text(void)
 	char buf[64];
 	size_t longest = 0;
 	for (int r = MD9600_REV_UNKNOWN; r <= MD9600_REV_COUNT; r++) {
-		for (uint8_t src = 0; src <= 4; src++) {
-			for (int f = 0; f < 4; f++) {
+		for (uint8_t src = 0; src <= 5; src++) {
+			for (int f = 0; f < 16; f++) {
 				for (int16_t probe = -1; probe <= MD9600_REV_COUNT; probe++) {
-					md9600_rev_state_t st = { (md9600_rev_t)r, src, (f & 1) != 0, (f & 2) != 0 };
+					md9600_rev_state_t st = { (md9600_rev_t)r, src, (f & 1) != 0, (f & 2) != 0,
+								  (uint8_t)(f >> 2) };
 					for (uint8_t line = 0; line < MD9600_REV_TEXT_LINES; line++) {
 						CHECK(md9600_rev_text(line, st, probe, buf, sizeof buf));
 						size_t n = strlen(buf);
@@ -973,14 +1079,20 @@ static void test_rev_text(void)
 			}
 		}
 	}
-	CHECK(longest == 21);	// the longest of all: "Set rev: Adv>Hardware"
-	md9600_rev_state_t st = { MD9600_REV_V5, MD9600_REV_SRC_STORED, false, true };
+	CHECK(longest == 21);	// the longest of all: "Set rev: Adv>Hardware", "rev V4A/V5 detected"
+	md9600_rev_state_t st = { MD9600_REV_V5, MD9600_REV_SRC_STORED, false, true, MD9600_IF_UNKNOWN };
 	CHECK(md9600_rev_text(0, st, -1, buf, sizeof buf) && strcmp(buf, "rev V4A/V5 unbuilt") == 0);
-	st = (md9600_rev_state_t){ MD9600_REV_V5, MD9600_REV_SRC_DEFAULT, true, false };
+	st = (md9600_rev_state_t){ MD9600_REV_V5, MD9600_REV_SRC_DEFAULT, true, false, MD9600_IF_UNKNOWN };
 	CHECK(md9600_rev_text(0, st, -1, buf, sizeof buf) && strcmp(buf, "rev V4A/V5 default") == 0);
 	CHECK(md9600_rev_text(1, st, -1, buf, sizeof buf) && strcmp(buf, "Set rev: Adv>Hardware") == 0);
-	CHECK(md9600_rev_text(2, st, -1, buf, sizeof buf) && strcmp(buf, "probe off") == 0);
-	CHECK(md9600_rev_text(2, st, 0, buf, sizeof buf) && strcmp(buf, "probe none") == 0);
+	CHECK(md9600_rev_text(2, st, -1, buf, sizeof buf) && strcmp(buf, "ak ? probe off") == 0);
+	CHECK(md9600_rev_text(2, st, 0, buf, sizeof buf) && strcmp(buf, "ak ? probe none") == 0);
+	st = (md9600_rev_state_t){ MD9600_REV_V5, MD9600_REV_SRC_DETECTED, true, true, MD9600_IF_ABSENT };
+	CHECK(md9600_rev_text(0, st, -1, buf, sizeof buf) && strcmp(buf, "rev V4A/V5 detected") == 0);
+	CHECK(md9600_rev_text(2, st, -1, buf, sizeof buf) && strcmp(buf, "ak no probe off") == 0);
+	st.if_chip = MD9600_IF_PRESENT;
+	CHECK(md9600_rev_text(2, st, -1, buf, sizeof buf) && strcmp(buf, "ak yes probe off") == 0);
+	st.confirmed = false;
 	st.confirmed = true;
 	CHECK(md9600_rev_text(1, st, -1, buf, sizeof buf) && strcmp(buf, "rev confirmed") == 0);
 	// Past the last line; a short buffer is cut, not overrun
@@ -989,10 +1101,12 @@ static void test_rev_text(void)
 	CHECK(md9600_rev_text(0, st, -1, buf, 5) && strcmp(buf, "rev ") == 0);
 }
 
-// --- The hardware options (hwopt_md9600.c) over a fake record and arm ---
+// --- The hardware option (hwopt_md9600.c) over a fake record and start-up state ---
 
 static md9600_rev_t stored_rev = MD9600_REV_UNKNOWN;
-static bool store_ok = true, arm_state, arm_ok = true;
+static bool store_ok = true;
+static md9600_rev_state_t rev_now;
+static int confirms;
 
 md9600_rev_t md9600_flash_rev_load(void)
 {
@@ -1008,42 +1122,55 @@ bool md9600_flash_rev_store(md9600_rev_t r)
 	return false;
 }
 
-bool md9600_radio_tx_arm(bool on)
+md9600_rev_state_t md9600_rev_state(void)
 {
-	if (on && !arm_ok) {
-		return false;
-	}
-	arm_state = on;
-	return true;
+	return rev_now;
 }
 
-void md9600_radio_diag(md9600_radio_diag_t *d)
+void md9600_radio_rev_confirm(void)
 {
-	memset(d, 0, sizeof(*d));
-	d->tx_armed = arm_state;
+	confirms++;
+	rev_now.confirmed = true;
 }
 
 static void test_hwopt(void)
 {
 	const hal_hwopt_t *o = &md9600_hwopts[0];
-	CHECK(MD9600_HWOPT_COUNT == (CONFIG_MD9600_TX ? 2u : 1u));
-	CHECK(strcmp(o->name, "Board revision") == 0 && o->count == 3 && o->restart);
-	CHECK(o->get() == HWOPT_NONE);
-	CHECK(o->set(2) && stored_rev == MD9600_REV_V5 && o->get() == 2 && strcmp(o->choices[2], "V4A/V5") == 0);
-	CHECK(o->set(0) && stored_rev == MD9600_REV_V1V3 && o->get() == 0);
-	CHECK(!o->set(3) && stored_rev == MD9600_REV_V1V3);
+	CHECK(MD9600_HWOPT_COUNT == 1u);
+	CHECK(strcmp(o->name, "Board revision") == 0 && o->count == 3 && o->restart && o->state != NULL);
+
+#if CONFIG_MD9600_V1V3 && CONFIG_MD9600_V4
+	// An AK2365A answered, nothing stored: the board runs V1-V3 and asks which it is
+	rev_now = md9600_rev_resolve(MD9600_REV_UNKNOWN, MD9600_IF_PRESENT, MD9600_REV_UNKNOWN, MD9600_REV_V5);
+	CHECK(rev_now.rev == MD9600_REV_V1V3 && !rev_now.confirmed);
+	CHECK(o->get() == HWOPT_NONE && o->state() == HWOPT_ST_ASK);
+	// V4A / V5 can't be right with an AK2365A
+	CHECK(!o->set(2) && stored_rev == MD9600_REV_UNKNOWN && o->state() == HWOPT_ST_ASK);
+	// The revision running: confirmed at once, no restart
+	CHECK(o->set(0) && stored_rev == MD9600_REV_V1V3 && o->get() == 0 && confirms == 1);
+	CHECK(o->state() == HWOPT_ST_OK);
+	// Another one: applies at the next start
+	CHECK(o->set(1) && stored_rev == MD9600_REV_V4 && o->get() == 1 && confirms == 1);
+	CHECK(o->state() == HWOPT_ST_RESTART);
+	CHECK(!o->set(3) && stored_rev == MD9600_REV_V4);
 	store_ok = false;
-	CHECK(!o->set(1) && o->get() == 0);
+	CHECK(!o->set(0) && o->get() == 1);
 	store_ok = true;
-#if CONFIG_MD9600_TX
-	const hal_hwopt_t *t = &md9600_hwopts[1];
-	CHECK(!t->restart && t->count == 2 && t->get() == 0);
-	CHECK(t->set(1) && arm_state && t->get() == 1);
-	CHECK(t->set(0) && !arm_state && t->get() == 0);
-	arm_ok = false;
-	CHECK(!t->set(1) && t->get() == 0);
-	CHECK(!t->set(2));
 #endif
+
+	// No AK2365A: V4A / V5 detected, the option hidden whatever is stored
+	rev_now = md9600_rev_resolve(MD9600_REV_V4, MD9600_IF_ABSENT, MD9600_REV_UNKNOWN, MD9600_REV_V5);
+	CHECK(rev_now.rev == MD9600_REV_V5 && rev_now.confirmed && rev_now.source == MD9600_REV_SRC_DETECTED);
+	CHECK(o->state() == HWOPT_ST_HIDDEN);
+
+	// No verdict, nothing stored: the default runs and the radio asks; a stored one counts
+	stored_rev = MD9600_REV_UNKNOWN;
+	CHECK(o->set(2) && stored_rev == MD9600_REV_V5);	// refreshes the cached record
+	stored_rev = MD9600_REV_UNKNOWN;
+	rev_now = md9600_rev_resolve(MD9600_REV_UNKNOWN, MD9600_IF_UNKNOWN, MD9600_REV_UNKNOWN, MD9600_REV_V5);
+	CHECK(!rev_now.confirmed && o->state() == HWOPT_ST_ASK);
+	int before = confirms;
+	CHECK(o->set(2) && confirms == before + 1 && o->state() == HWOPT_ST_OK);
 }
 
 int main(void)
@@ -1068,6 +1195,8 @@ int main(void)
 	}
 #endif
 	test_probe();
+	test_if_detect();
+	test_if_verdict();
 	test_readings();
 	test_noise_window();
 	test_ref_trim();
