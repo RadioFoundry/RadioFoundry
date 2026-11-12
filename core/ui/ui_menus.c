@@ -5406,12 +5406,20 @@ typedef struct {
 	const char *syn;		// another name Find knows it by
 	uint8_t type;			// set_type_t
 	uint8_t id;			// ui_setting_t, or SA_* for an action
-	int16_t min, max, step;		// ST_NUMBER
-	const int16_t *values;		// ST_LIST: the values ...
-	const char *const *names;	// ... and their names (NULL: number + unit)
-	uint8_t n;
-	const char *unit;
+	uint8_t n;			// ST_LIST: how many values
+	// By type, in the same bytes (24 a row, not 32: there are about 80 rows)
+	union {
+		struct {			// ST_NUMBER
+			int16_t min, max, step;
+			const char *unit;	// after the number, or NULL
+		};
+		struct {			// ST_LIST
+			const int16_t *values;
+			const char *const *names;
+		};
+	};
 } set_item_t;
+_Static_assert(sizeof(void *) != 4 || sizeof(set_item_t) == 24, "a settings row grew (on the radios; the host's is larger)");
 
 typedef struct {
 	const char *name;
@@ -5569,10 +5577,10 @@ static const char *const n_sfrcwid[] = { TRN("Off"), TRN("5 min"), TRN("10 min")
 static const int16_t v_ptype[] = { 0, 1, 2 };	// dmrPrivacyType_t
 static const char *const n_ptype[] = { TRN("Off"), "Motorola", "Anytone" };
 
-#define TOGGLE(nm, syn_, sid) { nm, syn_, ST_TOGGLE, sid, 0, 1, 1, NULL, NULL, 0, NULL }
-#define NUMBER(nm, syn_, sid, lo, hi, st, u) { nm, syn_, ST_NUMBER, sid, lo, hi, st, NULL, NULL, 0, u }
-#define LIST(nm, syn_, sid, v, n) { nm, syn_, ST_LIST, sid, 0, 0, 0, v, n, sizeof v / sizeof v[0], NULL }
-#define ACTION(nm, syn_, a) { nm, syn_, ST_ACTION, a, 0, 0, 0, NULL, NULL, 0, NULL }
+#define TOGGLE(nm, syn_, sid) { nm, syn_, ST_TOGGLE, sid, 0, { { 0, 1, 1, NULL } } }
+#define NUMBER(nm, syn_, sid, lo, hi, st, u) { nm, syn_, ST_NUMBER, sid, 0, { { lo, hi, st, u } } }
+#define LIST(nm, syn_, sid, v, nms) { nm, syn_, ST_LIST, sid, sizeof v / sizeof v[0], { .values = v, .names = nms } }
+#define ACTION(nm, syn_, a) { nm, syn_, ST_ACTION, a, 0, { { 0, 0, 0, NULL } } }
 
 static const set_item_t s_sound[] = {
 	NUMBER(TRN("Volume"), "speaker loudness", UI_SET_VOLUME, 0, RADIO_VOLUME_MAX, 1, NULL),
