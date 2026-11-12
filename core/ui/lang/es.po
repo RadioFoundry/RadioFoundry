@@ -1736,6 +1736,14 @@ msgstr "CTCSS va de 60.0 a 260.0"
 msgid "Save first: hold OK"
 msgstr "Guarda: mant OK"
 
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Air band: receive only"
+msgstr "Banda aérea: solo RX"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Broadcast: receive only"
+msgstr "Comercial: solo RX"
+
 #: core/ui/ui_menus.c
 msgid "Tones: not in this build"
 msgstr "Tonos: no disponible"
@@ -3323,14 +3331,6 @@ msgstr "Modo hotspot: sin PTT"
 #: core/ui/ui_screens.c
 msgid "No DMR ID in codeplug"
 msgstr "Sin ID DMR en codeplug"
-
-#: core/ui/ui_screens.c
-msgid "Air band: receive only"
-msgstr "Banda aérea: solo RX"
-
-#: core/ui/ui_screens.c
-msgid "Broadcast: receive only"
-msgstr "Comercial: solo RX"
 
 #: core/ui/ui_screens.c
 msgid "Repeater channel: PTT off"
