@@ -761,15 +761,23 @@ interrupt; at VHF it is the board's earliest point, 2.5 ms before the first symb
 | Band | dead_pm | knee_us | slope_us | window_us | settle_us | pa_us |
 |---|---|---|---|---|---|---|
 | VHF | 1 | 1106 | 1433 | 2500 | 600 | 1730 |
-| UHF | 348 | 255 | 1180 | 1530 | 700 | 1530 |
+| UHF | 349 | 247 | 1248 | 1530 | 800 | 1530 |
 
-UHF is measured with `tools/bench/pa_cal.py` ([pa-keyup.md](pa-keyup.md) 6) over the air on the SDR bench: every
-level's -3 dB point 0.19-0.40 ms before the first symbol, the two top levels with under 1 dB of overshoot, the
-boosted lower three with 1.2-2.2 dB. The knee and slope are 3-9 % under the tool's fit (280, 1210), which gave the
-boosted levels 1.7-3.3 dB: the charge a boost leaves in the power loop carries the output past the level after the
-boost's end, so a little less of it lowers the overshoot and brings the level up about 0.1 ms later. A longer settle
-time did the same, but put the lowest level late at 1100 us; a later PA point brought every level up late. The set converted
-from the earlier form (knee 250, slope 780, no dead zone, settle 300) keyed every level 0.1-0.6 ms late.
+UHF is measured with `tools/bench/pa_cal.py` ([pa-keyup.md](pa-keyup.md) 6) over the air on the SDR bench and
+judged by the ramp's shape (`pa_shape.py`): every level's -3 dB point 0.14-0.45 ms before the first symbol, the two top
+levels and the lowest with under 1 dB of overshoot, the second and third with 2.0 and 3.3 dB. The rule can't do
+better on those two: the lowest level's boost and the top level's lead fix the knee and the slope, and with them the
+boosts of the two levels between. Against the same keys:
+
+| Set | -3 dB, levels 0-4 (ms) | Overshoot, levels 0-4 (dB) |
+|---|---|---|
+| This one | -0.14 / -0.34 / -0.41 / -0.45 / -0.31 | 0.6 / 2.0 / 3.3 / 0.5 / 0.3 |
+| Knee 255, slope 1180, settle 700 (the one before) | -0.20 / -0.28 / -0.33 / -0.42 / -0.25 | 1.8 / 2.3 / 3.0 / 0.6 / 0.4 |
+| Knee 230, slope 1100, settle 700 | -0.05 / -0.21 / -0.27 / +0.12 / -0.14 | 0.8 / 1.3 / 2.3 / 0.3 / 0.4 |
+| Knee 210, slope 1060, settle 1000 | the lowest level +0.63 | level 2 1.2 |
+
+A wider window (2000-2400 us) put the lowest level early with 5 dB of overshoot; an approach drive (`ease_pm`) never
+reaches the levels that overshoot.
 
 VHF is measured the same way, into the dummy load: every level's -3 dB point 0.04-0.28 ms before the first symbol,
 with at most 2.2 dB of overshoot (the lowest level), the top three under 1 dB. The lowest level's own drive, written
