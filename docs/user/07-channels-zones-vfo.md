@@ -325,10 +325,9 @@ no mode to pick and no menu: the frequency decides.
 Tune there in the VFO (type **1** **1** **8** **1**, or **0** **8** **8** **1**, and press **OK**). A DMR VFO switches
 to FM there and stays FM; DMR can't be picked in these bands. To keep a station, use **New from current** in the channel
 list (or type the RX frequency in the channel editor): the channel becomes RX only, ready to save. Its Mode reads AM in
-the air band, where OK doesn't switch it to DMR, and FM in the broadcast band (and in the air band on a radio without
-AM). A channel programmed on the frequency in the codeplug works too, even one stored as DMR. Both bands are receive
-only: PTT shows "Air band: receive only" or "Broadcast: receive only" and the radio doesn't transmit. Sub-audio tones
-are ignored.
+the air band and FM in the broadcast band, and OK on it doesn't switch to DMR; the tone rows are hidden. A channel
+programmed on the frequency in the codeplug works too, even one stored as DMR. Both bands are receive only: PTT shows
+"Air band: receive only" or "Broadcast: receive only" and the radio doesn't transmit. Sub-audio tones are ignored.
 
 In the Codeplug Editor, a channel whose RX frequency is in one of these bands is set to **RX Only** when you type the
 frequency, its TX frequency follows RX, and its mode shows as "AM (air band)" or "FM broadcast". The Problems list warns about a channel there that

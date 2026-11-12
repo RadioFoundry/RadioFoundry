@@ -19,6 +19,7 @@
 #include "radio/mic_gain.h"
 #include "radio/ref_trim.h"
 #include "radio/radio_am.h"
+#include "radio/radio_bcast.h"
 #include "input/keyassign.h"
 #if CONFIG_HOTSPOT || CONFIG_USB_NETWORK
 #include "hostlink/hostlink.h"
@@ -2341,6 +2342,13 @@ static void ced_rx_band(channel_t *c)
 	c->mode = RADIO_MODE_FM;
 }
 
+// The radio receives this RX in AM or on the broadcast receiver whatever the channel's mode, never in DMR, and ignores
+// sub-audio there (radio_sm.c listen_band)
+static bool ced_listen_band(const channel_t *c)
+{
+	return radio_am_tx_refused(c->rx_hz) || radio_bcast_band(c->rx_hz);
+}
+
 // A copy of what the radio uses now (temporary changes included), named after it: "Name 2", or the frequency
 static void ced_from_view(void)
 {
@@ -2364,7 +2372,8 @@ static void ced_from_view(void)
 
 static void ced_build(void)
 {
-	bool dmr = CONFIG_DMR && ced_ch.mode == RADIO_MODE_DMR;
+	bool listen = ced_listen_band(&ced_ch);
+	bool dmr = CONFIG_DMR && ced_ch.mode == RADIO_MODE_DMR && !listen;
 	bool edit = CONFIG_CHANNEL_EDIT;
 	bool fresh = false, changed = false;
 #if CONFIG_CHANNEL_EDIT
@@ -2375,7 +2384,8 @@ static void ced_build(void)
 	for (uint8_t r = 0; r < CE_COUNT; r++) {
 		bool fm_only = r == CE_BW || r == CE_RX_TONE || r == CE_TX_TONE || r == CE_VOX;
 		bool dmr_only = r >= CE_CC && r <= CE_ALIAS2;
-		if ((fm_only && dmr) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR))
+		bool tone = r == CE_RX_TONE || r == CE_TX_TONE;
+		if ((fm_only && dmr) || (tone && listen) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR))
 			continue;
 		if ((r == CE_ZONES || r == CE_GO || r == CE_SHARE || r == CE_SAVE_NEW) && fresh)
 			continue;
@@ -2558,7 +2568,11 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 		sb_u32(&b, ced_num, 1);
 		break;
 	case CE_MODE:
-		sb_str(&b, ch->mode == RADIO_MODE_DMR ? "DMR" : radio_am_channel(ch) ? "AM" : "FM");
+		// What the radio does with it: a listen band is AM or FM whatever the channel says
+		if (radio_am_tx_refused(ch->rx_hz))
+			sb_str(&b, "AM");
+		else
+			sb_str(&b, ch->mode == RADIO_MODE_DMR && !ced_listen_band(ch) ? "DMR" : "FM");
 		break;
 	case CE_RX:
 		sb_freq(&b, ch->rx_hz);
@@ -2963,8 +2977,11 @@ static void chinfo_select(uint16_t i, bool hold)
 	switch (r) {
 	case CE_NAME: ui_text_open(c->name, CODEPLUG_NAME_LEN); break;
 	case CE_MODE:
-		// An AM channel stays AM: the air band is receive only, and AM is all the radio does there
-		if (!radio_am_channel(c))
+		// No DMR in a listen band: AM in the air band, FM on the broadcast receiver
+		if (ced_listen_band(c)) {
+			c->mode = RADIO_MODE_FM;
+			ui_toast(radio_am_tx_refused(c->rx_hz) ? TR("Air band: receive only") : TR("Broadcast: receive only"));
+		} else
 			c->mode = c->mode == RADIO_MODE_DMR ? RADIO_MODE_FM : RADIO_MODE_DMR;
 		break;
 	case CE_RX:
