@@ -156,19 +156,36 @@ rfoundry_debug.py radio pa-keyrun 300 350 517 800 1073           # three keys, t
 
 ## 5. Targets
 
-Measured on a dummy load, per burst, against the first symbol found from the burst's sync:
+Measured on a dummy load, per burst, against the first symbol found from the burst's sync. The timing figures come
+from the gateway's ramp measurements; the shape from the burst's envelope (`trace` and `tail`, 0.1 ms envelope at
+48 kS/s, dB from the burst's settled level), judged by `tools/bench/pa_shape.py`:
 
-| Measure | Target |
-|---|---|
-| The −3 dB point | 0.25 ms before the first symbol; never after it, never more than 0.6 ms before |
-| On the air (within 20 dB of the burst's level) | not before the slot's start, 1.25 ms before the first symbol; not after its end, 1.25 ms after the last symbol |
-| The first symbol's level against the settled level | within 3 dB |
-| Overshoot above the settled level | 3 dB at most |
+| Measure | Target | Fault |
+|---|---|---|
+| The −3 dB point | 0.10 to 0.45 ms before the first symbol | `early`, `late` |
+| The −30 dB point of the rise | no earlier than 0.8 ms before the first symbol: the guard time is the receiver's too | `early` |
+| The slot before | at most −45 dB (or 6 dB over the envelope's floor) | `pre-slot` |
+| The rise from −40 to −6 dB | one rise: never back down 2 dB, never flat (under 1.5 dB per 0.1 ms for 0.12 ms) | `hook`, `knee` |
+| The first 10 symbols (2.0 ms) | RMS 0.5 dB, every point within 1 dB, mean within 0.5 dB of the burst's level | `overshoot`, `sag`, `creep`, `unsettled` |
+| The −6 dB point to within 1 dB | 0.4 ms at most, unless the first symbols are flat | `creep` |
+| The highest point of the key-up | 1.5 dB over the burst's level | `peak` |
+| The −3 dB point over a capture's bursts | spread (standard deviation) 50 us at most | `jitter` |
+| The last 10 symbols | within 1 dB | `droop` |
+| The key-down | one fall: not back up 6 dB once under −30 dB; nothing over −45 dB after the slot's end | `rebound`, `after-slot` |
+| On the air (within 20 dB of the burst's level) | not before the slot's start, 1.25 ms before the first symbol; not after its end, 1.25 ms after the last symbol | `before-slot`, `after-slot` |
 
-A level may creep: within 6 dB at once, then its last dB over milliseconds (a PA held just over its turn-on edge).
-Its −3 dB point then lies on the creep, anywhere within a millisecond, and neither lead nor a boost moves the creep.
-Such a level is timed by its edge: the point 0.15 ms after its −6 dB crossing stands in for the −3 dB point when that
-comes later (a plain edge's is 0.04 to 0.13 ms after), and its first symbol may be 4.5 dB under the settled level.
+A DMR carrier's envelope is flat (4FSK), so whatever moves in the first symbols is the PA. Overshoot is their mean over
+the burst's level; sag their mean under it; creep a level still climbing to it (its −6 dB point more than 0.4 ms from
+within 1 dB, and the first symbols' trend upward); unsettled the rest. A level that comes up within 6 dB at once and
+creeps the last dB (a PA held just over its turn-on edge) is a fault like the others.
+
+`pa_shape.py RUN.json` prints each level's figures and faults from a saved run, and the envelope binned: ten 0.125 ms
+bins of the guard time and one per symbol after, in dB:
+
+    445 L0 after  floor -60 pre -60 | -30 -0.45 -3 -0.32 ms rise 128 us hook 4.1 knee -32 dB @-0.85 | ...  hook knee
+               guard -60 -60 -49 -32 -34 -35 -18  -3  -0  -0 | sym  -0  -0   0  -0   0   0   0   0  -0   0
+
+Over the air the floor is higher and the slot before is judged against it: a dummy-load path shows what the air hides.
 
 Each band that has its own PA has its own constants: the knee of one band's PA can be several times another's on the
 same radio.
@@ -243,10 +260,9 @@ Per band:
 | Verify | one per level, up to four rounds | Every level as the radio keys it. Without slow levels: each level's error goes back into the knee and slope. A level on the edge, or slow on its own drive and not right as the law keys it, has the boost it needs read from its own measurements, on the law's 1 / (b − dead) scale and no further than twice the last step past the drives tried. The constants are then solved over all levels (least squares per dead zone; the smallest worst error, then the smallest sum) to give those boosts and keep the other levels on the law's line. A boost that overshoots while on time ends earlier: `settle_us` up 0.1 ms, and as much again per 3 dB over the limit. The round that held best stands; a round ends the run when every level is up at least 60 us early with half a dB of overshoot to spare |
 | Confirm | one per level | The result again: it has to pass again, a level on its own drive within 0.1 ms |
 
-A boosted level may come up early, since it never starts before the window; no level, boosted or not, may be on
-the air before the slot's start (`before-slot`). A key-down still on the air after the slot's end (`after-slot`), or more than
-3 dB down at the last symbol's end (`cut-short`), fails the band and starts no refit: no key-up constant moves it. A creeping level (5) is reported with its edge, and its −3 dB point
-and first symbol beside it. An overshoot a drive has when written alone
+Every level's shape is judged as in 5, boosted or not: a boost that brings a level up early, or over its level for
+the first symbols, fails like any other. No level may be on the air before the slot's start (`before-slot`). A key-down still on the air after the slot's end (`after-slot`), or more than
+3 dB down at the last symbol's end (`cut-short`), fails the band and starts no refit: no key-up constant moves it. An overshoot a drive has when written alone
 counts: `ease_pm` is its cure. Only on a firmware without `ease_pm` (a view with six constants) is it noted and not
 counted.
 

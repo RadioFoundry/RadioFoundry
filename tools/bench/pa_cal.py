@@ -45,6 +45,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, ".."))
 
+import pa_shape  # noqa: E402
+
 TARGET_US = -250        # the -3 dB point against the first symbol's leading edge (pa-keyup.md 5)
 TOL_US = 60
 BOOST_TARGET_US = -500  # a boosted level: its own drive sits on the PA's turn-on edge, where a few counts are
@@ -316,7 +318,7 @@ def judge(m, boosted=False, own_db=0.0):
         bad.append("sym1")
     if m.get("on_us") is not None and m["on_us"] < -GUARD_US:
         bad.append("before-slot")   # on the air in the slot before, boosted or not
-    return bad
+    return bad + [w for w in m.get("faults", []) if w not in bad]
 
 
 # ---- the bench line and the radio ----------------------------------------------------------------------------------
@@ -333,7 +335,10 @@ class Bench:
         have = info.get("features", [])
         if isinstance(have, dict):          # name: true or false
             have = [k for k, v in have.items() if v]
-        self.trace = bool(a.plot) and (have.get("bursts_trace") if isinstance(have, dict) else "bursts_trace" in have)
+        # The envelopes are what the ramp's shape is judged on (pa_shape.py), plot or not
+        self.trace = bool(have.get("bursts_trace") if isinstance(have, dict) else "bursts_trace" in have)
+        if not self.trace:
+            print("  the gateway sends no burst envelopes (bursts_trace): timing only, the ramps' shape isn't judged")
         need = FEATURES + (("rx_port",) if a.rx_port else ())
         missing = [f for f in need if f not in have]
         if missing:
@@ -484,7 +489,27 @@ def summarize(replies, a):
             "clip_pct": max([cap.get("clip_pct") or 0] + [1 if r.get("clipped") else 0 for r in use]),
             "peak_dbfs": cap.get("peak_dbfs"), "trace": mid_trace(use, "trace"), "tail": mid_trace(use, "tail"),
             "off_us": off_air_us(mid_trace(use, "tail")), "end_db": end_db(mid_trace(use, "tail")),
-            "edge_res_us": ((done.get("envelope") or {}).get("ramp") or {}).get("edge_res_us")}
+            "edge_res_us": ((done.get("envelope") or {}).get("ramp") or {}).get("edge_res_us"),
+            **shape_of(use)}
+
+
+def shape_of(use):
+    """The bursts' ramp shapes (pa_shape.py): the median envelope's numbers ("shape", "down") and faults ("faults"),
+    and how far the bursts differ (the -3 dB point's spread, the worst burst's first-symbol RMS). Empty without
+    envelopes."""
+    tr, tl = mid_trace(use, "trace"), mid_trace(use, "tail")
+    up = pa_shape.key_up(tr, tl)
+    if not up:
+        return {}
+    down = pa_shape.key_down(tl, up[0]["floor_db"])
+    each = [pa_shape.key_up(r["trace"], r.get("tail")) for r in use if r.get("trace") and r["trace"].get("db")]
+    m3 = [e[0]["m3_ms"] for e in each if e and e[0]["m3_ms"] is not None]
+    sh = dict(up[0], m3_sd_us=round(statistics.pstdev(m3) * 1000.0) if len(m3) > 1 else 0,
+              worst_rms_db=max([e[0].get("sym_rms_db", 0.0) for e in each if e] or [0.0]))
+    faults = up[1] + (down[1] if down else [])
+    if sh["m3_sd_us"] > pa_shape.JITTER_US:
+        faults.append("jitter")
+    return {"shape": sh, "down": down[0] if down else None, "faults": faults}
 
 
 class Radio:
@@ -783,7 +808,7 @@ class Cal:
                     "levels": {l: {"drive": drives[l], "plan": x["plan"], "rise_us": x["rise_us"],
                                    "over_db": x["over_db"], "sym1_db": x["sym1_db"], "power": self.watts(x),
                                    "creep": x.get("creep"), "rise3_us": x.get("rise3_us"), "on_us": x.get("on_us"),
-                                   "off_us": x.get("off_us"), "end_db": x.get("end_db"), "bad": overrun(x), "own_over_db": x["own_over_db"]} for l, x in asis.items()}}
+                                   "off_us": x.get("off_us"), "end_db": x.get("end_db"), "bad": overrun(x), "own_over_db": x["own_over_db"], "shape": x.get("shape"), "faults": x.get("faults", [])} for l, x in asis.items()}}
 
         window = min(a.window_us or board["window_us"] or ahead, ahead)
         # Open loop at the window the radio will use, not at the board's earliest point: the same points of its burst
@@ -972,7 +997,7 @@ class Cal:
                                "off_us": res[l].get("off_us"), "end_db": res[l].get("end_db"),
                                "creep": res[l].get("creep"), "rise3_us": res[l].get("rise3_us"),
                                "on_us": res[l].get("on_us"),
-                               "own_over_db": res[l]["own_over_db"]} for l in levels}}
+                               "own_over_db": res[l]["own_over_db"], "shape": res[l].get("shape"), "faults": res[l].get("faults", [])} for l in levels}}
 
     def run(self):
         a, t0, out = self.a, time.monotonic(), []
@@ -996,6 +1021,10 @@ class Cal:
                          f"over {x['over_db'] or 0:.1f} dB, on air {x.get('on_us') or 0:+.0f} us"
                          + (f", off {x['off_us']:+.0f} us" if x.get("off_us") is not None else "") +
                          f"  {' '.join(x['bad']) or 'OK'}{note}")
+                sh = x.get("shape")
+                if sh:
+                    self.say(f"      {pa_shape.line(sh, x.get('faults', []))}; bursts: -3 dB spread {sh['m3_sd_us']} us")
+                    self.say(f"      {pa_shape.bins_line(sh)}")
             self.say("    { " + ", ".join(f".{n} = {c[n]}" for n in NAMES) + " }")
             self.say("    rfoundry_debug.py radio pa-keyup " + " ".join(str(c[n]) for n in NAMES))
         self.say(f"{self.keys_n} keys, {time.monotonic() - t0:.0f} s")
