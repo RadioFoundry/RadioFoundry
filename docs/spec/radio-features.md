@@ -577,7 +577,9 @@ calling `outputs()` while a signal runs, so it keeps time when nothing else chan
 
 Checked, unchanged: the board clamps the power level, uses the calibration table's drive value for the band and level,
 and refuses a TX frequency outside the board's bands (`tx_deny=band`). Without a calibration the board either drives
-a low fixed value or refuses to transmit; the board's hardware page says which.
+a low fixed value or refuses to transmit; the board's hardware page says which. When the board's `tx` refuses a
+frequency inside its bands, the reason is `tx_deny=hwopt` while a hardware option is pending (`board_hwopt_pending`,
+`hal/hal_hwopt.h`: the screen names it), else `tx_deny=refused` ("Radio refused to send"); never `band`.
 
 ### 6.1 Reference trim
 
