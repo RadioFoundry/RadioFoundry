@@ -1995,7 +1995,7 @@ static void text_draw(void)
 	do {
 		line_len = 0;
 		sb_init(&b, linebuf, sizeof linebuf);
-		while((start_char < text_len) && (line_len < text_linewidth)) {
+		while (start_char < text_len && line_len < text_linewidth) {
 			sb_chr(&b, text_buf[start_char++]);
 			line_len++;
 		}
