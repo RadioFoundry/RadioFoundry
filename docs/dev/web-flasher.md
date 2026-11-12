@@ -466,6 +466,20 @@ writes there. So the step needs no backup and loses nothing:
 The HR_C7000 backend has no conversion: its stock codeplug stays in the data flash and in the backup
 (`original-channels.bin`), and `tools/backup_codeplug.py` ports it.
 
+A bundle can hold both codeplugs, the stock one and RadioFoundry's:
+
+| Codeplug | Where the page reads it |
+|---|---|
+| RadioFoundry's | The Tools page's `backup-to-image` (`codeplug.js`) and the Codeplug Editor's open (`editor/files.js`): the `spi-flash` part, from address 0 |
+| A stock TYT-family codeplug | The same, converted by `codeplug/stock_tyt.js` ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md)) |
+| A stock Baofeng codeplug with a spec in `docs/spec/` | The same, converted by `codeplug/stock_baofeng.js` (the first 84 channels) |
+| Any other stock codeplug | Nowhere: no spec in `docs/spec/` describes its records, and only `dmrconf` (GPL, never in the page) decodes it |
+
+`tools/backup_codeplug.py` extracts both offline, from any data flash part, at the board's `openfw_eeprom` and through
+the board's `[stock_codeplug]` page layout, and decodes them with `dmrconf` ([codeplug-port.md](../spec/codeplug-port.md)
+5). The Codeplug Editor opens the YAML it writes. For a stock layout with no spec yet, that is the only way; doing it in
+the page needs a clean-room spec of the layout first (issue #228).
+
 ## Another open firmware (`openfw.js`)
 
 A radio whose port answers the debug link probe with `-` and gives a valid radio info is on another open firmware

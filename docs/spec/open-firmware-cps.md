@@ -435,7 +435,7 @@ assuming 500 ms steps (`codeplug.c` `GEN_HANG_UNIT_MS`, `dmr-voice.md` 7); that 
 | 0x2C | 1 | Color code 0-15 |
 | 0x2D | 1 | APRS configuration index, 1-based, 0 = none |
 | 0x2E | 2 | TX contact index, LE, 1-based, 0 = none |
-| 0x30 | 1 | flag1: bits 0-1 talker alias TX on TS1, bits 2-3 on TS2 (0 off, 1 APRS, 2 text, 3 both) |
+| 0x30 | 1 | flag1: bits 0-1 talker alias TX on TS1, bits 2-3 on TS2 (0 off, 1 APRS, 2 text, 3 both). RadioFoundry reads APRS as "our position in this channel's calls" (GPS Info, `dmr-voice.md` 3.1), in builds without APRS too |
 | 0x31 | 1 | flag2: bit 6 = timeslot 2 (clear = TS1) |
 | 0x32 | 1 | flag3: bits 6-7 = 0b11 STE, bit 5 non-STE.  |
 | 0x33 | 1 | flag4: bit 7 power (vendor; superseded by 0x19), bit 6 VOX, bit 5 zone scan skip, bit 4 all-channel scan skip, bit 3 talkaround (unused), bit 2 RX only, bit 1 bandwidth 25 kHz (clear = 12.5 kHz), bit 0 squelch (vendor) |

@@ -11,6 +11,7 @@
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
 //   mondown ... monup   the monitor key held (FM: the squelch held open)
 //   datatx / dataend    DMR data goes out without PTT (ARS, SMS, IP): the view says TX; it ends
+//   aprstx / aprsend    an APRS RF beacon keys the transmitter / returns to the selected channel
 //   dtmf:<digits>       during TX: the radio core has sent these DTMF digits (the TX screen's DTMF line)
 //   wait:<ms>           time passes
 //   reboot              power off and on: the screens start over, the settings stay
@@ -446,7 +447,7 @@ bool ui_svc_aprs_view(aprs_view_t *v)
 	v->block = aprs_sim.no_call ? APRS_NO_CALL : APRS_OK;
 	v->freq_hz = aprs_sim.cfg.region == APRS_REGION_CUSTOM ? aprs_sim.cfg.freq_hz : hz[aprs_sim.cfg.region % APRS_REGION_COUNT];
 	v->pos_valid = !aprs_sim.no_call && !aprs_sim.no_pos;
-	v->pos_src = APRS_SRC_FIXED;
+	v->pos_src = POSITION_SRC_FIXED;
 	v->lat = 337000000;
 	v->lon = -841000000;
 	v->next_s = aprs_sim.cfg.tx_on ? 245 : 0xFFFFu;
@@ -1642,6 +1643,21 @@ bool ui_svc_dmr_color_code(uint8_t cc)
 	}
 	return true;
 }
+// The VFO's SFR role, as the radio core takes it (radio_sfr_channel): in force in DMR on one frequency
+bool ui_svc_vfo_sfr(uint8_t a)
+{
+	if (!view.vfo)
+		return true;	// the radio core refuses it quietly
+	bool on = (a & 0x07u) != 0;
+	view.ch.sfr_flag1 = on ? 0x02u : 0;
+	view.ch.sfr_a = on ? a : 0;
+	view.ch.sfr_b = 0;
+	bool simplex = view.ch.tx_hz == view.ch.rx_hz || view.ch.tx_hz == 0;
+	view.dmr.sfr_role = on && view.ch.mode == RADIO_MODE_DMR && simplex ? (uint8_t)(a & 0x07u) : 0;
+	view.dmr.sfr_inbound = (a & 0x20u) != 0;
+	changed();
+	return true;
+}
 bool ui_svc_mode(uint8_t mode)
 {
 	retune();
@@ -2177,6 +2193,10 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_TOT_S, 180);
 	ui_svc_setting_set(UI_SET_BACKLIGHT_S, 30);
 	ui_svc_setting_set(UI_SET_REF_TRIM, 0);
+	ui_svc_setting_set(UI_SET_POS_SOURCE, 0);
+	ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 0);
+	ui_svc_setting_set(UI_SET_POS_FIXED_LON, 0);
+	ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 0);
 	ui_svc_setting_set(UI_SET_LONG_PRESS_MS, 600);	// settings a flow changes start from their defaults
 	ui_svc_setting_set(UI_SET_AUTO_LOCK_S, 0);
 	ui_svc_setting_set(UI_SET_ARS_SERVER, 0);
@@ -2236,6 +2256,7 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	{ "homekey", ACT_HOME_ZONE }, { "copykey", ACT_COPY_VFO },
 	{ "dualkey", ACT_DUAL_WATCH }, { "abkey", ACT_AB },	// dual watch's side key functions
 	{ "vfokey", ACT_VFO_TOGGLE },		// a VFO/MR key in the board's key map, or a side key set to VFO/Channel
+	{ "labelkey", ACT_TALK_LABEL },
 	{ "volkey", ACT_VOLUME },
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
 	{ "5", ACT_DIGIT_5 }, { "6", ACT_DIGIT_6 }, { "7", ACT_DIGIT_7 }, { "8", ACT_DIGIT_8 }, { "9", ACT_DIGIT_9 },
@@ -2244,7 +2265,7 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 static bool on_map(uint8_t action, bool lng)
 {
 	if ((action >= ACT_POWER && action <= ACT_VOLUME) || action == ACT_VFO_TOGGLE || action == ACT_DUAL_WATCH ||
-	    action == ACT_AB || action == ACT_TALK_TARGET)
+	    action == ACT_AB || action == ACT_TALK_TARGET || action == ACT_TALK_LABEL)
 		// any side key can be set to send these; the few-key map has none, but a radio with side keys and no QUICK key
 		// is the case the key lock needs on it
 		return board.side_key_count != 0 || cur_map == SIM_MAP_F;
@@ -2472,12 +2493,12 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "aprs_interval") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.interval_s);
 	else if (strcmp(key, "aprs_smart") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.smart);
 	else if (strcmp(key, "aprs_via") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.via);
-	else if (strcmp(key, "aprs_pos") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.pos_src);
+	else if (strcmp(key, "pos_source") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_SOURCE));
 	else if (strcmp(key, "aprs_power") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.power);
 	else if (strcmp(key, "aprs_path") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.path);
-	else if (strcmp(key, "aprs_lat") == 0) snprintf(got, sizeof got, "%d", (int)aprs_sim.cfg.fix_lat);
-	else if (strcmp(key, "aprs_lon") == 0) snprintf(got, sizeof got, "%d", (int)aprs_sim.cfg.fix_lon);
-	else if (strcmp(key, "aprs_dmrgps") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.dmr_gps);
+	else if (strcmp(key, "pos_lat") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_FIXED_LAT));
+	else if (strcmp(key, "pos_lon") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_FIXED_LON));
+	else if (strcmp(key, "pos_dmrgps") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_DMR_CALLS));
 	else if (strcmp(key, "aprs_kiss") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.kiss);
 #if CONFIG_DMR_ROAMING
 	else if (strcmp(key, "roam") == 0) snprintf(got, sizeof got, "%u", view.roam.state);	// RROAM_STATE_*
@@ -2532,6 +2553,14 @@ static bool run_token(char *t, char *err, size_t len)
 		view.tx_elapsed_ms = 0;
 		changed();
 		advance(1500);
+		return true;
+	}
+	if (strcmp(t, "aprstx") == 0 || strcmp(t, "aprsend") == 0) {
+		bool on = strcmp(t, "aprstx") == 0;
+		view.state = on ? RS_TX : RS_IDLE;
+		view.aprs_tx = on;
+		changed();
+		advance(200);
 		return true;
 	}
 	if (strcmp(t, "dtmf") == 0 && arg != NULL) {

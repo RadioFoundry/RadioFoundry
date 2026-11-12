@@ -213,6 +213,16 @@ def doc_scope(path):
     return path.endswith(".md") and path.startswith(DOC_DIRS) and path not in LIST_PAGES
 
 
+I18N = re.compile(r"^docs/i18n/[a-z]{2,3}(?:-[A-Za-z0-9]+)?/(.+)$")
+
+
+def canonical(path):
+    """The English page a translated one mirrors (docs/i18n/<lang>/user/23-radios.md is docs/user/23-radios.md): a
+    translation follows the same rules, and a page that lists radios on purpose still does in every language."""
+    m = I18N.match(path)
+    return "docs/" + m.group(1) if m else path
+
+
 def generic_doc(path, owned):
     """A doc that is no radio's: GENERIC_DOCS less hardware-* pages and pages a radio owns (owned)."""
     return doc_scope(path) and not os.path.basename(path).startswith("hardware-") and not owned
@@ -234,16 +244,17 @@ def check(root, radios, docs, part_of=None):
         for p in pages:
             shared_docs[p] = shared_docs.get(p, 0) + 1
     for path in tracked_files(root):
-        if path.startswith(SKIP_DIRS) or path in LIST_PAGES or path in GENERATED or path == ALLOW:
+        canon = canonical(path)
+        if path.startswith(SKIP_DIRS) or canon in LIST_PAGES or path in GENERATED or path == ALLOW:
             continue
         if os.path.splitext(path)[1] not in TEXT_EXT:
             continue
         hits = []
         # a generic doc is a radio's only by its path (hardware-<id>.md), never because one board.toml [docs] lists it
-        generic = generic_doc(path, any(own(path, b, {}, {}) for b in radios))
+        generic = generic_doc(canon, any(own(canon, b, {}, {}) for b in radios))
         pages = {} if generic else docs
         for bid, pat in pats.items():
-            if not own(path, bid, pages, shared_docs, family) and pat.search(path):
+            if not own(canon, bid, pages, shared_docs, family) and pat.search(canon):
                 hits.append((0, bid))
         try:
             with open(os.path.join(root, path), encoding="utf-8") as f:
@@ -259,10 +270,10 @@ def check(root, radios, docs, part_of=None):
         for n, line in enumerate(text.split("\n"), 1):
             # in docs a link names the radio whose page it is: a generic doc links feature-matrix.md, a radio's page
             # the shared spec
-            if not doc_scope(path):
+            if not doc_scope(canon):
                 line = FILE_REF.sub(" ", line)
             for bid, pat in pats.items():
-                if pat.search(line) and not own(path, bid, pages, shared_docs, family):
+                if pat.search(line) and not own(canon, bid, pages, shared_docs, family):
                     if n in exempt:
                         used.add(exempt[n])
                     else:

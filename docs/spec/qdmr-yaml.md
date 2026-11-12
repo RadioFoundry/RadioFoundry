@@ -134,7 +134,7 @@ Both types:
 | `openGD77.beep` | Not "no beep" | |
 | `openGD77.powerSave` | Not "no economy" | |
 | `openGD77.location` | Use location, latitude, longitude | Locator to the center of its square. The export writes a 6-character locator, about 5 km |
-| `openGD77.talkerAliasTS1`, `TS2`: `None`, `APRS`, `Text`, `Both` | Talker alias TX on TS1, TS2: 0-3 | |
+| `openGD77.talkerAliasTS1`, `TS2`: `None`, `APRS`, `Text`, `Both` | Talker alias TX on TS1, TS2: 0-3 | `APRS` and `Both` send our position in the channel's calls (`dmr-voice.md` 3.1) |
 | `aprs` | APRS configuration | Only an APRS system the file defines |
 | `scanList` | Dropped | |
 | `admit` | Dropped | Written as `Always` |

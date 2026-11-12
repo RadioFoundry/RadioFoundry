@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { fromHex, toHex, sha256, crc32, u32le } from "../static/js/flasher/bytes.js";
+import { fromHex, toHex, sha256, crc32, u32le, equal } from "../static/js/flasher/bytes.js";
 import * as stockfw from "../static/js/flasher/stockfw.js";
 import { makePlan, KEEP, MERGE, RESTORE, PlanError } from "../static/js/flasher/plan.js";
 import { verify, segments, ManifestError } from "../static/js/flasher/manifest.js";
@@ -717,7 +717,8 @@ test("merge on a radio without a codec, then restore stock from the bundle's sto
 	radio.afterExit = "stock";
 	await new Dfu(radio.dfuTransport(), noWait).run(plan, key);
 	const [, app] = stockfw.stockApplication(sim.stock, key, sim.board, sim.fb);
-	assert.deepEqual(radio.flash.subarray(0xC000, 0xC000 + app.length), app);
+	// Node's diff for mismatched firmware-sized arrays can exhaust memory.
+	assert.ok(equal(radio.flash.subarray(0xC000, 0xC000 + app.length), app), "restored application bytes must match stock");
 	assert.deepEqual(radio.violations, []);
 });
 
