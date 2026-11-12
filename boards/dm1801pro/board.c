@@ -12,7 +12,7 @@
 #include "bcast/rda5807m/rda5807m_hal.h"
 #include "hrc_bcast.h"
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 #include "hrc_afsk.h"
 #endif
 #if CONFIG_NET_PPP
@@ -121,7 +121,7 @@ const board_t board = {
 #if CONFIG_BCAST_FM
 	.bcast = &rda5807m_hal,
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	.afsk = &hrc_afsk,
 #endif
 };

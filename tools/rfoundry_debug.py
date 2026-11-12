@@ -107,7 +107,7 @@ SNMP_FLAGS = {"off": 0x01, "rf_off": 0x02, "rf_write": 0x04, "usb_traps_off": 0x
 APRS_FIELDS = {name: i for i, name in enumerate(
     ["tx", "region", "freq_hz", "ssid", "lat", "lon", "pos_src", "interval_s", "smart", "via", "dmr_dst", "level",
      "path", "kiss", "dmr_udt", "after_ptt", "distance_m", "rx", "igate", "igate_tx", "digi", "txdelay",
-     "dmr_gps", "to_is", "power"])}
+     "dmr_gps", "to_is", "power", "ambiguity"])}
 APRS_REGIONS = {"na": 0, "eu": 1, "au": 2, "nz": 3, "jp": 4, "cn": 5, "custom": 6}
 APRS_POS_SRCS = {"auto": 0, "gps": 1, "host": 2, "fixed": 3}
 APRS_VIAS = {"rf": 0, "dmr": 1, "both": 2}
@@ -595,11 +595,17 @@ class DebugLink:
         self.request(RX2, struct.pack("<BI", RX2_OP_RESTART, RX2_TOKEN))
 
     def hwopts(self):
-        """The board's hardware options: [{name, value (-1 = none stored), restart, choices}]"""
+        """The board's hardware options: [{name, value (-1 = none stored), restart, choices, state}]; state ok, ask,
+        restart or hidden (a firmware without the key: ask while nothing is stored, else ok)"""
         kv = parse_kv(self.request(HWOPT, bytes([HWOPT_OP_LIST]))[1].decode("ascii", "replace"))
-        return [{"name": kv.get(f"hwopt.{i}.name", ""), "value": int(kv.get(f"hwopt.{i}.value", "-1")),
-                 "restart": kv.get(f"hwopt.{i}.restart") == "1",
-                 "choices": kv.get(f"hwopt.{i}.choices", "").split("|")} for i in range(int(kv.get("hwopt.count", "0")))]
+        out = []
+        for i in range(int(kv.get("hwopt.count", "0"))):
+            value = int(kv.get(f"hwopt.{i}.value", "-1"))
+            out.append({"name": kv.get(f"hwopt.{i}.name", ""), "value": value,
+                        "restart": kv.get(f"hwopt.{i}.restart") == "1",
+                        "choices": kv.get(f"hwopt.{i}.choices", "").split("|"),
+                        "state": kv.get(f"hwopt.{i}.state") or ("ask" if value < 0 else "ok")})
+        return out
 
     def hwopt_set(self, option, choice):
         """Store a choice; raises DebugLinkError (status 7) when the board refuses it or the radio transmits."""
@@ -2026,11 +2032,12 @@ def cmd_hwopt(link, a):
             print("hwopt: OPTION (number or name) and one of its choices; see `hwopt` for the list", file=sys.stderr)
             return 2
         link.hwopt_set(i, opts[i]["choices"].index(a.choice))
-        print(f"{opts[i]['name']} = {a.choice}" + (" (from the next start-up)" if opts[i]["restart"] else ""))
+        due = link.hwopts()[i]["state"] == "restart"
+        print(f"{opts[i]['name']} = {a.choice}" + (" (from the next start-up)" if due else ""))
         return 0
     for i, o in enumerate(opts):
         v = o["choices"][o["value"]] if 0 <= o["value"] < len(o["choices"]) else "not set"
-        print(f"{i} {o['name']}: {v}  ({' | '.join(o['choices'])}){'  restart' if o['restart'] else ''}")
+        print(f"{i} {o['name']}: {v}  ({' | '.join(o['choices'])})  {o['state']}")
     if not opts:
         print("no hardware options on this radio")
     return 0

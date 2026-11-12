@@ -3,7 +3,8 @@
 // The fast codeplug protocol (core/cps/cps_fast.c, docs/spec/cps-fast.md) on a simulated flash with the DM-1701's
 // layout: the LZ4 encoder and streaming decoder against a reference decoder and a second encoder, blank blocks, CRC
 // sums and DIFF, READ windows, the range refusals, direct and staged writes, the session time-out, power cuts all
-// through a staged commit and a direct write, and the staging area shared with the TFTP server.
+// through a staged commit and a direct write, the staging area shared with the TFTP server, and the settings area's
+// transfer rule applied by the radio.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,6 +12,7 @@
 #include "cps/cps_lz4.h"
 #include "cps/cps_openfw.h"
 #include "codeplug/codeplug.h"
+#include "codeplug/codeplug_kv.h"
 #include "settings/settings.h"
 #include "storage/storage.h"
 #include "net/tftp_codeplug.h"
@@ -902,6 +904,73 @@ static void test_bad_records(void)
 	printf("# boot records: a changed slot, a protected block, the good one, TFTP leaves ours\n");
 }
 
+// The settings area (codeplug-settings.md 6): a block that isn't a valid area never replaces the radio's valid one,
+// direct, staged, or staged and finished at the next boot; a valid one (an empty one too) is taken
+static void kv_send(uint8_t mode, const uint8_t *area, bool cut)
+{
+	CHECK(begin(mode) == DL_ST_OK);
+	CHECK(write_block(CODEPLUG_KV_ADDR, area, 61) == DL_ST_OK);
+	if (mode == CPSF_MODE_STAGED) {
+		CHECK(op(CPSF_OP_COMMIT) == DL_ST_OK);
+		if (cut) {
+			boot(&dm1701_map, false);	// a power cut before the copy: the next boot finishes it
+		} else {
+			CHECK(tick_until_done(20));
+		}
+	} else {
+		CHECK(op(CPSF_OP_COMMIT) == DL_ST_OK);
+	}
+}
+
+static void test_settings_area(void)
+{
+	static uint8_t ff[BLOCK], radio[BLOCK], other[BLOCK], empty[BLOCK];
+	static const struct { uint8_t mode; bool cut; } ways[] = {
+		{ CPSF_MODE_DIRECT, false }, { CPSF_MODE_STAGED, false }, { CPSF_MODE_STAGED, true },
+	};
+	uint32_t id;
+	uint16_t len, n;
+	memset(ff, 0xFF, sizeof(ff));
+	for (unsigned w = 0; w < sizeof(ways) / sizeof(ways[0]); w++) {
+		boot(&dm1701_map, true);
+		uint8_t *area = &sim_flash_data[CODEPLUG_KV_ADDR];
+		CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 1) && codeplug_kv_remove(CODEPLUG_KEY_ARS_SERVER));
+		memcpy(empty, area, BLOCK);
+		CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_IP_GATEWAY, 3100222));
+		memcpy(other, area, BLOCK);
+		CHECK(codeplug_kv_remove(CODEPLUG_KEY_IP_GATEWAY) && codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 3100111));
+		memcpy(radio, area, BLOCK);
+
+		kv_send(ways[w].mode, ff, ways[w].cut);		// a blank block: the radio's area stays
+		CHECK(memcmp(area, radio, BLOCK) == 0);
+		CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 3100111);
+		memcpy(other + 200, "junk", 4);		// past the data: still a valid area
+		kv_send(ways[w].mode, other, ways[w].cut);	// a valid area: taken
+		CHECK(memcmp(area, other, BLOCK) == 0);
+		CHECK(!codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && codeplug_kv_get_id(CODEPLUG_KEY_IP_GATEWAY, &id));
+		other[20] ^= 0xFF;				// its CRC fails now: the radio's stays
+		kv_send(ways[w].mode, other, ways[w].cut);
+		CHECK(memcmp(area, other, BLOCK) != 0 && codeplug_kv_get_id(CODEPLUG_KEY_IP_GATEWAY, &id) && id == 3100222);
+		kv_send(ways[w].mode, empty, ways[w].cut);	// a valid empty area: every key gone
+		CHECK(codeplug_kv_info(&len, &n) == CODEPLUG_KV_VALID && n == 0);
+		CHECK(!codeplug_kv_get_id(CODEPLUG_KEY_IP_GATEWAY, &id));
+		area[4] = 2;					// a newer radio area: never written
+		memcpy(other, area, BLOCK);
+		kv_send(ways[w].mode, radio, ways[w].cut);
+		CHECK(memcmp(area, other, BLOCK) == 0);
+		CHECK(sim_flash_violations() == 0);
+	}
+	// The image at an offset: the rule follows the area's physical address
+	boot(&offset_map, true);
+	uint8_t *area = &sim_flash_data[offset_map.openfw_eeprom + CODEPLUG_KV_ADDR];
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 3100111));
+	memcpy(radio, area, BLOCK);
+	CHECK(begin(CPSF_MODE_DIRECT) == DL_ST_OK && write_block(CODEPLUG_KV_ADDR, ff, 61) == DL_ST_OK &&
+	      write_block(CODEPLUG_KV_ADDR - BLOCK, other, 61) == DL_ST_OK && op(CPSF_OP_COMMIT) == DL_ST_OK);
+	CHECK(memcmp(area, radio, BLOCK) == 0 && codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 3100111);
+	CHECK(memcmp(area - BLOCK, other, BLOCK) == 0);	// the sector before it: written as sent
+}
+
 int main(void)
 {
 	setvbuf(stdout, NULL, _IONBF, 0);	// the lines before a crash
@@ -913,6 +982,7 @@ int main(void)
 	test_staged_write();
 	test_power_cuts();
 	test_bad_records();
+	test_settings_area();
 	CHECK(sim_flash_violations() == 0);
 	sim_flash_free();
 	printf("# cpsFastTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");

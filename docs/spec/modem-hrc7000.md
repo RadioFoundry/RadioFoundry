@@ -347,7 +347,7 @@ Findings:
 |---|---|---|
 | 1 | The BS registers exist and read the datasheet's reset values: BS_MODE 0x00000900, the others 0 | read at idle |
 | 2 | Writable bits match the datasheet: BS_MODE b11:8, b5:0; BS_CACH b1:0; BS_SECOND b5:0. Reserved bits read 0. BS_STATUS ignores writes. 0x42C is not implemented (reads 0, ignores writes) | write and read back |
-| 3 | BS_MODE survives a chip reset (`stubtool --attach --boot reset`). A radio left in BS mode stays there until written back or hardware reset | read after reset |
+| 3 | BS_MODE survives a chip reset (`stubtool --attach --board <id> --boot reset`). A radio left in BS mode stays there until written back or hardware reset | read after reset |
 | 4 | With BS_MODE b2 set, RadioFoundry's normal call start fails: the TX path never arms (`dmr.tx_error=stalled`, TX denied `rejected`). BS TX needs its own start sequence | `ptt` with b2 set |
 | 5 | With b2 set, then LAYER2_SLOTON b3 set and b0 cleared during a call, the chip reports o_bs_tx_slot_on (SLOTON reads 0x1000000C) and BS_STATUS b29:28 becomes non-zero (one read: 0x10000000, so the CACH LCSS counter runs) | read back, 0x434 = 0x10000000 |
 | 6 | The chip then sends its own Idle frames (data type 9 from bs_idle_type, color code from LOCAL_CC) with no MCU data, every 60 ms in **one** slot, with the same 30 ms bursts keyed and unkeyed (the RF keying is still RadioFoundry's). The first frame comes about 0.8 s after the switch | SDR: 54 IDLE bursts, 60.0 ms apart |

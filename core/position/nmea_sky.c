@@ -4,8 +4,8 @@
 #include "config.h"
 #if CONFIG_GPS_SKY
 #include <string.h>
-#include "aprs/nmea_sky.h"
-#include "aprs/aprs_nmea.h"
+#include "position/nmea_sky.h"
+#include "position/nmea.h"
 
 #define FIELDS_MAX	22	// GSV: 4 + 4 satellites x 4 + the NMEA 4.1 signal ID
 #define SYS_ALL		0xFFu	// a GN talker: the satellites' numbers say their systems

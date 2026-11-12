@@ -1622,18 +1622,15 @@ typedef struct
 } lrrpTrigger_t;
 static lrrpTrigger_t lrrpTriggers[LRRP_TRIGGERS_MAX];
 
-// The platform's position for LRRP. Weak: none (the host test brings its own)
-#if !defined(DMR_DATA_SERVICE_TEST)
-__attribute__((weak)) bool dmrDataServiceGetPosition(lrrpPosition_t *position)
-{
-	memset(position, 0, sizeof(*position));
-	return false;
-}
-#endif
-
 static bool havePosition(lrrpPosition_t *position)
 {
-	return settings.hasGps && dmrDataServiceGetPosition(position);
+	memset(position, 0, sizeof(*position));
+	return settings.hasGps && (env.ownPosition != NULL) && env.ownPosition(position, now, env.ctx);
+}
+
+bool dmrDataServiceOwnPosition(lrrpPosition_t *position)
+{
+	return havePosition(position);
 }
 
 static void lrrpReceived(uint32_t src, const uint8_t *payload, int length)
@@ -1794,7 +1791,9 @@ static bool lrrpHandleRequest(const lrrpPendingRequest_t *pending)
 	return true;
 }
 
-static void lrrpTick(void)
+// noinline: inlined into the service's tick it puts the position and the report document in the radio task's own
+// frame, under everything that task calls (the stack check's deepest path)
+__attribute__((noinline)) static void lrrpTick(void)
 {
 	if (!CONFIG_DMR_LRRP || passthrough)
 	{

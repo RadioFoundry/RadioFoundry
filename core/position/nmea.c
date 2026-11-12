@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// NMEA 0183 RMC / GGA and the field splitting nmea_sky.c shares (aprs_nmea.h)
+// NMEA 0183 RMC / GGA and the field splitting nmea_sky.c shares (nmea.h)
 #include <string.h>
-#include "aprs/aprs_nmea.h"
+#include "position/nmea.h"
 
 #define FIELDS_MAX	16
 

@@ -36,7 +36,8 @@
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"	// dmr_sms_format_t
-#include "aprs/aprs_nmea.h"	// DMR APRS positions heard (data_position)
+#include "position/nmea.h"	// DMR APRS positions heard (data_position)
+#include "radio/radio_keys.h"
 #endif
 #if CONFIG_DMR_EMERGENCY
 #include "dmr/dmr_emergency.h"
@@ -68,8 +69,11 @@ static void cw_cancel(radio_sm_t *sm);
 #if CONFIG_BCAST_FM
 #include "radio/radio_bcast.h"	// broadcast FM receive (docs/spec/airband-and-broadcast.md 4)
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 #include "aprs/afsk.h"			// AFSK_BAUD, the tones
+#endif
+#if CONFIG_POSITION
+#include "position/position.h"		// our position for DMR GPS Info and LRRP (docs/spec/position.md)
 #endif
 
 // The radio's own DMR ID when the codeplug's general settings hold none (build value; 0 = refuse DMR transmit)
@@ -348,7 +352,7 @@ static bool bcast_listening(const radio_sm_t *sm)
 {
 #if CONFIG_BCAST_FM
 	bool own_rx = true;	// an APRS job has the channel receiver on its own frequency
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	own_rx = sm->aprs_phase == APRS_RF_OFF;
 #endif
 	bool scanning = false;
@@ -944,6 +948,10 @@ static uint8_t tx_check(const radio_sm_t *sm)
 	if (!board_in_band(ch->tx_hz, true)) {
 		return TXDENY_BAND;
 	}
+	if (board_hwopt_pending() != NULL) {
+		// Unset, or stored but not applied until a restart: the transmitter may be set up for the wrong hardware
+		return TXDENY_HWOPT;
+	}
 	if (sm->batt.level == BATT_CRITICAL) {
 		return TXDENY_BATTERY;
 	}
@@ -951,6 +959,13 @@ static uint8_t tx_check(const radio_sm_t *sm)
 		return TXDENY_BUSY;
 	}
 	return TXDENY_NONE;
+}
+
+// The board didn't key a frequency tx_check passed: a hardware option it still needs, or its own refusal (no
+// calibration there, for one), never the band
+static uint8_t board_refusal(void)
+{
+	return board_hwopt_pending() != NULL ? TXDENY_HWOPT : TXDENY_REFUSED;
 }
 
 static void deny(radio_sm_t *sm, uint8_t reason)
@@ -1158,6 +1173,12 @@ static void dmr_configure(radio_sm_t *sm)
 	}
 	sm->win_group_s = cfg.reply_window_s;
 	sm->win_private_s = cfg.reply_window_private_s != 0 ? cfg.reply_window_private_s : cfg.reply_window_s;
+#if CONFIG_DMR_GPS
+	// The channel's own position setting for its timeslot (the codeplug): GPS Info in its calls with the radio-wide
+	// setting off too
+	sm->view.dmr.gps_tx_channel = !sm->view.vfo &&
+		(ch->alias_tx & (cfg.ts == 2 ? CODEPLUG_ALIAS_TS2_GPS : CODEPLUG_ALIAS_TS1_GPS)) != 0;
+#endif
 	bool alias = false;
 #if CONFIG_DMR_TALKER_ALIAS
 	alias = sm->radio_name[0] != '\0' && !sm->view.vfo &&
@@ -1519,28 +1540,30 @@ static bool dmr_tx_phase(uint8_t phase)
 }
 
 #if CONFIG_DMR_GPS
-// Our position for DMR GPS Info (docs/spec/dmr-voice.md): the APRS position source (GPS, host, fixed). send: the
+// Our position for DMR GPS Info (docs/spec/dmr-voice.md): the position service's (GPS, host, fixed). send: the
 // "send position in DMR calls" setting
-static bool own_position(int32_t *lat, int32_t *lon, uint32_t *err_m, bool *send)
+static bool own_position(int32_t *lat, int32_t *lon, uint32_t *err_m, bool *send, uint32_t now_ms)
 {
-#if CONFIG_APRS
-	return aprs_position_now(lat, lon, err_m, send);
+#if CONFIG_POSITION
+	return position_now(lat, lon, err_m, send, now_ms);
 #else
 	(void)lat;
 	(void)lon;
 	(void)err_m;
+	(void)now_ms;
 	*send = false;
-	return false;	// no position source without APRS
+	return false;	// built without a position source
 #endif
 }
 
-// At PTT: our GPS Info for this transmission, or none
-static void dmr_gps_tx(void)
+// At PTT: our GPS Info for this transmission, or none. It goes out when the radio-wide setting or the channel's own
+// (the codeplug) asks for it
+static void dmr_gps_tx(const radio_sm_t *sm, uint32_t now_ms)
 {
 	int32_t lat, lon;
 	uint32_t err_m;
 	bool send;
-	if (own_position(&lat, &lon, &err_m, &send) && send) {
+	if (own_position(&lat, &lon, &err_m, &send, now_ms) && (send || sm->view.dmr.gps_tx_channel)) {
 		dmr_gps_t g = { .err = dmr_gps_err_code(err_m), .lat = lat, .lon = lon };
 		dmr_call_set_tx_gps(&g);
 	} else {
@@ -1549,7 +1572,7 @@ static void dmr_gps_tx(void)
 }
 #endif
 
-static void copy_call(radio_sm_t *sm, const dmr_caller_t *c, radio_dmr_call_t *out)
+static void copy_call(radio_sm_t *sm, const dmr_caller_t *c, radio_dmr_call_t *out, uint32_t now_ms)
 {
 	out->src = c->src;
 	out->dst = c->dst;
@@ -1562,7 +1585,9 @@ static void copy_call(radio_sm_t *sm, const dmr_caller_t *c, radio_dmr_call_t *o
 	find_name(sm, c->dst, c->group, out->dst_name);
 	out->gps_valid = false;
 	out->gps_range = false;
-#if CONFIG_DMR_GPS
+#if !CONFIG_DMR_GPS
+	(void)now_ms;
+#else
 	if (c->gps_valid) {
 		int32_t lat, lon;
 		uint32_t err_m;
@@ -1571,7 +1596,7 @@ static void copy_call(radio_sm_t *sm, const dmr_caller_t *c, radio_dmr_call_t *o
 		out->gps_err = c->gps.err;
 		out->gps_lat = c->gps.lat;
 		out->gps_lon = c->gps.lon;
-		if (own_position(&lat, &lon, &err_m, &send)) {
+		if (own_position(&lat, &lon, &err_m, &send, now_ms)) {
 			out->gps_range = true;
 			dmr_gps_range(lat, lon, c->gps.lat, c->gps.lon, &out->gps_dist_m, &out->gps_bearing);
 		}
@@ -1580,7 +1605,7 @@ static void copy_call(radio_sm_t *sm, const dmr_caller_t *c, radio_dmr_call_t *o
 }
 
 // The stack's view into radio_view_t.dmr
-static void dmr_publish(radio_sm_t *sm)
+static void dmr_publish(radio_sm_t *sm, uint32_t now_ms)
 {
 	const dmr_call_view_t *cv = dmr_call_view();
 	radio_dmr_view_t *d = &sm->view.dmr;
@@ -1616,7 +1641,7 @@ static void dmr_publish(radio_sm_t *sm)
 	}
 #endif
 	if (d->state != RDMR_IDLE) {
-		copy_call(sm, &cv->caller, &d->call);
+		copy_call(sm, &cv->caller, &d->call, now_ms);
 		d->late_entry = cv->caller.late_entry;
 #if CONFIG_DMR_TALKER_ALIAS
 		memcpy(d->alias, cv->caller.alias, sizeof(d->alias));
@@ -1630,7 +1655,7 @@ static void dmr_publish(radio_sm_t *sm)
 	}
 	d->call_ms = cv->call_ms;
 	if (cv->last_heard_ms != 0) {
-		copy_call(sm, &cv->last_heard, &d->last);
+		copy_call(sm, &cv->last_heard, &d->last, now_ms);
 		d->last_ms = cv->last_heard_ms;
 	}
 	d->underruns = cv->tx_underruns;
@@ -1714,7 +1739,7 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 		aprs_dmr_heard(cv->caller.src, cv->caller.alias, cv->caller.gps.lat, cv->caller.gps.lon, now_ms);
 	}
 #endif
-	dmr_publish(sm);
+	dmr_publish(sm, now_ms);
 	if (sm->view.state != RS_TX && sm->view.state != RS_TX_DENIED) {
 		bool rx = cv->state == DMR_CALL_STATE_RX;
 		if (rx && sm->view.state != RS_RX) {
@@ -1867,7 +1892,7 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	if (!sm->dmr_keyed) {
 		static const subtone_t none = { TONE_NONE, 0 };
 		if (!key_tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
-			deny(sm, TXDENY_BAND);
+			deny(sm, board_refusal());
 			return;
 		}
 		sm->dmr_keyed = true;
@@ -1881,7 +1906,7 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	sm->tx_start_ms = now_ms;
 	changed(sm);
 #if CONFIG_DMR_GPS
-	dmr_gps_tx();
+	dmr_gps_tx(sm, now_ms);
 #endif
 	dmr_call_ptt(true);
 	dmr_call_poll(now_ms);
@@ -2017,6 +2042,25 @@ static bool data_in_rx_group(uint32_t tg, void *ctx)
 // noted in the settings store from data_tick
 static dmrDataSettings_t data_saved;
 
+// The ARS server and the IP gateway as the codeplug's settings area gives them (docs/spec/codeplug-settings.md 5),
+// read at start, whenever codeplug_serial() (a codeplug written) or codeplug_kv_serial() (a key written) moves on and
+// whenever the settings change. A key that is present holds its
+// setting: a change made another way is put back at the next tick, before it is saved. An absent key leaves the
+// setting as the radio has it (the settings store's copy), so a codeplug from a tool that doesn't carry the area
+// changes nothing. No copy of the keys in RAM: a read is a few bytes of flash, and only on those events. The keys are the
+// table in radio_keys.h (codeplug_keys_apply)
+static uint8_t data_kv_seen;	// codeplug_kv_serial() at the last load: it moves when the keys may read differently
+
+static void data_kv_load(void)
+{
+	data_kv_seen = codeplug_kv_serial();
+	dmrDataSettings_t set;
+	dmrDataServiceGetSettings(&set);
+	if (codeplug_keys_apply(radio_keys, RADIO_KEYS_N, &set)) {
+		dmrDataServiceSetSettings(&set);
+	}
+}
+
 static void data_save_settings(uint32_t now_ms)
 {
 	dmrDataSettings_t cur;
@@ -2028,6 +2072,9 @@ static void data_save_settings(uint32_t now_ms)
 	    cur.ipConfirmedTries == data_saved.ipConfirmedTries && cur.ipGatewayId == data_saved.ipGatewayId &&
 	    memcmp(cur.ipConfirmedRule, data_saved.ipConfirmedRule, sizeof(cur.ipConfirmedRule)) == 0) {
 		return;
+	}
+	if (codeplug_keys_apply(radio_keys, RADIO_KEYS_N, &cur)) {
+		dmrDataServiceSetSettings(&cur);	// the codeplug's key holds against the change
 	}
 	data_saved = cur;
 	settings_t *st = settings_begin();
@@ -2120,6 +2167,23 @@ static void emergency_tick(radio_sm_t *sm, uint32_t now_ms)
 }
 #endif
 
+#if CONFIG_DMR_LRRP
+// LRRP's position (dmrDataEnv_t.ownPosition): the position service's, with the ambiguity setting applied as for DMR
+// GPS Info
+static bool data_own_position(lrrpPosition_t *position, uint32_t now_ms, void *ctx)
+{
+	(void)ctx;
+	position_fix_t f;
+	uint32_t err_m;
+	if (position_report(&f, &err_m, now_ms) == POSITION_SRC_NONE) {
+		return false;
+	}
+	uint16_t kn = f.speed_kmh == 0xFFFFu ? 0xFFFFu : (uint16_t)(((uint32_t)f.speed_kmh * 1000u + 926u) / 1852u);
+	lrrpPositionFromE7(f.lat, f.lon, kn, f.course, f.utc_hms, f.date, position);
+	return true;
+}
+#endif
+
 static void data_init(radio_sm_t *sm)
 {
 	dmrDataEnv_t env = { .txStart = data_tx_start, .channelClear = data_channel_clear,
@@ -2129,6 +2193,9 @@ static void data_init(radio_sm_t *sm)
 #endif
 #if CONFIG_APRS_RX
 	env.position = data_position;
+#endif
+#if CONFIG_DMR_LRRP
+	env.ownPosition = data_own_position;
 #endif
 #if CONFIG_DMR_IP_GATEWAY
 	env.packet = hostlink_net_air_packet;
@@ -2141,6 +2208,11 @@ static void data_init(radio_sm_t *sm)
 	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = true, .callAlertAck = true, .lrrpReply = true,
 				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
 				  .ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
+#if CONFIG_DMR_LRRP
+	// The position service answers (data_own_position). A source can come later (a GPS found after start-up, a fixed
+	// position typed in): no fix until then
+	set.hasGps = true;
+#endif
 	settings_t *st = &st_copy;
 	settings_read(st);
 	if (st->ds_stored == 1) {	// as saved (docs/spec/settings-store.md 3)
@@ -2164,7 +2236,11 @@ static void data_init(radio_sm_t *sm)
 		memcpy(set.ipConfirmedRule, st->ds_ip_rule, sizeof(set.ipConfirmedRule));
 		set.ipGatewayId = st->ds_ip_gateway & 0xFFFFFFu;	// 0 in a record from before it (off)
 	}
+	// The settings store's copy as saved, then the keys over it: a key it doesn't hold yet (a factory reset leaves the
+	// codeplug, a power cut before the copy was saved) differs from data_saved, so the first tick saves the copy
+	// (docs/spec/codeplug-settings.md 5.2: the radio's own copy follows the key)
 	data_saved = set;
+	codeplug_keys_apply(radio_keys, RADIO_KEYS_N, &set);
 	data_tx.list = NULL;
 	dmrDataServiceInit(&env);
 	dmrDataServiceSetSettings(&set);
@@ -2208,6 +2284,9 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_ZONE_SHARE
 	zone_share_tick(now_ms);
 #endif
+	if (codeplug_kv_serial() != data_kv_seen) {
+		data_kv_load();	// a key written (menu, debug link): its value only, without a codeplug reload
+	}
 	data_save_settings(now_ms);
 	if (sm->power_off_req && sm->power_off_busy) {
 		sm->power_off_busy = dmrDataServicePowerOff();	// ARS deregistration, until it has gone out
@@ -3513,7 +3592,7 @@ static inline void roam_cancel(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (voi
 void radio_sm_shown_view(const radio_sm_t *sm, radio_view_t *v) { (void)sm; (void)v; }
 #endif
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 // --- APRS transmissions (core/aprs, docs/spec/aprs.md 6) ---
 // The engine (aprs_tick) decides what to send; here the radio leaves the user's channel for the APRS frequency (FM,
 // no subtone), waits for a clear channel (p-persistent CSMA on the noise reading), keys up, lets board.afsk send the
@@ -3592,6 +3671,7 @@ static void aprs_rf_end(radio_sm_t *sm, aprs_rf_result_t r, uint32_t now_ms)
 	}
 	sm->aprs_phase = APRS_RF_OFF;
 	sm->view.state = RS_IDLE;
+	sm->view.aprs_tx = false;
 	aprs_rf_done(r, now_ms);
 	tune(sm, now_ms);	// the channel again (DMR set up again if it was DMR)
 }
@@ -3650,6 +3730,7 @@ static void aprs_rf_service(radio_sm_t *sm, const radio_status_t *st, uint32_t n
 		sm->view.tx_auto = true;
 		sm->view.last_tx_ms = now_ms != 0 ? now_ms : 1;
 		sm->view.tx_deny = TXDENY_NONE;
+		sm->view.aprs_tx = true;
 		outputs(sm);
 		changed(sm);
 		// APRS's own power level when it has one, else the radio's current one (a temporary change included), as for
@@ -3683,31 +3764,41 @@ static void aprs_rf_service(radio_sm_t *sm, const radio_status_t *st, uint32_t n
 	}
 }
 
+#else
+static inline void aprs_rf_abort(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (void)now_ms; }
+#endif
+
+#if CONFIG_APRS
 // Every poll, before anything else: the engine, the "after PTT" trigger, a transmission to start
 static void aprs_poll(radio_sm_t *sm, uint32_t now_ms)
 {
-	bool tx_now = sm->view.state == RS_TX && !sm->tx_no_ptt && sm->aprs_phase == APRS_RF_OFF;
+	bool tx_now = sm->view.state == RS_TX && !sm->tx_no_ptt;
+#if CONFIG_APRS_AFSK
+	tx_now = tx_now && sm->aprs_phase == APRS_RF_OFF;
+#endif
 	if (sm->aprs_was_tx && !tx_now) {
 		aprs_ptt_end(now_ms);
 	}
 	sm->aprs_was_tx = tx_now;
 	aprs_radio_t r;
 	memset(&r, 0, sizeof(r));
+#if CONFIG_APRS_AFSK
 	r.can_rf = aprs_can_start(sm);
 	r.fm_rx = sm->aprs_phase == APRS_RF_OFF && sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot &&
 		  sm->view.state != RS_TX;
 	r.rx_hz = sm->view.ch.rx_hz;
+#endif
 #if CONFIG_DMR
 	r.on_dmr = sm->dmr_running && !sm->hotspot;
 	r.own_dmr_id = sm->own_id;
 #endif
 	aprs_tick(&r, now_ms);
+#if CONFIG_APRS_AFSK
 	if (r.can_rf && aprs_rf_pending()) {
 		aprs_rf_start(sm, now_ms);
 	}
+#endif
 }
-#else
-static inline void aprs_rf_abort(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (void)now_ms; }
 #endif
 
 // --- DTMF (CONFIG_DTMF; radio-features.md 3.7): a digit key held during an FM transmission sends its pair ---
@@ -4031,7 +4122,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	outputs(sm);
 	const channel_t *ch = &sm->view.ch;
 	if (!key_tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &ch->tx_tone)) {
-		deny(sm, TXDENY_BAND);
+		deny(sm, board_refusal());
 		return;
 	}
 #if CONFIG_NET_USRP
@@ -4922,6 +5013,9 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	sm->reload_pending = false;
 	sm->codeplug_serial = codeplug_serial();
 	sm->view.source = codeplug_source();
+#if CONFIG_DMR_DATA_CORE
+	data_kv_load();
+#endif
 #if CONFIG_DMR
 	// The cached names may be gone or new now ("" is cached too): a contact added after its ID was heard or called
 	// would otherwise stay a bare ID on the screens until it fell out of the cache
@@ -5013,6 +5107,10 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 {
 	settings_t st;
 	settings_read(&st);	// a zone add or delete a power cut interrupted is settled first (radio_core_start)
+#if CONFIG_POSITION
+	position_init();
+	position_load(&st);
+#endif
 
 	memset(sm, 0, sizeof(*sm));
 	sm->audio_out = -1;
@@ -5647,6 +5745,10 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		sm->power_off_busy = CONFIG_DMR_DATA_CORE;	// data_tick clears it once the deregistration is out
 		break;
 	case RREQ_RELOAD:
+#if CONFIG_POSITION
+		settings_read(&st_copy);	// the task's scratch copy: a settings_t is too big for this frame
+		position_load(&st_copy);	// the settings may have been replaced
+#endif
 #if CONFIG_APRS
 		aprs_reload();
 #endif
@@ -5873,7 +5975,7 @@ static bool save_allowed(const radio_sm_t *sm, uint32_t now_ms)
 			sm->view.state != RS_IDLE || sm->view.monitor || sm->ptt || sm->view.ch.no_eco || sm->view.bcast) {
 		return false;
 	}
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	if (sm->aprs_phase != APRS_RF_OFF || aprs_rf_pending() || aprs_rx_listening()) {
 		return false;	// a sleeping receiver misses packets
 	}
@@ -6082,7 +6184,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	// not at every step. It waits for an APRS job; while transmitting or a hotspot, for the end of it
 	if (sm->retune_due && (int32_t)(now_ms - sm->retune_due_ms) >= 0) {
 		bool aprs = false;
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 		aprs = sm->aprs_phase != APRS_RF_OFF;
 #endif
 		if (sm->view.state == RS_TX || sm->hotspot) {
@@ -6100,7 +6202,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #endif
 	// An APRS job has the channel receiver on its own frequency in FM: its carrier sense reads that receiver as is
 	bool own_rx = true;
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	own_rx = sm->aprs_phase == APRS_RF_OFF;
 #endif
 	(void)own_rx;
@@ -6135,7 +6237,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		sm->rssi_published = sm->view.rssi_dbm;
 		changed(sm);
 	}
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	if (sm->aprs_phase != APRS_RF_OFF) {
 		aprs_rf_service(sm, &st, now_ms);	// on the APRS frequency: no squelch, scan or time-out here
 		outputs(sm);

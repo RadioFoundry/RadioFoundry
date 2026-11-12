@@ -457,8 +457,13 @@ static void test_dmr_records(void)
 	c[0x1B] = 4;		// 60 s
 	c[0x30] = 0x0E;		// TS1 text (2), TS2 both (3)
 	CHECK(codeplug_channel(2, &ch) && ch.tot_s == 60 &&
-		ch.alias_tx == (CODEPLUG_ALIAS_TS1_TEXT | CODEPLUG_ALIAS_TS2_TEXT));
-	c[0x30] = 0x01;		// TS1 APRS only: no text
+		ch.alias_tx == (CODEPLUG_ALIAS_TS1_TEXT | CODEPLUG_ALIAS_TS2_TEXT | CODEPLUG_ALIAS_TS2_GPS));
+	c[0x30] = 0x01;		// TS1 APRS only: our position in its calls, no text
+	CHECK(codeplug_channel(2, &ch) && ch.alias_tx == CODEPLUG_ALIAS_TS1_GPS);
+	c[0x30] = 0x0D;		// TS1 APRS, TS2 both
+	CHECK(codeplug_channel(2, &ch) &&
+		ch.alias_tx == (CODEPLUG_ALIAS_TS1_GPS | CODEPLUG_ALIAS_TS2_GPS | CODEPLUG_ALIAS_TS2_TEXT));
+	c[0x30] = 0x00;
 	CHECK(codeplug_channel(2, &ch) && ch.alias_tx == 0);
 
 	// General settings: radio name (0xFF padded) and hang times

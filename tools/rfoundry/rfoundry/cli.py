@@ -613,8 +613,10 @@ def store_learned(port, board, learned, log=say, link_fn=None):
         action, i, c, held = origversion.hwopt_action(opts, name, choice)
         if action == "store":
             link.hwopt_set(i, c)
+            # the radio says whether a restart is still due (none when it already runs that choice)
+            restart = link.hwopts()[i].get("state") == "restart"
             log("stored   %s %s, from original firmware %s%s" % (name.lower(), choice, learned["version"],
-                "; it applies from the next start: switch the radio off and on" if opts[i]["restart"] else ""))
+                "; it applies from the next start: switch the radio off and on" if restart else ""))
         elif action == "same":
             log("ok       the radio already holds %s %s" % (name.lower(), choice))
         elif action == "mismatch":
@@ -625,6 +627,70 @@ def store_learned(port, board, learned, log=say, link_fn=None):
             log("note     this RadioFoundry build has no %s %s: nothing stored" % (name.lower(), choice))
     except (debuglink.LinkError, OSError) as e:
         warn("could not store the %s (%s): %s" % (name.lower(), e, learned_hint(board, learned)))
+    finally:
+        link.close()
+
+
+def ask_choice(name, choices, versions):
+    """On a terminal: which choice of the hardware option `name` (an index), or None."""
+    if not sys.stdin.isatty():
+        return None
+    say("")
+    for i, c in enumerate(choices):
+        say("  %d  %s%s" % (i + 1, c, ("   (original firmware %s)" % ", ".join(m + ".xx" for m in versions[i]))
+                                     if versions[i] else ""))
+    while True:
+        try:
+            a = input("%s (1-%d, Enter to set it on the radio later): " % (name, len(choices))).strip()
+        except EOFError:
+            return None
+        if not a:
+            return None
+        if a.isdigit() and 1 <= int(a) <= len(choices):
+            return int(a) - 1
+
+
+def hwopt_prompt(port, board, log=say, choose=ask_choice, link_fn=None):
+    """After the install: a hardware option the radio still needs from a person (it can't detect it and the install
+    didn't learn it) is asked for on a terminal, else said plainly with where to set it on the radio. A restart still
+    due is said too. The radio won't transmit until either is done."""
+    try:
+        link = (link_fn or debuglink.Link)(port)
+    except Exception:
+        return
+    try:
+        p = origversion.pending_hwopt(link.hwopts())
+        if p is None:
+            return
+        i, o = p
+        if o["state"] == "restart":
+            warn("switch the radio off and on: its %s applies from the next start. It won't transmit until then"
+                 % o["name"].lower())
+            return
+        spec = board.original_version if board.original_version and board.original_version.get("hwopt") == o["name"] \
+            else None
+        warn("the radio can't detect its %s and won't transmit until it knows it (receiving works). Not sure? Pick "
+             "the first; if the radio then hears nothing on a channel it should hear, pick another" % o["name"].lower())
+        while True:
+            c = choose(o["name"], o["choices"], [origversion.majors_for(spec, x) for x in o["choices"]])
+            if c is None:
+                warn("set it on the radio: Settings > Advanced > Hardware > %s. The home screen reminds you until "
+                     "then" % o["name"])
+                return
+            try:
+                link.hwopt_set(i, c)
+            except debuglink.LinkError as e:
+                warn("the radio refused %s %s (%s): it doesn't match what the radio found on its board. Pick another"
+                     % (o["name"].lower(), o["choices"][c], e))
+                continue
+            if link.hwopts()[i].get("state") == "restart":
+                log("stored   %s %s: switch the radio off and on, it applies from the next start"
+                    % (o["name"].lower(), o["choices"][c]))
+            else:
+                log("stored   %s %s: the radio is ready to transmit" % (o["name"].lower(), o["choices"][c]))
+            return
+    except (debuglink.LinkError, OSError) as e:
+        warn("could not read the radio's hardware options (%s): check Settings > Advanced > Hardware on the radio" % e)
     finally:
         link.close()
 
@@ -1100,6 +1166,7 @@ def verify_after(args, board, man, d, wait_s=25, learned=None):
         return 0
     state.remember_probe(p)
     store_learned(p["port"], board, learned)
+    hwopt_prompt(p["port"], board)
     want_git = man.get("git")
     if want_git and want_git != "unknown" and not (p.get("git") or "").startswith(want_git):
         warn("the radio reports git %s, the image is %s" % (p.get("git"), want_git))

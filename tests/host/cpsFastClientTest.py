@@ -14,6 +14,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "tools"))
 import cps_client  # noqa: E402
 import cps_fast  # noqa: E402
+import cpsClientTest  # noqa: E402  (the settings area cases, shared)
 
 failures = 0
 
@@ -118,6 +119,13 @@ def main():
         except cps_fast.FastError as e:
             check(e.reason == 1, f"refused as outside: {e}")
         link.close()
+
+    # The settings area: written only when the file's is valid and the radio's isn't newer, as cps_client.py
+    radio = cps_client.REGIONS["radio"]
+    cpsClientTest.area_cases(sim, lambda cmd: cps_fast.open_link(exec_cmd=cmd), lambda k: k.read_image(radio),
+                             lambda k, img: k.write_image(img, radio))
+    global failures
+    failures += cpsClientTest.failures
     print(f"# cpsFastClientTest {'FAILED' if failures else 'PASSED'} ({failures} failures)")
     return 1 if failures else 0
 

@@ -5,9 +5,9 @@
 // ADC, the calibration and the delays come in through md9600_rf_ops_t, so the host test (tests/host/md9600RfSeqTest.c)
 // logs every step. radio_md9600.c wires it to the pins.
 //
-// Transmit is gated three times: the build (CONFIG_MD9600_TX, off by default), a run-time arm that starts off at every
-// power-up (md9600_rf_tx_arm), and the board state (a stored revision, a plausible PA calibration). Every error path
-// and every refusal leaves the PA loop and both transmitter supplies off.
+// Transmit is gated by the build (CONFIG_MD9600_TX) and the board state: a confirmed revision (stored, or detected at
+// start-up: md9600_rf_if_detect) and a plausible PA calibration. Every error path and every refusal leaves the PA loop
+// and both transmitter supplies off.
 #ifndef RFSEQ_MD9600_H
 #define RFSEQ_MD9600_H
 
@@ -62,6 +62,12 @@ typedef struct {
 	uint16_t (*apc_floor)(void *ctx, uint8_t band);
 	// A 12-bit noise reading of the band's receiver (the probe)
 	uint16_t (*noise)(void *ctx, uint8_t band);
+	// Optional, for the AK2365A read test (md9600_rf_if_detect); NULL: no verdict. PE15 (the AK2365A reset on V1-V4,
+	// unused on V5) as an input with its pull up (true) or down: never driven, whatever the board is
+	void (*if_rst_pull)(void *ctx, bool up);
+	// One AK2365A read frame on the IF bus (band = chip select): R/W 1 and the address, then the data line released
+	// with its pull up (true) or down, and MD9600_IF_READ_BITS samples into *bits (rfplan_md9600.h). False: refused
+	bool (*if_read)(void *ctx, uint8_t band, uint8_t addr, bool pull_up, uint16_t *bits);
 	void *ctx;
 } md9600_rf_ops_t;
 
@@ -72,8 +78,7 @@ typedef enum {
 	MD9600_RF_E_BUS,	// a bus write failed
 	MD9600_RF_E_LOCK,	// the lock indication didn't come within the timeout
 	MD9600_RF_E_TX_BUILD,	// transmit isn't in this build (CONFIG_MD9600_TX)
-	MD9600_RF_E_TX_ARM,	// transmit isn't armed (md9600_rf_tx_arm)
-	MD9600_RF_E_TX_REV,	// the revision isn't confirmed by a stored record
+	MD9600_RF_E_TX_REV,	// the revision isn't confirmed (stored or detected)
 	MD9600_RF_E_TX_CAL,	// no plausible PA calibration for the frequency and level
 	MD9600_RF_E_STATE,	// not in a state that allows it (PA keying outside transmit)
 	MD9600_RF_E_COUNT
@@ -119,8 +124,7 @@ typedef struct {
 	const md9600_rf_ops_t *ops;
 	md9600_rev_t rev;		// MD9600_REV_UNKNOWN: nothing is programmed, the receiver stays off
 	const md9600_rev_desc_t *desc;	// NULL with MD9600_REV_UNKNOWN
-	bool confirmed;			// the stored record named the revision (the only source that allows transmit)
-	bool tx_armed;			// run-time arm, off at every start
+	bool confirmed;			// stored or detected: the only revisions that allow transmit
 	bool dmr;			// DMR mode: narrow IF, the FM audio stages off
 	uint8_t state;			// md9600_rf_state_t
 	// The reference trim (hal_radio_t.ref_trim, ppb): every synthesizer is programmed for f x (1 + trim), taken at the
@@ -157,8 +161,8 @@ void md9600_rf_set_dmr(md9600_rf_t *rf, bool dmr);
 // Receivers and synthesizers powered down (no receive until the next rx)
 void md9600_rf_sleep(md9600_rf_t *rf);
 
-// Transmit on hz at a board power level (0 = 5 W .. 3 = 40 W, labels unverified). Refused unless built, armed,
-// confirmed and calibrated; on any refusal or failure the PA stays off and the receiver returns
+// Transmit on hz at a board power level (0 = 5 W .. 3 = 40 W, labels unverified). Refused unless built, confirmed and
+// calibrated; on any refusal or failure the PA stays off and the receiver returns
 md9600_rf_err_t md9600_rf_tx(md9600_rf_t *rf, uint32_t hz, bool wide, uint8_t power);
 // The transmit side tuned with the PA off (DMR, ahead of the first burst): the same checks as md9600_rf_tx, the
 // receivers off, the TX VCO on the carrier. settle false: the synthesizer words only, without the wait (from an
@@ -186,9 +190,9 @@ md9600_rf_err_t md9600_rf_pa_step(md9600_rf_t *rf, uint32_t step, uint32_t *next
 md9600_rf_err_t md9600_rf_pa(md9600_rf_t *rf, bool on);
 // End a transmission: APC ramped down, the loop and the supplies off, then the last receive settings
 void md9600_rf_tx_off(md9600_rf_t *rf);
-// Arm or disarm transmit for this power cycle. Arming fails without CONFIG_MD9600_TX or a confirmed revision.
-// Disarming drops the PA at once (lines and DAC only, safe from any task); the transmission ends at tx_off
-bool md9600_rf_tx_arm(md9600_rf_t *rf, bool on);
+// A person stored the revision in use (Settings > Advanced > Hardware): transmit is allowed from now on, no restart.
+// Off: they stored another one, so the one in use may be wrong: transmit is refused until the restart applies it
+void md9600_rf_confirm(md9600_rf_t *rf, bool on);
 // What a tx() on hz at power would be refused for now, MD9600_RF_OK when it would be allowed
 md9600_rf_err_t md9600_rf_tx_check(const md9600_rf_t *rf, uint32_t hz, uint8_t power);
 
@@ -202,6 +206,12 @@ void md9600_rf_pa_safe(md9600_rf_t *rf);
 #define MD9600_PROBE_SETTLE_US	50000u
 #define MD9600_PROBE_THRESHOLD	200u	// ADC counts. Unmeasured: the probe is off by default
 md9600_rev_t md9600_rf_probe(const md9600_rf_ops_t *ops, uint32_t hz, uint16_t threshold);
+
+// The AK2365A read test (rfplan_md9600.h md9600_if_verdict): receivers powered, the AK2365A reset from PE15's pulls,
+// each pattern written to MD9600_IF_TEST_REG and read back under both pulls, then the soft reset. On V5 the frames only
+// toggle the IF filter and route lines while nothing receives. Leaves the radio off (md9600_rf_init before use)
+#define MD9600_IF_PULL_US	50u	// PE15 through the pin's own pull resistor: tens of kilohms into an input
+md9600_if_t md9600_rf_if_detect(const md9600_rf_ops_t *ops);
 
 // Short names of the errors for the diagnostics page and the debug link
 const char *md9600_rf_err_name(uint8_t err);

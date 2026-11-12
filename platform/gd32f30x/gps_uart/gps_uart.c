@@ -8,8 +8,8 @@
 #include "gps/gps_rx/gps_rx.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#if CONFIG_APRS
-#include "aprs/aprs.h"
+#if CONFIG_GPS
+#include "position/position.h"
 #endif
 
 #define GPS_TASK_STACK		352	// words: the APRS NMEA parser runs on it (make stack-check: about 0.9 KB deep)
@@ -112,8 +112,8 @@ static void sentence(const char *s, uint8_t len, uint32_t now_ms)
 			gps_setup_send(m->send, tx_byte);
 		}
 	}
-#if CONFIG_APRS
-	aprs_nmea(s, len, true, now_ms);
+#if CONFIG_GPS
+	position_nmea(s, len, true, now_ms);
 #else
 	(void)s;
 	(void)len;

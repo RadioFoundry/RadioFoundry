@@ -3,8 +3,8 @@
 // The satellites a GPS receiver reports (NMEA 0183 GSV and GSA, docs/spec/aprs.md 7.1): where each one is in the sky,
 // its signal and whether the fix uses it, and the fix mode. For the GPS status screen (CONFIG_GPS_SKY).
 // Pure: no RTOS; the caller locks. Small on purpose: one satellite is 4 bytes.
-#ifndef RFOUNDRY_NMEA_SKY_H
-#define RFOUNDRY_NMEA_SKY_H
+#ifndef RFOUNDRY_POSITION_NMEA_SKY_H
+#define RFOUNDRY_POSITION_NMEA_SKY_H
 
 #include <stdint.h>
 #include <stdbool.h>

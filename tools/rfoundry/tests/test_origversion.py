@@ -171,10 +171,18 @@ class FakeLink:
         self.closed = False
 
     def hwopts(self):
-        return [dict(o) for o in self.opts]
+        out = []
+        for o in self.opts:
+            o = dict(o)
+            run = o.pop("running", None)
+            if "state" not in o:
+                o["state"] = "ask" if o["value"] < 0 else "ok" if run is None or run == o["value"] else "restart"
+            out.append(o)
+        return out
 
     def hwopt_set(self, option, choice):
-        if self.refuse:
+        # refuse: True every choice, an int that choice (bool is an int too: test it first)
+        if self.refuse is True or (not isinstance(self.refuse, bool) and self.refuse == choice):
             raise debuglink.LinkError("command 0x21: status 7")
         self.sets.append((option, choice))
         self.opts[option]["value"] = choice
@@ -200,17 +208,23 @@ class StoreLearned(unittest.TestCase):
         self.choices = sorted(set(spec["major"].values()))
         self.learned = {"version": self.major + ".09", "choice": self.choice, "dev": None}
 
-    def link(self, value, **k):
+    def link(self, value, running=-2, **k):
         return FakeLink([{"name": self.board.original_version["hwopt"], "value": value, "restart": True,
-                          "choices": self.choices}], **k)
+                          "choices": self.choices, "running": None if running == -2 else running}], **k)
 
     def test_stores_when_the_radio_has_none(self):
-        link = self.link(-1)
+        link = self.link(-1, running=99)
         _, out = quiet(cli.store_learned, "port", self.board, self.learned, link_fn=lambda p: link)
         self.assertEqual(link.sets, [(0, self.choices.index(self.choice))])
         self.assertIn("stored", out)
         self.assertIn("switch the radio off and on", out)
         self.assertTrue(link.closed)
+
+    def test_stores_the_running_choice_without_a_restart(self):
+        link = self.link(-1, running=self.choices.index(self.choice))
+        _, out = quiet(cli.store_learned, "port", self.board, self.learned, link_fn=lambda p: link)
+        self.assertIn("stored", out)
+        self.assertNotIn("off and on", out)
 
     def test_same_choice_is_left(self):
         link = self.link(self.choices.index(self.choice))
@@ -239,6 +253,72 @@ class StoreLearned(unittest.TestCase):
         quiet(cli.store_learned, "port", self.board, dict(self.learned, choice=None), link_fn=boom)
 
 
+class HwoptPrompt(unittest.TestCase):
+    """After the install: what the radio still needs from a person"""
+
+    def setUp(self):
+        self.board = board()
+        self.name = self.board.original_version["hwopt"]
+        self.choices = sorted(set(self.board.original_version["major"].values()))
+
+    def run_prompt(self, link, answers):
+        asked = []
+
+        def choose(name, choices, versions):
+            asked.append((name, choices, versions))
+            return answers.pop(0) if answers else None
+        _, out = quiet(cli.hwopt_prompt, "port", self.board, choose=choose, link_fn=lambda p: link)
+        return asked, out
+
+    def link(self, value=-1, running=0, **k):
+        return FakeLink([{"name": self.name, "value": value, "restart": True, "choices": self.choices,
+                          "running": running}], **k)
+
+    def test_nothing_pending_asks_nothing(self):
+        link = self.link(value=0)
+        asked, out = self.run_prompt(link, [])
+        self.assertEqual(asked, [])
+        self.assertEqual(out, "")
+        self.assertTrue(link.closed)
+
+    def test_asked_stored_ready(self):
+        link = self.link()
+        asked, out = self.run_prompt(link, [0])
+        self.assertEqual(link.sets, [(0, 0)])
+        self.assertEqual(asked[0][0], self.name)
+        # the original firmware versions behind each choice, for a person who remembers it
+        self.assertTrue(any(asked[0][2]))
+        self.assertIn("won't transmit", out)
+        self.assertIn("ready to transmit", out)
+
+    def test_another_choice_needs_a_restart(self):
+        link = self.link()
+        _, out = self.run_prompt(link, [1])
+        self.assertIn("switch the radio off and on", out)
+
+    def test_refused_asks_again(self):
+        link = self.link(refuse=len(self.choices) - 1)
+        asked, out = self.run_prompt(link, [len(self.choices) - 1, 0])
+        self.assertEqual(len(asked), 2)
+        self.assertIn("refused", out)
+        self.assertEqual(link.sets, [(0, 0)])
+
+    def test_no_answer_says_where_to_set_it(self):
+        _, out = self.run_prompt(self.link(), [])
+        self.assertIn("Settings > Advanced > Hardware > " + self.name, out)
+
+    def test_restart_due_is_said(self):
+        asked, out = self.run_prompt(self.link(value=1), [])
+        self.assertEqual(asked, [])
+        self.assertIn("off and on", out)
+
+    def test_hidden_says_nothing(self):
+        link = FakeLink([{"name": self.name, "value": 0, "restart": True, "choices": self.choices,
+                          "state": "hidden"}])
+        asked, out = self.run_prompt(link, [])
+        self.assertEqual((asked, out), ([], ""))
+
+
 class DebugLinkHwopt(unittest.TestCase):
     def test_list_and_set_frames(self):
         link = object.__new__(debuglink.Link)
@@ -250,7 +330,7 @@ class DebugLinkHwopt(unittest.TestCase):
                     b"hwopt.0.choices=A|B|C\n") if payload == b"\x00" else b""
         link.request = request
         self.assertEqual(link.hwopts(), [{"name": "Board revision", "value": -1, "restart": True,
-                                          "choices": ["A", "B", "C"]}])
+                                          "choices": ["A", "B", "C"], "state": "ask"}])
         link.hwopt_set(0, 2)
         self.assertEqual(sent, [(0x21, b"\x00"), (0x21, b"\x01\x00\x02")])
 

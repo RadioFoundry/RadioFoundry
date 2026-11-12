@@ -184,6 +184,12 @@
    "group": "calls",
    "needs": []
   },
+  "tx_aprs": {
+   "group": "calls",
+   "needs": [
+    "APRS"
+   ]
+  },
   "tx_private": {
    "group": "calls",
    "needs": [

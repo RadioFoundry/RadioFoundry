@@ -18,6 +18,7 @@ typedef struct {
 	const char *code;
 	const char *name;
 	bool built;
+	bool wide;			// its catalog is UTF-8 with a CJK face: a line of it needs 16 px
 	const lang_table_t *table;	// NULL: English, or not built
 } lang_info_t;
 
@@ -59,6 +60,7 @@ uint8_t lang_count(void) { return LANG_KNOWN; }
 const char *lang_code(uint8_t i) { return i < LANG_KNOWN ? langs[i].code : ""; }
 const char *lang_name(uint8_t i) { return i < LANG_KNOWN ? langs[i].name : ""; }
 bool lang_built(uint8_t i) { return i < LANG_KNOWN && langs[i].built; }
+bool lang_wide(uint8_t i) { return i < LANG_KNOWN && langs[i].wide; }
 uint8_t lang_current(void) { return cur; }
 
 bool lang_set(uint8_t i)

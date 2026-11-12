@@ -38,10 +38,12 @@ frequency, your position and its source, and when the next beacon goes out. If t
 | Interval | How often: Off, 1, 2, 5, 10 or 30 minutes |
 | SmartBeaconing | More often when you move fast, at once after a turn, rarely when you stand still |
 | Send via | AFSK (on FM), DMR, or both |
-| Position | Where the position comes from, and the fixed position (see Position below) |
-| Position in DMR calls | Your position in your DMR voice calls (see [DMR](09-dmr.md#position-in-calls)) |
 | KISS on USB | The radio works as a KISS TNC for APRS programs on the computer |
 | Stations heard | Stations the radio heard (radios that can receive APRS), newest first. A station that sent its position shows how far away and which way it was from yours, when the radio has a position too; the age on that row is then the age of that position. Other rows show when the station was last heard. Objects and items a station sends don't count as its position, and a position more than a day old is dropped. Select one and choose Message to fill its callsign |
+
+A firmware built with only one way to send APRS shows only the rows for it. With APRS over DMR only there is no
+Frequency, Power, Path, Send via or Stations heard, and KISS on USB is called NMEA on USB (the computer can still give
+the radio its position).
 
 The symbol, comment and the DMR destination are set with the debug tool for now
 (`tools/rfoundry_debug.py aprs set ...`), later with qdmr.
@@ -103,10 +105,11 @@ The position comes from:
 
 Auto takes a fresh GPS position, else the computer's, else the fixed one.
 
-APRS > Position has three rows: **Source** (press OK to step through Auto, GPS, Computer, Fixed), **Latitude** and
-**Longitude**. To set the fixed position:
+The position is not only APRS's: DMR calls and location requests (LRRP) use the same one. Its settings are under
+**Settings > Location**: **Position source** (Auto, GPS, Computer, Fixed) and **Fixed position**, a page with
+**Latitude** and **Longitude**. To set the fixed position:
 
-1. Select Latitude and press OK. The value opens for editing.
+1. Open Settings > Location > Fixed position, select Latitude and press OK. The value opens for editing.
 2. Type the degrees with the digits, decimal places included: `3`,`3`,`7`,`4`,`9`,`0` is 33.7490. The decimal point is
    already there. Longitude has three places before the point: 84.3880 is `8`,`4`,`3`,`8`,`8`,`0` (the radio puts the
    leading 0 in for you), and 122.4194 is `1`,`2`,`2`,`4`,`1`,`9`,`4`. For 10 to 19 degrees, type the 0 yourself.
@@ -114,7 +117,7 @@ APRS > Position has three rows: **Source** (press OK to step through Auto, GPS, 
 4. Press OK to save. Places you didn't type count as zeros. BACK removes the last digit; with nothing typed it closes
    the value unchanged.
 
-Four decimal places put you within about 11 m. You can also type "latitude" or "position" on Home to find the page.
+Four decimal places put you within about 11 m. You can also type "latitude" or "fixed" on Home to find the page.
 
 ## GPS status
 

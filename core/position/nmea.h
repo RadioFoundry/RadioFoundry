@@ -3,8 +3,8 @@
 // NMEA 0183 position sentences (RMC, GGA, any talker: GP, GN, GL, GA, BD) for the position sources (docs/spec/aprs.md
 // 6): a board GPS, or a phone / PC feeding its GPS over the USB link. The checksum is required (not in
 // nmea_parse_unchecked, for DMR APRS).
-#ifndef RFOUNDRY_APRS_NMEA_H
-#define RFOUNDRY_APRS_NMEA_H
+#ifndef RFOUNDRY_POSITION_NMEA_H
+#define RFOUNDRY_POSITION_NMEA_H
 
 #include <stdint.h>
 #include <stdbool.h>

@@ -103,7 +103,7 @@ const board_t board = {
 	.audio = &hrc_audio_pcm,
 	.vocoder = &hrc_vocoder,
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	.afsk = &hrc_afsk,
 #endif
 #if CONFIG_HOSTLINK
@@ -227,6 +227,7 @@ static const hrc_flash_cfg_t flash_cfg = {
 	.map = &flash_map,
 };
 
+#if CONFIG_GPS
 // The ATGM336H on UART1; PTA9 is UART1's RXD from io_init
 static const hrc_gps_cfg_t gps_cfg = {
 	.uart_base = UART1_BASE,
@@ -234,6 +235,7 @@ static const hrc_gps_cfg_t gps_cfg = {
 	.power_pin = PIN_GPS_POWER,
 	.power_on_level = GPS_POWER_ON_LEVEL,
 };
+#endif
 
 #if CONFIG_BCAST_FM
 // The RDA5807M on PTA25 / PTA26 (hardware-dm32.md 8.7): no enable line is known; its audio is assumed to reach the

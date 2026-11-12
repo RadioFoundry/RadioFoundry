@@ -7,17 +7,18 @@
 import { h, t, ROOT, HOME, button, notice, download, progressBar, num as fmtNum, date as fmtDate } from "../flasher/dom.js";
 import { equal } from "../flasher/bytes.js";
 import { SerialStream, serialSupported, serialApi, RFOUNDRY_USB, browserErrorKey, knownRadioPort } from "../flasher/link.js";
-import { CodeplugImage, IDDB_HEADER, REGIONS } from "../codeplug/image.js";
+import { CodeplugImage, IDDB_HEADER, EDITOR_REGIONS } from "../codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
 import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
 import { FastError } from "../codeplug/fastlink.js";
+import { areaForWrite, KEYS } from "../codeplug/kv.js";
 import { convert as convertDb, readHeader as dbHeader } from "../codeplug/iddb.js";
 import { convertIddb, iddbEnd } from "../codeplug/sources/output.js";
 import { FakeCpsRadio } from "../codeplug/fakecps.js";
 import { Grid } from "./grid.js";
 import { History } from "./undo.js";
-import { bulkColumns, columns, channelForm, formDialog, membersDialog, refLabel } from "./views.js";
+import { bulkColumns, columns, channelForm, formDialog, membersDialog, refLabel, parseAreaKey } from "./views.js";
 import { openFile, saveBytes, tftpBytes, FileError, imageFrom, saveDraft, loadDraft, clearDraft } from "./files.js";
 import { extensions } from "./extensions.js";
 import "./parts.js";
@@ -382,6 +383,8 @@ function radioTab() {
 		const n = Number(v.trim() || 0);
 		return Number.isInteger(n) && n >= lo && n <= hi ? { value: n } : { error: t("editor.err.range", { min: lo, max: hi }) };
 	};
+	// a number kept as a key of the settings area (kv.js KEYS): the row gives its range, empty is an absent key
+	const areaKey = (name) => (v) => parseAreaKey(KEYS.find((row) => row.name === name), v, t);
 	const parts = [
 		h("div", { class: "form-grid ed-radio-form" },
 			field("dmrId", t("editor.general.dmr_id"), 8, t("editor.general.dmr_id_help"), num(0, 0xFFFFFF)),
@@ -389,7 +392,9 @@ function radioTab() {
 			field("bootLine1", t("editor.general.boot1"), LIMITS.bootText, null, text(LIMITS.bootText)),
 			field("bootLine2", t("editor.general.boot2"), LIMITS.bootText, null, text(LIMITS.bootText)),
 			field("groupHang", t("editor.general.group_hang"), 3, t("editor.general.hang_help"), num(0, 255)),
-			field("privateHang", t("editor.general.private_hang"), 3, t("editor.general.hang_help"), num(0, 255))),
+			field("privateHang", t("editor.general.private_hang"), 3, t("editor.general.hang_help"), num(0, 255)),
+			field("arsServer", t("editor.general.ars_server"), 8, t("editor.general.ars_server_help"), areaKey("arsServer")),
+			field("ipGateway", t("editor.general.ip_gateway"), 8, t("editor.general.ip_gateway_help"), areaKey("ipGateway"))),
 	];
 	if (S.conn) {
 		const p = S.conn.probe;
@@ -657,7 +662,7 @@ async function sameCodeplug(c, img) {
 	const now = await withProgress(t("editor.reading", { radio: c.radio.name }), (bar, signal) =>
 		c.transport.read({ iddb: false, signal, cache: img, progress: (n, total) => bar.set(n, total) }));
 	const at = (x, a, b) => x.bytes.subarray(a, Math.min(b, x.bytes.length));
-	return REGIONS.every(([a, b]) => equal(at(now, a, b), at(img, a, b)));
+	return EDITOR_REGIONS.every(([a, b]) => equal(at(now, a, b), at(img, a, b)));
 }
 
 function readSkippedIddb() {
@@ -827,6 +832,7 @@ async function planWrite() {
 		// the same codeplug with this radio's own name, ID and boot text kept, and what each would send
 		// (compared byte for byte: two plans can send the same number of bytes. The second is planned only when there
 		// is something to keep: each plan is a pass over every block's CRC)
+		areaForWrite(file.bytes, c.image.bytes, S.model.base?.bytes);
 		const kept = keepIdentity(file, c.image);
 		const differs = IDENTITY.some(([a, b]) => kept.bytes.subarray(a, b).some((x, i) => x !== file.bytes[a + i]));
 		const plans = { file: await c.transport.plan(file, c.image, { iddb }) };

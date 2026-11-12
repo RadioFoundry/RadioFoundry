@@ -220,17 +220,16 @@ def _report(c, sdr_bench, rdir):
 
 
 @pytest.mark.feature("dmr_gps")
-@pytest.mark.needs_switch("APRS")
+@pytest.mark.feature("position", optional=True)
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_dmr_gps_tx(radio, sdr_bench, pytestconfig):
-    """Our ETSI GPS Info (FLCO 8) in the alias superframes: a fixed APRS position and "position in DMR calls" set over
-    the debug link, a 4 s over, the bench modem's listener decodes the GPS Info LC (a bench_tx listen job: the call's
+    """Our ETSI GPS Info (FLCO 8) in the alias superframes: a fixed position and "Send in DMR calls" set over the
+    debug link (the position service's settings: no APRS needed), a 4 s over, the bench modem's listener decodes the GPS Info LC (a bench_tx listen job: the call's
     "gps"). The settings are put back afterwards."""
-    feats = radio.features()
-    if "DMR_GPS" not in feats or "APRS" not in feats:
-        skip("not_built", "needs CONFIG_DMR_GPS and CONFIG_APRS (the position source)")
+    if "DMR_GPS" not in radio.features():
+        skip("not_built", "needs CONFIG_DMR_GPS")
     freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")

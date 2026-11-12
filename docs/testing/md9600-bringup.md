@@ -38,7 +38,7 @@ First radio: a V1-V3 board (its original firmware reported version 06.09), on a 
 | APRS receive | Written (`afsk_md9600.c`: PC3 on ADC3, 9146 Hz), untested: no APRS traffic on 144.390 MHz in 12 minutes at the bench. Listening, the decoder sees the noise only (aborts, a few FCS errors) |
 | VOX mic level | PA3 is a level tap: 3-4 counts (VOX level 12-16 of 100) with the mic quiet, and a beep in the speaker doesn't move it. VOX on and off from Quick works. The level while speaking is not measured yet; VOX can't key while transmit is refused |
 | DMR receive | Works on UHF (446.100) and VHF (151.505), by hand: a group call from another radio (CC 1, slot 1) plays clearly, every voice burst received. The DMR modem counters are on the diagnostics page after the board lines |
-| Transmit | On in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`), armed per power cycle. UHF, 5 W into a dummy load (section 5): DMR decoded burst for burst; FM with CTCSS and DCS passes the FM transmit HIL tests. VHF, 5 W on 151.5125 MHz: FM (12.5 and 25 kHz, CTCSS, DCS) and DMR checked off air ([hardware-md9600.md](../spec/hardware-md9600.md) 19.9.1). Every power level checked on a wattmeter on both bands ([power-calibration.md](power-calibration.md) 4) |
+| Transmit | On in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`), once the board revision is confirmed. UHF, 5 W into a dummy load (section 5): DMR decoded burst for burst; FM with CTCSS and DCS passes the FM transmit HIL tests. VHF, 5 W on 151.5125 MHz: FM (12.5 and 25 kHz, CTCSS, DCS) and DMR checked off air ([hardware-md9600.md](../spec/hardware-md9600.md) 19.9.1). Every power level checked on a wattmeter on both bands ([power-calibration.md](power-calibration.md) 4) |
 
 ## 0. Before anything
 
@@ -60,9 +60,10 @@ First radio: a V1-V3 board (its original firmware reported version 06.09), on a 
    ```
 
    Later updates go through the stub (`stub/stubtool.py PORT --rfoundry-enter --board md9600 --write-app IMAGE`).
-4. **Board revision:** the installers store it after the first boot (19.3). Check it with
-   `rfoundry_debug.py hwopt`; set it by hand (`hwopt "Board revision" V1-V3|V4|V4A/V5`) if it reads "not set". The
-   diagnostics page shows the source.
+4. **Board revision:** V4A / V5 is detected at every start (the AK2365A read test, 19.3); on V1-V4 the installers store
+   it after the first boot or ask for it. Check it with `rfoundry_debug.py hwopt` (`state=ask` until it is set) and
+   the `board` view's `rev.source` and `rev.ak2365`; set it by hand (`hwopt "Board revision" V1-V3|V4`) if it asks.
+   The diagnostics page shows the source and the read test.
 5. **Codeplug:** write one (CPS or `tools/cps_client.py`) before judging the channel screens. Until then the codeplug
    area holds the original firmware's own bytes. Writes are refused until the settings area is claimed
    (`rfoundry_debug.py storage claim --out DIR`, which saves the area first).
@@ -119,7 +120,7 @@ terminator and every voice burst, played clearly. Three fixes, found in this ord
 The first two were each needed for any sync while 0x01 was still wrong. Whether each is still needed with 0x01 right
 wasn't tried; both match what the manual and the radio's own start-up do.
 
-Transmit, UHF, 5 W into a dummy load, a `CONFIG_MD9600_TX` and `CONFIG_MD9600_DMR_TX` build armed by hand
+Transmit, UHF, 5 W into a dummy load, a `CONFIG_MD9600_TX` and `CONFIG_MD9600_DMR_TX` build
 (2026-11-03), received by the SDR bench:
 
 | Check | Result |

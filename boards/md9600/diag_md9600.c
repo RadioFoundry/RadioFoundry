@@ -135,9 +135,8 @@ bool md9600_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_x(&o, stm32_spi_flash_device(), 4);
 		put(&o, stm32_spi_flash.map != NULL ? " mapped" : " no map");
 		break;
-	case 14:	// the RF sequencer: state, the transmit arm, the last refusal or failure
-		put(&o, rd.state == MD9600_RF_TX ? "rf tx" : rd.state == MD9600_RF_RX ? "rf rx" : "rf off");
-		put(&o, rd.tx_armed ? " armed " : " safe ");
+	case 14:	// the RF sequencer: state, the last refusal or failure
+		put(&o, rd.state == MD9600_RF_TX ? "rf tx " : rd.state == MD9600_RF_RX ? "rf rx " : "rf off ");
 		put(&o, md9600_rf_err_name(rd.last_err));
 		break;
 	case 15:	// retunes, refusals, bus or lock errors

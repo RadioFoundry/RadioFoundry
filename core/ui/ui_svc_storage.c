@@ -6,7 +6,8 @@
 //     core saves and restores itself (ui_svc_apply sends changes there); the preferences in settings_t (brightness,
 //     default squelch, hotspot allowed) directly; the DMR data service's answers (radio check, call alert, LRRP) from
 //     its settings, which the radio core saves; the UI's own (reply window, mic gain, auto lock, key timing, GPS
-//     options) from their settings_t fields. Settings nobody stores yet stay in the stub's RAM table.
+//     options) from their settings_t fields; the position settings from the position service, which saves them.
+//     Settings nobody stores yet stay in the stub's RAM table.
 //   - save to channel, the permanent talk target and the factory reset: the UI task only takes a copy of what to
 //     write and hands a job to the housekeeping task (storage_job_post), so the UI never waits for a flash erase. The
 //     channel is written with codeplug_set_channel; the radio core re-reads it when codeplug_serial() changes. A job
@@ -20,6 +21,8 @@
 #include "radio/ref_trim.h"
 #include "storage/storage.h"
 #include "codeplug/codeplug.h"
+#include "codeplug/codeplug_kv.h"
+#include "radio/radio_keys.h"
 #include "hal_time.h"
 #include "config.h"
 #if CONFIG_HOSTLINK
@@ -36,6 +39,9 @@
 #endif
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
+#endif
+#if CONFIG_POSITION
+#include "position/position.h"
 #endif
 #if CONFIG_KEY_ASSIGN
 #include "input/input.h"
@@ -110,6 +116,14 @@ static bool key_set(uint8_t id, int32_t value);
 
 #if CONFIG_DMR
 static bool dmr_id_post(uint32_t id);	// a job: the codeplug write is the housekeeping task's
+#endif
+#if CONFIG_DMR_DATA_CORE
+// The menu row of a setting kept as a key of the settings area (radio_keys.h), else 0
+static uint16_t data_row_key(uint8_t id)
+{
+	return id == UI_SET_ARS_SERVER ? CODEPLUG_KEY_ARS_SERVER : id == UI_SET_IP_GATEWAY ? CODEPLUG_KEY_IP_GATEWAY : 0;
+}
+static bool data_id_post(uint16_t key, uint32_t id);	// a job too: the key's write is the housekeeping task's
 #endif
 
 // Apart from ui_svc_setting_get so the paths that go deep from there (the keys, the reply time's codeplug read, both
@@ -240,6 +254,9 @@ __attribute__((noinline)) static int32_t stored_get(uint8_t id)
 	case UI_SET_UPDOWN_HOME:
 		settings_read(&st);
 		return settings_updown_home(&st);
+	case UI_SET_LABEL_FIRST:
+		settings_read(&st);
+		return (st.updown_home & SETTINGS_HOME_LABEL_FIRST) != 0;
 	case UI_SET_LOW_BATTERY:
 		settings_read(&st);
 		return st.low_batt_pct;
@@ -287,9 +304,15 @@ __attribute__((noinline)) static int32_t stored_get(uint8_t id)
 #if CONFIG_DMR_DATA_CORE
 	case UI_SET_CHECK_REPLY:
 	case UI_SET_ALERT_ANSWER:
-	case UI_SET_POS_REPLY: {
+	case UI_SET_POS_REPLY:
+	case UI_SET_ARS_SERVER:
+	case UI_SET_IP_GATEWAY: {
 		dmrDataSettings_t ds;
 		dmr_data_get_settings(&ds);
+		if (data_row_key(id) != 0) {
+			const codeplug_key_row_t *k = codeplug_keys_find(radio_keys, RADIO_KEYS_N, data_row_key(id));
+			return k != NULL ? (int32_t)codeplug_keys_field(k, &ds) : 0;
+		}
 		return id == UI_SET_CHECK_REPLY ? ds.radioCheckReply : id == UI_SET_ALERT_ANSWER ? ds.callAlertAck :
 			ds.lrrpReply;
 	}
@@ -322,6 +345,17 @@ __attribute__((noinline)) static int32_t stored_get(uint8_t id)
 	case UI_SET_USB_FIXED_LINK:
 		settings_read(&st);
 		return (st.net_flags & SETTINGS_NET_FIXED_LINK) != 0;
+#endif
+#if CONFIG_POSITION
+	case UI_SET_POS_SOURCE:
+	case UI_SET_POS_FIXED_LAT:
+	case UI_SET_POS_FIXED_LON:
+	case UI_SET_POS_DMR_CALLS: {
+		position_cfg_t pc;
+		position_get_cfg(&pc);
+		return id == UI_SET_POS_SOURCE ? pc.pref : id == UI_SET_POS_FIXED_LAT ? pc.fix_lat :
+		       id == UI_SET_POS_FIXED_LON ? pc.fix_lon : pc.dmr_gps;
+	}
 #endif
 	default:
 		return ui_svc_ram_get(id);
@@ -389,6 +423,12 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 #endif
 		st = settings_begin();
 		st->ui_flags = (uint8_t)(value != 0 ? st->ui_flags | ui_flag(id) : st->ui_flags & ~ui_flag(id));
+		settings_end(hal_millis());
+		return true;
+	case UI_SET_LABEL_FIRST:
+		st = settings_begin();
+		st->updown_home = (uint8_t)(value != 0 ? st->updown_home | SETTINGS_HOME_LABEL_FIRST :
+					    st->updown_home & ~SETTINGS_HOME_LABEL_FIRST);
 		settings_end(hal_millis());
 		return true;
 	case UI_SET_VIBRATE:
@@ -566,6 +606,9 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		dmr_data_set_settings(&ds);	// the radio core saves the data service's settings when they change
 		return true;
 	}
+	case UI_SET_ARS_SERVER:
+	case UI_SET_IP_GATEWAY:
+		return data_id_post(data_row_key(id), (uint32_t)value);
 #endif
 	case UI_SET_MSG_FORMAT:
 #if CONFIG_DMR_SMS
@@ -607,6 +650,32 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 					   ((value & UI_DUAL_B_SEL) ? SETTINGS_DUAL_B_SEL : 0));
 		settings_end(hal_millis());
 		return true;
+#endif
+#if CONFIG_POSITION
+	case UI_SET_POS_SOURCE:
+	case UI_SET_POS_FIXED_LAT:
+	case UI_SET_POS_FIXED_LON:
+	case UI_SET_POS_DMR_CALLS: {
+		position_cfg_t pc;
+		position_get_cfg(&pc);
+		if (id == UI_SET_POS_SOURCE) {
+			if (value < 0 || value >= POSITION_PREF_COUNT)
+				return false;
+			pc.pref = (uint8_t)value;
+		} else if (id == UI_SET_POS_FIXED_LAT) {
+			if (value < -900000000 || value > 900000000)
+				return false;
+			pc.fix_lat = value;
+		} else if (id == UI_SET_POS_FIXED_LON) {
+			if (value < -1800000000 || value > 1800000000)
+				return false;
+			pc.fix_lon = value;
+		} else {
+			pc.dmr_gps = value != 0;
+		}
+		position_set_cfg(&pc, hal_millis());	// in use at once, and saved
+		return true;
+	}
 #endif
 	default:
 		return ui_svc_ram_set(id, value);
@@ -785,6 +854,38 @@ static bool dmr_id_post(uint32_t id)
 		return false;
 	job.id = id;
 	return cp_post(dmr_id_job);
+}
+#endif
+
+#if CONFIG_DMR_DATA_CORE
+// The ARS server or the IP gateway (Settings > Connections > Data services), set as every keyed setting is
+// (docs/spec/codeplug-settings.md 5): the key is written when the settings area can be, so a CPS read shows it, and
+// the data service takes the setting, which the radio core saves as the radio's own. Not a codeplug write that asks
+// about another firmware's codeplug: there the area can't be written and holds no key, so the setting is only the
+// radio's own. Refused only when the codeplug has the key and it couldn't be updated (a CPS session holds the
+// flash), since the key would put the old value back. The key in job.channel, the ID in job.id
+static void data_id_job(void *ctx)
+{
+	(void)ctx;
+	const codeplug_key_row_t *row = codeplug_keys_find(radio_keys, RADIO_KEYS_N, job.channel);
+	dmrDataSettings_t was, set;
+	dmr_data_get_settings(&set);
+	was = set;
+	codeplug_keys_set_field(row, &set, job.id);
+	if (!codeplug_keys_store(radio_keys, RADIO_KEYS_N, &was, &set))
+		save_failed(TRN("Couldn't write the codeplug: not saved"));
+	else
+		dmr_data_set_settings(&set);
+}
+
+static bool data_id_post(uint16_t key, uint32_t id)
+{
+	const codeplug_key_row_t *row = codeplug_keys_find(radio_keys, RADIO_KEYS_N, key);
+	if (row == NULL || !codeplug_keys_valid(row, id) || job_busy())
+		return false;
+	job.channel = key;
+	job.id = id;
+	return storage_job_post(data_id_job, NULL);
 }
 #endif
 

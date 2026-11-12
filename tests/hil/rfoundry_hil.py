@@ -308,11 +308,6 @@ class Radio:
                             foreign.add(port)
                         continue
                     self.link, self.port = link, port
-                    # A transmit arm is RAM only: a test that keys right after its restart needs it back now
-                    try:
-                        self.hwopts_back()
-                    except DebugLinkError as e:
-                        print(f"rfoundry-hil: hardware options not set back after {what}: {e}")
                     return
                 except (DebugLinkError, OSError):
                     # A serial hub takes one client per port: a link left open would lock out every later try.
@@ -632,31 +627,11 @@ class Radio:
                 if time.monotonic() >= end:
                     raise
 
-    def hwopt_baseline(self):
-        """Remember the board's hardware options as the session found them (hwopts_back puts them back)"""
-        try:
-            self._hwopts_start = [o["value"] for o in self.link.hwopts()]
-        except DebugLinkError:     # firmware without HWOPT
-            self._hwopts_start = []
-
-    def hwopts_back(self):
-        """Set back a hardware option a restart reset: one that holds for a power cycle only (a bring-up transmit
-        arm) is lost when a test restarts the radio, and every later test would then fail as if the firmware did. An
-        option that needs a restart to apply is left alone: a restart doesn't change a stored one."""
-        start = getattr(self, "_hwopts_start", [])
-        if not start:
-            return
-        for i, o in enumerate(self.link.hwopts()[:len(start)]):
-            if o["value"] != start[i] and start[i] >= 0 and not o["restart"]:
-                self.link.hwopt_set(i, start[i])
-                print(f"rfoundry-hil: hardware option {o['name']!r} was reset (a restart?): set back")
-
     def restore(self, snap):
-        """Put back what snapshot() saw: monitor, zone, VFO or channel position, temporary changes, power, squelch, and
-        the session's hardware options (hwopts_back). The VFO's own frequency is not known while on a channel; tests
-        that change it restore it themselves (vfo_session)."""
+        """Put back what snapshot() saw: monitor, zone, VFO or channel position, temporary changes, power and squelch.
+        The VFO's own frequency is not known while on a channel; tests that change it restore it themselves
+        (vfo_session)."""
         L = self.link
-        self.hwopts_back()
         cur = self.core()
         if cur.get("monitor") != snap["monitor"]:
             L.monitor(snap["monitor"] == "1")

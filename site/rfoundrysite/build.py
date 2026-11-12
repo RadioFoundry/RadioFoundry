@@ -754,7 +754,7 @@ class Site:
 			pages = self.docs.section_pages(sec)
 			if not pages:
 				continue
-			links = "".join('<li><a href="{{home}}%s">%s</a></li>' % (p["out"], html.escape(p["title"]))
+			links = "".join('<li><a href="{{home}}%s">%s</a></li>' % (p["out"], html.escape(self.docs.title_for(p, lang)))
 					for p in pages)
 			sections.append(self.tpl.partial("docs_section", {
 				"title": self.t(lang, "docs.section." + sec), "blurb": self.t(lang, "docs.blurb." + sec),
@@ -770,7 +770,7 @@ class Site:
 				here = posixpath.dirname(p["out"])
 				side = "".join('<li><a href="%s"%s>%s</a></li>' % (
 					posixpath.relpath(q["out"], here), ' aria-current="page"' if q is p else "",
-					html.escape(q["title"])) for q in pages)
+					html.escape(self.docs.title_for(q, lang))) for q in pages)
 				toc_html = "".join('<li class="l%d"><a href="#%s">%s</a></li>' % (lvl, hid, html.escape(text))
 						   for lvl, hid, text in toc)
 				prev_next = ""
@@ -778,15 +778,16 @@ class Site:
 					prev = pages[i - 1] if i > 0 else None
 					nxt = pages[i + 1] if i + 1 < len(pages) else None
 					prev_next = "".join('<a class="%s" href="%s">%s</a>' % (cls, posixpath.relpath(q["out"], here),
-												 html.escape(q["title"]))
-							    for cls, q in (("prev", prev), ("next", nxt)) if q)
+										 html.escape(self.docs.title_for(q, lang)))
+						    for cls, q in (("prev", prev), ("next", nxt)) if q)
 				ctx = {"body": body, "side": side, "toc": toc_html, "section": self.t(lang, "docs.section." + sec),
 				       "source": "%s/blob/%s/%s" % (self.repo_url, self.ref, p["src"]), "prev_next": prev_next,
 				       "fallback": ('<p class="notice">%s</p>' % html.escape(self.t(lang, "docs.fallback")))
 				       if fallback else ""}
 				if fallback:	# the default language's text on another language's page: say so to browsers and readers
 					ctx["body"] = '<div lang="%s">%s</div>' % (self.i18n.default, body)
-				self.page(lang, p["out"], p["title"], self.tpl.render("doc", ctx, lang), "doc", nav="docs")
+				self.page(lang, p["out"], self.docs.title_for(p, lang), self.tpl.render("doc", ctx, lang), "doc",
+					  nav="docs")
 
 	def not_found(self, lang):
 		"""404.html in each language's tree: Pages serves the one nearest the missing address (/es/x: es/404.html)."""
