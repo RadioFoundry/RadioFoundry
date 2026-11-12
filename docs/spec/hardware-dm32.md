@@ -802,7 +802,7 @@ symbol is 3.45 ms after it. The PA keys up from the power cal table ([pa-keyup.m
 window is 1.5 ms on both bands. UHF is measured with `tools/bench/pa_cal.py` ([pa-keyup.md](pa-keyup.md) 6) over the
 air on the SDR bench and judged by its shape (`tools/bench/pa_shape.py`): dead zone 79.3 % of the low row's drive, knee
 500 µs, slope 1350 µs, the PA at 0.9 ms and a boost's end at 0.4 ms. Every level boosts. The four lower levels: -3 dB
-point 0.07-0.58 ms before the first symbol, under 1 dB over, 10-symbol mean and RMS within 0.5 dB of the level. The top
+point 0.03-0.58 ms before the first symbol, under 1 dB over, 10-symbol mean and RMS within 0.5 dB of the level. The top
 level creeps: -3 dB at 0.12-0.16 ms before the first symbol, then its last 2 dB over about 2 ms (10-symbol mean -1.1 to
 -1.2 dB). Its boost is at the 1.2 × top cap, and open-loop drives up to 3000 creep the same way, so the creep is the PA's
 own (the earlier set, knee 574 µs and slope 927 µs, left level 0 2 dB over and the three upper levels creeping).

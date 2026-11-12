@@ -60,10 +60,11 @@ LINK_BACK_S = 15.0          # how long a debug link lost while keying may take t
 REPLUG_S = 300.0            # after a key run (--key-run): past LINK_BACK_S the tool asks for a replug and waits this long
 OWN_OVER_TOL_DB = 1.0       # over what the level's drive overshoots by itself: the key-up's doing
 SYM1_MIN_DB = -3.0
-# A level whose output creeps or sags: within 6 dB at once, then its last dB over milliseconds. Its key-up is timed by
-# when it is within 1 dB for good (pa_shape's up1_ms), less UP1_US: so it is late until it is at its level by the
-# first symbol, and gets the boost that brings it there. Without an envelope the edge stands in: the point CREEP_US
-# after the -6 dB crossing, when the -3 dB point comes later (a plain edge's is 0.04 to 0.13 ms after it)
+# A level whose output creeps or sags: within 6 dB at once, then its last dB over milliseconds. A level's own key-up
+# is timed by when it is within 1 dB for good (pa_shape's up1_ms), less UP1_US: so it is late until it is at its level
+# by the first symbol, and gets the boost that brings it there. An open-loop drive (the fit's points) and a key without
+# an envelope are timed by the edge: the point CREEP_US after the -6 dB crossing, when the -3 dB point comes later (a
+# plain edge's is 0.04 to 0.13 ms after it)
 CREEP_US = 150
 UP1_US = 100
 SYM1_CREEP_MIN_DB = -4.5    # a creeping level's first symbol: under its settled level by the creep, not by the key-up
@@ -304,6 +305,13 @@ def grid(levels, top, n):
     return sorted(ds)
 
 
+def score(res):
+    """How far a set's verified levels miss (lower is nearer): the levels with a fault, then how late and how far
+    over they are."""
+    return (sum(1 for m in res.values() if m["bad"]),
+            sum(max(m["rise_us"], 0) + 100 * max((m["over_db"] or 0) - OVER_MAX_DB, 0) for m in res.values()))
+
+
 def judge(m, boosted=False, own_db=0.0):
     """What is wrong with a verified level's measurement (a list of words; empty: fine). A boosted level may be
     early: it starts at the window, never before. own_db: the overshoot the level's drive gives written alone (the
@@ -484,9 +492,10 @@ def summarize(replies, a):
     off = (done.get("envelope") or {}).get("dbm_offset")
     off = a.dbfs_to_dbm if a.dbfs_to_dbm is not None else off
     sh = shape_of(use)
+    up1 = None
     if {"creep", "sag"} & set(sh.get("faults", [])) and sh["shape"].get("up1_ms") is not None:
-        creep, rise = True, max(sh["shape"]["up1_ms"] - UP1_US / 1000.0, rise if rise is not None else -1e9)
-    return {"n": len(use), "rise_us": None if rise is None else rise * 1000.0, "creep": creep,
+        up1 = max(sh["shape"]["up1_ms"] - UP1_US / 1000.0, rise if rise is not None else -1e9) * 1000.0
+    return {"n": len(use), "rise_us": None if rise is None else rise * 1000.0, "creep": creep, "up1_rise_us": up1,
             "rise3_us": None if rise3 is None else rise3 * 1000.0, "on_us": None if on is None else on * 1000.0,
             "over_db": med([r.get("overshoot_db") for r in use]), "sym1_db": med([r.get("sym1_db") for r in use]),
             "settled_dbfs": settled, "dbm": None if settled is None or off is None else settled + off,
@@ -735,6 +744,9 @@ class Cal:
         """A key's measurement into the run's record and the log, with the stops every key is checked for."""
         a = self.a
         m.update(tag=tag, mhz=mhz, level=level, drive=drive, c=c)
+        if not drive and m.get("up1_rise_us") is not None:
+            # A level's own key-up (not an open-loop drive, whose edge the fit wants) is timed by its arrival
+            m.update(rise_us=m["up1_rise_us"], creep=True)
         self.rows.append(m)
         f = lambda v, n=1: "-" if v is None else f"{v:.{n}f}"
         self.say(f"  {tag:9s} level {level} drive {drive or '-':>5} {self.watts(m):>8s}  n={m['n']:2d}  "
@@ -918,8 +930,6 @@ class Cal:
                     own.append((d, k, m["rise_us"] - TARGET_US))
             ok = not any(m["bad"] for m in res.values())
             latest = lambda r: max(m["rise_us"] for m in r.values())
-            score = lambda r: (sum(1 for m in r.values() if m["bad"]),
-                               sum(max(m["rise_us"], 0) + 100 * max((m["over_db"] or 0) - OVER_MAX_DB, 0) for m in r.values()))
             if not ok and (near is None or score(res) < score(near[1])):
                 near = (c, res)             # the nearest miss, should no round hold
             if ok and (good is None or latest(res) < latest(good[1])):
@@ -981,6 +991,13 @@ class Cal:
                      f"settle {c['settle_us']} us" + (f", ease {c['ease_pm']}" if c["ease_pm"] else ""))
         if not ok and near:
             c, res = near                   # no round held: the nearest one is the result to look at
+        if not ok and not old and all(x["n"] and x["rise_us"] is not None for x in asis.values()) and \
+                score(asis) <= score(res):
+            # Nor is it nearer than the board's own: those stand
+            self.say("  no round is nearer than the board's constants: they stand")
+            c, res = board, asis
+            for l in levels:
+                res[l].setdefault("own_over_db", 0.0)
         if a.confirm and ok:
             for l, m in zip(levels, self.keys(mhz, "confirm", [(c, l, 0) for l in levels])):
                 boosted = plan(c, drives[l], top, ref, max_drive, ahead)["boost"] > drives[l]
