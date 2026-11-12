@@ -133,7 +133,7 @@ void radio_settings_default(radio_settings_t *s)
 	s->rx_save_idle_s = 10;
 	s->battery_off_s = 0;
 	s->backlight_dim_s = 30;
-	s->backlight_off_s = 120;
+	s->backlight_off_s = board.backlight_dims_only ? 0 : 120;
 	s->reply_s = RADIO_REPLY_CODEPLUG;
 	s->roam_rssi_dbm = -105;	// ROAM_RSSI_DEFAULT
 	s->roam_hyst_db = 6;		// ROAM_HYST_DEFAULT
