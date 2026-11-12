@@ -30,8 +30,21 @@ void sb_chr(sbuf_t *b, char c)
 
 void sb_str(sbuf_t *b, const char *s)
 {
+#if CONFIG_LANG_ZH
+	// A CJK catalog's text is UTF-8 (tools/i18n.py): when the buffer has no room for a whole character, drop it whole
+	// rather than leave half of it for the text layer to draw as a box
+	while (*s) {
+		const uint8_t *p = (const uint8_t *)s;
+		int seq = ((p[0] & 0xF0) == 0xE0 && (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) ? 3 : 1;
+		if ((size_t)(b->end - b->p) < (size_t)seq)
+			return;
+		while (seq--)
+			sb_chr(b, *s++);
+	}
+#else
 	while (*s)
 		sb_chr(b, *s++);
+#endif
 }
 
 void sb_u32(sbuf_t *b, uint32_t v, int min_digits)

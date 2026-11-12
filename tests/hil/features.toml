@@ -442,12 +442,20 @@ spec = "docs/spec/ui.md"
 switch = "LANG_IT"
 spec = "docs/spec/ui.md"
 
+[feature.lang_zh]
+switch = "LANG_ZH"
+spec = "docs/spec/ui.md"
+
 [feature.lang_default_es]
 switch = "LANG_DEFAULT_ES"
 spec = "docs/spec/ui.md"
 
 [feature.lang_default_it]
 switch = "LANG_DEFAULT_IT"
+spec = "docs/spec/ui.md"
+
+[feature.lang_default_zh]
+switch = "LANG_DEFAULT_ZH"
 spec = "docs/spec/ui.md"
 
 # ── Radio core, storage and codec ──
