@@ -1738,6 +1738,14 @@ msgstr "CTCSS 范围 60.0-260.0"
 msgid "Save first: hold OK"
 msgstr "先保存：长按 OK"
 
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Air band: receive only"
+msgstr "航空波段：仅接收"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Broadcast: receive only"
+msgstr "广播：仅接收"
+
 #: core/ui/ui_menus.c
 msgid "Tones: not in this build"
 msgstr "亚音：本版本无"
@@ -3339,6 +3347,22 @@ msgid "Broadcast FM"
 msgstr "调频广播"
 
 #: core/ui/ui_screens.c
+msgid "Restart to apply"
+msgstr "请重启电台"
+
+#: core/ui/ui_screens.c
+msgid "Set: "
+msgstr "请设置: "
+
+#: core/ui/ui_screens.c
+msgid "Turn the radio off and on"
+msgstr "请关机再开机"
+
+#: core/ui/ui_screens.c
+msgid "Settings>Advanced>Hardware"
+msgstr "设置>高级>Hardware"
+
+#: core/ui/ui_screens.c
 msgid "This channel is RX only"
 msgstr "本信道仅接收"
 
@@ -3387,16 +3411,12 @@ msgid "No DMR ID in codeplug"
 msgstr "电台频率中无 DMR ID"
 
 #: core/ui/ui_screens.c
-msgid "Air band: receive only"
-msgstr "航空波段：仅接收"
-
-#: core/ui/ui_screens.c
-msgid "Broadcast: receive only"
-msgstr "广播：仅接收"
-
-#: core/ui/ui_screens.c
 msgid "Repeater channel: PTT off"
 msgstr "中继信道：PTT 关闭"
+
+#: core/ui/ui_screens.c
+msgid "Radio refused to send"
+msgstr "电台拒绝发射"
 
 #: core/ui/ui_screens.c
 msgid "Not allowed here"
@@ -3573,6 +3593,10 @@ msgstr "无时间限制"
 #: core/ui/ui_screens.c
 msgid "Can't transmit"
 msgstr "不能发射"
+
+#: core/ui/ui_screens.c
+msgid "Transmit waits for it"
+msgstr "设置前不能发射"
 
 #: core/ui/ui_screens.c
 msgid "Last activity "

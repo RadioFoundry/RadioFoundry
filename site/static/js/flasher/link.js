@@ -241,12 +241,15 @@ export class Link {
 		return parseKv(new TextDecoder().decode(await this.request(CMD.VERSION)));
 	}
 
-	// HWOPT LIST (debuglink.md 3.25): [{name, value (-1: none stored), restart, choices}]
+	// HWOPT LIST (debuglink.md 3.25): [{name, value (-1: none stored), restart, choices, state}]; state ok, ask,
+	// restart or hidden (a firmware without the key: ask while nothing is stored, else ok)
 	async hwopts() {
 		const kv = parseKv(new TextDecoder().decode(await this.request(CMD.HWOPT, new Uint8Array([0]))));
-		return Array.from({ length: Number(kv["hwopt.count"] || 0) }, (_, i) => ({
-			name: kv[`hwopt.${i}.name`] || "", value: Number(kv[`hwopt.${i}.value`] ?? -1),
-			restart: kv[`hwopt.${i}.restart`] === "1", choices: (kv[`hwopt.${i}.choices`] || "").split("|") }));
+		return Array.from({ length: Number(kv["hwopt.count"] || 0) }, (_, i) => {
+			const value = Number(kv[`hwopt.${i}.value`] ?? -1);
+			return { name: kv[`hwopt.${i}.name`] || "", value, restart: kv[`hwopt.${i}.restart`] === "1",
+				choices: (kv[`hwopt.${i}.choices`] || "").split("|"), state: kv[`hwopt.${i}.state`] || (value < 0 ? "ask" : "ok") };
+		});
 	}
 
 	// HWOPT SET: store a choice (LinkError status 7 when the radio refuses: transmitting, or the board can't store it)

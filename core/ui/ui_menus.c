@@ -19,6 +19,7 @@
 #include "radio/mic_gain.h"
 #include "radio/ref_trim.h"
 #include "radio/radio_am.h"
+#include "radio/radio_bcast.h"
 #include "input/keyassign.h"
 #if CONFIG_HOTSPOT || CONFIG_USB_NETWORK
 #include "hostlink/hostlink.h"
@@ -2344,6 +2345,13 @@ static void ced_rx_band(channel_t *c)
 	c->mode = RADIO_MODE_FM;
 }
 
+// The radio receives this RX in AM or on the broadcast receiver whatever the channel's mode, never in DMR, and ignores
+// sub-audio there (radio_sm.c listen_band)
+static bool ced_listen_band(const channel_t *c)
+{
+	return radio_am_tx_refused(c->rx_hz) || radio_bcast_band(c->rx_hz);
+}
+
 // A copy of what the radio uses now (temporary changes included), named after it: "Name 2", or the frequency
 static void ced_from_view(void)
 {
@@ -2367,7 +2375,8 @@ static void ced_from_view(void)
 
 static void ced_build(void)
 {
-	bool dmr = CONFIG_DMR && ced_ch.mode == RADIO_MODE_DMR;
+	bool listen = ced_listen_band(&ced_ch);
+	bool dmr = CONFIG_DMR && ced_ch.mode == RADIO_MODE_DMR && !listen;
 	bool edit = CONFIG_CHANNEL_EDIT;
 	bool fresh = false, changed = false;
 #if CONFIG_CHANNEL_EDIT
@@ -2378,7 +2387,8 @@ static void ced_build(void)
 	for (uint8_t r = 0; r < CE_COUNT; r++) {
 		bool fm_only = r == CE_BW || r == CE_RX_TONE || r == CE_TX_TONE || r == CE_VOX;
 		bool dmr_only = r >= CE_CC && r <= CE_ALIAS2;
-		if ((fm_only && dmr) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR))
+		bool tone = r == CE_RX_TONE || r == CE_TX_TONE;
+		if ((fm_only && dmr) || (tone && listen) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR))
 			continue;
 		if ((r == CE_ZONES || r == CE_GO || r == CE_SHARE || r == CE_SAVE_NEW) && fresh)
 			continue;
@@ -2561,7 +2571,11 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 		sb_u32(&b, ced_num, 1);
 		break;
 	case CE_MODE:
-		sb_str(&b, ch->mode == RADIO_MODE_DMR ? "DMR" : "FM");
+		// What the radio does with it: a listen band is AM or FM whatever the channel says
+		if (radio_am_tx_refused(ch->rx_hz))
+			sb_str(&b, "AM");
+		else
+			sb_str(&b, ch->mode == RADIO_MODE_DMR && !ced_listen_band(ch) ? "DMR" : "FM");
 		break;
 	case CE_RX:
 		sb_freq(&b, ch->rx_hz);
@@ -2965,7 +2979,14 @@ static void chinfo_select(uint16_t i, bool hold)
 	uint8_t r = ced_rows[i];
 	switch (r) {
 	case CE_NAME: ui_text_open(c->name, CODEPLUG_NAME_LEN); break;
-	case CE_MODE: c->mode = c->mode == RADIO_MODE_DMR ? RADIO_MODE_FM : RADIO_MODE_DMR; break;
+	case CE_MODE:
+		// No DMR in a listen band: AM in the air band, FM on the broadcast receiver
+		if (ced_listen_band(c)) {
+			c->mode = RADIO_MODE_FM;
+			ui_toast(radio_am_tx_refused(c->rx_hz) ? TR("Air band: receive only") : TR("Broadcast: receive only"));
+		} else
+			c->mode = c->mode == RADIO_MODE_DMR ? RADIO_MODE_FM : RADIO_MODE_DMR;
+		break;
 	case CE_RX:
 	case CE_TX:
 	case CE_ID:
@@ -5747,12 +5768,24 @@ uint8_t ui_set_group_count(void) { return GROUPS; }
 // In English, as Find matches the name in the language in use and in English (it calls tr() on it)
 const char *ui_set_group_name(uint8_t g) { return g < GROUPS ? groups[g].name : ""; }
 
+#define HWOPT_ROWS_MAX		15
+
+// The hardware options Settings > Advanced > Hardware lists (hal_hwopt.h): those the board didn't detect
+static uint16_t hwopt_visible(void)
+{
+	uint16_t n = 0;
+	for (uint8_t k = 0; board.hwopts != NULL && k < board.hwopt_count && n < HWOPT_ROWS_MAX; k++) {
+		n += hwopt_state(&board.hwopts[k]) != HWOPT_ST_HIDDEN;
+	}
+	return n;
+}
+
 // Settings a radio without a battery (or a broadcast receiver, or the key) doesn't have are left out of the list, not
 // shown disabled
 static bool set_hidden(const set_item_t *s)
 {
 	if (s->type == ST_ACTION && s->id == SA_HARDWARE)
-		return board.hwopts == NULL || board.hwopt_count == 0;
+		return hwopt_visible() == 0;	// none, or every one detected
 #if CONFIG_KEY_ASSIGN
 	if (s->type != ST_ACTION && s->id >= UI_SET_KEY_FIRST && s->id <= UI_SET_KEY_LAST) {
 		key_labels();
@@ -6150,16 +6183,26 @@ static const ui_scr_def_t group_screen = {
 // argument (no static: RAM is tight on some radios): the row + 1 in the high byte, 0 = none, the choice in the low one.
 // Stepping another row drops it
 
-#define HWOPT_ROWS_MAX		15
-
 static void hwopt_enter(void)
 {
 	ui_frame()->arg = 0;
 }
 
+// The rows: the board's options less those it detected (HWOPT_ST_HIDDEN)
 static uint16_t hwopt_count(void)
 {
-	return board.hwopts != NULL ? (board.hwopt_count < HWOPT_ROWS_MAX ? board.hwopt_count : HWOPT_ROWS_MAX) : 0;
+	return hwopt_visible();
+}
+
+// Row i's option
+static const hal_hwopt_t *hwopt_row(uint16_t i)
+{
+	for (uint8_t k = 0; board.hwopts != NULL && k < board.hwopt_count; k++) {
+		if (hwopt_state(&board.hwopts[k]) != HWOPT_ST_HIDDEN && i-- == 0) {
+			return &board.hwopts[k];
+		}
+	}
+	return &board.hwopts[0];	// not reached: i < hwopt_count()
 }
 
 static int8_t hwopt_shown(uint16_t i, int8_t stored)
@@ -6170,7 +6213,7 @@ static int8_t hwopt_shown(uint16_t i, int8_t stored)
 
 static void hwopt_item(uint16_t i, ui_item_t *it)
 {
-	const hal_hwopt_t *o = &board.hwopts[i];
+	const hal_hwopt_t *o = hwopt_row(i);
 	int8_t stored = o->get();
 	int8_t c = hwopt_shown(i, stored);
 	sbuf_t b;
@@ -6180,13 +6223,13 @@ static void hwopt_item(uint16_t i, ui_item_t *it)
 	sb_str(&b, c >= 0 && c < o->count ? o->choices[c] : "Not set");
 	if (c != stored)
 		sb_chr(&b, '*');	// shown, not stored yet
-	if (stored == HWOPT_NONE)
+	if (hwopt_state(o) == HWOPT_ST_ASK)
 		it->flags |= UI_ITEM_WARN;
 }
 
 static void hwopt_select(uint16_t i, bool hold)
 {
-	const hal_hwopt_t *o = &board.hwopts[i];
+	const hal_hwopt_t *o = hwopt_row(i);
 	int8_t stored = o->get();
 	int8_t c = hwopt_shown(i, stored);
 	if (!hold) {
@@ -6201,7 +6244,9 @@ static void hwopt_select(uint16_t i, bool hold)
 		ui_toast("Not stored");
 	} else {
 		ui_frame()->arg = 0;
-		ui_toast(o->restart ? "Stored: restart to apply" : "Stored");
+		// A board that reports the state says whether a restart is still due (none when the choice is what runs)
+		bool restart = o->state != NULL ? hwopt_state(o) == HWOPT_ST_RESTART : o->restart;
+		ui_toast(restart ? "Stored: restart to apply" : "Stored");
 	}
 }
 

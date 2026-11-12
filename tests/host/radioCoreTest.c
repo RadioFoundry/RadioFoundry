@@ -182,8 +182,20 @@ static void fake_gps_enable(bool on)
 	gps_enabled = on;
 }
 
+// A hardware option (hal_hwopt.h) whose state the tests set; hidden (detected) unless a test says otherwise
+static uint8_t fake_hwopt_st = HWOPT_ST_HIDDEN;
+static const char *const fake_hwopt_choices[] = { "A", "B" };
+static int8_t fake_hwopt_get(void) { return 0; }
+static bool fake_hwopt_set(uint8_t c) { (void)c; return true; }
+static uint8_t fake_hwopt_state(void) { return fake_hwopt_st; }
+static const hal_hwopt_t fake_hwopts[] = {
+	{ "Revision", 2, fake_hwopt_choices, fake_hwopt_get, fake_hwopt_set, true, fake_hwopt_state },
+};
+
 const board_t board = {
 	.name = "fake",
+	.hwopts = fake_hwopts,
+	.hwopt_count = 1,
 	.caps = CAP_GPS,
 	.gps_enable = fake_gps_enable,
 	.gps_present = fake_gps_present,
@@ -4870,10 +4882,27 @@ static void test_error_paths(void)
 	run(20);
 	tx_fail = true;
 	req(RREQ_PTT, 1);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED);
 	run(RADIO_LED_DENY_STEPS * RADIO_LED_DENY_STEP_MS);
 	CHECK(!hw.led[LED_RED]);	// after the deny flash: dark, nothing on air
 	req(RREQ_PTT, 0);
+	// A hardware option still unset or not applied: the refusal names it, never the band
+	for (uint8_t st = HWOPT_ST_ASK; st <= HWOPT_ST_RESTART; st++) {
+		fake_hwopt_st = st;
+		req(RREQ_PTT, 1);
+		CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HWOPT);
+		req(RREQ_PTT, 0);
+	}
+	// The core refuses it itself, even where the board would key (a restart due, the old choice still confirmed)
+	tx_fail = false;
+	for (uint8_t st = HWOPT_ST_ASK; st <= HWOPT_ST_RESTART; st++) {
+		fake_hwopt_st = st;
+		int calls = hw.tx_calls;
+		req(RREQ_PTT, 1);
+		CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HWOPT && hw.tx_calls == calls);
+		req(RREQ_PTT, 0);
+	}
+	fake_hwopt_st = HWOPT_ST_HIDDEN;
 	tx_fail = false;
 
 	// No retuning while transmitting: channel, zone, VFO and scan requests wait for the release
@@ -4914,10 +4943,19 @@ static void test_error_paths(void)
 	tx_fail = true;
 	req(RREQ_PTT, 1);
 	run(100);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && sim.tx_begins == 0);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && sim.tx_begins == 0);
 	req(RREQ_PTT, 0);
 	run(100);
-	tx_fail = false;
+	tx_fail = false;	// the core refuses a pending option even where the board would key
+	for (uint8_t st = HWOPT_ST_ASK; st <= HWOPT_ST_RESTART; st++) {
+		fake_hwopt_st = st;
+		req(RREQ_PTT, 1);
+		run(100);
+		CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HWOPT && sim.tx_begins == 0);
+		req(RREQ_PTT, 0);
+		run(100);
+	}
+	fake_hwopt_st = HWOPT_ST_HIDDEN;
 	sim.reject_next = true;
 	req(RREQ_PTT, 1);
 	run(300);

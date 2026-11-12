@@ -23,18 +23,22 @@ void radio_get_view(radio_view_t *v)
 }
 
 static int8_t rev = HWOPT_NONE;
-static bool arm, arm_ok = true;
+static int8_t mode;
+static bool mode_ok = true;
+static uint8_t mode_st = HWOPT_ST_OK;
 
 static int8_t rev_get(void) { return rev; }
 static bool rev_set(uint8_t c) { rev = (int8_t)c; return true; }
-static int8_t arm_get(void) { return arm; }
-static bool arm_set(uint8_t c) { if (!arm_ok) return false; arm = c != 0; return true; }
+static int8_t mode_get(void) { return mode; }
+static bool mode_set(uint8_t c) { if (!mode_ok) return false; mode = (int8_t)c; return true; }
+static uint8_t mode_state(void) { return mode_st; }
 
+// A revision without a state hook (asks while unset) and a plain option that reports its state
 static const char *const revs[] = { "V1-V3", "V4", "V4A/V5" };
-static const char *const arms[] = { "Off", "Armed" };
+static const char *const modes[] = { "Off", "On" };
 static const hal_hwopt_t opts[] = {
-	{ "Board revision", 3, revs, rev_get, rev_set, true },
-	{ "Transmit", 2, arms, arm_get, arm_set, false },
+	{ "Board revision", 3, revs, rev_get, rev_set, true, NULL },
+	{ "Mode", 2, modes, mode_get, mode_set, false, mode_state },
 };
 
 #ifdef HWOPT_NONE_BOARD
@@ -70,11 +74,20 @@ int main(void)
 	CHECK(n > 1 && out[0] == DL_ST_OK);
 	CHECK(has("hwopt.count=2\n") && has("hwopt.0.name=Board revision\n") && has("hwopt.0.value=-1\n"));
 	CHECK(has("hwopt.0.restart=1\n") && has("hwopt.0.choices=V1-V3|V4|V4A/V5\n") && has("hwopt.1.restart=0\n"));
-	CHECK(has("hwopt.1.choices=Off|Armed\n"));
+	CHECK(has("hwopt.1.choices=Off|On\n"));
+	CHECK(has("hwopt.0.state=ask\n") && has("hwopt.1.state=ok\n"));
+	CHECK(board_hwopt_pending() == &opts[0]);
+	mode_st = HWOPT_ST_HIDDEN;
+	cmd(list, 1);
+	CHECK(has("hwopt.1.state=hidden\n"));
+	mode_st = HWOPT_ST_RESTART;
+	cmd(list, 1);
+	CHECK(has("hwopt.1.state=restart\n"));
+	mode_st = HWOPT_ST_OK;
 
 	CHECK(cmd(set_v5, 3) == 1 && out[0] == DL_ST_OK && rev == 2);
 	cmd(list, 1);
-	CHECK(has("hwopt.0.value=2\n"));
+	CHECK(has("hwopt.0.value=2\n") && has("hwopt.0.state=ok\n") && board_hwopt_pending() == NULL);
 
 	// Unknown option or choice, a bad length, an unknown operation
 	const uint8_t bad_opt[] = { DL_HWOPT_OP_SET, 2, 0 }, bad_choice[] = { DL_HWOPT_OP_SET, 1, 2 };
@@ -86,14 +99,14 @@ int main(void)
 	CHECK(cmd(list, 0) == 1 && out[0] == DL_ST_BAD_ARG);
 
 	// The board refuses; the radio transmits
-	const uint8_t arm_on[] = { DL_HWOPT_OP_SET, 1, 1 };
-	arm_ok = false;
-	CHECK(cmd(arm_on, 3) == 1 && out[0] == DL_ST_REFUSED && !arm);
-	arm_ok = true;
+	const uint8_t mode_on[] = { DL_HWOPT_OP_SET, 1, 1 };
+	mode_ok = false;
+	CHECK(cmd(mode_on, 3) == 1 && out[0] == DL_ST_REFUSED && mode == 0);
+	mode_ok = true;
 	radio_state = RS_TX;
-	CHECK(cmd(arm_on, 3) == 1 && out[0] == DL_ST_REFUSED && !arm);
+	CHECK(cmd(mode_on, 3) == 1 && out[0] == DL_ST_REFUSED && mode == 0);
 	radio_state = RS_IDLE;
-	CHECK(cmd(arm_on, 3) == 1 && out[0] == DL_ST_OK && arm);
+	CHECK(cmd(mode_on, 3) == 1 && out[0] == DL_ST_OK && mode == 1);
 #endif
 
 	printf("hwoptTest: %s (%d failures)\n", failures ? "FAILED" : "passed", failures);

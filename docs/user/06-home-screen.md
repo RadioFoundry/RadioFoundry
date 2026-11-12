@@ -17,7 +17,7 @@ is OK.
 | Channel | The channel number and name, as large as they fit. In the VFO: the frequency |
 | Talk target | An arrow and where **PTT** goes. DMR: a talkgroup or person, as "TG 91 World"; a name too long to fit is cut ("TG 201 Main O…") before it is dropped. FM: the transmit frequency. During the reply window: a return arrow in a filled box, and a countdown. To read the talkgroup's name first ("World TG 91"), turn on **Settings > Display > Talkgroup name first**, or give a side key **TG name / number** (Settings > Keys) |
 | Chips | DMR: timeslot, color code, power. FM: tone, bandwidth, power, squelch level |
-| Activity | Idle: the last station heard and how long ago, or "No calls heard yet". Receiving or transmitting: see below |
+| Activity | Idle: the last station heard and how long ago, or "No calls heard yet". A setting the radio needs before it can transmit comes first, in the warning color ("Set: Board revision", or "Restart to apply"), with the hint row saying where to set it. Receiving or transmitting: see below |
 | Hint row | What the nearest keys do now |
 
 A field changed for now (a temporary change) is drawn in a highlight color on Home, and the hint row says
@@ -97,6 +97,9 @@ once with the deny tone. The screen says why, and the hint row says what to do:
 | Hotspot mode: PTT off | The radio is a hotspot | Press **OK** to leave hotspot mode |
 | No DMR ID in codeplug | The codeplug has no DMR ID | Set your ID in the codeplug |
 | DMR modem not running | The DMR chip didn't start | Restart the radio. See [Troubleshooting](20-troubleshooting.md) |
+| Set: Board revision (or another hardware option) | The radio can't detect it and won't transmit until it knows | Settings > Advanced > Hardware ([Radios](23-radios.md) says what to pick) |
+| Restart to apply | A hardware option was changed and applies from the next start | Switch the radio off and on |
+| Radio refused to send | The radio's transmitter refused this transmission | "Release PTT, try again". If it repeats, restart the radio |
 | Modem refused to send | The DMR chip refused the call, or took it and sent nothing for 1.5 s | "Release PTT, try again". If it repeats, restart the radio |
 
 The low and critical battery levels also limit transmitting. See [Battery and power](16-battery-and-power.md).
