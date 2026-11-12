@@ -130,6 +130,9 @@ typedef struct {
 	void (*gps_enable)(bool on);
 	// Optional: a second receiver, so dual watch hears both channels at once (hal_rx2.h); NULL on one-receiver radios
 	const hal_rx2_t *rx2;
+	// Optional: the radio is about to jump to the RAM monitor (CONFIG_STUB_ENTRY), past the transmit checks and
+	// tx_off, interrupts still on. For what the monitor can't do itself: status LEDs on another SoC show it is running
+	void (*stub_entering)(void);
 	// Optional: bench access to the radio's RF chip registers (the debug link's CHIP_REG, docs/spec/debuglink.md
 	// 3.24). chip and page are the board's numbering (its hardware page lists them), chip below 0xFF (the SoC's).
 	// Writes val when write, then sets *val to the register as read back (a write-only register: the value written).

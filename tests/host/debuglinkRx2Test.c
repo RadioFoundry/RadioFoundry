@@ -55,7 +55,21 @@ static void st(rx2_status_t *s)
 static void bridge(void) { bridges++; }
 static void restart(void) { restarts++; }
 
-static hal_rx2_t rx2 = { .status = st, .bridge = bridge, .restart = restart };
+// FORWARD: the request it got, and the reply it gives (0: no answer)
+static uint8_t fwd_req[80], fwd_len;
+static size_t fwd_reply;
+static size_t forward(const uint8_t *req, uint8_t len, uint8_t *o, size_t cap)
+{
+	memcpy(fwd_req, req, len);
+	fwd_len = len;
+	size_t n = fwd_reply < cap ? fwd_reply : cap;
+	for (size_t i = 0; i < n; i++) {
+		o[i] = (uint8_t)(0xB0 + i);
+	}
+	return n;
+}
+
+static hal_rx2_t rx2 = { .status = st, .bridge = bridge, .restart = restart, .forward = forward };
 board_t board;
 
 // --- helpers ---
@@ -79,6 +93,8 @@ static void reset(void)
 	board.rx2 = &rx2;
 	rx2.bridge = bridge;
 	rx2.restart = restart;
+	rx2.forward = forward;
+	fwd_reply = 0;
 	fake_state = state_after_delay = RS_RX;
 	up = false;
 	bridges = restarts = 0;
@@ -91,12 +107,13 @@ static void test_info(void)
 	reset();
 	uint8_t req = DL_RX2_OP_INFO;
 	CHECK(cmd(&req, 1) == 2 && out[0] == DL_ST_OK);
-	CHECK(out[1] == (DL_RX2_F_PRESENT | DL_RX2_F_BRIDGE | DL_RX2_F_RESTART));
+	CHECK(out[1] == (DL_RX2_F_PRESENT | DL_RX2_F_BRIDGE | DL_RX2_F_RESTART | DL_RX2_F_FORWARD));
 	up = true;
 	cmd(&req, 1);
-	CHECK(out[1] == (DL_RX2_F_PRESENT | DL_RX2_F_UP | DL_RX2_F_BRIDGE | DL_RX2_F_RESTART));
+	CHECK(out[1] == (DL_RX2_F_PRESENT | DL_RX2_F_UP | DL_RX2_F_BRIDGE | DL_RX2_F_RESTART | DL_RX2_F_FORWARD));
 	rx2.bridge = NULL;
 	rx2.restart = NULL;
+	rx2.forward = NULL;
 	cmd(&req, 1);
 	CHECK(out[1] == (DL_RX2_F_PRESENT | DL_RX2_F_UP));
 	board.rx2 = NULL;
@@ -154,12 +171,35 @@ static void test_unavailable(void)
 	CHECK(cmd(&unk, 1) == 1 && out[0] == DL_ST_BAD_ARG);
 }
 
+static void test_forward(void)
+{
+	reset();
+	up = true;
+	uint8_t req[4] = { DL_RX2_OP_FORWARD, 0x05, 0x01, 0x02 };	// GET_VIEW-like: command and payload
+	fwd_reply = 3;
+	CHECK(cmd(req, 4) == 4 && out[0] == DL_ST_OK && out[1] == 0xB0 && out[3] == 0xB2);
+	CHECK(fwd_len == 3 && fwd_req[0] == 0x05 && fwd_req[2] == 0x02);
+	CHECK(cmd(req, 2) == 4 && fwd_len == 1);		// a command without payload
+	// The reply cut to the caller's room, A's status counted
+	fwd_reply = 100;
+	CHECK(cmd(req, 2) == sizeof out && out[0] == DL_ST_OK);
+	// No answer, no command, no second SoC or no FORWARD
+	fwd_reply = 0;
+	CHECK(cmd(req, 2) == 1 && out[0] == DL_ST_UNAVAILABLE);
+	CHECK(cmd(req, 1) == 1 && out[0] == DL_ST_BAD_ARG);
+	rx2.forward = NULL;
+	CHECK(cmd(req, 2) == 1 && out[0] == DL_ST_UNAVAILABLE);
+	board.rx2 = NULL;
+	CHECK(cmd(req, 2) == 1 && out[0] == DL_ST_UNAVAILABLE);
+}
+
 int main(void)
 {
 	test_info();
 	test_bridge();
 	test_restart();
 	test_unavailable();
+	test_forward();
 	printf("debuglinkRx2Test: %d checks, %d failures\n", checks, failures);
 	return failures != 0;
 }

@@ -17,6 +17,10 @@ endif
 # the run-time arm for the power cycle, a stored board revision and plausible PA rows. n leaves a receive-only image
 CONFIG_MD9600_TX ?= y
 CONFIG_MD9600_DMR_TX ?= y
+# No DMR, no DMR transmit: its per-burst keying uses the DMR key-up rule (core/radio/pa_keyup.c)
+ifeq ($(CONFIG_DMR),n)
+override CONFIG_MD9600_DMR_TX := n
+endif
 # This board's own switches (config_md9600.h), not feature switches: no other radio has them
 MCU_DEFS += $(foreach s,V1V3 V4 V5 TX DMR_TX,-DCONFIG_MD9600_$(s)=$(if $(filter y,$(CONFIG_MD9600_$(s))),1,0))
 BOARD_DIRS += $(if $(filter y,$(CONFIG_MD9600_V1V3)),drivers/rf/sky72310)

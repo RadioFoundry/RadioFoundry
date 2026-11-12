@@ -17,6 +17,49 @@ GET_VERSION, GET_STATUS = 0x00, 0x01
 
 
 @pytest.mark.feature("hotspot")
+def test_line_noise_no_mode_change(radio):
+    """Bytes a disturbed line reads (a lone 0xE0, low pulses) leave an idle port idle: no hotspot, no CPS session"""
+    if "HOTSPOT" not in radio.features():
+        skip("not_built", "built without the hotspot")
+    import mmdvm_probe
+    before = radio.wait_for(lambda x: x.get("hostlink") == "idle", 25, sections=("hotspot",), what="an idle port")
+    with radio.released() as port:
+        link = mmdvm_probe.Link(port, dtr=False)
+        try:
+            for noise in (b"\xE0", b"\xFC", b"\xE0\x00", b"\x80", b"\xE0\xF0\x00", b"\xF0\xFE", b"\xF0CDRWX"):
+                link.s.write(noise)
+                link.s.flush()
+                time.sleep(0.03)
+        finally:
+            link.s.close()
+    v = radio.view(["hotspot"])
+    assert v.get("hostlink") == "idle", v
+    assert int(v["hostlink.noise"]) > int(before["hostlink.noise"]), v
+
+
+@pytest.mark.feature("hotspot")
+def test_debug_hold_keeps_the_port(radio):
+    """While a debug client holds the port, even a well-formed MMDVM, CPS or KISS opening leaves it idle"""
+    if "HOTSPOT" not in radio.features():
+        skip("not_built", "built without the hotspot")
+    L = radio.link
+    before = radio.wait_for(lambda x: x.get("hostlink") == "idle", 25, sections=("hotspot",), what="an idle port")
+    if not L.hold(True):
+        skip("not_built", "built without LINK_HOLD")
+    try:
+        for noise in (bytes([0xE0, 3, 0]), b"C\x00", bytes([0xC0, 0x00])):
+            time.sleep(0.02)
+            L.s.write(noise)
+            L.s.flush()
+            time.sleep(0.05)
+            v = radio.view(["hotspot"])
+            assert v.get("hostlink") == "idle", (noise, v)
+        assert int(v["hostlink.noise"]) > int(before["hostlink.noise"]), v
+    finally:
+        L.hold(True)                    # as the session had it
+
+
+@pytest.mark.feature("hotspot")
 def test_hotspot_version_status(radio):
     if "HOTSPOT" not in radio.features():
         skip("not_built", "built without the hotspot")

@@ -69,6 +69,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [codeplug-settings.md](codeplug-settings.md) | The codeplug settings area: keyed settings the open-firmware layout has no field for (ARS server, IP gateway) |
 | [settings-store.md](settings-store.md) | Settings store and safe flash writes |
 | [nand-sectors.md](nand-sectors.md) | NOR-like 4 KB sectors over NAND, for the settings store on NAND radios |
+| [spi-nand-lut.md](spi-nand-lut.md) | The stock firmware's block map over an SPI NAND, for reading its partitions |
 
 ## Codecs
 

@@ -8,7 +8,7 @@
 #include "debuglink/dl_fmt.h"
 #include "hal_time.h"
 
-#if CONFIG_DEBUGLINK
+#if CONFIG_DLOG
 
 #ifdef DLOG_NO_RTOS	// host tests
 #define LOCK()

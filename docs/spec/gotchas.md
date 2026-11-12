@@ -196,6 +196,22 @@ plays 4 ms early or late until the halves line up again. No samples are lost, so
 every push waits 200 µs after it saw the bit clear (`platform/hrc7000/prompt_fifo.h`, `modem-hrc7000.md` 8.4); check
 speaker audio with the sweep (`test_speaker_sweep`), not with steady tones alone. Radios: the HR_C7000 boards.
 
+**2.12 Don't spin on a full UART TX FIFO in a task.** At 115200 a 1 KB debug link reply takes about 90 ms, and a writer
+that spins keeps the CPU the whole time. A host polling the debug link through a 3 s DMR transmission (an emergency
+call's hot mic) kept the idle task out for about 3 s, and the watchdog's hang check reset the radio. The host UART
+sends by interrupt, and the other UARTs' `hrc_uart_write` sleeps a tick while the FIFO is full when called from a task
+with interrupts on, and spins only in an interrupt, a fault handler or a section with interrupts off. A CPS read is no
+slower.
+
+**2.13 A character with a line error is not data.** Where the host UART's RXD is also the PTT line, a transmit burst can
+disturb the line, and the UART then delivers a 0x00 with a framing error, about one per burst. Handed to the protocols,
+that byte read as the start of a CPS request and put the host link in CPS mode. The host UART's receive interrupt counts
+a flagged character (`rx_line_errors`, and the receive tap still sees it) and drops it. A real PTT press is read from
+the pin by the shared PTT gate. The disturbance can still corrupt a host request sent during the burst, so a host polling
+through a transmission retries. The line can also deliver clean bytes: a short low pulse reads as 0xE0 or 0xC0, so an idle
+port changes protocol only for a plausible request (mmdvm-protocol.md 5.1), and a debug client can hold it
+([debuglink.md](debuglink.md) 3.27).
+
 ## 3. TX/RX state and PA handling
 
 **2.6 HR_C5000 register differences.** Configuration page 0 (page 4 on the HR_C6000); reg 0x10 = 0x6B simplex,
@@ -643,7 +659,8 @@ from the call's LC; hold data calls and repeat them whole after 130 ms quiet.
 
 **14.2 Own echo and phantom voice.** The chip reports voice in empty inbound slots with what we sent. Drop voice or
 data matching anything we sent in the last 250 ms; voice counts only within a voice call; after a terminator, ignore
-headerless voice for 10 s; a stale voice A after F with recent AMBE is dropped.
+headerless voice for 10 s; a stale voice A after F with recent AMBE is dropped. Only the sending chip echoes: with
+the repeat on a second transmitter (`tx_split`) there is no check, else a call of silence repeated 180 ms late is lost.
 
 **14.3 Repeat timing.** A burst is ready just after the timeslot interrupt that sets up the next outbound slot, so the
 repeat goes out 90 ms later (measured 90.02-90.05 ms). Read bursts at their Sys interrupt (deferred reads found reg 0x51

@@ -665,7 +665,8 @@ static void rx_play(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 	s.last_voice_ms = now;
 	s.last_voice_slot = slot;
 
-	bool enc = b->pi || (s.view.caller.svc & DMR_SVC_PRIVACY) || s.view.caller.pi_header;
+	// The PI bit is in the EMB: one that failed its check says nothing
+	bool enc = (b->pi && b->crc_ok) || (s.view.caller.svc & DMR_SVC_PRIVACY) || s.view.caller.pi_header;
 
 	if (enc && !s.view.caller.encrypted) {
 		s.view.caller.encrypted = true;
@@ -733,7 +734,7 @@ static void dual_flush(void)
 // A voice burst of the call to play. Encrypted voice can't be checked (the FEC is over the scrambled bits): played
 static void dual_take(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 {
-	bool enc = b->pi || (s.view.caller.svc & DMR_SVC_PRIVACY) || s.view.caller.pi_header;
+	bool enc = (b->pi && b->crc_ok) || (s.view.caller.svc & DMR_SVC_PRIVACY) || s.view.caller.pi_header;
 	uint8_t bad = enc ? 0 : frames_bad(b->payload);
 
 	if (bad == 0 && s.vq_n == 0) {
@@ -950,8 +951,9 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 
 	// Burst A has no color code on air (voice sync where B-F have the EMB): whatever CC the modem gives it is not
 	// the burst's, so it is never filtered on it (bench 2026-10-10: 0x52 at A's report held a junk CC, and every
-	// A was dropped here, three frames concealed per superframe)
-	bool cc_known = !(b->kind == DMR_BURST_VOICE && b->voice_index % 6 == 0);
+	// A was dropped here, three frames concealed per superframe). Nor is a B-F whose EMB failed its check (crc_ok):
+	// its CC is noise, while its voice frames carry their own FEC. Dropping it lost three good frames each time
+	bool cc_known = !(b->kind == DMR_BURST_VOICE && (b->voice_index % 6 == 0 || !b->crc_ok));
 
 	if (!s.cfg.listen.any_cc && cc_known && b->cc != s.cfg.cc && !(sfr_user() && s.cfg.cc2 >= 0 && b->cc == s.cfg.cc2)) {
 		stats.rx_cc_dropped++;

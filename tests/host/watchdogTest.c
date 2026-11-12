@@ -228,6 +228,47 @@ static void test_stall_check(void)
 	watchdog_clear_gap();
 }
 
+static uint32_t link_cause_fn(uint32_t now)
+{
+	(void)now;
+	return 0x02050007u;
+}
+
+// The link watch: armed, every frame moves the limit, then a record of kind LINK with the cause's word; off when stopped
+static void test_link_watch(void)
+{
+	uint32_t saved_now = now_ms;
+	unsigned before = hangs;
+	now_ms = 200000;
+	watchdog_idle(now_ms);
+	watchdog_task_pass(now_ms);
+	CHECK(!watchdog_link_lost(now_ms + 1000000u));		// never armed
+	watchdog_link_watch(now_ms, 5000, link_cause_fn);
+	for (int i = 0; i < 4; i++) {
+		now_ms += 4000;
+		watchdog_idle(now_ms);
+		watchdog_task_pass(now_ms);
+		CHECK(!tick());
+		watchdog_link_frame(now_ms);
+	}
+	now_ms += 4999;
+	watchdog_idle(now_ms);
+	watchdog_task_pass(now_ms);
+	CHECK(!tick() && hangs == before);
+	now_ms += 1;
+	watchdog_idle(now_ms);
+	CHECK(tick() && hangs == before + 1 && hang_kind == CRASH_KIND_LINK && hang_ms == 0x02050007u);
+	watchdog_link_watch(now_ms, 0, NULL);			// let go: nothing more
+	now_ms += 100000;
+	watchdog_idle(now_ms);
+	watchdog_task_pass(now_ms);
+	CHECK(!tick() && hangs == before + 1);
+	now_ms = saved_now;
+	watchdog_idle(now_ms);
+	watchdog_task_pass(now_ms);
+	watchdog_clear_gap();
+}
+
 // The view: the keys a HIL test reads
 static void test_view(void)
 {
@@ -326,6 +367,7 @@ int main(void)
 	test_ptt_cancels();
 	test_hang_check();
 	test_stall_check();
+	test_link_watch();
 	test_load_then_starve();	// last: the starve is for good
 	printf("watchdogTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;

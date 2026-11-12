@@ -156,6 +156,14 @@ void bk4819_set_af(bk4819_t *dev, uint16_t af);
 void bk4819_gpio(bk4819_t *dev, uint8_t pin, bool high);
 // AF DAC gain 0..15 (the received audio level)
 void bk4819_set_af_gain(bk4819_t *dev, uint8_t gain);
+// The received audio level in dB below the chip's top (AF Rx Gain2 at +5.5 dB, Gain1 at 0 dB), with the AF DAC gain held
+// at dac: AF Rx Gain2 (0x48 bits 9:4) in its 0.5 dB codes down to 0x03, then AF Rx Gain1 (bits 11:10, 6 dB a step), down
+// to BK4819_AF_MIN_DB. Gain2's codes 0x00 and 0x01 mute the audio (0x01 measured at a speaker); 0x02 and up play. The
+// DAC's own codes don't make even steps: measured at a speaker they are close to linear in amplitude (about 9 dB from 0
+// to 1, under 1 dB a code near 15), so a board picks one and leaves it
+#define BK4819_AF_GAIN2_SPAN_DB	30	// 0x3F down to 0x03
+#define BK4819_AF_MIN_DB	(-BK4819_AF_GAIN2_SPAN_DB - 18)
+void bk4819_set_af_level_db(bk4819_t *dev, uint8_t dac, int db);
 // DMR receive (hardware-db25d.md 4.5): the stock firmware's digital mode set for the main chip, written when it enters a
 // digital channel: 0x2A, 0x51 = 0, AFC off, 0x52, 0x47, 0x7E, 0x43, 0x40 = 0, 0x27, 0x2B, 0x48, then the AF output on
 // with the digital bit (0x47 = 0x6143). The modem samples the chip's AF output, so the output stays on in DMR. Idle the
@@ -187,6 +195,13 @@ void bk4819_tx_tail_end(bk4819_t *dev);
 // the deviation) instead of the microphone: 0x30 = 0xC3FA turns the microphone ADC off. A second start retunes. hz = 0
 // is a stop
 void bk4819_tone_start(bk4819_t *dev, uint16_t hz, uint8_t gain);
+// Retune a running tone: one register write, the generator's phase carried over (AFSK symbols, from an interrupt
+// while nothing else uses the bus)
+void bk4819_tone_freq(bk4819_t *dev, uint16_t hz);
+// The TX deviation while a tone runs: 0x40 bits 11:0 (stock 0x4D0 plain, 0x4A8 with CTCSS, 0x48A for DTMF), bits
+// 15:12 as stock. A tone's deviation follows this, not the tone's gain (one radio's figures: its hardware page).
+// bk4819_tone_stop() puts the stock word back
+void bk4819_tone_deviation(bk4819_t *dev, uint16_t scale);
 // Key the running tone: down = on, false = a silent carrier (the tone generator off, the microphone still out). No-op
 // without a tone
 void bk4819_tone_key(bk4819_t *dev, bool down);

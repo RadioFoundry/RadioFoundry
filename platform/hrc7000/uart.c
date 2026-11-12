@@ -32,6 +32,7 @@
 #define BAUD		115200u
 #define RX_SIZE		1024u	// power of two; MMDVM frames are at most 255 bytes, CPS writes 4 KB in 32-byte chunks
 #define TX_SPIN		200000u	// per byte, about 2 ms at 168 MHz: a stalled UART gives up rather than hangs
+#define TX_SLEEPS	20u	// per byte, in ticks, for a task that sleeps while the FIFO is full
 // A full view is tens of kilobytes, seconds at 115200. Sent by spinning on the TX FIFO at the host task's priority, it
 // kept the UI and idle tasks out during a DMR transmission until the hang check reset the radio, and the DMR tasks
 // above it left the FIFO empty most of the time, so the link ran at a third of its speed. The polled path sleeps a
@@ -63,7 +64,8 @@ static volatile uint32_t rx_line_errors;	// the UART flagged a character (FIFO o
 static volatile uint32_t rx_bytes;
 static volatile uint32_t rx_good_ms;	// hal_millis() at the last byte with no line error (hrc_host_uart_last_rx)
 static volatile bool rx_good_seen;
-static uint32_t tx_bytes, tx_stalls;	// a stall: the TX FIFO stayed full for TX_SPIN, the rest of the write dropped
+static uint32_t tx_bytes;
+static volatile uint32_t tx_stalls;	// a stall: the TX FIFO stayed full (hrc_uart_write), the rest of the write dropped
 static uint32_t waits;			// wait_rx() calls: the host link task's heartbeat (one per pass, 5 ms at most)
 // The write the TX interrupt is sending and what is left of it. Its end wakes the writer through rx_sem: the host link
 // task is the only writer and the only reader, and wait_rx looks at the ring before it sleeps, so a wake meant for
@@ -119,15 +121,67 @@ uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged))
 	return n;
 }
 
+// Polled receive and transmit of one character, for a loop that runs with interrupts off (the bridge to a second SoC)
+bool hrc_uart_poll_rx(uint32_t base, uint8_t *c)
+{
+	if ((UB(base, UART_LSR) & LSR_DR) == 0) {
+		return false;
+	}
+	*c = (uint8_t)UB(base, UART_RBR);
+	return true;
+}
+
+// A task with interrupts on may sleep while the FIFO is full; an interrupt, a fault handler or a section with
+// interrupts off (PSR.IE, bit 6) spins
+static bool may_sleep(void)
+{
+	uint32_t psr;
+	__asm__ volatile ("mfcr %0, psr" : "=r"(psr));
+	return (psr & 0x40u) != 0 && !hrc_in_isr() && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING;
+}
+
+// A spinning writer keeps the CPU for a whole reply: 1 KB is 90 ms at 115200. A host polling the debug link through a
+// 3 s DMR transmission left the idle task out until the watchdog's hang check reset the radio. Sleeping a tick while
+// the FIFO is full keeps the line just as busy (a CPS read is no slower)
+size_t hrc_uart_write(uint32_t base, const uint8_t *buf, size_t len, volatile uint32_t *stalls)
+{
+	bool sleep = may_sleep();
+	for (size_t i = 0; i < len; i++) {
+		uint32_t tries = sleep ? TX_SLEEPS : TX_SPIN;
+		while ((UB(base, UART_USR) & USR_TFNF) == 0) {
+			if (--tries == 0) {
+				(*stalls)++;
+				return i;
+			}
+			if (sleep) {
+				vTaskDelay(1);
+			}
+		}
+		UB(base, UART_RBR) = buf[i];
+	}
+	return len;
+}
+
+bool hrc_uart_poll_tx(uint32_t base, uint8_t c)
+{
+	if ((UB(base, UART_USR) & USR_TFNF) == 0) {
+		return false;
+	}
+	UB(base, UART_RBR) = c;
+	return true;
+}
+
 static void host_rx(uint8_t b, bool flagged)
 {
 	hrc_host_uart_rx_tap(b, flagged);
+	// A break or framing error is a held or disturbed line (a PTT press), not host data. Where RXD is also the PTT line
+	// each transmit burst can arrive as a 0x00 with a framing error. Handed on, it read as the start of a CPS request.
 	if (flagged) {
 		rx_line_errors++;
-	} else {
-		rx_good_ms = hal_millis();	// a break or framing error is a held line (a PTT press), not host data
-		rx_good_seen = true;
+		return;
 	}
+	rx_good_ms = hal_millis();
+	rx_good_seen = true;
 	uint32_t next = (rx_head + 1u) & (RX_SIZE - 1u);
 	if (next != rx_tail) {
 		rx_buf[rx_head] = b;

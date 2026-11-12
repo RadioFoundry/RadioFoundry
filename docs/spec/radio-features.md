@@ -129,7 +129,7 @@ only the debug link's dual watch is left: two channels of the current zone, and 
 
 ### 2.2 A second receiver
 
-A board with a second receiver sets `board.rx2` (`hal/hal_rx2.h`; the GD-88's second SoC, over the link in
+A board with a second receiver sets `board.rx2` (`hal/hal_rx2.h`; a second SoC, over the link in
 [rx2-link.md](rx2-link.md)). In dual watch the main receiver then stays on the selected channel and the second one gets
 the other. Nothing alternates, and the scan's hold and resume timing aren't used. The view's `rx2` is 1 while this is
 so (the debug link's `dual.both`).
@@ -140,7 +140,8 @@ so (the debug link's `dual.both`).
 | Its settings change (a codeplug edit, the squelch) | Sent again every 2 s; the link drops repeats |
 | Audio | The selected channel's always wins. The second receiver has the speaker only while the main one plays nothing (FM squelch closed, no DMR call) and the radio isn't transmitting |
 | PTT | On the selected channel, where the main receiver already is. The second receiver keeps listening; its audio is muted while the radio transmits |
-| It doesn't answer, or isn't on its settings 1.5 s after them | The core falls back to alternating the main receiver (2.1) and tries the second receiver again every 10 s |
+| Talk back (the UI setting, [12-scan.md](../user/12-scan.md)) | A call that ends on the other channel makes it the selected one, so the main receiver retunes there, the second receiver gets the old channel, and PTT answers on the new one. The second receiver never transmits: `hal_rx2_t` has no transmit call, and a receive-only SoC's bands are all `tx = false` |
+| It doesn't answer, or isn't on its settings 1.5 s after them | The core falls back to alternating the main receiver (2.1) and tries the second receiver again every 10 s. PTT, a new selection and talk back work as in 2.1 meanwhile |
 | The watch ends | The second receiver stops and its audio goes off |
 
 `ui_svc_receivers()` is 2 on such a radio, and `ui_svc_dual_rx(pane)` reports each pane's own receiver while the
@@ -366,7 +367,10 @@ knob (no `hal_radio_t.volume`) and one whose volume hook also scales the PCM pat
 board's RX gain, an HR_C7000 board's line out gain) play the beep at `beep_level`, and the volume acts on it in the
 speaker path. On a radio where the MCU sets the volume somewhere the PCM path doesn't pass, the core plays each beep at the
 volume percent last given to the board, capped at `beep_level` (`radio_beep_level`): volume 0 gives no beep. When the DMR voice stream runs, the beep is mixed into it (`ambeVoiceSetMixer`). A DMR call
-leaves that stream running until the radio leaves DMR, so most beeps on a DMR channel are mixed. A mixed beep the
+leaves that stream running until the radio leaves DMR, so most beeps on a DMR channel are mixed. A voice stream that
+takes over from a beep's own stream (the talk permit, then the over) sets the speaker route on its first block: on only
+while a call plays or a beep is mixed. The beep's stream leaves the route as it was, and an amplifier that follows the
+route stayed powered until the radio left DMR. A mixed beep the
 amplifier isn't ready for (more than one lead-in block, below) gets the same lead-in as silence mixed in with the speaker
 routed; otherwise its tone starts in the first block. Without the voice stream the beep
 starts the board's PCM audio stream itself, routes the speaker for silent lead-in blocks before the tone (one 20 ms

@@ -31,6 +31,7 @@ BOARD_UNSUPPORTED += SFR	# the HR_C5000 lacks CRC_MCU_Control for the idle burst
 BOARD_UNSUPPORTED += SFR_DUALPATH_RX	# needs SFR
 BOARD_UNSUPPORTED += SFR_CWID	# needs SFR
 BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)
+BOARD_UNSUPPORTED += FONT_BIG	# the 9x18 font is drawn only on panels 220 px and wider; this one is 160x128
 CONFIG_AM_RX ?= n
 BOARD_UNSUPPORTED += AM_RX	# no air band receiver (docs/spec/airband-and-broadcast.md)
 CONFIG_BCAST_FM ?= n
@@ -51,9 +52,10 @@ BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 # translations: maximal keeps Spanish, as the default build does (Italian builds on the other boards)
 # APRS-IS (about 2.7 KB) is left out of maximal too, which had 156 bytes left: with no APRS receive here it only gates
 # RF positions out, so it is the first IP service to go. The default build keeps it. It defaults on, so it is set off,
-# not only skipped
-MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT NET_APRSIS
-MAXIMAL_VARS := CONFIG_NET_APRSIS=n
+# not only skipped. The DMR ID database over TFTP too (it follows TFTP, so it is turned off here): with every other
+# switch on the flash is full, and the other radios' maximal builds still cover it
+MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT NET_APRSIS TFTP_IDDB
+MAXIMAL_VARS := CONFIG_NET_APRSIS=n CONFIG_TFTP_IDDB=n
 CONFIG_RX_EXT ?= n
 BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)
 

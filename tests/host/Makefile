@@ -188,6 +188,7 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_ke
            $(CORE)/ui/ui_svc_radio.c $(CORE)/ui/ui_svc_storage.c $(CORE)/ui/ui_svc_data.c \
            $(CORE)/ui/ui_svc_emergency.c $(CORE)/input/keyassign.c sim/sim_flash.c \
            $(CORE)/debuglink/debuglink_view_radio.c $(CORE)/debuglink/dl_fmt.c $(CORE)/codeplug/zone_edit.c \
+           $(CORE)/radio/pa_sweep.c $(CORE)/radio/pa_keyrun.c \
            $(POSLIB) $(CORE)/ui/ui_svc_position.c
 
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
@@ -300,6 +301,15 @@ serialmicTest: serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c $(ROO
 TESTS   += rx2LinkTest
 rx2LinkTest: rx2LinkTest.c $(CORE)/rx2/rx2_link.c $(CORE)/rx2/rx2_link.h $(ROOT)/hal/hal_rx2.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ rx2LinkTest.c $(CORE)/rx2/rx2_link.c
+# The second receiver's SoC as the main SoC's second DMR transmitter (core/rx2/rx2_dmr.c) over the link
+TESTS   += rx2DmrTest
+rx2DmrTest: rx2DmrTest.c $(CORE)/rx2/rx2_dmr.c $(CORE)/rx2/rx2_dmr.h $(CORE)/rx2/rx2_link.c $(CORE)/rx2/rx2_link.h \
+            $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ rx2DmrTest.c $(CORE)/rx2/rx2_dmr.c $(CORE)/rx2/rx2_link.c
+# The debug link's peek and poke (core/debuglink/dl_mem.c): widths, the arming key, pins
+TESTS   += dlMemTest
+dlMemTest: dlMemTest.c $(CORE)/debuglink/dl_mem.c $(CORE)/debuglink/dl_mem.h $(CORE)/debuglink/debuglink_proto.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ dlMemTest.c $(CORE)/debuglink/dl_mem.c
 TESTS   += miclevelTest
 miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ miclevelTest.c -lm
@@ -312,6 +322,10 @@ resampleTest: resampleTest.c $(ROOT)/drivers/audio/resample/resample.h
 TESTS   += batteryTest
 batteryTest: batteryTest.c $(ROOT)/drivers/power/battery/battery.h
 	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ batteryTest.c
+# The volume knob curve the radios share (drivers/power/knob)
+TESTS   += knobTest
+knobTest: knobTest.c $(ROOT)/drivers/power/knob/knob.h
+	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ knobTest.c
 # The band check of hal/board.h, which the core and the radios share
 TESTS   += boardBandTest
 boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
@@ -319,8 +333,9 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 
 run: run-core
 run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
-          rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
+          rx2LinkTest rx2DmrTest dlMemTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest knobTest afskTonegenTest
 	./aprsRadioTest
+	./afskTonegenTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
 	./radioCoreTestAprs
@@ -335,11 +350,14 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestAprs radioCoreTestApr
 	./miclevelTest
 	./resampleTest
 	./rx2LinkTest
+	./rx2DmrTest
+	./dlMemTest
 	./keyassignTest
 	./powerSwitchTest
 	./powerKeyTest
 	./boardBandTest
 	./batteryTest
+	./knobTest
 .PHONY: run-core
 
 # The read-only codeplug (open-firmware layout and built-in channels), on fake flash images
@@ -610,7 +628,7 @@ refTrimTest: refTrimTest.c $(CORE)/radio/ref_trim.c $(CORE)/radio/ref_trim.h $(R
 # of it with the report (core/ui/ui_svc_crash.c), the debug link's (core/debuglink/debuglink_crash.c)
 TESTS   += crashTest
 CRASHT  := crashTest.c $(CORE)/crash/crash.c $(CORE)/crash/crash_trace.c $(CORE)/ui/ui_svc_crash.c $(CORE)/debuglink/debuglink_crash.c \
-	   $(CORE)/debuglink/dl_fmt.c
+	   $(CORE)/debuglink/dl_crash_view.c $(CORE)/debuglink/dl_fmt.c
 crashTest: $(CRASHT) $(CORE)/crash/crash.h $(ROOT)/hal/hal_crash.h $(CORE)/ui/ui_svc.h $(CORE)/debuglink/debuglink.h \
 	   $(CORE)/debuglink/debuglink_proto.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(CRASHT)
@@ -635,13 +653,25 @@ TESTS   += paKeyupTest
 paKeyupTest: paKeyupTest.c $(CORE)/radio/pa_keyup.c $(CORE)/radio/pa_keyup.h
 	$(CC) $(CFLAGS) -Wshadow -DCONFIG_DMR=1 -o $@ paKeyupTest.c $(CORE)/radio/pa_keyup.c
 
+# The PA drive sweep (core/radio/pa_sweep.c): the grid's limits and what a run writes when
+TESTS   += paSweepTest
+paSweepTest: paSweepTest.c $(CORE)/radio/pa_sweep.c $(CORE)/radio/pa_sweep.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ paSweepTest.c $(CORE)/radio/pa_sweep.c
+
+# The PA key run (core/radio/pa_keyrun.c): the request's limits and what a run writes when
+TESTS   += paKeyrunTest
+paKeyrunTest: paKeyrunTest.c $(CORE)/radio/pa_keyrun.c $(CORE)/radio/pa_keyrun.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ paKeyrunTest.c $(CORE)/radio/pa_keyrun.c
+
 run: run-ambe
-run-ambe: ambeFecTest ambeVoiceTest micGainTest refTrimTest paKeyupTest
+run-ambe: ambeFecTest ambeVoiceTest micGainTest refTrimTest paKeyupTest paSweepTest paKeyrunTest
 	./ambeFecTest
 	./ambeVoiceTest
 	./micGainTest
 	./refTrimTest
 	./paKeyupTest
+	./paSweepTest
+	./paKeyrunTest
 .PHONY: run-ambe
 
 # The DMR voice call stack (core/dmr/call) against a simulated modem; LC coding cross-checked with sfr.c and dmrData.c
@@ -857,6 +887,21 @@ run-debuglinkRx2: debuglinkRx2Test
 	./debuglinkRx2Test
 .PHONY: run-debuglinkRx2
 
+# A second SoC's own debug link server (core/rx2/rx2_dl.c, rx2-link.md 2.3): the main SoC's reply layouts, READ_MEM's
+# windows, the restart's token, the restart and crash tests only after the reply, the log ring, CHIP_REG. Board and
+# clock faked
+RX2SRV  := rx2DlTest.c $(CORE)/rx2/rx2_dl.c $(CORE)/debuglink/dl_fmt.c $(CORE)/debuglink/dlog.c $(CORE)/debuglink/dl_chip.c \
+	   $(CORE)/debuglink/dl_crash_view.c $(CORE)/debuglink/dl_mem.c $(CORE)/debuglink/dl_mem_target.c \
+	   $(CORE)/debuglink/debuglink_chipreg.c
+TESTS   += rx2DlTest
+rx2DlTest: $(RX2SRV) $(CORE)/rx2/rx2_dl.h $(CORE)/rx2/rx2_link.h $(CORE)/debuglink/debuglink_proto.h $(ROOT)/hal/hal_system.h
+	$(CC) $(CFLAGS) -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -DDLOG_NO_RTOS -DCONFIG_RX2_DL_SERVER=1 -DCONFIG_CRASH_LOG=0 \
+		-o $@ $(RX2SRV)
+
+run: run-rx2Dl
+run-rx2Dl: rx2DlTest
+	./rx2DlTest
+.PHONY: run-rx2Dl
 # DL_CMD_CHIP_REG, RF chip and SoC registers on the debug link (core/debuglink/debuglink_chipreg.c): the board's hooks
 # and the transmit check are faked
 CHIPREG := debuglinkChipRegTest.c $(CORE)/debuglink/debuglink_chipreg.c
@@ -952,12 +997,18 @@ TESTS   += lis3dhTest
 lis3dhTest: lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c
 
+# The ILI9341-class panel driver: its init streams and windows (drivers/display/ili9341)
+TESTS   += ili9341Test
+ili9341Test: ili9341Test.c $(ROOT)/drivers/display/ili9341/ili9341.c $(ROOT)/drivers/display/ili9341/ili9341.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ ili9341Test.c $(ROOT)/drivers/display/ili9341/ili9341.c
+
 baofengCalTest: baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
 run: run-drivers
 run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest plugPttTest hrc7000DmrTest baofengCalTest rda5807mTest \
-             lis3dhTest hrc7000BsTest hrc7000DmrTestSplit
+             lis3dhTest hrc7000BsTest hrc7000DmrTestSplit ili9341Test
+	./ili9341Test
 	./hrc7000BsTest
 	./hrc7000DmrTestSplit
 	./lis3dhTest
@@ -1133,10 +1184,11 @@ settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/set
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ settingsTest.c $(STORE)
 
 run: run-settings
-run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
+run-settings: settingsTest spiNorTest spiNandTest spiNandLutTest nandSectorsTest
 	./settingsTest
 	./spiNorTest
 	./spiNandTest
+	./spiNandLutTest
 	./nandSectorsTest
 .PHONY: run-settings
 
@@ -1157,6 +1209,19 @@ TESTS   += spiNandTest
 spiNandTest: spiNandTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand.c $(ROOT)/drivers/flash/spi_nand/spi_nand.h \
              $(ROOT)/drivers/bus/spi_bus.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ spiNandTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand.c
+
+# APRS AFSK through an RF chip's tone generator: one tone write per change, the timer at the baud rate, refusals
+TESTS   += afskTonegenTest
+
+afskTonegenTest: afskTonegenTest.c $(ROOT)/drivers/audio/afsk_tonegen/afsk_tonegen.c \
+                 $(ROOT)/drivers/audio/afsk_tonegen/afsk_tonegen.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ afskTonegenTest.c $(ROOT)/drivers/audio/afsk_tonegen/afsk_tonegen.c
+
+# The stock firmware's block map over an SPI NAND: the shift block 0 gives, bad blocks, the reserved pool, no table
+TESTS   += spiNandLutTest
+
+spiNandLutTest: spiNandLutTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand_lut.c $(ROOT)/drivers/flash/spi_nand/spi_nand_lut.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ spiNandLutTest.c $(ROOT)/drivers/flash/spi_nand/spi_nand_lut.c
 
 # NOR-like 4 KB sectors over NAND (drivers/flash/nand_sectors) on a simulated NAND: bad and worn blocks, garbage
 # collection, wear leveling, a power cut at every operation of a write, an erase and a garbage collection (torn pages

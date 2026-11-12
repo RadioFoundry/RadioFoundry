@@ -595,11 +595,56 @@ Roaming reads this RSSI (the IF chain's level on an ADC) as the site signal ([dm
 
 ### 5.6 PA and power control
 
-DAC1 is the APC reference, scaled from the calibration's power rows (11.2). Two levels, 1 W and 5 W. TX is refused
+DAC1 is the APC reference, scaled from the calibration's power rows (11.2), 1 W and 5 W. TX is refused
 without an accepted calibration table (no safe uncalibrated drive is known).
 
-DMR: the PA follows the bursts. The RF TX interrupt keys it (APC_EN); a TIM7 one-shot drops it 30 ms later
- 3.4, and the slot engine's PA-off at the next timeslot interrupt stays as the fallback.
+Five power levels. The values are drafts, to be set with a wattmeter
+([power-calibration.md](../testing/power-calibration.md)); the debug link's `radio tx-drive` keys any drive.
+
+| Level | Name | Drive |
+|---|---|---|
+| 0 | 100 mW | 56.5 % of the 1 W row |
+| 1 | 500 mW | 80.7 % of the 1 W row |
+| 2 | 1 W | the 1 W row |
+| 3 | 2.5 W | 45 % of the way from the 1 W row to the 5 W row (not measured) |
+| 4 | 5 W | the 5 W row |
+
+Levels 0 and 1 come from a drive sweep on the SDR bench (UHF radio, 432 MHz, DMR bursts, relative to the 1 W row's
+drive 1115; the 5 W row is 2119):
+
+| Drive | 300 | 400 | 500 | 600 | 700 | 800 | 950 |
+|---|---|---|---|---|---|---|---|
+| dB | -42.8 | -32.2 | -18.7 | -12.4 | -8.2 | -4.8 | -2.1 |
+
+DMR: the PA follows the bursts, keyed by the key-up rule ([pa-keyup.md](pa-keyup.md)) with constants measured by
+`tools/bench/pa_cal.py` on a UHF radio up to its 2.5 W level and judged by the ramp's shape
+(`tools/bench/pa_shape.py`): dead zone 56.3 % of the anchor, knee 91 µs, slope 1003 µs, window 1650 µs, settle
+506 µs, no approach (`ease_pm` 0). Only the lowest level gets a boost. Over the air on the SDR bench every level
+reaches -3 dB 0.19-0.34 ms before the first symbol and is within 0.4 dB of its power over the first 10 symbols
+(mean), nothing over the floor in the slot before. Overshoot: 0.7-1.1 dB, and 1.7-1.8 dB at drive 972, which that
+drive gives written alone too (the power loop's). The lowest level leaves the floor about 1 ms ahead and stays near
+-28 dB for about 0.1 ms before it rises (the PA just over its turn-on edge, at any boost tried). The 5 W level is not
+measured.
+
+The window used to be 1530 µs: the second level's lead was then just past it, so it was boosted and ran 3.6-4.7 dB
+past its power, though written alone at the window's start its own drive is up 0.18 ms before the first symbol,
+0.7 dB over. An approach drive (`ease_pm` 304) capped that boost but kept the levels from 1 W up at the approach
+drive from 2.2 ms ahead: a step 6-9 dB down through the guard, on the air 1.1-1.2 ms before the first symbol. An
+earlier fixed boost for every level overshot the low levels by 7 dB and more. Keyed at the RF TX interrupt, the PA
+was up 1.1-1.6 ms before the first symbol (the interrupt taken as 2.53 ms before the first symbol), and the PA goes
+on with the first drive. On the SDR bench (UHF radio, 432 MHz), every level at its own drive from 1 ms after the
+interrupt, before the rule:
+
+| Level | -3 dB point before the first symbol | First symbol against the settled level | Overshoot |
+|---|---|---|---|
+| 100 mW | 0.13 ms | -0.2 dB | 0.6 dB |
+| 500 mW | 0.47 ms | +0.4 dB | 1.3 dB |
+| 1 W | 0.59 ms | 0.0 dB | 0.5 dB |
+
+The lowest level sets the point: a higher drive comes up sooner. The levels above 1 W are not measured.
+
+A TIM7 timer runs the points from the RF TX interrupt and drops the PA 30 ms after it
+([gotchas.md](gotchas.md) 3.4), and the slot engine's PA-off at the next timeslot interrupt stays as the fallback.
 
 The radio has one synthesizer, so it can't receive while it is set up to transmit. The switch to TX (receiver off,
 the HR_C5000's transmit set, the TX VCO locked, TX_5V up) happens before the first burst, never at it: done in the RF TX

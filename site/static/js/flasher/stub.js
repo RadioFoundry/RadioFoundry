@@ -47,6 +47,11 @@ export const WDT_LOCK = 0x14010000, WDT_EN = 0x14010010, WDT_KEY = 0x5ADA7200;
 // RadioFoundry's restart-cause mark (docs/spec/crash-log.md 1.3; stubtool.py CRASH_SOFT_MARK): the reset was asked for
 export const CRASH_SOFT_MARK = 0x18007EF4, CRASH_BOOT_SOFT = 0x54464F53;
 export const STUB_MAGIC = 0x42533743, DL_STUB = 0x1A;
+// DL_CMD_RX2: the second SoC of a radio with two (the GD-88), reached through the first (docs/spec/debuglink.md 3.22)
+export const DL_RX2 = 0x1E, RX2_TOKEN = 0x47445242, RX2_F = { present: 1, up: 2, bridge: 4, restart: 8, forward: 16 };
+// The end of the bridge: these 4 bytes alone, with quiet on the cable before and after (docs/spec/rx2-link.md 4.1; the
+// spec asks for 2 ms or more). The first SoC restarts at once instead of 10 s after the page's last byte
+export const BRIDGE_EXIT = [0x7E, 0xE7, 0x81, 0x18], BRIDGE_QUIET_MS = 20;
 const ROM_HELLO = [0x02, 0x24, 0x00, 0x03], ROM_ACK = [0x02, 0x05, 0x00, 0x03], ROM_REPLY = [0x02, 0x14, 0x00, 0x03];
 // The boot ROM's two other frames: it stops waiting (about 48 ms after its greeting when no answer came) and starts the
 // firmware; and its NAK (BADSUM), which is also how it answers a repeated greeting reply once it took the first one
@@ -96,6 +101,24 @@ export function stubImages(json) {
 	const image = Uint8Array.from(atob(json.univ.data), (c) => c.charCodeAt(0));
 	return { image, sha: json.univ.sha256, load: json.univ.load, run: json.univ.run, end: json.univ.end };
 }
+
+// The universal stub with the board's pins in its parameter block (stubtool's patch_univ), for the part of the run
+// before CONFIG: the UART it listens on, the power latch and key, the LED pins. Only a board that needs it (LEDs or a
+// UART in its profile: the GD-88, whose default LED pins are its RF chain's clock and data) gets a patched copy
+export function patchUniv(image, board) {
+	if (!board || !(board.leds || board.uart) || !univLayout(image)) return image;
+	const out = image.slice();
+	const leds = board.leds || [33, 32];
+	for (const [off, v] of [[0x8C, board.uart || 0], [0x9C, board.latch], [0xA0, board.key], [0xA8, leds[0]], [0xAC, leds[1]]])
+		for (let k = 0; k < 4; k++) out[off + k] = (v >>> (8 * k)) & 0xFF;
+	return out;
+}
+
+// The LED pins the stub drives on a board: its own (255 = none), else the HR_C7000 radios' usual PTB1 / PTB0
+export const boardLed = (C, id) => {
+	const l = C.boards[id]?.stub_board?.leds;
+	return l ? { red: l[0], green: l[1] } : C.led;
+};
 
 // [run, end) from a universal stub's parameter block ('UCFG' at 0x80, layout 2 or later), or null
 export function univLayout(image) {
@@ -316,6 +339,44 @@ export class Stub {
 		}
 		if (r.length < 14 || u32le(r, 0) !== STUB_MAGIC) return null;
 		return { load: u32le(r, 4), size: u32le(r, 8), chunk: Math.min(r[12] | (r[13] << 8), 59) };
+	}
+
+	// The second SoC (docs/spec/rx2-link.md 4): RadioFoundry on the first hands the cable over, and about 100 ms later the port
+	// carries the second SoC's first stage, which offers the boot ROM's handshake for up to a minute (waitForRom,
+	// loadThroughRom). Throws when there is no bridge or RadioFoundry refuses it (transmitting)
+	static async bridgeFromRFoundry(link) {
+		let flags;
+		try {
+			flags = (await link.request(DL_RX2, new Uint8Array([0])))[0];
+		} catch (e) {
+			throw new StubError("this RadioFoundry build has no route to the second receiver");
+		}
+		if (!(flags & RX2_F.present)) throw new StubError("this radio has no second receiver");
+		if (!(flags & RX2_F.bridge)) throw new StubError("this RadioFoundry build has no route to the second receiver");
+		const p = new Uint8Array([1, RX2_TOKEN & 0xFF, (RX2_TOKEN >>> 8) & 0xFF, (RX2_TOKEN >>> 16) & 0xFF, RX2_TOKEN >>> 24]);
+		try {
+			await link.request(DL_RX2, p);
+		} catch (e) {
+			throw new StubError(/status 7/.test(e.message) ? "the radio is transmitting: release PTT and try again"
+				: `RadioFoundry refused the hand-over (${e.message})`);
+		}
+		return flags;
+	}
+
+	// End the first SoC's bridge (bridgeFromRFoundry): the exit sequence in a write of its own between two quiet spells
+	async bridgeExit() {
+		await sleep(BRIDGE_QUIET_MS);
+		await this.s.write(new Uint8Array(BRIDGE_EXIT));
+		await sleep(BRIDGE_QUIET_MS);
+	}
+
+	// The second SoC's state, from RadioFoundry on the first: RX2_F flags, or null when it doesn't say
+	static async secondState(link) {
+		try {
+			return (await link.request(DL_RX2, new Uint8Array([0])))[0];
+		} catch (e) {
+			return null;
+		}
 	}
 
 	// entry: where RadioFoundry jumps (the offered load address unless the stub runs elsewhere, as the STM32F4 one does)

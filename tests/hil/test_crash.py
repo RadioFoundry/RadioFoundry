@@ -2,13 +2,15 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """The crash log (docs/spec/crash-log.md): the view section, and on purpose crashes that must leave a record the next
 start shows. The crash tests restart the radio: opt-in with --allow-reboot (marker reboot)."""
+import struct
 import time
 
 import pytest
 
 from rfoundry_hil import DebugLinkError, as_int, skip
 
-CRASH_KIND_FAULT, CRASH_KIND_ASSERT, CRASH_KIND_HANG, CRASH_KIND_STALL = 1, 4, 5, 6
+CRASH_KIND_FAULT, CRASH_KIND_ASSERT, CRASH_KIND_HANG, CRASH_KIND_STALL, CRASH_KIND_LINK = 1, 4, 5, 6, 7
+LINK_HOLD = 0x23        # docs/spec/debuglink.md 3.27
 STALL_MS = 60000        # WATCHDOG_STALL_MS (core/app/watchdog.h)
 
 
@@ -19,17 +21,24 @@ def _need(radio):
 
 
 
+def _restarted(up_before, t_before, up_after):
+    """The uptime grew by less than the time that passed. A plain up_after < up_before fails when the test before
+    this one also restarted the radio, and the two uptimes are both a few seconds."""
+    return up_after < up_before + (time.monotonic() - t_before) * 1000 - 500
+
+
 def _crash(radio, kind, wait_s=30.0):
     """Crash on purpose, wait for the restart (up to wait_s), return the crash view."""
     radio.link.crash_clear()
     assert radio.view(["crash"]).get("crash.valid") == "0"
     up_before = as_int(radio.view(["link"])["uptime_ms"])
+    t_before = time.monotonic()
     radio.link.crash_test(kind)
     radio.link.close()
     time.sleep(2.0)
     radio.reconnect(wait_s, "the crash")
     up_after = as_int(radio.view(["link"])["uptime_ms"])
-    assert up_after < up_before, f"the radio didn't restart (uptime {up_before} ms, then {up_after})"
+    assert _restarted(up_before, t_before, up_after), f"the radio didn't restart (uptime {up_before} ms, then {up_after})"
     return radio.view(["crash"])
 
 
@@ -47,6 +56,33 @@ def test_crash_test_refused_without_token(radio):
     with pytest.raises(DebugLinkError) as e:
         radio.link.request(0x1B, bytes([1, 1, 0, 0, 0, 0]))
     assert e.value.status == 7     # refused: no crash without the token
+
+
+@pytest.mark.feature("crash_log")
+@pytest.mark.reboot
+def test_link_watch_restarts(radio):
+    """A client that armed the link watch and went silent: the radio restarts by itself and says why."""
+    _need(radio)
+    L = radio.link
+    L.crash_clear()
+    up_before = as_int(radio.view(["link"])["uptime_ms"])
+    t_before = time.monotonic()
+    try:
+        L.request(LINK_HOLD, bytes([1]) + struct.pack("<H", 5))
+    except DebugLinkError as e:
+        skip("not_built", f"no link watch: {e}")
+    L._held = False                     # close without letting go: the client is gone
+    L.close()
+    time.sleep(12.0)
+    radio.reconnect(30.0, "the link watch")
+    assert _restarted(up_before, t_before, as_int(radio.view(["link"])["uptime_ms"])), "the radio didn't restart"
+    v = radio.view(["crash"])
+    assert v.get("crash.valid") == "1", v
+    assert as_int(v["crash.kind"]) == CRASH_KIND_LINK, v
+    cause = as_int(v["crash.cause"])
+    assert (cause >> 16) & 0xFF >= 4, v  # nothing had come in for the 5 s limit (the mode in bits 24-31 is whatever
+                                         # the test before left: an answered CPS session stays for its 10 s)
+    radio.link.crash_clear()
 
 
 @pytest.mark.feature("crash_log")
@@ -130,6 +166,6 @@ def test_crash_stall_kept(radio):
         n = as_int(v["crash.tasks"])
         others = dict(v[f"crash.t{k}"].rsplit(",", 1) for k in range(n))
         # The snapshot keeps the first tasks in creation order: on a radio with more, the host task may be past its end
-        if "host" in others or v.get("crash.tasks_more") != "1":
+        if "host" in others or as_int(v.get("crash.tasks_more"), 0) == 0:
             assert "host" in others and int(others["host"], 16) != 0, v
     radio.link.crash_clear()

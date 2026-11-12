@@ -521,8 +521,9 @@ Columns: **Standard host** (Linux / Pi-Star / WPSD class hosts) and **bench** (o
 - Replies whose length is a multiple of 64 must be ended with a zero-length packet so the host sees them at once.
 - Linux ModemManager probes new ACM ports with AT commands: the parser must skip those bytes (they aren't 0xE0) and
   answer the next real frame.
-- The port may be shared with the programming protocol: the first byte 0xE0 selects MMDVM (`open-firmware-cps.md`
-  section 6). Once in hotspot mode, programming commands aren't answered.
+- The port may be shared with the programming protocol: a request starting with 0xE0 and a plausible length and
+  command selects MMDVM (`open-firmware-cps.md` section 6). A lone 0xE0 is line noise and is dropped. Once in hotspot
+  mode, programming commands aren't answered.
 
 ### 5.2 UART
 

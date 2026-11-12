@@ -16,6 +16,7 @@ and what has been checked on it.
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
 | [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. V4A/V5 boards are detected; on older boards the radio asks for the revision once. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames. |
+| [Radioddity GD-88](#radioddity-gd-88) | Kydera DR-880UV | Runs on the radio: analog FM, DMR voice and data, dual watch on the second SoC, transmit through that SoC's PA, settings on the SPI NAND and the host link. Open: a wattmeter check of the power levels. |
 <!-- end generated -->
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
@@ -180,14 +181,14 @@ The side keys are, top to bottom, SK1, **PTT**, SK2 and SK3.
 
 ### DM-1701 power levels
 
-Nine levels: 50 mW, 250 mW, 500 mW, 750 mW, 1 W, 2 W, 3 W, 4 W, 5 W. The values are nominal and use the radio's
-factory calibration.
+Five levels: 100 mW, 500 mW, 1 W, 2.5 W, 5 W. The values are nominal and use the radio's factory calibration. They
+haven't been measured with a wattmeter.
 
 | Way to change it | Levels |
 |---|---|
 | A channel without a power in the codeplug | 1 W |
-| **\***, **1** | 50 mW, 1 W, 5 W |
-| SK3 on Home | All nine, one per press |
+| **\***, **1** | 100 mW, 1 W, 5 W |
+| SK3 on Home | All five, one per press |
 
 ### DM-1701 battery
 
@@ -290,8 +291,9 @@ bootloader starts when you hold **PTT** and the side key just above it at power-
 One band per radio: UHF (400-480 MHz) or VHF (136-174 MHz). There is one image for each band, and an image refuses
 the other band.
 
-Two power levels, 1 W and 5 W. A channel without a power in the codeplug uses 1 W. **\***, **1** switches between the
-two. The radio refuses to transmit without a valid factory calibration.
+Five power levels: 100 mW, 500 mW, 1 W, 2.5 W, 5 W. 1 W and 5 W are the factory calibration's; the others are set from
+them and haven't been measured with a wattmeter. A channel without a power in the codeplug uses 1 W. **\***, **1**
+steps through 100 mW, 1 W and 5 W. The radio refuses to transmit without a valid factory calibration.
 
 ### MD-380 battery
 
@@ -359,8 +361,8 @@ No **P1**, **P2**, **SK3** or top key, so no **Power level** or zone keys and no
 
 ### MD-UV380 power levels
 
-Nine levels as on the DM-1701, 50 mW to 5 W. On the MD-UV390 Plus 10 W image the top four are 2, 3, 5 and 10 W. A
-channel without a power in the codeplug uses 1 W. The radio refuses to transmit without a valid factory calibration.
+Nine levels: 50 mW, 250 mW, 500 mW, 750 mW, 1 W, 2 W, 3 W, 4 W, 5 W. On the MD-UV390 Plus 10 W image the top four are
+2, 3, 5 and 10 W. A channel without a power in the codeplug uses 1 W. The radio refuses to transmit without a valid factory calibration.
 
 ### MD-UV380 battery
 
@@ -420,7 +422,7 @@ the power with **\***, **1**.
 
 ### DM-32UV power levels
 
-Nine levels, L-, L, L+, L++, M, M+, M++, H-, H, from the radio's factory calibration. The radio is rated 5 W (VHF) and
+Five levels, L-, L, M, M+, H, from the radio's factory calibration. The radio is rated 5 W (VHF) and
 4 W (UHF) at high power. The levels haven't been measured. A channel without a power in the codeplug uses L.
 **\***, **1** steps through L-, L and H.
 
@@ -538,7 +540,9 @@ timeout Off until it is switched off. Switch the radio off before unplugging the
 
 ### DB25-D PRO power and supply
 
-Two levels, L and H (nominal 20 W). The radio refuses to transmit until RadioFoundry can read its power calibration.
+Five levels: L--, L-, L, M, H. L and H (nominal 20 W) are the factory calibration's; the others are set from them and
+haven't been measured. A channel without a power in the codeplug uses L. The radio refuses to transmit until
+RadioFoundry can read its power calibration.
 
 The radio runs from a 13.8 V supply and has no battery. The status line shows no battery icon or percentage, Tools has
 no Battery page, and Settings > Power saving has no Battery saver or Low battery warning. RadioFoundry doesn't read the supply
@@ -643,8 +647,9 @@ installation) or from a codec the browser kept. Untested on a DM-1801 Pro from t
 
 ### DM-1801 Pro power and display
 
-Three power levels, L, M and H, Low, Middle and High. The radio refuses to transmit until RadioFoundry can
-read its factory calibration. The battery
+Five power levels: L--, L-, L, M, H. L, M and H are the factory calibration's Low, Middle and High; the two under L are
+set from L and haven't been measured. A channel without a power in the codeplug uses L. The radio refuses to transmit
+until RadioFoundry can read its factory calibration. The battery
 reading is scaled from a measurement on one radio. The screen is monochrome; the backlight is on or off.
 The radio vibrates for messages, call alerts and emergencies (**Settings > Sound > Vibrate**).
 
@@ -728,6 +733,36 @@ A 128 x 64 monochrome screen.
 - No APRS: the radio doesn't pass its received audio to the decoder yet.
 - No air band or broadcast receiver, and no vibration motor.
 
+## Radioddity GD-88
+
+A dual band handheld (136-174 and 400-480 MHz) with a 320x240 color display. It has two HR_C7000 chips. The first
+runs the display, keys, PTT, transmitter, GPS and FM broadcast receiver. The second is a second receiver that listens
+at the same time as the first, so both VFOs can receive at once. **In development:** RadioFoundry doesn't run on this radio
+yet and there is no release for it.
+
+When it is ready, the web installer will put the first chip's image on through the programming cable. The second
+chip's image follows on the same cable, as the installer's next step. The first time, the second chip still runs its
+original firmware, so the installer writes it in the radio's update mode (`IAP_B`). After that it goes through the
+first chip.
+
+To start the radio's update mode, turn it off and connect the programming cable. Hold **SK1** (the side key above **PTT**) and turn the radio
+on with the volume knob. When the LED lights red and the top line shows `IAP_A` or `IAP_B`, release **SK1**. Hold **SK1** to
+switch between them: `IAP_A` updates the first chip, `IAP_B` the second.
+
+### GD-88 keys
+
+| Key | Role |
+|---|---|
+| Left soft key (under the display) | **OK** |
+| Right soft key | **Back** |
+| Green | **A/B** |
+| Red | **VFO** |
+| Up, Down | **Up**, **Down** |
+| SK1 (the side key above **PTT**) | **Monitor**. Held at power-on, it starts the update mode |
+| SK2 (the side key below **PTT**) | Talk target |
+| SOS (the orange top key) | User key 3 |
+| **PTT** | **PTT** |
+
 ## Planned radios
 
 These radios aren't built in a release yet. An in-progress port is on its own branch. [The radio survey](../spec/radios.md) lists what is known about each and the rebadged
@@ -737,7 +772,6 @@ models it covers.
 | Radio | Status |
 |---|---|
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | In progress ([#111](https://github.com/radiofoundry/radiofoundry/pull/111)). A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated. |
-| Radioddity GD-88 | In progress ([#132](https://github.com/radiofoundry/radiofoundry/pull/132)). Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port. |
 | Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | Planned. A new platform (GD32F30x) and a new DMR chip (SCT3258, which runs the vocoder itself), so it starts the Anytone family ([hardware-anytone.md](../spec/hardware-anytone.md)). |
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port. |
 | TYT MD-2017 / Retevis RT82 | Planned. The DM-1701's STM32 and HR_C6000 pair with two receivers, so it should reuse the STM32F4 platform. The hardware can receive two channels at once. |

@@ -342,7 +342,9 @@ def test_dual_watch(radio):
         seen, f = collect(radio, "zone_pos", 3.0)
         print("positions:", seen, "phase:", f.get("scan_phase"))
         assert set(seen) <= {str(a), str(b)}, seen
-        assert len(set(seen)) == 2 or f.get("scan_phase") in ("probe", "hold", "resume"), (seen, f)
+        # Alternating, or a second receiver has B and the main one stays on A (test_dual_watch_both_receivers)
+        both = features(radio).get("dual.both") == "1"
+        assert len(set(seen)) == 2 or both or f.get("scan_phase") in ("probe", "hold", "resume"), (seen, f)
         if "dual.at" in f:      # where the receiver is: A or B, never neither
             ats, _ = collect(radio, "dual.at", 2.0, sections=("features",))
             print("receiver on:", ats)
@@ -350,6 +352,25 @@ def test_dual_watch(radio):
     finally:
         scan_off(radio)
     radio.wait_for(lambda v: v.get("zone_pos") == str(a), 1.0, what="back on the first channel")
+
+
+@pytest.mark.feature("dual_watch")
+def test_dual_watch_both_receivers(radio):
+    """A radio with a second receiver gives it the channel not selected (dual.both), and keeps it: the main receiver
+    stays on the selected one instead of alternating (radio-features.md 2.1)."""
+    need_scan(radio)
+    if features(radio).get("dual.receivers") != "2":
+        skip("no_hw", "one receiver: dual watch alternates")
+    size = on_channel(radio, 2)
+    a = as_int(radio.core()["zone_pos"], 0)
+    radio.link.scan("dual", (a + 1) % size)
+    try:
+        wait_features(radio, lambda v: v.get("dual.both") == "1", 12.0, "the second receiver on the other channel (the core tries it every 10 s)")
+        ats, f = collect(radio, "dual.at", 4.0, sections=("features",))   # past the core's 1.5 s tune deadline
+        assert f.get("dual.both") == "1" and set(ats) == {"a"}, (ats, f)
+    finally:
+        scan_off(radio)
+    radio.link.zone_pos(a)
 
 
 @pytest.mark.feature("dual_watch")
@@ -456,7 +477,7 @@ def test_tx_limit(fm_tx):
         fm_tx.tx_gate(True)
 
 
-@pytest.mark.feature("debuglink")
+@pytest.mark.feature("debuglink", optional=True)     # only radios whose board gives hal_radio_t.tx_drive
 def test_tx_drive_op(radio):
     """The PA drive override (RADIO op 36, power calibration) without keying: the core view lists each power level's
     drive, rising; the op takes a drive and 0 (the level's again) and refuses one past the board's limit."""
@@ -478,7 +499,7 @@ def test_tx_drive_op(radio):
         radio.link.tx_drive(0)
 
 
-@pytest.mark.feature("debuglink")
+@pytest.mark.feature("debuglink", optional=True)    # a board opts in to the key-up (pa-keyup.md): no switch to excuse it
 def test_pa_keyup_op(radio):
     """The DMR PA key-up constants (RADIO op 37, docs/spec/pa-keyup.md) without keying: the core view shows the board's,
     the op takes a valid set and shows it, refuses one out of range or out of order and keeps the set before, and no
@@ -489,17 +510,20 @@ def test_pa_keyup_op(radio):
             radio.link.pa_keyup()               # a radio without the view key doesn't key this way
         skip("not_built", "no DMR PA key-up on this radio (docs/spec/pa-keyup.md)")
     board = [int(x) for x in core["pa_keyup"].split("/")]
-    assert len(board) == 8, core
-    dead, knee, slope_us, boost, hold, boost_us, pa_us, drive_us = board
-    assert 50 <= boost <= 120 and hold <= 100, board
-    assert boost_us == 0 or (boost_us >= pa_us and boost_us >= drive_us), board
-    assert len(core["pa_keyup.last"].split("/")) == 4, core
-    mine = [dead, max(knee - 50, 0), slope_us, 100, hold, boost_us, pa_us, drive_us]
+    assert len(board) == 7, core
+    dead_pm, knee_us, slope_us, window_us, settle_us, pa_us, ease_pm = board
+    ahead, max_drive = [int(x) for x in core["pa_keyup.limits"].split("/")]
+    assert window_us <= ahead and (settle_us < window_us or window_us == 0) and max_drive > 0, (board, core)
+    assert len(core["pa_keyup.last"].split("/")) == 7, core
+    window = max(window_us, 2)
+    mine = [dead_pm, knee_us + 50, slope_us, window, window // 2, pa_us, ease_pm + 1]
     try:
         radio.link.pa_keyup(*mine)
         assert [int(x) for x in radio.core()["pa_keyup"].split("/")] == mine
-        for bad in (mine[:3] + [121] + mine[4:], mine[:4] + [101] + mine[5:], mine[:6] + [boost_us + 1, drive_us],
-                    mine[:7] + [boost_us + 1], mine[:5] + [60000, pa_us, drive_us]):
+        # a window ahead of the board's earliest point, a boost that ends before it starts
+        for bad in (mine[:3] + [ahead + 1] + mine[4:], mine[:4] + [window, pa_us, 1], mine[:4] + [window + 1, pa_us, 1]):
+            if bad[3] > 0xFFFF:
+                continue
             with pytest.raises(DebugLinkError) as e:
                 radio.link.pa_keyup(*bad)
             assert e.value.status == 2, (bad, e.value)     # bad argument
@@ -722,6 +746,8 @@ def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
 @pytest.mark.bench_modem
 @pytest.mark.needs_switch("DMR")
 def test_dual_watch_stops_on_call(radio, sdr_bench, pytestconfig):
+    """A bench call on the channel not selected: one receiver holds there; a second receiver hears it while the main
+    one stays on the selected channel (radio-features.md 2.2)."""
     need_scan(radio)
     if "DMR" not in radio.features():
         skip("not_built", "built without DMR")
@@ -746,10 +772,22 @@ def test_dual_watch_stops_on_call(radio, sdr_bench, pytestconfig):
         radio.link.scan("dual", pos)
         try:
             wait_features(radio, lambda v: v.get("scan") == "dual", 1.0, "scan=dual")
-            seen, _ = _bench_call_watch(radio, sdr_bench, pytestconfig)
+            two = features(radio).get("dual.receivers") == "2"
+            if two:
+                wait_features(radio, lambda v: v.get("dual.both") == "1", 12.0,
+                              "the second receiver on the test channel (the core tries it every 10 s)")
+            seen, _ = _bench_call_watch(radio, sdr_bench, pytestconfig,
+                                       keys=("core", "channel") if two else ("core", "features"))
         finally:
             scan_off(radio)
     positions = {v.get("zone_pos") for _, v in seen}
+    if two:
+        calls = [v for _, v in seen if v.get("rx2.active") == "1"]
+        print(f"positions {sorted(positions)}, the second receiver heard the call in {len(calls)} views")
+        assert positions == {str(other)}, f"the main receiver left the selected channel: {sorted(positions)}"
+        assert calls, "the second receiver never reported the bench call"
+        assert all(v.get("rx2.src") not in ("0", None) for v in calls), calls[:3]
+        return
     held = [v.get("zone_pos") for _, v in seen if v.get("scan_phase") == "hold"]
     print(f"positions {sorted(positions)}, held on {sorted(set(held))} ({len(held)} views)")
     assert positions <= {str(pos), str(other)}, positions

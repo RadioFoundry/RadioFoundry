@@ -245,7 +245,7 @@ static void chip_rx_restart(hrc7000_dmr_t *e)
 	e->voice_slots = 0;
 	e->tc_slot[0] = e->tc_slot[1] = 0;
 	e->tc_agree = 0;
-	e->emb_pending = false;
+	e->emb_pending = 0;
 	// What was heard is gone with the slot timing. Kept, the polite check went on seeing a busy channel: an empty
 	// channel gives no timeslot interrupts after the restart, so rx_resync never aged it out, and every PTT after a
 	// data response was refused until the radio left DMR (on the SDR bench, 2026-11-03)
@@ -269,7 +269,7 @@ static void rx_hold(hrc7000_dmr_t *e)
 	e->voice_slots = 0;
 	e->tc_slot[0] = e->tc_slot[1] = 0;
 	e->tc_agree = 0;
-	e->emb_pending = false;
+	e->emb_pending = 0;
 	e->rx_any = false;	// the polite check's busy window starts again, as after a restart
 	e->resync_tick = e->tick;
 	e->idle_ticks = POST_TX_HOLD_TICKS;
@@ -693,10 +693,10 @@ static void rx_burst(hrc7000_dmr_t *e)
 		for (uint8_t i = 0; i < DMR_VOICE_BYTES; i++) {
 			b->payload[i] = e->dev->buf[C7_VOICE_RAM + i];
 		}
-		if (e->emb_pending) {
-			memcpy(b->lc, e->emb_rx, 9);
+		if (e->emb_pending & (1u << s.chip_slot)) {
+			memcpy(b->lc, e->emb_rx[s.chip_slot], 9);
 			b->lc_valid = true;
-			e->emb_pending = false;
+			e->emb_pending &= (uint8_t)~(1u << s.chip_slot);
 		}
 		e->voice_chip_slot = (int8_t)s.chip_slot;
 		e->voice_tick = e->tick;
@@ -772,13 +772,18 @@ void hrc7000_dmr_isr_sys(hrc7000_dmr_t *e)
 		}
 #endif
 		if (list & SYS_LATE_LC) {
-			// Embedded LC assembled from a superframe: in the RX RAM (2.8), handed over with the next voice burst
+			// Embedded LC assembled from a superframe: in the RX RAM (2.8), handed over with the next voice burst of
+			// its own slot. Through a repeater with a call on each slot the next burst is the other call's, and an
+			// LC given to it changed the talker of the call being heard, again and again
 			e->st.late_entry++;
-			if ((r(e, C7_RX_TYPE_INFO) & RTI_CS) == 0) {
+			uint32_t info = r(e, C7_RX_TYPE_INFO);
+			if ((info & RTI_CS) == 0) {
+				uint8_t cs = (uint8_t)((info >> 19) & 1u);
+
 				for (uint8_t i = 0; i < 9; i++) {
-					e->emb_rx[i] = e->dev->buf[C7_RX_RAM + i];
+					e->emb_rx[cs][i] = e->dev->buf[C7_RX_RAM + i];
 				}
-				e->emb_pending = true;
+				e->emb_pending |= (uint8_t)(1u << cs);
 			}
 		}
 		if (list & SYS_DEFRAME) {

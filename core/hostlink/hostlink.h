@@ -18,8 +18,9 @@
 //
 // A side protocol (the debug link, docs/spec/debuglink.md) may be registered beside these: its frames start with a
 // byte no other protocol starts a request with (0xA5; MMDVM is 0xE0, CPS requests are ASCII letters). It never
-// changes the mode. Its first byte is recognized at a request boundary: in idle mode always, in a CPS session only
-// after the CPS_GAP_MS quiet that starts a new request or right after another side frame, in hotspot mode only between MMDVM frames (where the MMDVM
+// changes the mode. Its first byte is recognized at a request boundary: in idle mode always, in a CPS session
+// whenever the engine holds no part of a request, or after the CPS_GAP_MS quiet that starts a new request or right
+// after another side frame, in hotspot mode only between MMDVM frames (where the MMDVM
 // framer would throw the byte away as junk). Once a side frame has started, its bytes go to it until it ends or
 // times out.
 //
@@ -71,9 +72,13 @@ void hostlink_request_ppp(bool on);
 // The CPS protocol, when it exists: called from the host link task with each chunk of bytes in a CPS session
 // (requests are not framed here; the handler splits them, e.g. by the 3 ms gap), and with len 0 (buf NULL) as a tick
 // on every pass of the task while the session lasts. Replies go out with hostlink_write. mid_request (may be NULL) says
-// the handler holds part of a request: then a quiet gap is no request boundary, and the rest stays the handler's
+// the handler holds part of a request: then a quiet gap is no request boundary, and the rest stays the handler's.
+// request_start (may be NULL) says a byte can start a request: on an idle port any other byte, or that byte away from
+// a request boundary, is line noise, dropped without opening a session. answered (may be NULL) counts the requests
+// answered since boot: a session that answered none was opened by noise
 typedef void (*hostlink_cps_fn)(const uint8_t *buf, size_t len, uint32_t now_ms);
-void hostlink_set_cps_handler(hostlink_cps_fn fn, bool (*mid_request)(void));
+void hostlink_set_cps_handler(hostlink_cps_fn fn, bool (*mid_request)(void), bool (*request_start)(uint8_t b),
+			      uint32_t (*answered)(void));
 // The side protocol: start is the first byte of its frames; feed takes bytes that start (buf[0] == start) or continue
 // a frame and returns how many it took (0: not its own after all, the bytes go to the other protocols); in_frame
 // says whether a frame is in progress (its next bytes belong to it). Called from the host link task; replies go out
@@ -96,6 +101,35 @@ typedef struct {
 void hostlink_set_tnc(const hostlink_tnc_t *tnc);
 // Bytes to the host; only from the host link task (the CPS handler, the hotspot, the side protocol)
 size_t hostlink_write(const uint8_t *buf, size_t len);
+
+// Bytes an idle port dropped as line noise since boot, for the debug link
+uint32_t hostlink_noise_bytes(void);
+
+// A side protocol client may hold the port (opt-in, DL_CMD_LINK_HOLD): while it does, nothing moves an idle port to
+// another protocol, so a disturbed line can't take the port from under it, and its frames end a CPS session that never
+// answered a request. Ends when released or after HOSTLINK_SIDE_HOLD_MS without a valid frame (a client that went away)
+#define HOSTLINK_SIDE_HOLD_MS		60000
+void hostlink_side_hold(bool on, uint32_t now_ms);
+// The side protocol took a valid frame
+void hostlink_side_frame(uint32_t now_ms);
+// For the link watch's record: the mode in bits 24-31, seconds since the port last gave a byte in bits 16-23 (255: that
+// long or more, or never)
+uint32_t hostlink_port_state(uint32_t now_ms);
+
+// Whether a frame's length and command bytes can be what opens an MMDVM session (hostlink_policy.c): a stray 0xE0 on a
+// disturbed line must not switch the port to hotspot mode
+bool hostlink_mmdvm_first_frame(uint8_t len, uint8_t cmd);
+// Whether the byte after a first KISS FEND can be a KISS frame's: another FEND, or a command on port 0
+bool hostlink_kiss_second(uint8_t b);
+
+// The side protocol's hold (hostlink_policy.c)
+typedef struct {
+	bool held;
+	uint32_t last_ms;
+} hostlink_side_hold_t;
+void hostlink_side_hold_set(hostlink_side_hold_t *h, bool on, uint32_t now_ms);
+void hostlink_side_hold_frame(hostlink_side_hold_t *h, uint32_t now_ms);
+bool hostlink_side_hold_active(hostlink_side_hold_t *h, uint32_t now_ms);
 
 // When to leave hotspot mode (hostlink_policy.c, no RTOS: the host tests run it). Fed after every pass of the task
 typedef enum {

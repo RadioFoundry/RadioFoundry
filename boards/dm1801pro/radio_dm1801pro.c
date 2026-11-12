@@ -20,6 +20,7 @@
 #include "hrc_afsk.h"
 #include "radio/ref_trim.h"
 #include "radio/apc_ramp.h"
+#include "radio/pa_keyup.h"
 
 // DAC C biases the modem's AF input. The radio's own value: with the other HR_C7000 boards' 0x06E2 the modem missed the sync of
 // about half of the DMR senders (bench, strong and weak signal); with 0x067E it took every burst
@@ -41,11 +42,19 @@
 // ahead of the lead point, not earlier: an earlier switch cut off the tail of the inbound burst before ours (a clipped
 // SFR header lost the next superframe; at 2.0 ms the frame before ours still carried most of the voice bit errors).
 // Swept 0.4-3.1 ms in hardware-dm1801pro.md 5.6. The interrupt comes 0.5 ms before that, so a late wake of the task
-// (up to 0.42 ms) doesn't make the switch late. The drive is keyed 0.5 ms before the first symbol (one step; it was
+// (up to 0.42 ms) doesn't make the switch late. The drive is keyed 0.5 ms before the first symbol (one step unless the key-up below has a boost; it was
 // 0.45 ms before to 0.65 ms after with the glue's PA one-shot, 5.6)
 #define RF_TX_LEAD		11u		// 100 us steps (RF_CONTROL b13:8)
 #define RF_SWITCH_LEAD_US	600u		// the RF to TX this long before the lead point
-#define PA_AHEAD_US		500u		// the drive keyed this long before the first symbol
+#define PA_AHEAD_US		1000u		// the drive keyed this long before the first symbol
+// The DMR key-up (radio/pa_keyup.h, docs/spec/pa-keyup.md). Its points come after the switch to TX, which takes about
+// 0.2 ms from its point: the earliest is that long after it
+#define SWITCH_US		200u
+#define KEYUP_MAX_AHEAD_US	(RF_SWITCH_LEAD_US + HRC_RFBURST_SYMBOL_AFTER_LEAD_US - SWITCH_US)
+// No boost: the output follows the drive about 0.65 ms later at every drive, on both bands, so the drive only has to
+// come earlier. At 0.5 ms the first symbol was 5-18 dB low; from 0.8 ms it is within 1 dB and the -3 dB point 0.15 ms
+// before it, at 1.0 ms 0.3 ms before (hardware-dm1801pro.md 5.6)
+static const pa_keyup_cfg_t keyup_cfg = PA_KEYUP_FIXED(PA_AHEAD_US);
 // TX data advance (hrc7000_t.tx_pre_on) 1.1 ms, not the chip's 0.4 ms: at 0.4 ms the inbound burst came 0.71 ms late
 // against the outbound, about 0.11 ms less per step (hardware-dm1801pro.md 5.6)
 #define TX_PRE_ON		11u
@@ -83,6 +92,9 @@ static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modula
 
 static void speaker_source(void);
 static volatile bool dmr_keyed;		// DMR transmission on: the burst sequence may key the drive
+static pa_keyup_t ku;			// the transmission's DMR key-up, set before the RF task is armed
+static pa_keyup_point_t key_pt[PA_KEYUP_POINTS];
+static uint8_t key_n;
 static volatile uint16_t tx_drive;	// DAC B value at the top of the ramp (FM) or while keyed (DMR)
 static uint16_t last_rssi_raw, last_noise_raw;
 static volatile int8_t mic_offset_db;	// hal_radio_t.mic_gain: taken at the next transmission start
@@ -157,12 +169,21 @@ static fd6818_tone_t fd_tone(uint8_t type)
 	}
 }
 
+// The PA drive set over the debug link for the next transmission (power calibration; hal_radio_t.tx_drive), 0 = the
+// level's. Any task sets it; tx_off clears it
+static volatile uint16_t drive_override;
+
 // The calibration as the radio's own firmware reads it (hardware-dm1801pro.md 6.4): the band's rows at its TX points,
 // the VHF rows up to 200 MHz and the UHF rows above, as for the TX path select
 uint16_t dm1801pro_pa_drive(uint32_t hz, uint8_t power)
 {
-	static const bf_cal_row_t row[3] = { BF_ROW_PA_LOW, BF_ROW_PA_MID, BF_ROW_PA_HIGH };
-	return (uint16_t)(bf_cal_tx_byte(hz, row[power > 2 ? 2 : power]) << 4);
+	// Five levels: 2, 3 and 4 are the low, middle and high rows; 0 and 1 are fractions of the low row's drive
+	// (hardware-dm1801pro.md 5.6: draft values, to be set with a wattmeter)
+	static const uint8_t low_pct[2] = { 37, 65 };
+	if (power < 2u) {
+		return (uint16_t)(((uint32_t)bf_cal_tx_byte(hz, BF_ROW_PA_LOW) << 4) * low_pct[power] / 100u);
+	}
+	return (uint16_t)(bf_cal_tx_byte(hz, power == 2u ? BF_ROW_PA_LOW : power == 3u ? BF_ROW_PA_MID : BF_ROW_PA_HIGH) << 4);
 }
 
 // RF_MOD_BIAS_CTRL: TX center + 384 in the high half, the band's modulation byte x 0x0101 in the low half. The radio
@@ -210,17 +231,35 @@ static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 	fd6818_dmr_burst_at(&fd, true, fd.variant->bw_dmr, synth_hz(tx_hz));
 	fd6818_write(&fd, FD_REG_TX_AUX, 0x3B18);
 	tx_path(tx_hz, true);
-	at(hrc_rfburst_pa_at_us(RF_TX_LEAD, PA_AHEAD_US));
-	if (dmr_keyed) {
-		DAC_DATA_B = tx_drive;
+	// The key-up's points in time order. The TX path is on from the switch, so the PA's own point only sets the
+	// step's drive when there is no boost
+	for (uint8_t i = 0; i < key_n; i++) {
+		at(hrc_rfburst_pa_at_us(RF_TX_LEAD, key_pt[i].us));
+		if (!dmr_keyed) {
+			continue;
+		}
+		switch (key_pt[i].kind) {
+		case PA_KEYUP_PT_BOOST:
+			DAC_DATA_B = ku.boost;
+			break;
+		case PA_KEYUP_PT_DRIVE:
+			DAC_DATA_B = tx_drive;
+			break;
+		default:
+			if (ku.boost == 0u) {
+				DAC_DATA_B = tx_drive;
+			}
+			break;
+		}
 	}
 }
 
 // The burst's TX off, after the task's hold to its last symbol: drive off, TX path off, FD6818 straight back to
 // receive, RX path on. The TX path switches per burst: a hotspot stays keyed while it listens, and with the TX path on
 // it heard nothing
-static void burst_off(void)
+static void burst_off(hrc_rfburst_wait_fn wait)
 {
+	(void)wait;
 	DAC_DATA_B = 0;
 	tx_path(tx_hz, false);
 	fd6818_dmr_burst_at(&fd, false, fd.variant->bw_dmr, synth_hz(rx_hz));
@@ -269,6 +308,9 @@ static void init(void)
 	hrc_modem_analog_init(DAC_C_INIT);
 	hrc7000_power_on_init(&modem, bf_cal_tx_center(), MIC_GAIN_DMR_DB);
 	hrc7000_set_rf_tx_lead(&modem, RF_TX_LEAD);
+#if CONFIG_DMR
+	pa_keyup_init(&keyup_cfg, KEYUP_MAX_AHEAD_US, 4095u);
+#endif
 
 	hrc_pin_out(PIN_RF_CS, true);
 	hrc_pin_out(PIN_RF_CLK, false);
@@ -389,6 +431,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	// Levels 0..2 are the factory's low, mid and high rows, as the radio's own power setting picks them
 	// (hardware-dm1801pro.md 6.4)
 	tx_drive = dm1801pro_pa_drive(hz, power);
+	if (drive_override != 0u) {
+		tx_drive = drive_override;
+	}
 	rx_path(hz, false);
 	hal_delay_ms(1);
 	write_mod_bias(hz);
@@ -410,6 +455,15 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		hal_delay_ms(1);
 		tx_hz = hz;	// for burst_on's TX path
 		rx_path(rx_hz, true);
+		// The burst's key-up points from the cal table at the TX frequency
+		// against the calibration's high row, the dead zone's anchor its low row
+		uint16_t top = dm1801pro_pa_drive(hz, 0xFFu), ref = dm1801pro_pa_drive(hz, 2u);
+#if CONFIG_DMR
+		ku = pa_keyup_plan(tx_drive, top, ref);
+#else
+		ku = pa_keyup_drives(&keyup_cfg, tx_drive, top, ref, 4095u);
+#endif
+		key_n = pa_keyup_points(&ku, key_pt);
 		dmr_keyed = true;
 #if CONFIG_DMR
 		hrc_rfburst_arm();
@@ -475,6 +529,21 @@ static void tx_end(bool keep)
 static void tx_off(void)
 {
 	tx_end(false);
+	drive_override = 0u;
+}
+
+static uint16_t drive_level(uint32_t hz, uint8_t level)
+{
+	return board_in_band(hz, true) ? (bf_cal_valid() ? dm1801pro_pa_drive(hz, level) : 0u) : 0u;
+}
+
+static bool drive_set(uint16_t drive)
+{
+	if (drive > 4095u) {	// DAC B is 12 bits
+		return false;
+	}
+	drive_override = drive;
+	return true;
 }
 
 // hrc_dmr_board_t.tx_end: the burst switch left the FD6818 receiving
@@ -717,6 +786,8 @@ const hal_radio_t dm1801pro_radio = {
 #if CONFIG_REF_TRIM
 	.ref_trim = ref_trim,
 #endif
+	.tx_drive_level = drive_level,
+	.tx_drive = drive_set,
 };
 
 // The shared PTT line's gate trusts no new press while this is set (drivers/input/sharedptt)

@@ -20,6 +20,9 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.join(ROOT, "tools", "bench"))
 
+import rfoundry_debug
+rfoundry_debug.DebugLink.hold_session = True    # noise from a transmission must not take the port during a test
+rfoundry_debug.DebugLink.hold_watch_s = 120     # and a link that dies restarts the radio, with a record of why
 from rfoundry_debug import (DebugLink, DebugLinkError, as_int, find_ports, parse_counters,  # noqa: E402
                        to_rgb, write_png, ACTIONS, PRESS, LONG, UP, APRS, APRS_OP_MESSAGE, APRS_OP_SEND_NOW,
                        APRS_OP_STATUS, DATA_OP_CALL_ALERT, DATA_OP_EMERGENCY, DATA_OP_IP_SEND,
@@ -457,8 +460,18 @@ class Radio:
         """Poll the view until pred(view) is true; returns that view. AssertionError with the last view if not."""
         end = time.monotonic() + timeout
         v = {}
+        missed = False
         while True:
-            v = self.link.view(list(sections))
+            try:
+                v = self.link.view(list(sections))
+            except DebugLinkError as e:
+                # One unanswered request is no fault: a key-up or burst can disturb a cable line shared with the PTT
+                # (docs/spec/gotchas.md 2.13). A second in a row is a radio that stopped answering
+                if e.status is not None or missed:
+                    raise
+                missed = True
+                continue
+            missed = False
             if pred(v):
                 return v
             if time.monotonic() > end:
@@ -607,7 +620,10 @@ class Radio:
         return lang
 
     def ptt_for(self, seconds):
-        self.link.ptt_for(seconds)
+        try:
+            self.link.ptt_for(seconds)
+        except DebugLinkError:          # a key-up can disturb a cable line shared with the PTT and lose the reply: it is
+            time.sleep(seconds + 0.5)   # keyed anyway, and asking again would be lost too. The caller checks what went out
 
     # ── radio state: every test leaves the radio as it found it ──
     def snapshot(self):

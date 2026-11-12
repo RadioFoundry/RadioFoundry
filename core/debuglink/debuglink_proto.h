@@ -35,6 +35,8 @@ enum {
 	DL_CMD_IDDB		= 0x1F,	// the DMR ID database: its format, records and an ID looked up (debuglink_iddb.c, 3.23)
 	DL_CMD_CHIP_REG		= 0x20,	// an RF chip or SoC register read or written (debuglink_chipreg.c, 3.24)
 	DL_CMD_HWOPT		= 0x21,	// the board's hardware options: list, set (debuglink_hwopt.c, 3.25)
+	DL_CMD_LINK_HOLD	= 0x23,	// hold the host port for this client, or let go (docs/spec/debuglink.md 3.27)
+	DL_CMD_MEM		= 0x22,	// peek and poke: memory, registers and pins (CONFIG_DEBUG_MEM; dl_mem.c, 3.26)
 };
 
 // DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.25)
@@ -42,6 +44,27 @@ enum {
 	DL_HWOPT_OP_LIST	= 0,	// none -> key=value text: hwopt.count, hwopt.<i>.name / value / restart / choices
 	DL_HWOPT_OP_SET		= 1,	// option u8, choice u8 -> none (refused: the board didn't store it, or on air)
 };
+
+// DL_CMD_MEM operations (first payload byte; docs/spec/debuglink.md 3.26). u32 little endian. Width is 1, 2 or 4 bytes
+// and the address a multiple of it. Everything but READ, ARM and PIN's read is refused unless armed
+enum {
+	DL_MEM_OP_READ = 0,	// width u8, address u32, count u8 (1..DL_MEM_PEEK_MAX) -> status, the values (width each)
+	DL_MEM_OP_WRITE = 1,	// width u8, address u32, value u32 -> status, the value read back u32
+	DL_MEM_OP_SET = 2,	// the same: the value's bits set (read, or, write)
+	DL_MEM_OP_CLEAR = 3,	// the same: the value's bits cleared
+	DL_MEM_OP_ARM = 4,	// key u32 (DL_MEM_KEY) -> status: writes allowed for DL_MEM_ARM_MS
+	DL_MEM_OP_DISARM = 5,	// -> status
+	DL_MEM_OP_PIN = 6,	// pin u8 (the platform's index), action u8 (DL_MEM_PIN_*) -> status, state u8 (DL_MEM_PS_*)
+};
+enum { DL_MEM_PIN_READ = 0, DL_MEM_PIN_INPUT = 1, DL_MEM_PIN_LOW = 2, DL_MEM_PIN_HIGH = 3 };
+#define DL_MEM_PS_OUTPUT	0x01u	// driven by the SoC
+#define DL_MEM_PS_LEVEL		0x02u	// the level read at the pin
+#define DL_MEM_PS_LATCH		0x04u	// the level it drives (or would)
+#define DL_MEM_PEEK_MAX		64u
+#define DL_MEM_ARM_MS		60000u
+// The arming key, little endian in the payload: bytes 'P' 'O' 'K' 'E'. The host tool sends it only when asked to
+// (rfoundry_debug.py --dangerous), so a write can't happen by accident
+#define DL_MEM_KEY		0x454B4F50u
 
 // DL_CMD_CHIP_REG's chip number for the SoC's own registers (board.system->reg): an address u32 follows, not a page and
 // register. The board's RF chips are numbered below it
@@ -52,11 +75,13 @@ enum {
 	DL_RX2_OP_INFO = 0,	// -> status, flags u8 (DL_RX2_F_*)
 	DL_RX2_OP_BRIDGE = 1,	// token u32 -> status; after the reply the radio bridges the cable to the second SoC
 	DL_RX2_OP_RESTART = 2,	// token u32 -> status: restart the second SoC
+	DL_RX2_OP_FORWARD = 3,	// command u8, its payload -> status, then the second SoC's reply payload (its status first)
 };
 #define DL_RX2_F_PRESENT	0x01u	// the board has a second receiver
 #define DL_RX2_F_UP		0x02u	// it answers
 #define DL_RX2_F_BRIDGE		0x04u	// the update bridge is there
 #define DL_RX2_F_RESTART	0x08u	// so is the restart
+#define DL_RX2_F_FORWARD	0x10u	// so is FORWARD, to the second SoC's own debug link server
 #define DL_RX2_TOKEN		0x47445242u	// 'BRDG
 
 // DL_CMD_WATCHDOG operations (first payload byte; docs/spec/debuglink.md 3.21). u32 little endian. Every test ends in

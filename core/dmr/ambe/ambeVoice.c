@@ -47,6 +47,7 @@ static uint8_t tx_seq, tx_end_seq;	// equal: no call (also at start-up)
 static uint8_t cb_rx_seq, cb_tx_seq;
 static bool cb_rx_playing, cb_rx_primed, cb_rx_live;
 static bool cb_speaker;
+static bool cb_route_unknown;		// set at the stream's start: cb_speaker may not be what the route is
 static uint8_t cb_bad_run;
 static uint32_t cb_call_frames;		// frames played in this call (rx_underrun_at)
 static uint8_t last_bits[VOCODER_BITS];
@@ -68,6 +69,7 @@ static bool cb_enc_opts_set;		// cb_enc_opts is valid
 static void ensure_streaming(void)
 {
 	if (!streaming && aud != NULL) {
+		STORE(cb_route_unknown, true);	// before the first callback
 		streaming = aud->start(ambeVoiceAudioBlock, NULL);
 	}
 }
@@ -457,6 +459,13 @@ void ambeVoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx)
 		if (!cb_rx_playing) {
 			speaker(false);
 		}
+	}
+	// The stream took the callback over from a beep's (beep.c), which leaves the speaker route as it was: on, after
+	// a talk permit tone. Send the route once, or it stays on (and an amplifier that follows it) until leaving DMR
+	if (LOAD(cb_route_unknown)) {
+		STORE(cb_route_unknown, false);
+		cb_speaker = !(cb_rx_playing || cb_mixing);
+		speaker(cb_rx_playing || cb_mixing);
 	}
 }
 

@@ -147,6 +147,9 @@ void stub_entry_service(void)
 	if (board.radio != NULL && board.radio->tx_off != NULL) {
 		board.radio->tx_off();
 	}
+	if (board.stub_entering != NULL) {
+		board.stub_entering();
+	}
 	show_banner();				// tell the user, flushed to the panel before the jump
 	s->enter_stub(enter_addr);		// does not return on success
 	dlog("stub: entry failed");		// only reached if the jump was refused

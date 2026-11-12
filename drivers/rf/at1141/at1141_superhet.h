@@ -7,5 +7,6 @@
 #include "rf/superhet/superhet.h"
 
 extern const superhet_lo_ops_t at1141_superhet_lo;
+extern const superhet_lo_ops_t at1141_superhet_lo_restart;	// off (0x4002) for TX, a restart after it
 
 #endif

@@ -4,7 +4,7 @@
 // flash.stock_console "usmart"; the DB25-D PRO's, docs/spec/hardware-db25d.md 7). It reads and writes single words of
 // memory, which is enough to put the universal stub (stub.js) into a free stretch of RAM and start it. The stub then
 // reads and writes the program flash as on every other HR_C7000 radio. The console writes RAM only, never flash. The
-// stock builds it knows are below (BUILDS); their versions are the board's flash.stock_versions.
+// stock builds it knows are below (BUILDS), by their versions; a board's flash.stock_versions names the ones it runs.
 //
 // Once RadioFoundry runs, the radio is reached the way the other HR_C7000 radios are (stub.js, c7000.js).
 
@@ -24,9 +24,9 @@ const APP_END = 0x0310C000;
 //   write_addr(0x00054000,0x1)   -> "write_addr(0X54000,0X1);" (the function returns nothing; the echo is the reply)
 // The stock application's own log text follows on the same line, so a reply is matched by its address.
 //
-// The stub goes into 0x54000-0x58000, free RAM above the heap in both known builds (018, 020). The console's command
-// table lives in RAM at 0x18000840; its cmd_rec entry (+8) is called through the table for every ordinary frame, so
-// pointing it at the stub makes the next frame start the stub.
+// The stub goes into 0x54000-0x58000, free RAM above the heap in both proven builds (018, 020); the others name their
+// own window (BUILDS). The console's command table lives in RAM at 0x18000840; its cmd_rec entry (+8) is called
+// through the table for every ordinary frame, so pointing it at the stub makes the next frame start the stub.
 
 const FRAME = "@AT ";
 export const STUB_WINDOW = [0x54000, 0x4000];		// [load address, size]
@@ -35,10 +35,12 @@ export const APP_SIG = [0x0300C000, 0xC001112C];		// the application's first wor
 // Every vendor build known (hardware-db25d.md 7, USMART console): name, its build date, at: the word just below
 // "EARSAB.0NN" in its program flash (four words cover it: how the build is told), ram: the version string's copy in
 // RAM, where the firmware writes the RF chips it found at boot (the hardware variant; the flash holds a placeholder).
-// stub: the stub load through this build's console is proven on a radio (its free RAM and command table measured);
-// on the others it is only offered as a try. window ([load, size]) and hijack: where this build takes the stub and
-// which RAM word its console calls for every frame, when not STUB_WINDOW and HIJACK. The proven builds first: a radio
-// on one is told with the fewest reads
+// series: the version's first three parts, "909E.DBB.EARSAB" when not given. stub: the stub load through this build's
+// console is proven on a radio (its free RAM and command table measured); on the others it is only offered as a try.
+// window ([load, size]) and hijack: where this build takes the stub and which RAM word its console calls for every
+// frame, when not STUB_WINDOW and HIJACK. traced: false, a series whose console route nobody has followed on a radio
+// (its RAM, frame format and command table unchecked): its builds are told and named, but no load is tried through
+// them. The proven builds first: a radio on one is told with the fewest reads
 export const BUILDS = [
 	{ name: "018", date: "2025-01-21", at: 0x03079F3C, ram: 0x18000AF4, stub: true },
 	{ name: "020", date: "2026-01-10", at: 0x0307DCCC, ram: 0x18000B74, stub: true },
@@ -49,6 +51,9 @@ export const BUILDS = [
 	{ name: "018", date: "2023-07-06", at: 0x03075AAC, ram: 0x18000A74, stub: false, window: [0x55000, 0x3000], hijack: 0x18000840 },
 	{ name: "018", date: "2022-11-23", at: 0x030759EC, ram: 0x18000A64, stub: false, window: [0x56000, 0x2000], hijack: 0x18000840 },
 	{ name: "017", date: "2022-10-21", at: 0x030759E8, ram: 0x18000A60, stub: false, window: [0x56000, 0x2000], hijack: 0x18000840 },
+	// the GD-88's main SoC (hardware-gd88.md): of the B49E series only 021 has the console. Its route is not traced, so
+	// no load is tried; the window is that of a build the page doesn't know, and its version's RAM copy is not known
+	{ series: "B49E.D64.EOPSAB", name: "021", date: "2025-01-19", at: 0x0307E66C, stub: false, traced: false, window: [0x56000, 0x2000] },
 ];
 // A build this page doesn't know: the top 8 KB of SRAM, above the heap of every known build (its highest end:
 // 0x554A0, 2022-11-23), and the newer builds' table layout. The pointer check of an untried load still applies
@@ -57,14 +62,42 @@ const VERSION_WORDS = 6;	// "909E.DBB.EARSAB.018" and its terminator
 // Where a build this page doesn't know keeps the version string's RAM copy: around the known builds' (0x18000A60-0x18000B74)
 const VERSION_SCAN = [0x18000A00, 0x18000C00];
 
+// A build's series, its full version ("909E.DBB.EARSAB.018") and the version's last two parts, what the build check
+// reads ("EARSAB.018")
+export const seriesOf = (b) => b.series || "909E.DBB.EARSAB";
+export const versionOf = (b) => `${seriesOf(b)}.${b.name}`;
+export const buildTail = (b) => `${seriesOf(b).split(".")[2]}.${b.name}`;
+
+// The builds of a board whose flash.stock_versions are `versions`: those of the same series word ("EARSAB"), so the
+// older builds of a known series are told too; every known build when versions is null
+export function buildsFor(versions) {
+	if (!versions) return BUILDS;
+	const words = new Set(versions.map((v) => v.split(".")[2]));
+	return BUILDS.filter((b) => words.has(seriesOf(b).split(".")[2]));
+}
+
+// Whether an untried load may be offered: on a build of a traced series, or on a build the page doesn't know (null)
+// when the board has a traced series at all. A guess at the RAM of an untraced console is never sent to a radio
+export const mayTry = (build, versions) => (build ? build.traced !== false : buildsFor(versions).some((b) => b.traced !== false));
+
 // A build's full version as the board's flash.stock_versions name it ("018" -> "909E.DBB.EARSAB.018"), or the build
 export const stockName = (flash, build) => (flash.stock_versions || []).find((v) => v.endsWith(`.${build}`)) || build;
 
+// A version's form: its first and third parts as they are, any model code and build number ("909E.DBB.EARSAB.018" ->
+// 909E.<2-4 letters or digits>.EARSAB.<3 digits>)
+const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const versionForm = (v) => {
+	const p = v.split(".");
+	return `${esc(p[0])}\\.[0-9A-Za-z]{2,4}\\.${esc(p[2] || "")}\\.\\d{3}`;
+};
+
 // The stock application's version string ("909E.D6x.EARSAB.020") in a read of the program flash, wherever the build
-// put it, or null. Only for messages: what a read holds is decided by its contents (c7000.js analyze)
-export function stockVersion(progmem) {
+// put it, or null. versions: the forms to look for (a board's flash.stock_versions), every known build's by default.
+// Only for messages: what a read holds is decided by its contents (c7000.js analyze)
+export function stockVersion(progmem, versions = BUILDS.map(versionOf)) {
+	if (!versions.length) return null;
 	const app = progmem.subarray(APP_SIG[0] - FLASH_BASE, Math.min(progmem.length, APP_END - FLASH_BASE));
-	const m = /909E\.[0-9A-Za-z]{2,4}\.EARSAB\.\d{3}/.exec(latin(app));
+	const m = new RegExp([...new Set(versions.map(versionForm))].join("|")).exec(latin(app));
 	return m ? m[0] : null;
 }
 
@@ -101,8 +134,10 @@ export function stubTarget(build) {
 }
 
 export class Usmart {
-	constructor(stream, { log = () => {}, quiet = 80 } = {}) {
+	// versions: the builds to look for (the board's flash.stock_versions), every known one by default
+	constructor(stream, { log = () => {}, quiet = 80, versions = null } = {}) {
 		this.s = stream;
+		this.builds = buildsFor(versions);
 		this.log = log;
 		this.quiet = quiet;	// after a write's echo, how long the line must stay quiet before the next frame
 		this.target = stubTarget(null);
@@ -189,15 +224,16 @@ export class Usmart {
 
 	// Which stock build runs (a BUILDS entry), or null for one this page does not know (its RAM may differ)
 	async build(signal) {
-		for (const b of BUILDS) {
-			if ((await this.readText(b.at, 4, signal)).includes(`EARSAB.${b.name}`)) return b;
+		for (const b of this.builds) {
+			if ((await this.readText(b.at, 4, signal)).includes(buildTail(b))) return b;
 		}
 		return null;
 	}
 
 	// The version string as the running build filled it in ("909E.DBB.EARSAB.018"), from its RAM copy: the text up to
-	// its terminator
+	// its terminator. null for a build whose RAM copy is not known
 	async version(build, signal) {
+		if (!build.ram) return null;
 		const text = await this.readText(build.ram, VERSION_WORDS, signal);
 		return text.split("\0")[0];
 	}

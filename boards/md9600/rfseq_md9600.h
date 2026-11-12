@@ -185,6 +185,12 @@ md9600_rf_err_t md9600_rf_pa_burst(md9600_rf_t *rf, bool on);
 // Call with step 0, 1, ... each *next_us later, until *next_us comes back 0. Step 0 with the PA already on does
 // nothing. md9600_rf_pa_burst(rf, false) ends it at any step
 md9600_rf_err_t md9600_rf_pa_step(md9600_rf_t *rf, uint32_t step, uint32_t *next_us);
+// The burst's key-up as single points, for a timer that runs the key-up rule's sequence (radio/pa_keyup.h): the
+// band's transmitter supply, the loop closed, and an APC reference value. The reference is held at the floor or
+// above (under it the loop loses control). Each refuses like md9600_rf_pa_step and leaves the PA safe
+md9600_rf_err_t md9600_rf_pa_supply(md9600_rf_t *rf);
+md9600_rf_err_t md9600_rf_pa_loop(md9600_rf_t *rf);
+md9600_rf_err_t md9600_rf_pa_ref(md9600_rf_t *rf, uint16_t dac);
 // While transmitting: the PA alone on or off (the transmitter supply and the loop, the synthesizer stays), for DMR
 // bursts
 md9600_rf_err_t md9600_rf_pa(md9600_rf_t *rf, bool on);

@@ -16,6 +16,7 @@ import warnings
 
 import pytest
 
+from rfoundry_debug import DebugLinkError
 from rfoundry_hil import skip
 import dmr_packet
 from test_dmr_ip import BENCH_ID, _ip_view, _ours, _setup, ip_settings  # noqa: F401 (ip_settings: the fixture)
@@ -62,7 +63,14 @@ def test_back_to_back_delivery(radio, sdr_bench, pytestconfig, ip_settings, tx_s
     with sdr_bench.lease():
         lis = sdr_bench.listen_start(freq, cc, seconds=25)
         for p in payloads:
-            radio.link.ip_send(BENCH_ID, SRC_PORT, DST_PORT, p)
+            for tries in range(4):  # the send before this one is on air: a cable line shared with the PTT can lose a
+                try:                # request or its reply (a repeat is a set member)
+                    radio.link.ip_send(BENCH_ID, SRC_PORT, DST_PORT, p)
+                    break
+                except DebugLinkError:
+                    if tries == 3:
+                        raise
+                    time.sleep(0.3)
         after = radio.wait_for(lambda x: int(x.get("ip.sent", 0)) - int(before["ip.sent"]) >= COUNT and
                                x.get("ip.busy") == "0", timeout=20, sections=("dmr_ip",), what="all sent")
         heard = sdr_bench.listen_result(lis)

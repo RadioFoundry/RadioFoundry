@@ -316,6 +316,10 @@ static void test_summary(void)
 	r.cause = 60005;
 	crash_summary(&r, s, sizeof s);
 	CHECK(strcmp(s, "Stall at 0802C4A9 for 60005 ms in radio") == 0);
+	r.kind = CRASH_KIND_LINK;
+	r.cause = 0x02050007u;
+	crash_summary(&r, s, sizeof s);
+	CHECK(strcmp(s, "Link lost at 0802C4A9 port 2 last byte 5 s bad 7 in radio") == 0);
 	CHECK(strcmp(crash_kind_name(0), "Crash") == 0);
 
 	// Cut to the buffer, always terminated

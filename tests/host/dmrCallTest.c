@@ -1161,6 +1161,46 @@ static void test_rx_recheck_on_configure(void)
 	CHECK(V()->phase != DMR_CALL_PHASE_RX_VOICE && sink_log.begins == 0);
 }
 
+// B-F whose EMB failed its check: the color code and PI the modem gives them are noise, but the voice is good (the
+// AMBE frames have their own FEC). Such a burst is played, not dropped for another color code or taken as encrypted
+static void test_rx_bad_emb(void)
+{
+	dmr_call_config_t c = base_cfg();
+	uint8_t lc[9];
+	unsigned frame = 1;
+	dmr_call_stats_t st;
+
+	setup(&c);
+	mk_lc(lc, 0, TG_TALK, 9997030);
+	rx_header(lc, 1, 0, DMR_SYNC_MS, false);
+	run_ms(60);
+	for (int i = 0; i < 6; i++) {
+		dmr_burst_t b;
+
+		memset(&b, 0, sizeof(b));
+		b.kind = DMR_BURST_VOICE;
+		b.voice_index = (uint8_t)i;
+		b.sync = i == 0 ? DMR_SYNC_MS : DMR_SYNC_NONE;
+		b.cc = (i == 2 || i == 4) ? 9 : 1;
+		b.crc_ok = !(i == 2 || i == 4);
+		b.pi = i == 4;
+		b.in_step = true;
+		b.rssi_dbm = -85;
+		b.len = 27;
+		for (int f = 0; f < 3; f++) {
+			b.payload[f * 9] = (uint8_t)(frame++);
+			memset(&b.payload[f * 9 + 1], 0x55, 8);
+		}
+		sim_rx(&b);
+		run_ms(60);
+	}
+	rx_header(lc, 1, 0, DMR_SYNC_MS, true);
+	run_ms(60);
+	dmr_call_get_stats(&st);
+	CHECK(sink_log.begins == 1 && sink_log.frames == 18 && sink_log.losts == 0);
+	CHECK(st.rx_cc_dropped == 0 && st.rx_lost_frames == 0 && st.rx_enc_dropped == 0 && !V()->caller.encrypted);
+}
+
 static void test_rx_filters(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -2447,6 +2487,7 @@ int main(void)
 	test_rmo_air_slot_alignment();
 	test_rx_call();
 	test_rx_filters();
+	test_rx_bad_emb();
 	test_rx_recheck_on_configure();
 	test_rx_no_call_after_terminator();
 	test_rx_group_callback();
