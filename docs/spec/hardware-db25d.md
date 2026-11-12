@@ -465,9 +465,10 @@ overshoot, on the air (within 20 dB) 0.35 to 0.62 ms before it, so nothing befor
 dB under the top one, whether the TX supply is on or not. With the select at the TX on sequence's end, 0.4-0.6 ms
 ahead of the drive, every level rose in two steps (a flat step at that level, then the drive's rise) and the lowest
 level was on the air at -15 dB from 0.15 ms before the slot's start. So a DMR burst selects the PA 30 us before its
-first drive and turns the TX supply on with it; PTA23 still goes low 200 us before the supply. Measured at 445 MHz,
-every level then rises once, its -3 dB point 0.25-0.34 ms before the first symbol. Left at the lowest level: the main
-chip's TX on at the end of its tune, 31 dB under the level from 0.1 ms before the slot's start.
+first drive and turns the TX supply on with it; PTA23 still goes low 200 us before the supply. Measured into the
+dummy load, every level then rises once from under -57 dB: at 146 MHz its -3 dB point 0.25-0.33 ms before the first
+symbol with 0.2 dB of overshoot, at 445 MHz 0.24-0.29 ms (the lowest level by its edge, below). The carrier is down
+0.40-0.73 ms after the last symbol on both bands.
 
 UHF, the lowest level: the output is within 6 dB 0.4 ms after the drive is written, then gains its last 3 dB over
 milliseconds. More lead buys about 0.15 dB per 0.1 ms at the first symbol (3.6 dB under the settled level with 0.8 ms
