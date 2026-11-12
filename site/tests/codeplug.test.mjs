@@ -32,7 +32,7 @@ function detail(m, ids = [], db = []) {
 	const used = new Set(m.channels.map((c) => c.number));
 	for (const c of [...m.channels].sort((a, b) => a.number - b.number)) {
 		const power = c.power === 0 ? 255 : Math.min(c.power - 1, POWER_LEVELS - 1);
-		const alias = (c.aliasTs1 & 2 ? 1 : 0) | (c.aliasTs2 & 2 ? 2 : 0);
+		const alias = (c.aliasTs1 & 2 ? 1 : 0) | (c.aliasTs2 & 2 ? 2 : 0) | (c.aliasTs1 & 1 ? 4 : 0) | (c.aliasTs2 & 1 ? 8 : 0);
 		const b = (x) => (x ? 1 : 0);
 		out.push(`channel ${c.number} "${c.name}" rx ${c.rxHz} tx ${c.txHz} mode ${b(c.mode === "dmr")} bw ${b(c.bw === 25)}` +
 			` power ${power} tot ${c.tot} rxtone ${tone(c.rxTone)} txtone ${tone(c.txTone)} cc ${c.colorCode} ts ${c.timeslot}` +

@@ -63,12 +63,14 @@ Rules:
   contacts, RX group lists, DMR ID, radio name or boot text. It never erases it on its own. A CPS write that leaves a
   valid codeplug flips it back on the reload. Editing refuses to write over it (`materialize()` fails); the UI asks
   first. A save on the radio (save to channel, channel or contact edit, zone edit, talk target, DMR ID, radio name,
-  quick keys) opens the "Old codeplug" screen (`codeplug-foreign`) and holds the write until it is answered:
+  quick keys) opens the "Old codeplug" screen (`codeplug-foreign`) and holds the write until it is answered. A
+  setting kept as a key of the settings area isn't such a save: it is saved as the radio's own
+  ([codeplug-settings.md](codeplug-settings.md) 5.2):
 
   | Choice | What happens |
   |---|---|
   | Cancel (the default; also Back or leaving the screen) | Nothing is written. Toast "Not saved" |
-  | Start new | `codeplug_start_new()`: clears the general settings up to the hang times (radio name, DMR ID and hang times, 0x00E0-0x00F9: 0xFF), the boot text (0xFF), the quick-key slots (0) and the 1024 contact records (0xFF, seven sector rewrites), then materializes as for a blank flash. The held write then goes on. The codeplug made is a clean one, which the next start-up finds ours |
+  | Start new | `codeplug_start_new()`: clears the general settings up to the hang times (radio name, DMR ID and hang times, 0x00E0-0x00F9: 0xFF), the boot text (0xFF), the quick-key slots (0), the 1024 contact records (0xFF, seven sector rewrites) and the codeplug settings area (0xFF, [codeplug-settings.md](codeplug-settings.md) 5.2), then materializes as for a blank flash. The held write then goes on. The codeplug made is a clean one, which the next start-up finds ours |
   | Use anyway | `codeplug_accept(true)` and a reload: nothing is erased and the verdict is off, so the radio shows that codeplug's records. The held write is dropped (it was made against the built-in set); toast "Old codeplug kept: edit again" |
 
   The acceptance belongs to the codeplug stored when it was given. It is kept in the settings (`cp_flags` bit 0,
@@ -128,6 +130,10 @@ until the native format exists every channel uses the radio-wide slot.
 - **Open-firmware tools after conversion.** Two options, open: (a) the open-firmware CPS shim keeps reading and writing the open-firmware
   image and a commit triggers a re-import into the native area, or (b) the shim serves an open-firmware view generated from
   the native records. (a) is simpler; (b) never lets the two drift apart.
+- **Settings without a record.** Radio-wide settings the open-firmware layout has no field for are keys in the
+  codeplug settings area ([codeplug-settings.md](codeplug-settings.md)), built now in the open-firmware image. The
+  native format carries the same key space: one record in the same entry format, the same key numbers and value
+  encodings, so a conversion copies the entries as they are and no key is ever translated (codeplug-settings.md 8).
 - **Native protocol.** `cps-protocol.md` 3 drafts the record-level protocol a native CPS (and qdmr, if it adds a
   driver) would use: read and write records by type and index, no addresses.
 

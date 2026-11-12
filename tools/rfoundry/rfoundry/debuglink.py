@@ -72,6 +72,10 @@ class Link:
     def __init__(self, port, timeout=1.0):
         import serial
         self.s = serial.Serial(port, 115200, timeout=0.05)
+        try:    # an FTDI cable passes received bytes on after 1 ms, not 16 (Linux only)
+            self.s.set_low_latency_mode(True)
+        except (AttributeError, NotImplementedError, OSError, ValueError):
+            pass
         self.timeout = timeout
         self.seq = 0x40
 
@@ -111,12 +115,18 @@ class Link:
         return bytes(out)
 
     def hwopts(self):
-        """The board's hardware options: [{name, value (-1: none stored), restart, choices}]"""
+        """The board's hardware options: [{name, value (-1: none stored), restart, choices, state}]; state ok, ask
+        (transmit waits for a person to set it), restart or hidden (the board detected it). A firmware without the
+        state key: ask while nothing is stored, else ok."""
         kv = parse_kv(self.request(CMD_HWOPT, bytes([HWOPT_LIST])).decode("ascii", "replace"))
-        return [{"name": kv.get("hwopt.%d.name" % i, ""), "value": int(kv.get("hwopt.%d.value" % i, "-1")),
-                 "restart": kv.get("hwopt.%d.restart" % i) == "1",
-                 "choices": kv.get("hwopt.%d.choices" % i, "").split("|")}
-                for i in range(int(kv.get("hwopt.count", "0")))]
+        out = []
+        for i in range(int(kv.get("hwopt.count", "0"))):
+            value = int(kv.get("hwopt.%d.value" % i, "-1"))
+            out.append({"name": kv.get("hwopt.%d.name" % i, ""), "value": value,
+                        "restart": kv.get("hwopt.%d.restart" % i) == "1",
+                        "choices": kv.get("hwopt.%d.choices" % i, "").split("|"),
+                        "state": kv.get("hwopt.%d.state" % i) or ("ask" if value < 0 else "ok")})
+        return out
 
     def hwopt_set(self, option, choice):
         """Store a choice; LinkError when the radio refuses it (status 7: transmitting, or the board can't store it)."""

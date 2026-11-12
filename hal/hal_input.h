@@ -25,6 +25,7 @@ typedef enum {
 	ACT_DUAL_WATCH,		// dual watch on / off (docs/ux/dual-watch.md)
 	ACT_AB,			// dual watch: the other channel (A / B); starts dual watch when it is off
 	ACT_TONE_BURST,		// FM repeater access: raw down / up edges
+	ACT_TALK_LABEL,		// Home's talk line: the talkgroup's name or its number first (a side key function)
 	ACT_COUNT
 } input_action_t;
 

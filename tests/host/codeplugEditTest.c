@@ -711,8 +711,17 @@ static void test_foreign(void)
 	CHECK(codeplug_acceptance() == CODEPLUG_ACCEPT_DROPPED);
 	codeplug_accept(false);
 
-	// Start new: what the radio reads of the old bytes cleared, the built-in set stored; then the edit
+	// Start new: what the radio reads of the old bytes cleared, the built-in set stored; then the edit. The settings
+	// area goes too: keys from before the other firmware don't come back in the clean codeplug
+	memset(&sim_flash_data[EE + 0xE000], 0x00, 64);
+	sim_flash_data[EE + 0xEFFF] = 0x00;
 	CHECK(codeplug_start_new() && codeplug_set_channel(10, &c));
+	for (uint32_t i = 0; i < 0x1000; i++) {
+		if (sim_flash_data[EE + 0xE000 + i] != 0xFF) {
+			CHECK(!"the settings area erased by Start new");
+			break;
+		}
+	}
 	CHECK(codeplug_source() == CODEPLUG_OPENFW && !codeplug_foreign() && codeplug_channel_count() == 10);
 	CHECK(codeplug_init() == CODEPLUG_OPENFW && !codeplug_foreign());
 	codeplug_evidence(&good, &bad);

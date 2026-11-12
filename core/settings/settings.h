@@ -166,10 +166,11 @@ typedef struct {
 	uint16_t aprs_distance_m;	// beacon after moving this far, 0 = off
 	char aprs_symbol[2];		// symbol table and code
 	uint8_t aprs_path;		// aprs_path_t
-	uint8_t aprs_pos_src;		// aprs_pos_src_t
+	uint8_t aprs_pos_src;		// position_pref_t
 	uint8_t aprs_level;		// AFSK level, 0-100
 	uint8_t aprs_txdelay;		// preamble in 10 ms units
-	uint8_t aprs_misc;		// bits 0-1 aprs_via_t, 2-3 digipeater mode, 4-6 position ambiguity
+	uint8_t aprs_misc;		// bits 0-1 aprs_via_t, 2-3 digipeater mode, 4-6 position ambiguity, 7
+					// SETTINGS_APRS_MISC_POSITION
 	uint8_t aprs_stored;		// 1 = the aprs_ fields are set
 	uint16_t snmp_rf_gap_s;		// SNMP: at most one RF notification per this many seconds, 0 = 60 (was reserved7)
 	// The data service's confirmed IP rules (dmrDataSettings_t.ipConfirmedRule, docs/spec/dmr-data.md 12; appended
@@ -226,7 +227,11 @@ typedef struct {
 	// The volume knob's options (Settings > Sound on a radio whose MCU reads the knob; appended): SETTINGS_KNOB_*,
 	// 0 = all off, as an older record reads
 	uint8_t knob_flags;
-	uint8_t reserved9[3];
+	// The VFOs' SFR role (docs/spec/sfr.md 4): byte A of a codeplug channel's SFR bytes (core/dmr/sfr.h), role bits 0 =
+	// none (was reserved9[0..1]: an older record reads none). The VFO's outbound color code is its own (no byte B)
+	uint8_t vfo_sfr;		// the first VFO
+	uint8_t vfo2_sfr;		// the second
+	uint8_t reserved9;
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
@@ -239,6 +244,7 @@ typedef struct {
 // cp_flags: the owner kept another firmware's codeplug as the radio's own ("Use anyway", docs/spec/codeplug-native.md
 // 2); app.c keeps it equal to codeplug_acceptance(), which a codeplug written by a CPS or TFTP drops
 #define SETTINGS_CP_ACCEPTED		0x01u
+#define SETTINGS_CP_RX_EXT		0x02u	// receive past the band table is on (not about the codeplug: the free bit here)
 
 #define SETTINGS_ZONE_JRN_NONE		0u	// zone_jrn_kind
 #define SETTINGS_ZONE_JRN_ADD		1u
@@ -293,8 +299,10 @@ static inline void settings_set_vfo_talk(settings_t *s, uint32_t id, bool privat
 #define SETTINGS_ACCENT_COLOR	0x07u
 #define SETTINGS_ACCENT_PLAIN	0x08u
 
-// theme and updown_home hold 0..2 in bits 0-1; their upper bits hold the crash report's target (below)
+// theme and updown_home hold 0..2 in bits 0-1; their upper bits hold the crash report's target (below), and
+// updown_home bit 7 Home's talk line order (0, older records: talkgroup number first, 1: its name first)
 #define SETTINGS_SMALL_MASK	0x03u
+#define SETTINGS_HOME_LABEL_FIRST	0x80u
 static inline uint8_t settings_theme(const settings_t *s) { return (s->theme & 3u) <= 2u ? s->theme & 3u : 0; }
 static inline uint8_t settings_updown_home(const settings_t *s)
 {
@@ -396,6 +404,9 @@ static inline void settings_set_crash_contact(settings_t *s, uint16_t num)
 #define SETTINGS_APRS2_DMR_UDT		0x08u	// digital APRS as an ETSI UDT location (else Motorola LRRP)
 #define SETTINGS_APRS2_TO_IS		0x10u	// our own beacons to APRS-IS through the host helper
 #define SETTINGS_APRS2_DMR_GPS		0x20u	// our position in DMR voice calls (ETSI GPS Info LC, CONFIG_DMR_GPS)
+// aprs_misc bit 7: the position service's settings are set (core/position: aprs_lat, aprs_lon, aprs_alt_m,
+// aprs_pos_src, the ambiguity and SETTINGS_APRS2_DMR_GPS). They are also taken when aprs_stored is 1
+#define SETTINGS_APRS_MISC_POSITION	0x80u
 
 typedef enum {
 	SETTINGS_RAM,		// no flash: defaults, nothing saved

@@ -298,7 +298,8 @@ the write and stores it after the first start, so nobody picks it. The web flash
 | 1. Read | Current firmware step, under **Original firmware** and **Other / Not sure**: **Read Firmware Version** opens the WebUSB chooser on the bootloader's USB IDs; a device showing `interface` gets the read, any other (the bootloader) gets nothing. Optional | Before it asks for the bootloader, when no RadioFoundry answered the probe: reads a device with the bootloader's IDs that is connected and shows `interface`, or asks to connect the radio switched on normally (`--yes`: only one already there). `--no-version-read` skips it |
 | 2. Map | `major` gives the choice. The bootloader (by its strings, or its 0x54 answer) is told as "in update mode already"; a version not listed or no answer (a stall) is unknown. None of them settles anything, and none is an alarm | The same, as a `version` line |
 | 3. Bootloader | **Connect** refuses a device showing `interface` (and the very WebUSB device that answered): the original firmware has the bootloader's USB IDs | `check_bootloader` refuses a device showing `interface`; `wait_for_dfu` passes over the device that answered (its bus and address) and waits for the bootloader |
-| 4. Store | After the install, once the check reads the radio: HWOPT LIST, then SET when no choice is stored. A stored choice that differs is shown and kept: a person set it | The same, after `verify_after`'s probe. `--no-verify` (or no debug link) prints how to set it on the radio instead |
+| 4. Store | After the install, once the check reads the radio: HWOPT LIST, then SET when no choice is stored. A stored choice that differs is shown and kept: a person set it. The notice says "applies the next time the radio is switched on" only when the radio reports `restart` after the store | The same, after `verify_after`'s probe. `--no-verify` (or no debug link) prints how to set it on the radio instead |
+| 5. Ask | Then any option the radio still reports as `ask` (HWOPT `state`, [debuglink.md](../spec/debuglink.md#325-hwopt)): the board can't detect it and nothing above settled it (another open firmware ran before, a version not listed, no read). A warning panel first in the check's result: the radio won't transmit until it is set, a button per choice, and the original firmware versions behind each choice from `major`. A refused choice (the board found it can't be right) says so and stays on offer; `restart` after the store says to switch the radio off and on. On the **Another open firmware** path the current-firmware step says ahead that this may come (`flash.hwopt.ahead`) | `hwopt_prompt`: the same on a terminal (numbered choices; Enter or no terminal says where to set it on the radio) |
 
 Only the requests of the read are sent: GETSTATUS, CLRSTATUS or ABORT to reach dfuIDLE, DNLOAD block 0 `A2 02`, two
 GETSTATUS, ABORT, UPLOAD block 0 of 1024 bytes. The fakes (`fake.js` with `originalVersion`, rfoundry's
@@ -465,6 +466,20 @@ writes there. So the step needs no backup and loses nothing:
 | 4. Check | The radio's codeplug read again and counted. A mismatch is reported as a problem |
 The HR_C7000 backend has no conversion: its stock codeplug stays in the data flash and in the backup
 (`original-channels.bin`), and `tools/backup_codeplug.py` ports it.
+
+A bundle can hold both codeplugs, the stock one and RadioFoundry's:
+
+| Codeplug | Where the page reads it |
+|---|---|
+| RadioFoundry's | The Tools page's `backup-to-image` (`codeplug.js`) and the Codeplug Editor's open (`editor/files.js`): the `spi-flash` part, from address 0 |
+| A stock TYT-family codeplug | The same, converted by `codeplug/stock_tyt.js` ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md)) |
+| A stock Baofeng codeplug with a spec in `docs/spec/` | The same, converted by `codeplug/stock_baofeng.js` (the first 84 channels) |
+| Any other stock codeplug | Nowhere: no spec in `docs/spec/` describes its records, and only `dmrconf` (GPL, never in the page) decodes it |
+
+`tools/backup_codeplug.py` extracts both offline, from any data flash part, at the board's `openfw_eeprom` and through
+the board's `[stock_codeplug]` page layout, and decodes them with `dmrconf` ([codeplug-port.md](../spec/codeplug-port.md)
+5). The Codeplug Editor opens the YAML it writes. For a stock layout with no spec yet, that is the only way; doing it in
+the page needs a clean-room spec of the layout first (issue #228).
 
 ## Another open firmware (`openfw.js`)
 

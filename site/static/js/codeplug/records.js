@@ -9,6 +9,7 @@ import { EE, FL } from "./image.js";
 import {
 	getFreq, putFreq, getBcdId, putBcdId, getTone, putTone, getName, putName, getCoord, coordBytes, u16, put16,
 } from "./fields.js";
+import { decodeArea, getKey, putKeys, keyValid, KEYS } from "./kv.js";
 
 export const LIMITS = {
 	channels: 1024, zones: 68, zoneChannels: 80, contacts: 1024, rxLists: 76, rxListContacts: 32,
@@ -309,10 +310,13 @@ export function encodeAprs(a, r) {
 	return r;
 }
 
-// --- General settings, boot text (7.3.2, 7.2) ---
+// --- General settings, boot text (7.3.2, 7.2), the settings area's keys (codeplug-settings.md) ---
 
+// The settings area's keys (kv.js KEYS; arsServer, ipGateway: DMR IDs, 0 = off) are fields too: null when the key is
+// absent (the radio keeps its own setting)
 export function decodeGeneral(b) {
 	const g = b.subarray(GENERAL, GENERAL + GENERAL_SIZE);
+	const kv = decodeArea(b).entries;
 	return {
 		radioName: getName(g, 0, 8),
 		dmrId: getBcdId(g, 8),
@@ -320,6 +324,7 @@ export function decodeGeneral(b) {
 		privateHang: g[0x19] === 0xFF ? 0 : g[0x19],
 		bootLine1: getName(b, BOOT_TEXT, 16),
 		bootLine2: getName(b, BOOT_TEXT + 16, 16),
+		...Object.fromEntries(KEYS.map((row) => [row.name, getKey(kv, row)])),
 	};
 }
 
@@ -335,4 +340,12 @@ export function encodeGeneral(s, b) {
 	if (was.privateHang !== s.privateHang) g[0x19] = s.privateHang & 0xFF;
 	if (was.bootLine1 !== s.bootLine1) putName(b, BOOT_TEXT, 16, s.bootLine1);
 	if (was.bootLine2 !== s.bootLine2) putName(b, BOOT_TEXT + 16, 16, s.bootLine2);
+	// the settings area only when one of its keys changed; an area of a newer version is never written (model.js
+	// validate() warns), nor is a value out of range (validate()'s error)
+	const vals = {};
+	for (const row of KEYS) {
+		const v = s[row.name] ?? null;
+		if (was[row.name] !== v && (v === null || keyValid(row, v))) vals[row.name] = v;
+	}
+	if (Object.keys(vals).length) putKeys(b, vals);
 }

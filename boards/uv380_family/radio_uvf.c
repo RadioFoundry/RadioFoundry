@@ -269,7 +269,7 @@ static uint32_t power_to_dac(const uvf_cal_point_t *cal, uint8_t level, bool uhf
 
 static const band_t *find_band(uint32_t hz)
 {
-	for (uint8_t i = 0; i < board.band_count; i++) {
+	for (uint8_t i = 0; i < board_band_count(); i++) {
 		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz) {
 			return &board.bands[i];
 		}
@@ -1006,7 +1006,7 @@ static bool tx_tone_key(bool down)
 	return true;
 }
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 // APRS AFSK (afsk_uvf.c, docs/spec/aprs.md 5.2): the FM TX tone generator as for tx_tone, at hz with the deviation
 // from level (50 = the tone deviation tx_tone uses), then the TIM6 interrupt retunes tone1 (reg 0x35) every symbol
 // with single I2C3 writes. status() keeps off I2C3 meanwhile. Unverified on the bench, like tx_tone

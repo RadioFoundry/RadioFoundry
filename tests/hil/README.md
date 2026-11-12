@@ -66,10 +66,10 @@ callsign) are in the next section.
 ### The rig's configuration
 
 The repository holds no frequency, callsign or ID of any rig. Each value comes from the command line, else
-`$RFOUNDRY_HIL_<NAME>` (the option's name in capitals, `_` for `-`), else the rig's TOML file: `--hil-config FILE`,
-else `$RFOUNDRY_HIL_CONFIG`, else `~/.config/rfoundry/hil.toml` when it exists. The file's keys are the option names
-with `_` for `-`; an unknown key is an error. A test that needs a value no one gave skips (kind `opt_in`) and names
-the three ways to give it. `tests/hil/hil_config.py` reads them.
+`$RFOUNDRY_HIL_<NAME>` (the option's name in capitals, `_` for `-`), else the rig's TOML file: `--hil-config FILE`, else
+`$RFOUNDRY_HIL_CONFIG`, else `~/.config/rfoundry/hil.toml` when it exists (`none` reads no file; `tools/ci.sh` uses it).
+The file's keys are the option names with `_` for `-`; an unknown key is an error. A test that needs a value no one gave
+skips (kind `opt_in`) and names the three ways to give it. `tests/hil/hil_config.py` reads them.
 
 | Option | Value |
 |---|---|
@@ -351,6 +351,7 @@ The waveform and CACH tests skip as `bench` on a board without the feature (`bur
 | `test_dmr_ip_burst.py` | UDP over DMR in bursts and at the air MTU ([dmr-data.md](../../docs/spec/dmr-data.md) 12.6, 12.8; [usb-network.md](../../docs/spec/usb-network.md) 3.2): 5 datagrams back to back from the debug link's IP_SEND, from this host over the USB network (or PPP on the serial host port on a radio without USB networking: pppd, root or passwordless sudo), and from the bench to this host's socket (all sent, none dropped, in order); the view keys `net.mtu net.air_mtu` (radio only); DHCP option 26 on the host's adapter (a warning if the host ignores it; over PPP the interface MTU must be `ppp.mru`); the largest datagram each way (to the air: the link's MTU, SAP 3 and SAP 4, its block count checked; from it: 558 octets delivered, the receiver's 580 reassembled and dropped as too long for the link, `net.up_too_big`), one block more from the air (52 blocks dropped, the next one delivered); on firmware with an air MTU below the link's only, one octet more to the air (refused, counted, nothing on air, the link still works) and the ICMP fragmentation needed for a DF datagram (a raw socket, root) | `--allow-rf --allow-service-stop --allow-usb-switch` by test, firmware with `CONFIG_DMR_IP_GATEWAY`; the bench's UDP mode needs `tools/bench/dmr_bench.py sync`; the ICMP test runs as root |
 | `test_roaming.py` | DMR repeater roaming: the `roam` view section, the roaming settings round trip (RAM), the zone flag toggled and back, roam now on the current zone (passive: listens only; the radio ends on one of the sites, no probe sent), lock and roam now ending it (radio only); the wake probe brings up the bench repeater (a `bench_repeater` job) as a second site and the radio moves there (`rf`, `radio_tx`, `bench_service`); the survey settings round trip; the bench repeater keys an idle beacon (a `bench_repeater` job with `--beacon`) and the radio, listening only, learns the beacon window from it as its own site and surveys the other sites in the window, or (slow) finds it from a silent site with a discovery visit and measures it (`rf`, `bench_service`). The zone flag and the roaming settings are put back | radio (the current zone with 2+ repeater channels on one talkgroup for roam now); `--allow-rf --allow-service-stop --roam-rx MHz --roam-tx MHz [--roam-beacon S --roam-beacon-len S]`, firmware with `CONFIG_DMR_ROAMING` |
 | `test_aprs.py` | APRS (`docs/spec/aprs.md` 13): the `aprs` / `aprs_set` view sections and a setting round trip, the RAM test callsign and host NMEA as the position (radio only); on air at the lowest power on `--aprs-test-mhz` (never an APRS frequency, no path, the RAM test call `--aprs-call` with `--aprs-ssid`): a position (from the channel and from the FM VFO), a status and a message decoded off air, with deviation, twist and TX delay measured by the bench board; positions over DMR as LRRP and UDT decoded from the bench modem's listener; the debug link keeps answering (gaps under 0.5 s) while a frame goes out, sent over serial, over the USB network and from a KISS client on TCP. Every APRS setting touched is put back | radio; `--allow-rf --allow-service-stop --aprs-call CALL` (`--allow-usb-switch` for the network cases), firmware with `CONFIG_APRS` and the `aprs.tx_power` view key (the AFSK tests skip without it) |
+| `test_gps.py` | The position service (`docs/spec/position.md`), radio only, on any build with one (APRS not needed): the `pos.*` keys; a fixed position, the source, "Send in DMR calls" and the ambiguity round-trip and are what a DMR report would carry; with `--allow-reboot` they are back after a restart; with `--manual` the board GPS gets a fix outdoors |
 
 ### Speaker tests
 
@@ -508,10 +509,6 @@ checks reported as not judged when the receiver clips, and the bench modem's tri
   channel). The session puts the VFO in FM and puts its frequency and mode back afterwards; `vfo_session(mode=None)`
   keeps the mode. The VFO's mode, color code, slot and talk target are its own settings and outlive a power cycle,
   so a test that changes them (Copy to VFO does) puts them back itself.
-- `restore_radio` and `Radio.reconnect` (the reopen after a restart) also set back a hardware option (`hwopt`) a
-  restart reset to its default: one that holds for a power cycle only (a transmit arm) is otherwise lost after a
-  restart, and a test that keys right after it, and every later test, fails as if the firmware did. An option that
-  needs a restart to apply is left alone.
 - Don't depend on the state the radio starts in: an earlier test or run may leave a temporary change (the lowest
   power the TX tests set is one) or any zone and channel. A test that keys picks its channel (`find_channel` on
   `--dmr-freq` or `--fm-mhz`), and one that checks a flag checks what it changed (the bits it added), not the

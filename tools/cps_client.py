@@ -7,6 +7,7 @@ docs/spec/cps-protocol.md 2), the way qdmr's open-firmware UV380 driver does it.
   cps_client.py info                                 radio info (type, git, build date, flash)
   cps_client.py read image.bin [--regions all]       read into a flat image (file offset = flash address)
   cps_client.py write image.bin [--no-reboot]        write the regions back (prepare / data / commit per sector)
+                                                     (the settings area only when the file's is valid, see below)
   cps_client.py verify image.bin                     read back and compare
   cps_client.py test-channels image.bin              put an FM and a DMR test channel (and a zone) into an image
 
@@ -20,12 +21,15 @@ its data flash (boards/dm32/flash_dm32.c, open-firmware-cps.md 7.4) and its shim
 needs --offset 0x700000; image files keep the STM32 addresses either way.
 
 Regions (wire addresses = flash addresses on the STM32 radios):
+  radio     qdmr's regions and the codeplug settings area 0xE000-0xF000 (default): the TFTP codeplug.bin's regions
   qdmr      what qdmr transfers: EEPROM image 0x80-0x6060 and 0x7500-0xB000, custom data 0x20000-0x211A0,
-            codeplug 0x9B000-0xAEE60 (default)
+            codeplug 0x9B000-0xAEE60
   codeplug  the EEPROM image 0x0-0x10000 and the flash image's codeplug 0x9B000-0xAEE60
   all       the EEPROM image and the whole open-firmware flash image 0x20000-0x120000 (DMR ID database and voice prompts
             included; slow)
-Writes never touch bytes outside the regions; the radio refuses its own areas. Area 1 addresses on the wire are the
+Writes never touch bytes outside the regions; the radio refuses its own areas. The codeplug settings area
+(docs/spec/codeplug-settings.md) is written only when the file holds a valid one and the radio's isn't of a newer
+version, in every region set: a file from a tool that doesn't carry it (0xFF there) leaves the radio's keys. Area 1 addresses on the wire are the
 data flash's physical ones, so a write is also checked against the board's protected regions (board.toml
 [[flash.protect]], mem "data") before anything is sent: the board comes from --board, or from the radio type info
 reports.
@@ -37,6 +41,7 @@ import shlex
 import subprocess
 import sys
 import time
+import zlib
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry"))
 from rfoundry import boards as rfoundryboards  # noqa: E402
@@ -46,7 +51,10 @@ IMAGE_SIZE = 0x120000
 SECTOR = 4096
 BLOCK = 32                      # qdmr's block size for reads and writes
 
+SETTINGS_AREA = (0x0E000, 0x0F000)   # the codeplug settings area, one sector (docs/spec/codeplug-settings.md)
+
 REGIONS = {
+    "radio": [(0x00080, 0x06060), (0x07500, 0x0B000), SETTINGS_AREA, (0x20000, 0x211A0), (0x9B000, 0xAEE60)],
     "qdmr": [(0x00080, 0x06060), (0x07500, 0x0B000), (0x20000, 0x211A0), (0x9B000, 0xAEE60)],
     "codeplug": [(0x00000, 0x10000), (0x9B000, 0xAEE60)],
     "all": [(0x00000, 0x10000), (0x20000, 0x120000)],
@@ -67,6 +75,10 @@ class SerialTransport:
         import serial  # pyserial
         self.s = serial.serial_for_url(port, 115200, timeout=0.05)	# a device, or a URL such as rfc2217://host:port
         self.s.reset_input_buffer()
+        try:    # an FTDI cable passes received bytes on after 1 ms, not 16 (Linux only)
+            self.s.set_low_latency_mode(True)
+        except (AttributeError, NotImplementedError, OSError, ValueError):
+            pass
 
     def write(self, b):
         self.s.write(b)
@@ -271,6 +283,11 @@ class Cps:
         board's protected regions; a sector on the wire that overlaps one refuses the whole write before anything is
         sent."""
         jobs = plan_write(img, regions, base)
+        area = SETTINGS_AREA[0] // SECTOR
+        lo, hi = SETTINGS_AREA
+        if any(s == area for s, _, _ in jobs) and (
+                area_state(img[lo:hi]) != "valid" or area_kept(img[lo:hi], self.read_image([SETTINGS_AREA])[lo:hi])):
+            jobs = [j for j in jobs if j[0] != area]     # the radio keeps its settings area
         for sector, _, _ in jobs:
             wire = sector * SECTOR + self.offset
             try:
@@ -285,6 +302,25 @@ class Cps:
         self.control(5)
         if reboot:
             self.control(6, bytes([0]))
+
+
+def area_state(b):
+    """The codeplug settings area's state in a sector's bytes, as the radio reads it (codeplug-settings.md 2.3):
+    "valid", "empty" (erased), "bad" (version 0 too: never written) or "newer" (our magic, a later version)"""
+    b = bytes(b)
+    if b[:4] != b"RFKV":
+        return "empty" if b[:16] == b"\xff" * 16 else "bad"
+    if b[4] != 1:
+        return "newer" if b[4] > 1 else "bad"
+    hdr, n = b[5], int.from_bytes(b[6:8], "little")
+    if hdr < 16 or hdr + n > SECTOR or zlib.crc32(b[hdr:hdr + n]) != int.from_bytes(b[8:12], "little"):
+        return "bad"
+    at = 0
+    while at < n:
+        if n - at < 4 or int.from_bytes(b[hdr + at + 2:hdr + at + 4], "little") > n - at - 4:
+            return "bad"
+        at += 4 + int.from_bytes(b[hdr + at + 2:hdr + at + 4], "little")
+    return "valid"
 
 
 VFO_A = (0x7590, 0x7590 + 56)   # the VFO A record: a read shows the live VFO there (cps-protocol.md 2.2)
@@ -504,6 +540,12 @@ def load_image(path):
     return d
 
 
+def area_kept(mine, radio):
+    """True when a write leaves the radio's settings area as it is (codeplug-settings.md 4): the area being written
+    (mine) isn't valid, or the radio's is of a newer version. verify then leaves the area out, as write does"""
+    return area_state(mine) != "valid" or area_state(radio) == "newer"
+
+
 def compare(a, b, regions, skip=()):
     """Differences of b against a inside the regions, as (address, a byte, b byte); the ranges in skip left out"""
     diffs = []
@@ -526,7 +568,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port")
     ap.add_argument("--exec", dest="exec_cmd", help="command speaking the protocol on stdin / stdout (tests)")
-    ap.add_argument("--regions", choices=sorted(REGIONS), default="qdmr")
+    ap.add_argument("--regions", choices=sorted(REGIONS), default="radio")
     ap.add_argument("--block", type=int, default=BLOCK, help="bytes per read / data request (qdmr: 32)")
     ap.add_argument("--offset", type=lambda x: int(x, 0), default=0,
                     help="added to flash addresses on the wire (DM-32UV: 0x700000)")
@@ -583,7 +625,8 @@ def main(argv=None):
         elif a.cmd == "verify":
             img = load_image(a.image)
             back = cps.read_image(regions, block=a.block, progress=progress)
-            d = compare(img, back, regions)
+            lo, hi = SETTINGS_AREA
+            d = compare(img, back, regions, skip=[SETTINGS_AREA] if area_kept(img[lo:hi], back[lo:hi]) else ())
             for addr, x, y in d[:20]:
                 print(f"{addr:#08x}: file {x:#04x} radio {y:#04x}")
             print("match" if not d else f"{len(d)} bytes differ")

@@ -584,7 +584,11 @@ calling `outputs()` while a signal runs, so it keeps time when nothing else chan
 
 Checked, unchanged: the board clamps the power level, uses the calibration table's drive value for the band and level,
 and refuses a TX frequency outside the board's bands (`tx_deny=band`). Without a calibration the board either drives
-a low fixed value or refuses to transmit; the board's hardware page says which.
+a low fixed value or refuses to transmit; the board's hardware page says which. While a hardware option is pending
+(`board_hwopt_pending`, `hal/hal_hwopt.h`: unset, or stored and waiting for a restart) the core refuses PTT itself with
+`tx_deny=hwopt` (the screen names the option), before the board is asked: a board may still key while a restart is
+due. When the board's `tx` refuses a frequency inside its bands, the reason is `tx_deny=hwopt` while an option is
+pending, else `tx_deny=refused` ("Radio refused to send"); never `band`.
 
 ### 6.1 Reference trim
 
@@ -620,6 +624,23 @@ keeps the trim it started with on receive. The RF chips' bus stays the radio tas
 The value is a correction to enter by hand: measure the carrier against a reference (a frequency counter, a service
 monitor, or a hotspot's MMDVMCal BER test) and enter the error with its sign reversed. A radio 2 kHz high at 448.7 MHz
 is 4.5 ppm high and takes -4.5 ppm. [feature-matrix.md](../feature-matrix.md) lists which radios have the hook.
+
+### 6.2 Receive past the band table (CONFIG_RX_EXT)
+
+A board may list receive-only ranges past its rated bands: the last `board_t.rx_ext_count` entries of `bands`, with
+`tx` false. They count only while `*board_t.rx_ext_on` is set.
+
+| Rule | Detail |
+|---|---|
+| Setting | Settings > Advanced > RX past bands, off by default. Stored in `settings_t.cp_flags`, cleared by a factory reset. Hidden on a board with no range. |
+| Table | Everything that reads the bands uses `board_band_count()`: the VFO's tuning and wrap, the keypad entry, VFO scan, the channel editor, `rigctld` and the debug link's `bands=`. |
+| Transmit | Never: `board_in_band(hz, true)` skips the entries, so PTT gives `TXDENY_BAND`. |
+| Modes | FM only, as in any receive-only band: the channel editor refuses DMR there. |
+| Turning it off | The radio core reloads. A VFO past the table returns to a band; a channel there stays stored and doesn't tune. |
+
+A board's ranges come from its receiver chip's documents. Nothing past the rated bands is
+measured: front-end filters may cut sensitivity well inside the chip's range, and spurs aren't specified.
+A radio's ranges are on its hardware page.
 
 ## 7. Verification status
 

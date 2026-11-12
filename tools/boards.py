@@ -255,6 +255,10 @@ BOARD_SCHEMA = {
     "features": _opt(("map", {"state": _req(("unsupported", "n/a")), "reason": _req(str)})),
     # the open-firmware CPS radio types the board's hal_cps_t reports (docs/spec/cps-protocol.md 2.2, test_cps.py)
     "cps": _opt({"radio_types": _req(("list", int))}),
+    # the stock firmware's codeplug in a data flash backup (tools/backup_codeplug.py, docs/spec/codeplug-port.md 5):
+    # dmrconf's driver for it, the span of data flash it sits in, and how its pages map to the addresses the driver
+    # takes (block-id: each 4 KB page names its logical block in its last byte)
+    "stock_codeplug": _opt({"dmrconf": _req(str), "span": _req(RANGE), "pages": _req(("block-id", "linear"))}),
 }
 
 PLATFORM_SCHEMA = {
@@ -881,9 +885,11 @@ def load(root=ROOT, only=None):
         srcs = [bdir] + shared_board_dirs(root, bid, mk)
         out[bid] = Board(data, plat, mk, _layout(root, bid, mk), board_t_names(srcs),
                          pin_defines(os.path.join(bdir, "pins.h")),
-                         # the platform's config.mk adds its own switches (no USB on a platform without it); the
-                         # board's reason wins for a switch both list
-                         {**unsupported_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
+                         # config/features.mk lists the switches a build rules out for every board (FONT_BIG on a
+                         # narrow panel); the platform's config.mk adds its own (no USB on a platform without it);
+                         # the board's reason wins for a switch both list
+                         {**unsupported_reasons(os.path.join(root, "config", "features.mk")),
+                          **unsupported_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
                           **unsupported_reasons(os.path.join(bdir, "config.mk"))}, flash_map(srcs))
         out[bid].write_floor = write_floor(srcs)
         out[bid].volts = source_volts(srcs)

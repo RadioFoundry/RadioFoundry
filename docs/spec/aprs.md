@@ -11,8 +11,10 @@ received audio, a demodulator, a station list, messages to us and a digipeater.
 
 Code: `core/aprs` (portable, host tested), the RF part in `core/radio/radio_sm.c` (the APRS block), the board's tone
 path behind `hal/hal_afsk.h`, the UI in `core/ui/ui_aprs.c`, the debug link in `core/debuglink/debuglink_aprs.c`, the
-host helper `tools/aprs_gate.py`. Build switches: `CONFIG_APRS`, `CONFIG_APRS_RX`, `CONFIG_APRS_IGATE`, and on the
-USB network link `CONFIG_NET_KISS` and `CONFIG_NET_APRSIS` (`docs/build-config.md`). The DMR GPS Info LC, which shares the position source, is in `dmr-voice.md` 3.1.
+host helper `tools/aprs_gate.py`. Build switches: `CONFIG_APRS` (the engine), `CONFIG_APRS_AFSK` and
+`CONFIG_APRS_DMR` (its two ways out, section 2), `CONFIG_APRS_RX`, `CONFIG_APRS_IGATE`, and on the USB network link
+`CONFIG_NET_KISS` and `CONFIG_NET_APRSIS` (`docs/build-config.md`). Where our position comes from is the position
+service's ([position.md](position.md)); DMR GPS Info and LRRP use it too and need no APRS.
 
 Sources (all public, read for the formats only; no implementation was used as a source, `CLEANROOM.md`):
 
@@ -37,12 +39,12 @@ aprx can stand in.
 
 | Feature | Needs |
 |---|---|
-| FM AFSK transmit | `board.afsk->tx_*` (5.1) |
+| FM AFSK transmit | `CONFIG_APRS_AFSK` and `board.afsk->tx_*` (5.1) |
 | FM AFSK receive, station list, digipeater, messages to us | `CONFIG_APRS_RX` and receive audio: `board.afsk->rx_*`, or FM receive audio on the PCM stream (`AUDIO_TAP_FM_RX`) (5.3) |
-| Positions over DMR (LRRP / UDT) | a DMR radio, on a DMR channel |
-| KISS TNC on the host port (UDP 3334 and TCP 8001 in network mode) | nothing more (TX path; RX frames only with RX) |
+| Positions over DMR (LRRP / UDT) | `CONFIG_APRS_DMR`, on a DMR channel |
+| KISS TNC on the host port (UDP 3334 and TCP 8001 in network mode) | `CONFIG_APRS_AFSK` (TX path; RX frames only with RX) |
 | iGate | RX for RF -> IS; IS -> RF messages only once RX exists |
-| GPS | `CAP_GPS` boards feed `aprs_nmea(..., gps=true)`; otherwise host NMEA or the fixed position. `CONFIG_GPS=n` leaves out the board's GPS driver and `CAP_GPS`, so the radio behaves as one without a receiver. Settings > Location > GPS (`settings_t.gps`, default off) goes through `ui_svc_apply` at start-up and on each change to `board_t.gps_enable` (the module's power; the board probes the module at start-up whatever the setting says, so `board_has_gps()` stays true) and to `aprs_gps_enable`: off drops the board fix at once and ignores later sentences, so the position falls back to the computer or the fixed one |
+| Position | the position service ([position.md](position.md)): the board GPS, host NMEA or the fixed position |
 
 What a board provides:
 
@@ -64,11 +66,30 @@ debug link and the host link reach it through the "any task" calls, which take a
 (`aprs_set_lock`, the scheduler suspended for short copies). Settings and codeplug reads take the storage mutex and so
 happen outside that lock.
 
+The engine sends through two backends. Each has its own switch and works without the other:
+
+| Part | Switch | File | Holds |
+|---|---|---|---|
+| Engine | `CONFIG_APRS` | `aprs.c` | the settings, the beacon triggers, the view, "Send position now" |
+| AX.25 on FM | `CONFIG_APRS_AFSK` (needs `APRS` and `FM`) | `aprs_ax25.c` | the callsign, the frame queue and the AFSK jobs the radio core sends, status and messages, the KISS TNC and APRS-IS lines, receive |
+| Positions over DMR | `CONFIG_APRS_DMR` (needs `APRS` and `DMR`) | `aprs_dmr.c` | the LRRP or UDT report to the gateway ID (section 8); turns on the DMR data core |
+
+- `CONFIG_APRS=y` needs at least one backend; the build stops otherwise.
+- `CONFIG_APRS_RX`, `CONFIG_APRS_IGATE`, `CONFIG_NET_KISS` and `CONFIG_NET_APRSIS` need `CONFIG_APRS_AFSK`.
+- The halves share one state block (`aprs_int.h`). The engine calls the AX.25 half through `aprs_ax25_*`, which are
+  empty inline functions when it isn't built. Calls other modules make into it (`aprs_send_message`,
+  `aprs_rf_pending`, `aprs_host_frame`, ...) answer "nothing there" the same way, so callers need no switch.
+- With one backend built, "Send via" is not asked: a beacon goes the way there is, whatever the setting stored by
+  another build says. The settings record is the same in every build.
+- Without the AX.25 half: no callsign, APRS frequency, path, messages or station list; the radio core has no APRS
+  RF job; the host port takes NMEA lines only (`$...`, no KISS decoder).
+
 Pure parts, each with host tests in `tests/host/aprsTest.c`: `ax25.c` (addresses, frames, TNC2 text), `hdlc.c` (FCS,
 bit stuffing, NRZI symbols, the receive deframer), `afsk.c` (the tone plan for TX, a correlator demodulator with a PLL
-for RX), `kiss.c`, `aprs_fmt.c` (APRS formats in and out), `aprs_nmea.c`, `aprs_beacon.c` (when to send),
+for RX), `kiss.c`, `aprs_fmt.c` (APRS formats in and out), `aprs_beacon.c` (when to send),
 `aprs_igate.c` (gating and digipeater rules). `tests/host/aprsRadioTest.c` runs the engine with the radio core on a
-fake board whose AFSK output is demodulated back to frames.
+fake board whose AFSK output is demodulated back to frames, in a build without DMR; `radioCoreTestAprsDmr` runs it
+with the DMR backend alone.
 
 ## 3. Rules
 
@@ -111,6 +132,20 @@ fake board whose AFSK output is demodulated back to frames.
   awaiting acknowledgment. `aprs_send_message` refuses a message when the RF path is blocked.
 - Path: none, WIDE1-1, WIDE1-1,WIDE2-1 (the default), WIDE2-1, WIDE2-2. Set on the APRS page (section 10), over the
   debug link, or in the codeplug's APRS record (section 11).
+
+### 4.1.1 Arithmetic
+
+No libm: the 32-bit math library costs flash on every board and nothing here needs it.
+
+| Value | Method | Accuracy |
+|---|---|---|
+| Compressed speed byte `round(ln(knots + 1) / ln 1.08)`, at most 89 | table of the lowest speed for each byte value | the formula's byte for all 65536 speeds (the nearest tie is 0.0007 of a step away) |
+| Compressed speed read back `1.08^k - 1` | squared table, 32-bit mantissas | the formula's knots for every byte |
+| Compressed altitude read back `1.002^n` feet, as meters | the same table method, Q24 | within 1 m |
+| Distance (haversine, 6371 km) and bearing | float polynomials (sine and cosine to the 13th and 12th power, arctangent to 1e-5 rad); past a quarter of the globe the arc to the antipode, subtracted from pi | distance under 1 m below 1 km, 14 m to 100 km, 150 m beyond; bearing within the rounding to a whole degree for stations 20 m or more away |
+
+The bearing uses `x = sin(dp) + 2 sin(p1) cos(p2) sin(dl / 2)^2`, which has no cancellation, so a station tens of
+meters away gets a true bearing. The longitude difference is wrapped to the short way round first.
 
 ### 4.2 Tocall
 
@@ -212,15 +247,20 @@ job (`aprs_rf_take`: our queued frames, 1 flag between them, a TX delay of flags
 3. SEND: `board.afsk->tx_start`; at most 6 s.
 4. Back: transmitter off, the user's channel retuned exactly as it was.
 
+While keyed, Home keeps the selected channel on screen. Its status pill says "TX APRS" and its activity says
+"SENDING", without elapsed or remaining TX time. The ordinary status and activity return when the APRS job ends or is
+aborted.
+
 PTT, a channel change or any request other than beeps, DMR focus and settings aborts it (`rf_failed`, the frame
 retried after 15 s, 3 tries). A failure counts in `rf_failed` and names its step in `rf_fail`: `aborted`, `no_key`
 (the transmitter didn't key), `no_afsk` (`tx_start` refused), `timeout` (the tones didn't finish in 6 s). The settings save waits while a job is pending.
 
 ## 7. Position and triggers
 
-Position source (setting: Auto, GPS, Computer, Fixed): Auto takes a board GPS fix younger than 60 s, else a host NMEA
-fix younger than 60 s (`$GPRMC`, `$GPGGA` with valid checksums, from KISS SetHardware 'N' or a bare `$` line on the
-host port), else the fixed position (settings, or the debug link). GPS and host fixes carry speed and course.
+The position is the position service's ([position.md](position.md)): its source setting and the fixed position
+are in Settings > Location and serve DMR GPS Info and LRRP as well. The engine reads
+`position_fix` every tick; GPS and host fixes carry speed and course. Host NMEA (`$GPRMC`, `$GPGGA` with valid
+checksums) comes from KISS SetHardware 'N' or a bare `$` line on the host port.
 
 Triggers (`aprs_beacon.c`), all under the hard minimum:
 
@@ -235,25 +275,10 @@ Triggers (`aprs_beacon.c`), all under the hard minimum:
 
 Without a known speed SmartBeaconing falls back to the interval. The defaults are an open decision (section 14).
 
-### 7.1 The board GPS's state and satellites
-
-`aprs_gps()` gives the UI the board GPS as it is now: false while Settings > Location > GPS is off or no valid sentence
-came for 60 s, else the last fix (60 s old at most), satellites used and HDOP (GGA), speed, course and time (RMC).
-
-With `CONFIG_GPS_SKY` (needs `GPS` and `APRS`) `nmea_sky.c` also reads the board GPS's satellite sentences:
-
-| Sentence | What it gives |
-|---|---|
-| GSV (talker GP, GL, GA, BD / GB, GQ, GN) | each satellite in view: number, elevation, azimuth, SNR. A round (messages 1 to N of one talker) replaces that system's satellites; one the round no longer lists is dropped. A receiver that sends a round per signal (the NMEA 4.1 signal ID, e.g. L1 and L5) has only the first signal heard kept per system. A GN talker places a satellite by its number (GLONASS 65-96, QZSS 193-200, BeiDou 201-263 and 401-463, Galileo 301-336); SBAS and unknown numbers are skipped |
-| GSA | the fix mode (1 none, 2 2D, 3 3D) and the satellites the fix uses. The GSAs in a row (one per system, or several GN) make one round; the first clears the used set. A GN GSA takes its system from the NMEA 4.1 system ID when present, else from the numbers |
-
-The table holds 28 satellites of 4 bytes each (number, elevation, system, SNR, azimuth / 2); the used sets are a 64-bit
-mask per system. In all 168 B, kept in the APRS state under its lock; `aprs_gps_sat(i)` copies one satellite out, so a
-reader needs no table of its own. Turning the GPS setting off empties it.
-
 ## 8. Positions over DMR
 
-Send via (AFSK / DMR / Both): DMR positions go out when the radio is on a DMR channel with the call stack running,
+Built with `CONFIG_APRS_DMR`. Send via (AFSK / DMR / Both; DMR always in a build without the AX.25 half): DMR
+positions go out when the radio is on a DMR channel with the call stack running,
 as a private data call to the destination ID (default 310999). BrandMeister's APRS gateway is a private ID
 "MCC999", with MCC replaced by the master's MCC (310999 for US masters, 204999 for a Dutch one). 310999 works from any master; your own master's prefix
 (`<MCC>999`) is recommended. The old 5057 was
@@ -264,6 +289,8 @@ value: run `aprs set dmr_dst <MCC>999` (US: `aprs set dmr_dst 310999`).
 - Motorola LRRP triggered location report (the default): UDP port 4001, built by `dmrLrrp.c`.
 - ETSI UDT location (`dmr_udt` on): `dmrDataBuildUDTLocation`. BrandMeister forwards the position reports of Motorola
   (LRRP) and Hytera radios to APRS, so use LRRP, not UDT, for BrandMeister.
+- The position in either report has the ambiguity setting applied (`position_blur`, [position.md](position.md) 3), as
+  the AX.25 packets and the other DMR reports do.
 
 ### 8.1 LRRP details
 
@@ -331,22 +358,24 @@ frequency, not amateur, no AFSK), the position and its source, the next beacon a
 position now, Automatic beacons, Frequency (region: N America 144.390, Europe 144.800, Australia 145.175, New Zealand
 144.575, Japan 144.660, China 144.640, Custom), Power (As channel, then each of the board's levels), Path (the
 digipeater path of RF packets: None, WIDE1-1, WIDE1-1,WIDE2-1, WIDE2-1, WIDE2-2; OK steps to the next and WIDE2-2
-wraps to None), Interval (Off, 1, 2, 5, 10, 30 min), SmartBeaconing, Send via (AFSK, DMR, Both), Position (opens its page, below), Position in DMR calls (`dmr-voice.md` 3.1), KISS on USB, Stations
+wraps to None), Interval (Off, 1, 2, 5, 10, 30 min), SmartBeaconing, Send via (AFSK, DMR, Both), KISS on USB, Stations
 heard (RX builds: the list, most recent first, dimmed when heard through a digipeater; a station with a position shows
-its distance and compass point from ours, `aprs_position_now` as DMR GPS Info uses it, "14.5 km NE" by `sb_range`,
+its distance and compass point from ours, `position_now` as DMR GPS Info uses it, "14.5 km NE" by `sb_range`,
 left out first when the row is too narrow, and nothing without a position on either side; that row's age is the
 position's, `pos_ms`, else the last packet's. An object's or item's position is not stored as its sender's; a
 station's position is dropped at 24 h, `STATION_POS_MS`, so its age never wraps). On a radio without
-`board.afsk`, Power and Path are dimmed, and so is Frequency unless the build receives APRS. Rows 11 and 12 have no
-digit key.
+`board.afsk`, Power and Path are dimmed, and so is Frequency unless the build receives APRS.
 
-APRS > Position (`aprs-pos`; the APRS page's body shows the position in use). Rows: Source (Auto, GPS, Computer, Fixed),
-Latitude and Longitude (the fixed position, "Not set" while both are 0). OK on Latitude or Longitude opens an editor in
-decimal degrees to 4 places (about 11 m): the digits fill `DD.DDDD` or `DDD.DDDD` from the left (a longitude's first
-digit of 2-9 gets its leading zero by itself), a digit that would pass 90 or 180 degrees is refused with a toast, Up /
-Down or the knob switch N / S or E / W, BACK takes the last digit back (with none typed it closes the editor unchanged),
-OK saves with the places not typed as zeros. The editor starts with the stored value shown; the first digit starts over.
-Find knows the page as "APRS position".
+The page shows the rows the build has:
+
+| Build | Rows left out | Body |
+|---|---|---|
+| Both backends | none | callsign and frequency, why RF is blocked, position, next beacon, count |
+| No `CONFIG_APRS_DMR` | Send via | the same |
+| No `CONFIG_APRS_AFSK` | Frequency, Power, Path, Send via, Stations heard; "KISS on USB" reads "NMEA on USB" | position, next beacon, count |
+
+The digit keys follow the rows shown. Where the position comes from, the fixed position and "Send in DMR calls" are
+in Settings > Location ([position.md](position.md) 6).
 
 The rest (symbol, comment, digital destination, ambiguity, iGate, digipeater, fixed altitude) is set over the
 debug link (`rfoundry_debug.py aprs set`) and later by qdmr through the native codeplug.
@@ -355,10 +384,11 @@ debug link (`rfoundry_debug.py aprs set`) and later by qdmr through the native c
 
 `settings_t` (`core/settings/settings.h`), taken only when `aprs_stored` is 1, else the defaults: `aprs_flags`
 (TX, SmartBeaconing, compressed, after PTT, boot, KISS, narrow, RX), `aprs_flags2` (iGate, iGate TX, messaging, UDT,
-to APRS-IS, DMR GPS Info), `aprs_region`, `aprs_ssid`, `aprs_freq_hz`, `aprs_lat` / `aprs_lon` (1e-7 degree),
-`aprs_dmr_dst`, `aprs_alt_m`, `aprs_interval_s`, `aprs_distance_m`, `aprs_symbol`, `aprs_path`, `aprs_pos_src`,
-`aprs_level`, `aprs_power` (0 = the radio's current level, n = the board's level n - 1), `aprs_txdelay`, `aprs_misc`
-(via, digipeater, ambiguity). The codeplug's APRS record 1 (EEPROM 0x1588,
+to APRS-IS), `aprs_region`, `aprs_ssid`, `aprs_freq_hz`, `aprs_dmr_dst`, `aprs_interval_s`, `aprs_distance_m`,
+`aprs_symbol`, `aprs_path`, `aprs_level`, `aprs_power` (0 = the radio's current level, n = the board's level n - 1),
+`aprs_txdelay`, `aprs_misc` bits 0-3 (via, digipeater). The position fields in the same record (`aprs_lat`,
+`aprs_lon`, `aprs_alt_m`, `aprs_pos_src`, the DMR GPS Info flag, `aprs_misc` bits 4-7) are the position service's
+([position.md](position.md) 5): APRS never changes them, and its save keeps them. The codeplug's APRS record 1 (EEPROM 0x1588,
 64 bytes each) gives the SSID, path, symbol, comment and ambiguity when present; its fixed position and frequency
 encodings are unknown and not used. Of these the radio takes the comment and the path.
 
@@ -379,7 +409,8 @@ receive path.
 ## 12. Size
 
 The flash and RAM cost of `CONFIG_APRS` and `CONFIG_APRS_RX` per radio is in [feature-matrix.md](../feature-matrix.md).
-`CONFIG_DMR_GPS` costs about 2.2 KB flash.
+`CONFIG_DMR_GPS` costs about 2.2 KB flash. A build with `CONFIG_APRS_AFSK=n` (positions over DMR only) leaves out
+AX.25, the tone plan, KISS, messages and the receive path.
 
 ## 13. Tests
 

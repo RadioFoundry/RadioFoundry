@@ -112,6 +112,9 @@ typedef struct {
 	bool large_text;	// Home shows only the channel and the talk target (Settings > Display)
 	bool privacy;		// the next DMR transmission is encrypted
 	bool hear_all;		// hear all latched (quick tile 5 on DMR); follows the radio view where the radio has it
+	// Here, in the byte before auto_lock_s that was padding: the radio with the least RAM has none to spare in its
+	// maximal build
+	bool label_first;	// Home's talk line: the talkgroup's name before its number (Settings > Display, a side key)
 	uint16_t auto_lock_s;	// lock the keys after this long without a key press, 0 = never (Settings > Keys)
 	bool alias_show;	// show received talker aliases (Settings > Talk & listen)
 	bool ptt_locked;	// PTT works while the keys are locked (Settings > Privacy)
@@ -272,8 +275,8 @@ bool ui_freq_entry_digit(char *digits, uint8_t *len, char d);
 uint32_t ui_freq_entry_hz(const char *digits, uint8_t len);
 // The same without a toast: 0 for too few or too many digits, or outside the receive bands (Find's Tune VFO row)
 uint32_t ui_freq_parse(const char *digits, uint8_t len);
-// Text for the board's bands ("136-174 400-480"), for hints
-void ui_bands_text(char *out, size_t len);
+// Text for the board's bands ("136-174 400-480"), for hints; only the ones that may transmit when tx
+void ui_bands_text(char *out, size_t len, bool tx);
 // The board's power level name
 const char *ui_power_name(uint8_t level, uint32_t tx_hz);
 

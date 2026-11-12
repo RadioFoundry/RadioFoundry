@@ -5,7 +5,6 @@
  * dmr_data_api.h calls at the end, which only touch the mailbox and copies under the lock.
  */
 
-#include <stdio.h>
 #include <string.h>
 #include "config.h"
 #include "dmr/dmrDataService.h"
@@ -1164,7 +1163,8 @@ bool dmrDataServiceSendSMSFormat(bool group, uint32_t dst, const char *text, boo
 	sms.format = format;
 	sms.tries = 0;
 	sms.waiting = false;
-	snprintf(sms.text, sizeof(sms.text), "%s", text);
+	strncpy(sms.text, text, sizeof(sms.text) - 1u);	// no snprintf: it would bring the C library's printf in
+	sms.text[sizeof(sms.text) - 1u] = '\0';
 	sms.state = DMR_REQ_QUEUED;
 	if (!canTransmit())
 	{
@@ -1622,18 +1622,15 @@ typedef struct
 } lrrpTrigger_t;
 static lrrpTrigger_t lrrpTriggers[LRRP_TRIGGERS_MAX];
 
-// The platform's position for LRRP. Weak: none (the host test brings its own)
-#if !defined(DMR_DATA_SERVICE_TEST)
-__attribute__((weak)) bool dmrDataServiceGetPosition(lrrpPosition_t *position)
-{
-	memset(position, 0, sizeof(*position));
-	return false;
-}
-#endif
-
 static bool havePosition(lrrpPosition_t *position)
 {
-	return settings.hasGps && dmrDataServiceGetPosition(position);
+	memset(position, 0, sizeof(*position));
+	return settings.hasGps && (env.ownPosition != NULL) && env.ownPosition(position, now, env.ctx);
+}
+
+bool dmrDataServiceOwnPosition(lrrpPosition_t *position)
+{
+	return havePosition(position);
 }
 
 static void lrrpReceived(uint32_t src, const uint8_t *payload, int length)
@@ -1794,7 +1791,9 @@ static bool lrrpHandleRequest(const lrrpPendingRequest_t *pending)
 	return true;
 }
 
-static void lrrpTick(void)
+// noinline: inlined into the service's tick it puts the position and the report document in the radio task's own
+// frame, under everything that task calls (the stack check's deepest path)
+__attribute__((noinline)) static void lrrpTick(void)
 {
 	if (!CONFIG_DMR_LRRP || passthrough)
 	{
@@ -2881,7 +2880,8 @@ bool sms_send(uint32_t dst, bool group, const char *text, bool ack_requested, dm
 		mailbox.smsGroup = group;
 		mailbox.smsAck = ack_requested;
 		mailbox.smsFormat = format;
-		snprintf(mailbox.smsText, sizeof(mailbox.smsText), "%s", text);
+		strncpy(mailbox.smsText, text, sizeof(mailbox.smsText) - 1u);
+		mailbox.smsText[sizeof(mailbox.smsText) - 1u] = '\0';
 		mailbox.smsPending = true;
 		ok = true;
 	}
