@@ -299,7 +299,7 @@ static const flow_t flows[] = {
 	{ "21 more presses: digit, then lower case", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "2 2 2 2 2", "shows=a", 5, false },
 	{ "21 1 cycles punctuation", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "1 1 1 1", "shows=,", 4, false },
 	{ "21 a slow * deletes, no key lock", "ok 5 ok ok 4 6", "long:quick", "shows=COUNTY_DMRG locked=0", 1, false },
-	{ "21 a held digit types itself", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "long:7", "shows=7", 1, false },
+	{ "21 a held digit types itself", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "long:7", "showsraw=7_", 1, false },
 	{ "22 new from current settings, saved", "", "ok 5 up up up ok long:ok",
 	  "writes=1 toast=Saved_as_channel_41", 7, true },
 	// The channel editor's rules (ui.md 2.1). Channel 1 is an FM repeater (146.940, TX 600 kHz below), channel 3 DMR
