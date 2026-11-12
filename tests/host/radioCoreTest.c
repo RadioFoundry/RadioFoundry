@@ -257,52 +257,72 @@ static const contact_t contacts[] = {
 };
 uint32_t codeplug_dmr_id(void) { return own_dmr_id; }
 
-// The codeplug's settings area: only the ARS server key here (the gateway's is built out, CONFIG_DMR_IP_GATEWAY=0)
+// The codeplug's settings area: the ARS server key (the gateway's is built out, CONFIG_DMR_IP_GATEWAY=0) and the
+// Settings > Sound tone keys, one-byte bools (kv_tone: -1 absent)
 static bool kv_ars_present;
 static uint8_t kv_serial;
 static uint32_t kv_ars;
+static int16_t kv_tone[CODEPLUG_KEY_TX_DENY_TONE - CODEPLUG_KEY_CALL_END_TONE + 1] = { -1, -1, -1, -1 };
 static bool kv_held;	// a CPS session holds the flash, or another firmware's codeplug: no key can be written
+static bool kv_is_tone(uint16_t key) { return key >= CODEPLUG_KEY_CALL_END_TONE && key <= CODEPLUG_KEY_TX_DENY_TONE; }
 int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 {
+	if (kv_is_tone(key)) {
+		if (kv_tone[key - CODEPLUG_KEY_CALL_END_TONE] < 0) {
+			return -1;
+		}
+		if (max > 0) {
+			*(uint8_t *)buf = (uint8_t)kv_tone[key - CODEPLUG_KEY_CALL_END_TONE];
+		}
+		return 1;
+	}
 	if (key != CODEPLUG_KEY_ARS_SERVER || !kv_ars_present) {
 		return -1;
 	}
 	memcpy(buf, &kv_ars, max < 4 ? max : 4);
 	return 4;
 }
-static bool kv_set_u32(uint16_t key, uint32_t value)
+// One set: the ARS server as a u32, a tone as one byte
+static bool kv_set(uint16_t key, const uint8_t *v, uint16_t len)
 {
-	if (key != CODEPLUG_KEY_ARS_SERVER || kv_held) {
+	if (kv_is_tone(key) && len == 1) {
+		kv_tone[key - CODEPLUG_KEY_CALL_END_TONE] = v[0];
+	} else if (key == CODEPLUG_KEY_ARS_SERVER && len == 4) {
+		kv_ars_present = true;
+		kv_ars = v[0] | (uint32_t)v[1] << 8 | (uint32_t)v[2] << 16 | (uint32_t)v[3] << 24;
+	} else {
 		return false;
 	}
-	kv_ars_present = true;
-	kv_ars = value;
 	kv_serial++;	// as codeplug_kv_write: the area's serial, no codeplug reload
 	return true;
 }
 uint8_t codeplug_kv_serial(void) { return kv_serial; }
+// The walk: c->at the next key to try, up to CODEPLUG_KEY_TX_DENY_TONE
 void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi)
 {
-	c->done = !(lo <= CODEPLUG_KEY_ARS_SERVER && CODEPLUG_KEY_ARS_SERVER <= hi);
+	c->hi = hi;
+	c->at = lo;
+	c->done = 0;
 }
 int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
 {
-	uint8_t v[4] = { (uint8_t)kv_ars, (uint8_t)(kv_ars >> 8), (uint8_t)(kv_ars >> 16), (uint8_t)(kv_ars >> 24) };
-	if (c->done || !kv_ars_present) {
-		return -1;
+	for (; !c->done && c->at <= c->hi && c->at <= CODEPLUG_KEY_TX_DENY_TONE; c->at++) {
+		int n = codeplug_kv_get(c->at, buf, max);
+		if (n >= 0) {
+			*key = c->at++;
+			return n;
+		}
 	}
 	c->done = 1;
-	*key = CODEPLUG_KEY_ARS_SERVER;
-	memcpy(buf, v, max < 4 ? max : 4);
-	return 4;
+	return -1;
 }
 bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n)
 {
-	// each op a u32 set, through the one-key fake
+	if (kv_held) {
+		return false;
+	}
 	for (uint8_t i = 0; i < n; i++) {
-		const uint8_t *v = ops[i].value;
-		if (ops[i].len != 4 ||
-		    !kv_set_u32(ops[i].key, v[0] | (uint32_t)v[1] << 8 | (uint32_t)v[2] << 16 | (uint32_t)v[3] << 24)) {
+		if (!kv_set(ops[i].key, ops[i].value, ops[i].len)) {
 			return false;
 		}
 	}
@@ -3894,6 +3914,82 @@ static void test_ui_glue(void)
 	ui_svc_apply(UI_SET_TALK_PERMIT, 1);
 	run(20);
 	CHECK(sm.set.talk_permit);
+	// Settings > Sound tones. The four keyed ones (docs/spec/codeplug-settings.md 5.2): on while absent; a set writes
+	// a one-byte bool key with no codeplug reload, and the radio core saves the tone as the radio's own
+	static const uint8_t tone_ids[] = { UI_SET_CALL_END_TONE, UI_SET_TOT_WARN_TONE, UI_SET_BATTERY_TONE,
+					    UI_SET_TX_DENY_TONE };
+	for (size_t i = 0; i < sizeof(tone_ids); i++) {
+		uint32_t cp_was = cp_serial;
+		CHECK(ui_svc_setting_get(tone_ids[i]) == 1);
+		CHECK(ui_svc_setting_set(tone_ids[i], 0) && storage_job_busy());
+		storage_job_poll();
+		CHECK(kv_tone[i] == 0);
+		run(20);
+		CHECK(sm.set.tones_off == (1u << i) && cp_serial == cp_was && ui_svc_setting_get(tone_ids[i]) == 0);
+		settings_read(&sv);
+		CHECK(settings_tones_off(&sv) == (1u << i));
+		// A settings change sent by the UI (its copy of the bits may be older) doesn't undo the key
+		ui_svc_apply(UI_SET_KEY_TONES, 0);
+		run(20);
+		CHECK(sm.set.tones_off == (1u << i));
+		ui_svc_apply(UI_SET_KEY_TONES, 1);
+		CHECK(ui_svc_setting_set(tone_ids[i], 1));
+		storage_job_poll();
+		run(20);
+		CHECK(kv_tone[i] == 1 && ui_svc_setting_get(tone_ids[i]) == 1 && sm.set.tones_off == 0);
+		kv_tone[i] = -1;
+	}
+	// A key written by a CPS holds over the radio's own copy, which follows it; once the key is gone the radio keeps
+	// the key's last value
+	kv_tone[1] = 0;
+	kv_serial++;
+	run(20);
+	settings_read(&sv);
+	CHECK(sm.set.tones_off == 0x02u && settings_tones_off(&sv) == 0x02u && ui_svc_setting_get(UI_SET_TOT_WARN_TONE) == 0);
+	kv_tone[1] = -1;
+	kv_serial++;
+	run(20);
+	CHECK(sm.set.tones_off == 0x02u);
+	// With another firmware's codeplug the area can't be written and holds no key: the tone is saved as the radio's
+	// own, with no "Old codeplug" question
+	cp_foreign = true;
+	kv_held = true;
+	n_ev = 0;
+	CHECK(ui_svc_setting_set(UI_SET_TOT_WARN_TONE, 1));
+	storage_job_poll();
+	run(20);
+	settings_read(&sv);
+	CHECK(n_ev == 0 && kv_tone[1] == -1 && sm.set.tones_off == 0 && settings_tones_off(&sv) == 0);
+	cp_foreign = false;
+	// A key that is present and can't be updated (a CPS session holds the flash) refuses the change
+	kv_tone[2] = 1;
+	CHECK(ui_svc_setting_set(UI_SET_BATTERY_TONE, 0));
+	storage_job_poll();
+	run(20);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && kv_tone[2] == 1 && sm.set.tones_off == 0);
+	kv_held = false;
+	kv_tone[2] = -1;
+	n_ev = 0;
+	// The scan stop tone is the radio core's (rs_flags), the emergency tone the emergency service's (em_flags)
+	CHECK(ui_svc_setting_get(UI_SET_SCAN_TONE) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_SCAN_TONE, 1));
+	ui_svc_apply(UI_SET_SCAN_TONE, 1);
+	run(20);
+	CHECK(sm.set.scan_beep && ui_svc_setting_get(UI_SET_SCAN_TONE) == 1);
+	settings_read(&sv);
+	CHECK(sv.rs_flags & SETTINGS_RS_SCAN_BEEP);
+	ui_svc_apply(UI_SET_SCAN_TONE, 0);
+	run(20);
+	CHECK(!sm.set.scan_beep);
+	CHECK(ui_svc_setting_get(UI_SET_EMERGENCY_TONE) == 1);
+	CHECK(ui_svc_setting_set(UI_SET_EMERGENCY_TONE, 0));
+	run(20);
+	CHECK(ui_svc_setting_get(UI_SET_EMERGENCY_TONE) == 0);
+	settings_read(&sv);
+	CHECK(sv.em_flags & SETTINGS_EM_NO_TONE);
+	CHECK(ui_svc_setting_set(UI_SET_EMERGENCY_TONE, 1));
+	run(20);
+	CHECK(ui_svc_setting_get(UI_SET_EMERGENCY_TONE) == 1);
 	// Reply window: the value shown at start-up for "the codeplug's" keeps it; another value is the radio's own
 	CHECK(ui_svc_setting_get(UI_SET_REPLY_S) == 10);
 	ui_svc_apply(UI_SET_REPLY_S, 10);

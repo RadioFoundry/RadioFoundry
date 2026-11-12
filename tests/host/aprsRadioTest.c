@@ -19,6 +19,7 @@
 #include "aprs/kiss.h"
 #include "aprs/afsk.h"
 #include "radio/tx_limit.h"
+#include "codeplug/codeplug_kv.h"	// the settings area fakes
 #include "fuzz.h"
 #include "ui/ui_svc_aprs.h"
 
@@ -217,6 +218,12 @@ codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
 static uint32_t cp_serial = 1;
 static char cp_path[2][10];		// the APRS record's path entries
 uint32_t codeplug_serial(void) { return cp_serial; }
+void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi) { (void)c; (void)lo; (void)hi; }	// no settings area
+int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
+	{ (void)c; (void)key; (void)buf; (void)max; return -1; }
+uint8_t codeplug_kv_serial(void) { return 0; }
+int codeplug_kv_get(uint16_t key, void *buf, uint16_t max) { (void)key; (void)buf; (void)max; return -1; }
+bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n) { (void)ops; (void)n; return false; }
 void storage_lock(void) {}
 void storage_unlock(void) {}
 void storage_quick_lock(void) {}

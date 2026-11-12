@@ -385,6 +385,18 @@ function radioTab() {
 	};
 	// a number kept as a key of the settings area (kv.js KEYS): the row gives its range, empty is an absent key
 	const areaKey = (name) => (v) => parseAreaKey(KEYS.find((row) => row.name === name), v, t);
+	// a bool kept as a key of the settings area: Not set (an absent key, the radio keeps its own), On or Off
+	const onOff = (key, label) => {
+		const sel = h("select", { id: "g-" + key },
+			h("option", { value: "" }, t("editor.general.not_set")),
+			h("option", { value: "1" }, t("editor.general.on")),
+			h("option", { value: "0" }, t("editor.general.off")));
+		sel.value = g[key] == null ? "" : g[key] ? "1" : "0";
+		sel.addEventListener("change", () => change(t("editor.undo.edit"),
+			() => (S.model.general = { ...S.model.general, [key]: sel.value === "" ? null : sel.value === "1" })));
+		return h("div", { class: "form-row" }, h("label", { for: "g-" + key }, label), sel,
+			h("span", { class: "small muted" }, t("editor.general.tone_help")));
+	};
 	const parts = [
 		h("div", { class: "form-grid ed-radio-form" },
 			field("dmrId", t("editor.general.dmr_id"), 8, t("editor.general.dmr_id_help"), num(0, 0xFFFFFF)),
@@ -394,7 +406,11 @@ function radioTab() {
 			field("groupHang", t("editor.general.group_hang"), 3, t("editor.general.hang_help"), num(0, 255)),
 			field("privateHang", t("editor.general.private_hang"), 3, t("editor.general.hang_help"), num(0, 255)),
 			field("arsServer", t("editor.general.ars_server"), 8, t("editor.general.ars_server_help"), areaKey("arsServer")),
-			field("ipGateway", t("editor.general.ip_gateway"), 8, t("editor.general.ip_gateway_help"), areaKey("ipGateway"))),
+			field("ipGateway", t("editor.general.ip_gateway"), 8, t("editor.general.ip_gateway_help"), areaKey("ipGateway")),
+			onOff("callEndTone", t("editor.general.call_end_tone")),
+			onOff("totWarnTone", t("editor.general.tot_warn_tone")),
+			onOff("batteryTone", t("editor.general.battery_tone")),
+			onOff("txDenyTone", t("editor.general.tx_deny_tone"))),
 	];
 	if (S.conn) {
 		const p = S.conn.probe;

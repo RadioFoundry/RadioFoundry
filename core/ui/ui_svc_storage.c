@@ -23,6 +23,7 @@
 #include "codeplug/codeplug.h"
 #include "codeplug/codeplug_kv.h"
 #include "radio/radio_keys.h"
+#include "dmr/dmr_emergency.h"	// the emergency tone (Settings > Sound); stubs without CONFIG_DMR_EMERGENCY
 #include "hal_time.h"
 #include "config.h"
 #if CONFIG_HOSTLINK
@@ -117,6 +118,27 @@ static bool key_set(uint8_t id, int32_t value);
 #if CONFIG_DMR
 static bool dmr_id_post(uint32_t id);	// a job: the codeplug write is the housekeeping task's
 #endif
+// The settings area's key of a Settings > Sound tone row (radio_keys.h radio_tone_rows)
+static uint16_t tone_row_key(uint8_t id)
+{
+	return id == UI_SET_CALL_END_TONE ? CODEPLUG_KEY_CALL_END_TONE : id == UI_SET_TOT_WARN_TONE ? CODEPLUG_KEY_TOT_WARN_TONE :
+		id == UI_SET_BATTERY_TONE ? CODEPLUG_KEY_BATTERY_TONE : CODEPLUG_KEY_TX_DENY_TONE;
+}
+static bool tone_post(uint16_t key, bool on);
+// A Settings > Sound tone row, on (1) or off. The keys' bits come from the radio core (no flash read here, which sat
+// on the radio and UI tasks' deepest paths)
+static int32_t tone_get(uint8_t id)
+{
+	if (id == UI_SET_EMERGENCY_TONE) {
+		dmr_emergency_settings_t es;
+		dmr_emergency_get_settings(&es);
+		return es.rx_tone;
+	}
+	radio_settings_t rs;
+	radio_get_settings(&rs);
+	int row = radio_tone_row(tone_row_key(id));
+	return row < 0 || (rs.tones_off >> row & 1u) == 0;
+}
 #if CONFIG_DMR_DATA_CORE
 // The menu row of a setting kept as a key of the settings area (radio_keys.h), else 0
 static uint16_t data_row_key(uint8_t id)
@@ -157,7 +179,7 @@ int32_t ui_svc_setting_get(uint8_t id)
 		return radio_volume_step(st.volume);
 	case UI_SET_KNOB_WHEN_LOCKED:
 		settings_read(&st);
-		return (st.knob_flags & SETTINGS_KNOB_LOCK) == 0;	// stored as the lock, shown as the knob working
+		return (st.sound_flags & SETTINGS_KNOB_LOCK) == 0;	// stored as the lock, shown as the knob working
 	case UI_SET_BRIGHTNESS:
 		settings_read(&st);
 		return st.brightness >= 10 && st.brightness <= 100 ? st.brightness : 100;
@@ -270,8 +292,15 @@ int32_t ui_svc_setting_get(uint8_t id)
 		settings_read(&st);
 		return st.auto_off_min;
 	case UI_SET_TALK_PERMIT:
+	case UI_SET_SCAN_TONE:
 		radio_get_settings(&rs);
-		return rs.talk_permit;
+		return id == UI_SET_TALK_PERMIT ? rs.talk_permit : rs.scan_beep;
+	case UI_SET_CALL_END_TONE:
+	case UI_SET_TOT_WARN_TONE:
+	case UI_SET_BATTERY_TONE:
+	case UI_SET_TX_DENY_TONE:
+	case UI_SET_EMERGENCY_TONE:
+		return tone_get(id);
 	case UI_SET_TFTP_WRITE:
 		settings_read(&st);
 		return (st.net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0;
@@ -384,6 +413,7 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_BATTERY_SAVER:
 	case UI_SET_REPLY_S:
 	case UI_SET_TALK_PERMIT:
+	case UI_SET_SCAN_TONE:
 #if CONFIG_SFR
 	case UI_SET_SFR_RX:
 #endif
@@ -511,8 +541,8 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		return true;
 	case UI_SET_KNOB_WHEN_LOCKED:
 		st = settings_begin();
-		st->knob_flags = (uint8_t)(value == 0 ? st->knob_flags | SETTINGS_KNOB_LOCK :
-							st->knob_flags & ~SETTINGS_KNOB_LOCK);
+		st->sound_flags = (uint8_t)(value == 0 ? st->sound_flags | SETTINGS_KNOB_LOCK :
+							st->sound_flags & ~SETTINGS_KNOB_LOCK);
 		settings_end(hal_millis());
 		return true;
 	case UI_SET_VOLUME:
@@ -601,6 +631,18 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_IP_GATEWAY:
 		return data_id_post(data_row_key(id), (uint32_t)value);
 #endif
+	case UI_SET_CALL_END_TONE:
+	case UI_SET_TOT_WARN_TONE:
+	case UI_SET_BATTERY_TONE:
+	case UI_SET_TX_DENY_TONE:
+		return tone_post(tone_row_key(id), value != 0);
+	case UI_SET_EMERGENCY_TONE: {
+		dmr_emergency_settings_t es;
+		dmr_emergency_get_settings(&es);
+		es.rx_tone = value != 0;
+		dmr_emergency_set_settings(&es);	// the radio core saves them when they change (em_flags)
+		return CONFIG_DMR_EMERGENCY;
+	}
 	case UI_SET_MSG_FORMAT:
 #if CONFIG_DMR_SMS
 		if ((value != DMR_SMS_FORMAT_ETSI_IP) && (value != DMR_SMS_FORMAT_ETSI) &&
@@ -879,6 +921,36 @@ static bool data_id_post(uint16_t key, uint32_t id)
 	return storage_job_post(data_id_job, NULL);
 }
 #endif
+
+// A Settings > Sound tone on or off, set as every keyed setting is (docs/spec/codeplug-settings.md 5.2, data_id_job):
+// the key is written when the settings area can be, and the radio core takes the tone into its settings, which it
+// saves as the radio's own. Refused only when the codeplug has the key and it couldn't be updated. The key in
+// job.channel, on or off in job.temp
+static void tone_job(void *ctx)
+{
+	(void)ctx;
+	radio_settings_t rs;
+	radio_get_settings(&rs);
+	radio_tones_t was, now;
+	radio_tones_unpack(rs.tones_off, &was);
+	now = was;
+	codeplug_keys_set_field(codeplug_keys_find(radio_tone_rows, RADIO_TONE_ROWS_N, job.channel), &now, job.temp);
+	if (!codeplug_keys_store(radio_tone_rows, RADIO_TONE_ROWS_N, &was, &now)) {
+		save_failed(TRN("Couldn't write the codeplug: not saved"));
+		return;
+	}
+	rs.tones_off = radio_tones_pack(&now);
+	radio_set_settings(&rs);
+}
+
+static bool tone_post(uint16_t key, bool on)
+{
+	if (codeplug_keys_find(radio_tone_rows, RADIO_TONE_ROWS_N, key) == NULL || job_busy())
+		return false;
+	job.channel = key;
+	job.temp = on ? 1u : 0u;
+	return storage_job_post(tone_job, NULL);
+}
 
 static channel_t job_ch;	// the job's working copy of the stored channel
 
