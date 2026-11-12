@@ -235,6 +235,16 @@ def test_outbound_voice_late_entry(radio, sdr_bench, pytestconfig, backup_dir, l
 
 
 @_marked
+@pytest.mark.parametrize("ts", [1, 2])
+def test_outbound_voice_late_entry_beside_call(radio, sdr_bench, pytestconfig, backup_dir, ts):
+    """A headerless call beside another caller must acquire only its own slot's embedded LC (#495)."""
+    calls = [_call(3 - ts, LEAD_S, 10), _call(ts, LEAD_S + 0.72, 8, headers=0, late=0)]
+    d, view, recs = _run(radio, sdr_bench, pytestconfig, backup_dir, calls, ts)
+    _board_calls(recs, calls)
+    _heard(d, view, ts, ts, calls, late=True)
+
+
+@_marked
 def test_outbound_voice_wrong_cc(radio, sdr_bench, pytestconfig, backup_dir):
     """The outbound's color code isn't the channel's: the radio doesn't hear the repeater's calls."""
     calls = [_call(1, LEAD_S)]

@@ -317,6 +317,16 @@ mode, AUDIO_CONTROL b0 = 1); 0x4B–0x50 embedded RC; 0x495–0x4AF send voice k
 10 + 2, data blocks 12 / 18 / 24, idle 12, C_RC 7 + 2). Embedded LC after late entry also appears at 0x00–0x08; the
 chip keeps the previous call's LC there until a new one is decoded (measured).
 
+The driver saves each late-entry LC under the reporting `RX_TYPE_INFO.current_rx_slot` and attaches it only to a
+voice burst on that chip slot. A single pending LC can cross slots even when the voice burst filter works: an
+unselected slot's late-entry interrupt sets it, its deframe is dropped, and the next selected voice burst takes the
+wrong caller (#495, host reproduction). Separate pending buffers also preserve both LCs when both reports arrive
+before voice. Headers, terminators and filtered bursts discard their slot's pending LC; receiver resets and a slot
+filter change discard both. A failed late-entry checksum invalidates only the reporting slot's pending LC.
+
+This uses the status associated with the late-entry interrupt; its slot association under simultaneous traffic still
+needs on-air confirmation. It does not infer a DMR timeslot from the chip slot: BS bursts retain their CACH TC labels.
+
 **Voice RAM (0x16000960)**: write 27 bytes before arming a voice burst; read 27 bytes after a voice deframe interrupt
 Burst numbering for privacy keystream purposes is RX_TYPE_INFO's 1–6.
 

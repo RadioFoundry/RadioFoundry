@@ -159,8 +159,8 @@ typedef struct {
 	uint8_t tc_est;		// TC estimate of the slot now starting (toggled every tick)
 	uint8_t cc_cur;		// LOCAL_CC now
 	uint32_t cc_tick;	// last CC change or burst heard (scan)
-	bool emb_pending;	// late entry: an embedded LC waits for the next voice burst
-	uint8_t emb_rx[9];
+	uint8_t emb_pending;	// bit n: embedded LC waiting for chip slot n
+	uint8_t emb_rx[2][9];
 	// Transmit
 	uint8_t tx_state;
 	uint8_t tx_timing;
