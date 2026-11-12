@@ -613,15 +613,18 @@ static void test_tx_power(void)
 	CHECK(aprs_send_now());
 	CHECK(wait_start(1, 5000));
 	CHECK(hw.tx_power == 0);
+	CHECK(sm.view.aprs_tx && sm.view.state == RS_TX);
 	wait_idle();
+	CHECK(!sm.view.aprs_tx);
 	req(RREQ_POWER, 1);		// temporary: H
 	CHECK(sm.view.power == 1 && sm.view.temporary);
 	run(6000);			// past the 5 s "send now" repeat guard
 	CHECK(aprs_send_now());
 	CHECK(wait_start(2, 5000));
 	CHECK(hw.tx_power == 1);
+	CHECK(sm.view.aprs_tx);
 	wait_idle();
-	CHECK(sm.view.power == 1 && hw.rx_hz == CH_HZ);
+	CHECK(!sm.view.aprs_tx && sm.view.power == 1 && hw.rx_hz == CH_HZ);
 }
 
 // APRS's own power setting (aprs_power, 0 = the radio's level) overrides the radio's current level
@@ -638,8 +641,9 @@ static void test_tx_power_own(void)
 	CHECK(aprs_send_now());
 	CHECK(wait_start(1, 5000));
 	CHECK(hw.tx_power == 1);
+	CHECK(sm.view.aprs_tx);
 	wait_idle();
-	CHECK(sm.view.power == 0);	// the radio's own level is untouched
+	CHECK(!sm.view.aprs_tx && sm.view.power == 0);	// the radio's own level is untouched
 	CHECK(aprs_tx_power(0) == 1);
 	c.power = 1;
 	aprs_set_cfg(&c, now);
@@ -1249,7 +1253,8 @@ static void test_rf_failures(void)
 		CHECK(v.rf_failed > failed && v.rf_sent == 0);
 		static const uint8_t why[3] = { APRS_RF_NO_KEY, APRS_RF_NO_AFSK, APRS_RF_TIMEOUT };
 		CHECK(v.rf_fail == why[fault]);
-		CHECK(!hw.keyed && hw.rx_hz == CH_HZ && sm.view.state == RS_IDLE && sm.aprs_phase == 0);
+		CHECK(!hw.keyed && hw.rx_hz == CH_HZ && sm.view.state == RS_IDLE && sm.aprs_phase == 0 &&
+		      !sm.view.aprs_tx);
 		run(60000);		// the retries, then given up
 		aprs_get_view(&v);
 		CHECK(!aprs_rf_pending() && !v.rf_active && !hw.keyed && hw.rx_hz == CH_HZ);
