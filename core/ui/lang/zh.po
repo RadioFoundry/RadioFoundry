@@ -443,6 +443,10 @@ msgid "No match: Back deletes a key"
 msgstr "无匹配：返回删一位"
 
 #: core/ui/ui_app.c
+msgid "Receive only. Sensitivity not rated"
+msgstr "仅接收。灵敏度未标定"
+
+#: core/ui/ui_app.c
 msgid "Emergency: not in this build"
 msgstr "紧急：本版本无"
 
@@ -546,11 +550,11 @@ msgstr "两者"
 msgid "Auto"
 msgstr "自动"
 
-#: core/ui/ui_aprs.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgid "Computer"
 msgstr "电脑"
 
-#: core/ui/ui_aprs.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgid "Fixed"
 msgstr "固定"
 
@@ -658,14 +662,6 @@ msgstr "智能信标"
 msgid "Send via"
 msgstr "发送方式"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c
-msgid "Position"
-msgstr "位置"
-
-#: core/ui/ui_aprs.c
-msgid "Position in DMR calls"
-msgstr "DMR 通话带位置"
-
 #: core/ui/ui_aprs.c
 msgid "KISS on USB"
 msgstr "USB KISS"
@@ -673,6 +669,10 @@ msgstr "USB KISS"
 #: core/ui/ui_aprs.c
 msgid "Stations heard"
 msgstr "收到的台站"
+
+#: core/ui/ui_aprs.c
+msgid "NMEA on USB"
+msgstr "USB NMEA"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "On"
@@ -703,44 +703,8 @@ msgid "Beacons off"
 msgstr "信标关"
 
 #: core/ui/ui_aprs.c
-msgid "DMR position: not in this build"
-msgstr "DMR 定位：本版本无"
-
-#: core/ui/ui_aprs.c
-msgid "Position goes out in DMR calls"
-msgstr "位置随 DMR 通话发出"
-
-#: core/ui/ui_aprs.c
-msgid "No position in DMR calls"
-msgstr "DMR 通话不带位置"
-
-#: core/ui/ui_aprs.c
 msgid "This radio can't receive APRS"
 msgstr "本机无法接收 APRS"
-
-#: core/ui/ui_aprs.c
-msgid "Source"
-msgstr "来源"
-
-#: core/ui/ui_aprs.c
-msgid "Latitude"
-msgstr "纬度"
-
-#: core/ui/ui_aprs.c
-msgid "Longitude"
-msgstr "经度"
-
-#: core/ui/ui_aprs.c core/ui/ui_menus.c
-msgid "Not set"
-msgstr "未设置"
-
-#: core/ui/ui_aprs.c
-msgid "Up to 90 N/S, 180 E/W"
-msgstr "北南 90，东西 180"
-
-#: core/ui/ui_aprs.c core/ui/ui_menus.c
-msgid "OK change  Back"
-msgstr "OK 改  返回"
 
 #: core/ui/ui_aprs.c
 msgid "0-9 pick  Back"
@@ -757,6 +721,14 @@ msgstr "返回"
 #: core/ui/ui_aprs.c
 msgid "Nothing heard yet"
 msgstr "尚未收到"
+
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgid "Message"
+msgstr "消息"
+
+#: core/ui/ui_aprs.c
+msgid "OK choose  Back"
+msgstr "OK 选  返回"
 
 #: core/ui/ui_dual.c core/ui/ui_screens.c
 msgid "No tone"
@@ -955,10 +927,6 @@ msgid "Roaming"
 msgstr "漫游"
 
 #: core/ui/ui_find.c
-msgid "APRS position"
-msgstr "APRS 位置"
-
-#: core/ui/ui_find.c
 msgid "Ch "
 msgstr "信道 "
 
@@ -1147,16 +1115,16 @@ msgid "Private call"
 msgstr "个呼"
 
 #: core/ui/ui_menus.c
-msgid "Message"
-msgstr "消息"
-
-#: core/ui/ui_menus.c
 msgid "Radio check"
 msgstr "电台检查"
 
 #: core/ui/ui_menus.c
 msgid "Call alert"
 msgstr "呼叫提示"
+
+#: core/ui/ui_menus.c
+msgid "Position"
+msgstr "位置"
 
 #: core/ui/ui_menus.c
 msgid "In contacts"
@@ -1231,8 +1199,24 @@ msgid "Can't talk now"
 msgstr "暂时不能通话"
 
 #: core/ui/ui_menus.c
+msgid "To callsign"
+msgstr "发往呼号"
+
+#: core/ui/ui_menus.c
+msgid "Enter"
+msgstr "输入"
+
+#: core/ui/ui_menus.c
 msgid "Write..."
 msgstr "编写……"
+
+#: core/ui/ui_menus.c
+msgid "Request acknowledgment"
+msgstr "请求确认"
+
+#: core/ui/ui_menus.c
+msgid "Include position"
+msgstr "APRS 位置"
 
 #: core/ui/ui_menus.c
 msgid "Couldn't send: try again"
@@ -1243,8 +1227,8 @@ msgid "Sending to "
 msgstr "正在发送至 "
 
 #: core/ui/ui_menus.c
-msgid "Typing: not in this build"
-msgstr "输入：本版本无"
+msgid "Callsign"
+msgstr "呼号"
 
 #: core/ui/ui_menus.c
 msgid "To"
@@ -1279,6 +1263,10 @@ msgid "Contacts: not in this build"
 msgstr "联系人：本版本无"
 
 #: core/ui/ui_menus.c
+msgid "New APRS message"
+msgstr "新 APRS 消息"
+
+#: core/ui/ui_menus.c
 msgid "OK open  # reply  Back"
 msgstr "OK 打开  # 回复  返回"
 
@@ -1311,12 +1299,12 @@ msgid "Couldn't delete: try again"
 msgstr "删除失败：请重试"
 
 #: core/ui/ui_menus.c
-msgid "To "
-msgstr "至 "
-
-#: core/ui/ui_menus.c
 msgid "From "
 msgstr "来自 "
+
+#: core/ui/ui_menus.c
+msgid "To "
+msgstr "至 "
 
 #: core/ui/ui_menus.c
 msgid "OK choose  # more  Back"
@@ -1535,6 +1523,22 @@ msgid "Empty zone"
 msgstr "空区域"
 
 #: core/ui/ui_menus.c
+msgid "That's the most it can hold"
+msgstr "已达上限"
+
+#: core/ui/ui_menus.c
+msgid "Name"
+msgstr "名称"
+
+#: core/ui/ui_menus.c
+msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
+msgstr "{返回 删除  # ABC/123/abc  OK 保留|返回 删  # 模式  OK}"
+
+#: core/ui/ui_menus.c
+msgid "{Back delete  # ABC/123/abc  OK send|Back del  # mode  OK}"
+msgstr "{返回 删除  # ABC/123/abc  OK 发送|返回 删  # 模式  OK}"
+
+#: core/ui/ui_menus.c
 msgid "New from current"
 msgstr "用当前新建"
 
@@ -1569,10 +1573,6 @@ msgstr " 个区域"
 #: core/ui/ui_menus.c
 msgid "Radio's"
 msgstr "电台的"
-
-#: core/ui/ui_menus.c
-msgid "Name"
-msgstr "名称"
 
 #: core/ui/ui_menus.c
 msgid "Number"
@@ -1777,14 +1777,6 @@ msgstr "未保存的更改"
 #: core/ui/ui_menus.c
 msgid "{OK choose  Back keep editing|OK choose  Back}"
 msgstr "{OK 选  返回继续编辑|OK 选  返回}"
-
-#: core/ui/ui_menus.c
-msgid "That's the most it can hold"
-msgstr "已达上限"
-
-#: core/ui/ui_menus.c
-msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
-msgstr "{返回 删除  # ABC/123/abc  OK 保留|返回 删  # 模式  OK}"
 
 #: core/ui/ui_menus.c
 msgid "Type"
@@ -2007,6 +1999,22 @@ msgid "Single-Freq Repeater"
 msgstr "单频中继"
 
 #: core/ui/ui_menus.c
+msgid "User"
+msgstr "用户"
+
+#: core/ui/ui_menus.c
+msgid "User (ERDM)"
+msgstr "用户 (ERDM)"
+
+#: core/ui/ui_menus.c
+msgid "Repeater"
+msgstr "中继台"
+
+#: core/ui/ui_menus.c
+msgid "Repeater (ERDM style)"
+msgstr "中继台（ERDM 式）"
+
+#: core/ui/ui_menus.c
 msgid "Supply"
 msgstr "供电"
 
@@ -2075,16 +2083,16 @@ msgid "USB network: not in this build"
 msgstr "USB 网络：本版本无"
 
 #: core/ui/ui_menus.c
+msgid "The VFO has no SFR role. Pick one below."
+msgstr "VFO 无单频中继角色。请在下方选择。"
+
+#: core/ui/ui_menus.c
+msgid "Off here: the role needs DMR and one frequency (no split)."
+msgstr "此处关闭：该角色需 DMR 和单一频率（无异频）。"
+
+#: core/ui/ui_menus.c
 msgid "This channel has no SFR role. Set Repeater or User in the Codeplug Editor, on a channel with one frequency."
 msgstr "本信道无单频中继角色。请在电台频率编辑器把单频信道设为中继台或用户。"
-
-#: core/ui/ui_menus.c
-msgid "Repeater (ERDM style)"
-msgstr "中继台（ERDM 式）"
-
-#: core/ui/ui_menus.c
-msgid "Repeater"
-msgstr "中继台"
 
 #: core/ui/ui_menus.c
 msgid "In TS"
@@ -2139,6 +2147,14 @@ msgid "Single-freq repeater: not in this build"
 msgstr "单频中继：本版本无"
 
 #: core/ui/ui_menus.c
+msgid "Role"
+msgstr "角色"
+
+#: core/ui/ui_menus.c
+msgid "Inbound slot"
+msgstr "入站时隙"
+
+#: core/ui/ui_menus.c
 msgid "Switch USB to serial"
 msgstr "USB 切到串口"
 
@@ -2149,6 +2165,10 @@ msgstr "USB 切到网络"
 #: core/ui/ui_menus.c
 msgid "Stop hotspot"
 msgstr "停止热点"
+
+#: core/ui/ui_menus.c
+msgid "Pick a role first"
+msgstr "请先选择角色"
 
 #: core/ui/ui_menus.c
 msgid "No USB network on this radio"
@@ -2165,6 +2185,10 @@ msgstr "USB 已恢复为串口"
 #: core/ui/ui_menus.c
 msgid "DMR ID"
 msgstr "DMR ID"
+
+#: core/ui/ui_menus.c core/ui/ui_position.c
+msgid "Not set"
+msgstr "未设置"
 
 #: core/ui/ui_menus.c
 msgid "Radio name"
@@ -2197,6 +2221,10 @@ msgstr "ID 从 1 开始"
 #: core/ui/ui_menus.c
 msgid "DMR ID saved"
 msgstr "DMR ID 已保存"
+
+#: core/ui/ui_menus.c
+msgid "Typing: not in this build"
+msgstr "输入：本版本无"
 
 #: core/ui/ui_menus.c
 msgid "My Radio"
@@ -2547,6 +2575,22 @@ msgid "Serial"
 msgstr "串口"
 
 #: core/ui/ui_menus.c
+msgid "10s/dim"
+msgstr "10秒/暗"
+
+#: core/ui/ui_menus.c
+msgid "30s/dim"
+msgstr "30秒/暗"
+
+#: core/ui/ui_menus.c
+msgid "1m/dim"
+msgstr "1分/暗"
+
+#: core/ui/ui_menus.c
+msgid "2m/dim"
+msgstr "2分/暗"
+
+#: core/ui/ui_menus.c
 msgid "Never"
 msgstr "从不"
 
@@ -2643,8 +2687,16 @@ msgid "Home zone"
 msgstr "主区域"
 
 #: core/ui/ui_menus.c
+msgid "Tone burst"
+msgstr "突发音"
+
+#: core/ui/ui_menus.c
 msgid "Copy to VFO"
 msgstr "复制到 VFO"
+
+#: core/ui/ui_menus.c
+msgid "VFO/Channel"
+msgstr "VFO/信道"
 
 #: core/ui/ui_menus.c
 msgid "Call back"
@@ -2807,6 +2859,10 @@ msgid "PTT when locked"
 msgstr "锁定时 PTT"
 
 #: core/ui/ui_menus.c
+msgid "Knob when locked"
+msgstr "锁定时旋钮"
+
+#: core/ui/ui_menus.c
 msgid "Position format"
 msgstr "位置格式"
 
@@ -2817,6 +2873,18 @@ msgstr "发送位置"
 #: core/ui/ui_menus.c
 msgid "Answer GPS requests"
 msgstr "应答 GPS 请求"
+
+#: core/ui/ui_menus.c
+msgid "Position source"
+msgstr "位置来源"
+
+#: core/ui/ui_menus.c core/ui/ui_position.c
+msgid "Fixed position"
+msgstr "固定位置"
+
+#: core/ui/ui_menus.c
+msgid "Send in DMR calls"
+msgstr "DMR 通话带位置"
 
 #: core/ui/ui_menus.c
 msgid "Hotspot allowed"
@@ -2893,6 +2961,10 @@ msgstr "恢复出厂设置"
 #: core/ui/ui_menus.c
 msgid "Crash log"
 msgstr "崩溃日志"
+
+#: core/ui/ui_menus.c
+msgid "RX past bands"
+msgstr "超频段接收"
 
 #: core/ui/ui_menus.c
 msgid "Freq trim"
@@ -2999,6 +3071,10 @@ msgid "No GPS on this radio"
 msgstr "本机无 GPS"
 
 #: core/ui/ui_menus.c
+msgid "DMR position: not in this build"
+msgstr "DMR 定位：本版本无"
+
+#: core/ui/ui_menus.c
 msgid "Diagnostics: not in this build"
 msgstr "诊断：本版本无"
 
@@ -3017,6 +3093,10 @@ msgstr " 到 "
 #: core/ui/ui_menus.c
 msgid ", steps of "
 msgstr "，步进 "
+
+#: core/ui/ui_menus.c core/ui/ui_position.c
+msgid "OK change  Back"
+msgstr "OK 改  返回"
 
 #: core/ui/ui_menus.c
 msgid "No, keep settings"
@@ -3133,6 +3213,18 @@ msgstr "其他固件的电台频率？新建会清除联系人、呼号和 ID。
 #: core/ui/ui_menus.c
 msgid "Old codeplug"
 msgstr "旧电台频率"
+
+#: core/ui/ui_position.c
+msgid "Latitude"
+msgstr "纬度"
+
+#: core/ui/ui_position.c
+msgid "Longitude"
+msgstr "经度"
+
+#: core/ui/ui_position.c
+msgid "Up to 90 N/S, 180 E/W"
+msgstr "北南 90，东西 180"
 
 #: core/ui/ui_screens.c
 msgid "IDLE"
@@ -3525,6 +3617,10 @@ msgstr "紧急呼叫"
 #: core/ui/ui_screens.c
 msgid "OK acknowledge  Back hide"
 msgstr "OK 确认  返回 隐藏"
+
+#: core/ui/ui_screens.c
+msgid "Vol"
+msgstr "音量"
 
 #: core/ui/ui_screens.c
 msgid "Muted"

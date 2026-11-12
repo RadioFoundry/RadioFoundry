@@ -133,8 +133,10 @@ is `tools/bringup.py list --radio <id>`.
 | `font_big` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `lang_es` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `lang_it` | off | off | off | off | off | off | off |
+| `lang_zh` | off | ✕ | ✕ | ✕ | ✕ | ✕ | off |
 | `lang_default_es` | off | off | off | off | off | off | off |
 | `lang_default_it` | off | off | off | off | off | off | off |
+| `lang_default_zh` | off | ✕ | ✕ | ✕ | ✕ | ✕ | off |
 | `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run |
 | `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run |
 | `codeplug_foreign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run |
@@ -222,8 +224,10 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `FONT_BIG` | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `LANG_ES` | ● | ● | ● | ● | ● | ● | ○ |
 | `LANG_IT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `LANG_ZH` | ○ | ✕ | ✕ | ✕ | ✕ | ✕ | ○ |
 | `LANG_DEFAULT_ES` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `LANG_DEFAULT_IT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `LANG_DEFAULT_ZH` | ○ | ✕ | ✕ | ✕ | ✕ | ✕ | ○ |
 | `UI_COLOR` | ● | ● | ✕ | ● | ● | ● | ✕ |
 | `UI_SETTINGS` | ● | ● | ● | ● | ● | ● | ● |
 | `SCAN` | ● | ● | ● | ● | ● | ● | ● |
@@ -372,7 +376,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Larger text | `FONT_BIG` | — | — | 9x18 lists and labels on 240 px color panels (needs `FONT_AA`); 3,588 B on the DM-32 (measured 2026-10-17) |
 | Spanish on the radio | `LANG_ES` | 28,456 | 28,348 | The first language brings the lookup and the accented letters of every font (about 7.5 KB); the rest is its text. Measured 2026-10-31 |
 | Italian on the radio | `LANG_IT` | 17,304 | 17,304 | Off by default; measured with Spanish on (its text, and the hashes of strings Spanish leaves untranslated). Alone it costs about as much as Spanish |
-| Chinese on the radio | `LANG_ZH` | 32,856 | 32,856 | Off by default. Not the text alone: 15,232 B of 16x16 glyphs (476 characters, `core/ui/cjk_font_data.c`) and about 17 KB of UTF-8 text, with the text layer's decoder. Needs a 16 px line height: a 240 px color radio draws its words in 8x16 and shows Chinese on every screen, while a layout whose words use the 5x8 or 6x12 font (128x64, 160x128) has no room for it and must not build it. Measured with Spanish on, 2026-11-04 |
+| Chinese on the radio | `LANG_ZH` | 32,856 | 32,856 | Off by default. Not the text alone: 15,360 B of 16x16 glyphs (480 characters, `core/ui/cjk_font_data.c`) and about 17 KB of UTF-8 text, with the text layer's decoder. Needs a 16 px line height: a 240 px color radio draws its words in 8x16 and shows Chinese on every screen, while a layout whose words use the 5x8 or 6x12 font (128x64, 160x128) has no room for it and must not build it. Measured with Spanish on, 2026-11-04 |
 | Start in Spanish | `LANG_DEFAULT_ES` | 0 | 0 | The language the radio starts in until the user picks one (needs `LANG_ES`); the web flasher sets it from its Radio language choice |
 | Start in Italian | `LANG_DEFAULT_IT` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_IT`) |
 | Start in Chinese | `LANG_DEFAULT_ZH` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_ZH`) |
