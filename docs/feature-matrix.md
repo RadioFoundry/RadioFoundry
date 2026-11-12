@@ -411,8 +411,8 @@ sector 11 ([codec-md380.md](spec/codec-md380.md)). With link time optimization, 
 
 | MD-380 build | Flash | Free |
 |---|---:|---:|
-| Default (UHF) | 470,884 | 397,468 |
-| Maximal | 474,116 | 394,236 |
+| Default (UHF) | 465,912 | 402,440 |
+| Maximal | 469,168 | 399,184 |
 
 Until the codec first moved, the region was 281,668 bytes and the default image fit only with link time optimization
 and the hotspot off. Until every codec window moved into sector 11 it was 475,136 bytes (sectors 3-7).
