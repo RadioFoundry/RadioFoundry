@@ -43,9 +43,6 @@ const NAND_PAGE = 2048;
 export const WRITE_VERSION = 7;	// the stub has op 0x0E (WRITE): a sector erased, programmed and read back in one request
 export const SSI_PROG = 0x04000000, SSI_DATA = 0x140A0000;
 export const QUAD_ENABLE = 0x1100005C, LCSFC_BAUDR = 0x11000030, SYS_SOFT_RSTN = 0x11000000, TIMER2_VALUE = 0x14000018;
-// After a no-reply request, before the caller may close the port: a USB-serial cable holds a write up to its latency
-// timer (16 ms on an FTDI) before it sends it; closing at once lost a GD-88's reset (2026-10-26)
-const NOREPLY_DRAIN_MS = 100;
 export const WDT_LOCK = 0x14010000, WDT_EN = 0x14010010, WDT_KEY = 0x5ADA7200;
 // RadioFoundry's restart-cause mark (docs/spec/crash-log.md 1.3; stubtool.py CRASH_SOFT_MARK): the reset was asked for
 export const CRASH_SOFT_MARK = 0x18007EF4, CRASH_BOOT_SOFT = 0x54464F53;
