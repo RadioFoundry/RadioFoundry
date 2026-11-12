@@ -2370,6 +2370,18 @@ static void test_persist(void)
 	boot();
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.arsServer == 3100888);
+	// A key present at start that the radio's own copy doesn't hold (a factory reset leaves the codeplug, a power
+	// cut before the copy was saved): the copy follows it, so the radio keeps the key's value once the key is gone
+	kv_ars_present = true;
+	kv_ars = 3100555;
+	boot();
+	run(100);
+	settings_read(&cur);
+	CHECK(cur.ds_ars_server == 3100555);
+	kv_ars_present = false;
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100555);
 	settings_begin()->ds_stored = 0;
 	settings_end(now);
 	boot();

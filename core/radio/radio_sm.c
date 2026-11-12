@@ -2167,8 +2167,11 @@ static void data_init(radio_sm_t *sm)
 		memcpy(set.ipConfirmedRule, st->ds_ip_rule, sizeof(set.ipConfirmedRule));
 		set.ipGatewayId = st->ds_ip_gateway & 0xFFFFFFu;	// 0 in a record from before it (off)
 	}
-	codeplug_keys_apply(radio_keys, RADIO_KEYS_N, &set);
+	// The settings store's copy as saved, then the keys over it: a key it doesn't hold yet (a factory reset leaves the
+	// codeplug, a power cut before the copy was saved) differs from data_saved, so the first tick saves the copy
+	// (docs/spec/codeplug-settings.md 5.2: the radio's own copy follows the key)
 	data_saved = set;
+	codeplug_keys_apply(radio_keys, RADIO_KEYS_N, &set);
 	data_tx.list = NULL;
 	dmrDataServiceInit(&env);
 	dmrDataServiceSetSettings(&set);
