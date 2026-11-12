@@ -66,8 +66,12 @@ static const pa_keyup_cfg_t keyup_cfg = {
 // with these writes on top. Which one the radio has is found at start-up (rf_detect)
 #define RF_PROBE_HZ		145000000u	// in band on both sections
 #define RF_LOCK_MS		20u		// the probe's wait for the lock bit after the tune
-#define FD_REG_TX_AUX		0x50u		// set-up B: after each switch to TX
-#define FD_TX_AUX		0x3B20u
+#define FD_REG_TX_AUX		0x50u		// set-up B: around each switch to TX
+#define FD_TX_AUX_FM_PRE	0xBB20u		// FM, before the switch
+#define FD_TX_AUX_FM		0x3B20u		// FM, after
+#define FD_TX_AUX_DMR		0x3B18u		// DMR burst, after
+#define FD_REG_CSS_A		0x2Eu		// set-up B: two words by the receive sub-audio type
+#define FD_REG_CSS_B		0x2Fu
 #define FD_REG40_BASE		0x3480u		// set-up B, FM transmit: 0x40 = this + the calibration byte
 #define C7_RF_MODE_RX_INVERT	(1u << 15)	// HR_C7000 RF_MODE: RX IQ invert, off on the newer section
 
@@ -210,7 +214,7 @@ static void burst_switch(void)
 	lna(tx_hz, false);
 	fd6818_dmr_burst_at(&fd, true, fd.variant->bw_dmr, synth_hz(tx_hz));
 	if (rf_b) {
-		fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX);
+		fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_DMR);
 	}
 }
 
@@ -372,9 +376,7 @@ static void init(void)
 static void wake(void)
 {
 	if (asleep) {
-		if (!rf_b) {
-			fd6818_rx_sleep(&fd, false, FD6818_MODE_FM);
-		}
+		fd6818_rx_sleep(&fd, false, FD6818_MODE_FM);
 		asleep = false;
 	}
 }
@@ -435,6 +437,12 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, 
 		// The FD6818 detects the tone on its own demodulated audio: the C7000's detector gets no audio while the
 		// FD6818 plays FM to the speaker (hardware-dm32.md 8.4)
 		fd6818_set_rx_tone(&fd, fd_tone(tone != NULL ? tone->type : TONE_NONE), tone != NULL ? tone->value : 0);
+		if (rf_b) {
+			// CTCSS one pair, DCS and no tone the other (the stock build picks either for no tone by a setting)
+			bool ctcss = tone != NULL && tone->type == TONE_CTCSS;
+			fd6818_write(&fd, FD_REG_CSS_A, ctcss ? 0x8608u : 0x9608u);
+			fd6818_write(&fd, FD_REG_CSS_B, ctcss ? 0x1890u : 0x9890u);
+		}
 #if CONFIG_AM_RX
 		fd6818_set_am(&fd, am);	// every AM tune: full gain again for the new channel; FM: AM off
 #endif
@@ -531,9 +539,12 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		hrc7000_fm_tx(&modem, tx_wide);
 		hrc_pin_write(PIN_MIC_PATH, true);
 		fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
+		if (rf_b) {
+			fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_FM_PRE);
+		}
 		fd6818_set_state(&fd, FD6818_STATE_TX);
 		if (rf_b) {
-			fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX);
+			fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_FM);
 			hal_delay_ms(1);
 		}
 		pa_key();
@@ -765,11 +776,7 @@ static void rx_sleep(bool sleep)
 		return;
 	}
 	if (sleep) {
-		if (rf_b) {
-			fd6818_set_state(&fd, FD6818_STATE_IDLE);	// set-up B: idle only, its low-power 0x37 words not tried
-		} else {
-			fd6818_rx_sleep(&fd, true, FD6818_MODE_FM);
-		}
+		fd6818_rx_sleep(&fd, true, FD6818_MODE_FM);
 		lna(rx_hz, false);
 		asleep = true;
 	} else {

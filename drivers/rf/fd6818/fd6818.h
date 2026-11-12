@@ -43,6 +43,9 @@ typedef struct {
 	uint16_t burst_tx_n;
 	uint16_t bw_fm_25k, bw_fm_12k5, bw_dmr;	// 0x43 values
 	uint32_t park_10hz;			// where post_init leaves the synthesizer, 0 if it doesn't tune
+	// fd6818_rx_sleep's 0x37 words: asleep in FM, asleep in DMR, awake. 0 = the default's (0x1D11, 0x1D00, then
+	// 0x1F1F and 0x1F0F)
+	uint16_t sleep_fm, sleep_dmr, sleep_wake;
 	// Band words for a frequency in 10 Hz units: *r1a == 0 leaves 0x1A alone; false writes neither
 	bool (*band_words)(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40);
 } fd6818_variant_t;

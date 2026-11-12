@@ -424,9 +424,16 @@ uint8_t fd6818_agc_atten_db(const fd6818_agc_t *a)
 
 void fd6818_rx_sleep(fd6818_t *dev, bool sleep, fd6818_mode_t mode)
 {
+	const fd6818_variant_t *v = dev->variant;
 	if (sleep) {
 		fd6818_write(dev, FD6818_REG_STATE, FD6818_STATE_IDLE);
-		fd6818_write(dev, FD6818_REG_POWER, mode == FD6818_MODE_DMR ? 0x1D00 : 0x1D11);
+		if (v->sleep_wake != 0u) {
+			fd6818_write(dev, FD6818_REG_POWER, mode == FD6818_MODE_DMR ? v->sleep_dmr : v->sleep_fm);
+		} else {
+			fd6818_write(dev, FD6818_REG_POWER, mode == FD6818_MODE_DMR ? 0x1D00 : 0x1D11);
+		}
+	} else if (v->sleep_wake != 0u) {
+		fd6818_write(dev, FD6818_REG_POWER, v->sleep_wake);
 	} else {
 		fd6818_write(dev, FD6818_REG_POWER, 0x1F1F);
 		fd6818_write(dev, FD6818_REG_POWER, 0x1F0F);

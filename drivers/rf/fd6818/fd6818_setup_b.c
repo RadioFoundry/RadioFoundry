@@ -72,6 +72,8 @@ static bool band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40)
 	.burst_tx = burst_tx, .burst_tx_n = TBL_N(burst_tx), \
 	/* The radios' own firmware writes only these two words: 12.5 kHz FM shares the DMR word (5.2) */ \
 	.bw_fm_25k = 0x3028u, .bw_fm_12k5 = 0x3048u, .bw_dmr = 0x3048u, \
+	/* hardware-dm32.md 8.10: the receiver's sleep words */ \
+	.sleep_fm = 0x9D17u, .sleep_dmr = 0x9D00u, .sleep_wake = 0x9D1Fu, \
 	.band_words = band_words
 
 const fd6818_variant_t fd6818_variant_b = { SETUP_B(dmr_table) };

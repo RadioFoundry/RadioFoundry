@@ -290,6 +290,18 @@ static void test_rx_sleep(void)
 	chip.n = 0;
 	fd6818_rx_sleep(&dev, false, FD6818_MODE_FM);
 	CHECK(chip.n == 2 && chip.log[0].reg == 0x37 && chip.log[0].val == 0x1F1F && chip.log[1].val == 0x1F0F);
+
+	// set-up B: its own words, one on waking
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b_dmr6943);
+	chip.n = 0;
+	fd6818_rx_sleep(&dev, true, FD6818_MODE_FM);
+	CHECK(chip.n == 2 && chip.log[0].reg == 0x30 && chip.log[0].val == 0 && chip.log[1].val == 0x9D17);
+	chip.n = 0;
+	fd6818_rx_sleep(&dev, true, FD6818_MODE_DMR);
+	CHECK(chip.n == 2 && chip.log[1].val == 0x9D00);
+	chip.n = 0;
+	fd6818_rx_sleep(&dev, false, FD6818_MODE_FM);
+	CHECK(chip.n == 1 && chip.log[0].reg == 0x37 && chip.log[0].val == 0x9D1F);
 }
 
 // AM receive: one AF word, the FM word with the AM demodulator type; FM gives the tables' word back
