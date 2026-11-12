@@ -99,6 +99,7 @@ static void startup_task(void *arg)
 	board_init();
 	board.display->init();
 	board.display->set_backlight(100);
+	ui_boot_splash();		// the backlight would show a blank panel until the UI task starts, seconds on some radios
 	board.input->init();
 	storage_init();			// finishes a codeplug sector rewrite a power cut interrupted
 	bool written = false;		// a commit below wrote a new codeplug
