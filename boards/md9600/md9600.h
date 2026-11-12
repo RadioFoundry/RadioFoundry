@@ -85,8 +85,9 @@ typedef struct {
 } md9600_radio_diag_t;
 void md9600_radio_diag(md9600_radio_diag_t *d);
 void md9600_radio_early(void);	// board_init: the revision and the power-on synthesizer set-up
-// A person stored the revision running now (hwopt_md9600.c): transmit is allowed from now on, no restart
-void md9600_radio_rev_confirm(void);
+// A person stored the revision running now (hwopt_md9600.c): transmit is allowed from now on, no restart. Off:
+// they stored another one, and nothing transmits until the restart applies it
+void md9600_radio_rev_confirm(bool on);
 // Hardware options (hwopt_md9600.c, hal_hwopt.h): the board revision
 #define MD9600_HWOPT_COUNT	1u
 extern const hal_hwopt_t md9600_hwopts[];

@@ -284,9 +284,13 @@ md9600_rf_err_t md9600_rf_rx(md9600_rf_t *rf, uint32_t hz, bool wide)
 
 // --- Transmit ---
 
-void md9600_rf_confirm(md9600_rf_t *rf)
+void md9600_rf_confirm(md9600_rf_t *rf, bool on)
 {
-	if (rf->desc != NULL) {
+	if (!on) {
+		// Lines and the DAC only (no bus), like the end of any path: nothing keys from here on
+		rf->confirmed = false;
+		md9600_rf_pa_safe(rf);
+	} else if (rf->desc != NULL) {
 		rf->confirmed = true;
 	}
 }

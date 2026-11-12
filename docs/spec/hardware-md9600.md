@@ -913,7 +913,8 @@ Transmit needs a confirmed revision. On V4A / V5 nothing is asked: the hardware 
 asks until a record is stored: Settings > Advanced > Hardware > Board revision (warning color), the home screen
 ("Set: Board revision", "Transmit waits for it", with the menu path as the hint) and PTT ("Can't transmit", the same
 line). Storing the revision the radio runs confirms it at once, without a restart; storing another one applies from
-the next start, and until then the home screen and PTT say "Restart to apply". The radio refuses V4A / V5 when an
+the next start, and until then nothing transmits (the running revision is no longer confirmed, so the board refuses
+every path, the hotspot's too) and the home screen and PTT say "Restart to apply". The radio refuses V4A / V5 when an
 AK2365A answered. The debug link's HWOPT sets it too (`rfoundry_debug.py hwopt "Board revision" V4`) and reports the
 state (`hwopt.0.state`: `ask`, `restart`, `ok`, `hidden`; [debuglink.md](debuglink.md#325-hwopt)).
 

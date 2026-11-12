@@ -40,9 +40,9 @@ static bool rev_set(uint8_t choice)
 	}
 	stored = r;
 	stored_known = true;
-	if (r == s.rev) {
-		md9600_radio_rev_confirm();	// the revision running now: transmit without a restart
-	}
+	// The revision running now: transmit without a restart. Another one: the running one may be wrong for this
+	// board, so nothing transmits on it (any path, the hotspot's too) until the restart applies the new one
+	md9600_radio_rev_confirm(r == s.rev);
 	return true;
 }
 

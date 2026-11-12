@@ -215,11 +215,14 @@ md9600_rev_state_t md9600_rev_state(void)
 	return rev;
 }
 
-void md9600_radio_rev_confirm(void)
+void md9600_radio_rev_confirm(bool on)
 {
-	if (rev.usable) {
+	if (!on) {
+		rev.confirmed = false;
+		md9600_rf_confirm(&rf, false);
+	} else if (rev.usable) {
 		rev.confirmed = true;
-		md9600_rf_confirm(&rf);
+		md9600_rf_confirm(&rf, true);
 	}
 }
 

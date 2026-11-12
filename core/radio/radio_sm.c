@@ -915,6 +915,10 @@ static uint8_t tx_check(const radio_sm_t *sm)
 	if (!board_in_band(ch->tx_hz, true)) {
 		return TXDENY_BAND;
 	}
+	if (board_hwopt_pending() != NULL) {
+		// Unset, or stored but not applied until a restart: the transmitter may be set up for the wrong hardware
+		return TXDENY_HWOPT;
+	}
 	if (sm->batt.level == BATT_CRITICAL) {
 		return TXDENY_BATTERY;
 	}

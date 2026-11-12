@@ -4657,6 +4657,15 @@ static void test_error_paths(void)
 		CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HWOPT);
 		req(RREQ_PTT, 0);
 	}
+	// The core refuses it itself, even where the board would key (a restart due, the old choice still confirmed)
+	tx_fail = false;
+	for (uint8_t st = HWOPT_ST_ASK; st <= HWOPT_ST_RESTART; st++) {
+		fake_hwopt_st = st;
+		int calls = hw.tx_calls;
+		req(RREQ_PTT, 1);
+		CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HWOPT && hw.tx_calls == calls);
+		req(RREQ_PTT, 0);
+	}
 	fake_hwopt_st = HWOPT_ST_HIDDEN;
 	tx_fail = false;
 
@@ -4701,14 +4710,16 @@ static void test_error_paths(void)
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && sim.tx_begins == 0);
 	req(RREQ_PTT, 0);
 	run(100);
-	fake_hwopt_st = HWOPT_ST_ASK;
-	req(RREQ_PTT, 1);
-	run(100);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HWOPT && sim.tx_begins == 0);
+	tx_fail = false;	// the core refuses a pending option even where the board would key
+	for (uint8_t st = HWOPT_ST_ASK; st <= HWOPT_ST_RESTART; st++) {
+		fake_hwopt_st = st;
+		req(RREQ_PTT, 1);
+		run(100);
+		CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HWOPT && sim.tx_begins == 0);
+		req(RREQ_PTT, 0);
+		run(100);
+	}
 	fake_hwopt_st = HWOPT_ST_HIDDEN;
-	req(RREQ_PTT, 0);
-	run(100);
-	tx_fail = false;
 	sim.reject_next = true;
 	req(RREQ_PTT, 1);
 	run(300);

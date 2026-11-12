@@ -444,11 +444,15 @@ static void test_tx_gates(void)
 	CHECK(md9600_rf_tx_check(&rf, 446000000u, 0) == MD9600_RF_E_TX_REV);
 	CHECK(count(EV_PLL, -1) == 0 && pa_off_now());
 	// Confirmed later (a person stored the revision running): allowed at once
-	md9600_rf_confirm(&rf);
+	md9600_rf_confirm(&rf, true);
 	CHECK(rf.confirmed && md9600_rf_tx_check(&rf, 446000000u, 0) == MD9600_RF_OK);
+	// Another revision stored: refused again until the restart
+	md9600_rf_confirm(&rf, false);
+	CHECK(!rf.confirmed && md9600_rf_tx_check(&rf, 446000000u, 0) == MD9600_RF_E_TX_REV && pa_off_now());
+	md9600_rf_confirm(&rf, true);
 	// No revision: nothing to confirm
 	fresh(MD9600_REV_UNKNOWN, false);
-	md9600_rf_confirm(&rf);
+	md9600_rf_confirm(&rf, true);
 	CHECK(!rf.confirmed && md9600_rf_tx_check(&rf, 446000000u, 0) == MD9600_RF_E_REV);
 	// Confirmed: out of band and missing calibration refuse
 	fresh(MD9600_REV_V5, true);
@@ -1107,6 +1111,7 @@ static md9600_rev_t stored_rev = MD9600_REV_UNKNOWN;
 static bool store_ok = true;
 static md9600_rev_state_t rev_now;
 static int confirms;
+static int unconfirms;
 
 md9600_rev_t md9600_flash_rev_load(void)
 {
@@ -1127,10 +1132,14 @@ md9600_rev_state_t md9600_rev_state(void)
 	return rev_now;
 }
 
-void md9600_radio_rev_confirm(void)
+void md9600_radio_rev_confirm(bool on)
 {
-	confirms++;
-	rev_now.confirmed = true;
+	if (on) {
+		confirms++;
+	} else {
+		unconfirms++;
+	}
+	rev_now.confirmed = on;
 }
 
 static void test_hwopt(void)
@@ -1149,9 +1158,12 @@ static void test_hwopt(void)
 	// The revision running: confirmed at once, no restart
 	CHECK(o->set(0) && stored_rev == MD9600_REV_V1V3 && o->get() == 0 && confirms == 1);
 	CHECK(o->state() == HWOPT_ST_OK);
-	// Another one: applies at the next start
-	CHECK(o->set(1) && stored_rev == MD9600_REV_V4 && o->get() == 1 && confirms == 1);
-	CHECK(o->state() == HWOPT_ST_RESTART);
+	// Another one: applies at the next start, and the running one no longer counts as confirmed
+	CHECK(o->set(1) && stored_rev == MD9600_REV_V4 && o->get() == 1 && confirms == 1 && unconfirms == 1);
+	CHECK(o->state() == HWOPT_ST_RESTART && !rev_now.confirmed);
+	// Back to the running one: confirmed again, no restart
+	CHECK(o->set(0) && confirms == 2 && o->state() == HWOPT_ST_OK);
+	CHECK(o->set(1) && o->state() == HWOPT_ST_RESTART);
 	CHECK(!o->set(3) && stored_rev == MD9600_REV_V4);
 	store_ok = false;
 	CHECK(!o->set(0) && o->get() == 1);
