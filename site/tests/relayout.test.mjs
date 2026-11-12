@@ -165,3 +165,56 @@ test("an install that stops halfway through the move is finished from the same c
 		assert.equal(radio.codecReport(), sim.board.codec.id, id);
 	}
 });
+
+test("the bootloader route erases the vector table's sector first and writes it last: a cut anywhere leaves nothing to start", async () => {
+	for (const id of MOVING) {
+		const { sim, radio } = await former(id);
+		const copy = await readCodec(mem(radio), sim.board, sim.fb);
+		const img = app(0x60000);
+		const base = sim.board.app_base;
+		const sec = sim.board.sectors.find((s) => s.addr === base);
+		const codec = await codecSegments(copy.profile, copy.segments, sim.fb);
+		const plan = makePlan(sim.board, [[base, img]], MERGE, codec, stockfw.layoutWindows(copy.profile, sim.fb));
+		// every DNLOAD that went through: ["erase", addr], ["block", its sector] or ["command"]
+		const run = async (left) => {
+			const events = [];
+			radio.enterBootloader();
+			const t = radio.dfuTransport();
+			const cut = { ...t, async out(req, value, data) {
+				if (left !== null && left-- === 0) throw new Error("the device has been lost");
+				const r = await t.out(req, value, data);
+				if (value) events.push(["block", radio.addr]);
+				else if (data?.[0] === 0x41) events.push(["erase", radio.erased.at(-1)]);
+				else events.push(["command"]);
+				return r;
+			} };
+			if (left === null) await new Dfu(cut, noWait).run(plan, sim.key);
+			else await assert.rejects(new Dfu(cut, noWait).run(plan, sim.key));
+			return events;
+		};
+		const orig = radio.flash.slice();
+		const ev = await run(null);
+		assert.equal(ev.find(([k]) => k === "erase")[1], base, `${id}: first erase`);
+		const written = ev.filter(([k]) => k === "block").map(([, a]) => a);
+		const first = written.indexOf(base);
+		assert.ok(first > 0 && written.slice(first).every((a) => a === base), `${id}: the vector table's sector is written last`);
+		const start = ev.findIndex(([k, a]) => k === "block" && a === base);
+		const cuts = new Set([0, 1, 2, 3, 4, Math.floor(start / 2), start - 1, start, start + 1, ev.length - 2]);
+		for (const c of [...cuts].sort((x, y) => x - y)) {
+			radio.flash.set(orig);
+			radio.erased = [];
+			await run(c);
+			if (radio.erased.includes(base) && c <= start) {
+				assert.ok(at(radio, base, sec.size).every((b) => b === 0xFF), `${id} cut ${c}: the vector table's sector is blank`);
+				radio.powerOn();
+				assert.equal(radio.mode, "bootloader", `${id} cut ${c}: the bootloader stays in its update mode`);
+			}
+			// the same plan run again finishes it
+			await run(null);
+			assert.ok(equal(at(radio, base, img.length), img), `${id} cut ${c}`);
+			for (const [a, d] of sim.codecSegments) assert.ok(equal(at(radio, a, d.length), d), `${id} cut ${c} ${a}`);
+			radio.powerOn();
+			assert.equal(radio.codecReport(), sim.board.codec.id, `${id} cut ${c}`);
+		}
+	}
+});

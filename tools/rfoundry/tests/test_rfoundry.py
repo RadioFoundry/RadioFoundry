@@ -2134,12 +2134,25 @@ class CodecRelayout(unittest.TestCase):
         """The bootloader's device losing power after `left` more DNLOAD requests (erases, writes, the exit)"""
         left = None
 
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            self.events = []	# one per DNLOAD that went through: ("erase", addr) or ("block", sector addr)
+
         def ctrl_transfer(self, rtype, req, value, intf, data, timeout=None):
             if rtype == 0x21 and req == dfumod.DFU_DNLOAD and self.left is not None:
                 if self.left == 0:
                     raise OSError("the radio lost power")
                 self.left -= 1
-            return super().ctrl_transfer(rtype, req, value, intf, data, timeout)
+            r = super().ctrl_transfer(rtype, req, value, intf, data, timeout)
+            if rtype == 0x21 and req == dfumod.DFU_DNLOAD:
+                d = bytes(data or b"")
+                if value:
+                    self.events.append(("block", self.addr))
+                elif d[:1] == b"\x41":
+                    self.events.append(("erase", struct.unpack("<I", d[1:5])[0]))
+                else:
+                    self.events.append(("command", None))
+            return r
 
     def install(self, b, dev, saved, probe):
         """One run as cmd_flash makes it: the decision, the plan, the bootloader route"""
@@ -2164,9 +2177,19 @@ class CodecRelayout(unittest.TestCase):
             probe = {"board": b.debuglink_names[0], "codec": b.codec_former[0]}
             full = self.CutDevice(b, KEY, flash)
             self.install(b, full, got, probe)
-            steps = 2 + len(full.erased) + full.blocks + 1	# vendor commands, erases, blocks, the exit
+            ev = full.events
+            steps = len(ev)		# vendor commands, erases, set address, blocks, the exit
+            # the vector table's sector is erased first and written last: until then the bootloader finds no
+            # application and stays in its update mode
+            erases = [a for k, a in ev if k == "erase"]
+            self.assertEqual(erases[0], b.app_base)
+            written = [a for k, a in ev if k == "block"]
+            first3 = written.index(b.app_base)
+            self.assertTrue(len(written) > first3 and set(written[first3:]) == {b.app_base}, bid)
+            self.assertTrue(len(set(written)) > 1, bid)
+            start3 = [i for i, (k, a) in enumerate(ev) if k == "block" and a == b.app_base][0]
             cuts = sorted(set(list(range(0, 2 + len(full.erased) + 3)) + list(range(0, steps, max(1, steps // 8)))
-                              + [steps - 2, steps - 1]))
+                              + [start3 - 1, start3, start3 + 1, steps - 2, steps - 1]))
             for cut in cuts:
                 with self.subTest(board=bid, cut=cut):
                     dev = self.CutDevice(b, KEY, flash)
@@ -2174,6 +2197,10 @@ class CodecRelayout(unittest.TestCase):
                     with self.assertRaises(OSError):
                         self.install(b, dev, got, probe)
                     self.assertEqual(dev.read(0x08000000, 0xC000), boot, "the bootloader is never written")
+                    if b.app_base in dev.erased and cut <= start3:
+                        # cut after the first erase and before the last sector: no vector table, nothing to start
+                        sec = b.sector_at(b.app_base)
+                        self.assertEqual(dev.read(sec.addr, sec.size), b"\xFF" * sec.size, "cut %d" % cut)
                     # the radio comes back in its bootloader (or with a part of the new image, which the owner can
                     # always leave for the bootloader); nothing to probe. The copy saved on this computer finishes it
                     dev.left = None

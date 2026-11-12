@@ -171,7 +171,7 @@ flashing tools (rfoundry and the web flasher) do this inside the normal install:
 | 2. Read back | READ_MEM reads every window where the descriptor says the codec is; the copy is checked against the profile (stock SHA-256s after taking it back, every rewritten site) | Nothing written |
 | 3. Save | The copy is stored on the user's machine (rfoundry: `<config>/codecs/<board>-<codec id>.bin`; the web flasher: the browser) and never deleted | Nothing written |
 | 4. Plan | A merge from the saved copy, moved to the current layout; else from the stock file; with neither, the install is refused | Nothing written |
-| 5. Write | Bootloader route: the plan's sectors are erased, then written in address order, the descriptor last. Stub route: sector 3 erased first, the other sectors, sector 3 without its first word, a CRC check, the first word | The bootloader starts (sector 3 blank or the image incomplete), or the new application starts with no valid descriptor and runs FM only |
+| 5. Write | Bootloader route: the plan's sectors are erased, sector 3 first, then the others are written, sector 3 last. Stub route: sector 3 erased first, the other sectors, sector 3 without its first word, a CRC check, the first word | The bootloader starts (sector 3 blank or the image incomplete), or the new application starts with no valid descriptor and runs FM only |
 | 6. Check | The radio reports the current codec id | |
 
 Resume rule: after any stop the radio is in its bootloader or runs the new application without voice. The same
@@ -193,6 +193,7 @@ codec without a copy.
   have not been exercised by a move before; the placed CRCs agree with the maps, the bytes have not been run.
 * Window moves on a radio: voice RX and TX after the move, an update in keep mode after it, and a move stopped at
   each step and run again (the radios' codec pages).
-* The bootloader route writes in address order, the application's first sector first. Power lost while that sector
-  is half written may leave a start the bootloader runs; the bootloader key combination still recovers the radio. The
-  stub route writes the first sector last for that reason.
+* The bootloader route writes sector 3 last, but its blocks in order, the vector table first: the bootloader takes
+  each sector's blocks from its start. Power lost during those last 16 blocks may leave a start the bootloader runs;
+  the bootloader key combination still recovers the radio. The stub route avoids that window by writing the first word
+  last.

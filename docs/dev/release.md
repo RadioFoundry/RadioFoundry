@@ -128,10 +128,11 @@ hold the codec. Whether an update can leave the codec alone (keep) depends on th
 
 The exact map of a radio is in its hardware spec (`hardware-<id>.md`) and in `tools/rfoundry/rfoundry/registry.json`.
 
-**What an interrupted update leaves.** All erases come first, then the writes in address order, so sector 3 (the vector
-table) is the first one written back: an update cut off before that leaves the bootloader in DFU. Cut off later, the
-radio may boot half an application: a crash, never a brick. Enter the bootloader by hand (PTT and SK1 at power on)
-and flash again.
+**What an interrupted update leaves.** All erases come first, sector 3 (the vector table) first, then the writes,
+sector 3 last (`Plan.write_order` in rfoundry, `writeOrder` in the web flasher). An update cut off anywhere before
+that last sector leaves sector 3 blank, so the bootloader stays in DFU and the same install, run again, finishes it.
+Cut off while sector 3 itself is written, the radio may boot half an application: a crash, never a brick. Enter the
+bootloader by hand (the board's key combination at power on) and flash again.
 
 ## Releases from before the codec moved
 
