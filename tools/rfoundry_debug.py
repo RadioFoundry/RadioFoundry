@@ -47,7 +47,8 @@ Key names: up down left right select (ok) back (exit) quick (star) context (hash
 emergency enc user1-user4.
 
 The port is found by its USB ID 1FC9:0094 (the only one present), else a radio in USB network mode answering over UDP;
---port or $RFOUNDRY_PORT picks one. A serial port needs pyserial (pip install pyserial). Exit status 0 on success, 1 on a radio error, 2 on a usage or connection problem.
+--port or $RFOUNDRY_PORT picks one. A serial port needs pyserial (pip install pyserial). Exit status 0 on success, 1 on
+a radio error, 2 on a usage or connection problem.
 """
 import argparse
 import json

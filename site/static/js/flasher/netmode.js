@@ -17,6 +17,11 @@ export const SERIAL_MODE_REQUEST = 0x53;
 // not the mDNS name: a sandboxed browser (Flatpak, Snap) resolves no .local names
 export const SERIAL_MODE_URL = "http://12.255.255.254/api/usb?mode=serial";
 
+// The wait for the port when a chooser (requestPort) may follow in the same click: the browser lets a click open one
+// for about 5 s (transient user activation), and the request to the radio comes out of that too. A port that isn't
+// back by then shows up in the chooser as the radio re-enumerates
+export const CLICK_WAIT_MS = 3000;
+
 const isNet = (d) => d.vendorId === RFOUNDRY_NET.vendorId && d.productId === RFOUNDRY_NET.productId;
 
 // Radios in network mode this page may use over WebUSB (granted before: no prompt)
@@ -64,16 +69,18 @@ export async function serialPortPresent(serial = serialSupported() ? serialApi()
 }
 
 // Ask a radio in network mode for its serial port and wait for it. http: false leaves the tab out (not in a click).
-// {how: "usb" | "http" | null, back}: back is true when a port granted before showed up within ms; a radio this page
-// never had a port of can't be seen coming back, so the caller then asks the user to connect
-export async function toSerial({ usb, serial, open, http = true, ms = 8000, step = 250 } = {}) {
+// {how: "usb" | "http" | null, back}: back is true when a port granted before showed up within ms of the call (the
+// request's own time counts, so a caller's ms bounds the whole call); a radio this page never had a port of can't be
+// seen coming back, so the caller then asks the user to connect
+export async function toSerial({ usb, serial, open, http = true, ms = 8000, step = 250, now = Date.now } = {}) {
+	const start = now();
 	let how = (await requestOverUsb(await grantedNetworkRadios(usb))) ? "usb" : null;
 	if (!how && http) {
 		requestOverHttp(open);
 		how = "http";
 	}
 	if (!how) return { how, back: false };
-	for (let waited = 0; waited < ms; waited += step) {
+	while (now() - start < ms) {
 		await sleep(step);
 		if (await serialPortPresent(serial)) return { how, back: true };
 	}

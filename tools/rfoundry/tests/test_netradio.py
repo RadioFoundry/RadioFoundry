@@ -58,7 +58,10 @@ class Udp(unittest.TestCase):
         self.radio.sendto(b"12345", src)
         self.radio.sendto(b"678", src)
         self.assertEqual(s.read(2), b"12")      # a datagram is a piece of the stream, not a message
-        self.assertEqual(s.read(16), b"345678")
+        rest = s.read(16)
+        if len(rest) < 6:                       # the second datagram a moment behind the first (seen on macOS)
+            rest += s.read(16)
+        self.assertEqual(rest, b"345678")
         self.assertEqual(s.read(1), b"")        # nothing more: empty after the timeout, as pyserial
         self.radio.sendto(b"stale", src)
         s.timeout = 0.2

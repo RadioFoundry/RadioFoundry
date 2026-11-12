@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { SERIAL_MODE_REQUEST, SERIAL_MODE_URL, grantedNetworkRadios, requestOverUsb, serialPortPresent, toSerial } from "../static/js/flasher/netmode.js";
+import { CLICK_WAIT_MS, SERIAL_MODE_REQUEST, SERIAL_MODE_URL, grantedNetworkRadios, requestOverUsb, serialPortPresent, toSerial } from "../static/js/flasher/netmode.js";
 
 const NET = { vendorId: 0x1FC9, productId: 0x0096 };
 
@@ -67,6 +67,21 @@ test("outside a click nothing opens: no way to ask, no wait", async () => {
 	const r = await toSerial({ usb: usbWith(), serial: serialAfter(0), open: (...a) => opened.push(a), http: false, step: 1, ms: 50 });
 	assert.deepEqual(r, { how: null, back: false });
 	assert.equal(opened.length, 0);
+});
+
+test("the wait is bounded from the call's start, inside a click's activation for a chooser", async () => {
+	// a port never granted to this page: nothing ends the wait early. The request's own time counts against ms
+	let clock = 0;
+	const slow = device();
+	const open = slow.open.bind(slow);
+	slow.open = async () => { clock += 2000; return open(); };
+	const polls = [];
+	const serial = { getPorts: async () => { polls.push(clock); clock += 250; return []; } };
+	const r = await toSerial({ usb: usbWith(slow), serial, http: false, step: 0, ms: CLICK_WAIT_MS, now: () => clock });
+	assert.deepEqual(r, { how: "usb", back: false });
+	assert.ok(clock <= CLICK_WAIT_MS + 250, `returned at ${clock} ms`);
+	assert.equal(polls.length, 4);	// 2000, 2250, 2500, 2750: not CLICK_WAIT_MS more after the request
+	assert.ok(CLICK_WAIT_MS < 5000);	// the browser's transient activation
 });
 
 test("a port this page never had can't be seen coming back", async () => {

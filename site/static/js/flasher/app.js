@@ -59,7 +59,7 @@ import { showBetaNotice } from "./beta.js";
 import { currentBuild, planUpdate } from "./update.js";
 import { readDfuInfo, choiceFor, hwoptAction, pendingHwopt, majorsFor, runsOriginal, BOOTLOADER } from "./origversion.js";
 import { readOriginal, deviceKind, spiSeconds, Guard } from "./origbackup.js";
-import { toSerial } from "./netmode.js";
+import { toSerial, CLICK_WAIT_MS } from "./netmode.js";
 
 // ---------------------------------------------------------------------------------------------------------------
 // strings and DOM
@@ -510,9 +510,9 @@ async function waitForRFoundry(ms = 20000) {
 
 // A radio in network mode, asked for its serial port over WebUSB alone (netmode.js: no click needed, and no tab).
 // true: it took the request, so the connect goes on. false: this browser can't reach it that way, the help offers the
-// radio's own page
+// radio's own page. The wait is short: the connect that follows may open a chooser, in the same click
 async function leaveNetworkMode() {
-	const r = await toSerial({ http: false, ms: 6000 });
+	const r = await toSerial({ http: false, ms: CLICK_WAIT_MS });
 	if (r.how) switchedToSerial();
 	return r.how !== null;
 }
