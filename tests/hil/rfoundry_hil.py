@@ -1398,11 +1398,23 @@ class SdrBench:
 
     def voice_call(self, freq, cc, dst, superframes=3, calls=1, headers=8, terminators=3, gap_ms=500, ambe=None,
                    private=False, src=None, late=None, talker_alias=None, pi=False, emergency=False,
-                   service_options=None, gps=None):
+                   service_options=None, gps=None, offset_hz=0, offset_sweep=None, superframes_per_step=1):
         """One or more voice calls from the bench (a bench_tx voice job). late=K: no header, the first K bursts left out;
         talker_alias: text in odd superframes; pi: the EMB PI bit on B-F; service_options: hex byte in the LC;
-        gps: (lat, lon[, error code]) as an ETSI GPS Info LC in the odd superframes"""
-        a = f"voice --dst {dst} --superframes {superframes} --calls {calls} --gap-ms {gap_ms}"
+        gps: (lat, lon[, error code]) as an ETSI GPS Info LC in the odd superframes. offset_hz: the carrier that far
+        from freq (+-2500 Hz; the lease stays on freq). offset_sweep=(from, to, step) Hz: one call stepping through
+        the offsets, superframes_per_step superframes each (superframes ignored), with a "step" record a step"""
+        if offset_sweep:
+            lo, hi, st = offset_sweep
+            superframes = (int((hi - lo) / st + 1e-9) + 1) * superframes_per_step
+            calls = 1
+        a = f"voice --dst {dst} --calls {calls} --gap-ms {gap_ms}"
+        if offset_sweep:
+            a += f" --offset-sweep {lo:g}:{hi:g}:{st:g} --superframes-per-step {superframes_per_step}"
+        else:
+            a += f" --superframes {superframes}"
+        if offset_hz:
+            a += f" --offset-hz {offset_hz:g}"
         if late is None:
             a += f" --headers {headers}"
         else:
