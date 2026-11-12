@@ -266,7 +266,7 @@ static bool key_timer_ready;
 #define KEYUP_INT_AHEAD_US	2550u
 #define KEYUP_MAX_AHEAD_US	(KEYUP_INT_AHEAD_US - MD9600_BURST_T5_US - 50u)	// the loop's point after the interrupt
 static const pa_keyup_cfg_t keyup_cfg[2] = {
-	[MD9600_VHF] = PA_KEYUP_FIXED(936),
+	[MD9600_VHF] = PA_KEYUP_FIXED(1236),
 	[MD9600_UHF] = PA_KEYUP_FIXED(800),
 };
 enum { KEY_PT_LOOP = PA_KEYUP_PT_BOARD };
