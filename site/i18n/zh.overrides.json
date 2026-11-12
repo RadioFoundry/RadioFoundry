@@ -185,5 +185,9 @@
  "feature.ZONE_EDIT.title": "区域编辑器：在区域内移动、添加、复制和移除信道；重命名、复制和删除区域",
  "feature.ZONE_EDIT.help": "区域列表中的区域编辑器：添加、移动、复制到此处、移除信道；重命名、复制、删除区域（docs/spec/ui.md 2.2）：配合信道编辑器",
  "feature.CONTACT_EDIT.title": "联系人编辑器：从查找或呼叫操作新建联系人（名称、ID、类型、时隙）",
- "feature.CONTACT_EDIT.help": "联系人编辑器：从查找、呼叫操作或手动输入的号码新建联系人，设置名称、ID、类型和时隙（docs/spec/ui.md 2.4）：配合信道编辑器（其文本输入）和 DMR"
+ "feature.CONTACT_EDIT.help": "联系人编辑器：从查找、呼叫操作或手动输入的号码新建联系人，设置名称、ID、类型和时隙（docs/spec/ui.md 2.4）：配合信道编辑器（其文本输入）和 DMR",
+ "flash.bootloader.dm32.0": "关闭电台，连接编程线。",
+ "flash.bootloader.dm32.1": "按住 PTT 和 SK1。",
+ "flash.bootloader.dm32.2": "保持按住两个键的同时开机。绿色 LED 亮起。",
+ "flash.bootloader.dm32.3": "松开按键。"
 }

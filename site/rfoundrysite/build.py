@@ -624,7 +624,8 @@ class Site:
 		       # the C7000 radios need no keys held: the page meets the chip's boot ROM when the radio is switched on
 		       "bootloader": "".join("<li>%s</li>" % html.escape(s) for s in (
 			       [self.t(lang, "radio.c7_step%d" % i) for i in (1, 2, 3)] if fl["backend"] == "c7000-stub"
-			       else fl.get("bootloader", [])))}
+			       else [self.i18n.opt(lang, "flash.bootloader.%s.%d" % (b["id"], i), s)
+				     for i, s in enumerate(fl.get("bootloader", []))]))}
 		self.page(lang, "radios/%s.html" % b["id"], b["name"], self.tpl.render("radio", ctx, lang), "radio",
 			  description=self.t(lang, "radio.description", name=b["name"]), nav="radios")
 
