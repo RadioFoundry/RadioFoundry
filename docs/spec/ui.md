@@ -59,7 +59,8 @@ between lines of the screen under it (a row all one color), never through a line
 
 Hints and toasts call the QUICK and CONTEXT keys `*` and `#`. A radio without those keys gives its own names
 (`board.quick_label`, `board.context_label`: for example a front panel's own key names), and each `*` or `#` that stands alone is
-drawn as that name ("OK Menu  P1 Quick"). On a radio with no digit keys a hint group that starts with a digit
+drawn as that name ("OK Menu  P1 Quick"). When the key lock is another key's hold, `board.lock_label` names it in
+"hold *" ("hold MENU to unlock"). On a radio with no digit keys a hint group that starts with a digit
 ("0-9 find") is left out. Toasts keep their numbers.
 
 Text is shortened with a middle ellipsis only as a last resort (P5 allows it for names on Home). Before that:

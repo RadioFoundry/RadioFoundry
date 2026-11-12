@@ -243,14 +243,14 @@ static uint32_t scan(void)
 	uint32_t m = 0;
 	int8_t k = ladder(ADC_KEY_LADDER0);
 	if (k >= 0) {
-		m |= 1u << (KEY_UP + k);
+		m |= 1u << (KEY_P1 + k);
 	}
 	k = ladder(ADC_KEY_LADDER1);
 	if (k >= 0) {
-		m |= 1u << (KEY_C17 + k);
+		m |= 1u << (KEY_P4 + k);
 	}
 	if (!mcu_pin_read(PIN_KEY_SINGLE)) {
-		m |= 1u << KEY_C1E;
+		m |= 1u << KEY_PUSH;
 	}
 #if CONFIG_BT_PTT
 	m |= d578uv_bt_scan();

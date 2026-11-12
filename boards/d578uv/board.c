@@ -41,24 +41,28 @@ static const board_power_band_t power_bands[] = {
 	{ 400000000u, 480000000u, power_names },
 };
 
-// Up, down, confirm and exit as the radio's menus use them (a key lock is the core's long QUICK, menu held, and a long
-// exit goes home). The radio's other front keys are programmable in its manual (P2..P6 and PUSH, defaults Tx Power,
-// TalkAround, Speaker Mode, APRS Set, Switch ChType and none), so they get the
-// core's other actions on a press and the user actions on a long press. PUSH (PA1, the knob's switch) confirms as the
-// menu key does, so the knob alone can work a list. The serial microphone's keypad: the digits (with their DTMF), '*'
-// and '#' as Quick settings and the context menu (as on the keypad radios; the front and the microphone have their
-// own up and down), A/B, and A..D by their printed labels (MENU, ZONE up, ZONE down, EXIT) with DTMF A..D while PTT
-// is held on FM
+// The front keys (docs/user/23-radios.md, "AT-D578UV keys"). Up and down are the knob and the microphone's Up and Down,
+// so P1 and P2 take the jobs of * and # (QUICK, held: the next zone; CONTEXT, held: the talk target). MENU confirms
+// (held: the key lock, the core's long QUICK) and EXIT goes back (held: Home). P3-P6 and PUSH (the knob's switch) are the side keys below: Settings > Keys and the
+// codeplug set their press and hold. Defaults: P3 Monitor, P4 A/B (held: dual watch), P5 Power level (held 1.5 s:
+// emergency), P6 VFO/Channel (held: copy to VFO), PUSH confirms as MENU does (held: scan). The serial microphone's
+// keypad: the digits (with their DTMF), '*' and '#' as QUICK and CONTEXT, A/B, and A..D by their printed labels
+// (MENU, ZONE up, ZONE down, EXIT) with DTMF A..D while PTT is held on FM
+#if CONFIG_DMR_EMERGENCY
+#define P5_LONG		ACT_EMERGENCY
+#else
+#define P5_LONG		ACT_POWER
+#endif
 static const keymap_entry_t keymap[] = {
-	{ KEY_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
-	{ KEY_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
+	{ KEY_P1, ACT_QUICK, ACT_ZONE_UP, false, false, 0 },
+	{ KEY_P2, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },
 	{ KEY_MENU, ACT_SELECT, ACT_QUICK, false, false, 0 },
 	{ KEY_EXIT, ACT_BACK, ACT_BACK, false, false, 0 },
-	{ KEY_C15, ACT_CONTEXT, ACT_USER_1, false, false, 0 },
-	{ KEY_C17, ACT_AB, ACT_USER_2, false, false, 0 },
-	{ KEY_C18, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
-	{ KEY_C19, ACT_USER_3, ACT_USER_3, false, false, 0 },
-	{ KEY_C1E, ACT_SELECT, ACT_USER_4, false, false, 0 },
+	{ KEY_P3, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
+	{ KEY_P4, ACT_AB, ACT_DUAL_WATCH, false, false, 0 },
+	{ KEY_P5, ACT_POWER, P5_LONG, false, false, 0 },
+	{ KEY_P6, ACT_VFO_TOGGLE, ACT_COPY_VFO, false, false, 0 },
+	{ KEY_PUSH, ACT_SELECT, ACT_SCAN, false, false, 0 },
 	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 	// The microphone's Up and Down act as the front Up and Down (on the home screen they step the channel)
 	{ KEY_MIC_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
@@ -81,6 +85,10 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_MIC_PC, ACT_ZONE_DOWN, ACT_ZONE_DOWN, false, false, 'C' },
 	{ KEY_MIC_PD, ACT_BACK, ACT_BACK, false, false, 'D' },
 };
+
+// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h), named as printed
+static const uint8_t side_keys[] = { KEY_P3, KEY_P4, KEY_P5, KEY_P6, KEY_PUSH };
+static const char *const side_key_names[] = { "P3", "P4", "P5", "P6", "PUSH" };
 
 const board_t board = {
 	.name = BOARD_T_NAME,	// board.mk: the GD32 and Artery builds report their own
@@ -109,6 +117,12 @@ const board_t board = {
 	.input = &d578uv_input,
 	.keymap = keymap,
 	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
+	.side_keys = side_keys,
+	.side_key_names = side_key_names,
+	.side_key_count = sizeof(side_keys),
+	.quick_label = "P1",
+	.context_label = "P2",
+	.lock_label = "MENU",
 	.radio = &d578uv_radio,
 	.chip_reg = d578uv_chip_reg,
 #if CONFIG_DUAL_WATCH

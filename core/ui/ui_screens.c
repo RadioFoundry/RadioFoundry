@@ -560,7 +560,7 @@ static bool board_has_digits(void)
 
 // Hints and toasts are written for a keypad: "*" and "#" name the QUICK and CONTEXT keys, and a hint group may start
 // with a digit ("0-9 find"). On a radio without them (ui.md 1) a "*" or "#" standing alone becomes the board's own
-// key name (board.quick_label / context_label: "P1 Quick"), and in a hint (not a toast, whose numbers are values) a
+// key name (board.quick_label / context_label: "P1 Quick"; "hold *" is the key lock, board.lock_label when set), and in a hint (not a toast, whose numbers are values) a
 // group that starts with a digit goes, so no hint names a key the radio doesn't have. Text for a keypad radio comes
 // back unchanged
 static const char *key_names(const char *text, char *out, size_t cap, bool hint)
@@ -582,7 +582,9 @@ static const char *key_names(const char *text, char *out, size_t cap, bool hint)
 			continue;
 		}
 		bool alone = (p == text || p[-1] == ' ' || alt_mark(p[-1])) && (p[1] == 0 || p[1] == ' ' || alt_mark(p[1]));
-		const char *sub = !alone ? NULL : *p == '*' ? board.quick_label : *p == '#' ? board.context_label : NULL;
+		bool held = p - text >= 5 && memcmp(p - 5, "hold ", 5) == 0 && board.lock_label != NULL;
+		const char *sub = !alone ? NULL : *p == '*' ? (held ? board.lock_label : board.quick_label) :
+			*p == '#' ? board.context_label : NULL;
 		if (sub == NULL) {
 			out[n++] = *p;
 			continue;

@@ -696,16 +696,19 @@ the `d578uva` image instead. The `rfoundry` route has installed on a radio; the 
 
 | Front key | Press | Hold |
 |---|---|---|
-| **P1**, **P3** | **Up**, **Down** | repeat |
-| **P2** | **#** | a job you can set |
-| **P4** | **A/B** | a job you can set |
-| **P5** | **Monitor** | **Monitor** |
-| **P6** | a job you can set | a job you can set |
-| **MENU** | **OK** | **\*** |
-| **EXIT** | **Back** | **Back** |
+| **P1** | **\*** (quick settings) | **Next zone** |
+| **P2** | **#** (actions) | **Talk target** |
+| **P3** | **Monitor** | **Monitor** |
+| **P4** | **A/B** | dual watch on or off |
+| **P5** | **Power level** | emergency (hold 1.5 s) |
+| **P6** | between the channel and the VFO | copy the channel to the VFO |
+| **MENU** | **OK** | lock or unlock the keys (locks from Home) |
+| **EXIT** | **Back** | Home |
+| Knob push | **OK** | scan on or off |
 
-**Settings > Keys** sets the jobs. The front knob steps the channel, and in a list moves the focus; pushing it is
-**OK**, and holding it does a job you can set. The two knobs on the left set the volume of channel A (top) and B.
+**Settings > Keys** and the codeplug set the press and the hold of **P3** to **P6** and the knob push; the table gives
+the defaults. **Up** and **Down** are the front knob and the microphone's **Up** and **Down**: the knob steps the
+channel, and in a list moves the focus. The two knobs on the left set the volume of channel A (top) and B.
 
 PTT is on the hand microphone. Both kinds work without a setting: the radio tells the keypad microphone from the plain
 one by the messages it sends. (The original firmware's **Hand Type** setting chooses between them.) The keypad
@@ -716,7 +719,7 @@ microphone works on a radio; the plain one is untested.
 | **PTT** | **PTT** |
 | **Up**, **Down** (both microphones) | as the front **Up** and **Down** |
 | **0**-**9** (keypad microphone) | digits |
-| **\*** / **#** | **\*** / **#**, and **Down** / **Up** in lists |
+| **\*** / **#** | **\*** / **#**, as **P1** / **P2** |
 | **SUBPTT A/B** (beside **PTT**) | **A/B**; held, dual watch on or off |
 | **A** (MENU) | **OK** |
 | **B**, **C** (ZONE) | next zone, previous zone |
