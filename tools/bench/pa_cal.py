@@ -651,6 +651,8 @@ class Cal:
         if m.get("dbm") is None:
             return "-" if m.get("settled_dbfs") is None else f"{m['settled_dbfs']:.1f} dBFS"
         w = 10 ** ((m["dbm"] + self.a.pad_db) / 10) / 1000
+        if w < 0.001:   # an over-the-air path: --pad-db isn't its loss, so no power to give
+            return "-"
         return f"{w:.1f} W" if w >= 1 else f"{w * 1000:.0f} mW"
 
     def key_fn(self, specs):
