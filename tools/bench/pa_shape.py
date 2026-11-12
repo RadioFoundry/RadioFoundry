@@ -33,7 +33,7 @@ RISE_HIGH_DB = -6.0         # ... to here: above it the approach (creep) is judg
 KNEE_DB_PER_100US = 1.5     # a knee: the rise slower than this ...
 KNEE_MS = 0.12              # ... for this long
 HOOK_DB = 2.0               # a hook: the rise falls back this far before it goes on
-EARLY_MS = -0.45            # the -3 dB point no earlier than this ...
+EARLY_MS = -0.60            # the -3 dB point no earlier than this ...
 LATE_MS = -0.10             # ... and no later
 EARLY_ON_MS = -0.80         # and on the air (-30 dB) no earlier than this
 APPROACH_MS = 0.40          # -6 dB to within 1 dB of the level: longer is a creep
@@ -142,6 +142,8 @@ def key_up(trace, tail=None):
     win = [(t, v) for t, v in pts if 0.0 <= t < SYMS * SYM_MS]
     out = [t for t, v in pts if t >= (r["m6_ms"] if r["m6_ms"] is not None else 0.0) and v < -1.0]
     r["approach_ms"] = None if r["m6_ms"] is None else round((out[-1] + dt if out else r["m6_ms"]) - r["m6_ms"], 3)
+    # Up for good: within 1 dB of the level from here on (the envelope's end when it never is)
+    r["up1_ms"] = None if r["m6_ms"] is None else round(out[-1] + dt if out else r["m6_ms"], 3)
     if win:
         vs = [v for _, v in win]
         tm = statistics.mean(t for t, _ in win)

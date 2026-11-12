@@ -53,18 +53,19 @@ BOOST_TARGET_US = -500  # a boosted level: its own drive sits on the PA's turn-o
                         # half a millisecond, so it is aimed early by that much; the window bounds how early
 EDGE_MAX_US = 100       # a level whose key-up moves more than this per 1 % of drive is boosted, late or not
 EARLY_MAX_US = -600     # verify: no level up earlier than this (the ramp belongs in the 1.5 ms before the burst)
-OVER_MAX_DB = 3.0
+OVER_MAX_DB = pa_shape.PEAK_DB  # over the level at any point of the key-up
 KEY_SETUP_S = 0.25          # a key's set-up and its PTT requests over the debug link, at most
 KEY_GAP_S = 0.35            # between the keys of one capture: the radio's key-down, and the next key's set-up
 LINK_BACK_S = 15.0          # how long a debug link lost while keying may take to answer again
 REPLUG_S = 300.0            # after a key run (--key-run): past LINK_BACK_S the tool asks for a replug and waits this long
 OWN_OVER_TOL_DB = 1.0       # over what the level's drive overshoots by itself: the key-up's doing
 SYM1_MIN_DB = -3.0
-# A level whose output creeps: within 6 dB at once, then its last dB over milliseconds (a PA held just over its turn-on
-# edge). Lead buys such a level next to nothing and a boost nothing at all (the output is back on the creep as soon
-# as the boost ends), so its key-up is timed by the edge: the point this long after the -6 dB crossing stands in for
-# the -3 dB point when that comes later. A plain edge's -3 dB point is 0.04 to 0.13 ms after its -6 dB crossing
+# A level whose output creeps or sags: within 6 dB at once, then its last dB over milliseconds. Its key-up is timed by
+# when it is within 1 dB for good (pa_shape's up1_ms), less UP1_US: so it is late until it is at its level by the
+# first symbol, and gets the boost that brings it there. Without an envelope the edge stands in: the point CREEP_US
+# after the -6 dB crossing, when the -3 dB point comes later (a plain edge's is 0.04 to 0.13 ms after it)
 CREEP_US = 150
+UP1_US = 100
 SYM1_CREEP_MIN_DB = -4.5    # a creeping level's first symbol: under its settled level by the creep, not by the key-up
 GUARD_US = 1250             # the slot starts this long before the first symbol (ETSI TS 102 361-1, 4.2)
 ON_AIR_DB = "-20"           # on the air: the carrier within 20 dB of the burst's level
@@ -482,6 +483,9 @@ def summarize(replies, a):
     settled = med([r.get("settled_db") for r in use])
     off = (done.get("envelope") or {}).get("dbm_offset")
     off = a.dbfs_to_dbm if a.dbfs_to_dbm is not None else off
+    sh = shape_of(use)
+    if {"creep", "sag"} & set(sh.get("faults", [])) and sh["shape"].get("up1_ms") is not None:
+        creep, rise = True, max(sh["shape"]["up1_ms"] - UP1_US / 1000.0, rise if rise is not None else -1e9)
     return {"n": len(use), "rise_us": None if rise is None else rise * 1000.0, "creep": creep,
             "rise3_us": None if rise3 is None else rise3 * 1000.0, "on_us": None if on is None else on * 1000.0,
             "over_db": med([r.get("overshoot_db") for r in use]), "sym1_db": med([r.get("sym1_db") for r in use]),
@@ -489,8 +493,7 @@ def summarize(replies, a):
             "clip_pct": max([cap.get("clip_pct") or 0] + [1 if r.get("clipped") else 0 for r in use]),
             "peak_dbfs": cap.get("peak_dbfs"), "trace": mid_trace(use, "trace"), "tail": mid_trace(use, "tail"),
             "off_us": off_air_us(mid_trace(use, "tail")), "end_db": end_db(mid_trace(use, "tail")),
-            "edge_res_us": ((done.get("envelope") or {}).get("ramp") or {}).get("edge_res_us"),
-            **shape_of(use)}
+            "edge_res_us": ((done.get("envelope") or {}).get("ramp") or {}).get("edge_res_us"), **sh}
 
 
 def shape_of(use):
