@@ -831,6 +831,9 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_split(req, len, out, cap);
 #endif
 	case DL_CMD_APRS:
+		if (debuglink_cmd_position(req, len, &out[0])) {
+			return 1;
+		}
 		return debuglink_cmd_aprs(req, len, out, cap);
 	case DL_CMD_SNMP:
 		return debuglink_cmd_snmp(req, len, out, cap);

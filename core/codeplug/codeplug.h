@@ -52,6 +52,10 @@ typedef struct {
 // channel_t.alias_tx: what the channel sends as talker alias on each timeslot (text = our radio name)
 #define CODEPLUG_ALIAS_TS1_TEXT	0x01u
 #define CODEPLUG_ALIAS_TS2_TEXT	0x02u
+// ... and whether its calls on that timeslot carry our position (GPS Info, docs/spec/dmr-voice.md 3.1), whatever the
+// radio-wide "Send in DMR calls" setting says. The codeplug's own name for the bit is APRS
+#define CODEPLUG_ALIAS_TS1_GPS	0x04u
+#define CODEPLUG_ALIAS_TS2_GPS	0x08u
 
 #define CODEPLUG_POWER_DEFAULT	0xFF
 
@@ -147,7 +151,7 @@ bool codeplug_set_boot_text(const char *line1, const char *line2);
 bool codeplug_quick_keys(uint16_t out[CODEPLUG_QUICK_KEYS]);
 bool codeplug_set_quick_keys(const uint16_t in[CODEPLUG_QUICK_KEYS]);
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 // An open-firmware codeplug APRS configuration (open-firmware-cps.md 7.3.8; qdmr writes them): what the APRS engine
 // takes from it. Not read: the fixed position and the frequency (their encodings aren't in the interop spec yet)
 #define CODEPLUG_APRS_CONFIGS	8

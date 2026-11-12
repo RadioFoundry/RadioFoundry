@@ -294,7 +294,7 @@ static void dmr_disarm(void)
 #endif
 }
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 static bool afsk_tx_route(bool on);
 static void aprs_listen_route(bool on);
 
@@ -333,7 +333,7 @@ static void init(void)
 	hrc_dmr_board_init(&modem, &dmr_board);
 	hrc_audio_pcm_attach(&modem, dm32_speaker_pcm);
 	hrc_fm_rx_attach(&modem);
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	hrc_afsk_attach(&modem, &afsk_board);
 #endif
 }
@@ -521,7 +521,7 @@ static void tx_end(bool keep)
 {
 	dmr_disarm();
 	pa_off();
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	if (afsk_tx) {
 		hrc_afsk.tx_stop();	// the core stops the tones first; this is the safety net
 	}
@@ -642,7 +642,7 @@ static void speaker_source(void)
 	}
 }
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 // APRS listens (hrc_afsk.c): the FD6818's audio stays on the HR_C7000's input, which also plays it to the speaker
 static void aprs_listen_route(bool on)
 {
@@ -712,7 +712,7 @@ void dm32_speaker_pcm(bool on)
 	hrc_irq_restore(s);
 }
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 // APRS AFSK (hrc_afsk.c): during an FM transmission the prompt FIFO's audio goes to the modulator (the path that put
 // beeps on DMR bursts, modem-hrc7000.md 8.4), so the tones go there with the microphone muted. False when the radio
 // isn't transmitting FM

@@ -193,7 +193,7 @@ const board_t board = {
 #if CONFIG_CPS_OPENFW
 	.cps = &cps,
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	.afsk = &uvf_afsk,
 #endif
 };

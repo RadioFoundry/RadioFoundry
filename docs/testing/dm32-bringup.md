@@ -176,7 +176,7 @@ No fix needed: the module talks from about 1 s after power-up, indoors too.
 | Check | Expected | If not |
 |---|---|---|
 | The diagnostics line `gps ...` (Settings > Diagnostics, or the debug link's diag lines) 10 s after start-up | `gps yes`, the good count rising by a few a second, bad near 0, `b` rising by about 300-600 a second | `gps no` with `b0`: no bytes on UART1: PTA9's mux (IO_DIPLEX0 bit 9 = 0), the power pin (0x2C low), the module. `gps no` with bytes but no good sentences: the baud rate (try 115200; stock may have reconfigured the module) |
-| Outdoors, a few minutes | Info > Position shows a fix and the satellite count | the NMEA talker or sentence set (`aprs_nmea`) |
+| Outdoors, a few minutes | Info > Position shows a fix and the satellite count | the NMEA talker or sentence set (`position_nmea`) |
 | Bad count rising steadily | near 0 | UART errors: the divisor (547 at 84 MHz APB) or noise on the line |
 
 ## 13. APRS

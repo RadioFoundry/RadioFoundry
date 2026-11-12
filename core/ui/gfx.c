@@ -365,6 +365,20 @@ static void icon_glyph(const font_t *f, int x, int y, uint8_t c, color_t fg)
 	}
 	int t = f->w >= 12 ? 2 : 1;			// line width
 	int l = x, r = x + f->w - 1 - (f->w >= 8 ? 1 : 0), tp = y + top, bt = y + top + rows - 1;
+	if (c == 0x86) {
+		// Reply: a riser on the right, the bar back along the lower third, the head at its left end
+		int mid = tp + (bt - tp) * 2 / 3;
+		int head = (r - l) / 2;
+		if (head > bt - mid)
+			head = bt - mid;
+		if (head < 1)
+			head = 1;
+		gfx_fill(r - t + 1, tp, t, mid - tp + t, fg);
+		gfx_fill(l, mid, r - l + 1, t, fg);
+		seg(l + head, mid - head, l, mid, t, fg);
+		seg(l + head, mid + head, l, mid, t, fg);
+		return;
+	}
 	// An arrow on a tray: up out of it for share, down onto it for download
 	int cx = l + (r - l + 1 - t) / 2, head = (r - l) / 2 - (t - 1);
 	gfx_fill(l, bt - t + 1, r - l + 1, t, fg);			// the tray
@@ -407,6 +421,7 @@ static void fallback_glyph(const font_t *f, int x, int y, uint8_t c, color_t fg)
 		break;
 	case 0x84:
 	case 0x85:
+	case 0x86:
 		icon_glyph(f, x, y, c, fg);
 		break;
 	default:	// not drawable: a box

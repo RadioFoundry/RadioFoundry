@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // Millisecond clock from the DWT cycle counter, so it runs before the scheduler and inside critical sections.
-// The 32-bit cycle counter wraps every 59 s at 72 MHz; it is folded into a 64-bit count on every read, and the RTOS
-// tick hook reads it every millisecond, so no wrap is missed.
+// The 32-bit cycle counter wraps every 59 s at 72 MHz; every read folds the cycles since the last one into microsecond
+// and millisecond counts (32 bits, the remainders carried: no 64-bit division), and the RTOS tick hook reads it every
+// millisecond, so no wrap is missed.
 #include "config.h"
 #include "platform.h"
 #include "hal_time.h"
@@ -13,19 +14,31 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-static uint64_t cycles;
-static uint32_t last;
+static uint32_t last;		// the cycle count at the last read
+static uint32_t now_us, us_cycles;	// microseconds, and the cycles past the last one
+static uint32_t now_ms, ms_us;	// milliseconds, and the microseconds past the last one
 
-static uint64_t cycles_now(void)
+// Folds the cycles since the last call in (interrupts off: any task or interrupt may read the clock)
+static void fold(void)
 {
 	uint32_t primask = __get_PRIMASK();
 	__disable_irq();
+	uint32_t per_us = SystemCoreClock / 1000000u;
 	uint32_t now = DWT->CYCCNT;
-	cycles += (uint32_t)(now - last);
+	uint32_t d = now - last;
 	last = now;
-	uint64_t c = cycles;
+	uint32_t q = d / per_us;
+	uint32_t r = d % per_us + us_cycles;
+	if (r >= per_us) {
+		r -= per_us;
+		q++;
+	}
+	now_us += q;
+	us_cycles = r;
+	uint32_t t = ms_us + q;
+	now_ms += t / 1000u;
+	ms_us = t % 1000u;
 	__set_PRIMASK(primask);
-	return c;
 }
 
 void stm32_time_init(void)
@@ -34,23 +47,31 @@ void stm32_time_init(void)
 	DWT->CYCCNT = 0;
 	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 	last = 0;
-	cycles = 0;
+	now_us = us_cycles = now_ms = ms_us = 0;
 }
 
 uint32_t hal_millis(void)
 {
-	return (uint32_t)(cycles_now() / (SystemCoreClock / 1000u));
+	fold();
+	return now_ms;
 }
 
 uint32_t hal_micros(void)
 {
-	return (uint32_t)(cycles_now() / (SystemCoreClock / 1000000u));
+	fold();
+	return now_us;
 }
 
-void hal_delay_us(uint32_t us)
+void hal_delay_us(uint32_t n)
 {
-	uint64_t end = cycles_now() + (uint64_t)us * (SystemCoreClock / 1000000u);
-	while (cycles_now() < end) {
+	uint32_t per_us = SystemCoreClock / 1000000u;
+	while (n > 0) {
+		uint32_t step = n < 1000u ? n : 1000u;	// in steps: the count can't overflow, and the fold sees every wrap
+		uint32_t start = DWT->CYCCNT;
+		while (DWT->CYCCNT - start < step * per_us) {
+		}
+		n -= step;
+		fold();
 	}
 }
 
@@ -89,7 +110,7 @@ void HAL_Delay(uint32_t Delay)
 
 void vApplicationTickHook(void)
 {
-	(void)cycles_now();
+	fold();
 	stm32_irq_stack_check();
 }
 

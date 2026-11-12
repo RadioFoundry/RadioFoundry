@@ -39,7 +39,10 @@
 #endif
 
 extern const ui_scr_def_t ui_find_screen;
-extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_pos_screen, ui_aprs_station_screen;	// ui_aprs.c
+extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_station_screen;	// ui_aprs.c
+#if CONFIG_POSITION
+extern const ui_scr_def_t ui_fixed_pos_screen;	// ui_position.c
+#endif
 extern const ui_scr_def_t ui_gps_screen;	// ui_gps.c
 #if CONFIG_DUAL_WATCH
 extern const ui_scr_def_t ui_dual_screen, ui_dual_pick_screen, ui_dual_zone_screen;	// ui_dual.c
@@ -345,10 +348,10 @@ static char aprs_to[AX25_CALL_LEN + 4];
 static char aprs_compose_to[AX25_CALL_LEN + 4];
 static uint8_t aprs_message_flags;
 static bool aprs_composing;
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 static void ui_text_open_to(char *target, uint8_t max);
 #endif
-#if CONFIG_DMR_SMS || CONFIG_APRS
+#if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
 static void ui_text_open_message(bool aprs);
 #endif
 static bool compose_aprs(void) { return aprs_composing; }
@@ -424,7 +427,7 @@ static void compose_select(uint16_t i, bool hold)
 	(void)hold;
 	if (compose_aprs()) {
 		if (i == 0) {
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 			ui_text_open_to(aprs_to, sizeof(aprs_to) - 1u);
 #endif
 			return;
@@ -436,7 +439,7 @@ static void compose_select(uint16_t i, bool hold)
 		send_text(tr(canned[i]), aprs);
 	}
 	else if (i == CANNED_N) {
-#if CONFIG_DMR_SMS || CONFIG_APRS
+#if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
 		ui_text_open_message(compose_aprs());
 	#endif
 	} else if (compose_aprs()) {
@@ -660,7 +663,7 @@ static const ui_scr_def_t contacts_screen = {
 
 static bool aprs_new_available(void)
 {
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	aprs_view_t v;
 	return ui_svc_aprs_view(&v) && v.call[0] != '\0';
 #else
@@ -1859,7 +1862,7 @@ uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint3
 }
 #endif
 
-#if CONFIG_CHANNEL_EDIT || CONFIG_APRS || CONFIG_DMR_SMS
+#if CONFIG_CHANNEL_EDIT || CONFIG_APRS_AFSK || CONFIG_DMR_SMS
 // ======================= Text entry: keypad letters (ui.md 2.1) =======================
 // Phone keypad: in ABC / abc, 2-9 cycle their letters, the digit, then the letters in the other case (ABC: A B C 2 a b
 // c); 1 cycles punctuation and 0 a space, 0 and a few signs. The same key within 1 s takes the next one, another key
@@ -1892,7 +1895,7 @@ static void text_open(char *target, uint8_t max, uint8_t screen)
 	ui_push(screen, 0);
 }
 
-#if CONFIG_DMR_SMS || CONFIG_APRS
+#if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
 static void message_text_kept(void)
 {
 	if (message_buffer[0] != '\0')
@@ -1910,7 +1913,7 @@ static void ui_text_open_message(bool aprs)
 #if CONFIG_CHANNEL_EDIT
 static void ui_text_open(char *target, uint8_t max) { text_open(target, max, SCR_TEXT); }
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 static void ui_text_open_to(char *target, uint8_t max) { text_open(target, max, SCR_APRS_TO); }
 #endif
 
@@ -2058,7 +2061,7 @@ static const ui_scr_def_t text_screen = {
 };
 #endif
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 static const ui_scr_def_t aprs_to_screen = {
 	.name = "aprs-to", .flags = SF_LIST, .prefix = TRN("Callsign"), .title = text_title,
 	.hint = TRN(TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
@@ -2066,7 +2069,7 @@ static const ui_scr_def_t aprs_to_screen = {
 };
 #endif
 
-#if CONFIG_DMR_SMS || CONFIG_APRS
+#if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
 static const ui_scr_def_t message_text_screen = {
 	.name = "message-text", .flags = SF_LIST, .prefix = TRN("Message"), .title = text_title,
 	.hint = TRN(TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK send" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
@@ -5197,7 +5200,7 @@ static const ui_scr_def_t tools_screen = {
 #if CONFIG_UI_SETTINGS
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
-enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE };
+enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE, SA_FIXED_POS };
 
 typedef struct {
 	const char *name;
@@ -5238,6 +5241,16 @@ static const char *const n_lock[] = { TRN("Off"), "30 s", TRN("1 min"), TRN("5 m
 static const int16_t v_posfmt[] = { 0, 1, 2 };
 static const char *const n_posfmt[] = { TRN("Degrees"), TRN("Deg min sec"), TRN("Grid") };
 static const int16_t v_possend[] = { 0, 60, 300, 900 };
+#if CONFIG_POSITION
+// position_pref_t: where our position comes from. A computer's NMEA only where something takes it in
+#if CONFIG_POSITION_HOST
+static const int16_t v_possrc[] = { 0, 1, 2, 3 };
+static const char *const n_possrc[] = { TRN("Auto"), "GPS", TRN("Computer"), TRN("Fixed") };
+#else
+static const int16_t v_possrc[] = { 0, 1, 3 };
+static const char *const n_possrc[] = { TRN("Auto"), "GPS", TRN("Fixed") };
+#endif
+#endif
 static const char *const n_possend[] = { TRN("Off"), TRN("1 min"), TRN("5 min"), TRN("15 min") };
 #if CONFIG_KEY_ASSIGN
 // Side keys (core/input/keyassign.h, KEYFN_* values): monitor needs the key held, so it is a press only;
@@ -5252,7 +5265,7 @@ static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITO
 					 KEYFN_COPY_VFO, KEYFN_VFO_TOGGLE,
 #endif
 #if CONFIG_DMR
-					 KEYFN_CALL_BACK,
+					 KEYFN_CALL_BACK, KEYFN_TALK_LABEL,
 #endif
 #if CONFIG_DUAL_WATCH
 					 KEYFN_AB, KEYFN_DUAL_WATCH,
@@ -5268,7 +5281,7 @@ static const char *const n_keyfn_press[] = { TRN("Default"), TRN("Nothing"), TRN
 					     TRN("Copy to VFO"), TRN("VFO/Channel"),
 #endif
 #if CONFIG_DMR
-					     TRN("Call back"),
+					     TRN("Call back"), TRN("TG name / number"),
 #endif
 #if CONFIG_DUAL_WATCH
 					     "A/B", TRN("Dual watch"),
@@ -5284,7 +5297,7 @@ static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TA
 					KEYFN_COPY_VFO, KEYFN_VFO_TOGGLE,
 #endif
 #if CONFIG_DMR
-					KEYFN_CALL_BACK,
+					KEYFN_CALL_BACK, KEYFN_TALK_LABEL,
 #endif
 #if CONFIG_DUAL_WATCH
 					KEYFN_AB, KEYFN_DUAL_WATCH,
@@ -5300,7 +5313,7 @@ static const char *const n_keyfn_hold[] = { TRN("Default"), TRN("Nothing"), TRN(
 					    TRN("Copy to VFO"), TRN("VFO/Channel"),
 #endif
 #if CONFIG_DMR
-					    TRN("Call back"),
+					    TRN("Call back"), TRN("TG name / number"),
 #endif
 #if CONFIG_DUAL_WATCH
 					    "A/B", TRN("Dual watch"),
@@ -5383,6 +5396,9 @@ static const set_item_t s_display[] = {
 #endif
 	TOGGLE(TRN("Large text"), "accessibility", UI_SET_LARGE_TEXT),
 	TOGGLE(TRN("Hint row"), "help", UI_SET_HINTS),
+#if CONFIG_DMR
+	TOGGLE(TRN("Talkgroup name first"), "talk line label TG number Home", UI_SET_LABEL_FIRST),
+#endif
 	// Last, so the rows above keep their places; its search words are "language" in other languages, for a user who
 	// can't read the English
 	ACTION(TRN("Language"), "idioma langue sprache lingua taal jezyk", SA_LANGUAGE),
@@ -5428,6 +5444,13 @@ static const set_item_t s_location[] = {
 	LIST(TRN("Position format"), NULL, UI_SET_POS_FORMAT, v_posfmt, n_posfmt),
 	LIST(TRN("Send position"), "APRS", UI_SET_POS_SEND_S, v_possend, n_possend),
 	TOGGLE(TRN("Answer GPS requests"), "LRRP position location", UI_SET_POS_REPLY),
+#if CONFIG_POSITION
+	// What every position report sends (docs/spec/position.md): DMR GPS Info, LRRP, APRS. After the rows above, so
+	// they keep their places
+	LIST(TRN("Position source"), "GPS computer fixed auto", UI_SET_POS_SOURCE, v_possrc, n_possrc),
+	ACTION(TRN("Fixed position"), "latitude longitude coordinates", SA_FIXED_POS),
+	TOGGLE(TRN("Send in DMR calls"), "GPS info position location talker", UI_SET_POS_DMR_CALLS),
+#endif
 };
 static const set_item_t s_connections[] = {
 	TOGGLE(TRN("Hotspot allowed"), "MMDVM", UI_SET_HOTSPOT_AUTO),
@@ -5693,7 +5716,7 @@ static const char *set_why_not(const set_item_t *s)
 	case UI_SET_TALK_PERMIT:
 		return CONFIG_DMR && CONFIG_BEEP ? NULL : TR("Talk permit tone: not in this build");
 	case UI_SET_MESSAGE_TONE:
-		return (feats() & UI_FEAT_SMS) || CONFIG_APRS ? NULL : TR("Messages: not in this build");
+		return (feats() & UI_FEAT_SMS) || CONFIG_APRS_AFSK ? NULL : TR("Messages: not in this build");
 	case UI_SET_VIBRATE:
 		return feats() & UI_FEAT_VIBRATE ? NULL : TR("This radio has no vibration motor");
 	case UI_SET_THEME:
@@ -5726,6 +5749,8 @@ static const char *set_why_not(const set_item_t *s)
 	case UI_SET_POS_FORMAT:
 	case UI_SET_POS_SEND_S:
 		return board_has_gps() ? NULL : TR("No GPS on this radio");
+	case UI_SET_POS_DMR_CALLS:
+		return CONFIG_DMR_GPS ? NULL : TR("DMR position: not in this build");
 	default:
 		return NULL;
 	}
@@ -5830,6 +5855,9 @@ static void group_select(uint16_t i, bool hold)
 		case SA_CRASH: ui_push(SCR_CRASH, 0); break;
 #endif
 		case SA_HARDWARE: ui_push(SCR_HWOPT, 0); break;
+#if CONFIG_POSITION
+		case SA_FIXED_POS: ui_push(SCR_FIXED_POS, 0); break;
+#endif
 		default: break;
 		}
 		break;
@@ -6325,17 +6353,20 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_DIAG] = &diag_screen, [SCR_EMERGENCY] = &emergency_screen, [SCR_SCAN] = &scan_screen,
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
 	[SCR_APRS_STATION] = &ui_aprs_station_screen,
-	[SCR_APRS_POS] = &ui_aprs_pos_screen, [SCR_ABOUT] = &about_screen,
+	[SCR_ABOUT] = &about_screen,
+#if CONFIG_POSITION
+	[SCR_FIXED_POS] = &ui_fixed_pos_screen,
+#endif
 	[SCR_VOLUME] = &volume_screen, [SCR_LANGUAGE] = &lang_screen,
 	[SCR_DMR_ID] = &dmr_id_screen,
 	[SCR_CP_FOREIGN] = &cpf_screen,
 #if CONFIG_REF_TRIM
 	[SCR_REF_TRIM] = &trim_screen,
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	[SCR_APRS_TO] = &aprs_to_screen,
 #endif
-#if CONFIG_DMR_SMS || CONFIG_APRS
+#if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
 	[SCR_MESSAGE_TEXT] = &message_text_screen,
 #endif
 #if CONFIG_CHANNEL_LIST

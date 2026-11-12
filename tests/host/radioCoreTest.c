@@ -7,6 +7,9 @@
 #include <string.h>
 #include "board.h"
 #include "radio/radio_sm.h"
+#if CONFIG_APRS
+#include "aprs/aprs_beacon.h"	// APRS_WHY_*
+#endif
 #include "radio/radio_sfr.h"
 #include "radio/tones.h"
 #include "dmr/call/dmr_call.h"
@@ -31,6 +34,7 @@
 #include "radio/tx_limit.h"
 #include "radio/battery.h"
 #include "fuzz.h"
+#include "position/position.h"
 
 static int failures;
 static int checks;
@@ -170,6 +174,8 @@ static const uint8_t side_keys[] = { 1, 2 };
 
 static int gps_enable_calls;
 static bool gps_enabled;
+static bool gps_here;	// the module answered (board_has_gps): only test_position has one
+static bool fake_gps_present(void) { return gps_here; }
 static void fake_gps_enable(bool on)
 {
 	gps_enable_calls++;
@@ -178,7 +184,9 @@ static void fake_gps_enable(bool on)
 
 const board_t board = {
 	.name = "fake",
+	.caps = CAP_GPS,
 	.gps_enable = fake_gps_enable,
+	.gps_present = fake_gps_present,
 	.bands = bands,
 	.band_count = 4,
 	.rx_ext_count = 1,
@@ -256,10 +264,13 @@ bool codeplug_set_dmr_id(uint32_t id)
 }
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]) { line1[0] = line2[0] = 0; }
 void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]) { out[0] = 0; }
-#if CONFIG_APRS
-// APRS (radioCoreTestAprs): no APRS channel in the codeplug, no host link
+#if CONFIG_APRS_AFSK
+// APRS (radioCoreTestAprs): no APRS channel in the codeplug
 bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out) { memset(out, 0, sizeof(*out)); return false; }
 bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2) { return false; }
+#endif
+#if CONFIG_APRS
+// ... and no host link
 #include "hostlink/hostlink.h"
 void hostlink_set_tnc(const hostlink_tnc_t *tnc) { (void)tnc; }
 #endif
@@ -2466,6 +2477,65 @@ static void test_dmr_contact_added(void)
 	memset(&added_contact, 0, sizeof(added_contact));
 }
 
+#if CONFIG_APRS_DMR
+// APRS over DMR (docs/spec/aprs.md 8): a beacon goes to the data service as a position report, from a build with
+// the AX.25 backend and from one without it (radioCoreTestAprsDmr: no callsign, no APRS frequency, nothing of FM
+// APRS in the way). Where there is no choice the stored "Send via" is not asked
+static void test_aprs_dmr_beacon(void)
+{
+	aprs_view_t v0, v1;
+	aprs_cfg_t c;
+
+	boot();
+	dmr_start(true);
+	CHECK(ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 337490000) && ui_svc_setting_set(UI_SET_POS_FIXED_LON, -843880000));
+	aprs_get_cfg(&c);
+	c.via = CONFIG_APRS_AFSK ? APRS_VIA_DMR : APRS_VIA_RF;	// DMR only: "radio" stored by another build still goes out
+	c.dmr_dst = 310999;
+	c.dmr_udt = false;
+	aprs_set_cfg(&c, now);
+	run(50);
+	aprs_get_view(&v0);
+	CHECK(v0.pos_valid && v0.lat == 337490000);
+	CHECK(aprs_send_now());
+	run(3000);
+	aprs_get_view(&v1);
+	CHECK(v1.dmr_sent == v0.dmr_sent + 1 && v1.dmr_failed == v0.dmr_failed && v1.rf_sent == v0.rf_sent);
+	CHECK(v1.last_why == APRS_WHY_MANUAL);
+	// The short UDT form too
+	c.dmr_udt = true;
+	aprs_set_cfg(&c, now);
+	CHECK(aprs_send_now());
+	run(3000);
+	aprs_get_view(&v0);
+	CHECK(v0.dmr_sent == v1.dmr_sent + 1 && v0.dmr_failed == v1.dmr_failed);
+	// Automatic beacons: the interval sends without anyone asking
+	c.tx_on = true;
+	c.smart = false;
+	c.interval_s = 60;
+	aprs_set_cfg(&c, now);
+	run(130000);
+	aprs_get_view(&v1);
+	CHECK(v1.dmr_sent >= v0.dmr_sent + 2 && v1.rf_sent == v0.rf_sent);
+	c.tx_on = false;
+	aprs_set_cfg(&c, now);
+	// Off a DMR channel there is nowhere to send it: counted as failed, nothing keyed
+	req(RREQ_ZONE_POS, 0);
+	run(200);
+	aprs_get_view(&v0);
+	if (!CONFIG_APRS_AFSK) {
+		CHECK(aprs_send_now());
+		run(1000);
+		aprs_get_view(&v1);
+		CHECK(v1.dmr_sent == v0.dmr_sent && v1.dmr_failed == v0.dmr_failed + 1);
+	}
+	position_cfg_t pc;
+	position_get_cfg(&pc);
+	pc.fix_lat = pc.fix_lon = 0;
+	position_set_cfg(&pc, now);
+}
+#endif
+
 #if CONFIG_APRS_RX
 // One NMEA sentence from src to dst (a private call) on UDP 10110 (SAP 3), as the data service hears it
 static void hear_dmr_nmea(uint32_t src, uint32_t dst, const char *sentence, size_t length)
@@ -3113,6 +3183,150 @@ static void test_dual_two_vfos(void)
 	CHECK(ui_svc_vfo_get(0, &c0) && c0.rx_hz == 146550000);
 }
 #endif
+
+// The board GPS for everything that reports a position (#466): the Position screen, LRRP's answer and DMR GPS Info
+// read the position service, and the stored position settings apply. radioCoreTest builds it without APRS,
+// radioCoreTestAprs with
+static void test_position(void)
+{
+	static const char gga[] = "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47";
+	static const char rmc[] = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
+	lrrpPosition_t lp;
+	ui_position_t up;
+	int32_t lat, lon;
+	uint32_t err;
+	bool send = true;
+
+	CHECK(CONFIG_POSITION);
+	gps_here = false;
+	dmr_start(true);
+	CHECK(!(ui_svc_feat_radio() & UI_FEAT_GPS) && !ui_svc_position(&up));
+	CHECK(!dmrDataServiceOwnPosition(&lp));
+	gps_here = true;
+	CHECK(ui_svc_feat_radio() & UI_FEAT_GPS);
+	CHECK(!ui_svc_position(&up));		// nothing heard yet
+	position_nmea(gga, strlen(gga), true, now);
+	position_nmea(rmc, strlen(rmc), true, now);
+	CHECK(ui_svc_position(&up) && up.fix && up.sats == 8 && up.lat_e7 == 481173000 && up.lon_e7 == 115166666);
+	CHECK(up.alt_ok && up.alt_m == 545 && up.course == 84);
+	run(10);
+	CHECK(dmrDataServiceOwnPosition(&lp) && lp.location.fixValid && lp.location.north && lp.location.east);
+	CHECK(lp.location.latDegrees == 48 && lp.location.latMinutes10000 == 70380 && lp.location.lonDegrees == 11 &&
+	      lp.location.lonMinutes10000 == 310000);
+	CHECK(lp.location.speedKnots == 22 && lp.hasCourse && lp.courseDegrees == 84 && lp.utcYear == 2094 &&
+	      lp.utcMonth == 3 && lp.utcDay == 23 && lp.location.utcHours == 12 && lp.location.utcMinutes == 35);
+	dmrDataSettings_t ds;
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.hasGps);			// LRRP takes triggered requests: a GPS is there
+
+	// DMR GPS Info: off until Settings > Location > Send in DMR calls says so, then our position goes out in the
+	// call. The setting is the position service's own: saved without APRS, back after a restart
+	CHECK(position_now(&lat, &lon, &err, &send, now) && !send && lat == 481173000 && err == 20);
+	CHECK(ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 0 && ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 1));
+	position_cfg_t pc;
+	position_get_cfg(&pc);
+	pc.ambiguity = 2;			// whole minutes
+	position_set_cfg(&pc, now);
+	settings_t sr;
+	settings_read(&sr);
+	CHECK(sr.aprs_stored != 1 && (sr.aprs_misc & SETTINGS_APRS_MISC_POSITION));	// its own marker, not APRS's
+	boot();
+	CHECK(ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 1);
+	position_nmea(rmc, strlen(rmc), true, now);
+	CHECK(position_now(&lat, &lon, &err, &send, now) && send && err == 1852);
+	CHECK(lat == 481250002);		// 48 07.038 -> the middle of its minute, 48 07.5
+	position_get_cfg(&pc);
+	pc.ambiguity = 0;
+	position_set_cfg(&pc, now);
+	req(RREQ_ZONE_POS, 3);			// the DMR channel again (dmr_start would start from new settings)
+	run(50);
+	position_nmea(rmc, strlen(rmc), true, now);
+	dmr_call_stats_t cs0, cs1;
+	dmr_call_get_stats(&cs0);
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs1);
+	CHECK(cs1.tx_gps_lcs - cs0.tx_gps_lcs >= 1);
+	// ... and with the setting off again, none
+	CHECK(ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 0));
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs0);
+	CHECK(cs0.tx_gps_lcs == cs1.tx_gps_lcs);
+	// The codeplug can ask for it per channel and timeslot (what a CPS sets): sent with the radio's setting off
+	chans[4].alias_tx = CODEPLUG_ALIAS_TS2_GPS;	// a TS1 channel: not on this one
+	reload_channel();
+	CHECK(!sm.view.dmr.gps_tx_channel);
+	chans[4].alias_tx = CODEPLUG_ALIAS_TS1_GPS;
+	reload_channel();
+	CHECK(sm.view.dmr.gps_tx_channel);
+	position_nmea(rmc, strlen(rmc), true, now);
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs1);
+	CHECK(cs1.tx_gps_lcs - cs0.tx_gps_lcs >= 1);
+	chans[4].alias_tx = 0;
+	reload_channel();
+	CHECK(ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 1));
+
+	// Settings > Location > GPS off: the fix goes at once
+	position_gps_enable(false);
+	CHECK(!ui_svc_position(&up) && !dmrDataServiceOwnPosition(&lp));
+	position_gps_enable(true);
+
+	// A radio without a GPS: the fixed position typed in Settings > Location is what LRRP answers with and what
+	// goes out in calls, after a restart too
+	gps_here = false;
+	CHECK(!dmrDataServiceOwnPosition(&lp));
+	CHECK(ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 337490000) && ui_svc_setting_set(UI_SET_POS_FIXED_LON, -843880000));
+	CHECK(!ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 900000001) && !ui_svc_setting_set(UI_SET_POS_SOURCE, 9));
+	boot();
+	req(RREQ_ZONE_POS, 3);
+	run(50);
+	CHECK(ui_svc_setting_get(UI_SET_POS_FIXED_LAT) == 337490000 && ui_svc_setting_get(UI_SET_POS_FIXED_LON) == -843880000);
+	CHECK(dmrDataServiceOwnPosition(&lp) && lp.location.fixValid && lp.location.north && !lp.location.east);
+	CHECK(lp.location.latDegrees == 33 && lp.location.latMinutes10000 == 449400 && lp.location.lonDegrees == 84 &&
+	      lp.location.lonMinutes10000 == 232800 && lp.utcYear == 0 && !lp.hasCourse);
+	CHECK(position_now(&lat, &lon, &err, &send, now) && send && lat == 337490000 && lon == -843880000 && err == 200);
+	dmr_call_get_stats(&cs0);
+	req(RREQ_PTT, 1);
+	run(360 * 4);
+	req(RREQ_PTT, 0);
+	run(1000);
+	dmr_call_get_stats(&cs1);
+	CHECK(cs1.tx_gps_lcs - cs0.tx_gps_lcs >= 1);
+	// The source set to GPS only: the fixed position doesn't count
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_GPS) && ui_svc_setting_get(UI_SET_POS_SOURCE) == POSITION_GPS);
+	CHECK(!dmrDataServiceOwnPosition(&lp) && !position_now(&lat, &lon, &err, &send, now));
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_FIXED) && dmrDataServiceOwnPosition(&lp));
+#if !CONFIG_POSITION_HOST
+	// "Computer" left by a build that takes a computer's NMEA: here it counts as Auto, not as no position
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_HOST) && dmrDataServiceOwnPosition(&lp));
+	CHECK(ui_svc_setting_set(UI_SET_POS_SOURCE, POSITION_FIXED));
+#endif
+	// A record APRS stored before the position service had its own marker still counts
+	settings_t *st = settings_begin();
+	st->aprs_misc &= (uint8_t)~SETTINGS_APRS_MISC_POSITION;
+	st->aprs_stored = 1;
+	settings_end(now);
+	boot();
+	CHECK(ui_svc_setting_get(UI_SET_POS_FIXED_LAT) == 337490000 && ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 1);
+	// ... and with neither, the defaults
+	st = settings_begin();
+	st->aprs_stored = 0;
+	settings_end(now);
+	boot();
+	CHECK(ui_svc_setting_get(UI_SET_POS_FIXED_LAT) == 0 && ui_svc_setting_get(UI_SET_POS_DMR_CALLS) == 0 &&
+	      ui_svc_setting_get(UI_SET_POS_SOURCE) == POSITION_AUTO);
+	settings_init();
+	boot();
+}
 
 static void test_ui_glue(void)
 {
@@ -5075,6 +5289,7 @@ int main(void)
 	test_dmr_contact_added();
 	test_ui_requests();
 	test_ui_glue();
+	test_position();
 #if CONFIG_DUAL_WATCH
 	test_ui_dual();
 	test_dual_two_vfos();
@@ -5097,6 +5312,9 @@ int main(void)
 	test_sfr_cwid();
 #endif
 	test_dmr_emergency();
+#if CONFIG_APRS_DMR
+	test_aprs_dmr_beacon();
+#endif
 #if CONFIG_APRS_RX
 	test_dmr_aprs_position();
 #endif

@@ -282,7 +282,7 @@ static void dmr_disarm(void)
 #endif
 }
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 static bool afsk_tx_route(bool on);
 static void aprs_listen_route(bool on);
 
@@ -321,7 +321,7 @@ static void init(void)
 
 	hrc_dmr_board_init(&modem, &dmr_board);
 	hrc_audio_pcm_attach(&modem, dm1801pro_speaker_pcm);
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	hrc_afsk_attach(&modem, &afsk_board);
 #endif
 }
@@ -501,7 +501,7 @@ static void tx_end(bool keep)
 		return;
 	}
 	dmr_disarm();
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	if (afsk_tx) {
 		hrc_afsk.tx_stop();	// the core stops the tones first; this is the safety net
 	}
@@ -645,7 +645,7 @@ static void speaker_source(void)
 	}
 }
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 // APRS listens (hrc_afsk.c): the FD6818's audio stays on the HR_C7000's input, which also plays it to the speaker
 static void aprs_listen_route(bool on)
 {
@@ -723,7 +723,7 @@ void dm1801pro_speaker_pcm(bool on)
 	hrc_irq_restore(s);
 }
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 // APRS AFSK (hrc_afsk.c): during an FM transmission the tones play through the prompt FIFO (ring play), and the codec
 // mixer puts the DAC's audio on the ADC's output to the modulator with the microphone's input zeroed. Ring play alone
 // (with the mic muted) sent no tones here, unlike the other HR_C7000 boards (hardware-dm1801pro.md 10). False when the radio isn't

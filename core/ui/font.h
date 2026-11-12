@@ -20,6 +20,7 @@
 // Icons one cell wide, never in a font: always drawn from lines (gfx.c), scaled to the font's capital letters
 #define GLYPH_SHARE	"\x84"	// an arrow up out of a tray (upload): GLYPH_DOWNLOAD reversed
 #define GLYPH_DOWNLOAD	"\x85"	// an arrow down onto a tray
+#define GLYPH_REPLY	"\x86"	// a return arrow: down the right side and back to the left
 // Text alternates: TEXT_ALT_OPEN "14min ago" TEXT_ALT_NEXT "14m ago" ... TEXT_ALT_CLOSE offers the same text at
 // falling lengths. Drawing and measuring use the first; gfx_text_fit uses the longest that fits (gfx.c)
 #define TEXT_ALT_OPEN	"\x1d"
