@@ -108,6 +108,27 @@ static void send(t3_ms_t *ms, const uint8_t burst[T3_CSBK_BYTES], uint8_t slot, 
 
 static void finish(t3_ms_t *ms, uint32_t now, t3_res_t r);
 
+// A logical channel's frequencies: the plan (learned, table, fixed), else a programmed control channel with that
+// number. A one-carrier site grants its own carrier's other slot, which a radio with only the control channel
+// programmed (no plan, no Chan_Freq heard yet) knows that way
+static bool chan_lookup(const t3_ms_t *ms, uint16_t lcn, t3_chan_t *out)
+{
+	const t3_cfg_t *c = ms->cfg;
+	if (t3_plan_lookup(&c->plan, &ms->learned, lcn, out)) {
+		return true;
+	}
+	if (lcn == T3_LPCN_NULL || lcn > T3_LPCN_MAX) {
+		return false;
+	}
+	for (uint8_t i = 0; i < c->nctrl; i++) {
+		if (c->ctrl[i].lcn == lcn && c->ctrl[i].rx_hz != 0) {
+			*out = c->ctrl[i];
+			return true;
+		}
+	}
+	return false;
+}
+
 // ---- Hunting (6.3.2.1, Annex D) ----
 
 static uint8_t hunt_count(const t3_ms_t *ms)
@@ -123,7 +144,7 @@ static bool hunt_candidate(const t3_ms_t *ms, uint8_t i, t3_chan_t *out)
 		return out->rx_hz != 0;
 	}
 	i = (uint8_t)(i - c->nctrl);
-	return i < c->nhunt && t3_plan_lookup(&c->plan, &ms->learned, c->hunt[i], out);
+	return i < c->nhunt && chan_lookup(ms, c->hunt[i], out);
 }
 
 static void hunt_next(t3_ms_t *ms, uint32_t now)
@@ -301,7 +322,7 @@ static void on_grant(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_cha
 	if (chan != NULL) {
 		c = *chan;
 	} else if (p->u.grant.lpcn == T3_LPCN_ABSOLUTE ||
-		   !t3_plan_lookup(&ms->cfg->plan, &ms->learned, p->u.grant.lpcn, &c)) {
+		   !chan_lookup(ms, p->u.grant.lpcn, &c)) {
 		ms->st.unmapped++;
 		ms->st.last_unmapped = p->u.grant.lpcn;
 		return;
@@ -804,7 +825,7 @@ static void on_payload(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_csbk_t 
 				to = true;
 			} else if (p->u.clear.lpcn != T3_LPCN_NULL && p->u.clear.lpcn != T3_LPCN_ABSOLUTE &&
 				   p->u.clear.lpcn != ms->tscc.lcn) {
-				to = t3_plan_lookup(&ms->cfg->plan, &ms->learned, p->u.clear.lpcn, &c);
+				to = chan_lookup(ms, p->u.clear.lpcn, &c);
 			}
 			if (to) {
 				// Go to another TSCC (7.1.1.1.4): it must still confirm with an Aloha before T_Nosig

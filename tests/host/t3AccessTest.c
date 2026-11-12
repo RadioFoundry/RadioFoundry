@@ -680,6 +680,65 @@ static void test_receive_rules(void)
 	CHECK(ms.aloha.backoff == 11, "C_BCAST backoff kept");
 }
 
+// The gateway's one-carrier site: the TSCC on TS1, its payload channel on TS2 of the same carrier. The radio knows
+// only the control channel (with its LCN), no plan and no Chan_Freq yet. It registers with its talk group and gets
+// Reg_Subscription (0x65); a group call is granted on the TSCC's own LCN, slot 2; the payload slot starts with idles
+// only (Site Timeslot Sync 0: four CACH before the first sync) and keeps sending idles through the 3 s hang; the
+// call ends with P_CLEAR to ALLMSI, LPCN 0, four times
+static void test_one_carrier_site(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE | T3_OPT_REG_TG, true);
+	cfg.plan.fixed.base_hz = 0;
+	cfg.ctrl[0].lcn = 7;
+	camp(&ms);
+	for (int i = 0; i < 10 && nsent == 0; i++) {
+		frame(&ms);
+	}
+	const t3_rand_t *q = &sent[0].u.rand;
+	CHECK(nsent == 1 && q->kind == T3_SK_REGISTRATION && q->dst == TG_A && (q->extra >> 2) == T3_TRG_TALKGROUP &&
+	      (q->options & T3_SO_REG_REGISTER), "registration with the talk group (TRGT_ADR_CNTS 01b)");
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_REG_SUBSCRIPTION, OWN, T3_ID_REGI);
+	rx(&ms, 1, &a);
+	CHECK(ms.reg == T3_REG_OK, "Reg_Subscription counts as registered, reg %s", t3_reg_name(ms.reg));
+	nsent = 0;
+
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false), "group call request");
+	frames(&ms, 2);
+	CHECK(nsent == 1 && sent[0].u.rand.kind == T3_SK_TG_VOICE, "TG voice C_RAND");
+	t3_csbk_t g = grant(T3_OP_TV_GRANT, 7, 2, TG_A, OWN);
+	rx(&ms, 1, &g);
+	T += 60;
+	rx(&ms, 1, &g);		// granted twice
+	CHECK(ms.state == T3_FOLLOW && ms.call.ours && ms.ax.result == T3_RES_GRANTED, "granted");
+	CHECK(tuned.payload && tuned.slot == 2 && tuned.chan.rx_hz == RX(TSCC_LCN) &&
+	      tuned.chan.tx_hz == RX(TSCC_LCN) + 5000000u, "the TSCC's own carrier, slot 2, from the control channel's LCN");
+	// Idles only, through a call and the site's 3 s hang
+	frames(&ms, 100);
+	CHECK(ms.state == T3_FOLLOW && t3_ms_can_talk(&ms), "still on the payload slot through idles");
+	// The late-entry grant repeats on the TSCC slot don't matter while following
+	g.u.grant.late_entry = true;
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW, "late-entry repeat ignored");
+	int t0 = ntune;
+	t3_csbk_t c = { .lb = true, .op = T3_OP_P_CLEAR };
+	c.u.clear.lpcn = T3_LPCN_NULL;
+	c.u.clear.group = true;
+	c.u.clear.dst = T3_ID_ALLMSI;
+	c.u.clear.src = T3_ID_TSI;
+	for (int i = 0; i < 4; i++) {
+		rx(&ms, 2, &c);
+		frame(&ms);
+	}
+	CHECK(ms.state == T3_CAMPED && ntune == t0 + 1 && tuned.chan.rx_hz == RX(TSCC_LCN) && tuned.slot == 0 &&
+	      !tuned.payload, "P_CLEAR to ALLMSI, LPCN 0: back to the TSCC once");
+	// A late-entry repeat just after the clear doesn't pull it back
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_CAMPED, "not followed again at once");
+	frames(&ms, 20);
+	CHECK(ms.state == T3_CAMPED && ms.reg == T3_REG_OK, "camped and registered after the call");
+}
+
 int main(void)
 {
 	test_register();
@@ -693,6 +752,7 @@ int main(void)
 	test_ahoy();
 	test_deregister();
 	test_receive_rules();
+	test_one_carrier_site();
 	printf("t3AccessTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;
 }
