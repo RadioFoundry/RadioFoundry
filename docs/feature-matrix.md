@@ -388,6 +388,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | Notes |
 |---|---|---:|---:|---|
 | Audio path probe (debug link 0x10) | `AUDIO_PROBE` | 1,176* | — | Bench only, never in a release |
+| Peek and poke: memory, registers and pins (debug link 0x22) | `DEBUG_MEM` | 720 | 440 | Follows `DEBUGLINK`; writes and pin changes need a key ([debuglink.md](spec/debuglink.md) 3.26). Figures from a merge-check build |
 
 ## Whole images
 
