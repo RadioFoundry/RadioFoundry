@@ -16,7 +16,7 @@ and what has been checked on it.
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
 | [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. Transmit is armed per power cycle. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames. |
-| [Radioddity GD-88](#radioddity-gd-88) | Kydera DR-880UV | Runs on the radio: analog FM, DMR voice and data, dual watch on the second SoC, transmit through that SoC's PA, settings on the SPI NAND and the host link. Open: output power at each level. |
+| [Radioddity GD-88](#radioddity-gd-88) | Kydera DR-880UV | Runs on the radio: analog FM, DMR voice and data, dual watch on the second SoC, transmit through that SoC's PA, settings on the SPI NAND and the host link. Open: a wattmeter check of the power levels. |
 <!-- end generated -->
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.

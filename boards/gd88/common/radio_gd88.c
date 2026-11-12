@@ -49,10 +49,6 @@
 #define LOW_SIDE_TO_HZ		440000000u
 #define UHF_FROM_HZ		280000000u
 
-// GD88_TX_DRIVE_PCT scales the page's PA drive (100 = the page's value)
-#ifndef GD88_TX_DRIVE_PCT
-#define GD88_TX_DRIVE_PCT	100u
-#endif
 #ifndef GD88_TX_TONE_GAIN
 #define GD88_TX_TONE_GAIN	BK4819_TONE_GAIN_STOCK
 #endif
@@ -146,12 +142,11 @@ static volatile uint16_t drive_override;
 // them from the TX line's edge, so the edge has its own fixed time after the RF TX interrupt: later than a late
 // interrupt (a few hundred us, dmr_rfburst.c) and the task's wake, which then don't move the points. The earliest
 // point sets the RF TX interrupt's lead with the page's TX-on delay (gd88_dmr_key_rf_tx_lead).
-// Measured (tools/bench/pa_cal.py), [VHF, UHF]. UHF, both levels: the output is up 0.1 to 0.2 ms after its drive,
-// the higher level sooner. With every drive on where the ramp began (GD88_DMR_DRIVE_US) the levels were up 0.65 and
-// 0.88 ms before the first symbol; with these, 0.32 and 0.27 ms. VHF comes up 0.76 ms (the top drive) to 0.98 ms
-// (the low table's) after its drive, and a boost doesn't shorten that: its window holds the slowest drive, so no
-// level is boosted. With the drive at GD88_DMR_DRIVE_US the low level was up 0.18 ms after the first symbol; with
-// these, 0.25 ms before it (the low level measured, the others by the fit over six drives)
+// Measured (tools/bench/pa_cal.py), [VHF, UHF], every power level into a dummy load, the dead zone a part of the
+// band's zero point (gd88_cal_zero). UHF: the five levels reach -3 dB 0.21-0.25 ms before the first symbol, under
+// 0.8 dB over their level. VHF: 0.24-0.28 ms before it; the middle levels overshoot by about 2.3 dB, as they do with
+// their drive written alone, and no ease limit helps (the PA's own). The output comes up 0.4 (the lowest level) to
+// 1.2 ms (the top) after its drive
 #define KEY_EDGE_AT_US		300u
 // The earliest point: the modem's longest lead (6.3 ms) has to hold the sequence, the page's longest TX-on delay
 // and this
@@ -160,8 +155,8 @@ _Static_assert(GD88_DMR_SEQ_US + GD88_CAL_TX_DELAY_MAX_US + KEYUP_MAX_AHEAD_US <
 	       63u * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US, "the earliest key-up point fits the modem's longest lead");
 _Static_assert(KEY_EDGE_AT_US + 50u + 200u < GD88_DMR_SEQ_US, "B's sequence after the edge ends before the first point");
 static const pa_keyup_cfg_t keyup_cfg[2] = {
-	{ .dead_pm = 383, .knee_us = 105, .slope_us = 892, .window_us = 1250, .settle_us = 160, .pa_us = GD88_DMR_DRIVE_US },
-	{ .dead_pm = 0, .knee_us = 189, .slope_us = 22, .window_us = GD88_DMR_DRIVE_US, .settle_us = 160,
+	{ .dead_pm = 449, .knee_us = 252, .slope_us = 82, .window_us = 1250, .settle_us = 160, .pa_us = GD88_DMR_DRIVE_US },
+	{ .dead_pm = 0, .knee_us = 95, .slope_us = 85, .window_us = GD88_DMR_DRIVE_US, .settle_us = 160,
 	  .pa_us = GD88_DMR_DRIVE_US },
 };
 static pa_keyup_t ku;		// the transmission's, set before the RF task is armed
@@ -500,7 +495,7 @@ static void own_gpio(bool on, uint32_t hz)
 static bool dmr_tx(uint32_t hz, uint8_t power)
 {
 	gd88_tx_plan_t plan;
-	if (!supported || !board_in_band(hz, true) || !gd88_cal_tx_plan(hz, power >= 1, GD88_TX_DRIVE_PCT, &plan)) {
+	if (!supported || !board_in_band(hz, true) || !gd88_cal_tx_plan(hz, power, &plan)) {
 		return false;
 	}
 	if (dmr_armed) {
@@ -524,10 +519,10 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 #endif
 #if GD88_TX
 	uint16_t pa = drive_override != 0u ? drive_override : plan.pa;
-	// The key-up against the high table's drive here; the low table's is the dead zone's anchor
+	// The key-up against the top level's drive here; the band's zero point is the dead zone's anchor
 	gd88_tx_plan_t other;
-	uint16_t top = gd88_cal_tx_plan(hz, true, GD88_TX_DRIVE_PCT, &other) && other.pa > pa ? other.pa : pa;
-	uint16_t ref = gd88_cal_tx_plan(hz, false, GD88_TX_DRIVE_PCT, &other) ? other.pa : 0u;
+	uint16_t top = gd88_cal_tx_plan(hz, GD88_POWER_LEVELS - 1u, &other) && other.pa > pa ? other.pa : pa;
+	uint16_t ref = gd88_cal_zero(hz);
 	pa_keyup_select(&keyup_cfg[hz >= UHF_FROM_HZ ? 1 : 0]);
 	ku = pa_keyup_plan(pa, top, ref);
 	tx_lead = gd88_dmr_key_rf_tx_lead(ku.boost != 0u ? ku.boost_us : ku.pa_us, plan.on_us);
@@ -672,8 +667,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		return false;
 	}
 	gd88_tx_plan_t plan;
-	// Power index 1 ("H") is table 0x045; "L" the other table
-	if (!supported || !board_in_band(hz, true) || !gd88_cal_tx_plan(hz, power >= 1, GD88_TX_DRIVE_PCT, &plan)) {
+	if (!supported || !board_in_band(hz, true) || !gd88_cal_tx_plan(hz, power, &plan)) {
 		return false;
 	}
 	tx_stop();
@@ -749,7 +743,7 @@ static void tx_off(void)
 static uint16_t tx_drive_level(uint32_t hz, uint8_t level)
 {
 	gd88_tx_plan_t plan;
-	return supported && gd88_cal_tx_plan(hz, level >= 1, GD88_TX_DRIVE_PCT, &plan) ? plan.pa : 0u;
+	return supported && gd88_cal_tx_plan(hz, level, &plan) ? plan.pa : 0u;
 }
 
 static bool tx_drive(uint16_t drive)
@@ -978,9 +972,8 @@ void gd88_radio_diag(gd88_radio_diag_t *d)
 	d->supported = supported;
 	d->audio_open = audio_open;
 	d->pcm_on = pcm_on;
-	gd88_tx_plan_t plan;
-	d->pa_low = GD88_TX && have_rx && gd88_cal_tx_plan(rx_hz, false, GD88_TX_DRIVE_PCT, &plan) ? plan.pa : 0;
-	d->pa_high = GD88_TX && have_rx && gd88_cal_tx_plan(rx_hz, true, GD88_TX_DRIVE_PCT, &plan) ? plan.pa : 0;
+	d->pa_low = GD88_TX && have_rx ? gd88_cal_pa(rx_hz, false) : 0;
+	d->pa_high = GD88_TX && have_rx ? gd88_cal_pa(rx_hz, true) : 0;
 }
 
 #if !GD88_TX

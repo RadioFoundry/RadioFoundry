@@ -207,25 +207,55 @@ static void test_tx_plan(void)
 	gd88_tx_plan_t p = { 11, 22, 33 };
 	// No page: refused, and the plan isn't touched
 	CHECK(!gd88_cal_load(NULL, NULL));
-	CHECK(!gd88_cal_tx_plan(403175000, true, 100, &p) && p.pa == 11 && p.on_us == 22 && p.off_us == 33);
+	CHECK(!gd88_cal_tx_plan(403175000, 4, &p) && p.pa == 11 && p.on_us == 22 && p.off_us == 33);
+	CHECK(gd88_cal_zero(403175000) == 0);
 
 	build(flash_page, 1);
 	gd88_cal_load(flash_page, NULL);
-	// Level "H" is table 0x045, "L" table 0x056; delays come with the PA value
-	CHECK(gd88_cal_tx_plan(403175000, true, 100, &p) && p.pa == 1500 && p.on_us == 100 && p.off_us == 1800);
-	CHECK(gd88_cal_tx_plan(403175000, false, 100, &p) && p.pa == 900);
-	CHECK(gd88_cal_tx_plan(146125000, true, 100, &p) && p.pa == 2700 && p.on_us == 200);
-	// The drive scale rounds to nearest and never reaches 0
-	CHECK(gd88_cal_tx_plan(403175000, true, 40, &p) && p.pa == 600);
-	CHECK(gd88_cal_tx_plan(403175000, false, 1, &p) && p.pa == 9);
-	CHECK(!gd88_cal_tx_plan(403175000, true, 0, &p) && !gd88_cal_tx_plan(403175000, true, 101, &p));
-	// A PA value that isn't one (erased, or beyond the DAC) refuses just that frequency
+	// The fixed levels are the band's table, whatever the rows; the delays come with them
+	const gd88_power_band_t *u = &gd88_tx_levels[1], *v = &gd88_tx_levels[0];
+	CHECK(gd88_cal_tx_plan(403175000, 0, &p) && p.pa == u->fixed[0] && p.on_us == 100 && p.off_us == 1800);
+	CHECK(gd88_cal_tx_plan(403175000, 2, &p) && p.pa == u->fixed[2]);
+	CHECK(gd88_cal_tx_plan(146125000, 1, &p) && p.pa == v->fixed[1] && p.on_us == 200);
+	// The upper levels lie between the rows at the frequency: UHF 900 (0x056) and 1500 (0x045) at 403.175 MHz
+	CHECK(gd88_cal_tx_plan(403175000, 3, &p) && p.pa == 900 + (600 * u->frac[0] + 500) / 1000);
+	CHECK(gd88_cal_tx_plan(403175000, 4, &p) && p.pa == 900 + (600 * u->frac[1] + 500) / 1000);
+	// VHF: 1860 and 2700 at 146.125 MHz (point 3)
+	CHECK(gd88_cal_tx_plan(146125000, 4, &p) && p.pa == 1860 + (840 * v->frac[1] + 500) / 1000);
+	CHECK(!gd88_cal_tx_plan(403175000, GD88_POWER_LEVELS, &p));
+	CHECK(gd88_cal_zero(403175000) == u->zero && gd88_cal_zero(146125000) == v->zero);
+	// A PA row that isn't one (erased, or beyond the DAC) refuses just that frequency, the fixed levels too
 	put16(flash_page + 0x045 + 1 + 2 * 3, 0xFFFF);
 	put16(flash_page + 0x056 + 1 + 2 * 0, 0);
 	gd88_cal_load(flash_page, NULL);
-	CHECK(!gd88_cal_tx_plan(436625000, true, 100, &p));
-	CHECK(!gd88_cal_tx_plan(400000000, false, 100, &p));
-	CHECK(gd88_cal_tx_plan(414175000, true, 100, &p) && p.pa == 1600);
+	CHECK(!gd88_cal_tx_plan(436625000, 4, &p) && !gd88_cal_tx_plan(436625000, 0, &p));
+	CHECK(!gd88_cal_tx_plan(400000000, 0, &p));
+	CHECK(gd88_cal_tx_plan(414175000, 4, &p));
+}
+
+// The table itself: every level rises with its number on both bands for rows from the bench radio's page, the zero
+// point sits under the lowest level, and the rule's edges
+static void test_power_drive(void)
+{
+	static const gd88_power_band_t t = { .zero = 300, .fixed = { 400, 600, 800 }, .frac = { 100, 700 } };
+	CHECK(gd88_power_drive(&t, 0, 1177, 3024) == 400);
+	CHECK(gd88_power_drive(&t, 2, 1177, 3024) == 800);
+	CHECK(gd88_power_drive(&t, 3, 1177, 3024) == 1177 + 185);	// 184.7 rounds up
+	CHECK(gd88_power_drive(&t, 4, 1177, 3024) == 1177 + 1293);	// 1292.9
+	CHECK(gd88_power_drive(&t, 4, 1000, 1000) == 1000);
+	CHECK(gd88_power_drive(&t, 5, 1177, 3024) == 0);
+	CHECK(gd88_power_drive(&t, 0, 0, 3024) == 0);
+	CHECK(gd88_power_drive(&t, 3, 2000, 1000) == 0);
+	for (int b = 0; b < 2; b++) {
+		const gd88_power_band_t *g = &gd88_tx_levels[b];
+		CHECK(g->zero < g->fixed[0]);
+		uint16_t prev = 0;
+		for (uint8_t lv = 0; lv < GD88_POWER_LEVELS; lv++) {
+			uint16_t d = gd88_power_drive(g, lv, 1177, 3024);
+			CHECK(d > prev && d <= 4095);
+			prev = d;
+		}
+	}
 }
 
 static void test_apc(void)
@@ -274,6 +304,7 @@ int main(void)
 	test_limits();
 	test_squelch();
 	test_tx_plan();
+	test_power_drive();
 	test_apc();
 	test_dmr_timing();
 	if (failures) {

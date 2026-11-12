@@ -173,7 +173,8 @@ bool gd88_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, gd88_input_ptt_ignored());
 		break;
 	case 11:
-		// The TX drive a keyup at the tuned frequency would use, low / high (0: TX refused here), and the TX state
+		// The page's PA rows at the tuned frequency, low / high (0: TX refused here), and the TX state; the levels' drives
+		// are in the core view (tx_drive)
 		put(&o, "tx ");
 		put_u(&o, d.hz / 1000u);
 		put(&o, "k pa ");

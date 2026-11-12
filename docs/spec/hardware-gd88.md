@@ -229,7 +229,7 @@ B has no display, keys, power latch or GPS. Pin index as in section 9.
 | PA select, then supply | UHF PTB6, 200 us, then PTB20. VHF PTB3, then PTB21. TX off clears the supplies first |
 | A's TX line | PTB2 in, both-edge interrupt: A's PTB2 (section 9) (BIN) |
 | A's PA | **B keys the PA for A's transmitter** (BIN; **HW** FM 2026-10-27). A sends B a record first (vendor link id 0x6B00) with the drive and the page's delays, then raises PTB2. Rising edge: mode 0, the TX band pair, A's RX path PTB1 (and PTB13) off, 50 us, the TX-on delay, PA select, 200 us, supply, DAC B ramped up to the drive (180 steps of 4 us, S-shaped). Falling edge: the TX-off delay, the ramp down, supply then select off, 300 + 1000 + 300 us, the RX front end and A's RX path back, 200 us |
-| PA drive and delays | From A's page: drive = item 0x045 (channel power byte 0) or 0x056 (otherwise), interpolated at the TX frequency; TX-on / TX-off delays from item 0x0AE, in us, over 2000 read as 0 (BIN). Which item is high power: INF |
+| PA drive and delays | From A's page: drive = item 0x045 (channel power byte 0) or 0x056 (otherwise), interpolated at the TX frequency; TX-on / TX-off delays from item 0x0AE, in us, over 2000 read as 0 (BIN). 0x045 is the high row: at 445 MHz 0x045 (3024) gave about 5.6 W, 0x056 (1177) about 2.1 W (**HW**, SDR bench). RadioFoundry's levels use both rows (13.1) |
 | DMR keying | Per burst on the shared RF-burst task. The modem's RF TX lead is the shortest 100 us step that has the PA up for the first symbol: 2.4 ms + the TX-on delay - 0.85 ms, rounded up (`gd88_dmr_rf_tx_lead`). A's TX line falls at the last symbol's end and B waits no TX-off delay, so the ramp down starts there (150 us earlier, the VHF carrier was 4.9 dB down at the symbol's end). Bench, UHF, lowest power, into a dummy load: burst on-time 29.66-30.53 ms, ramps 0.75-0.85 ms up and 0.42-0.52 ms down, no AMBE FEC corrections in 162 frames (**HW**). With the 3.1 ms lead and the page's TX-off delay the bursts ran 31.08-31.73 ms. A's bursts are keyed by the key-up rule ([pa-keyup.md](pa-keyup.md)): A plans the drive's points and sends B their times after the TX line's edge (`RX2_TX`, [rx2-link.md](rx2-link.md)); A raises the line 300 us after the RF TX interrupt, and B steps DAC B at the points instead of ramping it. B also holds the PA select and supply until 50 us before the first point (`SUPPLY_AHEAD_US`, pa_gd88b.c): with the supply on at the sequence's start, the PA passed A's carrier at drive 0 from 1.75 ms before the first symbol, 40-44 dB under the level, in the slot before (UHF, **HW**). From 50 us to the point itself the rise is the same; 300 us ahead left a 0.3 ms step at -40 dB. Constants per band (`tools/bench/pa_cal.py`). UHF: knee 189 us, slope 22 us, window 800 us, settle 160 us, no dead zone: the output is up 0.1 to 0.2 ms after its drive, and both levels reach -3 dB 0.27-0.34 ms before the first symbol, on the air 0.36-0.51 ms before it, nothing over the floor before the guard, within 0.5 dB of the level from the first symbol (`tools/bench/pa_shape.py`: clean), off 0.7 and 0.9 ms after the last. With every level's drive 0.8 ms before the first symbol, where the ramp began, they were up 0.65 and 0.88 ms before it. VHF: dead zone 38.3 % of the anchor, knee 105 us, slope 892 us, window 1250 us, settle 160 us, lowest level only, over the air 16 dB over the noise: up 0.24 ms before the first symbol and 1.1 dB down at the last symbol's end; with the UHF set it was 0.55 ms late. The VHF shape with the later supply is not measured (the over-air path was 14 dB over the noise). The VHF high level is not measured. The earliest point is 3.0 ms before the first symbol; the lead is 1.6 ms + the TX-on delay + the first point - 0.85 ms, rounded up (`gd88_dmr_key_rf_tx_lead`), 2.4 ms with a first point at 0.8 ms. The drive of each level and one set over the debug link (RADIO op 36) are in the `core` view (`tx_drive`). B's diag line counts the bursts whose first point had passed when its sequence got there (`late`). Untested on a radio. B's own transmitter (an SFR's repeat) still ramps: it runs the sequence in series, its chip tuned first, and needs 0.9 ms more (`gd88_dmr_own_rf_tx_lead`): with A's lead the first four symbols of every burst were lost on air (**HW**) |
 | Start-up levels | Low: PTB20, PTB21, PTB6, PTB3, PTB1, PTB0, PTB15, PTB14, PTB13, PTB5, PTB12, PTB11, PTB8, PTB7, PTA17, PTB10, PTC18, PTB4, PTA15. High: PTB22, PTB18, PTB9 |
 | NAND | SPI0, CS PTA18, the same part and map as A's (**HW**). B's calibration pair is in it and at 0x031FE000 of B's program flash |
@@ -302,12 +302,47 @@ page, DMR on the modem and the SPI NAND. Both run on the bench's radio (2026-10-
 
 Not supported yet: the IMU, the headset path on its own, the RTC.
 
+### 13.1 Power levels
+
+Five levels, as on the other handhelds: 100 mW, 500 mW, 1 W, 2.5 W, 5 W (`gd88_tx_levels`,
+`boards/gd88/common/calibration_gd88.c`), 1 W by default. The low three are fixed drives per band; 2.5 W and 5 W lie
+between the page's two rows at the TX frequency, per mille from 0x056 to 0x045 ([power-calibration.md](../testing/power-calibration.md)).
+The drives are approximate, from the SDR bench (a 57 dB pad into an SDR, about ±2 dB), and wait for a wattmeter.
+
+| DAC B | 146 MHz | 445 MHz |
+|---|---|---|
+| 250 | under 1 mW | 3.5 mW |
+| 300 | under 1 mW | 15 mW |
+| 400 | under 1 mW | 72 mW |
+| 500 | 4 mW | 220 mW |
+| 700 | 100 mW | 652 mW |
+| 900 | 440 mW | 1.17 W |
+| 1100 | 1.0 W | 1.83 W |
+| 1500 | 2.7 W | 2.89 W |
+| 2200 | 6.1 W | 4.44 W |
+| 2600 | 8.0 W | 5.16 W |
+| 3000 | | 5.62 W |
+| 3400 | | 5.57 W (saturated) |
+
+| Level | VHF drive | UHF drive |
+|---|---|---|
+| zero point (about 20 mW, the key-up's anchor) | 575 | 330 |
+| 100 mW | 700 | 426 |
+| 500 mW | 929 | 651 |
+| 1 W | 1098 | 846 |
+| 2.5 W | row 0x056 + 6.3 % (1471 at 146 MHz) | row 0x056 + 10.7 % (1374 at 445 MHz) |
+| 5 W | row 0x056 + 38.8 % (1988) | row 0x056 + 72.4 % (2515) |
+
+The page's rows on the bench radio: 146 MHz 1371 (about 2.2 W) and 2960; 445 MHz 1177 (about 2.1 W) and 3024 (about
+5.6 W). No cliff at 445 MHz: under the zero point the output stays at a floor of about 0.3 mW down to a drive of 40.
+At 146 MHz it stays under 1 mW from 450 down to 250, the lowest drive measured.
+
 ## 14. Remaining unknowns for bring-up
 
 The code marks each with `TODO(gd88)`. The first-day plan that settles them is [gd88-bringup.md](../testing/gd88-bringup.md).
 
 1. Which RF chips other units have (the bench's A: BK4819 and AT1141), and B's.
-2. The output power at each level.
+2. ~~The output power at each level.~~ Approximate drives from the SDR bench (13.1); a wattmeter check is open.
 3. Chain bit 6 as the broadcast tuner's source, and B's audio source pair.
 4. The front panel's navigation keys, whether PTB12 is the knob's contact.
 5. DAC C on each SoC. On A it is powered and on its pin, and 0 to 4095 leave the RSSI unchanged at 146, 162 and 461 MHz (**HW**): not receive gain; a frequency trim or a transmit role is left.

@@ -49,7 +49,7 @@ typedef struct {
 	uint16_t rssi_raw, noise_raw;	// main chip 0x67 / 0x65 from the last status poll
 	uint32_t rf_writes;
 	uint32_t hz;			// the tuned frequency
-	uint16_t pa_low, pa_high;	// the PA drive a transmission there would use (0: TX refused)
+	uint16_t pa_low, pa_high;	// the page's two PA rows there (0: none, TX refused)
 	bool transmitting;
 	bool supported;			// both chips answered as BK4819
 	bool audio_open, pcm_on;	// the speaker's requests: FM receive audio, the modem's PCM (speaker())

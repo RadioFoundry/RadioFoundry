@@ -25,9 +25,11 @@ static const band_t bands[] = {
 #endif
 };
 
-// The page's two PA tables. The radio refuses TX until the PA calibration can be read (radio_gd88.c), and without
-// with GD88_TX=0 altogether
-static const char *const power_names[] = { "L", "H" };
+// The power levels (common/calibration_gd88.c gd88_tx_levels, hardware-gd88.md 13.1): the low three fixed drives, the
+// upper two between the page's rows. The radio refuses TX until the page can be read (radio_gd88.c), and altogether
+// with GD88_TX=0
+static const char *const power_names[] = { "100mW", "500mW", "1W", "2.5W", "5W" };
+_Static_assert(sizeof(power_names) / sizeof(power_names[0]) == GD88_POWER_LEVELS, "a name per level of gd88_tx_levels");
 
 // docs/ux/information-architecture.md 7.1. As the original firmware: the left soft key opens the menu and accepts
 // (its screen labels it Menu or Ok), the right one is A/B, red goes back; green is its programmable key. SK1 / SK2
@@ -81,7 +83,7 @@ const board_t board = {
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
-	.power_default = 0,
+	.power_default = 2,	// 1 W
 	.display = &gd88_display,
 	.input = &gd88_input,
 	.keymap = keymap,

@@ -13,7 +13,7 @@
 
 #define OFF_RX_TUNE		0x02Cu
 #define OFF_TX_CENTER		0x43Fu		// VHF half only, used for both bands
-// TODO(gd88): unknown, needs a radio: which of the two is high power (the output at each level)
+// The factory's two power rows (hardware-gd88.md 13.1): at 445 MHz 0x045 gave about 5.6 W, 0x056 about 2.1 W
 #define OFF_PA_HIGH		0x045u		// power level 1 of the factory set-up
 #define OFF_PA_LOW		0x056u		// every other level
 #define OFF_MOD			0x067u		// (u8, u8) pairs, the first byte used
@@ -141,16 +141,46 @@ uint16_t gd88_cal_pa(uint32_t hz, bool high)
 	return v > 0 && v <= (int32_t)DAC_MAX ? (uint16_t)v : 0;
 }
 
-bool gd88_cal_tx_plan(uint32_t hz, bool high, uint8_t drive_pct, gd88_tx_plan_t *p)
+// The power levels, [VHF, UHF] (hardware-gd88.md 13.1). Approximate, from the SDR bench (about +-2 dB): change a drive
+// here when a wattmeter says otherwise. zero: the drive where the output reaches about 20 mW. VHF at 146 MHz: 100 mW
+// 700, 500 mW 929, 1 W 1098; 2.5 W 1471 and 5 W 1988 between the rows 1371 (2.2 W) and 2960. UHF at 445 MHz: 100 mW
+// 426, 500 mW 651, 1 W 846; 2.5 W 1374 and 5 W 2515 between the rows 1177 (2.1 W) and 3024 (5.6 W)
+const gd88_power_band_t gd88_tx_levels[2] = {
+	{ .zero = 575, .fixed = { 700, 929, 1098 }, .frac = { 63, 388 } },
+	{ .zero = 330, .fixed = { 426, 651, 846 }, .frac = { 107, 724 } },
+};
+
+uint16_t gd88_power_drive(const gd88_power_band_t *b, uint8_t level, uint16_t low_row, uint16_t high_row)
 {
-	uint16_t pa = gd88_cal_pa(hz, high);
-	if (pa == 0 || drive_pct == 0 || drive_pct > 100) {
+	if (level >= GD88_POWER_LEVELS || low_row == 0 || high_row < low_row) {
+		return 0;
+	}
+	if (level < GD88_POWER_FIXED) {
+		return b->fixed[level];
+	}
+	uint32_t span = (uint32_t)(high_row - low_row) * b->frac[level - GD88_POWER_FIXED];
+	return (uint16_t)(low_row + (span + 500u) / 1000u);
+}
+
+static const gd88_power_band_t *power_band(uint32_t hz)
+{
+	return &gd88_tx_levels[is_vhf(hz) ? 0 : 1];
+}
+
+bool gd88_cal_tx_plan(uint32_t hz, uint8_t level, gd88_tx_plan_t *p)
+{
+	uint16_t pa = gd88_power_drive(power_band(hz), level, gd88_cal_pa(hz, false), gd88_cal_pa(hz, true));
+	if (pa == 0) {
 		return false;
 	}
-	uint32_t scaled = ((uint32_t)pa * drive_pct + 50u) / 100u;
-	p->pa = (uint16_t)(scaled > 0 ? scaled : 1u);
+	p->pa = pa;
 	gd88_cal_tx_delays(hz, &p->on_us, &p->off_us);
 	return true;
+}
+
+uint16_t gd88_cal_zero(uint32_t hz)
+{
+	return valid ? power_band(hz)->zero : 0u;
 }
 
 uint16_t gd88_apc_level(uint16_t target, uint16_t step)

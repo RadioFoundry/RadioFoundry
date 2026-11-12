@@ -25,21 +25,37 @@ bool gd88_cal_valid(void);
 gd88_cal_source_t gd88_cal_source(void);
 uint32_t gd88_cal_counter(void);
 // Per-frequency values, interpolated between the 8 points of the band. 0 when there's no page or the value isn't one
-uint16_t gd88_cal_pa(uint32_t hz, bool high);		// DAC B at the top of the ramp
+uint16_t gd88_cal_pa(uint32_t hz, bool high);		// a factory row: item 0x045 (high) or 0x056 (low)
 uint16_t gd88_cal_rx_tune(uint32_t hz);			// DAC A while receiving
 uint8_t gd88_cal_mod(uint32_t hz);			// modcal for hrc7000_mod_bias_dc
 #define GD88_CAL_TX_DELAY_MAX_US	2000u			// the longest delay the page can give
 void gd88_cal_tx_delays(uint32_t hz, uint16_t *on_us, uint16_t *off_us);
 uint8_t gd88_cal_tx_center(void);			// 128 without a page
-// What a transmission at hz needs from the page. high = power level 1 (table 0x045), else the other table (0x056).
-// drive_pct (1..100) scales the PA drive. False, with *p untouched: no page, no usable PA value for hz, or a bad
-// percentage. The delays are 0 where the page has none
+// The power levels (docs/spec/hardware-gd88.md 13.1, docs/testing/power-calibration.md), one table per band. The low
+// levels are fixed drives: the bottom of the PA's curve follows the absolute drive. The upper levels lie between the
+// page's two rows, which follow the PA across the band. zero is the drive where the output reaches zero, the key-up's
+// anchor for the dead zone (radio/pa_keyup.h)
+#define GD88_POWER_LEVELS	5u
+#define GD88_POWER_FIXED	3u
+typedef struct {
+	uint16_t zero;				// DAC B where the output reaches zero
+	uint16_t fixed[GD88_POWER_FIXED];	// levels 0..2: DAC B
+	uint16_t frac[GD88_POWER_LEVELS - GD88_POWER_FIXED];	// levels 3..4: per mille from the low row to the high row
+} gd88_power_band_t;
+extern const gd88_power_band_t gd88_tx_levels[2];	// [VHF, UHF]
+// A level's drive from its band's table and the page's two rows at the TX frequency (pure). 0 for a level past the
+// table or rows that aren't usable (0, or the low row over the high)
+uint16_t gd88_power_drive(const gd88_power_band_t *b, uint8_t level, uint16_t low_row, uint16_t high_row);
+// What a transmission at hz needs: the level's drive and the page's delays. False, with *p untouched: no page, no
+// usable PA rows for hz, or no such level. The delays are 0 where the page has none
 typedef struct {
 	uint16_t pa;		// DAC B at the top of the ramp
 	uint16_t on_us;		// after tuning, before the PA is selected
 	uint16_t off_us;	// at TX end, before the ramp down
 } gd88_tx_plan_t;
-bool gd88_cal_tx_plan(uint32_t hz, bool high, uint8_t drive_pct, gd88_tx_plan_t *p);
+bool gd88_cal_tx_plan(uint32_t hz, uint8_t level, gd88_tx_plan_t *p);
+// The band's zero point at hz (the key-up's anchor); 0 without a page
+uint16_t gd88_cal_zero(uint32_t hz);
 // The PA ramp: DAC B at step 0..GD88_APC_STEPS of a ramp to target (smooth start and end). Ramping down runs the
 // steps backwards
 #define GD88_APC_STEPS		180u
