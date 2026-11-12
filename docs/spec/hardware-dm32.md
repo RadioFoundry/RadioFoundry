@@ -1088,8 +1088,7 @@ not yet on a RadioFoundry test radio.
 | 0x0C bit 9 on set-up B | set | set |
 | 0x3D | reads 0x2AAB | reads 0 (user) |
 
-The newer section's data flash is a Puya part (JEDEC 852018) on the radios seen so far; RadioFoundry doesn't use that
-to choose.
+The data flash can't tell the sections apart: a Puya part (JEDEC 852018) is fitted with both.
 
 Start-up check (`radio_dm32.c` `rf_detect`): set-up A, tuned to 145 MHz in RX, waits up to 20 ms for 0x0C bit 9. No
 lock: set-up B the same way. Set-up B locks on both sections, so A goes first. Neither locking leaves set-up A and
