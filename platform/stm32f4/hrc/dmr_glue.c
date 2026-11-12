@@ -936,11 +936,13 @@ bool stm32_hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " s", m->rs_why[HRC6000_RS_STALL] + m->rs_why[HRC6000_RS_TX_END]);
 		put_kv(&o, " h", m->rx_holds);
 		break;
-	case 16:	// class 0 reports: no superframe on their slot, stale number, taken by sequence, number skipped
+	case 16:	// class 0 reports: no superframe on their slot, stale number, taken by sequence, number skipped,
+			// renumbered by the frame count
 		put_kv(&o, "v0 nc", m->rx_no_call);
 		put_kv(&o, " st", m->rx_stale);
 		put_kv(&o, " sf", m->rx_seq_fill);
 		put_kv(&o, " sj", m->rx_seq_jump);
+		put_kv(&o, " sx", m->rx_seq_fix);
 		break;
 	case 17:	// lone voice syncs dropped (no B after); voice CCs replaced (filter / superframe); system interrupts
 			// serviced at the timeslot interrupt (line still low, no edge)

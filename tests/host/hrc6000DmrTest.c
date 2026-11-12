@@ -1140,6 +1140,55 @@ static void test_rx_missed_burst(void)
 	CHECK(eng.st.rx_seq_jump == 1);
 }
 
+// Feeds the reports a frame apart (each burst with its own voice unless same_voice[i]); fills got with the voice
+// numbers delivered and returns how many
+static int feed_numbers(const uint8_t *r51s, const bool *same_voice, int n, uint8_t *got)
+{
+	fresh_engine();
+	uint32_t t = 14000000;
+	for (int i = 0; i < n; i++) {
+		ts_at(t);
+		if (!same_voice[i]) {
+			memset(voice_rx, 0x40 + i, sizeof(voice_rx));
+		}
+		report_at(t + 3500, r51s[i], 0x20, 0x00);
+		t += 60000;
+		ts_at(t - 30000);
+	}
+	drain();
+	int k = 0;
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].kind == DMR_EV_BURST_RX && k < 8) {
+			got[k++] = bursts[i].voice_index;
+		}
+	}
+	return k;
+}
+
+// A report with another burst's number, no frame missed (bench: A B F C E F and C D F A): numbered by the frames
+// counted, nothing lost, and a burst whose number repeats the last one's is taken when its voice is new
+static void test_rx_wrong_number(void)
+{
+	static const bool fresh[6] = { false };
+	uint8_t got[8];
+	static const uint8_t lag[] = { 0x91, 0xA0, 0xE0, 0xB0, 0xD0, 0xE0 };	// A B "F" "C" E F
+	int k = feed_numbers(lag, fresh, 6, got);
+	CHECK(k == 6 && memcmp(got, (const uint8_t[]){ 0, 1, 2, 3, 4, 5 }, 6) == 0);
+	CHECK(eng.st.rx_seq_fix == 2 && eng.st.rx_seq_jump == 0 && eng.st.rx_stale == 0);
+
+	static const uint8_t early[] = { 0x91, 0xA0, 0xB0, 0xC0, 0xE0, 0xE0 };	// A B C D "F" F
+	k = feed_numbers(early, fresh, 6, got);
+	CHECK(k == 6 && memcmp(got, (const uint8_t[]){ 0, 1, 2, 3, 4, 5 }, 6) == 0);
+	CHECK(eng.st.rx_seq_fix == 1 && eng.st.rx_stale == 0);
+
+	// The same number and the same voice: a stale report, dropped
+	static const bool again[5] = { false, false, false, true, false };
+	static const uint8_t stale[] = { 0x91, 0xA0, 0xB0, 0xB0, 0xD0 };	// A B C C(stale) E
+	k = feed_numbers(stale, again, 5, got);
+	CHECK(k == 4 && memcmp(got, (const uint8_t[]){ 0, 1, 2, 4 }, 4) == 0);
+	CHECK(eng.st.rx_stale == 1 && eng.st.rx_seq_jump == 1 && eng.st.rx_seq_fix == 0);
+}
+
 static void test_halt(void)
 {
 	fresh_engine();
@@ -1175,6 +1224,7 @@ int main(void)
 	test_idle_restart_once();
 	test_rx_bench_call();
 	test_rx_missed_burst();
+	test_rx_wrong_number();
 	test_halt();
 	if (failures) {
 		printf("# hrc6000DmrTest: %d FAILED\n", failures);
