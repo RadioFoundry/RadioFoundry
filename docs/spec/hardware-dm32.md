@@ -1064,14 +1064,13 @@ switches per burst. As a user it reports both copies of a call (gotchas 14.15).
 
 ### 8.10 Two RF sections
 
-Newer DM-32UV radios have an RF section whose FD6818 needs another set-up. They ship with the stock build
-`DM32.NRFB.01.050`; the older stock builds (046 to 049) leave their receiver dead. On the classic set-up above, the
-newer part's synthesizer never locks: no receive anywhere, and transmit far off frequency (146.520 MHz set, 220.100 MHz
-out). The NRFB build carries only the new set-up and never checks which part is fitted. RadioFoundry checks at
-start-up.
+Newer DM-32UV radios have an RF section whose FD6818 needs another set-up. They ship with
+`DM32.NRFB.01.050`; the older builds (046 to 049) leave their receiver dead. On the classic set-up above, the newer
+part's synthesizer never locks: no receive anywhere, and transmit far off frequency (146.520 MHz set, 220.100 MHz out).
+RadioFoundry checks which part is fitted at start-up.
 
-Set-up B's words are the NRFB build's; the ones marked "user" were checked on one user's radio with the newer section,
-not yet on a RadioFoundry test radio.
+Set-up B rows marked "user" were checked on one user's radio with the newer section; none are yet checked on a
+RadioFoundry test radio.
 
 | | Classic section (set-up A, 8.2-8.8) | Newer section (set-up B) |
 |---|---|---|
@@ -1095,10 +1094,7 @@ lock: set-up B the same way. Set-up B locks on both sections, so A goes first. N
 refuses every transmission. The diagnostics line `flash ... cal ... rf X` names the result: `A`, `B`, or `-` for
 neither. Set-up B has no AM receive yet (8.7 is set-up A's).
 
-With no receive tone the stock build picks either 0x2E / 0x2F pair by a setting; RadioFoundry writes the DCS pair, which
-is also the power-on 0x2F. The stock build's tone generator (0x70 = 0xE000, the tone in 0x71) writes 0x21 = 0x06FD and
-0x24 = 0x8A2F or 0x8A23 at its start, 0x24 = 0 at its end and 0x50 = 0xBB18 / 0x3B18 around each tone; RadioFoundry
-doesn't use that generator.
+With no receive tone RadioFoundry writes the DCS 0x2E / 0x2F pair, which is also the power-on 0x2F.
 
 ## 9. Audio path
 

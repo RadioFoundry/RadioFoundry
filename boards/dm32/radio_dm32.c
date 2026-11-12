@@ -438,7 +438,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, 
 		// FD6818 plays FM to the speaker (hardware-dm32.md 8.4)
 		fd6818_set_rx_tone(&fd, fd_tone(tone != NULL ? tone->type : TONE_NONE), tone != NULL ? tone->value : 0);
 		if (rf_b) {
-			// CTCSS one pair, DCS and no tone the other (the stock build picks either for no tone by a setting)
+			// CTCSS one pair, DCS and no tone the other
 			bool ctcss = tone != NULL && tone->type == TONE_CTCSS;
 			fd6818_write(&fd, FD_REG_CSS_A, ctcss ? 0x8608u : 0x9608u);
 			fd6818_write(&fd, FD_REG_CSS_B, ctcss ? 0x1890u : 0x9890u);
