@@ -190,8 +190,8 @@ How RadioFoundry runs it ([codec-placement.md](codec-placement.md), "HR_C7000 ra
    (0x43A00..0x58000), adds (window start - run address) to each listed word, checks the first two words, and
    copies the tables to their modem RAM address (049: 0x18000EA8).
 3. **Memory map** (`boards/dm32/memory.ld`): one RAM region for RadioFoundry from 0x10000 to the codec window. The modem RAM
-   window 0x18000E48..0x18003E28 (the union of the builds' tables) is reserved.
-4. **Versions**: every DM-32UV build with a codec map (six maps in `tools/rfoundry/rfoundry/codec_maps/dm32/`) runs in the
+   window 0x18000E48..0x18003E38 (the union of the builds' tables) is reserved.
+4. **Versions**: every DM-32UV build with a codec map (eight maps in `tools/rfoundry/rfoundry/codec_maps/dm32/`) runs in the
    same window, since only the 3 words depend on the run address.
 
 ## Open items
