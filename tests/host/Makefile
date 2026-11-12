@@ -872,9 +872,11 @@ run-debuglinkRx2: debuglinkRx2Test
 .PHONY: run-debuglinkRx2
 
 # A second SoC's own debug link server (core/rx2/rx2_dl.c, rx2-link.md 2.3): the main SoC's reply layouts, READ_MEM's
-# windows, the restart's token, the restart and crash tests only after the reply, the log ring. Board and clock faked
+# windows, the restart's token, the restart and crash tests only after the reply, the log ring, CHIP_REG. Board and
+# clock faked
 RX2SRV  := rx2DlTest.c $(CORE)/rx2/rx2_dl.c $(CORE)/debuglink/dl_fmt.c $(CORE)/debuglink/dlog.c $(CORE)/debuglink/dl_chip.c \
-	   $(CORE)/debuglink/dl_crash_view.c $(CORE)/debuglink/dl_mem.c $(CORE)/debuglink/dl_mem_target.c
+	   $(CORE)/debuglink/dl_crash_view.c $(CORE)/debuglink/dl_mem.c $(CORE)/debuglink/dl_mem_target.c \
+	   $(CORE)/debuglink/debuglink_chipreg.c
 TESTS   += rx2DlTest
 rx2DlTest: $(RX2SRV) $(CORE)/rx2/rx2_dl.h $(CORE)/rx2/rx2_link.h $(CORE)/debuglink/debuglink_proto.h $(ROOT)/hal/hal_system.h
 	$(CC) $(CFLAGS) -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -DDLOG_NO_RTOS -DCONFIG_RX2_DL_SERVER=1 -DCONFIG_CRASH_LOG=0 \

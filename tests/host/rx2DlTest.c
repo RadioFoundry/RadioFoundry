@@ -78,6 +78,22 @@ static bool diag_line(uint8_t i, char *buf, uint8_t len)
 board_t board;
 static rx2_recv_t link;
 
+// CHIP_REG (debuglink_chipreg.c): one fake chip register, and B's PA keyed or not
+static bool pa_keyed;
+static uint32_t fake_reg;
+bool debuglink_transmitting(void) { return pa_keyed; }
+static bool chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
+{
+	if (chip != 0 || page != 0 || reg != 0x33) {
+		return false;
+	}
+	if (write) {
+		fake_reg = *val;
+	}
+	*val = fake_reg;
+	return true;
+}
+
 static void own_view(dl_text_t *t) { dl_text(t, "b.test=7\n"); }
 
 // --- helpers ---
@@ -234,6 +250,23 @@ static void test_mem(void)
 	CHECK(cmd(DL_CMD_MEM, p, sizeof p) == 1 && out[0] == DL_ST_UNAVAILABLE);
 }
 
+// B answers CHIP_REG for its own chips as A does: unavailable without the board's hook, a register read and written
+// through it, a wrong register refused
+static void test_chip_reg(void)
+{
+	setup();
+	uint8_t rd[3] = { 0, 0, 0x33 };
+	CHECK(cmd(DL_CMD_CHIP_REG, rd, 3) == 1 && out[0] == DL_ST_UNAVAILABLE);
+	board.chip_reg = chip_reg;
+	uint8_t wr[7] = { 0, 0, 0x33, 0x20, 0, 0, 0 };
+	CHECK(cmd(DL_CMD_CHIP_REG, wr, 7) == 5 && out[0] == DL_ST_OK && out[1] == 0x20 && fake_reg == 0x20);
+	pa_keyed = true;	// RF chip writes stay open while keyed (only SoC writes wait)
+	CHECK(cmd(DL_CMD_CHIP_REG, rd, 3) == 5 && out[0] == DL_ST_OK && out[1] == 0x20);
+	pa_keyed = false;
+	uint8_t bad[3] = { 0, 0, 0x34 };
+	CHECK(cmd(DL_CMD_CHIP_REG, bad, 3) == 1 && out[0] == DL_ST_BAD_ARG);
+}
+
 int main(void)
 {
 	test_basic();
@@ -242,6 +275,7 @@ int main(void)
 	test_reboot();
 	test_log();
 	test_mem();
+	test_chip_reg();
 	printf("rx2DlTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;
 }

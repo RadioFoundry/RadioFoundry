@@ -27,6 +27,11 @@ bool gd88b_diag_line(uint8_t i, char *buf, uint8_t len) { (void)i; (void)buf; (v
 bool gd88_cal_load(const uint8_t *flash_page, gd88_cal_read_fn nand) { (void)flash_page; (void)nand; return false; }
 bool gd88_nand_init(void) { return false; }
 bool gd88_nand_read_stock(uint32_t addr, void *buf, uint32_t len) { (void)addr; (void)buf; (void)len; return false; }
+bool gd88_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
+{
+	(void)chip; (void)page; (void)reg; (void)val; (void)write;
+	return false;
+}
 
 int main(void)
 {

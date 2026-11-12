@@ -32,6 +32,7 @@ const board_t board = {
 #endif
 	.system = &hrc_system,
 	.diag_line = gd88b_diag_line,
+	.chip_reg = gd88_chip_reg,	// B's own RF chips, through A (rx2-link.md 2.3)
 };
 
 // Transmitter off from any context (board.h, docs/spec/crash-log.md 8): every TX switch low and the PA drive (DAC B)

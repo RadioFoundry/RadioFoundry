@@ -300,6 +300,8 @@ size_t rx2_dl_handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return cmd_crash(req, len, out);
 	case DL_CMD_MEM:
 		return debuglink_cmd_mem(req, len, out, cap);
+	case DL_CMD_CHIP_REG:
+		return debuglink_cmd_chip_reg(req, len, out, cap);
 	default:
 		return status_only(out, DL_ST_UNKNOWN_CMD);
 	}

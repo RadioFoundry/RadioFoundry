@@ -91,7 +91,8 @@ for what it has: no display, keys, radio core or storage. The host reaches it th
 - A waits up to 1 s for the last part. A missing part, a wrong index or the timeout ends the request: A answers the
   host `DL_ST_UNAVAILABLE` (4).
 - What B serves (`core/rx2/rx2_dl.c`): PING, VERSION, GET_DIAG, RESET_COUNTERS, GET_LOG, GET_VIEW (B's own sections),
-  INFO_CHIP, READ_MEM, REBOOT (normal only) and CRASH. Anything else is `DL_ST_UNKNOWN_CMD` (1) from B.
+  INFO_CHIP, READ_MEM, REBOOT (normal only), CRASH, MEM (peek and poke) and CHIP_REG (its own RF chips, as A numbers
+  them). Anything else is `DL_ST_UNKNOWN_CMD` (1) from B.
 - REBOOT takes the chip UID's low word as its token, as on A. When B can't read its UID (INFO_CHIP answers
   `DL_ST_UNAVAILABLE`), it takes the bridge's token `0x47445242` instead.
 - A restart or crash test runs 50 ms after its reply has gone out.

@@ -27,6 +27,7 @@
 #include "platform.h"
 #include "hal_time.h"
 #include "debuglink/dl_fmt.h"
+#include "debuglink/debuglink.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -191,6 +192,14 @@ static void task_fn(void *arg)
 		}
 	}
 }
+
+#if CONFIG_RX2_DL_SERVER
+// The debug link's TX guard (debuglink.h): B's SoC registers stay unwritten while the PA is keyed, as on A
+bool debuglink_transmitting(void)
+{
+	return keyed || own_busy();
+}
+#endif
 
 void gd88b_pa_init(void)
 {
