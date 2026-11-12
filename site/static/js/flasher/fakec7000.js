@@ -28,7 +28,7 @@ import { concat, crc32, le32, sha256, sleep, u32le } from "./bytes.js";
 import { frame, parseFrames } from "./link.js";
 import { ACK, NAK, CRC_REQ, STX, EOT, BLOCK, HEADER_BLOCK, xmodem } from "./bfloader.js";
 import { encodeBlock } from "./lz4.js";
-import { CRASH_BOOT_SOFT, CRASH_SOFT_MARK, STUB_MAGIC, SSI_PROG, SYS_SOFT_RSTN, TIMER2_VALUE, WDT_EN } from "./stub.js";
+import { CRASH_BOOT_SOFT, CRASH_SOFT_MARK, STUB_MAGIC, SSI_PROG, SYS_SOFT_RSTN, TIMER2_VALUE, WDT_EN, ROM_FLAG, hasRomFlag } from "./stub.js";
 import { HIJACK, STUB_WINDOW, BUILDS, FLASH_BASE } from "./usmart.js";
 import { rng, randomBytes } from "./fake.js";
 import { sigBytes } from "./c7000.js";
@@ -77,10 +77,11 @@ class SparseNand {
 }
 
 // What FakeC7000 needs to play a board, from its flasher data (radio: its radios.json entry): the name it reports, its
-// codec, a small data memory when the stub reads none, its stock console and its Baofeng updater's ID
+// codec, a small data memory when the stub reads none, its stock console, its Baofeng updater's ID and, for a board
+// the boot ROM starts directly, the entry RadioFoundry's flag names
 export function fakeC7000Options(radio, fb) {
 	const b = fb.boards[radio.id];
-	return { board: b.debuglink_names[0], codecId: b.codec.id,
+	return { board: b.debuglink_names[0], codecId: b.codec.id, romEntry: fb.c7000.boards[radio.id].rom_entry ?? null,
 		...(fb.c7000.boards[radio.id].data_flash === false ? { dataSize: 0x200000, nand: { calibration: fb.c7000.boards[radio.id].calibration } } : {}),
 		usmart: consoleBuild(radio),
 		loaderId: radio.flash.update_mode === "baofeng" ? fb.c7000.boards[radio.id].bootloader_id : null };
@@ -218,23 +219,33 @@ export class FakeBfLoader {
 }
 
 // A synthetic stock program flash for a board: bootloader, firmware, the codec at made-up addresses, and the c7000
-// config changed so its profile matches them. radio (its radios.json entry, optional) adds what its stock firmware
-// starts with: the first stage signature the vendor loader checks, and a stock console's version string. Returns
+// config changed so its profile matches them. A board the boot ROM starts directly (rom_entry) has no bootloader: the
+// boot ROM's flag at 0 names STOCK_ENTRY, where its original firmware starts (0x1000 to 0x78000, over the start of the
+// application area). radio (its radios.json entry, optional) adds what its original firmware starts with: the first
+// stage signature the vendor loader checks, and a stock console's version string. Returns
 // {c, progmem, codec: {code, tables}}.
+export const STOCK_ENTRY = 0x03001000;
 export async function c7000Simulation(cReal, boardId, seed = 7000, radio = null) {
 	const c = structuredClone(cReal);
 	const r = rng(seed);
 	const progmem = new Uint8Array(c.boards[boardId].progmem_size || c.progmem_size).fill(0xFF);
-	progmem.set(randomBytes(r, 0xA000), 0);					// bootloader, with its ID
-	progmem.set(new TextEncoder().encode(c.boards[boardId].bootloader_id || ""), 0x5000);
-	const fwLen = 0xC0000;
-	progmem.set(randomBytes(r, fwLen).map((b) => (b < 120 ? b : 0)), c.app_start);	// firmware-like
-	const real = c.profiles.find((p) => p.board === boardId);
+	const direct = (c.boards[boardId].rom_entry ?? null) !== null;
+	if (direct) {
+		progmem.set(concat(ROM_FLAG, le32(STOCK_ENTRY)), 0);
+		progmem.set(randomBytes(r, 0x77000).map((b) => (b < 120 ? b : 0)), STOCK_ENTRY - FLASH_BASE);
+	} else {
+		progmem.set(randomBytes(r, 0xA000), 0);					// bootloader, with its ID
+		progmem.set(new TextEncoder().encode(c.boards[boardId].bootloader_id || ""), 0x5000);
+		const fwLen = 0xC0000;
+		progmem.set(randomBytes(r, fwLen).map((b) => (b < 120 ? b : 0)), c.app_start);	// firmware-like
+	}
+	// a board without a codec map yet (in bring-up) borrows another board's profile: the simulation makes its own codec
+	const real = c.profiles.find((p) => p.board === boardId) ?? { ...c.profiles[0], board: boardId, name: boardId };
 	const code = randomBytes(r, real.code_len);
 	code.set(sigBytes(c), 0);
 	code.set(le32(real.run + 0x100), 0x40);		// one address word inside the code, which the map lists
 	const tables = randomBytes(r, real.tables_len);
-	const codeAt = 0xA4000, tabAt = 0x6A000;
+	const [codeAt, tabAt] = direct ? [0x50000, 0x30000] : [0xA4000, 0x6A000];
 	progmem.set(code, codeAt);
 	progmem.set(tables, tabAt);
 	const fs = radio?.flash.first_stage;
@@ -262,7 +273,10 @@ export class FakeC7000 {
 	// nand.calibration ({progmem, nand, magic}, the board profile's) where its two calibration copies go
 	constructor({ progmem, dataSize = 0x1000000, board = "DM-1801 Pro", codecId = "dm1801pro-049", stubEntry = true, speed = 1,
 		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null, loaderId = null, nand = null,
-		stubWrite = true, variant = "DBB" } = {}) {
+		stubWrite = true, variant = "DBB", romEntry = null } = {}) {
+		// a radio the boot ROM starts directly: it runs what the flag at flash 0 names (RadioFoundry's entry: the
+		// application area; any other: the original firmware; no flag: nothing), and the flag sector may be written
+		this.romEntry = romEntry;
 		this.stubWrite = stubWrite;		// the universal stub is protocol 7, with op 0x0E (WRITE); false: protocol 6
 		this.usmart = usmart;			// a stock firmware build with the USMART console ("018")
 		this.variant = variant;			// the hardware code the stock firmware reports ("DBB", "D6T")
@@ -318,12 +332,15 @@ export class FakeC7000 {
 		this.wel = false;
 		this.led = "off";
 		this.events = [];
+		this.ledPins = new Set();	// every GPIO a stub drove as an LED (255: none)
 		this.writes = 0;
 		this.stream = this.makeStream();
 	}
 
 	firmware() {
 		if (this.fwKind) return this.fwKind;
+		if (this.romEntry !== null && !hasRomFlag(this.progmem)) return (this.fwKind = "empty");
+		if (this.romEntry !== null && u32le(this.progmem, 4) !== this.romEntry) return (this.fwKind = "stock");
 		const app = this.progmem.subarray(0xC000, 0xE8000);
 		let kind = "stock";
 		if (app.subarray(0, 64).every((b) => b === 0xFF)) kind = "empty";
@@ -472,11 +489,7 @@ export class FakeC7000 {
 		this.inb = ib.slice(n);
 		if (sum8(payload) !== ib[2]) return 1;
 		if (op === 0x18) this.loaded = concat(this.loaded, payload.subarray(8));
-		else {
-			this.state = "stub";
-			this.led = "slow";
-			this.events.push("stub (boot ROM)");
-		}
+		else this.startStub("stub (boot ROM)");
 		this.send(new Uint8Array(this.faults.romNak ? [0x02, 0x0A, 0x00, 0x03] : [0x02, 0x05, 0x00, 0x03]));
 		return 1;
 	}
@@ -508,11 +521,7 @@ export class FakeC7000 {
 			} else if (op === 3) {
 				if (crc32(this.loaded) !== this.crc) return reply(4), 1;
 				reply(0);
-				setTimeout(() => {
-					this.state = "stub";
-					this.led = "slow";
-					this.events.push("stub (from RadioFoundry)");
-				}, 100);
+				setTimeout(() => this.startStub("stub (from RadioFoundry)"), 100);
 			}
 		} else reply(3);
 		return 1;
@@ -550,9 +559,7 @@ export class FakeC7000 {
 			for (const a of this.ram.keys()) if (a >= load && a < load + size) top = Math.max(top, a + 4 - load);
 			this.loaded = new Uint8Array(top);
 			for (let o = 0; o < top; o += 4) this.loaded.set(le32(this.ram.get(load + o) || 0), o);
-			this.state = "stub";
-			this.led = "slow";
-			this.events.push("stub (debug console)");
+			this.startStub("stub (debug console)");
 			return 1;
 		}
 		let m = /^read_addr\((0x[0-9a-f]+)\)$/.exec(cmd);
@@ -571,6 +578,16 @@ export class FakeC7000 {
 		}
 		if (out) this.send(new TextEncoder().encode(`${out}\r\nclose slot.\r\nu8PassWord 0 u8EncLevel 0 u8Enc0\r\n`));
 		return 1;
+	}
+
+	// The stub starts: a universal one drives the LED pins its parameter block names (0xA8, 0xAC) from its first
+	// instruction, before CONFIG; ledPins keeps every pin a stub drove as an LED since this radio was made
+	startStub(event) {
+		this.state = "stub";
+		this.led = "slow";
+		this.events.push(event);
+		if (this.loaded.length >= 0xC0 && String.fromCharCode(...this.loaded.subarray(0x80, 0x84)) === "UCFG")
+			for (const o of [0xA8, 0xAC]) this.ledPins.add(u32le(this.loaded, o));
 	}
 
 	// A word of the RAM copy of the version string (the build's ram address), else 0
@@ -619,7 +636,7 @@ export class FakeC7000 {
 			const m = mem(u32be(p, 0), p[4], p[5]), a = u32be(p, 6);
 			if ((p.length !== 10 && p.length !== 10 + SECTOR) || a % SECTOR || p[4] & ~3) return this.reply(0x0B, new Uint8Array(0)), 1;
 			if (!m || this.nand && m === this.nand) return this.reply(0x0F, new Uint8Array(0)), 1;
-			if (m === this.progmem && a < 0xC000) throw new Error("simulated radio: a write reached the bootloader");
+			if (m === this.progmem && a < 0xC000 && !(a === 0 && this.romEntry !== null)) throw new Error("simulated radio: a write reached the bootloader");
 			if (this.faults.writeStatus) return this.reply(this.faults.writeStatus, new Uint8Array(0)), 1;
 			if (p.length > 10) m.set(p.subarray(10), a);
 			else m.fill(0xFF, a, a + SECTOR);
@@ -633,6 +650,7 @@ export class FakeC7000 {
 			if (p.length !== 16) return this.reply(0x0B, new Uint8Array(0)), 1;
 			this.configs.push(p);
 			this.stubCfg = { board: p[12], flags: p[13] };
+			this.ledPins.add(p[10]).add(p[11]);
 			this.reply(OK, new Uint8Array(0));
 		} else if (op === 0x01) this.reply(OK, concat(new TextEncoder().encode("C7STUB"), new Uint8Array([1, 0x04, 0x08]), le32(0x10000)));
 		else if (op === 0x02) {
@@ -668,7 +686,7 @@ export class FakeC7000 {
 			else if (tx[0] === 0x05) body[0] = this.wel ? 2 : 0;
 			else if (tx[0] === 0x20 || tx[0] === 0x02) {
 				const a = (tx[1] << 16) | (tx[2] << 8) | tx[3];
-				if (this.wel && m === this.progmem && a < 0xC000) throw new Error("simulated radio: a write reached the bootloader");
+				if (this.wel && m === this.progmem && a < 0xC000 && !(a < SECTOR && this.romEntry !== null)) throw new Error("simulated radio: a write reached the bootloader");
 				if (this.wel) {
 					if (tx[0] === 0x20) m.fill(0xFF, a, a + SECTOR);
 					else for (let i = 4; i < tx.length; i++) m[a + i - 4] &= tx[i];
@@ -694,6 +712,7 @@ export class FakeC7000 {
 			}
 			this.reply(OK, concat(...out));
 		} else if (op === 0x08 || op === 0x0A) {
+			if (op === 0x08) this.ledPins.add(p[0]).add(p[1]);
 			if (op === 0x0A) this.led = p[1] ? "sequence" : "slow";
 			this.reply(OK, new Uint8Array(0));
 		} else if (op === 0x09) {

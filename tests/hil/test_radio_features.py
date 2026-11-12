@@ -304,6 +304,7 @@ def test_zone_scan_nuisance(radio):
 
 
 @pytest.mark.feature("scan")
+@pytest.mark.needs_switch("VFO_FM")
 def test_vfo_scan(radio):
     need_scan(radio)
     if "VFO_FM" not in radio.features():
@@ -410,6 +411,7 @@ def fm_tx(radio, pytestconfig):
 
 @pytest.mark.feature("radio_controls")
 @pytest.mark.radio_tx
+@pytest.mark.needs_switch("VFO_FM")
 def test_tx_inhibit(fm_tx):
     with settings(fm_tx, tx_inhibit=1):
         fm_tx.link.log()            # empty the ring
@@ -430,6 +432,7 @@ def test_tx_inhibit(fm_tx):
 
 @pytest.mark.feature("debuglink")
 @pytest.mark.radio_tx
+@pytest.mark.needs_switch("VFO_FM")
 def test_tx_limit(fm_tx):
     """PTT under the test TX limit: if the limit failed, the radio keys on the FM VFO at its lowest power."""
     core = fm_tx.core()
@@ -464,7 +467,7 @@ def test_tx_drive_op(radio):
     if "tx_drive" not in core:
         with pytest.raises(DebugLinkError):
             radio.link.tx_drive(0)          # a radio without the view key has no override either
-        skip("not_built", "no PA drive override for this radio (hal_radio_t.tx_drive)")
+        skip("other_board", "no PA drive override for this radio (hal_radio_t.tx_drive)")
     drives = [int(x) for x in core["tx_drive"].split("/")]
     assert len(drives) == int(core["power_count"]), core
     on = [d for d in drives if d]
@@ -511,6 +514,7 @@ def test_pa_keyup_op(radio):
 
 @pytest.mark.feature("radio_controls")
 @pytest.mark.radio_tx
+@pytest.mark.needs_switch("VFO_FM")
 def test_tot_warning(fm_tx):
     with settings(fm_tx, tot_s=6, tot_warn_s=3):
         t0 = time.monotonic()
@@ -532,6 +536,7 @@ def test_tot_warning(fm_tx):
 
 @pytest.mark.feature("fm_tx_tones")
 @pytest.mark.radio_tx
+@pytest.mark.needs_switch("VFO_FM")
 def test_roger_beep(fm_tx):
     if "FM_TX_TONES" not in fm_tx.features():
         skip("not_built", "built without CONFIG_FM_TX_TONES")
@@ -555,6 +560,7 @@ def test_roger_beep(fm_tx):
 
 @pytest.mark.feature("fm_tx_tones")
 @pytest.mark.radio_tx
+@pytest.mark.needs_switch("VFO_FM")
 def test_tone_burst(fm_tx):
     if "FM_TX_TONES" not in fm_tx.features():
         skip("not_built", "built without CONFIG_FM_TX_TONES")
@@ -570,6 +576,7 @@ def test_tone_burst(fm_tx):
 
 @pytest.mark.feature("fm_tx_tones")
 @pytest.mark.radio_tx
+@pytest.mark.needs_switch("VFO_FM")
 def test_tone_burst_time_limit(fm_tx):
     """A burst whose "off" never comes (the host went away) ends by itself at its time limit. The radio's own
     transmission may jam the link while it is keyed, so the over is read once the link answers again."""
@@ -691,6 +698,7 @@ def _bench_call_watch(radio, sdr_bench, pytestconfig, keys=("core", "features"))
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
+@pytest.mark.needs_switch("VFO_FM")
 def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
     need_scan(radio)
     if "VFO_FM" not in radio.features():
@@ -779,6 +787,7 @@ def _battery_save(radio, pytestconfig):
 
 
 @pytest.mark.feature("battery_save")
+@pytest.mark.needs_switch("VFO_FM")
 def test_battery_save(radio, pytestconfig):
     with _battery_save(radio, pytestconfig):
         seen, _ = collect(radio, "rx_sleeping", 2.0, sections=("features",))
@@ -798,6 +807,7 @@ def test_battery_save(radio, pytestconfig):
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
+@pytest.mark.needs_switch("VFO_FM")
 def test_battery_save_wakes_for_signal(radio, sdr_bench, pytestconfig):
     with _battery_save(radio, pytestconfig):
         seen, t_start = _bench_call_watch(radio, sdr_bench, pytestconfig)

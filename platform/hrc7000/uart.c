@@ -16,6 +16,7 @@
 #define UART_FMT_RD(base, off)		REG32((base) + (off))
 #define UART_FMT_WR(base, off, v)	(REG32((base) + (off)) = (v))
 #include "uart_format.h"
+#include "uart_idle.h"
 
 #define UART_RBR	0x00u	// RBR / THR / DLL
 #define UART_IER	0x04u	// IER / DLH
@@ -39,6 +40,13 @@
 // the tick, so it costs no speed
 #define TX_BURST	64u
 #define TX_MS_PER_KB	100u	// a write's time-out: 1 KB takes 89 ms at 115200
+// A board whose cable line can't take both directions at once sets HRC_HOST_TX_IDLE_MS: a write waits that long after
+// the last received character (uart_idle.h, docs/spec/gotchas.md 16.5), TX_IDLE_MAX_MS at most. 50 ms is 576
+// characters at 115200, inside the receive ring
+#ifndef HRC_HOST_TX_IDLE_MS
+#define HRC_HOST_TX_IDLE_MS	0u
+#endif
+#define TX_IDLE_MAX_MS	50u
 
 #ifndef HRC_HOST_UART
 #define HRC_HOST_UART	0
@@ -63,6 +71,10 @@ static volatile uint32_t rx_line_errors;	// the UART flagged a character (FIFO o
 static volatile uint32_t rx_bytes;
 static volatile uint32_t rx_good_ms;	// hal_millis() at the last byte with no line error (hrc_host_uart_last_rx)
 static volatile bool rx_good_seen;
+static volatile uint32_t tx_last_ms;	// hal_millis() at the last write (hrc_host_uart_last_tx)
+static volatile bool tx_last_seen;
+static volatile uint32_t rx_any_ms;	// hal_millis() at the last character, flagged or not (HRC_HOST_TX_IDLE_MS)
+static volatile bool rx_any_seen;
 static uint32_t tx_bytes, tx_stalls;	// a stall: the TX FIFO stayed full for TX_SPIN, the rest of the write dropped
 static uint32_t waits;			// wait_rx() calls: the host link task's heartbeat (one per pass, 5 ms at most)
 // The write the TX interrupt is sending and what is left of it. Its end wakes the writer through rx_sem: the host link
@@ -122,6 +134,8 @@ uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged))
 static void host_rx(uint8_t b, bool flagged)
 {
 	hrc_host_uart_rx_tap(b, flagged);
+	rx_any_ms = hal_millis();
+	rx_any_seen = true;
 	if (flagged) {
 		rx_line_errors++;
 	} else {
@@ -290,20 +304,36 @@ static bool wr_irq(const uint8_t *buf, size_t len, size_t *sent)
 	return true;
 }
 
+static void note_tx(void)
+{
+	tx_last_ms = hal_millis();
+	tx_last_seen = true;
+}
+
 static size_t wr(const uint8_t *buf, size_t len)
 {
 	if (len == 0) {
 		return 0;
 	}
 	bool rtos = xTaskGetSchedulerState() == taskSCHEDULER_RUNNING && !hrc_in_isr() && rx_sem != NULL;
+	if (HRC_HOST_TX_IDLE_MS != 0u && rtos) {
+		uint32_t since = hal_millis();
+		while (hrc_uart_tx_wait(hal_millis(), rx_any_ms, rx_any_seen, since, HRC_HOST_TX_IDLE_MS, TX_IDLE_MAX_MS)) {
+			vTaskDelay(1);
+		}
+	}
+	note_tx();
 	if (rtos && tx_irq) {
 		size_t sent = 0;
 		if (wr_irq(buf, len, &sent)) {
+			note_tx();
 			return sent;
 		}
 		tx_irq = false;		// no byte went: this UART doesn't interrupt as expected, poll from now on
 	}
-	return put(buf, len, rtos);
+	size_t sent = put(buf, len, rtos);
+	note_tx();
+	return sent;
 }
 
 void hrc_host_uart_put_polled(const char *s)
@@ -346,4 +376,10 @@ bool hrc_host_uart_last_rx(uint32_t *ms)
 {
 	*ms = rx_good_ms;
 	return rx_good_seen;
+}
+
+bool hrc_host_uart_last_tx(uint32_t *ms)
+{
+	*ms = tx_last_ms;
+	return tx_last_seen;
 }

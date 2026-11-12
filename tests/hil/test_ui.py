@@ -77,12 +77,17 @@ def test_hub_and_back(home):
     assert s["ui.depth"] == "2"
     r.press("back")
     wait_screen(r, "hub", "BACK goes up to the Hub")
-    r.press("7")
-    wait_screen(r, "settings", "Settings on 7")
-    r.press("2")
-    wait_screen(r, "group", "a settings group on 2")
+    if "UI_SETTINGS" in r.features():
+        r.press("7")
+        wait_screen(r, "settings", "Settings on 7")
+        r.press("2")
+        wait_screen(r, "group", "a settings group on 2")
+    else:
+        # Built without the Settings menu: depth 2 through Contacts again
+        r.press("1")
+        wait_screen(r, "contacts", "Contacts on 1")
     r.press("back", LONG)
-    s = wait_screen(r, "home", "long BACK goes Home from depth 3")
+    s = wait_screen(r, "home", "long BACK goes Home")
     assert s["ui.depth"] == "0"
 
 
@@ -163,9 +168,12 @@ def test_recent_from_the_hub(home):
 
 
 @pytest.mark.feature("channel_list")
+@pytest.mark.needs_switch("CHANNEL_LIST")
 def test_zones_and_channels_lists(home):
     """Hub 4 lists the VFO and the zones, hub 5 every channel by number; OK on a channel opens its settings page."""
     r = home
+    if "CHANNEL_LIST" not in r.features():
+        skip("not_built", "built without CONFIG_CHANNEL_LIST: no Zones or Channels list")
     r.press("ok")
     wait_screen(r, "hub")
     r.press("4")

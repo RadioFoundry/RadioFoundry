@@ -1,0 +1,280 @@
+{
+ "board": "rt10",
+ "commit": "c00512a63c424abe139bc17b11df36018af7659c",
+ "date": "2026-11-04T04:54:41Z",
+ "dirty": false,
+ "features": [
+  "debuglink",
+  "task_stacks",
+  "watchdog",
+  "crash_log"
+ ],
+ "firmware": {
+  "board": "RT10",
+  "codec": "none",
+  "display": "128x64x1",
+  "features": "FM,SUBTONE,VFO,VFO_FM,DIAG,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,BATTERY_SAVE,CPS_FAST,DEBUGLINK,HOSTLINK",
+  "git": "5561dcc4",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "radio",
+  "reboot"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-reboot": true,
+  "dmr-cc": 2,
+  "dmr-tg": 9,
+  "tx-power": 40
+ },
+ "sources": {
+  "crash_log": {
+   "core/crash": "ccb91547a39ed6bb6a528c75ab3856f14602c985",
+   "core/debuglink/dl_fmt.c": "5d4ed48e3605040d32262cd22ea96cc6d02d4473",
+   "docs/spec/crash-log.md": "7972e9a478a11c4851a8cd2ba872e36cac294c03"
+  },
+  "debuglink": {
+   "core/cps/cps_lz4.c": "b961393163a43ca1d742d6e66d13c0d37c9ee3ce",
+   "core/debuglink": null,
+   "core/debuglink/dl_fmt.c": "5d4ed48e3605040d32262cd22ea96cc6d02d4473",
+   "core/debuglink/dl_frame.c": "412b8045f8ec30b661c477d9d818ab5bd75f90f2",
+   "docs/spec/debuglink.md": "790afba5b002137a56ea791c6b0522e536214061"
+  },
+  "task_stacks": {
+   "core/app/task_stack.c": "928707d52b2e1985679a0b4b55c4f6df17f1de5d",
+   "docs/spec/debuglink.md": "790afba5b002137a56ea791c6b0522e536214061"
+  },
+  "watchdog": {
+   "core/app/watchdog.c": "c459327713d9dec9ab61550a1898c5183cd809fe",
+   "docs/spec/watchdog.md": "82d65dd75f29743b590ca8e9094584e0306844a3"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_diag_has_clock_and_lines",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_log_readable",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_no_stalls",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_oversized_request_rejected",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_ping_latency",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_reset_counters_returns_clock",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_screenshot_geometry",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_unknown_command_and_bad_crc",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_version_and_features",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_boot.py::test_view_sections",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "crash_log"
+   ],
+   "id": "tests/hil/test_crash.py::test_crash_assert_kept",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "crash_log"
+   ],
+   "id": "tests/hil/test_crash.py::test_crash_fault_kept",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "crash_log"
+   ],
+   "id": "tests/hil/test_crash.py::test_crash_hang_kept",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "crash_log"
+   ],
+   "id": "tests/hil/test_crash.py::test_crash_test_refused_without_token",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "crash_log"
+   ],
+   "id": "tests/hil/test_crash.py::test_crash_view",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "task_stacks"
+   ],
+   "id": "tests/hil/test_task_stacks.py::test_every_task_has_stack_left",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_ui.py::test_injected_keys_count_as_activity",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/rfoundry_hil.py:277: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "debuglink"
+   ],
+   "id": "tests/hil/test_ui.py::test_screenshot_sanity",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/rfoundry_hil.py:277: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_reset_cause_reboot",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_resets[irq-off]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_resets[spin]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_resets[starve]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_running",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_test_refused_without_token",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.12.13"
+ }
+}

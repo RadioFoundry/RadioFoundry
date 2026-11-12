@@ -367,7 +367,7 @@ a radio, such as another bootloader protocol or a stock firmware's own read-back
 | Backend | Radios | Module |
 |---|---|---|
 | `anyroad-dfu` | `usb-dfu` family (STM32F4 radios) | `app.js` (`dfu.js`, `f4stub.js`) |
-| `c7000-stub` | `serial-loader` and `serial-iap` families (HR_C7000 radios) | `c7000ui.js` (`stub.js`, `c7000.js`) |
+| `c7000-stub` | `serial-loader`, `serial-iap` and `boot-rom` families (HR_C7000 radios) | `c7000ui.js` (`stub.js`, `c7000.js`) |
 | `none` | any other | none: the radio is listed but grayed out |
 
 A radio without a backend the page knows gets `none`, so a family can come before its module. The
@@ -520,17 +520,17 @@ erased before the check.
 
 ## HR_C7000 radios (the boot stub)
 
-Radios whose backend is `c7000-stub` (the `serial-loader` and `serial-iap` families; a board with a first stage adds the section
-below) are flashed over their
+Radios whose backend is `c7000-stub` (the `serial-loader`, `serial-iap` and `boot-rom` families; a board with a first
+stage or one the boot ROM starts directly adds a section below) are flashed over their
 programming cable with Web Serial, through the boot stub ([stub/README.md](../../stub/README.md),
 [debuglink.md](../spec/debuglink.md) 3.18), or through the radio's factory update mode when the stub can't be loaded
 (below). No loader in the radio is ever written. The install has its own steps:
 
 | Step | What happens |
 |---|---|
-| Connect | The page looks for a stub that still runs, then for RadioFoundry. RadioFoundry with `CONFIG_STUB_ENTRY` hands over to the stub (command 0x1A); RadioFoundry without it is restarted with its CPS reboot, which passes the boot ROM's serial window (not yet tried on a radio). Otherwise the page asks the user to switch the radio off and on and catches the boot ROM. The radio model is then checked by the bootloader's ID string, and the page sends the stub the board's profile (CONFIG: clocks, UART, pins, board id) and checks the echo; the stub refuses writes until then |
+| Connect | The page looks for a stub that still runs, then for RadioFoundry. RadioFoundry with `CONFIG_STUB_ENTRY` hands over to the stub (command 0x1A); RadioFoundry without it is restarted with its CPS reboot, which passes the boot ROM's serial window (not yet tried on a radio). Otherwise the page asks the user to switch the radio off and on and catches the boot ROM. The stub image sent carries the board's LED pins in its parameter block (`stubFor()` in `c7000ui.js`), so the stub drives no other pin before CONFIG. The radio model is then checked by the bootloader's ID string, and the page sends the stub the board's profile (CONFIG: clocks, UART, pins, board id) and checks the echo; the stub refuses writes until then |
 | Back up and check | A first install reads the whole program memory (required) and the calibration area; the whole data memory only if asked (off by default: many minutes at 115200 baud). Each choice shows its time: the stub's sector sums count the blank sectors first (no data moved, `c7000.js` `blankCount`, at most 8 s per memory, windows spread over the range), and `readSeconds` turns the used share into wire bytes, plus the radio's own time per sector where it is slower (a NAND), pessimistically: every used sector whole (no credit for LZ4), 13 bytes a record, at 9000 B/s or the rate measured on this radio, never above the 11,520 B/s of the line; without a count every sector is taken as used ("up to"). The page keeps the program memory in IndexedDB and downloads a backup bundle. A first install can skip the program memory read, before or during it, and take the codec from the stock file instead: only the codec slot is read, and the firmware is reported as not read. An update reads only the codec slot. The page then decides the codec |
-| Write | Only sectors whose CRC differs are written. The first application sector goes last, each sector is read back right away (three tries), and a final pass checks every sector |
+| Write | Only sectors whose CRC differs are written. The first application sector goes last, each sector is read back right away (three tries), and a final pass checks every sector. A board the boot ROM starts directly then gets its flag sector ([below](#a-board-the-boot-rom-starts-directly)) |
 | Check | The stub resets the chip; the page asks RadioFoundry's VERSION for the build and the codec |
 
 A cable whose USB vendor id is a CH340's (1a86) gets a warning on the connect, check, write, backup and restore steps:
@@ -589,6 +589,28 @@ starts RadioFoundry by itself, so the done step's first check waits 20 s before 
 `bfloader.js` and `c7000.js` have installed a radio this way from Node, over an FTDI cable (the radio's hardware page
 has the figures). The page around them is checked only in practice mode, and the route is untested on the other
 radios on this loader.
+
+### A board the boot ROM starts directly
+
+A board with no vendor loader (`boot-rom` family, `rom_entry` in its `[flash.stub]`) is started by the boot ROM
+itself: after its serial window the ROM reads a flag at program flash 0 (`74 68 64 0C`, then the entry address, little
+endian) and jumps to that entry. Its original firmware starts below the application area and runs into it, so an
+install overwrites part of it. `c7000.boards.<id>.rom_entry` in `data/flash-boards.json` (from `stub/stubtool.py`
+`C7_BOARDS`) and `c7000.rom_flag` carry what the page needs; `progmem_size` is the whole program flash, which the
+backup reads.
+
+| Step | What changes |
+|---|---|
+| Back up and check | The whole program flash is read (`c7.totalSize()`): the only copy of the original firmware below the application area is this backup |
+| Write | After the application and the codec slot are written and verified, `installWrite()` (`c7000ui.js`) has `Stub.writeRomFlag()` make the flag sector name `rom_entry`: the flag, the entry, then the rest of the sector as it was when it held the flag, else 0xFF (`stubtool.py` `write_rom_flag`). It is the last write, so an install stopped before it leaves the radio starting its original firmware, and running the install again writes only that sector |
+| Bootloader check | The hash of the area below the application before and after the write leaves out that one sector; the rest of the area is checked as on every board |
+| Restore | `restoreWrite()`: the backup must start with the flag (else nothing is written), the radio's flash between the flag sector and the application must already match the backup by CRC (nothing writes it; else nothing is written), then the application area, then the backup's own flag sector, last |
+
+The restore puts back the program flash up to the end of the application area; flash past it is not written by any
+route. `stubtool.py` has no restore: it reads the whole program flash and writes only the application
+area and the flag sector. `site/tests/c7000boot.test.mjs` runs the backup, the codec from the radio's own flash, the
+install, an install stopped before the flag sector and the restore against the simulated radio (`fakec7000.js`
+`romEntry`: it starts what the flag names).
 
 ### A board with a first stage
 

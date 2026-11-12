@@ -356,13 +356,24 @@ static bool bcast_listening(const radio_sm_t *sm)
 #endif
 }
 
-// The LEDs' timed signals over what the state shows (RADIO_LED_*_MS). A deny flashes red, green, ... once: a radio
+static bool ptt_line_stuck(void)
+{
+	return board.input != NULL && board.input->ptt_line_stuck != NULL && board.input->ptt_line_stuck();
+}
+
+// The LEDs' timed signals over what the state shows (RADIO_LED_*_MS). A stuck PTT line flashes red and green fast. A deny flashes red, green, ... once: a radio
 // without a screen has no other way to say PTT was refused. While the radio waits for a repeater to wake, red shows
 // each wake-up burst going out, not the whole wait, which is mostly listening
 static void led_signals(radio_sm_t *sm, bool *red, bool *green)
 {
 	uint32_t now = sm->led_now;
 	bool timed = false;
+	if (ptt_line_stuck()) {
+		*red = ((now / RADIO_LED_STUCK_STEP_MS) & 1u) == 0;	// until the power cycle that releases it
+		*green = !*red;
+		sm->led_timed = true;
+		return;
+	}
 	if (sm->deny_led) {
 		uint32_t step = (now - sm->deny_led_ms) / RADIO_LED_DENY_STEP_MS;
 		// A new transmission ends the flash: red then shows the air (or the wake-up bursts), not the refusal before
@@ -5910,7 +5921,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 {
 	radio_status_t st;
 	sm->led_now = now_ms;
-	if (sm->led_timed || sm->deny_led) {
+	if (sm->led_timed || sm->deny_led || ptt_line_stuck()) {
 		outputs(sm);	// as in radio_sm_tick: some paths below return before their outputs()
 	}
 	// codeplug_serial() before zone_edit_busy(): a zone write that moved indexes has its log entry by then
@@ -6205,7 +6216,7 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 	emergency_tick(sm, now_ms);
 #endif
 #endif
-	if (sm->led_timed || sm->deny_led) {
+	if (sm->led_timed || sm->deny_led || ptt_line_stuck()) {
 		outputs(sm);	// a blink or the deny flash runs on time, not only when the state changes
 	}
 }

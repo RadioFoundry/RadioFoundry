@@ -411,6 +411,7 @@ def check_tones(f):
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
 @pytest.mark.parametrize("aprs_air", ["channel", "fm_vfo"], indirect=True)
+@pytest.mark.needs_switch("VFO_FM")
 def test_aprs_on_air_position(radio, sdr_bench, aprs_air):
     """One position at 50 mW on the test frequency, decoded off air; deviation, twist, phase, TX delay printed."""
     f = send_and_capture(radio, sdr_bench, aprs_air, radio.link.aprs_send_now)
@@ -665,6 +666,7 @@ def bench_frame(call, own, info=BENCH_RX_INFO):
 @pytest.mark.feature("aprs_rx")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.needs_switch("VFO_FM")
 def test_aprs_rx_on_air(radio, sdr_bench, pytestconfig):
     """One AX.25 UI frame (a position, from --callsign-7 or -11, not the radio's own call) in Bell 202 AFSK from the bench board's FM transmitter on
     --fm-mhz: the radio, in the FM VFO there with APRS receive on that frequency, decodes it (aprs.rx_frames) with no

@@ -272,7 +272,8 @@ photos (the photos stay outside the repository: product photos are not ours to p
 - viewBox `0 0 W H`, transparent background, no external references or embedded images;
 - exactly one `<rect id="screen" x y width height/>`, black, transform-free and not covered by anything, on the
   display's visible area, with the aspect ratio of the radio's gallery (5:4 for 160x128 and 160x120i5, 22:31 for
-  240x320i10x5);
+  240x320i10x5). A radio without a display (`board.toml` `display = "none"`) has none: its drawing is the radio as it
+  is, and the site shows no screenshots for it;
 - for the radio's web control page (`docs/spec/tcp-services.md` 5.1): each key it shows carries `id="key-<name>"`, the
   name being the board's `KEY_*` in lower case without `KEY_` (`key-fn_left`); the channel knob `id="encoder"` and a
   drawn LED `id="led"`. Keys whose shape doesn't match a key (a d-pad drawn as one piece) get transparent hit rects
@@ -296,8 +297,8 @@ with the same keys. The build writes its frame and boot-screen files like the bo
 missing.
 
 The build writes `static/img/radios/<radio>-frame.svg` (screen black), `<radio>.svg` (with the boot screen) and the
-screen's position in `data/radios.json` (`frame_geometry`: viewBox units and percentages), so any screenshot can be
-laid over the frame; the radio pages do that when a screenshot is clicked. `frame_geometry.keys` has each tagged key's
+screen's position in `data/radios.json` (`frame_geometry`: viewBox units and percentages, `null` without a display),
+so any screenshot can be laid over the frame; the radio pages do that when a screenshot is clicked. `frame_geometry.keys` has each tagged key's
 box, as percentages of the picture. A radio without an illustration gets a generic drawing from board.toml `[frame]`;
 its handheld shapes tag their side PTT, and the caption names any other key.
 

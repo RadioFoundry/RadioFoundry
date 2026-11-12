@@ -728,12 +728,15 @@ static bool beacon(uint8_t why, const fix_t *f)
 
 static void message_service(void)
 {
-	if (!a.out.active || a.block != APRS_OK || (int32_t)(a.now - a.out.next_ms) < 0) {
+	if (!a.out.active || (int32_t)(a.now - a.out.next_ms) < 0) {
 		return;
 	}
-	if (a.out.acked || a.out.tries >= APRS_MSG_TRIES) {
+	if (a.out.acked || a.out.tries >= APRS_MSG_TRIES) {	// even when blocked: nothing is left to send
 		a.out.active = false;
 		changed();
+		return;
+	}
+	if (a.block != APRS_OK) {
 		return;
 	}
 	size_t n = aprs_build_message(a.out.to, a.out.text, a.out.msgno, a.info, sizeof(a.info));

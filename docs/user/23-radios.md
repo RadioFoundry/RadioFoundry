@@ -16,6 +16,7 @@ and what has been checked on it.
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. Open: every function on air. |
 | [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. Transmit is armed per power cycle. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames. |
+| [Retevis RT10](#retevis-rt10) |  | Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. FM receive with CTCSS/DCS decode, FM transmit, DMR transmit and receive with the radio's own codec, and APRS transmit work on the radio. |
 <!-- end generated -->
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
@@ -659,6 +660,49 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
   ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)) are built in but not checked on
   the radio yet. Broadcast covers 65 to 108 MHz.
 
+## Retevis RT10
+
+A handheld for 902-928 MHz with a 16-position channel knob, two side keys and no display. FM receive with CTCSS
+and DCS decode, FM transmit, DMR transmit and receive with the radio's own codec, and APRS transmit work on the radio.
+DMR speech to the speaker isn't checked yet ([hardware and bring-up state](../spec/hardware-rt10.md#9-bring-up-state)).
+
+### Installing on the RT10
+
+The radio has no bootloader of its own: the chip's boot window on the programming cable is the way in, at every power-on.
+
+| Item | RT10 |
+|---|---|
+| Cable | the radio's programming cable on the accessory jack |
+| Keys | none: turn the radio on when the tool asks |
+| Backup | installing replaces the whole original image. Only a full program flash backup taken first puts it back |
+| Board name | `rt10` |
+
+### The RT10's channel knob
+
+The knob picks the channel by where it points: positions 1 to 16 are the first 16 channels of the zone, in the
+zone's order, also when the radio is switched on and when the zone changes. A position past the end of a shorter zone
+changes nothing.
+
+### RT10 power levels
+
+Two, **L** and **H**: the radio's own factory calibration for each 10 MHz step. Without a valid calibration the
+radio refuses to transmit.
+
+### If the RT10's LEDs flash red and green fast
+
+The cable line is stuck low. The radio won't transmit until the line is released: switch the radio off and on again. Holding PTT for more than 2 s while the radio starts shows the same flash until the key is let go.
+
+### What the RT10 lacks today
+
+- The network over the programming cable (PPP) and the services on it. The cable's line latches when the computer
+  and the radio send at the same time, and only switching the radio off frees it, so PPP is off by default in the
+  RT10 build. A custom build can turn it on, at that risk.
+- Hotspot mode. The hotspot software on the computer also sends at any time, so it may latch the line the same way.
+  The hotspot is off by default in the RT10 build until that is resolved. A custom build can turn it on, at that risk.
+- GPS. The radio has no receiver, so DMR position reports and LRRP location replies are off by default in the RT10
+  build.
+- The battery scale.
+
 ## TYT MD-9600
 
 Covers the TYT MD-9600 and the Retevis RT90, a mobile radio. **In testing.** One image serves every board revision. V1-V3 boards
@@ -740,5 +784,4 @@ models it covers.
 | BTECH DMR-6X2 PRO | Planned. Built on the AT-D878UVII Plus, so it should follow the Anytone port. |
 | Anytone AT-D578UV (mobile) | Planned. The 878's chips in a mobile, with a mid-run MCU change: two platforms ([hardware-anytone.md](../spec/hardware-anytone.md)). |
 | BridgeCom Maverick | Planned. Sold as an upgraded AT-D878UV, so it likely follows the Anytone port. |
-| Retevis RT10 (902-928 MHz) | Planned. A DMR and FM handheld for 902-928 MHz, a band no other radio here covers; the chips aren't known yet. |
 <!-- end generated -->

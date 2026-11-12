@@ -400,7 +400,9 @@ WDT_KEY = 0x5ADA7200
 CRASH_SOFT_MARK = 0x18007EF4        # RadioFoundry's restart-cause words (crash-log.md 1.3): HRC_CRASH_BOOT + 4, crash_boot_t.soft
 CRASH_BOOT_SOFT = 0x54464F53        # "SOFT": the reset was asked for, so RadioFoundry's next start doesn't take it for the watchdog
 TIMER2_VALUE = 0x14000018           # timer 2 current value (counts down; the stub runs it free)
-LED_RED, LED_GREEN = 33, 32         # PTB1 = red, PTB0 = green on the DM-1801 Pro and the DM-32UV (both checked on the radio)
+# The universal stub's own LED pins until CONFIG: PTB1 = red, PTB0 = green on the DM-1801 Pro and the DM-32UV (both
+# checked on the radio). A board profile names its own (pins.h): on another radio these pins may be anything
+LED_RED, LED_GREEN = 33, 32
 OK, BADSUM, BADOP, SPITIMEOUT, TOOLONG, NOWEL = 0x05, 0x0A, 0x0B, 0x0C, 0x0E, 0x0F
 # A NAND sector read or checksum (NAND_FLAG): a page of it has more bit errors than the chip's ECC corrects. It reads the
 # same every time, so it is never asked for again: nand_raw takes the pages as the chip holds them instead
@@ -433,6 +435,7 @@ PAGE = 256
 # The application area of the program flash: an RadioFoundry image is linked for 0x0300C000, which is flash offset 0xC000. The
 # bootloader below it (0..0xC000) is never written, so the radio can always be put in update mode by hand.
 APP_START, APP_END = 0xC000, 0x100000
+ROM_FLAG = b"thd\x0c"                    # the boot ROM's flag at flash 0, followed by the entry address (hardware-rt10.md 2)
 # The first word of RadioFoundry's first stage (boot/README.md), at APP_START on a radio that has one (the DB25-D). Its
 # application is linked for 0x0300D000, so the image written at APP_START is the install image, which starts with it
 STAGE_MAGIC = bytes.fromhex("2c1101c0")
@@ -532,6 +535,21 @@ def univ_layout(image):
     return int.from_bytes(image[0xB8:0xBC], "little"), int.from_bytes(image[0xBC:0xC0], "little")
 
 
+UCFG_LED = 0xA8                         # the parameter block's led_red and led_green (u32 little endian each)
+
+
+def univ_for_board(image, prof):
+    """The universal stub with the board's LED pins in its parameter block (the host may patch it before the image is
+    sent): the stub drives its LED pins from its first instruction, before CONFIG, so on a radio whose LEDs are elsewhere
+    the built-in ones (PTB1, PTB0) would be driven although they do something else there. No profile: the generic one,
+    no LEDs, since the radio is not known. A position-dependent stub: the image as it is."""
+    if univ_layout(image) is None:
+        return image
+    led = (prof or GENERIC)["led"]
+    return (image[:UCFG_LED] + led["red"].to_bytes(4, "little") + led["green"].to_bytes(4, "little")
+            + image[UCFG_LED + 8:])
+
+
 def check_univ_load(image, load, window=None):
     """Refuse a load of the universal stub that could go wrong, before anything is sent: its run area [run, end) must be
     inside SRAM; the image must land 4-byte aligned inside SRAM (and inside `window` = (base, size) when the firmware
@@ -559,11 +577,18 @@ def check_univ_load(image, load, window=None):
 # program flash size. VERSION's board= names them on the RadioFoundry route; --board at power-on. Unknown radio: GENERIC (no
 # pins, nothing echoed but 0).
 C7_BOARDS = {b.id: {"id": b.stub["id"], "name": b.model, "names": tuple(b.debuglink_names), "latch": b.stub["latch"],
-                    "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"], "protect": b.protect,
+                    "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"], "rom_entry": b.stub.get("rom_entry"),
+                    "led": b.stub.get("led") or {"red": LED_RED, "green": LED_GREEN}, "protect": b.protect,
                     "write_test": b.stub.get("write_test")}
              for b in rfoundryboards.BOARDS.values() if b.stub and b.stub["tool"] == "stubtool"}
 GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000,
-           "protect": [], "write_test": None}
+           "rom_entry": None, "led": {"red": 255, "green": 255}, "protect": [], "write_test": None}   # an unknown radio: no pin driven as an LED
+# The tool installs at one application start, which every board must use: a radio whose bootloader ends elsewhere has to
+# give this tool and the web flasher a per-board start first, or an install would overwrite the end of that bootloader
+for _b in rfoundryboards.BOARDS.values():
+    if _b.stub and _b.stub["tool"] == "stubtool" and _b.app_base - _b.rom_base != APP_START:
+        raise ImportError("stubtool: the %s's image starts at flash offset 0x%X, the tools know 0x%X only"
+                          % (_b.id, _b.app_base - _b.rom_base, APP_START))
 # This tool's memory names as board.toml [[flash.protect]] names them
 PROTECT_MEM = {"progmem": "progmem", "q128": "data", "nand": "nand"}
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
@@ -832,11 +857,11 @@ class Radio:
         self.log("attached to stub v%d (max payload %d, SSI burst %d / %d bytes)"
                  % (info[0], info[1], self.info >> 8 & 0xFF, self.info & 0xFF))
 
-    def start(self, wait=120, stub=None, load=LOAD_ADDR, slow=False):
+    def start(self, wait=120, stub=None, load=LOAD_ADDR, slow=False, board=None):
         """Boot a stub through the serial boot ROM at power-on, written to and started at load (the DB25-D's first
         stage answers the same way). Default: the universal stub at 0x10000, which copies itself to its run address;
         a position-dependent stub (--legacy-stub, --stub FILE) must be linked for `load` (--load-base)."""
-        stub = stub_univ_image() if stub is None else stub
+        stub = univ_for_board(stub_univ_image(), C7_BOARDS.get(board)) if stub is None else stub
         if univ_layout(stub):
             check_univ_load(stub, load)
             self.stub_head = stub[:0x80]            # the entry code: the same at the load address and the run address
@@ -1020,7 +1045,8 @@ class Radio:
         hz = int(round(hz / 1e6) * 1e6)         # every APB clock here is whole MHz: rates then come out the same each time
         self.uart_hz = hz
         payload = (hz.to_bytes(4, "big") + hz.to_bytes(4, "big")
-                   + bytes([prof["latch"], prof["key"], LED_RED, LED_GREEN, prof["id"], 1 if prof["nand"] else 0, CFG_UART_THIS, 0]))
+                   + bytes([prof["latch"], prof["key"], prof["led"]["red"], prof["led"]["green"], prof["id"], 1 if prof["nand"] else 0,
+                            CFG_UART_THIS, 0]))
         self.request(0x0D, payload)
         self.hello(self.retries)                # a damaged reply here is asked for again
         want = (prof["id"], 1 if prof["nand"] else 0)
@@ -1116,7 +1142,7 @@ class Radio:
             self.log("the firmware's stub span 0x%X: using the legacy stub for %s" % (load, known[load][0]))
             image = known[load][1]
         elif image is None:
-            image = stub_univ_image()
+            image = univ_for_board(stub_univ_image(), C7_BOARDS.get(board))
         self.check_stub(image, load, size)
         if len(image) > size:
             raise DumpError("stub image (%d bytes) does not fit RadioFoundry's free RAM (%d bytes)" % (len(image), size))
@@ -1236,7 +1262,7 @@ class Radio:
         except protect.ProtectedError as e:
             raise DumpError(str(e))
 
-    def check_write_range(self, mem, start, end, app=False):
+    def check_write_range(self, mem, start, end, app=False, rom_flag=False):
         """Refuse a write or erase of [start, end) before anything is sent: whole sectors, never the NAND, only the
         allowed regions, and never a protected region of the board the stub is configured for (board.toml
         [[flash.protect]], rfoundry/protect.py)."""
@@ -1249,6 +1275,7 @@ class Radio:
         if mem == "nand":
             raise DumpError("the NAND is read only here")
         ok = self.write_ok(mem) + ([(APP_START, APP_END)] if app and mem == "progmem" else [])
+        ok += [(0, SECTOR)] if rom_flag and mem == "progmem" else []
         if not any(a <= start and end <= b for a, b in ok):
             raise DumpError("%s 0x%X-0x%X is outside the allowed write regions: %s" %
                             (MEM[mem][4], start, end, ", ".join("0x%X-0x%X" % r for r in self.write_ok(mem))
@@ -1342,7 +1369,28 @@ class Radio:
         bad = self.verify(mem, padded, APP_START) if todo else []
         if bad:
             raise DumpError("verify after write: sectors differ at %s" % ", ".join("0x%X" % x for x in bad))
-        return len(todo), (end - APP_START) // SECTOR - len(todo)
+        flag = self.write_rom_flag()
+        return len(todo) + flag, (end - APP_START) // SECTOR - len(todo)
+
+    def write_rom_flag(self):
+        """On a board the boot ROM starts directly (profile rom_entry), make the flag sector at flash 0 name the
+        application's entry. Written after the application, so an interrupted write leaves the radio starting what it
+        started before. The rest of the sector is kept; a sector without the flag gets the flag, the entry and 0xFF.
+        Returns 1 if the sector was written, else 0."""
+        entry = (self.profile or {}).get("rom_entry")
+        if entry is None:
+            return 0
+        mem = "progmem"
+        cur = b"".join(bytes(self.read_flash(mem, a, CHUNK)) for a in range(0, SECTOR, CHUNK))
+        want = ROM_FLAG + entry.to_bytes(4, "little") + (cur[8:] if cur[:4] == ROM_FLAG else b"\xff" * (SECTOR - 8))
+        if cur == want:
+            return 0
+        self.check_write_range(mem, 0, SECTOR, rom_flag=True)
+        self.write_sectors(mem, want, 0, [0])
+        if self.verify(mem, want, 0):
+            raise DumpError("verify after write: the boot ROM flag sector differs")
+        self.log("boot ROM flag at 0 now names 0x%08X" % entry)
+        return 1
 
     def write_flash(self, mem, start, data):
         """Erase and program whole sectors at `start`, then check by CRC against the radio's own read of them."""
@@ -2681,9 +2729,15 @@ def self_test():
         radio = FakeRadio(imgs, stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
         radio.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
         r = Radio(radio, log=quiet)
-        r.start(wait=2)
-        check(radio.running and not radio.errors and bytes(radio.loaded[:len(univ)]) == univ,
+        r.start(wait=2, board=board)
+        prof = C7_BOARDS[board] if board else GENERIC
+        led = prof["led"]["red"].to_bytes(4, "little") + prof["led"]["green"].to_bytes(4, "little")
+        got = bytes(radio.loaded[:len(univ)])
+        check(radio.running and not radio.errors and got[:UCFG_LED] == univ[:UCFG_LED] and got[UCFG_LED + 8:] == univ[UCFG_LED + 8:],
               "the universal stub is the default power-on image, at 0x10000 (%s)" % radio.errors)
+        check(got[UCFG_LED:UCFG_LED + 8] == led,
+              "the stub sent names the %s's LED pins %d / %d from its first instruction"
+              % (prof["name"], prof["led"]["red"], prof["led"]["green"]))
         check(r.v6 is not None and r.v6["run"] == 0x30000 and r.v6["load"] == 0x10000, "HELLO v6 parsed")
         try:
             r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
@@ -2691,13 +2745,21 @@ def self_test():
         except DumpError as e:
             check("configuration" in str(e), "write before CONFIG refused: %s" % e)
         r.configure(board)
-        prof = C7_BOARDS[board] if board else GENERIC
         cfg = radio.configs[-1]
         check(cfg[8:10] == bytes([prof["latch"], prof["key"]]) and cfg[12] == prof["id"] and cfg[14] == CFG_UART_THIS,
               "CONFIG carries the %s profile" % prof["name"])
+        check(cfg[10:12] == bytes([prof["led"]["red"], prof["led"]["green"]]),
+              "CONFIG carries the %s's LED pins" % prof["name"])
         check(23e6 < int.from_bytes(cfg[:4], "big") < 25e6, "CONFIG carries the measured clock")
         check(r.configured is prof, "the %s profile is confirmed by the HELLO echo" % prof["name"])
         nw, nk = r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
+        if prof["rom_entry"] is not None:	# the boot ROM's flag sector at 0 is made to name the entry, once
+            pm = radio.images["progmem"]
+            check(nw == 1 and nk == 4 and pm[:8] == ROM_FLAG + prof["rom_entry"].to_bytes(4, "little"),
+                  "the flag sector names 0x%X after the first write" % prof["rom_entry"])
+            check(pm[8:SECTOR] == images["progmem"][8:SECTOR] or images["progmem"][:4] != ROM_FLAG,
+                  "the rest of a flag sector is kept")
+            nw, nk = r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
         check(nw == 0 and nk == 4, "writing the same image after CONFIG changes nothing")
         if b and b.first_stage:		# a first stage in the radio: only an image that starts with one goes over it
             pm = bytearray(radio.images["progmem"])
@@ -2984,8 +3046,8 @@ def main(argv=None):
     ap.add_argument("--slow-cable", action="store_true", help="boot ROM: send the answer to its greeting every 30 ms "
                     "from the start, for a cable or USB hub too slow for the ROM's 48 ms window. Radio OFF before the "
                     "tool starts: a running firmware would get the answers too")
-    ap.add_argument("--led-red", type=int, default=LED_RED, help="GPIO pin index of the red LED (default %d, 255 = none)" % LED_RED)
-    ap.add_argument("--led-green", type=int, default=LED_GREEN, help="GPIO pin index of the green LED (default %d, 255 = none)" % LED_GREEN)
+    ap.add_argument("--led-red", type=int, help="GPIO pin index of the red LED (default the board's, else %d; 255 = none)" % LED_RED)
+    ap.add_argument("--led-green", type=int, help="GPIO pin index of the green LED (default the board's, else %d; 255 = none)" % LED_GREEN)
     ap.add_argument("--led-status", choices=("red", "green", "both", "off"), default="both",
                     help="which LED blinks while the stub is up: 500 ms phases waiting, 125 ms while data moves")
     ap.add_argument("--led-seq", metavar="SPEC", help="play an LED sequence now, e.g. 255:0:300,0:255:300 (RED:GREEN:MS "
@@ -3114,7 +3176,7 @@ def main(argv=None):
                 else:
                     raise DumpError("no legacy stub is linked for 0x%X: give --stub" % load)
             print("radio OFF? switch it on now (waiting up to %d s)" % a.wait)
-            radio.start(a.wait, stub, load, slow=a.slow_cable)
+            radio.start(a.wait, stub, load, slow=a.slow_cable, board=a.board)
             radio.configure(a.board)
         jobs = [(mem, f) + parse_range(rng, radio.mem_size(mem)) for mem, f, rng in jobs]
         if a.baud == "off":
@@ -3129,7 +3191,9 @@ def main(argv=None):
                     break
         elif a.baud:
             radio.set_baud(int(a.baud))
-        radio.setup_led(a.led_red, a.led_green, a.led_status)
+        led = (radio.profile or GENERIC)["led"]
+        radio.setup_led(led["red"] if a.led_red is None else a.led_red, led["green"] if a.led_green is None else a.led_green,
+                        a.led_status)
         if a.led_test:
             for what, steps in (("red only", [(255, 0, 1500)]), ("green only", [(0, 255, 1500)]),
                                 ("both full", [(255, 255, 1500)]), ("red 255 + green 40", [(255, 40, 1500)]),

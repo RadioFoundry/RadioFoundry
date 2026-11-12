@@ -17,7 +17,7 @@ import * as c7 from "../static/js/flasher/c7000.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "../static/js/flasher/fakec7000.js";
 import { stockVersion } from "../static/js/flasher/usmart.js";
 import { openVendorFile, whyNot, analysisCandidate } from "../static/js/flasher/vendorfile.js";
-import { vendorBundle, hasC7Backup, backupChoices } from "../static/js/flasher/c7000ui.js";
+import { vendorBundle, hasC7Backup, backupChoices, ledFor, stubFor } from "../static/js/flasher/c7000ui.js";
 import * as explain from "../static/js/flasher/explain.js";
 import * as crumbs from "../static/js/flasher/trail.js";
 import * as diag from "../static/js/diag.js";
@@ -429,6 +429,33 @@ test("boot ROM path: load, read with damaged frames, write, reset into RadioFoun
 	assert.equal(p.codec, "dm1801pro-049");
 });
 
+// A radio's LED pins may be other pins on another radio (a TX supply, a knob input): the stub must drive only the
+// board's own, from its first instruction (the parameter block) and after CONFIG and the LED setup
+test("every C7 board: the stub drives only the board's LED pins, from the boot ROM load on", async (t) => {
+	for (const [id, b] of Object.entries(C.boards)) {
+		const led = ledFor(C, id);
+		assert.deepEqual(led, b.stub_board.led, `${id}: its own pins`);
+		const r = new FakeC7000({ progmem: new Uint8Array(0x100000).fill(0xFF), dataSize: 0x200000, speed: 200, romWindow: 400, bootTime: 200 });
+		t.after(() => r.stop());
+		const s = new Stub(r.stream, { log: quiet });
+		setTimeout(() => r.powerOn(), 50);
+		await s.waitForRom(5000);
+		const image = stubFor(C, id, stubs.image);
+		assert.equal(image.length, stubs.image.length);
+		assert.ok(equal(image.subarray(0, 0xA8), stubs.image.subarray(0, 0xA8)) && equal(image.subarray(0xB0), stubs.image.subarray(0xB0)),
+			`${id}: only the LED pins change`);
+		await s.loadThroughRom(image, stubs.load);
+		assert.deepEqual([...r.ledPins].sort(), [led.red, led.green].sort(), `${id}: the stub starts on the board's LED pins`);
+		await s.configure(b.stub_board);
+		assert.deepEqual([...r.configs.at(-1).subarray(10, 12)], [led.red, led.green], `${id}: CONFIG carries the board's LED pins`);
+		await s.setupLed(led.red, led.green);
+		assert.deepEqual([...r.ledPins].sort(), [led.red, led.green].sort(), `${id}: no other pin driven`);
+		r.stop();
+	}
+	assert.ok(Object.values(C.boards).some((b) => b.stub_board.led.red !== C.led.red), "a board whose LEDs are not the stub's own");
+	assert.ok(equal(stubFor(C, "dm1801pro", stubs.image), stubs.image), "a board on the stub's own pins gets the image as it is");
+});
+
 test("simulated radio: after the stub's reset the host link stays silent until a power cycle, as on the real radios", async (t) => {
 	const { r } = await radio("rfoundry", { faults: { silentAfterReset: true } });
 	t.after(() => r.stop());
@@ -825,4 +852,11 @@ test("a pick nothing in which serves is logged with its problem and why, not as 
 	assert.ok(rec.problem);
 	assert.ok(rec.why, "why the file was not taken");
 	assert.match(rec.id, /^problem:/);
+});
+
+test("a whole data memory read is the board's own chip, not the usual 16 MB", () => {
+	const usual = 0x1000000;
+	assert.equal(c7.dataMemSize({ backup: { spi_size: 0x200000 } }, "q128", usual), 0x200000);
+	assert.equal(c7.dataMemSize({ backup: { spi_size: 0 } }, "q128", usual), usual, "no SPI NOR listed");
+	assert.equal(c7.dataMemSize({ backup: { spi_size: 0x200000 } }, "nand", 0x10000000), 0x10000000, "a NAND has its own size");
 });

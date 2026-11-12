@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# The RT10's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
+# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/rt10/memory.ld.
+
+id = "rt10"
+name = "Retevis RT10"
+maker = "Retevis"
+model = "RT10"
+also = []
+kind = "handheld"
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 20
+debuglink_aliases = []
+
+[docs]
+hardware = "docs/spec/hardware-rt10.md"
+
+# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+[hardware]
+bands = "902-928 MHz"
+power = "L / H"
+display = "none"
+gallery = "128x64"
+clock = { rtc = "unbacked", note = "the SoC RTC, with no coin cell or backup capacitor on the board (docs/spec/hardware-rt10.md 1)" }
+
+[status]
+level = "supported"
+summary = """\
+Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. FM receive with CTCSS/DCS \
+decode, FM transmit, DMR transmit and receive with the radio's own codec, and APRS transmit work on the radio."""
+release = "stable"
+
+# No vendor loader: the boot ROM's serial window on the accessory jack is the way in at every power-on
+# (hardware-rt10.md 2). RadioFoundry replaces the whole program flash image; a full backup puts the original back
+[flash]
+family = "boot-rom"
+keep_codec = true
+stock_versions = []
+backup = { stock = "full", rfoundry = "full", spi_size = 0x200000 }
+
+# Flash no tool erases or writes (docs/dev/board-registry.md, "Protected regions")
+[[flash.protect]]
+mem = "data"
+start = 0x1FE000
+end = 0x200000
+what = "the activation block (0x1FE000) and the factory calibration (0x1FF000) (hardware-rt10.md 4)"
+
+# The boot ROM's serial window: tools wait for it, so the radio is switched on only when they ask
+[flash.bootloader]
+steps = [
+	"Turn the radio off and connect the programming cable.",
+	"Start the tool and wait until it asks you to switch the radio on.",
+	"Turn the radio on. No keys are needed.",
+]
+
+# The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py): the power latch is driven from the first
+# instruction by RadioFoundry and isn't a soft key; 2 MB program flash (GD25Q16). rom_entry: the boot ROM starts the
+# application itself, so the flag sector at flash 0 must name this entry (stubtool --write-app writes it)
+[flash.stub]
+id = 4
+hold_power = false
+progmem = 0x200000
+rom_entry = 0x0300C000
+tested = false
+# the factory calibration: the data flash's sector at 0x1FF000 (hardware-rt10.md 4)
+calibration = { data = 0x1FF000 }
+
+# The codec slot and windows come from boards/rt10/memory.ld (__codec_*). The codec comes from the radio's own program flash
+# (read with stub/stubtool.py)
+[codec]
+tool = "hrc7000_codec"
+profile = "rt10-112"
+sources = ["a program flash read of the radio"]
+
+# Bring-up features without a switch that the hardware rules out (tools/bringup.py)
+[features]
+key_lock = { state = "n/a", reason = "PTT, two side keys and the channel switch: no keypad a lock would protect" }
+dmr_iddb = { state = "n/a", reason = "no display: the ID database only names callers on the screen" }
+
+# How the site draws the radio
+[frame]
+shape = "handheld-tall"
+body = "#1d1f22"
+accent = "#d0d0d0"
+lens = [24, 34]

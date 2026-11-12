@@ -48,6 +48,7 @@ def freq(rx, tx):
 
 @pytest.mark.feature("sfr")
 @pytest.mark.radio_tx
+@pytest.mark.needs_switch("HOTSPOT")
 def test_hotspot_sfr_mode(radio):
     feats = radio.features()
     if "SFR" not in feats or "HOTSPOT" not in feats:
@@ -104,6 +105,7 @@ def test_hotspot_sfr_mode(radio):
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 @pytest.mark.sdr_rx
+@pytest.mark.needs_switch("HOTSPOT")
 def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
     feats = radio.features()
     if "SFR" not in feats or "HOTSPOT" not in feats:

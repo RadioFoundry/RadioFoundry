@@ -28,6 +28,7 @@
 // repeater to wake, red blinks once per wake-up burst sent, not solid (a burst is 30 ms: stretched to be seen); a
 // deny flashes red, green, red, green, red, green, RADIO_LED_DENY_STEP_MS each
 #define RADIO_LED_WAKE_MS	100
+#define RADIO_LED_STUCK_STEP_MS	125	// a stuck PTT line: red and green in turn, to ask for a power cycle
 #define RADIO_LED_DENY_STEP_MS	100
 #define RADIO_LED_DENY_STEPS	6
 #define RADIO_TOT_DEFAULT_S	180	// TX time-out

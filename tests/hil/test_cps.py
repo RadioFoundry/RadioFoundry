@@ -109,8 +109,13 @@ def test_settings_survive_restart(radio):
     v = radio.leave_vfo()
     if v.get("vfo") == "1" or as_int(v.get("zone_size"), 0) < 2:
         skip("state", "needs a zone with two channels or more, on a channel")
-    pos = (as_int(v["zone_pos"]) + 1) % as_int(v["zone_size"])
-    radio.link.zone_pos(pos)
+    knob = as_int(radio.view(["link"]).get("input.switch_pos"), -1)
+    if knob >= 0:
+        # A channel switch picks the channel, at start-up too (docs/spec/ui.md 3): the radio comes back on its position
+        pos = knob
+    else:
+        pos = (as_int(v["zone_pos"]) + 1) % as_int(v["zone_size"])
+        radio.link.zone_pos(pos)
     radio.wait_for(lambda s: s.get("settings.dirty") == "0", timeout=5.0, sections=("storage",),
                    what="settings saved")
     radio.link.reboot(0, radio.link.chip()["token"])

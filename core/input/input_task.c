@@ -10,6 +10,7 @@
 #include "input/input.h"
 #include "input/input_engine.h"
 #include "input/input_forward.h"
+#include "input/switch_follow.h"
 #include "radio/radio.h"
 #include "debuglink/dlog.h"
 #include "FreeRTOS.h"
@@ -45,6 +46,8 @@ static volatile uint16_t long_now = INPUT_LONG_MS;
 static volatile bool ptt_blocked;	// input_set_ptt_block
 static volatile uint32_t ptt_downs;	// PTT presses seen by the engine (debug link: input.ptt_downs)
 static volatile bool dtmf_blocked;	// input_set_dtmf_block
+static switch_follow_t sw_follow;	// the channel switch (hal_input_t.position), input task only
+static volatile int8_t switch_pos = -1;	// its settled position, for the debug link
 
 static void emit(const input_event_t *ev, void *ctx)
 {
@@ -103,6 +106,22 @@ static uint32_t take_injected(uint32_t now, int8_t *enc)
 	return m;
 }
 
+// A channel switch picks the zone position it points at (docs/spec/ui.md 3)
+static void switch_poll(uint32_t now)
+{
+	int8_t pos = board.input->position();
+	switch_pos = pos;
+	switch_step_t st = switch_follow_step(&sw_follow, pos, now);
+	if (st == SWITCH_CHECK) {
+		uint16_t zone, at, size;
+		bool ready = radio_get_zone_pos(&zone, &at, &size);
+		st = switch_follow_check(&sw_follow, zone, at, size, ready) ? SWITCH_ASK : SWITCH_IDLE;
+	}
+	if (st == SWITCH_ASK) {
+		radio_req_zone_pos((uint16_t)pos);
+	}
+}
+
 static void input_task(void *arg)
 {
 	(void)arg;
@@ -113,6 +132,9 @@ static void input_task(void *arg)
 		uint32_t inj_keys = take_injected(now, &ienc);
 		uint32_t keys = board.input->scan();
 		int8_t enc = board.input->encoder != NULL ? board.input->encoder() : 0;	// keypad-only radios have none
+		if (board.input->position != NULL) {
+			switch_poll(now);
+		}
 		raw_keys = keys;
 		enc_total += enc;
 		if ((keys != 0) || (enc != 0)) {
@@ -146,6 +168,7 @@ void input_start(void)
 	uint8_t n = board.keymap_len > INPUT_KEYS_MAX ? INPUT_KEYS_MAX : board.keymap_len;
 	memcpy(keymap_live, board.keymap, n * sizeof(keymap_live[0]));
 	input_engine_init(&engine, keymap_live, n, hal_millis());
+	switch_follow_init(&sw_follow);
 #if CONFIG_DTMF
 	input_engine_set_dtmf(&engine, dtmf_edge, NULL);
 #endif
@@ -231,6 +254,11 @@ uint32_t input_ptt_downs(void)
 int32_t input_encoder_total(void)
 {
 	return enc_total;
+}
+
+int8_t input_switch_pos(void)
+{
+	return switch_pos;
 }
 
 bool input_encoder_stats(hal_encoder_stats_t *st, uint32_t *deferred)

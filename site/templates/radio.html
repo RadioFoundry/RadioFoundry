@@ -2,9 +2,9 @@
 	<figure class="radio-device">
 		<div class="device-frame" style="aspect-ratio: {{ frame_aspect }}">
 			<img class="device-body" src="{{root}}static/img/radios/{{ id }}-frame.svg" alt="{{ name }}">
-			<img class="device-screen" id="device-screen" src="{{root}}{{ boot_src }}" alt="" style="{{ screen_style }}">
+			{{{ screen_img }}}
 		</div>
-		<figcaption class="muted small">{{t radio.image_note}}</figcaption>
+		{{{ image_note }}}
 	</figure>
 	<div class="radio-summary">
 		<p class="eyebrow"><a href="index.html">{{t radios.title}}</a></p>
@@ -26,10 +26,7 @@
 	</div>
 </section>
 
-<section class="wrap section" id="screens">
-	<h2>{{t radio.screens_title}}</h2>
-	{{{ shots }}}
-</section>
+{{{ screens_section }}}
 
 <section class="wrap section">
 	<h2>{{t radio.features_title}}</h2>
