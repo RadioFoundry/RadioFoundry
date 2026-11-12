@@ -100,11 +100,12 @@ quick = 0x200000
 loader_interface = "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg"
 loader_spi = 0x100000
 
-# The codec where the merge puts it (docs/spec/codec-md9600.md "Hosting"): the tables stay at the stock build's address in
-# sector 9 (the largest GPS-REC builds' run a few hundred bytes into sector 10, which is free), the code moves to the
-# start of sector 11 and the descriptor to its end. The application has sectors 3-8, so an update leaves the codec
-# sectors alone. The builds keep their tables at different addresses and report the one codec id: a merge uses the
-# windows of the file it merges, and the board's windows are all the files' (sectors 9-11). Each line is one original
+# The codec where the merge puts it (docs/spec/codec-md9600.md "Hosting"): the table window, moved as one block, to the
+# start of sector 10, the code to the start of sector 11 and the descriptor to its end. The application has sectors 3-9,
+# so an update leaves the codec sectors alone. Releases before this layout kept the tables at the stock build's address
+# in sector 9; the flashing tools read the codec back from there and move it (stockfw.py "former"). The builds report
+# the one codec id: a merge uses the windows of the file it merges, and the board's windows are all the files' (sectors
+# 10-11). Each line is one original
 # firmware file: 03.28 to 06.24 (06.09 is the V1-V3 boards' file), 16.xx for V4, 26.38 to 26.45 for V5 (the RT90's are 26.38, 26.41 and
 # 26.42) and 26.57 for V4A, in the CSV, CSV-GPS, REC and GPS-REC variants that exist
 [codec]

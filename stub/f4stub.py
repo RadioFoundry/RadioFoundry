@@ -164,6 +164,8 @@ SUM_MAX = 800                          # SUMS records per request (the stub allo
 READ_PACK = 16                         # blocks per READ request
 ERASE_TIMEOUT = 6.0                    # 128 KB: 2 s worst case in the data sheet, the stub gives up at 4 s
 RUN_ADDR = 0x20000000                  # the stub's link address, which RadioFoundry reports as STUB INFO's load_addr
+DESC_LEN = 0x80                        # the codec descriptor at the end of the codec flash (platform/stm32f4/codec_desc.h)
+DESC_MAGIC = 0x43534544                # "DESC"
 SRAM_SIZE = 128 * 1024                 # stub/stm32f4/f4stub.ld: .bss and the stack use all of it after the jump
 
 # Flash the firmware owns on each radio: the application region of its linker script (the board registry,
@@ -219,7 +221,7 @@ def record(b):
 # A profile with the stub id the registry keeps for tests (0xFE, tools/boards.py STUB_TEST_ID), so HELLO never names a
 # real board for it, for the tests here, in tests/host/f4stub_wire_check.py and in the web flasher's
 # (site/tests/fixtures.py): the SPI flash on SPI2 in mode 3 with chip select PB12, a second chip select on that bus
-# (PD14) held high, and the MD-380's application sectors 3-7 with the codec in 8-11
+# (PD14) held high, and application sectors 3-7 with the codec in 8-11
 TEST_BOARD = "spi2test"
 
 
@@ -618,7 +620,26 @@ class F4Radio(stubtool.Radio):
             have = self.sums(saddr, size // BLOCK)
             if any(zlib.crc32(buf[i * BLOCK:(i + 1) * BLOCK]) != crc for i, (crc, _) in enumerate(have)):
                 changed.append(idx)
+        if codec and codec not in owned:
+            self.guard_codec(codec, [i for i in changed if i in new], {i: (a, s) for i, a, s in f405_sectors(self.flash_kb)})
         return new, changed, kept
+
+    def guard_codec(self, codec, changed, sec):
+        """Refuse a plain image that would erase a sector holding the radio's codec, before any erase. The codec's
+        descriptor at the end of the codec flash says where every window is (docs/spec/codec-placement.md); a codec
+        placed by an earlier release can lie in what is now the application's flash. Moving it takes a build merged
+        with the codec, which rfoundry and the web flasher make from a copy read back from the radio first."""
+        at = codec[1] - DESC_LEN
+        w = struct.unpack_from("<%dI" % (DESC_LEN // 4), self.read_flash(codec[1] - BLOCK, BLOCK), BLOCK - DESC_LEN)
+        if w[0] != DESC_MAGIC or w[1] != 1 or not 0 < w[6] <= 5:
+            return
+        wins = [(w[3], w[4])] + [(w[7 + 3 * i], w[8 + 3 * i]) for i in range(w[6])]
+        hit = sorted({i for i in changed for a, n in wins if a < sum(sec[i]) and a + n > sec[i][0]})
+        if hit:
+            raise F4Error("sector(s) %s hold the radio's codec (its descriptor at 0x%08X says so), which this build "
+                          "would erase: nothing was written. Install with rfoundry flash or the web flasher, which read "
+                          "the codec back and move it, or write a build merged with the codec (_codec.bin)"
+                          % (", ".join(map(str, hit)), at))
 
     def write_image(self, board_id, segments, backup_dir=None, progress=None):
         """Install a build. Order (the stub's interlock enforces it): erase sector 3 first, so the bootloader stays in
@@ -1305,23 +1326,48 @@ def self_test():
     nw, _ = r.write_image("dm1701", segs, backup_dir=tmp)
     check(bytes(fake.flash[0xC000:0xC000 + 300000]) == segs[0][1], "a second run completes the install")
 
-    # MD-380: sectors 3-7 for the application, the codec sectors 8-11 untouched
+    # MD-380: sectors 3-10 for the application, the codec sector 11 untouched
     f = stock(13)
     fake = FakeF4(f)
     r = F4Radio(fake, log=quiet)
     r.hello()
     r.configure("md380")
-    segs = [(APP_BASE, app(0x08080000 - APP_BASE, 17))]
+    segs = [(APP_BASE, app(0x080E0000 - APP_BASE, 17))]
     nw, nk = r.write_image("md380", segs, backup_dir=tmp)
     fl = fake.flash
-    check(sorted(fake.erased) == [3, 4, 5, 6, 7], "md380: sectors 3-7 %s" % fake.erased)
-    check(bytes(fl[0x80000:]) == bytes(f[0x80000:]), "md380: codec sectors untouched")
-    check(bytes(fl[0xC000:0x80000]) == segs[0][1], "md380: application in place")
+    check(sorted(fake.erased) == [3, 4, 5, 6, 7, 8, 9, 10], "md380: sectors 3-10 %s" % fake.erased)
+    check(bytes(fl[0xE0000:]) == bytes(f[0xE0000:]), "md380: codec sector untouched")
+    check(bytes(fl[0xC000:0xE0000]) == segs[0][1], "md380: application in place")
     try:
-        r.write_image("md380", [(APP_BASE, app(0x08080000 - APP_BASE + 4, 3))], backup_dir=tmp)
+        r.write_image("md380", [(APP_BASE, app(0x080E0000 - APP_BASE + 4, 3))], backup_dir=tmp)
         check(False, "md380: an image into the codec sectors is refused")
     except F4Error:
         pass
+
+    # A codec where an earlier layout put it (its descriptor names windows in sector 8, now the application's): a plain
+    # build is refused before anything is erased; a build merged with the codec (the move) is written
+    f = stock(14)
+    words = [DESC_MAGIC, 1, 0x2032, 0x080E0000, 0x10000, 0, 1, 0x0808FC64, 0xB000, 0] + [0] * 9
+    body = struct.pack("<%dI" % len(words), *words)
+    body += b"\0" * (DESC_LEN - 4 - len(body))
+    f[0xFFF80:0x100000] = body + struct.pack("<I", zlib.crc32(body))
+    fake = FakeF4(f)
+    r = F4Radio(fake, log=quiet)
+    r.hello()
+    r.configure("md380")
+    try:
+        r.write_image("md380", [(APP_BASE, app(0x080E0000 - APP_BASE, 5))], backup_dir=tmp)
+        check(False, "md380: a plain build over a codec in sector 8 is refused")
+    except F4Error as e:
+        check(fake.erased == [] and "sector(s) 8 hold the radio's codec" in str(e),
+              "md380: a plain build over a codec in sector 8 refused before any erase (%s)" % e)
+    moved = app(0x08100000 - APP_BASE, 6)
+    nw, _ = r.write_image("md380", [(APP_BASE, moved[:0xE0000 - 0xC000]), (0x080E0000, moved[0xE0000 - 0xC000:])],
+                          backup_dir=tmp)
+    check(sorted(fake.erased) == list(range(3, 12)) and bytes(fake.flash[0xC000:]) == moved,
+          "md380: a merged build moves the codec (sectors 3-11)")
+    nw, _ = r.write_image("md380", [(APP_BASE, app(0x080E0000 - APP_BASE, 7))], backup_dir=tmp)
+    check(nw == 8, "md380: no descriptor naming sectors 3-10 any more: a plain build installs (%d)" % nw)
 
     # A board with other wiring: the MD-380's application sectors, the SPI flash on SPI2 in mode 3 with chip select
     # PB12, and a second chip select on that bus (PD14) held high. A fixture, so the test doesn't need such a board
@@ -1393,7 +1439,7 @@ def self_test():
         pass
     r.configure("md380")
     nw, _ = r.write_image("md380", [(APP_BASE, app(5000, 3))], backup_dir=tmp)
-    check(nw == 5 and fake.configs == 0, "a protocol 2 stub still installs on the MD-380 (%d)" % nw)
+    check(nw == 8 and fake.configs == 0, "a protocol 2 stub still installs on the MD-380 (%d)" % nw)
     # Protocol 3 (the image header and the IWDG feed, no CONFIG yet) is treated the same way
     r = F4Radio(FakeF4(stock(11), version=3), log=quiet)
     r.hello()
