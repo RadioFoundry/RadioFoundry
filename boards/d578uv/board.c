@@ -124,6 +124,7 @@ const board_t board = {
 	.context_label = "P2",
 	.lock_label = "MENU",
 	.backlight_dims_only = true,
+	.text_star_space = true,
 	.radio = &d578uv_radio,
 	.chip_reg = d578uv_chip_reg,
 #if CONFIG_DUAL_WATCH
