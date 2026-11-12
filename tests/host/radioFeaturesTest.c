@@ -2697,6 +2697,20 @@ static void test_channel_burst(void)
 	run(300);
 	hw.has_tx_tone = true;
 
+	// Host audio (USRP): the host sends its own tones, so no burst over them
+	tap_hw = (typeof(tap_hw)){ .ok = true };
+	int16_t pcm[AUDIO_BLOCK_SAMPLES] = { 0 };
+	req(RREQ_PTT, 2);
+	CHECK(sm.view.state == RS_TX && sm.host_audio && !sm.view.tone_burst && hw.tone_hz == 0);
+	for (int i = 0; i < 10; i++) {
+		audio_mux_host_push(pcm, AUDIO_BLOCK_SAMPLES);
+		run(20);
+	}
+	CHECK(sm.view.state == RS_TX && !sm.view.tone_burst && hw.tone_hz == 0);
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE);
+
 	// Never on DMR, whatever the record holds
 	chans[6].tone_burst = true;
 	req(RREQ_ZONE_POS, 5);

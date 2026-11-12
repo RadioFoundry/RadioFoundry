@@ -2396,8 +2396,10 @@ static void ced_build(void)
 		bool tone = r == CE_RX_TONE || r == CE_TX_TONE;
 		if ((fm_only && dmr) || (tone && listen) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR))
 			continue;
-		if (r == CE_BURST && !CONFIG_FM_TX_TONES)
-			continue;	// as the Tone burst key: the radio core skips it on a board with no TX tone
+		// The radio core skips the burst on a board with no TX tone, so no row for it there (a host board
+		// without a radio keeps the row)
+		if (r == CE_BURST && (!CONFIG_FM_TX_TONES || (board.radio != NULL && board.radio->tx_tone == NULL)))
+			continue;
 		if ((r == CE_ZONES || r == CE_GO || r == CE_SHARE || r == CE_SAVE_NEW) && fresh)
 			continue;
 		if (r == CE_SHARE && !CONFIG_ZONE_SHARE)
