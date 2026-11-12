@@ -10,7 +10,7 @@ stub/USER-GUIDE.md in the RadioFoundry repository.
     stubtool.py PORT --verify-q128 q128.bin                      compare flash with a file by CRC, no data transferred
     stubtool.py PORT --rfoundry-enter --progmem p.bin --q128 q.bin     the same from a radio running RadioFoundry (built with CONFIG_STUB_ENTRY=y)
     stubtool.py PORT --rfoundry-enter --write-app rfoundry_dm1801pro.bin   program an RadioFoundry build into the program flash (changed sectors only)
-    stubtool.py PORT --attach --boot reset                      restart the radio into its firmware, no power cycle
+    stubtool.py PORT --attach --board dm1801pro --boot reset    restart the radio into its firmware, no power cycle
     stubtool.py PORT --probe                                    chip IDs and a few registers, no files
     stubtool.py PORT --peek 0x14020000:16                       read radio memory (registers, SRAM, flash window)
     stubtool.py PORT out.bin --mem q128                         the old form: one memory into out.bin
@@ -695,6 +695,10 @@ def rom_cmd(op, payload=b""):
     return bytes([0x02, op, sum8(payload), 0x03]) + payload
 
 
+def restart_hint(board):
+    return "to start the firmware: stubtool.py PORT --attach --board %s --boot reset" % (board or "<id>")
+
+
 class Radio:
     """port: write(bytes), read(n) (what arrived within its timeout), reset_input_buffer(), a timeout attribute."""
 
@@ -828,7 +832,7 @@ class Radio:
             except DumpError:
                 continue
         if info is None:
-            raise DumpError("no stub answers: power-cycle the radio and run without --attach")
+            raise DumpError("no stub answers: name the radio with --board <id>, or switch it off and on and run without --attach")
         self.log("attached to stub v%d (max payload %d, SSI burst %d / %d bytes)"
                  % (info[0], info[1], self.info >> 8 & 0xFF, self.info & 0xFF))
 
@@ -2293,6 +2297,7 @@ def self_test():
             print("FAIL: " + what)
 
     quiet = lambda *a: None
+    check("--attach --board dm32 --boot reset" in restart_hint("dm32"), "the restart hint names the board")
     try:
         import serial
     except ImportError:
@@ -3175,7 +3180,7 @@ def main(argv=None):
             print("\n%s: %d bytes, %d sectors written, %d unchanged, verified by CRC, %.0f s" % (a.write_app, len(image), nw, nk, time.monotonic() - t0))
             print("sha256", fingerprint(a.write_app))
             if not a.boot:
-                print("run again with --attach --boot reset (or power-cycle) to start the new firmware")
+                print(restart_hint(a.board))
         if a.write_test:
             regions = {}
             for mem in (("progmem", "q128") if a.write_test == "both" else (a.write_test,)):

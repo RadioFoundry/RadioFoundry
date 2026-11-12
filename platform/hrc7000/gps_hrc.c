@@ -6,8 +6,8 @@
 //
 // The module is powered at start-up and listened for for LISTEN_MS, whatever Settings > Location > GPS says, so the
 // radio knows whether it has one. One checksum-valid sentence makes it present, and every sentence then goes to the
-// APRS position source (CONFIG_APRS). Nothing heard: the module is powered off again, the UART stopped, and the radio
-// reports no GPS (board.gps_present). Once present, the module is powered only while the setting is on
+// position service (core/position, CONFIG_GPS). Nothing heard: the module is powered off again, the UART stopped,
+// and the radio reports no GPS (board.gps_present). Once present, the module is powered only while the setting is on
 // (hrc_gps_enable, board_t.gps_enable): the task switches it within one poll, the UART and the supply together.
 #include "platform.h"
 #include "config.h"
@@ -15,13 +15,13 @@
 #include "gps/gps_rx/gps_rx.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#if CONFIG_APRS
-#include "aprs/aprs.h"
+#if CONFIG_GPS
+#include "position/position.h"
 #endif
 
 #define GPS_BAUD		9600u
 #define LISTEN_MS		5000u	// the module sends a sentence a second from about 1 s after power-up, fix or not
-#define GPS_TASK_STACK		384	// words: the APRS NMEA parser runs on it
+#define GPS_TASK_STACK		384	// words: the position service's NMEA parser runs on it
 #define GPS_TASK_PRIORITY	1
 #define GPS_POLL_MS		20
 
@@ -65,8 +65,8 @@ static void gps_on(bool on)
 
 static void sentence(const char *s, uint8_t len, uint32_t now_ms)
 {
-#if CONFIG_APRS
-	aprs_nmea(s, len, true, now_ms);
+#if CONFIG_GPS
+	position_nmea(s, len, true, now_ms);
 #else
 	(void)s;
 	(void)len;

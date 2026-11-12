@@ -16,6 +16,7 @@
 #include "net/tftp_iddb.h"
 #include "codeplug/dmr_iddb.h"
 #include "codeplug/codeplug.h"
+#include "codeplug/codeplug_kv.h"
 #include "storage/storage.h"
 #include "sim/sim_flash.h"
 #include "fuzz.h"
@@ -537,7 +538,8 @@ static band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000
 const board_t board = { .name = "test", .bands = bands, .band_count = 2, .power_count = 9, .flash = &sim_flash };
 
 static const struct { uint32_t start, end; } regions[] = {
-	{ 0x00080u, 0x06060u }, { 0x07500u, 0x0B000u }, { 0x20000u, 0x211A0u }, { 0x9B000u, 0xAEE60u },
+	{ 0x00080u, 0x06060u }, { 0x07500u, 0x0B000u }, { 0x0E000u, 0x0F000u }, { 0x20000u, 0x211A0u },
+	{ 0x9B000u, 0xAEE60u },
 };
 
 static void populate(void)
@@ -566,7 +568,7 @@ static void populate(void)
 static void expected_image(uint8_t *img)
 {
 	memset(img, 0xFF, TFTP_CODEPLUG_SIZE);
-	for (unsigned i = 0; i < 4; i++) {
+	for (unsigned i = 0; i < sizeof(regions) / sizeof(regions[0]); i++) {
 		for (uint32_t a = regions[i].start; a < regions[i].end; a++) {
 			img[a] = sim_flash_data[a < 0x10000u ? EE + a : FL + (a - 0x20000u)];
 		}
@@ -575,7 +577,7 @@ static void expected_image(uint8_t *img)
 
 static bool regions_equal(const uint8_t *img)
 {
-	for (unsigned i = 0; i < 4; i++) {
+	for (unsigned i = 0; i < sizeof(regions) / sizeof(regions[0]); i++) {
 		for (uint32_t a = regions[i].start; a < regions[i].end; a++) {
 			if (img[a] != sim_flash_data[a < 0x10000u ? EE + a : FL + (a - 0x20000u)]) {
 				return false;
@@ -661,6 +663,40 @@ static void test_codeplug(void)
 	CHECK(memcmp(before, sim_flash_data, STAGING) == 0);	// staging aside, every byte as it was
 	CHECK(!tftp_codeplug_resume());				// and nothing to finish at boot
 	CHECK(memcmp(before, sim_flash_data, STAGING) == 0);
+	capture = true;
+}
+
+// The codeplug settings area (codeplug-settings.md): read as stored; a write takes a valid one and keeps the radio's
+// for anything else (an erased one, from a tool that doesn't carry it, or a damaged one); a newer one is never written
+static void test_settings_area(void)
+{
+	static uint8_t img[TFTP_CODEPLUG_SIZE];
+	uint32_t id;
+	capture = false;
+	populate();
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 3100111));
+	CHECK(get("codeplug.bin", NULL, img, sizeof(img), 512) == (long)TFTP_CODEPLUG_SIZE);
+	CHECK(codeplug_kv_check(img + CODEPLUG_KV_ADDR) == CODEPLUG_KV_VALID);
+
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 3100222));
+	CHECK(put("codeplug.bin", NULL, img, sizeof(img), 512) == 0);
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 3100111);	// the file's
+
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 3100333));
+	static uint8_t other[TFTP_CODEPLUG_SIZE];
+	memcpy(other, img, sizeof(other));
+	memset(other + CODEPLUG_KV_ADDR, 0xFF, 0x1000);				// a file from before the area
+	CHECK(put("codeplug.bin", NULL, other, sizeof(other), 512) == 0);
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 3100333);
+	memcpy(other, img, sizeof(other));
+	other[CODEPLUG_KV_ADDR + CODEPLUG_KV_HDR + 4] ^= 1;			// a value byte: the CRC fails
+	CHECK(put("codeplug.bin", NULL, other, sizeof(other), 512) == 0);
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 3100333);
+
+	sim_flash_data[EE + CODEPLUG_KV_ADDR + 4] = CODEPLUG_KV_VERSION + 1;	// a later firmware's area
+	CHECK(put("codeplug.bin", NULL, img, sizeof(img), 512) == 0);
+	CHECK(sim_flash_data[EE + CODEPLUG_KV_ADDR + 4] == CODEPLUG_KV_VERSION + 1);
+	CHECK(sim_flash_violations() == 0);
 	capture = true;
 }
 
@@ -1108,6 +1144,7 @@ int main(void)
 	test_refusals();
 	test_writes();
 	test_codeplug();
+	test_settings_area();
 	test_power_cuts();
 	test_codeplug_edges();
 	test_iddb();

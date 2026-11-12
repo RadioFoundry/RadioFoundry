@@ -39,7 +39,6 @@ static const struct {
 #endif
 #if CONFIG_APRS
 	{ "APRS", "beacon smartbeaconing symbol path kiss tnc gps", SCR_APRS },
-	{ TRN("APRS position"), "fixed latitude longitude coordinates", SCR_APRS_POS },
 #endif
 };
 #define PLACES_N	((uint8_t)(sizeof places / sizeof places[0]))

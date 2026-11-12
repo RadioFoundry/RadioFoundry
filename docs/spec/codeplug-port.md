@@ -89,3 +89,52 @@ A non-empty EEPROM target selects the MK22 placement. Elements that still overla
 The placement covers codeplug files only. An ID database encoded with `opengd77` is one target at the MK22 address
 0x30000 and has a different record size from the `openuv380` one, so moving it would not make it valid. Encode the
 database with `openuv380`, as the migration tools do.
+
+## 5. Codeplugs from a backup
+
+`tools/backup_codeplug.py` turns the data flash in a backup into qdmr YAML, offline. It takes a web installer backup
+bundle (`rfoundry-backup/1`, or `odr-backup/1` from before the rename; [web-flasher.md](../dev/web-flasher.md),
+"Backup bundles") or a raw dump with `--board`. The board's layout comes from the board registry (`tools/boards.py`),
+so a `hal_flash_map_t` in a board family directory is found too. The bundle part it reads is the first of `spi-flash`, `c7000-data` and `c7000-data-start`; each holds
+the data flash from address 0.
+
+| Codeplug | Where it comes from | Decoded with |
+|---|---|---|
+| RadioFoundry | 0x120000 bytes at the board's `hal_flash_map_t` `openfw_eeprom`, as one DfuSe element at 0 | `dmrconf decode --radio openuv380` |
+| Stock | the board's `[stock_codeplug]` in `board.toml`: `span`, page layout `pages`, driver `dmrconf` | that driver |
+
+The Codeplug Editor's qdmr import reads the YAML of either (T: a stock codeplug of 24 channels, 5 zones and 23
+contacts). A part that is blank (all 0xFF), not in the backup or that its driver doesn't decode is skipped and the
+other still extracted: a backup taken
+on stock firmware can end before the RadioFoundry codeplug (T: an install backup holding only the start of the data
+flash, to 0xC9000). One element over the whole image decodes the same as
+the four regions qdmr writes (T). Each codeplug is written as `<name>-rfoundry.dfu` / `.yaml` or `<name>-stock.dfu` /
+`.yaml`.
+
+Page layouts:
+
+| `pages` | Layout | Address given to dmrconf |
+|---|---|---|
+| `block-id` | 4 KB pages behind a translation layer: the last byte of a page is its logical block. 0 is a free page, 0xFF an erased one. A block found in two pages is refused | block × 0x1000 |
+| `linear` | the span as one block | its own address |
+
+With the pages at their physical addresses, the decoder walks past the end of the span and fails ("Cannot resolve
+offset") (T).
+
+### 5.1 The stock codeplug ported
+
+The stock codeplug is also ported to RadioFoundry, by the same steps as a migration tool (section 1, without the
+radio): `<name>-ported.yaml` and `.dfu`, and `<name>-ported.bin`, the 0x120000-byte open-firmware image the web Codeplug
+Editor and Restore take. `cps_client.py write` writes the `.bin` to a radio that runs RadioFoundry. The tool prints the
+counts before and after, the sections over RadioFoundry's limits and what they drop, and stops when channels went in
+and none came out. `--no-port` skips the port, `--no-cleanup` the RX group list clean-up. (T: a backup of 52
+channels, 9 zones and 19 contacts, all kept; one of 508 channels, 46 zones and 96 contacts, all 403 TX contacts kept.)
+
+### 5.2 A mixed codeplug
+
+Where a board's `[stock_codeplug]` span overlaps its open-firmware image (the board's hardware page has the flash map), writing the stock codeplug again (the stock firmware or its CPS, or a restore) replaces
+RadioFoundry's radio ID, zones and first channels and keeps the rest. The open-firmware decode of such a dump succeeds:
+the contacts are RadioFoundry's, the ID and zones are stock bytes (T: radio ID 166666665 with no name, 0 zones, 36
+channels, 26 contacts). The tool flags a RadioFoundry codeplug with no valid radio ID, or channels and no zone, on such a
+board, and says to use the stock one instead. When the bundle doesn't say RadioFoundry ran (`firmware_now`), or the
+input is a raw dump, nothing shows RadioFoundry ever wrote a codeplug there: the tool writes no RadioFoundry files.

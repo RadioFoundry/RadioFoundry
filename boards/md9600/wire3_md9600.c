@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// A write-only three-wire bus bit-banged on GPIO (periph_md9600.h, drivers/bus/wire3.h), for chips on pins no SPI
+// A three-wire bus bit-banged on GPIO (periph_md9600.h, drivers/bus/wire3.h), for chips on pins no SPI
 // peripheral reaches. Per bit: clock low, data set, half a period, clock high (the chip takes the bit on the rising
 // edge), half a period. The chip select goes low before the first bit and high after the last, which latches the
 // word; clock and data are left low.
@@ -35,5 +35,45 @@ bool stm32_wire3_write(void *ctx, uint8_t cs, uint32_t word, uint8_t bits)
 	stm32_pin_write(w->cs_port[cs], w->cs_pin[cs], true);
 	stm32_pin_write(w->data_port, w->data_pin, false);
 	wait_cycles(half);
+	return true;
+}
+
+bool stm32_wire3_read(void *ctx, uint8_t cs, uint32_t head, uint8_t head_bits, bool pull_up, uint32_t settle_us,
+		      uint8_t n, uint32_t *out)
+{
+	const stm32_wire3_t *w = ctx;
+	if (cs >= w->cs_count || head_bits == 0 || head_bits > 32 || n == 0 || n > 32) {
+		return false;
+	}
+	uint32_t half = (SystemCoreClock / 1000000u) * w->half_period_ns / 1000u + 1u;
+	stm32_pin_write(w->clk_port, w->clk_pin, false);
+	stm32_pin_write(w->cs_port[cs], w->cs_pin[cs], false);
+	wait_cycles(half);
+	for (uint32_t m = 1u << (head_bits - 1u); m != 0; m >>= 1) {
+		stm32_pin_write(w->clk_port, w->clk_pin, false);
+		stm32_pin_write(w->data_port, w->data_pin, (head & m) != 0);
+		wait_cycles(half);
+		stm32_pin_write(w->clk_port, w->clk_pin, true);
+		wait_cycles(half);
+	}
+	// Turn the line around with the clock high: the chip drives it only after the next falling edge, and the clock
+	// has no slowest rate, so the line has all the time it needs to settle under the pull
+	stm32_pin_in(w->data_port, w->data_pin, pull_up ? GPIO_PULLUP : GPIO_PULLDOWN);
+	wait_cycles((SystemCoreClock / 1000000u) * settle_us + 1u);
+	uint32_t v = 0;
+	for (uint8_t i = 0; i < n; i++) {
+		stm32_pin_write(w->clk_port, w->clk_pin, false);
+		wait_cycles(half);
+		v = (v << 1) | (stm32_pin_read(w->data_port, w->data_pin) ? 1u : 0u);
+		if (i + 1u < n) {
+			stm32_pin_write(w->clk_port, w->clk_pin, true);
+			wait_cycles(half);
+		}
+	}
+	wait_cycles(half);
+	stm32_pin_write(w->cs_port[cs], w->cs_pin[cs], true);
+	stm32_pin_out(w->data_port, w->data_pin, false, false);
+	wait_cycles(half);
+	*out = v;
 	return true;
 }

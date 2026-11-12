@@ -107,7 +107,7 @@ SNMP_FLAGS = {"off": 0x01, "rf_off": 0x02, "rf_write": 0x04, "usb_traps_off": 0x
 APRS_FIELDS = {name: i for i, name in enumerate(
     ["tx", "region", "freq_hz", "ssid", "lat", "lon", "pos_src", "interval_s", "smart", "via", "dmr_dst", "level",
      "path", "kiss", "dmr_udt", "after_ptt", "distance_m", "rx", "igate", "igate_tx", "digi", "txdelay",
-     "dmr_gps", "to_is", "power"])}
+     "dmr_gps", "to_is", "power", "ambiguity"])}
 APRS_REGIONS = {"na": 0, "eu": 1, "au": 2, "nz": 3, "jp": 4, "cn": 5, "custom": 6}
 APRS_POS_SRCS = {"auto": 0, "gps": 1, "host": 2, "fixed": 3}
 APRS_VIAS = {"rf": 0, "dmr": 1, "both": 2}
@@ -176,6 +176,9 @@ OP_DTMF = 34
 OP_TX_LIMIT = 35
 OP_TX_DRIVE = 36
 OP_PA_KEYUP = 37
+OP_VFO_SFR = 38
+# The VFO's SFR role names (sfrRole_t, docs/spec/sfr.md 4): off, user, user of an ERDM repeater, repeater, ERDM style
+SFR_ROLES = {"off": 0, "user": 1, "user-erdm": 2, "rpt": 3, "rpt-erdm": 4}
 TX_LIMIT_MAX = 10       # frequencies in the test TX limit's list (core/radio/tx_limit.h)
 DTMF_DIGITS = "0123456789*#ABCD"
 VOLUME_KNOB = 0xFF
@@ -604,11 +607,17 @@ class DebugLink:
         self.request(RX2, struct.pack("<BI", RX2_OP_RESTART, RX2_TOKEN))
 
     def hwopts(self):
-        """The board's hardware options: [{name, value (-1 = none stored), restart, choices}]"""
+        """The board's hardware options: [{name, value (-1 = none stored), restart, choices, state}]; state ok, ask,
+        restart or hidden (a firmware without the key: ask while nothing is stored, else ok)"""
         kv = parse_kv(self.request(HWOPT, bytes([HWOPT_OP_LIST]))[1].decode("ascii", "replace"))
-        return [{"name": kv.get(f"hwopt.{i}.name", ""), "value": int(kv.get(f"hwopt.{i}.value", "-1")),
-                 "restart": kv.get(f"hwopt.{i}.restart") == "1",
-                 "choices": kv.get(f"hwopt.{i}.choices", "").split("|")} for i in range(int(kv.get("hwopt.count", "0")))]
+        out = []
+        for i in range(int(kv.get("hwopt.count", "0"))):
+            value = int(kv.get(f"hwopt.{i}.value", "-1"))
+            out.append({"name": kv.get(f"hwopt.{i}.name", ""), "value": value,
+                        "restart": kv.get(f"hwopt.{i}.restart") == "1",
+                        "choices": kv.get(f"hwopt.{i}.choices", "").split("|"),
+                        "state": kv.get(f"hwopt.{i}.state") or ("ask" if value < 0 else "ok")})
+        return out
 
     def hwopt_set(self, option, choice):
         """Store a choice; raises DebugLinkError (status 7) when the board refuses it or the radio transmits."""
@@ -947,6 +956,20 @@ class DebugLink:
         temporary changes, in the VFO the VFO's own settings (RADIO op 31)."""
         m = 0xFF if mode is None else {"fm": 0, "dmr": 1}[mode]
         self.radio(OP_DMR_FIELDS, bytes([m, 0xFF if cc is None else int(cc), 0 if ts is None else int(ts)]))
+
+    def vfo_sfr(self, role, inbound_ts=1, framing=0, hang=0):
+        """The VFO's SFR role (RADIO op 38; sfr.md 4), saved with the VFO: role a SFR_ROLES name or 0..4, the inbound
+        slot 1 / 2, framing 0..3, hang 0..3: a codeplug channel's SFR byte A. The outbound color code is the VFO's own.
+        The radio core takes it in the VFO only (dmr.sfr_role shows it)."""
+        r = SFR_ROLES[role] if isinstance(role, str) else int(role)
+        if not 0 <= r <= 4 or inbound_ts not in (1, 2) or not 0 <= framing <= 3 or not 0 <= hang <= 3:
+            raise ValueError("vfo_sfr: role 0..4, inbound_ts 1|2, framing 0..3, hang 0..3")
+        a = r | framing << 3 | (0x20 if inbound_ts == 2 else 0) | hang << 6
+        self.vfo_sfr_byte(a)
+
+    def vfo_sfr_byte(self, a):
+        """The VFO's SFR role as byte A itself (RADIO op 38), as the view's ch.sfr shows it first."""
+        self.radio(OP_VFO_SFR, bytes([int(a) & 0xFF]))
 
     def vfo_copy(self):
         """Copy the channel on view to the VFO and open it (RADIO op 32). Raises DebugLinkError "refused" for a channel
@@ -1437,6 +1460,12 @@ def cmd_radio(link, a):
         link.dmr_fields(cc=num(0))
     elif op == "ts":                  # ts 1|2
         link.dmr_fields(ts=num(0))
+    elif op == "sfr":                 # sfr off|user|user-erdm|rpt|rpt-erdm [ts=1|2] [framing=0..3] [hang=0..3]
+        if not args or (args[0] not in SFR_ROLES and not (args[0].isdigit() and int(args[0]) in SFR_ROLES.values())):
+            raise SystemExit("sfr ROLE [ts=1|2] [framing=N] [hang=N]: ROLE " + "|".join(SFR_ROLES))
+        kw = dict(a.split("=", 1) for a in args[1:] if "=" in a)
+        link.vfo_sfr(args[0] if not args[0].isdigit() else int(args[0]), int(kw.get("ts", 1)),
+                     int(kw.get("framing", 0)), int(kw.get("hang", 0)))
     elif op == "dtmf":                # dtmf DIGITS [ms]: key taps during FM TX (PTT held)
         if not args or any(c not in DTMF_DIGITS for c in args[0].upper()):
             raise SystemExit("dtmf DIGITS [ms]: digits from " + DTMF_DIGITS)
@@ -2010,11 +2039,12 @@ def cmd_hwopt(link, a):
             print("hwopt: OPTION (number or name) and one of its choices; see `hwopt` for the list", file=sys.stderr)
             return 2
         link.hwopt_set(i, opts[i]["choices"].index(a.choice))
-        print(f"{opts[i]['name']} = {a.choice}" + (" (from the next start-up)" if opts[i]["restart"] else ""))
+        due = link.hwopts()[i]["state"] == "restart"
+        print(f"{opts[i]['name']} = {a.choice}" + (" (from the next start-up)" if due else ""))
         return 0
     for i, o in enumerate(opts):
         v = o["choices"][o["value"]] if 0 <= o["value"] < len(o["choices"]) else "not set"
-        print(f"{i} {o['name']}: {v}  ({' | '.join(o['choices'])}){'  restart' if o['restart'] else ''}")
+        print(f"{i} {o['name']}: {v}  ({' | '.join(o['choices'])})  {o['state']}")
     if not opts:
         print("no hardware options on this radio")
     return 0
@@ -2172,7 +2202,7 @@ def main(argv=None):
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
-                                  "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "copy-vfo", "voice-test", "dtmf",
+                                  "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "sfr", "copy-vfo", "voice-test", "dtmf",
                                   "tx-limit", "tx-drive", "pa-keyup"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")

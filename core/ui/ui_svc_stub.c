@@ -28,6 +28,7 @@ WEAK void ui_svc_focus_target(uint32_t id, bool private_call) { (void)id; (void)
 
 WEAK bool ui_svc_dmr_timeslot(uint8_t ts) { (void)ts; return false; }
 WEAK bool ui_svc_dmr_color_code(uint8_t cc) { (void)cc; return false; }
+WEAK bool ui_svc_vfo_sfr(uint8_t a) { (void)a; return false; }
 WEAK bool ui_svc_mode(uint8_t mode) { (void)mode; return false; }
 WEAK uint8_t ui_svc_vfo_copy(const radio_view_t *v) { (void)v; return VFO_COPY_NO_VFO; }
 WEAK bool ui_svc_hear_all(bool on) { (void)on; return false; }
@@ -69,6 +70,7 @@ WEAK bool ui_svc_msg_delete(uint16_t i) { (void)i; return false; }
 WEAK bool ui_svc_msg_send(uint32_t dst, bool group, const char *text) { (void)dst; (void)group; (void)text; return false; }
 WEAK bool ui_svc_radio_check(uint32_t id) { (void)id; return false; }
 WEAK bool ui_svc_call_alert(uint32_t id) { (void)id; return false; }
+WEAK uint8_t ui_svc_ars_state(void) { return UI_ARS_OFF; }
 
 WEAK bool ui_svc_position(ui_position_t *out) { (void)out; return false; }
 WEAK bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out) { (void)i; (void)out; return false; }
@@ -98,7 +100,7 @@ WEAK void ui_svc_zone_offer_reject(uint32_t serial) { (void)serial; }
 WEAK bool ui_svc_zone_offer_import(uint32_t serial, uint16_t zone) { (void)serial; (void)zone; return false; }
 
 // Safe defaults (P7): no auto-transmit feature on, tones on, hints on
-static int32_t settings[UI_SET_COUNT] = {
+static int32_t settings[UI_SET_RAM_COUNT] = {
 	[UI_SET_KEY_TONES] = 1, [UI_SET_TONE_VOLUME] = 5, [UI_SET_TALK_PERMIT] = 1, [UI_SET_MESSAGE_TONE] = 1,
 	[UI_SET_BRIGHTNESS] = 100, [UI_SET_BACKLIGHT_S] = 30, [UI_SET_HINTS] = 1,
 	[UI_SET_REPLY_S] = 10, [UI_SET_TOT_S] = 180, [UI_SET_SQUELCH] = 5, [UI_SET_MIC_GAIN] = 5, [UI_SET_ALIAS_SHOW] = 1,
@@ -112,12 +114,12 @@ static int32_t settings[UI_SET_COUNT] = {
 // (ui_svc_storage.c keeps the ones settings_t has fields for: these are the defaults of the rest, and the UI's
 // stand-ins in a build without the store)
 
-int32_t ui_svc_ram_get(uint8_t id) { return id < UI_SET_COUNT ? settings[id] : 0; }
+int32_t ui_svc_ram_get(uint8_t id) { return id < UI_SET_RAM_COUNT ? settings[id] : 0; }
 
 bool ui_svc_ram_set(uint8_t id, int32_t value)
 {
-	if (id >= UI_SET_COUNT)
-		return false;
+	if (id >= UI_SET_RAM_COUNT)
+		return false;	// past the table (RAM is short): the codeplug's, set through ui_svc_storage.c
 	settings[id] = value;
 	return true;
 }

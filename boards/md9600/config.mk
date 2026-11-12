@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 # MD-9600 feature defaults (config/features.mk lists them all). State: docs/spec/hardware-md9600.md 19. Every
-# board revision is built; V1-V3 is the one checked on a radio. Transmit is refused until a person arms it for the power
-# cycle, the revision is a stored one and the PA calibration is plausible. DMR receive is built (the HR_C6000 glue, the radio's own stock codec where the user's
+# board revision is built; V1-V3 is the one checked on a radio. Transmit is refused until the board revision is
+# confirmed (detected on V4A / V5, else set once by a person or the installer) and the PA calibration is plausible. DMR receive is built (the HR_C6000 glue, the radio's own stock codec where the user's
 # machine merged it); DMR transmit is refused like FM. The switches that are off are listed below
 #
 # Every board revision's synthesizer driver, so one image runs on any MD-9600; turn revisions off for a smaller image
@@ -42,7 +42,6 @@ CONFIG_BCAST_FM ?= n
 BOARD_UNSUPPORTED += UI_COLOR	# a 128x64 monochrome panel
 BOARD_UNSUPPORTED += FONT_XL	# the large font is for 240 px and wider panels; this one is 128x64
 BOARD_UNSUPPORTED += FONT_AA	# a monochrome panel draws anti-aliased fonts as plain ink and gains nothing
-BOARD_UNSUPPORTED += FONT_BIG	# for 240 px and wider color panels (and needs FONT_AA)
 BOARD_UNSUPPORTED += AM_RX	# no air band receiver (docs/spec/airband-and-broadcast.md)
 BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver (docs/spec/airband-and-broadcast.md)
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor
