@@ -617,16 +617,23 @@ drive 1115; the 5 W row is 2119):
 | dB | -42.8 | -32.2 | -18.7 | -12.4 | -8.2 | -4.8 | -2.1 |
 
 DMR: the PA follows the bursts, keyed by the key-up rule ([pa-keyup.md](pa-keyup.md)) with constants measured by
-`tools/bench/pa_cal.py` on a UHF radio up to its 2.5 W level (dead zone 56.3 % of the anchor, knee 96 µs, slope
-1002 µs, settle 506 µs, fastest approach 30.4 % of the anchor over the dead zone): the two lowest levels get a
-boost; the levels from 1 W up come in on the approach drive (842 on the radio measured) and then take their own.
-Over the air on the SDR bench every level measured was up 0.16-0.41 ms before the first symbol and 0.8-1.4 dB
-over its power, on the air no earlier than 1.07 ms before the first symbol. The level at drive 972 written alone
-ran 4.5 dB past its power, and a boost made it worse (6-8 dB): the cure is the slower approach. The 5 W level is
-not measured. An earlier fixed boost for every level overshot the low levels by 7 dB and more. Keyed at the RF TX
-interrupt, the PA was up 1.1-1.6 ms before the first symbol, so the window is 1 ms after the interrupt (`window_us`
-1530, the interrupt taken as 2.53 ms before the first symbol) and the PA goes on with the first drive. On the SDR bench (UHF radio, 432 MHz), every level at
-its own drive from that point:
+`tools/bench/pa_cal.py` on a UHF radio up to its 2.5 W level and judged by the ramp's shape
+(`tools/bench/pa_shape.py`): dead zone 56.3 % of the anchor, knee 91 µs, slope 1003 µs, window 1650 µs, settle
+506 µs, no approach (`ease_pm` 0). Only the lowest level gets a boost. Over the air on the SDR bench every level
+reaches -3 dB 0.19-0.34 ms before the first symbol and is within 0.4 dB of its power over the first 10 symbols
+(mean), nothing over the floor in the slot before. Overshoot: 0.7-1.1 dB, and 1.7-1.8 dB at drive 972, which that
+drive gives written alone too (the power loop's). The lowest level leaves the floor about 1 ms ahead and stays near
+-28 dB for about 0.1 ms before it rises (the PA just over its turn-on edge, at any boost tried). The 5 W level is not
+measured.
+
+The window used to be 1530 µs: the second level's lead was then just past it, so it was boosted and ran 3.6-4.7 dB
+past its power, though written alone at the window's start its own drive is up 0.18 ms before the first symbol,
+0.7 dB over. An approach drive (`ease_pm` 304) capped that boost but kept the levels from 1 W up at the approach
+drive from 2.2 ms ahead: a step 6-9 dB down through the guard, on the air 1.1-1.2 ms before the first symbol. An
+earlier fixed boost for every level overshot the low levels by 7 dB and more. Keyed at the RF TX interrupt, the PA
+was up 1.1-1.6 ms before the first symbol (the interrupt taken as 2.53 ms before the first symbol), and the PA goes
+on with the first drive. On the SDR bench (UHF radio, 432 MHz), every level at its own drive from 1 ms after the
+interrupt, before the rule:
 
 | Level | -3 dB point before the first symbol | First symbol against the settled level | Overshoot |
 |---|---|---|---|
