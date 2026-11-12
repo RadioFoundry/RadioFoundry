@@ -140,6 +140,7 @@ so (the debug link's `dual.both`).
 | Its settings change (a codeplug edit, the squelch) | Sent again every 2 s; the link drops repeats |
 | Audio | The selected channel's always wins. The second receiver has the speaker only while the main one plays nothing (FM squelch closed, no DMR call) and the radio isn't transmitting |
 | PTT | On the selected channel, where the main receiver already is. The second receiver keeps listening; its audio is muted while the radio transmits |
+| It only senses its channel (`rx2_status_t.sense`: a DMR channel on a board with one DMR decoder) | It reports a carrier there as `active`. While the selected channel is quiet (no signal or call, no DMR reply window, monitor off), a carrier there moves the main receiver to it to decode: a look, which runs as on one receiver (2.1): the scan holds the call and waits after it, then the main receiver goes back. The board can make the move without a retune (the DMR decoder switched to the second receiver's signal). A look that found no call for us is repeated only after the carrier drops or 5 s. During a look the main receiver doesn't look back at the selected channel |
 | It doesn't answer, or isn't on its settings 1.5 s after them | The core falls back to alternating the main receiver (2.1) and tries the second receiver again every 10 s |
 | The watch ends | The second receiver stops and its audio goes off |
 

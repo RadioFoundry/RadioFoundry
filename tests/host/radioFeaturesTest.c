@@ -2237,6 +2237,7 @@ static void test_dual_requests(void)
 static struct {
 	bool up, refuse, deaf, on, audio;	// deaf: takes settings but never says it's on them
 	bool active;
+	bool sense;				// it only senses its channel (rx2_status_t.sense)
 	rx2_tune_t t;
 	int tunes, stops;
 } r2;
@@ -2259,7 +2260,8 @@ static void r2_status(rx2_status_t *st)
 	st->up = r2.up;
 	st->tuned = r2.up && r2.on && !r2.deaf;
 	st->active = st->tuned && r2.active;
-	st->heard = st->active && r2.audio;
+	st->heard = st->active && r2.audio && !r2.sense;
+	st->sense = r2.sense;
 	st->rssi_dbm = -80;
 }
 static void r2_audio(bool on) { r2.audio = on; }
@@ -2365,6 +2367,89 @@ static void test_dual_rx2(void)
 	CHECK(sm.view.rx2);
 	req(RREQ_CH_STEP, 1);
 	CHECK(sm.view.scan == SCAN_OFF && !sm.view.rx2 && !r2.on);
+	r2.active = false;
+	board.rx2 = NULL;
+}
+
+// A second receiver that only senses its DMR channel (rx2_status_t.sense): on its carrier, with the selected channel
+// quiet, the main receiver goes there to decode, holds the call, and comes back after the wait
+static void test_dual_rx2_sense(void)
+{
+	start();
+	memset(&r2, 0, sizeof(r2));
+	r2.up = true;
+	r2.sense = true;
+	board.rx2 = &fake_rx2;
+	const radio_dual_ref_t home = { false, 0, 0 }, dmr = { false, 0, 5 };
+	dual(dmr, home, 1);
+	CHECK(sm.view.rx2 && on_ref(home) && r2.on && r2.t.mode == RADIO_MODE_DMR);
+	bool moved = false;
+	for (int i = 0; i < 80; i++) {
+		run(25);
+		moved |= !on_ref(home);
+	}
+	CHECK(!moved);
+
+	// A call there: the main receiver goes, plays it and holds it
+	signal_on(0, 438500000, 30, no_tone);
+	hw.sig[0].tdma = true;
+	memset(&air, 0, sizeof(air));
+	air.on = true;
+	air.hz = 438500000;
+	air.t0 = now + 100;
+	air.dst = 9;
+	air.lc_at = 1;
+	r2.active = true;
+	uint32_t went = 0, played = 0, t0 = now;
+	for (int i = 0; i < 160; i++) {
+		run(25);
+		if (went == 0 && on_ref(dmr)) {
+			went = now - t0;
+		}
+		if (played == 0 && on_ref(dmr) && sm.view.dmr.state == RDMR_RX) {
+			played = now - t0;
+		}
+	}
+	CHECK(went != 0 && went <= 100 && played != 0 && on_ref(dmr) && sm.view.rx2 &&
+	      sm.view.scan_phase == SCAN_PH_HOLD && sm.view.dmr.state == RDMR_RX);
+	// It ends: back on the selected channel after the wait
+	air.on = false;
+	hw.sig[0].hz = 0;
+	r2.active = false;
+	CHECK(wait_on(home, RADIO_DUAL_DELAY_MS + 3000));
+	CHECK(sm.view.rx2 && sm.view.scan == SCAN_DUAL);
+
+	// The selected channel has a signal: it keeps the main receiver
+	signal_on(0, 146520000, 30, no_tone);
+	hw.sig[0].tdma = false;
+	run(300);
+	CHECK(sm.view.state == RS_RX && on_ref(home));
+	r2.active = true;
+	moved = false;
+	for (int i = 0; i < 40; i++) {
+		run(25);
+		moved |= !on_ref(home);
+	}
+	CHECK(!moved);
+	hw.sig[0].hz = 0;
+
+	// A carrier with no call for us: one look, and the next only after RADIO_RX2_RELOOK_MS
+	int looks = 0;
+	bool was = false;
+	for (uint32_t t = 0; t < RADIO_RX2_RELOOK_MS; t += 25) {
+		run(25);
+		looks += on_ref(dmr) && !was;
+		was = on_ref(dmr);
+	}
+	CHECK(looks == 1 && on_ref(home));
+	// ... or once its carrier dropped and came back
+	r2.active = false;
+	run(100);
+	r2.active = true;
+	CHECK(wait_on(dmr, 200));
+	CHECK(wait_on(home, 4000));
+
+	dual_stop();
 	r2.active = false;
 	board.rx2 = NULL;
 }
@@ -3640,6 +3725,7 @@ int main(void)
 	test_dual_wait();
 	test_dual_requests();
 	test_dual_rx2();
+	test_dual_rx2_sense();
 #endif
 	test_tot_and_beeps();
 	test_beep_follows_volume();

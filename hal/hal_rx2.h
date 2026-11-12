@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// A second receiver: radios with a receiver per dual watch channel (the GD-88's SoC B). The radio core keeps it on the
+// A second receiver: radios with a receiver per dual watch channel. The radio core keeps it on the
 // dual watch channel that isn't selected, so both channels are heard at once instead of in turn; the main receiver
 // (hal_radio_t) stays on the selected one, which is also the one PTT transmits on. Without it (board.rx2 NULL, or
 // tune() refused) dual watch alternates the main receiver as on every other radio (docs/spec/radio-features.md 2.1).
@@ -36,6 +36,10 @@ typedef struct {
 	bool dmr;		// active is a DMR call
 	bool group;		// ... to a group (else private)
 	bool heard;		// its audio goes to the speaker now (audio(true) and active)
+	// It only senses its channel: a DMR channel on a receiver with no decoder of its own (one baseband for both). Then
+	// active is a carrier there, and the core moves the main receiver to it to decode, while the selected channel is
+	// quiet (docs/spec/radio-features.md 2.1)
+	bool sense;
 	int16_t rssi_dbm;
 	uint8_t noise;
 	uint32_t src, dst;	// DMR: the call's source and destination IDs
