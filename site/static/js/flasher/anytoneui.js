@@ -84,10 +84,17 @@ async function openPort() {
 	if (a.stream && !a.stream.lost) return a.stream;
 	if (S().sim) return (a.stream = simRadio().stream);
 	if (!serialSupported()) throw new Error(t("flash.err.no_serial"));
-	// the update mode's USB ids are the vendor's and not known here: any port, the user picks the radio's
-	const port = await navigator.serial.requestPort();
+	// the chooser lists the variants' USB ids, which the update mode and the PC mode share with the normal mode (seen on
+	// the GD32; the AT32's assumed: hardware-d578uv.md 1), and RadioFoundry's; allPortsLink lists every port
+	const port = await navigator.serial.requestPort(a.everyPort ? {} : { filters: portFilters(S().radio) });
 	a.stream = await SerialStream.open(port, BAUD);
 	return a.stream;
+}
+
+// "Show All USB Devices": the next openPort lists every port, then retry runs
+function allPortsLink(retry) {
+	return h("p", { class: "small" }, h("a", { href: "#", onclick: (e) => { e.preventDefault(); session().everyPort = true; retry(); } },
+		t("flash.detect.all_ports")));
 }
 
 // For the variant probes (detect.js): the port asked for once, opened again at each probe's rate
@@ -99,7 +106,7 @@ function probeOpener() {
 		port ||= await navigator.serial.requestPort(every ? {} : { filters: portFilters(S().radio) });
 		return SerialStream.open(port, baud || BAUD);
 	};
-	// the update mode's USB id isn't known (hardware-d578uv.md 1), so the filtered chooser may not list a radio in it
+	// the AT32's update mode USB id is assumed (hardware-d578uv.md 1), so the filtered chooser may not list it
 	open.showAll = () => { every = true; port = null; };
 	return open;
 }
@@ -167,6 +174,7 @@ export function connectView() {
 			a.ident ? h("dl", { class: "kv-list" },
 				h("dt", {}, t("flash.at.model")), h("dd", {}, `${a.ident.model} (${t("flash.at.hw")} ${a.ident.hw}, ${a.ident.version})`),
 				h("dt", {}, t("flash.at.variant")), h("dd", {}, vd?.code ? variantLabel(r, vd.code) : t("flash.at.variant_unknown"))) : null,
+			a.ident ? null : allPortsLink(connect),
 			vd && !vd.ok ? notice(t(`flash.at.refuse_${vd.why}`, { why: vd.text }), "bad") : null,
 			vd?.ok ? notice(t(task() === "install" ? "flash.at.ok_install" : "flash.at.ok_restore"), "ok") : null,
 			status, a.log.el));
@@ -223,7 +231,7 @@ export function channelsView() {
 			h("ol", { class: "steps" }, h("li", {}, t("flash.at.ch_step_on")), h("li", {}, t("flash.at.ch_step_connect"))),
 			c ? notice(t("flash.at.ch_have", { counts: t("flash.channels.counts", c.counts) }), "ok") : null,
 			c?.notes.length ? h("ul", { class: "small" }, c.notes.map((x) => h("li", {}, t(`editor.qdmr.note.${x.code}`, { n: x.n })))) : null,
-			bar.el, status, a.log.el));
+			c ? null : allPortsLink(read), bar.el, status, a.log.el));
 		S().forward([button(t(c ? "flash.at.continue" : "flash.at.ch_skip"), () => ctx.next(), { quiet: !c, primary: !!c }),
 			c ? null : button(t("flash.at.ch_read"), read, { primary: true })].filter(Boolean));
 	};

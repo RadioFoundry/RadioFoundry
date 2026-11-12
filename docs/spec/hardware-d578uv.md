@@ -22,7 +22,8 @@ The radio was built with two MCUs. Each needs its own firmware build; the manufa
 | AT | AT32F435/437 (Cortex-M4F) | from about mid-2022 | `578UV2A` (578UV), `D578UVA` (PRO) |
 
 - The radio's version screen names the build: `GD_Ver` or `AT_Ver`.
-- The original firmware's USB device differs by MCU, so the port alone names the variant:
+- The original firmware's USB device differs by MCU, so the port alone names the variant. The update mode and the
+  PC mode use the same device (seen on a GD32 PRO, bootloader V100; assumed on the AT32):
 
   | Variant | USB id | Strings |
   | --- | --- | --- |
@@ -937,6 +938,8 @@ radio is turned on with MENU and EXIT held (unverified, section 3.2).
 - A vendor firmware set is a `.CDD` (the image), a `.CDI` (278-byte entries: name, address, length, offset) and a
   `.spi` (the model names). The application's address in the `.CDI` is the image's flash address.
 - The firmware image is written by the bootloader only.
+- A finish (`18`) after the hello with no data frames leaves the update mode: the radio restarts into the application
+  already in flash (seen on a GD32 PRO, bootloader V100).
 
 Tools: `tools/anytone_update.py` and the flasher's AnyTone update backend.
 
