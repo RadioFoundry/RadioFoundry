@@ -2008,10 +2008,11 @@ static void text_draw(void)
 		y += L->small->h;
 	} while(start_char < (text_len+1));
 
-	if(text_prefix != TEXT_MESSAGE)
-		ui_draw_hint(TRN(TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE), false);
+	// TRN only marks the text for the catalog: tr() translates it where it is shown (list_draw did this before)
+	if (text_prefix != TEXT_MESSAGE)
+		ui_draw_hint(tr(TRN(TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE)), false);
 	else
-		ui_draw_hint(TRN(TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK send" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE), false);
+		ui_draw_hint(tr(TRN(TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK send" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE)), false);
 }
 
 static bool text_key_fn(const input_event_t *ev)
