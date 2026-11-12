@@ -2000,7 +2000,7 @@ static void text_draw(void)
 			line_len++;
 		}
 		// Make sure the "_" is displayed, even if it wraps to the next line.
-		if((line_len < text_linewidth) && (start_char >= text_len)) {
+		if (line_len < text_linewidth && start_char >= text_len) {
 			sb_chr(&b, '_');
 			start_char++;
 		}
