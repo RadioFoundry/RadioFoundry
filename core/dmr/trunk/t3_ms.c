@@ -1403,8 +1403,12 @@ static int adj_note(t3_ms_t *ms, const t3_bcast_t *b, const t3_cdef_t *cdef)
 		return -1;
 	}
 	uint16_t sys14 = (uint16_t)(b->parms1 & 0x3FFFu);
-	if (c.rx_hz == 0 || c.rx_hz == ms->tscc.rx_hz ||
-	    !authorized(ms, (uint16_t)((uint16_t)(sys14 << 2) | (ms->syscode & 3u)))) {
+	if (c.rx_hz == 0 || c.rx_hz == ms->tscc.rx_hz) {
+		return -1;
+	}
+	if (!authorized(ms, (uint16_t)((uint16_t)(sys14 << 2) | (ms->syscode & 3u)))) {
+		// A site the radio may not use (its network, sites or category): announced, never sampled
+		ms->st.adj_refused++;
 		return -1;
 	}
 	uint8_t i = 0;

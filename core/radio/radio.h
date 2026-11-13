@@ -247,6 +247,7 @@ typedef struct {
 	uint32_t csbk, crc_bad, grants, followed, unmapped, returns, hunts, foreign, learned, sent, ra_tries;
 	// Roaming (the t3_roam section)
 	uint32_t votes, vote_moves, weak_leaves;	// adjacent TSCCs sampled, moved to; TSCCs left as weak
+	uint32_t adj_refused;	// adjacent sites announced but not authorized
 	int16_t level_dbm;	// the tuned channel's averaged level (0: none yet)
 	int16_t leave_dbm;	// the threshold in force
 	uint16_t reg_area;	// the area registered in

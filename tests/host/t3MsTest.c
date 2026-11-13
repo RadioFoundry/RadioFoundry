@@ -606,6 +606,7 @@ static void test_adjacent(void)
 	announce(&ms, T3_ANN_ADJACENT, site1, 0, 0, 154);
 	announce(&ms, T3_ANN_ADJACENT, site1, 0, 0, 0);
 	CHECK(ms.nadj == 1, "another network's, our own TSCC and channel 0 aren't kept: %u", ms.nadj);
+	CHECK(ms.st.adj_refused == 1, "the other network's counted as refused: %u", ms.st.adj_refused);
 	CHECK(ms.state == T3_CAMPED && last.chan.rx_hz == RX(154), "Adjacent_Site alone doesn't sample");
 	// A lost TSCC is tried again first, then the adjacent site before the programmed list
 	adv(&ms, T3_NOSIG_MS + 100);

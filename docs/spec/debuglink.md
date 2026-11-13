@@ -883,7 +883,8 @@ key itself is never shown), `auths` (challenges answered), `massregs`, `moves` (
 The `t3_roam` section, also `t3.`-prefixed ([dmr-trunking.md](dmr-trunking.md) 7.18): `level_dbm` (the tuned
 channel's averaged level, 0: none yet), `leave_dbm` (the threshold in force), `dmrla`, `reg_area` (the area registered
 in), `vote_on` (sampling an adjacent control channel), `hunt_strict` (hunting away from a weak one), `votes`,
-`vote_moves`, `weak_leaves`, `adjacent` (how many are known), then each as `adjN=rx_hz,sys14,conf_prio,adj_prio,dbm,age_ms`
+`vote_moves`, `weak_leaves`, `adj_refused` (adjacent sites announced with a system code the radio may not use: its
+network, authorized sites or category), `adjacent` (how many are known), then each as `adjN=rx_hz,sys14,conf_prio,adj_prio,dbm,age_ms`
 (sys14 the system code's 14 high bits in hex; dbm 0 and age -1: never sampled).
 
 `rfoundry_debug.py t3 setup --model 1 --net 5 --cc 2 --ctrl 1:RX_MHZ:TX_MHZ --tg 1` stages and starts one;

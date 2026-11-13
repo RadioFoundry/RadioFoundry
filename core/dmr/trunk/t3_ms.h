@@ -239,6 +239,7 @@ typedef struct {
 	uint32_t votes;		// adjacent TSCCs sampled after a Vote Now
 	uint32_t vote_moves;	// ... and moved to
 	uint32_t weak_leaves;	// TSCCs left for a weak signal
+	uint32_t adj_refused;	// adjacent sites announced with a system code the radio may not use
 } t3_stats_t;
 
 typedef struct {

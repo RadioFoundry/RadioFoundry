@@ -317,8 +317,8 @@ void debuglink_view_t3_roam(const radio_view_t *v, dl_text_t *t)
 	uint32_t now = hal_millis();
 	dl_text(t, "t3.level_dbm=%d\nt3.leave_dbm=%d\nt3.dmrla=%u\nt3.reg_area=0x%04x\nt3.vote_on=%u\nt3.hunt_strict=%u\n",
 		x->level_dbm, x->leave_dbm, x->dmrla, x->reg_area, x->vote_on, x->hunt_strict);
-	dl_text(t, "t3.votes=%u\nt3.vote_moves=%u\nt3.weak_leaves=%u\nt3.adjacent=%u\n", (unsigned)x->votes,
-		(unsigned)x->vote_moves, (unsigned)x->weak_leaves, x->nadj);
+	dl_text(t, "t3.votes=%u\nt3.vote_moves=%u\nt3.weak_leaves=%u\nt3.adj_refused=%u\nt3.adjacent=%u\n",
+		(unsigned)x->votes, (unsigned)x->vote_moves, (unsigned)x->weak_leaves, (unsigned)x->adj_refused, x->nadj);
 	// Each: RX Hz, the 14 system code bits, confirmed and adjacent priority, the level and age of its last sample
 	for (uint8_t i = 0; i < x->nadj && i < sizeof x->adj / sizeof x->adj[0]; i++) {
 		dl_text(t, "t3.adj%u=%u,0x%04x,%u,%u,%d,%d\n", i, (unsigned)x->adj[i].rx_hz, x->adj[i].sys14,
