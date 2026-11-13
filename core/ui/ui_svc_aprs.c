@@ -68,6 +68,11 @@ bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out)
 	return aprs_station(i, out);
 }
 
+bool ui_svc_aprs_station_find(const char *call, aprs_station_t *out)
+{
+	return aprs_station_find(call, out);
+}
+
 bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg)
 {
 	int32_t lat, lon;

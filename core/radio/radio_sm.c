@@ -3618,9 +3618,21 @@ static bool aprs_can_start(const radio_sm_t *sm)
 		return false;
 	}
 #if CONFIG_SCAN
-	if (scan_on(&sm->scan)) {
+	if (scan_on(&sm->scan) && !dual_running(sm)) {
 		return false;
 	}
+#if CONFIG_DUAL_WATCH
+	if (dual_peeking(sm)) {
+		return false;
+	}
+	if (sm->rx2_on) {
+		rx2_status_t st;
+		board.rx2->status(&st);
+		if (st.active) {
+			return false;
+		}
+	}
+#endif
 #endif
 #if CONFIG_FM_TX_TONES
 	if (sm->roger_ms != 0 || sm->burst_keyed) {
@@ -3679,6 +3691,17 @@ static void aprs_rf_end(radio_sm_t *sm, aprs_rf_result_t r, uint32_t now_ms)
 	sm->view.aprs_tx = false;
 	aprs_rf_done(r, now_ms);
 	tune(sm, now_ms);	// the channel again (DMR set up again if it was DMR)
+#if CONFIG_SCAN
+	if (dual_running(sm)) {
+		scan_tuned(&sm->scan, now_ms);
+		scan_publish(sm);
+#if CONFIG_DUAL_WATCH
+		if (board.rx2 != NULL) {
+			rx2_engage(sm, now_ms);
+		}
+#endif
+	}
+#endif
 }
 
 static void aprs_rf_abort(radio_sm_t *sm, uint32_t now_ms)
@@ -3692,6 +3715,11 @@ static void aprs_rf_start(radio_sm_t *sm, uint32_t now_ms)
 	if (!aprs_rf_take(&sm->aprs_job, now_ms)) {
 		return;
 	}
+#if CONFIG_SCAN && CONFIG_DUAL_WATCH
+	if (dual_running(sm)) {
+		rx2_release(sm);	// the other receiver must be quiet while APRS has the transmitter
+	}
+#endif
 	if (sm->board_mode == RADIO_MODE_DMR) {
 		dmr_end(sm);		// the call stack lets go of the modem before the chip leaves DMR
 	}

@@ -693,6 +693,24 @@
     "APRS"
    ]
   },
+  "aprs_station": {
+   "group": "tools",
+   "needs": [
+    "APRS_RX"
+   ]
+  },
+  "aprs_station_evicted": {
+   "group": "tools",
+   "needs": [
+    "APRS_RX"
+   ]
+  },
+  "aprs_station_text": {
+   "group": "tools",
+   "needs": [
+    "APRS_RX"
+   ]
+  },
   "gps_sky": {
    "group": "tools",
    "needs": [

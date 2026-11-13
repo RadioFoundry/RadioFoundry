@@ -733,6 +733,42 @@ msgid "Message"
 msgstr "Messaggio"
 
 #: core/ui/ui_aprs.c
+msgid "No longer in list"
+msgstr "Non più in elenco"
+
+#: core/ui/ui_aprs.c
+msgid "{Distance|Dist|}"
+msgstr "{Distanza|Dist|}"
+
+#: core/ui/ui_aprs.c
+msgid "Direct"
+msgstr "Diretto"
+
+#: core/ui/ui_aprs.c
+msgid "Via digipeater"
+msgstr "Via digipeater"
+
+#: core/ui/ui_aprs.c
+msgid "{Position age|Pos age}"
+msgstr "{Età posizione|Età pos}"
+
+#: core/ui/ui_aprs.c core/ui/ui_gps.c
+msgid "Speed"
+msgstr "Velocità"
+
+#: core/ui/ui_aprs.c
+msgid "Course"
+msgstr "Rotta"
+
+#: core/ui/ui_aprs.c
+msgid "Symbol"
+msgstr "Simbolo"
+
+#: core/ui/ui_aprs.c
+msgid "Packets"
+msgstr "Pacchetti"
+
+#: core/ui/ui_aprs.c
 msgid "OK choose  Back"
 msgstr "OK scegli  Indietro"
 
@@ -1051,10 +1087,6 @@ msgstr "Lon"
 #: core/ui/ui_gps.c
 msgid "Alt"
 msgstr "Alt"
-
-#: core/ui/ui_gps.c
-msgid "Speed"
-msgstr "Velocità"
 
 #: core/ui/ui_gps.c
 msgid "No positions yet"

@@ -158,6 +158,12 @@ Positions (plain, compressed, with and without timestamps), Mic-E (the destinati
 longitude, speed and course from the information field), objects, items, status, messages, third-party packets,
 queries, weather and telemetry recognized by type (not decoded further).
 
+Third-party packets (`}SRC>DST,PATH:info`, how an iGate puts APRS-IS traffic on RF): a message or ack inside one is
+handled as from SRC (`aprs_ax25.c`, `third_party_in`). It is kept, matched to our pending message and acked under SRC; the
+ack goes to SRC on our own path. One level only. A packet from our own call is ignored. Nothing else inside is
+decoded: the station list keeps the iGate, the station actually heard, so an Internet station never counts as heard
+on RF for the iGate rules (section 9.1).
+
 ## 5. The radio side
 
 ### 5.1 hal_afsk
@@ -238,8 +244,8 @@ below the squelch could be decoded. That needs a board receive path (1 above) re
 ## 6. RF transmission
 
 The radio core's APRS block (`radio_sm.c`, `aprs_*`): when a frame waits (`aprs_rf_pending`) and the radio is idle
-(no PTT, no call heard or sent, no scan, no hotspot, no monitor, no TX inhibit, battery not critical), it takes the
-job (`aprs_rf_take`: our queued frames, 1 flag between them, a TX delay of flags before, 3 after), and:
+(no PTT, no call heard or sent, no zone or VFO scan, no hotspot, no monitor, no TX inhibit, battery not critical),
+it takes the job (`aprs_rf_take`: our queued frames, 1 flag between them, a TX delay of flags before, 3 after), and:
 
 1. LISTEN: tunes the APRS frequency (25 kHz, or 12.5 kHz when narrow is set), 50 ms to settle, then 100 ms slots with
    p-persistence 64/256 while the squelch is closed; gives up after 10 s (`rf_busy`, retried later).
@@ -252,6 +258,12 @@ job (`aprs_rf_take`: our queued frames, 1 flag between them, a TX delay of flags
 While keyed, Home keeps the selected channel on screen. Its status pill says "TX APRS" and its activity says
 "SENDING", without elapsed or remaining TX time. The ordinary status and activity return when the APRS job ends or is
 aborted.
+
+During dual watch, the job temporarily interrupts the watch and sends on APRS's configured frequency regardless of
+which channel is selected or tuned. A call on either receiver defers the job. A second receiver is stopped during the
+job. After the channel is restored, dual watch resumes its normal listen dwell; a second receiver is engaged again. A
+short look at the other channel finishes before a job starts. Zone and VFO scans still defer APRS transmission until
+they stop.
 
 PTT, a channel change or any request other than beeps, DMR focus and settings aborts it (`rf_failed`, the frame
 retried after 15 s, 3 tries). A failure counts in `rf_failed` and names its step in `rf_fail`: `aborted`, `no_key`
@@ -378,6 +390,17 @@ The page shows the rows the build has:
 
 The digit keys follow the rows shown. Where the position comes from, the fixed position and "Send in DMR calls" are
 in Settings > Location ([position.md](position.md) 6).
+
+Selecting a heard station opens `aprs-station`, a scrollable detail list. The UI keeps its callsign,
+not its row index, and resolves the current station through `ui_svc_aprs_station_find` on each draw. New packets
+can reorder the heard list without changing the open station or Message recipient. Message is the first row and
+opens the composer with that callsign. The remaining rows show distance and compass direction when both positions
+exist, heard age, Direct or Via digipeater, position age when different from heard age, speed in km/h and course
+when the retained position has them, symbol table and code, the retained comment/status text, and packet count.
+Unknown speed and course have no row. Text is limited to the engine's 24-byte field; no digipeater identity or
+additional comment text is retained. Detail rows scroll with Up / Down and do not perform actions. If the station
+is evicted, the screen says "No longer in list" and Message still addresses the saved callsign. This detail code
+and the saved callsign are guarded by `CONFIG_APRS_RX`; the engine storage is unchanged.
 
 The rest (symbol, comment, digital destination, ambiguity, iGate, digipeater, fixed altitude) is set over the
 debug link (`rfoundry_debug.py aprs set`) and later by qdmr through the native codeplug.
