@@ -2260,26 +2260,17 @@ static void knob_moved(const radio_view_t *v)
 // over or giving back) set the reference without a bar. The bar wakes the backlight: turning the knob is using the
 // radio
 //
-// A radio with a second knob (side B's, view.volume_b >= 0) shows both bars stacked when that one turns, when the main
-// one turns in dual watch, and while they show; the side whose knob moved is marked. Side A's row shows the level in
-// force (the debug link's too). A radio with one knob never gets there
+// A radio with a second knob (side B's, view.volume_b >= 0) shows both bars stacked whichever knob turns; the side
+// whose knob moved is marked. Side A's row shows the level in force (the debug link's too). A radio with one knob
+// never gets there
 #if CONFIG_VOLUME_BAR
-static bool dual_on(void)
-{
-#if CONFIG_DUAL_WATCH
-	return ui_st.dual.on;
-#else
-	return false;
-#endif
-}
-
 __attribute__((noinline)) static void knob_tick(const radio_view_t *v)
 {
 	int8_t lvl = v->volume_src == RVOL_KNOB ? v->volume : -1;
 	int8_t lb = v->volume_b;
 	bool moved_b = lb >= 0 && knob_b_seen >= 0 && lb != knob_b_seen;
 	if ((lvl >= 0 && knob_seen >= 0 && lvl != knob_seen) || moved_b) {
-		if (lb >= 0 && (moved_b || dual_on() || ui_st.volbar_b >= 0)) {
+		if (lb >= 0) {
 			ui_st.volbar_b = (int8_t)radio_volume_step_of((uint8_t)lb);
 			ui_st.volbar_side = moved_b ? 1u : 0u;
 		}

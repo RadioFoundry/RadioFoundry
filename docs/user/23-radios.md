@@ -109,9 +109,8 @@ nothing.
 
 <img src="../ux/screens/160x128/volume_bar.png" width="200" alt="The volume bar at the bottom of Home after turning the knob">
 
-On a radio with a volume knob per side (the AT-D578UV), turning side B's knob, or either knob in dual watch, shows
-two bars: **Vol A** over **Vol B**, each with its step, and the side whose knob you turned highlighted. Out of dual
-watch, turning side A's knob alone shows its one bar. Untested on a radio.
+On a radio with a volume knob per side (the AT-D578UV), turning either knob shows two bars: **Vol A** over **Vol B**,
+each with its step, and the side whose knob you turned highlighted.
 
 <img src="../ux/screens/160x128/volume_bar_ab_dual.png" width="200" alt="Vol A over Vol B at the bottom of Home in dual watch, Vol A highlighted">
 

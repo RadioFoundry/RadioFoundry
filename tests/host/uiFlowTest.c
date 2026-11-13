@@ -1533,11 +1533,11 @@ static void volume_bar_checks(void)
 		{ "Home: in the hint row", "knob:50 knob:60", "volbar_at=bottom" },
 		{ "over Quick", "quick knob:50 knob:60", "volbar=10 screen=quick" },
 		{ "hints off: in the strip", "hints:off knob:50 knob:60", "volbar=10 volbar_at=top" },
-		// A second knob (side B's, "knobb"): both bars stacked when it turns, A over B, the side that moved marked
+		// A second knob (side B's, "knobb"): both bars stacked when either turns, A over B, the side that moved marked
 		{ "one knob: one bar", "knob:50 knob:75", "volbar=12 volbar_b=-1" },
 		{ "side B's first reading: none", "knob:50 knobb:40", "volbar=-1 volbar_b=-1" },
 		{ "side B turned: both, B marked", "knob:50 knobb:40 knobb:62", "volbar=8 volbar_b=10 volbar_side=b shows=Vol wake=1" },
-		{ "side A turned out of dual watch: one bar", "knob:50 knobb:40 knob:75", "volbar=12 volbar_b=-1" },
+		{ "side A turned: both, A marked", "knob:50 knobb:40 knob:75", "volbar=12 volbar_b=6 volbar_side=a" },
 		{ "side A turned while both show: A marked", "knob:50 knobb:40 knobb:62 knob:75", "volbar=12 volbar_b=10 volbar_side=a" },
 		{ "both gone at 3 s", "knob:50 knobb:40 knobb:62 wait:3000", "volbar=-1 volbar_b=-1 hides=Vol" },
 		{ "side B under the debug link's level", "knob:50 knobb:40 override:80 knobb:62", "volbar=13 volbar_b=10" },
