@@ -963,6 +963,17 @@ static void test_cc_follow(void)
 		report_at(t + 4000, 0x32, 0x20, 0x00);
 	}
 	CHECK(last_write(4, 0x1F) == -1);
+
+	// The same filter again: no write, no restart (the call layer sets it on every slot change)
+	restarts = eng.st.rx_restarts;
+	hrc6000_dmr_set_cc_filter(&eng, 5);
+	ts_at(t += 30000);
+	ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == -1 && eng.st.rx_restarts == restarts);
+	// Another one still restarts
+	hrc6000_dmr_set_cc_filter(&eng, 6);
+	ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x60 && eng.st.rx_restarts == restarts + 1);
 }
 
 // Bench 2026-10-09: each voice burst was reported twice, in step, at two consecutive ticks (V twice the bursts sent)
