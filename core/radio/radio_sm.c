@@ -2329,7 +2329,8 @@ static void t3_tune(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 
 static void t3_send(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 {
-	if (sm->view.ch.timeslot != (a->slot == 2 ? 2 : 1) || sm->ptt || sm->view.state == RS_TX) {
+	// PTT held while waiting for our grant is the request itself, not talking
+	if (sm->view.ch.timeslot != (a->slot == 2 ? 2 : 1) || (sm->ptt && !sm->t3_ptt_wait) || sm->view.state == RS_TX) {
 		sm->view.t3.send_fail++;	// not on the slot asked for, or talking: the engine retries what needs it
 		return;
 	}
@@ -2350,6 +2351,7 @@ static void t3_send(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 		return;
 	}
 	sm->view.t3.last_tx_op = a->burst[0] & 0x3Fu;
+	memcpy(sm->view.t3.last_tx, a->burst, T3_CSBK_BYTES);
 	sm->view.t3.last_tx_ms = now_ms != 0 ? now_ms : 1;
 	(void)now_ms;
 }
@@ -2595,6 +2597,11 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	}
 	sm->t3_ticks = tc;
 	sm->view.t3.ticks += n;
+	// Talking on the payload channel: the radio doesn't hear its own slot, so its transmission is the call's activity
+	// (TV_Inactive would otherwise pull it back to the control channel mid-sentence)
+	if (n != 0 && t3m.state == T3_FOLLOW && sm->view.state == RS_TX) {
+		t3_ms_activity(&t3m, now_ms, sm->view.ch.timeslot);
+	}
 
 	t3_act_t a;
 	while (t3_ms_poll(&t3m, now_ms, &a)) {

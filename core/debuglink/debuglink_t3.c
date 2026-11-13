@@ -184,6 +184,14 @@ void debuglink_view_t3(const radio_view_t *v, dl_text_t *t)
 		"t3.last_tx_age_ms=%d\n", x->last_rx_op, x->last_rx_slot,
 		x->last_rx_ms != 0 ? (int)(now - x->last_rx_ms) : -1, x->last_tx_op,
 		x->last_tx_ms != 0 ? (int)(now - x->last_tx_ms) : -1);
+	char hex[2 * T3_CSBK_BYTES + 1];
+	for (unsigned i = 0; i < T3_CSBK_BYTES; i++) {
+		static const char digits[] = "0123456789abcdef";
+		hex[2 * i] = digits[x->last_tx[i] >> 4];
+		hex[2 * i + 1] = digits[x->last_tx[i] & 15u];
+	}
+	hex[2 * T3_CSBK_BYTES] = '\0';
+	dl_text(t, "t3.last_tx=%s\n", hex);
 	dl_text(t, "t3.ticks=%u\nt3.csbk=%u\nt3.crc_bad=%u\nt3.grants=%u\nt3.followed=%u\nt3.unmapped=%u\n"
 		"t3.last_unmapped=%u\n", (unsigned)x->ticks, (unsigned)x->csbk, (unsigned)x->crc_bad,
 		(unsigned)x->grants, (unsigned)x->followed, (unsigned)x->unmapped, x->last_unmapped);
