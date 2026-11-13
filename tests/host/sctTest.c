@@ -1121,6 +1121,54 @@ static void test_dmr_rx(void)
 }
 
 // CARRIER_READY: the board's value, sent on a change in receive only, and again at each return to receive
+// An LC after an FEC error starts no call: a header goes to the stack with its CRC failed and no voice bursts follow,
+// a superframe's LC is dropped, and the next LC the chip reports (the same one) starts the call as a late entry
+static void test_dmr_rx_fec_lc(void)
+{
+	static const uint8_t fec[2] = { SCT_F_NEW_EVENT, SCT_EV_DATA_SYNC_FEC };
+	static const uint8_t hdr[16] = { 0x43, DMR_BURST_VOICE_LC_HEADER, 9, 0, 0, 0, 0, 0, 0x09, 0x2F, 0x52, 0x5C };
+	static const uint8_t sf[16] = { 0x43, SCT_PROP_VOICE, 9, 0, 0, 0, 0, 0, 0x09, 0x2F, 0x52, 0x5C };
+	static const uint8_t term[16] = { 0x43, DMR_BURST_TERMINATOR_LC, 9, 0, 0, 0, 0, 0, 0x09, 0x2F, 0x52, 0x5C };
+	uint8_t p[20];
+
+	start();
+	memcpy(p, fec, 2);
+	memcpy(p + 2, hdr, 12);
+	chip_packet(p, 14, 0x30, 1000);
+	CHECK(nev == 1 && ev_bursts[0].kind == DMR_BURST_VOICE_LC_HEADER && !ev_bursts[0].crc_ok);
+	CHECK(ev_bursts[0].lc_valid && ev_bursts[0].lc[7] == 0x52);
+	for (uint32_t t = 1005; t < 1400; t += 5)
+		sct_dmr_poll(t);
+	CHECK(nev == 1);			// no call: no voice bursts
+
+	// A superframe's LC after an FEC error is dropped
+	memcpy(p + 2, sf, 12);
+	chip_packet(p, 14, 0x30, 1400);
+	sct_dmr_poll(1500);
+	CHECK(nev == 1);
+
+	// The next superframe's LC, the same one, starts the call as a late entry: the header's wasn't kept
+	chip_packet(sf, 12, 0x30, 1760);
+	CHECK(nev == 2 && ev_bursts[1].kind == DMR_BURST_VOICE && ev_bursts[1].voice_index == 0);
+	CHECK(ev_bursts[1].lc_valid && ev_bursts[1].crc_ok && ev_bursts[1].lc[7] == 0x52);
+	sct_dmr_poll(1820);
+	CHECK(nev == 3 && ev_bursts[2].voice_index == 1);
+
+	// A header with an FEC error during the call is passed on and doesn't restart the count
+	memcpy(p + 2, hdr, 12);
+	chip_packet(p, 14, 0x30, 1830);
+	CHECK(nev == 4 && !ev_bursts[3].crc_ok);
+	sct_dmr_poll(1880);
+	CHECK(nev == 5 && ev_bursts[4].voice_index == 2);
+
+	// A terminator after an FEC error still ends the call
+	memcpy(p + 2, term, 12);
+	chip_packet(p, 14, 0x30, 1890);
+	CHECK(nev == 6 && ev_bursts[5].kind == DMR_BURST_TERMINATOR_LC && !ev_bursts[5].crc_ok);
+	sct_dmr_poll(2200);
+	CHECK(nev == 6);
+}
+
 static void test_dmr_carrier(void)
 {
 	const uint8_t *d;
@@ -1731,6 +1779,7 @@ int main(void)
 	test_dmr_rx();
 	test_dmr_rx_outbound();
 	test_dmr_rx_voice_count();
+	test_dmr_rx_fec_lc();
 	test_dmr_options();
 	test_dmr_carrier();
 	test_dmr_carrier_ends_call();
