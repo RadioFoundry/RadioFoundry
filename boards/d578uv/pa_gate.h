@@ -97,6 +97,15 @@ static inline pa_step_t pa_gate_timer(pa_phase_t *ph, bool keyed)
 	}
 }
 
+// The burst line's edges the driver may count as done (the modem port's burst_edges): every one, but a fall whose
+// burst is still on the air. The modulation runs 4.5 ms past PD0's fall and the PA with it (PA_FALLING, PA_TAIL);
+// the driver ends a data transmission at the fall that completes its last burst, and ending at PD0's fall cut that
+// burst's end off (bit errors in the last block)
+static inline uint32_t pa_gate_edges_done(uint32_t edges, pa_phase_t ph, bool level)
+{
+	return !level && (ph == PA_FALLING || ph == PA_TAIL) && edges != 0 ? edges - 1u : edges;
+}
+
 // Keying: whether the key-up may go on. The core keys the radio before it tells the baseband to transmit, so the burst
 // line is low then; high, nobody drives it (it floats high on its pull-up with the baseband in reset or crashed) or
 // its polarity isn't the inferred one, and the PA would carry an unmodulated carrier. The key-up is refused. Arming

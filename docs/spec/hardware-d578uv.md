@@ -579,8 +579,10 @@ The core keys the radio before its call stack starts the modem's transmission, s
 `DMR_CALL_SLOT` with the transmit bit in every DMR transmission, and released after `TX_DONE`.
 
 Back to receive, from the last burst's PD0 fall: the board counts PD0's edges (`burst_edges`,
-[modem-sct.md](modem-sct.md) 5), so a transmission without voice ends at that fall: `TX_DONE` and `tx_off()` at
-1.6 ms, the RF chips in receive at 7.8 ms (`diag` line 5, `rx`), `CARRIER_READY` 2 at about 16 ms. The baseband's
+[modem-sct.md](modem-sct.md) 5), a fall only once the PA's off delay and tail have run (the modulation goes on 4.5 ms
+past the fall; ending at the fall itself cut the last burst's end off, and the bench decoded that block wrong after
+the radio had been idle a while). So a transmission without voice ends 5.8 ms after that fall: `TX_DONE` and
+`tx_off()` at 6.6 to 7.6 ms, the RF chips in receive at about 13 ms (`diag` line 5, `rx`). The baseband's
 own end (ACK 0x0A) comes about 17 ms after the fall. A voice transmission still ends on it.
 
 A one-burst reply (a link ACK) from a simulated station on the bench:

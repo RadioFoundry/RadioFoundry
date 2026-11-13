@@ -185,6 +185,31 @@ int main(void)
 	CHECK(pa_gate_timer(&p.ph, false).act == PA_GATE_OFF);
 	CHECK(off(&p));
 
+	// The edges done (the modem's early end): a fall counts once the PA's off delay and tail have run, the burst's
+	// modulation with them; a rise and a fall with no burst after it count at once
+	p = (pa_t){ .keyed = true };
+	uint32_t n = 0;
+	edge(&p, true);
+	n++;
+	CHECK(pa_gate_edges_done(n, p.ph, p.burst) == 1);
+	run_to(&p, PD0_HIGH_US);
+	edge(&p, false);
+	n++;
+	CHECK(pa_gate_edges_done(n, p.ph, p.burst) == 1);	// PA_FALLING: the burst still going out
+	run_to(&p, PD0_HIGH_US + PA_OFF_DELAY_US);
+	CHECK(p.ph == PA_TAIL && pa_gate_edges_done(n, p.ph, p.burst) == 1);
+	run_to(&p, PD0_HIGH_US + PA_OFF_DELAY_US + PA_TAIL_US);
+	CHECK(off(&p) && pa_gate_edges_done(n, p.ph, p.burst) == 2);
+	CHECK(p.off_at >= PD0_HIGH_US + MOD_END_US);		// done only after the modulation ended
+	edge(&p, true);					// the next burst in the off delay: its rise counts
+	CHECK(pa_gate_edges_done(3, p.ph, p.burst) == 3);
+	CHECK(pa_gate_edges_done(0, PA_FALLING, false) == 0);
+	p = (pa_t){ .keyed = true };
+	edge(&p, true);
+	run_to(&p, 1000u);
+	edge(&p, false);					// a pulse with no burst: PA_IDLE, done at once
+	CHECK(pa_gate_edges_done(2, p.ph, p.burst) == 2);
+
 	// Ended during the on delay, and during the off delay
 	p = (pa_t){ .keyed = true };
 	edge(&p, true);
