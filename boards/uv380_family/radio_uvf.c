@@ -121,11 +121,14 @@ static void i2c_setup(void)
 	HAL_I2C_Init(&i2c3);
 }
 
-// One register transfer. Task context: up to 3 tries 1 ms apart, then the peripheral is reset. ISR context: one
-// try, and none at all while a task transfer owns the bus (skip, never wait)
-static bool i2c_xfer(uint8_t reg, uint8_t *buf, bool write)
+// Task-level transfers from more than one task (the radio task's driver, the debug link's CHIP_REG): one at a time,
+// so a retry's peripheral reset never lands in another task's transfer. ISR writes (rf_isr_write) don't take it
+static SemaphoreHandle_t i2c_lock;
+
+// One register transfer, the lock held in task context (i2c_xfer). Task context: up to 3 tries 1 ms apart, then the
+// peripheral is reset. ISR context: one try, and none at all while a task transfer owns the bus (skip, never wait)
+static bool i2c_xfer_once(uint8_t reg, uint8_t *buf, bool write, bool isr)
 {
-	bool isr = in_isr();
 	int tries = isr ? 1 : I2C_TRIES;
 	for (int i = 0; i < tries; i++) {
 		if (isr && HAL_I2C_GetState(&i2c3) != HAL_I2C_STATE_READY) {
@@ -147,6 +150,20 @@ static bool i2c_xfer(uint8_t reg, uint8_t *buf, bool write)
 		i2c_setup();
 	}
 	return false;
+}
+
+static bool i2c_xfer(uint8_t reg, uint8_t *buf, bool write)
+{
+	bool isr = in_isr();
+	bool lock = !isr && i2c_lock != NULL && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING;
+	if (lock) {
+		xSemaphoreTake(i2c_lock, portMAX_DELAY);
+	}
+	bool ok = i2c_xfer_once(reg, buf, write, isr);
+	if (lock) {
+		xSemaphoreGive(i2c_lock);
+	}
+	return ok;
 }
 
 static bool rf_write(void *ctx, uint8_t reg, uint16_t val)
@@ -360,7 +377,7 @@ static bool rf_key(void)
 	r.rf_isr_dirty = true;
 	int8_t ref;
 	if (!r.rf_rx_pending && hz == r.rx_hz && r.rf_tuned_hz == r.rx_tune_hz &&
-	    uvf_direct_tx_ref(hz, r.rf_ref, (int32_t)(r.rx_tune_hz - hz), &ref)) {
+	    uvf_direct_tx_ref(hz, r.rf_ref, (int32_t)(r.rx_tune_hz - hz), &ref)) {	// the DMR receive offset
 		// Direct (SFR, simplex): the receiver on the TX frequency goes straight to DMR TX, which puts the carrier
 		// about 3.07 kHz low; the raised MOD1 offset puts it back (uvf_direct_tx_ref)
 		if (!rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_DMR_TX))) {
@@ -592,6 +609,9 @@ static void init(void)
 	if (speaker_lock == NULL) {
 		speaker_lock = xSemaphoreCreateMutex();
 	}
+	if (i2c_lock == NULL) {
+		i2c_lock = xSemaphoreCreateMutex();
+	}
 	PIN_WRITE(PIN_MIC_POWER, true);		// kept on in RX and TX (4.5: some speaker-mics see false PTT without bias)
 	rx_supply(false, false);
 	dac_setup();
@@ -627,6 +647,16 @@ static uint32_t rx_tune(uint32_t hz)
 	return (uint32_t)((int32_t)hz + (r.mode == RADIO_MODE_DMR ? uvf_dmr_rx_offset_hz(hz) : 0));
 }
 
+// A receiver still on the other mode's frequency onto rx_tune_hz (set_mode)
+static void rx_retune(void)
+{
+	if (r.rx_valid && !r.tx_on && !r.asleep && r.rf_tuned_hz != r.rx_tune_hz) {
+		count(at1846s_set_freq(&r.rf, r.rx_tune_hz));
+		count(at1846s_set_state(&r.rf, AT1846S_STATE_RX));
+		r.rf_tuned_hz = r.rx_tune_hz;
+	}
+}
+
 static void set_mode(radio_mode_t mode)
 {
 	radio_mode_t prev = r.mode;
@@ -638,20 +668,17 @@ static void set_mode(radio_mode_t mode)
 		count(at1846s_set_mode(&r.rf, AT1846S_MODE_DMR));
 		if (prev != RADIO_MODE_DMR) {
 			dmr_enter();
-			if (r.rx_valid && !r.tx_on && !r.asleep && r.rf_tuned_hz != r.rx_tune_hz) {
-				count(at1846s_set_freq(&r.rf, r.rx_tune_hz));
-				count(at1846s_set_state(&r.rf, AT1846S_STATE_RX));
-				r.rf_tuned_hz = r.rx_tune_hz;
-			}
+			rx_retune();
 		}
 	} else {
 		if (prev == RADIO_MODE_DMR) {
 			dmr_disarm();
 			stm32_hrc_dmr_leave();
-			rf_resync();
+			rf_resync();	// retunes only after DMR bursts; rx_retune below otherwise
 			r.tx_on = false;
 		}
 		count(at1846s_set_mode(&r.rf, AT1846S_MODE_FM));
+		rx_retune();
 		if (!r.tx_on) {
 			count(hrc6000_set_mode_fm_rx(&r.modem));
 		}
@@ -1107,7 +1134,9 @@ void uvf_radio_diag(uvf_radio_diag_t *d)
 // The debug link's CHIP_REG (board.chip_reg, hardware-dm1701.md 5.12): chip 0 is the AT1846S, page 0, registers
 // 0x00-0x7E (0x7F selects the page, which the driver owns); chip 1 is the HR_C6000, pages 1 and 4 (2 and 3 are the
 // data and vocoder FIFOs, which a read would drain). Straight on the bus, as the probe's access: a write goes into the
-// AT1846S driver's cache, so its own cached writes don't skip the register, but its next set-up overwrites it
+// AT1846S driver's cache, so its own cached writes don't skip the register, but its next set-up overwrites it. From
+// the debug link's task: each AT1846S transfer takes the I2C lock (i2c_xfer), and the driver stays on page 0 after
+// init, so the page select is a no-op; each HR_C6000 access is one masked transaction
 bool uvf_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
 {
 	if (chip == 0 && page == 0 && reg < 0x7Fu && (!write || *val <= 0xFFFFu)) {

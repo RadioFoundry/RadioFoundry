@@ -188,7 +188,10 @@ static void test_direct_tx_ref(void)
 	// The step is a share of the carrier: the same offset is fewer steps higher in the band
 	int8_t lo = 0, hi = 0;
 	CHECK(uvf_direct_tx_ref(403000000u, 0, -875, &lo) && uvf_direct_tx_ref(479000000u, 0, -875, &hi) && lo > hi);
-	CHECK(!uvf_direct_tx_ref(461187500u, 120, -875, &v));	// past the register: idle path
+	// The take-back alone past the register: idle path
+	CHECK(uvf_direct_tx_ref(461187500u, 80, 0, &v) && v == 80 + UVF_DIRECT_TX_REF_STEPS);
+	v = 5;
+	CHECK(!uvf_direct_tx_ref(461187500u, 80, -875, &v) && v == 5);
 }
 
 static void test_dmr_rx_offset(void)

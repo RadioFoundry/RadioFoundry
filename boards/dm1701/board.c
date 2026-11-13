@@ -141,6 +141,7 @@ const board_t board = {
 	.radio = &uvf_radio,
 	.power = &uvf_power,
 	.flash = &stm32_spi_flash,
+	.chip_reg = uvf_chip_reg,
 #if CONFIG_DIAG
 	.diag_line = uvf_diag_line,
 	.diag_reset = uvf_diag_reset,
@@ -149,7 +150,6 @@ const board_t board = {
 	.dmr = &stm32_hrc_dmr,
 	.audio = &uvf_audio,
 	.vocoder = &stm32_vocoder,
-	.chip_reg = uvf_chip_reg,
 #if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP || CONFIG_APRS_RX
 	.audio_tap = &uvf_audio_tap,
 #endif

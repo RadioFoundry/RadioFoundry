@@ -662,8 +662,6 @@ What the bench showed:
 | Tune by hand: 0x30 = 0x6006, 0x29, 0x2A, 0x30 = 0x6026 | retunes at once, in 62.5 Hz steps; the DMR receiver follows |
 | HR_C6000 4:0x4E / 4:0x4F in DMR receive | fixed (0x01 / 0x04 here), with or without a signal, whatever the carrier offset |
 
----
-
 ### 5.13 DMR receive offset
 
 With the transmitter on frequency, DMR receive tuned to the channel decodes best on a carrier about 0.9 kHz (UHF) to
@@ -679,16 +677,17 @@ DM-1701):
 
 | Carrier offset (Hz) | -1000 | -500 | 0 | +500 | +1000 | +1500 |
 |---|---|---|---|---|---|---|
-| UHF 461.1875, tuned to the channel | 3.18 | 2.93 | 1.59 | — | 1.31 | — |
-| UHF 461.1875, 875 Hz below | 1.56 | 1.23 | 1.28 | 1.56 | 1.51 | 3.07 |
-| VHF 151.625, tuned to the channel | 2.74 | 2.09 | 1.72 | 1.42 | 1.15 | 1.18 |
-| VHF 151.625, 1250 Hz below | 1.53 | 1.30 | 1.10 | 1.59 | 2.85 | no frames |
+| UHF, tuned to the channel | 3.18 | 2.93 | 1.59 | — | 1.31 | — |
+| UHF, 875 Hz below | 1.56 | 1.23 | 1.28 | 1.56 | 1.51 | 3.07 |
+| VHF, tuned to the channel | 2.74 | 2.09 | 1.72 | 1.42 | 1.15 | 1.18 |
+| VHF, 1250 Hz below | 1.53 | 1.30 | 1.10 | 1.59 | 2.85 | no frames |
 
 Bursts keyed through idle write the transmit frequency, so the offset doesn't reach the transmitter. A direct burst
 (section 6) keys from the receive frequency and takes the offset back in whole MOD1 steps toward zero (about 74 Hz each
-near 461 MHz: 11 for 875 Hz put the carrier about 5 Hz high, 12 about 85 Hz high); every burst decodes, the first
-within 20 Hz of the rest. The MD-UV380 has the same two chips and is
-not measured on its own.
+mid-band: 11 for 875 Hz put the carrier about 5 Hz high, 12 about 85 Hz high); every burst decodes, the first within
+20 Hz of the rest. The MD-UV380 has the same two chips and is not measured on its own.
+
+---
 
 ## 6. RF path control (PA, LNA, band)
 
