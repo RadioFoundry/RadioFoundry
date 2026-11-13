@@ -13,6 +13,7 @@
 #include "board.h"
 #include "storage/storage.h"
 #include "codeplug/codeplug.h"
+#include "codeplug/codeplug_kv.h"
 #include "config.h"
 #if CONFIG_CPS_FAST
 #include "cps/cps_fast.h"
@@ -29,12 +30,14 @@
 #define VERSION		1u
 #define HEADER_LEN	20u
 
-// What qdmr's open-firmware driver and tools/cps_client.py transfer (open-firmware-cps.md 7.1), file offsets
+// What qdmr's open-firmware driver and tools/cps_client.py transfer (open-firmware-cps.md 7.1), and the codeplug
+// settings area (codeplug-settings.md 1), file offsets
 static const struct {
 	uint32_t start, end;
 } regions[] = {
 	{ 0x00080u, 0x06060u },		// EEPROM image part 1: general settings, channels 1-128, ...
 	{ 0x07500u, 0x0B000u },		// EEPROM image part 2: boot text, VFOs, zones
+	{ CODEPLUG_KV_ADDR, CODEPLUG_KV_ADDR + SECTOR },	// the settings area: taken only when valid (copy_sector)
 	{ 0x20000u, 0x211A0u },		// custom data
 	{ 0x9B000u, 0xAEE60u },		// flash codeplug: channels 129-1024, contacts, RX group lists
 };
@@ -385,9 +388,14 @@ static uint32_t next_sector(uint32_t from)
 }
 
 // Copy one sector of the staged image into the stored codeplug: the stored sector, the staged regions' bytes over
-// it, written through the journal (skipped when nothing changed)
+// it, written through the journal (skipped when nothing changed). The settings area follows codeplug_kv_commit, as every
+// path does: a file from a tool that doesn't carry it (0xFF there, as every codeplug.bin before) leaves the radio's
+// keys (codeplug-settings.md 6)
 static bool copy_sector(uint32_t s, uint8_t *buf)
 {
+	if (s == CODEPLUG_KV_ADDR) {	// a whole region sector: the staged bytes replace all of it
+		return staged_read(s, buf, SECTOR) && codeplug_kv_commit(phys(s), buf);
+	}
 	if (!flash_read(phys(s), buf, SECTOR)) {
 		return false;
 	}

@@ -37,6 +37,7 @@ static struct {
 	uint8_t tx_power;
 	int tx_off_calls;
 	bool keyed;
+	uint16_t tone_hz;	// the TX tone in force (0 = the microphone)
 	uint8_t noise_on_aprs;	// noise reading on 144.390 (low = a carrier)
 	// AFSK
 	uint8_t tones[600];
@@ -91,9 +92,14 @@ static void r_status(radio_status_t *st)
 	st->tone_ok = true;
 }
 static void r_audio(bool on) { (void)on; }
+static bool r_tone(uint16_t hz)
+{
+	hw.tone_hz = hz;
+	return true;
+}
 static const hal_radio_t fake_radio = {
 	.init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off, .status = r_status,
-	.audio = r_audio,
+	.audio = r_audio, .tx_tone = r_tone,
 };
 
 static void p_led(uint8_t which, bool on) { (void)which; (void)on; }
@@ -527,6 +533,33 @@ static void test_ptt_cuts(void)
 	CHECK(sm.view.state == RS_IDLE && hw.rx_hz == CH_HZ);
 	run(20u * 1000u);	// the beacon goes again later
 	CHECK(hw.starts >= 1);
+}
+
+// PTT over a beacon on a channel with its tone burst on: the beacon gives way and the fresh key-up opens with the burst
+// (the beacon's RS_TX is the radio's own transmission, not the user's)
+static void test_ptt_cuts_burst(void)
+{
+#if CONFIG_FM_TX_TONES
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(60, false);
+	chan.tone_burst = true;
+	req(RREQ_ZONE_POS, 0);
+	run(50);
+	CHECK(sm.view.ch.tone_burst);
+	run(59u * 1000u);
+	CHECK(wait_start(1, 5000));
+	CHECK(sm.view.state == RS_TX && sm.view.tx_auto && hw.tx_hz == APRS_HZ && hw.tone_hz == 0);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && !sm.view.tx_auto && hw.tx_hz == CH_HZ);
+	CHECK(sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+	run(RADIO_BURST_MIN_MS + 20);
+	radio_sm_tick(&sm, now);	// the burst's timer runs on the tick, which run() doesn't drive
+	CHECK(sm.view.state == RS_TX && !sm.view.tone_burst && hw.tone_hz == 0);	// the microphone follows
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE && hw.rx_hz == CH_HZ);
+#endif
 }
 
 static void test_not_amateur(void)
@@ -1537,6 +1570,7 @@ int main(void)
 	test_busy_channel();
 	test_bcast_channel();
 	test_ptt_cuts();
+	test_ptt_cuts_burst();
 	test_not_amateur();
 	test_manual_and_ptt_trigger();
 	test_tx_power();
