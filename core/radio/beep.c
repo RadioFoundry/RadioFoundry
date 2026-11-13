@@ -77,10 +77,12 @@ static beep_stats_t stats;
 
 // Tones without PCM (beep_init_tone), radio task only
 static void (*tone_fn)(uint16_t hz, uint8_t level);
-static uint16_t tone_poll_ms;
+static uint8_t tone_lead_ms;
 static bool tone_on;		// a pattern is playing as tones
+static bool tone_pending;	// beep_play asked for it: beep_tone_run starts it
+static bool tone_lead;		// tone_seg's tone runs silent until tone_at, then sounds
 static uint8_t tone_pattern, tone_seg, tone_level;
-static int32_t tone_left_ms;
+static uint32_t tone_at;	// when the lead or the segment ends
 
 // Handed from the radio task to the audio side
 static uint8_t req_pattern;
@@ -112,29 +114,54 @@ void beep_init(const hal_audio_t *audio)
 	aud = audio;
 }
 
-void beep_init_tone(void (*tone)(uint16_t hz, uint8_t level), uint16_t poll_ms)
+void beep_init_tone(void (*tone)(uint16_t hz, uint8_t level), uint8_t lead_ms)
 {
 	tone_fn = tone;
-	tone_poll_ms = poll_ms != 0 ? poll_ms : 1;
+	tone_lead_ms = lead_ms;
 	tone_on = false;
+	tone_pending = false;
 }
 
-// The tone of the pattern's segment tone_seg, for its length
+// Segment tone_seg from tone_at (its start). A gap before a tone, with a lead, runs that tone silent
 static void tone_seg_start(void)
 {
 	const beep_seg_t *s = &patterns[tone_pattern].segs[tone_seg];
-	tone_left_ms += s->ms;
+	tone_at += s->ms;
+	if (s->hz == 0 && tone_lead_ms != 0 && tone_seg + 1u < patterns[tone_pattern].count &&
+	    patterns[tone_pattern].segs[tone_seg + 1u].hz != 0) {
+		tone_seg++;
+		tone_lead = true;
+		tone_fn(patterns[tone_pattern].segs[tone_seg].hz, 0);
+		return;
+	}
+	tone_lead = false;
 	tone_fn(s->hz, s->hz != 0 ? tone_level : 0);
 }
 
-// A poll gone by: the next segment when this one's time is up, off after the last
-static void tone_step(void)
+void beep_tone_run(uint32_t now_ms)
 {
 	if (!tone_on) {
 		return;
 	}
-	tone_left_ms -= tone_poll_ms;
-	while (tone_left_ms <= 0) {
+	if (tone_pending) {
+		tone_pending = false;
+		tone_at = now_ms;
+		uint16_t hz = patterns[tone_pattern].segs[0].hz;
+		if (tone_lead_ms != 0 && hz != 0) {
+			tone_lead = true;
+			tone_at += tone_lead_ms;
+			tone_fn(hz, 0);
+		} else {
+			tone_seg_start();
+		}
+	}
+	while ((int32_t)(now_ms - tone_at) >= 0) {
+		if (tone_lead) {
+			tone_lead = false;
+			tone_at += patterns[tone_pattern].segs[tone_seg].ms;
+			tone_fn(patterns[tone_pattern].segs[tone_seg].hz, tone_level);
+			continue;
+		}
 		if (++tone_seg >= patterns[tone_pattern].count) {
 			tone_on = false;
 			tone_fn(0, 0);
@@ -142,6 +169,18 @@ static void tone_step(void)
 		}
 		tone_seg_start();
 	}
+}
+
+int32_t beep_tone_wait(uint32_t now_ms)
+{
+	if (!tone_on) {
+		return -1;
+	}
+	if (tone_pending) {
+		return 0;
+	}
+	int32_t left = (int32_t)(tone_at - now_ms);
+	return left > 0 ? left : 0;
 }
 
 // The amplifier held powered (beep_warm): since when, until when, and the last poll's time
@@ -209,11 +248,8 @@ void beep_play(beep_t b, uint8_t level, bool shared)
 		tone_pattern = (uint8_t)b;
 		tone_seg = 0;
 		tone_level = level > 100 ? 100 : level;
-		// The poll this starts in is partly gone and doesn't count: without it a one-poll key beep sounded for
-		// anywhere from nothing to a poll (measured on a radio)
-		tone_left_ms = tone_poll_ms;
 		tone_on = true;		// replaces a pattern still playing
-		tone_seg_start();
+		tone_pending = true;	// the radio task's loop starts it (beep_tone_run) at once
 		stats.played++;
 		return;
 	}
@@ -258,7 +294,7 @@ void beep_service(bool shared, uint32_t now_ms)
 			aud->speaker_warm(false);
 		}
 	}
-	tone_step();
+	beep_tone_run(now_ms);
 	if (!own_stream) {
 		return;
 	}
