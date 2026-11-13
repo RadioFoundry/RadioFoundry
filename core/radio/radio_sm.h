@@ -314,7 +314,9 @@ typedef struct {
 	uint32_t rx2_refresh_ms;	// last time its settings went again
 	int8_t rx2_audio_out;		// last board.rx2->audio(), -1 = none yet
 	bool rx2_look;			// the second receiver only senses its channel: the main one went there to decode
-	bool rx2_relook;		// ... its carrier dropped since the last look ended: the next one goes at once
+	bool rx2_relook;		// ... its carrier dropped since the last look ended, or that look played a call: the
+					// next one goes at once
+	bool rx2_look_call;		// ... this look played a call for us
 	uint32_t rx2_look_ms;		// ... when the last look ended
 	// One receiver, in the wait after a signal: on the other channel for a look (scan.tuned_ms its start), the wait's
 	// start to go back to, and whether this look heard a signal

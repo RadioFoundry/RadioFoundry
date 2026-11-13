@@ -1991,7 +1991,7 @@ void ui_app_key(const input_event_t *ev)
 	if (ptt_held && view->state == RS_TX && ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9)
 		return;
 	// A/B in dual watch retunes both receivers: its beep goes after the switch (the radio task takes requests in
-	// order), as a retune inside a beep let the receiver's noise through the speaker on the AT-D578UV
+	// order), as a retune inside a beep can let the receiver's noise through the speaker
 	bool ab = CONFIG_DUAL_WATCH && ev->action == ACT_AB && ev->gesture == GESTURE_PRESS && !ui_st.locked;
 	if ((ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG) && !ab)
 		ui_svc_beep(UI_BEEP_KEY);
@@ -2023,6 +2023,8 @@ void ui_app_key(const input_event_t *ev)
 	}
 #if CONFIG_HOTSPOT
 	if (in_hotspot()) {
+		if (ab)
+			ui_svc_beep(UI_BEEP_KEY);	// no switch here: the beep held back above goes now
 		hotspot_key(ev);
 		return;
 	}
