@@ -150,6 +150,13 @@ static void test_chip(void)
 	nx = 0;
 	CHECK(hrc_set_dmr_id(&c5.hrc, 0x123456u));		// low byte first
 	CHECK(last_write(0, 0x14) == 0x56 && last_write(0, 0x15) == 0x34 && last_write(0, 0x16) == 0x12);
+	// The microphone bit alone, the rest of 4:0xE0 as read (the configuration page: 0 on the wire)
+	rd[0][0xE0] = 0xC9;
+	nx = 0;
+	CHECK(hrc_mic(&c5.hrc, false) && last_write(0, 0xE0) == 0x89 && nx == 2);
+	rd[0][0xE0] = 0x89;
+	CHECK(hrc_mic(&c5.hrc, true) && last_write(0, 0xE0) == 0xC9);
+	rd[0][0xE0] = 0;
 }
 
 // --- Register traffic ---

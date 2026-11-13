@@ -895,11 +895,7 @@ static bool tail_mic_off;
 
 static void tail_mic(bool off)
 {
-	uint8_t e0;
-
-	if (hrc_read(&r.modem, 4, 0xE0, &e0)) {
-		count(hrc_write(&r.modem, 4, 0xE0, (uint8_t)(off ? (e0 & ~0x40u) : (e0 | 0x40u))));
-	}
+	count(hrc_mic(&r.modem, !off));
 	tail_mic_off = off;
 }
 

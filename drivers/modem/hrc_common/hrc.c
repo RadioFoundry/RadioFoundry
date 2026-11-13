@@ -81,6 +81,15 @@ bool hrc_set_mic_gain(hrc_t *dev, uint8_t gain)
 	return dev->chip->set_mic_gain(dev, gain);
 }
 
+bool hrc_mic(hrc_t *dev, bool on)
+{
+	uint8_t e0;
+	if (!hrc_read(dev, HRC_PAGE_SYS, 0xE0, &e0)) {
+		return false;
+	}
+	return hrc_write(dev, HRC_PAGE_SYS, 0xE0, (uint8_t)(on ? (e0 | 0x40u) : (e0 & ~0x40u)));
+}
+
 bool hrc_flush_vocoder(hrc_t *dev)
 {
 	uint8_t fill[128];
