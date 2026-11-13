@@ -212,6 +212,7 @@ bool aprs_send_now(void);
 #if CONFIG_APRS_RX
 uint8_t aprs_station_count(void);
 bool aprs_station(uint8_t i, aprs_station_t *out);	// 0 = most recent
+bool aprs_station_find(const char *call, aprs_station_t *out);	// exact callsign, one locked copy
 uint8_t aprs_msg_count(void);
 bool aprs_msg(uint8_t i, aprs_msg_t *out);		// 0 = newest; marks it read
 bool aprs_msg_peek(uint8_t i, aprs_msg_t *out);	// leaves unread state alone

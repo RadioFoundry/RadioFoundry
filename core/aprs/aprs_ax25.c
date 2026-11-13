@@ -1097,6 +1097,18 @@ bool aprs_station(uint8_t i, aprs_station_t *out)
 	return ok;
 }
 
+bool aprs_station_find(const char *call, aprs_station_t *out)
+{
+	LOCK();
+	const aprs_station_t *s = station_find(call);
+	bool ok = s != NULL;
+	if (ok) {
+		*out = *s;
+	}
+	UNLOCK();
+	return ok;
+}
+
 uint8_t aprs_msg_count(void)
 {
 	LOCK();
