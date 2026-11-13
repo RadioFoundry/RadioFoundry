@@ -310,6 +310,28 @@ static void rules(void)
 	CHECK(t3_backoff_frames(1) == 1 && t3_backoff_frames(6) == 8 && t3_backoff_frames(9) == 20 &&
 	      t3_backoff_frames(15) == 100, "Backoff");
 
+	// Duplex grants (tables 7.10, 7.14): bit 15 is Call Direction, and the payload channel always uses offset timing
+	for (uint8_t op = T3_OP_PV_GRANT_DX; op <= T3_OP_PD_GRANT_DX; op++) {
+		t3_csbk_t g = { .lb = true, .op = op };
+		g.u.grant.lpcn = 0x123;
+		g.u.grant.slot = 2;
+		g.u.grant.emergency = true;
+		g.u.grant.dx_calling = true;
+		g.u.grant.dst = 1234567;
+		g.u.grant.src = 7654321;
+		uint8_t pdu[T3_CSBK_BYTES];
+		CHECK(t3_csbk_build(&g, T3_CRC_MASK_CSBK, pdu), "dx grant %u built", op);
+		CHECK(pdu[2] == 0x12 && pdu[3] == 0x3B && pdu[4] == 0x12 && pdu[5] == 0xD6 && pdu[6] == 0x87,
+		      "dx grant %u layout %02x %02x %02x", op, pdu[2], pdu[3], pdu[4]);
+		t3_csbk_t back;
+		CHECK(t3_csbk_parse(pdu, &back) && back.u.grant.dx_calling && back.u.grant.offset &&
+		      back.u.grant.emergency && back.u.grant.slot == 2 && back.u.grant.lpcn == 0x123 &&
+		      back.u.grant.dst == 1234567 && back.u.grant.src == 7654321 && !back.u.grant.hi_rate,
+		      "dx grant %u parsed", op);
+		pdu[3] &= (uint8_t)~0x01u;	// Call Direction 0: the target is the called MS
+		CHECK(t3_csbk_parse(pdu, &back) && !back.u.grant.dx_calling && back.u.grant.offset, "dx grant %u called", op);
+	}
+
 	// Acknowledgement classes
 	CHECK(t3_ack_class(T3_RC_REG_ACCEPTED) == T3_ACK && t3_ack_class(T3_RC_MS_ACCEPTED) == T3_ACK, "ACK");
 	CHECK(t3_ack_class(T3_RC_MS_NOT_REGISTERED) == T3_NACK && t3_ack_class(T3_RC_MS_NOT_SUPPORTED) == T3_NACK &&

@@ -78,8 +78,8 @@ t3_ack_class_t t3_ack_class(uint8_t reason)
 
 static bool is_grant(uint8_t op)
 {
-	// The multi-item data grants have the single-item layout (table 7.13)
-	return (op >= T3_OP_PV_GRANT && op <= T3_OP_TD_GRANT) || op == T3_OP_PD_GRANT_MI || op == T3_OP_TD_GRANT_MI;
+	// The multi-item data grants have the single-item layout (table 7.13); the duplex ones (53, 54) differ in two bits
+	return op >= T3_OP_PV_GRANT && op <= T3_OP_TD_GRANT_MI;
 }
 
 static bool is_ack(uint8_t op)
@@ -131,7 +131,13 @@ bool t3_csbk_parse(const uint8_t pdu[T3_CSBK_BYTES], t3_csbk_t *out)
 			g->hi_rate = b13;
 		}
 		g->emergency = flag(&r);
-		g->offset = flag(&r);
+		if (op == T3_OP_PV_GRANT_DX || op == T3_OP_PD_GRANT_DX) {
+			// Call Direction in place of Offset: duplex payload channels always use offset timing
+			g->dx_calling = flag(&r);
+			g->offset = true;
+		} else {
+			g->offset = flag(&r);
+		}
 		g->dst = get(&r, 24);
 		g->src = get(&r, 24);
 		return true;
@@ -263,7 +269,7 @@ bool t3_csbk_build(const t3_csbk_t *in, uint16_t mask, uint8_t pdu[T3_CSBK_BYTES
 			put(&w, 1, 0);
 		}
 		put(&w, 1, g->emergency);
-		put(&w, 1, g->offset);
+		put(&w, 1, op == T3_OP_PV_GRANT_DX || op == T3_OP_PD_GRANT_DX ? g->dx_calling : g->offset);
 		put(&w, 24, g->dst);
 		put(&w, 24, g->src);
 	} else if (op == T3_OP_C_BCAST) {

@@ -130,6 +130,7 @@
 #define T3_RC_REFUSED_UNKNOWN	0x3F
 #define T3_RC_MS_NOT_SUPPORTED	0x00	// NACK sent by an MS
 #define T3_RC_EQUIP_BUSY	0x13	// EquipBusy_Refused: the MS's data terminal isn't ready
+#define T3_RC_MS_DUPLEX_NOT_SUPPORTED	0x16	// a duplex MS to MS availability check to a simplex MS
 #define T3_RC_RECIPIENT_REFUSED	0x14
 #define T3_RC_QUEUED_RESOURCE	0xA0
 #define T3_RC_QUEUED_BUSY	0xA1
@@ -190,7 +191,8 @@ typedef struct {
 	bool late_entry;	// TV / BTV
 	bool hi_rate;		// data grants
 	bool emergency;
-	bool offset;		// payload channel offset timing
+	bool offset;		// payload channel offset timing (always set for the duplex grants, tables 7.10, 7.14)
+	bool dx_calling;	// duplex grants: the target (dst) is the calling MS, not the called (Call Direction)
 	uint32_t dst;
 	uint32_t src;
 } t3_grant_t;

@@ -335,7 +335,6 @@ static bool wants_grant(const t3_ms_t *ms, const t3_csbk_t *p, bool *group)
 		}
 		return t3_ms_wants_group(ms, g->dst, g->emergency);
 	case T3_OP_PV_GRANT:
-	case T3_OP_PV_GRANT_DX:
 		// Either party: a call to the radio, or one it made
 		*group = false;
 		return is_me(ms, g->src) || ((ms->cfg->opts & T3_OPT_PRIVATE) && is_me(ms, g->dst));
@@ -350,7 +349,8 @@ static bool wants_grant(const t3_ms_t *ms, const t3_csbk_t *p, bool *group)
 		*group = true;
 		return is_me(ms, g->src) || t3_ms_wants_group(ms, g->dst, g->emergency);
 	default:
-		// Duplex data grants aren't asked for; a grant to a gateway or another MS is not ours
+		// The radio is simplex: it never asks for a duplex call and refuses a duplex availability check
+		// (6.6.9.2.5), so a duplex grant (53, 54) is never its own; nor a grant to a gateway or another MS
 		return false;
 	}
 }
@@ -1199,6 +1199,9 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 	} else if (payload && h->src == T3_ID_TSI && (h->kind == T3_SK_IND_DATA || h->kind == T3_SK_TG_DATA)) {
 		// Packet data radio check on the payload channel (6.6.3.3.2.1; table 6.51, cited there as 6.53)
 		answer(ms, slot, true, T3_RC_MESSAGE_ACCEPTED, h->src, false);
+	} else if (to_me && !payload && (h->kind == T3_SK_DX_VOICE || h->kind == T3_SK_DX_DATA)) {
+		// A full-duplex MS to MS availability check: the radio is simplex (6.6.9.2.5, 6.6.10.2.5)
+		answer(ms, slot, false, T3_RC_MS_DUPLEX_NOT_SUPPORTED, h->src, false);
 	} else if (to_me && !payload && h->kind == T3_SK_IND_DATA) {
 		// Packet data to the radio (6.6.3.2.6): the data service takes it on the payload channel, or the radio
 		// refuses when its data terminal can't

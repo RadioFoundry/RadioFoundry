@@ -1722,6 +1722,30 @@ static void test_pdata(void)
 	g = grant(T3_OP_TD_GRANT_MI, 999, 2, TG_B, CALLER);
 	rx(&ms, 1, &g);
 	CHECK(ms.state == T3_FOLLOW && ms.call.data && ms.call.group, "multi-item talkgroup data: followed");
+	frames(&ms, 3);
+	c.u.clear.group = true;
+	c.u.clear.dst = TG_B;
+	rx(&ms, 2, &c);
+	CHECK(ms.state == T3_CAMPED, "multi-item talkgroup data cleared");
+
+	// Full duplex MS to MS: the radio is simplex. The availability check is refused MS_Duplex_Not_Supported
+	// (6.6.9.2.5, 6.6.10.2.5), and a duplex grant naming it isn't followed
+	frames(&ms, 50);
+	static const uint8_t dx_kind[2] = { T3_SK_DX_VOICE, T3_SK_DX_DATA };
+	for (unsigned i = 0; i < 2; i++) {
+		nsent = 0;
+		t3_csbk_t h = ahoy(dx_kind[i], false, OWN, CALLER);
+		rx(&ms, 1, &h);
+		frames(&ms, 1);
+		CHECK(nsent == 1 && sent[0].u.ack.reason == T3_RC_MS_DUPLEX_NOT_SUPPORTED && sent[0].u.ack.dst == CALLER,
+		      "duplex kind %u: reason 0x%02x", dx_kind[i], nsent ? sent[0].u.ack.reason : 0xFFu);
+		frames(&ms, 50);
+	}
+	g = grant(T3_OP_PV_GRANT_DX, 999, 1, OWN, CALLER);
+	rx(&ms, 1, &g);
+	g = grant(T3_OP_PD_GRANT_DX, 999, 1, OWN, CALLER);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_CAMPED, "duplex grants: not followed");
 }
 
 static void test_sdata(void)

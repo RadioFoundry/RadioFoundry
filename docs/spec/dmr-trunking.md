@@ -302,6 +302,7 @@ the AHOY's source, its additional address the radio's ID.
 | radio check (kind registration, from TSI) | MS_Accepted |
 | availability check (kind individual voice): OACSU | MS_Accepted |
 | availability check (kind individual packet data) | Message_Accepted (section 7.7); EquipBusy_Refused (0x13) while the data service sends; not supported in a build without it |
+| availability check (kind duplex voice or duplex packet data) | MS_Duplex_Not_Supported (0x16): the radio is simplex (6.6.9.2.5, 6.6.10.2.5). It never follows a duplex grant (53, 54), whose bit 15 is Call Direction; their payload channel always uses offset timing (tables 7.10, 7.14) |
 | packet data radio check (P_AHOY kind packet data, from TSI) | P_ACKU Message_Accepted (6.6.3.3.2.1) |
 | call cancel (kind cancel) on the TSCC | MS_Accepted |
 | selective clear (P_AHOY kind cancel) | Message_Accepted, then return |
@@ -382,7 +383,7 @@ each transmission. Single slot, single item only; no gateway addressing.
 | C_NACKD | refused, with its reason |
 
 Grants followed as data calls (6.6.3.2.7): PD_GRANT with the radio as source or target; TD_GRANT with the radio as
-source, or to a talkgroup it listens to; the multi-item grants (55, 56) the same. Duplex data grants aren't taken. On a data call PTT is off
+source, or to a talkgroup it listens to; the multi-item grants (55, 56) the same. On a data call PTT is off
 (`t3_ms_can_talk`); `t3_ms_data_ready` is true once the radio has settled on the slot. P_CLEAR, P_MAINT from the other
 party, inactivity and `t3_ms_end_call` end it as they end a voice call.
 
@@ -585,7 +586,8 @@ on its voice, and never camps on another system or on a control channel that isn
 | Short data polling, supplementary data, a list subscription without registering | later |
 | A kill kept across a restart, and conventional DMR off when killed | later |
 | A stun kept across a restart of the radio | trunked systems in the codeplug |
-| Duplex packet data, data to a gateway, adjacent sites | later |
+| Duplex calls (voice, packet data) | not planned: the radios are simplex |
+| Data to a gateway, adjacent sites | later |
 | Power save: the receiver off while asleep (boards' `rx_sleep` on DMR channels) | later |
 
 ## 11. On the radio
