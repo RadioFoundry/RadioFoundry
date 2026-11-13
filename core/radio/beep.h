@@ -79,6 +79,10 @@ void beep_service(bool shared, uint32_t now_ms);
 void beep_warm(uint32_t now_ms);
 // The amplifier is held powered (beep_warm)
 bool beep_warm_on(void);
+// The board has an amplifier hang (hal_audio_t.speaker_warm and speaker_hang_s): beep_warm does something
+bool beep_has_hang(void);
+// The beeps are tones from the radio's own hook (beep_init_tone), not PCM: no stream, no blocks
+bool beep_tone_route(void);
 // From an audio block callback: add the beep to the block (saturating). True while the beep sounds
 bool beep_mix(int16_t *spk);
 // Whether a pattern is still playing (as last seen by the audio side)

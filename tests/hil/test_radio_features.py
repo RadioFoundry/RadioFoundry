@@ -15,8 +15,8 @@ Pass criteria:
 - test_settings_round_trip: SETTING scan_hold_s 7 (8 if it was 7) shows in set.scan_hold_s within 1 s, and the old
   value again within 1 s after it is put back.
 - test_beep_counts: a BEEP error request counts in beep.played or beep.no_stream (one of them, by 1); when played,
-  beep.blocks grows within 1 s (the audio stream ran: on FM this shows whether the I2S clock runs) and beep.busy
-  falls back to 0 within 2 s.
+  beep.blocks grows within 1 s (the audio stream ran: on FM this shows whether the I2S clock runs; not on a radio
+  whose beeps are its own tones, beep.tone 1) and beep.busy falls back to 0 within 2 s.
 - test_vibrate_counts: (CONFIG_VIBRATE builds) a VIBRATE emergency request: on a radio with a motor (vibe.motor=1)
   vibe.played grows by 1 within 1 s and vibe.busy falls back to 0 within 3 s; without one vibe.played stays put.
 - test_volume_op: RADIO op 30 (the speaker volume). volume.src none (no software volume): the op answers
@@ -221,7 +221,10 @@ def test_beep_counts(radio):
     no_stream = as_int(f["beep.no_stream"], 0) - none0
     print(f"mode {radio.core().get('mode')}: played +{played}, no_stream +{no_stream}")
     assert played + no_stream == 1, f
-    if played:
+    if played and radio.view(["audio"]).get("beep.tone") == "1":
+        # the radio's own tone hook plays it (hal_radio_t.beep_tone): no stream, no blocks to count
+        wait_features(radio, lambda v: v.get("beep.busy") == "0", 2.0, "the beep finished")
+    elif played:
         f = wait_features(radio, lambda v: as_int(v.get("beep.blocks"), 0) > blocks0, 1.0,
                           "audio blocks (the stream runs)")
         wait_features(radio, lambda v: v.get("beep.busy") == "0", 2.0, "the beep finished")
