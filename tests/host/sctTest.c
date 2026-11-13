@@ -1632,6 +1632,28 @@ static void test_chip_answers(void)
 	chip_packet(nak, sizeof(nak), SCT_TYPE_DMR, t + 2);
 	CHECK(!m->is_transmitting() && count_ev(DMR_EV_TX_REJECTED) == 1);
 
+	// A transmission aborted while its voice's first frame waits for an answer: in the next one, a refused header is
+	// only counted
+	t += 1000;
+	sct_dmr_poll(t);
+	nev = 0;
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	sct_dmr_poll(t);
+	CHECK(m->tx_queue(&b));
+	sct_dmr_poll(t + 1);
+	CHECK(frames_sent() >= 1);
+	m->tx_abort();
+	t += 1000;
+	sct_dmr_poll(t);
+	CHECK(tx_begin_answered(DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	sct_dmr_poll(t);
+	b = burst(DMR_BURST_VOICE_LC_HEADER, 0, 12);
+	CHECK(m->tx_queue(&b));
+	sct_dmr_poll(t + 1);
+	chip_packet(nak, sizeof(nak), SCT_TYPE_DMR, t + 2);
+	CHECK(m->is_transmitting() && count_ev(DMR_EV_TX_REJECTED) == 0);
+	m->tx_abort();
+
 	// ACK 0x01 within a second of the start is the chip's answer to it: nothing happens
 	sct_dmr_get_stats(&st);
 	uint32_t restarts = st.chip_restarts;

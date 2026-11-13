@@ -396,6 +396,7 @@ static void tx_finish(void)
 	s.waiting = false;
 	s.paced = false;
 	s.voice_on = false;
+	s.voice_start = false;
 	s.q_count = 0;
 	rx_after_tx();
 	audio_rx();
@@ -1041,6 +1042,7 @@ static bool x_tx_begin(dmr_timing_t timing, int8_t ts, dmr_access_t access)
 	}
 	s.tx = TX_ON;
 	s.tx_voice = false;
+	s.voice_start = false;
 	s.tx_sent = 0;
 	s.tx_edges = s.port->burst_edges != NULL ? s.port->burst_edges() : 0;
 	rx_voice_clear();
@@ -1092,6 +1094,7 @@ static void x_tx_abort(void)
 	s.q_count = 0;
 	s.waiting = false;
 	s.voice_on = false;
+	s.voice_start = false;	// a refusal of its frame, still to come, is no frame of the next transmission
 	rx_after_tx();
 	audio_rx();
 }
@@ -1313,5 +1316,7 @@ void sct_dmr_get_stats(sct_dmr_stats_t *out)
 
 void sct_dmr_reset_stats(void)
 {
+	lock();	// the counters are the poll's, as in sct_dmr_get_stats
 	memset(&s.st, 0, sizeof(s.st));
+	unlock();
 }
