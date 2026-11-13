@@ -366,7 +366,7 @@ room's noise; a recording too quiet throughout skips `state`.
 |---|---|---|
 | `test_speaker_beeps` | every beep the debug link can ask for, one recording each; the patterns are read from `core/radio/beep.c` | radio |
 | `test_speaker_beep_cold` | the key click after the amplifier hang ran out (`beep.warm` 0): the lead-in must cover the amplifier's start | a board with a speaker hang |
-| `test_speaker_sweep` | the speaker test's sweep (`BEEP_SWEEP`: 150 Hz to 3.8 kHz over 4 s, after 400 ms of silence); prints the speaker's response in third octaves and fails when the sweep breaks up | radio |
+| `test_speaker_sweep` | the speaker test's sweep (`BEEP_SWEEP`: 150 Hz to 3.8 kHz over 4 s, after 400 ms of silence); prints the speaker's response in third octaves and fails when the sweep breaks up. Skips (`no_hw`) where the beeps are the radio's own tones (`beep.tone` 1): those play fixed pitches, and the radio drops the sweep (`beep.no_stream`) | radio |
 | `test_fm_rx_speaker` | the bench board's FM transmitter on `--fm-mhz`: 0.5 s of carrier, then 1000 Hz 300 ms, 600 Hz 150 ms, 1500 Hz 80 ms and 1000 Hz 500 ms with silences of 200 to 300 ms, the carrier ending with the last tone | `--allow-rf`, a bench board with FM |
 
 `audio_check.check_tones` judges each recording. A tone's edges are where its amplitude rises and falls fastest: the

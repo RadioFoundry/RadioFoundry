@@ -399,7 +399,7 @@ block for 200 ms (8 radio polls), its clock has stopped: the beep stops the stre
 drops the pattern, so a codec that goes quiet can't leave the analog receive audio muted. A start that fails (no codec
 clock) is stopped the same way, in case a block already ran. Counters in the view:
 `beep.played` (started), `beep.no_stream` (no audio stream could be started: on a board that can't stream PCM in FM
-mode this counts instead), `beep.blocks` (audio blocks with beep in them), `beep.stalls` (streams given up that way),
+mode this counts instead; on the tone route, the sweep, which a tone hook can't play), `beep.blocks` (audio blocks with beep in them), `beep.stalls` (streams given up that way),
 `beep.busy`; in the `audio` section, `beep.shared` (patterns mixed into the voice stream), `beep.leads` (lead-in blocks
 played), `beep.tone` (1: the beeps are the radio's own tones, with no stream or blocks) and, on a board with an
 amplifier hang, `beep.warm` (1: the amplifier is held warm) and `beep.warms` (times it was powered up for that).
