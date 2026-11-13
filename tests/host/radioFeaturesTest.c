@@ -2485,6 +2485,31 @@ static void test_dual_rx2_sense(void)
 	CHECK(wait_on(dmr, 200));
 	CHECK(wait_on(home, 4000));
 
+	// A look that played a call: the next goes at once, though the carrier stayed up (a repeater's hang, the reply)
+	r2.active = false;
+	run(100);
+	signal_on(0, 438500000, 30, no_tone);
+	hw.sig[0].tdma = true;
+	memset(&air, 0, sizeof(air));
+	air.on = true;
+	air.hz = 438500000;
+	air.t0 = now + 100;
+	air.dst = 9;
+	air.lc_at = 1;
+	r2.active = true;
+	CHECK(wait_on(dmr, 200));
+	bool call = false;
+	for (int i = 0; i < 80; i++) {
+		run(25);
+		call |= on_ref(dmr) && sm.view.dmr.state == RDMR_RX;
+	}
+	CHECK(call);
+	air.on = false;
+	hw.sig[0].hz = 0;
+	CHECK(wait_on(home, RADIO_DUAL_DELAY_MS + 3000));
+	CHECK(wait_on(dmr, 200));
+	CHECK(wait_on(home, 4000));
+
 	dual_stop();
 	r2.active = false;
 	board.rx2 = NULL;

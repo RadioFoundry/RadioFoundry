@@ -44,7 +44,7 @@ typedef struct {
 	void (*dmr_wake_listen)(bool listen);
 	void (*status)(radio_status_t *st);
 	// Optional: a check of the receiver between status polls, for a board that watches it faster than the squelch runs
-	// (the D578 shuts its speaker the moment an FM carrier goes). The radio task calls it again after the ms it returns,
+	// (one that shuts its speaker the moment an FM carrier goes). The radio task calls it again after the ms it returns,
 	// 0 = at its next tick (RADIO_TICK_MS). Short; NULL = none
 	uint8_t (*rx_watch)(void);
 	// Speaker path (amp and mute) for received audio

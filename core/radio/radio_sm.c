@@ -2618,12 +2618,16 @@ static bool dual_sel_busy(const radio_sm_t *sm)
 // The second receiver only senses its channel (rx2_status_t.sense: DMR with one decoder). On a carrier there while
 // the selected channel is quiet, the main receiver goes to decode it: a look, which the scan runs as on one receiver
 // (a hold on the call, the wait after it), and its step brings the main receiver back. A look that found no call for
-// us isn't repeated until the carrier drops, or for RADIO_RX2_RELOOK_MS. True: the main receiver is on the selected
-// channel (nothing for the scan to do)
+// us isn't repeated until the carrier drops, or for RADIO_RX2_RELOOK_MS; after one that played a call the next goes
+// at once (a repeater's hang keeps the carrier up for the reply). True: the main receiver is on the selected channel
+// (nothing for the scan to do)
 static bool rx2_sense(radio_sm_t *sm, const rx2_status_t *st, uint32_t now_ms)
 {
 	if (!dual_here(sm, sm->dual_sel)) {
 		if (sm->rx2_look) {
+#if CONFIG_DMR
+			sm->rx2_look_call = sm->rx2_look_call || sm->view.dmr.state == RDMR_RX;
+#endif
 			return false;
 		}
 		if (dual_tune(sm, sm->dual_sel, now_ms)) {
@@ -2634,7 +2638,7 @@ static bool rx2_sense(radio_sm_t *sm, const rx2_status_t *st, uint32_t now_ms)
 	if (sm->rx2_look) {
 		sm->rx2_look = false;
 		sm->rx2_look_ms = now_ms;
-		sm->rx2_relook = false;
+		sm->rx2_relook = sm->rx2_look_call;
 	}
 	if (!st->active) {
 		sm->rx2_relook = true;
@@ -2646,6 +2650,7 @@ static bool rx2_sense(radio_sm_t *sm, const rx2_status_t *st, uint32_t now_ms)
 	if (dual_tune(sm, (uint8_t)!sm->dual_sel, now_ms)) {
 		scan_tuned(&sm->scan, now_ms);
 		sm->rx2_look = true;
+		sm->rx2_look_call = false;
 	}
 	return true;	// this poll's readings are from before the retune
 }

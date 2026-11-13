@@ -94,8 +94,10 @@ DM-1801 Pro's A/B key does both: a press switches A / B, a hold starts and stops
 A and B can be any channel of any zone, or the VFO ([how the core does it](../spec/radio-features.md#21-dual-watch)).
 Nothing about this dual watch has been checked on the air on any radio.
 
-The AnyTone AT-D578UV has two receivers: when the other channel is FM, its second receiver stays on it, so dual watch
-hears both channels at once instead of in turn ([AT-D578UV](#what-the-at-d578uv-lacks-today)). Untested on a radio.
+The AnyTone AT-D578UV has two receivers. When the other channel is FM, its second receiver stays on it, so dual watch
+hears both channels at once instead of in turn. When it is DMR, the second receiver watches it for a signal, and
+while the selected channel is quiet the radio goes over to decode the call and comes back after it
+([AT-D578UV](#what-the-at-d578uv-lacks-today)).
 
 ## The volume bar
 
@@ -731,7 +733,8 @@ microphone works on a radio; the plain one is untested.
 | **B**, **C** (ZONE) | next zone, previous zone |
 | **D** (EXIT) | **Back** |
 
-The **Key Lock** switch on the side has no effect yet. On the keypad microphone, **R/T** shows each side receiving or
+In text entry **\*** (**P1** too) types a space, as on AnyTone's own microphones; held, it deletes. The **Key Lock**
+switch on the side has no effect yet. On the keypad microphone, **R/T** shows each side receiving or
 transmitting and **MAIN** the selected side.
 
 A keypad microphone unplugged while the radio is on stops its PTT within 3 seconds.
@@ -741,8 +744,9 @@ A keypad microphone unplugged while the radio is on stops its PTT within 3 secon
 - DMR voice, text messages, positions, the ID database, talker alias, emergency calls and roaming work on the radio.
   A text message with a response requested longer than 32 characters is lost: the DMR chip clears part of each
   data block ([DMR data](../spec/modem-sct.md)).
-- Dual watch hears both channels at once only when the other channel is FM: the second receiver has no DMR. With a
-  DMR channel there, the radio switches between the two as other radios do.
+- Dual watch hears both channels at once only when the other channel is FM: the second receiver has no DMR decoder.
+  With a DMR channel there it watches for a signal, and while the selected channel is quiet the radio goes over to
+  decode the call and comes back after it.
 - FM transmit, DTMF, VOX and APRS beacons work on the radio.
 - Air band receive (108-137 MHz, AM) needs the KTMicro receiver. Some radios carry an RDA5807 in its place, which
   has FM broadcast only: on those the air band stays silent
@@ -758,7 +762,7 @@ A keypad microphone unplugged while the radio is on stops its PTT within 3 secon
   left with DMR on. The AT32 image has it. RadioFoundry decodes the receive audio itself and doesn't use
   the radio's APRS add-on board.
 - The backlight has five levels: **Brightness** picks one per 20 % (10-20 % the dimmest,
-  90-100 % the brightest). RadioFoundry doesn't control the status light yet, so its colors don't follow the radio's manual.
+  90-100 % the brightest). By default it dims after 30 s and never goes off (**Backlight Dim/Off** 30s/dim). RadioFoundry doesn't control the status light yet, so its colors don't follow the radio's manual.
 - The hotspot, single frequency repeating, privacy, the USB network and zone sharing are left out: the
   radio's memory is too small for all of them, and the vocoder runs in the DMR chip, out of the processor's reach.
 

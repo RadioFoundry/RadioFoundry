@@ -1173,6 +1173,9 @@ static void rx_setup(void)
 	// else the open gate plays the receiver's noise for the rest of the beep
 	if (beep_hz != 0) {
 		qa4818_beep(&chip_if, beep_hz, beep_gain, qa4818_af_rx(digital, rx_hz));
+		if (!beeping) {
+			qa4818_af_out(&chip_if, QA4818_AF_SILENT);	// in its silent lead: the gate still opens on silence
+		}
 	}
 	// The tone generator's first tone after power-up came out 6 dB low (measured by microphone): one silent tone of
 	// TONE_WARM_MS at the first set-up, the gate shut
@@ -1905,6 +1908,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	if (beep_hz != 0) {	// a beep cut by the key-up: its tone generator off before the TX set-up
 		beeping = false;
 		beep_hz = 0;
+		// Cut in its silent lead, the beep never comes back to lift side A's level (beep_tone() returns early for
+		// a beep that isn't sounding): the receiver's audio after the transmission takes the level again
+		beep_quiet = false;
 		qa4818_tone_gen(&chip_if, false);
 	}
 #if CONFIG_DTMF || CONFIG_APRS

@@ -2,8 +2,8 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 # AT-D578UV feature defaults, Artery builds (config/features.mk lists them all). The radio's code is boards/d578uv's,
 # and so are these switches and reasons, kept in step with boards/d578uv/config.mk (tools/boards.py reads each board's
-# own file). Bring-up state (docs/spec/hardware-d578uv.md 9, 10): nothing has run on an Artery radio yet. The image
-# gets 128 KB of SRAM (memory.ld), no CCM
+# own file). Bring-up state: docs/spec/hardware-d578uv.md 9, 10 and the bring-up records. The image gets 128 KB of
+# SRAM (memory.ld), no CCM
 # DMR runs through the SCT3258 baseband, which carries its own vocoder and plays the voice to the codec itself
 # (hardware-d578uv.md 4, CAP_MODEM_VOICE). Its driver (drivers/modem/sct), the voice set-up and the RF side (receive,
 # the transmit keying and the PA per burst) are written

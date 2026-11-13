@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# AT-D578UV feature defaults (config/features.mk lists them all). Bring-up state (docs/spec/hardware-d578uv.md 9): the
-# display, keys, USB host link, FM on the RF chips and the GPS module are written and untested on a radio. RAM is the
-# limit: 96 KB, no CCM
+# AT-D578UV feature defaults (config/features.mk lists them all). Bring-up state: docs/spec/hardware-d578uv.md 9 and
+# the bring-up records. RAM is the limit: 96 KB, no CCM
 # DMR runs through the SCT3258 baseband, which carries its own vocoder and plays the voice to the codec itself
 # (hardware-d578uv.md 4, CAP_MODEM_VOICE). Its driver (drivers/modem/sct), the voice set-up and the RF side (receive,
 # the transmit keying and the PA per burst) are written
