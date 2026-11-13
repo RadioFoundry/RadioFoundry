@@ -20,6 +20,10 @@ counting every frame is test_dmr_voice's job), the decoded audio peaks at PEAK_M
 (voice.rx_repeats at most the recording's own repeats plus the padding plus 2 % of the frames), and the FEC corrected
 at most 2 bits a frame on average (the stale RAM signature is exactly 3 a frame).
 
+test_dmr_audio_rx_offset: the same call with the bench carrier OFFSET_HZ below and above the channel, one call each,
+and the same pass criteria. A receiver whose DMR decoding falls off on one side of its channel fails here (the UV380
+family's DMR receive offset, docs/spec/hardware-dm1701.md 5.13: 3 bits a frame at -500 Hz before it).
+
 test_dmr_audio_tx (marker radio_tx): the radio keys TX_S seconds at its lowest power with the voice layer's test
 signal in place of the mic (RADIO op 33: a tone whose pitch changes every frame), the bench modem records the call.
 Pass: the bench heard a call from the radio's ID with at least 30 frames a second of PTT, at most 15 % of them the
@@ -41,6 +45,7 @@ PRIME = 3                   # AMBE_VOICE_PRIME in core/dmr/ambe/ambeVoice.h
 PEAK_MIN = 1000             # decoded speech peaks at thousands; the stale voice RAM gave 6
 BIT_ERRORS_PER_FRAME = 2.0  # stale voice RAM: exactly 3 a frame; the DM-1801 Pro on the bench: about 1
 TX_S = 3.0
+OFFSET_HZ = 500             # bench carrier offset: a small share of the 12.5 kHz channel
 ALL_CALL = 0xFFFFFF
 STATS_KEYS = ("voice.rx_peak", "voice.rx_repeats", "voice.tx_repeats", "voice.tx_mic_peak", "voice.tx_test")
 
@@ -109,13 +114,13 @@ def dmr_channel(radio, pytestconfig):
     return freq, cc, dst, private, own
 
 
-def bench_call(radio, sdr_bench, freq, cc, dst, private, remote):
-    """The bench sends the .ambe file remote (on the bench) as one call; returns the radio's counter deltas and its
-    dmr_stats view after the call."""
+def bench_call(radio, sdr_bench, freq, cc, dst, private, remote, offset_hz=0):
+    """The bench sends the .ambe file remote (on the bench) as one call, its carrier offset_hz from freq; returns the
+    radio's counter deltas and its dmr_stats view after the call."""
     radio.reset_counters()
     _, before = radio.counters()
     with sdr_bench.lease():
-        sdr_bench.voice_call(freq, cc, dst, calls=1, ambe=remote, private=private)
+        sdr_bench.voice_call(freq, cc, dst, calls=1, ambe=remote, private=private, offset_hz=offset_hz)
     time.sleep(2.0)                      # playback drains (the queue holds 160 ms)
     _, after = radio.counters()
     keys = ["voice.rx_in", "voice.rx_frames", "voice.rx_repeats", "voice.rx_bit_errors", "voice.rx_bad",
@@ -166,6 +171,27 @@ def test_dmr_audio_rx(radio, sdr_bench, pytestconfig):
     print(f"sent {sent} frames ({len(frames)} in the file, {frame_repeats(frames)} repeats there); radio: {d}, "
           f"rx_peak {stats.get('voice.rx_peak')}")
     bad = check_played(d, stats, sent, allowed, "bench speech")
+    assert not bad, "; ".join(bad)
+
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_dmr_audio_rx_offset(radio, sdr_bench, pytestconfig):
+    freq, cc, dst, private, _ = dmr_channel(radio, pytestconfig)
+    ambe = pytestconfig.getoption("--ambe")
+    if not ambe or not os.path.isfile(ambe) or os.path.getsize(ambe) % 9:
+        pytest.fail("the DMR audio smoke needs a speech recording: --ambe FILE or $RFOUNDRY_HIL_AMBE (9-byte frames)")
+    frames = read_frames(ambe)
+    sent = padded(len(frames))
+    allowed = frame_repeats(frames) + (sent - len(frames)) + 2 + len(frames) // 50
+    remote = sdr_bench.upload(ambe, "hil_audio_smoke.ambe")
+    bad = []
+    for off in (-OFFSET_HZ, OFFSET_HZ):
+        d, stats = bench_call(radio, sdr_bench, freq, cc, dst, private, remote, offset_hz=off)
+        good = max(1, d["voice.rx_in"] - d["voice.rx_bad"])
+        print(f"carrier {off:+d} Hz: {d['voice.rx_bit_errors'] / good:.2f} bits a frame, radio {d}, "
+              f"rx_peak {stats.get('voice.rx_peak')}")
+        bad += check_played(d, stats, sent, allowed, f"carrier {off:+d} Hz")
     assert not bad, "; ".join(bad)
 
 

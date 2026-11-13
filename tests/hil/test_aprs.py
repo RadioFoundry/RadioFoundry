@@ -638,6 +638,52 @@ def test_aprs_rx_on_air(radio, sdr_bench, pytestconfig):
         assert _n(v, "aprs.stations") >= 1, f"the station isn't listed: {v}"
 
 
+@pytest.mark.feature("aprs_rx")
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_aprs_rx_third_party_message(radio, sdr_bench, pytestconfig):
+    """A message to the radio wrapped as an iGate puts APRS-IS traffic on RF ("}SRC>DST,TCPIP,IGATE*:info", sent by
+    --callsign-7 or -11 as the iGate, from --callsign-12 inside), from the bench board's FM transmitter on --fm-mhz:
+    the radio keeps it as from the inner sender (aprs.msg_from, msg_text). No message number, so no ack: the radio doesn't transmit."""
+    _need_aprs(radio)
+    if "APRS_RX" not in radio.features() or "VFO_FM" not in radio.features():
+        skip("not_built", "built without APRS receive or the FM VFO")
+    call = rig(pytestconfig, "callsign", "an amateur transmission: needs a licensed operator's callsign,")
+    mhz = rig(pytestconfig, "fm-mhz")
+    hz = round(mhz * 1e6)
+    if not allowed_test_hz(hz):
+        pytest.fail(f"--fm-mhz {mhz:.4f}: an APRS frequency, or not one of the rig's transmit frequencies (tx_mhz)")
+    radio.go_home()
+    if radio.screen() == "hotspot":
+        skip("state", "the radio is in hotspot mode")
+    own = _aprs(radio).get("aprs.call")
+    if not own:
+        skip("state", "the radio has no APRS callsign")
+    inner = f"{call.upper()}-12"
+    if inner == own:
+        skip("state", f"the radio's own call is {own}, the test's inner sender")
+    gate = next(c for c in (f"{call.upper()}-{n}" for n in BENCH_RX_SSIDS) if c != own)
+    text = f"RadioFoundry HIL third party {int(time.time()) % 100000}"     # new each run: not the inbox's last one
+    info = f"}}{inner}>APZRDF,TCPIP,{gate}*::{own:<9}:{text}"
+    src, program = bench_frame(call, own, info)
+    L = radio.link
+    with radio.vfo_session(), aprs_session(radio) as s:
+        L.vfo_set(hz)
+        radio.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO")
+        s.rx_setup(hz)
+        radio.wait_for(lambda v: v.get("aprs.rx_listening") == "1", sections=("aprs",), what="APRS receiver on")
+        v0 = _aprs(radio)
+        with sdr_bench.lease():
+            done = sdr_bench.fm_transmit(mhz, program, dev_hz=3000, lead_s=0.1, tail_s=0.1)
+        print(f"bench: {src}: {info}: {done}")
+        v = radio.wait_for(lambda x: _n(x, "aprs.rx_frames") > _n(v0, "aprs.rx_frames"), timeout=5,
+                           sections=("aprs",), what="the bench's frame decoded")
+        v = radio.wait_for(lambda x: x.get("aprs.msg_text") == text, timeout=2, sections=("aprs",),
+                           what="the wrapped message kept")
+        assert v.get("aprs.msg_from") == inner, f"the message isn't from the inner sender {inner}: {v}"
+        assert _n(v, "aprs.rf_sent") == _n(v0, "aprs.rf_sent"), f"the radio transmitted: {v}"
+
+
 def kiss_frames(data):
     """The frames in a KISS byte stream, unescaped (type byte first)"""
     out, cur, esc = [], bytearray(), False
