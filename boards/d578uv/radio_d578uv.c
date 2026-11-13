@@ -273,6 +273,7 @@ static uint8_t level_a_want;		// the level code audio_route() gives side A
 static bool dmr_heard;			// in DMR side A hears a signal (status()): no beep then (beep_tone())
 static int16_t level_code_vol = -1;	// the speaker level code for the volume, -1 until the core sets one
 static bool vol_zero;			// the volume (knob A) is 0: side A and the KTMicro receiver stay silent
+static spk_hang_t amp_hang;		// PA7's hang after the last sound (spk_hang())
 static int16_t level_code_b = -1;	// side B's level code from knob B, -1 until side B's poll reads it
 static bool vol_b_zero;			// knob B is at 0: side B stays silent
 static bool knobs_swapped;		// dual watch with chip 0 on side B: chip 0 takes knob B, chip 1 knob A
@@ -618,17 +619,36 @@ static void audio_route(void)
 	bool zero_b = swap ? vol_zero : level_code_b < 0 ? vol_zero : vol_b_zero;
 	// In DMR side A's RF chip audio is the demodulator's 4FSK, which the gate keeps off the speaker but for a beep or
 	// the KTMicro receiver; the baseband's voice reaches the speaker without it
-	bool a_rf = beeping || kt_out || (mode != RADIO_MODE_DMR && main_audio && a_lost_ms == 0);
+	// A beep's silent lead (beep_tone(): the chip's output held silent) opens the gate and powers the amplifier ahead
+	// of the tone, so the amplifier comes on with its input held and settles before anything sounds
+	bool lead = beep_hz != 0 && !beeping;
+	bool a_rf = beeping || lead || kt_out || (mode != RADIO_MODE_DMR && main_audio && a_lost_ms == 0);
 	if (level_code_vol >= 0) {
 		level_a_want = a_rf || !b ? (uint8_t)code_a : 0;
 		level_set(0, beep_quiet ? 0 : level_a_want);
 		level_set(1, (b || kt_out) && code_b >= 0 ? (uint8_t)code_b : 0);
 	}
+	bool b_loud = b && !zero_b;
+	bool want = !spk_amp_off(transmitting, beeping || lead || kt_out || main_audio || b, !zero_a || b_loud);
+	bool amp = spk_hang(&amp_hang, want, beeping || lead, !transmitting && !vol_zero, hal_millis());
+	// Off before the gate shuts, on after it opens: the gate never switches with the amplifier coming on or going off
+	if (!amp) {
+		mcu_pin_write(PIN_SPK_MUTE, true);
+	}
 	if (chips_ready && !transmitting) {
 		chip1_gpio(GPIO_B_A_AUDIO, a_rf ? GPIO_B_A_AUDIO : 0);
 	}
-	bool b_loud = b && !zero_b;
-	mcu_pin_write(PIN_SPK_MUTE, spk_amp_off(transmitting, beeping || kt_out || main_audio || b, !zero_a || b_loud));
+	if (amp) {
+		mcu_pin_write(PIN_SPK_MUTE, false);
+	}
+}
+
+// Every status poll: the amplifier off once its hang has run out
+static void amp_service(void)
+{
+	if (amp_hang.hanging && (int32_t)(hal_millis() - amp_hang.until) >= 0) {
+		audio_route();
+	}
 }
 
 static void volume(uint8_t percent)
@@ -1117,6 +1137,8 @@ static void rx_setup(void)
 	asleep = false;
 	if (beeping) {		// a retune during a beep: the speaker off until the tone is back (audio_route() below)
 		mcu_pin_write(PIN_SPK_MUTE, spk_amp_off(true, false, false));
+		amp_hang.on = false;
+		amp_hang.hanging = false;
 	}
 #if CONFIG_DUAL_WATCH
 	src_b = digital && b_on && b_dmr && rx_hz == b_hz && !AM_ON;
@@ -2231,6 +2253,7 @@ static uint8_t rx_watch(void)
 static void status(radio_status_t *st)
 {
 	fan_poll();
+	amp_service();
 #if CONFIG_VOX
 	mic_poll();
 #endif
@@ -2271,8 +2294,11 @@ static void status(radio_status_t *st)
 // emergency call's alert beep cost 12 voice bursts, or ended the call and the rest came as a second, late call). A
 // beep sounding when one comes stops
 // The tone generator's level rises about 10 dB over its first 30 ms (it runs on the transmit DSP), so each tone runs
-// that long with the gate shut before it sounds (hal_radio_t.beep_lead_ms): without it a 25 ms key beep never reached
-// its level and sounded louder or softer with its length (measured by microphone)
+// silent first (hal_radio_t.beep_lead_ms): without it a 25 ms key beep never reached its level and sounded louder or
+// softer with its length (measured by microphone). The lead also powers the amplifier with the gate open on the chip's
+// silent output (audio_route()), so its turn-on pop comes ahead of the tone, not on it. A longer lead (150 ms) or the
+// gate open first made the pop no smaller: it is the amplifier's own (PA7), and its hang (spk_hang()) keeps it to one
+// for a run of beeps
 #ifndef D578UV_BEEP_LEAD_MS
 #define D578UV_BEEP_LEAD_MS	40
 #endif
