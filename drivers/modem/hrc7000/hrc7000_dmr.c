@@ -56,7 +56,7 @@
 #define VOICE_LOST_TICKS	13u	// about 390 ms without a voice burst on the call's slot
 #define CC_SCAN_TICKS		4u	// color code scan: next code after 120 ms of nothing
 #define CC_HOLD_TICKS		167u	// ... held 5 s after the last burst
-#define BUSY_TICKS		12u	// polite access: activity in the last 360 ms
+#define BUSY_US			360000u	// polite access: activity in the last 360 ms
 #define RX_LOST_TICKS		13u	// a reception is over (390 ms without a burst taken)
 #define RX_IDLE_TICKS		20u	// slot timing but nothing taken for 600 ms: the timing is stale
 #define POST_TX_HOLD_TICKS	5u	// after a direct transmission: an answer is awaited on our slot timing for 150 ms
@@ -250,7 +250,8 @@ static void chip_rx_restart(hrc7000_dmr_t *e)
 	// channel gives no timeslot interrupts after the restart, so rx_resync never aged it out, and every PTT after a
 	// data response was refused until the radio left DMR (on the SDR bench, 2026-11-03)
 	e->rx_any = false;
-	e->resync_tick = e->tick;
+	e->t_resync = now(e);
+	e->resync_pending = false;
 	e->idle_ticks = RX_IDLE_TICKS;
 	e->st.rx_restarts++;
 }
@@ -271,26 +272,30 @@ static void rx_hold(hrc7000_dmr_t *e)
 	e->tc_agree = 0;
 	e->emb_pending = false;
 	e->rx_any = false;	// the polite check's busy window starts again, as after a restart
-	e->resync_tick = e->tick;
+	e->t_resync = now(e);
+	e->resync_pending = true;
 	e->idle_ticks = POST_TX_HOLD_TICKS;
 	e->st.rx_holds++;
 }
 
 // The receiver's slot timing is dropped (5.2) when it stops giving bursts: at the end of a reception, and while the
 // chip keeps the timing of a sender that left (it then only reports unusable and abnormal slots and takes no new
-// call). Timeslot interrupts stop once the timing is released, so an empty channel sees no more restarts. Only with
+// call). After a restart, only new modem activity schedules another one. Only with
 // a color code set: the color code scan restarts the receiver itself
 static void rx_resync(hrc7000_dmr_t *e)
 {
-	if (e->cc_filter < 0) {
+	if (e->cc_filter < 0 || !e->resync_pending) {
 		return;
 	}
-	uint32_t quiet = e->tick - (e->rx_any ? e->rx_tick : e->resync_tick);
-	if (quiet > (e->rx_any ? RX_LOST_TICKS : e->idle_ticks)) {
+	uint32_t quiet = now(e) - (e->rx_any ? e->t_rx : e->t_resync);
+	if (quiet > (e->rx_any ? RX_LOST_TICKS : e->idle_ticks) * SLOT_US) {
 		if (e->rx_any) {
 			e->st.rx_lost++;
 		} else {
 			e->st.rx_stale++;
+		}
+		if (e->voice_chip_slot >= 0) {	// the restart drops the call: report it as rx_tick would have
+			ev_simple(e, DMR_EV_VOICE_LOST, e->tc_slot[e->voice_chip_slot], tick_arg(e));
 		}
 		chip_rx_restart(e);
 	}
@@ -652,6 +657,7 @@ static void rx_burst(hrc7000_dmr_t *e)
 	}
 	int8_t ts = slot_ts(e, &s);
 	e->rx_tick = e->tick;
+	e->t_rx = now(e);
 	e->rx_any = true;
 	e->cc_tick = e->tick;
 	e->st.last_cc = s.cc;
@@ -771,6 +777,9 @@ void hrc7000_dmr_isr_sys(hrc7000_dmr_t *e)
 			continue;
 		}
 #endif
+		if (list & (SYS_DEFRAME | SYS_ABNORMAL)) {
+			e->resync_pending = true;
+		}
 		if (list & SYS_LATE_LC) {
 			// Embedded LC assembled from a superframe: in the RX RAM (2.8), handed over with the next voice burst
 			e->st.late_entry++;
@@ -834,6 +843,7 @@ void hrc7000_dmr_isr_timeslot(hrc7000_dmr_t *e, bool tx_vector)
 			lock_tick(e);
 		}
 		if (!tx_ticking(e)) {
+			e->resync_pending = true;
 			rx_tick(e);	// armed: the TX vector ticks from the next slot
 		}
 	}
@@ -945,6 +955,9 @@ void hrc7000_dmr_poll(hrc7000_dmr_t *e)
 		tx_finish(e, true);
 		ev_simple(e, DMR_EV_SYNC_LOST, 0, tick_arg(e));
 	}
+	if (e->running && e->tx_state == TXS_IDLE) {
+		rx_resync(e);	// receive slot interrupts can stop while system interrupts continue
+	}
 	// A system request pending since an earlier poll with no handler run in between: its interrupt was lost, and
 	// with its line kept high no later one would come (received bursts gone for good). Dropped, so the next rises.
 	// The 50 ms count from the first poll that saw it pending, not from the poll before: after a late poll a request
@@ -1002,7 +1015,7 @@ bool hrc7000_dmr_tx_begin(hrc7000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 {
 	lock(e);
 	bool ok = e->running && e->tx_state == TXS_IDLE && !BS_ACTIVE(e);
-	if (ok && access != DMR_ACCESS_IMPOLITE && e->rx_any && (uint32_t)(e->tick - e->rx_tick) < BUSY_TICKS &&
+	if (ok && access != DMR_ACCESS_IMPOLITE && e->rx_any && (uint32_t)(now(e) - e->t_rx) < BUSY_US &&
 	    (access == DMR_ACCESS_POLITE_ALL || (e->cfg.cc >= 0 && e->st.last_cc == (uint8_t)e->cfg.cc))) {
 		e->st.tx_rejected++;
 		ev_simple(e, DMR_EV_TX_REJECTED, ts, tick_arg(e));
@@ -1037,7 +1050,7 @@ bool hrc7000_dmr_tx_begin(hrc7000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 			w(e, C7_LAYER2_TXRX_CTRL, TXRX_NONE);
 			e->tx_state = TXS_ARMING;
 		}
-		uint32_t age = e->tick - e->rx_tick;
+		uint32_t age = (now(e) - e->t_rx) / SLOT_US;	// slots, by wall time: the ticks may have stopped
 		e->st.txb_tc_agree = e->tc_agree;
 		e->st.txb_lock_wait = 0;
 		e->st.txb_timing = e->tx_timing;

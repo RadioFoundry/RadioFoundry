@@ -642,7 +642,9 @@ Used at DMR entry, after TX through a repeater (direct: 5.2a), after a stalled t
 
 A sequence of TXRX 0xC00000, 0, 0xC00000, 0x8040 with no SLOTON writes, or a busy wait in the color code probe, does not acquire sync reliably. Use this one everywhere.
 
-A restart also forgets what was heard: the polite-access busy window (`dmr-modem.md`) starts again with the next burst taken. The window is counted in timeslot interrupts, and on an empty channel they stop after a restart, so a station heard just before one stayed "busy" for good. Every polite start was then refused (`tx_rejected`) until the radio left DMR: after a one-burst data response, the restart at the end of the transmission came well inside the window.
+A restart also forgets what was heard: the polite-access busy window (`dmr-modem.md`) starts again with the next burst taken. Polite access ages the last decoded activity by `now_us`, with a 360 ms window, independently of timeslot interrupts. Every usable burst refreshes the window, including one later dropped by the slot or CRC filter; unusable deframes do not. The own-color-code and all-activity policies retain their existing color-code checks.
+
+Receive recovery uses wall time too, from both the timeslot handler and the task poll: more than 390 ms without another usable burst, 600 ms of stale activity without a usable burst, or 150 ms after a direct TX hold. A restart clears the pending recovery; subsequent slot interrupts, deframes or abnormal-slot reports schedule it again. A silent receiver is not restarted repeatedly. This permits recovery when timeslot interrupts stop but system interrupts continue. Host register-model tests cover stopped timeslot interrupts; the cause of a physical interrupt loss and recovery on air remain unverified.
 
 ### 5.2a End of a direct transmission: the hold
 
