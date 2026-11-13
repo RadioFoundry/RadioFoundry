@@ -227,17 +227,19 @@ def burst_tone(r, want_s):
 
 
 @pytest.mark.feature("tone_burst_key")
+@pytest.mark.needs_switch("KEY_ASSIGN")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
 def test_fm_tx_tone_burst_key(fm_vfo, sdr_bench, pytestconfig):
     radio = fm_vfo
-    for feature in ("FM_TX_TONES", "KEY_ASSIGN", "UI_SETTINGS"):
+    for feature in ("FM_TX_TONES", "UI_SETTINGS"):
         if feature not in radio.features():
             skip("not_built", f"built without CONFIG_{feature}")
     before = radio.view(["link"])
-    if "key.first.bit" not in before:
-        skip("not_built", "no key.first view (firmware older than the tone burst key, or no assignable key)")
+    if "key.first.bit" not in before:   # the version's features never list KEY_ASSIGN: this view is its sign
+        skip("not_built", "no key.first view (built without CONFIG_KEY_ASSIGN, firmware older than the tone burst "
+                          "key, or no assignable key)")
     bit, saved = int(before["key.first.bit"]), int(before["key.first.press"])
     assert 0 <= bit < 32, before
     hz = round(rig(pytestconfig, "fm-mhz") * 1e6)
