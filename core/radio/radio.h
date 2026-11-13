@@ -256,6 +256,8 @@ typedef struct {
 	uint8_t reg_tg_ok;	// which the TSCC accepted: bit 6 the first
 	bool call_data;		// the call followed is packet data (PD_GRANT, TD_GRANT)
 	bool pd_wait;		// the data service's packet waits for its data channel
+	bool stunned;		// stunned by the TSCC: no user services (6.4.9)
+	uint32_t stuns, revives;
 	bool st_group;		// the last status heard: to a talkgroup
 	uint8_t st_value;
 	uint32_t st_count, st_src, st_dst, st_ms;

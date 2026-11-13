@@ -918,6 +918,49 @@ static void test_broadcast(void)
 	CHECK(ms.state == T3_FOLLOW && !t3_ms_can_talk(&ms), "an all-call heard: no PTT");
 }
 
+// Stun and revive without authentication (6.4.9.1): a C_AHOY from STUNI, Service_Kind supplementary, the flag 0 to
+// stun and 1 to revive, answered C_ACKU Message_Accepted. Stunned, the radio asks for and takes no user service; a
+// radio check and the revive still work
+static void test_stun(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+	t3_csbk_t h = ahoy(T3_SK_SUPPLEMENTARY, false, OWN, T3_ID_STUNI);
+	h.u.ahoy.kind_flag = false;
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	CHECK(ms.stunned && ms.stuns == 1, "stunned");
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MESSAGE_ACCEPTED &&
+	      sent[0].u.ack.dst == T3_ID_STUNI, "stun acknowledged");
+	nsent = 0;
+	CHECK(!t3_ms_request(&ms, T, TG_A, true, false) && ms.ax.result == T3_RES_NOT_ALLOWED, "no calls");
+	CHECK(!t3_ms_status(&ms, T, TG_A, true, 3), "no status");
+	t3_csbk_t g = grant(T3_OP_TV_GRANT, 159, 2, TG_A, CALLER);
+	rx(&ms, 1, &g);
+	frames(&ms, 2);
+	CHECK(ms.state == T3_CAMPED, "no call followed");
+	t3_csbk_t a = ahoy(T3_SK_IND_VOICE, false, OWN, CALLER);
+	rx(&ms, 1, &a);
+	frames(&ms, 2);
+	CHECK(nsent == 0, "an availability check isn't answered");
+	a = ahoy(T3_SK_REGISTRATION, false, OWN, T3_ID_TSI);
+	rx(&ms, 1, &a);
+	frames(&ms, 2);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU, "a radio check is");
+	nsent = 0;
+	h.u.ahoy.kind_flag = true;
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	CHECK(!ms.stunned && ms.revives == 1 && nsent == 1 && sent[0].u.ack.reason == T3_RC_MESSAGE_ACCEPTED, "revived");
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false), "calls again");
+	// Another radio's stun isn't ours
+	t3_ms_end_call(&ms, T);
+	h = ahoy(T3_SK_SUPPLEMENTARY, false, CALLER, T3_ID_STUNI);
+	rx(&ms, 1, &h);
+	CHECK(!ms.stunned, "another radio's stun");
+}
+
 static void test_status(void)
 {
 	t3_ms_t ms;
@@ -1259,6 +1302,7 @@ int main(void)
 	test_cancel();
 	test_ahoy();
 	test_broadcast();
+	test_stun();
 	test_status();
 	test_sdata();
 	test_pdata();

@@ -298,7 +298,8 @@ the AHOY's source, its additional address the radio's ID.
 | selective clear (P_AHOY kind cancel) | Message_Accepted, then return |
 | status (kind status) | MS_Accepted (section 7.5) |
 | status poll (kind status, status 127) | Accepted for the Status Polling Service (0x47), Response_Info the radio's status |
-| authentication challenge, anything else to the radio | not supported (0x00) |
+| stun or revive (kind supplementary, from STUNI) | Message_Accepted (section 7.9) |
+| authentication challenge, anything else to the radio | not supported (0x00); stunned, nothing |
 
 ### 7.5 Status (6.6.6)
 
@@ -436,6 +437,20 @@ The emergency key ([dmr-emergency.md](dmr-emergency.md)) works on a trunked syst
 | Cancel | The emergency over, status 124 to the alarm's target, once the radio is camped. Only after an alarm the TSCC acknowledged. |
 | Heard | Status 126 to the radio or a talkgroup it listens to raises the alarm alert. A call granted with the emergency option raises the call alert, as on a conventional channel. |
 
+### 7.9 Stun and revive (6.4.9.1)
+
+A C_AHOY to the radio from STUNI, Service_Kind supplementary (1101b), stuns it (Service_Kind_Flag 0) or revives it (1).
+The radio answers C_ACKU Message_Accepted either way.
+
+Stunned, the radio:
+
+- keeps hunting, registration, de-registration, radio checks and stun/revive;
+- asks for no call, status, short data or packet data (refused as not allowed; PTT is denied);
+- follows no grant, keeps no status or short data heard, and answers no other AHOY.
+
+The stun outlasts leaving the system and starting it again, unless the new system is another network. It is kept in
+RAM, with the staged system: a restart of the radio clears it.
+
 ## 10. Not done yet
 
 | Item | Needs |
@@ -444,6 +459,8 @@ The emergency key ([dmr-emergency.md](dmr-emergency.md)) works on a trunked syst
 | CACH short LC reception | the modem drivers' CACH report |
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
 | Short data polling, supplementary data, a list subscription without registering, authentication | later |
+| Stun and revive with authentication, kill (6.4.9.2, 6.4.10) | authentication |
+| A stun kept across a restart of the radio | trunked systems in the codeplug |
 | Multi-item and duplex packet data, data to a gateway, C_MOVE, adjacent sites, power save | later |
 
 ## 11. On the radio

@@ -5818,6 +5818,38 @@ static void test_t3_emergency(void)
 	run(20);
 	sim.repeater = false;
 }
+// A stun outlasts leaving the system and coming back; PTT is refused while stunned; the revive lifts it
+static void test_t3_stun(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_SUPPLEMENTARY;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = T3_ID_STUNI;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	CHECK(sm.view.t3.stunned && sm.view.t3.stuns == 1);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	req(RREQ_T3, RADIO_T3_START);
+	t3_site_run(600);
+	CHECK(sm.view.t3.state == T3_CAMPED && sm.view.t3.stunned);
+	unsigned rands = t3_sent(T3_OP_C_RAND);
+	req(RREQ_PTT, 1);
+	run(200);
+	CHECK(sm.view.state == RS_TX_DENIED && t3_sent(T3_OP_C_RAND) == rands);
+	req(RREQ_PTT, 0);
+	run(200);
+	h.u.ahoy.kind_flag = true;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	CHECK(!sm.view.t3.stunned && sm.view.t3.revives == 1);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
 #endif
 
 int main(void)
@@ -5848,6 +5880,7 @@ int main(void)
 	test_t3_sdata();
 	test_t3_pdata();
 	test_t3_emergency();
+	test_t3_stun();
 #endif
 	test_dmr_stalled();
 	test_dmr_list_talk_target();

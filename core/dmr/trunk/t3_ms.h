@@ -235,6 +235,8 @@ typedef struct {
 
 	t3_call_t call;
 	bool protect_dis;	// P_PROTECT DIS_PTT in force on the payload channel
+	bool stunned;		// stunned by the TSCC (6.4.9): no user services until revived
+	uint32_t stuns, revives;	// stun and revive commands taken
 	uint32_t cleared_ms;	// when the last call was cleared (T3_REGRANT_MS)
 	t3_call_t cleared;
 
@@ -328,6 +330,8 @@ void t3_ms_slot(t3_ms_t *ms, uint32_t now, uint8_t slot, bool at_known, bool at_
 // Access (CONFIG_DMR_TRUNK_TX). t3_ms_request asks for a voice call (PTT) to dst, a talkgroup or an individual. False
 // (ax.result says why) when it can't start. Watch ax.result for the outcome
 bool t3_ms_request(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, bool emergency);
+// Stunned (6.4.9) or not: the radio core keeps it across a restart of the engine and gives it back after t3_ms_start
+void t3_ms_set_stunned(t3_ms_t *ms, bool stunned);
 // Send a status (0-126) to dst, a talkgroup or an MS, or poll an MS (T3_STATUS_POLL; ax.info has its answer). False
 // (ax.result says why) when it can't start
 bool t3_ms_status(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t status);

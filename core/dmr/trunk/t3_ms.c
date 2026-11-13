@@ -269,6 +269,9 @@ bool t3_ms_wants_group(const t3_ms_t *ms, uint32_t tg, bool emergency)
 static bool wants_grant(const t3_ms_t *ms, const t3_csbk_t *p, bool *group)
 {
 	const t3_grant_t *g = &p->u.grant;
+	if (ms->stunned) {
+		return false;	// no user services, received ones included (6.4.9.0)
+	}
 	switch (p->op) {
 	case T3_OP_TV_GRANT:
 	case T3_OP_BTV_GRANT:
@@ -775,7 +778,7 @@ static void answer(t3_ms_t *ms, uint8_t slot, bool payload, uint8_t reason, uint
 static bool on_status(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h)
 {
 	bool to_me = !h->group && is_me(ms, h->dst);
-	if (h->kind != T3_SK_STATUS || (!to_me && !(h->group && t3_ms_wants_group(ms, h->dst, false)))) {
+	if (ms->stunned || h->kind != T3_SK_STATUS || (!to_me && !(h->group && t3_ms_wants_group(ms, h->dst, false)))) {
 		return false;
 	}
 	uint8_t v = (uint8_t)(((h->options & 0x1Fu) << 2) | (h->blocks & 3u));
@@ -914,8 +917,19 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 	if (!may_send(ms)) {
 		return;
 	}
-	if (h->kind == T3_SK_REGISTRATION && h->src == T3_ID_TSI) {
+	if (to_me && !payload && h->kind == T3_SK_SUPPLEMENTARY && h->src == T3_ID_STUNI) {
+		// Stun (Service_Kind_Flag 0) or revive (1), without authentication (6.4.9.1.2)
+		ms->stunned = !h->kind_flag;
+		if (ms->stunned) {
+			ms->stuns++;
+		} else {
+			ms->revives++;
+		}
+		answer(ms, slot, false, T3_RC_MESSAGE_ACCEPTED, h->src, false);
+	} else if (h->kind == T3_SK_REGISTRATION && h->src == T3_ID_TSI) {
 		answer(ms, slot, payload, T3_RC_MS_ACCEPTED, h->src, false);	// radio check
+	} else if (ms->stunned) {
+		return;		// stunned: no user services to answer for
 	} else if (to_me && !payload && h->kind == T3_SK_CANCEL) {
 		answer(ms, slot, false, T3_RC_MS_ACCEPTED, h->src, false);	// the caller gave up (6.6.1.2.2)
 	} else if (to_me && !payload && h->kind == T3_SK_IND_VOICE) {
@@ -1155,7 +1169,8 @@ static void udt_done(t3_ms_t *ms, uint32_t now, uint8_t slot)
 {
 	const t3_udt_t *h = &ms->udt_rx.h;
 	bool to_me = !h->group && is_me(ms, h->dst);
-	if (h->op != T3_OP_C_UDTHD || h->sf || (!to_me && !(h->group && t3_ms_wants_group(ms, h->dst, false)))) {
+	if (ms->stunned || h->op != T3_OP_C_UDTHD || h->sf ||
+	    (!to_me && !(h->group && t3_ms_wants_group(ms, h->dst, false)))) {
 		return;
 	}
 	if (!t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])ms->udt_rx.blk, h->blocks)) {
@@ -1379,12 +1394,17 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 
 static bool may_ask(t3_ms_t *ms)
 {
-	if (!may_send(ms) || ms->state != T3_CAMPED || !ms->confirmed ||
+	if (!may_send(ms) || ms->stunned || ms->state != T3_CAMPED || !ms->confirmed ||
 	    (ms->reg != T3_REG_OK && ms->reg != T3_REG_NOT_NEEDED)) {
 		ms->ax.result = T3_RES_NOT_ALLOWED;
 		return false;
 	}
 	return true;
+}
+
+void t3_ms_set_stunned(t3_ms_t *ms, bool stunned)
+{
+	ms->stunned = stunned;
 }
 
 bool t3_ms_request(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, bool emergency)

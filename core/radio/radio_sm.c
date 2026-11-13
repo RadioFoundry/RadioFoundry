@@ -2659,6 +2659,9 @@ static void t3_publish(radio_sm_t *sm)
 	v->reg_tgs = m->reg_tgs;
 	v->reg_tg_ok = m->reg_tg_ok;
 	v->call_data = m->call.data;
+	v->stunned = m->stunned;
+	v->stuns = m->stuns;
+	v->revives = m->revives;
 #if CONFIG_DMR_DATA_CORE && CONFIG_DMR_TRUNK_TX
 	v->pd_wait = data_tx.t3_wait;
 #endif
@@ -2716,7 +2719,14 @@ static void t3_start(radio_sm_t *sm, uint32_t now_ms)
 	sm->t3_slot = 0;
 	sm->t3_cc = t3s.cc;
 	dmr_call_set_rx_tap(t3_tap, sm);
+	// A stun outlasts leaving the system and coming back (6.4.9): it is the network's, so another network's
+	// doesn't carry over
+	static int32_t last_net = -1;
+	int32_t net = (int32_t)(((uint32_t)t3s.cfg.auth.model << 16) | t3s.cfg.auth.net);
+	bool stunned = t3m.stunned && net == last_net;
+	last_net = net;
 	t3_ms_start(&t3m, &t3s.cfg, now_ms);
+	t3_ms_set_stunned(&t3m, stunned);
 	t3_publish(sm);
 	changed(sm);
 }
