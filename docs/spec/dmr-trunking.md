@@ -801,6 +801,11 @@ Leaving sends nothing: a site drops a radio that has gone quiet (section 7.2). Z
 a frequency is not what the radio follows there. The talkgroups' re-registration waits until the user has rested on a
 channel for `T3_REG_TG_DELAY_MS` (1 s), so turning the knob through channels registers once.
 
+**On screen.** A zone or channel list names a trunked channel's system after its name, in place of the frequency.
+An unavailable one is dimmed: OK on it says "System not set up" and stays, and channel stepping passes it. On a
+trunked channel Home's chips row shows the system's name and its state in place of slot and color code: Ready,
+Registering, Searching, In call, Refused, Fallback (12.5) or System not set up, then the power.
+
 At power-on the radio restores the channel it was on, so a trunked channel starts its system. Keys written while a
 system runs are taken at the next selection of a channel.
 
