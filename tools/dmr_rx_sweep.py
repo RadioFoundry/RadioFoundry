@@ -184,7 +184,7 @@ def per_call(a, L, bench, ambe, cond, values, calls, table, out, regt):
         wait_quiet(L)
         with bench.lease():
             job = bench.voice_call(a.freq, a.cc, a.tg, calls=1, ambe=ambe, superframes=superframes_for(a),
-                                   offset_hz=off, background=True)
+                                   offset_hz=0 if a.detune else off, background=True)
             sync = wait_flowing(L, timeout=START_S + 3.0)
             if sync is None:
                 c = {"in": 0, "sent": round(a.dwell * FRAMES_S), "bad": 0, "bits": None}
@@ -232,7 +232,11 @@ def main():
     ap.add_argument("--values", help="comma list of register values")
     ap.add_argument("--offsets", type=parse_offsets, default=[0],
                     help="carrier offsets, Hz: FROM:TO:STEP or a list (--offsets=-1000:1000:500 with a leading minus)")
+    ap.add_argument("--detune", action="store_true",
+                    help="make each offset by tuning the radio's receiver away from --freq instead of moving the bench "
+                         "carrier (works with any bench board; the radio reports where it is tuned)")
     ap.add_argument("--dbm", help="bench levels, dBm at the SDR's antenna, comma list (--dbm=-40,-70; default its own)")
+    ap.add_argument("--level", type=int, help="a W12-type board's transmit level 0-255 (one for the run; default its own)")
     ap.add_argument("--devs", default="1", help="deviations, a share of the standard's, comma list (0.5-1.5)")
     ap.add_argument("--dwell", type=float, default=1.0, help="seconds a value is counted (default 1: 50 frames)")
     ap.add_argument("--repeat", type=int, default=1, help="calls a level, deviation and offset (cells add up)")
@@ -255,7 +259,7 @@ def main():
 
     radio = Radio(a.port)
     L = radio.link
-    bench = SdrBench(allow_rf=True, api=a.bench_api)
+    bench = SdrBench(allow_rf=True, api=a.bench_api, api_level=a.level)
     L.vfo(True)
     L.vfo_set(round(a.freq * 1e6))
     L.dmr_fields("dmr", a.cc, 1)
@@ -283,6 +287,14 @@ def main():
     try:
         for cond in conds:
             dbm, dev, off = cond
+            bench_off = off
+            if a.detune:                    # the carrier off + Hz from the receiver = the receiver off - Hz
+                L.vfo_set(round(a.freq * 1e6) - off)
+                time.sleep(0.3)
+                rx = int(L.view(["core"]).get("rx_hz", 0))
+                if rx != round(a.freq * 1e6) - off:
+                    raise RuntimeError(f"radio tuned to {rx} Hz, not {round(a.freq * 1e6) - off}")
+                bench_off = 0
             bench.power_dbm = dbm
             bench.dev_scale = None if dev == 1 else dev
             for _ in range(a.repeat):
@@ -294,7 +306,7 @@ def main():
                     reg_write(L, a.reg, orig)       # every call starts at the radio's own value
                 with bench.lease():
                     job = bench.voice_call(a.freq, a.cc, a.tg, calls=1, ambe=ambe, superframes=superframes,
-                                           offset_hz=off, background=True)
+                                           offset_hz=bench_off, background=True)
                     time.sleep(START_S)
                     if wait_flowing(L, timeout=4.0) is None:    # the call never came: say so, count nothing
                         job.kill()

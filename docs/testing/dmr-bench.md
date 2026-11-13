@@ -85,6 +85,10 @@ tools/dmr_rx_sweep.py --allow-rf --port PORT --bench-api HOST --freq MHZ --ambe 
     --reg 0:0x44 --values 0x07FF,0x07EF,0x07DF,0x07CF --dbm=-30,-50 --devs 0.85,1.15 --offsets=-1000,0,1000
 ```
 
+For a carrier offset window, `--detune --offsets=-4000:4000:500` tunes the radio away from the bench's carrier instead
+of moving the carrier: any bench board can do it, and it reaches past the bench's own offset limit (2.5 kHz).
+`test_dmr_audio_rx_offset_wide` checks the window from the other side, with the bench's carrier offset.
+
 Decoding AMBE to audio on the test host needs an AMBE+2 vocoder, and this project ships none (README,
 `docs/CLEANROOM.md`). Options: a DVSI hardware vocoder on USB (ThumbDV / DV3000 class, AMBE-3000 chip), or an open
 decoder the tester installs locally, never vendored here. Independent of any vocoder, the radio's own decoder judges a
