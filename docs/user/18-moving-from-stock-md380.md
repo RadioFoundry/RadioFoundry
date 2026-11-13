@@ -130,6 +130,9 @@ TYT's updater file goes through the same bootloader:
 python3 md380_migrate.py flash --image "MD-380-D2.32(AD).bin"
 ```
 
+If the screen stays dark and the LED keeps blinking afterwards, the radio is still in the bootloader: switch it off
+and on. If the switch does nothing, take the battery off and refit it. The program tells you when it sees this.
+
 Then write your `backup-stock.rdt` or `backup-stock.dfu` with the TYT CPS or qdmr (`dmrconf write --radio md390`).
 
 ## Limits and notes

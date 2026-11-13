@@ -34,6 +34,7 @@ void peer_clear(peer_t *p);
 void pump(void);
 void run_for(uint32_t ms);
 uint32_t net_test_host_ip(void);
+extern uint32_t net_test_radio_ip;	// the address the peers speak to: the radio's own, or IPGW_ANY_RADIO_IP
 void tests_run(void);
 
 #endif
