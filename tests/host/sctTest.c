@@ -1014,6 +1014,7 @@ static void test_dmr_rx_voice_count(void)
 static void test_dmr_rx(void)
 {
 	start();
+	CHECK(!sct_dmr_synced());		// no sync before the chip finds a slot
 	// TDMA direct sync on TS2, CC 2, then a CSBK
 	uint8_t r[32] = { SCT_F_DMR_SLOT_FOUND, 0x02, SCT_F_DMR_CC, 0x02, SCT_F_NEW_EVENT, SCT_EV_DATA_SYNC,
 			  0x43, DMR_BURST_CSBK, 10, 0xBD, 0x00, 0x80, 0x00, 0x00, 0x01, 0x00, 0x00, 0x02, 0x03 };
@@ -1051,10 +1052,12 @@ static void test_dmr_rx(void)
 	sct_dmr_poll(520);
 	CHECK(nev == 5 && ev_bursts[4].voice_index == 2 && evs[4].arg != evs[3].arg);
 
-	// Sync lost ends it
+	// Sync lost ends it, and the chip has no sync after it (sct_dmr_synced)
+	CHECK(sct_dmr_synced());
 	uint8_t r4[2] = { SCT_F_NEW_EVENT, SCT_EV_SYNC_LOST };
 	chip_packet(r4, 2, 0x30, 800);
 	CHECK(nev == 6 && evs[5].kind == DMR_EV_SYNC_LOST);
+	CHECK(!sct_dmr_synced());
 	sct_dmr_poll(900);
 	CHECK(nev == 6);
 

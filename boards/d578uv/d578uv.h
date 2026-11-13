@@ -160,6 +160,8 @@ const char *d578uv_modem_codec(void);		// board_t.modem_codec
 bool d578uv_modem_field(uint8_t type, uint8_t id, uint32_t *val, bool write);	// board.chip_reg chip 5
 // Side A's carrier in DMR, each status poll: tells the baseband when one comes up and when it goes (CARRIER_READY)
 void d578uv_modem_carrier(bool carrier);
+// The baseband has DMR sync (sct_dmr_synced): a DMR signal is heard
+bool d578uv_modem_synced(void);
 // The burst line's level changes seen while keyed (sct_dmr_port_t.burst_edges)
 uint32_t d578uv_burst_edges(void);
 #endif
