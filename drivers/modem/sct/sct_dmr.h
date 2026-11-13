@@ -111,6 +111,9 @@ typedef struct {
 // After the last frame, how long to wait for the chip's "far end done" before reporting TX_DONE anyway
 #define SCT_DMR_DONE_MS		600
 #define SCT_DMR_SLOT_MS		60
+// After a voice header, no voice burst is reported for this long: two headers of the lead-in missed (180 ms) and a
+// little more. The bursts due by then (A at 90 ms, B, C) go together
+#define SCT_DMR_HDR_HOLD_MS	(3 * SCT_DMR_SLOT_MS + SCT_DMR_SLOT_MS / 2)
 #define SCT_DMR_HUNT_LONG	12	// DMR_SLOT_FOUND reports without the verified flag before a hunt is started over
 // How long the board's carrier must stay lost before CARRIER_READY 0 goes out: a voice superframe
 #define SCT_DMR_CR_HOLD_MS	360
