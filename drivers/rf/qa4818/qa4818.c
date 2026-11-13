@@ -70,6 +70,7 @@ static const uint16_t ctcss_detect[CTCSS_TONES + 1] = {
 #define TX_PATH_TONE	0x0005u		// ... while a tone sends (inferred: the microphone's path off)
 #define P1_1D_ANALOG	0x39FDu		// page 1 0x1D on the analog path; with it the tone generator plays 12 dB louder
 #define P1_1D_DIGITAL	0x29A1u		// ... on the digital path (both measured on a radio by microphone)
+#define P1_1B_DIGITAL	0x07FFu		// page 1 0x1B on the digital path (TX_PATH_VOICE on the analog)
 
 uint32_t qa4818_freq_word(uint32_t hz)
 {
@@ -239,7 +240,7 @@ static void path_page1(qa4818_t *c, bool tx, bool digital)
 	page(c, 1);
 	if (digital) {
 		static const rfbus_regval_t d[] = {
-			{ 0x1B, 0x07FF }, { 0x1C, 0x04D3 }, { 0x27, 0x891B }, { 0x21, 0xC8F7 },
+			{ 0x1B, P1_1B_DIGITAL }, { 0x1C, 0x04D3 }, { 0x27, 0x891B }, { 0x21, 0xC8F7 },
 			{ 0x22, 0x2136 }, { 0x2A, 0x8537 }, { 0x2B, 0x3B20 }, { 0x36, 0x1D59 },
 		};
 		rfbus_write_table(c->bus, d, sizeof(d) / sizeof(d[0]));
@@ -325,13 +326,27 @@ void qa4818_rx_on(qa4818_t *c, bool digital, uint32_t hz)
 
 // The tone generator's frequency word in receive is half the transmit one: with the receiver on, the generator sounds
 // at twice the transmit word's frequency (measured on a radio by microphone, 500 to 1500 Hz)
+// On a digital channel page 1 0x1B takes the analog path's value for the beep: with the digital one the tone came out
+// stepped and ringing, its second to fifth harmonics within 4-9 dB of the tone (by microphone; 15-19 dB under it with
+// the analog value, as on an FM channel). The receiver's output is off the AF for the beep, so DMR receive loses nothing
 void qa4818_beep(qa4818_t *c, uint16_t hz, uint8_t gain, uint16_t af)
 {
+	bool digital = (af & (uint16_t)~QA4818_AF_INVERT) == QA4818_AF_DMR;
 	if (hz == 0) {
 		wr(c, QA4818_REG_TONE_GEN, 0);
+		if (digital) {
+			page(c, 1);
+			wr(c, 0x1B, P1_1B_DIGITAL);
+			page(c, 0);
+		}
 		wr(c, 0x47, af);
 		wr(c, QA4818_REG_ENABLE, QA4818_ENABLE_RX);
 		return;
+	}
+	if (digital) {
+		page(c, 1);
+		wr(c, 0x1B, TX_PATH_VOICE);
+		page(c, 0);
 	}
 	wr(c, QA4818_REG_TONE_FREQ, (uint16_t)(qa4818_tone_word(hz) >> 1));
 	// 0x70 bit 15 tone 1 on, bits 14:8 its gain (BK4819 map)
