@@ -284,6 +284,7 @@ static uint32_t tx_hz;
 static bool tx_wide;
 static uint16_t tx_r40;
 static uint8_t tx_level;
+static bool tx_dcs;		// the FM transmission's tone is DCS: tx_tail() sends the turn-off
 typedef enum { AUX_NONE, AUX_TONE, AUX_LINE } aux_t;	// AUX_LINE: PB9's audio (DTMF, APRS) on the input pin
 static aux_t aux;			// what replaces the microphone now
 static uint8_t rx_threshold;		// RSSI below which a signal counts as lost
@@ -1940,6 +1941,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	tx_wide = wide;
 	tx_r40 = qa4818_drive_word(hz, wide, drive);
 	tx_level = dcs ? lvl_dcs : lvl_ctcss;
+	tx_dcs = dcs;
 
 	transmitting = true;
 	mcu_pin_write(PIN_SPK_MUTE, true);	// the speaker is off while transmitting, as audio_route() keeps it
@@ -2010,6 +2012,26 @@ static bool tx_tone(uint16_t hz)
 	qa4818_tone_start(&chip_if, hz);
 	return true;
 }
+
+#if CONFIG_SUBTONE
+#define DCS_TURNOFF_DHZ	1344u	// 134.4 Hz, in the tone's Hz x 10 (hal_radio.h)
+
+// The DCS turn-off (hal_radio_t.tx_tail): the sub-audio generator from the code to a 134.4 Hz tone at the DCS level,
+// the microphone muted (PTT is up); off: no sub-audio, still keyed. tx_off() ends the transmission as always
+static bool tx_tail(bool on)
+{
+	if (!fm_keyed() || !tx_dcs) {
+		return false;
+	}
+	if (on) {
+		chip0_gpio(GPIO_MIC_MUTE, GPIO_MIC_MUTE);
+		qa4818_tx_tone(&chip_if, QA4818_TONE_CTCSS, DCS_TURNOFF_DHZ, tx_level, tx_level);
+	} else {
+		qa4818_tx_tone(&chip_if, QA4818_TONE_NONE, 0, 0, 0);
+	}
+	return true;
+}
+#endif
 
 // A silent carrier between the marks: the generator off, the microphone still muted
 static bool tx_tone_key(bool down)
@@ -2423,6 +2445,9 @@ const hal_radio_t d578uv_radio = {
 #endif
 	.tx_tone = tx_tone,
 	.tx_tone_key = tx_tone_key,
+#if CONFIG_SUBTONE
+	.tx_tail = tx_tail,
+#endif
 #if CONFIG_DTMF
 	.tx_dtmf = tx_dtmf,
 #endif
