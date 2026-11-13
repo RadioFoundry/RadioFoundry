@@ -59,6 +59,11 @@
 #define IPGW_POINT_TO_POINT		(IPGW_LINK_PREFIX >= 31)
 #define IPGW_ALL_CALL_IP		(IPGW_INDIVIDUAL_NET | ~IPGW_MASK(IPGW_INDIVIDUAL_PREFIX))
 #define IPGW_SHARED_RADIO_IP	(IPGW_ALL_CALL_IP - 1)	// the radio on a shared link
+// The radio on this link, whatever its DMR ID or link addressing: TCP to it is the radio's own (the host routes the
+// individual range through the radio, DHCP option 121), so a host that can't know the radio's address or resolve its
+// mDNS name reaches its services (a web page: docs/spec/usb-network.md 1). The shared link's radio address, which
+// no DMR ID maps to on any link
+#define IPGW_ANY_RADIO_IP		IPGW_SHARED_RADIO_IP
 #if IPGW_POINT_TO_POINT
 #define IPGW_BROADCAST_IP		0xFFFFFFFFu
 #else
@@ -184,7 +189,7 @@ bool ipGatewaySerialOut(const uint8_t *data, int length);
 // and answers over the air itself (ipGatewayIPToAir). One small table for every service: bind at start-up (handler
 // NULL unbinds; false if the table is full). In use: mDNS 5353, TFTP 69 and its transfer port, SNMP 161 (from the air
 // too)
-typedef void (*ipGatewayLocalFn)(uint32_t src, const uint8_t *l4, int length);
+typedef void (*ipGatewayLocalFn)(uint32_t src, uint32_t dst, const uint8_t *l4, int length);
 void ipGatewaySetTCP(ipGatewayLocalFn fn);
 #define IPGW_UDP_PORTS			8
 #define IPGW_LOCAL_MULTICAST	0xE0000000u		// 224.0.0.0/24, link local: never forwarded (RFC 5771)
@@ -206,6 +211,8 @@ bool ipGatewayUdpFromAir(uint32_t srcId, uint16_t srcPort, uint16_t dstPort, con
 #define IPGW_UDP_PAYLOAD_MAX	(IPGW_LOCAL_MAX - 8)
 uint8_t *ipGatewayLocalPayload(void);
 bool ipGatewaySendLocal(uint8_t protocol, uint32_t dst, int length);
+// The same from src, one of the radio's addresses: its own, or IPGW_ANY_RADIO_IP (false for any other)
+bool ipGatewaySendLocalFrom(uint8_t protocol, uint32_t src, uint32_t dst, int length);
 static inline uint8_t *ipGatewayUdpPayload(void)
 {
 	return ipGatewayLocalPayload() + 8;

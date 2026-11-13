@@ -70,6 +70,7 @@ WEAK bool ui_svc_msg_delete(uint16_t i) { (void)i; return false; }
 WEAK bool ui_svc_msg_send(uint32_t dst, bool group, const char *text) { (void)dst; (void)group; (void)text; return false; }
 WEAK bool ui_svc_radio_check(uint32_t id) { (void)id; return false; }
 WEAK bool ui_svc_call_alert(uint32_t id) { (void)id; return false; }
+WEAK uint8_t ui_svc_ars_state(void) { return UI_ARS_OFF; }
 
 WEAK bool ui_svc_position(ui_position_t *out) { (void)out; return false; }
 WEAK bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out) { (void)i; (void)out; return false; }

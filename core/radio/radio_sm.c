@@ -37,6 +37,7 @@
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"	// dmr_sms_format_t
 #include "position/nmea.h"	// DMR APRS positions heard (data_position)
+#include "radio/radio_keys.h"
 #endif
 #if CONFIG_DMR_EMERGENCY
 #include "dmr/dmr_emergency.h"
@@ -918,6 +919,10 @@ static uint8_t tx_check(const radio_sm_t *sm)
 	if (!board_in_band(ch->tx_hz, true)) {
 		return TXDENY_BAND;
 	}
+	if (board_hwopt_pending() != NULL) {
+		// Unset, or stored but not applied until a restart: the transmitter may be set up for the wrong hardware
+		return TXDENY_HWOPT;
+	}
 	if (sm->batt.level == BATT_CRITICAL) {
 		return TXDENY_BATTERY;
 	}
@@ -925,6 +930,13 @@ static uint8_t tx_check(const radio_sm_t *sm)
 		return TXDENY_BUSY;
 	}
 	return TXDENY_NONE;
+}
+
+// The board didn't key a frequency tx_check passed: a hardware option it still needs, or its own refusal (no
+// calibration there, for one), never the band
+static uint8_t board_refusal(void)
+{
+	return board_hwopt_pending() != NULL ? TXDENY_HWOPT : TXDENY_REFUSED;
 }
 
 static void deny(radio_sm_t *sm, uint8_t reason)
@@ -1825,7 +1837,7 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	if (!sm->dmr_keyed) {
 		static const subtone_t none = { TONE_NONE, 0 };
 		if (!key_tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
-			deny(sm, TXDENY_BAND);
+			deny(sm, board_refusal());
 			return;
 		}
 		sm->dmr_keyed = true;
@@ -1975,6 +1987,25 @@ static bool data_in_rx_group(uint32_t tg, void *ctx)
 // noted in the settings store from data_tick
 static dmrDataSettings_t data_saved;
 
+// The ARS server and the IP gateway as the codeplug's settings area gives them (docs/spec/codeplug-settings.md 5),
+// read at start, whenever codeplug_serial() (a codeplug written) or codeplug_kv_serial() (a key written) moves on and
+// whenever the settings change. A key that is present holds its
+// setting: a change made another way is put back at the next tick, before it is saved. An absent key leaves the
+// setting as the radio has it (the settings store's copy), so a codeplug from a tool that doesn't carry the area
+// changes nothing. No copy of the keys in RAM: a read is a few bytes of flash, and only on those events. The keys are the
+// table in radio_keys.h (codeplug_keys_apply)
+static uint8_t data_kv_seen;	// codeplug_kv_serial() at the last load: it moves when the keys may read differently
+
+static void data_kv_load(void)
+{
+	data_kv_seen = codeplug_kv_serial();
+	dmrDataSettings_t set;
+	dmrDataServiceGetSettings(&set);
+	if (codeplug_keys_apply(radio_keys, RADIO_KEYS_N, &set)) {
+		dmrDataServiceSetSettings(&set);
+	}
+}
+
 static void data_save_settings(uint32_t now_ms)
 {
 	dmrDataSettings_t cur;
@@ -1986,6 +2017,9 @@ static void data_save_settings(uint32_t now_ms)
 	    cur.ipConfirmedTries == data_saved.ipConfirmedTries && cur.ipGatewayId == data_saved.ipGatewayId &&
 	    memcmp(cur.ipConfirmedRule, data_saved.ipConfirmedRule, sizeof(cur.ipConfirmedRule)) == 0) {
 		return;
+	}
+	if (codeplug_keys_apply(radio_keys, RADIO_KEYS_N, &cur)) {
+		dmrDataServiceSetSettings(&cur);	// the codeplug's key holds against the change
 	}
 	data_saved = cur;
 	settings_t *st = settings_begin();
@@ -2147,7 +2181,11 @@ static void data_init(radio_sm_t *sm)
 		memcpy(set.ipConfirmedRule, st->ds_ip_rule, sizeof(set.ipConfirmedRule));
 		set.ipGatewayId = st->ds_ip_gateway & 0xFFFFFFu;	// 0 in a record from before it (off)
 	}
+	// The settings store's copy as saved, then the keys over it: a key it doesn't hold yet (a factory reset leaves the
+	// codeplug, a power cut before the copy was saved) differs from data_saved, so the first tick saves the copy
+	// (docs/spec/codeplug-settings.md 5.2: the radio's own copy follows the key)
 	data_saved = set;
+	codeplug_keys_apply(radio_keys, RADIO_KEYS_N, &set);
 	data_tx.list = NULL;
 	dmrDataServiceInit(&env);
 	dmrDataServiceSetSettings(&set);
@@ -2191,6 +2229,9 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_ZONE_SHARE
 	zone_share_tick(now_ms);
 #endif
+	if (codeplug_kv_serial() != data_kv_seen) {
+		data_kv_load();	// a key written (menu, debug link): its value only, without a codeplug reload
+	}
 	data_save_settings(now_ms);
 	if (sm->power_off_req && sm->power_off_busy) {
 		sm->power_off_busy = dmrDataServicePowerOff();	// ARS deregistration, until it has gone out
@@ -3987,7 +4028,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	outputs(sm);
 	const channel_t *ch = &sm->view.ch;
 	if (!key_tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &ch->tx_tone)) {
-		deny(sm, TXDENY_BAND);
+		deny(sm, board_refusal());
 		return;
 	}
 #if CONFIG_NET_USRP
@@ -4878,6 +4919,9 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	sm->reload_pending = false;
 	sm->codeplug_serial = codeplug_serial();
 	sm->view.source = codeplug_source();
+#if CONFIG_DMR_DATA_CORE
+	data_kv_load();
+#endif
 #if CONFIG_DMR
 	// The cached names may be gone or new now ("" is cached too): a contact added after its ID was heard or called
 	// would otherwise stay a bare ID on the screens until it fell out of the cache
@@ -5120,6 +5164,22 @@ static void tone_burst(radio_sm_t *sm, bool on, uint32_t max_ms, uint32_t now_ms
 }
 #endif
 
+#if CONFIG_FM_TX_TONES
+// A channel with its tone burst on (channel_t.tone_burst): each PTT key-up opens with one timed burst, as the Tone
+// burst key pressed during PTT does; the microphone follows. Nothing on a channel or board that can't send it
+static void channel_burst(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->view.ch.tone_burst || sm->view.vfo || sm->view.ch.mode != RADIO_MODE_FM || sm->hotspot || sm->host_audio ||
+	    board.radio->tx_tone == NULL || sm->view.state != RS_TX || sm->view.tone_burst) {
+		return;
+	}
+	tone_burst(sm, true, 0, now_ms);
+	sm->burst_timed = sm->view.tone_burst;
+	sm->burst_held = false;
+	sm->burst_ms = sm->burst_timed ? now_ms : 0;
+}
+#endif
+
 // A request that changes what the receiver is tuned to ends a scan first (it stays where it is)
 static bool retunes(uint8_t type)
 {
@@ -5310,7 +5370,15 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 				sm->host_push_ms = now_ms;
 #endif
 			}
+#if CONFIG_FM_TX_TONES
+			bool was_tx = sm->view.state == RS_TX && !sm->view.tx_auto;	// the radio's own transmission is not the user's key-up
+#endif
 			ptt_down(sm, now_ms);
+#if CONFIG_FM_TX_TONES
+			if (!was_tx) {
+				channel_burst(sm, now_ms);
+			}
+#endif
 		} else {
 			ptt_up(sm, now_ms);
 		}

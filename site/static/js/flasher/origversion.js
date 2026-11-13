@@ -96,3 +96,16 @@ export function hwoptAction(opts, name, choice) {
 	if (o.value >= o.choices.length) return { action: "missing", option, choice: c, held: null };
 	return { action: o.value === c ? "same" : "mismatch", option, choice: c, held: o.choices[o.value] };
 }
+
+// The first hardware option the radio still needs from a person (HWOPT state "ask": transmit waits for it) or that
+// waits for a restart ("restart"), as { option (its index), ...the option }, or null (debuglink.md 3.25)
+export function pendingHwopt(opts) {
+	const i = opts.findIndex((o) => o.state === "ask" || o.state === "restart");
+	return i < 0 ? null : { option: i, ...opts[i] };
+}
+
+// The original firmware's major versions that mean `choice` (board.toml [flash.original_version] major), for a person
+// who remembers the version but can't read it any more (another firmware runs now)
+export function majorsFor(spec, choice) {
+	return Object.entries(spec?.major || {}).filter(([, c]) => c === choice).map(([m]) => m).sort();
+}
