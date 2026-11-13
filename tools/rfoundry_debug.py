@@ -164,7 +164,7 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
                  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio", "t3",
-                 "t3_svc", "t3_roam"]
+                 "t3_svc", "t3_roam", "voice_cap"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -181,6 +181,7 @@ OP_VOLUME = 30
 OP_DMR_FIELDS = 31
 OP_VFO_COPY = 32
 OP_VOICE_TEST = 33
+OP_VOICE_CAPTURE = 39
 OP_DTMF = 34
 OP_TX_LIMIT = 35
 OP_TX_DRIVE = 36
@@ -1081,6 +1082,20 @@ class DebugLink:
         """The DMR voice test signal (RADIO op 33, RAM only): on, the encoder gets a generated tone that changes pitch
         every 20 ms in place of the mic, so an over carries known, varying audio (the dmr view key voice.tx_test)."""
         self.radio(OP_VOICE_TEST, bytes([1 if on else 0]))
+
+    def voice_capture(self, n=32):
+        """Capture the next n (up to 32) voice frames received, raw as on air (RADIO op 39, CONFIG_VOICE_CAPTURE
+        builds); 0 stops. voice_frames() reads them."""
+        self.radio(OP_VOICE_CAPTURE, bytes([n]))
+
+    def voice_frames(self):
+        """The frames captured: (want, [9-byte frame or None for a lost one, ...])"""
+        v = self.view(["voice_cap"])
+        if v.get("vcap.built") != "1":
+            raise DebugLinkError("unavailable: built without CONFIG_VOICE_CAPTURE")
+        text = v.get("vcap.frames", "")
+        frames = [None if f == "L" else bytes.fromhex(f) for f in text.split(",") if f]
+        return int(v.get("vcap.want", 0)), frames
 
     def dtmf_key(self, digit, down):
         """A DTMF key's down or up during FM TX (RADIO op 34; radio-features.md 3.7). Raises DebugLinkError "refused"
