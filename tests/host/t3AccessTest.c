@@ -1167,6 +1167,85 @@ static void test_power_save(void)
 
 static void udt_down(t3_ms_t *ms, uint8_t slot, const t3_udt_t *h, const uint8_t *data, uint8_t len, bool corrupt);
 
+// Call diversion (6.6.7): set to an MS (C_RAND kind 1000b, DIVONOFF 1, target MSI), the address uploaded when DIVERTI
+// asks (Address format, UDT_DIV, to MSI), accepted; clear (to TSI), clear incoming (to DIVERTI); a call answered with
+// the callee's diverted address ends DIVERTED
+static void test_divert(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+	nsent = 0;
+	nup = 0;
+	CHECK(t3_ms_divert(&ms, T, T3_DIV_VOICE | T3_DIV_SDATA, 1234567u, false), "diversion starts");
+	CHECK(sent_rand(&ms), "diversion request sent");
+	const t3_rand_t *q = &sent[0].u.rand;
+	CHECK(q->kind == T3_SK_DIVERT && q->options == (T3_SO_DIV_SET | T3_DIV_VOICE | T3_DIV_SDATA) &&
+	      q->dst == T3_ID_MSI && q->src == OWN && (q->extra & 3u) == 0, "C_RAND diversion: options 0x%02x dst %06x",
+	      q->options, (unsigned)q->dst);
+	t3_csbk_t h = ahoy(T3_SK_DIVERT, false, OWN, T3_ID_DIVERTI);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	t3_udt_t u;
+	CHECK(nup == 1 && nup_blocks == 1 && t3_udt_parse(up_hdr, &u), "address uploaded: %d", nup);
+	CHECK(u.op == T3_OP_C_UDTHU && !u.group && u.opt && !u.sf && !u.a && u.format == T3_UDTF_ADDRESS &&
+	      u.dst == T3_ID_MSI && u.src == OWN && u.blocks == 1, "C_UDTHU: dst %06x format %u", (unsigned)u.dst,
+	      u.format);
+	CHECK(up_blocks[0][0] == 0 && up_blocks[0][1] == 0x12 && up_blocks[0][2] == 0xD6 && up_blocks[0][3] == 0x87 &&
+	      up_blocks[0][4] == 0 && t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])up_blocks, 1), "ADDRESS1");
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, T3_ID_MSI);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_DONE, "diversion set: %s", t3_res_name(ms.ax.result));
+
+	// To a talkgroup, refused for that destination (0x23)
+	nsent = 0;
+	CHECK(t3_ms_divert(&ms, T, T3_DIV_ALL, TG_A, true), "diversion to a talkgroup");
+	CHECK(sent_rand(&ms) && sent[0].u.rand.dst == T3_ID_GPI, "target GPI");
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup == 2 && t3_udt_parse(up_hdr, &u) && u.dst == T3_ID_GPI && !u.group, "address to GPI");
+	a = ack(T3_OP_C_ACKD, T3_RC_TRANSIENT_REFUSED, OWN, T3_ID_GPI);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_REFUSED && ms.ax.reason == T3_RC_TRANSIENT_REFUSED, "refused");
+
+	// Clear our own (TSI), then every incoming one (DIVERTI): single part, no upload
+	nsent = 0;
+	CHECK(t3_ms_divert_clear(&ms, T, T3_DIV_ALL, false), "clear");
+	CHECK(sent_rand(&ms) && sent[0].u.rand.dst == T3_ID_TSI && sent[0].u.rand.options == T3_DIV_ALL &&
+	      sent[0].u.rand.kind == T3_SK_DIVERT, "clear to TSI, DIVONOFF 0");
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup == 2, "nothing uploaded for a clear");
+	a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, T3_ID_TSI);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_DONE, "cleared");
+	nsent = 0;
+	CHECK(t3_ms_divert_clear(&ms, T, T3_DIV_VOICE, true), "clear incoming");
+	CHECK(sent_rand(&ms) && sent[0].u.rand.dst == T3_ID_DIVERTI && sent[0].u.rand.options == T3_DIV_VOICE,
+	      "clear incoming to DIVERTI");
+	a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, T3_ID_DIVERTI);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_DONE, "incoming cleared");
+	CHECK(!t3_ms_divert(&ms, T, 0, 1234567u, false) && ms.ax.result == T3_RES_NOT_ALLOWED, "no services");
+	CHECK(!t3_ms_divert(&ms, T, T3_DIV_VOICE, 0, false) && ms.ax.result == T3_RES_NOT_ALLOWED, "no address");
+
+	// A private call answered diverted (table 6.65: from MSI, supplementary, ADDRESS1)
+	nsent = 0;
+	CHECK(t3_ms_request(&ms, T, CALLER, false, false) && sent_rand(&ms), "private call asked");
+	static const uint8_t to[] = { 0, 0x12, 0xD6, 0x87, 0, 0, 0, 0, 0, 0 };
+	t3_udt_t d = { .op = T3_OP_C_UDTHD, .sf = true, .format = T3_UDTF_ADDRESS, .dst = OWN, .src = T3_ID_MSI };
+	udt_down(&ms, 1, &d, to, sizeof(to), false);
+	frames(&ms, 1);
+	CHECK(ms.ax.result == T3_RES_DIVERTED && ms.ax.divert_to == 1234567u && !ms.ax.divert_group &&
+	      ms.ax.state == T3_AX_IDLE && ms.state == T3_CAMPED, "diverted: %s to %u", t3_res_name(ms.ax.result),
+	      (unsigned)ms.ax.divert_to);
+	CHECK(ms.sd_rx.count == 0, "not short data");
+	// Without a request of ours it is nothing
+	udt_down(&ms, 1, &d, to, sizeof(to), false);
+	frames(&ms, 1);
+	CHECK(ms.sd_rx.count == 0 && ms.ax.result == T3_RES_DIVERTED, "ignored when idle");
+}
+
 // DGNA (6.6.8): a C_DGNAHD download to the radio sets its dynamic talkgroups (address mode, One-key flag), names one
 // or adds the 16th (alias mode), deletes them; it is answered MS_Accepted and a DGNA talkgroup's call is followed
 static void test_dgna(void)
@@ -1569,6 +1648,7 @@ int main(void)
 	test_move();
 	test_power_save();
 	test_dgna();
+	test_divert();
 	test_status();
 	test_sdata();
 	test_pdata();

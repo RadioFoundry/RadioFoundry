@@ -17,6 +17,7 @@ typedef enum {
 	RADIO_T3_END,			// end the call being followed (P_MAINT when it is ours or private)
 	RADIO_T3_STATUS,		// send the staged status (radio_t3_setup_t.sd_*)
 	RADIO_T3_SDATA,			// send the staged short data (radio_t3_setup_t.sd_*)
+	RADIO_T3_DIVERT,		// set or clear a call diversion (radio_t3_setup_t.div_*, sd_dst, sd_group)
 } radio_t3_cmd_t;
 
 #if CONFIG_DMR_TRUNK
@@ -37,7 +38,11 @@ typedef struct {
 	uint8_t sd_format;	// RADIO_T3_SDATA: T3_UDTF_*, sd_len octets of sd_data
 	uint8_t sd_len;
 	uint8_t sd_data[T3_UDT_MAX];
+	uint8_t div_mode;	// RADIO_T3_DIVERT: RADIO_T3_DIV_*
+	uint8_t div_svcs;	// T3_DIV_*
 } radio_t3_setup_t;
+
+enum { RADIO_T3_DIV_CLEAR, RADIO_T3_DIV_SET, RADIO_T3_DIV_CLEAR_IN };
 
 // The setup the debug link writes to (host link task); RADIO_T3_START copies it into the radio core
 radio_t3_setup_t *radio_t3_staged(void);

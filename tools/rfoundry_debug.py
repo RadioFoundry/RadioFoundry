@@ -99,9 +99,10 @@ IDDB = 0x1F                         # the DMR ID database: format, records, an I
 CHIP_REG = 0x20                     # an RF chip or SoC register read or written (docs/spec/debuglink.md 3.24)
 T3 = 0x22                           # a Tier III trunked system: stage, select, leave (docs/spec/debuglink.md 3.26)
 T3_RESET, T3_SYSTEM, T3_CTRL, T3_CHAN, T3_TG, T3_SITE, T3_PLAN, T3_START, T3_STOP, T3_DEREG, T3_END, \
-    T3_STATUS, T3_SDATA, T3_AUTH, T3_PS = range(1, 16)
+    T3_STATUS, T3_SDATA, T3_AUTH, T3_PS, T3_DIVERT = range(1, 17)
 T3_UDTF = {"binary": 0, "address": 1, "bcd": 2, "iso7": 3, "iso8": 4, "nmea": 5, "ip": 6, "utf16": 7}
 T3_TG_LISTEN, T3_TG_TALK, T3_TG_BROADCAST = 1, 2, 4
+T3_DIV = {"voice": 8, "pdata": 4, "sdata": 2, "status": 1}  # call diversion services (T3_DIV_*)
 T3_PAR = {"a": 1, "b": 2}
 CHIP_SOC = 0xFF                     # CHIP_REG's chip number for the SoC's own registers
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
@@ -673,6 +674,14 @@ class DebugLink:
     def t3_power_save(self, rq, awake_ms=0):
         """Power save asked for at registration: PowerSave_RQ 0 (off) to 7 (1:128), T_Awake in ms (0: default)."""
         self.t3_op(T3_PS, struct.pack("<BH", rq, awake_ms))
+
+    def t3_divert(self, to=0, group=False, services=("voice", "pdata", "sdata", "status"), clear=False,
+                  incoming=False):
+        """Call diversion: services to an MS or talkgroup; clear=True ends the radio's own, incoming=True every one
+        to the radio."""
+        mode = 2 if incoming else (0 if clear else 1)
+        bits = sum(T3_DIV[s] for s in services)
+        self.t3_op(T3_DIVERT, struct.pack("<BBIB", mode, bits, to, int(group)))
 
     def t3_site(self, site):
         self.t3_op(T3_SITE, struct.pack("<H", site))

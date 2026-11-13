@@ -539,6 +539,7 @@ const char *t3_res_name(t3_res_t r)
 	case T3_RES_NOT_ALLOWED: return "not-allowed";
 	case T3_RES_LOST: return "lost";
 	case T3_RES_CANCELLED: return "cancelled";
+	case T3_RES_DIVERTED: return "diverted";
 	}
 	return "?";
 }
@@ -711,6 +712,13 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 		q->kind = ms->ax.group ? T3_SK_TG_UDT : T3_SK_IND_UDT;
 		q->options = 0;
 		q->extra = (uint8_t)(((ms->sd_tx.len + 2u + T3_UDT_BLOCK - 1u) / T3_UDT_BLOCK - 1u) & 3u);
+		break;
+	case T3_SVC_DIVERT:
+		// Table 6.61: no emergency or privacy; DIVONOFF and the services; SDATA_VAL 0 (the address fits one
+		// appended block)
+		q->kind = T3_SK_DIVERT;
+		q->options = ms->ax.div & 0x1Fu;
+		q->extra = 0;
 		break;
 	case T3_SVC_STATUS:
 		// Tables 6.57, 6.58: G/I, SUPED_SV 0 and the status's 5 most significant bits; its 2 least significant
@@ -942,6 +950,31 @@ static bool on_upload(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *
 	return true;
 }
 
+// The TSCC asks for a diversion's address (6.6.7.1.2.1, C_AHOY from DIVERTI): one UDT block in Address format to
+// MSI or GPI, the address in ADDRESS1 (B.3.2), UDT_DIV set; the TSCC's acknowledgement ends the request
+static bool on_divert_ask(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h)
+{
+	if (h->src != T3_ID_DIVERTI || h->group || !is_me(ms, h->dst)) {
+		return false;
+	}
+	if (!may_send(ms) || ms->ax.svc != T3_SVC_DIVERT || !(ms->ax.div & T3_SO_DIV_SET) ||
+	    (ms->ax.state != T3_AX_WAIT_RESP && ms->ax.state != T3_AX_ACKED)) {
+		return true;
+	}
+	uint8_t d[10];
+	memset(d, 0, sizeof(d));	// octet 0 reserved, OK 0; ADDRESS2 and 3 ADRNULL
+	d[1] = (uint8_t)(ms->ax.div_to >> 16);
+	d[2] = (uint8_t)(ms->ax.div_to >> 8);
+	d[3] = (uint8_t)ms->ax.div_to;
+	t3_udt_t u;
+	memset(&u, 0, sizeof(u));
+	u.format = T3_UDTF_ADDRESS;
+	u.opt = true;	// UDT_DIV
+	u.dst = ms->ax.group ? T3_ID_GPI : T3_ID_MSI;
+	queue_udt(ms, now, slot, &u, d, sizeof(d), 0, false);
+	return true;
+}
+
 // The TSCC asks for the registration's talkgroup list (table 6.11: Service_Kind_Flag 1, from TATTSI): the addresses
 // go up as UDT Address Format (B.3.2) to TATTSI, supplementary data that wants no answer of its own; the
 // registration's acknowledgement follows
@@ -979,7 +1012,8 @@ static bool on_reg_list(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t
 
 static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h, bool payload)
 {
-	if (!payload && (on_upload(ms, now, slot, h) || on_reg_list(ms, now, slot, h))) {
+	if (!payload && (on_upload(ms, now, slot, h) || on_reg_list(ms, now, slot, h) ||
+			  on_divert_ask(ms, now, slot, h))) {
 		return;
 	}
 	if (!payload && h->kind == T3_SK_STATUS && is_me(ms, h->src)) {
@@ -1387,6 +1421,26 @@ static void dgna_done(t3_ms_t *ms, const t3_udt_t *h, uint8_t slot)
 	}
 }
 
+// The answer to our call is that its destination's calls are diverted (6.6.7.2): a UDT download to us, supplementary,
+// from MSI, GPI or DIVERTI, ADDRESS1 the new destination. The request is over; the radio shows it or asks again
+static bool diverted(t3_ms_t *ms, uint32_t now, const t3_udt_t *h)
+{
+	if (h->op != T3_OP_C_UDTHD || !h->sf || h->group || !is_me(ms, h->dst) || ms->stunned ||
+	    (h->src != T3_ID_MSI && h->src != T3_ID_GPI && h->src != T3_ID_DIVERTI) || h->format != T3_UDTF_ADDRESS ||
+	    (ms->ax.state != T3_AX_WAIT_RESP && ms->ax.state != T3_AX_ACKED) || ms->ax.svc == T3_SVC_DIVERT) {
+		return false;
+	}
+	if (!t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])ms->udt_rx.blk, h->blocks)) {
+		ms->st.crc_bad++;
+		return true;
+	}
+	const uint8_t *a = &ms->udt_rx.blk[0][1];
+	ms->ax.divert_to = (uint32_t)a[0] << 16 | (uint32_t)a[1] << 8 | a[2];
+	ms->ax.divert_group = h->src == T3_ID_GPI;
+	finish(ms, now, T3_RES_DIVERTED);
+	return true;
+}
+
 static void udt_done(t3_ms_t *ms, uint32_t now, uint8_t slot)
 {
 	const t3_udt_t *h = &ms->udt_rx.h;
@@ -1401,6 +1455,9 @@ static void udt_done(t3_ms_t *ms, uint32_t now, uint8_t slot)
 		}
 		ps_wake(ms, now);
 		dgna_done(ms, h, slot);
+		return;
+	}
+	if (diverted(ms, now, h)) {
 		return;
 	}
 	if (ms->stunned || h->op != T3_OP_C_UDTHD || h->sf ||
@@ -1720,6 +1777,37 @@ bool t3_ms_pdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group)
 	}
 	start_access(ms, now, T3_SVC_PDATA, dst, false);
 	ms->ax.group = group;
+	return true;
+}
+
+bool t3_ms_divert(t3_ms_t *ms, uint32_t now, uint8_t services, uint32_t to, bool group)
+{
+	bool bad = to == T3_ID_NULL || to > T3_ID_USER_MAX || (services & T3_DIV_ALL) == 0;
+	if (bad || ms->ax.state != T3_AX_IDLE || !may_ask(ms)) {
+		if (bad) {
+			ms->ax.result = T3_RES_NOT_ALLOWED;
+		}
+		return false;
+	}
+	start_access(ms, now, T3_SVC_DIVERT, group ? T3_ID_GPI : T3_ID_MSI, false);
+	ms->ax.div = (uint8_t)(T3_SO_DIV_SET | (services & T3_DIV_ALL));
+	ms->ax.div_to = to;
+	ms->ax.group = group;
+	return true;
+}
+
+bool t3_ms_divert_clear(t3_ms_t *ms, uint32_t now, uint8_t services, bool incoming)
+{
+	if ((services & T3_DIV_ALL) == 0 || ms->ax.state != T3_AX_IDLE || !may_ask(ms)) {
+		if ((services & T3_DIV_ALL) == 0) {
+			ms->ax.result = T3_RES_NOT_ALLOWED;
+		}
+		return false;
+	}
+	start_access(ms, now, T3_SVC_DIVERT, incoming ? T3_ID_DIVERTI : T3_ID_TSI, false);
+	ms->ax.div = services & T3_DIV_ALL;
+	ms->ax.div_to = 0;
+	ms->ax.group = false;
 	return true;
 }
 

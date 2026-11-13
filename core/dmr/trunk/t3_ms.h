@@ -147,6 +147,7 @@ typedef enum {
 	T3_SVC_STATUS,		// a status (or a poll, T3_STATUS_POLL) to an MS or talkgroup (6.6.6)
 	T3_SVC_SDATA,		// UDT short data to an MS or talkgroup (6.6.4)
 	T3_SVC_PDATA,		// a packet data channel to an MS or talkgroup (6.6.3): the data service sends on it
+	T3_SVC_DIVERT,		// set or clear a call diversion (6.6.7)
 } t3_svc_t;
 
 #define T3_STATUS_POLL		127	// the status that asks the called MS for its own (6.6.6.2)
@@ -165,6 +166,7 @@ typedef enum {
 	T3_RES_NOT_ALLOWED,	// not now: listen only, not registered, no TSCC, PTT disabled
 	T3_RES_LOST,		// the TSCC was lost meanwhile
 	T3_RES_CANCELLED,	// withdrawn before anything was sent
+	T3_RES_DIVERTED,	// the called party's calls are diverted: divert_to (6.6.1.3 a 2)
 } t3_res_t;
 
 typedef enum { T3_AX_IDLE, T3_AX_WAIT_SLOT, T3_AX_WAIT_RESP, T3_AX_ACKED } t3_ax_state_t;
@@ -287,6 +289,10 @@ typedef struct {
 		uint8_t status;		// T3_SVC_STATUS: the status sent
 		bool group;		// T3_SVC_STATUS, SDATA, PDATA: to a talkgroup
 		uint8_t info;		// Response_Info of the final acknowledgement (a poll's answer: the polled status)
+		uint8_t div;		// T3_SVC_DIVERT: T3_SO_DIV_SET and the T3_DIV_* services
+		uint32_t div_to;	// T3_SVC_DIVERT set: where to (an MS, or a talkgroup when group)
+		uint32_t divert_to;	// T3_RES_DIVERTED: the address the TSCC gave
+		bool divert_group;
 	} ax;
 	// The last status heard for the radio, from a C_AHOY to it or to a talkgroup it listens to (6.6.6)
 	struct {
@@ -370,6 +376,10 @@ bool t3_ms_sdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t fo
 // Ask for a packet data channel to an MS or talkgroup (6.6.3.2.1). Once granted the engine follows it (call.data) and
 // t3_ms_data_ready says when the radio may send its packet there
 bool t3_ms_pdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group);
+// Call diversion (6.6.7). Set: the services (T3_DIV_*) go to an MS or talkgroup from now on. Clear: the services' own
+// diversion ends (incoming false), or every diversion to this radio does (incoming true). False when it can't start
+bool t3_ms_divert(t3_ms_t *ms, uint32_t now, uint8_t services, uint32_t to, bool group);
+bool t3_ms_divert_clear(t3_ms_t *ms, uint32_t now, uint8_t services, bool incoming);
 // On a packet data payload channel, settled: the data service may send (the caller first, 6.6.3.3)
 bool t3_ms_data_ready(const t3_ms_t *ms, uint32_t now);
 // PTT released before the grant: withdraw the request, or cancel it at the TSCC once sent

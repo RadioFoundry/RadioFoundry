@@ -469,6 +469,18 @@ DGNA talkgroups are heard like the configured ones and never attached (6.4.4.1.1
 talkgroup when the system has no talk ID of its own. The list lives in RAM: a restart or another system clears it.
 The radio keeps one alias, the latest.
 
+### 7.15 Call diversion (6.6.7)
+
+| Request | C_RAND (Service_Kind 1000b) | Then |
+|---|---|---|
+| Set: the chosen services go to an MS or talkgroup | DIVONOFF 1, the services (DIV_VD, DIV_PD, DIV_SD, DIV_S), target MSI or GPI | a C_AHOY from DIVERTI: the radio uploads one UDT block, Address format, UDT_DIV set, to MSI or GPI, the address in ADDRESS1; C_ACK (0x60) or C_NACK (0x20 not supported, 0x23 not to there) ends it |
+| Clear the radio's own | DIVONOFF 0, the services, target TSI | the acknowledgement |
+| Clear every diversion to the radio | DIVONOFF 0, the services, target DIVERTI | the acknowledgement |
+
+A call the radio asks for can be answered with a UDT download instead (6.6.1.3, table 6.65): supplementary, to the
+radio, from MSI, GPI or DIVERTI, Address format. The request ends `diverted` and the view shows the new destination
+(`divert_to`, `divert_group`). The radio doesn't call it by itself.
+
 ## 8. Timers and constants
 
 | Name | Value | Standard range (Annex A) |

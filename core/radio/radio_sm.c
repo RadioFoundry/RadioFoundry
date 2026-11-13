@@ -2682,6 +2682,8 @@ static void t3_publish(radio_sm_t *sm)
 	v->dgna_onekey = m->dgna_onekey;
 	v->dgna_alias_tg = m->dgna_alias_tg;
 	v->dgnas = m->dgnas;
+	v->divert_to = m->ax.divert_to;
+	v->divert_group = m->ax.divert_group;
 #if CONFIG_DMR_DATA_CORE && CONFIG_DMR_TRUNK_TX
 	v->pd_wait = data_tx.t3_wait;
 #endif
@@ -2815,6 +2817,16 @@ static void t3_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
 		if (sm->t3_on) {
 			const radio_t3_setup_t *st = radio_t3_staged();
 			(void)t3_ms_sdata(&t3m, now_ms, st->sd_dst, st->sd_group, st->sd_format, st->sd_data, st->sd_len);
+		}
+		break;
+	case RADIO_T3_DIVERT:
+		if (sm->t3_on) {
+			const radio_t3_setup_t *st = radio_t3_staged();
+			if (st->div_mode == RADIO_T3_DIV_SET) {
+				(void)t3_ms_divert(&t3m, now_ms, st->div_svcs, st->sd_dst, st->sd_group);
+			} else {
+				(void)t3_ms_divert_clear(&t3m, now_ms, st->div_svcs, st->div_mode == RADIO_T3_DIV_CLEAR_IN);
+			}
 		}
 		break;
 #endif

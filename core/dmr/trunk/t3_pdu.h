@@ -52,10 +52,13 @@
 #define T3_ID_PSTNI		0xFFFEC0u
 #define T3_ID_SDMI		0xFFFEC5u
 #define T3_ID_REGI		0xFFFEC6u
+#define T3_ID_MSI		0xFFFEC7u	// call diversion to an MS
+#define T3_ID_DIVERTI		0xFFFEC9u	// call diversion: its address upload, cancelling incoming diversions
 #define T3_ID_TSI		0xFFFECAu
 #define T3_ID_DISPATI		0xFFFECBu
 #define T3_ID_STUNI		0xFFFECCu
 #define T3_ID_AUTHI		0xFFFECDu
+#define T3_ID_GPI		0xFFFECEu	// call diversion to a talkgroup
 #define T3_ID_KILLI		0xFFFECFu
 #define T3_ID_ALLMSI		0xFFFED4u
 #define T3_ID_TATTSI		0xFFFED7u
@@ -64,6 +67,7 @@
 #define T3_ID_ALLMSID		0xFFFFFFu
 #define T3_ID_GATEWAY_FIRST	0xFFFEC0u	// the gateway block (A.4) up to ALLMSID
 #define T3_ID_NULL		0u		// ADRNULL
+#define T3_ID_USER_MAX		0xFFFCDFu	// the last MS or talkgroup address (A.4)
 
 // Logical physical channel numbers
 #define T3_LPCN_NULL		0u
@@ -143,6 +147,13 @@ t3_ack_class_t t3_ack_class(uint8_t reason);
 
 // Voice Service_Options (table 7.52): bit 6 emergency, 5 privacy, 4 supplementary data, 3 broadcast, 1-0 priority
 #define T3_SO_EMERGENCY		0x40
+// Call diversion Service_Options (table 6.61): DIVONOFF and the services it sets or clears
+#define T3_SO_DIV_SET		0x10
+#define T3_DIV_VOICE		0x08
+#define T3_DIV_PDATA		0x04
+#define T3_DIV_SDATA		0x02
+#define T3_DIV_STATUS		0x01
+#define T3_DIV_ALL		0x0F
 #define T3_SO_PRIVACY		0x20
 #define T3_SO_SUPPL_DATA	0x10
 #define T3_SO_BROADCAST		0x08

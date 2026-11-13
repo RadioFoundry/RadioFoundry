@@ -156,6 +156,18 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 		memcpy(s->sd_data, a + 6, s->sd_len);
 		radio_req_t3(RADIO_T3_SDATA);
 		break;
+	case DL_T3_DIVERT:	// mode u8, services u8, to u32, group u8
+		if (n != 7u || a[0] > RADIO_T3_DIV_CLEAR_IN || (a[1] & T3_DIV_ALL) == 0 || a[1] > T3_DIV_ALL ||
+		    (a[0] == RADIO_T3_DIV_SET && (rd32(a + 2) == 0 || rd32(a + 2) > T3_ID_USER_MAX))) {
+			out[0] = DL_ST_BAD_ARG;
+			break;
+		}
+		s->div_mode = a[0];
+		s->div_svcs = a[1];
+		s->sd_dst = rd32(a + 2);
+		s->sd_group = a[6] != 0;
+		radio_req_t3(RADIO_T3_DIVERT);
+		break;
 	case DL_T3_PS:		// PowerSave_RQ u8, T_Awake ms u16
 		if (n != 3u || a[0] > 7u) {
 			out[0] = DL_ST_BAD_ARG;
@@ -197,9 +209,9 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 static const char *const t3_states[] = { "off", "hunt", "camped", "follow" };
 static const char *const t3_regs[] = { "unknown", "not_needed", "listen", "needed", "ok", "denied" };
 static const char *const t3_svcs[] = { "none", "register", "deregister", "group", "individual", "cancel",
-				       "status", "sdata" };
+				       "status", "sdata", "pdata", "divert" };
 static const char *const t3_results[] = { "none", "pending", "granted", "done", "refused", "no_answer", "timeout",
-					  "not_allowed", "lost", "cancelled" };
+					  "not_allowed", "lost", "cancelled", "diverted" };
 static const char *const t3_axs[] = { "idle", "wait_slot", "wait_resp", "acked" };
 
 static const char *word(uint8_t v, const char *const *names, uint8_t count)
@@ -222,7 +234,8 @@ void debuglink_view_t3(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "t3.call_dst=%u\nt3.call_src=%u\nt3.call_group=%u\nt3.call_ours=%u\n", (unsigned)x->call_dst,
 		(unsigned)x->call_src, x->call_group, x->call_ours);
 	dl_text(t, "t3.ax_svc=%s\nt3.ax_state=%s\nt3.ax_result=%s\nt3.ax_reason=0x%02x\nt3.ptt_wait=%u\nt3.can_talk=%u\n",
-		word(x->ax_svc, t3_svcs, 8), word(x->ax_state, t3_axs, 4), word(x->ax_result, t3_results, 10),
+		word(x->ax_svc, t3_svcs, sizeof(t3_svcs) / sizeof(t3_svcs[0])), word(x->ax_state, t3_axs, 4),
+		word(x->ax_result, t3_results, sizeof(t3_results) / sizeof(t3_results[0])),
 		x->ax_reason, x->ptt_wait, x->can_talk);
 	// The last CSBK heard and sent: opcode, slot, age in ms (-1: none)
 	uint32_t now = hal_millis();
@@ -270,6 +283,7 @@ void debuglink_view_t3_svc(const radio_view_t *v, dl_text_t *t)
 		(unsigned)x->massregs, (unsigned)x->moves);
 	dl_text(t, "t3.ps_rq=%u\nt3.ps_offset=%u\nt3.asleep=%u\nt3.sleeps=%u\n", x->ps_rq, x->ps_offset, x->asleep,
 		(unsigned)x->sleeps);
+	dl_text(t, "t3.divert_to=%u\nt3.divert_group=%u\n", (unsigned)x->divert_to, x->divert_group);
 	dl_text(t, "t3.dgnas=%u\nt3.dgna_onekey=%u\nt3.dgna_alias_tg=%u\nt3.dgna=", (unsigned)x->dgnas,
 		(unsigned)x->dgna_onekey, (unsigned)x->dgna_alias_tg);
 	for (uint8_t i = 0; i < x->ndgna && i < RADIO_T3_DGNA; i++) {

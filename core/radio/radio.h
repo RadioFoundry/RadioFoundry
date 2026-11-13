@@ -268,6 +268,8 @@ typedef struct {
 	uint32_t dgna[RADIO_T3_DGNA];	// DGNA (6.6.8): the list, the One-key, the alias mode's 16th
 	uint8_t ndgna;
 	uint32_t dgna_onekey, dgna_alias_tg, dgnas;
+	uint32_t divert_to;	// the last call answered diverted (6.6.7.2): its new destination
+	bool divert_group;
 	bool st_group;		// the last status heard: to a talkgroup
 	uint8_t st_value;
 	uint32_t st_count, st_src, st_dst, st_ms;
