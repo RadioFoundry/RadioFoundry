@@ -36,10 +36,11 @@ static volatile uint16_t phase_lo, phase_hi, step_lo, step_hi;
 static volatile bool afsk_on;
 
 #if CONFIG_APRS
-// The tones' PWM amplitude at the core's level 50 (its nominal deviation): near the DTMF pair's peak (102), whose
-// deviation the factory calibration sets through the same input. Inferred; the bench sets it, and the APRS level (a
-// debug link setting) moves it until then. Full scale is 127
-#define AFSK_AMP_NOMINAL	90
+// The tones' PWM amplitude at the core's level 50 (its nominal deviation). Measured off air (UHF, 2026-11-13): 90
+// gave a 2.0 kHz peak, 108 2.34 kHz, 126 2.74 kHz, with the twist the same (no clipping). Full scale is 127, so the
+// path tops out near 2.75 kHz, short of the 3 kHz aimed for (aprs.md 13): level 50 sits there and a higher level
+// changes nothing
+#define AFSK_AMP_NOMINAL	125
 
 static afsk_tx_t afsk;
 static volatile bool afsk_busy;
