@@ -6400,6 +6400,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 
 	if (sm->view.state == RS_IDLE) {
 		if (opens) {
+			activity(sm, now_ms);	// a squelch open for one poll still keeps battery save awake its idle time
 			sm->view.state = RS_RX;
 			sm->close_count = 0;
 			changed(sm);

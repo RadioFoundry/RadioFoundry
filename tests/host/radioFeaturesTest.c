@@ -3449,6 +3449,31 @@ static void test_battery_save(void)
 	CHECK(hw.sleeps == s2);
 }
 
+// A squelch open for a moment (a transmitter keying up) counts as activity: the receiver stays awake the idle time
+// after it closes, so the call that follows isn't missed while it sleeps
+static void test_battery_save_brief_open(void)
+{
+	start();
+	settings(set_save);
+	run(8000);
+	CHECK(hw.sleeps >= 1);
+	signal_on(0, 146520000, 30, no_tone);
+	for (int i = 0; i < 200 && sm.view.state != RS_RX; i++) {
+		run(5);
+	}
+	CHECK(sm.view.state == RS_RX);
+	hw.sig[0].hz = 0;
+	for (int i = 0; i < 200 && sm.view.state != RS_IDLE; i++) {
+		run(5);
+	}
+	CHECK(sm.view.state == RS_IDLE);
+	int s0 = hw.sleeps;
+	run(4000);				// under rx_save_idle_s (5 s)
+	CHECK(hw.sleeps == s0 && !sm.view.rx_sleeping);
+	run(2000);
+	CHECK(hw.sleeps > s0);
+}
+
 static void test_dmr_beeps(void)
 {
 	start();
@@ -3901,6 +3926,7 @@ int main(void)
 	test_no_battery();
 	test_supply_voltage();
 	test_battery_save();
+	test_battery_save_brief_open();
 	test_dmr_beeps();
 	test_dmr_permit_before_key();
 	test_dmr_short_press_wake();
