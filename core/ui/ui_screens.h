@@ -258,7 +258,7 @@ void ui_draw_volume(const radio_view_t *v, const ui_state_t *s);
 #if CONFIG_VOLUME_BAR
 // The knob's volume (s->volbar) over whatever screen is drawn: the label, the same bar as the volume screen and the
 // step, in the hint row's place, or the status strip's (top) on a screen that uses the bottom row for itself. With a
-// second knob's step (s->volbar_b, a radio with a knob per side, when side B's turns or in dual watch) both, "Vol A"
+// second knob's step (s->volbar_b, a radio with a knob per side, whichever knob turns) both, "Vol A"
 // over "Vol B", the side whose knob moved marked: two rows in the smallest font at the bottom of the screen (the hint
 // row and the space above it), or from the top
 void ui_draw_volume_bar(const ui_state_t *s, bool top);
