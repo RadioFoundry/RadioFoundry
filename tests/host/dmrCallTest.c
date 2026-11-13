@@ -1045,6 +1045,24 @@ static void test_rx_call(void)
 	CHECK(V()->state == DMR_CALL_STATE_IDLE && sink_log.ends == 1);
 }
 
+// Another slot on the same channel only moves the slot lock: a modem restart would lose sync and miss the call's start
+static void test_slot_change_keeps_modem(void)
+{
+	dmr_call_config_t c = base_cfg();
+
+	c.rmo = true;
+	c.ts = 1;
+	setup(&c);
+	unsigned n = sim.configures;
+	CHECK(sim.locked_ts == 1);
+	c.ts = 2;
+	dmr_call_configure(&c);
+	CHECK(sim.configures == n && sim.locked_ts == 2);
+	c.cc = (uint8_t)((c.cc + 1) & 0x0F);	// another channel's settings: the modem is told
+	dmr_call_configure(&c);
+	CHECK(sim.configures == n + 1 && sim.cfg.cc == (int8_t)c.cc);
+}
+
 // The modem reports bursts in batches: the call's last voice bursts can come after its terminator. They must not start
 // a second call by late entry (HIL 2026-10-10: one bench call counted as two or three)
 static void test_rx_no_call_after_terminator(void)
@@ -2449,6 +2467,7 @@ int main(void)
 	test_rx_filters();
 	test_rx_recheck_on_configure();
 	test_rx_no_call_after_terminator();
+	test_slot_change_keeps_modem();
 	test_rx_group_callback();
 	test_rx_own_id_parrot();
 	test_rx_resumed_call();

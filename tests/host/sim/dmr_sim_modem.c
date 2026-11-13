@@ -27,7 +27,7 @@ static bool start(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx)
 }
 
 static void stop(void) { sim.started = false; sim.cb = NULL; }
-static void configure(const dmr_config_t *cfg) { sim.cfg = *cfg; }
+static void configure(const dmr_config_t *cfg) { sim.cfg = *cfg; sim.configures++; }
 static void rx_restart(void) { sim.rx_restarts++; }
 static void rx_lock_slot(int8_t ts) { sim.locked_ts = ts; }
 
