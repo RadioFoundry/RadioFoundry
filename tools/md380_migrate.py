@@ -593,6 +593,7 @@ def prepare_stream(sess, args):
                 raise MigrateError("the updater file doesn't decrypt to an MD-380 application with this key")
             sess.say("   checked with the key: a valid vector table")
         sess.cache["stream"] = stream
+        sess.cache["stock_image"] = True    # TYT's firmware, not ours: what the flash says it wrote
         return stream
     dfu = stm32_dfu()
     if not info:
@@ -667,8 +668,40 @@ def wait_dfu(sess, dfu, timeout):
     raise MigrateError("the bootloader did not appear within %d s (USB 0483:DF11)" % timeout)
 
 
+EXIT_WATCH_S = 6    # after the bootloader's exit request: long enough for the radio to leave USB and come back
+
+
+def flash_result(stock, loader_back):
+    """What to say after the write and the exit request. stock: a TYT updater file was written, not RadioFoundry.
+    loader_back: a device 0483:DF11 is on USB when the watch ends. RadioFoundry never uses that ID, so there it is the
+    bootloader; the stock firmware in programming mode uses it too (docs/spec/md380-migration.md 3), so there only the
+    screen tells."""
+    what = "the stock firmware" if stock else "RadioFoundry"
+    off_on = "switch the radio off and on (take the battery off and refit it if the switch does nothing)"
+    if not loader_back:
+        return ["written; the radio restarts into %s" % what]
+    if stock:
+        return ["written: %s. A device 0483:DF11 is on USB, which is the bootloader or the stock firmware." % what,
+                "If the screen is dark and the LED blinks, the radio is still in the bootloader: " + off_on + "."]
+    return ["written: %s, but the radio is still in the bootloader (USB 0483:DF11, screen dark, LED blinking):" % what,
+            off_on + "."]
+
+
+def loader_back_after_exit(dfu, usb, watch_s=EXIT_WATCH_S, step_s=0.5):
+    """True when 0483:DF11 is on USB at the end of the watch (it never left, or it came back)"""
+    present = True
+    end = time.monotonic() + watch_s
+    while time.monotonic() < end:
+        time.sleep(step_s)
+        try:
+            present = bool(dfu.find_devices(usb))
+        except Exception:
+            present = False     # the bus is re-enumerating: not there right now
+    return present
+
+
 def step_flash(sess, args):
-    sess.step("2. Flash RadioFoundry")
+    sess.step("2. Flash the firmware")
     stream = prepare_stream(sess, args)
     dfu = stm32_dfu()
     shown = stream if stream is not None else bytes(sess.cache.get("plain_len", 0))
@@ -707,7 +740,8 @@ def step_flash(sess, args):
     except Exception as e:
         raise MigrateError("flashing failed: %s. The bootloader is never erased: enter it again and rerun "
                            "'flash'. Your codeplug backup is in %s" % (e, sess.workdir))
-    sess.say("   written; the radio restarts into RadioFoundry")
+    for line in flash_result(bool(sess.cache.get("stock_image")), loader_back_after_exit(dfu, usb)):
+        sess.say("   " + line)
     sess.save_state(flashed=sha256(stream))
     return True
 
@@ -1059,6 +1093,24 @@ zones:
                 check(want is not None and want in str(e), "pick_port: %s (got %r)" % (want, str(e)))
     finally:
         globals()["load_module"] = real
+
+    # After the flash: what was written, and a radio left in the bootloader is told how to leave it
+    check(flash_result(False, False) == ["written; the radio restarts into RadioFoundry"], "flash result: RadioFoundry")
+    check(flash_result(True, False) == ["written; the radio restarts into the stock firmware"], "flash result: stock")
+    for stock in (False, True):
+        text = " ".join(flash_result(stock, True))
+        check("bootloader" in text and "off and on" in text and "restarts into" not in text,
+              "flash result: loader still there (stock %s)" % stock)
+    check("RadioFoundry" not in " ".join(flash_result(True, True)), "flash result: a stock image is not called ours")
+
+    class FakeDfu:
+        def __init__(self, seen):
+            self.seen = list(seen)
+
+        def find_devices(self, usb):
+            return [1] if self.seen.pop(0) else []
+    check(loader_back_after_exit(FakeDfu([False] * 50), None, watch_s=0.03, step_s=0.01) is False, "exit watch: gone")
+    check(loader_back_after_exit(FakeDfu([True] * 50), None, watch_s=0.03, step_s=0.01) is True, "exit watch: still there")
 
     # What --stock and the flash load, here and from a kit. None of it needs the stock file
     check(stockfw().codecmap.load_maps(), "stockfw loads, with the codec maps")
