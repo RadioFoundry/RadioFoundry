@@ -33,6 +33,14 @@ Pass criteria:
 - test_t3_private_call (rf, radio_tx; needs --t3-peer): as the group call, to --t3-peer as an individual call
   (t3.ax_svc individual): granted within PRIVATE_S, t3.call_group 0, t3.call_dst the peer; back on the control
   channel within CLEAR_S after the release.
+- test_t3_status[group|peer|poll] (rf, radio_tx; peer and poll need --t3-peer): registered, the radio sends status
+  STATUS_VALUE to --t3-tg or to --t3-peer, or polls the peer. Within SERVICE_S: t3.ax_svc status, t3.ax_result done,
+  t3.ax_reason 0x60 Message_Accepted (talkgroup), 0x44 MS_Accepted (peer) or 0x47 (poll; t3_svc t3.ax_info is the
+  peer's status, 0-126). The radio is back to camped.
+- test_t3_sdata[group|peer] (rf, radio_tx; peer needs --t3-peer): registered, the radio sends SDATA_TEXT as ISO
+  8-bit short data (two UDT blocks) to --t3-tg or --t3-peer: within SERVICE_S t3.ax_svc sdata, t3.ax_result done,
+  t3.ax_reason 0x60 or 0x44. Whether the octets arrived whole is in the site's log; the radio's view shows only that
+  the site took them (it acknowledges after the UDT's CRC passed).
 
 On a failure every test prints the last t3 view.
 
@@ -57,12 +65,17 @@ T3_KEYS = ("t3.built", "t3.tx_built", "t3.on", "t3.state", "t3.reg", "t3.confirm
            "t3.csbk", "t3.crc_bad", "t3.grants", "t3.followed", "t3.unmapped", "t3.last_unmapped", "t3.returns",
            "t3.hunts", "t3.foreign", "t3.learned", "t3.sent", "t3.ra_tries", "t3.send_fail")
 # Engine options (core/dmr/trunk/t3_ms.h T3_OPT_*)
+SVC_SECTION = "t3_svc"
 OPT_LISTEN_ONLY = 0x0001
 OPT_PRIVATE = 0x0020
 OPT_REG_TG = 0x0040
 PAR_AB = 3
 # Reason codes (ETSI TS 102 361-4 table 7.75): registration accepted, and accepted with a talkgroup subscription
 REG_ACCEPTED = (0x62, 0x65)
+# Final acknowledgements of a status or short data (table 7.75): to a talkgroup, to an MS, a poll's answer
+MSG_ACCEPTED, MS_ACCEPTED, POLL_ACCEPTED = 0x60, 0x44, 0x47
+STATUS_VALUE = 37
+SDATA_TEXT = b"rfoundry short data test"   # 24 octets: two blocks
 
 CAMP_S = 15.0       # hunting one control channel, then an Aloha
 LEARN_S = 25.0      # Chan_Freq every 10 s on the rig's site; two chances
@@ -72,6 +85,7 @@ GRANT_S = 10.0
 PRIVATE_S = 30.0    # the site may ask the called radio first (C_AHOY)
 TALK_S = 3.0
 CLEAR_S = 15.0      # the site's hang time, its P_CLEAR, the retune
+SERVICE_S = 20.0    # random access, the site's C_AHOY to the called MS and its answer, retries
 PTT_MAX_MS = 20000  # the firmware's own PTT time-out, past every wait here
 
 
@@ -290,3 +304,54 @@ def test_t3_private_call(trunk_tx, pytestconfig):
         print("t3 view:", t3(trunk_tx))
         raise
     call(trunk_tx, s, peer, False, PRIVATE_S)
+
+
+def service(radio, svc, send, reason):
+    """Run one status or short data request (send()) and wait for its end; returns the t3 and t3_svc views"""
+    send()
+    try:
+        v = wait_t3(radio, lambda x: x.get("t3.ax_svc") == svc and x.get("t3.ax_state") == "idle" and
+                    x.get("t3.ax_result") != "pending", SERVICE_S, f"the {svc} request's answer")
+        assert v.get("t3.ax_result") == "done", f"{svc}: {v.get('t3.ax_result')} reason {v.get('t3.ax_reason')}"
+        assert num(v, "t3.ax_reason") == reason, f"{svc}: reason {v.get('t3.ax_reason')}, expected {reason:#04x}"
+        assert v.get("t3.state") == "camped", f"{svc}: state {v.get('t3.state')} after the request"
+    except AssertionError:
+        print("t3 view:", t3(radio), radio.link.view([SVC_SECTION]))
+        raise
+    return v, radio.link.view([SVC_SECTION])
+
+
+def svc_target(trunk_tx, pytestconfig, to):
+    s = site(pytestconfig)
+    if not hasattr(trunk_tx.link, "t3_sdata") or SVC_SECTION not in VIEW_SECTIONS:
+        skip("not_built", "tools/rfoundry_debug.py has no t3 status or short data (older tool)")
+    if to == "group":
+        dst = s["tg"]
+    else:
+        dst = int(rig(pytestconfig, "t3-peer", "a second radio ID the site delivers status and short data to"))
+    register(trunk_tx, s)
+    return dst
+
+
+@pytest.mark.feature("dmr_trunk_tx")
+@pytest.mark.rf
+@pytest.mark.radio_tx
+@pytest.mark.parametrize("to", ["group", "peer", "poll"])
+def test_t3_status(trunk_tx, pytestconfig, to):
+    dst = svc_target(trunk_tx, pytestconfig, "group" if to == "group" else "peer")
+    value = 127 if to == "poll" else STATUS_VALUE
+    reason = {"group": MSG_ACCEPTED, "peer": MS_ACCEPTED, "poll": POLL_ACCEPTED}[to]
+    _, sv = service(trunk_tx, "status", lambda: trunk_tx.link.t3_status(dst, value, to == "group"), reason)
+    if to == "poll":
+        info = num(sv, "t3.ax_info")
+        assert 0 <= info <= 126, f"the poll's answer {info} is not a status"
+
+
+@pytest.mark.feature("dmr_trunk_tx")
+@pytest.mark.rf
+@pytest.mark.radio_tx
+@pytest.mark.parametrize("to", ["group", "peer"])
+def test_t3_sdata(trunk_tx, pytestconfig, to):
+    dst = svc_target(trunk_tx, pytestconfig, to)
+    service(trunk_tx, "sdata", lambda: trunk_tx.link.t3_sdata(dst, SDATA_TEXT, to == "group", "iso8"),
+            MSG_ACCEPTED if to == "group" else MS_ACCEPTED)

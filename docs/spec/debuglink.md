@@ -344,6 +344,8 @@ short. View 5: the `cps.*` and `cpsf.*` keys moved from `storage` to `cps` (27),
 | 27 | `cps` | open-firmware CPS (`cps.built openfw_eeprom requests reads commits refused overflows last session pending junk reboots_ignored`; [settings-store.md](settings-store.md), [cps-protocol.md](cps-protocol.md)), with `CONFIG_CPS_FAST` the fast codeplug protocol (`cpsf.state read written commits refused`; [cps-fast.md](cps-fast.md)), with the DMR data core the codeplug settings area (`cpkv.state` valid / empty / bad / newer, `cpkv.length` its data bytes, `cpkv.keys` its entries; [codeplug-settings.md](codeplug-settings.md) 5) |
 | 28 | `board` | `board.name`, then the board's own keys, each as `board.<key>` (`board.view_line`): bring-up readings such as pin levels, raw ADC values, the clock that started and the flash ID. The keys are listed in the radio's hardware spec; a board without its own keys sends only `board.name` |
 | 29 | `audio` | the beeps' speaker route (`radio-features.md` 4): `beep.shared` (patterns mixed into the DMR voice stream) `beep.leads` (silent lead-in blocks played on a beep's own stream) `beep.warm` (1: the amplifier is held powered, `hal_audio_t.speaker_hang_s`) `beep.warms` (times it was powered up for that), these four only with CONFIG_BEEP; and on a board that counts them (`hal_audio_t.stream_stats`), the PCM stream's timing since boot: `audio.blocks` (blocks filled) `audio.late` (a block's turn came before it was filled: the speaker played its old contents, the sound before it, again) `audio.dropped` (blocks skipped, a whole block late) |
+| 30 | `t3` | a Tier III trunked system: the engine's state, call, access and counters (3.26) |
+| 31 | `t3_svc` | its services: a poll's answer, the radio's status, the last status and short data heard (3.26) |
 
 With `CONFIG_KEY_ASSIGN` and at least one assignable key, `link` also reports `key.first.bit` (the first
 `board.side_keys` entry, for KEY kind 1) and `key.first.press` (its saved `keyfn_t`, [ui.md](ui.md#31-key-assignment)).
@@ -859,8 +861,8 @@ The `t3` view section has the engine's state as the radio core last published it
 `ax_state`, `ax_result`, `ax_reason`, `ptt_wait`, `can_talk`); the last CSBK heard and sent (`last_rx_op`,
 `last_rx_slot`, `last_rx_age_ms`, `last_tx_op`, `last_tx_age_ms`, `last_tx` in hex; age -1: none); counters (`ticks`,
 `csbk`, `crc_bad`, `grants`, `followed`, `unmapped`, `last_unmapped`, `returns`, `hunts`, `foreign`, `learned`, `sent`,
-`ra_tries`, `send_fail`, `at_known`, `at_busy`); status: `ax_info` (the final acknowledgement's Response_Info: a
-poll's answer), `own_status` (the radio's, sent in answer to a poll), and the last status heard (`st_count`,
+`ra_tries`, `send_fail`, `at_known`, `at_busy`). The `t3_svc` section, also `t3.`-prefixed, has the services:
+`ax_info` (the final acknowledgement's Response_Info: a poll's answer), `own_status` (the radio's, sent in answer to a poll), and the last status heard (`st_count`,
 `st_src`, `st_dst`, `st_group`, `st_value`, `st_age_ms`); the last short data heard (`sd_count`, `sd_src`, `sd_dst`,
 `sd_group`, `sd_format`, `sd_len`, `sd_data` in hex, `sd_age_ms`).
 

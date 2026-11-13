@@ -222,6 +222,18 @@ void debuglink_view_t3(const radio_view_t *v, dl_text_t *t)
 		"t3.send_fail=%u\nt3.at_known=%u\nt3.at_busy=%u\n", (unsigned)x->returns, (unsigned)x->hunts,
 		(unsigned)x->foreign, (unsigned)x->learned, (unsigned)x->sent, (unsigned)x->ra_tries,
 		(unsigned)x->send_fail, (unsigned)x->at_known, (unsigned)x->at_busy);
+#else
+	(void)v;
+	dl_text(t, "t3.built=0\n");
+#endif
+}
+
+// Its own section: with these keys the t3 section outgrew a reply (truncated=1 before t3.sd_*)
+void debuglink_view_t3_svc(const radio_view_t *v, dl_text_t *t)
+{
+#if CONFIG_DMR_TRUNK
+	const radio_t3_view_t *x = &v->t3;
+	uint32_t now = hal_millis();
 	// Status (6.6.6): a poll's answer, the radio's own, the last one heard (age -1: none)
 	dl_text(t, "t3.ax_info=%u\nt3.own_status=%u\nt3.st_count=%u\nt3.st_src=%u\nt3.st_dst=%u\nt3.st_group=%u\n"
 		"t3.st_value=%u\nt3.st_age_ms=%d\n", x->ax_info, x->own_status, (unsigned)x->st_count,
