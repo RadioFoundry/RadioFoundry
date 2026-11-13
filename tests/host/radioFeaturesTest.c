@@ -761,6 +761,14 @@ static void test_beep_tone(void)
 	beep_play(BEEP_KEY, 50, false);
 	beep_get_stats(&bs);
 	CHECK(bs.no_stream == 1 && !beep_busy());
+
+	// The sweep: a tone hook plays fixed pitches, so it is dropped (counted in no_stream), never a 1 Hz "tone"
+	beep_init_tone(fake_tone, 0);
+	tone_calls = 0;
+	beep_play(BEEP_SWEEP, 70, false);
+	beep_tone_run(7000);
+	beep_get_stats(&bs);
+	CHECK(tone_calls == 0 && !beep_busy() && bs.no_stream == 2);
 }
 
 // The speaker test's sweep (BEEP_SWEEP): silence with the route up, then a rising tone with no jump between samples, from

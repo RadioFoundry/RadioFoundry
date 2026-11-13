@@ -202,6 +202,8 @@ def test_speaker_sweep(radio, microphone):
     for the radio's records, and the sweep whole: audio that jumps (samples lost, repeated or out of order on the way
     to the speaker) spreads energy across the band, which a tone check at a few pitches can miss"""
     _beep_ready(radio)
+    if _audio(radio).get("beep.tone") == "1":
+        skip("no_hw", "the beeps are the radio's own tones (beep.tone 1): it plays fixed pitches, no sweep")
     from rfoundry_debug import DebugLinkError
     lo, hi, ms = A.sweep_spec()
     length = sum(m for _, m in A.beep_patterns()["sweep"]) / 1000

@@ -31,7 +31,7 @@ typedef enum {
 	BEEP_EMERGENCY,		// DMR: someone's emergency heard (alarm or emergency call; core/dmr/dmr_emergency.h)
 	BEEP_MESSAGE,		// a text message arrived (the UI, if Settings > Sound > Message tone)
 	BEEP_TX_PERMIT_SHORT,	// DMR: talk now, played before keying (CAP_BEEP_NOT_ON_AIR): one short tone
-	BEEP_SWEEP,		// speaker test (debug link only): a 4 s sweep, BEEP_SWEEP_LO_HZ to BEEP_SWEEP_HI_HZ
+	BEEP_SWEEP,		// speaker test (debug link only): a 4 s sweep, BEEP_SWEEP_LO_HZ to BEEP_SWEEP_HI_HZ; PCM route only
 	BEEP_COUNT
 } beep_t;
 
@@ -47,7 +47,7 @@ typedef struct {
 
 typedef struct {
 	uint32_t played;	// patterns started
-	uint32_t no_stream;	// patterns dropped: no PCM audio, or the stream would not start (no codec clock)
+	uint32_t no_stream;	// patterns dropped: no PCM audio, the stream would not start (no codec clock), or a sweep on the tone route
 	uint32_t blocks;	// 20 ms blocks with a beep in them
 	uint32_t stalls;	// own streams given up: no block for STALL_POLLS polls (the codec clock stopped)
 	uint32_t shared;	// patterns mixed into the voice stream (no lead-in of their own)

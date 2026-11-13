@@ -251,7 +251,7 @@ void beep_play(beep_t b, uint8_t level, bool shared)
 		return;
 	}
 	if (aud == NULL || aud->start == NULL) {
-		if (tone_fn == NULL) {
+		if (tone_fn == NULL || b == BEEP_SWEEP) {	// a tone hook plays fixed pitches: no sweep
 			stats.no_stream++;
 			return;
 		}
