@@ -60,9 +60,13 @@ typedef struct {
 // audio NULL: beeps are counted as dropped, unless beep_init_tone gave a tone hook
 void beep_init(const hal_audio_t *audio);
 // Without PCM audio: play the patterns as tones through tone(hz, level) (hal_radio_t.beep_tone; hz 0 = off), each
-// segment held for whole poll_ms polls of beep_service (rounded up) after the poll the pattern starts in, so none is
-// shorter than its length. NULL: none
-void beep_init_tone(void (*tone)(uint16_t hz, uint8_t level), uint16_t poll_ms);
+// segment for its length to the millisecond (beep_tone_run, beep_tone_wait). lead_ms (hal_radio_t.beep_lead_ms):
+// each tone starts that long ahead silent, tone(hz, 0), and a gap before a tone runs it silent. NULL: none
+void beep_init_tone(void (*tone)(uint16_t hz, uint8_t level), uint8_t lead_ms);
+// Radio task, each pass of its loop: the tones' changes now due (beep_service runs it too)
+void beep_tone_run(uint32_t now_ms);
+// Milliseconds until beep_tone_run has a change to make, -1 for none: the radio task wakes for it
+int32_t beep_tone_wait(uint32_t now_ms);
 // Start a pattern at level 1..100 (0 or BEEP_NONE: nothing). shared: the DMR voice stream is running and mixes the
 // beep in; otherwise the beep starts its own stream. Replaces a pattern still playing
 void beep_play(beep_t b, uint8_t level, bool shared);

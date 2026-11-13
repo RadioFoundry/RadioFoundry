@@ -32,6 +32,9 @@
 #if CONFIG_ZONE_WRITE
 #include "codeplug/zone_edit.h"
 #endif
+#if CONFIG_BEEP
+#include "radio/beep.h"
+#endif
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -151,10 +154,20 @@ static void radio_task(void *arg)
 	TickType_t tick_period = pdMS_TO_TICKS(RADIO_TICK_MS);
 	TickType_t next_poll = xTaskGetTickCount() + period;
 	TickType_t next_tick = xTaskGetTickCount() + tick_period;
+	TickType_t next_watch = next_tick;	// board.radio->rx_watch
 
 	for (;;) {
 		TickType_t due = (int32_t)(next_tick - next_poll) < 0 ? next_tick : next_poll;
+		if (board.radio != NULL && board.radio->rx_watch != NULL && (int32_t)(next_watch - due) < 0) {
+			due = next_watch;
+		}
 		int32_t left = (int32_t)(due - xTaskGetTickCount());
+#if CONFIG_BEEP
+		int32_t tone = beep_tone_wait(hal_millis());	// a beep's tone changes on time, not on the next poll
+		if (tone >= 0 && (int32_t)pdMS_TO_TICKS((uint32_t)tone) < left) {
+			left = (int32_t)pdMS_TO_TICKS((uint32_t)tone);
+		}
+#endif
 		radio_req_t req;
 		bool woken = false;
 		if (xQueueReceive(requests, &req, left > 0 ? (TickType_t)left : 0) == pdTRUE) {
@@ -177,7 +190,14 @@ static void radio_task(void *arg)
 				}
 			} while (xQueueReceive(requests, &req, 0) == pdTRUE);
 		}
+#if CONFIG_BEEP
+		beep_tone_run(hal_millis());
+#endif
 		TickType_t now = xTaskGetTickCount();
+		if (board.radio != NULL && board.radio->rx_watch != NULL && (int32_t)(now - next_watch) >= 0) {
+			uint8_t ms = board.radio->rx_watch();
+			next_watch = now + (ms != 0 ? pdMS_TO_TICKS(ms) : tick_period);
+		}
 		if (woken || (int32_t)(now - next_tick) >= 0) {
 			radio_sm_tick(&sm, hal_millis());
 			next_tick += tick_period;

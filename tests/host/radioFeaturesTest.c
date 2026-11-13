@@ -676,57 +676,86 @@ static void fake_tone(uint16_t hz, uint8_t level)
 static void test_beep_tone(void)
 {
 	beep_init(NULL);
-	beep_init_tone(fake_tone, 25);
+	beep_init_tone(fake_tone, 0);
 	beep_reset_stats();
 	tone_calls = 0;
 	beep_play(BEEP_KEY, 0, false);
 	CHECK(tone_calls == 0 && !beep_busy());
 
-	// The key beep, 25 ms: on for one whole poll after the one it starts in (that one may be all but over: counting it
-	// cut the beep to nothing)
+	// The key beep, 25 ms, timed to the millisecond from the radio task's next pass (beep_tone_run)
 	beep_play(BEEP_KEY, 70, false);
-	CHECK(tone_calls == 1 && tone_hz[0] == 1000 && tone_lvl[0] == 70 && beep_busy());
-	beep_service(false, 0);			// the poll it started in
+	CHECK(tone_calls == 0 && beep_busy() && beep_tone_wait(1000) == 0);
+	beep_tone_run(1000);
+	CHECK(tone_calls == 1 && tone_hz[0] == 1000 && tone_lvl[0] == 70);
+	CHECK(beep_tone_wait(1010) == 15);
+	beep_tone_run(1024);
 	CHECK(tone_calls == 1 && beep_busy());
-	beep_service(false, 0);
-	CHECK(tone_calls == 2 && tone_hz[1] == 0 && !beep_busy());
-	beep_service(false, 0);
+	beep_tone_run(1025);
+	CHECK(tone_calls == 2 && tone_hz[1] == 0 && !beep_busy() && beep_tone_wait(1025) == -1);
+	beep_tone_run(1100);
 	CHECK(tone_calls == 2);
 
-	// Call end: 1200 Hz 50 ms, a 30 ms gap, 900 Hz 70 ms; segments end on the poll their time runs out in
+	// Call end: 1200 Hz 50 ms, a 30 ms gap, 900 Hz 70 ms
 	tone_calls = 0;
 	beep_play(BEEP_CALL_END, 100, false);
+	beep_tone_run(2000);
 	CHECK(tone_calls == 1 && tone_hz[0] == 1200);
-	beep_service(false, 0);			// the poll it started in
-	CHECK(tone_calls == 1);
-	beep_service(false, 0);			// 25 of 50
-	CHECK(tone_calls == 1);
-	beep_service(false, 0);			// 50: the gap, silent
+	beep_tone_run(2050);			// the gap, silent
 	CHECK(tone_calls == 2 && tone_hz[1] == 0 && tone_lvl[1] == 0 && beep_busy());
-	beep_service(false, 0);			// 75 (gap to 80)
-	CHECK(tone_calls == 2);
-	beep_service(false, 0);			// 100: the 900 Hz tone (to 150)
+	beep_tone_run(2080);			// the 900 Hz tone, to 2150
 	CHECK(tone_calls == 3 && tone_hz[2] == 900 && tone_lvl[2] == 100);
-	beep_service(false, 0);			// 125
+	beep_tone_run(2149);
 	CHECK(tone_calls == 3 && beep_busy());
-	beep_service(false, 0);			// 150: the pattern's end
+	beep_service(false, 2150);		// beep_service runs the tones too
 	CHECK(tone_calls == 4 && tone_hz[3] == 0 && !beep_busy());
 
+	// A late pass makes every change due, in order
+	tone_calls = 0;
+	beep_play(BEEP_CALL_END, 100, false);
+	beep_tone_run(3000);
+	beep_tone_run(3200);
+	CHECK(tone_calls == 4 && tone_hz[1] == 0 && tone_hz[2] == 900 && tone_hz[3] == 0 && !beep_busy());
+
+	// A lead: each tone runs silent (level 0) that long first; a gap before a tone runs that tone silent
+	beep_init_tone(fake_tone, 40);
+	tone_calls = 0;
+	beep_play(BEEP_KEY, 70, false);
+	beep_tone_run(4000);
+	CHECK(tone_calls == 1 && tone_hz[0] == 1000 && tone_lvl[0] == 0 && beep_tone_wait(4000) == 40);
+	beep_tone_run(4040);
+	CHECK(tone_calls == 2 && tone_hz[1] == 1000 && tone_lvl[1] == 70);
+	beep_tone_run(4064);
+	CHECK(tone_calls == 2);
+	beep_tone_run(4065);
+	CHECK(tone_calls == 3 && tone_hz[2] == 0 && !beep_busy());
+	tone_calls = 0;
+	beep_play(BEEP_CALL_END, 100, false);
+	beep_tone_run(5000);			// 1200 Hz silent to 5040, sounding to 5090
+	beep_tone_run(5040);
+	CHECK(tone_calls == 2 && tone_hz[1] == 1200 && tone_lvl[1] == 100);
+	beep_tone_run(5090);			// the gap: 900 Hz silent to 5120
+	CHECK(tone_calls == 3 && tone_hz[2] == 900 && tone_lvl[2] == 0);
+	beep_tone_run(5120);
+	CHECK(tone_calls == 4 && tone_hz[3] == 900 && tone_lvl[3] == 100);
+	beep_tone_run(5190);
+	CHECK(tone_calls == 5 && tone_hz[4] == 0 && !beep_busy());
+
 	// A new pattern replaces one still sounding
+	beep_init_tone(fake_tone, 0);
 	tone_calls = 0;
 	beep_play(BEEP_TX_DENY, 50, false);
+	beep_tone_run(6000);
 	beep_play(BEEP_KEY, 50, false);
+	beep_tone_run(6010);
 	CHECK(tone_calls == 2 && tone_hz[1] == 1000);
-	beep_service(false, 0);
-	CHECK(tone_calls == 2);
-	beep_service(false, 0);
+	beep_tone_run(6035);
 	CHECK(tone_calls == 3 && tone_hz[2] == 0 && !beep_busy());
 	beep_stats_t bs;
 	beep_get_stats(&bs);
-	CHECK(bs.played == 4 && bs.no_stream == 0);
+	CHECK(bs.played == 7 && bs.no_stream == 0);
 
 	// No hook: dropped, as before
-	beep_init_tone(NULL, 25);
+	beep_init_tone(NULL, 0);
 	beep_play(BEEP_KEY, 50, false);
 	beep_get_stats(&bs);
 	CHECK(bs.no_stream == 1 && !beep_busy());

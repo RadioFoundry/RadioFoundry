@@ -43,6 +43,10 @@ typedef struct {
 	// to the transmit set-up of the last tx(), for the next burst. NULL: the modem switches between bursts by itself
 	void (*dmr_wake_listen)(bool listen);
 	void (*status)(radio_status_t *st);
+	// Optional: a check of the receiver between status polls, for a board that watches it faster than the squelch runs
+	// (the D578 shuts its speaker the moment an FM carrier goes). The radio task calls it again after the ms it returns,
+	// 0 = at its next tick (RADIO_TICK_MS). Short; NULL = none
+	uint8_t (*rx_watch)(void);
 	// Speaker path (amp and mute) for received audio
 	void (*audio)(bool on);
 	// Optional: received audio level 0..100 % (radios whose volume knob is read by the MCU, not wired to the amp)
@@ -51,9 +55,11 @@ typedef struct {
 	// path would ignore it, so the core caps each beep at the volume percent (radio_beep_level)
 	bool volume_pcm;
 	// Optional, for a board without PCM speaker audio (board.audio NULL): sound a beep tone of hz at level 1..100 to
-	// the speaker, whatever the squelch; 0 = off. The core steps a beep pattern's tones by its poll. Ignored while the
-	// radio transmits
+	// the speaker, whatever the squelch; 0 = off. Level 0 with hz: the tone runs but stays off the speaker
+	// (beep_lead_ms). The core times each tone to the millisecond. Ignored while the radio transmits
 	void (*beep_tone)(uint16_t hz, uint8_t level);
+	// With beep_tone: ms each tone runs silent before it sounds, for a tone that takes time to settle; 0 = none
+	uint8_t beep_lead_ms;
 	// Optional: during FM TX, send a single audio tone of hz instead of the microphone (1750 Hz burst, roger beep);
 	// 0 = the microphone again. False when the board can't (not in FM TX)
 	bool (*tx_tone)(uint16_t hz);
