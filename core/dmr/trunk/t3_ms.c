@@ -223,6 +223,7 @@ static void enter_hunt(t3_ms_t *ms, uint32_t now, bool retry)
 	}
 	ms->state = T3_HUNT;
 	ms->confirmed = false;
+	ms->asleep = false;
 	ms->massreg = false;	// another TSCC cancels it (6.4.5.1)
 	ms->tscc_slots = 0;
 	ms->csc_valid = false;
@@ -373,6 +374,7 @@ static void follow(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_chan_
 	}
 	ms->state = T3_FOLLOW;
 	ms->last_act_ms = now;
+	ms->asleep = false;
 	ms->st.followed++;
 	tune(ms, now, &ch, g->slot, true);
 }
@@ -423,6 +425,43 @@ static void on_grant(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_cha
 	}
 }
 
+// ---- Power save (6.4.7) ----
+
+// Traffic for the radio: awake T_Awake from now
+static void ps_wake(t3_ms_t *ms, uint32_t now)
+{
+	ms->awake_until = now + or_default(ms->cfg->awake_ms, T3_AWAKE_MS);
+	ms->asleep = false;
+}
+
+// The power save frame (480 ms, four Common_Slot_Counter steps) is the radio's when PS_Counter (CSC / 4) masked to
+// PowerSave_RQ bits equals PowerSave_Offset. The CSC is carried on from the last short LC heard, one step per 120 ms.
+// The radio wakes two steps early, so the receiver has synchronized before its frame
+#define T3_CSC_STEP_MS		120u
+#define T3_PS_EARLY_STEPS	2u
+static bool ps_frame(const t3_ms_t *ms, uint32_t now)
+{
+	uint32_t csc = (ms->csc + (now - ms->csc_ms) / T3_CSC_STEP_MS) & 511u;
+	uint32_t mask = (1u << ms->ps_rq) - 1u;
+	if (((csc >> 2) & mask) == ms->ps_offset) {
+		return true;
+	}
+	return (csc & 3u) >= 4u - T3_PS_EARLY_STEPS && ((((csc >> 2) + 1u) & mask) == ms->ps_offset);
+}
+
+static bool ps_may_sleep(const t3_ms_t *ms, uint32_t now)
+{
+	return ms->ps_offset != 0 && ms->state == T3_CAMPED && ms->confirmed && ms->reg == T3_REG_OK &&
+	       ms->csc_valid && ms->ax.state == T3_AX_IDLE && ms->nq == 0 && ms->tx.count == 0 && !ms->tx.udt &&
+	       !ms->udt_rx.open &&
+	       !(ms->massreg && (int32_t)(now - ms->massreg_at) >= 0) && (int32_t)(now - ms->awake_until) >= 0 && !ps_frame(ms, now);
+}
+
+bool t3_ms_asleep(const t3_ms_t *ms)
+{
+	return ms->asleep;
+}
+
 static void return_to_tscc(t3_ms_t *ms, uint32_t now)
 {
 	ms->cleared = ms->call;
@@ -431,6 +470,7 @@ static void return_to_tscc(t3_ms_t *ms, uint32_t now)
 	ms->state = T3_CAMPED;
 	ms->last_valid_ms = now;
 	ms->st.returns++;
+	ps_wake(ms, now);	// T_Awake after the call (6.4.7.2.1)
 	tune(ms, now, &ms->tscc, 0, false);
 }
 
@@ -552,6 +592,7 @@ static void finish(t3_ms_t *ms, uint32_t now, t3_res_t r)
 
 static void start_access(t3_ms_t *ms, uint32_t now, t3_svc_t svc, uint32_t dst, bool emergency)
 {
+	ps_wake(ms, now);
 	ms->ax.state = T3_AX_WAIT_SLOT;
 	ms->ax.svc = svc;
 	ms->ax.dst = dst;
@@ -618,6 +659,7 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 		q->kind = T3_SK_REGISTRATION;
 		q->options = ms->ax.svc == T3_SVC_REGISTER ? T3_SO_REG_REGISTER : 0;
 		ms->reg_tgs = 0;
+		ms->ps_rq_sent = 0;
 		if ((ms->cfg->opts & T3_OPT_REG_TG) && ms->ax.svc == T3_SVC_REGISTER && n >= 2u) {
 			// A list (6.4.4.1.13.2): to TATTSI, with the blocks the TSCC's C_AHOY will ask for
 			q->extra = (uint8_t)((T3_TRG_TATTSI << 2) | (reg_list_blocks(n) - 1u));
@@ -629,6 +671,11 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 		} else {
 			q->extra = T3_TRG_SYSCODE << 2;
 			q->dst = ms->syscode;
+		}
+		if (ms->ax.svc == T3_SVC_REGISTER && ms->reg_tgs == 0 && ms->cfg->ps_rq != 0) {
+			// Power save (6.4.7.2.1). Not with a list: its answer's Response_Info is the list's
+			ms->ps_rq_sent = ms->cfg->ps_rq & 7u;
+			q->options |= (uint8_t)(ms->ps_rq_sent << 1);
 		}
 		break;
 	}
@@ -720,6 +767,7 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 		return;
 	}
 	t3_svc_t svc = ms->ax.svc;
+	ps_wake(ms, now);
 	ms->ax.reason = a->reason;
 	ms->ax.info = a->info;
 	switch (t3_ack_class(a->reason)) {
@@ -739,6 +787,10 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 			// the first reg_tgs bits mean anything: all taken is 1111111b however many went (6.4.4.1.13.2)
 			uint8_t sent_bits = (uint8_t)(0x7Fu & ~((1u << (T3_REG_TG_MAX - ms->reg_tgs)) - 1u));
 			ms->reg_tg_ok = ms->reg_tgs != 0 ? (uint8_t)(a->info & sent_bits) : 0u;
+			// PowerSave_Offset: the wake frame; 0 = registered, no power save (table 6.13)
+			ms->ps_rq = ms->ps_rq_sent;
+			ms->ps_offset = ms->ps_rq != 0 ? (uint8_t)(a->info & ((1u << ms->ps_rq) - 1u)) : 0u;
+			ms->awake_until = now + or_default(ms->cfg->awake_ms, T3_AWAKE_MS);
 		} else if (svc == T3_SVC_DEREGISTER) {
 			ms->reg = T3_REG_NEEDED;
 			ms->deregistered = true;
@@ -934,6 +986,7 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 	if (!to_me && !to_call) {
 		return;
 	}
+	ps_wake(ms, now);
 	if (h->kind == T3_SK_CANCEL && payload) {
 		// Selective clear (6.6.2.3.1.8): answer, then leave the channel
 		if (may_send(ms)) {
@@ -1394,6 +1447,7 @@ void t3_ms_slc(t3_ms_t *ms, uint32_t now, uint32_t slc)
 	ms->slc_foreign = 0;
 	if (ms->state == T3_CAMPED) {
 		ms->csc = sp.csc;
+		ms->csc_ms = now;
 		ms->csc_valid = true;
 	}
 }
@@ -1441,7 +1495,17 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 			hunt_next(ms, now);
 		}
 		break;
-	case T3_CAMPED:
+	case T3_CAMPED: {
+		// Asleep, nothing can be heard: T_Nosig counts only the time awake
+		bool sleep = ps_may_sleep(ms, now);
+		if (ms->asleep) {
+			ms->last_valid_ms += now - ms->ps_tick_ms;
+		}
+		if (sleep && !ms->asleep) {
+			ms->sleeps++;
+		}
+		ms->asleep = sleep;
+		ms->ps_tick_ms = now;
 		if (since(now, ms->last_valid_ms, or_default(ms->cfg->nosig_ms, T3_NOSIG_MS))) {
 			enter_hunt(ms, now, true);
 			break;
@@ -1467,6 +1531,7 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 			start_access(ms, now, T3_SVC_REGISTER, 0, false);
 		}
 		break;
+	}
 	case T3_FOLLOW:
 		if (since(now, ms->last_act_ms, or_default(ms->cfg->inactive_ms, T3_INACTIVE_MS)) ||
 		    since(now, ms->call.start_ms, T3_CALL_MAX_MS)) {

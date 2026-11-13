@@ -54,6 +54,7 @@ enum {
 	DL_T3_STATUS = 12,	// send a status: to u32, group u8, status u8 (0-126; 127 polls an MS)
 	DL_T3_SDATA = 13,	// send short data: to u32, group u8, UDT_Format u8, then 1-46 octets
 	DL_T3_AUTH = 14,	// the authentication key K: 16 octets, then the PSN u32 (optional, 0: none); none: no key
+	DL_T3_PS = 15,		// power save: PowerSave_RQ u8 (0 off, 1-7), T_Awake ms u16 (0: default)
 };
 
 // DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.25)

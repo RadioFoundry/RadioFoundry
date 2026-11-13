@@ -53,6 +53,7 @@
 #define T3_OPT_REG_TG		0x0040	// register with the talk group (subscription) rather than the system code
 
 // Defaults (TS 102 361-4 Annex A ranges in the comments)
+#define T3_AWAKE_MS		2000	// T_Awake, 0.1-60 s: power save, awake this long after traffic for the radio
 #define T3_NOSIG_MS		5000	// T_Nosig, 1-15 s: no valid TSCC PDU this long, hunt again
 #define T3_DWELL_MS		700	// hunting: time on a candidate (12 TSCC slots and two short LCs)
 #define T3_SETTLE_MS		60	// after a retune: what is heard before this belongs to the old channel
@@ -98,6 +99,8 @@ typedef struct {
 	bool auth_key_set;		// authentication (6.4.8): K and the PSN; without K a challenge is not supported
 	uint8_t auth_key[T3_AUTH_KEY_LEN];
 	uint32_t psn;
+	uint8_t ps_rq;			// power save asked for at registration (6.4.7, table 6.13): 0 off, 1-7 = 1:2-1:128
+	uint16_t awake_ms;		// T_Awake, 0 = default
 } t3_cfg_t;
 
 typedef enum {
@@ -246,6 +249,11 @@ typedef struct {
 	uint32_t massreg_at, massreg_end;
 	uint32_t massregs;	// applicable MassReg broadcasts taken
 	uint32_t moves;		// C_MOVE taken
+	// Power save (6.4.7): the cycle and wake frame the TSCC gave at registration (ps_offset 0: none)
+	uint8_t ps_rq_sent, ps_rq, ps_offset;
+	bool asleep;
+	uint32_t awake_until, csc_ms, ps_tick_ms;
+	uint32_t sleeps;	// times the radio went to sleep
 	uint32_t cleared_ms;	// when the last call was cleared (T3_REGRANT_MS)
 	t3_call_t cleared;
 
@@ -360,6 +368,8 @@ void t3_ms_end_call(t3_ms_t *ms, uint32_t now);
 bool t3_ms_deregister(t3_ms_t *ms, uint32_t now);
 // May the user talk on the payload channel now (the call is ours or a group call, PTT not disabled)?
 bool t3_ms_can_talk(const t3_ms_t *ms);
+// Power save: the receiver may sleep now (t3_ms_poll decides; the radio wakes it the moment this goes false)
+bool t3_ms_asleep(const t3_ms_t *ms);
 const char *t3_res_name(t3_res_t r);
 
 // Is a talkgroup grant one the radio follows?

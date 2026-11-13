@@ -436,6 +436,25 @@ it names, or, in an MBC (LPCN 0xFFF), the frequencies and color code of the appe
 (`lost`), a mass registration is dropped, and the radio sends nothing there until an Aloha confirms the channel;
 T_Nosig without one starts the hunt (D.1.2). A move to the channel it is on does nothing.
 
+### 7.13 Power save (6.4.7)
+
+With `t3_cfg_t.ps_rq` 1-7 (1:2 to 1:128, table 6.13) the registration request carries PowerSave_RQ in its Service
+Options (bits 3-1). A list registration (TATTSI) doesn't ask: its answer's Response_Info is the list's. Reg_Accepted's
+Response_Info, masked to PowerSave_RQ bits, is PowerSave_Offset, the wake frame; 0 means no power save.
+
+| Rule | Detail |
+|---|---|
+| Wake frame | 480 ms. PS_Counter = Common_Slot_Counter / 4. The radio's frame: PS_Counter masked to PowerSave_RQ bits equals PowerSave_Offset |
+| Counter | The CSC of the last C_SYS_Parms heard, carried on one step per 120 ms |
+| Early | The radio wakes two CSC steps (240 ms) before its frame, so the receiver has synchronized |
+| Asleep | Camped, confirmed, registered, no access, nothing queued, outside the wake frame, past T_Awake |
+| T_Awake | 2 s (`awake_ms`): after registering, any access, traffic for the radio (AHOY, acknowledgement) and a call's end |
+| T_Nosig | Counts only time awake |
+| MassReg | A due mass registration wakes the radio |
+
+`t3_ms_asleep` is the engine's decision. Switching the receiver off with it needs each board's `rx_sleep` to work on a
+DMR channel; today it works on FM only (section 10).
+
 ## 8. Timers and constants
 
 | Name | Value | Standard range (Annex A) |
@@ -496,7 +515,8 @@ on its voice, and never camps on another system or on a control channel that isn
 | The radio challenging the TSCC (C_ACVIT) | later |
 | Stun and revive with authentication, kill (6.4.9.2, 6.4.10) | authentication |
 | A stun kept across a restart of the radio | trunked systems in the codeplug |
-| Multi-item and duplex packet data, data to a gateway, adjacent sites, power save | later |
+| Multi-item and duplex packet data, data to a gateway, adjacent sites | later |
+| Power save: the receiver off while asleep (boards' `rx_sleep` on DMR channels) | later |
 
 ## 11. On the radio
 

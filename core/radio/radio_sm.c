@@ -2669,6 +2669,10 @@ static void t3_publish(radio_sm_t *sm)
 	v->auths = m->auths;
 	v->massregs = m->massregs;
 	v->moves = m->moves;
+	v->ps_rq = m->ps_rq;
+	v->ps_offset = m->ps_offset;
+	v->asleep = m->asleep;
+	v->sleeps = m->sleeps;
 #if CONFIG_DMR_DATA_CORE && CONFIG_DMR_TRUNK_TX
 	v->pd_wait = data_tx.t3_wait;
 #endif

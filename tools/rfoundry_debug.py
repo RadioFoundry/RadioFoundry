@@ -99,7 +99,7 @@ IDDB = 0x1F                         # the DMR ID database: format, records, an I
 CHIP_REG = 0x20                     # an RF chip or SoC register read or written (docs/spec/debuglink.md 3.24)
 T3 = 0x22                           # a Tier III trunked system: stage, select, leave (docs/spec/debuglink.md 3.26)
 T3_RESET, T3_SYSTEM, T3_CTRL, T3_CHAN, T3_TG, T3_SITE, T3_PLAN, T3_START, T3_STOP, T3_DEREG, T3_END, \
-    T3_STATUS, T3_SDATA, T3_AUTH = range(1, 15)
+    T3_STATUS, T3_SDATA, T3_AUTH, T3_PS = range(1, 16)
 T3_UDTF = {"binary": 0, "address": 1, "bcd": 2, "iso7": 3, "iso8": 4, "nmea": 5, "ip": 6, "utf16": 7}
 T3_TG_LISTEN, T3_TG_TALK, T3_TG_BROADCAST = 1, 2, 4
 T3_PAR = {"a": 1, "b": 2}
@@ -669,6 +669,10 @@ class DebugLink:
         if len(key) != 16:
             raise DebugLinkError("t3 auth: K is 16 bytes")
         self.t3_op(T3_AUTH, bytes(key) + struct.pack("<I", psn & 0xFFFFFF))
+
+    def t3_power_save(self, rq, awake_ms=0):
+        """Power save asked for at registration: PowerSave_RQ 0 (off) to 7 (1:128), T_Awake in ms (0: default)."""
+        self.t3_op(T3_PS, struct.pack("<BH", rq, awake_ms))
 
     def t3_site(self, site):
         self.t3_op(T3_SITE, struct.pack("<H", site))

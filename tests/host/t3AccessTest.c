@@ -1111,6 +1111,60 @@ static void test_move(void)
 	      tuned.chan.rx_hz);
 }
 
+// Power save (6.4.7): PowerSave_RQ goes in the registration; the PowerSave_Offset of Reg_Accepted names the wake
+// frame. After T_Awake the radio sleeps outside its frames (two CSC steps early); traffic for it wakes it
+static void test_power_save(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	cfg.ps_rq = 2;		// 1:4
+	camp(&ms);
+	for (int i = 0; i < 10 && nsent == 0; i++) {
+		frame(&ms);
+	}
+	CHECK(nsent == 1 && sent[0].u.rand.kind == T3_SK_REGISTRATION && ((sent[0].u.rand.options >> 1) & 7u) == 2u,
+	      "PowerSave_RQ 2 asked, options %02x", sent[0].u.rand.options);
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_REG_ACCEPTED, OWN, T3_ID_REGI);
+	a.u.ack.info = 2;
+	rx(&ms, 1, &a);
+	CHECK(ms.reg == T3_REG_OK && ms.ps_rq == 2 && ms.ps_offset == 2, "wake frame 2 of 4");
+	t3_sysparms_t sp = { true, T3_MODEL_LARGE, (uint16_t)(t3_syscode_14(ours) & 0xFFF), true, 0 };
+	t3_ms_slc(&ms, T, t3_sysparms_build(&sp));
+	uint32_t t0 = T;
+	CHECK(!ms.asleep, "awake right after registering");
+	frames(&ms, 40);	// T_Awake (2 s) runs out
+	int wrong = 0, asleep = 0;
+	for (int i = 0; i < 64; i++) {
+		frame(&ms);
+		uint32_t step = ((T - t0) / 120u) & 511u;
+		bool awake = ((step >> 2) & 3u) == 2u || ((step & 3u) >= 2u && (((step >> 2) + 1u) & 3u) == 2u);
+		wrong += ms.asleep == awake;
+		asleep += ms.asleep;
+	}
+	CHECK(wrong == 0 && asleep > 30 && ms.sleeps >= 2, "asleep outside the wake frame: %d wrong, %d asleep", wrong,
+	      asleep);
+	CHECK(ms.state == T3_CAMPED, "T_Nosig counts only awake time");
+	// An AHOY to the radio wakes it for T_Awake
+	t3_csbk_t h = ahoy(T3_SK_IND_VOICE, false, OWN, 1234u);
+	rx(&ms, 1, &h);
+	frame(&ms);
+	CHECK(!ms.asleep, "woken by traffic");
+
+	// Offset 0: registered, no power save
+	setup(T3_OPT_PRIVATE, true);
+	cfg.ps_rq = 3;
+	nsent = 0;
+	camp(&ms);
+	for (int i = 0; i < 10 && nsent == 0; i++) {
+		frame(&ms);
+	}
+	a.u.ack.info = 0;
+	rx(&ms, 1, &a);
+	t3_ms_slc(&ms, T, t3_sysparms_build(&sp));
+	frames(&ms, 100);
+	CHECK(ms.reg == T3_REG_OK && ms.ps_offset == 0 && ms.sleeps == 0, "offset 0: never asleep");
+}
+
 static void test_status(void)
 {
 	t3_ms_t ms;
@@ -1456,6 +1510,7 @@ int main(void)
 	test_auth();
 	test_mass_reg();
 	test_move();
+	test_power_save();
 	test_status();
 	test_sdata();
 	test_pdata();
