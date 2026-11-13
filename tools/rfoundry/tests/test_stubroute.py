@@ -59,6 +59,25 @@ class Route(unittest.TestCase):
             self.assertEqual(len(data), 30000)
             self.assertIn("reset", argv)
 
+    def test_a_stub_left_running_is_attached(self):
+        # an earlier run stopped with the stub running: RadioFoundry's debug link doesn't answer, the stub does
+        class DumpError(Exception):
+            pass
+        calls, real = self.fake.calls, self.fake.main
+
+        def main(argv):
+            if "--rfoundry-enter" in argv:
+                calls.append((argv, None))
+                raise DumpError("no answer from RadioFoundry's debug link")
+            return real(argv)
+        self.fake.main = main
+        bid = stubroute.BOARDS[0]
+        rc, log = run_cli(["flash", self.image(), "--board", bid, "--route", "stub", "--port", "/dev/x", "--yes"])
+        self.assertEqual(rc, 0, log)
+        self.assertEqual([c[0][1] for c in calls], ["--rfoundry-enter", "--attach"])
+        self.assertEqual(len(calls[1][1]), 30000)
+        self.assertIn("left running", log)
+
     def test_refusals(self):
         rc, log = run_cli(["flash", self.image(), "--board", stubroute.BOARDS[0], "--route", "stub", "--simulate", "blank"])
         self.assertNotEqual(rc, 0)

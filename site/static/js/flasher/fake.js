@@ -12,8 +12,8 @@ import { concat, crc32, equal, fromHex, le32, sha256, u16be, u32le } from "./byt
 import { frame, parseFrames } from "./link.js";
 import { STUB_MAGIC } from "./stub.js";
 import { APP_BASE, F4_MAGIC, f405Sectors } from "./f4stub.js";
-import { moveCode, moveBranches, putBl } from "./codecmap.js";
-import { place } from "./stockfw.js";
+import { moveCode, moveBranches, putBl, relocate } from "./codecmap.js";
+import { carve, descriptor, forms, place, placedWindows } from "./stockfw.js";
 
 const FLASH_BASE = 0x08000000, FLASH_SIZE = 0x100000;
 const sum8 = (b) => b.reduce((a, x) => (a + x) & 0xFF, 0);
@@ -37,10 +37,12 @@ export function randomBytes(r, n) {
 }
 
 // A synthetic stock file shaped like a real profile, the board and profiles made to accept it. Returns
-// {fb, board, key, stock, codecSegments, stockSegments}: fb is a copy of flash-boards.json whose board and profile
-// match the key; codecSegments: the codec as RadioFoundry's merge places it (the profile's placement), stockSegments: where
-// the stock firmware keeps it. Where the profile moves the code, the synthetic codec gets what stockfw.py's
-// build_synthetic_stock plants (a self reference, an island's call into the code) and a codec map for them.
+// {fb, board, key, stock, codecSegments, stockSegments, formerSegments}: fb is a copy of flash-boards.json whose board and
+// profile match the key; codecSegments: the codec as RadioFoundry's merge places it (the profile's placement), stockSegments:
+// where the stock firmware keeps it, formerSegments: where an earlier release placed it (the profile's first "former"
+// layout, with its descriptor), or null. Where the profile moves the code, the synthetic codec gets what stockfw.py's
+// build_synthetic_stock plants (a self reference, an island's call into the code) and a codec map for them, and every
+// layout's "placed" CRC-32s (and SHA-256s, where the real profile has them) are this codec's.
 const SYN_SELF_REF = 0x40, SYN_BL = 0x110;
 export async function simulation(fbReal, boardId, seed = 1701) {
 	const fb = structuredClone(fbReal);
@@ -84,20 +86,36 @@ export async function simulation(fbReal, boardId, seed = 1701) {
 			objects: [], groups: [], outside_refs: [],
 			table_windows: [{ id: "tables", flash: tabAddr, run: tabAddr, len: tables.length, min_start: tabAddr, min_len: cut.length,
 				min_sha256: await sha256(cut) }] };
-		const mc = await moveCode(code, prof.map, pl.code);
-		const mt = moveBranches(tabAddr, tables.slice(0, pl.tables_len ?? tables.length), prof.map, pl.code);
-		prof.placed = { code: [crc32(mc), await sha256(mc)], tables: [crc32(mt), await sha256(mt)] };
+		// every layout's bytes, each window moved as one block from the stock windows (relocate gives what place does)
+		const placed = async (form) => {
+			const wins = carve(prof, form);
+			const out = relocate(prof.map, wins, wins.map(([, n], i) => stockSegments[i][1].slice(0, n)), wins.map(([a]) => a), placedWindows(prof, form).map(([a]) => a));
+			const pd = form.placed, sha = async (d, had) => (had ? sha256(d) : null);
+			const q = { code: [crc32(out[0]), await sha(out[0], pd.code[1])], tables: [crc32(out[1]), await sha(out[1], pd.tables[1])] };
+			if (out.length > 2) q.extra = out.slice(2).map((d) => crc32(d));
+			return q;
+		};
+		const [cur, ...former] = forms(prof);
+		prof.former = await Promise.all(former.map(async ({ current, ...f }) => ({ ...f, placed: await placed(f) })));
+		prof.placed = await placed(cur);
 	}
 	fb.profiles[sha] = prof;
 	fb.known_files[sha] = real.version + " (simulated)";
 	const codecSegments = await place(prof, stockSegments, fb);
-	return { fb, board, key, stock, codecSegments, stockSegments, profile: prof };
+	let formerSegments = null;
+	if (prof.former?.length) {
+		const f = forms(prof)[1], wins = carve(prof, f);
+		const out = relocate(prof.map, wins, wins.map(([, n], i) => stockSegments[i][1].slice(0, n)), wins.map(([a]) => a), placedWindows(prof, f).map(([a]) => a));
+		formerSegments = [...placedWindows(prof, f).map(([a], i) => [a, out[i]]), [fb.descriptor.addr, descriptor(prof, fb, f)]];
+	}
+	return { fb, board, key, stock, codecSegments, stockSegments, formerSegments, profile: prof };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
 
 export class FakeRadio {
-	// state: "stock" (stock firmware: codec in place, no serial port), "rfoundry", "rfoundry-nocodec", "bootloader".
+	// state: "stock" (stock firmware: codec in place, no serial port), "rfoundry", "rfoundry-nocodec", "bootloader",
+	// "rfoundry-former" (RadioFoundry with its codec where an earlier release placed it: sim.formerSegments).
 	// stubEntry: RadioFoundry built with CONFIG_STUB_ENTRY; adopt: the stub keeps RadioFoundry's USB device (else the port goes away
 	// and serialStream() gives the new one); cutAfter: stub programs before the "cable" is pulled. stubVersion: the
 	// STM32F4 stub's protocol (5: SREAD, the security registers; 4: CONFIG and the record echo; 2 and 3: the DM-1701's
@@ -121,14 +139,15 @@ export class FakeRadio {
 		const r = rng(380);
 		for (let i = 0; i < FLASH_SIZE; i += 4096) this.flash.set(randomBytes(r, 64), i);	// "stock code"
 		// stock keeps its codec in its stock place; RadioFoundry (with its codec) where the merge put it
-		for (const [a, d] of state === "stock" || state === "bootloader" ? sim.stockSegments : sim.codecSegments) this.flash.set(d, a - FLASH_BASE);
+		const placed = state === "stock" || state === "bootloader" ? sim.stockSegments : state === "rfoundry-former" ? sim.formerSegments : sim.codecSegments;
+		for (const [a, d] of placed) this.flash.set(d, a - FLASH_BASE);
 		this.spi = new Uint8Array(spiSize).fill(0xFF);
 		this.spi.set(randomBytes(r, 0x40000), 0);		// a stock codeplug where RadioFoundry's settings go
 		this.spi.set(randomBytes(r, 0x5D400), 0x60000);		// stock resources
 		this.flash.set(this.key, 0x2340);		// the bootloader holds its key (anywhere: found by its hash)
 		this.security = randomBytes(r, 0x300);
 		this.uid = randomBytes(r, 12);
-		this.running = state === "bootloader" ? "stock" : state;
+		this.running = state === "bootloader" ? "stock" : state === "rfoundry-former" ? "rfoundry" : state;
 		this.mode = state === "bootloader" ? "bootloader" : "normal";
 		this.git = "5f034440";
 		this.stubEntry = stubEntry;
@@ -173,13 +192,13 @@ export class FakeRadio {
 
 	enterBootloader() { this.mode = "bootloader"; this.resetDfu(); }
 
+	// What RadioFoundry reports: the codec id of the layout the flash holds intact (an earlier release's id for
+	// sim.formerSegments), else "absent"
 	codecReport() {
 		if (this.running === "stock") return null;
-		const ok = this.sim.codecSegments.every(([a, d]) => {
-			const f = this.flash.subarray(a - FLASH_BASE, a - FLASH_BASE + d.length);
-			return crc32(f) === crc32(d);
-		});
-		return ok ? this.board.codec.id : "absent";
+		const holds = (segs) => !!segs && segs.every(([a, d]) => crc32(this.flash.subarray(a - FLASH_BASE, a - FLASH_BASE + d.length)) === crc32(d));
+		if (holds(this.sim.codecSegments)) return this.board.codec.id;
+		return holds(this.sim.formerSegments) ? this.sim.profile.former[0].codec_profile : "absent";
 	}
 
 	// ---- the bootloader, as a dfu.js transport

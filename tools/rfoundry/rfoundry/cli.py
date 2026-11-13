@@ -355,11 +355,16 @@ def get_key(args, board, stock, sim_key=None):
 
 def get_saved_codec(args, board, probe):
     """The codec read back from the radio, or the copy saved from it earlier (codecsave.py). A radio running RadioFoundry with
-    this codec hands over a copy: before every update where an update erases it, once on the other boards. Else the
-    copy an earlier run saved (an update that stopped halfway, a radio back on stock firmware or in its bootloader)."""
+    this codec hands over a copy: before every update where an update erases it, once on the other boards. A radio
+    whose codec is where an earlier release put it (board.codec_former) hands one over before anything is erased: this
+    release's application may use that flash, and the copy is what the codec is written from where it goes now. Else
+    the copy an earlier run saved (an update that stopped halfway, a radio back on stock firmware or in its
+    bootloader). The copy is never deleted."""
     saved = codecsave.load(board)
-    has_codec = bool(probe) and probe.get("codec") == board.codec.id
-    if has_codec and not args.no_probe and (not board.keep_codec_supported or saved is None):
+    codec = probe.get("codec") if probe else None
+    current = codec == board.codec.id
+    former = codec is not None and codec in board.codec_former
+    if (current or former) and not args.no_probe and (not board.keep_codec_supported or saved is None):
         say("codec    reading it back from the radio over the debug link (a read, nothing is written to the radio); "
             "this can take a few minutes")
         progress, finish = _read_progress()
@@ -370,7 +375,9 @@ def get_saved_codec(args, board, probe):
         if got:
             say("codec    read back from the radio (debug link) and checked; saved in %s" % codecsave.save(board, got[1]))
             return got
-    if saved and not (has_codec and board.keep_codec_supported):
+        if former:
+            warn("the codec could not be read back from the radio (codec=%s)" % codec)
+    if saved and not (current and board.keep_codec_supported):
         say("codec    the copy saved from this radio earlier, checked: %s" % codecsave.path(board))
     return saved
 
@@ -422,6 +429,20 @@ def decide_codec(board, manifest, requested, have_stock, probe, stock_installed,
         if codec == profile:
             return Decision(planmod.KEEP, "RadioFoundry on the radio checked its codec (%s: where it is and every window's CRC) "
                             "and the codec sectors are left alone" % codec)
+        if codec in board.codec_former and requested != planmod.KEEP:
+            # the codec is where an earlier release put it, partly in flash this release's application uses: it moves.
+            # The copy was read back and saved before this (get_saved_codec), so an install that stops at any step
+            # is finished by running it again
+            moved = ("the radio's codec is where earlier releases kept it (%s), in flash this release's firmware "
+                     "uses, so it moves to where this release keeps it" % codec)
+            if have_saved:
+                return Decision(planmod.MERGE, moved + ": written from the copy read back from the radio",
+                                source="saved")
+            if have_stock:
+                return Decision(planmod.MERGE, moved + ": written from your stock file")
+            raise UsageError(moved + ", and it could not be read back from the radio: nothing was written. Start the "
+                             "radio with RadioFoundry and connect it (rfoundry reads the codec back and saves a copy), "
+                             "or %s" % merge_hint)
         if codec is None:
             what = "firmware too old to report its codec"
         else:
@@ -878,15 +899,50 @@ def _progress(unit):
     return progress
 
 
+def stub_codec_move(args, board, image):
+    """The image the stub route writes: a plain build as it is, unless the radio's codec is where an earlier release put
+    it (board.codec_former), in flash this build uses. Then the codec is read back and saved first (get_saved_codec),
+    else taken from --stock, and merged into the image, so the stub writes the codec where it goes now in the same
+    install (the stub erases sector 3 first: a radio that stops halfway starts in its bootloader, and the bootloader
+    route finishes the move from the saved copy). Nothing to move and no source: refused before anything is written."""
+    if not board.codec_former:
+        return image, False
+    probe = get_probe(args)
+    codec = probe.get("codec") if probe else None
+    if codec not in board.codec_former:
+        return image, False
+    saved = get_saved_codec(args, board, probe)
+    stock = load_stock(args)
+    d = decide_codec(board, {}, args.codec, stock is not None, probe, None, None, have_saved=saved is not None)
+    say("codec    %s: %s" % (d.mode.upper(), d.why))
+    if d.mode != planmod.MERGE:
+        if d.risk:
+            warn(d.risk)
+        return image, False
+    if d.source == "saved":
+        prof, segs = saved[0], codecsave.segments(*saved)
+    else:
+        key = get_key(args, board, stock) if stockfw.is_container(stock) else None
+        prof, csegs = stock_codec(stock, key, board.id)
+        segs = stockfw.codec_segments(prof, csegs)
+    try:
+        return stockfw.merge(image, prof, segs), True
+    except stockfw.StockError as e:
+        raise UsageError(str(e))
+
+
 def cmd_flash_stub(args, board, image, merged):
     """A radio with a flash stub route (stubroute.py): RadioFoundry must be running with stub entry."""
     if board.id not in stubroute.BOARDS:
         raise UsageError("the %s has no flash stub; use the bootloader route" % board.name)
     if args.simulate:
         raise UsageError("--simulate does not cover the stub route")
+    moving = False
+    if not merged:
+        image, moving = stub_codec_move(args, board, image)
     if merged:
         warn("the codec in this image is ignored: the stub route keeps the radio's own codec")
-    if args.codec == "merge" or (args.stock and args.codec == "auto"):
+    if not moving and (args.codec == "merge" or (args.stock and args.codec == "auto")):
         warn("the stub route never writes a codec; --stock is ignored (use the bootloader route to write one)")
     say("route    stub: the radio must be ON and run RadioFoundry built with CONFIG_STUB_ENTRY=y")
     if args.dry_run:
@@ -898,6 +954,9 @@ def cmd_flash_stub(args, board, image, merged):
         rc = stubroute.run(board, image, args.port, log=say)
     except stubroute.StubRouteError as e:
         raise UsageError(str(e))
+    if rc and moving:
+        say("note     if the radio now starts in its bootloader, run the same install through the bootloader route "
+            "(no --route): the codec copy saved on this computer finishes the move")
     return rc
 
 

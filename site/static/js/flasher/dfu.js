@@ -82,7 +82,8 @@ export class Dfu {
 		await this.waitDone(what);
 	}
 
-	// Erase the plan's sectors in the bootloader's order, write each, exit (the radio restarts). programMode: this
+	// Erase the plan's sectors, write each, exit (the radio restarts). The application's first sector is erased first and
+	// written last (plan.js writeOrder): a run cut short leaves no application to start. programMode: this
 	// bootloader session already took 91 01 (a backup read its SPI flash, origbackup.js); the bootloader takes 91 01 only
 	// once, so the write starts at 91 31
 	async run(plan, key, progress = () => {}, { programMode = false } = {}) {
@@ -93,13 +94,13 @@ export class Dfu {
 		await this.waitIdle();
 		if (!programMode) await this.vendor(0x91, 0x01);
 		await this.vendor(0x91, 0x31);
-		for (const s of plan.erase) {
+		for (const s of plan.eraseOrder) {
 			this.log(`erase sector ${s.index} at ${hex(s.addr)}`);
 			await this.command(0x41, s.addr, `erase ${hex(s.addr)}`);
 		}
 		const total = plan.totalBlocks;
 		let done = 0;
-		for (const st of plan.writes) {
+		for (const st of plan.writeOrder) {
 			const addr = st.sector.addr;
 			this.log(`write sector ${st.sector.index}: ${st.blocks.length} blocks`);
 			await this.command(0x21, addr, `set address ${hex(addr)}`);

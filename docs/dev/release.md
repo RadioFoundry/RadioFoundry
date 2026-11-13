@@ -128,10 +128,11 @@ hold the codec. Whether an update can leave the codec alone (keep) depends on th
 
 The exact map of a radio is in its hardware spec (`hardware-<id>.md`) and in `tools/rfoundry/rfoundry/registry.json`.
 
-**What an interrupted update leaves.** All erases come first, then the writes in address order, so sector 3 (the vector
-table) is the first one written back: an update cut off before that leaves the bootloader in DFU. Cut off later, the
-radio may boot half an application: a crash, never a brick. Enter the bootloader by hand (PTT and SK1 at power on)
-and flash again.
+**What an interrupted update leaves.** All erases come first, sector 3 (the vector table) first, then the writes,
+sector 3 last (`Plan.write_order` in rfoundry, `writeOrder` in the web flasher). An update cut off anywhere before
+that last sector leaves sector 3 blank, so the bootloader stays in DFU and the same install, run again, finishes it.
+Cut off while sector 3 itself is written, the radio may boot half an application: a crash, never a brick. Enter the
+bootloader by hand (the board's key combination at power on) and flash again.
 
 ## Releases from before the codec moved
 
@@ -149,7 +150,10 @@ over the bootloader (the radio is at RDP level 1), so rfoundry needs another way
 1. **RadioFoundry is running.** Before the user switches the radio into its bootloader, rfoundry asks over the debug link
    (`rfoundry probe`, or automatically at the start of `rfoundry flash`). VERSION's `codec=` is the firmware's own check,
    the same one that gates DMR voice (on an STM32F4 radio: the descriptor, the signature word and the CRC-32 of both
-   windows at their placed addresses). If it reports the board's codec profile (ending in `-s11`), keep is safe.
+   windows at their placed addresses). If it reports the board's codec profile (`codec.id` in the registry), keep is safe. If it reports
+   the id of an earlier layout (the profiles' `former` entries, the registry's `codec_former`), the codec sits where this
+   release's image goes: rfoundry reads it back over the debug link, checks it and merges it in the new layout
+   ([codec-placement.md](../spec/codec-placement.md), "Moving to a new layout").
    The answer is remembered for 30 minutes (rfoundry's settings directory), because the debug link is gone once the
    radio is in its bootloader. A build from before the codec moved reports the profile without `-s11`: its codec code is in
    sectors the update overwrites, so keep is not safe.
@@ -162,7 +166,7 @@ over the bootloader (the radio is at RDP level 1), so rfoundry needs another way
    rfoundry and the web flasher (`site/static/js/flasher/decide.js`) apply the same rules.
 
 **The saved copy.** Whenever rfoundry or the web flasher sees a radio running RadioFoundry, it reads the codec over the debug
-link (READ_MEM, in the stock or the placed layout), checks it against the profile's hashes and saves it (rfoundry's
+link (READ_MEM, in the stock, the placed or an earlier placed layout), checks it against the profile's hashes and saves it (rfoundry's
 config directory, or the browser). It uses that copy instead of the stock file whenever the radio's codec can't be
 kept or checked: no answer over the debug link, the radio back on stock firmware, or no codec reported
 (`rfoundry/codecsave.py`, `site/static/js/flasher/codecsave.js`). There is no read-back during the update itself, so

@@ -46,7 +46,12 @@ MD9600_KEY_SHA256 = "c3d665b297651b52310ec098e87440b147136241359c1154d474e517b04
 # supported; boards.py requires one id per board, and the site and release manifests compare it
 DM1701_CODEC = "dm1701-v0206-csv-s11"
 MDUV380_CODEC = "mduv380-1926-s11"
-MD380_CODEC = "md380-d2032-s11"
+# A board whose layout changed reports a new id, so the flashing tools see that a radio still holds the codec where an
+# earlier release put it ("former" in the profiles: they read it back from there and move it)
+MD380_CODEC = "md380-d2032-s11v2"
+MD380_CODEC_S11 = "md380-d2032-s11"	# the MD-380 layout before the application took sectors 8-10
+MD9600_CODEC = "md9600-s11v2"
+MD9600_CODEC_S11 = "md9600-s11"		# the MD-9600 layout before the application took sector 9
 # The count word of the single-segment container form (the MD-380 D002.032 file: one segment, count 0xFFFFFFFF)
 SINGLE_SEGMENT = 0xFFFFFFFF
 
@@ -62,6 +67,10 @@ SINGLE_SEGMENT = 0xFFFFFFFF
 # descriptor's tag; "placed": the CRC-32 and SHA-256 of the code and tables as placed (the code's self references and
 # the islands' calls into it rewritten for the new address, and with "tables" every reference into the tables too),
 # which the descriptor carries and the firmware checks, and the CRC-32 of each "extra" window (written unchanged).
+# A placement with "extra" moves every window as its own block (codecmap.relocate): "tables" and each "extra" address
+# say where; its "placed" SHA-256s are None, and a copy is checked by taking it back to the stock windows' SHA-256s
+# (unplace). "former": the placements earlier releases wrote, each with the codec id they reported, so a radio that
+# still holds one is recognized and its codec read back from there and moved (docs/spec/codec-placement.md, "Layouts").
 PROFILES = {
     "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d": {
         "name": "DM-1701(CSV)-V02.06.bin",
@@ -497,12 +506,18 @@ PROFILES = {
             (0x080F9E74, 0x14, "0af022f016edcb28a3b29d60abdf42846456f22b8b4579a14b2069c7f6f31017"),
             (0x080FD490, 0x20, "b6bc2f43d9a7779d7a8ac938db131b049f72620bc6d288db19bd9ecc15a8c812"),
         ],
-        # The code goes to the start of sector 11, below the small windows there (boards/md380/memory.ld,
-        # boards/md380/vocoder_md380.c); the tables stay in sector 8, so sectors 3-7 are the application's
-        "placement": {"code": 0x080E0000, "tag": 0x2032},
-        "placed": {"code": (0x067E6A77, "d5c68973b33d5709b6d1df719b80841b77f1835d3bef5b61c6c682147da6bebc"),
-                   "tables": (0x2A5C9EE1, "8c704a9606ec19fbe4af275de4fbd1ded64e2ab644e0115ec34bff86cb3d21a9"),
+        # Every window moves into sector 11 as one block, each at its own address modulo 16: the code, the tables, the
+        # small ones (boards/md380/memory.ld, boards/md380/vocoder_md380.c), so sectors 3-10 are the application's
+        "placement": {"code": 0x080E0004, "tables": 0x080F0894, "tag": 0x2032,
+                      "extra": [0x080FB898, 0x080FB8C8, 0x080FB8E4, 0x080FB900]},
+        "placed": {"code": (0xBAA2C858, None), "tables": (0x04DF1EE4, None),
                    "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x2032},
+            "placed": {"code": (0x067E6A77, "d5c68973b33d5709b6d1df719b80841b77f1835d3bef5b61c6c682147da6bebc"),
+                       "tables": (0x2A5C9EE1, "8c704a9606ec19fbe4af275de4fbd1ded64e2ab644e0115ec34bff86cb3d21a9"),
+                       "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]}}],
     },
     # TYT MD-UV380 / MD-UV390 19.26, the four builds (codec-mduv380.md). One codec, placed as the DM-1701's: the tables
     # at their stock address cut to the codec's data, the code right after them in sector 11, word aligned
@@ -1032,7 +1047,7 @@ PROFILES = {
                    "tables": (0x64B8EF5C, "c3e4eb53e2dc7ea257c66d731779362678064df29fa17050b30e120daf56e6ce")},
     },
     # TYT MD-380 D35.14 and MD-390 S35.14: the UV380 family's codec (its entry offsets), with three table windows. The
-    # main one is in sector 9; the code goes right after it, the two small ones stay at their address in sector 11
+    # windows move into sector 11 as for D002.032: the code, the main table window, the two small ones
     "ff6c3d79b205391c9c2096f8e4367c514c1e1e4dac7d421ed69077e5b42eaf2f": {
         "name": "TYT-72310-11-MD380-D35.14.bin",
         "version": "D35.14",
@@ -1047,10 +1062,16 @@ PROFILES = {
             (0x080ECC98, 0x87C, "2b71d2df1634ae8d0a9f3dd1623a9f34c3b5ae9b5e4f1298275cec69310fbd94"),
             (0x080F0C14, 0xE, "d75975040dd220ce557972812fd91bf6b58eb360185a7157ba910ce7fae4319d"),
         ],
-        "placement": {"code": 0x080C45D0, "tag": 0x00443514},
-        "placed": {"code": (0x83A0361F, "618da7ae4148b8098718fe7faea599ad021cb7466fcb64abbeccc565aaeee9eb"),
-                   "tables": (0x810CC7B3, "2614009182836cad98a91d4e86206353d06062c2b9bd9034d1e2c537888f8ce0"),
+        "placement": {"code": 0x080E0000, "tables": 0x080F0368, "tag": 0x00443514,
+                      "extra": [0x080FD0D8, 0x080FD954]},
+        "placed": {"code": (0x632E7F32, None), "tables": (0x3F7F60A1, None),
                    "extra": [0xA5F0D272, 0xEFDB66A5]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x080C45D0, "tag": 0x00443514},
+            "placed": {"code": (0x83A0361F, "618da7ae4148b8098718fe7faea599ad021cb7466fcb64abbeccc565aaeee9eb"),
+                       "tables": (0x810CC7B3, "2614009182836cad98a91d4e86206353d06062c2b9bd9034d1e2c537888f8ce0"),
+                       "extra": [0xA5F0D272, 0xEFDB66A5]}}],
     },
     "167e79f18e78d7d31460dc577c4efd0cb881344f5ee44a4c9a30798ead0fb79d": {
         "name": "TYT-72310-11-MD390-S35.14.bin",
@@ -1066,10 +1087,16 @@ PROFILES = {
             (0x080EDDD8, 0x87C, "9758c5e73d747a202de7b7987a6c6080af5e8960cb983b70f7969af971298783"),
             (0x080F1D54, 0xE, "d75975040dd220ce557972812fd91bf6b58eb360185a7157ba910ce7fae4319d"),
         ],
-        "placement": {"code": 0x080C5710, "tag": 0x00533514},
-        "placed": {"code": (0xD953C7A8, "ffc1337565f53176acb2a1f87380d78368846e342c24e9251c674aa11ce96e76"),
-                   "tables": (0x68B2CC40, "8600f3786487d34b56af7540dd0b3c85ae93c4a9303ee9c25954eedc9ec18b4c"),
+        "placement": {"code": 0x080E0004, "tables": 0x080F0378, "tag": 0x00533514,
+                      "extra": [0x080FD168, 0x080FD9E4]},
+        "placed": {"code": (0x446271B6, None), "tables": (0x2DCB2F57, None),
                    "extra": [0xA2B85A33, 0xEFDB66A5]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x080C5710, "tag": 0x00533514},
+            "placed": {"code": (0xD953C7A8, "ffc1337565f53176acb2a1f87380d78368846e342c24e9251c674aa11ce96e76"),
+                       "tables": (0x68B2CC40, "8600f3786487d34b56af7540dd0b3c85ae93c4a9303ee9c25954eedc9ec18b4c"),
+                       "extra": [0xA2B85A33, 0xEFDB66A5]}}],
     },
     "0897e946bb123a5942f1458d3d2be8f759befe769c6aeaad4fe093ad3a40ac01": {
         "name": "TYT-TFT-MD380-D3.32.bin",
@@ -1087,10 +1114,16 @@ PROFILES = {
             (0x080F8F2C, 0x14, "0af022f016edcb28a3b29d60abdf42846456f22b8b4579a14b2069c7f6f31017"),
             (0x080FC61C, 0x20, "b6bc2f43d9a7779d7a8ac938db131b049f72620bc6d288db19bd9ecc15a8c812"),
         ],
-        "placement": {"code": 0x080E0000, "tag": 0x00440332},
-        "placed": {"code": (0x07369C2C, "4f67d05cb97637bfb4853a588b9fafe238a92be0137509701952ac8a1a0b4356"),
-                   "tables": (0x2445FE8F, "9c497a0f098ae62ac0cd8a56c655979e68497070fd2f37e3b73145c4dd031faa"),
+        "placement": {"code": 0x080E000C, "tables": 0x080F0890, "tag": 0x00440332,
+                      "extra": [0x080FB890, 0x080FB8B8, 0x080FB8DC, 0x080FB8FC]},
+        "placed": {"code": (0xCC4C18C5, None), "tables": (0xA0E259E3, None),
                    "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x00440332},
+            "placed": {"code": (0x07369C2C, "4f67d05cb97637bfb4853a588b9fafe238a92be0137509701952ac8a1a0b4356"),
+                       "tables": (0x2445FE8F, "9c497a0f098ae62ac0cd8a56c655979e68497070fd2f37e3b73145c4dd031faa"),
+                       "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]}}],
     },
     "0c954b0fa8426352cf9c99544be4811115f4102fc4ae491269d1cdaef3edd54a": {
         "name": "RETEVIS-Vocoder-RT3-with GPS-S14.04.bin",
@@ -1107,10 +1140,16 @@ PROFILES = {
             (0x080F90A4, 0x868, "48f772d9233e0b6d2e90b2f61b41c2b85af3be607372cd00aa3a94b9481fc2a5"),
             (0x080FCFF0, 0xE, "d75975040dd220ce557972812fd91bf6b58eb360185a7157ba910ce7fae4319d"),
         ],
-        "placement": {"code": 0x0809A8DC, "tag": 0x00531404},
-        "placed": {"code": (0x82FE5C5D, "cfd4a239f3c80f85fd0a52549941ddf37e542429b8925baafef7ad3314577d6b"),
-                   "tables": (0x2445ED1B, "4a91f09555569cd38108503973e93dbfe3c39784ea35d8d2094b090201e112e7"),
+        "placement": {"code": 0x080E0004, "tables": 0x080F0350, "tag": 0x00531404,
+                      "extra": [0x080F964E, 0x080F96A4, 0x080F9F10]},
+        "placed": {"code": (0x8540F233, None), "tables": (0xE60B5532, None),
                    "extra": [0xA28CCD40, 0xB8A4973B, 0xEFDB66A5]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x0809A8DC, "tag": 0x00531404},
+            "placed": {"code": (0x82FE5C5D, "cfd4a239f3c80f85fd0a52549941ddf37e542429b8925baafef7ad3314577d6b"),
+                       "tables": (0x2445ED1B, "4a91f09555569cd38108503973e93dbfe3c39784ea35d8d2094b090201e112e7"),
+                       "extra": [0xA28CCD40, 0xB8A4973B, 0xEFDB66A5]}}],
     },
     "c375de54f172346d3f9aecc73cbfa024e753b482e484765b1a890182cfac157e": {
         "name": "D013.034.bin",
@@ -1127,10 +1166,16 @@ PROFILES = {
             (0x080F81E4, 0x868, "3addb679e4dcd0167a6873286d7dab19ef563e3f9334c9f7d5ddfe17f5969c09"),
             (0x080FC130, 0xE, "d75975040dd220ce557972812fd91bf6b58eb360185a7157ba910ce7fae4319d"),
         ],
-        "placement": {"code": 0x08099874, "tag": 0x00441334},
-        "placed": {"code": (0x2E0C4561, "9e1ae53cce83ff2e1bef7caf0aed2cc7d30d015ba7636f757a94930cc3d44465"),
-                   "tables": (0x15B8E25A, "b082aabd27e9ae978d4832a71ed32a8a23c9b0531ca917a394db2881ec3cf89c"),
+        "placement": {"code": 0x080E0000, "tables": 0x080F0360, "tag": 0x00441334,
+                      "extra": [0x080F943E, 0x080F9494, 0x080F9D00]},
+        "placed": {"code": (0x2BFDA5D3, None), "tables": (0x9041E916, None),
                    "extra": [0xA28CCD40, 0x117A8303, 0xEFDB66A5]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x08099874, "tag": 0x00441334},
+            "placed": {"code": (0x2E0C4561, "9e1ae53cce83ff2e1bef7caf0aed2cc7d30d015ba7636f757a94930cc3d44465"),
+                       "tables": (0x15B8E25A, "b082aabd27e9ae978d4832a71ed32a8a23c9b0531ca917a394db2881ec3cf89c"),
+                       "extra": [0xA28CCD40, 0x117A8303, 0xEFDB66A5]}}],
     },
     "db479b26c0c6aed81e9a3d2f7b2bf7476dfccc401c7bdd8976b321b31b967f42": {
         "name": "TYT-Vocoder-MD380-D13.14.bin",
@@ -1147,10 +1192,16 @@ PROFILES = {
             (0x080F7E1C, 0x868, "3b331ca3701a46ec2663d579b90e6b04dc975d24f4eb175478c3989aac56b356"),
             (0x080FBD50, 0xE, "d75975040dd220ce557972812fd91bf6b58eb360185a7157ba910ce7fae4319d"),
         ],
-        "placement": {"code": 0x080998F4, "tag": 0x00441314},
-        "placed": {"code": (0x57BE4B8C, "4f015852398e306af4c97f0fecb85654f0390cb38552da3bbaac0238b8d3ce90"),
-                   "tables": (0xF78E94DE, "8cb2128d970d1172364510efb5af1161dfd7fa8700163e5e8da89056b92c55d2"),
+        "placement": {"code": 0x080E0004, "tables": 0x080F0370, "tag": 0x00441314,
+                      "extra": [0x080F985E, 0x080F98AC, 0x080FA120]},
+        "placed": {"code": (0x76E8A208, None), "tables": (0x093CF69C, None),
                    "extra": [0xA28CCD40, 0x42C39178, 0xEFDB66A5]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x080998F4, "tag": 0x00441314},
+            "placed": {"code": (0x57BE4B8C, "4f015852398e306af4c97f0fecb85654f0390cb38552da3bbaac0238b8d3ce90"),
+                       "tables": (0xF78E94DE, "8cb2128d970d1172364510efb5af1161dfd7fa8700163e5e8da89056b92c55d2"),
+                       "extra": [0xA28CCD40, 0x42C39178, 0xEFDB66A5]}}],
     },
     "b92052ea958b15687992cbf796f00a3dbcb33113426def550c32c7dd4e20cd95": {
         "name": "TYT-Vocoder-MD380-D13.20.bin",
@@ -1167,10 +1218,16 @@ PROFILES = {
             (0x080F7E9C, 0x868, "29314537dba2cc2c0ae1583a451e0510705f85504a94213ccca385020343c95e"),
             (0x080FBDD0, 0xE, "d75975040dd220ce557972812fd91bf6b58eb360185a7157ba910ce7fae4319d"),
         ],
-        "placement": {"code": 0x08099974, "tag": 0x00441320},
-        "placed": {"code": (0x8AC4FAF5, "6e52bd232df80ccc418e0051b9256e009914ab0e73c5cfd3dbbab73e49eb60a0"),
-                   "tables": (0xEC93E5BC, "5b95262d987d96eef10422b1acedf25e7c400d297cafa7b3f9694209838d0188"),
+        "placement": {"code": 0x080E0008, "tables": 0x080F0360, "tag": 0x00441320,
+                      "extra": [0x080F984E, 0x080F989C, 0x080FA110]},
+        "placed": {"code": (0x414EB952, None), "tables": (0x47BFD116, None),
                    "extra": [0xA28CCD40, 0x6DE76FF7, 0xEFDB66A5]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x08099974, "tag": 0x00441320},
+            "placed": {"code": (0x8AC4FAF5, "6e52bd232df80ccc418e0051b9256e009914ab0e73c5cfd3dbbab73e49eb60a0"),
+                       "tables": (0xEC93E5BC, "5b95262d987d96eef10422b1acedf25e7c400d297cafa7b3f9694209838d0188"),
+                       "extra": [0xA28CCD40, 0x6DE76FF7, 0xEFDB66A5]}}],
     },
     "c0053729cfe3155ae19089dd1accaa3a63e2382d6c8d8a50304c548c9dc2a311": {
         "name": "D014.004.bin",
@@ -1187,10 +1244,16 @@ PROFILES = {
             (0x080F81E4, 0x868, "3addb679e4dcd0167a6873286d7dab19ef563e3f9334c9f7d5ddfe17f5969c09"),
             (0x080FC130, 0xE, "d75975040dd220ce557972812fd91bf6b58eb360185a7157ba910ce7fae4319d"),
         ],
-        "placement": {"code": 0x08099874, "tag": 0x00441404},
-        "placed": {"code": (0x3337E7B8, "7944e4d1f8003ee02bc2ea0dd2c071355da5cb1a6a8b0aa3d7e46e27f6b5e351"),
-                   "tables": (0x843FB58D, "81e34035eebe7fd9742781f8bc7430f1930f69d82b8ceac3a57c8ef4883680c5"),
+        "placement": {"code": 0x080E0004, "tables": 0x080F0350, "tag": 0x00441404,
+                      "extra": [0x080F942E, 0x080F9484, 0x080F9CF0]},
+        "placed": {"code": (0x51932859, None), "tables": (0x7EEC43F6, None),
                    "extra": [0xA28CCD40, 0x117A8303, 0xEFDB66A5]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x08099874, "tag": 0x00441404},
+            "placed": {"code": (0x3337E7B8, "7944e4d1f8003ee02bc2ea0dd2c071355da5cb1a6a8b0aa3d7e46e27f6b5e351"),
+                       "tables": (0x843FB58D, "81e34035eebe7fd9742781f8bc7430f1930f69d82b8ceac3a57c8ef4883680c5"),
+                       "extra": [0xA28CCD40, 0x117A8303, 0xEFDB66A5]}}],
     },
     "e0a65ef4ba358abd66ce7041b571df5a1b3047b9f113d3cad6f8ab99b6e972be": {
         "name": "TYT-Vocoder-MD380-D14.07.bin",
@@ -1207,10 +1270,16 @@ PROFILES = {
             (0x080F8424, 0x868, "7c5690358d089fd468b67074ce9fbef927b7772f68ab1019fda75ce88a9c6496"),
             (0x080FC370, 0xE, "d75975040dd220ce557972812fd91bf6b58eb360185a7157ba910ce7fae4319d"),
         ],
-        "placement": {"code": 0x08099B04, "tag": 0x00441407},
-        "placed": {"code": (0x6AC85EF3, "7dda12c68d418873dd90dc04f11acd7b20aef9c1e545a563c52c1cb037d4d429"),
-                   "tables": (0x0571A6F1, "003de637a35ad6b301fa9b8f1e1c426cd6ecb74133e69a4a206bf237cf8dd576"),
+        "placement": {"code": 0x080E0000, "tables": 0x080F0370, "tag": 0x00441407,
+                      "extra": [0x080F949E, 0x080F94F4, 0x080F9D60]},
+        "placed": {"code": (0x5359BBD8, None), "tables": (0x31D913FC, None),
                    "extra": [0xA28CCD40, 0x091CD076, 0xEFDB66A5]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x08099B04, "tag": 0x00441407},
+            "placed": {"code": (0x6AC85EF3, "7dda12c68d418873dd90dc04f11acd7b20aef9c1e545a563c52c1cb037d4d429"),
+                       "tables": (0x0571A6F1, "003de637a35ad6b301fa9b8f1e1c426cd6ecb74133e69a4a206bf237cf8dd576"),
+                       "extra": [0xA28CCD40, 0x091CD076, 0xEFDB66A5]}}],
     },
     "18d0080b41cde2871a4801ea0de1876cb3320c2498f3ea04f89d647b7d722e74": {
         "name": "Upgraded software for newest version.bin",
@@ -1228,10 +1297,16 @@ PROFILES = {
             (0x080FB1CC, 0x14, "0af022f016edcb28a3b29d60abdf42846456f22b8b4579a14b2069c7f6f31017"),
             (0x080FE7C0, 0x20, "b6bc2f43d9a7779d7a8ac938db131b049f72620bc6d288db19bd9ecc15a8c812"),
         ],
-        "placement": {"code": 0x080E0000, "tag": 0x00440224},
-        "placed": {"code": (0x318B0FDA, "8b041d33ad6c64f29e94a2c394b21edbc1b9a355e32221640e6340450fdad32b"),
-                   "tables": (0x68F0B40D, "5c6f49bfeb608563f5c95cc2f6fc518743a68907d35aeb82e2b3908b32d88c82"),
+        "placement": {"code": 0x080E0008, "tables": 0x080F08B4, "tag": 0x00440224,
+                      "extra": [0x080FB8B8, 0x080FB8E0, 0x080FB8FC, 0x080FB910]},
+        "placed": {"code": (0x05D45115, None), "tables": (0xA072ACC8, None),
                    "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x00440224},
+            "placed": {"code": (0x318B0FDA, "8b041d33ad6c64f29e94a2c394b21edbc1b9a355e32221640e6340450fdad32b"),
+                       "tables": (0x68F0B40D, "5c6f49bfeb608563f5c95cc2f6fc518743a68907d35aeb82e2b3908b32d88c82"),
+                       "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]}}],
     },
     "5d0e5671a2e2ee8d2163325b442448e5494b93bd1a3e48e978ddbee6bcfd5bc5": {
         "name": "MD-380-D2.25.bin",
@@ -1249,10 +1324,16 @@ PROFILES = {
             (0x080F9C5C, 0x14, "0af022f016edcb28a3b29d60abdf42846456f22b8b4579a14b2069c7f6f31017"),
             (0x080FD250, 0x20, "b6bc2f43d9a7779d7a8ac938db131b049f72620bc6d288db19bd9ecc15a8c812"),
         ],
-        "placement": {"code": 0x080E0000, "tag": 0x00440225},
-        "placed": {"code": (0x308F0A9C, "8939f32185d4caa9c756ad2f8c60ab0e686f7b7d9f7218edd49d531bf5791d5b"),
-                   "tables": (0x8C7DA6F8, "b1b011a6284103afec955b46f17d3a3a524db9c89a5933f2de6eba226da1bd09"),
+        "placement": {"code": 0x080E000C, "tables": 0x080F0894, "tag": 0x00440225,
+                      "extra": [0x080FB898, 0x080FB8C0, 0x080FB8DC, 0x080FB8F0]},
+        "placed": {"code": (0x2DCEC323, None), "tables": (0x53F6D661, None),
                    "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x00440225},
+            "placed": {"code": (0x308F0A9C, "8939f32185d4caa9c756ad2f8c60ab0e686f7b7d9f7218edd49d531bf5791d5b"),
+                       "tables": (0x8C7DA6F8, "b1b011a6284103afec955b46f17d3a3a524db9c89a5933f2de6eba226da1bd09"),
+                       "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]}}],
     },
     "348f6a6bcddfe80327b5da29a4074fc036bace344891dcf8b7b2b76e7f20b60f": {
         "name": "MD-380-D2.26.bin",
@@ -1270,10 +1351,16 @@ PROFILES = {
             (0x080F9BDC, 0x14, "0af022f016edcb28a3b29d60abdf42846456f22b8b4579a14b2069c7f6f31017"),
             (0x080FD1D0, 0x20, "b6bc2f43d9a7779d7a8ac938db131b049f72620bc6d288db19bd9ecc15a8c812"),
         ],
-        "placement": {"code": 0x080E0000, "tag": 0x00440226},
-        "placed": {"code": (0xC4F140C2, "46a71a0fb0747429690615c2817709096c21255e374e6114311133db18b5ce30"),
-                   "tables": (0xEB9AE318, "f65b2502c2b4ab926272869293507515d9a88a3936b362d4644f30e5d4f2ddcb"),
+        "placement": {"code": 0x080E0000, "tables": 0x080F0874, "tag": 0x00440226,
+                      "extra": [0x080FB878, 0x080FB8A0, 0x080FB8BC, 0x080FB8D0]},
+        "placed": {"code": (0xB7094E15, None), "tables": (0xA47D4B16, None),
                    "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x00440226},
+            "placed": {"code": (0xC4F140C2, "46a71a0fb0747429690615c2817709096c21255e374e6114311133db18b5ce30"),
+                       "tables": (0xEB9AE318, "f65b2502c2b4ab926272869293507515d9a88a3936b362d4644f30e5d4f2ddcb"),
+                       "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]}}],
     },
     "34ffbc629eb198c4c853c8081f441303a488f80eee5818826b3838b6abcf867c": {
         "name": "MD-380-D2.27.bin",
@@ -1291,10 +1378,16 @@ PROFILES = {
             (0x080F9BDC, 0x14, "0af022f016edcb28a3b29d60abdf42846456f22b8b4579a14b2069c7f6f31017"),
             (0x080FD1D0, 0x20, "b6bc2f43d9a7779d7a8ac938db131b049f72620bc6d288db19bd9ecc15a8c812"),
         ],
-        "placement": {"code": 0x080E0000, "tag": 0x00440227},
-        "placed": {"code": (0x662DA478, "6937931beb7d96d20802f093617fe9819c49296fdbbb970955949dc0a87dd96e"),
-                   "tables": (0xEB89B60B, "9dc304aa563361c03b9d6f0b02dc9b53fa77faaa0003d35090df78689ea4d8e4"),
+        "placement": {"code": 0x080E0000, "tables": 0x080F0874, "tag": 0x00440227,
+                      "extra": [0x080FB878, 0x080FB8A0, 0x080FB8BC, 0x080FB8D0]},
+        "placed": {"code": (0x15D5AAAF, None), "tables": (0xA46E1E05, None),
                    "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x00440227},
+            "placed": {"code": (0x662DA478, "6937931beb7d96d20802f093617fe9819c49296fdbbb970955949dc0a87dd96e"),
+                       "tables": (0xEB89B60B, "9dc304aa563361c03b9d6f0b02dc9b53fa77faaa0003d35090df78689ea4d8e4"),
+                       "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]}}],
     },
     "1c903d440e35917e8a16906ccae1cbbd539230a5a3352e3eb896ffc3e96eccc6": {
         "name": "MD-380-D2.30.bin",
@@ -1312,10 +1405,16 @@ PROFILES = {
             (0x080F9E34, 0x14, "0af022f016edcb28a3b29d60abdf42846456f22b8b4579a14b2069c7f6f31017"),
             (0x080FD450, 0x20, "b6bc2f43d9a7779d7a8ac938db131b049f72620bc6d288db19bd9ecc15a8c812"),
         ],
-        "placement": {"code": 0x080E0000, "tag": 0x00440230},
-        "placed": {"code": (0xF47AF71A, "f171f3d2ffd2d09a9d8eeb9c9804788b8565477ce65e74a51e2aec65430fce40"),
-                   "tables": (0x41CFB9A5, "db5850acacdbea9baf90dbe9c2181bb270d47ef4e23b69f85f6ed701e9d7240f"),
+        "placement": {"code": 0x080E000C, "tables": 0x080F0884, "tag": 0x00440230,
+                      "extra": [0x080FB888, 0x080FB8B8, 0x080FB8D4, 0x080FB8F0]},
+        "placed": {"code": (0x0670381A, None), "tables": (0xCE99EE52, None),
                    "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x00440230},
+            "placed": {"code": (0xF47AF71A, "f171f3d2ffd2d09a9d8eeb9c9804788b8565477ce65e74a51e2aec65430fce40"),
+                       "tables": (0x41CFB9A5, "db5850acacdbea9baf90dbe9c2181bb270d47ef4e23b69f85f6ed701e9d7240f"),
+                       "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]}}],
     },
     "9d9a9599f43ef82caefd9239cec3770cc6b411e47f760fa07c6f22167e26fdfb": {
         "name": "MD-380-D2.34.bin",
@@ -1333,10 +1432,16 @@ PROFILES = {
             (0x080F9FB4, 0x14, "0af022f016edcb28a3b29d60abdf42846456f22b8b4579a14b2069c7f6f31017"),
             (0x080FD5D0, 0x20, "b6bc2f43d9a7779d7a8ac938db131b049f72620bc6d288db19bd9ecc15a8c812"),
         ],
-        "placement": {"code": 0x080E0000, "tag": 0x00440234},
-        "placed": {"code": (0x777AD2AB, "d6a2414104c68b786a22a370660fceaad4a37f6b63958a616a8fc017e44f02c8"),
-                   "tables": (0x2F6FFE2F, "5e81579827e229dbc7cb1158a2ec30be028ba9edad482eedf1e96fd63c155188"),
+        "placement": {"code": 0x080E0004, "tables": 0x080F08A4, "tag": 0x00440234,
+                      "extra": [0x080FB8A8, 0x080FB8D8, 0x080FB8F4, 0x080FB910]},
+        "placed": {"code": (0xD85CA32E, None), "tables": (0x26F75D98, None),
                    "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x00440234},
+            "placed": {"code": (0x777AD2AB, "d6a2414104c68b786a22a370660fceaad4a37f6b63958a616a8fc017e44f02c8"),
+                       "tables": (0x2F6FFE2F, "5e81579827e229dbc7cb1158a2ec30be028ba9edad482eedf1e96fd63c155188"),
+                       "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]}}],
     },
     "466a5d6973926de2148f4ff32382e235ed047c2ef27d5ec5683ab9b91b89489d": {
         "name": "D003.008.bin",
@@ -1354,10 +1459,16 @@ PROFILES = {
             (0x080F8964, 0x14, "0af022f016edcb28a3b29d60abdf42846456f22b8b4579a14b2069c7f6f31017"),
             (0x080FC03C, 0x20, "b6bc2f43d9a7779d7a8ac938db131b049f72620bc6d288db19bd9ecc15a8c812"),
         ],
-        "placement": {"code": 0x080E0000, "tag": 0x00440308},
-        "placed": {"code": (0xB3773804, "23f08398b075ed7ffad2208238d7bd84054437514b55960117465af9429c2117"),
-                   "tables": (0xBF6A2D83, "806394e6a72ba29479f7959cd59e7d78fc0eb97080b907ea50e582e7a20ba10c"),
+        "placement": {"code": 0x080E0000, "tables": 0x080F08A0, "tag": 0x00440308,
+                      "extra": [0x080FB8A0, 0x080FB8D0, 0x080FB8F4, 0x080FB90C]},
+        "placed": {"code": (0xC4751D4C, None), "tables": (0x4B8A648D, None),
                    "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x00440308},
+            "placed": {"code": (0xB3773804, "23f08398b075ed7ffad2208238d7bd84054437514b55960117465af9429c2117"),
+                       "tables": (0xBF6A2D83, "806394e6a72ba29479f7959cd59e7d78fc0eb97080b907ea50e582e7a20ba10c"),
+                       "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]}}],
     },
     "38787da956234f9ec811cae08568f7bdb5f21b4070681ae689a0ba82c845f973": {
         "name": "TYT-TFT-MD380-D3.20.bin",
@@ -1375,10 +1486,16 @@ PROFILES = {
             (0x080F8C64, 0x14, "0af022f016edcb28a3b29d60abdf42846456f22b8b4579a14b2069c7f6f31017"),
             (0x080FC33C, 0x20, "b6bc2f43d9a7779d7a8ac938db131b049f72620bc6d288db19bd9ecc15a8c812"),
         ],
-        "placement": {"code": 0x080E0000, "tag": 0x00440320},
-        "placed": {"code": (0xAA1D7DD6, "9ef2a7ba68e0c5bfbda64aa617d54098858c1b5b37f960558844e07580c124ea"),
-                   "tables": (0x1B844817, "8ad66d4b1ae0b7596fae138ca9b52f6dd431c1fd061227be217be8d4c8fea3b7"),
+        "placement": {"code": 0x080E0004, "tables": 0x080F0890, "tag": 0x00440320,
+                      "extra": [0x080FB890, 0x080FB8C0, 0x080FB8E4, 0x080FB8FC]},
+        "placed": {"code": (0x9DE0DD67, None), "tables": (0x2C1DC5A0, None),
                    "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x00440320},
+            "placed": {"code": (0xAA1D7DD6, "9ef2a7ba68e0c5bfbda64aa617d54098858c1b5b37f960558844e07580c124ea"),
+                       "tables": (0x1B844817, "8ad66d4b1ae0b7596fae138ca9b52f6dd431c1fd061227be217be8d4c8fea3b7"),
+                       "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]}}],
     },
     "c8a98648d01c34ec8dca208eb0fff903ac0c9127a46ed482b7ca8e5755396d3d": {
         "name": "TYT-Vocoder-MD390-S13.12.bin",
@@ -1395,10 +1512,16 @@ PROFILES = {
             (0x080F8B1C, 0x868, "930454e770d09429d313ca1e22d3d403e4461119f640c1ab4de16fce0edf5b2a"),
             (0x080FCA50, 0xE, "d75975040dd220ce557972812fd91bf6b58eb360185a7157ba910ce7fae4319d"),
         ],
-        "placement": {"code": 0x0809A324, "tag": 0x00531312},
-        "placed": {"code": (0x159EF17E, "d58838e873635789774396a30b0b156915980037effaddadaf755927ddbe7dac"),
-                   "tables": (0xA649816D, "890351e1e7546f5ac04c6debc49546edeb217400754523ee25088b053d404e74"),
+        "placement": {"code": 0x080E0000, "tables": 0x080F0350, "tag": 0x00531312,
+                      "extra": [0x080F95EE, 0x080F963C, 0x080F9EB0]},
+        "placed": {"code": (0xA6598879, None), "tables": (0x89E08BDC, None),
                    "extra": [0xA28CCD40, 0x1240DAC1, 0xEFDB66A5]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x0809A324, "tag": 0x00531312},
+            "placed": {"code": (0x159EF17E, "d58838e873635789774396a30b0b156915980037effaddadaf755927ddbe7dac"),
+                       "tables": (0xA649816D, "890351e1e7546f5ac04c6debc49546edeb217400754523ee25088b053d404e74"),
+                       "extra": [0xA28CCD40, 0x1240DAC1, 0xEFDB66A5]}}],
     },
     "5ce02f5f68fcb4d977d3b209d0d3911743ed300ebfb89d583a4a83c10208ed26": {
         "name": "TYT-Vocoder-MD390-S13.20.bin",
@@ -1415,10 +1538,16 @@ PROFILES = {
             (0x080F8D5C, 0x868, "ee83d9087904246e5f5f4735055024c7e2f097038bb2616dd6eafa0390d1dac2"),
             (0x080FCC90, 0xE, "d75975040dd220ce557972812fd91bf6b58eb360185a7157ba910ce7fae4319d"),
         ],
-        "placement": {"code": 0x0809A834, "tag": 0x00531320},
-        "placed": {"code": (0xB91DF0D1, "2ffc0646cd6e7efd69f35f5e4469028eadd7b2d67dadb331853e4e83de54434c"),
-                   "tables": (0x7E7F431D, "af4410b425fe5a1d1f579f1ec59bef9dcf56cf33492e35572e977a33b5ef4aeb"),
+        "placement": {"code": 0x080E0008, "tables": 0x080F0360, "tag": 0x00531320,
+                      "extra": [0x080F98CE, 0x080F991C, 0x080FA190]},
+        "placed": {"code": (0xD62D8CB7, None), "tables": (0x06D75947, None),
                    "extra": [0xA28CCD40, 0xFB8963BF, 0xEFDB66A5]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x0809A834, "tag": 0x00531320},
+            "placed": {"code": (0xB91DF0D1, "2ffc0646cd6e7efd69f35f5e4469028eadd7b2d67dadb331853e4e83de54434c"),
+                       "tables": (0x7E7F431D, "af4410b425fe5a1d1f579f1ec59bef9dcf56cf33492e35572e977a33b5ef4aeb"),
+                       "extra": [0xA28CCD40, 0xFB8963BF, 0xEFDB66A5]}}],
     },
     "1fc264949d497af9af7dbef541d59d9690f1f9c0167601f5011e17e196584757": {
         "name": "TYT-Vocoder-MD390-S14.07.bin",
@@ -1435,10 +1564,16 @@ PROFILES = {
             (0x080F90E4, 0x868, "9816d6dd320f2e11898b40f441b88593b258fcd9769d4a72f90636ab5dd35923"),
             (0x080FD030, 0xE, "d75975040dd220ce557972812fd91bf6b58eb360185a7157ba910ce7fae4319d"),
         ],
-        "placement": {"code": 0x0809A774, "tag": 0x00531407},
-        "placed": {"code": (0x41705E75, "36c3ffd9f8c4c82b3ff022117f15a8fe9ee117d7cad312e1bd91c5ac83c6a844"),
-                   "tables": (0x12AC6B06, "08d796a4a81e46c41599c65752ed7d2dca1c9942b3fd1ae51cdbc5a8204393bf"),
+        "placement": {"code": 0x080E0008, "tables": 0x080F0350, "tag": 0x00531407,
+                      "extra": [0x080F94AE, 0x080F9504, 0x080F9D70]},
+        "placed": {"code": (0xEF3F72D3, None), "tables": (0xDDF71172, None),
                    "extra": [0xA28CCD40, 0x8A5DE917, 0xEFDB66A5]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x0809A774, "tag": 0x00531407},
+            "placed": {"code": (0x41705E75, "36c3ffd9f8c4c82b3ff022117f15a8fe9ee117d7cad312e1bd91c5ac83c6a844"),
+                       "tables": (0x12AC6B06, "08d796a4a81e46c41599c65752ed7d2dca1c9942b3fd1ae51cdbc5a8204393bf"),
+                       "extra": [0xA28CCD40, 0x8A5DE917, 0xEFDB66A5]}}],
     },
     "823439219e82f142ddb707003b6d6affa3993e6dd5bee99771a1f7f883de2046": {
         "name": "TYT-GPS-MD390-MD380-S003.012.bin",
@@ -1456,10 +1591,16 @@ PROFILES = {
             (0x080F98E4, 0x14, "0af022f016edcb28a3b29d60abdf42846456f22b8b4579a14b2069c7f6f31017"),
             (0x080FCFBC, 0x20, "b6bc2f43d9a7779d7a8ac938db131b049f72620bc6d288db19bd9ecc15a8c812"),
         ],
-        "placement": {"code": 0x080E0000, "tag": 0x00530312},
-        "placed": {"code": (0x04E6AF17, "ee4d5dd90565845c3ef9e5d6d7a948ed8d08f3ce216eccafbb0d205367ba9040"),
-                   "tables": (0xB25BA64C, "30dc217d5512a06cbe4c35cc02430be1135c5cfebc8914f4d7f97c3515871fb9"),
+        "placement": {"code": 0x080E000C, "tables": 0x080F0890, "tag": 0x00530312,
+                      "extra": [0x080FB890, 0x080FB8C0, 0x080FB8E4, 0x080FB8FC]},
+        "placed": {"code": (0x0B79AD0A, None), "tables": (0x5C73A624, None),
                    "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x00530312},
+            "placed": {"code": (0x04E6AF17, "ee4d5dd90565845c3ef9e5d6d7a948ed8d08f3ce216eccafbb0d205367ba9040"),
+                       "tables": (0xB25BA64C, "30dc217d5512a06cbe4c35cc02430be1135c5cfebc8914f4d7f97c3515871fb9"),
+                       "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]}}],
     },
     "6b83a74b72df4b13f74f5ac7ef2472593809055fc252c0aabe4c9eeeef1f115c": {
         "name": "TYT-Vocoder-MD446-D13.20.bin",
@@ -1476,10 +1617,16 @@ PROFILES = {
             (0x080F7EE4, 0x868, "62ebfe76db052595a1a02daf96388810effaa25b37956d92ea056cbe600fa544"),
             (0x080FBE1C, 0xE, "d75975040dd220ce557972812fd91bf6b58eb360185a7157ba910ce7fae4319d"),
         ],
-        "placement": {"code": 0x080995A4, "tag": 0x04441320},
-        "placed": {"code": (0xBD3277AE, "11bccdd802e5729d983c5f812ff4f81e9bb87611bf3645ce7c4acbc6d222203a"),
-                   "tables": (0xCC12D2AA, "c2783e003f71db40b71437211c564c101a8a16c099d0d98cf855b66b503363b7"),
+        "placement": {"code": 0x080E0004, "tables": 0x080F0380, "tag": 0x04441320,
+                      "extra": [0x080F945E, 0x080F94B4, 0x080F9D1C]},
+        "placed": {"code": (0x1E969669, None), "tables": (0x312BCC55, None),
                    "extra": [0xA28CCD40, 0x9C044751, 0xEFDB66A5]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x080995A4, "tag": 0x04441320},
+            "placed": {"code": (0xBD3277AE, "11bccdd802e5729d983c5f812ff4f81e9bb87611bf3645ce7c4acbc6d222203a"),
+                       "tables": (0xCC12D2AA, "c2783e003f71db40b71437211c564c101a8a16c099d0d98cf855b66b503363b7"),
+                       "extra": [0xA28CCD40, 0x9C044751, 0xEFDB66A5]}}],
     },
     "9892b2e95da0eee0ec87604007f157f6f9b249a9fb11ba0fc3798e78956e2587": {
         "name": "TYT-TFT-MD446-D3.20.bin",
@@ -1497,468 +1644,604 @@ PROFILES = {
             (0x080F8C6C, 0x14, "0af022f016edcb28a3b29d60abdf42846456f22b8b4579a14b2069c7f6f31017"),
             (0x080FC348, 0x20, "b6bc2f43d9a7779d7a8ac938db131b049f72620bc6d288db19bd9ecc15a8c812"),
         ],
-        "placement": {"code": 0x080E0000, "tag": 0x04440320},
-        "placed": {"code": (0x54F942E7, "c95719b5fb2d403ea0c31d3fa70cb27482b4829cdfd5d5df5c945336b54824cf"),
-                   "tables": (0x55648D6B, "2a388c51ec726f26514152efab7d3d5a572c5842be625f1f16f4ddfd55ecd635"),
+        "placement": {"code": 0x080E0000, "tables": 0x080F0870, "tag": 0x04440320,
+                      "extra": [0x080FB870, 0x080FB898, 0x080FB8BC, 0x080FB8D8]},
+        "placed": {"code": (0x00406609, None), "tables": (0x9CA289D8, None),
                    "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]},
+        "former": [{
+            "codec_profile": MD380_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x04440320},
+            "placed": {"code": (0x54F942E7, "c95719b5fb2d403ea0c31d3fa70cb27482b4829cdfd5d5df5c945336b54824cf"),
+                       "tables": (0x55648D6B, "2a388c51ec726f26514152efab7d3d5a572c5842be625f1f16f4ddfd55ecd635"),
+                       "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]}}],
     },
     # TYT MD-9600 original firmware files for the MD-9600 itself (docs/spec/codec-md9600.md): 06.09 CSV (V1-V3 boards) and
     # 16.45 CSV (V4) first, then every other build with a map. The same files are codec sources for the DM-1701 above
     # (one file, two placements), so these are keyed "<sha>@md9600" (profile_key) and found by
     # find_profile(board="md9600"). The codec is board independent, so any file serves every board revision, and all
     # report one codec id (the descriptor's tag tells them apart: the variant in bits 16-17, 0 CSV, 1 CSV-GPS, 2 REC,
-    # 3 GPS-REC, and the version in BCD below). The original firmware keeps the code in sectors 7 and 8, which are the
-    # application's now; the tables stay at their own address in sector 9 (the largest GPS-REC builds' run a few hundred
-    # bytes into sector 10, which is free) and the code goes to the start of sector 11 (boards/md9600/memory.ld,
-    # boards/md9600/vocoder_md9600.c, which pins every "placed" value below), checked in an emulator against the
-    # stock-address run
+    # 3 GPS-REC, and the version in BCD below). The original firmware keeps the code in sectors 7 and 8 and the tables
+    # in sector 9, all the application's now (sectors 3-9): the code goes to the start of sector 11 and the table window,
+    # moved as one block, to the start of sector 10 (keeping its address modulo 16), each with every address into the
+    # other rewritten (codecmap.move_window), and the descriptor to the end of sector 11 (boards/md9600/memory.ld,
+    # boards/md9600/vocoder_md9600.c, which pins every "placed" value below). "former": where releases before put it,
+    # the code in sector 11 and the tables at their own address in sector 9, which a radio still holds until the
+    # flashing tools move it
     "79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09@md9600": {
         "name": "MD9600-CSV-V06.09.bin",
         "version": "V06.09 CSV",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1094144,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB1800)],
         "code": (0x08074B18, 0xF214, "c729480a47c7444c03eff1ec6b176a76d071f72b64d2f0fe3965e517c85a1215"),
         "tables": (0x080AB13C, 0x10FE6, "0b431c14ef7e32fe8a0915976c250f127a757ed4cc5af2bc7f867ae261c6f1ca"),
-        "placement": {"code": 0x080E0000, "tag": 0x0609},
-        "placed": {"code": (0xD7D67AE8, "76b94a2727e0180cad4d354ee9bbea0a9d4278696dde76647508d6592963c737"),
-                   "tables": (0x9983906A, "08d9806571c5d1a8280be09d6bace1f1b73a7b21713a41d4d4fec3d151e82533")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C000C, "tag": 0x0609},
+        "placed": {"code": (0x93CFE119, None), "tables": (0x4C84A4F5, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x0609},
+            "placed": {"code": (0xD7D67AE8, "76b94a2727e0180cad4d354ee9bbea0a9d4278696dde76647508d6592963c737"),
+                       "tables": (0x9983906A, "08d9806571c5d1a8280be09d6bace1f1b73a7b21713a41d4d4fec3d151e82533")}}],
     },
     "de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532@md9600": {
         "name": "MD9600-CSV(V4)-V16.45.bin",
         "version": "V16.45 CSV",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1099264,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB2C00)],
         "code": (0x08075C98, 0xF214, "4bcfec3e1113d17bb53bee1543039894db00c00c32d1b7dfd258f224043f52cd"),
         "tables": (0x080AC2BC, 0x11036, "a101749f26c6df7d784130c45570e25abc5c88e02bee6f2510beb0a6c3ad4dfa"),
-        "placement": {"code": 0x080E0000, "tag": 0x1645},
-        "placed": {"code": (0xD5E2E873, "625b369a1f298e4760b0b07029a6cb98014715397c3ef529a6c5d7450a2f55e1"),
-                   "tables": (0xA8A52935, "1dd472d6574b852ea57f86ffb9b366aab9d44398ea289bd750927bac6b95e51d")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C000C, "tag": 0x1645},
+        "placed": {"code": (0xFFA99B9F, None), "tables": (0x2808FDCB, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x1645},
+            "placed": {"code": (0xD5E2E873, "625b369a1f298e4760b0b07029a6cb98014715397c3ef529a6c5d7450a2f55e1"),
+                       "tables": (0xA8A52935, "1dd472d6574b852ea57f86ffb9b366aab9d44398ea289bd750927bac6b95e51d")}}],
     },
     "9454eb221ae1f206fca5a15ec1b540bf06b3db4991f466b1626a3a3073ca91d5@md9600": {
         "name": "MD9600-CSV-GPS-P06.09.bin",
         "version": "P06.09 CSV-GPS",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1100288,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB3000)],
         "code": (0x080760B8, 0xF234, "1836c0870ef9333d022c495fbaf2d989f64f6a26dd5d762d8c730cce82e300b6"),
         "tables": (0x080AC6FC, 0x11066, "f2b8bda5a65f2da7bba0d525347dd1896242f3ead77db03b9af44ba971a12b9e"),
-        "placement": {"code": 0x080E0000, "tag": 0x10609},
-        "placed": {"code": (0x92742CD3, "a4ecc92b2898645f8f7e8a47f5d48af93ef571876c3e5b002d68a714ac9daa73"),
-                   "tables": (0x7293248A, "9ed8c5c9f47ce0565ef2862379c327b079f2ffa5fee5de5422fa126641ef7c0f")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C000C, "tag": 0x10609},
+        "placed": {"code": (0xBF0C8303, None), "tables": (0x740B5784, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x10609},
+            "placed": {"code": (0x92742CD3, "a4ecc92b2898645f8f7e8a47f5d48af93ef571876c3e5b002d68a714ac9daa73"),
+                       "tables": (0x7293248A, "9ed8c5c9f47ce0565ef2862379c327b079f2ffa5fee5de5422fa126641ef7c0f")}}],
     },
     "7b1b1b33e661766a5b0c0b3ddab9c31c96e3855b09f4e280b07f4990b563b68f@md9600": {
         "name": "MD9600-REC-D06.09.bin",
         "version": "D06.09 REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1103360,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB3C00)],
         "code": (0x08076C9C, 0xF210, "75a937300cda4cc1802453e7352686511ca427888b4cc95732f45894b3e14a50"),
         "tables": (0x080AD660, 0x10FF6, "d61403ecd01634b9054e41f32c32085db2b3e0f2e998b83a102fd7a77f55431f"),
-        "placement": {"code": 0x080E0000, "tag": 0x20609},
-        "placed": {"code": (0x1E46EE7D, "62cffbb9db7087525048be607d016a082c3f5bc0b791b018d2e8094f419f18aa"),
-                   "tables": (0x678DE46B, "0e5254246047efa0416cb3298ff37cf1928c70a9717f8b4900774a8da758d0f2")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C0000, "tag": 0x20609},
+        "placed": {"code": (0x252BE3EF, None), "tables": (0x8D952716, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x20609},
+            "placed": {"code": (0x1E46EE7D, "62cffbb9db7087525048be607d016a082c3f5bc0b791b018d2e8094f419f18aa"),
+                       "tables": (0x678DE46B, "0e5254246047efa0416cb3298ff37cf1928c70a9717f8b4900774a8da758d0f2")}}],
     },
     "4610ed115e80efa04be554a94915ec2e053ae00f6b64dfa4815451966840dba7@md9600": {
         "name": "MD9600-GPS-REC-S06.09.bin",
         "version": "S06.09 GPS-REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1109504,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB5400)],
         "code": (0x08078280, 0xF22C, "a3d768224197cdd4f72db9024149e38f1c33a965ce44bca33a1904bb9e6c82b5"),
         "tables": (0x080AEC60, 0x11076, "2fe79fad2e2688e78ce892d52121874ba623df8f2ec73f44e4740413f356dfa3"),
-        "placement": {"code": 0x080E0000, "tag": 0x30609},
-        "placed": {"code": (0x8B3C7444, "33f26e7171f33a10db8158bcae2ff123f0d401c9ba7083a8509d3172a5735c03"),
-                   "tables": (0x16BC466F, "899fb41096e8e36ce415b24845e74b7d860058fd86137da21758d0110625813a")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C0000, "tag": 0x30609},
+        "placed": {"code": (0x91A96A0B, None), "tables": (0x7C4DEB7A, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x30609},
+            "placed": {"code": (0x8B3C7444, "33f26e7171f33a10db8158bcae2ff123f0d401c9ba7083a8509d3172a5735c03"),
+                       "tables": (0x16BC466F, "899fb41096e8e36ce415b24845e74b7d860058fd86137da21758d0110625813a")}}],
     },
     "194526d60f796cc0f7339d14c1efeedc267731d108fd66a96876b459408de0ba@md9600": {
         "name": "MD9600-CSV-V06.24.bin",
         "version": "V06.24 CSV",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1094144,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB1800)],
         "code": (0x08074C78, 0xF232, "cc3372d87629dfca98a22d0227301011084189fdec8cf073eb3c18fb8412d3a6"),
         "tables": (0x080AB2BC, 0x10FE6, "3e19a511cb77dd2d1c8ac6a09d215f1dd862470dce99718645b43821c8a7d6fe"),
-        "placement": {"code": 0x080E0000, "tag": 0x0624},
-        "placed": {"code": (0x0BD96104, "201e78f34cc7d7d5e29f96a524afd04839988485739bc51d83f2de5514ecb30f"),
-                   "tables": (0x2876271F, "4d2b34c3f60bb85bc5df5ee6abc3b854911ca0b8b78cd02192d22ffe6f135972")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C000C, "tag": 0x0624},
+        "placed": {"code": (0xA1AD11BC, None), "tables": (0x5243DEF3, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x0624},
+            "placed": {"code": (0x0BD96104, "201e78f34cc7d7d5e29f96a524afd04839988485739bc51d83f2de5514ecb30f"),
+                       "tables": (0x2876271F, "4d2b34c3f60bb85bc5df5ee6abc3b854911ca0b8b78cd02192d22ffe6f135972")}}],
     },
     "1eafdb774fd71cb7bc3334d06617ed42264ee25df1c73f61744f6b21742bbd20@md9600": {
         "name": "MD9600-CSV-GPS-P06.24.bin",
         "version": "P06.24 CSV-GPS",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1100288,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB3000)],
         "code": (0x080763CC, 0xF21E, "403b3df9ddcd5d732999d7c2c65a74f4db35bcf4d71d76dd0747df172a90a5d8"),
         "tables": (0x080AC9FC, 0x11066, "be95f990663f73c1c703c68e0393121b8f78a8266027295b20cfd7f824b4dfa7"),
-        "placement": {"code": 0x080E0000, "tag": 0x10624},
-        "placed": {"code": (0x59308C6E, "f66b694a36ddae1057918a352033408da08e1f7966afc92f36bd60b58f2cb349"),
-                   "tables": (0x6F4DC5D8, "4432b0aaf7fe6ed985340c60d645998d67c7fc83ed0c9b2f0b702271c7c7fdb6")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C000C, "tag": 0x10624},
+        "placed": {"code": (0x10109FA5, None), "tables": (0x5A4AAF27, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x10624},
+            "placed": {"code": (0x59308C6E, "f66b694a36ddae1057918a352033408da08e1f7966afc92f36bd60b58f2cb349"),
+                       "tables": (0x6F4DC5D8, "4432b0aaf7fe6ed985340c60d645998d67c7fc83ed0c9b2f0b702271c7c7fdb6")}}],
     },
     "6643261e62b9778a5df43b1e5c3428d6d308bf54b34478513df3e08f6f4dbb63@md9600": {
         "name": "MD9600-REC-D06.24.bin",
         "version": "D06.24 REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1104384,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB4000)],
         "code": (0x08076DFC, 0xF22E, "c5b5123caa9b045cc63d3aeb61aa4c53b8daa2001ede7745102960820fcaedf7"),
         "tables": (0x080AD7E0, 0x10FF6, "8db73635d11b0216bb59ab8a099e547948c522a9bbf526e95cfe607fb6309c5c"),
-        "placement": {"code": 0x080E0000, "tag": 0x20624},
-        "placed": {"code": (0x9F66F4A5, "fb5974485dbd55ef0e049ec5924c7caa56683992da9ebba688cf8e83de12248a"),
-                   "tables": (0x310E2E1A, "e813f7a53ad7fbb20f027b0cda0e0e1b28df018713df7f2371981156074a1af2")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C0000, "tag": 0x20624},
+        "placed": {"code": (0x4BF6DA35, None), "tables": (0xDC2E3C94, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x20624},
+            "placed": {"code": (0x9F66F4A5, "fb5974485dbd55ef0e049ec5924c7caa56683992da9ebba688cf8e83de12248a"),
+                       "tables": (0x310E2E1A, "e813f7a53ad7fbb20f027b0cda0e0e1b28df018713df7f2371981156074a1af2")}}],
     },
     "ec44929e855442ad248f1a5c171a467922d6cb5742fc35f759db269c645e22ab@md9600": {
         "name": "MD9600-GPS-REC-S06.24.bin",
         "version": "S06.24 GPS-REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1110528,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB5800)],
         "code": (0x08078594, 0xF216, "16fbf16c889e12bede6ea2c0501321881489d9c2dc5a90998d181d7afcccd41e"),
         "tables": (0x080AEF60, 0x11076, "10db31bf95d1a0cb40593d8d35da14a0ae5d59bb35ae513047553c647fdb2a6a"),
-        "placement": {"code": 0x080E0000, "tag": 0x30624},
-        "placed": {"code": (0x2B2D9386, "6e6960ebef37271e3b8e90ea35b578605aeeefe9a29372752c2bf4c14fc77032"),
-                   "tables": (0x51A89621, "3057aab30df98ff19cda3b0f098683dc6431d55d9714522a80c36f2fd9ea845e")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C0000, "tag": 0x30624},
+        "placed": {"code": (0x644F8B24, None), "tables": (0x0C4D13DD, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x30624},
+            "placed": {"code": (0x2B2D9386, "6e6960ebef37271e3b8e90ea35b578605aeeefe9a29372752c2bf4c14fc77032"),
+                       "tables": (0x51A89621, "3057aab30df98ff19cda3b0f098683dc6431d55d9714522a80c36f2fd9ea845e")}}],
     },
     "7f4d760288f0c1875c7c5dc83dcdf3f355f5188becde2b505eedf609fdbe665f@md9600": {
         "name": "MD9600-CSV-GPS(V4)-P16.45.bin",
         "version": "P16.45 CSV-GPS",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1105408,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB4400)],
         "code": (0x08077434, 0xF238, "70bbb7beaa426dbefa080af083c51b263945818f935533c619aad9675a5f91b9"),
         "tables": (0x080ADA7C, 0x110B6, "b29494898a4a96c5333c57d0681ed76b571e0aaeb460a8208479a0d700d2a225"),
-        "placement": {"code": 0x080E0000, "tag": 0x11645},
-        "placed": {"code": (0xB39222A8, "0c65173440cb21d6e0934461307a127257826d5b37d1130564bc484128480cbd"),
-                   "tables": (0xED224602, "5b51dd2c7f8d2b46cc9517b9f43221ffd61f05c0a973cde03b79c824c8b6e069")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C000C, "tag": 0x11645},
+        "placed": {"code": (0xF0BC4906, None), "tables": (0xBB67A545, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x11645},
+            "placed": {"code": (0xB39222A8, "0c65173440cb21d6e0934461307a127257826d5b37d1130564bc484128480cbd"),
+                       "tables": (0xED224602, "5b51dd2c7f8d2b46cc9517b9f43221ffd61f05c0a973cde03b79c824c8b6e069")}}],
     },
     "d2ef7a7e9c484dc1a8777488816f4da47181899ff8b7299a0ead7d141d55e10c@md9600": {
         "name": "MD9600-REC(V4)-D16.45.bin",
         "version": "D16.45 REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1108480,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB5000)],
         "code": (0x08077E38, 0xF234, "c870d2b5b9bf77e139544de24331f4cac2ca439bb0e9e24cc92b3a87a3f6e2c5"),
         "tables": (0x080AE820, 0x11046, "e1baec7419b42d6f420d64c639a5b92d2a6e3b7410a5648b17acaeddd93c71e3"),
-        "placement": {"code": 0x080E0000, "tag": 0x21645},
-        "placed": {"code": (0x8838CEB2, "1f8f1d3c6177471c8a22e623d9ef2421c92ad51bd4c154efa35c61890f073ea2"),
-                   "tables": (0xDB4CA8C2, "f14e6d028a3240d71ff124117866575e24e1c88964f0db6a348a1954be5510f4")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C0000, "tag": 0x21645},
+        "placed": {"code": (0x7768458F, None), "tables": (0x1EFE138B, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x21645},
+            "placed": {"code": (0x8838CEB2, "1f8f1d3c6177471c8a22e623d9ef2421c92ad51bd4c154efa35c61890f073ea2"),
+                       "tables": (0xDB4CA8C2, "f14e6d028a3240d71ff124117866575e24e1c88964f0db6a348a1954be5510f4")}}],
     },
     "3d71b4358267fe5fdae8980f340b6a158e7b229c9d32c8ab894c4985964e8aff@md9600": {
         "name": "MD9600-GPS-REC(V4)-S16.45.bin",
         "version": "S16.45 GPS-REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1114624,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB6800)],
         "code": (0x08079630, 0xF1FC, "5a7f1d52b1aac95abf7f2f79f3db58cd35188f5bc0b35374f10f74aa17db2c1a"),
         "tables": (0x080AFFE0, 0x110C6, "2172ecdd60f3217a28b1549d935c8870051f01d39f7ed8b7264712a14d9b9d31"),
-        "placement": {"code": 0x080E0000, "tag": 0x31645},
-        "placed": {"code": (0x3E27241A, "6145acd41356b59ca3f5cd439c0791d5510b606e694847addba1c79d42a6a1c3"),
-                   "tables": (0x08804876, "b3950b0ae8bcad79ccc6cd1c192b4950b5a17224716998606be141b7bd8ba127")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C0000, "tag": 0x31645},
+        "placed": {"code": (0xED48DBB4, None), "tables": (0xFD723459, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x31645},
+            "placed": {"code": (0x3E27241A, "6145acd41356b59ca3f5cd439c0791d5510b606e694847addba1c79d42a6a1c3"),
+                       "tables": (0x08804876, "b3950b0ae8bcad79ccc6cd1c192b4950b5a17224716998606be141b7bd8ba127")}}],
     },
     "98302fbc26fa0db93bd7ecbd29a410ac9fbb42cbd7d6ce15d54ce085fefff329@md9600": {
         "name": "MD9600-CSV(V4)-V16.24.bin",
         "version": "V16.24 CSV",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1095168,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB1C00)],
         "code": (0x08074FB0, 0xF23A, "f68bd78b26ce3ef2ed9547703569460b6a1e77406bd9122f8c2981e4b0565438"),
         "tables": (0x080AB5FC, 0x10FE6, "df2ca5d596c3ee6266342b8ea66f73f74fc910ff5e9a00cec439d136491766c7"),
-        "placement": {"code": 0x080E0000, "tag": 0x1624},
-        "placed": {"code": (0x3E488686, "8b9a9464f52417ba7cb03777cfa2bc66025923d250e0c2dd85d67af124927351"),
-                   "tables": (0x1A2262A1, "f97363f2ef66a3d330b69811d85080c2ea0862261201df82fd645d2c1d12e4fe")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C000C, "tag": 0x1624},
+        "placed": {"code": (0xA51732C8, None), "tables": (0xE7957C50, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x1624},
+            "placed": {"code": (0x3E488686, "8b9a9464f52417ba7cb03777cfa2bc66025923d250e0c2dd85d67af124927351"),
+                       "tables": (0x1A2262A1, "f97363f2ef66a3d330b69811d85080c2ea0862261201df82fd645d2c1d12e4fe")}}],
     },
     "e86b9e9775758548dd2d01334cfacc96c640fbf843aa6c5fa009b4bc7598e98d@md9600": {
         "name": "MD9600-CSV-GPS(V4)-P16.24.bin",
         "version": "P16.24 CSV-GPS",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1101312,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB3400)],
         "code": (0x08076704, 0xF226, "bd0d774b118b10f68f13fbf11002f42951abf9c94973a5dc48e8e349790b6349"),
         "tables": (0x080ACD3C, 0x11066, "545966b60d6b5f34d2fa4248826126dd0a74dbfb67e26c5ba58274e29156598c"),
-        "placement": {"code": 0x080E0000, "tag": 0x11624},
-        "placed": {"code": (0x56A6DF63, "8fd6669116499d0a9e649f9b44c0bdaffe634b8527661904f388c10d33f1565d"),
-                   "tables": (0xFB1BA990, "008cb3403114f0717b9c4f6a19c858280938cee982fc789f2d39b9b6454c9874")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C000C, "tag": 0x11624},
+        "placed": {"code": (0x41DAC329, None), "tables": (0x52B86BB9, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x11624},
+            "placed": {"code": (0x56A6DF63, "8fd6669116499d0a9e649f9b44c0bdaffe634b8527661904f388c10d33f1565d"),
+                       "tables": (0xFB1BA990, "008cb3403114f0717b9c4f6a19c858280938cee982fc789f2d39b9b6454c9874")}}],
     },
     "e21c72e30716fb43e4d15798012aec15e964b9ec8c1a534ede5d0b0fe73f3acb@md9600": {
         "name": "MD9600-REC(V4)-D16.24.bin",
         "version": "D16.24 REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1105408,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB4400)],
         "code": (0x08077134, 0xF236, "d7f73d858f2f91e8bcebf1b3a67f2164e3e9128ef1ea926faa1f26afe010804a"),
         "tables": (0x080ADB20, 0x10FF6, "c989388d09c824d424c6820d72fac1fb726b432a982b4404aa609190c61bac37"),
-        "placement": {"code": 0x080E0000, "tag": 0x21624},
-        "placed": {"code": (0x474FE24E, "1bf980162e2204e4cca2681ddb0a194f85cd7ce340283d774fcbd929377f3940"),
-                   "tables": (0x5CB7686A, "fb4b70b89315dd88c17977d6701aff09c8a2b0ff44aaca3ff2466a1afbf1c5f9")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C0000, "tag": 0x21624},
+        "placed": {"code": (0x843D0574, None), "tables": (0x64084D5F, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x21624},
+            "placed": {"code": (0x474FE24E, "1bf980162e2204e4cca2681ddb0a194f85cd7ce340283d774fcbd929377f3940"),
+                       "tables": (0x5CB7686A, "fb4b70b89315dd88c17977d6701aff09c8a2b0ff44aaca3ff2466a1afbf1c5f9")}}],
     },
     "4e1c5c081d5bdf4bef8f205668fd7381391187d8b07150df7e99275b030b811b@md9600": {
         "name": "MD9600-GPS-REC(V4)-S16.24.bin",
         "version": "S16.24 GPS-REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1111552,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB5C00)],
         "code": (0x080788CC, 0xF21E, "181da1f9656b7851d94cacda6b6b5e59c9d3355e3456d3b3fbb36ebb83a7f7e3"),
         "tables": (0x080AF2A0, 0x11076, "1af5f6df7ec08475330f28a543bc6164acb74e249b0c3c10326b661046b9ea26"),
-        "placement": {"code": 0x080E0000, "tag": 0x31624},
-        "placed": {"code": (0x0C0CE848, "191ecdbcd7ba3473bbef281d7682517a19c4517b46ec6b4999c80330f7b6bdaa"),
-                   "tables": (0x0F3948D1, "3444500c728d4616cbf2ff00de0edb2b2818dfcca6dcebf62f264e5a6b82c9ec")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C0000, "tag": 0x31624},
+        "placed": {"code": (0xF50B7EEE, None), "tables": (0x8BC3280C, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x31624},
+            "placed": {"code": (0x0C0CE848, "191ecdbcd7ba3473bbef281d7682517a19c4517b46ec6b4999c80330f7b6bdaa"),
+                       "tables": (0x0F3948D1, "3444500c728d4616cbf2ff00de0edb2b2818dfcca6dcebf62f264e5a6b82c9ec")}}],
     },
     "d8a653307222e576ee416ab6d4704d14758fa71c1b0e826ffd840f26266cf11f@md9600": {
         "name": "MD9600-CSV(2571V5)-V26.45.bin",
         "version": "V26.45 CSV",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1096192,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB2000)],
         "code": (0x0807537C, 0xF22E, "c437494bb0f9f4e58cb2c4a1c039185330a54ff293b54fdaff5c7d4159b30ad7"),
         "tables": (0x080AB9BC, 0x11036, "b7017c2346c41c2bcaac3ecceb037263952557ee6a9fe8094d5a9caffe6e8c4b"),
-        "placement": {"code": 0x080E0000, "tag": 0x2645},
-        "placed": {"code": (0x6C1C3CDA, "a06478934543df94a4b8dfa4fa21b15bda5f78e60b5ee2b870ad14ffcee6cb3d"),
-                   "tables": (0x45AEA030, "fc5e84afc699c9a1d37589593d0bec9a6ada8257bdbaf785094c38d7267d60d6")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C000C, "tag": 0x2645},
+        "placed": {"code": (0x95128BA1, None), "tables": (0x32B72D6B, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x2645},
+            "placed": {"code": (0x6C1C3CDA, "a06478934543df94a4b8dfa4fa21b15bda5f78e60b5ee2b870ad14ffcee6cb3d"),
+                       "tables": (0x45AEA030, "fc5e84afc699c9a1d37589593d0bec9a6ada8257bdbaf785094c38d7267d60d6")}}],
     },
     "02e366687f122ed752581344db8316666d21782d9353334518b69237a81e74dc@md9600": {
         "name": "MD9600-CSV-GPS(2571V5)-P26.45.bin",
         "version": "P26.45 CSV-GPS",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1102336,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB3800)],
         "code": (0x08076B18, 0xF212, "72dd6322a68709db0e2841fff1cb4f6def3f6f3f912e3f16271a35125d907a4a"),
         "tables": (0x080AD13C, 0x110B6, "b6c9bf6433f9ea38622173293140b72bbe8589ee3acd5064026f54f7fe65e7de"),
-        "placement": {"code": 0x080E0000, "tag": 0x12645},
-        "placed": {"code": (0xA161DDD6, "386e9aa184599ea15c77e1d5a66305604130bf1526ee08e2f921d9b0dc31f923"),
-                   "tables": (0xF3525F5A, "26e9a936e7c9671aa3b7e82bae621bcb62413fdc52c6df1ce793df1c5e92af1d")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C000C, "tag": 0x12645},
+        "placed": {"code": (0xB1033B46, None), "tables": (0x05BADF02, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x12645},
+            "placed": {"code": (0xA161DDD6, "386e9aa184599ea15c77e1d5a66305604130bf1526ee08e2f921d9b0dc31f923"),
+                       "tables": (0xF3525F5A, "26e9a936e7c9671aa3b7e82bae621bcb62413fdc52c6df1ce793df1c5e92af1d")}}],
     },
     "baee36b0fd852dfc1fb14952242a1231dbfa4fabc37cba57c61f1b8d3e0d830d@md9600": {
         "name": "MD9600-REC(2571V5)-D26.45.bin",
         "version": "D26.45 REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1106432,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB4800)],
         "code": (0x0807751C, 0xF20E, "8974385cad3549428d9dad0685d1961535e730856073cbf3083b55e182eb2f96"),
         "tables": (0x080ADEE0, 0x11046, "fa652e605a9c8c941ff4aca30862ca4efe9e5154e959129126cad0192d016c37"),
-        "placement": {"code": 0x080E0000, "tag": 0x22645},
-        "placed": {"code": (0xCC9B0015, "0a24755d56a641d6b0bc5a88c48464d38a2ff3747a7fcd8382a219da78c1b8cd"),
-                   "tables": (0x23760EF0, "60b38065bcc626796cab8a4ada80afdc09fd8981fce140a8a4bb687bc01a1295")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C0000, "tag": 0x22645},
+        "placed": {"code": (0x27AFD6CF, None), "tables": (0x8D2A9EC6, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x22645},
+            "placed": {"code": (0xCC9B0015, "0a24755d56a641d6b0bc5a88c48464d38a2ff3747a7fcd8382a219da78c1b8cd"),
+                       "tables": (0x23760EF0, "60b38065bcc626796cab8a4ada80afdc09fd8981fce140a8a4bb687bc01a1295")}}],
     },
     "6df34152e9786530d61032ab71f1962cf194aca0b99cf0a54e3802fd2cd4ac72@md9600": {
         "name": "MD9600-GPS-REC(2571V5)-S26.45.bin",
         "version": "S26.45 GPS-REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1112576,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB6000)],
         "code": (0x08078D14, 0xF216, "7789393c8053c61ac8021c2f79b9b961d77693c3433c0e5d4e65bdf86d8276ab"),
         "tables": (0x080AF6E0, 0x110C6, "17ad382ff8e8649e60dfeb81ca5118075dacde0bf63400a5a5c64b4b5b8e3bb5"),
-        "placement": {"code": 0x080E0000, "tag": 0x32645},
-        "placed": {"code": (0xC1FD5D9B, "60673518e4143c1ce2959230317dd60a84495f9db1bfd6d2c4e4b53740d91b80"),
-                   "tables": (0xEFEACF83, "2cbdffe660deb69e253a2d3f9efabc311ad880bf0bceab9f796ec4fa8d93a821")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C0000, "tag": 0x32645},
+        "placed": {"code": (0xC16D439B, None), "tables": (0x5990E948, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x32645},
+            "placed": {"code": (0xC1FD5D9B, "60673518e4143c1ce2959230317dd60a84495f9db1bfd6d2c4e4b53740d91b80"),
+                       "tables": (0xEFEACF83, "2cbdffe660deb69e253a2d3f9efabc311ad880bf0bceab9f796ec4fa8d93a821")}}],
     },
     "2522008737d7845e43ab47a307d38498ee783c788a377fac855dff94dea53af0@md9600": {
         "name": "MD9600-REC(2571V4)-D26.57.bin",
         "version": "D26.57 REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1107456,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB4C00)],
         "code": (0x08077C3C, 0xF1EE, "c43426f088eb61bb8c8aa96356326431a0958340aa44ad9451741ed9c93419d2"),
         "tables": (0x080AE5E0, 0x11032, "877866109452231406875d9c1d39a1bca355fa2e491af691f1f530bde5f2a74e"),
-        "placement": {"code": 0x080E0000, "tag": 0x22657},
-        "placed": {"code": (0x4ADE21EA, "ee137536e69a224e9c08fa6c186f59e52cf5441e6cd7abd4ec1cae66f9bb5b8e"),
-                   "tables": (0x503BFE08, "a082d72a2374558860c3af7fcd751bdb37e2f3690ce86749e63ea86d3ed13094")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C0000, "tag": 0x22657},
+        "placed": {"code": (0xD47A944D, None), "tables": (0xAC31E690, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x22657},
+            "placed": {"code": (0x4ADE21EA, "ee137536e69a224e9c08fa6c186f59e52cf5441e6cd7abd4ec1cae66f9bb5b8e"),
+                       "tables": (0x503BFE08, "a082d72a2374558860c3af7fcd751bdb37e2f3690ce86749e63ea86d3ed13094")}}],
     },
     "cf52b678629466bac593d533abc87fd7524c6e123b608dce6ef0d4e685a1d79e@md9600": {
         "name": "MD9600-CSV-V06.03.bin",
         "version": "V06.03 CSV",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1093120,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB1400)],
         "code": (0x080746B0, 0xF23A, "8ebfa48e42c260639d55b5cdef450b9311b48388fd67db6bd8c4975aceeda209"),
         "tables": (0x080AACFC, 0x10FE6, "65595c1b85401b4693e5055eb68a85b6f723acacdcb688346db27a597a0b9ab3"),
-        "placement": {"code": 0x080E0000, "tag": 0x0603},
-        "placed": {"code": (0xAC0A6C89, "1943aca7d81ef3094d792b1b6c7c7dc764b4b5bdf677bf72d5aa5f7a8c98d41d"),
-                   "tables": (0x886A04C5, "195aa6a57aa94864972fdc65b8c7b5810099f8fab140896a5a4bcd305e8c15a2")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C000C, "tag": 0x0603},
+        "placed": {"code": (0x7468E41B, None), "tables": (0x4E50EAA6, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x0603},
+            "placed": {"code": (0xAC0A6C89, "1943aca7d81ef3094d792b1b6c7c7dc764b4b5bdf677bf72d5aa5f7a8c98d41d"),
+                       "tables": (0x886A04C5, "195aa6a57aa94864972fdc65b8c7b5810099f8fab140896a5a4bcd305e8c15a2")}}],
     },
     "50eed60616030f5ca110db649ec938782d90b23d7c911d05e388a0a7cd20af53@md9600": {
         "name": "MD9600-CSV-GPS-P06.03.bin",
         "version": "P06.03 CSV-GPS",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1099264,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB2C00)],
         "code": (0x08075C80, 0xF234, "01b4e1932a52871fede31eb28c7e2300c66151b69315d22bb034764768f15b01"),
         "tables": (0x080AC2BC, 0x11066, "0912f5637d8c9e305b005207a203e963fd2c2b01ff6a0db34d5777f72c4933a2"),
-        "placement": {"code": 0x080E0000, "tag": 0x10603},
-        "placed": {"code": (0xA8BC5920, "2a2d6f36ab4aa2bd2129293680cbea0bd5c8bc6b05c1b8e368df5198b5111a7a"),
-                   "tables": (0xDF5D6B0C, "7ef92737cd17c794aefc3961a7d1bd6921e9582a5ff0766df363030d17a679d1")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C000C, "tag": 0x10603},
+        "placed": {"code": (0xB5E72968, None), "tables": (0x3DC006E6, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x10603},
+            "placed": {"code": (0xA8BC5920, "2a2d6f36ab4aa2bd2129293680cbea0bd5c8bc6b05c1b8e368df5198b5111a7a"),
+                       "tables": (0xDF5D6B0C, "7ef92737cd17c794aefc3961a7d1bd6921e9582a5ff0766df363030d17a679d1")}}],
     },
     "6356f4f467942ea0a1137d625071945ad47c0af72320bfc4f7890d99371cd8ca@md9600": {
         "name": "MD9600-REC-D06.03.bin",
         "version": "D06.03 REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1102336,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB3800)],
         "code": (0x0807682C, 0xF210, "1bfe2e1e5cbb25de0d0b50ebd0606e848cf5a434a537c09d0500f70d8c41a19e"),
         "tables": (0x080AD1E0, 0x10FF6, "ed2b8cea0ef67b78e5469089210f52b078afea33e94eedc347c0bf3d301f2f63"),
-        "placement": {"code": 0x080E0000, "tag": 0x20603},
-        "placed": {"code": (0x2463B336, "a276317cb41b9dc14319b11402c7a3ac594ae94cba4a8f5e3ce0ad5c2d2088b5"),
-                   "tables": (0x41B67AF0, "a5ff392b0e60415e2122035b76b988e78f4b6b2b3090c69e4a9d5eae70511216")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C0000, "tag": 0x20603},
+        "placed": {"code": (0x5D6647FA, None), "tables": (0x59EE7CF2, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x20603},
+            "placed": {"code": (0x2463B336, "a276317cb41b9dc14319b11402c7a3ac594ae94cba4a8f5e3ce0ad5c2d2088b5"),
+                       "tables": (0x41B67AF0, "a5ff392b0e60415e2122035b76b988e78f4b6b2b3090c69e4a9d5eae70511216")}}],
     },
     "4cb9f3bd483eb998a96c2700b070af94393f91aab688dd5b0670c85e379f1452@md9600": {
         "name": "MD9600-GPS-REC-S06.03.bin",
         "version": "S06.03 GPS-REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1108480,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB5000)],
         "code": (0x08077E3C, 0xF22E, "f6c803bdb4346e9631f7b78230edc3bc800b82fb73298c79b888d8d0a4a27ea4"),
         "tables": (0x080AE820, 0x11076, "624a0d7210c76928ae90b3b1de8a228e67142e79701ff9ab6a4f86a0f30a10a0"),
-        "placement": {"code": 0x080E0000, "tag": 0x30603},
-        "placed": {"code": (0x28F39772, "d84d9b736a7addd85eac279363c84246c4a6105069f883aade2e291671e05123"),
-                   "tables": (0x229CF445, "94604d535dbc942fdb7fe4302fa714d5fa16ad7589597eff993d6967e705045e")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C0000, "tag": 0x30603},
+        "placed": {"code": (0xCFE5669B, None), "tables": (0x53C166F7, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x30603},
+            "placed": {"code": (0x28F39772, "d84d9b736a7addd85eac279363c84246c4a6105069f883aade2e291671e05123"),
+                       "tables": (0x229CF445, "94604d535dbc942fdb7fe4302fa714d5fa16ad7589597eff993d6967e705045e")}}],
     },
     "b25c573013b79f58a65629f0df85f5aced57c89eabde40465331984bb14dcc38@md9600": {
         "name": "MD9600-REC-D03.28.bin",
         "version": "D03.28 REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1089024,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB0400)],
         "code": (0x080724B4, 0x102F6, "79f12a8417c37391f57eac84e49e74d51682a9a3360c5ba799d1e5b3612b6aec"),
         "tables": (0x080A9F5C, 0x10C8E, "897fa811141c79ba2628aa79bd7ad64a7ef08e5da204200d9d12424b55a02fea"),
-        "placement": {"code": 0x080E0000, "tag": 0x20328},
-        "placed": {"code": (0xF1CF88D9, "fa77a8d4f69d352afa0d2d81287d53d903dfe3aafc6ab860f719ba3391dbd4d1"),
-                   "tables": (0x7B2C05F7, "c9bdec1a7fdda190d7ad5f019d9fb85f781feb7e40b42adcf210d83d63658dfc")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C000C, "tag": 0x20328},
+        "placed": {"code": (0x42DD43AB, None), "tables": (0x4A6B4212, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x20328},
+            "placed": {"code": (0xF1CF88D9, "fa77a8d4f69d352afa0d2d81287d53d903dfe3aafc6ab860f719ba3391dbd4d1"),
+                       "tables": (0x7B2C05F7, "c9bdec1a7fdda190d7ad5f019d9fb85f781feb7e40b42adcf210d83d63658dfc")}}],
     },
     "9035209ffb2ecd08999cea93bfe5d255006e783f0a4da11354390c9ecbcb8521@md9600": {
         "name": "MD9600-REC-D03.29.bin",
         "version": "D03.29 REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1089024,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB0400)],
         "code": (0x080724C0, 0x102EA, "066d2c85d621f2f3d1ddabf910acb61fe6dcebc96d46f2188a6e079b3e22b626"),
         "tables": (0x080A9F5C, 0x10C8E, "07f412b7a6c3e4d9fbd7eef881e64ac25bd46c6425b5eae02976b838d608a0cb"),
-        "placement": {"code": 0x080E0000, "tag": 0x20329},
-        "placed": {"code": (0x30EBC7BC, "30da834cee07476abed2f0927b58d616b59c7632f80eb4dcd98c5780b948b468"),
-                   "tables": (0xCEFD3850, "25a5eeb6fd9692591580ce03e7ee6415b00ff59eb797b9b20c9c6d7500207be2")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C000C, "tag": 0x20329},
+        "placed": {"code": (0x64A12BF0, None), "tables": (0x0C7369ED, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x20329},
+            "placed": {"code": (0x30EBC7BC, "30da834cee07476abed2f0927b58d616b59c7632f80eb4dcd98c5780b948b468"),
+                       "tables": (0xCEFD3850, "25a5eeb6fd9692591580ce03e7ee6415b00ff59eb797b9b20c9c6d7500207be2")}}],
     },
     "32044e55879afa44c7a525a9a53633a51e38c3ae01ff512d2d0971117a97a75b@md9600": {
         "name": "MD9600-REC-D04.03.bin",
         "version": "D04.03 REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1089024,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB0400)],
         "code": (0x080727CC, 0x102DE, "6cdc6fadc6f86b95d1b247255c4766ce435543de2b445449f86da6d22588e4cf"),
         "tables": (0x080AA25C, 0x10C7E, "484461f34abf04ec22c30752a5ca1d83eecb5f4aa99c67bde39d1341c282020b"),
-        "placement": {"code": 0x080E0000, "tag": 0x20403},
-        "placed": {"code": (0x079D54DE, "1ab26e5e3c233557a5aa4d875261b3fc8e8b65117f847979f759061f18ff95fc"),
-                   "tables": (0xF12A738E, "6caca513bbaa1f468ab3c3915f8e5dc2a9f3f58472e9ef1d464432fe67727ba8")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C000C, "tag": 0x20403},
+        "placed": {"code": (0xE2F24AE5, None), "tables": (0xCABDC2B1, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x20403},
+            "placed": {"code": (0x079D54DE, "1ab26e5e3c233557a5aa4d875261b3fc8e8b65117f847979f759061f18ff95fc"),
+                       "tables": (0xF12A738E, "6caca513bbaa1f468ab3c3915f8e5dc2a9f3f58472e9ef1d464432fe67727ba8")}}],
     },
     "1536ea3093394859c29ec6a522464c1b3f87a516e1a73b2cbf4f7be254b2dec4@md9600": {
         "name": "RT90-CSV(2571V5)-V26.41.bin",
         "version": "V26.41 CSV",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1096192,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB2000)],
         "code": (0x080751E0, 0xF214, "52d94ddea594c34f7a8277c665e8c513ce483cae67e165cc79d693cc8d86ff0f"),
         "tables": (0x080AB7FC, 0x11036, "356f6ae066b8fbc9d3fc04a85ad7525c75d8dcb17373b5cc6073111dcbb1421c"),
-        "placement": {"code": 0x080E0000, "tag": 0x2641},
-        "placed": {"code": (0x60C83344, "c4a6ce5b93218f862494680ff8faff701e9c39cf63125c48a19571c8b766151e"),
-                   "tables": (0xB2F17F8F, "13703f6b7b75fff98e822a627b341e1e979217dc12bf944a103f32e60236e1d3")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C000C, "tag": 0x2641},
+        "placed": {"code": (0x1F219B16, None), "tables": (0x1058C66D, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x2641},
+            "placed": {"code": (0x60C83344, "c4a6ce5b93218f862494680ff8faff701e9c39cf63125c48a19571c8b766151e"),
+                       "tables": (0xB2F17F8F, "13703f6b7b75fff98e822a627b341e1e979217dc12bf944a103f32e60236e1d3")}}],
     },
     "8acfedbc60fe8dec2d88ed1f00a1444d6f8f243590d967a1a59b121f5d6dfef4@md9600": {
         "name": "RT90-CSV-GPS(2571V5)-P26.41.bin",
         "version": "P26.41 CSV-GPS",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1102336,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB3800)],
         "code": (0x08076980, 0xF234, "a09d8a83d7481ae485d1eff87744eb5569587e68d1e82d4da993c193c48cd89a"),
         "tables": (0x080ACFBC, 0x110B6, "085caab11a4a603c56990e94d03ab66585ba3b3d15f7432b4abfb6ace3f0b470"),
-        "placement": {"code": 0x080E0000, "tag": 0x12641},
-        "placed": {"code": (0x509B33F4, "d79a2fe42496b37fba8519b19c597c0b781b7d10f5e83a25051cfbf35dff9707"),
-                   "tables": (0xF8C5439D, "108e733f8673bc55c4a409498120c6b3c4bdca578d457830c91b5b4979007484")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C000C, "tag": 0x12641},
+        "placed": {"code": (0x3F571143, None), "tables": (0x8B7C3F76, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x12641},
+            "placed": {"code": (0x509B33F4, "d79a2fe42496b37fba8519b19c597c0b781b7d10f5e83a25051cfbf35dff9707"),
+                       "tables": (0xF8C5439D, "108e733f8673bc55c4a409498120c6b3c4bdca578d457830c91b5b4979007484")}}],
     },
     "267dac314c1aa217ab259a6f9709f2e19342ff3a79aa18a2bf8b501939347e49@md9600": {
         "name": "RT90-REC(2571V5)-D26.38.bin",
         "version": "D26.38 REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1105408,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB4400)],
         "code": (0x080771B0, 0xF210, "96e8464d77194beea47e6ddea53f7ea44e1e7313d067e1b2b601be0d193a7ce3"),
         "tables": (0x080ADB60, 0x1100E, "dda353cf2856f1e58d4eb20ba00a8239c66a227906dbe15db27e017c5194cccd"),
-        "placement": {"code": 0x080E0000, "tag": 0x22638},
-        "placed": {"code": (0x1EB20C9A, "7d17ebbe71539bf3c59a1fe63e61a4d831364431d90e7ad0005908c89c3c7193"),
-                   "tables": (0xEF601161, "0d68138fdb19d07d870a08f9caf0010c10d3fcbca1e8fa327aec2c7750ad6f53")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C0000, "tag": 0x22638},
+        "placed": {"code": (0x153AFFE0, None), "tables": (0x3612202B, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x22638},
+            "placed": {"code": (0x1EB20C9A, "7d17ebbe71539bf3c59a1fe63e61a4d831364431d90e7ad0005908c89c3c7193"),
+                       "tables": (0xEF601161, "0d68138fdb19d07d870a08f9caf0010c10d3fcbca1e8fa327aec2c7750ad6f53")}}],
     },
     "a10bad809048c8bbd9602c7b50ca4c824a6dbdee34b2167b872ec86c0affbbe1@md9600": {
         "name": "RT90-GPS-REC(2571V5)-S26.42.bin",
         "version": "S26.42 GPS-REC",
         "board": "md9600",
         "key_sha256": MD9600_KEY_SHA256,
-        "codec_profile": "md9600-s11",
+        "codec_profile": MD9600_CODEC,
         "size": 1111552,
         "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB5C00)],
         "code": (0x08078C18, 0xF22C, "74395e461ad0e8ec154bdaeef98cf7d42b16dc8704608f949258c71490634bb9"),
         "tables": (0x080AF5E0, 0x110C6, "8f1935786e1c087a7f615fa447472a0ed8e73f7ec5e3590287f0db9e140af36d"),
-        "placement": {"code": 0x080E0000, "tag": 0x32642},
-        "placed": {"code": (0x3BDF7D22, "b4f6757a2b150a245d056c7f45f3459b258e827ae7a74af79002fa9bc595c67d"),
-                   "tables": (0xDD55386A, "a920cb01ad249c086c2e4b02d9d2fd293471af2c221beb54b86d14b4977d43bb")},
+        "placement": {"code": 0x080E0000, "tables": 0x080C0000, "tag": 0x32642},
+        "placed": {"code": (0x16CE0290, None), "tables": (0x5F13B0DE, None)},
+        "former": [{
+            "codec_profile": MD9600_CODEC_S11,
+            "placement": {"code": 0x080E0000, "tag": 0x32642},
+            "placed": {"code": (0x3BDF7D22, "b4f6757a2b150a245d056c7f45f3459b258e827ae7a74af79002fa9bc595c67d"),
+                       "tables": (0xDD55386A, "a920cb01ad249c086c2e4b02d9d2fd293471af2c221beb54b86d14b4977d43bb")}}],
     },
 }
 
@@ -2132,24 +2415,55 @@ def code_map(prof, code=None):
     return found[0] if found else None
 
 
-def placed_windows(prof):
-    """Where the merge puts a profile's codec: [(addr, length, sha256)], code first, then the table windows (the extra
-    ones at their stock address, unchanged). Without "placement", the stock windows."""
+def forms(prof):
+    """Every layout a profile's codec can be in on a radio, newest first: the current placement, then each "former" one,
+    as {"codec_profile", "placement", "placed", "current"}; [] for a profile that doesn't move its codec. The stock
+    windows (windows()) are the other form a radio can hold"""
     if not prof.get("placement"):
+        return []
+    cur = {"codec_profile": prof["codec_profile"], "placement": prof["placement"], "placed": prof["placed"],
+           "current": True}
+    return [cur] + [dict(f, current=False) for f in prof.get("former", ())]
+
+
+def _form(prof, form):
+    return form if form is not None else (forms(prof) or [None])[0]
+
+
+def placed_windows(prof, form=None):
+    """Where the merge puts a profile's codec: [(addr, length, sha256)], code first, then the table windows (the extra
+    ones at their stock address, unchanged, unless the placement moves them too). Without "placement", the stock windows.
+    form: one of forms() (default: the current placement). A SHA-256 is None where the profile has none for the placed
+    bytes (check_form checks those through the stock windows)"""
+    form = _form(prof, form)
+    if form is None:
         return windows(prof)
-    pl, pd = prof["placement"], prof["placed"]
+    pl, pd = form["placement"], form["placed"]
     tab = prof["tables"]
+    extra = list(prof.get("extra", ()))
+    if "extra" in pl:
+        extra = [(a, n, None) for a, (_, n, _) in zip(pl["extra"], extra)]
     return [(pl["code"], prof["code"][1], pd["code"][1]),
-            (pl.get("tables", tab[0]), pl.get("tables_len", tab[1]), pd["tables"][1])] + list(prof.get("extra", ()))
+            (pl.get("tables", tab[0]), pl.get("tables_len", tab[1]), pd["tables"][1])] + extra
 
 
-def descriptor(prof):
+def carve(prof, form=None):
+    """The stock windows [(addr, length)] as a placement carves them, in placed_windows() order: the tables cut to
+    "tables_len" where the placement keeps only the codec's data"""
+    pl = _form(prof, form)["placement"]
+    tab = prof["tables"]
+    return [prof["code"][:2], (tab[0], pl.get("tables_len", tab[1]))] + [x[:2] for x in prof.get("extra", ())]
+
+
+def descriptor(prof, form=None):
     """The 128-byte descriptor for a placed codec (codec_desc.h): tag, code window, table windows, each with its CRC"""
-    wins = placed_windows(prof)
-    crcs = [prof["placed"]["code"][0], prof["placed"]["tables"][0]] + list(prof["placed"].get("extra", ()))
+    form = _form(prof, form)
+    wins = placed_windows(prof, form)
+    pd = form["placed"]
+    crcs = [pd["code"][0], pd["tables"][0]] + list(pd.get("extra", ()))
     if len(wins) - 1 > DESC_WINDOWS:
         raise StockError("%d table windows: the descriptor holds %d" % (len(wins) - 1, DESC_WINDOWS))
-    words = [DESC_MAGIC, DESC_VERSION, prof["placement"]["tag"], wins[0][0], wins[0][1], crcs[0], len(wins) - 1]
+    words = [DESC_MAGIC, DESC_VERSION, form["placement"]["tag"], wins[0][0], wins[0][1], crcs[0], len(wins) - 1]
     for i in range(DESC_WINDOWS):
         words += [wins[i + 1][0], wins[i + 1][1], crcs[i + 1]] if i + 1 < len(wins) else [0, 0, 0]
     body = struct.pack("<%dI" % len(words), *words)
@@ -2157,20 +2471,64 @@ def descriptor(prof):
     return body + struct.pack("<I", zlib.crc32(body) & 0xFFFFFFFF)
 
 
-def layout(prof):
+def layout(prof, form=None):
     """Where the merge puts the codec in the radio: [(addr, length, sha256)], code first, then the tables, then the
     descriptor when the profile moves the code. Without "placement", the stock windows."""
-    if not prof.get("placement"):
+    form = _form(prof, form)
+    if form is None:
         return windows(prof)
-    desc = descriptor(prof)
-    return placed_windows(prof) + [(DESC_ADDR, DESC_LEN, sha256(desc))]
+    desc = descriptor(prof, form)
+    return placed_windows(prof, form) + [(DESC_ADDR, DESC_LEN, sha256(desc))]
+
+
+def _crcs(form):
+    pd = form["placed"]
+    return [pd["code"][0], pd["tables"][0]] + list(pd.get("extra", ()))
+
+
+def unplace(prof, form, parts):
+    """A placed copy [(addr, bytes)] (placed_windows(prof, form) order, without the descriptor) taken back to the stock
+    windows: [(stock address, bytes)] as the stock file holds them, each checked against the profile's stock SHA-256,
+    or None when the copy isn't this profile's codec in that form. Nothing is trusted from the copy: every rewritten
+    site must hold what the form says (codecmap.relocate) and every window must come out as stock has it"""
+    m = code_map(prof)
+    wins = carve(prof, form)
+    if m is None or [a for a, _ in parts] != [a for a, _, _ in placed_windows(prof, form)]:
+        return None
+    try:
+        back = codecmap.relocate(m, wins, [d for _, d in parts], [a for a, _ in parts], [a for a, _ in wins])
+    except codecmap.MapError:
+        return None
+    tw = (m["table_windows"] or [{}])[0]
+    out = []
+    for (a, n), d, (_, sn, want) in zip(wins, back, windows(prof)):
+        if n != sn:		# a cut table window: the map's hash of the cut
+            want = tw.get("min_sha256") if (a, n) == (tw.get("min_start"), tw.get("min_len")) else None
+        if want is None or sha256(d) != want:
+            return None
+        out.append((a, d))
+    return out
+
+
+def check_form(prof, form, parts):
+    """True when parts [(addr, bytes)] are the profile's codec in this form (None: the stock windows), at its addresses:
+    by SHA-256 where the profile has one for each window, else through unplace()"""
+    wins = placed_windows(prof, form) if form is not None else windows(prof)
+    if [(a, len(d)) for a, d in parts] != [(a, n) for a, n, _ in wins]:
+        return False
+    if len(parts[0][1]) < 4 or struct.unpack_from("<I", parts[0][1], 0)[0] != CODEC_SIG:
+        return False
+    if all(want is not None for _, _, want in wins):
+        return all(sha256(d) == want for (_, d), (_, _, want) in zip(parts, wins))
+    return unplace(prof, form, parts) is not None
 
 
 def place(prof, segments):
     """The decrypted stock windows [(stock address, bytes)] as the merge writes them (layout()). With "placement": the
     code moved (codec map: its self references rewritten), the table window cut to the codec's data with the islands'
-    calls into the code re-encoded, the extra windows unchanged, then the descriptor. Every result is checked against
-    "placed"."""
+    calls into the code re-encoded, the extra windows unchanged (or, where the placement says, every window moved as
+    its own block, codecmap.relocate), then the descriptor. Every result is checked against "placed": its SHA-256, and
+    its CRC-32 where the profile has no SHA-256."""
     if not prof.get("placement"):
         return list(segments)
     pl = prof["placement"]
@@ -2178,8 +2536,15 @@ def place(prof, segments):
     if m is None:
         raise StockError("no codec map for %s: its code can't be moved" % prof["name"])
     (_, code), (tab_addr, tables) = segments[0], segments[1]
+    extra = list(segments[2:])
     try:
-        if "tables" in pl:
+        if "extra" in pl:
+            wins = carve(prof)
+            parts = [code, tables[:wins[1][1]]] + [d for _, d in extra]
+            out = codecmap.relocate(m, wins, parts, [a for a, _ in wins], [a for a, _, _ in placed_windows(prof)])
+            moved, tab, tab_addr = out[0], out[1], pl["tables"]
+            extra = list(zip(pl["extra"], out[2:]))
+        elif "tables" in pl:
             moved, tab = codecmap.move_window(code, tables, m, pl["code"], pl["tables"])
             tab_addr = pl["tables"]
         else:
@@ -2189,12 +2554,28 @@ def place(prof, segments):
                 raise StockError("a branch into the code lies outside the tables the merge keeps")
     except codecmap.MapError as e:
         raise StockError("can't move the codec: %s" % e)
-    extra = list(segments[2:])
-    for (_, n, want), got, what in zip(placed_windows(prof), [moved, tab] + [d for _, d in extra],
-                                       ["code", "tables"] + ["table 0x%08X" % a for a, _ in extra]):
-        if sha256(got) != want:
+    crcs = _crcs(forms(prof)[0])
+    for i, ((_, n, want), got, what) in enumerate(zip(placed_windows(prof), [moved, tab] + [d for _, d in extra],
+                                                      ["code", "tables"] + ["table 0x%08X" % a for a, _ in extra])):
+        if want is not None and sha256(got) != want:
             raise StockError("the moved %s doesn't match the profile (sha256 %s)" % (what, sha256(got)))
+        if want is None and zlib.crc32(got) != crcs[i]:
+            raise StockError("the moved %s doesn't match the profile (crc32 0x%08X)" % (what, zlib.crc32(got)))
     return [(pl["code"], moved), (tab_addr, tab)] + extra + [(DESC_ADDR, descriptor(prof))]
+
+
+def from_form(prof, form, parts):
+    """A copy found in a radio, in any form (None: the stock windows; else one of forms()), as the merge writes it now:
+    the current placement with its descriptor. A copy in a stock or former form is taken back to stock and placed
+    again (the move a layout change needs); None when the copy doesn't check"""
+    if not check_form(prof, form, parts):
+        return None
+    if form is not None and form.get("current"):
+        return list(parts) + [(DESC_ADDR, descriptor(prof))]
+    stock = parts if form is None else unplace(prof, form, parts)
+    if stock is None:
+        return None
+    return place(prof, stock)
 
 
 def profile_for_board(board_id):
@@ -2282,7 +2663,8 @@ def from_flash(flash, base=FLASH_BASE, profiles=None):
     supported codec is in it. A radio on its stock firmware holds the build's code and tables plain at their stock
     addresses: the build is found by the code window's SHA-256 there, every window is checked, and the codec is placed
     as a merge from the stock file places it. A radio running RadioFoundry holds it where the merge put it, with its
-    descriptor, and is taken as it is. No key is needed: the flash holds the codec decrypted."""
+    descriptor, and is taken as it is; one where an earlier release put it (a "former" placement) is taken back to stock
+    and placed again. No key is needed: the flash holds the codec decrypted."""
     profiles = PROFILES if profiles is None else profiles
 
     def read(wins):
@@ -2295,15 +2677,25 @@ def from_flash(flash, base=FLASH_BASE, profiles=None):
             parts.append((a, bytes(d)))
         return parts if struct.unpack_from("<I", parts[0][1], 0)[0] == CODEC_SIG else None
 
+    def grab(wins):
+        parts = []
+        for a, n, _ in wins:
+            off = a - base
+            d = flash[off:off + n] if off >= 0 else b""
+            if len(d) != n:
+                return None
+            parts.append((a, bytes(d)))
+        return parts
+
     for prof in profiles.values():
         parts = read(windows(prof))
         if parts:
             return prof, place(prof, parts)
-        if prof.get("placement"):
-            desc = descriptor(prof)
-            parts = read(placed_windows(prof) + [(DESC_ADDR, DESC_LEN, sha256(desc))])
-            if parts:
-                return prof, parts
+        for form in forms(prof):
+            parts = grab(placed_windows(prof, form))
+            got = from_form(prof, form, parts) if parts else None
+            if got:
+                return prof, got
     return None
 
 
@@ -2412,7 +2804,10 @@ def split_merged(image, profiles=None):
         if APP_BASE + len(image) < max(a + n for a, n, _ in wins):
             continue
         segs = [(a, image[a - APP_BASE:a - APP_BASE + n]) for a, n, _ in wins]
-        if any(sha256(d) != want for (_, d), (_, _, want) in zip(segs, wins)):
+        if prof.get("placement"):
+            if sha256(segs[-1][1]) != wins[-1][2] or not check_form(prof, forms(prof)[0], segs[:-1]):
+                continue
+        elif any(sha256(d) != want for (_, d), (_, _, want) in zip(segs, wins)):
             continue
         rest = bytearray(image[first - APP_BASE:])
         for a, d in segs:
@@ -2548,6 +2943,7 @@ def random_bytes(rng, n):
 
 SYN_SELF_REF = 0x40      # the synthetic codec's self reference (code offset) and island call (table window offset)
 SYN_BL = 0x110
+SYN_TABLE_REF = 0x80     # the synthetic codec's table references, for a profile whose every window moves
 
 
 def build_synthetic_stock(key, rng, profile_sha=None):
@@ -2581,8 +2977,8 @@ def build_synthetic_stock(key, rng, profile_sha=None):
     for i, (a, n) in enumerate(segs):
         struct.pack_into("<II", header, 0x80 + 8 * i, a, n)
     stream = (key * (payload_len // KEY_LEN + 1))[:payload_len]
-    enc = bytes(a ^ b for a, b in zip(plain, stream))
-    stock = bytes(header) + enc + random_bytes(rng, 0x100)	# trailer, as the real files
+    trailer = random_bytes(rng, 0x100)	# as the real files
+    stock = bytes(header) + bytes(a ^ b for a, b in zip(plain, stream)) + trailer
     prof = dict(real, code=wins[0][:3], tables=wins[1][:3], size=len(stock))
     if real.get("file_radio"):
         prof["key_sha256"] = sha256(key)
@@ -2591,23 +2987,57 @@ def build_synthetic_stock(key, rng, profile_sha=None):
     if real.get("placement"):	# its own codec map (a self reference, an island with a call into the code), placed
         code, tab = wins[0][3], wins[1][3]
         isl = wins[1][0] + SYN_BL - 0x10
-        prof["map"] = codecmap.normalize({
+        raw_map = {
             "format": codecmap.FORMAT, "profile": "synthetic-" + real["codec_profile"], "board": real["board"],
             "isa": "thumb2", "code": {"flash": run, "len": len(code), "run": run, "sha256": sha256(code)},
             "entries": {}, "self_refs": [{"off": SYN_SELF_REF, "value": run + 0x201}],
             "islands": [{"start": isl, "len": 0x40}],
             "branches": [{"at": wins[1][0] + SYN_BL, "target": run + 0x200}],
             "table_windows": [{"flash": wins[1][0], "run": wins[1][0], "len": len(tab), "min_start": wins[1][0],
-                               "min_len": len(tab), "min_sha256": sha256(tab)}]})
-        pl = real["placement"]
-        at, n = pl["code"], pl.get("tables_len", len(tab))
-        if "tables" in pl:
-            mc, mt = codecmap.move_window(code, tab, prof["map"], at, pl["tables"])
-        else:
-            mc = codecmap.move_code(code, prof["map"], at)
-            mt = codecmap.move_branches(wins[1][0], tab[:n], prof["map"], at)
-        prof["placed"] = {"code": (zlib.crc32(mc) & 0xFFFFFFFF, sha256(mc)),
-                          "tables": (zlib.crc32(mt) & 0xFFFFFFFF, sha256(mt))}
-        if "extra" in real:
-            prof["placed"]["extra"] = [zlib.crc32(w[3]) & 0xFFFFFFFF for w in wins[2:]]
-    return stock, {sha256(stock): prof}, wins[0][3], wins[1][3]
+                               "min_len": len(tab), "min_sha256": sha256(tab)}]}
+        if "extra" in real["placement"] or real.get("former"):
+            # a codec whose every window moves (codecmap.relocate): a word and a movw/movt pair into the tables, a word
+            # into each extra window, written into the code (the code's hash is taken after)
+            code = bytearray(code)
+            refs = [{"off": SYN_TABLE_REF, "target": wins[1][0] + 0x20}]
+            struct.pack_into("<I", code, SYN_TABLE_REF, wins[1][0] + 0x20)
+            r = {"kind": "movw_movt", "off": SYN_TABLE_REF + 8, "off2": SYN_TABLE_REF + 12, "target": wins[1][0] + 0x44}
+            struct.pack_into("<HHHH", code, r["off"], codecmap._MOVW, 0, codecmap._MOVT, 0)
+            codecmap._put_pair(code, r, r["target"])
+            refs.append(r)
+            for k, w in enumerate(wins[2:]):
+                o = SYN_TABLE_REF + 16 + 4 * k
+                struct.pack_into("<I", code, o, w[0] + 4)
+                refs.append({"off": o, "target": w[0] + 4})
+            code = bytes(code)
+            raw_map["table_refs"] = refs
+            raw_map["code"]["sha256"] = sha256(code)
+            wins[0] = (wins[0][0], len(code), sha256(code), code)
+            off = app_off + run - APP_BASE
+            plain[off:off + len(code)] = code
+        prof["map"] = codecmap.normalize(raw_map)
+        prof["code"] = wins[0][:3]
+
+        def placed(form):
+            pl = form["placement"]
+            at, n = pl["code"], pl.get("tables_len", len(tab))
+            if "extra" in pl:
+                cw = [(w[0], len(w[3])) for w in wins]
+                out = codecmap.relocate(prof["map"], cw, [w[3] for w in wins], [a for a, _ in cw],
+                                        [at, pl["tables"]] + list(pl["extra"]))
+                return {"code": (zlib.crc32(out[0]) & 0xFFFFFFFF, None), "tables": (zlib.crc32(out[1]) & 0xFFFFFFFF, None),
+                        "extra": [zlib.crc32(d) & 0xFFFFFFFF for d in out[2:]]}
+            if "tables" in pl:
+                mc, mt = codecmap.move_window(wins[0][3], tab, prof["map"], at, pl["tables"])
+            else:
+                mc = codecmap.move_code(wins[0][3], prof["map"], at)
+                mt = codecmap.move_branches(wins[1][0], tab[:n], prof["map"], at)
+            out = {"code": (zlib.crc32(mc) & 0xFFFFFFFF, sha256(mc)), "tables": (zlib.crc32(mt) & 0xFFFFFFFF, sha256(mt))}
+            if "extra" in real:
+                out["extra"] = [zlib.crc32(w[3]) & 0xFFFFFFFF for w in wins[2:]]
+            return out
+        prof["placed"] = placed(real)
+        if real.get("former"):
+            prof["former"] = [dict(f, placed=placed(f)) for f in real["former"]]
+    stock = bytes(header) + bytes(a ^ b for a, b in zip(plain, stream)) + trailer
+    return stock, {sha256(stock): dict(prof, size=len(stock))}, wins[0][3], wins[1][3]

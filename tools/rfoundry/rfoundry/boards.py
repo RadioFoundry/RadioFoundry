@@ -65,6 +65,7 @@ class Board:
         self.first_stage = (fs[0], bytes.fromhex(fs[1])) if fs else None
         c = dict(e["codec"])
         self.codec_layouts = {}
+        self.codec_former = []
         self.codec_codes = [self.codec_code] if self.codec_code is not None else []
         if c["id"] is None:
             # a stock-file placement (STM32): each listed stock file puts its codec where its own layout says. The board's
@@ -81,6 +82,9 @@ class Board:
                 self.codec_layouts[h] = lay
                 wins += [w for w in lay if w not in wins]
             c.update(id=profs[0]["codec_profile"], windows=wins, sources=c["sources"] or [p["name"] for p in profs])
+            # the ids earlier releases reported for this codec where they put it (the profiles' "former" layouts): a
+            # radio that reports one holds the codec where this release's image goes, so it is read back and moved
+            self.codec_former = sorted({f["codec_profile"] for p in profs for f in p.get("former", ())})
             # where each file's codec code starts (its first word is the codec signature), first file first
             self.codec_codes = [self.codec_layouts[h][0][0] for h in self.codec_stock]
             self.codec_code = self.codec_codes[0]

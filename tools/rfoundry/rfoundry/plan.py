@@ -9,6 +9,10 @@ Codec modes (docs/dev/release.md "Codec handling"):
           the codec at its stock addresses (0xFF around it). Refused unless every codec window is covered. The image
           may share a sector with a codec window (never the window itself); that sector is written with both.
 
+Every sector of the plan is erased before any is written, the application's first sector (the vector table) first; it
+is written last (Plan.erase_order, Plan.write_order). A run stopped anywhere leaves that sector blank, so the bootloader
+stays in its update mode and the same plan runs again.
+
 A written sector is always erased first and written from its start through its last data block (0xFF filling the
 gaps), as one run of 1024-byte blocks numbered from 2: the AnyRoad bootloader's region form (hardware-dm1701.md 15.2).
 
@@ -57,6 +61,19 @@ class Plan:
     @property
     def writes(self):
         return [s for s in self.steps if s.action == "write"]
+
+    @property
+    def erase_order(self):
+        """The erases in the order they run: the sector with the application's start (its vector table) first, so
+        an erase stopped anywhere leaves no application the bootloader would start."""
+        return sorted(self.erase, key=lambda s: s.addr != self.board.app_base)
+
+    @property
+    def write_order(self):
+        """The writes in the order they run: the sector with the application's start last. Until it is written the
+        bootloader finds no application and stays in its update mode, so a write stopped anywhere is finished by
+        running the same plan again."""
+        return sorted(self.writes, key=lambda st: st.sector.addr == self.board.app_base)
 
     @property
     def kept(self):

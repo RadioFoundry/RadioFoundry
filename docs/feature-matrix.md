@@ -12,8 +12,8 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
     default build uses link time optimization: 330,824 B (13,240 free). The per-feature figures stay the plain ones.
   - MD-380: link time optimization on (`LTO=1 LTO_3P=1`, its default), default image 279,444 B of 281,668 B, the
     region it had then. With LTO a switch also changes what gets inlined elsewhere, so small MD-380 figures are
-    approximate. Since the codec moved (2026-10-19) the region is 464 KB and the switches that were off for flash are
-    on; the per-feature figures stay the 2026-10-11 ones.
+    approximate. Since the codec moved the region is 464 KB, and since every codec window moved into sector 11
+    848 KB; the switches that were off for flash are on. The per-feature figures stay the 2026-10-11 ones.
   - `*` = off by default; measured by turning it on in the DM-1701 build (main c0022b4).
 - **Radios:** which switches each radio builds by default is in
   [Built by default on each radio](#built-by-default-on-each-radio), generated from the build. A — in a bytes column
@@ -409,17 +409,16 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 Link time optimization is on by default on both radios. The DM-1701 has run with it since 2026-10-13 (the HIL suite
 passed); `LTO_3P=1` would take another 3 KB or so off by optimizing the third-party code too.
 
-The MD-380's app region is sectors 3-7, 0x0800C000..0x0807FFFF, 475,136 bytes (464 KB). The codec runs in place in
-sectors 8, 10 and 11 ([codec-md380.md](spec/codec-md380.md)). Measured 2026-10-19 with link time optimization, its
-default:
+The MD-380's app region is sectors 3-10, 0x0800C000..0x080DFFFF, 868,352 bytes (848 KB). The codec runs in place in
+sector 11 ([codec-md380.md](spec/codec-md380.md)). With link time optimization, its default:
 
-| MD-380 build | Flash | Free | RAM | CCM |
-|---|---:|---:|---:|---:|
-| Default (UHF) | 320,236 | 154,900 | 107,120 of 131,068 | 59,640 of 65,536 |
-| Maximal | 327,064 | 148,072 | | |
+| MD-380 build | Flash | Free |
+|---|---:|---:|
+| Default (UHF) | 465,912 | 402,440 |
+| Maximal | 469,168 | 399,184 |
 
-Until the codec moved, the region was 281,668 bytes and the default image fit only with link time optimization and
-the hotspot off.
+Until the codec first moved, the region was 281,668 bytes and the default image fit only with link time optimization
+and the hotspot off. Until every codec window moved into sector 11 it was 475,136 bytes (sectors 3-7).
 
 ### DM-32UV
 

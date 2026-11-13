@@ -46,7 +46,7 @@ import { FakeC7000, c7000Simulation, fakeC7000Options } from "./fakec7000.js";
 import { APP_ENTRY } from "./iap.js";
 import { slotBytes, locateCodec } from "./c7000.js";
 import { Stub, StubError } from "./stub.js";
-import { F4Stub, f4Image, registerShort } from "./f4stub.js";
+import { F4Stub, f4Image, registerShort, withCodec } from "./f4stub.js";
 import { f4LoaderReader } from "./readers.js";
 import * as openfw from "./openfw.js";
 import { register, backendOf, bundleBackend, allBackends } from "./backends.js";
@@ -416,8 +416,20 @@ register({
 const f4Board = () => fb().f4stub?.boards[S.board?.id];
 // A chip whose flash size register reads less than the firmware's flash: the loader would refuse the top sectors
 const shortRegister = () => !!(f4Board() && S.now?.kind === "rfoundry" && registerShort(S.now.flashKb, f4Board().owned));
+// The radio reports a codec where an earlier release kept it (board.codec.former): partly in flash this release's
+// application uses, so the install moves it, from the copy read back from the radio before anything is erased
+const codecMoves = (probe = S.now?.probe) => !!probe?.codec && (S.board?.codec.former || []).includes(probe.codec);
+// The copy read back from the radio is kept in this browser (IndexedDB), not only in this page: a codec move takes it
+// only then (decide.js savedKept). The simulator keeps nothing and stands in for a browser that does
+const savedKept = () => !!S.savedCodec && (!!S.sim || !!S.savedCodec.stored);
+// The picked stock file gives this radio's codec
+const stockGivesCodec = () => !!S.stock && stockfw.profileFor(fb().profiles, S.stock.info?.sha, S.board.id)?.board === S.board.id;
+// A codec that moves takes the loader route whenever the radio offers it: from the copy kept in this browser, else from
+// the stock file the loader step asks for (stubSegments). A move that stops halfway is finished from either through the
+// bootloader route; a copy only in this page is never used for a move
 const stubRoute = () => !!((S.task === "install" || S.task === "update") && f4Board() && S.now?.kind === "rfoundry" && S.now.stubOffer && !S.requested
-	&& S.now.probe?.codec === S.board.codec.id && !S.firmware?.manifest.codec?.included && !shortRegister());
+	&& (S.now.probe?.codec === S.board.codec.id || codecMoves())
+	&& !S.firmware?.manifest.codec?.included && !shortRegister());
 // The loader hand-over RadioFoundry offers now: the one probed before the install, or after a first install (doneView)
 // the one the build just written offers, while S.now still says what ran before it
 const loaderOffer = () => (!f4Board() ? null : S.now?.kind === "rfoundry" ? S.now.stubOffer : S.now?.afterOffer || null);
@@ -669,12 +681,18 @@ async function keyFromRadio(link) {
 }
 
 // A radio running RadioFoundry with its codec hands it over (codecsave.js), and this browser keeps a copy: where an update
-// erases the codec (keep_codec_supported false) before anything is erased, elsewhere once, for an install that can't
-// keep it (a radio back on stock firmware, an interrupted install, a radio in its bootloader). Quiet when it can't:
-// the stock file still works.
+// erases the codec (keep_codec_supported false) or moves it (a codec where an earlier release kept it, codecMoves())
+// before anything is erased, elsewhere once, for an install that can't keep it (a radio back on stock firmware, an
+// interrupted install, a radio in its bootloader). Quiet when it can't: the stock file still works. The copy is never
+// deleted: an install that stops halfway is finished from it
 async function codecFromRadio(link, probe, status) {
-	if (probe?.codec !== S.board.codec.id || S.savedCodec?.from === "radio") return;
-	if (S.board.keep_codec_supported && !S.sim && (await loadCodec(S.board, fb()))) return;
+	const moves = codecMoves(probe);
+	if ((probe?.codec !== S.board.codec.id && !moves) || S.savedCodec?.from === "radio") return;
+	if (S.board.keep_codec_supported && !S.sim) {
+		const saved = await loadCodec(S.board, fb());
+		if (saved && moves) S.savedCodec = { ...saved, from: "browser", stored: true };
+		if (saved) return;
+	}
 	status?.replaceChildren(h("p", { class: "muted" }, t("flash.now.reading_codec")));
 	const got = await readCodec(link, S.board, fb());
 	if (got) S.savedCodec = { ...got, from: "radio", stored: S.sim ? false : await saveCodec(S.board, got.segments) };
@@ -1996,7 +2014,7 @@ function codecView() {
 		let err = null;
 		try {
 			S.decision = decideCodec(S.board, fw.manifest, {
-				haveStock, haveSaved: !!S.savedCodec, requested: S.requested || null,
+				haveStock, haveSaved: !!S.savedCodec, savedKept: savedKept(), requested: S.requested || null,
 				probe: S.now?.kind === "rfoundry" ? S.now.probe : null,
 				stockInstalled: S.now?.kind === "stock" ? S.now.version : null,
 				runsStock: S.now?.kind === "stock",
@@ -2216,7 +2234,7 @@ function writeView() {
 		variant: fw.variant || fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null };
 	const dfu = (opts) => bootloaderPanel(t("flash.write.title"), async () => {
 		// from the cable route the codec step was skipped: decide now, from what the radio reported
-		S.decision ||= decideCodec(S.board, fw.manifest, { haveStock: false, haveSaved: !!S.savedCodec, probe: S.now?.probe || null });
+		S.decision ||= decideCodec(S.board, fw.manifest, { haveStock: stockGivesCodec(), haveSaved: !!S.savedCodec, savedKept: savedKept(), probe: S.now?.probe || null });
 		let codec = [], prof = null;
 		if (S.decision.mode === MERGE && S.decision.source === "saved") {
 			prof = S.savedCodec.profile;
@@ -2238,6 +2256,23 @@ function writeView() {
 	return h("div", { class: "flasher" }, stubPanel(fallback, next, what), fallback);
 }
 
+// The segments the loader writes: the build, and where the radio's codec moves (codecMoves) the codec too, from the copy
+// read back from the radio and kept in this browser, else from the stock file (as rfoundry's stub_codec_move), placed
+// where this build keeps it: the loader writes the codec's sectors whole from it (f4stub.js withCodec). The loader
+// erases sector 3 first, so a radio that stops halfway starts in its bootloader, and the bootloader route finishes the
+// move from the same copy or file
+async function stubSegments(fw, log) {
+	const segs = segments(fw.manifest, fw.image);
+	if (!codecMoves()) return segs;
+	S.decision = decideCodec(S.board, fw.manifest, { haveSaved: !!S.savedCodec, savedKept: savedKept(), haveStock: stockGivesCodec(), probe: S.now.probe });
+	noteDecision();
+	log.add(said(S.decision.whyKey, S.decision.args));
+	if (S.decision.mode !== MERGE) return segs;	// the loader refuses a plain image over the codec (f4stub.js guardCodec)
+	if (S.decision.source === "saved") return withCodec(segs, await codecSegments(S.savedCodec.profile, S.savedCodec.segments, fb()), f4Board().codec);
+	const { segments: codec } = await stockfw.extract(S.stock.data, await getKey(S.board), fb(), fb().profiles, S.board.id);
+	return withCodec(segs, codec, f4Board().codec);
+}
+
 // Install through the STM32F4 loader on a radio running RadioFoundry (f4stub.js). fallback: the bootloader route's details,
 // opened when the loader can't finish
 function stubPanel(fallback, onDone, what) {
@@ -2254,7 +2289,7 @@ function stubPanel(fallback, onDone, what) {
 			started = flashStarted(what);
 			await stub.configure();	// the radio's board record, its echo checked before any write
 			prog.set(0, 1, t("flash.f4.reading"));
-			const r = await stub.writeImage(f4Board().owned, segments(fw.manifest, fw.image), {
+			const r = await stub.writeImage(f4Board().owned, await stubSegments(fw, log), {
 				// bytes in a rewritten sector that aren't the firmware's (no radio has them since the codec moved): a copy first
 				onKept: async (sec) => {
 					const file = `${S.board.id}_sector${sec.index}_${hex(sec.addr)}.bin`;
@@ -2275,6 +2310,17 @@ function stubPanel(fallback, onDone, what) {
 			onDone();
 		} catch (e) {
 			flashFinished(started, e);
+			if (e.codecGuard) {
+				// refused before any erase: the radio leaves the loader and runs its firmware as before
+				let restarted = true;
+				try { await stub.resetChip(); } catch (err) { restarted = false; }
+				try { await stub.s.close?.(); } catch (err) { /* gone */ }
+				status.replaceChildren(...h("div", {}, errorNotice(t("flash.f4.failed", { error: errorText(e) })),
+					h("p", {}, t(restarted ? "flash.f4.guard_restarted" : "flash.f4.guard_leave")), helpLink()).childNodes);
+				S.forward(null);
+				openFallback();
+				return;
+			}
 			const again = button(t("flash.f4.again"), async () => {
 				again.disabled = true;
 				if (await stub.attach()) {
@@ -2328,8 +2374,27 @@ function stubPanel(fallback, onDone, what) {
 		}
 		await install();
 	}, { primary: true });
-	box.append(h("h2", {}, t("flash.f4.title")), h("p", {}, t("flash.f4.codec_text")), h("p", {}, h("b", {}, t("flash.f4.lead"))),
-		h("p", { class: "small muted" }, t("flash.f4.safety")), status);
+	// a move without a copy kept in this browser takes its codec from the stock file: Install waits for one that gives it
+	const needStock = () => codecMoves() && !savedKept() && !stockGivesCodec();
+	const stockBox = h("div");
+	const useStock = async (f) => {
+		S.stock = await pickedStock(f);
+		if (!S.keyFromRadio) S.key = S.keySource = null;
+		drawStock();
+	};
+	const drawStock = () => {
+		go.disabled = needStock();
+		if (!codecMoves() || savedKept()) return stockBox.replaceChildren();
+		const picked = !S.stock ? null : S.stock.problem ? problemNotice(S.stock.problem)
+			: h("p", {}, "✓ ", t("flash.codec.stock_loaded", { name: S.stock.name, what: S.stock.info.known || t("flash.codec.stock_build", { radio: S.board.name }) }));
+		stockBox.replaceChildren(h("div", { class: `notice ${needStock() ? "action" : "ok"}` }, h("strong", {}, t("flash.f4.move_stock_title")),
+			h("p", {}, t("flash.f4.move_stock", { files: stockFiles() })),
+			S.sim ? button(t("flash.sim.use_stock"), () => useStock({ name: "simulated-stock.bin", data: S.sim.stock }))
+				: filePicker(t("flash.codec.stock_pick"), ".bin,.zip", useStock), picked));
+	};
+	drawStock();
+	box.append(h("h2", {}, t("flash.f4.title")), h("p", {}, t(codecMoves() ? "flash.f4.move_text" : "flash.f4.codec_text")), stockBox,
+		h("p", {}, h("b", {}, t("flash.f4.lead"))), h("p", { class: "small muted" }, t("flash.f4.safety")), status);
 	S.forward(go);
 	return box;
 }
