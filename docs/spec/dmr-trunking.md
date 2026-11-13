@@ -158,6 +158,8 @@ carries them. The registration state follows the latest Aloha or broadcast Reg f
 | 1 | no | needed; the access side registers (section 7.2) |
 
 A registration record holds the area it was made in: MODEL, NET and the DMRLA top bits of SITE (SYS_AREA, 6.4.4).
+DMRLA 0 is reserved (361-4 table 6.5), so a radio without one takes every site as an area of its own and registers
+on each site it moves to.
 A TSCC of another area needs a new registration. An area that denied registration stays denied until the engine
 restarts.
 

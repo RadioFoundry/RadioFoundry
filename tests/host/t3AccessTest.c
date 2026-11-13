@@ -410,6 +410,36 @@ static void test_no_answer(void)
 	CHECK(nsent > n, "registration tried again later");
 }
 
+// DMRLA 0 is reserved (361-4 table 6.5: 1 at least): unset, every site is its own registration area, so a radio
+// that moves to another site of the network registers there
+static void test_area_unset(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	cfg.dmrla = 0;
+	camp_registered(&ms);
+	t3_syscode_t s;
+	t3_syscode_split(al.syscode, &s);
+	s.site ^= 1u;	// the next site, the same area for any DMRLA short of the whole SITE field
+	al.syscode = t3_syscode_join(&s);
+	frames(&ms, 3);
+	CHECK(ms.reg == T3_REG_NEEDED || nsent > 0, "another site with DMRLA unset: registers, reg %s",
+	      t3_reg_name(ms.reg));
+	frames(&ms, 10);
+	CHECK(nsent >= 1 && sent[0].op == T3_OP_C_RAND && sent[0].u.rand.kind == T3_SK_REGISTRATION,
+	      "registration request sent there");
+
+	// A DMRLA that groups the two sites: one area, no new registration
+	setup(T3_OPT_PRIVATE, true);
+	cfg.dmrla = 3;
+	camp_registered(&ms);
+	t3_syscode_split(al.syscode, &s);
+	s.site ^= 1u;
+	al.syscode = t3_syscode_join(&s);
+	frames(&ms, 20);
+	CHECK(ms.reg == T3_REG_OK && nsent == 0, "the same area: stays registered, reg %s", t3_reg_name(ms.reg));
+}
+
 static void test_refused_denied(void)
 {
 	t3_ms_t ms;
@@ -2101,6 +2131,7 @@ int main(void)
 	test_register();
 	test_reg_list();
 	test_no_answer();
+	test_area_unset();
 	test_refused_denied();
 	test_permission();
 	test_group_call();

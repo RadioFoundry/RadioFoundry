@@ -526,13 +526,14 @@ static void return_to_tscc(t3_ms_t *ms, uint32_t now)
 // ---- The control channel ----
 
 // The registration area of a system code: MODEL, NET and the DMRLA most significant bits of SITE (6.4.4). A new
-// area needs a new registration
+// area needs a new registration. DMRLA 0 is reserved (table 6.5: 1 at least), so unset means every site is an area
+// of its own: the radio registers wherever it moves, never missing one
 static uint16_t reg_area(const t3_ms_t *ms, uint16_t code)
 {
 	t3_syscode_t s;
 	t3_syscode_split(code, &s);
 	uint8_t sb = t3_site_bits(s.model);
-	uint8_t la = ms->cfg->dmrla < sb ? ms->cfg->dmrla : sb;
+	uint8_t la = ms->cfg->dmrla != 0 && ms->cfg->dmrla < sb ? ms->cfg->dmrla : sb;
 	return (uint16_t)(t3_syscode_14(code) >> (sb - la));
 }
 
