@@ -2760,6 +2760,7 @@ static void t3_start(radio_sm_t *sm, uint32_t now_ms)
 	sm->t3_talking = false;
 	sm->t3_ticks = dmr_call_ticks(NULL);
 	sm->t3_slot = 0;
+	memset(sm->t3_at, 0, sizeof(sm->t3_at));
 	sm->t3_cc = t3s.cc;
 	dmr_call_set_rx_tap(t3_tap, sm);
 	// A stun outlasts leaving the system and coming back (6.4.9): it is the network's, so another network's
@@ -2977,6 +2978,9 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 		uint8_t fl = dmr_call_tick_at(tc - n + 1u + i, &kts);
 		uint8_t slot = (kts == 1 || kts == 2) ? (uint8_t)kts : (sm->t3_slot == 1 ? 2u : 1u);
 		sm->t3_slot = slot;
+		// fl is the AT of the CACH naming this slot; the one for this slot's inbound may be the other's (t3_ms_at_tc)
+		sm->t3_at[slot - 1u] = fl;
+		fl = sm->t3_at[t3_ms_at_tc(&t3m, slot) - 1u];
 		bool known = (fl & DMR_TICK_AT_KNOWN) != 0;
 		if (known) {
 			sm->view.t3.at_known++;

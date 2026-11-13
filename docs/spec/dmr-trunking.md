@@ -221,12 +221,18 @@ One request at a time, on the TSCC's first slot (TS1 on a dedicated TSCC).
 | Step | Rule |
 |---|---|
 | Before the first try | an Aloha heard since the radio came to this TSCC |
-| Each inbound slot | the AT bit decoded and free; the Aloha's Mask matches the radio's ID; the Service Function allows the service (table below). An emergency skips Mask and Service Function unless the Mask is 24 |
+| Each inbound slot | the AT bit for the slot's inbound decoded and free (below); the Aloha's Mask matches the radio's ID; the Service Function allows the service (table below). An emergency skips Mask and Service Function unless the Mask is 24 |
 | A slot not permitted | wait for the next permitted one |
 | After a try | wait NRand_Wait + 1 frames for an answer |
 | No answer | try again 1 to Backoff frames later, at random (table 6.3); NRand_NR tries (NRand_NE for an emergency), then no answer |
 | Overall | TRand_TC from the request, then timeout |
 | C_WACKD, C_QACKD | stop retrying; TP_Timer for a call, TNP_Timer for the rest; a further one restarts it |
+
+Which CACH's AT bit describes the TSCC's inbound depends on the Aloha's Offset bit. A CACH describes the inbound slot its
+TC names (361-1 4.5). With aligned timing (Offset 0) logical channel 1 sends on inbound slot 2 (361-1 table 5.1), so the
+TSCC slot's AT is in the CACH naming the other slot: the one right after the TSCC's own burst, where a PDU wanting an
+answer is followed by AT busy (361-4 6.2.1.1.3). With offset timing it is the CACH naming the TSCC's slot
+(`t3_ms_at_tc`).
 
 | Service Function | Allows |
 |---|---|

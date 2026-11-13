@@ -169,7 +169,12 @@ void sim_slot(void)
 	sim.slot++;
 	int8_t ts = sim.repeater ? (int8_t)(1 + (sim.slot & 1)) : 0;
 
-	emit(DMR_EV_SLOT_TICK, ts, sim.slot, NULL);
+	dmr_event_t tick = { .kind = DMR_EV_SLOT_TICK, .ts = ts, .arg = sim.slot };
+	if (ts != 0) {
+		tick.flags = (uint8_t)(DMR_TICK_AT_KNOWN | ((sim.at_busy >> (ts - 1)) & 1u ? DMR_TICK_AT_BUSY : 0u));
+	}
+	if (sim.cb)
+		sim.cb(&tick, sim.ctx);
 	if (!sim.tx_active || (int8_t)(sim.slot & 1) != sim.tx_parity)
 		return;
 	if (sim.reject_next) {

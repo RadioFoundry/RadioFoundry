@@ -432,6 +432,7 @@ typedef struct {
 	bool t3_talking;		// PTT went to the stack for a trunked call
 	uint32_t t3_ticks;		// the stack's tick count handed to the engine
 	uint8_t t3_slot;		// the slot of the last tick handed to it
+	uint8_t t3_at[2];		// the last tick flags (DMR_TICK_AT_*) of the CACH naming slot 1, 2
 	uint8_t t3_cc;			// the color code of the channel being listened to
 	uint8_t t3_send_left;		// the bursts the data source still has to give
 	uint8_t t3_send_n;		// bursts in t3_send_burst: a CSBK, or a UDT header and its blocks

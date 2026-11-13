@@ -5458,6 +5458,8 @@ static uint16_t t3_code(void)
 	return t3_syscode_join(&c);
 }
 
+static bool t3_site_offset;	// the TSCC's Aloha says offset timing
+
 // The TSCC for ms: an Aloha on TS1 every frame
 static void t3_site_run(uint32_t ms)
 {
@@ -5467,6 +5469,7 @@ static void t3_site_run(uint32_t ms)
 		a.u.aloha.nrand_wait = 6;
 		a.u.aloha.backoff = 1;
 		a.u.aloha.version = 2;
+		a.u.aloha.offset = t3_site_offset;
 		t3_csbk_rx(&a, 1);
 		run(60);
 	}
@@ -5521,6 +5524,37 @@ static void t3_data_rx(uint8_t kind, const uint8_t *d, int8_t ts)
 	b.len = T3_CSBK_BYTES;
 	memcpy(b.payload, d, T3_CSBK_BYTES);
 	sim_rx(&b);
+}
+
+// Random access on the TSCC (TS1) reads the AT bit of the CACH describing its inbound: with aligned timing that is the
+// CACH naming slot 2 (361-1 table 5.1, 4.5), so a call on the other slot doesn't block it; with offset timing, slot 1's
+static bool t3_at_case(bool offset, uint8_t busy)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	sim.at_busy = busy;
+	t3_site_offset = offset;
+	t3_stage_start();
+	unsigned before = t3_sent(T3_OP_C_RAND);
+	req(RREQ_PTT, 1);
+	t3_site_run(900);
+	bool sent = t3_sent(T3_OP_C_RAND) > before;
+	req(RREQ_PTT, 0);
+	run(100);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+	sim.at_busy = 0;
+	t3_site_offset = false;
+	return sent;
+}
+
+static void test_t3_at(void)
+{
+	CHECK(t3_at_case(false, 1));	// aligned: slot 1's CACH (TS2's inbound) busy, the TSCC's free
+	CHECK(!t3_at_case(false, 2));	// aligned: slot 2's CACH (the TSCC's inbound) busy
+	CHECK(!t3_at_case(true, 1));	// offset: slot 1's own
+	CHECK(t3_at_case(true, 2));
 }
 
 static void test_t3_talk(void)
@@ -5970,6 +6004,7 @@ int main(void)
 	test_dmr_tx();
 	test_dmr_tx_end();
 #if CONFIG_DMR_TRUNK_TX
+	test_t3_at();
 	test_t3_talk();
 	test_t3_sdata();
 	test_t3_pdata();

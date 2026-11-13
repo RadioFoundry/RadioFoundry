@@ -384,6 +384,11 @@ void t3_ms_activity(t3_ms_t *ms, uint32_t now, uint8_t slot);
 bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act);
 
 void t3_ms_slot(t3_ms_t *ms, uint32_t now, uint8_t slot, bool at_known, bool at_busy);
+// The slot named by the CACH whose AT bit tells whether the TSCC's inbound for logical slot `slot` is free. Aligned
+// timing (the Aloha's Offset 0) sends logical channel 1 on inbound slot 2 (361-1 table 5.1), and a CACH describes the
+// inbound slot its TC names (361-1 4.5): the other slot's CACH, the one right after the TSCC's own burst (361-4
+// 6.2.1.1.3). Offset timing: the same slot
+uint8_t t3_ms_at_tc(const t3_ms_t *ms, uint8_t slot);
 
 // Access (CONFIG_DMR_TRUNK_TX). t3_ms_request asks for a voice call (PTT) to dst, a talkgroup or an individual. False
 // (ax.result says why) when it can't start. Watch ax.result for the outcome

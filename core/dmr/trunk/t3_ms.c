@@ -1764,6 +1764,11 @@ void t3_ms_slot(t3_ms_t *ms, uint32_t now, uint8_t slot, bool at_known, bool at_
 	}
 }
 
+uint8_t t3_ms_at_tc(const t3_ms_t *ms, uint8_t slot)
+{
+	return ms->aloha.offset ? slot : (uint8_t)(3u - slot);
+}
+
 void t3_ms_activity(t3_ms_t *ms, uint32_t now, uint8_t slot)
 {
 	if (ms->state == T3_FOLLOW && slot == ms->call.slot && since(now, ms->tuned_ms, T3_SETTLE_MS)) {
