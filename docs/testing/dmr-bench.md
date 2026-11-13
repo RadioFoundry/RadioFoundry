@@ -76,6 +76,15 @@ of the mic, and the bench's recording played back to the radio.
 
 Missing prerequisites with the radio and bench present fail; they don't skip.
 
+`test_dmr_audio_rx_deviation` checks the receive level window (`docs/spec/dmr-voice.md` 7.1) and needs a bench board
+that scales its deviation (info feature `dev_scale`) and sets its level in dBm (`power_dbm`); it skips on others. To
+tune a board's receive level, `tools/dmr_rx_sweep.py` (its help has the options), for example:
+
+```
+tools/dmr_rx_sweep.py --allow-rf --port PORT --bench-api HOST --freq MHZ --ambe SPEECH.ambe \
+    --reg 0:0x44 --values 0x07FF,0x07EF,0x07DF,0x07CF --dbm=-30,-50 --devs 0.85,1.15 --offsets=-1000,0,1000
+```
+
 Decoding AMBE to audio on the test host needs an AMBE+2 vocoder, and this project ships none (README,
 `docs/CLEANROOM.md`). Options: a DVSI hardware vocoder on USB (ThumbDV / DV3000 class, AMBE-3000 chip), or an open
 decoder the tester installs locally, never vendored here. Independent of any vocoder, the radio's own decoder judges a

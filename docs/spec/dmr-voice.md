@@ -250,6 +250,24 @@ own in the VFO), op 15 the talk target and op 32 copies the channel to the VFO (
 `voice --gps LAT,LON[,ERR]` job), `tests/hil/test_dmr_tx.py` (`test_dmr_gps_tx`: our GPS Info decoded by the
 bench modem's listener).
 
+### 7.1 Receive level
+
+A DMR receiver decodes 4FSK well only while the demodulated level at its modem sits in a window: too high and the outer
+symbol threshold is crossed (corrected bits on every frame, even far above sensitivity), too low and sync is lost. That
+level is the receiver's audio gain times the transmitter's deviation, and transmitters differ by 10-20 % in deviation,
+so the gain a board sets has to sit in the middle of the window, not at its best point for an exact transmitter. Where
+a board's window was measured is on its hardware page ([feature-matrix.md](../feature-matrix.md) for the radios).
+
+| Tool | What it does |
+|---|---|
+| `tools/dmr_rx_sweep.py` | Steps a chip register (debug link CHIP_REG) through values while the SDR bench sends speech, over bench levels, deviations and carrier offsets; ranks the values by their worst cell. About three minutes a grid |
+| `test_dmr_audio_rx_deviation` | The bench's speech at 0.85 and 1.15 of the standard deviation, at -100 dBm at the radio: every frame and at most 0.6 corrected bits a frame, both ways |
+
+Measure near sensitivity (-90 to -105 dBm at the radio): with a strong signal other limits (the AGC) dominate and a
+setting barely shows. Use speech or another varied recording, never AMBE silence: its errors land in bits with no FEC.
+Let the radio drop the last call before the next one starts (about 2 s): a call that begins while it still follows the
+last one's slot timing can be decoded at that timing to its end.
+
 ## 8. Open points
 
 - The codeplug's hang time unit is not confirmed. The interop spec lists the group and private hang bytes
