@@ -653,6 +653,10 @@ pin. Both mute the microphone with chip 0's 0x25 bit 0 while they sound.
 | Tone | 0x71 = 9030 (1750 Hz), 0x70 = 0xA000 | PB9 PWM (below) |
 | End | page 1 0x1B = 4, 0x70 = 0, the voice drive | page 1 0x1B = 4, page 1 0x17 = 0x03B8, the voice drive |
 
+DCS turn-off (RadioFoundry, `hal_radio_t.tx_tail`): at PTT release on a DCS channel the sub-audio generator changes
+from the code to a 134.4 Hz CTCSS tone at the DCS level (`qa4818_tx_tone`), with the microphone muted, for the core's
+tail; then no sub-audio, and the transmission ends. The bench decodes the tail after the code (HIL `test_fm_tx_dcs`).
+
 APRS transmit (RadioFoundry, `CONFIG_APRS`): the DTMF path
 with one tone. The chip's audio input at the calibrated DTMF drive, the microphone muted; TIMER4's interrupt writes one
 sample of a phase continuous 1200 / 2200 Hz tone per tick, and counts timer clocks to change the tone every 100,000
