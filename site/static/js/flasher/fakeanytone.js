@@ -2,7 +2,8 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // A simulated AnyTone update mode (anytone.js) for the tests and the practice run: a port of rfoundry's
 // anytone.FakeRadio. It answers the handshake and the identity, checks and keeps every frame, and can refuse a frame
-// now and then (nakEvery) or go silent (silentAfter frames). With memory ([[address, bytes], ...]) it also plays the
+// now and then (nakEvery), answer one frame late (late: [n, ms], or at the next write if that is sooner) or go silent
+// (silentAfter frames). With memory ([[address, bytes], ...]) it also plays the
 // radio's PC mode: PROGRAM, reads of that memory (unset bytes 0xFF), END. With pairs, a read in a block
 // that isn't current comes from the block after it, as the radio's does (codeplug/stock_anytone.js currentBlock). stream: what anytone.js reads and
 // writes, as a SerialStream's buffer and write().
@@ -12,7 +13,9 @@ import { AT, BLOCK, CTCSS, MAP, currentBlock } from "../codeplug/stock_anytone.j
 import { HELLO, HELLO_REPLY, FINISH, ACK, NAK, DATA, CHUNK, FRAME_LEN, PROGRAM, END, READ, readReply } from "./anytone.js";
 
 export class FakeAnytone {
-	constructor({ model = "MODEL1", nakEvery = 0, silentAfter = null, delay = 0, memory = [], pairs = false, updateReply = Uint8Array.of(ACK), dropAtFinish = false } = {}) {
+	constructor({ model = "MODEL1", nakEvery = 0, silentAfter = null, delay = 0, memory = [], pairs = false, updateReply = Uint8Array.of(ACK), dropAtFinish = false, late = null } = {}) {
+		this.late = late;
+		this.held = null;	// an answer held back by late: { bytes, timer }
 		this.updateReply = updateReply;	// the bootloader's answer to UPDATE
 		this.dropAtFinish = dropAtFinish;	// the port goes away at FINISH, before the ACK (the radio restarts)
 		Object.assign(this, { model, nakEvery, silentAfter, delay, memory, pairs });
@@ -40,6 +43,14 @@ export class FakeAnytone {
 		};
 	}
 
+	release(h) {
+		if (this.held !== h) return;
+		clearTimeout(h.timer);
+		this.held = null;
+		this.stream.buf = concat(this.stream.buf, h.bytes);
+		for (const w of this.stream.waiters) w();
+	}
+
 	send(b) {
 		const go = () => { this.stream.buf = concat(this.stream.buf, b); for (const w of this.stream.waiters) w(); };
 		if (this.delay) setTimeout(go, this.delay); else go();
@@ -64,6 +75,7 @@ export class FakeAnytone {
 	}
 
 	feed(b) {
+		if (this.held) this.release(this.held);	// a late answer comes before the answer to what is sent now
 		this.inbuf = concat(this.inbuf, b);
 		const starts = (p) => p.every((x, i) => this.inbuf[i] === x);
 		while (this.inbuf.length) {
@@ -111,6 +123,11 @@ export class FakeAnytone {
 				const ok = (f[37] | (f[38] << 8)) === (sum & 0xFFFF) && f[39] === ACK;
 				if (ok) this.mem.set((f[1] | (f[2] << 8) | (f[3] << 16) | (f[4] << 24)) >>> 0, f.slice(5, 37));
 				else this.bad++;
+				if (this.late && this.frames === this.late[0]) {
+					const h = this.held = { bytes: Uint8Array.of(ok ? ACK : NAK) };
+					h.timer = setTimeout(() => this.release(h), this.late[1]);
+					continue;
+				}
 				this.send(Uint8Array.of(ok ? ACK : NAK));
 			} else if ([HELLO, PROGRAM, END].some((w) => this.inbuf.length < w.length && starts(w.subarray(0, this.inbuf.length)))) {
 				return;	// the start of a handshake word: wait for the rest

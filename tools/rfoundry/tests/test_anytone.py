@@ -169,6 +169,12 @@ class Protocol(unittest.TestCase):
         always = at.FakeRadio(nak_every=1)
         with self.assertRaisesRegex(at.UpdateError, "NAK"):
             at.Radio(always, log=lambda m: None, timeout=0.01).write(B.app_base, data)
+        # The third frame's ACK comes after the timeout, the fifth frame sent (the fourth's data) is refused: the
+        # late ACK is dropped, not taken for the fourth's, so the fourth is sent again and nothing is missing
+        late = at.FakeRadio(nak_every=5, late=(3, 0.015))
+        r = at.Radio(late, log=lambda m: None, timeout=0.01)
+        self.assertEqual(r.write(B.app_base, data), at.frames_needed(len(data)))
+        self.assertEqual(late.image()[:len(data)], data)
 
     def test_coarse_clock_reads_every_answer(self):
         # A clock that has passed the deadline by the first check (a 15.6 ms tick, a 10 ms timeout): an answer
