@@ -111,8 +111,10 @@
 #define RADIO_VOX_RX_GUARD_MS	500
 
 // Receiver battery saving: awake RADIO_SAVE_WAKE_MS (the first RADIO_SAVE_SETTLE_MS of it ignored), asleep
-// RADIO_SAVE_SLEEP_MS x 1, 2 or 4
-#define RADIO_SAVE_WAKE_MS	100
+// RADIO_SAVE_SLEEP_MS x 1, 2 or 4. The wake gives three squelch polls 25 ms apart: 50 ms, more than the 30 ms gap
+// between a DMR portable's bursts, so a wake always reads its carrier once (two polls, at 100 ms, could both fall in
+// gaps, and with the cycle then a multiple of the 60 ms frame, every later wake too)
+#define RADIO_SAVE_WAKE_MS	125
 #define RADIO_SAVE_SETTLE_MS	50
 #define RADIO_SAVE_SLEEP_MS	200
 
