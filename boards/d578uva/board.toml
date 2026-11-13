@@ -24,6 +24,8 @@ bands = "136-174 / 400-480 MHz"
 power = "up to 50 W"
 display = "1.77\" color, 160 × 128"
 gallery = "160x128"
+# a volume knob per side (docs.hardware: side B's is bottom left)
+knobs = 2
 clock = { rtc = "unknown", note = "the AT32F435 ERTC; whether a crystal and a backup supply are fitted is not known (docs/spec/hardware-d578uv.md)" }
 # The same two variants as boards/d578uv: this image runs on the AT32 builds only
 variant_pattern = '(GD|AT)_Ver'

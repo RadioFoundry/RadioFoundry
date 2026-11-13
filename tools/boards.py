@@ -169,6 +169,9 @@ BOARD_SCHEMA = {
     # what is missing (docs/build-config.md, "Unsupported, not written, unconfirmed")
     "hardware": _req({"cpu": _opt(str), "bands": _req(str), "power": _req(str), "display": _req(str),
                       "gallery": _req(str), "unconfirmed": _opt(("map", str)),
+                      # volume knobs: 2 for a knob per side (side B's, hal_power_t.volume_b); the site shows the screens
+                      # that need it (site/data/screens.json "knobs") only on those
+                      "knobs": _opt(int),
                       # the real-time clock (CLOCKS) and the source of that fact; no driver uses it yet
                       "clock": _req({"rtc": _req(CLOCKS), "note": _req(str)}),
                       # hardware variants sold under this model that the radio itself names (variant_pattern: a regular
@@ -1548,7 +1551,7 @@ def site_view(boards, root=ROOT):
             "id": bid, "name": d["name"], "maker": d["maker"], "model": d["model"], "also": list(d["also"]),
             "kind": d["kind"], "order": d["order"], "level": d["status"]["level"], "release": d["status"]["release"],
             "summary": d["status"]["summary"], "bands": hw["bands"], "power": hw["power"],
-            "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
+            "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "knobs": hw.get("knobs", 1), "docs": dict(d["docs"]), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
             "looks": json.loads(json.dumps(d.get("looks", []))),
             "unsupported": dict(b.unsupported), "not_written": dict(b.not_written), "volts": b.volts,

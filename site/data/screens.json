@@ -785,10 +785,7 @@
    "needs": [
     "VOLUME_BAR"
    ],
-   "boards": [
-    "d578uv",
-    "d578uva"
-   ]
+   "knobs": 2
   },
   "volume_bar_ab_dual": {
    "group": "home",
@@ -796,10 +793,7 @@
     "VOLUME_BAR",
     "DUAL_WATCH"
    ],
-   "boards": [
-    "d578uv",
-    "d578uva"
-   ]
+   "knobs": 2
   },
   "factory_reset": {
    "group": "settings",
