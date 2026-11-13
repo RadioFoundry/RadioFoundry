@@ -158,6 +158,12 @@ Positions (plain, compressed, with and without timestamps), Mic-E (the destinati
 longitude, speed and course from the information field), objects, items, status, messages, third-party packets,
 queries, weather and telemetry recognized by type (not decoded further).
 
+Third-party packets (`}SRC>DST,PATH:info`, how an iGate puts APRS-IS traffic on RF): a message or ack inside one is
+handled as from SRC (`aprs_ax25.c`, `third_party_in`). It is kept, matched to our pending message and acked under SRC; the
+ack goes to SRC on our own path. One level only. A packet from our own call is ignored. Nothing else inside is
+decoded: the station list keeps the iGate, the station actually heard, so an Internet station never counts as heard
+on RF for the iGate rules (section 9.1).
+
 ## 5. The radio side
 
 ### 5.1 hal_afsk

@@ -935,6 +935,65 @@ static void test_messages(void)
 #endif
 }
 
+// Messages from APRS-IS reach RF through an iGate as third-party packets ("}SRC>DST,TCPIP,IGATE*:info"): the message
+// inside is from SRC, kept and acked to SRC; the station list holds the iGate, the station actually heard
+static void test_third_party_messages(void)
+{
+#if CONFIG_APRS_RX
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	nframes = 0;
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1ABC-9>APQRX,TCPIP,Q1GTE*::Q1TST-7  :From the net{77");
+	CHECK(wait_start(1, 5000));
+	wait_idle();
+	CHECK(aprs_msg_count() == 1);
+	aprs_msg_t m;
+	CHECK(aprs_msg(0, &m) && strcmp(m.from, "Q1ABC-9") == 0 && strcmp(m.text, "From the net") == 0 &&
+	      strcmp(m.msgno, "77") == 0);
+	CHECK(nframes == 1 && strstr(frames[0], "::Q1ABC-9  :ack77") != NULL);
+	// its retry: acked again, not kept twice
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1ABC-9>APQRX,TCPIP,Q1GTE*::Q1TST-7  :From the net{77");
+	CHECK(wait_start(2, 5000));
+	wait_idle();
+	CHECK(aprs_msg_count() == 1 && nframes == 2);
+	// the station list: the iGate, not the Internet station (which must not count as heard on RF)
+	aprs_station_t s;
+	bool gate = false, inner = false;
+	for (uint8_t i = 0; aprs_station(i, &s); i++) {
+		gate |= strcmp(s.call, "Q1GTE") == 0;
+		inner |= strcmp(s.call, "Q1ABC-9") == 0;
+	}
+	CHECK(gate && !inner);
+	// to another station, malformed, our own message gated back, nested: ignored, nothing sent
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1ABC-9>APQRX,TCPIP,Q1GTE*::Q1XYZ    :Not ours{78");
+	rx_line("Q1GTE>APDW17,WIDE2*:}garbage");
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1ABC>:");
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1TST-7>APZRDF,TCPIP,Q1GTE*::Q1TST-7  :Echo{79");
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1GTF>APDW17,TCPIP,Q1GTE*:}Q1ABC-9>APQRX,TCPIP,Q1GTF*::Q1TST-7  :Nested{80");
+	run(10u * 1000u);
+	CHECK(aprs_msg_count() == 1 && nframes == 2 && hw.starts == 2);
+	// the ack of our message to an Internet station comes back wrapped too: no more retries
+	CHECK(aprs_send_message("Q1ABC-9", "To the net"));
+	CHECK(wait_start(3, 5000));
+	char msgno[8] = "";
+	const char *brace = strchr(frames[nframes - 1], '{');
+	CHECK(brace != NULL);
+	if (brace != NULL) {
+		strncpy(msgno, brace + 1, sizeof(msgno) - 1);
+	}
+	wait_idle();
+	char ack[96];
+	snprintf(ack, sizeof(ack), "Q1GTE>APDW17,WIDE2*:}Q1ABC-9>APRS,TCPIP,Q1GTE*::Q1TST-7  :ack%s", msgno);
+	rx_line(ack);
+	run(200u * 1000u);
+	CHECK(hw.starts == 3);
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(v.msg_acked);
+#endif
+}
+
 static void test_message_options(void)
 {
 	reset();
@@ -1710,6 +1769,7 @@ int main(void)
 	test_tx_power_own();
 	test_host_kiss_nmea();
 	test_messages();
+	test_third_party_messages();
 	test_message_options();
 	test_message_replaces_pending();
 #if CONFIG_APRS_RX
