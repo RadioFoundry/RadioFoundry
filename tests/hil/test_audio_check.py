@@ -61,6 +61,27 @@ def test_every_beep_clean():
             assert abs(t.got_ms - ms) < 6, (name, t)
 
 
+def test_harmonics():
+    """A clean 25 ms key beep measures far under the -8 dB test_speaker.py allows; the same tone stepped (four steps a period, much as
+    a radio's DMR path played it) or clipped measures over -12 dB; a 25 ms 400 Hz tone, the shortest, still measures"""
+    x, t0 = render([(1000, 25)], echo=0.3)
+    r = check(x, [(1000, 25)])
+    t = r.tones[0]
+    clean = A.harmonics_db(x, FS, 1000, t.start_s, t.end_s)
+    assert clean < -20, clean
+    n = np.arange(int(0.025 * FS))
+    stepped = np.sin(2 * np.pi * 1000 * (n // 4 * 4) / FS)      # held 4 samples: a 4 kHz staircase
+    h = A.harmonics_db(np.concatenate([np.zeros(800), stepped, np.zeros(800)]), FS, 1000, 0.05, 0.075)
+    assert h > -10, h
+    clipped = np.clip(3 * np.sin(2 * np.pi * 1000 * n / FS), -1, 1)
+    h = A.harmonics_db(np.concatenate([np.zeros(800), clipped, np.zeros(800)]), FS, 1000, 0.05, 0.075)
+    assert h > -12, h
+    x, _ = render([(400, 25)])
+    assert A.harmonics_db(x, FS, 400, 0.3, 0.325) < -30
+    assert A.harmonics_db(x, FS, 400, 0.3, 0.305) is None      # under 3 periods once its edges are left out
+    assert A.harmonics_db(x, FS, 400, None, 0.3) is None
+
+
 def test_start_cut():
     segs = [(400, 150)]
     x, t0 = render(segs)

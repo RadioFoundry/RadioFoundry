@@ -418,6 +418,30 @@ def check_tones(x, fs, segs, search=None, dur_tol_ms=10.0, ripple_db=12.0, step_
 
 
 
+def harmonics_db(x, fs, hz, start_s, end_s, edge_ms=3.0, top=5):
+    """A tone's 2nd to top-th harmonics (those under 0.45 fs) against its fundamental, in dB, over start_s..end_s less
+    edge_ms at each end (a Hann window): about -15 dB or less for a clean beep through a small speaker, near 0 for one
+    stepped or clipped on its way. None when the tone is too short to measure (under 3 periods) or not found"""
+    if start_s is None or end_s is None:
+        return None
+    a, b = int((start_s + edge_ms / 1000) * fs), int((end_s - edge_ms / 1000) * fs)
+    if b - a < 3 * fs / hz:
+        return None
+    s = np.asarray(x[a:b], dtype=float)
+    s = s - s.mean()
+    sp = np.abs(np.fft.rfft(s * np.hanning(len(s)))) ** 2
+    fr = np.fft.rfftfreq(len(s), 1 / fs)
+    width = max(hz / 4, 2.5 * fs / len(s))      # the window's main lobe, and a speaker's pitch a little off
+
+    def band(f):
+        return float(sp[np.abs(fr - f) < width].sum())
+    fund = band(hz)
+    harm = sum(band(k * hz) for k in range(2, top + 1) if k * hz < 0.45 * fs)
+    if fund <= 0:
+        return None
+    return float(10 * np.log10(max(harm, 1e-30) / fund))
+
+
 def check_onsets(x, fs, segs, min_snr_db=20.0, tol_ms=15.0, min_rise_db=10.0, min_over_db=GONE_DB):
     """The start of each tone in segs ([(hz, ms)], hz 0 a silence), for a microphone whose processing makes the rest
     of the recording meaningless (the module's notes). The first tone must rise min_rise_db out of silence to
