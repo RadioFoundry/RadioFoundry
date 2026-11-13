@@ -196,7 +196,7 @@ def test_speaker_beep_cold(radio, microphone):
     assert not problems, "\n".join(problems)
 
 
-@pytest.mark.feature("beep")
+@pytest.mark.feature("beep", optional=True)    # a radio whose beeps are its own tones (beep.tone 1) has no sweep
 def test_speaker_sweep(radio, microphone):
     """The speaker test's sweep (BEEP_SWEEP, a tone rising through the band): the speaker's response along it, printed
     for the radio's records, and the sweep whole: audio that jumps (samples lost, repeated or out of order on the way
