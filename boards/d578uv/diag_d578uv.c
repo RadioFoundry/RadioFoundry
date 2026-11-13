@@ -191,7 +191,8 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 #endif
 		break;
 	case 8: {
-		// Chip 0's raw RSSI and noise as the radio task last read them, and its signal flag; a dead bus reads a constant
+		// Chip 0's raw RSSI and noise as the radio task last read them, and its signal flag; a dead bus reads a constant.
+		// Then the baseband's DMR sync (no beep while it holds, radio_d578uv.c beep_tone())
 		uint16_t rssi, noise;
 		bool signal;
 		d578uv_rx_raw(&rssi, &noise, &signal);
@@ -200,6 +201,7 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " nz ");
 		put_u(&o, noise);
 		put(&o, signal ? " sig" : " -");
+		put(&o, d578uv_modem_synced() ? " sync" : " -");
 		break;
 	}
 	default: {

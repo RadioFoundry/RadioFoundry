@@ -244,7 +244,8 @@ def test_speaker_beep_modes(radio, microphone):
                 what = f"{name}, {mode.upper()}"
                 problems += allow.apply(what, r, _check(r, what, path))
                 if r.quiet:
-                    problems.append(f"{what}: not heard")
+                    problems.append(f"{what}: not heard" + (" (a radio holds its beeps back while it hears a DMR signal: is "
+                                                            "another station on the frequency?)" if mode == "dmr" else ""))
                 for i, t in enumerate(r.tones):
                     h = A.harmonics_db(*A.load_wav(path), t.hz, t.start_s, t.end_s)
                     got[(mode, name, i)] = (t.plateau_db, h)
