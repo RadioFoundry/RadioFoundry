@@ -2739,7 +2739,20 @@ static void t3_publish(radio_sm_t *sm)
 	v->vote_moves = m->st.vote_moves;
 	v->weak_leaves = m->st.weak_leaves;
 	v->level_dbm = m->level_dbm;
+	v->leave_dbm = t3s.cfg.leave_dbm;
+	v->reg_area = m->reg_area;
+	v->dmrla = t3s.cfg.dmrla;
+	v->vote_on = m->vote.on;
+	v->hunt_strict = m->hunt_strict;
+	_Static_assert(T3_ADJ_MAX == sizeof v->adj / sizeof v->adj[0], "radio_t3_view_t.adj");
 	v->nadj = m->nadj;
+	for (uint8_t i = 0; i < m->nadj; i++) {
+		v->adj[i].rx_hz = m->adj[i].chan.rx_hz;
+		v->adj[i].sys14 = m->adj[i].sys14;
+		v->adj[i].prio = (uint8_t)(m->adj[i].conf_prio << 4 | m->adj[i].adj_prio);
+		v->adj[i].dbm = m->adj[i].dbm;
+		v->adj[i].sampled_ms = m->adj[i].sampled_ms;
+	}
 	v->own_id = t3s.cfg.own_id;
 }
 

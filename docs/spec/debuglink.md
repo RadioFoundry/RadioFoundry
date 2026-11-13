@@ -346,6 +346,7 @@ short. View 5: the `cps.*` and `cpsf.*` keys moved from `storage` to `cps` (27),
 | 29 | `audio` | the beeps' speaker route (`radio-features.md` 4): `beep.shared` (patterns mixed into the DMR voice stream) `beep.leads` (silent lead-in blocks played on a beep's own stream) `beep.warm` (1: the amplifier is held powered, `hal_audio_t.speaker_hang_s`) `beep.warms` (times it was powered up for that), these four only with CONFIG_BEEP; and on a board that counts them (`hal_audio_t.stream_stats`), the PCM stream's timing since boot: `audio.blocks` (blocks filled) `audio.late` (a block's turn came before it was filled: the speaker played its old contents, the sound before it, again) `audio.dropped` (blocks skipped, a whole block late) |
 | 30 | `t3` | a Tier III trunked system: the engine's state, call, access and counters (3.26) |
 | 31 | `t3_svc` | its services: a poll's answer, the radio's status, the last status and short data heard (3.26) |
+| 32 | `t3_roam` | its roaming: the level, the adjacent sites, Vote Now and the weak control channel leave (3.26) |
 
 With `CONFIG_KEY_ASSIGN` and at least one assignable key, `link` also reports `key.first.bit` (the first
 `board.side_keys` entry, for KEY kind 1) and `key.first.press` (its saved `keyfn_t`, [ui.md](ui.md#31-key-assignment)).
@@ -841,7 +842,7 @@ answers unavailable (3). Each op answers OK or bad argument (2), with no reply b
 | Op | Name | Arguments |
 |---|---|---|
 | 1 | RESET | none: the staged system back to empty |
-| 2 | SYSTEM | own ID u32 (0: the radio's), model u8 (0 tiny .. 3 huge), net u16, category u8 (1 A, 2 B), opts u16 (`T3_OPT_*`), color code u8, talk ID u32 (0: the first talkgroup with the talk flag), talk private u8 |
+| 2 | SYSTEM | own ID u32 (0: the radio's), model u8 (0 tiny .. 3 huge), net u16, category u8 (1 A, 2 B), opts u16 (`T3_OPT_*`), color code u8, talk ID u32 (0: the first talkgroup with the talk flag), talk private u8; then optional: DMRLA u8 (0 when absent), leave threshold dBm s16 (0: the radio's roaming threshold), Vote Now sample ms u16 (0: 360) |
 | 3 | CTRL | a control channel: LCN u16, RX Hz u32, TX Hz u32 (as the radio sees them), color code u8 (0xFF: the system's). Also a channel of the plan |
 | 4 | CHAN | a channel of the plan, as CTRL (8 channels at most) |
 | 5 | TG | talkgroup u32, flags u8 (1 listen, 2 talk) |
@@ -876,6 +877,12 @@ registration's talkgroup list: how many it sent, and which the site accepted, bi
 key itself is never shown), `auths` (challenges answered), `massregs`, `moves` (MassReg broadcasts and C_MOVEs taken), `ps_rq`, `ps_offset` (power save granted; 0 none), `asleep`, `sleeps` (the engine's power save sleep, and how often), `dgnas` (DGNA downloads taken) `dgna` (the assigned talkgroups, comma separated) `dgna_onekey dgna_alias_tg` (0: none), `divert_to divert_group` (where the last call answered `diverted` was sent), `call_als als_calls` (an ALS call followed, how many), `killed kills` (killed by the system, until a restart) `tscc_auth_fails` (TSCC answers to the radio's challenge that failed), `own_status` (the radio's, sent in answer to a poll), and the last status heard (`st_count`,
 `st_src`, `st_dst`, `st_group`, `st_value`, `st_age_ms`); the last short data heard (`sd_count`, `sd_src`, `sd_dst`,
 `sd_group`, `sd_format`, `sd_len`, `sd_data` in hex, `sd_age_ms`).
+
+The `t3_roam` section, also `t3.`-prefixed ([dmr-trunking.md](dmr-trunking.md) 7.18): `level_dbm` (the tuned
+channel's averaged level, 0: none yet), `leave_dbm` (the threshold in force), `dmrla`, `reg_area` (the area registered
+in), `vote_on` (sampling an adjacent control channel), `hunt_strict` (hunting away from a weak one), `votes`,
+`vote_moves`, `weak_leaves`, `adjacent` (how many are known), then each as `adjN=rx_hz,sys14,conf_prio,adj_prio,dbm,age_ms`
+(sys14 the system code's 14 high bits in hex; dbm 0 and age -1: never sampled).
 
 `rfoundry_debug.py t3 setup --model 1 --net 5 --cc 2 --ctrl 1:RX_MHZ:TX_MHZ --tg 1` stages and starts one;
 `rfoundry_debug.py t3 [show|start|stop|dereg|end]`; `rfoundry_debug.py t3 status --to ID --status N [--group]`;

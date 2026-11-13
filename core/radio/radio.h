@@ -245,9 +245,21 @@ typedef struct {
 	uint32_t last_rx_ms, last_tx_ms;
 	uint32_t ticks;		// slot ticks handed to the engine
 	uint32_t csbk, crc_bad, grants, followed, unmapped, returns, hunts, foreign, learned, sent, ra_tries;
+	// Roaming (the t3_roam section)
 	uint32_t votes, vote_moves, weak_leaves;	// adjacent TSCCs sampled, moved to; TSCCs left as weak
-	int16_t level_dbm;	// the tuned TSCC's averaged level
-	uint8_t nadj;		// adjacent sites known
+	int16_t level_dbm;	// the tuned channel's averaged level (0: none yet)
+	int16_t leave_dbm;	// the threshold in force
+	uint16_t reg_area;	// the area registered in
+	uint8_t dmrla;
+	bool vote_on, hunt_strict;	// sampling an adjacent TSCC; hunting away from a weak one
+	uint8_t nadj;		// adjacent sites known, then each
+	struct {
+		uint32_t rx_hz;
+		uint16_t sys14;
+		uint8_t prio;	// confirmed priority << 4 | adjacent priority (table 6.81)
+		int16_t dbm;	// when last sampled, 0: never
+		uint32_t sampled_ms;
+	} adj[4];		// T3_ADJ_MAX
 	uint32_t send_fail;	// sends the stack refused (busy) and dropped
 	uint8_t last_tx[12];	// the last CSBK sent, CRC included (T3_CSBK_BYTES)
 	uint32_t at_known;	// slot ticks with the CACH's AT bit read, and of those, busy

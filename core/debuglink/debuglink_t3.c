@@ -82,6 +82,11 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 		s->cc = a[10];
 		s->talk_id = rd32(a + 11) & 0xFFFFFFu;
 		s->talk_private = a[15] != 0;
+		// Optional, for roaming: DMRLA u8, the leave threshold dBm s16 (0: the radio's roaming threshold), the Vote
+		// Now sample ms u16 (0: default)
+		s->cfg.dmrla = n >= 17u ? a[16] : 0u;
+		s->cfg.leave_dbm = n >= 19u ? (int16_t)rd16(a + 17) : 0;
+		s->cfg.vote_ms = n >= 21u ? rd16(a + 19) : 0u;
 		break;
 	case DL_T3_CTRL:	// a control channel candidate (also a channel of the plan)
 		if (!chan_of(a, n, &c) || s->cfg.nctrl >= T3_CTRL_MAX || !add_chan(s, &c)) {
@@ -298,8 +303,28 @@ void debuglink_view_t3(const radio_view_t *v, dl_text_t *t)
 		"t3.send_fail=%u\nt3.at_known=%u\nt3.at_busy=%u\n", (unsigned)x->returns, (unsigned)x->hunts,
 		(unsigned)x->foreign, (unsigned)x->learned, (unsigned)x->sent, (unsigned)x->ra_tries,
 		(unsigned)x->send_fail, (unsigned)x->at_known, (unsigned)x->at_busy);
-	dl_text(t, "t3.level_dbm=%d\nt3.adjacent=%u\nt3.votes=%u\nt3.vote_moves=%u\nt3.weak_leaves=%u\n",
-		x->level_dbm, x->nadj, (unsigned)x->votes, (unsigned)x->vote_moves, (unsigned)x->weak_leaves);
+#else
+	(void)v;
+	dl_text(t, "t3.built=0\n");
+#endif
+}
+
+// Roaming: the level, the adjacent sites, Vote Now and the weak-TSCC leave (dmr-trunking.md 7.18)
+void debuglink_view_t3_roam(const radio_view_t *v, dl_text_t *t)
+{
+#if CONFIG_DMR_TRUNK
+	const radio_t3_view_t *x = &v->t3;
+	uint32_t now = hal_millis();
+	dl_text(t, "t3.level_dbm=%d\nt3.leave_dbm=%d\nt3.dmrla=%u\nt3.reg_area=0x%04x\nt3.vote_on=%u\nt3.hunt_strict=%u\n",
+		x->level_dbm, x->leave_dbm, x->dmrla, x->reg_area, x->vote_on, x->hunt_strict);
+	dl_text(t, "t3.votes=%u\nt3.vote_moves=%u\nt3.weak_leaves=%u\nt3.adjacent=%u\n", (unsigned)x->votes,
+		(unsigned)x->vote_moves, (unsigned)x->weak_leaves, x->nadj);
+	// Each: RX Hz, the 14 system code bits, confirmed and adjacent priority, the level and age of its last sample
+	for (uint8_t i = 0; i < x->nadj && i < sizeof x->adj / sizeof x->adj[0]; i++) {
+		dl_text(t, "t3.adj%u=%u,0x%04x,%u,%u,%d,%d\n", i, (unsigned)x->adj[i].rx_hz, x->adj[i].sys14,
+			x->adj[i].prio >> 4, x->adj[i].prio & 15u, x->adj[i].dbm,
+			x->adj[i].sampled_ms != 0 ? (int)(now - x->adj[i].sampled_ms) : -1);
+	}
 #else
 	(void)v;
 	dl_text(t, "t3.built=0\n");

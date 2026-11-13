@@ -164,7 +164,7 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
                  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio", "t3",
-                 "t3_svc"]
+                 "t3_svc", "t3_roam"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -644,11 +644,15 @@ class DebugLink:
     def t3_reset(self):
         self.t3_op(T3_RESET)
 
-    def t3_system(self, own_id=0, model=0, net=0, par="a", opts=0x20, cc=1, talk_id=0, talk_private=False):
+    def t3_system(self, own_id=0, model=0, net=0, par="a", opts=0x20, cc=1, talk_id=0, talk_private=False, dmrla=0,
+                  leave_dbm=0, vote_ms=0):
         """own_id 0: the radio's; model 0 tiny .. 3 huge; par a|b|1|2; opts T3_OPT_* (core/dmr/trunk/t3_ms.h): 0x01
-        listen only, 0x20 private calls to the radio, 0x40 register with the talkgroup"""
+        listen only, 0x20 private calls to the radio, 0x40 register with the talkgroup, 0x200 no roaming; dmrla: the
+        SITE bits of a registration area; leave_dbm: a TSCC below it is left (0: the radio's roaming threshold);
+        vote_ms: the Vote Now sample (0: default)"""
         cat = T3_PAR[par] if isinstance(par, str) else par
-        self.t3_op(T3_SYSTEM, struct.pack("<IBHBHBIB", own_id, model, net, cat, opts, cc, talk_id, int(talk_private)))
+        self.t3_op(T3_SYSTEM, struct.pack("<IBHBHBIBBhH", own_id, model, net, cat, opts, cc, talk_id, int(talk_private),
+                                          dmrla, leave_dbm, vote_ms))
 
     def t3_ctrl(self, lcn, rx_hz, tx_hz, cc=0xFF):
         """A control channel candidate (also a channel of the plan); rx/tx as the radio sees them; cc 0xFF: the
@@ -2353,6 +2357,8 @@ def main(argv=None):
     p.add_argument("--net", type=int, default=0)
     p.add_argument("--par", default="a")
     p.add_argument("--cc", type=int, default=1)
+    p.add_argument("--dmrla", type=int, default=0, help="SITE bits of a registration area")
+    p.add_argument("--leave-dbm", type=int, default=0, help="leave a TSCC below this (0: the radio's roaming threshold)")
     p.add_argument("--opts", type=lambda x: int(x, 0), default=0x21,
                    help="T3_OPT_*; default 0x21: listen only (never transmits), private calls")
     p.add_argument("--ctrl", action="append", default=[], metavar="LCN:RX_MHZ:TX_MHZ[:CC]")
@@ -2453,7 +2459,8 @@ def main(argv=None):
                             int(f[3]) if len(f) > 3 else 0xFF)
                 if a.op == "setup":
                     link.t3_reset()
-                    link.t3_system(a.own_id, a.model, a.net, a.par, a.opts, a.cc, a.talk, a.private)
+                    link.t3_system(a.own_id, a.model, a.net, a.par, a.opts, a.cc, a.talk, a.private, a.dmrla,
+                                   a.leave_dbm)
                     for c in a.ctrl:
                         link.t3_ctrl(*chan(c))
                     for c in a.chan:
@@ -2473,7 +2480,7 @@ def main(argv=None):
                     link.t3_interrupt(a.op == "als-end")
                 elif a.op != "show":
                     link.t3(a.op)
-                for k, v in link.view(sections=["t3", "t3_svc"]).items():
+                for k, v in link.view(sections=["t3", "t3_svc", "t3_roam"]).items():
                     print(f"{k}={v}")
             elif a.cmd == "iddb":
                 d = link.iddb()
