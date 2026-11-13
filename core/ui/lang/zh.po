@@ -1607,6 +1607,10 @@ msgid "TX CTCSS/DCS"
 msgstr "发射亚音"
 
 #: core/ui/ui_menus.c
+msgid "Tone burst"
+msgstr "突发音"
+
+#: core/ui/ui_menus.c
 msgid "Color code"
 msgstr "色码"
 
@@ -2733,10 +2737,6 @@ msgstr "按键锁"
 #: core/ui/ui_menus.c
 msgid "Home zone"
 msgstr "主区域"
-
-#: core/ui/ui_menus.c
-msgid "Tone burst"
-msgstr "突发音"
 
 #: core/ui/ui_menus.c
 msgid "Copy to VFO"

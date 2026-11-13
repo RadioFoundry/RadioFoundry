@@ -17,7 +17,8 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 def pytest_addoption(parser):
     g = parser.getgroup("rfoundry-hil", "RadioFoundry hardware-in-the-loop")
     g.addoption("--radio-port", default=os.environ.get("RFOUNDRY_PORT"),
-                help="the radio's serial port (default: the only USB 1FC9:0094 device, or $RFOUNDRY_PORT)")
+                help="the radio's serial port or udp:ADDR (default: $RFOUNDRY_PORT, the only USB 1FC9:0094 device, else the "
+                     "one radio in USB network mode)")
     g.addoption("--allow-rf", action="store_true",
                 help="tests may transmit (the SDR bench's transmitter; the radio only in tests marked radio_tx)")
     g.addoption("--allow-service-stop", action="store_true",

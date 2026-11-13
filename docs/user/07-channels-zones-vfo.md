@@ -129,8 +129,8 @@ row ends with the RX frequency and the talkgroup (DMR) or FM. A long name stays 
 
 ## Editing a channel
 
-The channel's page lists every setting: name, mode, RX and TX frequency, power, RX only, then bandwidth, tones and
-VOX on FM, or color code, timeslot, TX contact, RX group list, own ID, direct mode, talk permit beeps and talker
+The channel's page lists every setting: name, mode, RX and TX frequency, power, RX only, then bandwidth, tones,
+VOX and tone burst on FM, or color code, timeslot, TX contact, RX group list, own ID, direct mode, talk permit beeps and talker
 alias on DMR, then TX time-out, scan, battery saver and the zones that hold it. The list scrolls.
 
 <img src="../ux/screens/160x120i5/channel.png" width="200" alt="A channel's settings">
@@ -139,7 +139,7 @@ Focus a row and press **OK**:
 
 | Row | What OK does |
 |---|---|
-| Two choices (mode, timeslot, bandwidth, RX only, scan, VOX, direct mode, beeps, talker alias, battery saver) | switches to the other one |
+| Two choices (mode, timeslot, bandwidth, RX only, scan, VOX, tone burst, direct mode, beeps, talker alias, battery saver) | switches to the other one |
 | Power, RX CTCSS/DCS, TX CTCSS/DCS, color code, TX time-out | opens a picker: turn the knob (or Up / Down) to the value, **OK** keeps it, **Back** cancels. Color code and time-out also take digits |
 | RX CTCSS/DCS, TX CTCSS/DCS, typed | type a CTCSS tone with its tenths digit: **8 8 5** is 88.5, **1 3 1 8** is 131.8. Under 60 the digits are whole Hz: **6 7** is 67.0, **1 0 0** is 100.0. Start with **0** for a DCS code: **0 2 3** is D023N. **Back** takes the last digit back. For an inverted DCS code, turn the knob one step: each code's I follows its N (D023N, D023I, D025N) |
 | Zones | opens every zone, marked "In" where the channel is. **OK** puts the channel in a zone or takes it out, saved at once. A new channel shows the row once saved |

@@ -164,6 +164,7 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "ch.color_code=%u\nch.timeslot=%u\n", c->color_code, c->timeslot);
 	dl_text(t, "ch.contact=%u\nch.listen_list=%u\n", c->contact, c->listen_list);
 	dl_text(t, "ch.dmr_id=%u\nch.dmo=%u\n", (unsigned)c->dmr_id, c->dmo);
+	dl_text(t, "ch.tone_burst=%u\n", c->tone_burst);
 	// The SFR bytes A and B as stored (sfr.h; 0,0 = none); dmr.sfr_role is the role in force
 	dl_text(t, "ch.sfr=%u,%u\n", c->sfr_flag1 ? c->sfr_a : 0u, c->sfr_flag1 ? c->sfr_b : 0u);
 }
