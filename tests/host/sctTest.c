@@ -936,36 +936,79 @@ static void test_dmr_rx_outbound(void)
 	uint8_t term2[16] = { 0x43, DMR_BURST_TERMINATOR_LC | SCT_PROP_TS2, 9, 0, 0, 0, 0, 0, 0x09, 0x2F, 0x60, 0x5C };
 	uint8_t term1[16] = { 0x43, DMR_BURST_TERMINATOR_LC, 9, 0, 0, 0, 0, 0, 0x09, 0x2F, 0x52, 0x5C };
 
+	// (after a header the bursts are held SCT_DMR_HDR_HOLD_MS, 210 ms, then A at 90 ms, B and C go together)
 	chip_packet(hdr1, 14, 0x30, 100);
 	chip_packet(idle2, 15, 0x30, 130);
 	sct_dmr_poll(160);
-	chip_packet(hdr2, 12, 0x30, 190);
-	sct_dmr_poll(220);
+	chip_packet(hdr2, 12, 0x30, 200);
 	sct_dmr_poll(250);
-	sct_dmr_poll(280);
-	chip_packet(term1, 12, 0x30, 300);
 	sct_dmr_poll(310);
-	chip_packet(term2, 12, 0x30, 340);
-	sct_dmr_poll(400);
-	CHECK(nev == 10);
+	sct_dmr_poll(370);
+	chip_packet(term1, 12, 0x30, 400);
+	sct_dmr_poll(410);
+	chip_packet(term2, 12, 0x30, 440);
+	sct_dmr_poll(500);
+	CHECK(nev == 12);
 	static const struct {
 		dmr_burst_kind_t kind;
 		int8_t ts;
 		uint8_t index;
-	} want[10] = {
-		{ DMR_BURST_VOICE_LC_HEADER, 1, 0 }, { DMR_BURST_IDLE, 2, 0 }, { DMR_BURST_VOICE, 1, 0 },
-		{ DMR_BURST_VOICE_LC_HEADER, 2, 0 }, { DMR_BURST_VOICE, 1, 1 }, { DMR_BURST_VOICE, 2, 0 },
-		{ DMR_BURST_VOICE, 1, 2 }, { DMR_BURST_TERMINATOR_LC, 1, 0 }, { DMR_BURST_VOICE, 2, 1 },
-		{ DMR_BURST_TERMINATOR_LC, 2, 0 },
+	} want[12] = {
+		{ DMR_BURST_VOICE_LC_HEADER, 1, 0 }, { DMR_BURST_IDLE, 2, 0 }, { DMR_BURST_VOICE_LC_HEADER, 2, 0 },
+		{ DMR_BURST_VOICE, 1, 0 }, { DMR_BURST_VOICE, 1, 1 }, { DMR_BURST_VOICE, 1, 2 }, { DMR_BURST_VOICE, 1, 3 },
+		{ DMR_BURST_TERMINATOR_LC, 1, 0 }, { DMR_BURST_VOICE, 2, 0 }, { DMR_BURST_VOICE, 2, 1 },
+		{ DMR_BURST_VOICE, 2, 2 }, { DMR_BURST_TERMINATOR_LC, 2, 0 },
 	};
-	for (int i = 0; i < 10 && i < nev; i++) {
+	for (int i = 0; i < 12 && i < nev; i++) {
 		const dmr_burst_t *b = &ev_bursts[i];
 
 		CHECK(b->kind == want[i].kind && b->ts == want[i].ts && b->sync == DMR_SYNC_BS);
 		if (b->kind == DMR_BURST_VOICE)
 			CHECK(b->voice_index == want[i].index);
 	}
-	CHECK(ev_bursts[3].lc_valid && ev_bursts[3].lc[7] == 0x60);
+	CHECK(ev_bursts[2].lc_valid && ev_bursts[2].lc[7] == 0x60);
+}
+
+// A call heard from its headers (every one, or two of the lead-in missed): 60 voice bursts on air, the terminator 61
+// slots after the last header, its report a little late or a little early. The stack gets exactly 60 voice bursts
+// (the count on the slot boundary gave 61 when the terminator's report came after the 61st slot's tick, and bursts
+// counted in the missed headers' gap were too many)
+static void test_dmr_rx_voice_count(void)
+{
+	static const uint8_t hdr[16] = { 0x43, DMR_BURST_VOICE_LC_HEADER, 9, 0, 0, 0, 0, 0, 0x09, 0x2F, 0x52, 0x5C };
+	static const uint8_t term[16] = { 0x43, DMR_BURST_TERMINATOR_LC, 9, 0, 0, 0, 0, 0, 0x09, 0x2F, 0x52, 0x5C };
+
+	for (int late = -20; late <= 25; late += 5) {
+		for (int gap = 0; gap < 2; gap++) {
+		start();
+		// eight headers, a slot apart; with gap, the chip misses the third and the fourth
+		uint32_t t0 = 1000, t = t0;
+		for (int h = 0; h < 8; h++) {
+			t = t0 + (uint32_t)h * SCT_DMR_SLOT_MS;
+			if (!(gap && (h == 2 || h == 3)))
+				chip_packet(hdr, 12, 0x30, t);
+			for (uint32_t q = t + 5; q < t + SCT_DMR_SLOT_MS && h < 7; q += 5)
+				sct_dmr_poll(q);
+		}
+		t0 = t;		// the last header
+		int voice = 0;
+		for (int i = 0; i < nev; i++)
+			voice += ev_bursts[i].kind == DMR_BURST_VOICE;
+		nev = 0;	// (EV_MAX: the headers and the call's bursts don't all fit)
+		uint32_t t_term = (uint32_t)((int32_t)(t0 + 61 * SCT_DMR_SLOT_MS) + late);
+		for (t = t0 + 5; t < t_term; t += 5)
+			sct_dmr_poll(t);
+		chip_packet(term, 12, 0x30, t_term);
+		for (t = t_term; t < t_term + 300; t += 5)
+			sct_dmr_poll(t);
+		for (int i = 0; i < nev; i++)
+			voice += ev_bursts[i].kind == DMR_BURST_VOICE;
+		CHECK(voice == 60);
+		if (voice != 60)
+			printf("# terminator %d ms off its slot, %s: %d voice bursts\n", late,
+			       gap ? "two headers missed" : "every header", voice);
+		}
+	}
 }
 
 static void test_dmr_rx(void)
@@ -1015,50 +1058,55 @@ static void test_dmr_rx(void)
 	sct_dmr_poll(900);
 	CHECK(nev == 6);
 
-	// A header starts the bursts at A; a stalled poll gives at most a few, then the terminator stops them
+	// A header starts the bursts at A, counted half a slot after its time on air; a stalled poll gives at most a few,
+	// then the terminator stops them
 	uint8_t r5[16] = { 0x43, DMR_BURST_VOICE_LC_HEADER | SCT_PROP_TS2, 9, 0, 0, 0, 0, 0, 0x09, 0x2F, 0x52, 0x5C };
 	chip_packet(r5, 12, 0x30, 1000);
 	CHECK(nev == 7 && ev_bursts[6].kind == DMR_BURST_VOICE_LC_HEADER && ev_bursts[6].lc_valid);
-	sct_dmr_poll(1060);
-	CHECK(nev == 8 && ev_bursts[7].voice_index == 0);
+	sct_dmr_poll(1209);
+	CHECK(nev == 7);			// held: another header may come
+	sct_dmr_poll(1210);
+	CHECK(nev == 10 && ev_bursts[7].voice_index == 0 && ev_bursts[8].voice_index == 1 &&
+	      ev_bursts[9].voice_index == 2);
 	sct_dmr_poll(3000);
-	CHECK(nev == 12);
+	CHECK(nev == 14);
 	sct_dmr_poll(3059);
-	CHECK(nev == 12);
+	CHECK(nev == 14);
 	uint8_t r6[16] = { 0x43, DMR_BURST_TERMINATOR_LC | SCT_PROP_TS2, 9, 0, 0, 0, 0, 0, 0x09, 0x2F, 0x52, 0x5C };
 	chip_packet(r6, 12, 0x30, 3060);
-	CHECK(nev == 13 && ev_bursts[12].kind == DMR_BURST_TERMINATOR_LC);
+	CHECK(nev == 15 && ev_bursts[14].kind == DMR_BURST_TERMINATOR_LC);
 	sct_dmr_poll(3200);
-	CHECK(nev == 13);
+	CHECK(nev == 15);
 
 	// Every header reported (DMR_CALL_OPTION byte 3): a repeat starts the bursts at A again, a superframe's LC
 	// doesn't, and a second terminator after the end changes nothing
 	chip_packet(r5, 12, 0x30, 4000);
-	sct_dmr_poll(4060);
-	CHECK(nev == 15 && ev_bursts[14].voice_index == 0);
-	chip_packet(r5, 12, 0x30, 4070);
 	CHECK(nev == 16 && ev_bursts[15].kind == DMR_BURST_VOICE_LC_HEADER);
-	sct_dmr_poll(4129);
-	CHECK(nev == 16);
-	sct_dmr_poll(4130);
-	CHECK(nev == 17 && ev_bursts[16].voice_index == 0);
+	sct_dmr_poll(4090);
+	CHECK(nev == 16);			// burst A's time, held
+	chip_packet(r5, 12, 0x30, 4100);
+	CHECK(nev == 17 && ev_bursts[16].kind == DMR_BURST_VOICE_LC_HEADER);
+	sct_dmr_poll(4309);
+	CHECK(nev == 17);
+	sct_dmr_poll(4310);
+	CHECK(nev == 20 && ev_bursts[17].voice_index == 0 && ev_bursts[19].voice_index == 2);
 	// The call's own LC from a superframe is dropped: the stack would take it for a header and restart at A
-	chip_packet(r3, 14, 0x30, 4140);
-	sct_dmr_poll(4190);
-	CHECK(nev == 18 && ev_bursts[17].kind == DMR_BURST_VOICE && ev_bursts[17].voice_index == 1);
+	chip_packet(r3, 14, 0x30, 4320);
+	sct_dmr_poll(4370);
+	CHECK(nev == 21 && ev_bursts[20].kind == DMR_BURST_VOICE && ev_bursts[20].voice_index == 3);
 	// ... another LC (a new talker) goes through in place of the next voice burst, and the bursts go on from it
 	uint8_t r7[16] = { 0x43, SCT_PROP_VOICE | SCT_PROP_TS2, 9, 0, 0, 0, 0, 0, 0x09, 0x2F, 0x53, 0x5C };
-	chip_packet(r7, 12, 0x30, 4200);
-	CHECK(nev == 19 && ev_bursts[18].kind == DMR_BURST_VOICE && ev_bursts[18].voice_index == 2);
-	CHECK(ev_bursts[18].lc_valid && ev_bursts[18].lc[7] == 0x53);
-	sct_dmr_poll(4259);
-	CHECK(nev == 19);
-	sct_dmr_poll(4260);
-	CHECK(nev == 20 && ev_bursts[19].voice_index == 3 && !ev_bursts[19].lc_valid);
-	chip_packet(r6, 12, 0x30, 4270);
-	chip_packet(r6, 12, 0x30, 4320);
-	sct_dmr_poll(4500);
-	CHECK(nev == 22 && ev_bursts[20].kind == DMR_BURST_TERMINATOR_LC && ev_bursts[21].kind == DMR_BURST_TERMINATOR_LC);
+	chip_packet(r7, 12, 0x30, 4380);
+	CHECK(nev == 22 && ev_bursts[21].kind == DMR_BURST_VOICE && ev_bursts[21].voice_index == 4);
+	CHECK(ev_bursts[21].lc_valid && ev_bursts[21].lc[7] == 0x53);
+	sct_dmr_poll(4439);
+	CHECK(nev == 22);
+	sct_dmr_poll(4440);
+	CHECK(nev == 23 && ev_bursts[22].voice_index == 5 && !ev_bursts[22].lc_valid);
+	chip_packet(r6, 12, 0x30, 4450);
+	chip_packet(r6, 12, 0x30, 4500);
+	sct_dmr_poll(4600);
+	CHECK(nev == 25 && ev_bursts[23].kind == DMR_BURST_TERMINATOR_LC && ev_bursts[24].kind == DMR_BURST_TERMINATOR_LC);
 	nev = 6;
 
 	// Nothing reported while transmitting; a garbled packet is counted
@@ -1069,7 +1117,7 @@ static void test_dmr_rx(void)
 	chip_packet(junk, 4, 0x30, 900);
 	sct_dmr_stats_t st;
 	sct_dmr_get_stats(&st);
-	CHECK(st.rx_bad == 1 && st.rx_frames == 11 && st.rx_fec == 1 && st.rx_voice == 13);
+	CHECK(st.rx_bad == 1 && st.rx_frames == 11 && st.rx_fec == 1 && st.rx_voice == 16);
 }
 
 // CARRIER_READY: the board's value, sent on a change in receive only, and again at each return to receive
@@ -1141,17 +1189,19 @@ static void test_dmr_carrier_ends_call(void)
 	sct_dmr_carrier(2);
 	uint8_t hdr[16] = { 0x43, DMR_BURST_VOICE_LC_HEADER | SCT_PROP_TS2, 9, 0, 0, 0, 0, 0, 0x09, 0x2F, 0x52, 0x5C };
 	chip_packet(hdr, 12, 0x30, 1000);
-	sct_dmr_poll(1060);
+	sct_dmr_poll(1090);
 	sct_dmr_carrier(2);			// the board's reading at each status poll
-	sct_dmr_poll(1120);
+	sct_dmr_poll(1150);
+	sct_dmr_carrier(2);
+	sct_dmr_poll(1210);
 	sct_dmr_carrier(2);
 	int n = nev;
 	CHECK(n >= 3 && ev_bursts[n - 1].kind == DMR_BURST_VOICE);
 	sct_dmr_carrier(0);			// the signal goes, the chip says nothing
-	sct_dmr_poll(1120 + SCT_DMR_CR_HOLD_MS - 10);
+	sct_dmr_poll(1210 + SCT_DMR_CR_HOLD_MS - 10);
 	CHECK(evs[nev - 1].kind != DMR_EV_SYNC_LOST);	// within the hold the bursts go on
 	n = nev;
-	sct_dmr_poll(1120 + SCT_DMR_CR_HOLD_MS);
+	sct_dmr_poll(1210 + SCT_DMR_CR_HOLD_MS);
 	CHECK(nev > n && evs[nev - 1].kind == DMR_EV_SYNC_LOST);
 	n = nev;
 	sct_dmr_poll(3000);
@@ -1680,6 +1730,7 @@ int main(void)
 	test_dmr_tx_answer_on_air();
 	test_dmr_rx();
 	test_dmr_rx_outbound();
+	test_dmr_rx_voice_count();
 	test_dmr_options();
 	test_dmr_carrier();
 	test_dmr_carrier_ends_call();

@@ -71,6 +71,7 @@ static struct {
 		uint8_t index;		// the next burst's index, 0..5 (A..F)
 		uint8_t lc[LC_BYTES];	// its LC
 		uint32_t next_ms;
+		uint32_t hold_ms;	// none reported before this: after a header, until the next one is clearly not coming
 	} rv[2];
 	uint32_t counter;	// burst counter for event args, never 0
 	uint32_t now;
@@ -521,7 +522,13 @@ static void rx_voice_start(uint8_t slot, int8_t ts)
 	s.rv[slot].on = true;
 	s.rv[slot].ts = ts;
 	s.rv[slot].index = 0;
-	s.rv[slot].next_ms = s.now + SCT_DMR_SLOT_MS;
+	// Burst A is on air a slot after the header, but its count comes half a slot later: the terminator is on air 61
+	// slots after the last header, and counted from a slot after it the 61st burst fell due as it was reported: one
+	// burst too many, now and then (HIL test_dmr_rx_counters). And none is reported for SCT_DMR_HDR_HOLD_MS: the chip
+	// misses a header of the lead-in now and then, and bursts counted in its gap, before the next header started the
+	// count again, were too many too. The ones due by then go together. The embedded LC path sets its own times
+	s.rv[slot].next_ms = s.now + SCT_DMR_SLOT_MS + SCT_DMR_SLOT_MS / 2;
+	s.rv[slot].hold_ms = s.now + SCT_DMR_HDR_HOLD_MS;
 }
 
 static void rx_frame(const uint8_t *f, uint8_t flen)
@@ -571,6 +578,7 @@ static void rx_frame(const uint8_t *f, uint8_t flen)
 			b.len = DMR_VOICE_BYTES;
 			s.rv[slot].index = (uint8_t)((s.rv[slot].index + 1) % 6);
 			s.rv[slot].next_ms = s.now + SCT_DMR_SLOT_MS;
+			s.rv[slot].hold_ms = s.now;
 			s.st.rx_voice++;
 		} else {
 			b.kind = prop & SCT_PROP_TYPE;
@@ -609,6 +617,8 @@ static void rx_frame(const uint8_t *f, uint8_t flen)
 static void rx_voice_step(void)
 {
 	for (uint8_t i = 0; i < 2; i++) {
+		if (s.rv[i].on && (int32_t)(s.now - s.rv[i].hold_ms) < 0)
+			continue;	// right after a header: maybe another comes
 		for (int n = 0; s.rv[i].on && s.tx == TX_IDLE && (int32_t)(s.now - s.rv[i].next_ms) >= 0 && n < 4; n++) {
 			dmr_burst_t b;
 

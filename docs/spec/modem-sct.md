@@ -263,7 +263,7 @@ the answer is never taken as a frame's answer or a NAK, OK or not.
   60 ms, from burst A (a late entry's LC is burst A itself), at most 4 catching up at once, until the terminator,
   sync lost or carrier lost, or until a board that reports its carrier (`sct_dmr_carrier`) sends `CARRIER_READY`
   lost, which then also reports sync lost: on a weak signal the chip missed every terminator and said sync lost only
-  about 2 s later (measured), and the stack held the call that long. A repeated header starts the count again, burst A 60 ms after it; a superframe's LC
+  about 2 s later (measured), and the stack held the call that long. After a header, the bursts are counted half a slot after their time on air (burst A at 90 ms): the terminator comes 61 slots after the last header, and a count on the slot boundary reported a 61st burst when the terminator's report came a little late. None is reported for 210 ms after a header (`SCT_DMR_HDR_HOLD_MS`), and the ones due by then (A, B, C) go together: the chip misses a header of the lead-in now and then, and bursts counted in the gap before the next header were too many. A repeated header starts the count again; a superframe's LC
   during the call doesn't. The call's own LC from a superframe isn't reported at all: it brings nothing new. A
   different LC (a new talker without a header) takes the place of the next voice burst, and the count goes on from
   it. The stack holds the call as on other modems.
