@@ -142,6 +142,8 @@ on the radio; a catalog key on the site), and the code works when its translatio
 - A new feature switch goes into [build-config.md](../build-config.md) and [feature-matrix.md](../feature-matrix.md).
 - Docs use US English, short sentences and tables. Links are relative so they work on GitHub and in the PDF.
 - `python3 tools/check_doc_links.py` checks every relative link, image and anchor in the docs (ci.sh runs it).
+- `python3 tools/check_keys.py` checks that a codeplug settings area key is listed the same way in the spec, the
+  firmware and the Codeplug Editor ([codeplug-settings.md](../spec/codeplug-settings.md) 3; ci.sh runs it).
 
 ## Before you open a pull request
 

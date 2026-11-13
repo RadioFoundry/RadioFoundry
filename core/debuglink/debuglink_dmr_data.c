@@ -10,6 +10,7 @@
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmr_data_api.h"
 #include "dmr/dmr_emergency.h"
+#include "radio/radio_keys.h"
 #endif
 #if CONFIG_DMR_IP_GATEWAY
 #include "dmr/ipGateway.h"
@@ -195,19 +196,30 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 			     ? DL_ST_OK : DL_ST_BUSY;
 		break;
 	case DL_DATA_OP_SETTINGS: {
-		dmrDataSettings_t set;
+		dmrDataSettings_t set, was;
 
 		if (n < 5) {
 			st = DL_ST_BAD_ARG;
 			break;
 		}
 		dmr_data_get_settings(&set);
+		was = set;
 		set.arsServer = get32(a) & 0xFFFFFFu;
+		// A new ID above a radio's own range would be written to the key and then read back as absent: refused, as
+		// the menu does. An unchanged one passes, so a host that only flips a reply bit isn't refused
+		if (set.arsServer != was.arsServer && set.arsServer > CODEPLUG_DMR_ID_MAX) {
+			st = DL_ST_BAD_ARG;
+			break;
+		}
 		set.radioCheckReply = (a[4] & 1u) != 0;
 		set.callAlertAck = (a[4] & 2u) != 0;
 		set.lrrpReply = (a[4] & 4u) != 0;
 		set.smsFormat = (a[4] & 32u) ? DMR_SMS_FORMAT_ETSI_IP : (a[4] & 8u) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
 		set.radioCheckEtsi = (a[4] & 16u) != 0;
+		if (!codeplug_keys_store(radio_keys, RADIO_KEYS_N, &was, &set)) {
+			st = DL_ST_BUSY;
+			break;
+		}
 		dmr_data_set_settings(&set);
 		break;
 	}
@@ -278,13 +290,14 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		break;
 	}
 	case DL_DATA_OP_IP_SETTINGS: {
-		dmrDataSettings_t set;
+		dmrDataSettings_t set, was;
 
 		if (n < 11 || a[0] > DMR_UDPC_ALL || a[1] > DMR_IPC_ALL || a[2] > DMR_IPC_TRIES_MAX) {
 			st = DL_ST_BAD_ARG;
 			break;
 		}
 		dmr_data_get_settings(&set);
+		was = set;
 		set.udpCompress = a[0];
 		set.ipConfirmed = a[1];
 		set.ipConfirmedTries = a[2] ? a[2] : DMR_IPC_TRIES_DEFAULT;
@@ -292,6 +305,14 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		set.ipConfirmedRule[1] = get32(a + 7);
 		if (n >= 15) {	// the off-net route's gateway ID, appended (an older request leaves it)
 			set.ipGatewayId = get32(a + 11) & 0xFFFFFFu;
+		}
+		if (set.ipGatewayId != was.ipGatewayId && set.ipGatewayId > CODEPLUG_DMR_ID_MAX) {
+			st = DL_ST_BAD_ARG;	// as DL_DATA_OP_SETTINGS: only a new ID out of range
+			break;
+		}
+		if (!codeplug_keys_store(radio_keys, RADIO_KEYS_N, &was, &set)) {
+			st = DL_ST_BUSY;
+			break;
 		}
 		dmr_data_set_settings(&set);
 		break;

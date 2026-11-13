@@ -30,8 +30,8 @@ level = "supported"
 summary = """\
 One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, \
 roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power \
-level checked on a wattmeter on both bands. Transmit is armed per power cycle. Open: V4 and V4A/V5 boards have not run \
-on a radio, and SFR loses inbound voice frames."""
+level checked on a wattmeter on both bands. V4A/V5 boards are detected; on older boards the radio asks for the revision \
+once. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames."""
 release = "stable"
 
 # This board's own switches (config.mk, config_md9600.h) aren't feature switches, so ci's per-switch builds don't cover
@@ -78,8 +78,8 @@ key_prefix = "A2FABB4B"
 # the bootloader's alt 0 string (seen on a radio, hardware-md9600.md 15): the flashers accept no other DFU layout
 layout = "@Internal Flash   /0x0800C000/01*016Kg,01*064Kg,07*128Kg"
 
-# The board revision, which RadioFoundry can't detect (docs/spec/hardware-md9600.md 16), follows the major version of
-# the radio's original firmware. The installers read that version over USB before the install and store the
+# The board revision, which RadioFoundry can't fully detect (V4A / V5 only: docs/spec/hardware-md9600.md 16, 19.3),
+# follows the major version of the radio's original firmware. The installers read that version over USB before the install and store the
 # revision as the board record once RadioFoundry runs (hardware-md9600.md 15.1, 19.3)
 [flash.original_version]
 read = "dfu-info"

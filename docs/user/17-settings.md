@@ -118,6 +118,7 @@ and by APRS. None of them needs the others: a radio without APRS still reports i
 | USB network at start | On, Off | Off | The radio starts as a USB network adapter instead of a serial port ([USB network](15-usb-network.md#starting-in-network-mode)) | Works |
 | PC answers data | On, Off | Off | Control station mode: while the computer is connected in USB network mode, it answers the data sent to your radio instead of the radio ([USB network](15-usb-network.md#control-station-for-dispatch-software)) | Works |
 | USB address | By DMR ID, 192.168.10.x | By DMR ID | The addresses of the USB network link: from your DMR ID, or the fixed pair 192.168.10.1 (radio) and 192.168.10.2 (computer) | Works |
+| Data services | ARS server, IP gateway: a DMR ID or Off | Off | Opens a screen with the ARS presence server ([ARS](10-messages-and-signaling.md#registration-ars-and-location-lrrp)) and the gateway radio for other networks ([USB network](15-usb-network.md#other-networks-through-a-gateway-radio)). Type an ID and press **OK**; 0 is Off. Both are saved in the codeplug | Works |
 
 ### Power saving (key 7)
 
@@ -178,7 +179,7 @@ When the keys lock by themselves and what still works while they are locked ([Ke
 | Crash log | What the last crash left, and sending it to the developers ([below](#crash-log)) |
 | RX past bands | Only on radios with a range for it: receive above the radio's rated bands, FM only. Off by default. Sensitivity isn't rated there, and the radio never transmits there |
 | Freq trim | Moves the radio's receive and transmit frequency together, for a radio that is off frequency. Measure the error (a frequency counter, a service monitor, or a hotspot's BER test) and enter it with the sign reversed. The page shows what the trim comes to in Hz at 440 MHz and 144 MHz: a radio 2 kHz high at 440 MHz takes about -4.5 ppm (-1980 Hz). The page shows the trim in large type over a slider from -10 to +10, with "+ to increase frequency" under it where the display has room. Up and Down (or the knob) step 0.1 ppm, # flips the sign, digits type it (# 4 5 OK is -4.5 ppm). Takes effect once you stop changing it. Only on radios that have it ([which radios](../feature-matrix.md)). Range -10.0 to +10.0 ppm in 0.1 ppm steps, default 0 |
-| Hardware | Only on radios that need it: facts about the radio the firmware can't read, such as a board revision. **OK** steps through the choices, holding **OK** stores the one shown. "Not set" shows until one is stored. A revision applies from the next start-up |
+| Hardware | Only on radios that need it: facts about the radio the firmware can't detect, such as a board revision (one the radio detects isn't listed). **OK** steps through the choices, holding **OK** stores the one shown. "Not set" shows in the warning color until one is stored, and the radio won't transmit until then. A choice other than the one the radio runs applies from the next start-up |
 
 <img src="../ux/screens/160x120i5/about.png" width="200" alt="Settings > Advanced > About">
 
@@ -228,7 +229,7 @@ A few settings exist in the radio but not yet on the menu:
 - busy channel lockout and the roger beep;
 - the scan's resume mode and timing;
 - VOX sensitivity;
-- the ARS server and the emergency settings;
+- the emergency settings;
 - the IP data settings (header compression, confirmed data) and the SNMP communities;
 - the roaming threshold, hysteresis and periodic search;
 - the SFR idle beacon.

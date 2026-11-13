@@ -71,7 +71,7 @@ TFTP ([USB network](15-usb-network.md#programming-over-the-network)).
 
 | Tab | Holds |
 |---|---|
-| Radio | DMR ID, radio name (callsign), boot text, group and private call hang times |
+| Radio | DMR ID, radio name (callsign), boot text, group and private call hang times, ARS server, IP gateway |
 | Channels | Every channel. The pencil button opens the full form: FM, DMR, scan and power, location, single frequency repeater |
 | Zones | Zones and their channels |
 | Contacts | Talkgroups and private-call contacts |
@@ -84,6 +84,13 @@ In a table, double-click a cell or type on it to edit it in place. Click a colum
 filter to narrow the rows. Check rows and choose **Bulk Edit** to set one field on all of them (not on Zones or RX Lists, whose members are
 edited in their own dialog). **Undo** and **Redo**
 cover every change, including an import.
+
+**ARS server** is the DMR ID of the presence server the radio registers with
+([ARS](10-messages-and-signaling.md#registration-ars-and-location-lrrp)). **IP gateway** is the DMR ID of the radio
+that takes the computer's packets to other networks ([USB network](15-usb-network.md#other-networks-through-a-gateway-radio)).
+Leave a field empty and the radio keeps its own setting; enter 0 to turn it off. qdmr doesn't have these settings and
+leaves them as they are on the radio. Other programming software that writes the radio's whole memory can't erase them
+either: the radio keeps its own unless the software writes them in RadioFoundry's format.
 
 The page keeps the working codeplug in the browser, so closing or reloading the page doesn't lose edits. **New** starts
 over.
@@ -118,7 +125,7 @@ name. A file can hold only some columns; the others keep their values. Records m
 Values the editor can't take are listed by row and column after the import.
 
 A qdmr file replaces the channels, zones, contacts, DTMF contacts, RX group lists, APRS configurations and the Radio
-tab's settings in one change, so one **Undo** reverses it. The VFOs and the DMR ID database stay as they were.
+tab's settings other than the ARS server and IP gateway in one change, so one **Undo** reverses it. The VFOs and the DMR ID database stay as they were.
 Afterwards the editor lists what it changed or left out, such as scan lists, encryption keys and names that were
 shortened. Saving as qdmr YAML lists what qdmr's format can't hold: SFR settings, power levels qdmr has no name for,
 and locations, which are rounded to 6-character grid locators (about 5 km). The Tools page converts between qdmr YAML
@@ -166,7 +173,7 @@ TFTP (USB network mode) and other CPS programs use the older format.
 
 | Item | Fields RadioFoundry uses |
 |---|---|
-| General settings | Your DMR ID. The callsign (radio name, 8 characters, sent as talker alias). The group and private call hang times (the reply window) |
+| General settings | Your DMR ID. The callsign (radio name, 8 characters, sent as talker alias). The group and private call hang times (the reply window). The ARS server and IP gateway, when set |
 | Channels (up to 1024) | Name, receive and transmit frequency, mode (FM or DMR), bandwidth, receive and transmit tones, power, receive only, color code, timeslot, talk target contact, RX group list (listen list), a per-channel DMR ID, force direct mode, transmit timeout (Radio Default: the radio's own, [TX timeout](08-fm.md#transmit-timeout)), talker alias, zone scan skip, VOX allowed, no beep, no battery saving |
 | Zones | Name and channel list. Without zones, the radio shows one zone with all channels |
 | Contacts (up to 1024) | Name, DMR ID or talkgroup, private or group, timeslot override |
@@ -186,7 +193,7 @@ The codeplug can't set these yet:
 - Privacy keys ([DMR](09-dmr.md#privacy)).
 - RadioFoundry's own settings ([Settings](17-settings.md)): they are kept separately from the codeplug. The codeplug's
   quick key assignments are ignored.
-- Emergency, ARS and text message format.
+- Emergency and text message format.
 - SFR settings, in qdmr. The Codeplug Editor sets them on each channel.
 
 ## Programming with qdmr

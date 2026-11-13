@@ -401,6 +401,10 @@ static const hal_afsk_t afsk = { .tx_start = afsk_tx_start, .tx_busy = afsk_tx_b
 static uint32_t v_options(void) { return VOCODER_OPT_NOISE_REDUCTION | VOCODER_OPT_TONE_FRAMES | VOCODER_OPT_AGC; }
 static const hal_vocoder_t vocoder = { .options = v_options };
 
+// A receiver that does AM (the "am" token): radio_am_channel() reads only that rx_am is there
+static bool r_rx_am(uint32_t hz, radio_bw_t bw) { (void)hz; (void)bw; return true; }
+static const hal_radio_t am_radio = { .rx_am = r_rx_am };
+
 board_t board = {
 	.name = "Simulator", .bands = bands, .band_count = 3, .power_count = 9, .power_names = power_names,
 	.power_default = 4, .display = &disp, .power = &power, .afsk = &afsk, .vocoder = &vocoder,
@@ -2178,6 +2182,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	view.volume = -1;	// no level passed on yet (power-up)
 	view.volume_src = RVOL_KNOB;
 	bcast_rx = false;
+	board.radio = NULL;
 	ref_trim = false;
 	knob_radio = false;
 	vol_held = false;
@@ -2199,6 +2204,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 0);
 	ui_svc_setting_set(UI_SET_LONG_PRESS_MS, 600);	// settings a flow changes start from their defaults
 	ui_svc_setting_set(UI_SET_AUTO_LOCK_S, 0);
+	ui_svc_setting_set(UI_SET_ARS_SERVER, 0);
+	ui_svc_setting_set(UI_SET_IP_GATEWAY, 0);
 	ui_svc_setting_set(UI_SET_PTT_LOCKED, 1);
 	ui_svc_setting_set(UI_SET_HEAR_ALL_DEFAULT, 0);
 	ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 1);
@@ -2967,6 +2974,11 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "softvol") == 0) {	// this radio has no volume knob: the board sets the speaker volume
 		soft_volume = true;
 		advance(200);
+		return true;
+	}
+	if (strcmp(t, "am") == 0) {		// this radio receives air band AM (CAP_AM_RX), until the next reset
+		board.caps |= CAP_AM_RX;
+		board.radio = &am_radio;
 		return true;
 	}
 	if (strcmp(t, "bcast") == 0) {		// this radio has a broadcast FM receiver

@@ -17,6 +17,9 @@
 #include "radio/tx_limit.h"
 #include "radio/pa_keyup.h"
 #include "storage/storage.h"
+#if CONFIG_DMR_DATA_CORE
+#include "codeplug/codeplug_kv.h"
+#endif
 #if CONFIG_APRS
 #include "aprs/aprs.h"
 #endif
@@ -57,7 +60,7 @@ static const char *deny_key(uint8_t d)
 {
 	static const char *const names[] = { "none", "rx_only", "band", "timeout", "no_freq", "mode", "no_codec",
 					     "no_dmr", "busy", "no_repeater", "rejected", "hotspot", "no_id", "inhibit",
-					     "battery", "am", "bcast" };
+					     "battery", "am", "bcast", "sfr_rpt", "hwopt", "refused" };
 	return d < sizeof(names) / sizeof(names[0]) ? names[d] : "?";
 }
 
@@ -410,6 +413,19 @@ static void link_section(dl_text_t *t)
 	}
 }
 
+#if CONFIG_DMR_DATA_CORE
+// The codeplug settings area (docs/spec/codeplug-settings.md 5). noinline: inlined, its flash reads would sit under
+// the caller's frame on the host task's deepest path
+static void __attribute__((noinline)) cpkv_section(dl_text_t *t)
+{
+	static const char *const states[] = { [CODEPLUG_KV_EMPTY] = "empty", [CODEPLUG_KV_VALID] = "valid",
+		[CODEPLUG_KV_BAD] = "bad", [CODEPLUG_KV_NEWER] = "newer" };
+	uint16_t len, keys;
+	codeplug_kv_state_t s = codeplug_kv_info(&len, &keys);
+	dl_text(t, "cpkv.state=%s\ncpkv.length=%u\ncpkv.keys=%u\n", states[s], len, keys);
+}
+#endif
+
 static void storage_section(dl_text_t *t)
 {
 	static const char *const loads[] = { "ram", "defaults", "loaded", "upgraded", "foreign" };
@@ -629,6 +645,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_CPS:
 		cps_section(t);
+#if CONFIG_DMR_DATA_CORE
+		cpkv_section(t);
+#endif
 		break;
 	case DL_VIEW_AUDIO:
 		debuglink_view_audio(t);
