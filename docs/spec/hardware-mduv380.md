@@ -42,7 +42,7 @@ DM-1701 spec ([hardware-dm1701.md](hardware-dm1701.md)) and the codec spec ([cod
 | Power levels | 5 W | 5 W | 10 W (2, 3, 5, 10 W at the top four levels) | 7 |
 | Power fractions | DM-1701 rows | 5 W rows | 10 W rows | 7 |
 | Working-copy power conversion | DM-1701 row | 5 W row | 10 W row | 8 |
-| AT1846S DMR AF gain | needs 0x44 = 0x07FF | less AF gain is enough ([hardware-dm1701.md](hardware-dm1701.md) 5.5) | | 2 |
+| AT1846S DMR AF gain | 0x44 = 0x07EF | the same driver value, untested ([hardware-dm1701.md](hardware-dm1701.md) 5.5) | | 2 |
 | GPS | not fitted | G models: USART1 RX PA10, power PA9 | G models | 9 |
 | DFU key | DM-1701 key | MD-UV380 key | same | 11 |
 | Stock codec | V02.06 at 0x08074714 | TYT and Retevis builds 18.11 to 219.74, same codec, different addresses | 10 W builds of 19.74 and 219.74, same codec | 12 |
@@ -72,8 +72,8 @@ by the DM-1701 port, and the DM-1701 spec has no entry for them (?: may hold on 
 The AT1846S register tables of [hardware-dm1701.md](hardware-dm1701.md) apply, with these differences in the images:
 
 - **Init.** The same registers and values, plus one write, 0x0F = 0x8A24 (the DM-1701's init step 27 lists it too).
-  0x44 is 0x07FF at init (DMR 100 %) and 0x04FF in a second mode function, as on the DM-1701. The DM-1701 needs more DMR
-  AF gain than the MD-UV380 (5.5): keep 0x44 = 0x07FF unless bench tests show better BER with less.
+  0x44 is 0x07FF at init (DMR 100 %) and 0x04FF in a second mode function, as on the DM-1701. The shared driver
+  sets 0x44 = 0x07EF in DMR (1 dB under full, the DM-1701's receive level window, 5.5); open item 9 checks it here.
 - **Frequency set.** The routine writes reg 0x05 from 0x8443, 0x8543, 0x8643 or 0x8763, chosen by testing the frequency
   against multiples of 26 MHz and 182 MHz (spur avoidance), where the DM-1701 image writes 0x8643 once. It ends with
   reg 0x30 = 0x4026 (RX on, band bits 00); the DM-1701 image writes that only in its callers.
@@ -355,7 +355,7 @@ there.
 | 6 | Battery divider (40.3) | open: no scale in the images; thresholds are raw counts | compare against a meter |
 | 7 | Volume pot ranges per model | open | read the raw value at both ends |
 | 8 | GPS on PA10 / PA9, 9600 baud; PA9 on non-GPS radios | images: 9600 on the wire, PA9 driven only in the GPS images | G model: sentences arrive; non-G: nothing breaks |
-| 9 | AT1846S DMR AF gain | open | BER against a hotspot at 0x07FF and lower |
+| 9 | AT1846S DMR AF gain | open: 0x07EF, the DM-1701's value | `test_dmr_audio_rx_deviation`; `tools/dmr_rx_sweep.py --reg 0:0x44` for the window |
 | 10 | Power fractions and k factors | open; the images' power rows are averaged between points (section 8) | power meter at each level, band edges |
 | 11 | Bootloader entry check and stack rule | open; the application has no entry code | dump the loader (RDP 1 allows the application to read it) |
 | 12 | Codec voice on air | open: bit-identical in the emulator for every build ([codec-mduv380.md](codec-mduv380.md)) | DMR TX and RX through the placed codec |
