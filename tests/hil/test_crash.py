@@ -10,6 +10,7 @@ from rfoundry_hil import DebugLinkError, as_int, skip
 
 CRASH_KIND_FAULT, CRASH_KIND_ASSERT, CRASH_KIND_HANG, CRASH_KIND_STALL = 1, 4, 5, 6
 STALL_MS = 60000        # WATCHDOG_STALL_MS (core/app/watchdog.h)
+CLOCK_SLACK_MS = 500    # the view's round trips and the radio's clock against the host's
 
 
 def _need(radio):
@@ -24,12 +25,17 @@ def _crash(radio, kind, wait_s=30.0):
     radio.link.crash_clear()
     assert radio.view(["crash"]).get("crash.valid") == "0"
     up_before = as_int(radio.view(["link"])["uptime_ms"])
+    t0 = time.monotonic()
     radio.link.crash_test(kind)
     radio.link.close()
     time.sleep(2.0)
     radio.reconnect(wait_s, "the crash")
     up_after = as_int(radio.view(["link"])["uptime_ms"])
-    assert up_after < up_before, f"the radio didn't restart (uptime {up_before} ms, then {up_after})"
+    # Without a restart the uptime has gone on from up_before; a restart started it again within the time since.
+    # Not up_after < up_before: a radio that started only seconds before and takes as long to come up again reads more
+    unbroken = up_before + round((time.monotonic() - t0) * 1000)
+    assert up_after < unbroken - CLOCK_SLACK_MS, \
+        f"the radio didn't restart (uptime {up_before} ms, then {up_after}, {unbroken} without a restart)"
     return radio.view(["crash"])
 
 
