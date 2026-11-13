@@ -12,9 +12,9 @@
 
 typedef enum {
 	RADIO_T3_START = 1,		// select the staged system: hunt for its TSCC
-	RADIO_T3_STOP,		// leave it: back to the channel or VFO
-	RADIO_T3_DEREG,		// de-register (when registered), staying on the system
-	RADIO_T3_END,		// end the call being followed (P_MAINT when it is ours or private)
+	RADIO_T3_STOP,			// leave it: back to the channel or VFO
+	RADIO_T3_DEREG,			// de-register (when registered), staying on the system
+	RADIO_T3_END,			// end the call being followed (P_MAINT when it is ours or private)
 } radio_t3_cmd_t;
 
 #if CONFIG_DMR_TRUNK
