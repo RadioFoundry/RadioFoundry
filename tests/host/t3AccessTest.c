@@ -838,12 +838,20 @@ static void test_status(void)
 	frames(&ms, 2);
 	CHECK(ms.status_rx.count == 3 && ms.status_rx.group && ms.status_rx.dst == TG_B && nsent == 2,
 	      "talkgroup status kept, no answer");
+	// The TSCC's repeat isn't another status; the same one later is
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	CHECK(ms.status_rx.count == 3, "a repeat isn't counted: %u", (unsigned)ms.status_rx.count);
+	T += T3_REPEAT_MS;
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	CHECK(ms.status_rx.count == 4, "the same status later is counted: %u", (unsigned)ms.status_rx.count);
 	h = status_ahoy(9, true, TG_OTHER, CALLER);
 	rx(&ms, 1, &h);
 	h = status_ahoy(9, false, OWN + 1u, CALLER);
 	rx(&ms, 1, &h);
 	frames(&ms, 2);
-	CHECK(ms.status_rx.count == 3 && nsent == 2, "others' statuses ignored");
+	CHECK(ms.status_rx.count == 4 && nsent == 2, "others' statuses ignored");
 
 	// Listen only: kept, never answered, none sent
 	setup(T3_OPT_PRIVATE | T3_OPT_LISTEN_ONLY, true);
@@ -944,14 +952,19 @@ static void test_sdata(void)
 	      ms.sd_rx.len);
 	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_ACCEPTED &&
 	      sent[0].u.ack.dst == CALLER, "short data acknowledged");
+	// Sent again (the answer was lost): answered again, not another message
+	udt_down(&ms, 1, &d, (const uint8_t *)"hello", 5, false);
+	frames(&ms, 1);
+	CHECK(ms.sd_rx.count == 1 && nsent == 2 && sent[1].u.ack.reason == T3_RC_MS_ACCEPTED,
+	      "repeat: answered, count %u", (unsigned)ms.sd_rx.count);
 	// 46 characters, 4 blocks
 	udt_down(&ms, 1, &d, (const uint8_t *)"0123456789012345678901234567890123456789012345", 46, false);
 	frames(&ms, 1);
-	CHECK(ms.sd_rx.count == 2 && ms.sd_rx.len == 46 && ms.sd_rx.data[45] == '5' && nsent == 2, "46 characters");
+	CHECK(ms.sd_rx.count == 2 && ms.sd_rx.len == 46 && ms.sd_rx.data[45] == '5' && nsent == 3, "46 characters");
 	// A bad CRC: not kept, no answer (the TSCC sends it again)
 	udt_down(&ms, 1, &d, (const uint8_t *)"hello", 5, true);
 	frames(&ms, 2);
-	CHECK(ms.sd_rx.count == 2 && nsent == 2, "bad CRC: dropped");
+	CHECK(ms.sd_rx.count == 2 && nsent == 3, "bad CRC: dropped");
 	// A block missing: nothing
 	d.dst = OWN;
 	{
@@ -964,7 +977,7 @@ static void test_sdata(void)
 		T += 60;
 		t3_ms_rx(&ms, T, 1, T3_DT_R12, CC, blk[0]);
 		frames(&ms, 4);
-		CHECK(ms.sd_rx.count == 2 && nsent == 2, "a block missing: dropped");
+		CHECK(ms.sd_rx.count == 2 && nsent == 3, "a block missing: dropped");
 	}
 	// To a talkgroup it listens to: kept, no answer; another MS's or talkgroup's: ignored
 	d.group = true;
@@ -972,7 +985,14 @@ static void test_sdata(void)
 	d.dst = TG_B;
 	udt_down(&ms, 1, &d, (const uint8_t *)"all", 3, false);
 	frames(&ms, 2);
-	CHECK(ms.sd_rx.count == 3 && ms.sd_rx.group && ms.sd_rx.dst == TG_B && nsent == 2, "talkgroup data kept");
+	CHECK(ms.sd_rx.count == 3 && ms.sd_rx.group && ms.sd_rx.dst == TG_B && nsent == 3, "talkgroup data kept");
+	udt_down(&ms, 1, &d, (const uint8_t *)"all", 3, false);
+	frames(&ms, 2);
+	CHECK(ms.sd_rx.count == 3, "talkgroup repeat not counted: %u", (unsigned)ms.sd_rx.count);
+	T += T3_REPEAT_MS;
+	udt_down(&ms, 1, &d, (const uint8_t *)"all", 3, false);
+	frames(&ms, 2);
+	CHECK(ms.sd_rx.count == 4, "the same later is counted: %u", (unsigned)ms.sd_rx.count);
 	d.dst = TG_OTHER;
 	udt_down(&ms, 1, &d, (const uint8_t *)"x", 1, false);
 	d.group = false;
@@ -980,7 +1000,7 @@ static void test_sdata(void)
 	d.dst = OWN + 1u;
 	udt_down(&ms, 1, &d, (const uint8_t *)"x", 1, false);
 	frames(&ms, 2);
-	CHECK(ms.sd_rx.count == 3 && nsent == 2, "others' data ignored");
+	CHECK(ms.sd_rx.count == 4 && nsent == 3, "others' data ignored");
 
 	// Listen only: kept, not answered, none sent
 	setup(T3_OPT_PRIVATE | T3_OPT_LISTEN_ONLY, true);

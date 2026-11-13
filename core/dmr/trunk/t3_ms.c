@@ -712,7 +712,14 @@ static bool on_status(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *
 		return false;
 	}
 	uint8_t v = (uint8_t)(((h->options & 0x1Fu) << 2) | (h->blocks & 3u));
-	ms->status_rx.count++;
+	// The TSCC sends one to a talkgroup more than once, and one to the radio again when the answer was lost: a
+	// repeat is answered again but not counted as another
+	bool repeat = ms->status_rx.ms != 0 && !since(now, ms->status_rx.ms, T3_REPEAT_MS) &&
+		      ms->status_rx.src == h->src && ms->status_rx.dst == h->dst && ms->status_rx.group == h->group &&
+		      ms->status_rx.value == v;
+	if (!repeat) {
+		ms->status_rx.count++;
+	}
 	ms->status_rx.src = h->src;
 	ms->status_rx.dst = h->dst;
 	ms->status_rx.group = h->group;
@@ -1044,12 +1051,19 @@ static void udt_done(t3_ms_t *ms, uint32_t now, uint8_t slot)
 	}
 	uint8_t room = (uint8_t)(h->blocks * T3_UDT_BLOCK - 2u);
 	uint8_t pad = (uint8_t)(h->pad / 2u);
-	ms->sd_rx.count++;
+	uint8_t len = pad < room ? (uint8_t)(room - pad) : 0u;
+	// A repeat (on_status) is answered again but not counted as another message
+	bool repeat = ms->sd_rx.ms != 0 && !since(now, ms->sd_rx.ms, T3_REPEAT_MS) && ms->sd_rx.src == h->src &&
+		      ms->sd_rx.dst == h->dst && ms->sd_rx.group == h->group && ms->sd_rx.format == h->format &&
+		      ms->sd_rx.len == len && memcmp(ms->sd_rx.data, &ms->udt_rx.blk[0][0], len) == 0;
+	if (!repeat) {
+		ms->sd_rx.count++;
+	}
 	ms->sd_rx.src = h->src;
 	ms->sd_rx.dst = h->dst;
 	ms->sd_rx.group = h->group;
 	ms->sd_rx.format = h->format;
-	ms->sd_rx.len = pad < room ? (uint8_t)(room - pad) : 0u;
+	ms->sd_rx.len = len;
 	memcpy(ms->sd_rx.data, &ms->udt_rx.blk[0][0], ms->sd_rx.len);
 	ms->sd_rx.ms = now != 0 ? now : 1;
 	if (to_me && h->a && may_send(ms)) {

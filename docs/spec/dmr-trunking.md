@@ -302,7 +302,9 @@ the answer to a poll.
 
 A status heard in a C_AHOY on the TSCC (Service_Options_Mirror the 5 most significant bits, Appended_Blocks the 2
 least) to the radio or to a talkgroup it listens to is kept in `status_rx`. To the radio it is answered (section 7.4);
-to a talkgroup it isn't. Listen only, it is kept and not answered.
+to a talkgroup it isn't. Listen only, it is kept and not answered. The TSCC sends one to a talkgroup more than once,
+and one to the radio again when the answer was lost: the same status from the same caller within `T3_REPEAT_MS`
+(4 s) of the last is answered again but not counted as another.
 
 ### 7.6 UDT short data (6.5, 6.6.4)
 
@@ -332,7 +334,8 @@ before it, unmasked (TS 102 361-1 8.2.2.5).
 A C_UDTHD heard on the TSCC, its blocks whole and the CRC good, to the radio or to a talkgroup it listens to, is kept
 in `sd_rx` (the data without its pad octets). To the radio with A set it is answered C_ACKU MS_Accepted; to a
 talkgroup it isn't. A bad CRC or a missing block keeps nothing and answers nothing: the TSCC sends it again.
-Supplementary data (SF set) isn't taken.
+Supplementary data (SF set) isn't taken. A repeat (the same caller, destination, format and octets within
+`T3_REPEAT_MS`) is answered again but not counted, as for a status.
 
 ## 8. Timers and constants
 

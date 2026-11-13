@@ -64,6 +64,7 @@
 #define T3_NRAND_NE		10	// ... an emergency request
 #define T3_N_MAINT		4	// P_MAINT bursts at the end of a call we end
 #define T3_REG_RETRY_MS		30000	// a registration nobody answered is tried again after this
+#define T3_REPEAT_MS		4000	// a status or short data the same as the last heard this soon is the TSCC's repeat
 #define T3_DENIED_MAX		4	// SYS_AREAs that denied registration (cleared at power on)
 
 typedef struct {
