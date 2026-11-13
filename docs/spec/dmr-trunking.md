@@ -270,6 +270,7 @@ De-registration is the same request with Reg_Dereg 0. After it the engine doesn'
 | Event | Result |
 |---|---|
 | request | C_RAND kind talkgroup or individual voice, the target, the radio's ID; EMERG option for an emergency |
+| request to an all-call ID (ALLMSID, ALLMSIDL, ALLMSIDZ) or a talkgroup with `T3_TG_BROADCAST` | kind talkgroup voice with the broadcast option (6.6.1.7, table 7.52); the TSCC grants BTV_GRANT |
 | C_WACKD, C_QACKD, C_ACKD MS_Alerting | waiting (TP_Timer) |
 | a grant with the radio as source | follow; the call is the radio's own; result granted |
 | C_NACKD | refused, with its reason |
@@ -277,8 +278,8 @@ De-registration is the same request with Reg_Dereg 0. After it the engine doesn'
 | cancel, nothing sent yet | dropped |
 | cancel, sent | a C_RAND kind cancel to the same target; the TSCC answers C_ACKD Message_Accepted |
 
-PTT on the payload channel (`t3_ms_can_talk`): following, not disabled by P_PROTECT, and not an all-call someone
-else made. At the end of a call the radio made, or of any private call, `t3_ms_end_call` sends N_Maint P_MAINT
+PTT on the payload channel (`t3_ms_can_talk`): following, not disabled by P_PROTECT, and not a broadcast (BTV_GRANT)
+or all-call someone else made. At the end of a call the radio made, or of any private call, `t3_ms_end_call` sends N_Maint P_MAINT
 (DISCON, to TSI) in consecutive frames on the call's slot, then returns. A talkgroup call's recipient returns
 without sending, and the call's late-entry grants don't bring it back.
 

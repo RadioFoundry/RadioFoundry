@@ -865,6 +865,59 @@ static bool sent_rand(t3_ms_t *ms)
 	return nsent >= 1 && sent[nsent - 1].op == T3_OP_C_RAND;
 }
 
+// Broadcasts (6.6.1.7, table 7.52): a call to an all-call ID or to a talkgroup set T3_TG_BROADCAST carries the broadcast
+// option; the radio talks on its own; a broadcast or all-call someone else made keeps its PTT off
+static void test_broadcast(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE | T3_OPT_ALLCALL, true);
+	cfg.tg[1].flags |= T3_TG_BROADCAST;
+	camp_registered(&ms);
+
+	CHECK(t3_ms_request(&ms, T, T3_ID_ALLMSID, true, false), "all-call request");
+	CHECK(sent_rand(&ms), "sent");
+	const t3_rand_t *q = &sent[nsent - 1].u.rand;
+	CHECK(q->kind == T3_SK_TG_VOICE && q->dst == T3_ID_ALLMSID && q->options == T3_SO_BROADCAST,
+	      "all-call: TG voice, broadcast option, options 0x%02x", q->options);
+	t3_csbk_t g = grant(T3_OP_BTV_GRANT, 159, 2, T3_ID_ALLMSID, OWN);
+	rx(&ms, 1, &g);
+	frames(&ms, 2);
+	CHECK(ms.state == T3_FOLLOW && ms.call.ours && t3_ms_can_talk(&ms), "our all-call: may talk");
+	t3_ms_end_call(&ms, T);
+	frames(&ms, 6);
+	CHECK(ms.state == T3_CAMPED, "back");
+
+	nsent = 0;
+	CHECK(t3_ms_request(&ms, T, TG_B, true, true), "broadcast talkgroup, emergency");
+	CHECK(sent_rand(&ms), "sent");
+	q = &sent[nsent - 1].u.rand;
+	CHECK(q->dst == TG_B && q->options == (T3_SO_BROADCAST | T3_SO_EMERGENCY), "options 0x%02x", q->options);
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_TRANSIENT_REFUSED, OWN, TG_B);
+	rx(&ms, 1, &a);
+
+	nsent = 0;
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false), "a plain talkgroup");
+	CHECK(sent_rand(&ms), "sent");
+	CHECK(sent[nsent - 1].u.rand.options == 0, "no broadcast option");
+	a = ack(T3_OP_C_ACKD, T3_RC_TRANSIENT_REFUSED, OWN, TG_A);
+	rx(&ms, 1, &a);
+
+	// Heard: another radio's broadcast to a talkgroup we follow, and its all-call
+	g = grant(T3_OP_BTV_GRANT, 159, 2, TG_A, CALLER);
+	rx(&ms, 1, &g);
+	frames(&ms, 2);
+	CHECK(ms.state == T3_FOLLOW && !ms.call.ours && !t3_ms_can_talk(&ms), "a broadcast heard: no PTT");
+	t3_csbk_t c = { .lb = true, .op = T3_OP_P_CLEAR };
+	c.u.clear.dst = TG_A;
+	c.u.clear.group = true;
+	rx(&ms, 2, &c);
+	frames(&ms, 2);
+	g = grant(T3_OP_BTV_GRANT, 159, 1, T3_ID_ALLMSID, CALLER);
+	rx(&ms, 1, &g);
+	frames(&ms, 2);
+	CHECK(ms.state == T3_FOLLOW && !t3_ms_can_talk(&ms), "an all-call heard: no PTT");
+}
+
 static void test_status(void)
 {
 	t3_ms_t ms;
@@ -1205,6 +1258,7 @@ int main(void)
 	test_private_call();
 	test_cancel();
 	test_ahoy();
+	test_broadcast();
 	test_status();
 	test_sdata();
 	test_pdata();

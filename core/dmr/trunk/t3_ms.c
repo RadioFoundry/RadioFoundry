@@ -232,6 +232,20 @@ static bool is_allcall(uint32_t id)
 	return id == T3_ID_ALLMSID || id == T3_ID_ALLMSIDL || id == T3_ID_ALLMSIDZ;
 }
 
+// A call the radio makes to this talkgroup is a broadcast: an all-call (6.6.1.7), or a talkgroup set so
+static bool is_broadcast(const t3_ms_t *ms, uint32_t tg)
+{
+	if (is_allcall(tg)) {
+		return true;
+	}
+	for (uint8_t i = 0; i < ms->cfg->ntg; i++) {
+		if (ms->cfg->tg[i].id == tg) {
+			return (ms->cfg->tg[i].flags & T3_TG_BROADCAST) != 0;
+		}
+	}
+	return false;
+}
+
 bool t3_ms_wants_group(const t3_ms_t *ms, uint32_t tg, bool emergency)
 {
 	const t3_cfg_t *c = ms->cfg;
@@ -588,7 +602,8 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 	}
 	case T3_SVC_GROUP_VOICE:
 		q->kind = T3_SK_TG_VOICE;
-		q->options = ms->ax.emergency ? T3_SO_EMERGENCY : 0;
+		q->options = (uint8_t)((ms->ax.emergency ? T3_SO_EMERGENCY : 0) |
+				       (is_broadcast(ms, ms->ax.dst) ? T3_SO_BROADCAST : 0));
 		break;
 	case T3_SVC_IND_VOICE:
 		q->kind = T3_SK_IND_VOICE;
@@ -1499,7 +1514,8 @@ bool t3_ms_deregister(t3_ms_t *ms, uint32_t now)
 
 bool t3_ms_can_talk(const t3_ms_t *ms)
 {
-	// The PTT stays off on an all-call the radio didn't make (6.6.2.3.2.4) and while P_PROTECT disables it
+	// The PTT stays off on a broadcast or all-call the radio didn't make (6.6.2.3.2.4, 6.6.2.5) and while P_PROTECT
+	// disables it
 	return may_send(ms) && ms->state == T3_FOLLOW && !ms->protect_dis && ms->tx.count == 0 && !ms->call.data &&
-	       (ms->call.ours || !is_allcall(ms->call.dst));
+	       (ms->call.ours || (!is_allcall(ms->call.dst) && ms->call.op != T3_OP_BTV_GRANT));
 }

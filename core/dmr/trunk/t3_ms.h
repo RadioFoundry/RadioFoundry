@@ -40,6 +40,7 @@
 // Talkgroup flags
 #define T3_TG_LISTEN		0x01	// follow calls to it
 #define T3_TG_TALK		0x02	// the default talk group (CONFIG_DMR_TRUNK_TX)
+#define T3_TG_BROADCAST		0x04	// the radio's calls to it are broadcasts: one-way (6.6.2.1)
 #define T3_REG_TG_MAX		7	// talkgroups in a subscription list (6.4.4.1.13.2, table 6.10)
 
 // System options

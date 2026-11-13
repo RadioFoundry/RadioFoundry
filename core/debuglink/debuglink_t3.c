@@ -95,7 +95,7 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 			out[0] = DL_ST_BAD_ARG;
 		}
 		break;
-	case DL_T3_TG:		// id u32, flags u8 (T3_TG_LISTEN, T3_TG_TALK)
+	case DL_T3_TG:		// id u32, flags u8 (T3_TG_LISTEN, T3_TG_TALK, T3_TG_BROADCAST)
 		if (n < 5u || s->cfg.ntg >= T3_TG_MAX || rd32(a) == 0 || rd32(a) > 0xFFFFFFu) {
 			out[0] = DL_ST_BAD_ARG;
 			break;

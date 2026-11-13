@@ -101,7 +101,7 @@ T3 = 0x22                           # a Tier III trunked system: stage, select, 
 T3_RESET, T3_SYSTEM, T3_CTRL, T3_CHAN, T3_TG, T3_SITE, T3_PLAN, T3_START, T3_STOP, T3_DEREG, T3_END, \
     T3_STATUS, T3_SDATA = range(1, 14)
 T3_UDTF = {"binary": 0, "address": 1, "bcd": 2, "iso7": 3, "iso8": 4, "nmea": 5, "ip": 6, "utf16": 7}
-T3_TG_LISTEN, T3_TG_TALK = 1, 2
+T3_TG_LISTEN, T3_TG_TALK, T3_TG_BROADCAST = 1, 2, 4
 T3_PAR = {"a": 1, "b": 2}
 CHIP_SOC = 0xFF                     # CHIP_REG's chip number for the SoC's own registers
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
@@ -657,8 +657,9 @@ class DebugLink:
     def t3_chan(self, lcn, rx_hz, tx_hz, cc=0xFF):
         self.t3_op(T3_CHAN, struct.pack("<HIIB", lcn, rx_hz, tx_hz, cc))
 
-    def t3_tg(self, tg, listen=True, talk=False):
-        self.t3_op(T3_TG, struct.pack("<IB", tg, (T3_TG_LISTEN if listen else 0) | (T3_TG_TALK if talk else 0)))
+    def t3_tg(self, tg, listen=True, talk=False, broadcast=False):
+        self.t3_op(T3_TG, struct.pack("<IB", tg, (T3_TG_LISTEN if listen else 0) | (T3_TG_TALK if talk else 0) |
+                                      (T3_TG_BROADCAST if broadcast else 0)))
 
     def t3_site(self, site):
         self.t3_op(T3_SITE, struct.pack("<H", site))
@@ -2315,8 +2316,10 @@ def main(argv=None):
     p.add_argument("--tg", action="append", default=[], type=int,
                    help="listen; the first also talks. With --opts 0x40 (register with the talkgroup) and two or more, "
                    "registration subscribes to the first seven as a list")
-    p.add_argument("--talk", type=int, default=0)
+    p.add_argument("--talk", type=int, default=0, help="PTT's target (16777215 = ALLMSID: an all-call)")
     p.add_argument("--private", action="store_true")
+    p.add_argument("--broadcast", action="append", default=[], type=int,
+                   help="a talkgroup whose calls from the radio are broadcasts (one-way)")
     p.add_argument("--no-start", action="store_true")
     p = sub.add_parser("iddb", help="the DMR ID database: its format and records, and the text for each ID given "
                        "(docs/spec/debuglink.md 3.23)")
@@ -2412,7 +2415,7 @@ def main(argv=None):
                     for c in a.chan:
                         link.t3_chan(*chan(c))
                     for i, tg in enumerate(a.tg):
-                        link.t3_tg(tg, True, i == 0)
+                        link.t3_tg(tg, True, i == 0, tg in a.broadcast)
                     if not a.no_start:
                         link.t3("start")
                 elif a.op == "status":
