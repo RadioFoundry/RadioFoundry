@@ -6,6 +6,7 @@
 import { register } from "./extensions.js";
 import { exportTable, exportAll, importTable, importAll, TABLES, CsvError } from "../codeplug/csv.js";
 import { zip } from "../flasher/zip.js";
+import { datedName } from "./files.js";
 
 const TABLE_TABS = Object.keys(TABLES);
 
@@ -37,7 +38,7 @@ register({
 	},
 });
 
-const base = (api) => api.fileName || "codeplug";
+const base = (api) => datedName(api.fileName);
 
 function saveTable(api, table) {
 	// a byte order mark, so spreadsheet programs read the names as UTF-8

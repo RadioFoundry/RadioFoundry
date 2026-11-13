@@ -20,7 +20,7 @@ import { FakeCpsRadio } from "../codeplug/fakecps.js";
 import { Grid } from "./grid.js";
 import { History } from "./undo.js";
 import { bulkColumns, columns, channelForm, formDialog, membersDialog, refLabel, parseAreaKey } from "./views.js";
-import { openFile, saveBytes, tftpBytes, FileError, imageFrom, saveDraft, loadDraft, clearDraft } from "./files.js";
+import { openFile, saveBytes, tftpBytes, datedName, FileError, imageFrom, saveDraft, loadDraft, clearDraft } from "./files.js";
 import { extensions } from "./extensions.js";
 import "./parts.js";
 import * as diag from "../diag.js";
@@ -463,7 +463,7 @@ function saveFile(kind) {
 		say(t("editor.saved_tftp"), "info");
 		return;
 	}
-	download(`${S.fileName || "codeplug"}.bin`, saveBytes(img));
+	download(`${datedName(S.fileName)}.bin`, saveBytes(img));
 	S.dirty = false;
 	refresh();
 	draftSoon();
