@@ -34,6 +34,9 @@ enum { ITF_CDC_COMM, ITF_CDC_DATA, ITF_COUNT };
 static volatile usb_mode_t mode = USB_MODE_SERIAL;
 static SemaphoreHandle_t rx_ready;
 static volatile bool started;
+#if CONFIG_USB_SERIAL_REQUEST
+static volatile bool serial_requested;	// USB_REQ_SERIAL_MODE came in on endpoint 0
+#endif
 
 void usb_device_set_mode(usb_mode_t m)
 {
@@ -129,8 +132,31 @@ static const uint8_t ms_compat_id[40] = {
 	0, 0, 0, 0, 0, 0,		// reserved
 };
 
+#if CONFIG_USB_SERIAL_REQUEST
+bool usb_device_take_serial_request(void)
+{
+	bool r = serial_requested;
+
+	serial_requested = false;
+	return r;
+}
+#endif
+
 bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const *request)
 {
+#if CONFIG_USB_SERIAL_REQUEST
+	// The host asks for the serial personality (a web page over WebUSB, which reaches endpoint 0 but neither the
+	// adapter's interfaces nor UDP): vendor, to the device, no data. Carried out from the NCM tick, after the status
+	if ((mode == USB_MODE_NETWORK) && (request->bmRequestType == 0x40) && (request->bRequest == USB_REQ_SERIAL_MODE)) {
+		if (stage == CONTROL_STAGE_SETUP) {
+			return tud_control_status(rhport, request);
+		}
+		if (stage == CONTROL_STAGE_ACK) {
+			serial_requested = true;
+		}
+		return true;
+	}
+#endif
 	if ((mode != USB_MODE_NETWORK) || (request->bRequest != MS_VENDOR_CODE) || (request->wIndex != 0x0004)) {
 		return false;	// stalled
 	}

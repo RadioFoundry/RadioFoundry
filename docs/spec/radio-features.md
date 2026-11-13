@@ -196,6 +196,13 @@ A side-key up releases only its own burst or TX denial; down/up during a host bu
 Power-off cancels a held or timed burst and unkeys without a roger beep before shutdown waits.
 VOX cannot release during a burst; its full quiet tail starts after the burst ends.
 
+A channel can send the burst by itself (`channel_t.tone_burst`, the channel editor's **Tone burst** row; stored in SFR
+byte B bit 6, [open-firmware-cps.md](open-firmware-cps.md) 7.3.3). Each PTT key-up on it opens with one timed burst,
+as the side key pressed during PTT: 1750 Hz for `RADIO_BURST_MIN_MS`, then the mic. Only a PTT press that keys the
+transmitter starts one: not a press during a transmission, not VOX, the side key or the debug link. FM channels
+only, never the VFO, DMR or hotspot mode, and nothing on a board without `tx_tone`. A board whose `tx_tone` refuses
+the tone gives the error beep and the transmission goes on.
+
 Why 1 s: the [UK repeater access standard](https://www.ukrepeater.net/access.htm) accepts 1750 Hz +/- 25 Hz
 after 200-400 ms, and some decoders need 500 ms; a 1 s minimum exceeds both. Once open, a repeater stays open on
 carrier through its hang time, so one burst opens a contact.

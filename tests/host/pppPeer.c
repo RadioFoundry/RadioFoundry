@@ -156,8 +156,9 @@ static uint8_t *tcp_buffer(void) { return ipGatewayLocalPayload(); }
 static bool tcp_send(uint32_t dst, int length) { return ipGatewaySendLocal(6, dst, length); }
 static const tcp_io_t tcp_io = { .buffer = tcp_buffer, .send = tcp_send, .local_ip = ipGatewayRadioIP };
 
-static void tcp_in(uint32_t src, const uint8_t *seg, int length)
+static void tcp_in(uint32_t src, uint32_t dst, const uint8_t *seg, int length)
 {
+	(void)dst;
 	tcp_input(src, seg, length, now_ms());
 }
 

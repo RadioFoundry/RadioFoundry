@@ -734,7 +734,7 @@ class Site:
 			  "tools", scripts=scripts, nav="tools")
 
 	def codeplug_page(self, lang):
-		strings = json.dumps(self.i18n.subset(lang, ("editor.", "flash.part.", "report.")), ensure_ascii=False).replace("</", "<\\/")
+		strings = json.dumps(self.i18n.subset(lang, ("editor.", "flash.part.", "flash.net.", "report.")), ensure_ascii=False).replace("</", "<\\/")
 		scripts = ('<script type="application/json" id="i18n">%s</script>'
 			   '<script type="module" src="{{root}}static/js/editor/app.js?v=%s"></script>' % (strings, self.asset_version))
 		self.page(lang, "codeplug/index.html", self.t(lang, "editor.title"), self.tpl.render("codeplug", {}, lang),
