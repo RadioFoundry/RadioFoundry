@@ -145,9 +145,18 @@ bool uvf_cal_at(uint32_t hz, uvf_cal_point_t *out);
 // near 461 MHz (SDR bench, 2026-10-19): 41 steps -57..-15 Hz, 42 steps +16..+60 Hz, 43 steps +94..+132 Hz; the
 // MD-UV380 has the same two chips, unchecked on its own
 #define UVF_DIRECT_TX_REF_STEPS	42
-// 4:0x04 for a direct burst at hz from the calibrated offset; false where direct keying doesn't apply (VHF) or the
-// value would overflow the register, and the burst then goes through idle
-bool uvf_direct_tx_ref(uint32_t hz, int8_t ref_offset, int8_t *out);
+// 4:0x04 for a direct burst at hz from the calibrated offset, the synthesizer tuned_hz from hz (the DMR receive offset
+// below, taken back in MOD1 steps); false where direct keying doesn't apply (VHF) or the value would overflow the
+// register, and the burst then goes through idle
+bool uvf_direct_tx_ref(uint32_t hz, int8_t ref_offset, int32_t tuned_hz, int8_t *out);
+
+// DMR receive offset (hardware-dm1701.md 5.13): with the transmitter on frequency, DMR receive decodes best on a carrier
+// about 0.9 kHz (UHF) to 1.2 kHz (VHF) high, falling off fast below. The same in Hz on both bands, so it is in the
+// receive path, not the reference: the AT1846S receives that much lower in DMR (62.5 Hz steps). Measured on a DM-1701
+// at 461.1875 and 151.625 MHz (SDR bench); the MD-UV380 has the same two chips, unchecked on its own
+#define UVF_DMR_RX_OFFSET_UHF_HZ	(-875)
+#define UVF_DMR_RX_OFFSET_VHF_HZ	(-1250)
+int32_t uvf_dmr_rx_offset_hz(uint32_t hz);
 
 // The user's reference trim (hal_radio_t.ref_trim) in MOD1 offset steps, added to the calibrated offset. The offset
 // pulls the reference, so a step is the same share of any carrier: about 74 Hz near 461 MHz from the direct keying

@@ -77,6 +77,7 @@ static struct {
 	volatile uint32_t dmr_drive;
 	volatile bool dmr_uhf;
 	volatile uint32_t rf_tuned_hz;	// what the AT1846S synthesizer holds, 0 unknown
+	volatile uint32_t rx_tune_hz;	// the AT1846S receive frequency: rx_hz plus the DMR receive offset (uvf_dmr_rx_offset_hz)
 	volatile bool rf_isr_dirty;	// the ISR wrote the AT1846S behind the task-level driver
 	volatile bool rf_rx_pending;	// a back-to-RX write was skipped: retry at the next timeslot interrupt
 	volatile uint8_t rf_page;	// AT1846S page last written to reg 0x7F, 0xFF unknown
@@ -330,12 +331,12 @@ static bool rf_to_rx(void)
 	// bursts lost, HIL 2026-10-12), and the receiver stayed on the TX frequency where RX != TX
 	uint16_t idle = at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_IDLE);
 	bool ok = rf_isr_write(0x30, idle);
-	if (ok && r.rf_tuned_hz != r.rx_hz) {
-		uint32_t word = at1846s_freq_word(r.rx_hz);
+	if (ok && r.rf_tuned_hz != r.rx_tune_hz) {
+		uint32_t word = at1846s_freq_word(r.rx_tune_hz);
 		r.rf_tuned_hz = 0;
 		ok = rf_isr_write(0x29, (uint16_t)((word >> 16) & 0x3FFFu)) && rf_isr_write(0x2A, (uint16_t)(word & 0xFFFFu));
 		if (ok) {
-			r.rf_tuned_hz = r.rx_hz;
+			r.rf_tuned_hz = r.rx_tune_hz;
 		}
 	}
 	rx_supply(true, r.rx_uhf);
@@ -358,7 +359,8 @@ static bool rf_key(void)
 	uint32_t hz = r.dmr_tx_hz;
 	r.rf_isr_dirty = true;
 	int8_t ref;
-	if (!r.rf_rx_pending && r.rf_tuned_hz == hz && uvf_direct_tx_ref(hz, r.rf_ref, &ref)) {
+	if (!r.rf_rx_pending && hz == r.rx_hz && r.rf_tuned_hz == r.rx_tune_hz &&
+	    uvf_direct_tx_ref(hz, r.rf_ref, (int32_t)(r.rx_tune_hz - hz), &ref)) {
 		// Direct (SFR, simplex): the receiver on the TX frequency goes straight to DMR TX, which puts the carrier
 		// about 3.07 kHz low; the raised MOD1 offset puts it back (uvf_direct_tx_ref)
 		if (!rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_DMR_TX))) {
@@ -495,8 +497,8 @@ static void rf_resync(void)
 		count(hrc_write(&r.modem, 4, 0x04, (uint8_t)r.rf_ref));
 	}
 	if (r.rx_valid) {
-		count(at1846s_set_freq(&r.rf, r.rx_hz));	// forced writes of 0x30 (idle), 0x29, 0x2A
-		r.rf_tuned_hz = r.rx_hz;
+		count(at1846s_set_freq(&r.rf, r.rx_tune_hz));	// forced writes of 0x30 (idle), 0x29, 0x2A
+		r.rf_tuned_hz = r.rx_tune_hz;
 	}
 	count(at1846s_set_state(&r.rf, r.rx_valid ? AT1846S_STATE_RX : AT1846S_STATE_IDLE));	// forced
 }
@@ -619,14 +621,28 @@ static void init(void)
 	key_timer_setup();
 }
 
+// The AT1846S receive frequency for a channel on hz in the current mode: DMR receives below it (5.13)
+static uint32_t rx_tune(uint32_t hz)
+{
+	return (uint32_t)((int32_t)hz + (r.mode == RADIO_MODE_DMR ? uvf_dmr_rx_offset_hz(hz) : 0));
+}
+
 static void set_mode(radio_mode_t mode)
 {
 	radio_mode_t prev = r.mode;
 	r.mode = mode;
+	if (r.rx_valid) {
+		r.rx_tune_hz = rx_tune(r.rx_hz);	// the receive offset follows the mode, not only the next rx()
+	}
 	if (mode == RADIO_MODE_DMR) {
 		count(at1846s_set_mode(&r.rf, AT1846S_MODE_DMR));
 		if (prev != RADIO_MODE_DMR) {
 			dmr_enter();
+			if (r.rx_valid && !r.tx_on && !r.asleep && r.rf_tuned_hz != r.rx_tune_hz) {
+				count(at1846s_set_freq(&r.rf, r.rx_tune_hz));
+				count(at1846s_set_state(&r.rf, AT1846S_STATE_RX));
+				r.rf_tuned_hz = r.rx_tune_hz;
+			}
 		}
 	} else {
 		if (prev == RADIO_MODE_DMR) {
@@ -729,12 +745,14 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone, bool ke
 	if (r.mode == RADIO_MODE_DMR) {
 		dmr_disarm();
 	}
-	bool back = keep && same && r.mode == RADIO_MODE_DMR && r.rf_tuned_hz == hz &&
+	uint32_t tune = rx_tune(hz);
+	bool back = keep && same && r.mode == RADIO_MODE_DMR && r.rf_tuned_hz == tune &&
 		    !r.rf_rx_pending && !r.asleep;
 	r.asleep = false;
 	tone_restore();
 	inject_stop();
 	r.rx_hz = hz;
+	r.rx_tune_hz = tune;
 	r.rx_bw = bw;
 	r.rx_tone = rx_tone != NULL ? *rx_tone : (subtone_t){ TONE_NONE, 0 };
 	r.rx_uhf = uhf;
@@ -745,13 +763,13 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone, bool ke
 	count(at1846s_set_bandwidth(&r.rf, rf_bw(bw)));
 	count(at1846s_set_mode(&r.rf, r.mode == RADIO_MODE_DMR ? AT1846S_MODE_DMR : AT1846S_MODE_FM));
 	if (!back) {
-		count(at1846s_set_freq(&r.rf, hz));
+		count(at1846s_set_freq(&r.rf, tune));
 	}
 	apply_rx_tone();
 	if (!back) {
 		count(at1846s_set_state(&r.rf, AT1846S_STATE_RX));
 	}
-	r.rf_tuned_hz = hz;
+	r.rf_tuned_hz = tune;
 	r.rf_isr_dirty = false;
 	r.rf_rx_pending = false;
 

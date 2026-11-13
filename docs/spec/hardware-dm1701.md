@@ -664,6 +664,32 @@ What the bench showed:
 
 ---
 
+### 5.13 DMR receive offset
+
+With the transmitter on frequency, DMR receive tuned to the channel decodes best on a carrier about 0.9 kHz (UHF) to
+1.2 kHz (VHF) high and falls off fast below it. The offset is about the same in Hz on both bands, so it is in the
+receive path (the AT1846S demodulator and the baseband line to the HR_C6000), not the reference oscillator, which would
+give the same ppm. Moving the reference (4:0x47) or the HR_C6000 receive offsets (4:0x03, 4:0x05) doesn't fix it:
+0x47 moves the transmitter too, and 0x03 / 0x05 change nothing in this input mode. The HR_C6000 ADC DC readings
+(4:0x4E, 4:0x4F) stay fixed whatever the carrier.
+
+So in DMR the AT1846S receives that much below the channel (`UVF_DMR_RX_OFFSET_UHF_HZ`, `UVF_DMR_RX_OFFSET_VHF_HZ`,
+62.5 Hz steps). FM receive is tuned to the channel. Voice bit errors per frame against the carrier offset (SDR bench, a
+DM-1701):
+
+| Carrier offset (Hz) | -1000 | -500 | 0 | +500 | +1000 | +1500 |
+|---|---|---|---|---|---|---|
+| UHF 461.1875, tuned to the channel | 3.18 | 2.93 | 1.59 | — | 1.31 | — |
+| UHF 461.1875, 875 Hz below | 1.56 | 1.23 | 1.28 | 1.56 | 1.51 | 3.07 |
+| VHF 151.625, tuned to the channel | 2.74 | 2.09 | 1.72 | 1.42 | 1.15 | 1.18 |
+| VHF 151.625, 1250 Hz below | 1.53 | 1.30 | 1.10 | 1.59 | 2.85 | no frames |
+
+Bursts keyed through idle write the transmit frequency, so the offset doesn't reach the transmitter. A direct burst
+(section 6) keys from the receive frequency and takes the offset back in whole MOD1 steps toward zero (about 74 Hz each
+near 461 MHz: 11 for 875 Hz put the carrier about 5 Hz high, 12 about 85 Hz high); every burst decodes, the first
+within 20 Hz of the rest. The MD-UV380 has the same two chips and is
+not measured on its own.
+
 ## 6. RF path control (PA, LNA, band)
 
 | Signal | Pin | RX | TX VHF | TX UHF | Off |
@@ -685,8 +711,9 @@ Ordering:
 - Burst-by-burst DMR TX (the PA follows the bursts), keyed 1 ms after the RF TX interrupt (it comes about 1.28 ms
   before the slot boundary; keyed at once, the PA cut the end of the inbound burst an SFR receives in the other slot).
   Two sequences:
-  - Direct, when the synthesizer already holds the TX frequency (SFR, simplex) and the band is UHF: reg 0x30 straight
-    from RX to DMR TX, HR_C6000 4:0x04 (MOD1 offset) = calibrated value + 42, both RX supplies off, then the PA. Back to
+  - Direct, when the synthesizer already holds the receive frequency of a simplex channel (SFR, simplex) and the band
+    is UHF: reg 0x30 straight from RX to DMR TX, HR_C6000 4:0x04 (MOD1 offset) = calibrated value + 42, plus the DMR
+    receive offset in MOD1 steps (5.13), both RX supplies off, then the PA. Back to
     RX: the PA enables low, 4:0x04 = calibrated value, the RX supply, reg 0x30 RX on. RX straight to TX puts the
     carrier about 3.07 kHz low, and a frequency write can't correct it (the AT1846S applies one only coming out of
     idle); 42 steps of about 75 Hz put it back (measured near 461 MHz: +16..+60 Hz). The idle step that the other
