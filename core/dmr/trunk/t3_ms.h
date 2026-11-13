@@ -241,6 +241,11 @@ typedef struct {
 	bool stunned;		// stunned by the TSCC (6.4.9): no user services until revived
 	uint32_t stuns, revives;	// stun and revive commands taken
 	uint32_t auths;		// authentication challenges answered
+	// Mass registration (6.4.5.1): a registration due at massreg_at; the window ends at massreg_end
+	bool massreg;
+	uint32_t massreg_at, massreg_end;
+	uint32_t massregs;	// applicable MassReg broadcasts taken
+	uint32_t moves;		// C_MOVE taken
 	uint32_t cleared_ms;	// when the last call was cleared (T3_REGRANT_MS)
 	t3_call_t cleared;
 

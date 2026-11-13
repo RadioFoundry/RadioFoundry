@@ -371,9 +371,9 @@ static void rules(void)
 	      t3_plan_lookup(&plan, &learned, T3_LEARN_MAX + 2, &c), "learned list full");
 
 	// Opcodes this module doesn't decode still report op and FID
-	uint8_t raw[T3_CSBK_BYTES] = { 0x80 | T3_OP_C_MOVE, 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+	uint8_t raw[T3_CSBK_BYTES] = { 0x80 | 41u, 0, 1, 2, 3, 4, 5, 6, 7, 8 };
 	t3_csbk_t m;
-	CHECK(!t3_csbk_parse(raw, &m) && m.op == T3_OP_C_MOVE && m.raw[0] == 1, "unknown opcode");
+	CHECK(!t3_csbk_parse(raw, &m) && m.op == 41u && m.raw[0] == 1, "unknown opcode");
 	raw[0] = 0x80 | T3_OP_C_ALOHA;
 	raw[1] = 0x10;
 	CHECK(!t3_csbk_parse(raw, &m) && m.fid == 0x10, "manufacturer FID");

@@ -188,6 +188,34 @@ static void hunt_next(t3_ms_t *ms, uint32_t now)
 	// Nothing to tune to: stay where we are and look again after the dwell
 }
 
+static uint32_t rnd(t3_ms_t *ms);
+
+// C_BCAST MassReg (6.4.5.1, table 7.76): Broadcast_Parms1 holds Reg_Window (bits 8-5) and the Aloha mask (4-0),
+// Parms2 the address. Applicable when the mask's low bits of the address match the radio's ID. A window starts a
+// registration at a random time inside it; another MassReg before the window ends is ignored; Reg_Window 0 cancels
+static void on_mass_reg(t3_ms_t *ms, uint32_t now, const t3_bcast_t *b)
+{
+	static const uint32_t window_ms[16] = { 0, 500, 1000, 2000, 5000, 10000, 20000, 30000, 100000, 300000,
+						1000000, 3000000, 10000000, 30000000, 100000000, 200000000 };
+	uint8_t mask = (uint8_t)(b->parms1 & 0x1Fu);
+	uint8_t win = (uint8_t)((b->parms1 >> 5) & 0xFu);
+	uint32_t bits = mask >= 24u ? 0xFFFFFFu : ((1u << mask) - 1u);
+	if (!ms->confirmed || mask > 24u || ((my_id(ms) ^ b->parms2) & bits) != 0) {
+		return;
+	}
+	if (win == 0) {
+		ms->massreg = false;	// a registration already under way completes
+		return;
+	}
+	if (ms->massreg && (int32_t)(now - ms->massreg_end) < 0) {
+		return;
+	}
+	ms->massreg = true;
+	ms->massreg_at = now + rnd(ms) % (window_ms[win] + 1u);
+	ms->massreg_end = now + window_ms[win];
+	ms->massregs++;
+}
+
 static void enter_hunt(t3_ms_t *ms, uint32_t now, bool retry)
 {
 	if (ms->ax.state != T3_AX_IDLE) {
@@ -195,6 +223,7 @@ static void enter_hunt(t3_ms_t *ms, uint32_t now, bool retry)
 	}
 	ms->state = T3_HUNT;
 	ms->confirmed = false;
+	ms->massreg = false;	// another TSCC cancels it (6.4.5.1)
 	ms->tscc_slots = 0;
 	ms->csc_valid = false;
 	ms->retry_tscc = retry && ms->tscc.rx_hz != 0;
@@ -990,6 +1019,46 @@ static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 	set_reg(ms, a->reg);
 }
 
+// C_MOVE (6.3.3.1 e, D.1.2): an applicable one sends the radio to the TSCC it names, by logical channel or, in an
+// MBC, by frequency. Nothing is sent there until an Aloha confirms it; T_Nosig without one starts the hunt. An access
+// under way is lost, and so is a mass registration
+static void on_move(t3_ms_t *ms, uint32_t now, const t3_move_t *m, const t3_cdef_t *cdef)
+{
+	uint32_t bits = m->mask >= 24u ? 0xFFFFFFu : ((1u << m->mask) - 1u);
+	if (!ms->confirmed || m->mask > 24u || ((my_id(ms) ^ m->ms) & bits) != 0) {
+		return;
+	}
+	t3_chan_t c;
+	if (m->lpcn == T3_LPCN_ABSOLUTE) {
+		if (cdef == NULL) {
+			return;
+		}
+		c = (t3_chan_t){ cdef->chan, cdef->rx_hz, cdef->tx_hz, cdef->cc };
+		if (ms->cfg->plan.learn && t3_learn_add(&ms->learned, cdef)) {
+			ms->st.learned++;
+		}
+	} else if (m->lpcn == T3_LPCN_NULL || !chan_lookup(ms, m->lpcn, &c)) {
+		return;
+	}
+	if (c.cc == T3_CC_ANY) {
+		c.cc = ms->tscc.cc;
+	}
+	if (c.rx_hz == ms->tscc.rx_hz && c.tx_hz == ms->tscc.tx_hz) {
+		return;
+	}
+	if (ms->ax.state != T3_AX_IDLE) {
+		finish(ms, now, T3_RES_LOST);
+	}
+	ms->tscc = c;
+	ms->confirmed = false;
+	ms->massreg = false;
+	ms->tscc_slots = 0;
+	ms->csc_valid = false;
+	ms->moves++;
+	ms->last_valid_ms = now;
+	tune(ms, now, &ms->tscc, 0, false);
+}
+
 // A complete PDU heard on the TSCC we are hunting or camped on. cdef: the appended block of an MBC, or NULL
 static void on_tscc(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t3_csbk_t *p, const t3_cdef_t *cdef)
 {
@@ -1016,6 +1085,9 @@ static void on_tscc(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 		ms->last_valid_ms = now;
 		ms->aloha.backoff = p->u.bcast.backoff;
 		set_reg(ms, p->u.bcast.reg);
+		if (p->u.bcast.type == T3_ANN_MASS_REG) {
+			on_mass_reg(ms, now, &p->u.bcast);
+		}
 		if (p->u.bcast.type == T3_ANN_CHAN_FREQ && cdef != NULL && ms->cfg->plan.learn) {
 			t3_cdef_t c = *cdef;
 			if (c.chan == T3_LPCN_NULL) {
@@ -1035,6 +1107,10 @@ static void on_tscc(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 	}
 	if (p->op == T3_OP_C_AHOY) {
 		on_ahoy(ms, now, slot, &p->u.ahoy, false);
+		return;
+	}
+	if (p->op == T3_OP_C_MOVE) {
+		on_move(ms, now, &p->u.move, cdef);
 		return;
 	}
 	if (is_grant(p->op)) {
@@ -1378,6 +1454,12 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 		} else if ((ms->ax.state == T3_AX_WAIT_SLOT || ms->ax.state == T3_AX_WAIT_RESP) &&
 			   (int32_t)(now - ms->ax.tc_deadline) >= 0) {
 			finish(ms, now, T3_RES_TIMEOUT);	// TRand_TC
+		}
+		if (ms->ax.state == T3_AX_IDLE && ms->massreg && (int32_t)(now - ms->massreg_at) >= 0 && ms->aloha_here &&
+		    !ms->deregistered && (ms->reg == T3_REG_OK || ms->reg == T3_REG_NEEDED || ms->reg == T3_REG_NOT_NEEDED)) {
+			// Mass registration's time: register again by random access (6.4.5.1 d)
+			ms->massreg = false;
+			start_access(ms, now, T3_SVC_REGISTER, 0, false);
 		}
 		if (ms->ax.state == T3_AX_IDLE && ms->reg == T3_REG_NEEDED && !ms->deregistered && ms->aloha_here &&
 		    (ms->ax.retry_ms == 0 || (int32_t)(now - ms->ax.retry_ms) >= 0)) {

@@ -270,7 +270,7 @@ De-registration is the same request with Reg_Dereg 0. After it the engine doesn'
 | Event | Result |
 |---|---|
 | request | C_RAND kind talkgroup or individual voice, the target, the radio's ID; EMERG option for an emergency |
-| request to an all-call ID (ALLMSID, ALLMSIDL, ALLMSIDZ) or a talkgroup with `T3_TG_BROADCAST` | kind talkgroup voice with the broadcast option (6.6.1.7, table 7.52); the TSCC grants BTV_GRANT |
+| request to an all-call ID (ALLMSID, ALLMSIDL, ALLMSIDZ) or a talkgroup with `T3_TG_BROADCAST` | kind talkgroup voice with the broadcast option (6.6.1.7, table 7.52); the TSCC grants BTV_GRANT; the voice LC then carries the broadcast service option (0x08, 361-2 5.3.3.1) |
 | C_WACKD, C_QACKD, C_ACKD MS_Alerting | waiting (TP_Timer) |
 | a grant with the radio as source | follow; the call is the radio's own; result granted |
 | C_NACKD | refused, with its reason |
@@ -355,55 +355,6 @@ talkgroup it isn't. A bad CRC or a missing block keeps nothing and answers nothi
 Supplementary data (SF set) isn't taken. A repeat (the same caller, destination, format and octets within
 `T3_REPEAT_MS`) is answered again but not counted, as for a status.
 
-## 8. Timers and constants
-
-| Name | Value | Standard range (Annex A) |
-|---|---|---|
-| T_Nosig | 5 s | 1-15 s |
-| Hunt dwell | 700 ms | |
-| Settle after a retune | 60 ms: what is heard sooner belongs to the old channel | |
-| TV_Inactive | 2.5 s | 0-20 s |
-| Call ceiling | 300 s | |
-| Re-grant hold | 2 s | |
-| MBC continuation gap | 130 ms: one TDMA frame, one lost | |
-| TRand_TC | 10 s | 2-60 s |
-| TP_Timer | 20 s | |
-| TNP_Timer | 10 s | |
-| NRand_NR, NRand_NE | 6, 10 | |
-| N_Maint | 4 | |
-| Registration retry | 30 s | |
-
-The system's record may override T_Nosig, TV_Inactive, the dwell, TRand_TC, TP_Timer and TNP_Timer; 0 keeps the
-default.
-
-## 9. Tests
-
-### 9.1 PDUs (`tests/host/t3PduTest.c`)
-
-`tests/host/data/t3_vectors.jsonl` holds PDUs packed by an independent implementation from the field tables of 7.1,
-7.2 and Annex C, with the field values beside each. The test parses each one, checks every field, rebuilds the exact
-octets, and checks the CRC (including corrupted copies and the wrong mask). The same file is meant for every codec of
-these PDUs. Then the rules: Mask, delay tables, acknowledgement classes, authorization order, SYS_AREA, plan order and
-the learned ring.
-
-### 9.2 Engine (`tests/host/t3MsTest.c`, `tests/host/t3ReplayTest.c`)
-
-`t3MsTest` drives the engine with built PDUs: hunting over silent and foreign candidates, the settle time, CRC and
-color code filters, every follow rule, every return, T_Nosig, short LCs, learning from Chan_Freq and CG_AP, late MBC
-continuations, monitor and emergency options, stop.
-
-`t3AccessTest` runs the access side against a TSCC simulated frame by frame (CACH, AT bit, Aloha): registration and
-its answers, the retry spacing and count, denied and refused areas, the AT bit, Mask, Service Function and first-Aloha
-rules, group and private calls with their acknowledgements and timers, cancel, P_PROTECT, P_MAINT at the end, the
-answers to C_AHOY and P_AHOY, de-registration, and the follow rules for the radio's own calls.
-
-`t3ReplayTest` feeds the engine off-air recordings decoded on the SDR bench, in time order; the engine hears a
-channel's records only while it is tuned there. The recordings are not in the repository: `RFOUNDRY_T3_RECORDINGS`
-names a manifest (format in the test's header) with the files and what is known about the recorded system. Without
-it the test skips. It checks that the engine camps within 1.5 s, reads the system code and Aloha parameters, stays on
-the TSCC except across gaps in the recording, follows only planned channels and known talkgroups, keeps a call alive
-on its voice, and never camps on another system or on a control channel that isn't Tier III.
-
 ### 7.7 Packet data (6.6.3)
 
 Packet data uses the conventional data stack ([dmr-data.md](dmr-data.md)) on a payload channel the TSCC grants for
@@ -466,6 +417,74 @@ address its own ID. A challenge during an access (a registration or a call reque
 TNP_Timer for its final answer. Without K a challenge is answered not supported. A radio check (from TSI, above the
 range) is unchanged. `t3_auth_response` passes the test vectors of tables 6.15 and 6.16.
 
+### 7.11 Mass registration (6.4.5)
+
+A C_BCAST MassReg (table 7.76) asks radios to register again. Broadcast_Parms1 holds Reg_Window and an Aloha-style
+mask; it applies when the mask's low bits of its address equal the radio's ID (mask 24 names one radio, 0 all).
+
+| Reg_Window | What the radio does |
+|---|---|
+| 1-15 | registers by random access at a random time inside the window (table 6.12: 0.5 s to 200 000 s); another MassReg before the window ends is ignored |
+| 0 | cancels a pending one; a registration already sent completes |
+
+Hunting for, or moving to, another TSCC cancels it too.
+
+### 7.12 Move TSCC (C_MOVE, 7.1.1.1.3)
+
+An applicable C_MOVE (the same mask rule as MassReg) sends the radio to another control channel: the logical channel
+it names, or, in an MBC (LPCN 0xFFF), the frequencies and color code of the appended block. An access under way ends
+(`lost`), a mass registration is dropped, and the radio sends nothing there until an Aloha confirms the channel;
+T_Nosig without one starts the hunt (D.1.2). A move to the channel it is on does nothing.
+
+## 8. Timers and constants
+
+| Name | Value | Standard range (Annex A) |
+|---|---|---|
+| T_Nosig | 5 s | 1-15 s |
+| Hunt dwell | 700 ms | |
+| Settle after a retune | 60 ms: what is heard sooner belongs to the old channel | |
+| TV_Inactive | 2.5 s | 0-20 s |
+| Call ceiling | 300 s | |
+| Re-grant hold | 2 s | |
+| MBC continuation gap | 130 ms: one TDMA frame, one lost | |
+| TRand_TC | 10 s | 2-60 s |
+| TP_Timer | 20 s | |
+| TNP_Timer | 10 s | |
+| NRand_NR, NRand_NE | 6, 10 | |
+| N_Maint | 4 | |
+| Registration retry | 30 s | |
+
+The system's record may override T_Nosig, TV_Inactive, the dwell, TRand_TC, TP_Timer and TNP_Timer; 0 keeps the
+default.
+
+## 9. Tests
+
+### 9.1 PDUs (`tests/host/t3PduTest.c`)
+
+`tests/host/data/t3_vectors.jsonl` holds PDUs packed by an independent implementation from the field tables of 7.1,
+7.2 and Annex C, with the field values beside each. The test parses each one, checks every field, rebuilds the exact
+octets, and checks the CRC (including corrupted copies and the wrong mask). The same file is meant for every codec of
+these PDUs. Then the rules: Mask, delay tables, acknowledgement classes, authorization order, SYS_AREA, plan order and
+the learned ring.
+
+### 9.2 Engine (`tests/host/t3MsTest.c`, `tests/host/t3ReplayTest.c`)
+
+`t3MsTest` drives the engine with built PDUs: hunting over silent and foreign candidates, the settle time, CRC and
+color code filters, every follow rule, every return, T_Nosig, short LCs, learning from Chan_Freq and CG_AP, late MBC
+continuations, monitor and emergency options, stop.
+
+`t3AccessTest` runs the access side against a TSCC simulated frame by frame (CACH, AT bit, Aloha): registration and
+its answers, the retry spacing and count, denied and refused areas, the AT bit, Mask, Service Function and first-Aloha
+rules, group and private calls with their acknowledgements and timers, cancel, P_PROTECT, P_MAINT at the end, the
+answers to C_AHOY and P_AHOY, de-registration, and the follow rules for the radio's own calls.
+
+`t3ReplayTest` feeds the engine off-air recordings decoded on the SDR bench, in time order; the engine hears a
+channel's records only while it is tuned there. The recordings are not in the repository: `RFOUNDRY_T3_RECORDINGS`
+names a manifest (format in the test's header) with the files and what is known about the recorded system. Without
+it the test skips. It checks that the engine camps within 1.5 s, reads the system code and Aloha parameters, stays on
+the TSCC except across gaps in the recording, follows only planned channels and known talkgroups, keeps a call alive
+on its voice, and never camps on another system or on a control channel that isn't Tier III.
+
 ## 10. Not done yet
 
 | Item | Needs |
@@ -477,7 +496,7 @@ range) is unchanged. `t3_auth_response` passes the test vectors of tables 6.15 a
 | The radio challenging the TSCC (C_ACVIT) | later |
 | Stun and revive with authentication, kill (6.4.9.2, 6.4.10) | authentication |
 | A stun kept across a restart of the radio | trunked systems in the codeplug |
-| Multi-item and duplex packet data, data to a gateway, C_MOVE, adjacent sites, power save | later |
+| Multi-item and duplex packet data, data to a gateway, adjacent sites, power save | later |
 
 ## 11. On the radio
 

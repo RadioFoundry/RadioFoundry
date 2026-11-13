@@ -1212,6 +1212,9 @@ static void dmr_configure(radio_sm_t *sm)
 			cfg.listen.hear_all = true;
 			cfg.talk_target.private_call = !c->group;
 			cfg.talk_target.id = c->group || c->src == cfg.own_id ? c->dst : c->src;
+			if (c->op == T3_OP_BTV_GRANT && c->ours) {
+				cfg.tx_svc |= DMR_SVC_BROADCAST;	// 361-2 5.3.3.1: a broadcast call says so in its LC
+			}
 		}
 		cfg.reply_window_s = cfg.reply_window_private_s = 0;
 	}
@@ -2664,6 +2667,8 @@ static void t3_publish(radio_sm_t *sm)
 	v->revives = m->revives;
 	v->auth_key = m->cfg != NULL && m->cfg->auth_key_set;
 	v->auths = m->auths;
+	v->massregs = m->massregs;
+	v->moves = m->moves;
 #if CONFIG_DMR_DATA_CORE && CONFIG_DMR_TRUNK_TX
 	v->pd_wait = data_tx.t3_wait;
 #endif

@@ -1014,6 +1014,103 @@ static void test_auth(void)
 	CHECK(nsent == 1 && sent[0].u.ack.reason == T3_RC_MS_ACCEPTED, "radio check");
 }
 
+// Mass registration (6.4.5.1): an applicable C_BCAST MassReg starts a registration at a random time inside
+// Reg_Window; not applicable (the mask's bits differ) does nothing; another one inside the window is ignored;
+// Reg_Window 0 cancels
+static t3_csbk_t mass_reg(uint8_t window, uint8_t mask, uint32_t addr)
+{
+	t3_csbk_t b = { .lb = true, .op = T3_OP_C_BCAST };
+	b.u.bcast.type = T3_ANN_MASS_REG;
+	b.u.bcast.syscode = ours;
+	b.u.bcast.reg = true;
+	b.u.bcast.parms1 = (uint16_t)((window << 5) | mask);
+	b.u.bcast.parms2 = addr;
+	return b;
+}
+
+static int reg_requests_within(t3_ms_t *ms, int nframes)
+{
+	int n = 0;
+	for (int i = 0; i < nframes; i++) {
+		nsent = 0;
+		frame(ms);
+		if (nsent == 1 && sent[0].op == T3_OP_C_RAND && sent[0].u.rand.kind == T3_SK_REGISTRATION) {
+			n++;
+			t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_REG_ACCEPTED, OWN, T3_ID_REGI);
+			rx(ms, 1, &a);
+		}
+	}
+	return n;
+}
+
+static void test_mass_reg(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+	t3_csbk_t b = mass_reg(3, 24, OWN ^ 1u);	// 2 s, another MS
+	rx(&ms, 1, &b);
+	CHECK(!ms.massreg && reg_requests_within(&ms, 50) == 0, "another MS's: nothing");
+	b = mass_reg(3, 24, OWN);
+	rx(&ms, 1, &b);
+	CHECK(ms.massreg && ms.massregs == 1, "own address: taken");
+	b = mass_reg(3, 0, 0);
+	rx(&ms, 1, &b);
+	CHECK(ms.massregs == 1, "a second inside the window: ignored");
+	CHECK(reg_requests_within(&ms, 40) == 1 && ms.reg == T3_REG_OK && !ms.massreg, "one registration inside 2 s");
+	b = mass_reg(2, 4, OWN & 0xFu);		// the low 4 bits match
+	rx(&ms, 1, &b);
+	CHECK(ms.massreg, "mask 4: taken");
+	b = mass_reg(0, 0, 0);
+	rx(&ms, 1, &b);
+	CHECK(!ms.massreg && reg_requests_within(&ms, 30) == 0, "Reg_Window 0 cancels");
+}
+
+// C_MOVE (6.3.3.1 e): another MS's is ignored; one for the radio sends it to the named TSCC, which it uses only once
+// an Aloha confirms it; an MBC names the frequencies
+static t3_csbk_t move(uint8_t mask, uint32_t ms_addr, uint16_t lpcn)
+{
+	t3_csbk_t m = { .lb = true, .op = T3_OP_C_MOVE };
+	m.u.move.mask = mask;
+	m.u.move.ms = ms_addr;
+	m.u.move.lpcn = lpcn;
+	m.u.move.backoff = 6;
+	return m;
+}
+
+static void test_move(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+
+	// The PDU round trip
+	uint8_t b[T3_CSBK_BYTES];
+	t3_csbk_t m = move(24, OWN, 200), d;
+	t3_csbk_build(&m, T3_CRC_MASK_CSBK, b);
+	CHECK(t3_csbk_parse(b, &d) && d.op == T3_OP_C_MOVE && d.u.move.mask == 24 && d.u.move.ms == OWN &&
+	      d.u.move.lpcn == 200 && d.u.move.backoff == 6, "C_MOVE round trip");
+
+	m = move(24, OWN ^ 2u, 200);
+	rx(&ms, 1, &m);
+	CHECK(ms.moves == 0 && ms.tscc.rx_hz == RX(TSCC_LCN), "another MS's: ignored");
+	m = move(0, 0, 200);	// every radio
+	rx(&ms, 1, &m);
+	CHECK(ms.moves == 1 && ms.state == T3_CAMPED && !ms.confirmed && tuned.chan.rx_hz == RX(200) &&
+	      ms.tscc.rx_hz == RX(200), "moved to LCN 200, rx %u", tuned.chan.rx_hz);
+	nsent = 0;
+	frames(&ms, 3);
+	CHECK(ms.confirmed && ms.state == T3_CAMPED, "confirmed by an Aloha there");
+
+	// An MBC: the frequencies in the appended block
+	t3_csbk_t h = move(24, OWN, T3_LPCN_ABSOLUTE);
+	h.lb = false;
+	t3_cdef_t cd = { .cdeftype = 0, .chan = 0x123, .tx_hz = 446000000u, .rx_hz = 441500000u, .cc = 3 };
+	rx_mbc(&ms, 1, &h, &cd);
+	CHECK(ms.moves == 2 && tuned.chan.rx_hz == 441500000u && ms.tscc.cc == 3, "MBC move, rx %u",
+	      tuned.chan.rx_hz);
+}
+
 static void test_status(void)
 {
 	t3_ms_t ms;
@@ -1357,6 +1454,8 @@ int main(void)
 	test_broadcast();
 	test_stun();
 	test_auth();
+	test_mass_reg();
+	test_move();
 	test_status();
 	test_sdata();
 	test_pdata();

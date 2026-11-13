@@ -258,7 +258,8 @@ void debuglink_view_t3_svc(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "t3.reg_tgs=%u\nt3.reg_tg_ok=0x%02x\n", x->reg_tgs, x->reg_tg_ok);
 	dl_text(t, "t3.call_data=%u\nt3.pd_wait=%u\nt3.stunned=%u\nt3.stuns=%u\nt3.revives=%u\n", x->call_data, x->pd_wait,
 		x->stunned, (unsigned)x->stuns, (unsigned)x->revives);
-	dl_text(t, "t3.auth_key=%u\nt3.auths=%u\n", x->auth_key, (unsigned)x->auths);
+	dl_text(t, "t3.auth_key=%u\nt3.auths=%u\nt3.massregs=%u\nt3.moves=%u\n", x->auth_key, (unsigned)x->auths,
+		(unsigned)x->massregs, (unsigned)x->moves);
 	// The last short data heard: its octets in hex (sd_data), the format to read them by
 	char sd[2 * sizeof(x->sd_data) + 1];
 	uint8_t len = x->sd_len < sizeof(x->sd_data) ? x->sd_len : (uint8_t)sizeof(x->sd_data);

@@ -226,6 +226,15 @@ typedef struct {
 	uint32_t src;
 } t3_clear_t;
 
+// C_MOVE (7.1.1.1.3, table 7.17): radios whose ID matches ms in its mask low bits go to another TSCC
+typedef struct {
+	uint8_t mask;
+	bool reg;
+	uint8_t backoff;
+	uint16_t lpcn;		// T3_LPCN_ABSOLUTE: an MBC, the appended block gives the frequencies
+	uint32_t ms;
+} t3_move_t;
+
 typedef struct {
 	uint8_t kind;		// T3_PROTECT_*
 	bool group;
@@ -252,6 +261,7 @@ typedef struct {
 		t3_ack_t ack;
 		t3_rand_t rand;
 		t3_clear_t clear;
+		t3_move_t move;
 		t3_protect_t protect;
 		t3_maint_t maint;
 	} u;

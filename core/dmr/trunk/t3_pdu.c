@@ -176,6 +176,18 @@ bool t3_csbk_parse(const uint8_t pdu[T3_CSBK_BYTES], t3_csbk_t *out)
 		c->src = get(&r, 24);
 		return true;
 	}
+	case T3_OP_C_MOVE: {
+		t3_move_t *m = &out->u.move;
+		get(&r, 9);
+		m->mask = (uint8_t)get(&r, 5);
+		get(&r, 5);
+		m->reg = flag(&r);
+		m->backoff = (uint8_t)get(&r, 4);
+		get(&r, 4);
+		m->lpcn = (uint16_t)get(&r, 12);
+		m->ms = get(&r, 24);
+		return true;
+	}
 	case T3_OP_P_PROTECT: {
 		t3_protect_t *p = &out->u.protect;
 		get(&r, 12);
@@ -283,6 +295,16 @@ bool t3_csbk_build(const t3_csbk_t *in, uint16_t mask, uint8_t pdu[T3_CSBK_BYTES
 		put(&w, 1, c->group);
 		put(&w, 24, c->dst);
 		put(&w, 24, c->src);
+	} else if (op == T3_OP_C_MOVE) {
+		const t3_move_t *m = &in->u.move;
+		put(&w, 9, 0);
+		put(&w, 5, m->mask);
+		put(&w, 5, 0);
+		put(&w, 1, m->reg);
+		put(&w, 4, m->backoff);
+		put(&w, 4, 0);
+		put(&w, 12, m->lpcn);
+		put(&w, 24, m->ms);
 	} else if (op == T3_OP_P_PROTECT) {
 		const t3_protect_t *p = &in->u.protect;
 		put(&w, 12, 0);
