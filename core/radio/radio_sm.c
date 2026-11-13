@@ -922,6 +922,24 @@ static bool bcl_busy(const radio_sm_t *sm)
 	return carrier && tone_needed(sm) && !sm->view.tone_ok;
 }
 
+// An SFR repeats while our role has the modem or the hotspot runs its SFR mode: the board may then key DMR bursts
+// straight from RX for the inbound slot (hal_radio_t.dmr_direct_key); told only on a change
+static void direct_key_sync(radio_sm_t *sm)
+{
+#if CONFIG_DMR
+	bool on = sm->sfr_rpt;
+#if CONFIG_HOTSPOT
+	on = on || (sm->hotspot && hotspot_alt_active());
+#endif
+	if (on != sm->direct_key && board.radio->dmr_direct_key != NULL) {
+		board.radio->dmr_direct_key(on);
+	}
+	sm->direct_key = on;
+#else
+	(void)sm;
+#endif
+}
+
 // Every keying of the transmitter goes through here: the test TX limit (tx_limit.h) refuses what it doesn't allow, as
 // a board that can't key there would
 static bool key_tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
@@ -1356,6 +1374,7 @@ static void dmr_set_timeslot(radio_sm_t *sm, int32_t ts, bool busy)
 }
 
 #if CONFIG_SFR
+
 // The repeater role lets go of the modem and the keying
 static void sfr_rpt_end(radio_sm_t *sm)
 {
@@ -1368,6 +1387,7 @@ static void sfr_rpt_end(radio_sm_t *sm)
 		board.radio->tx_off();
 	}
 	sm->sfr_rpt = false;
+	direct_key_sync(sm);
 	sm->view.dmr.sfr_rpt = false;
 	sm->view.dmr.sfr_keyed = false;
 	sm->view.dmr.sfr_busy = false;
@@ -1432,6 +1452,7 @@ static bool sfr_rpt_begin(radio_sm_t *sm)
 	}						// transmission
 #endif
 	sm->sfr_rpt = true;
+	direct_key_sync(sm);
 	sm->view.dmr.sfr_rpt = true;
 	sm->view.dmr.active = false;
 	return true;
@@ -6106,6 +6127,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 {
 	radio_status_t st;
 	sm->led_now = now_ms;
+	direct_key_sync(sm);	// the hotspot's SFR mode turns on and off in the host link task
 	if (sm->led_timed || sm->deny_led) {
 		outputs(sm);	// as in radio_sm_tick: some paths below return before their outputs()
 	}

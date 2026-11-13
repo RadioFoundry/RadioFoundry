@@ -714,11 +714,7 @@ The VHF offset was measured at full gain, inside the overload (voice bit errors 
 It is not measured again at 0x07EF yet. `test_dmr_audio_rx_offset_wide` (tests/hil) checks a carrier 2.5 kHz below
 and above the channel at -100 dBm.
 
-Bursts keyed through idle write the transmit frequency, so the offset doesn't reach the transmitter. A direct burst
-(section 6, UHF only) keys from the receive frequency and takes any offset back in whole MOD1 steps toward zero (about
-74 Hz each mid-band: for an offset of 875 Hz, 11 put the carrier about 5 Hz high, 12 about 85 Hz high); every burst
-decodes, the first within 20 Hz of the rest. With the UHF offset at 0 there is nothing to take back. The MD-UV380 has
-the same two chips and is not measured on its own.
+Bursts are keyed through idle, which writes the transmit frequency, so the receive offset doesn't reach the transmitter.
 
 ---
 
@@ -743,19 +739,21 @@ Ordering:
 - Burst-by-burst DMR TX (the PA follows the bursts), keyed 1 ms after the RF TX interrupt (it comes about 1.28 ms
   before the slot boundary; keyed at once, the PA cut the end of the inbound burst an SFR receives in the other slot).
   Two sequences:
-  - Direct, when the synthesizer already holds the receive frequency of a simplex channel (SFR, simplex) and the band
-    is UHF: reg 0x30 straight from RX to DMR TX, HR_C6000 4:0x04 (MOD1 offset) = calibrated value + 42, plus the DMR
-    receive offset in MOD1 steps (5.13), both RX supplies off, then the PA. Back to
+  - Through idle, the normal one: reg 0x30 receiver off, the TX frequency, reg 0x30 DMR TX, both RX supplies off, then
+    the PA. Back to RX, the PA enables low, reg 0x30 receiver off, the RX frequency if it differs, the RX supply for
+    the band, reg 0x30 RX on. Going straight back to RX after a burst entered from idle leaves the receiver about 3 kHz
+    off. The original firmware keys this way (it writes the frequency words on every transmit).
+  - Direct, only while an SFR role runs (`hal_radio_t.dmr_direct_key`), on a simplex UHF channel whose receive
+    frequency the synthesizer already holds: reg 0x30 straight from RX to DMR TX, HR_C6000 4:0x04 (MOD1 offset) =
+    calibrated value + 42, plus the DMR receive offset in MOD1 steps (5.13), both RX supplies off, then the PA. Back to
     RX: the PA enables low, 4:0x04 = calibrated value, the RX supply, reg 0x30 RX on. RX straight to TX puts the
-    carrier about 3.07 kHz low, and a frequency write can't correct it (the AT1846S applies one only coming out of
-    idle); 42 steps of about 75 Hz put it back (measured near 461 MHz: +16..+60 Hz). The idle step that the other
-    sequence takes every slot makes the synthesizer settle again, and an SFR lost the first and last frames of its
-    inbound bursts to it: about 190 bit errors and 5-10 lost frames per 72 repeated frames, against about 60 and none
-    direct (SDR bench, 2026-10-19).
-  - Through idle, otherwise (VHF, where 3.07 kHz is more steps than the register holds; RX and TX frequencies that
-    differ): reg 0x30 receiver off, the TX frequency, reg 0x30 DMR TX, both RX supplies off, then the PA. Back to RX,
-    the PA enables low, reg 0x30 receiver off, the RX frequency if it differs, the RX supply for the band, reg 0x30 RX
-    on. Going straight back to RX after a burst entered from idle leaves the receiver about 3 kHz off.
+    carrier about 3.07 kHz low and a frequency write can't correct it (the AT1846S applies one only coming out of
+    idle); 42 steps of about 75 Hz put it back on the board measured near 461 MHz (+16..+60 Hz). On two other DM-1701s
+    at 433.45 MHz the same correction left the DMR carrier 178 Hz and 449-554 Hz below the FM carrier, enough for an
+    MMDVM hotspot to reject the call, and through idle they measured +34 and +41 Hz (SDR bench, 2026-11-13). That is
+    why direct keying is kept to the SFR: there the idle step, which makes the synthesizer settle again each slot, lost
+    the first and last frames of the inbound bursts, about 190 bit errors and 5-10 lost frames per 72 repeated frames
+    against about 60 and none direct (SDR bench, 2026-10-19). A per-radio correction would make it right everywhere.
 
   The receiver must work between bursts (an SFR's inbound slot, `sfr.md` 3). Dropping the PA earlier than the next
   timeslot interrupt (28.5-30 ms after the RF TX interrupt) did not reduce the inbound errors. The "transmitting" state of the radio must therefore be taken from the HR_C6000 slot state, not from the PA

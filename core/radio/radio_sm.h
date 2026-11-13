@@ -365,6 +365,7 @@ typedef struct {
 	bool dmr_running;		// the call stack has the modem
 	bool dmr_keyed;			// board.radio->tx() armed the per-burst keying (until tx_off)
 	bool sfr_rpt;			// the channel's SFR repeater role has the modem (radio_sfr.c), not the call stack
+	bool direct_key;		// last told the board (hal_radio_t.dmr_direct_key): an SFR repeats, ours or the hotspot's
 	bool sfr_denied;		// a repeater channel kept ordinary because the radio may not transmit or a scan
 					// runs: the role starts once it may (TX inhibit cleared, the scan stopped)
 	uint32_t dmr_rx_hz;		// the frequency the call stack's receiver searched for slot timing on
