@@ -435,6 +435,7 @@ typedef struct {
 	uint8_t t3_send_n;		// bursts in t3_send_burst: a CSBK, or a UDT header and its blocks
 	bool t3_send_udt;
 	uint8_t t3_send_burst[1 + T3_UDT_BLOCKS_MAX][T3_CSBK_BYTES];
+	uint32_t t3_now;		// the clock at the last t3_tick (for the data service's start, which has none)
 #endif
 #if CONFIG_DMR_ROAMING
 	roam_t roam;

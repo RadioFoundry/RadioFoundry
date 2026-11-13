@@ -979,6 +979,92 @@ static void udt_down(t3_ms_t *ms, uint8_t slot, const t3_udt_t *h, const uint8_t
 	poll_all(ms);
 }
 
+// Packet data (6.6.3): the radio asks for a data channel and follows PD_GRANT / TD_GRANT; to it, the TSCC checks it is
+// there first. The data service sends on the call (the radio side), PTT doesn't
+static void test_pdata(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+
+	// To an MS: C_RAND 0010b (table 6.50), no options
+	CHECK(t3_ms_pdata(&ms, T, CALLER, false), "packet data request");
+	CHECK(sent_rand(&ms), "request sent");
+	const t3_rand_t *q = &sent[0].u.rand;
+	CHECK(q->kind == T3_SK_IND_DATA && q->options == 0 && q->extra == 0 && q->dst == CALLER && q->src == OWN,
+	      "C_RAND packet data: kind %u options %u", q->kind, q->options);
+	CHECK(!t3_ms_request(&ms, T, TG_A, true, false), "one request at a time");
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_WAIT, OWN, CALLER);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.state == T3_AX_ACKED, "wait");
+	t3_csbk_t g = grant(T3_OP_PD_GRANT, 999, 2, CALLER, OWN);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && ms.call.data && ms.call.ours && !ms.call.group && ms.call.slot == 2 &&
+	      ms.ax.result == T3_RES_GRANTED && tuned.payload && tuned.slot == 2, "granted: following the data call");
+	CHECK(!t3_ms_can_talk(&ms), "no PTT on a data call");
+	CHECK(!t3_ms_data_ready(&ms, T), "not settled yet");
+	frames(&ms, 3);
+	CHECK(t3_ms_data_ready(&ms, T), "settled: the data goes");
+	// The repeat of our packet keeps the call; P_CLEAR ends it
+	t3_ms_activity(&ms, T, 2);
+	t3_csbk_t c = { .lb = true, .op = T3_OP_P_CLEAR };
+	c.u.clear.dst = CALLER;
+	rx(&ms, 2, &c);
+	CHECK(ms.state == T3_CAMPED && !t3_ms_data_ready(&ms, T), "P_CLEAR: back on the TSCC");
+
+	// To a talkgroup: 0011b, TD_GRANT
+	frames(&ms, 50);
+	nsent = 0;
+	CHECK(t3_ms_pdata(&ms, T, TG_OTHER, true), "talkgroup packet data");
+	CHECK(sent_rand(&ms) && sent[0].u.rand.kind == T3_SK_TG_DATA && sent[0].u.rand.dst == TG_OTHER,
+	      "C_RAND talkgroup data");
+	g = grant(T3_OP_TD_GRANT, 999, 1, TG_OTHER, OWN);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && ms.call.data && ms.call.group && ms.call.dst == TG_OTHER &&
+	      ms.ax.result == T3_RES_GRANTED, "talkgroup data granted (ours, though not listened to)");
+	nsent = 0;
+	t3_ms_end_call(&ms, T);
+	frames(&ms, 6);
+	CHECK(nsent == T3_N_MAINT && ms.state == T3_CAMPED, "ended with P_MAINT");
+
+	// Refused
+	frames(&ms, 50);
+	CHECK(t3_ms_pdata(&ms, T, CALLER, false), "again");
+	frames(&ms, 2);
+	a = ack(T3_OP_C_ACKD, T3_RC_MS_AWAY, OWN, CALLER);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_REFUSED && ms.state == T3_CAMPED, "NACK: refused");
+
+	// To the radio: the availability check answered Message_Accepted (6.6.3.2.6), then PD_GRANT to it
+	nsent = 0;
+	t3_csbk_t h = ahoy(T3_SK_IND_DATA, false, OWN, CALLER);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MESSAGE_ACCEPTED &&
+	      sent[0].u.ack.dst == CALLER, "availability check: accepted");
+	g = grant(T3_OP_PD_GRANT, 999, 1, OWN, CALLER);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && ms.call.data && !ms.call.ours && ms.call.src == CALLER, "called: following");
+	frames(&ms, 3);
+	c.u.clear.dst = OWN;
+	rx(&ms, 1, &c);
+	CHECK(ms.state == T3_CAMPED, "cleared");
+
+	// Talkgroup data to a group it listens to: followed; to another MS: not
+	frames(&ms, 50);
+	g = grant(T3_OP_TD_GRANT, 999, 1, TG_B, CALLER);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && ms.call.data && ms.call.group && !ms.call.ours, "talkgroup data heard");
+	frames(&ms, 3);
+	c.u.clear.group = true;
+	c.u.clear.dst = TG_B;
+	rx(&ms, 1, &c);
+	frames(&ms, 50);
+	g = grant(T3_OP_PD_GRANT, 999, 1, CALLER + 1u, CALLER);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_CAMPED, "another MS's data: not followed");
+}
+
 static void test_sdata(void)
 {
 	t3_ms_t ms;
@@ -1121,6 +1207,7 @@ int main(void)
 	test_ahoy();
 	test_status();
 	test_sdata();
+	test_pdata();
 	test_deregister();
 	test_receive_rules();
 	test_one_carrier_site();

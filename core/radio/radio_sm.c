@@ -1891,6 +1891,13 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 static struct {
 	const dmrBurst_t *list;		// the service's buffer, valid until dmrDataServiceTxDone
 	int count, next;
+#if CONFIG_DMR_TRUNK_TX
+	// A Tier III system: list waits while the engine gets a packet data channel for it (data_t3_tick)
+	bool t3_wait;
+	bool t3_asked;
+	bool t3_group;
+	uint32_t t3_dst;
+#endif
 } data_tx;
 
 static bool data_next(dmr_tx_burst_t *out, void *ctx)
@@ -1943,16 +1950,19 @@ static bool data_can_send(const radio_sm_t *sm)
 #if CONFIG_DMR_ROAMING
 	roaming = roam_searching(&sm->roam);	// never on a site being looked at
 #endif
+#if CONFIG_DMR_TRUNK_TX
+	// A trunked system: data asks for a channel on the TSCC, or goes on the packet data call the radio is in. Never
+	// while hunting or in a voice call
+	if (sm->t3_on && !(t3m.state == T3_CAMPED || (t3m.state == T3_FOLLOW && t3m.call.data))) {
+		return false;
+	}
+#endif
 	return sm->dmr_running && !sm->hotspot && sm->view.ch.mode == RADIO_MODE_DMR &&
 		tx_check(sm) == TXDENY_NONE && sm->view.dmr.own_id != 0 && !roaming;
 }
 
-static bool data_tx_start(const dmrBurst_t *bursts, int count, void *ctx)
+static bool data_send(radio_sm_t *sm, const dmrBurst_t *bursts, int count)
 {
-	radio_sm_t *sm = ctx;
-	if (!data_can_send(sm) || sm->ptt || count <= 0) {
-		return false;
-	}
 	if (!sm->dmr_keyed) {
 		static const subtone_t none = { TONE_NONE, 0 };
 		const channel_t *ch = &sm->view.ch;
@@ -1973,9 +1983,105 @@ static bool data_tx_start(const dmrBurst_t *bursts, int count, void *ctx)
 	return true;
 }
 
+#if CONFIG_DMR_TRUNK_TX
+// Packet data on a Tier III system (docs/spec/dmr-trunking.md 7.7): it goes on a payload channel the TSCC grants for
+// it (6.6.3). The list waits here while the engine asks; the caller sends first (6.6.3.3), so it goes as soon as the
+// radio is there. On a packet data call already (a response, a retry, the next packet to the same party) it goes at once
+static bool data_t3_start(radio_sm_t *sm, const dmrBurst_t *bursts, int count)
+{
+	// Preambles wake a radio on a conventional channel; on the payload channel the called party is already there
+	int i = 0;
+	while (i < count && bursts[i].dataType != DMR_BURST_DATA_HEADER) {
+		i++;
+	}
+	if (i == count || bursts[i].length < 8 || data_tx.t3_wait) {
+		return false;
+	}
+	// 361-1 9.2.6: G/I in octet 0, the destination in octets 2-4
+	const uint8_t *h = bursts[i].payload;
+	bool group = (h[0] & 0x80) != 0;
+	uint32_t dst = ((uint32_t)h[2] << 16) | ((uint32_t)h[3] << 8) | h[4];
+	if (t3m.state == T3_FOLLOW && t3m.call.data) {
+		const t3_call_t *c = &t3m.call;
+		bool same = group == c->group && (dst == c->dst || (!group && dst == c->src));
+		return same && t3_ms_data_ready(&t3m, sm->t3_now) && data_send(sm, bursts + i, count - i);
+	}
+	if (t3m.state != T3_CAMPED || t3m.ax.state != T3_AX_IDLE) {
+		return false;
+	}
+	data_tx.list = bursts + i;
+	data_tx.count = count - i;
+	data_tx.next = 0;
+	data_tx.t3_wait = true;
+	data_tx.t3_asked = false;
+	data_tx.t3_group = group;
+	data_tx.t3_dst = dst;
+	return true;
+}
+
+static void data_t3_fail(uint8_t err)
+{
+	data_tx.t3_wait = false;
+	data_tx.list = NULL;
+	dmrDataServiceTxDone(err);
+}
+
+// From t3_tick: ask for the channel, send once on it, or give the list back failed
+static void data_t3_tick(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!data_tx.t3_wait) {
+		return;
+	}
+	if (!data_tx.t3_asked) {
+		if (!t3_ms_pdata(&t3m, now_ms, data_tx.t3_dst, data_tx.t3_group)) {
+			data_t3_fail(DMR_TX_ERR_REJECTED);
+			return;
+		}
+		data_tx.t3_asked = true;
+		return;
+	}
+	if (t3m.state == T3_FOLLOW && t3m.call.data && t3m.call.ours) {
+		if (t3_ms_data_ready(&t3m, now_ms) && !sm->ptt) {
+			data_tx.t3_wait = false;
+			if (!data_send(sm, data_tx.list, data_tx.count)) {
+				dmrDataServiceTxDone(DMR_TX_ERR_REJECTED);
+			}
+		}
+		return;
+	}
+	const t3_ms_t *m = &t3m;
+	if (m->ax.svc != T3_SVC_PDATA || (m->ax.state == T3_AX_IDLE && m->ax.result != T3_RES_PENDING)) {
+		// Refused, no answer, timed out, or the call came and went without the radio sending
+		data_t3_fail(m->ax.result == T3_RES_REFUSED ? DMR_TX_ERR_REJECTED : DMR_TX_ERR_NO_REPEATER);
+	}
+}
+#endif
+
+static bool data_tx_start(const dmrBurst_t *bursts, int count, void *ctx)
+{
+	radio_sm_t *sm = ctx;
+	if (!data_can_send(sm) || sm->ptt || count <= 0) {
+		return false;
+	}
+#if CONFIG_DMR_TRUNK_TX
+	if (sm->t3_on) {
+		return data_t3_start(sm, bursts, count);
+	}
+#endif
+	return data_send(sm, bursts, count);
+}
+
 static bool data_channel_clear(uint32_t now_ms, void *ctx)
 {
+#if CONFIG_DMR_TRUNK
+	// A trunked system gives the slot: random access on the TSCC, a grant on the payload channel
+	const radio_sm_t *sm = ctx;
+	if (sm->t3_on) {
+		return true;
+	}
+#else
 	(void)ctx;
+#endif
 	return dmr_call_channel_clear(now_ms);
 }
 
@@ -2000,6 +2106,11 @@ static void data_position(uint32_t src, const uint8_t *nmea, int length, uint32_
 static bool data_in_rx_group(uint32_t tg, void *ctx)
 {
 	const radio_sm_t *sm = ctx;
+#if CONFIG_DMR_TRUNK
+	if (sm->t3_on) {
+		return t3_ms_wants_group(&t3m, tg, false);
+	}
+#endif
 	for (uint16_t i = 0; i < sm->listen_count; i++) {
 		if (sm->listen[i] == tg) {
 			return true;
@@ -2236,6 +2347,14 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 	};
 	uint32_t h = 2166136261u;	// FNV-1a of what a registration is for
 	uint32_t vals[] = { ch->rx_hz, ch->tx_hz, sm->view.dmr.ts, sm->view.dmr.cc };
+#if CONFIG_DMR_TRUNK
+	if (sm->t3_on) {
+		// A trunked system: the call's talkgroup; one registration for the system, whichever channel it is on
+		c.talkGroup = t3m.state == T3_FOLLOW && t3m.call.group ? t3m.call.dst : 0;
+		vals[0] = t3s.cfg.own_id;
+		vals[1] = vals[2] = vals[3] = 0;
+	}
+#endif
 	for (unsigned i = 0; i < sizeof(vals) / sizeof(vals[0]); i++) {
 		h = (h ^ vals[i]) * 16777619u;
 	}
@@ -2382,6 +2501,10 @@ static bool t3_tap(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 	    b->kind != DMR_BURST_DATA_HEADER && b->kind != DMR_BURST_RATE_12_DATA) {
 		return false;
 	}
+	if (t3m.state == T3_FOLLOW && t3m.call.data && b->kind != DMR_BURST_CSBK && b->kind != DMR_BURST_MBC_HEADER &&
+	    b->kind != DMR_BURST_MBC_CONT) {
+		return false;	// a packet data call: its data is the data service's (UDT is a control channel's)
+	}
 	if (slot == 0) {
 		slot = sm->view.ch.timeslot;	// not known: the slot we listen to
 	}
@@ -2512,6 +2635,11 @@ static void t3_leave(radio_sm_t *sm)
 	}
 	t3_ms_stop(&t3m);
 	sm->t3_on = false;
+#if CONFIG_DMR_DATA_CORE && CONFIG_DMR_TRUNK_TX
+	if (data_tx.t3_wait) {
+		data_t3_fail(DMR_TX_ERR_REJECTED);	// the system went before its channel came
+	}
+#endif
 	sm->t3_both = false;
 	sm->t3_ptt_wait = false;
 	dmr_call_set_rx_tap(NULL, NULL);
@@ -2643,10 +2771,11 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 		t3_ms_slot(&t3m, now_ms, slot, true, known && (fl & DMR_TICK_AT_BUSY) != 0);
 	}
 	sm->t3_ticks = tc;
+	sm->t3_now = now_ms;
 	sm->view.t3.ticks += n;
-	// Talking on the payload channel: the radio doesn't hear its own slot, so its transmission is the call's activity
-	// (TV_Inactive would otherwise pull it back to the control channel mid-sentence)
-	if (n != 0 && t3m.state == T3_FOLLOW && sm->view.state == RS_TX) {
+	// Talking (or sending data) on the payload channel: the radio doesn't hear its own slot, so its transmission is the
+	// call's activity (TV_Inactive would otherwise pull it back to the control channel mid-sentence)
+	if (n != 0 && t3m.state == T3_FOLLOW && (sm->view.state == RS_TX || sm->dmr_keyed)) {
 		t3_ms_activity(&t3m, now_ms, sm->view.ch.timeslot);
 	}
 
@@ -2658,6 +2787,9 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 			t3_send(sm, &a, now_ms);
 		}
 	}
+#if CONFIG_DMR_DATA_CORE && CONFIG_DMR_TRUNK_TX
+	data_t3_tick(sm, now_ms);
+#endif
 #if CONFIG_DMR_TRUNK_TX
 	// Our grant came while PTT is held: talk now
 	if (sm->t3_ptt_wait) {

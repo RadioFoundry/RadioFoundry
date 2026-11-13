@@ -124,6 +124,7 @@ static void send_udt(t3_ms_t *ms, uint8_t slot)
 }
 
 static void finish(t3_ms_t *ms, uint32_t now, t3_res_t r);
+static bool is_voice(t3_svc_t s);
 
 // A logical channel's frequencies: the plan (learned, table, fixed), else a programmed control channel with that
 // number. A one-carrier site grants its own carrier's other slot, which a radio with only the control channel
@@ -272,8 +273,16 @@ static bool wants_grant(const t3_ms_t *ms, const t3_csbk_t *p, bool *group)
 		// Either party: a call to the radio, or one it made
 		*group = false;
 		return is_me(ms, g->src) || ((ms->cfg->opts & T3_OPT_PRIVATE) && is_me(ms, g->dst));
+	case T3_OP_PD_GRANT:
+		// 6.6.3.2.7 a: packet data to the radio, or that it sends
+		*group = false;
+		return is_me(ms, g->src) || is_me(ms, g->dst);
+	case T3_OP_TD_GRANT:
+		// 6.6.3.2.7 b: a talkgroup the radio listens to, or its own data to one
+		*group = true;
+		return is_me(ms, g->src) || t3_ms_wants_group(ms, g->dst, g->emergency);
 	default:
-		// Data grants: the data services come later; a grant to a gateway or another MS is not ours
+		// Multi-item and duplex data grants aren't asked for; a grant to a gateway or another MS is not ours
 		return false;
 	}
 }
@@ -311,6 +320,7 @@ static void follow(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_chan_
 	ms->call.slot = g->slot;
 	ms->call.start_ms = now;
 	ms->call.ours = is_me(ms, g->src);
+	ms->call.data = p->op == T3_OP_PD_GRANT || p->op == T3_OP_TD_GRANT;
 	ms->protect_dis = false;
 	if (g->dst != ms->left_dst || !g->late_entry) {
 		ms->left_dst = 0;
@@ -359,7 +369,7 @@ static void on_grant(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_cha
 	}
 	follow(ms, now, p, &c, group);
 	if (ms->call.ours && ms->ax.state != T3_AX_IDLE &&
-	    (ms->ax.svc == T3_SVC_GROUP_VOICE || ms->ax.svc == T3_SVC_IND_VOICE)) {
+	    (ms->call.data ? ms->ax.svc == T3_SVC_PDATA : is_voice(ms->ax.svc))) {
 		finish(ms, now, T3_RES_GRANTED);
 	} else if (ms->ax.state != T3_AX_IDLE) {
 		// An emergency call took us off the TSCC: what we were asking for is lost
@@ -447,6 +457,12 @@ static uint32_t rnd(t3_ms_t *ms)
 static bool is_voice(t3_svc_t s)
 {
 	return s == T3_SVC_GROUP_VOICE || s == T3_SVC_IND_VOICE;
+}
+
+// A call service: it ends in a grant, and its progress acknowledgements run TP_Timer
+static bool is_call(t3_svc_t s)
+{
+	return is_voice(s) || s == T3_SVC_PDATA;
 }
 
 static const t3_tg_t *talk_group(const t3_ms_t *ms)
@@ -578,6 +594,11 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 		q->kind = T3_SK_IND_VOICE;
 		q->options = ms->ax.emergency ? T3_SO_EMERGENCY : 0;
 		break;
+	case T3_SVC_PDATA:
+		// Table 6.50: single slot, single item, normal priority, no supplementary data
+		q->kind = ms->ax.group ? T3_SK_TG_DATA : T3_SK_IND_DATA;
+		q->options = ms->ax.emergency ? T3_SO_EMERGENCY : 0;
+		break;
 	case T3_SVC_SDATA:
 		// Table 6.55: no options; the 4 service-dependent bits are SUPED_VAL 0 and the blocks to upload less one
 		q->kind = ms->ax.group ? T3_SK_TG_UDT : T3_SK_IND_UDT;
@@ -660,7 +681,7 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 		// More to come: TP_Timer for a call, TNP_Timer for the rest; each further one restarts it
 		ms->ax.state = T3_AX_ACKED;
 		ms->ax.progress = (uint8_t)t3_ack_class(a->reason);
-		ms->ax.ack_deadline = now + (is_voice(svc) ? or_default(ms->cfg->tp_ms, T3_TP_MS) :
+		ms->ax.ack_deadline = now + (is_call(svc) ? or_default(ms->cfg->tp_ms, T3_TP_MS) :
 							    or_default(ms->cfg->tnp_ms, T3_TNP_MS));
 		break;
 	case T3_ACK:
@@ -884,6 +905,9 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 		answer(ms, slot, false, T3_RC_MS_ACCEPTED, h->src, false);	// the caller gave up (6.6.1.2.2)
 	} else if (to_me && !payload && h->kind == T3_SK_IND_VOICE) {
 		answer(ms, slot, false, T3_RC_MS_ACCEPTED, h->src, false);	// availability check: OACSU
+	} else if (to_me && !payload && h->kind == T3_SK_IND_DATA) {
+		// Packet data to the radio (6.6.3.2.6): the data service takes it on the payload channel
+		answer(ms, slot, false, T3_RC_MESSAGE_ACCEPTED, h->src, false);
 	} else if (to_me) {
 		answer(ms, slot, payload, T3_RC_MS_NOT_SUPPORTED, h->src, false);
 	}
@@ -1399,6 +1423,25 @@ bool t3_ms_sdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t fo
 	return true;
 }
 
+bool t3_ms_pdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group)
+{
+	if (dst == T3_ID_NULL || ms->ax.state != T3_AX_IDLE || !may_ask(ms)) {
+		if (dst == T3_ID_NULL) {
+			ms->ax.result = T3_RES_NOT_ALLOWED;
+		}
+		return false;
+	}
+	start_access(ms, now, T3_SVC_PDATA, dst, false);
+	ms->ax.group = group;
+	return true;
+}
+
+bool t3_ms_data_ready(const t3_ms_t *ms, uint32_t now)
+{
+	return may_send(ms) && ms->state == T3_FOLLOW && ms->call.data && ms->tx.count == 0 &&
+	       since(now, ms->tuned_ms, T3_SETTLE_MS);
+}
+
 void t3_ms_cancel(t3_ms_t *ms, uint32_t now)
 {
 	if (!is_voice(ms->ax.svc) || ms->ax.state == T3_AX_IDLE) {
@@ -1457,6 +1500,6 @@ bool t3_ms_deregister(t3_ms_t *ms, uint32_t now)
 bool t3_ms_can_talk(const t3_ms_t *ms)
 {
 	// The PTT stays off on an all-call the radio didn't make (6.6.2.3.2.4) and while P_PROTECT disables it
-	return may_send(ms) && ms->state == T3_FOLLOW && !ms->protect_dis && ms->tx.count == 0 &&
+	return may_send(ms) && ms->state == T3_FOLLOW && !ms->protect_dis && ms->tx.count == 0 && !ms->call.data &&
 	       (ms->call.ours || !is_allcall(ms->call.dst));
 }

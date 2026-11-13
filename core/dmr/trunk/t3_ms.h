@@ -137,6 +137,7 @@ typedef enum {
 	T3_SVC_CANCEL,
 	T3_SVC_STATUS,		// a status (or a poll, T3_STATUS_POLL) to an MS or talkgroup (6.6.6)
 	T3_SVC_SDATA,		// UDT short data to an MS or talkgroup (6.6.4)
+	T3_SVC_PDATA,		// a packet data channel to an MS or talkgroup (6.6.3): the data service sends on it
 } t3_svc_t;
 
 #define T3_STATUS_POLL		127	// the status that asks the called MS for its own (6.6.6.2)
@@ -168,6 +169,7 @@ typedef struct {
 	uint8_t slot;
 	uint32_t start_ms;
 	bool ours;		// the radio asked for it (it may talk at once, and ends it with P_MAINT)
+	bool data;		// a packet data call (PD_GRANT, TD_GRANT): the data service has the slot, PTT doesn't
 } t3_call_t;
 
 typedef struct {
@@ -249,7 +251,7 @@ typedef struct {
 		uint8_t progress;	// T3_WACK / T3_QACK of the last progress acknowledgement
 		uint32_t retry_ms;	// registration: try again from here (0: no)
 		uint8_t status;		// T3_SVC_STATUS: the status sent
-		bool group;		// T3_SVC_STATUS: to a talkgroup
+		bool group;		// T3_SVC_STATUS, SDATA, PDATA: to a talkgroup
 		uint8_t info;		// Response_Info of the final acknowledgement (a poll's answer: the polled status)
 	} ax;
 	// The last status heard for the radio, from a C_AHOY to it or to a talkgroup it listens to (6.6.6)
@@ -329,6 +331,11 @@ bool t3_ms_status(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t s
 // Send UDT short data (1-46 octets in format, T3_UDTF_*) to dst, a talkgroup or an MS. False (ax.result says why)
 // when it can't start
 bool t3_ms_sdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t format, const uint8_t *data, uint8_t len);
+// Ask for a packet data channel to an MS or talkgroup (6.6.3.2.1). Once granted the engine follows it (call.data) and
+// t3_ms_data_ready says when the radio may send its packet there
+bool t3_ms_pdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group);
+// On a packet data payload channel, settled: the data service may send (the caller first, 6.6.3.3)
+bool t3_ms_data_ready(const t3_ms_t *ms, uint32_t now);
 // PTT released before the grant: withdraw the request, or cancel it at the TSCC once sent
 void t3_ms_cancel(t3_ms_t *ms, uint32_t now);
 // The user ends the call being followed: P_MAINT when the radio started it or it is individual, then back

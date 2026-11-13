@@ -221,16 +221,17 @@ static void test_follow(void)
 	hunt_to_ours(&ms);
 	int n0 = nact;
 
-	// Not ours: another talkgroup, a talkgroup we hold without LISTEN, a private call to someone else, data
+	// Not ours: another talkgroup, a talkgroup we hold without LISTEN, a private call or data to someone else, data to
+	// a talkgroup we don't follow
 	t3_csbk_t g = grant(T3_OP_TV_GRANT, 159, 1, 9999u, 1234u);
 	send(&ms, 1, CC, &g);
 	g = grant(T3_OP_TV_GRANT, 159, 1, TG_OTHER, 1234u);
 	send(&ms, 1, CC, &g);
 	g = grant(T3_OP_PV_GRANT, 159, 1, 1111u, 1234u);
 	send(&ms, 1, CC, &g);
-	g = grant(T3_OP_PD_GRANT, 159, 1, OWN, 1234u);
+	g = grant(T3_OP_PD_GRANT, 159, 1, 1111u, 1234u);
 	send(&ms, 1, CC, &g);
-	g = grant(T3_OP_TD_GRANT, 159, 1, TG_A, 1234u);
+	g = grant(T3_OP_TD_GRANT, 159, 1, TG_OTHER, 1234u);
 	send(&ms, 1, CC, &g);
 	CHECK(ms.state == T3_CAMPED && nact == n0, "no follow: %s", t3_state_name(ms.state));
 	CHECK(ms.st.grants == 5, "grants %u", ms.st.grants);
