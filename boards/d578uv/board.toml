@@ -23,6 +23,8 @@ bands = "136-174 / 400-480 MHz"
 power = "up to 50 W"
 display = "1.77\" color, 160 × 128"
 gallery = "160x128"
+# a volume knob per side (docs.hardware: side B's is bottom left)
+knobs = 2
 clock = { rtc = "unknown", note = "the GD32F303 RTC; whether a crystal and a backup supply are fitted is not known (docs/spec/hardware-d578uv.md)" }
 # The radio was built with two MCUs (hardware-d578uv.md 1): the radio's version screen names the one it runs on, and
 # the vendor update mode answers with a model name per MCU (8). This image runs on the GD32F303 only; the AT32 builds
