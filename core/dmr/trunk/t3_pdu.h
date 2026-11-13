@@ -19,6 +19,7 @@
 #define T3_CSBK_BYTES		12
 #define T3_CRC_MASK_CSBK	0xA5A5u
 #define T3_CRC_MASK_MBC_HDR	0xAAAAu
+#define T3_CRC_MASK_DATA_HDR	0xCCCCu	// the UDT header (a data header)
 
 // CSBK opcodes (Annex B.1)
 #define T3_OP_C_ALOHA		25
@@ -294,5 +295,44 @@ typedef struct {
 } t3_sysparms_t;
 bool t3_sysparms_parse(uint32_t slc, t3_sysparms_t *out);
 uint32_t t3_sysparms_build(const t3_sysparms_t *in);
+
+// --- Unified Data Transport (6.5; TS 102 361-1 8.2.1.8, 8.2.2.5) ---
+// A header (data type: data header, CRC mask 0xCCCC) and 1-4 rate 1/2 blocks of 12 octets sent in consecutive slots.
+// The blocks hold the data, then pad octets, then a CRC-CCITT (unmasked) over all the octets before it
+
+#define T3_UDT_BLOCK		12
+#define T3_UDT_BLOCKS_MAX	4
+#define T3_UDT_MAX		(T3_UDT_BLOCKS_MAX * T3_UDT_BLOCK - 2)	// 46 octets
+
+// UDT_Format (7.2.27)
+#define T3_UDTF_BINARY		0x0
+#define T3_UDTF_ADDRESS		0x1
+#define T3_UDTF_BCD		0x2
+#define T3_UDTF_ISO7		0x3
+#define T3_UDTF_ISO8		0x4
+#define T3_UDTF_NMEA		0x5
+#define T3_UDTF_IP		0x6
+#define T3_UDTF_UTF16		0x7
+
+typedef struct {
+	uint8_t op;		// T3_OP_C_UDTHD (outbound) or T3_OP_C_UDTHU (inbound)
+	bool group;		// G/I: to a talkgroup
+	bool a;			// a response is demanded
+	bool emergency;		// outbound only (inbound: reserved)
+	bool opt;		// outbound: UDT_Option_Flag; inbound: UDT_DIV
+	uint8_t format;		// T3_UDTF_*
+	uint32_t dst, src;
+	uint8_t pad;		// Pad Nibble: 4-bit pad nibbles after the data
+	uint8_t blocks;		// appended blocks, 1-4
+	bool sf;		// supplementary data (else the data of a user's service)
+} t3_udt_t;
+
+// The header with its CRC; parse checks the CRC, DPF and SAP 0 and the opcode
+void t3_udt_build(const t3_udt_t *h, uint8_t out[T3_CSBK_BYTES]);
+bool t3_udt_parse(const uint8_t in[T3_CSBK_BYTES], t3_udt_t *h);
+// The blocks for len (1-46) octets of data, padded with fill: their number (0: too long) and the Pad Nibble value
+uint8_t t3_udt_pack(const uint8_t *data, uint8_t len, uint8_t fill, uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK],
+		    uint8_t *pad_nibbles);
+bool t3_udt_crc_ok(const uint8_t blk[][T3_UDT_BLOCK], uint8_t n);
 
 #endif

@@ -2278,13 +2278,15 @@ static bool t3_send_next(dmr_tx_burst_t *out, void *ctx)
 	if (sm->t3_send_left == 0) {
 		return false;
 	}
+	uint8_t i = (uint8_t)(sm->t3_send_n - sm->t3_send_left);
 	sm->t3_send_left--;
 	memset(out, 0, sizeof(*out));
-	out->kind = DMR_BURST_CSBK;
+	// A short data upload is a UDT header, then its rate 1/2 blocks in the next frames
+	out->kind = !sm->t3_send_udt ? DMR_BURST_CSBK : (i == 0 ? DMR_BURST_DATA_HEADER : DMR_BURST_RATE_12_DATA);
 	out->host_crc = true;
 	out->sync_override = DMR_SYNC_NONE;
 	out->len = T3_CSBK_BYTES;
-	memcpy(out->payload, sm->t3_send_burst, T3_CSBK_BYTES);
+	memcpy(out->payload, sm->t3_send_burst[i], T3_CSBK_BYTES);
 	return true;
 }
 
@@ -2344,15 +2346,22 @@ static void t3_send(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 		}
 		sm->dmr_keyed = true;
 	}
-	memcpy(sm->t3_send_burst, a->burst, T3_CSBK_BYTES);
-	sm->t3_send_left = 1;
-	dmr_data_source_t src = { .next = t3_send_next, .done = t3_send_done, .ctx = sm, .count = 1, .tag = "t3" };
+	uint8_t nb = a->udt && a->blocks != NULL ? (a->nblocks > T3_UDT_BLOCKS_MAX ? T3_UDT_BLOCKS_MAX : a->nblocks) : 0u;
+	memcpy(sm->t3_send_burst[0], a->burst, T3_CSBK_BYTES);
+	for (uint8_t i = 0; i < nb; i++) {
+		memcpy(sm->t3_send_burst[1 + i], a->blocks[i], T3_CSBK_BYTES);
+	}
+	sm->t3_send_udt = a->udt;
+	sm->t3_send_n = (uint8_t)(1u + nb);
+	sm->t3_send_left = sm->t3_send_n;
+	dmr_data_source_t src = { .next = t3_send_next, .done = t3_send_done, .ctx = sm, .count = sm->t3_send_n,
+				  .tag = "t3" };
 	if (!dmr_call_data_tx(&src)) {
 		sm->t3_send_left = 0;
 		sm->view.t3.send_fail++;	// the keying is released by dmr_follow
 		return;
 	}
-	sm->view.t3.last_tx_op = a->burst[0] & 0x3Fu;
+	sm->view.t3.last_tx_op = (a->udt ? a->burst[9] : a->burst[0]) & 0x3Fu;
 	memcpy(sm->view.t3.last_tx, a->burst, T3_CSBK_BYTES);
 	sm->view.t3.last_tx_ms = now_ms != 0 ? now_ms : 1;
 	(void)now_ms;
@@ -2369,7 +2378,8 @@ static bool t3_tap(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 	if (b->kind != DMR_BURST_IDLE && slot != 0) {
 		t3_ms_activity(&t3m, now_ms, slot);
 	}
-	if (b->kind != DMR_BURST_CSBK && b->kind != DMR_BURST_MBC_HEADER && b->kind != DMR_BURST_MBC_CONT) {
+	if (b->kind != DMR_BURST_CSBK && b->kind != DMR_BURST_MBC_HEADER && b->kind != DMR_BURST_MBC_CONT &&
+	    b->kind != DMR_BURST_DATA_HEADER && b->kind != DMR_BURST_RATE_12_DATA) {
 		return false;
 	}
 	if (slot == 0) {
@@ -2377,9 +2387,12 @@ static bool t3_tap(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 	}
 	if (b->len >= T3_CSBK_BYTES) {
 		t3_ms_rx(&t3m, now_ms, slot, b->kind, b->cc, b->payload);
-		sm->view.t3.last_rx_op = b->payload[0] & 0x3Fu;
-		sm->view.t3.last_rx_slot = slot;
-		sm->view.t3.last_rx_ms = now_ms != 0 ? now_ms : 1;
+		if (b->kind != DMR_BURST_RATE_12_DATA) {
+			// A UDT header's opcode is in octet 9
+			sm->view.t3.last_rx_op = b->payload[b->kind == DMR_BURST_DATA_HEADER ? 9 : 0] & 0x3Fu;
+			sm->view.t3.last_rx_slot = slot;
+			sm->view.t3.last_rx_ms = now_ms != 0 ? now_ms : 1;
+		}
 	}
 	return true;
 }
@@ -2437,6 +2450,14 @@ static void t3_publish(radio_sm_t *sm)
 	v->st_group = m->status_rx.group;
 	v->st_value = m->status_rx.value;
 	v->st_ms = m->status_rx.ms;
+	v->sd_count = m->sd_rx.count;
+	v->sd_src = m->sd_rx.src;
+	v->sd_dst = m->sd_rx.dst;
+	v->sd_group = m->sd_rx.group;
+	v->sd_format = m->sd_rx.format;
+	v->sd_len = m->sd_rx.len;
+	memcpy(v->sd_data, m->sd_rx.data, sizeof(v->sd_data));
+	v->sd_ms = m->sd_rx.ms;
 	v->ptt_wait = sm->t3_ptt_wait;
 	v->can_talk = t3_ms_can_talk(m);
 	v->ticks = sm->t3_ticks;
@@ -2535,6 +2556,12 @@ static void t3_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
 		if (sm->t3_on) {
 			const radio_t3_setup_t *st = radio_t3_staged();
 			(void)t3_ms_status(&t3m, now_ms, st->sd_dst, st->sd_group, st->sd_status);
+		}
+		break;
+	case RADIO_T3_SDATA:
+		if (sm->t3_on) {
+			const radio_t3_setup_t *st = radio_t3_staged();
+			(void)t3_ms_sdata(&t3m, now_ms, st->sd_dst, st->sd_group, st->sd_format, st->sd_data, st->sd_len);
 		}
 		break;
 #endif

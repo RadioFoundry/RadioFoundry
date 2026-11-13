@@ -5485,10 +5485,9 @@ static unsigned t3_sent(uint8_t op)
 
 // PTT on the TSCC asks for the call, held through the wait (the request is sent, not refused as talking), and on
 // the grant the radio talks; with nothing heard while it talks, the call stays up (its own TX is the activity)
-static void test_t3_talk(void)
+// Stage the test system and select it: the radio camps on its TSCC
+static void t3_stage_start(void)
 {
-	dmr_start(true);
-	sim.repeater = true;
 	radio_t3_setup_t *s = radio_t3_staged();
 	radio_t3_reset(s);
 	s->cfg.own_id = T3_OWN;
@@ -5507,6 +5506,13 @@ static void test_t3_talk(void)
 	req(RREQ_T3, RADIO_T3_START);
 	t3_site_run(600);
 	CHECK(sm.view.t3.state == T3_CAMPED);
+}
+
+static void test_t3_talk(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
 	CHECK(sm.view.dmr.own_id == T3_OWN);
 
 	unsigned before = t3_sent(T3_OP_C_RAND);
@@ -5532,6 +5538,89 @@ static void test_t3_talk(void)
 	req(RREQ_PTT, 0);
 	run(4000);		// released: the inactivity timer runs again
 	CHECK(sm.view.t3.state != T3_FOLLOW && sm.view.state != RS_TX);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+static void t3_data_rx(uint8_t kind, const uint8_t *d, int8_t ts)
+{
+	dmr_burst_t b;
+	memset(&b, 0, sizeof(b));
+	b.kind = kind;
+	b.sync = DMR_SYNC_BS;
+	b.ts = ts;
+	b.cc = 2;
+	b.crc_ok = true;
+	b.in_step = true;
+	b.len = T3_CSBK_BYTES;
+	memcpy(b.payload, d, T3_CSBK_BYTES);
+	sim_rx(&b);
+}
+
+// Short data: the upload goes out as a UDT header and its blocks in consecutive frames of the TSCC's slot; a download
+// to the radio is kept and answered
+static void test_t3_sdata(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	radio_t3_setup_t *s = radio_t3_staged();
+	s->sd_dst = 1000001u;
+	s->sd_group = false;
+	s->sd_format = T3_UDTF_ISO8;
+	memcpy(s->sd_data, "hello trunk world", 17);
+	s->sd_len = 17;
+	unsigned before = t3_sent(T3_OP_C_RAND);
+	req(RREQ_T3, RADIO_T3_SDATA);
+	t3_site_run(600);
+	CHECK(t3_sent(T3_OP_C_RAND) > before && sm.view.t3.ax_svc == T3_SVC_SDATA);
+
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_UDT;
+	h.u.ahoy.blocks = 1;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = T3_ID_SDMI;
+	unsigned from = sim.air_count;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(400);
+	int hdr = -1;
+	for (unsigned i = from; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_DATA_HEADER) {
+			hdr = (int)i;
+			break;
+		}
+	}
+	CHECK(hdr >= 0 && (unsigned)hdr + 2u < sim.air_count);
+	if (hdr >= 0 && (unsigned)hdr + 2u < sim.air_count) {
+		const sim_air_t *a = &sim.air[hdr];
+		t3_udt_t u;
+		CHECK(t3_udt_parse(a->payload, &u) && u.op == T3_OP_C_UDTHU && u.dst == 1000001u && u.src == T3_OWN &&
+		      u.blocks == 2 && u.format == T3_UDTF_ISO8);
+		CHECK(sim.air[hdr + 1].kind == DMR_BURST_RATE_12_DATA && sim.air[hdr + 2].kind == DMR_BURST_RATE_12_DATA);
+		// One frame apart each: consecutive inbound slots of the TSCC's slot
+		CHECK(sim.air[hdr + 1].slot == a->slot + 2u && sim.air[hdr + 2].slot == a->slot + 4u);
+		uint8_t blk[2][T3_UDT_BLOCK];
+		memcpy(blk[0], sim.air[hdr + 1].payload, T3_UDT_BLOCK);
+		memcpy(blk[1], sim.air[hdr + 2].payload, T3_UDT_BLOCK);
+		CHECK(t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])blk, 2) && memcmp(blk, "hello trunk world", 17) == 0);
+	}
+	CHECK(sm.view.t3.send_fail == 0);
+
+	// A download to the radio
+	uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK], pad, d[T3_CSBK_BYTES];
+	t3_udt_t u = { .op = T3_OP_C_UDTHD, .a = true, .format = T3_UDTF_ISO8, .dst = T3_OWN, .src = 1000001u };
+	u.blocks = t3_udt_pack((const uint8_t *)"hi there", 8, 0xFF, blk, &pad);
+	u.pad = pad;
+	t3_udt_build(&u, d);
+	before = t3_sent(T3_OP_C_ACKU);
+	t3_data_rx(DMR_BURST_DATA_HEADER, d, 1);
+	run(60);
+	t3_data_rx(DMR_BURST_RATE_12_DATA, blk[0], 1);
+	t3_site_run(300);
+	CHECK(sm.view.t3.sd_count == 1 && sm.view.t3.sd_len == 8 && memcmp(sm.view.t3.sd_data, "hi there", 8) == 0 &&
+	      sm.view.t3.sd_src == 1000001u);
+	CHECK(t3_sent(T3_OP_C_ACKU) > before);
 	req(RREQ_T3, RADIO_T3_STOP);
 	run(100);
 	sim.repeater = false;
@@ -5563,6 +5652,7 @@ int main(void)
 	test_dmr_tx_end();
 #if CONFIG_DMR_TRUNK_TX
 	test_t3_talk();
+	test_t3_sdata();
 #endif
 	test_dmr_stalled();
 	test_dmr_list_talk_target();

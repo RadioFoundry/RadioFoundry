@@ -850,6 +850,7 @@ answers unavailable (3). Each op answers OK or bad argument (2), with no reply b
 | 10 | DEREG | de-register, staying on the system (`CONFIG_DMR_TRUNK_TX`) |
 | 11 | END | end the call being followed (`CONFIG_DMR_TRUNK_TX`) |
 | 12 | STATUS | send a status: to u32 (an MS, or a talkgroup), group u8, status u8 (0-126; 127 polls an MS) (`CONFIG_DMR_TRUNK_TX`) |
+| 13 | SDATA | send UDT short data: to u32, group u8, UDT_Format u8 (4: ISO 8-bit text, 0: binary), then 1-46 octets (`CONFIG_DMR_TRUNK_TX`) |
 
 The `t3` view section has the engine's state as the radio core last published it, all keys `t3.`-prefixed: `built`,
 `tx_built`, `on`, `state` (off, hunt, camped, follow), `reg`, `confirmed`, `syscode`, `own_id`, `tscc_lcn`, `rx_hz`,
@@ -860,10 +861,12 @@ The `t3` view section has the engine's state as the radio core last published it
 `csbk`, `crc_bad`, `grants`, `followed`, `unmapped`, `last_unmapped`, `returns`, `hunts`, `foreign`, `learned`, `sent`,
 `ra_tries`, `send_fail`, `at_known`, `at_busy`); status: `ax_info` (the final acknowledgement's Response_Info: a
 poll's answer), `own_status` (the radio's, sent in answer to a poll), and the last status heard (`st_count`,
-`st_src`, `st_dst`, `st_group`, `st_value`, `st_age_ms`).
+`st_src`, `st_dst`, `st_group`, `st_value`, `st_age_ms`); the last short data heard (`sd_count`, `sd_src`, `sd_dst`,
+`sd_group`, `sd_format`, `sd_len`, `sd_data` in hex, `sd_age_ms`).
 
 `rfoundry_debug.py t3 setup --model 1 --net 5 --cc 2 --ctrl 1:RX_MHZ:TX_MHZ --tg 1` stages and starts one;
-`rfoundry_debug.py t3 [show|start|stop|dereg|end]`; `rfoundry_debug.py t3 status --to ID --status N [--group]`.
+`rfoundry_debug.py t3 [show|start|stop|dereg|end]`; `rfoundry_debug.py t3 status --to ID --status N [--group]`;
+`rfoundry_debug.py t3 sdata --to ID (--text TEXT | --hex HEX) [--group]`.
 
 ## 4. Safety
 

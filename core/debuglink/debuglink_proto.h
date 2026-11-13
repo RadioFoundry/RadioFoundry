@@ -52,6 +52,7 @@ enum {
 	DL_T3_DEREG = 10,	// de-register
 	DL_T3_END = 11,		// end the call being followed
 	DL_T3_STATUS = 12,	// send a status: to u32, group u8, status u8 (0-126; 127 polls an MS)
+	DL_T3_SDATA = 13,	// send short data: to u32, group u8, UDT_Format u8, then 1-46 octets
 };
 
 // DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.25)

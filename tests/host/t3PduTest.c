@@ -379,10 +379,52 @@ static void rules(void)
 	CHECK(!t3_csbk_parse(raw, &m) && m.fid == 0x10, "manufacturer FID");
 }
 
+// UDT (6.5): the header's fields and CRC, and the blocks' padding and message CRC (table B.5 for ISO 8-bit text)
+static void udt(void)
+{
+	t3_udt_t h = { .op = T3_OP_C_UDTHU, .group = true, .a = true, .format = T3_UDTF_ISO8, .dst = 0x123456u,
+		       .src = 0xABCDEFu, .pad = 18, .blocks = 3, .sf = false };
+	uint8_t b[T3_CSBK_BYTES];
+	t3_udt_build(&h, b);
+	CHECK(b[0] == 0xC0 && b[1] == 0x04 && b[2] == 0x12 && b[7] == 0xEF && b[8] == ((18 << 3) | 2) && b[9] == 27,
+	      "UDT header octets %02x %02x .. %02x %02x", b[0], b[1], b[8], b[9]);
+	t3_udt_t q;
+	CHECK(t3_udt_parse(b, &q) && q.op == T3_OP_C_UDTHU && q.group && q.a && q.format == T3_UDTF_ISO8 &&
+	      q.dst == 0x123456u && q.src == 0xABCDEFu && q.pad == 18 && q.blocks == 3 && !q.sf, "UDT header round trip");
+	CHECK(!t3_crc_ok(b, T3_CRC_MASK_CSBK), "UDT header: data header mask, not the CSBK's");
+	b[4] ^= 1u;
+	CHECK(!t3_udt_parse(b, &q), "UDT header: bad CRC refused");
+
+	static const struct { uint8_t len, uab, pad; } b5[] = {
+		{ 1, 0, 18 }, { 10, 0, 0 }, { 11, 1, 22 }, { 22, 1, 0 }, { 23, 2, 22 }, { 34, 2, 0 }, { 35, 3, 22 },
+		{ 46, 3, 0 },
+	};
+	uint8_t text[T3_UDT_MAX];
+	for (unsigned i = 0; i < sizeof(text); i++) {
+		text[i] = (uint8_t)('a' + i % 26u);
+	}
+	for (unsigned i = 0; i < sizeof(b5) / sizeof(b5[0]); i++) {
+		uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK];
+		uint8_t pad = 0xEE;
+		uint8_t n = t3_udt_pack(text, b5[i].len, 0xFF, blk, &pad);
+		CHECK(n == b5[i].uab + 1u && pad == b5[i].pad, "%u characters: %u blocks, pad %u", b5[i].len, n, pad);
+		CHECK(t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])blk, n), "%u characters: CRC", b5[i].len);
+		const uint8_t *flat = &blk[0][0];
+		CHECK(memcmp(flat, text, b5[i].len) == 0 && (b5[i].pad == 0 || flat[b5[i].len] == 0xFF),
+		      "%u characters: data, then 0xFF", b5[i].len);
+		blk[0][0] ^= 0x80u;
+		CHECK(!t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])blk, n), "%u characters: corrupt CRC", b5[i].len);
+	}
+	uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK];
+	uint8_t pad;
+	CHECK(t3_udt_pack(text, 0, 0, blk, &pad) == 0 && t3_udt_pack(text, 47, 0, blk, &pad) == 0, "UDT: 1-46 octets");
+}
+
 int main(int argc, char **argv)
 {
 	vectors(argc > 1 ? argv[1] : "data/t3_vectors.jsonl");
 	rules();
+	udt();
 	printf("t3PduTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

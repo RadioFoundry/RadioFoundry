@@ -15,7 +15,7 @@ a system set up over the debug link (section 11); the codeplug has no keys for a
 | 4 | System identity and authorization |
 | 5 | Channel plans |
 | 6 | The receive engine |
-| 7 | Access (7.5 status) |
+| 7 | Access (7.5 status, 7.6 short data) |
 | 8 | Timers and constants |
 | 9 | Tests |
 | 10 | Not done yet |
@@ -304,6 +304,36 @@ A status heard in a C_AHOY on the TSCC (Service_Options_Mirror the 5 most signif
 least) to the radio or to a talkgroup it listens to is kept in `status_rx`. To the radio it is answered (section 7.4);
 to a talkgroup it isn't. Listen only, it is kept and not answered.
 
+### 7.6 UDT short data (6.5, 6.6.4)
+
+A message is 1-46 octets in a UDT: a header (data type data header, CRC mask 0xCCCC) and 1-4 rate 1/2 blocks of 12
+octets in consecutive frames of one slot. The blocks hold the data, pad octets, and a CRC-CCITT over all the octets
+before it, unmasked (TS 102 361-1 8.2.2.5).
+
+| Header field | Holds |
+|---|---|
+| G/I, A | a talkgroup; a response demanded |
+| DPF, SAP | 0000b, 0000b |
+| UDT_Format | 4 ISO 8-bit text, 0 binary (table 7.88) |
+| Pad Nibble | ISO 8-bit text: twice the pad octets (0xFF each, table B.5); binary: 0, pad octets 0 |
+| UAB | blocks less one |
+| SF, opcode | 0 (the user's data); C_UDTHD outbound, C_UDTHU inbound |
+
+`t3_ms_sdata` sends one to an MS or a talkgroup:
+
+1. C_RAND, Service_Kind 0100b (an MS) or 0101b (a talkgroup), Service_Options 0, the 4 service-dependent bits
+   SUPED_VAL 0 and the blocks less one (table 6.55).
+2. The TSCC's C_AHOY from SDMI to the radio, Service_Kind 0100b, asks for the upload: C_UDTHU and the blocks go in
+   the inbound slots that follow, as one transmission. A second C_AHOY (a CRC failure at the TSCC) sends it again.
+   With no message waiting, the radio sends nothing.
+3. C_WACKD and C_QACKD are progress (TNP_Timer). C_ACKD ends it: MS_Accepted mirrored for an MS, Message_Accepted for
+   a talkgroup. C_NACKD refuses it.
+
+A C_UDTHD heard on the TSCC, its blocks whole and the CRC good, to the radio or to a talkgroup it listens to, is kept
+in `sd_rx` (the data without its pad octets). To the radio with A set it is answered C_ACKU MS_Accepted; to a
+talkgroup it isn't. A bad CRC or a missing block keeps nothing and answers nothing: the TSCC sends it again.
+Supplementary data (SF set) isn't taken.
+
 ## 8. Timers and constants
 
 | Name | Value | Standard range (Annex A) |
@@ -360,7 +390,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | A trunked system in the codeplug, and its screens | codeplug keys for systems |
 | CACH short LC reception | the modem drivers' CACH report |
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
-| Talkgroup lists of more than one group, short data, packet data | later |
+| Talkgroup lists of more than one group, packet data, short data polling, supplementary data | later |
 | Data grants, C_MOVE, adjacent sites, power save | later |
 
 ## 11. On the radio
@@ -378,6 +408,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | PTT | Camped, PTT asks for a call to the system's talk target (the first talkgroup with `T3_TG_TALK` when none is set) and waits with PTT held. The grant puts the radio on the payload slot and keys it. A refusal, no answer or timeout denies TX (`TXDENY_NO_DMR`). Released before the grant, the request is cancelled. |
 | Following | The stack takes the system's ID as its own, hears every call on the slot, and talks to the call's group or to the other party. The radio's own transmission counts as the call's activity: it never hears its own slot, so TV_Inactive would otherwise end the call while it talks. |
 | Status | `RADIO_T3_STATUS` sends the staged status (section 7.5). The last status heard is in the view. |
+| Short data | `RADIO_T3_SDATA` sends the staged message (section 7.6): the upload is a UDT header and its blocks, one data source on the TSCC's slot. Data headers and rate 1/2 blocks heard go to the engine. The last message heard is in the view. |
 | View | The `t3` section ([debuglink.md](debuglink.md) 3.26). |
 
 Tests: `tests/host/radioCoreTest.c` (`test_t3_talk`) runs a simulated site through PTT, request, grant and a call

@@ -255,6 +255,11 @@ typedef struct {
 	bool st_group;		// the last status heard: to a talkgroup
 	uint8_t st_value;
 	uint32_t st_count, st_src, st_dst, st_ms;
+	// The last short data heard (sd_len octets of sd_data, in UDT_Format sd_format)
+	bool sd_group;
+	uint8_t sd_format, sd_len;
+	uint8_t sd_data[46];	// T3_UDT_MAX
+	uint32_t sd_count, sd_src, sd_dst, sd_ms;
 } radio_t3_view_t;
 #endif
 

@@ -29,6 +29,8 @@
 #define T3_DT_CSBK		3
 #define T3_DT_MBC_HDR		4
 #define T3_DT_MBC_CONT		5
+#define T3_DT_DATA_HDR		6	// a UDT header
+#define T3_DT_R12		7	// a UDT block
 
 #define T3_CTRL_MAX		4	// programmed control channel candidates
 #define T3_HUNT_MAX		8	// extra hunt LCNs (Annex D short hunt), resolved through the plan
@@ -115,7 +117,10 @@ typedef struct {
 	t3_chan_t chan;		// TUNE
 	uint8_t slot;		// TUNE: 0 both (a control channel), 1 / 2 the payload slot. SEND: the slot to send on
 	bool payload;		// TUNE: a payload channel. SEND: on the payload channel (else the TSCC)
-	uint8_t burst[T3_CSBK_BYTES];	// SEND: the CSBK, CRC included
+	uint8_t burst[T3_CSBK_BYTES];	// SEND: the CSBK, CRC included (udt: a UDT header)
+	bool udt;		// SEND: burst is a UDT header, followed by nblocks rate 1/2 blocks in the next frames
+	uint8_t nblocks;
+	const uint8_t (*blocks)[T3_UDT_BLOCK];	// the engine's, valid until the next t3_ms_* call
 } t3_act_t;
 
 #define T3_ACT_QUEUE	3
@@ -129,6 +134,7 @@ typedef enum {
 	T3_SVC_IND_VOICE,
 	T3_SVC_CANCEL,
 	T3_SVC_STATUS,		// a status (or a poll, T3_STATUS_POLL) to an MS or talkgroup (6.6.6)
+	T3_SVC_SDATA,		// UDT short data to an MS or talkgroup (6.6.4)
 } t3_svc_t;
 
 #define T3_STATUS_POLL		127	// the status that asks the called MS for its own (6.6.6.2)
@@ -254,12 +260,39 @@ typedef struct {
 		uint32_t ms;
 	} status_rx;
 	uint8_t own_status;		// the radio's status, sent in answer to a poll: the last one it sent
+	// UDT short data (6.6.4): what T3_SVC_SDATA sends, its blocks once packed, and the last message heard
+	struct {
+		uint8_t format;
+		uint8_t len;
+		uint8_t data[T3_UDT_MAX];
+	} sd_tx;
+	uint8_t up[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK];
+	struct {
+		bool open;
+		uint8_t slot;
+		uint8_t got;
+		uint32_t ms;
+		t3_udt_t h;
+		uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK];
+	} udt_rx;			// a UDT being received
+	struct {
+		uint32_t count;
+		uint32_t src;
+		uint32_t dst;
+		bool group;
+		uint8_t format;
+		uint8_t len;		// data octets, pad left out (Pad Nibble)
+		uint8_t data[T3_UDT_MAX];
+		uint32_t ms;
+	} sd_rx;
 	// A burst to send on a slot without random access: an answer (once) or P_MAINT (count times)
 	struct {
 		uint8_t count;
 		uint8_t slot;
 		bool payload;
 		bool then_return;	// back to the TSCC once sent
+		bool udt;		// burst is a UDT header with up[] as its nblocks blocks (the short data upload)
+		uint8_t nblocks;
 		uint8_t burst[T3_CSBK_BYTES];
 	} tx;
 	uint32_t talk_id;		// set by t3_ms_request: the last target, for a user's PTT in the hang time
@@ -287,6 +320,9 @@ bool t3_ms_request(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, bool eme
 // Send a status (0-126) to dst, a talkgroup or an MS, or poll an MS (T3_STATUS_POLL; ax.info has its answer). False
 // (ax.result says why) when it can't start
 bool t3_ms_status(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t status);
+// Send UDT short data (1-46 octets in format, T3_UDTF_*) to dst, a talkgroup or an MS. False (ax.result says why)
+// when it can't start
+bool t3_ms_sdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t format, const uint8_t *data, uint8_t len);
 // PTT released before the grant: withdraw the request, or cancel it at the TSCC once sent
 void t3_ms_cancel(t3_ms_t *ms, uint32_t now);
 // The user ends the call being followed: P_MAINT when the radio started it or it is individual, then back

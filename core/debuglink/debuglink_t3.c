@@ -144,6 +144,18 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 		s->sd_status = a[5];
 		radio_req_t3(RADIO_T3_STATUS);
 		break;
+	case DL_T3_SDATA:	// to u32, group u8, format u8, data
+		if (n < 7u || n > 6u + T3_UDT_MAX || rd32(a) == 0 || rd32(a) > 0xFFFFFFu || a[5] > 15u) {
+			out[0] = DL_ST_BAD_ARG;
+			break;
+		}
+		s->sd_dst = rd32(a);
+		s->sd_group = a[4] != 0;
+		s->sd_format = a[5];
+		s->sd_len = (uint8_t)(n - 6u);
+		memcpy(s->sd_data, a + 6, s->sd_len);
+		radio_req_t3(RADIO_T3_SDATA);
+		break;
 	default:
 		out[0] = DL_ST_BAD_ARG;
 		break;
@@ -162,7 +174,7 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 static const char *const t3_states[] = { "off", "hunt", "camped", "follow" };
 static const char *const t3_regs[] = { "unknown", "not_needed", "listen", "needed", "ok", "denied" };
 static const char *const t3_svcs[] = { "none", "register", "deregister", "group", "individual", "cancel",
-				       "status" };
+				       "status", "sdata" };
 static const char *const t3_results[] = { "none", "pending", "granted", "done", "refused", "no_answer", "timeout",
 					  "not_allowed", "lost", "cancelled" };
 static const char *const t3_axs[] = { "idle", "wait_slot", "wait_resp", "acked" };
@@ -187,7 +199,7 @@ void debuglink_view_t3(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "t3.call_dst=%u\nt3.call_src=%u\nt3.call_group=%u\nt3.call_ours=%u\n", (unsigned)x->call_dst,
 		(unsigned)x->call_src, x->call_group, x->call_ours);
 	dl_text(t, "t3.ax_svc=%s\nt3.ax_state=%s\nt3.ax_result=%s\nt3.ax_reason=0x%02x\nt3.ptt_wait=%u\nt3.can_talk=%u\n",
-		word(x->ax_svc, t3_svcs, 7), word(x->ax_state, t3_axs, 4), word(x->ax_result, t3_results, 10),
+		word(x->ax_svc, t3_svcs, 8), word(x->ax_state, t3_axs, 4), word(x->ax_result, t3_results, 10),
 		x->ax_reason, x->ptt_wait, x->can_talk);
 	// The last CSBK heard and sent: opcode, slot, age in ms (-1: none)
 	uint32_t now = hal_millis();
@@ -215,6 +227,18 @@ void debuglink_view_t3(const radio_view_t *v, dl_text_t *t)
 		"t3.st_value=%u\nt3.st_age_ms=%d\n", x->ax_info, x->own_status, (unsigned)x->st_count,
 		(unsigned)x->st_src, (unsigned)x->st_dst, x->st_group, x->st_value,
 		x->st_ms != 0 ? (int)(now - x->st_ms) : -1);
+	// The last short data heard: its octets in hex (sd_data), the format to read them by
+	char sd[2 * sizeof(x->sd_data) + 1];
+	uint8_t len = x->sd_len < sizeof(x->sd_data) ? x->sd_len : (uint8_t)sizeof(x->sd_data);
+	for (unsigned i = 0; i < len; i++) {
+		static const char digits[] = "0123456789abcdef";
+		sd[2 * i] = digits[x->sd_data[i] >> 4];
+		sd[2 * i + 1] = digits[x->sd_data[i] & 15u];
+	}
+	sd[2 * len] = '\0';
+	dl_text(t, "t3.sd_count=%u\nt3.sd_src=%u\nt3.sd_dst=%u\nt3.sd_group=%u\nt3.sd_format=%u\nt3.sd_len=%u\n"
+		"t3.sd_data=%s\nt3.sd_age_ms=%d\n", (unsigned)x->sd_count, (unsigned)x->sd_src, (unsigned)x->sd_dst,
+		x->sd_group, x->sd_format, x->sd_len, sd, x->sd_ms != 0 ? (int)(now - x->sd_ms) : -1);
 #else
 	(void)v;
 	dl_text(t, "t3.built=0\n");

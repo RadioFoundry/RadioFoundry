@@ -404,3 +404,74 @@ uint32_t t3_sysparms_build(const t3_sysparms_t *in)
 	       (uint32_t)(in->model & 0x3u) << 22 | (uint32_t)(in->netsite & 0xFFFu) << 10 |
 	       (uint32_t)(in->flag ? 1u : 0u) << 9 | (in->csc & 0x1FFu);
 }
+
+// --- UDT ---
+
+void t3_udt_build(const t3_udt_t *h, uint8_t out[T3_CSBK_BYTES])
+{
+	uint8_t blocks = h->blocks < 1u ? 1u : (h->blocks > T3_UDT_BLOCKS_MAX ? T3_UDT_BLOCKS_MAX : h->blocks);
+	out[0] = (uint8_t)((h->group ? 0x80u : 0u) | (h->a ? 0x40u : 0u) | (h->emergency ? 0x20u : 0u) |
+			   (h->opt ? 0x10u : 0u));	// DPF 0000: UDT
+	out[1] = (uint8_t)(h->format & 0x0Fu);		// SAP 0000: UDT
+	out[2] = (uint8_t)(h->dst >> 16);
+	out[3] = (uint8_t)(h->dst >> 8);
+	out[4] = (uint8_t)h->dst;
+	out[5] = (uint8_t)(h->src >> 16);
+	out[6] = (uint8_t)(h->src >> 8);
+	out[7] = (uint8_t)h->src;
+	out[8] = (uint8_t)(((h->pad & 0x1Fu) << 3) | ((blocks - 1u) & 3u));
+	out[9] = (uint8_t)((h->sf ? 0x80u : 0u) | (h->op & 0x3Fu));
+	t3_crc_append(out, T3_CRC_MASK_DATA_HDR);
+}
+
+bool t3_udt_parse(const uint8_t in[T3_CSBK_BYTES], t3_udt_t *h)
+{
+	if (!t3_crc_ok(in, T3_CRC_MASK_DATA_HDR) || (in[0] & 0x0Fu) != 0 || (in[1] & 0xF0u) != 0) {
+		return false;
+	}
+	uint8_t op = in[9] & 0x3Fu;
+	if (op != T3_OP_C_UDTHD && op != T3_OP_C_UDTHU) {
+		return false;
+	}
+	h->op = op;
+	h->group = (in[0] & 0x80u) != 0;
+	h->a = (in[0] & 0x40u) != 0;
+	h->emergency = (in[0] & 0x20u) != 0;
+	h->opt = (in[0] & 0x10u) != 0;
+	h->format = in[1] & 0x0Fu;
+	h->dst = ((uint32_t)in[2] << 16) | ((uint32_t)in[3] << 8) | in[4];
+	h->src = ((uint32_t)in[5] << 16) | ((uint32_t)in[6] << 8) | in[7];
+	h->pad = in[8] >> 3;
+	h->blocks = (uint8_t)((in[8] & 3u) + 1u);
+	h->sf = (in[9] & 0x80u) != 0;
+	return true;
+}
+
+uint8_t t3_udt_pack(const uint8_t *data, uint8_t len, uint8_t fill, uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK],
+		    uint8_t *pad_nibbles)
+{
+	if (len == 0 || len > T3_UDT_MAX) {
+		return 0;
+	}
+	uint8_t n = (uint8_t)((len + 2u + T3_UDT_BLOCK - 1u) / T3_UDT_BLOCK);
+	uint8_t room = (uint8_t)(n * T3_UDT_BLOCK - 2u);
+	uint8_t *flat = &blk[0][0];
+	memcpy(flat, data, len);
+	memset(flat + len, fill, (size_t)(room - len));
+	uint16_t crc = dmr_crc_ccitt(flat, room);
+	flat[room] = (uint8_t)(crc >> 8);
+	flat[room + 1u] = (uint8_t)crc;
+	*pad_nibbles = (uint8_t)(2u * (room - len));
+	return n;
+}
+
+bool t3_udt_crc_ok(const uint8_t blk[][T3_UDT_BLOCK], uint8_t n)
+{
+	if (n < 1u || n > T3_UDT_BLOCKS_MAX) {
+		return false;
+	}
+	const uint8_t *flat = &blk[0][0];
+	uint8_t room = (uint8_t)(n * T3_UDT_BLOCK - 2u);
+	uint16_t crc = dmr_crc_ccitt(flat, room);
+	return flat[room] == (uint8_t)(crc >> 8) && flat[room + 1u] == (uint8_t)crc;
+}

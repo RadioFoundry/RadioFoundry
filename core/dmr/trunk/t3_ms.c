@@ -89,9 +89,11 @@ static void tune(t3_ms_t *ms, uint32_t now, const t3_chan_t *c, uint8_t slot, bo
 	push(ms, &a);
 	ms->mbc[0].open = false;
 	ms->mbc[1].open = false;
+	ms->udt_rx.open = false;
 	ms->slc_foreign = 0;
 	ms->aloha_here = false;
 	ms->tx.count = 0;
+	ms->tx.udt = false;
 }
 
 static void send(t3_ms_t *ms, const uint8_t burst[T3_CSBK_BYTES], uint8_t slot, bool payload)
@@ -102,6 +104,21 @@ static void send(t3_ms_t *ms, const uint8_t burst[T3_CSBK_BYTES], uint8_t slot, 
 	a.slot = slot;
 	a.payload = payload;
 	memcpy(a.burst, burst, T3_CSBK_BYTES);
+	push(ms, &a);
+	ms->st.sent++;
+}
+
+// The short data upload: the UDT header, then its blocks in the next frames
+static void send_udt(t3_ms_t *ms, uint8_t slot)
+{
+	t3_act_t a;
+	memset(&a, 0, sizeof(a));
+	a.type = T3_ACT_SEND;
+	a.slot = slot;
+	a.udt = true;
+	a.nblocks = ms->tx.nblocks;
+	a.blocks = (const uint8_t (*)[T3_UDT_BLOCK])ms->up;
+	memcpy(a.burst, ms->tx.burst, T3_CSBK_BYTES);
 	push(ms, &a);
 	ms->st.sent++;
 }
@@ -202,6 +219,7 @@ void t3_ms_stop(t3_ms_t *ms)
 	ms->state = T3_OFF;
 	ms->nq = 0;
 	ms->tx.count = 0;
+	ms->tx.udt = false;
 	ms->ax.state = T3_AX_IDLE;
 	ms->confirmed = false;
 }
@@ -534,6 +552,12 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 		q->kind = T3_SK_IND_VOICE;
 		q->options = ms->ax.emergency ? T3_SO_EMERGENCY : 0;
 		break;
+	case T3_SVC_SDATA:
+		// Table 6.55: no options; the 4 service-dependent bits are SUPED_VAL 0 and the blocks to upload less one
+		q->kind = ms->ax.group ? T3_SK_TG_UDT : T3_SK_IND_UDT;
+		q->options = 0;
+		q->extra = (uint8_t)(((ms->sd_tx.len + 2u + T3_UDT_BLOCK - 1u) / T3_UDT_BLOCK - 1u) & 3u);
+		break;
 	case T3_SVC_STATUS:
 		// Tables 6.57, 6.58: G/I, SUPED_SV 0 and the status's 5 most significant bits; its 2 least significant
 		// where a registration has Appended_UDT_Short_Data, SUPED_VAL 0 above them
@@ -671,6 +695,7 @@ static void answer_info(t3_ms_t *ms, uint8_t slot, bool payload, uint8_t reason,
 	ms->tx.slot = slot;
 	ms->tx.payload = payload;
 	ms->tx.then_return = then_return;
+	ms->tx.udt = false;
 }
 
 static void answer(t3_ms_t *ms, uint8_t slot, bool payload, uint8_t reason, uint32_t to, bool then_return)
@@ -703,8 +728,46 @@ static bool on_status(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *
 	return true;
 }
 
+// The TSCC asks for our short data (6.6.4.4 c, C_AHOY from SDMI): the UDT header and blocks go in the inbound slots
+// that follow, which the TSCC keeps for them (figure 6.43). It asks again after a CRC failure
+static bool on_upload(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h)
+{
+	if (h->src != T3_ID_SDMI || h->group || !is_me(ms, h->dst) || h->kind != T3_SK_IND_UDT) {
+		return false;
+	}
+	if (!may_send(ms) || ms->ax.svc != T3_SVC_SDATA ||
+	    (ms->ax.state != T3_AX_WAIT_RESP && ms->ax.state != T3_AX_ACKED)) {
+		return true;	// nothing to upload (6.6.4.4 d, supplementary data, isn't sent)
+	}
+	t3_udt_t u;
+	memset(&u, 0, sizeof(u));
+	u.op = T3_OP_C_UDTHU;
+	u.group = ms->ax.group;
+	u.format = ms->sd_tx.format;
+	u.dst = ms->ax.dst;
+	u.src = my_id(ms);
+	// ISO 8-bit text pads with 1111b nibbles (B.3.5); every other format here is binary-like, padded with zeros
+	uint8_t fill = u.format == T3_UDTF_ISO8 ? 0xFFu : 0u;
+	uint8_t pad = 0;
+	u.blocks = t3_udt_pack(ms->sd_tx.data, ms->sd_tx.len, fill, ms->up, &pad);
+	u.pad = u.format == T3_UDTF_ISO8 || u.format == T3_UDTF_ISO7 || u.format == T3_UDTF_UTF16 ? pad : 0u;
+	t3_udt_build(&u, ms->tx.burst);
+	ms->tx.count = 1;
+	ms->tx.slot = slot;
+	ms->tx.payload = false;
+	ms->tx.then_return = false;
+	ms->tx.udt = true;
+	ms->tx.nblocks = u.blocks;
+	ms->ax.state = T3_AX_ACKED;
+	ms->ax.ack_deadline = now + or_default(ms->cfg->tnp_ms, T3_TNP_MS);
+	return true;
+}
+
 static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h, bool payload)
 {
+	if (!payload && on_upload(ms, now, slot, h)) {
+		return;
+	}
 	if (!payload && h->kind == T3_SK_STATUS && is_me(ms, h->src)) {
 		// Our status going to the called party or talkgroup (6.6.6.1.2.1.2 c): it is under way, the final answer
 		// follows. Not a status heard, though the talkgroup's may be ours
@@ -966,15 +1029,73 @@ static bool cc_ok(const t3_ms_t *ms, uint8_t cc)
 	return want == T3_CC_ANY || want == cc;
 }
 
+// A UDT short data message whole (6.6.4.7): kept when it is to the radio or a talkgroup it listens to; one to the
+// radio that asks for a response is answered MS_Accepted. A bad CRC gets no answer: the TSCC sends it again
+static void udt_done(t3_ms_t *ms, uint32_t now, uint8_t slot)
+{
+	const t3_udt_t *h = &ms->udt_rx.h;
+	bool to_me = !h->group && is_me(ms, h->dst);
+	if (h->op != T3_OP_C_UDTHD || h->sf || (!to_me && !(h->group && t3_ms_wants_group(ms, h->dst, false)))) {
+		return;
+	}
+	if (!t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])ms->udt_rx.blk, h->blocks)) {
+		ms->st.crc_bad++;
+		return;
+	}
+	uint8_t room = (uint8_t)(h->blocks * T3_UDT_BLOCK - 2u);
+	uint8_t pad = (uint8_t)(h->pad / 2u);
+	ms->sd_rx.count++;
+	ms->sd_rx.src = h->src;
+	ms->sd_rx.dst = h->dst;
+	ms->sd_rx.group = h->group;
+	ms->sd_rx.format = h->format;
+	ms->sd_rx.len = pad < room ? (uint8_t)(room - pad) : 0u;
+	memcpy(ms->sd_rx.data, &ms->udt_rx.blk[0][0], ms->sd_rx.len);
+	ms->sd_rx.ms = now != 0 ? now : 1;
+	if (to_me && h->a && may_send(ms)) {
+		answer(ms, slot, false, T3_RC_MS_ACCEPTED, h->src, false);
+	}
+}
+
+static void udt_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, const uint8_t d[T3_CSBK_BYTES])
+{
+	if (dt == T3_DT_DATA_HDR) {
+		ms->udt_rx.open = t3_udt_parse(d, &ms->udt_rx.h);
+		if (!ms->udt_rx.open) {
+			ms->st.crc_bad++;
+			return;
+		}
+		ms->udt_rx.slot = slot;
+		ms->udt_rx.got = 0;
+		ms->udt_rx.ms = now;
+		return;
+	}
+	// The blocks follow the header in consecutive frames of its slot
+	if (!ms->udt_rx.open || slot != ms->udt_rx.slot || since(now, ms->udt_rx.ms, MBC_GAP_MS)) {
+		ms->udt_rx.open = false;
+		return;
+	}
+	memcpy(ms->udt_rx.blk[ms->udt_rx.got++], d, T3_UDT_BLOCK);
+	ms->udt_rx.ms = now;
+	if (ms->udt_rx.got == ms->udt_rx.h.blocks) {
+		ms->udt_rx.open = false;
+		udt_done(ms, now, slot);
+	}
+}
+
 void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, const uint8_t d[T3_CSBK_BYTES])
 {
 	if (ms->state == T3_OFF || slot < 1 || slot > 2 || !since(now, ms->tuned_ms, T3_SETTLE_MS)) {
 		return;
 	}
-	if (dt != T3_DT_CSBK && dt != T3_DT_MBC_HDR && dt != T3_DT_MBC_CONT) {
+	if (dt != T3_DT_CSBK && dt != T3_DT_MBC_HDR && dt != T3_DT_MBC_CONT && dt != T3_DT_DATA_HDR && dt != T3_DT_R12) {
 		return;
 	}
 	if (!cc_ok(ms, cc)) {
+		return;
+	}
+	if (dt == T3_DT_DATA_HDR || dt == T3_DT_R12) {
+		udt_rx(ms, now, slot, dt, d);
 		return;
 	}
 	uint8_t si = (uint8_t)(slot - 1u);
@@ -1055,8 +1176,13 @@ void t3_ms_slot(t3_ms_t *ms, uint32_t now, uint8_t slot, bool at_known, bool at_
 		return;
 	}
 	if (ms->tx.count != 0 && slot == ms->tx.slot) {
-		// An answer or P_MAINT: no random access, the slot is the radio's
-		send(ms, ms->tx.burst, slot, ms->tx.payload);
+		// An answer, an upload or P_MAINT: no random access, the slot is the radio's
+		if (ms->tx.udt) {
+			send_udt(ms, slot);
+			ms->tx.udt = false;
+		} else {
+			send(ms, ms->tx.burst, slot, ms->tx.payload);
+		}
 		if (--ms->tx.count == 0 && ms->tx.then_return && ms->state == T3_FOLLOW) {
 			return_to_tscc(ms, now);
 		}
@@ -1167,6 +1293,24 @@ bool t3_ms_status(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t s
 	return true;
 }
 
+bool t3_ms_sdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t format, const uint8_t *data, uint8_t len)
+{
+	bool bad = dst == T3_ID_NULL || len == 0 || len > T3_UDT_MAX || format > 0x0Fu;
+	if (bad || ms->ax.state != T3_AX_IDLE || !may_ask(ms)) {
+		if (bad) {
+			ms->ax.result = T3_RES_NOT_ALLOWED;
+		}
+		return false;
+	}
+	start_access(ms, now, T3_SVC_SDATA, dst, false);
+	ms->ax.group = group;
+	ms->ax.info = 0;
+	ms->sd_tx.format = format;
+	ms->sd_tx.len = len;
+	memcpy(ms->sd_tx.data, data, len);
+	return true;
+}
+
 void t3_ms_cancel(t3_ms_t *ms, uint32_t now)
 {
 	if (!is_voice(ms->ax.svc) || ms->ax.state == T3_AX_IDLE) {
@@ -1200,6 +1344,7 @@ void t3_ms_end_call(t3_ms_t *ms, uint32_t now)
 		ms->tx.slot = ms->call.slot;
 		ms->tx.payload = true;
 		ms->tx.then_return = true;
+		ms->tx.udt = false;
 		return;
 	}
 	// A talkgroup call heard: leave quietly, and don't come back on its late-entry grants

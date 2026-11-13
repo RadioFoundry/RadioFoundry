@@ -43,6 +43,12 @@ static bool aloha_on = true;
 static uint16_t ours;
 static t3_cfg_t cfg;
 
+// The last short data upload the radio sent
+static uint8_t up_hdr[T3_CSBK_BYTES];
+static uint8_t up_blocks[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK];
+static uint8_t nup_blocks, up_slot;
+static int nup;
+
 static void poll_all(t3_ms_t *ms)
 {
 	t3_act_t a;
@@ -50,6 +56,12 @@ static void poll_all(t3_ms_t *ms)
 		if (a.type == T3_ACT_TUNE) {
 			tuned = a;
 			ntune++;
+		} else if (a.type == T3_ACT_SEND && a.udt) {
+			memcpy(up_hdr, a.burst, T3_CSBK_BYTES);
+			nup_blocks = a.nblocks;
+			memcpy(up_blocks, a.blocks, (size_t)a.nblocks * T3_UDT_BLOCK);
+			up_slot = a.slot;
+			nup++;
 		} else if (a.type == T3_ACT_SEND && nsent < SENT_MAX) {
 			if (!t3_crc_ok(a.burst, T3_CRC_MASK_CSBK) || !t3_csbk_parse(a.burst, &sent[nsent])) {
 				bad_sent++;
@@ -174,6 +186,7 @@ static void setup(uint16_t opts, bool reg)
 	ntune = 0;
 	nsent = 0;
 	bad_sent = 0;
+	nup = 0;
 }
 
 static void camp(t3_ms_t *ms)
@@ -842,6 +855,143 @@ static void test_status(void)
 	CHECK(!t3_ms_status(&ms, T, CALLER, false, 3), "listen only: no status sent");
 }
 
+// The TSCC's download of short data: a UDT header and its blocks in consecutive frames
+static void udt_down(t3_ms_t *ms, uint8_t slot, const t3_udt_t *h, const uint8_t *data, uint8_t len, bool corrupt)
+{
+	uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK];
+	uint8_t pad = 0;
+	t3_udt_t u = *h;
+	u.blocks = t3_udt_pack(data, len, 0xFF, blk, &pad);
+	u.pad = pad;
+	if (corrupt) {
+		blk[0][1] ^= 4u;
+	}
+	uint8_t d[T3_CSBK_BYTES];
+	t3_udt_build(&u, d);
+	t3_ms_rx(ms, T, slot, T3_DT_DATA_HDR, CC, d);
+	for (uint8_t i = 0; i < u.blocks; i++) {
+		T += 60;
+		t3_ms_rx(ms, T, slot, T3_DT_R12, CC, blk[i]);
+	}
+	poll_all(ms);
+}
+
+static void test_sdata(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+	static const char msg[] = "hello from the radio";	// 20 characters: 2 blocks
+
+	// To an MS (6.6.4.2, table 6.55)
+	CHECK(t3_ms_sdata(&ms, T, CALLER, false, T3_UDTF_ISO8, (const uint8_t *)msg, 20), "short data starts");
+	CHECK(sent_rand(&ms), "short data request sent");
+	const t3_rand_t *q = &sent[0].u.rand;
+	CHECK(q->kind == T3_SK_IND_UDT && q->options == 0 && (q->extra & 3u) == 1u && q->dst == CALLER && q->src == OWN,
+	      "C_RAND short data: kind %u extra %u", q->kind, q->extra);
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_WAIT, OWN, CALLER);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.state == T3_AX_ACKED, "wait");
+	// The TSCC asks for the data: the header and both blocks go in the next inbound slots
+	t3_csbk_t h = ahoy(T3_SK_IND_UDT, false, OWN, T3_ID_SDMI);
+	h.u.ahoy.blocks = 1;
+	rx(&ms, 1, &h);
+	CHECK(nup == 0, "the upload waits for its slot");
+	frames(&ms, 1);
+	t3_udt_t u;
+	CHECK(nup == 1 && up_slot == 1 && nup_blocks == 2 && t3_udt_parse(up_hdr, &u), "upload sent: %d, %u blocks",
+	      nup, nup_blocks);
+	CHECK(u.op == T3_OP_C_UDTHU && !u.group && u.format == T3_UDTF_ISO8 && u.dst == CALLER && u.src == OWN &&
+	      u.blocks == 2 && u.pad == 4 && !u.sf, "C_UDTHU: op %u format %u pad %u", u.op, u.format, u.pad);
+	CHECK(t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])up_blocks, 2) && memcmp(up_blocks, msg, 20) == 0 &&
+	      up_blocks[1][8] == 0xFF, "blocks: the text, 0xFF, the CRC");
+	frames(&ms, 3);
+	CHECK(nup == 1 && nsent == 1, "sent once");
+	// A CRC failure at the TSCC: it asks again
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup == 2, "upload again when asked");
+	a = ack(T3_OP_C_ACKD, T3_RC_MS_ACCEPTED, OWN, CALLER);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_DONE, "delivered, result %s", t3_res_name(ms.ax.result));
+	// Asked with nothing to send: no upload, no answer
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	CHECK(nup == 2 && nsent == 1, "no upload when nothing waits");
+
+	// To a talkgroup: kind 0101b; Message_Accepted ends it
+	nsent = 0;
+	CHECK(t3_ms_sdata(&ms, T, TG_A, true, T3_UDTF_BINARY, (const uint8_t *)"\x01\x02\x03", 3), "talkgroup data");
+	CHECK(sent_rand(&ms) && sent[0].u.rand.kind == T3_SK_TG_UDT && (sent[0].u.rand.extra & 3u) == 0u,
+	      "C_RAND talkgroup short data");
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup == 3 && t3_udt_parse(up_hdr, &u) && u.group && u.format == T3_UDTF_BINARY && u.pad == 0 &&
+	      u.blocks == 1 && up_blocks[0][3] == 0, "binary upload: pad 0, zeros");
+	a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, TG_A);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_DONE, "talkgroup data done");
+	CHECK(!t3_ms_sdata(&ms, T, CALLER, false, T3_UDTF_ISO8, (const uint8_t *)msg, 0) &&
+	      ms.ax.result == T3_RES_NOT_ALLOWED, "no empty message");
+
+	// Received: to the radio with A, answered MS_Accepted; the text without its padding
+	nsent = 0;
+	t3_udt_t d = { .op = T3_OP_C_UDTHD, .a = true, .format = T3_UDTF_ISO8, .dst = OWN, .src = CALLER };
+	udt_down(&ms, 1, &d, (const uint8_t *)"hello", 5, false);
+	frames(&ms, 1);
+	CHECK(ms.sd_rx.count == 1 && ms.sd_rx.len == 5 && memcmp(ms.sd_rx.data, "hello", 5) == 0 &&
+	      ms.sd_rx.src == CALLER && ms.sd_rx.format == T3_UDTF_ISO8 && !ms.sd_rx.group, "short data heard: len %u",
+	      ms.sd_rx.len);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_ACCEPTED &&
+	      sent[0].u.ack.dst == CALLER, "short data acknowledged");
+	// 46 characters, 4 blocks
+	udt_down(&ms, 1, &d, (const uint8_t *)"0123456789012345678901234567890123456789012345", 46, false);
+	frames(&ms, 1);
+	CHECK(ms.sd_rx.count == 2 && ms.sd_rx.len == 46 && ms.sd_rx.data[45] == '5' && nsent == 2, "46 characters");
+	// A bad CRC: not kept, no answer (the TSCC sends it again)
+	udt_down(&ms, 1, &d, (const uint8_t *)"hello", 5, true);
+	frames(&ms, 2);
+	CHECK(ms.sd_rx.count == 2 && nsent == 2, "bad CRC: dropped");
+	// A block missing: nothing
+	d.dst = OWN;
+	{
+		uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK], pad, hd[T3_CSBK_BYTES];
+		t3_udt_t u2 = d;
+		u2.blocks = t3_udt_pack((const uint8_t *)msg, 20, 0xFF, blk, &pad);
+		u2.pad = pad;
+		t3_udt_build(&u2, hd);
+		t3_ms_rx(&ms, T, 1, T3_DT_DATA_HDR, CC, hd);
+		T += 60;
+		t3_ms_rx(&ms, T, 1, T3_DT_R12, CC, blk[0]);
+		frames(&ms, 4);
+		CHECK(ms.sd_rx.count == 2 && nsent == 2, "a block missing: dropped");
+	}
+	// To a talkgroup it listens to: kept, no answer; another MS's or talkgroup's: ignored
+	d.group = true;
+	d.a = false;
+	d.dst = TG_B;
+	udt_down(&ms, 1, &d, (const uint8_t *)"all", 3, false);
+	frames(&ms, 2);
+	CHECK(ms.sd_rx.count == 3 && ms.sd_rx.group && ms.sd_rx.dst == TG_B && nsent == 2, "talkgroup data kept");
+	d.dst = TG_OTHER;
+	udt_down(&ms, 1, &d, (const uint8_t *)"x", 1, false);
+	d.group = false;
+	d.a = true;
+	d.dst = OWN + 1u;
+	udt_down(&ms, 1, &d, (const uint8_t *)"x", 1, false);
+	frames(&ms, 2);
+	CHECK(ms.sd_rx.count == 3 && nsent == 2, "others' data ignored");
+
+	// Listen only: kept, not answered, none sent
+	setup(T3_OPT_PRIVATE | T3_OPT_LISTEN_ONLY, true);
+	camp(&ms);
+	d.dst = OWN;
+	udt_down(&ms, 1, &d, (const uint8_t *)"hi", 2, false);
+	frames(&ms, 3);
+	CHECK(ms.sd_rx.count == 1 && nsent == 0, "listen only: kept, no answer");
+	CHECK(!t3_ms_sdata(&ms, T, CALLER, false, T3_UDTF_ISO8, (const uint8_t *)"hi", 2), "listen only: none sent");
+}
+
 int main(void)
 {
 	test_register();
@@ -854,6 +1004,7 @@ int main(void)
 	test_cancel();
 	test_ahoy();
 	test_status();
+	test_sdata();
 	test_deregister();
 	test_receive_rules();
 	test_one_carrier_site();

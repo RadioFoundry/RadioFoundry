@@ -431,10 +431,10 @@ typedef struct {
 	uint32_t t3_ticks;		// the stack's tick count handed to the engine
 	uint8_t t3_slot;		// the slot of the last tick handed to it
 	uint8_t t3_cc;			// the color code of the channel being listened to
-	t3_act_t t3_send;		// a CSBK waiting for the stack (it was busy)
-	bool t3_send_pending;
-	uint8_t t3_send_left;		// the probe-style source's bursts left
-	uint8_t t3_send_burst[T3_CSBK_BYTES];
+	uint8_t t3_send_left;		// the bursts the data source still has to give
+	uint8_t t3_send_n;		// bursts in t3_send_burst: a CSBK, or a UDT header and its blocks
+	bool t3_send_udt;
+	uint8_t t3_send_burst[1 + T3_UDT_BLOCKS_MAX][T3_CSBK_BYTES];
 #endif
 #if CONFIG_DMR_ROAMING
 	roam_t roam;

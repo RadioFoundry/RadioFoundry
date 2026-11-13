@@ -98,7 +98,8 @@ IDDB = 0x1F                         # the DMR ID database: format, records, an I
 CHIP_REG = 0x20                     # an RF chip or SoC register read or written (docs/spec/debuglink.md 3.24)
 T3 = 0x22                           # a Tier III trunked system: stage, select, leave (docs/spec/debuglink.md 3.26)
 T3_RESET, T3_SYSTEM, T3_CTRL, T3_CHAN, T3_TG, T3_SITE, T3_PLAN, T3_START, T3_STOP, T3_DEREG, T3_END, \
-    T3_STATUS = range(1, 13)
+    T3_STATUS, T3_SDATA = range(1, 14)
+T3_UDTF = {"binary": 0, "address": 1, "bcd": 2, "iso7": 3, "iso8": 4, "nmea": 5, "ip": 6, "utf16": 7}
 T3_TG_LISTEN, T3_TG_TALK = 1, 2
 T3_PAR = {"a": 1, "b": 2}
 CHIP_SOC = 0xFF                     # CHIP_REG's chip number for the SoC's own registers
@@ -653,6 +654,11 @@ class DebugLink:
     def t3_status(self, dst, status, group=False):
         """Send a status 0-126 to an MS or talkgroup, or poll an MS (127: its answer is t3.ax_info)"""
         self.t3_op(T3_STATUS, struct.pack("<IBB", dst, int(group), status))
+
+    def t3_sdata(self, dst, data, group=False, fmt="iso8"):
+        """Send UDT short data (1-46 octets) to an MS or talkgroup; fmt a T3_UDTF name or number (UDT_Format)"""
+        f = T3_UDTF[fmt] if isinstance(fmt, str) else fmt
+        self.t3_op(T3_SDATA, struct.pack("<IBB", dst, int(group), f) + bytes(data))
 
     def t3(self, cmd):
         """start | stop | dereg | end"""
@@ -2276,10 +2282,12 @@ def main(argv=None):
     p = sub.add_parser("t3", help="a Tier III trunked system (docs/spec/debuglink.md 3.26): show (the t3 view), "
                        "start, stop, dereg, end, or setup: reset then stage one from the options and start it")
     p.add_argument("op", nargs="?", default="show",
-                   choices=["show", "setup", "start", "stop", "dereg", "end", "status"])
+                   choices=["show", "setup", "start", "stop", "dereg", "end", "status", "sdata"])
     p.add_argument("--to", type=int, default=0, help="status: the MS or talkgroup (--group)")
     p.add_argument("--status", type=int, default=0, help="status: 0-126, or 127 to poll an MS")
-    p.add_argument("--group", action="store_true", help="status: --to is a talkgroup")
+    p.add_argument("--group", action="store_true", help="status, sdata: --to is a talkgroup")
+    p.add_argument("--text", help="sdata: ISO 8-bit text, up to 46 characters")
+    p.add_argument("--hex", help="sdata: binary octets in hex, up to 46")
     p.add_argument("--own-id", type=int, default=0)
     p.add_argument("--model", type=int, default=0)
     p.add_argument("--net", type=int, default=0)
@@ -2392,6 +2400,11 @@ def main(argv=None):
                         link.t3("start")
                 elif a.op == "status":
                     link.t3_status(a.to, a.status, a.group)
+                elif a.op == "sdata":
+                    if a.hex is not None:
+                        link.t3_sdata(a.to, bytes.fromhex(a.hex), a.group, "binary")
+                    else:
+                        link.t3_sdata(a.to, (a.text or "").encode("latin-1"), a.group, "iso8")
                 elif a.op != "show":
                     link.t3(a.op)
                 for k, v in link.view(sections=["t3"]).items():
