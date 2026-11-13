@@ -324,6 +324,9 @@ void debuglink_view_t3_roam(const radio_view_t *v, dl_text_t *t)
 		x->level_dbm, x->leave_dbm, x->dmrla, x->reg_area, x->vote_on, x->hunt_strict);
 	dl_text(t, "t3.votes=%u\nt3.vote_moves=%u\nt3.weak_leaves=%u\nt3.adj_refused=%u\nt3.adjacent=%u\n",
 		(unsigned)x->votes, (unsigned)x->vote_moves, (unsigned)x->weak_leaves, (unsigned)x->adj_refused, x->nadj);
+	// The codeplug system the channel belongs to (n+1, 0: none) and its fallback (12.5): 1 on the channel, 2 looking
+	dl_text(t, "t3.sys=%u\nt3.unavail=%u\nt3.fallback=%u\nt3.fallbacks=%u\nt3.backs=%u\n", x->sys, x->unavail,
+		x->fallback, (unsigned)x->fallbacks, (unsigned)x->backs);
 	// Each: RX Hz, the 14 system code bits, confirmed and adjacent priority, the level and age of its last sample
 	for (uint8_t i = 0; i < x->nadj && i < sizeof x->adj / sizeof x->adj[0]; i++) {
 		dl_text(t, "t3.adj%u=%u,0x%04x,%u,%u,%d,%d\n", i, (unsigned)x->adj[i].rx_hz, x->adj[i].sys14,

@@ -887,7 +887,10 @@ The `t3_roam` section, also `t3.`-prefixed ([dmr-trunking.md](dmr-trunking.md) 7
 channel's averaged level, 0: none yet), `leave_dbm` (the threshold in force), `dmrla`, `reg_area` (the area registered
 in), `vote_on` (sampling an adjacent control channel), `hunt_strict` (hunting away from a weak one), `votes`,
 `vote_moves`, `weak_leaves`, `adj_refused` (adjacent sites announced with a system code the radio may not use: its
-network, authorized sites or category), `adjacent` (how many are known), then each as `adjN=rx_hz,sys14,conf_prio,adj_prio,dbm,age_ms`
+network, authorized sites or category), `sys` (the codeplug system of the channel, n+1; 0: none), `unavail` (that
+system isn't set up: the channel is locked out), `fallback` (0 on the system, 1 on its fallback channel, 2 looking for
+the system from it), `fallbacks`, `backs` (how often it went to the fallback channel and came back; dmr-trunking.md
+12.5), `adjacent` (how many are known), then each as `adjN=rx_hz,sys14,conf_prio,adj_prio,dbm,age_ms`
 (sys14 the system code's 14 high bits in hex; dbm 0 and age -1: never sampled).
 
 `rfoundry_debug.py t3 setup --model 1 --net 5 --cc 2 --ctrl 1:RX_MHZ:TX_MHZ --tg 1` stages and starts one;
