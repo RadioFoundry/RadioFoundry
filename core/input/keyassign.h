@@ -39,6 +39,7 @@ typedef enum {
 	KEYFN_AB,		// dual watch: the other channel, A / B (starts dual watch when it is off)
 	KEYFN_VFO_TOGGLE,	// between the channel and the VFO, as a VFO/MR key (CONFIG_VFO)
 	KEYFN_TONE_BURST,	// FM repeater access, raw edges (press only)
+	KEYFN_TALK_LABEL,	// Home's talk line: the talkgroup's name or its number first (CONFIG_DMR)
 	KEYFN_COUNT
 } keyfn_t;
 

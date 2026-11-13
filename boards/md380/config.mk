@@ -49,6 +49,20 @@ BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
 # radios (docs/spec/ppp.md), and this one has the adapter. Every switch on doesn't fit the 464 KB of flash with two
 # translations: maximal keeps Spanish, as the default build does (Italian builds on the other boards)
-MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT
+# APRS-IS (about 2.7 KB) is left out of maximal too, which had 156 bytes left: with no APRS receive here it only gates
+# RF positions out, so it is the first IP service to go. The default build keeps it. It defaults on, so it is set off,
+# not only skipped
+MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT NET_APRSIS
+MAXIMAL_VARS := CONFIG_NET_APRSIS=n
+# When the default build runs out of room, the IP services go first, the weakest here first: APRS-IS (NET_APRSIS, about
+# 2.7 KB: with no APRS receive it only gates RF positions out), then KISS over TCP (NET_KISS, about 0.75 KB, transmit
+# only for the same reason), then USRP or SNMP. Each serves its own kind of user over the same USB network link, so
+# dropping one costs the others nothing. USB_SERIAL_REQUEST stays while USB_NETWORK does: without it a radio in network
+# mode can't be reached by the web pages
 CONFIG_RX_EXT ?= n
 BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)
+
+# A Chinese character is 16 px tall (core/ui/cjk_font.h) and these layouts draw their words in the 6x12 font:
+# there is no room for a 16 px line, and the CJK face must not be built in (docs/build-config.md)
+BOARD_UNSUPPORTED += LANG_ZH	# a Chinese line needs 16 px; this layout draws its words in a smaller font
+BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH

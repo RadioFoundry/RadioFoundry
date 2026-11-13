@@ -2,7 +2,8 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // APRS on the debug link (docs/spec/debuglink.md 3.16, docs/spec/aprs.md 13): the "aprs" view section and the APRS
 // command (send now, status, message, a RAM-only test callsign, configuration fields, NMEA injection). Built without
-// CONFIG_APRS: "aprs.built=0" and the command answers unavailable.
+// CONFIG_APRS: "aprs.built=0" and the command answers unavailable. The position settings' fields and the NMEA
+// injection are the position service's (debuglink_position.c), taken before the command gets here.
 #include <string.h>
 #include "config.h"
 #include "debuglink/debuglink.h"
@@ -47,10 +48,9 @@ static void view_settings(dl_text_t *t)
 		c.interval_s, c.smart, c.distance_m, c.after_ptt);
 	dl_text(t, "set.aprs_boot=%u\nset.aprs_level=%u\nset.aprs_txdelay=%u\nset.aprs_via=%s\nset.aprs_dmr_dst=%u\n"
 		"set.aprs_power=%u\n", c.boot, c.level, c.txdelay, word(c.via, vias, 3), (unsigned)c.dmr_dst, c.power);
-	dl_text(t, "set.aprs_dmr_udt=%u\nset.aprs_pos_src=%u\nset.aprs_kiss=%u\nset.aprs_rx=%u\nset.aprs_igate=%u\n",
-		c.dmr_udt, c.pos_src, c.kiss, c.rx_on, c.igate);
-	dl_text(t, "set.aprs_igate_tx=%u\nset.aprs_digi=%u\nset.aprs_dmr_gps=%u\nset.aprs_to_is=%u\n", c.igate_tx, c.digi,
-		c.dmr_gps, c.to_is);
+	dl_text(t, "set.aprs_dmr_udt=%u\nset.aprs_kiss=%u\nset.aprs_rx=%u\nset.aprs_igate=%u\n",
+		c.dmr_udt, c.kiss, c.rx_on, c.igate);
+	dl_text(t, "set.aprs_igate_tx=%u\nset.aprs_digi=%u\nset.aprs_to_is=%u\n", c.igate_tx, c.digi, c.to_is);
 }
 
 void debuglink_view_aprs(uint8_t part, dl_text_t *t)
@@ -67,8 +67,10 @@ void debuglink_view_aprs(uint8_t part, dl_text_t *t)
 		return;
 	}
 	aprs_get_view(&v);
-	dl_text(t, "aprs.built=1\naprs.rx_built=%u\naprs.igate_built=%u\naprs.call=%s\naprs.block=%s\naprs.freq_hz=%u\n",
-		CONFIG_APRS_RX, CONFIG_APRS_IGATE, v.call, word(v.block, blocks, 7), (unsigned)v.freq_hz);
+	dl_text(t, "aprs.built=1\naprs.afsk_built=%u\naprs.dmr_built=%u\naprs.rx_built=%u\naprs.igate_built=%u\n",
+		CONFIG_APRS_AFSK, CONFIG_APRS_DMR, CONFIG_APRS_RX, CONFIG_APRS_IGATE);
+	dl_text(t, "aprs.call=%s\naprs.block=%s\naprs.freq_hz=%u\n", v.call, word(v.block, blocks, 7),
+		(unsigned)v.freq_hz);
 	dl_text(t, "aprs.pos_src=%s\naprs.pos_valid=%u\n", word(v.pos_src, srcs, 4), v.pos_valid);
 	if (v.pos_valid) {
 		deg(t, "aprs.lat", v.lat);
@@ -135,14 +137,6 @@ static uint8_t set_field(uint8_t field, uint32_t val)
 		}
 		c.ssid = (uint8_t)val;
 		break;
-	case DL_APRS_F_LAT: c.fix_lat = (int32_t)val; break;
-	case DL_APRS_F_LON: c.fix_lon = (int32_t)val; break;
-	case DL_APRS_F_POS_SRC:
-		if (val >= APRS_POS_COUNT) {
-			return DL_ST_BAD_ARG;
-		}
-		c.pos_src = (uint8_t)val;
-		break;
 	case DL_APRS_F_INTERVAL_S: c.interval_s = (uint16_t)val; break;
 	case DL_APRS_F_SMART: c.smart = val != 0; break;
 	case DL_APRS_F_VIA:
@@ -172,7 +166,6 @@ static uint8_t set_field(uint8_t field, uint32_t val)
 	case DL_APRS_F_IGATE: c.igate = val != 0; break;
 	case DL_APRS_F_IGATE_TX: c.igate_tx = val != 0; break;
 	case DL_APRS_F_DIGI: c.digi = (uint8_t)val; break;
-	case DL_APRS_F_DMR_GPS: c.dmr_gps = val != 0; break;
 	case DL_APRS_F_TO_IS: c.to_is = val != 0; break;
 	case DL_APRS_F_POWER:
 		if (val > board.power_count) {
@@ -235,9 +228,6 @@ size_t debuglink_cmd_aprs(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 		break;
 	case DL_APRS_OP_SET:
 		st = n == 5 ? set_field(a[0], get32(a + 1)) : DL_ST_BAD_ARG;
-		break;
-	case DL_APRS_OP_NMEA:
-		aprs_nmea((const char *)a, n, false, hal_millis());
 		break;
 	default:
 		st = DL_ST_BAD_ARG;

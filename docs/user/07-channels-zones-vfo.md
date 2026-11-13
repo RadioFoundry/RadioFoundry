@@ -129,8 +129,8 @@ row ends with the RX frequency and the talkgroup (DMR) or FM. A long name stays 
 
 ## Editing a channel
 
-The channel's page lists every setting: name, mode, RX and TX frequency, power, RX only, then bandwidth, tones and
-VOX on FM, or color code, timeslot, TX contact, RX group list, own ID, direct mode, talk permit beeps and talker
+The channel's page lists every setting: name, mode, RX and TX frequency, power, RX only, then bandwidth, tones,
+VOX and tone burst on FM, or color code, timeslot, TX contact, RX group list, own ID, direct mode, talk permit beeps and talker
 alias on DMR, then TX time-out, scan, battery saver and the zones that hold it. The list scrolls.
 
 <img src="../ux/screens/160x120i5/channel.png" width="200" alt="A channel's settings">
@@ -139,7 +139,7 @@ Focus a row and press **OK**:
 
 | Row | What OK does |
 |---|---|
-| Two choices (mode, timeslot, bandwidth, RX only, scan, VOX, direct mode, beeps, talker alias, battery saver) | switches to the other one |
+| Two choices (mode, timeslot, bandwidth, RX only, scan, VOX, tone burst, direct mode, beeps, talker alias, battery saver) | switches to the other one |
 | Power, RX CTCSS/DCS, TX CTCSS/DCS, color code, TX time-out | opens a picker: turn the knob (or Up / Down) to the value, **OK** keeps it, **Back** cancels. Color code and time-out also take digits |
 | RX CTCSS/DCS, TX CTCSS/DCS, typed | type a CTCSS tone with its tenths digit: **8 8 5** is 88.5, **1 3 1 8** is 131.8. Under 60 the digits are whole Hz: **6 7** is 67.0, **1 0 0** is 100.0. Start with **0** for a DCS code: **0 2 3** is D023N. **Back** takes the last digit back. For an inverted DCS code, turn the knob one step: each code's I follows its N (D023N, D023I, D025N) |
 | Zones | opens every zone, marked "In" where the channel is. **OK** puts the channel in a zone or takes it out, saved at once. A new channel shows the row once saved |
@@ -322,9 +322,10 @@ no mode to pick and no menu: the frequency decides.
 | 108 to 137 MHz | Air band, in AM. Home shows "Air Band AM" and the squelch level, and "AM" in place of "FM" |
 | The broadcast band (65 to 108 MHz on most receivers) | FM broadcast, on the radio's broadcast receiver. Home shows "Broadcast FM" |
 
-Tune there in the VFO (type **1** **1** **8** **1**, or **0** **8** **8** **1**, and press **OK**). A DMR VFO switches to
-FM there and stays FM; DMR can't be picked in these bands. To keep a station, use **New from current** in the channel
-list (or type the RX frequency in the channel editor): the channel becomes FM and RX only, ready to save. A channel
+Tune there in the VFO (type **1** **1** **8** **1**, or **0** **8** **8** **1**, and press **OK**). A DMR VFO switches
+to FM there and stays FM; DMR can't be picked in these bands. To keep a station, use **New from current** in the channel
+list (or type the RX frequency in the channel editor): the channel becomes RX only, ready to save. Its Mode reads AM in
+the air band and FM in the broadcast band, and OK on it doesn't switch to DMR; the tone rows are hidden. A channel
 programmed on the frequency in the codeplug works too, even one stored as DMR. Both bands are receive only: PTT shows
 "Air band: receive only" or "Broadcast: receive only" and the radio doesn't transmit. Sub-audio tones are ignored.
 

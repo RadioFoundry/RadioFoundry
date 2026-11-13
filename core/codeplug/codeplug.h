@@ -42,6 +42,7 @@ typedef struct {
 	bool no_beep;		// no DMR talk permit / call end beeps on this channel
 	bool no_eco;		// no receiver battery saving on this channel
 	bool roam;		// a roaming site (the open-firmware Roaming flag; docs/spec/dmr-roaming.md 5.2), read only
+	bool tone_burst;	// FM: the 1750 Hz access burst at each PTT key-up (repeaters that need it)
 	// SFR (docs/spec/sfr.md 4): flag 1 bit 1 and the two SFR bytes as stored, for sfrChannelDecode(); read only
 	// (the encoder keeps them as read), all 0 when the channel has none
 	uint8_t sfr_flag1;
@@ -52,6 +53,10 @@ typedef struct {
 // channel_t.alias_tx: what the channel sends as talker alias on each timeslot (text = our radio name)
 #define CODEPLUG_ALIAS_TS1_TEXT	0x01u
 #define CODEPLUG_ALIAS_TS2_TEXT	0x02u
+// ... and whether its calls on that timeslot carry our position (GPS Info, docs/spec/dmr-voice.md 3.1), whatever the
+// radio-wide "Send in DMR calls" setting says. The codeplug's own name for the bit is APRS
+#define CODEPLUG_ALIAS_TS1_GPS	0x04u
+#define CODEPLUG_ALIAS_TS2_GPS	0x08u
 
 #define CODEPLUG_POWER_DEFAULT	0xFF
 
@@ -147,7 +152,7 @@ bool codeplug_set_boot_text(const char *line1, const char *line2);
 bool codeplug_quick_keys(uint16_t out[CODEPLUG_QUICK_KEYS]);
 bool codeplug_set_quick_keys(const uint16_t in[CODEPLUG_QUICK_KEYS]);
 
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 // An open-firmware codeplug APRS configuration (open-firmware-cps.md 7.3.8; qdmr writes them): what the APRS engine
 // takes from it. Not read: the fixed position and the frequency (their encodings aren't in the interop spec yet)
 #define CODEPLUG_APRS_CONFIGS	8

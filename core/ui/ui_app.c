@@ -18,6 +18,7 @@
 #include "ui_nav.h"
 #include "ui_svc.h"
 #include "ui_svc_aprs.h"
+#include "ui_screens.h"		// ui_layout_init: a line of Chinese needs a taller font
 #include "fmt.h"
 #include "i18n.h"
 #include "input/input.h"
@@ -241,9 +242,10 @@ uint16_t ui_filter_raw(uint16_t i)
 	if (filter_n <= UI_FILTER_MAX || i < UI_FILTER_MAX - 2u)
 		return filter_idx[i];
 	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
-	if (!(d->flags & SF_FILTER) || d->raw_count == NULL || d->raw_label == NULL)
+	const ui_filter_def_t *f = d->filter;
+	if (!(d->flags & SF_FILTER) || f == NULL)
 		return 0;
-	uint16_t n = d->raw_count();
+	uint16_t n = f->raw_count();
 	uint16_t raw = WALK_RAW;
 	char label[40];
 	while (WALK_I != i) {	// never below UI_FILTER_MAX - 2, one under where the cursor started
@@ -252,7 +254,7 @@ uint16_t ui_filter_raw(uint16_t i)
 			if (up ? raw + 1u >= n : raw == 0)
 				return 0;	// the rows changed under the list: the next rebuild puts it right
 			raw = up ? (uint16_t)(raw + 1u) : (uint16_t)(raw - 1u);
-		} while (d->raw_used != NULL ? !d->raw_used(raw) : !d->raw_label(raw, label, sizeof label));
+		} while (f->raw_used != NULL ? !f->raw_used(raw) : !f->raw_label(raw, label, sizeof label));
 		WALK_RAW = raw;
 		WALK_I = up ? (uint16_t)(WALK_I + 1u) : (uint16_t)(WALK_I - 1u);
 	}
@@ -271,26 +273,26 @@ static bool filter_row(uint16_t raw, const char *label, void *ctx)
 }
 
 // A row at a time, for a list without raw_each. Its own frame: the label stays off the stack of raw_each's pass
-static void __attribute__((noinline)) filter_rows(const ui_scr_def_t *d)
+static void __attribute__((noinline)) filter_rows(const ui_filter_def_t *f)
 {
-	uint16_t n = d->raw_count();
+	uint16_t n = f->raw_count();
 	char label[40];
 	for (uint16_t i = 0; i < n; i++) {
-		if (!filter_row(i, d->raw_label(i, label, sizeof label) ? label : NULL, NULL))
+		if (!filter_row(i, f->raw_label(i, label, sizeof label) ? label : NULL, NULL))
 			break;
 	}
 }
 
 void ui_filter_rebuild(void)
 {
-	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
+	const ui_filter_def_t *f = ui_scr[stack[sp].scr]->filter;
 	filter_n = 0;
-	if (d->raw_count == NULL || d->raw_label == NULL)
+	if (f == NULL)
 		return;
-	if (d->raw_each != NULL)
-		d->raw_each(filter_row, NULL, filter_keys[0] != 0);
+	if (f->raw_each != NULL)
+		f->raw_each(filter_row, NULL, filter_keys[0] != 0);
 	else
-		filter_rows(d);
+		filter_rows(f);
 	if (filter_n > UI_FILTER_MAX)
 		WALK_I = UI_FILTER_MAX - 1u;	// the cursor starts on that row, its raw row already in WALK_RAW
 }
@@ -1823,7 +1825,7 @@ void ui_app_init(void)
 		ui_svc_apply(id, ui_svc_setting_get(id));
 	static const uint8_t ui_ids[] = { UI_SET_HINTS, UI_SET_LARGE_TEXT, UI_SET_AUTO_LOCK_S, UI_SET_BRIGHTNESS,
 					  UI_SET_ALIAS_SHOW, UI_SET_PTT_LOCKED, UI_SET_HEAR_ALL_DEFAULT, UI_SET_MESSAGE_TONE,
-					  UI_SET_UPDOWN_HOME, UI_SET_LOW_BATTERY, UI_SET_AUTO_OFF_MIN, UI_SET_THEME, UI_SET_ACCENT,
+					  UI_SET_UPDOWN_HOME, UI_SET_LABEL_FIRST, UI_SET_LOW_BATTERY, UI_SET_AUTO_OFF_MIN, UI_SET_THEME, UI_SET_ACCENT,
 					  UI_SET_STRIP, UI_SET_VIBRATE, UI_SET_VOLUME, UI_SET_LANGUAGE,
 					  UI_SET_KNOB_WHEN_LOCKED,
 #if CONFIG_DUAL_WATCH
@@ -1881,6 +1883,7 @@ void ui_apply_setting(uint8_t id, int32_t v)
 		ui_svc_volume_hold(ui_st.locked && ui_st.knob_lock);
 		break;
 	case UI_SET_UPDOWN_HOME: ui_st.updown = (uint8_t)(v >= 0 && v <= 2 ? v : 0); break;
+	case UI_SET_LABEL_FIRST: ui_st.label_first = v != 0; break;
 	case UI_SET_LOW_BATTERY: ui_st.low_batt_pct = (uint8_t)(v >= 0 && v <= 50 ? v : 15); batt_warned = false; break;
 	case UI_SET_AUTO_OFF_MIN: ui_st.auto_off_min = clamp_u16(v); off_warned = false; break;
 	case UI_SET_PTT_LOCKED:
@@ -1899,6 +1902,9 @@ void ui_apply_setting(uint8_t id, int32_t v)
 	case UI_SET_LANGUAGE:
 		if (!lang_set(lang_find(v)))
 			lang_set(LANG_ENGLISH);	// a language this image was built without
+#if CONFIG_LANG_ZH
+		ui_layout_init();		// a line of Chinese needs the 16 px font (ui_screens.c)
+#endif
 		break;
 	default:
 		return;
@@ -2056,6 +2062,14 @@ void ui_app_key(const input_event_t *ev)
 		case ACT_CALL_BACK:
 			call_back_key();
 			return;
+#if CONFIG_DMR
+		case ACT_TALK_LABEL:
+			// Saved like Settings > Display > Talkgroup name first, so the choice survives a power cycle
+			ui_svc_setting_set(UI_SET_LABEL_FIRST, !ui_st.label_first);
+			ui_apply_setting(UI_SET_LABEL_FIRST, !ui_st.label_first);
+			ui_toast(ui_st.label_first ? TR("Talkgroup name first") : TR("Talkgroup number first"));
+			return;
+#endif
 		case ACT_VOLUME:
 			if (!(ui_svc_features() & UI_FEAT_VOLUME))
 				ui_toast(TR("Volume: use the knob"));
