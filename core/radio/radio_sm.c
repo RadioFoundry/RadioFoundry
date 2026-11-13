@@ -1205,6 +1205,7 @@ static void dmr_configure(radio_sm_t *sm)
 	// A trunked system: both slots on the control channel; on a payload channel the engine chose the call, so it
 	// plays whatever its talkgroup, and PTT talks to it
 	if (sm->t3_on) {
+		cfg.own_id = t3s.cfg.own_id;	// the system's ID: calls to it, and the source of ours
 		cfg.both_slots = sm->t3_both;
 		if (t3m.state == T3_FOLLOW) {
 			const t3_call_t *c = &t3m.call;
@@ -2310,13 +2311,14 @@ static uint8_t t3_chan_cc(const radio_sm_t *sm, const t3_chan_t *c)
 static void t3_tune(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 {
 	channel_t *ch = &sm->view.ch;
+	uint8_t ts = a->slot == 2 ? 2 : 1;
 	bool rf = ch->rx_hz != a->chan.rx_hz || sm->board_mode != RADIO_MODE_DMR || !sm->dmr_running;
 	ch->rx_hz = a->chan.rx_hz;
 	ch->tx_hz = a->chan.tx_hz;
 	ch->mode = RADIO_MODE_DMR;
 	ch->dmo = false;
 	ch->color_code = t3_chan_cc(sm, &a->chan);
-	ch->timeslot = a->slot == 2 ? 2 : 1;	// a control channel: its first slot carries the TSCC (dedicated)
+	ch->timeslot = ts;	// a control channel: its first slot carries the TSCC (dedicated)
 	sm->t3_cc = ch->color_code;
 	sm->t3_both = a->slot == 0;
 	sm->temp_ts = 0;
