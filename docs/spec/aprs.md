@@ -377,7 +377,7 @@ The page shows the rows the build has:
 The digit keys follow the rows shown. Where the position comes from, the fixed position and "Send in DMR calls" are
 in Settings > Location ([position.md](position.md) 6).
 
-Selecting a heard station opens `aprs-station`, a scrollable detail list. The UI retains its callsign in main RAM,
+Selecting a heard station opens `aprs-station`, a scrollable detail list. The UI keeps its callsign,
 not its row index, and resolves the current station through `ui_svc_aprs_station_find` on each draw. New packets
 can reorder the heard list without changing the open station or Message recipient. Message is the first row and
 opens the composer with that callsign. The remaining rows show distance and compass direction when both positions

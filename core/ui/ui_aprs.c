@@ -338,8 +338,8 @@ const ui_scr_def_t ui_aprs_heard_screen = {
 #if CONFIG_APRS_RX
 enum { ST_MESSAGE, ST_RANGE, ST_HEARD, ST_PATH, ST_POS_AGE, ST_SPEED, ST_COURSE, ST_SYMBOL, ST_TEXT, ST_PACKETS, ST_COUNT };
 
-// Resolve the rows to show from the current record in one pass (the range once); no copy of the engine's station
-// table lives in the UI.
+// Resolve the rows to show from one station copy in one pass. Each row draw looks the station up again, so no copy
+// of the engine's station table lives in the UI between draws.
 static uint8_t station_rows(const aprs_station_t *s, uint8_t shown[ST_COUNT], uint32_t *m, uint16_t *deg)
 {
 	bool range = ui_svc_aprs_range(s, m, deg);
@@ -437,9 +437,7 @@ static void station_select(uint16_t i, bool hold)
 {
 	(void)hold;
 	if (i == 0) {
-		aprs_station_t s;
-		bool found = ui_svc_aprs_station_find(station_call, &s);
-		ui_aprs_compose(found ? s.call : station_call);
+		ui_aprs_compose(station_call);
 	}
 }
 #else
