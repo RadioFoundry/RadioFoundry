@@ -415,7 +415,7 @@ The speaker during a DMR call (seen on a radio, a bench call and the owner liste
 | Codec headphone driver (page 1 register 0x10) | the call's voice. Muted, the voice goes and nothing else changes |
 | Volume device, side A's channel | side A's RF chip audio, which in DMR is the 4FSK demodulator output (0x47 = 0x4840 or 0x6840): a loud data sound under the voice, with shift register bit 0x08 clear. Code 0 is not a mute (the 4FSK still plays loudly with the gate below open), and a jump from code 0 to the volume clicks: RadioFoundry leaves the channel at the volume and mutes with the gate |
 | Chip 1 GPIO (0x25) bit 1 | the gate on side A's RF chip audio: clearing bit 1 stops it (measured by microphone and heard on a radio), and the voice is unchanged. Opening and shutting it on silence doesn't click. RadioFoundry sets the bit only while side A's RF audio plays (FM with the squelch open, a beep, the KTMicro receiver) or side B is heard. Bit 5 cleared stops the voice too |
-| PA7 | the amplifier. RadioFoundry turns it on only while something plays (the receiver's audio, side B, a beep, the KTMicro receiver) and a volume knob is up, and off while it transmits. With it held on, a hiss that doesn't follow the volume came from the speaker with the squelch shut and no hand mic connected (heard on a radio, not every time); switching it at the squelch's edges or for a beep adds no click and doesn't shorten a beep: a key beep is heard as long with it held on (measured by microphone) |
+| PA7 | the amplifier. RadioFoundry turns it on only while something plays (the receiver's audio, side B, a beep, the KTMicro receiver) and a volume knob is up, and off while it transmits. Held on, the amplifier's own hiss stays on the speaker, 13-15 dB over the room with the gate shut, in FM and DMR alike, whatever the shift register's RX audio bit (measured by microphone). Switching it pops: about -20 dBFS at the microphone when it turns on, louder than a beep's peak, and a smaller tick when it turns off; driving it with a PWM ramp made the pop louder. It turns on as a beep or the receiver's audio starts, so the pop falls on that sound's onset |
 
 Beeps: the board has no PCM speaker audio, so the core plays a beep's tones through `beep_tone`. Side A's chip sounds
 each on its tone generator (0x71 the tone, 0x70 the gain, 0x47 = 0x6341) with 0x03 = 0xBFF7: the receive enable plus
@@ -423,8 +423,13 @@ bit 1, without which the tone is silent (seen on a radio). The PA gain bit stays
 receiver on the generator sounds at twice the frequency of its transmit word (measured by microphone, 500 to 1500 Hz),
 so a beep writes half the word. Its level follows page 1 0x1D: 12 dB louder at the analog path's 0x39FD than at the
 digital path's 0x29A1, which only DMR transmit needs, so DMR receive takes 0x39FD as well and a beep sounds the same in
-both modes (measured by microphone; DMR receive unchanged on bench calls). The chip's output switches to the tone
-before the gate opens, and the gate shuts before it switches back. Each edge of a beep goes through the level device:
+both modes (measured by microphone; DMR receive unchanged on bench calls). The generator's level rises about 10 dB over
+its first 30 ms (it runs on the transmit DSP), so a 25 ms key beep never reached its level, and its peak moved 7 dB
+from press to press. Each tone now runs 40 ms with the chip's AF output carrying nothing (0x47 = 0x6041), the gate
+opens on that silence, then the output takes the tone: a gate opening on a running tone clicked. The core times each
+tone to the millisecond (the radio task wakes for it), so every key beep is as long and as loud (within 0.5 dB, by
+microphone). The generator's first tone after power-up was 6 dB low too: the first receive set-up runs a silent
+100 ms tone. The gate shuts before the output switches back. Each edge of a beep goes through the level device:
 side A's level steps down to its most attenuation, the tone starts or stops, and the level steps back up, one step
 per write (5-6 ms over the range). The tone generator starts and stops at full strength: 0x70's gain spans only 8 dB
 (0x01 to 0x40 sound the same), and 0x48's AF gains already sit at their lowest. That edge was a tick at the start of
@@ -492,7 +497,10 @@ the receive set-up after a DMR transmission (65 register writes) took about 15 m
 The squelch is decided in firmware from register 0x0C bit 1, the noise and the RSSI against calibration values; no
 squelch threshold register is written. Back in receive after a transmission, register 0x0C bit 1 and the RSSI read
 as a signal for a moment, and the squelch opened on noise at every unkey (about 50 ms, loud, measured by microphone):
-RadioFoundry reports no carrier for 150 ms after the transmitter goes off. The 578UV and the PRO differ only in register 0x49 of chips 0 and 1 (0x26AC
+RadioFoundry reports no carrier for 150 ms after the transmitter goes off. When an FM carrier goes, the noise reading
+takes a poll or two to rise and the squelch held open on about 30 ms of loud noise; register 0x0C bit 1 and the RSSI
+fall at once, so while side A's FM audio plays they are read every 5 ms, and side A's gate shuts the moment they say
+the carrier is gone (about 8 ms of the noise is left, by microphone). The squelch itself still closes on the noise. The 578UV and the PRO differ only in register 0x49 of chips 0 and 1 (0x26AC
 on the PRO, 0x29AA on the 578UV).
 
 Chip 0's register 0x25 bit 0 is set in receive and while a TX tone sounds and cleared at each key-up: a microphone
