@@ -33,6 +33,11 @@
 #include "debuglink/dl_fmt.h"
 #include "radio/tx_limit.h"
 #include "radio/battery.h"
+#if CONFIG_DMR_TRUNK_TX
+#include "radio/radio_trunk.h"
+#include "dmr/trunk/t3_pdu.h"
+#include "dmr/trunk/t3_sys.h"
+#endif
 #include "fuzz.h"
 #include "position/position.h"
 
@@ -5425,6 +5430,114 @@ static void test_volume_step_of(void)
 	}
 }
 
+#if CONFIG_DMR_TRUNK_TX
+// A Tier III site on the sim: TS1 of 461.4625 is the TSCC (C_ALOHA, no registration asked), LCN 1 is that carrier
+#define T3_OWN		3105738u
+#define T3_TG		1u
+#define T3_RX_HZ	461462500u
+#define T3_TX_HZ	461087500u
+
+static void t3_csbk_rx(const t3_csbk_t *p, int8_t ts)
+{
+	dmr_burst_t b;
+	memset(&b, 0, sizeof(b));
+	b.kind = DMR_BURST_CSBK;
+	b.sync = DMR_SYNC_BS;
+	b.ts = ts;
+	b.cc = 2;
+	b.crc_ok = true;
+	b.in_step = true;
+	b.len = T3_CSBK_BYTES;
+	CHECK(t3_csbk_build(p, T3_CRC_MASK_CSBK, b.payload));
+	sim_rx(&b);
+}
+
+static uint16_t t3_code(void)
+{
+	t3_syscode_t c = { T3_MODEL_SMALL, 5, 1, T3_PAR_A };
+	return t3_syscode_join(&c);
+}
+
+// The TSCC for ms: an Aloha on TS1 every frame
+static void t3_site_run(uint32_t ms)
+{
+	for (uint32_t t = 0; t < ms; t += 60) {
+		t3_csbk_t a = { .lb = true, .op = T3_OP_C_ALOHA };
+		a.u.aloha.syscode = t3_code();
+		a.u.aloha.nrand_wait = 6;
+		a.u.aloha.backoff = 1;
+		a.u.aloha.version = 2;
+		t3_csbk_rx(&a, 1);
+		run(60);
+	}
+}
+
+static unsigned t3_sent(uint8_t op)
+{
+	unsigned n = 0;
+	for (unsigned i = 0; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_CSBK && (sim.air[i].payload[0] & 0x3Fu) == op) {
+			n++;
+		}
+	}
+	return n;
+}
+
+// PTT on the TSCC asks for the call, held through the wait (the request is sent, not refused as talking), and on
+// the grant the radio talks; with nothing heard while it talks, the call stays up (its own TX is the activity)
+static void test_t3_talk(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	radio_t3_setup_t *s = radio_t3_staged();
+	radio_t3_reset(s);
+	s->cfg.own_id = T3_OWN;
+	s->cfg.auth.model = T3_MODEL_SMALL;
+	s->cfg.auth.net = 5;
+	s->cfg.auth.category = T3_PAR_A;
+	s->cfg.opts = T3_OPT_PRIVATE;
+	s->cc = 2;
+	s->cfg.ctrl[0] = (t3_chan_t){ 1, T3_RX_HZ, T3_TX_HZ, 2 };
+	s->cfg.nctrl = 1;
+	s->chans[0] = s->cfg.ctrl[0];
+	s->nchans = 1;
+	s->cfg.tg[0] = (t3_tg_t){ T3_TG, T3_TG_LISTEN | T3_TG_TALK };
+	s->cfg.ntg = 1;
+	radio_t3_fix(s);
+	req(RREQ_T3, RT3_START);
+	t3_site_run(600);
+	CHECK(sm.view.t3.state == T3_CAMPED);
+	CHECK(sm.view.dmr.own_id == T3_OWN);
+
+	unsigned before = t3_sent(T3_OP_C_RAND);
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	CHECK(sm.view.t3.ptt_wait && t3_sent(T3_OP_C_RAND) > before);
+	CHECK(sm.view.t3.send_fail == 0);
+
+	t3_csbk_t g = { .lb = true, .op = T3_OP_TV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = T3_TG;
+	g.u.grant.src = T3_OWN;
+	t3_csbk_rx(&g, 1);
+	run(200);
+	CHECK(sm.view.t3.state == T3_FOLLOW && sm.view.t3.can_talk);
+	CHECK(sm.view.state == RS_TX && sm.view.ch.timeslot == 2);
+
+	run(4000);		// longer than TV_Inactive, nothing heard
+	CHECK(sm.view.t3.state == T3_FOLLOW && sm.view.state == RS_TX);
+	CHECK(sm.view.t3.returns == 0);
+
+	req(RREQ_PTT, 0);
+	run(4000);		// released: the inactivity timer runs again
+	CHECK(sm.view.t3.state != T3_FOLLOW && sm.view.state != RS_TX);
+	req(RREQ_T3, RT3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+#endif
+
 int main(void)
 {
 	test_tx_limit_op();
@@ -5448,6 +5561,9 @@ int main(void)
 	test_fm_rssi_raw();
 	test_dmr_tx();
 	test_dmr_tx_end();
+#if CONFIG_DMR_TRUNK_TX
+	test_t3_talk();
+#endif
 	test_dmr_stalled();
 	test_dmr_list_talk_target();
 #if CONFIG_VFO_DMR
