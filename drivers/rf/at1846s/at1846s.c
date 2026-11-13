@@ -101,7 +101,10 @@ static const reg_val_t dmr_regs[] = {
 	{ 0x43, 0x0100 },
 	{ 0x48, 0x19B1 },
 	{ 0x58, 0x9CDD },	// audio filters off
-	{ 0x44, 0x07FF },	// AF gain 100 %
+	// Receive audio 1 dB under full (dac_vgain 0xE): the 4FSK level the modem decodes best between transmitters
+	// 15 % under and over the standard's deviation; full gain corrects a bit a frame from one that over-deviates,
+	// and 2 dB under loses sync to one that under-deviates (hardware-dm1701.md 5.5)
+	{ 0x44, 0x07EF },
 };
 
 // 5.3: [state][bw]

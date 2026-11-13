@@ -181,7 +181,7 @@ static void test_direct_tx_ref(void)
 	v = 5;
 	CHECK(!uvf_direct_tx_ref(463612500u, 128 - UVF_DIRECT_TX_REF_STEPS, 0, &v) && v == 5);	// overflow: idle path
 	CHECK(!uvf_direct_tx_ref(146520000u, 0, 0, &v) && v == 5);	// VHF: idle path
-	// The synthesizer 875 Hz below near 461 MHz (the DMR receive offset): 11.8 steps of about 74 Hz, taken back as 11
+	// A synthesizer 875 Hz below near 461 MHz (a DMR receive offset): 11.8 steps of about 74 Hz, taken back as 11
 	// (whole steps toward zero), and as many off for one above
 	CHECK(uvf_direct_tx_ref(461187500u, -49, -875, &v) && v == -49 + UVF_DIRECT_TX_REF_STEPS + 11);
 	CHECK(uvf_direct_tx_ref(461187500u, -49, 875, &v) && v == -49 + UVF_DIRECT_TX_REF_STEPS - 11);
@@ -196,10 +196,10 @@ static void test_direct_tx_ref(void)
 
 static void test_dmr_rx_offset(void)
 {
-	// Below the channel in DMR, more on VHF; both whole 62.5 Hz synthesizer steps
+	// UHF on the channel (its receive window is centered there), VHF below; both whole 62.5 Hz synthesizer steps
 	CHECK(uvf_dmr_rx_offset_hz(461187500u) == UVF_DMR_RX_OFFSET_UHF_HZ);
 	CHECK(uvf_dmr_rx_offset_hz(151625000u) == UVF_DMR_RX_OFFSET_VHF_HZ);
-	CHECK(UVF_DMR_RX_OFFSET_UHF_HZ < 0 && UVF_DMR_RX_OFFSET_VHF_HZ < UVF_DMR_RX_OFFSET_UHF_HZ);
+	CHECK(UVF_DMR_RX_OFFSET_UHF_HZ == 0 && UVF_DMR_RX_OFFSET_VHF_HZ < 0);
 	CHECK((-UVF_DMR_RX_OFFSET_UHF_HZ * 2) % 125 == 0 && (-UVF_DMR_RX_OFFSET_VHF_HZ * 2) % 125 == 0);
 }
 
