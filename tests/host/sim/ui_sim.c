@@ -385,6 +385,8 @@ static hal_power_t power = { .battery_pct = p_battery };
 // The air band receive only, as on radios that have it (docs/spec/airband-and-broadcast.md 3.2)
 static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true },
 				{ 108000000, 136000000, false } };
+// "rxonly": a radio whose transmitter isn't written yet, every band receive only
+static const band_t rx_only_bands[] = { { 136000000, 174000000, false }, { 400000000, 480000000, false } };
 static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
 
 static bool afsk_tx_start(const uint8_t *t, uint16_t n, uint16_t baud, uint16_t mark, uint16_t space, uint8_t level)
@@ -2150,6 +2152,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.side_key_names = maps[map].names;
 	board.side_key_count = maps[map].side_n;
 	board.caps = maps[map].caps;
+	board.bands = bands;
+	board.band_count = sizeof bands / sizeof bands[0];
 	power.supply_mv = NULL;
 	// The MD-9600's panel names its QUICK and CONTEXT keys in the hints
 	board.quick_label = map == SIM_MAP_P ? "P1" : NULL;
@@ -2939,6 +2943,11 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "foreign") == 0) {	// the codeplug is another firmware's: the first edit asks
 		sim_foreign = true;
+		return true;
+	}
+	if (strcmp(t, "rxonly") == 0) {	// no band may transmit
+		board.bands = rx_only_bands;
+		board.band_count = sizeof rx_only_bands / sizeof rx_only_bands[0];
 		return true;
 	}
 	if (strcmp(t, "nobattery") == 0) {
