@@ -2280,6 +2280,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	knob_tick(v);
 #endif
 	ui_svc_poll();
+#if CONFIG_DMR_TRUNK
+	ui_svc_t3_poll(v);
+#endif
 	ui_svc_keys_poll();
 #if CONFIG_ZONE_EDIT
 	ui_svc_zone_poll();

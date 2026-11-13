@@ -622,24 +622,19 @@ static void set_zone(radio_sm_t *sm, uint16_t index, const zone_t *z)
 	memcpy(sm->view.zone_name, sm->zone.name, sizeof(sm->view.zone_name));
 }
 
-// A channel change: the channel's own settings, temporary changes dropped (P7)
 #if CONFIG_DMR_TRUNK
-static void t3_leave(radio_sm_t *sm);
+static void t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch);
+static void t3_off(radio_sm_t *sm);
 #endif
 
-static void set_channel(radio_sm_t *sm, uint16_t pos, const channel_t *ch)
+// A channel's own settings into the view, temporary changes dropped (P7)
+static void load_channel(radio_sm_t *sm, const channel_t *ch)
 {
-#if CONFIG_DMR_TRUNK
-	t3_leave(sm);		// another channel: the trunked system goes
-#endif
 	sm->view.ch = *ch;
 	sm->view.ch.name[CODEPLUG_NAME_LEN] = '\0';
 #if !CONFIG_SUBTONE
 	sm->view.ch.rx_tone = sm->view.ch.tx_tone = (subtone_t){ TONE_NONE, 0 };	// built without CTCSS / DCS
 #endif
-	sm->view.vfo = false;
-	sm->view.zone_pos = pos;
-	sm->view.channel_number = sm->zone.channels[pos];
 	sm->base_bw = sm->view.ch.bw;
 	sm->base_rx_tone = sm->view.ch.rx_tone;
 	sm->base_tx_tone = sm->view.ch.tx_tone;
@@ -648,6 +643,24 @@ static void set_channel(radio_sm_t *sm, uint16_t pos, const channel_t *ch)
 	sm->base_ts = sm->view.ch.timeslot;
 	clear_temporary(sm);
 	apply_tot(sm);
+}
+
+// A channel change
+static void set_channel(radio_sm_t *sm, uint16_t pos, const channel_t *ch)
+{
+#if CONFIG_DMR_TRUNK
+	t3_channel(sm, sm->zone.channels[pos], ch);	// a trunked channel starts its system; any other leaves it
+#endif
+	sm->view.vfo = false;
+	sm->view.zone_pos = pos;
+	sm->view.channel_number = sm->zone.channels[pos];
+	load_channel(sm, ch);
+#if CONFIG_DMR_TRUNK
+	if (sm->t3_tagged && !sm->view.t3.unavail) {
+		sm->view.ch.rx_only = false;	// the record's flag keeps firmware without trunking off the air; the site
+						// grants every transmission here
+	}
+#endif
 }
 
 static bool read_zone(uint16_t index, zone_t *z)
@@ -700,6 +713,9 @@ static void enter_vfo(radio_sm_t *sm, uint32_t now_ms)
 		uint32_t hz = keep ? sm->view.ch.rx_hz : vfo_default_hz();
 		vfo_set_hz(sm, hz);
 	}
+#if CONFIG_DMR_TRUNK
+	t3_off(sm);
+#endif
 	sm->view.ch = sm->vfo_ch;
 	sm->view.vfo = true;
 	sm->view.channel_number = 0;
@@ -2757,13 +2773,12 @@ static void t3_publish(radio_sm_t *sm)
 	v->own_id = t3s.cfg.own_id;
 }
 
-static void t3_start(radio_sm_t *sm, uint32_t now_ms)
+// Start the engine on t3s
+static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 {
 	if (sm->t3_on) {
 		t3_ms_stop(&t3m);
 	}
-	t3s = *radio_t3_staged();
-	radio_t3_fix(&t3s);
 	if (t3s.cfg.own_id == 0) {
 		t3s.cfg.own_id = sm->own_id;
 	}
@@ -2773,7 +2788,13 @@ static void t3_start(radio_sm_t *sm, uint32_t now_ms)
 	if (t3s.cfg.leave_dbm == 0) {
 		t3s.cfg.leave_dbm = sm->set.roam_rssi_dbm;	// the roaming threshold: weak below it (6.3.2.3)
 	}
+	// The view's counters start over with the engine; the channel's system and the fallback are the radio core's
+	radio_t3_view_t keep = sm->view.t3;
 	memset(&sm->view.t3, 0, sizeof(sm->view.t3));
+	sm->view.t3.sys = keep.sys;
+	sm->view.t3.fallback = keep.fallback;
+	sm->view.t3.fallbacks = keep.fallbacks;
+	sm->view.t3.backs = keep.backs;
 	sm->view.t3.last_tx_op = 0xFF;
 	sm->t3_on = true;
 	sm->t3_ptt_wait = false;
@@ -2782,6 +2803,7 @@ static void t3_start(radio_sm_t *sm, uint32_t now_ms)
 	sm->t3_talking = false;
 	sm->t3_ticks = dmr_call_ticks(NULL);
 	sm->t3_slot = 0;
+	sm->t3_hunt_ms = now_ms | 1u;	// hunting from now (the fallback's clock)
 	memset(sm->t3_at, 0, sizeof(sm->t3_at));
 	sm->t3_cc = t3s.cc;
 	dmr_call_set_rx_tap(t3_tap, sm);
@@ -2797,6 +2819,15 @@ static void t3_start(radio_sm_t *sm, uint32_t now_ms)
 	t3_ms_set_killed(&t3m, killed);
 	t3_publish(sm);
 	changed(sm);
+}
+
+// RADIO_T3_START: the debug link's staged system, on whatever channel the radio is on
+static void t3_start(radio_sm_t *sm, uint32_t now_ms)
+{
+	t3_off(sm);
+	t3s = *radio_t3_staged();
+	radio_t3_fix(&t3s);
+	t3_begin(sm, now_ms);
 }
 
 static void t3_leave(radio_sm_t *sm)
@@ -2817,6 +2848,92 @@ static void t3_leave(radio_sm_t *sm)
 	t3_publish(sm);
 }
 
+// The system goes, and with it the fallback and the channel's tag (a conventional channel, the VFO, the debug link)
+static void t3_off(radio_sm_t *sm)
+{
+	t3_leave(sm);
+	sm->t3_pending = false;
+	sm->t3_tagged = false;
+	sm->t3_fb = 0;
+	sm->t3_fb_number = 0;
+	sm->view.t3.sys = 0;
+	sm->view.t3.unavail = false;
+	sm->view.t3.fallback = 0;
+}
+
+// A channel selected (docs/spec/dmr-trunking.md 12.4): a trunked one starts its system, or on the system running takes
+// the channel's talk target and talkgroups; an unavailable one leaves any; a conventional one leaves it
+static void t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch)
+{
+	radio_t3_tag_t tag;
+	if (number == 0 || !radio_t3_tag(number, ch->name, &tag)) {
+		t3_off(sm);
+		return;
+	}
+	sm->t3_fb = 0;
+	sm->view.t3.fallback = 0;
+	sm->view.t3.unavail = false;
+	sm->t3_tag = tag;
+	sm->t3_tagged = true;
+	if (sm->t3_on && t3s.sys == tag.sys && sm->t3_kv == codeplug_kv_serial()) {
+		// Another channel of the system running: the same TSCC, the new channel's talkgroups
+		uint8_t ntg = t3s.cfg.ntg;
+		t3_tg_t tg[T3_TG_MAX];
+		memcpy(tg, t3s.cfg.tg, sizeof(tg));
+		radio_t3_talk(ch, &t3s);
+		sm->t3_fb_number = radio_t3_fallback(&tag, &t3s, &sm->t3_fb_ch);
+		if (ntg != t3s.cfg.ntg || memcmp(tg, t3s.cfg.tg, ntg * sizeof(tg[0])) != 0) {
+			t3_ms_groups_changed(&t3m, sm->t3_now);
+		}
+		return;
+	}
+	t3_leave(sm);
+	sm->t3_pending = false;
+	sm->view.t3.sys = (uint8_t)(tag.sys + 1u);
+	if (!radio_t3_load(tag.sys, &t3s)) {
+		sm->view.t3.unavail = true;	// no control channel, or no key where the system authenticates
+		sm->t3_fb_number = 0;
+		return;
+	}
+	sm->t3_kv = codeplug_kv_serial();
+	radio_t3_talk(ch, &t3s);
+	sm->t3_fb_number = radio_t3_fallback(&tag, &t3s, &sm->t3_fb_ch);
+	sm->t3_pending = true;		// started by t3_tick, which has the clock
+}
+
+// To the fallback channel (12.5): the engine stops, the radio works the channel as any conventional one
+static void t3_to_fallback(radio_sm_t *sm, uint32_t now_ms)
+{
+	t3_leave(sm);
+	if (sm->t3_fb == 0) {
+		sm->view.t3.fallbacks++;
+	}
+	sm->t3_fb = 1;
+	sm->view.t3.fallback = 1;
+	load_channel(sm, &sm->t3_fb_ch);
+	tune(sm, now_ms);
+	sm->t3_probe_ms = now_ms + RADIO_T3_PROBE_MS;
+	changed(sm);
+}
+
+// On the fallback channel: look for the TSCC every RADIO_T3_PROBE_MS while the channel is quiet
+static void t3_fallback_tick(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (sm->t3_fb != 1 || (int32_t)(now_ms - sm->t3_probe_ms) < 0) {
+		return;
+	}
+	bool quiet = sm->view.state == RS_IDLE && !sm->ptt &&
+		     (sm->view.last_rx_ms == 0 || now_ms - sm->view.last_rx_ms >= RADIO_T3_PROBE_QUIET_MS) &&
+		     (sm->view.last_tx_ms == 0 || now_ms - sm->view.last_tx_ms >= RADIO_T3_PROBE_QUIET_MS);
+	if (!quiet) {
+		return;		// tried again at the next tick: the probe waits for the channel to go quiet
+	}
+	sm->t3_fb = 2;
+	sm->view.t3.fallback = 2;
+	t3_begin(sm, now_ms);
+	sm->t3_probe_ms = now_ms + RADIO_T3_PROBE_HUNT_MS;
+}
+
 static void t3_stop(radio_sm_t *sm, uint32_t now_ms)
 {
 	if (!sm->t3_on) {
@@ -2826,7 +2943,7 @@ static void t3_stop(radio_sm_t *sm, uint32_t now_ms)
 		sm->t3_als_keyed = false;
 		ptt_release(sm, false, now_ms);
 	}
-	t3_leave(sm);
+	t3_off(sm);
 	// Back to the channel or the VFO the user had
 	channel_t ch;
 	if (sm->view.vfo) {
@@ -2995,6 +3112,11 @@ static void t3_emergency_tick(uint32_t now_ms)
 
 static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 {
+	if (sm->t3_pending) {
+		sm->t3_pending = false;
+		t3_begin(sm, now_ms);
+	}
+	t3_fallback_tick(sm, now_ms);
 	if (!sm->t3_on) {
 		return;
 	}
@@ -3051,6 +3173,33 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR_TRUNK_TX && CONFIG_DMR_EMERGENCY
 	t3_emergency_tick(now_ms);
 #endif
+	// Fallback (12.5): hunting with no TSCC for the hold time goes to it; a probe from it that finds the TSCC stays
+	if (t3m.state != T3_HUNT) {
+		sm->t3_hunt_ms = 0;
+	} else if (sm->t3_hunt_ms == 0) {
+		sm->t3_hunt_ms = now_ms | 1u;
+	}
+	if (sm->t3_fb == 2 && t3m.state == T3_CAMPED && t3m.confirmed) {
+		// Found from the fallback channel: the trunked channel again (the engine tunes the radio)
+		channel_t ch;
+		if (codeplug_channel(sm->view.channel_number, &ch)) {
+			load_channel(sm, &ch);
+			sm->view.ch.rx_only = false;
+		}
+		sm->t3_fb = 0;
+		sm->view.t3.fallback = 0;
+		sm->view.t3.backs++;
+		beep(sm, BEEP_SYSTEM_BACK);
+		changed(sm);
+	} else if (sm->t3_fb == 2 && (int32_t)(now_ms - sm->t3_probe_ms) >= 0) {
+		t3_to_fallback(sm, now_ms);	// not found: back to the fallback channel
+		return;
+	} else if (sm->t3_fb == 0 && sm->t3_fb_number != 0 && sm->t3_hunt_ms != 0 &&
+		   (int32_t)(now_ms - sm->t3_hunt_ms) >=
+			   (int32_t)(t3s.fb_hold_s != 0 ? t3s.fb_hold_s : RADIO_T3_FALLBACK_HOLD_S) * 1000) {
+		t3_to_fallback(sm, now_ms);
+		return;
+	}
 #if CONFIG_DMR_TRUNK_TX
 	t3_als_tick(sm, now_ms);
 	// Our grant came while PTT is held: talk now
@@ -3082,7 +3231,16 @@ static bool scan_usable(uint16_t pos, void *ctx)
 {
 	const radio_sm_t *sm = ctx;
 	channel_t ch;
-	return pos < sm->zone.count && codeplug_channel(sm->zone.channels[pos], &ch) && !ch.scan_skip;
+	if (pos >= sm->zone.count || !codeplug_channel(sm->zone.channels[pos], &ch) || ch.scan_skip) {
+		return false;
+	}
+#if CONFIG_DMR_TRUNK
+	radio_t3_tag_t tag;
+	if (radio_t3_tag(sm->zone.channels[pos], ch.name, &tag)) {
+		return false;	// a trunked channel: its system is what the radio follows, not a frequency to scan
+	}
+#endif
+	return true;
 }
 
 // Dual watch (SCAN_DUAL): the receiver alternates between two channels, dual[0] and dual[1], skip flags ignored. With
@@ -4753,6 +4911,11 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	if (sm->ptt) {
 		return;
 	}
+#if CONFIG_DMR_TRUNK
+	if (sm->t3_fb == 2) {
+		t3_to_fallback(sm, now_ms);	// looking for the TSCC from the fallback channel: PTT talks on the fallback
+	}
+#endif
 	aprs_rf_abort(sm, now_ms);	// back on the channel first: PTT talks there
 	activity(sm, now_ms);
 	roam_cancel(sm, now_ms);	// PTT transmits on the site the user saw before a roaming search

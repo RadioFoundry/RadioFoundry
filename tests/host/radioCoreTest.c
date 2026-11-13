@@ -40,6 +40,7 @@
 #endif
 #include "fuzz.h"
 #include "position/position.h"
+#include "radio/beep.h"
 
 static int failures;
 static int checks;
@@ -279,8 +280,42 @@ static bool kv_ars_present;
 static uint8_t kv_serial;
 static uint32_t kv_ars;
 static bool kv_held;	// a CPS session holds the flash, or another firmware's codeplug: no key can be written
+// Tier III keys (0x0100-0x04FF: systems, system channels, keys, channel tags), kept in key order
+#define KV_T3_MAX	24
+static struct {
+	uint16_t key;
+	uint8_t len;
+	uint8_t v[64];
+} kv_t3[KV_T3_MAX];
+static uint8_t kv_t3_n;
+static void kv_t3_set(uint16_t key, const void *v, uint8_t len)
+{
+	uint8_t i = 0;
+	while (i < kv_t3_n && kv_t3[i].key < key) {
+		i++;
+	}
+	if (i == kv_t3_n || kv_t3[i].key != key) {
+		memmove(&kv_t3[i + 1], &kv_t3[i], (kv_t3_n - i) * sizeof(kv_t3[0]));
+		kv_t3_n++;
+	}
+	kv_t3[i].key = key;
+	kv_t3[i].len = len;
+	memcpy(kv_t3[i].v, v, len);
+	kv_serial++;
+}
+static void kv_t3_clear(void)
+{
+	kv_t3_n = 0;
+	kv_serial++;
+}
 int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 {
+	for (uint8_t i = 0; i < kv_t3_n; i++) {
+		if (kv_t3[i].key == key) {
+			memcpy(buf, kv_t3[i].v, max < kv_t3[i].len ? max : kv_t3[i].len);
+			return kv_t3[i].len;
+		}
+	}
 	if (key != CODEPLUG_KEY_ARS_SERVER || !kv_ars_present) {
 		return -1;
 	}
@@ -300,10 +335,21 @@ static bool kv_set_u32(uint16_t key, uint32_t value)
 uint8_t codeplug_kv_serial(void) { return kv_serial; }
 void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi)
 {
+	c->lo = lo;
+	c->hi = hi;
+	c->at = 0;
 	c->done = !(lo <= CODEPLUG_KEY_ARS_SERVER && CODEPLUG_KEY_ARS_SERVER <= hi);
 }
 int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
 {
+	while (c->at < kv_t3_n) {		// the Tier III keys (no walk covers them and the ARS server's)
+		uint8_t i = (uint8_t)c->at++;
+		if (kv_t3[i].key >= c->lo && kv_t3[i].key <= c->hi) {
+			*key = kv_t3[i].key;
+			memcpy(buf, kv_t3[i].v, max < kv_t3[i].len ? max : kv_t3[i].len);
+			return kv_t3[i].len;
+		}
+	}
 	uint8_t v[4] = { (uint8_t)kv_ars, (uint8_t)(kv_ars >> 8), (uint8_t)(kv_ars >> 16), (uint8_t)(kv_ars >> 24) };
 	if (c->done || !kv_ars_present) {
 		return -1;
@@ -5497,7 +5543,7 @@ static void t3_stage_start(void)
 	s->cfg.auth.model = T3_MODEL_SMALL;
 	s->cfg.auth.net = 5;
 	s->cfg.auth.category = T3_PAR_A;
-	s->cfg.opts = T3_OPT_PRIVATE;
+	s->cfg.opts = T3_OPT_PRIVATE | T3_OPT_STUN;
 	s->cc = 2;
 	s->cfg.ctrl[0] = (t3_chan_t){ 1, T3_RX_HZ, T3_TX_HZ, 2 };
 	s->cfg.nctrl = 1;
@@ -5947,6 +5993,163 @@ static void test_t3_als(void)
 	sim.repeater = false;
 }
 
+// Trunked channels in the codeplug (dmr-trunking.md 12): system n's record, its control channel and a key
+static void t3_cp_system(uint8_t n, uint16_t opts, uint8_t hold_s, uint16_t fb_chan, const char *fb_name)
+{
+	uint8_t v[64];
+	memset(v, 0, sizeof(v));
+	snprintf((char *)v, 16, "Sys %u", n);
+	v[16] = T3_MODEL_SMALL;
+	v[17] = 5;			// NET 5
+	v[19] = T3_PAR_A;
+	v[20] = 2;			// CC
+	v[21] = (uint8_t)opts;
+	v[22] = (uint8_t)(opts >> 8);
+	v[28] = hold_s;
+	v[29] = (uint8_t)fb_chan;
+	v[30] = (uint8_t)(fb_chan >> 8);
+	uint16_t check = fb_name != NULL ? radio_t3_name_check(fb_name) : 0;
+	v[62] = (uint8_t)check;
+	v[63] = (uint8_t)(check >> 8);
+	kv_t3_set((uint16_t)(CODEPLUG_KEY_T3_SYSTEM + n), v, 64);
+	uint8_t c[13] = { n, 0x01, 1, 0 };	// a control channel, LCN 1
+	for (int i = 0; i < 4; i++) {
+		c[4 + i] = (uint8_t)(T3_RX_HZ >> (8 * i));
+		c[8 + i] = (uint8_t)(T3_TX_HZ >> (8 * i));
+	}
+	c[12] = 2;
+	kv_t3_set((uint16_t)(CODEPLUG_KEY_T3_CHAN + n), c, 13);
+}
+
+// Channel c (named in the fake codeplug) tagged to system n
+static void t3_cp_tag(uint16_t c, uint8_t n)
+{
+	uint16_t check = radio_t3_name_check(chans[c].name);
+	uint8_t t[8] = { n, 0, (uint8_t)check, (uint8_t)(check >> 8) };
+	kv_t3_set((uint16_t)(CODEPLUG_KEY_T3_TAG + c - 1u), t, 8);
+}
+
+// Zone "Tones" (index 2) made two trunked channels of system 0, as an editor writes them: DMR, receive only, the
+// control channel's frequencies, the talk target (TG 201, then TG 9)
+static void t3_cp_zone(uint16_t opts, uint8_t hold_s, uint16_t fb_chan, const char *fb_name)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	kv_t3_clear();
+	add(7, "Ops A", T3_RX_HZ, RADIO_MODE_DMR, true, CODEPLUG_POWER_DEFAULT);
+	chans[7].tx_hz = T3_TX_HZ;
+	chans[7].contact = 1;
+	add(8, "Ops B", T3_RX_HZ, RADIO_MODE_DMR, true, CODEPLUG_POWER_DEFAULT);
+	chans[8].tx_hz = T3_TX_HZ;
+	chans[8].contact = 3;
+	t3_cp_system(0, opts, hold_s, fb_chan, fb_name);
+	t3_cp_tag(7, 0);
+	t3_cp_tag(8, 0);
+}
+
+static void t3_cp_done(void)
+{
+	req(RREQ_ZONE, 0);
+	run(100);
+	kv_t3_clear();
+	sim.repeater = false;
+	setup_codeplug();
+}
+
+// Selecting trunked channels: the first starts its system and camps; another of the same system keeps the TSCC; an
+// untagged channel leaves; a renamed channel (its name check no longer matches) is conventional; one whose system
+// authenticates without a key is unavailable and refuses PTT; zone scan passes trunked channels by
+static void test_t3_channels(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	CHECK(sm.view.channel_number == 7 && sm.view.t3.sys == 1 && !sm.view.t3.unavail);
+	t3_site_run(600);
+	CHECK(sm.view.t3.on && sm.view.t3.state == T3_CAMPED && !sm.view.ch.rx_only);
+	CHECK(hw.rx_hz == T3_RX_HZ);
+	unsigned hunts = sm.view.t3.hunts;
+	req(RREQ_ZONE_POS, 1);		// "Ops B": the same system
+	t3_site_run(120);
+	CHECK(sm.view.channel_number == 8 && sm.view.t3.on && sm.view.t3.state == T3_CAMPED);
+	CHECK(sm.view.t3.hunts == hunts);
+	CHECK(strcmp(sm.view.ch.name, "Ops B") == 0);
+
+	// A zone scan visits only the conventional channel; cancelled, the radio is back on its system
+	zones[2].channels[2] = 6;
+	zones[2].count = 3;
+	req(RREQ_ZONE, 1);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(sm.view.t3.state == T3_CAMPED);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	bool on_t3 = false, on_6 = false;
+	for (int i = 0; i < 400; i++) {
+		run(5);
+		on_t3 = on_t3 || (sm.view.scan != 0 && hw.rx_hz == T3_RX_HZ);
+		on_6 = on_6 || hw.rx_hz == 145500000;
+	}
+	CHECK(sm.view.scan != 0 && on_6 && !on_t3);
+	req(RREQ_SCAN, RSCAN_CANCEL);
+	t3_site_run(600);
+	CHECK(sm.view.scan == 0 && sm.view.channel_number == 7 && sm.view.t3.state == T3_CAMPED);
+	zones[2].count = 2;
+
+	req(RREQ_ZONE, 0);		// a conventional channel: the system goes
+	run(100);
+	CHECK(!sm.view.t3.on && sm.view.t3.sys == 0 && hw.rx_hz == 146520000);
+
+	strcpy(chans[7].name, "Renamed");	// a CPS that renumbered or renamed it: no longer the tagged channel
+	req(RREQ_ZONE, 2);
+	run(100);
+	CHECK(sm.view.t3.sys == 0 && !sm.view.t3.on && sm.view.ch.rx_only);
+	strcpy(chans[7].name, "Ops A");
+
+	t3_cp_system(1, T3_OPT_PRIVATE | 0x0800u, 0, 0, NULL);	// authenticates, no key in the codeplug
+	t3_cp_tag(8, 1);
+	req(RREQ_ZONE_POS, 1);
+	run(100);
+	CHECK(sm.view.t3.sys == 2 && sm.view.t3.unavail && !sm.view.t3.on);
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.state != RS_TX && t3_sent(T3_OP_C_RAND) == 0);
+	req(RREQ_PTT, 0);
+	run(100);
+	t3_cp_done();
+}
+
+// Fallback (12.5): hunting past the hold time goes to the fallback channel, which works as any channel; a probe in a
+// quiet moment that finds the TSCC goes back with the system-back tone, one that doesn't returns to the fallback
+static void test_t3_fallback(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 3, 6, "Other");
+	req(RREQ_ZONE, 2);
+	run(2900);			// no TSCC heard
+	CHECK(sm.view.t3.on && sm.view.t3.fallback == 0);
+	run(200);
+	CHECK(sm.view.t3.fallback == 1 && sm.view.t3.fallbacks == 1 && !sm.view.t3.on);
+	CHECK(hw.rx_hz == 145500000 && strcmp(sm.view.ch.name, "Other") == 0 && sm.view.channel_number == 7);
+
+	run(RADIO_T3_PROBE_MS);		// a probe: nothing found in RADIO_T3_PROBE_HUNT_MS, back
+	CHECK(sm.view.t3.fallback == 2 && sm.view.t3.on);
+	run(RADIO_T3_PROBE_HUNT_MS + 100);
+	CHECK(sm.view.t3.fallback == 1 && !sm.view.t3.on && hw.rx_hz == 145500000 && sm.view.t3.fallbacks == 1);
+
+	// A probe while the channel is busy waits for it to go quiet
+	rx_signal(10, true);
+	run(RADIO_T3_PROBE_MS);
+	CHECK(sm.view.t3.fallback == 1);
+	rx_signal(120, true);
+	run(RADIO_T3_PROBE_QUIET_MS + 500);
+	CHECK(sm.view.t3.fallback == 2);
+	t3_site_run(600);		// found
+	CHECK(sm.view.t3.fallback == 0 && sm.view.t3.backs == 1 && sm.view.t3.state == T3_CAMPED);
+	CHECK(strcmp(sm.view.ch.name, "Ops A") == 0 && !sm.view.ch.rx_only && hw.rx_hz == T3_RX_HZ);
+	beep_stats_t bs;
+	beep_get_stats(&bs);
+	CHECK(bs.last == BEEP_SYSTEM_BACK);
+	t3_cp_done();
+}
+
 static void test_t3_stun(void)
 {
 	dmr_start(true);
@@ -6012,6 +6215,8 @@ int main(void)
 	test_t3_broadcast();
 	test_t3_als();
 	test_t3_stun();
+	test_t3_channels();
+	test_t3_fallback();
 #endif
 	test_dmr_stalled();
 	test_dmr_list_talk_target();

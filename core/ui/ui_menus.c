@@ -44,6 +44,7 @@
 
 extern const ui_scr_def_t ui_find_screen;
 extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_station_screen;	// ui_aprs.c
+extern const ui_scr_def_t ui_trunk_screen;	// ui_trunk.c
 #if CONFIG_POSITION
 extern const ui_scr_def_t ui_fixed_pos_screen;	// ui_position.c
 #endif
@@ -5253,7 +5254,8 @@ void ui_crash_tick(uint32_t now_ms)
 // Every tool keeps its number on every radio and build, so a key path (OK 6 7: Diagnostics; tests/hil/test_ui.py and the
 // user guide) is the same everywhere. The one a radio may not have (Battery) is last, so no radio has a gap; a build
 // without diagnostics skips 7
-enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_BATTERY, T_ZONE_OFFER, T_COUNT };
+// Trunking comes after the zone offer: the tools' keys are their numbers, and the offer's 0 is the tenth
+enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_BATTERY, T_ZONE_OFFER, T_TRUNK, T_COUNT };
 
 // A tool this build or radio doesn't have is left out of the list (Battery, Supply on a radio that measures its DC
 // input instead, is left out where the radio measures neither)
@@ -5264,7 +5266,7 @@ static bool tool_shown(uint16_t i)
 		return offer_waiting();	// 0 on the keypad: only while another radio's zone waits
 #endif
 	return (i != T_DIAG || CONFIG_DIAG) && (i != T_BATTERY || board_volts() != BOARD_VOLTS_NONE) &&
-	       i != T_ZONE_OFFER;
+	       i != T_ZONE_OFFER && (i != T_TRUNK || CONFIG_DMR_TRUNK);
 }
 
 // The hint names the last number ("1-9 open"): the highest tool this radio has. Built in the language in use on each
@@ -5303,7 +5305,7 @@ static void tools_item(uint16_t row, ui_item_t *it)
 {
 	static const char *const names[] = { TRN("Scan"), TRN("Position"), TRN("Hotspot"), TRN("USB network"),
 					     TRN("Single-freq repeater"), TRN("Roaming"), TRN("Diagnostics"), "APRS",
-					     TRN("Battery"), TRN("Zones/Chs Received") };
+					     TRN("Battery"), TRN("Zones/Chs Received"), TRN("Trunking") };
 	uint16_t i = tools_row(row);
 	if (i >= T_COUNT)
 		return;
@@ -5402,6 +5404,9 @@ static void tools_select(uint16_t row, bool hold)
 	case T_ROAM: ui_push(SCR_ROAM, 0); break;
 	case T_APRS: ui_push(SCR_APRS, 0); break;
 	case T_ZONE_OFFER: ui_push(SCR_OFFER, 0); break;
+#if CONFIG_DMR_TRUNK
+	case T_TRUNK: ui_push(SCR_TRUNK, 0); break;
+#endif
 	default: break;
 	}
 }
@@ -6627,6 +6632,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_CP_FOREIGN] = &cpf_screen,
 #if DATA_IDS
 	[SCR_DATA_SERVICES] = &ds_screen,
+#endif
+#if CONFIG_DMR_TRUNK
+	[SCR_TRUNK] = &ui_trunk_screen,
 #endif
 #if CONFIG_REF_TRIM
 	[SCR_REF_TRIM] = &trim_screen,

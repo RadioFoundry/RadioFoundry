@@ -19,6 +19,7 @@ void radio_t3_reset(radio_t3_setup_t *s)
 	s->cfg.auth.category = T3_PAR_A;
 	s->cfg.plan.learn = true;
 	s->cc = 1;
+	s->sys = RADIO_T3_STAGED;
 	radio_t3_fix(s);
 }
 
@@ -29,4 +30,5 @@ void radio_t3_fix(radio_t3_setup_t *s)
 	s->cfg.plan.ntable = s->nchans;
 	s->cfg.poll_data = s->poll_reply;
 }
+
 #endif

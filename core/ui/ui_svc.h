@@ -125,6 +125,15 @@ bool ui_svc_vfo_get(uint8_t index, channel_t *out);
 // --- DMR repeater roaming (the radio core, docs/spec/dmr-roaming.md). Its state is radio_view_t.roam ---
 bool ui_svc_roam(uint8_t cmd);			// radio_roam_cmd_t: zone on / off, roam now, lock / unlock
 
+#if CONFIG_DMR_TRUNK
+// --- Tier III systems from the codeplug (docs/spec/dmr-trunking.md 12). Their state is radio_view_t.t3 ---
+uint8_t ui_svc_t3_count(void);				// systems in the codeplug
+bool ui_svc_t3_system(uint8_t row, uint8_t *n, char *name);	// the row-th: its number and name (CODEPLUG_NAME_LEN + 1)
+int ui_svc_t3_selected(void);				// the selected system's number, -1 none
+bool ui_svc_t3_select(uint8_t n);			// start system n (false: it can't be); the selected one: leave it
+void ui_svc_t3_poll(const radio_view_t *v);		// each UI tick: power-on start, the selection dropped on leaving
+#endif
+
 // --- Beeps (radio-features): the radio sounds key beeps only when its key_beep setting is on ---
 typedef enum { UI_BEEP_KEY, UI_BEEP_ERROR, UI_BEEP_MESSAGE, UI_BEEP_BATTERY_LOW } ui_beep_t;
 void ui_svc_beep(uint8_t beep);

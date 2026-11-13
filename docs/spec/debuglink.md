@@ -113,6 +113,8 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x1F` | IDDB | DMR ID u32 (3.23); `CONFIG_DMR` builds, else status 4 | format u8, records u32, found u8, text (3.23) |
 | `0x20` | CHIP_REG | chip u8, page u8, register u8 [+ value u32]; or chip `0xFF`, address u32 [+ value u32] (3.24) | the register's value u32 (3.24) |
 | `0x21` | HWOPT | operation u8 + arguments (3.25) | the options as key=value text, or none (3.25) |
+| `0x22` | T3 | operation u8 + arguments (3.26); `CONFIG_DMR_TRUNK` builds, else status 4 | none |
+| `0x23` | CPKV | operation u8, key u16 + arguments (3.27); builds with the DMR data core or Tier III trunking, else status 4 | GET: the value (3.27) |
 
 ### 3.1 VERSION
 
@@ -863,6 +865,7 @@ answers unavailable (3). Each op answers OK or bad argument (2), with no reply b
 | 18 | INTERRUPT | stop the talker in the call followed: end ALS u8 (0: status 125, then back to the call; 1: end the ALS call the radio listens to, status 123) |
 | 19 | SDPOLL | poll an MS for its short data: to u32, UDT_Format u8, blocks u8 (1-4); the answer is the last message heard (`CONFIG_DMR_TRUNK_TX`) |
 | 20 | POLL_REPLY | the radio's answer to a short data poll: UDT_Format u8, then 0-46 octets (none: refused); taken at the next start |
+| 21 | LOAD | stage system n u8 of the codeplug ([dmr-trunking.md](dmr-trunking.md) 12) in place of the staged one, not started; bad argument when it is absent or has no control channel |
 
 The `t3` view section has the engine's state as the radio core last published it, all keys `t3.`-prefixed: `built`,
 `tx_built`, `on`, `state` (off, hunt, camped, follow), `reg`, `confirmed`, `syscode`, `own_id`, `tscc_lcn`, `rx_hz`,
@@ -890,6 +893,21 @@ network, authorized sites or category), `adjacent` (how many are known), then ea
 `rfoundry_debug.py t3 setup --model 1 --net 5 --cc 2 --ctrl 1:RX_MHZ:TX_MHZ --tg 1` stages and starts one;
 `rfoundry_debug.py t3 [show|start|stop|dereg|end]`; `rfoundry_debug.py t3 status --to ID --status N [--group]`;
 `rfoundry_debug.py t3 sdata --to ID (--text TEXT | --hex HEX) [--group]`.
+
+### 3.27 CPKV
+
+A key of the codeplug settings area ([codeplug-settings.md](codeplug-settings.md)) read, written or removed, as a
+codeplug tool would. Every op starts with the op u8 and the key u16. Writes go through `codeplug_kv_set` and
+`codeplug_kv_remove`: one journaled sector rewrite each, BUSY when the area can't be written (5). Little endian.
+
+| Op | Name | Arguments | Reply |
+|---|---|---|---|
+| 1 | GET | offset u16 (optional, 0) | the value's whole length u16, then its bytes from offset, as many as the reply holds (the first 128 of a longer value). Unavailable: no such key |
+| 2 | SET | offset u16, bytes | none. Offset 0: the value is these bytes. Otherwise they replace the value's from offset, which must be inside a value of at most 128 bytes; the value grows if they run past its end. So a value longer than a request is set in pieces |
+| 3 | REMOVE | none | none |
+
+`DebugLink.cpkv_get`, `cpkv_set` (in pieces), `cpkv_remove`; `t3_system_record` and `t3_chan_record` encode a
+trunked system's records.
 
 ## 4. Safety
 

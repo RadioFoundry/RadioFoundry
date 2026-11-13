@@ -225,7 +225,11 @@ typedef struct {
 // A DMR Tier III trunked system (docs/spec/dmr-trunking.md 11) for the screens and the debug link
 #define RADIO_T3_DGNA	15	// T3_DGNA_MAX
 typedef struct {
-	bool on;		// a trunked system is selected
+	bool on;		// a trunked system is running
+	uint8_t sys;		// the channel's codeplug system, n + 1 (0: a conventional channel, or the debug link's system)
+	bool unavail;		// the channel is trunked and its system isn't set up (dmr-trunking.md 12.4)
+	uint8_t fallback;	// 12.5: 0 off, 1 on the fallback channel, 2 looking for the TSCC from it
+	uint32_t fallbacks, backs;	// times the radio went to the fallback channel, and came back from it
 	uint8_t state;		// t3_state_t
 	uint8_t reg;		// t3_reg_t
 	bool confirmed;

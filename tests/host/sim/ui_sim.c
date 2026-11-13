@@ -72,6 +72,9 @@
 #include "hotspot/hotspot.h"
 #include "stubentry/stub_entry.h"
 #include "ui/ui_svc_aprs.h"
+#if CONFIG_DMR_TRUNK
+#include "dmr/trunk/t3_ms.h"
+#endif
 
 #define TICK_MS		50
 #define PRESS_MS	150
@@ -1093,6 +1096,31 @@ static uint32_t reply_until;
 static uint32_t ptt_up_at;
 static bool rx_on;
 static uint32_t check_due, check_id;
+
+#if CONFIG_DMR_TRUNK
+// Two trunked systems in the codeplug; selecting one puts the radio on it, registered (the radio core's Tier III)
+static const char *const t3_names[] = { "Metro", "County" };
+static int t3_sel = -1;
+uint8_t ui_svc_t3_count(void) { return 2; }
+bool ui_svc_t3_system(uint8_t row, uint8_t *n, char *name)
+{
+	if (row >= 2)
+		return false;
+	*n = row;
+	strcpy(name, t3_names[row]);
+	return true;
+}
+int ui_svc_t3_selected(void) { return t3_sel; }
+bool ui_svc_t3_select(uint8_t n)
+{
+	t3_sel = t3_sel == (int)n ? -1 : (int)n;
+	view.t3.on = t3_sel >= 0;
+	view.t3.state = t3_sel >= 0 ? T3_CAMPED : T3_OFF;
+	view.t3.reg = t3_sel >= 0 ? T3_REG_OK : T3_REG_UNKNOWN;
+	serial++;
+	return true;
+}
+#endif
 
 const radio_view_t *sim_view(void) { return &view; }
 void radio_get_view(radio_view_t *v) { *v = view; }
@@ -2163,6 +2191,9 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	hotspot_on = rx_on = usb_net = usb_up = false;
 	board.netif = &sim_netif;
 	aprs_sim_reset();
+#if CONFIG_DMR_TRUNK
+	t3_sel = -1;
+#endif
 	n_edits = 0;
 	n_ct_edits = 0;
 	sim_names_reset();

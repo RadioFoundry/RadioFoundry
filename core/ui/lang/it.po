@@ -20,7 +20,7 @@ msgstr "Loader PC collegato"
 msgid "Power-cycle to exit"
 msgstr "Riavvia per uscire"
 
-#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c core/ui/ui_trunk.c
 msgid "Off"
 msgstr "No"
 
@@ -1020,7 +1020,7 @@ msgstr "Fix 2D"
 msgid "Fix"
 msgstr "Fix"
 
-#: core/ui/ui_gps.c
+#: core/ui/ui_gps.c core/ui/ui_trunk.c
 msgid "Searching"
 msgstr "Ricerca"
 
@@ -2268,11 +2268,11 @@ msgstr "Gateway IP"
 msgid "Registering"
 msgstr "Registrazione"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_trunk.c
 msgid "Registered"
 msgstr "Registrato"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_trunk.c
 msgid "Refused"
 msgstr "Rifiutato"
 
@@ -2611,6 +2611,10 @@ msgstr "Diagnostica"
 #: core/ui/ui_menus.c
 msgid "Zones/Chs Received"
 msgstr "Zone/Can. ricevuti"
+
+#: core/ui/ui_menus.c core/ui/ui_trunk.c
+msgid "Trunking"
+msgstr "Trunking"
 
 #: core/ui/ui_menus.c
 msgid "Dual watch"
@@ -3891,3 +3895,35 @@ msgstr "Zona non leggibile qui"
 #: core/ui/ui_svc_zone.c
 msgid "The offer is gone"
 msgstr "L'offerta non c'è più"
+
+#: core/ui/ui_trunk.c
+msgid "Starting"
+msgstr "Avvio"
+
+#: core/ui/ui_trunk.c
+msgid "In call"
+msgstr "In chiamata"
+
+#: core/ui/ui_trunk.c
+msgid "On site"
+msgstr "Sul sito"
+
+#: core/ui/ui_trunk.c
+msgid "System"
+msgstr "Sistema"
+
+#: core/ui/ui_trunk.c
+msgid "No control channel"
+msgstr "Nessun canale di controllo"
+
+#: core/ui/ui_trunk.c
+msgid "Trunking off"
+msgstr "Trunking spento"
+
+#: core/ui/ui_trunk.c
+msgid "Select  Back"
+msgstr "Scegli  Indietro"
+
+#: core/ui/ui_trunk.c
+msgid "No trunked systems"
+msgstr "Nessun sistema trunking"

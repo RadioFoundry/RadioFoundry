@@ -99,11 +99,14 @@ IDDB = 0x1F                         # the DMR ID database: format, records, an I
 CHIP_REG = 0x20                     # an RF chip or SoC register read or written (docs/spec/debuglink.md 3.24)
 T3 = 0x22                           # a Tier III trunked system: stage, select, leave (docs/spec/debuglink.md 3.26)
 T3_RESET, T3_SYSTEM, T3_CTRL, T3_CHAN, T3_TG, T3_SITE, T3_PLAN, T3_START, T3_STOP, T3_DEREG, T3_END, \
-    T3_STATUS, T3_SDATA, T3_AUTH, T3_PS, T3_DIVERT, T3_ALS, T3_INTERRUPT, T3_SDPOLL, T3_POLL_REPLY = range(1, 21)
+    T3_STATUS, T3_SDATA, T3_AUTH, T3_PS, T3_DIVERT, T3_ALS, T3_INTERRUPT, T3_SDPOLL, T3_POLL_REPLY, T3_LOAD = range(1, 22)
 T3_UDTF = {"binary": 0, "address": 1, "bcd": 2, "iso7": 3, "iso8": 4, "nmea": 5, "ip": 6, "utf16": 7}
 T3_TG_LISTEN, T3_TG_TALK, T3_TG_BROADCAST = 1, 2, 4
 T3_DIV = {"voice": 8, "pdata": 4, "sdata": 2, "status": 1}  # call diversion services (T3_DIV_*)
 T3_PAR = {"a": 1, "b": 2}
+CPKV = 0x23                         # a key of the codeplug settings area (docs/spec/debuglink.md 3.27)
+CPKV_GET, CPKV_SET, CPKV_REMOVE = 1, 2, 3
+CPKV_T3_SYSTEM, CPKV_T3_CHAN = 0x0100, 0x0200   # Tier III key families (docs/spec/dmr-trunking.md 12)
 CHIP_SOC = 0xFF                     # CHIP_REG's chip number for the SoC's own registers
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
 SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
@@ -723,6 +726,54 @@ class DebugLink:
         """Send UDT short data (1-46 octets) to an MS or talkgroup; fmt a T3_UDTF name or number (UDT_Format)"""
         f = T3_UDTF[fmt] if isinstance(fmt, str) else fmt
         self.t3_op(T3_SDATA, struct.pack("<IBB", dst, int(group), f) + bytes(data))
+
+    def t3_load(self, n):
+        """Stage system n of the codeplug (docs/spec/dmr-trunking.md 12) without starting it; BAD_ARG when it is absent
+        or has no control channel"""
+        self.t3_op(T3_LOAD, bytes([n]))
+
+    def cpkv_get(self, key):
+        """A key's value from the codeplug settings area (its first bytes for a long one), None when absent"""
+        out, total = b"", None
+        while total is None or len(out) < min(total, 128):
+            try:
+                r = self.request(CPKV, struct.pack("<BHH", CPKV_GET, key, len(out)))[1]
+            except DebugLinkError as e:
+                if e.status == 4:
+                    return None
+                raise
+            total = struct.unpack_from("<H", r)[0]
+            if len(r) <= 2:
+                break
+            out += r[2:]
+        return out
+
+    def cpkv_set(self, key, value):
+        """Set a key to value (bytes), in pieces a request holds: the first replaces, the rest patch"""
+        value = bytes(value)
+        step = 64 - 5
+        for off in range(0, max(len(value), 1), step):
+            self.request(CPKV, struct.pack("<BHH", CPKV_SET, key, off) + value[off:off + step])
+
+    def cpkv_remove(self, key):
+        self.request(CPKV, struct.pack("<BH", CPKV_REMOVE, key))
+
+    @staticmethod
+    def t3_system_record(name, model, net, par="a", cc=1, opts=0x20, own_id=0, contact=0, listen_list=0, plan=None,
+                         plan_flags=0, leave_dbm=0, ps_rq=0, sites=()):
+        """A codeplug system record (docs/spec/dmr-trunking.md 12); plan: (base Hz, first LCN, separation code, split
+        Hz) or None; plan_flags bit 0 MS TX low, bit 1 don't learn channels; contact, listen_list 1-based, 0 none"""
+        base, first, sep, split = plan or (0, 0, 0, 0)
+        sites = list(sites)[:8]
+        return (name.encode("latin-1")[:16].ljust(16, b"\0") +
+                struct.pack("<BHBBHIHHIHBBIbBB", model, net, T3_PAR.get(par, par), cc, opts, own_id, contact,
+                            listen_list, base, first, sep, plan_flags, split, leave_dbm, ps_rq, len(sites)) +
+                struct.pack("<8H", *(sites + [0] * (8 - len(sites)))))
+
+    @staticmethod
+    def t3_chan_record(system, lcn, rx_hz, tx_hz, ctrl=False, cc=0xFF):
+        """A codeplug channel record of a trunked system (docs/spec/dmr-trunking.md 12)"""
+        return struct.pack("<BBHIIB", system, 1 if ctrl else 0, lcn, rx_hz, tx_hz, cc)
 
     def t3(self, cmd):
         """start | stop | dereg | end"""

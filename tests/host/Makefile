@@ -173,7 +173,7 @@ CORE_HAL := -I$(ROOT)/hal -Wshadow
 TESTS   += radioCoreTest inputTest quadratureTest serialmicTest
 
 # A Tier III trunked system on the radio (radio_sm.c's trunk block): the engine and what it reads PDUs with
-T3RADIO := $(CORE)/radio/radio_trunk.c $(CORE)/dmr/trunk/t3_ms.c $(CORE)/dmr/trunk/t3_pdu.c $(CORE)/dmr/trunk/t3_sys.c \
+T3RADIO := $(CORE)/radio/radio_trunk.c $(CORE)/radio/radio_trunk_cp.c $(CORE)/dmr/trunk/t3_ms.c $(CORE)/dmr/trunk/t3_pdu.c $(CORE)/dmr/trunk/t3_sys.c \
            $(CORE)/dmr/trunk/t3_plan.c
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
 RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
@@ -507,7 +507,7 @@ i18nTestDefault: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/
 # the long-press rules; uiSim renders screens to PNG (make ui-gallery: docs/ux/screens/, contact sheets in
 # docs/ux/screens/sheets/). Built without the __attribute__ override above so the weak service stubs
 # (ui_svc_stub.c) give way to the simulator's.
-UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
+UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_trunk.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
            $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/radio/radio_am.c \
            $(CORE)/radio/radio_bcast.c sim/ui_sim.c sim/ui_png.c
 # The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
@@ -1290,6 +1290,18 @@ run-t3pdu: t3PduTest
 	./t3PduTest
 .PHONY: run-t3pdu
 TESTS   += t3MsTest
+# Tier III systems from the codeplug (core/radio/radio_trunk_cp.c) and DL_CMD_CPKV, on a simulated flash
+T3CP    := t3CodeplugTest.c $(CORE)/radio/radio_trunk.c $(CORE)/radio/radio_trunk_cp.c $(CORE)/debuglink/debuglink_cpkv.c \
+	   $(CORE)/codeplug/codeplug_kv.c $(CPEDIT)
+TESTS   += t3CodeplugTest
+
+t3CodeplugTest: $(T3CP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/radio/radio_trunk.h $(CORE)/debuglink/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ $(T3CP)
+run: run-t3cp
+run-t3cp: t3CodeplugTest
+	./t3CodeplugTest
+.PHONY: run-t3cp
+
 t3MsTest: t3MsTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c $(wildcard $(CORE)/dmr/trunk/*.h)
 	$(CC) $(CFLAGS) -o $@ t3MsTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c
 run: run-t3ms

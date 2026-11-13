@@ -33,6 +33,9 @@ Pass criteria:
 - test_t3_private_call (rf, radio_tx; needs --t3-peer): as the group call, to --t3-peer as an individual call
   (t3.ax_svc individual): granted within PRIVATE_S, t3.call_group 0, t3.call_dst the peer; back on the control
   channel within CLEAR_S after the release.
+- test_t3_broadcast[talkgroup|allcall] (rf, radio_tx; talkgroup needs --t3-broadcast-tg): as the group call, to
+  --t3-broadcast-tg set as a broadcast talkgroup, or to all units (ALLMSID): granted within GRANT_S, then back on the
+  control channel within BCAST_CLEAR_S of the release, as a broadcast has no hang time (6.6.2.1).
 - test_t3_status[group|peer|poll] (rf, radio_tx; peer and poll need --t3-peer): registered, the radio sends status
   STATUS_VALUE to --t3-tg or to --t3-peer, or polls the peer. Within SERVICE_S: t3.ax_svc status, t3.ax_result done,
   t3.ax_reason 0x60 Message_Accepted (talkgroup), 0x44 MS_Accepted (peer) or 0x47 (poll; t3_svc t3.ax_info is the
@@ -41,6 +44,10 @@ Pass criteria:
   8-bit short data (two UDT blocks) to --t3-tg or --t3-peer: within SERVICE_S t3.ax_svc sdata, t3.ax_result done,
   t3.ax_reason 0x60 or 0x44. Whether the octets arrived whole is in the site's log; the radio's view shows only that
   the site took them (it acknowledges after the UDT's CRC passed).
+- test_t3_pdata[unconfirmed|confirmed] (rf, radio_tx; needs --t3-peer and the DMR data service): registered, the
+  data service sends PDATA_TEXT as an IP text message to --t3-peer. Within PDATA_S the engine asks for a data channel
+  (t3.ax_svc pdata seen), the message is sent (data.sms_state ok; confirmed: the peer acknowledged its blocks) and the radio
+  is back on the control channel within CLEAR_S.
 - test_t3_reg_list (rf, radio_tx; needs --t3-tg-list): registration by talkgroup with --t3-tg and --t3-tg-list
   (two to seven in all) listened to: within REG_S t3.reg ok, t3.ax_reason 0x62 or 0x65, t3_svc t3.reg_tgs the
   number sent, and t3.reg_tg_ok has no bit set past them. Which the site accepted is printed; the site's own
@@ -80,6 +87,7 @@ REG_ACCEPTED = (0x62, 0x65)
 MSG_ACCEPTED, MS_ACCEPTED, POLL_ACCEPTED = 0x60, 0x44, 0x47
 STATUS_VALUE = 37
 SDATA_TEXT = b"rfoundry short data test"   # 24 octets: two blocks
+PDATA_TEXT = "rfoundry packet data test"   # an IP text message on a granted data channel
 
 CAMP_S = 15.0       # hunting one control channel, then an Aloha
 LEARN_S = 25.0      # Chan_Freq every 10 s on the rig's site; two chances
@@ -89,7 +97,10 @@ GRANT_S = 10.0
 PRIVATE_S = 30.0    # the site may ask the called radio first (C_AHOY)
 TALK_S = 3.0
 CLEAR_S = 15.0      # the site's hang time, its P_CLEAR, the retune
+PDATA_S = 40.0      # the data channel request, the grant, the data, the answer (confirmed), the clear
 SERVICE_S = 20.0    # random access, the site's C_AHOY to the called MS and its answer, retries
+BCAST_CLEAR_S = 3.0  # a broadcast has no hang time: the terminator, the site's P_CLEAR, the retune
+ALLMSID = 0xFFFFFF  # all-call (TS 102 361-4 A.4)
 PTT_MAX_MS = 20000  # the firmware's own PTT time-out, past every wait here
 
 
@@ -157,7 +168,7 @@ def trunk_tx(trunk):
     return trunk
 
 
-def start(radio, s, listen_only=False, reg_tg=False, talk_id=0, talk_private=False, more_tgs=()):
+def start(radio, s, listen_only=False, reg_tg=False, talk_id=0, talk_private=False, more_tgs=(), broadcast_tg=0):
     """Stage the rig's site and start; returns once the radio is camped on it"""
     L = radio.link
     L.t3("stop")
@@ -167,9 +178,11 @@ def start(radio, s, listen_only=False, reg_tg=False, talk_id=0, talk_private=Fal
                 talk_private=talk_private)
     L.t3_site(s["site"])
     L.t3_ctrl(s["lcn"], s["rx"], s["tx"])
-    L.t3_tg(s["tg"], listen=True, talk=True)
+    L.t3_tg(s["tg"], listen=True, talk=True, broadcast=broadcast_tg == s["tg"])
     for tg in more_tgs:
         L.t3_tg(tg, listen=True, talk=False)
+    if broadcast_tg and broadcast_tg != s["tg"]:
+        L.t3_tg(broadcast_tg, listen=True, talk=False, broadcast=True)
     L.t3("start")
     try:
         return wait_t3(radio, lambda v: v.get("t3.state") == "camped" and v.get("t3.confirmed") == "1", CAMP_S,
@@ -179,8 +192,8 @@ def start(radio, s, listen_only=False, reg_tg=False, talk_id=0, talk_private=Fal
         raise
 
 
-def register(radio, s, reg_tg=False):
-    v = start(radio, s, reg_tg=reg_tg)
+def register(radio, s, reg_tg=False, **kw):
+    v = start(radio, s, reg_tg=reg_tg, **kw)
     try:
         return wait_t3(radio, lambda x: x.get("t3.reg") == "ok", REG_S, "registered")
     except AssertionError:
@@ -197,7 +210,8 @@ def back_on_tscc(radio, s, returns0):
 
 
 def call(radio, s, dst, group, grant_s):
-    """PTT held through a request, the grant and TALK_S of talking; released; back on the control channel"""
+    """PTT held through a request, the grant and TALK_S of talking; released; back on the control channel. Returns
+    the seconds from the release to the radio back on the control channel"""
     L = radio.link
     v0 = t3(radio)
     returns0 = num(v0, "t3.returns")
@@ -223,11 +237,13 @@ def call(radio, s, dst, group, grant_s):
         raise
     finally:
         L.ptt(False)
+        released = time.monotonic()
     try:
         back_on_tscc(radio, s, returns0)
     except AssertionError:
         print("t3 view:", t3(radio))
         raise
+    return time.monotonic() - released
 
 
 @pytest.mark.feature("dmr_trunk")
@@ -294,7 +310,25 @@ def test_t3_register(trunk_tx, pytestconfig, by):
 def test_t3_group_call(trunk_tx, pytestconfig):
     s = site(pytestconfig)
     register(trunk_tx, s)
-    call(trunk_tx, s, s["tg"], True, GRANT_S)
+    took = call(trunk_tx, s, s["tg"], True, GRANT_S)
+    print(f"back on the control channel {took:.1f} s after the release")
+
+
+@pytest.mark.feature("dmr_trunk_tx")
+@pytest.mark.rf
+@pytest.mark.radio_tx
+@pytest.mark.parametrize("kind", ["talkgroup", "allcall"])
+def test_t3_broadcast(trunk_tx, pytestconfig, kind):
+    s = site(pytestconfig)
+    if kind == "talkgroup":
+        dst = int(rig(pytestconfig, "t3-broadcast-tg", "a talkgroup the site takes broadcast calls to"))
+        register(trunk_tx, s, talk_id=dst, broadcast_tg=dst)
+    else:
+        dst = ALLMSID
+        register(trunk_tx, s, talk_id=dst)
+    took = call(trunk_tx, s, dst, True, GRANT_S)
+    print(f"{kind}: back on the control channel {took:.1f} s after the release")
+    assert took <= BCAST_CLEAR_S, f"{took:.1f} s after the release: a hang time on a broadcast"
 
 
 @pytest.mark.feature("dmr_trunk_tx")
@@ -361,6 +395,37 @@ def test_t3_sdata(trunk_tx, pytestconfig, to):
     dst = svc_target(trunk_tx, pytestconfig, to)
     service(trunk_tx, "sdata", lambda: trunk_tx.link.t3_sdata(dst, SDATA_TEXT, to == "group", "iso8"),
             MSG_ACCEPTED if to == "group" else MS_ACCEPTED)
+
+
+@pytest.mark.feature("dmr_trunk_tx")
+@pytest.mark.rf
+@pytest.mark.radio_tx
+@pytest.mark.parametrize("ack", ["unconfirmed", "confirmed"])
+def test_t3_pdata(trunk_tx, pytestconfig, ack):
+    s = site(pytestconfig)
+    peer = rig(pytestconfig, "t3-peer", "an MS the site grants data calls to")
+    radio = trunk_tx
+    if radio.link.view(["dmr_data"]).get("data.built") != "1":
+        skip("not_built", "built without the DMR data service")
+    register(radio, s)
+    returns0 = num(t3(radio), "t3.returns")
+    # The standard's IP text (361-3 5.7.1): confirmed, it is delivered on the data link ACK. A confirmed TMS text would
+    # also wait for the far radio's own TMS ACK, which a radio that only speaks the standard doesn't send
+    radio.link.sms(peer, PDATA_TEXT, ack=ack == "confirmed", fmt="etsi_ip")
+    seen = set()
+
+    def done(v):
+        seen.add(v.get("t3.ax_svc"))
+        return v.get("data.sms_state") in ("ok", "failed")
+    try:
+        v = radio.wait_for(done, PDATA_S, interval=0.2, sections=(SECTION, "dmr_data"), what="the text message sent")
+        assert "pdata" in seen, f"no packet data channel request (accesses seen: {sorted(map(str, seen))})"
+        assert v.get("data.sms_state") == "ok", f"text message {v.get('data.sms_state')}"
+        back_on_tscc(radio, s, returns0)
+    except AssertionError:
+        print("t3 view:", t3(radio))
+        print("data view:", radio.link.view(["dmr_data"]))
+        raise
 
 
 @pytest.mark.feature("dmr_trunk_tx")

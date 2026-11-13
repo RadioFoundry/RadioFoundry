@@ -194,6 +194,11 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 		s->cfg.poll_len = (uint8_t)(n - 1u);
 		memcpy(s->poll_reply, a + 1, s->cfg.poll_len);
 		break;
+	case DL_T3_LOAD:	// system n u8
+		if (n != 1u || !radio_t3_load(a[0], s)) {
+			out[0] = DL_ST_BAD_ARG;
+		}
+		break;
 	case DL_T3_INTERRUPT:	// end ALS u8
 		if (n != 1u || a[0] > 1u) {
 			out[0] = DL_ST_BAD_ARG;

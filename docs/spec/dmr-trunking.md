@@ -5,7 +5,7 @@
 A radio on a DMR Tier III trunked system (ETSI TS 102 361-4) finds the system's trunked site control channel (TSCC),
 stays on it, and follows the channel grants for the calls it wants to hear. Switch: `CONFIG_DMR_TRUNK`, a child of
 `CONFIG_DMR` (`docs/build-config.md`); the access side (section 7) is `CONFIG_DMR_TRUNK_TX`, a child of it. The radio core runs the engine on
-a system set up over the debug link (section 11); the codeplug has no keys for a system yet, and there is no UI.
+a system from the codeplug (section 12) or one set up over the debug link (section 11).
 
 | Section | Topic |
 |---|---|
@@ -20,6 +20,7 @@ a system set up over the debug link (section 11); the codeplug has no keys for a
 | 9 | Tests |
 | 10 | Not done yet |
 | 11 | On the radio |
+| 12 | In the codeplug |
 
 ## 1. Standards position
 
@@ -315,7 +316,7 @@ the AHOY's source, its additional address the radio's ID.
 | selective clear (P_AHOY kind cancel) | Message_Accepted, then return |
 | status (kind status) | MS_Accepted (section 7.5) |
 | status poll (kind status, status 127) | Accepted for the Status Polling Service (0x47), Response_Info the radio's status |
-| stun or revive (kind supplementary, from STUNI) | without K: Message_Accepted; with K: C_ACKVIT, the radio's challenge (section 7.9) |
+| stun or revive (kind supplementary, from STUNI) | without `T3_OPT_STUN`: not supported; else without K: Message_Accepted; with K: C_ACKVIT, the radio's challenge (section 7.9) |
 | kill (kind supplementary, from KILLI) | with K and `T3_OPT_KILL`: C_ACKVIT; else not supported (section 7.9) |
 | authentication challenge (kind 1110b, source a challenge 0-0xFFFCDF), with K | Authentication_Response 0x48, the target the response (section 7.10) |
 | authentication challenge without K, anything else to the radio | not supported (0x00); stunned, nothing |
@@ -426,7 +427,9 @@ The emergency key ([dmr-emergency.md](dmr-emergency.md)) works on a trunked syst
 ### 7.9 Stun, revive and kill (6.4.9, 6.4.10)
 
 A C_AHOY to the radio from STUNI, Service_Kind supplementary (1101b), stuns it (Service_Kind_Flag 0) or revives it (1).
-Without K (section 7.10) the radio answers C_ACKU Message_Accepted and acts (6.4.9.1).
+The radio takes it only with `T3_OPT_STUN`; without, it answers C_ACKU MSNot_Supported. With the option and without K
+(section 7.10) the radio answers C_ACKU Message_Accepted and acts (6.4.9.1). An open system's radios leave the option
+off: anyone could send an unauthenticated stun.
 
 With K it authenticates the TSCC first (6.4.9.2.2, 6.4.10.2):
 
@@ -655,11 +658,10 @@ on its voice, and never camps on another system or on a control channel that isn
 
 | Item | Needs |
 |---|---|
-| A trunked system in the codeplug, and its screens | codeplug keys for systems |
 | CACH short LC reception | the modem drivers' CACH report |
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
 | Supplementary data, a list subscription without registering | later |
-| Short data polling from the UI, and the reply in the codeplug | trunked systems in the codeplug |
+| Short data polling from the UI, and the reply in the codeplug | later |
 | A kill kept across a restart, and conventional DMR off when killed | later |
 | A stun kept across a restart of the radio | trunked systems in the codeplug |
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
@@ -692,3 +694,160 @@ on its voice, and never camps on another system or on a control channel that isn
 Tests: `tests/host/radioCoreTest.c` (`test_t3_talk`) runs a simulated site through PTT, request, grant and a call
 with nothing heard; `test_t3_pdata` through a text message out on a granted channel and one in; `test_t3_emergency` through the alarm, the emergency call, the cancel and an alarm heard. `tests/hil/test_t3_site.py` runs camp, registration, group and private calls against a site on
 the SDR bench.
+
+## 12. In the codeplug
+
+A trunked system is a record of its own; a **trunked channel** is an ordinary codeplug channel tagged with the system
+it uses. Zones hold trunked channels like any other, mixed with conventional ones. Four key families of the codeplug
+settings area ([codeplug-settings.md](codeplug-settings.md) 3) hold them:
+
+| Keys | Records |
+|---|---|
+| 0x0100 + n | System n, n = 0 to `RADIO_T3_SYSTEMS` - 1 (12.1) |
+| 0x0200 + i | A channel of a system: the hunt list and the plan's table (12.2) |
+| 0x0300 + n | System n's authentication key (12.3) |
+| 0x0400 + c - 1 | The tag of channel c, c = 1 to 1024 (12.4) |
+
+### 12.1 System
+
+Little endian:
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 16 | Name, NUL padded |
+| 16 | 1 | Network model: 0 tiny, 1 small, 2 large, 3 huge |
+| 17 | 2 | NET |
+| 19 | 1 | Category: 1 A, 2 B |
+| 20 | 1 | Color code, 0-15 |
+| 21 | 2 | Options: 0x0001 listen only, 0x0002 follow all-calls, 0x0004 follow emergency calls on any talkgroup, 0x0020 follow private calls, 0x0040 register with the talkgroups, 0x0080 accept Ambient Listening, 0x0100 accept a kill, 0x0200 no roaming, 0x0400 accept a stun, 0x0800 the system authenticates. Other bits: 0 |
+| 23 | 4 | DMR ID on the system, 0 = the radio's |
+| 27 | 1 | Sharing (12.6): 0 off, 1 channels with the system's identity, 2 the whole system and its key |
+| 28 | 1 | Fallback hold time in seconds (12.5), 0 = 30 |
+| 29 | 2 | Fallback channel (12.5), 0 = none |
+| 31 | 4 | Fixed plan (section 5): MS transmit Hz of the first channel, 0 = no fixed plan |
+| 35 | 2 | Fixed plan: the first channel's LCN |
+| 37 | 1 | Fixed plan: separation code (table C.1) |
+| 38 | 1 | Plan flags: bit 0 MS transmit below MS receive; bit 1 don't learn channels from the TSCC |
+| 39 | 4 | Fixed plan: duplex split Hz |
+| 43 | 1 | Weak below this dBm (signed; 0 = the radio's roaming threshold) |
+| 44 | 1 | Power save asked for at registration: 0 off, 1-7 = 1:2 to 1:128 |
+| 45 | 1 | Sites the radio may use: how many, 0 = any |
+| 46 | 16 | Those SITE values, u16 each, 8 at most |
+| 62 | 2 | The fallback channel's name check (12.4) |
+
+**Usable:** a system is usable when it has a control channel and, if it authenticates (0x0800), a key. A channel
+tagged with a system that isn't usable is **unavailable** (12.4).
+
+**Authentication is the system's choice.** A system that doesn't authenticate needs no key: the radio registers and
+answers a challenge "not supported". An open system (an amateur one, say) leaves 0x0800 off and no radio needs a key.
+
+**Stun.** A stun is taken only with 0x0400. With a key it is authenticated first (section 7.9); without one it is
+taken as sent, so an open system's radios leave 0x0400 off.
+
+### 12.2 System channels
+
+Record list, key 0x0200 + i, one per programmed channel of any system:
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 1 | System n |
+| 1 | 1 | Flags: bit 0 a control channel, hunted in key order |
+| 2 | 2 | LCN |
+| 4 | 4 | MS receive Hz |
+| 8 | 4 | MS transmit Hz |
+| 12 | 1 | Color code, 0xFF = the system's |
+
+A system takes its first `T3_CTRL_MAX` control channels and first `RADIO_T3_CHANS` channels; the rest are skipped.
+
+### 12.3 Authentication key
+
+Key 0x0300 + n, system n's: K (16 octets, the first the most significant), then the PSN (3 octets, most significant
+first; absent or 0: none). The key is in the codeplug so the Codeplug Editor can set it and a share can carry it
+(12.6); the editor's CSV and other-format exports leave it out.
+
+### 12.4 Trunked channels
+
+A trunked channel is a codeplug channel with a tag, key 0x0400 + c - 1 for channel c:
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 1 | System n |
+| 1 | 1 | Flags: bit 0 no fallback on this channel. Other bits: 0 |
+| 2 | 2 | Name check: the channel's |
+| 4 | 2 | Fallback channel for this channel, 0 = the system's |
+| 6 | 2 | Its name check |
+
+**Name check:** FNV-1a (32 bit) over the channel's name as stored (16 octets, NUL padded), the two halves XORed. A
+tool that renumbers channels (one that writes the channel table in its own order) moves a name away from its tag: a
+tag whose check doesn't match its channel's name is ignored, and the channel is an ordinary one. The same check
+guards a fallback channel, so a fallback never lands on a renumbered conventional channel.
+
+**The channel record** carries what the open-firmware format can say: DMR, receive only, RX and TX on the system's
+first control channel, the contact (the talk target: a talkgroup, a private contact or the all-call contact) and the
+RX group list (the talkgroups followed). A firmware or tool that doesn't know the tags sees a receive-only DMR channel
+and never transmits on it. This firmware takes from the record the name, contact, RX group list, power, TX time-out
+and talker alias; it ignores the frequencies, slot, color code, receive only, tones, direct mode and SFR.
+
+| The user selects | The radio |
+|---|---|
+| a trunked channel, its system not running | starts the system (section 7.1), its talkgroups the channel's |
+| a trunked channel of the system running | keeps the TSCC; takes the channel's talk target and talkgroups, and registers again only when its talkgroups changed and the system registers with them (0x0040) |
+| a trunked channel of another system | leaves the running one (deregistering, section 7.2) and starts the new one |
+| a conventional channel or the VFO | leaves the system |
+| an unavailable trunked channel | leaves any system, receives nothing and refuses PTT; the screen says "System not set up" |
+
+At power-on the radio restores the channel it was on, so a trunked channel starts its system. Keys written while a
+system runs are taken at the next selection of a channel.
+
+### 12.5 Fallback
+
+A system or a trunked channel may name a conventional **fallback channel**. When the radio has found no TSCC for
+the hold time, it goes to the fallback channel and works there as on any conventional channel, RX and TX. The screen
+says "Fallback".
+
+| Rule | Value |
+|---|---|
+| Which | the trunked channel's own fallback, else the system's; none when the channel's tag sets "no fallback" |
+| Checked | the fallback must be a conventional channel (not tagged) whose name check matches; else there is none |
+| When | the radio has been hunting, with no TSCC confirmed, for the hold time (0 = 30 s) |
+| Looking back | every `T3_FALLBACK_PROBE_MS` (10 s), while the fallback channel is idle (no call heard or sent for 2 s, PTT up), the radio hunts the system's control channels for up to `T3_FALLBACK_HUNT_MS` (2 s) |
+| Returning | a TSCC of the system found: the radio stays on it, registers, beeps twice and says "Back on <system>" |
+| Not found | back to the fallback channel |
+| Leaving | the user selecting another channel ends the fallback as any change does |
+
+### 12.6 Sharing
+
+A zone share ([zone-share.md](zone-share.md) 4.2) carries a zone's trunked channels as its system's sharing setting
+allows:
+
+| Sharing | The share carries |
+|---|---|
+| 0 off (the default) | no trunked channel: they are left out and counted |
+| 1 channels with the system's identity | the channels and the system's name and identity (model, NET, category, whether it authenticates). Enough for a radio that already has the system |
+| 2 the whole system and its key | the channels, the system's set-up (color code, options, plan, control channels, fallback) and its key when it has one |
+
+Never carried: the radio's own ID or its ID on the system, kill or stun state, registration.
+
+A receiver matches a shared system to one of its own by model, NET and category. A match is used as it is: the share
+changes nothing in it, not even its key. With no match, a share with the whole system adds it in a free system slot;
+one with the identity only adds the identity, with no control channel, so its channels come in **unavailable**. The
+offer says so before the import, and the banner after it: "3 trunked channels unavailable: system not set up". They
+work once the system is set up, by the Codeplug Editor or a later share with the whole system. With every system slot
+in use, the trunked channels are left out and counted.
+
+Trunked channels come in as they were sent: a site grants every transmission, so they are not made receive only.
+
+**The key is sent in clear** unless the channel the share goes out on uses privacy, and a key is tied to the radio's
+ID on most systems: the system holds one per radio, so a key shared to a radio with another ID works only where the
+system holds that key for it. The Codeplug Editor says both where sharing is set to 2.
+
+### 12.7 Calls
+
+| Call | |
+|---|---|
+| `radio_t3_tag(c, &tag)` | Channel c's tag, false when it has none or its name check fails |
+| `radio_t3_load(n, &ch, &setup)` | Fills a setup from system n's keys and the channel's contact and RX group list; false when the system is absent or not usable |
+| `radio_t3_name(n, buf)` | The name only, for a list |
+| `radio_t3_usable(n)` | Whether system n is usable |
+
+The debug link's LOAD (section 11) stages system n with no channel's talkgroups, without starting it.

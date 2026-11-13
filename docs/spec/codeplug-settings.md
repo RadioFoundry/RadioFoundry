@@ -96,6 +96,8 @@ continuation keeps the reserved bytes and the header length as it found them.
 |---|---|---|---|---|---|
 | 0x0001 | ARS server | id | The presence server's DMR ID for ARS registration ([dmr-data.md](dmr-data.md) 6); 0 = ARS off | `ds_ars_server` | ARS in the build (`CONFIG_DMR_ARS`) |
 | 0x0002 | IP gateway | id | The DMR ID of the radio that takes the host's off-net IP packets ([usb-network.md](usb-network.md) 3.1); 0 = none | `ds_ip_gateway` | IP gateway in the build (`CONFIG_DMR_IP_GATEWAY`) |
+| 0x0100 | Trunked systems | record list | Keys 0x0100-0x01FF, one per DMR Tier III system, n = key - 0x0100 ([dmr-trunking.md](dmr-trunking.md) 12) | none (a list) | Tier III trunking in the build (`CONFIG_DMR_TRUNK`) |
+| 0x0200 | Trunked channels | record list | Keys 0x0200-0x02FF, one per programmed channel of a trunked system ([dmr-trunking.md](dmr-trunking.md) 12) | none (a list) | Tier III trunking in the build (`CONFIG_DMR_TRUNK`) |
 
 **Radio's own copy** is the setting's field in the settings store ([settings-store.md](settings-store.md) 3). Every
 scalar key has one (3.2).

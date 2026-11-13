@@ -17,6 +17,11 @@
 // Keys (docs/spec/codeplug-settings.md 3): a key's meaning never changes, a new meaning gets a new key
 #define CODEPLUG_KEY_ARS_SERVER	0x0001u		// u32: the ARS presence server's DMR ID, 0 = ARS off
 #define CODEPLUG_KEY_IP_GATEWAY	0x0002u		// u32: the off-net IP gateway radio's DMR ID, 0 = none
+// Key families (record lists): record n is base + n
+#define CODEPLUG_KEY_T3_SYSTEM	0x0100u		// Tier III systems, 0x0100-0x01FF (docs/spec/dmr-trunking.md 12)
+#define CODEPLUG_KEY_T3_CHAN	0x0200u		// their channels, 0x0200-0x02FF
+#define CODEPLUG_KEY_T3_KEY	0x0300u		// their authentication keys, 0x0300-0x03FF
+#define CODEPLUG_KEY_T3_TAG	0x0400u		// trunked channel tags, 0x0400 + channel - 1 (0x0400-0x07FF)
 
 // How a key's value is encoded (docs/spec/codeplug-settings.md 3.1): the encoding, never a width. A type is never
 // redefined, only grown by appending bytes

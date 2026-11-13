@@ -161,6 +161,10 @@ void debuglink_rx2_service(void);
 // text. Without CONFIG_DMR, unavailable
 size_t debuglink_cmd_iddb(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 
+// A key of the codeplug settings area (debuglink_cpkv.c, docs/spec/debuglink.md 3.27): DL_CMD_CPKV. Unavailable
+// without the DMR data core or Tier III trunking, the features that read keys
+size_t debuglink_cmd_cpkv(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+
 // A Tier III trunked system (debuglink_t3.c, docs/spec/debuglink.md 3.26): DL_CMD_T3 and the t3 section ("t3.built=0"
 // without CONFIG_DMR_TRUNK)
 size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// A DMR Tier III trunked system on the radio (docs/spec/dmr-trunking.md 11). The system is set up in RAM (the debug
-// link stages it: radio_t3_staged) until the codeplug has keys for it; RADIO_T3_START hands it to the radio core, which runs
-// the engine (dmr/trunk/t3_ms.h) on the channel the radio is on.
+// A DMR Tier III trunked system on the radio (docs/spec/dmr-trunking.md 11, 12). The system is staged in RAM
+// (radio_t3_staged), by the debug link or from the codeplug (radio_t3_load); RADIO_T3_START hands it to the radio core,
+// which runs the engine (dmr/trunk/t3_ms.h) on the channel the radio is on.
 #ifndef RFOUNDRY_RADIO_TRUNK_H
 #define RFOUNDRY_RADIO_TRUNK_H
 
@@ -26,14 +26,27 @@ typedef enum {
 
 #if CONFIG_DMR_TRUNK
 #include "dmr/trunk/t3_ms.h"
+#include "codeplug/codeplug.h"
 
 #define RADIO_T3_CHANS	8	// programmed channels (the plan's table; control channels are among them)
+#define RADIO_T3_SYSTEMS	8	// systems read from the codeplug (keys CODEPLUG_KEY_T3_SYSTEM + 0..7)
+#define RADIO_T3_STAGED	0xFFu	// radio_t3_setup_t.sys of a system the debug link set up
+
+// Fallback (docs/spec/dmr-trunking.md 12.5)
+#define RADIO_T3_FALLBACK_HOLD_S	30	// hunting this long with no TSCC: to the fallback channel
+#define RADIO_T3_PROBE_MS		10000	// on the fallback channel: how often the radio looks for the TSCC
+#define RADIO_T3_PROBE_HUNT_MS		2000	// for how long
+#define RADIO_T3_PROBE_QUIET_MS		2000	// only when the fallback channel has been quiet this long
 
 typedef struct {
 	t3_cfg_t cfg;		// cfg.auth.sites and cfg.plan.table point into this struct once taken (radio_t3_fix)
 	t3_chan_t chans[RADIO_T3_CHANS];
 	uint8_t nchans;
 	uint8_t cc;		// the system's color code, for channels programmed with T3_CC_ANY
+	uint8_t sys;		// codeplug system n, or RADIO_T3_STAGED
+	uint8_t fb_hold_s;	// fallback hold time, 0 = RADIO_T3_FALLBACK_HOLD_S
+	uint16_t fb_chan;	// the system's fallback channel, 0 = none, and its name check
+	uint16_t fb_check;
 	uint32_t talk_id;	// PTT on the TSCC asks for a call to this (0: the first talkgroup with T3_TG_TALK)
 	bool talk_private;
 	uint32_t sd_dst;	// RADIO_T3_STATUS, RADIO_T3_SDATA: to this MS or talkgroup
@@ -49,11 +62,36 @@ typedef struct {
 
 enum { RADIO_T3_DIV_CLEAR, RADIO_T3_DIV_SET, RADIO_T3_DIV_CLEAR_IN };
 
+// A trunked channel's tag (docs/spec/dmr-trunking.md 12.4)
+typedef struct {
+	uint8_t sys;		// system n
+	uint8_t flags;		// RADIO_T3_TAG_*
+	uint16_t fb_chan;	// this channel's fallback, 0 = the system's, and its name check
+	uint16_t fb_check;
+} radio_t3_tag_t;
+#define RADIO_T3_TAG_NO_FALLBACK	0x01u
+
 // The setup the debug link writes to (host link task); RADIO_T3_START copies it into the radio core
 radio_t3_setup_t *radio_t3_staged(void);
 void radio_t3_reset(radio_t3_setup_t *s);
 // Point cfg's internal pointers into s (after a copy)
 void radio_t3_fix(radio_t3_setup_t *s);
+// The name check of a channel name (12.4): FNV-1a over it NUL padded to 16 octets, the halves XORed
+uint16_t radio_t3_name_check(const char *name);
+// Channel c's tag; false when it has none, or its name check doesn't match name (the channel's)
+bool radio_t3_tag(uint16_t c, const char *name, radio_t3_tag_t *tag);
+// System n of the codeplug (12.1-12.3) into s, with no talkgroups: false (s reset) when it is absent, too short or not
+// usable (no control channel, or it authenticates and has no key)
+bool radio_t3_load(uint8_t n, radio_t3_setup_t *s);
+// The channel's talk target and the talkgroups of its RX group list into s (replacing any)
+void radio_t3_talk(const channel_t *ch, radio_t3_setup_t *s);
+// Whether system n is usable
+bool radio_t3_usable(uint8_t n);
+// System n's name (CODEPLUG_NAME_LEN + 1 bytes); false when it is absent
+bool radio_t3_name(uint8_t n, char *name);
+// The fallback for a trunked channel with this tag on system s (12.5) into out: its channel number, 0 when none (none
+// set, the channel gone, renamed or itself trunked)
+uint16_t radio_t3_fallback(const radio_t3_tag_t *tag, const radio_t3_setup_t *s, channel_t *out);
 #endif
 
 #endif

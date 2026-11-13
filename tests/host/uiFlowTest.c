@@ -585,6 +585,14 @@ static const flow_t flows[] = {
 	{ "S message failed text", "", "", "screen=home", 0, false },
 	// APRS (docs/spec/aprs.md 10): Tools 9, one row each
 	{ "A APRS page", "", "ok 6 8", "screen=aprs", 3, false },
+#if CONFIG_DMR_TRUNK
+	// Tools > Trunking (dmr-trunking.md 12): the codeplug's systems; select one to use it, again to leave it
+	{ "T Trunking lists the systems", "", "ok 6 up", "screen=tools focus=Trunking", 3, false },
+	{ "T Trunking opens", "ok 6 up", "ok", "screen=trunk count=2", 1, false },
+	{ "T a system selected goes Home", "ok 6 up ok", "ok", "screen=home toast=Searching", 1, false },
+	{ "T its row says it is registered", "ok 6 up ok ok wait:3000 ok 6 up ok", "", "screen=trunk shows=Registered", 0, false },
+	{ "T selected again it is left", "ok 6 up ok ok wait:3000 ok 6 up ok", "ok", "toast=Trunking_off", 1, false },
+#endif
 	{ "A APRS RF keeps Home with a TX APRS pill", "", "aprstx",
 	  "screen=home shows=TX_APRS shows=SENDING hides=144.390 hides=0:00 hides=left_of", 0, false },
 	{ "A APRS RF returns to the channel", "aprstx", "aprsend",

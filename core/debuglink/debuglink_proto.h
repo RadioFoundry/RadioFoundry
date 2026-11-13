@@ -36,6 +36,7 @@ enum {
 	DL_CMD_CHIP_REG		= 0x20,	// an RF chip or SoC register read or written (debuglink_chipreg.c, 3.24)
 	DL_CMD_HWOPT		= 0x21,	// the board's hardware options: list, set (debuglink_hwopt.c, 3.25)
 	DL_CMD_T3		= 0x22,	// a Tier III trunked system: stage, select, leave (debuglink_t3.c, 3.26)
+	DL_CMD_CPKV		= 0x23,	// a key of the codeplug settings area: read, write, remove (debuglink_cpkv.c, 3.27)
 };
 
 // DL_CMD_T3 operations (first payload byte; docs/spec/debuglink.md 3.26). Little endian
@@ -57,9 +58,17 @@ enum {
 	DL_T3_PS = 15,		// power save: PowerSave_RQ u8 (0 off, 1-7), T_Awake ms u16 (0: default)
 	DL_T3_DIVERT = 16,	// call diversion: mode u8 (0 clear, 1 set, 2 clear incoming), services u8 (T3_DIV_*), to u32, group u8
 	DL_T3_ALS = 17,		// Ambient Listening: to u32 (0: only the timers), emergency u8, T_ALS s u16, T_ALS_E s u16 (0: default)
-	DL_T3_INTERRUPT = 18,
+	DL_T3_INTERRUPT = 18,	// stop the talker in the call followed: end ALS u8 (0: status 125, 1: status 123)
 	DL_T3_SDPOLL = 19,	// poll an MS for its short data: to u32, UDT_Format u8, blocks u8 (1-4)
-	DL_T3_POLL_REPLY = 20,	// the answer to a poll: UDT_Format u8, then 0-46 octets (none: refused)	// stop the talker in the call followed: end ALS u8 (0: status 125, 1: status 123)
+	DL_T3_POLL_REPLY = 20,	// the answer to a poll: UDT_Format u8, then 0-46 octets (none: refused)
+	DL_T3_LOAD = 21,	// stage system n u8 of the codeplug (dmr-trunking.md 12), not started
+};
+
+// DL_CMD_CPKV operations (first payload byte, then the key u16; docs/spec/debuglink.md 3.27)
+enum {
+	DL_CPKV_GET = 1,	// offset u16 -> length u16, the value from offset
+	DL_CPKV_SET = 2,	// offset u16, bytes: offset 0 sets the value, else patches it from offset
+	DL_CPKV_REMOVE = 3,
 };
 
 // DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.25)
