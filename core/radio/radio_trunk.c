@@ -27,5 +27,6 @@ void radio_t3_fix(radio_t3_setup_t *s)
 	s->cfg.auth.sites = s->cfg.sites;
 	s->cfg.plan.table = s->chans;
 	s->cfg.plan.ntable = s->nchans;
+	s->cfg.poll_data = s->poll_reply;
 }
 #endif

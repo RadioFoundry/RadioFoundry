@@ -21,6 +21,7 @@ typedef enum {
 	RADIO_T3_ALS,			// listen to sd_dst's surroundings (ALS); sd_group: an emergency one
 	RADIO_T3_INTERRUPT,		// ask the TS to stop the talker in the call followed (status 125)
 	RADIO_T3_ALS_END,		// end the ALS call the radio listens to (status 123)
+	RADIO_T3_SDPOLL,		// poll sd_dst for its short data: format sd_format, sd_len blocks
 } radio_t3_cmd_t;
 
 #if CONFIG_DMR_TRUNK
@@ -43,6 +44,7 @@ typedef struct {
 	uint8_t sd_data[T3_UDT_MAX];
 	uint8_t div_mode;	// RADIO_T3_DIVERT: RADIO_T3_DIV_*
 	uint8_t div_svcs;	// T3_DIV_*
+	uint8_t poll_reply[T3_UDT_MAX];	// the answer to a short data poll: cfg.poll_len octets, cfg.poll_format
 } radio_t3_setup_t;
 
 enum { RADIO_T3_DIV_CLEAR, RADIO_T3_DIV_SET, RADIO_T3_DIV_CLEAR_IN };

@@ -169,6 +169,26 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 			radio_req_t3(RADIO_T3_ALS);
 		}
 		break;
+	case DL_T3_SDPOLL:	// to u32, format u8, blocks u8
+		if (n != 6u || rd32(a) == 0 || rd32(a) > T3_ID_USER_MAX || a[4] > 15u || a[5] < 1u || a[5] > 4u) {
+			out[0] = DL_ST_BAD_ARG;
+			break;
+		}
+		s->sd_dst = rd32(a);
+		s->sd_group = false;
+		s->sd_format = a[4];
+		s->sd_len = a[5];
+		radio_req_t3(RADIO_T3_SDPOLL);
+		break;
+	case DL_T3_POLL_REPLY:	// format u8, data
+		if (n < 1u || n > 1u + T3_UDT_MAX || a[0] > 15u) {
+			out[0] = DL_ST_BAD_ARG;
+			break;
+		}
+		s->cfg.poll_format = a[0];
+		s->cfg.poll_len = (uint8_t)(n - 1u);
+		memcpy(s->poll_reply, a + 1, s->cfg.poll_len);
+		break;
 	case DL_T3_INTERRUPT:	// end ALS u8
 		if (n != 1u || a[0] > 1u) {
 			out[0] = DL_ST_BAD_ARG;
