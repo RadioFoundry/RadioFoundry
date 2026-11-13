@@ -8,7 +8,8 @@ input.raw_keys; the radio fixture puts the channel, VFO and settings back afterw
 
 Without --manual, the microphone at the speaker (--microphone, as in test_speaker.py) listens instead: it records the
 room just before the sound starts, then the sound, and the sound is heard when its loudest stretch (the 90th
-percentile of 50 ms windows) is EAR_DB over the room's median. The volume
+percentile of 50 ms windows; the 99th for the repeated key beep, which fills only a few) is EAR_DB over the room's
+median. The volume
 is set over the debug link (an override on a knob radio, given back after); a radio whose volume can't be set asks
 for its own volume turned up.
 
@@ -39,13 +40,14 @@ def _keys(radio):
     return as_int(radio.link.view(["link"]).get("input.raw_keys"), 0)
 
 
-def _heard(radio, ear, what, seconds=ANSWER_S, during=None, start=None):
+def _heard(radio, ear, what, seconds=ANSWER_S, during=None, start=None, pct=90):
     """Ask whether `what` is heard: True once a key goes down within `seconds` (a person), or when the microphone hears
     the speaker EAR_DB over the room (ear, the bench microphone). start(): starts the sound, once the room is
     measured. during(): called every 1.5 s while waiting (a beep again); keys still held from the step before are let
-    go first."""
+    go first. pct: the percentile of the microphone's 50 ms windows that counts as the sound (a short sound repeated
+    fills only a few)."""
     if ear is not None:
-        return _mic_heard(ear, what, seconds, during, start)
+        return _mic_heard(ear, what, seconds, during, start, pct)
     end = time.monotonic() + 5
     while _keys(radio) != 0 and time.monotonic() < end:
         time.sleep(0.1)
@@ -76,7 +78,7 @@ def _levels(path):
     return A.db(np.sqrt((w ** 2).mean(axis=1)))
 
 
-def _mic_heard(mic, what, seconds, during, start):
+def _mic_heard(mic, what, seconds, during, start, pct=90):
     import numpy as np
     p, path = mic.start(ROOM_S)
     room = float(np.median(_levels(mic.finish(p, path))))
@@ -89,7 +91,7 @@ def _mic_heard(mic, what, seconds, during, start):
             during()
             nxt = time.monotonic() + 1.5
         time.sleep(0.1)
-    loud = float(np.percentile(_levels(mic.finish(p, path)), 90))
+    loud = float(np.percentile(_levels(mic.finish(p, path)), pct))
     heard = loud - room >= EAR_DB
     print(f"microphone, {what}: room {room:.1f} dBFS, sound {loud:.1f} dBFS ({loud - room:+.1f} dB, "
           f"{EAR_DB:g} needed): {'heard' if heard else 'not heard'} ({path})", flush=True)
@@ -148,7 +150,8 @@ def test_speaker_beep(ready, ear):
     if as_int(ready.link.view(["features"]).get("set.beep_level"), 0) == 0:
         skip("state", "beep level 0")     # no beep to hear, as in test_speaker.py
     with _loud(ready):
-        assert _heard(ready, ear, "a beep every 1.5 s", during=lambda: ready.link.beep("key")), "no beep heard"
+        # A 25 ms key beep every 1.5 s is in 8 or more of the 240 windows: their loudest 1 % is the beep
+        assert _heard(ready, ear, "a beep every 1.5 s", during=lambda: ready.link.beep("key"), pct=99), "no beep heard"
 
 
 @pytest.mark.feature("fm", "vfo_fm", owner="say whether the speaker plays the FM receiver's noise")
