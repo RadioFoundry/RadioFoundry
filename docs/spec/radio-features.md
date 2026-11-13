@@ -41,7 +41,7 @@ quick changes therefore never reads back a value from before its own last change
 | `vox` | off | off, on channels whose codeplug entry allows it, on every FM channel (CONFIG_VOX) |
 | `vox_level` | 5 | sensitivity 1 (loud voice needed) to 10 |
 | `vox_tail_ms` | 1500 | stays keyed this long after the voice stops |
-| `rx_save` | 0 (off) | receiver battery saving: sleep 200, 400 or 800 ms per 100 ms awake (1-3) |
+| `rx_save` | 0 (off) | receiver battery saving: sleep 200, 400 or 800 ms per 125 ms awake (1-3; 125 ms gives three squelch readings, so a wake hears a DMR portable's carrier, on one slot of two) |
 | `rx_save_idle_s` | 10 | battery saving starts after this long without activity |
 | `battery_off_s` | 0 (never) | switch off after this long with the battery critical |
 | `backlight_dim_s`, `backlight_off_s` | 30, 120 | for the UI's backlight policy (`radio_backlight_pct`, 5.3) |

@@ -3416,7 +3416,7 @@ static void test_battery_save(void)
 	CHECK(hw.sleeps == 0);			// the settings change counts as activity
 	run(1200);
 	CHECK(hw.sleeps >= 1);
-	// Cycles: awake 100 ms, asleep 400 ms
+	// Cycles: awake 125 ms, asleep 400 ms
 	int s0 = hw.sleeps;
 	run(5000);
 	CHECK(hw.sleeps - s0 >= 9 && hw.sleeps - s0 <= 11 && hw.status_asleep == 0);
@@ -3472,6 +3472,37 @@ static void test_battery_save_brief_open(void)
 	CHECK(hw.sleeps == s0 && !sm.view.rx_sleeping);
 	run(2000);
 	CHECK(hw.sleeps > s0);
+}
+
+// A carrier on only one TDMA slot of two (a DMR portable: 30 ms on, 30 ms off) wakes a saving receiver within a
+// cycle whatever its phase: a wake whose readings all fell in the gaps would miss it, and with a cycle a multiple of
+// 60 ms every later wake too
+static void set_save_short(radio_settings_t *s) { s->rx_save = 1; s->rx_save_idle_s = 3; }
+
+static void test_battery_save_slotted(void)
+{
+	for (uint32_t phase = 0; phase < 60; phase += 5) {
+		start();
+		settings(set_save_short);
+		run(8000);
+		CHECK(hw.sleeps >= 1);
+		uint32_t t0 = now + phase;
+		uint32_t ms = 0;
+		while (ms < 1200 && sm.view.state != RS_RX) {
+			hw.sig[0].hz = now >= t0 && (now - t0) % 60u < 30u ? 146520000 : 0;
+			if (hw.sig[0].hz != 0) {
+				hw.sig[0].noise = 30;
+				hw.sig[0].tone = no_tone;
+			}
+			run(5);
+			ms += 5;
+		}
+		CHECK(sm.view.state == RS_RX);
+		if (sm.view.state != RS_RX) {
+			printf("# slotted carrier at phase %u ms: not heard in 1.2 s\n", (unsigned)phase);
+		}
+		hw.sig[0].hz = 0;
+	}
 }
 
 static void test_dmr_beeps(void)
@@ -3927,6 +3958,7 @@ int main(void)
 	test_supply_voltage();
 	test_battery_save();
 	test_battery_save_brief_open();
+	test_battery_save_slotted();
 	test_dmr_beeps();
 	test_dmr_permit_before_key();
 	test_dmr_short_press_wake();
