@@ -786,7 +786,8 @@ static uint16_t voice_sum(const uint8_t *v)
 static bool seq_by_count(hrc6000_dmr_t *e, const hrc6000_dmr_vstate_t *vs, hrc6000_rx_status_t *s, uint16_t sum)
 {
 	uint32_t gap = e->tick - vs->tick;	// slots: a frame is two
-	bool last_no = s->voice_index == vs->last;
+	// After a header nothing is taken yet: a report without a number is filled, never stale (vs->sum is the last call's)
+	bool last_no = s->voice_index == vs->last && vs->last != HRC6000_INDEX_UNKNOWN;
 	uint8_t want = (uint8_t)((vs->last + gap / 2u) % 6u);
 
 	if (last_no && sum == vs->sum) {
@@ -1378,6 +1379,7 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 	bool cc_fix = voice && e->cc_filter >= 0;
 	if (voice) {
 		bool live = vs->active && (uint32_t)(e->tick - vs->tick) <= RX_LOST_TICKS;
+		uint16_t sum = voice_sum(nb.payload);
 		if (s.sync_class == 1) {
 			s.voice_index = 0;
 			if (!live) {
@@ -1413,7 +1415,7 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 			vs->next = 1;
 			vs->cc = s.cc;
 			vs->tick = hd->tick;
-		} else if (!seq_by_count(e, vs, &s, voice_sum(nb.payload))) {
+		} else if (!seq_by_count(e, vs, &s, sum)) {
 			return cc_real;
 		}
 		if (s.sync_class != 1) {
@@ -1422,7 +1424,7 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 		vs->active = true;
 		vs->last = s.voice_index;
 		vs->next = (uint8_t)((s.voice_index + 1u) % 6u);
-		vs->sum = voice_sum(nb.payload);
+		vs->sum = sum;
 		vs->tick = e->tick;
 	} else {
 		held_drop(e, hd);	// a lone A followed by data on its slot: not a call

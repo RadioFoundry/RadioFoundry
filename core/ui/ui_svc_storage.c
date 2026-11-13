@@ -125,20 +125,6 @@ static uint16_t tone_row_key(uint8_t id)
 		id == UI_SET_BATTERY_TONE ? CODEPLUG_KEY_BATTERY_TONE : CODEPLUG_KEY_TX_DENY_TONE;
 }
 static bool tone_post(uint16_t key, bool on);
-// A Settings > Sound tone row, on (1) or off. The keys' bits come from the radio core (no flash read here, which sat
-// on the radio and UI tasks' deepest paths)
-static int32_t tone_get(uint8_t id)
-{
-	if (id == UI_SET_EMERGENCY_TONE) {
-		dmr_emergency_settings_t es;
-		dmr_emergency_get_settings(&es);
-		return es.rx_tone;
-	}
-	radio_settings_t rs;
-	radio_get_settings(&rs);
-	int row = radio_tone_row(tone_row_key(id));
-	return row < 0 || (rs.tones_off >> row & 1u) == 0;
-}
 #if CONFIG_DMR_DATA_CORE
 // The menu row of a setting kept as a key of the settings area (radio_keys.h), else 0
 static uint16_t data_row_key(uint8_t id)
@@ -298,9 +284,18 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_CALL_END_TONE:
 	case UI_SET_TOT_WARN_TONE:
 	case UI_SET_BATTERY_TONE:
-	case UI_SET_TX_DENY_TONE:
-	case UI_SET_EMERGENCY_TONE:
-		return tone_get(id);
+	case UI_SET_TX_DENY_TONE: {
+		// The keys' bits come from the radio core (no flash read here, which sat on the radio and UI tasks' deepest
+		// paths)
+		radio_get_settings(&rs);
+		int row = radio_tone_row(tone_row_key(id));
+		return row < 0 || (rs.tones_off >> row & 1u) == 0;
+	}
+	case UI_SET_EMERGENCY_TONE: {
+		dmr_emergency_settings_t es;
+		dmr_emergency_get_settings(&es);
+		return es.rx_tone;
+	}
 	case UI_SET_TFTP_WRITE:
 		settings_read(&st);
 		return (st.net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0;
@@ -939,7 +934,11 @@ static void tone_job(void *ctx)
 		save_failed(TRN("Couldn't write the codeplug: not saved"));
 		return;
 	}
-	rs.tones_off = radio_tones_pack(&now);
+	// Read again after the write (a flash write can take a while): a setting the UI or the debug link changed
+	// meanwhile stays, only this tone's bit changes
+	uint8_t bit = (uint8_t)(1u << radio_tone_row(job.channel));
+	radio_get_settings(&rs);
+	rs.tones_off = (uint8_t)(job.temp != 0 ? rs.tones_off & ~bit : rs.tones_off | bit);
 	radio_set_settings(&rs);
 }
 
