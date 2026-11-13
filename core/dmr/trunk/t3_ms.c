@@ -667,8 +667,10 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 		if (svc == T3_SVC_REGISTER) {
 			ms->reg = T3_REG_OK;
 			ms->reg_area = reg_area(ms, ms->syscode);
-			// Reg_Accepted or Reg_Subscription/Attachment: Response_Info says which of a list were taken
-			ms->reg_tg_ok = ms->reg_tgs != 0 ? (uint8_t)(a->info & 0x7Fu) : 0u;
+			// Reg_Accepted or Reg_Subscription/Attachment: Response_Info says which of a list were taken. Only
+			// the first reg_tgs bits mean anything: all taken is 1111111b however many went (6.4.4.1.13.2)
+			uint8_t sent_bits = (uint8_t)(0x7Fu & ~((1u << (T3_REG_TG_MAX - ms->reg_tgs)) - 1u));
+			ms->reg_tg_ok = ms->reg_tgs != 0 ? (uint8_t)(a->info & sent_bits) : 0u;
 		} else if (svc == T3_SVC_DEREGISTER) {
 			ms->reg = T3_REG_NEEDED;
 			ms->deregistered = true;

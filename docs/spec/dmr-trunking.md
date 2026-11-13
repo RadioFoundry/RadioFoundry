@@ -252,7 +252,8 @@ A list goes in UDT blocks the C_RAND counts (Appended UDT Short Data: blocks les
 hold 7). The TSCC asks for them with a C_AHOY from TATTSI, Service_Kind registration, Service_Kind_Flag 1. The radio
 sends C_UDTHU (UDT_Format 0001b address, to TATTSI, SF 1, A 0, Pad Nibble 0) and the blocks in the inbound slots
 that follow: octet 0 is 0 (no one-key talkgroup), then the 24-bit addresses, the unused ones ADRNULL (B.3.2). The
-final C_ACKD's Response_Info says which were accepted, bit 6 the first (table 6.10): `reg_tg_ok`. A C_AHOY for the
+final C_ACKD's Response_Info says which were accepted, bit 6 the first (table 6.10): `reg_tg_ok`. Only the bits of
+the addresses sent are kept: all accepted is 1111111b however many were sent, so the rest mean nothing. A C_AHOY for the
 list when none was sent, or for a list since changed, gets nothing.
 
 | Answer to the radio's ID | Result |

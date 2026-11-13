@@ -340,9 +340,9 @@ static void test_reg_list(void)
 		ok = ok && addr_at(d, i) == (i < 5 ? ids[i] : 0u);
 	}
 	CHECK(ok && t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])up_blocks, 2), "five: addresses across the blocks");
-	a.u.ack.info = 0x7F;
+	a.u.ack.info = 0x7F;	// all taken: every bit set, past the five sent too
 	rx(&ms, 1, &a);
-	CHECK(ms.reg_tg_ok == 0x7F, "all taken");
+	CHECK(ms.reg_tg_ok == 0x7C, "all taken, the five bits kept: 0x%02x", ms.reg_tg_ok);
 
 	// Not ours or nothing asked: nothing uploaded
 	nup = 0;
