@@ -262,14 +262,23 @@ bool uvf_cal_at(uint32_t hz, uvf_cal_point_t *out)
 	return true;
 }
 
-bool uvf_direct_tx_ref(uint32_t hz, int8_t ref_offset, int8_t *out)
+int32_t uvf_dmr_rx_offset_hz(uint32_t hz)
+{
+	return hz > 300000000u ? UVF_DMR_RX_OFFSET_UHF_HZ : UVF_DMR_RX_OFFSET_VHF_HZ;
+}
+
+bool uvf_direct_tx_ref(uint32_t hz, int8_t ref_offset, int32_t rx_offset_hz, int8_t *out)
 {
 	// UHF only: at VHF the same carrier shift would need about three times as many steps, past the register's range
 	if (hz <= 300000000u) {
 		return false;
 	}
-	int v = ref_offset + UVF_DIRECT_TX_REF_STEPS;
-	if (v > 127) {
+	// The synthesizer holds the receive frequency, rx_offset_hz from hz: a step is UVF_REF_TRIM_PPB_PER_STEP of the
+	// carrier. Whole steps toward zero: mid-band, -875 Hz is 11.8 steps, and 11 measured about 5 Hz high, 12 about 85 Hz
+	int64_t step_mhz = (int64_t)hz * UVF_REF_TRIM_PPB_PER_STEP / 1000000;	// millihertz
+	int32_t back = (int32_t)((int64_t)rx_offset_hz * 1000 / step_mhz);
+	int v = ref_offset + UVF_DIRECT_TX_REF_STEPS - back;
+	if (v > 127 || v < -128) {
 		return false;
 	}
 	*out = (int8_t)v;
