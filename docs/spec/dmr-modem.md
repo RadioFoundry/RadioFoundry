@@ -335,7 +335,7 @@ interrupt.
 
 | Command | Effect |
 |---|---|
-| `configure` | own DMR ID, color code (or "any"), sync families to detect, default access policy (impolite / polite to CC / polite to all), DMO / RMO framing |
+| `configure` | own DMR ID, color code (or "any"), sync families to detect, default access policy (impolite / polite to CC / polite to all), DMO / RMO framing. The stack calls it only when one of these changes: a slot change on the same channel only moves `rx_lock_slot`, since a restart loses the sync at a call's start |
 | `rx_start` / `rx_restart` | receive every slot, passive timing; restart = drop sync and search again. The radio core restarts at every new DMR frequency with the stack running (a scan or channel step): a chip may keep the last transmitter's slot timing otherwise ([gotchas](gotchas.md) 17.2) |
 | `rx_lock_slot(slot or none)` | receive only our slot / both |
 | `tx_begin(timing)` | start a transmission: own timing (DMO), aligned to the received signal on the next slot carrying a given TS (RMO, SFR user), or as soon as possible; with the access policy for this transmission |
@@ -343,7 +343,7 @@ interrupt.
 | `tx_end` | no more bursts: finish the queued ones (a voice call ends at the superframe boundary with its terminator, which the stack has queued), then `tx_done` |
 | `tx_abort` | stop at the next slot (emergency, timeout) |
 | `set_embedded_lc` | the LC (or talker alias / GPS embedded LC) the modem spreads over B-E from the next superframe |
-| `set_cc_filter(cc or any)` | color code deframing |
+| `set_cc_filter(cc or any)` | color code deframing. The stack sets it on every reconfigure: the same filter again changes nothing (no receiver restart) |
 | `is_transmitting` | slot-state based (6.1 point 5) |
 | `set_audio_path` | vocoder PCM in / out routing and gains (where the modem owns the codec) |
 | `power(on/off)` | chip power down / up with its init sequence |
