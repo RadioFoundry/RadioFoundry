@@ -1001,6 +1001,34 @@ static void test_rx_repeat_report(void)
 	CHECK(eng.st.dt_hist[2] == 40);	// all 3 ms after the tick
 }
 
+// A base station carrier idle on both slots: every slot an idle burst with the same bits. Each is delivered (a
+// repeater's hang shows as a carrier), while a BS sync CSBK reported again one slot later is still a repeat
+static void test_rx_bs_idles(void)
+{
+	fresh_engine();
+	dmr_config_t cfg = { .own_id = 9990001, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
+	hrc6000_dmr_configure(&eng, &cfg);
+	uint32_t t = 9800000;
+	uint32_t idle0 = eng.st.rx_idle;
+	for (int k = 0; k < 20; k++) {
+		uint8_t tc = (uint8_t)(((eng.tick + 1u) & 1u) ? 0x04 : 0x00);
+		rd[4][0x52] = tc;
+		ts_at(t);
+		report_at(t + 3000, 0x92, (uint8_t)(0x10 | tc), 0x01);	// idle (type 9, class 2), CC 1, BS sync
+		t += 30000;
+	}
+	CHECK(eng.st.rx_idle == idle0 + 20);
+	uint32_t c0 = eng.st.rx_csbk, d0 = eng.st.rx_dup_repeat;
+	for (int k = 0; k < 2; k++) {
+		uint8_t tc = (uint8_t)(((eng.tick + 1u) & 1u) ? 0x04 : 0x00);
+		rd[4][0x52] = tc;
+		ts_at(t);
+		report_at(t + 3000, 0x32, (uint8_t)(0x10 | tc), 0x01);	// the same CSBK twice
+		t += 30000;
+	}
+	CHECK(eng.st.rx_csbk == c0 + 1 && eng.st.rx_dup_repeat == d0 + 1);
+}
+
 // The quiet-period restart happens once, not every 20 ticks (each one drops the sync)
 static void test_idle_restart_once(void)
 {
@@ -1172,6 +1200,7 @@ int main(void)
 	test_rx_stall();
 	test_cc_follow();
 	test_rx_repeat_report();
+	test_rx_bs_idles();
 	test_idle_restart_once();
 	test_rx_bench_call();
 	test_rx_missed_burst();

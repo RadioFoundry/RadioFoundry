@@ -1283,8 +1283,12 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 	// The same burst reported again at the next timeslot interrupt (bench 2026-10-09: every voice burst came twice,
 	// both in step, 30 ms apart, so the 28 ms window let both through). A repeat: within 45 ms of the burst taken,
 	// same kind and voice number, and for data the same payload (two calls on two slots never share one). TS1 / TS2
-	// direct mode sync on different slots are two calls, not a repeat
+	// direct mode sync on different slots are two calls, not a repeat. Idle bursts with BS sync are exempt: every one
+	// carries the same bits, and a base station sends a burst in every slot, so on a carrier idle on both slots the
+	// next slot's idle looks like a repeat. Dropping them hid the carrier (a repeater's hang time looked like no signal);
+	// a repeated idle delivered costs nothing, it carries no information
 	bool same = e->report_valid && s.kind == e->last_rx_kind
+		    && !(s.kind == DMR_BURST_IDLE && s.sync == DMR_SYNC_BS)
 		    && !(s.sync != e->last_rx_sync && (s.sync == DMR_SYNC_TS1 || s.sync == DMR_SYNC_TS2))
 		    && (voice ? s.voice_index == e->last_rx_index : memcmp(nb.payload, e->last_rx_payload, nb.len) == 0);
 	if (same && (uint32_t)(t - e->t_report) < VOICE_DEDUP_US) {
