@@ -142,6 +142,8 @@ typedef enum {
 
 #define T3_STATUS_POLL		127	// the status that asks the called MS for its own (6.6.6.2)
 #define T3_STATUS_MAX		126	// 0-126 are statuses (126 the emergency alarm, 124 its cancel)
+#define T3_STATUS_EMERGENCY	126	// 6.6.6.3.1
+#define T3_STATUS_EMERGENCY_CANCEL	124	// 6.6.6.3.2
 
 typedef enum {
 	T3_RES_NONE,

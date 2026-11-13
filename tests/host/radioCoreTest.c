@@ -5716,6 +5716,108 @@ static void test_t3_pdata(void)
 	run(100);
 	sim.repeater = false;
 }
+// The last C_RAND sent at or after from with this Service_Kind; false when none
+static bool t3_rand_since(unsigned from, uint8_t kind, t3_csbk_t *q)
+{
+	bool found = false;
+	for (unsigned i = from; i < sim.air_count; i++) {
+		t3_csbk_t c;
+		if (sim.air[i].kind == DMR_BURST_CSBK && (sim.air[i].payload[0] & 0x3Fu) == T3_OP_C_RAND &&
+		    t3_csbk_parse(sim.air[i].payload, &c) && c.u.rand.kind == kind) {
+			*q = c;
+			found = true;
+		}
+	}
+	return found;
+}
+
+static uint8_t t3_rand_status(const t3_csbk_t *q)
+{
+	return (uint8_t)(((q->u.rand.options & 0x1Fu) << 2) | (q->u.rand.extra & 3u));
+}
+
+// Emergency on a trunked system: the alarm is status 126 to the target, acknowledged once (no repeats); the call
+// asks with the emergency option; the end of the emergency sends status 124; status 126 heard raises the alert
+static void test_t3_emergency(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	dmr_emergency_settings_t es;
+	dmr_emergency_settings_default(&es);
+	es.mode = DMR_EMERGENCY_MODE_ALARM_CALL;
+	es.hot_mic_s = 2;
+	es.alarm_tries = 3;
+	dmr_emergency_set_settings(&es);
+	run(20);
+	unsigned from = sim.air_count;
+	CHECK(dmr_emergency_start());
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_STATUS, &q) && t3_rand_status(&q) == T3_STATUS_EMERGENCY &&
+	      (q.u.rand.options & 0x40u) && q.u.rand.dst == T3_TG);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_ALARM);
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ACKD };
+	a.u.ack.reason = T3_RC_MESSAGE_ACCEPTED;
+	a.u.ack.dst = T3_OWN;
+	a.u.ack.src = T3_TG;
+	t3_csbk_rx(&a, 1);
+	from = sim.air_count;
+	t3_site_run(600);
+	// Acknowledged: no second alarm; the hot mic asks for an emergency call to the same group
+	t3_csbk_t v;
+	CHECK(!t3_rand_since(from, T3_SK_STATUS, &q));
+	CHECK(t3_rand_since(from, T3_SK_TG_VOICE, &v) && (v.u.rand.options & T3_SO_EMERGENCY) && v.u.rand.dst == T3_TG);
+	t3_csbk_t g = { .lb = true, .op = T3_OP_TV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = T3_TG;
+	g.u.grant.src = T3_OWN;
+	g.u.grant.emergency = true;
+	t3_csbk_rx(&g, 1);
+	run(500);
+	CHECK(sm.view.t3.state == T3_FOLLOW && sm.view.state == RS_TX);
+	run(2500);	// the hot mic runs out
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_ACTIVE && sm.view.state != RS_TX);
+	req(RREQ_T3, RADIO_T3_END);
+	run(400);
+	CHECK(sm.view.t3.state == T3_CAMPED);
+
+	// Cancelled: status 124 to the alarm's target
+	from = sim.air_count;
+	dmr_emergency_cancel();
+	t3_site_run(600);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_IDLE);
+	CHECK(t3_rand_since(from, T3_SK_STATUS, &q) && t3_rand_status(&q) == T3_STATUS_EMERGENCY_CANCEL &&
+	      q.u.rand.dst == T3_TG);
+	t3_csbk_rx(&a, 1);
+	from = sim.air_count;
+	t3_site_run(600);
+	CHECK(!t3_rand_since(from, T3_SK_STATUS, &q));	// once
+
+	// Heard: another MS's status 126 to our group raises the alarm alert
+	dmr_emergency_stats_t s0, s1;
+	dmr_emergency_get_stats(&s0);
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_STATUS;
+	h.u.ahoy.group = true;
+	h.u.ahoy.options = T3_STATUS_EMERGENCY >> 2;
+	h.u.ahoy.blocks = T3_STATUS_EMERGENCY & 3;
+	h.u.ahoy.dst = T3_TG;
+	h.u.ahoy.src = 1000002u;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	dmr_emergency_get_stats(&s1);
+	dmr_emergency_alert_t al;
+	CHECK(s1.alerts_alarm == s0.alerts_alarm + 1 && dmr_emergency_alert(&al) && al.src == 1000002u && al.dst == T3_TG);
+	dmr_emergency_dismiss();
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	dmr_emergency_settings_default(&es);
+	dmr_emergency_set_settings(&es);
+	run(20);
+	sim.repeater = false;
+}
 #endif
 
 int main(void)
@@ -5745,6 +5847,7 @@ int main(void)
 	test_t3_talk();
 	test_t3_sdata();
 	test_t3_pdata();
+	test_t3_emergency();
 #endif
 	test_dmr_stalled();
 	test_dmr_list_talk_target();

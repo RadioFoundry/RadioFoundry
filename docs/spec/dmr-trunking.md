@@ -423,6 +423,18 @@ party, inactivity and `t3_ms_end_call` end it as they end a voice call.
 The availability check for data to the radio (C_AHOY, Service_Kind 0010b) is answered C_ACKU Message_Accepted
 (6.6.3.2.6).
 
+### 7.8 Emergency (6.6.6.3, 6.6.1)
+
+The emergency key ([dmr-emergency.md](dmr-emergency.md)) works on a trunked system as follows:
+
+| Part | On a trunked system |
+|---|---|
+| Alarm | Status 126 to the emergency target (section 7.5), instead of the alarm CSBK. Sent once: the TSCC acknowledges it, so the alarm tries don't repeat it. Refused or unanswered, the module goes on to the call as after its last try. |
+| Call | PTT and the hot mic ask for a call to the emergency target with Service_Options EMERG set (N_Rand_NE tries). The hot mic lasts into the granted call. |
+| Target 0 | The system's talk target, not the channel's. |
+| Cancel | The emergency over, status 124 to the alarm's target, once the radio is camped. Only after an alarm the TSCC acknowledged. |
+| Heard | Status 126 to the radio or a talkgroup it listens to raises the alarm alert. A call granted with the emergency option raises the call alert, as on a conventional channel. |
+
 ## 10. Not done yet
 
 | Item | Needs |
@@ -450,8 +462,9 @@ The availability check for data to the radio (C_AHOY, Service_Kind 0010b) is ans
 | Status | `RADIO_T3_STATUS` sends the staged status (section 7.5). The last status heard is in the view. |
 | Short data | `RADIO_T3_SDATA` sends the staged message (section 7.6): the upload is a UDT header and its blocks, one data source on the TSCC's slot. Data headers and rate 1/2 blocks heard go to the engine. The last message heard is in the view. |
 | Packet data | The data service's transmissions (text, IP packets, replies) start through `data_tx_start`. Camped, the radio keeps the burst list, drops its preambles, and asks for a data channel to the data header's destination (section 7.7). Once following the granted call and settled, it sends the list on the call's slot; a refusal, no answer, timeout or a call that ended first gives the list back failed. On a data call already, a list to the same party goes at once. While a data call is followed, its data headers and blocks go to the data service, not the engine. The data service can't send while hunting or in a voice call. Listen before talk is skipped: the TSCC gives the slot. |
+| Emergency | `data_t3_start` sends the data service's alarm as status 126; `t3_emergency_tick` sends the cancel and passes a status 126 heard to the emergency module (section 7.8). |
 | View | The `t3` section ([debuglink.md](debuglink.md) 3.26). |
 
 Tests: `tests/host/radioCoreTest.c` (`test_t3_talk`) runs a simulated site through PTT, request, grant and a call
-with nothing heard; `test_t3_pdata` through a text message out on a granted channel and one in. `tests/hil/test_t3_site.py` runs camp, registration, group and private calls against a site on
+with nothing heard; `test_t3_pdata` through a text message out on a granted channel and one in; `test_t3_emergency` through the alarm, the emergency call, the cancel and an alarm heard. `tests/hil/test_t3_site.py` runs camp, registration, group and private calls against a site on
 the SDR bench.

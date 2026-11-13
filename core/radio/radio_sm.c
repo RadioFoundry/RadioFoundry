@@ -1888,6 +1888,17 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 // when (listen before talk, retries); this side checks the channel allows it, arms the board's per-burst keying as
 // PTT does, and lends the list to the stack. dmr_follow releases the keying once the stack is off the air ---
 
+#if CONFIG_DMR_TRUNK_TX && CONFIG_DMR_EMERGENCY
+// Emergency on a Tier III system (docs/spec/dmr-trunking.md 7.8): the alarm acknowledged, so its cancel is due when
+// the emergency ends; the last status heard that was looked at
+static struct {
+	bool alarm_sent;
+	bool alarm_group;
+	uint32_t alarm_dst;
+	uint32_t status_seen;
+} t3_em;
+#endif
+
 static struct {
 	const dmrBurst_t *list;		// the service's buffer, valid until dmrDataServiceTxDone
 	int count, next;
@@ -1897,6 +1908,7 @@ static struct {
 	bool t3_asked;
 	bool t3_group;
 	uint32_t t3_dst;
+	uint8_t t3_status;	// not 0: the list is the emergency alarm, sent as this status instead (6.6.6.3)
 #endif
 } data_tx;
 
@@ -1994,7 +2006,29 @@ static bool data_t3_start(radio_sm_t *sm, const dmrBurst_t *bursts, int count)
 	while (i < count && bursts[i].dataType != DMR_BURST_DATA_HEADER) {
 		i++;
 	}
-	if (i == count || bursts[i].length < 8 || data_tx.t3_wait) {
+	if (data_tx.t3_wait) {
+		return false;
+	}
+#if CONFIG_DMR_EMERGENCY
+	// The emergency alarm CSBK: on a trunked system it is the status service, status 126 (361-4 6.6.6.3.1), sent once
+	// (the TSCC acknowledges it; the module's repeats are for a channel nobody acknowledges on)
+	if (strcmp(dmrDataServiceTxStartingName(), "emergency") == 0) {
+		uint32_t id;
+		bool priv;
+		dmr_emergency_target(&id, &priv);
+		if (id == 0 || t3m.state != T3_CAMPED || t3m.ax.state != T3_AX_IDLE) {
+			return false;
+		}
+		data_tx.list = NULL;
+		data_tx.t3_wait = true;
+		data_tx.t3_asked = false;
+		data_tx.t3_group = !priv;
+		data_tx.t3_dst = id;
+		data_tx.t3_status = T3_STATUS_EMERGENCY;
+		return true;
+	}
+#endif
+	if (i == count || bursts[i].length < 8) {
 		return false;
 	}
 	// 361-1 9.2.6: G/I in octet 0, the destination in octets 2-4
@@ -2016,6 +2050,7 @@ static bool data_t3_start(radio_sm_t *sm, const dmrBurst_t *bursts, int count)
 	data_tx.t3_asked = false;
 	data_tx.t3_group = group;
 	data_tx.t3_dst = dst;
+	data_tx.t3_status = 0;
 	return true;
 }
 
@@ -2033,13 +2068,37 @@ static void data_t3_tick(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 	if (!data_tx.t3_asked) {
-		if (!t3_ms_pdata(&t3m, now_ms, data_tx.t3_dst, data_tx.t3_group)) {
+		bool ok = data_tx.t3_status != 0 ?
+			t3_ms_status(&t3m, now_ms, data_tx.t3_dst, data_tx.t3_group, data_tx.t3_status) :
+			t3_ms_pdata(&t3m, now_ms, data_tx.t3_dst, data_tx.t3_group);
+		if (!ok) {
 			data_t3_fail(DMR_TX_ERR_REJECTED);
 			return;
 		}
 		data_tx.t3_asked = true;
 		return;
 	}
+	const t3_ms_t *m = &t3m;
+#if CONFIG_DMR_EMERGENCY
+	if (data_tx.t3_status != 0) {
+		if (m->ax.svc == T3_SVC_STATUS && (m->ax.state != T3_AX_IDLE || m->ax.result == T3_RES_PENDING)) {
+			return;
+		}
+		bool ok = m->ax.svc == T3_SVC_STATUS && m->ax.result == T3_RES_DONE;
+		data_tx.t3_wait = false;
+		data_tx.t3_status = 0;
+		if (ok) {
+			t3_em.alarm_dst = data_tx.t3_dst;
+			t3_em.alarm_group = data_tx.t3_group;
+			t3_em.alarm_sent = true;
+		}
+		dmrDataServiceTxDone(ok ? DMR_TX_OK : DMR_TX_ERR_NO_REPEATER);
+		if (ok) {
+			dmrDataServiceEmergencyAlarmCancel();	// acknowledged: no repeats; the module goes on to the call
+		}
+		return;
+	}
+#endif
 	if (t3m.state == T3_FOLLOW && t3m.call.data && t3m.call.ours) {
 		if (t3_ms_data_ready(&t3m, now_ms) && !sm->ptt) {
 			data_tx.t3_wait = false;
@@ -2049,7 +2108,6 @@ static void data_t3_tick(radio_sm_t *sm, uint32_t now_ms)
 		}
 		return;
 	}
-	const t3_ms_t *m = &t3m;
 	if (m->ax.svc != T3_SVC_PDATA || (m->ax.state == T3_AX_IDLE && m->ax.result != T3_RES_PENDING)) {
 		// Refused, no answer, timed out, or the call came and went without the radio sending
 		data_t3_fail(m->ax.result == T3_RES_REFUSED ? DMR_TX_ERR_REJECTED : DMR_TX_ERR_NO_REPEATER);
@@ -2222,6 +2280,10 @@ static void emergency_save(uint32_t now_ms)
 	settings_end(now_ms);
 }
 
+#if CONFIG_DMR_TRUNK_TX
+static uint32_t t3_base_talk_id(bool *group);
+#endif
+
 static void emergency_tick(radio_sm_t *sm, uint32_t now_ms)
 {
 	dmr_emergency_channel_t c = {
@@ -2229,6 +2291,14 @@ static void emergency_tick(radio_sm_t *sm, uint32_t now_ms)
 		.talk_id = sm->manual ? sm->manual_id : sm->talk_id,
 		.talk_private = sm->manual ? sm->manual_private : sm->talk_private,
 	};
+#if CONFIG_DMR_TRUNK_TX
+	if (sm->t3_on) {
+		bool group;
+		c.talk_id = t3_base_talk_id(&group);
+		c.talk_private = !group;
+		c.can_transmit = t3m.state == T3_CAMPED || t3_ms_can_talk(&t3m);	// the hot mic lasts into the granted call
+	}
+#endif
 	dmr_emergency_tick(now_ms, &c);
 	if (sm->dmr_running && dmr_emergency_config_serial() != sm->em_cfg_serial) {
 		dmr_configure(sm);	// the emergency option and target on or off; takes effect at the next call
@@ -2521,7 +2591,8 @@ static bool t3_tap(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 }
 
 #if CONFIG_DMR_TRUNK_TX
-static uint32_t t3_talk_id(const radio_sm_t *sm, bool *group)
+// The system's talk target, as the emergency module's channel target too
+static uint32_t t3_base_talk_id(bool *group)
 {
 	const radio_t3_setup_t *s = &t3s;
 	*group = !s->talk_private;
@@ -2535,6 +2606,24 @@ static uint32_t t3_talk_id(const radio_sm_t *sm, bool *group)
 		}
 	}
 	return s->cfg.ntg != 0 ? s->cfg.tg[0].id : 0;
+}
+
+// PTT's target: in emergency, the emergency target
+static uint32_t t3_talk_id(const radio_sm_t *sm, bool *group)
+{
+	(void)sm;
+#if CONFIG_DMR_EMERGENCY
+	if (dmr_emergency_in_progress()) {
+		uint32_t id;
+		bool priv;
+		dmr_emergency_target(&id, &priv);
+		if (id != 0) {
+			*group = !priv;
+			return id;
+		}
+	}
+#endif
+	return t3_base_talk_id(group);
 }
 #endif
 
@@ -2717,7 +2806,11 @@ static bool t3_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR_TRUNK_TX
 	bool group;
 	uint32_t dst = t3_talk_id(sm, &group);
-	if (t3m.state == T3_CAMPED && dst != 0 && t3_ms_request(&t3m, now_ms, dst, group, false)) {
+	bool emergency = false;
+#if CONFIG_DMR_EMERGENCY
+	emergency = dmr_emergency_in_progress();
+#endif
+	if (t3m.state == T3_CAMPED && dst != 0 && t3_ms_request(&t3m, now_ms, dst, group, emergency)) {
 		sm->t3_ptt_wait = true;
 		sm->ptt = true;
 		changed(sm);
@@ -2746,6 +2839,26 @@ static void t3_ptt_up(radio_sm_t *sm, uint32_t now_ms)
 }
 
 // Each radio tick while a system is selected: the slots since the last tick, then the engine's actions
+#if CONFIG_DMR_TRUNK_TX && CONFIG_DMR_EMERGENCY
+// An emergency alarm heard (status 126) raises the alert; the radio's own emergency over, its alarm is cancelled with
+// status 124 to the same target (361-4 6.6.6.3.2)
+static void t3_emergency_tick(uint32_t now_ms)
+{
+	const t3_ms_t *m = &t3m;
+	if (m->status_rx.count != t3_em.status_seen) {
+		t3_em.status_seen = m->status_rx.count;
+		if (m->status_rx.value == T3_STATUS_EMERGENCY) {
+			dmr_emergency_heard(DMR_EMERGENCY_ALERT_ALARM, m->status_rx.src, m->status_rx.dst, m->status_rx.group,
+					    now_ms);
+		}
+	}
+	if (t3_em.alarm_sent && !dmr_emergency_in_progress() && m->state == T3_CAMPED && m->ax.state == T3_AX_IDLE &&
+	    !data_tx.t3_wait && t3_ms_status(&t3m, now_ms, t3_em.alarm_dst, t3_em.alarm_group, T3_STATUS_EMERGENCY_CANCEL)) {
+		t3_em.alarm_sent = false;
+	}
+}
+#endif
+
 static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 {
 	if (!sm->t3_on) {
@@ -2793,6 +2906,9 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	}
 #if CONFIG_DMR_DATA_CORE && CONFIG_DMR_TRUNK_TX
 	data_t3_tick(sm, now_ms);
+#endif
+#if CONFIG_DMR_TRUNK_TX && CONFIG_DMR_EMERGENCY
+	t3_emergency_tick(now_ms);
 #endif
 #if CONFIG_DMR_TRUNK_TX
 	// Our grant came while PTT is held: talk now
