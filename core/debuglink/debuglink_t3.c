@@ -241,6 +241,7 @@ void debuglink_view_t3_svc(const radio_view_t *v, dl_text_t *t)
 		x->st_ms != 0 ? (int)(now - x->st_ms) : -1);
 	// The registration's talkgroup list (6.4.4.1.13.2): how many went, which were taken (bit 6 the first)
 	dl_text(t, "t3.reg_tgs=%u\nt3.reg_tg_ok=0x%02x\n", x->reg_tgs, x->reg_tg_ok);
+	dl_text(t, "t3.call_data=%u\nt3.pd_wait=%u\n", x->call_data, x->pd_wait);
 	// The last short data heard: its octets in hex (sd_data), the format to read them by
 	char sd[2 * sizeof(x->sd_data) + 1];
 	uint8_t len = x->sd_len < sizeof(x->sd_data) ? x->sd_len : (uint8_t)sizeof(x->sd_data);

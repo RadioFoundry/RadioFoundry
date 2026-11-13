@@ -292,6 +292,7 @@ the AHOY's source, its additional address the radio's ID.
 |---|---|
 | radio check (kind registration, from TSI) | MS_Accepted |
 | availability check (kind individual voice): OACSU | MS_Accepted |
+| availability check (kind individual packet data) | Message_Accepted (section 7.7) |
 | call cancel (kind cancel) on the TSCC | MS_Accepted |
 | selective clear (P_AHOY kind cancel) | Message_Accepted, then return |
 | status (kind status) | MS_Accepted (section 7.5) |
@@ -400,6 +401,28 @@ it the test skips. It checks that the engine camps within 1.5 s, reads the syste
 the TSCC except across gaps in the recording, follows only planned channels and known talkgroups, keeps a call alive
 on its voice, and never camps on another system or on a control channel that isn't Tier III.
 
+### 7.7 Packet data (6.6.3)
+
+Packet data uses the conventional data stack ([dmr-data.md](dmr-data.md)) on a payload channel the TSCC grants for
+each transmission. Single slot, single item only; no gateway addressing.
+
+`t3_ms_pdata` asks for the channel:
+
+| Event | Result |
+|---|---|
+| request | C_RAND, Service_Kind 0010b (an MS) or 0011b (a talkgroup), Service_Options 0 (table 6.50) |
+| C_WACKD, C_QACKD | waiting (TP_Timer) |
+| PD_GRANT or TD_GRANT with the radio as source | follow it as a data call; result granted |
+| C_NACKD | refused, with its reason |
+
+Grants followed as data calls (6.6.3.2.7): PD_GRANT with the radio as source or target; TD_GRANT with the radio as
+source, or to a talkgroup it listens to. Multi-item and duplex data grants aren't taken. On a data call PTT is off
+(`t3_ms_can_talk`); `t3_ms_data_ready` is true once the radio has settled on the slot. P_CLEAR, P_MAINT from the other
+party, inactivity and `t3_ms_end_call` end it as they end a voice call.
+
+The availability check for data to the radio (C_AHOY, Service_Kind 0010b) is answered C_ACKU Message_Accepted
+(6.6.3.2.6).
+
 ## 10. Not done yet
 
 | Item | Needs |
@@ -407,8 +430,8 @@ on its voice, and never camps on another system or on a control channel that isn
 | A trunked system in the codeplug, and its screens | codeplug keys for systems |
 | CACH short LC reception | the modem drivers' CACH report |
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
-| Packet data, short data polling, supplementary data, a list subscription without registering, authentication | later |
-| Data grants, C_MOVE, adjacent sites, power save | later |
+| Short data polling, supplementary data, a list subscription without registering, authentication | later |
+| Multi-item and duplex packet data, data to a gateway, C_MOVE, adjacent sites, power save | later |
 
 ## 11. On the radio
 
@@ -426,8 +449,9 @@ on its voice, and never camps on another system or on a control channel that isn
 | Following | The stack takes the system's ID as its own, hears every call on the slot, and talks to the call's group or to the other party. The radio's own transmission counts as the call's activity: it never hears its own slot, so TV_Inactive would otherwise end the call while it talks. |
 | Status | `RADIO_T3_STATUS` sends the staged status (section 7.5). The last status heard is in the view. |
 | Short data | `RADIO_T3_SDATA` sends the staged message (section 7.6): the upload is a UDT header and its blocks, one data source on the TSCC's slot. Data headers and rate 1/2 blocks heard go to the engine. The last message heard is in the view. |
+| Packet data | The data service's transmissions (text, IP packets, replies) start through `data_tx_start`. Camped, the radio keeps the burst list, drops its preambles, and asks for a data channel to the data header's destination (section 7.7). Once following the granted call and settled, it sends the list on the call's slot; a refusal, no answer, timeout or a call that ended first gives the list back failed. On a data call already, a list to the same party goes at once. While a data call is followed, its data headers and blocks go to the data service, not the engine. The data service can't send while hunting or in a voice call. Listen before talk is skipped: the TSCC gives the slot. |
 | View | The `t3` section ([debuglink.md](debuglink.md) 3.26). |
 
 Tests: `tests/host/radioCoreTest.c` (`test_t3_talk`) runs a simulated site through PTT, request, grant and a call
-with nothing heard. `tests/hil/test_t3_site.py` runs camp, registration, group and private calls against a site on
+with nothing heard; `test_t3_pdata` through a text message out on a granted channel and one in. `tests/hil/test_t3_site.py` runs camp, registration, group and private calls against a site on
 the SDR bench.

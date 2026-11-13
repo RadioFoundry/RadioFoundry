@@ -254,6 +254,8 @@ typedef struct {
 	uint8_t own_status;	// sent in answer to a poll
 	uint8_t reg_tgs;	// talkgroups in the last registration's subscription list (0: none sent)
 	uint8_t reg_tg_ok;	// which the TSCC accepted: bit 6 the first
+	bool call_data;		// the call followed is packet data (PD_GRANT, TD_GRANT)
+	bool pd_wait;		// the data service's packet waits for its data channel
 	bool st_group;		// the last status heard: to a talkgroup
 	uint8_t st_value;
 	uint32_t st_count, st_src, st_dst, st_ms;

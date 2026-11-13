@@ -5625,6 +5625,97 @@ static void test_t3_sdata(void)
 	run(100);
 	sim.repeater = false;
 }
+// Packet data (6.6.3): the data service's message waits while the radio asks the TSCC for a data channel, then goes on
+// the granted slot without preambles; data to the radio on a payload channel reaches the data service
+static void test_t3_pdata(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	unsigned from = sim.air_count;
+	CHECK(sms_send(1000001u, false, "hello trunk", false, DMR_SMS_FORMAT_ETSI_IP));
+	t3_site_run(600);
+	CHECK(sm.view.t3.pd_wait && sm.view.t3.ax_svc == T3_SVC_PDATA);
+	int rand_at = -1;
+	bool data_early = false;
+	for (unsigned i = from; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_CSBK && (sim.air[i].payload[0] & 0x3Fu) == T3_OP_C_RAND) {
+			rand_at = (int)i;
+		}
+		data_early |= sim.air[i].kind == DMR_BURST_DATA_HEADER;
+	}
+	CHECK(rand_at >= 0 && !data_early);
+	if (rand_at >= 0) {
+		t3_csbk_t q;
+		CHECK(t3_csbk_parse(sim.air[rand_at].payload, &q) && q.u.rand.kind == T3_SK_IND_DATA &&
+		      q.u.rand.dst == 1000001u && q.u.rand.src == T3_OWN);
+	}
+
+	// The grant: on TS2 of the channel, the data goes once settled
+	t3_csbk_t g = { .lb = true, .op = T3_OP_PD_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = 1000001u;
+	g.u.grant.src = T3_OWN;
+	from = sim.air_count;
+	t3_csbk_rx(&g, 1);
+	run(1500);
+	CHECK(sm.view.t3.state == T3_FOLLOW && sm.view.t3.call_data && !sm.view.t3.can_talk && sm.view.ch.timeslot == 2);
+	CHECK(!sm.view.t3.pd_wait);
+	int hdr = -1;
+	unsigned csbks = 0;
+	for (unsigned i = from; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_DATA_HEADER && hdr < 0) {
+			hdr = (int)i;
+		}
+		csbks += hdr < 0 && sim.air[i].kind == DMR_BURST_CSBK;
+	}
+	CHECK(hdr >= 0 && csbks == 0);	// no preambles
+	if (hdr >= 0) {
+		const uint8_t *h = sim.air[hdr].payload;
+		uint32_t dst = ((uint32_t)h[2] << 16) | ((uint32_t)h[3] << 8) | h[4];
+		uint32_t src = ((uint32_t)h[5] << 16) | ((uint32_t)h[6] << 8) | h[7];
+		CHECK(dst == 1000001u && src == T3_OWN && (h[0] & 0x80) == 0);
+		CHECK((unsigned)hdr + 1u < sim.air_count && sim.air[hdr + 1].kind == DMR_BURST_RATE_12_DATA);
+	}
+	CHECK(sms_send_state() == DMR_REQ_OK);
+	t3_csbk_t c = { .lb = true, .op = T3_OP_P_CLEAR };
+	c.u.clear.dst = 1000001u;
+	t3_csbk_rx(&c, 2);
+	run(300);
+	CHECK(sm.view.t3.state == T3_CAMPED);
+
+	// Data to the radio: the TSCC's check is answered, PD_GRANT followed, the text taken by the data service
+	unsigned acks = t3_sent(T3_OP_C_ACKU);
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_DATA;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = 1000001u;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	CHECK(t3_sent(T3_OP_C_ACKU) > acks);
+	g.u.grant.dst = T3_OWN;
+	g.u.grant.src = 1000001u;
+	t3_csbk_rx(&g, 1);
+	run(500);
+	CHECK(sm.view.t3.state == T3_FOLLOW && sm.view.t3.call_data);
+	int inbox = sms_inbox_count();
+	dmrBurst_t b[16];
+	int n = dmrDataBuildIPText(false, T3_OWN, 1000001u, "hi radio", DMR_TYPE_RATE_1_2, 0, b, 16);
+	CHECK(n >= 2);
+	for (int i = 0; i < n; i++) {
+		t3_data_rx(b[i].dataType, b[i].payload, 2);
+		run(60);
+	}
+	run(500);
+	CHECK(sms_inbox_count() == inbox + 1);
+	dmrDataMessage_t m;
+	CHECK(sms_inbox_get(0, &m) && m.src == 1000001u && strcmp(m.text, "hi radio") == 0);
+	CHECK(sms_inbox_delete(0));	// the inbox as the later tests expect it
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
 #endif
 
 int main(void)
@@ -5653,6 +5744,7 @@ int main(void)
 #if CONFIG_DMR_TRUNK_TX
 	test_t3_talk();
 	test_t3_sdata();
+	test_t3_pdata();
 #endif
 	test_dmr_stalled();
 	test_dmr_list_talk_target();

@@ -2569,6 +2569,10 @@ static void t3_publish(radio_sm_t *sm)
 	v->own_status = m->own_status;
 	v->reg_tgs = m->reg_tgs;
 	v->reg_tg_ok = m->reg_tg_ok;
+	v->call_data = m->call.data;
+#if CONFIG_DMR_DATA_CORE && CONFIG_DMR_TRUNK_TX
+	v->pd_wait = data_tx.t3_wait;
+#endif
 	v->st_count = m->status_rx.count;
 	v->st_src = m->status_rx.src;
 	v->st_dst = m->status_rx.dst;
