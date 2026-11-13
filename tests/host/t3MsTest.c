@@ -264,8 +264,9 @@ static void test_follow(void)
 	adv(&ms, 100);
 	aloha(&ms, CC, ours, true);
 	g = grant(T3_OP_TV_GRANT, 159, 2, TG_A, 1234u);
+	g.u.grant.late_entry = true;
 	send(&ms, 1, CC, &g);
-	CHECK(ms.state == T3_CAMPED, "re-grant just after leaving is ignored");
+	CHECK(ms.state == T3_CAMPED, "late-entry re-grant just after leaving is ignored");
 	camp(&ms, T3_REGRANT_MS);
 	send(&ms, 1, CC, &g);
 	CHECK(ms.state == T3_FOLLOW, "re-grant later is followed");

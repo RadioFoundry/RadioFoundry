@@ -170,18 +170,19 @@ restarts.
 
 A gateway address (6.2, Annex A.4) is never followed as a talkgroup. While a request is in progress (section 7) only
 the radio's own call or an emergency takes it off the TSCC. The TSCC repeats a grant while its call lasts,
-for late entry; a grant for the call just left is not followed again for 2 s.
+for late entry. A Late_Entry grant for the call just left (same talkgroup, channel and slot) is not followed again for
+2 s; a grant with Late_Entry 0 is a new call set-up and is always followed (6.6.2.4.1).
 
 **Follow.** The engine asks for the payload channel and slot. The payload color code is CG_AP's when the grant had
 one, else the TSCC's. On the payload channel:
 
 | Heard on the call's slot | Result |
 |---|---|
-| voice or data sync, any CSBK with a good CRC | the call stays alive |
+| any burst with voice or data sync, idle bursts in the hang included (6.6.2.3.2.9 a) | the call stays alive |
 | P_CLEAR for the call, or to ALLMSI | return; to the LPCN it names, or to the frequencies of its appended block (LPCN 0xFFF, an MBC), else to the last TSCC |
 | P_MAINT disconnect from the call's source (either party of a private call) | return |
-| P_PROTECT DIS_PTT / EN_PTT to the radio, the call or ALLMSID | PTT off / on |
-| P_PROTECT EN_PTT_ONE_MS | PTT on for the radio it names, off for every other |
+| P_PROTECT DIS_PTT / EN_PTT to the radio, the talkgroup of its grant or ALLMSID (not to the other party of a private call) | PTT off / on |
+| P_PROTECT EN_PTT_ONE_MS | PTT on for the radio it names; off for every other while they come (1 s after the last) |
 | P_PROTECT ILLEGALLY_PARKED | return, unless it names the call |
 | P_AHOY | section 7.4 |
 | a grant for the same call to another channel or slot | move there |
@@ -230,8 +231,8 @@ One request at a time, on the TSCC's first slot (TS1 on a dedicated TSCC).
 | Service Function | Allows |
 |---|---|
 | 0 | everything |
-| 1 | calls and registration |
-| 2 | everything but calls, and registration |
+| 1 | services with a payload channel (calls, packet data) and registration |
+| 2 | services without one (status, short data, ...) and registration |
 | 3 | registration only |
 
 The C_BCAST Backoff replaces the Aloha's.
@@ -258,7 +259,8 @@ list when none was sent, or for a list since changed, gets nothing.
 
 | Answer to the radio's ID | Result |
 |---|---|
-| C_ACKD Reg_Accepted, Reg_Subscription | registered, for this area |
+| C_ACKD Reg_Accepted, Reg_Subscription | registered, for this area; a single talkgroup sent was taken with Reg_Accepted, refused with Reg_Subscription |
+| another ACK-class reason | not a registration answer (table 7.41): ignored |
 | C_NACKD Reg_Refused | hunt; registers again on returning, after 30 s at the earliest |
 | C_NACKD Reg_Denied | the area is denied; hunt |
 | none (NRand_NR tries) | the record stays as it was; tries again after 30 s |
@@ -270,7 +272,7 @@ De-registration is the same request with Reg_Dereg 0. After it the engine doesn'
 | Event | Result |
 |---|---|
 | request | C_RAND kind talkgroup or individual voice, the target, the radio's ID; EMERG option for an emergency |
-| request to an all-call ID (ALLMSID, ALLMSIDL, ALLMSIDZ) or a talkgroup with `T3_TG_BROADCAST` | kind talkgroup voice with the broadcast option (6.6.1.7, table 7.52); the TSCC grants BTV_GRANT; the voice LC then carries the broadcast service option (0x08, 361-2 5.3.3.1) |
+| request to an all-call ID (ALLMSID, ALLMSIDL, ALLMSIDZ) or a talkgroup with `T3_TG_BROADCAST` | kind talkgroup voice with the broadcast option (6.6.1.7, table 7.52); the TSCC grants BTV_GRANT (or a TV_GRANT to the all-call ID, table 7.11); the voice LC then carries the broadcast service option (0x08, 361-2 5.3.2.1, 5.3.3.1) |
 | C_WACKD, C_QACKD, C_ACKD MS_Alerting | waiting (TP_Timer) |
 | a grant with the radio as source | follow; the call is the radio's own; result granted |
 | C_NACKD | refused, with its reason |
@@ -293,7 +295,8 @@ the AHOY's source, its additional address the radio's ID.
 |---|---|
 | radio check (kind registration, from TSI) | MS_Accepted |
 | availability check (kind individual voice): OACSU | MS_Accepted |
-| availability check (kind individual packet data) | Message_Accepted (section 7.7) |
+| availability check (kind individual packet data) | Message_Accepted (section 7.7); EquipBusy_Refused (0x13) while the data service sends; not supported in a build without it |
+| packet data radio check (P_AHOY kind packet data, from TSI) | P_ACKU Message_Accepted (6.6.3.3.2.1) |
 | call cancel (kind cancel) on the TSCC | MS_Accepted |
 | selective clear (P_AHOY kind cancel) | Message_Accepted, then return |
 | status (kind status) | MS_Accepted (section 7.5) |
@@ -335,8 +338,10 @@ before it, unmasked (TS 102 361-1 8.2.2.5).
 |---|---|
 | G/I, A | a talkgroup; a response demanded |
 | DPF, SAP | 0000b, 0000b |
-| UDT_Format | 4 ISO 8-bit text, 0 binary (table 7.88) |
-| Pad Nibble | ISO 8-bit text: twice the pad octets (0xFF each, table B.5); binary: 0, pad octets 0 |
+| UDT_Format | table 7.88, as the caller gives it |
+| Pad Nibble | BCD, ISO 7 bit, ISO 8 bit, UTF-16 and mixed: the 1111b pad nibbles, counted (B.3.3-B.3.5, B.3.8, B.3.9; a last BCD digit 1111b, DigitNULL, counts); ISO 7 bit counts the spare bits of its last octet too (table B.4); other formats: 0, pad octets 0 |
+
+ISO 7-bit text is given one character an octet (1-52) and packed 7 bits each, first character first.
 | UAB | blocks less one |
 | SF, opcode | 0 (the user's data); C_UDTHD outbound, C_UDTHU inbound |
 
@@ -371,7 +376,7 @@ each transmission. Single slot, single item only; no gateway addressing.
 | C_NACKD | refused, with its reason |
 
 Grants followed as data calls (6.6.3.2.7): PD_GRANT with the radio as source or target; TD_GRANT with the radio as
-source, or to a talkgroup it listens to. Multi-item and duplex data grants aren't taken. On a data call PTT is off
+source, or to a talkgroup it listens to; the multi-item grants (55, 56) the same. Duplex data grants aren't taken. On a data call PTT is off
 (`t3_ms_can_talk`); `t3_ms_data_ready` is true once the radio has settled on the slot. P_CLEAR, P_MAINT from the other
 party, inactivity and `t3_ms_end_call` end it as they end a voice call.
 
@@ -388,7 +393,7 @@ The emergency key ([dmr-emergency.md](dmr-emergency.md)) works on a trunked syst
 | Call | PTT and the hot mic ask for a call to the emergency target with Service_Options EMERG set (N_Rand_NE tries). The hot mic lasts into the granted call. |
 | Target 0 | The system's talk target, not the channel's. |
 | Cancel | The emergency over, status 124 to the alarm's target, once the radio is camped. Only after an alarm the TSCC acknowledged. |
-| Heard | Status 126 to the radio or a talkgroup it listens to raises the alarm alert. A call granted with the emergency option raises the call alert, as on a conventional channel. |
+| Heard | Status 126 to the radio or a talkgroup it listens to raises the alarm alert. A call whose voice LC has the emergency option raises the call alert, as on a conventional channel; on a call followed from a grant with Emergency set, so does the grant. |
 
 ### 7.9 Stun, revive and kill (6.4.9, 6.4.10)
 
@@ -457,8 +462,9 @@ T_Nosig without one starts the hunt (D.1.2). A move to the channel it is on does
 ### 7.13 Power save (6.4.7)
 
 With `t3_cfg_t.ps_rq` 1-7 (1:2 to 1:128, table 6.13) the registration request carries PowerSave_RQ in its Service
-Options (bits 3-1). A list registration (TATTSI) doesn't ask: its answer's Response_Info is the list's. Reg_Accepted's
-Response_Info, masked to PowerSave_RQ bits, is PowerSave_Offset, the wake frame; 0 means no power save.
+Options (bits 3-1). A single-talkgroup registration doesn't ask (6.4.4.1.13.1 sets PS_RQ 000), nor does a list
+(TATTSI): its answer's Response_Info is the list's. Only Reg_Accepted's Response_Info, masked to PowerSave_RQ bits, is
+PowerSave_Offset, the wake frame (table 7.41); 0 means no power save.
 
 | Rule | Detail |
 |---|---|
@@ -573,7 +579,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | Short data polling, supplementary data, a list subscription without registering | later |
 | A kill kept across a restart, and conventional DMR off when killed | later |
 | A stun kept across a restart of the radio | trunked systems in the codeplug |
-| Multi-item and duplex packet data, data to a gateway, adjacent sites | later |
+| Duplex packet data, data to a gateway, adjacent sites | later |
 | Power save: the receiver off while asleep (boards' `rx_sleep` on DMR channels) | later |
 
 ## 11. On the radio

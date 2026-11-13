@@ -64,6 +64,7 @@
 #define T3_INACTIVE_MS		2500	// TV_Inactive, 0-20 s: nothing on the followed slot this long, return
 #define T3_CALL_MAX_MS		300000	// a followed call ends by this at the latest
 #define T3_REGRANT_MS		2000	// a call just left isn't followed again this soon
+#define T3_PROTECT_ONE_MS	1000	// EN_PTT_ONE_MS for another radio holds PTT off this long after the last one
 #define T3_TRAND_TC_MS		10000	// TRand_TC, 2-60 s: the longest a random access may take
 #define T3_TP_MS		20000	// TP_Timer: after a progress acknowledgement to a call request
 #define T3_TNP_MS		10000	// TNP_Timer: after one to a request without a payload channel
@@ -253,6 +254,8 @@ typedef struct {
 
 	t3_call_t call;
 	bool protect_dis;	// P_PROTECT DIS_PTT in force on the payload channel
+	uint8_t data_nack;	// set by the radio: 0 when packet data to it can be taken, else the C_NACKU reason
+	uint32_t protect_other_ms;	// last EN_PTT_ONE_MS for another radio: PTT off while they come (0: none)
 	bool stunned;		// stunned by the TSCC (6.4.9): no user services until revived
 	uint32_t stuns, revives;	// stun and revive commands taken
 	uint32_t auths;		// authentication challenges answered
@@ -326,6 +329,7 @@ typedef struct {
 	struct {
 		uint8_t format;
 		uint8_t len;
+		uint8_t spare;		// fill bits (1s) inside the last data octet: ISO 7 bit, a BCD DigitNULL
 		uint8_t data[T3_UDT_MAX];
 	} sd_tx;
 	uint8_t up[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK];
@@ -362,6 +366,7 @@ typedef struct {
 	// The talkgroup subscription list the last registration sent (T3_OPT_REG_TG with two or more listened to), and
 	// which the TSCC accepted: bit 6 the first (table 6.10)
 	uint8_t reg_tgs;
+	bool reg_single;	// the registration carried one talkgroup (6.4.4.1.13.1): its answer says whether it was taken
 	uint8_t reg_tg_ok;
 	uint16_t denied[T3_DENIED_MAX];	// areas, as reg_area, that denied registration, + 1 (0: empty)
 	bool deregistered;		// de-registered: no registration until t3_ms_start
@@ -389,8 +394,8 @@ void t3_ms_set_killed(t3_ms_t *ms, bool killed);
 // Send a status (0-126) to dst, a talkgroup or an MS, or poll an MS (T3_STATUS_POLL; ax.info has its answer). False
 // (ax.result says why) when it can't start
 bool t3_ms_status(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t status);
-// Send UDT short data (1-46 octets in format, T3_UDTF_*) to dst, a talkgroup or an MS. False (ax.result says why)
-// when it can't start
+// Send UDT short data (1-46 octets in format, T3_UDTF_*; ISO 7 bit: 1-52 characters, one an octet) to dst, a talkgroup
+// or an MS. False (ax.result says why) when it can't start
 bool t3_ms_sdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t format, const uint8_t *data, uint8_t len);
 // Ask for a packet data channel to an MS or talkgroup (6.6.3.2.1). Once granted the engine follows it (call.data) and
 // t3_ms_data_ready says when the radio may send its packet there

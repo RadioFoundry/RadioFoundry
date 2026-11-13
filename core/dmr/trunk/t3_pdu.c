@@ -78,7 +78,8 @@ t3_ack_class_t t3_ack_class(uint8_t reason)
 
 static bool is_grant(uint8_t op)
 {
-	return op >= T3_OP_PV_GRANT && op <= T3_OP_TD_GRANT;
+	// The multi-item data grants have the single-item layout (table 7.13)
+	return (op >= T3_OP_PV_GRANT && op <= T3_OP_TD_GRANT) || op == T3_OP_PD_GRANT_MI || op == T3_OP_TD_GRANT_MI;
 }
 
 static bool is_ack(uint8_t op)
@@ -125,7 +126,8 @@ bool t3_csbk_parse(const uint8_t pdu[T3_CSBK_BYTES], t3_csbk_t *out)
 		bool b13 = flag(&r);
 		if (op == T3_OP_TV_GRANT || op == T3_OP_BTV_GRANT) {
 			g->late_entry = b13;
-		} else if (op == T3_OP_PD_GRANT || op == T3_OP_TD_GRANT) {
+		} else if (op == T3_OP_PD_GRANT || op == T3_OP_TD_GRANT || op == T3_OP_PD_GRANT_MI ||
+			   op == T3_OP_TD_GRANT_MI) {
 			g->hi_rate = b13;
 		}
 		g->emergency = flag(&r);
@@ -254,7 +256,8 @@ bool t3_csbk_build(const t3_csbk_t *in, uint16_t mask, uint8_t pdu[T3_CSBK_BYTES
 		put(&w, 1, g->slot == 2);
 		if (op == T3_OP_TV_GRANT || op == T3_OP_BTV_GRANT) {
 			put(&w, 1, g->late_entry);
-		} else if (op == T3_OP_PD_GRANT || op == T3_OP_TD_GRANT) {
+		} else if (op == T3_OP_PD_GRANT || op == T3_OP_TD_GRANT || op == T3_OP_PD_GRANT_MI ||
+			   op == T3_OP_TD_GRANT_MI) {
 			put(&w, 1, g->hi_rate);
 		} else {
 			put(&w, 1, 0);

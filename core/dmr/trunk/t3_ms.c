@@ -340,15 +340,17 @@ static bool wants_grant(const t3_ms_t *ms, const t3_csbk_t *p, bool *group)
 		*group = false;
 		return is_me(ms, g->src) || ((ms->cfg->opts & T3_OPT_PRIVATE) && is_me(ms, g->dst));
 	case T3_OP_PD_GRANT:
+	case T3_OP_PD_GRANT_MI:	// multi-item: the same applicability (6.6.3.2.7)
 		// 6.6.3.2.7 a: packet data to the radio, or that it sends
 		*group = false;
 		return is_me(ms, g->src) || is_me(ms, g->dst);
 	case T3_OP_TD_GRANT:
+	case T3_OP_TD_GRANT_MI:
 		// 6.6.3.2.7 b: a talkgroup the radio listens to, or its own data to one
 		*group = true;
 		return is_me(ms, g->src) || t3_ms_wants_group(ms, g->dst, g->emergency);
 	default:
-		// Multi-item and duplex data grants aren't asked for; a grant to a gateway or another MS is not ours
+		// Duplex data grants aren't asked for; a grant to a gateway or another MS is not ours
 		return false;
 	}
 }
@@ -386,7 +388,8 @@ static void follow(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_chan_
 	ms->call.slot = g->slot;
 	ms->call.start_ms = now;
 	ms->call.ours = is_me(ms, g->src);
-	ms->call.data = p->op == T3_OP_PD_GRANT || p->op == T3_OP_TD_GRANT;
+	ms->call.data = p->op == T3_OP_PD_GRANT || p->op == T3_OP_TD_GRANT || p->op == T3_OP_PD_GRANT_MI ||
+			p->op == T3_OP_TD_GRANT_MI;
 	// The private grant after an accepted ALS radio check, same caller, in time: an ALS call (6.6.2.6.2)
 	ms->call.als = !group && !ms->call.data && ms->als_until != 0 && before(now, ms->als_until) &&
 		       g->src == ms->als_src && is_me(ms, g->dst);
@@ -397,6 +400,7 @@ static void follow(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_chan_
 	}
 	ms->als_until = 0;
 	ms->protect_dis = false;
+	ms->protect_other_ms = 0;
 	if (g->dst != ms->left_dst || !g->late_entry) {
 		ms->left_dst = 0;
 	}
@@ -440,7 +444,8 @@ static void on_grant(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_cha
 		if (ms->call.dst != p->u.grant.dst) {
 			return;
 		}
-	} else if (just_left(ms, now, &p->u.grant, &c)) {
+	} else if (p->u.grant.late_entry && just_left(ms, now, &p->u.grant, &c)) {
+		// Only a Late_Entry repeat of the call just left; a set-up grant (Late_Entry 0) is a new call (6.6.2.4.1)
 		return;
 	}
 	follow(ms, now, p, &c, group);
@@ -495,6 +500,7 @@ static void return_to_tscc(t3_ms_t *ms, uint32_t now)
 	ms->cleared = ms->call;
 	ms->cleared_ms = now != 0 ? now : 1;
 	ms->protect_dis = false;
+	ms->protect_other_ms = 0;
 	ms->state = T3_CAMPED;
 	ms->last_valid_ms = now;
 	ms->st.returns++;
@@ -664,6 +670,7 @@ static bool permitted(const t3_ms_t *ms, bool at_known, bool at_busy)
 		return true;	// every Service Function lets registration through
 	case T3_SVC_GROUP_VOICE:
 	case T3_SVC_IND_VOICE:
+	case T3_SVC_PDATA:	// packet data needs a payload channel too (table 6.1)
 		return a->service_fn == 0 || a->service_fn == 1;
 	default:
 		return a->service_fn == 0 || a->service_fn == 2;
@@ -689,6 +696,7 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 		q->kind = T3_SK_REGISTRATION;
 		q->options = ms->ax.svc == T3_SVC_REGISTER ? T3_SO_REG_REGISTER : 0;
 		ms->reg_tgs = 0;
+		ms->reg_single = false;
 		ms->ps_rq_sent = 0;
 		if ((ms->cfg->opts & T3_OPT_REG_TG) && ms->ax.svc == T3_SVC_REGISTER && n >= 2u) {
 			// A list (6.4.4.1.13.2): to TATTSI, with the blocks the TSCC's C_AHOY will ask for
@@ -698,12 +706,14 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 		} else if ((ms->cfg->opts & T3_OPT_REG_TG) && tg != NULL) {
 			q->extra = T3_TRG_TALKGROUP << 2;
 			q->dst = tg->id;
+			ms->reg_single = ms->ax.svc == T3_SVC_REGISTER;
 		} else {
 			q->extra = T3_TRG_SYSCODE << 2;
 			q->dst = ms->syscode;
 		}
-		if (ms->ax.svc == T3_SVC_REGISTER && ms->reg_tgs == 0 && ms->cfg->ps_rq != 0) {
-			// Power save (6.4.7.2.1). Not with a list: its answer's Response_Info is the list's
+		if (ms->ax.svc == T3_SVC_REGISTER && ms->reg_tgs == 0 && !ms->reg_single && ms->cfg->ps_rq != 0) {
+			// Power save (6.4.7.2.1). Not with a talkgroup (6.4.4.1.13.1 sets PS_RQ 000) or a list (its answer's
+			// Response_Info is the list's)
 			ms->ps_rq_sent = ms->cfg->ps_rq & 7u;
 			q->options |= (uint8_t)(ms->ps_rq_sent << 1);
 		}
@@ -819,6 +829,9 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 							    or_default(ms->cfg->tnp_ms, T3_TNP_MS));
 		break;
 	case T3_ACK:
+		if (svc == T3_SVC_REGISTER && a->reason != T3_RC_REG_ACCEPTED && a->reason != T3_RC_REG_SUBSCRIPTION) {
+			break;	// not a registration answer (table 7.41): wait for one, or TNP_Timer
+		}
 		if (svc == T3_SVC_REGISTER) {
 			ms->reg = T3_REG_OK;
 			ms->reg_area = reg_area(ms, ms->syscode);
@@ -826,8 +839,12 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 			// the first reg_tgs bits mean anything: all taken is 1111111b however many went (6.4.4.1.13.2)
 			uint8_t sent_bits = (uint8_t)(0x7Fu & ~((1u << (T3_REG_TG_MAX - ms->reg_tgs)) - 1u));
 			ms->reg_tg_ok = ms->reg_tgs != 0 ? (uint8_t)(a->info & sent_bits) : 0u;
-			// PowerSave_Offset: the wake frame; 0 = registered, no power save (table 6.13)
-			ms->ps_rq = ms->ps_rq_sent;
+			if (ms->reg_single) {
+				// One talkgroup: Reg_Accepted took it, Reg_Subscription/Attachment didn't (6.4.4.1.13.1)
+				ms->reg_tg_ok = a->reason == T3_RC_REG_ACCEPTED ? 0x40u : 0u;
+			}
+			// PowerSave_Offset: the wake frame, only in a Reg_Accepted (table 7.41); 0 = no power save (table 6.13)
+			ms->ps_rq = a->reason == T3_RC_REG_ACCEPTED ? ms->ps_rq_sent : 0u;
 			ms->ps_offset = ms->ps_rq != 0 ? (uint8_t)(a->info & ((1u << ms->ps_rq) - 1u)) : 0u;
 			ms->awake_until = now + or_default(ms->cfg->awake_ms, T3_AWAKE_MS);
 		} else if (svc == T3_SVC_DEREGISTER) {
@@ -927,13 +944,13 @@ static bool on_status(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *
 
 // Load a UDT upload: the header in tx.burst, the blocks in up[], sent as one transmission on the next inbound slot
 static void queue_udt(t3_ms_t *ms, uint32_t now, uint8_t slot, t3_udt_t *u, const uint8_t *data, uint8_t len,
-		      uint8_t fill, bool count_pad)
+		      uint8_t fill, bool count_pad, uint8_t spare)
 {
 	uint8_t pad = 0;
 	u->op = T3_OP_C_UDTHU;
 	u->src = my_id(ms);
 	u->blocks = t3_udt_pack(data, len, fill, ms->up, &pad);
-	u->pad = count_pad ? pad : 0u;
+	u->pad = count_pad ? (uint8_t)(pad + spare / 4u) : 0u;
 	t3_udt_build(u, ms->tx.burst);
 	ms->tx.count = 1;
 	ms->tx.slot = slot;
@@ -961,10 +978,11 @@ static bool on_upload(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *
 	u.group = ms->ax.group;
 	u.format = ms->sd_tx.format;
 	u.dst = ms->ax.dst;
-	// ISO 8-bit text pads with 1111b nibbles (B.3.5); every other format here is binary-like, padded with zeros
-	uint8_t fill = u.format == T3_UDTF_ISO8 ? 0xFFu : 0u;
-	queue_udt(ms, now, slot, &u, ms->sd_tx.data, ms->sd_tx.len, fill,
-		  u.format == T3_UDTF_ISO8 || u.format == T3_UDTF_ISO7 || u.format == T3_UDTF_UTF16);
+	// The character formats pad with 1111b nibbles and count them (B.3.3-B.3.5, B.3.8, B.3.9); binary, NMEA and IP
+	// with zeros, uncounted
+	bool chars = u.format == T3_UDTF_BCD || u.format == T3_UDTF_ISO7 || u.format == T3_UDTF_ISO8 ||
+		     u.format == T3_UDTF_UTF16 || u.format == T3_UDTF_DGNA_ALIAS;
+	queue_udt(ms, now, slot, &u, ms->sd_tx.data, ms->sd_tx.len, chars ? 0xFFu : 0u, chars, ms->sd_tx.spare);
 	return true;
 }
 
@@ -989,7 +1007,7 @@ static bool on_divert_ask(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy
 	u.format = T3_UDTF_ADDRESS;
 	u.opt = true;	// UDT_DIV
 	u.dst = ms->ax.group ? T3_ID_GPI : T3_ID_MSI;
-	queue_udt(ms, now, slot, &u, d, sizeof(d), 0, false);
+	queue_udt(ms, now, slot, &u, d, sizeof(d), 0, false, 0);
 	return true;
 }
 
@@ -1024,7 +1042,7 @@ static bool on_reg_list(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t
 	u.format = T3_UDTF_ADDRESS;
 	u.dst = T3_ID_TATTSI;
 	u.sf = true;
-	queue_udt(ms, now, slot, &u, d, (uint8_t)(1u + 3u * slots), 0, false);
+	queue_udt(ms, now, slot, &u, d, (uint8_t)(1u + 3u * slots), 0, false, 0);
 	return true;
 }
 
@@ -1178,9 +1196,13 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 		answer(ms, slot, false, T3_RC_MESSAGE_ACCEPTED, h->src, false);
 	} else if (to_me && !payload && h->kind == T3_SK_IND_VOICE) {
 		answer(ms, slot, false, T3_RC_MS_ACCEPTED, h->src, false);	// availability check: OACSU
+	} else if (payload && h->src == T3_ID_TSI && (h->kind == T3_SK_IND_DATA || h->kind == T3_SK_TG_DATA)) {
+		// Packet data radio check on the payload channel (6.6.3.3.2.1; table 6.51, cited there as 6.53)
+		answer(ms, slot, true, T3_RC_MESSAGE_ACCEPTED, h->src, false);
 	} else if (to_me && !payload && h->kind == T3_SK_IND_DATA) {
-		// Packet data to the radio (6.6.3.2.6): the data service takes it on the payload channel
-		answer(ms, slot, false, T3_RC_MESSAGE_ACCEPTED, h->src, false);
+		// Packet data to the radio (6.6.3.2.6): the data service takes it on the payload channel, or the radio
+		// refuses when its data terminal can't
+		answer(ms, slot, false, ms->data_nack != 0 ? ms->data_nack : T3_RC_MESSAGE_ACCEPTED, h->src, false);
 	} else if (to_me) {
 		answer(ms, slot, payload, T3_RC_MS_NOT_SUPPORTED, h->src, false);
 	}
@@ -1389,9 +1411,11 @@ static void on_payload(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_csbk_t 
 		}
 		break;
 	case T3_OP_P_PROTECT: {
-		// 6.6.2.3.2.3: addressed to the radio, the call's talkgroup or every radio
+		// 6.6.2.3.2.3: DIS_PTT and EN_PTT apply addressed to the radio, the talkgroup of its grant or ALLMSID; not
+		// to the other party of an individual call
 		const t3_protect_t *pr = &p->u.protect;
-		bool ours = pr->dst == T3_ID_ALLMSID || is_me(ms, pr->dst) || for_call(ms, pr->group, pr->dst);
+		bool ours = pr->dst == T3_ID_ALLMSID || is_me(ms, pr->dst) ||
+			    (pr->group && ms->call.group && pr->dst == ms->call.dst);
 		switch (pr->kind) {
 		case T3_PROTECT_DIS_PTT:
 			if (ours) {
@@ -1404,8 +1428,13 @@ static void on_payload(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_csbk_t 
 			}
 			break;
 		case T3_PROTECT_EN_PTT_ONE_MS:
-			// Only the addressed radio may talk
-			ms->protect_dis = !is_me(ms, pr->dst);
+			// While these come, only the addressed radio may talk; the rest have PTT off until they stop
+			if (is_me(ms, pr->dst)) {
+				ms->protect_dis = false;
+				ms->protect_other_ms = 0;
+			} else {
+				ms->protect_other_ms = now != 0 ? now : 1u;
+			}
 			break;
 		case T3_PROTECT_ILLEGALLY_PARKED: {
 			// Everyone not in the named call leaves
@@ -1792,6 +1821,9 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 		break;
 	}
 	case T3_FOLLOW:
+		if (ms->protect_other_ms != 0 && since(now, ms->protect_other_ms, T3_PROTECT_ONE_MS)) {
+			ms->protect_other_ms = 0;
+		}
 		if (since(now, ms->last_act_ms, or_default(ms->cfg->inactive_ms, T3_INACTIVE_MS)) ||
 		    since(now, ms->call.start_ms, T3_CALL_MAX_MS)) {
 			return_to_tscc(ms, now);
@@ -1864,7 +1896,8 @@ bool t3_ms_status(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t s
 
 bool t3_ms_sdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t format, const uint8_t *data, uint8_t len)
 {
-	bool bad = dst == T3_ID_NULL || len == 0 || len > T3_UDT_MAX || format > 0x0Fu;
+	bool iso7 = format == T3_UDTF_ISO7;
+	bool bad = dst == T3_ID_NULL || len == 0 || len > (iso7 ? T3_UDT_ISO7_MAX : T3_UDT_MAX) || format > 0x0Fu;
 	if (bad || ms->ax.state != T3_AX_IDLE || !may_ask(ms)) {
 		if (bad) {
 			ms->ax.result = T3_RES_NOT_ALLOWED;
@@ -1875,8 +1908,23 @@ bool t3_ms_sdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t fo
 	ms->ax.group = group;
 	ms->ax.info = 0;
 	ms->sd_tx.format = format;
-	ms->sd_tx.len = len;
-	memcpy(ms->sd_tx.data, data, len);
+	if (iso7) {
+		// One character an octet in, 7 bits each on air, first character first (B.3.4); the bits left over in the
+		// last octet are 1s, and table B.4 counts them as pad
+		memset(ms->sd_tx.data, 0xFF, sizeof(ms->sd_tx.data));
+		for (uint16_t i = 0; i < 7u * len; i++) {
+			if (!((data[i / 7u] >> (6u - i % 7u)) & 1u)) {
+				ms->sd_tx.data[i / 8u] &= (uint8_t)~(0x80u >> (i % 8u));
+			}
+		}
+		ms->sd_tx.len = (uint8_t)((7u * len + 7u) / 8u);
+		ms->sd_tx.spare = (uint8_t)(8u * ms->sd_tx.len - 7u * len);
+	} else {
+		ms->sd_tx.len = len;
+		memcpy(ms->sd_tx.data, data, len);
+		// A last BCD digit 1111b is DigitNULL (table 7.46): a pad nibble
+		ms->sd_tx.spare = format == T3_UDTF_BCD && (data[len - 1u] & 0x0Fu) == 0x0Fu ? 4u : 0u;
+	}
 	return true;
 }
 
@@ -2012,6 +2060,7 @@ bool t3_ms_can_talk(const t3_ms_t *ms)
 {
 	// The PTT stays off on a broadcast or all-call the radio didn't make (6.6.2.3.2.4, 6.6.2.5) and while P_PROTECT
 	// disables it
-	return may_send(ms) && ms->state == T3_FOLLOW && !ms->protect_dis && ms->tx.count == 0 && !ms->call.data &&
+	return may_send(ms) && ms->state == T3_FOLLOW && !ms->protect_dis && ms->protect_other_ms == 0 &&
+	       ms->tx.count == 0 && !ms->call.data &&
 	       (ms->call.ours || (!is_allcall(ms->call.dst) && ms->call.op != T3_OP_BTV_GRANT));
 }

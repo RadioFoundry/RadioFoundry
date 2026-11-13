@@ -129,6 +129,7 @@
 #define T3_RC_GROUP_NOT_ALLOWED	0x2F
 #define T3_RC_REFUSED_UNKNOWN	0x3F
 #define T3_RC_MS_NOT_SUPPORTED	0x00	// NACK sent by an MS
+#define T3_RC_EQUIP_BUSY	0x13	// EquipBusy_Refused: the MS's data terminal isn't ready
 #define T3_RC_RECIPIENT_REFUSED	0x14
 #define T3_RC_QUEUED_RESOURCE	0xA0
 #define T3_RC_QUEUED_BUSY	0xA1
@@ -326,6 +327,7 @@ uint32_t t3_sysparms_build(const t3_sysparms_t *in);
 #define T3_UDT_BLOCK		12
 #define T3_UDT_BLOCKS_MAX	4
 #define T3_UDT_MAX		(T3_UDT_BLOCKS_MAX * T3_UDT_BLOCK - 2)	// 46 octets
+#define T3_UDT_ISO7_MAX		52	// 7-bit symbols in 46 octets (table B.4)
 
 // UDT_Format (7.2.27)
 #define T3_UDTF_BINARY		0x0

@@ -5508,6 +5508,21 @@ static void t3_stage_start(void)
 	CHECK(sm.view.t3.state == T3_CAMPED);
 }
 
+static void t3_data_rx(uint8_t kind, const uint8_t *d, int8_t ts)
+{
+	dmr_burst_t b;
+	memset(&b, 0, sizeof(b));
+	b.kind = kind;
+	b.sync = DMR_SYNC_BS;
+	b.ts = ts;
+	b.cc = 2;
+	b.crc_ok = true;
+	b.in_step = true;
+	b.len = T3_CSBK_BYTES;
+	memcpy(b.payload, d, T3_CSBK_BYTES);
+	sim_rx(&b);
+}
+
 static void test_t3_talk(void)
 {
 	dmr_start(true);
@@ -5536,26 +5551,18 @@ static void test_t3_talk(void)
 	CHECK(sm.view.t3.returns == 0);
 
 	req(RREQ_PTT, 0);
-	run(4000);		// released: the inactivity timer runs again
+	// The call's hang, filled with idle bursts: a signal, so the call stays (6.6.2.3.2.9 a)
+	static const uint8_t idle[T3_CSBK_BYTES];
+	for (int i = 0; i < 70; i++) {
+		t3_data_rx(DMR_BURST_IDLE, idle, 2);
+		run(60);
+	}
+	CHECK(sm.view.t3.state == T3_FOLLOW && sm.view.t3.returns == 0);
+	run(4000);		// then nothing: the inactivity timer ends it
 	CHECK(sm.view.t3.state != T3_FOLLOW && sm.view.state != RS_TX);
 	req(RREQ_T3, RADIO_T3_STOP);
 	run(100);
 	sim.repeater = false;
-}
-
-static void t3_data_rx(uint8_t kind, const uint8_t *d, int8_t ts)
-{
-	dmr_burst_t b;
-	memset(&b, 0, sizeof(b));
-	b.kind = kind;
-	b.sync = DMR_SYNC_BS;
-	b.ts = ts;
-	b.cc = 2;
-	b.crc_ok = true;
-	b.in_step = true;
-	b.len = T3_CSBK_BYTES;
-	memcpy(b.payload, d, T3_CSBK_BYTES);
-	sim_rx(&b);
 }
 
 // Short data: the upload goes out as a UDT header and its blocks in consecutive frames of the TSCC's slot; a download

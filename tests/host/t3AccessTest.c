@@ -244,16 +244,34 @@ static void test_register(void)
 	frames(&ms, 200);
 	CHECK(nsent == 1 && ms.reg == T3_REG_OK, "stays registered without asking again");
 
-	// Registering to the talk group (subscription), the only one listened to
+	// A registration answer must be a registration reason (table 7.41)
+	setup(T3_OPT_PRIVATE, true);
+	camp(&ms);
+	frames(&ms, 2);
+	a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, T3_ID_REGI);
+	rx(&ms, 1, &a);
+	CHECK(ms.reg != T3_REG_OK && ms.ax.state != T3_AX_IDLE, "Message_Accepted doesn't register");
+
+	// Registering to the talk group (subscription), the only one listened to: no power save with it (6.4.4.1.13.1)
+	setup(T3_OPT_PRIVATE | T3_OPT_REG_TG, true);
+	cfg.tg[1].flags = 0;
+	cfg.ps_rq = 2;
+	camp(&ms);
+	frames(&ms, 2);
+	CHECK(nsent == 1 && sent[0].u.rand.extra == (T3_TRG_TALKGROUP << 2) && sent[0].u.rand.dst == TG_A &&
+	      ((sent[0].u.rand.options >> 1) & 7u) == 0u, "subscription to the talk group, PS_RQ 000");
+	a = ack(T3_OP_C_ACKD, T3_RC_REG_SUBSCRIPTION, OWN, T3_ID_REGI);
+	a.u.ack.info = 2;
+	rx(&ms, 1, &a);
+	CHECK(ms.reg == T3_REG_OK && ms.reg_tg_ok == 0 && ms.ps_offset == 0,
+	      "Reg_Subscription/Attachment: registered, the talkgroup refused, no wake frame");
 	setup(T3_OPT_PRIVATE | T3_OPT_REG_TG, true);
 	cfg.tg[1].flags = 0;
 	camp(&ms);
 	frames(&ms, 2);
-	CHECK(nsent == 1 && sent[0].u.rand.extra == (T3_TRG_TALKGROUP << 2) && sent[0].u.rand.dst == TG_A,
-	      "subscription to the talk group");
-	a = ack(T3_OP_C_ACKD, T3_RC_REG_SUBSCRIPTION, OWN, T3_ID_REGI);
+	a = ack(T3_OP_C_ACKD, T3_RC_REG_ACCEPTED, OWN, T3_ID_REGI);
 	rx(&ms, 1, &a);
-	CHECK(ms.reg == T3_REG_OK, "subscription accepted registers");
+	CHECK(ms.reg == T3_REG_OK && ms.reg_tg_ok == 0x40, "Reg_Accepted: the talkgroup taken");
 
 	// Reg = 0: nothing to do
 	setup(T3_OPT_PRIVATE, false);
@@ -464,6 +482,17 @@ static void test_permission(void)
 	frames(&ms, 2);
 	CHECK(nsent == 1 && (sent[0].u.rand.options & T3_SO_EMERGENCY), "emergency goes through");
 
+	// Service Function 2 (no payload channel): packet data waits; 1 (payload channel): it goes (table 6.1)
+	setup(T3_OPT_PRIVATE, true);
+	al.service_fn = 2;
+	camp_registered(&ms);
+	CHECK(t3_ms_pdata(&ms, T, CALLER, false), "packet data accepted locally");
+	frames(&ms, 30);
+	CHECK(nsent == 0, "service function 2: no packet data request");
+	al.service_fn = 1;
+	frames(&ms, 2);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_RAND, "service function 1: packet data request sent");
+
 	// An Aloha must be heard on this TSCC before the first request
 	setup(T3_OPT_PRIVATE, true);
 	aloha_on = false;
@@ -513,6 +542,10 @@ static void test_group_call(void)
 	p.u.protect.dst = CALLER;
 	rx(&ms, 2, &p);
 	CHECK(!t3_ms_can_talk(&ms), "EN_PTT_ONE_MS for another radio disables ours");
+	frames(&ms, (int)(T3_PROTECT_ONE_MS / 60u) + 2);
+	CHECK(t3_ms_can_talk(&ms), "only while they come (6.6.2.3.2.3)");
+	rx(&ms, 2, &p);
+	CHECK(!t3_ms_can_talk(&ms), "again for another radio");
 	p.u.protect.dst = OWN;
 	rx(&ms, 2, &p);
 	CHECK(t3_ms_can_talk(&ms), "EN_PTT_ONE_MS for ours");
@@ -522,6 +555,11 @@ static void test_group_call(void)
 	CHECK(!t3_ms_can_talk(&ms), "DIS_PTT to every radio");
 	p.u.protect.kind = T3_PROTECT_EN_PTT;
 	rx(&ms, 2, &p);
+	CHECK(t3_ms_can_talk(&ms), "EN_PTT to every radio");
+	p.u.protect.kind = T3_PROTECT_DIS_PTT;
+	p.u.protect.dst = CALLER;
+	rx(&ms, 2, &p);
+	CHECK(t3_ms_can_talk(&ms), "DIS_PTT to another radio: not ours");
 	p.u.protect.kind = T3_PROTECT_ILLEGALLY_PARKED;
 	p.u.protect.group = true;
 	p.u.protect.dst = TG_A;
@@ -588,11 +626,12 @@ static void test_group_heard(void)
 	      "selective clear acknowledged");
 	CHECK(ms.state == T3_CAMPED, "and left");
 
-	// ILLEGALLY_PARKED for another call: leave
-	frames(&ms, 50);
+	// Within T3_REGRANT_MS of leaving, a set-up grant (Late_Entry 0) is a new call: followed (6.6.2.4.1)
+	frames(&ms, 2);
 	rx(&ms, 1, &g);
 	frames(&ms, 2);
-	CHECK(ms.state == T3_FOLLOW, "followed again");
+	CHECK(ms.state == T3_FOLLOW, "a set-up grant just after leaving: followed");
+	// ILLEGALLY_PARKED for another call: leave
 	t3_csbk_t p = { .lb = true, .op = T3_OP_P_PROTECT };
 	p.u.protect.kind = T3_PROTECT_ILLEGALLY_PARKED;
 	p.u.protect.group = true;
@@ -1632,10 +1671,26 @@ static void test_pdata(void)
 	frames(&ms, 1);
 	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MESSAGE_ACCEPTED &&
 	      sent[0].u.ack.dst == CALLER, "availability check: accepted");
+	// The data terminal busy: refused (6.6.3.2.6)
+	nsent = 0;
+	ms.data_nack = T3_RC_EQUIP_BUSY;
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_EQUIP_BUSY,
+	      "data terminal busy: EquipBusy_Refused");
+	ms.data_nack = 0;
 	g = grant(T3_OP_PD_GRANT, 999, 1, OWN, CALLER);
 	rx(&ms, 1, &g);
 	CHECK(ms.state == T3_FOLLOW && ms.call.data && !ms.call.ours && ms.call.src == CALLER, "called: following");
 	frames(&ms, 3);
+	// The payload channel's packet data radio check (6.6.3.3.2.1): P_ACKU Message_Accepted
+	nsent = 0;
+	h = ahoy(T3_SK_IND_DATA, false, OWN, T3_ID_TSI);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_P_ACKU && sent[0].u.ack.reason == T3_RC_MESSAGE_ACCEPTED &&
+	      sent[0].u.ack.dst == T3_ID_TSI && ms.state == T3_FOLLOW, "payload data radio check: P_ACKU %u reason 0x%02x",
+	      sent[0].op, sent[0].u.ack.reason);
 	c.u.clear.dst = OWN;
 	rx(&ms, 1, &c);
 	CHECK(ms.state == T3_CAMPED, "cleared");
@@ -1653,6 +1708,20 @@ static void test_pdata(void)
 	g = grant(T3_OP_PD_GRANT, 999, 1, CALLER + 1u, CALLER);
 	rx(&ms, 1, &g);
 	CHECK(ms.state == T3_CAMPED, "another MS's data: not followed");
+
+	// Multi-item grants (55, 56): the same applicability (6.6.3.2.7)
+	g = grant(T3_OP_PD_GRANT_MI, 999, 2, OWN, CALLER);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && ms.call.data && !ms.call.group, "multi-item data to the radio: followed");
+	frames(&ms, 3);
+	c.u.clear.group = false;
+	c.u.clear.dst = OWN;
+	rx(&ms, 2, &c);
+	CHECK(ms.state == T3_CAMPED, "multi-item data cleared");
+	frames(&ms, 50);
+	g = grant(T3_OP_TD_GRANT_MI, 999, 2, TG_B, CALLER);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && ms.call.data && ms.call.group, "multi-item talkgroup data: followed");
 }
 
 static void test_sdata(void)
@@ -1712,6 +1781,32 @@ static void test_sdata(void)
 	CHECK(ms.ax.result == T3_RES_DONE, "talkgroup data done");
 	CHECK(!t3_ms_sdata(&ms, T, CALLER, false, T3_UDTF_ISO8, (const uint8_t *)msg, 0) &&
 	      ms.ax.result == T3_RES_NOT_ALLOWED, "no empty message");
+
+	// ISO 7 bit: one character an octet in, 7 bits each out, 1s after; 4 symbols pad 13 nibbles (table B.4)
+	nsent = 0;
+	CHECK(t3_ms_sdata(&ms, T, CALLER, false, T3_UDTF_ISO7, (const uint8_t *)"ABCD", 4), "ISO 7 data");
+	CHECK(sent_rand(&ms), "C_RAND short data");
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup == 4 && t3_udt_parse(up_hdr, &u) && u.format == T3_UDTF_ISO7 && u.pad == 13 && u.blocks == 1 &&
+	      memcmp(up_blocks[0], "\x83\x0A\x1C\x4F\xFF\xFF\xFF\xFF\xFF\xFF", 10) == 0, "ISO 7 upload: pad %u, %02x %02x %02x %02x %02x",
+	      u.pad, up_blocks[0][0], up_blocks[0][1], up_blocks[0][2], up_blocks[0][3], up_blocks[0][4]);
+	a = ack(T3_OP_C_ACKD, T3_RC_MS_ACCEPTED, OWN, CALLER);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_DONE, "ISO 7 delivered");
+	CHECK(!t3_ms_sdata(&ms, T, CALLER, false, T3_UDTF_ISO7, (const uint8_t *)msg, T3_UDT_ISO7_MAX + 1) &&
+	      ms.ax.result == T3_RES_NOT_ALLOWED, "ISO 7: at most 52 characters");
+	// BCD "123": 0x12 0x3F, the DigitNULL counted with the fill (17 nibbles in one block, table B.3)
+	nsent = 0;
+	CHECK(t3_ms_sdata(&ms, T, CALLER, false, T3_UDTF_BCD, (const uint8_t *)"\x12\x3F", 2), "BCD data");
+	CHECK(sent_rand(&ms), "C_RAND short data");
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup == 5 && t3_udt_parse(up_hdr, &u) && u.format == T3_UDTF_BCD && u.pad == 17 && up_blocks[0][2] == 0xFF,
+	      "BCD upload: pad %u", u.pad);
+	a = ack(T3_OP_C_ACKD, T3_RC_MS_ACCEPTED, OWN, CALLER);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_DONE, "BCD delivered");
 
 	// Received: to the radio with A, answered MS_Accepted; the text without its padding
 	nsent = 0;

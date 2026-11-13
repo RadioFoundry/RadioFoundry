@@ -1212,8 +1212,10 @@ static void dmr_configure(radio_sm_t *sm)
 			cfg.listen.hear_all = true;
 			cfg.talk_target.private_call = !c->group;
 			cfg.talk_target.id = c->group || c->src == cfg.own_id ? c->dst : c->src;
-			if (c->op == T3_OP_BTV_GRANT && c->ours) {
-				cfg.tx_svc |= DMR_SVC_BROADCAST;	// 361-2 5.3.3.1: a broadcast call says so in its LC
+			// 361-2 5.3.2.1, 5.3.3.1: a broadcast or all-call says so in its LC, whatever grant came back (a
+			// TV_GRANT to an all-unit ID is one too, table 7.11)
+			if (c->ours && (c->op == T3_OP_BTV_GRANT || (c->group && c->dst >= T3_ID_ALLMSIDL))) {
+				cfg.tx_svc |= DMR_SVC_BROADCAST;
 			}
 		}
 		cfg.reply_window_s = cfg.reply_window_private_s = 0;
@@ -1610,7 +1612,12 @@ static void dmr_publish(radio_sm_t *sm, uint32_t now_ms)
 	d->reply_s = cv->reply_s;
 	d->one_shot = sm->one_shot;
 #if CONFIG_DMR_EMERGENCY
-	if (d->state == RDMR_RX && cv->caller.emergency) {
+	bool emergency = cv->caller.emergency;
+#if CONFIG_DMR_TRUNK
+	// Trunked: the grant's Emergency flag too (table 7.11), should a site's voice LC lose its option bit
+	emergency |= sm->t3_on && t3m.state == T3_FOLLOW && t3m.call.emergency && !t3m.call.ours;
+#endif
+	if (d->state == RDMR_RX && emergency) {
 		dmr_emergency_heard(DMR_EMERGENCY_ALERT_CALL, cv->caller.src, cv->caller.dst, cv->caller.group, cv->call_start_ms);
 	}
 #endif
@@ -2567,7 +2574,8 @@ static bool t3_tap(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 		return false;
 	}
 	uint8_t slot = (b->ts == 1 || b->ts == 2) ? (uint8_t)b->ts : 0;
-	if (b->kind != DMR_BURST_IDLE && slot != 0) {
+	// TV_Inactive measures signal quality (6.6.2.3.2.9 a): every burst with a sync counts, a hang's idles included
+	if (slot != 0) {
 		t3_ms_activity(&t3m, now_ms, slot);
 	}
 	if (b->kind != DMR_BURST_CSBK && b->kind != DMR_BURST_MBC_HEADER && b->kind != DMR_BURST_MBC_CONT &&
@@ -2582,6 +2590,12 @@ static bool t3_tap(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 		slot = sm->view.ch.timeslot;	// not known: the slot we listen to
 	}
 	if (b->len >= T3_CSBK_BYTES) {
+		// Whether the data service can take packet data to the radio now (6.6.3.2.6)
+#if CONFIG_DMR_DATA_CORE
+		t3m.data_nack = dmr_call_data_busy() ? T3_RC_EQUIP_BUSY : 0u;
+#else
+		t3m.data_nack = T3_RC_MS_NOT_SUPPORTED;
+#endif
 		t3_ms_rx(&t3m, now_ms, slot, b->kind, b->cc, b->payload);
 		if (b->kind != DMR_BURST_RATE_12_DATA) {
 			// A UDT header's opcode is in octet 9
