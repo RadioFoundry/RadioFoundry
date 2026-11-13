@@ -145,7 +145,8 @@ bool t3_csbk_parse(const uint8_t pdu[T3_CSBK_BYTES], t3_csbk_t *out)
 		b->parms2 = get(&r, 24);
 		return true;
 	}
-	case T3_OP_C_AHOY: {
+	case T3_OP_C_AHOY:
+	case T3_OP_C_ACKVIT: {	// the same layout (table 6.21: ALS and G/I reserved)
 		t3_ahoy_t *a = &out->u.ahoy;
 		a->options = (uint8_t)get(&r, 7);
 		a->kind_flag = flag(&r);
@@ -270,7 +271,7 @@ bool t3_csbk_build(const t3_csbk_t *in, uint16_t mask, uint8_t pdu[T3_CSBK_BYTES
 		put(&w, 4, b->backoff);
 		put(&w, 16, b->syscode);
 		put(&w, 24, b->parms2);
-	} else if (op == T3_OP_C_AHOY) {
+	} else if (op == T3_OP_C_AHOY || op == T3_OP_C_ACKVIT) {
 		const t3_ahoy_t *a = &in->u.ahoy;
 		put(&w, 7, a->options);
 		put(&w, 1, a->kind_flag);

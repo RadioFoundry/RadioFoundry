@@ -2685,6 +2685,9 @@ static void t3_publish(radio_sm_t *sm)
 	v->divert_to = m->ax.divert_to;
 	v->divert_group = m->ax.divert_group;
 	v->als_calls = m->als_calls;
+	v->killed = m->killed;
+	v->kills = m->kills;
+	v->tscc_auth_fails = m->tscc_auth_fails;
 	v->call_als = m->call.als;
 #if CONFIG_DMR_DATA_CORE && CONFIG_DMR_TRUNK_TX
 	v->pd_wait = data_tx.t3_wait;
@@ -2750,9 +2753,11 @@ static void t3_start(radio_sm_t *sm, uint32_t now_ms)
 	static int32_t last_net = -1;
 	int32_t net = (int32_t)(((uint32_t)t3s.cfg.auth.model << 16) | t3s.cfg.auth.net);
 	bool stunned = t3m.stunned && net == last_net;
+	bool killed = t3m.killed;	// any network's, until the radio restarts
 	last_net = net;
 	t3_ms_start(&t3m, &t3s.cfg, now_ms);
 	t3_ms_set_stunned(&t3m, stunned);
+	t3_ms_set_killed(&t3m, killed);
 	t3_publish(sm);
 	changed(sm);
 }

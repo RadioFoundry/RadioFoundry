@@ -54,6 +54,7 @@
 #define T3_OPT_PRIVATE		0x0020	// follow private calls to the radio's ID (on by default)
 #define T3_OPT_REG_TG		0x0040	// register with the talk group (subscription) rather than the system code
 #define T3_OPT_ALS		0x0080	// accept Ambient Listening (6.6.2.6): the radio transmits by itself when called so
+#define T3_OPT_KILL		0x0100	// accept an authenticated kill (6.4.10); the radio keeps it in RAM only
 
 // Defaults (TS 102 361-4 Annex A ranges in the comments)
 #define T3_AWAKE_MS		2000	// T_Awake, 0.1-60 s: power save, awake this long after traffic for the radio
@@ -255,6 +256,12 @@ typedef struct {
 	bool stunned;		// stunned by the TSCC (6.4.9): no user services until revived
 	uint32_t stuns, revives;	// stun and revive commands taken
 	uint32_t auths;		// authentication challenges answered
+	// The radio challenging the TSCC before a stun, revive (6.4.9.2) or kill (6.4.10): what it was asked, its
+	// challenge, until when an answer counts
+	uint8_t acvit;		// T3_ACVIT_*
+	uint32_t acvit_challenge, acvit_until;
+	bool killed;		// killed (6.4.10): no DMR service at all until the radio restarts
+	uint32_t kills, tscc_auth_fails;	// kills taken; TSCC answers that failed the check
 	// Mass registration (6.4.5.1): a registration due at massreg_at; the window ends at massreg_end
 	bool massreg;
 	uint32_t massreg_at, massreg_end;
@@ -378,6 +385,7 @@ void t3_ms_slot(t3_ms_t *ms, uint32_t now, uint8_t slot, bool at_known, bool at_
 bool t3_ms_request(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, bool emergency);
 // Stunned (6.4.9) or not: the radio core keeps it across a restart of the engine and gives it back after t3_ms_start
 void t3_ms_set_stunned(t3_ms_t *ms, bool stunned);
+void t3_ms_set_killed(t3_ms_t *ms, bool killed);
 // Send a status (0-126) to dst, a talkgroup or an MS, or poll an MS (T3_STATUS_POLL; ax.info has its answer). False
 // (ax.result says why) when it can't start
 bool t3_ms_status(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t status);
@@ -410,6 +418,11 @@ bool t3_ms_can_talk(const t3_ms_t *ms);
 // A talkgroup DGNA assigned (6.6.8)
 bool t3_ms_is_dgna(const t3_ms_t *ms, uint32_t tg);
 // Power save: the receiver may sleep now (t3_ms_poll decides; the radio wakes it the moment this goes false)
+#define T3_ACVIT_NONE	0
+#define T3_ACVIT_STUN	1
+#define T3_ACVIT_REVIVE	2
+#define T3_ACVIT_KILL	3
+
 bool t3_ms_asleep(const t3_ms_t *ms);
 const char *t3_res_name(t3_res_t r);
 

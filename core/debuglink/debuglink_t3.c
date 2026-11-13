@@ -298,6 +298,8 @@ void debuglink_view_t3_svc(const radio_view_t *v, dl_text_t *t)
 		(unsigned)x->sleeps);
 	dl_text(t, "t3.divert_to=%u\nt3.divert_group=%u\nt3.als_calls=%u\nt3.call_als=%u\n", (unsigned)x->divert_to,
 		x->divert_group, (unsigned)x->als_calls, x->call_als);
+	dl_text(t, "t3.killed=%u\nt3.kills=%u\nt3.tscc_auth_fails=%u\n", x->killed, (unsigned)x->kills,
+		(unsigned)x->tscc_auth_fails);
 	dl_text(t, "t3.dgnas=%u\nt3.dgna_onekey=%u\nt3.dgna_alias_tg=%u\nt3.dgna=", (unsigned)x->dgnas,
 		(unsigned)x->dgna_onekey, (unsigned)x->dgna_alias_tg);
 	for (uint8_t i = 0; i < x->ndgna && i < RADIO_T3_DGNA; i++) {

@@ -1167,6 +1167,82 @@ static void test_power_save(void)
 
 static void udt_down(t3_ms_t *ms, uint8_t slot, const t3_udt_t *h, const uint8_t *data, uint8_t len, bool corrupt);
 
+// The radio authenticates the TSCC (6.4.9.2, 6.4.10): with K, a stun, revive or kill C_AHOY is acknowledged by a
+// C_ACKVIT carrying the radio's challenge; the TSCC's right answer (C_ACKD Authentication_Response) is acted on and
+// acknowledged MS_Accepted, a wrong one refused (Recipient_Refused) and ignored. Kill only with T3_OPT_KILL
+static void test_acvit(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE | T3_OPT_KILL, true);
+	cfg.auth_key_set = true;
+	for (int i = 0; i < 16; i++) {
+		cfg.auth_key[i] = (uint8_t)(i + 1);
+	}
+	camp_registered(&ms);
+	nsent = 0;
+	t3_csbk_t h = ahoy(T3_SK_SUPPLEMENTARY, false, OWN, T3_ID_STUNI);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKVIT && sent[0].u.ahoy.kind == T3_SK_SUPPLEMENTARY &&
+	      !sent[0].u.ahoy.kind_flag && sent[0].u.ahoy.src == OWN && sent[0].u.ahoy.dst == ms.acvit_challenge &&
+	      sent[0].u.ahoy.dst <= T3_AUTH_CHALLENGE_MAX, "stun: C_ACKVIT with the challenge (op %u)", sent[0].op);
+	CHECK(!ms.stunned, "not stunned before the TSCC answers");
+	uint32_t ok = t3_auth_response(cfg.auth_key, ms.acvit_challenge, 0);
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_AUTH_RESPONSE, OWN, ok ^ 1u);
+	rx(&ms, 1, &a);
+	frames(&ms, 1);
+	CHECK(nsent == 2 && sent[1].op == T3_OP_C_ACKU && sent[1].u.ack.reason == T3_RC_RECIPIENT_REFUSED &&
+	      sent[1].u.ack.dst == T3_ID_STUNI && !ms.stunned && ms.tscc_auth_fails == 1, "a wrong answer refused");
+	a = ack(T3_OP_C_ACKD, T3_RC_AUTH_RESPONSE, OWN, ok);
+	rx(&ms, 1, &a);
+	frames(&ms, 1);
+	CHECK(nsent == 3 && sent[2].u.ack.reason == T3_RC_MS_ACCEPTED && sent[2].u.ack.dst == T3_ID_STUNI &&
+	      ms.stunned && ms.stuns == 1, "the right one: stunned");
+	rx(&ms, 1, &a);
+	frames(&ms, 1);
+	CHECK(nsent == 4 && sent[3].u.ack.reason == T3_RC_MS_ACCEPTED && ms.stuns == 1, "repeated: answered, once");
+	// The repeated C_AHOY gets the same challenge
+	uint32_t c = ms.acvit_challenge;
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 5 && sent[4].op == T3_OP_C_ACKVIT && sent[4].u.ahoy.dst == c, "same challenge again");
+
+	// Revive (Service_Kind_Flag 1)
+	h.u.ahoy.kind_flag = true;
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 6 && sent[5].op == T3_OP_C_ACKVIT && sent[5].u.ahoy.kind_flag, "revive: C_ACKVIT, flag 1");
+	a = ack(T3_OP_C_ACKD, T3_RC_AUTH_RESPONSE, OWN, t3_auth_response(cfg.auth_key, ms.acvit_challenge, 0));
+	rx(&ms, 1, &a);
+	frames(&ms, 1);
+	CHECK(!ms.stunned && ms.revives == 1 && sent[6].u.ack.reason == T3_RC_MS_ACCEPTED, "revived");
+
+	// Kill: to KILLI; afterwards nothing is heard or asked
+	t3_csbk_t k = ahoy(T3_SK_SUPPLEMENTARY, false, OWN, T3_ID_KILLI);
+	rx(&ms, 1, &k);
+	frames(&ms, 1);
+	CHECK(nsent == 8 && sent[7].op == T3_OP_C_ACKVIT && !sent[7].u.ahoy.kind_flag, "kill: C_ACKVIT");
+	a = ack(T3_OP_C_ACKD, T3_RC_AUTH_RESPONSE, OWN, t3_auth_response(cfg.auth_key, ms.acvit_challenge, 0));
+	rx(&ms, 1, &a);
+	frames(&ms, 1);
+	CHECK(nsent == 9 && sent[8].u.ack.reason == T3_RC_MS_ACCEPTED && sent[8].u.ack.dst == T3_ID_KILLI && ms.killed &&
+	      ms.kills == 1, "killed");
+	t3_csbk_t r = ahoy(T3_SK_REGISTRATION, false, OWN, T3_ID_TSI);
+	rx(&ms, 1, &r);
+	frames(&ms, 2);
+	CHECK(nsent == 9 && !t3_ms_request(&ms, T, CALLER, false, false), "killed: deaf and dumb");
+
+	// Without T3_OPT_KILL (or without K): not supported
+	setup(T3_OPT_PRIVATE, true);
+	cfg.auth_key_set = true;
+	camp_registered(&ms);
+	nsent = 0;
+	rx(&ms, 1, &k);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_NOT_SUPPORTED &&
+	      !ms.killed, "kill not allowed: not supported");
+}
+
 // Ambient Listening (6.6.2.6): the ALS radio check is accepted with Message_Accepted (only with T3_OPT_ALS, else
 // MSNot_Supported); the caller's private grant in T_ALS_REQUEST_LIFE_SPAN is an ALS call the radio transmits on until
 // T_ALS; late, or from someone else, it is an ordinary call. Asking for one sets ALS_SERV in the C_RAND
@@ -1728,6 +1804,7 @@ int main(void)
 	test_dgna();
 	test_divert();
 	test_als();
+	test_acvit();
 	test_status();
 	test_sdata();
 	test_pdata();

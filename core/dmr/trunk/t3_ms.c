@@ -1028,6 +1028,71 @@ static bool on_reg_list(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t
 	return true;
 }
 
+// The radio challenges the TSCC (tables 6.21, 6.25): C_ACKVIT, the acknowledgement to the stun, revive or kill, with a
+// random challenge as its target. The TSCC repeating its C_AHOY gets the same challenge again
+static void challenge_tscc(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t what)
+{
+	if (ms->acvit != what || ms->acvit_until == 0 || !before(now, ms->acvit_until)) {
+		ms->acvit = what;
+		ms->acvit_challenge = rnd(ms) % (T3_AUTH_CHALLENGE_MAX + 1u);
+	}
+	ms->acvit_until = (now + or_default(ms->cfg->tnp_ms, T3_TNP_MS)) | 1u;
+	t3_csbk_t p;
+	memset(&p, 0, sizeof(p));
+	p.lb = true;
+	p.op = T3_OP_C_ACKVIT;
+	p.u.ahoy.kind_flag = what == T3_ACVIT_REVIVE;
+	p.u.ahoy.kind = T3_SK_SUPPLEMENTARY;
+	p.u.ahoy.dst = ms->acvit_challenge;
+	p.u.ahoy.src = my_id(ms);
+	t3_csbk_build(&p, T3_CRC_MASK_CSBK, ms->tx.burst);
+	ms->tx.count = 1;
+	ms->tx.slot = slot;
+	ms->tx.payload = false;
+	ms->tx.then_return = false;
+	ms->tx.udt = false;
+}
+
+// The TSCC's answer to the challenge (tables 6.20, 6.24: C_ACKD Authentication_Response, the response in the source
+// field). Right: act, and MS_Accepted to STUNI or KILLI; wrong: Recipient_Refused and nothing done. The TSCC may send
+// it again when the final acknowledgement is lost: answered again, counted once
+static bool on_tscc_auth(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ack_t *a)
+{
+	if (a->reason != T3_RC_AUTH_RESPONSE || !is_me(ms, a->dst) || ms->acvit == T3_ACVIT_NONE ||
+	    !before(now, ms->acvit_until) || !may_send(ms)) {
+		return false;
+	}
+	uint32_t want = t3_auth_response(ms->cfg->auth_key, ms->acvit_challenge, ms->cfg->psn);
+	uint32_t gw = ms->acvit == T3_ACVIT_KILL ? T3_ID_KILLI : T3_ID_STUNI;
+	if (a->src != want) {
+		ms->tscc_auth_fails++;
+		answer(ms, slot, false, T3_RC_RECIPIENT_REFUSED, gw, false);
+		return true;
+	}
+	switch (ms->acvit) {
+	case T3_ACVIT_STUN:
+		if (!ms->stunned) {
+			ms->stunned = true;
+			ms->stuns++;
+		}
+		break;
+	case T3_ACVIT_REVIVE:
+		if (ms->stunned) {
+			ms->stunned = false;
+			ms->revives++;
+		}
+		break;
+	default:
+		if (!ms->killed) {
+			ms->killed = true;
+			ms->kills++;
+		}
+		break;
+	}
+	answer(ms, slot, false, T3_RC_MS_ACCEPTED, gw, false);
+	return true;
+}
+
 static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h, bool payload)
 {
 	if (!payload && (on_upload(ms, now, slot, h) || on_reg_list(ms, now, slot, h) ||
@@ -1064,7 +1129,18 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 	if (!may_send(ms)) {
 		return;
 	}
-	if (to_me && !payload && h->kind == T3_SK_SUPPLEMENTARY && h->src == T3_ID_STUNI) {
+	if (to_me && !payload && h->kind == T3_SK_SUPPLEMENTARY && h->src == T3_ID_KILLI) {
+		// Kill (6.4.10.2): only authenticated, and only where allowed; else not supported
+		if (!(ms->cfg->opts & T3_OPT_KILL) || !ms->cfg->auth_key_set) {
+			answer(ms, slot, false, T3_RC_MS_NOT_SUPPORTED, h->src, false);
+		} else {
+			challenge_tscc(ms, now, slot, T3_ACVIT_KILL);
+		}
+	} else if (to_me && !payload && h->kind == T3_SK_SUPPLEMENTARY && h->src == T3_ID_STUNI &&
+		   ms->cfg->auth_key_set) {
+		// With K the radio authenticates the TSCC first (6.4.9.2.2)
+		challenge_tscc(ms, now, slot, h->kind_flag ? T3_ACVIT_REVIVE : T3_ACVIT_STUN);
+	} else if (to_me && !payload && h->kind == T3_SK_SUPPLEMENTARY && h->src == T3_ID_STUNI) {
 		// Stun (Service_Kind_Flag 0) or revive (1), without authentication (6.4.9.1.2)
 		ms->stunned = !h->kind_flag;
 		if (ms->stunned) {
@@ -1230,6 +1306,9 @@ static void on_tscc(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 	// Grants and the rest carry no system code: the color code and the confirmed channel vouch for them
 	ms->last_valid_ms = now;
 	if (p->op == T3_OP_C_ACKD) {
+		if (on_tscc_auth(ms, now, slot, &p->u.ack)) {
+			return;
+		}
 		on_ack(ms, now, &p->u.ack);
 		return;
 	}
@@ -1546,7 +1625,8 @@ static void udt_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, const ui
 
 void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, const uint8_t d[T3_CSBK_BYTES])
 {
-	if (ms->state == T3_OFF || slot < 1 || slot > 2 || !since(now, ms->tuned_ms, T3_SETTLE_MS)) {
+	// Killed (6.4.10): nothing heard, nothing answered
+	if (ms->killed || ms->state == T3_OFF || slot < 1 || slot > 2 || !since(now, ms->tuned_ms, T3_SETTLE_MS)) {
 		return;
 	}
 	if (dt != T3_DT_CSBK && dt != T3_DT_MBC_HDR && dt != T3_DT_MBC_CONT && dt != T3_DT_DATA_HDR && dt != T3_DT_R12) {
@@ -1731,7 +1811,7 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 
 static bool may_ask(t3_ms_t *ms)
 {
-	if (!may_send(ms) || ms->stunned || ms->state != T3_CAMPED || !ms->confirmed ||
+	if (!may_send(ms) || ms->stunned || ms->killed || ms->state != T3_CAMPED || !ms->confirmed ||
 	    (ms->reg != T3_REG_OK && ms->reg != T3_REG_NOT_NEEDED)) {
 		ms->ax.result = T3_RES_NOT_ALLOWED;
 		return false;
@@ -1742,6 +1822,11 @@ static bool may_ask(t3_ms_t *ms)
 void t3_ms_set_stunned(t3_ms_t *ms, bool stunned)
 {
 	ms->stunned = stunned;
+}
+
+void t3_ms_set_killed(t3_ms_t *ms, bool killed)
+{
+	ms->killed = killed;
 }
 
 bool t3_ms_request(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, bool emergency)

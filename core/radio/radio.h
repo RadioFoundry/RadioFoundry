@@ -272,6 +272,8 @@ typedef struct {
 	bool divert_group;
 	uint32_t als_calls;	// Ambient Listening calls the radio transmitted on
 	bool call_als;		// the call followed is one
+	bool killed;		// killed by the system (6.4.10), until a restart
+	uint32_t kills, tscc_auth_fails;
 	bool st_group;		// the last status heard: to a talkgroup
 	uint8_t st_value;
 	uint32_t st_count, st_src, st_dst, st_ms;

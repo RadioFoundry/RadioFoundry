@@ -298,7 +298,8 @@ the AHOY's source, its additional address the radio's ID.
 | selective clear (P_AHOY kind cancel) | Message_Accepted, then return |
 | status (kind status) | MS_Accepted (section 7.5) |
 | status poll (kind status, status 127) | Accepted for the Status Polling Service (0x47), Response_Info the radio's status |
-| stun or revive (kind supplementary, from STUNI) | Message_Accepted (section 7.9) |
+| stun or revive (kind supplementary, from STUNI) | without K: Message_Accepted; with K: C_ACKVIT, the radio's challenge (section 7.9) |
+| kill (kind supplementary, from KILLI) | with K and `T3_OPT_KILL`: C_ACKVIT; else not supported (section 7.9) |
 | authentication challenge (kind 1110b, source a challenge 0-0xFFFCDF), with K | Authentication_Response 0x48, the target the response (section 7.10) |
 | authentication challenge without K, anything else to the radio | not supported (0x00); stunned, nothing |
 
@@ -389,10 +390,27 @@ The emergency key ([dmr-emergency.md](dmr-emergency.md)) works on a trunked syst
 | Cancel | The emergency over, status 124 to the alarm's target, once the radio is camped. Only after an alarm the TSCC acknowledged. |
 | Heard | Status 126 to the radio or a talkgroup it listens to raises the alarm alert. A call granted with the emergency option raises the call alert, as on a conventional channel. |
 
-### 7.9 Stun and revive (6.4.9.1)
+### 7.9 Stun, revive and kill (6.4.9, 6.4.10)
 
 A C_AHOY to the radio from STUNI, Service_Kind supplementary (1101b), stuns it (Service_Kind_Flag 0) or revives it (1).
-The radio answers C_ACKU Message_Accepted either way.
+Without K (section 7.10) the radio answers C_ACKU Message_Accepted and acts (6.4.9.1).
+
+With K it authenticates the TSCC first (6.4.9.2.2, 6.4.10.2):
+
+| Step | PDU |
+|---|---|
+| The radio's acknowledgement | C_ACKVIT (tables 6.21, 6.25): Service_Kind supplementary, Service_Kind_Flag as the AHOY's, target a random challenge 0-0xFFFCDF, source the radio |
+| The TSCC's answer | C_ACKD Authentication_Response (0x64), target the radio, source the response (tables 6.20, 6.24) |
+| Right answer (section 7.10's algorithm, the radio's K and PSN) | the radio acts, then C_ACKU MS_Accepted (0x44) to STUNI or KILLI (tables 6.22, 6.26) |
+| Wrong answer | C_ACKU Recipient_Refused (0x14) to STUNI or KILLI; nothing done |
+
+The challenge holds for TNP_Timer: a repeated C_AHOY gets the same one, a repeated answer the same acknowledgement
+(acted on once). The figure text of 6.4.9.2.0 says Message_Accepted for the final acknowledgement; tables 6.22 and 6.26
+give MS_Accepted, which the radio sends.
+
+A kill (C_AHOY from KILLI) is accepted only with K and `T3_OPT_KILL`; otherwise the radio answers MSNot_Supported.
+Killed, the radio hears and sends nothing on any trunked system until it restarts: the kill is kept in RAM only, so a
+test can't disable a radio for good.
 
 Stunned, the radio:
 
@@ -553,8 +571,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | CACH short LC reception | the modem drivers' CACH report |
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
 | Short data polling, supplementary data, a list subscription without registering | later |
-| The radio challenging the TSCC (C_ACVIT) | later |
-| Stun and revive with authentication, kill (6.4.9.2, 6.4.10) | authentication |
+| A kill kept across a restart, and conventional DMR off when killed | later |
 | A stun kept across a restart of the radio | trunked systems in the codeplug |
 | Multi-item and duplex packet data, data to a gateway, adjacent sites | later |
 | Power save: the receiver off while asleep (boards' `rx_sleep` on DMR channels) | later |
