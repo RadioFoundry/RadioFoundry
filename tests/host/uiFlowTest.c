@@ -363,6 +363,9 @@ static const flow_t flows[] = {
 #endif
 	{ "E DMR needs a TX contact to save", "ok 5 ok down down down down down down down down down", "ok up ok long:ok",
 	  "toast=Pick_a_TX writes=0", 4, false },
+	// The contact is whom PTT calls: an RX only channel saves without one (row 6 is RX only, the contact row stays 9)
+	{ "E DMR RX only saves without a TX contact", "ok 5 ok down down down down down down", "ok down down down ok up ok long:ok",
+	  "toast=Saved_channel_3 writes=1", 8, true },
 	// A radio with no transmit band ("rxonly") keeps a DMR channel that is RX only, as any radio does in a receive-only
 	// band. Channel 3 is DMR on 453.625, its RX only row is 6
 	{ "E no transmit band: DMR needs RX only", "rxonly ok 5 ok", "long:ok down down down down down down",

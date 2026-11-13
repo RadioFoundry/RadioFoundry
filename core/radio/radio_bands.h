@@ -7,12 +7,11 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "board.h"
 #include "config.h"
 #include "radio/radio_am.h"
 #include "radio/radio_bcast.h"
 
-// The air band (on a radio with AM receive) and the broadcast receiver's range: receive only, and never DMR
+// Listen-only bands (channels must be RX-only): air band (on a radio with AM RX) and the broadcast receiver's range
 static inline bool radio_listen_band(uint32_t hz)
 {
 #if CONFIG_AM_RX
@@ -25,13 +24,6 @@ static inline bool radio_listen_band(uint32_t hz)
 #endif
 	(void)hz;
 	return false;
-}
-
-// DMR may be received on hz: any band of the table but a listen band, as FM. Where the radio can't transmit, a channel
-// must also be RX only, which the TX checks ask for
-static inline bool radio_dmr_band(uint32_t hz)
-{
-	return board_in_band(hz, false) && !radio_listen_band(hz);
 }
 
 #endif

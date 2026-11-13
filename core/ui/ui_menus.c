@@ -19,7 +19,6 @@
 #include "radio/mic_gain.h"
 #include "radio/ref_trim.h"
 #include "radio/radio_am.h"
-#include "radio/radio_bcast.h"
 #include "radio/radio_bands.h"
 #include "input/keyassign.h"
 #if CONFIG_HOTSPOT || CONFIG_USB_NETWORK
@@ -2282,8 +2281,6 @@ static uint16_t ced_num;		// its number, 0 = no such channel
 static uint8_t ced_rows[CE_COUNT];
 static uint8_t ced_n;
 
-// The radio receives this RX in AM or on the broadcast receiver whatever the channel's mode, never in DMR, and ignores
-// sub-audio there (radio_listen_band in radio/radio_bands.h)
 #if CONFIG_CHANNEL_EDIT
 #define CE_TOT_MAX	495
 #define CE_TOT_STEP	15
@@ -2344,14 +2341,14 @@ static bool ced_changed(uint8_t r)
 }
 
 // RX in a receive-only band (the air band, broadcast FM: docs/spec/airband-and-broadcast.md 2): the copy becomes RX
-// only, and FM (AM there) in a listen band (radio_dmr_band), which is all the radio does there
+// only, and FM (AM there) in a listen band, which is all the radio does there
 static void ced_rx_band(channel_t *c)
 {
 	if (!board_in_band(c->rx_hz, false) || board_in_band(c->rx_hz, true))
 		return;
 	c->rx_only = true;
 	c->tx_hz = c->rx_hz;
-	if (!radio_dmr_band(c->rx_hz))
+	if (radio_listen_band(c->rx_hz))
 		c->mode = RADIO_MODE_FM;
 }
 
@@ -2713,9 +2710,10 @@ static const char *ced_problem(void)
 		return TR("RX is outside the radio's bands");
 	if (!c->rx_only && !board_in_band(c->tx_hz, true))
 		return TR("TX can't transmit there: set RX only");
-	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && !radio_dmr_band(c->rx_hz))
+	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && radio_listen_band(c->rx_hz))
 		return TR("Receive only band: set FM");
-	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && c->contact == 0)
+	// The contact is whom PTT calls, so a channel that never transmits needs none
+	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && !c->rx_only && c->contact == 0)
 		return TR("Pick a TX contact first");
 	return NULL;
 }

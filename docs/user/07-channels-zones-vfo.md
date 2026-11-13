@@ -156,7 +156,8 @@ channel you are on: the radio reloads it from the codeplug.
 
 The radio won't save a channel without a name, with RX outside its bands, with TX where it can't transmit (set RX only
 instead), a DMR channel in the broadcast band or in the air band (on a radio that receives AM there), or a DMR channel
-without a TX contact. It says which. A DMR channel where the radio receives but can't transmit saves when it is RX only.
+without a TX contact, unless it is RX only. It says which. A DMR channel where the radio receives but can't transmit
+saves when it is RX only.
 
 **Save as new channel** stores the edited copy at the lowest free number and leaves the original as it was.
 **Tune to this ch** tunes the channel and **Share channel to...** sends it to another radio ([Sharing a zone](#sharing-a-zone));
