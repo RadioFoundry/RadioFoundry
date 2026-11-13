@@ -5504,7 +5504,7 @@ static void test_t3_talk(void)
 	s->cfg.tg[0] = (t3_tg_t){ T3_TG, T3_TG_LISTEN | T3_TG_TALK };
 	s->cfg.ntg = 1;
 	radio_t3_fix(s);
-	req(RREQ_T3, RT3_START);
+	req(RREQ_T3, RADIO_T3_START);
 	t3_site_run(600);
 	CHECK(sm.view.t3.state == T3_CAMPED);
 	CHECK(sm.view.dmr.own_id == T3_OWN);
@@ -5532,7 +5532,7 @@ static void test_t3_talk(void)
 	req(RREQ_PTT, 0);
 	run(4000);		// released: the inactivity timer runs again
 	CHECK(sm.view.t3.state != T3_FOLLOW && sm.view.state != RS_TX);
-	req(RREQ_T3, RT3_STOP);
+	req(RREQ_T3, RADIO_T3_STOP);
 	run(100);
 	sim.repeater = false;
 }

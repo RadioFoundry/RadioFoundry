@@ -123,16 +123,16 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 		s->cfg.plan.fixed.split_hz = rd32(a + 8);
 		break;
 	case DL_T3_START:
-		radio_req_t3(RT3_START);
+		radio_req_t3(RADIO_T3_START);
 		break;
 	case DL_T3_STOP:
-		radio_req_t3(RT3_STOP);
+		radio_req_t3(RADIO_T3_STOP);
 		break;
 	case DL_T3_DEREG:
-		radio_req_t3(RT3_DEREG);
+		radio_req_t3(RADIO_T3_DEREG);
 		break;
 	case DL_T3_END:
-		radio_req_t3(RT3_END);
+		radio_req_t3(RADIO_T3_END);
 		break;
 	default:
 		out[0] = DL_ST_BAD_ARG;

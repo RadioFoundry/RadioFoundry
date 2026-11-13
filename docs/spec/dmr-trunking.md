@@ -4,9 +4,8 @@
 
 A radio on a DMR Tier III trunked system (ETSI TS 102 361-4) finds the system's trunked site control channel (TSCC),
 stays on it, and follows the channel grants for the calls it wants to hear. Switch: `CONFIG_DMR_TRUNK`, a child of
-`CONFIG_DMR` (`docs/build-config.md`); the access side (section 7) is `CONFIG_DMR_TRUNK_TX`, a child of it. Work in
-progress: the engine and its tests exist, nothing in the radio calls
-them yet, so the image doesn't change.
+`CONFIG_DMR` (`docs/build-config.md`); the access side (section 7) is `CONFIG_DMR_TRUNK_TX`, a child of it. The radio core runs the engine on
+a system set up over the debug link (section 11); the codeplug has no keys for a system yet, and there is no UI.
 
 | Section | Topic |
 |---|---|
@@ -20,6 +19,7 @@ them yet, so the image doesn't change.
 | 8 | Timers and constants |
 | 9 | Tests |
 | 10 | Not done yet |
+| 11 | On the radio |
 
 ## 1. Standards position
 
@@ -30,8 +30,7 @@ Section and table numbers below are TS 102 361-4's unless marked -1.
   counted and ignored.
 - No vendor's own trunking protocol. A system that sends its control channel with another CRC or framing fails the
   standard CRC checks and is never confirmed as a TSCC (section 9.2 checks this on recordings).
-- The radio core doesn't transmit on a trunked system yet: the access side (section 7) exists in the engine only
-  (section 10).
+- On a trunked system the radio transmits only the access side (section 7) and the calls it is granted.
 - No authentication: a challenge is answered "not supported".
 
 ## 2. Modules
@@ -336,9 +335,28 @@ on its voice, and never camps on another system or on a control channel that isn
 
 | Item | Needs |
 |---|---|
-| Radio core: a trunked system as a place, retune on grants, both slots while camped | the codeplug keys for systems |
+| A trunked system in the codeplug, and its screens | codeplug keys for systems |
 | CACH short LC reception | the modem drivers' CACH report |
-| Access on the radio: sending the engine's CSBKs in the announced slot, voice on the payload channel | slot-timed transmit with a late veto in the modem drivers, the CACH AT bit |
+| A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
 | Talkgroup lists of more than one group, data and status services | later |
-| UI, debug link view | the radio core |
 | Data grants, C_MOVE, adjacent sites, power save | later |
+
+## 11. On the radio
+
+`core/radio/radio_sm.c` runs one engine; `core/radio/radio_trunk.{h,c}` holds the system it runs.
+
+| Step | What the radio core does |
+|---|---|
+| Set-up | The debug link stages a system in RAM (`radio_t3_staged`, `DL_CMD_T3`, [debuglink.md](debuglink.md) 3.26): its ID, authorization, color code, control channels, channel table, talkgroups. `RADIO_T3_START` copies it and starts the engine. |
+| Leave | `RADIO_T3_STOP`, or any channel or VFO change, stops the engine and goes back to the channel or VFO. |
+| Tune | A `T3_ACT_TUNE` sets the channel to DMR, repeater mode, the action's frequencies and color code. Slot 0 (the TSCC, hunting) listens to both slots; a payload channel listens to its slot only. A new carrier is a full tune; the same carrier is a reconfiguration of the stack. |
+| Slots | Each slot tick from the modem goes to `t3_ms_slot` with its slot number and its CACH AT bit (`DMR_TICK_AT_KNOWN`, `DMR_TICK_AT_BUSY`). A modem that doesn't number slots gets them alternating; one that doesn't read AT gets every slot free. |
+| Receive | The stack's receive tap hands CSBKs and MBC blocks to `t3_ms_rx`. Any other burst on a known slot, idle ones excepted, is activity on that slot (`t3_ms_activity`). |
+| Send | A `T3_ACT_SEND` keys one CSBK as a data list, on the action's slot only, and not while the radio is talking. |
+| PTT | Camped, PTT asks for a call to the system's talk target (the first talkgroup with `T3_TG_TALK` when none is set) and waits with PTT held. The grant puts the radio on the payload slot and keys it. A refusal, no answer or timeout denies TX (`TXDENY_NO_DMR`). Released before the grant, the request is cancelled. |
+| Following | The stack takes the system's ID as its own, hears every call on the slot, and talks to the call's group or to the other party. The radio's own transmission counts as the call's activity: it never hears its own slot, so TV_Inactive would otherwise end the call while it talks. |
+| View | The `t3` section ([debuglink.md](debuglink.md) 3.26). |
+
+Tests: `tests/host/radioCoreTest.c` (`test_t3_talk`) runs a simulated site through PTT, request, grant and a call
+with nothing heard. `tests/hil/test_t3_site.py` runs camp, registration, group and private calls against a site on
+the SDR bench.

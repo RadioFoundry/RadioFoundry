@@ -92,7 +92,7 @@ static const uint32_t vfo_start_hz[] = { 146520000, 145500000, 446000000, 433500
 #if CONFIG_DMR_TRUNK
 // The engine and the system it runs, in plain RAM (radio_sm_t sits in the CPU-only RAM, which is full on some radios)
 static t3_ms_t t3m;
-static radio_t3_setup_t t3s;	// the system, copied from the staged one at RT3_START
+static radio_t3_setup_t t3s;	// the system, copied from the staged one at RADIO_T3_START
 #endif
 
 // The VFO's step in use: auto follows the width (the air band's channels are 25 kHz apart); in the broadcast band
@@ -2504,19 +2504,19 @@ static void t3_stop(radio_sm_t *sm, uint32_t now_ms)
 static void t3_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
 {
 	switch (cmd) {
-	case RT3_START:
+	case RADIO_T3_START:
 		t3_start(sm, now_ms);
 		break;
-	case RT3_STOP:
+	case RADIO_T3_STOP:
 		t3_stop(sm, now_ms);
 		break;
 #if CONFIG_DMR_TRUNK_TX
-	case RT3_DEREG:
+	case RADIO_T3_DEREG:
 		if (sm->t3_on) {
 			(void)t3_ms_deregister(&t3m, now_ms);
 		}
 		break;
-	case RT3_END:
+	case RADIO_T3_END:
 		if (sm->t3_on) {
 			t3_ms_end_call(&t3m, now_ms);
 		}
