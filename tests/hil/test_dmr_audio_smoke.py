@@ -8,11 +8,13 @@ voice-access flag on the wrong slot: the DM-1801 Pro played every call silent, 2
 every frame, lost and duplicate count. These tests look at the audio itself.
 
 Skips and failures. Only a missing radio or SDR bench, or a run without --allow-rf, skips (with a reason that starts
-"DMR AUDIO NOT CHECKED"), and so does a firmware built without DMR. Once the radio, its DMR and the bench are there,
-anything else that keeps the check from running fails: no speech recording, no vocoder merged (dmr.codec=0), no
-channel on --dmr-freq, firmware without the view keys or the test signal. The talkgroup comes from the radio: the
-bench calls the channel's talk target (dmr.target_id, always listened to), or the radio's own ID privately when the
-target is a private ID, on the channel's own color code, so a wrong --dmr-tg / --dmr-cc can't filter the call out.
+"DMR AUDIO NOT CHECKED"), and so do a firmware built without DMR and a modem that plays the voice itself
+(dmr.modem_voice=1: no frame reaches the voice layer; test_dmr_voice counts its bursts). Once the radio, its DMR and
+the bench are there, anything else that keeps the check from running fails: no speech recording, no vocoder merged
+(dmr.codec=0), no channel on --dmr-freq, firmware without the view keys or the test signal. The talkgroup comes from
+the radio: the bench calls the channel's talk target (dmr.target_id, always listened to), or the radio's own ID
+privately when the target is a private ID, on the channel's own color code, so a wrong --dmr-tg / --dmr-cc can't filter
+the call out.
 
 test_dmr_audio_rx: the bench sends the speech recording as one call. Pass: the call is played (call.rx_calls_played
 +1), at least 90 % of the frames sent reach the voice layer (voice.rx_in; the recording padded to whole superframes;
@@ -88,6 +90,9 @@ def dmr_channel(radio, pytestconfig):
     radio.go_home()
     find_dmr_channel(radio, round(freq * 1e6))
     d = radio.view(["dmr"])
+    if d.get("dmr.modem_voice") == "1":
+        skip("no_hw", "DMR AUDIO NOT CHECKED: the modem plays the voice itself (dmr.modem_voice=1, "
+                      "docs/spec/modem-sct.md 7): no frame reaches the voice layer to check")
     if d.get("dmr.codec") != "1":
         pytest.fail("no vocoder merged in this firmware (dmr.codec=0): DMR voice plays and sends nothing. Merge the "
                     "radio's codec (docs/user) before the bench pass")
