@@ -7,7 +7,9 @@ sequence of tones and silences and checks the recording with audio_check.check_t
 
 test_speaker_beeps: every beep the debug link can ask for, one recording each, patterns read from core/radio/beep.c.
 The first beep finds the amplifier as the radio left it; on a radio that keeps it warm (speaker_hang_s), the next
-ones find it warm.
+ones find it warm. A board's [hil.limits] can allow, with its reason, beep_lead_pops pops ahead of each beep's first
+tone (an amplifier's own turn-on pop, which the beep's silent lead keeps off the tone) and beep_dropouts tone dropouts
+in the run; each one allowed is printed.
 
 test_speaker_beep_cold: on a radio with an amplifier hang (the beep.warm view key), waits for the hang to run out,
 then the shortest beep (key): the lead-in must cover the amplifier's start.
@@ -163,10 +165,24 @@ def test_speaker_beeps(radio, microphone):
     pats = A.beep_patterns()
     names = [n for n in BEEPS if n in pats]
     assert names, "no beep both in the debug link and in beep.c"
-    problems, heard = [], 0
+    limits = rfoundry_hil.board_hil(rfoundry_hil.board_id(radio.version().get("board"))).get("limits", {})
+    lead_pops, dropouts = (limits.get(k) or {"value": 0, "reason": None} for k in ("beep_lead_pops", "beep_dropouts"))
+    problems, heard, dropped = [], 0, 0
     for name in names:
         r, path = _play(radio, microphone, name, pats[name])
-        problems += _check(r, name, path)
+        mine = _check(r, name, path)
+        first = r.tones[0].start_s if r.tones and r.tones[0].start_s is not None else None
+        ahead = [p for p in r.pops if first is not None and p[0] + p[2] / 1000 <= first + 0.005]
+        for t0, over, ms in ahead[:int(lead_pops["value"])]:
+            mine = [p for p in mine if f"a pop or noise burst at {t0:.3f} s" not in p]
+            print(f"{name}: the pop {over:.0f} dB over the floor ahead of the first tone allowed (the board's "
+                  f"[hil.limits] beep_lead_pops: {lead_pops['reason']})")
+        for p in [p for p in mine if ": a dropout:" in p]:
+            if dropped < int(dropouts["value"]):
+                dropped += 1
+                mine.remove(p)
+                print(f"{p}: allowed (the board's [hil.limits] beep_dropouts: {dropouts['reason']})")
+        problems += mine
         heard += not r.quiet
         radio.wait_for(lambda v: v.get("beep.busy") == "0", 3, sections=("features",), what="the beep finished")
     if not heard:
