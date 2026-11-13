@@ -65,7 +65,11 @@ known yet.
    conversion ([codeplug-port.md](codeplug-port.md)): RX group list clean-up (`--no-cleanup` skips it), encode for
    `openuv380`, TX contacts put back, decode again (`rfoundry-codeplug.yaml`). Compare the counts and report what RadioFoundry's
    limits drop. A users CSV becomes `users.json` and is checked with `encode-db`.
-2. Flash: bootloader prompt, wait for 0483:DF11, confirm, write.
+2. Flash: bootloader prompt, wait for 0483:DF11, confirm, write. The result names what was written (RadioFoundry, or
+   the stock firmware for a TYT updater file). After the exit request the tool watches USB for 6 s: with 0483:DF11
+   still there, it says the radio may be in the bootloader and to switch it off and on (the battery off and on if
+   the switch does nothing). After a RadioFoundry image that ID can only be the bootloader; after a stock image it
+   is the bootloader or the stock firmware, and the screen tells (dark with the LED blinking: the bootloader).
 3. Wait for RadioFoundry (`rfoundry_debug.py ping`). `version` must say MD-380. Then `storage info`: `none` stops, `foreign` is
    claimed after a prompt, and `ours` continues.
 4. `rfoundry-codeplug.dfu` through the CPS shim (`cps_client.py`), what was there saved first as `codeplug-before.bin`.
