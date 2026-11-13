@@ -210,6 +210,11 @@ test("anytone: a frame refused every time, a radio gone silent and a stop all en
 		await assert.rejects(on({ updateReply: Uint8Array.from(reply) }).u.hello(), /update mode/);
 	const mute = new at.AnytoneUpdate({ buf: new Uint8Array(0), clear() {}, take: () => new Uint8Array(0), async write() {} }, { timeout: 20 });
 	await assert.rejects(mute.hello(), /update mode/);
+	// the third frame's ACK comes after the timeout, the fifth frame sent (the fourth's data) is refused: the late ACK
+	// is dropped, not taken for the fourth's, so the fourth is sent again and nothing is missing
+	const late = on({ nakEvery: 5, late: [3, 75] });
+	assert.equal(await late.u.write(BOARD.app_base, data), Math.ceil(data.length / 32));
+	assert.ok(equal(late.fake.image().subarray(0, data.length), data));
 	// an answer that comes late still counts (the stream's arrived() wakes the wait)
 	const slow = on({ delay: 10 });
 	await slow.u.hello();

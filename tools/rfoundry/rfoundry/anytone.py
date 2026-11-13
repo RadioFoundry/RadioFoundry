@@ -253,7 +253,12 @@ class Radio:
                 raise UpdateError("stopped after %d of %d frames: the radio stays in update mode, write again" % (i, n))
             f = frame(addr + i * CHUNK, data[i * CHUNK:(i + 1) * CHUNK])
             r = b""
-            for _ in range(self.retries):
+            for k in range(self.retries):
+                if k and not r:
+                    # No answer in time: one may still come. Wait until the radio is quiet for a timeout and drop what
+                    # came, or a late ACK would be taken for the next frame's
+                    while self._read(1):
+                        pass
                 self.port.write(f)
                 r = self._read(1)
                 if r == bytes([ACK]):
@@ -347,10 +352,13 @@ class Program(Radio):
 
 class FakeRadio:
     """A simulated update mode for tests: answers the handshake and the identity, keeps what is written. nak_every:
-    refuse every n-th frame once; silent_after: stop answering after that many frames"""
+    refuse every n-th frame once; silent_after: stop answering after that many frames; late: (n, seconds), the n-th
+    frame's answer comes that late, or at the next write if that is sooner"""
 
     def __init__(self, model="MODEL1", nak_every=0, silent_after=None, memory=None, update_reply=bytes([ACK]),
-                 drop_at_finish=False):
+                 drop_at_finish=False, late=None):
+        self.late = late
+        self.held = None	# (when, bytes): an answer held back by late
         self.model = model
         self.drop_at_finish = drop_at_finish	# the port goes away at FINISH, before the ACK (the radio restarts)
         self.gone = False
@@ -367,12 +375,19 @@ class FakeRadio:
         self.frames = 0
         self.bad = 0
 
+    def _arrive(self):
+        if self.held and time.monotonic() >= self.held[0]:
+            self.out += self.held[1]
+            self.held = None
+
     def reset_input_buffer(self):
+        self._arrive()
         self.out = b""
 
     def read(self, n):
         if self.gone:
             raise OSError("device reports readiness to read but returned no data (device disconnected)")
+        self._arrive()
         r, self.out = self.out[:n], self.out[n:]
         return r
 
@@ -395,6 +410,9 @@ class FakeRadio:
         return bytes(out)
 
     def write(self, b):
+        if self.held:	# a late answer comes before the answer to what is sent now
+            self.held = (0, self.held[1])
+            self._arrive()
         self.inbuf += bytes(b)
         while self.inbuf:
             if self.inbuf.startswith(PROGRAM):
@@ -439,6 +457,9 @@ class FakeRadio:
                     self.mem[struct.unpack_from("<I", f, 1)[0]] = f[5:37]
                 else:
                     self.bad += 1
+                if self.late and self.frames == self.late[0]:
+                    self.held = (time.monotonic() + self.late[1], bytes([ACK if ok else NAK]))
+                    continue
                 self.out += bytes([ACK if ok else NAK])
             else:
                 self.inbuf = self.inbuf[1:]	# noise: the update mode ignores a byte it doesn't know

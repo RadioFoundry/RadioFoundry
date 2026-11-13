@@ -246,6 +246,9 @@ export class AnytoneUpdate {
 			const f = frame(addr + i * CHUNK, data.subarray(i * CHUNK, (i + 1) * CHUNK));
 			let r = null;
 			for (let k = 0; k < this.retries; k++) {
+				// No answer in time: one may still come. Wait until the radio is quiet for a timeout and drop what came,
+				// or a late ACK would be taken for the next frame's
+				if (k && !r.length) while ((await this.readExact(1)).length);
 				await this.s.write(f);
 				r = await this.readExact(1);
 				if (r.length === 1 && r[0] === ACK) break;
