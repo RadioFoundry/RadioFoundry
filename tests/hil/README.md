@@ -433,7 +433,7 @@ call stack (`call.rx_voice_bursts`, `call.rx_lost_frames`), voice layer (`voice.
 each module's docstring (`dmr_bench.check_tx` for DMR TX; CTCSS within 0.5 Hz and 200-900 Hz deviation at 12.5
 kHz, DCS with the right polarity, the 25 / 12.5 kHz deviation ratio 1.5-2.6 for FM; for the radio features: warning
 2.5-4.5 s and time-out 5.5-7.5 s with tot_s 6 / tot_warn_s 3, roger=1 seen after release while still on air,
-beep.blocks grows when beep.played does).
+beep.blocks grows when beep.played does, except where the beeps are the radio's own tones, beep.tone 1).
 
 Screenshots: every SCREENSHOT request freezes the UI's redraws for a moment (`docs/spec/debuglink.md` 3.3), so a
 capture taken right after a key can still show the old screen. `Radio.screenshot()` waits out the previous

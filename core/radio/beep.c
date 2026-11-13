@@ -220,6 +220,16 @@ bool beep_warm_on(void)
 	return warm_on;
 }
 
+bool beep_has_hang(void)
+{
+	return aud != NULL && aud->speaker_warm != NULL && aud->speaker_hang_s != 0;
+}
+
+bool beep_tone_route(void)
+{
+	return (aud == NULL || aud->start == NULL) && tone_fn != NULL;
+}
+
 uint8_t beep_pattern(beep_t b, const beep_seg_t **segs)
 {
 	if (b <= BEEP_NONE || b >= BEEP_COUNT) {

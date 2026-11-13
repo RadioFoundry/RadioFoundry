@@ -401,7 +401,8 @@ clock) is stopped the same way, in case a block already ran. Counters in the vie
 `beep.played` (started), `beep.no_stream` (no audio stream could be started: on a board that can't stream PCM in FM
 mode this counts instead), `beep.blocks` (audio blocks with beep in them), `beep.stalls` (streams given up that way),
 `beep.busy`; in the `audio` section, `beep.shared` (patterns mixed into the voice stream), `beep.leads` (lead-in blocks
-played), `beep.warm` (1: the amplifier is held warm) and `beep.warms` (times it was powered up for that).
+played), `beep.tone` (1: the beeps are the radio's own tones, with no stream or blocks) and, on a board with an
+amplifier hang, `beep.warm` (1: the amplifier is held warm) and `beep.warms` (times it was powered up for that).
 
 A board with no PCM speaker audio (no `board.audio`) can give `hal_radio_t.beep_tone(hz, level)` instead: the core
 then plays each segment of the pattern as one tone on the board's own tone generator, `hz` 0 for a silent segment and

@@ -677,6 +677,7 @@ static void test_beep_tone(void)
 {
 	beep_init(NULL);
 	beep_init_tone(fake_tone, 0);
+	CHECK(beep_tone_route() && !beep_has_hang());	// the view's beep.tone 1, no beep.warm
 	beep_reset_stats();
 	tone_calls = 0;
 	beep_play(BEEP_KEY, 0, false);
@@ -756,6 +757,7 @@ static void test_beep_tone(void)
 
 	// No hook: dropped, as before
 	beep_init_tone(NULL, 0);
+	CHECK(!beep_tone_route());
 	beep_play(BEEP_KEY, 50, false);
 	beep_get_stats(&bs);
 	CHECK(bs.no_stream == 1 && !beep_busy());
@@ -1014,6 +1016,7 @@ static void test_beep_module(void)
 	static const hal_audio_t hang_amp = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm, .speaker_lead_ms = 50,
 					      .speaker_warm = a_warm, .speaker_hang_s = 2 };
 	beep_init(&hang_amp);
+	CHECK(beep_has_hang() && !beep_tone_route());
 	beep_service(false, 1000);
 	CHECK(!beep_warm_on() && !warm_state);
 	beep_warm(1000);
@@ -1073,6 +1076,7 @@ static void test_beep_module(void)
 	CHECK(!beep_warm_on() && !warm_state);
 	// A board without the hook or with no hang: never warm
 	beep_init(&fake_audio);
+	CHECK(!beep_has_hang());
 	beep_warm(4000);
 	CHECK(!beep_warm_on());
 }

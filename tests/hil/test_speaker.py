@@ -174,12 +174,12 @@ def test_speaker_beeps(radio, microphone):
     assert not problems, "\n".join(problems)    # one beep not heard among others is a fault, not the room
 
 
-@pytest.mark.feature("beep")
+@pytest.mark.feature("beep", optional=True)    # only a board with an amplifier hang has one to check
 def test_speaker_beep_cold(radio, microphone):
     _beep_ready(radio)
     a = _audio(radio)
     if "beep.warm" not in a:
-        skip("not_built", "no amplifier hang on this firmware (no beep.warm view key)")
+        skip("no_hw", "no amplifier hang on this radio (no beep.warm view key)")
     if a["beep.warm"] != "0":
         end = time.monotonic() + 90
         print("waiting for the amplifier hang to run out")

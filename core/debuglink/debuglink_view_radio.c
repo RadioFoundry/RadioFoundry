@@ -48,8 +48,10 @@ void debuglink_view_audio(dl_text_t *t)
 #if CONFIG_BEEP
 	beep_stats_t b;
 	beep_get_stats(&b);
-	dl_text(t, "beep.shared=%u\nbeep.leads=%u\nbeep.warm=%u\nbeep.warms=%u\n", (unsigned)b.shared, (unsigned)b.leads,
-		beep_warm_on(), (unsigned)b.warms);
+	dl_text(t, "beep.shared=%u\nbeep.leads=%u\nbeep.tone=%u\n", (unsigned)b.shared, (unsigned)b.leads, beep_tone_route());
+	if (beep_has_hang()) {
+		dl_text(t, "beep.warm=%u\nbeep.warms=%u\n", beep_warm_on(), (unsigned)b.warms);
+	}
 #endif
 	const hal_audio_t *a = board.audio;
 	if (a != NULL && a->stream_stats != NULL) {
