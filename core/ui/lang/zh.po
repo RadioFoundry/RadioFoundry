@@ -735,6 +735,42 @@ msgid "Message"
 msgstr "消息"
 
 #: core/ui/ui_aprs.c
+msgid "No longer in list"
+msgstr "已不在列表"
+
+#: core/ui/ui_aprs.c
+msgid "{Distance|Dist|}"
+msgstr "{距离|距离|}"
+
+#: core/ui/ui_aprs.c
+msgid "Direct"
+msgstr "直接"
+
+#: core/ui/ui_aprs.c
+msgid "Via digipeater"
+msgstr "经中继"
+
+#: core/ui/ui_aprs.c
+msgid "{Position age|Pos age}"
+msgstr "{位置时间|位置时间}"
+
+#: core/ui/ui_aprs.c core/ui/ui_gps.c
+msgid "Speed"
+msgstr "速度"
+
+#: core/ui/ui_aprs.c
+msgid "Course"
+msgstr "移动方位"
+
+#: core/ui/ui_aprs.c
+msgid "Symbol"
+msgstr "标志"
+
+#: core/ui/ui_aprs.c
+msgid "Packets"
+msgstr "数据包"
+
+#: core/ui/ui_aprs.c
 msgid "OK choose  Back"
 msgstr "OK 选  返回"
 
@@ -1053,10 +1089,6 @@ msgstr "经度"
 #: core/ui/ui_gps.c
 msgid "Alt"
 msgstr "海拔"
-
-#: core/ui/ui_gps.c
-msgid "Speed"
-msgstr "速度"
 
 #: core/ui/ui_gps.c
 msgid "No positions yet"

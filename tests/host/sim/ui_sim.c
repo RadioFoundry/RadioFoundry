@@ -428,6 +428,9 @@ static struct {
 	bool message;		// "aprs:message": an unread APRS message
 	bool message_read;
 	uint32_t message_ms;
+	bool evicted;
+	bool no_speed, no_course, zero_motion, no_station_pos, same_age, empty_text, long_text;
+	bool reordered;		// a packet moves the second station to the front
 	bool no_pos;		// "aprs:nopos": no position of our own (no GPS fix, no fixed position)
 	aprs_cfg_t cfg;
 	uint32_t sent;
@@ -470,21 +473,37 @@ bool ui_svc_aprs_send_now(void)
 	aprs_sim.sent++;
 	return true;
 }
-uint8_t ui_svc_aprs_station_count(void) { return aprs_sim.off ? 0 : 2; }
+uint8_t ui_svc_aprs_station_count(void) { return aprs_sim.off || aprs_sim.evicted ? 0 : 2; }
 bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out)
 {
 	static const char *const calls[] = { "Q4WABC-15", "QJ4XYZ" };	// the longest call there is, and one without a position
-	if (aprs_sim.off || i >= 2)
+	if (aprs_sim.off || aprs_sim.evicted || i >= 2)
 		return false;
 	memset(out, 0, sizeof *out);
+	i ^= aprs_sim.reordered ? 1u : 0u;
 	strcpy(out->call, calls[i]);
 	out->heard_ms = now_ms > 60000u * (i + 1u) ? now_ms - 60000u * (i + 1u) : 0;
 	out->direct = i == 0;
-	out->has_pos = i == 0;
+	out->has_pos = i == 0 && !aprs_sim.no_station_pos;
 	out->lat = 338000000;	// 14.5 km NE of our fixed position (ui_svc_aprs_view)
 	out->lon = -840000000;
-	out->pos_ms = 0;	// the position heard at start, the packets since (heard_ms) without one
+	out->speed_kn = aprs_sim.no_speed || i != 0 ? 0xFFFFu : aprs_sim.zero_motion ? 0 : 10;
+	out->course = aprs_sim.no_course || i != 0 ? 0xFFFFu : aprs_sim.zero_motion ? 0 : 40;
+	out->sym_table = i == 0 && !aprs_sim.empty_text ? '/' : 0;
+	out->sym_code = i == 0 ? '>' : 0;
+	out->count = 3;
+	strcpy(out->text, aprs_sim.empty_text ? "" : aprs_sim.long_text ? "12345678901234567890123" :
+	       i == 0 ? "On the road" : "At home");
+	out->pos_ms = aprs_sim.same_age ? out->heard_ms : 0;	// the position heard at start, the packets since (heard_ms) without one
 	return true;
+}
+bool ui_svc_aprs_station_find(const char *call, aprs_station_t *out)
+{
+	for (uint8_t i = 0; i < ui_svc_aprs_station_count(); i++) {
+		if (ui_svc_aprs_station(i, out) && strcmp(out->call, call) == 0)
+			return true;
+	}
+	return false;
 }
 // The engine's range for station 0 from our position (the sim has no aprs_fmt.c: the figures, not the math)
 bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg)
@@ -2852,6 +2871,19 @@ static bool run_token(char *t, char *err, size_t len)
 		if (aprs_sim.message)
 			aprs_sim.message_ms = now_ms;
 		aprs_sim.no_pos = strcmp(arg, "nopos") == 0;
+		aprs_sim.reordered = strcmp(arg, "reorder") == 0;
+		aprs_sim.evicted = strcmp(arg, "evict") == 0;
+		aprs_sim.no_speed = strcmp(arg, "nospeed") == 0 || strcmp(arg, "speedunknown") == 0;
+		aprs_sim.no_course = strcmp(arg, "nospeed") == 0 || strcmp(arg, "courseunknown") == 0;
+		aprs_sim.zero_motion = strcmp(arg, "zero") == 0;
+		aprs_sim.no_station_pos = strcmp(arg, "stationnopos") == 0;
+		aprs_sim.same_age = strcmp(arg, "sameage") == 0;
+		aprs_sim.empty_text = strcmp(arg, "emptytext") == 0;
+		aprs_sim.long_text = strcmp(arg, "longtext") == 0;
+		if (strcmp(arg, "heard") == 0) {
+			ui_push(SCR_APRS_HEARD, 0);
+			advance(200);
+		}
 		if (strcmp(arg, "custom") == 0)
 			aprs_sim.cfg.freq_hz = 144930000;
 		return true;

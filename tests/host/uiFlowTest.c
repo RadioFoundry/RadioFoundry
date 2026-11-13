@@ -631,6 +631,8 @@ static const flow_t flows[] = {
 	{ "G GPS pages wrap", "ok 6 2", "up down", "shows=Status", 2, false },
 	{ "A KISS on USB", "ok 6 8", "up up ok", "aprs_kiss=1", 3, false },
 	{ "A stations heard", "", "ok 6 8 up ok", "screen=aprs-heard count=2", 5, false },
+	{ "A station message survives a newer packet", "ok 6 8 up ok ok aprs:reorder", "ok",
+	  "screen=compose shows=Q4WABC-15", 1, false },
 	{ "A station opens its Message action", "ok 6 8 up ok", "ok", "screen=aprs-station shows=Message", 1, false },
 	{ "A station Message fills its callsign", "ok 6 8 up ok ok", "ok", "screen=compose shows=Q4WABC-15", 1, false },
 	{ "A new APRS message appears independently of DMR format", "", "ok 2", "shows=New_APRS_message", 2, false },
@@ -1372,6 +1374,51 @@ static void heard_checks(void)
 	}
 }
 
+// Detail rows remain reachable on the smallest panel; only Message opens another screen.
+static void station_checks(void)
+{
+	static const struct { const char *name, *script; } cases[] = {
+		{ "position", "wait:600000 ok 6 8 up ok ok expect:screen=aprs-station expect:count=10 "
+		  "down expect:shows=14.5_km_NE down expect:shows=1m down expect:shows=Direct "
+		  "down expect:shows=10m down expect:shows=19_km/h down expect:shows=40 "
+		  "down expect:shows=/> down expect:shows=On_the_road down expect:focus=Packets expect:shows=3 "
+		  "ok expect:screen=aprs-station" },
+		{ "no local position", "aprs:nopos ok 6 8 up ok ok expect:count=8 down expect:shows=Heard" },
+		{ "no speed", "aprs:nospeed ok 6 8 up ok ok expect:count=7 down down down down expect:shows=/>" },
+		{ "no station position", "ok 6 8 up ok down ok expect:count=5 down down "
+		  "expect:shows=Via_digipeater down expect:shows=At_home down expect:shows=Packets" },
+		{ "speed unknown", "aprs:speedunknown ok 6 8 up ok ok expect:count=8 "
+		  "down down down down expect:focus=Course expect:shows=40 expect:hides=Speed" },
+		{ "course unknown", "aprs:courseunknown ok 6 8 up ok ok expect:count=8 "
+		  "down down down down expect:focus=Speed expect:shows=19_km/h down expect:focus=Symbol" },
+		{ "known zero motion", "aprs:zero ok 6 8 up ok ok expect:count=9 "
+		  "down down down down expect:focus=Speed expect:shows=0_km/h down expect:focus=Course expect:shows=0" },
+		{ "equal ages", "wait:600000 aprs:sameage ok 6 8 up ok ok expect:count=9 "
+		  "down down expect:focus=Heard expect:shows=1m down expect:focus=Direct down expect:focus=Speed" },
+		{ "position lost while open", "wait:600000 ok 6 8 up ok ok aprs:stationnopos down "
+		  "expect:count=6 expect:shows=Q4WABC-15 expect:focus=Heard expect:hides=km "
+		  "down expect:focus=Direct down expect:focus=Symbol" },
+		{ "empty text and symbol", "aprs:emptytext ok 6 8 up ok ok expect:count=7 "
+		  "up expect:focus=Packets up expect:focus=Course" },
+		{ "retained text", "aprs:longtext ok 6 8 up ok ok up up "
+		  "expect:focus=12345678901234567890123" },
+		{ "reordered detail", "ok 6 8 up ok ok aprs:reorder down expect:count=9 "
+		  "expect:shows=Q4WABC-15 expect:shows=14.5_km_NE up ok expect:screen=compose expect:shows=Q4WABC-15" },
+		{ "evicted", "ok 6 8 up ok ok aprs:evict down expect:count=2 expect:shows=No_longer_in_list "
+		  "up ok expect:screen=compose expect:shows=Q4WABC-15" },
+	};
+	char err[300];
+	for (int g = 0; g < sim_geom_count; g++) {
+		for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			if (!sim_run(cases[i].script, err, sizeof err)) {
+				printf("FAIL station detail %s [%s]: %s\n", cases[i].name, sim_geoms[g].name, err);
+				fails++;
+			}
+		}
+	}
+}
+
 // A radio without a battery (CAP_NO_BATTERY), at every display class: no percentage in the status strip, no battery
 // warning, and no Battery page, Battery saver or Low battery warning in the lists (Tools keep their numbers, Battery
 // is the last one; in Settings the other rows move up). With a
@@ -1622,6 +1669,7 @@ int main(void)
 	about_checks();
 	call_screen_checks();
 	heard_checks();
+	station_checks();
 	vfo_split_dmr_checks();
 	no_battery_checks();
 #if CONFIG_VOLUME_BAR

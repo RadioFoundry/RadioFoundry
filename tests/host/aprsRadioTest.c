@@ -27,6 +27,7 @@ static int checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
 
 #define CH_HZ		146520000u
+#define CH2_HZ		146050000u
 #define APRS_HZ		144390000u
 
 // ---- fake board ----
@@ -192,6 +193,33 @@ static const hal_bcast_t fake_bcast = {
 	.volume = b_volume, .status = b_status, .audio = b_audio,
 };
 
+#if CONFIG_DUAL_WATCH
+static struct {
+	bool up, active;
+	uint32_t hz;
+	int tunes, stops;
+} other_rx;
+
+static bool x_tune(const rx2_tune_t *t)
+{
+	if (!other_rx.up) {
+		return false;
+	}
+	other_rx.hz = t->rx_hz;
+	other_rx.tunes++;
+	return true;
+}
+static void x_stop(void) { other_rx.stops++; }
+static void x_status(rx2_status_t *st)
+{
+	memset(st, 0, sizeof(*st));
+	st->up = st->tuned = other_rx.up;
+	st->active = other_rx.active;
+}
+static void x_audio(bool on) { (void)on; }
+static const hal_rx2_t fake_rx2 = { .tune = x_tune, .stop = x_stop, .status = x_status, .audio = x_audio };
+#endif
+
 static const band_t bands[] = {
 	{ 136000000, 174000000, true }, { 400000000, 480000000, true }, { 65000000, 108000000, false },
 };
@@ -213,10 +241,13 @@ const board_t board = {
 	.audio = &fake_audio,
 	.audio_tap = &fake_tap,
 	.bcast = &fake_bcast,
+#if CONFIG_DUAL_WATCH
+	.rx2 = &fake_rx2,
+#endif
 };
 
-// ---- fake codeplug: one channel ----
-static channel_t chan;
+// ---- fake codeplug ----
+static channel_t chan, chan2;
 static zone_t zone;
 static char cp_name[CODEPLUG_NAME_LEN + 1];
 codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
@@ -227,14 +258,18 @@ void storage_lock(void) {}
 void storage_unlock(void) {}
 void storage_quick_lock(void) {}
 void storage_quick_unlock(void) {}
-uint16_t codeplug_channel_count(void) { return 1; }
+uint16_t codeplug_channel_count(void) { return 2; }
 bool codeplug_channel(uint16_t n, channel_t *out)
 {
-	if (n != 1) {
-		return false;
+	if (n == 1) {
+		*out = chan;
+		return true;
 	}
-	*out = chan;
-	return true;
+	if (n == 2) {
+		*out = chan2;
+		return true;
+	}
+	return false;
 }
 uint16_t codeplug_zone_count(void) { return 1; }
 bool codeplug_zones_stored(void) { return true; }
@@ -314,6 +349,9 @@ static void req(uint8_t type, int32_t arg)
 static void reset(void)
 {
 	memset(&hw, 0, sizeof(hw));
+#if CONFIG_DUAL_WATCH
+	memset(&other_rx, 0, sizeof(other_rx));
+#endif
 	hw.noise_on_aprs = 120;
 	nframes = 0;
 	memset(frames, 0, sizeof(frames));
@@ -324,6 +362,9 @@ static void reset(void)
 	chan.mode = RADIO_MODE_FM;
 	chan.bw = RADIO_BW_25K;
 	chan.power = CODEPLUG_POWER_DEFAULT;
+	chan2 = chan;
+	strcpy(chan2.name, "Other");
+	chan2.rx_hz = chan2.tx_hz = CH2_HZ;
 	memset(&zone, 0, sizeof(zone));
 	strcpy(zone.name, "Z");
 	zone.count = 1;
@@ -535,6 +576,93 @@ static void test_ptt_cuts(void)
 	CHECK(hw.starts >= 1);
 }
 
+#if CONFIG_DUAL_WATCH
+static void test_dual_watch_beacon(void)
+{
+	reset();
+	zone.count = 2;
+	zone.channels[1] = 2;
+	radio_sm_init(&sm, now);
+	aprs_set_test_call("N0TST");
+	configure(0, false);
+	radio_req_t watch = { RREQ_SCAN, RSCAN_DUAL, 1 };
+	radio_sm_request(&sm, &watch, now);
+	CHECK(sm.scan.kind == SCAN_DUAL);
+	for (int i = 0; i < 100 && sm.dual_at != 1; i++) {
+		run(RADIO_POLL_MS);
+	}
+	CHECK(sm.dual_at == 1 && hw.rx_hz == CH2_HZ);
+	uint32_t steps = sm.scan.steps;
+	CHECK(aprs_send_now());
+	CHECK(wait_start(1, 5000));
+	CHECK(sm.scan.kind == SCAN_DUAL && hw.tx_hz == APRS_HZ && hw.starts == 1);
+	wait_idle();
+	CHECK(sm.scan.kind == SCAN_DUAL && sm.scan.phase == SCAN_PH_LISTEN &&
+	      sm.dual_at == 1 && hw.rx_hz == CH2_HZ && !hw.keyed);
+	run(RADIO_SCAN_DWELL_MS + RADIO_POLL_MS);
+	CHECK(sm.dual_at == 0 && hw.rx_hz == CH_HZ);
+	run(5000);
+	CHECK(sm.scan.kind == SCAN_DUAL && sm.scan.steps > steps);
+	// PTT still uses the selected channel after a beacon interrupted the watch.
+	req(RREQ_PTT, 1);
+	CHECK(sm.scan.kind == SCAN_DUAL && hw.tx_hz == CH_HZ);
+	req(RREQ_PTT, 0);
+	// A regular zone scan still holds a queued packet until the scan stops.
+	req(RREQ_SCAN, RSCAN_STOP);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(sm.scan.kind == SCAN_ZONE && aprs_send_now());
+	run(5000);
+	CHECK(sm.scan.kind == SCAN_ZONE && hw.starts == 1);
+	req(RREQ_SCAN, RSCAN_STOP);
+	CHECK(wait_start(2, 5000) && hw.tx_hz == APRS_HZ);
+	wait_idle();
+}
+
+static void test_dual_receiver_beacon(void)
+{
+	reset();
+	zone.count = 2;
+	zone.channels[1] = 2;
+	radio_sm_init(&sm, now);
+	aprs_set_test_call("N0TST");
+	configure(0, false);
+	other_rx.up = true;
+	radio_req_t watch = { RREQ_SCAN, RSCAN_DUAL, 1 };
+	radio_sm_request(&sm, &watch, now);
+	CHECK(sm.rx2_on && other_rx.hz == CH2_HZ && hw.rx_hz == CH_HZ);
+	other_rx.active = true;
+	CHECK(aprs_send_now());
+	run(5000);
+	CHECK(hw.starts == 0 && sm.rx2_on && other_rx.stops == 0);
+	int tunes = other_rx.tunes;
+	other_rx.active = false;
+	CHECK(wait_start(1, 5000));
+	CHECK(!sm.rx2_on && other_rx.stops == 1 && hw.tx_hz == APRS_HZ);
+	wait_idle();
+	CHECK(sm.scan.kind == SCAN_DUAL && sm.scan.phase == SCAN_PH_LISTEN && sm.rx2_on && other_rx.tunes == tunes + 1 &&
+	      other_rx.hz == CH2_HZ && hw.rx_hz == CH_HZ);
+}
+
+static void test_dual_watch_beacon_abort(void)
+{
+	reset();
+	zone.count = 2;
+	zone.channels[1] = 2;
+	radio_sm_init(&sm, now);
+	aprs_set_test_call("N0TST");
+	configure(0, false);
+	radio_req_t watch = { RREQ_SCAN, RSCAN_DUAL, 1 };
+	radio_sm_request(&sm, &watch, now);
+	CHECK(aprs_send_now());
+	CHECK(wait_start(1, 5000));
+	uint8_t at = sm.dual_at;
+	req(RREQ_POWER, 1);	// abort without ending the watch or keying PTT
+	CHECK(sm.aprs_phase == 0 && sm.scan.kind == SCAN_DUAL && sm.scan.phase == SCAN_PH_LISTEN && !hw.keyed);
+	CHECK(hw.rx_hz == (at == 0 ? CH_HZ : CH2_HZ));
+	run(RADIO_SCAN_DWELL_MS + RADIO_POLL_MS);
+	CHECK(sm.dual_at != at);
+}
+#endif
 // PTT over a beacon on a channel with its tone burst on: the beacon gives way and the fresh key-up opens with the burst
 // (the beacon's RS_TX is the radio's own transmission, not the user's)
 static void test_ptt_cuts_burst(void)
@@ -807,6 +935,65 @@ static void test_messages(void)
 #endif
 }
 
+// Messages from APRS-IS reach RF through an iGate as third-party packets ("}SRC>DST,TCPIP,IGATE*:info"): the message
+// inside is from SRC, kept and acked to SRC; the station list holds the iGate, the station actually heard
+static void test_third_party_messages(void)
+{
+#if CONFIG_APRS_RX
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	nframes = 0;
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1ABC-9>APQRX,TCPIP,Q1GTE*::Q1TST-7  :From the net{77");
+	CHECK(wait_start(1, 5000));
+	wait_idle();
+	CHECK(aprs_msg_count() == 1);
+	aprs_msg_t m;
+	CHECK(aprs_msg(0, &m) && strcmp(m.from, "Q1ABC-9") == 0 && strcmp(m.text, "From the net") == 0 &&
+	      strcmp(m.msgno, "77") == 0);
+	CHECK(nframes == 1 && strstr(frames[0], "::Q1ABC-9  :ack77") != NULL);
+	// its retry: acked again, not kept twice
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1ABC-9>APQRX,TCPIP,Q1GTE*::Q1TST-7  :From the net{77");
+	CHECK(wait_start(2, 5000));
+	wait_idle();
+	CHECK(aprs_msg_count() == 1 && nframes == 2);
+	// the station list: the iGate, not the Internet station (which must not count as heard on RF)
+	aprs_station_t s;
+	bool gate = false, inner = false;
+	for (uint8_t i = 0; aprs_station(i, &s); i++) {
+		gate |= strcmp(s.call, "Q1GTE") == 0;
+		inner |= strcmp(s.call, "Q1ABC-9") == 0;
+	}
+	CHECK(gate && !inner);
+	// to another station, malformed, our own message gated back, nested: ignored, nothing sent
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1ABC-9>APQRX,TCPIP,Q1GTE*::Q1XYZ    :Not ours{78");
+	rx_line("Q1GTE>APDW17,WIDE2*:}garbage");
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1ABC>:");
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1TST-7>APZRDF,TCPIP,Q1GTE*::Q1TST-7  :Echo{79");
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1GTF>APDW17,TCPIP,Q1GTE*:}Q1ABC-9>APQRX,TCPIP,Q1GTF*::Q1TST-7  :Nested{80");
+	run(10u * 1000u);
+	CHECK(aprs_msg_count() == 1 && nframes == 2 && hw.starts == 2);
+	// the ack of our message to an Internet station comes back wrapped too: no more retries
+	CHECK(aprs_send_message("Q1ABC-9", "To the net"));
+	CHECK(wait_start(3, 5000));
+	char msgno[8] = "";
+	const char *brace = strchr(frames[nframes - 1], '{');
+	CHECK(brace != NULL);
+	if (brace != NULL) {
+		strncpy(msgno, brace + 1, sizeof(msgno) - 1);
+	}
+	wait_idle();
+	char ack[96];
+	snprintf(ack, sizeof(ack), "Q1GTE>APDW17,WIDE2*:}Q1ABC-9>APRS,TCPIP,Q1GTE*::Q1TST-7  :ack%s", msgno);
+	rx_line(ack);
+	run(200u * 1000u);
+	CHECK(hw.starts == 3);
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(v.msg_acked);
+#endif
+}
+
 static void test_message_options(void)
 {
 	reset();
@@ -937,6 +1124,51 @@ static void test_stations_digi_igate(void)
 #endif
 
 #if CONFIG_APRS_RX
+static unsigned station_locks, station_unlocks;
+static bool station_locked;
+
+static void station_lock(void)
+{
+	CHECK(!station_locked);
+	station_locked = true;
+	station_locks++;
+}
+
+static void station_unlock(void)
+{
+	CHECK(station_locked);
+	station_locked = false;
+	if (++station_unlocks == 2) {
+		// Trap for a lookup that locks more than once (the old count-then-rows scan): a packet moves A to the
+		// front between reads, so that scan misses A and the find CHECK below fails. One locked copy never gets here.
+		aprs_set_lock(NULL, NULL);
+		rx_line("Q1ABC-9>APRS:>Moved");
+	}
+}
+
+static void test_station_lookup(void)
+{
+	reset();
+	rx_line("Q1ABC-9>APRS:>First");
+	rx_line("Q1ABC-8>APRS:>Second");
+	station_locks = station_unlocks = 0;
+	station_locked = false;
+	aprs_set_lock(station_lock, station_unlock);
+	aprs_station_t s;
+	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &s) && strcmp(s.call, "Q1ABC-9") == 0);
+	CHECK(station_locks == 1 && station_unlocks == 1 && !station_locked);
+	aprs_set_lock(NULL, NULL);
+	CHECK(aprs_station_count() == 2);
+	CHECK(!ui_svc_aprs_station_find("Q1ABC", &s));
+	CHECK(!ui_svc_aprs_station_find("Q1ABC-7", &s));
+	CHECK(!ui_svc_aprs_station_find("q1abc-9", &s));
+	// The 24-byte retained field holds 23 comment bytes and the terminator.
+	rx_line("Q1ABC-9>APRS:=4903.50N/07201.75W>12345678901234567890123EXCESS");
+	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &s));
+	CHECK(sizeof s.text == 24 && strlen(s.text) == 23);
+	CHECK(strcmp(s.text, "12345678901234567890123") == 0);
+}
+
 // The range Stations heard shows (ui_svc_aprs_range): from our position as position_now gives it, to the
 // station's. EP: our position none / fixed / GPS (GPS wins in Auto) x the station's none / valid. BVA: the same
 // spot is 0 m; 10 minutes of latitude due north is 18.5 km at bearing 0
@@ -952,6 +1184,12 @@ static void test_station_range(void)
 	rx_line("Q1ABC-8>APZRDF:=4903.50N/07201.75W>Here");	// on it
 	rx_line("Q1ABC-7>APZRDF:>Status only");
 	CHECK(aprs_station_count() == 3);
+	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &far) && far.has_pos);
+	rx_line("Q1ABC-8>APZRDF:>New packet");
+	CHECK(aprs_station(0, &here) && strcmp(here.call, "Q1ABC-8") == 0);
+	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &far) && strcmp(far.call, "Q1ABC-9") == 0);
+	CHECK(!ui_svc_aprs_station_find("Q1NONE", &nopos));
+	rx_line("Q1ABC-7>APZRDF:>Status only");
 	CHECK(aprs_station(2, &far) && far.has_pos && aprs_station(1, &here) && here.has_pos);
 	CHECK(aprs_station(0, &nopos) && !nopos.has_pos);
 	// our position: none
@@ -1547,6 +1785,11 @@ int main(void)
 	test_busy_channel();
 	test_bcast_channel();
 	test_ptt_cuts();
+#if CONFIG_DUAL_WATCH
+	test_dual_watch_beacon();
+	test_dual_receiver_beacon();
+	test_dual_watch_beacon_abort();
+#endif
 	test_ptt_cuts_burst();
 	test_not_amateur();
 	test_manual_and_ptt_trigger();
@@ -1554,6 +1797,7 @@ int main(void)
 	test_tx_power_own();
 	test_host_kiss_nmea();
 	test_messages();
+	test_third_party_messages();
 	test_message_options();
 	test_message_replaces_pending();
 	test_message_ends_while_blocked();
@@ -1571,6 +1815,7 @@ int main(void)
 	test_stations_digi_igate();
 	test_rx_stream();
 	test_rx_board_only();
+	test_station_lookup();
 	test_station_range();
 #endif
 	printf("# aprsRadioTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
