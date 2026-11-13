@@ -715,9 +715,10 @@ It is not measured again at 0x07EF yet. `test_dmr_audio_rx_offset_wide` (tests/h
 and above the channel at -100 dBm.
 
 Bursts keyed through idle write the transmit frequency, so the offset doesn't reach the transmitter. A direct burst
-(section 6) keys from the receive frequency and takes the offset back in whole MOD1 steps toward zero (about 74 Hz each
-mid-band: for an offset of 875 Hz, 11 put the carrier about 5 Hz high, 12 about 85 Hz high); every burst decodes, the first within
-20 Hz of the rest. The MD-UV380 has the same two chips and is not measured on its own.
+(section 6, UHF only) keys from the receive frequency and takes any offset back in whole MOD1 steps toward zero (about
+74 Hz each mid-band: for an offset of 875 Hz, 11 put the carrier about 5 Hz high, 12 about 85 Hz high); every burst
+decodes, the first within 20 Hz of the rest. With the UHF offset at 0 there is nothing to take back. The MD-UV380 has
+the same two chips and is not measured on its own.
 
 ---
 

@@ -49,8 +49,8 @@ sys.path.insert(0, os.path.join(ROOT, "tests", "hil"))
 from rfoundry_hil import Radio, SdrBench  # noqa: E402
 
 FRAMES_S = 50               # 3 AMBE frames a 60 ms burst
-SETTLE_S = 0.3              # after a register write, before the dwell counts
 START_S = 1.5               # the call's header and the radio's sync, before the first value
+START_WAIT_S = 4.0          # then at most this long for frames to flow
 KEYS = ("voice.rx_in", "voice.rx_bad", "voice.rx_bit_errors")
 
 
@@ -162,6 +162,19 @@ def wait_flowing(L, timeout=2.0):
     return None
 
 
+def measure(a, L, sync):
+    """One value's cell: --dwell seconds of counters once frames flow (sync: seconds until they did, None: never)"""
+    if sync is None:
+        c = {"in": 0, "sent": round(a.dwell * FRAMES_S), "bad": 0, "bits": None}
+    else:
+        c0 = counters(L)
+        time.sleep(a.dwell)
+        c = cell(c0, counters(L), a.dwell)
+        c["rssi"] = int(L.view(["core"]).get("rssi_dbm", 0))
+    c["sync"] = sync
+    return c
+
+
 def record(a, out, cond, v, c, regt):
     if not out:
         return
@@ -185,15 +198,7 @@ def per_call(a, L, bench, ambe, cond, values, calls, table, out, regt):
         with bench.lease():
             job = bench.voice_call(a.freq, a.cc, a.tg, calls=1, ambe=ambe, superframes=superframes_for(a),
                                    offset_hz=0 if a.detune else off, background=True)
-            sync = wait_flowing(L, timeout=START_S + 3.0)
-            if sync is None:
-                c = {"in": 0, "sent": round(a.dwell * FRAMES_S), "bad": 0, "bits": None}
-            else:
-                c0 = counters(L)
-                time.sleep(a.dwell)
-                c = cell(c0, counters(L), a.dwell)
-                c["rssi"] = int(L.view(["core"]).get("rssi_dbm", 0))
-            c["sync"] = sync
+            c = measure(a, L, wait_flowing(L, timeout=START_S + 3.0))
             job.kill()
         table[(cond, v)] = add(table.get((cond, v)), c)
         c["quiet"] = wait_quiet(L)
@@ -255,7 +260,8 @@ def main():
     dbms = [float(x) for x in a.dbm.split(",")] if a.dbm else [None]
     devs = [float(x) for x in a.devs.split(",")]
     tmp = tempfile.mkdtemp(prefix="dmr-rx-sweep-")
-    ambe, superframes = long_file(a.ambe, START_S + len(values) * (2.0 + a.dwell) + 1.0, tmp)
+    # Long enough for the slowest start and every value's sync wait (and for a --per-call call, superframes_for)
+    ambe, superframes = long_file(a.ambe, START_S + START_WAIT_S + len(values) * (2.0 + a.dwell) + 1.0, tmp)
 
     radio = Radio(a.port)
     L = radio.link
@@ -281,7 +287,7 @@ def main():
     with bench.lease():
         job = bench.voice_call(a.freq, a.cc, a.tg, calls=1, ambe=ambe, superframes=superframes, background=True)
         time.sleep(START_S)
-        wait_flowing(L, timeout=4.0)
+        wait_flowing(L, timeout=START_WAIT_S)
         job.kill()
     wait_quiet(L)
     try:
@@ -299,7 +305,7 @@ def main():
             bench.dev_scale = None if dev == 1 else dev
             for _ in range(a.repeat):
                 if a.per_call:
-                    per_call(a, L, bench, ambe, cond, values, calls, table, out, (chip, reg, page) if a.reg else None)
+                    per_call(a, L, bench, ambe, cond, values, calls, table, out, a.reg)
                     calls += 1
                     continue
                 if orig is not None:
@@ -308,7 +314,7 @@ def main():
                     job = bench.voice_call(a.freq, a.cc, a.tg, calls=1, ambe=ambe, superframes=superframes,
                                            offset_hz=bench_off, background=True)
                     time.sleep(START_S)
-                    if wait_flowing(L, timeout=4.0) is None:    # the call never came: say so, count nothing
+                    if wait_flowing(L, timeout=START_WAIT_S) is None:    # the call never came: say so, count nothing
                         job.kill()
                         print(f"{label(cond)}: the call didn't start on the radio, skipped", flush=True)
                         wait_quiet(L)
@@ -319,29 +325,17 @@ def main():
                     for v in values[k:] + values[:k]:
                         if v is not None:
                             reg_write(L, a.reg, v)
-                        sync = wait_flowing(L)
-                        if sync is None:
-                            c = {"in": 0, "sent": round(a.dwell * FRAMES_S), "bad": 0, "bits": None}
-                        else:
-                            c0 = counters(L)
-                            time.sleep(a.dwell)
-                            c = cell(c0, counters(L), a.dwell)
-                            c["rssi"] = int(L.view(["core"]).get("rssi_dbm", 0))
-                        c["sync"] = sync
+                        c = measure(a, L, wait_flowing(L))
                         table[(cond, v)] = add(table.get((cond, v)), c)
-                        rec = {"t": time.time(), "freq": a.freq, "dbm": dbm, "dev": dev, "offset_hz": off, "value": v,
-                               **c}
-                        if a.reg:
-                            rec.update(chip=chip, reg=reg, page=page)
-                        if out:
-                            out.write(json.dumps(rec) + "\n")
-                            out.flush()
+                        record(a, out, cond, v, c, a.reg)
                     job.kill()              # the rest of the call isn't needed
                 wait_quiet(L)
             if all((cond, v) in table for v in values):
                 print(f"{label(cond)}: " + "  ".join(f"{name(v)} {show(table[(cond, v)])}" for v in values),
                       flush=True)
     finally:
+        if a.detune:                        # the VFO keeps its frequency: put it back on --freq
+            L.vfo_set(round(a.freq * 1e6))
         if orig is not None:
             reg_write(L, a.reg, orig)
             print(f"0x{reg:02X} back to 0x{orig:04X}")
@@ -357,9 +351,11 @@ def main():
         sys.exit("no call reached the radio")
     worst = {v: max(conds, key=lambda k: badness(table[(k, v)])) for v in values}
     for v in sorted(values, key=lambda v: badness(table[(worst[v], v)])):
+        bits = [table[(k, v)]["bits"] for k in conds if table[(k, v)]["bits"] is not None]   # no-sync cells left out
         print(name(v).ljust(11) + f"{show(table[(worst[v], v)]):>24}  {label(worst[v]):<26}"
-              f"{sum(table[(k, v)]['bits'] or 0 for k in conds) / len(conds):.3f}")
+              + (f"{sum(bits) / len(bits):.3f}" if bits else "-"))
     print(f"\n{time.monotonic() - t_start:.0f} s")
+
 
 if __name__ == "__main__":
     main()
