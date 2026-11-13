@@ -133,6 +133,9 @@ static struct {
 	bool tot_hit;
 	uint8_t stage[DMR_AMBE_FRAMES_PER_BURST][DMR_AMBE_FRAME_BYTES];
 	uint8_t stage_n;
+	// At the release, the frames the encoder already had (said before it), for what remains of the superframe
+	uint8_t tail[5 * DMR_AMBE_FRAMES_PER_BURST][DMR_AMBE_FRAME_BYTES];
+	uint8_t tail_n, tail_at;
 	uint32_t tx_since;	// PTT handling start (access wait)
 	uint32_t deadline;
 	uint32_t wake_sent_ms;
@@ -1180,6 +1183,15 @@ static void tx_stop(void)
 	if (s.stop_req)
 		return;
 	s.stop_req = true;
+	// What the encoder holds now was said before the release: it goes out in the rest of the superframe (none left
+	// at its boundary), and nothing taken later does
+	s.tail_n = s.tail_at = 0;
+	if (s.tx == TX_ON && s.headers_left == 0 && s.voice_index != 0 && s.source && s.source->next) {
+		unsigned room = (6u - s.voice_index) * DMR_AMBE_FRAMES_PER_BURST - s.stage_n;
+
+		while (s.tail_n < room && s.source->next(s.tail[s.tail_n], s.source->ctx))
+			s.tail_n++;
+	}
 	if (s.modem->tx_release != NULL)
 		s.modem->tx_release();
 }
@@ -1214,10 +1226,12 @@ static void tx_fill(uint32_t now)
 			s.dirty = true;
 			return;
 		}
-		// Once the call is ending what remains of the superframe is silence: nothing said after the release goes out
+		// Once the call is ending, what the encoder held at the release, then silence: nothing said after it goes out
 		while (!s.stop_req && s.stage_n < DMR_AMBE_FRAMES_PER_BURST && s.source && s.source->next &&
 		       s.source->next(s.stage[s.stage_n], s.source->ctx))
 			s.stage_n++;
+		while (s.stop_req && s.stage_n < DMR_AMBE_FRAMES_PER_BURST && s.tail_at < s.tail_n)
+			memcpy(s.stage[s.stage_n++], s.tail[s.tail_at++], DMR_AMBE_FRAME_BYTES);
 		if (!s.stop_req && s.stage_n < DMR_AMBE_FRAMES_PER_BURST && inflight > 1)
 			return;	// not due yet: wait for the encoder
 		while (s.stage_n < DMR_AMBE_FRAMES_PER_BURST) {

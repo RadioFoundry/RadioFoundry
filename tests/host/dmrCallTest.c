@@ -645,6 +645,41 @@ static void test_tx_ahead(void)
 	CHECK(two + 100 <= full);
 }
 
+// Frames encoded before the release but still in the encoder (the queue full, waiting for a burst to go) go out in
+// what remains of the superframe; nothing encoded after the release does
+static void test_tx_release_keeps_said(void)
+{
+	dmr_call_config_t c = base_cfg();
+	unsigned v, said = 0;
+	uint8_t lc[9];
+
+	c.tx_ahead = 2;
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(1000);
+	// The call sees the release at its next poll, 10 ms on: what the encoder has by then was said before it
+	for (int i = 0; i < 6 && src.taken >= (now + 10 - src.start_ms) / 20 + 1; i++)
+		run_ms(10);
+	said = (now + 10 - src.start_ms) / 20 + 1;
+	CHECK(src.taken < said && V()->phase == DMR_CALL_PHASE_TX_VOICE);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && sim.tx_ends == 1 && sim.underflows == 0);
+	CHECK(src.taken == said);
+	mk_lc(lc, DMR_FLCO_GROUP_VOICE, TG_TALK, OWN_ID);
+	check_tx_burst_sequence(0, lc, &v);
+	unsigned expect = 1;
+	for (unsigned i = DMR_CALL_TX_HEADERS; i < DMR_CALL_TX_HEADERS + v; i++)
+		for (int f = 0; f < 3; f++) {
+			const uint8_t *fr = &sim.air[i].payload[f * 9];
+			if (memcmp(fr, dmr_ambe_silence, 9) != 0) {
+				CHECK(fr[0] == (uint8_t)expect);
+				expect++;
+			}
+		}
+	CHECK(expect - 1 == said);
+}
+
 static void test_tx_timeout_and_starve(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -2635,6 +2670,7 @@ int main(void)
 	test_alias();
 	test_tx_call();
 	test_tx_ahead();
+	test_tx_release_keeps_said();
 	test_tx_permit_hold();
 	test_tx_timeout_and_starve();
 	test_tx_refused();
