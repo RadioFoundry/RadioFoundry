@@ -255,7 +255,8 @@ subscribes to talkgroups. Sending it drops the old record.
 | `T3_OPT_REG_TG`, talkgroups listened to | C_RAND |
 |---|---|
 | off | Trg_Adr_Cnts 00b, the system code |
-| on, one | Trg_Adr_Cnts 01b, the talk group |
+| on, none | Trg_Adr_Cnts 01b, the talk group; the system code (00b) without one |
+| on, one | Trg_Adr_Cnts 01b, the talk group, else the one listened to |
 | on, two or more | Trg_Adr_Cnts 10b, TATTSI; the first seven as a list (6.4.4.1.13.2) |
 
 A list goes in UDT blocks the C_RAND counts (Appended UDT Short Data: blocks less one; 1 block holds 3 addresses, 2

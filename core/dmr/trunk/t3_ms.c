@@ -743,9 +743,10 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 			q->extra = (uint8_t)((T3_TRG_TATTSI << 2) | (reg_list_blocks(n) - 1u));
 			q->dst = T3_ID_TATTSI;
 			ms->reg_tgs = n;
-		} else if ((ms->cfg->opts & T3_OPT_REG_TG) && tg != NULL) {
+		} else if ((ms->cfg->opts & T3_OPT_REG_TG) && (tg != NULL || n == 1u)) {
+			// One talkgroup (6.4.4.1.13.1): the one talked on, else the only one listened to
 			q->extra = T3_TRG_TALKGROUP << 2;
-			q->dst = tg->id;
+			q->dst = tg != NULL ? tg->id : list[0];
 			ms->reg_single = ms->ax.svc == T3_SVC_REGISTER;
 		} else {
 			q->extra = T3_TRG_SYSCODE << 2;

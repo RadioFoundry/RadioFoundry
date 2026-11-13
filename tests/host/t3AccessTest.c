@@ -273,6 +273,14 @@ static void test_register(void)
 	rx(&ms, 1, &a);
 	CHECK(ms.reg == T3_REG_OK && ms.reg_tg_ok == 0x40, "Reg_Accepted: the talkgroup taken");
 
+	// One talkgroup listened to and none to talk on: it is the one subscribed to, not the system code
+	setup(T3_OPT_PRIVATE | T3_OPT_REG_TG, true);
+	cfg.tg[0].flags = 0;
+	camp(&ms);
+	frames(&ms, 2);
+	CHECK(nsent == 1 && sent[0].u.rand.extra == (T3_TRG_TALKGROUP << 2) && sent[0].u.rand.dst == TG_B,
+	      "the listened talkgroup subscribed: extra %u dst %u", sent[0].u.rand.extra, sent[0].u.rand.dst);
+
 	// Reg = 0: nothing to do
 	setup(T3_OPT_PRIVATE, false);
 	camp(&ms);
