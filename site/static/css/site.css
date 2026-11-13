@@ -365,6 +365,8 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .toggle input { width: 1.1rem; height: 1.1rem; margin: 0; align-self: start; margin-top: 0.3rem; accent-color: var(--accent); }
 .toggle .why { display: block; color: var(--muted); font-size: var(--text-sm); line-height: 1.35; }
 /* Update task: a new feature of a custom build, its On / Off choice in one column at the right */
+/* the update step's notices one after another: apart, as the rest of the panel */
+.notice + .update-note { margin-top: var(--space-3); }
 .update-new { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-4); align-items: center; padding: var(--space-1) 0; }
 .update-new .why { display: block; color: var(--muted); font-size: var(--text-sm); line-height: 1.35; }
 .update-pick { display: flex; gap: var(--space-3); }
