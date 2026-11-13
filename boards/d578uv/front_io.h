@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// AT-D578UV: the plain hand microphone's two key lines, the backlight level and the speaker amplifier
+// AT-D578UV: the plain hand microphone's two key lines, the backlight level and the speaker amplifier and its hang
 // (docs/spec/hardware-d578uv.md 3.2, 3.1, 4.4). Pure, so the host tests check them; input_d578uv.c and radio_d578uv.c
 // apply them.
 #ifndef D578UV_FRONT_IO_H
@@ -52,6 +52,38 @@ static inline uint8_t backlight_code(uint8_t percent)
 static inline bool spk_amp_off(bool transmitting, bool playing, bool loud)
 {
 	return transmitting || !playing || !loud;
+}
+
+// The amplifier's hang: each turn-on can pop, so once on it stays on SPK_HANG_BEEP_MS after a beep and SPK_HANG_RX_MS
+// after other audio, and a run of key beeps or a flickering squelch doesn't cycle it. Off at once while transmitting or
+// with the volume at 0 (may false). want: !spk_amp_off(); beep: a beep (or its lead) is what plays. True: PA7 on
+#define SPK_HANG_BEEP_MS	400u
+#define SPK_HANG_RX_MS		300u
+typedef struct {
+	bool on;
+	bool beep;		// the last sound was a beep
+	bool hanging;		// nothing plays: on until `until`
+	uint32_t until;
+} spk_hang_t;
+
+static inline bool spk_hang(spk_hang_t *h, bool want, bool beep, bool may, uint32_t now)
+{
+	if (want) {
+		h->on = true;
+		h->beep = beep;
+		h->hanging = false;
+		return true;
+	}
+	if (h->on && may && !h->hanging) {
+		h->hanging = true;
+		h->until = now + (h->beep ? SPK_HANG_BEEP_MS : SPK_HANG_RX_MS);
+	}
+	if (!h->on || !may || (int32_t)(now - h->until) >= 0) {
+		h->on = false;
+		h->hanging = false;
+		return false;
+	}
+	return true;
 }
 
 #endif

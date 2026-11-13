@@ -47,11 +47,43 @@ static void test_amp(void)
 	CHECK(spk_amp_off(true, false, false));
 }
 
+static void test_hang(void)
+{
+	spk_hang_t h = { 0 };
+	CHECK(!spk_hang(&h, false, false, true, 1000));		// never on: stays off
+	CHECK(spk_hang(&h, true, true, true, 1000));		// a beep
+	CHECK(spk_hang(&h, false, false, true, 1100));		// beep over: the hang starts
+	CHECK(spk_hang(&h, false, false, true, 1100 + SPK_HANG_BEEP_MS - 1));
+	CHECK(!spk_hang(&h, false, false, true, 1100 + SPK_HANG_BEEP_MS));	// run out
+	CHECK(!h.on && !h.hanging);
+	// A second beep inside the hang keeps it on and starts the hang again from its end
+	CHECK(spk_hang(&h, true, true, true, 2000));
+	CHECK(spk_hang(&h, false, false, true, 2050));
+	CHECK(spk_hang(&h, true, true, true, 2300));
+	CHECK(spk_hang(&h, false, false, true, 2350));
+	CHECK(spk_hang(&h, false, false, true, 2350 + SPK_HANG_BEEP_MS - 1));
+	CHECK(!spk_hang(&h, false, false, true, 2350 + SPK_HANG_BEEP_MS));
+	// Received audio: the shorter hang
+	CHECK(spk_hang(&h, true, false, true, 3000));
+	CHECK(spk_hang(&h, false, false, true, 3500));
+	CHECK(!spk_hang(&h, false, false, true, 3500 + SPK_HANG_RX_MS));
+	// Transmitting or the volume at 0: off at once, no hang
+	CHECK(spk_hang(&h, true, true, true, 4000));
+	CHECK(!spk_hang(&h, false, false, false, 4001));
+	CHECK(!h.on);
+	// The clock wrapping inside a hang
+	CHECK(spk_hang(&h, true, false, true, 0xFFFFFF00u));
+	CHECK(spk_hang(&h, false, false, true, 0xFFFFFF80u));
+	CHECK(spk_hang(&h, false, false, true, 0x00000010u));
+	CHECK(!spk_hang(&h, false, false, true, 0xFFFFFF80u + SPK_HANG_RX_MS + 1u));
+}
+
 int main(void)
 {
 	test_mic();
 	test_backlight();
 	test_amp();
+	test_hang();
 	if (failures) {
 		printf("d578uvFrontIoTest: %d failure(s)\n", failures);
 		return 1;
