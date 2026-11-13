@@ -244,8 +244,9 @@ static void test_register(void)
 	frames(&ms, 200);
 	CHECK(nsent == 1 && ms.reg == T3_REG_OK, "stays registered without asking again");
 
-	// Registering to the talk group (subscription)
+	// Registering to the talk group (subscription), the only one listened to
 	setup(T3_OPT_PRIVATE | T3_OPT_REG_TG, true);
+	cfg.tg[1].flags = 0;
 	camp(&ms);
 	frames(&ms, 2);
 	CHECK(nsent == 1 && sent[0].u.rand.extra == (T3_TRG_TALKGROUP << 2) && sent[0].u.rand.dst == TG_A,
@@ -266,6 +267,99 @@ static void test_register(void)
 	frames(&ms, 50);
 	CHECK(ms.reg == T3_REG_LISTEN && nsent == 0, "listen only: no registration");
 	CHECK(!t3_ms_request(&ms, T, TG_A, true, false), "listen only: no calls");
+}
+
+static t3_csbk_t reg_list_ahoy(uint8_t blocks)
+{
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_REGISTRATION;
+	h.u.ahoy.kind_flag = true;
+	h.u.ahoy.blocks = blocks;
+	h.u.ahoy.dst = OWN;
+	h.u.ahoy.src = T3_ID_TATTSI;
+	return h;
+}
+
+static uint32_t addr_at(const uint8_t *d, unsigned i)
+{
+	const uint8_t *p = d + 1u + 3u * i;
+	return (uint32_t)p[0] << 16 | (uint32_t)p[1] << 8 | p[2];
+}
+
+// Registration with a talkgroup subscription list (6.4.4.1.13.2): two or more listened to go as a list to TATTSI,
+// uploaded as UDT Address Format when the TSCC asks; the acknowledgement says which were taken
+static void test_reg_list(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE | T3_OPT_REG_TG, true);
+	camp(&ms);
+	frames(&ms, 2);
+	const t3_rand_t *q = &sent[0].u.rand;
+	CHECK(nsent == 1 && q->kind == T3_SK_REGISTRATION && q->dst == T3_ID_TATTSI &&
+	      q->extra == ((T3_TRG_TATTSI << 2) | 0u) && (q->options & T3_SO_REG_REGISTER) && ms.reg_tgs == 2,
+	      "list request: dst 0x%06x extra 0x%x tgs %u", (unsigned)q->dst, q->extra, ms.reg_tgs);
+	t3_csbk_t w = ack(T3_OP_C_ACKD, T3_RC_WAIT, OWN, T3_ID_REGI);
+	rx(&ms, 1, &w);
+	nup = 0;
+	t3_csbk_t h = reg_list_ahoy(1);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	t3_udt_t u;
+	CHECK(nup == 1 && nup_blocks == 1 && t3_udt_parse(up_hdr, &u), "list uploaded: %d, %u blocks", nup, nup_blocks);
+	CHECK(u.op == T3_OP_C_UDTHU && u.format == T3_UDTF_ADDRESS && u.dst == T3_ID_TATTSI && u.src == OWN && u.sf &&
+	      !u.a && !u.group && u.pad == 0 && u.blocks == 1, "list header: format %u sf %u a %u", u.format, u.sf, u.a);
+	CHECK(up_blocks[0][0] == 0 && addr_at(up_blocks[0], 0) == TG_A && addr_at(up_blocks[0], 1) == TG_B &&
+	      addr_at(up_blocks[0], 2) == 0 && t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])up_blocks, 1),
+	      "list: TG_A, TG_B, ADRNULL, CRC");
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_REG_SUBSCRIPTION, OWN, T3_ID_REGI);
+	a.u.ack.info = 0x40;	// only the first taken
+	rx(&ms, 1, &a);
+	CHECK(ms.reg == T3_REG_OK && ms.reg_tg_ok == 0x40 && ms.ax.result == T3_RES_DONE, "registered, mask 0x%02x",
+	      ms.reg_tg_ok);
+
+	// Five: two blocks, seven address slots
+	setup(T3_OPT_PRIVATE | T3_OPT_REG_TG, true);
+	static const uint32_t ids[5] = { 101, 102, 103, 104, 105 };
+	for (unsigned i = 0; i < 5; i++) {
+		cfg.tg[i] = (t3_tg_t){ ids[i], T3_TG_LISTEN | (i == 0 ? T3_TG_TALK : 0) };
+	}
+	cfg.ntg = 5;
+	camp(&ms);
+	frames(&ms, 2);
+	CHECK(nsent == 1 && sent[0].u.rand.extra == ((T3_TRG_TATTSI << 2) | 1u), "five: one block appended more");
+	nup = 0;
+	h = reg_list_ahoy(2);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup == 1 && nup_blocks == 2 && t3_udt_parse(up_hdr, &u) && u.blocks == 2, "five: two blocks");
+	uint8_t d[24];
+	memcpy(d, up_blocks[0], 12);
+	memcpy(d + 12, up_blocks[1], 12);
+	bool ok = true;
+	for (unsigned i = 0; i < 7; i++) {
+		ok = ok && addr_at(d, i) == (i < 5 ? ids[i] : 0u);
+	}
+	CHECK(ok && t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])up_blocks, 2), "five: addresses across the blocks");
+	a.u.ack.info = 0x7F;
+	rx(&ms, 1, &a);
+	CHECK(ms.reg_tg_ok == 0x7F, "all taken");
+
+	// Not ours or nothing asked: nothing uploaded
+	nup = 0;
+	h = reg_list_ahoy(1);
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	CHECK(nup == 0, "registered: no upload");
+
+	// Eight listened to: the first seven go
+	setup(T3_OPT_PRIVATE | T3_OPT_REG_TG, true);
+	for (unsigned i = 0; i < 8; i++) {
+		cfg.tg[i] = (t3_tg_t){ 200u + i, T3_TG_LISTEN };
+	}
+	cfg.ntg = 8;
+	camp(&ms);
+	frames(&ms, 2);
+	CHECK(nsent == 1 && ms.reg_tgs == 7, "eight: seven in the list (%u)", ms.reg_tgs);
 }
 
 static void test_no_answer(void)
@@ -702,6 +796,7 @@ static void test_one_carrier_site(void)
 {
 	t3_ms_t ms;
 	setup(T3_OPT_PRIVATE | T3_OPT_REG_TG, true);
+	cfg.tg[1].flags = 0;
 	cfg.plan.fixed.base_hz = 0;
 	cfg.ctrl[0].lcn = 7;
 	camp(&ms);
@@ -1015,6 +1110,7 @@ static void test_sdata(void)
 int main(void)
 {
 	test_register();
+	test_reg_list();
 	test_no_answer();
 	test_refused_denied();
 	test_permission();

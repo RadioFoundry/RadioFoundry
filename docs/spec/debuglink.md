@@ -862,7 +862,8 @@ The `t3` view section has the engine's state as the radio core last published it
 `last_rx_slot`, `last_rx_age_ms`, `last_tx_op`, `last_tx_age_ms`, `last_tx` in hex; age -1: none); counters (`ticks`,
 `csbk`, `crc_bad`, `grants`, `followed`, `unmapped`, `last_unmapped`, `returns`, `hunts`, `foreign`, `learned`, `sent`,
 `ra_tries`, `send_fail`, `at_known`, `at_busy`). The `t3_svc` section, also `t3.`-prefixed, has the services:
-`ax_info` (the final acknowledgement's Response_Info: a poll's answer), `own_status` (the radio's, sent in answer to a poll), and the last status heard (`st_count`,
+`ax_info` (the final acknowledgement's Response_Info: a poll's answer), `reg_tgs` and `reg_tg_ok` (the
+registration's talkgroup list: how many it sent, and which the site accepted, bit 6 the first), `own_status` (the radio's, sent in answer to a poll), and the last status heard (`st_count`,
 `st_src`, `st_dst`, `st_group`, `st_value`, `st_age_ms`); the last short data heard (`sd_count`, `sd_src`, `sd_dst`,
 `sd_group`, `sd_format`, `sd_len`, `sd_data` in hex, `sd_age_ms`).
 

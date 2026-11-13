@@ -40,6 +40,7 @@
 // Talkgroup flags
 #define T3_TG_LISTEN		0x01	// follow calls to it
 #define T3_TG_TALK		0x02	// the default talk group (CONFIG_DMR_TRUNK_TX)
+#define T3_REG_TG_MAX		7	// talkgroups in a subscription list (6.4.4.1.13.2, table 6.10)
 
 // System options
 #define T3_OPT_LISTEN_ONLY	0x0001	// never transmit (and so never register)
@@ -298,6 +299,10 @@ typedef struct {
 	} tx;
 	uint32_t talk_id;		// set by t3_ms_request: the last target, for a user's PTT in the hang time
 	uint16_t reg_area;		// the registration record: MODEL, NET and the SYS_AREA bits of SITE (reg T3_REG_OK)
+	// The talkgroup subscription list the last registration sent (T3_OPT_REG_TG with two or more listened to), and
+	// which the TSCC accepted: bit 6 the first (table 6.10)
+	uint8_t reg_tgs;
+	uint8_t reg_tg_ok;
 	uint16_t denied[T3_DENIED_MAX];	// areas, as reg_area, that denied registration, + 1 (0: empty)
 	bool deregistered;		// de-registered: no registration until t3_ms_start
 	uint32_t left_dst;		// a talkgroup call the user left: its late-entry grants don't pull us back (6.6.2.4.1)

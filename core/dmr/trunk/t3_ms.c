@@ -459,6 +459,24 @@ static const t3_tg_t *talk_group(const t3_ms_t *ms)
 	return NULL;
 }
 
+// The talkgroups a registration subscribes to as a list (6.4.4.1.13.2): those listened to, in order, up to seven
+static uint8_t reg_list(const t3_ms_t *ms, uint32_t out[T3_REG_TG_MAX])
+{
+	uint8_t n = 0;
+	for (uint8_t i = 0; i < ms->cfg->ntg && n < T3_REG_TG_MAX; i++) {
+		if ((ms->cfg->tg[i].flags & T3_TG_LISTEN) && ms->cfg->tg[i].id < T3_ID_GATEWAY_FIRST) {
+			out[n++] = ms->cfg->tg[i].id;
+		}
+	}
+	return n;
+}
+
+// Blocks for a list of n addresses (B.3.2): the first holds 3 after its flags octet, two hold 7
+static uint8_t reg_list_blocks(uint8_t n)
+{
+	return n <= 3u ? 1u : 2u;
+}
+
 static void finish(t3_ms_t *ms, uint32_t now, t3_res_t r)
 {
 	t3_svc_t svc = ms->ax.svc;
@@ -533,9 +551,17 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 	case T3_SVC_DEREGISTER: {
 		// Table 6.9: register to the system code, or subscribe to the talk group
 		const t3_tg_t *tg = talk_group(ms);
+		uint32_t list[T3_REG_TG_MAX];
+		uint8_t n = reg_list(ms, list);
 		q->kind = T3_SK_REGISTRATION;
 		q->options = ms->ax.svc == T3_SVC_REGISTER ? T3_SO_REG_REGISTER : 0;
-		if ((ms->cfg->opts & T3_OPT_REG_TG) && tg != NULL) {
+		ms->reg_tgs = 0;
+		if ((ms->cfg->opts & T3_OPT_REG_TG) && ms->ax.svc == T3_SVC_REGISTER && n >= 2u) {
+			// A list (6.4.4.1.13.2): to TATTSI, with the blocks the TSCC's C_AHOY will ask for
+			q->extra = (uint8_t)((T3_TRG_TATTSI << 2) | (reg_list_blocks(n) - 1u));
+			q->dst = T3_ID_TATTSI;
+			ms->reg_tgs = n;
+		} else if ((ms->cfg->opts & T3_OPT_REG_TG) && tg != NULL) {
 			q->extra = T3_TRG_TALKGROUP << 2;
 			q->dst = tg->id;
 		} else {
@@ -595,6 +621,7 @@ static void ra_slot(t3_ms_t *ms, uint32_t now, bool at_known, bool at_busy)
 			// 6.4.4.1: the old record goes as soon as the request is sent
 			ms->reg = T3_REG_NEEDED;
 			ms->reg_area = 0;
+			ms->reg_tg_ok = 0;
 		}
 		break;
 	}
@@ -640,6 +667,8 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 		if (svc == T3_SVC_REGISTER) {
 			ms->reg = T3_REG_OK;
 			ms->reg_area = reg_area(ms, ms->syscode);
+			// Reg_Accepted or Reg_Subscription/Attachment: Response_Info says which of a list were taken
+			ms->reg_tg_ok = ms->reg_tgs != 0 ? (uint8_t)(a->info & 0x7Fu) : 0u;
 		} else if (svc == T3_SVC_DEREGISTER) {
 			ms->reg = T3_REG_NEEDED;
 			ms->deregistered = true;
@@ -735,6 +764,26 @@ static bool on_status(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *
 	return true;
 }
 
+// Load a UDT upload: the header in tx.burst, the blocks in up[], sent as one transmission on the next inbound slot
+static void queue_udt(t3_ms_t *ms, uint32_t now, uint8_t slot, t3_udt_t *u, const uint8_t *data, uint8_t len,
+		      uint8_t fill, bool count_pad)
+{
+	uint8_t pad = 0;
+	u->op = T3_OP_C_UDTHU;
+	u->src = my_id(ms);
+	u->blocks = t3_udt_pack(data, len, fill, ms->up, &pad);
+	u->pad = count_pad ? pad : 0u;
+	t3_udt_build(u, ms->tx.burst);
+	ms->tx.count = 1;
+	ms->tx.slot = slot;
+	ms->tx.payload = false;
+	ms->tx.then_return = false;
+	ms->tx.udt = true;
+	ms->tx.nblocks = u->blocks;
+	ms->ax.state = T3_AX_ACKED;
+	ms->ax.ack_deadline = now + or_default(ms->cfg->tnp_ms, T3_TNP_MS);
+}
+
 // The TSCC asks for our short data (6.6.4.4 c, C_AHOY from SDMI): the UDT header and blocks go in the inbound slots
 // that follow, which the TSCC keeps for them (figure 6.43). It asks again after a CRC failure
 static bool on_upload(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h)
@@ -748,31 +797,54 @@ static bool on_upload(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *
 	}
 	t3_udt_t u;
 	memset(&u, 0, sizeof(u));
-	u.op = T3_OP_C_UDTHU;
 	u.group = ms->ax.group;
 	u.format = ms->sd_tx.format;
 	u.dst = ms->ax.dst;
-	u.src = my_id(ms);
 	// ISO 8-bit text pads with 1111b nibbles (B.3.5); every other format here is binary-like, padded with zeros
 	uint8_t fill = u.format == T3_UDTF_ISO8 ? 0xFFu : 0u;
-	uint8_t pad = 0;
-	u.blocks = t3_udt_pack(ms->sd_tx.data, ms->sd_tx.len, fill, ms->up, &pad);
-	u.pad = u.format == T3_UDTF_ISO8 || u.format == T3_UDTF_ISO7 || u.format == T3_UDTF_UTF16 ? pad : 0u;
-	t3_udt_build(&u, ms->tx.burst);
-	ms->tx.count = 1;
-	ms->tx.slot = slot;
-	ms->tx.payload = false;
-	ms->tx.then_return = false;
-	ms->tx.udt = true;
-	ms->tx.nblocks = u.blocks;
-	ms->ax.state = T3_AX_ACKED;
-	ms->ax.ack_deadline = now + or_default(ms->cfg->tnp_ms, T3_TNP_MS);
+	queue_udt(ms, now, slot, &u, ms->sd_tx.data, ms->sd_tx.len, fill,
+		  u.format == T3_UDTF_ISO8 || u.format == T3_UDTF_ISO7 || u.format == T3_UDTF_UTF16);
+	return true;
+}
+
+// The TSCC asks for the registration's talkgroup list (table 6.11: Service_Kind_Flag 1, from TATTSI): the addresses
+// go up as UDT Address Format (B.3.2) to TATTSI, supplementary data that wants no answer of its own; the
+// registration's acknowledgement follows
+static bool on_reg_list(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h)
+{
+	if (h->src != T3_ID_TATTSI || h->group || !is_me(ms, h->dst) || h->kind != T3_SK_REGISTRATION || !h->kind_flag) {
+		return false;
+	}
+	if (!may_send(ms) || ms->ax.svc != T3_SVC_REGISTER || ms->reg_tgs == 0 ||
+	    (ms->ax.state != T3_AX_WAIT_RESP && ms->ax.state != T3_AX_ACKED)) {
+		return true;
+	}
+	uint32_t list[T3_REG_TG_MAX];
+	uint8_t n = reg_list(ms, list);
+	if (n != ms->reg_tgs) {
+		return true;	// the list changed since the request: the next registration sends the new one
+	}
+	// Octet 0: reserved and OK 0 (no one-key talkgroup); the addresses after it, the rest ADRNULL
+	uint8_t d[1u + 3u * T3_REG_TG_MAX];
+	uint8_t slots = reg_list_blocks(n) == 1u ? 3u : T3_REG_TG_MAX;
+	memset(d, 0, sizeof(d));
+	for (uint8_t i = 0; i < n; i++) {
+		d[1u + 3u * i] = (uint8_t)(list[i] >> 16);
+		d[2u + 3u * i] = (uint8_t)(list[i] >> 8);
+		d[3u + 3u * i] = (uint8_t)list[i];
+	}
+	t3_udt_t u;
+	memset(&u, 0, sizeof(u));
+	u.format = T3_UDTF_ADDRESS;
+	u.dst = T3_ID_TATTSI;
+	u.sf = true;
+	queue_udt(ms, now, slot, &u, d, (uint8_t)(1u + 3u * slots), 0, false);
 	return true;
 }
 
 static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h, bool payload)
 {
-	if (!payload && on_upload(ms, now, slot, h)) {
+	if (!payload && (on_upload(ms, now, slot, h) || on_reg_list(ms, now, slot, h))) {
 		return;
 	}
 	if (!payload && h->kind == T3_SK_STATUS && is_me(ms, h->src)) {

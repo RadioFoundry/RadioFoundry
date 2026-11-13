@@ -239,8 +239,21 @@ The C_BCAST Backoff replaces the Aloha's.
 ### 7.2 Registration (6.4.4.1)
 
 The engine registers by itself when the state is "needed" and nothing else is in progress. Until registered it asks
-for nothing else. The C_RAND (kind registration) targets the system code (Trg_Adr_Cnts 0), or the talk group with
-`T3_OPT_REG_TG` (subscription, Trg_Adr_Cnts 1). Sending it drops the old record.
+for nothing else. The C_RAND (kind registration) targets the system code (Trg_Adr_Cnts 0), or with `T3_OPT_REG_TG`
+subscribes to talkgroups. Sending it drops the old record.
+
+| `T3_OPT_REG_TG`, talkgroups listened to | C_RAND |
+|---|---|
+| off | Trg_Adr_Cnts 00b, the system code |
+| on, one | Trg_Adr_Cnts 01b, the talk group |
+| on, two or more | Trg_Adr_Cnts 10b, TATTSI; the first seven as a list (6.4.4.1.13.2) |
+
+A list goes in UDT blocks the C_RAND counts (Appended UDT Short Data: blocks less one; 1 block holds 3 addresses, 2
+hold 7). The TSCC asks for them with a C_AHOY from TATTSI, Service_Kind registration, Service_Kind_Flag 1. The radio
+sends C_UDTHU (UDT_Format 0001b address, to TATTSI, SF 1, A 0, Pad Nibble 0) and the blocks in the inbound slots
+that follow: octet 0 is 0 (no one-key talkgroup), then the 24-bit addresses, the unused ones ADRNULL (B.3.2). The
+final C_ACKD's Response_Info says which were accepted, bit 6 the first (table 6.10): `reg_tg_ok`. A C_AHOY for the
+list when none was sent, or for a list since changed, gets nothing.
 
 | Answer to the radio's ID | Result |
 |---|---|
@@ -393,7 +406,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | A trunked system in the codeplug, and its screens | codeplug keys for systems |
 | CACH short LC reception | the modem drivers' CACH report |
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
-| Talkgroup lists of more than one group, packet data, short data polling, supplementary data | later |
+| Packet data, short data polling, supplementary data, a list subscription without registering, authentication | later |
 | Data grants, C_MOVE, adjacent sites, power save | later |
 
 ## 11. On the radio

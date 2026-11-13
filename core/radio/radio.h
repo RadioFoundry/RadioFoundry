@@ -252,6 +252,8 @@ typedef struct {
 	uint32_t own_id;
 	uint8_t ax_info;	// Response_Info of the last final acknowledgement (a poll's answer)
 	uint8_t own_status;	// sent in answer to a poll
+	uint8_t reg_tgs;	// talkgroups in the last registration's subscription list (0: none sent)
+	uint8_t reg_tg_ok;	// which the TSCC accepted: bit 6 the first
 	bool st_group;		// the last status heard: to a talkgroup
 	uint8_t st_value;
 	uint32_t st_count, st_src, st_dst, st_ms;

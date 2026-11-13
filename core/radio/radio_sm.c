@@ -2444,6 +2444,8 @@ static void t3_publish(radio_sm_t *sm)
 	v->ax_state = (uint8_t)m->ax.state;
 	v->ax_info = m->ax.info;
 	v->own_status = m->own_status;
+	v->reg_tgs = m->reg_tgs;
+	v->reg_tg_ok = m->reg_tg_ok;
 	v->st_count = m->status_rx.count;
 	v->st_src = m->status_rx.src;
 	v->st_dst = m->status_rx.dst;

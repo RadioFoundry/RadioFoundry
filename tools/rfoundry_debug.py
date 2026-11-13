@@ -2298,7 +2298,9 @@ def main(argv=None):
                    help="T3_OPT_*; default 0x21: listen only (never transmits), private calls")
     p.add_argument("--ctrl", action="append", default=[], metavar="LCN:RX_MHZ:TX_MHZ[:CC]")
     p.add_argument("--chan", action="append", default=[], metavar="LCN:RX_MHZ:TX_MHZ[:CC]")
-    p.add_argument("--tg", action="append", default=[], type=int, help="listen; the first also talks")
+    p.add_argument("--tg", action="append", default=[], type=int,
+                   help="listen; the first also talks. With --opts 0x40 (register with the talkgroup) and two or more, "
+                   "registration subscribes to the first seven as a list")
     p.add_argument("--talk", type=int, default=0)
     p.add_argument("--private", action="store_true")
     p.add_argument("--no-start", action="store_true")
