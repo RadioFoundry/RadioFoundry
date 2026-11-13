@@ -10,12 +10,18 @@ db25dCalTest: $(HERE)db25dCalTest.c $(HERE)../calibration_db25d.c $(HERE)../db25
 		$(ROOT)/platform/hrc7000/dmr_rfburst_timing.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(ROOT)/platform/hrc7000 -I$(dir $<).. -Wshadow -o $@ $(filter %.c,$^)
 
+# Chip identification: register 0 values, positions and batch letters (hardware-db25d.md 4.2)
+TESTS   += db25dChipIdTest
+db25dChipIdTest: $(HERE)db25dChipIdTest.c $(HERE)../rfchip_id_db25d.h
+	$(CC) $(CFLAGS) -I$(dir $<).. -Wshadow -o $@ $<
+
 # The first stage in front of the application (boot/db25d): the stub load, dropped frames, the window, a cold UART.
 # The test includes boot.c
 TESTS   += bootDb25dTest
 bootDb25dTest: $(HERE)bootDb25dTest.c $(ROOT)/boot/db25d/boot.c
 	$(CC) $(CFLAGS) -Wshadow -o $@ $<
 
-run-boards:: db25dCalTest bootDb25dTest
+run-boards:: db25dCalTest db25dChipIdTest bootDb25dTest
 	./db25dCalTest
+	./db25dChipIdTest
 	./bootDb25dTest

@@ -12,6 +12,7 @@ import { equal, sha256, be32, concat } from "../static/js/flasher/bytes.js";
 import { stubImages, univFits, StubError } from "../static/js/flasher/stub.js";
 import * as c7 from "../static/js/flasher/c7000.js";
 import { Usmart, HIJACK, UsmartError, stockVersion, stockName, BUILDS, STUB_WINDOW, stubTarget, UNKNOWN_BUILD } from "../static/js/flasher/usmart.js";
+import { variantCode } from "../static/js/flasher/variant.js";
 import {
 	Iap, iapPlan, readPacket, checkInstallImage as checkInstall, checkRestoreImage as checkRestore, trimTail, erasePacket,
 	IapError,
@@ -38,12 +39,19 @@ test("the DB25-D's data in the flasher tables", () => {
 	assert.deepEqual(FS, { size: 0x1000, head: "2c1101c0" });
 	assert.equal(radio.flash.read_rate, 46000);
 	// every build the stub goes in through is a stock version of the board, by which the page names it; every build
-	// known has its version string inside the application and its RAM copy in the console's RAM
+	// known has its version string inside the application and its RAM copy in the console's RAM, except the 2021
+	// build, which never copies it (the string the console reads is the one in flash, just below its build word)
 	for (const b of BUILDS.filter((x) => x.stub)) assert.equal(stockName(radio.flash, b.name), `909E.DBB.EARSAB.${b.name}`);
 	for (const b of BUILDS) {
 		assert.ok(b.at >= 0x0300C000 && b.at < 0x03090000 && b.at % 4 === 0, b.date);
-		assert.ok(b.ram >= 0x18000000 && b.ram < 0x18001000 && b.ram % 4 === 0, b.date);
+		if (b.date.startsWith("2021")) assert.equal(b.ram, b.at - 4, b.date);
+		else assert.ok(b.ram >= 0x18000000 && b.ram < 0x18001000 && b.ram % 4 === 0, b.date);
 	}
+	// the RT73's build: its version is one the board lists, and its variant code is one the board knows
+	const rt73 = BUILDS.find((b) => b.date === "2021-09-23");
+	assert.equal(stockName(radio.flash, rt73.name), "909E.D4.EARSAB.010");
+	assert.equal(variantCode(radio, "909E.D4.EARSAB.010."), "D4");
+	assert.ok(radio.variants.some((v) => v.code === "D4"));
 	assert.equal(new Set(BUILDS.map((b) => b.date)).size, BUILDS.length);
 	assert.deepEqual(b.stub_board, { id: 3, latch: 45, key: 44, nand: true });
 	assert.deepEqual(b.slot, [0xE8000, 0x100000]);
@@ -261,7 +269,7 @@ test("identify: the stock application's answer to the read-only probe is its ver
 	const um = await iapOn(r.stream).probe(1500);
 	assert.equal(um.version, null);
 	assert.match(um.stock, /909E\.D64\.EARSAB\.018/);
-	const { versionText, variantCode } = await import("../static/js/flasher/variant.js");
+	const { versionText } = await import("../static/js/flasher/variant.js");
 	assert.equal(versionText(radio, um.stock), "909E.D64.EARSAB.018");
 	assert.equal(variantCode(radio, um.stock), "D64");
 	assert.ok(r.events.includes("identify"));

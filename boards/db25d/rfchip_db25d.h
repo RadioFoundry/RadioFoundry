@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D RF chips, whichever the radio has (docs/spec/hardware-db25d.md 4.2, 4.8). One image serves every batch: the
-// main transceiver is a BK4819 (PRO) or an FD6818 (older batches), the LO a BK4819, an FD6818, the 0x7813 part or an
-// AT1141. rfchip_db25d.c reads register 0 of each chip at start-up and drives the pair it finds; radio_db25d.c and
+// main transceiver is a BK4819 (PRO) or an FD6818 or its 0x7813 sibling (older batches), the LO a BK4819, an FD6818,
+// the 0x7813 part or an AT1141. rfchip_db25d.c reads register 0 of each chip at start-up and drives the pair it finds; radio_db25d.c and
 // dmr_db25d.c only call the functions below.
 #ifndef RFCHIP_DB25D_H
 #define RFCHIP_DB25D_H
@@ -19,7 +19,8 @@ void db25d_rf_bus_init(void);
 bool db25d_rf_init(void);
 uint16_t db25d_rf_main_id(void);
 uint16_t db25d_rf_lo_id(void);
-// The batch code the stock firmware shows for this pair ("DBB", "D64", "D66", "D6T"; "D??" for another): out holds 4
+// The batch code the 2022 and later firmware shows for this pair ("DBB", "D64", "D66", "D6T"; the 2021 firmware's
+// "D4" reads as "D64"; "D??" for another): out holds 4
 void db25d_rf_variant(char out[4]);
 uint32_t db25d_rf_writes(void);
 

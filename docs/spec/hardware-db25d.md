@@ -30,7 +30,8 @@ radio or in a datasheet.
 | SoC | One HR_C7000 (CK803S core), marked "HR_C7000 D56323MP1" |
 | Boards (PRO) | Control "CDR300UV-MCU-BT-AI-TDA-1.0", display "C7DR300UV-TFT-51M-FD-2.0", RX "C7DR300UV-RX-BT-AD-3.0", TX "C7DR300UV-TX-RD35-BT-AD-3.5" |
 | One image for every board | The firmware identifies both RF chips at boot (section 4.2) and writes two letters after the "D" of its version string |
-| Batch codes | D64, D66, D6T: FD6818 main transceiver (2021-2023), LO 0x7813, FD6818 or AT1141 (4.8). **DBB: two BK4819, the PRO** |
+| Batch codes | D64, D66, D6T: FD6818 main transceiver (2021-2023), LO 0x7813, FD6818 or AT1141 (4.8). **DBB: two BK4819, the PRO**. D4: the 2021 firmware's single code (4.8) |
+| Retevis RT73 (version D4) | Runs this firmware line: builds 909E.D4.EARSAB.007 (2021-06-23) and .010 (2021-09-23), "RT73" as the Version screen's model name. Same image format, start-up, pins, RF bus, RF tables, NAND driver and addresses, calibration page, band plan and identify reply as the 2022 builds; only the differences in 4.8, 7.1 and 8.1 (static analysis of the RT73's own firmware files). Untested on an RT73 |
 | Minimum vendor firmware on a PRO | The 2024-05-09 build is the first that knows the BK4819. Older vendor firmware must never be loaded on a PRO |
 
 ## 2. Memory and image
@@ -194,11 +195,16 @@ The firmware reads register 0 of each chip at boot and writes the letters into i
 | Register 0 | Main transceiver (letter) | LO (letter) |
 |---|---|---|
 | 0x6818 (FD6818) | '6' | '6' |
-| 0x7813 (seen only as the LO, 4.8) | '4' | '4' |
+| 0x7813 (4.8; as the main transceiver it gets the FD6818's tables, no such radio seen) | '4' | '4' |
 | 0x1846 | 'A' | - |
 | 0x1100 (AT1141 PLL) | - | 'T' |
 | 0x4819 (BK4819) | 'B' | 'B' |
 | other | soft reset and read again | same |
+
+The 2022 builds detect only the LO (main fixed '6'), the 2023-07-06 build adds the AT1141, the 2024 and later builds
+detect both. The 2021 builds (D4) detect neither: they log both IDs and always drive an FD6818 main and a 0x7813 LO.
+RadioFoundry identifies both chips as the 2024 and later builds do; a main 0x1846 or an unknown ID leaves the radio
+in the unsupported state with nothing written to the RF chips.
 
 ### 4.3 BK4819 registers (address: value, in order)
 
@@ -531,6 +537,7 @@ image (`drivers/rf/fd6818/fd6818sh.c`, `drivers/rf/at1141/at1141.c`): untested o
 | D64 | FD6818 | 0x7813, a part of the FD6818 family (same bus, page select and state register) |
 | D66 | FD6818 | FD6818 |
 | D6T | FD6818 | AT1141 PLL synthesizer |
+| D4 | FD6818 | 0x7813: the 2021 firmware drives this pair unconditionally (below), the later firmware and RadioFoundry name it D64 |
 
 **Main FD6818 registers.** The map is the datasheet's, not the DM-32's (`fd6818.h` drives the part through another
 map, [hardware-dm32.md](hardware-dm32.md) 8). Page select 0x7F (1 = page 1).
@@ -595,6 +602,18 @@ writes 0x3C, 0x3D, 0x40, 0x1A, 0x2A:
 
 FD6818 and 0x7813 LOs end their init with 0x40 = 0, 0x51 = 0x1050, 0x73 = 0x4E52, 0x28 = 0x003F, GPIO3 and GPIO4 low.
 The AT1141's GPIO3 is the same RX band flag. The 2022 builds use 0xC1FE for an LO's output and 0xC3FE for a tone.
+
+**The 2021 firmware (D4).** The Retevis RT73's builds (7.1) write the main FD6818 init, the 0x7813 LO init and its
+section table word for word as the 2022 builds, with no chip detection. They differ in four words:
+
+| Item | 2021 builds | 2023-07-06 build and RadioFoundry |
+|---|---|---|
+| LO output | `03` = 0, 0x81FA (no bit 14) | `03` = 0, 0xC1FA |
+| Analog set | no 0x44 write | 0x44 = 0x4ACC |
+| Digital set | 0x43 = 0x6648, no 0x44, 0x53 = 0x963D | 0x43 = 0x7E48, 0x44 = 0x52CC, 0x53 = 0x957D |
+
+RadioFoundry writes the 2023-07-06 values on a D4 radio too. The DB25-D's 2022-10-26 update package is named
+909E.D4.EARSAB.017, so the later firmware with these values is meant for D4 radios as well (untested on one).
 
 **Sub-audio detect.** The FD6818 has no found bits in 0x0C. The vendor firmware routes the code stream to GPIO0 (output
 select 5), which reaches PTB27, and decodes it in software. RadioFoundry selects the chip's own compare result instead
@@ -844,7 +863,7 @@ The diagnostics page (`CONFIG_DIAG`) shows the storage on lines 12-15, after the
 
 ### 7.1 Vendor builds and the hardware variant
 
-Every vendor build has the USMART console and the identify handler below. The version string's word in the program flash
+Every build from 2021-09-23 on has the USMART console, and every build the identify handler below. The version string's word in the program flash
 (`at`, four words read through `read_addr` tell the build) and its RAM copy (`ram`, the variant filled in) per build,
 from static analysis of the vendor files:
 
@@ -857,6 +876,8 @@ from static analysis of the vendor files:
 | 018 | 2023-07-06 | 0x03075AAC | 0x18000A74 | 0x54990 (interrupt stack top 0x54190) | 0x55000, 12 KB | 0x18000840 | Offered as a try |
 | 018 | 2022-11-23 | 0x030759EC | 0x18000A64 | 0x554A0 | 0x56000, 8 KB | 0x18000840 | Offered as a try |
 | 017 | 2022-10-21 | 0x030759E8 | 0x18000A60 | 0x553C0 | 0x56000, 8 KB | 0x18000840 | Offered as a try |
+| 010 (RT73) | 2021-09-23 | 0x0307AA94 | none: the string at 0x0307AA90 in the program flash is never copied | 0x55330 (interrupt stack top 0x54B30) | 0x56000, 8 KB | 0x18000840 | Offered as a try |
+| 007 (RT73) | 2021-06-23 | | | | | | No console: the IAP loader only |
 | Unknown | | | found in 0x18000A00-0x18000BFF | | 0x56000, 8 KB | 0x18000848 | Offered as a try |
 
 The heap is the 2 KB above the interrupt stack, which sits above `.bss`; the RTOS task stacks are static in `.bss`.
@@ -871,7 +892,8 @@ static analysis; UART DMA set up at run time was not traced.
 |---|---|
 | Version in RAM | The `.data` copy of the version string. The boot code finds its first `.` and writes the main chip's letter 2 bytes after it and the LO's 3 bytes after it (4.2). Six words cover the string and its terminator |
 | Identify | The vendor programming software sends `Flash Read ` + u32 BE 0x3C + u32 BE 0x37 + 12 zero bytes; the IAP probe's 19-byte `Flash Read ` + 0 + 1 has the same prefix. The application answers `  Read_2M_`, a NUL, a few binary bytes, then the RAM version string, its build date and time and `+DRS-300UV+136-480MHZ+`. The loader's answer starts `Read_2M_V1.08B` instead. The screen then shows "Flash Read" and the console stays silent until a power cycle. Read only (measured with the vendor software on a PRO; the reply to the 19-byte form is unverified) |
-| Variants in the registry | `[hardware] variants` in `board.toml`: DBB supported; D64, D66 and D6T run the same image at `testing`: their chips are driven (4.8), untested on a radio |
+| Version in flash (2021) | The 2021 builds hold the finished `909E.D4.EARSAB.0NN.` in the program flash and have no RAM copy; the page reads it there (`ram` in the table) |
+| Variants in the registry | `[hardware] variants` in `board.toml`: DBB supported; D4, D64, D66 and D6T run the same image at `testing`: their chips are driven (4.8), untested on a radio |
 | Web flasher | Console answers on a build with a proven stub load: the variant from `ram`, then the backup and install. Other builds: the variant from `ram`; an unknown build, or a `ram` that doesn't read as a version: found by reading 0x18000A00-0x18000BFF (never the identify, which silences the console). The page then offers three ways: try the stub load anyway (refused before any write unless the build's hijack word, table above, holds an application address; a failure is reported as expected, and a power cycle recovers it), update the vendor firmware to a proven build first, or install through the IAP loader without a backup. A backup made by the try offers its program memory read to the project with a problem report, from the install's check step and the backup task's done screen alike. Console silent: the identify. Only the IAP loader answers: the user picks the variant from the Version screen, or says it can't be read. A variant no image runs stops an install before any write; the backup task goes on, since it only reads |
 
 ## 8. Codec
@@ -907,6 +929,11 @@ the codec is plain code and tables. The 020 build:
 | Code | Another compile: 32 of the 19,144 words match 018's at the same offset. Most 32-byte runs of the 018 code are there, shifted by 0x4F0, 0x430 and other amounts |
 | Code run address | 0x180B8, inferred: the RAM image starts at flash 0x030B9374 (its first 256 bytes are 018's, and occur once), and 020's start-up copy is in the 4 KB the read lacks |
 | Tables | Byte-identical to 018's (same sha256), at flash 0x0307E760 |
+
+The Retevis RT73's two files (2021-06-23 and 2021-09-23) carry a third compile of the codec: 78,424 bytes of code
+(0x13258), the compile of the 2022 builds, with tables byte-identical to 018's. No profile exists for them: the code
+is longer than the window's sizing build (020), and the 2021-06-23 file's tables run below the table window. An RT73
+takes its codec from a supported DB25-D file.
 
 0x180B8 lay inside RadioFoundry's RAM in the layout from before the move. With the codec copied to the board's window (8.3), the
 run address only sets the offset added to the three words its codec map lists. The 020 code is 78,172 bytes, the
@@ -1053,6 +1080,8 @@ carrier: try `DB25D_DMR_TX_INVERT=1`. Low deviation: compare the page's modulati
 | 14 | Answered (4.5): single-point modulation on the TCXO, the per-burst sequence, decoded on the SDR bench; deviation 101 % of nominal | - |
 | 15 | The 020 codec's windows, entry points and a RAM layout for its run address (a separate compile at 0x030C142C, 8.1) | A 020 vendor firmware file, or a read of 0x0300C000-0x0300CFFF |
 | 16 | The FD6818 batches (4.8) on a radio: FM receive and transmit, the PTB27 tone-heard flag, the PA gain from 0x09B, DMR | Yes, a D64, D66 or D6T radio |
+| 17 | A D4 radio (Retevis RT73): its chip IDs (0x6818 and 0x7813 expected), the LO with 0xC1FA, FM and DMR, the key that starts its IAP loader, its cable chip, the .010 console stub load | Yes, an RT73 |
+| 18 | A main transceiver reading 0x1846 (letter 'A' in the 2024 and later builds): no batch with it is known and RadioFoundry doesn't drive it | A radio that reports DA |
 
 ## Receive past the rated bands
 
