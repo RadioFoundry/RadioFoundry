@@ -21,6 +21,7 @@ import { Grid } from "./grid.js";
 import { History } from "./undo.js";
 import { bulkColumns, columns, channelForm, formDialog, membersDialog, refLabel, parseAreaKey } from "./views.js";
 import { openFile, saveBytes, tftpBytes, FileError, imageFrom, saveDraft, loadDraft, clearDraft } from "./files.js";
+import { timestampedName } from "./filename.js";
 import { extensions } from "./extensions.js";
 import "./parts.js";
 import * as diag from "../diag.js";
@@ -459,11 +460,14 @@ function saveFile(kind) {
 	if (errors.length) return say(t("editor.err.fix_first", { n: errors.length }), "bad");
 	const img = encode(S.model);
 	if (kind === "tftp") {
+		// the name stays codeplug.bin: the radio's TFTP server knows the file only under that name, and the
+		// saved message tells the user to send it as curl -T codeplug.bin, so a timestamp here would break the
+		// documented transfer instead of keeping two saves apart
 		download("codeplug.bin", tftpBytes(img, iddbEnd(S.conn?.radio)));
 		say(t("editor.saved_tftp"), "info");
 		return;
 	}
-	download(`${S.fileName || "codeplug"}.bin`, saveBytes(img));
+	download(timestampedName(`${S.fileName || "codeplug"}.bin`), saveBytes(img));
 	S.dirty = false;
 	refresh();
 	draftSoon();
