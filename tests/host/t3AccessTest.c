@@ -1001,7 +1001,7 @@ static void test_broadcast(void)
 static void test_stun(void)
 {
 	t3_ms_t ms;
-	setup(T3_OPT_PRIVATE, true);
+	setup(T3_OPT_PRIVATE | T3_OPT_STUN, true);
 	camp_registered(&ms);
 	t3_csbk_t h = ahoy(T3_SK_SUPPLEMENTARY, false, OWN, T3_ID_STUNI);
 	h.u.ahoy.kind_flag = false;
@@ -1036,6 +1036,82 @@ static void test_stun(void)
 	h = ahoy(T3_SK_SUPPLEMENTARY, false, CALLER, T3_ID_STUNI);
 	rx(&ms, 1, &h);
 	CHECK(!ms.stunned, "another radio's stun");
+}
+
+// Another channel of the system (t3_ms_groups_changed): with T3_OPT_REG_TG the radio registers again with the new
+// talkgroups once they have stayed T3_REG_TG_DELAY_MS (the knob turned through channels registers once); changed during
+// a registration, it registers again after it; without the option nothing is sent
+static void test_groups_changed(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE | T3_OPT_REG_TG, true);
+	cfg.tg[1].flags = 0;
+	camp_registered(&ms);
+	cfg.tg[0].flags = 0;
+	cfg.tg[1].flags = T3_TG_LISTEN | T3_TG_TALK;
+	t3_ms_groups_changed(&ms, T);
+	frames(&ms, 10);
+	CHECK(nsent == 0, "nothing before the delay");
+	t3_ms_groups_changed(&ms, T);		// turned again: the delay starts over
+	frames(&ms, 12);
+	CHECK(nsent == 0, "nothing before the delay from the last change");
+	for (int i = 0; i < 30 && nsent == 0; i++) {
+		frame(&ms);
+	}
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_RAND && sent[0].u.rand.kind == T3_SK_REGISTRATION &&
+	      sent[0].u.rand.extra == (T3_TRG_TALKGROUP << 2) && sent[0].u.rand.dst == TG_B,
+	      "registered again with the new talkgroup (sent %d)", nsent);
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_REG_ACCEPTED, OWN, T3_ID_REGI);
+	rx(&ms, 1, &a);
+	CHECK(ms.reg == T3_REG_OK, "registered");
+
+	// Changed while that registration runs: once it is answered, the radio registers again with the newer
+	nsent = 0;
+	cfg.tg[1].flags = 0;
+	cfg.tg[0].flags = T3_TG_LISTEN | T3_TG_TALK;
+	t3_ms_groups_changed(&ms, T);
+	for (int i = 0; i < 30 && nsent == 0; i++) {
+		frame(&ms);
+	}
+	CHECK(nsent == 1 && sent[0].u.rand.dst == TG_A, "to TG_A");
+	cfg.tg[0].flags = 0;
+	cfg.tg[1].flags = T3_TG_LISTEN | T3_TG_TALK;
+	t3_ms_groups_changed(&ms, T);
+	rx(&ms, 1, &a);
+	CHECK(ms.reg == T3_REG_NEEDED, "the answer to a stale list: needed again (reg %s)", t3_reg_name(ms.reg));
+	for (int i = 0; i < 30 && nsent == 1; i++) {
+		frame(&ms);
+	}
+	CHECK(nsent == 2 && sent[1].u.rand.dst == TG_B, "then to TG_B (sent %d)", nsent);
+
+	// Registered to the system code: the talkgroups are only followed, nothing sent
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+	cfg.tg[0].flags = T3_TG_LISTEN;
+	cfg.tg[1].flags = T3_TG_LISTEN | T3_TG_TALK;
+	t3_ms_groups_changed(&ms, T);
+	frames(&ms, 40);
+	CHECK(nsent == 0 && ms.reg == T3_REG_OK, "without T3_OPT_REG_TG nothing sent");
+}
+
+// Without T3_OPT_STUN (an open system's radios) a stun is answered MSNot_Supported and nothing changes, with K or not
+static void test_stun_off(void)
+{
+	for (int with_k = 0; with_k < 2; with_k++) {
+		t3_ms_t ms;
+		setup(T3_OPT_PRIVATE, true);
+		cfg.auth_key_set = with_k != 0;
+		camp_registered(&ms);
+		nsent = 0;
+		t3_csbk_t h = ahoy(T3_SK_SUPPLEMENTARY, false, OWN, T3_ID_STUNI);
+		h.u.ahoy.kind_flag = false;
+		rx(&ms, 1, &h);
+		frames(&ms, 2);
+		CHECK(!ms.stunned && ms.stuns == 0 && nsent == 1 && sent[0].op == T3_OP_C_ACKU &&
+		      sent[0].u.ack.reason == T3_RC_MS_NOT_SUPPORTED && sent[0].u.ack.dst == T3_ID_STUNI,
+		      "stun refused without the option (K %d)", with_k);
+		CHECK(t3_ms_request(&ms, T, TG_A, true, false), "still calls (K %d)", with_k);
+	}
 }
 
 // Authentication (6.4.8): a challenge during registration is answered C_ACKU Authentication_Response with the RC4
@@ -1250,7 +1326,7 @@ static void udt_down(t3_ms_t *ms, uint8_t slot, const t3_udt_t *h, const uint8_t
 static void test_acvit(void)
 {
 	t3_ms_t ms;
-	setup(T3_OPT_PRIVATE | T3_OPT_KILL, true);
+	setup(T3_OPT_PRIVATE | T3_OPT_KILL | T3_OPT_STUN, true);
 	cfg.auth_key_set = true;
 	for (int i = 0; i < 16; i++) {
 		cfg.auth_key[i] = (uint8_t)(i + 1);
@@ -2149,6 +2225,8 @@ int main(void)
 	test_ahoy();
 	test_broadcast();
 	test_stun();
+	test_stun_off();
+	test_groups_changed();
 	test_auth();
 	test_interrupt();
 	test_sdpoll();

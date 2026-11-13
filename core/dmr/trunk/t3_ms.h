@@ -57,6 +57,7 @@
 #define T3_OPT_ALS		0x0080	// accept Ambient Listening (6.6.2.6): the radio transmits by itself when called so
 #define T3_OPT_KILL		0x0100	// accept an authenticated kill (6.4.10); the radio keeps it in RAM only
 #define T3_OPT_NO_ROAM		0x0200	// stay on a TSCC whatever its signal: no Vote Now sampling, no leaving a weak one
+#define T3_OPT_STUN		0x0400	// accept a stun or revive (6.4.9): authenticated first with K, else as sent
 
 // Defaults (TS 102 361-4 Annex A ranges in the comments)
 #define T3_AWAKE_MS		2000	// T_Awake, 0.1-60 s: power save, awake this long after traffic for the radio
@@ -77,6 +78,7 @@
 #define T3_NRAND_NE		10	// ... an emergency request
 #define T3_N_MAINT		4	// P_MAINT bursts at the end of a call we end
 #define T3_REG_RETRY_MS		30000	// a registration nobody answered is tried again after this
+#define T3_REG_TG_DELAY_MS	1000	// talkgroups changed: register with them once they stay this long
 #define T3_REPEAT_MS		4000	// a status or short data the same as the last heard this soon is the TSCC's repeat
 #define T3_DENIED_MAX		4	// SYS_AREAs that denied registration (cleared at power on)
 #define T3_ADJ_MAX		4	// adjacent sites' TSCCs (Adjacent_Site, Vote_Now), hunted first
@@ -417,6 +419,7 @@ typedef struct {
 	} vote;
 	uint16_t denied[T3_DENIED_MAX];	// areas, as reg_area, that denied registration, + 1 (0: empty)
 	bool deregistered;		// de-registered: no registration until t3_ms_start
+	bool reg_stale;			// the talkgroups changed during a registration: register again after it
 	uint32_t left_dst;		// a talkgroup call the user left: its late-entry grants don't pull us back (6.6.2.4.1)
 	uint32_t rnd;
 
@@ -480,6 +483,9 @@ void t3_ms_cancel(t3_ms_t *ms, uint32_t now);
 void t3_ms_end_call(t3_ms_t *ms, uint32_t now);
 // Switching off or leaving the system: de-register when registered. True when a de-registration started
 bool t3_ms_deregister(t3_ms_t *ms, uint32_t now);
+// The talkgroups in cfg changed (another channel of the system): with T3_OPT_REG_TG, register with them again once
+// they have stayed T3_REG_TG_DELAY_MS. Otherwise nothing: the new ones are followed and talked to at once
+void t3_ms_groups_changed(t3_ms_t *ms, uint32_t now);
 // May the user talk on the payload channel now (the call is ours or a group call, PTT not disabled)?
 bool t3_ms_can_talk(const t3_ms_t *ms);
 // A talkgroup DGNA assigned (6.6.8)

@@ -880,7 +880,8 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 			break;	// not a registration answer (table 7.41): wait for one, or TNP_Timer
 		}
 		if (svc == T3_SVC_REGISTER) {
-			ms->reg = T3_REG_OK;
+			ms->reg = ms->reg_stale ? T3_REG_NEEDED : T3_REG_OK;	// stale: the list sent is no longer ours
+			ms->reg_stale = false;
 			ms->reg_area = reg_area(ms, ms->syscode);
 			// Reg_Accepted or Reg_Subscription/Attachment: Response_Info says which of a list were taken. Only
 			// the first reg_tgs bits mean anything: all taken is 1111111b however many went (6.4.4.1.13.2)
@@ -1241,6 +1242,10 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 		} else {
 			challenge_tscc(ms, now, slot, T3_ACVIT_KILL);
 		}
+	} else if (to_me && !payload && h->kind == T3_SK_SUPPLEMENTARY && h->src == T3_ID_STUNI &&
+		   !(ms->cfg->opts & T3_OPT_STUN)) {
+		// Stun not accepted (an open system's radios: anyone could send it unauthenticated)
+		answer(ms, slot, false, T3_RC_MS_NOT_SUPPORTED, h->src, false);
 	} else if (to_me && !payload && h->kind == T3_SK_SUPPLEMENTARY && h->src == T3_ID_STUNI &&
 		   ms->cfg->auth_key_set) {
 		// With K the radio authenticates the TSCC first (6.4.9.2.2)
@@ -2371,6 +2376,20 @@ void t3_ms_end_call(t3_ms_t *ms, uint32_t now)
 		ms->left_dst = ms->call.dst;
 	}
 	return_to_tscc(ms, now);
+}
+
+void t3_ms_groups_changed(t3_ms_t *ms, uint32_t now)
+{
+	if (!(ms->cfg->opts & T3_OPT_REG_TG) || ms->deregistered) {
+		return;
+	}
+	if (ms->ax.state != T3_AX_IDLE && ms->ax.svc == T3_SVC_REGISTER) {
+		ms->reg_stale = true;
+	} else if (ms->reg == T3_REG_OK) {
+		ms->reg = T3_REG_NEEDED;
+	}
+	// The knob turned through several channels registers once, with the last
+	ms->ax.retry_ms = (now + T3_REG_TG_DELAY_MS) | 1u;
 }
 
 bool t3_ms_deregister(t3_ms_t *ms, uint32_t now)
