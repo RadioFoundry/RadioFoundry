@@ -1213,11 +1213,9 @@ bool sct_dmr_field_begin(uint8_t type, uint8_t id, const uint8_t *data, uint8_t 
 
 	lock();
 	sct_pkt_begin(&p, read ? (uint8_t)(type | SCT_TYPE_READ) : type);
-	if (read) {
+	if (read)
 		sct_pkt_add_raw(&p, &id, 1);
-		if (n)			// SCRATCH (never commit): carry read args, e.g. 0x3F READ_MM address
-			sct_pkt_add_raw(&p, data, n);
-	} else
+	else
 		sct_pkt_add(&p, id, data, n);
 	s.field.state = FIELD_WAIT;
 	s.field.id = id;

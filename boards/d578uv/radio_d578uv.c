@@ -2348,9 +2348,6 @@ static void trims_b(void)
 bool d578uv_chip_reg(uint8_t chip, uint8_t pg, uint8_t reg, uint32_t *val, bool write)
 {
 #if CONFIG_DMR
-	if (chip == 0x7F) {	// SCRATCH (never commit): raw SCT read via chip 0x7F; *val in = 16-bit arg, out = reply word
-		return d578uv_modem_raw_read(pg, reg, (uint16_t)*val, val);
-	}
 	if (chip == 5) {
 		return d578uv_modem_field(pg, reg, val, write);
 	}

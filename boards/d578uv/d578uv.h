@@ -158,7 +158,6 @@ bool d578uv_modem_booting(void);		// board_t.boot_busy
 uint8_t d578uv_modem_boot_result(void);		// sct_boot_result_t
 const char *d578uv_modem_codec(void);		// board_t.modem_codec
 bool d578uv_modem_field(uint8_t type, uint8_t id, uint32_t *val, bool write);	// board.chip_reg chip 5
-bool d578uv_modem_raw_read(uint8_t type, uint8_t id, uint16_t arg, uint32_t *val);	// SCRATCH chip 0x7F raw SCT read (never commit)
 // Side A's carrier in DMR, each status poll: tells the baseband when one comes up and when it goes (CARRIER_READY)
 void d578uv_modem_carrier(bool carrier);
 // The burst line's level changes seen while keyed (sct_dmr_port_t.burst_edges)

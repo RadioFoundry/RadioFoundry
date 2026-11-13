@@ -427,35 +427,6 @@ bool d578uv_modem_field(uint8_t type, uint8_t id, uint32_t *val, bool write)
 	return false;
 }
 
-// SCRATCH (never commit): raw read of an SCT field that carries a 16-bit argument (0x3F READ_MM, a debug memory
-// peek). Sends TYPE|READ, id, arg_hi, arg_lo; returns the reply's data assembled MSB-first. Reached via chip 0x7F in
-// d578uv_chip_reg. Needs field_len[0x3F]=2 and the read-arg path in sct_dmr_field_begin.
-bool d578uv_modem_raw_read(uint8_t type, uint8_t id, uint16_t arg, uint32_t *val)
-{
-	uint8_t req[2] = { (uint8_t)(arg >> 8), (uint8_t)arg };
-	uint8_t d[4], n = 0;
-
-	if (!booted)
-		return false;
-	if (!sct_dmr_field_begin(type, id, req, 2, true))
-		return false;
-	for (int t = 0; t < FIELD_WAIT_MS; t += 2) {
-		int r = sct_dmr_field_poll(d, &n);
-
-		if (r < 0)
-			return false;
-		if (r > 0) {
-			*val = 0;
-			for (uint8_t i = 0; i < n; i++)
-				*val = (*val << 8) | d[i];
-			return true;
-		}
-		vTaskDelay(pdMS_TO_TICKS(2));
-	}
-	sct_dmr_field_cancel();
-	return false;
-}
-
 bool d578uv_modem_init(void)
 {
 	sct_dmr_init(&port);
