@@ -36,8 +36,8 @@ stored: **an FM channel or the VFO tuned inside 108-137 MHz is received in AM** 
 most radios with an air band behave, it needs no CPS change, and qdmr can program air channels today (as FM
 channels in that range). The band is an ITU allocation, the same everywhere, so the range is a core constant
 (`RADIO_AM_LO_HZ` / `RADIO_AM_HI_HZ` in `core/radio/radio_am.h`), not a board value. A DMR channel in the range is
-received in AM too: `tune()` sets `view.ch.mode` to FM in the air band and the broadcast range (`listen_band()` in
-`radio_sm.c`), the VFO's own mode with it, and RREQ_MODE refuses DMR there. The codeplug keeps the stored mode. Against a stored AM flag: it would need the native codeplug first, and an AM
+received in AM too: `tune()` sets `view.ch.mode` to FM in the air band and the broadcast range (`radio_listen_band()` in
+`core/radio/radio_bands.h`), the VFO's own mode with it, and RREQ_MODE refuses DMR there. The codeplug keeps the stored mode. Against a stored AM flag: it would need the native codeplug first, and an AM
 channel outside the air band has no use on these radios.
 
 The Codeplug Editor follows the same rule (`listenBand()` in `site/static/js/codeplug/model.js`, with the air band and
@@ -55,7 +55,7 @@ radio uses, and the Problems list warns about a DMR channel there or a TX freque
 | Sub-audio | ignored in AM (`tone_needed()` is false, the tone counts as heard) |
 | Steps | `radio_req_vfo_step_size()` (RREQ_VFO_STEP_SIZE, stored in `settings_t.vfo_step_hz`; 0 is auto, the default: 25 kHz at width 25K or in AM, else `RADIO_VFO_STEP_HZ`, recomputed on every view change, with `view.vfo_step_auto` set; Settings › Talk › VFO step); 8333 means the exact 8.33 kHz grid (n x 25/3 kHz, `radio_am_step()` snaps and steps without drift); 25 kHz is a plain step |
 | Band table | the board lists the air band as an RX-only band ({108000000, 136000000, false} after the VHF TX band) |
-| Saving | the channel editor makes a copy whose RX lands in an RX-only band of the table (New from current, a typed RX) RX only and FM, so it saves as is; a DMR copy there is refused ("Receive only band: set FM"). The codeplug stores it as an FM channel |
+| Saving | the channel editor makes a copy whose RX lands in an RX-only band of the table (New from current, a typed RX) RX only, and FM in a listen band (the air band on a radio with AM receive, the broadcast receiver's range), so it saves as is; a DMR copy in a listen band is refused ("Receive only band: set FM"). In another receive-only band a DMR copy stays DMR, RX only ([ui.md](ui.md) 2.1). The codeplug stores a listen band's channel as an FM channel |
 | Mode tile | DMR is refused: "AM only in the air band" |
 | Screen | "AM" in place of "FM" for the mode on Home, in the strip, on the mode tile and in the channel list. Home's chips are "Air Band AM" and the squelch level (no tone, width or power). PTT shows "Air band: receive only" |
 
