@@ -481,6 +481,21 @@ A call the radio asks for can be answered with a UDT download instead (6.6.1.3, 
 radio, from MSI, GPI or DIVERTI, Address format. The request ends `diverted` and the view shows the new destination
 (`divert_to`, `divert_group`). The radio doesn't call it by itself.
 
+### 7.16 Ambient Listening (ALS, 6.6.2.6)
+
+The radio answers ALS only with `T3_OPT_ALS`: it then transmits with no one at the PTT.
+
+| Step | The radio |
+|---|---|
+| C_AHOY, individual voice, ALS_SERV 1, to the radio | C_ACKU Message_Accepted (0x60); without `T3_OPT_ALS`, C_NACKU MSNot_Supported (table 6.47). Starts T_ALS_REQUEST_LIFE_SPAN (5 s) |
+| PV_GRANT from the same caller to the radio before it runs out | an ALS call: keys at once, for T_ALS (default 30 s), or T_ALS_E (60 s) when the grant has Emergency set |
+| T_ALS over | unkeys (terminator with LC), then N_Maint P_MAINT (DISCON) and back to the TSCC |
+| A grant after the life span, or from another caller | an ordinary private call |
+
+Asking for one: a C_RAND for an individual voice call with ALS_SERV set (table 6.40). The radio listens on the grant.
+The view shows `call_als` and `als_calls`. Payload interrupt of an ALS call (6.6.2.6.6) and the ALS de-key status 123
+(6.4.14.3.4) are not done.
+
 ## 8. Timers and constants
 
 | Name | Value | Standard range (Annex A) |

@@ -1167,6 +1167,84 @@ static void test_power_save(void)
 
 static void udt_down(t3_ms_t *ms, uint8_t slot, const t3_udt_t *h, const uint8_t *data, uint8_t len, bool corrupt);
 
+// Ambient Listening (6.6.2.6): the ALS radio check is accepted with Message_Accepted (only with T3_OPT_ALS, else
+// MSNot_Supported); the caller's private grant in T_ALS_REQUEST_LIFE_SPAN is an ALS call the radio transmits on until
+// T_ALS; late, or from someone else, it is an ordinary call. Asking for one sets ALS_SERV in the C_RAND
+static void test_als(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+	nsent = 0;
+	t3_csbk_t h = ahoy(T3_SK_IND_VOICE, false, OWN, CALLER);
+	h.u.ahoy.als = true;
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_NOT_SUPPORTED &&
+	      sent[0].u.ack.dst == CALLER, "ALS off: not supported");
+
+	setup(T3_OPT_PRIVATE | T3_OPT_ALS, true);
+	cfg.als_s = 12;
+	camp_registered(&ms);
+	nsent = 0;
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent[0].u.ack.reason == T3_RC_MESSAGE_ACCEPTED, "ALS radio check accepted: 0x%02x",
+	      sent[0].u.ack.reason);
+	t3_csbk_t g = grant(T3_OP_PV_GRANT, 159, 1, OWN, CALLER);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && ms.call.als && ms.als_calls == 1, "the grant is an ALS call");
+	frames(&ms, 2);
+	CHECK(t3_ms_als_tx(&ms, T) && !t3_ms_als_over(&ms, T), "transmit");
+	uint32_t at = ms.call.als_end;
+	CHECK(at - ms.call.start_ms == 12000u, "T_ALS from the config");
+	CHECK(!t3_ms_als_tx(&ms, at) && t3_ms_als_over(&ms, at), "T_ALS over");
+	t3_ms_end_call(&ms, at);
+	frames(&ms, 12);
+	CHECK(ms.state == T3_CAMPED, "the radio ended it");
+
+	// Too late: an ordinary private call
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	frames(&ms, T3_ALS_REQUEST_MS / 60u + 2u);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && !ms.call.als && !t3_ms_als_tx(&ms, T), "after the life span: not ALS: state %d als %d sent %d ax %d", ms.state, ms.call.als, nsent, ms.ax.state);
+	frames(&ms, 2);
+	t3_ms_end_call(&ms, T);
+	frames(&ms, 12);
+	// From another caller: not ALS
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	g = grant(T3_OP_PV_GRANT, 159, 2, OWN, CALLER + 1u);	// not the call just left (T3_REGRANT_MS)
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && !ms.call.als, "another caller: not ALS: state %d als %d", ms.state, ms.call.als);
+	frames(&ms, 2);
+	t3_ms_end_call(&ms, T);
+	frames(&ms, 12);
+
+	// An emergency one: T_ALS_E
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	g = grant(T3_OP_PV_GRANT, 159, 1, OWN, CALLER);
+	g.u.grant.emergency = true;
+	rx(&ms, 1, &g);
+	CHECK(ms.call.als && ms.call.als_end - ms.call.start_ms == T3_ALS_E_S * 1000u, "T_ALS_E: state %d als %d", ms.state, ms.call.als);
+	frames(&ms, 2);
+	t3_ms_end_call(&ms, T);
+	frames(&ms, 12);
+
+	// Asking: C_RAND individual voice with ALS_SERV
+	nsent = 0;
+	CHECK(t3_ms_request_als(&ms, T, CALLER, false) && sent_rand(&ms), "ALS asked");
+	CHECK(sent[0].u.rand.kind == T3_SK_IND_VOICE && (sent[0].u.rand.extra & 0x2u) && sent[0].u.rand.options == 0,
+	      "ALS_SERV set: extra %u", sent[0].u.rand.extra);
+	t3_csbk_t n = ack(T3_OP_C_ACKD, T3_RC_MS_AWAY, OWN, CALLER);
+	rx(&ms, 1, &n);
+	nsent = 0;
+	CHECK(t3_ms_request(&ms, T, CALLER, false, false) && sent_rand(&ms) && !(sent[0].u.rand.extra & 0x2u),
+	      "an ordinary call has no ALS_SERV");
+}
+
 // Call diversion (6.6.7): set to an MS (C_RAND kind 1000b, DIVONOFF 1, target MSI), the address uploaded when DIVERTI
 // asks (Address format, UDT_DIV, to MSI), accepted; clear (to TSI), clear incoming (to DIVERTI); a call answered with
 // the callee's diverted address ends DIVERTED
@@ -1649,6 +1727,7 @@ int main(void)
 	test_power_save();
 	test_dgna();
 	test_divert();
+	test_als();
 	test_status();
 	test_sdata();
 	test_pdata();

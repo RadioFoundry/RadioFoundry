@@ -270,6 +270,8 @@ typedef struct {
 	uint32_t dgna_onekey, dgna_alias_tg, dgnas;
 	uint32_t divert_to;	// the last call answered diverted (6.6.7.2): its new destination
 	bool divert_group;
+	uint32_t als_calls;	// Ambient Listening calls the radio transmitted on
+	bool call_als;		// the call followed is one
 	bool st_group;		// the last status heard: to a talkgroup
 	uint8_t st_value;
 	uint32_t st_count, st_src, st_dst, st_ms;

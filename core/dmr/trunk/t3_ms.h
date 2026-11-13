@@ -53,6 +53,7 @@
 #define T3_OPT_LEARN_SYSCODE	0x0010	// take the first system heard as ours (model/net unset)
 #define T3_OPT_PRIVATE		0x0020	// follow private calls to the radio's ID (on by default)
 #define T3_OPT_REG_TG		0x0040	// register with the talk group (subscription) rather than the system code
+#define T3_OPT_ALS		0x0080	// accept Ambient Listening (6.6.2.6): the radio transmits by itself when called so
 
 // Defaults (TS 102 361-4 Annex A ranges in the comments)
 #define T3_AWAKE_MS		2000	// T_Awake, 0.1-60 s: power save, awake this long after traffic for the radio
@@ -65,6 +66,9 @@
 #define T3_TRAND_TC_MS		10000	// TRand_TC, 2-60 s: the longest a random access may take
 #define T3_TP_MS		20000	// TP_Timer: after a progress acknowledgement to a call request
 #define T3_TNP_MS		10000	// TNP_Timer: after one to a request without a payload channel
+#define T3_ALS_S		30	// T_ALS (A.1: 10-300 s)
+#define T3_ALS_E_S		60	// T_ALS_E (10-14 400 s)
+#define T3_ALS_REQUEST_MS	5000	// T_ALS_REQUEST_LIFE_SPAN (1-10 s)
 #define T3_NRAND_NR		6	// random access tries, a request
 #define T3_NRAND_NE		10	// ... an emergency request
 #define T3_N_MAINT		4	// P_MAINT bursts at the end of a call we end
@@ -103,6 +107,7 @@ typedef struct {
 	uint32_t psn;
 	uint8_t ps_rq;			// power save asked for at registration (6.4.7, table 6.13): 0 off, 1-7 = 1:2-1:128
 	uint16_t awake_ms;		// T_Awake, 0 = default
+	uint16_t als_s, als_e_s;	// T_ALS, T_ALS_E (A.1), 0 = default
 } t3_cfg_t;
 
 typedef enum {
@@ -183,6 +188,8 @@ typedef struct {
 	uint32_t start_ms;
 	bool ours;		// the radio asked for it (it may talk at once, and ends it with P_MAINT)
 	bool data;		// a packet data call (PD_GRANT, TD_GRANT): the data service has the slot, PTT doesn't
+	bool als;		// an Ambient Listening call to the radio: it transmits until als_end (6.6.2.6.3)
+	uint32_t als_end;
 } t3_call_t;
 
 typedef struct {
@@ -268,6 +275,9 @@ typedef struct {
 	uint16_t dgna_alias[T3_DGNA_ALIAS_MAX];
 	uint8_t dgna_alias_len;
 	uint32_t dgnas;		// DGNA downloads taken
+	// Ambient Listening (6.6.2.6): the radio check accepted, waiting for the private grant until als_until
+	uint32_t als_src, als_until;
+	uint32_t als_calls;	// ALS calls the radio transmitted on
 	uint32_t cleared_ms;	// when the last call was cleared (T3_REGRANT_MS)
 	t3_call_t cleared;
 
@@ -293,6 +303,7 @@ typedef struct {
 		uint32_t div_to;	// T3_SVC_DIVERT set: where to (an MS, or a talkgroup when group)
 		uint32_t divert_to;	// T3_RES_DIVERTED: the address the TSCC gave
 		bool divert_group;
+		bool als;		// T3_SVC_IND_VOICE: Ambient Listening asked for
 	} ax;
 	// The last status heard for the radio, from a C_AHOY to it or to a talkgroup it listens to (6.6.6)
 	struct {
@@ -378,6 +389,12 @@ bool t3_ms_sdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t fo
 bool t3_ms_pdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group);
 // Call diversion (6.6.7). Set: the services (T3_DIV_*) go to an MS or talkgroup from now on. Clear: the services' own
 // diversion ends (incoming false), or every diversion to this radio does (incoming true). False when it can't start
+// Ask to listen to an MS's surroundings (ALS, 6.6.2.6.2): an individual call it transmits on by itself
+bool t3_ms_request_als(t3_ms_t *ms, uint32_t now, uint32_t dst, bool emergency);
+// An ALS call to the radio: transmit now (als_tx); its T_ALS is over and the call ends once the radio is quiet
+// (als_over: the caller sends t3_ms_end_call)
+bool t3_ms_als_tx(const t3_ms_t *ms, uint32_t now);
+bool t3_ms_als_over(const t3_ms_t *ms, uint32_t now);
 bool t3_ms_divert(t3_ms_t *ms, uint32_t now, uint8_t services, uint32_t to, bool group);
 bool t3_ms_divert_clear(t3_ms_t *ms, uint32_t now, uint8_t services, bool incoming);
 // On a packet data payload channel, settled: the data service may send (the caller first, 6.6.3.3)

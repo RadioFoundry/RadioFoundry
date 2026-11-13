@@ -2684,6 +2684,8 @@ static void t3_publish(radio_sm_t *sm)
 	v->dgnas = m->dgnas;
 	v->divert_to = m->ax.divert_to;
 	v->divert_group = m->ax.divert_group;
+	v->als_calls = m->als_calls;
+	v->call_als = m->call.als;
 #if CONFIG_DMR_DATA_CORE && CONFIG_DMR_TRUNK_TX
 	v->pd_wait = data_tx.t3_wait;
 #endif
@@ -2736,6 +2738,8 @@ static void t3_start(radio_sm_t *sm, uint32_t now_ms)
 	sm->view.t3.last_tx_op = 0xFF;
 	sm->t3_on = true;
 	sm->t3_ptt_wait = false;
+	sm->t3_als_keyed = false;
+	sm->t3_als_quiet_ms = 0;
 	sm->t3_talking = false;
 	sm->t3_ticks = dmr_call_ticks(NULL);
 	sm->t3_slot = 0;
@@ -2775,6 +2779,10 @@ static void t3_stop(radio_sm_t *sm, uint32_t now_ms)
 {
 	if (!sm->t3_on) {
 		return;
+	}
+	if (sm->t3_als_keyed) {
+		sm->t3_als_keyed = false;
+		ptt_release(sm, false, now_ms);
 	}
 	t3_leave(sm);
 	// Back to the channel or the VFO the user had
@@ -2817,6 +2825,12 @@ static void t3_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
 		if (sm->t3_on) {
 			const radio_t3_setup_t *st = radio_t3_staged();
 			(void)t3_ms_sdata(&t3m, now_ms, st->sd_dst, st->sd_group, st->sd_format, st->sd_data, st->sd_len);
+		}
+		break;
+	case RADIO_T3_ALS:
+		if (sm->t3_on) {
+			const radio_t3_setup_t *st = radio_t3_staged();
+			(void)t3_ms_request_als(&t3m, now_ms, st->sd_dst, st->sd_group);
 		}
 		break;
 	case RADIO_T3_DIVERT:
@@ -2879,6 +2893,30 @@ static void t3_ptt_up(radio_sm_t *sm, uint32_t now_ms)
 	sm->t3_talking = false;
 	(void)now_ms;
 }
+
+#if CONFIG_DMR_TRUNK_TX
+// An Ambient Listening call to the radio (6.6.2.6.3): it transmits with no one at the PTT until T_ALS, then ends the
+// call (terminator, then P_MAINT). A user's PTT meanwhile is the user's
+static void t3_als_tick(radio_sm_t *sm, uint32_t now_ms)
+{
+	bool want = t3_ms_als_tx(&t3m, now_ms);
+	if (want && !sm->t3_als_keyed && !sm->ptt) {
+		ptt_down(sm, now_ms);
+		sm->t3_als_keyed = sm->ptt;
+		sm->t3_als_quiet_ms = 0;
+	} else if (!want && sm->t3_als_keyed) {
+		sm->t3_als_keyed = false;
+		ptt_release(sm, false, now_ms);
+		sm->t3_als_quiet_ms = now_ms | 1u;
+	}
+	if (sm->t3_als_quiet_ms != 0 && (int32_t)(now_ms - sm->t3_als_quiet_ms) >= 360) {	// quiet may be 1 ms ahead
+		sm->t3_als_quiet_ms = 0;
+		if (t3_ms_als_over(&t3m, now_ms)) {
+			t3_ms_end_call(&t3m, now_ms);
+		}
+	}
+}
+#endif
 
 // Each radio tick while a system is selected: the slots since the last tick, then the engine's actions
 #if CONFIG_DMR_TRUNK_TX && CONFIG_DMR_EMERGENCY
@@ -2953,6 +2991,7 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	t3_emergency_tick(now_ms);
 #endif
 #if CONFIG_DMR_TRUNK_TX
+	t3_als_tick(sm, now_ms);
 	// Our grant came while PTT is held: talk now
 	if (sm->t3_ptt_wait) {
 		if (t3_ms_can_talk(&t3m) && t3m.state == T3_FOLLOW) {

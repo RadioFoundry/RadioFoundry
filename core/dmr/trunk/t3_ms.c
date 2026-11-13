@@ -10,6 +10,12 @@ static bool since(uint32_t now, uint32_t t, uint32_t ms)
 	return (uint32_t)(now - t) >= ms;
 }
 
+// now is earlier than t (wrapping)
+static bool before(uint32_t now, uint32_t t)
+{
+	return (int32_t)(now - t) < 0;
+}
+
 static uint32_t or_default(uint16_t v, uint32_t def)
 {
 	return v != 0 ? v : def;
@@ -381,6 +387,15 @@ static void follow(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_chan_
 	ms->call.start_ms = now;
 	ms->call.ours = is_me(ms, g->src);
 	ms->call.data = p->op == T3_OP_PD_GRANT || p->op == T3_OP_TD_GRANT;
+	// The private grant after an accepted ALS radio check, same caller, in time: an ALS call (6.6.2.6.2)
+	ms->call.als = !group && !ms->call.data && ms->als_until != 0 && before(now, ms->als_until) &&
+		       g->src == ms->als_src && is_me(ms, g->dst);
+	if (ms->call.als) {
+		uint32_t s = g->emergency ? or_default(ms->cfg->als_e_s, T3_ALS_E_S) : or_default(ms->cfg->als_s, T3_ALS_S);
+		ms->call.als_end = now + s * 1000u;
+		ms->als_calls++;
+	}
+	ms->als_until = 0;
 	ms->protect_dis = false;
 	if (g->dst != ms->left_dst || !g->late_entry) {
 		ms->left_dst = 0;
@@ -611,6 +626,7 @@ static void start_access(t3_ms_t *ms, uint32_t now, t3_svc_t svc, uint32_t dst, 
 	ms->ax.svc = svc;
 	ms->ax.dst = dst;
 	ms->ax.emergency = emergency;
+	ms->ax.als = false;
 	// The first slot the TSCC uses; a dedicated TSCC on both slots is reached on TS1
 	ms->ax.slot = (ms->tscc_slots & 1u) || ms->tscc_slots == 0 ? 1 : 2;
 	ms->ax.frames = 0;
@@ -699,8 +715,10 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 				       (is_broadcast(ms, ms->ax.dst) ? T3_SO_BROADCAST : 0));
 		break;
 	case T3_SVC_IND_VOICE:
+		// Table 6.40: SUPED_VAL 0, then ALS_SERV
 		q->kind = T3_SK_IND_VOICE;
 		q->options = ms->ax.emergency ? T3_SO_EMERGENCY : 0;
+		q->extra = ms->ax.als ? 0x2u : 0u;
 		break;
 	case T3_SVC_PDATA:
 		// Table 6.50: single slot, single item, normal priority, no supplementary data
@@ -1072,6 +1090,16 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 		return;		// stunned: no user services to answer for
 	} else if (to_me && !payload && h->kind == T3_SK_CANCEL) {
 		answer(ms, slot, false, T3_RC_MS_ACCEPTED, h->src, false);	// the caller gave up (6.6.1.2.2)
+	} else if (to_me && !payload && h->kind == T3_SK_IND_VOICE && h->als) {
+		// An ALS radio check (table 6.46): Message_Accepted, and a private grant from the same caller within
+		// T_ALS_REQUEST_LIFE_SPAN is an ALS call. Without ALS turned on, not supported (table 6.47)
+		if (!(ms->cfg->opts & T3_OPT_ALS)) {
+			answer(ms, slot, false, T3_RC_MS_NOT_SUPPORTED, h->src, false);
+			return;
+		}
+		ms->als_src = h->src;
+		ms->als_until = (now + T3_ALS_REQUEST_MS) | 1u;
+		answer(ms, slot, false, T3_RC_MESSAGE_ACCEPTED, h->src, false);
 	} else if (to_me && !payload && h->kind == T3_SK_IND_VOICE) {
 		answer(ms, slot, false, T3_RC_MS_ACCEPTED, h->src, false);	// availability check: OACSU
 	} else if (to_me && !payload && h->kind == T3_SK_IND_DATA) {
@@ -1778,6 +1806,29 @@ bool t3_ms_pdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group)
 	start_access(ms, now, T3_SVC_PDATA, dst, false);
 	ms->ax.group = group;
 	return true;
+}
+
+bool t3_ms_request_als(t3_ms_t *ms, uint32_t now, uint32_t dst, bool emergency)
+{
+	if (dst == T3_ID_NULL || dst > T3_ID_USER_MAX || ms->ax.state != T3_AX_IDLE || !may_ask(ms)) {
+		if (dst == T3_ID_NULL || dst > T3_ID_USER_MAX) {
+			ms->ax.result = T3_RES_NOT_ALLOWED;
+		}
+		return false;
+	}
+	start_access(ms, now, T3_SVC_IND_VOICE, dst, emergency);
+	ms->ax.als = true;
+	return true;
+}
+
+bool t3_ms_als_tx(const t3_ms_t *ms, uint32_t now)
+{
+	return ms->call.als && before(now, ms->call.als_end) && t3_ms_can_talk(ms);
+}
+
+bool t3_ms_als_over(const t3_ms_t *ms, uint32_t now)
+{
+	return ms->state == T3_FOLLOW && ms->call.als && !before(now, ms->call.als_end);
 }
 
 bool t3_ms_divert(t3_ms_t *ms, uint32_t now, uint8_t services, uint32_t to, bool group)

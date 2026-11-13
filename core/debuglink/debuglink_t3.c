@@ -156,6 +156,19 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 		memcpy(s->sd_data, a + 6, s->sd_len);
 		radio_req_t3(RADIO_T3_SDATA);
 		break;
+	case DL_T3_ALS:		// to u32, emergency u8, T_ALS s u16, T_ALS_E s u16
+		if (n != 9u || rd32(a) > T3_ID_USER_MAX) {
+			out[0] = DL_ST_BAD_ARG;
+			break;
+		}
+		s->cfg.als_s = rd16(a + 5);
+		s->cfg.als_e_s = rd16(a + 7);
+		if (rd32(a) != 0) {
+			s->sd_dst = rd32(a);
+			s->sd_group = a[4] != 0;
+			radio_req_t3(RADIO_T3_ALS);
+		}
+		break;
 	case DL_T3_DIVERT:	// mode u8, services u8, to u32, group u8
 		if (n != 7u || a[0] > RADIO_T3_DIV_CLEAR_IN || (a[1] & T3_DIV_ALL) == 0 || a[1] > T3_DIV_ALL ||
 		    (a[0] == RADIO_T3_DIV_SET && (rd32(a + 2) == 0 || rd32(a + 2) > T3_ID_USER_MAX))) {
@@ -283,7 +296,8 @@ void debuglink_view_t3_svc(const radio_view_t *v, dl_text_t *t)
 		(unsigned)x->massregs, (unsigned)x->moves);
 	dl_text(t, "t3.ps_rq=%u\nt3.ps_offset=%u\nt3.asleep=%u\nt3.sleeps=%u\n", x->ps_rq, x->ps_offset, x->asleep,
 		(unsigned)x->sleeps);
-	dl_text(t, "t3.divert_to=%u\nt3.divert_group=%u\n", (unsigned)x->divert_to, x->divert_group);
+	dl_text(t, "t3.divert_to=%u\nt3.divert_group=%u\nt3.als_calls=%u\nt3.call_als=%u\n", (unsigned)x->divert_to,
+		x->divert_group, (unsigned)x->als_calls, x->call_als);
 	dl_text(t, "t3.dgnas=%u\nt3.dgna_onekey=%u\nt3.dgna_alias_tg=%u\nt3.dgna=", (unsigned)x->dgnas,
 		(unsigned)x->dgna_onekey, (unsigned)x->dgna_alias_tg);
 	for (uint8_t i = 0; i < x->ndgna && i < RADIO_T3_DGNA; i++) {

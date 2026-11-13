@@ -856,6 +856,7 @@ answers unavailable (3). Each op answers OK or bad argument (2), with no reply b
 | 14 | AUTH | the authentication key K: 16 octets, then the PSN u32 (optional; 0: none); no octets: no key. Write only |
 | 15 | PS | power save: PowerSave_RQ u8 (0 off, 1-7 = 1:2 to 1:128), T_Awake ms u16 (0: default 2 s) |
 | 16 | DIVERT | call diversion: mode u8 (0 clear the radio's own, 1 set, 2 clear every one to the radio), services u8 (8 voice, 4 packet data, 2 short data, 1 status), to u32 (set), group u8 (set: to a talkgroup) |
+| 17 | ALS | Ambient Listening: to u32 (0: set the timers only), emergency u8, T_ALS s u16, T_ALS_E s u16 (0: default; taken at the next start). The radio answers ALS calls only with opts 0x80 (`T3_OPT_ALS`) |
 
 The `t3` view section has the engine's state as the radio core last published it, all keys `t3.`-prefixed: `built`,
 `tx_built`, `on`, `state` (off, hunt, camped, follow), `reg`, `confirmed`, `syscode`, `own_id`, `tscc_lcn`, `rx_hz`,
@@ -869,7 +870,7 @@ The `t3` view section has the engine's state as the radio core last published it
 registration's talkgroup list: how many it sent, and which the site accepted, bit 6 the first), `call_data`
 (the call followed is packet data), `pd_wait` (a data service transmission waits for its data channel), `stunned`,
 `stuns`, `revives` (the stun in force, and the stun and revive commands taken), `auth_key` (the system has K: the
-key itself is never shown), `auths` (challenges answered), `massregs`, `moves` (MassReg broadcasts and C_MOVEs taken), `ps_rq`, `ps_offset` (power save granted; 0 none), `asleep`, `sleeps` (the engine's power save sleep, and how often), `dgnas` (DGNA downloads taken) `dgna` (the assigned talkgroups, comma separated) `dgna_onekey dgna_alias_tg` (0: none), `divert_to divert_group` (where the last call answered `diverted` was sent), `own_status` (the radio's, sent in answer to a poll), and the last status heard (`st_count`,
+key itself is never shown), `auths` (challenges answered), `massregs`, `moves` (MassReg broadcasts and C_MOVEs taken), `ps_rq`, `ps_offset` (power save granted; 0 none), `asleep`, `sleeps` (the engine's power save sleep, and how often), `dgnas` (DGNA downloads taken) `dgna` (the assigned talkgroups, comma separated) `dgna_onekey dgna_alias_tg` (0: none), `divert_to divert_group` (where the last call answered `diverted` was sent), `call_als als_calls` (an ALS call followed, how many), `own_status` (the radio's, sent in answer to a poll), and the last status heard (`st_count`,
 `st_src`, `st_dst`, `st_group`, `st_value`, `st_age_ms`); the last short data heard (`sd_count`, `sd_src`, `sd_dst`,
 `sd_group`, `sd_format`, `sd_len`, `sd_data` in hex, `sd_age_ms`).
 

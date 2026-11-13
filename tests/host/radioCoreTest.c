@@ -5863,6 +5863,49 @@ static void test_t3_broadcast(void)
 	sim.repeater = false;
 }
 
+// An ALS call to the radio (6.6.2.6): the radio check accepted, then on the caller's private grant the radio transmits
+// with no PTT until T_ALS, sends its terminator and P_MAINT, and goes back to the TSCC
+static void test_t3_als(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	radio_t3_staged()->cfg.opts |= T3_OPT_ALS;
+	radio_t3_staged()->cfg.als_s = 2;
+	req(RREQ_T3, RADIO_T3_START);
+	t3_site_run(600);
+	CHECK(sm.view.t3.state == T3_CAMPED);
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_VOICE;
+	h.u.ahoy.als = true;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = 1000001u;
+	unsigned acks = t3_sent(T3_OP_C_ACKU);
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	CHECK(t3_sent(T3_OP_C_ACKU) == acks + 1u);
+	t3_csbk_t g = { .lb = true, .op = T3_OP_PV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = T3_OWN;
+	g.u.grant.src = 1000001u;
+	t3_csbk_rx(&g, 1);
+	run(600);
+	CHECK(sm.view.t3.state == T3_FOLLOW && sm.view.t3.call_als && sm.view.t3.als_calls == 1);
+	CHECK(sm.view.state == RS_TX);
+	unsigned maints = t3_sent(T3_OP_P_MAINT);
+	run(2200);
+	CHECK(sm.view.state != RS_TX);
+	CHECK(t3_sent(T3_OP_P_MAINT) > maints);
+	run(600);
+	CHECK(sm.view.t3.state == T3_CAMPED);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
 static void test_t3_stun(void)
 {
 	dmr_start(true);
@@ -5925,6 +5968,7 @@ int main(void)
 	test_t3_pdata();
 	test_t3_emergency();
 	test_t3_broadcast();
+	test_t3_als();
 	test_t3_stun();
 #endif
 	test_dmr_stalled();
