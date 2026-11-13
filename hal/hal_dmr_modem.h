@@ -93,6 +93,13 @@ typedef struct {
 	bool repeater;		// RMO framing (BS sync expected) vs DMO
 } dmr_config_t;
 
+// Whether a configure with b would change nothing over a: the stack skips it then (a restart loses the sync). A new
+// field above goes in here too
+static inline bool dmr_config_same(const dmr_config_t *a, const dmr_config_t *b)
+{
+	return a->own_id == b->own_id && a->cc == b->cc && a->access == b->access && a->repeater == b->repeater;
+}
+
 typedef struct {
 	uint8_t kind;		// dmr_burst_kind_t
 	uint8_t voice_index;	// voice: 0..5

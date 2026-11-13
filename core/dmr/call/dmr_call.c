@@ -117,8 +117,7 @@ static struct {
 	// repeater outbound
 	uint32_t rpt_last_ms;
 	bool rpt_seen;
-	dmr_config_t mc;	// what the modem was last configured with (mc_ok)
-	bool mc_ok;
+	dmr_config_t mc;	// what the modem was last configured with (set by dmr_call_start, valid while running)
 	uint32_t tick_seen;
 
 	// TX
@@ -1659,11 +1658,9 @@ static void modem_apply(void)
 	modem_config(&mc);
 	// A slot change on the same channel (the other slot of a repeater, a channel's slot setting changed) keeps the
 	// modem's sync: a restart would search again and miss the call's start
-	if (!s.mc_ok || mc.own_id != s.mc.own_id || mc.cc != s.mc.cc || mc.access != s.mc.access ||
-	    mc.repeater != s.mc.repeater) {
+	if (!dmr_config_same(&mc, &s.mc)) {
 		s.modem->configure(&mc);
 		s.mc = mc;
-		s.mc_ok = true;
 	}
 	s.modem->set_cc_filter(mc.cc);
 	s.modem->rx_lock_slot(s.cfg.rmo ? (int8_t)s.cfg.ts : 0);
@@ -1725,7 +1722,6 @@ bool dmr_call_start(void)
 		return false;
 	s.running = true;
 	s.mc = mc;
-	s.mc_ok = true;
 	s.modem->set_cc_filter(mc.cc);
 	s.modem->rx_lock_slot(s.cfg.rmo ? (int8_t)s.cfg.ts : 0);
 	s.dirty = true;

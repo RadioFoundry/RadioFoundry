@@ -35,10 +35,10 @@ Symptom: a voice B reported 12 ms after a header, a header twice 26 ms apart, a 
 ended a call early. Cause: the EMB parsing interrupt (sync class 0, data type 0x0D / 0x0E) and other extra reports
 arrive for the same slot, sometimes with a wrong type. Rule: accept only the first report per slot; drop any report
 within 45 ms of the last one (28 ms when listening to both slots); never map data types 0x0D / 0x0E to voice E / F.
-Exception: an idle burst with BS sync is never a repeat. All idle bursts carry the same bits, and a base station
-carrier idle on both slots sends one every slot; dropping them made the carrier look silent, and a repeater's hang time
-looked like no signal ([modem-hrc6000.md](modem-hrc6000.md)).
 Radios: HR_C6000 confirmed on air; the HR_C7000 hook applies the same 45 ms rule.
+Exception (HR_C6000 / HR_C5000 driver): an idle burst with BS sync is never a repeat. All idle bursts carry the same
+bits, and a base station carrier idle on both slots sends one every slot; dropping them made the carrier look silent,
+and a repeater's hang time looked like no signal ([modem-hrc6000.md](modem-hrc6000.md)).
 
 **1.3 Voice burst numbering lives in the low 3 bits.**
 Symptom: after tightening the voice filter to data types 1-6, no RF voice reached the host at all. Cause: real voice
