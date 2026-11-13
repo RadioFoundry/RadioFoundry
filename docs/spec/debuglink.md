@@ -868,7 +868,7 @@ The `t3` view section has the engine's state as the radio core last published it
 registration's talkgroup list: how many it sent, and which the site accepted, bit 6 the first), `call_data`
 (the call followed is packet data), `pd_wait` (a data service transmission waits for its data channel), `stunned`,
 `stuns`, `revives` (the stun in force, and the stun and revive commands taken), `auth_key` (the system has K: the
-key itself is never shown), `auths` (challenges answered), `massregs`, `moves` (MassReg broadcasts and C_MOVEs taken), `ps_rq`, `ps_offset` (power save granted; 0 none), `asleep`, `sleeps` (the engine's power save sleep, and how often), `own_status` (the radio's, sent in answer to a poll), and the last status heard (`st_count`,
+key itself is never shown), `auths` (challenges answered), `massregs`, `moves` (MassReg broadcasts and C_MOVEs taken), `ps_rq`, `ps_offset` (power save granted; 0 none), `asleep`, `sleeps` (the engine's power save sleep, and how often), `dgnas` (DGNA downloads taken) `dgna` (the assigned talkgroups, comma separated) `dgna_onekey dgna_alias_tg` (0: none), `own_status` (the radio's, sent in answer to a poll), and the last status heard (`st_count`,
 `st_src`, `st_dst`, `st_group`, `st_value`, `st_age_ms`); the last short data heard (`sd_count`, `sd_src`, `sd_dst`,
 `sd_group`, `sd_format`, `sd_len`, `sd_data` in hex, `sd_age_ms`).
 

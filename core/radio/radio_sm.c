@@ -2603,6 +2603,9 @@ static uint32_t t3_base_talk_id(bool *group)
 		return s->talk_id;
 	}
 	*group = true;
+	if (t3m.dgna_onekey != 0) {
+		return t3m.dgna_onekey;	// DGNA's One-key talkgroup (6.6.8.1)
+	}
 	for (uint8_t i = 0; i < s->cfg.ntg; i++) {
 		if (s->cfg.tg[i].flags & T3_TG_TALK) {
 			return s->cfg.tg[i].id;
@@ -2673,6 +2676,12 @@ static void t3_publish(radio_sm_t *sm)
 	v->ps_offset = m->ps_offset;
 	v->asleep = m->asleep;
 	v->sleeps = m->sleeps;
+	_Static_assert(RADIO_T3_DGNA == T3_DGNA_MAX, "the view holds the DGNA list");
+	memcpy(v->dgna, m->dgna, sizeof(v->dgna));
+	v->ndgna = m->ndgna;
+	v->dgna_onekey = m->dgna_onekey;
+	v->dgna_alias_tg = m->dgna_alias_tg;
+	v->dgnas = m->dgnas;
 #if CONFIG_DMR_DATA_CORE && CONFIG_DMR_TRUNK_TX
 	v->pd_wait = data_tx.t3_wait;
 #endif

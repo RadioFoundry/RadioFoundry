@@ -270,6 +270,12 @@ void debuglink_view_t3_svc(const radio_view_t *v, dl_text_t *t)
 		(unsigned)x->massregs, (unsigned)x->moves);
 	dl_text(t, "t3.ps_rq=%u\nt3.ps_offset=%u\nt3.asleep=%u\nt3.sleeps=%u\n", x->ps_rq, x->ps_offset, x->asleep,
 		(unsigned)x->sleeps);
+	dl_text(t, "t3.dgnas=%u\nt3.dgna_onekey=%u\nt3.dgna_alias_tg=%u\nt3.dgna=", (unsigned)x->dgnas,
+		(unsigned)x->dgna_onekey, (unsigned)x->dgna_alias_tg);
+	for (uint8_t i = 0; i < x->ndgna && i < RADIO_T3_DGNA; i++) {
+		dl_text(t, i ? ",%u" : "%u", (unsigned)x->dgna[i]);
+	}
+	dl_text(t, "\n");
 	// The last short data heard: its octets in hex (sd_data), the format to read them by
 	char sd[2 * sizeof(x->sd_data) + 1];
 	uint8_t len = x->sd_len < sizeof(x->sd_data) ? x->sd_len : (uint8_t)sizeof(x->sd_data);

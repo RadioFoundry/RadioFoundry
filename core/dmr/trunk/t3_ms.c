@@ -293,7 +293,20 @@ bool t3_ms_wants_group(const t3_ms_t *ms, uint32_t tg, bool emergency)
 			return true;
 		}
 	}
-	return false;
+	return t3_ms_is_dgna(ms, tg);
+}
+
+bool t3_ms_is_dgna(const t3_ms_t *ms, uint32_t tg)
+{
+	if (tg == T3_ID_NULL) {
+		return false;
+	}
+	for (uint8_t i = 0; i < ms->ndgna; i++) {
+		if (ms->dgna[i] == tg) {
+			return true;
+		}
+	}
+	return tg == ms->dgna_alias_tg;
 }
 
 static bool wants_grant(const t3_ms_t *ms, const t3_csbk_t *p, bool *group)
@@ -1305,10 +1318,91 @@ static bool cc_ok(const t3_ms_t *ms, uint8_t cc)
 
 // A UDT short data message whole (6.6.4.7): kept when it is to the radio or a talkgroup it listens to; one to the
 // radio that asks for a response is answered MS_Accepted. A bad CRC gets no answer: the TSCC sends it again
+static uint32_t addr24(const uint8_t *d)
+{
+	return ((uint32_t)d[0] << 16) | ((uint32_t)d[1] << 8) | d[2];
+}
+
+// A DGNA download to the radio (6.6.8): DGNA_Address mode replaces the list of up to 15 (ADRNULL: none; all ADRNULL
+// deletes them); bit 0 of octet 0 (OK) makes ADDRESS1 the One-key talkgroup. DGNA_Alias mode names a talkgroup of
+// the list, or sets the 16th (ADRNULL with no characters deletes it). Answered MS_Accepted when asked
+static void dgna_done(t3_ms_t *ms, const t3_udt_t *h, uint8_t slot)
+{
+	const uint8_t *d = &ms->udt_rx.blk[0][0];
+	uint8_t room = (uint8_t)(h->blocks * T3_UDT_BLOCK - 2u);
+	bool ok = (d[0] & 1u) != 0;
+	if (h->format == T3_UDTF_ADDRESS) {
+		uint32_t old_onekey = ms->dgna_onekey;
+		bool onekey_listed = false;
+		ms->ndgna = 0;
+		for (uint8_t o = 1; o + 3u <= room && ms->ndgna < T3_DGNA_MAX; o = (uint8_t)(o + 3u)) {
+			uint32_t a = addr24(d + o);
+			if (a != T3_ID_NULL) {
+				ms->dgna[ms->ndgna++] = a;
+				onekey_listed |= a == old_onekey;
+			}
+		}
+		if (ok && addr24(d + 1) != T3_ID_NULL) {
+			ms->dgna_onekey = addr24(d + 1);
+		} else if (!onekey_listed && old_onekey != ms->dgna_alias_tg) {
+			ms->dgna_onekey = 0;	// it was one of the old list
+		}
+	} else if (h->format == T3_UDTF_DGNA_ALIAS) {
+		uint32_t a = addr24(d + 1);
+		uint8_t pad = (uint8_t)(h->pad / 2u);
+		uint8_t len = room > 4u + pad ? (uint8_t)((room - 4u - pad) / 2u) : 0u;
+		if (len > T3_DGNA_ALIAS_MAX) {
+			len = T3_DGNA_ALIAS_MAX;
+		}
+		if (a == T3_ID_NULL) {
+			if (ms->dgna_onekey == ms->dgna_alias_tg) {
+				ms->dgna_onekey = 0;
+			}
+			ms->dgna_alias_tg = 0;
+			ms->dgna_named = 0;
+			ms->dgna_alias_len = 0;
+		} else {
+			bool listed = false;
+			for (uint8_t i = 0; i < ms->ndgna; i++) {
+				listed |= ms->dgna[i] == a;
+			}
+			if (!listed) {
+				ms->dgna_alias_tg = a;
+			}
+			ms->dgna_named = a;
+			ms->dgna_alias_len = len;
+			for (uint8_t i = 0; i < len; i++) {
+				ms->dgna_alias[i] = (uint16_t)((d[4u + 2u * i] << 8) | d[5u + 2u * i]);
+			}
+			if (ok) {
+				ms->dgna_onekey = a;
+			}
+		}
+	} else {
+		return;
+	}
+	ms->dgnas++;
+	if (h->a && may_send(ms)) {
+		answer(ms, slot, false, T3_RC_MS_ACCEPTED, h->src, false);
+	}
+}
+
 static void udt_done(t3_ms_t *ms, uint32_t now, uint8_t slot)
 {
 	const t3_udt_t *h = &ms->udt_rx.h;
 	bool to_me = !h->group && is_me(ms, h->dst);
+	if (h->op == T3_OP_C_DGNAHD) {
+		if (!to_me || ms->stunned) {
+			return;
+		}
+		if (!t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])ms->udt_rx.blk, h->blocks)) {
+			ms->st.crc_bad++;
+			return;
+		}
+		ps_wake(ms, now);
+		dgna_done(ms, h, slot);
+		return;
+	}
 	if (ms->stunned || h->op != T3_OP_C_UDTHD || h->sf ||
 	    (!to_me && !(h->group && t3_ms_wants_group(ms, h->dst, false)))) {
 		return;

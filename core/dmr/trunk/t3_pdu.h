@@ -24,6 +24,7 @@
 // CSBK opcodes (Annex B.1)
 #define T3_OP_C_ALOHA		25
 #define T3_OP_C_UDTHD		26
+#define T3_OP_C_DGNAHD		36	// the UDT header of a DGNA download (6.6.8.2.2)
 #define T3_OP_C_UDTHU		27
 #define T3_OP_C_AHOY		28	// P_AHOY on a payload channel
 #define T3_OP_C_ACKVIT		30
@@ -324,9 +325,10 @@ uint32_t t3_sysparms_build(const t3_sysparms_t *in);
 #define T3_UDTF_NMEA		0x5
 #define T3_UDTF_IP		0x6
 #define T3_UDTF_UTF16		0x7
+#define T3_UDTF_DGNA_ALIAS	0xA	// DGNA_Alias mode: the mixed format (B.3.9)
 
 typedef struct {
-	uint8_t op;		// T3_OP_C_UDTHD (outbound) or T3_OP_C_UDTHU (inbound)
+	uint8_t op;		// T3_OP_C_UDTHD, T3_OP_C_DGNAHD (outbound) or T3_OP_C_UDTHU (inbound)
 	bool group;		// G/I: to a talkgroup
 	bool a;			// a response is demanded
 	bool emergency;		// outbound only (inbound: reserved)

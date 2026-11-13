@@ -36,6 +36,8 @@
 #define T3_HUNT_MAX		8	// extra hunt LCNs (Annex D short hunt), resolved through the plan
 #define T3_SITES_MAX		8
 #define T3_TG_MAX		32
+#define T3_DGNA_MAX		15	// DGNA_Address mode talkgroups (6.6.8.1.1)
+#define T3_DGNA_ALIAS_MAX	21	// DGNA_Alias mode characters
 
 // Talkgroup flags
 #define T3_TG_LISTEN		0x01	// follow calls to it
@@ -254,6 +256,16 @@ typedef struct {
 	bool asleep;
 	uint32_t awake_until, csc_ms, ps_tick_ms;
 	uint32_t sleeps;	// times the radio went to sleep
+	// DGNA (6.6.8): talkgroups the system assigned. Heard like the configured ones, never attached (6.4.4.1.13.0).
+	// The alias mode's talkgroup (the 16th, or one of the list named) keeps the latest alias, UTF-16
+	uint32_t dgna[T3_DGNA_MAX];
+	uint8_t ndgna;
+	uint32_t dgna_onekey;	// the One-key talkgroup: PTT talks to it; 0 none
+	uint32_t dgna_alias_tg;	// the 16th talkgroup (alias mode, not one of the list), 0 none
+	uint32_t dgna_named;	// the talkgroup dgna_alias names
+	uint16_t dgna_alias[T3_DGNA_ALIAS_MAX];
+	uint8_t dgna_alias_len;
+	uint32_t dgnas;		// DGNA downloads taken
 	uint32_t cleared_ms;	// when the last call was cleared (T3_REGRANT_MS)
 	t3_call_t cleared;
 
@@ -368,6 +380,8 @@ void t3_ms_end_call(t3_ms_t *ms, uint32_t now);
 bool t3_ms_deregister(t3_ms_t *ms, uint32_t now);
 // May the user talk on the payload channel now (the call is ours or a group call, PTT not disabled)?
 bool t3_ms_can_talk(const t3_ms_t *ms);
+// A talkgroup DGNA assigned (6.6.8)
+bool t3_ms_is_dgna(const t3_ms_t *ms, uint32_t tg);
 // Power save: the receiver may sleep now (t3_ms_poll decides; the radio wakes it the moment this goes false)
 bool t3_ms_asleep(const t3_ms_t *ms);
 const char *t3_res_name(t3_res_t r);

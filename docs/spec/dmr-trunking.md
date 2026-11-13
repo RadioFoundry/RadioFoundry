@@ -455,6 +455,20 @@ Response_Info, masked to PowerSave_RQ bits, is PowerSave_Offset, the wake frame;
 `t3_ms_asleep` is the engine's decision. Switching the receiver off with it needs each board's `rx_sleep` to work on a
 DMR channel; today it works on FM only (section 10).
 
+### 7.14 Dynamic group assignment (DGNA, 6.6.8)
+
+A UDT download with the C_DGNAHD header (opcode 36) to the radio's own ID sets its dynamic talkgroups. One to a
+talkgroup is ignored. The radio answers MS_Accepted when the header asks (A flag).
+
+| UDT_Format | Content | The radio |
+|---|---|---|
+| 0001b (DGNA_Address) | octet 0 bit 0 OK, then up to 15 24-bit addresses (B.3.2) | replaces the list; ADRNULL entries are skipped, all ADRNULL deletes it. OK: ADDRESS1 is the One-key talkgroup |
+| 1010b (DGNA_Alias) | octet 0 bit 0 OK, a 24-bit address, up to 21 UTF-16BE characters (B.3.9) | names a talkgroup of the list, or sets the 16th; ADRNULL deletes the 16th. OK: the address is the One-key talkgroup |
+
+DGNA talkgroups are heard like the configured ones and never attached (6.4.4.1.13.0). PTT talks to the One-key
+talkgroup when the system has no talk ID of its own. The list lives in RAM: a restart or another system clears it.
+The radio keeps one alias, the latest.
+
 ## 8. Timers and constants
 
 | Name | Value | Standard range (Annex A) |

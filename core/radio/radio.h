@@ -223,6 +223,7 @@ typedef struct {
 
 #if CONFIG_DMR_TRUNK
 // A DMR Tier III trunked system (docs/spec/dmr-trunking.md 11) for the screens and the debug link
+#define RADIO_T3_DGNA	15	// T3_DGNA_MAX
 typedef struct {
 	bool on;		// a trunked system is selected
 	uint8_t state;		// t3_state_t
@@ -264,6 +265,9 @@ typedef struct {
 	uint8_t ps_rq, ps_offset;	// power save granted (0: none)
 	bool asleep;
 	uint32_t sleeps;
+	uint32_t dgna[RADIO_T3_DGNA];	// DGNA (6.6.8): the list, the One-key, the alias mode's 16th
+	uint8_t ndgna;
+	uint32_t dgna_onekey, dgna_alias_tg, dgnas;
 	bool st_group;		// the last status heard: to a talkgroup
 	uint8_t st_value;
 	uint32_t st_count, st_src, st_dst, st_ms;

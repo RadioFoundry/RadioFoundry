@@ -452,7 +452,7 @@ bool t3_udt_parse(const uint8_t in[T3_CSBK_BYTES], t3_udt_t *h)
 		return false;
 	}
 	uint8_t op = in[9] & 0x3Fu;
-	if (op != T3_OP_C_UDTHD && op != T3_OP_C_UDTHU) {
+	if (op != T3_OP_C_UDTHD && op != T3_OP_C_UDTHU && op != T3_OP_C_DGNAHD) {
 		return false;
 	}
 	h->op = op;

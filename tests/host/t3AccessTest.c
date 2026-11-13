@@ -1165,6 +1165,63 @@ static void test_power_save(void)
 	CHECK(ms.reg == T3_REG_OK && ms.ps_offset == 0 && ms.sleeps == 0, "offset 0: never asleep");
 }
 
+static void udt_down(t3_ms_t *ms, uint8_t slot, const t3_udt_t *h, const uint8_t *data, uint8_t len, bool corrupt);
+
+// DGNA (6.6.8): a C_DGNAHD download to the radio sets its dynamic talkgroups (address mode, One-key flag), names one
+// or adds the 16th (alias mode), deletes them; it is answered MS_Accepted and a DGNA talkgroup's call is followed
+static void test_dgna(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+	t3_udt_t u = { .op = T3_OP_C_DGNAHD, .a = true, .format = T3_UDTF_ADDRESS, .dst = OWN, .src = 0xFFFED2u };
+	uint8_t d[10] = { 1, 0, 0x01, 0xF4, 0, 0x01, 0xF5, 0, 0, 0 };	// OK, 500, 501, ADRNULL
+	nsent = 0;
+	udt_down(&ms, 1, &u, d, sizeof(d), false);
+	frames(&ms, 2);
+	CHECK(ms.ndgna == 2 && ms.dgna[0] == 500 && ms.dgna[1] == 501 && ms.dgna_onekey == 500 && ms.dgnas == 1,
+	      "address mode: %u talkgroups, One-key %u", ms.ndgna, (unsigned)ms.dgna_onekey);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_ACCEPTED, "answered");
+	CHECK(t3_ms_wants_group(&ms, 501, false) && !t3_ms_wants_group(&ms, 502, false), "DGNA groups heard");
+	t3_csbk_t g = grant(T3_OP_TV_GRANT, 159, 1, 501, 1234u);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && ms.call.dst == 501, "a DGNA group's call followed");
+	frames(&ms, 2);
+	t3_csbk_t c = { .lb = true, .op = T3_OP_P_CLEAR };
+	c.u.clear.group = true;
+	c.u.clear.dst = 501;
+	rx(&ms, 1, &c);
+	frames(&ms, 3);
+	CHECK(ms.state == T3_CAMPED, "back");
+
+	// Alias mode: the 16th talkgroup with "Ops"
+	u.format = T3_UDTF_DGNA_ALIAS;
+	uint8_t al[10] = { 0, 0, 0x03, 0x09, 0, 'O', 0, 'p', 0, 's' };	// 777
+	udt_down(&ms, 1, &u, al, sizeof(al), false);
+	CHECK(ms.dgna_alias_tg == 777 && ms.dgna_named == 777 && ms.dgna_alias_len == 3 && ms.dgna_alias[2] == 's' &&
+	      ms.dgna_onekey == 500 && t3_ms_wants_group(&ms, 777, false), "alias mode: the 16th, len %u",
+	      ms.dgna_alias_len);
+	// Naming one of the list keeps the 16th
+	al[2] = 0x01;
+	al[3] = 0xF5;
+	udt_down(&ms, 1, &u, al, sizeof(al), false);
+	CHECK(ms.dgna_alias_tg == 777 && ms.dgna_named == 501, "alias names 501");
+
+	// To a talkgroup: not a DGNA for the radio
+	u.format = T3_UDTF_ADDRESS;
+	u.group = true;
+	u.dst = TG_A;
+	uint8_t none[10] = { 0 };
+	udt_down(&ms, 1, &u, none, sizeof(none), false);
+	CHECK(ms.ndgna == 2, "group-addressed ignored");
+	// Delete all of the list
+	u.group = false;
+	u.dst = OWN;
+	udt_down(&ms, 1, &u, none, sizeof(none), false);
+	CHECK(ms.ndgna == 0 && ms.dgna_onekey == 0 && ms.dgna_alias_tg == 777 && !t3_ms_wants_group(&ms, 500, false),
+	      "list deleted");
+}
+
 static void test_status(void)
 {
 	t3_ms_t ms;
@@ -1511,6 +1568,7 @@ int main(void)
 	test_mass_reg();
 	test_move();
 	test_power_save();
+	test_dgna();
 	test_status();
 	test_sdata();
 	test_pdata();
