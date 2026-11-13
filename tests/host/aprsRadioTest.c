@@ -591,8 +591,10 @@ static void test_dual_watch_beacon(void)
 	CHECK(wait_start(1, 5000));
 	CHECK(sm.scan.kind == SCAN_DUAL && hw.tx_hz == APRS_HZ && hw.starts == 1);
 	wait_idle();
-	CHECK(sm.scan.kind == SCAN_DUAL && sm.scan.phase == SCAN_PH_RESUME &&
+	CHECK(sm.scan.kind == SCAN_DUAL && sm.scan.phase == SCAN_PH_LISTEN &&
 	      sm.dual_at == 1 && hw.rx_hz == CH2_HZ && !hw.keyed);
+	run(RADIO_SCAN_DWELL_MS + RADIO_POLL_MS);
+	CHECK(sm.dual_at == 0 && hw.rx_hz == CH_HZ);
 	run(5000);
 	CHECK(sm.scan.kind == SCAN_DUAL && sm.scan.steps > steps);
 	// PTT still uses the selected channel after a beacon interrupted the watch.
@@ -631,8 +633,28 @@ static void test_dual_receiver_beacon(void)
 	CHECK(wait_start(1, 5000));
 	CHECK(!sm.rx2_on && other_rx.stops == 1 && hw.tx_hz == APRS_HZ);
 	wait_idle();
-	CHECK(sm.scan.kind == SCAN_DUAL && sm.rx2_on && other_rx.tunes == tunes + 1 &&
+	CHECK(sm.scan.kind == SCAN_DUAL && sm.scan.phase == SCAN_PH_LISTEN && sm.rx2_on && other_rx.tunes == tunes + 1 &&
 	      other_rx.hz == CH2_HZ && hw.rx_hz == CH_HZ);
+}
+
+static void test_dual_watch_beacon_abort(void)
+{
+	reset();
+	zone.count = 2;
+	zone.channels[1] = 2;
+	radio_sm_init(&sm, now);
+	aprs_set_test_call("N0TST");
+	configure(0, false);
+	radio_req_t watch = { RREQ_SCAN, RSCAN_DUAL, 1 };
+	radio_sm_request(&sm, &watch, now);
+	CHECK(aprs_send_now());
+	CHECK(wait_start(1, 5000));
+	uint8_t at = sm.dual_at;
+	req(RREQ_POWER, 1);	// abort without ending the watch or keying PTT
+	CHECK(sm.aprs_phase == 0 && sm.scan.kind == SCAN_DUAL && sm.scan.phase == SCAN_PH_LISTEN && !hw.keyed);
+	CHECK(hw.rx_hz == (at == 0 ? CH_HZ : CH2_HZ));
+	run(RADIO_SCAN_DWELL_MS + RADIO_POLL_MS);
+	CHECK(sm.dual_at != at);
 }
 #endif
 
@@ -1596,6 +1618,7 @@ int main(void)
 #if CONFIG_DUAL_WATCH
 	test_dual_watch_beacon();
 	test_dual_receiver_beacon();
+	test_dual_watch_beacon_abort();
 #endif
 	test_not_amateur();
 	test_manual_and_ptt_trigger();

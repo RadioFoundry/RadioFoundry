@@ -352,11 +352,9 @@ static bool bcast_listening(const radio_sm_t *sm)
 #if CONFIG_APRS_AFSK
 	own_rx = sm->aprs_phase == APRS_RF_OFF;
 #endif
-#if CONFIG_SCAN
 	if (scan_on(&sm->scan)) {
 		return false;
 	}
-#endif
 	return own_rx && sm->view.bcast && !sm->view.bcast_fault;
 #else
 	(void)sm;
@@ -3538,7 +3536,7 @@ static void aprs_rf_end(radio_sm_t *sm, aprs_rf_result_t r, uint32_t now_ms)
 	tune(sm, now_ms);	// the channel again (DMR set up again if it was DMR)
 #if CONFIG_SCAN
 	if (dual_running(sm)) {
-		scan_talked(&sm->scan, now_ms);
+		scan_tuned(&sm->scan, now_ms);
 		scan_publish(sm);
 #if CONFIG_DUAL_WATCH
 		if (board.rx2 != NULL) {
