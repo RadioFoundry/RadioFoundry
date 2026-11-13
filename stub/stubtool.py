@@ -2945,6 +2945,22 @@ def version_board(radio):
     return None
 
 
+def find_running_radio():
+    """The one radio running RadioFoundry: its serial port (1FC9:0094), else udp:ADDR of the one in USB network mode.
+    None when there isn't exactly one."""
+    try:
+        from serial.tools import list_ports
+        ports = [p.device for p in list_ports.comports() if (p.vid, p.pid) == (0x1FC9, 0x0094)]
+    except ImportError:
+        ports = []
+    if not ports:
+        from rfoundry import debuglink
+        ports = debuglink.find_network_radios()
+        if len(ports) == 1:
+            print("the radio is in USB network mode: %s" % ports[0])
+    return ports[0] if len(ports) == 1 else None
+
+
 def find_rfoundry_port():
     """The one serial port with RadioFoundry's USB identity (1FC9:0094), which the STM32 stub also uses"""
     from serial.tools import list_ports
@@ -2957,7 +2973,8 @@ def find_rfoundry_port():
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     ap.add_argument("port", nargs="?", help="serial port or pyserial URL (rfc2217://HOST:PORT), or udp:ADDR[:PORT] for an "
-                    "STM32 radio in USB network mode")
+                    "STM32 radio in USB network mode (then a write ends with --boot reset). With --rfoundry-enter and "
+                    "no PORT: the one radio running RadioFoundry, on serial or in network mode")
     ap.add_argument("--stub-port", metavar="PORT", help="with a udp: port: the serial port the stub comes up on "
                     "(default: the one USB device 1FC9:0094)")
     ap.add_argument("out", nargs="?", help="old form: output file for the memory chosen with --mem")
@@ -3045,8 +3062,12 @@ def main(argv=None):
     if a.self_test:
         import f4stub
         return self_test() | f4stub.self_test()
+    if not a.port and a.rfoundry_enter:
+        a.port = find_running_radio()
     if not a.port:
         ap.error("give PORT")
+    if a.port.startswith("udp:") and (a.write_app or a.write_q128) and not a.boot:
+        a.boot = "reset"	# the radio sits in the stub until reset, and comes back in network mode by itself
     jobs = []                                   # (mem, file, start, end, twice)
     if a.out:
         size = MEM[a.mem][3]

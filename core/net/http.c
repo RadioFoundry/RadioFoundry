@@ -23,6 +23,8 @@
 #include "net/aprsis.h"
 #endif
 #include "ui/ui.h"
+#include "hostlink/hostlink.h"
+#include "dmr/ipGateway.h"
 #if CONFIG_NET_WEBCTL
 #include "net/ws.h"
 #include "net/webctl.h"
@@ -41,6 +43,7 @@
 #define REQ_TIMEOUT_MS	10000u
 #define BMP_HEADER_MAX	118	// file header 14, BITMAPINFOHEADER 40, then 16 palette entries (bpp 4) at most
 #define SHOT_HOLD_MS	1000u	// UI redraws are held while the screen goes out, so it is one frame
+#define USB_SWITCH_MS	500u	// /api/usb: the answer goes out and the connection closes before the link goes away
 
 enum { H_FREE, H_REQ, H_WAIT, H_SEND, H_WS };	// H_WS: webctl.c has the connection
 enum { SRC_NONE, SRC_MEM, SRC_BUF, SRC_BMP };
@@ -71,6 +74,16 @@ static int buf_owner = -1;
 static struct {
 	uint32_t requests, ok, not_found, bad, busy_waits;
 } st;
+#if CONFIG_USB_SERIAL_REQUEST
+static bool usb_serial_due;	// /api/usb?mode=serial was answered: the switch is asked for at usb_serial_at
+static uint32_t usb_serial_at;
+// What a browser tab shows for the moment the request takes: a web page on the host opens it, since it can't send
+// UDP and may not fetch plain http, and the tab closes itself
+static const char usb_serial_page[] =
+	"<!doctype html><meta charset=utf-8><title>RadioFoundry</title>"
+	"<p>The radio's USB is switching to a serial port. You can close this tab."
+	"<script>setTimeout(function(){window.close()},300)</script>";
+#endif
 
 static void put16le(uint8_t *p, uint32_t v)
 {
@@ -463,6 +476,26 @@ static void dispatch(int c)
 		respond(c, 200, "image/bmp", SRC_BMP, NULL, bmp_size());
 		return;
 	}
+#if CONFIG_USB_SERIAL_REQUEST
+	if (strcmp(path, "/api/usb") == 0) {
+		// The USB personality back to serial, for a tool that needs the serial port (docs/spec/usb-network.md 1):
+		// from the host only, and only over the USB network link (not PPP, which is the serial port)
+		if (tcp_remote_ip(c) != ipGatewayHostIP()) {
+			fail(c, 403);
+			return;
+		}
+		if ((query == NULL) || (strcmp(query, "mode=serial") != 0) || !hostlink_network_mode()) {
+			fail(c, 400);
+			return;
+		}
+		if (!h->head) {
+			usb_serial_due = true;
+			usb_serial_at = hal_millis() + USB_SWITCH_MS;
+		}
+		respond(c, 200, "text/html", SRC_MEM, usb_serial_page, sizeof(usb_serial_page) - 1);
+		return;
+	}
+#endif
 	bool status = strcmp(path, "/status") == 0;
 	bool viewp = strcmp(path, "/api/view") == 0;
 #if CONFIG_NET_APRSIS
@@ -700,6 +733,9 @@ void http_start(void)
 {
 	memset(hc, 0, sizeof(hc));
 	buf_owner = -1;
+#if CONFIG_USB_SERIAL_REQUEST
+	usb_serial_due = false;
+#endif
 	tcp_listen(NET_HTTP_PORT, &app);
 }
 
@@ -707,6 +743,12 @@ void http_poll(uint32_t now_ms)
 {
 #if CONFIG_NET_WEBCTL
 	webctl_poll(now_ms);
+#endif
+#if CONFIG_USB_SERIAL_REQUEST
+	if (usb_serial_due && ((int32_t)(now_ms - usb_serial_at) >= 0)) {
+		usb_serial_due = false;
+		hostlink_request_usb_network(false);
+	}
 #endif
 	for (int c = 0; c < TCP_CONNS; c++) {
 		hconn_t *h = &hc[c];

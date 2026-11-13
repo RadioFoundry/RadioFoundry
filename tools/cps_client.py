@@ -11,7 +11,8 @@ docs/spec/cps-protocol.md 2), the way qdmr's open-firmware UV380 driver does it.
   cps_client.py verify image.bin                     read back and compare
   cps_client.py test-channels image.bin              put an FM and a DMR test channel (and a zone) into an image
 
-Transport: the radio's USB serial port (--port, $RFOUNDRY_PORT, or the only 1FC9:0094 device), or a command speaking
+Transport: the radio's USB serial port (--port, $RFOUNDRY_PORT, or the only 1FC9:0094 device), a radio in USB network
+mode over UDP (--port udp:ADDR, or found by itself when it is the only radio), or a command speaking
 the protocol on stdin / stdout (--exec "tests/host/cpsSim --populate", for tests). The DM-32UV and the DB25-D PRO have
 no USB: give the programming cable's port with --port (for example /dev/ttyUSB1; needs pyserial). The DB25-D's image
 sits at the STM32 addresses, so it takes no --offset.
@@ -70,10 +71,22 @@ class CpsError(Exception):
     pass
 
 
+def rfoundry_package():
+    """The rfoundry package's debug link (tools/rfoundry): the UDP transport and the network radio discovery"""
+    pkg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry")
+    if pkg not in sys.path:
+        sys.path.insert(0, pkg)
+    from rfoundry import debuglink
+    return debuglink
+
+
 class SerialTransport:
     def __init__(self, port):
-        import serial  # pyserial
-        self.s = serial.serial_for_url(port, 115200, timeout=0.05)	# a device, or a URL such as rfc2217://host:port
+        if port.startswith("udp:"):	# a radio in USB network mode: the same byte stream on UDP 3334
+            self.s = rfoundry_package().UdpSerial(port[4:])
+        else:
+            import serial  # pyserial
+            self.s = serial.serial_for_url(port, 115200, timeout=0.05)	# a device, or a URL such as rfc2217://host:port
         self.s.reset_input_buffer()
         try:    # an FTDI cable passes received bytes on after 1 ms, not 16 (Linux only)
             self.s.set_low_latency_mode(True)
@@ -553,7 +566,10 @@ def open_cps(port=None, exec_cmd=None, timeout=2.0, offset=0):
         return Cps(ExecTransport(exec_cmd), timeout, offset)
     port = port or os.environ.get("RFOUNDRY_PORT") or find_port()
     if not port:
-        raise CpsError("no radio found (1FC9:0094): give --port")
+        net = rfoundry_package().find_network_radios()	# no serial port: a radio in USB network mode
+        port = net[0] if len(net) == 1 else None
+    if not port:
+        raise CpsError("no radio found (1FC9:0094, or one radio in USB network mode): give --port")
     return Cps(SerialTransport(port), timeout, offset)
 
 

@@ -460,7 +460,7 @@ Flag 1 (offset 0x26):
 | 1 | SFR enabled for this channel (ours) |
 | 0 | Roaming (ours reads it: in a roaming zone, flagged channels narrow the sites to themselves; `dmr-roaming.md` 5.2) |
 
-SFR bytes (ours; the CPS doesn't know them and leaves them as read; they are only read when flag 1 bit 1 is set):
+SFR bytes (ours; the CPS doesn't know them and leaves them as read). The SFR fields are only read when flag 1 bit 1 is set; byte B bit 6 (the tone burst) is read on every channel:
 
 | Byte | Bits | Meaning |
 | --- | --- | --- |
@@ -469,6 +469,7 @@ SFR bytes (ours; the CPS doesn't know them and leaves them as read; they are onl
 | A | 5 | Inbound slot: 1 = TS2, 0 = TS1. The outbound slot is the other one |
 | A | 7-6 | Hang time index: 1 s, 2 s, 4 s, none |
 | B (0x2A) | 7 | Outbound color code set |
+| B | 6 | FM: the 1750 Hz tone burst at each PTT key-up ([radio-features.md](radio-features.md) 3.3). Read and written without the SFR flag. A byte of 0xFF reads as off (a writer that fills bytes it doesn't know); setting the bit on such a byte writes 0xCF (the unused bits 5-4 cleared), never 0xFF |
 | B | 3-0 | That color code (else the channel's) |
 
 The repeater's timeout is the channel TOT, or 180 s when the TOT is 0.
@@ -706,9 +707,9 @@ The new firmware should keep its settings elsewhere, and treat bytes 0x604B..0x6
 - **APRS magic.** 0x4153 now, 0x4152 in older records (7.3.8).
 - **Voice prompt versions.** 8 for mono radios, 9 for color radios. A version mismatch makes the radio fall back to
   beeps.
-- **Our additions.** The SFR bytes and flag 1 bit 1, the `D` commands, the codeplug settings area at EEPROM image
-  0xE000 ([codeplug-settings.md](codeplug-settings.md)) and the network mode USB identities (PID 0x0095 / 0x0096)
-  don't exist in R20260131. They are invisible to the CPS, which round-trips the bytes it read.
+- **Our additions.** The SFR bytes (with the tone burst bit) and flag 1 bit 1, the `D` commands, the codeplug settings
+  area at EEPROM image 0xE000 ([codeplug-settings.md](codeplug-settings.md)) and the network mode USB identities
+  (PID 0x0095 / 0x0096) don't exist in R20260131. They are invisible to the CPS, which round-trips the bytes it read.
 
 ## 10. Open questions
 

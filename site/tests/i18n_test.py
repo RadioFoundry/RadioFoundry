@@ -191,6 +191,18 @@ class SecondLanguage(unittest.TestCase):
 		self.assertEqual(strings["flash.title"], "Instalar (es)")
 		self.assertIn("flash.build.pack_text", strings)	# English fills in
 
+	def test_codeplug_page_has_its_scripts_keys(self):
+		# the page gets the keys under a few prefixes only: one outside them shows as the key itself (flash.net.*)
+		strings = json.loads(re.search(r'<script type="application/json" id="i18n">(.*?)</script>',
+					       self.read("codeplug/index.html"), re.S).group(1).replace("<\\/", "</"))
+		with open(EN, encoding="utf-8") as f:
+			known = set(json.load(f))
+		js = repo.path("site", "static", "js", "editor")
+		for name in sorted(os.listdir(js)):
+			with open(os.path.join(js, name), encoding="utf-8") as f:
+				used = set(re.findall(r'"([a-z_]+(?:\.[a-z0-9_]+)+)"', f.read())) & known
+			self.assertEqual(sorted(used - set(strings)), [], name)
+
 	def test_english_docs_marked(self):
 		page = self.read("es/docs/user/02-installing.html")
 		self.assertIn('<p class="notice">', page)

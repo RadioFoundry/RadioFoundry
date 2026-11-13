@@ -102,7 +102,7 @@ static bool io_send(uint32_t dst, int len)
 	return true;
 }
 
-static const tcp_io_t io = { io_buffer, io_send, io_local };
+static const tcp_io_t io = { io_buffer, io_send, io_local, NULL };
 
 // ---- the peer ----
 static void peer_opts(uint16_t sport, uint16_t dport, uint32_t seq, uint32_t ack, uint8_t flags, uint16_t wnd,

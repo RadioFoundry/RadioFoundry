@@ -277,7 +277,7 @@ export function importQdmr(m, yamlText) {
 			rxList: null, aprs: null, dmrId: 0, noBeep: o.beep === false, noEco: o.powerSave === false, dmo: false,
 			roam: false, aliasTs1: Math.max(0, ALIAS.indexOf(text(o.talkerAliasTS1))),
 			aliasTs2: Math.max(0, ALIAS.indexOf(text(o.talkerAliasTS2))), useLocation: !!loc, lat: loc ? loc.lat : 0,
-			lon: loc ? loc.lon : 0, sfr: false, sfrA: 0, sfrB: 0,
+			lon: loc ? loc.lon : 0, sfr: false, sfrA: 0, sfrB: 0, toneBurst: false,
 		};
 		if (v.scanList != null) note("scan_lists");
 		if (dmr) {
@@ -413,6 +413,7 @@ export function exportQdmr(m) {
 		};
 		if (c.useLocation) note("location_rounded");
 		if (c.sfr || c.sfrA || c.sfrB) note("sfr");
+		if (c.toneBurst && c.mode !== "dmr") note("tone_burst");
 		const powerName = Object.keys(POWER).find((k) => POWER[k] === c.power);
 		if (c.power && !powerName) note("power_level");
 		const common = {

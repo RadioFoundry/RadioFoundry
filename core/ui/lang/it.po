@@ -1605,6 +1605,10 @@ msgid "TX CTCSS/DCS"
 msgstr "CTCSS/DCS TX"
 
 #: core/ui/ui_menus.c
+msgid "Tone burst"
+msgstr "Tono di apertura"
+
+#: core/ui/ui_menus.c
 msgid "Color code"
 msgstr "Color code"
 
@@ -2731,10 +2735,6 @@ msgstr "Blocco tasti"
 #: core/ui/ui_menus.c
 msgid "Home zone"
 msgstr "Zona casa"
-
-#: core/ui/ui_menus.c
-msgid "Tone burst"
-msgstr "Tono di apertura"
 
 #: core/ui/ui_menus.c
 msgid "Copy to VFO"
