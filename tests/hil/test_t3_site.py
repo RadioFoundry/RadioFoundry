@@ -87,8 +87,9 @@ def site(config):
         model, net, site_no = (int(x, 0) for x in str(sysd).split(","))
     except ValueError:
         raise pytest.UsageError(f"--t3-system {sysd!r}: MODEL,NET,SITE (e.g. 1,5,1)")
+    own = config.getoption("--t3-own-id")
     return {"rx": round(rx * 1e6), "tx": round(tx * 1e6), "lcn": int(lcn), "model": model, "net": net,
-            "site": site_no, "cc": int(cc), "tg": int(tg)}
+            "site": site_no, "cc": int(cc), "tg": int(tg), "own_id": int(own or 0)}
 
 
 def syscode(s):
@@ -144,7 +145,7 @@ def start(radio, s, listen_only=False, reg_tg=False, talk_id=0, talk_private=Fal
     L.t3("stop")
     L.t3_reset()
     opts = OPT_PRIVATE | (OPT_LISTEN_ONLY if listen_only else 0) | (OPT_REG_TG if reg_tg else 0)
-    L.t3_system(own_id=0, model=s["model"], net=s["net"], par="a", opts=opts, cc=s["cc"], talk_id=talk_id,
+    L.t3_system(own_id=s["own_id"], model=s["model"], net=s["net"], par="a", opts=opts, cc=s["cc"], talk_id=talk_id,
                 talk_private=talk_private)
     L.t3_site(s["site"])
     L.t3_ctrl(s["lcn"], s["rx"], s["tx"])

@@ -48,6 +48,8 @@ RIG = {
     "t3-system": (str, "the Tier III site's identity MODEL,NET,SITE (model 0 tiny, 1 small, 2 large, 3 huge)", False),
     "t3-cc": (int, "the Tier III site's color code", False),
     "t3-tg": (int, "the talkgroup test_t3_site registers with and calls", False),
+    "t3-own-id": (int, "the DMR ID the radio uses on the Tier III site (test_t3_site; default: its codeplug ID)",
+                  False),
     "t3-peer": (int, "a second radio ID the Tier III site grants individual calls to (test_t3_private_call)", False),
     "tx-mhz": (str, "MHz, comma separated: the frequencies this rig may transmit on (the radio and the bench); "
                     "--allow-rf needs it", False),
