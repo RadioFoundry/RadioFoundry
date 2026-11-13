@@ -22,6 +22,7 @@
 #include "sim/dmr_sim_modem.h"
 #include "settings/settings.h"
 #include "radio/tx_limit.h"
+#include "codeplug/codeplug_kv.h"	// the settings area fakes
 
 static int failures;
 static int checks;
@@ -311,6 +312,12 @@ bool codeplug_zone(uint16_t i, zone_t *out)
 }
 static const contact_t contacts[] = { { "Local", 9, CONTACT_GROUP, 0 } };
 uint32_t codeplug_dmr_id(void) { return 9996543; }
+int codeplug_kv_get(uint16_t key, void *buf, uint16_t max) { (void)key; (void)buf; (void)max; return -1; }	// no settings area
+bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n) { (void)ops; (void)n; return false; }
+void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi) { (void)c; (void)lo; (void)hi; }
+int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
+	{ (void)c; (void)key; (void)buf; (void)max; return -1; }
+uint8_t codeplug_kv_serial(void) { return 0; }
 bool codeplug_contact(uint16_t index, contact_t *out)
 {
 	if (index != 1) {
@@ -2637,6 +2644,85 @@ static void test_roger_burst(void)
 	}
 }
 
+// A channel with its tone burst on: each PTT key-up opens with one timed burst, then the microphone (channel_t.tone_burst)
+static void test_channel_burst(void)
+{
+	start();
+	// Off (the default): PTT keys with no tone
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && !sm.view.tone_burst && hw.tone_hz == 0);
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE);
+
+	chans[1].tone_burst = true;
+	req(RREQ_ZONE_POS, 0);
+	run(50);
+	CHECK(sm.view.ch.tone_burst);
+	int tx = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && sm.ptt && sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ && hw.tx_calls == tx + 1);
+	CHECK(!sm.burst_keyed);	// the PTT owns the carrier, not the burst
+	run(RADIO_BURST_MIN_MS - 20);
+	CHECK(sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+	run(40);
+	CHECK(sm.view.state == RS_TX && sm.ptt && !sm.view.tone_burst && hw.tone_hz == 0);	// the microphone follows
+	run(2000);
+	CHECK(sm.view.state == RS_TX && hw.tone_hz == 0);	// once per key-up
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE);
+	// Released during the burst: unkeys at once, the tone with it
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.tone_burst);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE && !sm.view.tone_burst && hw.tone_hz == 0 && !sm.burst_timed);
+	run(300);
+	// The next key-up has it again
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+	req(RREQ_PTT, 0);
+	run(300);
+
+	// The tone refused: the error beep warns that the repeater may not open, and the PTT's transmission goes on
+	hw.has_tx_tone = false;
+	beep_stats_t b0, b1;
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && sm.ptt && !sm.view.tone_burst);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1);
+	req(RREQ_PTT, 0);
+	run(300);
+	hw.has_tx_tone = true;
+
+	// Host audio (USRP): the host sends its own tones, so no burst over them
+	tap_hw = (typeof(tap_hw)){ .ok = true };
+	int16_t pcm[AUDIO_BLOCK_SAMPLES] = { 0 };
+	req(RREQ_PTT, 2);
+	CHECK(sm.view.state == RS_TX && sm.host_audio && !sm.view.tone_burst && hw.tone_hz == 0);
+	for (int i = 0; i < 10; i++) {
+		audio_mux_host_push(pcm, AUDIO_BLOCK_SAMPLES);
+		run(20);
+	}
+	CHECK(sm.view.state == RS_TX && !sm.view.tone_burst && hw.tone_hz == 0);
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// Never on DMR, whatever the record holds
+	chans[6].tone_burst = true;
+	req(RREQ_ZONE_POS, 5);
+	run(50);
+	req(RREQ_PTT, 1);
+	run(50);
+	CHECK(!sm.view.tone_burst && hw.tone_hz == 0);
+	req(RREQ_PTT, 0);
+	run(1000);
+	chans[1].tone_burst = chans[6].tone_burst = false;
+}
+
 // The side key owns a minimum duration; the debug link still has explicit on/off control.
 static void test_burst_key(void)
 {
@@ -3508,6 +3594,7 @@ int main(void)
 	test_tx_limit();
 	test_roger_burst();
 	test_burst_key();
+	test_channel_burst();
 	test_burst_deadlines();
 	test_burst_key_host_overlap();
 	test_burst_key_denied();

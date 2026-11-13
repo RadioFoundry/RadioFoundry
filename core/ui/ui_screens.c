@@ -1108,6 +1108,31 @@ static void draw_meter(int x, int y, int w, int h, int16_t dbm)
 	}
 }
 
+// A hardware option the radio still needs from a person (board_hwopt_pending, hal_hwopt.h): what to do, on the home
+// screen and when PTT is refused
+static void hwopt_needed(sbuf_t *b)
+{
+	const hal_hwopt_t *o = board_hwopt_pending();
+	if (o == NULL) {
+		return;
+	}
+	if (hwopt_state(o) == HWOPT_ST_RESTART) {
+		sb_str(b, TR("Restart to apply"));
+		return;
+	}
+	sb_str(b, TR("Set: "));
+	sb_str(b, o->name);
+}
+
+static const char *hwopt_action(void)
+{
+	const hal_hwopt_t *o = board_hwopt_pending();
+	if (o != NULL && hwopt_state(o) == HWOPT_ST_RESTART) {
+		return TR("Turn the radio off and on");
+	}
+	return TR("Settings>Advanced>Hardware");
+}
+
 static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 {
 	sbuf_t b;
@@ -1134,6 +1159,8 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_AM: sb_str(&b, TR("Air band: receive only")); break;
 	case TXDENY_BCAST: sb_str(&b, TR("Broadcast: receive only")); break;
 	case TXDENY_SFR_RPT: sb_str(&b, TR("Repeater channel: PTT off")); break;
+	case TXDENY_HWOPT: hwopt_needed(&b); break;
+	case TXDENY_REFUSED: sb_str(&b, TR("Radio refused to send")); break;
 	default: sb_str(&b, TR("Not allowed here")); break;
 	}
 	return buf;
@@ -1154,6 +1181,8 @@ static const char *deny_action(const radio_view_t *v)
 	case TXDENY_AM:
 	case TXDENY_BCAST: return v->vfo ? TR("Tune out of the band") : TR("Pick another channel");
 	case TXDENY_SFR_RPT: return TR("Pick a user channel to talk");
+	case TXDENY_HWOPT: return hwopt_action();
+	case TXDENY_REFUSED: return TR("Release PTT, try again");
 	default: return TR("Pick another channel");
 	}
 }
@@ -1698,6 +1727,20 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 		}
 		break;
 	default:
+		if (board_hwopt_pending() != NULL) {
+			// Something only a person can tell the radio, and transmit waits for it: said where the eye
+			// goes, before the last call heard
+			hwopt_needed(&b);
+			gfx_text_fit(sm, buf, w, fit, sizeof fit);
+			bool two_sm = L->activity_h >= 2 * sm->h;
+			y += (L->activity_h - (two_sm ? 2 : 1) * sm->h) / 2;
+			gfx_text(sm, 0, y, fit, ui_col.warn);
+			if (two_sm) {
+				gfx_text_fit(sm, TR("Transmit waits for it"), w, fit, sizeof fit);
+				gfx_text(sm, 0, y + sm->h, fit, ui_col.fg);
+			}
+			break;
+		}
 #if CONFIG_DMR
 		if (v->ch.mode == RADIO_MODE_DMR && v->dmr.active) {
 			draw_last_heard(v, s, y);	// hear all shows as "All" in the chips and in the hint
@@ -1730,6 +1773,8 @@ static const char *home_hint(const radio_view_t *v, const ui_state_t *s)
 		return TR(TEXT_ALT_OPEN "Keys locked: hold * to unlock" TEXT_ALT_NEXT "Locked: hold * to unlock" TEXT_ALT_CLOSE);
 	if (s->scanning)
 		return TR("# skip  Back stop scan");
+	if (board_hwopt_pending() != NULL)
+		return hwopt_action();
 #if CONFIG_DMR
 	if (v->ch.mode == RADIO_MODE_DMR) {
 		if (v->dmr.reply_active)

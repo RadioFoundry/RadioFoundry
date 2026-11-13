@@ -15,6 +15,7 @@ import { CodeplugImage, CODEPLUG_SPAN } from "../static/js/codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, refNumber, listenBand } from "../static/js/codeplug/model.js";
 import { getTone, putTone, parseTone, parseFreq, mhz, getCoord, coordBytes, putName, getName, nameBytes } from "../static/js/codeplug/fields.js";
 import * as iddb from "../static/js/codeplug/iddb.js";
+import { blankChannel, decodeChannel, encodeChannel } from "../static/js/codeplug/records.js";
 import { targets } from "../static/js/flasher/restore.js";
 
 const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
@@ -36,7 +37,8 @@ function detail(m, ids = [], db = []) {
 		out.push(`channel ${c.number} "${c.name}" rx ${c.rxHz} tx ${c.txHz} mode ${b(c.mode === "dmr")} bw ${b(c.bw === 25)}` +
 			` power ${power} tot ${c.tot} rxtone ${tone(c.rxTone)} txtone ${tone(c.txTone)} cc ${c.colorCode} ts ${c.timeslot}` +
 			` contact ${refNumber(c.contact)} list ${refNumber(c.rxList)} id ${c.dmrId} dmo ${b(c.dmo)} rxonly ${b(c.rxOnly)}` +
-			` skip ${b(c.zoneSkip)} vox ${b(c.vox)} nobeep ${b(c.noBeep)} noeco ${b(c.noEco)} roam ${b(c.roam)} alias ${alias}`);
+			` skip ${b(c.zoneSkip)} vox ${b(c.vox)} nobeep ${b(c.noBeep)} noeco ${b(c.noEco)} roam ${b(c.roam)}` +
+			` burst ${b(c.toneBurst)} alias ${alias}`);
 	}
 	m.zones.forEach((z, i) => {
 		const chs = z.channels.map(refNumber).filter((n) => used.has(n));
@@ -140,7 +142,8 @@ function rich() {
 	m.rxLists.push(list);
 	const chs = [
 		newChannel({ name: "Simplex", rxHz: 146520000, txHz: 146520000, bw: 25, rxTone: "100.0", txTone: "D023I", power: 9 }),
-		newChannel({ name: "Repeater", rxHz: 442100000, txHz: 447100000, txTone: "88.5", tot: 180, vox: true, zoneSkip: true }),
+		newChannel({ name: "Repeater", rxHz: 442100000, txHz: 447100000, txTone: "88.5", tot: 180, vox: true, zoneSkip: true,
+			toneBurst: true }),
 		newChannel({ name: "DMR TG91", rxHz: 438500000, txHz: 438500000, mode: "dmr", colorCode: 7, timeslot: 2,
 			contact: tg91, rxList: list, dmrId: 9991277, dmo: true, noBeep: true, noEco: true, aliasTs1: 2, aliasTs2: 3 }),
 		newChannel({ name: "RX only", rxHz: 162550000, txHz: 162550000, rxOnly: true, power: 1 }),
@@ -160,6 +163,24 @@ test("an edited codeplug is read by the radio as written", () => {
 	assert.equal(detail(decode(img)), detail(m));
 	assert.equal(m.channels[4].number, 300);
 	assert.equal(m.contacts.map((c) => c.number).join(), "1,2,3,4");
+});
+
+test("a channel's tone burst byte filled with 0xFF is not set, and is never written as 0xFF", () => {
+	// open-firmware-cps.md 7.3.3: byte 0x2A bit 6, the firmware's guard for a writer that fills bytes it doesn't know
+	const m = empty();
+	m.channels.push(newChannel({ name: "Filled", rxHz: 145500000, txHz: 145500000 }));
+	const r = encodeChannel(m.channels[0], blankChannel());
+	r[0x2A] = 0xFF;
+	const c = decodeChannel(r);
+	assert.equal(c.toneBurst, false);
+	assert.equal(encodeChannel(c, r.slice())[0x2A], 0xBF);
+	c.toneBurst = true;
+	const on = encodeChannel(c, r.slice());
+	assert.equal(on[0x2A], 0xCF);
+	assert.equal(decodeChannel(on).toneBurst, true);
+	// a byte with other bits clear is as before
+	r[0x2A] = 0x40;
+	assert.equal(decodeChannel(r).toneBurst, true);
 });
 
 test("an edit rewrites only what changed", () => {

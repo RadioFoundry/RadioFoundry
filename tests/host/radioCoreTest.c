@@ -23,6 +23,7 @@
 #include "dmr/dmr_emergency.h"
 #include "ui/ui_svc.h"
 #include "storage/storage.h"
+#include "codeplug/codeplug_kv.h"
 #include "dmr/dmrPrivacy.h"
 #include "dmr/dmrData.h"
 #include "sim/sim_flash.h"
@@ -181,8 +182,20 @@ static void fake_gps_enable(bool on)
 	gps_enabled = on;
 }
 
+// A hardware option (hal_hwopt.h) whose state the tests set; hidden (detected) unless a test says otherwise
+static uint8_t fake_hwopt_st = HWOPT_ST_HIDDEN;
+static const char *const fake_hwopt_choices[] = { "A", "B" };
+static int8_t fake_hwopt_get(void) { return 0; }
+static bool fake_hwopt_set(uint8_t c) { (void)c; return true; }
+static uint8_t fake_hwopt_state(void) { return fake_hwopt_st; }
+static const hal_hwopt_t fake_hwopts[] = {
+	{ "Revision", 2, fake_hwopt_choices, fake_hwopt_get, fake_hwopt_set, true, fake_hwopt_state },
+};
+
 const board_t board = {
 	.name = "fake",
+	.hwopts = fake_hwopts,
+	.hwopt_count = 1,
 	.caps = CAP_GPS,
 	.gps_enable = fake_gps_enable,
 	.gps_present = fake_gps_present,
@@ -255,6 +268,58 @@ static const contact_t contacts[] = {
 	{ "Local", 9, CONTACT_GROUP, 0 },
 };
 uint32_t codeplug_dmr_id(void) { return own_dmr_id; }
+
+// The codeplug's settings area: only the ARS server key here (the gateway's is built out, CONFIG_DMR_IP_GATEWAY=0)
+static bool kv_ars_present;
+static uint8_t kv_serial;
+static uint32_t kv_ars;
+static bool kv_held;	// a CPS session holds the flash, or another firmware's codeplug: no key can be written
+int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
+{
+	if (key != CODEPLUG_KEY_ARS_SERVER || !kv_ars_present) {
+		return -1;
+	}
+	memcpy(buf, &kv_ars, max < 4 ? max : 4);
+	return 4;
+}
+static bool kv_set_u32(uint16_t key, uint32_t value)
+{
+	if (key != CODEPLUG_KEY_ARS_SERVER || kv_held) {
+		return false;
+	}
+	kv_ars_present = true;
+	kv_ars = value;
+	kv_serial++;	// as codeplug_kv_write: the area's serial, no codeplug reload
+	return true;
+}
+uint8_t codeplug_kv_serial(void) { return kv_serial; }
+void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi)
+{
+	c->done = !(lo <= CODEPLUG_KEY_ARS_SERVER && CODEPLUG_KEY_ARS_SERVER <= hi);
+}
+int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
+{
+	uint8_t v[4] = { (uint8_t)kv_ars, (uint8_t)(kv_ars >> 8), (uint8_t)(kv_ars >> 16), (uint8_t)(kv_ars >> 24) };
+	if (c->done || !kv_ars_present) {
+		return -1;
+	}
+	c->done = 1;
+	*key = CODEPLUG_KEY_ARS_SERVER;
+	memcpy(buf, v, max < 4 ? max : 4);
+	return 4;
+}
+bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n)
+{
+	// each op a u32 set, through the one-key fake
+	for (uint8_t i = 0; i < n; i++) {
+		const uint8_t *v = ops[i].value;
+		if (ops[i].len != 4 ||
+		    !kv_set_u32(ops[i].key, v[0] | (uint32_t)v[1] << 8 | (uint32_t)v[2] << 16 | (uint32_t)v[3] << 24)) {
+			return false;
+		}
+	}
+	return true;
+}
 bool codeplug_set_dmr_id(uint32_t id)
 {
 	own_dmr_id = id;
@@ -2272,6 +2337,67 @@ static void test_persist(void)
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
 
+	// The codeplug's settings area (docs/spec/codeplug-settings.md 5): a key that is present sets the ARS server, at
+	// start and when the codeplug changes, and the radio's own copy follows it
+	ds.arsServer = 3100999;
+	dmr_data_set_settings(&ds);
+	run(50);
+	kv_ars_present = true;
+	kv_ars = 3100777;
+	cp_serial++;			// as a CPS commit or a TFTP write
+	run(100);
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100777);
+	settings_read(&cur);
+	CHECK(cur.ds_ars_server == 3100777);
+	// A change that isn't a codeplug write doesn't hold against the key
+	ds.arsServer = 5;
+	dmr_data_set_settings(&ds);
+	run(50);
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100777);
+	// The menu writes the key (a codeplug job), 0 turns ARS off, and a reboot reads it back
+	CHECK(ui_svc_setting_get(UI_SET_ARS_SERVER) == 3100777);
+	CHECK(ui_svc_setting_set(UI_SET_ARS_SERVER, 0) && storage_job_busy());
+	CHECK(!ui_svc_setting_set(UI_SET_ARS_SERVER, 1));	// one job at a time
+	uint32_t cp_was = cp_serial;
+	storage_job_poll();
+	CHECK(kv_ars_present && kv_ars == 0 && !storage_job_busy());
+	run(100);
+	CHECK(ui_svc_setting_get(UI_SET_ARS_SERVER) == 0);
+	CHECK(cp_serial == cp_was);	// the key's value taken without a codeplug reload
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 0);
+	CHECK(!ui_svc_setting_set(UI_SET_ARS_SERVER, CODEPLUG_DMR_ID_MAX + 1));
+	// Absent (a codeplug from a tool that doesn't carry the area): the radio keeps what it has, and a change holds
+	kv_ars_present = false;
+	cp_serial++;
+	run(100);
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 0);
+	ds.arsServer = 3100888;
+	dmr_data_set_settings(&ds);
+	run(50);
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100888);
+	// A key present at start that the radio's own copy doesn't hold (a factory reset leaves the codeplug, a power
+	// cut before the copy was saved): the copy follows it, so the radio keeps the key's value once the key is gone
+	kv_ars_present = true;
+	kv_ars = 3100555;
+	boot();
+	run(100);
+	settings_read(&cur);
+	CHECK(cur.ds_ars_server == 3100555);
+	kv_ars_present = false;
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.arsServer == 3100555);
+	settings_begin()->ds_stored = 0;
+	settings_end(now);
+	boot();
+
 	// Power off: nothing to deregister, so the radio core is done at once
 	req(RREQ_POWER_OFF, 0);
 	run(50);
@@ -3453,6 +3579,32 @@ static void test_ui_glue(void)
 	CHECK(ui_svc_write_channel(6, &ed) && n_ev == 3 && ui_svc_codeplug_answer(UI_CP_NEW));
 	storage_job_poll();
 	CHECK(cp_new == 1 && cp_writes == w + 2 && chans[6].color_code == 4 && !codeplug_foreign());
+	// A keyed setting isn't a codeplug write that asks (docs/spec/codeplug-settings.md 5): with another firmware's
+	// codeplug the area can't be written and holds no key, so the setting is saved as the radio's own, no question
+	cp_foreign = true;
+	kv_ars_present = false;
+	kv_held = true;
+	CHECK(ui_svc_setting_set(UI_SET_ARS_SERVER, 3100123) && n_ev == 3);
+	storage_job_poll();
+	run(100);
+	CHECK(!kv_ars_present && cp_new == 1 && n_ev == 3);
+	CHECK(ui_svc_setting_get(UI_SET_ARS_SERVER) == 3100123);
+	{
+		settings_t own;
+		settings_read(&own);
+		CHECK(own.ds_ars_server == 3100123);
+	}
+	cp_foreign = false;
+	// A key that is present and can't be updated (a CPS session holds the flash) refuses the change: it would put
+	// the old value back
+	kv_ars_present = true;
+	kv_ars = 3100123;
+	CHECK(ui_svc_setting_set(UI_SET_ARS_SERVER, 3100124));
+	storage_job_poll();
+	run(100);
+	CHECK(kv_ars == 3100123 && ui_svc_setting_get(UI_SET_ARS_SERVER) == 3100123 && last_ev.kind == UI_EV_SAVE_FAILED);
+	kv_held = false;
+	kv_ars_present = false;
 	n_ev = 0;
 	run(100);
 	req(RREQ_CLEAR_TEMP, 0);
@@ -4634,10 +4786,27 @@ static void test_error_paths(void)
 	run(20);
 	tx_fail = true;
 	req(RREQ_PTT, 1);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED);
 	run(RADIO_LED_DENY_STEPS * RADIO_LED_DENY_STEP_MS);
 	CHECK(!hw.led[LED_RED]);	// after the deny flash: dark, nothing on air
 	req(RREQ_PTT, 0);
+	// A hardware option still unset or not applied: the refusal names it, never the band
+	for (uint8_t st = HWOPT_ST_ASK; st <= HWOPT_ST_RESTART; st++) {
+		fake_hwopt_st = st;
+		req(RREQ_PTT, 1);
+		CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HWOPT);
+		req(RREQ_PTT, 0);
+	}
+	// The core refuses it itself, even where the board would key (a restart due, the old choice still confirmed)
+	tx_fail = false;
+	for (uint8_t st = HWOPT_ST_ASK; st <= HWOPT_ST_RESTART; st++) {
+		fake_hwopt_st = st;
+		int calls = hw.tx_calls;
+		req(RREQ_PTT, 1);
+		CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HWOPT && hw.tx_calls == calls);
+		req(RREQ_PTT, 0);
+	}
+	fake_hwopt_st = HWOPT_ST_HIDDEN;
 	tx_fail = false;
 
 	// No retuning while transmitting: channel, zone, VFO and scan requests wait for the release
@@ -4678,10 +4847,19 @@ static void test_error_paths(void)
 	tx_fail = true;
 	req(RREQ_PTT, 1);
 	run(100);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && sim.tx_begins == 0);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && sim.tx_begins == 0);
 	req(RREQ_PTT, 0);
 	run(100);
-	tx_fail = false;
+	tx_fail = false;	// the core refuses a pending option even where the board would key
+	for (uint8_t st = HWOPT_ST_ASK; st <= HWOPT_ST_RESTART; st++) {
+		fake_hwopt_st = st;
+		req(RREQ_PTT, 1);
+		run(100);
+		CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_HWOPT && sim.tx_begins == 0);
+		req(RREQ_PTT, 0);
+		run(100);
+	}
+	fake_hwopt_st = HWOPT_ST_HIDDEN;
 	sim.reject_next = true;
 	req(RREQ_PTT, 1);
 	run(300);

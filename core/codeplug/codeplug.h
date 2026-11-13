@@ -45,6 +45,7 @@ typedef struct {
 	bool no_beep;		// no DMR talk permit / call end beeps on this channel
 	bool no_eco;		// no receiver battery saving on this channel
 	bool roam;		// a roaming site (the open-firmware Roaming flag; docs/spec/dmr-roaming.md 5.2), read only
+	bool tone_burst;	// FM: the 1750 Hz access burst at each PTT key-up (repeaters that need it)
 	// SFR (docs/spec/sfr.md 4): flag 1 bit 1 and the two SFR bytes as stored, for sfrChannelDecode(); read only
 	// (the encoder keeps them as read), all 0 when the channel has none
 	uint8_t sfr_flag1;
