@@ -84,6 +84,7 @@ skips (kind `opt_in`) and names the three ways to give it. `tests/hil/hil_config
 | `--t3-rx-mhz` / `--t3-tx-mhz` | a DMR Tier III site's control channel as the radio receives it and where the radio transmits to it (`test_t3_site`; the site is the rig's own, on the air) |
 | `--t3-lcn` / `--t3-system` / `--t3-cc` | that control channel's logical channel number, the site's identity `MODEL,NET,SITE` (model 0 tiny .. 3 huge) and color code |
 | `--t3-tg` / `--t3-peer` | the talkgroup `test_t3_site` registers with and calls, and a second radio ID the site grants individual calls to |
+| `--t3-tg-list` | more talkgroups, comma separated, that `test_t3_reg_list` subscribes to after `--t3-tg` as a list |
 | `--tx-mhz` | the frequencies the rig may transmit on, comma separated (a TOML list in the file) |
 | `--microphone` | an ALSA capture device (`arecord -D`) whose microphone is at the radio's speaker: the speaker tests ([Speaker tests](#speaker-tests)) |
 | `--mic-processed` | `1` when that microphone has processing of its own (a headset's noise suppression): the speaker tests check tone starts only ([Speaker tests](#speaker-tests)) |

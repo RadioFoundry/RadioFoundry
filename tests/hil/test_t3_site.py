@@ -41,6 +41,10 @@ Pass criteria:
   8-bit short data (two UDT blocks) to --t3-tg or --t3-peer: within SERVICE_S t3.ax_svc sdata, t3.ax_result done,
   t3.ax_reason 0x60 or 0x44. Whether the octets arrived whole is in the site's log; the radio's view shows only that
   the site took them (it acknowledges after the UDT's CRC passed).
+- test_t3_reg_list (rf, radio_tx; needs --t3-tg-list): registration by talkgroup with --t3-tg and --t3-tg-list
+  (two to seven in all) listened to: within REG_S t3.reg ok, t3.ax_reason 0x62 or 0x65, t3_svc t3.reg_tgs the
+  number sent, and t3.reg_tg_ok has no bit set past them. Which the site accepted is printed; the site's own
+  configuration decides it.
 
 On a failure every test prints the last t3 view.
 
@@ -153,7 +157,7 @@ def trunk_tx(trunk):
     return trunk
 
 
-def start(radio, s, listen_only=False, reg_tg=False, talk_id=0, talk_private=False):
+def start(radio, s, listen_only=False, reg_tg=False, talk_id=0, talk_private=False, more_tgs=()):
     """Stage the rig's site and start; returns once the radio is camped on it"""
     L = radio.link
     L.t3("stop")
@@ -164,6 +168,8 @@ def start(radio, s, listen_only=False, reg_tg=False, talk_id=0, talk_private=Fal
     L.t3_site(s["site"])
     L.t3_ctrl(s["lcn"], s["rx"], s["tx"])
     L.t3_tg(s["tg"], listen=True, talk=True)
+    for tg in more_tgs:
+        L.t3_tg(tg, listen=True, talk=False)
     L.t3("start")
     try:
         return wait_t3(radio, lambda v: v.get("t3.state") == "camped" and v.get("t3.confirmed") == "1", CAMP_S,
@@ -355,3 +361,36 @@ def test_t3_sdata(trunk_tx, pytestconfig, to):
     dst = svc_target(trunk_tx, pytestconfig, to)
     service(trunk_tx, "sdata", lambda: trunk_tx.link.t3_sdata(dst, SDATA_TEXT, to == "group", "iso8"),
             MSG_ACCEPTED if to == "group" else MS_ACCEPTED)
+
+
+@pytest.mark.feature("dmr_trunk_tx")
+@pytest.mark.rf
+@pytest.mark.radio_tx
+def test_t3_reg_list(trunk_tx, pytestconfig):
+    s = site(pytestconfig)
+    raw = rig(pytestconfig, "t3-tg-list", "more talkgroups the site takes in a subscription list")
+    try:
+        more = [int(x, 0) for x in str(raw).split(",") if x.strip()]
+    except ValueError:
+        raise pytest.UsageError(f"--t3-tg-list {raw!r}: talkgroups, comma separated")
+    if not 1 <= len(more) <= 6:
+        raise pytest.UsageError("--t3-tg-list: one to six talkgroups (seven in all with --t3-tg)")
+    if SVC_SECTION not in VIEW_SECTIONS:
+        skip("not_built", "tools/rfoundry_debug.py has no t3_svc section (older tool)")
+    start(trunk_tx, s, reg_tg=True, more_tgs=more)
+    try:
+        v = wait_t3(trunk_tx, lambda x: x.get("t3.reg") == "ok" or
+                    x.get("t3.ax_result") in ("refused", "no_answer", "timeout"), REG_S, "registered")
+        assert v.get("t3.reg") == "ok", f"registration: {v.get('t3.ax_result')} reason {v.get('t3.ax_reason')}"
+        assert num(v, "t3.ax_reason") in REG_ACCEPTED, f"reason {v.get('t3.ax_reason')}"
+        sv = trunk_tx.link.view([SVC_SECTION])
+        n = 1 + len(more)
+        assert num(sv, "t3.reg_tgs") == n, f"list of {sv.get('t3.reg_tgs')}, {n} listened to"
+        mask = num(sv, "t3.reg_tg_ok")
+        assert mask & ((1 << (7 - n)) - 1) == 0, f"accepted mask {mask:#04x} has bits past the {n} sent"
+        tgs = [s["tg"]] + more
+        print("accepted:", [tg for i, tg in enumerate(tgs) if mask & (0x40 >> i)],
+              "rejected:", [tg for i, tg in enumerate(tgs) if not mask & (0x40 >> i)])
+    except AssertionError:
+        print("t3 view:", t3(trunk_tx), trunk_tx.link.view([SVC_SECTION]))
+        raise

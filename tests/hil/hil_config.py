@@ -51,6 +51,8 @@ RIG = {
     "t3-own-id": (int, "the DMR ID the radio uses on the Tier III site (test_t3_site; default: its codeplug ID)",
                   False),
     "t3-peer": (int, "a second radio ID the Tier III site grants individual calls to (test_t3_private_call)", False),
+    "t3-tg-list": (str, "talkgroups, comma separated, the radio subscribes to after --t3-tg as a list "
+                        "(test_t3_reg_list)", False),
     "tx-mhz": (str, "MHz, comma separated: the frequencies this rig may transmit on (the radio and the bench); "
                     "--allow-rf needs it", False),
 }
