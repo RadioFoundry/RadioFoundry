@@ -654,9 +654,10 @@ pin. Both mute the microphone with chip 0's 0x25 bit 0 while they sound.
 APRS transmit (RadioFoundry, `CONFIG_APRS`): the DTMF path
 with one tone. The chip's audio input at the calibrated DTMF drive, the microphone muted; TIMER4's interrupt writes one
 sample of a phase continuous 1200 / 2200 Hz tone per tick, and counts timer clocks to change the tone every 100,000
-clocks (1200 baud; a symbol is about 21.8 samples). At the core's APRS level 50 the PWM's peak is 90 counts of 128,
-near the DTMF pair's 102 (the level is a setting the debug link changes); the deviation that gives is inferred until
-measured.
+clocks (1200 baud; a symbol is about 21.8 samples). At the core's APRS level 50 the PWM's peak is 125 counts of 128
+(lower levels scale it down; higher ones stop at 127). Off air on UHF, peak deviation follows the amplitude: 90 counts
+2.0 kHz, 108 2.34 kHz, 126 2.74 kHz, twist +1.7 dB throughout. The PWM's full scale caps the path near 2.75 kHz, a
+little under the 3 kHz the other radios use (`aprs.md` 13).
 
 DTMF: TIMER3 CH3 runs PB9 as an 8-bit PWM (period 256, prescaler 0, PWM mode 1). TIMER4's update interrupt, period
 4592 clocks (26,132 Hz at 120 MHz), steps two 16-bit phase accumulators by f x 65536 / 26,132 and writes the sum of
@@ -982,7 +983,7 @@ The order to check it in on a radio, with the diagnostics lines and what to chan
 | DMR on side B | sensed by chip 1; a call there is decoded by switching the one baseband to chip 1 while side A is quiet (5.2). Both sides' calls at once can't be decoded: one baseband input |
 | VOX | chip 0's voice amplitude as the microphone level (5.6); written, untested on the radio. The register and its scale are inferred from the BK4819 map |
 | APRS receive | PC0 sampled at 9600 Hz into the core's demodulator (3.4); written, the sample path host tested with the demodulator, untested on the radio. Off on the GD32 builds: it takes about 11.6 KB of RAM (the demodulator, the station list, the iGate and the 2 KB sample ring) and about 6.4 KB is free with DMR on. On in the AT32 builds (section 10) |
-| APRS transmit | the tones on PB9 into chip 0's audio input with the DTMF set-up (5.3); written, the tones host tested through the core's demodulator, untested on the radio. The deviation per APRS level is inferred |
+| APRS transmit | the tones on PB9 into chip 0's audio input with the DTMF set-up (5.3); decoded off air with a valid FCS from a channel and from the FM VFO (position, status, message), 2.7 kHz peak deviation at level 50 (5.3) |
 | AT32 variant | `boards/d578uva` on the AT32F43x platform (section 10): builds, untested on the radio |
 
 Open for DMR on side B:

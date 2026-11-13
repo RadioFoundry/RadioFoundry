@@ -815,6 +815,34 @@ static void test_message_replaces_pending(void)
 	CHECK(strstr(frames[2], "::K1ABC-9  :Second{") != NULL);
 }
 
+// The last try's ack wait runs out while APRS is blocked (the call taken away): the message still ends
+static void test_message_ends_while_blocked(void)
+{
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	CHECK(aprs_send_message("Q1ABC-9", "Hello"));
+	CHECK(wait_start(1, 5000));
+	wait_idle();
+	run(30u * 1000u);
+	CHECK(wait_start(2, 6000));
+	wait_idle();
+	aprs_set_test_call("");		// blocked: no try goes out now
+	run(70u * 1000u);
+	CHECK(hw.starts == 2);
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(v.msg_pending && v.block != APRS_OK);
+	aprs_set_test_call("Q1TST");	// the third try goes out once the call is back
+	CHECK(wait_start(3, 6000));
+	wait_idle();
+	aprs_set_test_call("");
+	run(130u * 1000u);		// past the last try's 120 s ack wait, still blocked
+	aprs_get_view(&v);
+	CHECK(!v.msg_pending && !v.msg_acked && v.msg_tries == APRS_MSG_TRIES);
+	CHECK(hw.starts == 3);
+}
+
 #if CONFIG_APRS_RX
 static void test_message_rejection(void)
 {
@@ -1494,6 +1522,7 @@ int main(void)
 	test_messages();
 	test_message_options();
 	test_message_replaces_pending();
+	test_message_ends_while_blocked();
 #if CONFIG_APRS_RX
 	test_message_rejection();
 #endif
