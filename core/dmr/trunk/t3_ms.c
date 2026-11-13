@@ -705,14 +705,16 @@ static bool on_status(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *
 
 static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h, bool payload)
 {
-	if (!payload && on_status(ms, now, slot, h)) {
+	if (!payload && h->kind == T3_SK_STATUS && is_me(ms, h->src)) {
+		// Our status going to the called party or talkgroup (6.6.6.1.2.1.2 c): it is under way, the final answer
+		// follows. Not a status heard, though the talkgroup's may be ours
+		if (ms->ax.svc == T3_SVC_STATUS && (ms->ax.state == T3_AX_WAIT_RESP || ms->ax.state == T3_AX_ACKED)) {
+			ms->ax.state = T3_AX_ACKED;
+			ms->ax.ack_deadline = now + or_default(ms->cfg->tnp_ms, T3_TNP_MS);
+		}
 		return;
 	}
-	if (!payload && h->kind == T3_SK_STATUS && is_me(ms, h->src) && ms->ax.svc == T3_SVC_STATUS &&
-	    (ms->ax.state == T3_AX_WAIT_RESP || ms->ax.state == T3_AX_ACKED)) {
-		// Our status going to the called party (6.6.6.1.2.1.2 c): it is under way, the final answer follows
-		ms->ax.state = T3_AX_ACKED;
-		ms->ax.ack_deadline = now + or_default(ms->cfg->tnp_ms, T3_TNP_MS);
+	if (!payload && on_status(ms, now, slot, h)) {
 		return;
 	}
 	bool to_me = !h->group && is_me(ms, h->dst);

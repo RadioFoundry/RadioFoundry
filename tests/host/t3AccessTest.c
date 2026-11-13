@@ -782,6 +782,11 @@ static void test_status(void)
 	CHECK(t3_ms_status(&ms, T, TG_A, true, 5), "status to a talkgroup starts");
 	CHECK(sent_rand(&ms) && sent[0].u.rand.options == (0x40 | (5 >> 2)) && (sent[0].u.rand.extra & 3u) == 1u,
 	      "talkgroup status: options 0x%02x", sent[0].u.rand.options);
+	// The TSCC sends it to the talkgroup the radio listens to: progress, not a status heard
+	h = status_ahoy(5, true, TG_A, OWN);
+	rx(&ms, 1, &h);
+	CHECK(ms.ax.state == T3_AX_ACKED && ms.status_rx.count == 0, "own talkgroup status: not heard, count %u",
+	      (unsigned)ms.status_rx.count);
 	a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, TG_A);
 	rx(&ms, 1, &a);
 	CHECK(ms.ax.result == T3_RES_DONE && ms.own_status == 5, "talkgroup status done");
