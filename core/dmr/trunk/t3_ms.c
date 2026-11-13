@@ -86,6 +86,8 @@ static void tune(t3_ms_t *ms, uint32_t now, const t3_chan_t *c, uint8_t slot, bo
 	ms->tuned = *c;
 	ms->tuned_slot = slot;
 	ms->tuned_ms = now;
+	ms->level_dbm = 0;
+	ms->weak_since = 0;
 	t3_act_t a;
 	memset(&a, 0, sizeof(a));
 	a.type = T3_ACT_TUNE;
@@ -155,14 +157,20 @@ static bool chan_lookup(const t3_ms_t *ms, uint16_t lcn, t3_chan_t *out)
 
 // ---- Hunting (6.3.2.1, Annex D) ----
 
+// The adjacent sites' TSCCs come first (6.7.1.7: they are the likelier to serve), then the programmed ones
 static uint8_t hunt_count(const t3_ms_t *ms)
 {
-	return (uint8_t)(ms->cfg->nctrl + ms->cfg->nhunt);
+	return (uint8_t)(ms->nadj + ms->cfg->nctrl + ms->cfg->nhunt);
 }
 
 static bool hunt_candidate(const t3_ms_t *ms, uint8_t i, t3_chan_t *out)
 {
 	const t3_cfg_t *c = ms->cfg;
+	if (i < ms->nadj) {
+		*out = ms->adj[i].chan;
+		return out->rx_hz != 0;
+	}
+	i = (uint8_t)(i - ms->nadj);
 	if (i < c->nctrl) {
 		*out = c->ctrl[i];
 		return out->rx_hz != 0;
@@ -186,6 +194,9 @@ static void hunt_next(t3_ms_t *ms, uint32_t now)
 		t3_chan_t c;
 		uint8_t i = ms->hunt_idx;
 		ms->hunt_idx = (uint8_t)((ms->hunt_idx + 1u) % n);
+		if (ms->hunt_idx == 0) {
+			ms->hunt_strict = false;	// a whole pass found nothing better: take any TSCC again
+		}
 		if (hunt_candidate(ms, i, &c)) {
 			tune(ms, now, &c, 0, false);
 			return;
@@ -234,6 +245,8 @@ static void enter_hunt(t3_ms_t *ms, uint32_t now, bool retry)
 	ms->tscc_slots = 0;
 	ms->csc_valid = false;
 	ms->retry_tscc = retry && ms->tscc.rx_hz != 0;
+	ms->hunt_strict = false;
+	ms->vote.on = false;
 	ms->st.hunts++;
 	hunt_next(ms, now);
 }
@@ -645,8 +658,13 @@ static void finish(t3_ms_t *ms, uint32_t now, t3_res_t r)
 	}
 }
 
+static void vote_end(t3_ms_t *ms, uint32_t now, bool moving);
+
 static void start_access(t3_ms_t *ms, uint32_t now, t3_svc_t svc, uint32_t dst, bool emergency)
 {
+	if (ms->vote.on) {
+		vote_end(ms, now, false);	// back on our TSCC first
+	}
 	ps_wake(ms, now);
 	ms->ax.state = T3_AX_WAIT_SLOT;
 	ms->ax.svc = svc;
@@ -1292,6 +1310,12 @@ static bool authorized(t3_ms_t *ms, uint16_t code)
 
 static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t3_aloha_t *a)
 {
+	if (ms->state == T3_HUNT && ms->hunt_strict && ms->cfg->leave_dbm != 0 && ms->level_dbm != 0 &&
+	    ms->level_dbm < ms->cfg->leave_dbm) {
+		// Hunting away from a weak TSCC: this one is no better (6.3.2.3 a, the hunting threshold)
+		hunt_next(ms, now);
+		return;
+	}
 	if (ms->state == T3_HUNT) {
 		ms->state = T3_CAMPED;
 		ms->tscc = ms->tuned;
@@ -1304,6 +1328,8 @@ static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 		t3_syscode_split(a->syscode, &n);
 		if (o.model != n.model || o.net != n.net) {
 			t3_learn_clear(&ms->learned);
+			ms->nadj = 0;
+			ms->adj_next = 0;
 		}
 	}
 	ms->confirmed = true;
@@ -1355,6 +1381,153 @@ static void on_move(t3_ms_t *ms, uint32_t now, const t3_move_t *m, const t3_cdef
 	tune(ms, now, &ms->tscc, 0, false);
 }
 
+// ---- Adjacent sites, Vote Now (6.7.1.3, 6.7.1.7) ----
+
+// An Adjacent_Site or Vote_Now broadcast (tables 7.71, 7.79): Parms1 the adjacent TSCC's 14 system code MSBs; Parms2
+// Active_Connection available and its flag, the confirmed and the adjacent channel priority, 4 reserved, the channel
+// (4 095: an MBC whose appended block holds the frequencies). Kept when it is the radio's network; the entry's index,
+// or -1
+static int adj_note(t3_ms_t *ms, const t3_bcast_t *b, const t3_cdef_t *cdef)
+{
+	uint16_t ch = (uint16_t)(b->parms2 & 0xFFFu);
+	t3_chan_t c;
+	if (ch == 0) {
+		return -1;
+	}
+	if (ch == T3_LPCN_ABSOLUTE) {
+		if (cdef == NULL) {
+			return -1;
+		}
+		c = (t3_chan_t){ cdef->chan, cdef->rx_hz, cdef->tx_hz, cdef->cc };
+	} else if (!chan_lookup(ms, ch, &c)) {
+		return -1;
+	}
+	uint16_t sys14 = (uint16_t)(b->parms1 & 0x3FFFu);
+	if (c.rx_hz == 0 || c.rx_hz == ms->tscc.rx_hz ||
+	    !authorized(ms, (uint16_t)((uint16_t)(sys14 << 2) | (ms->syscode & 3u)))) {
+		return -1;
+	}
+	uint8_t i = 0;
+	while (i < ms->nadj && ms->adj[i].chan.rx_hz != c.rx_hz) {
+		i++;
+	}
+	if (i == ms->nadj) {
+		if (ms->nadj < T3_ADJ_MAX) {
+			ms->nadj++;
+		} else {
+			i = ms->adj_next;
+			ms->adj_next = (uint8_t)((ms->adj_next + 1u) % T3_ADJ_MAX);
+		}
+		memset(&ms->adj[i], 0, sizeof(ms->adj[i]));
+	}
+	t3_adj_t *a = &ms->adj[i];
+	a->chan = c;
+	a->sys14 = sys14;
+	a->conf_prio = (uint8_t)((b->parms2 >> 19) & 7u);
+	a->adj_prio = (uint8_t)((b->parms2 >> 16) & 7u);
+	return i;
+}
+
+static bool weak(const t3_ms_t *ms, int16_t dbm)
+{
+	return ms->cfg->leave_dbm != 0 && dbm != 0 && dbm < ms->cfg->leave_dbm;
+}
+
+// Whether the adjacent TSCC sampled serves better than ours (home: our level). The algorithm is the radio's to choose
+// (6.7.1.3): radiated priorities first (1 highest .. 7; 0 none), then the signal with a margin, so two sites of about
+// the same level don't swap the radio back and forth. A worse-priority site only rescues a weak TSCC
+static bool vote_better(const t3_ms_t *ms, const t3_adj_t *a, int16_t home)
+{
+	if (weak(ms, a->dbm)) {
+		return false;
+	}
+	bool stronger = a->dbm != 0 && home != 0 && a->dbm >= home + T3_VOTE_MARGIN_DB;
+	if (a->conf_prio != 0 && a->adj_prio != 0 && a->adj_prio != a->conf_prio) {
+		return a->adj_prio < a->conf_prio || (weak(ms, home) && stronger);
+	}
+	return stronger;
+}
+
+// Sampling over: move to it (the next Aloha there confirms it, and registers in a new area), or back to our TSCC.
+// moving false: back at once (the user wants service)
+static void vote_end(t3_ms_t *ms, uint32_t now, bool moving)
+{
+	ms->vote.on = false;
+	t3_adj_t *a = &ms->adj[ms->vote.idx];
+	a->dbm = ms->level_dbm;
+	a->sampled_ms = now != 0 ? now : 1u;
+	if (moving && ms->vote.heard && vote_better(ms, a, ms->vote.home_dbm)) {
+		t3_chan_t to = a->chan;
+		to.cc = ms->vote.cc;
+		// The TSCC left becomes the new one's adjacent site, so a hunt finds it again
+		uint8_t conf = a->conf_prio;
+		a->chan = ms->tscc;
+		a->sys14 = (uint16_t)(ms->syscode >> 2);
+		a->conf_prio = a->adj_prio;
+		a->adj_prio = conf;
+		a->dbm = ms->vote.home_dbm;
+		ms->tscc = to;
+		ms->tuned.cc = to.cc;
+		ms->confirmed = false;
+		ms->massreg = false;
+		ms->tscc_slots = 0;
+		ms->csc_valid = false;
+		ms->last_valid_ms = now;
+		ms->st.vote_moves++;
+		return;
+	}
+	int16_t home = ms->vote.home_dbm;
+	ms->last_valid_ms += now - ms->vote.start;	// T_Nosig doesn't count the time away
+	tune(ms, now, &ms->tscc, 0, false);
+	ms->level_dbm = home;
+}
+
+// A Vote Now (6.7.1.3): an idle radio samples the TSCC named, in the frames the TSCC keeps quiet for it
+static void maybe_vote(t3_ms_t *ms, uint32_t now, uint8_t i)
+{
+	t3_adj_t *a = &ms->adj[i];
+	if ((ms->cfg->opts & T3_OPT_NO_ROAM) || ms->state != T3_CAMPED || !ms->confirmed || ms->vote.on ||
+	    ms->ax.state != T3_AX_IDLE || ms->nq != 0 || ms->tx.count != 0 || ms->udt_rx.open ||
+	    (a->sampled_ms != 0 && !since(now, a->sampled_ms, T3_VOTE_AGAIN_MS) && !weak(ms, ms->level_dbm))) {
+		return;
+	}
+	ms->vote.on = true;
+	ms->vote.idx = i;
+	ms->vote.start = now;
+	ms->vote.until = now + or_default(ms->cfg->vote_ms, T3_VOTE_MS);
+	ms->vote.heard = false;
+	ms->vote.cc = 0;
+	ms->vote.home_dbm = ms->level_dbm;
+	ms->st.votes++;
+	tune(ms, now, &a->chan, 0, false);
+}
+
+// A PDU heard on the TSCC being sampled: only whether it is the site announced
+static void on_vote(t3_ms_t *ms, uint8_t cc, const t3_csbk_t *p)
+{
+	uint16_t code;
+	if (p->op == T3_OP_C_ALOHA) {
+		code = p->u.aloha.syscode;
+	} else if (p->op == T3_OP_C_BCAST) {
+		code = p->u.bcast.syscode;
+	} else {
+		return;
+	}
+	const t3_adj_t *a = &ms->adj[ms->vote.idx];
+	if (authorized(ms, code) && (code >> 2) == a->sys14) {
+		ms->vote.heard = true;
+		ms->vote.cc = cc;
+	}
+}
+
+void t3_ms_level(t3_ms_t *ms, uint32_t now, int16_t dbm)
+{
+	if (dbm == 0 || ms->state == T3_OFF || ms->state == T3_FOLLOW || !since(now, ms->tuned_ms, T3_SETTLE_MS)) {
+		return;
+	}
+	ms->level_dbm = ms->level_dbm == 0 ? dbm : (int16_t)((3 * (int32_t)ms->level_dbm + dbm) / 4);
+}
+
 // A complete PDU heard on the TSCC we are hunting or camped on. cdef: the appended block of an MBC, or NULL
 static void on_tscc(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t3_csbk_t *p, const t3_cdef_t *cdef)
 {
@@ -1383,6 +1556,12 @@ static void on_tscc(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 		set_reg(ms, p->u.bcast.reg);
 		if (p->u.bcast.type == T3_ANN_MASS_REG) {
 			on_mass_reg(ms, now, &p->u.bcast);
+		}
+		if (p->u.bcast.type == T3_ANN_ADJACENT || p->u.bcast.type == T3_ANN_VOTE_NOW) {
+			int i = adj_note(ms, &p->u.bcast, cdef);
+			if (i >= 0 && p->u.bcast.type == T3_ANN_VOTE_NOW) {
+				maybe_vote(ms, now, (uint8_t)i);
+			}
 		}
 		if (p->u.bcast.type == T3_ANN_CHAN_FREQ && cdef != NULL && ms->cfg->plan.learn) {
 			t3_cdef_t c = *cdef;
@@ -1542,6 +1721,8 @@ static void deliver(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 {
 	if (ms->state == T3_FOLLOW) {
 		on_payload(ms, now, slot, p, cdef);
+	} else if (ms->vote.on) {
+		on_vote(ms, cc, p);
 	} else {
 		on_tscc(ms, now, slot, cc, p, cdef);
 	}
@@ -1550,7 +1731,7 @@ static void deliver(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 static bool cc_ok(const t3_ms_t *ms, uint8_t cc)
 {
 	uint8_t want = ms->state == T3_FOLLOW ? ms->call.chan.cc : ms->tuned.cc;
-	if (ms->state == T3_CAMPED) {
+	if (ms->state == T3_CAMPED && !ms->vote.on) {
 		want = ms->tscc.cc;
 	}
 	return want == T3_CC_ANY || want == cc;
@@ -1809,7 +1990,7 @@ void t3_ms_slc(t3_ms_t *ms, uint32_t now, uint32_t slc)
 		return;
 	}
 	ms->slc_foreign = 0;
-	if (ms->state == T3_CAMPED) {
+	if (ms->state == T3_CAMPED && !ms->vote.on) {
 		ms->csc = sp.csc;
 		ms->csc_ms = now;
 		ms->csc_valid = true;
@@ -1865,6 +2046,12 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 		}
 		break;
 	case T3_CAMPED: {
+		if (ms->vote.on) {
+			if (ms->nq == 0 && !before(now, ms->vote.until)) {
+				vote_end(ms, now, true);
+			}
+			break;
+		}
 		// Asleep, nothing can be heard: T_Nosig counts only the time awake
 		bool sleep = ps_may_sleep(ms, now);
 		if (ms->asleep) {
@@ -1878,6 +2065,22 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 		if (since(now, ms->last_valid_ms, or_default(ms->cfg->nosig_ms, T3_NOSIG_MS))) {
 			enter_hunt(ms, now, true);
 			break;
+		}
+		if (!(ms->cfg->opts & T3_OPT_NO_ROAM) && weak(ms, ms->level_dbm) && ms->ax.state == T3_AX_IDLE &&
+		    hunt_count(ms) > 1) {
+			// Below the threshold (6.3.3.1 a) for T3_WEAK_MS, with somewhere else to look: hunt, and take only a
+			// stronger TSCC for one pass
+			if (ms->weak_since == 0) {
+				ms->weak_since = now != 0 ? now : 1u;
+			} else if (since(now, ms->weak_since, T3_WEAK_MS)) {
+				ms->st.weak_leaves++;
+				ms->hunt_idx = 0;	// from the adjacent sites
+				enter_hunt(ms, now, false);
+				ms->hunt_strict = true;
+				break;
+			}
+		} else {
+			ms->weak_since = 0;
 		}
 		if (!may_send(ms)) {
 			break;

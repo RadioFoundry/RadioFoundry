@@ -2735,6 +2735,11 @@ static void t3_publish(radio_sm_t *sm)
 	v->learned = m->st.learned;
 	v->sent = m->st.sent;
 	v->ra_tries = m->st.ra_tries;
+	v->votes = m->st.votes;
+	v->vote_moves = m->st.vote_moves;
+	v->weak_leaves = m->st.weak_leaves;
+	v->level_dbm = m->level_dbm;
+	v->nadj = m->nadj;
 	v->own_id = t3s.cfg.own_id;
 }
 
@@ -2750,6 +2755,9 @@ static void t3_start(radio_sm_t *sm, uint32_t now_ms)
 	}
 	if (t3s.cfg.nctrl == 0 || t3s.cfg.own_id == 0) {
 		return;		// nothing to hunt on, or no ID
+	}
+	if (t3s.cfg.leave_dbm == 0) {
+		t3s.cfg.leave_dbm = sm->set.roam_rssi_dbm;	// the roaming threshold: weak below it (6.3.2.3)
 	}
 	memset(&sm->view.t3, 0, sizeof(sm->view.t3));
 	sm->view.t3.last_tx_op = 0xFF;
@@ -3009,6 +3017,10 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	// call's activity (TV_Inactive would otherwise pull it back to the control channel mid-sentence)
 	if (n != 0 && t3m.state == T3_FOLLOW && (sm->view.state == RS_TX || sm->dmr_keyed)) {
 		t3_ms_activity(&t3m, now_ms, sm->view.ch.timeslot);
+	}
+
+	if (n != 0 && t3m.state != T3_FOLLOW) {
+		t3_ms_level(&t3m, now_ms, sm->view.rssi_dbm);	// once a frame: the TSCC's or the one hunted or sampled
 	}
 
 	t3_act_t a;

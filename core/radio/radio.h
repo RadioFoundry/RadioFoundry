@@ -245,6 +245,9 @@ typedef struct {
 	uint32_t last_rx_ms, last_tx_ms;
 	uint32_t ticks;		// slot ticks handed to the engine
 	uint32_t csbk, crc_bad, grants, followed, unmapped, returns, hunts, foreign, learned, sent, ra_tries;
+	uint32_t votes, vote_moves, weak_leaves;	// adjacent TSCCs sampled, moved to; TSCCs left as weak
+	int16_t level_dbm;	// the tuned TSCC's averaged level
+	uint8_t nadj;		// adjacent sites known
 	uint32_t send_fail;	// sends the stack refused (busy) and dropped
 	uint8_t last_tx[12];	// the last CSBK sent, CRC included (T3_CSBK_BYTES)
 	uint32_t at_known;	// slot ticks with the CACH's AT bit read, and of those, busy

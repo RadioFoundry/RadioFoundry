@@ -138,8 +138,9 @@ retune not yet taken and what was queued after it.
 | CAMPED | listens to the TSCC, both slots |
 | FOLLOW | listens to one slot of a payload channel |
 
-**Hunt.** The candidates are the programmed control channels in order, then the extra hunt LPCNs through the plan.
-Each gets a dwell (700 ms: at least 12 TSCC slots and two short LCs). After a loss, the lost TSCC is tried first.
+**Hunt.** The candidates are the adjacent sites' control channels (7.18), then the programmed control channels in
+order, then the extra hunt LPCNs through the plan. Each gets a dwell (700 ms: at least 12 TSCC slots and two short
+LCs). After a loss, the lost TSCC is tried first.
 
 - An authorized C_ALOHA confirms the channel: the radio camps, and keeps the color code it was heard with.
 - An Aloha of another system moves the hunt to the next candidate at once.
@@ -562,6 +563,37 @@ channel and sends a status on the TSCC; the TS answers, then stops the talker wi
   Command 0100 (cease) or 0101 (cease request) ends after voice burst F with a terminator (6.4.15.2). The modem drivers
   drop reverse channel bursts.
 
+### 7.18 Adjacent sites, Vote Now and signal quality (6.3.2.3, 6.3.3.1 a, 6.7.1.3, 6.7.1.7)
+
+The standard leaves what a radio does with these to the manufacturer. The engine:
+
+**Adjacent sites.** An Adjacent_Site or Vote_Now broadcast (tables 7.71, 7.79) names another TSCC: its logical
+channel, or (channel 4 095) the frequencies of the appended block, and the 14 high bits of its system code. One that
+belongs to the radio's network (authorized as an Aloha would be) is kept, up to 4, the oldest replaced. Hunting tries
+them first. Another network's Aloha confirmed drops them, with the learned channels.
+
+**Signal level.** The radio reports the tuned channel's level once a TDMA frame while it isn't following a call
+(`t3_ms_level`); the engine averages it (3/4 old, 1/4 new) and starts again on each retune. The threshold is the
+radio's roaming threshold (`roam_rssi_dbm`), unless the system's record sets one.
+
+**Vote Now.** An idle radio, camped and confirmed, with nothing queued, samples the TSCC named for 360 ms: the frames
+the TSCC keeps quiet for it (VOTE_BLK). An access started meanwhile brings it back at once. It counts the sample only
+if it hears an Aloha or broadcast of that site's system code there, and then moves when the site is better:
+
+| Priorities radiated (table 6.81) | Moves when |
+|---|---|
+| Adjacent higher than ours | its level is at or above the threshold |
+| Adjacent lower than ours | ours is below the threshold, and it is 6 dB stronger and above the threshold |
+| None, or equal | it is 6 dB stronger and at or above the threshold |
+
+A move keeps the radio there unconfirmed until its Aloha (which registers again in a new SYS_AREA, 7.2); the TSCC
+left becomes an adjacent site. Otherwise the radio returns, its level kept and the time away not counted in T_Nosig.
+A site sampled isn't sampled again for 30 s unless ours is weak. `T3_OPT_NO_ROAM` turns sampling and the next rule off.
+
+**Leaving a weak TSCC.** Camped, idle, below the threshold for 5 s, and with another candidate: the radio hunts from
+the adjacent sites, and for one pass confirms only a TSCC at or above the threshold (the hunting threshold of
+6.3.2.3). After a pass it takes any. With nowhere else to look it stays.
+
 ## 8. Timers and constants
 
 | Name | Value | Standard range (Annex A) |
@@ -579,6 +611,10 @@ channel and sends a status on the TSCC; the TS answers, then stops the talker wi
 | NRand_NR, NRand_NE | 6, 10 | |
 | N_Maint | 4 | |
 | Registration retry | 30 s | |
+| Vote Now sample | 360 ms | VOTE_BLK: 2-10 frames |
+| Vote margin | 6 dB | |
+| Sample again | 30 s | |
+| Weak before leaving | 5 s | |
 
 The system's record may override T_Nosig, TV_Inactive, the dwell, TRand_TC, TP_Timer and TNP_Timer; 0 keeps the
 default.
@@ -597,7 +633,8 @@ the learned ring.
 
 `t3MsTest` drives the engine with built PDUs: hunting over silent and foreign candidates, the settle time, CRC and
 color code filters, every follow rule, every return, T_Nosig, short LCs, learning from Chan_Freq and CG_AP, late MBC
-continuations, monitor and emergency options, stop.
+continuations, monitor and emergency options, adjacent sites and the hunt order, Vote Now (stronger, within the
+margin, silent, priorities, `T3_OPT_NO_ROAM`), leaving a weak TSCC and the hunting threshold, stop.
 
 `t3AccessTest` runs the access side against a TSCC simulated frame by frame (CACH, AT bit, Aloha): registration and
 its answers, the retry spacing and count, denied and refused areas, the AT bit, Mask, Service Function and first-Aloha
@@ -623,7 +660,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | A kill kept across a restart, and conventional DMR off when killed | later |
 | A stun kept across a restart of the radio | trunked systems in the codeplug |
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
-| Data to a gateway, adjacent sites | later |
+| Data to a gateway | later |
 | Power save: the receiver off while asleep (boards' `rx_sleep` on DMR channels) | later |
 | The interrupted talker's side: the reverse channel's cease command while transmitting (6.4.15.2) | reverse channel reception in the modem drivers |
 

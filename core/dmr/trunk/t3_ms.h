@@ -11,6 +11,7 @@
 //   t3_ms_rx()        every data burst heard (CSBK, MBC header, MBC continuation) with its slot and color code
 //   t3_ms_slc()       every short LC the CACH carried (CRC-8 good)
 //   t3_ms_activity()  any sync on the slot being followed (voice or data), for the inactivity timer
+//   t3_ms_level()     the signal level of the channel tuned, for leaving a weak TSCC and sampling an adjacent one
 //   t3_ms_poll()      every 10-30 ms: T3_ACT_TUNE means retune to act->chan and listen to act->slot (0: both)
 //   t3_ms_stop()      another zone or channel selected
 //   t3_ms_slot()      once per TDMA frame for each slot heard, at its CACH: the AT bit for the inbound slot after it
@@ -55,6 +56,7 @@
 #define T3_OPT_REG_TG		0x0040	// register with the talk group (subscription) rather than the system code
 #define T3_OPT_ALS		0x0080	// accept Ambient Listening (6.6.2.6): the radio transmits by itself when called so
 #define T3_OPT_KILL		0x0100	// accept an authenticated kill (6.4.10); the radio keeps it in RAM only
+#define T3_OPT_NO_ROAM		0x0200	// stay on a TSCC whatever its signal: no Vote Now sampling, no leaving a weak one
 
 // Defaults (TS 102 361-4 Annex A ranges in the comments)
 #define T3_AWAKE_MS		2000	// T_Awake, 0.1-60 s: power save, awake this long after traffic for the radio
@@ -77,11 +79,27 @@
 #define T3_REG_RETRY_MS		30000	// a registration nobody answered is tried again after this
 #define T3_REPEAT_MS		4000	// a status or short data the same as the last heard this soon is the TSCC's repeat
 #define T3_DENIED_MAX		4	// SYS_AREAs that denied registration (cleared at power on)
+#define T3_ADJ_MAX		4	// adjacent sites' TSCCs (Adjacent_Site, Vote_Now), hunted first
+#define T3_VOTE_MS		360	// sampling an adjacent TSCC after a Vote Now (VOTE_BLK: 2-10 frames)
+#define T3_VOTE_MARGIN_DB	6	// an adjacent TSCC this much stronger is better (no radiated preference)
+#define T3_WEAK_MS		5000	// camped with the level below leave_dbm this long: hunt (6.3.3.1 a)
+#define T3_VOTE_AGAIN_MS	30000	// an adjacent TSCC sampled isn't sampled again this soon, unless ours is weak
 
 typedef struct {
 	uint32_t id;
 	uint8_t flags;
 } t3_tg_t;
+
+// An adjacent site's TSCC (6.7.1.3, 6.7.1.7): its channel, the 14 MSBs of its system code, and the priorities a
+// Vote Now gave (table 6.81: 1 highest .. 7 lowest, 0 none radiated)
+typedef struct {
+	t3_chan_t chan;
+	uint16_t sys14;
+	uint8_t conf_prio;
+	uint8_t adj_prio;
+	int16_t dbm;		// its level when last sampled, 0 = never
+	uint32_t sampled_ms;	// when (0: never)
+} t3_adj_t;
 
 typedef struct {
 	uint32_t own_id;
@@ -99,6 +117,8 @@ typedef struct {
 	uint16_t nosig_ms;		// 0 = default
 	uint16_t inactive_ms;
 	uint16_t dwell_ms;
+	int16_t leave_dbm;		// signal quality (6.3.2.3): a TSCC below this is left for another; 0 = never
+	uint16_t vote_ms;		// 0 = default
 	uint32_t reg_id;		// the ID registered and called from, 0 = own_id
 	uint16_t trand_tc_ms;		// 0 = default, as the rest
 	uint16_t tp_ms;
@@ -216,6 +236,9 @@ typedef struct {
 	uint16_t last_unmapped;
 	uint32_t sent;		// CSBKs handed to the radio to send
 	uint32_t ra_tries;	// random access bursts among them
+	uint32_t votes;		// adjacent TSCCs sampled after a Vote Now
+	uint32_t vote_moves;	// ... and moved to
+	uint32_t weak_leaves;	// TSCCs left for a weak signal
 } t3_stats_t;
 
 typedef struct {
@@ -377,6 +400,20 @@ typedef struct {
 	uint8_t reg_tgs;
 	bool reg_single;	// the registration carried one talkgroup (6.4.4.1.13.1): its answer says whether it was taken
 	uint8_t reg_tg_ok;
+	t3_adj_t adj[T3_ADJ_MAX];
+	uint8_t nadj;
+	uint8_t adj_next;		// the entry a new site replaces when full
+	int16_t level_dbm;		// the tuned channel's averaged signal level (t3_ms_level), 0 = none yet
+	uint32_t weak_since;		// camped and below leave_dbm since (0: not)
+	bool hunt_strict;		// hunting after a weak TSCC: confirm only one above leave_dbm, for one pass
+	struct {
+		bool on;		// sampling adj[idx] until `until`
+		uint8_t idx;
+		uint32_t start, until;
+		bool heard;		// an Aloha or broadcast with its system code
+		uint8_t cc;
+		int16_t home_dbm;	// the TSCC's level before
+	} vote;
 	uint16_t denied[T3_DENIED_MAX];	// areas, as reg_area, that denied registration, + 1 (0: empty)
 	bool deregistered;		// de-registered: no registration until t3_ms_start
 	uint32_t left_dst;		// a talkgroup call the user left: its late-entry grants don't pull us back (6.6.2.4.1)
@@ -390,6 +427,8 @@ void t3_ms_stop(t3_ms_t *ms);
 void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, const uint8_t d[T3_CSBK_BYTES]);
 void t3_ms_slc(t3_ms_t *ms, uint32_t now, uint32_t slc);
 void t3_ms_activity(t3_ms_t *ms, uint32_t now, uint8_t slot);
+// The tuned channel's signal level, in dBm, as often as the radio measures it (0: none). Not while following a call
+void t3_ms_level(t3_ms_t *ms, uint32_t now, int16_t dbm);
 bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act);
 
 void t3_ms_slot(t3_ms_t *ms, uint32_t now, uint8_t slot, bool at_known, bool at_busy);

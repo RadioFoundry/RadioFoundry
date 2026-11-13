@@ -298,6 +298,8 @@ void debuglink_view_t3(const radio_view_t *v, dl_text_t *t)
 		"t3.send_fail=%u\nt3.at_known=%u\nt3.at_busy=%u\n", (unsigned)x->returns, (unsigned)x->hunts,
 		(unsigned)x->foreign, (unsigned)x->learned, (unsigned)x->sent, (unsigned)x->ra_tries,
 		(unsigned)x->send_fail, (unsigned)x->at_known, (unsigned)x->at_busy);
+	dl_text(t, "t3.level_dbm=%d\nt3.adjacent=%u\nt3.votes=%u\nt3.vote_moves=%u\nt3.weak_leaves=%u\n",
+		x->level_dbm, x->nadj, (unsigned)x->votes, (unsigned)x->vote_moves, (unsigned)x->weak_leaves);
 #else
 	(void)v;
 	dl_text(t, "t3.built=0\n");

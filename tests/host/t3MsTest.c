@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The DMR Tier III mobile station engine, receive side (core/dmr/trunk/t3_ms): hunting, confirming the TSCC,
-// following grants, returning, T_Nosig, learned channels, against PDUs built from the standard's layouts.
+// following grants, returning, T_Nosig, learned channels, adjacent sites and Vote Now, leaving a weak TSCC, against PDUs
+// built from the standard's layouts.
 //
 //   make -C tests/host t3MsTest && (cd tests/host && ./t3MsTest)
 #include <stdio.h>
@@ -554,6 +555,183 @@ static void test_monitor_emergency(void)
 	CHECK(ms.state == T3_CAMPED, "private calls off");
 }
 
+// ---- Adjacent sites, Vote Now, leaving a weak TSCC ----
+
+static uint16_t site1;		// our network's site 1
+
+// A C_BCAST from the TSCC: an Adjacent_Site or Vote_Now naming a TSCC (tables 7.71, 7.79)
+static void announce(t3_ms_t *ms, uint8_t type, uint16_t code, uint8_t conf, uint8_t adj, uint16_t ch)
+{
+	t3_csbk_t p = { .lb = true, .op = T3_OP_C_BCAST };
+	p.u.bcast.type = type;
+	p.u.bcast.syscode = ours;
+	p.u.bcast.reg = true;
+	p.u.bcast.parms1 = t3_syscode_14(code);
+	p.u.bcast.parms2 = ((uint32_t)conf << 19) | ((uint32_t)adj << 16) | ch;
+	send(ms, 1, CC, &p);
+}
+
+// The tuned TSCC sends Alohas of `code` for dur, the radio measuring dbm (0: nothing)
+static void camp_at(t3_ms_t *ms, uint32_t dur, uint16_t code, int16_t dbm)
+{
+	for (uint32_t t = 0; t < dur; t += 60) {
+		adv(ms, 60);
+		t3_ms_level(ms, T, dbm);
+		if (code != 0) {
+			aloha(ms, CC, code, true);
+		}
+	}
+}
+
+static void roam_setup(t3_ms_t *ms, int16_t home_dbm)
+{
+	setup();
+	t3_syscode_t s = { T3_MODEL_LARGE, 12, 1, T3_PAR_AB };
+	site1 = t3_syscode_join(&s);
+	hunt_to_ours(ms);
+	camp_at(ms, 600, ours, home_dbm);
+}
+
+static void test_adjacent(void)
+{
+	t3_ms_t ms;
+	roam_setup(&ms, -90);
+	CHECK(ms.level_dbm < -88 && ms.level_dbm > -92, "level averaged: %d", ms.level_dbm);
+	announce(&ms, T3_ANN_ADJACENT, site1, 0, 0, 200);
+	CHECK(ms.nadj == 1 && ms.adj[0].chan.rx_hz == RX(200) && ms.adj[0].sys14 == t3_syscode_14(site1),
+	      "adjacent site kept: %u", ms.nadj);
+	announce(&ms, T3_ANN_ADJACENT, site1, 0, 0, 200);
+	CHECK(ms.nadj == 1, "the same one again is one entry");
+	announce(&ms, T3_ANN_ADJACENT, theirs, 0, 0, 201);
+	announce(&ms, T3_ANN_ADJACENT, site1, 0, 0, 154);
+	announce(&ms, T3_ANN_ADJACENT, site1, 0, 0, 0);
+	CHECK(ms.nadj == 1, "another network's, our own TSCC and channel 0 aren't kept: %u", ms.nadj);
+	CHECK(ms.state == T3_CAMPED && last.chan.rx_hz == RX(154), "Adjacent_Site alone doesn't sample");
+	// A lost TSCC is tried again first, then the adjacent site before the programmed list
+	adv(&ms, T3_NOSIG_MS + 100);
+	CHECK(ms.state == T3_HUNT && last.chan.rx_hz == RX(154), "the lost TSCC first");
+	adv(&ms, T3_DWELL_MS + 20);
+	CHECK(last.chan.rx_hz == RX(200), "then the adjacent site: %u", last.chan.rx_hz);
+	adv(&ms, T3_DWELL_MS + 20);
+	CHECK(last.chan.rx_hz == 452000000u, "then the list: %u", last.chan.rx_hz);
+	// Another network's Aloha found in the hunt drops what was learned of this one
+	adv(&ms, 100);
+	aloha(&ms, CC, theirs, true);
+	CHECK(ms.nadj == 1, "an unauthorized Aloha isn't a network change");
+}
+
+static void test_vote(void)
+{
+	t3_ms_t ms;
+	// A stronger adjacent TSCC: sampled in the quiet frames, and moved to
+	roam_setup(&ms, -90);
+	announce(&ms, T3_ANN_VOTE_NOW, site1, 0, 0, 200);
+	CHECK(ms.vote.on && last.chan.rx_hz == RX(200) && ms.st.votes == 1, "Vote Now samples it");
+	camp_at(&ms, 300, site1, -70);
+	adv(&ms, T3_VOTE_MS);
+	CHECK(!ms.vote.on && ms.tscc.rx_hz == RX(200) && last.chan.rx_hz == RX(200) && ms.st.vote_moves == 1,
+	      "moved to the stronger site: TSCC %u", ms.tscc.rx_hz);
+	CHECK(!ms.confirmed && ms.state == T3_CAMPED, "until its Aloha confirms it");
+	camp_at(&ms, 120, site1, -70);
+	CHECK(ms.confirmed && ms.syscode == site1, "confirmed on site 1");
+	CHECK(ms.nadj == 1 && ms.adj[0].chan.rx_hz == RX(154) && ms.adj[0].sys14 == t3_syscode_14(ours),
+	      "the site left is the adjacent one now");
+
+	// About as strong: back to our TSCC with its level, and not sampled again soon
+	roam_setup(&ms, -90);
+	announce(&ms, T3_ANN_VOTE_NOW, site1, 0, 0, 200);
+	camp_at(&ms, 300, site1, -86);
+	adv(&ms, T3_VOTE_MS);
+	CHECK(!ms.vote.on && ms.tscc.rx_hz == RX(154) && last.chan.rx_hz == RX(154) && ms.st.vote_moves == 0,
+	      "within the margin: back, on %u", last.chan.rx_hz);
+	CHECK(ms.level_dbm < -88 && ms.adj[0].dbm > -88, "our level kept (%d), theirs noted (%d)", ms.level_dbm,
+	      ms.adj[0].dbm);
+	camp_at(&ms, 120, ours, -90);
+	CHECK(ms.state == T3_CAMPED && ms.confirmed, "camped again");
+	announce(&ms, T3_ANN_VOTE_NOW, site1, 0, 0, 200);
+	CHECK(!ms.vote.on && ms.st.votes == 1, "not sampled again within T3_VOTE_AGAIN_MS");
+	camp_at(&ms, T3_VOTE_AGAIN_MS, ours, -90);
+	announce(&ms, T3_ANN_VOTE_NOW, site1, 0, 0, 200);
+	CHECK(ms.vote.on && ms.st.votes == 2, "sampled again after it");
+
+	// Silence there (no Aloha of the site named): back, whatever the level
+	roam_setup(&ms, -90);
+	announce(&ms, T3_ANN_VOTE_NOW, site1, 0, 0, 200);
+	camp_at(&ms, 300, theirs, -60);
+	adv(&ms, T3_VOTE_MS);
+	CHECK(ms.tscc.rx_hz == RX(154) && last.chan.rx_hz == RX(154), "another network there: back");
+
+	// Radiated priorities: a preferred site is taken though weaker, a less preferred one only to escape a weak TSCC
+	roam_setup(&ms, -90);
+	cfg.leave_dbm = -105;
+	announce(&ms, T3_ANN_VOTE_NOW, site1, 3, 1, 200);
+	camp_at(&ms, 300, site1, -98);
+	adv(&ms, T3_VOTE_MS);
+	CHECK(ms.tscc.rx_hz == RX(200), "a preferred site, weaker but above the threshold: moved");
+	roam_setup(&ms, -90);
+	cfg.leave_dbm = -105;
+	announce(&ms, T3_ANN_VOTE_NOW, site1, 3, 1, 200);
+	camp_at(&ms, 300, site1, -110);
+	adv(&ms, T3_VOTE_MS);
+	CHECK(ms.tscc.rx_hz == RX(154), "a preferred site below the threshold: not taken");
+	roam_setup(&ms, -90);
+	cfg.leave_dbm = -105;
+	announce(&ms, T3_ANN_VOTE_NOW, site1, 1, 3, 200);
+	camp_at(&ms, 300, site1, -60);
+	adv(&ms, T3_VOTE_MS);
+	CHECK(ms.tscc.rx_hz == RX(154), "a less preferred site, though much stronger: not taken");
+
+	// T3_OPT_NO_ROAM: Vote Now is noted, never sampled
+	roam_setup(&ms, -90);
+	cfg.opts |= T3_OPT_NO_ROAM;
+	announce(&ms, T3_ANN_VOTE_NOW, site1, 0, 0, 200);
+	CHECK(!ms.vote.on && ms.nadj == 1, "no sampling with T3_OPT_NO_ROAM");
+}
+
+// Our TSCC, weak, until the radio leaves it (then it hears nothing of ours elsewhere)
+static void camp_weak(t3_ms_t *ms, uint32_t dur)
+{
+	for (uint32_t t = 0; t < dur && ms->state == T3_CAMPED; t += 60) {
+		camp_at(ms, 60, ours, -112);
+	}
+}
+
+static void test_weak(void)
+{
+	t3_ms_t ms;
+	roam_setup(&ms, -90);
+	cfg.leave_dbm = -100;
+	announce(&ms, T3_ANN_ADJACENT, site1, 0, 0, 200);
+	camp_at(&ms, T3_WEAK_MS - 500, ours, -112);
+	CHECK(ms.state == T3_CAMPED, "weak, not yet for T3_WEAK_MS");
+	camp_weak(&ms, 1200);
+	CHECK(ms.state == T3_HUNT && ms.st.weak_leaves == 1 && last.chan.rx_hz == RX(200),
+	      "left for the adjacent site: %s on %u", t3_state_name(ms.state), last.chan.rx_hz);
+	// That one is weak too: not confirmed, the hunt goes on
+	camp_at(&ms, 180, site1, -115);
+	CHECK(ms.state == T3_HUNT, "a TSCC below the threshold isn't confirmed while hunting away from a weak one");
+	// Once a pass found nothing better, any TSCC will do
+	setup();
+	t3_syscode_t s = { T3_MODEL_LARGE, 12, 1, T3_PAR_AB };
+	site1 = t3_syscode_join(&s);
+	cfg.leave_dbm = -100;
+	hunt_to_ours(&ms);
+	announce(&ms, T3_ANN_ADJACENT, site1, 0, 0, 200);
+	camp_weak(&ms, T3_WEAK_MS + 600);
+	CHECK(ms.state == T3_HUNT && last.chan.rx_hz == RX(200), "hunting from the adjacent site");
+	camp_at(&ms, 300, site1, -75);
+	CHECK(ms.state == T3_CAMPED && ms.tscc.rx_hz == RX(200) && ms.syscode == site1, "a stronger one is taken");
+	// No adjacent site and one programmed TSCC: nowhere to go, it stays
+	setup();
+	cfg.leave_dbm = -100;
+	cfg.nctrl = 1;
+	cfg.ctrl[0] = (t3_chan_t){ 154, RX(154), RX(154) + 5000000u, T3_CC_ANY };
+	t3_ms_start(&ms, &cfg, T);
+	poll_all(&ms);
+	camp_at(&ms, T3_WEAK_MS * 2, ours, -112);
+	CHECK(ms.state == T3_CAMPED && ms.st.weak_leaves == 0, "nowhere else to look: stays");
+}
+
 static void test_stop(void)
 {
 	setup();
@@ -576,6 +754,9 @@ int main(void)
 	test_slc();
 	test_learn();
 	test_monitor_emergency();
+	test_adjacent();
+	test_vote();
+	test_weak();
 	test_stop();
 	printf("t3MsTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;
