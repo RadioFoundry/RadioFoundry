@@ -875,12 +875,32 @@ static void vfo_step(radio_sm_t *sm, int dir, uint32_t now_ms)
 	tune(sm, now_ms);
 }
 
+// A trunked channel whose system isn't set up (dmr-trunking.md 12.4): stepping passes it by
+static bool channel_locked(uint16_t number, const channel_t *ch)
+{
+#if CONFIG_DMR_TRUNK
+	radio_t3_tag_t tag;
+	return radio_t3_tag(number, ch->name, &tag) && !radio_t3_usable(tag.sys);
+#else
+	(void)number;
+	(void)ch;
+	return false;
+#endif
+}
+
 static void channel_step(radio_sm_t *sm, int dir, uint32_t now_ms)
 {
 	uint16_t pos;
 	channel_t ch;
-	if (!find_channel(&sm->zone, sm->view.zone_pos + dir, dir, &pos, &ch)) {
-		return;
+	int start = sm->view.zone_pos + dir;
+	for (int i = 0;; i++) {
+		if (i >= sm->zone.count || !find_channel(&sm->zone, start, dir, &pos, &ch)) {
+			return;		// nothing else in the zone the radio can use
+		}
+		if (!channel_locked(sm->zone.channels[pos], &ch)) {
+			break;
+		}
+		start = pos + dir;
 	}
 	set_channel(sm, pos, &ch);
 	tune(sm, now_ms);

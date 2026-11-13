@@ -48,11 +48,8 @@ WEAK bool ui_svc_save_talk_target(uint32_t id, bool private_call) { (void)id; (v
 WEAK bool ui_svc_scan(bool on) { (void)on; return false; }
 WEAK bool ui_svc_roam(uint8_t cmd) { (void)cmd; return false; }
 #if CONFIG_DMR_TRUNK
-WEAK uint8_t ui_svc_t3_count(void) { return 0; }
-WEAK bool ui_svc_t3_system(uint8_t row, uint8_t *n, char *name) { (void)row; (void)n; (void)name; return false; }
-WEAK int ui_svc_t3_selected(void) { return -1; }
-WEAK bool ui_svc_t3_select(uint8_t n) { (void)n; return false; }
-WEAK void ui_svc_t3_poll(const radio_view_t *v) { (void)v; }
+WEAK int ui_svc_t3_channel(uint16_t num, const char *name, bool *usable) { (void)num; (void)name; (void)usable; return -1; }
+WEAK bool ui_svc_t3_name(uint8_t n, char *name) { (void)n; name[0] = '\0'; return false; }
 #endif
 WEAK bool ui_svc_scan_skip(void) { return false; }
 WEAK bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel) { (void)ref; (void)sel; return false; }

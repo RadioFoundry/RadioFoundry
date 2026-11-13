@@ -2280,15 +2280,29 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	knob_tick(v);
 #endif
 	ui_svc_poll();
-#if CONFIG_DMR_TRUNK
-	ui_svc_t3_poll(v);
-#endif
 	ui_svc_keys_poll();
 #if CONFIG_ZONE_EDIT
 	ui_svc_zone_poll();
 #endif
 #if CONFIG_CRASH_SCREEN
 	ui_crash_tick(now_ms);
+#endif
+#if CONFIG_DMR_TRUNK
+	// Back on the trunked system from its fallback channel (dmr-trunking.md 12.5): the radio beeped, the toast names it
+	static uint32_t backs_seen;
+	if (v->t3.backs != backs_seen) {
+		bool back = v->t3.backs > backs_seen && v->t3.sys != 0;
+		backs_seen = v->t3.backs;
+		char name[CODEPLUG_NAME_LEN + 1];
+		if (back && ui_svc_t3_name((uint8_t)(v->t3.sys - 1u), name)) {
+			static char msg[CODEPLUG_NAME_LEN + 32];	// the toast keeps the pointer
+			sbuf_t b;
+			sb_init(&b, msg, sizeof msg);
+			sb_str(&b, TR("Back on "));
+			sb_str(&b, name);
+			ui_toast(msg);
+		}
+	}
 #endif
 
 #if CONFIG_USB_NETWORK && CONFIG_HOSTLINK

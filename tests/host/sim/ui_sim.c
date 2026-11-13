@@ -1097,31 +1097,6 @@ static uint32_t ptt_up_at;
 static bool rx_on;
 static uint32_t check_due, check_id;
 
-#if CONFIG_DMR_TRUNK
-// Two trunked systems in the codeplug; selecting one puts the radio on it, registered (the radio core's Tier III)
-static const char *const t3_names[] = { "Metro", "County" };
-static int t3_sel = -1;
-uint8_t ui_svc_t3_count(void) { return 2; }
-bool ui_svc_t3_system(uint8_t row, uint8_t *n, char *name)
-{
-	if (row >= 2)
-		return false;
-	*n = row;
-	strcpy(name, t3_names[row]);
-	return true;
-}
-int ui_svc_t3_selected(void) { return t3_sel; }
-bool ui_svc_t3_select(uint8_t n)
-{
-	t3_sel = t3_sel == (int)n ? -1 : (int)n;
-	view.t3.on = t3_sel >= 0;
-	view.t3.state = t3_sel >= 0 ? T3_CAMPED : T3_OFF;
-	view.t3.reg = t3_sel >= 0 ? T3_REG_OK : T3_REG_UNKNOWN;
-	serial++;
-	return true;
-}
-#endif
-
 const radio_view_t *sim_view(void) { return &view; }
 void radio_get_view(radio_view_t *v) { *v = view; }
 uint32_t radio_view_serial(void) { return serial; }
@@ -1153,6 +1128,44 @@ static void default_target(void)
 	}
 }
 
+#if CONFIG_DMR_TRUNK
+// Trunked channels (dmr-trunking.md 12.4), after the "t3" token: channel 3 uses the system "County", set up; channel 5
+// "Metro", not set up. On a usable one the radio is registered; "t3state:" changes what it is doing
+static bool t3_tagged;
+int ui_svc_t3_channel(uint16_t num, const char *name, bool *usable)
+{
+	(void)name;
+	if (!t3_tagged || (num != 3 && num != 5))
+		return -1;
+	if (usable != NULL)
+		*usable = num == 3;
+	return num == 3 ? 0 : 1;
+}
+bool ui_svc_t3_name(uint8_t n, char *name)
+{
+	static const char *const names[] = { "County", "Metro" };
+	if (n > 1)
+		return false;
+	strcpy(name, names[n]);
+	return true;
+}
+static void t3_view(void)
+{
+	bool usable = false;
+	int sys = view.vfo ? -1 : ui_svc_t3_channel(view.channel_number, NULL, &usable);
+	uint32_t backs = view.t3.backs;
+	memset(&view.t3, 0, sizeof view.t3);
+	view.t3.backs = backs;
+	if (sys < 0)
+		return;
+	view.t3.sys = (uint8_t)(sys + 1);
+	view.t3.unavail = !usable;
+	view.t3.on = usable;
+	view.t3.state = usable ? T3_CAMPED : T3_OFF;
+	view.t3.reg = usable ? T3_REG_OK : T3_REG_UNKNOWN;
+}
+#endif
+
 static void load_channel(void)
 {
 	zone_t z;
@@ -1171,6 +1184,9 @@ static void load_channel(void)
 	temp_target = 0;
 	view.dmr.hear_all_latch = false;	// the latch ends with the channel, as in the radio core
 	view.dmr.hear_all = view.monitor;
+#if CONFIG_DMR_TRUNK
+	t3_view();
+#endif
 	view.dmr.active = view.ch.mode == RADIO_MODE_DMR;
 	view.dmr.codec = true;
 	view.dmr.cc = view.ch.color_code;
@@ -1209,7 +1225,14 @@ void radio_req_channel_step(int8_t dir)
 void radio_req_zone_pos(uint16_t pos) { retune(); view.vfo = false; view.zone_pos = pos; load_channel(); }
 void radio_req_zone(uint16_t index) { retune(); view.zone_index = index; view.zone_pos = 0; load_channel(); }
 static void sim_vfo(bool on);
-void radio_req_vfo(bool on) { retune(); sim_vfo(on); }
+void radio_req_vfo(bool on)
+{
+	retune();
+	sim_vfo(on);
+#if CONFIG_DMR_TRUNK
+	t3_view();
+#endif
+}
 static void sim_vfo(bool on)
 {
 	view.vfo = on;
@@ -2192,7 +2215,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.netif = &sim_netif;
 	aprs_sim_reset();
 #if CONFIG_DMR_TRUNK
-	t3_sel = -1;
+	t3_tagged = false;
+	memset(&view.t3, 0, sizeof view.t3);
 #endif
 	n_edits = 0;
 	n_ct_edits = 0;
@@ -2757,6 +2781,36 @@ static bool run_token(char *t, char *err, size_t len)
 		op.zone = (uint16_t)atoi(arg);
 		ui_svc_zone_edit(&op);
 		advance(300);
+		return true;
+	}
+#endif
+#if CONFIG_DMR_TRUNK
+	if (strcmp(t, "t3") == 0) {		// channels 3 and 5 become trunked (see t3_view)
+		t3_tagged = true;
+		t3_view();
+		serial++;
+		return true;
+	}
+	if (strcmp(t, "t3state") == 0 && arg != NULL && view.t3.sys != 0) {	// hunt, follow, refused, fallback, back
+		view.t3.on = true;
+		view.t3.fallback = 0;
+		view.t3.state = T3_CAMPED;
+		view.t3.reg = T3_REG_OK;
+		if (strcmp(arg, "hunt") == 0) {
+			view.t3.state = T3_HUNT;
+		} else if (strcmp(arg, "follow") == 0) {
+			view.t3.state = T3_FOLLOW;
+		} else if (strcmp(arg, "refused") == 0) {
+			view.t3.reg = T3_REG_DENIED;
+		} else if (strcmp(arg, "fallback") == 0) {
+			view.t3.on = false;
+			view.t3.fallback = 1;
+			view.t3.fallbacks++;
+		} else if (strcmp(arg, "back") == 0) {
+			view.t3.backs++;
+		}
+		serial++;
+		advance(100);
 		return true;
 	}
 #endif

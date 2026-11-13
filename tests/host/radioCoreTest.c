@@ -6114,6 +6114,13 @@ static void test_t3_channels(void)
 	CHECK(sm.view.state != RS_TX && t3_sent(T3_OP_C_RAND) == 0);
 	req(RREQ_PTT, 0);
 	run(100);
+	// Stepping passes an unavailable channel by: from "Ops A" up, down, both land on "Ops A" (the zone's only other)
+	req(RREQ_ZONE_POS, 0);
+	run(50);
+	req(RREQ_CH_STEP, 1);
+	CHECK(sm.view.channel_number == 7);
+	req(RREQ_CH_STEP, -1);
+	CHECK(sm.view.channel_number == 7);
 	t3_cp_done();
 }
 

@@ -675,8 +675,9 @@ on its voice, and never camps on another system or on a control channel that isn
 
 | Step | What the radio core does |
 |---|---|
-| Set-up | The debug link stages a system in RAM (`radio_t3_staged`, `DL_CMD_T3`, [debuglink.md](debuglink.md) 3.26): its ID, authorization, color code, control channels, channel table, talkgroups. `RADIO_T3_START` copies it and starts the engine. |
-| Leave | `RADIO_T3_STOP`, or any channel or VFO change, stops the engine and goes back to the channel or VFO. |
+| Set-up | A trunked channel selected (12.4) loads its system from the codeplug and starts it at the next tick. The debug link can instead stage a system in RAM (`radio_t3_staged`, `DL_CMD_T3`, [debuglink.md](debuglink.md) 3.26): its ID, authorization, color code, control channels, channel table, talkgroups; `RADIO_T3_START` copies it and starts the engine on whatever channel the radio is on. |
+| Leave | `RADIO_T3_STOP`, a conventional channel or the VFO stops the engine and goes back to the channel or VFO. |
+| Fallback | 12.5: `t3_tick` watches how long the engine has hunted. |
 | Tune | A `T3_ACT_TUNE` sets the channel to DMR, repeater mode, the action's frequencies and color code. Slot 0 (the TSCC, hunting) listens to both slots; a payload channel listens to its slot only. A new carrier is a full tune; the same carrier is a reconfiguration of the stack. |
 | Slots | Each slot tick from the modem goes to `t3_ms_slot` with its slot number and its CACH AT bit (`DMR_TICK_AT_KNOWN`, `DMR_TICK_AT_BUSY`). A modem that doesn't number slots gets them alternating; one that doesn't read AT gets every slot free. |
 | Receive | The stack's receive tap hands CSBKs and MBC blocks to `t3_ms_rx`. Any other burst on a known slot, idle ones excepted, is activity on that slot (`t3_ms_activity`). |
@@ -692,7 +693,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | View | The `t3` section ([debuglink.md](debuglink.md) 3.26). |
 
 Tests: `tests/host/radioCoreTest.c` (`test_t3_talk`) runs a simulated site through PTT, request, grant and a call
-with nothing heard; `test_t3_pdata` through a text message out on a granted channel and one in; `test_t3_emergency` through the alarm, the emergency call, the cancel and an alarm heard. `tests/hil/test_t3_site.py` runs camp, registration, group and private calls against a site on
+with nothing heard; `test_t3_pdata` through a text message out on a granted channel and one in; `test_t3_emergency` through the alarm, the emergency call, the cancel and an alarm heard. `test_t3_channels` selects trunked channels from the codeplug (same system, another system, unavailable, scan); `test_t3_fallback` runs the fallback and its probes. `tests/hil/test_t3_site.py` runs camp, registration, group and private calls against a site on
 the SDR bench.
 
 ## 12. In the codeplug
@@ -792,9 +793,13 @@ and talker alias; it ignores the frequencies, slot, color code, receive only, to
 |---|---|
 | a trunked channel, its system not running | starts the system (section 7.1), its talkgroups the channel's |
 | a trunked channel of the system running | keeps the TSCC; takes the channel's talk target and talkgroups, and registers again only when its talkgroups changed and the system registers with them (0x0040) |
-| a trunked channel of another system | leaves the running one (deregistering, section 7.2) and starts the new one |
+| a trunked channel of another system | leaves the running one and starts the new one |
 | a conventional channel or the VFO | leaves the system |
-| an unavailable trunked channel | leaves any system, receives nothing and refuses PTT; the screen says "System not set up" |
+| an unavailable trunked channel | leaves any system and keeps the record as it is (receive only), so PTT is refused; the screen says "System not set up" |
+
+Leaving sends nothing: a site drops a radio that has gone quiet (section 7.2). Zone scan passes trunked channels by:
+a frequency is not what the radio follows there. The talkgroups' re-registration waits until the user has rested on a
+channel for `T3_REG_TG_DELAY_MS` (1 s), so turning the knob through channels registers once.
 
 At power-on the radio restores the channel it was on, so a trunked channel starts its system. Keys written while a
 system runs are taken at the next selection of a channel.
@@ -810,9 +815,10 @@ says "Fallback".
 | Which | the trunked channel's own fallback, else the system's; none when the channel's tag sets "no fallback" |
 | Checked | the fallback must be a conventional channel (not tagged) whose name check matches; else there is none |
 | When | the radio has been hunting, with no TSCC confirmed, for the hold time (0 = 30 s) |
-| Looking back | every `T3_FALLBACK_PROBE_MS` (10 s), while the fallback channel is idle (no call heard or sent for 2 s, PTT up), the radio hunts the system's control channels for up to `T3_FALLBACK_HUNT_MS` (2 s) |
-| Returning | a TSCC of the system found: the radio stays on it, registers, beeps twice and says "Back on <system>" |
+| Looking back | every `RADIO_T3_PROBE_MS` (10 s), once the fallback channel is idle (nothing heard or sent for `RADIO_T3_PROBE_QUIET_MS`, 2 s, PTT up), the radio hunts the system's control channels for up to `RADIO_T3_PROBE_HUNT_MS` (2 s) |
+| Returning | a TSCC of the system confirmed: the radio stays on it, takes the trunked channel back, registers, plays the system-back tone ([radio-features.md](radio-features.md) 4) and says "Back on <system>" |
 | Not found | back to the fallback channel |
+| PTT while looking | back to the fallback channel at once: PTT talks there |
 | Leaving | the user selecting another channel ends the fallback as any change does |
 
 ### 12.6 Sharing
@@ -845,8 +851,10 @@ system holds that key for it. The Codeplug Editor says both where sharing is set
 
 | Call | |
 |---|---|
-| `radio_t3_tag(c, &tag)` | Channel c's tag, false when it has none or its name check fails |
-| `radio_t3_load(n, &ch, &setup)` | Fills a setup from system n's keys and the channel's contact and RX group list; false when the system is absent or not usable |
+| `radio_t3_tag(c, name, &tag)` | Channel c's tag, false when it has none or its name check fails against `name` |
+| `radio_t3_load(n, &setup)` | Fills a setup from system n's keys; false when the system is absent or not usable |
+| `radio_t3_talk(&ch, &setup)` | The channel's contact and RX group list as the setup's talk target and talkgroups |
+| `radio_t3_fallback(&tag, &setup, &ch)` | The fallback channel's number (0 none) and its record |
 | `radio_t3_name(n, buf)` | The name only, for a list |
 | `radio_t3_usable(n)` | Whether system n is usable |
 

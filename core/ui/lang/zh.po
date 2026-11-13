@@ -22,7 +22,7 @@ msgstr "PC 加载器已连接"
 msgid "Power-cycle to exit"
 msgstr "断电重启退出"
 
-#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c core/ui/ui_trunk.c
+#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "Off"
 msgstr "关"
 
@@ -517,6 +517,10 @@ msgstr "电池 "
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgid "%: charge soon"
 msgstr "%：请尽快充电"
+
+#: core/ui/ui_app.c
+msgid "Back on "
+msgstr "已回到 "
 
 #: core/ui/ui_app.c
 msgid "That zone was deleted"
@@ -1022,7 +1026,7 @@ msgstr "2D 定位"
 msgid "Fix"
 msgstr "定位"
 
-#: core/ui/ui_gps.c core/ui/ui_trunk.c
+#: core/ui/ui_gps.c core/ui/ui_screens.c
 msgid "Searching"
 msgstr "搜索中"
 
@@ -1369,6 +1373,10 @@ msgstr "{OK 进入  # 信道  0-9 查找|OK 进入  # 信道}"
 #: core/ui/ui_menus.c
 msgid "No zones"
 msgstr "无区域"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "System not set up"
+msgstr "系统未设置"
 
 #: core/ui/ui_menus.c
 msgid "Couldn't save now: try again"
@@ -2266,15 +2274,15 @@ msgstr "ARS 服务器"
 msgid "IP gateway"
 msgstr "IP 网关"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "Registering"
 msgstr "正在注册"
 
-#: core/ui/ui_menus.c core/ui/ui_trunk.c
+#: core/ui/ui_menus.c
 msgid "Registered"
 msgstr "已注册"
 
-#: core/ui/ui_menus.c core/ui/ui_trunk.c
+#: core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "Refused"
 msgstr "已拒绝"
 
@@ -2613,10 +2621,6 @@ msgstr "诊断"
 #: core/ui/ui_menus.c
 msgid "Zones/Chs Received"
 msgstr "收到的区域/信道"
-
-#: core/ui/ui_menus.c core/ui/ui_trunk.c
-msgid "Trunking"
-msgstr "集群"
 
 #: core/ui/ui_menus.c
 msgid "Dual watch"
@@ -3471,6 +3475,22 @@ msgid "DMR modem off"
 msgstr "DMR 调制解调器关"
 
 #: core/ui/ui_screens.c
+msgid "Fallback"
+msgstr "备用信道"
+
+#: core/ui/ui_screens.c
+msgid "In call"
+msgstr "通话中"
+
+#: core/ui/ui_screens.c
+msgid "Ready"
+msgstr "就绪"
+
+#: core/ui/ui_screens.c
+msgid "System"
+msgstr "系统"
+
+#: core/ui/ui_screens.c
 msgid "Lock"
 msgstr "锁"
 
@@ -3897,35 +3917,3 @@ msgstr "本机无法识别该区域"
 #: core/ui/ui_svc_zone.c
 msgid "The offer is gone"
 msgstr "该邀请已失效"
-
-#: core/ui/ui_trunk.c
-msgid "Starting"
-msgstr "启动中"
-
-#: core/ui/ui_trunk.c
-msgid "In call"
-msgstr "通话中"
-
-#: core/ui/ui_trunk.c
-msgid "On site"
-msgstr "已在站点"
-
-#: core/ui/ui_trunk.c
-msgid "System"
-msgstr "系统"
-
-#: core/ui/ui_trunk.c
-msgid "No control channel"
-msgstr "无控制信道"
-
-#: core/ui/ui_trunk.c
-msgid "Trunking off"
-msgstr "集群已关闭"
-
-#: core/ui/ui_trunk.c
-msgid "Select  Back"
-msgstr "选择  返回"
-
-#: core/ui/ui_trunk.c
-msgid "No trunked systems"
-msgstr "无集群系统"

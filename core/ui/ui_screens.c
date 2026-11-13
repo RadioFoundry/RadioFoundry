@@ -1017,6 +1017,10 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 }
 
 // Chips: tone, bandwidth, power, squelch. A dot marks a temporary change
+#if CONFIG_DMR_TRUNK
+static void draw_chips_t3(const radio_view_t *v);
+#endif
+
 static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 {
 	const ui_layout_t *L = &ui_layout;
@@ -1026,6 +1030,12 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 	sbuf_t b;
 	int x = 0, y = L->chips_y;
 
+#if CONFIG_DMR_TRUNK
+	if (v->t3.sys != 0) {
+		draw_chips_t3(v);
+		return;
+	}
+#endif
 #if CONFIG_DMR
 	if (v->ch.mode == RADIO_MODE_DMR) {
 		draw_chips_dmr(v, s);
@@ -1415,6 +1425,60 @@ static void draw_talk_dmr(const radio_view_t *v, bool label_first)
 	gfx_text_fit(f, buf, w - x, fit, sizeof fit);
 	gfx_text(f, x, L->talk_y, fit, c);
 }
+
+#if CONFIG_DMR_TRUNK
+#include "dmr/trunk/t3_ms.h"
+
+// What the radio is doing on the trunked channel's system (dmr-trunking.md 12.4); *warn: something the user should see
+static const char *t3_state_word(const radio_view_t *v, bool *warn)
+{
+	*warn = true;
+	if (v->t3.unavail)
+		return TR("System not set up");
+	if (v->t3.fallback != 0)
+		return TR("Fallback");		// on the system's fallback channel, or looking for the system from it
+	if (!v->t3.on || v->t3.state == T3_HUNT)
+		return TR("Searching");
+	if (v->t3.state == T3_FOLLOW) {
+		*warn = false;
+		return TR("In call");
+	}
+	if (v->t3.reg == T3_REG_DENIED)
+		return TR("Refused");
+	if (v->t3.reg == T3_REG_NEEDED || v->t3.reg == T3_REG_UNKNOWN)
+		return TR("Registering");
+	*warn = false;
+	return TR("Ready");
+}
+
+// Chips on a trunked channel: the system's name, what the radio does on it, power. Slot and color code are the
+// site's, not the channel's. On the fallback channel the name and frequency rows are that channel's
+static void draw_chips_t3(const radio_view_t *v)
+{
+	const ui_layout_t *L = &ui_layout;
+	const font_t *f = L->small;
+	static char name[CODEPLUG_NAME_LEN + 1];
+	static uint8_t named;		// the system name holds (n + 1; 0 none): read once, not every frame
+	if (named != v->t3.sys) {
+		named = v->t3.sys;
+		if (!ui_svc_t3_name((uint8_t)(v->t3.sys - 1u), name) || name[0] == '\0')
+			str_copy(name, sizeof name, TR("System"));
+	}
+	bool warn;
+	const char *st = t3_state_word(v, &warn);
+	const char *pw = ui_power_name(v->power, v->ch.tx_hz);
+	int room = gfx_width() - gfx_text_width(f, st) - gfx_text_width(f, pw) - 2 * f->w;
+	char fit[CODEPLUG_NAME_LEN + 4];
+	int x = 0;
+	if (room > 0) {
+		gfx_text_fit(f, name, room, fit, sizeof fit);
+		x = gfx_text(f, x, L->chips_y, fit, ui_col.fg) + f->w;
+	}
+	x = gfx_text(f, x, L->chips_y, st, warn ? ui_col.warn : ui_col.fg) + f->w;
+	if (x + gfx_text_width(f, pw) <= gfx_width())
+		gfx_text(f, x, L->chips_y, pw, ui_col.fg);
+}
+#endif
 
 // Chips: timeslot, color code, repeater / direct, roaming, power, hear all
 static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s)

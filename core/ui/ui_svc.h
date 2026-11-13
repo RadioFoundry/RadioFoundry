@@ -126,12 +126,10 @@ bool ui_svc_vfo_get(uint8_t index, channel_t *out);
 bool ui_svc_roam(uint8_t cmd);			// radio_roam_cmd_t: zone on / off, roam now, lock / unlock
 
 #if CONFIG_DMR_TRUNK
-// --- Tier III systems from the codeplug (docs/spec/dmr-trunking.md 12). Their state is radio_view_t.t3 ---
-uint8_t ui_svc_t3_count(void);				// systems in the codeplug
-bool ui_svc_t3_system(uint8_t row, uint8_t *n, char *name);	// the row-th: its number and name (CODEPLUG_NAME_LEN + 1)
-int ui_svc_t3_selected(void);				// the selected system's number, -1 none
-bool ui_svc_t3_select(uint8_t n);			// start system n (false: it can't be); the selected one: leave it
-void ui_svc_t3_poll(const radio_view_t *v);		// each UI tick: power-on start, the selection dropped on leaving
+// --- Trunked channels (docs/spec/dmr-trunking.md 12.4). The system in use is radio_view_t.t3 ---
+// Channel num's system (-1: a conventional channel); *usable (may be NULL): the system is set up
+int ui_svc_t3_channel(uint16_t num, const char *name, bool *usable);
+bool ui_svc_t3_name(uint8_t n, char *name);	// system n's name (CODEPLUG_NAME_LEN + 1); false: no such system
 #endif
 
 // --- Beeps (radio-features): the radio sounds key beeps only when its key_beep setting is on ---

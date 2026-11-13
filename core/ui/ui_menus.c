@@ -44,7 +44,6 @@
 
 extern const ui_scr_def_t ui_find_screen;
 extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_station_screen;	// ui_aprs.c
-extern const ui_scr_def_t ui_trunk_screen;	// ui_trunk.c
 #if CONFIG_POSITION
 extern const ui_scr_def_t ui_fixed_pos_screen;	// ui_position.c
 #endif
@@ -1173,10 +1172,27 @@ static const ui_scr_def_t channels_screen = {
 	.filter = &(const ui_filter_def_t){ .raw_count = chans_raw_count, .raw_label = chans_raw_label },
 };
 
+// A trunked channel whose system isn't set up (dmr-trunking.md 12.4) is locked out: selecting it says why
+static bool ch_locked(uint16_t num)
+{
+#if CONFIG_DMR_TRUNK
+	static channel_t ch;
+	bool usable = true;
+	if (codeplug_channel(num, &ch) && ui_svc_t3_channel(num, ch.name, &usable) >= 0 && !usable) {
+		ui_toast(TR("System not set up"));
+		return true;
+	}
+#else
+	(void)num;
+#endif
+	return false;
+}
+
 // A channel row's value: its RX frequency and what it talks to, the talkgroup on DMR ("TG3113", "ID9991234" for a
 // private contact) or "FM". The whole name comes first; where both don't fit beside it, the frequency and the bare
-// number, then the talkgroup alone (text alternates)
-static void sb_channel_row(sbuf_t *b, const channel_t *ch)
+// number, then the talkgroup alone (text alternates). A trunked channel (dmr-trunking.md 12.4) names its system where
+// the frequency would be. Returns false for a trunked channel whose system isn't set up: the caller dims the row
+static bool sb_channel_row(sbuf_t *b, uint16_t num, const channel_t *ch)
 {
 	char what[16];
 	uint8_t prefix = 0;	// "TG" / "ID": left out in the middle form
@@ -1195,6 +1211,28 @@ static void sb_channel_row(sbuf_t *b, const channel_t *ch)
 	{
 		sb_str(&wb, ch->mode == RADIO_MODE_DMR ? "DMR" : radio_am_channel(ch) ? "AM" : "FM");
 	}
+#if CONFIG_DMR_TRUNK
+	bool usable;
+	int sys = ui_svc_t3_channel(num, ch->name, &usable);
+	if (sys >= 0) {
+		char name[CODEPLUG_NAME_LEN + 1];
+		if (!usable) {
+			sb_str(b, TR("System not set up"));
+			return false;
+		}
+		ui_svc_t3_name((uint8_t)sys, name);
+		sb_str(b, TEXT_ALT_OPEN);
+		sb_str(b, name);
+		sb_chr(b, ' ');
+		sb_str(b, what);
+		sb_str(b, TEXT_ALT_NEXT);
+		sb_str(b, what);
+		sb_str(b, TEXT_ALT_CLOSE);
+		return true;
+	}
+#else
+	(void)num;
+#endif
 	sb_str(b, TEXT_ALT_OPEN);
 	sb_freq(b, ch->rx_hz);
 	sb_chr(b, ' ');
@@ -1208,6 +1246,7 @@ static void sb_channel_row(sbuf_t *b, const channel_t *ch)
 	sb_str(b, TEXT_ALT_NEXT);
 	sb_str(b, what);
 	sb_str(b, TEXT_ALT_CLOSE);
+	return true;
 }
 
 static zone_t zone_cache;
@@ -1368,7 +1407,8 @@ static void zone_item(uint16_t i, ui_item_t *it)
 	sb_chr(&b, ' ');
 	sb_str(&b, ch.name);
 	sb_init(&b, it->value, sizeof it->value);
-	sb_channel_row(&b, &ch);
+	if (!sb_channel_row(&b, z->channels[raw], &ch))
+		it->flags |= UI_ITEM_DIM;	// a trunked channel whose system isn't set up: locked out
 	const radio_view_t *v = ui_view();
 	if (!v->vfo && v->zone_index == ui_frame()->arg && v->zone_pos == raw)
 		it->flags |= UI_ITEM_TEMP;	// the channel we are on
@@ -1402,11 +1442,15 @@ static void zone_select(uint16_t i, bool hold)
 	}
 #endif
 	(void)hold;
+	const zone_t *z = zone_of_frame();
+	uint16_t pos = (uint16_t)(raw - ZE_ADD);
+	if (pos < z->count && ch_locked(z->channels[pos]))
+		return;
 	if (v->vfo)
 		radio_req_vfo(false);
 	if (v->zone_index != zi)
 		radio_req_zone(zi);
-	radio_req_zone_pos((uint16_t)(raw - ZE_ADD));
+	radio_req_zone_pos(pos);
 	ui_go_home();
 }
 
@@ -2203,7 +2247,8 @@ static void chlist_item(uint16_t i, ui_item_t *it)
 	ch_label(num, ch.name, it->label, sizeof it->label);
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
-	sb_channel_row(&b, &ch);
+	if (!sb_channel_row(&b, num, &ch))
+		it->flags |= UI_ITEM_DIM;
 	if (num == chlist_current())
 		it->flags |= UI_ITEM_TEMP;	// the channel we are on
 }
@@ -2214,6 +2259,8 @@ static bool chlist_tune(uint16_t num)
 	static zone_t z;
 	const radio_view_t *v = ui_view();
 	uint16_t zones = codeplug_zone_count();
+	if (ch_locked(num))
+		return false;
 	for (uint16_t k = 0; k <= zones; k++) {
 		// k == 0 tries the zone in use first, then every zone in order
 		uint16_t zi = k == 0 ? v->zone_index : (uint16_t)(k - 1u);
@@ -3503,7 +3550,7 @@ static void zpick_item(uint16_t i, ui_item_t *it)
 	ch_label(num, ch.name, it->label, sizeof it->label);
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
-	sb_channel_row(&b, &ch);
+	sb_channel_row(&b, num, &ch);	// adding to a zone: allowed, the row says the system isn't set up
 }
 
 static void zpick_select(uint16_t i, bool hold)
@@ -5254,8 +5301,7 @@ void ui_crash_tick(uint32_t now_ms)
 // Every tool keeps its number on every radio and build, so a key path (OK 6 7: Diagnostics; tests/hil/test_ui.py and the
 // user guide) is the same everywhere. The one a radio may not have (Battery) is last, so no radio has a gap; a build
 // without diagnostics skips 7
-// Trunking comes after the zone offer: the tools' keys are their numbers, and the offer's 0 is the tenth
-enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_BATTERY, T_ZONE_OFFER, T_TRUNK, T_COUNT };
+enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_BATTERY, T_ZONE_OFFER, T_COUNT };
 
 // A tool this build or radio doesn't have is left out of the list (Battery, Supply on a radio that measures its DC
 // input instead, is left out where the radio measures neither)
@@ -5266,7 +5312,7 @@ static bool tool_shown(uint16_t i)
 		return offer_waiting();	// 0 on the keypad: only while another radio's zone waits
 #endif
 	return (i != T_DIAG || CONFIG_DIAG) && (i != T_BATTERY || board_volts() != BOARD_VOLTS_NONE) &&
-	       i != T_ZONE_OFFER && (i != T_TRUNK || CONFIG_DMR_TRUNK);
+	       i != T_ZONE_OFFER;
 }
 
 // The hint names the last number ("1-9 open"): the highest tool this radio has. Built in the language in use on each
@@ -5305,7 +5351,7 @@ static void tools_item(uint16_t row, ui_item_t *it)
 {
 	static const char *const names[] = { TRN("Scan"), TRN("Position"), TRN("Hotspot"), TRN("USB network"),
 					     TRN("Single-freq repeater"), TRN("Roaming"), TRN("Diagnostics"), "APRS",
-					     TRN("Battery"), TRN("Zones/Chs Received"), TRN("Trunking") };
+					     TRN("Battery"), TRN("Zones/Chs Received") };
 	uint16_t i = tools_row(row);
 	if (i >= T_COUNT)
 		return;
@@ -5404,9 +5450,6 @@ static void tools_select(uint16_t row, bool hold)
 	case T_ROAM: ui_push(SCR_ROAM, 0); break;
 	case T_APRS: ui_push(SCR_APRS, 0); break;
 	case T_ZONE_OFFER: ui_push(SCR_OFFER, 0); break;
-#if CONFIG_DMR_TRUNK
-	case T_TRUNK: ui_push(SCR_TRUNK, 0); break;
-#endif
 	default: break;
 	}
 }
@@ -6632,9 +6675,6 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_CP_FOREIGN] = &cpf_screen,
 #if DATA_IDS
 	[SCR_DATA_SERVICES] = &ds_screen,
-#endif
-#if CONFIG_DMR_TRUNK
-	[SCR_TRUNK] = &ui_trunk_screen,
 #endif
 #if CONFIG_REF_TRIM
 	[SCR_REF_TRIM] = &trim_screen,

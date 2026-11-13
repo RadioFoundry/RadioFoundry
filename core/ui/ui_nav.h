@@ -40,7 +40,6 @@ typedef enum {
 	SCR_APRS_STATION,		// a heard station's actions
 	SCR_MESSAGE_TEXT,		// message body editor
 	SCR_DATA_SERVICES,		// Settings > Connections > Data services: ARS server, IP gateway (CONFIG_DMR_ARS / _IP_GATEWAY)
-	SCR_TRUNK,			// Tools > Trunking: the codeplug's Tier III systems (CONFIG_DMR_TRUNK)
 	SCR_COUNT
 } ui_scr_t;
 

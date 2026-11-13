@@ -586,12 +586,16 @@ static const flow_t flows[] = {
 	// APRS (docs/spec/aprs.md 10): Tools 9, one row each
 	{ "A APRS page", "", "ok 6 8", "screen=aprs", 3, false },
 #if CONFIG_DMR_TRUNK
-	// Tools > Trunking (dmr-trunking.md 12): the codeplug's systems; select one to use it, again to leave it
-	{ "T Trunking lists the systems", "", "ok 6 up", "screen=tools focus=Trunking", 3, false },
-	{ "T Trunking opens", "ok 6 up", "ok", "screen=trunk count=2", 1, false },
-	{ "T a system selected goes Home", "ok 6 up ok", "ok", "screen=home toast=Searching", 1, false },
-	{ "T its row says it is registered", "ok 6 up ok ok wait:3000 ok 6 up ok", "", "screen=trunk shows=Registered", 0, false },
-	{ "T selected again it is left", "ok 6 up ok ok wait:3000 ok 6 up ok", "ok", "toast=Trunking_off", 1, false },
+	// Trunked channels (dmr-trunking.md 12.4): "t3" makes channel 3 a channel of "County" and 5 one of "Metro", not set up
+	{ "T a trunked channel names its system in the zone", "t3", "ok 4 ctx", "screen=zone shows=County", 3, false },
+	{ "T a channel without its system is locked out", "t3 ok 4 ctx", "down down ok",
+	  "screen=zone focus=05_Metro_DMR toast=System_not_set_up", 3, false },
+	{ "T Home on a trunked channel: the system and Ready", "t3 dlpos:3", "", "screen=home shows=County shows=Ready hides=CC",
+	  0, false },
+	{ "T Home while hunting", "t3 dlpos:3 t3state:hunt", "", "screen=home shows=Searching", 0, false },
+	{ "T Home on the fallback channel", "t3 dlpos:3 t3state:fallback", "", "screen=home shows=Fallback", 0, false },
+	{ "T back on the system", "t3 dlpos:3 t3state:fallback", "t3state:back", "screen=home toast=Back_on_County", 0, false },
+	{ "T Home on a channel without its system", "t3 dlpos:5", "", "screen=home shows=System_not_set_up", 0, false },
 #endif
 	{ "A APRS RF keeps Home with a TX APRS pill", "", "aprstx",
 	  "screen=home shows=TX_APRS shows=SENDING hides=144.390 hides=0:00 hides=left_of", 0, false },
