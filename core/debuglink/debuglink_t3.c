@@ -229,7 +229,7 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 static const char *const t3_states[] = { "off", "hunt", "camped", "follow" };
 static const char *const t3_regs[] = { "unknown", "not_needed", "listen", "needed", "ok", "denied" };
 static const char *const t3_svcs[] = { "none", "register", "deregister", "group", "individual", "cancel",
-				       "status", "sdata", "pdata", "divert" };
+				       "status", "sdata", "pdata", "divert", "sdpoll" };
 static const char *const t3_results[] = { "none", "pending", "granted", "done", "refused", "no_answer", "timeout",
 					  "not_allowed", "lost", "cancelled", "diverted" };
 static const char *const t3_axs[] = { "idle", "wait_slot", "wait_resp", "acked" };

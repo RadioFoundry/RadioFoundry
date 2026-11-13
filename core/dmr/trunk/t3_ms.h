@@ -110,6 +110,10 @@ typedef struct {
 	uint8_t ps_rq;			// power save asked for at registration (6.4.7, table 6.13): 0 off, 1-7 = 1:2-1:128
 	uint16_t awake_ms;		// T_Awake, 0 = default
 	uint16_t als_s, als_e_s;	// T_ALS, T_ALS_E (A.1), 0 = default
+	// The answer to a short data poll (6.6.5.7): poll_len octets in UDT_Format poll_format; 0 octets: refused
+	const uint8_t *poll_data;
+	uint8_t poll_len;
+	uint8_t poll_format;
 } t3_cfg_t;
 
 typedef enum {
@@ -155,6 +159,7 @@ typedef enum {
 	T3_SVC_SDATA,		// UDT short data to an MS or talkgroup (6.6.4)
 	T3_SVC_PDATA,		// a packet data channel to an MS or talkgroup (6.6.3): the data service sends on it
 	T3_SVC_DIVERT,		// set or clear a call diversion (6.6.7)
+	T3_SVC_SDPOLL,		// ask an MS for its short data (6.6.5)
 } t3_svc_t;
 
 #define T3_STATUS_POLL		127	// the status that asks the called MS for its own (6.6.6.2)
@@ -409,6 +414,9 @@ bool t3_ms_sdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t fo
 // Ask for a packet data channel to an MS or talkgroup (6.6.3.2.1). Once granted the engine follows it (call.data) and
 // t3_ms_data_ready says when the radio may send its packet there
 bool t3_ms_pdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group);
+// Ask MS dst for its short data (6.6.5.2): UDT_Format format, in 1-4 blocks (a prearranged size). The answer lands in
+// sd_rx; ax.result done once it came. False (ax.result says why) when it can't start
+bool t3_ms_sdata_poll(t3_ms_t *ms, uint32_t now, uint32_t dst, uint8_t format, uint8_t blocks);
 // Call diversion (6.6.7). Set: the services (T3_DIV_*) go to an MS or talkgroup from now on. Clear: the services' own
 // diversion ends (incoming false), or every diversion to this radio does (incoming true). False when it can't start
 // Ask to listen to an MS's surroundings (ALS, 6.6.2.6.2): an individual call it transmits on by itself

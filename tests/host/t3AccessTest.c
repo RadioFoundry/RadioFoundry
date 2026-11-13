@@ -1449,6 +1449,111 @@ static void test_interrupt(void)
 	CHECK(ms.state == T3_FOLLOW && !t3_ms_interrupt(&ms, T, false) && ms.state == T3_FOLLOW, "listen only: no interrupt");
 }
 
+// UDT short data polling (6.6.5): asking (C_RAND kind UDT poll, POL_FMT, blocks less one; the C_AHOY to the polled MS is
+// progress; the data from it ends it, acknowledged MS_Accepted) and answering (the reply in the format asked, cut to the
+// blocks asked; none, or another format: C_NACKU)
+static void test_sdpoll(void)
+{
+	t3_ms_t ms;
+	static const uint8_t reply[] = "position 33.5N 86.8W, all well";
+	setup(T3_OPT_PRIVATE, true);
+	cfg.poll_data = reply;
+	cfg.poll_len = (uint8_t)(sizeof(reply) - 1u);
+	cfg.poll_format = T3_UDTF_ISO8;
+	camp_registered(&ms);
+
+	CHECK(!t3_ms_sdata_poll(&ms, T, CALLER, T3_UDTF_ISO8, 0) && ms.ax.result == T3_RES_NOT_ALLOWED, "0 blocks");
+	CHECK(!t3_ms_sdata_poll(&ms, T, CALLER, T3_UDTF_ISO8, 5), "5 blocks");
+	nsent = 0;
+	CHECK(t3_ms_sdata_poll(&ms, T, CALLER, T3_UDTF_ISO8, 2) && sent_rand(&ms), "poll asked");
+	const t3_rand_t *q = &sent[0].u.rand;
+	CHECK(q->kind == T3_SK_UDT_POLL && q->options == T3_UDTF_ISO8 && (q->extra & 3u) == 1u && q->dst == CALLER,
+	      "C_RAND: kind %u options 0x%02x extra %u", q->kind, q->options, q->extra);
+	t3_csbk_t h = ahoy(T3_SK_UDT_POLL, false, CALLER, OWN);
+	h.u.ahoy.options = T3_UDTF_ISO8;
+	h.u.ahoy.blocks = 1;
+	rx(&ms, 1, &h);
+	CHECK(ms.ax.state == T3_AX_ACKED && ms.ax.result == T3_RES_PENDING, "our poll under way");
+	static const uint8_t got[] = "hello";
+	t3_udt_t d = { .op = T3_OP_C_UDTHD, .format = T3_UDTF_ISO8, .dst = OWN, .src = CALLER };
+	nsent = 0;
+	udt_down(&ms, 1, &d, got, 5, false);
+	frames(&ms, 1);
+	CHECK(ms.ax.result == T3_RES_DONE && ms.sd_rx.len >= 5 && memcmp(ms.sd_rx.data, got, 5) == 0 &&
+	      ms.sd_rx.src == CALLER, "polled data in: %s", t3_res_name(ms.ax.result));
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_ACCEPTED &&
+	      sent[0].u.ack.dst == CALLER, "final acknowledgement");
+
+	// Polled: one block asked, so the reply is cut to 10 octets
+	nup = 0;
+	h = ahoy(T3_SK_UDT_POLL, false, OWN, CALLER);
+	h.u.ahoy.options = T3_UDTF_ISO8;
+	h.u.ahoy.blocks = 0;
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	t3_udt_t u;
+	CHECK(nup == 1 && nup_blocks == 1 && t3_udt_parse(up_hdr, &u) && u.op == T3_OP_C_UDTHU && u.dst == CALLER &&
+	      u.src == OWN && u.format == T3_UDTF_ISO8 && u.blocks == 1, "reply uploaded: %d", nup);
+	CHECK(ms.ax.state == T3_AX_IDLE, "no access of its own");
+	// Four blocks asked: all of it, in three
+	nup = 0;
+	h.u.ahoy.blocks = 3;
+	h.u.ahoy.src = T3_ID_SDMI;
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup == 1 && t3_udt_parse(up_hdr, &u) && u.blocks == 3 && u.dst == T3_ID_SDMI, "gateway poll: %u blocks",
+	      u.blocks);
+	// Another format: refused
+	nup = 0;
+	nsent = 0;
+	h.u.ahoy.options = T3_UDTF_NMEA;
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup == 0 && nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_NOT_SUPPORTED,
+	      "other format: not supported");
+	cfg.poll_len = 0;
+	nsent = 0;
+	h.u.ahoy.options = T3_UDTF_ISO8;
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup == 0 && nsent == 1 && sent[0].u.ack.reason == T3_RC_MS_NOT_SUPPORTED, "no reply set: not supported");
+	cfg.poll_data = NULL;
+}
+
+// MS_Not_Registered (6.4.4.1.12): the TSCC lost the radio's record; it registers again. A registration demand (a
+// MassReg to its address, Mask 24) does the same
+static void test_not_registered(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+	nsent = 0;
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false) && sent_rand(&ms), "request");
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_MS_NOT_REGISTERED, OWN, TG_A);
+	rx(&ms, 1, &a);
+	CHECK(ms.reg == T3_REG_NEEDED && ms.ax.svc == T3_SVC_REGISTER, "refused, registration needed: reg %d svc %d",
+	      ms.reg, ms.ax.svc);
+	nsent = 0;
+	CHECK(sent_rand(&ms) && sent[0].u.rand.kind == T3_SK_REGISTRATION, "registers again");
+	CHECK(!t3_ms_request(&ms, T, TG_A, true, false), "nothing else meanwhile");
+	a = ack(T3_OP_C_ACKD, T3_RC_REG_ACCEPTED, OWN, T3_ID_TSI);
+	rx(&ms, 1, &a);
+	CHECK(ms.reg == T3_REG_OK, "registered: reg %d", ms.reg);
+	// A registration demand to this address
+	int before = (int)ms.massregs;
+	t3_csbk_t m = mass_reg(2, 24, OWN);
+	rx(&ms, 1, &m);
+	nsent = 0;
+	CHECK(ms.massregs == (uint32_t)before + 1u && sent_rand(&ms) && sent[0].u.rand.kind == T3_SK_REGISTRATION,
+	      "registration demand answered");
+	// To another address: not this radio
+	a = ack(T3_OP_C_ACKD, T3_RC_REG_ACCEPTED, OWN, T3_ID_TSI);
+	rx(&ms, 1, &a);
+	m = mass_reg(2, 24, OWN + 1u);
+	rx(&ms, 1, &m);
+	CHECK(ms.massregs == (uint32_t)before + 1u, "another MS's demand ignored");
+}
+
 // Call diversion (6.6.7): set to an MS (C_RAND kind 1000b, DIVONOFF 1, target MSI), the address uploaded when DIVERTI
 // asks (Address format, UDT_DIV, to MSI), accepted; clear (to TSI), clear incoming (to DIVERTI); a call answered with
 // the callee's diverted address ends DIVERTED
@@ -2007,6 +2112,8 @@ int main(void)
 	test_stun();
 	test_auth();
 	test_interrupt();
+	test_sdpoll();
+	test_not_registered();
 	test_mass_reg();
 	test_move();
 	test_power_save();

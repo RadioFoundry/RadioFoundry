@@ -271,6 +271,9 @@ list when none was sent, or for a list since changed, gets nothing.
 | C_NACKD Reg_Denied | the area is denied; hunt |
 | none (NRand_NR tries) | the record stays as it was; tries again after 30 s |
 
+C_NACKD MS_Not_Registered to any other request (6.4.4.1.12) means the TSCC has no record of the radio: it registers
+again before asking for anything else.
+
 De-registration is the same request with Reg_Dereg 0. After it the engine doesn't register again until restarted.
 
 ### 7.3 Calls (6.6.1, 6.6.2.2)
@@ -367,6 +370,20 @@ in `sd_rx` (the data without its pad octets). To the radio with A set it is answ
 talkgroup it isn't. A bad CRC or a missing block keeps nothing and answers nothing: the TSCC sends it again.
 Supplementary data (SF set) isn't taken. A repeat (the same caller, destination, format and octets within
 `T3_REPEAT_MS`) is answered again but not counted, as for a status.
+
+**Polling (6.6.5).** `t3_ms_sdata_poll` asks an MS for its short data: a C_RAND kind UDT poll (0110b) with the
+format in POL_FMT (table 7.60) and the blocks less one in Appended_Short_Data (table 6.56). The size is prearranged
+between the two MSs.
+
+| Step | The radio |
+|---|---|
+| C_AHOY UDT poll from the radio to the polled MS | progress (TNP_Timer) |
+| C_UDTHD from the polled MS to the radio | kept in `sd_rx`, answered C_ACKU MS_Accepted (6.6.5.5); done |
+| C_NACKD | refused |
+
+Polled (6.6.5.7): a C_AHOY UDT poll to the radio, from the calling MS or SDMI, gets the reply in `t3_cfg_t.poll_data`
+as a C_UDTHU to that caller in the slots that follow, cut to the blocks asked for. With no reply set, or one in
+another format than POL_FMT, the radio answers C_NACKU MSNot_Supported.
 
 ### 7.7 Packet data (6.6.3)
 
@@ -601,7 +618,8 @@ on its voice, and never camps on another system or on a control channel that isn
 | A trunked system in the codeplug, and its screens | codeplug keys for systems |
 | CACH short LC reception | the modem drivers' CACH report |
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
-| Short data polling, supplementary data, a list subscription without registering | later |
+| Supplementary data, a list subscription without registering | later |
+| Short data polling from the debug link or UI | the radio's reply in the codeplug |
 | A kill kept across a restart, and conventional DMR off when killed | later |
 | A stun kept across a restart of the radio | trunked systems in the codeplug |
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |

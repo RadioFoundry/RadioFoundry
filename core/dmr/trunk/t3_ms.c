@@ -762,6 +762,12 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 		q->options = 0;
 		q->extra = (uint8_t)(((ms->sd_tx.len + 2u + T3_UDT_BLOCK - 1u) / T3_UDT_BLOCK - 1u) & 3u);
 		break;
+	case T3_SVC_SDPOLL:
+		// Table 6.56: POL_FMT in the options; Appended_Short_Data: the blocks less one
+		q->kind = T3_SK_UDT_POLL;
+		q->options = ms->ax.status & 0x0Fu;
+		q->extra = ms->ax.info & 3u;
+		break;
 	case T3_SVC_DIVERT:
 		// Table 6.61: no emergency or privacy; DIVONOFF and the services; SDATA_VAL 0 (the address fits one
 		// appended block)
@@ -896,6 +902,11 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 			finish(ms, now, T3_RES_REFUSED);
 			enter_hunt(ms, now, false);
 		} else {
+			if (a->reason == T3_RC_MS_NOT_REGISTERED && svc != T3_SVC_REGISTER && !ms->deregistered &&
+			    (ms->reg == T3_REG_OK || ms->reg == T3_REG_NOT_NEEDED)) {
+				// The TSCC has no record of the radio (6.4.4.1.12): register again before asking more
+				ms->reg = T3_REG_NEEDED;
+			}
 			finish(ms, now, T3_RES_REFUSED);
 		}
 		break;
@@ -965,7 +976,7 @@ static bool on_status(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *
 
 // Load a UDT upload: the header in tx.burst, the blocks in up[], sent as one transmission on the next inbound slot
 static void queue_udt(t3_ms_t *ms, uint32_t now, uint8_t slot, t3_udt_t *u, const uint8_t *data, uint8_t len,
-		      uint8_t fill, bool count_pad, uint8_t spare)
+		      uint8_t fill, bool count_pad, uint8_t spare, bool access)
 {
 	uint8_t pad = 0;
 	u->op = T3_OP_C_UDTHU;
@@ -979,8 +990,18 @@ static void queue_udt(t3_ms_t *ms, uint32_t now, uint8_t slot, t3_udt_t *u, cons
 	ms->tx.then_return = false;
 	ms->tx.udt = true;
 	ms->tx.nblocks = u->blocks;
-	ms->ax.state = T3_AX_ACKED;
-	ms->ax.ack_deadline = now + or_default(ms->cfg->tnp_ms, T3_TNP_MS);
+	if (access) {
+		ms->ax.state = T3_AX_ACKED;
+		ms->ax.ack_deadline = now + or_default(ms->cfg->tnp_ms, T3_TNP_MS);
+	}
+}
+
+// The character formats pad with 1111b nibbles and count them (B.3.3-B.3.5, B.3.8, B.3.9); binary, NMEA and IP with
+// zeros, uncounted
+static bool udt_chars(uint8_t format)
+{
+	return format == T3_UDTF_BCD || format == T3_UDTF_ISO7 || format == T3_UDTF_ISO8 || format == T3_UDTF_UTF16 ||
+	       format == T3_UDTF_DGNA_ALIAS;
 }
 
 // The TSCC asks for our short data (6.6.4.4 c, C_AHOY from SDMI): the UDT header and blocks go in the inbound slots
@@ -999,11 +1020,35 @@ static bool on_upload(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *
 	u.group = ms->ax.group;
 	u.format = ms->sd_tx.format;
 	u.dst = ms->ax.dst;
-	// The character formats pad with 1111b nibbles and count them (B.3.3-B.3.5, B.3.8, B.3.9); binary, NMEA and IP
-	// with zeros, uncounted
-	bool chars = u.format == T3_UDTF_BCD || u.format == T3_UDTF_ISO7 || u.format == T3_UDTF_ISO8 ||
-		     u.format == T3_UDTF_UTF16 || u.format == T3_UDTF_DGNA_ALIAS;
-	queue_udt(ms, now, slot, &u, ms->sd_tx.data, ms->sd_tx.len, chars ? 0xFFu : 0u, chars, ms->sd_tx.spare);
+	bool chars = udt_chars(u.format);
+	queue_udt(ms, now, slot, &u, ms->sd_tx.data, ms->sd_tx.len, chars ? 0xFFu : 0u, chars, ms->sd_tx.spare, true);
+	return true;
+}
+
+// A short data poll to the radio (6.6.5.7, C_AHOY kind UDT poll from the calling MS or SDMI): its data as a UDT to the
+// caller in the slots the TSCC keeps, cut to the blocks asked for; refused (C_NACKU) when it has none in that format
+static bool on_poll(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h)
+{
+	if (h->kind != T3_SK_UDT_POLL || h->group || !is_me(ms, h->dst)) {
+		return false;
+	}
+	if (!may_send(ms) || ms->stunned) {
+		return true;
+	}
+	const t3_cfg_t *c = ms->cfg;
+	uint8_t format = h->options & 0x0Fu;	// POL_FMT (table 7.60), mirrored
+	if (c->poll_len == 0 || c->poll_data == NULL || c->poll_format != format) {
+		answer(ms, slot, false, T3_RC_MS_NOT_SUPPORTED, h->src, false);
+		return true;
+	}
+	uint8_t room = (uint8_t)((h->blocks & 3u) + 1u) * T3_UDT_BLOCK - 2u;
+	t3_udt_t u;
+	memset(&u, 0, sizeof(u));
+	u.format = format;
+	u.dst = h->src;
+	bool chars = udt_chars(format);
+	queue_udt(ms, now, slot, &u, c->poll_data, c->poll_len < room ? c->poll_len : room, chars ? 0xFFu : 0u, chars, 0,
+		  false);
 	return true;
 }
 
@@ -1028,7 +1073,7 @@ static bool on_divert_ask(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy
 	u.format = T3_UDTF_ADDRESS;
 	u.opt = true;	// UDT_DIV
 	u.dst = ms->ax.group ? T3_ID_GPI : T3_ID_MSI;
-	queue_udt(ms, now, slot, &u, d, sizeof(d), 0, false, 0);
+	queue_udt(ms, now, slot, &u, d, sizeof(d), 0, false, 0, true);
 	return true;
 }
 
@@ -1063,7 +1108,7 @@ static bool on_reg_list(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t
 	u.format = T3_UDTF_ADDRESS;
 	u.dst = T3_ID_TATTSI;
 	u.sf = true;
-	queue_udt(ms, now, slot, &u, d, (uint8_t)(1u + 3u * slots), 0, false, 0);
+	queue_udt(ms, now, slot, &u, d, (uint8_t)(1u + 3u * slots), 0, false, 0, true);
 	return true;
 }
 
@@ -1135,13 +1180,14 @@ static bool on_tscc_auth(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ack_t
 static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h, bool payload)
 {
 	if (!payload && (on_upload(ms, now, slot, h) || on_reg_list(ms, now, slot, h) ||
-			  on_divert_ask(ms, now, slot, h))) {
+			  on_divert_ask(ms, now, slot, h) || on_poll(ms, now, slot, h))) {
 		return;
 	}
-	if (!payload && h->kind == T3_SK_STATUS && is_me(ms, h->src)) {
-		// Our status going to the called party or talkgroup (6.6.6.1.2.1.2 c): it is under way, the final answer
-		// follows. Not a status heard, though the talkgroup's may be ours
-		if (ms->ax.svc == T3_SVC_STATUS && (ms->ax.state == T3_AX_WAIT_RESP || ms->ax.state == T3_AX_ACKED)) {
+	if (!payload && (h->kind == T3_SK_STATUS || h->kind == T3_SK_UDT_POLL) && is_me(ms, h->src)) {
+		// Our status going to the called party or talkgroup (6.6.6.1.2.1.2 c), or our poll (6.6.5.4 b): it is under
+		// way, the final answer (the polled data) follows. Not a status heard, though the talkgroup's may be ours
+		t3_svc_t want = h->kind == T3_SK_STATUS ? T3_SVC_STATUS : T3_SVC_SDPOLL;
+		if (ms->ax.svc == want && (ms->ax.state == T3_AX_WAIT_RESP || ms->ax.state == T3_AX_ACKED)) {
 			ms->ax.state = T3_AX_ACKED;
 			ms->ax.ack_deadline = now + or_default(ms->cfg->tnp_ms, T3_TNP_MS);
 		}
@@ -1645,8 +1691,14 @@ static void udt_done(t3_ms_t *ms, uint32_t now, uint8_t slot)
 	ms->sd_rx.len = len;
 	memcpy(ms->sd_rx.data, &ms->udt_rx.blk[0][0], ms->sd_rx.len);
 	ms->sd_rx.ms = now != 0 ? now : 1;
-	if (to_me && h->a && may_send(ms)) {
+	// The data our poll asked for: the calling MS's final acknowledgement (6.6.5.5)
+	bool polled = ms->ax.svc == T3_SVC_SDPOLL && to_me && h->src == ms->ax.dst &&
+		      (ms->ax.state == T3_AX_WAIT_RESP || ms->ax.state == T3_AX_ACKED);
+	if (to_me && (h->a || polled) && may_send(ms)) {
 		answer(ms, slot, false, T3_RC_MS_ACCEPTED, h->src, false);
+	}
+	if (polled) {
+		finish(ms, now, T3_RES_DONE);
 	}
 }
 
@@ -1967,6 +2019,22 @@ bool t3_ms_pdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group)
 	}
 	start_access(ms, now, T3_SVC_PDATA, dst, false);
 	ms->ax.group = group;
+	return true;
+}
+
+bool t3_ms_sdata_poll(t3_ms_t *ms, uint32_t now, uint32_t dst, uint8_t format, uint8_t blocks)
+{
+	bool bad = dst == T3_ID_NULL || dst > T3_ID_USER_MAX || format > 0x0Fu || blocks < 1u || blocks > 4u;
+	if (bad || ms->ax.state != T3_AX_IDLE || !may_ask(ms)) {
+		if (bad) {
+			ms->ax.result = T3_RES_NOT_ALLOWED;
+		}
+		return false;
+	}
+	start_access(ms, now, T3_SVC_SDPOLL, dst, false);
+	ms->ax.status = format;			// POL_FMT
+	ms->ax.info = (uint8_t)(blocks - 1u);	// Appended_Short_Data
+	ms->ax.group = false;
 	return true;
 }
 
