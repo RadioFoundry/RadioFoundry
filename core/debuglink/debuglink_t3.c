@@ -134,6 +134,16 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 	case DL_T3_END:
 		radio_req_t3(RADIO_T3_END);
 		break;
+	case DL_T3_STATUS:	// to u32, group u8, status u8
+		if (n < 6u || rd32(a) == 0 || rd32(a) > 0xFFFFFFu || a[5] > T3_STATUS_POLL) {
+			out[0] = DL_ST_BAD_ARG;
+			break;
+		}
+		s->sd_dst = rd32(a);
+		s->sd_group = a[4] != 0;
+		s->sd_status = a[5];
+		radio_req_t3(RADIO_T3_STATUS);
+		break;
 	default:
 		out[0] = DL_ST_BAD_ARG;
 		break;
@@ -151,7 +161,8 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 #if CONFIG_DMR_TRUNK
 static const char *const t3_states[] = { "off", "hunt", "camped", "follow" };
 static const char *const t3_regs[] = { "unknown", "not_needed", "listen", "needed", "ok", "denied" };
-static const char *const t3_svcs[] = { "none", "register", "deregister", "group", "individual", "cancel" };
+static const char *const t3_svcs[] = { "none", "register", "deregister", "group", "individual", "cancel",
+				       "status" };
 static const char *const t3_results[] = { "none", "pending", "granted", "done", "refused", "no_answer", "timeout",
 					  "not_allowed", "lost", "cancelled" };
 static const char *const t3_axs[] = { "idle", "wait_slot", "wait_resp", "acked" };
@@ -176,7 +187,7 @@ void debuglink_view_t3(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "t3.call_dst=%u\nt3.call_src=%u\nt3.call_group=%u\nt3.call_ours=%u\n", (unsigned)x->call_dst,
 		(unsigned)x->call_src, x->call_group, x->call_ours);
 	dl_text(t, "t3.ax_svc=%s\nt3.ax_state=%s\nt3.ax_result=%s\nt3.ax_reason=0x%02x\nt3.ptt_wait=%u\nt3.can_talk=%u\n",
-		word(x->ax_svc, t3_svcs, 6), word(x->ax_state, t3_axs, 4), word(x->ax_result, t3_results, 10),
+		word(x->ax_svc, t3_svcs, 7), word(x->ax_state, t3_axs, 4), word(x->ax_result, t3_results, 10),
 		x->ax_reason, x->ptt_wait, x->can_talk);
 	// The last CSBK heard and sent: opcode, slot, age in ms (-1: none)
 	uint32_t now = hal_millis();
@@ -199,6 +210,11 @@ void debuglink_view_t3(const radio_view_t *v, dl_text_t *t)
 		"t3.send_fail=%u\nt3.at_known=%u\nt3.at_busy=%u\n", (unsigned)x->returns, (unsigned)x->hunts,
 		(unsigned)x->foreign, (unsigned)x->learned, (unsigned)x->sent, (unsigned)x->ra_tries,
 		(unsigned)x->send_fail, (unsigned)x->at_known, (unsigned)x->at_busy);
+	// Status (6.6.6): a poll's answer, the radio's own, the last one heard (age -1: none)
+	dl_text(t, "t3.ax_info=%u\nt3.own_status=%u\nt3.st_count=%u\nt3.st_src=%u\nt3.st_dst=%u\nt3.st_group=%u\n"
+		"t3.st_value=%u\nt3.st_age_ms=%d\n", x->ax_info, x->own_status, (unsigned)x->st_count,
+		(unsigned)x->st_src, (unsigned)x->st_dst, x->st_group, x->st_value,
+		x->st_ms != 0 ? (int)(now - x->st_ms) : -1);
 #else
 	(void)v;
 	dl_text(t, "t3.built=0\n");

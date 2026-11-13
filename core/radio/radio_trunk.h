@@ -15,6 +15,7 @@ typedef enum {
 	RADIO_T3_STOP,			// leave it: back to the channel or VFO
 	RADIO_T3_DEREG,			// de-register (when registered), staying on the system
 	RADIO_T3_END,			// end the call being followed (P_MAINT when it is ours or private)
+	RADIO_T3_STATUS,		// send the staged status (radio_t3_setup_t.sd_*)
 } radio_t3_cmd_t;
 
 #if CONFIG_DMR_TRUNK
@@ -29,6 +30,9 @@ typedef struct {
 	uint8_t cc;		// the system's color code, for channels programmed with T3_CC_ANY
 	uint32_t talk_id;	// PTT on the TSCC asks for a call to this (0: the first talkgroup with T3_TG_TALK)
 	bool talk_private;
+	uint32_t sd_dst;	// RADIO_T3_STATUS: to this MS or talkgroup
+	bool sd_group;
+	uint8_t sd_status;	// 0-126, or T3_STATUS_POLL
 } radio_t3_setup_t;
 
 // The setup the debug link writes to (host link task); RADIO_T3_START copies it into the radio core

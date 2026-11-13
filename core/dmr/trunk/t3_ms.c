@@ -534,6 +534,13 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 		q->kind = T3_SK_IND_VOICE;
 		q->options = ms->ax.emergency ? T3_SO_EMERGENCY : 0;
 		break;
+	case T3_SVC_STATUS:
+		// Tables 6.57, 6.58: G/I, SUPED_SV 0 and the status's 5 most significant bits; its 2 least significant
+		// where a registration has Appended_UDT_Short_Data, SUPED_VAL 0 above them
+		q->kind = T3_SK_STATUS;
+		q->options = (uint8_t)((ms->ax.group ? 0x40u : 0u) | ((ms->ax.status >> 2) & 0x1Fu));
+		q->extra = (uint8_t)(ms->ax.status & 3u);
+		break;
 	default:
 		q->kind = T3_SK_CANCEL;
 		break;
@@ -595,6 +602,7 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 	}
 	t3_svc_t svc = ms->ax.svc;
 	ms->ax.reason = a->reason;
+	ms->ax.info = a->info;
 	switch (t3_ack_class(a->reason)) {
 	case T3_WACK:
 	case T3_QACK:
@@ -647,13 +655,15 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 // C_AHOY on the TSCC or P_AHOY on the payload channel addressed to the radio: radio check, availability check (OACSU),
 // call cancel, selective clear. Authentication isn't supported: it is refused. The answer goes on the inbound slot
 // after the next CACH of the slot the AHOY came on, without random access
-static void answer(t3_ms_t *ms, uint8_t slot, bool payload, uint8_t reason, uint32_t to, bool then_return)
+static void answer_info(t3_ms_t *ms, uint8_t slot, bool payload, uint8_t reason, uint8_t info, uint32_t to,
+			bool then_return)
 {
 	t3_csbk_t p;
 	memset(&p, 0, sizeof(p));
 	p.lb = true;
 	p.op = payload ? T3_OP_P_ACKU : T3_OP_C_ACKU;
 	p.u.ack.reason = reason;
+	p.u.ack.info = info;
 	p.u.ack.dst = to;
 	p.u.ack.src = my_id(ms);
 	t3_csbk_build(&p, T3_CRC_MASK_CSBK, ms->tx.burst);
@@ -663,8 +673,48 @@ static void answer(t3_ms_t *ms, uint8_t slot, bool payload, uint8_t reason, uint
 	ms->tx.then_return = then_return;
 }
 
+static void answer(t3_ms_t *ms, uint8_t slot, bool payload, uint8_t reason, uint32_t to, bool then_return)
+{
+	answer_info(ms, slot, payload, reason, 0, to, then_return);
+}
+
+// A status delivered by C_AHOY (6.6.6.1.1.4): Service_Options_Mirror holds its 5 most significant bits, Appended_Blocks
+// the 2 least. To the radio it is answered (a poll with the radio's own status, 6.6.6.2.1.3); to a talkgroup it isn't
+static bool on_status(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h)
+{
+	bool to_me = !h->group && is_me(ms, h->dst);
+	if (h->kind != T3_SK_STATUS || (!to_me && !(h->group && t3_ms_wants_group(ms, h->dst, false)))) {
+		return false;
+	}
+	uint8_t v = (uint8_t)(((h->options & 0x1Fu) << 2) | (h->blocks & 3u));
+	ms->status_rx.count++;
+	ms->status_rx.src = h->src;
+	ms->status_rx.dst = h->dst;
+	ms->status_rx.group = h->group;
+	ms->status_rx.value = v;
+	ms->status_rx.ms = now != 0 ? now : 1;
+	if (to_me && may_send(ms)) {
+		if (v == T3_STATUS_POLL) {
+			answer_info(ms, slot, false, T3_RC_MS_POLL_ACCEPTED, ms->own_status, h->src, false);
+		} else {
+			answer(ms, slot, false, T3_RC_MS_ACCEPTED, h->src, false);
+		}
+	}
+	return true;
+}
+
 static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h, bool payload)
 {
+	if (!payload && on_status(ms, now, slot, h)) {
+		return;
+	}
+	if (!payload && h->kind == T3_SK_STATUS && is_me(ms, h->src) && ms->ax.svc == T3_SVC_STATUS &&
+	    (ms->ax.state == T3_AX_WAIT_RESP || ms->ax.state == T3_AX_ACKED)) {
+		// Our status going to the called party (6.6.6.1.2.1.2 c): it is under way, the final answer follows
+		ms->ax.state = T3_AX_ACKED;
+		ms->ax.ack_deadline = now + or_default(ms->cfg->tnp_ms, T3_TNP_MS);
+		return;
+	}
 	bool to_me = !h->group && is_me(ms, h->dst);
 	bool to_call = payload && h->group && ms->call.group && h->dst == ms->call.dst;
 	if (!to_me && !to_call) {
@@ -1092,6 +1142,26 @@ bool t3_ms_request(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, bool eme
 	}
 	ms->talk_id = dst;
 	start_access(ms, now, group ? T3_SVC_GROUP_VOICE : T3_SVC_IND_VOICE, dst, emergency);
+	return true;
+}
+
+bool t3_ms_status(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t status)
+{
+	// A poll goes to an MS only (6.6.6.2.2)
+	bool bad = dst == T3_ID_NULL || status > T3_STATUS_POLL || (group && status == T3_STATUS_POLL);
+	if (bad || ms->ax.state != T3_AX_IDLE || !may_ask(ms)) {
+		if (bad) {
+			ms->ax.result = T3_RES_NOT_ALLOWED;
+		}
+		return false;
+	}
+	start_access(ms, now, T3_SVC_STATUS, dst, false);
+	ms->ax.status = status;
+	ms->ax.group = group;
+	ms->ax.info = 0;
+	if (status != T3_STATUS_POLL) {
+		ms->own_status = status;
+	}
 	return true;
 }
 

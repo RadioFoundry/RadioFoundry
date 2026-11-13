@@ -97,7 +97,8 @@ RX2_FLAGS = {1: "present", 2: "up", 4: "bridge", 8: "restart"}
 IDDB = 0x1F                         # the DMR ID database: format, records, an ID looked up (docs/spec/debuglink.md 3.23)
 CHIP_REG = 0x20                     # an RF chip or SoC register read or written (docs/spec/debuglink.md 3.24)
 T3 = 0x22                           # a Tier III trunked system: stage, select, leave (docs/spec/debuglink.md 3.26)
-T3_RESET, T3_SYSTEM, T3_CTRL, T3_CHAN, T3_TG, T3_SITE, T3_PLAN, T3_START, T3_STOP, T3_DEREG, T3_END = range(1, 12)
+T3_RESET, T3_SYSTEM, T3_CTRL, T3_CHAN, T3_TG, T3_SITE, T3_PLAN, T3_START, T3_STOP, T3_DEREG, T3_END, \
+    T3_STATUS = range(1, 13)
 T3_TG_LISTEN, T3_TG_TALK = 1, 2
 T3_PAR = {"a": 1, "b": 2}
 CHIP_SOC = 0xFF                     # CHIP_REG's chip number for the SoC's own registers
@@ -648,6 +649,10 @@ class DebugLink:
 
     def t3_plan(self, base_hz, first=1, sep=0, tx_low=False, split_hz=0):
         self.t3_op(T3_PLAN, struct.pack("<IHBBI", base_hz, first, sep, int(tx_low), split_hz))
+
+    def t3_status(self, dst, status, group=False):
+        """Send a status 0-126 to an MS or talkgroup, or poll an MS (127: its answer is t3.ax_info)"""
+        self.t3_op(T3_STATUS, struct.pack("<IBB", dst, int(group), status))
 
     def t3(self, cmd):
         """start | stop | dereg | end"""
@@ -2270,7 +2275,11 @@ def main(argv=None):
     p.add_argument("choice", nargs="?", help="one of the option's choices, e.g. V4A/V5")
     p = sub.add_parser("t3", help="a Tier III trunked system (docs/spec/debuglink.md 3.26): show (the t3 view), "
                        "start, stop, dereg, end, or setup: reset then stage one from the options and start it")
-    p.add_argument("op", nargs="?", default="show", choices=["show", "setup", "start", "stop", "dereg", "end"])
+    p.add_argument("op", nargs="?", default="show",
+                   choices=["show", "setup", "start", "stop", "dereg", "end", "status"])
+    p.add_argument("--to", type=int, default=0, help="status: the MS or talkgroup (--group)")
+    p.add_argument("--status", type=int, default=0, help="status: 0-126, or 127 to poll an MS")
+    p.add_argument("--group", action="store_true", help="status: --to is a talkgroup")
     p.add_argument("--own-id", type=int, default=0)
     p.add_argument("--model", type=int, default=0)
     p.add_argument("--net", type=int, default=0)
@@ -2381,6 +2390,8 @@ def main(argv=None):
                         link.t3_tg(tg, True, i == 0)
                     if not a.no_start:
                         link.t3("start")
+                elif a.op == "status":
+                    link.t3_status(a.to, a.status, a.group)
                 elif a.op != "show":
                     link.t3(a.op)
                 for k, v in link.view(sections=["t3"]).items():

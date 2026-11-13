@@ -250,6 +250,11 @@ typedef struct {
 	uint32_t at_busy;
 	uint16_t last_unmapped;
 	uint32_t own_id;
+	uint8_t ax_info;	// Response_Info of the last final acknowledgement (a poll's answer)
+	uint8_t own_status;	// sent in answer to a poll
+	bool st_group;		// the last status heard: to a talkgroup
+	uint8_t st_value;
+	uint32_t st_count, st_src, st_dst, st_ms;
 } radio_t3_view_t;
 #endif
 

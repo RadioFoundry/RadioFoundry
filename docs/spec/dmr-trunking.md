@@ -15,7 +15,7 @@ a system set up over the debug link (section 11); the codeplug has no keys for a
 | 4 | System identity and authorization |
 | 5 | Channel plans |
 | 6 | The receive engine |
-| 7 | Access |
+| 7 | Access (7.5 status) |
 | 8 | Timers and constants |
 | 9 | Tests |
 | 10 | Not done yet |
@@ -280,7 +280,29 @@ the AHOY's source, its additional address the radio's ID.
 | availability check (kind individual voice): OACSU | MS_Accepted |
 | call cancel (kind cancel) on the TSCC | MS_Accepted |
 | selective clear (P_AHOY kind cancel) | Message_Accepted, then return |
+| status (kind status) | MS_Accepted (section 7.5) |
+| status poll (kind status, status 127) | Accepted for the Status Polling Service (0x47), Response_Info the radio's status |
 | authentication challenge, anything else to the radio | not supported (0x00) |
+
+### 7.5 Status (6.6.6)
+
+A status is a 7-bit value: 0-126, 126 the emergency alarm and 124 its cancel; 127 is a poll. `t3_ms_status` sends one
+to an MS or a talkgroup, or polls an MS, by random access (C_RAND, Service_Kind status, tables 6.57 and 6.58):
+
+| Field | Holds |
+|---|---|
+| Service_Options | G/I (bit 6), SUPED_SV 0, the status's 5 most significant bits |
+| the 4 service-dependent bits | SUPED_VAL 0, then the status's 2 least significant bits |
+
+The TSCC's C_AHOY to the called party with our status as the source is progress (TNP_Timer); C_WACKD and C_QACKD are
+too. C_ACKD ends it (`T3_RES_DONE`): MS_Accepted mirrored for an MS, Message_Accepted for a talkgroup, Accepted for
+the Status Polling Service for a poll, with the polled status in Response_Info (`ax.info`). C_NACKD refuses it. A poll
+to a talkgroup or a status past 127 isn't started (`T3_RES_NOT_ALLOWED`). The last status sent is the radio's own,
+the answer to a poll.
+
+A status heard in a C_AHOY on the TSCC (Service_Options_Mirror the 5 most significant bits, Appended_Blocks the 2
+least) to the radio or to a talkgroup it listens to is kept in `status_rx`. To the radio it is answered (section 7.4);
+to a talkgroup it isn't. Listen only, it is kept and not answered.
 
 ## 8. Timers and constants
 
@@ -338,7 +360,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | A trunked system in the codeplug, and its screens | codeplug keys for systems |
 | CACH short LC reception | the modem drivers' CACH report |
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
-| Talkgroup lists of more than one group, data and status services | later |
+| Talkgroup lists of more than one group, short data, packet data | later |
 | Data grants, C_MOVE, adjacent sites, power save | later |
 
 ## 11. On the radio
@@ -355,6 +377,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | Send | A `T3_ACT_SEND` keys one CSBK as a data list, on the action's slot only, and not while the radio is talking. |
 | PTT | Camped, PTT asks for a call to the system's talk target (the first talkgroup with `T3_TG_TALK` when none is set) and waits with PTT held. The grant puts the radio on the payload slot and keys it. A refusal, no answer or timeout denies TX (`TXDENY_NO_DMR`). Released before the grant, the request is cancelled. |
 | Following | The stack takes the system's ID as its own, hears every call on the slot, and talks to the call's group or to the other party. The radio's own transmission counts as the call's activity: it never hears its own slot, so TV_Inactive would otherwise end the call while it talks. |
+| Status | `RADIO_T3_STATUS` sends the staged status (section 7.5). The last status heard is in the view. |
 | View | The `t3` section ([debuglink.md](debuglink.md) 3.26). |
 
 Tests: `tests/host/radioCoreTest.c` (`test_t3_talk`) runs a simulated site through PTT, request, grant and a call

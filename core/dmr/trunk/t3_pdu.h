@@ -105,6 +105,7 @@
 #define T3_RC_MS_ACCEPTED	0x44
 #define T3_RC_CALLBACK		0x45
 #define T3_RC_MS_ALERTING	0x46
+#define T3_RC_MS_POLL_ACCEPTED	0x47	// Accepted for the Status Polling Service, from the MS: Response_Info its status
 #define T3_RC_NOT_SUPPORTED	0x20
 #define T3_RC_PERM_USER_REFUSED	0x21
 #define T3_RC_TEMP_USER_REFUSED	0x22

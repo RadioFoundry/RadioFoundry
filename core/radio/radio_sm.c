@@ -2384,6 +2384,7 @@ static bool t3_tap(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 	return true;
 }
 
+#if CONFIG_DMR_TRUNK_TX
 static uint32_t t3_talk_id(const radio_sm_t *sm, bool *group)
 {
 	const radio_t3_setup_t *s = &t3s;
@@ -2399,6 +2400,7 @@ static uint32_t t3_talk_id(const radio_sm_t *sm, bool *group)
 	}
 	return s->cfg.ntg != 0 ? s->cfg.tg[0].id : 0;
 }
+#endif
 
 static void t3_publish(radio_sm_t *sm)
 {
@@ -2427,6 +2429,14 @@ static void t3_publish(radio_sm_t *sm)
 	v->ax_result = (uint8_t)m->ax.result;
 	v->ax_reason = m->ax.reason;
 	v->ax_state = (uint8_t)m->ax.state;
+	v->ax_info = m->ax.info;
+	v->own_status = m->own_status;
+	v->st_count = m->status_rx.count;
+	v->st_src = m->status_rx.src;
+	v->st_dst = m->status_rx.dst;
+	v->st_group = m->status_rx.group;
+	v->st_value = m->status_rx.value;
+	v->st_ms = m->status_rx.ms;
 	v->ptt_wait = sm->t3_ptt_wait;
 	v->can_talk = t3_ms_can_talk(m);
 	v->ticks = sm->t3_ticks;
@@ -2519,6 +2529,12 @@ static void t3_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
 	case RADIO_T3_END:
 		if (sm->t3_on) {
 			t3_ms_end_call(&t3m, now_ms);
+		}
+		break;
+	case RADIO_T3_STATUS:
+		if (sm->t3_on) {
+			const radio_t3_setup_t *st = radio_t3_staged();
+			(void)t3_ms_status(&t3m, now_ms, st->sd_dst, st->sd_group, st->sd_status);
 		}
 		break;
 #endif

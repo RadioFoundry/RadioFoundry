@@ -739,6 +739,104 @@ static void test_one_carrier_site(void)
 	CHECK(ms.state == T3_CAMPED && ms.reg == T3_REG_OK, "camped and registered after the call");
 }
 
+// A status delivered by C_AHOY: 5 most significant bits in Service_Options_Mirror, 2 least in Appended_Blocks
+static t3_csbk_t status_ahoy(uint8_t v, bool group, uint32_t dst, uint32_t src)
+{
+	t3_csbk_t p = ahoy(T3_SK_STATUS, group, dst, src);
+	p.u.ahoy.options = (uint8_t)((group ? 0x40u : 0u) | (v >> 2));
+	p.u.ahoy.blocks = (uint8_t)(v & 3u);
+	return p;
+}
+
+// Send until the C_RAND goes out
+static bool sent_rand(t3_ms_t *ms)
+{
+	for (int i = 0; i < 20 && nsent == 0; i++) {
+		frame(ms);
+	}
+	return nsent >= 1 && sent[nsent - 1].op == T3_OP_C_RAND;
+}
+
+static void test_status(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+
+	// To an MS (table 6.57): delivered to it, then its acceptance mirrored
+	CHECK(t3_ms_status(&ms, T, CALLER, false, 37), "status to an MS starts");
+	CHECK(sent_rand(&ms), "status request sent");
+	const t3_rand_t *q = &sent[0].u.rand;
+	CHECK(q->kind == T3_SK_STATUS && q->options == (37 >> 2) && (q->extra & 3u) == (37 & 3) && q->dst == CALLER &&
+	      q->src == OWN, "C_RAND status 37: options 0x%02x extra %u", q->options, q->extra);
+	t3_csbk_t h = status_ahoy(37, false, CALLER, OWN);
+	rx(&ms, 1, &h);
+	CHECK(ms.ax.state == T3_AX_ACKED && ms.ax.result == T3_RES_PENDING, "our status going out: progress");
+	CHECK(ms.status_rx.count == 0, "not a status for us");
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_MS_ACCEPTED, OWN, CALLER);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_DONE && ms.own_status == 37, "delivered, result %s", t3_res_name(ms.ax.result));
+
+	// To a talkgroup: G/I set; the TSCC's Message_Accepted ends it
+	nsent = 0;
+	CHECK(t3_ms_status(&ms, T, TG_A, true, 5), "status to a talkgroup starts");
+	CHECK(sent_rand(&ms) && sent[0].u.rand.options == (0x40 | (5 >> 2)) && (sent[0].u.rand.extra & 3u) == 1u,
+	      "talkgroup status: options 0x%02x", sent[0].u.rand.options);
+	a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, TG_A);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_DONE && ms.own_status == 5, "talkgroup status done");
+
+	// A poll: status 127 to an MS only; the answer's Response_Info is its status
+	CHECK(!t3_ms_status(&ms, T, TG_A, true, T3_STATUS_POLL) && ms.ax.result == T3_RES_NOT_ALLOWED,
+	      "no poll to a talkgroup");
+	CHECK(!t3_ms_status(&ms, T, CALLER, false, 128), "no status past 127");
+	nsent = 0;
+	CHECK(t3_ms_status(&ms, T, CALLER, false, T3_STATUS_POLL), "poll starts");
+	CHECK(sent_rand(&ms) && sent[0].u.rand.options == 0x1F && (sent[0].u.rand.extra & 3u) == 3u, "poll request");
+	a = ack(T3_OP_C_ACKD, T3_RC_STATUS_ACCEPTED, OWN, CALLER);
+	a.u.ack.info = 12;
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_DONE && ms.ax.info == 12 && ms.own_status == 5, "poll answered: info %u",
+	      ms.ax.info);
+
+	// Received: to the radio, answered MS_Accepted
+	nsent = 0;
+	h = status_ahoy(100, false, OWN, CALLER);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(ms.status_rx.count == 1 && ms.status_rx.value == 100 && ms.status_rx.src == CALLER && !ms.status_rx.group,
+	      "status 100 heard: %u", ms.status_rx.value);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_ACCEPTED &&
+	      sent[0].u.ack.dst == CALLER, "status acknowledged");
+	// A poll: Accepted for the Status Polling Service with the radio's last status
+	h = status_ahoy(T3_STATUS_POLL, false, OWN, CALLER);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 2 && sent[1].u.ack.reason == T3_RC_MS_POLL_ACCEPTED && sent[1].u.ack.info == 5,
+	      "poll answered: reason 0x%02x info %u", sent[1].u.ack.reason, sent[1].u.ack.info);
+	// To a talkgroup it listens to: kept, not answered; to one it doesn't: ignored
+	h = status_ahoy(9, true, TG_B, CALLER);
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	CHECK(ms.status_rx.count == 3 && ms.status_rx.group && ms.status_rx.dst == TG_B && nsent == 2,
+	      "talkgroup status kept, no answer");
+	h = status_ahoy(9, true, TG_OTHER, CALLER);
+	rx(&ms, 1, &h);
+	h = status_ahoy(9, false, OWN + 1u, CALLER);
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	CHECK(ms.status_rx.count == 3 && nsent == 2, "others' statuses ignored");
+
+	// Listen only: kept, never answered, none sent
+	setup(T3_OPT_PRIVATE | T3_OPT_LISTEN_ONLY, true);
+	camp(&ms);
+	h = status_ahoy(3, false, OWN, CALLER);
+	rx(&ms, 1, &h);
+	frames(&ms, 3);
+	CHECK(ms.status_rx.count == 1 && nsent == 0, "listen only: kept, no answer");
+	CHECK(!t3_ms_status(&ms, T, CALLER, false, 3), "listen only: no status sent");
+}
+
 int main(void)
 {
 	test_register();
@@ -750,6 +848,7 @@ int main(void)
 	test_private_call();
 	test_cancel();
 	test_ahoy();
+	test_status();
 	test_deregister();
 	test_receive_rules();
 	test_one_carrier_site();

@@ -128,7 +128,11 @@ typedef enum {
 	T3_SVC_GROUP_VOICE,
 	T3_SVC_IND_VOICE,
 	T3_SVC_CANCEL,
+	T3_SVC_STATUS,		// a status (or a poll, T3_STATUS_POLL) to an MS or talkgroup (6.6.6)
 } t3_svc_t;
+
+#define T3_STATUS_POLL		127	// the status that asks the called MS for its own (6.6.6.2)
+#define T3_STATUS_MAX		126	// 0-126 are statuses (126 the emergency alarm, 124 its cancel)
 
 typedef enum {
 	T3_RES_NONE,
@@ -236,7 +240,20 @@ typedef struct {
 		uint8_t reason;		// of the last acknowledgement
 		uint8_t progress;	// T3_WACK / T3_QACK of the last progress acknowledgement
 		uint32_t retry_ms;	// registration: try again from here (0: no)
+		uint8_t status;		// T3_SVC_STATUS: the status sent
+		bool group;		// T3_SVC_STATUS: to a talkgroup
+		uint8_t info;		// Response_Info of the final acknowledgement (a poll's answer: the polled status)
 	} ax;
+	// The last status heard for the radio, from a C_AHOY to it or to a talkgroup it listens to (6.6.6)
+	struct {
+		uint32_t count;
+		uint32_t src;
+		uint32_t dst;
+		bool group;
+		uint8_t value;		// 0-126; T3_STATUS_POLL: a poll, answered with own_status
+		uint32_t ms;
+	} status_rx;
+	uint8_t own_status;		// the radio's status, sent in answer to a poll: the last one it sent
 	// A burst to send on a slot without random access: an answer (once) or P_MAINT (count times)
 	struct {
 		uint8_t count;
@@ -267,6 +284,9 @@ void t3_ms_slot(t3_ms_t *ms, uint32_t now, uint8_t slot, bool at_known, bool at_
 // Access (CONFIG_DMR_TRUNK_TX). t3_ms_request asks for a voice call (PTT) to dst, a talkgroup or an individual. False
 // (ax.result says why) when it can't start. Watch ax.result for the outcome
 bool t3_ms_request(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, bool emergency);
+// Send a status (0-126) to dst, a talkgroup or an MS, or poll an MS (T3_STATUS_POLL; ax.info has its answer). False
+// (ax.result says why) when it can't start
+bool t3_ms_status(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t status);
 // PTT released before the grant: withdraw the request, or cancel it at the TSCC once sent
 void t3_ms_cancel(t3_ms_t *ms, uint32_t now);
 // The user ends the call being followed: P_MAINT when the radio started it or it is individual, then back

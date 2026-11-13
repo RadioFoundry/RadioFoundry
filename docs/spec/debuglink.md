@@ -849,18 +849,21 @@ answers unavailable (3). Each op answers OK or bad argument (2), with no reply b
 | 9 | STOP | leave it: back to the channel or VFO |
 | 10 | DEREG | de-register, staying on the system (`CONFIG_DMR_TRUNK_TX`) |
 | 11 | END | end the call being followed (`CONFIG_DMR_TRUNK_TX`) |
+| 12 | STATUS | send a status: to u32 (an MS, or a talkgroup), group u8, status u8 (0-126; 127 polls an MS) (`CONFIG_DMR_TRUNK_TX`) |
 
 The `t3` view section has the engine's state as the radio core last published it, all keys `t3.`-prefixed: `built`,
 `tx_built`, `on`, `state` (off, hunt, camped, follow), `reg`, `confirmed`, `syscode`, `own_id`, `tscc_lcn`, `rx_hz`,
 `tx_hz`, `slot` (0: both), `cc`; the last Aloha (`aloha_mask`, `aloha_sf`, `aloha_nrand`, `aloha_backoff`,
 `aloha_reg`); the call followed (`call_dst`, `call_src`, `call_group`, `call_ours`); the access in progress (`ax_svc`,
 `ax_state`, `ax_result`, `ax_reason`, `ptt_wait`, `can_talk`); the last CSBK heard and sent (`last_rx_op`,
-`last_rx_slot`, `last_rx_age_ms`, `last_tx_op`, `last_tx_age_ms`; age -1: none); counters (`ticks`, `csbk`, `crc_bad`,
-`grants`, `followed`, `unmapped`, `last_unmapped`, `returns`, `hunts`, `foreign`, `learned`, `sent`, `ra_tries`,
-`send_fail`, `at_known`, `at_busy`).
+`last_rx_slot`, `last_rx_age_ms`, `last_tx_op`, `last_tx_age_ms`, `last_tx` in hex; age -1: none); counters (`ticks`,
+`csbk`, `crc_bad`, `grants`, `followed`, `unmapped`, `last_unmapped`, `returns`, `hunts`, `foreign`, `learned`, `sent`,
+`ra_tries`, `send_fail`, `at_known`, `at_busy`); status: `ax_info` (the final acknowledgement's Response_Info: a
+poll's answer), `own_status` (the radio's, sent in answer to a poll), and the last status heard (`st_count`,
+`st_src`, `st_dst`, `st_group`, `st_value`, `st_age_ms`).
 
 `rfoundry_debug.py t3 setup --model 1 --net 5 --cc 2 --ctrl 1:RX_MHZ:TX_MHZ --tg 1` stages and starts one;
-`rfoundry_debug.py t3 [show|start|stop|dereg|end]`.
+`rfoundry_debug.py t3 [show|start|stop|dereg|end]`; `rfoundry_debug.py t3 status --to ID --status N [--group]`.
 
 ## 4. Safety
 
