@@ -2096,6 +2096,12 @@ void hrc6000_dmr_set_embedded_lc(hrc6000_dmr_t *e, const uint8_t lc[9])
 void hrc6000_dmr_set_cc_filter(hrc6000_dmr_t *e, int8_t cc)
 {
 	lock(e);
+	// The same filter again changes nothing: a restart would drop the sync. The call layer sets the filter on every
+	// reconfigure, so a slot change on the same channel lost the voice syncs at a call's start
+	if (cc == e->cc_filter) {
+		unlock(e);
+		return;
+	}
 	e->cc_filter = cc;
 	e->cc_held = false;
 	e->cc_matches = 0;
