@@ -114,7 +114,7 @@ Tune the FM VFO to a known signal (NOAA, a repeater output, the SDR bench) and t
 | Check | Pass | If not |
 | --- | --- | --- |
 | Audio from the speaker with the squelch open | `tests/hil` FM receive cases | the shift register's audio bits 0x02, 0x08, 0x40 and PA7 (`radio_d578uv.c`); the level device on PA13/PA14 (`D578UV_LEVEL_IC`) |
-| RSSI and the squelch track the signal | `view` rssi, the squelch closes on a quiet channel | the QA4818 RSSI read and its offset (`drivers/rf/qa4818`) |
+| RSSI and the squelch track the signal | `view` rssi, the squelch closes on a quiet channel; `tools/bench/rssi_cal.py` ([rssi-calibration.md](rssi-calibration.md) 4) | the QA4818 RSSI read and its offset (`drivers/rf/qa4818`) |
 | CTCSS and DCS open only on the right tone | `tests/hil` subtone cases | the sub-audio registers (`drivers/rf/subaudio`) |
 | Both bands, 145 and 435 MHz | | the band bits on chip 0 and the shift register's 0x04 |
 | Sensitivity even across each band (the SDR bench's level steps at a band's ends and middle) | | the PA5 trims from the calibration (`trims_a`, `rf_plan.h`; [hardware-d578uv.md](../spec/hardware-d578uv.md) 5.5). Writing the factory defaults instead tells a calibration problem from a formula one |
