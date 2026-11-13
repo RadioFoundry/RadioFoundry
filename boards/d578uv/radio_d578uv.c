@@ -2279,10 +2279,14 @@ static void status(radio_status_t *st)
 	st->rssi_dbm = qa4818_rssi_dbm(s.rssi);
 	st->noise = qa4818_noise(s.noise);
 	st->carrier = mode == RADIO_MODE_DMR ? s.rssi >= dmr_threshold : s.signal && s.rssi >= rx_threshold;
-	dmr_heard = mode == RADIO_MODE_DMR && st->carrier;
+	dmr_heard = false;
 #if CONFIG_DMR
-	if (mode == RADIO_MODE_DMR)
+	if (mode == RADIO_MODE_DMR) {
 		d578uv_modem_carrier(st->carrier);
+		// By the baseband's sync, not the carrier: the carrier threshold sits near the noise, and on a quiet channel
+		// it flickered on and dropped beeps (heard as only the amplifier's pop)
+		dmr_heard = d578uv_modem_synced();
+	}
 #endif
 	st->tone_ok = qa4818_tone_heard(chip_tone(rx_tone.type), s.tone_flags);
 }

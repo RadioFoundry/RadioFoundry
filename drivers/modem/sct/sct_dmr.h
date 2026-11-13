@@ -133,6 +133,9 @@ void sct_dmr_poll(uint32_t now_ms);
 // receiver has settled, when it sets one); it never sends one while it transmits. A board
 // that never calls it relies on the chip's own squelch (docs/spec/modem-sct.md 3)
 void sct_dmr_carrier(uint8_t ready);
+// The chip has DMR sync now: from its DMR_SLOT_FOUND until sync or carrier lost. A DMR signal, not noise over the
+// board's carrier threshold
+bool sct_dmr_synced(void);
 
 // Bench access for the debug link's CHIP_REG (docs/spec/modem-sct.md 8): one field to the chip in a packet of TYPE
 // `type`, or a query for it (read: the data is ignored). sct_dmr_field_poll: 0 no answer yet, 1 answered (a query's

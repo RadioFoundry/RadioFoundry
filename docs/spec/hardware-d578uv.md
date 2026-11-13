@@ -439,7 +439,7 @@ the fade it is within 2 dB of the steady part, the beep is as loud, and the rece
 after a beep (all measured by microphone). A tone longer than about 1.1 s drops 12 dB by
 itself; no beep is that long. In DMR the tone takes the chip's output from the baseband, which then has nothing to
 demodulate: a beep during a call cost 12 voice bursts, or ended the call (HIL, the alert beep of an emergency call). No
-beep sounds while side A hears a DMR signal, and one sounding stops when a signal comes.
+beep sounds while side A hears a DMR signal, and one sounding stops when a signal comes. A DMR signal is the baseband's sync (`sct_dmr_synced`), not the carrier: the carrier threshold sits near the noise, and on a quiet DMR channel it came and went and dropped beeps, leaving only the amplifier's pop.
 
 ## 5. RF chips
 

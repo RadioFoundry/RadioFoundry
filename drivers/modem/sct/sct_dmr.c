@@ -1127,6 +1127,14 @@ static void unlock(void)
 		s.port->unlock(s.port->ctx);
 }
 
+bool sct_dmr_synced(void)
+{
+	lock();
+	bool on = s.running && s.sync != DMR_SYNC_NONE;
+	unlock();
+	return on;
+}
+
 void sct_dmr_packet(const uint8_t *pkt, uint16_t len, uint32_t now_ms)
 {
 	lock();
