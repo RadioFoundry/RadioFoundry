@@ -88,6 +88,9 @@ bool hrc_set_dmr_id(hrc_t *dev, uint32_t id);
 bool hrc_set_mod_gain(hrc_t *dev, uint8_t mod2, uint8_t mod1);
 // The DMR microphone gain, through the chip's own register
 bool hrc_set_mic_gain(hrc_t *dev, uint8_t gain);
+// The codec's microphone input (4:0xE0 bit 6), the register's other bits kept: off while a TX tone or the sub-audio
+// tail goes out, so nothing said reaches the air
+bool hrc_mic(hrc_t *dev, bool on);
 // The vocoder buffer flush (modem-hrc6000.md 3, step 5): 128 bytes of 0x7F to page 3
 bool hrc_flush_vocoder(hrc_t *dev);
 // The MS-sourced data sync pattern for page 1 0x04 (ETSI TS 102 361-1; the chip sends the voice sync as its inverse)

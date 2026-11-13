@@ -310,10 +310,8 @@ static void inject_stop(void)
 
 void md9600_c6000_mic(bool on)
 {
-	uint8_t e0;
-
-	if (fm_tx && hrc_read(&modem, 4, 0xE0, &e0)) {
-		count(hrc_write(&modem, 4, 0xE0, (uint8_t)(on ? (e0 | 0x40u) : (e0 & ~0x40u))));
+	if (fm_tx) {
+		count(hrc_mic(&modem, on));
 	}
 }
 
