@@ -1456,6 +1456,7 @@ static void tx_start_data(uint32_t now)
 	}
 	s.queue_cap = s.modem->tx_queue_space();
 	s.queued = s.started = 0;
+	s.view.tx_released = false;
 	s.tx = TX_DATA;
 	s.deadline = now + DMR_CALL_DATA_TIMEOUT_MS + (uint32_t)s.data.count * VOICE_PERIOD_MS;
 	s.dirty = true;
@@ -1466,6 +1467,7 @@ static void tx_ptt_pressed(uint32_t now)
 {
 	if (s.tx != TX_NONE)
 		return;		// a transmission is ending: tx_finished() restarts if PTT is still held
+	s.view.tx_released = false;	// a new transmission: access, a wake-up or a permit wait are not the last one's tail
 	if (!s.modem || !s.running || !s.configured) {
 		s.tx = TX_DENIED;
 		s.view.tx_error = DMR_TX_ERR_NO_MODEM;

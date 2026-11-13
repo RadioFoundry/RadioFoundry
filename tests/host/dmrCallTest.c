@@ -1128,6 +1128,17 @@ static void test_rmo_wakeup(void)
 	CHECK(sim.air[before].kind == DMR_BURST_VOICE_LC_HEADER);
 	dmr_call_ptt(false);
 	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->tx_released);	// until the next transmission starts
+
+	// The next press, once the repeater is down: the wake-up is a transmission of its own, not the last one's tail
+	sim.repeater = false;
+	run_ms(DMR_CALL_REPEATER_HOLD_MS + 500);
+	CHECK(!V()->repeater_up);
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_WAKEUP && !V()->tx_released);
+	dmr_call_ptt(false);
+	run_ms(3000);
 
 	// A short press: the wake-up goes on after the release, and nothing else is sent once the repeater is up
 	setup(&c);
