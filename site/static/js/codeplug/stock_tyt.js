@@ -246,7 +246,7 @@ export function importStock(m, bytes, format) {
 			colorCode: dmr ? c.colorCode : 0, timeslot: dmr ? c.timeslot : 1,
 			contact: dmr ? contactOf.get(c.contact) || null : null, rxList: dmr ? listOf.get(c.rxList) || null : null,
 			aprs: null, dmrId: 0, noBeep: false, noEco: false, dmo: false, roam: false, aliasTs1: 0, aliasTs2: 0,
-			useLocation: false, lat: 0, lon: 0, sfr: false, sfrA: 0, sfrB: 0,
+			useLocation: false, lat: 0, lon: 0, sfr: false, sfrA: 0, sfrB: 0, toneBurst: false,
 		};
 		channelOf.set(c.index, x);
 		return x;

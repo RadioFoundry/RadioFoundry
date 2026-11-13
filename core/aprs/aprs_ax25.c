@@ -717,6 +717,24 @@ static void message_in(const ax25_frame_t *f, const aprs_parsed_t *p)
 	}
 }
 
+// A third-party packet ("}SRC>DST,PATH:info", APRS101 chapter 17): how an iGate puts APRS-IS traffic on RF, so
+// messages from Internet stations and the acks of ours to them arrive this way. The message inside is from SRC: kept,
+// matched and acked as SRC's. Only messages are taken; the station list keeps the iGate, the station actually heard,
+// since an Internet station must not count as heard on RF for the iGate rules. One level, no nesting
+static void third_party_in(const ax25_frame_t *f)
+{
+	ax25_frame_t in;
+	aprs_parsed_t q;
+	if (f->info_len < 2 || !ax25_from_tnc2((const char *)f->info + 1, f->info_len - 1u, &in) || in.info_len == 0 ||
+	    ax25_addr_equal(&in.src, &aprs_s.me)) {
+		return;
+	}
+	aprs_parse(&in.dst, in.info, in.info_len, &q);
+	if (q.type == APRS_T_MESSAGE) {
+		message_in(&in, &q);
+	}
+}
+
 void aprs_rx_frame(const uint8_t *frame, size_t n, uint32_t now_ms)
 {
 	ax25_frame_t f;
@@ -739,6 +757,9 @@ void aprs_rx_frame(const uint8_t *frame, size_t n, uint32_t now_ms)
 	station_update(&f, &p);
 	if (p.type == APRS_T_MESSAGE && aprs_s.me_ok) {
 		message_in(&f, &p);
+	}
+	if (p.type == APRS_T_THIRD_PARTY && aprs_s.me_ok) {
+		third_party_in(&f);
 	}
 	if (aprs_s.cfg.igate && aprs_s.cfg.kiss && aprs_s.me_ok && CONFIG_APRS_IGATE &&
 	    aprs_igate_rf_to_is(&aprs_s.dedup_gate, &f, &aprs_s.me, now_ms, aprs_s.gate, sizeof(aprs_s.gate)) == APRS_GATE_OK) {
@@ -1092,6 +1113,18 @@ bool aprs_station(uint8_t i, aprs_station_t *out)
 	bool ok = i < aprs_s.nst;
 	if (ok) {
 		*out = aprs_s.st[i];
+	}
+	UNLOCK();
+	return ok;
+}
+
+bool aprs_station_find(const char *call, aprs_station_t *out)
+{
+	LOCK();
+	const aprs_station_t *s = station_find(call);
+	bool ok = s != NULL;
+	if (ok) {
+		*out = *s;
 	}
 	UNLOCK();
 	return ok;

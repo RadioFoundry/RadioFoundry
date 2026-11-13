@@ -48,6 +48,20 @@ the radio its position).
 The symbol, comment and the DMR destination are set with the debug tool for now
 (`tools/rfoundry_debug.py aprs set ...`), later with qdmr.
 
+## Station details
+
+Open **Stations heard**, select a callsign, and press **OK**. **Message** is first; press OK again to open a message
+addressed to that station. The selection stays on the same callsign when incoming packets reorder the heard list.
+
+Scroll with **Up / Down** to see distance and direction (when both positions are known), when the station was heard,
+**Direct** or **Via digipeater**, and the position's age if it differs from the last packet's age. Speed in km/h and
+course appear only when known for the retained position. The remaining rows show the symbol's table and code,
+the retained comment or status, and the packet count. The radio retains at most 23 text characters plus the end
+marker; longer comments are incomplete. No digipeater name is retained.
+
+If the station leaves the heard list, the page says **No longer in list**. You can still choose Message to address
+that callsign.
+
 ## Path
 
 The path says how many digipeater hops a packet may take on FM. Each **WIDEn-N** entry allows N more hops. Press
@@ -74,7 +88,8 @@ the frequency shown in **Frequency** on the APRS page (your region's, 144.390 MH
 the VFO there, and leave the radio on it. If the packets are sent on another frequency, set **Frequency** to Custom
 and enter it first. Heard
 stations go into **Stations heard**, messages to your callsign appear in **Messages** and are acknowledged, and the digipeater (if you
-turned it on) passes packets on.
+turned it on) passes packets on. Messages from internet stations (an APRS messaging service, for example) reach you
+through a nearby iGate. They appear under the sender's callsign, and the acknowledgment goes back to that sender.
 
 - It listens only on the APRS frequency, in FM, and the tuned frequency must equal the APRS **Frequency** exactly.
   On other FM channels nothing is decoded.
@@ -93,6 +108,10 @@ works whatever the receive setting. **Stations heard** shows the station and whe
 Automatic beacons go out at the interval, or with SmartBeaconing by speed and turns. Never more often than every
 30 seconds. The radio waits for a clear APRS frequency before it sends, and gives up after 10 seconds. Pressing PTT
 always wins: an APRS transmission in progress stops and your channel comes back.
+
+An FM beacon can interrupt dual watch. It always sends on the APRS frequency you set, then dual watch resumes on the
+channel it was listening to. A or B selection still controls where PTT transmits; it does not choose the beacon
+frequency. A zone or VFO scan delays the beacon until the scan stops.
 
 ## Position
 

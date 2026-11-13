@@ -733,6 +733,42 @@ msgid "Message"
 msgstr "Mensaje"
 
 #: core/ui/ui_aprs.c
+msgid "No longer in list"
+msgstr "Ya no está en lista"
+
+#: core/ui/ui_aprs.c
+msgid "{Distance|Dist|}"
+msgstr "{Distancia|Dist|}"
+
+#: core/ui/ui_aprs.c
+msgid "Direct"
+msgstr "Directo"
+
+#: core/ui/ui_aprs.c
+msgid "Via digipeater"
+msgstr "Vía repetidor"
+
+#: core/ui/ui_aprs.c
+msgid "{Position age|Pos age}"
+msgstr "{Edad posición|Edad pos}"
+
+#: core/ui/ui_aprs.c core/ui/ui_gps.c
+msgid "Speed"
+msgstr "Velocidad"
+
+#: core/ui/ui_aprs.c
+msgid "Course"
+msgstr "Rumbo"
+
+#: core/ui/ui_aprs.c
+msgid "Symbol"
+msgstr "Símbolo"
+
+#: core/ui/ui_aprs.c
+msgid "Packets"
+msgstr "Paquetes"
+
+#: core/ui/ui_aprs.c
 msgid "OK choose  Back"
 msgstr "OK elegir  Atrás"
 
@@ -1051,10 +1087,6 @@ msgstr "Lon"
 #: core/ui/ui_gps.c
 msgid "Alt"
 msgstr "Alt"
-
-#: core/ui/ui_gps.c
-msgid "Speed"
-msgstr "Velocidad"
 
 #: core/ui/ui_gps.c
 msgid "No positions yet"
@@ -1603,6 +1635,10 @@ msgstr "CTCSS/DCS RX"
 #: core/ui/ui_menus.c
 msgid "TX CTCSS/DCS"
 msgstr "CTCSS/DCS TX"
+
+#: core/ui/ui_menus.c
+msgid "Tone burst"
+msgstr "Ráfaga de tono"
 
 #: core/ui/ui_menus.c
 msgid "Color code"
@@ -2731,10 +2767,6 @@ msgstr "Bloq. teclas"
 #: core/ui/ui_menus.c
 msgid "Home zone"
 msgstr "Zona de inicio"
-
-#: core/ui/ui_menus.c
-msgid "Tone burst"
-msgstr "Ráfaga de tono"
 
 #: core/ui/ui_menus.c
 msgid "Copy to VFO"

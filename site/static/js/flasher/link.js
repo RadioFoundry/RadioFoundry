@@ -14,7 +14,8 @@ export { serialApi };
 
 export const RFOUNDRY_USB = { usbVendorId: 0x1FC9, usbProductId: 0x0094 };
 // The same radio as a USB network adapter (CDC-NCM, docs/spec/usb-network.md 1): no serial port, and the OS network
-// driver owns the interfaces, so a page can only see that it is there (WebUSB lists it without claiming it)
+// driver owns the interfaces, so a page can only see that it is there (WebUSB lists it without claiming it) and ask
+// it for the serial port (netmode.js)
 export const RFOUNDRY_NET = { vendorId: 0x1FC9, productId: 0x0096 };
 const SOF1 = 0xA5, SOF2 = 0x5A;
 export const CMD = { PING: 0x01, VERSION: 0x02, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F, HWOPT: 0x21 };

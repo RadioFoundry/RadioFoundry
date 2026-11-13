@@ -53,7 +53,8 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 #define CH_SFR_A	0x25u	// SFR byte A (ours, open-firmware-cps.md 7.3.3)
 #define CH_LFLAG1	0x26u
 #define CH_DMR_ID	0x27u
-#define CH_SFR_B	0x2Au	// SFR byte B (ours)
+#define CH_SFR_B	0x2Au	// SFR byte B (ours); bit 6 the FM tone burst, read without the SFR flag
+#define SFRB_TONE_BURST	0x40u
 #define CH_RX_GROUP	0x2Bu
 #define CH_CC		0x2Cu
 #define CH_CONTACT	0x2Eu
@@ -667,6 +668,7 @@ bool codeplug_openfw_decode(const uint8_t *r, channel_t *out)
 	out->no_beep = (r[CH_LFLAG1] & LFLAG1_NO_BEEP) != 0;
 	out->no_eco = (r[CH_LFLAG1] & LFLAG1_NO_ECO) != 0;
 	out->roam = (r[CH_LFLAG1] & LFLAG1_ROAM) != 0;
+	out->tone_burst = r[CH_SFR_B] != 0xFFu && (r[CH_SFR_B] & SFRB_TONE_BURST) != 0;	// 0xFF: a writer that fills unknown bytes
 	if (r[CH_LFLAG1] & LFLAG1_SFR) {
 		out->sfr_flag1 = LFLAG1_SFR;
 		out->sfr_a = r[CH_SFR_A];
@@ -712,6 +714,12 @@ void codeplug_openfw_encode(const channel_t *ch, uint8_t *r)
 	r[CH_LFLAG1] = (uint8_t)((r[CH_LFLAG1] & ~(LFLAG1_ID | LFLAG1_NO_BEEP | LFLAG1_NO_ECO | LFLAG1_DMO)) |
 				 (ch->dmr_id != 0 ? LFLAG1_ID : 0) | (ch->no_beep ? LFLAG1_NO_BEEP : 0) |
 				 (ch->no_eco ? LFLAG1_NO_ECO : 0) | (ch->dmo ? LFLAG1_DMO : 0));
+	// The rest of SFR byte B is kept as read (the SFR fields are read only here). Never 0xFF, which reads as "not
+	// set": with the burst on over a byte a writer filled, the unused bits 5-4 are cleared
+	r[CH_SFR_B] = (uint8_t)((r[CH_SFR_B] & ~SFRB_TONE_BURST) | (ch->tone_burst ? SFRB_TONE_BURST : 0));
+	if (r[CH_SFR_B] == 0xFFu) {
+		r[CH_SFR_B] = 0xCFu;
+	}
 	uint32_t tot = (ch->tot_s + 14u) / 15u;
 	r[CH_TOT] = (uint8_t)(tot > 255u ? 255u : tot);
 	// Each timeslot's talker alias field: its text bit and its position (APRS) bit

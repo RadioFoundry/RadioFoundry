@@ -393,7 +393,10 @@ static bool bcast_listening(const radio_sm_t *sm)
 #if CONFIG_APRS_AFSK
 	own_rx = sm->aprs_phase == APRS_RF_OFF;
 #endif
-	return own_rx && sm->view.bcast && !sm->view.bcast_fault && !scan_on(&sm->scan);
+	if (scan_on(&sm->scan)) {
+		return false;
+	}
+	return own_rx && sm->view.bcast && !sm->view.bcast_fault;
 #else
 	(void)sm;
 	return false;
@@ -3533,9 +3536,21 @@ static bool aprs_can_start(const radio_sm_t *sm)
 		return false;
 	}
 #if CONFIG_SCAN
-	if (scan_on(&sm->scan)) {
+	if (scan_on(&sm->scan) && !dual_running(sm)) {
 		return false;
 	}
+#if CONFIG_DUAL_WATCH
+	if (dual_peeking(sm)) {
+		return false;
+	}
+	if (sm->rx2_on) {
+		rx2_status_t st;
+		board.rx2->status(&st);
+		if (st.active) {
+			return false;
+		}
+	}
+#endif
 #endif
 #if CONFIG_FM_TX_TONES
 	if (sm->roger_ms != 0 || sm->burst_keyed) {
@@ -3594,6 +3609,17 @@ static void aprs_rf_end(radio_sm_t *sm, aprs_rf_result_t r, uint32_t now_ms)
 	sm->view.aprs_tx = false;
 	aprs_rf_done(r, now_ms);
 	tune(sm, now_ms);	// the channel again (DMR set up again if it was DMR)
+#if CONFIG_SCAN
+	if (dual_running(sm)) {
+		scan_tuned(&sm->scan, now_ms);
+		scan_publish(sm);
+#if CONFIG_DUAL_WATCH
+		if (board.rx2 != NULL) {
+			rx2_engage(sm, now_ms);
+		}
+#endif
+	}
+#endif
 }
 
 static void aprs_rf_abort(radio_sm_t *sm, uint32_t now_ms)
@@ -3607,6 +3633,11 @@ static void aprs_rf_start(radio_sm_t *sm, uint32_t now_ms)
 	if (!aprs_rf_take(&sm->aprs_job, now_ms)) {
 		return;
 	}
+#if CONFIG_SCAN && CONFIG_DUAL_WATCH
+	if (dual_running(sm)) {
+		rx2_release(sm);	// the other receiver must be quiet while APRS has the transmitter
+	}
+#endif
 	if (sm->board_mode == RADIO_MODE_DMR) {
 		dmr_end(sm);		// the call stack lets go of the modem before the chip leaves DMR
 	}
@@ -5170,6 +5201,22 @@ static void tone_burst(radio_sm_t *sm, bool on, uint32_t max_ms, uint32_t now_ms
 }
 #endif
 
+#if CONFIG_FM_TX_TONES
+// A channel with its tone burst on (channel_t.tone_burst): each PTT key-up opens with one timed burst, as the Tone
+// burst key pressed during PTT does; the microphone follows. Nothing on a channel or board that can't send it
+static void channel_burst(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->view.ch.tone_burst || sm->view.vfo || sm->view.ch.mode != RADIO_MODE_FM || sm->hotspot || sm->host_audio ||
+	    board.radio->tx_tone == NULL || sm->view.state != RS_TX || sm->view.tone_burst) {
+		return;
+	}
+	tone_burst(sm, true, 0, now_ms);
+	sm->burst_timed = sm->view.tone_burst;
+	sm->burst_held = false;
+	sm->burst_ms = sm->burst_timed ? now_ms : 0;
+}
+#endif
+
 // A request that changes what the receiver is tuned to ends a scan first (it stays where it is)
 static bool retunes(uint8_t type)
 {
@@ -5360,7 +5407,15 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 				sm->host_push_ms = now_ms;
 #endif
 			}
+#if CONFIG_FM_TX_TONES
+			bool was_tx = sm->view.state == RS_TX && !sm->view.tx_auto;	// the radio's own transmission is not the user's key-up
+#endif
 			ptt_down(sm, now_ms);
+#if CONFIG_FM_TX_TONES
+			if (!was_tx) {
+				channel_burst(sm, now_ms);
+			}
+#endif
 		} else {
 			ptt_up(sm, now_ms);
 		}
