@@ -961,6 +961,59 @@ static void test_stun(void)
 	CHECK(!ms.stunned, "another radio's stun");
 }
 
+// Authentication (6.4.8): a challenge during registration is answered C_ACKU Authentication_Response with the RC4
+// result as the target, and the registration waits on for its answer; a challenge on its own is answered too; without
+// K a challenge is not supported
+static void test_auth(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	cfg.auth_key_set = true;
+	for (int i = 0; i < T3_AUTH_KEY_LEN; i++) {
+		cfg.auth_key[i] = (uint8_t)(i + 1);
+	}
+	camp(&ms);
+	for (int i = 0; i < 10 && nsent == 0; i++) {
+		frame(&ms);
+	}
+	CHECK(nsent == 1 && sent[0].u.rand.kind == T3_SK_REGISTRATION, "registration request");
+	nsent = 0;
+	t3_csbk_t h = ahoy(T3_SK_REGISTRATION, false, OWN, 0x7A17C0u);
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_AUTH_RESPONSE &&
+	      sent[0].u.ack.dst == 0xE8CA1Du && sent[0].u.ack.src == OWN, "the response, %06x",
+	      (unsigned)sent[0].u.ack.dst);
+	CHECK(ms.ax.state == T3_AX_ACKED && ms.ax.svc == T3_SVC_REGISTER && ms.auths == 1, "registration goes on");
+	nsent = 0;
+	frames(&ms, 10);
+	CHECK(nsent == 0, "no new request meanwhile");
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_REG_ACCEPTED, OWN, T3_ID_REGI);
+	rx(&ms, 1, &a);
+	CHECK(ms.reg == T3_REG_OK, "registered");
+
+	// A poll on its own, with a PSN
+	cfg.psn = 0x010203u;
+	nsent = 0;
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	CHECK(nsent == 1 && sent[0].u.ack.dst == 0xE9C81Eu, "with the PSN, %06x", (unsigned)sent[0].u.ack.dst);
+
+	// Without K
+	cfg.auth_key_set = false;
+	nsent = 0;
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	CHECK(nsent == 1 && sent[0].u.ack.reason == T3_RC_MS_NOT_SUPPORTED, "no key: not supported");
+	// A radio check still is one (TSI is above the challenge range)
+	nsent = 0;
+	cfg.auth_key_set = true;
+	h = ahoy(T3_SK_REGISTRATION, false, OWN, T3_ID_TSI);
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	CHECK(nsent == 1 && sent[0].u.ack.reason == T3_RC_MS_ACCEPTED, "radio check");
+}
+
 static void test_status(void)
 {
 	t3_ms_t ms;
@@ -1303,6 +1356,7 @@ int main(void)
 	test_ahoy();
 	test_broadcast();
 	test_stun();
+	test_auth();
 	test_status();
 	test_sdata();
 	test_pdata();

@@ -420,11 +420,25 @@ static void udt(void)
 	CHECK(t3_udt_pack(text, 0, 0, blk, &pad) == 0 && t3_udt_pack(text, 47, 0, blk, &pad) == 0, "UDT: 1-46 octets");
 }
 
+// MS authentication (6.4.8): the test vectors of tables 6.15 and 6.16
+static void auth(void)
+{
+	uint8_t k[T3_AUTH_KEY_LEN];
+	for (int i = 0; i < T3_AUTH_KEY_LEN; i++) {
+		k[i] = (uint8_t)(i + 1);
+	}
+	uint32_t r = t3_auth_response(k, 0x7A17C0u, 0);
+	CHECK(r == 0xE8CA1Du, "response %06x without PSN", (unsigned)r);
+	r = t3_auth_response(k, 0x7A17C0u, 0x010203u);
+	CHECK(r == 0xE9C81Eu, "response %06x with PSN", (unsigned)r);
+}
+
 int main(int argc, char **argv)
 {
 	vectors(argc > 1 ? argv[1] : "data/t3_vectors.jsonl");
 	rules();
 	udt();
+	auth();
 	printf("t3PduTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

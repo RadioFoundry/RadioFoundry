@@ -2662,6 +2662,8 @@ static void t3_publish(radio_sm_t *sm)
 	v->stunned = m->stunned;
 	v->stuns = m->stuns;
 	v->revives = m->revives;
+	v->auth_key = m->cfg != NULL && m->cfg->auth_key_set;
+	v->auths = m->auths;
 #if CONFIG_DMR_DATA_CORE && CONFIG_DMR_TRUNK_TX
 	v->pd_wait = data_tx.t3_wait;
 #endif

@@ -95,6 +95,9 @@ typedef struct {
 	uint16_t tp_ms;
 	uint16_t tnp_ms;
 	uint32_t seed;			// random access backoff; 0 = from the ID and the time
+	bool auth_key_set;		// authentication (6.4.8): K and the PSN; without K a challenge is not supported
+	uint8_t auth_key[T3_AUTH_KEY_LEN];
+	uint32_t psn;
 } t3_cfg_t;
 
 typedef enum {
@@ -237,6 +240,7 @@ typedef struct {
 	bool protect_dis;	// P_PROTECT DIS_PTT in force on the payload channel
 	bool stunned;		// stunned by the TSCC (6.4.9): no user services until revived
 	uint32_t stuns, revives;	// stun and revive commands taken
+	uint32_t auths;		// authentication challenges answered
 	uint32_t cleared_ms;	// when the last call was cleared (T3_REGRANT_MS)
 	t3_call_t cleared;
 

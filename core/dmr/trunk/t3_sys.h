@@ -63,6 +63,13 @@ typedef enum {
 // TSCC authorization (6.3.2.2.2 a-d)
 t3_auth_result_t t3_authorize(const t3_auth_t *a, uint16_t code);
 
+// MS authentication (6.4.8): the answer to a TSCC's 24-bit challenge. RC4 keyed with the challenge (3 octets, most
+// significant first) followed by the 128-bit key K; the keystream's octets 257-259 (most significant first), XOR
+// the PSN (0: none)
+#define T3_AUTH_KEY_LEN		16
+#define T3_AUTH_CHALLENGE_MAX	0xFFFCDFu	// table 6.17
+uint32_t t3_auth_response(const uint8_t key[T3_AUTH_KEY_LEN], uint32_t challenge, uint32_t psn);
+
 // The Mask rule (6.2.1.1.1): the PDU applies to the MS when the mask least significant bits of the two addresses match
 bool t3_mask_match(uint8_t mask, uint32_t pdu_addr, uint32_t own);
 

@@ -156,6 +156,21 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 		memcpy(s->sd_data, a + 6, s->sd_len);
 		radio_req_t3(RADIO_T3_SDATA);
 		break;
+	case DL_T3_AUTH:	// K (16 octets), PSN u32; nothing: no key. Write only: the view says whether one is set
+		if (n == 0u) {
+			s->cfg.auth_key_set = false;
+			memset(s->cfg.auth_key, 0, sizeof(s->cfg.auth_key));
+			s->cfg.psn = 0;
+			break;
+		}
+		if (n != T3_AUTH_KEY_LEN && n != T3_AUTH_KEY_LEN + 4u) {
+			out[0] = DL_ST_BAD_ARG;
+			break;
+		}
+		memcpy(s->cfg.auth_key, a, T3_AUTH_KEY_LEN);
+		s->cfg.psn = n > T3_AUTH_KEY_LEN ? rd32(a + T3_AUTH_KEY_LEN) & 0xFFFFFFu : 0u;
+		s->cfg.auth_key_set = true;
+		break;
 	default:
 		out[0] = DL_ST_BAD_ARG;
 		break;
@@ -243,6 +258,7 @@ void debuglink_view_t3_svc(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "t3.reg_tgs=%u\nt3.reg_tg_ok=0x%02x\n", x->reg_tgs, x->reg_tg_ok);
 	dl_text(t, "t3.call_data=%u\nt3.pd_wait=%u\nt3.stunned=%u\nt3.stuns=%u\nt3.revives=%u\n", x->call_data, x->pd_wait,
 		x->stunned, (unsigned)x->stuns, (unsigned)x->revives);
+	dl_text(t, "t3.auth_key=%u\nt3.auths=%u\n", x->auth_key, (unsigned)x->auths);
 	// The last short data heard: its octets in hex (sd_data), the format to read them by
 	char sd[2 * sizeof(x->sd_data) + 1];
 	uint8_t len = x->sd_len < sizeof(x->sd_data) ? x->sd_len : (uint8_t)sizeof(x->sd_data);

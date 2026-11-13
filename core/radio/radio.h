@@ -258,6 +258,8 @@ typedef struct {
 	bool pd_wait;		// the data service's packet waits for its data channel
 	bool stunned;		// stunned by the TSCC: no user services (6.4.9)
 	uint32_t stuns, revives;
+	bool auth_key;		// the system has an authentication key
+	uint32_t auths;		// challenges answered
 	bool st_group;		// the last status heard: to a talkgroup
 	uint8_t st_value;
 	uint32_t st_count, st_src, st_dst, st_ms;

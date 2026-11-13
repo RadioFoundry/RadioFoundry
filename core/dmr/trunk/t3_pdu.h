@@ -104,6 +104,7 @@
 #define T3_RC_AUTH_RESPONSE	0x64
 #define T3_RC_REG_SUBSCRIPTION	0x65	// Reg_Subscription/Attachment: registration accepted with a talkgroup
 #define T3_RC_MS_ACCEPTED	0x44
+#define T3_RC_MS_AUTH_RESPONSE	0x48	// the MS's answer to a challenge (table 7.42); the TS's is 0x64
 #define T3_RC_CALLBACK		0x45
 #define T3_RC_MS_ALERTING	0x46
 #define T3_RC_MS_POLL_ACCEPTED	0x47	// Accepted for the Status Polling Service, from the MS: Response_Info its status

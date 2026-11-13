@@ -99,7 +99,7 @@ IDDB = 0x1F                         # the DMR ID database: format, records, an I
 CHIP_REG = 0x20                     # an RF chip or SoC register read or written (docs/spec/debuglink.md 3.24)
 T3 = 0x22                           # a Tier III trunked system: stage, select, leave (docs/spec/debuglink.md 3.26)
 T3_RESET, T3_SYSTEM, T3_CTRL, T3_CHAN, T3_TG, T3_SITE, T3_PLAN, T3_START, T3_STOP, T3_DEREG, T3_END, \
-    T3_STATUS, T3_SDATA = range(1, 14)
+    T3_STATUS, T3_SDATA, T3_AUTH = range(1, 15)
 T3_UDTF = {"binary": 0, "address": 1, "bcd": 2, "iso7": 3, "iso8": 4, "nmea": 5, "ip": 6, "utf16": 7}
 T3_TG_LISTEN, T3_TG_TALK, T3_TG_BROADCAST = 1, 2, 4
 T3_PAR = {"a": 1, "b": 2}
@@ -660,6 +660,15 @@ class DebugLink:
     def t3_tg(self, tg, listen=True, talk=False, broadcast=False):
         self.t3_op(T3_TG, struct.pack("<IB", tg, (T3_TG_LISTEN if listen else 0) | (T3_TG_TALK if talk else 0) |
                                       (T3_TG_BROADCAST if broadcast else 0)))
+
+    def t3_auth(self, key=None, psn=0):
+        """The staged system's authentication key K (16 bytes) and PSN; None removes it. The radio never shows K."""
+        if key is None:
+            self.t3_op(T3_AUTH, b"")
+            return
+        if len(key) != 16:
+            raise DebugLinkError("t3 auth: K is 16 bytes")
+        self.t3_op(T3_AUTH, bytes(key) + struct.pack("<I", psn & 0xFFFFFF))
 
     def t3_site(self, site):
         self.t3_op(T3_SITE, struct.pack("<H", site))

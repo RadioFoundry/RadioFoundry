@@ -926,6 +926,17 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 			ms->revives++;
 		}
 		answer(ms, slot, false, T3_RC_MESSAGE_ACCEPTED, h->src, false);
+	} else if (to_me && !payload && h->kind == T3_SK_REGISTRATION && h->src <= T3_AUTH_CHALLENGE_MAX &&
+		   ms->cfg->auth_key_set) {
+		// An authentication challenge (6.4.8.3): the source is the challenge, the answer's target the response. One
+		// during an access (registration, a call) is progress: the final answer follows within TNP_Timer
+		answer(ms, slot, false, T3_RC_MS_AUTH_RESPONSE, t3_auth_response(ms->cfg->auth_key, h->src, ms->cfg->psn),
+		       false);
+		ms->auths++;
+		if (ms->ax.state == T3_AX_WAIT_RESP || ms->ax.state == T3_AX_ACKED) {
+			ms->ax.state = T3_AX_ACKED;
+			ms->ax.ack_deadline = now + or_default(ms->cfg->tnp_ms, T3_TNP_MS);
+		}
 	} else if (h->kind == T3_SK_REGISTRATION && h->src == T3_ID_TSI) {
 		answer(ms, slot, payload, T3_RC_MS_ACCEPTED, h->src, false);	// radio check
 	} else if (ms->stunned) {

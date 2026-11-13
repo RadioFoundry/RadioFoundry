@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // DMR Tier III system identity and access rules (see t3_sys.h).
+#include <string.h>
 #include "dmr/trunk/t3_sys.h"
 
 // Table 6.5 / figure 6.15: 14 bits after MODEL split between NET and SITE, 2 bits PAR
@@ -103,4 +104,38 @@ uint8_t t3_backoff_frames(uint8_t backoff)
 {
 	static const uint8_t frames[16] = { 1, 1, 2, 3, 4, 5, 8, 11, 15, 20, 26, 33, 41, 50, 70, 100 };
 	return frames[backoff & 0xFu];
+}
+
+uint32_t t3_auth_response(const uint8_t key[T3_AUTH_KEY_LEN], uint32_t challenge, uint32_t psn)
+{
+	uint8_t k[3 + T3_AUTH_KEY_LEN];
+	k[0] = (uint8_t)(challenge >> 16);
+	k[1] = (uint8_t)(challenge >> 8);
+	k[2] = (uint8_t)challenge;
+	memcpy(k + 3, key, T3_AUTH_KEY_LEN);
+	uint8_t st[256];
+	for (int i = 0; i < 256; i++) {
+		st[i] = (uint8_t)i;
+	}
+	uint8_t j = 0;
+	for (int i = 0; i < 256; i++) {
+		j = (uint8_t)(j + st[i] + k[i % (int)sizeof(k)]);
+		uint8_t t = st[i];
+		st[i] = st[j];
+		st[j] = t;
+	}
+	uint8_t i = 0;
+	uint32_t r = 0;
+	j = 0;
+	for (int n = 0; n < 259; n++) {
+		i++;
+		j = (uint8_t)(j + st[i]);
+		uint8_t t = st[i];
+		st[i] = st[j];
+		st[j] = t;
+		if (n >= 256) {
+			r = (r << 8) | st[(uint8_t)(st[i] + st[j])];
+		}
+	}
+	return (r ^ psn) & 0xFFFFFFu;
 }

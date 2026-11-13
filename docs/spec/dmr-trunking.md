@@ -299,7 +299,8 @@ the AHOY's source, its additional address the radio's ID.
 | status (kind status) | MS_Accepted (section 7.5) |
 | status poll (kind status, status 127) | Accepted for the Status Polling Service (0x47), Response_Info the radio's status |
 | stun or revive (kind supplementary, from STUNI) | Message_Accepted (section 7.9) |
-| authentication challenge, anything else to the radio | not supported (0x00); stunned, nothing |
+| authentication challenge (kind 1110b, source a challenge 0-0xFFFCDF), with K | Authentication_Response 0x48, the target the response (section 7.10) |
+| authentication challenge without K, anything else to the radio | not supported (0x00); stunned, nothing |
 
 ### 7.5 Status (6.6.6)
 
@@ -451,6 +452,20 @@ Stunned, the radio:
 The stun outlasts leaving the system and starting it again, unless the new system is another network. It is kept in
 RAM, with the staged system: a restart of the radio clears it.
 
+### 7.10 Authentication (6.4.8)
+
+The system may hold a 128-bit key K and a 24-bit PSN (`t3_cfg_t.auth_key`, `psn`; 0: no PSN). A C_AHOY to the radio,
+Service_Kind 1110b, whose source is below the gateway block (0-0xFFFCDF) is a challenge:
+
+1. RC4 is keyed with the challenge (3 octets, most significant first) followed by K.
+2. Of its keystream, octets 1-256 are dropped; octets 257-259 are the response, most significant first.
+3. The response is XORed with the PSN.
+
+The radio answers C_ACKU, Reason Authentication_Response (0x48, table 7.42), the target the response, the additional
+address its own ID. A challenge during an access (a registration or a call request) is progress: the access waits
+TNP_Timer for its final answer. Without K a challenge is answered not supported. A radio check (from TSI, above the
+range) is unchanged. `t3_auth_response` passes the test vectors of tables 6.15 and 6.16.
+
 ## 10. Not done yet
 
 | Item | Needs |
@@ -458,7 +473,8 @@ RAM, with the staged system: a restart of the radio clears it.
 | A trunked system in the codeplug, and its screens | codeplug keys for systems |
 | CACH short LC reception | the modem drivers' CACH report |
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
-| Short data polling, supplementary data, a list subscription without registering, authentication | later |
+| Short data polling, supplementary data, a list subscription without registering | later |
+| The radio challenging the TSCC (C_ACVIT) | later |
 | Stun and revive with authentication, kill (6.4.9.2, 6.4.10) | authentication |
 | A stun kept across a restart of the radio | trunked systems in the codeplug |
 | Multi-item and duplex packet data, data to a gateway, C_MOVE, adjacent sites, power save | later |
