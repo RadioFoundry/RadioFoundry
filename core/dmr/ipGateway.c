@@ -970,9 +970,12 @@ static bool deliverLocal(uint8_t protocol, uint32_t src, uint32_t dst, const uin
 
 	if (protocol == IP_PROTO_TCP)
 	{
+#if CONFIG_USB_SERIAL_REQUEST
+		radio = radio || ((dst == IPGW_ANY_RADIO_IP) && (ipGatewayRadioIP() != 0));	// the address a web page uses
+#endif
 		if (radio && (localTCP != NULL))
 		{
-			localTCP(src, l4, length);
+			localTCP(src, dst, l4, length);
 		}
 		return true;// TCP never goes over the air
 	}
@@ -999,11 +1002,16 @@ uint8_t *ipGatewayLocalPayload(void)
 
 bool ipGatewaySendLocal(uint8_t protocol, uint32_t dst, int length)
 {
+	return ipGatewaySendLocalFrom(protocol, ipGatewayRadioIP(), dst, length);
+}
+
+bool ipGatewaySendLocalFrom(uint8_t protocol, uint32_t src, uint32_t dst, int length)
+{
 	uint32_t radioIp = ipGatewayRadioIP();
 	uint8_t multicastMac[6];
 	const uint8_t *dstMac = hostMac;// the host is the only neighbor, and the router
 
-	if ((radioIp == 0) || (length < 0) || (length > IPGW_LOCAL_MAX))
+	if ((radioIp == 0) || ((src != radioIp) && (src != IPGW_ANY_RADIO_IP)) || (length < 0) || (length > IPGW_LOCAL_MAX))
 	{
 		return false;
 	}
@@ -1018,7 +1026,7 @@ bool ipGatewaySendLocal(uint8_t protocol, uint32_t dst, int length)
 	}
 
 	txTtl = 255;// on link (mDNS checks it, RFC 6762 11), and plenty beyond the host
-	bool ok = sendIPv4(dstMac, protocol, radioIp, dst, length);
+	bool ok = sendIPv4(dstMac, protocol, src, dst, length);
 	txTtl = 64;
 	return ok;
 }

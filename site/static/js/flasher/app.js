@@ -59,6 +59,7 @@ import { showBetaNotice } from "./beta.js";
 import { currentBuild, planUpdate } from "./update.js";
 import { readDfuInfo, choiceFor, hwoptAction, pendingHwopt, majorsFor, runsOriginal, BOOTLOADER } from "./origversion.js";
 import { readOriginal, deviceKind, spiSeconds, Guard } from "./origbackup.js";
+import { toSerial, CLICK_WAIT_MS } from "./netmode.js";
 
 // ---------------------------------------------------------------------------------------------------------------
 // strings and DOM
@@ -470,7 +471,7 @@ async function connectSerial() {
 	if (S.fakeRadio) stream = S.fakeRadio.serialStream();
 	else {
 		if (!serialSupported()) throw new Error(t("flash.err.no_serial"));
-		if (await networkModeSeen()) throw new NetworkModeError();
+		if (await networkModeSeen() && !(await leaveNetworkMode())) throw new NetworkModeError();
 		const granted = await grantedRFoundryPorts();
 		stream = granted.length ? await SerialStream.open(granted[0]) : await SerialStream.request();
 		useAdapter(adapter.fromSerialInfo(stream.port?.getInfo?.()));
@@ -507,6 +508,24 @@ async function waitForRFoundry(ms = 20000) {
 	return false;
 }
 
+// A radio in network mode, asked for its serial port over WebUSB alone (netmode.js: no click needed, and no tab).
+// true: it took the request, so the connect goes on. false: this browser can't reach it that way, the help offers the
+// radio's own page. The wait is short: the connect that follows may open a chooser, in the same click
+async function leaveNetworkMode() {
+	const r = await toSerial({ http: false, ms: CLICK_WAIT_MS });
+	if (r.how) switchedToSerial();
+	return r.how !== null;
+}
+
+// The radio was taken out of network mode for this page: say so. No way back is offered: a restart (the end of an
+// update, or the user's) puts it back by itself when USB network at start is on
+let netBar = null;
+function switchedToSerial() {
+	if (netBar) return;
+	netBar = h("div", { class: "notice info" }, h("p", {}, t("flash.net.switched_note")));
+	app.before(netBar);
+}
+
 // A radio in USB network mode that this page was allowed to see before (no prompt)
 async function networkModeSeen() {
 	if (!usbSupported()) return false;
@@ -541,12 +560,33 @@ function serialHelp() {
 			out.replaceChildren(notice(err?.name === "NotFoundError" ? t("flash.net.none") : errorText(err)));
 		}
 	} }, t("flash.net.check"));
-	return h("div", {}, h("p", { class: "small" }, check), out);
+	// the switch itself needs no USB chooser: the radio's own page does it (netmode.js), so it is offered at once
+	const offer = h("a", { href: "#", class: "small", onclick: (e) => {
+		e.preventDefault();
+		if (S.fakeRadio) return;
+		const help = networkModeHelp({ found: false });
+		out.replaceChildren(help);
+		help.querySelector("button")?.click();	// this click is the one the tab opens from
+	} }, t("flash.net.offer"));
+	return h("div", {}, h("p", { class: "small" }, check, " · ", offer), out);
 }
 
-function networkModeHelp() {
+// The radio is in network mode: a button that asks it for its serial port (netmode.js), and the steps on the radio
+// for when that doesn't reach it
+function networkModeHelp({ found = true } = {}) {
+	const result = h("div");
+	const go = button(t("flash.net.switch"), async () => {
+		go.disabled = true;
+		result.replaceChildren(h("p", { class: "muted" }, t("flash.net.switching")));
+		const r = await toSerial();
+		go.disabled = false;
+		if (r.back) switchedToSerial();
+		result.replaceChildren(notice(t(r.back ? "flash.net.switched" : "flash.net.switch_unseen"), r.back ? "ok" : ""));
+	}, { primary: true });
 	return h("div", { class: "notice info" },
-		h("p", {}, h("b", {}, t("flash.net.found"))),
+		found ? h("p", {}, h("b", {}, t("flash.net.found"))) : null,
+		h("p", {}, go), h("p", { class: "small" }, t("flash.net.not_secure")), result,
+		h("p", { class: "small" }, t("flash.net.manual")),
 		h("ol", { class: "steps" }, h("li", {}, t("flash.net.step1")), h("li", {}, t("flash.net.step2")), h("li", {}, t("flash.net.step3"))));
 }
 
@@ -833,7 +873,7 @@ async function connectForUpdate(status) {
 	else if (S.fakeC7) link = new Link(stream = S.fakeC7.stream, { timeout: 1200 });
 	else {
 		if (!serialSupported()) throw new Error(t("flash.err.no_serial"));
-		if (await networkModeSeen()) throw new NetworkModeError();
+		if (await networkModeSeen() && !(await leaveNetworkMode())) throw new NetworkModeError();
 		// a port granted before where RadioFoundry answers needs no chooser
 		const known = await knownRadioPort([RFOUNDRY_USB, ...c7ui.CABLES]);
 		stream = known?.stream || await SerialStream.open(await serialApi().requestPort({ filters: [RFOUNDRY_USB, ...c7ui.CABLES] }));
@@ -887,7 +927,8 @@ function updateView() {
 				} catch (e) {
 					await dropSerial();
 					await c7ui.dropC7();
-					if (e?.name === "NotFoundError") return status.replaceChildren();
+					// the chooser closed without a pick: no error, only the way on for a radio it couldn't list
+					if (e?.name === "NotFoundError") return status.replaceChildren(serialHelp());
 					status.replaceChildren(connectError(e), connectHelp(e, "flash.update.not_rfoundry"));
 				}
 			}, { primary: true }));

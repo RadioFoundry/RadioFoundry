@@ -54,6 +54,11 @@ BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 # not only skipped
 MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT NET_APRSIS
 MAXIMAL_VARS := CONFIG_NET_APRSIS=n
+# When the default build runs out of room, the IP services go first, the weakest here first: APRS-IS (NET_APRSIS, about
+# 2.7 KB: with no APRS receive it only gates RF positions out), then KISS over TCP (NET_KISS, about 0.75 KB, transmit
+# only for the same reason), then USRP or SNMP. Each serves its own kind of user over the same USB network link, so
+# dropping one costs the others nothing. USB_SERIAL_REQUEST stays while USB_NETWORK does: without it a radio in network
+# mode can't be reached by the web pages
 CONFIG_RX_EXT ?= n
 BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)
 
