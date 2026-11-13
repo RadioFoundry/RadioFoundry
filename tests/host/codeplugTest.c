@@ -1021,6 +1021,54 @@ static void test_channel_names(void)
 	CHECK(codeplug_zone_name(0, name) && strcmp(name, "All channels") == 0 && !codeplug_zone_name(1, name));
 }
 
+// name_field_ok: Latin-1 and UTF-8 mix freely (a Chinese name a CPS wrote); a truncated or stray UTF-8 lead, or a byte
+// past the terminator, is invalid
+static void test_name_field_ok(void)
+{
+	uint8_t buf[CODEPLUG_NAME_LEN];
+	bool empty;
+
+	// Latin-1 only: valid
+	memset(buf, 0xFF, sizeof buf);
+	memcpy(buf, "AB C", 4);
+	CHECK(name_field_ok(buf, sizeof buf, &empty) && !empty);
+	// a Latin-1 middot (U+00B7 is a Latin-1 byte, kept as such, not the font's 0x81): valid
+	memset(buf, 0xFF, sizeof buf);
+	memcpy(buf, "A\xB7B", 3);
+	CHECK(name_field_ok(buf, sizeof buf, &empty) && !empty);
+
+	// UTF-8 only (a Chinese name): valid
+	memset(buf, 0xFF, sizeof buf);
+	memcpy(buf, "\xE4\xB8\xAD\xE9\x81\x93", 6);	// "中道"
+	CHECK(name_field_ok(buf, sizeof buf, &empty) && !empty);
+	// mixed Latin-1 and UTF-8: valid (what an editor writes)
+	memset(buf, 0xFF, sizeof buf);
+	memcpy(buf, "A\xE4\xB8\xAD", 4);		// "A中"
+	CHECK(name_field_ok(buf, sizeof buf, &empty) && !empty);
+
+	// a font glyph byte (0x80 = ellipsis): valid as a Latin-1 byte
+	memset(buf, 0xFF, sizeof buf);
+	buf[0] = 'X'; buf[1] = 0x80; buf[2] = 0x80;
+	CHECK(name_field_ok(buf, sizeof buf, &empty) && !empty);
+
+	// truncated UTF-8 (a 3-byte lead with no continuation): invalid
+	memset(buf, 0xFF, sizeof buf);
+	memcpy(buf, "\xE4\xB8", 2);			// "中" missing its last byte
+	CHECK(!name_field_ok(buf, sizeof buf, &empty));
+	// a stray UTF-8 lead mid-string: invalid
+	memset(buf, 0xFF, sizeof buf);
+	memcpy(buf, "AB\xE4", 3);
+	CHECK(!name_field_ok(buf, sizeof buf, &empty));
+	// a byte past the terminator: invalid
+	memset(buf, 0xFF, sizeof buf);
+	memcpy(buf, "OK", 2);
+	buf[2] = 0x00; buf[3] = 'X';
+	CHECK(!name_field_ok(buf, sizeof buf, &empty));
+	// empty (all 0xFF): valid and empty
+	memset(buf, 0xFF, sizeof buf);
+	CHECK(name_field_ok(buf, sizeof buf, &empty) && empty);
+}
+
 int main(void)
 {
 	image = malloc(IMAGE_SIZE);
@@ -1034,6 +1082,7 @@ int main(void)
 	test_dmr_records();
 	test_contacts_each();
 	test_channel_names();
+	test_name_field_ok();
 	test_iddb();
 	test_iddb_compact();
 	test_erased();

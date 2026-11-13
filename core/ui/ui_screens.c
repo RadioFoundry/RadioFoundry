@@ -1268,7 +1268,7 @@ static void sb_talk_alts(sbuf_t *b, uint32_t id, bool private_call, const char *
 	sbuf_t nb;
 	sb_init(&nb, num, sizeof num);
 	sb_target(&nb, id, false, "");
-	size_t len = strlen(name);
+	size_t cells = ui_text_cells(name);
 	sb_str(b, TEXT_ALT_OPEN);
 	if (label_first) {
 		// "Main Ops TG 201 (9s)", "Main Ops TG 201", "Main Ops", "Main O…": the name is what the user reads
@@ -1284,10 +1284,9 @@ static void sb_talk_alts(sbuf_t *b, uint32_t id, bool private_call, const char *
 		sb_str(b, num);
 		sb_str(b, TEXT_ALT_NEXT);
 		sb_str(b, name);
-		if (room >= 2 && room < len) {
+		if (room >= 2 && cells > room - 1) {
 			sb_str(b, TEXT_ALT_NEXT);
-			for (size_t i = 0; i < room - 1; i++)
-				sb_chr(b, name[i]);
+			sb_cut_text(b, name, room - 1);
 			sb_str(b, GLYPH_ELLIPSIS);
 		}
 		sb_str(b, TEXT_ALT_CLOSE);
@@ -1300,12 +1299,11 @@ static void sb_talk_alts(sbuf_t *b, uint32_t id, bool private_call, const char *
 		sb_str(b, TEXT_ALT_NEXT);
 	}
 	sb_target(b, id, false, name);
-	if (room >= lead + 3 && room < lead + len) {
+	if (room >= lead + 3 && cells > room - lead - 1) {
 		sb_str(b, TEXT_ALT_NEXT);
 		sb_str(b, num);
 		sb_chr(b, ' ');
-		for (size_t i = 0; i < room - lead - 1; i++)
-			sb_chr(b, name[i]);
+		sb_cut_text(b, name, room - lead - 1);
 		sb_str(b, GLYPH_ELLIPSIS);
 	}
 	sb_str(b, TEXT_ALT_NEXT);

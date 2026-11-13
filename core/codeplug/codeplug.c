@@ -312,55 +312,12 @@ static void set_used(uint16_t number, bool on)
 }
 
 // A name field's text is Latin-1 (codeplug-stock-tyt.md 2): printable bytes 0x20-0x7E and 0xA0-0xFE
-static bool latin_ok(const uint8_t *p, unsigned n)
-{
-	for (unsigned i = 0; i < n; i++) {
-		if (p[i] < 0x20u || (p[i] > 0x7Eu && p[i] < 0xA0u)) {
-			return false;
-		}
-	}
-	return true;
-}
-
-// A name field's text is UTF-8 (a Chinese name the CPS wrote): every sequence well-formed, no overlong form, no
-// surrogate. The CPS writes Latin-1 letters and ASCII one byte each, so a name is either all Latin-1 or all UTF-8
-static bool utf8_ok(const uint8_t *p, unsigned n)
-{
-	unsigned i = 0;
-	while (i < n) {
-		uint8_t c = p[i];
-		if (c < 0x80u) {
-			i++;
-			continue;
-		}
-		unsigned need, lo;
-		uint32_t cp;
-		if ((c & 0xE0u) == 0xC0u) { need = 2; cp = c & 0x1Fu; lo = 0x80u; }
-		else if ((c & 0xF0u) == 0xE0u) { need = 3; cp = c & 0x0Fu; lo = 0x800u; }
-		else if ((c & 0xF8u) == 0xF0u) { need = 4; cp = c & 0x07u; lo = 0x10000u; }
-		else { return false; }
-		if (i + need > n) {
-			return false;
-		}
-		for (unsigned j = 1; j < need; j++) {
-			uint8_t b = p[i + j];
-			if ((b & 0xC0u) != 0x80u) {
-				return false;
-			}
-			cp = (cp << 6) | (b & 0x3Fu);
-		}
-		if (cp < lo || cp > 0x10FFFFu || (cp >= 0xD800u && cp <= 0xDFFFu)) {
-			return false;
-		}
-		i += need;
-	}
-	return true;
-}
-
-// A name field: printable text up to the first 0x00 or 0xFF, only 0x00 or 0xFF after it. The text is Latin-1 (the
-// historical format) or UTF-8 (a Chinese name the CPS wrote); a UTF-16 name fails (its second byte is 0x00 and
-// printable bytes follow)
-static bool name_field_ok(const uint8_t *p, unsigned len, bool *empty)
+// A name field: printable text up to the first 0x00 or 0xFF, only 0x00 or 0xFF after it. The text the CPS or the radio
+// writes is ASCII and Latin-1 (U+00A0..U+00FF) one byte each, font.h's glyph bytes (0x80..0x85) too, and any multi-byte
+// UTF-8 sequence for the rest (a Chinese name). Latin-1 and UTF-8 mix freely: a valid UTF-8 sequence where there is one
+// and a Latin-1 byte where there isn't. A stray or truncated UTF-8 lead is invalid, so a Chinese name the editor wrote
+// is valid but a cut-off one is not
+bool name_field_ok(const uint8_t *p, unsigned len, bool *empty)
 {
 	unsigned n = 0;
 	while (n < len && p[n] != 0x00 && p[n] != 0xFF) {
@@ -372,7 +329,29 @@ static bool name_field_ok(const uint8_t *p, unsigned len, bool *empty)
 			return false;
 		}
 	}
-	return n == 0 || latin_ok(p, n) || utf8_ok(p, n);
+	if (n == 0) {
+		return true;
+	}
+	for (unsigned i = 0; i < n; ) {
+		uint8_t c = p[i];
+		if ((c & 0xF0u) == 0xE0u) {		// a 3-byte sequence (the face covers the BMP only)
+			if (i + 2 >= n) {
+				return false;		// truncated
+			}
+			uint8_t c1 = p[i + 1], c2 = p[i + 2];
+			if ((c1 & 0xC0u) != 0x80u || (c2 & 0xC0u) != 0x80u) {
+				return false;		// not a continuation byte: a stray lead
+			}
+			uint32_t cp = ((uint32_t)(c & 0x0Fu) << 12) | ((uint32_t)(c1 & 0x3Fu) << 6) | (c2 & 0x3Fu);
+			if (cp < 0x800u) {
+				return false;		// overlong
+			}
+			i += 3;
+		} else {
+			i += 1;			// ASCII, Latin-1, or a font glyph byte
+		}
+	}
+	return true;
 }
 
 // A record that counts by its name: good when the name is valid and not empty

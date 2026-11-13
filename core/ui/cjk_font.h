@@ -16,10 +16,8 @@
 #define CJK_FONT_ROW_BYTES	2
 #define CJK_FONT_BYTES		(CJK_FONT_H * CJK_FONT_ROW_BYTES)
 
-#if CONFIG_LANG_ZH
 // The glyph of a code point: CJK_FONT_H rows of CJK_FONT_ROW_BYTES bytes, MSB the left of the 16, or NULL when the
-// font has none (the text layer draws a box)
+// font has none (the text layer draws a box). Built only with CONFIG_CJK_GLYPHS; without it the call returns NULL
 const uint8_t *cjk_font_glyph(uint32_t cp);
-#endif
 
 #endif

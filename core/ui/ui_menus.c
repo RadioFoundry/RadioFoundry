@@ -2002,12 +2002,15 @@ static bool text_key_fn(const input_event_t *ev)
 	if (dir != 0 && ev->gesture != GESTURE_UP) {
 		// Step the last character through the printable ones (the way in without a keypad); down past the space
 		// deletes it
-		if (text_len == 0)
+		if (text_len == 0) {
 			text_append('A');
-		else if (dir < 0 && text_buf[text_len - 1] == ' ')
+		} else if (dir < 0 && text_buf[text_len - 1] == ' ') {
 			text_buf[--text_len] = 0;
-		else
+		} else if ((uint8_t)text_buf[text_len - 1] < 0x80) {
+			// a single-byte character: step it through the printable range
 			text_buf[text_len - 1] = (char)(' ' + (text_buf[text_len - 1] - ' ' + dir + 95) % 95);
+		}
+		// a multi-byte last character (a Chinese name) is left whole: Up/Down does nothing to it
 		text_key = -1;
 		ui_dirty();
 		return true;
@@ -2024,8 +2027,13 @@ static bool text_key_fn(const input_event_t *ev)
 	}
 	if (((ev->action == ACT_BACK || ev->action == ACT_NAV_LEFT) && ev->gesture == GESTURE_PRESS) ||
 			(ev->action == ACT_QUICK && press)) {	// a slow * deletes too (it doesn't lock here)
-		if (text_len > 0)
-			text_buf[--text_len] = 0;
+		if (text_len > 0) {
+			unsigned cut = text_len;
+			while (cut > 0 && ((uint8_t)text_buf[cut - 1] & 0xC0) == 0x80)
+				cut--;		// step back over a UTF-8 continuation byte to the character start
+			text_len = cut;
+			text_buf[text_len] = 0;
+		}
 		text_key = -1;
 		ui_dirty();
 		return true;

@@ -15,6 +15,9 @@
 #include "config.h"
 
 #define CODEPLUG_NAME_LEN	16
+// A name field's text valid: Latin-1 and UTF-8 mixed, no truncated or stray UTF-8 lead. The rule the CPS and the radio
+// use, also exposed for tests (core/codeplug/codeplug.c)
+bool name_field_ok(const uint8_t *p, unsigned len, bool *empty);
 #define CODEPLUG_ZONE_MAX	80	// channels per zone
 #define CODEPLUG_DMR_ID_MAX	16776415u	// a radio's own ID; the IDs above it are the system's (gateways, all call)
 

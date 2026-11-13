@@ -512,9 +512,35 @@ static void test_cjk_layout(void)
 }
 #endif
 
+// ui_text_cells and sb_cut_text: a CJK character is two display cells, and a cut never splits one. A Chinese name the
+// talk line must truncate stays whole or drops whole
+static void test_text_cells(void)
+{
+	char out[64];
+	sbuf_t b;
+	// a CJK character is two cells, ASCII and a Latin-1 glyph byte are one
+	CHECK(ui_text_cells("AB") == 2);
+	CHECK(ui_text_cells("中") == 2);
+	CHECK(ui_text_cells("A中B") == 4);
+	CHECK(ui_text_cells("·") == 1);
+	// a cut leaves a Chinese character whole: room for 3 cells fits "A中" but not "A中B"
+	sb_init(&b, out, sizeof out);
+	sb_cut_text(&b, "A中B", 3);
+	CHECK(strcmp(out, "A中") == 0);
+	// a shorter cut drops a Chinese character whole rather than splitting it
+	sb_init(&b, out, sizeof out);
+	sb_cut_text(&b, "中道", 3);
+	CHECK(strcmp(out, "中") == 0);
+	// no cut when there is room
+	sb_init(&b, out, sizeof out);
+	sb_cut_text(&b, "AB", 4);
+	CHECK(strcmp(out, "AB") == 0);
+}
+
 int main(void)
 {
 	mkdir("out", 0755);
+	test_text_cells();
 
 	char buf[32];
 	sbuf_t b;

@@ -98,8 +98,9 @@ export function putTone(b, off, text) {
 	b[off + 1] = w >> 8;
 }
 
-// font.h's extra glyphs (tools/i18n.py MACROS): the character, then the byte the radio draws it as
-const TEXT_TO_BYTE = { "\u2026": 0x80, "\u00b7": 0x81, "\u2192": 0x82, "\u00b0": 0x83, "\u2912": 0x84, "\u2913": 0x85 };
+// font.h's extra glyphs (tools/i18n.py MACROS): a character with no Latin-1 byte, then the byte the radio draws it as.
+// "·" (B7) and "°" (B0) keep their Latin-1 bytes; putName checks Latin-1 first, so it does not rewrite them
+const TEXT_TO_BYTE = { "\u2026": 0x80, "\u2192": 0x82, "\u2912": 0x84, "\u2913": 0x85 };
 const BYTE_TO_TEXT = Object.fromEntries(Object.entries(TEXT_TO_BYTE).map(([t, b]) => [b, t]));
 
 // A name field holds the text the radio draws: ASCII and Latin-1 (U+00A0-U+00FF) one byte each, font.h's glyphs their
