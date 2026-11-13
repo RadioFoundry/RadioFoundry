@@ -341,6 +341,11 @@ void qa4818_beep(qa4818_t *c, uint16_t hz, uint8_t gain, uint16_t af)
 	wr(c, QA4818_REG_ENABLE, QA4818_ENABLE_RX | QA4818_ENABLE_TX_DSP);
 }
 
+void qa4818_af_out(qa4818_t *c, uint16_t af)
+{
+	wr(c, 0x47, af);
+}
+
 void qa4818_tx_on(qa4818_t *c)
 {
 	wr(c, 0x47, QA4818_AF_VOICE);
@@ -634,6 +639,12 @@ void qa4818_status(qa4818_t *c, qa4818_status_t *st)
 	st->noise = (uint8_t)(rfbus_read(c->bus, QA4818_REG_NOISE) & 0x7Fu);
 	st->rssi = (uint16_t)(rfbus_read(c->bus, QA4818_REG_RSSI) & 0x1FFu);
 	st->tone_flags = rfbus_read(c->bus, QA4818_REG_TONE_FLAGS);
+}
+
+void qa4818_carrier(qa4818_t *c, bool *signal, uint16_t *rssi)
+{
+	*signal = (rfbus_read(c->bus, QA4818_REG_STATUS) & 0x0002u) != 0;
+	*rssi = (uint16_t)(rfbus_read(c->bus, QA4818_REG_RSSI) & 0x1FFu);
 }
 
 uint16_t qa4818_voice(qa4818_t *c)

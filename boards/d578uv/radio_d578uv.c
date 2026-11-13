@@ -246,6 +246,18 @@ static struct { uint32_t hz; radio_bw_t bw; bool digital; subtone_t tone; int16_
 static bool transmitting;
 static uint8_t sr;			// the shift register's outputs
 static bool main_audio;			// side A's audio to the speaker (audio())
+// The squelch tail: when an FM carrier goes, the chip's noise reading takes a poll or two to rise, and the core's
+// squelch held open on it for about 30 ms of loud noise (measured by microphone). Its signal flag and the RSSI fall at
+// once, so while side A's FM audio plays they are read every FM_WATCH_MS (hal_radio_t.rx_watch), and once its squelch
+// is open on a carrier (the flag seen) the read that says it's gone shuts side A's audio gate: about 8 ms of the noise
+// is left. The core still closes the squelch on its own; the carrier back opens the gate again, and so does FM_LOST_MS
+// without a close (the monitor, squelch 0: they hear the channel's noise after it)
+#define FM_LOST_MS	150u
+#define FM_DROP		20u	// raw RSSI steps, 0.5 dB each
+#define FM_WATCH_MS	5u	// between reads while side A's FM audio plays
+static bool a_carrier_seen;		// since side A's audio went on, the chip's signal flag was set
+static uint32_t a_lost_ms;		// nonzero: when the carrier went and the gate shut
+static uint16_t a_rssi_last;		// side A's raw RSSI at the last poll
 // After a retune the chip's noise reading dips while it settles, and the squelch opened on it for a moment (heard on a
 // radio: a burst of noise as side A was set to another channel): no carrier for RX_SETTLE_MS after each set-up, on
 // either side
@@ -255,7 +267,8 @@ static uint32_t b_setup_ms;		// ... side B's
 static bool beeping;			// side A's chip sounds a beep instead of its receiver (beep_tone())
 static bool beep_quiet;			// side A's level held at its lowest while a beep starts or stops
 static uint16_t beep_hz;		// the beep sounding: its tone and the chip's gain, for a set-up during it
-static uint8_t beep_gain;
+static uint8_t beep_gain = 0x40;	// until a beep sets it: the generator runs during a lead at the last level
+#define TONE_WARM_MS	100		// rx_setup()'s silent first tone
 static uint8_t level_a_want;		// the level code audio_route() gives side A
 static bool dmr_heard;			// in DMR side A hears a signal (status()): no beep then (beep_tone())
 static int16_t level_code_vol = -1;	// the speaker level code for the volume, -1 until the core sets one
@@ -604,7 +617,7 @@ static void audio_route(void)
 	bool zero_b = swap ? vol_zero : level_code_b < 0 ? vol_zero : vol_b_zero;
 	// In DMR side A's RF chip audio is the demodulator's 4FSK, which the gate keeps off the speaker but for a beep or
 	// the KTMicro receiver; the baseband's voice reaches the speaker without it
-	bool a_rf = beeping || kt_out || (mode != RADIO_MODE_DMR && main_audio);
+	bool a_rf = beeping || kt_out || (mode != RADIO_MODE_DMR && main_audio && a_lost_ms == 0);
 	if (level_code_vol >= 0) {
 		level_a_want = a_rf || !b ? (uint8_t)code_a : 0;
 		level_set(0, beep_quiet ? 0 : level_a_want);
@@ -1158,8 +1171,17 @@ static void rx_setup(void)
 	a_kept = true;
 	// A set-up during a beep (the A/B key's beep, then side A retuned) left the chip in plain receive: the tone again,
 	// else the open gate plays the receiver's noise for the rest of the beep
-	if (beeping) {
+	if (beep_hz != 0) {
 		qa4818_beep(&chip_if, beep_hz, beep_gain, qa4818_af_rx(digital, rx_hz));
+	}
+	// The tone generator's first tone after power-up came out 6 dB low (measured by microphone): one silent tone of
+	// TONE_WARM_MS at the first set-up, the gate shut
+	static bool tone_warmed;
+	if (!tone_warmed && beep_hz == 0 && !main_audio) {
+		tone_warmed = true;
+		qa4818_beep(&chip_if, 1000, beep_gain, qa4818_af_rx(digital, rx_hz));
+		vTaskDelay(pdMS_TO_TICKS(TONE_WARM_MS));
+		qa4818_beep(&chip_if, 0, 0, qa4818_af_rx(digital, rx_hz));
 	}
 	rx_setup_ms = hal_millis() | 1u;
 	audio_route();		// side B may need the RF audio with side A on DMR
@@ -1880,8 +1902,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 #if CONFIG_DMR
 	burst_disarm();		// keyed again without tx_off(): no burst switches the PA of the new set-up
 #endif
-	if (beeping) {		// a beep cut by the key-up: its tone generator off before the TX set-up
+	if (beep_hz != 0) {	// a beep cut by the key-up: its tone generator off before the TX set-up
 		beeping = false;
+		beep_hz = 0;
 		qa4818_tone_gen(&chip_if, false);
 	}
 #if CONFIG_DTMF || CONFIG_APRS
@@ -2134,6 +2157,46 @@ static void mic_poll(void)
 }
 #endif
 
+// Side A's FM carrier at a status poll or between them (rx_watch): the gate shut the moment it goes (a_lost_ms)
+static void a_carrier(bool signal, uint16_t rssi)
+{
+	if (mode == RADIO_MODE_DMR || !main_audio) {
+		a_rssi_last = rssi;
+		return;
+	}
+	// Gone: both say so, or a read catches it falling (the RSSI down FM_DROP raw steps since the last read, to within
+	// FM_DROP of the threshold)
+	bool gone = (!signal && rssi < rx_threshold) || (a_rssi_last >= rssi + FM_DROP && rssi < rx_threshold + FM_DROP);
+	uint32_t now = hal_millis();
+	a_rssi_last = rssi;
+	if (!gone) {
+		a_carrier_seen = a_carrier_seen || signal;
+		if (a_lost_ms != 0) {
+			a_lost_ms = 0;
+			audio_route();
+		}
+	} else if (a_carrier_seen && a_lost_ms == 0) {
+		a_lost_ms = now | 1u;
+		audio_route();
+	} else if (a_lost_ms != 0 && now - a_lost_ms >= FM_LOST_MS) {
+		a_carrier_seen = false;		// no close: the channel's noise is wanted
+		a_lost_ms = 0;
+		audio_route();
+	}
+}
+
+static uint8_t rx_watch(void)
+{
+	if (!main_audio || mode == RADIO_MODE_DMR || transmitting || !have_rx || asleep || AM_ON) {
+		return 0;
+	}
+	bool signal;
+	uint16_t rssi;
+	qa4818_carrier(src_b ? &chip_b : &chip_if, &signal, &rssi);
+	a_carrier(signal, rssi);
+	return FM_WATCH_MS;
+}
+
 static void status(radio_status_t *st)
 {
 	fan_poll();
@@ -2158,6 +2221,7 @@ static void status(radio_status_t *st)
 	qa4818_status_t s;
 	qa4818_status(src_b ? &chip_b : &chip_if, &s);
 	diag_rx = (uint32_t)s.rssi | (uint32_t)(s.noise & 0x7FFFu) << 16 | (s.signal ? 1u << 31 : 0u);
+	a_carrier(s.signal, s.rssi);
 	st->rssi_dbm = qa4818_rssi_dbm(s.rssi);
 	st->noise = qa4818_noise(s.noise);
 	st->carrier = mode == RADIO_MODE_DMR ? s.rssi >= dmr_threshold : s.signal && s.rssi >= rx_threshold;
@@ -2175,6 +2239,12 @@ static void status(radio_status_t *st)
 // DMR signal is heard either: the baseband gets nothing to demodulate for the beep's length and loses the call (HIL: an
 // emergency call's alert beep cost 12 voice bursts, or ended the call and the rest came as a second, late call). A
 // beep sounding when one comes stops
+// The tone generator's level rises about 10 dB over its first 30 ms (it runs on the transmit DSP), so each tone runs
+// that long with the gate shut before it sounds (hal_radio_t.beep_lead_ms): without it a 25 ms key beep never reached
+// its level and sounded louder or softer with its length (measured by microphone)
+#ifndef D578UV_BEEP_LEAD_MS
+#define D578UV_BEEP_LEAD_MS	40
+#endif
 static void beep_tone(uint16_t hz, uint8_t level)
 {
 	if (hz != 0 && (transmitting || !have_rx || AM_ON || BC_HEARD)) {
@@ -2183,29 +2253,42 @@ static void beep_tone(uint16_t hz, uint8_t level)
 	if (dmr_heard) {
 		hz = 0;
 	}
-	if (hz == 0 && !beeping) {
+	if (hz == 0 && beep_hz == 0) {
 		return;
 	}
-	// The tone's edges go through the speaker level faded to its lowest (level_fade()); a change of tone inside a
-	// beep doesn't
-	bool edge = (hz != 0) != beeping;
-	if (edge && level_code_vol >= 0) {
+	bool sound = hz != 0 && level != 0;
+	// The speaker's edges (the tone starts sounding or stops, or the receiver's audio gives way to a silent lead) go
+	// through the level faded to its lowest (level_fade()); a change of tone inside a beep doesn't
+	if ((sound != beeping || (hz != 0) != (beep_hz != 0)) && level_code_vol >= 0 && !beep_quiet) {
 		level_fade(0);
 		beep_quiet = true;
 	}
-	beeping = hz != 0;
-	if (!beeping) {
+	uint16_t was = beep_hz;
+	beeping = sound;
+	if (hz == 0) {
+		beep_hz = 0;
 		audio_route();	// the gate shuts first: the chip's output goes back to the receiver below
 	}
-	beep_hz = hz;
-	beep_gain = (uint8_t)((level * 0x7Fu + 50u) / 100u);
-	if (!transmitting && have_rx) {
+	if (level != 0) {
+		beep_gain = (uint8_t)((level * 0x7Fu + 50u) / 100u);
+	}
+	bool chip = !transmitting && have_rx && (hz != was || level != 0);
+	// The gate opens on silence: a running tone (or the receiver's audio) heard through a gate as it opened clicked, so
+	// the chip's AF output carries nothing for a silent lead and takes the tone only once the gate is open
+	if (chip && !beeping) {
+		qa4818_beep(&chip_if, hz, beep_gain, qa4818_af_rx(mode == RADIO_MODE_DMR, rx_hz));
+		if (hz != 0) {
+			qa4818_af_out(&chip_if, QA4818_AF_SILENT);
+		}
+	}
+	if (hz != 0) {
+		beep_hz = hz;
+		audio_route();
+	}
+	if (chip && beeping) {
 		qa4818_beep(&chip_if, hz, beep_gain, qa4818_af_rx(mode == RADIO_MODE_DMR, rx_hz));
 	}
-	if (beeping) {
-		audio_route();	// ... and opens once the tone is on
-	}
-	if (beep_quiet) {
+	if (beep_quiet && (beeping || hz == 0)) {
 		beep_quiet = false;
 		level_fade(level_a_want);	// up to the beep, or back to the receiver's audio after it
 	}
@@ -2214,6 +2297,8 @@ static void beep_tone(uint16_t hz, uint8_t level)
 static void audio(bool on)
 {
 	main_audio = on;
+	a_carrier_seen = false;
+	a_lost_ms = 0;
 #if KT_USED
 	kt_level();
 #endif
@@ -2336,11 +2421,13 @@ const hal_radio_t d578uv_radio = {
 	.tx_dtmf = tx_dtmf,
 #endif
 	.status = status,
+	.rx_watch = rx_watch,
 	.audio = audio,
 	.rx_sleep = rx_sleep,
 	.volume = volume,
 	.volume_pcm = true,	// beeps go through the level device, which the volume sets
 	.beep_tone = beep_tone,
+	.beep_lead_ms = D578UV_BEEP_LEAD_MS,
 #if CONFIG_AM_RX
 	.rx_am = rx_am,
 #endif

@@ -119,6 +119,7 @@ void qa4818_enable(qa4818_t *c, uint16_t value);
 #define QA4818_AF_DMR		0x4840u
 #define QA4818_AF_INVERT	0x2000u
 #define QA4818_AF_BEEP		0x6341u	// bit 0: the TX audio filters bypassed, so their high-pass leaves low tones
+#define QA4818_AF_SILENT	0x6041u	// QA4818_AF_BEEP with nothing out (bits 11:8 clear): the tone runs unheard
 // A transceiver's receiver on (its front-end constants, the AF output for a digital or analog channel at hz, then
 // QA4818_ENABLE_RX); its transmitter on (QA4818_ENABLE_TX)
 void qa4818_rx_on(qa4818_t *c, bool digital, uint32_t hz);
@@ -127,6 +128,8 @@ uint16_t qa4818_af_rx(bool digital, uint32_t hz);
 // In receive: a beep tone of hz from the tone generator to the AF output instead of the receiver, at tone gain 0..127;
 // hz 0 puts back af (qa4818_af_rx) and stops the generator
 void qa4818_beep(qa4818_t *c, uint16_t hz, uint8_t gain, uint16_t af);
+// 0x47 alone: what the AF output carries (QA4818_AF_*)
+void qa4818_af_out(qa4818_t *c, uint16_t af);
 void qa4818_tx_on(qa4818_t *c);
 // A local oscillator on (through off)
 void qa4818_lo_on(qa4818_t *c);
@@ -195,6 +198,8 @@ static inline uint8_t qa4818_noise(uint8_t raw)
 }
 
 void qa4818_status(qa4818_t *c, qa4818_status_t *st);
+// The signal flag and RSSI alone (two reads), for a check between status polls
+void qa4818_carrier(qa4818_t *c, bool *signal, uint16_t *rssi);
 // The microphone's amplitude (0x64), with the chip transmitting or receiving and its microphone ADC on
 uint16_t qa4818_voice(qa4818_t *c);
 
