@@ -1360,6 +1360,95 @@ static void test_als(void)
 	      "an ordinary call has no ALS_SERV");
 }
 
+// Payload interrupt (6.4.14.3.3): from a call another MS talks on, status 125 to the talker on the TSCC (the talkgroup,
+// or the other MS), then back to the call whatever the answer. ALS termination (6.4.14.3.4.3): status 123 to the MS
+// the radio listens to, then it stays on the TSCC
+static void test_interrupt(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+	CHECK(!t3_ms_interrupt(&ms, T, false) && ms.ax.result == T3_RES_NOT_ALLOWED, "camped: nothing to interrupt");
+
+	t3_csbk_t g = grant(T3_OP_TV_GRANT, 159, 1, TG_A, CALLER);
+	rx(&ms, 1, &g);
+	frames(&ms, 2);
+	CHECK(ms.state == T3_FOLLOW && tuned.payload, "following a talkgroup call");
+	t3_act_t call_tune = tuned;
+	CHECK(!t3_ms_interrupt(&ms, T, true), "status 123 only in an ALS call the radio asked for");
+	nsent = 0;
+	int nt = ntune;
+	CHECK(t3_ms_interrupt(&ms, T, false), "interrupt starts");
+	CHECK(sent_rand(&ms), "status request sent");
+	CHECK(ms.state == T3_CAMPED && ntune == nt + 1 && !tuned.payload, "on the TSCC to ask");
+	const t3_rand_t *q = &sent[0].u.rand;
+	CHECK(q->kind == T3_SK_STATUS && q->options == (0x40 | (125 >> 2)) && (q->extra & 3u) == (125 & 3) &&
+	      q->dst == TG_A && q->src == OWN, "status 125 to the talkgroup: options 0x%02x extra %u", q->options,
+	      q->extra);
+	CHECK(ms.own_status != 125, "not the radio's own status");
+	// Another call's grant meanwhile doesn't take the radio
+	t3_csbk_t o = grant(T3_OP_TV_GRANT, 160, 2, TG_B, CALLER + 1u);
+	rx(&ms, 1, &o);
+	CHECK(ms.state == T3_CAMPED, "another grant ignored while asking");
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, TG_A);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_DONE && ms.state == T3_FOLLOW && tuned.payload &&
+	      tuned.chan.rx_hz == call_tune.chan.rx_hz && tuned.slot == call_tune.slot && ms.call.dst == TG_A,
+	      "accepted: back in the call, result %s", t3_res_name(ms.ax.result));
+
+	// Refused: back all the same
+	frames(&ms, 2);
+	nsent = 0;
+	CHECK(t3_ms_interrupt(&ms, T, false) && sent_rand(&ms), "again");
+	a = ack(T3_OP_C_ACKD, T3_RC_NOT_SUPPORTED, OWN, TG_A);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_REFUSED && ms.state == T3_FOLLOW && tuned.payload, "refused: back in the call");
+
+	// An individual call: to the other MS; no answer, back all the same
+	t3_ms_end_call(&ms, T);
+	frames(&ms, 12);
+	g = grant(T3_OP_PV_GRANT, 159, 2, OWN, CALLER + 2u);
+	rx(&ms, 1, &g);
+	frames(&ms, 2);
+	CHECK(ms.state == T3_FOLLOW && !ms.call.group, "following a private call");
+	nsent = 0;
+	CHECK(t3_ms_interrupt(&ms, T, false) && sent_rand(&ms), "interrupt in a private call");
+	q = &sent[0].u.rand;
+	CHECK(q->dst == CALLER + 2u && !(q->options & 0x40u), "status 125 to the other MS: dst %u options 0x%02x",
+	      (unsigned)q->dst, q->options);
+	for (int i = 0; i < 400 && ms.ax.state != T3_AX_IDLE; i++) {
+		frame(&ms);
+	}
+	CHECK(ms.ax.state == T3_AX_IDLE && ms.ax.result != T3_RES_DONE && ms.state == T3_FOLLOW && tuned.payload,
+	      "no answer: back in the call, result %s", t3_res_name(ms.ax.result));
+
+	// An ALS call the radio asked for: status 123, then it stays on the TSCC
+	t3_ms_end_call(&ms, T);
+	frames(&ms, 12);
+	nsent = 0;
+	CHECK(t3_ms_request_als(&ms, T, CALLER, false) && sent_rand(&ms), "ALS asked");
+	g = grant(T3_OP_PV_GRANT, 159, 1, CALLER, OWN);
+	rx(&ms, 1, &g);
+	frames(&ms, 2);
+	CHECK(ms.state == T3_FOLLOW && ms.call.als_ours && !ms.call.als, "listening to an ALS call");
+	nsent = 0;
+	CHECK(t3_ms_interrupt(&ms, T, true) && sent_rand(&ms), "ALS end starts");
+	q = &sent[0].u.rand;
+	CHECK(q->kind == T3_SK_STATUS && q->options == (123 >> 2) && (q->extra & 3u) == (123 & 3) && q->dst == CALLER,
+	      "status 123 to the ALS MS: options 0x%02x extra %u", q->options, q->extra);
+	a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, CALLER);
+	rx(&ms, 1, &a);
+	frames(&ms, 2);
+	CHECK(ms.ax.result == T3_RES_DONE && ms.state == T3_CAMPED && !tuned.payload, "ALS ended: stays on the TSCC");
+
+	// Listen only: never
+	setup(T3_OPT_PRIVATE | T3_OPT_LISTEN_ONLY, true);
+	camp(&ms);
+	g = grant(T3_OP_TV_GRANT, 159, 1, TG_A, CALLER);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && !t3_ms_interrupt(&ms, T, false) && ms.state == T3_FOLLOW, "listen only: no interrupt");
+}
+
 // Call diversion (6.6.7): set to an MS (C_RAND kind 1000b, DIVONOFF 1, target MSI), the address uploaded when DIVERTI
 // asks (Address format, UDT_DIV, to MSI), accepted; clear (to TSI), clear incoming (to DIVERTI); a call answered with
 // the callee's diverted address ends DIVERTED
@@ -1917,6 +2006,7 @@ int main(void)
 	test_broadcast();
 	test_stun();
 	test_auth();
+	test_interrupt();
 	test_mass_reg();
 	test_move();
 	test_power_save();

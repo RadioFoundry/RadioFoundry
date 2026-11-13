@@ -57,6 +57,7 @@ enum {
 	DL_T3_PS = 15,		// power save: PowerSave_RQ u8 (0 off, 1-7), T_Awake ms u16 (0: default)
 	DL_T3_DIVERT = 16,	// call diversion: mode u8 (0 clear, 1 set, 2 clear incoming), services u8 (T3_DIV_*), to u32, group u8
 	DL_T3_ALS = 17,		// Ambient Listening: to u32 (0: only the timers), emergency u8, T_ALS s u16, T_ALS_E s u16 (0: default)
+	DL_T3_INTERRUPT = 18,	// stop the talker in the call followed: end ALS u8 (0: status 125, 1: status 123)
 };
 
 // DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.25)

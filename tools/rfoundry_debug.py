@@ -99,7 +99,7 @@ IDDB = 0x1F                         # the DMR ID database: format, records, an I
 CHIP_REG = 0x20                     # an RF chip or SoC register read or written (docs/spec/debuglink.md 3.24)
 T3 = 0x22                           # a Tier III trunked system: stage, select, leave (docs/spec/debuglink.md 3.26)
 T3_RESET, T3_SYSTEM, T3_CTRL, T3_CHAN, T3_TG, T3_SITE, T3_PLAN, T3_START, T3_STOP, T3_DEREG, T3_END, \
-    T3_STATUS, T3_SDATA, T3_AUTH, T3_PS, T3_DIVERT, T3_ALS = range(1, 18)
+    T3_STATUS, T3_SDATA, T3_AUTH, T3_PS, T3_DIVERT, T3_ALS, T3_INTERRUPT = range(1, 19)
 T3_UDTF = {"binary": 0, "address": 1, "bcd": 2, "iso7": 3, "iso8": 4, "nmea": 5, "ip": 6, "utf16": 7}
 T3_TG_LISTEN, T3_TG_TALK, T3_TG_BROADCAST = 1, 2, 4
 T3_DIV = {"voice": 8, "pdata": 4, "sdata": 2, "status": 1}  # call diversion services (T3_DIV_*)
@@ -687,6 +687,11 @@ class DebugLink:
         """Ambient Listening: ask to listen to MS `to` (0: only set T_ALS / T_ALS_E, in s, 0 = default). The radio
         answers ALS calls to it only with T3_OPT_ALS (0x80) in t3_system's opts."""
         self.t3_op(T3_ALS, struct.pack("<IBHH", to, int(emergency), als_s, als_e_s))
+
+    def t3_interrupt(self, end_als=False):
+        """Stop the talker in the call followed: status 125 to it, then back to the call (t3.ax_result done =
+        accepted); end_als: end the ALS call the radio listens to (status 123; the radio stays on the TSCC)"""
+        self.t3_op(T3_INTERRUPT, struct.pack("<B", int(end_als)))
 
     def t3_site(self, site):
         self.t3_op(T3_SITE, struct.pack("<H", site))
@@ -2325,7 +2330,8 @@ def main(argv=None):
     p = sub.add_parser("t3", help="a Tier III trunked system (docs/spec/debuglink.md 3.26): show (the t3 view), "
                        "start, stop, dereg, end, or setup: reset then stage one from the options and start it")
     p.add_argument("op", nargs="?", default="show",
-                   choices=["show", "setup", "start", "stop", "dereg", "end", "status", "sdata"])
+                   choices=["show", "setup", "start", "stop", "dereg", "end", "status", "sdata", "interrupt",
+                            "als-end"])
     p.add_argument("--to", type=int, default=0, help="status: the MS or talkgroup (--group)")
     p.add_argument("--status", type=int, default=0, help="status: 0-126, or 127 to poll an MS")
     p.add_argument("--group", action="store_true", help="status, sdata: --to is a talkgroup")
@@ -2452,6 +2458,8 @@ def main(argv=None):
                         link.t3_sdata(a.to, bytes.fromhex(a.hex), a.group, "binary")
                     else:
                         link.t3_sdata(a.to, (a.text or "").encode("latin-1"), a.group, "iso8")
+                elif a.op in ("interrupt", "als-end"):
+                    link.t3_interrupt(a.op == "als-end")
                 elif a.op != "show":
                     link.t3(a.op)
                 for k, v in link.view(sections=["t3", "t3_svc"]).items():

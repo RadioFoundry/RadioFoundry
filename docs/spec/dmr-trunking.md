@@ -524,8 +524,26 @@ The radio answers ALS only with `T3_OPT_ALS`: it then transmits with no one at t
 | A grant after the life span, or from another caller | an ordinary private call |
 
 Asking for one: a C_RAND for an individual voice call with ALS_SERV set (table 6.40). The radio listens on the grant.
-The view shows `call_als` and `als_calls`. Payload interrupt of an ALS call (6.6.2.6.6) and the ALS de-key status 123
-(6.4.14.3.4) are not done.
+The view shows `call_als` and `als_calls`.
+
+### 7.17 Stopping the talker (6.4.14.3.3, 6.4.14.3.4)
+
+`t3_ms_interrupt` asks the TS to stop the MS talking in the voice call the radio follows. The radio leaves the payload
+channel and sends a status on the TSCC; the TS answers, then stops the talker with the reverse channel.
+
+| Case | Status, to | After the answer |
+|---|---|---|
+| Payload interrupt, any voice call | 125, to the talkgroup or the other MS | back to the call, accepted or not (6.4.14.3.3.2); `ax.result` done = accepted |
+| End an ALS call the radio asked for | 123, to the ALS MS | stays on the TSCC (6.4.14.3.4.3) |
+
+- C_ACKD Message_Accepted: accepted (`done`). C_NACKD Not_Supported or Perm_User_Refused: `refused`. No answer ends
+  as for any request (`no-answer`, `timeout`), and a payload interrupt goes back to the call all the same.
+- Other calls' grants don't take the radio while it asks. An emergency grant does, and the radio stays in that call.
+- 6.4.14.3.4.1 also says the ALS initiator goes back to the payload channel; the MS procedure (6.4.14.3.4.3) says it
+  stays on the TSCC, and the radio follows that. The TS clears the call with P_CLEAR.
+- Not done: the talker's side. The interrupted MS decodes the outbound reverse channel while it transmits, and on RC
+  Command 0100 (cease) or 0101 (cease request) ends after voice burst F with a terminator (6.4.15.2). The modem drivers
+  drop reverse channel bursts.
 
 ## 8. Timers and constants
 
@@ -589,6 +607,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
 | Data to a gateway, adjacent sites | later |
 | Power save: the receiver off while asleep (boards' `rx_sleep` on DMR channels) | later |
+| The interrupted talker's side: the reverse channel's cease command while transmitting (6.4.15.2) | reverse channel reception in the modem drivers |
 
 ## 11. On the radio
 
@@ -605,6 +624,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | PTT | Camped, PTT asks for a call to the system's talk target (the first talkgroup with `T3_TG_TALK` when none is set) and waits with PTT held. The grant puts the radio on the payload slot and keys it. A refusal, no answer or timeout denies TX (`TXDENY_NO_DMR`). Released before the grant, the request is cancelled. |
 | Following | The stack takes the system's ID as its own, hears every call on the slot, and talks to the call's group or to the other party. The radio's own transmission counts as the call's activity: it never hears its own slot, so TV_Inactive would otherwise end the call while it talks. |
 | Status | `RADIO_T3_STATUS` sends the staged status (section 7.5). The last status heard is in the view. |
+| Interrupt | `RADIO_T3_INTERRUPT` and `RADIO_T3_ALS_END` call `t3_ms_interrupt` (section 7.17), not while the radio's PTT is held. |
 | Short data | `RADIO_T3_SDATA` sends the staged message (section 7.6): the upload is a UDT header and its blocks, one data source on the TSCC's slot. Data headers and rate 1/2 blocks heard go to the engine. The last message heard is in the view. |
 | Packet data | The data service's transmissions (text, IP packets, replies) start through `data_tx_start`. Camped, the radio keeps the burst list, drops its preambles, and asks for a data channel to the data header's destination (section 7.7). Once following the granted call and settled, it sends the list on the call's slot; a refusal, no answer, timeout or a call that ended first gives the list back failed. On a data call already, a list to the same party goes at once. While a data call is followed, its data headers and blocks go to the data service, not the engine. The data service can't send while hunting or in a voice call. Listen before talk is skipped: the TSCC gives the slot. |
 | Emergency | `data_t3_start` sends the data service's alarm as status 126; `t3_emergency_tick` sends the cancel and passes a status 126 heard to the emergency module (section 7.8). |

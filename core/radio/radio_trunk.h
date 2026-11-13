@@ -19,6 +19,8 @@ typedef enum {
 	RADIO_T3_SDATA,			// send the staged short data (radio_t3_setup_t.sd_*)
 	RADIO_T3_DIVERT,		// set or clear a call diversion (radio_t3_setup_t.div_*, sd_dst, sd_group)
 	RADIO_T3_ALS,			// listen to sd_dst's surroundings (ALS); sd_group: an emergency one
+	RADIO_T3_INTERRUPT,		// ask the TS to stop the talker in the call followed (status 125)
+	RADIO_T3_ALS_END,		// end the ALS call the radio listens to (status 123)
 } radio_t3_cmd_t;
 
 #if CONFIG_DMR_TRUNK

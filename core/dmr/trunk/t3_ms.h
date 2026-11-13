@@ -161,6 +161,8 @@ typedef enum {
 #define T3_STATUS_MAX		126	// 0-126 are statuses (126 the emergency alarm, 124 its cancel)
 #define T3_STATUS_EMERGENCY	126	// 6.6.6.3.1
 #define T3_STATUS_EMERGENCY_CANCEL	124	// 6.6.6.3.2
+#define T3_STATUS_ALS_END	123	// ends an ALS call: the TS stops the talker (6.4.14.3.4)
+#define T3_STATUS_INTERRUPT	125	// asks the TS to stop the talker (6.4.14.3.3)
 
 typedef enum {
 	T3_RES_NONE,
@@ -191,6 +193,7 @@ typedef struct {
 	bool ours;		// the radio asked for it (it may talk at once, and ends it with P_MAINT)
 	bool data;		// a packet data call (PD_GRANT, TD_GRANT): the data service has the slot, PTT doesn't
 	bool als;		// an Ambient Listening call to the radio: it transmits until als_end (6.6.2.6.3)
+	bool als_ours;		// an Ambient Listening call the radio asked for: it listens
 	uint32_t als_end;
 } t3_call_t;
 
@@ -314,6 +317,7 @@ typedef struct {
 		uint32_t divert_to;	// T3_RES_DIVERTED: the address the TSCC gave
 		bool divert_group;
 		bool als;		// T3_SVC_IND_VOICE: Ambient Listening asked for
+		bool resume;		// T3_SVC_STATUS: back to the call left for it once answered (a payload interrupt)
 	} ax;
 	// The last status heard for the radio, from a C_AHOY to it or to a talkgroup it listens to (6.6.6)
 	struct {
@@ -413,6 +417,11 @@ bool t3_ms_request_als(t3_ms_t *ms, uint32_t now, uint32_t dst, bool emergency);
 // (als_over: the caller sends t3_ms_end_call)
 bool t3_ms_als_tx(const t3_ms_t *ms, uint32_t now);
 bool t3_ms_als_over(const t3_ms_t *ms, uint32_t now);
+// Stop the MS talking in the voice call followed (6.4.14.3.3, payload interrupt): leave for the TSCC, send status 125 to
+// the talker (or the talkgroup), and come back to the call whatever the answer (ax.result: done = accepted). end_als:
+// end an ALS call the radio asked for instead (6.4.14.3.4.3): status 123, and the radio stays on the TSCC. False when
+// it can't start
+bool t3_ms_interrupt(t3_ms_t *ms, uint32_t now, bool end_als);
 bool t3_ms_divert(t3_ms_t *ms, uint32_t now, uint8_t services, uint32_t to, bool group);
 bool t3_ms_divert_clear(t3_ms_t *ms, uint32_t now, uint8_t services, bool incoming);
 // On a packet data payload channel, settled: the data service may send (the caller first, 6.6.3.3)

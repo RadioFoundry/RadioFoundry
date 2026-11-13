@@ -2853,6 +2853,12 @@ static void t3_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
 			(void)t3_ms_request_als(&t3m, now_ms, st->sd_dst, st->sd_group);
 		}
 		break;
+	case RADIO_T3_INTERRUPT:
+	case RADIO_T3_ALS_END:
+		if (sm->t3_on && !sm->ptt) {
+			(void)t3_ms_interrupt(&t3m, now_ms, cmd == RADIO_T3_ALS_END);
+		}
+		break;
 	case RADIO_T3_DIVERT:
 		if (sm->t3_on) {
 			const radio_t3_setup_t *st = radio_t3_staged();

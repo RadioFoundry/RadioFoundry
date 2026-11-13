@@ -857,6 +857,7 @@ answers unavailable (3). Each op answers OK or bad argument (2), with no reply b
 | 15 | PS | power save: PowerSave_RQ u8 (0 off, 1-7 = 1:2 to 1:128), T_Awake ms u16 (0: default 2 s) |
 | 16 | DIVERT | call diversion: mode u8 (0 clear the radio's own, 1 set, 2 clear every one to the radio), services u8 (8 voice, 4 packet data, 2 short data, 1 status), to u32 (set), group u8 (set: to a talkgroup) |
 | 17 | ALS | Ambient Listening: to u32 (0: set the timers only), emergency u8, T_ALS s u16, T_ALS_E s u16 (0: default; taken at the next start). The radio answers ALS calls only with opts 0x80 (`T3_OPT_ALS`) |
+| 18 | INTERRUPT | stop the talker in the call followed: end ALS u8 (0: status 125, then back to the call; 1: end the ALS call the radio listens to, status 123) |
 
 The `t3` view section has the engine's state as the radio core last published it, all keys `t3.`-prefixed: `built`,
 `tx_built`, `on`, `state` (off, hunt, camped, follow), `reg`, `confirmed`, `syscode`, `own_id`, `tscc_lcn`, `rx_hz`,

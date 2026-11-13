@@ -169,6 +169,13 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 			radio_req_t3(RADIO_T3_ALS);
 		}
 		break;
+	case DL_T3_INTERRUPT:	// end ALS u8
+		if (n != 1u || a[0] > 1u) {
+			out[0] = DL_ST_BAD_ARG;
+			break;
+		}
+		radio_req_t3(a[0] != 0 ? RADIO_T3_ALS_END : RADIO_T3_INTERRUPT);
+		break;
 	case DL_T3_DIVERT:	// mode u8, services u8, to u32, group u8
 		if (n != 7u || a[0] > RADIO_T3_DIV_CLEAR_IN || (a[1] & T3_DIV_ALL) == 0 || a[1] > T3_DIV_ALL ||
 		    (a[0] == RADIO_T3_DIV_SET && (rd32(a + 2) == 0 || rd32(a + 2) > T3_ID_USER_MAX))) {

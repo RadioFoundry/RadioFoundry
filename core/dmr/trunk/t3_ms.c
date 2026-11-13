@@ -393,6 +393,8 @@ static void follow(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_chan_
 	// The private grant after an accepted ALS radio check, same caller, in time: an ALS call (6.6.2.6.2)
 	ms->call.als = !group && !ms->call.data && ms->als_until != 0 && before(now, ms->als_until) &&
 		       g->src == ms->als_src && is_me(ms, g->dst);
+	// The grant for the radio's own ALS request: it listens (and may end it, 6.4.14.3.4.3)
+	ms->call.als_ours = ms->call.ours && !group && !ms->call.data && ms->ax.state != T3_AX_IDLE && ms->ax.als;
 	if (ms->call.als) {
 		uint32_t s = g->emergency ? or_default(ms->cfg->als_e_s, T3_ALS_E_S) : or_default(ms->cfg->als_s, T3_ALS_S);
 		ms->call.als_end = now + s * 1000u;
@@ -614,11 +616,29 @@ static uint8_t reg_list_blocks(uint8_t n)
 	return n <= 3u ? 1u : 2u;
 }
 
+// Back to the call left for a payload interrupt (ms->call still holds it)
+static void resume_call(t3_ms_t *ms, uint32_t now)
+{
+	ms->state = T3_FOLLOW;
+	ms->last_act_ms = now;
+	ms->asleep = false;
+	ms->left_dst = 0;
+	tune(ms, now, &ms->call.chan, ms->call.slot, true);
+}
+
 static void finish(t3_ms_t *ms, uint32_t now, t3_res_t r)
 {
 	t3_svc_t svc = ms->ax.svc;
 	ms->ax.state = T3_AX_IDLE;
 	ms->ax.result = r;
+	if (ms->ax.resume) {
+		// 6.4.14.3.3.2: back to the payload channel whatever the answer; not when the TSCC was lost or an
+		// emergency grant took the radio elsewhere
+		ms->ax.resume = false;
+		if (ms->state == T3_CAMPED) {
+			resume_call(ms, now);
+		}
+	}
 	if (svc == T3_SVC_REGISTER && r != T3_RES_DONE && ms->reg != T3_REG_DENIED) {
 		// No record was made: try again later (6.4.4.1: no answer leaves the record as it was)
 		ms->ax.retry_ms = (now + T3_REG_RETRY_MS) | 1u;
@@ -633,6 +653,7 @@ static void start_access(t3_ms_t *ms, uint32_t now, t3_svc_t svc, uint32_t dst, 
 	ms->ax.dst = dst;
 	ms->ax.emergency = emergency;
 	ms->ax.als = false;
+	ms->ax.resume = false;
 	// The first slot the TSCC uses; a dedicated TSCC on both slots is reached on TS1
 	ms->ax.slot = (ms->tscc_slots & 1u) || ms->tscc_slots == 0 ? 1 : 2;
 	ms->ax.frames = 0;
@@ -1970,6 +1991,29 @@ bool t3_ms_als_tx(const t3_ms_t *ms, uint32_t now)
 bool t3_ms_als_over(const t3_ms_t *ms, uint32_t now)
 {
 	return ms->state == T3_FOLLOW && ms->call.als && !before(now, ms->call.als_end);
+}
+
+bool t3_ms_interrupt(t3_ms_t *ms, uint32_t now, bool end_als)
+{
+	const t3_call_t *c = &ms->call;
+	// A voice call followed and not keyed by the radio itself; status 123 only from the MS listening to an ALS call
+	bool ok = may_send(ms) && ms->state == T3_FOLLOW && !c->data && !c->als && ms->tx.count == 0 &&
+		  ms->ax.state == T3_AX_IDLE && !ms->stunned && !ms->killed && (!end_als || c->als_ours) &&
+		  (ms->reg == T3_REG_OK || ms->reg == T3_REG_NOT_NEEDED);
+	if (!ok) {
+		ms->ax.result = T3_RES_NOT_ALLOWED;
+		return false;
+	}
+	// Addressed to the talker: the talkgroup, or the other MS of an individual call (6.4.14.3.3)
+	uint32_t dst = c->group || !is_me(ms, c->dst) ? c->dst : c->src;
+	bool group = c->group;
+	return_to_tscc(ms, now);	// other calls' grants don't take the radio while it asks (on_grant)
+	start_access(ms, now, T3_SVC_STATUS, dst, false);
+	ms->ax.status = end_als ? T3_STATUS_ALS_END : T3_STATUS_INTERRUPT;
+	ms->ax.group = group;
+	ms->ax.info = 0;
+	ms->ax.resume = !end_als;
+	return true;
 }
 
 bool t3_ms_divert(t3_ms_t *ms, uint32_t now, uint8_t services, uint32_t to, bool group)
