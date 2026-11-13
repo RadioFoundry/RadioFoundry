@@ -110,6 +110,6 @@ profile = "d578uv-boot"
 sources = ["AT-D578UV stock firmware (.CDD), any build", "a program flash read of the radio"]
 
 [hil.limits]
-beep_lead_pops = { value = 1, reason = "the speaker amplifier pops as PA7 turns it on, in the beep's silent lead, 20-25 dB over the room; the level device's setting and the gate's order don't change it, and the hang keeps a run of beeps to one; hardware-d578uv.md 4.4" }
+beep_lead_pops = { value = 1, reason = "the speaker amplifier pops as PA7 turns it on, in the beep's silent lead, 20-25 dB over the room; the level device's setting and the gate's order don't change it; hardware-d578uv.md 4.4" }
 beep_dropouts = { value = 1, reason = "the TX-deny beep's 300 Hz tone drops 20 dB for a few ms now and then, by microphone; a known issue" }
 dmr_tx_ramp_ms = { value = 1.75, reason = "the PA's key-down ramp measures 1.58-1.69 ms on the SDR bench: over the 1.5 ms of the ETSI power mask; the baseband's manuals offer no ramp setting; hardware-d578uv.md 5.1" }

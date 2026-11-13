@@ -54,16 +54,19 @@ static inline bool spk_amp_off(bool transmitting, bool playing, bool loud)
 	return transmitting || !playing || !loud;
 }
 
-// The amplifier's hang: each turn-on can pop, so once on it stays on SPK_HANG_BEEP_MS after a beep and SPK_HANG_RX_MS
-// after other audio, and a run of key beeps or a flickering squelch doesn't cycle it. Off at once while transmitting or
-// with the volume at 0 (may false). want: !spk_amp_off(); beep: a beep (or its lead) is what plays. True: PA7 on
-#define SPK_HANG_BEEP_MS	400u
-#define SPK_HANG_RX_MS		300u
+// The amplifier's hang: once on, it stays on beep_ms after a beep and rx_ms after other audio, so a run of key beeps
+// or a flickering squelch turns it on once (each turn-on pops). Off at once while transmitting or with the volume at 0
+// (may false). want: !spk_amp_off(); beep: a beep (or its lead) is what plays. True: PA7 on. The radio uses no hang
+// (SPK_HANG_BEEP_MS, SPK_HANG_RX_MS 0): the amplifier is off between sounds, and each sound's turn-on pop was judged
+// better than the hang's hiss by ear (400 ms after a beep and 300 ms after the receiver's audio were tried)
+#define SPK_HANG_BEEP_MS	0u
+#define SPK_HANG_RX_MS		0u
 typedef struct {
 	bool on;
 	bool beep;		// the last sound was a beep
 	bool hanging;		// nothing plays: on until `until`
 	uint32_t until;
+	uint16_t beep_ms, rx_ms;	// the hang after a beep and after other audio
 } spk_hang_t;
 
 static inline bool spk_hang(spk_hang_t *h, bool want, bool beep, bool may, uint32_t now)
@@ -76,7 +79,7 @@ static inline bool spk_hang(spk_hang_t *h, bool want, bool beep, bool may, uint3
 	}
 	if (h->on && may && !h->hanging) {
 		h->hanging = true;
-		h->until = now + (h->beep ? SPK_HANG_BEEP_MS : SPK_HANG_RX_MS);
+		h->until = now + (h->beep ? h->beep_ms : h->rx_ms);
 	}
 	if (!h->on || !may || (int32_t)(now - h->until) >= 0) {
 		h->on = false;
