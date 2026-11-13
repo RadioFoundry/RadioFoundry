@@ -184,6 +184,12 @@
    "group": "calls",
    "needs": []
   },
+  "tx_aprs": {
+   "group": "calls",
+   "needs": [
+    "APRS"
+   ]
+  },
   "tx_private": {
    "group": "calls",
    "needs": [
@@ -685,6 +691,24 @@
    "group": "tools",
    "needs": [
     "APRS"
+   ]
+  },
+  "aprs_station": {
+   "group": "tools",
+   "needs": [
+    "APRS_RX"
+   ]
+  },
+  "aprs_station_evicted": {
+   "group": "tools",
+   "needs": [
+    "APRS_RX"
+   ]
+  },
+  "aprs_station_text": {
+   "group": "tools",
+   "needs": [
+    "APRS_RX"
    ]
   },
   "gps_sky": {

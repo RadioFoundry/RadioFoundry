@@ -138,6 +138,7 @@ Special cases the radio applies to sub commands 1-3 (and 4 on the MK22). An inte
 | Case | Behavior |
 | --- | --- |
 | Calibration window, flash image 0x10000..0x101FF (STM32 and HR_C7000 radios) | Preparing sector 0x10 succeeds without reading flash. Data inside the window goes to the radio's working calibration copy. The commit saves that copy. Reads of the window are served from the copy (2.1). On an HR_C7000 radio the copy is the UV380-format table: the radio's own factory calibration is not exposed, and the CPS has no calibration window of its own (the sector is plain data). The MK22 family has no window: its calibration is plain flash at 0xF000 (working copy) and 0x8F000 (factory) |
+| Codeplug settings area, EEPROM image 0xE000..0xEFFF | RadioFoundry only. At the commit the radio keeps its own sector when its area is valid and the pending one isn't, or its area is of a newer version (`codeplug-settings.md` 6). The commit is acknowledged either way, so a CPS that writes 0xFF there doesn't erase the settings |
 | Quick-key slots, EEPROM image 0x7524..0x7537 (10 entries of 2 bytes) | Written like the rest of the codeplug. RadioFoundry keeps the key assignment there (`ui.md` 3.1); values another firmware left are ignored |
 | Channel bank 0 rewritten (a write that falls entirely inside EEPROM image 0x3780..0x538F) | Remembered. At "save and reboot" (`C` 6 0) the radio re-reads the zones and channels, selects the All Channels zone, and points it at its last used channel, or else the first channel in use |
 | LUCZ rewritten (a write inside 0x6000..0x6049) | Remembered. The radio then doesn't overwrite the LUCZ with its own copy at "save and reboot" |
@@ -363,6 +364,7 @@ range without letting them corrupt the live settings. It can ignore the range, o
 | 0x8000 | 0x10 | Reserved ("extended zone basic"), not read by the firmware |
 | 0x8010 | 0x20 | Zone in-use bitmap: bit j of byte i means zone slot (i x 8 + j) is in use. 68 slots are used |
 | 0x8030 | 68 x 0xB0 | Zone records (7.3.4), 80 channels each, to 0xAEF0. Open-firmware 16-channel layout: 68 x 0x30 |
+| 0xE000 | 0x1000 | RadioFoundry's codeplug settings area ([codeplug-settings.md](codeplug-settings.md)): keyed settings this layout has no field for. Outside the regions qdmr transfers |
 
 Zone layout detection: the firmware reads the 16 bytes at 0x8060 and looks at the last one (0x806F). In the 16-channel
 layout, 0x806F is the last byte of the second zone's name, so it is 0xFF. In the 80-channel layout, it is the high byte
@@ -433,7 +435,7 @@ assuming 500 ms steps (`codeplug.c` `GEN_HANG_UNIT_MS`, `dmr-voice.md` 7); that 
 | 0x2C | 1 | Color code 0-15 |
 | 0x2D | 1 | APRS configuration index, 1-based, 0 = none |
 | 0x2E | 2 | TX contact index, LE, 1-based, 0 = none |
-| 0x30 | 1 | flag1: bits 0-1 talker alias TX on TS1, bits 2-3 on TS2 (0 off, 1 APRS, 2 text, 3 both) |
+| 0x30 | 1 | flag1: bits 0-1 talker alias TX on TS1, bits 2-3 on TS2 (0 off, 1 APRS, 2 text, 3 both). RadioFoundry reads APRS as "our position in this channel's calls" (GPS Info, `dmr-voice.md` 3.1), in builds without APRS too |
 | 0x31 | 1 | flag2: bit 6 = timeslot 2 (clear = TS1) |
 | 0x32 | 1 | flag3: bits 6-7 = 0b11 STE, bit 5 non-STE.  |
 | 0x33 | 1 | flag4: bit 7 power (vendor; superseded by 0x19), bit 6 VOX, bit 5 zone scan skip, bit 4 all-channel scan skip, bit 3 talkaround (unused), bit 2 RX only, bit 1 bandwidth 25 kHz (clear = 12.5 kHz), bit 0 squelch (vendor) |
@@ -458,7 +460,7 @@ Flag 1 (offset 0x26):
 | 1 | SFR enabled for this channel (ours) |
 | 0 | Roaming (ours reads it: in a roaming zone, flagged channels narrow the sites to themselves; `dmr-roaming.md` 5.2) |
 
-SFR bytes (ours; the CPS doesn't know them and leaves them as read; they are only read when flag 1 bit 1 is set):
+SFR bytes (ours; the CPS doesn't know them and leaves them as read). The SFR fields are only read when flag 1 bit 1 is set; byte B bit 6 (the tone burst) is read on every channel:
 
 | Byte | Bits | Meaning |
 | --- | --- | --- |
@@ -467,6 +469,7 @@ SFR bytes (ours; the CPS doesn't know them and leaves them as read; they are onl
 | A | 5 | Inbound slot: 1 = TS2, 0 = TS1. The outbound slot is the other one |
 | A | 7-6 | Hang time index: 1 s, 2 s, 4 s, none |
 | B (0x2A) | 7 | Outbound color code set |
+| B | 6 | FM: the 1750 Hz tone burst at each PTT key-up ([radio-features.md](radio-features.md) 3.3). Read and written without the SFR flag. A byte of 0xFF reads as off (a writer that fills bytes it doesn't know); setting the bit on such a byte writes 0xCF (the unused bits 5-4 cleared), never 0xFF |
 | B | 3-0 | That color code (else the channel's) |
 
 The repeater's timeout is the channel TOT, or 180 s when the TOT is 0.
@@ -704,7 +707,8 @@ The new firmware should keep its settings elsewhere, and treat bytes 0x604B..0x6
 - **APRS magic.** 0x4153 now, 0x4152 in older records (7.3.8).
 - **Voice prompt versions.** 8 for mono radios, 9 for color radios. A version mismatch makes the radio fall back to
   beeps.
-- **Our additions.** The SFR bytes and flag 1 bit 1, the `D` commands, and the network mode USB identities
+- **Our additions.** The SFR bytes (with the tone burst bit) and flag 1 bit 1, the `D` commands, the codeplug settings
+  area at EEPROM image 0xE000 ([codeplug-settings.md](codeplug-settings.md)) and the network mode USB identities
   (PID 0x0095 / 0x0096) don't exist in R20260131. They are invisible to the CPS, which round-trips the bytes it read.
 
 ## 10. Open questions

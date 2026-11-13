@@ -480,6 +480,14 @@ msgstr "Teclas desbloq."
 msgid "Talk target: DMR channels only"
 msgstr "Destino: solo canales DMR"
 
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgid "Talkgroup name first"
+msgstr "Nombre del grupo primero"
+
+#: core/ui/ui_app.c
+msgid "Talkgroup number first"
+msgstr "Número del grupo primero"
+
 #: core/ui/ui_app.c
 msgid "Volume: use the knob"
 msgstr "Volumen: usa la perilla"
@@ -548,11 +556,11 @@ msgstr "Ambos"
 msgid "Auto"
 msgstr "Auto"
 
-#: core/ui/ui_aprs.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgid "Computer"
 msgstr "PC"
 
-#: core/ui/ui_aprs.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgid "Fixed"
 msgstr "Fija"
 
@@ -660,14 +668,6 @@ msgstr "SmartBeaconing"
 msgid "Send via"
 msgstr "Enviar por"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c
-msgid "Position"
-msgstr "Posición"
-
-#: core/ui/ui_aprs.c
-msgid "Position in DMR calls"
-msgstr "Pos. en llamadas DMR"
-
 #: core/ui/ui_aprs.c
 msgid "KISS on USB"
 msgstr "KISS por USB"
@@ -675,6 +675,10 @@ msgstr "KISS por USB"
 #: core/ui/ui_aprs.c
 msgid "Stations heard"
 msgstr "Estaciones oídas"
+
+#: core/ui/ui_aprs.c
+msgid "NMEA on USB"
+msgstr "NMEA por USB"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "On"
@@ -705,44 +709,8 @@ msgid "Beacons off"
 msgstr "Balizas off"
 
 #: core/ui/ui_aprs.c
-msgid "DMR position: not in this build"
-msgstr "Posición DMR: no disponible"
-
-#: core/ui/ui_aprs.c
-msgid "Position goes out in DMR calls"
-msgstr "Posición va en llamadas DMR"
-
-#: core/ui/ui_aprs.c
-msgid "No position in DMR calls"
-msgstr "Sin posición en llamadas DMR"
-
-#: core/ui/ui_aprs.c
 msgid "This radio can't receive APRS"
 msgstr "Esta radio no recibe APRS"
-
-#: core/ui/ui_aprs.c
-msgid "Source"
-msgstr "Origen"
-
-#: core/ui/ui_aprs.c
-msgid "Latitude"
-msgstr "Latitud"
-
-#: core/ui/ui_aprs.c
-msgid "Longitude"
-msgstr "Longitud"
-
-#: core/ui/ui_aprs.c core/ui/ui_menus.c
-msgid "Not set"
-msgstr "Sin definir"
-
-#: core/ui/ui_aprs.c
-msgid "Up to 90 N/S, 180 E/W"
-msgstr "Hasta 90 N/S, 180 E/W"
-
-#: core/ui/ui_aprs.c core/ui/ui_menus.c
-msgid "OK change  Back"
-msgstr "OK cambiar  Atrás"
 
 #: core/ui/ui_aprs.c
 msgid "0-9 pick  Back"
@@ -763,6 +731,42 @@ msgstr "Aún nada oído"
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgid "Message"
 msgstr "Mensaje"
+
+#: core/ui/ui_aprs.c
+msgid "No longer in list"
+msgstr "Ya no está en lista"
+
+#: core/ui/ui_aprs.c
+msgid "{Distance|Dist|}"
+msgstr "{Distancia|Dist|}"
+
+#: core/ui/ui_aprs.c
+msgid "Direct"
+msgstr "Directo"
+
+#: core/ui/ui_aprs.c
+msgid "Via digipeater"
+msgstr "Vía repetidor"
+
+#: core/ui/ui_aprs.c
+msgid "{Position age|Pos age}"
+msgstr "{Edad posición|Edad pos}"
+
+#: core/ui/ui_aprs.c core/ui/ui_gps.c
+msgid "Speed"
+msgstr "Velocidad"
+
+#: core/ui/ui_aprs.c
+msgid "Course"
+msgstr "Rumbo"
+
+#: core/ui/ui_aprs.c
+msgid "Symbol"
+msgstr "Símbolo"
+
+#: core/ui/ui_aprs.c
+msgid "Packets"
+msgstr "Paquetes"
 
 #: core/ui/ui_aprs.c
 msgid "OK choose  Back"
@@ -965,10 +969,6 @@ msgid "Roaming"
 msgstr "Roaming"
 
 #: core/ui/ui_find.c
-msgid "APRS position"
-msgstr "Posición APRS"
-
-#: core/ui/ui_find.c
 msgid "Ch "
 msgstr "Can "
 
@@ -1089,10 +1089,6 @@ msgid "Alt"
 msgstr "Alt"
 
 #: core/ui/ui_gps.c
-msgid "Speed"
-msgstr "Velocidad"
-
-#: core/ui/ui_gps.c
 msgid "No positions yet"
 msgstr "Aún sin posiciones"
 
@@ -1163,6 +1159,10 @@ msgstr "Prueba de radio"
 #: core/ui/ui_menus.c
 msgid "Call alert"
 msgstr "Alerta"
+
+#: core/ui/ui_menus.c
+msgid "Position"
+msgstr "Posición"
 
 #: core/ui/ui_menus.c
 msgid "In contacts"
@@ -1637,6 +1637,10 @@ msgid "TX CTCSS/DCS"
 msgstr "CTCSS/DCS TX"
 
 #: core/ui/ui_menus.c
+msgid "Tone burst"
+msgstr "Ráfaga de tono"
+
+#: core/ui/ui_menus.c
 msgid "Color code"
 msgstr "Código de color"
 
@@ -1767,6 +1771,14 @@ msgstr "CTCSS va de 60.0 a 260.0"
 #: core/ui/ui_menus.c
 msgid "Save first: hold OK"
 msgstr "Guarda: mant OK"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Air band: receive only"
+msgstr "Banda aérea: solo RX"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Broadcast: receive only"
+msgstr "Comercial: solo RX"
 
 #: core/ui/ui_menus.c
 msgid "Tones: not in this build"
@@ -2224,6 +2236,10 @@ msgstr "USB vuelve a ser puerto serie"
 msgid "DMR ID"
 msgstr "ID DMR"
 
+#: core/ui/ui_menus.c core/ui/ui_position.c
+msgid "Not set"
+msgstr "Sin definir"
+
 #: core/ui/ui_menus.c
 msgid "Radio name"
 msgstr "Nombre de radio"
@@ -2271,6 +2287,38 @@ msgstr "0-9  OK guardar  Atrás"
 #: core/ui/ui_menus.c
 msgid "OK edit  Back"
 msgstr "OK editar  Atrás"
+
+#: core/ui/ui_menus.c
+msgid "ARS server"
+msgstr "Servidor ARS"
+
+#: core/ui/ui_menus.c
+msgid "IP gateway"
+msgstr "Pasarela IP"
+
+#: core/ui/ui_menus.c
+msgid "Registering"
+msgstr "Registrando"
+
+#: core/ui/ui_menus.c
+msgid "Registered"
+msgstr "Registrado"
+
+#: core/ui/ui_menus.c
+msgid "Refused"
+msgstr "Rechazado"
+
+#: core/ui/ui_menus.c
+msgid "No answer"
+msgstr "Sin respuesta"
+
+#: core/ui/ui_menus.c
+msgid "ARS: "
+msgstr "ARS: "
+
+#: core/ui/ui_menus.c
+msgid "Data Services"
+msgstr "Servicios de datos"
 
 #: core/ui/ui_menus.c
 msgid "Freq Trim"
@@ -2335,6 +2383,10 @@ msgstr "Fuente Spleen: BSD-2-Clause"
 #: core/ui/ui_menus.c
 msgid "JetBrains Mono font: OFL-1.1"
 msgstr "Fuente JetBrains Mono: OFL-1.1"
+
+#: core/ui/ui_menus.c
+msgid "Noto Sans CJK SC font: OFL-1.1"
+msgstr "Fuente Noto Sans CJK SC: OFL-1.1"
 
 #: core/ui/ui_menus.c
 msgid "AMBE+2 codec: DVSI (stock)"
@@ -2717,10 +2769,6 @@ msgid "Home zone"
 msgstr "Zona de inicio"
 
 #: core/ui/ui_menus.c
-msgid "Tone burst"
-msgstr "Ráfaga de tono"
-
-#: core/ui/ui_menus.c
 msgid "Copy to VFO"
 msgstr "Copiar a VFO"
 
@@ -2731,6 +2779,10 @@ msgstr "VFO/Canal"
 #: core/ui/ui_menus.c
 msgid "Call back"
 msgstr "Rellamar"
+
+#: core/ui/ui_menus.c
+msgid "TG name / number"
+msgstr "Nombre / número TG"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "Emergency"
@@ -2905,6 +2957,18 @@ msgid "Answer GPS requests"
 msgstr "Responder pet. GPS"
 
 #: core/ui/ui_menus.c
+msgid "Position source"
+msgstr "Origen posición"
+
+#: core/ui/ui_menus.c core/ui/ui_position.c
+msgid "Fixed position"
+msgstr "Posición fija"
+
+#: core/ui/ui_menus.c
+msgid "Send in DMR calls"
+msgstr "Enviar en llam. DMR"
+
+#: core/ui/ui_menus.c
 msgid "Hotspot allowed"
 msgstr "Hotspot permitido"
 
@@ -2939,6 +3003,10 @@ msgstr "PC responde datos"
 #: core/ui/ui_menus.c
 msgid "USB address"
 msgstr "Dirección USB"
+
+#: core/ui/ui_menus.c
+msgid "Data services"
+msgstr "Servicios de datos"
 
 #: core/ui/ui_menus.c
 msgid "Auto power off"
@@ -3089,6 +3157,10 @@ msgid "No GPS on this radio"
 msgstr "Sin GPS en esta radio"
 
 #: core/ui/ui_menus.c
+msgid "DMR position: not in this build"
+msgstr "Posición DMR: no disponible"
+
+#: core/ui/ui_menus.c
 msgid "Diagnostics: not in this build"
 msgstr "Diagnóstico: no disponible"
 
@@ -3107,6 +3179,10 @@ msgstr " a "
 #: core/ui/ui_menus.c
 msgid ", steps of "
 msgstr ", pasos de "
+
+#: core/ui/ui_menus.c core/ui/ui_position.c
+msgid "OK change  Back"
+msgstr "OK cambiar  Atrás"
 
 #: core/ui/ui_menus.c
 msgid "No, keep settings"
@@ -3224,6 +3300,18 @@ msgstr "¿Codeplug de otro firmware? Crear nuevo borra contactos, indicativo e I
 msgid "Old codeplug"
 msgstr "Codeplug anterior"
 
+#: core/ui/ui_position.c
+msgid "Latitude"
+msgstr "Latitud"
+
+#: core/ui/ui_position.c
+msgid "Longitude"
+msgstr "Longitud"
+
+#: core/ui/ui_position.c
+msgid "Up to 90 N/S, 180 E/W"
+msgstr "Hasta 90 N/S, 180 E/W"
+
 #: core/ui/ui_screens.c
 msgid "IDLE"
 msgstr "LIBRE"
@@ -3263,6 +3351,22 @@ msgstr "Banda aérea AM"
 #: core/ui/ui_screens.c
 msgid "Broadcast FM"
 msgstr "FM comercial"
+
+#: core/ui/ui_screens.c
+msgid "Restart to apply"
+msgstr "Reinicia para aplicar"
+
+#: core/ui/ui_screens.c
+msgid "Set: "
+msgstr "Configura: "
+
+#: core/ui/ui_screens.c
+msgid "Turn the radio off and on"
+msgstr "Apaga y enciende la radio"
+
+#: core/ui/ui_screens.c
+msgid "Settings>Advanced>Hardware"
+msgstr "Ajustes>Avanzado>Hardware"
 
 #: core/ui/ui_screens.c
 msgid "This channel is RX only"
@@ -3313,16 +3417,12 @@ msgid "No DMR ID in codeplug"
 msgstr "Sin ID DMR en codeplug"
 
 #: core/ui/ui_screens.c
-msgid "Air band: receive only"
-msgstr "Banda aérea: solo RX"
-
-#: core/ui/ui_screens.c
-msgid "Broadcast: receive only"
-msgstr "Comercial: solo RX"
-
-#: core/ui/ui_screens.c
 msgid "Repeater channel: PTT off"
 msgstr "Canal repetidor: sin PTT"
+
+#: core/ui/ui_screens.c
+msgid "Radio refused to send"
+msgstr "La radio no quiso transmitir"
 
 #: core/ui/ui_screens.c
 msgid "Not allowed here"
@@ -3379,10 +3479,6 @@ msgstr "Privada para ti"
 #: core/ui/ui_screens.c
 msgid "Private to "
 msgstr "Privada a "
-
-#: core/ui/ui_screens.c
-msgid "Reply→ "
-msgstr "Resp→ "
 
 #: core/ui/ui_screens.c
 msgid "Sending ID"
@@ -3503,6 +3599,10 @@ msgstr "Sin tiempo límite"
 #: core/ui/ui_screens.c
 msgid "Can't transmit"
 msgstr "No se puede transmitir"
+
+#: core/ui/ui_screens.c
+msgid "Transmit waits for it"
+msgstr "Sin TX hasta entonces"
 
 #: core/ui/ui_screens.c
 msgid "Last activity "

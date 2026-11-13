@@ -62,6 +62,8 @@ typedef struct {
 	uint8_t *(*buffer)(void);		// where to build a segment, TCP_SEGMENT_MAX bytes
 	bool (*send)(uint32_t dst, int length);	// the segment in buffer() to dst from local_ip(); false: not sent
 	uint32_t (*local_ip)(void);		// our address (pseudo header), 0 while there is none
+	// the same from another address of ours, for connections opened to it (tcp_input_to); NULL: there is none
+	bool (*send_from)(uint32_t src, uint32_t dst, int length);
 } tcp_io_t;
 
 typedef struct {
@@ -83,6 +85,9 @@ void tcp_abort(int c);			// RST now; the application is done with c
 void tcp_abort_all(void);
 // A segment from src (the IP payload), and the timers / pending output
 void tcp_input(uint32_t src, const uint8_t *seg, int len, uint32_t now_ms);
+// The same for a segment sent to dst, an address of ours that may differ from local_ip(): a connection opened to it
+// answers from it (io->send_from). Dropped when it differs and there is no send_from
+void tcp_input_to(uint32_t src, uint32_t dst, const uint8_t *seg, int len, uint32_t now_ms);
 void tcp_poll(uint32_t now_ms);
 
 uint8_t tcp_state(int c);		// tcp_state_t

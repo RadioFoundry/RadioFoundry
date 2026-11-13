@@ -56,9 +56,10 @@ import * as adapter from "./adapter.js";
 import * as crumbs from "./trail.js";
 import { missingApi, kitPanel, kitLine } from "./manual.js";
 import { showBetaNotice } from "./beta.js";
-import { currentBuild, planUpdate } from "./update.js";
-import { readDfuInfo, choiceFor, hwoptAction, runsOriginal, BOOTLOADER } from "./origversion.js";
+import { DROP_OK, currentBuild, planUpdate } from "./update.js";
+import { readDfuInfo, choiceFor, hwoptAction, pendingHwopt, majorsFor, runsOriginal, BOOTLOADER } from "./origversion.js";
 import { readOriginal, deviceKind, spiSeconds, Guard } from "./origbackup.js";
+import { toSerial, CLICK_WAIT_MS } from "./netmode.js";
 
 // ---------------------------------------------------------------------------------------------------------------
 // strings and DOM
@@ -470,7 +471,7 @@ async function connectSerial() {
 	if (S.fakeRadio) stream = S.fakeRadio.serialStream();
 	else {
 		if (!serialSupported()) throw new Error(t("flash.err.no_serial"));
-		if (await networkModeSeen()) throw new NetworkModeError();
+		if (await networkModeSeen() && !(await leaveNetworkMode())) throw new NetworkModeError();
 		const granted = await grantedRFoundryPorts();
 		stream = granted.length ? await SerialStream.open(granted[0]) : await SerialStream.request();
 		useAdapter(adapter.fromSerialInfo(stream.port?.getInfo?.()));
@@ -507,6 +508,24 @@ async function waitForRFoundry(ms = 20000) {
 	return false;
 }
 
+// A radio in network mode, asked for its serial port over WebUSB alone (netmode.js: no click needed, and no tab).
+// true: it took the request, so the connect goes on. false: this browser can't reach it that way, the help offers the
+// radio's own page. The wait is short: the connect that follows may open a chooser, in the same click
+async function leaveNetworkMode() {
+	const r = await toSerial({ http: false, ms: CLICK_WAIT_MS });
+	if (r.how) switchedToSerial();
+	return r.how !== null;
+}
+
+// The radio was taken out of network mode for this page: say so. No way back is offered: a restart (the end of an
+// update, or the user's) puts it back by itself when USB network at start is on
+let netBar = null;
+function switchedToSerial() {
+	if (netBar) return;
+	netBar = h("div", { class: "notice info" }, h("p", {}, t("flash.net.switched_note")));
+	app.before(netBar);
+}
+
 // A radio in USB network mode that this page was allowed to see before (no prompt)
 async function networkModeSeen() {
 	if (!usbSupported()) return false;
@@ -541,12 +560,33 @@ function serialHelp() {
 			out.replaceChildren(notice(err?.name === "NotFoundError" ? t("flash.net.none") : errorText(err)));
 		}
 	} }, t("flash.net.check"));
-	return h("div", {}, h("p", { class: "small" }, check), out);
+	// the switch itself needs no USB chooser: the radio's own page does it (netmode.js), so it is offered at once
+	const offer = h("a", { href: "#", class: "small", onclick: (e) => {
+		e.preventDefault();
+		if (S.fakeRadio) return;
+		const help = networkModeHelp({ found: false });
+		out.replaceChildren(help);
+		help.querySelector("button")?.click();	// this click is the one the tab opens from
+	} }, t("flash.net.offer"));
+	return h("div", {}, h("p", { class: "small" }, check, " · ", offer), out);
 }
 
-function networkModeHelp() {
+// The radio is in network mode: a button that asks it for its serial port (netmode.js), and the steps on the radio
+// for when that doesn't reach it
+function networkModeHelp({ found = true } = {}) {
+	const result = h("div");
+	const go = button(t("flash.net.switch"), async () => {
+		go.disabled = true;
+		result.replaceChildren(h("p", { class: "muted" }, t("flash.net.switching")));
+		const r = await toSerial();
+		go.disabled = false;
+		if (r.back) switchedToSerial();
+		result.replaceChildren(notice(t(r.back ? "flash.net.switched" : "flash.net.switch_unseen"), r.back ? "ok" : ""));
+	}, { primary: true });
 	return h("div", { class: "notice info" },
-		h("p", {}, h("b", {}, t("flash.net.found"))),
+		found ? h("p", {}, h("b", {}, t("flash.net.found"))) : null,
+		h("p", {}, go), h("p", { class: "small" }, t("flash.net.not_secure")), result,
+		h("p", { class: "small" }, t("flash.net.manual")),
 		h("ol", { class: "steps" }, h("li", {}, t("flash.net.step1")), h("li", {}, t("flash.net.step2")), h("li", {}, t("flash.net.step3"))));
 }
 
@@ -833,7 +873,7 @@ async function connectForUpdate(status) {
 	else if (S.fakeC7) link = new Link(stream = S.fakeC7.stream, { timeout: 1200 });
 	else {
 		if (!serialSupported()) throw new Error(t("flash.err.no_serial"));
-		if (await networkModeSeen()) throw new NetworkModeError();
+		if (await networkModeSeen() && !(await leaveNetworkMode())) throw new NetworkModeError();
 		// a port granted before where RadioFoundry answers needs no chooser
 		const known = await knownRadioPort([RFOUNDRY_USB, ...c7ui.CABLES]);
 		stream = known?.stream || await SerialStream.open(await serialApi().requestPort({ filters: [RFOUNDRY_USB, ...c7ui.CABLES] }));
@@ -887,7 +927,8 @@ function updateView() {
 				} catch (e) {
 					await dropSerial();
 					await c7ui.dropC7();
-					if (e?.name === "NotFoundError") return status.replaceChildren();
+					// the chooser closed without a pick: no error, only the way on for a radio it couldn't list
+					if (e?.name === "NotFoundError") return status.replaceChildren(serialHelp());
 					status.replaceChildren(connectError(e), connectHelp(e, "flash.update.not_rfoundry"));
 				}
 			}, { primary: true }));
@@ -901,7 +942,8 @@ function updateView() {
 		}
 		const p = S.now.probe, cur = S.current;
 		// the radio's own build, unless the build step has the selection (edits kept when the user comes back)
-		const plan = S.editBuild ? { preset: S.selection.matches(startCode), added: [], ask: [], ready: true } : planUpdate(cur, S.selection, S.decided);
+		const plan = S.editBuild ? { preset: S.selection.matches(startCode), added: [], needed: [], dropped: [], ask: [], ready: true }
+			: planUpdate(cur, S.selection, S.decided);
 		// an image built for another selection no longer applies
 		if (S.firmware?.selection && S.firmware.selection !== selectionKey(S.selection)) S.firmware = null;
 		const vtitle = (id) => (t(`variant.${id}.title`) !== `variant.${id}.title` ? t(`variant.${id}.title`) : S.data.variants.find((v) => v.id === id)?.title || id);
@@ -911,14 +953,45 @@ function updateView() {
 			S.editBuild = !S.editBuild;
 			render();	// off again: the radio's own build (planUpdate in the redraw)
 		}, { quiet: true });
-		const asks = plan.ask.length ? h("div", { class: "notice action" },
+		const asks = plan.ask.length ? h("div", { class: "notice action update-note" },
 			h("p", {}, h("b", {}, t("flash.update.new_title")), " ", t("flash.update.new_custom")),
-			...plan.ask.map((n) => h("div", { class: "update-new" },
+			// one a feature answered On needs is on with it: shown On, not a choice (it's in the turned-on list)
+			...plan.ask.map((n) => [n, S.decided[n] !== true && plan.needed.includes(n)]).map(([n, forced]) => h("div", { class: "update-new" },
 				h("span", {}, h("b", {}, title(n)), h("span", { class: "why" }, plainHelp(S.selection.byName[n]?.help || ""))),
 				h("span", { class: "update-pick" }, ...[true, false].map((on) => h("label", {},
-					h("input", { type: "radio", name: `new-${n}`, checked: S.decided[n] === on, onchange: () => { S.decided[n] = on; draw(); } }),
+					h("input", { type: "radio", name: `new-${n}`, checked: forced ? on : S.decided[n] === on, disabled: forced,
+						onchange: () => { S.decided[n] = on; draw(); } }),
 					" ", t(on ? "flash.update.turn_on" : "flash.update.leave_off"))))))) : null;
-		const added = plan.added.length ? notice(t("flash.update.new_preset", { names: plan.added.map(title).join(", ") }), "info") : null;
+		// a preset's added are the variant's new features; a custom build's are new switches its features need, listed
+		// with the ones it had off and needs now, each with what needs it
+		const added = plan.preset && plan.added.length ? notice(t("flash.update.new_preset", { names: plan.added.map(title).join(", ") }), "info update-note") : null;
+		const needList = plan.preset ? plan.needed : [...plan.added, ...plan.needed];
+		const neededBy = (n) => S.selection.features.filter((f) => S.selection.on.has(f.name)
+			&& [...(f.needs?.all || []), ...(f.needs?.any || [])].includes(n)).map((f) => f.title || f.name);
+		const needed = !needList.length ? null : h("div", { class: "notice info update-note" },
+			h("p", {}, h("b", {}, t("flash.update.needed_title")), " ", t("flash.update.needed_text")),
+			h("ul", {}, needList.map((n) => {
+				const by = neededBy(n);
+				return h("li", {}, h("b", {}, title(n)),
+					by.length ? [" ", h("span", { class: "muted" }, t("flash.update.needed_for", { names: by.join(", ") }))] : null);
+			})));
+		// features the radio's build had on that this release can't build on it: say which and why; the user agrees to
+		// leave them off or edits the build
+		const dropOk = S.decided[DROP_OK] === true;
+		const dropped = !plan.dropped.length ? null : h("div", { class: `notice action update-note${dropOk ? " info" : ""}` },
+			h("p", {}, h("b", {}, t("flash.update.dropped_title")), " ",
+				t(dropOk ? "flash.update.dropped_ok" : "flash.update.dropped_text", { radio: S.radio.name })),
+			h("ul", {}, plan.dropped.map((d) => h("li", {}, h("b", {}, title(d.name)),
+				d.blockers.length ? [" ", h("span", { class: "muted" }, t("flash.update.dropped_needs", { names: d.blockers.map(title).join(", ") }))] : null))),
+			dropOk ? null : h("div", { class: "actions" },
+				button(t("flash.update.drop"), () => { S.decided[DROP_OK] = true; draw(); }),
+				// straight to the build step (the Edit Build beside the build only switches this page to it), unless the
+				// backup asked for first isn't made yet: then Next waits for it as usual
+				button(t("flash.update.edit_build"), () => {
+					S.editBuild = true;
+					if (S.updateBackup && backupPanel) render();
+					else next();
+				})));
 		const building = S.build && S.build.selection === selectionKey(S.selection);
 		const image = S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok")
 			: building && S.build.error ? buildErrorNotice(S.build.error)
@@ -934,7 +1007,7 @@ function updateView() {
 				h("dt", {}, t("flash.update.version")), h("dd", {}, t("flash.update.from_to", { from: firmwareName(p.version), to: updateVersion() })),
 				h("dt", {}, t("flash.update.build")), h("dd", {}, buildText, " ", cur.kind === "unknown" ? null : edit)),
 			cur.kind === "unknown" ? notice(t("flash.update.unknown_text", { variant: vtitle(cur.guess) }), "info") : null,
-			S.editBuild ? null : asks, S.editBuild ? null : added, backup, backupPanel, image, status));
+			S.editBuild ? null : dropped, S.editBuild ? null : asks, S.editBuild ? null : added, S.editBuild ? null : needed, backup, backupPanel, image, status));
 		const busy = building && !S.build.error;
 		const go = async () => {
 			if (S.editBuild) return next();
@@ -944,7 +1017,7 @@ function updateView() {
 		};
 		S.forward(button(busy ? [spinner(), t("flash.nav.building")] : t(S.editBuild ? "flash.update.to_build" : "flash.update.go"), go,
 			{ primary: true, disabled: busy || (!S.editBuild && !plan.ready) || (S.updateBackup && !!backupPanel) }),
-			!S.editBuild && !plan.ready ? t("flash.update.decide_first") : null);
+			S.editBuild || plan.ready ? null : t(plan.dropped.length && !S.decided[DROP_OK] ? "flash.update.drop_first" : "flash.update.decide_first"));
 	};
 	draw();
 	return out;
@@ -1202,8 +1275,15 @@ let tipEscape = () => {};
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") tipEscape(); });
 
 // Why a feature can't be chosen: the radio's code isn't written for it yet, or its hardware can't
-const naNote = (name) => t(S.selection.notWritten(name) ? "flash.build.not_written" : "flash.build.unsupported",
-	{ radio: S.radio.name });
+// a switch the radio could have but for a need it can't: that need, the same reason the update gives
+const naNote = (name) => {
+	const sel = S.selection;
+	if (sel.allowed(name)) {
+		const by = sel.blockers(name);
+		if (by.length) return t("flash.build.unsupported_needs", { names: by.map((n) => sel.byName[n]?.title || n).join(", "), radio: S.radio.name });
+	}
+	return t(sel.notWritten(name) ? "flash.build.not_written" : "flash.build.unsupported", { radio: S.radio.name });
+};
 
 // The ⓘ bubble: what a feature does, what it needs, its flash cost on this radio
 function featureTip(f, id) {
@@ -1386,6 +1466,10 @@ function nowView() {
 		} else if (openfwShown()) {
 			detail.append(openfwDetail({ draw, check: checkRFoundry, setRun: (b) => { runBackup = b; } }));
 		}
+		if (S.board.original_version && openfwShown()) {
+			// another open firmware: no original version to read, so the revision may be a question after the install
+			detail.append(notice(t("flash.hwopt.ahead", { option: S.board.original_version.hwopt }), "warn"));
+		}
 		if (S.board.original_version && (S.now?.kind === "stock" || (S.now?.kind === "unknown" && !openfwShown()))) {
 			if (S.board.original_backup) detail.append(originalBackupPanel());
 			detail.append(originalVersionPanel());
@@ -1429,7 +1513,8 @@ function nowView() {
 
 // A board whose hardware revision follows its original firmware (board.toml [flash.original_version], origversion.js):
 // read that firmware's version while it runs, so the install stores the revision and nobody has to pick it. Optional:
-// without it, or with a version the board doesn't list, the radio settles the revision itself
+// without it, or with a version the board doesn't list, the radio tells what it can by itself, and what it can't the
+// page asks for after the install (hwoptPrompt)
 function originalVersionPanel() {
 	const spec = S.board.original_version;
 	const box = h("div", { class: "notice info" });
@@ -1567,7 +1652,9 @@ async function storeLearned(link) {
 		if (a.action === "store") {
 			await link.hwoptSet(a.option, a.choice);
 			L.stored = true;
-			return notice(t(opts[a.option].restart ? "flash.orig.stored_restart" : "flash.orig.stored", args), "ok");
+			// the radio says whether a restart is still due (none when it already runs that choice)
+			const now = (await link.hwopts())[a.option];
+			return notice(t(now?.state === "restart" ? "flash.orig.stored_restart" : "flash.orig.stored", args), "ok");
 		}
 		if (a.action === "same") {
 			L.stored = true;
@@ -1578,6 +1665,52 @@ async function storeLearned(link) {
 	} catch (e) {
 		return notice(t("flash.orig.store_failed", { ...args, error: errorText(e) }));
 	}
+}
+
+// A hardware option the radio still needs from a person after the install (HWOPT state ask: the board can't tell it
+// and the install didn't learn it) or that waits for a restart: said plainly, first, with a button per choice and the
+// original firmware versions that mean each. The radio won't transmit until it is set, and its home screen says so
+async function hwoptPrompt(link) {
+	let opts;
+	try {
+		opts = await link.hwopts();
+	} catch (e) {
+		return null;	// a firmware without HWOPT
+	}
+	const p = pendingHwopt(opts);
+	if (!p) return null;
+	diag.note("hwopt", { action: "ask", state: p.state, option: p.name });
+	const spec = S.board.original_version;
+	const box = h("div", { class: "notice warn" });
+	const status = h("div");
+	const restart = (o) => box.replaceChildren(h("p", {}, h("b", {}, t("flash.hwopt.restart_title"))),
+		h("p", {}, t("flash.hwopt.restart", { option: o.name })));
+	const pick = async (i) => {
+		status.replaceChildren(h("p", { class: "muted" }, t("flash.hwopt.storing")));
+		const args = { option: p.name, choice: p.choices[i] };
+		try {
+			await link.hwoptSet(p.option, i);
+			diag.note("hwopt", { action: "picked", choice: p.choices[i] });
+			const o = (await link.hwopts())[p.option];
+			if (o?.state === "restart") return restart(o);
+			box.className = "notice ok";
+			box.replaceChildren(h("p", {}, t("flash.hwopt.stored", args)));
+		} catch (e) {
+			status.replaceChildren(errorNotice(t("flash.hwopt.refused", { ...args, error: errorText(e) })));
+		}
+	};
+	if (p.state === "restart") {
+		restart(p);
+		return box;
+	}
+	const versions = spec?.hwopt === p.name ? p.choices.map((c) => [c, majorsFor(spec, c)]).filter(([, m]) => m.length)
+		.map(([c, m]) => `${m.map((x) => x + ".xx").join(", ")}: ${c}`).join("; ") : "";
+	box.append(h("p", {}, h("b", {}, t("flash.hwopt.title", { option: p.name }))),
+		h("p", {}, t("flash.hwopt.lead", { option: p.name })),
+		versions ? h("p", {}, t("flash.hwopt.by_version", { list: versions })) : null,
+		h("p", {}, t("flash.hwopt.unsure")),
+		h("p", {}, ...p.choices.flatMap((c, i) => [button(c, () => pick(i), { primary: i === 0 }), " "])), status);
+	return box;
 }
 
 // What the radio's codec report means to a user
@@ -2267,6 +2400,9 @@ function doneView() {
 			notice(good ? t("flash.done.ready") : t("flash.done.no_codec"), good ? "ok" : "bad"), ...(good ? [] : [helpLink(), reportLine()]));	// the DOM writes a null as "null"
 			const learnedNote = await storeLearned(link);
 			if (learnedNote) status.append(learnedNote);
+			// what the radio still needs from a person goes first, where the eye lands
+			const ask = await hwoptPrompt(link);
+			if (ask) status.prepend(ask);
 			const channels = () => bringChannels(status, { finish });
 			if (!S.backupDone) {
 				S.now = { ...S.now, probe: S.now?.kind === "rfoundry" ? p : S.now?.probe, after: p,

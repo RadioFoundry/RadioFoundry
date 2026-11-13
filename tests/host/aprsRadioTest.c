@@ -27,6 +27,7 @@ static int checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
 
 #define CH_HZ		146520000u
+#define CH2_HZ		146050000u
 #define APRS_HZ		144390000u
 
 // ---- fake board ----
@@ -37,6 +38,7 @@ static struct {
 	uint8_t tx_power;
 	int tx_off_calls;
 	bool keyed;
+	uint16_t tone_hz;	// the TX tone in force (0 = the microphone)
 	uint8_t noise_on_aprs;	// noise reading on 144.390 (low = a carrier)
 	// AFSK
 	uint8_t tones[600];
@@ -91,9 +93,14 @@ static void r_status(radio_status_t *st)
 	st->tone_ok = true;
 }
 static void r_audio(bool on) { (void)on; }
+static bool r_tone(uint16_t hz)
+{
+	hw.tone_hz = hz;
+	return true;
+}
 static const hal_radio_t fake_radio = {
 	.init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off, .status = r_status,
-	.audio = r_audio,
+	.audio = r_audio, .tx_tone = r_tone,
 };
 
 static void p_led(uint8_t which, bool on) { (void)which; (void)on; }
@@ -186,6 +193,33 @@ static const hal_bcast_t fake_bcast = {
 	.volume = b_volume, .status = b_status, .audio = b_audio,
 };
 
+#if CONFIG_DUAL_WATCH
+static struct {
+	bool up, active;
+	uint32_t hz;
+	int tunes, stops;
+} other_rx;
+
+static bool x_tune(const rx2_tune_t *t)
+{
+	if (!other_rx.up) {
+		return false;
+	}
+	other_rx.hz = t->rx_hz;
+	other_rx.tunes++;
+	return true;
+}
+static void x_stop(void) { other_rx.stops++; }
+static void x_status(rx2_status_t *st)
+{
+	memset(st, 0, sizeof(*st));
+	st->up = st->tuned = other_rx.up;
+	st->active = other_rx.active;
+}
+static void x_audio(bool on) { (void)on; }
+static const hal_rx2_t fake_rx2 = { .tune = x_tune, .stop = x_stop, .status = x_status, .audio = x_audio };
+#endif
+
 static const band_t bands[] = {
 	{ 136000000, 174000000, true }, { 400000000, 480000000, true }, { 65000000, 108000000, false },
 };
@@ -207,10 +241,13 @@ const board_t board = {
 	.audio = &fake_audio,
 	.audio_tap = &fake_tap,
 	.bcast = &fake_bcast,
+#if CONFIG_DUAL_WATCH
+	.rx2 = &fake_rx2,
+#endif
 };
 
-// ---- fake codeplug: one channel ----
-static channel_t chan;
+// ---- fake codeplug ----
+static channel_t chan, chan2;
 static zone_t zone;
 static char cp_name[CODEPLUG_NAME_LEN + 1];
 codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
@@ -221,14 +258,18 @@ void storage_lock(void) {}
 void storage_unlock(void) {}
 void storage_quick_lock(void) {}
 void storage_quick_unlock(void) {}
-uint16_t codeplug_channel_count(void) { return 1; }
+uint16_t codeplug_channel_count(void) { return 2; }
 bool codeplug_channel(uint16_t n, channel_t *out)
 {
-	if (n != 1) {
-		return false;
+	if (n == 1) {
+		*out = chan;
+		return true;
 	}
-	*out = chan;
-	return true;
+	if (n == 2) {
+		*out = chan2;
+		return true;
+	}
+	return false;
 }
 uint16_t codeplug_zone_count(void) { return 1; }
 bool codeplug_zones_stored(void) { return true; }
@@ -308,6 +349,9 @@ static void req(uint8_t type, int32_t arg)
 static void reset(void)
 {
 	memset(&hw, 0, sizeof(hw));
+#if CONFIG_DUAL_WATCH
+	memset(&other_rx, 0, sizeof(other_rx));
+#endif
 	hw.noise_on_aprs = 120;
 	nframes = 0;
 	memset(frames, 0, sizeof(frames));
@@ -318,6 +362,9 @@ static void reset(void)
 	chan.mode = RADIO_MODE_FM;
 	chan.bw = RADIO_BW_25K;
 	chan.power = CODEPLUG_POWER_DEFAULT;
+	chan2 = chan;
+	strcpy(chan2.name, "Other");
+	chan2.rx_hz = chan2.tx_hz = CH2_HZ;
 	memset(&zone, 0, sizeof(zone));
 	strcpy(zone.name, "Z");
 	zone.count = 1;
@@ -330,16 +377,34 @@ static void reset(void)
 	aprs_set_test_call("");
 }
 
+// The fixed position (the position service's setting)
+static void fixed_position(int32_t lat, int32_t lon)
+{
+	position_cfg_t pc;
+	position_get_cfg(&pc);
+	pc.fix_lat = lat;
+	pc.fix_lon = lon;
+	position_set_cfg(&pc, now);
+}
+
+// The settings read again, as the radio core does when they were replaced (RREQ_RELOAD)
+static void reload_settings(void)
+{
+	settings_t st;
+	settings_read(&st);
+	position_load(&st);
+	aprs_reload();
+}
+
 // Callsign, a fixed position, automatic beacons every interval_s
 static void configure(uint16_t interval_s, bool smart)
 {
 	aprs_cfg_t c;
+	fixed_position(490583333, -720291667);	// 49 03.50 N, 072 01.75 W
 	aprs_get_cfg(&c);
 	c.tx_on = true;
 	c.interval_s = interval_s;
 	c.smart = smart;
-	c.fix_lat = 490583333;		// 49 03.50 N
-	c.fix_lon = -720291667;		// 072 01.75 W
 	c.compressed = false;
 	aprs_set_cfg(&c, now);
 }
@@ -380,13 +445,12 @@ static void test_defaults(void)
 	CHECK(!c.tx_on && c.region == APRS_REGION_NA && aprs_cfg_freq(&c) == APRS_HZ && c.ssid == 7);
 	// Callsign and a position, but transmit off: nothing in an hour
 	strcpy(cp_name, "Q1TST");
-	c.fix_lat = 490583333;
-	c.fix_lon = -720291667;
+	fixed_position(490583333, -720291667);
 	aprs_set_cfg(&c, now);
 	run(3600u * 1000u);
 	CHECK(hw.tx_calls == 0 && hw.starts == 0);
 	aprs_get_view(&v);
-	CHECK(v.block == APRS_OK && strcmp(v.call, "Q1TST-7") == 0 && v.pos_valid && v.pos_src == APRS_SRC_FIXED);
+	CHECK(v.block == APRS_OK && strcmp(v.call, "Q1TST-7") == 0 && v.pos_valid && v.pos_src == POSITION_SRC_FIXED);
 	CHECK(hw.rx_hz == CH_HZ);
 	// N0CALL (refused by name) and a name without a digit are no callsign
 	CHECK(!aprs_callsign_ok("N0CALL") && !aprs_callsign_ok("QTEST") && !aprs_callsign_ok("1ABC") &&
@@ -512,6 +576,120 @@ static void test_ptt_cuts(void)
 	CHECK(hw.starts >= 1);
 }
 
+#if CONFIG_DUAL_WATCH
+static void test_dual_watch_beacon(void)
+{
+	reset();
+	zone.count = 2;
+	zone.channels[1] = 2;
+	radio_sm_init(&sm, now);
+	aprs_set_test_call("N0TST");
+	configure(0, false);
+	radio_req_t watch = { RREQ_SCAN, RSCAN_DUAL, 1 };
+	radio_sm_request(&sm, &watch, now);
+	CHECK(sm.scan.kind == SCAN_DUAL);
+	for (int i = 0; i < 100 && sm.dual_at != 1; i++) {
+		run(RADIO_POLL_MS);
+	}
+	CHECK(sm.dual_at == 1 && hw.rx_hz == CH2_HZ);
+	uint32_t steps = sm.scan.steps;
+	CHECK(aprs_send_now());
+	CHECK(wait_start(1, 5000));
+	CHECK(sm.scan.kind == SCAN_DUAL && hw.tx_hz == APRS_HZ && hw.starts == 1);
+	wait_idle();
+	CHECK(sm.scan.kind == SCAN_DUAL && sm.scan.phase == SCAN_PH_LISTEN &&
+	      sm.dual_at == 1 && hw.rx_hz == CH2_HZ && !hw.keyed);
+	run(RADIO_SCAN_DWELL_MS + RADIO_POLL_MS);
+	CHECK(sm.dual_at == 0 && hw.rx_hz == CH_HZ);
+	run(5000);
+	CHECK(sm.scan.kind == SCAN_DUAL && sm.scan.steps > steps);
+	// PTT still uses the selected channel after a beacon interrupted the watch.
+	req(RREQ_PTT, 1);
+	CHECK(sm.scan.kind == SCAN_DUAL && hw.tx_hz == CH_HZ);
+	req(RREQ_PTT, 0);
+	// A regular zone scan still holds a queued packet until the scan stops.
+	req(RREQ_SCAN, RSCAN_STOP);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(sm.scan.kind == SCAN_ZONE && aprs_send_now());
+	run(5000);
+	CHECK(sm.scan.kind == SCAN_ZONE && hw.starts == 1);
+	req(RREQ_SCAN, RSCAN_STOP);
+	CHECK(wait_start(2, 5000) && hw.tx_hz == APRS_HZ);
+	wait_idle();
+}
+
+static void test_dual_receiver_beacon(void)
+{
+	reset();
+	zone.count = 2;
+	zone.channels[1] = 2;
+	radio_sm_init(&sm, now);
+	aprs_set_test_call("N0TST");
+	configure(0, false);
+	other_rx.up = true;
+	radio_req_t watch = { RREQ_SCAN, RSCAN_DUAL, 1 };
+	radio_sm_request(&sm, &watch, now);
+	CHECK(sm.rx2_on && other_rx.hz == CH2_HZ && hw.rx_hz == CH_HZ);
+	other_rx.active = true;
+	CHECK(aprs_send_now());
+	run(5000);
+	CHECK(hw.starts == 0 && sm.rx2_on && other_rx.stops == 0);
+	int tunes = other_rx.tunes;
+	other_rx.active = false;
+	CHECK(wait_start(1, 5000));
+	CHECK(!sm.rx2_on && other_rx.stops == 1 && hw.tx_hz == APRS_HZ);
+	wait_idle();
+	CHECK(sm.scan.kind == SCAN_DUAL && sm.scan.phase == SCAN_PH_LISTEN && sm.rx2_on && other_rx.tunes == tunes + 1 &&
+	      other_rx.hz == CH2_HZ && hw.rx_hz == CH_HZ);
+}
+
+static void test_dual_watch_beacon_abort(void)
+{
+	reset();
+	zone.count = 2;
+	zone.channels[1] = 2;
+	radio_sm_init(&sm, now);
+	aprs_set_test_call("N0TST");
+	configure(0, false);
+	radio_req_t watch = { RREQ_SCAN, RSCAN_DUAL, 1 };
+	radio_sm_request(&sm, &watch, now);
+	CHECK(aprs_send_now());
+	CHECK(wait_start(1, 5000));
+	uint8_t at = sm.dual_at;
+	req(RREQ_POWER, 1);	// abort without ending the watch or keying PTT
+	CHECK(sm.aprs_phase == 0 && sm.scan.kind == SCAN_DUAL && sm.scan.phase == SCAN_PH_LISTEN && !hw.keyed);
+	CHECK(hw.rx_hz == (at == 0 ? CH_HZ : CH2_HZ));
+	run(RADIO_SCAN_DWELL_MS + RADIO_POLL_MS);
+	CHECK(sm.dual_at != at);
+}
+#endif
+// PTT over a beacon on a channel with its tone burst on: the beacon gives way and the fresh key-up opens with the burst
+// (the beacon's RS_TX is the radio's own transmission, not the user's)
+static void test_ptt_cuts_burst(void)
+{
+#if CONFIG_FM_TX_TONES
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(60, false);
+	chan.tone_burst = true;
+	req(RREQ_ZONE_POS, 0);
+	run(50);
+	CHECK(sm.view.ch.tone_burst);
+	run(59u * 1000u);
+	CHECK(wait_start(1, 5000));
+	CHECK(sm.view.state == RS_TX && sm.view.tx_auto && hw.tx_hz == APRS_HZ && hw.tone_hz == 0);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && !sm.view.tx_auto && hw.tx_hz == CH_HZ);
+	CHECK(sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+	run(RADIO_BURST_MIN_MS + 20);
+	radio_sm_tick(&sm, now);	// the burst's timer runs on the tick, which run() doesn't drive
+	CHECK(sm.view.state == RS_TX && !sm.view.tone_burst && hw.tone_hz == 0);	// the microphone follows
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE && hw.rx_hz == CH_HZ);
+#endif
+}
+
 static void test_not_amateur(void)
 {
 	reset();
@@ -568,6 +746,21 @@ static void test_manual_and_ptt_trigger(void)
 	req(RREQ_PTT, 0);
 	run(5000);
 	CHECK(hw.starts == 2);
+#if !CONFIG_APRS_DMR
+	// A build without the DMR backend (this one) has one way out: "Send via: DMR" left in the settings by another
+	// build is not asked, and the beacon goes out on RF
+	c.tx_on = false;
+	c.via = APRS_VIA_DMR;
+	aprs_set_cfg(&c, now);
+	run(200u * 1000u);
+	CHECK(aprs_send_now());
+	CHECK(wait_start(3, 5000));
+	wait_idle();
+	aprs_get_view(&v);
+	CHECK(v.dmr_sent == 0 && v.dmr_failed == 0);
+	c.via = APRS_VIA_RF;
+	aprs_set_cfg(&c, now);
+#endif
 }
 
 // APRS keys at the radio's current power level, a temporary change included (it used the settings' default, so a
@@ -581,15 +774,18 @@ static void test_tx_power(void)
 	CHECK(aprs_send_now());
 	CHECK(wait_start(1, 5000));
 	CHECK(hw.tx_power == 0);
+	CHECK(sm.view.aprs_tx && sm.view.state == RS_TX);
 	wait_idle();
+	CHECK(!sm.view.aprs_tx);
 	req(RREQ_POWER, 1);		// temporary: H
 	CHECK(sm.view.power == 1 && sm.view.temporary);
 	run(6000);			// past the 5 s "send now" repeat guard
 	CHECK(aprs_send_now());
 	CHECK(wait_start(2, 5000));
 	CHECK(hw.tx_power == 1);
+	CHECK(sm.view.aprs_tx);
 	wait_idle();
-	CHECK(sm.view.power == 1 && hw.rx_hz == CH_HZ);
+	CHECK(!sm.view.aprs_tx && sm.view.power == 1 && hw.rx_hz == CH_HZ);
 }
 
 // APRS's own power setting (aprs_power, 0 = the radio's level) overrides the radio's current level
@@ -606,8 +802,9 @@ static void test_tx_power_own(void)
 	CHECK(aprs_send_now());
 	CHECK(wait_start(1, 5000));
 	CHECK(hw.tx_power == 1);
+	CHECK(sm.view.aprs_tx);
 	wait_idle();
-	CHECK(sm.view.power == 0);	// the radio's own level is untouched
+	CHECK(!sm.view.aprs_tx && sm.view.power == 0);	// the radio's own level is untouched
 	CHECK(aprs_tx_power(0) == 1);
 	c.power = 1;
 	aprs_set_cfg(&c, now);
@@ -637,7 +834,7 @@ static void test_host_kiss_nmea(void)
 	run(100);
 	aprs_view_t v;
 	aprs_get_view(&v);
-	CHECK(v.pos_valid && v.pos_src == APRS_SRC_HOST && v.lat == 481173000 && v.speed_kmh == 41 && v.course == 84);
+	CHECK(v.pos_valid && v.pos_src == POSITION_SRC_HOST && v.lat == 481173000 && v.speed_kmh == 41 && v.course == 84);
 	// a KISS data frame from the host, from our call (another SSID)
 	ax25_frame_t f;
 	uint8_t frame[AX25_FRAME_MAX], kiss[2 * AX25_FRAME_MAX];
@@ -738,20 +935,73 @@ static void test_messages(void)
 #endif
 }
 
+// Messages from APRS-IS reach RF through an iGate as third-party packets ("}SRC>DST,TCPIP,IGATE*:info"): the message
+// inside is from SRC, kept and acked to SRC; the station list holds the iGate, the station actually heard
+static void test_third_party_messages(void)
+{
+#if CONFIG_APRS_RX
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	nframes = 0;
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1ABC-9>APQRX,TCPIP,Q1GTE*::Q1TST-7  :From the net{77");
+	CHECK(wait_start(1, 5000));
+	wait_idle();
+	CHECK(aprs_msg_count() == 1);
+	aprs_msg_t m;
+	CHECK(aprs_msg(0, &m) && strcmp(m.from, "Q1ABC-9") == 0 && strcmp(m.text, "From the net") == 0 &&
+	      strcmp(m.msgno, "77") == 0);
+	CHECK(nframes == 1 && strstr(frames[0], "::Q1ABC-9  :ack77") != NULL);
+	// its retry: acked again, not kept twice
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1ABC-9>APQRX,TCPIP,Q1GTE*::Q1TST-7  :From the net{77");
+	CHECK(wait_start(2, 5000));
+	wait_idle();
+	CHECK(aprs_msg_count() == 1 && nframes == 2);
+	// the station list: the iGate, not the Internet station (which must not count as heard on RF)
+	aprs_station_t s;
+	bool gate = false, inner = false;
+	for (uint8_t i = 0; aprs_station(i, &s); i++) {
+		gate |= strcmp(s.call, "Q1GTE") == 0;
+		inner |= strcmp(s.call, "Q1ABC-9") == 0;
+	}
+	CHECK(gate && !inner);
+	// to another station, malformed, our own message gated back, nested: ignored, nothing sent
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1ABC-9>APQRX,TCPIP,Q1GTE*::Q1XYZ    :Not ours{78");
+	rx_line("Q1GTE>APDW17,WIDE2*:}garbage");
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1ABC>:");
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1TST-7>APZRDF,TCPIP,Q1GTE*::Q1TST-7  :Echo{79");
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1GTF>APDW17,TCPIP,Q1GTE*:}Q1ABC-9>APQRX,TCPIP,Q1GTF*::Q1TST-7  :Nested{80");
+	run(10u * 1000u);
+	CHECK(aprs_msg_count() == 1 && nframes == 2 && hw.starts == 2);
+	// the ack of our message to an Internet station comes back wrapped too: no more retries
+	CHECK(aprs_send_message("Q1ABC-9", "To the net"));
+	CHECK(wait_start(3, 5000));
+	char msgno[8] = "";
+	const char *brace = strchr(frames[nframes - 1], '{');
+	CHECK(brace != NULL);
+	if (brace != NULL) {
+		strncpy(msgno, brace + 1, sizeof(msgno) - 1);
+	}
+	wait_idle();
+	char ack[96];
+	snprintf(ack, sizeof(ack), "Q1GTE>APDW17,WIDE2*:}Q1ABC-9>APRS,TCPIP,Q1GTE*::Q1TST-7  :ack%s", msgno);
+	rx_line(ack);
+	run(200u * 1000u);
+	CHECK(hw.starts == 3);
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(v.msg_acked);
+#endif
+}
+
 static void test_message_options(void)
 {
 	reset();
 	aprs_set_test_call("N0TST");
 	configure(0, false);
-	aprs_cfg_t c;
-	aprs_get_cfg(&c);
-	c.fix_lat = 0;
-	c.fix_lon = 0;
-	aprs_set_cfg(&c, now);
+	fixed_position(0, 0);
 	CHECK(!aprs_send_message_opts("K1ABC-9", "Here", APRS_MSG_POSITION));
-	c.fix_lat = 490583333;
-	c.fix_lon = -720291667;
-	aprs_set_cfg(&c, now);
+	fixed_position(490583333, -720291667);
 	char long_text[APRS_MSG_TEXT_MAX + 1];
 	memset(long_text, 'x', sizeof(long_text) - 1u);
 	long_text[sizeof(long_text) - 1u] = '\0';
@@ -846,7 +1096,52 @@ static void test_stations_digi_igate(void)
 #endif
 
 #if CONFIG_APRS_RX
-// The range Stations heard shows (ui_svc_aprs_range): from our position as aprs_position_now gives it, to the
+static unsigned station_locks, station_unlocks;
+static bool station_locked;
+
+static void station_lock(void)
+{
+	CHECK(!station_locked);
+	station_locked = true;
+	station_locks++;
+}
+
+static void station_unlock(void)
+{
+	CHECK(station_locked);
+	station_locked = false;
+	if (++station_unlocks == 2) {
+		// Trap for a lookup that locks more than once (the old count-then-rows scan): a packet moves A to the
+		// front between reads, so that scan misses A and the find CHECK below fails. One locked copy never gets here.
+		aprs_set_lock(NULL, NULL);
+		rx_line("Q1ABC-9>APRS:>Moved");
+	}
+}
+
+static void test_station_lookup(void)
+{
+	reset();
+	rx_line("Q1ABC-9>APRS:>First");
+	rx_line("Q1ABC-8>APRS:>Second");
+	station_locks = station_unlocks = 0;
+	station_locked = false;
+	aprs_set_lock(station_lock, station_unlock);
+	aprs_station_t s;
+	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &s) && strcmp(s.call, "Q1ABC-9") == 0);
+	CHECK(station_locks == 1 && station_unlocks == 1 && !station_locked);
+	aprs_set_lock(NULL, NULL);
+	CHECK(aprs_station_count() == 2);
+	CHECK(!ui_svc_aprs_station_find("Q1ABC", &s));
+	CHECK(!ui_svc_aprs_station_find("Q1ABC-7", &s));
+	CHECK(!ui_svc_aprs_station_find("q1abc-9", &s));
+	// The 24-byte retained field holds 23 comment bytes and the terminator.
+	rx_line("Q1ABC-9>APRS:=4903.50N/07201.75W>12345678901234567890123EXCESS");
+	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &s));
+	CHECK(sizeof s.text == 24 && strlen(s.text) == 23);
+	CHECK(strcmp(s.text, "12345678901234567890123") == 0);
+}
+
+// The range Stations heard shows (ui_svc_aprs_range): from our position as position_now gives it, to the
 // station's. EP: our position none / fixed / GPS (GPS wins in Auto) x the station's none / valid. BVA: the same
 // spot is 0 m; 10 minutes of latitude due north is 18.5 km at bearing 0
 static void test_station_range(void)
@@ -861,6 +1156,12 @@ static void test_station_range(void)
 	rx_line("Q1ABC-8>APZRDF:=4903.50N/07201.75W>Here");	// on it
 	rx_line("Q1ABC-7>APZRDF:>Status only");
 	CHECK(aprs_station_count() == 3);
+	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &far) && far.has_pos);
+	rx_line("Q1ABC-8>APZRDF:>New packet");
+	CHECK(aprs_station(0, &here) && strcmp(here.call, "Q1ABC-8") == 0);
+	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &far) && strcmp(far.call, "Q1ABC-9") == 0);
+	CHECK(!ui_svc_aprs_station_find("Q1NONE", &nopos));
+	rx_line("Q1ABC-7>APZRDF:>Status only");
 	CHECK(aprs_station(2, &far) && far.has_pos && aprs_station(1, &here) && here.has_pos);
 	CHECK(aprs_station(0, &nopos) && !nopos.has_pos);
 	// our position: none
@@ -872,7 +1173,7 @@ static void test_station_range(void)
 	CHECK(!ui_svc_aprs_range(&nopos, &m, &deg));
 	// GPS (48 07.038 N 011 31.000 E) wins over the fixed position: the station is across the Atlantic, to the west
 	const char *rmc = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
-	aprs_nmea(rmc, strlen(rmc), true, now);
+	position_nmea(rmc, strlen(rmc), true, now);
 	run(100);
 	CHECK(ui_svc_aprs_range(&here, &m, &deg) && m > 5814000 && m < 5816000 && deg == 305);	// haversine: 5815.2 km, 304.6
 	CHECK(!ui_svc_aprs_range(&nopos, &m, &deg));
@@ -931,7 +1232,7 @@ static void test_station_range(void)
 }
 #endif
 
-// The position DMR GPS Info takes (aprs_position_now): the fixed position, the setting, ambiguity; and DMR callers'
+// The position DMR GPS Info takes (position_now): the fixed position, the setting, ambiguity; and DMR callers'
 // positions in the station list
 static void test_dmr_position(void)
 {
@@ -941,18 +1242,31 @@ static void test_dmr_position(void)
 	bool send = true;
 
 	reset();
-	CHECK(!aprs_position_now(&lat, &lon, &err, &send) && !send);	// no position, setting off by default
+	CHECK(!position_now(&lat, &lon, &err, &send, now) && !send);	// no position, setting off by default
 	configure(0, false);
-	CHECK(aprs_position_now(&lat, &lon, &err, &send) && lat == 490583333 && lon == -720291667 && err == 200 &&
+	CHECK(position_now(&lat, &lon, &err, &send, now) && lat == 490583333 && lon == -720291667 && err == 200 &&
 	      !send);
-	aprs_get_cfg(&c);
-	c.dmr_gps = true;
-	c.ambiguity = 2;	// whole minutes: the middle of the minute, about 1.9 km
-	aprs_set_cfg(&c, now);
-	CHECK(aprs_position_now(&lat, &lon, &err, &send) && send && err == 1852);
+	position_cfg_t pc;
+	position_get_cfg(&pc);
+	pc.dmr_gps = true;
+	pc.ambiguity = 2;	// whole minutes: the middle of the minute, about 1.9 km
+	position_set_cfg(&pc, now);
+	CHECK(position_now(&lat, &lon, &err, &send, now) && send && err == 1852);
 	CHECK(lat == 490583334 && lon == -720250000);	// 49 03.5 N (already mid-minute), 072 01.5 W
+	// APRS over DMR blurs the exact position the same way (position_blur)
+	int32_t blat = 490583333, blon = -720291667;
+	uint32_t berr = 0;
+	position_blur(&blat, &blon, POSITION_SRC_FIXED, &berr);
+	CHECK(blat == lat && blon == lon && berr == 1852);
+	// An APRS save leaves the position settings as they are, and both come back from the store
 	aprs_get_cfg(&c);
-	CHECK(c.dmr_gps);	// saved and read back
+	c.via = APRS_VIA_BOTH;
+	aprs_set_cfg(&c, now);
+	reload_settings();
+	run(200);
+	position_get_cfg(&pc);
+	aprs_get_cfg(&c);
+	CHECK(pc.dmr_gps && pc.ambiguity == 2 && pc.fix_lat == 490583333 && c.via == APRS_VIA_BOTH);
 #if CONFIG_APRS_RX
 	uint8_t n0 = aprs_station_count();
 	aprs_dmr_heard(9997040, "qd9xyz Bob", 337490000, -843880000, now);
@@ -968,7 +1282,7 @@ static void test_dmr_position(void)
 #endif
 }
 
-// Settings > Location > GPS (aprs_gps_enable): a board fix is the position while the setting is on, and with it off
+// Settings > Location > GPS (position_gps_enable): a board fix is the position while the setting is on, and with it off
 // the fix is gone at once (not 60 s later) and new sentences from the driver are ignored
 static void test_gps_setting(void)
 {
@@ -977,49 +1291,49 @@ static void test_gps_setting(void)
 
 	reset();
 	configure(0, false);
-	aprs_nmea(rmc, strlen(rmc), true, now);
+	position_nmea(rmc, strlen(rmc), true, now);
 	run(100);
 	aprs_get_view(&v);
-	CHECK(v.pos_valid && v.pos_src == APRS_SRC_GPS && v.lat == 481173000);
-	aprs_gps_enable(false);
+	CHECK(v.pos_valid && v.pos_src == POSITION_SRC_GPS && v.lat == 481173000);
+	position_gps_enable(false);
 	run(100);
 	aprs_get_view(&v);
-	CHECK(v.pos_src == APRS_SRC_FIXED);		// the fixed position, not the GPS fix
-	aprs_nmea(rmc, strlen(rmc), true, now);	// a sentence that was already in the driver's queue
+	CHECK(v.pos_src == POSITION_SRC_FIXED);		// the fixed position, not the GPS fix
+	position_nmea(rmc, strlen(rmc), true, now);	// a sentence that was already in the driver's queue
 	run(100);
 	aprs_get_view(&v);
-	CHECK(v.pos_src == APRS_SRC_FIXED);
-	aprs_gps_enable(true);
-	aprs_nmea(rmc, strlen(rmc), true, now);
+	CHECK(v.pos_src == POSITION_SRC_FIXED);
+	position_gps_enable(true);
+	position_nmea(rmc, strlen(rmc), true, now);
 	run(100);
 	aprs_get_view(&v);
-	CHECK(v.pos_src == APRS_SRC_GPS);
+	CHECK(v.pos_src == POSITION_SRC_GPS);
 }
 
-// The Position screen's view of the board GPS (aprs_gps): nothing before a sentence, then satellites without a fix,
+// The Position screen's view of the board GPS (position_gps): nothing before a sentence, then satellites without a fix,
 // then the fix; gone with the setting off and after a minute of silence
 static void test_gps_status(void)
 {
 	const char *nofix = "$GPGGA,123519,,,,,0,05,,,M,,M,,*6E";
 	const char *fix = "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47";
-	aprs_gps_t g;
+	position_gps_t g;
 
 	reset();
 	configure(0, false);
-	CHECK(!aprs_gps(&g, now));			// never heard
-	aprs_nmea(nofix, strlen(nofix), true, now);
-	CHECK(aprs_gps(&g, now) && !g.fix && g.sats == 5);
-	aprs_nmea(fix, strlen(fix), false, now);	// the host's GPS isn't the board's
-	CHECK(aprs_gps(&g, now) && !g.fix);
-	aprs_nmea(fix, strlen(fix), true, now);
-	CHECK(aprs_gps(&g, now) && g.fix && g.sats == 8 && g.lat == 481173000 && g.lon == 115166666 && g.alt_m == 545);
-	CHECK(!aprs_gps(&g, now + 61000));		// silent for a minute
-	aprs_gps_enable(false);
-	CHECK(!aprs_gps(&g, now));
-	aprs_gps_enable(true);
-	CHECK(!aprs_gps(&g, now));			// until the module speaks again
-	aprs_nmea(nofix, strlen(nofix), true, now);
-	CHECK(aprs_gps(&g, now) && !g.fix);		// the old fix was dropped with the setting
+	CHECK(!position_gps(&g, now));			// never heard
+	position_nmea(nofix, strlen(nofix), true, now);
+	CHECK(position_gps(&g, now) && !g.fix && g.sats == 5);
+	position_nmea(fix, strlen(fix), false, now);	// the host's GPS isn't the board's
+	CHECK(position_gps(&g, now) && !g.fix);
+	position_nmea(fix, strlen(fix), true, now);
+	CHECK(position_gps(&g, now) && g.fix && g.sats == 8 && g.lat == 481173000 && g.lon == 115166666 && g.alt_m == 545);
+	CHECK(!position_gps(&g, now + 61000));		// silent for a minute
+	position_gps_enable(false);
+	CHECK(!position_gps(&g, now));
+	position_gps_enable(true);
+	CHECK(!position_gps(&g, now));			// until the module speaks again
+	position_nmea(nofix, strlen(nofix), true, now);
+	CHECK(position_gps(&g, now) && !g.fix);		// the old fix was dropped with the setting
 }
 
 // DMR destination: EP the default and stored values (a stored 5057 is kept as stored), BVA at the ends of the
@@ -1062,18 +1376,16 @@ static void test_cfg_store(void)
 	aprs_cfg_t c, b;
 	aprs_get_cfg(&c);
 	c.tx_on = c.smart = c.compressed = c.after_ptt = c.boot = c.kiss = c.narrow = c.rx_on = true;
-	c.igate = c.igate_tx = c.messaging = c.dmr_udt = c.to_is = c.dmr_gps = true;
+	c.igate = c.igate_tx = c.messaging = c.dmr_udt = c.to_is = true;
 	c.region = APRS_REGION_CUSTOM;
 	c.freq_hz = 145825000;
 	c.ssid = 9;
 	c.sym_table = '\\';
 	c.sym_code = 'k';
 	c.path = APRS_PATH_WIDE2_2;
-	c.ambiguity = 3;
-	c.pos_src = APRS_POS_FIXED;
-	c.fix_lat = -337000000;
-	c.fix_lon = 1512000000;
-	c.fix_alt_m = -12;
+	position_cfg_t pc = { .pref = POSITION_FIXED, .fix_lat = -337000000, .fix_lon = 1512000000, .fix_alt_m = -12,
+			      .ambiguity = 3, .dmr_gps = true }, pb;
+	position_set_cfg(&pc, now);
 	c.interval_s = 900;
 	c.distance_m = 2500;
 	c.level = 63;
@@ -1082,23 +1394,26 @@ static void test_cfg_store(void)
 	c.dmr_dst = 5057;
 	c.digi = 2;
 	aprs_set_cfg(&c, now);
-	aprs_reload();
+	reload_settings();
 	run(200);			// (taken on the radio task's next tick)
 	aprs_get_cfg(&b);
+	position_get_cfg(&pb);
 	CHECK(b.tx_on && b.smart && b.compressed && b.after_ptt && b.boot && b.kiss && b.narrow && b.rx_on);
-	CHECK(b.igate && b.igate_tx && b.messaging && b.dmr_udt && b.to_is && b.dmr_gps);
+	CHECK(b.igate && b.igate_tx && b.messaging && b.dmr_udt && b.to_is && pb.dmr_gps);
 	CHECK(b.region == APRS_REGION_CUSTOM && b.freq_hz == 145825000 && b.ssid == 9 && b.sym_table == '\\' &&
-	      b.sym_code == 'k' && b.path == APRS_PATH_WIDE2_2 && b.ambiguity == 3 && b.pos_src == APRS_POS_FIXED);
-	CHECK(b.fix_lat == -337000000 && b.fix_lon == 1512000000 && b.fix_alt_m == -12 && b.interval_s == 900 &&
+	      b.sym_code == 'k' && b.path == APRS_PATH_WIDE2_2 && pb.ambiguity == 3 && pb.pref == POSITION_FIXED);
+	CHECK(pb.fix_lat == -337000000 && pb.fix_lon == 1512000000 && pb.fix_alt_m == -12 && b.interval_s == 900 &&
 	      b.distance_m == 2500 && b.level == 63 && b.txdelay == 45 && b.via == APRS_VIA_BOTH && b.dmr_dst == 5057 &&
 	      b.digi == 2);
 	// Out of range on the way in: kept in range
 	c.ssid = 40;
 	c.level = 200;
-	c.ambiguity = 9;
+	pc.ambiguity = 9;
 	aprs_set_cfg(&c, now);
+	position_set_cfg(&pc, now);
 	aprs_get_cfg(&b);
-	CHECK(b.ssid == 7 && b.level <= 100 && b.ambiguity == 4);
+	position_get_cfg(&pb);
+	CHECK(b.ssid == 7 && b.level <= 100 && pb.ambiguity == 4);
 	// A damaged record
 	settings_t *st = settings_begin();
 	st->aprs_region = 99;
@@ -1112,15 +1427,16 @@ static void test_cfg_store(void)
 	st->aprs_txdelay = 0;
 	st->aprs_misc = 3u | (3u << 2) | (7u << 4);	// via, digipeater mode and ambiguity all out of range
 	settings_end(now);
-	aprs_reload();
+	reload_settings();
 	run(200);			// (taken on the radio task's next tick)
 	aprs_get_cfg(&b);
+	position_get_cfg(&pb);
 	aprs_cfg_t d;
 	aprs_cfg_default(&d);
 	CHECK(b.region == APRS_REGION_NA && b.ssid == d.ssid && b.dmr_dst == d.dmr_dst && b.sym_code == d.sym_code &&
 	      b.sym_table == d.sym_table);
-	CHECK(b.path == APRS_PATH_WIDE1_WIDE2 && b.pos_src == APRS_POS_AUTO && b.level == d.level &&
-	      b.txdelay == d.txdelay && b.via == APRS_VIA_RF && b.digi == 0 && b.ambiguity == 0);
+	CHECK(b.path == APRS_PATH_WIDE1_WIDE2 && pb.pref == POSITION_AUTO && b.level == d.level &&
+	      b.txdelay == d.txdelay && b.via == APRS_VIA_RF && b.digi == 0 && pb.ambiguity == 0);
 	CHECK(b.tx_on && b.freq_hz == 145825000);	// the good fields stay
 	// Not stored at all: the defaults
 	st = settings_begin();
@@ -1208,7 +1524,8 @@ static void test_rf_failures(void)
 		CHECK(v.rf_failed > failed && v.rf_sent == 0);
 		static const uint8_t why[3] = { APRS_RF_NO_KEY, APRS_RF_NO_AFSK, APRS_RF_TIMEOUT };
 		CHECK(v.rf_fail == why[fault]);
-		CHECK(!hw.keyed && hw.rx_hz == CH_HZ && sm.view.state == RS_IDLE && sm.aprs_phase == 0);
+		CHECK(!hw.keyed && hw.rx_hz == CH_HZ && sm.view.state == RS_IDLE && sm.aprs_phase == 0 &&
+		      !sm.view.aprs_tx);
 		run(60000);		// the retries, then given up
 		aprs_get_view(&v);
 		CHECK(!aprs_rf_pending() && !v.rf_active && !hw.keyed && hw.rx_hz == CH_HZ);
@@ -1440,12 +1757,19 @@ int main(void)
 	test_busy_channel();
 	test_bcast_channel();
 	test_ptt_cuts();
+#if CONFIG_DUAL_WATCH
+	test_dual_watch_beacon();
+	test_dual_receiver_beacon();
+	test_dual_watch_beacon_abort();
+#endif
+	test_ptt_cuts_burst();
 	test_not_amateur();
 	test_manual_and_ptt_trigger();
 	test_tx_power();
 	test_tx_power_own();
 	test_host_kiss_nmea();
 	test_messages();
+	test_third_party_messages();
 	test_message_options();
 	test_message_replaces_pending();
 #if CONFIG_APRS_RX
@@ -1462,6 +1786,7 @@ int main(void)
 	test_stations_digi_igate();
 	test_rx_stream();
 	test_rx_board_only();
+	test_station_lookup();
 	test_station_range();
 #endif
 	printf("# aprsRadioTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");

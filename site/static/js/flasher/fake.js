@@ -108,9 +108,11 @@ export class FakeRadio {
 	// size. radioInfo: the radio info answered on a radio with its map too.
 	// state "openfw": another open firmware runs (installOpenFirmware; await radio.ready before using it), options in openfw.
 	// On a board with original_version (origversion.js): originalVersion, the 4 bytes the original firmware's version read
-	// answers while it runs (null: it stalls the read), and hwoptValue, the choice RadioFoundry's board record holds (-1 none)
+	// answers while it runs (null: it stalls the read), and hwoptValue, the choice RadioFoundry's board record holds (-1 none).
+	// hwoptRunning: the choice the radio runs with (a restart applies another; null: whatever is stored), hwoptRefuse:
+	// a choice the radio refuses (as one that can't match what it found on its board)
 	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 5, stubConfig = "ok", openfw = {}, flashKb = 1024, cpsSecurity = true, noMap = false, radioInfo = noMap,
-		originalVersion = new Uint8Array([0x56, 0x00, 0x60, 0x09]), hwoptValue = -1, usbCap = 0 } = {}) {
+		originalVersion = new Uint8Array([0x56, 0x00, 0x60, 0x09]), hwoptValue = -1, hwoptRunning = null, hwoptRefuse = null, usbCap = 0 } = {}) {
 		this.sim = sim;
 		Object.assign(this, { noMap, radioInfo });
 		this.board = sim.board;
@@ -144,7 +146,8 @@ export class FakeRadio {
 		this.resetDfu();
 		const ov = this.board.original_version;
 		this.originalVersion = ov ? originalVersion : null;
-		this.hwopt = ov ? { name: ov.hwopt, choices: [...new Set(Object.values(ov.major))], value: hwoptValue } : null;
+		this.hwopt = ov ? { name: ov.hwopt, choices: [...new Set(Object.values(ov.major))], value: hwoptValue,
+			running: hwoptRunning, refuse: hwoptRefuse } : null;
 		this.dfuRequests = [];	// what the version read and the backup sent the original firmware
 		this.forbidden = [];	// requests outside the backup's allowlist that reached the original firmware
 		this.appMode = 0;	// the original firmware's mode byte (0x30: program mode)
@@ -652,11 +655,15 @@ export class FakeRadio {
 				// HWOPT (debuglink.md 3.25): the option the board's original_version names, choices in its table's order
 				if (f.payload[0] === 0 && f.payload.length === 1) {
 					const o = this.hwopt;
-					const text = o ? `hwopt.count=1\nhwopt.0.value=${o.value}\nhwopt.0.restart=1\nhwopt.0.name=${o.name}\nhwopt.0.choices=${o.choices.join("|")}\n` : "hwopt.count=0\n";
+					// the state as the firmware reports it: a question while nothing is stored, a restart due when the
+					// stored choice isn't the one running
+					const st = !o ? "" : o.value < 0 ? "ask" : o.running === null || o.running === o.value ? "ok" : "restart";
+					const text = o ? `hwopt.count=1\nhwopt.0.value=${o.value}\nhwopt.0.restart=1\nhwopt.0.name=${o.name}\nhwopt.0.choices=${o.choices.join("|")}\nhwopt.0.state=${st}\n` : "hwopt.count=0\n";
 					return ok(new TextEncoder().encode(text));
 				}
 				if (f.payload[0] === 1 && f.payload.length === 3) {
 					if (!this.hwopt || f.payload[1] !== 0 || f.payload[2] >= this.hwopt.choices.length) return frame(f.cmd | 0x80, f.seq, new Uint8Array([2]));
+					if (f.payload[2] === this.hwopt.refuse) return frame(f.cmd | 0x80, f.seq, new Uint8Array([7]));
 					this.hwopt.value = f.payload[2];
 					this.events.push(`hwopt ${this.hwopt.choices[f.payload[2]]}`);
 					return ok(new Uint8Array(0));

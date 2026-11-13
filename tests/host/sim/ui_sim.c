@@ -11,6 +11,7 @@
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
 //   mondown ... monup   the monitor key held (FM: the squelch held open)
 //   datatx / dataend    DMR data goes out without PTT (ARS, SMS, IP): the view says TX; it ends
+//   aprstx / aprsend    an APRS RF beacon keys the transmitter / returns to the selected channel
 //   dtmf:<digits>       during TX: the radio core has sent these DTMF digits (the TX screen's DTMF line)
 //   wait:<ms>           time passes
 //   reboot              power off and on: the screens start over, the settings stay
@@ -400,6 +401,10 @@ static const hal_afsk_t afsk = { .tx_start = afsk_tx_start, .tx_busy = afsk_tx_b
 static uint32_t v_options(void) { return VOCODER_OPT_NOISE_REDUCTION | VOCODER_OPT_TONE_FRAMES | VOCODER_OPT_AGC; }
 static const hal_vocoder_t vocoder = { .options = v_options };
 
+// A receiver that does AM (the "am" token): radio_am_channel() reads only that rx_am is there
+static bool r_rx_am(uint32_t hz, radio_bw_t bw) { (void)hz; (void)bw; return true; }
+static const hal_radio_t am_radio = { .rx_am = r_rx_am };
+
 board_t board = {
 	.name = "Simulator", .bands = bands, .band_count = 3, .power_count = 9, .power_names = power_names,
 	.power_default = 4, .display = &disp, .power = &power, .afsk = &afsk, .vocoder = &vocoder,
@@ -423,6 +428,9 @@ static struct {
 	bool message;		// "aprs:message": an unread APRS message
 	bool message_read;
 	uint32_t message_ms;
+	bool evicted;
+	bool no_speed, no_course, zero_motion, no_station_pos, same_age, empty_text, long_text;
+	bool reordered;		// a packet moves the second station to the front
 	bool no_pos;		// "aprs:nopos": no position of our own (no GPS fix, no fixed position)
 	aprs_cfg_t cfg;
 	uint32_t sent;
@@ -446,7 +454,7 @@ bool ui_svc_aprs_view(aprs_view_t *v)
 	v->block = aprs_sim.no_call ? APRS_NO_CALL : APRS_OK;
 	v->freq_hz = aprs_sim.cfg.region == APRS_REGION_CUSTOM ? aprs_sim.cfg.freq_hz : hz[aprs_sim.cfg.region % APRS_REGION_COUNT];
 	v->pos_valid = !aprs_sim.no_call && !aprs_sim.no_pos;
-	v->pos_src = APRS_SRC_FIXED;
+	v->pos_src = POSITION_SRC_FIXED;
 	v->lat = 337000000;
 	v->lon = -841000000;
 	v->next_s = aprs_sim.cfg.tx_on ? 245 : 0xFFFFu;
@@ -465,21 +473,37 @@ bool ui_svc_aprs_send_now(void)
 	aprs_sim.sent++;
 	return true;
 }
-uint8_t ui_svc_aprs_station_count(void) { return aprs_sim.off ? 0 : 2; }
+uint8_t ui_svc_aprs_station_count(void) { return aprs_sim.off || aprs_sim.evicted ? 0 : 2; }
 bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out)
 {
 	static const char *const calls[] = { "Q4WABC-15", "QJ4XYZ" };	// the longest call there is, and one without a position
-	if (aprs_sim.off || i >= 2)
+	if (aprs_sim.off || aprs_sim.evicted || i >= 2)
 		return false;
 	memset(out, 0, sizeof *out);
+	i ^= aprs_sim.reordered ? 1u : 0u;
 	strcpy(out->call, calls[i]);
 	out->heard_ms = now_ms > 60000u * (i + 1u) ? now_ms - 60000u * (i + 1u) : 0;
 	out->direct = i == 0;
-	out->has_pos = i == 0;
+	out->has_pos = i == 0 && !aprs_sim.no_station_pos;
 	out->lat = 338000000;	// 14.5 km NE of our fixed position (ui_svc_aprs_view)
 	out->lon = -840000000;
-	out->pos_ms = 0;	// the position heard at start, the packets since (heard_ms) without one
+	out->speed_kn = aprs_sim.no_speed || i != 0 ? 0xFFFFu : aprs_sim.zero_motion ? 0 : 10;
+	out->course = aprs_sim.no_course || i != 0 ? 0xFFFFu : aprs_sim.zero_motion ? 0 : 40;
+	out->sym_table = i == 0 && !aprs_sim.empty_text ? '/' : 0;
+	out->sym_code = i == 0 ? '>' : 0;
+	out->count = 3;
+	strcpy(out->text, aprs_sim.empty_text ? "" : aprs_sim.long_text ? "12345678901234567890123" :
+	       i == 0 ? "On the road" : "At home");
+	out->pos_ms = aprs_sim.same_age ? out->heard_ms : 0;	// the position heard at start, the packets since (heard_ms) without one
 	return true;
+}
+bool ui_svc_aprs_station_find(const char *call, aprs_station_t *out)
+{
+	for (uint8_t i = 0; i < ui_svc_aprs_station_count(); i++) {
+		if (ui_svc_aprs_station(i, out) && strcmp(out->call, call) == 0)
+			return true;
+	}
+	return false;
 }
 // The engine's range for station 0 from our position (the sim has no aprs_fmt.c: the figures, not the math)
 bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg)
@@ -623,6 +647,23 @@ bool ui_svc_codeplug_answer(uint8_t answer)
 		sim_rec.codeplug_writes++;
 	if (answer != UI_CP_CANCEL)
 		sim_foreign = false;
+	return true;
+}
+
+// The settings past the stub's RAM table (UI_SET_RAM_COUNT): the firmware keeps them in the codeplug
+// (ui_svc_storage.c); here they are plain values
+static int32_t sim_late[UI_SET_COUNT - UI_SET_RAM_COUNT];
+
+int32_t ui_svc_setting_get(uint8_t id)
+{
+	return id >= UI_SET_RAM_COUNT && id < UI_SET_COUNT ? sim_late[id - UI_SET_RAM_COUNT] : ui_svc_ram_get(id);
+}
+
+bool ui_svc_setting_set(uint8_t id, int32_t value)
+{
+	if (id < UI_SET_RAM_COUNT || id >= UI_SET_COUNT)
+		return ui_svc_ram_set(id, value);
+	sim_late[id - UI_SET_RAM_COUNT] = value;
 	return true;
 }
 
@@ -2160,6 +2201,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	view.volume = -1;	// no level passed on yet (power-up)
 	view.volume_src = RVOL_KNOB;
 	bcast_rx = false;
+	board.radio = NULL;
 	ref_trim = false;
 	knob_radio = false;
 	vol_held = false;
@@ -2175,8 +2217,14 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_TOT_S, 180);
 	ui_svc_setting_set(UI_SET_BACKLIGHT_S, 30);
 	ui_svc_setting_set(UI_SET_REF_TRIM, 0);
+	ui_svc_setting_set(UI_SET_POS_SOURCE, 0);
+	ui_svc_setting_set(UI_SET_POS_FIXED_LAT, 0);
+	ui_svc_setting_set(UI_SET_POS_FIXED_LON, 0);
+	ui_svc_setting_set(UI_SET_POS_DMR_CALLS, 0);
 	ui_svc_setting_set(UI_SET_LONG_PRESS_MS, 600);	// settings a flow changes start from their defaults
 	ui_svc_setting_set(UI_SET_AUTO_LOCK_S, 0);
+	ui_svc_setting_set(UI_SET_ARS_SERVER, 0);
+	ui_svc_setting_set(UI_SET_IP_GATEWAY, 0);
 	ui_svc_setting_set(UI_SET_PTT_LOCKED, 1);
 	ui_svc_setting_set(UI_SET_HEAR_ALL_DEFAULT, 0);
 	ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 1);
@@ -2232,6 +2280,7 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	{ "homekey", ACT_HOME_ZONE }, { "copykey", ACT_COPY_VFO },
 	{ "dualkey", ACT_DUAL_WATCH }, { "abkey", ACT_AB },	// dual watch's side key functions
 	{ "vfokey", ACT_VFO_TOGGLE },		// a VFO/MR key in the board's key map, or a side key set to VFO/Channel
+	{ "labelkey", ACT_TALK_LABEL },
 	{ "volkey", ACT_VOLUME },
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
 	{ "5", ACT_DIGIT_5 }, { "6", ACT_DIGIT_6 }, { "7", ACT_DIGIT_7 }, { "8", ACT_DIGIT_8 }, { "9", ACT_DIGIT_9 },
@@ -2240,7 +2289,7 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 static bool on_map(uint8_t action, bool lng)
 {
 	if ((action >= ACT_POWER && action <= ACT_VOLUME) || action == ACT_VFO_TOGGLE || action == ACT_DUAL_WATCH ||
-	    action == ACT_AB || action == ACT_TALK_TARGET)
+	    action == ACT_AB || action == ACT_TALK_TARGET || action == ACT_TALK_LABEL)
 		// any side key can be set to send these; the few-key map has none, but a radio with side keys and no QUICK key
 		// is the case the key lock needs on it
 		return board.side_key_count != 0 || cur_map == SIM_MAP_F;
@@ -2468,12 +2517,12 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "aprs_interval") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.interval_s);
 	else if (strcmp(key, "aprs_smart") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.smart);
 	else if (strcmp(key, "aprs_via") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.via);
-	else if (strcmp(key, "aprs_pos") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.pos_src);
+	else if (strcmp(key, "pos_source") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_SOURCE));
 	else if (strcmp(key, "aprs_power") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.power);
 	else if (strcmp(key, "aprs_path") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.path);
-	else if (strcmp(key, "aprs_lat") == 0) snprintf(got, sizeof got, "%d", (int)aprs_sim.cfg.fix_lat);
-	else if (strcmp(key, "aprs_lon") == 0) snprintf(got, sizeof got, "%d", (int)aprs_sim.cfg.fix_lon);
-	else if (strcmp(key, "aprs_dmrgps") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.dmr_gps);
+	else if (strcmp(key, "pos_lat") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_FIXED_LAT));
+	else if (strcmp(key, "pos_lon") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_FIXED_LON));
+	else if (strcmp(key, "pos_dmrgps") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_DMR_CALLS));
 	else if (strcmp(key, "aprs_kiss") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.kiss);
 #if CONFIG_DMR_ROAMING
 	else if (strcmp(key, "roam") == 0) snprintf(got, sizeof got, "%u", view.roam.state);	// RROAM_STATE_*
@@ -2528,6 +2577,14 @@ static bool run_token(char *t, char *err, size_t len)
 		view.tx_elapsed_ms = 0;
 		changed();
 		advance(1500);
+		return true;
+	}
+	if (strcmp(t, "aprstx") == 0 || strcmp(t, "aprsend") == 0) {
+		bool on = strcmp(t, "aprstx") == 0;
+		view.state = on ? RS_TX : RS_IDLE;
+		view.aprs_tx = on;
+		changed();
+		advance(200);
 		return true;
 	}
 	if (strcmp(t, "dtmf") == 0 && arg != NULL) {
@@ -2810,6 +2867,19 @@ static bool run_token(char *t, char *err, size_t len)
 		if (aprs_sim.message)
 			aprs_sim.message_ms = now_ms;
 		aprs_sim.no_pos = strcmp(arg, "nopos") == 0;
+		aprs_sim.reordered = strcmp(arg, "reorder") == 0;
+		aprs_sim.evicted = strcmp(arg, "evict") == 0;
+		aprs_sim.no_speed = strcmp(arg, "nospeed") == 0 || strcmp(arg, "speedunknown") == 0;
+		aprs_sim.no_course = strcmp(arg, "nospeed") == 0 || strcmp(arg, "courseunknown") == 0;
+		aprs_sim.zero_motion = strcmp(arg, "zero") == 0;
+		aprs_sim.no_station_pos = strcmp(arg, "stationnopos") == 0;
+		aprs_sim.same_age = strcmp(arg, "sameage") == 0;
+		aprs_sim.empty_text = strcmp(arg, "emptytext") == 0;
+		aprs_sim.long_text = strcmp(arg, "longtext") == 0;
+		if (strcmp(arg, "heard") == 0) {
+			ui_push(SCR_APRS_HEARD, 0);
+			advance(200);
+		}
 		if (strcmp(arg, "custom") == 0)
 			aprs_sim.cfg.freq_hz = 144930000;
 		return true;
@@ -2936,6 +3006,11 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "softvol") == 0) {	// this radio has no volume knob: the board sets the speaker volume
 		soft_volume = true;
 		advance(200);
+		return true;
+	}
+	if (strcmp(t, "am") == 0) {		// this radio receives air band AM (CAP_AM_RX), until the next reset
+		board.caps |= CAP_AM_RX;
+		board.radio = &am_radio;
 		return true;
 	}
 	if (strcmp(t, "bcast") == 0) {		// this radio has a broadcast FM receiver

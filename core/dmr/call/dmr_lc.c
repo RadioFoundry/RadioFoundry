@@ -621,6 +621,16 @@ static uint16_t gps_bearing(float x, float y)
 	return (uint16_t)(d >= 360 ? d - 360 : d);
 }
 
+// (float)v for a difference of two int32, without the library's 64-bit conversion (and the soft-float add it is
+// built on, 540 bytes): a value past 32 bits is halved first, the bit that drops out kept as a sticky one, so the
+// result rounds as the direct conversion does
+static float gps_float(int64_t v)
+{
+	if (v == (int32_t)v)
+		return (float)(int32_t)v;
+	return (float)(int32_t)((v >> 1) | (v & 1)) * 2.0f;
+}
+
 void dmr_gps_range(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2, uint32_t *meters, uint16_t *bearing)
 {
 	const float rad = 3.14159265f / 180.0f / 1e7f;
@@ -630,9 +640,10 @@ void dmr_gps_range(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2, uint3
 		dlon -= 3600000000LL;
 	if (dlon < -1800000000LL)
 		dlon += 3600000000LL;
-	float mid = (float)(((int64_t)lat1 + lat2) / 2) * rad;
-	float x = (float)dlon * rad * gps_cos(mid);	// radians of arc, east
-	float y = (float)((int64_t)lat2 - lat1) * rad;	// north
+	// The mean and the wrapped difference fit 32 bits
+	float mid = (float)(int32_t)(((int64_t)lat1 + lat2) / 2) * rad;
+	float x = (float)(int32_t)dlon * rad * gps_cos(mid);	// radians of arc, east
+	float y = gps_float((int64_t)lat2 - lat1) * rad;	// north
 	float d = gps_sqrt(x * x + y * y) * 6371008.8f;
 
 	*meters = d > 4.0e9f ? 4000000000u : (uint32_t)(d + 0.5f);

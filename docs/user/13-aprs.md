@@ -38,13 +38,29 @@ frequency, your position and its source, and when the next beacon goes out. If t
 | Interval | How often: Off, 1, 2, 5, 10 or 30 minutes |
 | SmartBeaconing | More often when you move fast, at once after a turn, rarely when you stand still |
 | Send via | AFSK (on FM), DMR, or both |
-| Position | Where the position comes from, and the fixed position (see Position below) |
-| Position in DMR calls | Your position in your DMR voice calls (see [DMR](09-dmr.md#position-in-calls)) |
 | KISS on USB | The radio works as a KISS TNC for APRS programs on the computer |
 | Stations heard | Stations the radio heard (radios that can receive APRS), newest first. A station that sent its position shows how far away and which way it was from yours, when the radio has a position too; the age on that row is then the age of that position. Other rows show when the station was last heard. Objects and items a station sends don't count as its position, and a position more than a day old is dropped. Select one and choose Message to fill its callsign |
 
+A firmware built with only one way to send APRS shows only the rows for it. With APRS over DMR only there is no
+Frequency, Power, Path, Send via or Stations heard, and KISS on USB is called NMEA on USB (the computer can still give
+the radio its position).
+
 The symbol, comment and the DMR destination are set with the debug tool for now
 (`tools/rfoundry_debug.py aprs set ...`), later with qdmr.
+
+## Station details
+
+Open **Stations heard**, select a callsign, and press **OK**. **Message** is first; press OK again to open a message
+addressed to that station. The selection stays on the same callsign when incoming packets reorder the heard list.
+
+Scroll with **Up / Down** to see distance and direction (when both positions are known), when the station was heard,
+**Direct** or **Via digipeater**, and the position's age if it differs from the last packet's age. Speed in km/h and
+course appear only when known for the retained position. The remaining rows show the symbol's table and code,
+the retained comment or status, and the packet count. The radio retains at most 23 text characters plus the end
+marker; longer comments are incomplete. No digipeater name is retained.
+
+If the station leaves the heard list, the page says **No longer in list**. You can still choose Message to address
+that callsign.
 
 ## Path
 
@@ -72,7 +88,8 @@ the frequency shown in **Frequency** on the APRS page (your region's, 144.390 MH
 the VFO there, and leave the radio on it. If the packets are sent on another frequency, set **Frequency** to Custom
 and enter it first. Heard
 stations go into **Stations heard**, messages to your callsign appear in **Messages** and are acknowledged, and the digipeater (if you
-turned it on) passes packets on.
+turned it on) passes packets on. Messages from internet stations (an APRS messaging service, for example) reach you
+through a nearby iGate. They appear under the sender's callsign, and the acknowledgment goes back to that sender.
 
 - It listens only on the APRS frequency, in FM, and the tuned frequency must equal the APRS **Frequency** exactly.
   On other FM channels nothing is decoded.
@@ -92,6 +109,10 @@ Automatic beacons go out at the interval, or with SmartBeaconing by speed and tu
 30 seconds. The radio waits for a clear APRS frequency before it sends, and gives up after 10 seconds. Pressing PTT
 always wins: an APRS transmission in progress stops and your channel comes back.
 
+An FM beacon can interrupt dual watch. It always sends on the APRS frequency you set, then dual watch resumes on the
+channel it was listening to. A or B selection still controls where PTT transmits; it does not choose the beacon
+frequency. A zone or VFO scan delays the beacon until the scan stops.
+
 ## Position
 
 The position comes from:
@@ -103,10 +124,11 @@ The position comes from:
 
 Auto takes a fresh GPS position, else the computer's, else the fixed one.
 
-APRS > Position has three rows: **Source** (press OK to step through Auto, GPS, Computer, Fixed), **Latitude** and
-**Longitude**. To set the fixed position:
+The position is not only APRS's: DMR calls and location requests (LRRP) use the same one. Its settings are under
+**Settings > Location**: **Position source** (Auto, GPS, Computer, Fixed) and **Fixed position**, a page with
+**Latitude** and **Longitude**. To set the fixed position:
 
-1. Select Latitude and press OK. The value opens for editing.
+1. Open Settings > Location > Fixed position, select Latitude and press OK. The value opens for editing.
 2. Type the degrees with the digits, decimal places included: `3`,`3`,`7`,`4`,`9`,`0` is 33.7490. The decimal point is
    already there. Longitude has three places before the point: 84.3880 is `8`,`4`,`3`,`8`,`8`,`0` (the radio puts the
    leading 0 in for you), and 122.4194 is `1`,`2`,`2`,`4`,`1`,`9`,`4`. For 10 to 19 degrees, type the 0 yourself.
@@ -114,7 +136,7 @@ APRS > Position has three rows: **Source** (press OK to step through Auto, GPS, 
 4. Press OK to save. Places you didn't type count as zeros. BACK removes the last digit; with nothing typed it closes
    the value unchanged.
 
-Four decimal places put you within about 11 m. You can also type "latitude" or "position" on Home to find the page.
+Four decimal places put you within about 11 m. You can also type "latitude" or "fixed" on Home to find the page.
 
 ## GPS status
 

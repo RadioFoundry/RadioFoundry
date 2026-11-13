@@ -195,6 +195,13 @@ A side-key up releases only its own burst or TX denial; down/up during a host bu
 Power-off cancels a held or timed burst and unkeys without a roger beep before shutdown waits.
 VOX cannot release during a burst; its full quiet tail starts after the burst ends.
 
+A channel can send the burst by itself (`channel_t.tone_burst`, the channel editor's **Tone burst** row; stored in SFR
+byte B bit 6, [open-firmware-cps.md](open-firmware-cps.md) 7.3.3). Each PTT key-up on it opens with one timed burst,
+as the side key pressed during PTT: 1750 Hz for `RADIO_BURST_MIN_MS`, then the mic. Only a PTT press that keys the
+transmitter starts one: not a press during a transmission, not VOX, the side key or the debug link. FM channels
+only, never the VFO, DMR or hotspot mode, and nothing on a board without `tx_tone`. A board whose `tx_tone` refuses
+the tone gives the error beep and the transmission goes on.
+
 Why 1 s: the [UK repeater access standard](https://www.ukrepeater.net/access.htm) accepts 1750 Hz +/- 25 Hz
 after 200-400 ms, and some decoders need 500 ms; a 1 s minimum exceeds both. Once open, a repeater stays open on
 carrier through its hang time, so one burst opens a contact.
@@ -577,7 +584,11 @@ calling `outputs()` while a signal runs, so it keeps time when nothing else chan
 
 Checked, unchanged: the board clamps the power level, uses the calibration table's drive value for the band and level,
 and refuses a TX frequency outside the board's bands (`tx_deny=band`). Without a calibration the board either drives
-a low fixed value or refuses to transmit; the board's hardware page says which.
+a low fixed value or refuses to transmit; the board's hardware page says which. While a hardware option is pending
+(`board_hwopt_pending`, `hal/hal_hwopt.h`: unset, or stored and waiting for a restart) the core refuses PTT itself with
+`tx_deny=hwopt` (the screen names the option), before the board is asked: a board may still key while a restart is
+due. When the board's `tx` refuses a frequency inside its bands, the reason is `tx_deny=hwopt` while an option is
+pending, else `tx_deny=refused` ("Radio refused to send"); never `band`.
 
 ### 6.1 Reference trim
 

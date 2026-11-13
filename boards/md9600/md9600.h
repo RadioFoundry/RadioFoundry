@@ -79,17 +79,17 @@ typedef struct {
 	uint8_t state;		// md9600_rf_state_t
 	uint32_t retunes, refused, errors;
 	uint8_t last_err;	// md9600_rf_err_t
-	bool tx_armed;
 	int16_t probe;		// receiver probe: -1 not run, else the md9600_rev_t it picked (0 = no verdict)
 	uint16_t apc;		// the APC DAC value of the last transmission
 	uint32_t rx_hz;		// the receive frequency (the calibration lookups' point)
 } md9600_radio_diag_t;
 void md9600_radio_diag(md9600_radio_diag_t *d);
 void md9600_radio_early(void);	// board_init: the revision and the power-on synthesizer set-up
-// Transmit arm for this power cycle (hwopt_md9600.c); false when refused (rfseq_md9600.h)
-bool md9600_radio_tx_arm(bool on);
-// Hardware options (hwopt_md9600.c, hal_hwopt.h): the board revision, and the transmit arm with CONFIG_MD9600_TX
-#define MD9600_HWOPT_COUNT	(CONFIG_MD9600_TX ? 2u : 1u)	// needs config.h
+// A person stored the revision running now (hwopt_md9600.c): transmit is allowed from now on, no restart. Off:
+// they stored another one, and nothing transmits until the restart applies it
+void md9600_radio_rev_confirm(bool on);
+// Hardware options (hwopt_md9600.c, hal_hwopt.h): the board revision
+#define MD9600_HWOPT_COUNT	1u
 extern const hal_hwopt_t md9600_hwopts[];
 // TIM8 PWM outputs (pwm_md9600.c): CH2 PC7 the sub-audio tone, CH3 PC8 the beep. Duty in counts of 256 at about
 // 28 kHz; 0 = off (the pin a GPIO driven low). Needs the backlight's TIM8 set-up (display_md9600.c) first
@@ -113,7 +113,7 @@ extern const hal_afsk_t md9600_afsk;
 #define MD9600_FM_RX_TAP	(CONFIG_DMR && CONFIG_NET_USRP)
 // The discriminator capture (disc_md9600.c): PC3 on ADC3 at MD9600_DISC_RATE_HZ into a ring each reader keeps its own
 // tail on, running while a reader wants it; ADC3 is the capture's meanwhile. Radio task
-#define MD9600_DISC		(MD9600_FM_RX_TAP || (CONFIG_APRS && CONFIG_APRS_RX))
+#define MD9600_DISC		(MD9600_FM_RX_TAP || (CONFIG_APRS_AFSK && CONFIG_APRS_RX))
 #define MD9600_DISC_RATE_HZ	((72000000u / 8u / 492u + 1u) / 2u)	// 9146 Hz
 #define MD9600_DISC_RING	1024u					// 112 ms, a power of two
 enum { MD9600_DISC_APRS = 1u << 0, MD9600_DISC_STREAM = 1u << 1 };
@@ -162,14 +162,14 @@ void md9600_speaker_fm(bool on, bool vhf);	// the core's FM squelch (hal_radio_t
 void md9600_c6000_fm_tx(uint32_t hz, bool wide);
 void md9600_c6000_fm_tx_end(void);
 // The chip's tone generator in FM TX: the 1750 Hz burst, the roger beep, DTMF and APRS
-#define MD9600_TX_SIG	(CONFIG_MD9600_TX && (CONFIG_FM_TX_TONES || CONFIG_DTMF || CONFIG_APRS))
+#define MD9600_TX_SIG	(CONFIG_MD9600_TX && (CONFIG_FM_TX_TONES || CONFIG_DTMF || CONFIG_APRS_AFSK))
 // During FM TX: the chip's tone generator sends low_hz + high_hz in place of the microphone (0, 0: the microphone
 // again); tx_key keys that tone on and off (CONFIG_FM_TX_TONES, CONFIG_DTMF)
 bool md9600_c6000_tx_pair(uint16_t low_hz, uint16_t high_hz);
 bool md9600_c6000_tx_key(bool down);
 // From the radio task's poll (radio status): keeps a tone from tx_pair going past the generator's 16 codes
 void md9600_c6000_tx_service(uint32_t now_ms);
-// APRS transmit (CONFIG_APRS): the tone generator at level (hal_afsk.h), then retuned symbol by symbol from an
+// APRS transmit (CONFIG_APRS_AFSK): the tone generator at level (hal_afsk.h), then retuned symbol by symbol from an
 // interrupt; md9600_c6000_tx_pair(0, 0) or the end of FM TX stops it
 bool md9600_c6000_afsk_begin(uint16_t hz, uint8_t level);
 bool md9600_c6000_afsk_tone(uint16_t hz);
@@ -184,8 +184,6 @@ typedef struct {
 void md9600_c6000_diag(md9600_c6000_diag_t *d);
 extern const hal_audio_t md9600_audio;
 #if CONFIG_MD9600_DMR_TX
-// The run-time gate on DMR transmit (off at start-up): follows the transmit arm (md9600_radio_tx_arm)
-void md9600_dmr_tx_allow(bool on);
 // The RF chain's DMR switching (radio_md9600.c): the per-burst keying from the modem interrupts, the transmit side
 // tuned ahead of the first burst (never blocks) and the task-level wait for it, the receiver back at a transmission's
 // end (task level), the end of the transmission with the receiver left on (the glue's tx_end), the counters for the glue
