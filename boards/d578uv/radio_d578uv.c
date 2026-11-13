@@ -273,9 +273,11 @@ static uint8_t level_a_want;		// the level code audio_route() gives side A
 static bool dmr_heard;			// in DMR side A hears a signal (status()): no beep then (beep_tone())
 static int16_t level_code_vol = -1;	// the speaker level code for the volume, -1 until the core sets one
 static bool vol_zero;			// the volume (knob A) is 0: side A and the KTMicro receiver stay silent
-static spk_hang_t amp_hang;		// PA7's hang after the last sound (spk_hang())
+static spk_hang_t amp_hang = { .beep_ms = SPK_HANG_BEEP_MS, .rx_ms = SPK_HANG_RX_MS };	// PA7 (spk_hang())
 static int16_t level_code_b = -1;	// side B's level code from knob B, -1 until side B's poll reads it
 static bool vol_b_zero;			// knob B is at 0: side B stays silent
+static uint8_t vol_a_pct, vol_b_pct;	// knob A's percent (the core's volume) and knob B's
+static uint8_t beep_pct = 100;		// the beep level setting's percent, the loudest a beep gets
 static bool knobs_swapped;		// dual watch with chip 0 on side B: chip 0 takes knob B, chip 1 knob A
 #if D578UV_LEVEL_IC
 static int16_t level_last[2] = { -1, -1 };	// level codes written, side A and B; -1 = none
@@ -605,6 +607,17 @@ static void chip1_gpio(uint16_t mask, uint16_t val)
 // (measured by microphone, the same as with it held on). The main receiver's calls win: the core gives side B the speaker
 // only while side A is quiet. In AM, and while broadcast FM plays, both channels take the volume (which one carries
 // the KTMicro receiver isn't known)
+#if D578UV_LEVEL_IC
+// A beep's level: the beep level setting, but no louder than the louder knob, so a beep follows the volume down and
+// still sounds with only side B's knob up. The chip's tone runs at full gain (beep_tone()); this level sets it
+static uint8_t beep_level_code(void)
+{
+	uint8_t knob = vol_a_pct > vol_b_pct ? vol_a_pct : vol_b_pct;
+	uint8_t pct = beep_pct < knob ? beep_pct : knob;
+	return level_code((uint8_t)((pct * 32u + 50u) / 100u));
+}
+#endif
+
 static void audio_route(void)
 {
 	bool b = b_heard();
@@ -625,12 +638,19 @@ static void audio_route(void)
 	bool a_rf = beeping || lead || kt_out || (mode != RADIO_MODE_DMR && main_audio && a_lost_ms == 0);
 	if (level_code_vol >= 0) {
 		level_a_want = a_rf || !b ? (uint8_t)code_a : 0;
+#if D578UV_LEVEL_IC
+		if (beeping || lead) {
+			level_a_want = beep_level_code();
+		}
+#endif
 		level_set(0, beep_quiet ? 0 : level_a_want);
 		level_set(1, (b || kt_out) && code_b >= 0 ? (uint8_t)code_b : 0);
 	}
 	bool b_loud = b && !zero_b;
-	bool want = !spk_amp_off(transmitting, beeping || lead || kt_out || main_audio || b, !zero_a || b_loud);
-	bool amp = spk_hang(&amp_hang, want, beeping || lead, !transmitting && !vol_zero, hal_millis());
+	// A beep sounds while either knob is up (beep_level_code())
+	bool beep_loud = (beeping || lead) && !(vol_zero && vol_b_zero);
+	bool want = !spk_amp_off(transmitting, beeping || lead || kt_out || main_audio || b, !zero_a || b_loud || beep_loud);
+	bool amp = spk_hang(&amp_hang, want, beeping || lead, !transmitting && (!vol_zero || beep_loud), hal_millis());
 	// Off before the gate shuts, on after it opens: the gate never switches with the amplifier coming on or going off
 	if (!amp) {
 		mcu_pin_write(PIN_SPK_MUTE, true);
@@ -643,7 +663,7 @@ static void audio_route(void)
 	}
 }
 
-// Every status poll: the amplifier off once its hang has run out
+// Every status poll: the amplifier off once its hang has run out (with a hang: front_io.h)
 static void amp_service(void)
 {
 	if (amp_hang.hanging && (int32_t)(hal_millis() - amp_hang.until) >= 0) {
@@ -658,6 +678,7 @@ static void volume(uint8_t percent)
 	if (percent > 100) {
 		percent = 100;
 	}
+	vol_a_pct = percent;
 	level_code_vol = level_code((uint8_t)((percent * 32u + 50u) / 100u));
 #else
 	(void)percent;
@@ -1341,6 +1362,7 @@ static void b_knob(void)
 	}
 	sent = v;
 	vol_b_zero = v == 0;
+	vol_b_pct = (uint8_t)v;
 #if D578UV_LEVEL_IC
 	level_code_b = level_code((uint8_t)((v * 32 + 50) / 100));
 #else
@@ -2301,8 +2323,8 @@ static void status(radio_status_t *st)
 // silent first (hal_radio_t.beep_lead_ms): without it a 25 ms key beep never reached its level and sounded louder or
 // softer with its length (measured by microphone). The lead also powers the amplifier with the gate open on the chip's
 // silent output (audio_route()), so its turn-on pop comes ahead of the tone, not on it. A longer lead (150 ms) or the
-// gate open first made the pop no smaller: it is the amplifier's own (PA7), and its hang (spk_hang()) keeps it to one
-// for a run of beeps
+// gate open first made the pop no smaller: it is the amplifier's own (PA7). With no hang (front_io.h) each beep has
+// its own
 #ifndef D578UV_BEEP_LEAD_MS
 #define D578UV_BEEP_LEAD_MS	40
 #endif
@@ -2331,7 +2353,12 @@ static void beep_tone(uint16_t hz, uint8_t level)
 		audio_route();	// the gate shuts first: the chip's output goes back to the receiver below
 	}
 	if (level != 0) {
+#if D578UV_LEVEL_IC
+		beep_pct = level;	// the level device carries it (beep_level_code()); the tone at full gain
+		beep_gain = 0x7F;
+#else
 		beep_gain = (uint8_t)((level * 0x7Fu + 50u) / 100u);
+#endif
 	}
 	bool chip = !transmitting && have_rx && (hz != was || level != 0);
 	// The gate opens on silence: a running tone (or the receiver's audio) heard through a gate as it opened clicked, so

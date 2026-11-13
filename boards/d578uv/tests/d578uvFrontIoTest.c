@@ -49,24 +49,25 @@ static void test_amp(void)
 
 static void test_hang(void)
 {
-	spk_hang_t h = { 0 };
+	enum { BEEP_MS = 400, RX_MS = 300 };
+	spk_hang_t h = { .beep_ms = BEEP_MS, .rx_ms = RX_MS };
 	CHECK(!spk_hang(&h, false, false, true, 1000));		// never on: stays off
 	CHECK(spk_hang(&h, true, true, true, 1000));		// a beep
 	CHECK(spk_hang(&h, false, false, true, 1100));		// beep over: the hang starts
-	CHECK(spk_hang(&h, false, false, true, 1100 + SPK_HANG_BEEP_MS - 1));
-	CHECK(!spk_hang(&h, false, false, true, 1100 + SPK_HANG_BEEP_MS));	// run out
+	CHECK(spk_hang(&h, false, false, true, 1100 + BEEP_MS - 1));
+	CHECK(!spk_hang(&h, false, false, true, 1100 + BEEP_MS));	// run out
 	CHECK(!h.on && !h.hanging);
 	// A second beep inside the hang keeps it on and starts the hang again from its end
 	CHECK(spk_hang(&h, true, true, true, 2000));
 	CHECK(spk_hang(&h, false, false, true, 2050));
 	CHECK(spk_hang(&h, true, true, true, 2300));
 	CHECK(spk_hang(&h, false, false, true, 2350));
-	CHECK(spk_hang(&h, false, false, true, 2350 + SPK_HANG_BEEP_MS - 1));
-	CHECK(!spk_hang(&h, false, false, true, 2350 + SPK_HANG_BEEP_MS));
+	CHECK(spk_hang(&h, false, false, true, 2350 + BEEP_MS - 1));
+	CHECK(!spk_hang(&h, false, false, true, 2350 + BEEP_MS));
 	// Received audio: the shorter hang
 	CHECK(spk_hang(&h, true, false, true, 3000));
 	CHECK(spk_hang(&h, false, false, true, 3500));
-	CHECK(!spk_hang(&h, false, false, true, 3500 + SPK_HANG_RX_MS));
+	CHECK(!spk_hang(&h, false, false, true, 3500 + RX_MS));
 	// Transmitting or the volume at 0: off at once, no hang
 	CHECK(spk_hang(&h, true, true, true, 4000));
 	CHECK(!spk_hang(&h, false, false, false, 4001));
@@ -75,7 +76,13 @@ static void test_hang(void)
 	CHECK(spk_hang(&h, true, false, true, 0xFFFFFF00u));
 	CHECK(spk_hang(&h, false, false, true, 0xFFFFFF80u));
 	CHECK(spk_hang(&h, false, false, true, 0x00000010u));
-	CHECK(!spk_hang(&h, false, false, true, 0xFFFFFF80u + SPK_HANG_RX_MS + 1u));
+	CHECK(!spk_hang(&h, false, false, true, 0xFFFFFF80u + RX_MS + 1u));
+	// No hang (the radio's SPK_HANG_BEEP_MS, SPK_HANG_RX_MS): off as the sound ends
+	spk_hang_t z = { .beep_ms = SPK_HANG_BEEP_MS, .rx_ms = SPK_HANG_RX_MS };
+	CHECK(spk_hang(&z, true, true, true, 5000));
+	CHECK(!spk_hang(&z, false, false, true, 5001) && !z.on);
+	CHECK(spk_hang(&z, true, false, true, 5100));
+	CHECK(!spk_hang(&z, false, false, true, 5100) && !z.on);
 }
 
 int main(void)
