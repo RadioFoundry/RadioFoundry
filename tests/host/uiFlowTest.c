@@ -30,6 +30,24 @@ typedef struct {
 #define TALK_BACK	"ok 7 3 down down down down down down down down down ok long:back quick 7 ctx 3 5 ok "	// on, and A 3 / B 5
 
 static const flow_t flows[] = {
+#if CONFIG_SATELLITE_TLE
+	{ "Satellite pass list selects tracking detail", "", "ok 6 down down down down down down down down down ok ok",
+	  "screen=satellite shows=ISS shows=RX shows=TX shows=144.9988_MHz shows=435.0036_MHz hides=Doppler hides=Predicting_passes hides=Calculating", 13, false },
+	{ "Satellite detail shows sky while pass prediction is pending", "satpathpending",
+	  "ok 6 down down down down down down down down down ok ok",
+	  "screen=satellite shows=Below_horizon", 13, false },
+	{ "Satellite detail returns to pass list", "", "ok 6 down down down down down down down down down ok ok back",
+	  "screen=satellite-passes shows=Next_passes hides=Predicting_passes", 14, false },
+	{ "Satellite pass list shows prediction progress", "satpredict",
+	  "ok 6 down down down down down down down down down ok",
+	  "screen=satellite-passes shows=Predicting_passes shows=2/5", 13, false },
+	{ "Satellite pass list opens from Tools", "", "ok 6 down down down down down down down down down ok",
+	  "screen=satellite-passes shows=Next_passes shows=NOAA_19", 13, false },
+	{ "Satellite TLE editor opens line 1", "", "ok 6 down down down down down down down down down ok ok ctx",
+	  "screen=satellite-tle-text shows=1_ABC", 14, false },
+	{ "Satellite TLE editor cancels an empty line", "", "ok 6 down down down down down down down down down ok ok ctx back",
+	  "screen=satellite shows=ISS", 15, false },
+#endif
 	{ "menu entry keeps an available first row", "", "ok", "screen=hub focus=Contacts", 1, false },
 	{ "menu disabled row still explains why", "ok 7 5", "up ok", "focus=Send_position toast=No_GPS_on_this_radio", 2, false },
 	{ "menu return preserves focus", "ok 7 down down ok", "back", "screen=settings focus=Talk_&_listen", 1, false },
@@ -610,6 +628,7 @@ static const flow_t flows[] = {
 	{ "L position source", "ok 7 5 down", "ok", "pos_source=1 shows=GPS", 1, false },
 	{ "L position source wraps to auto", "ok 7 5 down ok ok ok", "ok", "pos_source=0 shows=Auto", 1, false },
 	{ "L position in DMR calls", "ok 7 5 down down down", "ok", "pos_dmrgps=1 focus=Send_in_DMR_calls", 1, false },
+	{ "L save GPS without a fix", "ok 7 5 down down down down", "ok", "toast=No_current_GPS_fix focus=Save_GPS_position", 1, false },
 	{ "L fixed position page", "ok 7 5 down down", "ok", "screen=fixed-pos", 1, false },
 	{ "L no fixed position yet", "ok 7 5 down down", "ok", "shows=Not_set", 1, false },
 	{ "L fixed position found by latitude", "", "5 2 8 4 8 8 3 3", "shows=Fixed_position", 8, false },

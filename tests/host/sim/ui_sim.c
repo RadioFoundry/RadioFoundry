@@ -57,6 +57,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ui_sim.h"
+#if CONFIG_SATELLITE_TLE
+#include "satellite/store.h"
+#endif
 // The board is changed at run time here (display, key map): this file defines it writable, the UI sees it const
 #define board board_as_declared
 #include "board.h"
@@ -1994,6 +1997,123 @@ bool ui_svc_position(ui_position_t *out)
 	return true;
 }
 
+#if CONFIG_SATELLITE_TLE
+static uint8_t sim_satellite_selected;
+static bool sim_satellite_predicting;
+static bool sim_satellite_path_pending;
+static const char *const sim_satellite_names[] = { "ISS", "NOAA 19", "SO-50", "AO-91", "AO-123" };
+static const uint32_t sim_satellite_catalog_ids[] = { 25544u, 33591u, 27607u, 43017u, 58421u };
+static const uint16_t sim_satellite_eta_minutes[] = { 14u, 36u, 53u, 71u, 96u };
+static const uint8_t sim_satellite_max_elevations[] = { 36u, 21u, 35u, 41u, 17u };
+
+uint8_t ui_svc_satellite_count(void)
+{
+	return (uint8_t)(sizeof(sim_satellite_names) / sizeof(sim_satellite_names[0]));
+}
+
+bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record)
+{
+	if (index >= ui_svc_satellite_count() || record == NULL)
+		return false;
+	memset(record, 0, sizeof(*record));
+	record->catalog_id = sim_satellite_catalog_ids[index];
+	strcpy(record->name, sim_satellite_names[index]);
+	record->name_length = (uint8_t)strlen(record->name);
+	return true;
+}
+
+uint8_t ui_svc_satellite_selected(void)
+{
+	return sim_satellite_selected;
+}
+
+bool ui_svc_satellite_select(uint8_t index)
+{
+	if (index >= ui_svc_satellite_count())
+		return false;
+	sim_satellite_selected = index;
+	return true;
+}
+
+bool ui_svc_satellite_track(bool enabled, uint8_t index)
+{
+	if (index >= ui_svc_satellite_count())
+		return false;
+	sim_satellite_selected = index;
+	view.satellite_tracking = enabled;
+	view.satellite_index = index;
+	view.satellite_status = enabled ? (sim_satellite_path_pending ? 2u : 3u) : 0u;
+	view.satellite_nominal_rx_hz = enabled ? 145000000u : 0u;
+	view.satellite_nominal_tx_hz = enabled ? 435000000u : 0u;
+	view.satellite_rx_offset_hz = enabled ? -1200 : 0;
+	view.satellite_tx_offset_hz = enabled ? 3600 : 0;
+	view.satellite_pass_valid = enabled && !sim_satellite_path_pending;
+	view.satellite_pass_visible_now = enabled && !sim_satellite_path_pending;
+	view.satellite_los_in_s = enabled ? 5500u : 0u;
+	view.satellite_max_elevation_tenths = enabled ? 360u : 0u;
+	view.satellite_elevation_tenths = enabled ? 330 : 0;
+	return true;
+}
+
+bool ui_svc_satellite_scan(bool enabled)
+{
+	(void)enabled;
+	return true;
+}
+
+void ui_svc_satellite_poll(void) { }
+
+void ui_svc_satellite_scan_state(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes)
+{
+	if (status != NULL) *status = sim_satellite_predicting ? RADIO_SAT_SCAN_RUNNING : RADIO_SAT_SCAN_COMPLETE;
+	if (completed != NULL) *completed = sim_satellite_predicting ? 2u : ui_svc_satellite_count();
+	if (total != NULL) *total = ui_svc_satellite_count();
+	if (passes != NULL) *passes = sim_satellite_predicting ? 0u : ui_svc_satellite_count();
+}
+
+bool ui_svc_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass)
+{
+	if (rank >= ui_svc_satellite_count() || pass == NULL)
+		return false;
+	pass->record_index = rank;
+	pass->aos_minutes = sim_satellite_eta_minutes[rank];
+	pass->maximum_elevation_deg = sim_satellite_max_elevations[rank];
+	pass->visible_now = false;
+	return true;
+}
+
+bool ui_svc_satellite_path(satellite_path_view_t *path)
+{
+	if (path == NULL)
+		return false;
+	memset(path, 0, sizeof(*path));
+	if (!view.satellite_tracking || sim_satellite_path_pending)
+		return false;
+	const uint16_t points[] = {
+		satellite_path_pack(180u, 0u), satellite_path_pack(160u, 8u),
+		satellite_path_pack(140u, 18u), satellite_path_pack(120u, 28u),
+		satellite_path_pack(100u, 35u), satellite_path_pack(80u, 36u),
+		satellite_path_pack(60u, 33u), satellite_path_pack(40u, 26u),
+		satellite_path_pack(24u, 18u), satellite_path_pack(12u, 8u),
+		satellite_path_pack(0u, 0u),
+	};
+	memcpy(path->points, points, sizeof(points));
+	path->count = sizeof(points) / sizeof(points[0]);
+	path->azimuth_deg = 60u;
+	return true;
+}
+
+bool ui_svc_satellite_replace(uint8_t index, const char *line1, const char *line2)
+{
+	return index == 0u && line1 != NULL && line2 != NULL;
+}
+
+bool ui_svc_satellite_update_busy(void)
+{
+	return false;
+}
+#endif
+
 bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out)
 {
 	if (i >= SIM_SATS)
@@ -2160,6 +2280,10 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_layout_init();
 	memset(&view, 0, sizeof view);
 	memset(&sim_rec, 0, sizeof sim_rec);
+#if CONFIG_SATELLITE_TLE
+	sim_satellite_predicting = false;
+	sim_satellite_path_pending = false;
+#endif
 	vfo_mode = RADIO_MODE_FM;	// a fresh VFO
 	vfo_cc = vfo_ts = 1;
 	vfo_bw = RADIO_BW_25K;
@@ -3048,6 +3172,16 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+#if CONFIG_SATELLITE_TLE
+	if (strcmp(t, "satpredict") == 0) {
+		sim_satellite_predicting = true;
+		return true;
+	}
+	if (strcmp(t, "satpathpending") == 0) {
+		sim_satellite_path_pending = true;
+		return true;
+	}
+#endif
 	if (strcmp(t, "power") == 0 && arg != NULL) {	// power:<level>, the board's level index
 		view.power = (uint8_t)atoi(arg);
 		changed();

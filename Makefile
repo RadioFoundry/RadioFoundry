@@ -100,6 +100,9 @@ endif
 ifeq ($(CONFIG_POSITION),y)
 CORE_DIRS += core/position
 endif
+ifeq ($(CONFIG_SATELLITE_TLE),y)
+CORE_DIRS += core/satellite
+endif
 ifeq ($(CONFIG_SNMP),y)
 CORE_DIRS += core/snmp
 endif
@@ -252,6 +255,19 @@ STACK_INFO := -fcallgraph-info=su
 COMMON := $(CPUFLAGS) $(OPT) -g3 -ffunction-sections -fdata-sections -fno-common -MMD -MP $(STACK_INFO)
 CFLAGS_APP := $(COMMON) -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Wshadow -Wdouble-promotion $(DEFS) $(INCLUDES)
 CFLAGS_3P := $(COMMON) -std=gnu11 -w $(DEFS) $(INCLUDES)
+ifeq ($(CONFIG_SATELLITE_TLE),y)
+SATELLITE_BUILTINS := $(BUILD)/gen/builtin_satellite_records.inc
+SATELLITE_TLE_CACHE ?= build/satellite-tle-cache.json
+SATELLITE_TLE_OFFLINE ?= 0
+CFLAGS_APP += -I$(BUILD)/gen
+.PHONY: satellite-tle-refresh
+$(SATELLITE_BUILTINS): satellite-tle-refresh tools/gen_satellite_builtins.py tools/satellite_builtin_fallback.py \
+		tools/satellite_tle.py
+	@mkdir -p $(dir $@)
+	python3 tools/gen_satellite_builtins.py --output $@ --cache $(SATELLITE_TLE_CACHE) \
+		--build-id $(RFOUNDRY_GIT_ID) $(if $(filter 1 y yes true,$(SATELLITE_TLE_OFFLINE)),--offline)
+$(BUILD)/core/debuglink/debuglink_satellite.o: $(SATELLITE_BUILTINS)
+endif
 # The C library flavor and linker extras come from the platform (platform.mk); these are the arm-none-eabi ones
 LDSPECS ?= --specs=nano.specs --specs=nosys.specs -Wl,--no-warn-rwx-segments
 # The image address (board.mk APP_BASE) reaches the linker scripts as __app_base, and the application's first byte, after

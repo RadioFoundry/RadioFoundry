@@ -505,7 +505,27 @@ DMR mode (the HR_C6000 needs the raw 4FSK baseband):
 | 0x43 = 0x0100 | deviation |
 | 0x48 = 0x19B1 | noise1_th |
 | 0x58 = 0x9CDD | all audio filters off |
-| 0x44 = 0x07FF | AF gain 100 %. Lower values (e.g. 0x00CF-ish) give better BER on strong signals but fail to decode some hotspots; the DM-1701 needs more AF gain than the MD-UV380 |
+| 0x44 = 0x07EF | AF gain 1 dB under full (dac_vgain, bits 7-4, 1 dB steps): the receive level window below |
+
+DMR receive level. The 4FSK level the HR_C6000 gets is the AF gain plus the transmitter's deviation, and the modem
+decodes well only in a window about 3 dB wide. Above it the outer symbol threshold is crossed: a +1 symbol read as +3,
+about a bit a frame for the FEC to correct even far above sensitivity. Below it the modem loses sync, a cliff. Voice
+bit errors a frame and the share of frames received, at -103 dBm with the transmitter's deviation scaled (SDR bench,
+`tools/dmr_rx_sweep.py`):
+
+| 0x44 | x0.8 | x0.85 | x0.9 | x1.0 | x1.1 | x1.15 | x1.2 |
+|---|---|---|---|---|---|---|---|
+| 0x07FF (full) | 0.19 | 0.29 | 0.15 | 0.36 | 0.75 | 1.49 | 1.51 |
+| 0x07EF (-1 dB) | 0.14 | 0.18 | 0.08 | 0.09 | 0.21 | 0.31 | 0.89 |
+| 0x07DF (-2 dB) | 44 % frames | 0.83 | 0.12 | 0.04 | 0.00 | 0.05 | 0.03 |
+| 0x07CF (-3 dB) | no sync | 16 % frames | 68 % frames | 0.09 | 0.03 | 0.00 | 0.00 |
+| 0x07BF (-4 dB) | no sync | no sync | no sync | 48 % frames | 0.59 | 0.07 | 0.03 |
+
+0x07EF keeps every frame from x0.8 to x1.2, so a transmitter under deviation (common on hotspots) and one over both
+decode; the over-deviated side costs corrected bits, never frames. The gain also sets how far off frequency a
+transmitter can be: full gain clips first and has the narrowest window (5.13). On strong signals (-50 dBm) about a bit a
+frame stays at every gain and offset: that is the AGC (0x32), not this gain. `test_dmr_audio_rx_deviation` (tests/hil)
+checks x0.85 and x1.15 at -100 dBm.
 
 ### 5.6 Frequency setting
 
@@ -664,28 +684,41 @@ What the bench showed:
 
 ### 5.13 DMR receive offset
 
-With the transmitter on frequency, DMR receive tuned to the channel decodes best on a carrier about 0.9 kHz (UHF) to
-1.2 kHz (VHF) high and falls off fast below it. The offset is about the same in Hz on both bands, so it is in the
-receive path (the AT1846S demodulator and the baseband line to the HR_C6000), not the reference oscillator, which would
-give the same ppm. Moving the reference (4:0x47) or the HR_C6000 receive offsets (4:0x03, 4:0x05) doesn't fix it:
-0x47 moves the transmitter too, and 0x03 / 0x05 change nothing in this input mode. The HR_C6000 ADC DC readings
-(4:0x4E, 4:0x4F) stay fixed whatever the carrier.
+In DMR the AT1846S receives `UVF_DMR_RX_OFFSET_UHF_HZ` / `UVF_DMR_RX_OFFSET_VHF_HZ` below the channel (62.5 Hz steps).
+FM receive is tuned to the channel. UHF: 0. VHF: 1250 Hz.
 
-So in DMR the AT1846S receives that much below the channel (`UVF_DMR_RX_OFFSET_UHF_HZ`, `UVF_DMR_RX_OFFSET_VHF_HZ`,
-62.5 Hz steps). FM receive is tuned to the channel. Voice bit errors per frame against the carrier offset (SDR bench, a
-DM-1701):
+The carrier offsets the radio decodes form a window whose width and center depend on the AF gain (5.5). UHF, receive
+offset 0, speech at the standard deviation, the carrier offset made by detuning the radio from the bench's carrier
+(SDR bench, 500 Hz steps). Carrier offsets where at least 95 % of the frames arrive with at most 1.5 corrected bits a
+frame:
+
+| 0x44 | -103 dBm | -81 dBm |
+|---|---|---|
+| 0x07FF (full) | -1.5 to +1.5 kHz | -0.5 to +2.0 kHz |
+| **0x07EF (-1 dB)** | **-3.0 to +2.5 kHz** | **-2.5 to +2.5 kHz** |
+| 0x07DF (-2 dB) | -2.5 to +3.0 kHz | -2.0 to +3.0 kHz |
+| 0x07CF (-3 dB) | -2.0 to +2.5 kHz | -1.0 to +3.0 kHz |
+
+- Full gain fails high first: from +2.5 kHz it loses frames at 4-6 bits a frame, the overload of 5.5.
+- Under 1 dB the window moves up: the low side loses sync, the cliff of the under-deviated transmitter in 5.5.
+- 0x07EF's window is centered on the channel within a few hundred Hz; a second transmitter put its edges within 500 Hz
+  of these. A fixed receive offset only moves the window: at 875 Hz below, a transmitter 2.5 kHz high is lost.
+
+The VHF offset was measured at full gain, inside the overload (voice bit errors a frame against the carrier offset):
 
 | Carrier offset (Hz) | -1000 | -500 | 0 | +500 | +1000 | +1500 |
 |---|---|---|---|---|---|---|
-| UHF, tuned to the channel | 3.18 | 2.93 | 1.59 | — | 1.31 | — |
-| UHF, 875 Hz below | 1.56 | 1.23 | 1.28 | 1.56 | 1.51 | 3.07 |
 | VHF, tuned to the channel | 2.74 | 2.09 | 1.72 | 1.42 | 1.15 | 1.18 |
 | VHF, 1250 Hz below | 1.53 | 1.30 | 1.10 | 1.59 | 2.85 | no frames |
 
+It is not measured again at 0x07EF yet. `test_dmr_audio_rx_offset_wide` (tests/hil) checks a carrier 2.5 kHz below
+and above the channel at -100 dBm.
+
 Bursts keyed through idle write the transmit frequency, so the offset doesn't reach the transmitter. A direct burst
-(section 6) keys from the receive frequency and takes the offset back in whole MOD1 steps toward zero (about 74 Hz each
-mid-band: 11 for 875 Hz put the carrier about 5 Hz high, 12 about 85 Hz high); every burst decodes, the first within
-20 Hz of the rest. The MD-UV380 has the same two chips and is not measured on its own.
+(section 6, UHF only) keys from the receive frequency and takes any offset back in whole MOD1 steps toward zero (about
+74 Hz each mid-band: for an offset of 875 Hz, 11 put the carrier about 5 Hz high, 12 about 85 Hz high); every burst
+decodes, the first within 20 Hz of the rest. With the UHF offset at 0 there is nothing to take back. The MD-UV380 has
+the same two chips and is not measured on its own.
 
 ---
 
@@ -1550,7 +1583,8 @@ across the family.
     0.5 ms per switch.
 11. The AT1846S TX frequency offset depends on the write sequence (about -3 kHz with the normal sequence, none with a
     direct switch); measure, do not copy.
-12. DMR RX needs AT1846S AF gain at maximum (0x44 = 0x07FF) and reg 0x40 bit 0 set; FM needs bit 0 clear.
+12. DMR RX needs AT1846S AF gain 1 dB under full (0x44 = 0x07EF; 5.5: full overloads the modem, -2 dB loses
+    under-deviated transmitters) and reg 0x40 bit 0 set; FM needs bit 0 clear.
 13. A volume-knob power-off looks like the battery dropping below 5.5 V; the firmware must then release the PA7 latch.
 
 ---

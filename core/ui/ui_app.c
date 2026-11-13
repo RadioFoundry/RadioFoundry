@@ -2284,6 +2284,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 #if CONFIG_ZONE_EDIT
 	ui_svc_zone_poll();
 #endif
+#if CONFIG_SATELLITE_TLE
+	ui_svc_satellite_poll();
+#endif
 #if CONFIG_CRASH_SCREEN
 	ui_crash_tick(now_ms);
 #endif

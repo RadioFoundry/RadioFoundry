@@ -5,6 +5,7 @@
 // owns one of these defines it without the weak attribute and the linker takes that one.
 #include <stddef.h>
 #include "ui_svc.h"
+#include "settings/settings.h"
 
 #define WEAK __attribute__((weak))
 
@@ -73,6 +74,50 @@ WEAK bool ui_svc_call_alert(uint32_t id) { (void)id; return false; }
 WEAK uint8_t ui_svc_ars_state(void) { return UI_ARS_OFF; }
 
 WEAK bool ui_svc_position(ui_position_t *out) { (void)out; return false; }
+#if CONFIG_GPS && CONFIG_POSITION
+WEAK bool ui_svc_position_save_gps(void) { return false; }
+#endif
+#if CONFIG_SATELLITE_TLE
+WEAK uint8_t ui_svc_satellite_count(void) { return 0; }
+WEAK bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record)
+{
+	(void)index;
+	(void)record;
+	return false;
+}
+WEAK uint8_t ui_svc_satellite_selected(void) { return SETTINGS_UNSET8; }
+WEAK bool ui_svc_satellite_select(uint8_t index) { (void)index; return false; }
+WEAK bool ui_svc_satellite_track(bool enabled, uint8_t index) { (void)enabled; (void)index; return false; }
+WEAK bool ui_svc_satellite_scan(bool enabled) { (void)enabled; return false; }
+WEAK void ui_svc_satellite_poll(void) { }
+WEAK void ui_svc_satellite_scan_state(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes)
+{
+	if (status != NULL) *status = RADIO_SAT_SCAN_UNAVAILABLE;
+	if (completed != NULL) *completed = 0u;
+	if (total != NULL) *total = 0u;
+	if (passes != NULL) *passes = 0u;
+}
+WEAK bool ui_svc_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass)
+{
+	(void)rank;
+	if (pass != NULL) *pass = (radio_satellite_pass_t){0};
+	return false;
+}
+WEAK bool ui_svc_satellite_path(satellite_path_view_t *path)
+{
+	if (path != NULL)
+		*path = (satellite_path_view_t){0};
+	return false;
+}
+WEAK bool ui_svc_satellite_replace(uint8_t index, const char *line1, const char *line2)
+{
+	(void)index;
+	(void)line1;
+	(void)line2;
+	return false;
+}
+WEAK bool ui_svc_satellite_update_busy(void) { return false; }
+#endif
 WEAK bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out) { (void)i; (void)out; return false; }
 WEAK bool ui_svc_emergency(bool on) { (void)on; return false; }
 WEAK void ui_svc_emergency_dismiss(void) { }

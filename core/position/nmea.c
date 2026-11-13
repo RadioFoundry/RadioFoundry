@@ -149,6 +149,7 @@ bool nmea_parse(const char *s, size_t n, nmea_fix_t *out)
 		out->kind = NMEA_RMC;
 		if (fixed(f[1], fl[1], 0, &v)) {
 			out->utc_hms = v;
+			out->utc_valid = true;
 		}
 		out->fix = fl[2] == 1 && f[2][0] == 'A';
 		if (out->fix && (fl[4] != 1 || fl[6] != 1 || !coord(f[3], fl[3], f[4][0], false, &out->lat) ||
@@ -163,6 +164,7 @@ bool nmea_parse(const char *s, size_t n, nmea_fix_t *out)
 		}
 		if (fixed(f[9], fl[9], 0, &v)) {
 			out->date = v;
+			out->date_valid = v != 0u;
 		}
 		return true;
 	}
@@ -173,6 +175,7 @@ bool nmea_parse(const char *s, size_t n, nmea_fix_t *out)
 		out->kind = NMEA_GGA;
 		if (fixed(f[1], fl[1], 0, &v)) {
 			out->utc_hms = v;
+			out->utc_valid = true;
 		}
 		out->fix = fl[6] == 1 && f[6][0] >= '1' && f[6][0] <= '8';
 		if (out->fix && (fl[3] != 1 || fl[5] != 1 || !coord(f[2], fl[2], f[3][0], false, &out->lat) ||

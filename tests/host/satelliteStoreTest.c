@@ -1,0 +1,489 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The RadioFoundry Authors
+// The debug-link satellite TLE store on simulated NOR: bounded capacity, merged commits, input validation and aborts.
+#include <stdio.h>
+#include <string.h>
+#include "debuglink/debuglink.h"
+#include "debuglink/debuglink_proto.h"
+#include "satellite/channels.h"
+#include "satellite/store.h"
+#include "storage/storage.h"
+#include "sim/sim_flash.h"
+
+static int failures, checks;
+
+#define CHECK(cond)                                                                                                \
+	do {                                                                                                       \
+		checks++;                                                                                          \
+		if (!(cond)) {                                                                                     \
+			failures++;                                                                                \
+			printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                                     \
+		}                                                                                                  \
+	} while (0)
+
+void storage_lock(void) { }
+void storage_unlock(void) { }
+void storage_quick_lock(void) { }
+void storage_quick_unlock(void) { }
+
+#define FLASH_SIZE 0x13000u
+#define TEST_RECORD_MAX (4u + 1u + 48u + 2u * 69u)
+static const hal_flash_map_t map = {
+	.settings_addr = 0x01000u, .settings_size = 0x02000u, .journal_addr = 0x03000u,
+	.openfw_eeprom = 0, .openfw_flash = 0x08000u, .openfw_end = 0x10000u,
+	.satellite_addr = 0x10000u, .satellite_size = 0x03000u,
+};
+const board_t board = { .name = "satellite-test", .flash = &sim_flash };
+
+static uint8_t output[128];
+static bool channel_sync_result = true;
+
+bool satellite_channels_sync(void)
+{
+	return channel_sync_result;
+}
+
+static uint16_t get16(const uint8_t *p)
+{
+	return (uint16_t)((uint16_t)p[0] | (uint16_t)((uint16_t)p[1] << 8));
+}
+
+static uint32_t get32(const uint8_t *p)
+{
+	return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+}
+
+static void put16(uint8_t *p, uint16_t v)
+{
+	p[0] = (uint8_t)v;
+	p[1] = (uint8_t)(v >> 8);
+}
+
+static void put32(uint8_t *p, uint32_t v)
+{
+	p[0] = (uint8_t)v;
+	p[1] = (uint8_t)(v >> 8);
+	p[2] = (uint8_t)(v >> 16);
+	p[3] = (uint8_t)(v >> 24);
+}
+
+static size_t command(const uint8_t *req, uint16_t len)
+{
+	memset(output, 0xEE, sizeof(output));
+	return debuglink_cmd_satellite(req, len, output, sizeof(output));
+}
+
+static void make_line(uint8_t *line, char number, uint32_t id, const char *epoch)
+{
+	memset(line, ' ', 69);
+	line[0] = (uint8_t)number;
+	line[1] = ' ';
+	line[2] = (uint8_t)('0' + id / 10000u);
+	line[3] = (uint8_t)('0' + id / 1000u % 10u);
+	line[4] = (uint8_t)('0' + id / 100u % 10u);
+	line[5] = (uint8_t)('0' + id / 10u % 10u);
+	line[6] = (uint8_t)('0' + id % 10u);
+	if (number == '1') {
+		line[7] = 'U';
+		memcpy(line + 9, "98067A  ", 8u);
+		line[17] = ' ';
+		memcpy(line + 18, epoch, 14);
+		line[32] = ' ';
+		memcpy(line + 33, " .00016717", 10u);
+		line[43] = ' ';
+		memcpy(line + 44, " 00000-0", 8u);
+		line[52] = ' ';
+		memcpy(line + 53, " 00000-0", 8u);
+		line[61] = ' ';
+		line[62] = '0';
+		line[63] = ' ';
+		memcpy(line + 64, "0001", 4u);
+	} else {
+		memcpy(line + 8, " 51.6400", 8u);
+		memcpy(line + 17, " 15.0000", 8u);
+		memcpy(line + 26, "0005000", 7u);
+		memcpy(line + 34, " 20.0000", 8u);
+		memcpy(line + 43, " 30.0000", 8u);
+		memcpy(line + 52, "15.50000000", 11u);
+		memcpy(line + 63, "00001", 5u);
+	}
+	unsigned sum = 0;
+	for (uint8_t i = 0; i < 68u; i++) {
+		if (line[i] >= '0' && line[i] <= '9') sum += line[i] - '0';
+		else if (line[i] == '-') sum++;
+	}
+	line[68] = (uint8_t)('0' + sum % 10u);
+}
+
+static uint16_t make_record(uint8_t *out, uint32_t id, const char *name, const char *epoch)
+{
+	uint8_t name_len = (uint8_t)strlen(name);
+	put32(out, id);
+	out[4] = name_len;
+	memcpy(out + 5, name, name_len);
+	uint8_t *line1 = out + 5 + name_len;
+	uint8_t *line2 = line1 + 69;
+	make_line(line1, '1', id, epoch);
+	make_line(line2, '2', id, "00000.00000000");
+	return (uint16_t)(5u + name_len + 138u);
+}
+
+static bool install(const uint8_t *data, uint16_t data_len, uint16_t count, bool bad_crc, bool bad_tle,
+		    bool bad_orbit)
+{
+	uint8_t transfer_data[10 * TEST_RECORD_MAX];
+	memcpy(transfer_data, data, data_len);
+	if (bad_tle) transfer_data[5u + transfer_data[4] + 68u] ^= 1u;
+	if (bad_orbit) {
+		uint8_t *line2 = transfer_data + 5u + transfer_data[4] + 69u;
+		memcpy(line2 + 52u, "00.00000000", 11u);
+		unsigned sum = 0;
+		for (uint8_t i = 0; i < 68u; i++) {
+			if (line2[i] >= '0' && line2[i] <= '9') sum += line2[i] - '0';
+			else if (line2[i] == '-') sum++;
+		}
+		line2[68] = (uint8_t)('0' + sum % 10u);
+	}
+	uint32_t crc = storage_crc32(0, transfer_data, data_len);
+	uint8_t req[64];
+	req[0] = DL_SAT_OP_BEGIN;
+	put16(req + 1, count);
+	put16(req + 3, data_len);
+	put32(req + 5, crc);
+	CHECK(command(req, 9) == 3 && output[0] == DL_ST_OK);
+	if (output[0] != DL_ST_OK) return false;
+	uint16_t transaction = get16(output + 1);
+	for (uint16_t off = 0; off < data_len;) {
+		uint16_t remaining = (uint16_t)(data_len - off);
+		uint16_t n = remaining > 59u ? 59u : remaining;
+		req[0] = DL_SAT_OP_DATA;
+		put16(req + 1, transaction);
+		put16(req + 3, off);
+		memcpy(req + 5, transfer_data + off, n);
+		CHECK(command(req, (uint16_t)(5u + n)) == 3 && output[0] == DL_ST_OK && get16(output + 1) == off + n);
+		off = (uint16_t)(off + n);
+	}
+	req[0] = DL_SAT_OP_COMMIT;
+	put16(req + 1, transaction);
+	put32(req + 3, crc ^ (bad_crc ? 1u : 0u));
+	command(req, 7);
+	if (bad_crc || bad_tle || bad_orbit) {
+		CHECK(output[0] == DL_ST_REFUSED);
+		req[0] = DL_SAT_OP_ABORT;
+		put16(req + 1, transaction);
+		CHECK(command(req, 3) == 1 && output[0] == DL_ST_OK);
+		return false;
+	}
+	CHECK(output[0] == DL_ST_OK);
+	return output[0] == DL_ST_OK;
+}
+
+static bool downgrade_active_bank_to_v1(void)
+{
+	uint8_t records[STORAGE_SECTOR - 24u];
+	for (uint8_t bank = 0u; bank < 3u; bank++) {
+		uint8_t *base = sim_flash_data + map.satellite_addr + (uint32_t)bank * STORAGE_SECTOR;
+		if (get32(base) != 0x31544653u || base[4] != 2u || get32(base + 20u) != 0x54494D43u)
+			continue;
+		uint16_t length = get16(base + 6u);
+		if (length > sizeof(records))
+			return false;
+		uint8_t header[16];
+		memcpy(header, base, sizeof(header));
+		memcpy(records, base + 24u, length);
+		memset(base, 0xFF, STORAGE_SECTOR);
+		memcpy(base, header, sizeof(header));
+		base[4] = 1u;
+		memcpy(base + 20u, records, length);
+		put32(base + 16u, 0x54494D43u);
+		return true;
+	}
+	return false;
+}
+
+static void test_inventory_transactions(void)
+{
+	uint8_t req[9] = { DL_SAT_OP_INFO };
+	CHECK(command(req, 1) == 6 && output[0] == DL_ST_OK && output[1] == 2 && get16(output + 2) == 10 &&
+	      get16(output + 4) == 0);
+	CHECK(satellite_store_count() == 0u);
+	uint8_t sync_req = DL_SAT_OP_SYNC_CHANNELS;
+	CHECK(command(&sync_req, 1u) == 1u && output[0] == DL_ST_OK);
+	channel_sync_result = false;
+	CHECK(command(&sync_req, 1u) == 1u && output[0] == DL_ST_REFUSED);
+	channel_sync_result = true;
+
+	uint8_t data[10 * TEST_RECORD_MAX];
+	uint16_t first_len = make_record(data, 25544u, "ISS", "26315.50000000");
+	CHECK(install(data, first_len, 1, false, false, false));
+	uint16_t second_len = make_record(data + first_len, 20580u, "HST", "26315.50000000");
+	CHECK(install(data + first_len, second_len, 1, false, false, false));
+	satellite_record_t satellite;
+	CHECK(satellite_store_count() == 2u);
+	CHECK(satellite_store_get(0, &satellite));
+	CHECK(satellite.catalog_id == 20580u && satellite.name_length == 3u && strcmp(satellite.name, "HST") == 0);
+	CHECK(memcmp(satellite.line1, data + first_len + 8u, 69u) == 0);
+	CHECK(memcmp(satellite.line2, data + first_len + 8u + 69u, 69u) == 0);
+	CHECK(!satellite_store_get(2, &satellite));
+
+	char replacement_line1[70], replacement_line2[70];
+	make_line((uint8_t *)replacement_line1, '1', satellite.catalog_id, "26316.50000000");
+	make_line((uint8_t *)replacement_line2, '2', satellite.catalog_id, "00000.00000000");
+	CHECK(satellite_store_replace(0u, replacement_line1, replacement_line2));
+	CHECK(satellite_store_count() == 2u && satellite_store_get(0u, &satellite));
+	CHECK(satellite.catalog_id == 20580u && strcmp(satellite.name, "HST") == 0 &&
+	      memcmp(satellite.line1, replacement_line1, 69u) == 0);
+	replacement_line1[68] = replacement_line1[68] == '9' ? '0' : (char)(replacement_line1[68] + 1);
+	CHECK(!satellite_store_replace(0u, replacement_line1, replacement_line2));
+	CHECK(satellite_store_get(0u, &satellite) && memcmp(satellite.line1, replacement_line1, 68u) == 0 &&
+	      satellite.line1[68] != replacement_line1[68]);
+	make_line((uint8_t *)replacement_line1, '1', 99999u, "26316.50000000");
+	CHECK(!satellite_store_replace(0u, replacement_line1, replacement_line2));
+
+	req[0] = DL_SAT_OP_INFO;
+	CHECK(command(req, 1) == 6 && output[0] == DL_ST_OK && get16(output + 4) == 2);
+	uint8_t list_req[3] = { DL_SAT_OP_LIST, 0, 0 };
+	CHECK(command(list_req, sizeof(list_req)) == 18 && output[0] == DL_ST_OK && output[1] == 2);
+	CHECK(get32(output + 2) == 20580u && get32(output + 10) == 25544u && get32(output + 6) != 0u);
+
+	uint16_t replacement_len = make_record(data, 25544u, "ISS UPDATED", "26316.50000000");
+	CHECK(!install(data, replacement_len, 1, true, false, false));
+	CHECK(command(req, 1) == 6 && output[0] == DL_ST_OK && get16(output + 4) == 2);
+	CHECK(command(list_req, sizeof(list_req)) == 18 && output[0] == DL_ST_OK && output[1] == 2);
+	CHECK(get32(output + 2) == 20580u && get32(output + 10) == 25544u);
+	uint32_t old_epoch = get32(output + 14);
+	CHECK(install(data, replacement_len, 1, false, false, false));
+	CHECK(command(list_req, sizeof(list_req)) == 18 && output[0] == DL_ST_OK && output[1] == 2);
+	CHECK(get32(output + 2) == 20580u && get32(output + 10) == 25544u && get32(output + 14) != old_epoch);
+	uint32_t committed_epoch = get32(output + 14);
+	CHECK(!install(data, replacement_len, 1, false, true, false));
+	CHECK(!install(data, replacement_len, 1, false, false, true));
+	CHECK(command(req, 1) == 6 && output[0] == DL_ST_OK && get16(output + 4) == 2);
+
+	uint16_t interrupted_len = make_record(data, 25544u, "ISS INTERRUPTED", "26317.50000000");
+	uint32_t interrupted_crc = storage_crc32(0, data, interrupted_len);
+	uint8_t transfer[64] = { DL_SAT_OP_BEGIN };
+	put16(transfer + 1, 1);
+	put16(transfer + 3, interrupted_len);
+	put32(transfer + 5, interrupted_crc);
+	CHECK(command(transfer, 9) == 3 && output[0] == DL_ST_OK);
+	uint16_t transaction = get16(output + 1);
+	for (uint16_t off = 0; off < interrupted_len;) {
+		uint16_t remaining = (uint16_t)(interrupted_len - off);
+		uint16_t n = remaining > 59u ? 59u : remaining;
+		transfer[0] = DL_SAT_OP_DATA;
+		put16(transfer + 1, transaction);
+		put16(transfer + 3, off);
+		memcpy(transfer + 5, data + off, n);
+		CHECK(command(transfer, (uint16_t)(5u + n)) == 3 && output[0] == DL_ST_OK);
+		off = (uint16_t)(off + n);
+	}
+	sim_flash_cut_after(1);
+	transfer[0] = DL_SAT_OP_COMMIT;
+	put16(transfer + 1, transaction);
+	put32(transfer + 3, interrupted_crc);
+	CHECK(command(transfer, 7) == 1 && output[0] == DL_ST_REFUSED);
+	sim_flash_power_on();
+	transfer[0] = DL_SAT_OP_ABORT;
+	put16(transfer + 1, transaction);
+	CHECK(command(transfer, 3) == 1 && output[0] == DL_ST_OK);
+	CHECK(command(req, 1) == 6 && output[0] == DL_ST_OK && get16(output + 4) == 2);
+	CHECK(command(list_req, sizeof(list_req)) == 18 && output[0] == DL_ST_OK && get32(output + 14) == committed_epoch);
+	list_req[1] = 2;
+	CHECK(command(list_req, sizeof(list_req)) == 2 && output[0] == DL_ST_OK && output[1] == 0);
+	uint8_t begin[9] = { DL_SAT_OP_BEGIN };
+	put16(begin + 1, 11);
+	put16(begin + 3, 11u * 144u);
+	CHECK(command(begin, sizeof(begin)) == 1 && output[0] == DL_ST_BAD_ARG);
+}
+
+static void test_corrupt_empty_area_fails_closed(void)
+{
+	uint8_t req = DL_SAT_OP_INFO;
+	sim_flash_create(FLASH_SIZE, &map);
+	CHECK(storage_init());
+	sim_flash_data[map.satellite_addr] = 0u;
+	CHECK(command(&req, 1) == 1 && output[0] == DL_ST_REFUSED);
+}
+
+static void test_commit_power_cuts(void)
+{
+	static const uint32_t cuts[] = { 1u, 100u, 170u, 174u };
+	for (unsigned cut = 0; cut < sizeof(cuts) / sizeof(cuts[0]); cut++) {
+		sim_flash_create(FLASH_SIZE, &map);
+		CHECK(storage_init());
+		uint8_t record[TEST_RECORD_MAX];
+		uint16_t length = make_record(record, 25544u, "ISS", "26315.50000000");
+		CHECK(install(record, length, 1, false, false, false));
+		length = make_record(record, 25544u, "ISS UPDATED", "26316.50000000");
+		uint32_t crc = storage_crc32(0, record, length);
+		uint8_t req[64] = { DL_SAT_OP_BEGIN };
+		put16(req + 1, 1u);
+		put16(req + 3, length);
+		put32(req + 5, crc);
+		CHECK(command(req, 9u) == 3u && output[0] == DL_ST_OK);
+		uint16_t transaction = get16(output + 1);
+		for (uint16_t offset = 0; offset < length;) {
+			uint16_t remaining = (uint16_t)(length - offset);
+			uint16_t n = remaining > 59u ? 59u : remaining;
+			req[0] = DL_SAT_OP_DATA;
+			put16(req + 1, transaction);
+			put16(req + 3, offset);
+			memcpy(req + 5, record + offset, n);
+			CHECK(command(req, (uint16_t)(5u + n)) == 3u && output[0] == DL_ST_OK);
+			offset = (uint16_t)(offset + n);
+		}
+		sim_flash_cut_after(cuts[cut]);
+		req[0] = DL_SAT_OP_COMMIT;
+		put16(req + 1, transaction);
+		put32(req + 3, crc);
+		command(req, 7u);
+		CHECK(output[0] == DL_ST_REFUSED);
+		sim_flash_power_on();
+		CHECK(storage_init());
+		uint8_t info = DL_SAT_OP_INFO;
+		CHECK(command(&info, 1u) == 6u && output[0] == DL_ST_OK && get16(output + 4) == 1u);
+		uint8_t list[3] = { DL_SAT_OP_LIST, 0, 0 };
+		CHECK(command(list, sizeof(list)) == 10u && output[0] == DL_ST_OK && output[1] == 1u);
+		CHECK(get32(output + 2) == 25544u &&
+		      (get32(output + 6) == 1794398400u || get32(output + 6) == 1794484800u));
+		req[0] = DL_SAT_OP_ABORT;
+		put16(req + 1, transaction);
+		command(req, 3u);
+	}
+}
+
+static void test_replace_power_cuts(void)
+{
+	static const uint32_t cuts[] = { 1u, 100u, 170u, 174u };
+	for (unsigned cut = 0; cut < sizeof(cuts) / sizeof(cuts[0]); cut++) {
+		sim_flash_create(FLASH_SIZE, &map);
+		CHECK(storage_init());
+		uint8_t initial[TEST_RECORD_MAX];
+		uint16_t initial_len = make_record(initial, 25544u, "ISS", "26315.50000000");
+		CHECK(install(initial, initial_len, 1u, false, false, false));
+		char line1[70], line2[70];
+		make_line((uint8_t *)line1, '1', 25544u, "26316.50000000");
+		make_line((uint8_t *)line2, '2', 25544u, "00000.00000000");
+		line1[69] = '\0';
+		line2[69] = '\0';
+		sim_flash_cut_after(cuts[cut]);
+		CHECK(!satellite_store_replace(0u, line1, line2));
+		sim_flash_power_on();
+		CHECK(storage_init());
+		satellite_record_t satellite;
+		CHECK(satellite_store_count() == 1u && satellite_store_get(0u, &satellite));
+		CHECK(satellite.catalog_id == 25544u && satellite.epoch == 1794398400u &&
+		      memcmp(satellite.line1, initial + 8u, 69u) == 0);
+	}
+}
+
+static void test_first_install_recovery(void)
+{
+	sim_flash_create(FLASH_SIZE, &map);
+	CHECK(storage_init());
+	uint8_t record[TEST_RECORD_MAX];
+	uint16_t length = make_record(record, 25544u, "ISS", "26315.50000000");
+	uint32_t crc = storage_crc32(0, record, length);
+	uint8_t req[64] = { DL_SAT_OP_BEGIN };
+	put16(req + 1, 1u);
+	put16(req + 3, length);
+	put32(req + 5, crc);
+	CHECK(command(req, 9u) == 3u && output[0] == DL_ST_OK);
+	uint16_t transaction = get16(output + 1);
+	for (uint16_t offset = 0; offset < length;) {
+			uint16_t remaining = (uint16_t)(length - offset);
+			uint16_t n = remaining > 59u ? 59u : remaining;
+		req[0] = DL_SAT_OP_DATA;
+		put16(req + 1, transaction);
+		put16(req + 3, offset);
+		memcpy(req + 5, record + offset, n);
+		CHECK(command(req, (uint16_t)(5u + n)) == 3u && output[0] == DL_ST_OK);
+		offset = (uint16_t)(offset + n);
+	}
+	sim_flash_cut_after(100u);
+	req[0] = DL_SAT_OP_COMMIT;
+	put16(req + 1, transaction);
+	put32(req + 3, crc);
+	CHECK(command(req, 7u) == 1u && output[0] == DL_ST_REFUSED);
+	sim_flash_power_on();
+	CHECK(storage_init());
+	uint8_t info = DL_SAT_OP_INFO;
+	CHECK(command(&info, 1u) == 6u && output[0] == DL_ST_OK && get16(output + 4) == 0u);
+	req[0] = DL_SAT_OP_ABORT;
+	put16(req + 1, transaction);
+	CHECK(command(req, 3u) == 1u && output[0] == DL_ST_OK);
+	CHECK(install(record, length, 1u, false, false, false));
+	CHECK(command(&info, 1u) == 6u && output[0] == DL_ST_OK && get16(output + 4) == 1u);
+}
+
+static void test_builtin_seed(void)
+{
+	sim_flash_create(FLASH_SIZE, &map);
+	CHECK(storage_init());
+	CHECK(satellite_store_count() == 0u);
+	CHECK(satellite_store_seed_defaults());
+	CHECK(satellite_store_count() == 3u);
+	satellite_record_t iss, so50, ao91;
+	CHECK(satellite_store_get(0u, &iss) && satellite_store_get(1u, &so50) && satellite_store_get(2u, &ao91));
+	CHECK(iss.catalog_id == 25544u && strcmp(iss.name, "ISS (ZARYA)") == 0);
+	CHECK(so50.catalog_id == 27607u && strcmp(so50.name, "SO-50") == 0);
+	CHECK(ao91.catalog_id == 43017u && strcmp(ao91.name, "AO-91") == 0);
+	CHECK(strlen(iss.line1) == SATELLITE_TLE_LINE_LENGTH && strlen(iss.line2) == SATELLITE_TLE_LINE_LENGTH);
+	CHECK(strlen(so50.line1) == SATELLITE_TLE_LINE_LENGTH && strlen(so50.line2) == SATELLITE_TLE_LINE_LENGTH);
+	CHECK(strlen(ao91.line1) == SATELLITE_TLE_LINE_LENGTH && strlen(ao91.line2) == SATELLITE_TLE_LINE_LENGTH);
+	CHECK(satellite_store_seed_defaults());
+	CHECK(satellite_store_count() == 3u && satellite_store_get(0u, &iss));
+	char replacement_line1[SATELLITE_TLE_LINE_LENGTH + 1u];
+	char replacement_line2[SATELLITE_TLE_LINE_LENGTH + 1u];
+	make_line((uint8_t *)replacement_line1, '1', 25544u, "26318.50000000");
+	make_line((uint8_t *)replacement_line2, '2', 25544u, "00000.00000000");
+	replacement_line1[SATELLITE_TLE_LINE_LENGTH] = '\0';
+	replacement_line2[SATELLITE_TLE_LINE_LENGTH] = '\0';
+	CHECK(satellite_store_replace(0u, replacement_line1, replacement_line2));
+	CHECK(satellite_store_seed_defaults());
+	CHECK(satellite_store_get(0u, &iss) && memcmp(iss.line1, replacement_line1, SATELLITE_TLE_LINE_LENGTH) == 0);
+	CHECK(satellite_store_get(1u, &so50) && so50.catalog_id == 27607u);
+	CHECK(satellite_store_get(2u, &ao91) && ao91.catalog_id == 43017u);
+}
+
+static void test_builtin_seed_migration(void)
+{
+	sim_flash_create(FLASH_SIZE, &map);
+	CHECK(storage_init());
+	uint8_t records[2u * TEST_RECORD_MAX];
+	uint16_t iss_length = make_record(records, 25544u, "Old ISS", "26315.50000000");
+	uint16_t so50_length = make_record(records + iss_length, 27607u, "Old SO-50", "26315.50000000");
+	CHECK(install(records, (uint16_t)(iss_length + so50_length), 2u, false, false, false));
+	CHECK(downgrade_active_bank_to_v1());
+	satellite_record_t iss, ao91;
+	CHECK(satellite_store_count() == 2u && satellite_store_get(0u, &iss));
+	char installed_line1[SATELLITE_TLE_LINE_LENGTH];
+	memcpy(installed_line1, iss.line1, sizeof(installed_line1));
+	CHECK(satellite_store_seed_defaults());
+	CHECK(satellite_store_count() == 3u && satellite_store_get(0u, &iss) &&
+	      memcmp(iss.line1, installed_line1, sizeof(installed_line1)) != 0 && strcmp(iss.name, "ISS (ZARYA)") == 0);
+	CHECK(satellite_store_get(2u, &ao91) && ao91.catalog_id == 43017u && strcmp(ao91.name, "AO-91") == 0);
+}
+
+int main(void)
+{
+	sim_flash_create(FLASH_SIZE, &map);
+	CHECK(storage_init());
+	test_inventory_transactions();
+	CHECK(sim_flash_violations() == 0);
+	test_corrupt_empty_area_fails_closed();
+	test_commit_power_cuts();
+	test_replace_power_cuts();
+	test_first_install_recovery();
+	test_builtin_seed_migration();
+	test_builtin_seed();
+	CHECK(sim_flash_violations() == 0);
+	sim_flash_free();
+	if (failures != 0) {
+		printf("# satelliteStoreTest FAILED (%d checks, %d failures)\n", checks, failures);
+		return 1;
+	}
+	printf("# satelliteStoreTest PASSED (%d checks, 0 failures)\n", checks);
+	return 0;
+}

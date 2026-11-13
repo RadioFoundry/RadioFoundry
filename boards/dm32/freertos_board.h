@@ -11,6 +11,10 @@
 // tests/hil/test_task_stacks.py asks for, and gives the rest to main RAM (the air MTU's 64-burst lists took the last
 // 1 KB from 34, the talk permit before keying 0.5 KB from 33). The debug link's tasks view reports the least free since
 // start (tasks.heap_min_free)
+#if CONFIG_SATELLITE_TLE
+#define configTOTAL_HEAP_SIZE	(31 * 1024 + 512)
+#else
 #define configTOTAL_HEAP_SIZE	(32 * 1024 + 512)
+#endif
 
 #endif

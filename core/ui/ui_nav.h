@@ -40,6 +40,9 @@ typedef enum {
 	SCR_APRS_STATION,		// a heard station's actions
 	SCR_MESSAGE_TEXT,		// message body editor
 	SCR_DATA_SERVICES,		// Settings > Connections > Data services: ARS server, IP gateway (CONFIG_DMR_ARS / _IP_GATEWAY)
+	SCR_SATELLITE_PASSES,		// Tools > Satellite: predict and select the next installed-TLE passes
+	SCR_SATELLITE,			// selected satellite: live pass details and tracking controls
+	SCR_SATELLITE_TEXT,		// one 69-character TLE line
 	SCR_COUNT
 } ui_scr_t;
 
@@ -65,6 +68,10 @@ typedef struct {
 	bool saved;		// in the contacts
 	char name[CODEPLUG_NAME_LEN + 1];
 } ui_target_t;
+
+#if CONFIG_SATELLITE_TLE
+void ui_menus_satellite_text(char *target, uint8_t line, void (*done)(void));
+#endif
 
 // A filtered list's raw row and its label (NULL: empty); false stops the pass
 typedef bool (*ui_raw_fn)(uint16_t raw, const char *label, void *ctx);

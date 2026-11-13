@@ -93,6 +93,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Answer GPS requests | On, Off | On | Answer LRRP location requests (Find also finds it as "position"). With no position the answer is "no fix" | Works |
 | Position source | Auto, GPS, Computer, Fixed | Auto | Where your position comes from, for DMR calls, location requests and APRS. See Position below | Works |
 | Fixed position | Latitude, Longitude | Not set | A position you type in, for a radio without GPS or one that stays in place ([how to type it](13-aprs.md#position)) | Works |
+| Save GPS position | Action | | Save the current GPS fix as the fixed-position fallback. Requires a fresh fix | GPS builds |
 | Send in DMR calls | On, Off | Off | Put your position into your DMR voice calls ([DMR](09-dmr.md#position-in-calls)) | Works |
 
 #### Position
@@ -100,7 +101,8 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 Your position is used by DMR calls (Send in DMR calls), by location requests from a dispatcher (Answer GPS requests)
 and by APRS. None of them needs the others: a radio without APRS still reports its position over DMR.
 
-- **Auto** takes a fresh GPS position, else the computer's, else the fixed one.
+- **Auto** takes a fresh GPS position, else the computer's, else the fixed one. Use **Save GPS position** while you
+  have a fix to store your current coordinates there; the radio can then use them after reboot while GPS is acquiring.
 - **GPS**, **Computer** and **Fixed** take only that one.
 - Computer is offered on firmware with APRS, which reads the computer's GPS over USB ([APRS](13-aprs.md#position)).
 - The settings are saved and are back after the radio restarts.

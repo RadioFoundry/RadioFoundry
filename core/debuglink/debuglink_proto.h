@@ -35,6 +35,18 @@ enum {
 	DL_CMD_IDDB		= 0x1F,	// the DMR ID database: its format, records and an ID looked up (debuglink_iddb.c, 3.23)
 	DL_CMD_CHIP_REG		= 0x20,	// an RF chip or SoC register read or written (debuglink_chipreg.c, 3.24)
 	DL_CMD_HWOPT		= 0x21,	// the board's hardware options: list, set (debuglink_hwopt.c, 3.25)
+	DL_CMD_SATELLITE	= 0x22,	// selected satellite TLE records (debuglink_satellite.c; CONFIG_SATELLITE_TLE)
+};
+
+// DL_CMD_SATELLITE operations (first payload byte; docs/spec/satellite.md 6)
+enum {
+	DL_SAT_OP_INFO = 0,	// -> version u8, capacity u16, installed count u16
+	DL_SAT_OP_LIST,		// start u16 -> count u8, then (catalog ID u32, epoch Unix seconds u32) entries
+	DL_SAT_OP_BEGIN,	// count u16, bytes u16, CRC-32 u32 -> transaction ID u16
+	DL_SAT_OP_DATA,		// transaction ID u16, offset u16, up to 59 data bytes -> next offset u16
+	DL_SAT_OP_COMMIT,	// transaction ID u16, CRC-32 u32 -> none
+	DL_SAT_OP_ABORT,	// transaction ID u16 -> none
+	DL_SAT_OP_SYNC_CHANNELS,	// none -> ensure installed satellites have channels in the Satellites zone
 };
 
 // DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.25)

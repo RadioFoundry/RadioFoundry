@@ -549,6 +549,61 @@ static void test_startup(void)
 	CHECK(!hw.audio && !hw.led[LED_GREEN] && !hw.led[LED_RED]);
 }
 
+#if CONFIG_SATELLITE_TLE
+static void test_satellite_override(void)
+{
+	setup_codeplug();
+	start();
+	uint32_t restore_rx = sm.view.ch.rx_hz;
+	uint32_t restore_tx = sm.view.ch.tx_hz;
+	uint32_t nominal_rx = 437800000u;
+	uint32_t nominal_tx = 145990000u;
+	sm.view.ch.bw = RADIO_BW_25K;
+	sm.view.ch.tx_tone = (subtone_t){ TONE_CTCSS, 123u };
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 10u, nominal_tx + 10u,
+				 10, 10, now);
+	CHECK(sm.view.satellite_tracking);
+	CHECK(sm.view.satellite_nominal_rx_hz == nominal_rx && sm.view.satellite_nominal_tx_hz == nominal_tx);
+	CHECK(sm.view.ch.rx_hz == nominal_rx + 10u && sm.view.ch.tx_hz == nominal_tx + 10u);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && sm.view.ch.bw == RADIO_BW_12K5);
+	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 670u);
+	int rx_calls = hw.rx_calls;
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 10u, nominal_tx + 10u, 10, 10, now);
+	CHECK(hw.rx_calls == rx_calls);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX);
+	sm.view.state = RS_IDLE;
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 15u, nominal_tx + 15u,
+				 15, 15, now);
+	CHECK(sm.view.ch.rx_hz == nominal_rx + 10u && sm.view.ch.tx_hz == nominal_tx + 10u);
+	sm.view.state = RS_TX;
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 20u, nominal_tx + 20u,
+				 20, 20, now);
+	CHECK(hw.rx_calls == rx_calls);
+	CHECK(sm.view.ch.rx_hz == nominal_rx + 10u && sm.view.ch.tx_hz == nominal_tx + 10u);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.ch.rx_hz == nominal_rx + 20u && sm.view.ch.tx_hz == nominal_tx + 20u);
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, 100000000u, 100000000u, 0, 0, now + 30u);
+	CHECK(sm.view.satellite_status == 1u);
+	CHECK(sm.view.ch.rx_hz == nominal_rx && sm.view.ch.tx_hz == nominal_tx);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now + 40u);
+	CHECK(!sm.view.satellite_tracking);
+	CHECK(sm.view.ch.rx_hz == nominal_rx && sm.view.ch.tx_hz == nominal_tx);
+	CHECK(sm.view.ch.bw == RADIO_BW_12K5);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.ch.rx_hz == restore_rx && sm.view.ch.tx_hz == restore_tx);
+	CHECK(sm.view.ch.bw == RADIO_BW_25K);
+	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 123u);
+}
+#endif
+
 // The VFO's step: auto (0, the default) follows the width; a step set stays whatever the width; kept in the settings
 static void test_vfo_step_auto(void)
 {
@@ -3313,6 +3368,7 @@ static void test_position(void)
 {
 	static const char gga[] = "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47";
 	static const char rmc[] = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
+	static const char rmc_void[] = "$GPRMC,123519,V,,,,,,,230394,,,N*51";
 	lrrpPosition_t lp;
 	ui_position_t up;
 	int32_t lat, lon;
@@ -3327,10 +3383,53 @@ static void test_position(void)
 	gps_here = true;
 	CHECK(ui_svc_feat_radio() & UI_FEAT_GPS);
 	CHECK(!ui_svc_position(&up));		// nothing heard yet
+	CHECK(!position_save_gps(now));
+	position_nmea(rmc_void, strlen(rmc_void), true, now);
 	position_nmea(gga, strlen(gga), true, now);
+	position_fix_t merged_fix;
+	uint32_t gps_date, gps_utc;
+	CHECK(position_fix(&merged_fix, now) == POSITION_SRC_GPS);
+	CHECK(merged_fix.date == 230394u && merged_fix.utc_hms == 123519u);
+	CHECK(position_utc_fields(&gps_date, &gps_utc, now));
+	CHECK(gps_date == 230394u && gps_utc == 123519u);
 	position_nmea(rmc, strlen(rmc), true, now);
 	CHECK(ui_svc_position(&up) && up.fix && up.sats == 8 && up.lat_e7 == 481173000 && up.lon_e7 == 115166666);
 	CHECK(up.alt_ok && up.alt_m == 545 && up.course == 84);
+	position_cfg_t original_cfg;
+	position_get_cfg(&original_cfg);
+	CHECK(position_save_gps(now));
+	position_cfg_t saved_cfg;
+	position_get_cfg(&saved_cfg);
+	CHECK(saved_cfg.fix_lat == up.lat_e7 && saved_cfg.fix_lon == up.lon_e7 && saved_cfg.fix_alt_m == up.alt_m);
+	uint32_t auto_fallback_now = now + POSITION_STALE_MS;
+#if CONFIG_POSITION_HOST
+	position_nmea(rmc, strlen(rmc), false, auto_fallback_now);	// a fresh host fix must not displace Fixed in Auto
+#endif
+	saved_cfg.pref = POSITION_AUTO;
+	position_set_cfg(&saved_cfg, now);
+	CHECK(position_fix(&merged_fix, auto_fallback_now) == POSITION_SRC_FIXED);
+	saved_cfg.pref = POSITION_GPS;
+	position_set_cfg(&saved_cfg, now);
+	CHECK(position_fix_for_satellite(&merged_fix, now) == POSITION_SRC_GPS);
+	CHECK(position_fix_for_satellite(&merged_fix, now + POSITION_STALE_MS) == POSITION_SRC_FIXED);
+	CHECK(merged_fix.lat == up.lat_e7 && merged_fix.lon == up.lon_e7 && merged_fix.alt_m == up.alt_m);
+	saved_cfg.pref = POSITION_FIXED;
+	position_set_cfg(&saved_cfg, now);
+	CHECK(position_fix(&merged_fix, now) == POSITION_SRC_FIXED && merged_fix.lat == up.lat_e7);
+	CHECK(position_utc_fields(&gps_date, &gps_utc, now));
+	saved_cfg.pref = original_cfg.pref;
+	position_set_cfg(&saved_cfg, now);
+	settings_t saved_settings;
+	settings_read(&saved_settings);
+	position_load(&saved_settings);
+	position_fix_t saved_fix;
+	CHECK(position_fix(&saved_fix, auto_fallback_now) == POSITION_SRC_FIXED);
+	CHECK(saved_fix.lat == up.lat_e7 && saved_fix.lon == up.lon_e7 && saved_fix.alt_m == up.alt_m);
+	position_get_cfg(&saved_cfg);
+	saved_cfg.fix_lat = original_cfg.fix_lat;
+	saved_cfg.fix_lon = original_cfg.fix_lon;
+	saved_cfg.fix_alt_m = original_cfg.fix_alt_m;
+	position_set_cfg(&saved_cfg, now);
 	run(10);
 	CHECK(dmrDataServiceOwnPosition(&lp) && lp.location.fixValid && lp.location.north && lp.location.east);
 	CHECK(lp.location.latDegrees == 48 && lp.location.latMinutes10000 == 70380 && lp.location.lonDegrees == 11 &&
@@ -4958,7 +5057,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(436);	// the settings records (page 1: 176 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
+	sim_flash_cut_after(440);	// the settings records (page 1: 180 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);
@@ -5429,6 +5528,9 @@ int main(void)
 {
 	test_tx_limit_op();
 	test_startup();
+#if CONFIG_SATELLITE_TLE
+	test_satellite_override();
+#endif
 	test_persist();
 	test_channel_step();
 	test_vfo_step_auto();

@@ -137,6 +137,12 @@ static const struct { const char *name, *script; } gallery[] = {
 #endif
 #endif
 	{ "tools", "ok 6" },
+#if CONFIG_SATELLITE_TLE
+	{ "satellite_passes", "ok 6 down down down down down down down down down ok" },
+	{ "satellite", "ok 6 down down down down down down down down down ok ok" },
+	{ "satellite_passes_predicting", "satpredict ok 6 down down down down down down down down down ok" },
+	{ "satellite_tle_text", "ok 6 down down down down down down down down down ok ok ctx" },
+#endif
 	{ "position", "ok 6 2" },
 	{ "gps_sky", "ok 6 2 2" },
 	{ "gps_signal", "ok 6 2 3" },

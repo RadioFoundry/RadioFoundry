@@ -12,6 +12,10 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: core/satellite/ui.c
+msgid "Couldn't save satellite TLE"
+msgstr "No se pudo guardar el TLE satelital"
+
 #: core/stubentry/stub_entry.h
 msgid "PC Loader Connected"
 msgstr "PC Loader conectado"
@@ -20,7 +24,7 @@ msgstr "PC Loader conectado"
 msgid "Power-cycle to exit"
 msgstr "Reinicia para salir"
 
-#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_satellite.c core/ui/ui_screens.c
 msgid "Off"
 msgstr "No"
 
@@ -652,7 +656,7 @@ msgstr "Frecuencia"
 msgid "Power"
 msgstr "Potencia"
 
-#: core/ui/ui_aprs.c
+#: core/ui/ui_aprs.c core/ui/ui_satellite.c
 msgid "Path"
 msgstr "Ruta"
 
@@ -1571,6 +1575,10 @@ msgstr "Nombre"
 #: core/ui/ui_menus.c
 msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
 msgstr "{Atrás borrar  # ABC/123/abc  OK listo|Atrás borr.  # modo  OK}"
+
+#: core/ui/ui_menus.c core/ui/ui_satellite.c
+msgid "Satellite"
+msgstr "Satélite"
 
 #: core/ui/ui_menus.c
 msgid "{Back delete  # ABC/123/abc  OK send|Back del  # mode  OK}"
@@ -2969,6 +2977,10 @@ msgid "Send in DMR calls"
 msgstr "Enviar en llam. DMR"
 
 #: core/ui/ui_menus.c
+msgid "Save GPS position"
+msgstr "Guardar posición GPS"
+
+#: core/ui/ui_menus.c
 msgid "Hotspot allowed"
 msgstr "Hotspot permitido"
 
@@ -3165,6 +3177,14 @@ msgid "Diagnostics: not in this build"
 msgstr "Diagnóstico: no disponible"
 
 #: core/ui/ui_menus.c
+msgid "GPS position saved"
+msgstr "Posición GPS guardada"
+
+#: core/ui/ui_menus.c
+msgid "No current GPS fix"
+msgstr "Sin posición GPS actual"
+
+#: core/ui/ui_menus.c
 msgid "Settings are saved as you change them"
 msgstr "Los ajustes se guardan al cambiarlos"
 
@@ -3311,6 +3331,102 @@ msgstr "Longitud"
 #: core/ui/ui_position.c
 msgid "Up to 90 N/S, 180 E/W"
 msgstr "Hasta 90 N/S, 180 E/W"
+
+#: core/ui/ui_satellite.c
+msgid "TLE update failed"
+msgstr "No se pudo guardar el TLE"
+
+#: core/ui/ui_satellite.c
+msgid "TLE update queued"
+msgstr "Actualización TLE en cola"
+
+#: core/ui/ui_satellite.c
+msgid "Satellite unavailable"
+msgstr "Satélite no disponible"
+
+#: core/ui/ui_satellite.c
+msgid "Predicting passes"
+msgstr "Calculando pasos"
+
+#: core/ui/ui_satellite.c
+msgid "GPS/time unavailable"
+msgstr "GPS/hora no disponible"
+
+#: core/ui/ui_satellite.c
+msgid "Now"
+msgstr "Ahora"
+
+#: core/ui/ui_satellite.c
+msgid "Next passes"
+msgstr "Próximos pasos"
+
+#: core/ui/ui_satellite.c
+msgid "Up Down pick  Back"
+msgstr "Arriba Abajo elegir  Atrás"
+
+#: core/ui/ui_satellite.c
+msgid "No passes in next 24h"
+msgstr "Sin pasos en las próximas 24 h"
+
+#: core/ui/ui_satellite.c
+msgid "No TLE records installed"
+msgstr "No hay registros TLE instalados"
+
+#: core/ui/ui_satellite.c
+msgid "Visible"
+msgstr "Visible"
+
+#: core/ui/ui_satellite.c
+msgid "Below horizon"
+msgstr "Bajo el horizonte"
+
+#: core/ui/ui_satellite.c
+msgid "Waiting for position/time"
+msgstr "Esperando posición/hora"
+
+#: core/ui/ui_satellite.c
+msgid "Tracking"
+msgstr "Seguimiento"
+
+#: core/ui/ui_satellite.c
+msgid "AOS in"
+msgstr "AOS en"
+
+#: core/ui/ui_satellite.c
+msgid "Other satellite"
+msgstr "Otro satélite"
+
+#: core/ui/ui_satellite.c
+msgid "Catalog"
+msgstr "Catálogo"
+
+#: core/ui/ui_satellite.c
+msgid "Next pass"
+msgstr "Próximo paso"
+
+#: core/ui/ui_satellite.c
+msgid "Visible now"
+msgstr "Visible ahora"
+
+#: core/ui/ui_satellite.c
+msgid "LOS"
+msgstr "LOS"
+
+#: core/ui/ui_satellite.c
+msgid "Calculating"
+msgstr "Calculando"
+
+#: core/ui/ui_satellite.c
+msgid "LOS beyond forecast"
+msgstr "LOS fuera del pronóstico"
+
+#: core/ui/ui_satellite.c
+msgid "LOS in"
+msgstr "LOS en"
+
+#: core/ui/ui_satellite.c
+msgid "Up Down satellite  OK track  # TLE  Back"
+msgstr "Arriba Abajo satélite  OK seguir  # TLE  Atrás"
 
 #: core/ui/ui_screens.c
 msgid "IDLE"

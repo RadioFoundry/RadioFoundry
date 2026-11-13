@@ -48,6 +48,10 @@ extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_station_
 extern const ui_scr_def_t ui_fixed_pos_screen;	// ui_position.c
 #endif
 extern const ui_scr_def_t ui_gps_screen;	// ui_gps.c
+#if CONFIG_SATELLITE_TLE
+extern const ui_scr_def_t ui_satellite_screen;	// ui_satellite.c
+extern const ui_scr_def_t ui_satellite_passes_screen;	// ui_satellite.c
+#endif
 #if CONFIG_DUAL_WATCH
 extern const ui_scr_def_t ui_dual_screen, ui_dual_pick_screen, ui_dual_zone_screen;	// ui_dual.c
 #endif
@@ -1870,7 +1874,7 @@ uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint3
 }
 #endif
 
-#if CONFIG_CHANNEL_EDIT || CONFIG_APRS_AFSK || CONFIG_DMR_SMS
+#if CONFIG_CHANNEL_EDIT || CONFIG_APRS_AFSK || CONFIG_DMR_SMS || CONFIG_SATELLITE_TLE
 // ======================= Text entry: keypad letters (ui.md 2.1) =======================
 // Phone keypad: in ABC / abc, 2-9 cycle their letters, the digit, then the letters in the other case (ABC: A B C 2 a b
 // c); 1 cycles punctuation and 0 a space, 0 and a few signs. The same key within 1 s takes the next one, another key
@@ -1884,7 +1888,11 @@ uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint3
 static char *text_target;
 static void (*text_done)(void);		// called once the text is kept (NULL: none)
 static uint8_t text_max;
+#if CONFIG_SATELLITE_TLE
+static char text_name_buf[SATELLITE_TLE_LINE_LENGTH + 1u];
+#else
 static char text_name_buf[CODEPLUG_NAME_LEN + 1];
+#endif
 static char *text_buf;
 static uint8_t text_len;
 static int8_t text_key = -1;		// the key that typed the last character, -1 = none to cycle
@@ -1892,14 +1900,22 @@ static uint8_t text_idx;
 static uint32_t text_ms;
 enum { TEXT_UPPER, TEXT_DIGITS, TEXT_LOWER, TEXT_MODES };	// the order # cycles through
 static uint8_t text_mode;
+#if CONFIG_SATELLITE_TLE
+static uint8_t satellite_text_line;
+#endif
 
 static void text_open(char *target, uint8_t max, uint8_t screen)
 {
 	text_target = target;
 	text_done = NULL;
 	text_buf = screen == SCR_MESSAGE_TEXT ? message_buffer : text_name_buf;
+#if CONFIG_SATELLITE_TLE
+	text_max = screen == SCR_SATELLITE_TEXT ? max :
+		(screen == SCR_MESSAGE_TEXT ? max : (max < CODEPLUG_NAME_LEN ? max : CODEPLUG_NAME_LEN));
+#else
 	text_max = screen == SCR_MESSAGE_TEXT ? max :
 		(max < CODEPLUG_NAME_LEN ? max : CODEPLUG_NAME_LEN);
+#endif
 	ui_push(screen, 0);
 }
 
@@ -1920,6 +1936,14 @@ static void ui_text_open_message(bool aprs)
 
 #if CONFIG_CHANNEL_EDIT
 static void ui_text_open(char *target, uint8_t max) { text_open(target, max, SCR_TEXT); }
+#endif
+#if CONFIG_SATELLITE_TLE
+void ui_menus_satellite_text(char *target, uint8_t line, void (*done)(void))
+{
+	text_open(target, SATELLITE_TLE_LINE_LENGTH, SCR_SATELLITE_TEXT);
+	satellite_text_line = line;
+	text_done = done;
+}
 #endif
 #if CONFIG_APRS_AFSK
 static void ui_text_open_to(char *target, uint8_t max) { text_open(target, max, SCR_APRS_TO); }
@@ -2064,6 +2088,21 @@ static const char *text_title(void)
 #if CONFIG_CHANNEL_EDIT
 static const ui_scr_def_t text_screen = {
 	.name = "text", .flags = SF_LIST, .prefix = TRN("Name"), .title = text_title,
+	.hint = TRN(TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
+	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
+};
+#endif
+#if CONFIG_SATELLITE_TLE
+static const char *satellite_text_title(void)
+{
+	static const char *const titles[2][TEXT_MODES] = {
+		{ "1 ABC", "1 123", "1 abc" }, { "2 ABC", "2 123", "2 abc" },
+	};
+	return titles[(satellite_text_line == 2u) ? 1u : 0u][text_mode];
+}
+
+static const ui_scr_def_t satellite_text_screen = {
+	.name = "satellite-tle-text", .flags = SF_LIST, .prefix = TRN("Satellite"), .title = satellite_text_title,
 	.hint = TRN(TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
 	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
 };
@@ -5253,7 +5292,8 @@ void ui_crash_tick(uint32_t now_ms)
 // Every tool keeps its number on every radio and build, so a key path (OK 6 7: Diagnostics; tests/hil/test_ui.py and the
 // user guide) is the same everywhere. The one a radio may not have (Battery) is last, so no radio has a gap; a build
 // without diagnostics skips 7
-enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_BATTERY, T_ZONE_OFFER, T_COUNT };
+enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_BATTERY, T_ZONE_OFFER,
+	T_SATELLITE, T_COUNT };
 
 // A tool this build or radio doesn't have is left out of the list (Battery, Supply on a radio that measures its DC
 // input instead, is left out where the radio measures neither)
@@ -5264,7 +5304,7 @@ static bool tool_shown(uint16_t i)
 		return offer_waiting();	// 0 on the keypad: only while another radio's zone waits
 #endif
 	return (i != T_DIAG || CONFIG_DIAG) && (i != T_BATTERY || board_volts() != BOARD_VOLTS_NONE) &&
-	       i != T_ZONE_OFFER;
+	       i != T_ZONE_OFFER && (i != T_SATELLITE || CONFIG_SATELLITE_TLE);
 }
 
 // The hint names the last number ("1-9 open"): the highest tool this radio has. Built in the language in use on each
@@ -5303,7 +5343,7 @@ static void tools_item(uint16_t row, ui_item_t *it)
 {
 	static const char *const names[] = { TRN("Scan"), TRN("Position"), TRN("Hotspot"), TRN("USB network"),
 					     TRN("Single-freq repeater"), TRN("Roaming"), TRN("Diagnostics"), "APRS",
-					     TRN("Battery"), TRN("Zones/Chs Received") };
+					     TRN("Battery"), TRN("Zones/Chs Received"), TRN("Satellite") };
 	uint16_t i = tools_row(row);
 	if (i >= T_COUNT)
 		return;
@@ -5402,6 +5442,7 @@ static void tools_select(uint16_t row, bool hold)
 	case T_ROAM: ui_push(SCR_ROAM, 0); break;
 	case T_APRS: ui_push(SCR_APRS, 0); break;
 	case T_ZONE_OFFER: ui_push(SCR_OFFER, 0); break;
+	case T_SATELLITE: ui_push(SCR_SATELLITE_PASSES, 0); break;
 	default: break;
 	}
 }
@@ -5417,7 +5458,8 @@ static const ui_scr_def_t tools_screen = {
 #if CONFIG_UI_SETTINGS
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
-enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE, SA_FIXED_POS, SA_DATA_SERVICES };
+enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE, SA_FIXED_POS,
+	SA_SAVE_GPS_POS, SA_DATA_SERVICES };
 
 typedef struct {
 	const char *name;
@@ -5675,6 +5717,9 @@ static const set_item_t s_location[] = {
 	LIST(TRN("Position source"), "GPS computer fixed auto", UI_SET_POS_SOURCE, v_possrc, n_possrc),
 	ACTION(TRN("Fixed position"), "latitude longitude coordinates", SA_FIXED_POS),
 	TOGGLE(TRN("Send in DMR calls"), "GPS info position location talker", UI_SET_POS_DMR_CALLS),
+#if CONFIG_GPS
+	ACTION(TRN("Save GPS position"), "save current GPS fix as fixed fallback", SA_SAVE_GPS_POS),
+#endif
 #endif
 };
 static const set_item_t s_connections[] = {
@@ -6108,6 +6153,11 @@ static void group_select(uint16_t i, bool hold)
 #endif
 #if CONFIG_POSITION
 		case SA_FIXED_POS: ui_push(SCR_FIXED_POS, 0); break;
+#endif
+#if CONFIG_POSITION && CONFIG_GPS
+		case SA_SAVE_GPS_POS:
+			ui_toast(ui_svc_position_save_gps() ? TR("GPS position saved") : TR("No current GPS fix"));
+			break;
 #endif
 		default: break;
 		}
@@ -6655,6 +6705,11 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #endif
 #if CONFIG_GPS_SKY
 	[SCR_GPS] = &ui_gps_screen,
+#endif
+#if CONFIG_SATELLITE_TLE
+	[SCR_SATELLITE_PASSES] = &ui_satellite_passes_screen,
+	[SCR_SATELLITE] = &ui_satellite_screen,
+	[SCR_SATELLITE_TEXT] = &satellite_text_screen,
 #endif
 #if CONFIG_CRASH_SCREEN
 	[SCR_CRASH] = &crash_screen,

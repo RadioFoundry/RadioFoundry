@@ -9,6 +9,8 @@
 
 typedef struct {
 	bool valid;
+	bool utc_date_valid, utc_time_valid;
+	uint32_t utc_date_ms, utc_time_ms;
 	position_fix_t f;
 } fix_t;
 
@@ -172,6 +174,18 @@ static bool allows(uint8_t pref)
 	return p.cfg.pref == POSITION_AUTO || p.cfg.pref == pref;
 }
 
+static void fixed_position(position_fix_t *out, uint32_t now_ms)
+{
+	out->lat = p.cfg.fix_lat;
+	out->lon = p.cfg.fix_lon;
+	out->alt_m = p.cfg.fix_alt_m != INT16_MIN ? p.cfg.fix_alt_m : POSITION_ALT_NONE;
+	out->speed_kmh = 0xFFFFu;
+	out->course = 0xFFFFu;
+	out->utc_hms = 0xFFFFFFFFu;
+	out->date = 0;
+	out->ms = now_ms;
+}
+
 // The position in use (lock held)
 static uint8_t choose(position_fix_t *out, uint32_t now_ms)
 {
@@ -181,23 +195,16 @@ static uint8_t choose(position_fix_t *out, uint32_t now_ms)
 		return POSITION_SRC_GPS;
 	}
 #endif
+	if (allows(POSITION_FIXED) && fixed_set()) {
+		fixed_position(out, now_ms);
+		return POSITION_SRC_FIXED;
+	}
 #if CONFIG_POSITION_HOST
 	if (allows(POSITION_HOST) && fresh(&p.host, now_ms)) {
 		*out = p.host.f;
 		return POSITION_SRC_HOST;
 	}
 #endif
-	if (allows(POSITION_FIXED) && fixed_set()) {
-		out->lat = p.cfg.fix_lat;
-		out->lon = p.cfg.fix_lon;
-		out->alt_m = p.cfg.fix_alt_m != INT16_MIN ? p.cfg.fix_alt_m : POSITION_ALT_NONE;
-		out->speed_kmh = 0xFFFFu;
-		out->course = 0xFFFFu;
-		out->utc_hms = 0xFFFFFFFFu;
-		out->date = 0;
-		out->ms = now_ms;
-		return POSITION_SRC_FIXED;
-	}
 	return POSITION_SRC_NONE;
 }
 
@@ -207,6 +214,48 @@ uint8_t position_fix(position_fix_t *out, uint32_t now_ms)
 	uint8_t src = choose(out, now_ms);
 	UNLOCK();
 	return src;
+}
+
+uint8_t position_fix_for_satellite(position_fix_t *out, uint32_t now_ms)
+{
+	LOCK();
+	uint8_t src = choose(out, now_ms);
+	if ((src == POSITION_SRC_NONE || (src != POSITION_SRC_FIXED && out->alt_m == POSITION_ALT_NONE)) &&
+	    fixed_set() && p.cfg.fix_alt_m != INT16_MIN) {
+		fixed_position(out, now_ms);
+		src = POSITION_SRC_FIXED;
+	}
+	UNLOCK();
+	return src;
+}
+
+bool position_utc_fields(uint32_t *date_ddmmyy, uint32_t *utc_hms, uint32_t now_ms)
+{
+	if (date_ddmmyy == NULL || utc_hms == NULL)
+		return false;
+	LOCK();
+#if CONFIG_GPS
+	if (!p.gps_off && p.gps.utc_date_valid && p.gps.utc_time_valid &&
+	    (int32_t)(now_ms - p.gps.utc_date_ms) < (int32_t)POSITION_STALE_MS &&
+	    (int32_t)(now_ms - p.gps.utc_time_ms) < (int32_t)POSITION_STALE_MS) {
+		*date_ddmmyy = p.gps.f.date;
+		*utc_hms = p.gps.f.utc_hms;
+		UNLOCK();
+		return true;
+	}
+#endif
+#if CONFIG_POSITION_HOST
+	if (p.host.utc_date_valid && p.host.utc_time_valid &&
+	    (int32_t)(now_ms - p.host.utc_date_ms) < (int32_t)POSITION_STALE_MS &&
+	    (int32_t)(now_ms - p.host.utc_time_ms) < (int32_t)POSITION_STALE_MS) {
+		*date_ddmmyy = p.host.f.date;
+		*utc_hms = p.host.f.utc_hms;
+		UNLOCK();
+		return true;
+	}
+#endif
+	UNLOCK();
+	return false;
 }
 
 // The middle of the ambiguity cell (grid in 1e-7 degree, within the whole degree) the position is in
@@ -318,6 +367,16 @@ void position_nmea(const char *s, size_t n, bool gps, uint32_t now_ms)
 #else
 	fix_t *f = &p.host;
 #endif
+	if (x.kind == NMEA_RMC && x.date_valid) {
+		f->f.date = x.date;
+		f->utc_date_valid = true;
+		f->utc_date_ms = now_ms;
+	}
+	if (x.utc_valid) {
+		f->f.utc_hms = x.utc_hms;
+		f->utc_time_valid = true;
+		f->utc_time_ms = now_ms;
+	}
 	if (!x.fix) {
 		f->valid = false;
 	} else {
@@ -325,12 +384,10 @@ void position_nmea(const char *s, size_t n, bool gps, uint32_t now_ms)
 		f->f.lat = x.lat;
 		f->f.lon = x.lon;
 		f->f.ms = now_ms;
-		f->f.utc_hms = x.utc_hms;
 		if (x.kind == NMEA_RMC) {
 			f->f.speed_kmh = x.speed_kn10 == 0xFFFFu ? 0xFFFFu :
 					 (uint16_t)(((uint32_t)x.speed_kn10 * 1852u + 5000u) / 10000u);
 			f->f.course = x.course10 == 0xFFFFu ? 0xFFFFu : (uint16_t)((x.course10 + 5u) / 10u % 360u);
-			f->f.date = x.date;
 			if (f->f.speed_kmh == 0) {
 				f->f.course = 0xFFFFu;	// standing still: no meaningful course
 			}
@@ -350,6 +407,8 @@ void position_gps_enable(bool on)
 	if (!on) {
 		p.gps.valid = false;
 		p.gps_heard = false;
+		p.gps.utc_date_valid = false;
+		p.gps.utc_time_valid = false;
 #if CONFIG_GPS_SKY
 		nmea_sky_init(&p.sky);
 #endif
@@ -381,6 +440,20 @@ bool position_gps(position_gps_t *out, uint32_t now_ms)
 	}
 	UNLOCK();
 	return on;
+}
+
+bool position_save_gps(uint32_t now_ms)
+{
+	position_gps_t gps;
+	if (!position_gps(&gps, now_ms) || !gps.fix)
+		return false;
+	position_cfg_t cfg;
+	position_get_cfg(&cfg);
+	cfg.fix_lat = gps.lat;
+	cfg.fix_lon = gps.lon;
+	cfg.fix_alt_m = gps.alt_m > INT16_MIN && gps.alt_m <= INT16_MAX ? (int16_t)gps.alt_m : INT16_MIN;
+	position_set_cfg(&cfg, now_ms);
+	return true;
 }
 
 #if CONFIG_GPS_SKY

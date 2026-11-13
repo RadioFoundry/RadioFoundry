@@ -113,6 +113,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x1F` | IDDB | DMR ID u32 (3.23); `CONFIG_DMR` builds, else status 4 | format u8, records u32, found u8, text (3.23) |
 | `0x20` | CHIP_REG | chip u8, page u8, register u8 [+ value u32]; or chip `0xFF`, address u32 [+ value u32] (3.24) | the register's value u32 (3.24) |
 | `0x21` | HWOPT | operation u8 + arguments (3.25) | the options as key=value text, or none (3.25) |
+| `0x22` | SATELLITE | operation u8 + arguments (3.26); `CONFIG_SATELLITE_TLE` builds only | capability, inventory, or transaction result (3.26) |
 
 ### 3.1 VERSION
 
@@ -828,6 +829,14 @@ the same list less the hidden ones; a radio without options has no such row and 
 | 1 | SET | option u8, choice u8 | none. Refused (7) while transmitting or when the board doesn't store it (a choice that contradicts what it detected); bad argument (2) for an unknown option or choice |
 
 `rfoundry_debug.py hwopt` lists them; `rfoundry_debug.py hwopt "Board revision" V4A/V5` sets one.
+
+### 3.26 SATELLITE
+
+`DL_CMD_SATELLITE` (`0x22`) stores explicitly selected TLE records when `CONFIG_SATELLITE_TLE` is enabled and the
+board map has a dedicated satellite area. It has no raw-address access. The operation layouts, record encoding,
+capacity and atomic commit behavior are specified in [satellite.md](satellite.md) 6. The command returns
+`DL_ST_UNAVAILABLE` when the feature or usable area is absent.
+
 
 ## 4. Safety
 

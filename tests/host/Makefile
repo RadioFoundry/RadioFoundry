@@ -9,6 +9,7 @@
 ROOT    := ../..
 CORE    := $(ROOT)/core
 CC      ?= cc
+PYTHON  ?= python3
 # COVERAGE=1: gcov instrumentation (GCC and clang both take --coverage); each test writes its .gcda files here
 COVFLAGS := $(if $(filter 1,$(COVERAGE)),--coverage -O0)
 # SANITIZE=1: ASan + UBSan (Apple clang and GCC); UBSan stops at the first report instead of printing and going on.
@@ -150,6 +151,7 @@ run: $(TESTS)
 	./ipGatewayTestAir440
 	./sfrTest
 	./aprsTest
+	$(PYTHON) satelliteTleTest.py
 ifneq ($(TSHARK),)
 	@# Independent check of the frames the gateway sent: no malformed packets or bad checksums
 	@for f in ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTestAir440.pcap; do "$(TSHARK)" -r $$f -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q; done > ipGatewayTest.expert
@@ -192,7 +194,8 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_ke
 
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                $(CORE)/ui/ui_svc.h
-	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 -o $@ $(RCORE) -lm
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
+		-DCONFIG_SATELLITE_TLE=1 -o $@ $(RCORE) -lm
 
 # The same with the DMR VFO off (CONFIG_VFO_DMR=0): the VFO stays analog and nothing about it changes
 TESTS   += radioCoreTestNoVfoDmr
@@ -503,7 +506,7 @@ i18nTestDefault: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/
 # the long-press rules; uiSim renders screens to PNG (make ui-gallery: docs/ux/screens/, contact sheets in
 # docs/ux/screens/sheets/). Built without the __attribute__ override above so the weak service stubs
 # (ui_svc_stub.c) give way to the simulator's.
-UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
+UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_satellite.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
            $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/radio/radio_am.c \
            $(CORE)/radio/radio_bcast.c sim/ui_sim.c sim/ui_png.c
 # The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
@@ -513,6 +516,7 @@ UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g $(COVFLAGS
            '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1 -DFONT_BOTH -DGFX_INDEXED=1 -DGFX_FIT_TRACE
 UIDEPS  := $(UIAPP) $(ABOUT_H) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc sim/ui_sim.h)
 TESTS   += uiFlowTest uiFlowTestNoColor uiSim
+TESTS   += uiFlowTestSatellite
 
 uiFlowTest: uiFlowTest.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -o $@ uiFlowTest.c $(UIAPP) -lz
@@ -522,8 +526,11 @@ uiFlowTest: uiFlowTest.c $(UIDEPS)
 uiFlowTestNoColor: uiFlowTest.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -DCONFIG_UI_COLOR=0 -DCONFIG_LANG_ES=0 -o $@ uiFlowTest.c $(UIAPP) -lz
 
+uiFlowTestSatellite: uiFlowTest.c $(UIDEPS)
+	$(CC) $(UIFLAGS) -DCONFIG_SATELLITE_TLE=1 -o $@ uiFlowTest.c $(UIAPP) -lz
+
 uiSim: uiSim.c $(UIDEPS)
-	$(CC) $(UIFLAGS) -o $@ uiSim.c $(UIAPP) -lz
+	$(CC) $(UIFLAGS) -DCONFIG_SATELLITE_TLE=1 -o $@ uiSim.c $(UIAPP) -lz
 
 # The beep reel (tools/beep_reel.py). BEEP_DIR picks the beep.c and beep.h to build with, so CI can build the base
 # commit's beeps for a before and after comparison. We copy that beep.h into out/beep/radio/ and put out/beep first on
@@ -559,7 +566,7 @@ ui-sheets: uiSim
 	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: gfxTest gfxTestZh i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiSim beepReel
+run-ui: gfxTest gfxTestZh i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiFlowTestSatellite uiSim beepReel
 	./gfxTest
 	./gfxTestZh
 	./i18nTest
@@ -567,6 +574,7 @@ run-ui: gfxTest gfxTestZh i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiF
 	./i18nTestDefault
 	./uiFlowTest
 	./uiFlowTestNoColor
+	./uiFlowTestSatellite
 	./uiSim --layout
 	./beepReel --out out/beep-reel --no-frames > /dev/null	# checks every beep has a scene and the scenes still run
 .PHONY: run-ui ui-gallery ui-sheets
@@ -1139,6 +1147,37 @@ run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
 	./spiNandTest
 	./nandSectorsTest
 .PHONY: run-settings
+
+TESTS   += satelliteStoreTest
+SAT_STORE := $(CORE)/debuglink/debuglink_satellite.c $(CORE)/storage/storage.c sim/sim_flash.c
+SAT_BUILTINS := $(ROOT)/build/host/gen/builtin_satellite_records.inc
+.PHONY: satellite-builtins-offline
+$(SAT_BUILTINS): satellite-builtins-offline
+	@mkdir -p $(dir $@)
+	$(PYTHON) $(ROOT)/tools/gen_satellite_builtins.py --offline --cache $(ROOT)/build/satellite-tle-cache.json \
+		--build-id 0xFFFFFFFFu --output $@
+TESTS   += satelliteChannelsTest
+TESTS   += satelliteOrbitTest
+SAT_ORBIT := $(CORE)/satellite/orbit.c $(CORE)/satellite/pass.c $(CORE)/satellite/doppler.c \
+	$(CORE)/satellite/tracking.c
+
+satelliteStoreTest: satelliteStoreTest.c $(SAT_STORE) $(SAT_BUILTINS) $(CORE)/debuglink/debuglink_satellite.c \
+		$(wildcard $(CORE)/debuglink/*.h $(CORE)/satellite/*.h $(CORE)/storage/*.h) sim/sim_flash.h
+	$(CC) $(CFLAGS) -I$(ROOT)/build/host/gen -I$(ROOT)/hal -I. -Wshadow -DCONFIG_SATELLITE_TLE=1 -o $@ satelliteStoreTest.c $(SAT_STORE)
+
+run: run-satellite
+run-satellite: satelliteStoreTest satelliteChannelsTest satelliteOrbitTest
+	./satelliteStoreTest
+	./satelliteChannelsTest
+	./satelliteOrbitTest
+.PHONY: run-satellite
+
+satelliteChannelsTest: satelliteChannelsTest.c $(CORE)/satellite/channels.c $(CORE)/satellite/frequency.c \
+		$(wildcard $(CORE)/satellite/*.h $(CORE)/codeplug/*.h $(CORE)/radio/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ satelliteChannelsTest.c $(CORE)/satellite/channels.c $(CORE)/satellite/frequency.c
+
+satelliteOrbitTest: satelliteOrbitTest.c $(SAT_ORBIT) $(wildcard $(CORE)/satellite/*.h)
+	$(CC) $(CFLAGS) -DCONFIG_POSITION=0 -I$(ROOT)/hal -I. -Wshadow -o $@ satelliteOrbitTest.c $(SAT_ORBIT) -lm
 
 # The SPI NOR driver against a model of the chip at the bus, and the journal and settings store on it (16 MB and
 # 1 MB parts, power cuts tearing page programs and erases)

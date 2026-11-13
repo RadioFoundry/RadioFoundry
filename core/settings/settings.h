@@ -232,6 +232,8 @@ typedef struct {
 	uint8_t vfo_sfr;		// the first VFO
 	uint8_t vfo2_sfr;		// the second
 	uint8_t reserved9;
+	uint8_t satellite_index;	// selected installed TLE record, SETTINGS_UNSET8 when none
+	uint8_t reserved10[3];
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size

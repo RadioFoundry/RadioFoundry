@@ -13,6 +13,9 @@
 #include "config.h"
 #include "radio/radio.h"
 #include "codeplug/zone_edit.h"
+#if CONFIG_SATELLITE_TLE
+#include "satellite/store.h"
+#endif
 
 // --- What is available (screens gray out what isn't, and say why on SELECT) ---
 #define UI_FEAT_TALK_TARGET	(1u << 0)	// ui_svc_talk_to / ui_svc_focus_target (dmr-voice)
@@ -179,6 +182,23 @@ typedef struct {
 	uint32_t utc_hms;	// hhmmss, 0xFFFFFFFF unknown
 } ui_position_t;
 bool ui_svc_position(ui_position_t *out);	// false: no GPS on this radio (or off)
+#if CONFIG_GPS && CONFIG_POSITION
+bool ui_svc_position_save_gps(void);	// save the current fresh board fix as the fixed-position fallback
+#endif
+#if CONFIG_SATELLITE_TLE
+uint8_t ui_svc_satellite_count(void);
+bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record);
+uint8_t ui_svc_satellite_selected(void);
+bool ui_svc_satellite_select(uint8_t index);
+bool ui_svc_satellite_track(bool enabled, uint8_t index);
+bool ui_svc_satellite_scan(bool enabled);
+void ui_svc_satellite_poll(void);
+void ui_svc_satellite_scan_state(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes);
+bool ui_svc_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass);
+bool ui_svc_satellite_path(satellite_path_view_t *path);
+bool ui_svc_satellite_replace(uint8_t index, const char *line1, const char *line2);
+bool ui_svc_satellite_update_busy(void);
+#endif
 // One satellite for the GPS screen's sky plot and signal bars
 enum { UI_GNSS_GPS, UI_GNSS_GLONASS, UI_GNSS_GALILEO, UI_GNSS_BEIDOU, UI_GNSS_QZSS, UI_GNSS_COUNT };
 typedef struct {

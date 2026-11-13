@@ -24,7 +24,9 @@ typedef struct {
 	uint8_t sats;		// GGA: satellites used
 	uint16_t hdop10;	// GGA: horizontal dilution of precision x 10, 0xFFFF unknown
 	uint32_t utc_hms;	// hhmmss
+	bool utc_valid;
 	uint32_t date;		// RMC: ddmmyy, 0 unknown
+	bool date_valid;
 } nmea_fix_t;
 
 // One sentence ("$GPRMC,...*hh", trailing CR / LF allowed). False for a bad checksum, another sentence or a malformed

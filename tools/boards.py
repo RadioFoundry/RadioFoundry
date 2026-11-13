@@ -78,10 +78,12 @@ ORIGINAL_VERSION_READS = ("dfu-info",)
 RFOUNDRY_JSON = "tools/rfoundry/rfoundry/registry.json"	# the flashing tools' view, generated and committed
 # hal_flash_map_t fields (hal/hal_flash.h). The site reads the open-firmware image's data flash address, the end of the
 # room for it and the DMR ID database, and the TFTP staging area (the codeplug editor); the check reads every area, to
-# keep a stub write test out of them. The open-firmware flash image follows the EEPROM image at a fixed offset
+# keep a stub write test out of them. Satellite map expressions are checked conservatively for the feature-on layout.
+# The open-firmware flash image follows the EEPROM image at a fixed offset
 # (docs/spec/cps-fast.md)
 FLASH_MAP_FIELDS = ("settings_addr", "settings_size", "journal_addr", "openfw_eeprom", "openfw_flash", "openfw_end",
-                    "calibration_addr", "calibration_size", "native_addr", "native_size", "staging_addr", "staging_size")
+                    "calibration_addr", "calibration_size", "native_addr", "native_size", "staging_addr", "staging_size",
+                    "satellite_addr", "satellite_size")
 OPENFW_FLASH_OFFSET = 0x20000
 APP_SLOT = "app+slot"		# [flash] sectors: one sector for the application, one for the codec slot (no geometry)
 NAND_DRIVER = "drivers/flash/spi_nand"	# in BOARD_DIRS: the board's data memory is SPI NAND (the stub's nand flag)
@@ -450,13 +452,22 @@ def board_t_names(board_dir):
 
 
 def flash_map(board_dir):
-    """The FLASH_MAP_FIELDS of the board's hal_flash_map_t definition, {field: address}. A board has one; a second one
-    that disagrees is an error."""
+    """The FLASH_MAP_FIELDS of the board's hal_flash_map_t definition, {field: literal value}. A board has one; a
+    second one that disagrees is an error. For satellite ternaries use the feature-on reservation and the smaller
+    staging size so write tests protect the sectors in both configurations."""
     out, where = {}, None
     for f, text in _c_sources(board_dir):
         for m in re.finditer(r"\bhal_flash_map_t\s+\w+\s*=\s*\{", text):
-            found = {k: int(v, 0) for k, v in re.findall(r"\.(\w+)\s*=\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*",
-                                                        _braced(text, m.end())) if k in FLASH_MAP_FIELDS}
+            body = _braced(text, m.end())
+            found = {k: int(v, 0) for k, v in re.findall(r"\.(\w+)\s*=\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*", body)
+                     if k in FLASH_MAP_FIELDS}
+            for k, _, a, b in re.findall(
+                    r"\.(\w+)\s*=\s*([A-Za-z_]\w*)\s*\?\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*"
+                    r"\s*:\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*", body):
+                if k not in FLASH_MAP_FIELDS:
+                    continue
+                av, bv = int(a, 0), int(b, 0)
+                found[k] = min(av, bv) if k == "staging_size" else max(av, bv) if k == "satellite_size" else av or bv
             if where is not None and found != out:
                 raise RegistryError("%s: hal_flash_map_t in %s and %s differ" % (os.path.relpath(board_dir, ROOT),
                                                                                  where, f))
@@ -723,7 +734,8 @@ class Board:
                             ("open-firmware flash image", fl, m.get("openfw_end", 0) - fl),
                             ("calibration", m.get("calibration_addr", 0), m.get("calibration_size", 0)),
                             ("native codeplug", m.get("native_addr", 0), m.get("native_size", 0)),
-                            ("staging", m.get("staging_addr", 0), m.get("staging_size", 0))):
+                            ("staging", m.get("staging_addr", 0), m.get("staging_size", 0)),
+                            ("satellite data", m.get("satellite_addr", 0), m.get("satellite_size", 0))):
             if n > 0:
                 out.append((lo, lo + n, name))
         return out
@@ -1688,6 +1700,24 @@ def self_test():
                 "\t.openfw_end = 0x00800000UL, .other = 5, .regions = { 1, 2 },\n\t.staging_addr = 0,\n};\n")
     ok(flash_map(tmpc) == {"openfw_eeprom": 0x700000, "openfw_end": 0x800000, "staging_addr": 0},
        "flash_map: the map's fields, suffixes and comments skipped %r" % flash_map(tmpc))
+    with open(os.path.join(tmpc, "flash.c"), "w", encoding="utf-8") as f:
+        f.write("static const hal_flash_map_t fmap = {\n"
+                "\t.openfw_eeprom = 0x00700000u,\n"
+                "\t.openfw_end = 0x00800000u,\n"
+                "\t.staging_addr = 0xF00000u,\n"
+                "\t.staging_size = CONFIG_SATELLITE_TLE ? 0x03D000u : 0x040000u,\n"
+                "\t.satellite_addr = CONFIG_SATELLITE_TLE ? 0xF3D000u : 0u,\n"
+                "\t.satellite_size = CONFIG_SATELLITE_TLE ? 0x003000u : 0u,\n};\n")
+    ok(flash_map(tmpc) == {"staging_addr": 0xF00000, "staging_size": 0x3D000,
+                           "satellite_addr": 0xF3D000, "satellite_size": 0x3000,
+                           "openfw_eeprom": 0x700000, "openfw_end": 0x800000},
+       "flash_map: reserves satellite sectors and checks the reduced staging range")
+    fixture_board = Board({"id": "fixture"}, {}, {}, {"symbols": {}, "flash": (0, 0x100000)}, [], {},
+                          fmap=flash_map(tmpc))
+    ok((0xF3D000, 0xF40000, "satellite data") in fixture_board.map_areas() and
+       any("satellite data" in p for p in write_test_problems(0xF3D000, False, 0x1000000,
+                                                               fixture_board.map_areas(), [])),
+       "map_areas: the satellite sectors are protected from stub writes")
     areas = [(0x700000, 0x710000, "EEPROM"), (0x711000, 0x719000, "settings"), (0x719000, 0x71B000, "journal"),
              (0x720000, 0xF00000, "flash image")]
     prot = [{"start": 0x1000, "end": 0xC9000, "what": "cal"}]

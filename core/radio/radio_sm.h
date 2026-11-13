@@ -163,6 +163,8 @@ typedef enum {
 	RREQ_WAKE,		// radio_task.c: tick now (a DMR transmission ended: dmr_call_set_wake); never radio_sm_request
 	RREQ_VOLUME_HOLD,	// arg: 1 hold the level and ignore the knob (keys locked), 0 follow it again
 	RREQ_VFO_SFR,		// the VFO's SFR role (CONFIG_SFR): arg = byte A, as a channel's (sfr.h); VFO only
+	RREQ_SATELLITE_TRACK,	// satellite mode: arg = enabled, arg2 = installed TLE record index
+	RREQ_SATELLITE_SCAN,	// satellite pass picker: arg = start/cancel
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -450,6 +452,22 @@ typedef struct {
 	aprs_rf_job_t aprs_job;
 #endif
 	bool tx_no_ptt;		// on the air without PTT (a DMR data burst list): not the user's transmission, no "after PTT"
+#if CONFIG_SATELLITE_TLE
+	bool satellite_session;
+	bool satellite_pending;
+	bool satellite_config_pending;
+	bool satellite_restore_config_pending;
+	bool satellite_saved_vfo;
+	uint8_t satellite_saved_vfo_index;
+	uint16_t satellite_saved_zone, satellite_saved_pos, satellite_saved_channel;
+	uint8_t satellite_saved_mode, satellite_saved_bw;
+	subtone_t satellite_saved_rx_tone, satellite_saved_tx_tone;
+	uint16_t satellite_profile_tx_tone_tenths;
+	uint32_t satellite_restore_rx_hz, satellite_restore_tx_hz;
+	uint32_t satellite_nominal_rx_hz, satellite_nominal_tx_hz;
+	uint32_t satellite_applied_rx_hz, satellite_applied_tx_hz;
+	uint32_t satellite_pending_rx_hz, satellite_pending_tx_hz;
+#endif
 } radio_sm_t;
 
 // Start-up: the codeplug and the settings (core/settings): the saved zone, channel or VFO, else zone 0 and its
@@ -471,6 +489,12 @@ uint8_t radio_sm_hotspot_power(uint8_t rf_level);
 
 // Settings in effect from now on (radio_task.c calls it for RREQ_SETTINGS; the tests call it directly)
 void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms);
+#if CONFIG_SATELLITE_TLE
+void radio_sm_satellite_update(radio_sm_t *sm, bool enabled, uint8_t record_index, uint8_t status,
+			       uint32_t nominal_rx_hz, uint32_t nominal_tx_hz, uint16_t tx_tone_tenths,
+			       bool targets_valid, uint32_t rx_hz, uint32_t tx_hz,
+			       int64_t rx_offset_hz, int64_t tx_offset_hz, uint32_t now_ms);
+#endif
 
 // The view as the screens and the debug link get it: during a roaming survey visit (a few hundred ms on another
 // site, docs/spec/dmr-roaming.md 4.9) it still shows the site the radio returns to. radio_task.c applies it when it

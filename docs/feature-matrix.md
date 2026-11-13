@@ -259,6 +259,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `APRS_RX` | ● | ● | ● | … | … | ● | ● |
 | `APRS_IGATE` | ● | ○ | ● | … | … | ○ | ● |
 | `GPS_SKY` | ● | ● | ✕ | ● | ● | ● | ● |
+| `SATELLITE_TLE` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `KEY_ASSIGN` | ● | ● | ● | ● | ● | ● | ● |
 | `CHANNEL_LIST` | ● | ● | ● | ● | ● | ● | ● |
 | `CHANNEL_EDIT` | ● | ● | ● | ● | ● | ● | ● |
@@ -388,6 +389,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | Notes |
 |---|---|---:|---:|---|
+| Satellite TLE inventory transfer and tracking | `SATELLITE_TLE` | — | — | Not measured; default off. Uses 12 KB of update staging when enabled on a radio with a dedicated satellite flash range |
 | Settings and codeplug storage on SPI NAND | `NAND_STORAGE` | — | — | For radios whose data flash is SPI NAND: on for the DB25-D (about 6.6 KB flash, 1.5 KB RAM), not in these columns. These radios have SPI NOR and don't use it ([nand-sectors](spec/nand-sectors.md)) |
 
 ## Bench
