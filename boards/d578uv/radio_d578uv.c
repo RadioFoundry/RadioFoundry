@@ -1083,7 +1083,10 @@ static void burst_disarm(void)
 
 uint32_t d578uv_burst_edges(void)
 {
-	return burst_edges;
+	__disable_irq();	// the three from the same moment: the handlers change them together
+	uint32_t n = pa_gate_edges_done(burst_edges, burst_phase, burst_level);
+	__enable_irq();
+	return n;
 }
 
 void d578uv_pa_counts(uint32_t *bursts, uint32_t *refused)

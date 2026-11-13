@@ -218,7 +218,8 @@ modem task can both call in. No RTOS calls and no waits: the host tests run the 
 5. `TX_DONE` comes on the first ACK 0x0A at least a slot after the last frame (an earlier one is another frame's),
    also when it comes before the queue has drained, or `SCT_DMR_DONE_MS` (600 ms) after it. Then WORK_MODE
    receive. `tx_abort` goes back to receive without `TX_DONE`.
-   A port with `burst_edges` (the count of the chip's burst line edges, from the board's interrupt) ends a
+   A port with `burst_edges` (the count of the chip's burst line edges, from the board's interrupt; a board whose RF
+   outlasts the line's fall counts that fall once the burst is off the air) ends a
    transmission without voice sooner: each frame goes out in a burst of its own, in order, so once the queue is
    empty the fall that brings the edges since `tx_begin` to twice the frames sent is the end of the last burst. ACK
    0x0A comes about 17 ms after that fall (measured), so the receiver is back that much sooner for a reply 30 ms

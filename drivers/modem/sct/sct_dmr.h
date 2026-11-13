@@ -44,8 +44,9 @@ typedef struct {
 	uint8_t rx_ready;
 	uint8_t rx_settle_ms;
 	// Optional: a running count of the chip's burst line edges, rising and falling, from the board's interrupt (any
-	// start value: the engine takes differences within a transmission). With it, a transmission without voice ends
-	// at the fall of its last burst, not at the chip's "far end done" about 17 ms later, and the receiver is back
+	// start value: the engine takes differences within a transmission); a board whose RF outlasts the line's fall
+	// counts that fall only once the burst is off the air. With it, a transmission without voice ends at the fall of
+	// its last burst, not at the chip's "far end done" about 17 ms later, and the receiver is back
 	// that much sooner (modem-sct.md 3)
 	uint32_t (*burst_edges)(void);
 	// Optional: more fields for the start packet (TYPE 0x05), sent in order after the driver's: settings the
