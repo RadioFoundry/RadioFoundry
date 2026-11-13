@@ -86,3 +86,30 @@ test("the code and its table window move as two blocks, and the move is read bac
 		assert.equal(await cm.unmoveWindow(flash, 0x08000000, W.map, cr), null);
 	}
 });
+
+// Every window moved as its own block (relocate, docs/spec/codec-placement.md "Layouts"): for the code and one table
+// window it is the two-block move rfoundry's vectors give, and it goes back the same way, from any layout to any other
+test("relocating window by window gives the two-block move's bytes, both ways, and checks every site", async () => {
+	const W = V.window;
+	const code = fromHex(W.code), tables = fromHex(W.tables);
+	const [lo, n] = cm.tableWindow(W.map);
+	const wins = [[W.map.code.run, code.length], [lo, n]];
+	const stock = [W.map.code.run, lo];
+	const [mc, mt] = cm.relocate(W.map, wins, [code, tables], stock, [W.code_run, W.tables_run]);
+	assert.equal(toHex(mc), W.code_moved);
+	assert.equal(toHex(mt), W.tables_moved);
+	const back = cm.relocate(W.map, wins, [mc, mt], [W.code_run, W.tables_run], stock);
+	assert.deepEqual(back.map(toHex), [W.code, W.tables]);
+	// one placed layout to another, without stock in between
+	const other = [0x08060004, 0x08098010];
+	const via = cm.relocate(W.map, wins, [mc, mt], [W.code_run, W.tables_run], other);
+	const [oc, ot] = await cm.moveWindow(code, tables, W.map, ...other);
+	assert.deepEqual(via.map(toHex), [toHex(oc), toHex(ot)]);
+	// the wrong source layout, a damaged site, a broken alignment or a wrong length: refused
+	assert.throws(() => cm.relocate(W.map, wins, [mc, mt], stock, other), cm.MapError);
+	const bad = mc.slice();
+	bad[W.map.self_refs[0].off] ^= 4;
+	assert.throws(() => cm.relocate(W.map, wins, [bad, mt], [W.code_run, W.tables_run], stock), cm.MapError);
+	assert.throws(() => cm.relocate(W.map, wins, [code, tables], stock, [W.code_run, W.tables_run + 2]), cm.MapError);
+	assert.throws(() => cm.relocate(W.map, wins, [code, tables.subarray(1)], stock, stock), cm.MapError);
+});

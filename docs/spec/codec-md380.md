@@ -199,36 +199,47 @@ instruction.
 
 ## Hosting
 
-Run in place from flash, no copy. The merge moves the code to the start of sector 11 and leaves every table window at
-its original address ([codec-placement.md](codec-placement.md), "STM32 radios").
+Run in place from flash, no copy. The merge moves every window as one block into sector 11: the code, then the main
+table window, then the small ones, each at its original address modulo 16, and rewrites every address between them
+([codec-placement.md](codec-placement.md), "STM32 radios"). D002.032's map lists 2 self references, 71 table
+references, 3 island pointers, 3 island references and 12 island calls into the code.
 
 | window | placed at | length | CRC-32 as placed |
 |---|---|---|---|
-| code | 0x080E0000 (sector 11) | 0x10884 | 0x067E6A77 (self references rewritten) |
-| tables | 0x0808FC64 (sector 8, original address) | 0xAFF8 | 0x2A5C9EE1 (the 12 island calls re-encoded) |
-| small tables 1-4 | original addresses (sectors 10 and 11) | as above | unchanged (0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF) |
+| code | 0x080E0004 (sector 11) | 0x10884 | 0xBAA2C858 (references to itself and the tables rewritten) |
+| tables | 0x080F0894 | 0xAFF8 | 0x04DF1EE4 (island pointers and the 12 island calls rewritten) |
+| small tables 1-4 | 0x080FB898, 0x080FB8C8, 0x080FB8E4, 0x080FB900 | as above | unchanged (0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF) |
 | descriptor | 0x080FFF80 (end of sector 11) | 128 | its own (`platform/stm32f4/codec_desc.h`), tag 0x2032 |
 
-* **Flash map (D002.032).** The application gets sectors 3-7, 0x0800C000..0x0807FFFF, 464 KB in one piece, and
-  `boards/md380/memory.ld` asserts that the image ends before 0x08080000. The codec uses sectors 8, 10 and 11. Sector
-  9 (0x080A0000..0x080BFFFF) holds nothing. The firmware file keeps the code at 0x08050C44, inside sectors 6 and 7, so
-  that layout leaves the application only 275 KB (it stops inside sector 6, where the code starts).
-* **Updates.** No codec byte shares a sector with the application, so an update writes sectors 3-7 only and keeps the
-  codec (`boards/md380/board.toml`: `keep_codec = true`; the STM32 stub `stub/f4stub.py` owns sectors 3-7). The codec
+The placed CRCs follow from the earlier layout's and the map (`codecmap.relocate_crcs`); no placed SHA-256 is listed,
+so a copy read from a radio is checked by taking it back to the original windows and their SHA-256s.
+
+* **Flash map.** The application gets sectors 3-10, 0x0800C000..0x080DFFFF, 848 KB in one piece, and
+  `boards/md380/memory.ld` asserts that the image ends before 0x080E0000. The codec uses sector 11 only. Every
+  supported build fits: D002.032 leaves 18,016 bytes free below the descriptor, the 35.14 builds the least (S35.14
+  9,614 bytes).
+* **Earlier layout.** Releases before this one kept the code at 0x080E0000 and the table windows at their original
+  addresses (sectors 8, 10 and 11; the 35.14 builds' main window in sectors 9 and 10) and reported
+  `md380-d2032-s11`. The flashing tools read such a codec back and move it on the first install of this layout
+  ([codec-placement.md](codec-placement.md), "Moving to a new layout"); its profiles are the `former` entries in
+  `stockfw.py`.
+* **Updates.** No codec byte shares a sector with the application, so an update writes sectors 3-10 only and keeps the
+  codec (`boards/md380/board.toml`: `keep_codec = true`; the STM32 stub `stub/f4stub.py` owns sectors 3-10). The codec
   is merged on a first install from the manufacturer's firmware, or when it can't be kept or checked. It comes from the firmware file, or from
   the copy the flashing tools keep: rfoundry and the web flasher read the codec from a radio running RadioFoundry over the
-  debug link (READ_MEM), in the original or the placed layout, check it against the profile hashes and save it on the
-  computer (rfoundry's config directory, the browser's IndexedDB; `rfoundry/codecsave.py`,
+  debug link (READ_MEM), in the original, the placed or the earlier placed layout, check it against the profile and
+  save it on the computer (rfoundry's config directory, the browser's IndexedDB; `rfoundry/codecsave.py`,
   `site/static/js/flasher/codecsave.js`).
 * **Boot check, D002.032 (`platform/stm32f4/hrc/vocoder.c`, the profiles in `boards/md380/vocoder_md380.c`).** Once,
   before the first call: the descriptor (its own CRC, tag 0x2032, the code and every table window at the addresses
-  and with the CRCs above), then the signature word 0x4FF0E92D at 0x080E0000, then the CRC-32 of every window (about
+  and with the CRCs above), then the signature word 0x4FF0E92D at 0x080E0004, then the CRC-32 of every window (about
   112 KB). Otherwise the vocoder reports no codec and the radio is FM only. Entry points are offsets from the code
   start (encode +0x14C, decode +0x604, the rest in `vocoder_md380.c`), the same offsets as in the original layout. The
   35.14 builds' tags, code addresses and entry offsets are in [35.14](#3514).
-* **Profile id.** `md380-d2032-s11` (debug link VERSION `codec=`), for a codec from any supported file: the descriptor's
-  tag tells the builds apart. A build from before the move reports `md380-d2032`, so the tools know the codec isn't
-  where the new layout keeps it and ask for the firmware file.
+* **Profile id.** `md380-d2032-s11v2` (debug link VERSION `codec=`), for a codec from any supported file: the
+  descriptor's tag tells the builds apart. A release with the earlier layout reports `md380-d2032-s11`, and the tools
+  move its codec. A build from before the first move reports `md380-d2032`, so the tools know the codec isn't where
+  either layout keeps it and ask for the firmware file.
 * **Older releases.** The id is the same for every build, but a release only accepts the tags it was built with.
   Releases before the one that added the 35.14 maps accept D002.032's tag only. A radio whose codec came from a 35.14
   file and is flashed with such a release, keeping the codec, finds no codec and is FM only. Going back to it needs the
@@ -238,19 +249,19 @@ its original address ([codec-placement.md](codec-placement.md), "STM32 radios").
 
 ### 35.14
 
-The main table window stays at its original address: it starts in sector 9 and runs into sector 10 (D35.14
-0x080B7868..0x080C45D0, S35.14 0x080B8928..0x080C5710). The code goes right after it, the two small windows
-stay at their original addresses in sector 11 (`stockfw.py` PROFILES, `boards/md380/vocoder_md380.c`):
+The same rule: the code at the start of sector 11, the main table window after it, the two small windows after that
+(`stockfw.py` PROFILES, `boards/md380/vocoder_md380.c`):
 
 | build | tag | code (address, length, CRC-32) | tables (address, length, CRC-32) | small tables (address, length, CRC-32) |
 |---|---|---|---|---|
-| D35.14 | 0x00443514 | 0x080C45D0, 0x10366, 0x83A0361F | 0x080B7868, 0xCD68, 0x810CC7B3 | 0x080ECC98, 0x87C, 0xA5F0D272; 0x080F0C14, 0xE, 0xEFDB66A5 |
-| S35.14 | 0x00533514 | 0x080C5710, 0x10372, 0xD953C7A8 | 0x080B8928, 0xCDE8, 0x68B2CC40 | 0x080EDDD8, 0x87C, 0xA2B85A33; 0x080F1D54, 0xE, 0xEFDB66A5 |
+| D35.14 | 0x00443514 | 0x080E0000, 0x10366, 0x632E7F32 | 0x080F0368, 0xCD68, 0x3F7F60A1 | 0x080FD0D8, 0x87C, 0xA5F0D272; 0x080FD954, 0xE, 0xEFDB66A5 |
+| S35.14 | 0x00533514 | 0x080E0004, 0x10372, 0x446271B6 | 0x080F0378, 0xCDE8, 0x2DCB2F57 | 0x080FD168, 0x87C, 0xA2B85A33; 0x080FD9E4, 0xE, 0xEFDB66A5 |
 
-* Sectors 9, 10 and 11 (sector 8 stays empty); the application keeps sectors 3-7, so "keep codec" works the same way.
-  An update keeps sectors 8-11 whichever build the codec came from.
-* Code and tables as placed were checked on a host over a 300 frame stress run: the same hash as D002.032's and the
-  DM-1701's codec, from the whole image, from the windows only and from the placed layout.
+* The earlier layout kept the main table window at its original address in sectors 9 and 10 and the code right after
+  it; the flashing tools move it as for D002.032.
+* Code and tables in the earlier layout were checked on a host over a 300 frame stress run: the same hash as
+  D002.032's and the DM-1701's codec, from the whole image, from the windows only and from the placed layout. The
+  current layout has not had that run (Open items).
 
 ## Extraction recipe (D002.032)
 
@@ -258,9 +269,9 @@ stay at their original addresses in sector 11 (`stockfw.py` PROFILES, `boards/md
 2. Get the key: a key file checked by SHA-256 (`5254139c...`), or derive it from the file (above).
 3. Decrypt each of the six windows: file offset = A - 0x0800C000 + 0x100, key index (A - 0x0800C000) % 1024. Check
    each window's SHA-256 and the code's first word 0x4FF0E92D.
-4. Write the table windows at their original addresses, with the 12 island calls in the main window re-encoded for the
-   moved code. Write the code at 0x080E0000 with its two movw/movt self references rewritten, and the descriptor at
-   0x080FFF80. Check the placed CRC-32s (Hosting). 0xFF fills the rest after the application image. The codec map
+4. Write the code at 0x080E0004, the main table window at 0x080F0894 and the four small ones after it (Hosting),
+   with every reference between the windows rewritten (self references, table references, island pointers and
+   references, the 12 island calls), and the descriptor at 0x080FFF80. Check the placed CRC-32s (Hosting). 0xFF fills the rest after the application image. The codec map
    drives the rewrites. The merge happens on the user's machine (`make` with the firmware file in `codecs/`,
    `tools/codec_extract.py`, rfoundry or the web flasher), never in a release.
 
@@ -276,18 +287,19 @@ other access faults.
   flags, were run against the windows of the merged image that `make BOARD=md380` writes, with a deliberately
   misaligned caller stack. `present()` passes, and the encoded bits and decoded PCM over 30 frames are bit-identical
   to calling the codec directly.
-* The placed codec (code at 0x080E0000, rewrites applied), run with only its placed windows mapped, gives the same air
-  bits and PCM as the original layout over 60 frames, plain and stressed, with the same FEC results and a stack peak
-  of 4046 bytes.
+* The codec in the earlier layout (code at 0x080E0000, rewrites applied), run with only its placed windows mapped,
+  gives the same air bits and PCM as the original layout over 60 frames, plain and stressed, with the same FEC results
+  and a stack peak of 4046 bytes. The current layout (every window moved) has not had that run yet.
 
 ## Only a radio can check
 
 * Audio: TX and RX voice quality and levels through the MD-380's own audio path (the I2S format, gain staging).
 * Timing: encode and decode within 20 ms at the MD-380's clock, and the audio task's stack (5 KB) under the codec's
   4.2 KB plus the audio callback.
-* That D002.032's bootloader accepts an image that writes sectors 3-8, 10 and 11 in one session, and that nothing
-  else in flash (for example the bootloader's own checks) cares about the codec sectors.
-* Voice TX and RX with the moved code, and an update in keep mode that leaves the codec working.
+* That D002.032's bootloader accepts an image that writes sectors 3-11 in one session, and that nothing else in flash
+  (for example the bootloader's own checks) cares about sectors 8-10.
+* Voice TX and RX with every window moved, an update in keep mode that leaves the codec working, and the move from the
+  earlier layout, including one stopped halfway and run again.
 * Calls against the HR_C5000 path with real frames, including the FEC decode results on air.
 
 ## Open items
@@ -298,5 +310,5 @@ other access faults.
 
 * Other firmware versions (D13.20 and similar) need their own profile; D002.032, D35.14, S35.14 and the files in [More MD-380 family files](#more-md-380-family-files) are supported.
 * On a radio: voice through a 35.14 codec as placed (untested on the radio).
-* Moving the table windows too (rewriting the `table_refs`) would free sector 8 and pack the codec into sector 11
-  ([codec-placement.md](codec-placement.md)). The application has 464 KB and doesn't need it yet.
+* A host run of the current layout (every window moved, `table_refs` rewritten) against the original layout, as for
+  the earlier one: the map's table references have not been exercised by a table move on this codec before.

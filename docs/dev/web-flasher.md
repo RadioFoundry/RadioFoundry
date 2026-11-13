@@ -18,8 +18,8 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `plan.js` | Sector plans: keep, merge, and restore (a whole image put back exactly) | `rfoundry/plan.py` |
 | `manifest.js` | Release manifest checks | `rfoundry/manifest.py` |
 | `decide.js` | Keep or merge the codec | `rfoundry/cli.py` `decide_codec` |
-| `dfu.js` | The AnyRoad DFU bootloader over WebUSB. `WebUsbTransport.open` refuses the radio switched on normally (`normalMode`: the board's `dfu_layout`, else a layout of only the bootloader's sectors) before it claims the interface | `rfoundry/dfu.py` |
-| `codecsave.js` | The codec read back from a radio that runs RadioFoundry (where stock keeps it, or where the merge placed it), checked against the profile's hashes, and a copy kept in IndexedDB: before every update that erases it, elsewhere once, so an install that can't keep or check the codec (a radio back on stock firmware, in its bootloader, or after an interrupted install) needs no stock file | `rfoundry/codecsave.py` |
+| `dfu.js` | The AnyRoad DFU bootloader over WebUSB. `WebUsbTransport.open` refuses the radio switched on normally (`normalMode`: the board's `dfu_layout`, else a layout of only the bootloader's sectors) before it claims the interface. `run` erases the application's first sector first and writes it last (`plan.js` `writeOrder`) | `rfoundry/dfu.py` |
+| `codecsave.js` | The codec read back from a radio that runs RadioFoundry (where stock keeps it, where the merge placed it, or where an earlier release's layout placed it: `codecSegments()` moves that copy to the current layout), checked against the profile's hashes, and a copy kept in IndexedDB: before every update that erases it, elsewhere once, so an install that can't keep or check the codec (a radio back on stock firmware, in its bootloader, or after an interrupted install) needs no stock file | `rfoundry/codecsave.py` |
 | `bootkey.js` | The bootloader key from a radio that runs RadioFoundry: the bootloader read over READ_MEM, the block with the key's SHA-256 | `rfoundry/bootkey.py` |
 | `origbackup.js` | The backup before the install through the original firmware's or the bootloader's DFU device, behind an allowlist (below) | |
 | `origversion.js` | The original firmware's version read before an install, and the hardware option it settles (below) | `rfoundry/origversion.py` |
@@ -696,10 +696,10 @@ loader route is used when all of these hold:
 | Condition | Why |
 |---|---|
 | RadioFoundry offers stub entry (`CONFIG_STUB_ENTRY`) | the hand-over needs it |
-| RadioFoundry reports the radio's codec | the loader writes only the firmware's own flash, so the codec must already be in place |
+| RadioFoundry reports the radio's codec, or one where an earlier release kept it (`board.codec.former`) | the loader writes only the firmware's own flash, so the codec is either in place or moves with the install: from the copy kept in IndexedDB, else from the stock file the write step asks for (`stubSegments`; a copy only in the page is never used for a move, `decide.js` `savedKept`) |
 | the image has no codec in it, and no mode was forced under Advanced | a merge or a forced mode goes through the bootloader |
 
-The codec step then needs no stock file or key. The write step sends the embedded stub (`data/f4-stub.json`, from
+There is no codec step; only a codec move without a kept copy asks for the stock file (which also gives the key), on the write step. The write step sends the embedded stub (`data/f4-stub.json`, from
 `stub/f4stub.py`), finds it on the same port or, if it enumerated again, on the granted port with the same serial
 number (one click picks it when the browser didn't keep the grant), and sends it the radio's board record
 ([stub-stm32f4.md](../spec/stub-stm32f4.md) 5.2: SPI flash bus, mode and pins, chip select, chip selects held high,
@@ -715,6 +715,7 @@ power-on, which that route finishes.
 |---|---|
 | HELLO before CONFIG: application base 0, no SPI flash, configured flag clear | Expected for protocol 4: it sends CONFIG |
 | CONFIG refused (status `0D`) | Stops, nothing written; the bootloader route opens |
+| The codec guard refuses a plain image over a codec window (`f4stub.js` `guardCodec`, `codecGuard` set) | Nothing written: restarts the radio out of the loader into its firmware (or says to turn it off and on) and opens the bootloader route |
 | HELLO after CONFIG echoes other bytes, or another application base | Stops, nothing written |
 | A write answered `11` (not configured) | Stops; the page checks the echo before every write, so this means the loader lost its record |
 | Protocol 2 (an older loader still running from an earlier session) | No CONFIG: accepted only for a board whose record matches the wiring built into it (`v2_wiring`) |

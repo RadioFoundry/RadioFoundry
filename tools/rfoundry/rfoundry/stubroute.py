@@ -21,8 +21,9 @@ class StubRouteError(Exception):
     pass
 
 
-def argv(board_id, image_path, port, backup_dir=None):
-    out = [port, "--rfoundry-enter", "--board", board_id, "--write-app", image_path, "--boot", "reset"]
+def argv(board_id, image_path, port, backup_dir=None, attach=False):
+    out = [port, "--attach" if attach else "--rfoundry-enter", "--board", board_id, "--write-app", image_path, "--boot",
+           "reset"]
     if backup_dir:
         out += ["--backup-dir", backup_dir]
     return out
@@ -49,4 +50,17 @@ def run(board, image, port=None, backup_dir=None, log=print, stubtool=None):
         with open(path, "wb") as f:
             f.write(image)
         log("stub     %s via %s: %d bytes from 0x%X" % (board.name, port, len(image), board.app_base))
-        return stubtool.main(argv(board.id, path, port, backup_dir))
+        try:
+            return stubtool.main(argv(board.id, path, port, backup_dir))
+        except Exception as e:
+            # RadioFoundry didn't answer: an earlier run that stopped (the tool killed, the cable pulled) can leave the
+            # stub running, which keeps the radio until it is reset. Attach to it and finish the write; a radio with
+            # neither answering fails here with the first error
+            if type(e).__name__ != "DumpError":
+                raise
+            log("stub     RadioFoundry doesn't answer (%s); trying a stub left running by an earlier run" % e)
+            try:
+                return stubtool.main(argv(board.id, path, port, backup_dir, attach=True))
+            except Exception as e2:
+                log("stub     no stub answers either (%s)" % e2)
+                raise e

@@ -141,6 +141,10 @@ export class Plan {
 
 	get erase() { return this.steps.filter((s) => s.action === "write" || s.action === "erase").map((s) => s.sector); }
 	get writes() { return this.steps.filter((s) => s.action === "write"); }
+	// The erases in the order they run, the sector with the application's start (its vector table) first, and the writes,
+	// that sector last: a run stopped anywhere leaves no application the bootloader would start (plan.py)
+	get eraseOrder() { const a = this.board.app_base; return [...this.erase].sort((x, y) => (x.addr !== a) - (y.addr !== a)); }
+	get writeOrder() { const a = this.board.app_base; return [...this.writes].sort((x, y) => (x.sector.addr === a) - (y.sector.addr === a)); }
 	get kept() { return this.steps.filter((s) => s.action === "keep").map((s) => s.sector); }
 	get totalBlocks() { return this.writes.reduce((a, s) => a + s.blocks.length, 0); }
 
