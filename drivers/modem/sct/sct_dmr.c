@@ -564,6 +564,21 @@ static void rx_frame(const uint8_t *f, uint8_t flen)
 
 		if (embedded && s.rv[slot].on && memcmp(data, s.rv[slot].lc, LC_BYTES) == 0)
 			return;	// the running call's own LC from a superframe: nothing new
+		// An LC after an FEC error starts no call and isn't kept as the call's: the stack takes no LC with its CRC
+		// failed, and kept, it would hold back the chip's next report of the same LC as a repeat, so the call would
+		// never show. A superframe's is dropped; a header goes to the stack with its CRC failed, and the call
+		// starts from the next LC the chip reports (a late entry). A terminator still ends the call
+		if (!b.crc_ok && embedded)
+			return;
+		if (!b.crc_ok && (prop & SCT_PROP_TYPE) != DMR_BURST_TERMINATOR_LC) {
+			b.kind = prop & SCT_PROP_TYPE;
+			memcpy(b.lc, data, LC_BYTES);
+			b.lc_valid = true;
+			memcpy(b.payload, data, LC_BYTES);
+			b.len = LC_BYTES;
+			emit(DMR_EV_BURST_RX, b.ts, next_counter(), &b);
+			return;
+		}
 		memcpy(b.lc, data, LC_BYTES);
 		b.lc_valid = true;
 		memcpy(s.rv[slot].lc, data, LC_BYTES);

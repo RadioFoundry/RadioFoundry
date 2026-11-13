@@ -267,6 +267,10 @@ the answer is never taken as a frame's answer or a NAK, OK or not.
   during the call doesn't. The call's own LC from a superframe isn't reported at all: it brings nothing new. A
   different LC (a new talker without a header) takes the place of the next voice burst, and the count goes on from
   it. The stack holds the call as on other modems.
+- An LC after an FEC error (NEW_EVENT 1) starts no call and isn't kept as the call's LC. A header goes to the stack
+  with its CRC failed, which the stack ignores; a superframe's LC is dropped; a terminator still ends the call. The
+  call starts from the next LC the chip reports, a superframe later at most, as a late entry. Kept, that LC would
+  hold back the chip's next report of it as a repeat, and the call would never show.
 - After a data header with A set (response requested), the chip reports every data block as a confirmed one: it
   clears the 9 bits it takes for the serial number's CRC-9 (octet 0 bit 0 and octet 1) and keeps the rest. That
   harms nothing in a confirmed packet (the stack lets the CRC-32 decide), but in a defined short data packet with a
