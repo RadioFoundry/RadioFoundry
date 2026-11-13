@@ -1065,12 +1065,17 @@ static void test_rx_no_call_after_terminator(void)
 	run_ms(60);
 	dmr_call_get_stats(&st);
 	CHECK(st.rx_calls == 1 && st.rx_term_dropped >= 1 && sink_log.begins == 1);
+	CHECK(st.rx_end_term == 1 && st.rx_end_fade == 0 && st.rx_end_sync == 0);
 
 	// The same talker again after the fade time, entered late: a new call
 	run_ms(DMR_CALL_FADE_MS);
 	rx_call(lc, 1, false, 4, 3, false, &frame);
 	dmr_call_get_stats(&st);
 	CHECK(st.rx_calls == 2 && st.rx_late_entries == 1 && sink_log.begins == 2);
+	// No terminator: the fade ends it, and the count says so
+	run_ms(DMR_CALL_FADE_MS + 60);
+	dmr_call_get_stats(&st);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && st.rx_end_term == 1 && st.rx_end_fade == 1 && st.rx_end_sync == 0);
 }
 
 // A call that fades (a dropout, no terminator) and comes back by late entry with its own LC is one call with a hole in

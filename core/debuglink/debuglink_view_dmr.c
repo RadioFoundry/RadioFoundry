@@ -133,6 +133,15 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text_kv_str(t, "call.alias", d->alias);
 		dl_text(t, "call.rssi_dbm=%d\ncall.ms=%u\n", d->rssi_dbm, (unsigned)d->call_ms);
 		call(t, "last", &d->last);
+		{
+			// Why received calls ended, and what the filters dropped: a call cut short shows here
+			dmr_call_stats_t c;
+			dmr_call_get_stats(&c);
+			dl_text(t, "call.rx_end_term=%u\ncall.rx_end_sync=%u\ncall.rx_end_fade=%u\n", (unsigned)c.rx_end_term,
+				(unsigned)c.rx_end_sync, (unsigned)c.rx_end_fade);
+			dl_text(t, "call.rx_ts_dropped=%u\ncall.rx_cc_dropped=%u\n", (unsigned)c.rx_ts_dropped,
+				(unsigned)c.rx_cc_dropped);
+		}
 		dl_text(t, "last.ms=%u\n", (unsigned)d->last_ms);
 		break;
 	case 2: {

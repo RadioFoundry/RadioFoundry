@@ -271,6 +271,9 @@ typedef struct {
 	uint32_t rx_sfr_direct;		// SFR user, repeat only: bursts of the talker's own copy dropped
 	uint32_t rx_sfr_held;		// SFR user, dual-path RX: bursts held for the other copy (a frame's FEC failed)
 	uint32_t rx_sfr_fixed;		// ... frames taken from the other copy
+	uint32_t rx_end_term;		// received calls ended by their terminator
+	uint32_t rx_end_sync;		// ... by the modem losing the channel
+	uint32_t rx_end_fade;		// ... by no burst on the call for the fade time
 } dmr_call_stats_t;
 void dmr_call_get_stats(dmr_call_stats_t *out);
 // The talker alias our calls send now ("" = none: off for the channel, no callsign, or built without it)

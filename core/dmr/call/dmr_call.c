@@ -1037,6 +1037,7 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 			memcpy(s.term_lc, s.call_lc, DMR_LC_BYTES);
 			s.term_ms = now;
 			s.term_seen = true;
+			stats.rx_end_term++;
 			rx_end(now);
 			TR_WHAT('k');
 		}
@@ -1605,8 +1606,11 @@ static void handle_event(const evq_item_t *it, uint32_t now)
 		}
 		break;
 	case DMR_EV_SYNC_LOST:
-		if (!transmitting())
+		if (!transmitting()) {
+			if (s.rx != RXC_NONE)
+				stats.rx_end_sync++;
 			rx_end(now);
+		}
 		break;
 	default:
 		break;
@@ -1871,8 +1875,10 @@ void dmr_call_poll(uint32_t now_ms)
 		dual_drain(now_ms);
 #endif
 	// Fade: no burst on the call for a while ends it
-	if (s.rx != RXC_NONE && elapsed(now_ms, s.last_rx_ms, true, fade_ms()))
+	if (s.rx != RXC_NONE && elapsed(now_ms, s.last_rx_ms, true, fade_ms())) {
+		stats.rx_end_fade++;
 		rx_end(now_ms);
+	}
 	if (s.le_active && elapsed(now_ms, s.le_last_ms, true, fade_ms()))
 		le_reset();
 
