@@ -263,10 +263,19 @@ static void test_paths(void)
 	// frequency with the receiver on), then the receive output back
 	n = f.n;
 	qa4818_beep(&c, 1000, 0x7F, qa4818_af_rx(true, 146520000u));
-	SEQ(&f, n, { 0x71, 0x0A14 }, { 0x70, 0xFF00 }, { 0x47, 0x6341 }, { 0x03, 0xBFF7 });
+	// On a digital channel page 1 0x1B takes the analog value for the beep and the digital one back after it
+	SEQ(&f, n, { 0x7F, 1 }, { 0x1B, 0x0004 }, { 0x7F, 0 }, { 0x71, 0x0A14 }, { 0x70, 0xFF00 }, { 0x47, 0x6341 },
+	    { 0x03, 0xBFF7 });
 	n = f.n;
 	qa4818_beep(&c, 0, 0, qa4818_af_rx(true, 146520000u));
-	SEQ(&f, n, { 0x70, 0 }, { 0x47, 0x6840 }, { 0x03, 0xBFF5 });
+	SEQ(&f, n, { 0x70, 0 }, { 0x7F, 1 }, { 0x1B, 0x07FF }, { 0x7F, 0 }, { 0x47, 0x6840 }, { 0x03, 0xBFF5 });
+	// On an analog channel nothing but the tone and the output
+	n = f.n;
+	qa4818_beep(&c, 1000, 0x7F, qa4818_af_rx(false, 146520000u));
+	SEQ(&f, n, { 0x71, 0x0A14 }, { 0x70, 0xFF00 }, { 0x47, 0x6341 }, { 0x03, 0xBFF7 });
+	n = f.n;
+	qa4818_beep(&c, 0, 0, qa4818_af_rx(false, 146520000u));
+	SEQ(&f, n, { 0x70, 0 }, { 0x47, 0x6140 }, { 0x03, 0xBFF5 });
 	CHECK(qa4818_af_rx(false, 446000000u) == 0x6140 && qa4818_af_rx(true, 446000000u) == 0x4840);
 	n = f.n;
 	qa4818_tx_on(&c);
