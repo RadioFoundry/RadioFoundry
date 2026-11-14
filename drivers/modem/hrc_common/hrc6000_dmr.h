@@ -91,6 +91,7 @@ enum {
 	HRC6000_RS_CMD,		// asked for: run, configure, rx_restart, set_cc_filter
 	HRC6000_RS_STALL,	// timing stopped while busy
 	HRC6000_RS_TX_END,	// end of a direct mode transmission
+	HRC6000_RS_ALIGN,	// an aligned start's wait heard nothing for ALIGN_DEAF_TICKS
 	HRC6000_RS_COUNT
 };
 
