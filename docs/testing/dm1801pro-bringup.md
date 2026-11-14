@@ -167,9 +167,29 @@ the debug link listen-only (`T3_OPT_LISTEN_ONLY`) and `tx_inhibit` set, read fro
 | Group call on the TSCC carrier's other slot | followed in about 0.5-1 s (`t3.state=follow`, `t3.slot=2`), voice decoded (`call.rx_voice_bursts` about 49 of 50 a 3 s call), back on the TSCC (`t3.returns`) | |
 | Group call on the second carrier | followed there (`t3.rx_hz` the carrier's, `t3.slot=1`), voice decoded, back on the TSCC | |
 
-Not checked on the radio: an MBC continuation with the chip's CRC flag set (host test only), the audio heard (the
-cable mutes the speaker; the counters show it decoded), power save, and everything that transmits (registration,
-random access, calls).
+Not checked on the radio: an MBC continuation with the chip's CRC flag set (host test only) and the audio heard (the
+cable mutes the speaker; the counters show it decoded).
+
+### 9.2 Tier III transmit
+
+The same site, the engine staged over the debug link with transmit, the lowest power setting, the radio's ID
+registered (`t3`, `t3_svc`, `dmr_ext`, `dmr_ip` views). Every step starts the engine again, so each one registers
+first:
+
+| Step | Seen | If not |
+|---|---|---|
+| Register | `t3.reg=ok`, `t3.ax_reason=0x62`, 1-4 random accesses (`t3.ra_tries`) | `t3.sent` 0: the engine listen-only or `tx_inhibit` set |
+| Group call, PTT with the test tone (`voice_test`) | granted in about 0.3 s, `t3.slot=2`, keyed (`state=tx`), back on the TSCC (`t3.returns`) after the hang | |
+| Private call | the same, `t3.call_dst` the called ID | |
+| Group and private call from another MS | followed, 49 voice bursts a 3 s call, `voice.rx_peak` about 16700 (speech), back on the TSCC | `voice.rx_peak` near 0: the other MS sent silence |
+| Status, short data to another MS | `t3.ax_result=done`, `t3.ax_reason=0x44` | |
+| Short data poll from another MS | the poll ahoy (`t3.ahoy_kind=6`), the answer UDT sent (`t3.last_tx_op=0x1b`) | |
+| Radio check during the radio's own call | the answer sent in the call (`t3.last_tx_op=0x23`), back on the TSCC | |
+| IP datagram to the gateway, unconfirmed | a data grant (`t3.call_data=1`), `ip.sent` +1, `ip.result=ok`, back on the TSCC | confirmed: `ip.cnf_timeouts` with no response from the site (the site sends none yet) |
+| Power save, PowerSave_RQ 2 | `t3.ps_offset=1` granted, `t3.sleeps` rising, a status from another MS received while asleep | |
+| Emergency: alarm, hot-mic call, cancel | `em.state=active`, `data.emergency_alarms_sent` +1, `em.hot_mic_keyed` 1, a call followed and back on the TSCC, the cancel `done` | |
+
+The receiver stays on while asleep: the board's `rx_sleep` works in FM only (no `rx_sleep_dmr`).
 
 ## 10. VOX and the microphone level
 

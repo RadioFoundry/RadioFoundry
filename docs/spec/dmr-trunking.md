@@ -757,7 +757,6 @@ on its voice, and never camps on another system or on a control channel that isn
 |---|---|
 | CACH short LC reception on modems that don't report it yet (`hrc_chip_t.slc_rx_addr` 0) | the location of the chip's short LC |
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
-| Random access on the HR_C7000 | untested on air. The engine's `T3_ACT_SEND` goes out as an aligned data list on the TSCC's inbound frequency in the action's slot; the modem must keep the outbound's TC lock across the switch to the inbound frequency at key-up, and the chip computes the CSBK CRC itself ([gotchas](gotchas.md) 5.2), so the engine's CRC is replaced, not checked |
 | A list subscription without registering | later |
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
 | Power save: the receiver off while asleep on boards without `rx_sleep_dmr` | each board's `rx_sleep` on a DMR channel |
