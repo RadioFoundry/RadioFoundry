@@ -1230,6 +1230,7 @@ const hal_dmr_modem_t sct_dmr_modem = {
 	.set_cc_filter = m_set_cc_filter,
 	.is_transmitting = m_is_transmitting,
 	.health = m_health,
+	.clears_crc9 = true,	// modem-sct.md 6
 };
 
 void sct_dmr_init(const sct_dmr_port_t *port)

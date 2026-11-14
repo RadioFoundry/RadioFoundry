@@ -307,7 +307,9 @@ with N(S) 0 within 20 s.
   A set whose blocks all read zero there, the receiver solves those bits from the CRC-32, which is affine in the
   data: 9 unknown bits a block against its 32 bits, Gaussian elimination over GF(2). It keeps the result only when
   the solution is unique and the spare equations agree, so up to 3 blocks (27 bits; 32 octets of text). A longer
-  packet stays a CRC error (`dmrDataTest`, `testClearedBits`).
+  packet stays a CRC error. Only with a modem that clears them (`hal_dmr_modem_t.clears_crc9`, set by the SCT
+  driver): with another, a damaged packet that reads zero there would pass about 1 time in 32 (`dmrDataTest`,
+  `testClearedBits`).
 - Also read: UDT text (TS 102 361-4, UDT header formats 3 ISO 7-bit, 4 ISO 8-bit, 7 UTF-16BE; CRC-CCITT
   unmasked, the pad nibbles in octet 8).
 - Received to us: into the inbox with format ETSI (`dmrDataMessage_t.format`); with the response bit set the ETSI
