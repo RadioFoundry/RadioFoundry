@@ -138,6 +138,7 @@ typedef struct {
 
 typedef struct {
 	bool active;		// the call stack runs (a DMR channel, not hotspot mode)
+	bool killed;		// a Tier III kill was taken: the stack never starts until a factory reset (settings t3_kill)
 	bool codec;		// the vocoder is merged: voice plays and PTT works
 	uint8_t state;		// radio_dmr_state_t
 	uint32_t own_id;

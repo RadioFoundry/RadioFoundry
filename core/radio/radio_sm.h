@@ -366,6 +366,7 @@ typedef struct {
 	uint8_t dmr_prev_state;		// radio_dmr_state_t at the last tick (beeps on changes)
 	bool codec;			// the vocoder is present
 	bool dmr_running;		// the call stack has the modem
+	bool dmr_killed;		// settings t3_kill: no DMR at all (dmr-trunking.md 7.9)
 	bool dmr_keyed;			// board.radio->tx() armed the per-burst keying (until tx_off)
 	bool sfr_rpt;			// the channel's SFR repeater role has the modem (radio_sfr.c), not the call stack
 	bool sfr_denied;		// a repeater channel kept ordinary because the radio may not transmit or a scan

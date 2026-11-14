@@ -67,7 +67,7 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 	switch (part) {
 	case 0:
 		dl_text(t, "dmr.built=1\n");
-		dl_text(t, "dmr.active=%u\ndmr.codec=%u\n", d->active, d->codec);
+		dl_text(t, "dmr.active=%u\ndmr.codec=%u\ndmr.killed=%u\n", d->active, d->codec, d->killed);
 		// The vocoder's TX state: here, as dmr_stats (the counters) fills most of a reply
 		{
 			ambe_voice_stats_t a;

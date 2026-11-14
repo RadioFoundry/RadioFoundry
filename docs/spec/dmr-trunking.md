@@ -507,8 +507,11 @@ The challenge holds for TNP_Timer: a repeated C_AHOY gets the same one, a repeat
 give MS_Accepted, which the radio sends.
 
 A kill (C_AHOY from KILLI) is accepted only with K and `T3_OPT_KILL`; otherwise the radio answers MSNot_Supported.
-Killed, the radio hears and sends nothing on any trunked system until it restarts: the kill is kept in RAM only, so a
-test can't disable a radio for good.
+Killed, the radio loses all DMR functionality (6.4.10.0). The DMR stack stops at once and never starts again: no
+trunked system, no conventional DMR channel (PTT there is denied, no DMR channel is heard), no hotspot. FM works. The
+kill is kept in the settings (`t3_kill`, [settings-store.md](settings-store.md) 3), so it outlasts a restart and a
+firmware update; only a factory reset clears it. No air message revives a killed radio. The debug link's `dmr.killed`
+reads it.
 
 Stunned, the radio:
 
@@ -731,7 +734,6 @@ on its voice, and never camps on another system or on a control channel that isn
 | CACH short LC reception on modems that don't report it yet (`hrc_chip_t.slc_rx_addr` 0, or another driver) | the location of the chip's short LC |
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
 | Supplementary data in the codeplug (only the debug link stages it), a list subscription without registering | later |
-| A kill kept across a restart, and conventional DMR off when killed | later |
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
 | Data to a gateway other than IP (PSTN, PABX, line, dispatcher: BCD digits) | later |
 | Power save: the receiver off while asleep on boards without `rx_sleep_dmr` | each board's `rx_sleep` on a DMR channel |

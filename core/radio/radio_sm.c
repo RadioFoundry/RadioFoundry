@@ -1471,6 +1471,10 @@ static bool sfr_rpt_begin(radio_sm_t *sm)
 // On a DMR channel, after set_mode(DMR) and rx(): configure, and start the stack if it isn't running
 static void dmr_begin(radio_sm_t *sm)
 {
+	if (sm->dmr_killed) {
+		sm->view.dmr.active = false;	// killed (6.4.10.0): no DMR at all, conventional or trunked, PTT denied
+		return;
+	}
 #if CONFIG_SFR
 	if (sfr_rpt_begin(sm)) {
 		return;
@@ -2970,6 +2974,25 @@ static void t3_keep_stun(radio_sm_t *sm, uint32_t now_ms)
 	sm->t3_stun_kept = want;
 }
 
+// A kill taken (6.4.10.0: the radio "shall lose all DMR functionality"): kept in the settings, and the DMR stack stops
+// now and never starts again until a factory reset clears it. FM stays
+static void t3_keep_kill(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!t3m.killed || sm->dmr_killed) {
+		return;
+	}
+	settings_t *st = settings_begin();
+	st->t3_kill |= SETTINGS_T3_KILLED;
+	settings_end(now_ms);
+	sm->dmr_killed = true;
+	sm->view.dmr.killed = true;
+	if (sm->dmr_running) {
+		dmr_end(sm);
+		sm->view.dmr.active = false;
+	}
+	changed(sm);
+}
+
 // Start the engine on t3s
 static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 {
@@ -3028,7 +3051,7 @@ static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 	if (!kept) {
 		sm->t3_stun_kept = 0;
 	}
-	bool killed = t3m.killed;	// any network's, until the radio restarts
+	bool killed = t3m.killed || sm->dmr_killed;	// any network's
 	last_net = net;
 	t3_ms_start(&t3m, &t3s.cfg, now_ms);
 	sm->t3_sd_seen = t3m.sd_rx.count;
@@ -3466,6 +3489,7 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	}
 #endif
 	t3_keep_stun(sm, now_ms);
+	t3_keep_kill(sm, now_ms);
 	t3_sd_inbox(sm);
 	t3_poll_tick(sm);
 	t3_publish(sm);
@@ -5553,7 +5577,7 @@ static void hotspot_enter(radio_sm_t *sm, uint32_t rx_hz, uint32_t now_ms)
 #if CONFIG_SFR
 	keyed = keyed && !sm->sfr_rpt;	// the repeater role's keying stays armed while it runs: dmr_end ends it
 #endif
-	if (sm->hotspot || board.dmr == NULL || sm->ptt || sm->view.state == RS_TX || keyed) {
+	if (sm->hotspot || board.dmr == NULL || sm->ptt || sm->view.state == RS_TX || keyed || sm->dmr_killed) {
 		return;		// refused for now: the hotspot asks again
 	}
 #if CONFIG_SFR_CWID
@@ -6265,6 +6289,13 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->base_squelch = RADIO_SQUELCH_DEFAULT;
 	sm->view.squelch = RADIO_SQUELCH_DEFAULT;
 	settings_to_radio(&st, &sm->set);	// as saved (docs/spec/settings-store.md 3)
+#if CONFIG_DMR
+	sm->dmr_killed = (st.t3_kill & SETTINGS_T3_KILLED) != 0;	// a kill holds in a build without trunking too
+	sm->view.dmr.killed = sm->dmr_killed;
+#endif
+#if CONFIG_DMR_TRUNK
+	t3m.killed = false;	// a start: the kill is the settings' (dmr_killed) from here on
+#endif
 #if CONFIG_DMR_ROAMING
 	roam_cfg_t rc;
 	roam_cfg_of(&sm->set, &rc);

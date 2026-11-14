@@ -5011,7 +5011,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(436);	// the settings records (page 1: 176 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
+	sim_flash_cut_after(440);	// the settings records (page 1: 180 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);
@@ -5537,7 +5537,7 @@ static unsigned t3_sent(uint8_t op)
 // PTT on the TSCC asks for the call, held through the wait (the request is sent, not refused as talking), and on
 // the grant the radio talks; with nothing heard while it talks, the call stays up (its own TX is the activity)
 // Stage the test system and select it: the radio camps on its TSCC
-static void t3_stage_start(void)
+static void t3_stage_with(uint16_t opts, const uint8_t *key)
 {
 	radio_t3_setup_t *s = radio_t3_staged();
 	radio_t3_reset(s);
@@ -5545,7 +5545,11 @@ static void t3_stage_start(void)
 	s->cfg.auth.model = T3_MODEL_SMALL;
 	s->cfg.auth.net = 5;
 	s->cfg.auth.category = T3_PAR_A;
-	s->cfg.opts = T3_OPT_PRIVATE | T3_OPT_STUN;
+	s->cfg.opts = opts;
+	if (key != NULL) {
+		s->cfg.auth_key_set = true;
+		memcpy(s->cfg.auth_key, key, T3_AUTH_KEY_LEN);
+	}
 	s->cc = 2;
 	s->cfg.ctrl[0] = (t3_chan_t){ 1, T3_RX_HZ, T3_TX_HZ, 2 };
 	s->cfg.nctrl = 1;
@@ -5557,6 +5561,11 @@ static void t3_stage_start(void)
 	req(RREQ_T3, RADIO_T3_START);
 	t3_site_run(600);
 	CHECK(radio_t3v.state == T3_CAMPED);
+}
+
+static void t3_stage_start(void)
+{
+	t3_stage_with(T3_OPT_PRIVATE | T3_OPT_STUN, NULL);
 }
 
 static void t3_data_rx(uint8_t kind, const uint8_t *d, int8_t ts)
@@ -6281,6 +6290,76 @@ static void test_t3_stun_kept(void)
 	t3_cp_done();
 }
 
+// A kill (6.4.10.0: the radio loses all DMR functionality) outlasts a restart: kept in the settings, the DMR stack
+// stops at once and doesn't start again on a conventional DMR channel, PTT there is denied, FM still works; the
+// defaults (a factory reset) clear it
+static void test_t3_kill_kept(void)
+{
+	static const uint8_t key[T3_AUTH_KEY_LEN] = { 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA };
+	settings_t st;
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_with(T3_OPT_PRIVATE | T3_OPT_KILL, key);
+	CHECK(sm.view.dmr.active && !sm.view.dmr.killed);
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_SUPPLEMENTARY;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = T3_ID_KILLI;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	t3_csbk_t v = { 0 };
+	bool challenged = false;
+	for (unsigned i = 0; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_CSBK && (sim.air[i].payload[0] & 0x3Fu) == T3_OP_C_ACKVIT) {
+			challenged = t3_csbk_parse(sim.air[i].payload, &v);
+		}
+	}
+	CHECK(challenged && !radio_t3v.killed);
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ACKD };
+	a.u.ack.reason = T3_RC_AUTH_RESPONSE;
+	a.u.ack.dst = T3_OWN;
+	a.u.ack.src = t3_auth_response(key, v.u.ahoy.dst, 0);
+	t3_csbk_rx(&a, 1);
+	t3_site_run(300);
+	CHECK(radio_t3v.killed && sm.view.dmr.killed && !sm.view.dmr.active);
+	settings_read(&st);
+	CHECK((st.t3_kill & SETTINGS_T3_KILLED) != 0);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+
+	// A restart: a conventional DMR channel doesn't start the stack, PTT is denied, nothing goes on air
+	boot();
+	req(RREQ_ZONE_POS, 3);
+	run(100);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sm.view.dmr.killed && !sm.view.dmr.active);
+	req(RREQ_PTT, 1);
+	run(200);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_NO_DMR && hw.tx_calls == 0 &&
+	      sim.air_count == 0);
+	req(RREQ_PTT, 0);
+	run(200);
+
+	// FM still transmits
+	req(RREQ_ZONE_POS, 0);
+	run(100);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM);
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.state == RS_TX);
+	req(RREQ_PTT, 0);
+	run(200);
+
+	// The defaults clear it
+	settings_t *w = settings_begin();
+	settings_defaults(w);
+	settings_end(now);
+	boot();
+	req(RREQ_ZONE_POS, 3);
+	run(100);
+	CHECK(!sm.view.dmr.killed && sm.view.dmr.active);
+}
+
 // Power save on a board whose rx_sleep works on DMR (dmr-trunking.md 7.13): registered with a wake frame and the
 // CSC known, the receiver goes off between wake frames and comes back, restarting the modem's receive, for them
 static int ps_sleeps, ps_wakes;
@@ -6701,6 +6780,7 @@ int main(void)
 	test_t3_als();
 	test_t3_stun();
 	test_t3_stun_kept();
+	test_t3_kill_kept();
 	test_t3_poll();
 	test_t3_ip_gateway();
 	test_t3_ip_advice();
