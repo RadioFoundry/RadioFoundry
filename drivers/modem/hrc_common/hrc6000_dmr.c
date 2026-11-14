@@ -572,6 +572,7 @@ static void tx_finish(hrc6000_dmr_t *e)
 	}
 	e->tx_state = TXS_IDLE;
 	e->tx_listen = false;
+	e->tap_reports = e->st.rc_reports;	// a report after the last tap read is not the next transmission's
 	e->tx_end_req = false;
 	e->tx_abort_req = false;
 	e->st.tx_done++;
@@ -636,11 +637,14 @@ static void tx_end_check(hrc6000_dmr_t *e, uint8_t r42)
 // The slot just listened to, for a BS's outbound RC burst: EMB + RC in place of the sync (ETSI TS 102 361-1 6.4.2).
 // The chip reports nothing for it, but its receive tap (tap_addr) holds the burst with that field where a voice burst's
 // sync or EMB goes. Read the field and the voice bytes after it, which change per burst: an area unchanged since its
-// last read holds the same burst, or a stale one, and is skipped, so one RC is never counted twice
+// last read holds the same burst, or a stale one, and is skipped. One slot is listened to between two reads, so an RC
+// the chip reported since (rc_report: a class 3 or burst F) is this burst's: not counted twice
 #define TAP_READ_LEN	12u	// the field (6) and as many voice bytes
 static void rc_tap_read(hrc6000_dmr_t *e)
 {
 	const hrc_chip_t *chip = e->dev->chip;
+	bool reported = e->st.rc_reports != e->tap_reports;
+	e->tap_reports = e->st.rc_reports;
 	if (e->cc_filter < 0) {
 		return;
 	}
@@ -660,7 +664,7 @@ static void rc_tap_read(hrc6000_dmr_t *e)
 		e->tap_sum[a] = sum;
 		e->st.rc_tap_changed++;
 		uint8_t command;
-		if (dmrFecRcFromField(raw, (uint8_t)e->cc_filter, &command) < 0) {
+		if (dmrFecRcFromField(raw, (uint8_t)e->cc_filter, &command) < 0 || reported) {
 			continue;
 		}
 		e->st.rc_tap++;

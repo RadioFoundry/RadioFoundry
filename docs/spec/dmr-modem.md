@@ -288,7 +288,7 @@ transmitting in the slot after the next one, in phase with the bursts being rece
   nothing for it. After each listen slot the engine reads the chip's receive tap instead (`hrc_chip_t` `tap_addr`,
   `tap_field`: the burst received, a voice-layout burst's 48-bit sync / EMB / RC field first) and decodes the field
   (`dmrFecRcFromField`) when its EMB has our color code, PI 1 and LCSS 00. Only an area that changed since its last
-  read is decoded, so one burst counts once. `rct` in the modem diagnostics: RCs found / areas changed.
+  read is decoded, and none the chip reported itself in that listen slot, so one burst counts once. `rct` in the modem diagnostics: RCs found / areas changed.
 
 - Repeater call hang time: the repeater keeps the outbound up after a call; an MS that keys in it does not need BS
   activation and should reply on the same slot (and talkgroup, if group hang applies).

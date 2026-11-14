@@ -631,7 +631,8 @@ static void test_tx_listen(void)
 
 // A BS's outbound RC burst heard while we send (ETSI TS 102 361-1 6.4.2): EMB + RC in place of the sync, so the chip
 // reports nothing. Its receive tap (CACH, then the burst's 48-bit field) is read before our next burst: one DMR_EV_RC
-// per RC burst, none for an unchanged area, another color code or a burst that isn't an RC
+// per RC burst, none for an unchanged area, another color code or a burst that isn't an RC, nor for one the chip
+// reported itself (a class 3 report in the same listen slot)
 static void test_tx_listen_rc(void)
 {
 	fresh_engine();
@@ -661,6 +662,12 @@ static void test_tx_listen_rc(void)
 			} else if (listened == 3) {
 				dmrFecRcField(3, DMR_RC_CEASE, burst + 3);	// another color code
 			}
+			if (listened == 5) {	// a cease the chip reports too: one event
+				dmrFecRcField(2, DMR_RC_CEASE, burst + 3);
+				rd[4][0x53] = (uint8_t)(dmrFecRcInfo(DMR_RC_CEASE) >> 3);
+				rd[4][0x54] = (uint8_t)(dmrFecRcInfo(DMR_RC_CEASE) & 7u);
+				report_at(t + 12000, 0x03, 0x20, 0x01);
+			}
 			if (listened != 2) {	// slot 2: nothing new heard, both areas unchanged
 				memcpy(&rd[2][(listened == 4) ? 0x60 : 0x30], burst, sizeof burst);
 			}
@@ -670,7 +677,7 @@ static void test_tx_listen_rc(void)
 	}
 	drain();
 	CHECK(listened >= 5);
-	CHECK(count_ev(DMR_EV_RC) == 2 && eng.st.rc_tap == 2);
+	CHECK(count_ev(DMR_EV_RC) == 3 && eng.st.rc_tap == 2 && eng.st.rc_reports == 1);
 	for (int i = 0; i < nev; i++) {
 		if (evs[i].kind == DMR_EV_RC) {
 			CHECK(evs[i].arg == dmrFecRcInfo(DMR_RC_CEASE) && evs[i].flags == 0);
