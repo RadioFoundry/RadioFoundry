@@ -82,7 +82,39 @@ def main():
         back = link.read_image([(0x7000, 0x8000)])
         check(n == 1 and back[0x7400] == 0x5A and back[0x7540:0x7550] == b"Fast boot line 1", "partial block merged")
         check(not link.verify(edit2, regions), "verify")
+
+        # Patch blocks (3.7): with an image read earlier as the cache, a changed block goes as a patch of the radio's
+        check(link.info()["patch"], "INFO lists patch blocks")
+        edit3 = bytearray(edit2)
+        cps_client.set_channel_name(edit3, 3, "Plain three")
+        link.patched = 0
+        n, plain = link.write_image(edit3, regions)                 # no cache: the whole block
+        check(n == 1 and link.patched == 0, f"plain write {n} {link.patched}")
+        held = link.read_image(regions)
+        edit4 = bytearray(edit3)
+        cps_client.set_channel_name(edit4, 3, "Patch three")
+        n, patched = link.write_image(edit4, regions, cache=held)
+        print(f"# one channel renamed: {plain} stream bytes as a block, {patched} as a patch")
+        check(n == 1 and link.patched == 1 and patched * 5 < plain, f"patch write {n} {link.patched} {patched}")
+        check(not link.verify(edit4, regions), "verify after the patch")
+        # a cache that's stale for a block: that block goes whole (its CRC isn't the radio's)
+        edit5 = bytearray(edit4)
+        cps_client.set_channel_name(edit5, 3, "Stale three")
+        link.patched = 0
+        n, _ = link.write_image(edit5, regions, cache=held)
+        check(n == 1 and link.patched == 0 and not link.verify(edit5, regions), "stale cache: plain")
+        # a base the radio doesn't hold (a block changed behind the host's back): refused, sent whole
+        a = 0x7000
+        want = bytes(edit5[a:a + cps_fast.BLOCK])
+        wrong = bytearray(want)
+        wrong[100] ^= 1
+        link.begin(cps_fast.MODE_DIRECT)
+        link.patched = 0
+        sent = link.write_block(a, want, base=bytes(wrong))
+        link.commit()
+        check(link.patched == 0 and sent > 0 and not link.verify(edit5, regions), "wrong base: sent whole")
         link.close()
+        edit2 = edit5
 
         # The command line: verify, a write from a file, a read with a cache
         path = os.path.join(d, "img.bin")

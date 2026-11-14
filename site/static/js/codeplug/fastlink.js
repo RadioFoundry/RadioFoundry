@@ -12,9 +12,9 @@ import { note } from "../diag.js";
 export const BLOCK = 4096;
 const CMD = 0x1C;
 const OP = { INFO: 0, SUMS: 1, READ: 2, BEGIN: 3, BLOCK: 4, DATA: 5, END: 6, COMMIT: 7, STATUS: 8, ABORT: 9 };
-export const REASON = { RANGE: 1, STORAGE: 2, NO_STAGING: 3, STAGE_FULL: 4, STAGE_BUSY: 5, STATE: 6, CRC: 7, STREAM: 8, FLASH: 9 };
+export const REASON = { RANGE: 1, STORAGE: 2, NO_STAGING: 3, STAGE_FULL: 4, STAGE_BUSY: 5, STATE: 6, CRC: 7, STREAM: 8, FLASH: 9, BASE: 10 };
 const WINDOW = 8;		// DATA requests in flight (3.6)
-const FORMAT_LZ4 = 1, FORMAT_BLANK = 2;
+const FORMAT_LZ4 = 1, FORMAT_BLANK = 2, FORMAT_PATCH = 3;
 export const BLANK_CRC = 0xF154670A;
 
 export class FastError extends Error {
@@ -35,6 +35,7 @@ export class FastLink {
 		this.s = link.s;
 		this.wire = 0;		// bytes sent and received, for the log and the tests
 		this.requests = 0;
+		this.patched = 0;	// blocks sent as patches
 	}
 
 	next() {
@@ -94,7 +95,7 @@ export class FastLink {
 		}
 		if (d.length < 26 || d[0] !== 1) return null;
 		this.limits = {
-			version: d[0], staging: !!(d[1] & 1), writable: !!(d[1] & 2), block: u16le(d, 2), sums: d[4], data: d[5],
+			version: d[0], staging: !!(d[1] & 1), writable: !!(d[1] & 2), patch: !!(d[1] & 4), block: u16le(d, 2), sums: d[4], data: d[5],
 			read: u16le(d, 6), eeSize: u32le(d, 8), flashStart: u32le(d, 12), end: u32le(d, 16), base: u32le(d, 20),
 			stageMax: u16le(d, 24),
 		};
@@ -142,24 +143,47 @@ export class FastLink {
 		return u16le(d, 0);
 	}
 
+	// The stream a block goes as: a patch of base (the radio's bytes of the block now) when the radio takes them and
+	// it's shorter, else plain. {format, stream}
+	encode(bytes, base) {
+		const plain = encodeBlock(bytes);
+		if (base && this.limits?.patch) {
+			const patch = encodeBlock(bytes, base);
+			if (patch.length < plain.length) return { format: FORMAT_PATCH, stream: patch };
+		}
+		return { format: FORMAT_LZ4, stream: plain };
+	}
+
 	// One block: BLOCK, its stream in DATA windows of 8, then END. A window that goes wrong sends the block again,
-	// one DATA at a time (3.6)
-	async write(addr, bytes) {
+	// one DATA at a time (3.6). base: the radio's bytes of the block as the host last saw them (CRC checked against
+	// SUMS), for a patch; a radio whose block turns out to be another refuses it and gets the plain stream
+	async write(addr, bytes, base = null) {
 		const crc = crc32(bytes);
 		if (isBlank(bytes)) {
 			await this.op("block", [OP.BLOCK, ...le32(addr), FORMAT_BLANK, 0, 0, ...le32(crc)]);
 			await this.op("end", [OP.END], { timeout: 5000 });
 			return 0;
 		}
-		const stream = encodeBlock(bytes);
-		for (let window = WINDOW; ; window = 1) {
-			await this.op("block", [OP.BLOCK, ...le32(addr), FORMAT_LZ4, ...u16(stream.length), ...le32(crc)]);
+		let { format, stream } = this.encode(bytes, base);
+		for (let window = WINDOW; ;) {
+			const head = [OP.BLOCK, ...le32(addr), format, ...u16(stream.length), ...le32(crc)];
+			try {
+				await this.op("block", format === FORMAT_PATCH ? [...head, ...le32(crc32(base))] : head);
+			} catch (e) {
+				if (!(e instanceof FastError && e.reason === REASON.BASE && format === FORMAT_PATCH)) throw e;
+				note("fast write: the radio's block isn't the one the patch was made against, sent whole", { addr });
+				format = FORMAT_LZ4;
+				stream = encodeBlock(bytes);
+				continue;
+			}
 			if (await this.data(stream, window)) break;
 			if (window === 1) throw new FastError("data", "refused", REASON.STREAM);
 			note("fast write: window failed, block sent again one DATA at a time", { addr });
+			window = 1;
 		}
 		// END writes the flash: a sector erase can take 400 ms, two of them in direct mode
 		await this.op("end", [OP.END], { timeout: 5000 });
+		if (format === FORMAT_PATCH) this.patched++;
 		return stream.length;
 	}
 

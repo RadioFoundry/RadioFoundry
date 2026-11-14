@@ -103,12 +103,31 @@ void cps_lz4_dec_init(cps_lz4_dec_t *d, uint8_t *out, uint32_t size)
 	d->state = S_TOKEN;
 }
 
+void cps_lz4_dec_dict(cps_lz4_dec_t *d, uint32_t dict_size, bool (*dict)(void *ctx, uint32_t pos, uint8_t *dst, uint32_t len),
+		      void *ctx)
+{
+	d->dict_size = dict != NULL ? dict_size : 0;
+	d->dict = dict;
+	d->dict_ctx = ctx;
+}
+
 static void copy_match(cps_lz4_dec_t *d)
 {
 	uint32_t ml = d->ml + MIN_MATCH;
-	if (d->off == 0 || d->off > d->o || ml > d->size - d->o) {
+	if (d->off == 0 || d->off > d->o + d->dict_size || ml > d->size - d->o) {
 		d->bad = true;
 		return;
+	}
+	if (d->off > d->o) {
+		// The match starts in the dictionary: its part there in one read, the rest (if any) from the output
+		uint32_t back = d->off - d->o, k = ml < back ? ml : back;
+		if (!d->dict(d->dict_ctx, d->dict_size - back, d->out + d->o, k)) {
+			d->dict_failed = true;
+			d->bad = true;
+			return;
+		}
+		d->o += k;
+		ml -= k;
 	}
 	for (uint32_t k = 0; k < ml; k++, d->o++) {
 		d->out[d->o] = d->out[d->o - d->off];	// byte by byte: an overlapping match repeats what it just wrote

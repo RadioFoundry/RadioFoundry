@@ -115,22 +115,24 @@ export { recordSize };
 
 // --- The draft: the working codeplug kept in this browser (IndexedDB), so a reload doesn't lose edits ---
 
-const DB = "rfoundry-codeplug-editor", STORE = "draft";
+const DB = "rfoundry-codeplug-editor", STORE = "draft", RADIOS = "radios";
 
 function db() {
 	return new Promise((resolve, reject) => {
-		const req = indexedDB.open(DB, 1);
-		req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+		const req = indexedDB.open(DB, 2);
+		req.onupgradeneeded = () => {
+			for (const name of [STORE, RADIOS]) if (!req.result.objectStoreNames.contains(name)) req.result.createObjectStore(name);
+		};
 		req.onsuccess = () => resolve(req.result);
 		req.onerror = () => reject(req.error);
 	});
 }
 
-async function tx(mode, fn) {
+async function tx(mode, fn, store = STORE) {
 	const d = await db();
 	return new Promise((resolve, reject) => {
-		const t = d.transaction(STORE, mode);
-		const req = fn(t.objectStore(STORE));
+		const t = d.transaction(store, mode);
+		const req = fn(t.objectStore(store));
 		t.oncomplete = () => resolve(req?.result);
 		t.onerror = () => reject(t.error);
 	});
@@ -157,5 +159,28 @@ export async function clearDraft() {
 		await tx("readwrite", (s) => s.delete("current"));
 	} catch {
 		// nothing kept
+	}
+}
+
+// --- Each radio's bytes as last read or written, by its chip UID ---
+// A cache only: the fast codeplug protocol checks every block's CRC-32 against the radio before it trusts one, so a
+// stale image costs reads, never a wrong write. With it, a new session reads only the blocks that changed and sends a
+// changed block as a patch of the radio's (docs/spec/cps-fast.md 3.7): a refreshed ID database in seconds, not minutes
+
+export async function saveRadioImage(uid, bytes) {
+	if (!uid) return;
+	try {
+		await tx("readwrite", (s) => s.put({ bytes, saved: Date.now() }, uid), RADIOS);
+	} catch {
+		// private window or storage blocked (or full): the next session reads more
+	}
+}
+
+export async function loadRadioImage(uid) {
+	if (!uid) return null;
+	try {
+		return (await tx("readonly", (s) => s.get(uid), RADIOS))?.bytes || null;
+	} catch {
+		return null;
 	}
 }

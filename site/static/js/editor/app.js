@@ -20,7 +20,7 @@ import { FakeCpsRadio } from "../codeplug/fakecps.js";
 import { Grid } from "./grid.js";
 import { History } from "./undo.js";
 import { bulkColumns, columns, channelForm, formDialog, membersDialog, refLabel, parseAreaKey } from "./views.js";
-import { openFile, saveBytes, tftpBytes, FileError, imageFrom, saveDraft, loadDraft, clearDraft } from "./files.js";
+import { openFile, saveBytes, tftpBytes, FileError, imageFrom, saveDraft, loadDraft, clearDraft, saveRadioImage, loadRadioImage } from "./files.js";
 import { extensions } from "./extensions.js";
 import "./parts.js";
 import * as diag from "../diag.js";
@@ -631,7 +631,31 @@ async function onLine(c) {
 		c.image = null;
 		c.dbKnown = false;
 	}
+	// this radio's bytes from an earlier session (files.js): only with the fast protocol, which trusts a block of it
+	// only where the radio's CRC matches; the CPS would trust it whole
+	if (uid !== c.cacheUid) {
+		const bytes = uid && c.transport.fast ? await loadRadioImage(uid) : null;
+		c.cache = bytes ? new CodeplugImage(bytes) : null;
+		c.cacheUid = uid;
+		if (c.cache) diag.note("radio image from an earlier session", { bytes: bytes.length });
+	}
 	c.uid = uid;
+}
+
+// The radio's bytes as now known kept for the next session; the ID database's from the cache when this session
+// didn't read it (the fast protocol checks each block anyway)
+function keepRadioImage(c) {
+	if (!c.uid || !c.transport.fast || !c.image) return;
+	let img = c.image;
+	if (!c.dbKnown && c.cache) {
+		img = c.image.clone();
+		for (const [a, b] of iddbRanges(c.cache)) {
+			img.ensure(b);
+			img.bytes.set(c.cache.bytes.subarray(a, b), a);
+		}
+	}
+	c.cache = img.clone();
+	saveRadioImage(c.uid, c.cache.bytes);
 }
 
 // The offer to convert a format N database to C, after a read: at most once in 12 hours for each radio model,
@@ -706,6 +730,7 @@ function readSkippedIddb() {
 			}
 			S.model.iddb = dbHeader(S.model.base.bytes);
 			c.dbKnown = true;
+			keepRadioImage(c);
 			S.iddbSkipped = null;
 			diag.note("iddb read", { bytes: img.bytes.length });
 			refresh();
@@ -724,7 +749,9 @@ async function readRadio() {
 			await onLine(c);
 			// the ID database can be megabytes: its header first, and a long read of it offered, not made. Then one read
 			// (one progress bar) of the codeplug and, when wanted, the database
-			const cached = !!c.image && c.dbKnown;
+			// a database known from this session, or from an earlier one's image with the same header: only changed blocks move
+			const cached = (!!c.image && c.dbKnown) || (!!c.cache && equal(c.cache.bytes.subarray(IDDB_HEADER[0], IDDB_HEADER[1]),
+				head.bytes.subarray(IDDB_HEADER[0], IDDB_HEADER[1])));
 			const head = await c.transport.readIddbHeader();
 			const db = dbHeader(head.bytes);
 			const dbBytes = c.transport.iddbBytes(head);
@@ -734,7 +761,7 @@ async function readRadio() {
 			const t0 = performance.now(), moved = c.transport.moved;
 			// the header just read serves as the cache for its own block on a first read
 			const img = await withProgress(t("editor.reading", { radio: c.radio.name }), (bar, signal) =>
-				c.transport.read({ iddb: readDb, signal, cache: c.image || head, progress: (n, total) => bar.set(n, total) }));
+				c.transport.read({ iddb: readDb, signal, cache: c.image || c.cache || head, progress: (n, total) => bar.set(n, total) }));
 			// how fast this radio and cable read, for the next estimate (a read from the cache says nothing): by the bytes
 			// that crossed the link, not the progress, which also counts blank blocks the fast protocol skips. A read of a
 			// few blocks is mostly round trips: too few to tell
@@ -742,12 +769,13 @@ async function readRadio() {
 			if (!c.image && took >= 65536) c.rate = took / Math.max(0.25, (performance.now() - t0) / 1000);
 			diag.note("read done", { bytes: img.bytes.length, iddb: readDb, dbBytes, seconds });
 			c.image = img.clone();
+			c.dbKnown = !db || readDb;
+			keepRadioImage(c);
 			if (db && !readDb) {
 				// the model without the database (its header erased): a write leaves the radio's as it is
 				img.bytes.fill(0xFF, IDDB_HEADER[0], IDDB_HEADER[1]);
 			}
 			load(decode(img), `${c.radio.id}-codeplug`, { fromRadio: true });
-			c.dbKnown = !db || readDb;
 			S.iddbSkipped = db && !readDb ? { count: db.count, bytes: dbBytes, seconds } : null;
 			if (S.iddbSkipped) refresh();
 			say(t("editor.read_done", { radio: c.radio.name, channels: S.model.channels.length, contacts: S.model.contacts.length }), "ok");
@@ -847,8 +875,8 @@ async function planWrite() {
 		areaForWrite(file.bytes, c.image.bytes, S.model.base?.bytes);
 		const kept = keepIdentity(file, c.image);
 		const differs = IDENTITY.some(([a, b]) => kept.bytes.subarray(a, b).some((x, i) => x !== file.bytes[a + i]));
-		const plans = { file: await c.transport.plan(file, c.image, { iddb }) };
-		plans.kept = differs ? await c.transport.plan(kept, c.image, { iddb }) : plans.file;
+		const plans = { file: await c.transport.plan(file, c.image, { iddb, cache: c.cache }) };
+		plans.kept = differs ? await c.transport.plan(kept, c.image, { iddb, cache: c.cache }) : plans.file;
 		let keep = keepPref() && differs;
 		const choice = () => (keep ? { want: kept, ...plans.kept } : { want: file, ...plans.file });
 		diag.note("write plan", { bytes: choice().bytes, sectors: choice().plan.length, iddb, keep });
@@ -917,7 +945,7 @@ function writeChosen(c, { want }, iddb, prepared) {
 		try {
 			const res = await withProgress(t("editor.writing", { radio: c.radio.name }), async (bar, signal) => {
 				// the CPS rewrites the whole codeplug with a database; the fast protocol checks every block's CRC itself
-				const r = await c.transport.write(want, iddb && !c.transport.fast ? null : c.image, { iddb, signal, progress: (n, total) => bar.set(n, total, t("editor.progress.write")) });
+				const r = await c.transport.write(want, iddb && !c.transport.fast ? null : c.image, { iddb, signal, cache: c.cache, progress: (n, total) => bar.set(n, total, t("editor.progress.write")) });
 				step = "verify codeplug";
 				await c.transport.verify(want, r.plan, { progress: (n, total) => bar.set(n, total, t("editor.progress.verify")) });
 				step = "finish write";
@@ -927,6 +955,7 @@ function writeChosen(c, { want }, iddb, prepared) {
 			diag.note("write done", { bytes: res.bytes, sectors: res.sectors });
 			c.image = want.clone();
 			if (iddb) c.dbKnown = true;
+			keepRadioImage(c);
 			S.iddbChanged = false;
 			S.model.base = want;
 			S.model.iddb = dbHeader(want.bytes);	// format N when it went to a radio that reads only that
