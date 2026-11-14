@@ -413,11 +413,11 @@ static void t3_svc(const radio_t3_view_t *x, void *ctx)
 	// The registration's talkgroup list (6.4.4.1.13.2): how many went, which were taken (bit 6 the first)
 	dl_text(t, "t3.reg_tgs=%u\nt3.reg_tg_ok=0x%02x\n", x->reg_tgs, x->reg_tg_ok);
 	// The last random access bursts, oldest first: age ms, TX slot, answer after ms (0: none), frames after (255:
-	// none), RX slot, the answer's opcode
+	// none), RX slot, the answer's opcode, on air after ms (0: not reported)
 	dl_text(t, "t3.nra=%u\n", x->nra);
 	for (uint8_t i = 0; i < x->nra; i++) {
-		dl_text(t, "t3.ra%u=%u,%u,%u,%u,%u,0x%02x\n", i, (unsigned)(now - x->ra[i].tx_ms), x->ra[i].tx_slot,
-			x->ra[i].rx_ms, x->ra[i].frames, x->ra[i].rx_slot, x->ra[i].op);
+		dl_text(t, "t3.ra%u=%u,%u,%u,%u,%u,0x%02x,%u\n", i, (unsigned)(now - x->ra[i].tx_ms), x->ra[i].tx_slot,
+			x->ra[i].rx_ms, x->ra[i].frames, x->ra[i].rx_slot, x->ra[i].op, x->ra[i].air_ms);
 	}
 	dl_text(t, "t3.call_data=%u\nt3.pd_wait=%u\nt3.stunned=%u\nt3.stuns=%u\nt3.revives=%u\n", x->call_data, x->pd_wait,
 		x->stunned, (unsigned)x->stuns, (unsigned)x->revives);

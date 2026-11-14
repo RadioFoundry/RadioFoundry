@@ -449,7 +449,8 @@ typedef struct {
 	uint32_t t3_slc_n;		// the stack's short LC count handed to the engine
 	bool t3_rx_off;			// the receiver is off: the engine sleeps (power save)
 	uint32_t t3_rx_off_at;
-	uint32_t t3_tx_end_ms;	// when our last transmission on the system ended, 0 = a burst was heard since
+	uint32_t t3_tx_end_ms;
+	uint8_t t3_sent_report;	// the stack's word on our last burst list: 1 sent, 2 dropped, 0 none pending	// when our last transmission on the system ended, 0 = a burst was heard since
 	uint8_t t3_slot;		// the slot of the last tick handed to it
 	uint8_t t3_at[2];		// the last tick flags (DMR_TICK_AT_*) of the CACH naming slot 1, 2
 	uint8_t t3_cc;			// the color code of the channel being listened to

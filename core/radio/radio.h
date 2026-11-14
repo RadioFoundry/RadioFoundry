@@ -301,6 +301,7 @@ typedef struct {
 		uint32_t tx_ms;
 		uint16_t rx_ms;
 		uint8_t tx_slot, frames, rx_slot, op;
+		uint16_t air_ms;	// on air this long after tx_ms (0: not reported)
 	} ra[4];
 	uint8_t nra;
 	uint8_t reg_tg_ok;	// which the TSCC accepted: bit 6 the first

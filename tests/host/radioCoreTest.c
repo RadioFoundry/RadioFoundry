@@ -5487,6 +5487,10 @@ static void test_volume_step_of(void)
 
 static void t3_csbk_rx(const t3_csbk_t *p, int8_t ts)
 {
+	// A site's PDU comes when the radio can hear it: not in the middle of the radio's own burst list
+	for (int i = 0; i < 60 && dmr_call_data_busy(); i++) {
+		run(5);
+	}
 	dmr_burst_t b;
 	memset(&b, 0, sizeof(b));
 	b.kind = DMR_BURST_CSBK;

@@ -706,6 +706,7 @@ static void start_access(t3_ms_t *ms, uint32_t now, t3_svc_t svc, uint32_t dst, 
 	// The first slot the TSCC uses; a dedicated TSCC on both slots is reached on TS1
 	ms->ax.slot = (ms->tscc_slots & 1u) || ms->tscc_slots == 0 ? 1 : 2;
 	ms->ax.frames = 0;
+	ms->ax.to_air = false;
 	ms->ax.tries = 0;
 	ms->ax.tc_deadline = now + or_default(ms->cfg->trand_tc_ms, T3_TRAND_TC_MS);
 	ms->ax.ack_deadline = 0;
@@ -888,6 +889,8 @@ static void ra_slot(t3_ms_t *ms, uint32_t now, bool at_known, bool at_busy)
 		ms->st.ra_log[k].rx_slot = 0;
 		ms->st.ra_log[k].rx_ms = 0;
 		ms->st.ra_log[k].op = 0;
+		ms->st.ra_log[k].air_ms = 0;
+		ms->ax.to_air = true;
 		ms->ax.state = T3_AX_WAIT_RESP;
 		ms->ax.frames = (uint16_t)(t3_nwait_frames(ms->aloha.nrand_wait) + 1u);
 		if (ms->ax.svc == T3_SVC_REGISTER) {
@@ -2375,6 +2378,25 @@ void t3_ms_slot(t3_ms_t *ms, uint32_t now, uint8_t slot, bool at_known, bool at_
 uint8_t t3_ms_at_tc(const t3_ms_t *ms, uint8_t slot)
 {
 	return ms->aloha.offset ? slot : (uint8_t)(3u - slot);
+}
+
+// The answer to a random access burst comes NRand_Wait frames after the burst itself (6.2.2). A radio can hold a
+// burst list back for a while (after a retune its stack waits for the channel's slot timing): counted from the
+// hand-over, the wait would end before an answer in time. So the window starts again from the radio's report; a
+// burst it dropped is tried again after the backoff, without waiting for an answer that can't come
+void t3_ms_sent(t3_ms_t *ms, uint32_t now, bool ok)
+{
+	if (!ms->ax.to_air) {
+		return;
+	}
+	ms->ax.to_air = false;
+	if (ms->ax.state != T3_AX_WAIT_RESP || ms->st.ra_tries == 0) {
+		return;	// answered already, or given up
+	}
+	uint8_t k = (uint8_t)((ms->st.ra_tries - 1u) % T3_RA_LOG);
+	uint32_t d = now - ms->st.ra_log[k].tx_ms;
+	ms->st.ra_log[k].air_ms = d == 0 ? 1u : (d > 0xFFFFu ? 0xFFFFu : (uint16_t)d);
+	ms->ax.frames = ok ? (uint16_t)(t3_nwait_frames(ms->aloha.nrand_wait) + 1u) : 1u;
 }
 
 void t3_ms_activity(t3_ms_t *ms, uint32_t now, uint8_t slot)

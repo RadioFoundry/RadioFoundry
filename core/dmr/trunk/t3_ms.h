@@ -267,6 +267,7 @@ typedef struct {
 	struct {
 		uint32_t tx_ms;		// when it was handed to the radio
 		uint16_t rx_ms;		// the answer, this many ms after (0: none)
+		uint16_t air_ms;	// the radio reported it sent this many ms after (t3_ms_sent; 0: not reported)
 		uint8_t tx_slot;
 		uint8_t frames;		// the answer came this many frames after it (T3_RA_NONE: none)
 		uint8_t rx_slot;
@@ -366,6 +367,7 @@ typedef struct {
 		bool emergency;
 		uint8_t slot;		// the TSCC slot it uses
 		uint16_t frames;	// WAIT_SLOT: frames to the chosen one; WAIT_RESP: frames left to wait
+		bool to_air;		// the last try is with the radio, not yet reported on air (t3_ms_sent)
 		uint8_t tries;
 		uint32_t tc_deadline;	// TRand_TC
 		uint32_t ack_deadline;	// TP_Timer / TNP_Timer
@@ -493,6 +495,9 @@ void t3_ms_stop(t3_ms_t *ms);
 void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, const uint8_t d[T3_CSBK_BYTES]);
 void t3_ms_slc(t3_ms_t *ms, uint32_t now, uint32_t slc);
 void t3_ms_activity(t3_ms_t *ms, uint32_t now, uint8_t slot);
+// The radio's report on the last burst list the engine handed it (T3_ACT_SEND): sent (ok), or dropped. Optional; a
+// random access burst's answer window (NRand_Wait) then runs from the burst on air, not from the hand-over
+void t3_ms_sent(t3_ms_t *ms, uint32_t now, bool ok);
 // The tuned channel's signal level, in dBm, as often as the radio measures it (0: none). Not while following a call
 void t3_ms_level(t3_ms_t *ms, uint32_t now, int16_t dbm);
 bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act);

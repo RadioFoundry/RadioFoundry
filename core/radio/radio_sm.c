@@ -2609,6 +2609,7 @@ static void t3_send_done(uint8_t err, void *ctx)
 	if (err != DMR_TX_OK) {
 		radio_t3v.send_fail++;
 	}
+	sm->t3_sent_report = err == DMR_TX_OK ? 1u : 2u;	// to the engine at the next step (t3_ms_sent)
 }
 
 // The color code a channel uses: its own, else the control channel's, else the system's
@@ -2689,12 +2690,14 @@ static void t3_send(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 	if (sm->t3_tune_held || sm->view.ch.timeslot != (a->slot == 2 ? 2 : 1) || (sm->ptt && !sm->t3_ptt_wait) ||
 	    sm->view.state == RS_TX) {
 		radio_t3v.send_fail++;	// not on the slot asked for, or talking: the engine retries what needs it
+		t3_ms_sent(&t3m, now_ms, false);
 		return;
 	}
 	if (!sm->dmr_keyed) {
 		static const subtone_t none = { TONE_NONE, 0 };
 		if (!key_tx(sm->view.ch.tx_hz, (radio_bw_t)sm->view.ch.bw, sm->view.power, &none)) {
 			radio_t3v.send_fail++;
+			t3_ms_sent(&t3m, now_ms, false);
 			return;
 		}
 		sm->dmr_keyed = true;
@@ -2712,13 +2715,13 @@ static void t3_send(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 	if (!dmr_call_data_tx(&src)) {
 		sm->t3_send_left = 0;
 		radio_t3v.send_fail++;	// the keying is released by dmr_follow
+		t3_ms_sent(&t3m, now_ms, false);
 		return;
 	}
 	sm->t3_sending = true;
 	radio_t3v.last_tx_op = (a->udt ? a->burst[9] : a->burst[0]) & 0x3Fu;
 	memcpy(radio_t3v.last_tx, a->burst, T3_CSBK_BYTES);
 	radio_t3v.last_tx_ms = now_ms != 0 ? now_ms : 1;
-	(void)now_ms;
 }
 
 // The RX tap: control bursts to the engine, activity on the followed slot. Voice and the rest go on to the stack
@@ -2862,6 +2865,7 @@ static void t3_publish(radio_sm_t *sm)
 		v->ra[i].frames = m->st.ra_log[k].frames;
 		v->ra[i].rx_slot = m->st.ra_log[k].rx_slot;
 		v->ra[i].op = m->st.ra_log[k].op;
+		v->ra[i].air_ms = m->st.ra_log[k].air_ms;
 	}
 	v->reg_tg_ok = m->reg_tg_ok;
 	v->call_data = m->call.data;
@@ -3123,6 +3127,7 @@ static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 	radio_t3v.ip_gw = t3s.ip_gw;
 	radio_t3v.last_tx_op = 0xFF;
 	sm->t3_tx_end_ms = 0;
+	sm->t3_sent_report = 0;
 	sm->t3_on = true;
 	sm->t3_sending = false;
 	sm->t3_tune_held = false;
@@ -3508,6 +3513,12 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	}
 	sm->t3_ticks = tc;
 	sm->t3_now = now_ms;
+	// The stack's report on our last burst list, after the frames before it were counted: a random access burst's
+	// answer window runs from here
+	if (sm->t3_sent_report != 0) {
+		t3_ms_sent(&t3m, now_ms, sm->t3_sent_report == 1u);
+		sm->t3_sent_report = 0;
+	}
 	// The CACH short LC (C_SYS_Parms): the system's identity check and the Common_Slot_Counter power save counts by
 	uint32_t slc, slc_bad;
 	uint32_t slc_n = dmr_call_short_lc(&slc, &slc_bad);

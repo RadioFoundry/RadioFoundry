@@ -882,9 +882,10 @@ burst heard on the same channel (`turns`, `turn_ms` the last, `turn_max_ms`, `tu
 at +4 slots, 120 ms after an access began, comes after the radio is back on receive only under that). The `t3_svc` section, also `t3.`-prefixed, has the services:
 `ax_info` (the final acknowledgement's Response_Info: a poll's answer), `reg_tgs` and `reg_tg_ok` (the
 registration's talkgroup list: how many it sent, and which the site accepted, bit 6 the first), `nra` and `ra0` to
-`ra3` (the last random access bursts, oldest first, each `age_ms,tx_slot,rx_ms,frames,rx_slot,op`: how long ago it
-went and in which slot, then the PDU that answered it: after how many ms and TDMA frames, in which slot, its
-opcode; `0,255,0,0x00` when nothing answered before the next try or the end), `call_data`
+`ra3` (the last random access bursts, oldest first, each `age_ms,tx_slot,rx_ms,frames,rx_slot,op,air_ms`: how long
+ago it went and in which slot, then the PDU that answered it: after how many ms and TDMA frames, in which slot, its
+opcode; `0,255,0,0x00` when nothing answered before the next try or the end; last, how long after the hand-over the
+stack reported it sent, 0 when it didn't), `call_data`
 (the call followed is packet data), `pd_wait` (a data service transmission waits for its data channel), `polls` and
 `poll_fails` (short data polls from the menus, and those that got no answer: dmr-trunking.md 12.7), `ip_gw`
 (off-net IP goes through the system's IP gateway: dmr-trunking.md 7.7), `ip_advised` (the system took the radio's

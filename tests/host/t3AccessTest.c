@@ -453,6 +453,42 @@ static void test_ra_log(void)
 	CHECK(none, "the last tries, each unanswered at its time");
 }
 
+// The answer window (NRand_Wait + 1 frames, 6.2.2) runs from the burst on air: a radio that held the burst back
+// (its stack waiting for the slot timing after a retune) still gets the whole window after it; a burst it dropped is
+// tried again after the backoff alone
+static void test_ra_on_air(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp(&ms);
+	frames(&ms, 2);
+	CHECK(nsent == 1 && ms.ax.state == T3_AX_WAIT_RESP && ms.ax.to_air, "request handed over");
+	uint32_t handed = sent_ms[0];
+	frames(&ms, 3);		// held by the radio: the window counted from the hand-over is nearly out
+	t3_ms_sent(&ms, T, true);
+	CHECK(ms.st.ra_log[0].air_ms == T - handed && !ms.ax.to_air, "on air %u ms after", ms.st.ra_log[0].air_ms);
+	frames(&ms, 6);		// the answer in the window's last frame, 10 frames after the hand-over
+	CHECK(nsent == 1 && ms.ax.state == T3_AX_WAIT_RESP, "still waiting, no second try (%d sent)", nsent);
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_REG_ACCEPTED, OWN, T3_ID_REGI);
+	rx(&ms, 1, &a);
+	CHECK(ms.reg == T3_REG_OK && nsent == 1, "the late answer taken");
+	t3_ms_sent(&ms, T, true);
+	CHECK(ms.reg == T3_REG_OK && ms.ax.state == T3_AX_IDLE, "a report with nothing pending changes nothing");
+
+	// Dropped: the backoff starts at the next frame
+	setup(T3_OPT_PRIVATE, true);
+	camp(&ms);
+	frames(&ms, 2);
+	CHECK(nsent == 1, "request handed over");
+	t3_ms_sent(&ms, T, false);
+	frames(&ms, 1);
+	CHECK(ms.ax.state == T3_AX_WAIT_SLOT && ms.ax.tries == 1, "backing off at once");
+	for (int i = 0; i < 12 && nsent == 1; i++) {
+		frame(&ms);
+	}
+	CHECK(nsent == 2 && sent_ms[1] - sent_ms[0] <= 9u * 60u, "tried again within the backoff, %u ms", sent_ms[1] - sent_ms[0]);
+}
+
 // DMRLA 0 is reserved (361-4 table 6.5: 1 at least): unset, every site is its own registration area, so a radio
 // that moves to another site of the network registers there
 static void test_area_unset(void)
@@ -2825,6 +2861,7 @@ int main(void)
 	test_reg_list();
 	test_no_answer();
 	test_ra_log();
+	test_ra_on_air();
 	test_area_unset();
 	test_refused_denied();
 	test_permission();
