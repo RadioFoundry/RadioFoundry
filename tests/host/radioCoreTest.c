@@ -3979,8 +3979,24 @@ static void test_ui_glue(void)
 	storage_job_poll();
 	run(20);
 	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && kv_tone[2] == 1 && sm.set.tones_off == 0);
-	kv_held = false;
+	// The debug link's SETTING 36 stores as the menu does: with the call end tone's key present, the key is written
+	// too (else the key would put the radio's copy back); a present key that can't be updated is busy
 	kv_tone[2] = -1;
+	kv_tone[0] = 1;
+	kv_serial++;
+	run(20);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 36, 1, 0 }, 3) == DL_ST_BUSY);
+	run(20);
+	CHECK(kv_tone[0] == 1 && sm.set.tones_off == 0);
+	kv_held = false;
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 36, 1, 0 }, 3) == DL_ST_OK);
+	run(20);
+	CHECK(kv_tone[0] == 0 && sm.set.tones_off == 0x01u);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 36, 0, 0 }, 3) == DL_ST_OK);
+	run(20);
+	CHECK(kv_tone[0] == 1 && sm.set.tones_off == 0);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 36, 0x10, 0 }, 3) == DL_ST_BAD_ARG);
+	kv_tone[0] = -1;
 	n_ev = 0;
 	// The scan stop tone is the radio core's (rs_flags), the emergency tone the emergency service's (em_flags)
 	CHECK(ui_svc_setting_get(UI_SET_SCAN_TONE) == 0);
