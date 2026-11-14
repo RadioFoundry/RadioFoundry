@@ -965,6 +965,21 @@ demodulated from a separate receiver, peak deviation:
 | 10 kHz (tried) | 0.5 Hz | 1.9 Hz | 1.1 Hz | 470 Hz: sidebands about 33 dB down at ±10 kHz, in the adjacent 12.5 kHz channel |
 | 40 kHz | 0.6-0.7 Hz | 1.6-2.3 Hz | 1.6 Hz | 99-206 Hz: sidebands 52-58 dB down at ±40 kHz |
 
+The panel's backlight driver doesn't follow 40 kHz: Brightness 20 % looked close to full, and the idle dim step (a
+fifth) hardly showed. At 2 kHz it dims as set. So the PWM runs at 2 kHz and switches to 40 kHz while the radio
+transmits (`uvf_backlight_tx`, from the radio's TX on and off). Measured on a DM-1701, FM, 50 mW, deviation in the
+demodulated transmit audio:
+
+| Backlight PWM during FM transmit | 2 kHz | 4 kHz | 40 kHz |
+|---|---|---|---|
+| 2 kHz (not switched; test build) | 210 Hz | 185 Hz | 96 Hz |
+| switched to 40 kHz | 3-7 Hz | 0.4-2 Hz | 70-100 Hz |
+| 40 kHz always (before) | 4.3 Hz | 1.4 Hz | 88 Hz |
+
+With the switch, transmit is the same as with 40 kHz always, at every brightness (10-100 % stepped during one
+transmission): the 2 kHz and 40 kHz lines that remain don't change with the brightness, not even at 100 %, where the
+pin is steady, so they aren't the backlight's.
+
 
 ---
 

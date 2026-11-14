@@ -676,6 +676,7 @@ static void set_mode(radio_mode_t mode)
 			stm32_hrc_dmr_leave();
 			rf_resync();	// retunes only after DMR bursts; rx_retune below otherwise
 			r.tx_on = false;
+			uvf_backlight_tx(false);
 		}
 		count(at1846s_set_mode(&r.rf, AT1846S_MODE_FM));
 		rx_retune();
@@ -815,6 +816,7 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone, bool ke
 		stm32_hrc_dmr_rx_restart();
 	}
 	r.tx_on = false;
+	uvf_backlight_tx(false);
 	return true;
 }
 
@@ -854,6 +856,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		__DMB();
 		r.dmr_armed = true;
 		r.tx_on = true;
+		uvf_backlight_tx(true);
 		return true;
 	}
 
@@ -886,6 +889,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	PIN_WRITE(PIN_PA_BAND, uhf);
 	PIN_WRITE(PIN_PA_EN2, true);
 	r.tx_on = true;
+	uvf_backlight_tx(true);
 	return true;
 }
 
@@ -908,6 +912,7 @@ static void tx_end(bool keep)
 	count(at1846s_set_state(&r.rf, AT1846S_STATE_IDLE));
 	count(hrc6000_set_mode_fm_rx(&r.modem));
 	r.tx_on = false;
+	uvf_backlight_tx(false);
 }
 
 static void tx_off(void)

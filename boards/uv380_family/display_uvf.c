@@ -144,13 +144,16 @@ static bool ready;
 
 // ---- Backlight: TIM1 paces two one-word DMA writes to the backlight port's BSRR (backlight_uvf.h) ----
 // The update (DMA2 Stream5 channel 6) sets the pin, the CC1 match (DMA2 Stream1 channel 6) clears it: duty = CCR1 /
-// period at 40 kHz, two transfers per cycle. 0 % and 100 % stop both and drive the pin steady.
+// period, two transfers per cycle, at 2 kHz or at 40 kHz while transmitting (uvf_backlight_tx). 0 % and 100 % stop
+// both and drive the pin steady.
 
 #define BL_MASK		PIN_MASK(PIN_LCD_BACKLIGHT)
 
 static uint32_t bl_set = BL_MASK;			// main SRAM, reachable by DMA2
 static uint32_t bl_clear = (uint32_t)BL_MASK << 16;
 static bool bl_running;
+static uint8_t bl_percent;	// the brightness set last
+static bool bl_tx;		// transmitting: the fast rate
 
 static void bl_stream_stop(DMA_Stream_TypeDef *st)
 {
@@ -198,7 +201,7 @@ static void bl_init(void)
 
 	TIM1->CR1 = 0;
 	TIM1->PSC = 0;
-	TIM1->ARR = UVF_BL_PERIOD - 1;
+	TIM1->ARR = UVF_BL_IDLE_PERIOD - 1;
 	TIM1->CCR1 = 1;
 	TIM1->CCMR1 = TIM_CCMR1_OC1PE;	// CC1 output compare, frozen, preloaded: a new duty starts at the next cycle
 	TIM1->DIER = TIM_DIER_UDE | TIM_DIER_CC1DE;	// DMA requests on update (set) and CC1 match (clear)
@@ -206,21 +209,42 @@ static void bl_init(void)
 	TIM1->CR1 = TIM_CR1_ARPE | TIM_CR1_CEN;
 }
 
-// 0 = off, 100 or more = fully on, otherwise PWM duty in percent
-static void set_backlight(uint8_t percent)
+// The brightness at the rate in use. Interrupts off: called from the backlight's task and from the radio's tx/rx, and
+// the period and compare are written as a pair (both preloaded, they take effect together at the next cycle)
+static void bl_apply(void)
 {
-	uint16_t cmp = uvf_bl_compare(percent);
+	uint32_t primask = __get_PRIMASK();
+	__disable_irq();
+	uint16_t period = bl_tx ? UVF_BL_PERIOD : UVF_BL_IDLE_PERIOD;
+	uint16_t cmp = uvf_bl_compare(bl_percent, period);
 
-	if (!ready || cmp == 0 || cmp >= UVF_BL_PERIOD) {
+	if (!ready || cmp == 0 || cmp >= period) {
 		if (bl_running) {
 			bl_dma_stop();
 		}
 		PIN_WRITE(PIN_LCD_BACKLIGHT, cmp > 0);
-		return;
+	} else {
+		TIM1->ARR = period - 1u;
+		TIM1->CCR1 = cmp;
+		if (!bl_running) {
+			bl_dma_start();
+		}
 	}
-	TIM1->CCR1 = cmp;
-	if (!bl_running) {
-		bl_dma_start();
+	__set_PRIMASK(primask);
+}
+
+// 0 = off, 100 or more = fully on, otherwise PWM duty in percent
+static void set_backlight(uint8_t percent)
+{
+	bl_percent = percent;
+	bl_apply();
+}
+
+void uvf_backlight_tx(bool tx)
+{
+	if (tx != bl_tx) {
+		bl_tx = tx;
+		bl_apply();
 	}
 }
 
