@@ -505,7 +505,7 @@ bool nand_blocks_mount(nand_blocks_t *nb)
 		nb->map[l] = NONE;
 	}
 	uint32_t seq = 0;
-	uint16_t last = (uint16_t)(ppb(nb) - 1u);
+	uint16_t last = (uint16_t)(ppb(nb) - 1u), newest = (uint16_t)(d->blocks - 1u);
 	for (uint16_t b = 0; b < d->blocks; b++) {
 		busy(nb);
 		nb->flags[b] = 0;
@@ -519,11 +519,17 @@ bool nand_blocks_mount(nand_blocks_t *nb)
 		tag_state_t st0 = read_tag(nb, page_of(nb, b, 0), &t0);
 		if (st0 == TAG_VALID) {
 			nb->flags[b] |= F_OURS;
-			seq = t0.seq + 1u > seq ? t0.seq + 1u : seq;
+			if (t0.seq + 1u > seq) {
+				seq = t0.seq + 1u;
+				newest = b;
+			}
 		}
 		if (st == TAG_VALID) {
 			nb->flags[b] |= F_OURS;
-			seq = t.seq + 1u > seq ? t.seq + 1u : seq;
+			if (t.seq + 1u > seq) {
+				seq = t.seq + 1u;
+				newest = b;
+			}
 			uint32_t dcrc;
 			if (t.logical >= nb->blocks || !page_crc(nb, page_of(nb, b, last), 0, NULL, 0, &dcrc) || dcrc != t.dcrc) {
 				nb->stats.torn++;	// cut while its last page was programmed: the copy never took over
@@ -545,7 +551,7 @@ bool nand_blocks_mount(nand_blocks_t *nb)
 		return false;
 	}
 	nb->stats.seq = seq;
-	nb->rotor = (uint16_t)(d->blocks - 1u);
+	nb->rotor = newest;	// wear goes on round the region from the block taken last, not from block 0 again
 	nb->mounted = true;
 	nb->stats.status = NAND_BLOCKS_MOUNTED;
 	return true;
