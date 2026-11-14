@@ -866,7 +866,7 @@ answers unavailable (3). Each op answers OK or bad argument (2), with no reply b
 | 19 | SDPOLL | poll an MS for its short data: to u32, UDT_Format u8, blocks u8 (1-4); the answer is the last message heard (`CONFIG_DMR_TRUNK_TX`) |
 | 20 | POLL_REPLY | the radio's answer to a short data poll: UDT_Format u8, then 0-46 octets (none: refused); taken at the next start |
 | 21 | LOAD | stage system n u8 of the codeplug ([dmr-trunking.md](dmr-trunking.md) 12) in place of the staged one, not started; bad argument when it is absent or has no control channel |
-| 22 | SUPL | supplementary user data offered with each call ([dmr-trunking.md](dmr-trunking.md) 7.6): UDT_Format u8, then 0-46 octets (none: off); taken at the next start |
+| 22 | SUPL | supplementary user data offered with each call ([dmr-trunking.md](dmr-trunking.md) 7.6): UDT_Format u8, then 0-46 octets (none: off); taken at the next start. `CONFIG_DMR_TRUNK_SUPL` only, else not supported |
 
 The `t3` view section has the engine's state as the radio core last published it, all keys `t3.`-prefixed: `built`,
 `tx_built`, `on`, `state` (off, hunt, camped, follow), `reg`, `confirmed`, `syscode`, `own_id`, `tscc_lcn`, `rx_hz`,
@@ -893,7 +893,7 @@ the radio on the TSCC, and the last one's Service_Kind, source and age; -1 none)
 `st_src`, `st_dst`, `st_group`, `st_value`, `st_age_ms`); the last short data heard (`sd_count`, `sd_src`, `sd_dst`,
 `sd_group`, `sd_format`, `sd_len`, `sd_data` in hex, `sd_age_ms`); the last supplementary user data heard (`supl_count`,
 `supl_src` (0 until a call names the sender), `supl_dst`, `supl_group`, `supl_format`, `supl_len`, `supl_data` in hex,
-`supl_age_ms`).
+`supl_age_ms`; `CONFIG_DMR_TRUNK_SUPL` only).
 
 The `t3_roam` section, also `t3.`-prefixed ([dmr-trunking.md](dmr-trunking.md) 7.18): `level_dbm` (the tuned
 channel's averaged level, 0: none yet), `leave_dbm` (the threshold in force), `dmrla`, `reg_area` (the area registered

@@ -58,7 +58,9 @@ typedef struct {
 	uint8_t div_mode;	// RADIO_T3_DIVERT: RADIO_T3_DIV_*
 	uint8_t div_svcs;	// T3_DIV_*
 	uint8_t poll_reply[T3_UDT_MAX];	// the answer to a short data poll: cfg.poll_len octets, cfg.poll_format
+#if CONFIG_DMR_TRUNK_SUPL
 	uint8_t supl[T3_UDT_MAX];	// supplementary user data offered with each call: cfg.supl_len octets, cfg.supl_format
+#endif
 	uint8_t poll_blocks;	// polling an MS from the menus: the prearranged size, 1-4 blocks (0: 4)
 	bool ip_gw;		// off-net IP goes through the system's IP gateway (IPI, dmr-trunking.md 7.7)
 } radio_t3_setup_t;

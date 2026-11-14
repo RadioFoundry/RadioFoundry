@@ -29,7 +29,9 @@ void radio_t3_fix(radio_t3_setup_t *s)
 	s->cfg.plan.table = s->chans;
 	s->cfg.plan.ntable = s->nchans;
 	s->cfg.poll_data = s->poll_reply;
+#if CONFIG_DMR_TRUNK_SUPL
 	s->cfg.supl_data = s->supl;
+#endif
 }
 
 #endif

@@ -415,6 +415,9 @@ request offers it: Service_Options SUPED_SV 1 and SUPED_VAL the blocks less one,
 | the same to a talkgroup the radio listens to | kept, not answered |
 | the grant or user data that follows to the same destination, within `T3_SUPL_HOLD_MS` (10 s) | names the sender: `supl_rx.src` (0 until then) |
 
+All of it is built with `CONFIG_DMR_TRUNK_SUPL` ([build-config.md](../build-config.md)). Without it the radio offers
+none, and a download from SUPLI is taken off the air unanswered (it is never short data).
+
 The download doesn't carry the sender (figures 6.38, 6.39), so the radio holds it until the call does. A repeat within
 `T3_REPEAT_MS` is answered again and keeps a sender already named. On the radio the debug link stages the data (`SUPL`,
 [debuglink.md](debuglink.md) 3.26) and the view shows the last heard (`supl_*`).

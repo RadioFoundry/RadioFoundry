@@ -332,11 +332,13 @@ typedef struct {
 	uint8_t sd_format, sd_len;
 	uint8_t sd_data[46];	// T3_UDT_MAX
 	uint32_t sd_count, sd_src, sd_dst, sd_ms;
+#if CONFIG_DMR_TRUNK_SUPL
 	// The last supplementary user data heard; supl_src 0 until a call names its sender
 	bool supl_group;
 	uint8_t supl_format, supl_len;
 	uint8_t supl_data[46];	// T3_UDT_MAX
 	uint32_t supl_count, supl_src, supl_dst, supl_ms;
+#endif
 } radio_t3_view_t;
 #endif
 

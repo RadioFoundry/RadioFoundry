@@ -195,6 +195,7 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 		s->cfg.poll_len = (uint8_t)(n - 1u);
 		memcpy(s->poll_reply, a + 1, s->cfg.poll_len);
 		break;
+#if CONFIG_DMR_TRUNK_SUPL
 	case DL_T3_SUPL:	// format u8, data
 		if (n < 1u || n > 1u + T3_UDT_MAX || a[0] > 15u) {
 			out[0] = DL_ST_BAD_ARG;
@@ -204,6 +205,7 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 		s->cfg.supl_len = (uint8_t)(n - 1u);
 		memcpy(s->supl, a + 1, s->cfg.supl_len);
 		break;
+#endif
 	case DL_T3_LOAD:	// system n u8
 		if (n != 1u || !radio_t3_load(a[0], s)) {
 			out[0] = DL_ST_BAD_ARG;
@@ -426,12 +428,14 @@ static void t3_svc(const radio_t3_view_t *x, void *ctx)
 	dl_text(t, "t3.sd_count=%u\nt3.sd_src=%u\nt3.sd_dst=%u\nt3.sd_group=%u\nt3.sd_format=%u\nt3.sd_len=%u\n"
 		"t3.sd_data=%s\nt3.sd_age_ms=%d\n", (unsigned)x->sd_count, (unsigned)x->sd_src, (unsigned)x->sd_dst,
 		x->sd_group, x->sd_format, x->sd_len, sd, x->sd_ms != 0 ? (int)(now - x->sd_ms) : -1);
+#if CONFIG_DMR_TRUNK_SUPL
 	// The last supplementary data heard; supl_src 0 until a call names its sender
 	hex(sd, x->supl_data, x->supl_len);
 	dl_text(t, "t3.supl_count=%u\nt3.supl_src=%u\nt3.supl_dst=%u\nt3.supl_group=%u\nt3.supl_format=%u\n"
 		"t3.supl_len=%u\nt3.supl_data=%s\nt3.supl_age_ms=%d\n", (unsigned)x->supl_count, (unsigned)x->supl_src,
 		(unsigned)x->supl_dst, x->supl_group, x->supl_format, x->supl_len, sd,
 		x->supl_ms != 0 ? (int)(now - x->supl_ms) : -1);
+#endif
 }
 #endif
 

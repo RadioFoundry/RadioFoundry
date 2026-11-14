@@ -22,6 +22,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "config.h"
 #include "dmr/trunk/t3_pdu.h"
 #include "dmr/trunk/t3_sys.h"
 #include "dmr/trunk/t3_plan.h"
@@ -413,7 +414,8 @@ typedef struct {
 		uint32_t ms;
 	} sd_rx;
 	// The last supplementary user data heard (6.4.13.2). The download doesn't name the sender: src is 0 until the
-	// call's grant or user data that follows does
+	// call's grant or user data that follows does (CONFIG_DMR_TRUNK_SUPL)
+#if CONFIG_DMR_TRUNK_SUPL
 	struct {
 		uint32_t count;
 		uint32_t src;
@@ -424,6 +426,7 @@ typedef struct {
 		uint8_t data[T3_UDT_MAX];
 		uint32_t ms;
 	} supl_rx;
+#endif
 	// A burst to send on a slot without random access: an answer (once) or P_MAINT (count times)
 	struct {
 		uint8_t count;

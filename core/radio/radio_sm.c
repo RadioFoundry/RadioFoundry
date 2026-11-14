@@ -2843,6 +2843,7 @@ static void t3_publish(radio_sm_t *sm)
 	v->sd_len = m->sd_rx.len;
 	memcpy(v->sd_data, m->sd_rx.data, sizeof(v->sd_data));
 	v->sd_ms = m->sd_rx.ms;
+#if CONFIG_DMR_TRUNK_SUPL
 	v->supl_count = m->supl_rx.count;
 	v->supl_src = m->supl_rx.src;
 	v->supl_dst = m->supl_rx.dst;
@@ -2851,6 +2852,7 @@ static void t3_publish(radio_sm_t *sm)
 	v->supl_len = m->supl_rx.len;
 	memcpy(v->supl_data, m->supl_rx.data, sizeof(v->supl_data));
 	v->supl_ms = m->supl_rx.ms;
+#endif
 	v->ptt_wait = sm->t3_ptt_wait;
 	v->can_talk = t3_ms_can_talk(m);
 	v->ticks = sm->t3_ticks;

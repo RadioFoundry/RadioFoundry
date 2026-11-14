@@ -388,10 +388,14 @@ static bool same_call(const t3_call_t *a, const t3_grant_t *g, const t3_chan_t *
 // The grant or user data that follows supplementary data to the same destination names its sender (6.4.13.2)
 static void supl_sender(t3_ms_t *ms, uint32_t now, uint32_t src, uint32_t dst, bool group)
 {
+#if !CONFIG_DMR_TRUNK_SUPL
+	(void)ms, (void)now, (void)src, (void)dst, (void)group;
+#else
 	if (ms->supl_rx.count != 0 && ms->supl_rx.src == 0 && !since(now, ms->supl_rx.ms, T3_SUPL_HOLD_MS) &&
 	    ms->supl_rx.dst == dst && ms->supl_rx.group == group) {
 		ms->supl_rx.src = src;
 	}
+#endif
 }
 
 static void follow(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_chan_t *c, bool group)
@@ -1996,13 +2000,18 @@ static bool diverted(t3_ms_t *ms, uint32_t now, const t3_udt_t *h)
 }
 
 // Supplementary user data for the radio or a talkgroup it follows (6.4.13.2): a UDT download from SUPLI with SF 1,
-// held until its sender is named. To the radio with A 1 it is accepted, C_ACKU Message_Accepted to SUPLI
+// held until its sender is named. To the radio with A 1 it is accepted, C_ACKU Message_Accepted to SUPLI. Without
+// CONFIG_DMR_TRUNK_SUPL it is taken off the air unanswered: it is no short data
 static bool supl_heard(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_udt_t *h, bool to_me)
 {
 	if (h->op != T3_OP_C_UDTHD || !h->sf || h->src != T3_ID_SUPLI || ms->stunned ||
 	    (!to_me && !(h->group && t3_ms_wants_group(ms, h->dst, false)))) {
 		return false;
 	}
+#if !CONFIG_DMR_TRUNK_SUPL
+	(void)now, (void)slot;
+	return true;
+#else
 	if (!t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])ms->udt_rx.blk, h->blocks)) {
 		ms->st.crc_bad++;
 		return true;
@@ -2027,6 +2036,7 @@ static bool supl_heard(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_udt_t *
 		answer(ms, slot, false, T3_RC_MESSAGE_ACCEPTED, T3_ID_SUPLI, false);
 	}
 	return true;
+#endif
 }
 
 static void udt_done(t3_ms_t *ms, uint32_t now, uint8_t slot)
