@@ -167,6 +167,9 @@ typedef struct {
 	// Optional (NULL: the driver can't). For the transmission begun last: receive in the slots between our bursts and
 	// report what is heard there, with the RF switched back to receive per burst (an SFR's inbound slot, sfr.md 3)
 	void (*tx_listen)(void);
+	// Optional (NULL: can't): tx_listen on a split channel too, the RF retuned to the receive frequency between our
+	// bursts (a duplex repeater's outbound heard during our over). False when this radio's RF can't: not listening
+	bool (*tx_listen_split)(void);
 	// Optional: b takes the place of the oldest DMR_BURST_EMPTY still queued (not yet set up). Returns how many queued
 	// entries come after it, -1 when none is left (an SFR's repeat then goes out 90 ms after the inbound burst instead
 	// of behind the placeholders queued for the gap)

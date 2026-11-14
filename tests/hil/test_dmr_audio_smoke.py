@@ -10,7 +10,8 @@ every frame, lost and duplicate count. These tests look at the audio itself.
 Skips and failures. Only a missing radio or SDR bench, or a run without --allow-rf, skips (with a reason that starts
 "DMR AUDIO NOT CHECKED"), and so does a firmware built without DMR. Once the radio, its DMR and the bench are there,
 anything else that keeps the check from running fails: no speech recording, no vocoder merged (dmr.codec=0), no
-channel on --dmr-freq, firmware without the view keys or the test signal. The talkgroup comes from the radio: the
+channel on --dmr-freq, firmware without the view keys or the test signal. The deviation and wide offset tests also skip
+on a bench board that can't do what they need (below). The talkgroup comes from the radio: the
 bench calls the channel's talk target (dmr.target_id, always listened to), or the radio's own ID privately when the
 target is a private ID, on the channel's own color code, so a wrong --dmr-tg / --dmr-cc can't filter the call out.
 
@@ -22,7 +23,21 @@ at most 2 bits a frame on average (the stale RAM signature is exactly 3 a frame)
 
 test_dmr_audio_rx_offset: the same call with the bench carrier OFFSET_HZ below and above the channel, one call each,
 and the same pass criteria. A receiver whose DMR decoding falls off on one side of its channel fails here (the UV380
-family's DMR receive offset, docs/spec/hardware-dm1701.md 5.13: 3 bits a frame at -500 Hz before it).
+family's receive gain and offset, docs/spec/hardware-dm1701.md 5.5 and 5.13).
+
+test_dmr_audio_rx_deviation: the same call from a transmitter DEV_LOW and DEV_HIGH of the standard's deviation, near
+the receiver's sensitivity (the bench level set so the radio reads about RSSI_DBM; deviation is a level at the
+demodulator's output, and near sensitivity a receiver has no level to spare). Pass: at least 95 % of the frames reach the
+voice layer and the FEC corrects at most BITS_DEV a frame, both ways. The window between the two is narrow: a receive
+audio gain 1 dB high corrects a bit or more a frame from a transmitter that over-deviates, 1-2 dB low loses sync to one
+that under-deviates (docs/spec/dmr-voice.md, "Receive level"). Skips when the bench can't scale its deviation (info
+feature dev_scale) or bring its level near RSSI_DBM at the radio.
+
+test_dmr_audio_rx_offset_wide: the same call with the bench carrier OFFSET_WIDE_HZ below and above the channel at
+RSSI_DBM, as from a handheld or repeater that far off frequency, and the pass criteria of test_dmr_audio_rx. They are
+loose on purpose: a receiver whose window is centered on its channel has room to spare there, and one tuned off center
+by a fixed offset, or with a receive gain that clips, loses the call on one side (docs/spec/dmr-voice.md, "Receive
+level"). Skips when the bench can't bring its level near RSSI_DBM.
 
 test_dmr_audio_tx (marker radio_tx): the radio keys TX_S seconds at its lowest power with the voice layer's test
 signal in place of the mic (RADIO op 33: a tone whose pitch changes every frame), the bench modem records the call.
@@ -46,6 +61,15 @@ PEAK_MIN = 1000             # decoded speech peaks at thousands; the stale voice
 BIT_ERRORS_PER_FRAME = 2.0  # stale voice RAM: exactly 3 a frame; the DM-1801 Pro on the bench: about 1
 TX_S = 3.0
 OFFSET_HZ = 500             # bench carrier offset: a small share of the 12.5 kHz channel
+OFFSET_WIDE_HZ = 2500       # a transmitter well off frequency (the bench's limit): inside a centered receive window
+# Pass limits leave room for receivers less good than the best measured. For reference, a good one near sensitivity:
+# - at OFFSET_WIDE_HZ: every frame and 0.25-0.5 corrected bits a frame both ways (DM-1701); a receiver tuned 875 Hz
+#   off center lost the call on one side, and full AF gain lost frames from about 2 kHz;
+# - at DEV_LOW / DEV_HIGH: every frame and 0.05-0.6 bits a frame (DM-1701); 1 dB too much AF gain gives 1.1-1.5 at
+#   DEV_HIGH, 2 dB too little loses frames at DEV_LOW.
+DEV_LOW, DEV_HIGH = 0.85, 1.15  # transmitters 15 % under and over the standard's deviation
+RSSI_DBM = -100             # the level the deviation and wide offset tests run at: some 20 dB over the sensitivity of a DMR radio
+BITS_DEV = 0.8              # FEC corrections a frame near sensitivity: 0.6 or less inside the window, 1-1.5 past its edge
 ALL_CALL = 0xFFFFFF
 STATS_KEYS = ("voice.rx_peak", "voice.rx_repeats", "voice.tx_repeats", "voice.tx_mic_peak", "voice.tx_test")
 
@@ -128,15 +152,17 @@ def bench_call(radio, sdr_bench, freq, cc, dst, private, remote, offset_hz=0):
     return counter_deltas(before, after, keys), radio.view(["dmr_stats"])
 
 
-def check_played(d, stats, sent, allowed_repeats, what, bit_errors=True):
+def check_played(d, stats, sent, allowed_repeats, what, bit_errors=True, min_in=0.9):
     """The audio checks on one played call: a list of failure strings. bit_errors: judge the FEC corrections too (not
-    for a recording the bench modem made off air, which carries the bit errors it heard)."""
+    for a recording the bench modem made off air, which carries the bit errors it heard). min_in: the share of the
+    frames sent that must reach the voice layer."""
     bad = []
     if d["call.rx_calls_played"] < 1:
         bad.append(f"{what}: the call was not played (call.rx_calls {d['call.rx_calls']}, played "
                    f"{d['call.rx_calls_played']}): filtered out?")
-    if d["voice.rx_in"] < 0.9 * sent:      # every frame counted is test_dmr_voice's job; here enough to judge audio
-        bad.append(f"{what}: frames into the voice layer {d['voice.rx_in']} of {sent} sent (at least 90 %)")
+    if d["voice.rx_in"] < min_in * sent:   # every frame counted is test_dmr_voice's job; here enough to judge audio
+        bad.append(f"{what}: frames into the voice layer {d['voice.rx_in']} of {sent} sent (at least "
+                   f"{100 * min_in:.0f} %)")
     peak = int(stats.get("voice.rx_peak", 0))
     if peak < PEAK_MIN:
         bad.append(f"{what}: decoded audio peaks at {peak} < {PEAK_MIN}: silent output (stale or wrong voice bits)")
@@ -152,6 +178,17 @@ def check_played(d, stats, sent, allowed_repeats, what, bit_errors=True):
 
 def padded(frames):
     return 18 * -(-frames // 18)         # the bench_tx job pads a call to whole superframes with silence
+
+
+def speech(pytestconfig, sdr_bench):
+    """The --ambe speech recording on the bench: (frames sent, repeats allowed, the bench's path). Fails without one."""
+    ambe = pytestconfig.getoption("--ambe")
+    if not ambe or not os.path.isfile(ambe) or os.path.getsize(ambe) % 9:
+        pytest.fail("the DMR audio smoke needs a speech recording: --ambe FILE or $RFOUNDRY_HIL_AMBE (9-byte frames)")
+    frames = read_frames(ambe)
+    sent = padded(len(frames))
+    allowed = frame_repeats(frames) + (sent - len(frames)) + 2 + len(frames) // 50
+    return sent, allowed, sdr_bench.upload(ambe, "hil_audio_smoke.ambe")
 
 
 @pytest.mark.rf
@@ -178,13 +215,7 @@ def test_dmr_audio_rx(radio, sdr_bench, pytestconfig):
 @pytest.mark.bench_service
 def test_dmr_audio_rx_offset(radio, sdr_bench, pytestconfig):
     freq, cc, dst, private, _ = dmr_channel(radio, pytestconfig)
-    ambe = pytestconfig.getoption("--ambe")
-    if not ambe or not os.path.isfile(ambe) or os.path.getsize(ambe) % 9:
-        pytest.fail("the DMR audio smoke needs a speech recording: --ambe FILE or $RFOUNDRY_HIL_AMBE (9-byte frames)")
-    frames = read_frames(ambe)
-    sent = padded(len(frames))
-    allowed = frame_repeats(frames) + (sent - len(frames)) + 2 + len(frames) // 50
-    remote = sdr_bench.upload(ambe, "hil_audio_smoke.ambe")
+    sent, allowed, remote = speech(pytestconfig, sdr_bench)
     bad = []
     for off in (-OFFSET_HZ, OFFSET_HZ):
         d, stats = bench_call(radio, sdr_bench, freq, cc, dst, private, remote, offset_hz=off)
@@ -193,6 +224,114 @@ def test_dmr_audio_rx_offset(radio, sdr_bench, pytestconfig):
               f"rx_peak {stats.get('voice.rx_peak')}")
         bad += check_played(d, stats, sent, allowed, f"carrier {off:+d} Hz")
     assert not bad, "; ".join(bad)
+
+
+def quiet(radio, timeout=8.0):
+    """Wait until the radio stops counting voice frames: a call that starts while it still follows the last one comes in
+    at another slot timing"""
+    t0, last, still = time.monotonic(), None, 0
+    while time.monotonic() - t0 < timeout:
+        n = radio.view(["dmr_stats"]).get("voice.rx_in")
+        still = still + 1 if n == last else 0
+        last = n
+        if still >= 3:
+            return
+        time.sleep(0.2)
+
+
+def rssi_in_call(radio, sdr_bench, freq, cc, dst, private, remote):
+    """The radio's RSSI during a call of remote at the bench's current level (None: no call reached the voice layer)"""
+    quiet(radio)
+    before = int(radio.view(["dmr_stats"]).get("voice.rx_in", 0))
+    with sdr_bench.lease():
+        job = sdr_bench.voice_call(freq, cc, dst, calls=1, ambe=remote, private=private, background=True)
+        rssi = None
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 6.0:
+            time.sleep(0.3)
+            if int(radio.view(["dmr_stats"]).get("voice.rx_in", 0)) > before + 10:
+                rssi = int(radio.core().get("rssi_dbm", 0))
+                break
+        job.kill()
+    quiet(radio)
+    return rssi
+
+
+_near_level = {}                    # (radio, freq): the bench level near_sensitivity found, for the next test
+
+
+def near_sensitivity(radio, sdr_bench, freq, cc, dst, private, remote, what):
+    """Sets the bench level so the radio reads about RSSI_DBM: one call to read the radio's RSSI, then the level moved
+    by the difference, checked once more. A level found for this radio and frequency earlier in the run is used
+    again. Skips when it can't (a board without power_dbm)."""
+    key = (radio.uid or radio.port, freq)
+    if key in _near_level:
+        sdr_bench.power_dbm = _near_level[key]
+        return
+    level = -40.0
+    for _ in range(3):
+        sdr_bench.power_dbm = level
+        rssi = rssi_in_call(radio, sdr_bench, freq, cc, dst, private, remote)
+        if rssi is None:
+            level += 20                     # nothing heard: too weak to start a call
+            continue
+        print(f"bench {level:+.0f} dBm: radio RSSI {rssi} dBm")
+        if abs(rssi - RSSI_DBM) <= 4:
+            _near_level[key] = level
+            return
+        level += RSSI_DBM - rssi
+    skip("bench", f"{what} NOT CHECKED: the bench level doesn't bring the radio near {RSSI_DBM} dBm "
+                  "(a board without power_dbm?)")
+
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.feature("dmr_voice")
+def test_dmr_audio_rx_offset_wide(radio, sdr_bench, pytestconfig):
+    freq, cc, dst, private, _ = dmr_channel(radio, pytestconfig)
+    sent, allowed, remote = speech(pytestconfig, sdr_bench)
+    saved = sdr_bench.power_dbm
+    try:
+        near_sensitivity(radio, sdr_bench, freq, cc, dst, private, remote, "DMR RX OFFSET WINDOW")
+        bad = []
+        for off in (-OFFSET_WIDE_HZ, OFFSET_WIDE_HZ):
+            quiet(radio)
+            d, stats = bench_call(radio, sdr_bench, freq, cc, dst, private, remote, offset_hz=off)
+            good = max(1, d["voice.rx_in"] - d["voice.rx_bad"])
+            per = d["voice.rx_bit_errors"] / good
+            print(f"carrier {off:+d} Hz: {d['voice.rx_in']} of {sent} frames, {per:.2f} bits a frame, radio {d}")
+            bad += check_played(d, stats, sent, allowed, f"carrier {off:+d} Hz at {RSSI_DBM} dBm")
+        assert not bad, "; ".join(bad)
+    finally:
+        sdr_bench.power_dbm = saved
+
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.feature("dmr_voice")
+def test_dmr_audio_rx_deviation(radio, sdr_bench, pytestconfig):
+    freq, cc, dst, private, _ = dmr_channel(radio, pytestconfig)
+    sent, allowed, remote = speech(pytestconfig, sdr_bench)
+    if not sdr_bench.has("dev_scale"):
+        skip("bench", "DMR RX DEVIATION NOT CHECKED: the bench board can't scale its deviation (info feature dev_scale)")
+    saved = (sdr_bench.power_dbm, sdr_bench.dev_scale)
+    try:
+        near_sensitivity(radio, sdr_bench, freq, cc, dst, private, remote, "DMR RX DEVIATION")
+        bad = []
+        for dev in (DEV_LOW, DEV_HIGH):
+            sdr_bench.dev_scale = dev
+            quiet(radio)
+            d, stats = bench_call(radio, sdr_bench, freq, cc, dst, private, remote)
+            good = max(1, d["voice.rx_in"] - d["voice.rx_bad"])
+            per = d["voice.rx_bit_errors"] / good
+            print(f"deviation x{dev:g}: {d['voice.rx_in']} of {sent} frames, {per:.2f} bits a frame, radio {d}")
+            what = f"deviation x{dev:g} at {RSSI_DBM} dBm"
+            if per > BITS_DEV:
+                bad.append(f"{what}: {per:.2f} bits corrected a frame (at most {BITS_DEV:g})")
+            bad += check_played(d, stats, sent, allowed, what, bit_errors=False, min_in=0.95)
+        assert not bad, "; ".join(bad)
+    finally:
+        sdr_bench.power_dbm, sdr_bench.dev_scale = saved
 
 
 @pytest.mark.radio_tx

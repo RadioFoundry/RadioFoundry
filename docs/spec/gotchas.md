@@ -82,7 +82,9 @@ the second F (13 of 36 bursts played instead of 18-19; HIL 2026-10-10 on c8c9b23
 driver reads page 2 at F's first report (the EMB one) and page 2 still held the old LC then. Rule: until a reception
 has its LC, look at page 2 again at the next burst A (and at F's repeated report and the post-access interrupt); the
 driver logs every look (`dle` lines, `lt` diagnostics line) so the next HIL run shows exactly when the LC appeared.
-Radios: HR_C6000.
+An unchanged page 2 at that A, after a whole superframe of this reception with a good F, is this call's LC: the same
+talker again (HIL 2026-11-14 on the HR_C5000: held back to the second F, 8 bursts played instead of 12; traced `Av`).
+Radios: HR_C6000, HR_C5000.
 
 **1.4b Page 2 isn't per slot.**
 Symptom: with a call on each slot, the wanted call went quiet with the other call's source shown (23 of 78 bursts
@@ -128,6 +130,18 @@ doesn't report voice (1.11), and take a call back only on proof it's the same ca
 ([modem-hrc6000.md](modem-hrc6000.md) 5.6). The LC wait is shorter now. The restart still costs what it did: holding
 it off helps only if the chip keeps its sync through a gap, which isn't known. Radios: HR_C5000 measured; the LC rule
 applies to any chip with a post-access interrupt.
+
+**1.13 After a wake-up, the receiver can stay deaf to the repeater that answered it.**
+Symptom: through a duplex repeater, "Modem refused" on 3 to 9 of every 16-24 key-ups, each one after a wake-up; the
+repeater answered at once and stayed on the air. Cause: the wake-up's CSBK ends with a receiver restart (own timing),
+and the aligned voice start follows a slot later. On some key-ups the chip then raised no receive interrupt and read
+the same 0x52 (0x73) at every tick for the whole 1.5 s wait, so no slot timing was found. The RF path was ruled out
+(the synthesizer was back on receive, no PA). What leaves the chip in that state isn't known. Any restart cleared it,
+and the repeater's timing came on the next slot. Rule: an aligned start that hears nothing for 8 ticks restarts the
+receiver (reason `a`), every 8 ticks until it aligns or times out. Each restart costs up to about 0.5 s of the
+key-up's first voice. On the SDR bench, with the wake-up rules of [dmr-modem.md](dmr-modem.md) 2.7, this took the
+key-ups that failed from 3-9 of 16-24 to 0 of 60. Radios: HR_C5000
+measured; the rule is in the shared engine, so the HR_C6000 has it too.
 
 ## 2. DMR modem timing: HR_C7000
 
@@ -819,3 +833,11 @@ stayed at its idle 65-103 during a call at -41 dBm, where the signal strength ro
 only on the noise reading, so it never saw a carrier within the dwell. Rule: on a DMR channel the scan also counts the
 signal strength, past the settle, against its own squelch scale (`RADIO_DMR_SQL_L1_DBM`, 3 dB a level: -100 dBm at the
 default level), so a stop probes whichever reading shows the signal (`test_scan_dmr_noise_deaf`).
+
+**17.4 A strength reading above the DMR scale with no signal.**
+Symptom: on one radio (2026-11-14) the zone scan never reached the DMR test channel during a 7 s call. Its strength
+reading isn't calibrated and read -89 to -93 dBm on every empty channel, above the 17.3 scale (-100 dBm at the default
+level), so every stop counted a carrier and probed for 700 ms instead of the 150 ms dwell: a sweep of its 14 channels
+took about 12 s. Rule: the scale also sits above the floor the scan reads, the lowest strength past the settle on the
+last 8 stops, by 6 dB plus 3 dB a level (`scan_floor`, `RADIO_DMR_SQL_L1_FLOOR_DB`). A call 20 dB over that floor
+still holds the scan, by the noise reading or by the strength alone (`test_scan_dmr_high_floor`).

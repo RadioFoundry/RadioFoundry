@@ -307,10 +307,20 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
 - **Data on our slot only**: through a repeater, accept a data burst only when the slot number (from the TC bit) is
   ours and it differs from the previous burst's slot (a second report in the same slot is a duplicate). In direct
   mode, accept the bursts of the slot the receiver is locked to.
+- **Voice numbers by the frame count.** A class 0 report's number (0x51 bits 6-4) is not always its burst's: on the
+  bench about one call in two had a burst reported with the number of the burst before it or one further back, with
+  no frame missed. Within a superframe in progress on the slot, with the timeslot interrupts running, the driver
+  numbers each voice burst from the last one taken plus the frames counted since (two ticks a frame) and counts a
+  disagreeing report (`sx` in the `v0` diagnostics line). A report with the last burst's number and the same voice is
+  stale and dropped; with new voice it is the next burst. Burst A keeps its voice sync. Without the timing, or where
+  the count would land on A, the chip's number is used.
 - **The LC registers are sticky.** Page 2 keeps the previous call's LC until the new one is decoded. On a new
   reception, the first LC read may be the last call's. Either wait for two superframes (burst A seen twice after the
   slot lock) before trusting it, or capture page 2 when the reception starts and accept an LC only when it differs
-  from that capture, or after more than one superframe of voice.
+  from that capture, or after more than one superframe of voice. The driver takes an unchanged LC at the burst A after
+  the reception's first whole superframe (A-F of this reception, F with no CRC error), by then written to page 2 (next
+  item): the same talker again. HIL 2026-11-14 on the HR_C5000: waiting for the second F, a late entry with the last
+  call's LC played 8 bursts instead of 12.
   The driver captures page 2 at the first report of a quiet period (a status report before any burst is taken, for a
   late entry), else at the first burst.
 - The voice header's LC and the terminator's LC are read at their bursts; during voice, the embedded LC appears in
@@ -412,6 +422,7 @@ chip descriptor's `slc_rx_addr` gives the location; a chip without one reports n
 | Terminator with LC, good CRC | ends the call in **direct mode**. Through a repeater, ignore it: the repeater echoes our own terminators, which would end our next reception |
 | no valid burst for 13 timeslot interrupts while receiving (about 390 ms) | call over; restart the receiver. The restart drops the chip's sync, so it costs more than the wait ([gotchas 1.12](gotchas.md)) |
 | no valid burst for 20 timeslot interrupts while idle | restart the receiver |
+| an aligned start (through a repeater) waiting for its slot, no valid burst for 8 timeslot interrupts and no slot timing | restart the receiver, every 8 interrupts until the slot is found or the start times out at 1.5 s ([gotchas 1.13](gotchas.md)). Diagnostics: `rs ... a` |
 | no timeslot interrupt for 200 ms while not idle | the modem has stopped: re-initialize the DMR state and the receiver |
 | slot captured but silent for the "capture timeout" (user setting, seconds) through a repeater, no slot filter | switch to the other slot |
 | slot sync search timeouts | 2.5 s at start-up, 390 ms (one superframe + one slot) while scanning |
@@ -425,13 +436,13 @@ the embedded LC is complete (subject to the sticky-LC rule above). The driver re
 LC that differs from the capture for the next voice burst (counted as `lc2 p=`, traced as `P`). On the HR_C5000 the
 interrupt comes once per superframe, just after burst E (bench trace), and starts the decoder, so it comes
 before the reception. An LC read then that differs from the last capture is kept for the reception's first burst
-(traced `pk`): the capture that follows holds that same LC, and the sticky rule would make it wait for the second F.
+(traced `pk`): the capture that follows holds that same LC, and the sticky rule would make it wait for the next A.
 On the HR_C6000, on the bench (a call joined at burst C of its second superframe), it came before the next F
 in most runs and the LC was taken there; on a weak signal it came one superframe later in 2 of 9 runs, page 2
 still held the old LC at F, and the call played from the superframe after that.
 
 **Resuming a call.** A call that stopped with no terminator and comes back has the sticky LC problem in its worst
-form: the LC in page 2 is the call's own, so the sticky rule waits for the second F (22 ticks). That page 2 still
+form: the LC in page 2 is the call's own, so the sticky rule waits for the A after the first whole superframe. That page 2 still
 shows the call's LC proves nothing: it would show the same if another caller had started. The post-access interrupt
 does prove it, read twice:
 

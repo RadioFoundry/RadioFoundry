@@ -17,6 +17,10 @@
 // Keys (docs/spec/codeplug-settings.md 3): a key's meaning never changes, a new meaning gets a new key
 #define CODEPLUG_KEY_ARS_SERVER	0x0001u		// u32: the ARS presence server's DMR ID, 0 = ARS off
 #define CODEPLUG_KEY_IP_GATEWAY	0x0002u		// u32: the off-net IP gateway radio's DMR ID, 0 = none
+#define CODEPLUG_KEY_CALL_END_TONE	0x0003u	// bool: the tone when a DMR call heard ends
+#define CODEPLUG_KEY_TOT_WARN_TONE	0x0004u	// bool: the tone before the TX time-out
+#define CODEPLUG_KEY_BATTERY_TONE	0x0005u	// bool: the low and critical battery tones
+#define CODEPLUG_KEY_TX_DENY_TONE	0x0006u	// bool: the tone when PTT is refused or a transmission cut
 // Key families (record lists): record n is base + n
 #define CODEPLUG_KEY_T3_SYSTEM	0x0100u		// Tier III systems, 0x0100-0x01FF (docs/spec/dmr-trunking.md 12)
 #define CODEPLUG_KEY_T3_CHAN	0x0200u		// their channels, 0x0200-0x02FF

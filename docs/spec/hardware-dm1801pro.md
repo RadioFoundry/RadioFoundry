@@ -727,7 +727,7 @@ receiving and orange flashing while scanning.
 |---|---|
 | SoC, interrupt, timer, GPIO, SSI, UART, ADC, data flash | `platform/hrc7000` |
 | Modem (FM and DMR) | `drivers/modem/hrc7000`; `platform/hrc7000` for the DMR glue and PCM audio |
-| RF chip | `drivers/rf/fd6818`, variant `fd6818_variant_dm1801pro` |
+| RF chip | `drivers/rf/fd6818`, variant `fd6818_variant_b` |
 | Display | `drivers/display/st7567` |
 | Keys | `drivers/input/keymatrix` |
 | Calibration | `drivers/cal/baofeng` |
