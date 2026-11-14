@@ -284,7 +284,11 @@ transmitting in the slot after the next one, in phase with the bursts being rece
   CRC one time in 128, and the BS repeats an RC every 360 ms. A request is always accepted. Power commands (0000-0011)
   are only counted: the power stays as set. `call.rc_good`, `call.rc_bad`, `call.rc_ceased`, `call.rc_last` in the
   diagnostics. The HR_C6000 engine reads the RC info from 0x53 / 0x54 at a class 3 report, or a burst F report with
-  LCSS 00 ([hrc6000-registers.md](hrc6000-registers.md) 2.2).
+  LCSS 00 ([hrc6000-registers.md](hrc6000-registers.md) 2.2). A dedicated RC burst has no sync, and the chips report
+  nothing for it. After each listen slot the engine reads the chip's receive tap instead (`hrc_chip_t` `tap_addr`,
+  `tap_field`: the burst received, a voice-layout burst's 48-bit sync / EMB / RC field first) and decodes the field
+  (`dmrFecRcFromField`) when its EMB has our color code, PI 1 and LCSS 00. Only an area that changed since its last
+  read is decoded, so one burst counts once. `rct` in the modem diagnostics: RCs found / areas changed.
 
 - Repeater call hang time: the repeater keeps the outbound up after a call; an MS that keys in it does not need BS
   activation and should reply on the same slot (and talkgroup, if group hang applies).

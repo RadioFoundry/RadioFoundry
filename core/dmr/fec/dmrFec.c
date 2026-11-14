@@ -508,48 +508,32 @@ int dmrFecRcDecode(uint32_t field, uint8_t *command)
 	return (best <= 3) ? best : -1;
 }
 
-void dmrFecRcToBurst(uint8_t colorCode, uint8_t command, uint8_t *burst)
+void dmrFecRcField(uint8_t colorCode, uint8_t command, uint8_t field[6])
 {
 	uint16_t emb = dmrFecEmbEncode(colorCode, true, 0);
-	uint32_t field = dmrFecRcEncode(command);
+	uint32_t rc = dmrFecRcEncode(command);
 
-	for (int i = 0; i < 8; i++)
-	{
-		burstSetBit(burst, 108 + i, (emb >> (15 - i)) & 1);
-		burstSetBit(burst, 148 + i, (emb >> (7 - i)) & 1);
-	}
-	for (int i = 0; i < 32; i++)
-	{
-		burstSetBit(burst, 116 + i, (int)((field >> (31 - i)) & 1u));
-	}
+	field[0] = (uint8_t)(emb >> 8);
+	field[1] = (uint8_t)(rc >> 24);
+	field[2] = (uint8_t)(rc >> 16);
+	field[3] = (uint8_t)(rc >> 8);
+	field[4] = (uint8_t)rc;
+	field[5] = (uint8_t)emb;
 }
 
-int dmrFecRcFromBurst(const uint8_t *burst, uint8_t colorCode, uint8_t *command)
+int dmrFecRcFromField(const uint8_t *field, uint8_t colorCode, uint8_t *command)
 {
-	uint16_t emb = 0;
-	uint32_t field = 0;
+	uint16_t emb = (uint16_t)((field[0] << 8) | field[5]);
+	uint32_t rc = ((uint32_t)field[1] << 24) | ((uint32_t)field[2] << 16) | ((uint32_t)field[3] << 8) | field[4];
 	uint8_t cc, lcss;
 	bool pi;
-
-	for (int i = 0; i < 8; i++)
-	{
-		emb = (uint16_t)((emb << 1) | burstBit(burst, 108 + i));
-	}
-	for (int i = 0; i < 8; i++)
-	{
-		emb = (uint16_t)((emb << 1) | burstBit(burst, 148 + i));
-	}
 	int embErrors = dmrFecEmbDecode(emb, &cc, &pi, &lcss);
 
 	if (embErrors < 0 || cc != (colorCode & 0x0Fu) || !pi || lcss != 0)
 	{
 		return -1;
 	}
-	for (int i = 0; i < 32; i++)
-	{
-		field = (field << 1) | (uint32_t)burstBit(burst, 116 + i);
-	}
-	int rcErrors = dmrFecRcDecode(field, command);
+	int rcErrors = dmrFecRcDecode(rc, command);
 
 	return (rcErrors < 0) ? -1 : embErrors + rcErrors;
 }

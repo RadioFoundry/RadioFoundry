@@ -76,11 +76,12 @@ uint32_t dmrFecRcEncode(uint8_t command);
 // The nearest command to a received field (up to 3 bit errors corrected). Returns the number of bit errors, or -1 if
 // there were too many
 int dmrFecRcDecode(uint32_t field, uint8_t *command);
-// An outbound RC burst's embedded field (6.4.2, 9.3.2, 9.3.3): the EMB with PI 1 and LCSS 00 (a single fragment)
-// around the 32 RC bits, burst bits 108-155, in place of the sync or an embedded LC fragment
-void dmrFecRcToBurst(uint8_t colorCode, uint8_t command, uint8_t *burst);
-// The RC in a received burst's embedded field, when its EMB has colorCode, PI 1 and LCSS 00. Returns the bit errors
-// corrected (EMB and RC), or -1 when the burst carries no RC
-int dmrFecRcFromBurst(const uint8_t *burst, uint8_t colorCode, uint8_t *command);
+// An outbound RC burst's 48-bit embedded field (6.4.2, 9.3.2, 9.3.3), in place of the sync or an embedded LC
+// fragment: the EMB with PI 1 and LCSS 00 (a single fragment) around the 32 RC bits. 6 bytes, MSB first: EMB 8 bits,
+// RC 32, EMB 8 (on air, burst bits 108-155)
+void dmrFecRcField(uint8_t colorCode, uint8_t command, uint8_t field[6]);
+// The RC in a received embedded field, when its EMB has colorCode, PI 1 and LCSS 00. Returns the bit errors corrected
+// (EMB and RC), or -1 when the field carries no RC
+int dmrFecRcFromField(const uint8_t *field, uint8_t colorCode, uint8_t *command);
 
 #endif

@@ -62,9 +62,11 @@ typedef struct {
 	// Page 2 address of the last CACH short LC the chip assembled (36 bits, MSB first: 28 bits then the CRC-8); 0 =
 	// not known for this chip, none reported
 	uint8_t slc_rx_addr;
-	// Page 2 addresses of the two raw received burst areas (264 bits as heard, one per slot); 0 = not known for this
-	// chip: no reverse channel from a sync-less burst while sending
-	uint8_t raw_rx_addr[2];
+	// Page 2 addresses of the receive tap: each burst received, as the chip deframed it (fields not in air order:
+	// a voice-layout burst is its 48-bit sync / EMB / RC field, then the voice bits), one area per slot; 0 = none.
+	// tap_field: that field's byte offset in an area (after the CACH where the chip puts one first)
+	uint8_t tap_addr[2];
+	uint8_t tap_field;
 } hrc_chip_t;
 
 struct hrc {

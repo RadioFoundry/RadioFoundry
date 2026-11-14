@@ -633,35 +633,37 @@ static void tx_end_check(hrc6000_dmr_t *e, uint8_t r42)
 	}
 }
 
-// The raw 264 bits of the slot just listened to, from the chip's raw burst areas (raw_rx_addr; which area holds which
-// slot isn't known, so both). The BS's outbound RC burst puts EMB + RC in place of the
-// sync (ETSI TS 102 361-1 6.4.2): the chip finds no sync there and reports nothing, so the RC is decoded here. An area
-// unchanged since its last read is the same burst, or a stale one: skipped, so one RC is never counted twice
-#define RAW_AREA_LEN	33u
-static void rc_raw_read(hrc6000_dmr_t *e)
+// The slot just listened to, for a BS's outbound RC burst: EMB + RC in place of the sync (ETSI TS 102 361-1 6.4.2).
+// The chip reports nothing for it, but its receive tap (tap_addr) holds the burst with that field where a voice burst's
+// sync or EMB goes. Read the field and the voice bytes after it, which change per burst: an area unchanged since its
+// last read holds the same burst, or a stale one, and is skipped, so one RC is never counted twice
+#define TAP_READ_LEN	12u	// the field (6) and as many voice bytes
+static void rc_tap_read(hrc6000_dmr_t *e)
 {
+	const hrc_chip_t *chip = e->dev->chip;
 	if (e->cc_filter < 0) {
 		return;
 	}
 	for (int a = 0; a < 2; a++) {
-		uint8_t raw[RAW_AREA_LEN];
-		uint8_t addr = e->dev->chip->raw_rx_addr[a];
-		if (addr == 0u || !hrc_read_burst(e->dev, HRC_PAGE_DATA, addr, raw, RAW_AREA_LEN)) {
+		uint8_t raw[TAP_READ_LEN];
+		uint8_t addr = chip->tap_addr[a];
+		if (addr == 0u || !hrc_read_burst(e->dev, HRC_PAGE_DATA, (uint8_t)(addr + chip->tap_field), raw, TAP_READ_LEN)) {
 			continue;
 		}
 		uint32_t sum = 2166136261u;	// FNV-1a
-		for (uint8_t i = 0; i < RAW_AREA_LEN; i++) {
+		for (uint8_t i = 0; i < TAP_READ_LEN; i++) {
 			sum = (sum ^ raw[i]) * 16777619u;
 		}
-		if (sum == e->raw_sum[a]) {
+		if (sum == e->tap_sum[a]) {
 			continue;
 		}
-		e->raw_sum[a] = sum;
+		e->tap_sum[a] = sum;
+		e->st.rc_tap_changed++;
 		uint8_t command;
-		if (dmrFecRcFromBurst(raw, (uint8_t)e->cc_filter, &command) < 0) {
+		if (dmrFecRcFromField(raw, (uint8_t)e->cc_filter, &command) < 0) {
 			continue;
 		}
-		e->st.rc_raw++;
+		e->st.rc_tap++;
 		hrc6000_dmr_evslot_t *ev = ev_begin(e);
 		if (ev != NULL) {
 			ev->ev.kind = DMR_EV_RC;
@@ -730,7 +732,7 @@ static void tx_tick(hrc6000_dmr_t *e, uint8_t r42)
 	case TXS_RUN:
 		if (next_phase == e->tx_phase) {
 			if (e->tx_listen) {
-				rc_raw_read(e);	// the slot just listened to, before ours is set up
+				rc_tap_read(e);	// the slot just listened to, before ours is set up
 			}
 			tx_slot(e);
 			if (e->tx_state == TXS_ENDING) {

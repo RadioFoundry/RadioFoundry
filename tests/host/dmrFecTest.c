@@ -356,45 +356,36 @@ static void testReverseChannel(void)
 	CHECK(min == 12, "RC codewords: minimum distance %d", min);
 	CHECK(bad == 0, "RC decode: %d wrong", bad);
 
-	// In a burst (6.4.2): EMB CC 2, PI 1, LCSS 00 is QR(16,7,6) of 0x14 split around the RC, burst bits 108-155
-	uint8_t burst[DMR_FEC_BURST_BYTES], copy[DMR_FEC_BURST_BYTES], got;
-
-	srand(7);
-	for (int i = 0; i < DMR_FEC_BURST_BYTES; i++)
-	{
-		burst[i] = (uint8_t)rand();
-	}
-	memcpy(copy, burst, sizeof copy);
-	dmrFecRcToBurst(2, DMR_RC_CEASE, burst);
-	CHECK(memcmp(burst, copy, 13) == 0 && (burst[13] & 0xF0) == (copy[13] & 0xF0) &&
-	      (burst[19] & 0x0F) == (copy[19] & 0x0F) && memcmp(burst + 20, copy + 20, 13) == 0, "RC burst: payload kept");
+	// The embedded field (6.4.2): EMB CC 2, PI 1, LCSS 00 is QR(16,7,6) of 0x14, split around the RC
+	uint8_t field[6], got;
 	uint16_t emb14 = dmrFecQr1676Encode(0x14);
-	CHECK((burst[13] & 0x0F) == (emb14 >> 12) && (burst[14] >> 4) == ((emb14 >> 8) & 0x0F) &&
-	      (burst[18] & 0x0F) == ((emb14 >> 4) & 0x0F) && (burst[19] >> 4) == (emb14 & 0x0F), "RC burst: EMB");
-	CHECK(dmrFecRcFromBurst(burst, 2, &got) == 0 && got == DMR_RC_CEASE, "RC burst: decode");
-	burst[15] ^= 0x41;	// two RC bit errors and one EMB bit error
-	burst[13] ^= 0x02;
-	CHECK(dmrFecRcFromBurst(burst, 2, &got) == 3 && got == DMR_RC_CEASE, "RC burst: errors corrected");
-	CHECK(dmrFecRcFromBurst(burst, 3, &got) < 0, "RC burst: another color code");
-	// Not an RC: PI 0 (a null fragment or this channel's LC), another LCSS, or a data sync in the middle
+
+	dmrFecRcField(2, DMR_RC_CEASE, field);
+	CHECK(field[0] == (emb14 >> 8) && field[5] == (emb14 & 0xFF), "RC field: EMB");
+	CHECK(((uint32_t)field[1] << 24 | (uint32_t)field[2] << 16 | (uint32_t)field[3] << 8 | field[4]) ==
+	      dmrFecRcEncode(DMR_RC_CEASE), "RC field: RC");
+	// A BS's cease as sent on air, CC 2
+	static const uint8_t onAir[6] = { 0x28, 0x70, 0xD0, 0x4F, 0x1F, 0x7E };
+	CHECK(memcmp(field, onAir, 6) == 0, "RC field: as on air");
+	CHECK(dmrFecRcFromField(field, 2, &got) == 0 && got == DMR_RC_CEASE, "RC field: decode");
+	field[2] ^= 0x41;	// two RC bit errors and one EMB bit error
+	field[0] ^= 0x02;
+	CHECK(dmrFecRcFromField(field, 2, &got) == 3 && got == DMR_RC_CEASE, "RC field: errors corrected");
+	CHECK(dmrFecRcFromField(field, 3, &got) < 0, "RC field: another color code");
+	// Not an RC: PI 0 (a null fragment or this channel's LC), another LCSS, a BS voice or data sync
 	uint16_t embs[2] = { dmrFecEmbEncode(2, false, 0), dmrFecEmbEncode(2, true, 1) };
 	for (int k = 0; k < 2; k++)
 	{
-		dmrFecRcToBurst(2, DMR_RC_CEASE, burst);
-		burst[13] = (uint8_t)((burst[13] & 0xF0) | (embs[k] >> 12));
-		burst[14] = (uint8_t)((burst[14] & 0x0F) | (((embs[k] >> 8) & 0x0F) << 4));
-		burst[18] = (uint8_t)((burst[18] & 0xF0) | ((embs[k] >> 4) & 0x0F));
-		burst[19] = (uint8_t)((burst[19] & 0x0F) | ((embs[k] & 0x0F) << 4));
-		CHECK(dmrFecRcFromBurst(burst, 2, &got) < 0, "RC burst: EMB %04X taken", embs[k]);
+		dmrFecRcField(2, DMR_RC_CEASE, field);
+		field[0] = (uint8_t)(embs[k] >> 8);
+		field[5] = (uint8_t)embs[k];
+		CHECK(dmrFecRcFromField(field, 2, &got) < 0, "RC field: EMB %04X taken", embs[k]);
 	}
-	static const uint8_t bsData[6] = { 0xDF, 0xF5, 0x7D, 0x75, 0xDF, 0x5D };	// BS sourced data sync
-	burst[13] = (uint8_t)((burst[13] & 0xF0) | (bsData[0] >> 4));
-	for (int i = 0; i < 5; i++)
+	static const uint8_t syncs[2][6] = { { 0x75, 0x5F, 0xD7, 0xDF, 0x75, 0xF7 }, { 0xDF, 0xF5, 0x7D, 0x75, 0xDF, 0x5D } };
+	for (int k = 0; k < 2; k++)
 	{
-		burst[14 + i] = (uint8_t)((bsData[i] << 4) | (bsData[i + 1] >> 4));
+		CHECK(dmrFecRcFromField(syncs[k], 2, &got) < 0, "RC field: sync %d taken", k);
 	}
-	burst[19] = (uint8_t)((burst[19] & 0x0F) | (bsData[5] << 4));
-	CHECK(dmrFecRcFromBurst(burst, 2, &got) < 0, "RC burst: data sync taken");
 }
 
 int main(void)

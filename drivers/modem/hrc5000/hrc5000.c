@@ -167,6 +167,8 @@ static const hrc_chip_t chip = {
 	.voice_lcss = voice_lcss,
 	.set_mic_gain = set_mic_gain,
 	.dmr_enter = dmr_enter,
+	.tap_addr = { 0x30, 0 },	// one area, 264 bits, no CACH (hardware-md380.md 4.9.1)
+	.tap_field = 0,
 #if HRC5000_TICK_RX
 	.rx_voice_read = rx_voice_read,
 	.rx_decode = rx_decode,

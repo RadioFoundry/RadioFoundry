@@ -630,8 +630,8 @@ static void test_tx_listen(void)
 }
 
 // A BS's outbound RC burst heard while we send (ETSI TS 102 361-1 6.4.2): EMB + RC in place of the sync, so the chip
-// reports nothing. The raw area of the slot just listened to is decoded before our next burst: one DMR_EV_RC per RC
-// burst, none for an unchanged area, another color code or a burst that isn't an RC
+// reports nothing. Its receive tap (CACH, then the burst's 48-bit field) is read before our next burst: one DMR_EV_RC
+// per RC burst, none for an unchanged area, another color code or a burst that isn't an RC
 static void test_tx_listen_rc(void)
 {
 	fresh_engine();
@@ -646,7 +646,7 @@ static void test_tx_listen_rc(void)
 	hrc6000_dmr_tx_end(&eng);
 	nev = 0;
 
-	uint8_t burst[33];
+	uint8_t burst[12];
 	int listened = 0;
 	uint32_t t = 7500000;
 	for (int k = 0; k < 40 && hrc6000_dmr_is_transmitting(&eng); k++) {
@@ -655,10 +655,11 @@ static void test_tx_listen_rc(void)
 		if (r41 == 0x50) {	// a listen slot: what the BS sends in it lands in a raw area
 			listened++;
 			memset(burst, 0x5A, sizeof burst);
+			burst[11] = (uint8_t)listened;	// the voice bits after the field differ per burst
 			if (listened == 1 || listened == 4) {
-				dmrFecRcToBurst(2, DMR_RC_CEASE, burst);	// a cease, area 0, then area 1
+				dmrFecRcField(2, DMR_RC_CEASE, burst + 3);	// a cease, area 0, then area 1
 			} else if (listened == 3) {
-				dmrFecRcToBurst(3, DMR_RC_CEASE, burst);	// another color code
+				dmrFecRcField(3, DMR_RC_CEASE, burst + 3);	// another color code
 			}
 			if (listened != 2) {	// slot 2: nothing new heard, both areas unchanged
 				memcpy(&rd[2][(listened == 4) ? 0x60 : 0x30], burst, sizeof burst);
@@ -669,7 +670,7 @@ static void test_tx_listen_rc(void)
 	}
 	drain();
 	CHECK(listened >= 5);
-	CHECK(count_ev(DMR_EV_RC) == 2 && eng.st.rc_raw == 2);
+	CHECK(count_ev(DMR_EV_RC) == 2 && eng.st.rc_tap == 2);
 	for (int i = 0; i < nev; i++) {
 		if (evs[i].kind == DMR_EV_RC) {
 			CHECK(evs[i].arg == dmrFecRcInfo(DMR_RC_CEASE) && evs[i].flags == 0);

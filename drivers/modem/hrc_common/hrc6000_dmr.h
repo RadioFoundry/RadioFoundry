@@ -145,7 +145,8 @@ typedef struct {
 	uint32_t rx_rc;		// reverse channel / unusable status, dropped
 	uint32_t rc_reports;	// reports between our bursts that may carry an RC (class 3, or burst F with LCSS 0): DMR_EV_RC
 	uint32_t rc_last;	// the last one's 0x51 << 16 | 0x53 << 8 | 0x54
-	uint32_t rc_raw;	// RCs decoded from the raw burst of a listen slot (rc_raw_read): DMR_EV_RC
+	uint32_t rc_tap;	// RCs decoded from the receive tap after a listen slot (rc_tap_read): DMR_EV_RC
+	uint32_t rc_tap_changed;	// tap areas found changed there (a new burst), RC or not
 	uint32_t rx_out_of_step;	// reports 22 ms or more after the timeslot interrupt
 	uint32_t rx_restarts;	// receiver restarts by the engine (silence, out of step, CC change, stall)
 	uint32_t late_entry;	// post-access interrupts
@@ -319,7 +320,7 @@ typedef struct {
 	int8_t tx_ts;
 	uint8_t tx_access;
 	bool tx_listen;		// receive in the slots between our bursts (hrc6000_dmr_tx_listen)
-	uint32_t raw_sum[2];	// a checksum of each raw burst area at its last read: only a changed one is decoded
+	uint32_t tap_sum[2];	// a checksum of each receive tap area at its last read: only a changed one is decoded
 	uint8_t tx_phase;	// phase (tick & 1) of our slots
 	bool tx_end_req;
 	bool tx_abort_req;
