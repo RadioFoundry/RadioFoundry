@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { CodeplugImage } from "../static/js/codeplug/image.js";
 import { KV_ADDR, KV_SIZE, decodeArea, getValue, putArea } from "../static/js/codeplug/kv.js";
 import { decode, encode, empty, validate, remove, newChannel, setTrunk, putSystem, systemUsable } from "../static/js/codeplug/model.js";
-import { nameCheck, decodeTag, decodeSystem, decodeKey, encodeSystem, newSystem, T3_KEY } from "../static/js/codeplug/trunk.js";
+import { nameCheck, decodeTag, decodeSystem, decodeKey, encodeSystem, newSystem, T3_KEY, decodePoll, encodePoll, encodePollReply } from "../static/js/codeplug/trunk.js";
 import { parseSystem } from "../static/js/editor/trunkview.js";
 import { columns, channelForm } from "../static/js/editor/views.js";
 import { History } from "../static/js/editor/undo.js";
@@ -243,6 +243,43 @@ test("a new system: the lowest free number, its channels and key, read back the 
 	assert.deepEqual([byName(m2, "County").rxHz, byName(m2, "County").txHz], [451050000, 456050000]);
 });
 
+test("the short data poll record (12.7): format, blocks, the reply in that format; none when all is default", () => {
+	const m = decode(fixture());
+	const [s0, s1] = m.trunkSystems;
+	assert.deepEqual([s0.pollFormat, s0.pollBlocks, s0.pollReply], [4, 4, ""], "no record: ISO 8 bit, 4 blocks, no reply");
+	s0.pollReply = "at gate 4";
+	s0.pollBlocks = 2;
+	s1.pollFormat = 3;
+	s1.pollReply = "AB";
+	const img = encode(m);
+	assert.deepEqual(value(img, 0x0800), Uint8Array.from([4, 2, ..."at gate 4"].map((c) => (typeof c === "string" ? c.charCodeAt(0) : c))));
+	// 7 bits a character, first bit first: A 1000001, B 1000010
+	assert.deepEqual(value(img, 0x0801), Uint8Array.of(3, 4, 0x83, 0x08));
+	const back = decode(img).trunkSystems;
+	assert.deepEqual([back[0].pollReply, back[0].pollBlocks, back[1].pollReply, back[1].pollFormat], ["at gate 4", 2, "AB", 3]);
+	assert.deepEqual(encodePollReply(7, "Hi"), Uint8Array.of(0, 0x48, 0, 0x69));
+	assert.equal(decodePoll(Uint8Array.of(7, 1, 0, 0x48, 0, 0x69)).pollReply, "Hi");
+	// too long or a character the format lacks: no encoding, and validation says so
+	assert.equal(encodePollReply(4, "x".repeat(47)), null);
+	assert.equal(encodePollReply(3, "x".repeat(52)).length, 46);
+	assert.equal(encodePollReply(3, "é"), null);
+	const m3 = decode(img);
+	m3.trunkSystems[1].pollReply = "é";
+	assert.deepEqual(validate(m3).filter((x) => x.code === "t3_poll_reply").map((x) => [x.level, x.field]), [["error", "pollReply"]]);
+	// back to the defaults: the record goes; a deleted system takes it with it
+	const m2 = decode(img);
+	Object.assign(m2.trunkSystems[0], { pollReply: "", pollBlocks: 4 });
+	remove(m2, "trunkSystems", [m2.trunkSystems[1]]);
+	const img2 = encode(m2);
+	assert.equal(value(img2, 0x0800), null);
+	assert.equal(value(img2, 0x0801), null);
+	// a reply in a format the editor doesn't write is kept byte for byte
+	const raw = Uint8Array.of(0, 3, 0xDE, 0xAD, 0xBE, 0xEF);
+	const p = decodePoll(raw);
+	assert.equal(p.pollReply, null);
+	assert.deepEqual(encodePoll({ ...p }), raw);
+});
+
 test("a codeplug without trunking stays without: no area written for it", () => {
 	const m = empty();
 	m.channels.push(newChannel({ number: 1, name: "One" }));
@@ -328,6 +365,10 @@ test("the system dialog's parser: blanks are 0, typed values checked", () => {
 	assert.deepEqual(chans, [{ control: true, lcn: 1, rxHz: 451012500, txHz: 456012500, cc: null }]);
 	const bad = parseSystem({ ...raw, name: "", net: "128", key: "abc", sites: "1, 99", chans: [{ control: true, lcn: "0", rxHz: "x", txHz: "1", cc: null }] }, t).errors;
 	assert.equal(bad.length, 6, bad.join("\n"));
+	// the poll reply: checked against its format; one kept as stored isn't
+	assert.deepEqual([fields.pollFormat, fields.pollBlocks, fields.pollReply], [4, 4, ""]);
+	assert.equal(parseSystem({ ...raw, pollFormat: 7, pollReply: "x".repeat(24) }, t).errors.length, 1);
+	assert.equal(parseSystem({ ...raw, pollFormat: 0, pollReply: null }, t).fields.pollReply, null);
 });
 
 test("the channel table's DMR Trunked mode tags a channel with a system; FM or DMR untags it", () => {

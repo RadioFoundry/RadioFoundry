@@ -19,7 +19,7 @@ import { readHeader } from "./iddb.js";
 import { decodeArea, keyValid, KEYS, KV_ADDR, KV_SIZE, KV_HDR, getValue, setValue, deleteValue, dedupe, putArea } from "./kv.js";
 import {
 	T3_KEY, T3_LIMITS, nameCheck, decodeSystem, encodeSystem, SYSTEM_KEYS, decodeChan, encodeChan, decodeKey, encodeKey,
-	validKey, decodeTag, encodeTag, netMax, siteMax, ID_MAX,
+	decodePoll, encodePoll, encodePollReply, POLL_DEFAULT, POLL_MAX, validKey, decodeTag, encodeTag, netMax, siteMax, ID_MAX,
 } from "./trunk.js";
 
 const REFS = ["contact", "rxList", "aprs"];
@@ -269,7 +269,8 @@ function decodeTrunk(m, b) {
 		if (!s) continue;
 		const k = decodeKey(getValue(entries, T3_KEY.key + n));
 		const { fallbackCheck, ...rest } = s;
-		m.trunkSystems.push({ number: n + 1, ...rest, fallback: fallbackRef(m, s.fallback, fallbackCheck), key: k?.key ?? "", psn: k?.psn ?? 0 });
+		m.trunkSystems.push({ number: n + 1, ...rest, fallback: fallbackRef(m, s.fallback, fallbackCheck), key: k?.key ?? "", psn: k?.psn ?? 0,
+			...decodePoll(getValue(entries, T3_KEY.poll + n)) });
 	}
 	const chans = entries.filter((e) => inFamily(e.key, T3_KEY.chan, T3_LIMITS.chanKeys)).sort((a, b) => a.key - b.key);
 	for (const e of chans) {
@@ -321,9 +322,15 @@ export function trunkEntries(m, entries, base = m.base?.bytes) {
 			if (was) {
 				del(T3_KEY.system + n);
 				del(T3_KEY.key + n);
+				del(T3_KEY.poll + n);
 			}
 			continue;
 		}
+		// The poll record: rewritten only when its bytes change; one that doesn't encode (validate says why) stays
+		const pollWas = getValue(out, T3_KEY.poll + n), poll = encodePoll(s);
+		const pollDefault = s.pollReply === "" && s.pollFormat === POLL_DEFAULT.pollFormat && s.pollBlocks === POLL_DEFAULT.pollBlocks;
+		if (poll && !(pollWas && pollWas.length === poll.length && pollWas.every((x, i) => x === poll[i]))) set(T3_KEY.poll + n, poll);
+		else if (!poll && pollDefault && pollWas) del(T3_KEY.poll + n);
 		const flat = { ...s, ...fallbackOut(s.fallback, was) };
 		if (!was || !sameFields(was, flat, SYSTEM_KEYS)) set(T3_KEY.system + n, encodeSystem(flat, prev));
 		const k = decodeKey(getValue(out, T3_KEY.key + n));
@@ -614,6 +621,8 @@ function validateTrunk(m, err, warn) {
 		if (s.key && !validKey(s.key)) err(T, s, "key", "t3_key_length");
 		if (!(Number.isInteger(s.psn) && s.psn >= 0 && s.psn <= 0xFFFFFF)) err(T, s, "psn", "range", { min: 0, max: 0xFFFFFF });
 		else if (s.psn && !s.key) warn(T, s, "psn", "t3_psn_no_key");
+		if (!(Number.isInteger(s.pollBlocks) && s.pollBlocks >= 1 && s.pollBlocks <= 4)) err(T, s, "pollBlocks", "range", { min: 1, max: 4 });
+		if (s.pollReply !== null && s.pollReply !== undefined && !encodePollReply(s.pollFormat, s.pollReply)) err(T, s, "pollReply", "t3_poll_reply", { max: POLL_MAX });
 		const mine = chans.filter((c) => c.system === s);
 		const ctrl = mine.filter((c) => c.control).length;
 		if (!ctrl) warn(T, s, "controlChannels", "t3_no_control");

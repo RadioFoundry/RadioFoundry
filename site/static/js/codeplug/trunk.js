@@ -7,7 +7,7 @@
 import { putName, getName } from "./fields.js";
 import { ID_MAX } from "./kv.js";
 
-export const T3_KEY = { system: 0x0100, chan: 0x0200, key: 0x0300, tag: 0x0400 };
+export const T3_KEY = { system: 0x0100, chan: 0x0200, key: 0x0300, tag: 0x0400, poll: 0x0800 };
 export const T3_LIMITS = {
 	systems: 8,		// RADIO_T3_SYSTEMS
 	chanKeys: 256,		// keys 0x0200-0x02FF
@@ -69,7 +69,7 @@ export function newSystem(fields = {}) {
 		acceptAls: false, acceptKill: false, noRoaming: false, acceptStun: false, authenticates: false,
 		ownId: 0, sharing: 0, fallbackHold: 0, fallback: null,
 		planBaseHz: 0, planFirstLcn: 0, planSep: 0, planTxLow: false, planNoLearn: false, planSplitHz: 0,
-		leaveDbm: 0, powerSave: 0, sites: [], key: "", psn: 0, ...fields,
+		leaveDbm: 0, powerSave: 0, sites: [], key: "", psn: 0, ...POLL_DEFAULT, ...fields,
 	};
 }
 
@@ -181,6 +181,73 @@ export function encodeKey(key, psn = 0) {
 	const v = new Uint8Array(psn ? KEY_LEN + PSN_LEN : KEY_LEN);
 	for (let i = 0; i < KEY_LEN; i++) v[i] = parseInt(key.slice(2 * i, 2 * i + 2), 16);
 	if (psn) v.set([(psn >>> 16) & 0xFF, (psn >>> 8) & 0xFF, psn & 0xFF], KEY_LEN);
+	return v;
+}
+
+// --- Short data poll (12.7) ---
+
+// UDT_Format (table 7.60) of the text formats the editor writes a reply in, and the octets a reply holds at most
+export const POLL_FORMATS = { iso7: 3, iso8: 4, utf16: 7 };
+export const POLL_MAX = 46;
+// No record: ISO 8 bit, 4 blocks, no reply. pollReply null: a reply in a format the editor doesn't write (pollRaw)
+export const POLL_DEFAULT = { pollFormat: POLL_FORMATS.iso8, pollBlocks: 4, pollReply: "", pollRaw: null };
+
+// The poll fields of a record, or the defaults when it is absent or shorter than 2 octets
+export function decodePoll(v) {
+	if (!v || v.length < 2) return { ...POLL_DEFAULT };
+	const format = v[0] & 0x0F, blocks = v[1] >= 1 && v[1] <= 4 ? v[1] : 4;
+	const d = v.subarray(2, 2 + POLL_MAX);
+	let reply = null;
+	if (format === POLL_FORMATS.iso8) reply = String.fromCharCode(...[...d].slice(0, d.indexOf(0) < 0 ? d.length : d.indexOf(0)));
+	else if (format === POLL_FORMATS.utf16) {
+		reply = "";
+		for (let i = 0; i + 1 < d.length; i += 2) {
+			const u = (d[i] << 8) | d[i + 1];
+			if (!u) break;
+			reply += String.fromCharCode(u);
+		}
+	} else if (format === POLL_FORMATS.iso7) {
+		reply = "";
+		for (let pos = 0; pos + 7 <= d.length * 8; pos += 7) {
+			let c = 0;
+			for (let b = pos; b < pos + 7; b++) c = (c << 1) | ((d[b >> 3] >> (7 - (b & 7))) & 1);
+			if (!c) break;
+			reply += String.fromCharCode(c);
+		}
+	}
+	return { pollFormat: format, pollBlocks: blocks, pollReply: reply, pollRaw: reply === null ? Uint8Array.from(d) : null };
+}
+
+// A reply's octets in a text format, or null when it doesn't fit (POLL_MAX) or has a character the format lacks
+export function encodePollReply(format, text) {
+	const cs = [...String(text ?? "")].map((c) => c.codePointAt(0));
+	let d;
+	if (format === POLL_FORMATS.iso8) {
+		if (cs.some((c) => c > 0xFF)) return null;
+		d = Uint8Array.from(cs);
+	} else if (format === POLL_FORMATS.utf16) {
+		if (cs.some((c) => c > 0xFFFF)) return null;
+		d = new Uint8Array(cs.length * 2);
+		cs.forEach((c, i) => d.set([c >> 8, c & 0xFF], 2 * i));
+	} else if (format === POLL_FORMATS.iso7) {
+		if (cs.some((c) => c > 0x7F || c === 0)) return null;
+		d = new Uint8Array(Math.ceil((cs.length * 7) / 8));
+		cs.forEach((c, i) => {
+			for (let b = 0; b < 7; b++) if ((c >> (6 - b)) & 1) d[(i * 7 + b) >> 3] |= 0x80 >> ((i * 7 + b) & 7);
+		});
+	} else return null;
+	return d.length <= POLL_MAX ? d : null;
+}
+
+// The record for a system's poll fields, or null when they are the defaults (no record needed) or don't encode
+export function encodePoll(s) {
+	const d = s.pollReply === null ? s.pollRaw ?? new Uint8Array(0) : encodePollReply(s.pollFormat, s.pollReply);
+	if (!d) return null;
+	if (!d.length && s.pollFormat === POLL_DEFAULT.pollFormat && s.pollBlocks === POLL_DEFAULT.pollBlocks) return null;
+	const v = new Uint8Array(2 + d.length);
+	v[0] = s.pollFormat & 0x0F;
+	v[1] = s.pollBlocks;
+	v.set(d, 2);
 	return v;
 }
 

@@ -6,7 +6,7 @@
 
 import { mhz, parseFreq } from "../codeplug/fields.js";
 import { putSystem, remove, systemUsable } from "../codeplug/model.js";
-import { T3_LIMITS, SEP_HZ, netMax, siteMax, newSystem, validKey, ID_MAX } from "../codeplug/trunk.js";
+import { T3_LIMITS, SEP_HZ, netMax, siteMax, newSystem, validKey, ID_MAX, POLL_FORMATS, POLL_MAX, encodePollReply } from "../codeplug/trunk.js";
 import { fallbackOptions } from "./views.js";
 
 const MODELS = [0, 1, 2, 3];
@@ -76,6 +76,14 @@ export function parseSystem(raw, t) {
 	const sites = String(raw.sites ?? "").split(/[\s,;]+/).filter(Boolean).map((x) => intIn(x, 0, siteMax(f.model)));
 	if (sites.includes(null) || sites.length > T3_LIMITS.sites) bad("editor.t3.sites", t("editor.err.t3_sites", { max: siteMax(f.model), n: T3_LIMITS.sites }));
 	f.sites = sites.filter((x) => x !== null).slice(0, T3_LIMITS.sites);
+	f.pollFormat = raw.pollFormat ?? POLL_FORMATS.iso8;
+	f.pollBlocks = raw.pollBlocks ?? 4;
+	if (raw.pollReply === null) f.pollReply = null;	// a reply in a format not written here: kept as stored
+	else {
+		f.pollReply = String(raw.pollReply ?? "");
+		f.pollRaw = null;
+		if (!encodePollReply(f.pollFormat, f.pollReply)) bad("editor.t3.poll_reply", t("editor.err.t3_poll_reply", { max: POLL_MAX }));
+	}
 
 	const chans = [];
 	(raw.chans || []).forEach((c, i) => {
@@ -235,6 +243,15 @@ function systemDialog(api, s, isNew) {
 	const leave = text(blankZero(s.leaveDbm));
 	const ps = select([[0, t("editor.t3.power_save_off")], ...[1, 2, 3, 4, 5, 6, 7].map((n) => [n, `1:${2 ** n}`])], s.powerSave);
 	const sites = text(s.sites.join(", "));
+	const pollOpts = Object.entries(POLL_FORMATS).map(([k, n]) => [n, t(`editor.t3.poll_format.${k}`)]);
+	const pollOther = !Object.values(POLL_FORMATS).includes(s.pollFormat);
+	if (pollOther) pollOpts.push([s.pollFormat, t("editor.t3.poll_format.other", { n: s.pollFormat })]);
+	const pollFormat = select(pollOpts, s.pollFormat);
+	const pollBlocks = select([1, 2, 3, 4].map((n) => [n, String(n)]), s.pollBlocks);
+	const pollReply = text(s.pollReply ?? "", { maxlength: 52 });
+	const pollKept = () => (pollReply.disabled = s.pollReply === null && val(pollFormat) === s.pollFormat);
+	pollFormat.addEventListener("change", pollKept);
+	pollKept();
 
 	const sync = () => {
 		netHelp.textContent = t("editor.t3.net_help", { max: netMax(val(model)) });
@@ -284,7 +301,12 @@ function systemDialog(api, s, isNew) {
 		txLow.row, noLearn.row,
 		h("h3", { class: "form-group" }, t("editor.t3.roaming")),
 		row(t("editor.t3.leave_dbm"), leave, t("editor.t3.leave_dbm_help")),
-		row(t("editor.t3.power_save"), ps)));
+		row(t("editor.t3.power_save"), ps),
+		h("h3", { class: "form-group" }, t("editor.t3.poll")),
+		h("p", { class: "form-note small muted" }, t("editor.t3.poll_help")),
+		row(t("editor.t3.poll_format"), pollFormat),
+		row(t("editor.t3.poll_blocks"), pollBlocks, t("editor.t3.poll_blocks_help")),
+		row(t("editor.t3.poll_reply"), pollReply, t(s.pollReply === null ? "editor.t3.poll_reply_kept" : "editor.t3.poll_reply_help"))));
 	const errs = h("p", { class: "notice bad", hidden: true });
 	const body = [h("h3", { class: "form-group" }, t("editor.t3.basic")), basic, advanced, errs];
 	for (const el of [model, auth.box, key, sharing]) {
@@ -300,7 +322,9 @@ function systemDialog(api, s, isNew) {
 			authenticates: auth.box.checked, key: key.value, psn: psn.value, sharing: val(sharing), fallback: val(fallback),
 			fallbackHold: hold.value, ownId: ownId.value, planBaseHz: planBase.value, planFirstLcn: planFirst.value,
 			planSep: val(planSep), planSplitHz: planSplit.value, planTxLow: txLow.box.checked, planNoLearn: noLearn.box.checked,
-			leaveDbm: leave.value, powerSave: val(ps), sites: sites.value,
+			leaveDbm: leave.value, powerSave: val(ps), sites: sites.value, pollFormat: val(pollFormat), pollBlocks: val(pollBlocks),
+			// a reply kept as stored stays so while its format does; another format starts a text reply
+			pollReply: s.pollReply === null && val(pollFormat) === s.pollFormat ? null : pollReply.value,
 			chans: [...tbody.children].map((tr) => tr._read()),
 			...Object.fromEntries(OPTIONS.map((k) => [k, opts[k].box.checked])),
 		};

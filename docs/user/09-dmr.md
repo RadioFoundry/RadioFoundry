@@ -126,6 +126,7 @@ On Home, **#** opens the actions for the current or last caller. A digit picks a
 | 7 | Save as contact | Opens New Contact with their ID and name ([Contacts](#contacts)). "In contacts" when they are one |
 | 8 | Speak status | Not built yet |
 | 9 | Save to channel | Shown only when the channel has temporary changes |
+| last | Poll short data | Shown only on a trunked channel. Asks their radio for its short data; the answer arrives as a message. "Poll: no short data" when none comes |
 
 For a talkgroup the actions are Talk to, Make channel default and Message, and 4 Save as contact when it isn't a contact.
 
