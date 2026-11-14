@@ -349,7 +349,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | Notes |
 |---|---|---:|---:|---|
 | USB network adapter (CDC-NCM) | `USB_NETWORK` | 48,344 | 47,468 | Includes everything below |
-| A web page's switch back to the serial port (endpoint 0 request, `/api/usb`, TCP at 12.255.255.254) | `USB_SERIAL_REQUEST` | 644 | 696 | Follows `USB_NETWORK` |
+| Leave network mode from a web page | `USB_SERIAL_REQUEST` | 644 | 696 | The web flasher and editor take a radio in USB network mode back to serial mode, with no key press on the radio (endpoint 0 request, `/api/usb`, TCP at 12.255.255.254). Follows `USB_NETWORK` |
 | IP over DMR gateway | `DMR_IP_GATEWAY` | 44,128 | 43,220 | Includes the radio's own services below |
 | Control station mode (boot as network, PC answers data, fixed link) | `DMR_CONTROL_STATION` | 288 | 484 |  |
 | Minimal TCP | `NET_TCP` | 16,240 | 15,656 | Includes KISS, HTTP, rigctld, APRS-IS. About 4.5 KB RAM |

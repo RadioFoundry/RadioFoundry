@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The codeplug settings area (docs/spec/codeplug-settings.md) in the Codeplug Editor: static/js/codeplug/kv.js, the
-// general settings' arsServer and ipGateway (records.js, model.js) and the region the editor moves to and from a radio.
+// general settings' arsServer, ipGateway and Settings > Sound tones (records.js, model.js) and the region the editor moves to and from a radio.
 // Run with node --test site/tests/ (site/tests/run.sh).
 
 import { test } from "node:test";
@@ -218,6 +218,27 @@ test("general settings: arsServer and ipGateway, absent apart from 0", () => {
 	const g2 = decode(encode(m2)).general;
 	assert.equal(g2.arsServer, null);
 	assert.equal(g2.ipGateway, 3100500);
+});
+
+test("general settings: the tones are bools, one byte written, absent apart from off", () => {
+	const m = empty();
+	for (const name of ["callEndTone", "totWarnTone", "batteryTone", "txDenyTone"]) assert.equal(m.general[name], null);
+	m.general = { ...m.general, callEndTone: false, batteryTone: true };
+	const img = encode(m);
+	assert.deepEqual(decodeArea(img.bytes).entries, [e(KEY.callEndTone, 0), e(KEY.batteryTone, 1)]);
+	const back = decode(img).general;
+	assert.equal(back.callEndTone, false, "off is a key, not an absent one");
+	assert.equal(back.batteryTone, true);
+	assert.equal(back.totWarnTone, null);
+	// a reader takes any nonzero value of 1 to 8 bytes as on, and an empty value as absent (3.1)
+	const g = decode(withArea([e(KEY.totWarnTone, 0, 2), e(KEY.txDenyTone), e(KEY.callEndTone, 0, 0, 0, 0)])).general;
+	assert.equal(g.totWarnTone, true);
+	assert.equal(g.txDenyTone, null);
+	assert.equal(g.callEndTone, false);
+	const m2 = decode(img);
+	m2.general = { ...m2.general, callEndTone: null };
+	assert.deepEqual(decodeArea(encode(m2).bytes).entries, [e(KEY.batteryTone, 1)]);
+	assert.equal(validate({ ...m2, general: { ...m2.general, txDenyTone: 1 } }).filter((p) => p.field === "txDenyTone").length, 1);
 });
 
 test("general settings: an unchanged codeplug keeps its area byte for byte", () => {

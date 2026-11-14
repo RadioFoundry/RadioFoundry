@@ -54,6 +54,7 @@ typedef struct {
 	uint16_t rssi_raw, noise_raw;	// FD6818 0x67 / 0x65 from the last status poll
 	uint16_t fm_noise;		// HR_C7000 FM_SQL
 	uint32_t fd_writes;
+	char rf_setup;			// the RF section (hardware-dm32.md 8.10): A classic, B newer, - neither locked
 } dm32_radio_diag_t;
 void dm32_radio_diag(dm32_radio_diag_t *d);
 bool dm32_diag_line(uint8_t i, char *buf, uint8_t len);

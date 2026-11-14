@@ -91,6 +91,7 @@ enum {
 	HRC6000_RS_CMD,		// asked for: run, configure, rx_restart, set_cc_filter
 	HRC6000_RS_STALL,	// timing stopped while busy
 	HRC6000_RS_TX_END,	// end of a direct mode transmission
+	HRC6000_RS_ALIGN,	// an aligned start's wait heard nothing for ALIGN_DEAF_TICKS
 	HRC6000_RS_COUNT
 };
 
@@ -103,7 +104,7 @@ typedef struct {
 	char ev;	// F burst F's report, f F reported again (a repeat, dropped), A burst A while no LC yet, P post-access
 			// interrupt, p post-access shortly before the reception started, H voice LC header
 	char res;	// n differs from the capture (taken), s same as the capture (held back), v same but taken (more than
-			// STALE_LC_VOICE voice bursts), c CRC error flagged, k kept for the next voice burst, o maybe the
+			// STALE_LC_VOICE voice bursts; at A, after a whole superframe), c CRC error flagged, k kept for the next voice burst, o maybe the
 			// other slot's (held back, modem-hrc6000.md 5.2), r an interrupted call's, read twice (5.6), - not used
 	uint8_t tk;	// ticks since the capture (255: 255 or more)
 	uint8_t vss;	// voice bursts taken in this reception at the time
@@ -135,6 +136,7 @@ typedef struct {
 	uint32_t rx_stale;	// class 0 reports repeating the number of the burst just taken on that slot
 	uint32_t rx_seq_fill;	// voice taken by sequence (the report had no usable number)
 	uint32_t rx_seq_jump;	// voice whose number skipped ahead of the sequence (a burst missed)
+	uint32_t rx_seq_fix;	// voice whose number disagreed with the frames counted since the last burst: renumbered
 	uint32_t rx_lone;	// voice sync reports (class 1) with no header or superframe on their slot and no burst B
 				// after them: noise, the other slot's echo of A. Dropped (never delivered)
 	uint32_t rx_a_cc;	// voice reports whose 0x52 CC was replaced: by the CC filter's (the chip deframes only that
@@ -199,6 +201,7 @@ typedef struct {
 	uint8_t last;		// voice number taken last (HRC6000_INDEX_UNKNOWN after a header)
 	uint8_t next;		// the one expected
 	uint8_t cc;		// color code of the superframe (from its header / bursts B-F): burst A has none on air
+	uint16_t sum;		// checksum of the voice taken last (tells a stale report from a new burst)
 	uint32_t tick;		// when
 } hrc6000_dmr_vstate_t;
 
@@ -263,6 +266,8 @@ typedef struct {
 	bool lc_kept;		// lc_keep holds an LC seen outside a voice report, for the next voice burst taken
 	uint8_t lc_keep[9];
 	bool f_crc_bad;		// the last F taken flagged a CRC error (its LC isn't taken at the next A either)
+	bool f_whole;		// the last F taken closed a superframe all of this reception's (B-E heard after an A),
+				// with no CRC error: by the next A page 2 holds that superframe's LC
 	uint8_t scap_lc[9];	// page 2 at the first status report of a quiet period (late entry: before any burst taken)
 	uint32_t scap_tick;
 	bool scap_valid;

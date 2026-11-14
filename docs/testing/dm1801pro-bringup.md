@@ -59,7 +59,7 @@ Tune a known local signal on VHF and UHF. Audio, RSSI (`rssi` line) and squelch 
 |---|---|
 | No audio on either band | The cable is plugged in (it mutes the speaker); `PIN_AMP_EN` (PTA16) or `PIN_SPK_SOURCE` (PTB15) |
 | Audio on one band only | The path pins' band side is inverted (`radio_dm1801pro.c` `path_pins`; hardware-dm1801pro.md 5.5) |
-| Wrong frequency or very weak | `fd6818_variant_dm1801pro` tables, the RF bus speed (`RF_BIT_SCALE_US`), `PIN_RF_CS` |
+| Wrong frequency or very weak | `fd6818_variant_b` tables, the RF bus speed (`RF_BIT_SCALE_US`), `PIN_RF_CS` |
 | Narrow / wide swapped | The 12.5 kHz word (`bw_fm_12k5`, hardware-dm1801pro.md 5.2) |
 
 ## 5. FM transmit
@@ -147,7 +147,7 @@ DMR counters.
 
 | Step | Expect | If not |
 |---|---|---|
-| Select a DMR channel on a local repeater or hotspot | `tk` (ticks) climbs by about 33 a second, `ts` interrupts count up | No ticks: the modem never got timing; check the DMR mode register set (`dmr_table` in `boards/dm1801pro/rf_tables_dm1801pro.c`) and the RX path |
+| Select a DMR channel on a local repeater or hotspot | `tk` (ticks) climbs by about 33 a second, `ts` interrupts count up | No ticks: the modem never got timing; check the DMR mode register set (`dmr_table` in `drivers/rf/fd6818/fd6818_setup_b.c`) and the RX path |
 | Receive a transmission | `H` (headers) and `V` / `T` counters rise, `crc` stays low | Many `crc` or `u` (unusable): the bandwidth word 0x3048 or the DMR register set |
 | Hear a call | Silence: the codec is located but not hosted yet | |
 | Transmit on a dummy load (data call or a short key-up) | A burst per slot on a meter or SDR, `tx`, `rf` and `ok` rise | `un` (underrun) or `rj`: the per-burst switch takes too long (`dmr_rf_switch`, `RF_BIT_SCALE_US`); no carrier: `dmr_pa_on`, the 28 ms PA delay |

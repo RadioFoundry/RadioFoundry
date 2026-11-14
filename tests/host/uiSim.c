@@ -82,6 +82,9 @@ static const struct { const char *name, *script; } gallery[] = {
 #endif
 	{ "caller_actions", "call:9991234,91,g wait:11000 ctx" },
 	{ "compose", "call:9991234,91,g wait:11000 ctx 3" },
+	{ "aprs_station", "wait:600000 aprs:heard ok" },
+	{ "aprs_station_text", "aprs:heard ok up up" },
+	{ "aprs_station_evicted", "aprs:heard ok aprs:evict down" },
 	{ "hub", "ok" },
 	{ "contacts", "ok 1" },
 	{ "contacts_find", "ok 1 5 6" },
@@ -142,6 +145,8 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "diagnostics", "ok 6 7" },
 	{ "roaming", "ok 6 6 1 wait:4000" },
 	{ "settings", "ok 7" },
+	{ "settings_sound", "ok 7 1" },
+	{ "settings_sound_tones", "ok 7 1 down down down down down down" },	// the tones (radio-features.md)
 	{ "settings_display", "ok 7 2" },
 	{ "settings_editor", "ok 7 2 ok up" },
 	{ "settings_freq_trim", "trim ok 7 up ok up" },	// on a radio with a reference trim (radio-features.md 6.1)
@@ -286,6 +291,9 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_fixed_position", "ok 7 5 down down ok 1 3 3 7 4 9 0 ok 2 8 4 3 8 8 0 down ok wait:3000" },
 	{ "w_fixed_position_edit", "ok 7 5 down down ok 1 3 3 7" },
 	{ "w_aprs_heard", "ok 6 8 up ok" },
+	{ "w_aprs_station", "wait:600000 ok 6 8 up ok ok" },
+	{ "w_aprs_station_text", "ok 6 8 up ok ok up up" },
+	{ "w_aprs_station_evicted", "ok 6 8 up ok ok aprs:evict down" },
 	{ "w_usb", "ok 6 4" },
 	{ "w_sfr", "ok 6 5" },
 	{ "w_battery", "battery:5 ok 6 9" },

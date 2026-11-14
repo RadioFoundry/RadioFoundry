@@ -601,8 +601,9 @@ static void late_run(const char *name, const chip_t *c, result_t *r)
 //     after F's (first) report: page 2 still holds the old LC when F is read, and the new one from the next report on.
 //     The engine looks again at the next burst A while it has no LC: played from burst 19, 18 bursts.
 //   - With page 2 written by F's report (the earlier model): played from F, burst 18.
-//   - The previous call had the same LC: the engine trusts an unchanged LC only after more than one superframe of
-//     voice (the next F, burst 24), 13 bursts
+//   - The previous call had the same LC: held back at F (unchanged), then taken at the next A, a whole superframe of
+//     this reception having closed with a good F (page 2 holds its LC by then): burst 19, as a new LC. It waited for
+//     the second F (burst 24) before HIL 2026-11-14
 //   - The post-access interrupt with the report after F: the LC is kept and handed over with the next voice burst (A)
 static void test_late_entry(void)
 {
@@ -636,9 +637,8 @@ static void test_late_entry(void)
 	c.page2_before = call_lc;
 	c.same_lc_before = true;
 	late_run("same LC", &c, &r);
-	CHECK(sk.first_burst == 24 && r.cs.rx_voice_bursts == 96 - 23);
-	CHECK(eng.st.lc_n == 4 && strcmp(lc_tr(1), "Fs") == 0 && strcmp(lc_tr(2), "As") == 0 &&
-	      strcmp(lc_tr(3), "Fv") == 0);
+	CHECK(sk.first_burst == 19 && r.cs.rx_voice_bursts == 96 - 18);
+	CHECK(eng.st.lc_n == 3 && strcmp(lc_tr(1), "Fs") == 0 && strcmp(lc_tr(2), "Av") == 0);
 }
 
 // The CACH short LC (DMR_EV_SHORT_LC): read from page 2 0x2B-0x2F while both slots of a BS signal are received,

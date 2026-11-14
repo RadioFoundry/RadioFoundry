@@ -62,7 +62,7 @@ RIG = {
 }
 # the transmit frequencies among the other options (None when not given)
 TX_OPTIONS = ("dmr-freq", "fm-mhz", "aprs-test-mhz", "sfr-freq", "roam-rx", "roam-tx", "split-out-mhz",
-              "split-tx-mhz", "outbound-mhz", "am-mhz", "vhf-fm-mhz", "t3-tx-mhz")
+              "split-tx-mhz", "outbound-mhz", "am-mhz", "vhf-fm-mhz", "repeater-in-mhz", "t3-tx-mhz")
 
 
 def add_options(g):

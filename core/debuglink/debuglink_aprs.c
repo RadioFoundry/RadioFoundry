@@ -96,6 +96,11 @@ void debuglink_view_aprs(uint8_t part, dl_text_t *t)
 	dl_text(t, "aprs.rx_peak=%u\naprs.rx_bits=%u\naprs.rx_hdlc_frames=%u\naprs.rx_fcs_errors=%u\naprs.rx_aborts=%u\n"
 		"aprs.rx_start_fails=%u\n", rs.peak, (unsigned)rs.bits, (unsigned)rs.frames, (unsigned)rs.fcs_errors,
 		(unsigned)rs.aborts, (unsigned)rs.start_fails);
+	aprs_msg_t m;	// the newest message received (the inbox is small: its count stops at full)
+	if (aprs_msg_peek(0, &m)) {
+		dl_text_kv_str(t, "aprs.msg_from", m.from);
+		dl_text_kv_str(t, "aprs.msg_text", m.text);
+	}
 #endif
 }
 

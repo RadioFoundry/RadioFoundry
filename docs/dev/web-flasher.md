@@ -276,7 +276,7 @@ Which build runs (`update.js` `currentBuild`), from VERSION ([debuglink.md](../s
 |---|---|---|
 | `preset=` a variant, `off=` | that variant | the same variant; features it gained since are listed |
 | `preset=custom`, `off=` equal to a variant's | that variant | as above |
-| `preset=custom`, `off=` | custom | every switch as it was; each feature added since is asked, On or Off, before Update |
+| `preset=custom`, `off=` | custom | every switch as it was; each feature added since is asked, On or Off, before Update. A switch a kept feature now needs comes on with it and is listed. A feature it had on that now needs what the radio can't have is listed with that need (`Selection.blockers`); the user disables them or edits the build |
 | neither (older firmware) | its `features=` against the variants of its release, by the names `features=` can carry (`features.json` `reported`) | one exact match: that variant; else the build step, from the closest |
 
 The release a radio's build came from is the one with its commit, else the newest one older than its `git_time`. What
