@@ -431,7 +431,16 @@ PABXI, LINEI or DISPATI (or their offset-timing addresses, A.4) carries no calle
 | the same to a talkgroup the radio listens to | kept, not answered |
 
 Built with `CONFIG_DMR_TRUNK_GW`. Without it a request to a dialling gateway is refused and a caller's number is
-dropped unanswered. Only the debug link sets the digits so far (DIAL, [debuglink.md](debuglink.md)).
+dropped unanswered. Two places set the digits of the system in use: the debug link (DIAL,
+[debuglink.md](debuglink.md)) and Find (`radio_req_t3_dial`, up to 16 digits; a new start drops them).
+
+| On screen | |
+|---|---|
+| Find, digits typed on a trunked system | a last row "Phone call 5551234": the digits go to the radio at once, PTT on the row calls PSTNI privately (one call), OK makes PSTNI the talk target for now. No actions, never the channel's own target |
+| a call from a dialling gateway | the caller's number in place of the gateway's ID, on the call screen and in the private call notice; "Phone line" when the gateway gave none |
+
+The number belongs to a call when the grant from that gateway to the same destination comes within `T3_CLI_CALL_MS`
+(10 s) of it (`t3_call_t.cli`): the TSCC downloads it in the call set-up (figure 6.45).
 
 The download doesn't carry the sender (figures 6.38, 6.39), so the radio holds it until the call does. A repeat within
 `T3_REPEAT_MS` is answered again and keeps a sender already named. On the radio the debug link stages the data (`SUPL`,
@@ -750,7 +759,6 @@ on its voice, and never camps on another system or on a control channel that isn
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
 | Supplementary data in the codeplug (only the debug link stages it), a list subscription without registering | later |
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
-| Dialling a gateway from the keypad, the caller's number on screen | later |
 | Power save: the receiver off while asleep on boards without `rx_sleep_dmr` | each board's `rx_sleep` on a DMR channel |
 | The interrupted talker's side: the reverse channel's cease command while transmitting (6.4.15.2) | reverse channel reception in the modem drivers |
 

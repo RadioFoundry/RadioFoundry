@@ -37,4 +37,20 @@ void radio_t3_fix(radio_t3_setup_t *s)
 #endif
 }
 
+#if CONFIG_DMR_TRUNK_GW
+void radio_t3_dial_args(const char *digits, uint32_t w[2])
+{
+	w[0] = w[1] = 0xFFFFFFFFu;
+	for (unsigned i = 0; i < 16u && digits != NULL; i++) {
+		char c = digits[i];
+		uint32_t n = c >= '0' && c <= '9' ? (uint32_t)(c - '0') : c == '*' ? 0xAu : c == '#' ? 0xBu : 0xFu;
+		if (n == 0xFu) {
+			break;
+		}
+		unsigned sh = 28u - 4u * (i % 8u);
+		w[i / 8u] = (w[i / 8u] & ~(0xFu << sh)) | n << sh;
+	}
+}
+#endif
+
 #endif

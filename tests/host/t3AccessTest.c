@@ -2685,6 +2685,40 @@ static void test_dial(void)
 	cfg.dial_n = 0;
 }
 
+// A gateway's caller number belongs to the call it precedes (figure 6.45): the grant from that gateway to the same
+// destination within T3_CLI_CALL_MS. Later, or from another source, the call has no number
+static void test_cli_call(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+	static const uint8_t num[4] = { 0x55, 0x51, 0x23, 0x4F };	// 5551234
+	t3_udt_t d = { .op = T3_OP_C_UDTHD, .a = true, .sf = true, .format = T3_UDTF_BCD, .dst = OWN, .src = T3_ID_PSTNI };
+	struct {
+		uint32_t src;
+		int wait;	// frames between the number and the grant
+		bool cli;
+		const char *what;
+	} c[] = {
+		{ T3_ID_PSTNI, 4, true, "the gateway's call: its number" },
+		{ T3_ID_PSTNI, 170, false, "granted 10.2 s after the number: none" },
+		{ T3_ID_PABXI, 4, false, "another gateway's call: none" },
+		{ CALLER, 4, false, "a radio's call: none" },
+	};
+	for (unsigned i = 0; i < sizeof c / sizeof c[0]; i++) {
+		udt_down(&ms, 1, &d, num, sizeof num, false);
+		frames(&ms, c[i].wait);
+		t3_csbk_t g = grant(T3_OP_PV_GRANT, 999, 1, OWN, c[i].src);
+		rx(&ms, 1, &g);
+		CHECK(ms.state == T3_FOLLOW && ms.call.cli == c[i].cli, "%s (state %d, cli %d)", c[i].what, ms.state,
+		      ms.call.cli);
+		t3_ms_end_call(&ms, T);
+		frames(&ms, 6);
+		CHECK(ms.state == T3_CAMPED, "camped again");
+		frames(&ms, 140);	// past T3_REPEAT_MS: the next number is a new one
+	}
+}
+
 // Camped on a TSCC that uses slot 1 only, the carrier's slot 2 is a payload channel: its P_AHOY (C_AHOY's opcode) is
 // not the TSCC's and gets no answer. An Aloha on slot 2 makes it a control slot too
 static void test_other_slot(void)
@@ -2742,6 +2776,7 @@ int main(void)
 	test_sdata();
 	test_supl();
 	test_dial();
+	test_cli_call();
 	test_pdata();
 	test_pdata_ip();
 	test_ip_advice();

@@ -96,6 +96,10 @@ On an FM channel **Talk target** shows "Talk target: DMR channels only".
 On Home, type the number. Find lists "Talk to TG 3100" and "Private call 3100" (with a name when the ID is a contact).
 Focus one and press **PTT** for one call, or **OK** for now.
 
+On a trunked channel, Find also lists "Phone call 5551234" last: **PTT** on it calls that number through the system's
+telephone gateway (the system refuses it when it has none). A call from the telephone network shows the caller's number, or "Phone line"
+when the system didn't send one.
+
 ## Replying
 
 After a call the radio played, the reply window opens. During the window **PTT** answers the call. A group call is

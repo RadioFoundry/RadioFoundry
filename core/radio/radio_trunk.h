@@ -85,6 +85,11 @@ radio_t3_setup_t *radio_t3_staged(void);
 void radio_t3_reset(radio_t3_setup_t *s);
 // Point cfg's internal pointers into s (after a copy)
 void radio_t3_fix(radio_t3_setup_t *s);
+#if CONFIG_DMR_TRUNK_GW
+// RREQ_T3_DIAL's two arguments for digits ("0-9*#", the first 16; another character ends them): 16 BCD nibbles,
+// the first in w[0]'s top one, 0xF after the last (B.3.3)
+void radio_t3_dial_args(const char *digits, uint32_t w[2]);
+#endif
 // The name check of a channel name (12.4): FNV-1a over it NUL padded to 16 octets, the halves XORed
 uint16_t radio_t3_name_check(const char *name);
 // Channel c's tag; false when it has none, or its name check doesn't match name (the channel's)

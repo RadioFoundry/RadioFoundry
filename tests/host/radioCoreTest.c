@@ -5886,6 +5886,74 @@ static void test_t3_radio_check(void)
 	sim.repeater = false;
 }
 
+#if CONFIG_DMR_TRUNK_GW
+// Digits from the UI (RREQ_T3_DIAL) go to the system in use: PTT to the PSTN gateway asks for the call, and the
+// digits go up when the gateway asks; an empty string drops them, and the call is refused again
+static void test_t3_dial(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	uint32_t w[2];
+	radio_t3_dial_args("5551234", w);
+	CHECK(w[0] == 0x5551234Fu && w[1] == 0xFFFFFFFFu);
+	radio_t3_dial_args("0123456789*#01234567", w);	// the first 16
+	CHECK(w[0] == 0x01234567u && w[1] == 0x89AB0123u);
+	radio_t3_dial_args("5551234", w);
+	radio_req_t r = { RREQ_T3_DIAL, (int32_t)w[0], w[1] };
+	radio_sm_request(&sm, &r, now);
+	req(RREQ_DMR_TARGET, (int32_t)((1u << 24) | T3_ID_PSTNI));
+	unsigned from = sim.air_count;
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_IND_VOICE, &q) && q.u.rand.dst == T3_ID_PSTNI);
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_VOICE;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = T3_ID_PSTNI;
+	from = sim.air_count;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(400);
+	int hdr = -1;
+	for (unsigned i = from; i < sim.air_count && hdr < 0; i++) {
+		hdr = sim.air[i].kind == DMR_BURST_DATA_HEADER ? (int)i : -1;
+	}
+	CHECK(hdr >= 0 && (unsigned)hdr + 1u < sim.air_count);
+	if (hdr >= 0 && (unsigned)hdr + 1u < sim.air_count) {
+		t3_udt_t u;
+		CHECK(t3_udt_parse(sim.air[hdr].payload, &u) && u.sf && u.dst == T3_ID_PSTNI && u.format == T3_UDTF_BCD);
+		CHECK(memcmp(sim.air[hdr + 1].payload, "\x55\x51\x23\x4f", 4) == 0);
+	}
+	req(RREQ_PTT, 0);
+	t3_site_run(3000);
+
+	// The focused row's target (one call) goes before the one chosen for now
+	req(RREQ_DMR_FOCUS, (int32_t)((1u << 24) | 1000001u));
+	from = sim.air_count;
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	CHECK(t3_rand_since(from, T3_SK_IND_VOICE, &q) && q.u.rand.dst == 1000001u);
+	req(RREQ_PTT, 0);
+	req(RREQ_DMR_FOCUS, 0);
+	t3_site_run(3000);
+
+	// No digits: refused, nothing asked for
+	radio_t3_dial_args("", w);
+	r = (radio_req_t){ RREQ_T3_DIAL, (int32_t)w[0], w[1] };
+	radio_sm_request(&sm, &r, now);
+	from = sim.air_count;
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	CHECK(!t3_rand_since(from, T3_SK_IND_VOICE, &q));
+	req(RREQ_PTT, 0);
+	req(RREQ_DMR_TARGET_CLEAR, 0);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+#endif
+
 // A selective clear on a payload slot of the TSCC's own carrier (6.6.2.3.2.7): the P_ACKU goes out on that slot before
 // the radio returns, and once back on the TSCC the radio ignores the clear's repeats on the payload slot
 static void test_t3_clear_slot(void)
@@ -6824,6 +6892,9 @@ int main(void)
 	test_t3_sdata();
 	test_t3_radio_check();
 	test_t3_clear_slot();
+#if CONFIG_DMR_TRUNK_GW
+	test_t3_dial();
+#endif
 	test_t3_pdata();
 	test_t3_emergency();
 	test_t3_broadcast();

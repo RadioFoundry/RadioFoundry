@@ -983,6 +983,10 @@ msgid "Create contact "
 msgstr "新建联系人 "
 
 #: core/ui/ui_find.c
+msgid "Phone call "
+msgstr "电话 "
+
+#: core/ui/ui_find.c
 msgid "Menu"
 msgstr "菜单"
 
@@ -3477,6 +3481,10 @@ msgstr "请调离该频段"
 #: core/ui/ui_screens.c
 msgid "Pick a user channel to talk"
 msgstr "请选用户信道通话"
+
+#: core/ui/ui_screens.c
+msgid "Phone line"
+msgstr "电话"
 
 #: core/ui/ui_screens.c
 msgid "Private to you"

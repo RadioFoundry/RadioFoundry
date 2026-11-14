@@ -80,6 +80,7 @@
 #define T3_N_MAINT		4	// P_MAINT bursts at the end of a call we end
 #define T3_REG_RETRY_MS		30000	// a registration nobody answered is tried again after this
 #define T3_REG_TG_DELAY_MS	1000	// talkgroups changed: register with them once they stay this long
+#define T3_CLI_CALL_MS		10000	// a gateway's caller number belongs to its call granted this soon after
 #define T3_REPEAT_MS		4000	// a status or short data the same as the last heard this soon is the TSCC's repeat
 #define T3_SUPL_HOLD_MS		10000	// supplementary data waits this long for the call that names its sender
 #define T3_DIAL_MAX		44	// dialled digits through a gateway (the Proxy Flag's most, 6.6.2.1.2)
@@ -235,6 +236,7 @@ typedef struct {
 	bool als;		// an Ambient Listening call to the radio: it transmits until als_end (6.6.2.6.3)
 	bool als_ours;		// an Ambient Listening call the radio asked for: it listens
 	uint32_t als_end;
+	bool cli;		// a gateway's call whose caller's number (t3_ms_t.cli) came just before it (figure 6.45)
 } t3_call_t;
 
 #define T3_RA_LOG	4

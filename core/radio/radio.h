@@ -336,6 +336,7 @@ typedef struct {
 #if CONFIG_DMR_TRUNK_GW
 	// The last caller's number a gateway sent (CLI): cli_n BCD digits, the first in the high nibble
 	bool cli_group;
+	bool call_cli;		// the call followed is that gateway's, and the number is its caller's
 	uint8_t cli_n;
 	uint8_t cli_bcd[22];	// T3_DIAL_MAX / 2
 	uint32_t cli_count, cli_gw, cli_dst, cli_ms;
@@ -578,6 +579,9 @@ void radio_req_roam(uint8_t cmd);
 void radio_req_t3(uint8_t cmd);
 // Poll MS dst for its short data (dmr-trunking.md 7.6): the reply comes as a message; t3.poll_fails counts failures
 void radio_req_t3_poll(uint32_t dst);
+// The digits ("0-9*#", up to 16; "" none) the next call through a dialling gateway sends (dmr-trunking.md 7.6;
+// CONFIG_DMR_TRUNK_GW, else ignored). The system in use only: a new start drops them
+void radio_req_t3_dial(const char *digits);
 // A beep (radio/beep.h beep_t) at the settings' level: key beeps only when key_beep is set (CONFIG_BEEP)
 void radio_req_beep(uint8_t beep);
 // The same delay_ms later (0 = now): a speaker test can start on a radio whose cable mutes the speaker, after the

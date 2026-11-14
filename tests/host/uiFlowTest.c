@@ -606,6 +606,21 @@ static const flow_t flows[] = {
 	{ "T no poll on a conventional channel", "9 9 9 1 2 3 4 ctx", "up", "screen=actions hides=Poll_short_data", 1, false },
 	{ "T a poll sent", "t3 dlpos:3 9 9 9 1 2 3 4 ctx", "9", "screen=home toast=Polling_Q1ABC_Joe...", 1, false },
 	{ "T a poll with no answer", "t3 dlpos:3", "t3state:pollfail", "toast=Poll:_no_short_data", 0, false },
+#if CONFIG_DMR_TRUNK_GW
+	// Telephone calls through the PSTN gateway (dmr-trunking.md 7.6): a typed number on a trunked system, last in Find
+	{ "T Find offers a phone call on a trunked system", "t3 dlpos:3", "5 5 5 1 2 3 4",
+	  "screen=find shows=Phone_call_5551234 dial=5551234", 7, false },
+	{ "T no phone call on a conventional channel", "", "5 5 5 1 2 3 4", "screen=find hides=Phone_call dial=", 7, false },
+	{ "T PTT on the phone call row calls the gateway", "t3 dlpos:3 5 5 5 1 2 3 4", "up",
+	  "focus=Phone_call focusid=16776896", 1, false },
+	{ "T OK on it talks to the gateway", "t3 dlpos:3 5 5 5 1 2 3 4", "up ok",
+	  "screen=home talk=16776896 toast=Talking_to_5551234", 2, false },
+	{ "T no actions on a phone call", "t3 dlpos:3 5 5 5 1 2 3 4 up", "ctx", "screen=find toast=No_actions", 1, false },
+	{ "T a gateway call shows the caller's number", "t3 dlpos:3 t3state:follow t3cli:8005551212", "rx:16776896,1,p",
+	  "shows=8005551212 hides=16776896", 0, false },
+	{ "T a gateway call without a number", "t3 dlpos:3 t3state:follow", "rx:16776896,1,p",
+	  "shows=Phone_line hides=16776896", 0, false },
+#endif
 #endif
 	{ "A APRS RF keeps Home with a TX APRS pill", "", "aprstx",
 	  "screen=home shows=TX_APRS shows=SENDING hides=144.390 hides=0:00 hides=left_of", 0, false },

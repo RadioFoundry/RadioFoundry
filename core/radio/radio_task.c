@@ -7,6 +7,7 @@
 #include <string.h>
 #include "radio/radio.h"
 #include "radio/radio_sm.h"
+#include "radio/radio_trunk.h"
 #include "hal_time.h"
 #include "config.h"
 #if CONFIG_HOTSPOT
@@ -450,6 +451,16 @@ void radio_req_vibrate(uint8_t pattern) { post(RREQ_VIBRATE, pattern, 0); }
 void radio_req_roam(uint8_t cmd) { post(RREQ_ROAM, cmd, 0); }
 void radio_req_t3(uint8_t cmd) { post(RREQ_T3, cmd, 0); }
 void radio_req_t3_poll(uint32_t dst) { post_pair(RREQ_T3_POLL, 0, dst, 0); }
+void radio_req_t3_dial(const char *digits)
+{
+#if CONFIG_DMR_TRUNK_GW
+	uint32_t w[2];
+	radio_t3_dial_args(digits, w);
+	post_pair(RREQ_T3_DIAL, (int32_t)w[0], w[1], 0);
+#else
+	(void)digits;
+#endif
+}
 // A lost release would leave the burst keyed until the time-out
 void radio_req_tone_burst(bool on, uint32_t max_ms) { post_pair(RREQ_TONE_BURST, on, max_ms, pdMS_TO_TICKS(50)); }
 void radio_req_tone_burst_key(bool down) { post(RREQ_TONE_BURST_KEY, down, pdMS_TO_TICKS(50)); }

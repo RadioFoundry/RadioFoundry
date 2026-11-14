@@ -51,6 +51,8 @@ WEAK bool ui_svc_roam(uint8_t cmd) { (void)cmd; return false; }
 WEAK int ui_svc_t3_channel(uint16_t num, const char *name, bool *usable) { (void)num; (void)name; (void)usable; return -1; }
 WEAK bool ui_svc_t3_name(uint8_t n, char *name) { (void)n; name[0] = '\0'; return false; }
 WEAK void ui_svc_t3_poll(uint32_t id) { (void)id; }
+WEAK void ui_svc_t3_dial(const char *digits) { (void)digits; }
+WEAK bool ui_svc_t3_cli(uint32_t gw, char *out, size_t len) { (void)gw; (void)out; (void)len; return false; }
 #endif
 WEAK bool ui_svc_scan_skip(void) { return false; }
 WEAK bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel) { (void)ref; (void)sel; return false; }

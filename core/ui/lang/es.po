@@ -981,6 +981,10 @@ msgid "Create contact "
 msgstr "Crear contacto "
 
 #: core/ui/ui_find.c
+msgid "Phone call "
+msgstr "Llamada telefónica "
+
+#: core/ui/ui_find.c
 msgid "Menu"
 msgstr "Menú"
 
@@ -3475,6 +3479,10 @@ msgstr "Sal de la banda"
 #: core/ui/ui_screens.c
 msgid "Pick a user channel to talk"
 msgstr "Elige un canal de usuario"
+
+#: core/ui/ui_screens.c
+msgid "Phone line"
+msgstr "Línea telefónica"
 
 #: core/ui/ui_screens.c
 msgid "Private to you"

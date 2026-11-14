@@ -1154,6 +1154,19 @@ void ui_svc_t3_poll(uint32_t id)
 	(void)id;
 	view.t3.polls++;
 }
+// The digits staged for a gateway call ("dial" check), and the caller's number "t3cli:" gives the gateway 0xFFFEC0
+static char t3_dial_digits[17], t3_cli_digits[17];
+void ui_svc_t3_dial(const char *digits)
+{
+	snprintf(t3_dial_digits, sizeof t3_dial_digits, "%s", digits);
+}
+bool ui_svc_t3_cli(uint32_t gw, char *out, size_t len)
+{
+	if (gw != 0xFFFEC0u || len == 0 || !view.t3.on)
+		return false;
+	snprintf(out, len, "%s", view.t3.state == T3_FOLLOW ? t3_cli_digits : "");
+	return true;
+}
 static void t3_view(void)
 {
 	bool usable = false;
@@ -2229,6 +2242,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 #if CONFIG_DMR_TRUNK
 	t3_tagged = false;
 	memset(&view.t3, 0, sizeof view.t3);
+	t3_dial_digits[0] = t3_cli_digits[0] = 0;
 #endif
 	n_edits = 0;
 	n_ct_edits = 0;
@@ -2485,6 +2499,9 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "hearall") == 0) snprintf(got, sizeof got, "%u", view.dmr.hear_all_latch);
 	else if (strcmp(key, "vox") == 0) snprintf(got, sizeof got, "%u", view.vox_on);
 	else if (strcmp(key, "focusid") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.dmr.focus_id);
+#if CONFIG_DMR_TRUNK
+	else if (strcmp(key, "dial") == 0) snprintf(got, sizeof got, "%s", t3_dial_digits);
+#endif
 	else if (strcmp(key, "longpress") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.long_press_ms);
 	else if (strcmp(key, "monitor") == 0) snprintf(got, sizeof got, "%u", view.monitor);
 	else if (strcmp(key, "beeps") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.beeps);
@@ -2801,6 +2818,10 @@ static bool run_token(char *t, char *err, size_t len)
 		t3_tagged = true;
 		t3_view();
 		serial++;
+		return true;
+	}
+	if (strcmp(t, "t3cli") == 0) {		// the next call from the PSTN gateway gives this caller's number
+		snprintf(t3_cli_digits, sizeof t3_cli_digits, "%s", arg != NULL ? arg : "");
 		return true;
 	}
 	if (strcmp(t, "t3state") == 0 && arg != NULL && view.t3.sys != 0) {	// hunt, follow, refused, fallback, back

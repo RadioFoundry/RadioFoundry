@@ -415,6 +415,11 @@ static void follow(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_chan_
 	ms->call.slot = g->slot;
 	ms->call.start_ms = now;
 	ms->call.ours = is_me(ms, g->src);
+#if CONFIG_DMR_TRUNK_GW
+	// The CLI download comes in the call set-up, just before the grant (6.6.4.2, figure 6.45)
+	ms->call.cli = ms->cli.ms != 0 && !since(now, ms->cli.ms, T3_CLI_CALL_MS) && ms->cli.gw == g->src &&
+		       ms->cli.dst == g->dst && ms->cli.group == group;
+#endif
 	ms->call.data = p->op == T3_OP_PD_GRANT || p->op == T3_OP_TD_GRANT || p->op == T3_OP_PD_GRANT_MI ||
 			p->op == T3_OP_TD_GRANT_MI;
 	// The private grant after an accepted ALS radio check, same caller, in time: an ALS call (6.6.2.6.2)

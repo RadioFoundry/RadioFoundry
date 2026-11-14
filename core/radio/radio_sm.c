@@ -2756,10 +2756,10 @@ static uint32_t t3_base_talk_id(bool *group)
 	return s->cfg.ntg != 0 ? s->cfg.tg[0].id : 0;
 }
 
-// PTT's target: in emergency, the emergency target
+// PTT's target: in emergency, the emergency target; else the focused row's (one call), the one chosen for now, the
+// system's own, as on a conventional channel
 static uint32_t t3_talk_id(const radio_sm_t *sm, bool *group)
 {
-	(void)sm;
 #if CONFIG_DMR_EMERGENCY
 	if (dmr_emergency_in_progress()) {
 		uint32_t id;
@@ -2771,6 +2771,14 @@ static uint32_t t3_talk_id(const radio_sm_t *sm, bool *group)
 		}
 	}
 #endif
+	if (sm->focus_id != 0) {
+		*group = !sm->focus_private;
+		return sm->focus_id;
+	}
+	if (sm->manual) {
+		*group = !sm->manual_private;
+		return sm->manual_id;
+	}
 	return t3_base_talk_id(group);
 }
 #endif
@@ -2869,6 +2877,7 @@ static void t3_publish(radio_sm_t *sm)
 #if CONFIG_DMR_TRUNK_GW
 	v->cli_count = m->cli.count;
 	v->cli_gw = m->cli.gw;
+	v->call_cli = m->call.cli;
 	v->cli_dst = m->cli.dst;
 	v->cli_group = m->cli.group;
 	v->cli_n = m->cli.n;
@@ -2934,6 +2943,26 @@ static uint8_t t3_stun_word(uint8_t sys, uint8_t model, uint16_t net)
 
 // A short data poll from the menus (6.6.5): the system's prearranged format and size; the answer comes as short data
 // (into the inbox, t3_sd_inbox). A poll that can't start, is refused or goes unanswered counts in poll_fails
+#if CONFIG_DMR_TRUNK_GW
+// RREQ_T3_DIAL: the 16 BCD nibbles radio_req_t3_dial packs, into the system in use (the engine reads cfg.dial when
+// the gateway asks); a new start copies the staged system's digits again
+static void t3_dial(int32_t a, uint32_t b)
+{
+	uint32_t w[2] = { (uint32_t)a, b };
+	uint8_t n = 0;
+	memset(t3s.dial, 0xFF, sizeof t3s.dial);
+	while (n < 16u) {
+		uint8_t d = (uint8_t)(w[n / 8u] >> (28u - 4u * (n % 8u)) & 0xFu);
+		if (d > 0xBu) {
+			break;
+		}
+		t3s.dial[n / 2u] = (uint8_t)(n & 1u ? (t3s.dial[n / 2u] & 0xF0u) | d : (d << 4) | 0x0Fu);
+		n++;
+	}
+	t3s.cfg.dial_n = n;
+}
+#endif
+
 static void t3_poll(radio_sm_t *sm, uint32_t dst, uint32_t now_ms)
 {
 	radio_t3v.polls++;
@@ -6938,6 +6967,11 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		break;
 	case RREQ_T3_POLL:
 		t3_poll(sm, req->arg2, now_ms);
+		break;
+	case RREQ_T3_DIAL:
+#if CONFIG_DMR_TRUNK_GW
+		t3_dial(req->arg, req->arg2);
+#endif
 		break;
 #endif
 	case RREQ_POWER_OFF:

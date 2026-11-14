@@ -585,7 +585,7 @@ static void station(sbuf_t *b, const ui_event_t *ev)
 	name_mark = b->p;
 	if (ev->name[0])
 		sb_str(b, ev->name);
-	else
+	else if (!ui_sb_gw_caller(b, ev->id))
 		sb_u32(b, ev->id, 1);
 }
 

@@ -20,6 +20,9 @@
 #include "i18n.h"
 #include "codeplug/codeplug.h"
 #include "config.h"
+#if CONFIG_DMR_TRUNK_GW
+#include "dmr/trunk/t3_pdu.h"
+#endif
 
 #define FIND_KEYS	12
 #define FIND_MAX	16
@@ -43,7 +46,7 @@ static const struct {
 };
 #define PLACES_N	((uint8_t)(sizeof places / sizeof places[0]))
 
-typedef enum { FR_CHANNEL, FR_ZONE, FR_CONTACT, FR_TG, FR_PRIVATE, FR_SETTING, FR_PLACE, FR_FREQ, FR_NEW_CONTACT }
+typedef enum { FR_CHANNEL, FR_ZONE, FR_CONTACT, FR_TG, FR_PRIVATE, FR_SETTING, FR_PLACE, FR_FREQ, FR_NEW_CONTACT, FR_PHONE }
 	find_kind_t;
 
 typedef struct {
@@ -244,6 +247,14 @@ void ui_find_run(void)
 			add(FR_NEW_CONTACT, num);
 	}
 #endif
+#if CONFIG_DMR_TRUNK_GW
+	// On a trunked system, the digits as a telephone number: a private call to the PSTN gateway, which asks for them
+	// (dmr-trunking.md 7.6). The radio holds the digits from now, so PTT on the row sends them
+	if (v->t3.on) {
+		add(FR_PHONE, 0);
+		ui_svc_t3_dial(query);
+	}
+#endif
 }
 
 void ui_find_set(const char *q)
@@ -286,6 +297,12 @@ static bool find_target(uint16_t i, ui_target_t *t)
 		t->id = r->ref;
 		t->group = true;
 		return true;
+#if CONFIG_DMR_TRUNK_GW
+	case FR_PHONE:
+		t->id = T3_ID_PSTNI;
+		str_copy(t->name, sizeof t->name, query);
+		return true;
+#endif
 	case FR_PRIVATE: {
 		t->id = r->ref;
 #if CONFIG_DMR
@@ -368,6 +385,10 @@ static void find_item(uint16_t i, ui_item_t *it)
 		sb_str(&b, TR("Create contact "));
 		sb_u32(&b, r->ref, 1);
 		break;
+	case FR_PHONE:
+		sb_str(&b, TR("Phone call "));
+		sb_str(&b, query);
+		break;
 	case FR_SETTING: {
 		const char *syn;
 		sb_str(&b, tr(ui_set_item_name((uint8_t)(r->ref >> 8), (uint8_t)r->ref, &syn)));
@@ -423,6 +444,10 @@ static void find_select(uint16_t i, bool hold)
 		if (find_target(i, &t))
 			ui_talk(&t, hold);
 		break;
+	case FR_PHONE:
+		if (find_target(i, &t))
+			ui_talk(&t, false);	// a gateway with these digits: never the channel's own target
+		break;
 	case FR_SETTING:
 		ui_open_setting((uint8_t)(r->ref >> 8), (uint8_t)r->ref);
 		break;
@@ -437,7 +462,7 @@ static void find_select(uint16_t i, bool hold)
 static void find_context(uint16_t i)
 {
 	ui_target_t t;
-	if (find_target(i, &t))
+	if (i < n_results && results[i].kind != FR_PHONE && find_target(i, &t))
 		ui_open_actions(&t);
 	else
 		ui_toast(TR("No actions for this result"));
