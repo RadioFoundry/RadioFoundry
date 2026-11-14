@@ -596,6 +596,17 @@ TESTS   += micGainTest
 micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
 
+# The debug link's Tier III view sections (core/debuglink/debuglink_t3.c): each fits a reply at its widest
+TESTS   += t3ViewTest
+t3ViewTest: t3ViewTest.c $(CORE)/debuglink/debuglink_t3.c $(CORE)/debuglink/dl_fmt.c $(wildcard $(CORE)/debuglink/*.h) \
+	    $(CORE)/radio/radio.h $(CORE)/radio/radio_trunk.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ t3ViewTest.c $(CORE)/debuglink/debuglink_t3.c $(CORE)/debuglink/dl_fmt.c
+
+run: run-t3view
+run-t3view: t3ViewTest
+	./t3ViewTest
+.PHONY: run-t3view
+
 # The debug link's hardware options command (core/debuglink/debuglink_hwopt.c), with options and without
 TESTS   += hwoptTest hwoptTestNone
 HWOPTT  := hwoptTest.c $(CORE)/debuglink/debuglink_hwopt.c $(CORE)/debuglink/dl_fmt.c

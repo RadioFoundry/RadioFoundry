@@ -50,9 +50,11 @@ enum {
 	DL_VIEW_BOARD,		// the board's own keys (board.view_line): pins, ADC, clock, flash, calibration
 	DL_VIEW_AUDIO,		// the beeps' speaker route: stream, lead-in, amplifier hang
 	DL_VIEW_T3,		// a Tier III trunked system: engine state, call, access, counters (debuglink_t3.c)
-	DL_VIEW_T3_SVC,		// its services: the last status and short data heard (its own section: t3 fills a reply)
+	DL_VIEW_T3_SVC,		// its services: polls, stun, power save, DGNA (its own section: t3 fills a reply)
 	DL_VIEW_T3_ROAM,	// its roaming: level, adjacent sites, Vote Now
 	DL_VIEW_VOICE_CAP,	// the voice frames captured (RADIO op 39)
+	DL_VIEW_T3_MSG,		// Tier III: the last status, short data, caller number, supplementary data heard
+	DL_VIEW_T3_RA,		// Tier III: random access bursts and their answers, the TX to RX turnaround
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		5	// bumped when a key changes meaning or goes away (new keys don't bump it)
@@ -171,6 +173,8 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 void debuglink_view_t3(const radio_view_t *v, dl_text_t *t);
 void debuglink_view_t3_svc(const radio_view_t *v, dl_text_t *t);
 void debuglink_view_t3_roam(const radio_view_t *v, dl_text_t *t);
+void debuglink_view_t3_msg(const radio_view_t *v, dl_text_t *t);
+void debuglink_view_t3_ra(const radio_view_t *v, dl_text_t *t);
 
 // The radio transmits: a call, or the hotspot (the gate of REBOOT and CHIP_REG's SoC writes). The debug link task only
 bool debuglink_transmitting(void);

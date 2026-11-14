@@ -347,9 +347,11 @@ short. View 5: the `cps.*` and `cpsf.*` keys moved from `storage` to `cps` (27),
 | 28 | `board` | `board.name`, then the board's own keys, each as `board.<key>` (`board.view_line`): bring-up readings such as pin levels, raw ADC values, the clock that started and the flash ID. The keys are listed in the radio's hardware spec; a board without its own keys sends only `board.name` |
 | 29 | `audio` | the beeps' speaker route (`radio-features.md` 4): `beep.shared` (patterns mixed into the DMR voice stream) `beep.leads` (silent lead-in blocks played on a beep's own stream) `beep.warm` (1: the amplifier is held powered, `hal_audio_t.speaker_hang_s`) `beep.warms` (times it was powered up for that), these four only with CONFIG_BEEP; and on a board that counts them (`hal_audio_t.stream_stats`), the PCM stream's timing since boot: `audio.blocks` (blocks filled) `audio.late` (a block's turn came before it was filled: the speaker played its old contents, the sound before it, again) `audio.dropped` (blocks skipped, a whole block late) |
 | 30 | `t3` | a Tier III trunked system: the engine's state, call, access and counters (3.26) |
-| 31 | `t3_svc` | its services: a poll's answer, the radio's status, the last status and short data heard (3.26) |
+| 31 | `t3_svc` | its services: a poll's answer, the radio's status, stun, power save, DGNA (3.26) |
 | 32 | `t3_roam` | its roaming: the level, the adjacent sites, Vote Now and the weak control channel leave (3.26) |
 | 33 | `voice_cap` | the voice frames captured (RADIO op 39): `vcap.built vcap.want vcap.count` and `vcap.frames`, comma separated in order, each 18 hex digits as on air (ETSI TS 102 361-1 bit order) or `L` for a lost frame. Built without `CONFIG_VOICE_CAPTURE`: `vcap.built=0` |
+| 34 | `t3_msg` | Tier III: the last status, short data, caller number and supplementary data heard (3.26) |
+| 35 | `t3_ra` | Tier III: the last random access bursts and their answers, the TX to RX turnaround (3.26) |
 
 With `CONFIG_KEY_ASSIGN` and at least one assignable key, `link` also reports `key.first.bit` (the first
 `board.side_keys` entry, for KEY kind 1) and `key.first.press` (its saved `keyfn_t`, [ui.md](ui.md#31-key-assignment)).
@@ -877,16 +879,10 @@ The `t3` view section has the engine's state as the radio core last published it
 `ax_state`, `ax_result`, `ax_reason`, `ptt_wait`, `can_talk`); the last CSBK heard and sent (`last_rx_op`,
 `last_rx_slot`, `last_rx_age_ms`, `last_tx_op`, `last_tx_age_ms`, `last_tx` in hex; age -1: none); counters (`ticks`,
 `csbk`, `crc_bad`, `grants`, `followed`, `unmapped`, `last_unmapped`, `returns`, `hunts`, `foreign`, `learned`, `sent`,
-`ra_tries`, `send_fail`, `at_known`, `at_busy`); the TX→RX turnaround, from the end of a transmission to the first
-burst heard on the same channel (`turns`, `turn_ms` the last, `turn_max_ms`, `turn_slow` those over 90 ms: an answer
-at +4 slots, 120 ms after an access began, comes after the radio is back on receive only under that); `lent`, the
+`ra_tries`, `send_fail`, `at_known`, `at_busy`); `lent`, the
 short LCs heard while camped that say the TSCC's slot is lent to a call (a composite TSCC). The `t3_svc` section, also `t3.`-prefixed, has the services:
 `ax_info` (the final acknowledgement's Response_Info: a poll's answer), `reg_tgs` and `reg_tg_ok` (the
-registration's talkgroup list: how many it sent, and which the site accepted, bit 6 the first), `nra` and `ra0` to
-`ra3` (the last random access bursts, oldest first, each `age_ms,tx_slot,rx_ms,frames,rx_slot,op,air_ms`: how long
-ago it went and in which slot, then the PDU that answered it: after how many ms and TDMA frames, in which slot, its
-opcode; `0,255,0,0x00` when nothing answered before the next try or the end; last, how long after the hand-over the
-stack reported it sent, 0 when it didn't), `call_data`
+registration's talkgroup list: how many it sent, and which the site accepted, bit 6 the first), `call_data`
 (the call followed is packet data), `pd_wait` (a data service transmission waits for its data channel), `polls` and
 `poll_fails` (short data polls from the menus, and those that got no answer: dmr-trunking.md 12.7), `ip_gw`
 (off-net IP goes through the system's IP gateway: dmr-trunking.md 7.7), `ip_advised` (the system took the radio's
@@ -895,12 +891,25 @@ IP address at registration), `stunned`,
 key itself is never shown), `auths` (challenges answered), `massregs`, `moves` (MassReg broadcasts and C_MOVEs taken), `ps_rq`, `ps_offset` (power save granted; 0 none), `asleep`, `sleeps` (the engine's power save sleep, and how often), `csc_valid` (the Common_Slot_Counter is known) `csc` (that of the last C_SYS_Parms taken),
 `slc_ok slc_bad` (CACH short LCs the modem reported since boot, good and bad CRC), `rx_off rx_offs rx_off_ms` (the
 receiver off for power save now, how many times, for how long in all), `ahoys ahoy_kind ahoy_src ahoy_age_ms` (C_AHOYs to
-the radio on the TSCC, and the last one's Service_Kind, source and age; -1 none), `dgnas` (DGNA downloads taken) `dgna` (the assigned talkgroups, comma separated) `dgna_onekey dgna_alias_tg` (0: none), `divert_to divert_group` (where the last call answered `diverted` was sent), `call_als als_calls` (an ALS call followed, how many), `killed kills` (killed by the system, until a restart) `tscc_auth_fails` (TSCC answers to the radio's challenge that failed), `own_status` (the radio's, sent in answer to a poll), and the last status heard (`st_count`,
+the radio on the TSCC, and the last one's Service_Kind, source and age; -1 none), `dgnas` (DGNA downloads taken) `dgna` (the assigned talkgroups, comma separated) `dgna_onekey dgna_alias_tg` (0: none), `divert_to divert_group` (where the last call answered `diverted` was sent), `call_als als_calls` (an ALS call followed, how many), `killed kills` (killed by the system, until a restart) `tscc_auth_fails` (TSCC answers to the radio's challenge that failed), `own_status` (the radio's, sent in answer to a poll).
+
+The `t3_msg` section, also `t3.`-prefixed, has what the radio heard last: the status (`st_count`,
 `st_src`, `st_dst`, `st_group`, `st_value`, `st_age_ms`); the last short data heard (`sd_count`, `sd_src`, `sd_dst`,
 `sd_group`, `sd_format`, `sd_len`, `sd_data` in hex, `sd_age_ms`); the last caller's number a gateway sent (`cli_count`, `cli_gw`, `cli_dst`, `cli_group`, `cli` as digits, `cli_age_ms`;
 `CONFIG_DMR_TRUNK_GW` only); the last supplementary user data heard (`supl_count`,
 `supl_src` (0 until a call names the sender), `supl_dst`, `supl_group`, `supl_format`, `supl_len`, `supl_data` in hex,
 `supl_age_ms`; `CONFIG_DMR_TRUNK_SUPL` only).
+
+The `t3_ra` section, also `t3.`-prefixed, has the random access timing: `nra` and `ra0` to `ra3` (the last random
+access bursts, oldest first, each `age_ms,tx_slot,rx_ms,frames,rx_slot,op,air_ms`: how long ago it went and in which
+slot, then the PDU that answered it: after how many ms and TDMA frames, in which slot, its opcode; `0,255,0,0x00`
+when nothing answered before the next try or the end; last, how long after the hand-over the stack reported it sent,
+0 when it didn't); the TX→RX turnaround, from the end of a transmission to the first burst heard on the same channel
+(`turns`, `turn_ms` the last, `turn_max_ms`, `turn_slow` those over 90 ms: an answer at +4 slots, 120 ms after an
+access began, comes after the radio is back on receive only under that).
+
+Each of these sections fits one reply with every field at its widest; a key that would not goes in a section of its
+own (`tests/host/t3ViewTest.c`).
 
 The `t3_roam` section, also `t3.`-prefixed ([dmr-trunking.md](dmr-trunking.md) 7.18): `level_dbm` (the tuned
 channel's averaged level, 0: none yet), `leave_dbm` (the threshold in force), `dmrla`, `reg_area` (the area registered

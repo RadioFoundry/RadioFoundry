@@ -338,8 +338,7 @@ static void t3_main(const radio_t3_view_t *x, void *ctx)
 		"t3.send_fail=%u\nt3.at_known=%u\nt3.at_busy=%u\n", (unsigned)x->returns, (unsigned)x->hunts,
 		(unsigned)x->foreign, (unsigned)x->learned, (unsigned)x->sent, (unsigned)x->ra_tries,
 		(unsigned)x->send_fail, (unsigned)x->at_known, (unsigned)x->at_busy);
-	dl_text(t, "t3.turns=%u\nt3.turn_ms=%u\nt3.turn_max_ms=%u\nt3.turn_slow=%u\nt3.lent=%u\n", (unsigned)x->turns,
-		x->turn_ms, x->turn_max_ms, (unsigned)x->turn_slow, (unsigned)x->lent);
+	dl_text(t, "t3.lent=%u\n", (unsigned)x->lent);
 }
 #endif
 
@@ -405,20 +404,10 @@ static void t3_svc(const radio_t3_view_t *x, void *ctx)
 {
 	dl_text_t *t = ctx;
 	uint32_t now = hal_millis();
-	// Status (6.6.6): a poll's answer, the radio's own, the last one heard (age -1: none)
-	dl_text(t, "t3.ax_info=%u\nt3.own_status=%u\nt3.st_count=%u\nt3.st_src=%u\nt3.st_dst=%u\nt3.st_group=%u\n"
-		"t3.st_value=%u\nt3.st_age_ms=%d\n", x->ax_info, x->own_status, (unsigned)x->st_count,
-		(unsigned)x->st_src, (unsigned)x->st_dst, x->st_group, x->st_value,
-		x->st_ms != 0 ? (int)(now - x->st_ms) : -1);
+	// Status (6.6.6): a poll's answer, the radio's own
+	dl_text(t, "t3.ax_info=%u\nt3.own_status=%u\n", x->ax_info, x->own_status);
 	// The registration's talkgroup list (6.4.4.1.13.2): how many went, which were taken (bit 6 the first)
 	dl_text(t, "t3.reg_tgs=%u\nt3.reg_tg_ok=0x%02x\n", x->reg_tgs, x->reg_tg_ok);
-	// The last random access bursts, oldest first: age ms, TX slot, answer after ms (0: none), frames after (255:
-	// none), RX slot, the answer's opcode, on air after ms (0: not reported)
-	dl_text(t, "t3.nra=%u\n", x->nra);
-	for (uint8_t i = 0; i < x->nra; i++) {
-		dl_text(t, "t3.ra%u=%u,%u,%u,%u,%u,0x%02x,%u\n", i, (unsigned)(now - x->ra[i].tx_ms), x->ra[i].tx_slot,
-			x->ra[i].rx_ms, x->ra[i].frames, x->ra[i].rx_slot, x->ra[i].op, x->ra[i].air_ms);
-	}
 	dl_text(t, "t3.call_data=%u\nt3.pd_wait=%u\nt3.stunned=%u\nt3.stuns=%u\nt3.revives=%u\n", x->call_data, x->pd_wait,
 		x->stunned, (unsigned)x->stuns, (unsigned)x->revives);
 	dl_text(t, "t3.auth_key=%u\nt3.auths=%u\nt3.massregs=%u\nt3.moves=%u\n", x->auth_key, (unsigned)x->auths,
@@ -440,11 +429,39 @@ static void t3_svc(const radio_t3_view_t *x, void *ctx)
 		dl_text(t, i ? ",%u" : "%u", (unsigned)x->dgna[i]);
 	}
 	dl_text(t, "\n");
+	dl_text(t, "t3.polls=%u\nt3.poll_fails=%u\nt3.ip_gw=%u\nt3.ip_advised=%u\n", x->polls, x->poll_fails, x->ip_gw,
+		x->ip_advised);
+}
+
+// Random access timing, a section of its own: in t3 and t3_svc it outgrew a reply
+static void t3_ra(const radio_t3_view_t *x, void *ctx)
+{
+	dl_text_t *t = ctx;
+	uint32_t now = hal_millis();
+	// The last random access bursts, oldest first: age ms, TX slot, answer after ms (0: none), frames after (255:
+	// none), RX slot, the answer's opcode, on air after ms (0: not reported)
+	dl_text(t, "t3.nra=%u\n", x->nra);
+	for (uint8_t i = 0; i < x->nra && i < sizeof x->ra / sizeof x->ra[0]; i++) {
+		dl_text(t, "t3.ra%u=%u,%u,%u,%u,%u,0x%02x,%u\n", i, (unsigned)(now - x->ra[i].tx_ms), x->ra[i].tx_slot,
+			x->ra[i].rx_ms, x->ra[i].frames, x->ra[i].rx_slot, x->ra[i].op, x->ra[i].air_ms);
+	}
+	// The TX to RX turnaround
+	dl_text(t, "t3.turns=%u\nt3.turn_ms=%u\nt3.turn_max_ms=%u\nt3.turn_slow=%u\n", (unsigned)x->turns, x->turn_ms,
+		x->turn_max_ms, (unsigned)x->turn_slow);
+}
+
+// The messages heard, a section of their own: in t3_svc they outgrew a reply (truncated=1 before t3.supl_*)
+static void t3_msg(const radio_t3_view_t *x, void *ctx)
+{
+	dl_text_t *t = ctx;
+	uint32_t now = hal_millis();
+	// The last status heard (6.6.6; age -1: none)
+	dl_text(t, "t3.st_count=%u\nt3.st_src=%u\nt3.st_dst=%u\nt3.st_group=%u\nt3.st_value=%u\nt3.st_age_ms=%d\n",
+		(unsigned)x->st_count, (unsigned)x->st_src, (unsigned)x->st_dst, x->st_group, x->st_value,
+		x->st_ms != 0 ? (int)(now - x->st_ms) : -1);
 	// The last short data heard: its octets in hex (sd_data), the format to read them by
 	char sd[2 * sizeof(x->sd_data) + 1];
 	hex(sd, x->sd_data, x->sd_len);
-	dl_text(t, "t3.polls=%u\nt3.poll_fails=%u\nt3.ip_gw=%u\nt3.ip_advised=%u\n", x->polls, x->poll_fails, x->ip_gw,
-		x->ip_advised);
 	dl_text(t, "t3.sd_count=%u\nt3.sd_src=%u\nt3.sd_dst=%u\nt3.sd_group=%u\nt3.sd_format=%u\nt3.sd_len=%u\n"
 		"t3.sd_data=%s\nt3.sd_age_ms=%d\n", (unsigned)x->sd_count, (unsigned)x->sd_src, (unsigned)x->sd_dst,
 		x->sd_group, x->sd_format, x->sd_len, sd, x->sd_ms != 0 ? (int)(now - x->sd_ms) : -1);
@@ -472,6 +489,26 @@ void debuglink_view_t3_svc(const radio_view_t *v, dl_text_t *t)
 	(void)v;
 #if CONFIG_DMR_TRUNK
 	radio_with_t3_view(t3_svc, t);	// formatted under the view's lock: no copy of the view here
+#else
+	dl_text(t, "t3.built=0\n");
+#endif
+}
+
+void debuglink_view_t3_msg(const radio_view_t *v, dl_text_t *t)
+{
+	(void)v;
+#if CONFIG_DMR_TRUNK
+	radio_with_t3_view(t3_msg, t);	// formatted under the view's lock: no copy of the view here
+#else
+	dl_text(t, "t3.built=0\n");
+#endif
+}
+
+void debuglink_view_t3_ra(const radio_view_t *v, dl_text_t *t)
+{
+	(void)v;
+#if CONFIG_DMR_TRUNK
+	radio_with_t3_view(t3_ra, t);	// formatted under the view's lock: no copy of the view here
 #else
 	dl_text(t, "t3.built=0\n");
 #endif
