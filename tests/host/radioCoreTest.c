@@ -2215,7 +2215,8 @@ static void test_hotspot_session(void)
 	}
 	CHECK(mm_naks == 0 && hotspot_running() && sm.hs_tx_hz == 453625000 && sm.dmr_keyed);
 	hs_run(500);
-	CHECK(direct_key != 1);	// a simplex hotspot keys the board's normal way
+	CHECK(!sm.direct_key);	// a simplex hotspot keys the board's normal way
+	direct_key = -1;	// only what this session tells the board below
 	// The hotspot's SFR mode (hotspotSfr.c, not linked here: an alternative engine that says it's active) lets the
 	// board key straight from RX while it runs, and normal keying again when it stops
 	hotspot_set_alt(&fake_alt);
