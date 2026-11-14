@@ -444,7 +444,7 @@ msgstr "Nessun risultato: Indietro cancella"
 msgid "Receive only. Sensitivity not rated"
 msgstr "Solo ricezione. Sensibilità non specificata"
 
-#: core/ui/ui_app.c
+#: core/ui/ui_app.c core/ui/ui_menus.c
 msgid "Emergency: not in this build"
 msgstr "Emergenza: non in questa build"
 
@@ -2825,6 +2825,30 @@ msgid "Talk permit tone"
 msgstr "Tono via libera"
 
 #: core/ui/ui_menus.c
+msgid "Call end tone"
+msgstr "Tono fine chiamata"
+
+#: core/ui/ui_menus.c
+msgid "TOT warning tone"
+msgstr "Tono avviso TOT"
+
+#: core/ui/ui_menus.c
+msgid "Battery tone"
+msgstr "Tono batteria"
+
+#: core/ui/ui_menus.c
+msgid "TX denied tone"
+msgstr "Tono TX negata"
+
+#: core/ui/ui_menus.c
+msgid "Scan stop tone"
+msgstr "Tono stop scansione"
+
+#: core/ui/ui_menus.c
+msgid "Emergency tone"
+msgstr "Tono emergenza"
+
+#: core/ui/ui_menus.c
 msgid "Voice prompts"
 msgstr "Voce guida"
 
@@ -3112,6 +3136,10 @@ msgstr "0-9 apri  Indietro"
 msgid "Talk permit tone: not in this build"
 msgstr "Tono via libera: non in questa build"
 
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "DMR: not in this build"
+msgstr "DMR: non in questa build"
+
 #: core/ui/ui_menus.c
 msgid "This radio has no vibration motor"
 msgstr "Questa radio non ha motore vibrazione"
@@ -3335,10 +3363,6 @@ msgstr "ROAM"
 #: core/ui/ui_screens.c
 msgid "Step "
 msgstr "Passo "
-
-#: core/ui/ui_screens.c
-msgid "DMR: not in this build"
-msgstr "DMR: non in questa build"
 
 #: core/ui/ui_screens.c
 msgid "No TX frequency"

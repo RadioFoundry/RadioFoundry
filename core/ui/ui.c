@@ -139,6 +139,14 @@ static void ui_task(void *arg)
 		bool got = input_next(&ev, wait);
 		if (rests)
 			rested = hal_millis();
+		// The view before the key: the radio core may have changed while this task waited (the VFO turned off from
+		// the host link, a scan stopping), and a key read against the old view sends the wrong request (a VFO step
+		// the core drops on a channel)
+		uint32_t s = radio_view_serial();
+		if (s != serial) {
+			serial = s;
+			radio_get_view(&view);
+		}
 		if (got) {
 			// The radio's view may have changed while this task waited (a channel change from the debug link or
 			// the radio core): the key acts on the view as it is now, not as it was up to a wait ago
@@ -156,8 +164,8 @@ static void ui_task(void *arg)
 			dirty = true;
 		}
 		now = hal_millis();
-		uint32_t s = radio_view_serial();
-		if (s != serial) {
+		s = radio_view_serial();
+		if (s != serial) {	// and after it: what the key changed shows in this pass
 			serial = s;
 			radio_get_view(&view);
 			radio_view_for_screen(&view);

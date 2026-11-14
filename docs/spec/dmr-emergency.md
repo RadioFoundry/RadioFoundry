@@ -88,7 +88,7 @@ Kept in the settings store (`settings_t em_*`, `settings-store.md` 3); the radio
 | `alarm_tries` | 3 | 1-10 |
 | `hot_mic_s` | 10 | 0 (off) - 60 |
 | `etsi_fid` | off (Motorola FID 0x10) | |
-| `rx_tone` | on | |
+| `rx_tone` | on | Settings > Sound > Emergency tone |
 
 The hot mic default (10 s) and keying it at all are owner decisions (`docs/ux/principles.md`: no transmission the
 user didn't ask for; holding the emergency key is that request).

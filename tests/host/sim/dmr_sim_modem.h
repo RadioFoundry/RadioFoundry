@@ -52,6 +52,10 @@ typedef struct {
 	bool repeater;		// emit slot ticks with the slot number alternating (a repeater's CACH)
 	bool wake_repeater_on_csbk;	// a BS_Dwn_Act on air starts the repeater (repeater = true)
 	bool stalled;		// no slot timing: no ticks, nothing sent, no tx_done (a modem chip that doesn't answer)
+	bool held_slot_numbers;	// while transmitting, ticks carry slot numbers from the modem's own timing, repeater or
+				// not (the HR_C6000 engine keeps the timing it last had)
+	bool align_needs_repeater;	// an aligned start waits for repeater ticks; DMR_EV_TX_REJECTED, then
+					// DMR_EV_TX_DONE, after 50 slots
 
 	// State
 	dmr_event_cb_t cb;
@@ -60,6 +64,9 @@ typedef struct {
 	bool tx_active;
 	bool tx_ending;
 	int8_t tx_parity;	// which slot parity is ours (0 / 1), set at tx_begin
+	bool align_found;	// align_needs_repeater: the repeater's timing seen since tx_begin
+	unsigned align_wait;	// ... slots waited for it
+	unsigned align_rejects;	// ... starts refused for the lack of it
 	dmr_tx_burst_t q[SIM_QUEUE_DEPTH];
 	uint8_t q_head, q_count;
 	uint8_t cur_emb_lc[9];

@@ -143,6 +143,7 @@ static struct {
 	bool wake_listening;	// wake_listen_fn was last told true
 	bool slot_waiting;	// an aligned key-up is held for the modem's slot_verified, since slot_wait_ms
 	uint32_t slot_wait_ms;
+	bool rewoken;		// this key-up woke the repeater again after a voice start the modem gave up (tx_rewake)
 	uint32_t permit_ms;	// the talk permit hold's start (TX_PERMIT)
 	bool permit_done;	// this PTT press had its hold
 	uint32_t tx_start_ms;
@@ -412,6 +413,12 @@ static uint8_t tx_sync(void)
 static bool transmitting(void)
 {
 	return s.tx == TX_WAKE || s.tx == TX_ON || s.tx == TX_END || s.tx == TX_DATA || s.tx == TX_DATA_END;
+}
+
+// Keyed, nothing on the air yet: the wake-up queued, or a voice start waiting for its slot
+static bool tx_waiting(void)
+{
+	return s.tx == TX_WAKE || (s.tx == TX_ON && s.started == 0);
 }
 
 // --- Modem event callback (producer) ---
@@ -1363,6 +1370,25 @@ static void tx_wakeup(uint32_t now)
 }
 
 static void tx_start_data(uint32_t now);
+static void tx_access(uint32_t now);
+
+// Through a repeater, a voice start the modem gave up before its first burst (no slot timing: the repeater dropped as
+// we keyed in its hang, or the outbound was never heard) wakes the repeater again, once per key-up, instead of being
+// refused (issue 524)
+static bool tx_rewake(uint32_t now)
+{
+	if (!s.cfg.rmo || s.tx != TX_ON || s.started != 0 || s.rewoken || !s.ptt)
+		return false;
+	s.rewoken = true;
+	s.wake_tries = 0;	// a whole wake-up, not what is left of the one at PTT
+	source_end();
+	s.rpt_seen = false;
+	tick_alt = 0;
+	s.tx = TX_ACCESS;
+	s.dirty = true;
+	tx_access(now);
+	return true;
+}
 
 // Through a repeater an aligned start before the modem has settled the outbound's slot numbering can go out on the
 // other slot, so it waits, and a modem that never settles it is denied rather than sent on a guess. True: hold (or
@@ -1491,6 +1517,7 @@ static void tx_ptt_pressed(uint32_t now)
 	s.view.tx_error = DMR_TX_OK;
 	s.tx_since = now;
 	s.wake_tries = 0;
+	s.rewoken = false;
 	s.permit_done = false;
 	s.slot_waiting = false;
 	s.tx = TX_ACCESS;
@@ -1591,10 +1618,16 @@ static void tx_poll(uint32_t now)
 			tx_start_voice(now);
 		break;
 	}
-	case TX_ON:
+	case TX_ON: {
 		// PTT release and the time-out end the call at a superframe boundary, which only a modem that sends bursts
-		// reaches: one without slot timing would hold us here, keyed, for good
-		if (elapsed(now, s.tx_progress_ms, true, DMR_CALL_TX_STALL_MS)) {
+		// reaches: one without slot timing would hold us here, keyed, for good. Through a repeater, before the first
+		// slot, the modem's own aligned-start timeout (1.5 s and a tick) must come first, so its refusal wakes the
+		// repeater (tx_rewake): with an encoder slow to start, the last burst queued is the headers at the start
+		uint32_t stall_ms = DMR_CALL_TX_STALL_MS;
+
+		if (s.cfg.rmo && s.started == 0)
+			stall_ms += DMR_CALL_TX_ALIGN_GRACE_MS;
+		if (elapsed(now, s.tx_progress_ms, true, stall_ms)) {
 			tx_deny(DMR_TX_ERR_STALLED);
 			break;
 		}
@@ -1604,6 +1637,7 @@ static void tx_poll(uint32_t now)
 		}
 		tx_fill(now);
 		break;
+	}
 	case TX_END:
 		if (!before(now, s.deadline)) {
 			s.modem->tx_abort();	// tx_done overdue
@@ -1662,15 +1696,21 @@ static void handle_event(const evq_item_t *it, uint32_t now)
 		}
 		break;
 	case DMR_EV_TX_REJECTED:
+		if (tx_rewake(now))
+			break;
 		if (transmitting())
 			tx_deny(DMR_TX_ERR_REJECTED);
 		break;
 	case DMR_EV_TX_DONE:
-		if (s.tx == TX_END) {
+		if (tx_rewake(now)) {
+			break;
+		} else if (s.tx == TX_END) {
 			tx_finished(now);
 		} else if (s.tx == TX_DATA_END) {
 			data_end(DMR_TX_OK);
-		} else if (s.tx == TX_WAKE) {
+		} else if (s.tx == TX_WAKE && s.started != 0) {
+			// Only once our CSBK went: a refused voice start's DMR_EV_TX_DONE follows its DMR_EV_TX_REJECTED, after
+			// tx_rewake already sent us here
 			wake_listen(true);
 			s.tx = TX_WAKE_LISTEN;
 			s.deadline = now + DMR_CALL_WAKEUP_LISTEN_MS;
@@ -1925,7 +1965,10 @@ void dmr_call_poll(uint32_t now_ms)
 
 		if (tc != s.tick_seen) {
 			s.tick_seen = tc;
-			if (s.cfg.rmo && tick_alt > 3) {	// slot number toggling: a repeater's CACH
+			// Slot number toggling: a repeater's CACH. Not while a transmission waits for its first slot: the
+			// modem's slot numbers then come from the timing it last had, and kept a repeater that had dropped
+			// "up", so the start was never woken (issue 524)
+			if (s.cfg.rmo && tick_alt > 3 && !tx_waiting()) {
 				s.rpt_last_ms = now_ms;
 				s.rpt_seen = true;
 			}

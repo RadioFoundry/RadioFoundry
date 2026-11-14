@@ -274,7 +274,8 @@ bool uvf_direct_tx_ref(uint32_t hz, int8_t ref_offset, int32_t rx_offset_hz, int
 		return false;
 	}
 	// The synthesizer holds the receive frequency, rx_offset_hz from hz: a step is UVF_REF_TRIM_PPB_PER_STEP of the
-	// carrier. Whole steps toward zero: mid-band, -875 Hz is 11.8 steps, and 11 measured about 5 Hz high, 12 about 85 Hz
+	// carrier. Whole steps toward zero: mid-band, an offset of -875 Hz is 11.8 steps, and 11 measured about 5 Hz high,
+	// 12 about 85 Hz
 	int64_t step_mhz = (int64_t)hz * UVF_REF_TRIM_PPB_PER_STEP / 1000000;	// millihertz
 	int32_t back = (int32_t)((int64_t)rx_offset_hz * 1000 / step_mhz);
 	int v = ref_offset + UVF_DIRECT_TX_REF_STEPS - back;

@@ -156,6 +156,10 @@ class Decisions(unittest.TestCase):
         mode, _, risk, expect, _ = d(B, sf.STUB, "auto", False, False, rfoundry("absent"))
         self.assertEqual((mode, expect), ("keep", False))
         self.assertIn("codec=absent", risk)
+        # a slot made from another stock build reports that build's number: still a working codec
+        self.assertIsNone(d(B, sf.STUB, "auto", False, False, rfoundry("dm1801pro-048"))[2])
+        self.assertEqual(d(B, sf.STUB, "auto", False, False, rfoundry("dm1801pro-unknown"))[3], False)
+        self.assertEqual(d(B, sf.STUB, "auto", False, False, rfoundry("dm32-049"))[3], False)	# another radio's id
         self.assertEqual(d(B, sf.STUB, "auto", True, False, None)[::4], ("merge", "image"))
         self.assertEqual(d(B, sf.BOOTLOADER, "auto", True, False, None)[::4], ("merge", "image"))
         self.assertEqual(d(B, sf.BOOTLOADER, "auto", False, True, None)[::4], ("merge", "file"))
@@ -428,6 +432,10 @@ class Verify(unittest.TestCase):
         self.assertEqual(self.check(rfoundry(git="00000000"))[0], 1)		# another build answers
         self.assertEqual(self.check(rfoundry("absent"))[0], 1)
         self.assertEqual(self.check(rfoundry("absent"), expect_codec=False)[0], 0)
+        # the slot of another stock build (DM-32UV: 048 from the L01 file, 050 from NRFB) is a working codec too
+        self.assertIn("DMR voice is ready", self.check(rfoundry("dm1801pro-048"))[1])
+        self.assertEqual(self.check(rfoundry("dm1801pro-unknown"))[0], 1)
+        self.assertEqual(self.check(rfoundry("dm32-049"))[0], 1)
         self.assertEqual(self.check(None)[0], 0)				# no answer: told what to look for
 
 

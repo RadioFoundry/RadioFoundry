@@ -57,6 +57,7 @@ typedef enum {
 #define DMR_CALL_TX_DONE_GUARD_MS	1500	// tx_done overdue after the last burst: force receive
 #define DMR_CALL_TX_MAX_INFLIGHT	4	// bursts queued ahead of the air at most
 #define DMR_CALL_TX_STALL_MS		1500	// a voice transmission the modem takes no burst of for this long is cut
+#define DMR_CALL_TX_ALIGN_GRACE_MS	300	// more for an aligned start through a repeater: the modem's own refusal comes first
 #define DMR_CALL_REPLY_WINDOW_S		10
 #define DMR_CALL_DATA_TIMEOUT_MS	10000	// a burst list on air takes at most this plus 60 ms per burst (gotcha 3.9)
 #define DMR_CALL_DATA_ALIGN_MS		300	// DMO data: aligned to a station heard this recently (the modem's slot memory)

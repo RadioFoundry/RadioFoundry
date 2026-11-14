@@ -171,6 +171,10 @@ Start the radio normally with RadioFoundry running and choose **Update** in the 
    - **Edit Build** opens the build step, to change features before the update.
    - A preset build lists the features the new release adds to it.
    - A custom build lists the features added since it was made. Choose **On** or **Off** for each before updating.
+     A new feature that one of yours now needs is turned on with it, and listed.
+   - A custom build's feature that the new release can't build for this radio (it now needs something the radio
+     doesn't have) is listed with what it needs. Press **Disable These Features** to update without them, or
+     **Edit Build** to change the build.
    - Firmware too old to report its build gets the build step, starting from the closest match.
 3. **Save a backup first** is optional and off. An update keeps the channels, settings, calibration and codec.
 4. Press **Update**. The installer builds the image, writes it and checks the version.

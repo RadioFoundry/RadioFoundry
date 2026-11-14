@@ -50,7 +50,6 @@ static bool enter_tried;		// enter() was refused at enter_ms: wait HOTSPOT_ENTER
 static uint32_t enter_ms;
 
 static uint8_t cc = 1;
-static bool simplex = true;
 static uint32_t rx_hz, tx_hz;
 static uint8_t rf_level = 255;
 
@@ -436,7 +435,6 @@ void hotspot_init(const hal_dmr_modem_t *m, hotspot_send_fn send)
 	send_up = send;
 	running = false;
 	cc = 1;
-	simplex = true;
 	rx_hz = 0;
 	tx_hz = 0;
 	rf_level = 255;
@@ -539,7 +537,8 @@ void hotspot_config(uint8_t color_code, bool is_simplex, uint16_t tx_delay_ms)
 {
 	(void)tx_delay_ms;	// the modem keys from its own slot timing
 	cc = color_code & 0x0F;
-	simplex = is_simplex;	// duplex + RX = TX selects the SFR where it is built (hotspotSfr.c, through mmdvm_ext_t)
+	(void)is_simplex;	// this engine is simplex only: duplex + RX = TX selects the SFR where it is built (hotspotSfr.c,
+				// through mmdvm_ext_t)
 	view.cc = cc;
 	if (running) {
 		dmr_config_t c = modem_config();

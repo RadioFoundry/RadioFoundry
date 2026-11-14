@@ -5612,6 +5612,12 @@ static const set_item_t s_sound[] = {
 	TOGGLE(TRN("Key tones"), "beep", UI_SET_KEY_TONES),
 	NUMBER(TRN("Tone volume"), NULL, UI_SET_TONE_VOLUME, 0, 10, 1, NULL),
 	TOGGLE(TRN("Talk permit tone"), NULL, UI_SET_TALK_PERMIT),
+	TOGGLE(TRN("Call end tone"), NULL, UI_SET_CALL_END_TONE),
+	TOGGLE(TRN("TOT warning tone"), "time-out", UI_SET_TOT_WARN_TONE),
+	TOGGLE(TRN("Battery tone"), "low battery", UI_SET_BATTERY_TONE),
+	TOGGLE(TRN("TX denied tone"), "refused", UI_SET_TX_DENY_TONE),
+	TOGGLE(TRN("Scan stop tone"), NULL, UI_SET_SCAN_TONE),
+	TOGGLE(TRN("Emergency tone"), "alarm", UI_SET_EMERGENCY_TONE),
 	TOGGLE(TRN("Voice prompts"), "speech", UI_SET_VOICE_PROMPTS),
 	TOGGLE(TRN("Message tone"), NULL, UI_SET_MESSAGE_TONE),
 #if CONFIG_VIBRATE
@@ -5968,6 +5974,17 @@ static const char *set_why_not(const set_item_t *s)
 		return TR("Voice prompts: not in this build");
 	case UI_SET_TALK_PERMIT:
 		return CONFIG_DMR && CONFIG_BEEP ? NULL : TR("Talk permit tone: not in this build");
+	case UI_SET_CALL_END_TONE:
+		return CONFIG_DMR && CONFIG_BEEP ? NULL : CONFIG_BEEP ? TR("DMR: not in this build") : TR("Tones: not in this build");
+	case UI_SET_TOT_WARN_TONE:
+	case UI_SET_BATTERY_TONE:
+	case UI_SET_TX_DENY_TONE:
+		return CONFIG_BEEP ? NULL : TR("Tones: not in this build");
+	case UI_SET_SCAN_TONE:
+		return !CONFIG_BEEP ? TR("Tones: not in this build") : feats() & UI_FEAT_SCAN ? NULL : TR("Scan: not in this build");
+	case UI_SET_EMERGENCY_TONE:
+		return !CONFIG_BEEP ? TR("Tones: not in this build") :
+			feats() & UI_FEAT_EMERGENCY ? NULL : TR("Emergency: not in this build");
 	case UI_SET_MESSAGE_TONE:
 		return (feats() & UI_FEAT_SMS) || CONFIG_APRS_AFSK ? NULL : TR("Messages: not in this build");
 	case UI_SET_VIBRATE:

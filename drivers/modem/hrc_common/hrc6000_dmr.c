@@ -95,6 +95,7 @@
 #define TC_RESYNC		3u	// more than this many disagreements
 #define BS_RECENT_TICKS		40u
 #define ALIGN_TIMEOUT_TICKS	50u	// 1.5 s for a slot to align to
+#define ALIGN_DEAF_TICKS	8u	// an aligned start's wait that hears nothing this long searches again
 #define DONE_FALLBACK_TICKS	4u
 #define STALE_LC_VOICE		6u	// voice bursts after which the embedded LC is trusted even if unchanged
 #define SLOT_LC_GAP_TICKS	12u	// a slot's call is over after this long without its voice (360 ms)
@@ -609,6 +610,17 @@ static void tx_tick(hrc6000_dmr_t *e, uint8_t r42)
 			return;
 		}
 		if (!go) {
+			// Nothing heard while waiting for a repeater's slot: after the restart that ends our wake-up, the HR_C5000
+			// at times hears nothing of the outbound that follows (no interrupts, 0x52 frozen) until the next restart,
+			// and the wait ran into the timeout ("Modem refused", issue 524). Search again, as an idle receiver does.
+			// Only through a repeater (modem-hrc6000.md): in direct mode a restart drops the chip's sync and the passive
+			// timing held after our last transmission (gotchas 1.12)
+			if (rmo(e) && !e->tx_found && e->phase_ts[0] == 0 && e->phase_ts[1] == 0 && e->tx_wait > 0
+			    && e->tx_wait % ALIGN_DEAF_TICKS == 0 && (uint32_t)(e->tick - e->rx_tick) > ALIGN_DEAF_TICKS - 2u) {
+				do_restart(e, HRC6000_RS_ALIGN);
+				e->tx_wait++;
+				return;
+			}
 			if (++e->tx_wait > ALIGN_TIMEOUT_TICKS) {
 				e->st.tx_rejected++;
 				push(e, DMR_EV_TX_REJECTED, e->tx_ts, 1);	// arg 1: no slot timing to align to
@@ -765,6 +777,59 @@ static void note_report(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dm
 		e->t_voice = t;
 		e->voice_valid = true;
 	}
+}
+
+// A voice burst's checksum (Fletcher-16): a stale report reads the voice taken last again
+static uint16_t voice_sum(const uint8_t *v)
+{
+	uint16_t a = 0, b = 0;
+	for (int i = 0; i < DMR_VOICE_BYTES; i++) {
+		a = (uint16_t)((a + v[i]) % 255u);
+		b = (uint16_t)((b + a) % 255u);
+	}
+	return (uint16_t)((b << 8) | a);
+}
+
+// The number of a class 0 voice report in a superframe in progress on its slot (modem-hrc6000.md 5.2). The chip's
+// number is not always the burst's: on the bench about one call in two had a burst reported with the number of the
+// burst before it or one further back, no frame missed, so the call stack counted bursts lost that had come and a
+// real burst was dropped as stale. With the timing running, the frames counted since the burst taken last give the
+// number; the chip's is used only without it. False: a stale report (its number and voice both the last burst's), dropped
+static bool seq_by_count(hrc6000_dmr_t *e, const hrc6000_dmr_vstate_t *vs, hrc6000_rx_status_t *s, uint16_t sum)
+{
+	uint32_t gap = e->tick - vs->tick;	// slots: a frame is two
+	// After a header nothing is taken yet: a report without a number is filled, never stale (vs->sum is the last call's)
+	bool last_no = s->voice_index == vs->last && vs->last != HRC6000_INDEX_UNKNOWN;
+	uint8_t want = (uint8_t)((vs->last + gap / 2u) % 6u);
+
+	if (last_no && sum == vs->sum) {
+		e->st.rx_stale++;
+		return false;
+	}
+	// No count: no timing, no burst taken yet (after a header), the other slot phase, or a count that lands on A (which
+	// comes with its voice sync, never as class 0)
+	if (!e->timing || vs->last == HRC6000_INDEX_UNKNOWN || gap < 2u || (gap & 1u) != 0u || want == 0u) {
+		if (s->voice_index == HRC6000_INDEX_UNKNOWN) {
+			s->voice_index = vs->next;
+			e->st.rx_seq_fill++;
+		} else if (last_no) {
+			e->st.rx_stale++;
+			return false;
+		} else if (s->voice_index != vs->next) {
+			e->st.rx_seq_jump++;	// a burst was missed: keep the chip's number
+		}
+		return true;
+	}
+	if (s->voice_index == HRC6000_INDEX_UNKNOWN) {
+		e->st.rx_seq_fill++;
+	} else if (s->voice_index != want) {
+		e->st.rx_seq_fix++;
+	}
+	if (gap > 2u) {
+		e->st.rx_seq_jump++;	// a burst was missed
+	}
+	s->voice_index = want;
+	return true;
 }
 
 static void held_drop(hrc6000_dmr_t *e, hrc6000_dmr_held_t *hd)
@@ -1326,6 +1391,7 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 	bool cc_fix = voice && e->cc_filter >= 0;
 	if (voice) {
 		bool live = vs->active && (uint32_t)(e->tick - vs->tick) <= RX_LOST_TICKS;
+		uint16_t sum = voice_sum(nb.payload);
 		if (s.sync_class == 1) {
 			s.voice_index = 0;
 			if (!live) {
@@ -1361,14 +1427,8 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 			vs->next = 1;
 			vs->cc = s.cc;
 			vs->tick = hd->tick;
-		} else if (s.voice_index == HRC6000_INDEX_UNKNOWN) {
-			s.voice_index = vs->next;
-			e->st.rx_seq_fill++;
-		} else if (s.voice_index == vs->last) {
-			e->st.rx_stale++;
+		} else if (!seq_by_count(e, vs, &s, sum)) {
 			return cc_real;
-		} else if (s.voice_index != vs->next) {
-			e->st.rx_seq_jump++;	// a burst was missed: keep the chip's number
 		}
 		if (s.sync_class != 1) {
 			vs->cc = s.cc;
@@ -1376,6 +1436,7 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 		vs->active = true;
 		vs->last = s.voice_index;
 		vs->next = (uint8_t)((s.voice_index + 1u) % 6u);
+		vs->sum = sum;
 		vs->tick = e->tick;
 	} else {
 		held_drop(e, hd);	// a lone A followed by data on its slot: not a call
