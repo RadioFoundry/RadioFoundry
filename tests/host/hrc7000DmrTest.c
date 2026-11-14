@@ -589,6 +589,83 @@ static void test_tx_edges(void)
 	}
 }
 
+// Wall time advances while the receive timeslot vector is silent, even across clock wrap.
+static void test_polite_without_ticks(void)
+{
+	for (int wrap = 0; wrap < 2; wrap++) {
+		for (int policy = DMR_ACCESS_POLITE_CC; policy <= DMR_ACCESS_POLITE_ALL; policy++) {
+			setup();
+			if (wrap) now = UINT32_MAX - 200000u;
+			const dmr_config_t cfg = { .cc = 1 };
+			hrc7000_dmr_configure(&eng, &cfg);
+			hrc7000_dmr_run(&eng);
+			for (int i = 0; i < 3; i++) {
+				deframe(rti(1, 0, 1, 0, 0, 0));
+				now += 300000u;
+				hrc7000_dmr_poll(&eng);
+				CHECK(!hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, policy));
+				count_kind(0xFF, NULL);
+			}
+			now += 59999u;
+			CHECK(!hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, policy));
+			now++;
+			CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, policy));
+			hrc7000_dmr_tx_end(&eng);
+			for (int i = 0; i < 3; i++) {
+				now += 33000000u;
+				hrc7000_dmr_poll(&eng);
+				CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, policy));
+				hrc7000_dmr_tx_end(&eng);
+				count_kind(0xFF, NULL);
+			}
+			CHECK(eng.tick == 0 && !rf_state);
+		}
+	}
+}
+
+// A call stopped with the slot interrupts: the poll's restart still reports the lost voice (the call layer conceals it)
+static void test_resync_voice_lost(void)
+{
+	setup();
+	const dmr_config_t cfg = { .cc = 1 };
+	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_run(&eng);
+	deframe(rti(1, 0, 1, 3, 0, 0));	// voice A, TS2 sync, chip slot 0
+	count_kind(0xFF, NULL);
+	CHECK(eng.voice_chip_slot == 0);
+	now += 391000u;
+	hrc7000_dmr_poll(&eng);
+	CHECK(eng.st.rx_lost == 1 && eng.voice_chip_slot < 0);
+	CHECK(count_kind(DMR_EV_VOICE_LOST, NULL) == 1);
+	CHECK(eng.tick == 0);
+}
+
+static void test_resync_without_ticks(void)
+{
+	setup();
+	const dmr_config_t cfg = { .cc = 1 };
+	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_run(&eng);
+	deframe(rti(1, 0, 1, 0, 0, 0));
+	uint32_t rs = eng.st.rx_restarts;
+	now += 390000u;
+	hrc7000_dmr_poll(&eng);
+	CHECK(eng.st.rx_restarts == rs);
+	now++;
+	hrc7000_dmr_poll(&eng);
+	CHECK(eng.st.rx_restarts == rs + 1 && !eng.rx_any && eng.st.rx_lost == 1);
+	CHECK(REG(C7_INTERP_CLEAR) == (C7_INT_TS_TX | C7_INT_TS_RX | C7_INT_RF_TX));
+	// A silent receiver needs no repeated restart.
+	now += 1000000u;
+	hrc7000_dmr_poll(&eng);
+	CHECK(eng.st.rx_restarts == rs + 1);
+	// System interrupts with only unusable bursts must not hold stale timing forever.
+	deframe((rti(0, 0, 1, 0, 0, 0) & ~3u) | 1u);
+	hrc7000_dmr_poll(&eng);
+	CHECK(eng.st.rx_restarts == rs + 2 && eng.st.rx_stale == 1);
+	CHECK(eng.tick == 0);
+}
+
 static void test_polite_and_repeater(void)
 {
 	setup();
@@ -1411,6 +1488,9 @@ int main(void)
 	test_tx_aligned();
 	test_tx_repeater_lock();
 	test_tx_empty_and_fill();
+	test_polite_without_ticks();
+	test_resync_without_ticks();
+	test_resync_voice_lost();
 	test_polite_and_repeater();
 	test_polite_after_restart();
 	test_event_overflow();

@@ -350,3 +350,5 @@ at least two sites. Changing channel or zone yourself makes the new channel home
 The threshold (default -105 dBm), the hysteresis (6 dB) and the optional periodic search of the other sites are set
 over the debug link for now ([dmr-roaming](../spec/dmr-roaming.md) section 5.1). The debug link also sets the idle
 beacon that a hotspot running MMDVM SFR can send for roaming radios (`rpt_beacon`, off by default).
+
+Polite channel access waits for recent activity to expire before transmitting. A quiet channel becomes available again even if no further bursts arrive.
