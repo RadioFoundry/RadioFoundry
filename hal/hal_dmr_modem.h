@@ -174,6 +174,9 @@ typedef struct {
 	// Optional (NULL: can't): tx_listen on a split channel too, the RF retuned to the receive frequency between our
 	// bursts (a duplex repeater's outbound heard during our over). False when this radio's RF can't: not listening
 	bool (*tx_listen_split)(void);
+	// tx_listen_split hears the repeater in only some of the slots between our bursts, at times in none for seconds:
+	// enough for its reverse channel, but silence there doesn't mean the repeater dropped (no drop check)
+	bool tx_listen_gaps;
 	// Optional: b takes the place of the oldest DMR_BURST_EMPTY still queued (not yet set up). Returns how many queued
 	// entries come after it, -1 when none is left (an SFR's repeat then goes out 90 ms after the inbound burst instead
 	// of behind the placeholders queued for the gap)

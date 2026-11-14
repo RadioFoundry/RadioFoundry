@@ -429,6 +429,8 @@ static dmr_call_config_t base_cfg(void)
 	return c;
 }
 
+static const hal_dmr_modem_t *modem = &sim_modem;	// sim_modem_gaps for test_rmo_listen_gaps
+
 static void setup(const dmr_call_config_t *c)
 {
 	sim_reset();
@@ -436,7 +438,7 @@ static void setup(const dmr_call_config_t *c)
 	memset(&src, 0, sizeof(src));
 	now = 1000;
 	sub_ms = 0;
-	dmr_call_init(&sim_modem);
+	dmr_call_init(modem);
 	dmr_call_set_voice(&sink, &source);
 	dmr_call_configure(c);
 	CHECK(dmr_call_start());
@@ -1525,6 +1527,41 @@ static void test_rmo_drop_under_over(void)
 	CHECK(sim.tx_listens == 0 && rpt_drops() == d0 && sim.tx_aborts == 0 && V()->phase == DMR_CALL_PHASE_TX_VOICE);
 	dmr_call_ptt(false);
 	run_ms(600);
+}
+
+// A modem that hears the repeater in only some of the slots between our bursts (tx_listen_gaps): it still listens, so
+// the repeater's RC stops the over, but silence there isn't the repeater's drop. Counted as one, the over through an
+// up repeater ended 0.5 s in and was keyed again
+static void test_rmo_listen_gaps(void)
+{
+	dmr_call_config_t c = base_cfg();
+	c.rmo = true;
+	c.ts = 2;
+	unsigned d0;
+
+	dmr_call_set_tx_listen(true);
+	modem = &sim_modem_gaps;
+	setup(&c);
+	sim.held_slot_numbers = true;
+	sim.listen_bursts = true;
+	sim.listen_deaf = true;	// none of its bursts heard while we send
+	sim.repeater = true;
+	run_ms(180);
+	d0 = rpt_drops();
+	dmr_call_ptt(true);
+	run_ms(1500);
+	CHECK(sim.tx_listens == 1 && V()->phase == DMR_CALL_PHASE_TX_VOICE && V()->tx_error == DMR_TX_OK);
+	CHECK(rpt_drops() == d0 && sim.tx_aborts == 0 && sim.tx_ends == 0 && csbks_on_air() == 0);
+	sim_rc(dmrFecRcInfo(DMR_RC_CEASE), 0);
+	run_ms(100);
+	sim_rc(dmrFecRcInfo(DMR_RC_CEASE), 0);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && V()->tx_error == DMR_TX_ERR_CEASED);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
+	modem = &sim_modem;
+	dmr_call_set_tx_listen(DMR_CALL_TX_LISTEN);
 }
 
 // Keyed as the repeater's hang ends (issue 524): it still counts as up, so no wake-up, and the modem's aligned start
@@ -3131,6 +3168,7 @@ int main(void)
 	test_rmo_wake_lost();
 	test_rmo_drop_before_first_burst();
 	test_rmo_drop_under_over();
+	test_rmo_listen_gaps();
 	test_rmo_data_after_listened_over();
 	test_rmo_start_stalled();
 	test_rx_call();

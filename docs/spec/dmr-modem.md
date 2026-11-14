@@ -273,7 +273,9 @@ transmitting in the slot after the next one, in phase with the bursts being rece
   Longer than under the over: after our wake-up the HR_C5000 at times hears nothing of a repeater that is up until
   the modem searches again (every 240 ms, [modem-hrc6000.md](modem-hrc6000.md) 5), so the modem gets two searches
   first. `call.rx_in_tx` and `call.rx_bs_in_tx` count what was heard while sending. A radio whose RF can't (the
-  modem's `tx_listen_split` NULL or false) sends as before and doesn't see the drop.
+  modem's `tx_listen_split` NULL or false) sends as before and doesn't see the drop. Nor does a modem that hears the
+  repeater in only some of the listen slots, at times none for seconds (`tx_listen_gaps`): it listens for the RC
+  only, and silence there is not a drop.
 
 - Reverse channel (ETSI TS 102 361-1 5.1.5, 6.4.2; TS 102 361-4 6.4.14, 6.4.15.2): a radio that listens between its
   bursts also hears an RC the BS sends on the other slot, either a dedicated RC burst or one in voice burst F (EMB

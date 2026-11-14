@@ -715,6 +715,13 @@ The first area's soft values overwrite the start of the second area, its CACH an
 field is read from its soft values at 0x1C8. The engine reads the tap after a slot it listened to while sending, for a
 BS's dedicated RC burst, which the chip doesn't report ([dmr-modem.md](dmr-modem.md), reverse channel).
 
+While we send through a repeater, the chip hears it in only some of the listen slots (measured, the RF back on the
+receive frequency after each burst). In some overs it gives the BS's bursts, typed or not, and the tap fills; in
+others it gives about one deframe a second and the tap areas don't change for seconds. So the modem says
+`tx_listen_gaps`: an RC is caught when heard, and silence is not a repeater drop. While we send, the second area's
+soft values are 7-bit signed, a dibit's first bit in the sign (b6); a BS sync read that way matched in all 24 first
+bits.
+
 ---
 
 ## 6. Transmit sequences

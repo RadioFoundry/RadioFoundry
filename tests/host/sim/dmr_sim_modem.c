@@ -121,6 +121,15 @@ const hal_dmr_modem_t sim_modem = {
 	.is_transmitting = is_transmitting, .tx_listen = tx_listen, .tx_listen_split = tx_listen_split, .tx_fill = tx_fill,
 };
 
+// The same, its split listening with gaps (tx_listen_gaps)
+const hal_dmr_modem_t sim_modem_gaps = {
+	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
+	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_end = tx_end,
+	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
+	.is_transmitting = is_transmitting, .tx_listen = tx_listen, .tx_listen_split = tx_listen_split, .tx_fill = tx_fill,
+	.tx_listen_gaps = true,
+};
+
 void sim_reset(void)
 {
 	memset(&sim, 0, sizeof(sim));
@@ -223,7 +232,7 @@ void sim_slot(void)
 		}
 	}
 	if (sim.listen_bursts && sim.repeater &&
-	    (!sim.tx_active || ((int8_t)(sim.slot & 1) != sim.tx_parity && sim.listening))) {
+	    (!sim.tx_active || ((int8_t)(sim.slot & 1) != sim.tx_parity && sim.listening && !sim.listen_deaf))) {
 		dmr_burst_t b;
 
 		memset(&b, 0, sizeof(b));

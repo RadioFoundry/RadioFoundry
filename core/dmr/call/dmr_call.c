@@ -1331,7 +1331,10 @@ static void tx_start_voice(uint32_t now)
 		return;
 	}
 	// The repeater's outbound heard between our bursts: a drop under our over is seen (DMR_CALL_TX_DROP_MS)
-	s.tx_listening = tx_listen_on && s.cfg.rmo && s.modem->tx_listen_split != NULL && s.modem->tx_listen_split();
+	// A modem that hears the repeater only at times between our bursts listens for its RC, but the over doesn't
+	// count on hearing it (tx_listen_gaps)
+	s.tx_listening = tx_listen_on && s.cfg.rmo && s.modem->tx_listen_split != NULL && s.modem->tx_listen_split() &&
+			 !s.modem->tx_listen_gaps;
 	s.tx_heard_ms = now;	// the drop check's reference until the repeater is heard
 	dmr_lc_pack(&l, s.tx_lc);
 	s.modem->set_embedded_lc(s.tx_lc);

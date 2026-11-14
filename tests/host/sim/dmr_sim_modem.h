@@ -66,6 +66,7 @@ typedef struct {
 	bool lose_own_csbk;	// a CSBK begun on DMR_TIMING_ASAP or ALIGNED never goes on air: TX done, no slot started
 	unsigned lose_next;	// this many next CSBKs never go on air, whatever their timing
 	bool no_split_listen;	// tx_listen_split refused (the radio's RF can't retune between bursts)
+	bool listen_deaf;	// tx_listen_split taken, but no repeater burst heard while transmitting (sim_modem_gaps)
 
 	// State
 	dmr_event_cb_t cb;
@@ -90,6 +91,7 @@ typedef struct {
 
 extern sim_modem_t sim;
 extern const hal_dmr_modem_t sim_modem;
+extern const hal_dmr_modem_t sim_modem_gaps;	// the same with tx_listen_gaps
 
 void sim_reset(void);
 // Advance one 30 ms slot: tick, send our burst if it is our slot, tx_done when drained
