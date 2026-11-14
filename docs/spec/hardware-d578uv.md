@@ -914,12 +914,12 @@ are in use, differing only in the read path:
 
 ### 6.3 RadioFoundry's range
 
-RadioFoundry programs and erases only blocks 1856-2047 (0x0E800000-0x0FFFFFFF, 24 MB), the top of the unused range.
+RadioFoundry programs and erases only blocks 1792-2047 (0x0E000000-0x0FFFFFFF, 32 MB), the unused range.
 The driver's write window refuses anything else. Two parts (`flash_d578uv.c`):
 
 | Blocks | NAND | Use |
 | --- | --- | --- |
-| 1856-2015 | 0x0E800000-0x0FBFFFFF | the ID database, 16 MB of data in 128 logical blocks with 32 spare blocks ([nand-blocks.md](nand-blocks.md); `D578UV_NAND_IDDB_*`) |
+| 1792-2015 | 0x0E000000-0x0FBFFFFF | the ID database, 24 MB of data in 192 logical blocks with 32 spare blocks ([nand-blocks.md](nand-blocks.md); `D578UV_NAND_IDDB_*`) |
 | 2016-2047 | 0x0FC00000-0x0FFFFFFF | the core's storage on [nand-sectors.md](nand-sectors.md) (`D578UV_NAND_RFOUNDRY_*`) |
 
 The core sees one device:
@@ -930,11 +930,11 @@ The core sees one device:
 | 0x011000 | settings ring, 8 sectors | sectors |
 | 0x019000 | sector journal, 2 sectors | sectors |
 | 0x020000 | open-firmware "flash" image: its first 1 MB | sectors |
-| 0x120000 | the image goes on: 16 MB, the ID database's room past its first 544 KB (`openfw_end` 0x1120000) | ID database |
-| 0x1120000 | native codeplug, 1 MB | sectors (its 0x120000) |
-| 0x1220000 | staging, 256 KB | sectors (its 0x220000) |
+| 0x120000 | the image goes on: 24 MB, the ID database's room past its first 544 KB (`openfw_end` 0x1920000) | ID database |
+| 0x1920000 | native codeplug, 1 MB | sectors (its 0x120000) |
+| 0x1A20000 | staging, 256 KB | sectors (its 0x220000) |
 
-The ID database's room is then about 16.8 MB: 256 KB in area 1 and area 2 from 0xD8000 to the image's end
+The ID database's room is then about 24.5 MB: 256 KB in area 1 and area 2 from 0xD8000 to the image's end
 ([iddb-compact.md](iddb-compact.md) 2). If its range doesn't mount (foreign data in it), the image ends at 0x120000,
 as on the NOR radios, and the radio says so in its fast CPS INFO; the diagnostics page's `iddb` line shows why. A
 write to the sectors' part first commits the ID database's open copy.

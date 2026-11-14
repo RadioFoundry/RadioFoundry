@@ -118,12 +118,12 @@ void d578uv_tone_stop(void);
 // --- SPI NAND (nand_d578uv.c, hardware-d578uv.md 6) ---
 // RadioFoundry's own block ranges, the only blocks it programs or erases (hardware-d578uv.md 6.3), in the 32 MB at
 // 0x0E000000 the radio's own data doesn't use ("Initialize radio" doesn't reach it either): the top 32 blocks (4 MB)
-// for the core's sectors, and the 160 blocks below them for the ID database (16 MB of data and 32 spare blocks)
+// for the core's sectors, and the 224 blocks below them for the ID database (24 MB of data and 32 spare blocks)
 #define D578UV_NAND_RFOUNDRY_FIRST	2016u
 #define D578UV_NAND_RFOUNDRY_BLOCKS	32u
-#define D578UV_NAND_IDDB_FIRST		1856u
-#define D578UV_NAND_IDDB_BLOCKS		160u
-#define D578UV_NAND_IDDB_LOGICAL	128u	// logical blocks: 16 MB
+#define D578UV_NAND_IDDB_FIRST		1792u
+#define D578UV_NAND_IDDB_BLOCKS		224u
+#define D578UV_NAND_IDDB_LOGICAL	192u	// logical blocks: 24 MB
 bool d578uv_nand_init(void);
 bool d578uv_nand_ready(void);
 uint16_t d578uv_nand_id(void);		// manufacturer << 8 | device, 0 if nothing answered
