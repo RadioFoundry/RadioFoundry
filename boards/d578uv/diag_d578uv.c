@@ -63,7 +63,6 @@ static const char *boot_name(uint8_t r)
 }
 // The baseband's identity answers (d578uv_modem_identity): product, hardware and software versions as text, then a
 // 3-byte BCD customer ID and a 5-byte BCD serial (hardware-d578uv.md 4.4)
-enum { SCT_PRO, SCT_HW, SCT_SW, SCT_CID };
 
 // A text answer: printable characters up to a NUL, trailing spaces dropped; "?" for none
 static void put_text(out_t *o, int q)
@@ -86,7 +85,7 @@ static void put_text(out_t *o, int q)
 static void put_bcd(out_t *o, int from, int to)
 {
 	const uint8_t *d = NULL;
-	if (d578uv_modem_identity(SCT_CID, &d) < to) {
+	if (d578uv_modem_identity(D578UV_SCT_CID, &d) < to) {
 		put(o, "?");
 		return;
 	}
@@ -282,11 +281,11 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 		// a long answer cuts the product off rather than it
 		put(&o, "sct sw ");
 #if CONFIG_DMR
-		put_text(&o, SCT_SW);
+		put_text(&o, D578UV_SCT_SW);
 		put(&o, " hw ");
-		put_text(&o, SCT_HW);
+		put_text(&o, D578UV_SCT_HW);
 		put(&o, " ");
-		put_text(&o, SCT_PRO);
+		put_text(&o, D578UV_SCT_PRO);
 #else
 		put(&o, "-");
 #endif

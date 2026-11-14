@@ -168,8 +168,8 @@ const char *d578uv_modem_codec(void);		// board_t.modem_codec
 bool d578uv_modem_field(uint8_t type, uint8_t id, uint32_t *val, bool write);	// board.chip_reg chip 5
 int d578uv_modem_field_bytes(uint8_t type, uint8_t id, const uint8_t *data, uint8_t n, uint8_t *out, uint8_t cap);
 // The baseband's identity answers (Q_PRO_STR, Q_HW_VER, Q_SW_VER, Q_CID_SN), asked by the modem task: the bytes of
-// answer q at *d and how many, -1 none (not asked yet, or unanswered three times)
-#define D578UV_SCT_IDENTITY	4
+// answer q at *d and how many, -1 none (not asked yet, or not answered yet)
+enum { D578UV_SCT_PRO, D578UV_SCT_HW, D578UV_SCT_SW, D578UV_SCT_CID, D578UV_SCT_IDENTITY };
 int d578uv_modem_identity(uint8_t q, const uint8_t **d);
 // Side A's carrier in DMR, each status poll: tells the baseband when one comes up and when it goes (CARRIER_READY)
 void d578uv_modem_carrier(bool carrier);
