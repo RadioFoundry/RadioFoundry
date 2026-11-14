@@ -5823,6 +5823,49 @@ static uint8_t t3_rand_status(const t3_csbk_t *q)
 	return (uint8_t)(((q->u.rand.options & 0x1Fu) << 2) | (q->u.rand.extra & 3u));
 }
 
+// A radio check on a trunked system goes as a status poll (6.6.6.2): the poll's acknowledgement is the check's answer;
+// a refusal fails it at once, without the conventional retries
+static void test_t3_radio_check(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	uint8_t kind;
+	uint32_t dst;
+	unsigned from = sim.air_count;
+	CHECK(dmr_signal_radio_check(1000001u));
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_STATUS, &q) && t3_rand_status(&q) == T3_STATUS_POLL && q.u.rand.dst == 1000001u &&
+	      !(q.u.rand.options & 0x40u));
+	CHECK(air_count(from, DMR_BURST_CSBK, DMR_CSBKO_RADIO_CHECK) == 0);	// no conventional check on the TSCC
+	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_SENDING);
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ACKD };
+	a.u.ack.reason = T3_RC_MS_POLL_ACCEPTED;
+	a.u.ack.info = 5;
+	a.u.ack.dst = T3_OWN;
+	a.u.ack.src = 1000001u;
+	t3_csbk_rx(&a, 1);
+	t3_site_run(300);
+	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_OK && dst == 1000001u);
+
+	// Refused (the polled MS isn't there)
+	from = sim.air_count;
+	CHECK(dmr_signal_radio_check(1000002u));
+	t3_site_run(600);
+	CHECK(t3_rand_since(from, T3_SK_STATUS, &q) && q.u.rand.dst == 1000002u);
+	t3_csbk_t n = { .lb = true, .op = T3_OP_C_ACKD };
+	n.u.ack.reason = T3_RC_MS_AWAY;
+	n.u.ack.dst = T3_OWN;
+	n.u.ack.src = 1000002u;
+	t3_csbk_rx(&n, 1);
+	t3_site_run(300);
+	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_FAILED && dst == 1000002u);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
 // Emergency on a trunked system: the alarm is status 126 to the target, acknowledged once (no repeats); the call
 // asks with the emergency option; the end of the emergency sends status 124; status 126 heard raises the alert
 static void test_t3_emergency(void)
@@ -6287,6 +6330,7 @@ int main(void)
 	test_t3_at();
 	test_t3_talk();
 	test_t3_sdata();
+	test_t3_radio_check();
 	test_t3_pdata();
 	test_t3_emergency();
 	test_t3_broadcast();

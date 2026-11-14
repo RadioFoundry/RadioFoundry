@@ -338,6 +338,11 @@ the Status Polling Service for a poll, with the polled status in Response_Info (
 to a talkgroup or a status past 127 isn't started (`T3_RES_NOT_ALLOWED`). The last status sent is the radio's own,
 the answer to a poll.
 
+**Radio check.** A radio check from the data service (the menus' Radio check, [dmr-data.md](dmr-data.md)) has no
+CSBK of its own on a trunked system: the radio core sends it as a status poll to the MS. The poll's acknowledgement
+answers the check (`dmrDataServiceSignalResult`); a refusal or no answer fails it at once, without the conventional
+retries (the random access has its own).
+
 A status heard in a C_AHOY on the TSCC (Service_Options_Mirror the 5 most significant bits, Appended_Blocks the 2
 least) to the radio or to a talkgroup it listens to is kept in `status_rx`. To the radio it is answered (section 7.4);
 to a talkgroup it isn't. Listen only, it is kept and not answered. The TSCC sends one to a talkgroup more than once,

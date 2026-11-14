@@ -89,6 +89,10 @@ static void cw_cancel(radio_sm_t *sm);
 
 static const uint32_t vfo_start_hz[] = { 146520000, 145500000, 446000000, 433500000 };
 
+// Used ahead of their definitions by the emergency and trunking code
+static void ptt_down(radio_sm_t *sm, uint32_t now_ms);
+static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms);
+
 #if CONFIG_DMR_TRUNK
 // The engine and the system it runs, in plain RAM (radio_sm_t sits in the CPU-only RAM, which is full on some radios)
 static t3_ms_t t3m;
@@ -1956,7 +1960,7 @@ static struct {
 	bool t3_asked;
 	bool t3_group;
 	uint32_t t3_dst;
-	uint8_t t3_status;	// not 0: the list is the emergency alarm, sent as this status instead (6.6.6.3)
+	uint8_t t3_status;	// not 0: the list is the emergency alarm or a radio check, sent as this status instead
 #endif
 } data_tx;
 
@@ -2076,6 +2080,25 @@ static bool data_t3_start(radio_sm_t *sm, const dmrBurst_t *bursts, int count)
 		return true;
 	}
 #endif
+#if CONFIG_DMR_SIGNALING
+	// A radio check: on a trunked system the status polling service (6.6.6.2), whose answer is the called MS's own
+	// status. Its answer finishes the check (dmrDataServiceSignalResult); there is no conventional answer CSBK
+	if (strcmp(dmrDataServiceTxStartingName(), "signal") == 0 && count >= 1 && bursts[0].length >= 10 &&
+	    (bursts[0].payload[0] & 0x3Fu) == DMR_CSBKO_RADIO_CHECK) {
+		const uint8_t *c = bursts[0].payload;
+		uint32_t id = ((uint32_t)c[4] << 16) | ((uint32_t)c[5] << 8) | c[6];
+		if (id == 0 || t3m.state != T3_CAMPED || t3m.ax.state != T3_AX_IDLE) {
+			return false;
+		}
+		data_tx.list = NULL;
+		data_tx.t3_wait = true;
+		data_tx.t3_asked = false;
+		data_tx.t3_group = false;
+		data_tx.t3_dst = id;
+		data_tx.t3_status = T3_STATUS_POLL;
+		return true;
+	}
+#endif
 	if (i == count || bursts[i].length < 8) {
 		return false;
 	}
@@ -2127,14 +2150,22 @@ static void data_t3_tick(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 	const t3_ms_t *m = &t3m;
-#if CONFIG_DMR_EMERGENCY
 	if (data_tx.t3_status != 0) {
 		if (m->ax.svc == T3_SVC_STATUS && (m->ax.state != T3_AX_IDLE || m->ax.result == T3_RES_PENDING)) {
 			return;
 		}
 		bool ok = m->ax.svc == T3_SVC_STATUS && m->ax.result == T3_RES_DONE;
+		uint8_t status = data_tx.t3_status;
 		data_tx.t3_wait = false;
 		data_tx.t3_status = 0;
+		if (status == T3_STATUS_POLL) {
+#if CONFIG_DMR_SIGNALING
+			dmrDataServiceSignalResult(data_tx.t3_dst, ok);	// answered: the MS is there
+#endif
+			dmrDataServiceTxDone(ok ? DMR_TX_OK : DMR_TX_ERR_NO_REPEATER);
+			return;
+		}
+#if CONFIG_DMR_EMERGENCY
 		if (ok) {
 			t3_em.alarm_dst = data_tx.t3_dst;
 			t3_em.alarm_group = data_tx.t3_group;
@@ -2144,9 +2175,9 @@ static void data_t3_tick(radio_sm_t *sm, uint32_t now_ms)
 		if (ok) {
 			dmrDataServiceEmergencyAlarmCancel();	// acknowledged: no repeats; the module goes on to the call
 		}
+#endif
 		return;
 	}
-#endif
 	if (t3m.state == T3_FOLLOW && t3m.call.data && t3m.call.ours) {
 		if (t3_ms_data_ready(&t3m, now_ms) && !sm->ptt) {
 			data_tx.t3_wait = false;
@@ -2289,8 +2320,6 @@ static void data_save_settings(uint32_t now_ms)
 // the alert tone and keeps the settings in the store (settings_t em_*) ---
 
 static uint32_t em_saved_serial;
-static void ptt_down(radio_sm_t *sm, uint32_t now_ms);
-static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms);
 
 static void emergency_init(const settings_t *st)
 {

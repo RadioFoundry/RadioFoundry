@@ -1292,6 +1292,23 @@ bool dmrDataServiceRadioCheck(uint32_t dst)
 	return signalStart(DMR_DATA_EV_RADIO_CHECK_OK, dst);
 }
 
+void dmrDataServiceSignalResult(uint32_t dst, bool ok)
+{
+	if (!CONFIG_DMR_SIGNALING || (sig.state != DMR_REQ_SENDING) || (dst != sig.dst))
+	{
+		return;
+	}
+	if (ok && (sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED))
+	{
+		stats.callAlertsAcked++;
+	}
+	else if (ok)
+	{
+		stats.radioChecksAnswered++;
+	}
+	signalFinish(ok);
+}
+
 static void signalTick(void)
 {
 	if (sig.state == DMR_REQ_QUEUED)
