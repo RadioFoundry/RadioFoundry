@@ -169,20 +169,24 @@ export class FastLink {
 			const head = [OP.BLOCK, ...le32(addr), format, ...u16(stream.length), ...le32(crc)];
 			try {
 				await this.op("block", format === FORMAT_PATCH ? [...head, ...le32(crc32(base))] : head);
+				if (!(await this.data(stream, window))) {
+					if (window === 1) throw new FastError("data", "refused", REASON.STREAM);
+					note("fast write: window failed, block sent again one DATA at a time", { addr });
+					window = 1;
+					continue;
+				}
+				// END writes the flash: a sector erase can take 400 ms, two of them in direct mode
+				await this.op("end", [OP.END], { timeout: 5000 });
 			} catch (e) {
+				// BASE at BLOCK, or at END when the block changed while the patch decoded (the VFO moved)
 				if (!(e instanceof FastError && e.reason === REASON.BASE && format === FORMAT_PATCH)) throw e;
 				note("fast write: the radio's block isn't the one the patch was made against, sent whole", { addr });
 				format = FORMAT_LZ4;
 				stream = encodeBlock(bytes);
 				continue;
 			}
-			if (await this.data(stream, window)) break;
-			if (window === 1) throw new FastError("data", "refused", REASON.STREAM);
-			note("fast write: window failed, block sent again one DATA at a time", { addr });
-			window = 1;
+			break;
 		}
-		// END writes the flash: a sector erase can take 400 ms, two of them in direct mode
-		await this.op("end", [OP.END], { timeout: 5000 });
 		if (format === FORMAT_PATCH) this.patched++;
 		return stream.length;
 	}
