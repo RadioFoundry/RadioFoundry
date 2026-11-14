@@ -786,7 +786,10 @@ function render() {
 	app.append(h("div", { class: "nav-bar" },
 		h("div", { class: "nav-back" },
 			S.step > 0 ? button("← " + t("flash.back"), () => { S.step--; render(); }) : null,
-			h("button", { class: "btn btn-quiet", type: "button", onclick: () => reset() }, t("flash.start_over"))),
+			h("button", { class: "btn btn-quiet", type: "button", onclick: () => reset() }, t("flash.start_over")),
+			// on every step: a page stuck waiting on the radio shows no error, so no error's report button either
+			// (#446). The done step has its own
+			step === "done" ? null : reportButton()),
 		info, fwd));
 }
 

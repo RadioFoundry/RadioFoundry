@@ -396,6 +396,17 @@ test("the bootloader route's Install asks before an install without a codec", ()
 	assert.match(body.slice(0, ask), /S\.requested = null; S\.step--/);
 });
 
+// app.js needs the DOM, so its source is checked: the bar under every step but the last offers Report a Problem, since
+// a page stuck waiting on the radio shows no error and so no error's button (#446); the done steps have their own
+test("every step's nav bar offers Report a Problem", () => {
+	const src = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
+	const back = src.slice(src.indexOf('h("div", { class: "nav-back" }'), src.indexOf("info, fwd));"));
+	assert.match(back, /step === "done" \? null : reportButton\(\)/);
+	assert.match(src.slice(src.indexOf("function doneView(")), /t\("report\.something_wrong"\), " ", reportButton\(\)/);
+	const c7 = readFileSync(new URL("../static/js/flasher/c7000ui.js", import.meta.url), "utf8");
+	assert.match(c7, /t\("report\.something_wrong"\), " ", reportButton\(\)/);
+});
+
 // app.js needs the DOM, so what it must keep is checked in its source: whyNoAnswer() is async, so a noAnswer() that
 // isn't awaited throws a Promise and the user reads "[object Promise]"; a radio that answered with the open-firmware
 // CPS gets the next step, not the cable and driver tips; every string it picks exists
