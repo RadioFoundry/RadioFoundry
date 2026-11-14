@@ -401,8 +401,9 @@ static void test_no_answer(void)
 	bool spaced = true;
 	for (int i = 1; i < nsent; i++) {
 		uint32_t gap = sent_ms[i] - sent_ms[i - 1];
-		// NWait + 1 frames for the answer, then 0..7 frames of backoff (table 6.3, Backoff 6: 8)
-		if (gap < 7u * 60u || gap > 15u * 60u) {
+		// NWait + 1 frames for the answer (and the decision at the next one), then 0..7 frames of backoff (table
+		// 6.3, Backoff 6: 8)
+		if (gap < 8u * 60u || gap > 16u * 60u) {
 			spaced = false;
 			printf("  gap %u ms\n", gap);
 		}
@@ -474,6 +475,23 @@ static void test_ra_on_air(void)
 	CHECK(ms.reg == T3_REG_OK && nsent == 1, "the late answer taken");
 	t3_ms_sent(&ms, T, true);
 	CHECK(ms.reg == T3_REG_OK && ms.ax.state == T3_AX_IDLE, "a report with nothing pending changes nothing");
+
+	// An answer in the window's last frame, NWait + 1 = 7 frames after the burst's (6.2.1.1.5), is taken
+	setup(T3_OPT_PRIVATE, true);
+	camp(&ms);
+	for (int i = 0; i < 4 && nsent == 0; i++) {
+		frame(&ms);
+	}
+	CHECK(nsent == 1, "request in frame F");
+	t3_ms_sent(&ms, T, true);
+	frames(&ms, 6);		// F+1..F+6
+	T += 30;		// F+7: its slot 1 tick, then the answer in that slot
+	t3_ms_slot(&ms, T, 1, at_known, at_busy);
+	poll_all(&ms);
+	CHECK(nsent == 1 && ms.ax.state == T3_AX_WAIT_RESP, "no retry before F+7's answer (%d sent)", nsent);
+	rx(&ms, 1, &a);
+	CHECK(ms.reg == T3_REG_OK && nsent == 1 && ms.st.ra_log[0].frames == 7, "taken, %u frames after",
+	      ms.st.ra_log[0].frames);
 
 	// Dropped: the backoff starts at the next frame
 	setup(T3_OPT_PRIVATE, true);

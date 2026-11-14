@@ -228,7 +228,7 @@ One request at a time, on the TSCC's first slot (TS1 on a dedicated TSCC).
 | Before the first try | an Aloha heard since the radio came to this TSCC |
 | Each inbound slot | the AT bit for the slot's inbound decoded and free (below); the Aloha's Mask matches the radio's ID; the Service Function allows the service (table below). An emergency skips Mask and Service Function unless the Mask is 24 |
 | A slot not permitted | wait for the next permitted one |
-| After a try | wait NRand_Wait + 1 frames for an answer |
+| After a try | the answer may come in any of the NWait + 1 frames after the try's own (6.2.1.1.5, figure 6.7); no new try before the last of them has passed. The wait runs from the burst on air: the radio's stack reports it sent, and a burst it dropped goes to the backoff at once |
 | No answer | try again 1 to Backoff frames later, at random (table 6.3); NRand_NR tries (NRand_NE for an emergency), then no answer |
 | Overall | TRand_TC from the request, then timeout |
 | C_WACKD, C_QACKD | stop retrying; TP_Timer for a call, TNP_Timer for the rest; a further one restarts it |

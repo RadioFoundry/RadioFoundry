@@ -5485,12 +5485,17 @@ static void test_volume_step_of(void)
 #define T3_RX_HZ	461462500u
 #define T3_TX_HZ	461087500u
 
-static void t3_csbk_rx(const t3_csbk_t *p, int8_t ts)
+// A site's PDU comes when the radio can hear it: not in the middle of the radio's own burst list
+static void t3_quiet(void)
 {
-	// A site's PDU comes when the radio can hear it: not in the middle of the radio's own burst list
 	for (int i = 0; i < 60 && dmr_call_data_busy(); i++) {
 		run(5);
 	}
+}
+
+static void t3_csbk_rx(const t3_csbk_t *p, int8_t ts)
+{
+	t3_quiet();
 	dmr_burst_t b;
 	memset(&b, 0, sizeof(b));
 	b.kind = DMR_BURST_CSBK;
@@ -5574,6 +5579,9 @@ static void t3_stage_start(void)
 
 static void t3_data_rx(uint8_t kind, const uint8_t *d, int8_t ts)
 {
+	if (kind == DMR_BURST_DATA_HEADER) {
+		t3_quiet();	// a UDT's blocks follow its header in the next frames: wait only before the header
+	}
 	dmr_burst_t b;
 	memset(&b, 0, sizeof(b));
 	b.kind = kind;
@@ -5771,6 +5779,7 @@ static void test_t3_pdata(void)
 	g.u.grant.slot = 2;
 	g.u.grant.dst = 1000001u;
 	g.u.grant.src = T3_OWN;
+	t3_quiet();
 	from = sim.air_count;
 	t3_csbk_rx(&g, 1);
 	run(1500);
@@ -5933,7 +5942,7 @@ static void test_t3_dial(void)
 		CHECK(memcmp(sim.air[hdr + 1].payload, "\x55\x51\x23\x4f", 4) == 0);
 	}
 	req(RREQ_PTT, 0);
-	t3_site_run(3000);
+	t3_site_run(4000);	// unanswered: NRand_NR tries of NWait + 2 frames and the backoff, then free again
 
 	// The focused row's target (one call) goes before the one chosen for now
 	req(RREQ_DMR_FOCUS, (int32_t)((1u << 24) | 1000001u));

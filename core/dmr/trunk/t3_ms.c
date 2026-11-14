@@ -865,6 +865,14 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 	t3_csbk_build(&p, T3_CRC_MASK_CSBK, out);
 }
 
+// The answer to a random access burst comes in one of the NWait + 1 frames after the burst's own (6.2.1.1.5, figure
+// 6.7: NRand_Wait 1 is "one of the next two TDMA frames"). The wait counts down at the access slot's tick and the next
+// try is decided at a tick: the count holds that last frame's tick too, so its answer lands before the decision
+static uint16_t ra_window(const t3_ms_t *ms)
+{
+	return (uint16_t)(t3_nwait_frames(ms->aloha.nrand_wait) + 2u);
+}
+
 static void ra_slot(t3_ms_t *ms, uint32_t now, bool at_known, bool at_busy)
 {
 	switch (ms->ax.state) {
@@ -892,7 +900,7 @@ static void ra_slot(t3_ms_t *ms, uint32_t now, bool at_known, bool at_busy)
 		ms->st.ra_log[k].air_ms = 0;
 		ms->ax.to_air = true;
 		ms->ax.state = T3_AX_WAIT_RESP;
-		ms->ax.frames = (uint16_t)(t3_nwait_frames(ms->aloha.nrand_wait) + 1u);
+		ms->ax.frames = ra_window(ms);
 		if (ms->ax.svc == T3_SVC_REGISTER) {
 			// 6.4.4.1: the old record goes as soon as the request is sent
 			ms->reg = T3_REG_NEEDED;
@@ -2023,9 +2031,9 @@ static void deliver(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 	}
 	if (waiting && ms->ax.state != T3_AX_WAIT_RESP && ms->st.ra_tries != 0) {
 		// This PDU answered the last random access burst: how many frames after it (the wait counts down from
-		// NRand_Wait + 1)
+		// ra_window)
 		uint8_t k = (uint8_t)((ms->st.ra_tries - 1u) % T3_RA_LOG);
-		uint16_t wait = (uint16_t)(t3_nwait_frames(ms->aloha.nrand_wait) + 1u);
+		uint16_t wait = ra_window(ms);
 		ms->st.ra_log[k].frames = (uint8_t)(left <= wait ? (uint16_t)(wait - left) : 0u);
 		ms->st.ra_log[k].rx_slot = slot;
 		ms->st.ra_log[k].rx_ms = (uint16_t)(now - ms->st.ra_log[k].tx_ms);
@@ -2396,7 +2404,7 @@ void t3_ms_sent(t3_ms_t *ms, uint32_t now, bool ok)
 	uint8_t k = (uint8_t)((ms->st.ra_tries - 1u) % T3_RA_LOG);
 	uint32_t d = now - ms->st.ra_log[k].tx_ms;
 	ms->st.ra_log[k].air_ms = d == 0 ? 1u : (d > 0xFFFFu ? 0xFFFFu : (uint16_t)d);
-	ms->ax.frames = ok ? (uint16_t)(t3_nwait_frames(ms->aloha.nrand_wait) + 1u) : 1u;
+	ms->ax.frames = ok ? ra_window(ms) : 1u;
 }
 
 void t3_ms_activity(t3_ms_t *ms, uint32_t now, uint8_t slot)
