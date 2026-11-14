@@ -64,7 +64,10 @@ sends bursts. When the modem takes no burst for `DMR_CALL_TX_STALL_MS` (1.5 s; a
 slot starts), the stack aborts the transmission and returns to receive with `DMR_TX_ERR_STALLED` (`dmr.tx_error=stalled`
 on the debug link). With PTT still held the radio shows "Modem refused to send" until release. A modem without slot
 timing (a modem that stops answering) otherwise kept the radio keyed until the battery came out
-([gotchas](gotchas.md) 3.12).
+([gotchas](gotchas.md) 3.12). Through a repeater, before the first burst's slot, the wait is 300 ms longer
+(`DMR_CALL_TX_ALIGN_GRACE_MS`): the modem's own aligned-start timeout (1.5 s and a slot) must come first, so its
+refusal wakes the repeater again ([dmr-modem.md](dmr-modem.md) 2.7). With an encoder slow to start, the headers are
+the last bursts queued, so without the margin the stall cut comes first.
 
 ### 2.1 The DMR VFO
 

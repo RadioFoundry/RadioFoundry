@@ -230,6 +230,14 @@ transmitting in the slot after the next one, in phase with the bursts being rece
 - Then listen: the repeater is up when its outbound is heard with the slot number toggling correctly more than 3 times
   in a row.
 - No answer within 600 ms: send again, up to the configured number of attempts; then report failure to the user.
+- While a key-up waits for its first slot (the wake-up queued, or the aligned voice start not yet on the air), the
+  modem's slot numbers don't count as the repeater heard: the modem labels slots from the timing it last had, which
+  kept a repeater that had dropped "up". A repeater that dropped as the hang ended then got no wake-up.
+- A voice start through a repeater that the modem gives up before its first burst (`DMR_EV_TX_REJECTED` or
+  `DMR_EV_TX_DONE` with nothing sent: no slot timing to align to) wakes the repeater again instead of being refused:
+  once per key-up, and only while PTT is held, with the whole wake-up's attempts. A second such start is refused. The
+  refused start's own `DMR_EV_TX_DONE` comes after its rejection, so a wake-up waits for its CSBK's
+  `DMR_EV_TX_SLOT_STARTED` before taking a `DMR_EV_TX_DONE` as its own.
 - A short PTT press still runs the whole wake-up (the user only starts the call; other radios do the same). On release the
   stack keeps listening and retrying. If the repeater answers after release, nothing is sent and the call view's
   `wake_admits` counter goes up, so the radio plays its talk permit tone. If no repeater is heard in the last attempt, the
