@@ -306,6 +306,8 @@
  "screen.hotspot": "热点模式",
  "screen.hub": "菜单",
  "screen.message_view": "阅读消息",
+ "screen.message_long": "长消息：显示全文",
+ "screen.message_read": "长消息的全文",
  "screen.messages_empty": "消息，空",
  "screen.messages": "消息",
  "screen.position": "位置（APRS）",

@@ -20,6 +20,7 @@
 
    | 行 | 作用 |
    |---|---|
+   | 显示全文 | 在单独的页面上显示全文。**上**、**下**键滚动，**返回**键返回。仅当文本太长、屏幕以“…”截断时出现 |
    | 回复“OK” | 向发送者发送“OK” |
    | 回复“在路上” | 向发送者发送“在路上” |
    | 呼叫 | 临时把发送者设为通话目标 |
@@ -29,6 +30,8 @@
 
 <img src="../ux/screens/160x120i5/messages.png" width="200" alt="消息">
 <img src="../ux/screens/160x120i5/message_view.png" width="200" alt="一条消息">
+<img src="../ux/screens/160x120i5/message_long.png" width="200" alt="长消息：显示全文">
+<img src="../ux/screens/160x120i5/message_read.png" width="200" alt="">
 
 电台在内存中保留最近收到的 4 条消息。关机后丢失。
 
