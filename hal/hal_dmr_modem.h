@@ -149,6 +149,9 @@ typedef struct {
 	// Chip on and in DMR mode (after the board's RF side is in DMR mode); events start flowing to cb
 	bool (*start)(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx);
 	void (*stop)(void);		// back to the FM / idle state of the chip
+	// The chip's rate 3/4 encoder doesn't start each block in state 0 (TS 102 361-1 B.2.2), so receivers decode
+	// octets 0-1 wrong: the core sends no rate 3/4 of its own (confirmed data goes at rate 1/2)
+	bool tx_rate34_bad;
 	void (*configure)(const dmr_config_t *cfg);
 	void (*rx_restart)(void);
 	void (*rx_lock_slot)(int8_t ts);	// 1, 2, or 0 for both
