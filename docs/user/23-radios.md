@@ -448,6 +448,7 @@ A 240 x 320 color screen. RadioFoundry uses its full resolution, with smooth (an
 
 ### What the DM-32UV lacks
 
+- On the newer RF section (the diagnostics line ends in `rf B`), no air band AM receive yet: an AM channel plays as FM.
 - Split duplex repeater: each half passes on air with one radio (the transmit half's outbound with its CACH, a
   host-fed voice call, 5 minutes keyed within 60 Hz; the receive half's slot labels). As the receive half of a pair
   with a DM-1801 Pro transmitting, it labeled a subscriber's calls with the right slot in 29 of 31 sessions; the other

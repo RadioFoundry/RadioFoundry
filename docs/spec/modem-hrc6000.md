@@ -301,6 +301,13 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
 - **Data on our slot only**: through a repeater, accept a data burst only when the slot number (from the TC bit) is
   ours and it differs from the previous burst's slot (a second report in the same slot is a duplicate). In direct
   mode, accept the bursts of the slot the receiver is locked to.
+- **Voice numbers by the frame count.** A class 0 report's number (0x51 bits 6-4) is not always its burst's: on the
+  bench about one call in two had a burst reported with the number of the burst before it or one further back, with
+  no frame missed. Within a superframe in progress on the slot, with the timeslot interrupts running, the driver
+  numbers each voice burst from the last one taken plus the frames counted since (two ticks a frame) and counts a
+  disagreeing report (`sx` in the `v0` diagnostics line). A report with the last burst's number and the same voice is
+  stale and dropped; with new voice it is the next burst. Burst A keeps its voice sync. Without the timing, or where
+  the count would land on A, the chip's number is used.
 - **The LC registers are sticky.** Page 2 keeps the previous call's LC until the new one is decoded. On a new
   reception, the first LC read may be the last call's. Either wait for two superframes (burst A seen twice after the
   slot lock) before trusting it, or capture page 2 when the reception starts and accept an LC only when it differs
@@ -397,6 +404,7 @@ the CC is held. Release the hold after 5 s of no received audio while idle.
 | Terminator with LC, good CRC | ends the call in **direct mode**. Through a repeater, ignore it: the repeater echoes our own terminators, which would end our next reception |
 | no valid burst for 13 timeslot interrupts while receiving (about 390 ms) | call over; restart the receiver. The restart drops the chip's sync, so it costs more than the wait ([gotchas 1.12](gotchas.md)) |
 | no valid burst for 20 timeslot interrupts while idle | restart the receiver |
+| an aligned start (through a repeater) waiting for its slot, no valid burst for 8 timeslot interrupts and no slot timing | restart the receiver, every 8 interrupts until the slot is found or the start times out at 1.5 s ([gotchas 1.13](gotchas.md)). Diagnostics: `rs ... a` |
 | no timeslot interrupt for 200 ms while not idle | the modem has stopped: re-initialize the DMR state and the receiver |
 | slot captured but silent for the "capture timeout" (user setting, seconds) through a repeater, no slot filter | switch to the other slot |
 | slot sync search timeouts | 2.5 s at start-up, 390 ms (one superframe + one slot) while scanning |

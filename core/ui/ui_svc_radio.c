@@ -421,6 +421,9 @@ void ui_svc_apply(uint8_t id, int32_t value)
 	case UI_SET_TALK_PERMIT:
 		rs.talk_permit = value != 0;
 		break;
+	case UI_SET_SCAN_TONE:
+		rs.scan_beep = value != 0;
+		break;
 	case UI_SET_VFO_STEP:		// 10 Hz units; 833 is the exact 8.33 kHz grid
 		radio_req_vfo_step_size(value == 833 ? 8333u : value > 0 && value <= 100000 ? (uint32_t)value * 10u : 0u);
 		return;

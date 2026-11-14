@@ -39,6 +39,12 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Volume | 0 to 16 | 8 | The speaker volume, on radios without a volume knob only (the row is not shown on the others). 0 is mute. The **Volume** key opens a screen that changes it faster ([Radio reference](23-radios.md#key-roles)) | Works |
 | Tone volume | 0 to 10 | 5 | The loudest the radio's beeps get. Beeps follow the speaker volume up to this level, so turning the volume down makes them quieter too | Works |
 | Talk permit tone | On, Off | On | The beep when a DMR transmission starts ([DMR](09-dmr.md)) | Works |
+| Call end tone | On, Off | On | The two-note beep when a DMR call you heard ends | Works |
+| TOT warning tone | On, Off | On | The beep a few seconds before the transmit time-out cuts a transmission | Works |
+| Battery tone | On, Off | On | The beeps for a low and a critical battery | Works |
+| TX denied tone | On, Off | On | The low tone when the radio refuses PTT or the time-out cuts a transmission | Works |
+| Scan stop tone | On, Off | Off | A short beep when a scan stops on a signal | Works |
+| Emergency tone | On, Off | On | The warble when the radio hears someone's emergency. Dimmed in a build without DMR emergency | Works |
 | Voice prompts | On, Off | Off | Spoken prompts. There is no recorded speech yet | Dimmed |
 | Message tone | On, Off | On | A three-note tone when a text message arrives | Works |
 | Vibrate | On, Off | On | The radio vibrates for a text message, a call alert, a private call to you and an emergency it hears. Only on radios with a vibration motor ([Radio reference](23-radios.md)) | Works |

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// FD6818 set-up of the Baofeng DM-1801 Pro (docs/spec/hardware-dm1801pro.md 5): the same chip family as the platform's other FD6818 board
-// with other register tables, an extra 0x0200 step in the 0x30 sequences and no band-word table. The values are
-// unverified on a bench; the 12.5 kHz word in particular is the one the spec lists second (hardware-dm1801pro.md 5.2)
+// FD6818 set-up B (docs/spec/hardware-dm1801pro.md 5, hardware-dm32.md 8.10): the register tables of the FD6818 parts
+// whose synthesizer doesn't lock on the default set-up. 0x37 has bit 15 set, the 0x30 sequences an extra 0x0200 step
+// and there is no band-word table. Two variants, which differ only in the DMR receive words; which board takes which
+// is in its radio file. The 12.5 kHz word is the one hardware-dm1801pro.md 5.2 lists second
 #include <stddef.h>
-#include "rf/fd6818/fd6818.h"	// not dm1801pro.h: the host test builds this file alone
+#include "fd6818.h"
 
 #define TBL_N(t)	(uint16_t)(sizeof(t) / sizeof((t)[0]))
 
@@ -36,6 +37,12 @@ static const fd6818_regval_t dmr_table[] = {
 	{ 0x47, 0x0140 }, { 0x48, 0xB2F5 }, { 0x7E, 0xB03F }, { 0x2B, 0x0700 }, { 0x28, 0x0A40 }, { 0x3F, 0x0000 },
 };
 
+// The second variant's DMR words (hardware-dm32.md 8.10): on an RF section where the table above gave the modem no DMR
+// signal (no sync ticks), 0x47 = 6943 and 0x48 = B2FD sync
+static const fd6818_regval_t dmr_table_6943[] = {
+	{ 0x47, 0x6943 }, { 0x48, 0xB2FD }, { 0x7E, 0xB03F }, { 0x2B, 0x0700 }, { 0x28, 0x0A40 }, { 0x3F, 0x0000 },
+};
+
 // 5.4: 0x37 first, the other HR_C7000 boards' 0x30 steps with a 0x0200 between idle and the final word
 static const fd6818_regval_t rx_seq[] = { { 0x37, 0x9D1F }, { 0x30, 0x0200 }, { 0x30, 0xBFF1 } };
 static const fd6818_regval_t tx_seq[] = { { 0x37, 0x9D1F }, { 0x52, 0x028F }, { 0x30, 0x0200 }, { 0x30, 0xC1FE } };
@@ -55,15 +62,19 @@ static bool band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40)
 	return true;
 }
 
-const fd6818_variant_t fd6818_variant_dm1801pro = {
-	.init = init_table, .init_n = TBL_N(init_table),
-	.fm = fm_table, .fm_n = TBL_N(fm_table),
-	.dmr = dmr_table, .dmr_n = TBL_N(dmr_table),
-	.rx = rx_seq, .rx_n = TBL_N(rx_seq),
-	.tx = tx_seq, .tx_n = TBL_N(tx_seq),
-	.burst_rx = burst_rx, .burst_rx_n = TBL_N(burst_rx),
-	.burst_tx = burst_tx, .burst_tx_n = TBL_N(burst_tx),
-	// The radio's own firmware writes only these two words: 12.5 kHz FM shares the DMR word (hardware-dm1801pro.md 5.2)
-	.bw_fm_25k = 0x3028u, .bw_fm_12k5 = 0x3048u, .bw_dmr = 0x3048u,
-	.band_words = band_words,
-};
+#define SETUP_B(dmr_tbl) \
+	.init = init_table, .init_n = TBL_N(init_table), \
+	.fm = fm_table, .fm_n = TBL_N(fm_table), \
+	.dmr = dmr_tbl, .dmr_n = TBL_N(dmr_tbl), \
+	.rx = rx_seq, .rx_n = TBL_N(rx_seq), \
+	.tx = tx_seq, .tx_n = TBL_N(tx_seq), \
+	.burst_rx = burst_rx, .burst_rx_n = TBL_N(burst_rx), \
+	.burst_tx = burst_tx, .burst_tx_n = TBL_N(burst_tx), \
+	/* Two words only: 12.5 kHz FM shares the DMR word (5.2) */ \
+	.bw_fm_25k = 0x3028u, .bw_fm_12k5 = 0x3048u, .bw_dmr = 0x3048u, \
+	/* hardware-dm32.md 8.10: the receiver's sleep words */ \
+	.sleep_fm = 0x9D17u, .sleep_dmr = 0x9D00u, .sleep_wake = 0x9D1Fu, \
+	.band_words = band_words
+
+const fd6818_variant_t fd6818_variant_b = { SETUP_B(dmr_table) };
+const fd6818_variant_t fd6818_variant_b_dmr6943 = { SETUP_B(dmr_table_6943) };

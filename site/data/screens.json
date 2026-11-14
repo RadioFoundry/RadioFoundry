@@ -741,6 +741,18 @@
     "UI_SETTINGS"
    ]
   },
+  "settings_sound": {
+   "group": "settings",
+   "needs": [
+    "UI_SETTINGS"
+   ]
+  },
+  "settings_sound_tones": {
+   "group": "settings",
+   "needs": [
+    "UI_SETTINGS"
+   ]
+  },
   "settings_display": {
    "group": "settings",
    "needs": [

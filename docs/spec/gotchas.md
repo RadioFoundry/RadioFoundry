@@ -126,6 +126,18 @@ doesn't report voice (1.11), and take a call back only on proof it's the same ca
 it off helps only if the chip keeps its sync through a gap, which isn't known. Radios: HR_C5000 measured; the LC rule
 applies to any chip with a post-access interrupt.
 
+**1.13 After a wake-up, the receiver can stay deaf to the repeater that answered it.**
+Symptom: through a duplex repeater, "Modem refused" on 3 to 9 of every 16-24 key-ups, each one after a wake-up; the
+repeater answered at once and stayed on the air. Cause: the wake-up's CSBK ends with a receiver restart (own timing),
+and the aligned voice start follows a slot later. On some key-ups the chip then raised no receive interrupt and read
+the same 0x52 (0x73) at every tick for the whole 1.5 s wait, so no slot timing was found. The RF path was ruled out
+(the synthesizer was back on receive, no PA). What leaves the chip in that state isn't known. Any restart cleared it,
+and the repeater's timing came on the next slot. Rule: an aligned start that hears nothing for 8 ticks restarts the
+receiver (reason `a`), every 8 ticks until it aligns or times out. Each restart costs up to about 0.5 s of the
+key-up's first voice. On the SDR bench, with the wake-up rules of [dmr-modem.md](dmr-modem.md) 2.7, this took the
+key-ups that failed from 3-9 of 16-24 to 0 of 60. Radios: HR_C5000
+measured; the rule is in the shared engine, so the HR_C6000 has it too.
+
 ## 2. DMR modem timing: HR_C7000
 
 **2.1 The TX interrupts must be hooked.** Without the TX timeslot interrupt (vector 62) and the RF TX interrupt (vector 64) connected, the TX handler is never called and DMR TX never starts. TX states must run on the

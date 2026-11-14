@@ -150,11 +150,11 @@ bool uvf_cal_at(uint32_t hz, uvf_cal_point_t *out);
 // register, and the burst then goes through idle
 bool uvf_direct_tx_ref(uint32_t hz, int8_t ref_offset, int32_t rx_offset_hz, int8_t *out);
 
-// DMR receive offset (hardware-dm1701.md 5.13): with the transmitter on frequency, DMR receive decodes best on a carrier
-// about 0.9 kHz (UHF) to 1.2 kHz (VHF) high, falling off fast below. The same in Hz on both bands, so it is in the
-// receive path, not the reference: the AT1846S receives that much lower in DMR (62.5 Hz steps). Measured on a DM-1701
-// on both bands (SDR bench); the MD-UV380 has the same two chips, unchecked on its own
-#define UVF_DMR_RX_OFFSET_UHF_HZ	(-875)
+// DMR receive offset (hardware-dm1701.md 5.13): how far below the channel the AT1846S receives in DMR (62.5 Hz steps).
+// UHF: none. With the receive gain out of overload (5.5) the window of carriers that decode is centered on the channel,
+// and an offset only moves it: 875 Hz lost transmitters some 2 kHz high. VHF: the value taken inside the overload, not
+// measured again yet. Measured on a DM-1701 (SDR bench); the MD-UV380 has the same two chips, unchecked on its own
+#define UVF_DMR_RX_OFFSET_UHF_HZ	0
 #define UVF_DMR_RX_OFFSET_VHF_HZ	(-1250)
 int32_t uvf_dmr_rx_offset_hz(uint32_t hz);
 

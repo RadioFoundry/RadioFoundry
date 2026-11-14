@@ -679,9 +679,14 @@ def test_scan_stops_on_dmr_call(radio, sdr_bench, pytestconfig):
 
 # ── scans and battery save against a signal from the SDR bench ───────────
 
-def _bench_call_watch(radio, sdr_bench, pytestconfig, keys=("core", "features")):
-    """The bench sends a 20 superframe group call on the DMR test channel while a thread records the view; returns
-    (views with their monotonic time, the time the bench started)."""
+BENCH_FM_CALL_S = 6.0      # the FM signal's length, as long as the DMR call and under the 10 s key limit
+
+
+def _bench_call_watch(radio, sdr_bench, pytestconfig, keys=("core", "features"), fm_mhz=None):
+    """The bench sends a 20 superframe group call on the DMR test channel, or with fm_mhz a 1 kHz FM tone as long,
+    while a thread records the view; returns (views with their monotonic time, the time the bench started). An FM
+    receiver gets the FM tone: the bench's DMR call keys one slot, so its carrier comes and goes every 30 ms, and a
+    noise squelch reads that as noise (whether it opens depends on the receiver chip)."""
     freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
     seen, done = [], threading.Event()
 
@@ -695,7 +700,11 @@ def _bench_call_watch(radio, sdr_bench, pytestconfig, keys=("core", "features"))
         t.start()
         try:
             t_start = time.monotonic()
-            sdr_bench.voice_call(freq, cc, tg, superframes=20, calls=1)
+            if fm_mhz is not None:
+                tone = [{"kind": "tone", "hz": 1000, "s": BENCH_FM_CALL_S, "level": 0.6}]
+                sdr_bench.fm_tx_start(fm_mhz, tone).wait(BENCH_FM_CALL_S + 15)
+            else:
+                sdr_bench.voice_call(freq, cc, tg, superframes=20, calls=1)
         finally:
             done.set()
             t.join(2)
@@ -712,7 +721,8 @@ def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
         skip("not_built", "built without the FM VFO")
     if features(radio).get("rx_save.hw") == "0":
         skip("no_hw", "this radio's driver can't switch the receiver off (no rx_sleep)")
-    hz = round(rig(pytestconfig, "dmr-freq") * 1e6)
+    mhz = rig(pytestconfig, "fm-mhz")
+    hz = round(mhz * 1e6)
     radio.go_home()
     with radio.vfo_session():
         radio.link.vfo_set(hz)
@@ -722,7 +732,7 @@ def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
             radio.link.scan_vfo(hz - 5 * step, hz + 5 * step)
             try:
                 wait_features(radio, lambda v: v.get("scan") == "vfo", 1.0, "scan=vfo")
-                seen, _ = _bench_call_watch(radio, sdr_bench, pytestconfig)
+                seen, _ = _bench_call_watch(radio, sdr_bench, pytestconfig, fm_mhz=mhz)
             finally:
                 scan_off(radio)
     held = [v.get("rx_hz") for _, v in seen if v.get("scan_phase") == "hold"]
@@ -913,14 +923,15 @@ def test_dual_watch_second_receiver_bench(radio, sdr_bench, pytestconfig):
 
 
 @contextlib.contextmanager
-def _battery_save(radio, pytestconfig):
+def _battery_save(radio, pytestconfig, mhz=None):
+    """The FM VFO on mhz (None: the DMR test frequency) with the receiver asleep"""
     if "BATTERY_SAVE" not in radio.features():
         skip("not_built", "built without CONFIG_BATTERY_SAVE")
     if "VFO_FM" not in radio.features():
         skip("not_built", "built without the FM VFO")
     if features(radio).get("rx_save.hw") == "0":
         skip("no_hw", "this radio's driver can't switch the receiver off (no rx_sleep)")
-    hz = round(rig(pytestconfig, "dmr-freq") * 1e6)
+    hz = round((mhz or rig(pytestconfig, "dmr-freq")) * 1e6)
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
@@ -955,11 +966,12 @@ def test_battery_save(radio, pytestconfig):
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_battery_save_wakes_for_signal(radio, sdr_bench, pytestconfig):
-    with _battery_save(radio, pytestconfig):
-        seen, t_start = _bench_call_watch(radio, sdr_bench, pytestconfig)
+    mhz = rig(pytestconfig, "fm-mhz")
+    with _battery_save(radio, pytestconfig, mhz):
+        seen, t_start = _bench_call_watch(radio, sdr_bench, pytestconfig, fm_mhz=mhz)
     rx = [(t, v) for t, v in seen if v.get("state") == "rx"]
-    assert rx, "the receiver never opened for the bench call"
-    # the bench_tx job needs about 2 s (port, tuning, settle) before its first burst: measure from the first open
+    assert rx, "the receiver never opened for the bench's signal"
+    # the bench's job needs up to about 2 s (port, tuning, settle) before it keys: measure from the first open
     t_open = rx[0][0]
     asleep_during = [t - t_open for t, v in seen if t_open <= t <= rx[-1][0] and v.get("rx_sleeping") == "1"]
     before = [v.get("rx_sleeping") for t, v in seen if t < t_open]
@@ -968,7 +980,7 @@ def test_battery_save_wakes_for_signal(radio, sdr_bench, pytestconfig):
     assert "1" in before, "the receiver wasn't asleep when the call started"
     assert t_open - t_start <= 4.0, f"opened {t_open - t_start:.2f} s after the bench started (it keys after ~2 s)"
     assert not asleep_during, f"asleep during the call at {asleep_during}"
-    assert rx[-1][0] - t_open >= 3.0, f"open for only {rx[-1][0] - t_open:.1f} s of the 6 s call"
+    assert rx[-1][0] - t_open >= 3.0, f"open for only {rx[-1][0] - t_open:.1f} s of the {BENCH_FM_CALL_S:g} s signal"
 
 
 def _mic_meter_line(radio):
