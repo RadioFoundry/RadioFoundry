@@ -53,7 +53,17 @@ Pass criteria:
   number sent, and t3.reg_tg_ok has no bit set past them. Which the site accepted is printed; the site's own
   configuration decides it.
 
-On a failure every test prints the last t3 view.
+- test_t3_cp_channel (rf, radio_tx): the system from the codeplug instead (dmr-trunking.md 12): a system record in
+  slot CP_SYS with --t3-system's identity, its control channel and a tag on the channel in use. Selecting the channel
+  starts the system (t3.sys CP_SYS + 1): within CAMP_S + REG_S it camps on --t3-rx-mhz and registers (t3.reg ok).
+  Another channel of the zone stops it (t3.sys 0, t3.on 0) within DEREG_S. The channel's talkgroup is its contact's,
+  so the channel in use must be a DMR channel whose contact the site serves.
+- test_t3_cp_unavailable (rf, radio_tx): the same system marked as authenticating, with no key: the channel is
+  unavailable (t3.unavail 1, t3.on 0) and PTT is refused: nothing is sent (t3.sent 0) and the radio never transmits
+  (core state never tx).
+
+The cp tests leave the codeplug as they found it: they refuse a slot, channel record or tag already there, and remove
+what they wrote after. On a failure every test prints the last t3 view.
 
     python3 -m pytest tests/hil/test_t3_site.py -v -rs -s --allow-rf --t3-rx-mhz RX --t3-tx-mhz TX --t3-lcn 1 \\
         --t3-system 1,5,1 --t3-cc 2 --t3-tg 1 [--t3-peer ID]
@@ -62,7 +72,7 @@ import time
 
 import pytest
 
-from rfoundry_debug import VIEW_SECTIONS, as_int
+from rfoundry_debug import VIEW_SECTIONS, as_int, DebugLink, CPKV_T3_SYSTEM, CPKV_T3_CHAN, CPKV_T3_TAG, T3_SYS_AUTH
 from rfoundry_hil import skip
 from hil_config import rig
 
@@ -102,6 +112,8 @@ SERVICE_S = 20.0    # random access, the site's C_AHOY to the called MS and its 
 BCAST_CLEAR_S = 3.0  # a broadcast has no hang time: the terminator, the site's P_CLEAR, the retune
 ALLMSID = 0xFFFFFF  # all-call (TS 102 361-4 A.4)
 PTT_MAX_MS = 20000  # the firmware's own PTT time-out, past every wait here
+CP_SYS = 7          # the codeplug system slot the cp tests write (the last: the user's come first)
+CP_CHAN = 0xF0      # the system channel record they write (CPKV_T3_CHAN + it)
 
 
 def site(config):
@@ -458,4 +470,91 @@ def test_t3_reg_list(trunk_tx, pytestconfig):
               "rejected:", [tg for i, tg in enumerate(tgs) if not mask & (0x40 >> i)])
     except AssertionError:
         print("t3 view:", t3(trunk_tx), trunk_tx.link.view([SVC_SECTION]))
+        raise
+
+
+@pytest.fixture
+def cp_system(trunk_tx, pytestconfig):
+    """A system in codeplug slot CP_SYS for the rig's site, and a tag making the channel in use one of its channels.
+    Yields write(opts): (re)writes the system with those options and selects the channel again. Everything written
+    is removed after and the channel selected again"""
+    radio, L = trunk_tx, trunk_tx.link
+    s = site(pytestconfig)
+    radio.go_home()
+    core = radio.core()
+    c, pos, size = (as_int(core.get(k)) for k in ("channel_number", "zone_pos", "zone_size"))
+    ch = radio.view(["channel"])
+    if not c or ch.get("ch.mode") != "dmr":
+        skip("setup", "the channel in use is not a DMR codeplug channel: select one whose contact the site serves")
+    if not size or size < 2:
+        skip("setup", "the zone has one channel: a cp test steps off the trunked channel to stop the system")
+    keys = (CPKV_T3_SYSTEM + CP_SYS, CPKV_T3_CHAN + CP_CHAN, CPKV_T3_TAG + c - 1)
+    for k in keys:
+        if L.cpkv_get(k) is not None:
+            skip("setup", f"codeplug key {k:#06x} is in use: the test won't write over the user's set-up")
+    other = (pos + 1) % size
+
+    def select():
+        L.zone_pos(other)
+        time.sleep(0.5)
+        L.zone_pos(pos)
+
+    def write(opts):
+        L.cpkv_set(keys[0], DebugLink.t3_system_record("HIL site", s["model"], s["net"], par="a", cc=s["cc"],
+                                                       opts=opts, own_id=s["own_id"], sites=(s["site"],)))
+        L.cpkv_set(keys[1], DebugLink.t3_chan_record(CP_SYS, s["lcn"], s["rx"], s["tx"], ctrl=True))
+        L.cpkv_set(keys[2], DebugLink.t3_tag_record(CP_SYS, ch.get("ch.name", "")))
+        select()
+        return s, other
+
+    try:
+        yield write
+    finally:
+        L.ptt(False)
+        for k in keys:
+            L.cpkv_remove(k)
+        select()
+
+
+@pytest.mark.feature("dmr_trunk_tx")
+@pytest.mark.rf
+@pytest.mark.radio_tx
+def test_t3_cp_channel(trunk_tx, cp_system):
+    s, other = cp_system(OPT_PRIVATE)
+    try:
+        v = wait_t3(trunk_tx, lambda x: x.get("t3.reg") == "ok", CAMP_S + REG_S, "camped and registered")
+        assert num(v, "t3.sys") == CP_SYS + 1, f"t3.sys {v.get('t3.sys')}: not the codeplug's system"
+        assert v.get("t3.unavail") == "0", "a system with a control channel and no authentication is unavailable"
+        assert num(v, "t3.rx_hz") == s["rx"], f"on {v.get('t3.rx_hz')} Hz, not the control channel"
+        print(f"camped and registered from the codeplug: reason {num(v, 't3.ax_reason'):#04x}")
+        trunk_tx.link.zone_pos(other)
+        wait_t3(trunk_tx, lambda x: x.get("t3.sys") == "0" and x.get("t3.on") == "0", DEREG_S,
+                "the system stopped on another channel")
+    except AssertionError:
+        print("t3 view:", t3(trunk_tx))
+        raise
+
+
+@pytest.mark.feature("dmr_trunk_tx")
+@pytest.mark.rf
+@pytest.mark.radio_tx
+def test_t3_cp_unavailable(trunk_tx, cp_system):
+    cp_system(OPT_PRIVATE | T3_SYS_AUTH)
+    L = trunk_tx.link
+    try:
+        v = wait_t3(trunk_tx, lambda x: x.get("t3.sys") == str(CP_SYS + 1), 3.0, "the channel's system")
+        assert v.get("t3.unavail") == "1", "authenticates without a key, yet available"
+        assert v.get("t3.on") == "0", "an unavailable system started"
+        sent0 = num(v, "t3.sent")
+        L.ptt(True, 3000)
+        try:
+            end = time.monotonic() + 2.0
+            while time.monotonic() < end:
+                assert str(trunk_tx.core().get("state", "")).lower() != "tx", "PTT keyed an unavailable channel"
+                time.sleep(0.1)
+        finally:
+            L.ptt(False)
+        assert num(t3(trunk_tx), "t3.sent") == sent0, "sent on an unavailable system"
+    except AssertionError:
+        print("t3 view:", t3(trunk_tx))
         raise
