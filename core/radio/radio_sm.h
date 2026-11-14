@@ -437,7 +437,8 @@ typedef struct {
 	bool t3_both;			// on a control channel: both slots
 	bool t3_ptt_wait;		// PTT held on the TSCC: waiting for our grant
 	bool t3_als_keyed;		// keyed by an Ambient Listening call (6.6.2.6), not by the user
-	uint32_t t3_als_quiet_ms;	// unkeyed at T_ALS: the call ends once the terminator is out
+	uint32_t t3_als_quiet_ms;
+	uint8_t t3_stun_kept;		// settings t3_stun as last written for the system in use (0: not stunned)	// unkeyed at T_ALS: the call ends once the terminator is out
 	bool t3_talking;		// PTT went to the stack for a trunked call
 	uint32_t t3_ticks;		// the stack's tick count handed to the engine
 	uint8_t t3_slot;		// the slot of the last tick handed to it
@@ -484,6 +485,11 @@ typedef struct {
 // Start-up: the codeplug and the settings (core/settings): the saved zone, channel or VFO, else zone 0 and its
 // first channel (or the VFO); FM receive. Every request notes the position and the VFO in the settings, and
 // radio_sm_poll re-reads the codeplug when codeplug_serial() moves
+#if CONFIG_DMR_TRUNK
+// The whole trunking view; view.t3 is its brief, made by radio_sm_t3_brief before the view is published
+extern radio_t3_view_t radio_t3v;
+void radio_sm_t3_brief(radio_sm_t *sm);
+#endif
 void radio_sm_init(radio_sm_t *sm, uint32_t now_ms);
 void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms);
 // Every RADIO_POLL_MS: status, squelch, audio, LEDs, TX time-out

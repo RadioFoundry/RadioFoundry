@@ -270,10 +270,10 @@ static const char *word(uint8_t v, const char *const *names, uint8_t count)
 }
 #endif
 
-void debuglink_view_t3(const radio_view_t *v, dl_text_t *t)
-{
 #if CONFIG_DMR_TRUNK
-	const radio_t3_view_t *x = &v->t3;
+static void t3_main(const radio_t3_view_t *x, void *ctx)
+{
+	dl_text_t *t = ctx;
 	dl_text(t, "t3.built=1\nt3.tx_built=%u\nt3.on=%u\nt3.state=%s\nt3.reg=%s\nt3.confirmed=%u\nt3.syscode=0x%04x\n",
 		CONFIG_DMR_TRUNK_TX ? 1u : 0u, x->on, word(x->state, t3_states, 4), word(x->reg, t3_regs, 6), x->confirmed,
 		x->syscode);
@@ -308,17 +308,24 @@ void debuglink_view_t3(const radio_view_t *v, dl_text_t *t)
 		"t3.send_fail=%u\nt3.at_known=%u\nt3.at_busy=%u\n", (unsigned)x->returns, (unsigned)x->hunts,
 		(unsigned)x->foreign, (unsigned)x->learned, (unsigned)x->sent, (unsigned)x->ra_tries,
 		(unsigned)x->send_fail, (unsigned)x->at_known, (unsigned)x->at_busy);
-#else
+}
+#endif
+
+void debuglink_view_t3(const radio_view_t *v, dl_text_t *t)
+{
 	(void)v;
+#if CONFIG_DMR_TRUNK
+	radio_with_t3_view(t3_main, t);	// formatted under the view's lock: no copy of the view here
+#else
 	dl_text(t, "t3.built=0\n");
 #endif
 }
 
 // Roaming: the level, the adjacent sites, Vote Now and the weak-TSCC leave (dmr-trunking.md 7.18)
-void debuglink_view_t3_roam(const radio_view_t *v, dl_text_t *t)
-{
 #if CONFIG_DMR_TRUNK
-	const radio_t3_view_t *x = &v->t3;
+static void t3_roam(const radio_t3_view_t *x, void *ctx)
+{
+	dl_text_t *t = ctx;
 	uint32_t now = hal_millis();
 	dl_text(t, "t3.level_dbm=%d\nt3.leave_dbm=%d\nt3.dmrla=%u\nt3.reg_area=0x%04x\nt3.vote_on=%u\nt3.hunt_strict=%u\n",
 		x->level_dbm, x->leave_dbm, x->dmrla, x->reg_area, x->vote_on, x->hunt_strict);
@@ -333,17 +340,24 @@ void debuglink_view_t3_roam(const radio_view_t *v, dl_text_t *t)
 			x->adj[i].prio >> 4, x->adj[i].prio & 15u, x->adj[i].dbm,
 			x->adj[i].sampled_ms != 0 ? (int)(now - x->adj[i].sampled_ms) : -1);
 	}
-#else
+}
+#endif
+
+void debuglink_view_t3_roam(const radio_view_t *v, dl_text_t *t)
+{
 	(void)v;
+#if CONFIG_DMR_TRUNK
+	radio_with_t3_view(t3_roam, t);	// formatted under the view's lock: no copy of the view here
+#else
 	dl_text(t, "t3.built=0\n");
 #endif
 }
 
 // Its own section: with these keys the t3 section outgrew a reply (truncated=1 before t3.sd_*)
-void debuglink_view_t3_svc(const radio_view_t *v, dl_text_t *t)
-{
 #if CONFIG_DMR_TRUNK
-	const radio_t3_view_t *x = &v->t3;
+static void t3_svc(const radio_t3_view_t *x, void *ctx)
+{
+	dl_text_t *t = ctx;
 	uint32_t now = hal_millis();
 	// Status (6.6.6): a poll's answer, the radio's own, the last one heard (age -1: none)
 	dl_text(t, "t3.ax_info=%u\nt3.own_status=%u\nt3.st_count=%u\nt3.st_src=%u\nt3.st_dst=%u\nt3.st_group=%u\n"
@@ -387,8 +401,15 @@ void debuglink_view_t3_svc(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "t3.sd_count=%u\nt3.sd_src=%u\nt3.sd_dst=%u\nt3.sd_group=%u\nt3.sd_format=%u\nt3.sd_len=%u\n"
 		"t3.sd_data=%s\nt3.sd_age_ms=%d\n", (unsigned)x->sd_count, (unsigned)x->sd_src, (unsigned)x->sd_dst,
 		x->sd_group, x->sd_format, x->sd_len, sd, x->sd_ms != 0 ? (int)(now - x->sd_ms) : -1);
-#else
+}
+#endif
+
+void debuglink_view_t3_svc(const radio_view_t *v, dl_text_t *t)
+{
 	(void)v;
+#if CONFIG_DMR_TRUNK
+	radio_with_t3_view(t3_svc, t);	// formatted under the view's lock: no copy of the view here
+#else
 	dl_text(t, "t3.built=0\n");
 #endif
 }

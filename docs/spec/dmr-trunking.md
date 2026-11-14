@@ -32,7 +32,8 @@ Section and table numbers below are TS 102 361-4's unless marked -1.
 - No vendor's own trunking protocol. A system that sends its control channel with another CRC or framing fails the
   standard CRC checks and is never confirmed as a TSCC (section 9.2 checks this on recordings).
 - On a trunked system the radio transmits only the access side (section 7) and the calls it is granted.
-- No authentication: a challenge is answered "not supported".
+- Authentication only as section 7.10 gives it: with a key K, the radio answers a challenge and checks the TSCC's
+  answer to its own; without one, a challenge is answered "not supported".
 
 ## 2. Modules
 
@@ -454,8 +455,12 @@ Stunned, the radio:
 - asks for no call, status, short data or packet data (refused as not allowed; PTT is denied);
 - follows no grant, keeps no status or short data heard, and answers no other AHOY.
 
-The stun outlasts leaving the system and starting it again, unless the new system is another network. It is kept in
-RAM, with the staged system: a restart of the radio clears it.
+The stun outlasts leaving the system and starting it again, unless the new system is another network. On a codeplug
+system (section 12) it also outlasts a restart of the radio: the settings keep it (`t3_stun`,
+[settings-store.md](settings-store.md)) as the system's slot and a 4-bit hash of its network ID and model, set when the
+stun is taken and cleared by the revive. Starting that slot's system with the same hash, the radio is stunned before
+it hunts. A kept stun for another hash (the slot now holds another system) doesn't apply and stays as it is. A factory
+reset clears it. The debug link's staged system keeps its stun in RAM only.
 
 ### 7.10 Authentication (6.4.8)
 
@@ -663,7 +668,6 @@ on its voice, and never camps on another system or on a control channel that isn
 | Supplementary data, a list subscription without registering | later |
 | Short data polling from the UI, and the reply in the codeplug | later |
 | A kill kept across a restart, and conventional DMR off when killed | later |
-| A stun kept across a restart of the radio | trunked systems in the codeplug |
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
 | Data to a gateway | later |
 | Power save: the receiver off while asleep (boards' `rx_sleep` on DMR channels) | later |

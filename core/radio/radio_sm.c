@@ -93,6 +93,8 @@ static const uint32_t vfo_start_hz[] = { 146520000, 145500000, 446000000, 433500
 // The engine and the system it runs, in plain RAM (radio_sm_t sits in the CPU-only RAM, which is full on some radios)
 static t3_ms_t t3m;
 static radio_t3_setup_t t3s;	// the system, copied from the staged one at RADIO_T3_START
+radio_t3_view_t radio_t3v;	// the whole trunking view (view.t3 is its brief: radio_sm_t3_brief); in RAM, not the
+				// CPU-only RAM radio_sm_t may be in
 #endif
 
 // The VFO's step in use: auto follows the width (the air band's channels are 25 kHz apart); in the broadcast band
@@ -656,7 +658,7 @@ static void set_channel(radio_sm_t *sm, uint16_t pos, const channel_t *ch)
 	sm->view.channel_number = sm->zone.channels[pos];
 	load_channel(sm, ch);
 #if CONFIG_DMR_TRUNK
-	if (sm->t3_tagged && !sm->view.t3.unavail) {
+	if (sm->t3_tagged && !radio_t3v.unavail) {
 		sm->view.ch.rx_only = false;	// the record's flag keeps firmware without trunking off the air; the site
 						// grants every transmission here
 	}
@@ -2527,9 +2529,9 @@ static bool t3_send_next(dmr_tx_burst_t *out, void *ctx)
 
 static void t3_send_done(uint8_t err, void *ctx)
 {
-	radio_sm_t *sm = ctx;
+	(void)ctx;
 	if (err != DMR_TX_OK) {
-		sm->view.t3.send_fail++;
+		radio_t3v.send_fail++;
 	}
 }
 
@@ -2570,13 +2572,13 @@ static void t3_send(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 {
 	// PTT held while waiting for our grant is the request itself, not talking
 	if (sm->view.ch.timeslot != (a->slot == 2 ? 2 : 1) || (sm->ptt && !sm->t3_ptt_wait) || sm->view.state == RS_TX) {
-		sm->view.t3.send_fail++;	// not on the slot asked for, or talking: the engine retries what needs it
+		radio_t3v.send_fail++;	// not on the slot asked for, or talking: the engine retries what needs it
 		return;
 	}
 	if (!sm->dmr_keyed) {
 		static const subtone_t none = { TONE_NONE, 0 };
 		if (!key_tx(sm->view.ch.tx_hz, (radio_bw_t)sm->view.ch.bw, sm->view.power, &none)) {
-			sm->view.t3.send_fail++;
+			radio_t3v.send_fail++;
 			return;
 		}
 		sm->dmr_keyed = true;
@@ -2593,12 +2595,12 @@ static void t3_send(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 				  .tag = "t3" };
 	if (!dmr_call_data_tx(&src)) {
 		sm->t3_send_left = 0;
-		sm->view.t3.send_fail++;	// the keying is released by dmr_follow
+		radio_t3v.send_fail++;	// the keying is released by dmr_follow
 		return;
 	}
-	sm->view.t3.last_tx_op = (a->udt ? a->burst[9] : a->burst[0]) & 0x3Fu;
-	memcpy(sm->view.t3.last_tx, a->burst, T3_CSBK_BYTES);
-	sm->view.t3.last_tx_ms = now_ms != 0 ? now_ms : 1;
+	radio_t3v.last_tx_op = (a->udt ? a->burst[9] : a->burst[0]) & 0x3Fu;
+	memcpy(radio_t3v.last_tx, a->burst, T3_CSBK_BYTES);
+	radio_t3v.last_tx_ms = now_ms != 0 ? now_ms : 1;
 	(void)now_ms;
 }
 
@@ -2635,9 +2637,9 @@ static bool t3_tap(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 		t3_ms_rx(&t3m, now_ms, slot, b->kind, b->cc, b->payload);
 		if (b->kind != DMR_BURST_RATE_12_DATA) {
 			// A UDT header's opcode is in octet 9
-			sm->view.t3.last_rx_op = b->payload[b->kind == DMR_BURST_DATA_HEADER ? 9 : 0] & 0x3Fu;
-			sm->view.t3.last_rx_slot = slot;
-			sm->view.t3.last_rx_ms = now_ms != 0 ? now_ms : 1;
+			radio_t3v.last_rx_op = b->payload[b->kind == DMR_BURST_DATA_HEADER ? 9 : 0] & 0x3Fu;
+			radio_t3v.last_rx_slot = slot;
+			radio_t3v.last_rx_ms = now_ms != 0 ? now_ms : 1;
 		}
 	}
 	return true;
@@ -2685,7 +2687,7 @@ static uint32_t t3_talk_id(const radio_sm_t *sm, bool *group)
 
 static void t3_publish(radio_sm_t *sm)
 {
-	radio_t3_view_t *v = &sm->view.t3;
+	radio_t3_view_t *v = &radio_t3v;
 	const t3_ms_t *m = &t3m;
 	v->on = sm->t3_on;
 	v->state = (uint8_t)m->state;
@@ -2804,6 +2806,33 @@ static void t3_publish(radio_sm_t *sm)
 	v->own_id = t3s.cfg.own_id;
 }
 
+// The settings' t3_stun for a stun of codeplug system sys (n + 1; 0 = a staged system, never kept)
+static uint8_t t3_stun_word(uint8_t sys, uint8_t model, uint16_t net)
+{
+	if (sys == 0 || sys > RADIO_T3_SYSTEMS) {
+		return 0;
+	}
+	uint8_t h = (uint8_t)(model ^ net ^ (net >> 4) ^ (net >> 8));
+	return (uint8_t)(SETTINGS_T3_STUN | ((sys - 1u) << 4) | (h & 0x0Fu));
+}
+
+// A stun or revive taken on a codeplug system: kept in the settings (written once the changes rest)
+static void t3_keep_stun(radio_sm_t *sm, uint32_t now_ms)
+{
+	uint8_t want = t3m.stunned ? t3_stun_word(radio_t3v.sys, t3s.cfg.auth.model, t3s.cfg.auth.net) : 0u;
+	if (want == sm->t3_stun_kept) {
+		return;
+	}
+	settings_t *st = settings_begin();
+	if (want != 0) {
+		st->t3_stun = want;
+	} else if (st->t3_stun == sm->t3_stun_kept) {
+		st->t3_stun = 0;	// revived: only this system's stun goes
+	}
+	settings_end(now_ms);
+	sm->t3_stun_kept = want;
+}
+
 // Start the engine on t3s
 static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 {
@@ -2820,13 +2849,14 @@ static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 		t3s.cfg.leave_dbm = sm->set.roam_rssi_dbm;	// the roaming threshold: weak below it (6.3.2.3)
 	}
 	// The view's counters start over with the engine; the channel's system and the fallback are the radio core's
-	radio_t3_view_t keep = sm->view.t3;
-	memset(&sm->view.t3, 0, sizeof(sm->view.t3));
-	sm->view.t3.sys = keep.sys;
-	sm->view.t3.fallback = keep.fallback;
-	sm->view.t3.fallbacks = keep.fallbacks;
-	sm->view.t3.backs = keep.backs;
-	sm->view.t3.last_tx_op = 0xFF;
+	uint8_t sys = radio_t3v.sys, fallback = radio_t3v.fallback;		// not a whole copy: the view is big
+	uint32_t fallbacks = radio_t3v.fallbacks, backs = radio_t3v.backs;
+	memset(&radio_t3v, 0, sizeof(radio_t3v));
+	radio_t3v.sys = sys;
+	radio_t3v.fallback = fallback;
+	radio_t3v.fallbacks = fallbacks;
+	radio_t3v.backs = backs;
+	radio_t3v.last_tx_op = 0xFF;
 	sm->t3_on = true;
 	sm->t3_ptt_wait = false;
 	sm->t3_als_keyed = false;
@@ -2843,6 +2873,15 @@ static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 	static int32_t last_net = -1;
 	int32_t net = (int32_t)(((uint32_t)t3s.cfg.auth.model << 16) | t3s.cfg.auth.net);
 	bool stunned = t3m.stunned && net == last_net;
+	// ... and a restart, for a codeplug system: kept in the settings with the system's slot and network
+	sm->t3_stun_kept = t3_stun_word(radio_t3v.sys, t3s.cfg.auth.model, t3s.cfg.auth.net);
+	settings_t *st = settings_begin();
+	bool kept = sm->t3_stun_kept != 0 && st->t3_stun == sm->t3_stun_kept;
+	settings_end(now_ms);
+	stunned = stunned || kept;
+	if (!kept) {
+		sm->t3_stun_kept = 0;
+	}
 	bool killed = t3m.killed;	// any network's, until the radio restarts
 	last_net = net;
 	t3_ms_start(&t3m, &t3s.cfg, now_ms);
@@ -2850,6 +2889,20 @@ static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 	t3_ms_set_killed(&t3m, killed);
 	t3_publish(sm);
 	changed(sm);
+}
+
+void radio_sm_t3_brief(radio_sm_t *sm)
+{
+	const radio_t3_view_t *x = &radio_t3v;
+	radio_t3_brief_t *b = &sm->view.t3;
+	b->on = x->on;
+	b->sys = x->sys;
+	b->unavail = x->unavail;
+	b->fallback = x->fallback;
+	b->fallbacks = x->fallbacks;
+	b->backs = x->backs;
+	b->state = x->state;
+	b->reg = x->reg;
 }
 
 // RADIO_T3_START: the debug link's staged system, on whatever channel the radio is on
@@ -2887,9 +2940,9 @@ static void t3_off(radio_sm_t *sm)
 	sm->t3_tagged = false;
 	sm->t3_fb = 0;
 	sm->t3_fb_number = 0;
-	sm->view.t3.sys = 0;
-	sm->view.t3.unavail = false;
-	sm->view.t3.fallback = 0;
+	radio_t3v.sys = 0;
+	radio_t3v.unavail = false;
+	radio_t3v.fallback = 0;
 }
 
 // A channel selected (docs/spec/dmr-trunking.md 12.4): a trunked one starts its system, or on the system running takes
@@ -2902,8 +2955,8 @@ static void t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch)
 		return;
 	}
 	sm->t3_fb = 0;
-	sm->view.t3.fallback = 0;
-	sm->view.t3.unavail = false;
+	radio_t3v.fallback = 0;
+	radio_t3v.unavail = false;
 	sm->t3_tag = tag;
 	sm->t3_tagged = true;
 	if (sm->t3_on && t3s.sys == tag.sys && sm->t3_kv == codeplug_kv_serial()) {
@@ -2920,9 +2973,9 @@ static void t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch)
 	}
 	t3_leave(sm);
 	sm->t3_pending = false;
-	sm->view.t3.sys = (uint8_t)(tag.sys + 1u);
+	radio_t3v.sys = (uint8_t)(tag.sys + 1u);
 	if (!radio_t3_load(tag.sys, &t3s)) {
-		sm->view.t3.unavail = true;	// no control channel, or no key where the system authenticates
+		radio_t3v.unavail = true;	// no control channel, or no key where the system authenticates
 		sm->t3_fb_number = 0;
 		return;
 	}
@@ -2937,10 +2990,10 @@ static void t3_to_fallback(radio_sm_t *sm, uint32_t now_ms)
 {
 	t3_leave(sm);
 	if (sm->t3_fb == 0) {
-		sm->view.t3.fallbacks++;
+		radio_t3v.fallbacks++;
 	}
 	sm->t3_fb = 1;
-	sm->view.t3.fallback = 1;
+	radio_t3v.fallback = 1;
 	load_channel(sm, &sm->t3_fb_ch);
 	tune(sm, now_ms);
 	sm->t3_probe_ms = now_ms + RADIO_T3_PROBE_MS;
@@ -2960,7 +3013,7 @@ static void t3_fallback_tick(radio_sm_t *sm, uint32_t now_ms)
 		return;		// tried again at the next tick: the probe waits for the channel to go quiet
 	}
 	sm->t3_fb = 2;
-	sm->view.t3.fallback = 2;
+	radio_t3v.fallback = 2;
 	t3_begin(sm, now_ms);
 	sm->t3_probe_ms = now_ms + RADIO_T3_PROBE_HUNT_MS;
 }
@@ -3170,16 +3223,16 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 		fl = sm->t3_at[t3_ms_at_tc(&t3m, slot) - 1u];
 		bool known = (fl & DMR_TICK_AT_KNOWN) != 0;
 		if (known) {
-			sm->view.t3.at_known++;
+			radio_t3v.at_known++;
 			if (fl & DMR_TICK_AT_BUSY) {
-				sm->view.t3.at_busy++;
+				radio_t3v.at_busy++;
 			}
 		}
 		t3_ms_slot(&t3m, now_ms, slot, true, known && (fl & DMR_TICK_AT_BUSY) != 0);
 	}
 	sm->t3_ticks = tc;
 	sm->t3_now = now_ms;
-	sm->view.t3.ticks += n;
+	radio_t3v.ticks += n;
 	// Talking (or sending data) on the payload channel: the radio doesn't hear its own slot, so its transmission is the
 	// call's activity (TV_Inactive would otherwise pull it back to the control channel mid-sentence)
 	if (n != 0 && t3m.state == T3_FOLLOW && (sm->view.state == RS_TX || sm->dmr_keyed)) {
@@ -3218,8 +3271,8 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 			sm->view.ch.rx_only = false;
 		}
 		sm->t3_fb = 0;
-		sm->view.t3.fallback = 0;
-		sm->view.t3.backs++;
+		radio_t3v.fallback = 0;
+		radio_t3v.backs++;
 		beep(sm, BEEP_SYSTEM_BACK);
 		changed(sm);
 	} else if (sm->t3_fb == 2 && (int32_t)(now_ms - sm->t3_probe_ms) >= 0) {
@@ -3247,6 +3300,7 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 		}
 	}
 #endif
+	t3_keep_stun(sm, now_ms);
 	t3_publish(sm);
 }
 #endif

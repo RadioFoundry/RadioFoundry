@@ -222,7 +222,18 @@ typedef struct {
 #endif
 
 #if CONFIG_DMR_TRUNK
-// A DMR Tier III trunked system (docs/spec/dmr-trunking.md 11) for the screens and the debug link
+// A DMR Tier III trunked system (docs/spec/dmr-trunking.md 11): what the screens show, in every view copy
+typedef struct {
+	bool on;		// a trunked system is running
+	uint8_t sys;		// the channel's codeplug system, n + 1 (0: a conventional channel, or the debug link's system)
+	bool unavail;		// the channel is trunked and its system isn't set up (dmr-trunking.md 12.4)
+	uint8_t fallback;	// 12.5: 0 off, 1 on the fallback channel, 2 looking for the TSCC from it
+	uint32_t fallbacks, backs;	// times the radio went to the fallback channel, and came back from it
+	uint8_t state;		// t3_state_t
+	uint8_t reg;		// t3_reg_t
+} radio_t3_brief_t;
+
+// ... and all of it, for the debug link: radio_get_t3_view, one copy (the view itself is copied by every task)
 #define RADIO_T3_DGNA	15	// T3_DGNA_MAX
 typedef struct {
 	bool on;		// a trunked system is running
@@ -399,7 +410,7 @@ typedef struct {
 	radio_roam_view_t roam;
 #endif
 #if CONFIG_DMR_TRUNK
-	radio_t3_view_t t3;
+	radio_t3_brief_t t3;
 #endif
 } radio_view_t;
 
@@ -423,6 +434,11 @@ void radio_core_start(void);
 void radio_get_view(radio_view_t *v);
 // Just the view's state, for a caller short of stack (the view is some 0.7 KB)
 radio_state_t radio_get_state(void);
+#if CONFIG_DMR_TRUNK
+// Runs fn on the whole trunking view as published with the view, under its lock (no copy: the view is 0.5 KB); fn
+// must be short and take no other lock
+void radio_with_t3_view(void (*fn)(const radio_t3_view_t *x, void *ctx), void *ctx);
+#endif
 // Bumped on every visible change, so the UI can redraw only when needed
 uint32_t radio_view_serial(void);
 

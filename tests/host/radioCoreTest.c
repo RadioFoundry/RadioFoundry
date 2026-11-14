@@ -5554,7 +5554,7 @@ static void t3_stage_start(void)
 	radio_t3_fix(s);
 	req(RREQ_T3, RADIO_T3_START);
 	t3_site_run(600);
-	CHECK(sm.view.t3.state == T3_CAMPED);
+	CHECK(radio_t3v.state == T3_CAMPED);
 }
 
 static void t3_data_rx(uint8_t kind, const uint8_t *d, int8_t ts)
@@ -5613,8 +5613,8 @@ static void test_t3_talk(void)
 	unsigned before = t3_sent(T3_OP_C_RAND);
 	req(RREQ_PTT, 1);
 	t3_site_run(600);
-	CHECK(sm.view.t3.ptt_wait && t3_sent(T3_OP_C_RAND) > before);
-	CHECK(sm.view.t3.send_fail == 0);
+	CHECK(radio_t3v.ptt_wait && t3_sent(T3_OP_C_RAND) > before);
+	CHECK(radio_t3v.send_fail == 0);
 
 	t3_csbk_t g = { .lb = true, .op = T3_OP_TV_GRANT };
 	g.u.grant.lpcn = 1;
@@ -5623,12 +5623,12 @@ static void test_t3_talk(void)
 	g.u.grant.src = T3_OWN;
 	t3_csbk_rx(&g, 1);
 	run(200);
-	CHECK(sm.view.t3.state == T3_FOLLOW && sm.view.t3.can_talk);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.can_talk);
 	CHECK(sm.view.state == RS_TX && sm.view.ch.timeslot == 2);
 
 	run(4000);		// longer than TV_Inactive, nothing heard
-	CHECK(sm.view.t3.state == T3_FOLLOW && sm.view.state == RS_TX);
-	CHECK(sm.view.t3.returns == 0);
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.state == RS_TX);
+	CHECK(radio_t3v.returns == 0);
 
 	req(RREQ_PTT, 0);
 	// The call's hang, filled with idle bursts: a signal, so the call stays (6.6.2.3.2.9 a)
@@ -5637,9 +5637,9 @@ static void test_t3_talk(void)
 		t3_data_rx(DMR_BURST_IDLE, idle, 2);
 		run(60);
 	}
-	CHECK(sm.view.t3.state == T3_FOLLOW && sm.view.t3.returns == 0);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.returns == 0);
 	run(4000);		// then nothing: the inactivity timer ends it
-	CHECK(sm.view.t3.state != T3_FOLLOW && sm.view.state != RS_TX);
+	CHECK(radio_t3v.state != T3_FOLLOW && sm.view.state != RS_TX);
 	req(RREQ_T3, RADIO_T3_STOP);
 	run(100);
 	sim.repeater = false;
@@ -5661,7 +5661,7 @@ static void test_t3_sdata(void)
 	unsigned before = t3_sent(T3_OP_C_RAND);
 	req(RREQ_T3, RADIO_T3_SDATA);
 	t3_site_run(600);
-	CHECK(t3_sent(T3_OP_C_RAND) > before && sm.view.t3.ax_svc == T3_SVC_SDATA);
+	CHECK(t3_sent(T3_OP_C_RAND) > before && radio_t3v.ax_svc == T3_SVC_SDATA);
 
 	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
 	h.u.ahoy.kind = T3_SK_IND_UDT;
@@ -5692,7 +5692,7 @@ static void test_t3_sdata(void)
 		memcpy(blk[1], sim.air[hdr + 2].payload, T3_UDT_BLOCK);
 		CHECK(t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])blk, 2) && memcmp(blk, "hello trunk world", 17) == 0);
 	}
-	CHECK(sm.view.t3.send_fail == 0);
+	CHECK(radio_t3v.send_fail == 0);
 
 	// A download to the radio
 	uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK], pad, d[T3_CSBK_BYTES];
@@ -5705,8 +5705,8 @@ static void test_t3_sdata(void)
 	run(60);
 	t3_data_rx(DMR_BURST_RATE_12_DATA, blk[0], 1);
 	t3_site_run(300);
-	CHECK(sm.view.t3.sd_count == 1 && sm.view.t3.sd_len == 8 && memcmp(sm.view.t3.sd_data, "hi there", 8) == 0 &&
-	      sm.view.t3.sd_src == 1000001u);
+	CHECK(radio_t3v.sd_count == 1 && radio_t3v.sd_len == 8 && memcmp(radio_t3v.sd_data, "hi there", 8) == 0 &&
+	      radio_t3v.sd_src == 1000001u);
 	CHECK(t3_sent(T3_OP_C_ACKU) > before);
 	req(RREQ_T3, RADIO_T3_STOP);
 	run(100);
@@ -5722,7 +5722,7 @@ static void test_t3_pdata(void)
 	unsigned from = sim.air_count;
 	CHECK(sms_send(1000001u, false, "hello trunk", false, DMR_SMS_FORMAT_ETSI_IP));
 	t3_site_run(600);
-	CHECK(sm.view.t3.pd_wait && sm.view.t3.ax_svc == T3_SVC_PDATA);
+	CHECK(radio_t3v.pd_wait && radio_t3v.ax_svc == T3_SVC_PDATA);
 	int rand_at = -1;
 	bool data_early = false;
 	for (unsigned i = from; i < sim.air_count; i++) {
@@ -5747,8 +5747,8 @@ static void test_t3_pdata(void)
 	from = sim.air_count;
 	t3_csbk_rx(&g, 1);
 	run(1500);
-	CHECK(sm.view.t3.state == T3_FOLLOW && sm.view.t3.call_data && !sm.view.t3.can_talk && sm.view.ch.timeslot == 2);
-	CHECK(!sm.view.t3.pd_wait);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.call_data && !radio_t3v.can_talk && sm.view.ch.timeslot == 2);
+	CHECK(!radio_t3v.pd_wait);
 	int hdr = -1;
 	unsigned csbks = 0;
 	for (unsigned i = from; i < sim.air_count; i++) {
@@ -5770,7 +5770,7 @@ static void test_t3_pdata(void)
 	c.u.clear.dst = 1000001u;
 	t3_csbk_rx(&c, 2);
 	run(300);
-	CHECK(sm.view.t3.state == T3_CAMPED);
+	CHECK(radio_t3v.state == T3_CAMPED);
 
 	// Data to the radio: the TSCC's check is answered, PD_GRANT followed, the text taken by the data service
 	unsigned acks = t3_sent(T3_OP_C_ACKU);
@@ -5785,7 +5785,7 @@ static void test_t3_pdata(void)
 	g.u.grant.src = 1000001u;
 	t3_csbk_rx(&g, 1);
 	run(500);
-	CHECK(sm.view.t3.state == T3_FOLLOW && sm.view.t3.call_data);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.call_data);
 	int inbox = sms_inbox_count();
 	dmrBurst_t b[16];
 	int n = dmrDataBuildIPText(false, T3_OWN, 1000001u, "hi radio", DMR_TYPE_RATE_1_2, 0, b, 16);
@@ -5863,12 +5863,12 @@ static void test_t3_emergency(void)
 	g.u.grant.emergency = true;
 	t3_csbk_rx(&g, 1);
 	run(500);
-	CHECK(sm.view.t3.state == T3_FOLLOW && sm.view.state == RS_TX);
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.state == RS_TX);
 	run(2500);	// the hot mic runs out
 	CHECK(dmr_emergency_state() == DMR_EMERGENCY_ACTIVE && sm.view.state != RS_TX);
 	req(RREQ_T3, RADIO_T3_END);
 	run(400);
-	CHECK(sm.view.t3.state == T3_CAMPED);
+	CHECK(radio_t3v.state == T3_CAMPED);
 
 	// Cancelled: status 124 to the alarm's target
 	from = sim.air_count;
@@ -5918,7 +5918,7 @@ static void test_t3_broadcast(void)
 	radio_t3_staged()->cfg.tg[0].flags |= T3_TG_BROADCAST;
 	req(RREQ_T3, RADIO_T3_START);
 	t3_site_run(600);
-	CHECK(sm.view.t3.state == T3_CAMPED);
+	CHECK(radio_t3v.state == T3_CAMPED);
 	unsigned from = sim.air_count;
 	req(RREQ_PTT, 1);
 	t3_site_run(600);
@@ -5932,7 +5932,7 @@ static void test_t3_broadcast(void)
 	from = sim.air_count;
 	t3_csbk_rx(&g, 1);
 	run(600);
-	CHECK(sm.view.t3.state == T3_FOLLOW && sm.view.state == RS_TX);
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.state == RS_TX);
 	bool found = false;
 	for (unsigned i = from; i < sim.air_count && !found; i++) {
 		if (sim.air[i].kind == DMR_BURST_VOICE_LC_HEADER) {
@@ -5963,7 +5963,7 @@ static void test_t3_als(void)
 	radio_t3_staged()->cfg.als_s = 2;
 	req(RREQ_T3, RADIO_T3_START);
 	t3_site_run(600);
-	CHECK(sm.view.t3.state == T3_CAMPED);
+	CHECK(radio_t3v.state == T3_CAMPED);
 	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
 	h.u.ahoy.kind = T3_SK_IND_VOICE;
 	h.u.ahoy.als = true;
@@ -5980,14 +5980,14 @@ static void test_t3_als(void)
 	g.u.grant.src = 1000001u;
 	t3_csbk_rx(&g, 1);
 	run(600);
-	CHECK(sm.view.t3.state == T3_FOLLOW && sm.view.t3.call_als && sm.view.t3.als_calls == 1);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.call_als && radio_t3v.als_calls == 1);
 	CHECK(sm.view.state == RS_TX);
 	unsigned maints = t3_sent(T3_OP_P_MAINT);
 	run(2200);
 	CHECK(sm.view.state != RS_TX);
 	CHECK(t3_sent(T3_OP_P_MAINT) > maints);
 	run(600);
-	CHECK(sm.view.t3.state == T3_CAMPED);
+	CHECK(radio_t3v.state == T3_CAMPED);
 	req(RREQ_T3, RADIO_T3_STOP);
 	run(100);
 	sim.repeater = false;
@@ -6063,15 +6063,15 @@ static void test_t3_channels(void)
 {
 	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
 	req(RREQ_ZONE, 2);
-	CHECK(sm.view.channel_number == 7 && sm.view.t3.sys == 1 && !sm.view.t3.unavail);
+	CHECK(sm.view.channel_number == 7 && radio_t3v.sys == 1 && !radio_t3v.unavail);
 	t3_site_run(600);
-	CHECK(sm.view.t3.on && sm.view.t3.state == T3_CAMPED && !sm.view.ch.rx_only);
+	CHECK(radio_t3v.on && radio_t3v.state == T3_CAMPED && !sm.view.ch.rx_only);
 	CHECK(hw.rx_hz == T3_RX_HZ);
-	unsigned hunts = sm.view.t3.hunts;
+	unsigned hunts = radio_t3v.hunts;
 	req(RREQ_ZONE_POS, 1);		// "Ops B": the same system
 	t3_site_run(120);
-	CHECK(sm.view.channel_number == 8 && sm.view.t3.on && sm.view.t3.state == T3_CAMPED);
-	CHECK(sm.view.t3.hunts == hunts);
+	CHECK(sm.view.channel_number == 8 && radio_t3v.on && radio_t3v.state == T3_CAMPED);
+	CHECK(radio_t3v.hunts == hunts);
 	CHECK(strcmp(sm.view.ch.name, "Ops B") == 0);
 
 	// A zone scan visits only the conventional channel; cancelled, the radio is back on its system
@@ -6080,7 +6080,7 @@ static void test_t3_channels(void)
 	req(RREQ_ZONE, 1);
 	req(RREQ_ZONE, 2);
 	t3_site_run(600);
-	CHECK(sm.view.t3.state == T3_CAMPED);
+	CHECK(radio_t3v.state == T3_CAMPED);
 	req(RREQ_SCAN, RSCAN_ZONE);
 	bool on_t3 = false, on_6 = false;
 	for (int i = 0; i < 400; i++) {
@@ -6091,24 +6091,24 @@ static void test_t3_channels(void)
 	CHECK(sm.view.scan != 0 && on_6 && !on_t3);
 	req(RREQ_SCAN, RSCAN_CANCEL);
 	t3_site_run(600);
-	CHECK(sm.view.scan == 0 && sm.view.channel_number == 7 && sm.view.t3.state == T3_CAMPED);
+	CHECK(sm.view.scan == 0 && sm.view.channel_number == 7 && radio_t3v.state == T3_CAMPED);
 	zones[2].count = 2;
 
 	req(RREQ_ZONE, 0);		// a conventional channel: the system goes
 	run(100);
-	CHECK(!sm.view.t3.on && sm.view.t3.sys == 0 && hw.rx_hz == 146520000);
+	CHECK(!radio_t3v.on && radio_t3v.sys == 0 && hw.rx_hz == 146520000);
 
 	strcpy(chans[7].name, "Renamed");	// a CPS that renumbered or renamed it: no longer the tagged channel
 	req(RREQ_ZONE, 2);
 	run(100);
-	CHECK(sm.view.t3.sys == 0 && !sm.view.t3.on && sm.view.ch.rx_only);
+	CHECK(radio_t3v.sys == 0 && !radio_t3v.on && sm.view.ch.rx_only);
 	strcpy(chans[7].name, "Ops A");
 
 	t3_cp_system(1, T3_OPT_PRIVATE | 0x0800u, 0, 0, NULL);	// authenticates, no key in the codeplug
 	t3_cp_tag(8, 1);
 	req(RREQ_ZONE_POS, 1);
 	run(100);
-	CHECK(sm.view.t3.sys == 2 && sm.view.t3.unavail && !sm.view.t3.on);
+	CHECK(radio_t3v.sys == 2 && radio_t3v.unavail && !radio_t3v.on);
 	req(RREQ_PTT, 1);
 	run(100);
 	CHECK(sm.view.state != RS_TX && t3_sent(T3_OP_C_RAND) == 0);
@@ -6131,29 +6131,99 @@ static void test_t3_fallback(void)
 	t3_cp_zone(T3_OPT_PRIVATE, 3, 6, "Other");
 	req(RREQ_ZONE, 2);
 	run(2900);			// no TSCC heard
-	CHECK(sm.view.t3.on && sm.view.t3.fallback == 0);
+	CHECK(radio_t3v.on && radio_t3v.fallback == 0);
 	run(200);
-	CHECK(sm.view.t3.fallback == 1 && sm.view.t3.fallbacks == 1 && !sm.view.t3.on);
+	CHECK(radio_t3v.fallback == 1 && radio_t3v.fallbacks == 1 && !radio_t3v.on);
 	CHECK(hw.rx_hz == 145500000 && strcmp(sm.view.ch.name, "Other") == 0 && sm.view.channel_number == 7);
 
 	run(RADIO_T3_PROBE_MS);		// a probe: nothing found in RADIO_T3_PROBE_HUNT_MS, back
-	CHECK(sm.view.t3.fallback == 2 && sm.view.t3.on);
+	CHECK(radio_t3v.fallback == 2 && radio_t3v.on);
 	run(RADIO_T3_PROBE_HUNT_MS + 100);
-	CHECK(sm.view.t3.fallback == 1 && !sm.view.t3.on && hw.rx_hz == 145500000 && sm.view.t3.fallbacks == 1);
+	CHECK(radio_t3v.fallback == 1 && !radio_t3v.on && hw.rx_hz == 145500000 && radio_t3v.fallbacks == 1);
 
 	// A probe while the channel is busy waits for it to go quiet
 	rx_signal(10, true);
 	run(RADIO_T3_PROBE_MS);
-	CHECK(sm.view.t3.fallback == 1);
+	CHECK(radio_t3v.fallback == 1);
 	rx_signal(120, true);
 	run(RADIO_T3_PROBE_QUIET_MS + 500);
-	CHECK(sm.view.t3.fallback == 2);
+	CHECK(radio_t3v.fallback == 2);
 	t3_site_run(600);		// found
-	CHECK(sm.view.t3.fallback == 0 && sm.view.t3.backs == 1 && sm.view.t3.state == T3_CAMPED);
+	CHECK(radio_t3v.fallback == 0 && radio_t3v.backs == 1 && radio_t3v.state == T3_CAMPED);
 	CHECK(strcmp(sm.view.ch.name, "Ops A") == 0 && !sm.view.ch.rx_only && hw.rx_hz == T3_RX_HZ);
 	beep_stats_t bs;
 	beep_get_stats(&bs);
 	CHECK(bs.last == BEEP_SYSTEM_BACK);
+	t3_cp_done();
+}
+
+// A stun on a codeplug system outlasts a restart: kept in the settings with the system's slot and network, lifted by
+// the revive; a stun kept for another network doesn't apply
+static void t3_stun_ahoy(bool revive)
+{
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_SUPPLEMENTARY;
+	h.u.ahoy.dst = sm.view.dmr.own_id;	// a codeplug system's ID is the radio's
+	h.u.ahoy.src = T3_ID_STUNI;
+	h.u.ahoy.kind_flag = revive;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+}
+
+static void t3_set_stun(uint8_t w)
+{
+	settings_t *st = settings_begin();
+	st->t3_stun = w;
+	settings_end(now);
+}
+
+static void test_t3_stun_kept(void)
+{
+	settings_t st;
+	t3_cp_zone(T3_OPT_PRIVATE | T3_OPT_STUN, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED && !radio_t3v.stunned);
+	settings_read(&st);
+	CHECK(st.t3_stun == 0);
+	t3_stun_ahoy(false);
+	CHECK(radio_t3v.stunned);
+	settings_read(&st);
+	uint8_t w = st.t3_stun;
+	CHECK((w & SETTINGS_T3_STUN) != 0 && ((w >> 4) & 7u) == 0);
+	t3_stun_ahoy(true);
+	CHECK(!radio_t3v.stunned);
+	settings_read(&st);
+	CHECK(st.t3_stun == 0);
+
+	// A restart with the stun kept (the engine's own memory of it gone with the revive): stunned on the system again
+	t3_set_stun(w);
+	req(RREQ_ZONE, 0);
+	run(100);
+	boot();
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.stunned);
+	unsigned rands = t3_sent(T3_OP_C_RAND);
+	req(RREQ_PTT, 1);
+	run(200);
+	CHECK(sm.view.state == RS_TX_DENIED && t3_sent(T3_OP_C_RAND) == rands);
+	req(RREQ_PTT, 0);
+	run(200);
+	t3_stun_ahoy(true);
+	settings_read(&st);
+	CHECK(!radio_t3v.stunned && st.t3_stun == 0);
+
+	// Kept for another network in that slot (the system was replaced): not this one's
+	t3_set_stun((uint8_t)(w ^ 0x01u));
+	req(RREQ_ZONE, 0);
+	run(100);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED && !radio_t3v.stunned);
+	settings_read(&st);
+	CHECK(st.t3_stun == (uint8_t)(w ^ 0x01u));	// left for its own system
+	t3_set_stun(0);
 	t3_cp_done();
 }
 
@@ -6168,12 +6238,12 @@ static void test_t3_stun(void)
 	h.u.ahoy.src = T3_ID_STUNI;
 	t3_csbk_rx(&h, 1);
 	t3_site_run(300);
-	CHECK(sm.view.t3.stunned && sm.view.t3.stuns == 1);
+	CHECK(radio_t3v.stunned && radio_t3v.stuns == 1);
 	req(RREQ_T3, RADIO_T3_STOP);
 	run(100);
 	req(RREQ_T3, RADIO_T3_START);
 	t3_site_run(600);
-	CHECK(sm.view.t3.state == T3_CAMPED && sm.view.t3.stunned);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.stunned);
 	unsigned rands = t3_sent(T3_OP_C_RAND);
 	req(RREQ_PTT, 1);
 	run(200);
@@ -6183,7 +6253,7 @@ static void test_t3_stun(void)
 	h.u.ahoy.kind_flag = true;
 	t3_csbk_rx(&h, 1);
 	t3_site_run(300);
-	CHECK(!sm.view.t3.stunned && sm.view.t3.revives == 1);
+	CHECK(!radio_t3v.stunned && radio_t3v.revives == 1);
 	req(RREQ_T3, RADIO_T3_STOP);
 	run(100);
 	sim.repeater = false;
@@ -6222,6 +6292,7 @@ int main(void)
 	test_t3_broadcast();
 	test_t3_als();
 	test_t3_stun();
+	test_t3_stun_kept();
 	test_t3_channels();
 	test_t3_fallback();
 #endif
