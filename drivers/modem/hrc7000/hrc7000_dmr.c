@@ -140,6 +140,9 @@ uint8_t hrc7000_dmr_payload_len(uint8_t kind)
 	}
 }
 
+// LAYER2_SEND_TYPE b8 crc_calc_sel: 1 = the CPU's CRCs are sent as given (modem-hrc7000.md 6.4)
+#define SEND_TYPE_CRC_CPU	0x100u
+
 uint32_t hrc7000_dmr_send_type(uint8_t kind, uint8_t voice_index, bool lcss)
 {
 	static const uint8_t lcss_of[6] = { 0, 1, 3, 3, 2, 0 };	// user guide superframe: 0x08 0x19 0x2B 0x3B 0x4A 0x50
@@ -147,7 +150,11 @@ uint32_t hrc7000_dmr_send_type(uint8_t kind, uint8_t voice_index, bool lcss)
 		uint8_t i = voice_index % 6u;
 		return 0x08u | ((uint32_t)i << 4) | (lcss ? lcss_of[i] : 0u);
 	}
-	return (uint32_t)(kind & 0xFu) << 4;
+	uint32_t t = (uint32_t)(kind & 0xFu) << 4;
+	if (kind == DMR_BURST_RATE_12_DATA || kind == DMR_BURST_RATE_34_DATA || kind == DMR_BURST_RATE_1_DATA) {
+		t |= SEND_TYPE_CRC_CPU;	// the blocks come whole: with b8 = 0 the chip writes over a rate 3/4 block's octets 0-1
+	}
+	return t;
 }
 
 uint8_t hrc7000_dmr_emb_checksum(const uint8_t lc[9])

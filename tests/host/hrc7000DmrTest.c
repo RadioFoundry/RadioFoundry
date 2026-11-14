@@ -149,6 +149,11 @@ static void test_pure(void)
 	CHECK(hrc7000_dmr_send_type(DMR_BURST_VOICE_LC_HEADER, 0, true) == 0x10);
 	CHECK(hrc7000_dmr_send_type(DMR_BURST_TERMINATOR_LC, 0, true) == 0x20);
 	CHECK(hrc7000_dmr_send_type(DMR_BURST_CSBK, 0, false) == 0x30);
+	CHECK(hrc7000_dmr_send_type(DMR_BURST_DATA_HEADER, 0, false) == 0x60);	// the chip appends the header's CRC-16
+	// Data blocks carry the CPU's DBSN, CRC-9 and CRC-32: b8 set, or the chip writes over rate 3/4 octets 0-1
+	CHECK(hrc7000_dmr_send_type(DMR_BURST_RATE_12_DATA, 0, false) == 0x170);
+	CHECK(hrc7000_dmr_send_type(DMR_BURST_RATE_34_DATA, 0, false) == 0x180);
+	CHECK(hrc7000_dmr_send_type(DMR_BURST_RATE_1_DATA, 0, false) == 0x1A0);
 	CHECK(hrc7000_dmr_payload_len(DMR_BURST_VOICE) == 27 && hrc7000_dmr_payload_len(DMR_BURST_RATE_34_DATA) == 18 &&
 	      hrc7000_dmr_payload_len(DMR_BURST_RATE_1_DATA) == 24 && hrc7000_dmr_payload_len(DMR_BURST_CSBK) == 12);
 	const uint8_t lc[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x01 };

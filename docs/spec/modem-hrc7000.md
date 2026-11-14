@@ -274,9 +274,9 @@ with the voice-access flag; 0x800000 release RX slot sync.
 | 0x40 | MBC header (4) | 10 bytes, chip CRC |
 | 0x50 | MBC continuation (5) | 12 bytes |
 | 0x60 | Data header (6) | 10 bytes, chip CRC with DATAH_CRC_MASK |
-| 0x70 | Rate ½ data block (7) | 12 bytes (CRC-9 / CRC-32 by the CPU) |
-| 0x80 | Rate ¾ data block (8) | 18 bytes |
-| 0xA0 | Rate 1 data block (10) | 24 bytes |
+| 0x170 | Rate ½ data block (7), b8 set | 12 bytes (CRC-9 / CRC-32 by the CPU, 6.4) |
+| 0x180 | Rate ¾ data block (8), b8 set | 18 bytes |
+| 0x1A0 | Rate 1 data block (10), b8 set | 24 bytes |
 | 0x08 + (n << 4) + LCSS | Voice burst n = 0..5 (A..F) | AMBE 27 bytes to the voice RAM 0x16000960; for burst A also the call's LC (bytes 0–8) at 0x16000000 for the embedded LC |
 
 Datasheet example for one superframe: A = 0x08, B = 0x19, C = 0x2B, D = 0x3B, E = 0x4A, F = 0x50, i.e. LCSS 0 on A,
@@ -746,9 +746,12 @@ Encoded audio must be produced continuously during TX: encode one 20 ms block pe
 
 Per burst, in an active slot: write the payload to TX RAM (10 bytes for CSBK / MBC header / data header: the chip
 appends the CRC-16 with the programmed mask because SEND_TYPE b8 = 0; 12 / 18 / 24 bytes for rate ½ / ¾ / 1 blocks,
-CRC-9 and CRC-32 computed by the CPU), SEND_TYPE = data type << 4, TXRX_CTRL = 0x80, start the PA one-shot. Inactive
+CRC-9 and CRC-32 computed by the CPU), SEND_TYPE = data type << 4 (blocks: | 0x100), TXRX_CTRL = 0x80, start the PA
+one-shot. Data blocks go with b8 (crc_calc_sel) set: with b8 = 0 the chip writes its own values over octets 0-1 of a
+rate 3/4 block, so on air a confirmed block's DBSN and CRC-9 were wrong while octets 2-17 were the CPU's (rate 1/2
+blocks were sent as given). Inactive
 slot: TXRX_CTRL = 0 (or 0x40 to listen for a response). Sequence for a packet: data header (0x60), blocks
-(0x70/0x80/0xA0), optional terminator. CSBK signaling: optional preamble CSBKs then the function CSBK, all 0x30
+(0x170/0x180/0x1A0), optional terminator. CSBK signaling: optional preamble CSBKs then the function CSBK, all 0x30
 (datasheet appendices B, C). Open RX afterwards to catch the response.
 
 ### 6.5 BS activation (repeater wake)
@@ -774,7 +777,7 @@ make repeater wake work (which of the two matters is not known).
 |---|---|---|
 | LC header, terminator | RS(12,9) with RS_H_MASK / RS_T_MASK, BPTC(196,96), slot type Golay | 9 LC bytes |
 | CSBK, MBC header, data header, PI header | CRC-16 with the programmed mask (when SEND_TYPE b8 = 0), BPTC, slot type | 10 bytes |
-| Rate ½ / ¾ / 1 data | BPTC / trellis ¾ / none, slot type | 12 / 18 / 24 bytes including CRC-9 and the final CRC-32 |
+| Rate ½ / ¾ / 1 data | BPTC / trellis ¾ / none, slot type; SEND_TYPE b8 = 1 (6.4) | 12 / 18 / 24 bytes including CRC-9 and the final CRC-32 |
 | Voice | sync / EMB (QR), embedded LC fragments (5-bit checksum from TX RAM byte 9 or computed), burst F EMB from the RC encoder when VOICE_EMB_CTRL b1 = 1 | 27 AMBE bytes; LC for burst A |
 | Short LC (CACH) | CRC-8 (CRC8_INIT) | repeater mode only |
 
