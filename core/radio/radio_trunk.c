@@ -32,6 +32,9 @@ void radio_t3_fix(radio_t3_setup_t *s)
 #if CONFIG_DMR_TRUNK_SUPL
 	s->cfg.supl_data = s->supl;
 #endif
+#if CONFIG_DMR_TRUNK_GW
+	s->cfg.dial = s->dial;
+#endif
 }
 
 #endif

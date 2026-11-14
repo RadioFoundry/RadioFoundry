@@ -22,6 +22,7 @@ CONFIG_DISPLAY_INSET_BOTTOM ?= 5
 CONFIG_VOX ?= n
 CONFIG_SNMP ?= n	# RAM for trunking for now; back on once the RAM is shared out again
 CONFIG_DMR_TRUNK_SUPL ?= n	# RAM, as SNMP
+CONFIG_DMR_TRUNK_GW ?= n	# RAM, as SNMP
 # The platform's three TCP connections; a fourth costs about 1.4 KB of main RAM. ci's maximal configuration has
 # every switch but USB and USB_NETWORK (platform/hrc7000/config.mk), and NAND_STORAGE (below), and also keeps about
 # 0.5 KB free

@@ -2847,6 +2847,15 @@ static void t3_publish(radio_sm_t *sm)
 	v->sd_len = m->sd_rx.len;
 	memcpy(v->sd_data, m->sd_rx.data, sizeof(v->sd_data));
 	v->sd_ms = m->sd_rx.ms;
+#if CONFIG_DMR_TRUNK_GW
+	v->cli_count = m->cli.count;
+	v->cli_gw = m->cli.gw;
+	v->cli_dst = m->cli.dst;
+	v->cli_group = m->cli.group;
+	v->cli_n = m->cli.n;
+	memcpy(v->cli_bcd, m->cli.bcd, sizeof(v->cli_bcd));
+	v->cli_ms = m->cli.ms;
+#endif
 #if CONFIG_DMR_TRUNK_SUPL
 	v->supl_count = m->supl_rx.count;
 	v->supl_src = m->supl_rx.src;

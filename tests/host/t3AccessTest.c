@@ -2564,6 +2564,123 @@ static void test_supl(void)
 	CHECK(ms.supl_rx.count == 3 && ms.supl_rx.src == 0, "too late: unnamed");
 }
 
+// Calls through a dialling gateway (6.6.2.2.3, table 6.41; 6.6.4.2, table 6.54): the request goes to the gateway with
+// the Proxy Flag set by the digits' count, and the digits go up as BCD with SF 1 when the gateway asks (table B.3 for
+// the Pad Nibble). A caller's number from a gateway (table 6.33) is kept and, with A, accepted
+static void test_dial(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+	uint8_t bcd[T3_DIAL_MAX / 2];
+	CHECK(t3_dial_pack("5551234", bcd) == 7 && bcd[0] == 0x55 && bcd[1] == 0x51 && bcd[2] == 0x23 && bcd[3] == 0x4F &&
+	      bcd[4] == 0xFF, "packed: %02x %02x %02x %02x", bcd[0], bcd[1], bcd[2], bcd[3]);
+	CHECK(t3_dial_pack("*0#", bcd) == 3 && bcd[0] == 0xA0 && bcd[1] == 0xBF, "* and #");
+	CHECK(t3_dial_pack("12a", bcd) == 0 && t3_dial_pack("", bcd) == 0 &&
+	      t3_dial_pack("123456789012345678901234567890123456789012345", bcd) == 0, "bad strings refused");
+	CHECK(t3_dial_gw(T3_ID_PSTNI) && t3_dial_gw(T3_ID_PABXI) && t3_dial_gw(T3_ID_LINEI) && t3_dial_gw(T3_ID_DISPATI) &&
+	      t3_dial_gw(T3_ID_PSTNDI) && t3_dial_gw(T3_ID_DISPATDI) && !t3_dial_gw(T3_ID_IPI) && !t3_dial_gw(T3_ID_SDMI),
+	      "dialling gateways");
+
+	// No digits, or to a talkgroup: refused
+	CHECK(!t3_ms_request(&ms, T, T3_ID_PSTNI, false, false) && ms.ax.result == T3_RES_NOT_ALLOWED, "no digits");
+	uint8_t digits[T3_DIAL_MAX / 2];
+	cfg.dial = digits;
+	cfg.dial_n = t3_dial_pack("5551234", digits);
+	CHECK(!t3_ms_request(&ms, T, T3_ID_PSTNI, true, false) && ms.ax.result == T3_RES_NOT_ALLOWED, "not a talkgroup");
+
+	// A voice call to the PSTN: an individual request to PSTNI, Proxy 0 (up to 20 digits), the digits when it asks
+	nsent = 0;
+	CHECK(t3_ms_request(&ms, T, T3_ID_PSTNI, false, false), "call to the PSTN");
+	CHECK(sent_rand(&ms) && sent[0].u.rand.kind == T3_SK_IND_VOICE && sent[0].u.rand.dst == T3_ID_PSTNI &&
+	      !sent[0].u.rand.proxy, "C_RAND to PSTNI, proxy %u", sent[0].u.rand.proxy);
+	int up0 = nup;
+	t3_csbk_t h = ahoy(T3_SK_IND_VOICE, false, OWN, T3_ID_PABXI);	// another gateway's: not ours
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	CHECK(nup == up0, "another gateway's ask: nothing");
+	h = ahoy(T3_SK_IND_VOICE, false, OWN, T3_ID_PSTNI);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	t3_udt_t u;
+	CHECK(nup == up0 + 1 && nup_blocks == 1 && t3_udt_parse(up_hdr, &u) && u.op == T3_OP_C_UDTHU && u.sf &&
+	      u.format == T3_UDTF_BCD && u.dst == T3_ID_PSTNI && u.src == OWN && u.pad == 13 && up_blocks[0][0] == 0x55 &&
+	      up_blocks[0][1] == 0x51 && up_blocks[0][2] == 0x23 && up_blocks[0][3] == 0x4F && up_blocks[0][4] == 0xFF,
+	      "digits uploaded: sf %u fmt %u pad %u", u.sf, u.format, u.pad);
+	CHECK(ms.ax.state == T3_AX_ACKED, "the request goes on");
+	t3_csbk_t g = grant(T3_OP_PV_GRANT, 895, 1, T3_ID_PSTNI, OWN);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && ms.ax.result == T3_RES_GRANTED, "granted");
+	t3_ms_end_call(&ms, T);
+	frames(&ms, 6);
+	CHECK(ms.state == T3_CAMPED, "back");
+	frames(&ms, 20);
+
+	// 21-44 digits: Proxy 1, two blocks
+	cfg.dial_n = t3_dial_pack("123456789012345678901", digits);
+	nsent = 0;
+	bool started = t3_ms_request(&ms, T, T3_ID_PABXI, false, false);
+	CHECK(started && sent_rand(&ms) && sent[0].u.rand.proxy, "proxy 1: started %u state %d ax %d res %d", started,
+	      ms.state, ms.ax.state, ms.ax.result);
+	h = ahoy(T3_SK_IND_VOICE, false, OWN, T3_ID_PABXI);
+	h.u.ahoy.blocks = 1;
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup_blocks == 2 && t3_udt_parse(up_hdr, &u) && u.dst == T3_ID_PABXI && u.pad == 23,
+	      "21 digits: 2 blocks, pad %u", u.pad);
+	nsent = 0;
+	t3_ms_cancel(&ms, T);
+	CHECK(sent_rand(&ms) && sent[nsent - 1].u.rand.kind == T3_SK_CANCEL, "cancelled");
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, T3_ID_PABXI);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.state == T3_AX_IDLE, "idle again: %d", ms.ax.state);
+
+	// Short data to the dispatcher: the digits when DISPATI asks, then the message when SDMI does
+	cfg.dial_n = t3_dial_pack("42", digits);
+	nsent = 0;
+	CHECK(t3_ms_sdata(&ms, T, T3_ID_DISPATI, false, T3_UDTF_ISO8, (const uint8_t *)"hi", 2) && sent_rand(&ms) &&
+	      sent[0].u.rand.dst == T3_ID_DISPATI, "short data to DISPATI");
+	h = ahoy(T3_SK_IND_UDT, false, OWN, T3_ID_DISPATI);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(t3_udt_parse(up_hdr, &u) && u.sf && u.format == T3_UDTF_BCD && u.dst == T3_ID_DISPATI && up_blocks[0][0] == 0x42,
+	      "digits first");
+	h = ahoy(T3_SK_IND_UDT, false, OWN, T3_ID_SDMI);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(t3_udt_parse(up_hdr, &u) && !u.sf && u.format == T3_UDTF_ISO8 && memcmp(up_blocks, "hi", 2) == 0,
+	      "then the message");
+	a = ack(T3_OP_C_ACKD, T3_RC_MS_ACCEPTED, OWN, T3_ID_DISPATI);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_DONE, "delivered");
+
+	// The caller's number from the PABX, to the radio with A: kept, accepted, not short data
+	static const uint8_t num[5] = { 0x80, 0x05, 0x55, 0x12, 0x12 };	// 8005551212
+	nsent = 0;
+	uint32_t sd0 = ms.sd_rx.count;
+	t3_udt_t d = { .op = T3_OP_C_UDTHD, .a = true, .sf = true, .format = T3_UDTF_BCD, .dst = OWN, .src = T3_ID_PABXI };
+	udt_down(&ms, 1, &d, num, sizeof num, false);
+	frames(&ms, 1);
+	char text[T3_DIAL_MAX + 1];
+	t3_bcd_text(ms.cli.bcd, ms.cli.n, text);
+	CHECK(ms.cli.count == 1 && ms.cli.gw == T3_ID_PABXI && ms.cli.n == 10 && strcmp(text, "8005551212") == 0 &&
+	      ms.sd_rx.count == sd0, "number kept: %u digits \"%s\"", ms.cli.n, text);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MESSAGE_ACCEPTED &&
+	      sent[0].u.ack.dst == T3_ID_PABXI, "accepted");
+	udt_down(&ms, 1, &d, num, sizeof num, false);
+	frames(&ms, 1);
+	CHECK(ms.cli.count == 1 && nsent == 2, "repeat answered, not counted again");
+	// To a talkgroup the radio follows: kept, not answered
+	d.group = true;
+	d.a = false;
+	d.dst = TG_B;
+	udt_down(&ms, 1, &d, num, 2, false);
+	frames(&ms, 2);
+	CHECK(ms.cli.count == 2 && ms.cli.group && ms.cli.n == 4 && nsent == 2, "talkgroup's: kept, %u digits", ms.cli.n);
+	cfg.dial = NULL;
+	cfg.dial_n = 0;
+}
+
 int main(void)
 {
 	test_register();
@@ -2596,6 +2713,7 @@ int main(void)
 	test_status();
 	test_sdata();
 	test_supl();
+	test_dial();
 	test_pdata();
 	test_pdata_ip();
 	test_ip_advice();

@@ -195,6 +195,24 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 		s->cfg.poll_len = (uint8_t)(n - 1u);
 		memcpy(s->poll_reply, a + 1, s->cfg.poll_len);
 		break;
+#if CONFIG_DMR_TRUNK_GW
+	case DL_T3_DIAL: {	// digits
+		char d[T3_DIAL_MAX + 1];
+		if (n > T3_DIAL_MAX) {
+			out[0] = DL_ST_BAD_ARG;
+			break;
+		}
+		memcpy(d, a, n);
+		d[n] = '\0';
+		uint8_t k = n != 0 ? t3_dial_pack(d, s->dial) : 0u;
+		if (n != 0 && k == 0) {
+			out[0] = DL_ST_BAD_ARG;
+			break;
+		}
+		s->cfg.dial_n = k;
+		break;
+	}
+#endif
 #if CONFIG_DMR_TRUNK_SUPL
 	case DL_T3_SUPL:	// format u8, data
 		if (n < 1u || n > 1u + T3_UDT_MAX || a[0] > 15u) {
@@ -428,6 +446,14 @@ static void t3_svc(const radio_t3_view_t *x, void *ctx)
 	dl_text(t, "t3.sd_count=%u\nt3.sd_src=%u\nt3.sd_dst=%u\nt3.sd_group=%u\nt3.sd_format=%u\nt3.sd_len=%u\n"
 		"t3.sd_data=%s\nt3.sd_age_ms=%d\n", (unsigned)x->sd_count, (unsigned)x->sd_src, (unsigned)x->sd_dst,
 		x->sd_group, x->sd_format, x->sd_len, sd, x->sd_ms != 0 ? (int)(now - x->sd_ms) : -1);
+#if CONFIG_DMR_TRUNK_GW
+	// The last caller's number from a gateway
+	char cli[T3_DIAL_MAX + 1];
+	t3_bcd_text(x->cli_bcd, x->cli_n, cli);
+	dl_text(t, "t3.cli_count=%u\nt3.cli_gw=%u\nt3.cli_dst=%u\nt3.cli_group=%u\nt3.cli=%s\nt3.cli_age_ms=%d\n",
+		(unsigned)x->cli_count, (unsigned)x->cli_gw, (unsigned)x->cli_dst, x->cli_group, cli,
+		x->cli_ms != 0 ? (int)(now - x->cli_ms) : -1);
+#endif
 #if CONFIG_DMR_TRUNK_SUPL
 	// The last supplementary data heard; supl_src 0 until a call names its sender
 	hex(sd, x->supl_data, x->supl_len);

@@ -49,7 +49,9 @@
 #define T3_OP_C_MOVE		57
 
 // Gateway and special addresses (A.4)
-#define T3_ID_PSTNI		0xFFFEC0u
+#define T3_ID_PSTNI		0xFFFEC0u	// PSTN, PABX, line and dispatcher gateways (aligned timing): dialled digits
+#define T3_ID_PABXI		0xFFFEC1u
+#define T3_ID_LINEI		0xFFFEC2u
 #define T3_ID_IPI		0xFFFEC3u	// the IP gateway: packet data to an IP destination (multi-part)
 #define T3_ID_SUPLI		0xFFFEC4u	// supplementary user data (6.4.13)
 #define T3_ID_SDMI		0xFFFEC5u
@@ -58,6 +60,8 @@
 #define T3_ID_DIVERTI		0xFFFEC9u	// call diversion: its address upload, cancelling incoming diversions
 #define T3_ID_TSI		0xFFFECAu
 #define T3_ID_DISPATI		0xFFFECBu
+#define T3_ID_PSTNDI		0xFFFED0u	// the same gateways with payload offset timing
+#define T3_ID_DISPATDI		0xFFFED3u
 #define T3_ID_STUNI		0xFFFECCu
 #define T3_ID_AUTHI		0xFFFECDu
 #define T3_ID_GPI		0xFFFECEu	// call diversion to a talkgroup

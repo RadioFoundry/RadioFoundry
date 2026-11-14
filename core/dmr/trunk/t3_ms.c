@@ -842,6 +842,11 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 		q->kind = T3_SK_CANCEL;
 		break;
 	}
+#if CONFIG_DMR_TRUNK_GW
+	if (t3_dial_gw(ms->ax.dst)) {
+		q->proxy = ms->cfg->dial_n > 20u;	// one appended block holds 20 digits, two 44 (6.6.2.1.2)
+	}
+#endif
 	if (ms->ax.supl) {
 		// SUPED_SV, and SUPED_VAL the blocks it needs less one, above the service's 2 low bits (tables 6.40, 6.50,
 		// 6.55)
@@ -1089,6 +1094,118 @@ static bool udt_chars(uint8_t format)
 {
 	return format == T3_UDTF_BCD || format == T3_UDTF_ISO7 || format == T3_UDTF_ISO8 || format == T3_UDTF_UTF16 ||
 	       format == T3_UDTF_DGNA_ALIAS;
+}
+
+bool t3_dial_gw(uint32_t id)
+{
+	return (id >= T3_ID_PSTNI && id <= T3_ID_LINEI) || id == T3_ID_DISPATI || (id >= T3_ID_PSTNDI && id <= T3_ID_DISPATDI);
+}
+
+void t3_bcd_text(const uint8_t *bcd, uint8_t n, char *out)
+{
+	static const char digit[] = "0123456789*#";
+	for (uint8_t i = 0; i < n; i++) {
+		uint8_t d = (uint8_t)(i & 1u ? bcd[i / 2u] & 0x0Fu : bcd[i / 2u] >> 4);
+		out[i] = d < 12u ? digit[d] : '?';
+	}
+	out[n] = '\0';
+}
+
+// A request to a dialling gateway needs the digits, and goes to the gateway as an individual (6.6.2.2.3)
+static bool dial_bad(const t3_ms_t *ms, uint32_t dst, bool group)
+{
+	if (!t3_dial_gw(dst)) {
+		return false;
+	}
+#if CONFIG_DMR_TRUNK_GW
+	return group || ms->cfg->dial == NULL || ms->cfg->dial_n == 0;
+#else
+	(void)ms, (void)group;
+	return true;
+#endif
+}
+
+uint8_t t3_dial_pack(const char *digits, uint8_t bcd[T3_DIAL_MAX / 2])
+{
+	uint8_t n = 0;
+	memset(bcd, 0xFF, T3_DIAL_MAX / 2);	// DigitNULL fills an odd count's last nibble (table 7.46)
+	for (; digits[n] != '\0'; n++) {
+		char c = digits[n];
+		uint8_t d = c >= '0' && c <= '9' ? (uint8_t)(c - '0') : c == '*' ? 10u : c == '#' ? 11u : 0xFFu;
+		if (d == 0xFFu || n >= T3_DIAL_MAX) {
+			return 0;
+		}
+		bcd[n / 2u] = (uint8_t)(n & 1u ? (bcd[n / 2u] & 0xF0u) | d : (d << 4) | 0x0Fu);
+	}
+	return n;
+}
+
+// The TSCC asks for the digits of our call through a gateway (6.6.2.1.2 b, tables 6.41 and 6.54: C_AHOY from the
+// gateway): a UDT with SF 1, BCD (B.3.3), to the gateway, in the inbound slots that follow
+static bool on_dial_ask(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h)
+{
+	if (!t3_dial_gw(h->src) || h->group || !is_me(ms, h->dst)) {
+		return false;
+	}
+#if CONFIG_DMR_TRUNK_GW
+	const t3_cfg_t *c = ms->cfg;
+	if (!may_send(ms) || ms->ax.dst != h->src || c->dial == NULL || c->dial_n == 0 ||
+	    (ms->ax.svc != T3_SVC_IND_VOICE && ms->ax.svc != T3_SVC_SDATA && ms->ax.svc != T3_SVC_PDATA) ||
+	    (ms->ax.state != T3_AX_WAIT_RESP && ms->ax.state != T3_AX_ACKED)) {
+		return true;
+	}
+	t3_udt_t u;
+	memset(&u, 0, sizeof(u));
+	u.format = T3_UDTF_BCD;
+	u.sf = true;
+	u.dst = h->src;
+	// Pad Nibble: the 1111b nibbles after the digits (table B.3), an odd count's last one among them
+	queue_udt(ms, now, slot, &u, c->dial, (uint8_t)((c->dial_n + 1u) / 2u), 0xFFu, true,
+		  (uint8_t)(c->dial_n & 1u ? 4u : 0u), true);
+#else
+	(void)now, (void)slot;
+#endif
+	return true;
+}
+
+// The caller's number from a gateway (CLI, table 6.33): a UDT download with SF 1, BCD, from PSTNI or PABXI (or another
+// dialling gateway) to the radio or a talkgroup it follows, ahead of the call. Kept in cli; to the radio with A 1,
+// C_ACKU Message_Accepted to the gateway
+static bool cli_heard(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_udt_t *h, bool to_me)
+{
+	if (h->op != T3_OP_C_UDTHD || !h->sf || !t3_dial_gw(h->src) || ms->stunned ||
+	    (!to_me && !(h->group && t3_ms_wants_group(ms, h->dst, false)))) {
+		return false;
+	}
+#if !CONFIG_DMR_TRUNK_GW
+	(void)now, (void)slot;
+	return true;
+#else
+	if (!t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])ms->udt_rx.blk, h->blocks)) {
+		ms->st.crc_bad++;
+		return true;
+	}
+	if (h->format == T3_UDTF_BCD) {
+		uint8_t room = (uint8_t)((h->blocks * T3_UDT_BLOCK - 2u) * 2u);
+		uint8_t n = h->pad < room ? (uint8_t)(room - h->pad) : 0u;
+		n = n < T3_DIAL_MAX ? n : (uint8_t)T3_DIAL_MAX;
+		bool repeat = ms->cli.ms != 0 && !since(now, ms->cli.ms, T3_REPEAT_MS) && ms->cli.gw == h->src &&
+			      ms->cli.dst == h->dst && ms->cli.n == n && memcmp(ms->cli.bcd, &ms->udt_rx.blk[0][0], (n + 1u) / 2u) == 0;
+		if (!repeat) {
+			ms->cli.count++;
+		}
+		ms->cli.gw = h->src;
+		ms->cli.dst = h->dst;
+		ms->cli.group = h->group;
+		ms->cli.n = n;
+		memcpy(ms->cli.bcd, &ms->udt_rx.blk[0][0], (n + 1u) / 2u);
+		ms->cli.ms = now != 0 ? now : 1;
+	}
+	if (to_me && h->a && may_send(ms)) {
+		answer(ms, slot, false, T3_RC_MESSAGE_ACCEPTED, h->src, false);
+	}
+	return true;
+#endif
 }
 
 // The TSCC asks for our short data (6.6.4.4 c, C_AHOY from SDMI): the UDT header and blocks go in the inbound slots
@@ -1339,7 +1456,7 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 	}
 	if (!payload && (on_upload(ms, now, slot, h) || on_reg_list(ms, now, slot, h) ||
 			  on_divert_ask(ms, now, slot, h) || on_ip_ask(ms, now, slot, h) || on_poll(ms, now, slot, h) ||
-			  on_supl_ask(ms, now, slot, h))) {
+			  on_supl_ask(ms, now, slot, h) || on_dial_ask(ms, now, slot, h))) {
 		return;
 	}
 	if (!payload && (h->kind == T3_SK_STATUS || h->kind == T3_SK_UDT_POLL) && is_me(ms, h->src)) {
@@ -2055,7 +2172,7 @@ static void udt_done(t3_ms_t *ms, uint32_t now, uint8_t slot)
 		dgna_done(ms, h, slot);
 		return;
 	}
-	if (diverted(ms, now, h) || supl_heard(ms, now, slot, h, to_me)) {
+	if (diverted(ms, now, h) || supl_heard(ms, now, slot, h, to_me) || cli_heard(ms, now, slot, h, to_me)) {
 		return;
 	}
 	if (ms->stunned || h->op != T3_OP_C_UDTHD || h->sf ||
@@ -2366,8 +2483,9 @@ void t3_ms_set_killed(t3_ms_t *ms, bool killed)
 
 bool t3_ms_request(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, bool emergency)
 {
-	if (dst == T3_ID_NULL || ms->ax.state != T3_AX_IDLE || !may_ask(ms)) {
-		if (dst == T3_ID_NULL) {
+	bool bad = dst == T3_ID_NULL || dial_bad(ms, dst, group);
+	if (bad || ms->ax.state != T3_AX_IDLE || !may_ask(ms)) {
+		if (bad) {
 			ms->ax.result = T3_RES_NOT_ALLOWED;
 		}
 		return false;
@@ -2400,7 +2518,8 @@ bool t3_ms_status(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t s
 bool t3_ms_sdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t format, const uint8_t *data, uint8_t len)
 {
 	bool iso7 = format == T3_UDTF_ISO7;
-	bool bad = dst == T3_ID_NULL || len == 0 || len > (iso7 ? T3_UDT_ISO7_MAX : T3_UDT_MAX) || format > 0x0Fu;
+	bool bad = dst == T3_ID_NULL || len == 0 || len > (iso7 ? T3_UDT_ISO7_MAX : T3_UDT_MAX) || format > 0x0Fu ||
+		   dial_bad(ms, dst, group);
 	if (bad || ms->ax.state != T3_AX_IDLE || !may_ask(ms)) {
 		if (bad) {
 			ms->ax.result = T3_RES_NOT_ALLOWED;
@@ -2433,8 +2552,9 @@ bool t3_ms_sdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t fo
 
 bool t3_ms_pdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group)
 {
-	if (dst == T3_ID_NULL || ms->ax.state != T3_AX_IDLE || !may_ask(ms)) {
-		if (dst == T3_ID_NULL) {
+	bool bad = dst == T3_ID_NULL || dial_bad(ms, dst, group);
+	if (bad || ms->ax.state != T3_AX_IDLE || !may_ask(ms)) {
+		if (bad) {
 			ms->ax.result = T3_RES_NOT_ALLOWED;
 		}
 		return false;

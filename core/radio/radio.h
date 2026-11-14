@@ -333,6 +333,13 @@ typedef struct {
 	uint8_t sd_format, sd_len;
 	uint8_t sd_data[46];	// T3_UDT_MAX
 	uint32_t sd_count, sd_src, sd_dst, sd_ms;
+#if CONFIG_DMR_TRUNK_GW
+	// The last caller's number a gateway sent (CLI): cli_n BCD digits, the first in the high nibble
+	bool cli_group;
+	uint8_t cli_n;
+	uint8_t cli_bcd[22];	// T3_DIAL_MAX / 2
+	uint32_t cli_count, cli_gw, cli_dst, cli_ms;
+#endif
 #if CONFIG_DMR_TRUNK_SUPL
 	// The last supplementary user data heard; supl_src 0 until a call names its sender
 	bool supl_group;

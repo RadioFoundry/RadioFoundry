@@ -418,6 +418,21 @@ request offers it: Service_Options SUPED_SV 1 and SUPED_VAL the blocks less one,
 All of it is built with `CONFIG_DMR_TRUNK_SUPL` ([build-config.md](../build-config.md)). Without it the radio offers
 none, and a download from SUPLI is taken off the air unanswered (it is never short data).
 
+**Calls through a dialling gateway (6.6.2.2.3, 6.6.4.2).** A voice, short data or packet data request to PSTNI,
+PABXI, LINEI or DISPATI (or their offset-timing addresses, A.4) carries no called number: the TSCC asks for it.
+`t3_cfg_t.dial` holds the digits (`t3_dial_pack`: `0-9`, `*`, `#`, up to 44; table 7.46).
+
+| Step | The radio |
+|---|---|
+| the request | individual (a talkgroup is refused), destination the gateway, Proxy Flag 0 for 1-20 digits, 1 for 21-44 (6.6.2.1.2); refused without digits |
+| C_AHOY from that gateway to the radio | a C_UDTHU to the gateway, SF 1, BCD (B.3.3: the first digit in the high nibble, Pad Nibble per table B.3), in the slots that follow (tables 6.35, 6.41, 6.54); the request goes on |
+| C_AHOY from SDMI or SUPLI | as without a gateway: the message, the supplementary data |
+| C_UDTHD from a dialling gateway, SF 1, BCD, to the radio | the caller's number (CLI, table 6.33): kept in `cli`, answered C_ACKU Message_Accepted to the gateway when A is set |
+| the same to a talkgroup the radio listens to | kept, not answered |
+
+Built with `CONFIG_DMR_TRUNK_GW`. Without it a request to a dialling gateway is refused and a caller's number is
+dropped unanswered. Only the debug link sets the digits so far (DIAL, [debuglink.md](debuglink.md)).
+
 The download doesn't carry the sender (figures 6.38, 6.39), so the radio holds it until the call does. A repeat within
 `T3_REPEAT_MS` is answered again and keeps a sender already named. On the radio the debug link stages the data (`SUPL`,
 [debuglink.md](debuglink.md) 3.26) and the view shows the last heard (`supl_*`).
@@ -735,7 +750,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
 | Supplementary data in the codeplug (only the debug link stages it), a list subscription without registering | later |
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
-| Data to a gateway other than IP (PSTN, PABX, line, dispatcher: BCD digits) | later |
+| Dialling a gateway from the keypad, the caller's number on screen | later |
 | Power save: the receiver off while asleep on boards without `rx_sleep_dmr` | each board's `rx_sleep` on a DMR channel |
 | The interrupted talker's side: the reverse channel's cease command while transmitting (6.4.15.2) | reverse channel reception in the modem drivers |
 

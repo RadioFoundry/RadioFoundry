@@ -82,6 +82,7 @@
 #define T3_REG_TG_DELAY_MS	1000	// talkgroups changed: register with them once they stay this long
 #define T3_REPEAT_MS		4000	// a status or short data the same as the last heard this soon is the TSCC's repeat
 #define T3_SUPL_HOLD_MS		10000	// supplementary data waits this long for the call that names its sender
+#define T3_DIAL_MAX		44	// dialled digits through a gateway (the Proxy Flag's most, 6.6.2.1.2)
 #define T3_DENIED_MAX		4	// SYS_AREAs that denied registration (cleared at power on)
 #define T3_ADJ_MAX		4	// adjacent sites' TSCCs (Adjacent_Site, Vote_Now), hunted first
 #define T3_VOTE_MS		360	// sampling an adjacent TSCC after a Vote Now (VOTE_BLK: 2-10 frames)
@@ -144,6 +145,10 @@ typedef struct {
 	const uint8_t *supl_data;
 	uint8_t supl_len;
 	uint8_t supl_format;
+	// The digits a call through a dialling gateway uploads (6.6.2.2.3; t3_dial_pack): dial_n BCD digits, the first in
+	// the high nibble (CONFIG_DMR_TRUNK_GW)
+	const uint8_t *dial;
+	uint8_t dial_n;
 } t3_cfg_t;
 
 typedef enum {
@@ -415,6 +420,18 @@ typedef struct {
 	} sd_rx;
 	// The last supplementary user data heard (6.4.13.2). The download doesn't name the sender: src is 0 until the
 	// call's grant or user data that follows does (CONFIG_DMR_TRUNK_SUPL)
+#if CONFIG_DMR_TRUNK_GW
+	// The last caller's number a gateway sent (CLI, table 6.33): n BCD digits as on air, from gateway gw
+	struct {
+		uint32_t count;
+		uint32_t gw;
+		uint32_t dst;
+		bool group;
+		uint8_t n;
+		uint8_t bcd[T3_DIAL_MAX / 2];
+		uint32_t ms;
+	} cli;
+#endif
 #if CONFIG_DMR_TRUNK_SUPL
 	struct {
 		uint32_t count;
@@ -495,6 +512,14 @@ bool t3_ms_status(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t s
 // Send UDT short data (1-46 octets in format, T3_UDTF_*; ISO 7 bit: 1-52 characters, one an octet) to dst, a talkgroup
 // or an MS. False (ax.result says why) when it can't start
 bool t3_ms_sdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t format, const uint8_t *data, uint8_t len);
+// Calls through a gateway (6.6.2.2.3, 6.6.4.2): t3_ms_request, t3_ms_sdata or t3_ms_pdata to a dialling gateway
+// (t3_dial_gw) upload cfg.dial when it asks. t3_dial_pack packs "0-9", '*', '#' (1-T3_DIAL_MAX) for it: the digits'
+// number, 0 for a bad string. Without CONFIG_DMR_TRUNK_GW a request to a dialling gateway is refused
+uint8_t t3_dial_pack(const char *digits, uint8_t bcd[T3_DIAL_MAX / 2]);
+// PSTNI, PABXI, LINEI, DISPATI and their offset-timing addresses (A.4)
+bool t3_dial_gw(uint32_t id);
+// n BCD digits (the first in the high nibble) as text, "0-9*#" (another code: '?'); out holds n + 1
+void t3_bcd_text(const uint8_t *bcd, uint8_t n, char *out);
 // Ask for a packet data channel to an MS or talkgroup (6.6.3.2.1). Once granted the engine follows it (call.data) and
 // t3_ms_data_ready says when the radio may send its packet there
 bool t3_ms_pdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group);
