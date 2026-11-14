@@ -446,7 +446,7 @@ msgstr "无匹配：返回删一位"
 msgid "Receive only. Sensitivity not rated"
 msgstr "仅接收。灵敏度未标定"
 
-#: core/ui/ui_app.c
+#: core/ui/ui_app.c core/ui/ui_menus.c
 msgid "Emergency: not in this build"
 msgstr "紧急：本版本无"
 
@@ -733,6 +733,42 @@ msgstr "尚未收到"
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgid "Message"
 msgstr "消息"
+
+#: core/ui/ui_aprs.c
+msgid "No longer in list"
+msgstr "已不在列表"
+
+#: core/ui/ui_aprs.c
+msgid "{Distance|Dist|}"
+msgstr "{距离|距离|}"
+
+#: core/ui/ui_aprs.c
+msgid "Direct"
+msgstr "直接"
+
+#: core/ui/ui_aprs.c
+msgid "Via digipeater"
+msgstr "经中继"
+
+#: core/ui/ui_aprs.c
+msgid "{Position age|Pos age}"
+msgstr "{位置时间|位置时间}"
+
+#: core/ui/ui_aprs.c core/ui/ui_gps.c
+msgid "Speed"
+msgstr "速度"
+
+#: core/ui/ui_aprs.c
+msgid "Course"
+msgstr "移动方位"
+
+#: core/ui/ui_aprs.c
+msgid "Symbol"
+msgstr "标志"
+
+#: core/ui/ui_aprs.c
+msgid "Packets"
+msgstr "数据包"
 
 #: core/ui/ui_aprs.c
 msgid "OK choose  Back"
@@ -1053,10 +1089,6 @@ msgstr "经度"
 #: core/ui/ui_gps.c
 msgid "Alt"
 msgstr "海拔"
-
-#: core/ui/ui_gps.c
-msgid "Speed"
-msgstr "速度"
 
 #: core/ui/ui_gps.c
 msgid "No positions yet"
@@ -2795,6 +2827,30 @@ msgid "Talk permit tone"
 msgstr "通话许可音"
 
 #: core/ui/ui_menus.c
+msgid "Call end tone"
+msgstr "通话结束音"
+
+#: core/ui/ui_menus.c
+msgid "TOT warning tone"
+msgstr "超时警告音"
+
+#: core/ui/ui_menus.c
+msgid "Battery tone"
+msgstr "电池提示音"
+
+#: core/ui/ui_menus.c
+msgid "TX denied tone"
+msgstr "发射拒绝音"
+
+#: core/ui/ui_menus.c
+msgid "Scan stop tone"
+msgstr "扫描停止音"
+
+#: core/ui/ui_menus.c
+msgid "Emergency tone"
+msgstr "紧急提示音"
+
+#: core/ui/ui_menus.c
 msgid "Voice prompts"
 msgstr "语音提示"
 
@@ -3082,6 +3138,10 @@ msgstr "0-9 打开  返回"
 msgid "Talk permit tone: not in this build"
 msgstr "通话许可音：本版本无"
 
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "DMR: not in this build"
+msgstr "DMR：本版本无"
+
 #: core/ui/ui_menus.c
 msgid "This radio has no vibration motor"
 msgstr "本机无振动马达"
@@ -3305,10 +3365,6 @@ msgstr "漫游"
 #: core/ui/ui_screens.c
 msgid "Step "
 msgstr "步进 "
-
-#: core/ui/ui_screens.c
-msgid "DMR: not in this build"
-msgstr "DMR：本版本无"
 
 #: core/ui/ui_screens.c
 msgid "No TX frequency"

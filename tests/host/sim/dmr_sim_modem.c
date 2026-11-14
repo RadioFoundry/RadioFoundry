@@ -44,6 +44,8 @@ static bool tx_begin(dmr_timing_t t, int8_t ts, dmr_access_t a)
 		return false;
 	sim.tx_active = true;
 	sim.tx_ending = false;
+	sim.align_found = false;
+	sim.align_wait = 0;
 	sim.q_head = sim.q_count = 0;
 	// Repeater ticks label even slots TS1 and odd slots TS2; aligned TX must honor that clock.
 	sim.tx_parity = t == DMR_TIMING_ALIGNED && sim.repeater && (ts == 1 || ts == 2)
@@ -167,9 +169,24 @@ void sim_slot(void)
 	if (sim.stalled)
 		return;
 	sim.slot++;
-	int8_t ts = sim.repeater ? (int8_t)(1 + (sim.slot & 1)) : 0;
+	int8_t ts = sim.repeater || (sim.held_slot_numbers && sim.tx_active) ? (int8_t)(1 + (sim.slot & 1)) : 0;
 
 	emit(DMR_EV_SLOT_TICK, ts, sim.slot, NULL);
+	if (sim.tx_active && sim.align_needs_repeater && sim.last_timing == DMR_TIMING_ALIGNED && !sim.align_found) {
+		if (sim.repeater && (sim.last_ts == 1 || sim.last_ts == 2)) {
+			sim.align_found = true;
+			sim.tx_parity = (int8_t)(sim.last_ts - 1);
+		} else if (++sim.align_wait > 50) {	// the 51st slot, as the HR_C6000 engine (ALIGN_TIMEOUT_TICKS)
+			sim.align_rejects++;
+			sim.tx_active = false;
+			sim.q_count = 0;
+			emit(DMR_EV_TX_REJECTED, sim.last_ts, 1, NULL);
+			emit(DMR_EV_TX_DONE, 0, sim.slot, NULL);	// as the HR_C6000 and HR_C7000 engines do
+			return;
+		} else {
+			return;
+		}
+	}
 	if (!sim.tx_active || (int8_t)(sim.slot & 1) != sim.tx_parity)
 		return;
 	if (sim.reject_next) {

@@ -81,28 +81,51 @@ function knownBefore(cur, probe) {
 //   preset: the same variant again; added: its features the old build didn't have (said, nothing to decide)
 //   custom: the same switches; ask: the features since (the user turns each on or off: decided {name: bool})
 //   unknown: the closest variant, for the build step to show
-// Returns {preset, added, ask, ready}: ready once every new feature of a custom build is decided
+// A custom build's kept features bring what they need now: added, a new switch (said, not asked: no would drop the
+// feature); needed, one the build had off. dropped: [{name, blockers}] the build had on that this release can't build
+// on the radio, because something it now needs the radio can't have; the user agrees (decided[DROP_OK]) or edits the build.
+// Returns {preset, added, needed, dropped, ask, ready}: ready once every new feature of a custom build is decided
+export const DROP_OK = "*drop";
 export function planUpdate(cur, sel, decided = {}) {
 	const known = knownBefore(cur, cur.probe);
 	const fresh = (names) => (known ? names.filter((n) => !known.has(n) && sel.supported(n)) : []);
 	const variants = Object.keys(sel.radio.config);
+	const none = { needed: [], dropped: [], ask: [], ready: true };
 	if (cur.kind === "unknown") {
 		sel.useVariant(variants.includes(cur.guess) ? cur.guess : "full");
-		return { preset: null, added: [], ask: [], ready: true };
+		return { ...none, preset: null, added: [] };
 	}
 	if (cur.kind === "preset" && variants.includes(cur.preset)) {
 		sel.useVariant(cur.preset);
 		for (const n of cur.start || []) sel.set(n, true);
-		return { preset: cur.preset, added: fresh(sel.radio.config[cur.preset]), ask: [], ready: true };
+		return { ...none, preset: cur.preset, added: fresh(sel.radio.config[cur.preset]) };
 	}
 	// a custom build (or a variant this release no longer has): every switch as it was, the new ones as decided. A
 	// new start-language switch (langsuggest.js) is no feature to ask about: off, the radio keeps the language it has
-	const news = fresh(sel.features.map((f) => f.name));
+	const names = sel.features.map((f) => f.name);
+	const news = fresh(names);
 	const off = new Set([...(cur.off || []), ...news.filter((n) => startCode(n))]);
-	const ask = news.filter((n) => !startCode(n));
+	const kept = names.filter((n) => sel.supported(n) && (!off.has(n) || sel.required(n)) && !news.includes(n));
 	sel.useVariant("full");
-	for (const f of sel.features) if (sel.supported(f.name) && !off.has(f.name) && !ask.includes(f.name)) sel.enable(f.name);
-	for (const n of off) sel.set(n, false);
-	for (const n of ask) sel.set(n, decided[n] === true);
-	return { preset: null, added: [], ask, ready: ask.every((n) => n in decided) };
+	// all kept ones first, so an "any of" need finds one already on; then enable() brings each one's needs
+	sel.on = new Set(kept);
+	for (const n of kept) {
+		sel.on.delete(n);
+		sel.enable(n);
+	}
+	const added = news.filter((n) => !startCode(n) && sel.on.has(n));
+	// on in the radio's build (known, not in off= that leaves out what the radio can't have), now not buildable. Only
+	// with off=: a variant this release dropped, on firmware that doesn't say off=, has no list of what was on
+	const dropped = known && cur.off ? names.filter((n) => known.has(n) && !off.has(n) && !news.includes(n) && sel.allowed(n) && !sel.on.has(n))
+		.map((name) => ({ name, blockers: sel.blockers(name) })) : [];
+	const ask = news.filter((n) => !startCode(n) && !sel.on.has(n));
+	// Off answers first, then On: a feature turned on brings what it needs, whatever order they're asked in, and an
+	// asked one it needs is on and needs no answer
+	for (const n of ask) if (decided[n] !== true) sel.set(n, false);
+	for (const n of ask) if (decided[n] === true) sel.set(n, true);
+	// after the answers: a new feature turned on brings what it needs too
+	const forced = ask.filter((n) => decided[n] !== true && sel.on.has(n));
+	const needed = [...[...off].filter((n) => sel.on.has(n) && !news.includes(n) && !sel.required(n)), ...forced];
+	const ready = ask.every((n) => n in decided || sel.on.has(n)) && (!dropped.length || decided[DROP_OK] === true);
+	return { preset: null, added, needed, dropped, ask, ready };
 }

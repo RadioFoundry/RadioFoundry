@@ -358,7 +358,7 @@ def get_saved_codec(args, board, probe):
     this codec hands over a copy: before every update where an update erases it, once on the other boards. Else the
     copy an earlier run saved (an update that stopped halfway, a radio back on stock firmware or in its bootloader)."""
     saved = codecsave.load(board)
-    has_codec = bool(probe) and probe.get("codec") == board.codec.id
+    has_codec = bool(probe) and board.codec_present(probe.get("codec"))
     if has_codec and not args.no_probe and (not board.keep_codec_supported or saved is None):
         say("codec    reading it back from the radio over the debug link (a read, nothing is written to the radio); "
             "this can take a few minutes")
@@ -419,7 +419,7 @@ def decide_codec(board, manifest, requested, have_stock, probe, stock_installed,
             raise UsageError("the radio reported board %r over its debug link, but this image is for the %s: refusing"
                              % (probe.get("board"), board.name))
         codec = probe.get("codec")
-        if codec == profile:
+        if codec == profile or board.codec_present(codec):
             return Decision(planmod.KEEP, "RadioFoundry on the radio checked its codec (%s: where it is and every window's CRC) "
                             "and the codec sectors are left alone" % codec)
         if codec is None:
@@ -1015,7 +1015,7 @@ def verify_serial(dev, board, man, expect_codec, wait_s=25, probe_fn=None, sleep
         warn("the radio reports git %s, the image is %s" % (p.get("git"), want_git))
         return 1
     say("radio    running RadioFoundry git %s, codec %s" % (p.get("git"), p.get("codec")))
-    if p.get("codec") == board.codec.id:
+    if board.codec_present(p.get("codec")):
         say("ok       DMR voice is ready")
         return 0
     say("note     the radio has no usable codec (codec=%s): FM works, DMR voice is off. Flash again with --stock FILE "
@@ -1075,7 +1075,7 @@ def verify_after(args, board, man, d, wait_s=25, learned=None):
         warn("the radio reports git %s, the image is %s" % (p.get("git"), want_git))
         return 1
     say("radio    running RadioFoundry git %s, codec %s" % (p.get("git"), p.get("codec")))
-    if p.get("codec") == board.codec.id:
+    if board.codec_present(p.get("codec")):
         say("ok       DMR voice is ready")
         return 0
     say("note     the radio has no usable codec (codec=%s): FM works, DMR voice is off. Flash again with --stock "
@@ -1094,7 +1094,7 @@ def cmd_probe(args):
     b = boards.from_debuglink_name(p.get("board") or "")
     say("radio    %s on %s, RadioFoundry git %s, chip %s" % (p.get("board"), p["port"], p.get("git"), p.get("uid") or "?"))
     say("codec    %s" % p.get("codec"))
-    if b and p.get("codec") == b.codec.id:
+    if b and b.codec_present(p.get("codec")):
         say("ok       the codec can be kept: 'rfoundry flash' will leave the codec sectors alone (remembered for "
             "%d min)" % (state.PROBE_MAX_AGE_S // 60))
     elif p.get("codec") is None:

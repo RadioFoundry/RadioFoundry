@@ -71,6 +71,8 @@ extern const hal_audio_tap_t uvf_audio_tap;
 bool uvf_fm_tx_inject(audio_tap_pull_t pull, audio_tap_mode_t mode);
 void uvf_pwm_audio(audio_tap_pull_t pull);	// PWM audio on PC8: start (pull) or stop (NULL)
 #endif
+// The debug link's CHIP_REG (board.chip_reg): chip 0 the AT1846S, chip 1 the HR_C6000 (hardware-dm1701.md 5.12)
+bool uvf_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 #if CONFIG_AUDIO_PROBE
 bool uvf_modem_reg(uint8_t page, uint8_t reg, uint8_t *val, bool write);
 bool uvf_modem_ram(uint8_t page, uint16_t addr, uint8_t *buf, uint16_t len, bool write);
@@ -143,9 +145,18 @@ bool uvf_cal_at(uint32_t hz, uvf_cal_point_t *out);
 // near 461 MHz (SDR bench, 2026-10-19): 41 steps -57..-15 Hz, 42 steps +16..+60 Hz, 43 steps +94..+132 Hz; the
 // MD-UV380 has the same two chips, unchecked on its own
 #define UVF_DIRECT_TX_REF_STEPS	42
-// 4:0x04 for a direct burst at hz from the calibrated offset; false where direct keying doesn't apply (VHF) or the
-// value would overflow the register, and the burst then goes through idle
-bool uvf_direct_tx_ref(uint32_t hz, int8_t ref_offset, int8_t *out);
+// 4:0x04 for a direct burst at hz from the calibrated offset, the synthesizer rx_offset_hz from hz (the DMR receive
+// offset below, taken back in MOD1 steps); false where direct keying doesn't apply (VHF) or the value would overflow the
+// register, and the burst then goes through idle
+bool uvf_direct_tx_ref(uint32_t hz, int8_t ref_offset, int32_t rx_offset_hz, int8_t *out);
+
+// DMR receive offset (hardware-dm1701.md 5.13): how far below the channel the AT1846S receives in DMR (62.5 Hz steps).
+// UHF: none. With the receive gain out of overload (5.5) the window of carriers that decode is centered on the channel,
+// and an offset only moves it: 875 Hz lost transmitters some 2 kHz high. VHF: the value taken inside the overload, not
+// measured again yet. Measured on a DM-1701 (SDR bench); the MD-UV380 has the same two chips, unchecked on its own
+#define UVF_DMR_RX_OFFSET_UHF_HZ	0
+#define UVF_DMR_RX_OFFSET_VHF_HZ	(-1250)
+int32_t uvf_dmr_rx_offset_hz(uint32_t hz);
 
 // The user's reference trim (hal_radio_t.ref_trim) in MOD1 offset steps, added to the calibrated offset. The offset
 // pulls the reference, so a step is the same share of any carrier: about 74 Hz near 461 MHz from the direct keying

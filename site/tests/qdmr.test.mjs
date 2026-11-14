@@ -225,7 +225,7 @@ test("import: every table and setting qdmr's file holds", () => {
 
 	// qdmr has no ARS server or IP gateway: the settings area's keys stay absent
 	assert.deepEqual(m.general, { radioName: "Q0TST", dmrId: 9990567, groupHang: 6, privateHang: 10, bootLine1: "Test Radio", bootLine2: "Q0TST",
-		arsServer: null, ipGateway: null });
+		arsServer: null, ipGateway: null, callEndTone: null, totWarnTone: null, batteryTone: null, txDenyTone: null });
 	assert.deepEqual(m.contacts.map((c) => [c.number, c.name, c.id, c.type, c.timeslot]),
 		[[1, "TG 9", 9, "group", 0], [2, "Echo Test", 9990, "private", 2], [3, "201", 201, "group", 0], [4, "All Call", 0xFFFFFF, "all", 0]]);
 	assert.deepEqual(m.dtmfContacts.map((d) => [d.name, d.code]), [["Gate", "123*#A"]]);

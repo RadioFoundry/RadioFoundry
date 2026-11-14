@@ -2289,6 +2289,13 @@ static uint16_t ced_num;		// its number, 0 = no such channel
 static uint8_t ced_rows[CE_COUNT];
 static uint8_t ced_n;
 
+// The radio receives this RX in AM or on the broadcast receiver whatever the channel's mode, never in DMR, and ignores
+// sub-audio there (radio_sm.c listen_band)
+static bool ced_listen_band(const channel_t *c)
+{
+	return radio_am_tx_refused(c->rx_hz) || radio_bcast_band(c->rx_hz);
+}
+
 #if CONFIG_CHANNEL_EDIT
 #define CE_TOT_MAX	495
 #define CE_TOT_STEP	15
@@ -2357,13 +2364,6 @@ static void ced_rx_band(channel_t *c)
 	c->rx_only = true;
 	c->tx_hz = c->rx_hz;
 	c->mode = RADIO_MODE_FM;
-}
-
-// The radio receives this RX in AM or on the broadcast receiver whatever the channel's mode, never in DMR, and ignores
-// sub-audio there (radio_sm.c listen_band)
-static bool ced_listen_band(const channel_t *c)
-{
-	return radio_am_tx_refused(c->rx_hz) || radio_bcast_band(c->rx_hz);
 }
 
 // A copy of what the radio uses now (temporary changes included), named after it: "Name 2", or the frequency
@@ -5616,6 +5616,12 @@ static const set_item_t s_sound[] = {
 	TOGGLE(TRN("Key tones"), "beep", UI_SET_KEY_TONES),
 	NUMBER(TRN("Tone volume"), NULL, UI_SET_TONE_VOLUME, 0, 10, 1, NULL),
 	TOGGLE(TRN("Talk permit tone"), NULL, UI_SET_TALK_PERMIT),
+	TOGGLE(TRN("Call end tone"), NULL, UI_SET_CALL_END_TONE),
+	TOGGLE(TRN("TOT warning tone"), "time-out", UI_SET_TOT_WARN_TONE),
+	TOGGLE(TRN("Battery tone"), "low battery", UI_SET_BATTERY_TONE),
+	TOGGLE(TRN("TX denied tone"), "refused", UI_SET_TX_DENY_TONE),
+	TOGGLE(TRN("Scan stop tone"), NULL, UI_SET_SCAN_TONE),
+	TOGGLE(TRN("Emergency tone"), "alarm", UI_SET_EMERGENCY_TONE),
 	TOGGLE(TRN("Voice prompts"), "speech", UI_SET_VOICE_PROMPTS),
 	TOGGLE(TRN("Message tone"), NULL, UI_SET_MESSAGE_TONE),
 #if CONFIG_VIBRATE
@@ -5972,6 +5978,17 @@ static const char *set_why_not(const set_item_t *s)
 		return TR("Voice prompts: not in this build");
 	case UI_SET_TALK_PERMIT:
 		return CONFIG_DMR && CONFIG_BEEP ? NULL : TR("Talk permit tone: not in this build");
+	case UI_SET_CALL_END_TONE:
+		return CONFIG_DMR && CONFIG_BEEP ? NULL : CONFIG_BEEP ? TR("DMR: not in this build") : TR("Tones: not in this build");
+	case UI_SET_TOT_WARN_TONE:
+	case UI_SET_BATTERY_TONE:
+	case UI_SET_TX_DENY_TONE:
+		return CONFIG_BEEP ? NULL : TR("Tones: not in this build");
+	case UI_SET_SCAN_TONE:
+		return !CONFIG_BEEP ? TR("Tones: not in this build") : feats() & UI_FEAT_SCAN ? NULL : TR("Scan: not in this build");
+	case UI_SET_EMERGENCY_TONE:
+		return !CONFIG_BEEP ? TR("Tones: not in this build") :
+			feats() & UI_FEAT_EMERGENCY ? NULL : TR("Emergency: not in this build");
 	case UI_SET_MESSAGE_TONE:
 		return (feats() & UI_FEAT_SMS) || CONFIG_APRS_AFSK ? NULL : TR("Messages: not in this build");
 	case UI_SET_VIBRATE:
