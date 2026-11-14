@@ -242,9 +242,10 @@ uint16_t ui_filter_raw(uint16_t i)
 	if (filter_n <= UI_FILTER_MAX || i < UI_FILTER_MAX - 2u)
 		return filter_idx[i];
 	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
-	if (!(d->flags & SF_FILTER) || d->raw_count == NULL || d->raw_label == NULL)
+	const ui_filter_def_t *f = d->filter;
+	if (!(d->flags & SF_FILTER) || f == NULL)
 		return 0;
-	uint16_t n = d->raw_count();
+	uint16_t n = f->raw_count();
 	uint16_t raw = WALK_RAW;
 	char label[40];
 	while (WALK_I != i) {	// never below UI_FILTER_MAX - 2, one under where the cursor started
@@ -253,7 +254,7 @@ uint16_t ui_filter_raw(uint16_t i)
 			if (up ? raw + 1u >= n : raw == 0)
 				return 0;	// the rows changed under the list: the next rebuild puts it right
 			raw = up ? (uint16_t)(raw + 1u) : (uint16_t)(raw - 1u);
-		} while (d->raw_used != NULL ? !d->raw_used(raw) : !d->raw_label(raw, label, sizeof label));
+		} while (f->raw_used != NULL ? !f->raw_used(raw) : !f->raw_label(raw, label, sizeof label));
 		WALK_RAW = raw;
 		WALK_I = up ? (uint16_t)(WALK_I + 1u) : (uint16_t)(WALK_I - 1u);
 	}
@@ -272,26 +273,26 @@ static bool filter_row(uint16_t raw, const char *label, void *ctx)
 }
 
 // A row at a time, for a list without raw_each. Its own frame: the label stays off the stack of raw_each's pass
-static void __attribute__((noinline)) filter_rows(const ui_scr_def_t *d)
+static void __attribute__((noinline)) filter_rows(const ui_filter_def_t *f)
 {
-	uint16_t n = d->raw_count();
+	uint16_t n = f->raw_count();
 	char label[40];
 	for (uint16_t i = 0; i < n; i++) {
-		if (!filter_row(i, d->raw_label(i, label, sizeof label) ? label : NULL, NULL))
+		if (!filter_row(i, f->raw_label(i, label, sizeof label) ? label : NULL, NULL))
 			break;
 	}
 }
 
 void ui_filter_rebuild(void)
 {
-	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
+	const ui_filter_def_t *f = ui_scr[stack[sp].scr]->filter;
 	filter_n = 0;
-	if (d->raw_count == NULL || d->raw_label == NULL)
+	if (f == NULL)
 		return;
-	if (d->raw_each != NULL)
-		d->raw_each(filter_row, NULL, filter_keys[0] != 0);
+	if (f->raw_each != NULL)
+		f->raw_each(filter_row, NULL, filter_keys[0] != 0);
 	else
-		filter_rows(d);
+		filter_rows(f);
 	if (filter_n > UI_FILTER_MAX)
 		WALK_I = UI_FILTER_MAX - 1u;	// the cursor starts on that row, its raw row already in WALK_RAW
 }

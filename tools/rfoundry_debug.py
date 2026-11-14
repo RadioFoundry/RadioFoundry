@@ -46,8 +46,9 @@
 Key names: up down left right select (ok) back (exit) quick (star) context (hash) 0-9 ptt monitor tt (talk target)
 emergency enc user1-user4.
 
-The port is found by its USB ID 1FC9:0094 (the only one present); --port or $RFOUNDRY_PORT picks one. Needs pyserial
-(pip install pyserial). Exit status 0 on success, 1 on a radio error, 2 on a usage or connection problem.
+The port is found by its USB ID 1FC9:0094 (the only one present), else a radio in USB network mode answering over UDP;
+--port or $RFOUNDRY_PORT picks one. A serial port needs pyserial (pip install pyserial). Exit status 0 on success, 1 on
+a radio error, 2 on a usage or connection problem.
 """
 import argparse
 import json
@@ -195,7 +196,8 @@ SETTINGS = {"tot_s": 1, "tot_warn_s": 2, "bcl": 3, "roger_beep": 4, "tx_inhibit"
             "battery_off_s": 18, "scan_beep": 19, "reply_s": 20, "roam_rssi_dbm": 21, "roam_hyst_db": 22,
             "roam_probe": 23, "roam_check_s": 24, "roam_beacon_s": 25, "roam_beacon_len_s": 26, "roam_survey": 27,
             "rpt_beacon": 28, "mic_gain": 29, "dual_delay_ms": 30, "enc_options": 31,
-            "zs_offers": 32, "sfr_cwid": 33, "sfr_rx": 34, "ref_trim": 35}
+            "zs_offers": 32, "sfr_cwid": 33, "sfr_rx": 34, "ref_trim": 35,
+            "tones_off": 36}
 
 
 class DebugLinkError(Exception):
@@ -238,6 +240,18 @@ def as_int(v, default=None):
         return default
 
 
+def find_network_radios():
+    """udp:ADDR of each radio in USB network mode (the rfoundry package's discovery: tools/rfoundry/rfoundry/debuglink.py)"""
+    pkg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry")
+    if pkg not in sys.path:
+        sys.path.insert(0, pkg)
+    try:
+        from rfoundry.debuglink import find_network_radios as find
+    except ImportError:
+        return []
+    return find()
+
+
 def low_latency(s):
     """A USB-serial cable's FTDI chip holds received bytes for its latency timer (16 ms) before passing them on; 1 ms
     halves a request's round trip on a radio linked by the programming cable. Linux only; elsewhere, and on ports
@@ -258,11 +272,12 @@ def pick_port(port=None):
     port = port or os.environ.get("RFOUNDRY_PORT")
     if port:
         return port
-    ports = find_ports()
+    ports = find_ports() or find_network_radios()	# no serial port: a radio in USB network mode, over UDP
     if len(ports) == 1:
         return ports[0]
     if not ports:
-        raise DebugLinkError("no radio found (USB 1FC9:0094): is it plugged in and powered on? Or give --port")
+        raise DebugLinkError("no radio found (USB 1FC9:0094, or a network adapter radio answering on UDP): is it plugged "
+                             "in and powered on? Or give --port")
     raise DebugLinkError(f"several radios found {ports}: give --port")
 
 
@@ -594,11 +609,17 @@ class DebugLink:
         self.request(RX2, struct.pack("<BI", RX2_OP_RESTART, RX2_TOKEN))
 
     def hwopts(self):
-        """The board's hardware options: [{name, value (-1 = none stored), restart, choices}]"""
+        """The board's hardware options: [{name, value (-1 = none stored), restart, choices, state}]; state ok, ask,
+        restart or hidden (a firmware without the key: ask while nothing is stored, else ok)"""
         kv = parse_kv(self.request(HWOPT, bytes([HWOPT_OP_LIST]))[1].decode("ascii", "replace"))
-        return [{"name": kv.get(f"hwopt.{i}.name", ""), "value": int(kv.get(f"hwopt.{i}.value", "-1")),
-                 "restart": kv.get(f"hwopt.{i}.restart") == "1",
-                 "choices": kv.get(f"hwopt.{i}.choices", "").split("|")} for i in range(int(kv.get("hwopt.count", "0")))]
+        out = []
+        for i in range(int(kv.get("hwopt.count", "0"))):
+            value = int(kv.get(f"hwopt.{i}.value", "-1"))
+            out.append({"name": kv.get(f"hwopt.{i}.name", ""), "value": value,
+                        "restart": kv.get(f"hwopt.{i}.restart") == "1",
+                        "choices": kv.get(f"hwopt.{i}.choices", "").split("|"),
+                        "state": kv.get(f"hwopt.{i}.state") or ("ask" if value < 0 else "ok")})
+        return out
 
     def hwopt_set(self, option, choice):
         """Store a choice; raises DebugLinkError (status 7) when the board refuses it or the radio transmits."""
@@ -2020,11 +2041,12 @@ def cmd_hwopt(link, a):
             print("hwopt: OPTION (number or name) and one of its choices; see `hwopt` for the list", file=sys.stderr)
             return 2
         link.hwopt_set(i, opts[i]["choices"].index(a.choice))
-        print(f"{opts[i]['name']} = {a.choice}" + (" (from the next start-up)" if opts[i]["restart"] else ""))
+        due = link.hwopts()[i]["state"] == "restart"
+        print(f"{opts[i]['name']} = {a.choice}" + (" (from the next start-up)" if due else ""))
         return 0
     for i, o in enumerate(opts):
         v = o["choices"][o["value"]] if 0 <= o["value"] < len(o["choices"]) else "not set"
-        print(f"{i} {o['name']}: {v}  ({' | '.join(o['choices'])}){'  restart' if o['restart'] else ''}")
+        print(f"{i} {o['name']}: {v}  ({' | '.join(o['choices'])})  {o['state']}")
     if not opts:
         print("no hardware options on this radio")
     return 0

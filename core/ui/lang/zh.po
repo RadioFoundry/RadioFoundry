@@ -446,7 +446,7 @@ msgstr "无匹配：返回删一位"
 msgid "Receive only. Sensitivity not rated"
 msgstr "仅接收。灵敏度未标定"
 
-#: core/ui/ui_app.c
+#: core/ui/ui_app.c core/ui/ui_menus.c
 msgid "Emergency: not in this build"
 msgstr "紧急：本版本无"
 
@@ -733,6 +733,42 @@ msgstr "尚未收到"
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgid "Message"
 msgstr "消息"
+
+#: core/ui/ui_aprs.c
+msgid "No longer in list"
+msgstr "已不在列表"
+
+#: core/ui/ui_aprs.c
+msgid "{Distance|Dist|}"
+msgstr "{距离|距离|}"
+
+#: core/ui/ui_aprs.c
+msgid "Direct"
+msgstr "直接"
+
+#: core/ui/ui_aprs.c
+msgid "Via digipeater"
+msgstr "经中继"
+
+#: core/ui/ui_aprs.c
+msgid "{Position age|Pos age}"
+msgstr "{位置时间|位置时间}"
+
+#: core/ui/ui_aprs.c core/ui/ui_gps.c
+msgid "Speed"
+msgstr "速度"
+
+#: core/ui/ui_aprs.c
+msgid "Course"
+msgstr "移动方位"
+
+#: core/ui/ui_aprs.c
+msgid "Symbol"
+msgstr "标志"
+
+#: core/ui/ui_aprs.c
+msgid "Packets"
+msgstr "数据包"
 
 #: core/ui/ui_aprs.c
 msgid "OK choose  Back"
@@ -1053,10 +1089,6 @@ msgstr "经度"
 #: core/ui/ui_gps.c
 msgid "Alt"
 msgstr "海拔"
-
-#: core/ui/ui_gps.c
-msgid "Speed"
-msgstr "速度"
 
 #: core/ui/ui_gps.c
 msgid "No positions yet"
@@ -1607,6 +1639,10 @@ msgid "TX CTCSS/DCS"
 msgstr "发射亚音"
 
 #: core/ui/ui_menus.c
+msgid "Tone burst"
+msgstr "突发音"
+
+#: core/ui/ui_menus.c
 msgid "Color code"
 msgstr "色码"
 
@@ -1737,6 +1773,14 @@ msgstr "CTCSS 范围 60.0-260.0"
 #: core/ui/ui_menus.c
 msgid "Save first: hold OK"
 msgstr "先保存：长按 OK"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Air band: receive only"
+msgstr "航空波段：仅接收"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Broadcast: receive only"
+msgstr "广播：仅接收"
 
 #: core/ui/ui_menus.c
 msgid "Tones: not in this build"
@@ -2247,6 +2291,38 @@ msgid "OK edit  Back"
 msgstr "OK 编辑  返回"
 
 #: core/ui/ui_menus.c
+msgid "ARS server"
+msgstr "ARS 服务器"
+
+#: core/ui/ui_menus.c
+msgid "IP gateway"
+msgstr "IP 网关"
+
+#: core/ui/ui_menus.c
+msgid "Registering"
+msgstr "正在注册"
+
+#: core/ui/ui_menus.c
+msgid "Registered"
+msgstr "已注册"
+
+#: core/ui/ui_menus.c
+msgid "Refused"
+msgstr "已拒绝"
+
+#: core/ui/ui_menus.c
+msgid "No answer"
+msgstr "无应答"
+
+#: core/ui/ui_menus.c
+msgid "ARS: "
+msgstr "ARS： "
+
+#: core/ui/ui_menus.c
+msgid "Data Services"
+msgstr "数据服务"
+
+#: core/ui/ui_menus.c
 msgid "Freq Trim"
 msgstr "频率微调"
 
@@ -2695,10 +2771,6 @@ msgid "Home zone"
 msgstr "主区域"
 
 #: core/ui/ui_menus.c
-msgid "Tone burst"
-msgstr "突发音"
-
-#: core/ui/ui_menus.c
 msgid "Copy to VFO"
 msgstr "复制到 VFO"
 
@@ -2753,6 +2825,30 @@ msgstr "提示音音量"
 #: core/ui/ui_menus.c
 msgid "Talk permit tone"
 msgstr "通话许可音"
+
+#: core/ui/ui_menus.c
+msgid "Call end tone"
+msgstr "通话结束音"
+
+#: core/ui/ui_menus.c
+msgid "TOT warning tone"
+msgstr "超时警告音"
+
+#: core/ui/ui_menus.c
+msgid "Battery tone"
+msgstr "电池提示音"
+
+#: core/ui/ui_menus.c
+msgid "TX denied tone"
+msgstr "发射拒绝音"
+
+#: core/ui/ui_menus.c
+msgid "Scan stop tone"
+msgstr "扫描停止音"
+
+#: core/ui/ui_menus.c
+msgid "Emergency tone"
+msgstr "紧急提示音"
 
 #: core/ui/ui_menus.c
 msgid "Voice prompts"
@@ -2935,6 +3031,10 @@ msgid "USB address"
 msgstr "USB 地址"
 
 #: core/ui/ui_menus.c
+msgid "Data services"
+msgstr "数据服务"
+
+#: core/ui/ui_menus.c
 msgid "Auto power off"
 msgstr "自动关机"
 
@@ -3037,6 +3137,10 @@ msgstr "0-9 打开  返回"
 #: core/ui/ui_menus.c
 msgid "Talk permit tone: not in this build"
 msgstr "通话许可音：本版本无"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "DMR: not in this build"
+msgstr "DMR：本版本无"
 
 #: core/ui/ui_menus.c
 msgid "This radio has no vibration motor"
@@ -3263,10 +3367,6 @@ msgid "Step "
 msgstr "步进 "
 
 #: core/ui/ui_screens.c
-msgid "DMR: not in this build"
-msgstr "DMR：本版本无"
-
-#: core/ui/ui_screens.c
 msgid "No TX frequency"
 msgstr "无发射频率"
 
@@ -3277,6 +3377,22 @@ msgstr "航空 AM"
 #: core/ui/ui_screens.c
 msgid "Broadcast FM"
 msgstr "调频广播"
+
+#: core/ui/ui_screens.c
+msgid "Restart to apply"
+msgstr "请重启电台"
+
+#: core/ui/ui_screens.c
+msgid "Set: "
+msgstr "请设置: "
+
+#: core/ui/ui_screens.c
+msgid "Turn the radio off and on"
+msgstr "请关机再开机"
+
+#: core/ui/ui_screens.c
+msgid "Settings>Advanced>Hardware"
+msgstr "设置>高级>Hardware"
 
 #: core/ui/ui_screens.c
 msgid "This channel is RX only"
@@ -3327,16 +3443,12 @@ msgid "No DMR ID in codeplug"
 msgstr "电台频率中无 DMR ID"
 
 #: core/ui/ui_screens.c
-msgid "Air band: receive only"
-msgstr "航空波段：仅接收"
-
-#: core/ui/ui_screens.c
-msgid "Broadcast: receive only"
-msgstr "广播：仅接收"
-
-#: core/ui/ui_screens.c
 msgid "Repeater channel: PTT off"
 msgstr "中继信道：PTT 关闭"
+
+#: core/ui/ui_screens.c
+msgid "Radio refused to send"
+msgstr "电台拒绝发射"
 
 #: core/ui/ui_screens.c
 msgid "Not allowed here"
@@ -3513,6 +3625,10 @@ msgstr "无时间限制"
 #: core/ui/ui_screens.c
 msgid "Can't transmit"
 msgstr "不能发射"
+
+#: core/ui/ui_screens.c
+msgid "Transmit waits for it"
+msgstr "设置前不能发射"
 
 #: core/ui/ui_screens.c
 msgid "Last activity "

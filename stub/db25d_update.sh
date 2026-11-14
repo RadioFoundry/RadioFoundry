@@ -18,6 +18,6 @@ cd "$(dirname "$0")"
 DBG=${RFOUNDRY_DEBUG:-../tools/rfoundry_debug.py}
 [ -f "$DBG" ] || DBG=rfoundry_debug.py
 python3 stubtool.py "$PORT" --rfoundry-enter --write-app "$IMG"
-python3 stubtool.py "$PORT" --attach --boot reset
+python3 stubtool.py "$PORT" --attach --board db25d --boot reset
 sleep 4
 python3 "$DBG" --port "$PORT" --timeout 2 version | grep -E "board|git|uptime"

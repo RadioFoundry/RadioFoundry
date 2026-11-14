@@ -229,3 +229,52 @@ def test_talk_target_requests(radio, pytestconfig):
         L.dmr_target_clear()
         if "DMR_PRIVACY" in radio.features():
             L.dmr_privacy("off")
+
+
+def _features(radio):
+    return radio.view(["features"])
+
+
+@pytest.mark.feature("beep")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+def test_call_end_tone_setting(radio, sdr_bench, pytestconfig):
+    """Settings > Sound > Call end tone: a call heard ends with the call end tone when it is on, and with no tone when
+    it is off (the setting's bit in beep.tones_off, set with the SETTING op; the tone counted by beep.played). The
+    setting and the tone volume are put back afterwards."""
+    _on_dmr_channel(radio, pytestconfig)
+    f = _features(radio)
+    if f.get("beep.built") != "1":
+        skip("not_built", "built without the beeps")
+    tones = radio.view(["audio"]).get("beep.tones_off")
+    if tones is None:
+        skip("not_built", "firmware without the Settings > Sound tone settings (beep.tones_off)")
+    was_off, was_level = int(tones), int(f["set.beep_level"])
+    L = radio.link
+    played = {}
+    try:
+        if was_level == 0:              # tone volume 0 mutes every tone: the setting couldn't show
+            L.setting("beep_level", 50)
+        for on in (False, True):
+            want = was_off & ~1 if on else was_off | 1      # bit 0: the call end tone
+            L.setting("tones_off", want)
+            radio.wait_for(lambda x: x.get("beep.tones_off") == str(want), timeout=5, sections=("audio",),
+                           what="the call end tone setting")
+            before = int(_features(radio)["beep.played"])
+            d, _ = _bench_call(radio, sdr_bench, pytestconfig, superframes=3)
+            assert d["call.rx_calls"] == 1, d
+            deadline = time.monotonic() + 4.0           # the tone follows the call's end
+            while True:
+                n = int(_features(radio)["beep.played"]) - before
+                if n or time.monotonic() > deadline:
+                    break
+                time.sleep(0.2)
+            played[on] = n
+        print("beeps after the call, tone off / on:", played[False], played[True])
+        assert played[False] == 0, f"{played[False]} tone(s) after a call with the call end tone off"
+        assert played[True] >= 1, "no call end tone after a call with the tone on"
+    finally:
+        L.setting("tones_off", was_off)
+        if was_level == 0:
+            L.setting("beep_level", 0)

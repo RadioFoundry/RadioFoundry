@@ -175,7 +175,7 @@ static void test_init(void)
 	CHECK(at1846s_set_mode(&dev, AT1846S_MODE_FM));
 	CHECK(last_write(0x40) == 0x0030 && last_write(0x58) == 0xBC85);
 	CHECK(at1846s_set_mode(&dev, AT1846S_MODE_DMR));
-	CHECK(last_write(0x40) == 0x0031 && last_write(0x44) == 0x07FF);
+	CHECK(last_write(0x40) == 0x0031 && last_write(0x44) == 0x07EF);	// receive audio 1 dB under full
 
 	// Sub-audio
 	CHECK(at1846s_set_rx_tone(&dev, AT1846S_TONE_CTCSS, 1000));

@@ -23,7 +23,8 @@ python3 -m pytest tests/hil -v -rs -s -k aprs --allow-rf --allow-service-stop   
 python3 -m pytest tests/hil -v -rs -s -k encoder --manual                              # turn the knob when asked
 ```
 
-Without a radio every test is skipped with the reason (no failure). The radio is found by its USB ID 1FC9:0094;
+Without a radio every test is skipped with the reason (no failure). The radio is found by its USB ID 1FC9:0094, else
+as the one radio in USB network mode that answers the debug link over UDP (`docs/spec/usb-network.md` 1);
 `--radio-port` or `$RFOUNDRY_PORT` picks one when there are several. The port can also be a pyserial URL, such as
 `rfc2217://host:7001` for a radio on another machine's RFC 2217 server.
 
@@ -40,8 +41,10 @@ python3 -m pytest tests/hil -v -rs -s --allow-rf --ambe ~/recordings/speech.ambe
 run includes the DMR audio smoke (`test_dmr_audio_smoke.py`, marker `audio_smoke`): real audio both ways, which no
 frame counter can check. Without `--allow-rf`, a radio or the SDR bench, these tests skip with a reason starting
 `DMR AUDIO NOT CHECKED`: such a run hasn't checked DMR audio. With the radio and the bench there, nothing else skips
-them: no recording, no vocoder, no DMR channel on `MHZ` or firmware without the view keys fails. Run only the smoke
-with `-m audio_smoke`.
+them: no recording, no vocoder, no DMR channel on `MHZ` or firmware without the view keys fails. The exceptions are
+`test_dmr_audio_rx_deviation` and `test_dmr_audio_rx_offset_wide`, which skip on a bench board that can't scale its
+deviation (info feature `dev_scale`) or bring the radio near -100 dBm (`power_dbm`). Run only the smoke with
+`-m audio_smoke`.
 
 ### Opt-in flags
 
@@ -327,7 +330,7 @@ The waveform and CACH tests skip as `bench` on a board without the feature (`bur
 | `test_snmp.py` | the SNMP agent over the USB network: walks the whole MIB at the radio's link address with `tools/rfoundry_snmp.py`, compares values with the debug link, the SET rules with a temporary write community (restored), a wrong community dropped, the test notification received on UDP 16162; back to serial. Nothing transmitted. Not run yet | `--allow-usb-switch`, firmware with `CONFIG_SNMP` |
 | `test_dmr_rx.py` | bench sends 2 group calls (10 superframes, 8 headers, 3 terminators each); counter deltas | `--allow-rf --allow-service-stop` |
 | `test_dmr_voice.py` | bench sends a speech recording; every frame reaches the speaker path. `test_vocoder_encode_options` (radio only): the encode options in force follow Mic noise reduction and Mic AGC (`voice.enc_options`, `settings.audio_flags`), and the codec word (`voice.enc_flags`) is 0x800 plus option bits, never 0x100 / 0x4000; it is the word the codec was last given, so one that still belongs to the previous options (no transmission since a change) is only printed | the same, and `--ambe`; radio only for the options test |
-| `test_dmr_audio_smoke.py` | DMR audio both ways (marker `audio_smoke`, part of the default bench pass). RX: the bench sends the speech recording to the call the radio's channel listens to (its talk target, or a private call to its ID, on the channel's color code); the decoded audio peaks high and the frames aren't one frame repeated. TX: the radio keys 3 s with the voice layer's test signal in place of the mic (RADIO op 33); the bench modem records the call, the frames on air must be distinct and not silence, and the recording played back to the radio must decode to audio. Prints the mic level of the over (`voice.tx_mic_peak`) | `--allow-rf --ambe`; skips only without the radio, the bench, DMR or `--allow-rf` |
+| `test_dmr_audio_smoke.py` | DMR audio both ways (marker `audio_smoke`, part of the default bench pass). RX: the bench sends the speech recording to the call the radio's channel listens to (its talk target, or a private call to its ID, on the channel's color code); the decoded audio peaks high and the frames aren't one frame repeated; near -100 dBm at the radio, the call from a transmitter 15 % under and over deviation and 2.5 kHz below and above the channel decodes (the receive level window, `docs/spec/dmr-voice.md` 7.1). TX: the radio keys 3 s with the voice layer's test signal in place of the mic (RADIO op 33); the bench modem records the call, the frames on air must be distinct and not silence, and the recording played back to the radio must decode to audio. Prints the mic level of the over (`voice.tx_mic_peak`) | `--allow-rf --ambe`; skips only without the radio, the bench, DMR or `--allow-rf`, and the deviation and wide offset checks on a bench board without `dev_scale` or `power_dbm` |
 | `test_am_rx.py` | the bench board's AM transmitter (tx op, mode am: a 1 kHz tone at depth 0.3 between bare carrier lead and tail) on `--am-mhz`; the radio's VFO tuned there is received in AM (`CONFIG_AM_RX`): the carrier opens the squelch (`state` rx, or `rssi_dbm` 10 dB over the floor read just before), it closes (`state` idle) after the carrier ends, and the bench did not cut. A board that only sends frequency skips | `--allow-rf --bench-api HOST --am-mhz MHz` |
 | `test_dmr_outbound_voice.py` | a bench board sends a repeater's outbound (BS bursts with the CACH on both slots) with voice calls (a `bench_tx` `outbound --voice` job); the radio, on a duplex channel receiving it and never transmitting, shows the call of its own timeslot with the right talker and talkgroup: one call on TS1 or TS2 (the other slot's radio hears none), both slots at once, TS2 starting 1.5 s into a TS1 call, late entry at burst A, D and F with no headers (marked late), and no call when the outbound's color code is wrong; the board's `call` records match what was sent and report no late bursts. A board that can't push voice (`unsupported`) skips | `--allow-rf --bench-api HOST --outbound-mhz MHz` (a duplex channel on it in the codeplug) |
 | `test_dmr_tx.py` | radio keys 3 s on DMR (debug-link PTT); the bench's decoded bursts and the bench modem's listener check src ID, TG, CC, headers / voice / terminator, timing, carrier offset (waveform checks reported as not judged when the board's receiver clips); our ETSI GPS Info from a fixed APRS position decoded by the bench modem's listener (`CONFIG_DMR_GPS` and `CONFIG_APRS`); privacy TX (Motorola BP key 1: service option 0x40 in every LC from us, FID 0x10 in the embedded LCs; a clear over has neither); talker alias TX (the channel's alias flag set over CPS, backed up and restored: the alias on air equals `dmr.tx_alias`); vocoder encode options (`test_dmr_tx_encode_options`, one over each for flags 0x1840, 0x800, 0x1800 and 0x3840, set over the debug link's SETTING 31: the same checks, `voice.enc_options` as set, `voice.enc_flags` after the over equal to the word, the options put back; AMBE parameter statistics of what the bench modem heard printed, not judged); repeater TX on a split channel (the channel's TX frequency set over CPS, backed up and restored; the bench modem as a duplex repeater: the radio wakes it, sees it up while talking, and the repeater takes the call) | `--allow-rf --allow-service-stop`; the alias test also `--allow-codeplug-write`; the split test also `--allow-codeplug-write --split-tx-mhz MHz` |
@@ -338,7 +341,7 @@ The waveform and CACH tests skip as `bench` on a board without the feature (`bur
 | `test_cps.py` | open-firmware CPS over USB with `tools/cps_client.py`: radio info (a radio type from the board's `board.toml` `[cps] radio_types`, struct 3), two reads of the qdmr regions identical, the current channel's record matches the view, a channel change saved by the settings store within 2 s (the `storage` view section); the write dry run (no write: backup file round trip, the rename touches only the name, the write and restore plans match and restore every byte); opt-in: one channel renamed, read back and the backup restored over what the radio then holds and verified; the channel position survives a restart | radio; `--allow-codeplug-write` (`--codeplug-backup-dir DIR` keeps the backups), `--allow-reboot` |
 | `test_iddb.py` | the DMR ID database ([open-firmware-cps.md](../../docs/spec/open-firmware-cps.md) 7.5 format N, [iddb-compact.md](../../docs/spec/iddb-compact.md) format C): records from its start, middle and end read over the fast codeplug protocol and decoded by `tools/iddb_read.py`, each looked up on the radio (DL_CMD_IDDB) for the same text, IDs between them not found. The radio's own database is the test data when it is in the test's format; otherwise the test skips (`state`), or with `--allow-codeplug-write` the blocks a synthetic database of that format takes (600 made-up records, `tools/iddb_write.py`) are backed up to `--codeplug-backup-dir` (`iddb-N.bak`, `iddb-C.bak`), the synthetic one is written (header block erased first, written last), checked, and the backup written back in a `finally` block and read back byte for byte; after a run stopped midway, `python3 tools/iddb_write.py restore FILE` puts it back. `test_iddb_write.py` checks the encoders against `iddb_read.py` without a radio | radio, firmware with `CONFIG_CPS_FAST` (`CONFIG_IDDB_COMPACT` for format C); `--allow-codeplug-write` for the format the radio doesn't hold |
 | `test_crash.py` | the crash log (`docs/spec/crash-log.md`): the `crash` view section, CRASH TEST refused without its token; opt-in: a trap instruction and a failed assertion each restart the radio and leave a record (kind, pc, the host task, the build's commit) the next start shows, then cleared | radio; `--allow-reboot` for the crash tests; firmware with `CONFIG_CRASH_LOG` |
-| `test_dmr_call_features.py` | bench sends a private call to us and to another ID, an emergency call, a talker alias, an ETSI GPS Info (after an alias), a late entry (no header, 8 bursts left out), a call with the privacy service option (without and with a key), a call with the PI bit; plus the talk target / privacy key requests (radio only) | `--allow-rf --allow-service-stop` (the last test: radio) |
+| `test_dmr_call_features.py` | bench sends a private call to us and to another ID, an emergency call, a talker alias, an ETSI GPS Info (after an alias), a late entry (no header, 8 bursts left out), a call with the privacy service option (without and with a key), a call with the PI bit, a call with the call end tone off and on (`beep.played`); plus the talk target / privacy key requests (radio only) | `--allow-rf --allow-service-stop` (the last test: radio) |
 | `test_speaker.py` | the speaker by microphone ([Speaker tests](#speaker-tests)): every beep, a cold amplifier's key click, the sweep, FM receive tone pulses from the bench board, AM receive of a 1 kHz tone (`test_am_rx_speaker`) | `--microphone`; the FM and AM tests `--allow-rf` and a bench board (AM also `--am-mhz`) |
 | `test_audio_check.py` | the speaker tests' analysis (`audio_check.py`) on synthetic recordings: cut starts and ends, a level step, a dropout, pops, a squelch tail, a filled silence, a sweep that breaks up, a broken capture must be found; a room's echo and swell must pass | numpy (tools/ci.sh runs it) |
 | `test_fm_measure.py` | `fm_measure.py` on made-up records of a bench board's FM job: keyed segments and drop-outs, carrier, CTCSS and DCS, DTMF twist, tone runs and voice figures from the audio stream, lost samples as a bench fault | none: no radio (`tools/ci.sh` runs it when numpy is installed) |
@@ -408,7 +411,10 @@ receiver's acquisition); terminators 5 to 6; CRC errors 0; the call stack saw ex
 
 `test_dmr_audio_smoke`: RX: the call played (`call.rx_calls_played` +1); frames into the voice layer at least 90 % of
 the frames sent; `voice.rx_peak` at least 1000; `voice.rx_repeats` at most the recording's own repeats + the superframe padding
-+ 2 + 2 % of the frames; FEC corrections at most 2 bits a frame on average. TX: the radio made one call of at least 30
++ 2 + 2 % of the frames; FEC corrections at most 2 bits a frame on average. The same near -100 dBm at the radio: with
+the carrier 2.5 kHz below and above the channel (`test_dmr_audio_rx_offset_wide`), and from a transmitter at 0.85 and
+1.15 of the standard's deviation with at least 95 % of the frames and at most 0.8 bits a frame
+(`test_dmr_audio_rx_deviation`). TX: the radio made one call of at least 30
 frames a second of PTT with at most 10 % `voice.tx_repeats`; the bench heard a call from the radio's ID with at least
 as many frames, at most 15 % of them the AMBE silence frame, at most 10 % equal to the frame before and at least a
 tenth distinct (the test signal repeats its cycle); played back to the radio, the RX criteria without the FEC limit (the recording carries what the bench heard).
@@ -444,7 +450,8 @@ another ID): `call.rx_late_entries` 1, 18 to 20 voice bursts played of the 28 se
 the first burst A, the embedded LC is complete at the next F, burst 18 of 36); the same late call again (same LC as the
 last one, so the modem's sticky LC rule waits one superframe more): 12 to 14. Privacy option without a key: 0 bursts played, 20 or more
 dropped as encrypted; with a key: none dropped, 22 or more played. PI bit: only that one call is heard (the
-DM-1701's modem driver clears PI on voice, so it plays as clear).
+DM-1701's modem driver clears PI on voice, so it plays as clear). Call end tone: no tone counted after the call with the tone off (`beep.tones_off` bit 0), at least one
+with it on.
 
 `test_dmr_data` (counters from the `dmr_data` section, `docs/spec/debuglink.md` 3.7): unconfirmed data:
 `data.rx_headers` 1, `data.rx_packets` 1, `data.rx_for_us` 1, `data.rx_blocks` 4 or more, CRC errors and stale
@@ -509,10 +516,6 @@ checks reported as not judged when the receiver clips, and the bench modem's tri
   channel). The session puts the VFO in FM and puts its frequency and mode back afterwards; `vfo_session(mode=None)`
   keeps the mode. The VFO's mode, color code, slot and talk target are its own settings and outlive a power cycle,
   so a test that changes them (Copy to VFO does) puts them back itself.
-- `restore_radio` and `Radio.reconnect` (the reopen after a restart) also set back a hardware option (`hwopt`) a
-  restart reset to its default: one that holds for a power cycle only (a transmit arm) is otherwise lost after a
-  restart, and a test that keys right after it, and every later test, fails as if the firmware did. An option that
-  needs a restart to apply is left alone.
 - Don't depend on the state the radio starts in: an earlier test or run may leave a temporary change (the lowest
   power the TX tests set is one) or any zone and channel. A test that keys picks its channel (`find_channel` on
   `--dmr-freq` or `--fm-mhz`), and one that checks a flag checks what it changed (the bits it added), not the

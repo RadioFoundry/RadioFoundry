@@ -444,7 +444,7 @@ msgstr "Nessun risultato: Indietro cancella"
 msgid "Receive only. Sensitivity not rated"
 msgstr "Solo ricezione. Sensibilità non specificata"
 
-#: core/ui/ui_app.c
+#: core/ui/ui_app.c core/ui/ui_menus.c
 msgid "Emergency: not in this build"
 msgstr "Emergenza: non in questa build"
 
@@ -731,6 +731,42 @@ msgstr "Ancora niente sentito"
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgid "Message"
 msgstr "Messaggio"
+
+#: core/ui/ui_aprs.c
+msgid "No longer in list"
+msgstr "Non più in elenco"
+
+#: core/ui/ui_aprs.c
+msgid "{Distance|Dist|}"
+msgstr "{Distanza|Dist|}"
+
+#: core/ui/ui_aprs.c
+msgid "Direct"
+msgstr "Diretto"
+
+#: core/ui/ui_aprs.c
+msgid "Via digipeater"
+msgstr "Via digipeater"
+
+#: core/ui/ui_aprs.c
+msgid "{Position age|Pos age}"
+msgstr "{Età posizione|Età pos}"
+
+#: core/ui/ui_aprs.c core/ui/ui_gps.c
+msgid "Speed"
+msgstr "Velocità"
+
+#: core/ui/ui_aprs.c
+msgid "Course"
+msgstr "Rotta"
+
+#: core/ui/ui_aprs.c
+msgid "Symbol"
+msgstr "Simbolo"
+
+#: core/ui/ui_aprs.c
+msgid "Packets"
+msgstr "Pacchetti"
 
 #: core/ui/ui_aprs.c
 msgid "OK choose  Back"
@@ -1051,10 +1087,6 @@ msgstr "Lon"
 #: core/ui/ui_gps.c
 msgid "Alt"
 msgstr "Alt"
-
-#: core/ui/ui_gps.c
-msgid "Speed"
-msgstr "Velocità"
 
 #: core/ui/ui_gps.c
 msgid "No positions yet"
@@ -1605,6 +1637,10 @@ msgid "TX CTCSS/DCS"
 msgstr "CTCSS/DCS TX"
 
 #: core/ui/ui_menus.c
+msgid "Tone burst"
+msgstr "Tono di apertura"
+
+#: core/ui/ui_menus.c
 msgid "Color code"
 msgstr "Color code"
 
@@ -1735,6 +1771,14 @@ msgstr "CTCSS va da 60.0 a 260.0"
 #: core/ui/ui_menus.c
 msgid "Save first: hold OK"
 msgstr "Salva prima: tieni OK"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Air band: receive only"
+msgstr "Banda aerea: solo ricezione"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Broadcast: receive only"
+msgstr "Broadcast: solo ricezione"
 
 #: core/ui/ui_menus.c
 msgid "Tones: not in this build"
@@ -2245,6 +2289,38 @@ msgid "OK edit  Back"
 msgstr "OK modifica  Indietro"
 
 #: core/ui/ui_menus.c
+msgid "ARS server"
+msgstr "Server ARS"
+
+#: core/ui/ui_menus.c
+msgid "IP gateway"
+msgstr "Gateway IP"
+
+#: core/ui/ui_menus.c
+msgid "Registering"
+msgstr "Registrazione"
+
+#: core/ui/ui_menus.c
+msgid "Registered"
+msgstr "Registrato"
+
+#: core/ui/ui_menus.c
+msgid "Refused"
+msgstr "Rifiutato"
+
+#: core/ui/ui_menus.c
+msgid "No answer"
+msgstr "Nessuna risposta"
+
+#: core/ui/ui_menus.c
+msgid "ARS: "
+msgstr "ARS: "
+
+#: core/ui/ui_menus.c
+msgid "Data Services"
+msgstr "Servizi dati"
+
+#: core/ui/ui_menus.c
 msgid "Freq Trim"
 msgstr "Trim freq."
 
@@ -2693,10 +2769,6 @@ msgid "Home zone"
 msgstr "Zona casa"
 
 #: core/ui/ui_menus.c
-msgid "Tone burst"
-msgstr "Tono di apertura"
-
-#: core/ui/ui_menus.c
 msgid "Copy to VFO"
 msgstr "Copia su VFO"
 
@@ -2751,6 +2823,30 @@ msgstr "Volume toni"
 #: core/ui/ui_menus.c
 msgid "Talk permit tone"
 msgstr "Tono via libera"
+
+#: core/ui/ui_menus.c
+msgid "Call end tone"
+msgstr "Tono fine chiamata"
+
+#: core/ui/ui_menus.c
+msgid "TOT warning tone"
+msgstr "Tono avviso TOT"
+
+#: core/ui/ui_menus.c
+msgid "Battery tone"
+msgstr "Tono batteria"
+
+#: core/ui/ui_menus.c
+msgid "TX denied tone"
+msgstr "Tono TX negata"
+
+#: core/ui/ui_menus.c
+msgid "Scan stop tone"
+msgstr "Tono stop scansione"
+
+#: core/ui/ui_menus.c
+msgid "Emergency tone"
+msgstr "Tono emergenza"
 
 #: core/ui/ui_menus.c
 msgid "Voice prompts"
@@ -2933,6 +3029,10 @@ msgid "USB address"
 msgstr "Indirizzo USB"
 
 #: core/ui/ui_menus.c
+msgid "Data services"
+msgstr "Servizi dati"
+
+#: core/ui/ui_menus.c
 msgid "Auto power off"
 msgstr "Spegnim. auto"
 
@@ -3035,6 +3135,10 @@ msgstr "0-9 apri  Indietro"
 #: core/ui/ui_menus.c
 msgid "Talk permit tone: not in this build"
 msgstr "Tono via libera: non in questa build"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "DMR: not in this build"
+msgstr "DMR: non in questa build"
 
 #: core/ui/ui_menus.c
 msgid "This radio has no vibration motor"
@@ -3261,10 +3365,6 @@ msgid "Step "
 msgstr "Passo "
 
 #: core/ui/ui_screens.c
-msgid "DMR: not in this build"
-msgstr "DMR: non in questa build"
-
-#: core/ui/ui_screens.c
 msgid "No TX frequency"
 msgstr "Nessuna frequenza TX"
 
@@ -3275,6 +3375,22 @@ msgstr "Aereo AM"
 #: core/ui/ui_screens.c
 msgid "Broadcast FM"
 msgstr "FM broadcast"
+
+#: core/ui/ui_screens.c
+msgid "Restart to apply"
+msgstr "Riavvia per applicare"
+
+#: core/ui/ui_screens.c
+msgid "Set: "
+msgstr "Imposta: "
+
+#: core/ui/ui_screens.c
+msgid "Turn the radio off and on"
+msgstr "Spegni e riaccendi la radio"
+
+#: core/ui/ui_screens.c
+msgid "Settings>Advanced>Hardware"
+msgstr "Impostazioni>Avanzate>Hardware"
 
 #: core/ui/ui_screens.c
 msgid "This channel is RX only"
@@ -3325,16 +3441,12 @@ msgid "No DMR ID in codeplug"
 msgstr "Nessun ID DMR nel codeplug"
 
 #: core/ui/ui_screens.c
-msgid "Air band: receive only"
-msgstr "Banda aerea: solo ricezione"
-
-#: core/ui/ui_screens.c
-msgid "Broadcast: receive only"
-msgstr "Broadcast: solo ricezione"
-
-#: core/ui/ui_screens.c
 msgid "Repeater channel: PTT off"
 msgstr "Canale ripetitore: PTT off"
+
+#: core/ui/ui_screens.c
+msgid "Radio refused to send"
+msgstr "La radio ha rifiutato di trasmettere"
 
 #: core/ui/ui_screens.c
 msgid "Not allowed here"
@@ -3511,6 +3623,10 @@ msgstr "Nessun limite"
 #: core/ui/ui_screens.c
 msgid "Can't transmit"
 msgstr "Non puoi trasmettere"
+
+#: core/ui/ui_screens.c
+msgid "Transmit waits for it"
+msgstr "Niente TX fino ad allora"
 
 #: core/ui/ui_screens.c
 msgid "Last activity "

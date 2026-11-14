@@ -22,6 +22,8 @@
 #include "sim/dmr_sim_modem.h"
 #include "settings/settings.h"
 #include "radio/tx_limit.h"
+#include "codeplug/codeplug_kv.h"	// the settings area fakes
+#include "radio/radio_keys.h"
 
 static int failures;
 static int checks;
@@ -311,6 +313,45 @@ bool codeplug_zone(uint16_t i, zone_t *out)
 }
 static const contact_t contacts[] = { { "Local", 9, CONTACT_GROUP, 0 } };
 uint32_t codeplug_dmr_id(void) { return 9996543; }
+// The settings area holds only the Settings > Sound tone keys here: one-byte bools, -1 absent (kv_tone_set)
+static int16_t kv_tone[CODEPLUG_KEY_TX_DENY_TONE - CODEPLUG_KEY_CALL_END_TONE + 1] = { -1, -1, -1, -1 };
+static uint8_t kv_serial;
+int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
+{
+	if (key < CODEPLUG_KEY_CALL_END_TONE || key > CODEPLUG_KEY_TX_DENY_TONE || kv_tone[key - CODEPLUG_KEY_CALL_END_TONE] < 0) {
+		return -1;
+	}
+	if (max > 0) {
+		*(uint8_t *)buf = (uint8_t)kv_tone[key - CODEPLUG_KEY_CALL_END_TONE];
+	}
+	return 1;
+}
+bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n) { (void)ops; (void)n; return false; }
+static void kv_tone_set(uint16_t key, int16_t v)
+{
+	kv_tone[key - CODEPLUG_KEY_CALL_END_TONE] = v;
+	kv_serial++;	// as codeplug_kv_write: the radio core reads the keys again
+}
+void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi)
+{
+	c->at = lo < CODEPLUG_KEY_CALL_END_TONE ? CODEPLUG_KEY_CALL_END_TONE : lo;
+	c->hi = hi > CODEPLUG_KEY_TX_DENY_TONE ? CODEPLUG_KEY_TX_DENY_TONE : hi;
+}
+int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
+{
+	for (; c->at <= c->hi; c->at++) {
+		int16_t v = kv_tone[c->at - CODEPLUG_KEY_CALL_END_TONE];
+		if (v >= 0) {
+			*key = c->at++;
+			if (max > 0) {
+				*(uint8_t *)buf = (uint8_t)v;
+			}
+			return 1;
+		}
+	}
+	return -1;
+}
+uint8_t codeplug_kv_serial(void) { return kv_serial; }
 bool codeplug_contact(uint16_t index, contact_t *out)
 {
 	if (index != 1) {
@@ -2637,6 +2678,85 @@ static void test_roger_burst(void)
 	}
 }
 
+// A channel with its tone burst on: each PTT key-up opens with one timed burst, then the microphone (channel_t.tone_burst)
+static void test_channel_burst(void)
+{
+	start();
+	// Off (the default): PTT keys with no tone
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && !sm.view.tone_burst && hw.tone_hz == 0);
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE);
+
+	chans[1].tone_burst = true;
+	req(RREQ_ZONE_POS, 0);
+	run(50);
+	CHECK(sm.view.ch.tone_burst);
+	int tx = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && sm.ptt && sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ && hw.tx_calls == tx + 1);
+	CHECK(!sm.burst_keyed);	// the PTT owns the carrier, not the burst
+	run(RADIO_BURST_MIN_MS - 20);
+	CHECK(sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+	run(40);
+	CHECK(sm.view.state == RS_TX && sm.ptt && !sm.view.tone_burst && hw.tone_hz == 0);	// the microphone follows
+	run(2000);
+	CHECK(sm.view.state == RS_TX && hw.tone_hz == 0);	// once per key-up
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE);
+	// Released during the burst: unkeys at once, the tone with it
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.tone_burst);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE && !sm.view.tone_burst && hw.tone_hz == 0 && !sm.burst_timed);
+	run(300);
+	// The next key-up has it again
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tone_burst && hw.tone_hz == RADIO_BURST_HZ);
+	req(RREQ_PTT, 0);
+	run(300);
+
+	// The tone refused: the error beep warns that the repeater may not open, and the PTT's transmission goes on
+	hw.has_tx_tone = false;
+	beep_stats_t b0, b1;
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && sm.ptt && !sm.view.tone_burst);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1);
+	req(RREQ_PTT, 0);
+	run(300);
+	hw.has_tx_tone = true;
+
+	// Host audio (USRP): the host sends its own tones, so no burst over them
+	tap_hw = (typeof(tap_hw)){ .ok = true };
+	int16_t pcm[AUDIO_BLOCK_SAMPLES] = { 0 };
+	req(RREQ_PTT, 2);
+	CHECK(sm.view.state == RS_TX && sm.host_audio && !sm.view.tone_burst && hw.tone_hz == 0);
+	for (int i = 0; i < 10; i++) {
+		audio_mux_host_push(pcm, AUDIO_BLOCK_SAMPLES);
+		run(20);
+	}
+	CHECK(sm.view.state == RS_TX && !sm.view.tone_burst && hw.tone_hz == 0);
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// Never on DMR, whatever the record holds
+	chans[6].tone_burst = true;
+	req(RREQ_ZONE_POS, 5);
+	run(50);
+	req(RREQ_PTT, 1);
+	run(50);
+	CHECK(!sm.view.tone_burst && hw.tone_hz == 0);
+	req(RREQ_PTT, 0);
+	run(1000);
+	chans[1].tone_burst = chans[6].tone_burst = false;
+}
+
 // The side key owns a minimum duration; the debug link still has explicit on/off control.
 static void test_burst_key(void)
 {
@@ -3112,6 +3232,87 @@ static void test_dmr_beeps(void)
 	chans[6].no_beep = false;
 }
 
+// Settings > Sound: a tone key of the codeplug's settings area at 0 silences its beeps, at 1 or absent they play
+// (codeplug-settings.md 3), and the radio core takes a key written without a codeplug reload
+static void set_tones_off(radio_settings_t *s) { s->tones_off = RADIO_TONES_MASK; }
+
+static void test_tone_keys(void)
+{
+	beep_stats_t b0, b1;
+	settings_t st;
+	static const struct { uint16_t key; uint8_t beep; } rows[] = {
+		{ CODEPLUG_KEY_TOT_WARN_TONE, BEEP_TOT_WARN }, { CODEPLUG_KEY_BATTERY_TONE, BEEP_BATTERY_LOW },
+		{ CODEPLUG_KEY_BATTERY_TONE, BEEP_BATTERY_CRIT }, { CODEPLUG_KEY_TX_DENY_TONE, BEEP_TX_DENY },
+	};
+
+	start();
+	req(RREQ_ZONE_POS, 5);
+	run(50);
+	// The call end tone, from a call heard
+	kv_tone_set(CODEPLUG_KEY_CALL_END_TONE, 0);
+	run(50);
+	beep_get_stats(&b0);
+	hear_call(9, 1, 1, true);
+	run(200);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played);
+	kv_tone_set(CODEPLUG_KEY_CALL_END_TONE, 1);
+	run(3000);
+	beep_get_stats(&b0);
+	hear_call(9, 1, 1, true);
+	run(200);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1);
+	kv_tone_set(CODEPLUG_KEY_CALL_END_TONE, -1);
+	run(3000);
+	// The others, as the radio core plays them; each key silences only its own
+	for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+		kv_tone_set(rows[i].key, 0);
+		run(50);
+		beep_get_stats(&b0);
+		req(RREQ_BEEP, rows[i].beep);
+		run(1000);
+		beep_get_stats(&b1);
+		CHECK(b1.played == b0.played);
+		req(RREQ_BEEP, BEEP_ERROR);
+		run(1000);
+		beep_get_stats(&b1);
+		CHECK(b1.played == b0.played + 1);
+		kv_tone_set(rows[i].key, 1);
+		run(50);
+		beep_get_stats(&b0);
+		req(RREQ_BEEP, rows[i].beep);
+		run(1000);
+		beep_get_stats(&b1);
+		CHECK(b1.played == b0.played + 1);
+		kv_tone_set(rows[i].key, -1);
+	}
+	// The radio's own copy (docs/spec/codeplug-settings.md 5.2) follows a key and is saved: with the key removed and
+	// after a reboot the tone stays off
+	kv_tone_set(CODEPLUG_KEY_TX_DENY_TONE, 0);
+	run(50);
+	kv_tone_set(CODEPLUG_KEY_TX_DENY_TONE, -1);
+	run(50);
+	settings_read(&st);
+	CHECK(sm.set.tones_off == 0x08u && settings_tones_off(&st) == 0x08u);
+	radio_sm_init(&sm, now);
+	run(100);
+	beep_get_stats(&b0);
+	req(RREQ_BEEP, BEEP_TX_DENY);
+	run(1000);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played && sm.set.tones_off == 0x08u);
+	// A key that is present holds against a settings change made another way; an absent one lets it through
+	kv_tone_set(CODEPLUG_KEY_TX_DENY_TONE, 0);
+	kv_tone_set(CODEPLUG_KEY_CALL_END_TONE, 1);
+	run(50);
+	settings(set_tones_off);
+	settings_read(&st);
+	CHECK(sm.set.tones_off == (RADIO_TONES_MASK & ~0x01u) && settings_tones_off(&st) == sm.set.tones_off);
+	kv_tone_set(CODEPLUG_KEY_TX_DENY_TONE, -1);
+	kv_tone_set(CODEPLUG_KEY_CALL_END_TONE, -1);
+}
+
 static void set_no_permit(radio_settings_t *s) { s->talk_permit = false; }
 
 // A board whose beeps can't sound on air (CAP_BEEP_NOT_ON_AIR): the short talk permit plays in a hold before keying,
@@ -3508,6 +3709,7 @@ int main(void)
 	test_tx_limit();
 	test_roger_burst();
 	test_burst_key();
+	test_channel_burst();
 	test_burst_deadlines();
 	test_burst_key_host_overlap();
 	test_burst_key_denied();
@@ -3525,6 +3727,7 @@ int main(void)
 	test_battery_save();
 	test_dmr_beeps();
 	test_dmr_permit_before_key();
+	test_tone_keys();
 	test_dmr_short_press_wake();
 	test_vibrate();
 	test_host_audio();

@@ -11,8 +11,8 @@
 // rewrite the reference offset and the DMR modulation pair from the calibration.
 //
 // Transmit: the slot engine asks the board to key the RF side for each burst (rf_switch). Here that is refused unless
-// the build has CONFIG_MD9600_DMR_TX and the transmit arm is on (md9600_dmr_tx_allow); the RF chain's per-burst keying
-// is radio_md9600.c's (md9600_rf_dmr_key). FM transmit puts the chip in its FM TX mode (the microphone on its line
+// the build has CONFIG_MD9600_DMR_TX; the RF chain's per-burst keying is radio_md9600.c's (md9600_rf_dmr_key), which
+// keys only a transmission the board's tx() allowed. FM transmit puts the chip in its FM TX mode (the microphone on its line
 // input, two-point modulation with the band's FM pair) for the over, and back to the receive set-up after it.
 //
 // FM receive audio to a host (MD9600_FM_RX_TAP, hal_audio_tap.h AUDIO_TAP_FM_RX): the core expects it on the stream's
@@ -388,15 +388,6 @@ static void fm_tap_update(void)
 
 // --- DMR glue ---
 
-#if CONFIG_MD9600_DMR_TX
-static volatile bool tx_allowed;
-
-void md9600_dmr_tx_allow(bool on)
-{
-	tx_allowed = on;
-}
-#endif
-
 // RF_TX_INTER's advance before the slot (0x12 bits 5-0, about 100 us steps; hrc6000-registers.md): an SFR retunes the
 // synthesizer from receive to transmit at that interrupt, so it needs more lead than a plain transmission (0)
 void md9600_c6000_tx_lead(uint8_t steps)
@@ -408,10 +399,6 @@ void md9600_c6000_tx_lead(uint8_t steps)
 static bool rf_switch(bool tx)
 {
 #if CONFIG_MD9600_DMR_TX
-	if (tx && !tx_allowed) {
-		diag.tx_refused++;
-		return false;
-	}
 	return md9600_rf_dmr_key(tx);
 #else
 	if (tx) {

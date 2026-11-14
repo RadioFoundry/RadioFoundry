@@ -20,7 +20,8 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.join(ROOT, "tools", "bench"))
 
-from rfoundry_debug import (DebugLink, DebugLinkError, as_int, find_ports, parse_counters,  # noqa: E402
+from rfoundry_debug import (DebugLink, DebugLinkError, as_int, find_network_radios, find_ports,  # noqa: E402
+                       parse_counters,
                        to_rgb, write_png, ACTIONS, PRESS, LONG, UP, APRS, APRS_OP_MESSAGE, APRS_OP_SEND_NOW,
                        APRS_OP_STATUS, DATA_OP_CALL_ALERT, DATA_OP_EMERGENCY, DATA_OP_IP_SEND,
                        DATA_OP_RADIO_CHECK, DATA_OP_SMS, DMR_DATA, KEY, OP_TONE_BURST, PTT, RADIO)
@@ -308,11 +309,6 @@ class Radio:
                             foreign.add(port)
                         continue
                     self.link, self.port = link, port
-                    # A transmit arm is RAM only: a test that keys right after its restart needs it back now
-                    try:
-                        self.hwopts_back()
-                    except DebugLinkError as e:
-                        print(f"rfoundry-hil: hardware options not set back after {what}: {e}")
                     return
                 except (DebugLinkError, OSError):
                     # A serial hub takes one client per port: a link left open would lock out every later try.
@@ -632,31 +628,11 @@ class Radio:
                 if time.monotonic() >= end:
                     raise
 
-    def hwopt_baseline(self):
-        """Remember the board's hardware options as the session found them (hwopts_back puts them back)"""
-        try:
-            self._hwopts_start = [o["value"] for o in self.link.hwopts()]
-        except DebugLinkError:     # firmware without HWOPT
-            self._hwopts_start = []
-
-    def hwopts_back(self):
-        """Set back a hardware option a restart reset: one that holds for a power cycle only (a bring-up transmit
-        arm) is lost when a test restarts the radio, and every later test would then fail as if the firmware did. An
-        option that needs a restart to apply is left alone: a restart doesn't change a stored one."""
-        start = getattr(self, "_hwopts_start", [])
-        if not start:
-            return
-        for i, o in enumerate(self.link.hwopts()[:len(start)]):
-            if o["value"] != start[i] and start[i] >= 0 and not o["restart"]:
-                self.link.hwopt_set(i, start[i])
-                print(f"rfoundry-hil: hardware option {o['name']!r} was reset (a restart?): set back")
-
     def restore(self, snap):
-        """Put back what snapshot() saw: monitor, zone, VFO or channel position, temporary changes, power, squelch, and
-        the session's hardware options (hwopts_back). The VFO's own frequency is not known while on a channel; tests
-        that change it restore it themselves (vfo_session)."""
+        """Put back what snapshot() saw: monitor, zone, VFO or channel position, temporary changes, power and squelch.
+        The VFO's own frequency is not known while on a channel; tests that change it restore it themselves
+        (vfo_session)."""
         L = self.link
-        self.hwopts_back()
         cur = self.core()
         if cur.get("monitor") != snap["monitor"]:
             L.monitor(snap["monitor"] == "1")
@@ -1071,7 +1047,9 @@ class SdrBench:
     def __init__(self, allow_rf=False, lease_max=300, wait_max=None, api=None, api_rx=None, api_level=None):
         self.api = api
         self.api_rx = api_rx or api
-        self.api_level = api_level      # the board's transmit level 0-255 (None: its own)
+        self.api_level = api_level      # the board's transmit level 0-255 (None: its own; an SDR ignores it)
+        self.power_dbm = None           # an SDR's level, dBm at its antenna (None: its own); the steps are exact
+        self.dev_scale = None           # the DMR deviation, a share of the standard's (0.5-1.5; None: 1)
         self.lease_max = lease_max
         self.wait_max = 900.0 if wait_max is None else float(wait_max)
         self.label = None               # the lease's name on the board
@@ -1095,6 +1073,10 @@ class SdrBench:
             L = self._line()
             setattr(self, key, L.request(L.address(self.api_rx if rx else self.api), {"op": "info"}))
         return getattr(self, key)
+
+    def has(self, feature):
+        """Whether the TX board says it can do feature (its info's features, e.g. "dev_scale")"""
+        return feature in (self._api_info().get("features") or {})
 
     def _api_fail(self, e, what):
         """A BenchLineError from the board: a wait that ran out or a request the board can't serve is a skip."""
@@ -1148,6 +1130,10 @@ class SdrBench:
         L = self._line()
         if self.api_level is not None and tool in ("bench_tx", "bench_repeater"):
             args = f"--power {self.api_level} {args}"
+        if self.power_dbm is not None and tool in ("bench_tx", "bench_repeater"):
+            args = f"--power-dbm {self.power_dbm:g} {args}"
+        if self.dev_scale is not None and tool in ("bench_tx", "bench_repeater"):
+            args = f"--dev-scale {self.dev_scale:g} {args}"
         job = L.job_from_args(tool, args)
         for k in ("freq", "tx"):            # bench_tx's frequency, bench_repeater's output
             if job.get(k) is not None:
@@ -1400,15 +1386,18 @@ class SdrBench:
         self._run_dirs = []
 
     # ── the bench modem ──
-    def transmit(self, args, freq, cc, timeout=300, expect_s=None):
+    def transmit(self, args, freq, cc, timeout=300, expect_s=None, background=False):
         """A bench_tx job with args (a string) on freq (MHz) / cc, which the board builds and sends (a --listen-after
         listens on its receiver); returns its JSON records. Needs the lease and --allow-rf. expect_s: about how long
-        it keys up. No --power: the board's own level, unless --bench-api-level gives one."""
+        it keys up. No --power: the board's own level, unless --bench-api-level gives one. background: return the
+        job once it started (wait() / kill() it; the lease's end kills it too)."""
         if not self.allow_rf:
             raise RuntimeError("the bench transmitter keys up: needs --allow-rf")
         self._tx_check(freq)
         self._need_lease()
         p = self._api_job("bench_tx", f"--freq {freq} --cc {cc} {args}", expect_s)
+        if background:
+            return p
         try:
             p.wait(timeout)
         except subprocess.TimeoutExpired:
@@ -1423,11 +1412,25 @@ class SdrBench:
 
     def voice_call(self, freq, cc, dst, superframes=3, calls=1, headers=8, terminators=3, gap_ms=500, ambe=None,
                    private=False, src=None, late=None, talker_alias=None, pi=False, emergency=False,
-                   service_options=None, gps=None):
+                   service_options=None, gps=None, offset_hz=0, offset_sweep=None, superframes_per_step=1,
+                   background=False):
         """One or more voice calls from the bench (a bench_tx voice job). late=K: no header, the first K bursts left out;
         talker_alias: text in odd superframes; pi: the EMB PI bit on B-F; service_options: hex byte in the LC;
-        gps: (lat, lon[, error code]) as an ETSI GPS Info LC in the odd superframes"""
-        a = f"voice --dst {dst} --superframes {superframes} --calls {calls} --gap-ms {gap_ms}"
+        gps: (lat, lon[, error code]) as an ETSI GPS Info LC in the odd superframes. offset_hz: the carrier that far
+        from freq (+-2500 Hz; the lease stays on freq). offset_sweep=(from, to, step) Hz: one call stepping through
+        the offsets, superframes_per_step superframes each (superframes ignored), with a "step" record a step.
+        background: the started job, as transmit()'s"""
+        if offset_sweep:
+            lo, hi, st = offset_sweep
+            superframes = (int((hi - lo) / st + 1e-9) + 1) * superframes_per_step
+            calls = 1
+        a = f"voice --dst {dst} --calls {calls} --gap-ms {gap_ms}"
+        if offset_sweep:
+            a += f" --offset-sweep {lo:g}:{hi:g}:{st:g} --superframes-per-step {superframes_per_step}"
+        else:
+            a += f" --superframes {superframes}"
+        if offset_hz:
+            a += f" --offset-hz {offset_hz:g}"
         if late is None:
             a += f" --headers {headers}"
         else:
@@ -1450,7 +1453,8 @@ class SdrBench:
         if service_options is not None:
             a += f" --service-options {service_options:02x}"
         bursts = (0 if late is not None else headers) + 6 * superframes + terminators
-        return self.transmit(a, freq, cc, expect_s=calls * bursts * 0.06 + (calls - 1) * gap_ms / 1000)
+        return self.transmit(a, freq, cc, expect_s=calls * bursts * 0.06 + (calls - 1) * gap_ms / 1000,
+                             background=background)
 
     def csbk(self, freq, cc, dst, opcode=None, fid=0, octet3=0, src=None, count=4, listen_after=0):
         """A preamble CSBK train, then optionally one CSBK (a bench_tx csbk job); listen_after: then listen that many
