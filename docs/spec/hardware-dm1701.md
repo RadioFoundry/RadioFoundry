@@ -1018,6 +1018,10 @@ DM-1701 A:
 
   A waveform model (instant rise, full current for the pulse plus d, then a linear fall over r) fitted to harmonics 1-4
   at once: d = 21.5 +- 0.4 us, r = 33.8 +- 0.7 us, full-light tail d + r/2 = 38.4 us.
+  Closed loop: the same sweep with 2736 counts (38 us) taken off each compare, as `uvf_bl_compare` does, puts the nulls
+  at 50.0, 33.1, 66.2, 24.9 and 49.9 % of the requested brightness (expected 50, 33.3, 66.7, 25, 50 %), residuals
+  0.1-1.4 us. The split between d and r moves between runs (25.1 and 26.5 us there); their total, which sets the
+  brightness, repeats (38.3 us).
 - **The 3.3 V rail.** Vrefint (ADC1 IN17) is read against VDDA, so the backlight's load raises the reading (about 1.1
   counts fully on). One injected conversion per PWM cycle, triggered at a chosen count (TIM1 OC4REF as TRGO, falling
   edge, 144-cycle sample), averaged and stepped through the cycle, traces the rail's waveform: when the pin rises the
