@@ -252,7 +252,9 @@ The C_BCAST Backoff replaces the Aloha's.
 
 The engine registers by itself when the state is "needed" and nothing else is in progress. Until registered it asks
 for nothing else. The C_RAND (kind registration) targets the system code (Trg_Adr_Cnts 0), or with `T3_OPT_REG_TG`
-subscribes to talkgroups. Sending it drops the old record.
+subscribes to talkgroups. Sending it drops the old record. On a system whose C_ALOHA has Reg 0 the radio never
+registers, and so subscribes to nothing: a subscription is part of a registration (6.4.4.1.13), and there the MS
+creates no registration record (6.4.3 a).
 
 | `T3_OPT_REG_TG`, talkgroups listened to | C_RAND |
 |---|---|
@@ -757,7 +759,6 @@ on its voice, and never camps on another system or on a control channel that isn
 |---|---|
 | CACH short LC reception on modems that don't report it yet (`hrc_chip_t.slc_rx_addr` 0, or another driver) | the location of the chip's short LC |
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
-| A list subscription without registering | later |
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
 | Power save: the receiver off while asleep on boards without `rx_sleep_dmr` | each board's `rx_sleep` on a DMR channel |
 | The interrupted talker's side: the reverse channel's cease command while transmitting (6.4.15.2) | reverse channel reception in the modem drivers |
