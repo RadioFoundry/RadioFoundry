@@ -309,6 +309,8 @@ typedef struct {
 	uint32_t sleeps;
 	bool csc_valid;		// the Common_Slot_Counter is known (a C_SYS_Parms short LC heard while camped)
 	uint32_t slc_ok, slc_bad;	// CACH short LCs the modem reported since boot: good CRC, bad CRC
+	bool rx_off;		// the receiver is off for power save (boards with rx_sleep_dmr)
+	uint32_t rx_offs, rx_off_ms;	// times it went off, and for how long in all
 	uint32_t dgna[RADIO_T3_DGNA];	// DGNA (6.6.8): the list, the One-key, the alias mode's 16th
 	uint8_t ndgna;
 	uint32_t dgna_onekey, dgna_alias_tg, dgnas;

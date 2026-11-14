@@ -658,7 +658,8 @@ set. An earlier build wrote bits 6:4 and keyed a silent carrier (`gotchas.md` 3.
 ### 5.11 Receiver sleep
 
 RadioFoundry's `rx_sleep(true)` (receiver battery save, `radio-features.md` 5.4) puts the AT1846S in idle and switches the
-receive supply off. `rx_sleep(false)` retunes.
+receive supply off. `rx_sleep(false)` retunes. It does the same on a DMR channel (`rx_sleep_dmr`, a trunked system's
+power save): the HR_C6000 keeps running and the core restarts its receive on waking. Unconfirmed on air.
 
 ### 5.12 Bench register access
 

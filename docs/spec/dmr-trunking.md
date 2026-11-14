@@ -537,8 +537,11 @@ PowerSave_Offset, the wake frame (table 7.41); 0 means no power save.
 | T_Nosig | Counts only time awake |
 | MassReg | A due mass registration wakes the radio |
 
-`t3_ms_asleep` is the engine's decision. Switching the receiver off with it needs each board's `rx_sleep` to work on a
-DMR channel; today it works on FM only (section 10).
+`t3_ms_asleep` is the engine's decision. While it holds, idle and not keyed, the radio core switches the receiver off
+with the board's `rx_sleep` where the board sets `rx_sleep_dmr` (the modem keeps running). Waking (the engine's
+decision, a tune, leaving the system) turns it on and restarts the modem's receive, which finds the TSCC's slot timing
+again inside the two early CSC steps. The debug link's `t3.rx_off`, `rx_offs` and `rx_off_ms` show it. A board
+without `rx_sleep_dmr` keeps the receiver on; the engine still keeps the wake frames.
 
 ### 7.14 Dynamic group assignment (DGNA, 6.6.8)
 
@@ -694,7 +697,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | A kill kept across a restart, and conventional DMR off when killed | later |
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
 | Data to a gateway other than IP (PSTN, PABX, line, dispatcher: BCD digits), and IP connection advice | later |
-| Power save: the receiver off while asleep (boards' `rx_sleep` on DMR channels) | later |
+| Power save: the receiver off while asleep on boards without `rx_sleep_dmr` | each board's `rx_sleep` on a DMR channel |
 | The interrupted talker's side: the reverse channel's cease command while transmitting (6.4.15.2) | reverse channel reception in the modem drivers |
 
 ## 11. On the radio

@@ -1086,10 +1086,11 @@ void uvf_afsk_end(void)
 }
 #endif
 
-// Receiver battery saving (FM receive only): the AT1846S idle and the RX supply off; waking retunes with rx()
+// Receiver power saving (FM battery save, a trunked system's power save on DMR): the AT1846S idle and the RX supply
+// off; waking retunes with rx(). The HR_C6000 keeps running
 static void rx_sleep(bool sleep)
 {
-	if (r.mode != RADIO_MODE_FM || r.tx_on || !r.rx_valid || sleep == r.asleep) {
+	if ((r.mode != RADIO_MODE_FM && r.mode != RADIO_MODE_DMR) || r.tx_on || !r.rx_valid || sleep == r.asleep) {
 		return;
 	}
 	if (sleep) {
@@ -1116,6 +1117,7 @@ const hal_radio_t uvf_radio = {
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
+	.rx_sleep_dmr = true,
 #if CONFIG_DTMF
 	.tx_dtmf = tx_dtmf,
 #endif

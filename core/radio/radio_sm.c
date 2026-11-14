@@ -2592,8 +2592,30 @@ static uint8_t t3_chan_cc(const radio_sm_t *sm, const t3_chan_t *c)
 	return t3s.cc & 0x0Fu;
 }
 
+// Power save (dmr-trunking.md 7.13): the receiver off while the engine sleeps, on boards whose rx_sleep works on DMR.
+// Awake again, the modem searches the TSCC's slot timing afresh: the old timing went with the signal
+static void t3_rx_sleep(radio_sm_t *sm, bool off, uint32_t now_ms)
+{
+	if (off == sm->t3_rx_off) {
+		return;
+	}
+	sm->t3_rx_off = off;
+	radio_t3v.rx_off = off;
+	board.radio->rx_sleep(off);
+	if (off) {
+		sm->t3_rx_off_at = now_ms;
+		radio_t3v.rx_offs++;
+		return;
+	}
+	radio_t3v.rx_off_ms += now_ms - sm->t3_rx_off_at;
+	if (sm->dmr_running) {
+		board.dmr->rx_restart();
+	}
+}
+
 static void t3_tune(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 {
+	t3_rx_sleep(sm, false, now_ms);
 	channel_t *ch = &sm->view.ch;
 	uint8_t ts = a->slot == 2 ? 2 : 1;
 	bool rf = ch->rx_hz != a->chan.rx_hz || sm->board_mode != RADIO_MODE_DMR || !sm->dmr_running;
@@ -3025,6 +3047,7 @@ static void t3_leave(radio_sm_t *sm)
 	if (!sm->t3_on) {
 		return;
 	}
+	t3_rx_sleep(sm, false, sm->t3_now);
 	t3_ms_stop(&t3m);
 	sm->t3_on = false;
 #if CONFIG_DMR_DATA_CORE && CONFIG_DMR_TRUNK_TX
@@ -3370,6 +3393,8 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 			t3_send(sm, &a, now_ms);
 		}
 	}
+	t3_rx_sleep(sm, t3_ms_asleep(&t3m) && board.radio->rx_sleep_dmr && board.radio->rx_sleep != NULL &&
+		    sm->board_mode == RADIO_MODE_DMR && sm->view.state == RS_IDLE && !sm->ptt, now_ms);
 #if CONFIG_DMR_DATA_CORE && CONFIG_DMR_TRUNK_TX
 	data_t3_tick(sm, now_ms);
 #endif

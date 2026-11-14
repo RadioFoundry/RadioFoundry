@@ -6281,6 +6281,90 @@ static void test_t3_stun_kept(void)
 	t3_cp_done();
 }
 
+// Power save on a board whose rx_sleep works on DMR (dmr-trunking.md 7.13): registered with a wake frame and the
+// CSC known, the receiver goes off between wake frames and comes back, restarting the modem's receive, for them
+static int ps_sleeps, ps_wakes;
+static void r_rx_sleep(bool sleep)
+{
+	if (sleep) {
+		ps_sleeps++;
+	} else {
+		ps_wakes++;
+	}
+}
+
+static void ps_site_run(uint32_t ms, bool slc)
+{
+	for (uint32_t t = 0; t < ms; t += 60) {
+		t3_csbk_t a = { .lb = true, .op = T3_OP_C_ALOHA };
+		a.u.aloha.syscode = t3_code();
+		a.u.aloha.nrand_wait = 6;
+		a.u.aloha.backoff = 1;
+		a.u.aloha.version = 2;
+		a.u.aloha.reg = true;
+		if (!radio_t3v.rx_off) {
+			t3_csbk_rx(&a, 1);	// asleep, nothing is heard
+		}
+		if (slc && t % 120 == 0) {
+			t3_sysparms_t sp = { true, T3_MODEL_SMALL, (uint16_t)((t3_code() >> 2) & 0xFFFu), true,
+					     (uint16_t)((now / 120u) & 0x1FFu) };
+			uint32_t w = t3_sysparms_build(&sp);
+			if (!radio_t3v.rx_off) {
+				sim_short_lc(w, dmrShortLcCrc8(w));
+			}
+		}
+		run(60);
+	}
+}
+
+static void test_t3_power_save(void)
+{
+	fake_radio.rx_sleep = r_rx_sleep;
+	fake_radio.rx_sleep_dmr = true;
+	ps_sleeps = ps_wakes = 0;
+	dmr_start(true);
+	sim.repeater = true;
+	radio_t3_setup_t *s = radio_t3_staged();
+	radio_t3_reset(s);
+	s->cfg.own_id = T3_OWN;
+	s->cfg.auth.model = T3_MODEL_SMALL;
+	s->cfg.auth.net = 5;
+	s->cfg.auth.category = T3_PAR_A;
+	s->cfg.opts = T3_OPT_PRIVATE;
+	s->cfg.ps_rq = 2;	// 1:4
+	s->cc = 2;
+	s->cfg.ctrl[0] = (t3_chan_t){ 1, T3_RX_HZ, T3_TX_HZ, 2 };
+	s->cfg.nctrl = 1;
+	s->chans[0] = s->cfg.ctrl[0];
+	s->nchans = 1;
+	radio_t3_fix(s);
+	unsigned from = sim.air_count;
+	req(RREQ_T3, RADIO_T3_START);
+	ps_site_run(1200, false);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_REGISTRATION, &q) && ((q.u.rand.options >> 1) & 7u) == 2u);
+	t3_csbk_t ack = { .lb = true, .op = T3_OP_C_ACKD };
+	ack.u.ack.reason = T3_RC_REG_ACCEPTED;
+	ack.u.ack.info = 1;
+	ack.u.ack.dst = T3_OWN;
+	ack.u.ack.src = T3_ID_REGI;
+	t3_csbk_rx(&ack, 1);
+	ps_site_run(600, false);
+	CHECK(radio_t3v.ps_offset == 1);
+	ps_site_run(3000, false);	// no CSC: awake
+	CHECK(ps_sleeps == 0 && !radio_t3v.rx_off);
+	unsigned restarts = sim.rx_restarts;
+	ps_site_run(6000, true);
+	CHECK(radio_t3v.csc_valid && ps_sleeps > 2 && ps_wakes > 2 && radio_t3v.rx_offs == (uint32_t)ps_sleeps);
+	CHECK(radio_t3v.rx_off_ms > 2000u && sim.rx_restarts - restarts >= (unsigned)ps_wakes - 1u);
+	CHECK(radio_t3v.state == T3_CAMPED);	// T_Nosig counts only the time awake
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(200);
+	CHECK(!radio_t3v.rx_off && ps_wakes == ps_sleeps);	// leaving wakes the receiver
+	fake_radio.rx_sleep = NULL;
+	fake_radio.rx_sleep_dmr = false;
+}
+
 // The CACH short LC from the modem (DMR_EV_SHORT_LC): a good CRC gives the engine the Common_Slot_Counter, a bad
 // one is only counted
 static void test_t3_short_lc(void)
@@ -6491,6 +6575,7 @@ int main(void)
 	test_t3_poll();
 	test_t3_ip_gateway();
 	test_t3_short_lc();
+	test_t3_power_save();
 	test_t3_channels();
 	test_t3_fallback();
 #endif

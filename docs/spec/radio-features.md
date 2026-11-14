@@ -536,7 +536,8 @@ last transmission began, so an unattended one can be placed afterwards (debuglin
 On an idle FM channel after `rx_save_idle_s` without activity (keys, requests, receptions, PTT), the receiver sleeps
 200 / 400 / 800 ms and listens 100 ms (`rx_sleeping` in the view). Any signal in the listen window keeps it awake;
 anything else (a key, a request, MONITOR, scan, VOX, DMR channel, hotspot, a channel with the codeplug "no eco" flag,
-APRS receive listening on the APRS frequency, `aprs.md` 5.3) stops it. The board's `rx_sleep` hook turns the receiver off and back on. On air
+APRS receive listening on the APRS frequency, `aprs.md` 5.3) stops it. The board's `rx_sleep` hook turns the receiver off and back on. A board that sets `rx_sleep_dmr` also lets a
+trunked system's power save use it on a DMR channel (`dmr-trunking.md` 7.13). On air
 on an AT1846S board since 2026-10-10 (`test_battery_save*`: cycles when idle, MONITOR and a call wake it); the setting stays off by default.
 
 ### 5.5 Power switch
