@@ -988,9 +988,13 @@ static void rx_meta(const dmr_burst_t *b, bool timed, uint32_t t_slot, int8_t la
 	f |= (b->sync == DMR_SYNC_BS) ? SPLIT_META_BS_SYNC : 0u;
 	f |= (label != 0) ? SPLIT_META_EPOCH : 0u;
 	f |= timed ? SPLIT_META_TIMED : 0u;
+	f |= (label != 0) ? SPLIT_META_SLOT : 0u;
 	d[9] = f;
 	put16(d + 10, (uint16_t)b->rssi_dbm);
 	put16(d + 12, sp.meta_seq);
+	if (label != 0) {
+		put16(d + 14, (uint16_t)sp.ep.last_slot);	// the slot slotEpochLabel just placed it in
+	}
 	sp.meta_seq++;
 	mmdvm_send(MMDVM_RFOUNDRY_SPLIT, p, sizeof(p));
 }

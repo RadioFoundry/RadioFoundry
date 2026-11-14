@@ -294,10 +294,10 @@ leave out. The block:
 | 6 | label: 1 TS1, 2 TS2, 0 none (no epoch or the slot clock didn't place it) |
 | 7 | kind: the slot type (`hal_dmr_modem.h` burst kinds), voice 0x10 + burst index (A = 0) |
 | 8 | color code heard |
-| 9 | flags: 01 CRC good, 02 in step, 04 PI, 08 LC complete, 10 BS sync, 20 labeled by the epoch, 40 slot time valid |
+| 9 | flags: 01 CRC good, 02 in step, 04 PI, 08 LC complete, 10 BS sync, 20 labeled by the epoch, 40 slot time valid, 80 slot number valid (bytes 14-15) |
 | 10-11 | RSSI, dBm (s16, 0 unknown) |
 | 12-13 | sequence number (u16, counts every event; a gap means a lost frame) |
-| 14-15 | reserved, 0 |
+| 14-15 | the burst's slot number, counted from the SET_EPOCH E (slot 0, a TS1 slot), low 16 bits (u16; with flag 80, else 0). It stays counted from E when the radio moves its own anchor forward, so a host that knows which slot E was maps the burst to its slot exactly; it wraps every 32.8 minutes, and an epoch is never used that long (SET_EPOCH again resets it) |
 
 A burst that fails its CRC still gets its event (flag 01 clear), though no uplink frame may follow. The events cost
 21 bytes per 30 ms slot heard, well inside the port's budget.

@@ -73,6 +73,7 @@
 #define SPLIT_META_BS_SYNC	0x10
 #define SPLIT_META_EPOCH	0x20	// labeled from a valid epoch
 #define SPLIT_META_TIMED	0x40	// t_us is the burst's slot start (the slot clock ran)
+#define SPLIT_META_SLOT		0x80	// bytes 14-15 hold the burst's slot number from the epoch
 
 // ALIGN reply / STATUS 46 flags (spec 3.8)
 #define SPLIT_AL_ALIGNED	0x01

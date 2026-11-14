@@ -554,8 +554,10 @@ static void test_epoch(void)
 	uint32_t n = 3001u;	// slots in about 90 s
 	uint64_t t = 5000000ull + ((uint64_t)n * 30003000ull) / 1000ull;
 	CHECK(slotEpochLabel(&e, (uint32_t)t, 1000, &res) == ((n & 1) ? 2 : 1) && res > -2 && res < 2);
+	CHECK(e.moved != 0 && e.last_slot == n);	// the anchor moved; the slot is still counted from the host's E
 	uint64_t t2 = 5000000ull + ((uint64_t)(n + 1) * 30003000ull) / 1000ull;
 	CHECK(slotEpochLabel(&e, (uint32_t)t2, 1000, &res) == ((n & 1) ? 1 : 2) && res > -2 && res < 2);
+	CHECK(e.last_slot == n + 1u);
 
 	// Tracking: a constant 4 ms chip delay is followed; never more than 5 ms in all
 	CHECK(slotEpochSet(&e, 0, 0, 0));
@@ -1846,11 +1848,12 @@ static void test_rx_meta(void)
 	CHECK(n == 2 && data1 > ev[0] && data1 < ev[1] && (data2 < 0 || data2 > ev[1]));
 	const uint8_t *m = out[ev[0]].b + 5;
 	CHECK(rd32(m) == s1 && (int16_t)rd16(m + 4) == 3000 && m[6] == 1 && m[7] == DMR_BURST_VOICE_LC_HEADER && m[8] == 1);
-	CHECK(m[9] == (SPLIT_META_CRC_OK | SPLIT_META_IN_STEP | SPLIT_META_LC | SPLIT_META_EPOCH | SPLIT_META_TIMED));
-	CHECK((int16_t)rd16(m + 10) == -80 && rd16(m + 12) == 0);
+	CHECK(m[9] == (SPLIT_META_CRC_OK | SPLIT_META_IN_STEP | SPLIT_META_LC | SPLIT_META_EPOCH | SPLIT_META_TIMED |
+		       SPLIT_META_SLOT));
+	CHECK((int16_t)rd16(m + 10) == -80 && rd16(m + 12) == 0 && rd16(m + 14) == 20);	// 600 ms after E: slot 20
 	m = out[ev[1]].b + 5;
 	CHECK(rd32(m) == s2 && m[6] == 2 && m[7] == DMR_BURST_VOICE && (int16_t)rd16(m + 10) == -97 && rd16(m + 12) == 1);
-	CHECK(m[9] == (SPLIT_META_CRC_OK | SPLIT_META_EPOCH | SPLIT_META_TIMED));
+	CHECK(m[9] == (SPLIT_META_CRC_OK | SPLIT_META_EPOCH | SPLIT_META_TIMED | SPLIT_META_SLOT) && rd16(m + 14) == 21);
 	// A burst that goes up nowhere (a header with a bad CRC) still gets its event; without an epoch: label 0
 	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, (const uint8_t[]){ 0 }, 1) == 0);
 	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, (const uint8_t[]){ 2, 0, 0, 0, 0, 0, 0, SPLIT_OPT_RX_META }, 8) == 0);
@@ -1864,7 +1867,8 @@ static void test_rx_meta(void)
 			e = out[i].b;
 		}
 	}
-	CHECK(e != NULL && e[5 + 6] == 0 && e[5 + 9] == (SPLIT_META_IN_STEP | SPLIT_META_LC | SPLIT_META_TIMED));
+	CHECK(e != NULL && e[5 + 6] == 0 && e[5 + 9] == (SPLIT_META_IN_STEP | SPLIT_META_LC | SPLIT_META_TIMED) &&
+	      rd16(e + 5 + 14) == 0);
 	CHECK(count_out(MMDVM_DMR_DATA2, from) == 0);
 	hotspot_split_view_t v;
 	hotspot_split_get_view(&v);
