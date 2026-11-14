@@ -173,15 +173,18 @@ static void path_point_xy(const satellite_path_view_t *path, uint8_t index, int 
 static void draw_path(int y, const radio_view_t *view, const satellite_path_view_t *path, bool compact)
 {
 	int width = gfx_width() - 16;
-	int available = ui_layout.hint_y - y - ui_layout.small->h - 4;
+	int plot_y = y;
+	if (!view->satellite_pass_valid) {
+		gfx_text(ui_layout.small, 8, y, TR("Predicting passes"), ui_col.dim);
+		plot_y += ui_layout.small->h + 2;
+	}
+	int available = ui_layout.hint_y - plot_y - 2;
 	int side = width < available ? width : available;
 	int radius = side / 2 - 1;
 	if (radius < 5)
 		return;
 	int cx = gfx_width() / 2;
-	int cy = y + ui_layout.small->h + 2 + radius;
-	gfx_text(ui_layout.small, 8, y, view->satellite_pass_valid ? TR("Path") : TR("Predicting passes"),
-		 ui_col.dim);
+	int cy = plot_y + radius;
 	path_circle(cx, cy, radius, ui_col.line);
 	path_circle(cx, cy, radius / 2, ui_col.line);
 	gfx_hline(cx - radius, cy, 2 * radius + 1, ui_col.line);

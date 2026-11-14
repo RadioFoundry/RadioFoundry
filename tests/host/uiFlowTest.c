@@ -32,7 +32,7 @@ typedef struct {
 static const flow_t flows[] = {
 #if CONFIG_SATELLITE_TLE
 	{ "Satellite pass list selects tracking detail", "", "ok 6 down down down down down down down down down ok ok",
-	  "screen=satellite shows=ISS shows=RX shows=TX shows=144.9988_MHz shows=435.0036_MHz hides=Doppler hides=Predicting_passes hides=Calculating", 13, false },
+	  "screen=satellite shows=ISS shows=RX shows=TX shows=144.9988_MHz shows=435.0036_MHz hides=Path hides=Doppler hides=Predicting_passes hides=Calculating", 13, false },
 	{ "SO-50 arm requires long OK while tracking", "", "ok 6 down down down down down down down down down ok down down ok long:ok",
 	  "screen=satellite shows=SO-50 toast=SO-50_arm_requested", 16, false },
 	{ "Satellite detail shows sky while pass prediction is pending", "satpathpending",

@@ -2022,6 +2022,17 @@ bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record)
 	return true;
 }
 
+bool ui_svc_satellite_summary(uint8_t index, satellite_record_summary_t *summary)
+{
+	if (index >= ui_svc_satellite_count() || summary == NULL)
+		return false;
+	memset(summary, 0, sizeof(*summary));
+	summary->catalog_id = sim_satellite_catalog_ids[index];
+	summary->name_length = (uint8_t)strlen(sim_satellite_names[index]);
+	memcpy(summary->name, sim_satellite_names[index], summary->name_length);
+	return true;
+}
+
 uint8_t ui_svc_satellite_selected(void)
 {
 	return sim_satellite_selected;
