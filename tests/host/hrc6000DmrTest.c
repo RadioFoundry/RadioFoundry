@@ -6,6 +6,7 @@
 #include <string.h>
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "modem/hrc6000/hrc6000.h"
+#include "dmr/fec/dmrFec.h"
 
 static int failures;
 
@@ -626,6 +627,54 @@ static void test_tx_listen(void)
 	CHECK(heard == 5 && count_ev(DMR_EV_BURST_RX) == 5);
 	CHECK(rf_on_calls == 6 && rf_off_calls == 6);	// the RF back to receive after each burst
 	CHECK(count_ev(DMR_EV_TX_DONE) == 1 && !eng.tx_listen);	// per transmission
+}
+
+// A BS's outbound RC burst heard while we send (ETSI TS 102 361-1 6.4.2): EMB + RC in place of the sync, so the chip
+// reports nothing. The raw area of the slot just listened to is decoded before our next burst: one DMR_EV_RC per RC
+// burst, none for an unchanged area, another color code or a burst that isn't an RC
+static void test_tx_listen_rc(void)
+{
+	fresh_engine();
+	pending_burst = false;
+	hrc6000_dmr_set_cc_filter(&eng, 2);
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 2, DMR_ACCESS_IMPOLITE));
+	hrc6000_dmr_tx_listen(&eng);
+	for (int i = 0; i < 8; i++) {
+		dmr_tx_burst_t b = mk(DMR_BURST_IDLE, 0, false);
+		CHECK(hrc6000_dmr_tx_queue(&eng, &b));
+	}
+	hrc6000_dmr_tx_end(&eng);
+	nev = 0;
+
+	uint8_t burst[33];
+	int listened = 0;
+	uint32_t t = 7500000;
+	for (int k = 0; k < 40 && hrc6000_dmr_is_transmitting(&eng); k++) {
+		int r50, r41;
+		tx_tick(t, &r50, &r41);
+		if (r41 == 0x50) {	// a listen slot: what the BS sends in it lands in a raw area
+			listened++;
+			memset(burst, 0x5A, sizeof burst);
+			if (listened == 1 || listened == 4) {
+				dmrFecRcToBurst(2, DMR_RC_CEASE, burst);	// a cease, area 0, then area 1
+			} else if (listened == 3) {
+				dmrFecRcToBurst(3, DMR_RC_CEASE, burst);	// another color code
+			}
+			if (listened != 2) {	// slot 2: nothing new heard, both areas unchanged
+				memcpy(&rd[2][(listened == 4) ? 0x60 : 0x30], burst, sizeof burst);
+			}
+		}
+		drain();
+		t += 30000;
+	}
+	drain();
+	CHECK(listened >= 5);
+	CHECK(count_ev(DMR_EV_RC) == 2 && eng.st.rc_raw == 2);
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].kind == DMR_EV_RC) {
+			CHECK(evs[i].arg == dmrFecRcInfo(DMR_RC_CEASE) && evs[i].flags == 0);
+		}
+	}
 }
 
 // DMR_BURST_EMPTY: our slot left empty and received (an SFR's gap), counted as taken, no PA
@@ -1375,6 +1424,7 @@ int main(void)
 	test_out_of_step_resync();
 	test_tx_voice_dmo();
 	test_tx_listen();
+	test_tx_listen_rc();
 	test_tx_empty_slot();
 	test_tx_fill();
 	test_tx_crc_and_underrun();

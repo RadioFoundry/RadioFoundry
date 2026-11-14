@@ -6,6 +6,7 @@
 #include <string.h>
 #include "hrc6000_dmr.h"
 #include "config.h"
+#include "dmr/fec/dmrFec.h"
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 #include "hrc6000_bs.h"	// split duplex TX half: the BS outbound takes the chip over (e->bs)
 #define BS_HOOK(call)	do { if (e->bs != NULL) { call; return; } } while (0)
@@ -632,6 +633,47 @@ static void tx_end_check(hrc6000_dmr_t *e, uint8_t r42)
 	}
 }
 
+// The raw 264 bits of the slot just listened to, from the chip's raw burst areas (raw_rx_addr; which area holds which
+// slot isn't known, so both). The BS's outbound RC burst puts EMB + RC in place of the
+// sync (ETSI TS 102 361-1 6.4.2): the chip finds no sync there and reports nothing, so the RC is decoded here. An area
+// unchanged since its last read is the same burst, or a stale one: skipped, so one RC is never counted twice
+#define RAW_AREA_LEN	33u
+static void rc_raw_read(hrc6000_dmr_t *e)
+{
+	if (e->cc_filter < 0) {
+		return;
+	}
+	for (int a = 0; a < 2; a++) {
+		uint8_t raw[RAW_AREA_LEN];
+		uint8_t addr = e->dev->chip->raw_rx_addr[a];
+		if (addr == 0u || !hrc_read_burst(e->dev, HRC_PAGE_DATA, addr, raw, RAW_AREA_LEN)) {
+			continue;
+		}
+		uint32_t sum = 2166136261u;	// FNV-1a
+		for (uint8_t i = 0; i < RAW_AREA_LEN; i++) {
+			sum = (sum ^ raw[i]) * 16777619u;
+		}
+		if (sum == e->raw_sum[a]) {
+			continue;
+		}
+		e->raw_sum[a] = sum;
+		uint8_t command;
+		if (dmrFecRcFromBurst(raw, (uint8_t)e->cc_filter, &command) < 0) {
+			continue;
+		}
+		e->st.rc_raw++;
+		hrc6000_dmr_evslot_t *ev = ev_begin(e);
+		if (ev != NULL) {
+			ev->ev.kind = DMR_EV_RC;
+			ev->ev.ts = -1;
+			ev->ev.flags = 0;
+			ev->ev.arg = dmrFecRcInfo(command);
+			ev->ev.burst = NULL;
+			ev_commit(e);
+		}
+	}
+}
+
 static void tx_tick(hrc6000_dmr_t *e, uint8_t r42)
 {
 	uint8_t next_phase = (uint8_t)((e->tick + 1u) & 1u);
@@ -687,6 +729,9 @@ static void tx_tick(hrc6000_dmr_t *e, uint8_t r42)
 	}
 	case TXS_RUN:
 		if (next_phase == e->tx_phase) {
+			if (e->tx_listen) {
+				rc_raw_read(e);	// the slot just listened to, before ours is set up
+			}
 			tx_slot(e);
 			if (e->tx_state == TXS_ENDING) {
 				// Nothing more to send: over at this tick if the last burst's slot has gone by. Waiting for the
