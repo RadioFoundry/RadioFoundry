@@ -7,8 +7,6 @@
 #include "rf/fd6818/fd6818.h"
 #include "rf/subaudio/subaudio.h"
 
-// A board's own set, the one other than the driver's default (boards/dm1801pro/rf_tables_dm1801pro.c)
-extern const fd6818_variant_t fd6818_variant_dm1801pro;
 
 static int failures;
 
@@ -33,6 +31,7 @@ static struct {
 	int crit_depth, crit_max;
 	int protocol_errors;
 	uint16_t regs[256];
+	uint16_t (*css)(void);	// set: what 0x0C reads (the lock bit by set-up and time)
 } chip;
 
 static void fake_cs(bool level)
@@ -75,6 +74,9 @@ static void fake_clk(bool level)
 			}
 			chip.reading = true;
 			chip.out = chip.regs[chip.shift & 0x7Fu];
+			if ((chip.shift & 0x7Fu) == FD6818_REG_CSS_STATUS && chip.css) {
+				chip.out = chip.css();
+			}
 			chip.out_bits = 0;
 		}
 		chip.out_bits++;
@@ -292,6 +294,18 @@ static void test_rx_sleep(void)
 	chip.n = 0;
 	fd6818_rx_sleep(&dev, false, FD6818_MODE_FM);
 	CHECK(chip.n == 2 && chip.log[0].reg == 0x37 && chip.log[0].val == 0x1F1F && chip.log[1].val == 0x1F0F);
+
+	// set-up B: its own words, one on waking
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b_dmr6943);
+	chip.n = 0;
+	fd6818_rx_sleep(&dev, true, FD6818_MODE_FM);
+	CHECK(chip.n == 2 && chip.log[0].reg == 0x30 && chip.log[0].val == 0 && chip.log[1].val == 0x9D17);
+	chip.n = 0;
+	fd6818_rx_sleep(&dev, true, FD6818_MODE_DMR);
+	CHECK(chip.n == 2 && chip.log[1].val == 0x9D00);
+	chip.n = 0;
+	fd6818_rx_sleep(&dev, false, FD6818_MODE_FM);
+	CHECK(chip.n == 1 && chip.log[0].reg == 0x37 && chip.log[0].val == 0x9D1F);
 }
 
 // AM receive: one AF word, the FM word with the AM demodulator type; FM gives the tables' word back
@@ -357,7 +371,7 @@ static void test_am(void)
 
 	// A variant whose tables set 0x13 and 0x4A (the DM-1801 Pro's init: 0x03DF, 0x5430) gets those back, no read
 	reset_chip();
-	fd6818_attach_variant(&dev, bus(), &fd6818_variant_dm1801pro);
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b);
 	chip.regs[FD6818_REG_GAIN] = 0x1111;
 	chip.regs[FD6818_REG_AM_4A] = 0x2222;
 	fd6818_set_am(&dev, true);
@@ -480,7 +494,7 @@ static void test_dm1801pro(void)
 {
 	fd6818_t dev;
 	reset_chip();
-	fd6818_attach_variant(&dev, bus(), &fd6818_variant_dm1801pro);
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b);
 	fd6818_init(&dev);
 	CHECK(chip.log[0].reg == 0x00 && chip.log[0].val == 0x8000);
 	CHECK(chip.log[chip.n - 1].reg == 0x24 && chip.log[chip.n - 1].val == 0x8C7E);
@@ -535,7 +549,7 @@ static void test_burst_tables(void)
 {
 	static const fd6818_regval_t brx[] = { { 0x30, 0xBFF1 } };
 	static const fd6818_regval_t btx[] = { { 0x52, 0x028F }, { 0x30, 0xC1FE } };
-	fd6818_variant_t v = fd6818_variant_dm1801pro;
+	fd6818_variant_t v = fd6818_variant_b;
 	v.burst_rx = brx;
 	v.burst_rx_n = 1;
 	v.burst_tx = btx;
@@ -563,7 +577,7 @@ static void test_burst_tables(void)
 // frequency between bursts and never heard the hotspot's downlink)
 static void test_burst_split(void)
 {
-	const fd6818_variant_t *vars[] = { &fd6818_variant_default, &fd6818_variant_dm1801pro };
+	const fd6818_variant_t *vars[] = { &fd6818_variant_default, &fd6818_variant_b };
 	for (unsigned i = 0; i < 2; i++) {
 		fd6818_t dev;
 		reset_chip();
@@ -595,8 +609,96 @@ static void test_burst_split(void)
 	}
 }
 
+// The lock poll (0x0C bit 9) and set-up B's two DMR word sets: the newer DM-32UV RF section's differs from the DM-1801
+// Pro's only in 0x47 / 0x48 (hardware-dm32.md 8.10)
+static void test_setup_b(void)
+{
+	fd6818_t dev;
+	reset_chip();
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b_dmr6943);
+	chip.regs[0x0C] = 0x0280;
+	CHECK(fd6818_pll_locked(&dev, 0));
+	chip.regs[0x0C] = 0x0080;
+	CHECK(!fd6818_pll_locked(&dev, 3));
+	chip.regs[0x0C] = 0x0200;
+	CHECK(fd6818_pll_locked(&dev, 3));
+
+	fd6818_set_mode(&dev, FD6818_MODE_DMR);
+	CHECK(chip.regs[0x47] == 0x6943 && chip.regs[0x48] == 0xB2FD);
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b);
+	fd6818_set_mode(&dev, FD6818_MODE_DMR);
+	CHECK(chip.regs[0x47] == 0x0140 && chip.regs[0x48] == 0xB2F5);
+	const fd6818_variant_t *a = &fd6818_variant_b, *b = &fd6818_variant_b_dmr6943;
+	CHECK(a->init == b->init && a->fm == b->fm && a->rx == b->rx && a->tx == b->tx && a->burst_rx == b->burst_rx &&
+		a->burst_tx == b->burst_tx && a->bw_dmr == b->bw_dmr && a->dmr_n == b->dmr_n && a->dmr != b->dmr);
+	CHECK(chip.protocol_errors == 0);
+}
+
+// fd6818_detect against a section that locks on some set-ups only, after some reads of 0x0C
+static fd6818_t det_dev;
+static const fd6818_variant_t *det_locks[2];	// the set-ups that lock this section
+static const fd6818_variant_t *det_last;
+static unsigned det_reads, det_slow;		// reads since the set-up changed; reads before det_locks[0] locks
+static const uint16_t *det_seq;			// set: 0x0C reads in turn (a bit that flickers)
+
+static uint16_t det_css(void)
+{
+	if (det_seq) {
+		return *det_seq++;
+	}
+	if (det_dev.variant != det_last) {
+		det_last = det_dev.variant;
+		det_reads = 0;
+	}
+	det_reads++;
+	bool ok = (det_dev.variant == det_locks[0] && det_reads > det_slow) || det_dev.variant == det_locks[1];
+	return ok ? FD6818_CSS_PLL_LOCK : 0;
+}
+
+static uint8_t detect(const fd6818_variant_t *l0, const fd6818_variant_t *l1, unsigned slow)
+{
+	static const fd6818_variant_t *const v[] = { &fd6818_variant_default, &fd6818_variant_b_dmr6943 };
+	reset_chip();
+	chip.css = det_css;
+	det_locks[0] = l0;
+	det_locks[1] = l1;
+	det_last = NULL;
+	det_slow = slow;
+	uint8_t i = fd6818_detect(&det_dev, bus(), v, 2, 145000000u, 20);
+	CHECK(chip.protocol_errors == 0);
+	return i;
+}
+
+static void test_detect(void)
+{
+	const fd6818_variant_t *a = &fd6818_variant_default, *b = &fd6818_variant_b_dmr6943;
+	// Both lock the classic section, so the default is taken; only B locks the newer one; neither: none, left on A
+	CHECK(detect(a, b, 0) == 0 && det_dev.variant == a);
+	CHECK(detect(b, NULL, 0) == 1 && det_dev.variant == b);
+	CHECK(detect(NULL, NULL, 0) == 2 && det_dev.variant == a && chip.regs[FD6818_REG_STATE] != FD6818_STATE_TX);
+	// The default locks only after the first wait: B locks too, so A gets a longer try and is taken
+	CHECK(detect(a, b, 25) == 0 && det_dev.variant == a);
+	// Slower than the longer try as well: taken as B
+	CHECK(detect(a, b, 70) == 1 && det_dev.variant == b);
+	// A lock bit set once while settling is no lock
+	static const uint16_t flicker[] = { FD6818_CSS_PLL_LOCK, 0, 0, 0, 0 };
+	reset_chip();
+	chip.css = det_css;
+	det_seq = flicker;
+	fd6818_attach_variant(&det_dev, bus(), &fd6818_variant_default);
+	CHECK(!fd6818_pll_locked(&det_dev, 2));
+	static const uint16_t settle[] = { FD6818_CSS_PLL_LOCK, 0, FD6818_CSS_PLL_LOCK, FD6818_CSS_PLL_LOCK,
+					   FD6818_CSS_PLL_LOCK };
+	det_seq = settle;
+	CHECK(fd6818_pll_locked(&det_dev, 2));
+	det_seq = NULL;
+	chip.css = NULL;
+}
+
 int main(void)
 {
+	test_setup_b();
+	test_detect();
 	test_burst_split();
 	test_dm1801pro();
 	test_burst_tables();

@@ -273,7 +273,7 @@ static void init(void)
 	hrc_pin_out(PIN_RF_CS, true);
 	hrc_pin_out(PIN_RF_CLK, false);
 	rfbus_3w_attach(&rf_bus, &rf_bus_pins);
-	fd6818_attach_variant(&fd, &rf_bus.bus, &fd6818_variant_dm1801pro);
+	fd6818_attach_variant(&fd, &rf_bus.bus, &fd6818_variant_b);
 	fd6818_init(&fd);
 	fd6818_set_mode(&fd, FD6818_MODE_FM);
 	mode = RADIO_MODE_FM;

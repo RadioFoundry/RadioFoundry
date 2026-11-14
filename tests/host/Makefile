@@ -906,8 +906,8 @@ run-f4stub: f4stubTest f4stubSim
 HRC7    := $(ROOT)/drivers/modem/hrc7000
 TESTS   += fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest plugPttTest hrc7000DmrTest baofengCalTest
 
-fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(RFBUS) $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
-	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(RFBUS) $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(SUBAUDIO)
+fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(RFBUS) $(ROOT)/drivers/rf/fd6818/fd6818_setup_b.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(RFBUS) $(ROOT)/drivers/rf/fd6818/fd6818_setup_b.c $(SUBAUDIO)
 
 st7567Test: st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c $(ROOT)/drivers/display/st7567/st7567.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c

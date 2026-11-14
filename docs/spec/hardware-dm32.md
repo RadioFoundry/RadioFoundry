@@ -1062,6 +1062,42 @@ repeat of a call sat 90.2 ms after the original on every voice burst (72 of 72).
 Golay corrections and 4 were uncorrectable, where the direct copy was clean: the receiver takes bit errors while it
 switches per burst. As a user it reports both copies of a call (gotchas 14.15).
 
+### 8.10 Two RF sections
+
+Newer DM-32UV radios have an RF section whose FD6818 needs another set-up. They ship with
+`DM32.NRFB.01.050`; the older builds (046 to 049) leave their receiver dead. On the classic set-up above, the newer
+part's synthesizer never locks: no receive anywhere, and transmit far off frequency (146.520 MHz set, 220.100 MHz out).
+RadioFoundry checks which part is fitted at start-up.
+
+Set-up B rows marked "user" were checked on one user's radio with the newer section; none are yet checked on a
+RadioFoundry test radio.
+
+| | Classic section (set-up A, 8.2-8.8) | Newer section (set-up B) |
+|---|---|---|
+| FD6818 tables | 8.2 | the DM-1801 Pro's (`hardware-dm1801pro.md` 5), `fd6818_variant_b_dmr6943` |
+| 0x37 | 0x1D0F / 0x1D1F / 0x1F0F / 0x1F1F | 0x9D1F (bit 15 set) |
+| 0x30 into RX / TX | idle, then 0xBFF1 / 0xC1FE | idle, 0x0200, then 0xBFF1 / 0xC1FE |
+| 0x1A, 0x40 | band words (8.3) | 0x1A not written; 0x40 = 0x34F0, on FM transmit 0x3480 + the calibration byte |
+| DMR 0x47 / 0x48 | 0x0140 / 0xBBBF | 0x6943 / 0xB2FD; the DM-1801 Pro's 0x0140 / 0xB2F5 gave no DMR sync (user) |
+| 0x50 around each switch to TX | not written | FM: 0xBB20 before, 0x3B20 after (user: after only); DMR burst: 0x3B18 after (user: 0x3B20) |
+| 0x2E / 0x2F at each receive tune | not written | 0x8608 / 0x1890 with CTCSS, 0x9608 / 0x9890 with DCS or none |
+| HR_C7000 RF_MODE bit 15 (RX IQ invert) | set | clear (user; set: DMR syncs but decodes nothing usable) |
+| Receiver sleep (8.8) | 0x37 = 0x1D11 / 0x1D00, wake 0x1F1F, 0x1F0F | 0x37 = 0x9D17 (FM) / 0x9D00 (DMR), wake 0x9D1F (user: idle only) |
+| 0x0C bit 9 (synthesizer locked) on set-up A | set at every frequency tried, 136-520 MHz | never set (user) |
+| 0x0C bit 9 on set-up B | set | set |
+| 0x3D | reads 0x2AAB | reads 0 (user) |
+
+The data flash can't tell the sections apart: a Puya part (JEDEC 852018) is fitted with both.
+
+Start-up check (`radio_dm32.c` `rf_detect`, `fd6818_detect`): set-up A, tuned to 145 MHz in RX, waits up to 20 ms
+for 0x0C bit 9 to read set three times in a row, 1 ms apart (the bit can read set once while the synthesizer
+settles). No lock: set-up B the same way. Set-up B locks on both sections, so A goes first, and when B locks A is tried
+once more with 60 ms, so a slow lock on the classic section isn't taken for the newer one. Neither locking leaves
+set-up A and refuses every transmission. The diagnostics line `flash ... cal ... rf X` names the result: `A`, `B`, or `-` for
+neither. Set-up B has no AM receive yet (8.7 is set-up A's).
+
+With no receive tone RadioFoundry writes the DCS 0x2E / 0x2F pair, which is also the power-on 0x2F.
+
 ## 9. Audio path
 
 | Element | Detail |
@@ -1391,7 +1427,7 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 | Image | linked at 0x0300C000, crt0 (`Reset_Handler`) is the first byte; wrapped with `tools/serial_loader.py --wrap` for the Baofeng updater | `boards/dm32/memory.ld`, `platform/hrc7000/crt0.S` |
 | Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/hrc7000_codec.py` | `boards/dm32/memory.ld` |
 | SRAM | one region, 0x10000..0x43A00 (211,456 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), `.ram_lo` (the state the core marks `RFOUNDRY_CPU_RAM`, the zeroed state of the radio task, APRS, hotspot rings and DMR data buffers, and the interrupt stack), data, bss (RTOS heap inside, the network buffers) and the start-up stack. 0x43A00..0x58000 (83,456 B) is the codec window and is not linked. See 17.1 | `boards/dm32/memory.ld`, `platform/hrc7000/common.ld` |
-| Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E28 the codec's tables (copied at first use) | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c` |
+| Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E38 the codec's tables (copied at first use) | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c` |
 | Clocks | XIP quad mode and divider (1.1 steps 2-3) always; the rest of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off (then `main()` starts it, [watchdog.md](watchdog.md)); cache as 1.3 | `platform/hrc7000/clock.c` |
 | Interrupts | PIC sources 0-63 as vectors 32-95 (assumed vectored), level mode, one level, never nested; EOI by writing 0x04 to 0x17000010 in the common entry | `platform/hrc7000/irq.c`, `freertos/portasm.S` |
 | Timers | 1: RTOS tick (1 kHz); 2: free-running cycle clock (microseconds, `hal_millis`); 3: DMR PA one-shot; 4: APRS AFSK, tops up the prompt FIFO every 2 ms while sending | `platform/hrc7000/time.c`, `platform/hrc7000/dmr_glue.c`, `platform/hrc7000/hrc_afsk.c` |
