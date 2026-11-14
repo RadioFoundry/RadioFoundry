@@ -697,7 +697,8 @@ dmrDataChainTest: $(DCHAIN) $(HRCDMR)/hrc6000_dmr.h $(ROOT)/hal/hal_dmr_modem.h 
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DDMR_RX_TRACE=0 -o $@ $(DCHAIN) -lm
 
 run: run-rxchain
-run-rxchain: dmrRxChainTest dmrDataChainTest
+run-rxchain: dmrRxChainTest dmrDataChainTest hrc7000RxChainTest
+	./hrc7000RxChainTest
 	./dmrRxChainTest
 	./dmrDataChainTest
 .PHONY: run-rxchain
@@ -924,6 +925,13 @@ plugPttTest: plugPttTest.c $(ROOT)/drivers/input/plugptt/plug_ptt.c $(ROOT)/driv
 	$(CC) $(CFLAGS) -Wshadow -o $@ plugPttTest.c $(ROOT)/drivers/input/plugptt/plug_ptt.c
 keymatrixTest: keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c $(ROOT)/drivers/input/keymatrix/keymatrix.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c
+
+# C7000 receive reports through the same call stack to the vocoder input.
+TESTS += hrc7000RxChainTest
+C7RXCHAIN = hrc7000RxChainTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000.c $(CORE)/dmr/call/dmr_call.c \
+            $(CORE)/dmr/sfr.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeFec.c
+hrc7000RxChainTest: $(C7RXCHAIN) $(wildcard $(HRC7)/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(C7RXCHAIN)
 
 hrc7000DmrTest: hrc7000DmrTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000.c $(HRC7)/hrc7000_dmr.h $(HRC7)/hrc7000.h $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc7000DmrTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000.c
