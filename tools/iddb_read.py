@@ -62,8 +62,11 @@ class Database:
         self.format = "C"
 
     def _db(self, off, n):
-        """Bytes at a database offset (iddb-compact.md 2); a range never crosses from area 1 to area 2 here"""
-        return self.get(self.area1 + off if off < AREA1_SIZE else self.area2 + off - AREA1_SIZE, n)
+        """Bytes at a database offset (iddb-compact.md 2): what lies past area 1's end is read on in area 2"""
+        if off >= AREA1_SIZE:
+            return self.get(self.area2 + off - AREA1_SIZE, n)
+        k = min(n, AREA1_SIZE - off)
+        return self.get(self.area1 + off, k) + (self.get(self.area2, n - k) if n > k else b"")
 
     def entry(self, k):
         """Format C: dictionary entry k"""

@@ -250,6 +250,8 @@ def test_iddb_whole_room(radio, pytestconfig, backup_dir):
                 if len(db) <= len(room) - 2:
                     break
                 n = n * len(room) // len(db) * 9 // 10
+            outside = sorted(set(db) - set(room))
+            assert not outside, f"the database's blocks outside its room: {[hex(a) for a in outside[:8]]}"
             rnd = random.Random(578)
             blocks = dict(db)
             pad = [a for a in room if a not in blocks]
