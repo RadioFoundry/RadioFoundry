@@ -3425,8 +3425,16 @@ msgid "LOS in"
 msgstr "LOS tra"
 
 #: core/ui/ui_satellite.c
+msgid "Up Down satellite  OK track  Hold OK arm  # TLE  Back"
+msgstr "Su Giu satellite  OK traccia  Tieni OK arma  # TLE  Indietro"
+
+#: core/ui/ui_satellite.c
 msgid "Up Down satellite  OK track  # TLE  Back"
 msgstr "Su Giu satellite  OK traccia  # TLE  Indietro"
+
+#: core/ui/ui_satellite.c
+msgid "SO-50 arm requested"
+msgstr "Richiesto armamento SO-50"
 
 #: core/ui/ui_screens.c
 msgid "IDLE"

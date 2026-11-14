@@ -88,6 +88,7 @@ WEAK bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record)
 WEAK uint8_t ui_svc_satellite_selected(void) { return SETTINGS_UNSET8; }
 WEAK bool ui_svc_satellite_select(uint8_t index) { (void)index; return false; }
 WEAK bool ui_svc_satellite_track(bool enabled, uint8_t index) { (void)enabled; (void)index; return false; }
+WEAK void ui_svc_satellite_arm(void) { }
 WEAK bool ui_svc_satellite_scan(bool enabled) { (void)enabled; return false; }
 WEAK void ui_svc_satellite_poll(void) { }
 WEAK void ui_svc_satellite_scan_state(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes)

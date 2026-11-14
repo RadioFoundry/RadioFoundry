@@ -602,6 +602,48 @@ static void test_satellite_override(void)
 	CHECK(sm.view.ch.bw == RADIO_BW_25K);
 	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 123u);
 }
+
+#if CONFIG_FM_TX_TONES
+static void test_so50_arm(void)
+{
+	setup_codeplug();
+	start();
+	radio_sm_satellite_update(&sm, true, 2u, 3u, 436795000u, 145850000u, 670u,
+				 true, 436795000u, 145850000u, 0, 0, now);
+	CHECK(sm.view.satellite_tracking);
+	int tx_calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(hw.tx_tone.type == TONE_CTCSS && hw.tx_tone.value == 670u);
+	req(RREQ_PTT, 0);
+	CHECK(!sm.satellite_arm_active);
+	CHECK(hw.tx_calls == tx_calls + 1);
+
+	req(RREQ_SATELLITE_ARM, 1);
+	CHECK(sm.view.state == RS_TX && sm.satellite_arm_active);
+	CHECK(hw.tx_hz == 145850000u);
+	CHECK(hw.tx_tone.type == TONE_CTCSS && hw.tx_tone.value == 744u);
+	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 670u);
+	uint32_t tx_off_calls = (uint32_t)hw.tx_off_calls;
+	now += 1990u;
+	radio_sm_poll(&sm, now);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_TX && sm.satellite_arm_active);
+	now += 10u;
+	radio_sm_poll(&sm, now);
+	CHECK(sm.view.state != RS_TX && !sm.satellite_arm_active);
+	CHECK((uint32_t)hw.tx_off_calls == tx_off_calls + 1u);
+	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 670u);
+
+	setup_codeplug();
+	start();
+	radio_sm_satellite_update(&sm, true, 1u, 3u, 435000000u, 145990000u, 670u,
+				 true, 435000000u, 145990000u, 0, 0, now);
+	tx_calls = hw.tx_calls;
+	req(RREQ_SATELLITE_ARM, 1);
+	CHECK(sm.view.state != RS_TX && !sm.satellite_arm_active);
+	CHECK(hw.tx_calls == tx_calls);
+}
+#endif
 #endif
 
 // The VFO's step: auto (0, the default) follows the width; a step set stays whatever the width; kept in the settings
@@ -5530,6 +5572,9 @@ int main(void)
 	test_startup();
 #if CONFIG_SATELLITE_TLE
 	test_satellite_override();
+#if CONFIG_FM_TX_TONES
+	test_so50_arm();
+#endif
 #endif
 	test_persist();
 	test_channel_step();

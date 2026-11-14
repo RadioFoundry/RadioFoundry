@@ -47,6 +47,12 @@ enum {
 	DL_SAT_OP_COMMIT,	// transaction ID u16, CRC-32 u32 -> none
 	DL_SAT_OP_ABORT,	// transaction ID u16 -> none
 	DL_SAT_OP_SYNC_CHANNELS,	// none -> ensure installed satellites have channels in the Satellites zone
+	DL_SAT_OP_PROFILE_GET,	// -> count u8, then selected frequency-profile catalog IDs u32
+	DL_SAT_OP_PROFILE_SET,	// count u8, then up to 10 selected frequency-profile catalog IDs u32
+	DL_SAT_OP_REPLACE_BEGIN,	// count u16, bytes u16, CRC-32 u32 -> transaction ID u16; replace full TLE inventory
+	DL_SAT_OP_PROFILE_STAGE,	// transaction ID u16, count u8, then (ID, RX Hz, TX Hz u32, tone tenths u16); replacement only
+	DL_SAT_OP_PROFILE_VALUES_GET,	// -> count u8, then (ID, RX Hz, TX Hz u32, tone tenths u16) records
+	DL_SAT_OP_PROFILE_STAGE_CHUNK	// transaction ID u16, total u8, offset u8, count u8, then profile records
 };
 
 // DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.25)

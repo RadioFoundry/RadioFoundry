@@ -41,6 +41,22 @@ bool satellite_store_get(uint8_t index, satellite_record_t *record)
 	return true;
 }
 
+bool satellite_store_profile_selected(uint32_t catalog_id)
+{
+	return catalog_id == 25544u;
+}
+
+bool satellite_store_profile_get(uint32_t catalog_id, satellite_frequency_profile_t *frequency)
+{
+	if (frequency == NULL || !satellite_store_profile_selected(catalog_id))
+		return false;
+	for (uint8_t i = 0u; i < satellite_frequency_profile_catalog_count(); i++) {
+		if (satellite_frequency_profile_catalog_get(i, frequency) && frequency->catalog_id == catalog_id)
+			return true;
+	}
+	return false;
+}
+
 void radio_get_channel_profile(channel_t *channel)
 {
 	*channel = profile;

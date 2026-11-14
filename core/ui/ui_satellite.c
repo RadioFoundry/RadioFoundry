@@ -15,6 +15,7 @@
 static uint8_t selected;
 static char edit_line1[SATELLITE_TLE_LINE_LENGTH + 1u];
 static char edit_line2[SATELLITE_TLE_LINE_LENGTH + 1u];
+static satellite_record_t pass_record;
 
 static void satellite_line2_kept(void)
 {
@@ -249,11 +250,10 @@ static void satellite_pass_item(uint16_t row_index, ui_item_t *item)
 		return;
 	}
 	radio_satellite_pass_t pass;
-	satellite_record_t record;
 	if (row_index >= passes || !ui_svc_satellite_pass((uint8_t)row_index, &pass) ||
-	    !ui_svc_satellite_get(pass.record_index, &record))
+	    !ui_svc_satellite_get(pass.record_index, &pass_record))
 		return;
-	str_copy(item->label, sizeof(item->label), record.name);
+	str_copy(item->label, sizeof(item->label), pass_record.name);
 	sbuf_t b;
 	sb_init(&b, item->value, sizeof(item->value));
 	if (pass.visible_now) {
@@ -371,7 +371,10 @@ static void satellite_draw(void)
 			row(&y, TR("Tracking"), view->satellite_tracking ? TR("Other satellite") : TR("Off"), ui_col.dim);
 		}
 	}
-	ui_draw_bottom(&ui_st, TR("Up Down satellite  OK track  # TLE  Back"));
+	bool so50_active = have_record && record.catalog_id == 27607u && view->satellite_tracking &&
+		view->satellite_index == selected;
+	ui_draw_bottom(&ui_st, so50_active ? TR("Up Down satellite  OK track  Hold OK arm  # TLE  Back") :
+		TR("Up Down satellite  OK track  # TLE  Back"));
 	ui_draw_banner(&ui_st);
 }
 
@@ -380,6 +383,14 @@ static bool satellite_key(const input_event_t *ev)
 	int dir = 0;
 	if (ev->action == ACT_ENC_STEP) {
 		dir = ev->value > 0 ? 1 : ev->value < 0 ? -1 : 0;
+	} else if (ev->gesture == GESTURE_LONG && ev->action == ACT_SELECT) {
+		const radio_view_t *view = ui_view();
+		if (view->satellite_tracking && view->satellite_index == selected &&
+		    ui_svc_satellite_get(selected, &pass_record) && pass_record.catalog_id == 27607u) {
+			ui_svc_satellite_arm();
+			ui_toast(TR("SO-50 arm requested"));
+			return true;
+		}
 	} else if (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_REPEAT) {
 		if (ev->action == ACT_NAV_DOWN || ev->action == ACT_NAV_RIGHT)
 			dir = 1;

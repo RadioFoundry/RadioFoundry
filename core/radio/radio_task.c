@@ -699,6 +699,7 @@ void radio_req_satellite_tracking(bool enabled, uint8_t record_index)
 	radio_req_t req = { .type = RREQ_SATELLITE_TRACK, .arg = enabled, .arg2 = record_index };
 	send(&req, 0);
 }
+void radio_req_satellite_arm(void) { post(RREQ_SATELLITE_ARM, 0, 0); }
 #endif
 
 radio_vfo_copy_t radio_req_vfo_copy_checked(void)

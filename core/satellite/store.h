@@ -6,10 +6,17 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "satellite/frequency.h"
 
 #define SATELLITE_NAME_MAX 48u
 #define SATELLITE_TLE_LINE_LENGTH 69u
 #define SATELLITE_STORE_MAX_RECORDS 10u
+#define SATELLITE_PROFILE_MAX 10u
+#define SATELLITE_PROFILE_RX_MIN_HZ 10000000u
+#define SATELLITE_PROFILE_RX_MAX_HZ 1000000000u
+#define SATELLITE_PROFILE_TX_MIN_HZ 10000000u
+#define SATELLITE_PROFILE_TX_MAX_HZ 1000000000u
+#define SATELLITE_PROFILE_TONE_MAX_TENTHS 2600u
 
 typedef struct {
 	uint32_t catalog_id;
@@ -27,5 +34,13 @@ uint8_t satellite_store_count(void);
 bool satellite_store_seed_defaults(void);
 // Replace the selected record's TLE without changing its catalog ID or name. The validated inventory commits atomically.
 bool satellite_store_replace(uint8_t index, const char *line1, const char *line2);
+bool satellite_store_profiles_get(uint8_t *count, uint32_t ids[SATELLITE_PROFILE_MAX]);
+bool satellite_store_profiles_set(uint8_t count, const uint32_t ids[SATELLITE_PROFILE_MAX]);
+bool satellite_store_frequency_profiles_get(uint8_t *count,
+					    satellite_frequency_profile_t profiles[SATELLITE_PROFILE_MAX]);
+bool satellite_store_frequency_profiles_set(uint8_t count,
+					    const satellite_frequency_profile_t profiles[SATELLITE_PROFILE_MAX]);
+bool satellite_store_profile_get(uint32_t catalog_id, satellite_frequency_profile_t *profile);
+bool satellite_store_profile_selected(uint32_t catalog_id);
 
 #endif

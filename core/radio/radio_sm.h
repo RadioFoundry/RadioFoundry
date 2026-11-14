@@ -165,6 +165,9 @@ typedef enum {
 	RREQ_VFO_SFR,		// the VFO's SFR role (CONFIG_SFR): arg = byte A, as a channel's (sfr.h); VFO only
 	RREQ_SATELLITE_TRACK,	// satellite mode: arg = enabled, arg2 = installed TLE record index
 	RREQ_SATELLITE_SCAN,	// satellite pass picker: arg = start/cancel
+#if CONFIG_SATELLITE_TLE
+	RREQ_SATELLITE_ARM,	// SO-50: explicitly transmit the two-second timer-arm tone
+#endif
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -467,6 +470,10 @@ typedef struct {
 	uint32_t satellite_nominal_rx_hz, satellite_nominal_tx_hz;
 	uint32_t satellite_applied_rx_hz, satellite_applied_tx_hz;
 	uint32_t satellite_pending_rx_hz, satellite_pending_tx_hz;
+#if CONFIG_FM_TX_TONES
+	bool satellite_arm_active;
+	uint32_t satellite_arm_end_ms;
+#endif
 #endif
 } radio_sm_t;
 

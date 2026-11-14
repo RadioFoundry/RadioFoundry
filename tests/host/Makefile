@@ -1149,7 +1149,7 @@ run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
 .PHONY: run-settings
 
 TESTS   += satelliteStoreTest
-SAT_STORE := $(CORE)/debuglink/debuglink_satellite.c $(CORE)/storage/storage.c sim/sim_flash.c
+SAT_STORE := $(CORE)/debuglink/debuglink_satellite.c $(CORE)/satellite/frequency.c $(CORE)/storage/storage.c sim/sim_flash.c
 SAT_BUILTINS := $(ROOT)/build/host/gen/builtin_satellite_records.inc
 .PHONY: satellite-builtins-offline
 $(SAT_BUILTINS): satellite-builtins-offline

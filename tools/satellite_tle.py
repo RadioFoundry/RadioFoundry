@@ -24,10 +24,22 @@ PROVIDER_URLS = {
     "ariss": "https://live.ariss.org/iss.txt",
 }
 DEFAULT_MAX_AGE_DAYS = 30
-SCHEMA_VERSION = 1
-SATELLITE_PROTOCOL_VERSION = 2
+SCHEMA_VERSION = 3
+SUPPORTED_SCHEMA_VERSIONS = (1, 2, 3)
+PROFILE_VALUES_PROTOCOL_VERSION = 5
+SATELLITE_PROTOCOL_VERSION = 6
+REPLACE_PROTOCOL_MIN_VERSION = 4
+PROFILE_PROTOCOL_MIN_VERSION = 3
+LEGACY_SATELLITE_PROTOCOL_VERSION = 2
 SATELLITE_COMMAND = 0x22
 OP_INFO, OP_LIST, OP_BEGIN, OP_DATA, OP_COMMIT, OP_ABORT, OP_SYNC_CHANNELS = range(7)
+OP_PROFILE_GET, OP_PROFILE_SET = 7, 8
+OP_REPLACE_BEGIN = 9
+OP_PROFILE_STAGE, OP_PROFILE_VALUES_GET, OP_PROFILE_STAGE_CHUNK = 10, 11, 12
+DEFAULT_PROFILE_IDS = (25544, 27607, 43017)
+SUPPORTED_PROFILE_IDS = frozenset((25544, 27607, 40908, 40931, 43017, 43678, 61781,
+                                   63213, 63214, 63215, 63217, 63218, 63219, 63237, 63238, 63239, 67291))
+MAX_PROFILES = 10
 MAX_NAME_BYTES = 48
 MAX_BUNDLE_BYTES = 1_000_000
 MAX_TLE_RESPONSE_BYTES = 1_000_000
@@ -237,10 +249,25 @@ def load_bundle(path):
         bundle = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_json_object)
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise SatelliteTleError(f"cannot read bundle {path}: {exc}") from exc
-    if not isinstance(bundle, dict) or set(bundle) != {"schema_version", "provider", "fetched_at", "records"}:
-        raise SatelliteTleError("bundle must contain schema_version, provider, fetched_at, and records only")
-    if type(bundle["schema_version"]) is not int or bundle["schema_version"] != SCHEMA_VERSION:
+    if not isinstance(bundle, dict) or set(bundle) not in (
+            {"schema_version", "provider", "fetched_at", "records"},
+            {"schema_version", "provider", "fetched_at", "records", "profile_ids"},
+            {"schema_version", "provider", "fetched_at", "records", "profile_ids", "profiles"}):
+        raise SatelliteTleError("bundle must contain schema_version, provider, fetched_at, records, and matching profile data")
+    if type(bundle["schema_version"]) is not int or bundle["schema_version"] not in SUPPORTED_SCHEMA_VERSIONS:
         raise SatelliteTleError(f"unsupported bundle schema version: {bundle['schema_version']!r}")
+    if bundle["schema_version"] == 1 and "profile_ids" in bundle or \
+            bundle["schema_version"] == 2 and ("profile_ids" not in bundle or "profiles" in bundle) or \
+            bundle["schema_version"] == 3 and not {"profile_ids", "profiles"} <= set(bundle):
+        raise SatelliteTleError("bundle schema version and profile data do not match")
+    if bundle["schema_version"] == 2:
+        bundle["profile_ids"] = validate_profile_ids(bundle["profile_ids"])
+    if bundle["schema_version"] == 3:
+        bundle["profiles"] = validate_frequency_profiles(bundle["profiles"])
+        ids = [profile["catalog_id"] for profile in bundle["profiles"]]
+        bundle["profile_ids"] = validate_catalog_profile_ids(bundle["profile_ids"])
+        if bundle["profile_ids"] != ids:
+            raise SatelliteTleError("schema-v3 profile_ids must exactly match frequency profiles")
     if not isinstance(bundle["provider"], str):
         raise SatelliteTleError("bundle provider must be text")
     _https_url(bundle["provider"])
@@ -257,15 +284,79 @@ def load_bundle(path):
     return bundle
 
 
-def make_bundle(provider, records, fetched_at=None):
+def validate_profile_ids(profile_ids):
+    if not isinstance(profile_ids, list) or not profile_ids or len(profile_ids) > MAX_PROFILES:
+        raise SatelliteTleError(f"profile_ids must contain 1..{MAX_PROFILES} catalog IDs")
+    if any(type(catalog_id) is not int or catalog_id not in SUPPORTED_PROFILE_IDS for catalog_id in profile_ids):
+        raise SatelliteTleError("profile_ids contains an unsupported frequency profile ID")
+    if len(set(profile_ids)) != len(profile_ids):
+        raise SatelliteTleError("profile_ids contains duplicate IDs")
+    return sorted(profile_ids)
+
+
+def validate_catalog_profile_ids(profile_ids):
+    if not isinstance(profile_ids, list) or not profile_ids or len(profile_ids) > MAX_PROFILES:
+        raise SatelliteTleError(f"profile_ids must contain 1..{MAX_PROFILES} catalog IDs")
+    if any(type(catalog_id) is not int or not 1 <= catalog_id <= 99999 for catalog_id in profile_ids):
+        raise SatelliteTleError("profile_ids contains an invalid catalog ID")
+    if len(set(profile_ids)) != len(profile_ids):
+        raise SatelliteTleError("profile_ids contains duplicate IDs")
+    return sorted(profile_ids)
+
+
+def validate_frequency_profiles(profiles):
+    required = {"catalog_id", "rx_hz", "tx_hz", "tx_tone_tenths"}
+    if not isinstance(profiles, list) or not profiles or len(profiles) > MAX_PROFILES:
+        raise SatelliteTleError(f"profiles must contain 1..{MAX_PROFILES} frequency records")
+    validated = []
+    for profile in profiles:
+        if not isinstance(profile, dict) or set(profile) != required:
+            raise SatelliteTleError("each frequency profile must contain catalog_id, rx_hz, tx_hz, and tx_tone_tenths")
+        if type(profile["catalog_id"]) is not int or not 1 <= profile["catalog_id"] <= 99999 or \
+                type(profile["rx_hz"]) is not int or not 0 < profile["rx_hz"] < 1_000_000_000 or \
+                type(profile["tx_hz"]) is not int or not 0 < profile["tx_hz"] < 1_000_000_000 or \
+                type(profile["tx_tone_tenths"]) is not int or \
+                not (profile["tx_tone_tenths"] == 0 or 600 <= profile["tx_tone_tenths"] <= 2600):
+            raise SatelliteTleError("frequency profile contains an out-of-range value")
+        validated.append(dict(profile))
+    ids = [profile["catalog_id"] for profile in validated]
+    if len(set(ids)) != len(ids):
+        raise SatelliteTleError("frequency profiles contain duplicate catalog IDs")
+    return sorted(validated, key=lambda profile: profile["catalog_id"])
+
+
+def parse_profile_ids(values):
+    profile_ids = []
+    for value in values:
+        for item in value.split(","):
+            try:
+                profile_ids.append(int(item, 10))
+            except ValueError as exc:
+                raise SatelliteTleError(f"invalid frequency profile ID {item!r}") from exc
+    return validate_profile_ids(profile_ids)
+
+
+def make_bundle(provider, records, fetched_at=None, profile_ids=None, profiles=None):
     fetched_at = _utc_now() if fetched_at is None else fetched_at
     if fetched_at.tzinfo is None or fetched_at.utcoffset() != dt.timedelta(0):
         raise SatelliteTleError("bundle timestamp must be timezone-aware UTC")
     _https_url(provider)
     plain_records = [{key: item[key] for key in ("catalog_id", "name", "line1", "line2")} for item in records]
-    return {"schema_version": SCHEMA_VERSION, "provider": provider,
-            "fetched_at": fetched_at.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
-            "records": plain_records}
+    schema_version = 3 if profiles is not None else 2 if profile_ids is not None else 1
+    bundle = {"schema_version": schema_version, "provider": provider,
+          "fetched_at": fetched_at.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+          "records": plain_records}
+    if profiles is not None:
+        bundle["profiles"] = validate_frequency_profiles(profiles)
+        frequency_ids = [profile["catalog_id"] for profile in bundle["profiles"]]
+        if profile_ids is not None and validate_catalog_profile_ids(profile_ids) != frequency_ids:
+            raise SatelliteTleError("profile_ids must exactly match frequency profiles")
+        if {record["catalog_id"] for record in plain_records} != set(frequency_ids):
+            raise SatelliteTleError("bundle TLE records must exactly match frequency profiles")
+        bundle["profile_ids"] = frequency_ids
+    elif profile_ids is not None:
+        bundle["profile_ids"] = validate_profile_ids(profile_ids)
+    return bundle
 
 
 def save_bundle(path, bundle):
@@ -353,7 +444,10 @@ def radio_inventory(link):
     if len(info) != 5:
         raise SatelliteTleError("radio returned malformed satellite capability data")
     version, capacity, installed_count = struct.unpack("<BHH", info)
-    if version != SATELLITE_PROTOCOL_VERSION or capacity == 0 or installed_count > capacity:
+    if version not in (LEGACY_SATELLITE_PROTOCOL_VERSION, PROFILE_PROTOCOL_MIN_VERSION,
+                       REPLACE_PROTOCOL_MIN_VERSION, PROFILE_VALUES_PROTOCOL_VERSION,
+                       SATELLITE_PROTOCOL_VERSION) or \
+            capacity == 0 or installed_count > capacity:
         raise SatelliteTleError("radio satellite capability is unsupported or invalid")
     entries = list_installed(link, capacity, installed_count)
     if len(entries) != installed_count or len({row[0] for row in entries}) != installed_count:
@@ -469,6 +563,73 @@ def _request(link, operation, payload=b""):
     return reply
 
 
+def radio_profile_ids(link, protocol_version=None):
+    if protocol_version is None:
+        info = _request(link, OP_INFO)
+        if len(info) != 5:
+            raise SatelliteTleError("radio returned malformed satellite capability data")
+        protocol_version = struct.unpack("<BHH", info)[0]
+    if protocol_version < PROFILE_PROTOCOL_MIN_VERSION:
+        raise SatelliteTleError("radio profile updates require satellite protocol version 3 or newer")
+    reply = _request(link, OP_PROFILE_GET)
+    if not reply or len(reply) != 1 + reply[0] * 4 or reply[0] > MAX_PROFILES:
+        raise SatelliteTleError("radio returned a malformed frequency profile list")
+    profile_ids = list(struct.unpack_from(f"<{reply[0]}I", reply, 1)) if reply[0] else []
+    return validate_catalog_profile_ids(profile_ids)
+
+
+def set_radio_profile_ids(link, profile_ids, protocol_version=None):
+    profile_ids = validate_profile_ids(profile_ids)
+    if protocol_version is None:
+        info = _request(link, OP_INFO)
+        if len(info) != 5:
+            raise SatelliteTleError("radio returned malformed satellite capability data")
+        protocol_version = struct.unpack("<BHH", info)[0]
+    if protocol_version < PROFILE_PROTOCOL_MIN_VERSION:
+        raise SatelliteTleError("radio profile updates require satellite protocol version 3 or newer")
+    payload = bytes([len(profile_ids)]) + struct.pack(f"<{len(profile_ids)}I", *profile_ids)
+    if _request(link, OP_PROFILE_SET, payload):
+        raise SatelliteTleError("radio returned unexpected data after profile update")
+    actual = radio_profile_ids(link, protocol_version)
+    if actual != profile_ids:
+        raise SatelliteTleError("radio frequency profile list did not match the requested selection")
+    return actual
+
+
+def stage_radio_frequency_profiles(link, transaction, profiles, protocol_version=SATELLITE_PROTOCOL_VERSION):
+    profiles = validate_frequency_profiles(profiles)
+    if protocol_version >= SATELLITE_PROTOCOL_VERSION:
+        for start in range(0, len(profiles), 4):
+            chunk = profiles[start:start + 4]
+            payload = bytearray(struct.pack("<HBBB", transaction, len(profiles), start, len(chunk)))
+            for profile in chunk:
+                payload.extend(struct.pack("<IIIH", profile["catalog_id"], profile["rx_hz"], profile["tx_hz"],
+                                           profile["tx_tone_tenths"]))
+            if _request(link, OP_PROFILE_STAGE_CHUNK, payload):
+                raise SatelliteTleError("radio returned unexpected data after staging frequency profiles")
+    else:
+        if len(profiles) > 4:
+            raise SatelliteTleError("more than four frequency profiles require satellite protocol version 6")
+        payload = bytearray(struct.pack("<HB", transaction, len(profiles)))
+        for profile in profiles:
+            payload.extend(struct.pack("<IIIH", profile["catalog_id"], profile["rx_hz"], profile["tx_hz"],
+                                       profile["tx_tone_tenths"]))
+        if _request(link, OP_PROFILE_STAGE, payload):
+            raise SatelliteTleError("radio returned unexpected data after staging frequency profiles")
+
+
+def radio_frequency_profiles(link):
+    reply = _request(link, OP_PROFILE_VALUES_GET)
+    if not reply or reply[0] > MAX_PROFILES or len(reply) != 1 + reply[0] * 14:
+        raise SatelliteTleError("radio returned a malformed frequency profile table")
+    profiles = []
+    for index in range(reply[0]):
+        catalog_id, rx_hz, tx_hz, tone = struct.unpack_from("<IIIH", reply, 1 + index * 14)
+        profiles.append({"catalog_id": catalog_id, "rx_hz": rx_hz, "tx_hz": tx_hz,
+                         "tx_tone_tenths": tone})
+    return validate_frequency_profiles(profiles)
+
+
 def list_installed(link, capacity, expected_count):
     entries = []
     cursor = 0
@@ -499,13 +660,20 @@ def _serialize_records(records):
     return bytes(stream)
 
 
-def install_records(link, records):
+def install_records(link, records, profile_ids=None, profiles=None):
     allowed = {"catalog_id", "name", "line1", "line2", "epoch", "age_days", "stale"}
     if any(not isinstance(item, dict) or set(item) - allowed or
            not {"catalog_id", "name", "line1", "line2"} <= set(item) for item in records):
         raise SatelliteTleError("install records may contain orbital fields only")
     plain_records = [{key: item[key] for key in ("catalog_id", "name", "line1", "line2")} for item in records]
     validated = validate_records(plain_records)
+    selected_ids = None if profile_ids is None else validate_catalog_profile_ids(profile_ids)
+    full_profiles = None if profiles is None else validate_frequency_profiles(profiles)
+    if full_profiles is not None:
+        full_ids = [profile["catalog_id"] for profile in full_profiles]
+        if selected_ids is not None and selected_ids != full_ids:
+            raise SatelliteTleError("frequency profiles must exactly match profile_ids")
+        selected_ids = full_ids
     try:
         info = _request(link, OP_INFO)
     except DebugLinkError as exc:
@@ -515,19 +683,31 @@ def install_records(link, records):
     if len(info) != 5:
         raise SatelliteTleError("radio returned malformed satellite capability data")
     version, capacity, installed_count = struct.unpack("<BHH", info)
-    if version != SATELLITE_PROTOCOL_VERSION or capacity == 0 or installed_count > capacity:
+    if version not in (LEGACY_SATELLITE_PROTOCOL_VERSION, PROFILE_PROTOCOL_MIN_VERSION,
+                       REPLACE_PROTOCOL_MIN_VERSION, PROFILE_VALUES_PROTOCOL_VERSION,
+                       SATELLITE_PROTOCOL_VERSION) or \
+            capacity == 0 or installed_count > capacity:
         raise SatelliteTleError("radio satellite capability is unsupported or invalid")
+    if selected_ids is not None and version < REPLACE_PROTOCOL_MIN_VERSION:
+        raise SatelliteTleError("this bundle replaces the selected TLE set and requires satellite protocol version 4")
+    if full_profiles is not None and version < PROFILE_VALUES_PROTOCOL_VERSION:
+        raise SatelliteTleError("frequency-valued bundles require satellite protocol version 5")
+    if full_profiles is not None and len(full_profiles) > 4 and version < SATELLITE_PROTOCOL_VERSION:
+        raise SatelliteTleError("more than four frequency profiles require satellite protocol version 6")
+    if selected_ids is not None and {item["catalog_id"] for item in validated} != set(selected_ids):
+        raise SatelliteTleError("replacement bundle TLE records must exactly match its selected profile IDs")
     before = list_installed(link, capacity, installed_count)
     if len(before) != installed_count or len({row[0] for row in before}) != len(before):
         raise SatelliteTleError("radio satellite inventory does not match its capability report")
 
-    selected_ids = {item["catalog_id"] for item in validated}
-    expected_count = len(selected_ids | {catalog_id for catalog_id, _ in before})
+    record_ids = {item["catalog_id"] for item in validated}
+    expected_count = len(record_ids) if selected_ids is not None else len(record_ids | {catalog_id for catalog_id, _ in before})
     if expected_count > capacity:
         raise SatelliteTleError(f"radio capacity {capacity} cannot hold {expected_count} selected and preserved records")
     stream = _serialize_records(validated)
     checksum = zlib.crc32(stream) & 0xFFFFFFFF
-    begin = _request(link, OP_BEGIN, struct.pack("<HHI", len(validated), len(stream), checksum))
+    begin_op = OP_REPLACE_BEGIN if selected_ids is not None else OP_BEGIN
+    begin = _request(link, begin_op, struct.pack("<HHI", len(validated), len(stream), checksum))
     if len(begin) != 2:
         raise SatelliteTleError("radio returned malformed satellite transaction ID")
     transaction = struct.unpack("<H", begin)[0]
@@ -538,6 +718,8 @@ def install_records(link, records):
             next_offset = _request(link, OP_DATA, struct.pack("<HH", transaction, offset) + chunk)
             if len(next_offset) != 2 or struct.unpack("<H", next_offset)[0] != offset + len(chunk):
                 raise SatelliteTleError("radio satellite transfer offset did not advance as expected")
+        if full_profiles is not None:
+            stage_radio_frequency_profiles(link, transaction, full_profiles, version)
         reply = _request(link, OP_COMMIT, struct.pack("<HI", transaction, checksum))
         if reply:
             raise SatelliteTleError("radio returned unexpected data after satellite commit")
@@ -549,18 +731,27 @@ def install_records(link, records):
             except Exception:
                 pass
 
-    try:
-        _request(link, OP_SYNC_CHANNELS)
-    except DebugLinkError as exc:
-        raise SatelliteTleError("TLE inventory committed, but Satellites channels could not be synchronized; "
-                                "retry the install after resolving the codeplug issue") from exc
+    if selected_ids is not None and full_profiles is None:
+        try:
+            set_radio_profile_ids(link, selected_ids, version)
+        except (DebugLinkError, SatelliteTleError) as exc:
+            raise SatelliteTleError("TLE inventory committed, but frequency profile selection was not verified: " +
+                                    str(exc)) from exc
 
     after_capacity, after = radio_inventory(link)
-    expected_inventory = dict(before)
+    expected_inventory = {} if selected_ids is not None else dict(before)
     expected_inventory.update({item["catalog_id"]: int(item["epoch"].timestamp()) for item in validated})
     if after_capacity != capacity or dict(after) != expected_inventory:
         raise SatelliteTleError("radio satellite inventory changed unexpectedly after commit")
-    return {"capacity": capacity, "count": len(after), "installed": sorted(selected_ids), "inventory": after}
+    result = {"capacity": capacity, "count": len(after), "installed": sorted(record_ids), "inventory": after}
+    if selected_ids is not None:
+        result["profile_ids"] = selected_ids
+    if full_profiles is not None:
+        actual_profiles = radio_frequency_profiles(link)
+        if actual_profiles != full_profiles:
+            raise SatelliteTleError("radio frequency profile readback did not match the requested values")
+        result["frequency_profiles"] = actual_profiles
+    return result
 
 
 def _stale_entries(records):
@@ -624,6 +815,8 @@ def main(argv=None):
     fetch.add_argument("--id", dest="ids", action="append", required=True, help="catalog ID; repeat or comma-separate")
     fetch.add_argument("--provider-url", default=DEFAULT_PROVIDER_URL)
     fetch.add_argument("--output", required=True, help="bundle JSON path")
+    fetch.add_argument("--profile-id", dest="profile_ids", action="append",
+                       help="built-in frequency profile ID to select in the bundle; repeat or comma-separate")
     _add_age_options(fetch)
 
     validate = commands.add_parser("validate", help="validate an offline bundle without network access")
@@ -634,6 +827,11 @@ def main(argv=None):
     install.add_argument("bundle")
     install.add_argument("--yes", action="store_true", help="confirm this explicit install without a prompt")
     _add_age_options(install)
+
+    profiles = commands.add_parser("profiles", help="read or update built-in satellite frequency profiles")
+    profiles.add_argument("--id", dest="profile_ids", action="append",
+                          help="profile ID to select; repeat or comma-separate (up to 10)")
+    profiles.add_argument("--yes", action="store_true", help="confirm profile changes without a prompt")
 
     catalog = commands.add_parser("catalog", help="browse the current AMSAT or ARISS catalog")
     catalog.add_argument("--source", choices=sorted(PROVIDER_URLS), default="amsat")
@@ -656,7 +854,8 @@ def main(argv=None):
             records = fetch_records(ids, args.provider_url, max_age_days=args.max_age_days)
             _preview(records)
             _accept_stale(records, args.accept_stale)
-            bundle = make_bundle(args.provider_url, records)
+            profile_ids = parse_profile_ids(args.profile_ids) if args.profile_ids else None
+            bundle = make_bundle(args.provider_url, records, profile_ids=profile_ids)
             save_bundle(args.output, bundle)
             print(f"saved {len(records)} satellite records to {args.output}")
             return 0
@@ -693,6 +892,28 @@ def main(argv=None):
             print(f"radio inventory: {len(saved)}/{capacity} satellites; remembered in {args.state_file}")
             return 0
 
+        if args.command == "profiles":
+            with DebugLink(args.port, args.timeout) as link:
+                info = _request(link, OP_INFO)
+                if len(info) != 5:
+                    raise SatelliteTleError("radio returned malformed satellite capability data")
+                version = struct.unpack("<BHH", info)[0]
+                if args.profile_ids:
+                    selected = parse_profile_ids(args.profile_ids)
+                    _confirm_install(args.yes)
+                    actual = set_radio_profile_ids(link, selected, version)
+                else:
+                    actual = radio_profile_ids(link, version)
+            names = {25544: "ISS", 27607: "SO-50", 40908: "LILACSAT-2", 40931: "IO-86",
+                     43017: "AO-91", 43678: "PO-101", 61781: "AO-123", 63213: "TEVEL2-4",
+                     63214: "TEVEL2-5", 63215: "TEVEL2-6", 63217: "TEVEL2-1",
+                     63218: "TEVEL2-3", 63219: "TEVEL2-2", 63237: "TEVEL2-9",
+                     63238: "TEVEL2-7", 63239: "TEVEL2-8", 67291: "RS95S"}
+            for catalog_id in actual:
+                print(f"{names[catalog_id]} ({catalog_id})")
+            print(f"frequency profiles: {len(actual)}/{MAX_PROFILES}; read-back verified")
+            return 0
+
         bundle = load_bundle(args.bundle)
         records = validate_records(bundle["records"], now=_utc_now(), max_age_days=args.max_age_days)
         _preview(records)
@@ -702,9 +923,12 @@ def main(argv=None):
             return 0
         _confirm_install(args.yes)
         with DebugLink(args.port, args.timeout) as link:
-            result = install_records(link, records)
+            result = install_records(link, records, bundle.get("profile_ids"), bundle.get("profiles"))
         print(f"installed {len(result['installed'])} selected records; radio now has {result['count']}/"
               f"{result['capacity']} records, read-back verified")
+        if "profile_ids" in result:
+            print(f"replaced the radio TLE list with {len(records)} selected satellites and verified "
+                  f"{len(result['profile_ids'])} selected frequency profiles")
         return 0
     except (SatelliteTleError, DebugLinkError, OSError) as exc:
         print(f"satellite_tle: {exc}", file=sys.stderr)
@@ -726,7 +950,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 
-SCHEMA_VERSION = 1
+LEGACY_SCHEMA_VERSION = 1
 DEFAULT_PROVIDER = DEFAULT_PROVIDER_URL
 DEFAULT_MAX_AGE_DAYS = 30
 CATALOG_ID = re.compile(r"^[0-9]{1,5}$")
@@ -829,7 +1053,7 @@ def _check_age(records, now, max_age_days, accept_stale):
 
 
 def _legacy_make_bundle(records, provider, fetched_at):
-    return {"schema_version": SCHEMA_VERSION, "provider": provider, "fetched_at": fetched_at,
+    return {"schema_version": LEGACY_SCHEMA_VERSION, "provider": provider, "fetched_at": fetched_at,
             "satellites": records}
 
 
@@ -839,7 +1063,7 @@ def _legacy_load_bundle(path):
             bundle = json.load(source)
     except (OSError, json.JSONDecodeError) as exc:
         raise TleError("could not read bundle: %s" % exc) from exc
-    if not isinstance(bundle, dict) or bundle.get("schema_version") != SCHEMA_VERSION or not isinstance(bundle.get("satellites"), list):
+    if not isinstance(bundle, dict) or bundle.get("schema_version") != LEGACY_SCHEMA_VERSION or not isinstance(bundle.get("satellites"), list):
         raise TleError("unsupported or malformed bundle schema")
     records = []
     for item in bundle["satellites"]:

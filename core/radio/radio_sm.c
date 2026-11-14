@@ -4205,12 +4205,40 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	changed(sm);
 }
 
+#if CONFIG_SATELLITE_TLE && CONFIG_FM_TX_TONES
+static void satellite_arm(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->satellite_session || !sm->view.satellite_tracking ||
+	    sm->satellite_nominal_rx_hz != 436795000u || sm->satellite_nominal_tx_hz != 145850000u ||
+	    sm->satellite_profile_tx_tone_tenths != 670u || sm->view.ch.mode != RADIO_MODE_FM ||
+	    sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED || sm->ptt || sm->hotspot || sm->host_audio ||
+	    sm->view.scan != 0u || board.radio->tx_tone == NULL) {
+		beep(sm, BEEP_ERROR);
+		return;
+	}
+	subtone_t normal_tone = sm->view.ch.tx_tone;
+	sm->view.ch.tx_tone = (subtone_t){ TONE_CTCSS, 744u };
+	ptt_down(sm, now_ms);
+	sm->view.ch.tx_tone = normal_tone;
+	if (sm->view.state != RS_TX || !sm->ptt) {
+		ptt_release(sm, false, now_ms);
+		return;
+	}
+	sm->satellite_arm_active = true;
+	sm->satellite_arm_end_ms = now_ms + 2000u;
+}
+#endif
+
 // roger: send the roger beep (if set) before unkeying
 static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 {
 	if (!sm->ptt) {
 		return;
 	}
+#if CONFIG_SATELLITE_TLE && CONFIG_FM_TX_TONES
+	sm->satellite_arm_active = false;
+	sm->satellite_arm_end_ms = 0u;
+#endif
 	sm->ptt = false;
 	activity(sm, now_ms);
 	if (sm->host_audio) {
@@ -5506,6 +5534,11 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		break;
 #endif
 	case RREQ_PTT:
+#if CONFIG_SATELLITE_TLE && CONFIG_FM_TX_TONES
+		if (sm->satellite_arm_active) {
+			break;	// Keep the operator-requested arm burst at its full duration
+		}
+#endif
 #if CONFIG_FM_TX_TONES
 		if (sm->burst_keyed) {
 			sm->burst_keyed = req->arg == 0;	// PTT pressed during a burst takes the transmission over
@@ -5899,6 +5932,11 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		break;
 	case RREQ_TONE_BURST:
 		tone_burst(sm, req->arg != 0, req->arg2, now_ms);
+		break;
+#endif
+#if CONFIG_SATELLITE_TLE && CONFIG_FM_TX_TONES
+	case RREQ_SATELLITE_ARM:
+		satellite_arm(sm, now_ms);
 		break;
 #endif
 #if CONFIG_DTMF
@@ -6376,6 +6414,13 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #endif
 
 	if (sm->view.state == RS_TX) {
+#if CONFIG_SATELLITE_TLE && CONFIG_FM_TX_TONES
+		if (sm->satellite_arm_active && (int32_t)(now_ms - sm->satellite_arm_end_ms) >= 0) {
+			sm->satellite_arm_active = false;
+			ptt_release(sm, false, now_ms);
+			return;
+		}
+#endif
 #if CONFIG_FM_TX_TONES
 		if (sm->burst_end_ms != 0 && sm->view.tone_burst && (int32_t)(now_ms - sm->burst_end_ms) >= 0) {
 			tone_burst(sm, false, 0, now_ms);	// its "off" never came: unkey as the off would

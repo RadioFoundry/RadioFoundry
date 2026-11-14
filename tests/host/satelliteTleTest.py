@@ -67,9 +67,13 @@ class FakeResponse:
 
 
 class FakeRadio:
-    def __init__(self, installed=None, capacity=8, fail_data=False):
+    def __init__(self, installed=None, capacity=8, fail_data=False, protocol_version=tle.SATELLITE_PROTOCOL_VERSION):
         self.capacity = capacity
         self.installed = dict(installed or {})
+        self.protocol_version = protocol_version
+        self.profiles = list(tle.DEFAULT_PROFILE_IDS)
+        self.frequency_profiles = []
+        self.staged_profiles = None
         self.fail_data = fail_data
         self.calls = []
         self.stream = bytearray()
@@ -77,6 +81,7 @@ class FakeRadio:
         self.count = 0
         self.expected_crc = 0
         self.inject_after_commit = False
+        self.replace_inventory = False
 
     def request(self, command, payload):
         self.calls.append((command, bytes(payload)))
@@ -85,14 +90,16 @@ class FakeRadio:
         operation = payload[0]
         args = payload[1:]
         if operation == tle.OP_INFO:
-            return 0, struct.pack("<BHH", tle.SATELLITE_PROTOCOL_VERSION, self.capacity, len(self.installed))
+            return 0, struct.pack("<BHH", self.protocol_version, self.capacity, len(self.installed))
         if operation == tle.OP_LIST:
             (start,) = struct.unpack("<H", args)
             rows = sorted(self.installed.items())[start:start + 2]
             return 0, bytes([len(rows)]) + b"".join(struct.pack("<II", *row) for row in rows)
-        if operation == tle.OP_BEGIN:
+        if operation in (tle.OP_BEGIN, tle.OP_REPLACE_BEGIN):
             self.count, size, self.expected_crc = struct.unpack("<HHI", args)
             self.stream = bytearray()
+            self.replace_inventory = operation == tle.OP_REPLACE_BEGIN
+            self.staged_profiles = None
             if size > 65535:
                 raise AssertionError("oversized fake transaction")
             return 0, struct.pack("<H", self.transaction)
@@ -110,6 +117,8 @@ class FakeRadio:
                     expected_crc != self.expected_crc:
                 raise AssertionError("commit CRC mismatch")
             offset = 0
+            if self.replace_inventory:
+                self.installed.clear()
             for _ in range(self.count):
                 catalog_id, name_len = struct.unpack_from("<IB", self.stream, offset)
                 offset += 5
@@ -123,6 +132,11 @@ class FakeRadio:
                 self.installed[catalog_id] = int(item["epoch"].timestamp())
             if offset != len(self.stream):
                 raise AssertionError("trailing record bytes")
+            if self.staged_profiles is not None:
+                if any(profile is None for profile in self.staged_profiles):
+                    raise AssertionError("incomplete staged profile set")
+                self.frequency_profiles = self.staged_profiles
+                self.profiles = [profile["catalog_id"] for profile in self.frequency_profiles]
             if self.inject_after_commit:
                 self.installed[40000] = 1_794_398_402
             return 0, b""
@@ -130,6 +144,49 @@ class FakeRadio:
             return 0, b""
         if operation == tle.OP_SYNC_CHANNELS:
             return 0, b""
+        if operation == tle.OP_PROFILE_GET:
+            if self.protocol_version < tle.PROFILE_PROTOCOL_MIN_VERSION:
+                raise DebugLinkError("profile operations unsupported", 1)
+            return 0, bytes([len(self.profiles)]) + struct.pack(f"<{len(self.profiles)}I", *self.profiles)
+        if operation == tle.OP_PROFILE_SET:
+            if self.protocol_version < tle.PROFILE_PROTOCOL_MIN_VERSION:
+                raise DebugLinkError("profile operations unsupported", 1)
+            count = args[0]
+            self.profiles = list(struct.unpack_from(f"<{count}I", args, 1))
+            return 0, b""
+        if operation == tle.OP_PROFILE_STAGE:
+            transaction, count = struct.unpack_from("<HB", args)
+            if transaction != self.transaction or len(args) != 3 + count * 14:
+                raise AssertionError("invalid staged profile payload")
+            self.staged_profiles = []
+            for index in range(count):
+                catalog_id, rx_hz, tx_hz, tone = struct.unpack_from("<IIIH", args, 3 + index * 14)
+                self.staged_profiles.append({"catalog_id": catalog_id, "rx_hz": rx_hz, "tx_hz": tx_hz,
+                                             "tx_tone_tenths": tone})
+            return 0, b""
+        if operation == tle.OP_PROFILE_STAGE_CHUNK:
+            transaction, total, start, count = struct.unpack_from("<HBBB", args)
+            if transaction != self.transaction or total != self.count or count == 0 or count > 4 or \
+                    len(args) != 5 + count * 14:
+                raise AssertionError("invalid chunked profile payload")
+            if self.staged_profiles is None:
+                if start != 0:
+                    raise AssertionError("profile chunks must start at zero")
+                self.staged_profiles = [None] * total
+            if len(self.staged_profiles) != total or start != next(
+                    (index for index, profile in enumerate(self.staged_profiles) if profile is None), total):
+                raise AssertionError("profile chunks must be consecutive")
+            for index in range(count):
+                offset = 5 + index * 14
+                catalog_id, rx_hz, tx_hz, tone = struct.unpack_from("<IIIH", args, offset)
+                self.staged_profiles[start + index] = {"catalog_id": catalog_id, "rx_hz": rx_hz,
+                                                       "tx_hz": tx_hz, "tx_tone_tenths": tone}
+            return 0, b""
+        if operation == tle.OP_PROFILE_VALUES_GET:
+            profiles = self.frequency_profiles
+            return 0, bytes([len(profiles)]) + b"".join(
+                struct.pack("<IIIH", profile["catalog_id"], profile["rx_hz"], profile["tx_hz"],
+                            profile["tx_tone_tenths"]) for profile in profiles)
         raise AssertionError(f"unexpected operation {operation}")
 
 
@@ -268,6 +325,26 @@ def test_bundle_round_trip():
             check(False, "boolean bundle schema version rejected")
         except tle.SatelliteTleError:
             check(True, "boolean bundle schema version rejected")
+        profile_bundle = tle.make_bundle(tle.DEFAULT_PROVIDER_URL, validated, profile_ids=[43017, 25544])
+        tle.save_bundle(path, profile_bundle)
+        loaded_profiles = tle.load_bundle(path)
+        check(loaded_profiles["schema_version"] == 2 and loaded_profiles["profile_ids"] == [25544, 43017],
+              "schema-v2 bundle round trips sorted profile IDs")
+        custom_profiles = [
+            {"catalog_id": 20580, "rx_hz": 145900000, "tx_hz": 435100000, "tx_tone_tenths": 885},
+            {"catalog_id": 25544, "rx_hz": 437800000, "tx_hz": 145990000, "tx_tone_tenths": 670},
+        ]
+        custom_bundle = tle.make_bundle(tle.DEFAULT_PROVIDER_URL, validated, profiles=custom_profiles)
+        tle.save_bundle(path, custom_bundle)
+        loaded_custom = tle.load_bundle(path)
+        check(loaded_custom["schema_version"] == 3 and loaded_custom["profiles"] == custom_profiles,
+              "schema-v3 bundle round trips arbitrary frequency profiles")
+        for invalid_profiles in ([25544, 25544], [99999], list(sorted(tle.SUPPORTED_PROFILE_IDS)[:11]), []):
+            try:
+                tle.validate_profile_ids(invalid_profiles)
+                check(False, f"invalid profile selection rejected: {invalid_profiles}")
+            except tle.SatelliteTleError:
+                check(True, f"invalid profile selection rejected: {invalid_profiles}")
         with open(path, "w", encoding="utf-8") as target:
             target.write('{"schema_version":1,"schema_version":1}')
         try:
@@ -302,9 +379,62 @@ def test_install_transaction():
     check(result == {"capacity": 8, "count": 3, "installed": [20580, 25544],
                      "inventory": expected_inventory}, "install reports verified IDs and inventory")
     check(radio.installed[99999] == old_epoch, "unselected installed satellite is preserved")
+    check(all(payload[0] != tle.OP_SYNC_CHANNELS for _, payload in radio.calls),
+          "TLE install leaves codeplug zones and channels unchanged")
     data_calls = [payload for command, payload in radio.calls if command == tle.SATELLITE_COMMAND and
                   payload[0] == tle.OP_DATA]
     check(len(data_calls) > 1 and all(len(payload) <= 64 for payload in data_calls), "install uses bounded chunks")
+    profiles_radio = FakeRadio({99999: old_epoch})
+    selected_profiles = [25544, 40908, 61781, 63213]
+    selected_records = tle.validate_records([make_record(catalog_id) for catalog_id in selected_profiles])
+    profile_result = tle.install_records(profiles_radio, selected_records, selected_profiles)
+    check(profile_result["profile_ids"] == selected_profiles and profiles_radio.profiles == selected_profiles,
+          "install updates frequency profiles and verifies read-back")
+    check(profile_result["inventory"] == [(catalog_id, int(record["epoch"].timestamp()))
+                                           for catalog_id, record in zip(selected_profiles, selected_records)],
+          "profile sync removes previously installed satellites that were unselected")
+    check(all(payload[0] != tle.OP_BEGIN for _, payload in profiles_radio.calls) and
+          any(payload[0] == tle.OP_REPLACE_BEGIN for _, payload in profiles_radio.calls),
+          "profile sync uses explicit replace-inventory transaction")
+    check(all(payload[0] != tle.OP_SYNC_CHANNELS for _, payload in profiles_radio.calls),
+          "profile sync does not create codeplug zones or channels")
+    check(tle.radio_profile_ids(profiles_radio) == selected_profiles, "profile list reads back through protocol")
+    manual = [make_record(99001)]
+    manual_profiles = [{"catalog_id": 99001, "rx_hz": 145900000, "tx_hz": 435100000, "tx_tone_tenths": 885}]
+    manual_radio = FakeRadio(protocol_version=tle.PROFILE_VALUES_PROTOCOL_VERSION)
+    manual_result = tle.install_records(manual_radio, manual, [99001], manual_profiles)
+    check(manual_result["frequency_profiles"] == manual_profiles and manual_radio.frequency_profiles == manual_profiles,
+            "schema-v3 install commits and verifies custom frequencies")
+    check(any(payload[0] == tle.OP_PROFILE_STAGE for _, payload in manual_radio.calls),
+            "schema-v3 install stages frequency profiles before commit")
+    check(all(payload[0] != tle.OP_SYNC_CHANNELS for _, payload in manual_radio.calls),
+          "schema-v3 install leaves the codeplug unchanged")
+    large_ids = sorted(tle.SUPPORTED_PROFILE_IDS)[:10]
+    large_records = tle.validate_records([make_record(catalog_id) for catalog_id in large_ids])
+    large_profiles = [{"catalog_id": catalog_id, "rx_hz": 145900000, "tx_hz": 435100000,
+                       "tx_tone_tenths": 885} for catalog_id in large_ids]
+    large_radio = FakeRadio(capacity=10)
+    large_result = tle.install_records(large_radio, large_records, large_ids, large_profiles)
+    large_chunks = [payload for _, payload in large_radio.calls if payload[0] == tle.OP_PROFILE_STAGE_CHUNK]
+    check(large_result["frequency_profiles"] == large_profiles and len(large_chunks) == 3 and
+          all(len(payload) <= 64 for payload in large_chunks),
+          "ten-profile install stages three bounded protocol-v6 chunks")
+    old_radio = FakeRadio(protocol_version=tle.PROFILE_VALUES_PROTOCOL_VERSION)
+    try:
+        tle.install_records(old_radio, large_records, large_ids, large_profiles)
+        check(False, "ten-profile replacement rejects protocol-v5 radio before writing")
+    except tle.SatelliteTleError as exc:
+        check("protocol version 6" in str(exc) and
+              all(payload[0] != tle.OP_REPLACE_BEGIN for _, payload in old_radio.calls),
+              "protocol-v5 radio gets a clear ten-profile limit before transaction")
+    legacy_radio = FakeRadio(protocol_version=tle.LEGACY_SATELLITE_PROTOCOL_VERSION)
+    legacy_result = tle.install_records(legacy_radio, selected)
+    check(legacy_result["count"] == 2, "protocol-v2 radio still accepts orbital TLE updates")
+    try:
+        tle.install_records(legacy_radio, selected, selected_profiles)
+        check(False, "profile bundle is rejected before modification on protocol-v2 radio")
+    except tle.SatelliteTleError as exc:
+        check("requires satellite protocol version 4" in str(exc), "profile update rejects older radio")
     unexpected = FakeRadio()
     unexpected.inject_after_commit = True
     try:

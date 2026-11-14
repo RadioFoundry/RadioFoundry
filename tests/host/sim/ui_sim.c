@@ -2055,6 +2055,8 @@ bool ui_svc_satellite_track(bool enabled, uint8_t index)
 	return true;
 }
 
+void ui_svc_satellite_arm(void) { }
+
 bool ui_svc_satellite_scan(bool enabled)
 {
 	(void)enabled;

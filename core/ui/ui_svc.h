@@ -191,6 +191,7 @@ bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record);
 uint8_t ui_svc_satellite_selected(void);
 bool ui_svc_satellite_select(uint8_t index);
 bool ui_svc_satellite_track(bool enabled, uint8_t index);
+void ui_svc_satellite_arm(void);
 bool ui_svc_satellite_scan(bool enabled);
 void ui_svc_satellite_poll(void);
 void ui_svc_satellite_scan_state(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes);

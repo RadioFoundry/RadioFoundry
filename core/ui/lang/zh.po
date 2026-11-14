@@ -14,6 +14,10 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "X-Glyphs: utf8\n"
 
+#: core/satellite/ui.c
+msgid "Couldn't save satellite TLE"
+msgstr "无法保存卫星 TLE"
+
 #: core/stubentry/stub_entry.h
 msgid "PC Loader Connected"
 msgstr "PC 加载器已连接"
@@ -22,7 +26,7 @@ msgstr "PC 加载器已连接"
 msgid "Power-cycle to exit"
 msgstr "断电重启退出"
 
-#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_satellite.c core/ui/ui_screens.c
 msgid "Off"
 msgstr "关"
 
@@ -654,7 +658,7 @@ msgstr "频率"
 msgid "Power"
 msgstr "功率"
 
-#: core/ui/ui_aprs.c
+#: core/ui/ui_aprs.c core/ui/ui_satellite.c
 msgid "Path"
 msgstr "路径"
 
@@ -1573,6 +1577,10 @@ msgstr "名称"
 #: core/ui/ui_menus.c
 msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
 msgstr "{返回 删除  # ABC/123/abc  OK 保留|返回 删  # 模式  OK}"
+
+#: core/ui/ui_menus.c core/ui/ui_satellite.c
+msgid "Satellite"
+msgstr "卫星"
 
 #: core/ui/ui_menus.c
 msgid "{Back delete  # ABC/123/abc  OK send|Back del  # mode  OK}"
@@ -2971,6 +2979,10 @@ msgid "Send in DMR calls"
 msgstr "DMR 通话带位置"
 
 #: core/ui/ui_menus.c
+msgid "Save GPS position"
+msgstr "保存 GPS 位置"
+
+#: core/ui/ui_menus.c
 msgid "Hotspot allowed"
 msgstr "允许热点"
 
@@ -3167,6 +3179,14 @@ msgid "Diagnostics: not in this build"
 msgstr "诊断：本版本无"
 
 #: core/ui/ui_menus.c
+msgid "GPS position saved"
+msgstr "GPS 位置已保存"
+
+#: core/ui/ui_menus.c
+msgid "No current GPS fix"
+msgstr "当前无 GPS 定位"
+
+#: core/ui/ui_menus.c
 msgid "Settings are saved as you change them"
 msgstr "设置更改即保存"
 
@@ -3313,6 +3333,110 @@ msgstr "经度"
 #: core/ui/ui_position.c
 msgid "Up to 90 N/S, 180 E/W"
 msgstr "北南 90，东西 180"
+
+#: core/ui/ui_satellite.c
+msgid "TLE update failed"
+msgstr "TLE 更新失败"
+
+#: core/ui/ui_satellite.c
+msgid "TLE update queued"
+msgstr "TLE 更新已排队"
+
+#: core/ui/ui_satellite.c
+msgid "Satellite unavailable"
+msgstr "卫星不可用"
+
+#: core/ui/ui_satellite.c
+msgid "Predicting passes"
+msgstr "正在预测过境"
+
+#: core/ui/ui_satellite.c
+msgid "GPS/time unavailable"
+msgstr "GPS/时间不可用"
+
+#: core/ui/ui_satellite.c
+msgid "Now"
+msgstr "当前"
+
+#: core/ui/ui_satellite.c
+msgid "Next passes"
+msgstr "后续过境"
+
+#: core/ui/ui_satellite.c
+msgid "Up Down pick  Back"
+msgstr "返回 上下选择"
+
+#: core/ui/ui_satellite.c
+msgid "No passes in next 24h"
+msgstr "未来 24 小时无过境"
+
+#: core/ui/ui_satellite.c
+msgid "No TLE records installed"
+msgstr "未安装 TLE 数据"
+
+#: core/ui/ui_satellite.c
+msgid "Visible"
+msgstr "可见"
+
+#: core/ui/ui_satellite.c
+msgid "Below horizon"
+msgstr "地平线下"
+
+#: core/ui/ui_satellite.c
+msgid "Waiting for position/time"
+msgstr "等待位置/时间"
+
+#: core/ui/ui_satellite.c
+msgid "Tracking"
+msgstr "跟踪中"
+
+#: core/ui/ui_satellite.c
+msgid "AOS in"
+msgstr "AOS 倒计时"
+
+#: core/ui/ui_satellite.c
+msgid "Other satellite"
+msgstr "其他卫星"
+
+#: core/ui/ui_satellite.c
+msgid "Catalog"
+msgstr "编号"
+
+#: core/ui/ui_satellite.c
+msgid "Next pass"
+msgstr "下次过境"
+
+#: core/ui/ui_satellite.c
+msgid "Visible now"
+msgstr "当前可见"
+
+#: core/ui/ui_satellite.c
+msgid "LOS"
+msgstr "LOS"
+
+#: core/ui/ui_satellite.c
+msgid "Calculating"
+msgstr "计算中"
+
+#: core/ui/ui_satellite.c
+msgid "LOS beyond forecast"
+msgstr "预测时段外 LOS"
+
+#: core/ui/ui_satellite.c
+msgid "LOS in"
+msgstr "LOS 倒计时"
+
+#: core/ui/ui_satellite.c
+msgid "Up Down satellite  OK track  Hold OK arm  # TLE  Back"
+msgstr "上下选择卫星  OK track  长按 OK 启动  # TLE  返回"
+
+#: core/ui/ui_satellite.c
+msgid "Up Down satellite  OK track  # TLE  Back"
+msgstr "返回 上下选择卫星  OK track  # TLE"
+
+#: core/ui/ui_satellite.c
+msgid "SO-50 arm requested"
+msgstr "已请求启动 SO-50 定时器"
 
 #: core/ui/ui_screens.c
 msgid "IDLE"

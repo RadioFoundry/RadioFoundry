@@ -65,6 +65,11 @@ bool ui_svc_satellite_track(bool enabled, uint8_t index)
 	return true;
 }
 
+void ui_svc_satellite_arm(void)
+{
+	radio_req_satellite_arm();
+}
+
 bool ui_svc_satellite_scan(bool enabled)
 {
 	scan_state_known = false;
