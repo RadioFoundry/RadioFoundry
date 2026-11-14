@@ -8,7 +8,7 @@ import { h, t, ROOT, HOME, button, notice, download, progressBar, num as fmtNum,
 import { equal } from "../flasher/bytes.js";
 import { SerialStream, serialSupported, serialApi, RFOUNDRY_USB, browserErrorKey, knownRadioPort } from "../flasher/link.js";
 import { CodeplugImage, IDDB_HEADER, EDITOR_REGIONS } from "../codeplug/image.js";
-import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
+import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers, trunkRecord } from "../codeplug/model.js";
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
 import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
 import { FastError } from "../codeplug/fastlink.js";
@@ -20,6 +20,7 @@ import { FakeCpsRadio } from "../codeplug/fakecps.js";
 import { Grid } from "./grid.js";
 import { History } from "./undo.js";
 import { bulkColumns, columns, channelForm, formDialog, membersDialog, refLabel, parseAreaKey } from "./views.js";
+import { trunkTab } from "./trunkview.js";
 import { openFile, saveBytes, tftpBytes, FileError, imageFrom, saveDraft, loadDraft, clearDraft } from "./files.js";
 import { extensions } from "./extensions.js";
 import "./parts.js";
@@ -28,7 +29,7 @@ import { initReporting, reportedLine } from "../report.js";
 import { updateFor } from "../flasher/version.js";
 
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
-const TABS = ["radio", "channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "iddb", "problems"];
+const TABS = ["radio", "channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "trunkSystems", "iddb", "problems"];
 const TABLE_MAX = { channels: LIMITS.channels, zones: LIMITS.zones, contacts: LIMITS.contacts, rxLists: LIMITS.rxLists, dtmfContacts: LIMITS.dtmfContacts, aprs: LIMITS.aprs };
 
 const S = {
@@ -121,7 +122,7 @@ function refresh() {
 	const counts = {
 		channels: S.model.channels.length, zones: S.model.zones.length, contacts: S.model.contacts.length,
 		rxLists: S.model.rxLists.length, dtmfContacts: S.model.dtmfContacts.length, aprs: S.model.aprs.length,
-		iddb: S.model.iddb?.count || 0, problems: p.length,
+		trunkSystems: S.model.trunkSystems?.length || 0, iddb: S.model.iddb?.count || 0, problems: p.length,
 	};
 	tabs.replaceChildren(...TABS.map((k) => {
 		const b = h("button", { type: "button", role: "tab", "aria-selected": String(S.tab === k), class: k === "problems" && errors ? "has-errors" : "",
@@ -171,6 +172,7 @@ function renderView(p) {
 	const tab = S.tab;
 	if (tab === "radio") return view.replaceChildren(radioTab());
 	if (tab === "iddb") return view.replaceChildren(extensions.iddbTab(api()));
+	if (tab === "trunkSystems") return view.replaceChildren(trunkTab(api()));
 	if (tab === "problems") return view.replaceChildren(problemsTab(p));
 	// a table: keep the grid (focus, sort, selection) when only its rows changed
 	if (S.grid && S.grid.table === tab) {
@@ -351,7 +353,11 @@ function bulkSet(tab, g) {
 
 function openRecord(tab, r) {
 	if (tab === "channels") {
-		formDialog(t("editor.channel_title", { name: r.name }), channelForm(S.model, t), r, t, (work) => change(t("editor.undo.edit"), () => Object.assign(r, work)));
+		// a trunked channel's record follows its system (trunkRecord), whatever the form's hidden fields hold
+		formDialog(t("editor.channel_title", { name: r.name }), channelForm(S.model, t), r, t, (work) => change(t("editor.undo.edit"), () => {
+			Object.assign(r, work);
+			trunkRecord(S.model, r);
+		}));
 	} else if (tab === "zones") {
 		membersDialog(t("editor.zone_title", { name: r.name }), r.channels, [...S.model.channels].sort((a, b) => a.number - b.number), LIMITS.zoneChannels, t,
 			(c) => `${c.number} · ${c.name}`, (list) => change(t("editor.undo.edit"), () => (r.channels = list)));

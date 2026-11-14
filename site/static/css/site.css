@@ -616,6 +616,11 @@ dialog.editor-dialog { max-width: 52rem; max-height: calc(100vh - 4rem); overflo
 .form-check { grid-template-columns: auto 1fr; align-items: center; }
 .form-check label { order: 2; font-weight: 500; }
 .ed-radio-form { max-width: 60rem; }
+.t3-chans input[type="text"] { width: 100%; min-width: 5rem; }
+.t3-chans + .btn { margin-top: var(--space-2); }
+.t3-key { font-family: var(--mono, monospace); }
+.t3-check-help { grid-column: 1 / -1; }
+.t3-advanced > summary { cursor: pointer; font-weight: 600; margin: var(--space-4) 0 var(--space-2); }
 .members { display: grid; grid-template-columns: 1fr auto 1fr; gap: var(--space-3); align-items: start; }
 .members h3 { font-size: var(--text-sm); margin-bottom: var(--space-1); }
 .members input[type="search"] { width: 100%; margin-bottom: var(--space-1); }

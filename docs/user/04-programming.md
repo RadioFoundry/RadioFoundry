@@ -77,6 +77,7 @@ TFTP ([USB network](15-usb-network.md#programming-over-the-network)).
 | Contacts | Talkgroups and private-call contacts |
 | RX Group Lists | The talkgroups each channel listens to |
 | DTMF Contacts, APRS | DTMF contacts and APRS configurations |
+| Trunked Systems | DMR Tier III trunked systems, up to 8 ([below](#trunked-systems)) |
 | DMR ID Database | Names for DMR IDs that aren't contacts, built from RadioID.net ([below](#dmr-id-database-and-contacts-from-radioidnet)) |
 | Problems | Errors and warnings, each with a link to the record |
 
@@ -94,6 +95,34 @@ either: the radio keeps its own unless the software writes them in RadioFoundry'
 
 The page keeps the working codeplug in the browser, so closing or reloading the page doesn't lose edits. **New** starts
 over.
+
+### Trunked systems
+
+The **Trunked Systems** tab holds up to 8 DMR Tier III systems. **Add System** opens a system's form:
+
+| Part | Holds |
+|---|---|
+| Basic | Name, network model, NET and category, color code, the system's channels (LCN, RX and TX frequency, color code; mark the control channels), whether the system authenticates, its key (32 hex digits) and PSN, sharing, fallback channel and hold time |
+| Advanced | Call options (all calls, emergency on any talkgroup, private calls, registration, ambient listening, kill, stun, no roaming, listen only), the radio's DMR ID on the system, allowed sites, a fixed channel plan, roaming level, power saving |
+
+The radio hunts the first 4 control channels and keeps the first 8 channels of a system. A system that authenticates
+and has no key, or that has no control channel, shows **System not set up** in the tab and in **Problems**; its
+channels are not usable on the radio. Accepting a stun is off by default.
+
+To put a system in a zone, set a channel's mode to **DMR Trunked** and pick the system. The channel's contact and RX
+group list set its talkgroups. The frequencies, color code and slot come from the system. A trunked channel can name
+its own fallback channel (a conventional one) or have none. Deleting a system makes its channels conventional DMR,
+receive only.
+
+**Sharing** sets what a zone shared from the radio carries for the system:
+
+| Setting | A zone share carries |
+|---|---|
+| Off | Not the system's trunked channels |
+| Channels with the system ID | The trunked channels, with the system's name and identity. A radio without the system set up shows them as **System not set up** |
+| Full system including keys | The whole system, key included. The key goes out over the air in the share: any radio that hears it can read it and use the system |
+
+The radio's own DMR ID on the system is never shared. The key is left out of CSV and other exports.
 
 ### Files
 
@@ -176,6 +205,7 @@ TFTP (USB network mode) and other CPS programs use the older format.
 | Zones | Name and channel list. Without zones, the radio shows one zone with all channels |
 | Contacts (up to 1024) | Name, DMR ID or talkgroup, private or group, timeslot override |
 | RX group lists | The talkgroups each channel listens to |
+| Trunked systems (up to 8) | Every field of the Trunked Systems tab, and which channels are trunked |
 | DMR ID database | Names for DMR IDs that aren't contacts, shown on the receive screen |
 | VFO A | Frequency and settings of the VFO, read after the next restart |
 | Boot text | The two lines on the boot screen |

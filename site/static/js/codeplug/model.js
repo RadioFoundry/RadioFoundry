@@ -16,7 +16,11 @@ import {
 } from "./records.js";
 import { parseTone } from "./fields.js";
 import { readHeader } from "./iddb.js";
-import { decodeArea, keyValid, KEYS } from "./kv.js";
+import { decodeArea, keyValid, KEYS, KV_ADDR, KV_SIZE, KV_HDR, getValue, setValue, deleteValue, dedupe, putArea } from "./kv.js";
+import {
+	T3_KEY, T3_LIMITS, nameCheck, decodeSystem, encodeSystem, SYSTEM_KEYS, decodeChan, encodeChan, decodeKey, encodeKey,
+	validKey, decodeTag, encodeTag, netMax, siteMax, ID_MAX,
+} from "./trunk.js";
 
 const REFS = ["contact", "rxList", "aprs"];
 
@@ -25,6 +29,7 @@ export function decode(image) {
 	const m = {
 		general: decodeGeneral(b),
 		channels: [], vfo: [], zones: [], contacts: [], rxLists: [], dtmfContacts: [], aprs: [],
+		trunkSystems: [], trunkChannels: [],
 		iddb: readHeader(b),
 		base: image,
 	};
@@ -51,6 +56,7 @@ export function decode(image) {
 		const c = decodeChannel(b.subarray(channelAddr(n), channelAddr(n) + CH_SIZE));
 		if (c) m.channels.push(linkRefs(m, { number: n, ...c }));
 	}
+	decodeTrunk(m, b);
 	for (const a of VFO) {
 		const c = decodeChannel(b.subarray(a, a + CH_SIZE));
 		m.vfo.push(c ? linkRefs(m, c) : null);
@@ -110,6 +116,7 @@ export function assignNumbers(list, max) {
 
 export function numberAll(m) {
 	assignNumbers(m.channels, LIMITS.channels);
+	assignNumbers(m.trunkSystems ??= [], T3_LIMITS.systems);
 	assignNumbers(m.contacts, LIMITS.contacts);
 	assignNumbers(m.rxLists, LIMITS.rxLists);
 	assignNumbers(m.dtmfContacts, LIMITS.dtmfContacts);
@@ -215,6 +222,7 @@ export function encode(m) {
 	}
 
 	encodeGeneral(m.general, b);
+	encodeTrunk(m, b);
 	fixLucz(b, m);
 	return img;
 }
@@ -230,6 +238,225 @@ function fixLucz(b, m) {
 		b[LUCZ + 72] = 0;
 		b[LUCZ + 73] = 0;
 	}
+}
+
+// --- Tier III trunked systems (docs/spec/dmr-trunking.md 12), in the codeplug settings area ---
+//
+// m.trunkSystems: {number: 1-8 (key 0x0100 + number - 1), the fields of trunk.js newSystem, fallback: a channel or a
+// number as read}. m.trunkChannels: the system channel records in key order (hunt order), {system: a system or a
+// number as read, control, lcn, rxHz, txHz, cc: 0-15 or null for the system's}. A trunked channel is a codeplug
+// channel with system set (a system, or a number as read), noFallback, and fallback (a channel, a number as read, or
+// null for the system's). A tag the radio wouldn't take (its name check fails) reads as none; a fallback whose check
+// fails stays the number stored.
+
+const areaEntries = (b) => {
+	const a = decodeArea(b);
+	return { state: a.state, entries: a.state === "valid" ? dedupe(a.entries) : [] };
+};
+const inFamily = (key, base, count) => key >= base && key < base + count;
+
+// The channel a fallback names: the channel when its name check matches, else the number as stored; null for none
+function fallbackRef(m, n, check) {
+	if (!n) return null;
+	const c = m.channels.find((x) => x.number === n);
+	return c && nameCheck(c.name) === check ? c : n;
+}
+
+function decodeTrunk(m, b) {
+	const { entries } = areaEntries(b);
+	for (let n = 0; n < T3_LIMITS.systems; n++) {
+		const s = decodeSystem(getValue(entries, T3_KEY.system + n));
+		if (!s) continue;
+		const k = decodeKey(getValue(entries, T3_KEY.key + n));
+		const { fallbackCheck, ...rest } = s;
+		m.trunkSystems.push({ number: n + 1, ...rest, fallback: fallbackRef(m, s.fallback, fallbackCheck), key: k?.key ?? "", psn: k?.psn ?? 0 });
+	}
+	const chans = entries.filter((e) => inFamily(e.key, T3_KEY.chan, T3_LIMITS.chanKeys)).sort((a, b) => a.key - b.key);
+	for (const e of chans) {
+		const c = decodeChan(e.value);
+		if (c) m.trunkChannels.push({ ...c, system: find(m.trunkSystems, c.system + 1) });
+	}
+	for (const c of m.channels) {
+		const tag = liveTag(getValue(entries, T3_KEY.tag + c.number - 1), c.name);
+		if (!tag) continue;
+		c.system = find(m.trunkSystems, tag.system + 1);
+		c.noFallback = tag.noFallback;
+		c.fallback = fallbackRef(m, tag.fallback, tag.fallbackCheck);
+	}
+}
+
+// A tag the radio takes for a channel of this name, decoded; null otherwise
+function liveTag(v, name) {
+	const tag = decodeTag(v);
+	return tag && name != null && tag.system < T3_LIMITS.systems && tag.check === nameCheck(name) ? tag : null;
+}
+
+// A fallback reference as stored: its number and name check. A number as read keeps the check stored with it (prev:
+// the record before)
+function fallbackOut(ref, prev) {
+	if (!ref) return { fallback: 0, fallbackCheck: 0 };
+	if (typeof ref === "object") return { fallback: ref.number || 0, fallbackCheck: ref.number ? nameCheck(ref.name) : 0 };
+	return { fallback: ref, fallbackCheck: prev && prev.fallback === ref ? prev.fallbackCheck : 0 };
+}
+
+const sameFields = (a, b, keys) => keys.every((k) => (Array.isArray(a[k]) ? a[k].join() === (b[k] ?? []).join() : a[k] === b[k]));
+const TAG_KEYS = ["system", "noFallback", "check", "fallback", "fallbackCheck"];
+const CHAN_KEYS = ["system", "control", "lcn", "rxHz", "txHz", "cc"];
+
+// The settings area's entries with the model's systems, channels, keys and tags in place of those stored. A record
+// left as it was keeps its bytes, and the system channels keep their keys unless one changed. base: the image the
+// model came from. A tag it held that the radio didn't take is kept as found, unless it would now name a channel
+export function trunkEntries(m, entries, base = m.base?.bytes) {
+	const systems = (m.trunkSystems ?? []).filter((s) => s.number >= 1 && s.number <= T3_LIMITS.systems);
+	const sysIndex = (ref) => ((typeof ref === "number" ? ref : ref.number) - 1) & 0xFF;
+	let out = entries;
+	const set = (key, v) => (out = setValue(out, key, v));
+	const del = (key) => (out = deleteValue(out, key));
+
+	for (let n = 0; n < T3_LIMITS.systems; n++) {
+		const s = systems.find((x) => x.number === n + 1);
+		const prev = getValue(out, T3_KEY.system + n), was = decodeSystem(prev);
+		if (!s) {
+			// a system the model no longer has was deleted, its key with it
+			if (was) {
+				del(T3_KEY.system + n);
+				del(T3_KEY.key + n);
+			}
+			continue;
+		}
+		const flat = { ...s, ...fallbackOut(s.fallback, was) };
+		if (!was || !sameFields(was, flat, SYSTEM_KEYS)) set(T3_KEY.system + n, encodeSystem(flat, prev));
+		const k = decodeKey(getValue(out, T3_KEY.key + n));
+		if (!s.key) {
+			if (k) del(T3_KEY.key + n);
+		} else if (validKey(s.key) && Number.isInteger(s.psn) && s.psn >= 0 && s.psn <= 0xFFFFFF &&
+			(!k || k.key !== s.key.toUpperCase() || k.psn !== s.psn)) {
+			set(T3_KEY.key + n, encodeKey(s.key, s.psn));
+		}
+	}
+
+	// System channels: the family rewritten from 0x0200 up when any record changed, else left as it is
+	const want = (m.trunkChannels ?? []).slice(0, T3_LIMITS.chanKeys).map((c) => ({ ...c, system: sysIndex(c.system), cc: c.cc ?? null }));
+	const have = out.filter((e) => inFamily(e.key, T3_KEY.chan, T3_LIMITS.chanKeys)).sort((a, b) => a.key - b.key);
+	const same = have.length === want.length && have.every((e, i) => {
+		const d = decodeChan(e.value);
+		return d && sameFields(d, want[i], CHAN_KEYS);
+	});
+	if (!same) {
+		out = out.filter((e) => !inFamily(e.key, T3_KEY.chan, T3_LIMITS.chanKeys));
+		want.forEach((c, i) => set(T3_KEY.chan + i, encodeChan(c)));
+	}
+
+	// Tags: one for each trunked channel, at its number. Any other goes, but for one the radio didn't take in the image
+	// the model came from and still wouldn't
+	const tagged = new Map();
+	for (const c of m.channels) if (c.system && c.number) tagged.set(T3_KEY.tag + c.number - 1, c);
+	const named = new Map(m.channels.filter((c) => c.number).map((c) => [c.number, c.name]));
+	let baseNames = null, baseTags = null;
+	for (const e of out.filter((x) => inFamily(x.key, T3_KEY.tag, LIMITS.channels))) {
+		if (tagged.has(e.key)) continue;
+		const n = e.key - T3_KEY.tag + 1;
+		baseTags ??= base ? areaEntries(base).entries : [];
+		baseNames ??= base ? baseChannelNames(base) : new Map();
+		const stored = getValue(baseTags, e.key);
+		const wasStale = !!stored && !liveTag(stored, baseNames.get(n));
+		const staysStale = !liveTag(e.value, named.get(n));
+		if (!(wasStale && staysStale)) del(e.key);
+	}
+	for (const [key, c] of tagged) {
+		const prev = getValue(out, key), was = decodeTag(prev);
+		const tag = { system: sysIndex(c.system), noFallback: !!c.noFallback, check: nameCheck(c.name), ...fallbackOut(c.fallback, was) };
+		if (!was || !sameFields(was, tag, TAG_KEYS)) set(key, encodeTag(tag, prev));
+	}
+	return out;
+}
+
+// The names of the channels an image stores, by number
+function baseChannelNames(b) {
+	const out = new Map();
+	for (let n = 1; n <= LIMITS.channels; n++) {
+		if (!channelUsed(b, n)) continue;
+		const c = decodeChannel(b.subarray(channelAddr(n), channelAddr(n) + CH_SIZE));
+		if (c) out.set(n, c.name);
+	}
+	return out;
+}
+
+// The model's trunking written into the image's settings area, only when it changes the area. An area of a newer
+// version is never written (validate() warns)
+function encodeTrunk(m, b) {
+	const { state, entries } = areaEntries(b);
+	if (state === "newer") return;
+	const out = trunkEntries(m, entries);
+	if (out !== entries) putArea(b, out);
+}
+
+// The bytes the settings area's entries would take with the model written, and the most it holds
+function areaUse(m) {
+	const base = m.base?.bytes;
+	const { state, entries } = base ? areaEntries(base) : { state: "empty", entries: [] };
+	let out = trunkEntries(m, entries);
+	for (const row of KEYS) {
+		if (m.general?.[row.name] != null && !getValue(out, row.key)) out = [...out, { key: row.key, value: new Uint8Array(row.size) }];
+	}
+	const hdr = state === "valid" ? base[KV_ADDR + 5] : KV_HDR;
+	return { used: out.reduce((n, e) => n + 4 + e.value.length, 0), max: KV_SIZE - hdr };
+}
+
+// The record a trunked channel keeps for tools that don't know tags (12.4): DMR, receive only, RX and TX on its
+// system's first control channel
+export function trunkRecord(m, c) {
+	if (!c.system) return;
+	c.mode = "dmr";
+	c.rxOnly = true;
+	const ctl = typeof c.system === "object" && (m.trunkChannels ?? []).find((x) => x.system === c.system && x.control);
+	if (ctl && ctl.rxHz && ctl.txHz) {
+		c.rxHz = ctl.rxHz;
+		c.txHz = ctl.txHz;
+	}
+}
+
+// The trunked channels of system s (of every system without s) brought to its record
+export function syncTrunk(m, s = null) {
+	for (const c of m.channels) if (c.system && (!s || c.system === s)) trunkRecord(m, c);
+}
+
+// A channel made trunked on system s, or conventional (s null)
+export function setTrunk(m, c, s) {
+	if (!s) {
+		c.system = null;
+		c.noFallback = false;
+		c.fallback = null;
+		return;
+	}
+	c.system = s;
+	c.noFallback ??= false;
+	c.fallback ??= null;
+	trunkRecord(m, c);
+}
+
+// A system's edited fields and channel list (records without their system) put into the model: a new system is added
+// with the lowest free number. Its channels take the place of the ones it had, so the other systems' keep their order;
+// its trunked channels follow its first control channel
+export function putSystem(m, s, fields, chans) {
+	m.trunkSystems ??= [];
+	m.trunkChannels ??= [];
+	if (!m.trunkSystems.includes(s)) {
+		m.trunkSystems.push(s);
+		assignNumbers(m.trunkSystems, T3_LIMITS.systems);
+	}
+	Object.assign(s, fields);
+	const at = m.trunkChannels.findIndex((c) => c.system === s);
+	const rest = m.trunkChannels.filter((c) => c.system !== s);
+	const mine = chans.map((c) => ({ ...c, system: s }));
+	rest.splice(at < 0 ? rest.length : at, 0, ...mine);
+	m.trunkChannels = rest;
+	syncTrunk(m, s);
+}
+
+// Whether system s works on the radio (12.1): a control channel and, when it authenticates, a key
+export function systemUsable(m, s) {
+	return (m.trunkChannels ?? []).some((c) => c.system === s && c.control) && (!s.authenticates || validKey(s.key));
 }
 
 // --- Editing helpers ---
@@ -254,6 +481,17 @@ export function remove(m, table, items) {
 	m[table] = m[table].filter((x) => !gone.has(x));
 	if (table === "channels") {
 		for (const z of m.zones) z.channels = z.channels.filter((c) => !gone.has(c));
+		// a fallback on a deleted channel is none; the deleted channel's tag goes with it (trunkEntries)
+		for (const x of [...m.channels, ...(m.trunkSystems ?? [])]) if (x.fallback != null && gone.has(x.fallback)) x.fallback = null;
+	} else if (table === "trunkSystems") {
+		// its channels go with it; channels tagged with it become conventional, receive only: their record's frequencies
+		// are the system's, where a conventional transmission doesn't belong
+		m.trunkChannels = (m.trunkChannels ?? []).filter((c) => !gone.has(c.system));
+		for (const c of m.channels) {
+			if (!gone.has(c.system)) continue;
+			setTrunk(m, c, null);
+			c.rxOnly = true;
+		}
 	} else if (table === "contacts") {
 		for (const c of [...m.channels, ...m.vfo]) if (c && gone.has(c.contact)) c.contact = null;
 		for (const l of m.rxLists) l.contacts = l.contacts.filter((c) => !gone.has(c));
@@ -344,5 +582,75 @@ export function validate(m, { bands = null } = {}) {
 		if (a.name.length > LIMITS.aprsName) err("aprs", a, "name", "too_long", { max: LIMITS.aprsName });
 		if (a.comment.length > LIMITS.aprsComment) err("aprs", a, "comment", "too_long", { max: LIMITS.aprsComment });
 	}
+	validateTrunk(m, err, warn);
 	return out;
+}
+
+// Tier III (docs/spec/dmr-trunking.md 12): problems are the system's (table trunkSystems), a channel's tag the channel's
+function validateTrunk(m, err, warn) {
+	const systems = m.trunkSystems ?? [], chans = m.trunkChannels ?? [];
+	const T = "trunkSystems";
+	if (systems.length > T3_LIMITS.systems) err(T, null, null, "too_many", { max: T3_LIMITS.systems, count: systems.length });
+	if (chans.length > T3_LIMITS.chanKeys) err(T, null, null, "t3_chans_too_many", { max: T3_LIMITS.chanKeys, count: chans.length });
+	const range = (s, f, lo, hi) => {
+		if (!(Number.isInteger(s[f]) && s[f] >= lo && s[f] <= hi)) err(T, s, f, "range", { min: lo, max: hi });
+	};
+	for (const s of systems) {
+		if (!s.name) err(T, s, "name", "no_name");
+		if (s.name.length > T3_LIMITS.name) err(T, s, "name", "too_long", { max: T3_LIMITS.name });
+		range(s, "model", 0, 3);
+		if (!(Number.isInteger(s.net) && s.net >= 0 && s.net <= netMax(s.model))) err(T, s, "net", "t3_net_range", { max: netMax(s.model) });
+		range(s, "colorCode", 0, 15);
+		range(s, "ownId", 0, ID_MAX);
+		range(s, "fallbackHold", 0, 255);
+		range(s, "planFirstLcn", 0, T3_LIMITS.lcn);
+		range(s, "planSep", 0, 7);
+		range(s, "planBaseHz", 0, 0xFFFFFFFF);
+		range(s, "planSplitHz", 0, 0xFFFFFFFF);
+		range(s, "leaveDbm", -128, 127);
+		range(s, "powerSave", 0, 7);
+		if (s.sites.length > T3_LIMITS.sites) err(T, s, "sites", "too_many", { max: T3_LIMITS.sites, count: s.sites.length });
+		if (s.sites.some((x) => !Number.isInteger(x) || x < 0 || x > siteMax(s.model))) err(T, s, "sites", "range", { min: 0, max: siteMax(s.model) });
+		if (s.key && !validKey(s.key)) err(T, s, "key", "t3_key_length");
+		if (!(Number.isInteger(s.psn) && s.psn >= 0 && s.psn <= 0xFFFFFF)) err(T, s, "psn", "range", { min: 0, max: 0xFFFFFF });
+		else if (s.psn && !s.key) warn(T, s, "psn", "t3_psn_no_key");
+		const mine = chans.filter((c) => c.system === s);
+		const ctrl = mine.filter((c) => c.control).length;
+		if (!ctrl) warn(T, s, "controlChannels", "t3_no_control");
+		else if (s.authenticates && !s.key) warn(T, s, "key", "t3_no_key");
+		if (ctrl > T3_LIMITS.ctrl) warn(T, s, "controlChannels", "t3_ctrl_extra", { max: T3_LIMITS.ctrl });
+		if (mine.length > T3_LIMITS.chans) warn(T, s, "controlChannels", "t3_chans_extra", { max: T3_LIMITS.chans });
+		fallbackProblems(T, s, s.fallback, warn);
+	}
+	for (const c of chans) {
+		if (typeof c.system === "number") {
+			warn(T, null, null, "t3_chan_no_system", { number: c.system });
+			continue;
+		}
+		const s = c.system;
+		if (!(Number.isInteger(c.lcn) && c.lcn >= 1 && c.lcn <= T3_LIMITS.lcn)) err(T, s, "lcn", "range", { min: 1, max: T3_LIMITS.lcn });
+		for (const f of ["rxHz", "txHz"]) if (!(c[f] > 0 && c[f] < 1e9)) err(T, s, f, "bad_freq");
+		if (c.cc != null && !(Number.isInteger(c.cc) && c.cc >= 0 && c.cc <= 15)) err(T, s, "colorCode", "range", { min: 0, max: 15 });
+	}
+	for (const c of m.channels) {
+		if (!c.system) continue;
+		if (typeof c.system === "number") warn("channels", c, "system", "t3_tag_no_system", { number: c.system });
+		if (!c.contact && !c.rxList) warn("channels", c, "contact", "t3_no_talkgroup");
+		if (c.fallback) fallbackProblems("channels", c, c.fallback, warn);
+	}
+	if (!m.base) return;
+	const state = decodeArea(m.base.bytes).state;
+	if (state === "newer") {
+		if (systems.length) warn(T, null, null, "t3_area_newer");
+		return;
+	}
+	if (!systems.length && !chans.length && !m.channels.some((c) => c.system)) return;
+	const { used, max } = areaUse(m);
+	if (used > max) err(T, null, null, "settings_area_full", { used, max });
+}
+
+// A fallback must be a conventional channel the radio finds by its number and name
+function fallbackProblems(table, item, f, warn) {
+	if (typeof f === "number") warn(table, item, "fallback", "t3_fallback_stale", { number: f });
+	else if (f && f.system) warn(table, item, "fallback", "t3_fallback_trunked");
 }
