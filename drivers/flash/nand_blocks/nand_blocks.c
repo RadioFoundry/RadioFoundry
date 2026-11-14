@@ -478,7 +478,11 @@ static bool put_page(nand_blocks_t *nb, uint16_t l, uint16_t p, uint16_t col, co
 		return false;
 	}
 	nb->next = (uint16_t)(p + 1u);
-	return p + 1u < ppb(nb) || close_open(nb);
+	if (p + 1u == ppb(nb) && !close_open(nb)) {
+		nb->open_l = NONE;	// as a failed program: its last page may be half programmed, never committed
+		return false;
+	}
+	return true;
 }
 
 // --- The device ---

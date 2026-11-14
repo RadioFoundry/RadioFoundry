@@ -1424,7 +1424,6 @@ static void tx_access(uint32_t now)
 		return;
 	}
 	if (s.cfg.rmo && !repeater_up(now)) {
-		s.slot_waiting = false;
 		tx_wakeup(now);
 	} else if (slot_unverified(now)) {
 		return;

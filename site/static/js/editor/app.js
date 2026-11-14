@@ -766,9 +766,9 @@ async function readRadio() {
 			// the ID database can be megabytes: its header first, and a long read of it offered, not made. Then one read
 			// (one progress bar) of the codeplug and, when wanted, the database
 			// a database known from this session, or from an earlier one's image with the same header: only changed blocks move
+			const head = await c.transport.readIddbHeader();
 			const cached = (!!c.image && c.dbKnown) || (!!c.cache && equal(c.cache.bytes.subarray(IDDB_HEADER[0], IDDB_HEADER[1]),
 				head.bytes.subarray(IDDB_HEADER[0], IDDB_HEADER[1])));
-			const head = await c.transport.readIddbHeader();
 			const db = dbHeader(head.bytes);
 			const dbBytes = c.transport.iddbBytes(head);
 			const rate = c.rate || (c.cable ? 9000 : 30000);

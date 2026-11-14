@@ -15,7 +15,6 @@ import { readHeader, extent, AREA1, AREA1_SIZE, AREA2 } from "./iddb.js";
 import { GENERAL, BOOT_TEXT } from "./records.js";
 import { Link, probe, whyNoAnswer } from "../flasher/link.js";
 import { crc32, sleep } from "../flasher/bytes.js";
-import { encodeBlock } from "../flasher/lz4.js";
 import { FastLink, FastError, BLOCK, REASON } from "./fastlink.js";
 import { note } from "../diag.js";
 
@@ -433,7 +432,7 @@ export class CpsSerial {
 		const plan = [...codeplug, ...ids];
 		plan.fast = true;
 		plan.codeplug = codeplug.length;
-		const bytes = plan.reduce((n, [, b, base]) => n + (b.every((x) => x === 0xFF) ? 0 : encodedSize(b, this.fast?.patch ? base : null)), 0);
+		const bytes = plan.reduce((n, [, b, base]) => n + (b.every((x) => x === 0xFF) ? 0 : this.fl.encode(b, base).stream.length), 0);
 		return { plan, bytes, blocks: plan.length };
 	}
 
@@ -544,11 +543,6 @@ function known(img, a, crc) {
 }
 
 // LZ4 stream bytes for a block (what the fast protocol sends): a patch of base when it's given and shorter
-function encodedSize(b, base = null) {
-	const plain = encodeBlock(b).length;
-	return base ? Math.min(plain, encodeBlock(b, base).length) : plain;
-}
-
 // Estimated seconds for a transfer of n bytes; blocks: 4 KB blocks the fast protocol writes (each an erase and two
 // programs on the radio, about 0.15 s)
 export function estimate(n, cable, blocks = 0) {
