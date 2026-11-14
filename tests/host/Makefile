@@ -645,7 +645,7 @@ paKeyupTest: paKeyupTest.c $(CORE)/radio/pa_keyup.c $(CORE)/radio/pa_keyup.h
 	$(CC) $(CFLAGS) -Wshadow -DCONFIG_DMR=1 -o $@ paKeyupTest.c $(CORE)/radio/pa_keyup.c
 
 run: run-ambe
-run-ambe: ambeFecTest ambeVoiceTest micGainTest refTrimTest paKeyupTest
+run-ambe: ambeFecTest ambeVoiceTest ambeVoiceCaptureTest micGainTest refTrimTest paKeyupTest
 	./ambeFecTest
 	./ambeVoiceTest
 	./ambeVoiceCaptureTest
