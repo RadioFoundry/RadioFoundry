@@ -36,7 +36,7 @@ copy holds it. Never a mix of the two, and no other block is affected. A host wr
 pages in address order, so each block is copied once.
 
 The old copy isn't erased at the commit: blocks are erased when they are next taken, from the next free block after
-the last one taken (wear goes round the region). One spare block is the least the layer needs; more ride out bad
+the last one taken (wear goes round the region; after a mount, from the block with the newest tag). One spare block is the least the layer needs; more ride out bad
 blocks.
 
 ## 2. The tag
@@ -74,7 +74,7 @@ Sequence numbers go on after the highest seen.
 | What | Treatment |
 |---|---|
 | An erase fails (the chip says so) | The block is retired (marked bad) and the next free block taken |
-| A program fails | The page may be half programmed: never programmed again. A new block takes the copy's pages so far (moved inside the chip, their tags as they are), the failing block is retired, and the page is tried there. Up to 3 times |
+| A program fails | The page may be half programmed: never programmed again. A new block takes the copy's pages so far (moved inside the chip, their tags as they are), the failing block is retired, and the page is tried there. Up to 3 times. When that fails too, the write fails and the open copy is dropped: the logical block reads as at its last commit, so writes to it since then are undone with it (not yet committed, they weren't kept through a power cut either, 1). The host's checksums show it and it sends the block again |
 | A page of the old copy can't be read when it is moved | It is lost either way: it is left erased in the copy, so the block can still be written (counted, `lost`). The host's checksums show the difference and it sends the page again |
 | No free block left | The write fails; the copy current before it stays |
 

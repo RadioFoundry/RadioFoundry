@@ -883,6 +883,24 @@ static void test_big_blocks(void)
 	CHECK(nand.violations == 0);
 }
 
+// Wear goes round the region across mounts too: a mount goes on from the block taken last
+static void test_wear_across_mounts(void)
+{
+	start(16, 8, 4);
+	for (uint32_t k = 0; k < 40; k++) {
+		CHECK(replace(bsize() + NAND_BLOCKS_SECTOR, 200 + k));
+		CHECK(nand_blocks_sync(&nb));
+		CHECK(remount());
+	}
+	CHECK(matches_model());
+	uint32_t lo = ~0u, hi = 0;
+	for (uint16_t b = 0; b < 16; b++) {
+		lo = nand.erases[b] < lo ? nand.erases[b] : lo;
+		hi = nand.erases[b] > hi ? nand.erases[b] : hi;
+	}
+	CHECK(lo > 0 && hi <= lo + 1u);
+}
+
 int main(void)
 {
 	test_setup();
@@ -892,6 +910,7 @@ int main(void)
 	test_nor_writes();
 	test_random_ops();
 	test_newest_wins();
+	test_wear_across_mounts();
 	test_bad_blocks();
 	test_worn_partway();
 	test_unreadable_old_page();
