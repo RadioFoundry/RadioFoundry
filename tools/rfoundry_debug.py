@@ -2457,6 +2457,7 @@ def main(argv=None):
     p.add_argument("--private", action="store_true")
     p.add_argument("--broadcast", action="append", default=[], type=int,
                    help="a talkgroup whose calls from the radio are broadcasts (one-way)")
+    p.add_argument("--ps-rq", type=int, default=0, help="power save asked for at registration: 0 off, 1-7 = 1:2-1:128")
     p.add_argument("--no-start", action="store_true")
     p = sub.add_parser("iddb", help="the DMR ID database: its format and records, and the text for each ID given "
                        "(docs/spec/debuglink.md 3.23)")
@@ -2554,6 +2555,8 @@ def main(argv=None):
                         link.t3_chan(*chan(c))
                     for i, tg in enumerate(a.tg):
                         link.t3_tg(tg, True, i == 0, tg in a.broadcast)
+                    if a.ps_rq:
+                        link.t3_power_save(a.ps_rq)
                     if not a.no_start:
                         link.t3("start")
                 elif a.op == "status":

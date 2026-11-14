@@ -534,7 +534,8 @@ PowerSave_Offset, the wake frame (table 7.41); 0 means no power save.
 | Early | The radio wakes two CSC steps (240 ms) before its frame, so the receiver has synchronized |
 | Asleep | Camped, confirmed, registered, no access, nothing queued, outside the wake frame, past T_Awake |
 | T_Awake | 2 s (`awake_ms`): after registering, any access, traffic for the radio (AHOY, acknowledgement) and a call's end |
-| T_Nosig | Counts only time awake |
+| T_Nosig | Counts only time awake. A PDU still heard in the first moments of a sleep (the receiver goes off after the engine sleeps) counts as heard now, never later |
+| Level | Not taken asleep, nor for 60 ms after waking: with the receiver off or settling it reads no signal, which would roam the radio |
 | MassReg | A due mass registration wakes the radio |
 
 `t3_ms_asleep` is the engine's decision. While it holds, idle and not keyed, the radio core switches the receiver off

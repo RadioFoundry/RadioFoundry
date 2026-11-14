@@ -319,6 +319,7 @@ typedef struct {
 	uint8_t ps_rq_sent, ps_rq, ps_offset;
 	bool asleep;
 	uint32_t awake_until, csc_ms, ps_tick_ms;
+	uint32_t woke_ms;		// the last wake from a power save sleep: the level is taken again T3_SETTLE_MS after it
 	uint32_t sleeps;	// times the radio went to sleep
 	// DGNA (6.6.8): talkgroups the system assigned. Heard like the configured ones, never attached (6.4.4.1.13.0).
 	// The alias mode's talkgroup (the 16th, or one of the list named) keeps the latest alias, UTF-16

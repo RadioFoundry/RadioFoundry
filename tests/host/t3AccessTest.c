@@ -1332,6 +1332,25 @@ static void test_power_save(void)
 	CHECK(wrong == 0 && asleep > 30 && ms.sleeps >= 2, "asleep outside the wake frame: %d wrong, %d asleep", wrong,
 	      asleep);
 	CHECK(ms.state == T3_CAMPED, "T_Nosig counts only awake time");
+	// The receiver goes off a little after the engine sleeps: an Aloha heard between two polls of a sleep must not move
+	// the last valid PDU past now (read as T_Nosig long ago: a hunt). The level read with the receiver off is no signal
+	int hunts = (int)ms.st.hunts, heard = 0;
+	for (int i = 0; i < 64; i++) {
+		T += 30;
+		t3_ms_slot(&ms, T, 1, at_known, at_busy);
+		poll_all(&ms);
+		bool asleep = ms.asleep;
+		T += 10;
+		send_aloha(&ms);
+		t3_ms_level(&ms, T, asleep ? -125 : -60);
+		heard += asleep;
+		T += 20;
+		t3_ms_slot(&ms, T, 2, at_known, at_busy);
+		poll_all(&ms);
+	}
+	CHECK(heard > 10 && ms.state == T3_CAMPED && (int)ms.st.hunts == hunts, "a PDU heard asleep: %d, hunts %u",
+	      heard, (unsigned)ms.st.hunts - (unsigned)hunts);
+	CHECK(ms.level_dbm >= -61, "the level asleep not taken: %d dBm", ms.level_dbm);
 	// An AHOY to the radio wakes it for T_Awake
 	t3_csbk_t h = ahoy(T3_SK_IND_VOICE, false, OWN, 1234u);
 	rx(&ms, 1, &h);

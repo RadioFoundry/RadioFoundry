@@ -479,6 +479,9 @@ static void on_grant(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_cha
 static void ps_wake(t3_ms_t *ms, uint32_t now)
 {
 	ms->awake_until = now + or_default(ms->cfg->awake_ms, T3_AWAKE_MS);
+	if (ms->asleep) {
+		ms->woke_ms = now;
+	}
 	ms->asleep = false;
 }
 
@@ -1571,7 +1574,10 @@ static void on_vote(t3_ms_t *ms, uint8_t cc, const t3_csbk_t *p)
 
 void t3_ms_level(t3_ms_t *ms, uint32_t now, int16_t dbm)
 {
-	if (dbm == 0 || ms->state == T3_OFF || ms->state == T3_FOLLOW || !since(now, ms->tuned_ms, T3_SETTLE_MS)) {
+	// Asleep the receiver may be off, and just awake it is still settling: its readings are of no signal, and taken
+	// they would roam the radio off a good TSCC
+	if (dbm == 0 || ms->state == T3_OFF || ms->state == T3_FOLLOW || !since(now, ms->tuned_ms, T3_SETTLE_MS) ||
+	    ms->asleep || !since(now, ms->woke_ms, T3_SETTLE_MS)) {
 		return;
 	}
 	ms->level_dbm = ms->level_dbm == 0 ? dbm : (int16_t)((3 * (int32_t)ms->level_dbm + dbm) / 4);
@@ -2116,13 +2122,18 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 			}
 			break;
 		}
-		// Asleep, nothing can be heard: T_Nosig counts only the time awake
+		// Asleep, nothing can be heard: T_Nosig counts only the time awake. The receiver goes off a little after the
+		// engine sleeps, so a PDU can still come in between two polls of a sleep: never move the last one past now,
+		// or since() reads it as long ago
 		bool sleep = ps_may_sleep(ms, now);
 		if (ms->asleep) {
-			ms->last_valid_ms += now - ms->ps_tick_ms;
+			uint32_t slept = now - ms->ps_tick_ms;
+			ms->last_valid_ms = since(now, ms->last_valid_ms, slept) ? ms->last_valid_ms + slept : now;
 		}
 		if (sleep && !ms->asleep) {
 			ms->sleeps++;
+		} else if (!sleep && ms->asleep) {
+			ms->woke_ms = now;
 		}
 		ms->asleep = sleep;
 		ms->ps_tick_ms = now;
