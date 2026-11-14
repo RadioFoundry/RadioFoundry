@@ -640,7 +640,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0], epilog=EPILOG,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--board", choices=sorted(BOARDS), help="the radio (default: the one the stock file is for)")
-    ap.add_argument("--stock", help="your radio's stock firmware file (DM-32UV: 049 or 046; DM-1801 Pro: a program "
+    ap.add_argument("--stock", help="your radio's stock firmware file (DM-32UV: 049 or 046, or for the newer RF "
+                    "section's 050 a program flash read, stub/stubtool.py --progmem; DM-1801 Pro: a program "
                     "flash dump, stub/stubtool.py --progmem; DB25-D PRO: 018, 2024-05-09 or later, or a program flash read of a "
                     "radio with 020)")
     ap.add_argument("--image", help="the built raw application image (default: build/<board>/rfoundry_<board>.bin)")

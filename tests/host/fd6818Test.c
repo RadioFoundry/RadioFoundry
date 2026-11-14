@@ -31,6 +31,7 @@ static struct {
 	int crit_depth, crit_max;
 	int protocol_errors;
 	uint16_t regs[256];
+	uint16_t (*css)(void);	// set: what 0x0C reads (the lock bit by set-up and time)
 } chip;
 
 static void fake_cs(bool level)
@@ -73,6 +74,9 @@ static void fake_clk(bool level)
 			}
 			chip.reading = true;
 			chip.out = chip.regs[chip.shift & 0x7Fu];
+			if ((chip.shift & 0x7Fu) == FD6818_REG_CSS_STATUS && chip.css) {
+				chip.out = chip.css();
+			}
 			chip.out_bits = 0;
 		}
 		chip.out_bits++;
@@ -630,9 +634,71 @@ static void test_setup_b(void)
 	CHECK(chip.protocol_errors == 0);
 }
 
+// fd6818_detect against a section that locks on some set-ups only, after some reads of 0x0C
+static fd6818_t det_dev;
+static const fd6818_variant_t *det_locks[2];	// the set-ups that lock this section
+static const fd6818_variant_t *det_last;
+static unsigned det_reads, det_slow;		// reads since the set-up changed; reads before det_locks[0] locks
+static const uint16_t *det_seq;			// set: 0x0C reads in turn (a bit that flickers)
+
+static uint16_t det_css(void)
+{
+	if (det_seq) {
+		return *det_seq++;
+	}
+	if (det_dev.variant != det_last) {
+		det_last = det_dev.variant;
+		det_reads = 0;
+	}
+	det_reads++;
+	bool ok = (det_dev.variant == det_locks[0] && det_reads > det_slow) || det_dev.variant == det_locks[1];
+	return ok ? FD6818_CSS_PLL_LOCK : 0;
+}
+
+static uint8_t detect(const fd6818_variant_t *l0, const fd6818_variant_t *l1, unsigned slow)
+{
+	static const fd6818_variant_t *const v[] = { &fd6818_variant_default, &fd6818_variant_b_dmr6943 };
+	reset_chip();
+	chip.css = det_css;
+	det_locks[0] = l0;
+	det_locks[1] = l1;
+	det_last = NULL;
+	det_slow = slow;
+	uint8_t i = fd6818_detect(&det_dev, bus(), v, 2, 145000000u, 20);
+	CHECK(chip.protocol_errors == 0);
+	return i;
+}
+
+static void test_detect(void)
+{
+	const fd6818_variant_t *a = &fd6818_variant_default, *b = &fd6818_variant_b_dmr6943;
+	// Both lock the classic section, so the default is taken; only B locks the newer one; neither: none, left on A
+	CHECK(detect(a, b, 0) == 0 && det_dev.variant == a);
+	CHECK(detect(b, NULL, 0) == 1 && det_dev.variant == b);
+	CHECK(detect(NULL, NULL, 0) == 2 && det_dev.variant == a && chip.regs[FD6818_REG_STATE] != FD6818_STATE_TX);
+	// The default locks only after the first wait: B locks too, so A gets a longer try and is taken
+	CHECK(detect(a, b, 25) == 0 && det_dev.variant == a);
+	// Slower than the longer try as well: taken as B
+	CHECK(detect(a, b, 70) == 1 && det_dev.variant == b);
+	// A lock bit set once while settling is no lock
+	static const uint16_t flicker[] = { FD6818_CSS_PLL_LOCK, 0, 0, 0, 0 };
+	reset_chip();
+	chip.css = det_css;
+	det_seq = flicker;
+	fd6818_attach_variant(&det_dev, bus(), &fd6818_variant_default);
+	CHECK(!fd6818_pll_locked(&det_dev, 2));
+	static const uint16_t settle[] = { FD6818_CSS_PLL_LOCK, 0, FD6818_CSS_PLL_LOCK, FD6818_CSS_PLL_LOCK,
+					   FD6818_CSS_PLL_LOCK };
+	det_seq = settle;
+	CHECK(fd6818_pll_locked(&det_dev, 2));
+	det_seq = NULL;
+	chip.css = NULL;
+}
+
 int main(void)
 {
 	test_setup_b();
+	test_detect();
 	test_burst_split();
 	test_dm1801pro();
 	test_burst_tables();

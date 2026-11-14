@@ -107,8 +107,7 @@ address (0x16CDC), the same entry points (the 049 column above) and byte-identic
 codec ranges the code differs only in its table pointers. The rest of the differences fall in the other code that lies
 inside the window but isn't codec. Each version links the codec to its own flash addresses, so `tools/hrc7000_codec.py`
 keys each file by its SHA-256 and finds the codec in a program flash read by content, then by address. The NRFB build
-is known only from a program flash read (no vendor file of it is held), so its profile is keyed by the SHA-256 of the
-code window.
+is known only from a program flash read, so its profile is keyed by the SHA-256 of the code window.
 
 | Build | Code, flash | Tables, flash | Tables, modem RAM | Same code as |
 |---|---|---|---|---|

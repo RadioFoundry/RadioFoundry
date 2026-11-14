@@ -315,28 +315,14 @@ static const hrc_afsk_board_t afsk_board = {
 // ---- hal_radio_t ----
 
 // Which RF section the radio has (hardware-dm32.md 8.10): the default set-up, tuned, locks the classic section's
-// synthesizer and never the newer one's; set-up B locks both, so the default goes first. Neither locking leaves the
-// default and blocks transmitting: on the wrong set-up the newer section transmitted 74 MHz off
+// synthesizer and never the newer one's; set-up B locks both, so the default goes first (fd6818_detect). Neither
+// locking leaves the default and blocks transmitting: on the wrong set-up the newer section transmitted 74 MHz off
 static void rf_detect(void)
 {
-	const fd6818_variant_t *v[] = { &fd6818_variant_default, &fd6818_variant_b_dmr6943 };
-	for (unsigned i = 0; i < 2; i++) {
-		fd6818_attach_variant(&fd, &fd_bus.bus, v[i]);
-		fd6818_init(&fd);
-		fd6818_set_mode(&fd, FD6818_MODE_FM);
-		fd6818_set_freq(&fd, RF_PROBE_HZ);
-		fd6818_set_state(&fd, FD6818_STATE_RX);
-		if (fd6818_pll_locked(&fd, RF_LOCK_MS)) {
-			rf_b = i == 1;
-			break;
-		}
-		rf_unlocked = i == 1;
-	}
-	if (rf_unlocked) {
-		fd6818_attach_variant(&fd, &fd_bus.bus, &fd6818_variant_default);
-		fd6818_init(&fd);
-		fd6818_set_mode(&fd, FD6818_MODE_FM);
-	}
+	static const fd6818_variant_t *const v[] = { &fd6818_variant_default, &fd6818_variant_b_dmr6943 };
+	uint8_t i = fd6818_detect(&fd, &fd_bus.bus, v, 2, RF_PROBE_HZ, RF_LOCK_MS);
+	rf_b = i == 1;
+	rf_unlocked = i == 2;
 	fd6818_set_state(&fd, FD6818_STATE_IDLE);
 	if (rf_b) {
 		hrc7000_wr(&modem, C7_RF_MODE, hrc7000_rd(&modem, C7_RF_MODE) & ~C7_RF_MODE_RX_INVERT);

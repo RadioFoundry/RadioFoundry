@@ -70,7 +70,7 @@ static bool band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40)
 	.tx = tx_seq, .tx_n = TBL_N(tx_seq), \
 	.burst_rx = burst_rx, .burst_rx_n = TBL_N(burst_rx), \
 	.burst_tx = burst_tx, .burst_tx_n = TBL_N(burst_tx), \
-	/* The radios' own firmware writes only these two words: 12.5 kHz FM shares the DMR word (5.2) */ \
+	/* Two words only: 12.5 kHz FM shares the DMR word (5.2) */ \
 	.bw_fm_25k = 0x3028u, .bw_fm_12k5 = 0x3048u, .bw_dmr = 0x3048u, \
 	/* hardware-dm32.md 8.10: the receiver's sleep words */ \
 	.sleep_fm = 0x9D17u, .sleep_dmr = 0x9D00u, .sleep_wake = 0x9D1Fu, \

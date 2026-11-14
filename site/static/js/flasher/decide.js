@@ -16,7 +16,8 @@ import { KEEP, MERGE } from "./plan.js";
 // build its slot was made from ("<board>-049"), and every build's slot holds a working codec
 export function codecPresent(board, reported) {
 	if (reported === board.codec.id) return true;
-	return !!(board.codec_tagged && typeof reported === "string" && new RegExp(`^${board.id}-\\d{3,5}$`).test(reported));
+	if (!board.codec_tagged || typeof reported !== "string" || !reported.startsWith(`${board.id}-`)) return false;
+	return /^\d{3,5}$/.test(reported.slice(board.id.length + 1));
 }
 
 export class DecisionError extends Error {

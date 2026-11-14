@@ -1089,9 +1089,11 @@ RadioFoundry test radio.
 
 The data flash can't tell the sections apart: a Puya part (JEDEC 852018) is fitted with both.
 
-Start-up check (`radio_dm32.c` `rf_detect`): set-up A, tuned to 145 MHz in RX, waits up to 20 ms for 0x0C bit 9. No
-lock: set-up B the same way. Set-up B locks on both sections, so A goes first. Neither locking leaves set-up A and
-refuses every transmission. The diagnostics line `flash ... cal ... rf X` names the result: `A`, `B`, or `-` for
+Start-up check (`radio_dm32.c` `rf_detect`, `fd6818_detect`): set-up A, tuned to 145 MHz in RX, waits up to 20 ms
+for 0x0C bit 9 to read set three times in a row, 1 ms apart (the bit can read set once while the synthesizer
+settles). No lock: set-up B the same way. Set-up B locks on both sections, so A goes first, and when B locks A is tried
+once more with 60 ms, so a slow lock on the classic section isn't taken for the newer one. Neither locking leaves
+set-up A and refuses every transmission. The diagnostics line `flash ... cal ... rf X` names the result: `A`, `B`, or `-` for
 neither. Set-up B has no AM receive yet (8.7 is set-up A's).
 
 With no receive tone RadioFoundry writes the DCS 0x2E / 0x2F pair, which is also the power-on 0x2F.

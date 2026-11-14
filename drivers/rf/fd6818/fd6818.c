@@ -201,15 +201,56 @@ void fd6818_set_freq(fd6818_t *dev, uint32_t hz)
 
 bool fd6818_pll_locked(fd6818_t *dev, uint32_t timeout_ms)
 {
+	// The bit can read set once while the synthesizer settles: a lock is FD6818_LOCK_READS reads in a row, 1 ms apart
+	uint8_t run = 0;
 	for (uint32_t ms = 0;; ms++) {
 		if ((fd6818_read(dev, FD6818_REG_CSS_STATUS) & FD6818_CSS_PLL_LOCK) != 0u) {
-			return true;
-		}
-		if (ms >= timeout_ms) {
-			return false;
+			if (++run >= FD6818_LOCK_READS) {
+				return true;
+			}
+		} else {
+			run = 0;
+			if (ms >= timeout_ms) {
+				return false;
+			}
 		}
 		rfbus_delay_ms(dev->bus, 1);
 	}
+}
+
+static bool detect_try(fd6818_t *dev, rfbus_t *bus, const fd6818_variant_t *v, uint32_t hz, uint32_t timeout_ms)
+{
+	fd6818_attach_variant(dev, bus, v);
+	fd6818_init(dev);
+	fd6818_set_mode(dev, FD6818_MODE_FM);
+	fd6818_set_freq(dev, hz);
+	fd6818_set_state(dev, FD6818_STATE_RX);
+	return fd6818_pll_locked(dev, timeout_ms);
+}
+
+uint8_t fd6818_detect(fd6818_t *dev, rfbus_t *bus, const fd6818_variant_t *const *v, uint8_t n, uint32_t hz,
+		      uint32_t timeout_ms)
+{
+	for (uint8_t i = 0; i < n; i++) {
+		if (!detect_try(dev, bus, v[i], hz, timeout_ms)) {
+			continue;
+		}
+		// A later set-up can lock a section an earlier one is right for: an earlier one that was only slow gets a
+		// longer wait before the later one is taken
+		for (uint8_t j = 0; j < i; j++) {
+			if (detect_try(dev, bus, v[j], hz, FD6818_DETECT_RETRY * timeout_ms)) {
+				return j;
+			}
+		}
+		if (i > 0 && !detect_try(dev, bus, v[i], hz, timeout_ms)) {
+			break;		// locked once, not again: neither is trusted
+		}
+		return i;
+	}
+	fd6818_attach_variant(dev, bus, v[0]);
+	fd6818_init(dev);
+	fd6818_set_mode(dev, FD6818_MODE_FM);
+	return n;
 }
 
 void fd6818_set_bandwidth(fd6818_t *dev, uint16_t bw_reg)

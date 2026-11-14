@@ -179,8 +179,17 @@ void fd6818_set_mode(fd6818_t *dev, fd6818_mode_t mode);
 void fd6818_set_freq(fd6818_t *dev, uint32_t hz);
 void fd6818_set_bandwidth(fd6818_t *dev, uint16_t bw_reg);
 void fd6818_set_state(fd6818_t *dev, uint16_t state);
-// Polls 0x0C bit 9 for up to timeout_ms after a tune; true once the synthesizer is locked
+// Polls 0x0C bit 9 for up to timeout_ms after a tune; true once the synthesizer is locked (FD6818_LOCK_READS reads
+// in a row, 1 ms apart)
+#define FD6818_LOCK_READS	3u
 bool fd6818_pll_locked(fd6818_t *dev, uint32_t timeout_ms);
+// Which of n set-ups (variants) the RF section takes: each attached in turn, tuned to hz in RX, the first whose
+// synthesizer locks within timeout_ms. A later one can also lock a section an earlier one is right for, so when one
+// after the first locks, the earlier ones are tried again with FD6818_DETECT_RETRY times the wait. Returns the index,
+// the chip left on that set-up in RX; n when none locks, the chip left on v[0] in FM receive
+#define FD6818_DETECT_RETRY	3u
+uint8_t fd6818_detect(fd6818_t *dev, rfbus_t *bus, const fd6818_variant_t *const *v, uint8_t n, uint32_t hz,
+		      uint32_t timeout_ms);
 // Analog TX preparation writes (0x3F, 0x40, 0x37) before switching to TX (8.3, FM only)
 void fd6818_fm_tx_prepare(fd6818_t *dev);
 // TX CTCSS from the FD6818 (hz_x10 = 0: sub-audio off)
