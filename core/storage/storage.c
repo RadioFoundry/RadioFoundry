@@ -533,6 +533,17 @@ void storage_buffer_release(void)
 	storage_unlock();
 }
 
+bool storage_sync(void)
+{
+	if (board.flash == NULL || board.flash->sync == NULL) {
+		return true;
+	}
+	storage_lock();
+	bool ok = board.flash->sync();
+	storage_unlock();
+	return ok;
+}
+
 bool storage_write(uint32_t addr, const void *buf, uint32_t len)
 {
 	const hal_flash_map_t *m = storage_map();

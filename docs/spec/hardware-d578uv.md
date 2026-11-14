@@ -914,21 +914,33 @@ are in use, differing only in the read path:
 
 ### 6.3 RadioFoundry's range
 
-RadioFoundry programs and erases only blocks 2016-2047 (0x0FC00000-0x0FFFFFFF, 4 MB), the top of the unused
-range (`D578UV_NAND_RFOUNDRY_FIRST`, `D578UV_NAND_RFOUNDRY_BLOCKS`). The driver's write window
-refuses anything else. The core's storage runs on [nand-sectors.md](nand-sectors.md) there (`flash_d578uv.c`):
+RadioFoundry programs and erases only blocks 1856-2047 (0x0E800000-0x0FFFFFFF, 24 MB), the top of the unused range.
+The driver's write window refuses anything else. Two parts (`flash_d578uv.c`):
 
-| Logical address | Area |
-| --- | --- |
-| 0x000000 | open-firmware "EEPROM" image, 64 KB |
-| 0x011000 | settings ring, 8 sectors |
-| 0x019000 | sector journal, 2 sectors |
-| 0x020000 | open-firmware "flash" image, 1 MB |
-| 0x120000 | native codeplug, 1 MB |
-| 0x220000 | staging, 256 KB |
+| Blocks | NAND | Use |
+| --- | --- | --- |
+| 1856-2015 | 0x0E800000-0x0FBFFFFF | the ID database, 16 MB of data in 128 logical blocks with 32 spare blocks ([nand-blocks.md](nand-blocks.md); `D578UV_NAND_IDDB_*`) |
+| 2016-2047 | 0x0FC00000-0x0FFFFFFF | the core's storage on [nand-sectors.md](nand-sectors.md) (`D578UV_NAND_RFOUNDRY_*`) |
 
-The calibration stays in its own blocks, read only. The sector layer retires a block whose program or erase fails;
-it doesn't read the bad block table in block 0.
+The core sees one device:
+
+| Address | Area | Layer |
+| --- | --- | --- |
+| 0x000000 | open-firmware "EEPROM" image, 64 KB | sectors |
+| 0x011000 | settings ring, 8 sectors | sectors |
+| 0x019000 | sector journal, 2 sectors | sectors |
+| 0x020000 | open-firmware "flash" image: its first 1 MB | sectors |
+| 0x120000 | the image goes on: 16 MB, the ID database's room past its first 544 KB (`openfw_end` 0x1120000) | ID database |
+| 0x1120000 | native codeplug, 1 MB | sectors (its 0x120000) |
+| 0x1220000 | staging, 256 KB | sectors (its 0x220000) |
+
+The ID database's room is then about 16.8 MB: 256 KB in area 1 and area 2 from 0xD8000 to the image's end
+([iddb-compact.md](iddb-compact.md) 2). If its range doesn't mount (foreign data in it), the image ends at 0x120000,
+as on the NOR radios, and the radio says so in its fast CPS INFO; the diagnostics page's `iddb` line shows why. A
+write to the sectors' part first commits the ID database's open copy.
+
+The calibration stays in its own blocks, read only. Both layers retire a block whose program or erase fails; neither
+reads the bad block table in block 0.
 
 ## 7. Calibration
 

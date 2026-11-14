@@ -529,6 +529,7 @@ codeplug_source_t codeplug_init(void)
 
 codeplug_source_t codeplug_reload(void)
 {
+	storage_sync();		// every write session ends here: what it left pending in the flash is finished first
 	storage_lock();
 	codeplug_source_t s = index_all();
 	serial++;

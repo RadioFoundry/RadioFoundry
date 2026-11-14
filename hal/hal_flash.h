@@ -72,6 +72,10 @@ typedef struct {
 	// it; core/storage then rewrites a codeplug sector with it directly, with no journal and no erase first. NULL: the
 	// journaled erase and program
 	bool (*replace)(uint32_t addr, const void *data);
+	// Optional: finish what earlier writes left pending (a block-mapped NAND range keeps one copy open until its last
+	// page, docs/spec/nand-blocks.md), so a power cut can't take it back. Called after each codeplug or ID database
+	// write session (storage_sync). NULL: every write is final when it returns
+	bool (*sync)(void);
 	const hal_flash_map_t *map;	// NULL: no areas for the core (nothing is stored)
 } hal_flash_t;
 

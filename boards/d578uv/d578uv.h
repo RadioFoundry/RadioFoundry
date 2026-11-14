@@ -116,10 +116,14 @@ void d578uv_tone_stop(void);
 #endif
 
 // --- SPI NAND (nand_d578uv.c, hardware-d578uv.md 6) ---
-// RadioFoundry's own block range, the only blocks it programs or erases (hardware-d578uv.md 6.3): the top 32 blocks
-// (4 MB) of the 32 MB at 0x0E000000, unused by the radio's own data. "Initialize radio" doesn't reach it either
+// RadioFoundry's own block ranges, the only blocks it programs or erases (hardware-d578uv.md 6.3), in the 32 MB at
+// 0x0E000000 the radio's own data doesn't use ("Initialize radio" doesn't reach it either): the top 32 blocks (4 MB)
+// for the core's sectors, and the 160 blocks below them for the ID database (16 MB of data and 32 spare blocks)
 #define D578UV_NAND_RFOUNDRY_FIRST	2016u
 #define D578UV_NAND_RFOUNDRY_BLOCKS	32u
+#define D578UV_NAND_IDDB_FIRST		1856u
+#define D578UV_NAND_IDDB_BLOCKS		160u
+#define D578UV_NAND_IDDB_LOGICAL	128u	// logical blocks: 16 MB
 bool d578uv_nand_init(void);
 bool d578uv_nand_ready(void);
 uint16_t d578uv_nand_id(void);		// manufacturer << 8 | device, 0 if nothing answered
@@ -132,9 +136,12 @@ void d578uv_nand_unlock(void);
 #if CONFIG_NAND_STORAGE
 #include "flash/nand_sectors/nand_sectors.h"
 #include "hal_flash.h"
-extern const nand_dev_t d578uv_nand_dev;
+extern const nand_dev_t d578uv_nand_dev;	// the sectors' range
+extern const nand_dev_t d578uv_nand_iddb_dev;	// the ID database's range (drivers/flash/nand_blocks)
 extern hal_flash_t d578uv_flash;		// flash_d578uv.c
 bool d578uv_flash_init(void);
+#include "flash/nand_blocks/nand_blocks.h"
+void d578uv_flash_ext_stats(nand_blocks_stats_t *st);	// the ID database's range
 #endif
 
 // --- Bluetooth PTT and keys (bt_d578uv.c, hardware-d578uv.md 3.7), with CONFIG_BT_PTT. Input task ---

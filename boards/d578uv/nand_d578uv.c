@@ -59,13 +59,17 @@ static spi_nand_t nand = {
 #if CONFIG_NAND_STORAGE
 	// Feature 0xB0: ECC on (both parts' default), Kioxia's high speed read off
 	// (the internal data move needs it off). Every block locked (0xA0 = 0x38) except during a program or erase.
-	// Writes only in RadioFoundry's range
+	// Writes only in RadioFoundry's ranges: the ID database's, and the sectors' right after it
 	.config = 0x10,
 	.lock_all = 0x38,
-	.write_first = D578UV_NAND_RFOUNDRY_FIRST,
-	.write_blocks = D578UV_NAND_RFOUNDRY_BLOCKS,
+	.write_first = D578UV_NAND_IDDB_FIRST,
+	.write_blocks = D578UV_NAND_IDDB_BLOCKS + D578UV_NAND_RFOUNDRY_BLOCKS,
 #endif
 };
+#if CONFIG_NAND_STORAGE
+_Static_assert(D578UV_NAND_IDDB_FIRST + D578UV_NAND_IDDB_BLOCKS == D578UV_NAND_RFOUNDRY_FIRST,
+	       "the write window is one run of blocks: the ID database's range right below the sectors'");
+#endif
 static bool ready;
 static SemaphoreHandle_t lock;
 
@@ -125,18 +129,33 @@ bool d578uv_nand_read_any(uint32_t addr, void *buf, uint32_t len, uint32_t *ecc_
 }
 
 #if CONFIG_NAND_STORAGE
-// RadioFoundry's range as the sector layer sees it (nand_dev_t): blocks and pages from D578UV_NAND_RFOUNDRY_FIRST. The
-// driver's write window refuses anything outside it as well
+// RadioFoundry's ranges as the layers see them (nand_dev_t): blocks and pages from the range's first block, the range
+// in ctx. The driver's write window refuses anything outside both as well
+typedef struct {
+	uint16_t first, blocks;
+} range_t;
+
+static const range_t sectors_range = { D578UV_NAND_RFOUNDRY_FIRST, D578UV_NAND_RFOUNDRY_BLOCKS };
+static const range_t iddb_range = { D578UV_NAND_IDDB_FIRST, D578UV_NAND_IDDB_BLOCKS };
+
 #define PPB		64u
-#define PAGES		(D578UV_NAND_RFOUNDRY_BLOCKS * PPB)
-#define FIRST_PAGE	((uint32_t)D578UV_NAND_RFOUNDRY_FIRST * PPB)
 #define MAX_CHUNKS	2u
+
+static uint32_t pages(const range_t *r)
+{
+	return (uint32_t)r->blocks * PPB;
+}
+
+static uint32_t first_page(const range_t *r)
+{
+	return (uint32_t)r->first * PPB;
+}
 
 static bool dev_read(void *ctx, uint32_t page, uint16_t column, void *buf, uint32_t len)
 {
-	(void)ctx;
+	const range_t *r = ctx;
 	d578uv_nand_lock();
-	bool ok = ready && page < PAGES && spi_nand_read_page(&nand, FIRST_PAGE + page, column, buf, len);
+	bool ok = ready && page < pages(r) && spi_nand_read_page(&nand, first_page(r) + page, column, buf, len);
 	d578uv_nand_unlock();
 	return ok;
 }
@@ -148,9 +167,9 @@ static nand_result_t result(spi_nand_result_t r)
 
 static nand_result_t dev_program(void *ctx, uint32_t page, uint32_t src, const nand_chunk_t *chunks, unsigned n)
 {
-	(void)ctx;
+	const range_t *rg = ctx;
 	spi_nand_chunk_t c[MAX_CHUNKS];
-	if (!ready || page >= PAGES || (src != NAND_SECTORS_NO_PAGE && src >= PAGES) || n > MAX_CHUNKS) {
+	if (!ready || page >= pages(rg) || (src != NAND_SECTORS_NO_PAGE && src >= pages(rg)) || n > MAX_CHUNKS) {
 		return NAND_ERROR;
 	}
 	for (unsigned i = 0; i < n; i++) {
@@ -159,39 +178,39 @@ static nand_result_t dev_program(void *ctx, uint32_t page, uint32_t src, const n
 		c[i].data = chunks[i].data;
 	}
 	d578uv_nand_lock();
-	spi_nand_result_t r = spi_nand_program(&nand, FIRST_PAGE + page,
-					       src == NAND_SECTORS_NO_PAGE ? SPI_NAND_NO_PAGE : FIRST_PAGE + src, c, n);
+	spi_nand_result_t r = spi_nand_program(&nand, first_page(rg) + page,
+					       src == NAND_SECTORS_NO_PAGE ? SPI_NAND_NO_PAGE : first_page(rg) + src, c, n);
 	d578uv_nand_unlock();
 	return result(r);
 }
 
 static nand_result_t dev_erase(void *ctx, uint16_t block)
 {
-	(void)ctx;
-	if (!ready || block >= D578UV_NAND_RFOUNDRY_BLOCKS) {
+	const range_t *rg = ctx;
+	if (!ready || block >= rg->blocks) {
 		return NAND_ERROR;
 	}
 	d578uv_nand_lock();
-	spi_nand_result_t r = spi_nand_erase(&nand, D578UV_NAND_RFOUNDRY_FIRST + block);
+	spi_nand_result_t r = spi_nand_erase(&nand, rg->first + block);
 	d578uv_nand_unlock();
 	return result(r);
 }
 
 static bool dev_block_bad(void *ctx, uint16_t block, bool *bad)
 {
-	(void)ctx;
+	const range_t *rg = ctx;
 	d578uv_nand_lock();
-	bool ok = ready && block < D578UV_NAND_RFOUNDRY_BLOCKS && spi_nand_block_bad(&nand, D578UV_NAND_RFOUNDRY_FIRST + block, bad);
+	bool ok = ready && block < rg->blocks && spi_nand_block_bad(&nand, rg->first + block, bad);
 	d578uv_nand_unlock();
 	return ok;
 }
 
 static void dev_mark_bad(void *ctx, uint16_t block)
 {
-	(void)ctx;
-	if (ready && block < D578UV_NAND_RFOUNDRY_BLOCKS) {
+	const range_t *rg = ctx;
+	if (ready && block < rg->blocks) {
 		d578uv_nand_lock();
-		spi_nand_mark_bad(&nand, D578UV_NAND_RFOUNDRY_FIRST + block);
+		spi_nand_mark_bad(&nand, rg->first + block);
 		d578uv_nand_unlock();
 	}
 }
@@ -219,9 +238,24 @@ static void dev_busy(void *ctx)
 static const uint8_t factory_mark[10] = { 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55 };
 
 const nand_dev_t d578uv_nand_dev = {
-	.ctx = NULL,
+	.ctx = (void *)&sectors_range,
 	.pages_per_block = PPB,
 	.blocks = D578UV_NAND_RFOUNDRY_BLOCKS,
+	.spare_size = 64,
+	.read = dev_read,
+	.program = dev_program,
+	.erase = dev_erase,
+	.block_bad = dev_block_bad,
+	.mark_bad = dev_mark_bad,
+	.busy = dev_busy,
+	.factory_mark = factory_mark,
+	.factory_mark_len = sizeof(factory_mark),
+};
+
+const nand_dev_t d578uv_nand_iddb_dev = {
+	.ctx = (void *)&iddb_range,
+	.pages_per_block = PPB,
+	.blocks = D578UV_NAND_IDDB_BLOCKS,
 	.spare_size = 64,
 	.read = dev_read,
 	.program = dev_program,

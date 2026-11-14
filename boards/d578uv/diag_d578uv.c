@@ -3,7 +3,8 @@
 // AT-D578UV diagnostics page lines: the raw readings the bring-up needs (docs/testing/d578uv-bringup.md): the
 // baseband's boot result, the key ladders and microphone lines (to place the keys), the supply and volume pots, the
 // NAND's ID, the baseband's CARRIER_READY and received frames, the DMR PA gate's bursts, the GPS receiver's sentences,
-// whether the KTMicro receiver answered, side A's raw RSSI and the serial hand microphone's frames. Each line keeps its
+// whether the KTMicro receiver answered, side A's raw RSSI, the ID database's NAND range and the serial hand
+// microphone's frames. Each line keeps its
 // number whatever is built. The gps and rssi lines are in the shape the HIL health tests read on every radio
 // (tests/hil/test_health.py)
 #include <stddef.h>
@@ -20,7 +21,7 @@
 
 #if CONFIG_DIAG
 
-#define DIAG_LINES	10u
+#define DIAG_LINES	11u
 
 typedef struct {
 	char *p, *end;
@@ -202,6 +203,32 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, noise);
 		put(&o, signal ? " sig" : " -");
 		put(&o, d578uv_modem_synced() ? " sync" : " -");
+		break;
+	}
+	case 9: {
+		// The ID database's NAND range (nand-blocks.md): logical blocks holding data, spare blocks, bad blocks, and
+		// pages lost (unreadable when copied); "off" when it didn't mount (foreign data in it, the stats' first block)
+		put(&o, "iddb ");
+#if CONFIG_NAND_STORAGE
+		nand_blocks_stats_t st;
+		d578uv_flash_ext_stats(&st);
+		if (st.status == NAND_BLOCKS_MOUNTED) {
+			put_u(&o, st.blocks_used);
+			put(&o, " free ");
+			put_u(&o, st.blocks_free);
+			put(&o, " bad ");
+			put_u(&o, st.blocks_bad);
+			put(&o, " lost ");
+			put_u(&o, st.lost);
+		} else {
+			put(&o, "off ");
+			put_u(&o, st.status);
+			put(&o, " ");
+			put_u(&o, st.foreign_block);
+		}
+#else
+		put(&o, "-");
+#endif
 		break;
 	}
 	default: {
