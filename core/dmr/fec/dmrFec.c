@@ -432,3 +432,78 @@ bool dmrFecSlotTypeDecode(const uint8_t *burst, uint8_t *colorCode, uint8_t *dat
 	*dataType = d & 0x0F;
 	return errors >= 0;
 }
+
+// --- Reverse channel (ETSI TS 102 361-1 9.1.5, B.2.2.2, B.3.13) ---
+
+#define RC_CRC_MASK	0x7Au	// table B.21
+#define RC_CRC_POLY	0xA7u	// G7(x) = x^7 + x^5 + x^2 + x + 1
+
+// F7(x) = x^7 M(x) mod G7(x), M(x) the 4-bit command; no inversion, initial remainder 0
+static uint8_t rcCrc7(uint8_t command)
+{
+	uint16_t r = (uint16_t)((command & 0x0Fu) << 7);
+
+	for (int b = 10; b >= 7; b--)
+	{
+		if (r & (1u << b))
+		{
+			r ^= (uint16_t)(RC_CRC_POLY << (b - 7));
+		}
+	}
+	return (uint8_t)(r & 0x7Fu);
+}
+
+uint16_t dmrFecRcInfo(uint8_t command)
+{
+	command &= 0x0Fu;
+	return (uint16_t)((command << 7) | (rcCrc7(command) ^ RC_CRC_MASK));
+}
+
+int dmrFecRcInfoDecode(uint16_t info)
+{
+	uint8_t command = (uint8_t)((info >> 7) & 0x0Fu);
+
+	return ((info & 0x7FFu) == dmrFecRcInfo(command)) ? command : -1;
+}
+
+uint32_t dmrFecRcEncode(uint8_t command)
+{
+	// Row: RC(10)-RC(0) and the Hamming (16,11,4) parity H(4)-H(0), the (15,11,3) code's four and an even parity
+	// bit over the row (table B.16). Column j holds the row's bit j and below it PC(15-j), its complement (odd
+	// column parity). Matrix index 2j is the row's bit j, 2j+1 its PC; it goes out at Index x 17 mod 32 (B.3)
+	uint16_t h15 = dmrFecHamming15113Encode(dmrFecRcInfo(command));
+	uint16_t row = (uint16_t)((h15 << 1) | (popcount32(h15) & 1));
+	uint32_t field = 0;
+
+	for (int j = 0; j < 16; j++)
+	{
+		uint32_t bit = (row >> (15 - j)) & 1u;
+
+		for (int i = 2 * j; i <= 2 * j + 1; i++)
+		{
+			uint32_t v = (i & 1) ? (bit ^ 1u) : bit;
+
+			field |= v << (31 - ((i * 17) % 32));
+		}
+	}
+	return field;
+}
+
+int dmrFecRcDecode(uint32_t field, uint8_t *command)
+{
+	// 16 codewords at least 12 bits apart: the nearest within 3, so noise is seldom taken for a command
+	int best = 33, bestCommand = 0;
+
+	for (uint8_t c = 0; c < 16; c++)
+	{
+		int dist = popcount32(dmrFecRcEncode(c) ^ field);
+
+		if (dist < best)
+		{
+			best = dist;
+			bestCommand = c;
+		}
+	}
+	*command = (uint8_t)bestCommand;
+	return (best <= 3) ? best : -1;
+}
