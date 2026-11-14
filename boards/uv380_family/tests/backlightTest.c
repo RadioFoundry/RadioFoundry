@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // UV380 family backlight PWM (backlight_uvf.h): a low rate the backlight follows while receiving and a rate far above
-// the FM audio band while transmitting (#330). The backlight stage stays lit about 35 us after the pin falls, at any
+// the FM audio band while transmitting (#330). The backlight stage stays lit about 38 us after the pin falls, at any
 // rate, so the compare is shortened by that tail: pulse plus tail is the brightness asked for, where the period allows.
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,23 +26,24 @@ int main(void)
 	CHECK(UVF_BL_IDLE_PERIOD == 36000u);
 	CHECK(UVF_BL_IDLE_PERIOD - 1 <= 0xFFFFu);
 	CHECK(UVF_BL_IDLE_HZ >= 1000u && UVF_BL_IDLE_HZ <= 5000u);
-	// The tail in timer counts: 35 us at 72 MHz, longer than the transmit period (so transmit can't dim) and a small
+	// The tail in timer counts: 38 us at 72 MHz, longer than the transmit period (so transmit can't dim) and a small
 	// share of the receive period
-	CHECK(UVF_BL_TAIL == 2520u);
+	CHECK(UVF_BL_TAIL == 2736u);
 	CHECK(UVF_BL_TAIL > UVF_BL_PERIOD);
 	CHECK(UVF_BL_TAIL * 10u < UVF_BL_IDLE_PERIOD);
 	// Equivalence partitions at the receive rate: off, too low for the tail (one count), a middle level, fully on,
 	// values above 100
 	CHECK(uvf_bl_compare(0, UVF_BL_IDLE_PERIOD) == 0);
 	CHECK(uvf_bl_compare(5, UVF_BL_IDLE_PERIOD) == 1);	// the idle dim floor: 1800 counts lit is under the tail
-	CHECK(uvf_bl_compare(10, UVF_BL_IDLE_PERIOD) == 3600u - 2520u);
-	CHECK(uvf_bl_compare(50, UVF_BL_IDLE_PERIOD) == 18000u - 2520u);
+	CHECK(uvf_bl_compare(10, UVF_BL_IDLE_PERIOD) == 3600u - 2736u);
+	CHECK(uvf_bl_compare(50, UVF_BL_IDLE_PERIOD) == 18000u - 2736u);
 	CHECK(uvf_bl_compare(100, UVF_BL_IDLE_PERIOD) == UVF_BL_IDLE_PERIOD);
 	CHECK(uvf_bl_compare(255, UVF_BL_IDLE_PERIOD) == UVF_BL_IDLE_PERIOD);
-	// Boundary values around the tail: 7 % is exactly the tail (one count), 8 % the first level above it, 99 % still PWM
+	// Boundary values around the tail: 7 % (2520 counts) is under it (one count), 8 % (2880) the first level above it,
+	// 99 % still PWM
 	CHECK(uvf_bl_compare(7, UVF_BL_IDLE_PERIOD) == 1);
-	CHECK(uvf_bl_compare(8, UVF_BL_IDLE_PERIOD) == 2880u - 2520u);
-	CHECK(uvf_bl_compare(99, UVF_BL_IDLE_PERIOD) == 35640u - 2520u);
+	CHECK(uvf_bl_compare(8, UVF_BL_IDLE_PERIOD) == 2880u - 2736u);
+	CHECK(uvf_bl_compare(99, UVF_BL_IDLE_PERIOD) == 35640u - 2736u);
 	CHECK(uvf_bl_compare(99, UVF_BL_IDLE_PERIOD) < UVF_BL_IDLE_PERIOD);
 	// Every Brightness setting and idle dim level from 10 % up: pulse plus tail is its exact share of the period
 	for (unsigned b = 10; b <= 95; b += 5)

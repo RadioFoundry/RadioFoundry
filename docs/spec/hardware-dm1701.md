@@ -998,22 +998,42 @@ From about 18 kHz up the backlight leaves no trace in transmit. Only 2 kHz lands
 The leak falls about 26 dB from 10 to 18 kHz, much faster than the switching harmonics do, so it is the transmit audio
 path's own filtering, not the backlight's.
 
-The backlight stage behind the pin has a turn-off tail. Seen on the 3.3 V rail: Vrefint (ADC1 IN17) is read against
-VDDA, so the backlight's load raises the reading (about 1.1 counts fully on). One injected conversion per PWM cycle,
-triggered at a chosen count (TIM1 OC4REF as TRGO, falling edge, 144-cycle sample), averaged and stepped through the
-cycle, traces the rail's waveform. When the pin rises the load appears at once. When the pin falls the load stays at
-full current for about 22 us, then falls over about 30 us: about 35 us of full light in all, the same at any rate.
-That is why 40 kHz (a 25 us period) can't dim at all, why at 15 kHz and 50 % (33 us off) the LEDs never go dark, and
-why 2 kHz lit Brightness 10 % at about 17 %. Clean transmit needs about 18 kHz or more and dimming a few kHz or less,
-so the rate switches. The compare is shortened by the tail (`UVF_BL_TAIL`), so a pulse plus the tail is the brightness:
-at 2 kHz and Brightness 20 % the pin is high for 65 us and the light ends at about 100 us of the 500 us cycle. A level
-too low for the tail keeps one count, the least the rate allows: about 7 % at 2 kHz (the idle dim floor of 5 % lights
-at that). At 40 kHz every level below 100 % is the one count and the panel is fully lit, as before; transmit then
-measured 5.5, 2.5, 1.8 and 7.0 Hz at 2, 4, 6 and 8 kHz, the same as above.
+The backlight stage behind the pin has a turn-off tail: after the pin falls the LEDs stay at full current for about
+22 us, then fall over about 34 us, 38 us of full light in all, the same at any rate. Two independent measurements on
+DM-1701 A:
+
+- **RF harmonic nulls.** FM transmit at 2987 Hz with the set duty stepped 10-70 % (2 % steps, 1.5 s each, HackRF). The
+  leak path is linear and fixed per frequency, so harmonic n of the light waveform shows as a line at n x 2987 Hz in
+  proportion to its Fourier coefficient, and vanishes where the effective duty makes whole cycles of it (n = 2 at 1/2,
+  n = 3 at 1/3 and 2/3, n = 4 at 1/4, 1/2, 3/4). Every null sits about 11.5 points below its no-tail duty:
+
+  | Harmonic | No-tail null | Measured null (set duty) | Tail |
+  |---|---|---|---|
+  | 2 | 50.0 % | 38.5 % | 38.6 us |
+  | 3 | 33.3 % | 21.8 % | 38.7 us |
+  | 3 | 66.7 % | 55.1 % | 38.6 us |
+  | 4 | 25.0 % | 13.7 % | 37.9 us |
+  | 4 | 50.0 % | 38.5 % | 38.5 us |
+  | 4 | 75.0 % | 63.8 % | 37.4 us |
+
+  A waveform model (instant rise, full current for the pulse plus d, then a linear fall over r) fitted to harmonics 1-4
+  at once: d = 21.5 +- 0.4 us, r = 33.8 +- 0.7 us, full-light tail d + r/2 = 38.4 us.
+- **The 3.3 V rail.** Vrefint (ADC1 IN17) is read against VDDA, so the backlight's load raises the reading (about 1.1
+  counts fully on). One injected conversion per PWM cycle, triggered at a chosen count (TIM1 OC4REF as TRGO, falling
+  edge, 144-cycle sample), averaged and stepped through the cycle, traces the rail's waveform: when the pin rises the
+  load appears at once; when it falls the load holds about 22 us, then falls over about 30 us.
+
+That tail is why 40 kHz (a 25 us period) can't dim at all, why at 15 kHz and 50 % (33 us off) the LEDs never go dark,
+and why 2 kHz lit Brightness 10 % at about 18 %. Clean transmit needs about 18 kHz or more and dimming a few kHz or
+less, so the rate switches. The compare is shortened by the tail (`UVF_BL_TAIL`, 38 us, 2736 counts), so a pulse plus
+the tail is the brightness: at 2 kHz and Brightness 20 % the pin is high for 62 us and the light ends at 100 us of the
+500 us cycle. A level too low for the tail keeps one count, the least the rate allows: about 8 % at 2 kHz (the idle
+dim floor of 5 % lights at that). At 40 kHz every level below 100 % is the one count and the panel is fully lit, as
+before; transmit then measured 5.5, 2.5, 1.8 and 7.0 Hz at 2, 4, 6 and 8 kHz, the same as above.
 
 Caveats: the rail shows the regulator's response as well as the load (a sag at turn-on, an overshoot at turn-off,
 each settling over 100-200 us), so averaging the rail over a cycle doesn't give the duty; only the time of each edge
-is read from it. The tail was measured on one DM-1701; the stage's parts aren't identified (no inductor near the
+is read from it. The tail was measured on one DM-1701, at room temperature; the stage's parts aren't identified (no inductor near the
 display connector in the FCC photos, so a switch, not a boost driver). For sampling over the debug link, avoid rates on
 whole kHz: its USB frames are 1 ms apart, so the samples lock to the PWM phase and the average is biased.
 
