@@ -1876,7 +1876,8 @@ uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint3
 // c); 1 cycles punctuation and 0 a space, 0 and a few signs. The same key within 1 s takes the next one, another key
 // or the pause moves on. In 123 a digit types itself, as a held digit does
 // in any mode. # cycles ABC -> 123 -> abc. BACK deletes the last character and leaves once the field is empty, without
-// a change (the phone convention; the one exception to P4, principles 4); * or Left delete too. OK keeps. Without a
+// a change (the phone convention; the one exception to P4, principles 4); * or Left delete too (* types a space where
+// board.text_star_space says so; held, it still deletes). OK keeps. Without a
 // keypad Up / Down step the last character (down past the space deletes it), OK adds one and long OK keeps
 
 #define TEXT_MULTI_MS	1000u
@@ -2028,6 +2029,12 @@ static bool text_key_fn(const input_event_t *ev)
 	}
 	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS && text_len == 0) {
 		ui_pop();	// an empty field: BACK leaves, the name as it was
+		return true;
+	}
+	if (board.text_star_space && ev->action == ACT_QUICK && ev->gesture == GESTURE_PRESS) {
+		text_append(' ');	// * is the space bar on this radio (board.text_star_space)
+		text_key = -1;
+		ui_dirty();
 		return true;
 	}
 	if (((ev->action == ACT_BACK || ev->action == ACT_NAV_LEFT) && ev->gesture == GESTURE_PRESS) ||

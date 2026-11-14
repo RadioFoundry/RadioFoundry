@@ -334,11 +334,16 @@ static void test_sequences(void)
 	chips[0].n = 0;
 	CHECK(bk4819_tx_tail_start(&m));
 	bk4819_tx_tail_end(&m);
-	CHECK(c->n == 2 && c->log[0].reg == 0x52 && c->log[0].val == 0x828F && c->log[1].reg == 0x52 && c->log[1].val == 0x028F);
+	// The microphone off for the tail (0x30 bit 2) and on again
+	CHECK(c->n == 4 && c->log[0].reg == 0x52 && c->log[0].val == 0x828F && c->log[1].reg == 0x30 && c->log[1].val == BK4819_STATE_TX_TONE &&
+	      c->log[2].reg == 0x52 && c->log[2].val == 0x028F && c->log[3].reg == 0x30 && c->log[3].val == BK4819_STATE_TX_MAIN);
 	CHECK(bk4819_tx_tail_start(&m));
 	chips[0].n = 0;
 	bk4819_tx_end(&m);
 	CHECK(c->n >= 1 && c->log[0].reg == 0x52 && c->log[0].val == 0x028F && !m.tail_on);
+	for (int i = 0; i < c->n; i++) {
+		CHECK(!(c->log[i].reg == 0x30 && c->log[i].val == BK4819_STATE_TX_MAIN));	// the microphone stays off
+	}
 	CHECK(!bk4819_tx_tail_start(&m));
 	bk4819_tx_prepare(&m, BK4819_TONE_CTCSS, 1000);
 	CHECK(!bk4819_tx_tail_start(&m));

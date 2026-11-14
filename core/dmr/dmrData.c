@@ -434,6 +434,13 @@ static uint8_t udpcPortId(uint16_t port)
 	return 0;// in an extended header
 }
 
+static bool clearedBitsOn;
+
+void dmrDataSetClearedBitsRepair(bool on)
+{
+	clearedBitsOn = on;
+}
+
 void dmrDataSetUdpCompression(uint8_t mode)
 {
 	udpCompression = (mode <= DMR_UDPC_ALL) ? mode : DMR_UDPC_AUTO;
@@ -1378,6 +1385,94 @@ uint32_t dmrDataRxCrc9Mismatches(void)
 	return crc9Mismatches;
 }
 
+// A modem that takes every block after a header with A set (response requested) for a confirmed one clears the 9
+// bits a confirmed block's CRC-9 sits in: octet 0 bit 0 and octet 1 (docs/spec/modem-sct.md 6). In an unconfirmed or
+// short data packet those are user data, so its CRC-32 fails. The CRC-32 is affine in the data, so with at most 3 rate
+// 1/2 blocks (27 unknown bits against its 32) the bits can be solved: Gaussian elimination over GF(2), one row a CRC
+// bit, one column an unknown bit (bit 31 the syndrome). Kept only when the solution is unique, which also leaves 5
+// equations as a check against a packet damaged some other way.
+#define CLEARED_MAX_BLOCKS	3
+// Not inlined: its rows stay off the receive path's stack, where it is a leaf called only on a CRC-32 failure
+__attribute__((noinline)) static bool clearedBitsRepair(uint8_t *d, int blocks, int dataBytes, uint32_t rxCrc)
+{
+	int n = blocks * 9;
+
+	if ((blocks > CLEARED_MAX_BLOCKS) || ((blocks * 12) < (dataBytes + 4)))
+	{
+		return false;
+	}
+	for (int b = 0; b < blocks; b++)
+	{
+		if (((d[b * 12] & 0x01) != 0) || (d[b * 12 + 1] != 0))
+		{
+			return false;// not cleared: something else broke the CRC-32
+		}
+	}
+
+	uint32_t rows[32] = { 0 };
+	uint32_t base = dmrDataCRC32(d, dataBytes);
+	uint32_t syn = base ^ rxCrc;
+
+	for (int k = 0; k < n; k++)
+	{
+		uint8_t *o = &d[(k / 9) * 12 + ((k % 9) ? 1 : 0)];
+		uint8_t bit = (k % 9) ? (uint8_t)(1u << ((k % 9) - 1)) : 0x01;
+
+		*o ^= bit;
+		uint32_t col = dmrDataCRC32(d, dataBytes) ^ base;
+		*o ^= bit;
+		for (int r = 0; r < 32; r++)
+		{
+			rows[r] |= ((col >> r) & 1u) << k;
+		}
+	}
+	for (int r = 0; r < 32; r++)
+	{
+		rows[r] |= ((syn >> r) & 1u) << 31;
+	}
+
+	// Reduced row echelon form: column k's pivot ends in row k
+	for (int k = 0; k < n; k++)
+	{
+		int r = k;
+
+		while ((r < 32) && !((rows[r] >> k) & 1u))
+		{
+			r++;
+		}
+		if (r == 32)
+		{
+			return false;// not unique
+		}
+		uint32_t t = rows[r];
+
+		rows[r] = rows[k];
+		rows[k] = t;
+		for (int i = 0; i < 32; i++)
+		{
+			if ((i != k) && ((rows[i] >> k) & 1u))
+			{
+				rows[i] ^= t;
+			}
+		}
+	}
+	for (int r = n; r < 32; r++)
+	{
+		if (rows[r] != 0)
+		{
+			return false;// the spare equations disagree
+		}
+	}
+	for (int k = 0; k < n; k++)
+	{
+		if (rows[k] >> 31)
+		{
+			d[(k / 9) * 12 + ((k % 9) ? 1 : 0)] ^= (k % 9) ? (uint8_t)(1u << ((k % 9) - 1)) : 0x01;
+		}
+	}
+	return dmrDataCRC32(d, dataBytes) == rxCrc;
+}
+
 static bool parseHeader(const uint8_t *h, dmrDataPacket_t *p)
 {
 	p->dpf = h[0] & 0x0F;
@@ -1529,7 +1624,9 @@ dmrDataRxResult_t dmrDataRxBurst(const dmrBurst_t *burst)
 				const uint8_t *c = &p->data[rxBytes - 4];
 				uint32_t rxCrc = c[0] | (c[1] << 8) | (c[2] << 16) | ((uint32_t)c[3] << 24);
 
-				if (dmrDataCRC32(p->data, rxBytes - 4) != rxCrc)
+				if ((dmrDataCRC32(p->data, rxBytes - 4) != rxCrc) &&
+						!(clearedBitsOn && p->responseRequested && (p->dataType == DMR_TYPE_RATE_1_2) &&
+						  ((rxBytes % 12) == 0) && clearedBitsRepair(p->data, rxBytes / 12, rxBytes - 4, rxCrc)))
 				{
 					return DMR_DATA_RX_ERROR;
 				}

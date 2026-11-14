@@ -613,7 +613,7 @@
    "id": "tests/hil/test_dmr_tx.py::test_dmr_tx_off_air",
    "optional": [],
    "outcome": "skipped",
-   "reason": "[bench] the bench board 192.168.1.182 has no sdrmon.py waveform analysis (analyze_dmr) here: only the SDR bench host does",
+   "reason": "[bench] the bench board has no sdrmon.py waveform analysis (analyze_dmr) here: only the SDR bench host does",
    "required": true,
    "skip_kind": "bench"
   },

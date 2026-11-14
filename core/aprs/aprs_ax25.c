@@ -171,18 +171,16 @@ bool aprs_path_to_codeplug(void)
 
 // Who we are: the debug link's test call, the settings' radio name, the codeplug's callsign; its first word, upper
 // case, without an SSID (ours comes from the configuration). Reads storage: outside the lock
-void aprs_ax25_identity(void)
+void aprs_ax25_identity_from(const settings_t *st)
 {
 	char name[CODEPLUG_NAME_LEN + 1];
-	settings_t st;
 	codeplug_aprs_t cp;
-	settings_read(&st);
 	bool have_cp = codeplug_aprs(1, &cp);
 	LOCK();
 	memcpy(name, aprs_s.test_call, sizeof(aprs_s.test_call));
 	UNLOCK();
 	if (name[0] == '\0') {
-		memcpy(name, st.radio_name, SETTINGS_NAME_LEN);
+		memcpy(name, st->radio_name, SETTINGS_NAME_LEN);
 		name[SETTINGS_NAME_LEN] = '\0';
 	}
 	if (name[0] == '\0') {
@@ -217,8 +215,15 @@ void aprs_ax25_identity(void)
 	aprs_s.cp_serial = codeplug_serial();
 	aprs_s.ident_ms = aprs_s.now;
 	if (have_cp) {
-		take_codeplug_path(&st, &cp);
+		take_codeplug_path(st, &cp);
 	}
+}
+
+void aprs_ax25_identity(void)
+{
+	settings_t st;
+	settings_read(&st);
+	aprs_ax25_identity_from(&st);
 }
 
 // --- Small helpers (lock held) ---
@@ -505,12 +510,17 @@ void aprs_ax25_service(void)
 	aprs_s.v.msg_pending = aprs_s.out.active;
 	aprs_s.v.msg_tries = aprs_s.out.tries;
 	aprs_s.v.msg_acked = aprs_s.out.acked;
-	if (!aprs_s.out.active || aprs_s.block != APRS_OK || (int32_t)(aprs_s.now - aprs_s.out.next_ms) < 0) {
+	if (!aprs_s.out.active || (int32_t)(aprs_s.now - aprs_s.out.next_ms) < 0) {
 		return;
 	}
 	if (aprs_s.out.acked || aprs_s.out.tries >= APRS_MSG_TRIES) {
 		aprs_s.out.active = false;
 		aprs_changed();
+		return;
+	}
+	// Blocked (no call, no frequency ...): the next try waits; the message's end above doesn't, or a message whose
+	// last ack wait ran out while blocked stays pending for good
+	if (aprs_s.block != APRS_OK) {
 		return;
 	}
 	size_t n = aprs_build_message(aprs_s.out.to, aprs_s.out.text, aprs_s.out.msgno, aprs_s.info, sizeof(aprs_s.info));

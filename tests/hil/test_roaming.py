@@ -239,15 +239,12 @@ def zone_on(radio):
 
 def site_zone(radio):
     """Roaming on, on a repeater site with a second site: the current channel if it is one, else the first such
-    channel of the other zones in order (each zone's flag put back by the roaming fixture). Its view."""
+    channel of the zones in order (each zone's flag put back by the roaming fixture). Its view."""
     v = zone_on(radio)
     if v["roam.state"] != "off":
         return v
     L = radio.link
-    start = radio.core().get("zone_index")
     for zone in range(int(radio.core().get("zone_count") or 1)):
-        if str(zone) == start:
-            continue
         L.zone(zone)
         radio.wait_for(lambda x: x.get("zone_index") == str(zone), 3.0, what=f"zone {zone}")
         for pos in range(int(radio.core().get("zone_size") or 0)):
@@ -465,9 +462,12 @@ def bench_beacon(sdr_bench, pytestconfig, rx, tx, every, length, seconds):
 def bench_events(p):
     """End the bench repeater (repeater_start) and return (its JSON events, its output)."""
     p.terminate()
-    if getattr(p, "reader", None) is not None:
-        p.reader.join(5)
-    out = "".join(p.lines)              # the board job's lines as they came
+    if hasattr(p, "lines"):
+        if getattr(p, "reader", None) is not None:
+            p.reader.join(5)
+        out = "".join(p.lines)          # the board job's lines as they came
+    else:
+        out, _ = p.communicate(timeout=10)
     events = []
     for line in (out or "").splitlines():
         try:

@@ -93,7 +93,7 @@ Nothing on the page names a screen, a group or a radio:
 
 | To add | Touch |
 |---|---|
-| A screen | `tests/host/uiSim.c` (`gallery[]`) and `make -C tests/host ui-gallery`; its entry in `site/data/screens.json` (group, needs); its caption `screen.<name>` in `site/i18n/en.json` |
+| A screen | `tests/host/uiSim.c` (`gallery[]`) and `make -C tests/host ui-gallery`; its entry in `site/data/screens.json` (group, needs, and `knobs: 2` for a screen only a radio with a volume knob per side shows, from `knobs` in its `board.toml` `[hardware]`); its caption `screen.<name>` in `site/i18n/en.json` |
 | A group | `groups` in `screens.json` and its heading `screens.group.<group>` in `en.json` |
 | A radio | `boards/<radio>/` as [Adding a radio](adding-a-radio.md) says; `board.toml` `hardware.gallery` must name a display class the gallery has (`tools/boards.py check`) |
 

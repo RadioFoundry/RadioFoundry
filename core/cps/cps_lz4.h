@@ -4,7 +4,8 @@
 // link's packed screenshots (docs/spec/debuglink.md 3.3): a greedy encoder with a 64-entry hash table on the stack,
 // for blocks the radio sends, and a streaming decoder that takes the compressed bytes in any pieces and writes straight
 // into the output block, for blocks the host sends. Neither needs a buffer of its own. No RTOS, no board: the host
-// tests run both.
+// tests run both. The decoder can also take a dictionary: bytes that come before the output (a patch block's old
+// contents, cps-fast.md 3.7), fetched through a callback when a match reaches back into them, so they need no RAM.
 #ifndef RFOUNDRY_CPS_LZ4_H
 #define RFOUNDRY_CPS_LZ4_H
 
@@ -27,9 +28,17 @@ typedef struct {
 	uint16_t off;
 	uint8_t state;
 	bool bad;		// corrupt: an offset before the start, a length past the end, bytes after the end
+	bool dict_failed;	// the dictionary's callback failed (the stream itself may be fine)
+	uint32_t dict_size;	// dictionary bytes before the output (0: none)
+	// len dictionary bytes from pos (0 .. dict_size) into dst; false on a read error
+	bool (*dict)(void *ctx, uint32_t pos, uint8_t *dst, uint32_t len);
+	void *dict_ctx;
 } cps_lz4_dec_t;
 
 void cps_lz4_dec_init(cps_lz4_dec_t *d, uint8_t *out, uint32_t size);
+// After cps_lz4_dec_init: matches may reach dict_size bytes before the output's start, into the dictionary
+void cps_lz4_dec_dict(cps_lz4_dec_t *d, uint32_t dict_size, bool (*dict)(void *ctx, uint32_t pos, uint8_t *dst, uint32_t len),
+		      void *ctx);
 // Take the next n bytes of the stream. False once the stream is known to be corrupt
 bool cps_lz4_dec_feed(cps_lz4_dec_t *d, const uint8_t *in, uint32_t n);
 // The stream ended: true when it was whole and decoded to exactly size bytes

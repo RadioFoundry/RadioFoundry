@@ -471,6 +471,10 @@ bool fd6818sh_tx_tail(fd6818sh_t *dev, bool on)
 {
 	if (!on) {
 		wr(dev, REG_SUB_DETECT, DETECT_DEF);
+		if (dev->tail_on) {
+			wr(dev, FD6818SH_REG_STATE, FD6818SH_STATE_TX);	// the microphone again
+			dev->state = FD6818SH_STATE_TX;
+		}
 		dev->tail_on = false;
 		return true;
 	}
@@ -479,6 +483,8 @@ bool fd6818sh_tx_tail(fd6818sh_t *dev, bool on)
 	}
 	wr(dev, REG_SUB, SUB_CTCSS);
 	wr(dev, REG_SUB_DETECT, DETECT_TAIL | DETECT_DEF);
+	wr(dev, FD6818SH_REG_STATE, FD6818SH_STATE_TX_TONE);	// PTT is up: the microphone off
+	dev->state = FD6818SH_STATE_TX_TONE;
 	dev->tail_on = true;
 	return true;
 }

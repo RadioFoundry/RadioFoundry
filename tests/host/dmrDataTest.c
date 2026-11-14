@@ -1116,6 +1116,67 @@ static void testFuzz(void)
 	printf("# dmr data fuzz: %ld packets reassembled from mutated bursts\n", packets);
 }
 
+// ETSI text with a response requested through a modem that cleared each block's CRC-9 bits (octet 0 bit 0, octet 1):
+// the receiver solves them from the CRC-32 up to 3 blocks; 4 blocks, or a bit broken elsewhere, stay a CRC error
+static void testClearedBits(void)
+{
+	dmrBurst_t b[DMR_DATA_MAX_BURSTS];
+	const char *texts[] = { "Hi", "RadioFoundry ET", "RadioFoundry ETSI 1234" };	// 1, 2, 3 blocks
+
+	// Only for a modem that clears them (hal_dmr_modem_t.clears_crc9)
+	int n = dmrDataBuildEtsiText(false, 100, 10005, texts[1], true, 0, b, DMR_DATA_MAX_BURSTS);
+	for (int i = 1; i < n; i++)
+	{
+		b[i].payload[0] &= 0xFE;
+		b[i].payload[1] = 0;
+	}
+	CHECK(feed(b, n) == DMR_DATA_RX_ERROR);
+	dmrDataSetClearedBitsRepair(true);
+
+	for (unsigned t = 0; t < 3; t++)
+	{
+		int n = dmrDataBuildEtsiText(false, 100, 10005, texts[t], true, 0, b, DMR_DATA_MAX_BURSTS);
+		CHECK(n == 2 + (int)t);
+		for (int i = 1; i < n; i++)
+		{
+			b[i].payload[0] &= 0xFE;
+			b[i].payload[1] = 0;
+		}
+		CHECK(feed(b, n) == DMR_DATA_RX_PACKET && dmrDataRxPacket.length == (int)strlen(texts[t]) &&
+		      memcmp(dmrDataRxPacket.data, texts[t], strlen(texts[t])) == 0);
+	}
+
+	// More blocks: 9 unknowns each, more than the 32 equations
+	const char *longer = "RadioFoundry ETSI text that needs four blocks";
+	n = dmrDataBuildEtsiText(false, 100, 10005, longer, true, 0, b, DMR_DATA_MAX_BURSTS);
+	CHECK(n >= 5);
+	for (int i = 1; i < n; i++)
+	{
+		b[i].payload[0] &= 0xFE;
+		b[i].payload[1] = 0;
+	}
+	CHECK(feed(b, n) == DMR_DATA_RX_ERROR);
+
+	// The bits cleared and one more broken elsewhere: the spare equations catch it
+	n = dmrDataBuildEtsiText(false, 100, 10005, texts[1], true, 0, b, DMR_DATA_MAX_BURSTS);
+	for (int i = 1; i < n; i++)
+	{
+		b[i].payload[0] &= 0xFE;
+		b[i].payload[1] = 0;
+	}
+	b[2].payload[5] ^= 0x04;
+	CHECK(feed(b, n) == DMR_DATA_RX_ERROR);
+
+	// Without A the repair isn't tried
+	n = dmrDataBuildEtsiText(false, 100, 10005, texts[1], false, 0, b, DMR_DATA_MAX_BURSTS);
+	for (int i = 1; i < n; i++)
+	{
+		b[i].payload[1] = 0;
+	}
+	CHECK(feed(b, n) == DMR_DATA_RX_ERROR);
+	dmrDataSetClearedBitsRepair(false);
+}
+
 int main(void)
 {
 	testCRC32();
@@ -1143,6 +1204,7 @@ int main(void)
 	testCodedFrames();
 	testShortPayloads();
 	testFuzz();
+	testClearedBits();
 
 	printf("# %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);
 	return failures ? 1 : 0;

@@ -128,6 +128,9 @@ typedef enum
 extern dmrDataPacket_t dmrDataRxPacket;
 
 uint32_t dmrDataCRC32(const uint8_t *data, int length);
+// On for a modem that clears the CRC-9 bits of every block after a header with A set (hal_dmr_modem_t.clears_crc9):
+// a short rate 1/2 packet whose CRC-32 fails then has those bits solved from it (dmr-data.md). Off by default
+void dmrDataSetClearedBitsRepair(bool on);
 // The CRC-CCITT of a 12-octet CSBK / header / MBC info field (octets 10-11) with its mask (CSBK 0xA5, data header
 // 0xCC, MBC 0xAA, as one octet repeated)
 bool dmrDataCheckCRC16(const uint8_t *burst12, uint8_t mask);

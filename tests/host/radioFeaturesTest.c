@@ -49,7 +49,7 @@ static struct {
 	uint32_t tx_hz;
 	int tx_off_calls;
 	bool audio;
-	bool led[2];
+	bool led[3];
 	uint16_t tone_hz;	// tx_tone
 	int tone_calls;
 	uint16_t tone_log[16];
@@ -694,6 +694,117 @@ static void test_battery_module(void)
 
 // ---- the beep engine on its own ----
 
+// Tones without PCM audio (beep_init_tone): each segment's tone for its whole polls, then off
+static uint16_t tone_hz[16];
+static uint8_t tone_lvl[16];
+static int tone_calls;
+static void fake_tone(uint16_t hz, uint8_t level)
+{
+	if (tone_calls < 16) {
+		tone_hz[tone_calls] = hz;
+		tone_lvl[tone_calls] = level;
+	}
+	tone_calls++;
+}
+
+static void test_beep_tone(void)
+{
+	beep_init(NULL);
+	beep_init_tone(fake_tone, 0);
+	CHECK(beep_tone_route() && !beep_has_hang());	// the view's beep.tone 1, no beep.warm
+	beep_reset_stats();
+	tone_calls = 0;
+	beep_play(BEEP_KEY, 0, false);
+	CHECK(tone_calls == 0 && !beep_busy());
+
+	// The key beep, 25 ms, timed to the millisecond from the radio task's next pass (beep_tone_run)
+	beep_play(BEEP_KEY, 70, false);
+	CHECK(tone_calls == 0 && beep_busy() && beep_tone_wait(1000) == 0);
+	beep_tone_run(1000);
+	CHECK(tone_calls == 1 && tone_hz[0] == 1000 && tone_lvl[0] == 70);
+	CHECK(beep_tone_wait(1010) == 15);
+	beep_tone_run(1024);
+	CHECK(tone_calls == 1 && beep_busy());
+	beep_tone_run(1025);
+	CHECK(tone_calls == 2 && tone_hz[1] == 0 && !beep_busy() && beep_tone_wait(1025) == -1);
+	beep_tone_run(1100);
+	CHECK(tone_calls == 2);
+
+	// Call end: 1200 Hz 50 ms, a 30 ms gap, 900 Hz 70 ms
+	tone_calls = 0;
+	beep_play(BEEP_CALL_END, 100, false);
+	beep_tone_run(2000);
+	CHECK(tone_calls == 1 && tone_hz[0] == 1200);
+	beep_tone_run(2050);			// the gap, silent
+	CHECK(tone_calls == 2 && tone_hz[1] == 0 && tone_lvl[1] == 0 && beep_busy());
+	beep_tone_run(2080);			// the 900 Hz tone, to 2150
+	CHECK(tone_calls == 3 && tone_hz[2] == 900 && tone_lvl[2] == 100);
+	beep_tone_run(2149);
+	CHECK(tone_calls == 3 && beep_busy());
+	beep_service(false, 2150);		// beep_service runs the tones too
+	CHECK(tone_calls == 4 && tone_hz[3] == 0 && !beep_busy());
+
+	// A late pass makes every change due, in order
+	tone_calls = 0;
+	beep_play(BEEP_CALL_END, 100, false);
+	beep_tone_run(3000);
+	beep_tone_run(3200);
+	CHECK(tone_calls == 4 && tone_hz[1] == 0 && tone_hz[2] == 900 && tone_hz[3] == 0 && !beep_busy());
+
+	// A lead: each tone runs silent (level 0) that long first; a gap before a tone runs that tone silent
+	beep_init_tone(fake_tone, 40);
+	tone_calls = 0;
+	beep_play(BEEP_KEY, 70, false);
+	beep_tone_run(4000);
+	CHECK(tone_calls == 1 && tone_hz[0] == 1000 && tone_lvl[0] == 0 && beep_tone_wait(4000) == 40);
+	beep_tone_run(4040);
+	CHECK(tone_calls == 2 && tone_hz[1] == 1000 && tone_lvl[1] == 70);
+	beep_tone_run(4064);
+	CHECK(tone_calls == 2);
+	beep_tone_run(4065);
+	CHECK(tone_calls == 3 && tone_hz[2] == 0 && !beep_busy());
+	tone_calls = 0;
+	beep_play(BEEP_CALL_END, 100, false);
+	beep_tone_run(5000);			// 1200 Hz silent to 5040, sounding to 5090
+	beep_tone_run(5040);
+	CHECK(tone_calls == 2 && tone_hz[1] == 1200 && tone_lvl[1] == 100);
+	beep_tone_run(5090);			// the gap: 900 Hz silent to 5120
+	CHECK(tone_calls == 3 && tone_hz[2] == 900 && tone_lvl[2] == 0);
+	beep_tone_run(5120);
+	CHECK(tone_calls == 4 && tone_hz[3] == 900 && tone_lvl[3] == 100);
+	beep_tone_run(5190);
+	CHECK(tone_calls == 5 && tone_hz[4] == 0 && !beep_busy());
+
+	// A new pattern replaces one still sounding
+	beep_init_tone(fake_tone, 0);
+	tone_calls = 0;
+	beep_play(BEEP_TX_DENY, 50, false);
+	beep_tone_run(6000);
+	beep_play(BEEP_KEY, 50, false);
+	beep_tone_run(6010);
+	CHECK(tone_calls == 2 && tone_hz[1] == 1000);
+	beep_tone_run(6035);
+	CHECK(tone_calls == 3 && tone_hz[2] == 0 && !beep_busy());
+	beep_stats_t bs;
+	beep_get_stats(&bs);
+	CHECK(bs.played == 7 && bs.no_stream == 0);
+
+	// No hook: dropped, as before
+	beep_init_tone(NULL, 0);
+	CHECK(!beep_tone_route());
+	beep_play(BEEP_KEY, 50, false);
+	beep_get_stats(&bs);
+	CHECK(bs.no_stream == 1 && !beep_busy());
+
+	// The sweep: a tone hook plays fixed pitches, so it is dropped (counted in no_stream), never a 1 Hz "tone"
+	beep_init_tone(fake_tone, 0);
+	tone_calls = 0;
+	beep_play(BEEP_SWEEP, 70, false);
+	beep_tone_run(7000);
+	beep_get_stats(&bs);
+	CHECK(tone_calls == 0 && !beep_busy() && bs.no_stream == 2);
+}
+
 // The speaker test's sweep (BEEP_SWEEP): silence with the route up, then a rising tone with no jump between samples, from
 // BEEP_SWEEP_LO_HZ to BEEP_SWEEP_HI_HZ, then silence again
 static void test_beep_sweep(void)
@@ -947,6 +1058,7 @@ static void test_beep_module(void)
 	static const hal_audio_t hang_amp = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm, .speaker_lead_ms = 50,
 					      .speaker_warm = a_warm, .speaker_hang_s = 2 };
 	beep_init(&hang_amp);
+	CHECK(beep_has_hang() && !beep_tone_route());
 	beep_service(false, 1000);
 	CHECK(!beep_warm_on() && !warm_state);
 	beep_warm(1000);
@@ -1006,6 +1118,7 @@ static void test_beep_module(void)
 	CHECK(!beep_warm_on() && !warm_state);
 	// A board without the hook or with no hang: never warm
 	beep_init(&fake_audio);
+	CHECK(!beep_has_hang());
 	beep_warm(4000);
 	CHECK(!beep_warm_on());
 }
@@ -1584,6 +1697,68 @@ static void test_scan_dmr_mid_call(void)
 // the scan by the LC's superframe after the first burst A (gotchas 17.2). With the noise reading showing the carrier
 // the probe outlasted the stale timing anyway, only later; a noise reading blind to the DMR carrier left the stop at
 // the dwell on every visit
+// The status LED on a board that asks for it (radio-features.md 5.7): green flashes while the scan runs, solid or cyan
+// once a signal holds it; the other boards keep a dark LED, and dual watch never flashes
+static void test_scan_led(void)
+{
+	start();
+	req(RREQ_SCAN, RSCAN_ZONE);
+	bool lit = false;
+	for (int i = 0; i < 40; i++) {
+		run(25);
+		lit |= hw.led[LED_GREEN];
+	}
+	CHECK(!lit);		// no flag: nothing changes
+	req(RREQ_SCAN, RSCAN_STOP);
+
+	board.caps |= CAP_LED_SCAN_FLASH | CAP_LED_RGB;
+	start();
+	req(RREQ_SCAN, RSCAN_ZONE);
+	int ons = 0, offs = 0, flips = 0;
+	bool was = hw.led[LED_GREEN];
+	for (int i = 0; i < 80; i++) {		// 2 s: four periods
+		run(25);
+		bool g = hw.led[LED_GREEN];
+		CHECK(g == ((sm.view.leds & RADIO_LED_GREEN) != 0) && !hw.led[LED_RED] && !hw.led[LED_BLUE]);
+		ons += g;
+		offs += !g;
+		flips += g != was;
+		was = g;
+	}
+	CHECK(flips >= 6 && flips <= 9 && ons >= 30 && offs >= 30);
+
+	// Stopped: dark, and no timed output left running
+	req(RREQ_SCAN, RSCAN_STOP);
+	run(600);
+	CHECK(sm.view.scan == SCAN_OFF && !hw.led[LED_GREEN] && !sm.led_timed);
+
+	// A digital call that holds the scan: cyan, steady
+	start();
+	all_dmr();
+	signal_on(0, 438500000, 30, no_tone);
+	hw.sig[0].tdma = true;
+	air.on = true;
+	air.hz = 438500000;
+	air.t0 = now + 300;
+	air.dst = 9;
+	air.lc_at = 1;
+	req(RREQ_ZONE_POS, 6);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	bool cyan = false;
+	for (int i = 0; i < 240 && !cyan; i++) {
+		run(25);
+		cyan = sm.view.dmr.state == RDMR_RX && sm.view.state == RS_RX && sm.view.scan_phase == SCAN_PH_HOLD;
+	}
+	CHECK(cyan);
+	CHECK(hw.led[LED_GREEN] && hw.led[LED_BLUE] && !hw.led[LED_RED]);
+	CHECK((sm.view.leds & (RADIO_LED_GREEN | RADIO_LED_BLUE)) == (RADIO_LED_GREEN | RADIO_LED_BLUE));
+	air.on = false;
+	req(RREQ_SCAN, RSCAN_STOP);
+	run(600);
+	CHECK(!hw.led[LED_BLUE]);
+	board.caps &= ~(CAP_LED_SCAN_FLASH | CAP_LED_RGB);
+}
+
 static void test_scan_dmr_kept_timing(void)
 {
 	// Every stop on a DMR frequency restarts the receiver; the same frequency again doesn't (a repeater's timing stays)
@@ -2144,6 +2319,7 @@ static void test_dual_requests(void)
 static struct {
 	bool up, refuse, deaf, on, audio;	// deaf: takes settings but never says it's on them
 	bool active;
+	bool sense;				// it only senses its channel (rx2_status_t.sense)
 	rx2_tune_t t;
 	int tunes, stops;
 } r2;
@@ -2166,7 +2342,8 @@ static void r2_status(rx2_status_t *st)
 	st->up = r2.up;
 	st->tuned = r2.up && r2.on && !r2.deaf;
 	st->active = st->tuned && r2.active;
-	st->heard = st->active && r2.audio;
+	st->heard = st->active && r2.audio && !r2.sense;
+	st->sense = r2.sense;
 	st->rssi_dbm = -80;
 }
 static void r2_audio(bool on) { r2.audio = on; }
@@ -2272,6 +2449,114 @@ static void test_dual_rx2(void)
 	CHECK(sm.view.rx2);
 	req(RREQ_CH_STEP, 1);
 	CHECK(sm.view.scan == SCAN_OFF && !sm.view.rx2 && !r2.on);
+	r2.active = false;
+	board.rx2 = NULL;
+}
+
+// A second receiver that only senses its DMR channel (rx2_status_t.sense): on its carrier, with the selected channel
+// quiet, the main receiver goes there to decode, holds the call, and comes back after the wait
+static void test_dual_rx2_sense(void)
+{
+	start();
+	memset(&r2, 0, sizeof(r2));
+	r2.up = true;
+	r2.sense = true;
+	board.rx2 = &fake_rx2;
+	const radio_dual_ref_t home = { false, 0, 0 }, dmr = { false, 0, 5 };
+	dual(dmr, home, 1);
+	CHECK(sm.view.rx2 && on_ref(home) && r2.on && r2.t.mode == RADIO_MODE_DMR);
+	bool moved = false;
+	for (int i = 0; i < 80; i++) {
+		run(25);
+		moved |= !on_ref(home);
+	}
+	CHECK(!moved);
+
+	// A call there: the main receiver goes, plays it and holds it
+	signal_on(0, 438500000, 30, no_tone);
+	hw.sig[0].tdma = true;
+	memset(&air, 0, sizeof(air));
+	air.on = true;
+	air.hz = 438500000;
+	air.t0 = now + 100;
+	air.dst = 9;
+	air.lc_at = 1;
+	r2.active = true;
+	uint32_t went = 0, played = 0, t0 = now;
+	for (int i = 0; i < 160; i++) {
+		run(25);
+		if (went == 0 && on_ref(dmr)) {
+			went = now - t0;
+		}
+		if (played == 0 && on_ref(dmr) && sm.view.dmr.state == RDMR_RX) {
+			played = now - t0;
+		}
+	}
+	CHECK(went != 0 && went <= 100 && played != 0 && on_ref(dmr) && sm.view.rx2 &&
+	      sm.view.scan_phase == SCAN_PH_HOLD && sm.view.dmr.state == RDMR_RX);
+	// It ends: back on the selected channel after the wait
+	air.on = false;
+	hw.sig[0].hz = 0;
+	r2.active = false;
+	CHECK(wait_on(home, RADIO_DUAL_DELAY_MS + 3000));
+	CHECK(sm.view.rx2 && sm.view.scan == SCAN_DUAL);
+
+	// The selected channel has a signal: it keeps the main receiver
+	signal_on(0, 146520000, 30, no_tone);
+	hw.sig[0].tdma = false;
+	run(300);
+	CHECK(sm.view.state == RS_RX && on_ref(home));
+	r2.active = true;
+	moved = false;
+	for (int i = 0; i < 40; i++) {
+		run(25);
+		moved |= !on_ref(home);
+	}
+	CHECK(!moved);
+	hw.sig[0].hz = 0;
+
+	// A carrier with no call for us: one look, and the next only after RADIO_RX2_RELOOK_MS
+	int looks = 0;
+	bool was = false;
+	for (uint32_t t = 0; t < RADIO_RX2_RELOOK_MS; t += 25) {
+		run(25);
+		looks += on_ref(dmr) && !was;
+		was = on_ref(dmr);
+	}
+	CHECK(looks == 1 && on_ref(home));
+	// ... or once its carrier dropped and came back
+	r2.active = false;
+	run(100);
+	r2.active = true;
+	CHECK(wait_on(dmr, 200));
+	CHECK(wait_on(home, 4000));
+
+	// A look that played a call: the next goes at once, though the carrier stayed up (a repeater's hang, the reply)
+	r2.active = false;
+	run(100);
+	signal_on(0, 438500000, 30, no_tone);
+	hw.sig[0].tdma = true;
+	memset(&air, 0, sizeof(air));
+	air.on = true;
+	air.hz = 438500000;
+	air.t0 = now + 100;
+	air.dst = 9;
+	air.lc_at = 1;
+	r2.active = true;
+	CHECK(wait_on(dmr, 200));
+	bool call = false;
+	for (int i = 0; i < 80; i++) {
+		run(25);
+		call |= on_ref(dmr) && sm.view.dmr.state == RDMR_RX;
+	}
+	CHECK(call);
+	air.on = false;
+	hw.sig[0].hz = 0;
+	CHECK(wait_on(home, RADIO_DUAL_DELAY_MS + 3000));
+	CHECK(wait_on(dmr, 200));
+	CHECK(wait_on(home, 4000));
+
+	dual_stop();
 	r2.active = false;
 	board.rx2 = NULL;
 }
@@ -2529,6 +2814,9 @@ static void test_subtone_tail(void)
 	run(500);
 	req(RREQ_PTT, 0);
 	CHECK(sm.view.state == RS_TX && hw.tail_on && hw.tail_starts == 1 && hw.tx_off_calls == 1);
+	radio_view_t shown = sm.view;
+	radio_view_for_screen(&shown);
+	CHECK(shown.state == RS_IDLE);	// the screen follows the key
 	run(RADIO_SUBTONE_TAIL_MS - 50);
 	CHECK(sm.view.state == RS_TX && hw.tail_on);
 	run(100);
@@ -3162,7 +3450,7 @@ static void test_battery_save(void)
 	CHECK(hw.sleeps == 0);			// the settings change counts as activity
 	run(1200);
 	CHECK(hw.sleeps >= 1);
-	// Cycles: awake 100 ms, asleep 400 ms
+	// Cycles: awake 125 ms, asleep 400 ms
 	int s0 = hw.sleeps;
 	run(5000);
 	CHECK(hw.sleeps - s0 >= 9 && hw.sleeps - s0 <= 11 && hw.status_asleep == 0);
@@ -3193,6 +3481,62 @@ static void test_battery_save(void)
 	req(RREQ_ZONE_POS, 5);
 	run(10000);
 	CHECK(hw.sleeps == s2);
+}
+
+// A squelch open for a moment (a transmitter keying up) counts as activity: the receiver stays awake the idle time
+// after it closes, so the call that follows isn't missed while it sleeps
+static void test_battery_save_brief_open(void)
+{
+	start();
+	settings(set_save);
+	run(8000);
+	CHECK(hw.sleeps >= 1);
+	signal_on(0, 146520000, 30, no_tone);
+	for (int i = 0; i < 200 && sm.view.state != RS_RX; i++) {
+		run(5);
+	}
+	CHECK(sm.view.state == RS_RX);
+	hw.sig[0].hz = 0;
+	for (int i = 0; i < 200 && sm.view.state != RS_IDLE; i++) {
+		run(5);
+	}
+	CHECK(sm.view.state == RS_IDLE);
+	int s0 = hw.sleeps;
+	run(4000);				// under rx_save_idle_s (5 s)
+	CHECK(hw.sleeps == s0 && !sm.view.rx_sleeping);
+	run(2000);
+	CHECK(hw.sleeps > s0);
+}
+
+// A carrier on only one TDMA slot of two (a DMR portable: 30 ms on, 30 ms off) wakes a saving receiver within a
+// cycle whatever its phase: a wake whose readings all fell in the gaps would miss it, and with a cycle a multiple of
+// 60 ms every later wake too
+static void set_save_short(radio_settings_t *s) { s->rx_save = 1; s->rx_save_idle_s = 3; }
+
+static void test_battery_save_slotted(void)
+{
+	for (uint32_t phase = 0; phase < 60; phase += 5) {
+		start();
+		settings(set_save_short);
+		run(8000);
+		CHECK(hw.sleeps >= 1);
+		uint32_t t0 = now + phase;
+		uint32_t ms = 0;
+		while (ms < 1200 && sm.view.state != RS_RX) {
+			hw.sig[0].hz = now >= t0 && (now - t0) % 60u < 30u ? 146520000 : 0;
+			if (hw.sig[0].hz != 0) {
+				hw.sig[0].noise = 30;
+				hw.sig[0].tone = no_tone;
+			}
+			run(5);
+			ms += 5;
+		}
+		CHECK(sm.view.state == RS_RX);
+		if (sm.view.state != RS_RX) {
+			printf("# slotted carrier at phase %u ms: not heard in 1.2 s\n", (unsigned)phase);
+		}
+		hw.sig[0].hz = 0;
+	}
 }
 
 static void test_dmr_beeps(void)
@@ -3688,6 +4032,7 @@ int main(void)
 	test_scan_engine();
 	test_battery_module();
 	test_beep_module();
+	test_beep_tone();
 	test_beep_sweep();
 	test_vibe_module();
 	test_zone_scan();
@@ -3695,6 +4040,7 @@ int main(void)
 	test_vfo_scan();
 	test_mixed_scan();
 	test_scan_dmr_mid_call();
+	test_scan_led();
 	test_scan_dmr_kept_timing();
 	test_scan_dmr_noise_deaf();
 	test_dual_watch();
@@ -3702,6 +4048,7 @@ int main(void)
 	test_dual_wait();
 	test_dual_requests();
 	test_dual_rx2();
+	test_dual_rx2_sense();
 #endif
 	test_tot_and_beeps();
 	test_beep_follows_volume();
@@ -3725,6 +4072,8 @@ int main(void)
 	test_no_battery();
 	test_supply_voltage();
 	test_battery_save();
+	test_battery_save_brief_open();
+	test_battery_save_slotted();
 	test_dmr_beeps();
 	test_dmr_permit_before_key();
 	test_tone_keys();

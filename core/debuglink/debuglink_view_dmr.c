@@ -68,6 +68,8 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 	case 0:
 		dl_text(t, "dmr.built=1\n");
 		dl_text(t, "dmr.active=%u\ndmr.codec=%u\n", d->active, d->codec);
+		// The modem plays and records the voice itself (CAP_MODEM_VOICE): no frames reach the voice layer
+		dl_text(t, "dmr.modem_voice=%u\n", (board.caps & CAP_MODEM_VOICE) ? 1u : 0u);
 		// The vocoder's TX state: here, as dmr_stats (the counters) fills most of a reply
 		{
 			ambe_voice_stats_t a;
@@ -88,6 +90,7 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		char alias[DMR_TA_TEXT_MAX + 1];
 		dmr_call_tx_alias(alias);
 		dl_text(t, "dmr.tx_alias=%s\n", alias);
+		dl_text(t, "dmr.tx_released=%u\n", (unsigned)d->tx_released);
 		dl_text(t, "dmr.rmo=%u\ndmr.repeater_up=%u\n", d->rmo, d->repeater_up);
 		// The channel's SFR role (sfrRole_t; sfr.md 4) and whether its repeater role has the modem
 		radio_settings_t rs;

@@ -7,7 +7,12 @@ sequence of tones and silences and checks the recording with audio_check.check_t
 
 test_speaker_beeps: every beep the debug link can ask for, one recording each, patterns read from core/radio/beep.c.
 The first beep finds the amplifier as the radio left it; on a radio that keeps it warm (speaker_hang_s), the next
-ones find it warm.
+ones find it warm. A board's [hil.limits] can allow, with its reason, beep_lead_pops pops ahead of each beep's first
+tone (an amplifier's own turn-on pop, which the beep's silent lead keeps off the tone) and beep_dropouts tone dropouts
+in the run; each one allowed is printed.
+
+test_speaker_beep_modes: beeps in the FM VFO and in the DMR VFO: heard in both, clean (audio_check.harmonics_db) and
+alike, harmonics and level. A radio whose RF chip sounds the beeps may route them by mode: one's DMR path stepped them.
 
 test_speaker_beep_cold: on a radio with an amplifier hang (the beep.warm view key), waits for the hang to run out,
 then the shortest beep (key): the lead-in must cover the amplifier's start.
@@ -156,6 +161,30 @@ def _play(radio, mic, name, segs):
     return r, path
 
 
+class _Allowances:
+    """A board's [hil.limits] beep_lead_pops (per beep) and beep_dropouts (per run), each one used printed"""
+    def __init__(self, radio):
+        limits = rfoundry_hil.board_hil(rfoundry_hil.board_id(radio.version().get("board"))).get("limits", {})
+        self.lead_pops, self.dropouts = (limits.get(k) or {"value": 0, "reason": None}
+                                         for k in ("beep_lead_pops", "beep_dropouts"))
+        self.dropped = 0
+
+    def apply(self, name, r, mine):
+        """mine (_check's problems for r) less what the board allows"""
+        first = r.tones[0].start_s if r.tones and r.tones[0].start_s is not None else None
+        ahead = [p for p in r.pops if first is not None and p[0] + p[2] / 1000 <= first + 0.005]
+        for t0, over, ms in ahead[:int(self.lead_pops["value"])]:
+            mine = [p for p in mine if f"a pop or noise burst at {t0:.3f} s" not in p]
+            print(f"{name}: the pop {over:.0f} dB over the floor ahead of the first tone allowed (the board's "
+                  f"[hil.limits] beep_lead_pops: {self.lead_pops['reason']})")
+        for p in [p for p in mine if ": a dropout:" in p]:
+            if self.dropped < int(self.dropouts["value"]):
+                self.dropped += 1
+                mine.remove(p)
+                print(f"{p}: allowed (the board's [hil.limits] beep_dropouts: {self.dropouts['reason']})")
+        return mine
+
+
 @pytest.mark.feature("beep")
 def test_speaker_beeps(radio, microphone):
     _beep_ready(radio)
@@ -163,10 +192,11 @@ def test_speaker_beeps(radio, microphone):
     pats = A.beep_patterns()
     names = [n for n in BEEPS if n in pats]
     assert names, "no beep both in the debug link and in beep.c"
+    allow = _Allowances(radio)
     problems, heard = [], 0
     for name in names:
         r, path = _play(radio, microphone, name, pats[name])
-        problems += _check(r, name, path)
+        problems += allow.apply(name, r, _check(r, name, path))
         heard += not r.quiet
         radio.wait_for(lambda v: v.get("beep.busy") == "0", 3, sections=("features",), what="the beep finished")
     if not heard:
@@ -174,12 +204,80 @@ def test_speaker_beeps(radio, microphone):
     assert not problems, "\n".join(problems)    # one beep not heard among others is a fault, not the room
 
 
+# test_speaker_beep_modes
+HARM_MIN_HZ = 800       # tones this high and up have their harmonics checked: under it a small speaker's own response
+                        # raises the second harmonic (a clean 400 Hz beep about -4 dB on a radio)
+HARM_MAX_DB = -3.0      # their harmonics against the tone: clean beeps -6 to -19 dB on a radio (its 1200 Hz tone the
+                        # highest, the same in FM and DMR), a stepped one near 0
+MODE_HARM_DB = 4.0      # a tone in DMR at most this much more distorted than the same tone in FM (within 0.5 dB on a
+                        # radio; its stepped DMR key beep 12 dB more)
+MODE_LEVEL_DB = 5.0     # ... and as loud within this (3 dB apart on a radio)
+MODE_BEEPS = ("key", "tot_warn", "call_end")
+
+
 @pytest.mark.feature("beep")
+def test_speaker_beep_modes(radio, microphone):
+    """Beeps in the FM VFO and in the DMR VFO (same frequency): each checked as in test_speaker_beeps, heard in both
+    modes (a DMR channel with no signal holds no beep back), its tones of HARM_MIN_HZ and up clean (harmonics_db
+    under HARM_MAX_DB), and each tone in DMR within MODE_HARM_DB of its harmonics and MODE_LEVEL_DB of its level in
+    FM. A radio whose RF chip sounds the beeps can route them differently by mode: on one the DMR path stepped them"""
+    _beep_ready(radio)
+    feats = radio.features()
+    if "VFO_FM" not in feats:
+        skip("not_built", "built without the FM VFO")
+    pats = A.beep_patterns()
+    names = [n for n in MODE_BEEPS if n in pats]
+    allow = _Allowances(radio)
+    modes = ["fm"] + (["dmr"] if "VFO_DMR" in feats else [])
+    if len(modes) == 1:
+        print("built without the DMR VFO: FM only")
+    problems, got = [], {}      # got[(mode, name, i)] = (plateau dB, harmonics dB)
+    with radio.vfo_session():
+        L = radio.link
+        for mode in modes:
+            if radio.core().get("mode") != mode:
+                L.dmr_fields(mode=mode)
+                radio.wait_for(lambda v: v.get("mode") == mode, what=f"the {mode.upper()} VFO")
+            time.sleep(1.0)     # the receive set-up and the modem's start settle
+            for name in names:
+                r, path = _play(radio, microphone, name, pats[name])
+                what = f"{name}, {mode.upper()}"
+                problems += allow.apply(what, r, _check(r, what, path))
+                if r.quiet:
+                    problems.append(f"{what}: not heard" + (" (a radio holds its beeps back while it hears a DMR signal: is "
+                                                            "another station on the frequency?)" if mode == "dmr" else ""))
+                for i, t in enumerate(r.tones):
+                    h = A.harmonics_db(*A.load_wav(path), t.hz, t.start_s, t.end_s)
+                    got[(mode, name, i)] = (t.plateau_db, h)
+                    print(f"{what}: {t.hz} Hz, level {t.plateau_db if t.plateau_db is None else round(t.plateau_db, 1)}"
+                          f" dB, harmonics {'?' if h is None else f'{h:.1f}'} dB")
+                    if h is not None and t.hz >= HARM_MIN_HZ and h > HARM_MAX_DB:
+                        problems.append(f"{what}: the {t.hz} Hz tone's harmonics are {h:.1f} dB under it, want "
+                                        f"{-HARM_MAX_DB:.0f} or more (a stepped or clipped tone)")
+                radio.wait_for(lambda v: v.get("beep.busy") == "0", 3, sections=("features",),
+                               what="the beep finished")
+    if all(v[0] is None for v in got.values()):
+        _quiet("every beep")
+    for (mode, name, i), (lv, h) in got.items():
+        fm = got.get(("fm", name, i))
+        if mode == "fm" or fm is None:
+            continue
+        hz = pats[name][[k for k, (f, _) in enumerate(pats[name]) if f][i]][0]
+        if h is not None and fm[1] is not None and h - fm[1] > MODE_HARM_DB:
+            problems.append(f"{name}, {hz} Hz: harmonics {h:.1f} dB in {mode.upper()}, {fm[1]:.1f} in FM (at most "
+                            f"{MODE_HARM_DB:.0f} dB apart)")
+        if lv is not None and fm[0] is not None and abs(lv - fm[0]) > MODE_LEVEL_DB:
+            problems.append(f"{name}, {hz} Hz: {lv:.1f} dB in {mode.upper()}, {fm[0]:.1f} in FM (at most "
+                            f"{MODE_LEVEL_DB:.0f} dB apart)")
+    assert not problems, "\n".join(problems)
+
+
+@pytest.mark.feature("beep", optional=True)    # only a board with an amplifier hang has one to check
 def test_speaker_beep_cold(radio, microphone):
     _beep_ready(radio)
     a = _audio(radio)
     if "beep.warm" not in a:
-        skip("not_built", "no amplifier hang on this firmware (no beep.warm view key)")
+        skip("no_hw", "no amplifier hang on this radio (no beep.warm view key)")
     if a["beep.warm"] != "0":
         end = time.monotonic() + 90
         print("waiting for the amplifier hang to run out")
@@ -196,12 +294,14 @@ def test_speaker_beep_cold(radio, microphone):
     assert not problems, "\n".join(problems)
 
 
-@pytest.mark.feature("beep")
+@pytest.mark.feature("beep", optional=True)    # a radio whose beeps are its own tones (beep.tone 1) has no sweep
 def test_speaker_sweep(radio, microphone):
     """The speaker test's sweep (BEEP_SWEEP, a tone rising through the band): the speaker's response along it, printed
     for the radio's records, and the sweep whole: audio that jumps (samples lost, repeated or out of order on the way
     to the speaker) spreads energy across the band, which a tone check at a few pitches can miss"""
     _beep_ready(radio)
+    if _audio(radio).get("beep.tone") == "1":
+        skip("no_hw", "the beeps are the radio's own tones (beep.tone 1): it plays fixed pitches, no sweep")
     from rfoundry_debug import DebugLinkError
     lo, hi, ms = A.sweep_spec()
     length = sum(m for _, m in A.beep_patterns()["sweep"]) / 1000

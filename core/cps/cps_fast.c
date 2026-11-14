@@ -305,7 +305,7 @@ static size_t op_info(uint8_t *out)
 	uint32_t cap = stage_cap();
 	out[0] = DL_ST_OK;
 	out[1] = CPSF_VERSION;
-	out[2] = (uint8_t)((cap != 0 ? 1u : 0u) | (storage_ready() ? 2u : 0u));
+	out[2] = (uint8_t)((cap != 0 ? CPSF_INFO_STAGING : 0u) | (storage_ready() ? CPSF_INFO_WRITABLE : 0u) | CPSF_INFO_PATCH);
 	put16(&out[3], CPSF_BLOCK);
 	out[5] = CPSF_SUMS_MAX;
 	out[6] = CPSF_DATA_MAX;
@@ -439,14 +439,28 @@ static size_t op_begin(const uint8_t *a, uint16_t len, uint8_t *out, uint32_t no
 	return 3;
 }
 
+// A patch's dictionary: the block's current contents as the image shows them (what SUMS hashed). The block is
+// written at END, so the flash still holds them while the stream decodes
+static bool patch_dict(void *ctx, uint32_t pos, uint8_t *dst, uint32_t len)
+{
+	uint32_t p = phys(*(const uint32_t *)ctx + pos);
+	if (!fread_(p, dst, len)) {
+		return false;
+	}
+	cps_openfw_vfo_overlay(p, dst, len);
+	return true;
+}
+
 static size_t op_block(const uint8_t *a, uint16_t len, uint8_t *out)
 {
-	if (len != 11) {
+	if (len < 11) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
 	uint32_t addr = get32(a), length = get16(&a[5]);
 	uint8_t format = a[4];
-	if ((format == CPSF_FMT_LZ4) ? (length == 0 || length > LZ4_MAX) : (format != CPSF_FMT_BLANK || length != 0)) {
+	bool stream = format == CPSF_FMT_LZ4 || format == CPSF_FMT_PATCH;
+	if (len != (format == CPSF_FMT_PATCH ? 15u : 11u) ||
+	    (stream ? (length == 0 || length > LZ4_MAX) : (format != CPSF_FMT_BLANK || length != 0))) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
 	if (!in_session()) {
@@ -464,6 +478,19 @@ static size_t op_block(const uint8_t *a, uint16_t len, uint8_t *out)
 			return refuse(out, CPSF_R_STAGE_FULL);
 		}
 	}
+	if (format == CPSF_FMT_PATCH) {
+		// The patch was made against the block the host last saw: one that changed since can't be patched
+		uint32_t crc;
+		bool blank;
+		if (!block_hash(addr, &crc, &blank)) {
+			drop_block();
+			return refuse(out, CPSF_R_FLASH);
+		}
+		if (crc != get32(&a[11])) {
+			drop_block();
+			return refuse(out, CPSF_R_BASE);
+		}
+	}
 	if (s.buf == NULL && (s.buf = storage_buffer_acquire()) == NULL) {
 		return status_only(out, DL_ST_BUSY);
 	}
@@ -476,6 +503,9 @@ static size_t op_block(const uint8_t *a, uint16_t len, uint8_t *out)
 		memset(s.buf, 0xFF, CPSF_BLOCK);
 	} else {
 		cps_lz4_dec_init(&s.dec, s.buf, CPSF_BLOCK);
+		if (format == CPSF_FMT_PATCH) {
+			cps_lz4_dec_dict(&s.dec, CPSF_BLOCK, patch_dict, &s.addr);
+		}
 	}
 	s.state = CPSF_ST_BLOCK;
 	return status_only(out, DL_ST_OK);
@@ -496,8 +526,9 @@ static size_t op_data(const uint8_t *a, uint16_t len, uint8_t *out)
 			return refuse(out, CPSF_R_STREAM);
 		}
 		if (!cps_lz4_dec_feed(&s.dec, a + 2, n)) {
+			bool flash = s.dec.dict_failed;
 			drop_block();
-			return refuse(out, CPSF_R_STREAM);
+			return refuse(out, flash ? CPSF_R_FLASH : CPSF_R_STREAM);
 		}
 		s.received = (uint16_t)(off + n);
 	}
@@ -532,13 +563,16 @@ static size_t op_end(uint16_t len, uint8_t *out, uint32_t now_ms)
 	if (s.state != CPSF_ST_BLOCK) {
 		return refuse(out, CPSF_R_STATE);
 	}
-	if (s.received != s.length || (s.format == CPSF_FMT_LZ4 && !cps_lz4_dec_done(&s.dec))) {
+	if (s.received != s.length || (s.format != CPSF_FMT_BLANK && !cps_lz4_dec_done(&s.dec))) {
 		drop_block();
 		return refuse(out, CPSF_R_STREAM);
 	}
 	if (storage_crc32(0, s.buf, CPSF_BLOCK) != s.crc) {
+		// A patch's base is read as the stream decodes: one that changed since BLOCK hashed it (the live VFO in
+		// VFO A) is a base the patch wasn't made against, and the host sends the block whole
+		bool base = s.format == CPSF_FMT_PATCH;
 		drop_block();
-		return refuse(out, CPSF_R_CRC);
+		return refuse(out, base ? CPSF_R_BASE : CPSF_R_CRC);
 	}
 	bool ok;
 	if (s.mode == CPSF_MODE_STAGED) {

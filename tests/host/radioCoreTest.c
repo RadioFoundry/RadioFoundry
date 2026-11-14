@@ -4,7 +4,10 @@
 #include "input/keyassign.h"
 #include <stdio.h>
 #include <string.h>
+// The caps change at run time here (the status LED's colors): defined writable, the core sees it const
+#define board board_as_declared
 #include "board.h"
+#undef board
 #include "radio/radio_sm.h"
 #if CONFIG_APRS
 #include "aprs/aprs_beacon.h"	// APRS_WHY_*
@@ -54,7 +57,7 @@ static struct {
 	uint8_t tx_power;
 	int tx_off_calls;
 	bool audio;
-	bool led[2];
+	bool led[3];
 	radio_status_t st;
 } hw;
 
@@ -192,11 +195,16 @@ static const hal_hwopt_t fake_hwopts[] = {
 	{ "Revision", 2, fake_hwopt_choices, fake_hwopt_get, fake_hwopt_set, true, fake_hwopt_state },
 };
 
-const board_t board = {
+// FAKE_MODEM_VOICE: a modem that plays the voice itself (CAP_MODEM_VOICE); that build runs test_modem_voice only
+#ifndef FAKE_MODEM_VOICE
+#define FAKE_MODEM_VOICE	0
+#endif
+
+board_t board = {
 	.name = "fake",
 	.hwopts = fake_hwopts,
 	.hwopt_count = 1,
-	.caps = CAP_GPS,
+	.caps = CAP_GPS | (FAKE_MODEM_VOICE ? CAP_MODEM_VOICE : 0),
 	.gps_enable = fake_gps_enable,
 	.gps_present = fake_gps_present,
 	.bands = bands,
@@ -3266,6 +3274,15 @@ static void test_ui_dual(void)
 	const ui_dual_ref_t withvfo[2] = { vfo, a };
 	CHECK(ui_svc_dual(withvfo, 0) && sm.view.scan == SCAN_DUAL);
 	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF && sm.view.vfo);
+	// The debug link's watch of the two VFOs (SCAN op 8): VFO A selected, the second VFO as B
+	CHECK(debuglink_radio_feature_op(DL_OP_SCAN, (const uint8_t[]){ 8 }, 1) == DL_ST_OK);
+	{
+		radio_dual_ref_t got[2];
+		uint8_t sel, at;
+		CHECK(sm.view.scan == SCAN_DUAL && radio_get_dual(got, &sel, &at) && sel == 0);
+		CHECK(got[0].vfo && got[0].pos == 0 && got[1].vfo && got[1].pos == 1);
+	}
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF && sm.view.vfo);
 	// Saved while the watch is on B: powers up on the selected A all the same
 	req(RREQ_VFO, 0);
 	req(RREQ_ZONE_POS, 0);
@@ -4851,6 +4868,19 @@ static void test_dmr_data_glue(void)
 }
 
 // Receive past the band table: the VFO tunes there only while the extension is on, and it never transmits
+// board.h's band helpers are compiled here against board_as_declared (the writable board above), so the test reads
+// the table itself: the receive-only extension counts only while rx_ext_on
+static bool rx_band_has(uint32_t hz)
+{
+	uint8_t n = rx_ext_on ? board.band_count : (uint8_t)(board.band_count - board.rx_ext_count);
+	for (uint8_t i = 0; i < n; i++) {
+		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static void test_rx_ext(void)
 {
 	setup_codeplug();
@@ -4860,7 +4890,7 @@ static void test_rx_ext(void)
 	req(RREQ_VFO_SET, 500000000);
 	run(20);
 	CHECK(sm.view.ch.rx_hz != 500000000);	// off: refused like any frequency outside the table
-	board_rx_ext_set(true);
+	rx_ext_on = true;
 	req(RREQ_VFO_SET, 500000000);
 	run(20);
 	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 500000000);
@@ -4869,11 +4899,11 @@ static void test_rx_ext(void)
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && hw.tx_calls == tx0);
 	req(RREQ_PTT, 0);
 	run(20);
-	board_rx_ext_set(false);
-	CHECK(!board_in_band(500000000, false));
+	rx_ext_on = false;
+	CHECK(!rx_band_has(500000000));
 	req(RREQ_RELOAD, 0);	// what turning it off in Settings does: a VFO left past the table returns to a band
 	run(20);
-	CHECK(sm.view.vfo && board_in_band(sm.view.ch.rx_hz, false));
+	CHECK(sm.view.vfo && rx_band_has(sm.view.ch.rx_hz));
 }
 
 // ---- Error paths: the radio refuses to key, a channel without a TX frequency, retuning or scanning while
@@ -5141,6 +5171,24 @@ static void test_fm_rssi_raw(void)
 }
 
 #if CONFIG_SFR
+// A repeater role on an RGB LED is orange while it waits (radio-features.md 5.7); without the flag it stays dark
+static void test_sfr_led(void)
+{
+	for (int rgb = 0; rgb < 2; rgb++) {
+		board.caps = rgb ? board.caps | CAP_LED_RGB : board.caps & ~(uint32_t)CAP_LED_RGB;
+		dmr_start(true);
+		chans[4].sfr_flag1 = SFR_CHANNEL_FLAG1_ENABLED;
+		chans[4].sfr_a = SFR_ROLE_RPT_STANDARD;
+		reload_channel();
+		CHECK(sm.sfr_rpt && hw.led[LED_RED] == (rgb != 0) && hw.led[LED_GREEN] == (rgb != 0) && !hw.led[LED_BLUE]);
+		chans[4].sfr_flag1 = 0;
+		chans[4].sfr_a = 0;
+		reload_channel();
+		CHECK(!sm.sfr_rpt && !hw.led[LED_RED] && !hw.led[LED_GREEN]);
+	}
+	board.caps &= ~(uint32_t)CAP_LED_RGB;
+}
+
 // Standalone SFR (docs/spec/sfr.md 4): a channel's SFR role in the codeplug. Repeater: the runner takes the modem
 // instead of the call stack and repeats the inbound slot on the other one. User: the call stack on the inbound slot
 static void test_sfr_roles(void)
@@ -5494,6 +5542,25 @@ static void test_sfr_cwid(void)
 #endif
 #endif
 
+#if FAKE_MODEM_VOICE
+// A modem with its own voice: the board's speaker path opens while a call is played, and not for one that isn't
+static void test_modem_voice(void)
+{
+	dmr_start(false);
+	const radio_dmr_view_t *d = &sm.view.dmr;
+	CHECK(d->codec && !hw.audio);
+	hear_call(true, 201, 3101234, 2, 1, false);
+	CHECK(sm.view.state == RS_RX && d->state == RDMR_RX && hw.led[LED_GREEN] && hw.audio);
+	uint8_t lc[9];
+	mk_lc(lc, true, 201, 3101234);
+	burst_lc(lc, 2, true);
+	run(100);
+	CHECK(d->state == RDMR_IDLE && !hw.led[LED_GREEN] && !hw.audio);
+	hear_call(true, 3100, 3107777, 2, 1, false);	// not in the listen list: shown, not played
+	CHECK(d->state == RDMR_RX_OTHER && !hw.audio);
+}
+#endif
+
 // RADIO op 35, the test TX limit (tx_limit.h): flags, a count, the frequencies; bad arguments change nothing
 static void test_tx_limit_op(void)
 {
@@ -5539,6 +5606,11 @@ static void test_volume_step_of(void)
 
 int main(void)
 {
+#if FAKE_MODEM_VOICE
+	test_modem_voice();
+	printf("# radioCoreTestModemVoice: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
+	return failures != 0;
+#endif
 	test_tx_limit_op();
 	test_startup();
 	test_persist();
@@ -5589,6 +5661,7 @@ int main(void)
 	test_hotspot_session();
 	test_hotspot_cwid();
 #if CONFIG_SFR
+	test_sfr_led();
 	test_sfr_roles();
 #if CONFIG_VFO_DMR
 	test_sfr_vfo();

@@ -57,7 +57,7 @@ if command -v snmpwalk > /dev/null 2>&1; then
 	else
 	snmpwalk -v2c -c public -t 1 -r 1 -OS -M "+$PWD/../../docs/spec" -m +RFOUNDRY-MIB -Ln 127.0.0.1:$PORT \
 		.1.3.6.1.4.1.32473 > snmpPeer.mwalk 2> snmpPeer.merr || fail "snmpwalk with RFOUNDRY-MIB"
-	U=$(grep -v -c '^RFOUNDRY-MIB::rfoundry[A-Za-z]*\.0 = ' snmpPeer.mwalk || true)
+	U=$(grep -v -c '^RFOUNDRY-MIB::rfoundry[A-Za-z]*\.[0-9][0-9]* = ' snmpPeer.mwalk || true)
 	E=$(wc -l < snmpPeer.mwalk | tr -d ' ')
 	[ "$U" = "0" ] && [ "$E" -ge 40 ] || fail "RFOUNDRY-MIB doesn't name ($E instances): $(grep -v '^RFOUNDRY-MIB::' snmpPeer.mwalk | head -3)"
 	grep -q -i -E "error|unlinked|cannot" snmpPeer.merr && fail "RFOUNDRY-MIB.txt: $(head -3 snmpPeer.merr)"

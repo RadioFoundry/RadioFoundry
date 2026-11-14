@@ -278,9 +278,10 @@ class Site:
 
 	def has_screen(self, board, name):
 		"""The board's build shows this gallery screen: its gallery has the shot and the full build has every switch
-		the screen needs."""
+		the screen needs; a screen with "knobs" (a knob per side, which no switch says) only on a board with as many."""
 		s = self.screen(name)
-		return name in board["screens"] and s is not None and all(x in board["config"]["full"] for x in s["needs"])
+		return (name in board["screens"] and s is not None and all(x in board["config"]["full"] for x in s["needs"])
+			and board.get("knobs", 1) >= s.get("knobs", 1))
 
 	def screen_caption(self, lang, name):
 		page, _, color = name.partition("__")
@@ -604,8 +605,7 @@ class Site:
 				     % (docsmod.site_path(p), html.escape(self.t(lang, "radio.doc." + k)))
 				     for k, p in sorted(b["docs"].items(), key=lambda kv: DOC_ORDER.index(kv[0])))
 		fl = b["flash"]
-		can_flash = ((fl["backend"] == "anyroad-dfu" and bool(self.flash["boards"].get(fl["board"], {}).get("key_sha256")))
-			     or (fl["backend"] == "c7000-stub" and fl["board"] in self.flash["c7000"]["boards"]))
+		can_flash = repo.can_flash(fl, self.flash)
 		g = b["frame_geometry"]
 		pct = g["screen_pct"]
 		ctx = {"id": b["id"], "name": b["name"], "also": ", ".join(b["also"]) or "—",

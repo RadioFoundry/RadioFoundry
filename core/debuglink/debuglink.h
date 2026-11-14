@@ -49,6 +49,7 @@ enum {
 	DL_VIEW_CPS,		// the CPS shims' counters (were in DL_VIEW_STORAGE until view version 5)
 	DL_VIEW_BOARD,		// the board's own keys (board.view_line): pins, ADC, clock, flash, calibration
 	DL_VIEW_AUDIO,		// the beeps' speaker route: stream, lead-in, amplifier hang
+	DL_VIEW_SENSORS,	// the temperature sensors and the fan (core/app/temp.c)
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		5	// bumped when a key changes meaning or goes away (new keys don't bump it)
@@ -92,7 +93,7 @@ static inline bool debuglink_is_feature_op(uint8_t op)
 	       op == DL_OP_DMR_FIELDS || op == DL_OP_VFO_COPY || op == DL_OP_VOICE_TEST || op == DL_OP_DTMF ||
 	       op == DL_OP_TX_LIMIT || op == DL_OP_TX_DRIVE || op == DL_OP_PA_KEYUP || op == DL_OP_VFO_SFR;
 }
-// VERSION's codec= (hal_vocoder_id; the name the host tests use)
+// VERSION's codec= for a vocoder (hal_vocoder_id; the name the host tests use); the board's is board_codec_id()
 static inline const char *debuglink_codec_id(const hal_vocoder_t *v)
 {
 	return hal_vocoder_id(v);

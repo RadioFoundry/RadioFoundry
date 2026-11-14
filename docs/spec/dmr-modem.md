@@ -230,6 +230,11 @@ transmitting in the slot after the next one, in phase with the bursts being rece
 - Then listen: the repeater is up when its outbound is heard with the slot number toggling correctly more than 3 times
   in a row.
 - No answer within 600 ms: send again, up to the configured number of attempts; then report failure to the user.
+- A board whose transmit set-up leaves it deaf between bursts provides `hal_radio_t.dmr_wake_listen`: the stack has it
+  receive after each burst and go back to the transmit set-up before the next one.
+- A modem that must settle the outbound's slot numbering before an aligned start gives `slot_verified`. Through a
+  repeater the stack keys only once it returns true, with the receiver still on, and denies the call with
+  `DMR_TX_ERR_NO_REPEATER` if it hasn't after `DMR_CALL_SLOT_VERIFY_MS` (1 s).
 - While a key-up waits for its first slot (the wake-up queued, or the aligned voice start not yet on the air), the
   modem's slot numbers don't count as the repeater heard: the modem labels slots from the timing it last had, which
   kept a repeater that had dropped "up". A repeater that dropped as the hang ended then got no wake-up.
@@ -350,6 +355,7 @@ interrupt.
 | `tx_queue_burst` | one burst: type (voice header, voice A-F with 27-byte AMBE, terminator, PI header, CSBK, data header / block, idle, raw DT), payload, "host supplied CRC" flag, embedded LC for B-E (voice), sync family override (SFR outbound) |
 | `tx_end` | no more bursts: finish the queued ones (a voice call ends at the superframe boundary with its terminator, which the stack has queued), then `tx_done` |
 | `tx_abort` | stop at the next slot (emergency, timeout) |
+| `tx_release` | optional: the call is ending and runs to its superframe boundary. A modem that takes the voice from the microphone itself sends silence from here on |
 | `set_embedded_lc` | the LC (or talker alias / GPS embedded LC) the modem spreads over B-E from the next superframe |
 | `set_cc_filter(cc or any)` | color code deframing |
 | `is_transmitting` | slot-state based (6.1 point 5) |

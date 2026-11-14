@@ -244,6 +244,13 @@ endif
 # RFOUNDRY_BOARD_ID: the board's id (boards/<id>), for platform code that names things after the board (the HR_C7000 codec
 # host's profile ids, "<id>-<stock tag>"); core/ never uses it
 DEFS := $(MCU_DEFS) $(FEATURE_DEFS) -DRFOUNDRY_BOARD_ID=\"$(BOARD)\"
+# BOARD_T_NAME (board.mk): board_t .name for boards that build one board_t between them (part_of), so each reports its
+# own name over the debug link; the registry reads it from board.mk (tools/boards.py). No spaces: the flags pass through
+# shell words (make stack-check)
+ifneq ($(BOARD_T_NAME),)
+$(if $(word 2,$(BOARD_T_NAME)),$(error BOARD_T_NAME '$(BOARD_T_NAME)' has a space: the build flags can't carry it))
+DEFS += -DBOARD_T_NAME=\"$(BOARD_T_NAME)\"
+endif
 
 OPT ?= -Os
 # Every function's frame size and calls, next to each object (or each LTO partition, next to the .elf), for the stack

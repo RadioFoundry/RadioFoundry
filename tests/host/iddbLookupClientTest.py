@@ -199,7 +199,58 @@ def main():
                 iddb_write.restore(link, backup)
                 check(link.iddb() == before, f"write {fmt}: after the restore {link.iddb()}, before {before}")
                 check(iddb_write.put(link, backup) == 0, f"write {fmt}: the restore left a block to write")
+            # The radio ends the session partway (no request for 10 s: the host stalled; here an ABORT does what the
+            # time-out does): the next BLOCK is refused for the state, put begins again and sends that block again (the
+            # header block goes twice anyway: erased first, written last)
+            blocks = iddb_write.encode_c(recs)
+            backup = iddb_write.save(link, blocks, os.path.join(d, "iddb.bak"))
+            send, sent = link.write_block, []
+
+            def cut(addr, data, **kw):
+                sent.append(addr)
+                if len(sent) == 3:
+                    link.abort()
+                return send(addr, data, **kw)
+            link.write_block = cut
+            n = iddb_write.put(link, blocks)
+            link.write_block = send
+            check(n > 3 and len(sent) == n + 2 and sent[2] == sent[3], f"a session cut: {len(sent)} sends for {n} blocks")
+            check(not iddb_write.differ(link, blocks) and link.iddb()["records"] == len(recs), "a session cut: written")
+            iddb_write.restore(link, backup)
+            check(link.iddb() == before, "a session cut: restored")
             print(f"# iddb_write: {len(recs)} synthetic records in formats N and C, put and restored")
+
+            # A full dictionary (as RadioID's worldwide list makes): its strings run past area 1's end and go on in
+            # area 2, one string across the seam; nothing lands between the areas
+            big = [(5000000 + k, f"Q{k} N{k % 50} Town{k // 2:05d} Province{k // 2 % 9}")
+                   for k in range(2 * iddb_write.DICT_MAX + 400)]
+            blocks = iddb_write.encode_c(big)
+            outside = [a for a in blocks if not (AREA1 <= a < AREA1 + iddb_read.AREA1_SIZE or a >= AREA2)]
+            check(not outside, f"full dictionary: blocks between the areas {[hex(a) for a in outside[:4]]}")
+            db = iddb_read.Database(lambda a, n: b"".join(bytes(blocks.get(b, b"\xff" * 4096))[max(a, b) - b:
+                                                                                     min(a + n, b + 4096) - b]
+                                                     for b in range(a & ~4095, a + n, 4096)))
+            check(db.dict == iddb_write.DICT_MAX and db.strings < iddb_read.AREA1_SIZE < db.size,
+                  f"full dictionary: {db.dict} entries, strings at {db.strings:#x}")
+            # the entry whose string crosses from area 1 into area 2
+            offs = [db.strings + int.from_bytes(db._db(db.table + 3 * k, 3), "little") for k in range(db.dict)]
+            seam = [k for k, o in enumerate(offs) if o < iddb_read.AREA1_SIZE <= o + 1 + (6 * db._db(o, 1)[0] + 7) // 8]
+            check(len(seam) == 1, f"full dictionary: {len(seam)} entries across the seam")
+            want = iddb_write.prepare(big, iddb_write.TEXT_MAX)
+            check(db.records() == want, "full dictionary: read back differs")
+            entry = db.entry(seam[0]) if seam else None
+            look = [r for r in want if entry and entry in r[1]] + want[::997] + want[-2:]
+            backup = iddb_write.save(link, blocks, os.path.join(d, "iddb.bak"))
+            iddb_write.put(link, blocks)
+            info = link.iddb()
+            check(info["format"] == "C" and info["records"] == len(want), f"full dictionary: radio {info}")
+            bad = [(i, t, r.get("text")) for i, t in look if (r := link.iddb(i)).get("text") != t]
+            check(not bad and len(look) > 2 + len(want) // 997, f"full dictionary: {len(bad)} of {len(look)} lookups "
+                  f"differ, first {bad[:2]}")
+            iddb_write.restore(link, backup)
+            check(link.iddb() == before, "full dictionary: restored")
+            print(f"# full dictionary: {db.dict} entries, strings {db.strings:#x} to past area 1; {len(want)} records, "
+                  f"{len(look)} looked up (the seam's entry {entry!r})")
         finally:
             link.close()
 

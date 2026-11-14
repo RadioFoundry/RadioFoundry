@@ -12,6 +12,9 @@ also = ["Kydera CDR-300UV"]
 kind = "mobile"
 # where the radio appears in the site's lists (the lowest: the home page's radio)
 order = 4
+# The database has the 544 KB the sector layer gives it (docs/spec/hardware-db25d.md 6); a NAND range of its own, which a
+# board's flash layer can map (docs/spec/nand-blocks.md), isn't mapped here yet
+iddb_small = "no NAND range for the ID database yet: 544 KB on the sector layer (hardware-db25d.md 6)"
 # Older VERSION board= values that also mean this radio (debug link). The current one is board_t .name (or a
 # build option value's board_name), and the id always counts
 debuglink_aliases = ["DB25-D PRO"]
@@ -26,6 +29,7 @@ power = "up to 25 W"
 display = "1.77\" color, 160 × 128"
 gallery = "160x128"
 clock = { rtc = "unknown", note = "the SoC RTC on I2C2; whether a backup supply keeps it through power-off is not known (docs/spec/hardware-db25d.md)" }
+unconfirmed = { BT_PTT = "whether a Bluetooth module is fitted is not known (docs/spec/hardware-db25d.md)" }
 # The stock firmware identifies its RF chips at boot and writes them into its version string, after "909E.D"
 # (hardware-db25d.md 1, 4.2): the Version screen, the vendor CPS identify reply and the console's RAM copy carry it, the
 # program flash only a placeholder. One image serves every variant: it reads the chips at start-up as the stock does (4.8)

@@ -20,25 +20,31 @@ def own_board(path):
     return parts[1] if len(parts) == 4 and parts[0] == "boards" and parts[2] == "hil" else None
 
 
+def marked(item, name):
+    """The test carries the marker (its own, its class's or its module's). Not item.keywords, which also holds the
+    names of the directories above the test: a checkout in a directory named rf would be taken for the rf marker"""
+    return item.get_closest_marker(name) is not None
+
+
 def pytest_collection_modifyitems(config, items):
     for item in items:
-        if ("rf" in item.keywords or "radio_tx" in item.keywords) and not config.getoption("--allow-rf"):
-            if "audio_smoke" in item.keywords:
+        if (marked(item, "rf") or marked(item, "radio_tx")) and not config.getoption("--allow-rf"):
+            if marked(item, "audio_smoke"):
                 item.add_marker(skip_mark("opt_in", "DMR AUDIO NOT CHECKED: transmits; run the bench pass with "
                                                     "--allow-rf --ambe FILE (README.md, Default bench pass)"))
             else:
                 item.add_marker(skip_mark("opt_in", "transmits: run with --allow-rf"))
-        elif "usb_switch" in item.keywords and not config.getoption("--allow-usb-switch"):
+        elif marked(item, "usb_switch") and not config.getoption("--allow-usb-switch"):
             item.add_marker(skip_mark("opt_in", "re-enumerates the radio as a network adapter: run with "
                                                 "--allow-usb-switch"))
-        elif "codeplug_write" in item.keywords and not config.getoption("--allow-codeplug-write"):
+        elif marked(item, "codeplug_write") and not config.getoption("--allow-codeplug-write"):
             item.add_marker(skip_mark("opt_in", "writes the codeplug: run with --allow-codeplug-write"))
-        elif "reboot" in item.keywords and not config.getoption("--allow-reboot"):
+        elif marked(item, "reboot") and not config.getoption("--allow-reboot"):
             item.add_marker(skip_mark("opt_in", "restarts the radio: run with --allow-reboot"))
-        elif "manual" in item.keywords and not config.getoption("--manual") and \
-                not ("by_ear" in item.keywords and config.getoption("--microphone")):
+        elif marked(item, "manual") and not config.getoption("--manual") and \
+                not (marked(item, "by_ear") and config.getoption("--microphone")):
             item.add_marker(skip_mark("opt_in", "needs a person at the radio: run with --manual -s" +
-                                      (", or --microphone to listen with it" if "by_ear" in item.keywords else "")))
+                                      (", or --microphone to listen with it" if marked(item, "by_ear") else "")))
 
 
 @pytest.hookimpl(wrapper=True)
@@ -104,7 +110,7 @@ def only_on(bid, radio):
 @pytest.fixture(autouse=True)
 def radio_can_tx(request):
     """A radio_tx test on a radio that can't transmit: not_built."""
-    if "radio_tx" in request.keywords and "radio" in request.fixturenames:
+    if request.node.get_closest_marker("radio_tx") is not None and "radio" in request.fixturenames:
         need_radio_tx(request.getfixturevalue("radio"))
 
 
@@ -120,7 +126,7 @@ def restore_radio(request):
         yield
         return
     r = request.getfixturevalue("radio")
-    may_transmit = "radio_tx" in request.keywords
+    may_transmit = request.node.get_closest_marker("radio_tx") is not None
     r.tx_gate(may_transmit)
     snap = r.snapshot()
     try:

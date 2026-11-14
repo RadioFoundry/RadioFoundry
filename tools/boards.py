@@ -67,11 +67,14 @@ FAMILIES = {
     # combination, speaking its own file format (tools/serial_loader.py)
     "serial-iap": {"link": "serial-cable", "needs": (), "web": "c7000-stub", "update_mode": "iap"},	# a vendor IAP
     # loader on the cable, through the RAM stub
+    "anytone-update": {"link": "usb", "needs": (), "web": "anytone-update", "update_mode": "anytone"},	# the vendor
+    # update mode on the radio's own USB serial port, which writes the image itself
+    # (tools/rfoundry/rfoundry/anytone.py)
 }
 # [flash.stub] stock_console: the debug console a stock firmware answers on the cable, by protocol (the web flasher
 # loads the stub through it before RadioFoundry is installed: site/static/js/flasher/usmart.js)
 STOCK_CONSOLES = ("usmart",)
-CODEC_TOOLS = ("codec_extract", "hrc7000_codec")
+CODEC_TOOLS = ("codec_extract", "hrc7000_codec", "modem_boot")
 # [flash.original_version] read: how the installers read the original firmware's version (rfoundry/origversion.py,
 # site/static/js/flasher/origversion.js)
 ORIGINAL_VERSION_READS = ("dfu-info",)
@@ -83,6 +86,11 @@ RFOUNDRY_JSON = "tools/rfoundry/rfoundry/registry.json"	# the flashing tools' vi
 FLASH_MAP_FIELDS = ("settings_addr", "settings_size", "journal_addr", "openfw_eeprom", "openfw_flash", "openfw_end",
                     "calibration_addr", "calibration_size", "native_addr", "native_size", "staging_addr", "staging_size")
 OPENFW_FLASH_OFFSET = 0x20000
+# The DMR ID database's room (core/codeplug/dmr_iddb.c, docs/spec/iddb-compact.md 2): area 1, 256 KB at this offset in
+# the open-firmware flash image, then area 2 from its offset up to openfw_end. A board's room is at least half its data
+# memory, or 16 MB when that's more (IDDB_ROOM_CAP), unless board.toml iddb_small says why not
+IDDB_AREA1_OFF, IDDB_AREA1_SIZE, IDDB_AREA2_OFF = 0x30000, 0x40000, 0xB8000
+IDDB_ROOM_CAP = 16 << 20
 APP_SLOT = "app+slot"		# [flash] sectors: one sector for the application, one for the codec slot (no geometry)
 NAND_DRIVER = "drivers/flash/spi_nand"	# in BOARD_DIRS: the board's data memory is SPI NAND (the stub's nand flag)
 # The memories a [[flash.protect]] entry names, and what an offset in each means: progmem, the MCU's program flash from
@@ -97,7 +105,7 @@ STUB_WRITE_TEST = 0x4000	# [flash.stub] write_test: the data flash bytes stubtoo
 NO_PIN = 255			# the universal stub's "no pin"
 # board.mk values the registry reads, through make (conditionals and config.mk included)
 MAKE_VARS = ("PLATFORM", "APP_BASE", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS",
-             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "BOARD_NOT_WRITTEN", "HSE_VALUE", "MCU_DEFS")
+             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "BOARD_NOT_WRITTEN", "HSE_VALUE", "MCU_DEFS", "BOARD_T_NAME")
 # The frame buffer core/ui/gfx.h builds when a board's MCU_DEFS don't size it (RGB565, 160x128, at most 160 rows)
 GFX_DEFAULTS = {"GFX_FB_BYTES": 160 * 128 * 2, "GFX_MAX_ROWS": 160, "GFX_INDEXED": 0}
 # The [flash.stub] id every stub keeps for its tools' test profiles (stub/f4stub.py test_board()), so a test record
@@ -136,6 +144,9 @@ STR_LIST = ("list", str)
 # The HIL pass limits a board can override ([hil.limits]): name -> the check that reads it
 HIL_LIMITS = {
     "dmr_tx_ramp_ms": "a DMR TX burst's key-up and key-down ramps, each (tools/bench/dmr_bench.py check_tx)",
+    "beep_lead_pops": "pops ahead of a beep's first tone allowed in each beep, the amplifier's own turn-on "
+                      "(tests/hil/test_speaker.py test_speaker_beeps)",
+    "beep_dropouts": "tone dropouts allowed in one run of tests/hil/test_speaker.py test_speaker_beeps",
     "fm_squelch_tail_ms": "the noise heard after an FM carrier ends, until the squelch closes (tests/hil/test_speaker.py "
                           "test_fm_rx_speaker)",
 }
@@ -156,6 +167,9 @@ BOARD_SCHEMA = {
     # the board's page. name is one of also;
     # also lists the radios in that body (each one of the board's also too)
     "looks": _opt(("list", {"id": _req(str), "name": _req(str), "also": _opt(STR_LIST)})),
+    # this board is the image of one hardware variant of another board's radio: one radio to the reader, so only that
+    # board is listed (the site, the README, the manual's index)
+    "variant_of": _opt(str),
     "debuglink_aliases": _opt(STR_LIST),
     "docs": _req({"hardware": _req(str), "codec": _opt(str), "install": _opt(str), "bringup": _opt(str)}),
     # unconfirmed: a hardware switch (tests/hil/features.toml hardware) that is neither built nor in
@@ -163,6 +177,9 @@ BOARD_SCHEMA = {
     # what is missing (docs/build-config.md, "Unsupported, not written, unconfirmed")
     "hardware": _req({"cpu": _opt(str), "bands": _req(str), "power": _req(str), "display": _req(str),
                       "gallery": _req(str), "unconfirmed": _opt(("map", str)),
+                      # volume knobs: 2 for a knob per side (side B's, hal_power_t.volume_b); the site shows the screens
+                      # that need it (site/data/screens.json "knobs") only on those
+                      "knobs": _opt(int),
                       # the real-time clock (CLOCKS) and the source of that fact; no driver uses it yet
                       "clock": _req({"rtc": _req(CLOCKS), "note": _req(str)}),
                       # hardware variants sold under this model that the radio itself names (variant_pattern: a regular
@@ -175,6 +192,13 @@ BOARD_SCHEMA = {
                       # before it writes and refuses another image
                       "variants": _opt(("list", {"code": _req(str), "name": _req(str), "level": _opt(LEVELS),
                                                  "notice": _opt(str),
+                                                 # the USB ids ("VVVV:PPPP", hex) the radio's original firmware
+                                                 # enumerates with on this variant: the web flasher reads the variant
+                                                 # from the port alone, nothing sent (site detect.js "usb-id")
+                                                 "usb_ids": _opt(("list", str)),
+                                                 # why no installer may write RadioFoundry on this variant yet, though
+                                                 # its image exists; its original firmware can still go back
+                                                 "blocked": _opt(str),
                                                  "runs": _opt({"board": _req(str), "options": _opt(("map", str))})})),
                       "variant_pattern": _opt(str), "variant_check": _opt(str)}),
     # summary: what works, then at most one short clause of what is open; plain text, no links (the README, the
@@ -197,6 +221,9 @@ BOARD_SCHEMA = {
         # key-<name> ids), for the web flasher's picture; steps stays the instructions
         "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str),
                             "hold": _opt(STR_LIST)}),
+        # the anytone-update family: the model names the radio's update mode answers (byte 02), per [hardware]
+        # variants code, as the vendor's .spi files for that variant carry them (tools/rfoundry/rfoundry/anytone.py)
+        "anytone": _opt({"models": _req(("map", STR_LIST))}),
         # layout: the bootloader's alt 0 interface string, only once read from a radio in its bootloader. The
         # flashers then accept no other device; without it they refuse a layout of only the bootloader's sectors
         # (rfoundry dfu.py normal_mode)
@@ -236,7 +263,11 @@ BOARD_SCHEMA = {
                       # the STM32F4 stub: the SPI flash's bus (SPIn), mode and fastest clock; the pins come from pins.h
                       # (F4_SPI_PINS), and idle_cs names other chip selects on that bus to hold high
                       "spi": _opt({"bus": _req(int), "mode": _req(int), "hz": _req(int)}),
-                      "idle_cs": _opt(STR_LIST)}),
+                      "idle_cs": _opt(STR_LIST),
+                      # the GD32F30x / AT32F43x stubs: a bit-banged SPI NAND they read as the external memory (its
+                      # size in MB, whether it reads in dual SPI); the pins come from pins.h (PIN_NAND_CS, _CLK,
+                      # _MOSI, _MISO)
+                      "spi_nand": _opt({"mb": _req(int), "dual": _opt(bool)})}),
     }),
     # stock_version: the stock firmware version whose file carries the codec, as the web flasher asks for the file
     "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(STR_LIST), "profile": _opt(str), "sources": _opt(STR_LIST),
@@ -255,6 +286,9 @@ BOARD_SCHEMA = {
     "features": _opt(("map", {"state": _req(("unsupported", "n/a")), "reason": _req(str)})),
     # the open-firmware CPS radio types the board's hal_cps_t reports (docs/spec/cps-protocol.md 2.2, test_cps.py)
     "cps": _opt({"radio_types": _req(("list", int))}),
+    # why the DMR ID database's room (iddb_room) is under half the data memory and 16 MB: tools/boards.py check
+    # refuses that without a reason (docs/dev/board-registry.md)
+    "iddb_small": _opt(str),
     # the stock firmware's codeplug in a data flash backup (tools/backup_codeplug.py, docs/spec/codeplug-port.md 5):
     # dmrconf's driver for it, the span of data flash it sits in, and how its pages map to the addresses the driver
     # takes (block-id: each 4 KB page names its logical block in its last byte)
@@ -488,6 +522,26 @@ def openfw_bases(mcu_defs):
 NAND_FIELDS = ("page_size", "pages_per_block", "blocks")
 
 
+def iddb_room(fm):
+    """The ID database's room in bytes, from a flash map's openfw_flash (or openfw_eeprom + OPENFW_FLASH_OFFSET) and
+    openfw_end: area 1 and area 2 (none past openfw_end)"""
+    fl = fm.get("openfw_flash", fm["openfw_eeprom"] + OPENFW_FLASH_OFFSET)
+    end = fm["openfw_end"]
+    return min(IDDB_AREA1_SIZE, max(0, end - fl - IDDB_AREA1_OFF)) + max(0, end - fl - IDDB_AREA2_OFF)
+
+
+def iddb_room_problem(room, data, reason):
+    """Why the board's ID database room isn't right, or None: under half the data memory (data bytes) and 16 MB
+    without a reason, or a reason the room no longer needs"""
+    want = min(data // 2, IDDB_ROOM_CAP)
+    if room < want and not reason:
+        return ("the DMR ID database's room is %.1f MB, under %.1f MB (half the %d MB data memory, at most 16 MB): "
+                "give it more, or say why in iddb_small" % (room / 2**20, want / 2**20, data >> 20))
+    if room >= want and reason:
+        return "iddb_small: the DMR ID database's room is %.1f MB, enough; drop the reason" % (room / 2**20)
+    return None
+
+
 def nand_geometry(board_dir):
     """(block bytes, blocks) of the board's spi_nand_t definition (drivers/flash/spi_nand): the main area only, as the
     stub tools address it. None without one; a second one with other numbers is an error."""
@@ -561,7 +615,7 @@ def not_written_problems(bid, b):
 
 def pin_defines(path):
     """{NAME: value} of the pin #defines in a pins.h: an integer (the HR_C7000's port << 4 | pin), or "PB3" for the
-    STM32 form `GPIOB, GPIO_PIN_3`."""
+    STM32 form `GPIOB, GPIO_PIN_3` and the GD32F30x / AT32F43x form `GPIOB, MCU_PIN(3)`."""
     if not os.path.isfile(path):
         return {}
     with open(path, encoding="utf-8") as f:
@@ -575,6 +629,9 @@ def pin_defines(path):
                 for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+\(?((?:0[xX][0-9a-fA-F]+|\d+))[uU]?\)?\s*$", text)})
     out.update({m.group(1): "P%s%d" % (m.group(2), int(m.group(3)))
                 for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+GPIO([A-K])\s*,\s*GPIO_PIN_(\d+)\s*$", text)})
+    # The GD32F30x / AT32F43x boards' form `GPIOB, MCU_PIN(8)`
+    out.update({m.group(1): "P%s%d" % (m.group(2), int(m.group(3)))
+                for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+GPIO([A-K])\s*,\s*MCU_PIN\((\d+)\)\s*$", text)})
     return out
 
 
@@ -684,13 +741,21 @@ class Board:
     def stub(self):
         """The board's profile for its platform's stub (platform.toml board_stub.tool), with what other files say.
         stubtool (the HR_C7000 universal stub): the power latch and key from pins.h when the stub must hold the radio
-        on (a soft power key), else none. f4stub: the board record's facts, the SPI flash pins from pins.h, the crystal
-        from HSE_VALUE and the bootloader's end from APP_BASE. None without a profile."""
+        on (a soft power key), else none. f4stub (the STM32F4, GD32F30x and AT32F43x stubs): the bootloader's end from
+        APP_BASE, and where the board names an SPI flash, its pins from pins.h and the crystal from HSE_VALUE. None without a
+        profile."""
         s = self.data["flash"].get("stub")
         bs = self.platform.data.get("board_stub")
         if s is None or bs is None:
             return None
         out = {"tool": bs["tool"], "id": s["id"], "tested": s["tested"]}
+        if bs["tool"] == "f4stub":
+            out.update(boot_end=self.app_base, hse=None, spi=None, spi_nand=None)
+            if "spi_nand" in s:
+                n = s["spi_nand"]
+                out.update(spi_nand={"mb": n["mb"], "dual": bool(n.get("dual", False)),
+                                     "cs": self.pins.get("PIN_NAND_CS"), "clk": self.pins.get("PIN_NAND_CLK"),
+                                     "io0": self.pins.get("PIN_NAND_MOSI"), "io1": self.pins.get("PIN_NAND_MISO")})
         if "spi" in s:
             spi, af = s["spi"], bs.get("spi_af") or []
             pin = {k: self.pins.get(k) for k in F4_SPI_PINS}
@@ -883,7 +948,10 @@ def load(root=ROOT, only=None):
         if plat is None:
             raise RegistryError("boards/%s: PLATFORM %r has no platform/<p>/platform.toml" % (bid, mk.get("PLATFORM")))
         srcs = [bdir] + shared_board_dirs(root, bid, mk)
-        out[bid] = Board(data, plat, mk, _layout(root, bid, mk), board_t_names(srcs),
+        # .name = BOARD_T_NAME: the Makefile defines it from board.mk, so its value is the board's literal
+        names = [(mk["BOARD_T_NAME"], None) if macro == "BOARD_T_NAME" and mk.get("BOARD_T_NAME") else (lit, macro)
+                 for lit, macro in board_t_names(srcs)]
+        out[bid] = Board(data, plat, mk, _layout(root, bid, mk), names,
                          pin_defines(os.path.join(bdir, "pins.h")),
                          # config/features.mk lists the switches a build rules out for every board (FONT_BIG on a
                          # narrow panel); the platform's config.mk adds its own (no USB on a platform without it);
@@ -961,9 +1029,10 @@ def hardware_switches(root=ROOT):
     return {e["switch"]: e["hardware"] for e in feats.values() if e.get("switch") and e.get("hardware")}
 
 
-def hardware_problems(bid, unsupported, unconfirmed, built, hw):
+def hardware_problems(bid, unsupported, unconfirmed, built, hw, no_room=()):
     """A board's hardware switches that read "off by default": each must be built (built: switch -> "y"/"n"), listed in
-    BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN (unsupported: both, with their reasons), or, while the fact is unknown, in
+    BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN (unsupported: both, with their reasons), in MAXIMAL_SKIP (no_room: written,
+    but the radio has no room for it beside its other features; config.mk says why), or, while the fact is unknown, in
     board.toml [hardware] unconfirmed. One in either list must also be off by default."""
     out = []
     for s, what in sorted(hw.items()):
@@ -975,12 +1044,12 @@ def hardware_problems(bid, unsupported, unconfirmed, built, hw):
         elif on and gone:
             out.append("boards/%s: %s is in BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN (it needs %s) but built by default: "
                        "add CONFIG_%s ?= n to its config.mk" % (bid, s, what, s))
-        elif not on and not gone:
+        elif not on and not gone and s not in no_room:
             out.append("boards/%s: %s needs %s and is off by default: build it (config.mk CONFIG_%s ?= y) if the "
                        "radio has it and the code is written; BOARD_NOT_WRITTEN += %s  # <what isn't written> if "
-                       "the radio has it but the code isn't; else BOARD_UNSUPPORTED += %s  # <the reason, from the "
-                       "hardware spec>. A fact no source has yet goes in board.toml [hardware] unconfirmed"
-                       % (bid, s, what, s, s, s))
+                       "the radio has it but the code isn't; MAXIMAL_SKIP if it is written but doesn't fit; else "
+                       "BOARD_UNSUPPORTED += %s  # <the reason, from the hardware spec>. A fact no source has yet goes "
+                       "in board.toml [hardware] unconfirmed" % (bid, s, what, s, s, s))
     for s in sorted(set(unconfirmed) - set(hw)):
         out.append("boards/%s/board.toml: hardware.unconfirmed %s is not a hardware switch (tests/hil/features.toml)"
                    % (bid, s))
@@ -1064,13 +1133,25 @@ def variant_problems(bid, d, boards, bad):
     codes = [v["code"] for v in vs]
     if len(set(codes)) != len(codes):
         bad("hardware.variants names a code twice")
+    ids = [u for v in vs for u in v.get("usb_ids", [])]
+    for u in ids:
+        if not re.fullmatch(r"[0-9A-F]{4}:[0-9A-F]{4}", u):
+            bad("hardware.variants usb_ids: %r is not VVVV:PPPP in upper-case hex" % u)
+    if len(set(ids)) != len(ids):
+        bad("hardware.variants: a USB id names two variants (or one twice)")
     if not any(v.get("runs", {}).get("board") == bid and v.get("level") == "supported" for v in vs) \
             and d["status"]["level"] == "supported":
         bad("hardware.variants: a supported board needs a supported variant that runs its image (runs.board = %r)" % bid)
     if not any(v.get("runs", {}).get("board") == bid for v in vs):
         bad("hardware.variants: none runs this board's image (runs.board = %r)" % bid)
+    of = d.get("variant_of")
+    if of and (of not in boards or not any(v.get("runs", {}).get("board") == bid
+                                           for v in boards[of].data["hardware"].get("variants", []))):
+        bad("variant_of: %r is no board with a variant that runs this board's image" % of)
     for v in vs:
         runs = v.get("runs")
+        if "blocked" in v and not runs:
+            bad("hardware.variants %s: blocked goes with runs (a variant no image runs can't be installed anyway)" % v["code"])
         if not runs:
             if "level" in v or "notice" in v:
                 bad("hardware.variants %s: level and notice go with runs (a variant no image runs is not supported)"
@@ -1114,11 +1195,13 @@ def check(root=ROOT):
         problems += not_written_problems(bid, b)
         if hw:
             try:
-                built = {s: v for s, v in ((k[len("CONFIG_"):], v) for k, v in
-                                           make_vars(root, bid, ["CONFIG_" + s for s in hw]).items())}
-                # not written yet counts as left off on purpose, as unsupported does
+                mv = make_vars(root, bid, ["CONFIG_" + s for s in hw] + ["MAXIMAL_SKIP"])
+                no_room = mv.pop("MAXIMAL_SKIP", "").split()
+                built = {k[len("CONFIG_"):]: v for k, v in mv.items()}
+                # not written yet counts as left off on purpose, as unsupported does, and so does written but too big
+                # for the radio beside its other features (MAXIMAL_SKIP)
                 problems += hardware_problems(bid, {**b.unsupported, **b.not_written},
-                                              d["hardware"].get("unconfirmed", {}), built, hw)
+                                              d["hardware"].get("unconfirmed", {}), built, hw, no_room)
             except RegistryError as e:
                 problems.append(str(e))
         for k, p in d["docs"].items():
@@ -1162,6 +1245,11 @@ def check(root=ROOT):
             if built != (fm["openfw_eeprom"], fm.get("openfw_flash", fm["openfw_eeprom"] + OPENFW_FLASH_OFFSET)):
                 bad("board.mk CODEPLUG_OPENFW_EEPROM_BASE / _FLASH_BASE (0x%X, 0x%X; 0 and 0x20000 when not set) aren't "
                     "the flash map's openfw_eeprom / openfw_flash" % built)
+            mem = b.memories()
+            why = iddb_room_problem(iddb_room(fm), (mem.get("nand") or mem.get("data") or (0,))[0],
+                                    d.get("iddb_small"))
+            if why:
+                bad(why)
         for lit, macro in b.source_names:
             if macro and not d.get("build_options"):
                 bad("board_t .name is the macro %s: name its values in [[build_options]] board_name" % macro)
@@ -1393,6 +1481,10 @@ def rfoundry_view(boards):
             # the backup before the install (origbackup.js), or None
             "original_backup": fl.get("original_backup"),
             "stub": b.stub(),
+            # [hardware] variants: code -> (name, the board whose image it runs or None); the anytone-update family's
+            # model names per variant code
+            "variants": {v["code"]: [v["name"], v.get("runs", {}).get("board"), v.get("blocked")] for v in d["hardware"].get("variants", [])},
+            "anytone_models": {k: list(v) for k, v in fl.get("anytone", {}).get("models", {}).items()},
             "build_options": d.get("build_options", []),		# rfoundry asks with the same words as the site
             # the radio types another open firmware's CPS radio info reports for this radio (board.toml [cps])
             "cps_radio_types": list(d.get("cps", {}).get("radio_types", [])),
@@ -1470,6 +1562,8 @@ def site_view(boards, root=ROOT):
     the keys the pages' scripts use (site/data/radios.json)."""
     out = []
     for bid, b in sorted(boards.items(), key=lambda kv: kv[1].data["order"]):
+        if b.data.get("variant_of"):
+            continue
         d, fl, hw = b.data, b.data["flash"], b.data["hardware"]
         stub = fl.get("stub") or {}
         flash = {"backend": b.family["web"], "board": bid, "family": fl["family"], "link": b.link,
@@ -1493,7 +1587,7 @@ def site_view(boards, root=ROOT):
             "id": bid, "name": d["name"], "maker": d["maker"], "model": d["model"], "also": list(d["also"]),
             "kind": d["kind"], "order": d["order"], "level": d["status"]["level"], "release": d["status"]["release"],
             "summary": d["status"]["summary"], "bands": hw["bands"], "power": hw["power"],
-            "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
+            "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "knobs": hw.get("knobs", 1), "docs": dict(d["docs"]), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
             "looks": json.loads(json.dumps(d.get("looks", []))),
             "unsupported": dict(b.unsupported), "not_written": dict(b.not_written), "volts": b.volts,
@@ -1620,6 +1714,18 @@ def self_test():
         if not cond:
             fails.append(what)
         print("%s %s" % ("ok  " if cond else "FAIL", what))
+
+    # the ID database's room: area 1 whole once openfw_end passes it, area 2 from 0xB8000; half the data memory, 16 MB
+    # at most, or a reason, and no reason once it fits
+    ok(iddb_room({"openfw_eeprom": 0, "openfw_end": 0x120000}) == 0x88000 and
+       iddb_room({"openfw_eeprom": 0x700000, "openfw_flash": 0x720000, "openfw_end": 0xF00000}) == 0x768000 and
+       iddb_room({"openfw_eeprom": 0, "openfw_end": 0x60000}) == 0x10000 and
+       iddb_room({"openfw_eeprom": 0, "openfw_end": 0x1120000}) == 0x1088000, "iddb_room: the two areas")
+    ok(iddb_room_problem(0x1088000, 256 << 20, None) is None and iddb_room_problem(8 << 20, 16 << 20, None) is None
+       and "under 16.0 MB" in (iddb_room_problem(0x88000, 256 << 20, None) or "")
+       and "under 8.0 MB" in (iddb_room_problem(0x768000, 16 << 20, None) or "")
+       and iddb_room_problem(0x88000, 256 << 20, "why") is None
+       and "drop the reason" in (iddb_room_problem(16 << 20, 256 << 20, "why") or ""), "iddb_room_problem")
 
     # list's selection (ci.sh --platform, the workflows' per-platform jobs)
     from types import SimpleNamespace as NS
@@ -1830,6 +1936,8 @@ def self_test():
        "hardware switches: in BOARD_UNSUPPORTED but built by default fails")
     ok(hp("x", {"NAND_STORAGE": "the driver isn't written"}, {}, {"VIBRATE": "y", "NAND_STORAGE": "n"}, hw) == [],
        "hardware switches: one in BOARD_NOT_WRITTEN (check() passes both lists) passes off by default")
+    ok(hp("x", {}, {}, {"VIBRATE": "y", "NAND_STORAGE": "n"}, hw, ["NAND_STORAGE"]) == [],
+       "hardware switches: one in MAXIMAL_SKIP (written, no room) passes off by default")
 
     # the survey's Port cells (check 5) and the floor, on a fixture survey
     class Stub:
@@ -1933,7 +2041,9 @@ def self_test():
                 os.makedirs(os.path.dirname(os.path.join(tmp, p)), exist_ok=True)
                 open(os.path.join(tmp, p), "w").close()
         ok(check(tmp) == [], "the copied registry is consistent: %s" % check(tmp)[:3])
-        one = board_dirs(tmp)[0]
+        # a board with the keys the cases below break: a universal stub profile ([flash.stub] hold_power)
+        one = next(b for b in board_dirs(tmp) if re.search(r"(?m)^hold_power = ",
+                                                         open(os.path.join(tmp, "boards", b, "board.toml")).read()))
         path = os.path.join(tmp, "boards", one, "board.toml")
         good = open(path, encoding="utf-8").read()
 
@@ -1961,7 +2071,7 @@ def self_test():
         if load(tmp)[one].family["update_mode"]:
             broken(re.sub(r"(?ms)^steps = \[.*?^\]\n", "steps = []\n", good, count=1),
                    "an update mode without the steps into it", "flash.bootloader.steps is empty")
-        two = board_dirs(tmp)[1]
+        two = next(b for b in board_dirs(tmp) if b != one)
         other = _tomllib().load(open(os.path.join(tmp, "boards", two, "board.toml"), "rb"))["order"]
         broken(re.sub(r"(?m)^order = .*$", "order = %d" % other, good), "an order another board has", "also the")
         fm_c = [os.path.join(tmp, "boards", one, f) for f, text in _c_sources(os.path.join(tmp, "boards", one))

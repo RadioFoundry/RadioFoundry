@@ -156,8 +156,8 @@ void http_status_json(dl_text_t *t)
 	ui_app_status_t ui;
 
 	ui_get_status(&ui);
-	dl_text(t, ",\"led_green\":%s,\"led_red\":%s,\"backlight\":%u,\"draws\":%u", bool_s((v->leds & RADIO_LED_GREEN) != 0),
-		bool_s((v->leds & RADIO_LED_RED) != 0), ui_backlight(), (unsigned)ui.draws);
+	dl_text(t, ",\"led_green\":%s,\"led_red\":%s,\"led_blue\":%s,\"backlight\":%u,\"draws\":%u", bool_s((v->leds & RADIO_LED_GREEN) != 0),
+		bool_s((v->leds & RADIO_LED_RED) != 0), bool_s((v->leds & RADIO_LED_BLUE) != 0), ui_backlight(), (unsigned)ui.draws);
 	dl_text(t, ",\"tcp_open\":%u}\n", (unsigned)tcp_open_count());
 }
 

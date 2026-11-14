@@ -156,7 +156,8 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-                 "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio"]
+                 "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio",
+                 "sensors"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -185,7 +186,7 @@ DTMF_DIGITS = "0123456789*#ABCD"
 VOLUME_KNOB = 0xFF
 OP_PPP = 28
 ROAM_CMDS = {"zone_off": 0, "zone_on": 1, "zone_toggle": 2, "now": 3, "lock": 4, "unlock": 5, "lock_toggle": 6}
-SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6, "select": 7}
+SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6, "select": 7, "dual_vfo": 8}
 BEEPS = {"key": 1, "error": 2, "tx_permit": 3, "tx_deny": 4, "call_end": 5, "tot_warn": 6, "battery_low": 7,
          "battery_crit": 8, "scan_hold": 9}
 SWEEP = 13      # the speaker test's sweep (beep.h BEEP_SWEEP): not a beep a user hears, so not in BEEPS
@@ -923,7 +924,7 @@ class DebugLink:
 
     def scan(self, cmd, pos=None):
         """Scan: stop | zone | vfo | dual (pos = the second channel) | cancel | nuisance | toggle | select (pos = 0 A,
-        1 B: the dual watch channel that position, zone and VFO requests then change)."""
+        1 B: the dual watch channel that position, zone and VFO requests then change) | dual_vfo (VFO A and VFO B)."""
         c = SCAN_CMDS[cmd] if isinstance(cmd, str) else cmd
         if c == SCAN_CMDS["dual"]:
             self.radio(OP_SCAN, bytes([c]) + struct.pack("<H", pos))
@@ -1627,7 +1628,7 @@ def cmd_data(link, a):
     return 0
 
 
-CHIP_STM32F4, CHIP_HRC7000 = 0, 1   # INFO_CHIP's family byte (debuglink.md 3.9)
+CHIP_STM32F4, CHIP_HRC7000, CHIP_GD32F30X, CHIP_AT32F43X = 0, 1, 2, 3   # INFO_CHIP's family byte (debuglink.md 3.9)
 
 
 def decode_chip(r):
@@ -1704,8 +1705,13 @@ def dump_path_ok(path):
 
 def print_chip(c):
     if c["family"] != CHIP_STM32F4:
-        name = {CHIP_HRC7000: "HR_C7000"}.get(c["family"], f"family {c['family']}")
+        name = {CHIP_HRC7000: "HR_C7000", CHIP_GD32F30X: "GD32F30x", CHIP_AT32F43X: "AT32F43x"}.get(
+            c["family"], f"family {c['family']}")
         print(f"chip     {name} (no ID or option byte registers)")
+        if c["family"] in (CHIP_GD32F30X, CHIP_AT32F43X):
+            print(f"flash    {c['flash_kb']} KB")
+            print(f"uid      {c['uid'][2]:08X}{c['uid'][1]:08X}{c['uid'][0]:08X} (token 0x{c['token']:08X})")
+            return
         print(f"uid      {c['uid'][2]:08X}{c['uid'][1]:08X}{c['uid'][0]:08X} (token 0x{c['token']:08X}; the data flash's unique ID)")
         return
     rdp_names = {0: "level 0 (0xAA, no protection)", 1: f"LEVEL 1 (0x{c['rdp_byte']:02X}: read protection)",

@@ -15,7 +15,6 @@ import { readHeader, extent, AREA1, AREA1_SIZE, AREA2 } from "./iddb.js";
 import { GENERAL, BOOT_TEXT } from "./records.js";
 import { Link, probe, whyNoAnswer } from "../flasher/link.js";
 import { crc32, sleep } from "../flasher/bytes.js";
-import { encodeBlock } from "../flasher/lz4.js";
 import { FastLink, FastError, BLOCK, REASON } from "./fastlink.js";
 import { note } from "../diag.js";
 
@@ -245,9 +244,11 @@ export class CpsSerial {
 
 	// What a write sends. Fast: the blocks whose CRC on the radio differs from want's (have: the radio's bytes as last
 	// read, trusted for a block only where its CRC matches). CPS: the codeplug's bytes that differ from have (null:
-	// everything), and with iddb the whole ID database (never read back first: it can be megabytes)
-	async plan(want, have, { iddb = false } = {}) {
-		return this.fastOr(() => this.fastPlan(want, have, { iddb }), () => this.cpsPlan(want, have, { iddb }));
+	// everything), and with iddb the whole ID database (never read back first: it can be megabytes). cache (fast
+	// only): an older image of this radio (kept in the browser), also trusted per block by CRC: a block found in have
+	// or cache goes as a patch of it
+	async plan(want, have, { iddb = false, cache = null } = {}) {
+		return this.fastOr(() => this.fastPlan(want, have, { iddb, cache }), () => this.cpsPlan(want, have, { iddb }));
 	}
 
 	// fast() with the fast protocol, else cps(); cps() too when the radio refuses a block as out of range. SUMS, READ and
@@ -306,9 +307,9 @@ export class CpsSerial {
 	}
 
 	// Write the plan; throws when the radio refuses a sector
-	async write(want, have, { iddb = false, progress = () => {}, signal } = {}) {
+	async write(want, have, { iddb = false, progress = () => {}, signal, cache = null } = {}) {
 		if (iddb && idDbEnd(want.bytes) > this.end) throw new TransportError("iddb_too_big");
-		return this.fastOr(() => this.fastWrite(want, have, { iddb, progress, signal }), () => this.cpsWrite(want, have, { iddb, progress, signal }));
+		return this.fastOr(() => this.fastWrite(want, have, { iddb, progress, signal, cache }), () => this.cpsWrite(want, have, { iddb, progress, signal }));
 	}
 
 	async cpsWrite(want, have, { iddb, progress, signal }) {
@@ -398,42 +399,45 @@ export class CpsSerial {
 		return img;
 	}
 
-	// [[addr, bytes]] for every block of ranges whose bytes on the radio differ from want's within the ranges: the
-	// radio's own bytes stay outside them (KEEP_OUT, a sector's other contents). A block the ranges fill isn't read
-	async fastChanged(want, have, ranges, sums) {
+	// [[addr, bytes, base]] for every block of ranges whose bytes on the radio differ from want's within the ranges:
+	// the radio's own bytes stay outside them (KEEP_OUT, a sector's other contents). A block the ranges fill isn't
+	// read. base: the radio's bytes of the block when known (blank, have's or cache's with the radio's CRC, or read),
+	// for a patch
+	async fastChanged(want, have, ranges, sums, cache = null) {
 		const out = [];
 		for (const [a, parts] of blocksOf(ranges)) {
 			const s = sums.get(a);
-			let next;
-			if (covers(a, parts)) next = new Uint8Array(BLOCK).fill(0xFF);
-			else {
-				const h = have?.bytes.length >= a + BLOCK ? have.bytes.subarray(a, a + BLOCK) : null;
-				next = s.blank ? new Uint8Array(BLOCK).fill(0xFF) : h && crc32(h) === s.crc ? h.slice() : await this.fl.read(a);
-			}
+			let base = s.blank ? new Uint8Array(BLOCK).fill(0xFF) : known(have, a, s.crc) || known(cache, a, s.crc);
+			if (!base && !covers(a, parts)) base = await this.fl.read(a);
+			const next = covers(a, parts) ? new Uint8Array(BLOCK).fill(0xFF) : base.slice();
 			for (const [x, y] of parts) next.set(want.bytes.subarray(x, y), x - a);
-			if (crc32(next) !== s.crc) out.push([a, next]);
+			if (crc32(next) !== s.crc) out.push([a, next, base]);
 		}
 		return out;
 	}
 
-	async fastPlan(want, have, { iddb = false } = {}) {
+	async fastPlan(want, have, { iddb = false, cache = null } = {}) {
 		const cp = writeRanges(), db = iddb ? iddbRanges(want) : [];
 		want.ensure(Math.max(...[...cp, ...db].map(([, b]) => b)));
 		const sums = await this.fastSums(blocksOf([...cp, ...db]).map(([a]) => a));
-		const codeplug = await this.fastChanged(want, have, cp, sums);
-		const ids = iddb ? await this.fastChanged(want, have, db, sums) : [];
+		const codeplug = await this.fastChanged(want, have, cp, sums, cache);
+		const ids = iddb ? await this.fastChanged(want, have, db, sums, cache) : [];
 		// the database's header block: rewritten first erased and again last whenever any of it changes (iddb-compact.md
 		// 4.3), so a write cut short leaves no database rather than a mix
-		if (ids.length && !ids.some(([a]) => a === AREA1)) ids.unshift([AREA1, want.bytes.slice(AREA1, AREA1 + BLOCK)]);
+		if (ids.length && !ids.some(([a]) => a === AREA1)) {
+			const s = sums.get(AREA1);
+			const base = s.blank ? new Uint8Array(BLOCK).fill(0xFF) : known(have, AREA1, s.crc) || known(cache, AREA1, s.crc);
+			ids.unshift([AREA1, want.bytes.slice(AREA1, AREA1 + BLOCK), base]);
+		}
 		const plan = [...codeplug, ...ids];
 		plan.fast = true;
 		plan.codeplug = codeplug.length;
-		const bytes = plan.reduce((n, [, b]) => n + (b.every((x) => x === 0xFF) ? 0 : encodedSize(b)), 0);
+		const bytes = plan.reduce((n, [, b, base]) => n + (b.every((x) => x === 0xFF) ? 0 : this.fl.encode(b, base).stream.length), 0);
 		return { plan, bytes, blocks: plan.length };
 	}
 
-	async fastWrite(want, have, { iddb, progress, signal }) {
-		const { plan, bytes } = await this.fastPlan(want, have, { iddb });
+	async fastWrite(want, have, { iddb, progress, signal, cache }) {
+		const { plan, bytes } = await this.fastPlan(want, have, { iddb, cache });
 		const codeplug = plan.slice(0, plan.codeplug), ids = plan.slice(plan.codeplug);
 		let done = 0;
 		const total = plan.length + (ids.length ? 1 : 0);	// the header block goes twice
@@ -445,9 +449,10 @@ export class CpsSerial {
 		}
 		if (ids.length) {
 			// header block first with the header erased, the rest, then the header block as it should be
+			// each a patch of what the radio holds then: the header block's second write of its first
 			const head = ids.find(([a]) => a === AREA1), first = head[1].slice();
 			first.fill(0xFF, 0, 32);
-			const order = [[AREA1, first], ...ids.filter(([a]) => a !== AREA1), head];
+			const order = [[AREA1, first, head[2]], ...ids.filter(([a]) => a !== AREA1), [AREA1, head[1], first]];
 			await this.fastSession(false, order, { signal, step, refused: null });
 		}
 		// a block the fast protocol refuses (outside what it serves on this radio) goes through the CPS
@@ -462,10 +467,10 @@ export class CpsSerial {
 	async fastSession(staged, blocks, { signal, step, refused }) {
 		await this.fl.begin(staged);
 		try {
-			for (const [a, b] of blocks) {
+			for (const [a, b, base] of blocks) {
 				if (signal?.aborted) throw new TransportError("stopped");
 				try {
-					await this.fl.write(a, b);
+					await this.fl.write(a, b, base);
 				} catch (e) {
 					// the ID database has no way round: its blocks are all written or the write fails
 					if (!refused || !(e instanceof FastError && e.reason === REASON.RANGE)) throw e;
@@ -531,11 +536,13 @@ export class CpsSerial {
 	}
 }
 
-// LZ4 stream bytes for a block (what the fast protocol sends)
-function encodedSize(b) {
-	return encodeBlock(b).length;
+// A copy of img's block at a when its CRC-32 is crc (the radio's), else null
+function known(img, a, crc) {
+	const b = img?.bytes.length >= a + BLOCK ? img.bytes.subarray(a, a + BLOCK) : null;
+	return b && crc32(b) === crc ? b.slice() : null;
 }
 
+// LZ4 stream bytes for a block (what the fast protocol sends): a patch of base when it's given and shorter
 // Estimated seconds for a transfer of n bytes; blocks: 4 KB blocks the fast protocol writes (each an erase and two
 // programs on the radio, about 0.15 s)
 export function estimate(n, cable, blocks = 0) {

@@ -135,8 +135,9 @@ typedef struct {
 	bool (*program)(void *ctx, uint32_t addr, const uint32_t *words, uint32_t n);
 	// Called after the RESET reply has been sent; does not return on the target
 	void (*reset)(void *ctx);
-	// The external SPI flash (NULL where the target has none): read, erase one 4 KB sector, program bytes inside one
-	// sector (checked erased); false on a chip that stays busy or doesn't answer
+	// The external memory (NULL where the target has none): an SPI NOR flash, or an SPI NAND's main areas as one
+	// linear space. Read, erase one 4 KB sector, program bytes inside one sector (checked erased); false on a chip
+	// that stays busy or doesn't answer. xerase and xprogram NULL: read only (XERASE, XPROGRAM answer BADOP)
 	bool (*xread)(void *ctx, uint32_t addr, void *dst, uint32_t n);
 	bool (*xerase)(void *ctx, uint32_t addr);
 	bool (*xprogram)(void *ctx, uint32_t addr, const uint8_t *data, uint32_t n);

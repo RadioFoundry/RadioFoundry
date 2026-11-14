@@ -31,7 +31,7 @@ typedef enum {
 	BEEP_EMERGENCY,		// DMR: someone's emergency heard (alarm or emergency call; core/dmr/dmr_emergency.h)
 	BEEP_MESSAGE,		// a text message arrived (the UI, if Settings > Sound > Message tone)
 	BEEP_TX_PERMIT_SHORT,	// DMR: talk now, played before keying (CAP_BEEP_NOT_ON_AIR): one short tone
-	BEEP_SWEEP,		// speaker test (debug link only): a 4 s sweep, BEEP_SWEEP_LO_HZ to BEEP_SWEEP_HI_HZ
+	BEEP_SWEEP,		// speaker test (debug link only): a 4 s sweep, BEEP_SWEEP_LO_HZ to BEEP_SWEEP_HI_HZ; PCM route only
 	BEEP_COUNT
 } beep_t;
 
@@ -47,7 +47,7 @@ typedef struct {
 
 typedef struct {
 	uint32_t played;	// patterns started
-	uint32_t no_stream;	// patterns dropped: no PCM audio, or the stream would not start (no codec clock)
+	uint32_t no_stream;	// patterns dropped: no PCM audio, the stream would not start (no codec clock), or a sweep on the tone route
 	uint32_t blocks;	// 20 ms blocks with a beep in them
 	uint32_t stalls;	// own streams given up: no block for STALL_POLLS polls (the codec clock stopped)
 	uint32_t shared;	// patterns mixed into the voice stream (no lead-in of their own)
@@ -57,8 +57,16 @@ typedef struct {
 
 #define BEEP_SEGS_MAX	6
 
-// audio NULL: beeps are counted as dropped
+// audio NULL: beeps are counted as dropped, unless beep_init_tone gave a tone hook
 void beep_init(const hal_audio_t *audio);
+// Without PCM audio: play the patterns as tones through tone(hz, level) (hal_radio_t.beep_tone; hz 0 = off), each
+// segment for its length to the millisecond (beep_tone_run, beep_tone_wait). lead_ms (hal_radio_t.beep_lead_ms):
+// each tone starts that long ahead silent, tone(hz, 0), and a gap before a tone runs it silent. NULL: none
+void beep_init_tone(void (*tone)(uint16_t hz, uint8_t level), uint8_t lead_ms);
+// Radio task, each pass of its loop: the tones' changes now due (beep_service runs it too)
+void beep_tone_run(uint32_t now_ms);
+// Milliseconds until beep_tone_run has a change to make, -1 for none: the radio task wakes for it
+int32_t beep_tone_wait(uint32_t now_ms);
 // Start a pattern at level 1..100 (0 or BEEP_NONE: nothing). shared: the DMR voice stream is running and mixes the
 // beep in; otherwise the beep starts its own stream. Replaces a pattern still playing
 void beep_play(beep_t b, uint8_t level, bool shared);
@@ -71,6 +79,10 @@ void beep_service(bool shared, uint32_t now_ms);
 void beep_warm(uint32_t now_ms);
 // The amplifier is held powered (beep_warm)
 bool beep_warm_on(void);
+// The board has an amplifier hang (hal_audio_t.speaker_warm and speaker_hang_s): beep_warm does something
+bool beep_has_hang(void);
+// The beeps are tones from the radio's own hook (beep_init_tone), not PCM: no stream, no blocks
+bool beep_tone_route(void);
 // From an audio block callback: add the beep to the block (saturating). True while the beep sounds
 bool beep_mix(int16_t *spk);
 // Whether a pattern is still playing (as last seen by the audio side)

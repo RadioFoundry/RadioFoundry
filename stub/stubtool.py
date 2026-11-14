@@ -1848,12 +1848,16 @@ def fingerprint(path):
 # bit in the data, `silent` = request numbers with no reply, `misplace` = request numbers whose first sector record
 # carries the next sector's data with its own CRC (as a record left over from a stream cut short would).
 
-def lz4_encode(src):
-    """A greedy LZ4 block encoder, for the simulated radio only (the real one is stub/lz4enc.h)."""
+def lz4_encode(src, dictionary=b""):
+    """A greedy LZ4 block encoder, for the simulated radio and the fast codeplug protocol's hosts (the radio's own is
+    stub/lz4enc.h). With a dictionary, matches may also reach into it as if it came just before src (a patch block,
+    docs/spec/cps-fast.md 3.7): each 4-byte key keeps its last few places, and the longest match among them wins."""
+    dn = len(dictionary)
+    buf = bytes(dictionary) + bytes(src)
     out = bytearray()
     seen = {}
-    ip = anchor = 0
     n = len(src)
+    ways = 4 if dn else 1
 
     def ext(v):
         while v >= 255:
@@ -1861,23 +1865,45 @@ def lz4_encode(src):
             v -= 255
         out.append(v)
 
+    def remember(key, at):
+        lst = seen.get(key)
+        if lst is None:
+            seen[key] = [at]
+        else:
+            lst.append(at)
+            if len(lst) > ways:
+                del lst[0]
+
+    for i in range(max(0, dn - 3)):
+        remember(buf[i:i + 4], i)
+    ip = anchor = 0
     while n >= 13 and ip <= n - 12:
-        key = src[ip:ip + 4]
-        ref = seen.get(key)
-        seen[key] = ip
-        if ref is not None and ip - ref < 65536:
+        at = dn + ip
+        key = buf[at:at + 4]
+        best = bref = 0
+        for ref in reversed(seen.get(key, ())):
+            if at - ref >= 65536:
+                continue
             ml = 4
-            while ip + ml < n - 5 and src[ref + ml] == src[ip + ml]:
+            while ip + ml < n - 5 and buf[ref + ml] == buf[at + ml]:
                 ml += 1
+            if ml > best:
+                best, bref = ml, ref
+        remember(key, at)
+        if best:
             lit = ip - anchor
-            out.append((min(lit, 15) << 4) | min(ml - 4, 15))
+            out.append((min(lit, 15) << 4) | min(best - 4, 15))
             if lit >= 15:
                 ext(lit - 15)
             out += src[anchor:ip]
-            out += (ip - ref).to_bytes(2, "little")
-            if ml - 4 >= 15:
-                ext(ml - 19)
-            ip += ml
+            out += (at - bref).to_bytes(2, "little")
+            if best - 4 >= 15:
+                ext(best - 19)
+            if dn:
+                for k in range(1, best):
+                    if ip + k <= n - 12:
+                        remember(buf[at + k:at + k + 4], at + k)
+            ip += best
             anchor = ip
             continue
         ip += 1
@@ -1886,6 +1912,52 @@ def lz4_encode(src):
     if lit >= 15:
         ext(lit - 15)
     out += src[anchor:]
+    return bytes(out)
+
+
+def lz4_block_dict(src, size, dictionary):
+    """Decode a block whose matches may reach into dictionary (lz4_encode with one): the reference for the tests"""
+    dn = len(dictionary)
+    full = lz4_block_any(src, size + dn, bytes(dictionary))
+    return full[dn:]
+
+
+def lz4_block_any(src, size, prefix):
+    out = bytearray(prefix)
+    i, n = 0, len(src)
+    while i < n:
+        tok = src[i]
+        i += 1
+        lit = tok >> 4
+        if lit == 15:
+            while True:
+                b = src[i]
+                i += 1
+                lit += b
+                if b != 255:
+                    break
+        out += src[i:i + lit]
+        i += lit
+        if i >= n:
+            break
+        off = src[i] | (src[i + 1] << 8)
+        i += 2
+        ml = tok & 15
+        if ml == 15:
+            while True:
+                b = src[i]
+                i += 1
+                ml += b
+                if b != 255:
+                    break
+        ml += 4
+        if off == 0 or off > len(out):
+            raise DumpError("corrupt LZ4 block")
+        start = len(out) - off
+        for k in range(ml):
+            out.append(out[start + k])
+    if len(out) != size:
+        raise DumpError("LZ4 block decodes to %d bytes, wanted %d" % (len(out) - len(prefix), size - len(prefix)))
     return bytes(out)
 
 
@@ -2983,8 +3055,9 @@ def main(argv=None):
     ap.add_argument("--q128", metavar="FILE", help="read the 16 MB data flash into FILE")
     ap.add_argument("--progmem-range", metavar="START:END", help="byte range, any alignment (default all)")
     ap.add_argument("--q128-range", metavar="START:END")
-    ap.add_argument("--nand", metavar="FILE", help="DB25-D (--board db25d or found from RadioFoundry): read the SPI NAND into FILE "
-                    "(2 KB pages without the spare bytes; give --nand-range, the chip is 256 MB)")
+    ap.add_argument("--nand", metavar="FILE", help="read the SPI NAND into FILE (main areas: 2 KB pages without the spare "
+                    "bytes; --nand-range for part of it): the DB25-D, and a GD32F30x radio whose board.toml names one "
+                    "([flash.stub] spi_nand)")
     ap.add_argument("--nand-range", metavar="START:END")
     ap.add_argument("--verify-nand", metavar="FILE", help="compare the NAND from --nand-range's start (default 0) with FILE by CRC")
     ap.add_argument("--start", type=lambda s: int(s, 0), help="old form: first byte")
@@ -3046,12 +3119,14 @@ def main(argv=None):
     ap.add_argument("--force", action="store_true",
                     help="write even when the radio's firmware or the image names another board than the one targeted. Two "
                          "cables with one serial number can swap port names, so a refusal usually means the wrong port")
+    import f4stub
     ap.add_argument("--board", choices=sorted(b.id for b in rfoundryboards.BOARDS.values()
-                                              if b.stub or "stub/stm32f4" in b.platform_stubs),
-                    help="the radio: an STM32 one (stub/f4stub.py) or an HR_C7000 one (%s: the board profile the "
+                                              if b.stub or b.id in f4stub.BOARDS),
+                    help="the radio: a Cortex-M one (%s: stub/f4stub.py, the STM32F4, GD32F30x or AT32F43x stub) "
+                         "or an HR_C7000 one (%s: the board profile the "
                          "universal stub gets). Found from the radio's VERSION reply with --rfoundry-enter; give it at "
                          "power-on and with --attach (without it the stub gets a profile that drives no board pins)"
-                         % ", ".join(sorted(C7_BOARDS)))
+                         % (", ".join(sorted(f4stub.BOARDS)), ", ".join(sorted(C7_BOARDS))))
     ap.add_argument("--backup-dir", metavar="DIR", help="STM32 --write-app: where a sector that also holds codec bytes "
                     "is saved before it is erased (default the home directory, never a git tree)")
     ap.add_argument("--self-test", action="store_true")
@@ -3102,8 +3177,7 @@ def main(argv=None):
             import f4stub
             reopen = f4stub.PortFollower(serial, a.port)
         radio = Radio(port, retries=a.retries)
-        # The STM32 radios (DM-1701, MD-380) run their own stub over USB: stub/f4stub.py
-        import f4stub
+        # The Cortex-M radios (STM32F4, GD32F30x, AT32F43x) run their own stub over USB: stub/f4stub.py
         if a.board is None and a.rfoundry_enter:
             name = version_board(radio)
             a.board = f4stub.board_for(name) if name else None

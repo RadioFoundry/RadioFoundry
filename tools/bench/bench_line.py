@@ -244,8 +244,29 @@ def job_from_args(tool, args):
     return job
 
 
+def self_test():
+    """job_from_args on the command lines the HIL tests build; no board."""
+    j = job_from_args("bench_tx", "--freq 446.05 --cc 1 outbound --seconds 4.5 "
+                                  "--voice '[{\"slot\":2,\"src\":1,\"dst\":2,\"group\":true}]'")
+    assert j == {"tool": "bench_tx", "freq": 446.05, "cc": 1, "cmd": "outbound", "seconds": 4.5,
+                 "voice": [{"slot": 2, "src": 1, "dst": 2, "group": True}]}, j
+    j = job_from_args("bench_tx", ["--fid", "10", "--talker-alias", "N0CALL", "--group", "voice", "--dst", "9"])
+    assert j == {"tool": "bench_tx", "fid": "10", "talker_alias": "N0CALL", "group": True, "cmd": "voice",
+                 "dst": 9}, j
+    for bad in ("outbound --voice '[{'", "outbound --voice", "voice outbound"):
+        try:
+            job_from_args("bench_tx", bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {bad!r}")
+    print("bench_line self-test passed")
+    return 0
+
+
 def main(argv=None):
     import argparse
+    if (sys.argv[1:] if argv is None else argv) == ["--self-test"]:
+        return self_test()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("board", help="HOST[:PORT]")
     ap.add_argument("op", choices=("info", "status", "run"))

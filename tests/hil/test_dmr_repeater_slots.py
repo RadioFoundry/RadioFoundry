@@ -26,6 +26,7 @@ between TS1 and TS2 (a temporary override, cleared afterwards) unless the scenar
 | long_call | up all along | a 25 s call on each slot |
 | boot | up all along | restarted, keys as soon as the link answers, then again once settled |
 | wake_ts | down at each key-up, answers 0.6 s after it | the timeslot changed 1 s before, 5 calls |
+| mixed_gaps | wakes and drops on the radio's own traffic | 36 calls: back to back, 0.1-4 s apart, and 5-9 s apart so it drops; both slots |
 
 test_dmr_repeater_burst_offset (the same options, and the SDR bench): where in the slot the radio's inbound bursts
 fall. On a bench board (--bench-api) the reference is the board's idle outbound with no repeater behind it, and the
@@ -216,7 +217,8 @@ def _channel_change(s, rnd):
         s.radio.wait_for(lambda c: c.get("channel_number") == number, timeout=5, what="back on the test channel")
         delay = rnd.uniform(0.0, 0.5)
         time.sleep(delay)
-        s.call(1.5, f"key-up {delay:.2f} s after coming back from the next channel")
+        # 2.5 s: right after a channel change a key-up can wait up to about 0.8 s for the slot (modem-sct.md 5)
+        s.call(2.5, f"key-up {delay:.2f} s after coming back from the next channel")
         time.sleep(1.0)
 
 
@@ -234,7 +236,7 @@ def _boot(s, rnd):
         s.radio.link.reboot(0, s.radio.link.chip()["token"])
         s.radio.link.close()
         time.sleep(2.0)
-        s.radio.reconnect()
+        s.radio.reconnect(20.0)
         s.radio.wait_for(lambda c: c.get("state") not in (None, "tx"), timeout=15, what="the radio after the restart")
         s.radio.lowest_power()
         s.ts = int(s.radio.view(["dmr"])["dmr.ts"])        # the override is gone with the restart
@@ -254,11 +256,26 @@ def _wake_ts(s, rnd):
         assert s.radio.view(["dmr"]).get("dmr.repeater_up") == "0", "the repeater is up before its answer"
         s.set_ts(3 - s.ts)
         time.sleep(max(0.0, due - time.monotonic()))
-        s.call(1.5, "woke the repeater, timeslot changed 1 s before")
+        # long enough that the wake-up's share of it (up to two attempts) leaves half the voice the check asks for
+        s.call(2.5, "woke the repeater, timeslot changed 1 s before")
+
+
+def _mixed_gaps(s, rnd):
+    # No beacon comes (its first is after the run): the repeater keys only on the radio's wake-up, and a beacon length
+    # is its hang time, so 3 s. Back-to-back calls, close ones at varied gaps and ones the repeater drops between, mixed
+    gaps = [0.0] * 12 + [rnd.uniform(0.1, 4.0) for _ in range(12)] + [rnd.uniform(5.0, 9.0) for _ in range(12)]
+    rnd.shuffle(gaps)
+    s.start(sum(gaps) + 36 * 4.0 + 20, beacon=9000, beacon_len=3.0, phase=9000)
+    for k, gap in enumerate(gaps):
+        time.sleep(gap)
+        s.call(2.5, f"{gap:.2f} s after the last call")
+        s.calls[-1]["what"] += f", tx_error {s.radio.view(['dmr']).get('dmr.tx_error')}"
+        if k % 3 == 2:
+            s.set_ts(3 - s.ts)
 
 
 SCENARIOS = {"up_ts_changes": _up_ts_changes, "long_idle": _long_idle, "rekey": _rekey,
-             "channel_change": _channel_change, "long_call": _long_call, "boot": _boot, "wake_ts": _wake_ts}
+             "channel_change": _channel_change, "long_call": _long_call, "boot": _boot, "wake_ts": _wake_ts, "mixed_gaps": _mixed_gaps}
 
 
 @pytest.mark.feature("dmr_voice")
@@ -266,7 +283,8 @@ SCENARIOS = {"up_ts_changes": _up_ts_changes, "long_idle": _long_idle, "rekey": 
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 @pytest.mark.codeplug_write
-@pytest.mark.parametrize("scenario", list(SCENARIOS))
+# The boot scenario restarts the radio, so it needs --allow-reboot (marker reboot) like the other restarts
+@pytest.mark.parametrize("scenario", [pytest.param(k, marks=pytest.mark.reboot) if k == "boot" else k for k in SCENARIOS])
 def test_dmr_repeater_slots(radio, sdr_bench, pytestconfig, backup_dir, scenario):
     _session(radio, sdr_bench, pytestconfig, backup_dir, SCENARIOS[scenario])
 

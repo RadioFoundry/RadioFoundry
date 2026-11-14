@@ -8,10 +8,12 @@ voice-access flag on the wrong slot: the DM-1801 Pro played every call silent, 2
 every frame, lost and duplicate count. These tests look at the audio itself.
 
 Skips and failures. Only a missing radio or SDR bench, or a run without --allow-rf, skips (with a reason that starts
-"DMR AUDIO NOT CHECKED"), and so does a firmware built without DMR. Once the radio, its DMR and the bench are there,
-anything else that keeps the check from running fails: no speech recording, no vocoder merged (dmr.codec=0), no
-channel on --dmr-freq, firmware without the view keys or the test signal. The deviation and wide offset tests also skip
-on a bench board that can't do what they need (below). The talkgroup comes from the radio: the
+"DMR AUDIO NOT CHECKED"), and so do a firmware built without DMR and a modem that plays the voice itself
+(dmr.modem_voice=1: no frame reaches the voice layer; test_dmr_voice counts its bursts), except the deviation and wide
+offset tests, which judge such a radio by its voice bursts (below). Once the radio, its DMR and
+the bench are there, anything else that keeps the check from running fails: no speech recording, no vocoder merged
+(dmr.codec=0), no channel on --dmr-freq, firmware without the view keys or the test signal. The deviation and wide
+offset tests also skip on a bench board that can't do what they need (below). The talkgroup comes from the radio: the
 bench calls the channel's talk target (dmr.target_id, always listened to), or the radio's own ID privately when the
 target is a private ID, on the channel's own color code, so a wrong --dmr-tg / --dmr-cc can't filter the call out.
 
@@ -38,6 +40,11 @@ RSSI_DBM, as from a handheld or repeater that far off frequency, and the pass cr
 loose on purpose: a receiver whose window is centered on its channel has room to spare there, and one tuned off center
 by a fixed offset, or with a receive gain that clips, loses the call on one side (docs/spec/dmr-voice.md, "Receive
 level"). Skips when the bench can't bring its level near RSSI_DBM.
+
+On a radio whose modem plays the voice itself (dmr.modem_voice=1) the deviation and wide offset tests count the call's
+voice bursts instead (no frame, bit count or audio reaches the host side): the call heard, and at least the share of
+the frames sent above (95 % or 90 %) in bursts of three, at most EXTRA_BURSTS more than were sent (the driver paces
+the bursts by time to the terminator, which near sensitivity can come a burst or two late; a missed one adds dozens).
 
 test_dmr_audio_tx (marker radio_tx): the radio keys TX_S seconds at its lowest power with the voice layer's test
 signal in place of the mic (RADIO op 33: a tone whose pitch changes every frame), the bench modem records the call.
@@ -71,6 +78,7 @@ DEV_LOW, DEV_HIGH = 0.85, 1.15  # transmitters 15 % under and over the standard'
 RSSI_DBM = -100             # the level the deviation and wide offset tests run at: some 20 dB over the sensitivity of a DMR radio
 BITS_DEV = 0.8              # FEC corrections a frame near sensitivity: 0.6 or less inside the window, 1-1.5 past its edge
 ALL_CALL = 0xFFFFFF
+EXTRA_BURSTS = 3            # modem-voice radios: bursts counted past those sent (80 of 78 seen at -2500 Hz, -103 dBm)
 STATS_KEYS = ("voice.rx_peak", "voice.rx_repeats", "voice.tx_repeats", "voice.tx_mic_peak", "voice.tx_test")
 
 pytestmark = [pytest.mark.audio_smoke]
@@ -108,21 +116,26 @@ def find_dmr_channel(radio, rx_hz):
                 "the codeplug has a DMR channel on")
 
 
-def dmr_channel(radio, pytestconfig):
+def dmr_channel(radio, pytestconfig, modem_ok=False):
     """Put the radio on its DMR channel at --dmr-freq and work out the call that reaches its speaker. Returns
-    (freq, cc, dst, private, own_id). Fails (not skips) when the radio has DMR but can't play a call."""
+    (freq, cc, dst, private, own_id). Fails (not skips) when the radio has DMR but can't play a call. modem_ok: a
+    radio whose modem plays the voice itself goes on (the test counts its bursts) instead of skipping."""
     if "DMR" not in radio.features():
         skip("not_built", "DMR AUDIO NOT CHECKED: firmware built without DMR")
     freq = rig(pytestconfig, "dmr-freq")
     radio.go_home()
     find_dmr_channel(radio, round(freq * 1e6))
     d = radio.view(["dmr"])
-    if d.get("dmr.codec") != "1":
+    modem = d.get("dmr.modem_voice") == "1"
+    if modem and not modem_ok:
+        skip("no_hw", "DMR AUDIO NOT CHECKED: the modem plays the voice itself (dmr.modem_voice=1, "
+                      "docs/spec/modem-sct.md 7): no frame reaches the voice layer to check")
+    if not modem and d.get("dmr.codec") != "1":
         pytest.fail("no vocoder merged in this firmware (dmr.codec=0): DMR voice plays and sends nothing. Merge the "
                     "radio's codec (docs/user) before the bench pass")
     stats = radio.view(["dmr", "dmr_stats"])
     missing = [k for k in STATS_KEYS if k not in stats]
-    if missing:
+    if missing and not modem:
         pytest.fail(f"firmware without the view keys {missing}: the audio checks can't run (an older build?)")
     own, target = int(d.get("dmr.own_id", 0)), int(d.get("dmr.target_id", 0))
     private = d.get("dmr.target_private") == "1"
@@ -148,7 +161,8 @@ def bench_call(radio, sdr_bench, freq, cc, dst, private, remote, offset_hz=0):
     time.sleep(2.0)                      # playback drains (the queue holds 160 ms)
     _, after = radio.counters()
     keys = ["voice.rx_in", "voice.rx_frames", "voice.rx_repeats", "voice.rx_bit_errors", "voice.rx_bad",
-            "voice.rx_lost", "call.rx_calls", "call.rx_calls_played", "call.rx_voice_bursts", "modem.voice"]
+            "voice.rx_lost", "call.rx_calls", "call.rx_calls_played", "call.rx_voice_bursts", "call.rx_lost_frames",
+            "modem.voice"]
     return counter_deltas(before, after, keys), radio.view(["dmr_stats"])
 
 
@@ -174,6 +188,26 @@ def check_played(d, stats, sent, allowed_repeats, what, bit_errors=True, min_in=
         bad.append(f"{what}: {d['voice.rx_bit_errors']} bits corrected in {good} frames (at most "
                    f"{BIT_ERRORS_PER_FRAME:g} a frame)")
     return bad
+
+
+def check_bursts(d, sent, what, min_in):
+    """The checks on one call to a radio whose modem plays the voice itself (dmr.modem_voice=1), from its voice bursts
+    (three frames each): a list of failure strings. min_in: the share of the frames sent that must arrive."""
+    bad = []
+    bursts, want = d["call.rx_voice_bursts"], sent // 3
+    if d["call.rx_calls"] < 1:
+        bad.append(f"{what}: no call heard (call.rx_calls {d['call.rx_calls']})")
+    if bursts < min_in * want:
+        bad.append(f"{what}: voice bursts {bursts} of {want} sent (at least {100 * min_in:.0f} %)")
+    if bursts > want + EXTRA_BURSTS:
+        bad.append(f"{what}: voice bursts {bursts}, {want} sent: the call's end missed?")
+    return bad
+
+
+def heard(stats):
+    """Voice frames the radio has taken in (a dmr_stats view): into the voice layer, or three a voice burst when its
+    modem plays the voice itself"""
+    return max(int(stats.get("voice.rx_in", 0)), 3 * int(stats.get("call.rx_voice_bursts", 0)))
 
 
 def padded(frames):
@@ -231,7 +265,7 @@ def quiet(radio, timeout=8.0):
     at another slot timing"""
     t0, last, still = time.monotonic(), None, 0
     while time.monotonic() - t0 < timeout:
-        n = radio.view(["dmr_stats"]).get("voice.rx_in")
+        n = heard(radio.view(["dmr_stats"]))
         still = still + 1 if n == last else 0
         last = n
         if still >= 3:
@@ -240,16 +274,16 @@ def quiet(radio, timeout=8.0):
 
 
 def rssi_in_call(radio, sdr_bench, freq, cc, dst, private, remote):
-    """The radio's RSSI during a call of remote at the bench's current level (None: no call reached the voice layer)"""
+    """The radio's RSSI during a call of remote at the bench's current level (None: no call was heard)"""
     quiet(radio)
-    before = int(radio.view(["dmr_stats"]).get("voice.rx_in", 0))
+    before = heard(radio.view(["dmr_stats"]))
     with sdr_bench.lease():
         job = sdr_bench.voice_call(freq, cc, dst, calls=1, ambe=remote, private=private, background=True)
         rssi = None
         t0 = time.monotonic()
         while time.monotonic() - t0 < 6.0:
             time.sleep(0.3)
-            if int(radio.view(["dmr_stats"]).get("voice.rx_in", 0)) > before + 10:
+            if heard(radio.view(["dmr_stats"])) > before + 10:
                 rssi = int(radio.core().get("rssi_dbm", 0))
                 break
         job.kill()
@@ -288,7 +322,8 @@ def near_sensitivity(radio, sdr_bench, freq, cc, dst, private, remote, what):
 @pytest.mark.bench_service
 @pytest.mark.feature("dmr_voice")
 def test_dmr_audio_rx_offset_wide(radio, sdr_bench, pytestconfig):
-    freq, cc, dst, private, _ = dmr_channel(radio, pytestconfig)
+    freq, cc, dst, private, _ = dmr_channel(radio, pytestconfig, modem_ok=True)
+    modem = radio.view(["dmr"]).get("dmr.modem_voice") == "1"
     sent, allowed, remote = speech(pytestconfig, sdr_bench)
     saved = sdr_bench.power_dbm
     try:
@@ -297,10 +332,15 @@ def test_dmr_audio_rx_offset_wide(radio, sdr_bench, pytestconfig):
         for off in (-OFFSET_WIDE_HZ, OFFSET_WIDE_HZ):
             quiet(radio)
             d, stats = bench_call(radio, sdr_bench, freq, cc, dst, private, remote, offset_hz=off)
+            what = f"carrier {off:+d} Hz at {RSSI_DBM} dBm"
+            if modem:
+                print(f"carrier {off:+d} Hz: {d['call.rx_voice_bursts']} of {sent // 3} voice bursts, radio {d}")
+                bad += check_bursts(d, sent, what, 0.9)
+                continue
             good = max(1, d["voice.rx_in"] - d["voice.rx_bad"])
             per = d["voice.rx_bit_errors"] / good
             print(f"carrier {off:+d} Hz: {d['voice.rx_in']} of {sent} frames, {per:.2f} bits a frame, radio {d}")
-            bad += check_played(d, stats, sent, allowed, f"carrier {off:+d} Hz at {RSSI_DBM} dBm")
+            bad += check_played(d, stats, sent, allowed, what)
         assert not bad, "; ".join(bad)
     finally:
         sdr_bench.power_dbm = saved
@@ -310,7 +350,8 @@ def test_dmr_audio_rx_offset_wide(radio, sdr_bench, pytestconfig):
 @pytest.mark.bench_service
 @pytest.mark.feature("dmr_voice")
 def test_dmr_audio_rx_deviation(radio, sdr_bench, pytestconfig):
-    freq, cc, dst, private, _ = dmr_channel(radio, pytestconfig)
+    freq, cc, dst, private, _ = dmr_channel(radio, pytestconfig, modem_ok=True)
+    modem = radio.view(["dmr"]).get("dmr.modem_voice") == "1"
     sent, allowed, remote = speech(pytestconfig, sdr_bench)
     if not sdr_bench.has("dev_scale"):
         skip("bench", "DMR RX DEVIATION NOT CHECKED: the bench board can't scale its deviation (info feature dev_scale)")
@@ -322,10 +363,14 @@ def test_dmr_audio_rx_deviation(radio, sdr_bench, pytestconfig):
             sdr_bench.dev_scale = dev
             quiet(radio)
             d, stats = bench_call(radio, sdr_bench, freq, cc, dst, private, remote)
+            what = f"deviation x{dev:g} at {RSSI_DBM} dBm"
+            if modem:
+                print(f"deviation x{dev:g}: {d['call.rx_voice_bursts']} of {sent // 3} voice bursts, radio {d}")
+                bad += check_bursts(d, sent, what, 0.95)
+                continue
             good = max(1, d["voice.rx_in"] - d["voice.rx_bad"])
             per = d["voice.rx_bit_errors"] / good
             print(f"deviation x{dev:g}: {d['voice.rx_in']} of {sent} frames, {per:.2f} bits a frame, radio {d}")
-            what = f"deviation x{dev:g} at {RSSI_DBM} dBm"
             if per > BITS_DEV:
                 bad.append(f"{what}: {per:.2f} bits corrected a frame (at most {BITS_DEV:g})")
             bad += check_played(d, stats, sent, allowed, what, bit_errors=False, min_in=0.95)

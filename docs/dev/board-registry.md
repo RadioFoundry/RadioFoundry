@@ -20,7 +20,7 @@ Each fact is in one file. A value another file already holds is derived from it,
 | `platform/<p>/platform.toml` | ISA, CPU, toolchain, platform stubs, flash base, sector geometries, codec symbols |
 | `boards/<id>/board.mk` | `PLATFORM`, `APP_BASE` (the image address), `HSE_VALUE` (the crystal, for the STM32F4 stub), `BOOT_*`, `BOARD_DIRS`, `BUILD_OPTIONS` and each option's `<NAME>_VALUES`, read with `make print-vars` so the board's and the platform's `config.mk` and their conditionals count. `LDSCRIPT` defaults to `memory.ld`. `BOARD_HWOPTS := y` on a board with hardware options (`board_t.hwopts`, `hal/hal_hwopt.h`: the others build none of that code) is for the build alone: the registry doesn't read it |
 | `boards/<id>/memory.ld` | The application region (`MEMORY FLASH`, from `__app_start`) and the codec symbols (`__codec_*`). Every `*.ld` in the board directory is read for the codec symbols |
-| `boards/<id>/*.c` | The `board_t` `.name` values: the names the debug link reports |
+| `boards/<id>/*.c` | The `board_t` `.name` values: the names the debug link reports. `.name = BOARD_T_NAME` takes the name from `board.mk`'s `BOARD_T_NAME`, so two boards that build one `board_t` (`part_of`) each report their own |
 | `boards/<id>/pins.h` | The pins the stub uses: the power latch and key (HR_C7000), the SPI flash's `PIN_FLASH_SCK`, `_MISO`, `_MOSI`, `_CS` and the `idle_cs` pins (STM32F4), each as `GPIOx, GPIO_PIN_n` on STM32F4 |
 
 Derived values:
@@ -55,6 +55,8 @@ neighbor on the same platform.
 | `part_of` | string, optional | Another board this one is a build of |
 | `debuglink_aliases` | list, optional | Names older firmware reported on the debug link |
 | `looks` | list of tables, optional | Other bodies the board ships in that look too different to share its picture: `{ id, name, also }`. Each is its own radio card on the site, drawn in `site/static/img/radios/src/<id>-<look id>.svg` (the site build refuses a missing drawing), and links to the board's page. `name` and every entry of `also` (the radios in that body) must be in the board's `also`; the board's own card lists the rest |
+| `variant_of` | string, optional | The board whose radio this board's image is one hardware variant of (its `runs.board` names this board). Only that board is listed on the site, in the README and in the manual's index |
+| `iddb_small` | string, optional | Why the DMR ID database's room (area 1 and area 2 up to the flash map's `openfw_end`, [iddb-compact.md](../spec/iddb-compact.md) 2) is under half the data memory and under 16 MB. `check` refuses such a board without a reason, and a reason on a board whose room is large enough. Checked before a release: a radio isn't held to a database far smaller than its memory |
 
 ### [docs]
 
@@ -189,12 +191,14 @@ original firmware's or the bootloader's DFU device before an install (`origbacku
 | `loader_spi` | The SPI bytes the bootloader reads |
 
 `[flash.stub]` (a board on a platform with `board_stub`): `id` (the board id the stub echoes, unique per stub; 0xFE is reserved for the stub tools' test profiles) and
-`tested` (flashed through the stub on a radio), then the keys the platform's `board_stub` names:
+`tested` (flashed through the stub on a radio), then the keys the platform's `board_stub` names. The `f4stub` tool serves
+all of its targets; the platform's `stubs` entry says which stub a board's record is for:
 
 | Platform stub | Required | Optional |
 |---|---|---|
 | `stubtool` (HR_C7000) | `hold_power` (the stub drives the power latch), `progmem` (program flash size) | `stock_console` (the stock firmware answers a console the web flasher reads), `read_rate`, `write_test` (the data flash offset of the 16 KB `--write-test` erases and programs; the check refuses one that overlaps the flash map, a protected region or the chip's end, or a NAND. Without it the tool writes no data flash) |
 | `f4stub` (STM32F4) | `spi = { bus, mode, hz }` (the SPI flash's bus 1-3, SPI mode 0-3, fastest clock) | `idle_cs` (up to two `pins.h` names of other chip selects on that bus, held high) |
+| `f4stub` (GD32F30x, AT32F43x) | none: the record is the board id and the application base, from the linker script | none |
 
 A key of another platform's stub fails the check.
 

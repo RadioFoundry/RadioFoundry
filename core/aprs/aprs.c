@@ -154,7 +154,7 @@ static void reload_cfg(void)
 	aprs_s.cfg = c;
 	apply_cfg();
 	UNLOCK();
-	aprs_ax25_identity();
+	aprs_ax25_identity_from(&st);
 }
 
 // The way out in use: the Send via setting where both backends are built, else the one there is

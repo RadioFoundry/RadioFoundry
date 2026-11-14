@@ -41,7 +41,7 @@ quick changes therefore never reads back a value from before its own last change
 | `vox` | off | off, on channels whose codeplug entry allows it, on every FM channel (CONFIG_VOX) |
 | `vox_level` | 5 | sensitivity 1 (loud voice needed) to 10 |
 | `vox_tail_ms` | 1500 | stays keyed this long after the voice stops |
-| `rx_save` | 0 (off) | receiver battery saving: sleep 200, 400 or 800 ms per 100 ms awake (1-3) |
+| `rx_save` | 0 (off) | receiver battery saving: sleep 200, 400 or 800 ms per 125 ms awake (1-3; 125 ms gives three squelch readings, so a wake hears a DMR portable's carrier, on one slot of two) |
 | `rx_save_idle_s` | 10 | battery saving starts after this long without activity |
 | `battery_off_s` | 0 (never) | switch off after this long with the battery critical |
 | `backlight_dim_s`, `backlight_off_s` | 30, 120 | for the UI's backlight policy (`radio_backlight_pct`, 5.3) |
@@ -140,6 +140,7 @@ so (the debug link's `dual.both`).
 | Its settings change (a codeplug edit, the squelch) | Sent again every 2 s; the link drops repeats |
 | Audio | The selected channel's always wins. The second receiver has the speaker only while the main one plays nothing (FM squelch closed, no DMR call) and the radio isn't transmitting |
 | PTT | On the selected channel, where the main receiver already is. The second receiver keeps listening; its audio is muted while the radio transmits |
+| It only senses its channel (`rx2_status_t.sense`: a DMR channel on a board with one DMR decoder) | It reports a carrier there as `active`. While the selected channel is quiet (no signal or call, no DMR reply window, monitor off), a carrier there moves the main receiver to it to decode: a look, which runs as on one receiver (2.1): the scan holds the call and waits after it, then the main receiver goes back. The board can make the move without a retune (the DMR decoder switched to the second receiver's signal). A look that found no call for us is repeated only after the carrier drops or 5 s. During a look the main receiver doesn't look back at the selected channel |
 | It doesn't answer, or isn't on its settings 1.5 s after them | The core falls back to alternating the main receiver (2.1) and tries the second receiver again every 10 s |
 | The watch ends | The second receiver stops and its audio goes off |
 
@@ -219,10 +220,12 @@ of the carrier dropping.
 | Step | Behavior |
 |---|---|
 | PTT release (after the roger beep, if on) | the core calls the board's `tx_tail(true)`. True: the radio stays keyed `RADIO_SUBTONE_TAIL_MS` (300 ms), then `tx_tail(false)` and unkeys. False (no DCS, or no tail on the radio): unkeys at once |
-| PTT again during the tail | `tx_tail(false)`: the code again, the transmission goes on |
+| Microphone during the tail | off: PTT is up. Each board's `tx_tail` turns it off and back on |
+| PTT again during the tail | `tx_tail(false)`: the code again, the microphone back, the transmission goes on |
 | Time-out during the tail | the tail ends with the transmission |
 
-The board maps the hook to its chip; the core owns the timing.
+The board maps the hook to its chip; the core owns the timing. The screen shows the release at once
+(`radio_view_for_screen`), during the roger beep too; the LED follows the RF.
 
 | Chip | Tail | Measured (SDR bench, D023N, 12.5 kHz) |
 |---|---|---|
@@ -349,6 +352,23 @@ pre-emphasis reads 3 to 7 dB higher on the carrier than it is received. Measured
 None of them needs a correction in the driver. The HIL test (`test_fm_tx_dtmf`) checks the received twist;
 `test_fm_tx_dtmf_stop` checks on air that a held digit ends with the carrier at PTT release and at the time-out.
 
+### 3.8 Bluetooth PTT and keys (CONFIG_BT_PTT)
+
+A board with a Bluetooth module on a UART reads its text lines (`drivers/input/bt_at`) and adds what they say to its
+key scan, so the core sees PTT and keys as from any other key. Which radios have a module:
+[feature-matrix.md](../feature-matrix.md); the module's lines are on each radio's hardware page.
+
+| Source | Held while |
+|---|---|
+| A PTT button (key fob) | its press line until its release line |
+| A hands-free button | latched: one press on, the next off |
+| A Bluetooth hand mic | its PTT press line until its release line, sent through the module's data tunnel |
+
+Any one held is PTT. A link that ends, or the module restarting, releases all three: a link lost mid-transmission
+doesn't hold the transmitter on, and the core's TX time-out still applies. A hand mic's key events hold their key for
+a short time each, past the core's debounce. Present, PTT, the last key and the counts are in the debug link's
+`input.bt_*` keys (`hal_input_t.bt_stats`). Pairing and Bluetooth audio aren't part of it.
+
 ## 4. Beeps (CONFIG_BEEP)
 
 | Beep | Sound | When |
@@ -393,9 +413,18 @@ block for 200 ms (8 radio polls), its clock has stopped: the beep stops the stre
 drops the pattern, so a codec that goes quiet can't leave the analog receive audio muted. A start that fails (no codec
 clock) is stopped the same way, in case a block already ran. Counters in the view:
 `beep.played` (started), `beep.no_stream` (no audio stream could be started: on a board that can't stream PCM in FM
-mode this counts instead), `beep.blocks` (audio blocks with beep in them), `beep.stalls` (streams given up that way),
+mode this counts instead; on the tone route, the sweep, which a tone hook can't play), `beep.blocks` (audio blocks with beep in them), `beep.stalls` (streams given up that way),
 `beep.busy`; in the `audio` section, `beep.shared` (patterns mixed into the voice stream), `beep.leads` (lead-in blocks
-played), `beep.warm` (1: the amplifier is held warm) and `beep.warms` (times it was powered up for that).
+played), `beep.tone` (1: the beeps are the radio's own tones, with no stream or blocks) and, on a board with an
+amplifier hang, `beep.warm` (1: the amplifier is held warm) and `beep.warms` (times it was powered up for that).
+
+A board with no PCM speaker audio (no `board.audio`) can give `hal_radio_t.beep_tone(hz, level)` instead: the core
+then plays each segment of the pattern as one tone on the board's own tone generator, `hz` 0 for a silent segment and
+once at the end, timed by the radio poll: a segment ends on the first poll at or after its length, counted from the first poll after
+the pattern starts. The poll it starts in doesn't count, so a segment never plays shorter than its length (up to one poll
+longer). `level` is the
+same level a PCM beep would play at. The board ignores the hook while it transmits. `beep.played` counts these
+beeps too.
 
 To hear the beeps in context, `tools/beep_reel.py` makes a video of the UI simulator's screen in which every beep sounds
 in a scene that sounds it on a radio, captioned (`build/beep-reel/beep_reel.mp4`; needs ffmpeg built with libass). It
@@ -452,6 +481,7 @@ hook; `hal_power_t.volume()` says where the level comes from (`radio_volume_src_
 | Override | `radio_req_volume_override(step)` (`RREQ_VOLUME_OVERRIDE`) holds a level over the knob until `-1`; RAM only, so a restart gives the knob back. Without a knob there is nothing to override, and the request changes nothing |
 | Hold | `radio_req_volume_hold(true)` (`RREQ_VOLUME_HOLD`, from the UI's key lock through `ui_svc_volume_hold`) keeps the level in force and ignores the knob; `false` follows the knob again, and its level goes out at once. RAM only; ignored without a knob or under an override |
 | Knob position | `radio_view_t.volume_knob`: the knob's 0..100 % with the same 2 % filter, in force or not (also while held), -1 without a knob the MCU reads. While held, a change shows the unlock hint, as a key does. `radio_volume_knob()` (`UI_FEAT_VOLUME_KNOB`) says whether the board has such a knob; Settings > Key lock > Knob when locked (`UI_SET_KNOB_WHEN_LOCKED`) is shown only then |
+| Second knob | A radio with a volume knob per side (side B's level set by the board itself; [feature matrix](../feature-matrix.md)) gives `hal_power_t.volume_b()`; `radio_view_t.volume_b` is its 0..100 % with the same filter, -1 without one. The UI only shows it: when either knob turns, the bar is two rows, "Vol A" over "Vol B" in the smallest font at the bottom of the screen, the side whose knob moved in the focus highlight (`ui_draw_volume_bar`). Home in dual watch shows one activity line less while they are up. A radio without one draws the one bar as before |
 | Beeps | Key and status tones keep their own level (Tone volume, 4) and are mixed at the board's speaker path as before |
 
 **Debug link.** RADIO op 30 (`debuglink.md` 3.8) sets a step 0..16, or `0xFF` for "back to the knob". On a `soft` radio
@@ -576,8 +606,16 @@ the network or the user sets it, the radio shows "no time", and records keep usi
 ### 5.7 LEDs
 
 The radio core drives the board's red and green LEDs (`board.power->led`); `view.leds` (debug link `leds`) is what it
-drives. Red: transmitting. Green: a reception that plays (FM squelch open, a DMR call played). Two timed signals go
-over that (`radio_sm.c` `led_signals`, the times in `radio_sm.h`), for radios without a screen above all:
+drives. Red: transmitting. Green: a reception that plays (FM squelch open, a DMR call played).
+
+Two capabilities change that, for a board that sets them ([feature matrix](../feature-matrix.md)):
+
+| Capability | What the core does |
+| --- | --- |
+| `CAP_LED_RGB` | The core also drives `LED_BLUE`. Green with blue (cyan): a DMR call played. Red with green (orange): an SFR repeater role is on and not transmitting |
+| `CAP_LED_SCAN_FLASH` | Green flashes, `RADIO_LED_SCAN_STEP_MS` (250 ms) on and off, while a zone or VFO scan runs and nothing else lights the LED. Dual watch doesn't flash |
+
+Two timed signals go over that (`radio_sm.c` `led_signals`, the times in `radio_sm.h`), for radios without a screen above all:
 
 | Signal | LEDs |
 | --- | --- |

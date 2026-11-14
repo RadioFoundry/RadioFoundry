@@ -66,8 +66,8 @@ def prepare(records, max_len):
     return sorted(out)
 
 
-def synthetic_records(n=600, first_id=9000001):
-    """n made-up records: IDs with gaps of 1 to a few hundred (one- and two-byte LEB128 gaps in format C), texts of
+def synthetic_records(n=600, first_id=9000001, max_gap=300):
+    """n made-up records: IDs with gaps of 1 to max_gap (one- and two-byte LEB128 gaps in format C), texts of
     a made-up callsign, a name from a small set and a town from a larger one, so format C gets one- and two-byte
     dictionary codes, literals and empty tokens"""
     out, dmr_id = [], first_id
@@ -80,7 +80,7 @@ def synthetic_records(n=600, first_id=9000001):
         else:
             text = f"{call} Name{i % 23} Town{i % 170} ST{i % 4}"
         out.append((dmr_id, text))
-        dmr_id += 1 + (i * 37) % 300
+        dmr_id += 1 + (i * 37) % max_gap
     return out
 
 
@@ -189,8 +189,14 @@ def encode_c(records, flash_start=FLASH_START):
     out = Blocks()
 
     def put(off, data):
-        """data at a database offset (iddb-compact.md 2); a section never crosses from area 1 to area 2 here"""
-        out.put(area1 + off if off < AREA1_SIZE else area2 + off - AREA1_SIZE, data)
+        """data at a database offset (iddb-compact.md 2): what lies past area 1's end goes on in area 2. A large
+        dictionary's strings run past it"""
+        if off < AREA1_SIZE:
+            k = min(len(data), AREA1_SIZE - off)
+            out.put(area1 + off, data[:k])
+            off, data = AREA1_SIZE, data[k:]
+        if data:
+            out.put(area2 + off - AREA1_SIZE, data)
 
     index = bytearray()
     for k, page in enumerate(pages):
@@ -264,12 +270,25 @@ def put(link, blocks, header=None):
             raise
         link.abort()                    # a session left open (a run stopped mid-write): end it, then begin
         link.begin(cps_fast.MODE_DIRECT)
+
+    def send(addr, data, again=3):
+        """One block. A BLOCK refused for the session's state means the radio ended it (no request for 10 s: the
+        host stalled): a new session, and the block again. The header is still erased, so nothing reads a mix"""
+        while True:
+            try:
+                return link.write_block(addr, data)
+            except cps_fast.FastError as e:
+                if e.reason != 6 or again == 0:
+                    raise
+                again -= 1
+                link.begin(cps_fast.MODE_DIRECT)
+
     try:
-        link.write_block(header, erased)
+        send(header, erased)
         for a in changed:
             if a != header:
-                link.write_block(a, bytes(blocks[a]))
-        link.write_block(header, bytes(blocks[header]))
+                send(a, bytes(blocks[a]))
+        send(header, bytes(blocks[header]))
     except cps_fast.FastError:
         link.abort()
         raise

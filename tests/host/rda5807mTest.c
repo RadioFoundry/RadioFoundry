@@ -240,6 +240,16 @@ static void test_power_and_tune(void)
 	// Off
 	CHECK(rda5807m_power(&d, false, 0) && !(chip.reg[2] & RDA5807M_ENABLE));
 	CHECK(!rda5807m_status(&d, &st) && !rda5807m_seek(&d, true));
+	CHECK((chip.reg[4] & RDA5807M_GPIO_MASK) == 0);	// no GPIO set-up: the pins stay high impedance
+
+	// A board that switches with GPIO1: low while on (beside the de-emphasis), high once powered down
+	rda5807m_cfg_t c3 = { .seek_th = 8, .de_50us = true, .gpio_on = RDA5807M_GPIO1_LOW, .gpio_off = RDA5807M_GPIO1_HIGH };
+	chip_reset();
+	rda5807m_attach(&d, &reg_bus, &c3);
+	CHECK(rda5807m_power(&d, true, 98500));
+	CHECK((chip.reg[4] & RDA5807M_GPIO_MASK) == RDA5807M_GPIO1_LOW && (chip.reg[4] & RDA5807M_DE_50US));
+	CHECK(rda5807m_power(&d, false, 0) && (chip.reg[4] & RDA5807M_GPIO_MASK) == RDA5807M_GPIO1_HIGH &&
+	      (chip.reg[4] & RDA5807M_DE_50US) && !(chip.reg[2] & RDA5807M_ENABLE));
 
 	// A bus that fails
 	chip_reset();

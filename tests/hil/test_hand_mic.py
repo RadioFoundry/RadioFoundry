@@ -1,0 +1,111 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+"""A serial hand mic: a mic with its own MCU that sends its keys as frames (hal_input_t.hand_mic_stats, the debug
+link's input.hmic_* keys; the radio's hardware page has the frame format).
+
+test_hand_mic_idle runs unattended: with no mic the decoder must not see one, and with a mic in, it stays present
+(an answered mic sends no frame at rest; its answers to the radio's polls keep it), no key or PTT is held and few
+bytes are dropped. test_hand_mic_keys needs a person at the radio (--manual): it asks for the mic, then for each key
+in turn, and prints the mic's code for each (the hardware page's table), then for the mic to be unplugged.
+test_hand_mic_under_load (--manual too) keeps the debug link as busy as it can (whole views and screen captures back
+to back) while the person presses and lets go of a key: the mic's bytes must all arrive (no byte dropped) and every
+release with them, since the mic sends nothing more after one. Neither asks for PTT: that would transmit, and a key's
+frames take the same path."""
+import time
+
+import pytest
+
+from rfoundry_hil import DebugLinkError, as_int, skip
+
+KEYS = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "*", "#", "A", "B", "C", "D", "Up", "Down",
+        "A/B (the small button above PTT)")
+GONE_S = 5.0        # the decoder's timeout with margin (3 s on the first radio)
+LOAD_PRESSES = 10   # key presses under load: two frames each
+LOAD_S = 90.0       # time for them
+
+
+def _mic(r):
+    v = r.link.view(["link"])
+    if "input.hmic_present" not in v:
+        skip("no_hw", "no serial hand mic on this radio, or firmware without input.hmic_*")
+    return {k[len("input.hmic_"):]: as_int(v[k]) for k in v if k.startswith("input.hmic_")}
+
+
+def _wait(r, cond, timeout, prompt=None):
+    if prompt:
+        print(f"\n>>> {prompt} (waiting up to {timeout:.0f} s)", flush=True)
+    end = time.monotonic() + timeout
+    m = _mic(r)
+    while not cond(m) and time.monotonic() < end:
+        time.sleep(0.2)
+        m = _mic(r)
+    return m
+
+
+@pytest.mark.feature("hand_mic")
+def test_hand_mic_idle(radio):
+    radio.ensure_awake()
+    a = _mic(radio)
+    time.sleep(3.0)
+    b = _mic(radio)
+    print(f"    {a} -> {b}")
+    if not b["present"]:
+        assert b["frames"] == a["frames"], f"frames accepted with no mic present: {a} -> {b}"
+        assert b["ptt"] == 0 and b["key"] == 0, f"a key or PTT held with no mic: {b}"
+        return
+    assert a["present"], f"the mic came in during the test: {a} -> {b}"
+    assert b["ptt"] == 0 and b["key"] == 0, f"a key or PTT held at rest (nobody touching the mic?): {b}"
+    assert b["errors"] - a["errors"] <= 2, f"bytes dropped at rest: {a} -> {b}"
+
+
+@pytest.mark.feature("hand_mic", optional=True, owner="plug in the keypad hand mic and press the keys the test asks for")
+@pytest.mark.manual
+def test_hand_mic_keys(radio):
+    radio.ensure_awake()
+    m = _wait(radio, lambda x: x["present"], 30.0, "Plug the keypad hand mic in (don't press PTT)")
+    assert m["present"], f"no mic seen: {m}"
+    codes = {}
+    for k in KEYS:
+        m = _wait(radio, lambda x: x["key"] != 0, 15.0, f"Press and hold {k} on the mic")
+        assert m["key"] != 0, f"no key seen for {k}: {m}"
+        raw = as_int(radio.link.view(["link"]).get("input.raw_keys"), 0)
+        codes[k] = m["key"]
+        print(f"    {k}: code 0x{m['key']:02X}, raw keys 0x{raw:08x}")
+        assert raw != 0, f"key {k} (code 0x{m['key']:02X}) reached no key bit"
+        m = _wait(radio, lambda x: x["key"] == 0, 15.0, "Let go")
+        assert m["key"] == 0, f"key {k} still held after release: {m}"
+    assert len(set(codes.values())) == len(KEYS), f"two keys share a code: {codes}"
+    m = _wait(radio, lambda x: not x["present"], 30.0 + GONE_S, "Unplug the mic")
+    assert not m["present"], f"the mic still counts as present after it was unplugged: {m}"
+    assert m["ptt"] == 0 and m["key"] == 0, m
+
+
+@pytest.mark.feature("hand_mic", optional=True,
+                     owner="with the keypad hand mic in, press and let go of its 1 key 10 times while the test loads the link")
+@pytest.mark.manual
+def test_hand_mic_under_load(radio):
+    radio.ensure_awake()
+    m = _wait(radio, lambda x: x["present"], 30.0, "Plug the keypad hand mic in (don't press PTT)")
+    assert m["present"], f"no mic seen: {m}"
+    a = _mic(radio)
+    print(f"\n>>> Press and let go of the mic's 1 key {LOAD_PRESSES} times, at any pace (waiting up to {LOAD_S:.0f} s)",
+          flush=True)
+    end = time.monotonic() + LOAD_S
+    polls = shots = 0
+    m = a
+    while time.monotonic() < end:
+        radio.link.view()                       # every section: the largest answer the link gives
+        polls += 1
+        try:
+            radio.screenshot(tries=1, fresh=False)  # the frame buffer, in many packets
+            shots += 1
+        except DebugLinkError:
+            pass                                # a screen that changed while read: the load was there all the same
+        m = _mic(radio)
+        if m["frames"] - a["frames"] >= 2 * LOAD_PRESSES and m["key"] == 0:
+            break
+    print(f"    {a} -> {m}; {polls} views and {shots} captures")
+    assert m["present"], f"the mic was lost under load: {m}"
+    assert m["errors"] == a["errors"], f"bytes dropped under load: {a['errors']} -> {m['errors']}"
+    assert m["frames"] - a["frames"] >= 2 * LOAD_PRESSES, f"not every press and release arrived: {a} -> {m}"
+    assert m["key"] == 0 and m["ptt"] == 0, f"a key or PTT held after the last release: {m}"

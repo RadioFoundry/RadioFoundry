@@ -378,6 +378,7 @@ static struct {
 	uint32_t start_ms;
 	unsigned produced, taken, begins, ends;
 	bool starve;
+	bool unpaced;	// always a frame ready, as with a modem that makes the voice itself
 } src;
 
 static void src_begin(void *ctx) { (void)ctx; src.on = true; src.start_ms = now; src.produced = src.taken = 0; src.begins++; }
@@ -388,7 +389,7 @@ static bool src_next(uint8_t f[9], void *ctx)
 	if (!src.on || src.starve)
 		return false;
 	unsigned avail = (now - src.start_ms) / 20 + 1;	// first frame 0 ms after begin
-	if (src.taken >= avail)
+	if (src.taken >= avail && !src.unpaced)
 		return false;
 	f[0] = (uint8_t)(src.taken + 1);
 	for (int i = 1; i < 9; i++)
@@ -428,6 +429,8 @@ static dmr_call_config_t base_cfg(void)
 	return c;
 }
 
+static const hal_dmr_modem_t *modem_under_test = &sim_modem;
+
 static void setup(const dmr_call_config_t *c)
 {
 	sim_reset();
@@ -435,7 +438,7 @@ static void setup(const dmr_call_config_t *c)
 	memset(&src, 0, sizeof(src));
 	now = 1000;
 	sub_ms = 0;
-	dmr_call_init(&sim_modem);
+	dmr_call_init(modem_under_test);
 	dmr_call_set_voice(&sink, &source);
 	dmr_call_configure(c);
 	CHECK(dmr_call_start());
@@ -572,12 +575,16 @@ static void test_tx_call(void)
 	CHECK(V()->caller.src == OWN_ID && V()->caller.dst == TG_TALK && V()->caller.group);
 	CHECK(src.begins == 1);
 	run_ms(1000);
+	CHECK(!V()->tx_released);
 	dmr_call_ptt(false);	// mid superframe
 	run_ms(10);
+	unsigned taken = src.taken;
 	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE);	// finishing the superframe
+	CHECK(V()->tx_released && sim.tx_releases == 1);
 	run_ms(600);
 	CHECK(V()->state == DMR_CALL_STATE_IDLE && V()->phase == DMR_CALL_PHASE_IDLE);
 	CHECK(sim.tx_ends == 1 && sim.tx_aborts == 0 && sim.underflows == 0);
+	CHECK(src.taken == taken);	// nothing said after the release goes out
 	CHECK(src.ends == 1);
 	check_tx_burst_sequence(0, lc, &v);
 	CHECK(v >= 18);
@@ -593,11 +600,84 @@ static void test_tx_call(void)
 				expect++;
 			}
 		}
-	CHECK(silent == V()->tx_underruns);
-	CHECK(silent <= 3);
+	CHECK(expect - 1 == taken && silent == 3 * v - taken);	// the rest of the superframe is silence
+	CHECK(V()->tx_underruns <= 3);
 	printf("# TX: %u headers, %u voice bursts, %u silence frames, 1 terminator\n", DMR_CALL_TX_HEADERS, v, silent);
 	// The talk target was the channel's: no reply countdown
 	CHECK(!V()->reply_active && V()->tx_target.id == TG_TALK);
+}
+
+// Fewer bursts ahead of the air (a modem with its own voice) end the call sooner, and still on a whole superframe
+static unsigned release_ms(uint8_t ahead, unsigned hold_ms)
+{
+	dmr_call_config_t c = base_cfg();
+	unsigned v, ms = 0;
+	uint8_t lc[9];
+
+	c.tx_ahead = ahead;
+	setup(&c);
+	src.unpaced = true;
+	dmr_call_ptt(true);
+	run_ms(hold_ms);
+	dmr_call_ptt(false);
+	while (V()->state != DMR_CALL_STATE_IDLE && ms < 2000) {
+		run_ms(10);
+		ms += 10;
+	}
+	CHECK(sim.tx_ends == 1 && sim.underflows == 0);
+	mk_lc(lc, DMR_FLCO_GROUP_VOICE, TG_TALK, OWN_ID);
+	check_tx_burst_sequence(0, lc, &v);
+	CHECK(v % 6 == 0);
+	return ms;
+}
+
+static void test_tx_ahead(void)
+{
+	unsigned full = 0, two = 0;
+
+	for (unsigned i = 0; i < 6; i++) {	// a release at each burst of the superframe: the longest wait
+		unsigned f = release_ms(0, 1000 + i * 60), t = release_ms(2, 1000 + i * 60);
+
+		full = f > full ? f : full;
+		two = t > two ? t : two;
+	}
+	printf("# release to idle, longest: %u ms with the default queue, %u ms with 2 bursts ahead\n", full, two);
+	CHECK(two + 100 <= full);
+}
+
+// Frames encoded before the release but still in the encoder (the queue full, waiting for a burst to go) go out in
+// what remains of the superframe; nothing encoded after the release does
+static void test_tx_release_keeps_said(void)
+{
+	dmr_call_config_t c = base_cfg();
+	unsigned v, said = 0;
+	uint8_t lc[9];
+
+	c.tx_ahead = 2;
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(1000);
+	// The call sees the release at its next poll, 10 ms on: what the encoder has by then was said before it
+	for (int i = 0; i < 6 && src.taken >= (now + 10 - src.start_ms) / 20 + 1; i++)
+		run_ms(10);
+	said = (now + 10 - src.start_ms) / 20 + 1;
+	CHECK(src.taken < said && V()->phase == DMR_CALL_PHASE_TX_VOICE);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && sim.tx_ends == 1 && sim.underflows == 0);
+	CHECK(src.taken == said);
+	mk_lc(lc, DMR_FLCO_GROUP_VOICE, TG_TALK, OWN_ID);
+	check_tx_burst_sequence(0, lc, &v);
+	unsigned expect = 1;
+	for (unsigned i = DMR_CALL_TX_HEADERS; i < DMR_CALL_TX_HEADERS + v; i++)
+		for (int f = 0; f < 3; f++) {
+			const uint8_t *fr = &sim.air[i].payload[f * 9];
+			if (memcmp(fr, dmr_ambe_silence, 9) != 0) {
+				CHECK(fr[0] == (uint8_t)expect);
+				expect++;
+			}
+		}
+	CHECK(expect - 1 == said);
 }
 
 static void test_tx_timeout_and_starve(void)
@@ -911,6 +991,233 @@ static void test_rmo_air_slot_alignment(void)
 	}
 }
 
+// The board's receiver follows the wake-up (dmr_call_set_wake_listen)
+static unsigned listen_on, listen_off;
+static void on_wake_listen(bool listen) { if (listen) listen_on++; else listen_off++; }
+
+// One burst of the repeater's outbound, so it counts as up
+static void repeater_outbound_keepalive(void)
+{
+	dmr_burst_t b;
+
+	memset(&b, 0, sizeof(b));
+	b.kind = DMR_BURST_IDLE;
+	b.cc = 1;
+	b.ts = 1;
+	b.sync = DMR_SYNC_BS;
+	b.crc_ok = true;
+	sim_rx(&b);
+}
+
+static bool slot_ok;
+static bool sim_slot_verified(void) { return slot_ok; }
+
+// An aligned start waits for the modem to settle the outbound's slots, and is denied if it never does
+static void test_slot_verified(void)
+{
+	dmr_call_config_t c = base_cfg();
+	hal_dmr_modem_t m = sim_modem;
+
+	c.rmo = true;
+	m.slot_verified = sim_slot_verified;
+	modem_under_test = &m;
+	dmr_call_set_wake_listen(on_wake_listen);
+
+	// After a wake-up: held with the receiver still on, then the transmit set-up back and the voice
+	setup(&c);
+	slot_ok = false;
+	listen_on = listen_off = 0;
+	sim.wake_repeater_on_csbk = true;
+	dmr_call_ptt(true);
+	run_ms(500);
+	CHECK(V()->phase != DMR_CALL_PHASE_TX_VOICE && listen_on == 1 && listen_off == 0);
+	slot_ok = true;
+	run_ms(100);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && listen_off == 1);
+	dmr_call_ptt(false);
+	run_ms(600);
+
+	// The repeater up, keyed before the modem has verified: no burst until it has
+	slot_ok = false;
+	repeater_outbound_keepalive();
+	unsigned begins = sim.tx_begins;
+
+	dmr_call_ptt(true);
+	run_ms(200);
+	CHECK(sim.tx_begins == begins);
+	repeater_outbound_keepalive();
+	slot_ok = true;
+	run_ms(100);
+	CHECK(sim.tx_begins == begins + 1 && V()->phase == DMR_CALL_PHASE_TX_VOICE);
+	dmr_call_ptt(false);
+	run_ms(600);
+
+	// The repeater idle: only its CACH is reported, as slot ticks. It stays up past the hold while the modem verifies,
+	// so no wake-up goes out to take the time the verify needs
+	slot_ok = false;
+	sim.repeater = true;
+	repeater_outbound_keepalive();
+	begins = sim.tx_begins;
+	dmr_call_ptt(true);
+	run_ms(DMR_CALL_REPEATER_HOLD_MS + 300);
+	CHECK(sim.tx_begins == begins && V()->phase != DMR_CALL_PHASE_TX_VOICE && V()->phase != DMR_CALL_PHASE_TX_WAKEUP);
+	slot_ok = true;
+	run_ms(100);
+	CHECK(sim.tx_begins == begins + 1 && V()->phase == DMR_CALL_PHASE_TX_VOICE);
+	dmr_call_ptt(false);
+	run_ms(600);
+
+	// Never verified with the outbound up: denied, nothing keyed on a guess
+	slot_ok = false;
+	begins = sim.tx_begins;
+	dmr_call_ptt(true);
+	for (uint32_t t = 0; t < DMR_CALL_SLOT_VERIFY_MS + 200; t += 100) {
+		repeater_outbound_keepalive();
+		run_ms(100);
+	}
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && V()->tx_error == DMR_TX_ERR_NO_REPEATER && sim.tx_begins == begins);
+	dmr_call_ptt(false);
+	run_ms(20);
+
+	dmr_call_set_wake_listen(NULL);
+	modem_under_test = &sim_modem;
+}
+
+// A burst list of two data bursts (dmr_call_data_tx)
+static int dlist_left, dlist_err;	// dlist_err: the list's result
+static unsigned dlist_done;
+static bool dlist_next(dmr_tx_burst_t *out, void *ctx)
+{
+	(void)ctx;
+	if (dlist_left <= 0)
+		return false;
+	dlist_left--;
+	memset(out, 0, sizeof(*out));
+	out->kind = DMR_BURST_RATE_12_DATA;
+	out->sync_override = DMR_SYNC_NONE;
+	out->len = 12;
+	return true;
+}
+static void dlist_end(uint8_t err, void *ctx)
+{
+	(void)ctx;
+	dlist_err = err;
+	dlist_done++;
+}
+static bool dlist_send(void)
+{
+	dmr_data_source_t list = { .next = dlist_next, .done = dlist_end, .count = 2, .tag = "test" };
+	dlist_left = 2;
+	dlist_err = -1;
+	return dmr_call_data_tx(&list);
+}
+
+// A burst list through a repeater that is up waits for the modem's slot numbering as voice does; PTT pressed and let
+// go meanwhile doesn't drop it; never settled, it is dropped (its owner told, nothing keyed). A list that wakes the
+// repeater is a transmission of its own, not the last call's tail (dmr.tx_released)
+static void test_data_slot_verified(void)
+{
+	dmr_call_config_t c = base_cfg();
+	hal_dmr_modem_t m = sim_modem;
+
+	c.rmo = true;
+	m.slot_verified = sim_slot_verified;
+	modem_under_test = &m;
+	setup(&c);
+
+	slot_ok = false;
+	repeater_outbound_keepalive();
+	run_ms(20);
+	unsigned begins = sim.tx_begins, done = dlist_done;
+	CHECK(dlist_send());
+	run_ms(200);
+	CHECK(sim.tx_begins == begins && dlist_done == done && dmr_call_data_busy());
+	dmr_call_ptt(true);	// pressed and let go while the list waits: the list goes on
+	run_ms(20);
+	dmr_call_ptt(false);
+	run_ms(20);
+	CHECK(dmr_call_data_busy() && dlist_done == done);
+	repeater_outbound_keepalive();
+	slot_ok = true;
+	run_ms(300);
+	CHECK(sim.tx_begins == begins + 1 && sim.last_timing == DMR_TIMING_ALIGNED);
+	CHECK(dlist_done == done + 1 && dlist_err == DMR_TX_OK && !dmr_call_data_busy());
+
+	// never settled: dropped after DMR_CALL_SLOT_VERIFY_MS, nothing keyed
+	slot_ok = false;
+	begins = sim.tx_begins;
+	CHECK(dlist_send());
+	for (uint32_t t = 0; t < DMR_CALL_SLOT_VERIFY_MS + 200; t += 100) {
+		repeater_outbound_keepalive();
+		run_ms(100);
+	}
+	CHECK(sim.tx_begins == begins && dlist_done == done + 2 && dlist_err == DMR_TX_ERR_NO_REPEATER);
+	CHECK(!dmr_call_data_busy() && V()->phase == DMR_CALL_PHASE_IDLE);
+
+	// a voice call's release, then a list that wakes the repeater: not shown as the call's tail
+	slot_ok = true;
+	repeater_outbound_keepalive();
+	dmr_call_ptt(true);
+	run_ms(300);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->tx_released);
+	sim.repeater = false;
+	run_ms(DMR_CALL_REPEATER_HOLD_MS + 500);
+	CHECK(!V()->repeater_up && dlist_send());
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DATA && !V()->tx_released);
+	run_ms(4000);
+
+	modem_under_test = &sim_modem;
+}
+
+static void test_wake_listen(void)
+{
+	dmr_call_config_t c = base_cfg();
+
+	c.rmo = true;
+	dmr_call_set_wake_listen(on_wake_listen);
+
+	// the repeater answers: receive for the answer, the transmit set-up back before the call
+	setup(&c);
+	listen_on = listen_off = 0;
+	sim.wake_repeater_on_csbk = true;
+	dmr_call_ptt(true);
+	run_ms(400);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && listen_on == 1 && listen_off == 1);
+	dmr_call_ptt(false);
+	run_ms(600);
+
+	// the repeater is up at the next key-up: no wake-up, nothing to switch
+	listen_on = listen_off = 0;
+	dmr_call_ptt(true);
+	run_ms(100);
+	CHECK(listen_on == 0 && listen_off == 0);
+	dmr_call_ptt(false);
+	run_ms(600);
+
+	// no repeater: a listen after every try, transmit again only before the next try, and not after the last
+	setup(&c);
+	listen_on = listen_off = 0;
+	dmr_call_ptt(true);
+	run_ms(3000);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED);
+	CHECK(listen_on == DMR_CALL_WAKEUP_ATTEMPTS && listen_off == DMR_CALL_WAKEUP_ATTEMPTS - 1);
+	dmr_call_ptt(false);
+	run_ms(20);
+
+	// the next call starts keyed, so its first listen is told again
+	setup(&c);
+	listen_on = listen_off = 0;
+	dmr_call_ptt(true);
+	run_ms(400);
+	CHECK(listen_on == 1 && listen_off == 0);
+	dmr_call_ptt(false);
+	run_ms(3000);
+	dmr_call_set_wake_listen(NULL);
+}
+
 static void test_rmo_wakeup(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -945,6 +1252,17 @@ static void test_rmo_wakeup(void)
 	CHECK(sim.air[before].kind == DMR_BURST_VOICE_LC_HEADER);
 	dmr_call_ptt(false);
 	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->tx_released);	// until the next transmission starts
+
+	// The next press, once the repeater is down: the wake-up is a transmission of its own, not the last one's tail
+	sim.repeater = false;
+	run_ms(DMR_CALL_REPEATER_HOLD_MS + 500);
+	CHECK(!V()->repeater_up);
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_WAKEUP && !V()->tx_released);
+	dmr_call_ptt(false);
+	run_ms(3000);
 
 	// A short press: the wake-up goes on after the release, and nothing else is sent once the repeater is up
 	setup(&c);
@@ -2001,6 +2319,8 @@ static void test_basic_privacy(void)
 		sim_air_t *a = &sim.air[i];
 		if (a->kind != DMR_BURST_VOICE)
 			continue;
+		if ((voice + 1) * 3 > src.taken)
+			break;	// the silence after the release
 		uint8_t clear[27], bits_air[49], bits_clear[49];
 		for (int f = 0; f < 3; f++) {
 			unsigned n = voice * 3 + (unsigned)f;
@@ -2548,12 +2868,17 @@ int main(void)
 	test_embedded();
 	test_alias();
 	test_tx_call();
+	test_tx_ahead();
+	test_tx_release_keeps_said();
 	test_tx_permit_hold();
 	test_tx_timeout_and_starve();
 	test_tx_refused();
 	test_tx_done_wake();
 	test_tx_modem_stalled();
 	test_rmo_wakeup();
+	test_wake_listen();
+	test_slot_verified();
+	test_data_slot_verified();
 	test_rmo_air_slot_alignment();
 	test_rmo_hang_end();
 	test_rx_call();

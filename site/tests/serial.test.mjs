@@ -165,7 +165,7 @@ test("the ports granted before are tried as the chooser would list them; a silen
 	// Node's navigator is a getter without a setter: replaced for this test and put back
 	const was = Object.getOwnPropertyDescriptor(globalThis, "navigator");
 	Object.defineProperty(globalThis, "navigator", { value: { serial: { getPorts: async () => [other, cable] } }, configurable: true });
-	t.after(() => Object.defineProperty(globalThis, "navigator", was));
+	t.after(() => (was ? Object.defineProperty(globalThis, "navigator", was) : delete globalThis.navigator));	// Node 20 has none
 	const filters = [{ usbVendorId: 0x0403 }];
 	assert.deepEqual(await grantedPorts(filters), [cable]);
 	assert.equal(await knownRadioPort(filters), null, "nothing answered: the chooser opens");

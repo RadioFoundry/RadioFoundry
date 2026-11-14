@@ -6,7 +6,8 @@ superframes each (8 voice LC headers, 60 voice bursts and 3 terminators per call
 counters must show exactly that.
 
 Tolerances (documented in README.md): voice bursts 120 - 0 / + 0, headers 14..16 (the first header of a call can
-fall in the receiver's acquisition), terminators 5..6, CRC errors 0, two calls seen by the call stack."""
+fall in the receiver's acquisition), terminators 5..6, CRC errors 0, two calls seen by the call stack. A modem without
+modem.* counters (a baseband that plays the voice): the call stack's voice bursts 120 instead."""
 import time
 
 import pytest
@@ -34,14 +35,20 @@ def test_dmr_rx_counters(radio, sdr_bench, pytestconfig):
                                terminators=TERMINATORS, gap_ms=500)
     time.sleep(1.5)                      # the last call times out / ends in the radio
     _, after = radio.counters()
-    d = counter_deltas(before, after, ["modem.voice", "modem.headers", "modem.terminators", "modem.crc",
-                                       "call.rx_calls", "call.rx_dup_dropped",
-                                       # a call counted twice: joined again by late entry after a gap, or another
-                                       # station's call on the channel
-                                       "call.rx_late_entries", "call.rx_calls_played"])
+    # A baseband that plays the voice itself reports no modem.* counters: the call stack's count of the voice bursts
+    # it was given stands in for the modem's, and headers, terminators and CRC errors aren't seen
+    burst_modem = "modem.voice" in after
+    # a call counted twice: joined again by late entry after a gap, or another station's call on the channel
+    keys = ["call.rx_calls", "call.rx_dup_dropped", "call.rx_voice_bursts", "call.rx_late_entries", "call.rx_calls_played"]
+    if burst_modem:
+        keys += ["modem.voice", "modem.headers", "modem.terminators", "modem.crc"]
+    d = counter_deltas(before, after, keys)
     print("bench:", recs[-1:] if recs else "no JSON", "radio deltas:", d)
-    assert d["modem.voice"] == CALLS * SUPERFRAMES * 6, d
-    assert CALLS * HEADERS - 2 <= d["modem.headers"] <= CALLS * HEADERS, d
-    assert CALLS * TERMINATORS - 1 <= d["modem.terminators"] <= CALLS * TERMINATORS, d
-    assert d["modem.crc"] == 0, d
+    if burst_modem:
+        assert d["modem.voice"] == CALLS * SUPERFRAMES * 6, d
+        assert CALLS * HEADERS - 2 <= d["modem.headers"] <= CALLS * HEADERS, d
+        assert CALLS * TERMINATORS - 1 <= d["modem.terminators"] <= CALLS * TERMINATORS, d
+        assert d["modem.crc"] == 0, d
+    else:
+        assert d["call.rx_voice_bursts"] == CALLS * SUPERFRAMES * 6, d
     assert d["call.rx_calls"] == CALLS, d

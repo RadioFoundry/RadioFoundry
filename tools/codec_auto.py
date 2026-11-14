@@ -76,7 +76,7 @@ def self_test():
     for b, t in CODEC_TOOLS.items():	# every board with a codec tool finds each of its stock files
         if t is None:
             continue
-        profs = board_profiles(__import__(t).PROFILES, b)
+        profs = board_profiles(getattr(__import__(t), "PROFILES", {}), b)
         if profs and not all(stockfw.key_sha(h) in profile_shas(profs) for h in profs):
             fails.append("%s: a stock file is not found" % b)
     for f in fails:
@@ -103,7 +103,7 @@ def main():
         return 0
     # one tool may serve several boards: only this board's stock files count
     mod = __import__(tool)
-    profiles = board_profiles(mod.PROFILES, args.board)
+    profiles = board_profiles(getattr(mod, "PROFILES", {}), args.board)
     if hasattr(mod, "identify"):	# a tool that knows a file by more than its SHA-256 (a program flash dump)
         def known(path):
             with open(path, "rb") as f:

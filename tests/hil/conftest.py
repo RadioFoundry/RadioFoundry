@@ -57,6 +57,12 @@ def pytest_addoption(parser):
     g.addoption("--codeplug-image", default=os.environ.get("RFOUNDRY_HIL_CODEPLUG_IMAGE"),
                 help="the radio's codeplug as a file (env RFOUNDRY_HIL_CODEPLUG_IMAGE): the codeplug_write tests take it "
                      "as the backup instead of reading the radio, and restore and verify it afterwards")
+    g.addoption("--iddb-users", default=os.environ.get("RFOUNDRY_HIL_IDDB_USERS"), metavar="CSV",
+                help="RadioID's user list (user.csv, env RFOUNDRY_HIL_IDDB_USERS): test_iddb_whole_room writes it, "
+                     "each text as the editor's default (callsign, first name, city, state), instead of a synthetic one")
+    g.addoption("--iddb-whole-room", action="store_true",
+                help="run test_iddb_whole_room: the ID database's whole room written and read back (long: about 40 "
+                     "minutes on a radio with a NAND range); with --allow-codeplug-write")
     g.addoption("--manual", action="store_true",
                 help="a person is at the radio: run the tests that ask for something done by hand (marker manual)")
     g.addoption("--mic-inject", action="store_true",

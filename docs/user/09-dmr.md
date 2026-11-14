@@ -18,6 +18,11 @@ The [Radio reference](23-radios.md) says which radios have DMR verified. DMR voi
 | Timeslot (TS) | One of the two time slots of a DMR channel |
 | Color code (CC) | A number from 0 to 15 that a DMR channel uses, like a tone on FM |
 
+## Ending a call
+
+Release **PTT** and the screen goes back to normal at once. The radio stays on the air for up to about half a second to
+finish the frames it has started, and the transmit LED stays on until it stops. Nothing you say after the release is sent.
+
 ## Who you hear
 
 The radio plays a group call when one of these is true:

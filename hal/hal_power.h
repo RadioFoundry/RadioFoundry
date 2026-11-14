@@ -7,7 +7,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-enum { LED_GREEN, LED_RED };
+// LED_BLUE is sent only to a board with CAP_LED_RGB
+enum { LED_GREEN, LED_RED, LED_BLUE };
 
 typedef struct {
 	void (*init)(void);
@@ -19,6 +20,9 @@ typedef struct {
 	uint8_t (*battery_pct)(void);
 	// Volume knob position 0..100, or -1 if volume is not a knob the MCU reads
 	int8_t (*volume)(void);
+	// Optional: a second volume knob's position 0..100, side B's on a radio with a knob per side (the board sets that
+	// side's level itself); NULL when the radio has one. The UI's volume bar shows both (radio_view_t.volume_b)
+	int8_t (*volume_b)(void);
 	// False once the user has switched the radio off (the core then saves and calls latch(false))
 	bool (*switch_on)(void);
 	void (*led)(uint8_t which, bool on);

@@ -125,6 +125,8 @@ typedef struct {
 	uint8_t low_batt_pct;	// warn at this battery percent, 0 = never (Settings > Power saving)
 	uint8_t volume;		// speaker volume step 0..RADIO_VOLUME_MAX of a radio without a knob (the volume screen, Settings > Sound)
 	int8_t volbar;		// the knob was turned: its step in the bar over the screen (ui_draw_volume_bar), -1 = none
+	int8_t volbar_b;	// with a second knob (side B's): its step, both bars stacked (ui_draw_volume_bar); -1 = one bar
+	uint8_t volbar_side;	// ... the side whose knob moved, marked: 0 A, 1 B
 	bool knob_lock;		// the volume knob does nothing while the keys are locked (Knob when locked Off)
 	uint16_t auto_off_min;	// switch off after this long without use, 0 = never (Settings > Power saving)
 	uint16_t unread;	// unread messages
@@ -255,8 +257,13 @@ void ui_draw_emergency(const radio_view_t *v, const ui_state_t *s, uint32_t id, 
 void ui_draw_volume(const radio_view_t *v, const ui_state_t *s);
 #if CONFIG_VOLUME_BAR
 // The knob's volume (s->volbar) over whatever screen is drawn: the label, the same bar as the volume screen and the
-// step, in the hint row's place, or the status strip's (top) on a screen that uses the bottom row for itself
+// step, in the hint row's place, or the status strip's (top) on a screen that uses the bottom row for itself. With a
+// second knob's step (s->volbar_b, a radio with a knob per side, whichever knob turns) both, "Vol A"
+// over "Vol B", the side whose knob moved marked: two rows in the smallest font at the bottom of the screen (the hint
+// row and the space above it), or from the top
 void ui_draw_volume_bar(const ui_state_t *s, bool top);
+// Where the two bars start at the bottom: Home's dual watch lays out its last line above it while they show
+int ui_volume_bars_y(void);
 #endif
 // Diagnostics: raw key bits, encoder total, radio readings and the board's own lines
 void ui_draw_diag(const radio_view_t *v, uint32_t keys, int32_t enc_total, uint8_t first_line);

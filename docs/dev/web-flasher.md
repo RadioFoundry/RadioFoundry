@@ -34,7 +34,7 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | `migrate.js` | The original firmware's channels after an install: a stock codeplug found, converted, written and read back (below) | `tools/codeplug_port.py` |
 | `fake.js` | A simulated radio: bootloader with a flash model, RadioFoundry's serial port, a synthetic stock file | `rfoundry/fakedfu.py` |
 | `stub.js`, `lz4.js` | The HR_C7000 boot stub: loaded through the boot ROM or handed over by RadioFoundry, then reads, sector writes and the LED | `stub/stubtool.py` |
-| `f4stub.js` | The STM32F4 loader: handed over by RadioFoundry, the board record (CONFIG) and its echo, then the install in the interlock's order and SPI flash writes | `stub/f4stub.py` |
+| `f4stub.js` | The Cortex-M loaders (the STM32F4, GD32F30x and AT32F43x stubs, one target table): handed over by RadioFoundry, the board record (CONFIG) and its echo, then the install in the interlock's order and SPI flash writes. The target comes from the board's `f4stub.boards.<id>.target`; `data/f4-stub.json` carries each target's image under `targets`. Only the `anyroad-dfu` backend offers a loader route; none offers the GD32F30x or AT32F43x one yet | `stub/f4stub.py` |
 | `c7000v1.js` | Rebuilds a version 1 codec slot (from before the codec moved) as version 2 | |
 | `c7000.js` | HR_C7000 program flash: what a read holds, the codec found by content, the codec slot, what an install writes | `tools/hrc7000_codec.py` |
 | `fakec7000.js` | A simulated HR_C7000 radio: boot ROM window, RadioFoundry's debug link (VERSION, 0x1A), the stub, both flash chips and the Baofeng updater (`FakeBfLoader`) | `tools/serial_loader.py` `FakeBootloader` |
@@ -364,11 +364,13 @@ a radio, such as another bootloader protocol or a stock firmware's own read-back
 | `vendorRestore(radio, file, fb)` | Optional: a restore bundle from the radio's original firmware file, so the restore task takes that file too |
 | `ownImage(fb, board, data)` | Optional: a user's own image file, split into the image and anything the backend keeps (a merged codec slot) |
 | `release()` | Optional: let go of a port or loader still held (Start Over, another radio) |
+| `buildGate(redraw)` | Optional: the hardware variant asked in the build step: `{view(), need(), refused()}`. Build Firmware stays off until a variant is picked or detected, and for a variant with no firmware, which shows a refusal |
 
 | Backend | Radios | Module |
 |---|---|---|
 | `anyroad-dfu` | `usb-dfu` family (STM32F4 radios) | `app.js` (`dfu.js`, `f4stub.js`) |
 | `c7000-stub` | `serial-loader` and `serial-iap` families (HR_C7000 radios) | `c7000ui.js` (`stub.js`, `c7000.js`) |
+| `anytone-update` | `anytone-update` family (the vendor update mode on the radio's USB serial port) | `anytoneui.js` (`anytone.js`; `fakeanytone.js` for tests) |
 | `none` | any other | none: the radio is listed but grayed out |
 
 A radio without a backend the page knows gets `none`, so a family can come before its module. The
@@ -380,6 +382,45 @@ link reads the memories when none opens. A reader may also have `security()`, th
 STM32F4 loader's SREAD (stub-stm32f4.md 6.2), each register checked against the CRC the loader sends. A reader has `open(progress)` (false: not possible now, nothing changed),
 `used`, `read(mem, addr, n)` giving `{data, complete}`, `close()` and `abort()`. A new read-back protocol is a reader,
 and the bundle format and the backup step stay as they are.
+
+## Variant detection
+
+A radio with `[hardware] variants` (several builds sold under one model, each needing its own image or build options)
+is asked which one it is before anything is written. `detect.js` holds the engine and the probes every radio shares.
+`detectui.js` is the Auto-detect button a backend puts beside its variant chooser: the user connects the radio in
+whatever state it is in, and the probes run in turn on that one port until one names the variant.
+The port chooser lists the USB devices the variants name (`usb_ids`) and RadioFoundry's (`portFilters()`). A backend that
+can't name every state's device passes `showAllPorts`, which adds a link to a chooser with every port.
+
+A probe is `{id, baud, run(stream, ctx), confirm(session, ctx)}`, registered with `registerProbe()`. `run` returns null
+when the radio didn't answer that way, else `{code, version, via, keep}`. `keep` means the radio stays in a session the
+backend takes over, such as an open update mode, so the user needn't connect again. A backend lists its probes in the
+order that is safe for its radios: probes that send nothing first, then words or frames the other firmwares ignore.
+
+| Probe | Module | Reads | Sends |
+|---|---|---|---|
+| `usb-id` | `detect.js` | The port's USB ids against the variants' `usb_ids` (board.toml) | nothing |
+| `rfoundry` | `detect.js` | The board RadioFoundry runs (debug link `VERSION`), when one variant takes that image | debug link frames |
+| `anytone-update` | `anytonedetect.js` | The update mode's model answer (`anytone.js` `variantOf`) | `UPDATE`, `02` |
+
+A probe never puts the radio in a state it can't leave without a restart; one that can't tell the variants apart
+without that is left out. For example, the AnyTone PC mode answers the same model name on both MCUs, and leaving it
+restarts the radio.
+
+**The check before a write is mandatory.** Just before the first byte, the backend calls `confirmVariant()` on the
+session it writes through. The probe that opened the session asks again with a read-only question (`confirm`). The
+write stops with nothing written when the answer is another variant than the one judged at connect, or a variant the
+image isn't for. A probe without `confirm` refuses the write. Tests: `site/tests/detect.test.mjs`, and the backend's
+own (`site/tests/anytoneui.test.mjs`).
+
+To support another radio's variants:
+1. List them in its board.toml, with `usb_ids` where the original firmware's USB device differs per variant.
+2. Write a probe for any other protocol that names the variant.
+3. Add the Auto-detect control and the `confirmVariant()` call to the radio's backend.
+
+A variant with `blocked` in board.toml (the reason, as text) can be identified and given its original firmware back, but
+no installer writes RadioFoundry on it: the page's check at connect, the check before the write and the `rfoundry` tools
+all refuse it. It is for an image that exists but has never run on that hardware.
 
 ## Backup bundles (`rfoundry-backup/1`)
 
@@ -467,6 +508,14 @@ writes there. So the step needs no backup and loses nothing:
 The HR_C7000 backend has no conversion: its stock codeplug stays in the data flash and in the backup
 (`original-channels.bin`), and `tools/backup_codeplug.py` ports it.
 
+The AnyTone update mode backend (`anytoneui.js`) reads before the install instead: RadioFoundry keeps its codeplug in
+its own NAND blocks and can't read the stock tables once it runs. Its optional `at_channels` step, before Connect,
+asks for the radio on in normal mode, reads what the zones reach through the radio's PC mode
+(`AnytoneProgram`, `readAnytone`; [codeplug-stock-anytone.md](../spec/codeplug-stock-anytone.md)), converts it
+(`convertAnytone`) and ends the PC mode (the radio restarts). The done page then offers **Write Channels**, which runs
+steps 1 and 4-6 above with that converted image (`bringChannels` with `converted`): the original stays in the radio's
+NAND, so it runs without asking.
+
 A bundle can hold both codeplugs, the stock one and RadioFoundry's:
 
 | Codeplug | Where the page reads it |
@@ -474,6 +523,7 @@ A bundle can hold both codeplugs, the stock one and RadioFoundry's:
 | RadioFoundry's | The Tools page's `backup-to-image` (`codeplug.js`) and the Codeplug Editor's open (`editor/files.js`): the `spi-flash` part, from address 0 |
 | A stock TYT-family codeplug | The same, converted by `codeplug/stock_tyt.js` ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md)) |
 | A stock Baofeng codeplug with a spec in `docs/spec/` | The same, converted by `codeplug/stock_baofeng.js` (the first 84 channels) |
+| A stock AnyTone codeplug (SPI NAND) | Not in a bundle: read in the radio's PC mode before the install (above) |
 | Any other stock codeplug | Nowhere: no spec in `docs/spec/` describes its records, and only `dmrconf` (GPL, never in the page) decodes it |
 
 `tools/backup_codeplug.py` extracts both offline, from any data flash part, at the board's `openfw_eeprom` and through

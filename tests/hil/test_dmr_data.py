@@ -242,6 +242,10 @@ def test_sms_rx(radio, sdr_bench, pytestconfig):
     after = radio.data_view()
     d = _deltas(before, after, ["data.sms_received", "data.tms_acks_sent", "data.tx_ok", "data.tx_failed"])
     print("radio deltas:", d, "event:", after["data.event"], after["data.event_id"])
+    # A confirmed ACK (the IP confirmation setting) waits for a response the bench never sends and goes again, up to
+    # its tries: wait it out, or it keys over the next test's message
+    if "ip.busy" in radio.link.view(["dmr_ip"]):
+        radio.wait_for(lambda v: v.get("ip.busy") == "0", timeout=20, sections=("dmr_ip",), what="TMS ACK tries over")
     assert d["data.sms_received"] == 1, d
     m = radio.link.inbox(0)
     assert m is not None and m["text"] == text and m["src"] == BENCH_SRC and m["unread"], m
@@ -555,9 +559,13 @@ def _lrrp_ask(radio, sdr_bench, freq, cc, own):
         heard = sdr_bench.data(freq, cc, own, udp_port=D.LRRP_PORT, udp_src_port=D.LRRP_PORT,
                                udp_payload=D.lrrp_immediate_request(req_id), src=src, listen_after=4)
     radio.wait_for(lambda v: v.get("data.busy", "0") == "0", 10, sections=("dmr_data",), what="the answer sent")
-    d = _deltas(before, radio.data_view(), ["data.rx_for_us", "data.lrrp_requests", "data.lrrp_answers",
-                                            "data.lrrp_no_fix", "data.tx_ok", "data.tx_failed"])
+    after = radio.data_view()
+    d = _deltas(before, after, ["data.rx_for_us", "data.lrrp_requests", "data.lrrp_answers",
+                                "data.lrrp_no_fix", "data.tx_ok", "data.tx_failed"])
     print("radio deltas:", d)
+    # What the radio's data service got of the request, for a miss: nothing (no bursts), or a packet broken on the way
+    print("radio receive deltas:", _deltas(before, after, ["data.rx_bursts", "data.rx_headers", "data.rx_blocks",
+                                                           "data.rx_crc_errors", "data.rx_packets"]))
     pk = [p for p in D.data_packets(heard) if p["src"] == own and p["dst"] == src and p["crc_ok"]]
     print(f"data headers heard: {[(p['src'], p['dst'], p['dpf'], p['sap'], len(p['blocks'])) for p in D.data_packets(heard)]}")
     answers = []

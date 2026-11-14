@@ -170,7 +170,7 @@ clean:
 
 # The radio core's state machine and the input gesture engine, against a fake board and codeplug (no RTOS)
 CORE_HAL := -I$(ROOT)/hal -Wshadow
-TESTS   += radioCoreTest inputTest quadratureTest serialmicTest
+TESTS   += radioCoreTest inputTest quadratureTest serialmicTest anytoneMicTest btAtTest
 
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
 RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
@@ -199,6 +199,12 @@ TESTS   += radioCoreTestNoVfoDmr
 radioCoreTestNoVfoDmr: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                        $(CORE)/ui/ui_svc.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 -DCONFIG_VFO_DMR=0 -o $@ $(RCORE) -lm
+
+# The same with a modem that plays the voice itself (CAP_MODEM_VOICE): the speaker path during a call
+TESTS   += radioCoreTestModemVoice
+radioCoreTestModemVoice: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
+                         $(CORE)/ui/ui_svc.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 -DFAKE_MODEM_VOICE=1 -o $@ $(RCORE) -lm
 
 # The same with APRS: what the data service hears goes into the station list (a DMR APRS position, docs/spec/aprs.md 8.2)
 TESTS   += radioCoreTestAprs
@@ -295,6 +301,13 @@ quadratureTest: quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c $
 serialmicTest: serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c $(ROOT)/drivers/input/serialmic/serialmic.h
 	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c
 
+# A serial keypad hand mic's frames (drivers/input/anytone_mic, header only)
+anytoneMicTest: anytoneMicTest.c $(ROOT)/drivers/input/anytone_mic/anytone_mic.h
+	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ anytoneMicTest.c
+
+btAtTest: btAtTest.c $(ROOT)/drivers/input/bt_at/bt_at.h
+	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ btAtTest.c
+
 # The VOX mic level (drivers/audio/miclevel): the boards' analog-tap scale and the level from PCM blocks
 # The second receiver's link (core/rx2): frames and both ends back to back
 TESTS   += rx2LinkTest
@@ -303,6 +316,11 @@ rx2LinkTest: rx2LinkTest.c $(CORE)/rx2/rx2_link.c $(CORE)/rx2/rx2_link.h $(ROOT)
 TESTS   += miclevelTest
 miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ miclevelTest.c -lm
+# ADC audio as PCM for the APRS demodulator (drivers/audio/adc_pcm): the ring, the bias, a packet through the demodulator
+TESTS   += adcPcmTest
+ADCPCM  := adcPcmTest.c $(CORE)/aprs/ax25.c $(CORE)/aprs/hdlc.c $(CORE)/aprs/afsk.c
+adcPcmTest: $(ADCPCM) $(ROOT)/drivers/audio/adc_pcm/adc_pcm.h $(CORE)/aprs/afsk.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ $(ADCPCM) -lm
 # The ring-to-block rate converter for ADC audio on the PCM stream (drivers/audio/resample)
 TESTS   += resampleTest
 resampleTest: resampleTest.c $(ROOT)/drivers/audio/resample/resample.h
@@ -318,11 +336,12 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
-          rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestModemVoice radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest anytoneMicTest btAtTest miclevelTest resampleTest \
+          adcPcmTest rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
+	./radioCoreTestModemVoice
 	./radioCoreTestAprs
 	./radioCoreTestAprsDmr
 	./radioFeaturesTest
@@ -332,7 +351,10 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestAprs radioCoreTestApr
 	./inputTest
 	./quadratureTest
 	./serialmicTest
+	./anytoneMicTest
+	./btAtTest
 	./miclevelTest
+	./adcPcmTest
 	./resampleTest
 	./rx2LinkTest
 	./keyassignTest
@@ -391,10 +413,17 @@ at1846sTest: at1846sTest.c $(ROOT)/drivers/rf/at1846s/at1846s.c $(ROOT)/drivers/
 subaudioTest: subaudioTest.c $(SUBAUDIO) $(ROOT)/drivers/rf/subaudio/subaudio.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ subaudioTest.c $(SUBAUDIO)
 
+# The QA4818-class transceiver (docs/spec/hardware-d578uv.md 5): pure helpers and register sequences on a fake bus
+TESTS   += qa4818Test
+
+qa4818Test: qa4818Test.c $(ROOT)/drivers/rf/qa4818/qa4818.c $(ROOT)/drivers/rf/qa4818/qa4818.h $(RFBUS) $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ qa4818Test.c $(ROOT)/drivers/rf/qa4818/qa4818.c $(RFBUS) $(SUBAUDIO)
+
 run: run-rf
-run-rf: at1846sTest subaudioTest
+run-rf: at1846sTest subaudioTest qa4818Test
 	./at1846sTest
 	./subaudioTest
+	./qa4818Test
 .PHONY: run-rf
 
 # The SKY72310 synthesizer's divider words against the data sheet and a register model, the HR_C5000 variant of the
@@ -409,6 +438,12 @@ HRC5K := $(ROOT)/drivers/modem/hrc5000/hrc5000.c $(ROOT)/drivers/modem/hrc_commo
          $(ROOT)/core/dmr/ambe/ambeFec.c
 hrc5000Test: hrc5000Test.c $(HRC5K) $(wildcard $(ROOT)/drivers/modem/hrc5000/*.h $(ROOT)/drivers/modem/hrc_common/*.h) $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc5000Test.c $(HRC5K)
+
+# The SCT baseband driver (drivers/modem/sct): packets, both chips' boot and voice set-up, the DMR engine on a fake chip
+TESTS   += sctTest
+SCT := $(ROOT)/drivers/modem/sct/sct_pkt.c $(ROOT)/drivers/modem/sct/sct_host.c $(ROOT)/drivers/modem/sct/sct_dmr.c
+sctTest: sctTest.c $(SCT) $(wildcard $(ROOT)/drivers/modem/sct/*.h) $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ sctTest.c $(SCT)
 
 nmeaLineTest: nmeaLineTest.c $(ROOT)/drivers/gps/nmea_line/nmea_line.c $(ROOT)/drivers/gps/nmea_line/nmea_line.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ nmeaLineTest.c $(ROOT)/drivers/gps/nmea_line/nmea_line.c
@@ -425,6 +460,13 @@ gpsBaudTest: gpsBaudTest.c $(ROOT)/drivers/gps/gps_rx/gps_baud.c $(ROOT)/drivers
 	$(CC) $(CFLAGS) -Wshadow -o $@ gpsBaudTest.c $(ROOT)/drivers/gps/gps_rx/gps_baud.c \
 		$(ROOT)/drivers/gps/gps_rx/gps_rx.c $(ROOT)/drivers/gps/nmea_line/nmea_line.c
 
+# A GPS module's set-up sentences (drivers/gps/gps_rx/gps_setup.c): the module by its sentence, the framing
+TESTS   += gpsSetupTest
+gpsSetupTest: gpsSetupTest.c $(ROOT)/drivers/gps/gps_rx/gps_setup.c $(ROOT)/drivers/gps/gps_rx/gps_setup.h \
+              $(ROOT)/drivers/gps/nmea_line/nmea_line.c
+	$(CC) $(CFLAGS) -Wshadow -o $@ gpsSetupTest.c $(ROOT)/drivers/gps/gps_rx/gps_setup.c \
+		$(ROOT)/drivers/gps/nmea_line/nmea_line.c
+
 # The STM32 codec descriptor (platform/stm32f4/codec_desc.h): its checks, and codec sectors 10 and 11 as
 # tools/codec_extract.py merges them (docs/spec/codec-placement.md)
 TESTS   += codecDescTest
@@ -439,12 +481,14 @@ adckeysTest: adckeysTest.c $(ROOT)/drivers/input/adckeys/adckeys.c $(ROOT)/drive
 	$(CC) $(CFLAGS) -Wshadow -o $@ adckeysTest.c $(ROOT)/drivers/input/adckeys/adckeys.c
 
 run: run-chips
-run-chips: sky72310Test hrc5000Test nmeaLineTest gpsRxTest gpsBaudTest adckeysTest codecDescTest
+run-chips: sky72310Test hrc5000Test sctTest nmeaLineTest gpsRxTest gpsBaudTest gpsSetupTest adckeysTest codecDescTest
 	./sky72310Test
 	./hrc5000Test
+	./sctTest
 	./nmeaLineTest
 	./gpsRxTest
 	./gpsBaudTest
+	./gpsSetupTest
 	./adckeysTest
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_test.bin --board dm1701
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md380.bin --board md380
@@ -831,6 +875,17 @@ run-taskStack: taskStackTest
 	./taskStackTest
 .PHONY: run-taskStack
 
+# The temperature sensors' framework: curves, the board's sensors read (core/app/temp.c, hal_temp.h)
+TEMPT   := tempTest.c $(CORE)/app/temp.c
+TESTS   += tempTest
+tempTest: $(TEMPT) $(CORE)/app/temp.h $(ROOT)/hal/hal_temp.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(TEMPT)
+
+run: run-temp
+run-temp: tempTest
+	./tempTest
+.PHONY: run-temp
+
 # The hardware watchdog's portable side: the idle task's feed, the longest idle gap, the bench starve (core/app/
 # watchdog.c), the debug link's watchdog section and DL_CMD_WATCHDOG (core/debuglink/debuglink_watchdog.c). The
 # platform, the clock, the radio's view and the log are faked; watchdog_stub/ holds the stand-in FreeRTOS headers
@@ -900,6 +955,44 @@ run-f4stub: f4stubTest f4stubSim
 	python3 f4stub_wire_check.py ./f4stubSim
 .PHONY: run-f4stub
 
+# The GD32F30x stub's portable parts with the same engine (stub/gd32f30x/gd32stub_board.c, docs/spec/stub-gd32f30x.md)
+GD32STUB_SRC := $(ROOT)/stub/common/stubeng.c $(ROOT)/stub/gd32f30x/gd32stub_board.c
+GD32STUB_H   := $(ROOT)/stub/common/stubeng.h $(ROOT)/stub/gd32f30x/gd32stub.h $(ROOT)/stub/gd32f30x/gd32stub_header.h \
+	$(ROOT)/stub/stm32f4/f4stub_header.h
+TESTS   += gd32stubTest
+gd32stubTest: gd32stubTest.c $(GD32STUB_SRC) $(GD32STUB_H)
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/common -I$(ROOT)/stub/gd32f30x -I$(ROOT)/stub/stm32f4 -o $@ gd32stubTest.c \
+		$(GD32STUB_SRC)
+
+TESTS   += gd32stubSim
+gd32stubSim: gd32stubSim.c $(GD32STUB_SRC) $(GD32STUB_H)
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/common -I$(ROOT)/stub/gd32f30x -o $@ gd32stubSim.c $(GD32STUB_SRC)
+
+run: run-gd32stub
+run-gd32stub: gd32stubTest gd32stubSim
+	./gd32stubTest
+	python3 f4stub_wire_check.py --gd32 ./gd32stubSim
+.PHONY: run-gd32stub
+
+# The AT32F43x stub's portable parts with the same engine (stub/at32f43x/at32stub_board.c, docs/spec/stub-at32f43x.md)
+AT32STUB_SRC := $(ROOT)/stub/common/stubeng.c $(ROOT)/stub/at32f43x/at32stub_board.c
+AT32STUB_H   := $(ROOT)/stub/common/stubeng.h $(ROOT)/stub/at32f43x/at32stub.h $(ROOT)/stub/at32f43x/at32stub_header.h \
+	$(ROOT)/stub/stm32f4/f4stub_header.h $(ROOT)/stub/gd32f30x/gd32stub_header.h
+TESTS   += at32stubTest
+at32stubTest: at32stubTest.c $(AT32STUB_SRC) $(AT32STUB_H)
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/common -I$(ROOT)/stub/at32f43x -I$(ROOT)/stub/stm32f4 -I$(ROOT)/stub/gd32f30x \
+		-o $@ at32stubTest.c $(AT32STUB_SRC)
+
+TESTS   += at32stubSim
+at32stubSim: at32stubSim.c $(AT32STUB_SRC) $(AT32STUB_H)
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/common -I$(ROOT)/stub/at32f43x -o $@ at32stubSim.c $(AT32STUB_SRC)
+
+run: run-at32stub
+run-at32stub: at32stubTest at32stubSim
+	./at32stubTest
+	python3 f4stub_wire_check.py --at32 ./at32stubSim
+.PHONY: run-at32stub
+
 # FD6818 frames on a fake three-wire chip, ST7567 and ST7789 init streams and 2x scaling, key matrix decode with the
 # column-to-ground side keys, the HR_C7000 DMR engine on plain register arrays, the Baofeng factory calibration decoder
 # (modem-hrc7000.md)
@@ -947,6 +1040,12 @@ rda5807mTest: rda5807mTest.c $(RDA)/rda5807m.c $(RDA)/rda5807m.h $(RDA)/rda5807m
 		$(I2CG)/i2c_gpio.c $(I2CG)/i2c_gpio.h $(ROOT)/hal/hal_bcast.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ rda5807mTest.c $(RDA)/rda5807m.c $(RDA)/rda5807m_hal.c $(I2CG)/i2c_gpio.c
 
+# The KTMicro AM/FM receiver driver on a register file (airband-and-broadcast.md 2)
+TESTS   += ktamfmTest
+KTAMFM  := $(ROOT)/drivers/bcast/ktamfm
+ktamfmTest: ktamfmTest.c $(KTAMFM)/ktamfm.c $(KTAMFM)/ktamfm.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ ktamfmTest.c $(KTAMFM)/ktamfm.c
+
 # The LIS3DH accelerometer driver on a register model
 TESTS   += lis3dhTest
 lis3dhTest: lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.h
@@ -957,8 +1056,9 @@ baofengCalTest: baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROO
 
 run: run-drivers
 run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest plugPttTest hrc7000DmrTest baofengCalTest rda5807mTest \
-             lis3dhTest hrc7000BsTest hrc7000DmrTestSplit
+             lis3dhTest hrc7000BsTest hrc7000DmrTestSplit ktamfmTest
 	./hrc7000BsTest
+	./ktamfmTest
 	./hrc7000DmrTestSplit
 	./lis3dhTest
 	./rda5807mTest
@@ -1025,6 +1125,18 @@ TESTS   += hrc7000IrqStallTest
 hrc7000IrqStallTest: hrc7000IrqStallTest.c $(ROOT)/platform/hrc7000/irq_stall.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000IrqStallTest.c
 
+# The 3-wire bit-banged bus (drivers/rf/rfbus): frames on a model chip, normal and fast timing
+TESTS   += rfbus3wTest
+
+rfbus3wTest: rfbus3wTest.c $(RFBUS) $(ROOT)/drivers/rf/rfbus/rfbus.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ rfbus3wTest.c $(RFBUS)
+
+# The GD32F30x clocks' fold (platform/gd32f30x/time_fold.h): 32-bit running counts against a 64-bit reference
+TESTS   += gd32TimeFoldTest
+
+gd32TimeFoldTest: gd32TimeFoldTest.c $(ROOT)/platform/gd32f30x/time_fold.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ gd32TimeFoldTest.c
+
 # The HR_C7000 codec slot (platform/hrc7000/codec_slot.h): versions 1 and 2, the move, the refusals, and the slot
 # tools/hrc7000_codec.py writes (docs/spec/codec-placement.md)
 TESTS   += hrc7000CodecSlotTest
@@ -1034,7 +1146,7 @@ hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot
 
 run: run-platform
 run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest \
-		hrc7000IrqStallTest hrc7000RfburstTest
+		hrc7000IrqStallTest hrc7000RfburstTest gd32TimeFoldTest rfbus3wTest
 	./bk4819Test
 	./at1141Test
 	./fd6818shTest
@@ -1043,6 +1155,8 @@ run-platform: bk4819Test at1141Test fd6818shTest superhetTest hrc7000ClockTest h
 	./hrc7000UartFormatTest
 	./hrc7000IrqStallTest
 	./hrc7000RfburstTest
+	./gd32TimeFoldTest
+	./rfbus3wTest
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin
 	./hrc7000CodecSlotTest hrc7000_test_slot.bin
 .PHONY: run-platform
@@ -1133,11 +1247,12 @@ settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/set
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ settingsTest.c $(STORE)
 
 run: run-settings
-run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
+run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest nandBlocksTest
 	./settingsTest
 	./spiNorTest
 	./spiNandTest
 	./nandSectorsTest
+	./nandBlocksTest
 .PHONY: run-settings
 
 # The SPI NOR driver against a model of the chip at the bus, and the journal and settings store on it (16 MB and
@@ -1169,6 +1284,15 @@ TESTS   += nandSectorsTest
 nandSectorsTest: nandSectorsTest.c $(NSECT) $(ROOT)/drivers/flash/nand_sectors/nand_sectors.h \
                  $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h $(CORE)/cps/*.h $(CORE)/codeplug/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ nandSectorsTest.c $(NSECT)
+
+# The block-mapped NAND device (drivers/flash/nand_blocks) on the same simulated NAND: copies in address order, NOR
+# writes, bad and worn blocks, foreign data, a power cut at every operation of a script (torn pages of several kinds)
+NBLK    := $(ROOT)/drivers/flash/nand_blocks/nand_blocks.c
+TESTS   += nandBlocksTest
+
+nandBlocksTest: nandBlocksTest.c $(NBLK) $(ROOT)/drivers/flash/nand_blocks/nand_blocks.h \
+                $(ROOT)/drivers/flash/nand_sectors/nand_sectors.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ nandBlocksTest.c $(NBLK)
 
 # Codeplug editing: the open-firmware record encoder, the built-in set made a stored codeplug, zones / contacts / lists,
 # the round trip read -> write -> read, power cuts during an edit
@@ -1362,9 +1486,9 @@ snmpPeer: snmpPeer.c $(SNMPLIB) $(wildcard $(CORE)/snmp/*.h)
 # The agent's firmware glue (snmp_agent.c: the USB and RF request paths, the RF mailbox and limits, settings, traps)
 # on fakes of the radio, the settings and the gateway
 TESTS   += snmpAgentTest
-snmpAgentTest: snmpAgentTest.c fuzz.h $(CORE)/snmp/snmp_agent.c $(SNMPLIB) $(DATA) $(wildcard $(CORE)/snmp/*.h)
+snmpAgentTest: snmpAgentTest.c fuzz.h $(CORE)/snmp/snmp_agent.c $(CORE)/app/temp.c $(SNMPLIB) $(DATA) $(wildcard $(CORE)/snmp/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_SNMP=1 -DCONFIG_DMR_IP_GATEWAY=1 -DCONFIG_HOTSPOT=0 -o $@ \
-		snmpAgentTest.c $(CORE)/snmp/snmp_agent.c $(SNMPLIB) $(DATA)
+		snmpAgentTest.c $(CORE)/snmp/snmp_agent.c $(CORE)/app/temp.c $(SNMPLIB) $(DATA)
 
 run: run-snmp
 run-snmp: snmpTest snmpPeer snmpAgentTest

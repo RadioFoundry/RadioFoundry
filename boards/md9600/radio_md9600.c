@@ -598,7 +598,11 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 // The DCS turn-off tail from the PWM generator; the core holds the carrier for it
 static bool tx_tail(bool on)
 {
-	return !dmr_mode && rf.state == MD9600_RF_TX && md9600_subtone_tx_tail(on);
+	if (dmr_mode || rf.state != MD9600_RF_TX || !md9600_subtone_tx_tail(on)) {
+		return false;
+	}
+	md9600_c6000_mic(!on);	// PTT is up: the microphone off for the tail
+	return true;
 }
 #endif
 

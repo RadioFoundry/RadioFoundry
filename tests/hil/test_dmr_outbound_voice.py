@@ -106,6 +106,16 @@ def _setup(radio, pytestconfig, freq):
     return cc, tg
 
 
+def _hear_all(radio, on):
+    """Set the DMR hear-all latch (a monitor key release toggles it); returns the state it was in."""
+    was = radio.view(["dmr"]).get("dmr.hear_all_latch") == "1"
+    if was != on:
+        radio.link.monitor(False)
+        radio.wait_for(lambda x: x.get("dmr.hear_all_latch") == ("1" if on else "0"), timeout=3, sections=("dmr",),
+                       what="the hear-all latch")
+    return was
+
+
 def _run(radio, bench, pytestconfig, backup_dir, calls, radio_ts, cc_offset=0, expect_up=True):
     """The calls on the outbound, with the radio on timeslot radio_ts; returns (radio deltas, radio view after, the
     board's records)."""
@@ -126,6 +136,7 @@ def _run_on(radio, bench, freq, cc, tg, calls, radio_ts, cc_offset, expect_up):
     seconds = round(max(_span_s(c) for c in calls) + 3.0, 1)
     voice = json.dumps(calls, separators=(",", ":"))
     try:
+        latch = _hear_all(radio, True)      # a call to a group the channel doesn't list is shown, not played
         with bench.lease():
             radio.reset_counters()
             _, before = radio.counters()
@@ -141,6 +152,7 @@ def _run_on(radio, bench, freq, cc, tg, calls, radio_ts, cc_offset, expect_up):
             _, after = radio.counters()
             view = radio.view(["dmr_call"])
     finally:
+        _hear_all(radio, latch)
         radio.link.clear_temporary()
     if job.returncode not in (0, None):
         text = "".join(job.lines)

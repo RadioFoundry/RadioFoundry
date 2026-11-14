@@ -114,6 +114,8 @@ void aprs_cfg_store_defaults(settings_t *s);
 void aprs_ax25_init(uint32_t now_ms);
 // Who we are, from the settings and the codeplug (reads storage: outside the lock)
 void aprs_ax25_identity(void);
+// The same from settings the caller has read: reload_cfg passes its copy, so the radio task's stack holds one settings_t
+void aprs_ax25_identity_from(const settings_t *st);
 // Every tick, outside the lock: the identity again when the codeplug changed, and now and then
 void aprs_ax25_poll(uint32_t now_ms);
 // Every tick, lock held, before the beacon triggers: the host's rate limit, old station positions, what blocks RF
@@ -134,6 +136,7 @@ void aprs_ax25_rx_service(const aprs_radio_t *r, uint32_t now_ms);
 #else
 static inline void aprs_ax25_init(uint32_t now_ms) { (void)now_ms; }
 static inline void aprs_ax25_identity(void) {}
+static inline void aprs_ax25_identity_from(const settings_t *st) { (void)st; }
 static inline void aprs_ax25_poll(uint32_t now_ms) { (void)now_ms; }
 static inline void aprs_ax25_tick(uint32_t now_ms) { (void)now_ms; }
 static inline bool aprs_ax25_beacon(const position_fix_t *f, bool rf) { (void)f; (void)rf; return false; }

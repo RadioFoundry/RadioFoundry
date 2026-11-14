@@ -810,6 +810,21 @@
     "VOLUME_BAR"
    ]
   },
+  "volume_bar_ab": {
+   "group": "home",
+   "needs": [
+    "VOLUME_BAR"
+   ],
+   "knobs": 2
+  },
+  "volume_bar_ab_dual": {
+   "group": "home",
+   "needs": [
+    "VOLUME_BAR",
+    "DUAL_WATCH"
+   ],
+   "knobs": 2
+  },
   "factory_reset": {
    "group": "settings",
    "needs": []

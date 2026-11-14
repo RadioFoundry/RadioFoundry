@@ -37,6 +37,7 @@ CONFIG_BCAST_FM ?= n
 BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver (docs/spec/airband-and-broadcast.md)
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is a SPI NOR (docs/spec/hardware-md380.md 12)
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (docs/user/23-radios.md, What the MD-380 lacks)
+BOARD_UNSUPPORTED += BT_PTT	# no Bluetooth module
 BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, the one UART the G models' GPS line
 # What the hardware can do but this radio's driver or glue doesn't yet, the same way: off by default, and off in ci's
 # maximal configuration too
@@ -51,8 +52,8 @@ BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 # translations: maximal keeps Spanish, as the default build does (Italian builds on the other boards)
 # APRS-IS (about 2.7 KB) is left out of maximal too, which had 156 bytes left: with no APRS receive here it only gates
 # RF positions out, so it is the first IP service to go. The default build keeps it. It defaults on, so it is set off,
-# not only skipped
-MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT NET_APRSIS
+# not only skipped. The smoothed fonts (FONT_AA) are off by default here and build on the other boards
+MAXIMAL_SKIP := NET_PPP LANG_IT LANG_DEFAULT_IT NET_APRSIS FONT_AA
 MAXIMAL_VARS := CONFIG_NET_APRSIS=n
 # When the default build runs out of room, the IP services go first, the weakest here first: APRS-IS (NET_APRSIS, about
 # 2.7 KB: with no APRS receive it only gates RF positions out), then KISS over TCP (NET_KISS, about 0.75 KB, transmit

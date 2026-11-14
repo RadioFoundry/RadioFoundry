@@ -70,6 +70,9 @@ def test_emergency_alarm_rx(radio, sdr_bench, pytestconfig, em_settings):
     """An emergency alarm CSBK (opcode 0x27, Motorola FID, octet 2 0 = to a group) to the channel's talkgroup: one
     alert of kind alarm from the bench; nothing is sent back."""
     freq, cc, own, tg, feats = _emergency_setup(radio, pytestconfig)
+    # Its own source: an emergency from the same ID within the re-alert window (test_emergency_call sends one just
+    # before in a full run) raises no new alert, dismissed or not
+    src = BENCH_SRC + 8
     radio.link.emergency("dismiss")
     # A source of its own: an emergency from a source active in the last 30 s adds no alert, dismissed or not
     # (dmr-emergency.md, DMR_EMERGENCY_REALERT_MS), and an earlier test's emergency call may come from the bench's

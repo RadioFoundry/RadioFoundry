@@ -1,0 +1,194 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The RadioFoundry Authors
+// AnyTone AT-D578UV: board descriptor, clocks and reset-time pin levels, key map (docs/spec/hardware-d578uv.md)
+#include "board.h"
+#include "config.h"
+#include "d578uv.h"
+#include "pins.h"
+#include "mcu_io.h"
+#include "hal_time.h"
+#if CONFIG_DMR
+#include "modem/sct/sct_dmr.h"
+#endif
+#if CONFIG_GPS
+#include "gps_uart/gps_uart.h"
+#endif
+#if CONFIG_USB
+#include "usb/usb_device.h"
+#include "usb/usb_ncm.h"
+#endif
+#if CONFIG_NET_PPP
+#include "hostlink/hostlink_ppp.h"
+#endif
+
+static const band_t bands[] = {
+	{ 136000000, 174000000, true },
+	{ 400000000, 480000000, true },
+#if CONFIG_AM_RX
+	{ 108000000, 136000000, false },	// the air band, AM receive only (docs/spec/hardware-d578uv.md 5.4)
+#endif
+#if CONFIG_BCAST_FM
+	{ 87500000, 108000000, false },		// the broadcast band, on the KTMicro receiver (hardware-d578uv.md 5.4)
+#endif
+};
+
+// The power levels, per band (hardware-d578uv.md: measured with a wattmeter; pa_drive in rf_plan.h). The top
+// differs: 45 W on UHF, 50 W on VHF
+static const char *const power_names[] = { "1W", "10W", "25W", "45W" };
+static const char *const power_names_vhf[] = { "1W", "10W", "25W", "50W" };
+static const board_power_band_t power_bands[] = {
+	{ 136000000u, 174000000u, power_names_vhf },
+	{ 400000000u, 480000000u, power_names },
+};
+
+// The front keys (docs/user/23-radios.md, "AT-D578UV keys"). Up and down are the knob and the microphone's Up and Down,
+// so P1 and P2 take the jobs of * and # (QUICK, held: the next zone; CONTEXT, held: the talk target). MENU confirms
+// (held: the key lock, the core's long QUICK) and EXIT goes back (held: Home). P3-P6 and PUSH (the knob's switch) are the side keys below: Settings > Keys and the
+// codeplug set their press and hold. Defaults: P3 Monitor, P4 A/B (held: dual watch), P5 Power level (held 1.5 s:
+// emergency), P6 VFO/Channel (held: copy to VFO), PUSH confirms as MENU does (held: scan). The serial microphone's
+// keypad: the digits (with their DTMF), '*' and '#' as QUICK and CONTEXT, A/B, and A..D by their printed labels
+// (MENU, ZONE up, ZONE down, EXIT) with DTMF A..D while PTT is held on FM
+#if CONFIG_DMR_EMERGENCY
+#define P5_LONG		ACT_EMERGENCY
+#else
+#define P5_LONG		ACT_POWER
+#endif
+static const keymap_entry_t keymap[] = {
+	{ KEY_P1, ACT_QUICK, ACT_ZONE_UP, false, false, 0 },
+	{ KEY_P2, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },
+	{ KEY_MENU, ACT_SELECT, ACT_QUICK, false, false, 0 },
+	{ KEY_EXIT, ACT_BACK, ACT_BACK, false, false, 0 },
+	{ KEY_P3, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
+	{ KEY_P4, ACT_AB, ACT_DUAL_WATCH, false, false, 0 },
+	{ KEY_P5, ACT_POWER, P5_LONG, false, false, 0 },
+	{ KEY_P6, ACT_VFO_TOGGLE, ACT_COPY_VFO, false, false, 0 },
+	{ KEY_PUSH, ACT_SELECT, ACT_SCAN, false, false, 0 },
+	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
+	// The microphone's Up and Down act as the front Up and Down (on the home screen they step the channel)
+	{ KEY_MIC_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
+	{ KEY_MIC_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
+	{ KEY_MIC_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false, 0 },
+	{ KEY_MIC_1, ACT_DIGIT_1, ACT_DIGIT_1, false, false, 0 },
+	{ KEY_MIC_2, ACT_DIGIT_2, ACT_DIGIT_2, false, false, 0 },
+	{ KEY_MIC_3, ACT_DIGIT_3, ACT_DIGIT_3, false, false, 0 },
+	{ KEY_MIC_4, ACT_DIGIT_4, ACT_DIGIT_4, false, false, 0 },
+	{ KEY_MIC_5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
+	{ KEY_MIC_6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 },
+	{ KEY_MIC_7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
+	{ KEY_MIC_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 },
+	{ KEY_MIC_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
+	{ KEY_MIC_STAR, ACT_QUICK, ACT_QUICK, false, false, '*' },
+	{ KEY_MIC_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false, '#' },
+	{ KEY_MIC_AB, ACT_AB, ACT_DUAL_WATCH, false, false, 0 },
+	{ KEY_MIC_PA, ACT_SELECT, ACT_QUICK, false, false, 'A' },
+	{ KEY_MIC_PB, ACT_ZONE_UP, ACT_ZONE_UP, false, false, 'B' },
+	{ KEY_MIC_PC, ACT_ZONE_DOWN, ACT_ZONE_DOWN, false, false, 'C' },
+	{ KEY_MIC_PD, ACT_BACK, ACT_BACK, false, false, 'D' },
+};
+
+// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h), named as printed
+static const uint8_t side_keys[] = { KEY_P3, KEY_P4, KEY_P5, KEY_P6, KEY_PUSH };
+static const char *const side_key_names[] = { "P3", "P4", "P5", "P6", "PUSH" };
+
+const board_t board = {
+	.name = BOARD_T_NAME,	// board.mk: the GD32 and Artery builds report their own
+#if CONFIG_DMR
+	.caps = CAP_ENCODER | CAP_NO_BATTERY | CAP_LED_RGB | CAP_DMR | CAP_MODEM_VOICE | (CONFIG_GPS ? CAP_GPS : 0) |
+		(CONFIG_AM_RX ? CAP_AM_RX : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
+	.dmr = &sct_dmr_modem,	// start() fails until the baseband has booted: FM only without the boot block
+	.modem_codec = d578uv_modem_codec,
+	.boot_busy = d578uv_modem_booting,
+#else
+	.caps = CAP_ENCODER | CAP_NO_BATTERY | CAP_LED_RGB | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_AM_RX ? CAP_AM_RX : 0) |
+		(CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
+#endif
+#if CONFIG_GPS
+	.gps_enable = mcu_gps_enable,
+	.gps_present = mcu_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
+#endif
+	.bands = bands,
+	.band_count = sizeof(bands) / sizeof(bands[0]),
+	.power_count = sizeof(power_names) / sizeof(power_names[0]),
+	.power_names = power_names,
+	.power_bands = power_bands,
+	.power_band_count = sizeof(power_bands) / sizeof(power_bands[0]),
+	.power_default = 0,
+	.display = &d578uv_display,
+	.input = &d578uv_input,
+	.keymap = keymap,
+	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
+	.side_keys = side_keys,
+	.side_key_names = side_key_names,
+	.side_key_count = sizeof(side_keys),
+	.quick_label = "P1",
+	.context_label = "P2",
+	.lock_label = "MENU",
+	.backlight_dims_only = true,
+	.text_star_space = true,
+	.radio = &d578uv_radio,
+	.chip_reg = d578uv_chip_reg,
+#if CONFIG_DUAL_WATCH
+	.rx2 = &d578uv_rx2,
+#endif
+	.temp = &d578uv_temp,
+#if CONFIG_BCAST_FM
+	.bcast = &d578uv_bcast,
+#endif
+#if CONFIG_APRS
+	.afsk = &d578uv_afsk,
+#endif
+	.power = &d578uv_power,
+#if CONFIG_USB
+	.host_port = &usb_cdc_stream,	// the debug link, CPS and the hotspot's MMDVM on the USB serial port
+#if CONFIG_NET_PPP
+	.netif = &hostlink_ppp_netif,	// PPP on the USB serial port, the network adapter under it (board_init)
+#elif CONFIG_USB_NETWORK
+	.netif = &usb_ncm_netif,
+#endif
+#endif
+	.system = &mcu_system,
+#if CONFIG_NAND_STORAGE
+	.flash = &d578uv_flash,
+#endif
+#if CONFIG_DIAG
+	.diag_line = d578uv_diag_line,
+	.diag_reset = d578uv_diag_reset,
+#endif
+};
+
+// The 12 MHz crystal to 120 MHz (hardware-d578uv.md 2)
+#define CRYSTAL_HZ	12000000u
+#define CORE_HZ		120000000u
+
+// Transmitter off: PE6 low, the PA DAC at 0, the shift register's TX bit clear (radio_d578uv.c)
+void board_rf_safe(void)
+{
+	d578uv_rf_safe();
+}
+
+void board_early_init(void)
+{
+	mcu_clock_init(CRYSTAL_HZ, CORE_HZ);
+	// PA15, PB3 and PB4 are the NAND's MISO and the RF bus: free them from JTAG, keep SWD
+	mcu_jtag_release();
+}
+
+void board_init(void)
+{
+	// The rail first: the RF chips the bus init turns off and the backlight sit on it
+	mcu_pin_out(PIN_RAIL, true, false);
+	hal_delay_ms(150);
+	d578uv_bus_init();	// the backlight (on the RF bus) is set before the radio starts
+	d578uv_nand_init();
+#if CONFIG_NAND_STORAGE
+	// The core's storage (hardware-d578uv.md 6.3): mounted before storage_init reads it. Without it the radio runs on
+	// the default settings
+	d578uv_flash.init();
+#endif
+#if CONFIG_DMR
+	d578uv_modem_init();
+#endif
+#if CONFIG_GPS
+	d578uv_gps_init();
+#endif
+}
