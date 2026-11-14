@@ -849,6 +849,101 @@ static void test_tx_aligned_rmo(void)
 	CHECK(last_write(4, 0x41) == 0x50);	// repeater: back to receiving on its timing, no resync
 }
 
+// An aligned start whose receiver hears nothing (issue 524: after the restart that ends a wake-up, the receiver at
+// times raised no interrupts and read a constant 0x52 while the repeater was on the air): it searches again every
+// ALIGN_DEAF_TICKS, and keys once the repeater's timing comes back. A wait that hears bursts doesn't restart
+static void test_tx_aligned_deaf(void)
+{
+	fresh_engine();
+	pending_burst = false;
+	dmr_config_t cfg = { .own_id = 9990001, .cc = 2, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
+	hrc6000_dmr_configure(&eng, &cfg);
+	dmr_tx_burst_t h = mk(DMR_BURST_VOICE_LC_HEADER, 0, false);
+	uint32_t t = 7000000;
+	int r50, r41;
+
+	// Deaf for the whole wait: restarts, then refused at the timeout as before
+	rd[4][0x52] = 0x73;
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 2, DMR_ACCESS_POLITE_CC));
+	hrc6000_dmr_tx_queue(&eng, &h);
+	int restarts = 0;
+	for (int k = 0; k < 60; k++) {
+		uint8_t v[8];
+		tx_tick(t += 30000, &r50, &r41);
+		int n = writes_of(0x41, v, 8);
+		for (int i = 0; i + 2 < n && i + 2 < 8; i++) {
+			restarts += v[i] == 0x20 && v[i + 1] == 0x00 && v[i + 2] == 0x20;	// the restart's sequence
+		}
+		drain();
+	}
+	CHECK(eng.st.rs_why[HRC6000_RS_ALIGN] == 6 && restarts == 7);	// at 8, 16, .. 48 ticks, and the end's
+	CHECK(count_ev(DMR_EV_TX_REJECTED) == 1 && count_ev(DMR_EV_TX_DONE) == 1);
+	CHECK(eng.st.tx_bursts == 0);
+
+	// Deaf, then the repeater's timing after the first restart: the voice goes on its slot
+	fresh_engine();
+	pending_burst = false;
+	hrc6000_dmr_configure(&eng, &cfg);
+	rd[4][0x52] = 0x73;
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 2, DMR_ACCESS_POLITE_CC));
+	hrc6000_dmr_tx_queue(&eng, &h);
+	hrc6000_dmr_tx_end(&eng);
+	int sent = -1;
+	for (int k = 0; k < 40 && sent < 0; k++) {
+		uint32_t next = eng.tick + 1;
+		if (eng.st.rs_why[HRC6000_RS_ALIGN] > 0) {
+			rd[4][0x52] = 0x20 | ((next & 1) ? 0x04 : 0x00);
+		}
+		tx_tick(t += 30000, &r50, &r41);
+		if (r41 == 0x80) {
+			sent = k;
+		}
+		drain();
+	}
+	for (int k = 0; k < 6; k++) {
+		tx_tick(t += 30000, &r50, &r41);
+		drain();
+	}
+	CHECK(eng.st.rs_why[HRC6000_RS_ALIGN] == 1);
+	CHECK(sent > 8 && sent < 20);
+	CHECK(count_ev(DMR_EV_TX_REJECTED) == 0 && count_ev(DMR_EV_TX_DONE) == 1 && eng.st.tx_bursts == 1);
+
+	// Bursts heard while waiting (a busy channel, no slot timing yet): no restart
+	fresh_engine();
+	pending_burst = false;
+	hrc6000_dmr_configure(&eng, &cfg);
+	rd[4][0x52] = 0x73;
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 2, DMR_ACCESS_POLITE_CC));
+	hrc6000_dmr_tx_queue(&eng, &h);
+	for (int k = 0; k < 30; k++) {
+		tx_tick(t += 30000, &r50, &r41);
+		report_at(t + 3000, 0x12, 0x73, 0x00);
+		drain();
+	}
+	CHECK(eng.st.rs_why[HRC6000_RS_ALIGN] == 0);
+	hrc6000_dmr_tx_abort(&eng);
+	for (int k = 0; k < 4; k++) {
+		tx_tick(t += 30000, &r50, &r41);
+	}
+	CHECK(!hrc6000_dmr_is_transmitting(&eng));
+
+	// Direct mode, deaf for the whole wait: no restart (it would drop the chip's sync), refused at the timeout
+	fresh_engine();
+	pending_burst = false;
+	dmr_config_t dmo = cfg;
+	dmo.repeater = false;
+	hrc6000_dmr_configure(&eng, &dmo);
+	rd[4][0x52] = 0x73;
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 2, DMR_ACCESS_POLITE_CC));
+	hrc6000_dmr_tx_queue(&eng, &h);
+	for (int k = 0; k < 60; k++) {
+		tx_tick(t += 30000, &r50, &r41);
+		drain();
+	}
+	CHECK(eng.st.rs_why[HRC6000_RS_ALIGN] == 0);
+	CHECK(count_ev(DMR_EV_TX_REJECTED) == 1);
+}
+
 // Locked to one slot of a repeater: the other slot is closed, so the TC read after our slot follows a slot not
 // received and is junk (bench 2026-10-28: such reads agreed 43% of the time). The slot numbers must hold: toggled per
 // compare, a TS2 call moved to TS1 mid-call (2026-10-27); resynced on junk, a good lock flipped
@@ -1216,6 +1311,7 @@ int main(void)
 	test_tx_crc_and_underrun();
 	test_tx_end_hold();
 	test_tx_aligned_rmo();
+	test_tx_aligned_deaf();
 	test_tc_locked_one_in_two();
 	test_tx_rejected_and_stall();
 	test_rx_stall();
