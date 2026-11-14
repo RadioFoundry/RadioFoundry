@@ -1201,6 +1201,87 @@ static void test_tx_repeater_lock(void)
 	CHECK(!hrc7000_dmr_is_transmitting(&eng) && eng.st.tx_rejected == 1 && rf_on_calls == 0 && rejected == 1);
 }
 
+// A BS signal on both slots, as a control channel sends. Once the TC lock holds, each slot tick
+// names the TS starting there and carries the AT bit of the last CACH naming it; the short LC is reported when it
+// changes, only from a BS signal, task-side; an MBC continuation is delivered whatever the chip's CRC flag, a CSBK with
+// one is not
+static void test_rx_control_channel(void)
+{
+	setup();
+	hrc7000_dmr_run(&eng);
+	const dmr_config_t cfg = { .own_id = 1234, .cc = 2, .access = DMR_ACCESS_IMPOLITE, .repeater = true };
+	hrc7000_dmr_configure(&eng, &cfg);
+	count_kind(0xFF, NULL);
+	// Slot k carries TC k & 1, its CSBK deframed late in the slot; TS2's inbound is busy (AT 1), TS1's free
+	int good = 0, unknown = 0, bad = 0;
+	for (int k = 0; k < 12; k++) {
+		tick(false);
+		dmr_event_t evs[8];
+		dmr_burst_t bs[8];
+		int n = drain(evs, bs, 8);
+		for (int i = 0; i < n; i++) {
+			if (evs[i].kind != DMR_EV_SLOT_TICK) {
+				continue;
+			}
+			if (k < 4) {
+				// Before the lock (four alternating TCs: slots 0-3) no slot is named
+				unknown += evs[i].ts == 0 && evs[i].flags == 0;
+				continue;
+			}
+			int8_t want = (int8_t)((k & 1) + 1);
+			uint8_t fl = want == 2 ? (DMR_TICK_AT_KNOWN | DMR_TICK_AT_BUSY) : DMR_TICK_AT_KNOWN;
+			if (evs[i].ts == want && evs[i].flags == fl) {
+				good++;
+			} else {
+				bad++;
+			}
+		}
+		uint8_t tc = (uint8_t)(k & 1);
+		deframe_at(rti(0, DMR_BURST_CSBK, 2, 1, (uint8_t)(k & 1), tc) | (tc ? (1u << 23) : 0u), 25000);
+	}
+	CHECK(unknown == 4 && good == 8 && bad == 0);
+	count_kind(0xFF, NULL);
+
+	// The short LC at RX RAM 0x2B: 28 bits, the CRC-8, 4 unused bits. Read task-side once per new one, reported once
+	// per change
+	dmr_event_t ev;
+	CHECK(!hrc7000_dmr_short_lc(&eng, &ev));	// none yet
+	uint32_t slc = 0x2345678u;
+	uint8_t crc = 0xA5;
+	uint64_t v = (((uint64_t)slc << 8) | crc) << 4;
+	for (int i = 0; i < 5; i++) {
+		buf[C7_RX_RAM + 0x2B + i] = (uint8_t)(v >> (32 - 8 * i));
+	}
+	buf[C7_RX_RAM + 0x2F] |= 0x0F;		// the unused bits are ignored
+	REG(C7_SYS_INTERP_LIST) = 1u << 4;
+	hrc7000_dmr_isr_sys(&eng);
+	CHECK(count_kind(0xFF, NULL) == 0);	// nothing from the interrupt
+	CHECK(hrc7000_dmr_short_lc(&eng, &ev) && ev.kind == DMR_EV_SHORT_LC && ev.arg == slc && ev.flags == crc &&
+	      ev.ts == 0 && ev.burst == NULL && eng.st.slc_reads == 1);
+	CHECK(!hrc7000_dmr_short_lc(&eng, &ev));	// once
+	REG(C7_SYS_INTERP_LIST) = 1u << 4;
+	hrc7000_dmr_isr_sys(&eng);
+	CHECK(!hrc7000_dmr_short_lc(&eng, &ev));	// unchanged
+	// A direct mode signal has no CACH: the RAM's short LC is an old one
+	deframe(rti(1, 0, 2, 0, 0, 0));
+	buf[C7_RX_RAM + 0x2B] ^= 0x10;
+	REG(C7_SYS_INTERP_LIST) = 1u << 4;
+	hrc7000_dmr_isr_sys(&eng);
+	CHECK(!hrc7000_dmr_short_lc(&eng, &ev) && eng.st.slc_reads == 1);
+	deframe(rti(0, DMR_BURST_IDLE, 2, 1, 0, 0));
+	REG(C7_SYS_INTERP_LIST) = 1u << 4;
+	hrc7000_dmr_isr_sys(&eng);
+	CHECK(hrc7000_dmr_short_lc(&eng, &ev) && ev.arg == (slc ^ 0x1000000u) && eng.st.slc_reads == 2);
+	count_kind(0xFF, NULL);
+
+	// CRC-16 flag: a CSBK is dropped, an MBC continuation goes up with crc_ok false (its CRC is the MBC's)
+	deframe(rti(0, DMR_BURST_CSBK, 2, 1, 0, 0) | (1u << 26));
+	CHECK(count_kind(DMR_EV_BURST_RX, NULL) == 0);
+	dmr_burst_t b;
+	deframe(rti(0, DMR_BURST_MBC_CONT, 2, 1, 0, 0) | (1u << 26));
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.kind == DMR_BURST_MBC_CONT && !b.crc_ok && b.len == 12);
+}
+
 // An SFR's gap: a queued DMR_BURST_EMPTY leaves our slot empty and received (nothing armed, no PA), still counts as
 // our slot for the caller, and tx_fill puts a burst in the oldest placeholder (gotchas 14.4, 14.10)
 static void test_tx_empty_and_fill(void)
@@ -1410,6 +1491,7 @@ int main(void)
 	test_tx_sync_and_listen();
 	test_tx_aligned();
 	test_tx_repeater_lock();
+	test_rx_control_channel();
 	test_tx_empty_and_fill();
 	test_polite_and_repeater();
 	test_polite_after_restart();

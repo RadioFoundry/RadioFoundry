@@ -766,7 +766,7 @@ on its voice, and never camps on another system or on a control channel that isn
 
 | Item | Needs |
 |---|---|
-| CACH short LC reception on modems that don't report it yet (`hrc_chip_t.slc_rx_addr` 0, or another driver) | the location of the chip's short LC |
+| CACH short LC reception on modems that don't report it yet (`hrc_chip_t.slc_rx_addr` 0) | the location of the chip's short LC |
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
 | Power save: the receiver off while asleep on boards without `rx_sleep_dmr` | each board's `rx_sleep` on a DMR channel |
@@ -782,7 +782,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | Leave | `RADIO_T3_STOP`, a conventional channel or the VFO stops the engine and goes back to the channel or VFO. |
 | Fallback | 12.5: `t3_tick` watches how long the engine has hunted. |
 | Tune | A `T3_ACT_TUNE` sets the channel to DMR, repeater mode, the action's frequencies and color code. Slot 0 (the TSCC, hunting) listens to both slots; a payload channel listens to its slot only. A new carrier is a full tune; the same carrier is a reconfiguration of the stack. |
-| Slots | Each slot tick from the modem goes to `t3_ms_slot` with its slot number and its CACH AT bit (`DMR_TICK_AT_KNOWN`, `DMR_TICK_AT_BUSY`). A modem that doesn't number slots gets them alternating; one that doesn't read AT gets every slot free. |
+| Slots | Each slot tick from the modem goes to `t3_ms_slot` with its slot number and its CACH AT bit (`DMR_TICK_AT_KNOWN`, `DMR_TICK_AT_BUSY`). A modem that doesn't number slots gets them alternating; one that doesn't read AT gets every slot free. The HR_C6000 and HR_C7000 drivers number them and read AT once locked to the CACH's TC ([modem-hrc7000.md](modem-hrc7000.md) 2.5). |
 | Receive | The stack's receive tap hands CSBKs and MBC blocks to `t3_ms_rx`. Any other burst on a known slot, idle ones excepted, is activity on that slot (`t3_ms_activity`). |
 | Send | A `T3_ACT_SEND` keys one CSBK as a data list, on the action's slot only, and not while the radio is talking. A `T3_ACT_TUNE` that comes while the list is still with the stack waits until it has gone out (at most 500 ms): a new slot or channel would drop it, and an answer before leaving a payload channel (a selective clear's P_ACKU) would never be sent. |
 | PTT | Camped, PTT asks for a call to the system's talk target (the first talkgroup with `T3_TG_TALK` when none is set) and waits with PTT held. The grant puts the radio on the payload slot and keys it. A refusal, no answer or timeout denies TX (`TXDENY_NO_DMR`). Released before the grant, the request is cancelled. |

@@ -212,6 +212,12 @@ slot when the estimate is the other TS's TC. A first TX-vector interrupt less th
 one is the same slot and does not toggle the estimate. Without the lock in 1 s the start is refused (TX_REJECTED,
 nothing sent).
 
+The same lock numbers the slot ticks on a BS signal: once it holds, each `DMR_EV_SLOT_TICK` carries the TS that the
+estimate gives for the slot starting there, and the AT bit (RX_TYPE_INFO b23) of the last CACH that named that slot,
+when it was read in the last four ticks (`DMR_TICK_AT_KNOWN`, `DMR_TICK_AT_BUSY`). Before the lock, while
+transmitting and without a CACH, `ts` is 0 and AT unknown. On a BS signal on both slots nearly every tick after the
+lock carries AT.
+
 Bench findings behind this (two boards on the SDR bench, 2026-10-18):
 
 | Tried | Result |
@@ -302,8 +308,8 @@ embedded LC fragments correctly is unverified; follow the datasheet.
 | 3:2 | recv_sync_type | 0 MS, 1 BS, 2 TDMA slot 1, 3 TDMA slot 2 |
 | 1:0 | sync_type | 0 none (EMB-only burst), 1 voice, 2 data, 3 RC |
 
-"CRC good" for a deframed burst = bits 30:24 all zero. Data blocks have no CRC-16, so do not drop them on these
-flags; check CRC-9/CRC-32 in software. RX_INFO (0x394): b24:16 trunking multiframe number, b10:0 received RC.
+"CRC good" for a deframed burst = bits 30:24 all zero. Data blocks and MBC continuation blocks have no CRC-16, so do
+not drop them on these flags; check CRC-9/CRC-32 (the MBC's CRC-16 in its last block) in software. RX_INFO (0x394): b24:16 trunking multiframe number, b10:0 received RC.
 
 ### 2.8 Buffer layouts
 
@@ -316,6 +322,11 @@ mode, AUDIO_CONTROL b0 = 1); 0x4B–0x50 embedded RC; 0x495–0x4AF send voice k
 **RX RAM (0x160004B0)**, datasheet table 53: the deframed control burst at 0x00 (LC header / terminator 9 + 3, CSBK / headers
 10 + 2, data blocks 12 / 18 / 24, idle 12, C_RC 7 + 2). Embedded LC after late entry also appears at 0x00–0x08; the
 chip keeps the previous call's LC there until a new one is decoded (measured).
+0x2B–0x2F: the CACH short LC of a BS signal, 28 bits and the CRC-8 received, the low 4 bits of 0x2F unused; new
+at system interrupt bit 4. The interrupt only counts it, and only while a BS signal is heard (the RAM keeps the last
+one); the event task reads it (`hrc7000_dmr_short_lc`, in flash: a new one comes every 120 ms at most) and reports it
+when it changes (`DMR_EV_SHORT_LC`); the stack checks the CRC-8. The chip's own CRC-8 flag (RX_TYPE_INFO
+b30, in the burst report) isn't used.
 
 **Voice RAM (0x16000960)**: write 27 bytes before arming a voice burst; read 27 bytes after a voice deframe interrupt
 Burst numbering for privacy keystream purposes is RX_TYPE_INFO's 1–6.

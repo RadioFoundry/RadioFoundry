@@ -745,7 +745,7 @@ there:
 - the display (upright, readable), every key, the data flash (Puya, JEDEC 852018) and the factory calibration
 - the speaker path (amplifier and source pins), the debug link on the programming cable
 - FM receive audio on a weather station, the squelch and the monitor key
-- the squelch closes without a signal (`fd6818_noise`), CTCSS / DCS muting, and receiver battery save (`rx_sleep`: FD6818 idle and the RX path off)
+- the squelch closes without a signal (`fd6818_noise`), CTCSS / DCS muting, and receiver battery save (`rx_sleep`: FD6818 idle and the RX path off; on DMR channels too, `rx_sleep_dmr`)
 - beeps through the prompt FIFO, clean and without pops
 - the accelerometer answers and reads 1 g lying flat
 
