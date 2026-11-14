@@ -104,7 +104,7 @@ static struct {
 	uint8_t dmr_mod2, dmr_mod1;
 	uint32_t rf_skipped, rf_unarmed, rf_rx_back;
 	volatile bool dmr_lead;		// RF_TX_INTER advanced for listening (LISTEN_LEAD_STEPS)
-	uint8_t lead_reg;		// 4:0x12 before that
+	hrc5000_lead_t lead;		// 4:0x12 before that
 } r;
 
 static DAC_HandleTypeDef dac;
@@ -375,11 +375,12 @@ static void listen_rx(void)
 		return;
 	}
 	if (!r.dmr_lead) {
-		uint8_t v = 0;
-		count(hrc_read(&r.modem.hrc, 4, 0x12, &v));
-		r.lead_reg = v;
-		count(hrc_write(&r.modem.hrc, 4, 0x12, (uint8_t)((v & 0xC0u) | LISTEN_LEAD_STEPS)));
-		r.dmr_lead = true;
+		// Without the lead there's no time to retune for our next burst: this slot isn't listened to
+		r.dmr_lead = hrc5000_tx_lead_on(&r.modem, &r.lead, LISTEN_LEAD_STEPS);
+		count(r.dmr_lead);
+		if (!r.dmr_lead) {
+			return;
+		}
 	}
 	(void)pll_tune(rx_vco_hz(r.rx_hz), false, false);
 	count(hrc5000_dmr_rx_in(&r.modem, true));
@@ -391,10 +392,10 @@ static void listen_rx(void)
 // Task level (the transmission's end or disarm)
 static void lead_restore(void)
 {
-	if (r.dmr_lead) {
-		count(hrc_write(&r.modem.hrc, 4, 0x12, r.lead_reg));
-		r.dmr_lead = false;
+	if (r.lead.kept) {
+		count(hrc5000_tx_lead_off(&r.modem, &r.lead));
 	}
+	r.dmr_lead = false;
 }
 
 bool md380_rf_dmr_switch(bool tx)
