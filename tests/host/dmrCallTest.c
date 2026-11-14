@@ -1671,6 +1671,34 @@ static void test_impolite_over_call(void)
 	run_ms(600);
 }
 
+static void test_modem_color_code(void)
+{
+	// The channel's TX code survives each reason for listening beyond it, on start and reconfigure.
+	for (int mode = 0; mode < 4; mode++) {
+		dmr_call_config_t c = base_cfg();
+		c.listen.hear_all = mode == 0;
+		c.listen.any_cc = mode == 1;
+		if (mode == 2)
+			c.access = DMR_ACCESS_POLITE_ALL;
+		if (mode == 3) {
+			c.sfr_user = true;
+			c.cc2 = 5;
+		}
+		setup(&c);
+		CHECK(sim.cfg.cc == 1 && sim.cc_filter == (mode == 0 ? 1 : -1));
+		c.cc = 3;
+		dmr_call_configure(&c);
+		CHECK(sim.cfg.cc == 3 && sim.cc_filter == (mode == 0 ? 3 : -1));
+		dmr_call_stop();
+		CHECK(dmr_call_start());
+		CHECK(sim.cfg.cc == 3 && sim.cc_filter == (mode == 0 ? 3 : -1));
+		c = base_cfg();
+		dmr_call_configure(&c);
+		CHECK(sim.cfg.cc == 1 && sim.cc_filter == 1);
+		dmr_call_stop();
+	}
+}
+
 static void test_reconfigure(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -2568,6 +2596,7 @@ int main(void)
 	test_privacy_hook();
 	test_emergency_tx();
 	test_impolite_over_call();
+	test_modem_color_code();
 	test_reconfigure();
 	test_tx_alias();
 	test_alias_formats();

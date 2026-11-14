@@ -200,6 +200,13 @@ transmitting in the slot after the next one, in phase with the bursts being rece
 
 ### 2.5 Transmitting voice
 
+The call stack configures the modem with the channel's transmit color code even when the receive filter accepts
+any CC (any-CC listening, polite-to-all access, or a dual-CC SFR user). `set_cc_filter` changes reception only.
+The HR_C7000 selects that transmit code in `LOCAL_CC` at `tx_begin`, keeps it through the final burst, and restores
+the receive filter or scan code afterwards. Its CC scan runs only while idle, including no scanning during an
+aligned start's wait for slot lock. A receive filter changed during TX takes effect when TX finishes.
+The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3.1 (CC).
+
 1. **Channel access** per the policy (1.7). Busy => wait (with timeout) or refuse.
 2. **RMO, repeater not heard**: BS activation (2.7).
 3. **Alignment**: RMO: wait until the slot tracking is stable, then transmit in the slot after the next one that
@@ -343,7 +350,7 @@ interrupt.
 
 | Command | Effect |
 |---|---|
-| `configure` | own DMR ID, color code (or "any"), sync families to detect, default access policy (impolite / polite to CC / polite to all), DMO / RMO framing |
+| `configure` | own DMR ID, channel's transmit color code and initial receive filter, sync families to detect, default access policy (impolite / polite to CC / polite to all), DMO / RMO framing |
 | `rx_start` / `rx_restart` | receive every slot, passive timing; restart = drop sync and search again. The radio core restarts at every new DMR frequency with the stack running (a scan or channel step): a chip may keep the last transmitter's slot timing otherwise ([gotchas](gotchas.md) 17.2) |
 | `rx_lock_slot(slot or none)` | receive only our slot / both |
 | `tx_begin(timing)` | start a transmission: own timing (DMO), aligned to the received signal on the next slot carrying a given TS (RMO, SFR user), or as soon as possible; with the access policy for this transmission |
@@ -351,7 +358,7 @@ interrupt.
 | `tx_end` | no more bursts: finish the queued ones (a voice call ends at the superframe boundary with its terminator, which the stack has queued), then `tx_done` |
 | `tx_abort` | stop at the next slot (emergency, timeout) |
 | `set_embedded_lc` | the LC (or talker alias / GPS embedded LC) the modem spreads over B-E from the next superframe |
-| `set_cc_filter(cc or any)` | color code deframing |
+| `set_cc_filter(cc or any)` | receive color code deframing; keeps the configured transmit color code |
 | `is_transmitting` | slot-state based (6.1 point 5) |
 | `set_audio_path` | vocoder PCM in / out routing and gains (where the modem owns the codec) |
 | `power(on/off)` | chip power down / up with its init sequence |

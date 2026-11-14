@@ -226,9 +226,19 @@ static void clear_requests(hrc7000_dmr_t *e)
 	w(e, C7_SYS_INTERP_CLEAR, r(e, C7_SYS_INTERP_LIST));
 }
 
+static void set_cc(hrc7000_dmr_t *e, uint8_t cc)
+{
+	e->cc_cur = cc & 0xFu;
+	w(e, C7_LOCAL_CC, e->cc_cur);	// cc_opt 0: deframe only this color code
+}
+
 static void chip_rx_restart(hrc7000_dmr_t *e)
 {
 	clear_requests(e);	// the restart discards what they would report; a stale one would keep its source dead
+	if (e->tx_state == TXS_IDLE) {
+		set_cc(e, e->cc_filter >= 0 ? (uint8_t)e->cc_filter : e->cc_cur);
+		e->cc_tick = e->tick;
+	}
 	w(e, C7_WORK_MODE, C7_WORK_MODE_FM);
 	w(e, C7_WORK_MODE, C7_WORK_MODE_DMR);
 	w(e, C7_VOICE_EMB_CTRL, 0x02);
@@ -296,12 +306,6 @@ static void rx_resync(hrc7000_dmr_t *e)
 	}
 }
 
-static void set_cc(hrc7000_dmr_t *e, uint8_t cc)
-{
-	e->cc_cur = cc & 0xFu;
-	w(e, C7_LOCAL_CC, e->cc_cur);	// cc_opt 0: deframe only this color code
-}
-
 static void rf_off(hrc7000_dmr_t *e)
 {
 	if (e->rf_tx) {
@@ -323,6 +327,9 @@ static void tx_finish(hrc7000_dmr_t *e, bool restart)
 	e->tx_state = TXS_IDLE;
 	e->tx_listen = false;
 	e->st.tx_done++;
+	// Receive on the filter's code (or the scan's) again, on the hold path too: TX used the channel's code
+	set_cc(e, e->cc_filter >= 0 ? (uint8_t)e->cc_filter : e->cc_cur);
+	e->cc_tick = e->tick;
 	// Through a repeater the restart at once, as the original firmware does: both slot syncs released and a new TC
 	// lock, so the next transmission's slots come from the repeater's timing, not ours (issue 72). Direct: the hold
 	if (restart || e->cfg.repeater || BS_ACTIVE(e)) {
@@ -621,7 +628,8 @@ static void rx_tick(hrc7000_dmr_t *e)
 	w(e, C7_LAYER2_TXRX_CTRL, (e->voice_slots & (1u << next)) ? TXRX_RX_VOICE : TXRX_RX);
 
 	// Color code scan when no filter is set: step through the codes while nothing is heard
-	if (e->cc_filter < 0 && (uint32_t)(e->tick - e->cc_tick) >= (e->rx_any ? CC_HOLD_TICKS : CC_SCAN_TICKS)) {
+	if (e->tx_state == TXS_IDLE && e->cc_filter < 0 &&
+	    (uint32_t)(e->tick - e->cc_tick) >= (e->rx_any ? CC_HOLD_TICKS : CC_SCAN_TICKS)) {
 		set_cc(e, (uint8_t)(e->cc_cur + 1u));
 		w(e, C7_LAYER2_CONTROL, L2_PASSIVE);
 		w(e, C7_LAYER2_SLOTON, SLOTON_OFF);
@@ -882,8 +890,6 @@ void hrc7000_dmr_run(hrc7000_dmr_t *e)
 	e->tx_listen = false;
 	e->txq_tail = e->txq_head;
 	e->rx_any = false;
-	e->cc_tick = e->tick;
-	set_cc(e, e->cc_filter >= 0 ? (uint8_t)e->cc_filter : e->cc_cur);
 	chip_rx_restart(e);
 	e->sys_seen = e->st.sys_ints;	// the stuck request check starts over
 	e->sys_waiting = false;
@@ -972,8 +978,7 @@ void hrc7000_dmr_configure(hrc7000_dmr_t *e, const dmr_config_t *cfg)
 	e->cc_filter = cfg->cc;
 	if (BS_ACTIVE(e)) {
 		// The BS outbound's bursts carry their color code; the receiver takes this one when it runs again
-	} else if (e->running && cfg->cc >= 0 && (uint8_t)cfg->cc != e->cc_cur) {
-		set_cc(e, (uint8_t)cfg->cc);
+	} else if (e->running && e->tx_state == TXS_IDLE && cfg->cc >= 0 && (uint8_t)cfg->cc != e->cc_cur) {
 		chip_rx_restart(e);
 	} else if (e->running && framing && e->tx_state == TXS_IDLE) {
 		chip_rx_restart(e);
@@ -985,9 +990,6 @@ void hrc7000_dmr_rx_restart(hrc7000_dmr_t *e)
 {
 	lock(e);
 	if (e->running && e->tx_state == TXS_IDLE && !BS_ACTIVE(e)) {
-		if (e->cc_filter >= 0 && (uint8_t)e->cc_filter != e->cc_cur) {
-			set_cc(e, (uint8_t)e->cc_filter);	// a color code set while the BS outbound ran
-		}
 		chip_rx_restart(e);
 	}
 	unlock(e);
@@ -1009,6 +1011,8 @@ bool hrc7000_dmr_tx_begin(hrc7000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 		ok = false;
 	}
 	if (ok) {
+		// LOCAL_CC also frames TX; keep cc_cur as the receive code to restore afterwards.
+		w(e, C7_LOCAL_CC, e->cfg.cc >= 0 ? (uint8_t)e->cfg.cc : e->cc_cur);
 		e->tx_timing = (uint8_t)timing;
 		e->tx_ts = ts;
 		e->tx_access = (uint8_t)access;
@@ -1130,9 +1134,7 @@ void hrc7000_dmr_set_cc_filter(hrc7000_dmr_t *e, int8_t cc)
 {
 	lock(e);
 	e->cc_filter = cc;
-	e->cfg.cc = cc;
 	if (e->running && cc >= 0 && (uint8_t)cc != e->cc_cur && e->tx_state == TXS_IDLE && !BS_ACTIVE(e)) {
-		set_cc(e, (uint8_t)cc);
 		chip_rx_restart(e);
 	}
 	unlock(e);

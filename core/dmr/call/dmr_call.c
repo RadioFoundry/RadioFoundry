@@ -1683,11 +1683,16 @@ void dmr_call_set_voice(const dmr_voice_sink_t *sink, const dmr_voice_source_t *
 static void modem_config(dmr_config_t *mc)
 {
 	mc->own_id = s.cfg.own_id;
-	bool two_cc = sfr_user() && s.cfg.cc2 >= 0 && s.cfg.cc2 != s.cfg.cc;	// an ERDM user: the stack filters
-
-	mc->cc = (s.cfg.listen.any_cc || s.cfg.access == DMR_ACCESS_POLITE_ALL || two_cc) ? -1 : (int8_t)s.cfg.cc;
+	mc->cc = (int8_t)s.cfg.cc;
 	mc->access = s.cfg.access;
 	mc->repeater = s.cfg.rmo;
+}
+
+static int8_t modem_cc_filter(void)
+{
+	bool two_cc = sfr_user() && s.cfg.cc2 >= 0 && s.cfg.cc2 != s.cfg.cc;	// an ERDM user: the stack filters
+
+	return (s.cfg.listen.any_cc || s.cfg.access == DMR_ACCESS_POLITE_ALL || two_cc) ? -1 : (int8_t)s.cfg.cc;
 }
 
 static void modem_apply(void)
@@ -1696,7 +1701,7 @@ static void modem_apply(void)
 
 	modem_config(&mc);
 	s.modem->configure(&mc);
-	s.modem->set_cc_filter(mc.cc);
+	s.modem->set_cc_filter(modem_cc_filter());
 	s.modem->rx_lock_slot(s.cfg.rmo ? (int8_t)s.cfg.ts : 0);
 }
 
@@ -1755,7 +1760,7 @@ bool dmr_call_start(void)
 	if (!s.modem->start(&mc, on_event, NULL))
 		return false;
 	s.running = true;
-	s.modem->set_cc_filter(mc.cc);
+	s.modem->set_cc_filter(modem_cc_filter());
 	s.modem->rx_lock_slot(s.cfg.rmo ? (int8_t)s.cfg.ts : 0);
 	s.dirty = true;
 	return true;

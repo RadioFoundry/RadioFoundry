@@ -88,7 +88,7 @@ typedef void (*dmr_event_cb_t)(const dmr_event_t *ev, void *ctx);
 
 typedef struct {
 	uint32_t own_id;
-	int8_t cc;		// -1 = any
+	int8_t cc;		// channel's TX code and initial RX filter; -1 = follow RX (no channel configured)
 	dmr_access_t access;
 	bool repeater;		// RMO framing (BS sync expected) vs DMO
 } dmr_config_t;
@@ -151,6 +151,8 @@ typedef struct {
 	void (*tx_end)(void);		// send what is queued, then DMR_EV_TX_DONE
 	void (*tx_abort)(void);
 	void (*set_embedded_lc)(const uint8_t lc[9]);	// spread over B-E from the next superframe
+	// The receive filter: -1 = any, else the configured code (the call layer passes nothing else, so a driver that
+	// writes it to the chip's one CC register leaves the TX code as configured)
 	void (*set_cc_filter)(int8_t cc);
 	bool (*is_transmitting)(void);	// slot state, never the PA
 	// Optional (NULL: the driver can't). For the transmission begun last: receive in the slots between our bursts and
