@@ -437,8 +437,9 @@ typedef struct {
 	bool t3_both;			// on a control channel: both slots
 	bool t3_ptt_wait;		// PTT held on the TSCC: waiting for our grant
 	bool t3_als_keyed;		// keyed by an Ambient Listening call (6.6.2.6), not by the user
-	uint32_t t3_als_quiet_ms;
-	uint8_t t3_stun_kept;		// settings t3_stun as last written for the system in use (0: not stunned)	// unkeyed at T_ALS: the call ends once the terminator is out
+	uint32_t t3_als_quiet_ms;	// unkeyed at T_ALS: the call ends once the terminator is out
+	uint8_t t3_stun_kept;		// settings t3_stun as last written for the system in use (0: not stunned)
+	uint32_t t3_sd_seen;		// the engine's short data count already given to the inbox
 	bool t3_talking;		// PTT went to the stack for a trunked call
 	uint32_t t3_ticks;		// the stack's tick count handed to the engine
 	uint8_t t3_slot;		// the slot of the last tick handed to it

@@ -2270,6 +2270,31 @@ static void rxResult(dmrDataRxResult_t result, bool block)
 	queueReplyEntry(&reply);
 }
 
+// A received message into the inbox (replacing the oldest when full), announced
+static void inboxStore(uint32_t src, uint32_t dst, bool group, uint8_t seq, uint8_t format, const char *text)
+{
+	lock();
+	uint8_t next = (inboxUsed == 0) ? 0 : ((inboxNewest + 1) % DMR_DATA_INBOX_SIZE);
+	dmrDataMessage_t *message = &inbox[next];
+	message->src = src;
+	message->dst = dst;
+	message->group = group;
+	message->seq = seq;
+	message->receivedAt = now;
+	message->unread = true;
+	message->format = format;
+	strncpy(message->text, text, sizeof(message->text) - 1);
+	message->text[sizeof(message->text) - 1] = '\0';
+	inboxNewest = next;
+	if (inboxUsed < DMR_DATA_INBOX_SIZE)
+	{
+		inboxUsed++;
+	}
+	unlock();
+	stats.smsReceived++;
+	post(DMR_DATA_EV_SMS_RECEIVED, src);
+}
+
 static void handlePacket(const dmrDataPacket_t *packet)
 {
 	dmrDataUDP_t udp;
@@ -2490,27 +2515,17 @@ static void handlePacket(const dmrDataPacket_t *packet)
 		}
 	}
 
-	lock();
-	uint8_t next = (inboxUsed == 0) ? 0 : ((inboxNewest + 1) % DMR_DATA_INBOX_SIZE);// replaces the oldest when full
-	dmrDataMessage_t *message = &inbox[next];
-	message->src = packet->src;
-	message->dst = packet->dst;
-	message->group = packet->group;
-	message->seq = tms.seq;
-	message->receivedAt = now;
-	message->unread = true;
-	message->format = format;
-	memcpy(message->text, tms.text, sizeof(message->text));
-	inboxNewest = next;
-	if (inboxUsed < DMR_DATA_INBOX_SIZE)
-	{
-		inboxUsed++;
-	}
-	unlock();
-	stats.smsReceived++;
+	inboxStore(packet->src, packet->dst, packet->group, tms.seq, format, tms.text);
 	stats.etsiSmsReceived += (format == DMR_SMS_FORMAT_ETSI) ? 1 : 0;
 	stats.ipTextReceived += (format == DMR_SMS_FORMAT_ETSI_IP) ? 1 : 0;
-	post(DMR_DATA_EV_SMS_RECEIVED, packet->src);
+}
+
+void dmrDataServiceInboxAdd(uint32_t src, uint32_t dst, bool group, const char *text)
+{
+	if (CONFIG_DMR_SMS && (text[0] != '\0'))
+	{
+		inboxStore(src, dst, group, 0, DMR_SMS_FORMAT_ETSI, text);
+	}
 }
 
 static uint32_t getId(const uint8_t *p)

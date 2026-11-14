@@ -299,6 +299,8 @@ bool dmrDataServiceRadioCheck(uint32_t dst);
 // The answer to the call alert or radio check being sent to dst, learned another way (a trunked system answers a radio
 // check as a status poll): finishes it as if the answer was heard (ok) or never came. Before dmrDataServiceTxDone
 void dmrDataServiceSignalResult(uint32_t dst, bool ok);
+// A text received another way (a trunked system's short data) into the inbox, as a received message
+void dmrDataServiceInboxAdd(uint32_t src, uint32_t dst, bool group, const char *text);
 // format: dmr_sms_format_t (ETSI_IP, ETSI or TMS; DEFAULT: the setting)
 bool dmrDataServiceSendSMSFormat(bool group, uint32_t dst, const char *text, bool ackRequested, uint8_t format);
 // The emergency alarm (CONFIG_DMR_EMERGENCY): the CSBK to dst (group or individual) with the feature set ID fid,

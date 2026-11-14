@@ -382,6 +382,10 @@ talkgroup it isn't. A bad CRC or a missing block keeps nothing and answers nothi
 Supplementary data (SF set) isn't taken. A repeat (the same caller, destination, format and octets within
 `T3_REPEAT_MS`) is answered again but not counted, as for a status.
 
+Text kept in `sd_rx` (UDT_Format ISO 7 bit, ISO 8 bit or UTF-16BE) also goes into the message inbox as a message
+from the caller, once per new one (`dmrDataServiceInboxAdd`), so the user reads it with the other messages. The
+other formats stay for the debug link.
+
 **Polling (6.6.5).** `t3_ms_sdata_poll` asks an MS for its short data: a C_RAND kind UDT poll (0110b) with the
 format in POL_FMT (table 7.60) and the blocks less one in Appended_Short_Data (table 6.56). The size is prearranged
 between the two MSs.

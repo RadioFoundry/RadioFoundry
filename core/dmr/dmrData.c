@@ -1166,33 +1166,44 @@ bool dmrDataDecodeEtsiText(const dmrDataPacket_t *packet, char *text, int textSi
 		{
 			return false;
 		}
-		int bits = (length * 8) - packet->padBits;
-
-		if (format == DMR_UDT_FORMAT_ISO7)
-		{
-			decode7bit(d, bits, text, textSize, &n);
-		}
-		else if (format == DMR_UDT_FORMAT_ISO8)
-		{
-			for (int i = 0; (i < (bits / 8)) && (d[i] != 0); i++)
-			{
-				textPut(text, textSize, &n, latin1(d[i]));
-			}
-		}
-		else if (format == DMR_UDT_FORMAT_UTF16BE)
-		{
-			decodeUTF16(d, bits / 8, true, text, textSize, &n);
-		}
-		else
-		{
-			return false;
-		}
+		return dmrDataDecodeUdtText(format, d, (length * 8) - packet->padBits, text, textSize);
 	}
 	else
 	{
 		return false;
 	}
 
+	text[n] = '\0';
+	return true;
+}
+
+bool dmrDataDecodeUdtText(uint8_t format, const uint8_t *d, int bits, char *text, int textSize)
+{
+	int n = 0;
+
+	if ((textSize <= 0) || (bits < 0))
+	{
+		return false;
+	}
+	if (format == DMR_UDT_FORMAT_ISO7)
+	{
+		decode7bit(d, bits, text, textSize, &n);
+	}
+	else if (format == DMR_UDT_FORMAT_ISO8)
+	{
+		for (int i = 0; (i < (bits / 8)) && (d[i] != 0); i++)
+		{
+			textPut(text, textSize, &n, latin1(d[i]));
+		}
+	}
+	else if (format == DMR_UDT_FORMAT_UTF16BE)
+	{
+		decodeUTF16(d, bits / 8, true, text, textSize, &n);
+	}
+	else
+	{
+		return false;
+	}
 	text[n] = '\0';
 	return true;
 }

@@ -2845,6 +2845,27 @@ static uint8_t t3_stun_word(uint8_t sys, uint8_t model, uint16_t net)
 	return (uint8_t)(SETTINGS_T3_STUN | ((sys - 1u) << 4) | (h & 0x0Fu));
 }
 
+// Short data text to the radio (6.6.4; a reply to its own poll too) goes into the message inbox as a received message.
+// Other formats (binary, BCD, addresses, NMEA, IP) stay for the debug link only
+static void t3_sd_inbox(radio_sm_t *sm)
+{
+	if (t3m.sd_rx.count == sm->t3_sd_seen) {
+		return;
+	}
+	sm->t3_sd_seen = t3m.sd_rx.count;
+#if CONFIG_DMR_DATA_CORE
+	char text[sizeof(((dmrDataMessage_t *)0)->text)];
+	if (!dmrDataDecodeUdtText(t3m.sd_rx.format, t3m.sd_rx.data, t3m.sd_rx.len * 8, text, sizeof text)) {
+		return;
+	}
+	size_t n = strlen(text);
+	while (n > 0 && text[n - 1] == 0x7F) {
+		text[--n] = '\0';	// ISO 7 bit: the pad bits of the last octet, all ones, read as one more character
+	}
+	dmrDataServiceInboxAdd(t3m.sd_rx.src, t3m.sd_rx.dst, t3m.sd_rx.group, text);
+#endif
+}
+
 // A stun or revive taken on a codeplug system: kept in the settings (written once the changes rest)
 static void t3_keep_stun(radio_sm_t *sm, uint32_t now_ms)
 {
@@ -2914,6 +2935,7 @@ static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 	bool killed = t3m.killed;	// any network's, until the radio restarts
 	last_net = net;
 	t3_ms_start(&t3m, &t3s.cfg, now_ms);
+	sm->t3_sd_seen = t3m.sd_rx.count;
 	t3_ms_set_stunned(&t3m, stunned);
 	t3_ms_set_killed(&t3m, killed);
 	t3_publish(sm);
@@ -3330,6 +3352,7 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	}
 #endif
 	t3_keep_stun(sm, now_ms);
+	t3_sd_inbox(sm);
 	t3_publish(sm);
 }
 #endif
