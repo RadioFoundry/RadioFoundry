@@ -171,6 +171,59 @@ static void test_load(void)
 	CHECK(sim_flash_violations() == 0);
 }
 
+#if CONFIG_DMR_TRUNK_SUPL
+// The supplementary user data a system's radios offer (12.8): its format and octets; none without a record, or with
+// one that has no octets; the debug link's staging is not the codeplug's
+static void test_supl(void)
+{
+	uint8_t v[SYS_LEN];
+	radio_t3_setup_t s;
+	fresh();
+	sys_rec(v, "Metro", T3_OPT_PRIVATE, 0, 0);
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_T3_SYSTEM, v, sizeof v));
+	chan(CODEPLUG_KEY_T3_CHAN, 0, true, 1, 461462500, 461087500);
+	CHECK(radio_t3_load(0, &s) && s.cfg.supl_len == 0);
+
+	const uint8_t rec[] = { T3_UDTF_ISO8, 'U', 'n', 'i', 't', ' ', '7' };
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_T3_SUPL, rec, sizeof rec));
+	CHECK(radio_t3_load(0, &s) && s.cfg.supl_format == T3_UDTF_ISO8 && s.cfg.supl_len == 6);
+	CHECK(s.cfg.supl_data == s.supl && memcmp(s.supl, "Unit 7", 6) == 0);
+	// another system's record isn't this one's
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_T3_SYSTEM + 1, v, sizeof v));
+	chan((uint16_t)(CODEPLUG_KEY_T3_CHAN + 1), 1, true, 2, 451000000, 456000000);
+	CHECK(radio_t3_load(1, &s) && s.cfg.supl_len == 0);
+
+	// at most 46 octets; a longer value is cut to them
+	uint8_t big[1 + T3_UDT_MAX + 4];
+	memset(big, 'x', sizeof big);
+	big[0] = 0x10u | T3_UDTF_BINARY;		// the format's low four bits
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_T3_SUPL, big, sizeof big));
+	CHECK(radio_t3_load(0, &s) && s.cfg.supl_format == T3_UDTF_BINARY && s.cfg.supl_len == T3_UDT_MAX);
+	// the format alone: none offered
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_T3_SUPL, rec, 1));
+	CHECK(radio_t3_load(0, &s) && s.cfg.supl_len == 0);
+	CHECK(sim_flash_violations() == 0);
+}
+#endif
+
+// A short data poll record longer than its buffer (12.7) is cut to it: the reply is never past T3_UDT_MAX octets,
+// whatever length the record stores
+static void test_poll_long(void)
+{
+	uint8_t v[SYS_LEN];
+	radio_t3_setup_t s;
+	fresh();
+	sys_rec(v, "Metro", T3_OPT_PRIVATE, 0, 0);
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_T3_SYSTEM, v, sizeof v));
+	chan(CODEPLUG_KEY_T3_CHAN, 0, true, 1, 461462500, 461087500);
+	uint8_t big[2 + T3_UDT_MAX + 20];
+	memset(big, 'y', sizeof big);
+	big[0] = T3_UDTF_ISO8;
+	big[1] = 4;
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_T3_POLL, big, sizeof big));
+	CHECK(radio_t3_load(0, &s) && s.cfg.poll_len == T3_UDT_MAX && s.poll_reply[T3_UDT_MAX - 1] == 'y');
+}
+
 // A trunked channel's talk target and talkgroups (12.4): its contact and RX group list
 static void test_talk(void)
 {
@@ -374,6 +427,10 @@ static void test_debuglink(void)
 int main(void)
 {
 	test_load();
+#if CONFIG_DMR_TRUNK_SUPL
+	test_supl();
+#endif
+	test_poll_long();
 	test_talk();
 	test_key();
 	test_tag();

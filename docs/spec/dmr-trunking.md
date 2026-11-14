@@ -443,8 +443,8 @@ The number belongs to a call when the grant from that gateway to the same destin
 (10 s) of it (`t3_call_t.cli`): the TSCC downloads it in the call set-up (figure 6.45).
 
 The download doesn't carry the sender (figures 6.38, 6.39), so the radio holds it until the call does. A repeat within
-`T3_REPEAT_MS` is answered again and keeps a sender already named. On the radio the debug link stages the data (`SUPL`,
-[debuglink.md](debuglink.md) 3.26) and the view shows the last heard (`supl_*`).
+`T3_REPEAT_MS` is answered again and keeps a sender already named. The data comes from the system's codeplug record (12.8), or the debug
+link stages it (`SUPL`, [debuglink.md](debuglink.md) 3.26); the view shows the last heard (`supl_*`).
 
 ### 7.7 Packet data (6.6.3)
 
@@ -757,7 +757,7 @@ on its voice, and never camps on another system or on a control channel that isn
 |---|---|
 | CACH short LC reception on modems that don't report it yet (`hrc_chip_t.slc_rx_addr` 0, or another driver) | the location of the chip's short LC |
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
-| Supplementary data in the codeplug (only the debug link stages it), a list subscription without registering | later |
+| A list subscription without registering | later |
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
 | Power save: the receiver off while asleep on boards without `rx_sleep_dmr` | each board's `rx_sleep` on a DMR channel |
 | The interrupted talker's side: the reverse channel's cease command while transmitting (6.4.15.2) | reverse channel reception in the modem drivers |
@@ -792,7 +792,7 @@ the SDR bench.
 ## 12. In the codeplug
 
 A trunked system is a record of its own; a **trunked channel** is an ordinary codeplug channel tagged with the system
-it uses. Zones hold trunked channels like any other, mixed with conventional ones. Four key families of the codeplug
+it uses. Zones hold trunked channels like any other, mixed with conventional ones. Six key families of the codeplug
 settings area ([codeplug-settings.md](codeplug-settings.md) 3) hold them:
 
 | Keys | Records |
@@ -802,6 +802,7 @@ settings area ([codeplug-settings.md](codeplug-settings.md) 3) hold them:
 | 0x0300 + n | System n's authentication key (12.3) |
 | 0x0400 + c - 1 | The tag of channel c, c = 1 to 1024 (12.4) |
 | 0x0800 + n | System n's short data poll setting and reply (12.7) |
+| 0x0900 + n | The supplementary user data the radio offers on system n (12.8) |
 
 ### 12.1 System
 
@@ -966,7 +967,20 @@ the MS in this format and size. The answer comes as short data and goes into the
 can't start, is refused, goes unanswered or is cut short by leaving the system counts in `t3.poll_fails`; the screen
 says "Poll: no short data".
 
-### 12.8 Calls
+### 12.8 Supplementary data
+
+Key 0x0900 + n, the supplementary user data (6.4.13, section 7.6) the radio offers with each call on system n: data in a
+format and size prearranged with the system, a position or a unit number, say.
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 1 | UDT_Format (table 7.60) |
+| 1 | 1-46 | The octets, in that format (ISO 8 bit: the text itself) |
+
+With no record, or one without octets, the radio offers none. The debug link's SUPL (11) replaces it for the staged
+system until the next load. Built with `CONFIG_DMR_TRUNK_SUPL`; a build without it ignores the record.
+
+### 12.9 Calls
 
 | Call | |
 |---|---|

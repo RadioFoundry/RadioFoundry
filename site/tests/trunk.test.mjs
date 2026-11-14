@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { CodeplugImage } from "../static/js/codeplug/image.js";
 import { KV_ADDR, KV_SIZE, decodeArea, getValue, putArea } from "../static/js/codeplug/kv.js";
 import { decode, encode, empty, validate, remove, newChannel, setTrunk, putSystem, systemUsable } from "../static/js/codeplug/model.js";
-import { nameCheck, decodeTag, decodeSystem, decodeKey, encodeSystem, newSystem, T3_KEY, decodePoll, encodePoll, encodePollReply } from "../static/js/codeplug/trunk.js";
+import { nameCheck, decodeTag, decodeSystem, decodeKey, encodeSystem, newSystem, T3_KEY, decodePoll, encodePoll, encodePollReply, decodeSupl, encodeSupl } from "../static/js/codeplug/trunk.js";
 import { parseSystem } from "../static/js/editor/trunkview.js";
 import { columns, channelForm } from "../static/js/editor/views.js";
 import { History } from "../static/js/editor/undo.js";
@@ -243,6 +243,37 @@ test("a new system: the lowest free number, its channels and key, read back the 
 	assert.deepEqual([byName(m2, "County").rxHz, byName(m2, "County").txHz], [451050000, 456050000]);
 });
 
+test("the supplementary data record (12.8): format and octets; no record without data; kept when not text", () => {
+	const m = decode(fixture());
+	const [s0, s1] = m.trunkSystems;
+	assert.deepEqual([s0.suplFormat, s0.suplData], [4, ""], "no record: none offered");
+	s0.suplData = "Unit 7";
+	s1.suplFormat = 3;
+	s1.suplData = "AB";
+	const img = encode(m);
+	assert.deepEqual(value(img, 0x0900), Uint8Array.of(4, ...[..."Unit 7"].map((c) => c.charCodeAt(0))));
+	assert.deepEqual(value(img, 0x0901), Uint8Array.of(3, 0x83, 0x08));
+	const back = decode(img).trunkSystems;
+	assert.deepEqual([back[0].suplData, back[1].suplData, back[1].suplFormat], ["Unit 7", "AB", 3]);
+	// binary data: not text, kept as stored through an edit of something else
+	assert.deepEqual(decodeSupl(Uint8Array.of(0, 1, 2, 3)), { suplFormat: 0, suplData: null, suplRaw: Uint8Array.of(1, 2, 3) });
+	assert.deepEqual(encodeSupl({ suplFormat: 0, suplData: null, suplRaw: Uint8Array.of(1, 2, 3) }), Uint8Array.of(0, 1, 2, 3));
+	assert.equal(decodeSupl(Uint8Array.of(4)).suplData, "", "the format alone: none");
+	// a character the format lacks: an error, the record as it was
+	const m3 = decode(img);
+	m3.trunkSystems[1].suplData = "é";
+	assert.deepEqual(validate(m3).filter((x) => x.code === "t3_supl_data").map((x) => [x.level, x.field]), [["error", "suplData"]]);
+	assert.deepEqual(value(encode(m3), 0x0901), Uint8Array.of(3, 0x83, 0x08));
+	// cleared: the record goes; a deleted system takes it with it
+	const m2 = decode(img);
+	m2.trunkSystems[0].suplData = "";
+	const img2 = encode(m2);
+	assert.equal(value(img2, 0x0900), null);
+	const m4 = decode(img2);
+	m4.trunkSystems = m4.trunkSystems.filter((s) => s.number !== 2);
+	assert.equal(value(encode(m4), 0x0901), null);
+});
+
 test("the short data poll record (12.7): format, blocks, the reply in that format; none when all is default", () => {
 	const m = decode(fixture());
 	const [s0, s1] = m.trunkSystems;
@@ -375,6 +406,11 @@ test("the system dialog's parser: blanks are 0, typed values checked", () => {
 	assert.deepEqual([fields.pollFormat, fields.pollBlocks, fields.pollReply], [4, 4, ""]);
 	assert.equal(parseSystem({ ...raw, pollFormat: 7, pollReply: "x".repeat(24) }, t).errors.length, 1);
 	assert.equal(parseSystem({ ...raw, pollFormat: 0, pollReply: null }, t).fields.pollReply, null);
+	// supplementary data: text in the format, empty is none, or kept as stored
+	assert.equal(parseSystem({ ...raw, suplFormat: 4, suplData: "x".repeat(47) }, t).errors.length, 1);
+	assert.equal(parseSystem({ ...raw, suplFormat: 4, suplData: "Unit 7" }, t).fields.suplData, "Unit 7");
+	assert.equal(parseSystem({ ...raw, suplFormat: 4, suplData: "" }, t).errors.length, 0);
+	assert.equal(parseSystem({ ...raw, suplFormat: 0, suplData: null }, t).fields.suplData, null);
 });
 
 test("the channel table's DMR Trunked mode tags a channel with a system; FM or DMR untags it", () => {

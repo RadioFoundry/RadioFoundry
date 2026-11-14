@@ -116,13 +116,25 @@ bool radio_t3_load(uint8_t n, radio_t3_setup_t *s)
 	bool keyed = load_key(n, c);
 	// The short data poll (12.7): UDT_Format, the blocks asked for, then the reply's octets in that format
 	uint8_t p[2u + T3_UDT_MAX];
+	// (a get gives the stored length, which may pass what it copied: a record is cut to the buffer)
 	int plen = codeplug_kv_get((uint16_t)(CODEPLUG_KEY_T3_POLL + n), p, sizeof p);
+	plen = plen > (int)sizeof p ? (int)sizeof p : plen;
 	if (plen >= 2) {
 		c->poll_format = p[0] & 0x0Fu;
 		s->poll_blocks = p[1] >= 1u && p[1] <= T3_UDT_BLOCKS_MAX ? p[1] : 0u;
 		c->poll_len = (uint8_t)(plen - 2);
 		memcpy(s->poll_reply, p + 2, c->poll_len);
 	}
+#if CONFIG_DMR_TRUNK_SUPL
+	// Supplementary user data offered with each call (12.8): UDT_Format, then the octets (the poll's buffer)
+	plen = codeplug_kv_get((uint16_t)(CODEPLUG_KEY_T3_SUPL + n), p, 1u + T3_UDT_MAX);
+	plen = plen > (int)(1u + T3_UDT_MAX) ? (int)(1u + T3_UDT_MAX) : plen;
+	if (plen >= 2) {
+		c->supl_format = p[0] & 0x0Fu;
+		c->supl_len = (uint8_t)(plen - 1);
+		memcpy(s->supl, p + 1, c->supl_len);
+	}
+#endif
 
 	// Channels in key order: the plan's table, and the control channels among them
 	uint8_t r[CHAN_LEN];

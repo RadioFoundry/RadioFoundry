@@ -84,6 +84,13 @@ export function parseSystem(raw, t) {
 		f.pollRaw = null;
 		if (!encodePollReply(f.pollFormat, f.pollReply)) bad("editor.t3.poll_reply", t("editor.err.t3_poll_reply", { max: POLL_MAX }));
 	}
+	f.suplFormat = raw.suplFormat ?? POLL_FORMATS.iso8;
+	if (raw.suplData === null) f.suplData = null;	// data in a format not written here: kept as stored
+	else {
+		f.suplData = String(raw.suplData ?? "");
+		f.suplRaw = null;
+		if (f.suplData && !encodePollReply(f.suplFormat, f.suplData)) bad("editor.t3.supl_data", t("editor.err.t3_poll_reply", { max: POLL_MAX }));
+	}
 
 	const chans = [];
 	(raw.chans || []).forEach((c, i) => {
@@ -252,6 +259,13 @@ function systemDialog(api, s, isNew) {
 	const pollKept = () => (pollReply.disabled = s.pollReply === null && val(pollFormat) === s.pollFormat);
 	pollFormat.addEventListener("change", pollKept);
 	pollKept();
+	const suplOpts = Object.entries(POLL_FORMATS).map(([k, n]) => [n, t(`editor.t3.poll_format.${k}`)]);
+	if (!Object.values(POLL_FORMATS).includes(s.suplFormat)) suplOpts.push([s.suplFormat, t("editor.t3.poll_format.other", { n: s.suplFormat })]);
+	const suplFormat = select(suplOpts, s.suplFormat);
+	const suplData = text(s.suplData ?? "", { maxlength: 52 });
+	const suplKept = () => (suplData.disabled = s.suplData === null && val(suplFormat) === s.suplFormat);
+	suplFormat.addEventListener("change", suplKept);
+	suplKept();
 
 	const sync = () => {
 		netHelp.textContent = t("editor.t3.net_help", { max: netMax(val(model)) });
@@ -306,7 +320,11 @@ function systemDialog(api, s, isNew) {
 		h("p", { class: "form-note small muted" }, t("editor.t3.poll_help")),
 		row(t("editor.t3.poll_format"), pollFormat),
 		row(t("editor.t3.poll_blocks"), pollBlocks, t("editor.t3.poll_blocks_help")),
-		row(t("editor.t3.poll_reply"), pollReply, t(s.pollReply === null ? "editor.t3.poll_reply_kept" : "editor.t3.poll_reply_help"))));
+		row(t("editor.t3.poll_reply"), pollReply, t(s.pollReply === null ? "editor.t3.poll_reply_kept" : "editor.t3.poll_reply_help")),
+		h("h3", { class: "form-group" }, t("editor.t3.supl")),
+		h("p", { class: "form-note small muted" }, t("editor.t3.supl_help")),
+		row(t("editor.t3.poll_format"), suplFormat),
+		row(t("editor.t3.supl_data"), suplData, t(s.suplData === null ? "editor.t3.supl_data_kept" : "editor.t3.supl_data_help"))));
 	const errs = h("p", { class: "notice bad", hidden: true });
 	const body = [h("h3", { class: "form-group" }, t("editor.t3.basic")), basic, advanced, errs];
 	for (const el of [model, auth.box, key, sharing]) {
@@ -325,6 +343,7 @@ function systemDialog(api, s, isNew) {
 			leaveDbm: leave.value, powerSave: val(ps), sites: sites.value, pollFormat: val(pollFormat), pollBlocks: val(pollBlocks),
 			// a reply kept as stored stays so while its format does; another format starts a text reply
 			pollReply: s.pollReply === null && val(pollFormat) === s.pollFormat ? null : pollReply.value,
+			suplFormat: val(suplFormat), suplData: s.suplData === null && val(suplFormat) === s.suplFormat ? null : suplData.value,
 			chans: [...tbody.children].map((tr) => tr._read()),
 			...Object.fromEntries(OPTIONS.map((k) => [k, opts[k].box.checked])),
 		};

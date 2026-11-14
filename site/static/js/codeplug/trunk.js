@@ -7,7 +7,7 @@
 import { putName, getName } from "./fields.js";
 import { ID_MAX } from "./kv.js";
 
-export const T3_KEY = { system: 0x0100, chan: 0x0200, key: 0x0300, tag: 0x0400, poll: 0x0800 };
+export const T3_KEY = { system: 0x0100, chan: 0x0200, key: 0x0300, tag: 0x0400, poll: 0x0800, supl: 0x0900 };
 export const T3_LIMITS = {
 	systems: 8,		// RADIO_T3_SYSTEMS
 	chanKeys: 256,		// keys 0x0200-0x02FF
@@ -70,7 +70,7 @@ export function newSystem(fields = {}) {
 		acceptAls: false, acceptKill: false, noRoaming: false, acceptStun: false, authenticates: false, ipGateway: false,
 		ownId: 0, sharing: 0, fallbackHold: 0, fallback: null,
 		planBaseHz: 0, planFirstLcn: 0, planSep: 0, planTxLow: false, planNoLearn: false, planSplitHz: 0,
-		leaveDbm: 0, powerSave: 0, sites: [], key: "", psn: 0, ...POLL_DEFAULT, ...fields,
+		leaveDbm: 0, powerSave: 0, sites: [], key: "", psn: 0, ...POLL_DEFAULT, ...SUPL_DEFAULT, ...fields,
 	};
 }
 
@@ -249,6 +249,28 @@ export function encodePoll(s) {
 	v[0] = s.pollFormat & 0x0F;
 	v[1] = s.pollBlocks;
 	v.set(d, 2);
+	return v;
+}
+
+// --- Supplementary data (12.8) ---
+
+// No record: none offered. suplData null: data in a format the editor doesn't write (suplRaw)
+export const SUPL_DEFAULT = { suplFormat: POLL_FORMATS.iso8, suplData: "", suplRaw: null };
+
+// The supplementary data fields of a record (UDT_Format, then the octets), or the defaults when it has no octets
+export function decodeSupl(v) {
+	if (!v || v.length < 2) return { ...SUPL_DEFAULT };
+	const p = decodePoll(Uint8Array.of(v[0], 4, ...v.subarray(1)));
+	return { suplFormat: p.pollFormat, suplData: p.pollReply, suplRaw: p.pollRaw };
+}
+
+// The record for a system's supplementary data, or null when it offers none or the text doesn't encode
+export function encodeSupl(s) {
+	const d = s.suplData === null ? s.suplRaw ?? new Uint8Array(0) : encodePollReply(s.suplFormat, s.suplData ?? "");
+	if (!d || !d.length) return null;
+	const v = new Uint8Array(1 + d.length);
+	v[0] = s.suplFormat & 0x0F;
+	v.set(d, 1);
 	return v;
 }
 
