@@ -998,11 +998,6 @@ static unsigned csbks_on_air(void)
 	return air_of(DMR_BURST_CSBK);
 }
 
-// Keyed as the repeater's hang ends (issue 524): it still counts as up, so no wake-up, and the modem's aligned start
-// finds no repeater timing. The modem's own slot numbers while it transmits must not keep the repeater "up", and the
-// refused start wakes the repeater instead of being refused, once per key-up
-// Listening between our bursts through a repeater (tx_listen): a repeater that drops under our over (its hang ended
-// as we keyed, issue 538) is woken again and the voice starts over
 static unsigned rpt_drops(void)
 {
 	dmr_call_stats_t st;
@@ -1221,6 +1216,51 @@ static void test_rmo_drop_before_first_burst(void)
 	run_ms(2500);
 }
 
+static unsigned data_left;
+
+static bool data_next(dmr_tx_burst_t *out, void *ctx)
+{
+	(void)ctx;
+	if (data_left == 0)
+		return false;
+	data_left--;
+	memset(out, 0, sizeof(*out));
+	out->kind = DMR_BURST_RATE_12_DATA;
+	out->len = 12;
+	return true;
+}
+
+// A data list after a voice over that listened: no repeater burst comes between its bursts (the modem doesn't listen),
+// so the slot numbers keep the repeater up, as before the over (else, past DMR_CALL_REPEATER_HOLD_MS, a PTT press
+// after the list woke a repeater that was up)
+static void test_rmo_data_after_listened_over(void)
+{
+	dmr_call_config_t c = base_cfg();
+	dmr_data_source_t d = { .next = data_next, .count = 12 };
+	c.rmo = true;
+	c.ts = 2;
+
+	setup(&c);
+	sim.held_slot_numbers = true;
+	sim.listen_bursts = true;
+	sim.repeater = true;
+	run_ms(180);
+	dmr_call_ptt(true);
+	run_ms(400);
+	CHECK(sim.tx_listens == 1 && V()->phase == DMR_CALL_PHASE_TX_VOICE);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->repeater_up);
+	data_left = 12;
+	CHECK(dmr_call_data_tx(&d));
+	run_ms(DMR_CALL_REPEATER_HOLD_MS + 300);
+	CHECK(dmr_call_data_busy() && V()->repeater_up);
+	run_ms(1000);
+	CHECK(!dmr_call_data_busy());
+}
+
+// Listening between our bursts through a repeater (tx_listen): a repeater that drops under our over (its hang ended
+// as we keyed, issue 538) is woken again and the voice starts over
 static void test_rmo_drop_under_over(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -1270,6 +1310,23 @@ static void test_rmo_drop_under_over(void)
 	dmr_call_ptt(false);
 	run_ms(600);
 	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && src.ends == 2);	// the dropped over's source ended too
+
+	// A neighbor's repeater on another color code heard between our bursts (a modem that doesn't filter the CC) is
+	// not ours: the drop of ours is still seen
+	setup(&c);
+	sim.held_slot_numbers = true;
+	sim.listen_bursts = true;
+	sim.repeater = true;
+	run_ms(180);
+	d0 = rpt_drops();
+	dmr_call_ptt(true);
+	run_ms(300);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && air_of(DMR_BURST_VOICE) > 0);
+	sim.listen_other_cc = true;	// ours down, the neighbor's on
+	run_ms(DMR_CALL_TX_DROP_MS + 110);
+	CHECK(rpt_drops() == d0 + 1 && sim.tx_ends == 1);
+	dmr_call_ptt(false);
+	run_ms(4000);
 
 	// The repeater still sends our aborted over (its echo, our ID) as it is woken: not a call that makes the channel
 	// busy, so the voice starts again (bench: refused as busy)
@@ -1422,6 +1479,9 @@ static void test_rmo_drop_under_over(void)
 	run_ms(600);
 }
 
+// Keyed as the repeater's hang ends (issue 524): it still counts as up, so no wake-up, and the modem's aligned start
+// finds no repeater timing. The modem's own slot numbers while it transmits must not keep the repeater "up", and the
+// refused start wakes the repeater instead of being refused, once per key-up
 static void test_rmo_hang_end(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -1862,6 +1922,21 @@ static void test_rx_own_id_parrot(void)
 	run_ms(100);
 	rx_call(lc, 1, true, 0, 1, true, &frame);
 	CHECK(sink_log.begins == 0);
+
+	// Our ID on a talk group we don't hear, with no key-up of ours (a clone, a parrot): not our echo, a call on the
+	// channel, so a polite radio waits for it as for any other
+	c.access = DMR_ACCESS_POLITE_CC;
+	c.access_wait_ms = 0;
+	setup(&c);
+	mk_lc(lc, 0, 555, OWN_ID);
+	rx_header(lc, 1, 0, DMR_SYNC_MS, false);
+	run_ms(10);
+	CHECK(sink_log.begins == 0);
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && V()->tx_error == DMR_TX_ERR_BUSY && sim.tx_begins == 0);
+	dmr_call_ptt(false);
+	run_ms(600);
 }
 
 static bool tg777(uint32_t tg, void *ctx) { (void)ctx; return tg == 777; }
@@ -2981,6 +3056,7 @@ int main(void)
 	test_rmo_wake_lost();
 	test_rmo_drop_before_first_burst();
 	test_rmo_drop_under_over();
+	test_rmo_data_after_listened_over();
 	test_rmo_start_stalled();
 	test_rx_call();
 	test_rx_filters();

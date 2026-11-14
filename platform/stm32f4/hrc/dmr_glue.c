@@ -648,7 +648,7 @@ static bool tx_listen_split(void)
 	if (hooks == NULL || !hooks->listen_split) {
 		return false;
 	}
-	hrc6000_dmr_tx_listen(&eng);
+	tx_listen();
 	return true;
 }
 

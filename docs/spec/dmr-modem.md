@@ -261,7 +261,9 @@ transmitting in the slot after the next one, in phase with the bursts being rece
   its hang to predict that is not general (hangs differ per repeater and per call type), so the stack reacts instead.
   Where the radio's RF can receive the repeater's outbound between our bursts on a split channel (the modem's
   `tx_listen_split`; `DMR_CALL_TX_LISTEN`, `dmr_call_set_tx_listen`), a voice over through a repeater listens there.
-  No repeater burst for `DMR_CALL_TX_DROP_MS` (240 ms) once our bursts are on the air means it dropped
+  A repeater burst is BS sync on our color code: a neighbor's on another one (heard where the modem doesn't filter
+  the color code) is not ours. No repeater burst for `DMR_CALL_TX_DROP_MS` (240 ms) once our bursts are on the air
+  means it dropped
   (`call.tx_rpt_drops`): the over ends with a terminator, not an abort (an abort mid-voice left the next CSBK
   undecodable on the HR_C5000), the repeater is woken again (2.7, once per key-up) and the voice starts again. After
   that wake-up only the repeater's own bursts count as its answer. Before our first burst the same holds: an aligned

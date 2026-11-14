@@ -263,9 +263,9 @@ typedef struct {
 	uint32_t tx_denied;		// PTT refused (any dmr_tx_error_t)
 	uint32_t tx_underruns;		// voice frames sent as silence
 	uint32_t rx_in_tx;		// bursts the modem reported while we transmitted (tx_listen)
-	uint32_t rx_bs_in_tx;		// of them, the repeater's (BS sync)
-	uint32_t tx_rpt_drops;
-	uint32_t tx_wake_lost;		// wake-up CSBKs whose transmission ended without going on air (tried again at once)		// overs the repeater dropped under us, woken again (DMR_CALL_TX_DROP_MS)
+	uint32_t rx_bs_in_tx;		// of them, the repeater's (BS sync, our color code)
+	uint32_t tx_rpt_drops;		// overs the repeater dropped under, or before their first burst, woken again
+	uint32_t tx_wake_lost;		// wake-up CSBKs whose transmission ended without going on air (tried again at once)
 	uint32_t evq_overflows;		// modem events dropped
 	uint32_t rx_cc_dropped;		// bursts dropped for another color code (never voice A: it has no CC on air)
 	uint32_t rx_ts_dropped;		// bursts of another slot than our call's / the channel's

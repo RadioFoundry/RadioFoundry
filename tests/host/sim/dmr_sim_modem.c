@@ -207,7 +207,7 @@ void sim_slot(void)
 		memset(&b, 0, sizeof(b));
 		b.sync = DMR_SYNC_BS;
 		b.kind = DMR_BURST_IDLE;
-		b.cc = sim.cfg.cc;
+		b.cc = (uint8_t)((sim.cfg.cc + (sim.listen_other_cc ? 1 : 0)) & 15);
 		b.ts = ts;
 		b.crc_ok = true;
 		emit(DMR_EV_BURST_RX, ts, sim.slot, &b);

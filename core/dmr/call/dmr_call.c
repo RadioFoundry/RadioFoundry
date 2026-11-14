@@ -141,7 +141,7 @@ static struct {
 	uint32_t tx_heard_ms;	// listening: the repeater's last burst heard during the over, or the over's first burst
 	bool drop_wait;		// the repeater dropped under our over: ended, the repeater woken once the modem is done
 	bool rpt_bursts;	// this channel's modem reports the repeater's bursts (BS sync), not only its slot numbers
-	bool rx_echo;		// the call heard (RXC_OTHER) is our own over echoed by the repeater (rx_accept)
+	bool rx_echo;		// the call heard (RXC_OTHER) is our own over echoed by the repeater (own_echo)
 	uint32_t permit_ms;	// the talk permit hold's start (TX_PERMIT)
 	bool permit_done;	// this PTT press had its hold
 	uint32_t tx_start_ms;
@@ -508,13 +508,18 @@ static bool group_listened(uint32_t tg, uint32_t now)
 	return f->group_ok && f->group_ok(tg, f->group_ctx);
 }
 
+// Our own call echoed by the repeater, which trails our terminator by a few bursts, or replays an over it heard while
+// down once a wake-up in the same key-up starts it. Later, with no key-up, our ID as the source is a parrot or test
+// service playing the call back, or a clone of the ID, and plays like any other (#294)
+static bool own_echo(const dmr_lc_t *l, uint32_t now)
+{
+	return l->src == s.cfg.own_id &&
+	       (s.tx != TX_NONE || !elapsed(now, s.tx_end_ms, s.tx_end_seen, DMR_CALL_OWN_ECHO_MS));
+}
+
 static bool rx_accept(const dmr_lc_t *l, uint32_t now)
 {
-	// Our own call echoed by the repeater, which trails our terminator by a few bursts, or replays an over it heard
-	// while down once a wake-up in the same key-up starts it. Later, with no key-up, our ID as the source is a parrot
-	// or test service playing the call back, or a clone of the ID, and plays like any other (#294)
-	if (l->src == s.cfg.own_id && (transmitting() || s.tx != TX_NONE ||
-				       !elapsed(now, s.tx_end_ms, s.tx_end_seen, DMR_CALL_OWN_ECHO_MS)))
+	if (own_echo(l, now))
 		return false;
 	if (l->flco == DMR_FLCO_GROUP_VOICE)
 		return group_listened(l->dst, now);
@@ -633,7 +638,7 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 		s.view.cc = b->cc;
 
 	s.rx = rx_accept(&l, now) ? RXC_PLAY : RXC_OTHER;
-	s.rx_echo = s.rx == RXC_OTHER && l.src == s.cfg.own_id;
+	s.rx_echo = s.rx == RXC_OTHER && own_echo(&l, now);
 	if (s.rx == RXC_PLAY && !continuing && !resumed)
 		stats.rx_calls_played++;
 	if (s.rx == RXC_PLAY && s.sink && s.sink->begin)
@@ -961,11 +966,23 @@ static bool rx_header_lc(const dmr_burst_t *b, uint8_t mask, uint8_t lc[DMR_LC_B
 	return false;
 }
 
+// A burst of another color code than ours (the modem doesn't filter with any_cc, polite to all or two CCs). Burst A has
+// no color code on air (voice sync where B-F have the EMB): whatever CC the modem gives it is not the burst's, so it is
+// never filtered on it (bench 2026-10-10: 0x52 at A's report held a junk CC, and every A was dropped here, three frames
+// concealed per superframe)
+static bool cc_other(const dmr_burst_t *b)
+{
+	bool cc_known = !(b->kind == DMR_BURST_VOICE && b->voice_index % 6 == 0);
+
+	return !s.cfg.listen.any_cc && cc_known && b->cc != s.cfg.cc && !(sfr_user() && s.cfg.cc2 >= 0 && b->cc == s.cfg.cc2);
+}
+
 static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 {
 	if (transmitting()) {
 		stats.rx_in_tx++;
-		if (b->sync == DMR_SYNC_BS) {
+		// Our repeater's: another color code's (a neighbor on the same frequency) would hide a drop under our over
+		if (b->sync == DMR_SYNC_BS && !cc_other(b)) {
 			stats.rx_bs_in_tx++;
 			s.tx_heard_ms = now;
 			s.rpt_last_ms = now;	// listening: the repeater heard between our bursts
@@ -977,12 +994,7 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 	s.last_any_ms = now;
 	s.any_seen = true;
 
-	// Burst A has no color code on air (voice sync where B-F have the EMB): whatever CC the modem gives it is not
-	// the burst's, so it is never filtered on it (bench 2026-10-10: 0x52 at A's report held a junk CC, and every
-	// A was dropped here, three frames concealed per superframe)
-	bool cc_known = !(b->kind == DMR_BURST_VOICE && b->voice_index % 6 == 0);
-
-	if (!s.cfg.listen.any_cc && cc_known && b->cc != s.cfg.cc && !(sfr_user() && s.cfg.cc2 >= 0 && b->cc == s.cfg.cc2)) {
+	if (cc_other(b)) {
 		stats.rx_cc_dropped++;
 		TR_WHAT('x');
 		return;
@@ -1471,6 +1483,7 @@ static void tx_start_data(uint32_t now)
 	}
 	s.queue_cap = s.modem->tx_queue_space();
 	s.queued = s.started = 0;
+	s.tx_listening = false;	// not the last voice over's: no repeater burst comes between ours, its slot numbers count
 	s.tx = TX_DATA;
 	s.deadline = now + DMR_CALL_DATA_TIMEOUT_MS + (uint32_t)s.data.count * VOICE_PERIOD_MS;
 	s.dirty = true;
