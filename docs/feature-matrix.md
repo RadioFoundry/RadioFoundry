@@ -137,6 +137,7 @@ is `tools/bringup.py list --radio <id>`.
 | `lang_es` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `lang_it` | off | off | off | off | off | off | off |
 | `lang_zh` | off | off | ✕ | ✕ | ✕ | off | off |
+| `cjk_glyphs` | off | off | off | off | off | off | off |
 | `lang_default_es` | off | off | off | off | off | off | off |
 | `lang_default_it` | off | off | off | off | off | off | off |
 | `lang_default_zh` | off | off | ✕ | ✕ | ✕ | off | off |
@@ -229,6 +230,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `LANG_ES` | ● | ● | ● | ● | ● | ● | ○ |
 | `LANG_IT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `LANG_ZH` | ○ | ○ | ✕ | ✕ | ✕ | ○ | ○ |
+| `CJK_GLYPHS` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `LANG_DEFAULT_ES` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `LANG_DEFAULT_IT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `LANG_DEFAULT_ZH` | ○ | ○ | ✕ | ✕ | ✕ | ○ | ○ |
