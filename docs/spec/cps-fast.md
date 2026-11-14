@@ -199,6 +199,8 @@ travel as literals.
 - The base is the block as the image shows it now: what SUMS hashed and READ sends (the live VFO in VFO A, section 2).
   BLOCK gives the base's CRC-32, and the radio hashes its block and refuses a patch whose base differs (reason 10,
   BASE: it changed since the host saw it). The host then sends the block plain. A refused patch leaves no block open.
+  The base is read again as the stream decodes, so a block that changes after BLOCK (the VFO moved meanwhile) makes
+  the decoded block's CRC-32 differ: END refuses that patch as BASE too, not CRC, and the host sends it plain.
 - In a staged session the base is the stored codeplug, not a slot staged earlier in the same session: a block sent
   twice is patched against the same base both times. In a direct session a block written once has a new base.
 - The radio writes a block only at END, so the old contents are still in the flash while the stream decodes. A match
@@ -279,7 +281,7 @@ a count outside its range, an offset past a stream), 3 busy (the storage sector 
 | 7 | CRC | the block decoded, but its CRC-32 is not the one BLOCK gave |
 | 8 | STREAM | a corrupt LZ4 stream, a gap in the offsets, a stream that doesn't decode to 4096 bytes |
 | 9 | FLASH | a flash erase, program or read-back failed, or a patch's base couldn't be read |
-| 10 | BASE | a patch whose base CRC-32 isn't the block's on the radio (3.7) |
+| 10 | BASE | a patch whose base CRC-32 isn't the block's on the radio, at BLOCK, or whose block changed before END (3.7) |
 
 These are the CPS's refusals and more: the CPS refuses the settings ring, the journal and the native area at `X 1`
 and filters the calibration window byte by byte (`cps-protocol.md` 2.3); this protocol refuses those blocks whole,

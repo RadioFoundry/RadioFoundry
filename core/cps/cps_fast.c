@@ -568,8 +568,11 @@ static size_t op_end(uint16_t len, uint8_t *out, uint32_t now_ms)
 		return refuse(out, CPSF_R_STREAM);
 	}
 	if (storage_crc32(0, s.buf, CPSF_BLOCK) != s.crc) {
+		// A patch's base is read as the stream decodes: one that changed since BLOCK hashed it (the live VFO in
+		// VFO A) is a base the patch wasn't made against, and the host sends the block whole
+		bool base = s.format == CPSF_FMT_PATCH;
 		drop_block();
-		return refuse(out, CPSF_R_CRC);
+		return refuse(out, base ? CPSF_R_BASE : CPSF_R_CRC);
 	}
 	bool ok;
 	if (s.mode == CPSF_MODE_STAGED) {

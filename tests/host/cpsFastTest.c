@@ -1137,6 +1137,8 @@ static void test_lz4_dict(void)
 }
 
 // Send a patch block: BLOCK (format 3, the base's CRC), DATA in pieces, END. base_crc lets a test lie
+static void (*patch_between)(void);	// run between a patch's BLOCK and its DATA
+
 static uint8_t patch_block(uint32_t addr, const uint8_t *old, const uint8_t *data, uint32_t base_crc, unsigned piece,
 			   uint32_t *stream_len)
 {
@@ -1154,6 +1156,9 @@ static uint8_t patch_block(uint32_t addr, const uint8_t *old, const uint8_t *dat
 	p32(&r[12], base_crc);
 	if (call(r, 16) != DL_ST_OK) {
 		return rep[0];
+	}
+	if (patch_between != NULL) {
+		patch_between();
 	}
 	for (uint32_t off = 0; off < n; off += piece) {
 		uint32_t k = n - off < piece ? n - off : piece;
@@ -1241,6 +1246,37 @@ static void test_patch_write(void)
 	CHECK(memcmp(&sim_flash_data[0x40000], b, BLOCK) == 0);
 }
 
+static void vfo_moves(void)
+{
+	settings_t *st = settings_begin();
+	st->vfo_rx_hz = st->vfo_tx_hz = 446093750u;
+	settings_end(now);
+}
+
+// The VFO changes while a patch of the block it shows in decodes (the dictionary is read as the stream goes): refused
+// as BASE, so the host sends the block whole, not as a corrupt write (CRC) that ends its session
+static void test_patch_vfo_moved(void)
+{
+	static uint8_t old[BLOCK], b[BLOCK];
+	uint8_t fmt;
+	unsigned reqs;
+
+	boot(&dm1701_map, true);
+	settings_t *st = settings_begin();
+	st->vfo_rx_hz = st->vfo_tx_hz = 446006250u;
+	settings_end(now);
+	CHECK(read_block(0x7000, old, &fmt, &reqs));
+	memcpy(b, old, BLOCK);
+	memcpy(&b[0x540], "Patch line one  ", 16);	// boot text line 1, away from VFO A
+	CHECK(begin(CPSF_MODE_DIRECT) == DL_ST_OK);
+	patch_between = vfo_moves;
+	CHECK(patch_block(0x7000, old, b, storage_crc32(0, old, BLOCK), 61, NULL) == DL_ST_REFUSED && refused(CPSF_R_BASE));
+	patch_between = NULL;
+	CHECK(state() == CPSF_ST_OPEN);
+	CHECK(write_block(0x7000, b, 61) == DL_ST_OK);	// whole: written
+	CHECK(op(CPSF_OP_COMMIT) == DL_ST_OK);
+}
+
 int main(void)
 {
 	setvbuf(stdout, NULL, _IONBF, 0);	// the lines before a crash
@@ -1255,6 +1291,7 @@ int main(void)
 	test_settings_area();
 	test_lz4_dict();
 	test_patch_write();
+	test_patch_vfo_moved();
 	CHECK(sim_flash_violations() == 0);
 	sim_flash_free();
 	printf("# cpsFastTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
