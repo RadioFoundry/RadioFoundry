@@ -505,7 +505,8 @@ static bool ps_may_sleep(const t3_ms_t *ms, uint32_t now)
 	return ms->ps_offset != 0 && ms->state == T3_CAMPED && ms->confirmed && ms->reg == T3_REG_OK &&
 	       ms->csc_valid && ms->ax.state == T3_AX_IDLE && ms->nq == 0 && ms->tx.count == 0 && !ms->tx.udt &&
 	       !ms->udt_rx.open &&
-	       !(ms->massreg && (int32_t)(now - ms->massreg_at) >= 0) && (int32_t)(now - ms->awake_until) >= 0 && !ps_frame(ms, now);
+	       !(ms->massreg && (int32_t)(now - ms->massreg_at) >= 0) && (int32_t)(now - ms->awake_until) >= 0 &&
+	       !ps_frame(ms, now);
 }
 
 bool t3_ms_asleep(const t3_ms_t *ms)
