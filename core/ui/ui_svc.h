@@ -188,6 +188,7 @@ bool ui_svc_position_save_gps(void);	// save the current fresh board fix as the 
 #if CONFIG_SATELLITE_TLE
 uint8_t ui_svc_satellite_count(void);
 bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record);
+bool ui_svc_satellite_summary(uint8_t index, satellite_record_summary_t *summary);
 uint8_t ui_svc_satellite_selected(void);
 bool ui_svc_satellite_select(uint8_t index);
 bool ui_svc_satellite_track(bool enabled, uint8_t index);

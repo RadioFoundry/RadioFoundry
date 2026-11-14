@@ -27,8 +27,16 @@ typedef struct {
 	char line2[SATELLITE_TLE_LINE_LENGTH + 1u];
 } satellite_record_t;
 
+typedef struct {
+	uint32_t catalog_id;
+	uint8_t name_length;
+	char name[SATELLITE_NAME_MAX + 1u];
+} satellite_record_summary_t;
+
 // Read one validated installed record in catalog-ID order. False for an invalid index, unavailable store or read error.
 bool satellite_store_get(uint8_t index, satellite_record_t *record);
+// Read the catalog ID and name without copying the TLE lines.
+bool satellite_store_summary_get(uint8_t index, satellite_record_summary_t *summary);
 uint8_t satellite_store_count(void);
 // Seed the built-in TLEs only when all inventory banks are erased; existing or interrupted inventories are preserved.
 bool satellite_store_seed_defaults(void);

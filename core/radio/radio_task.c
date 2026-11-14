@@ -401,9 +401,9 @@ __attribute__((noinline)) static void satellite_request(bool enabled, uint8_t re
 		return;
 	}
 	satellite_tracking_stop(&satellite_tracking);
-	satellite_record_t record;
+	satellite_record_summary_t record;
 	satellite_frequency_profile_t profile;
-	if (!satellite_store_get(record_index, &record) ||
+	if (!satellite_store_summary_get(record_index, &record) ||
 	    !satellite_frequency_profile(record.catalog_id, &profile)) {
 		satellite_requested = false;
 		radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now_ms);

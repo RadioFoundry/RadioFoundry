@@ -39,6 +39,11 @@ bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record)
 	return satellite_store_get(index, record);
 }
 
+bool ui_svc_satellite_summary(uint8_t index, satellite_record_summary_t *summary)
+{
+	return satellite_store_summary_get(index, summary);
+}
+
 uint8_t ui_svc_satellite_selected(void)
 {
 	settings_t settings;

@@ -10,10 +10,10 @@
 
 #define SATELLITE_ZONE_NAME "Satellites"
 
-static void apply_fm_profile(const satellite_record_t *record, channel_t *channel)
+static void apply_fm_profile(uint32_t catalog_id, channel_t *channel)
 {
 	satellite_frequency_profile_t profile;
-	if (!satellite_frequency_profile(record->catalog_id, &profile))
+	if (!satellite_frequency_profile(catalog_id, &profile))
 		return;
 	channel->rx_hz = profile.rx_hz;
 	channel->tx_hz = profile.tx_hz;
@@ -21,7 +21,7 @@ static void apply_fm_profile(const satellite_record_t *record, channel_t *channe
 		channel->tx_tone = (subtone_t){ TONE_CTCSS, profile.tx_tone_tenths };
 }
 
-static uint8_t channel_name(const satellite_record_t *record, char out[CODEPLUG_NAME_LEN + 1])
+static uint8_t channel_name(const satellite_record_summary_t *record, char out[CODEPLUG_NAME_LEN + 1])
 {
 	uint8_t length = record->name_length;
 	if (length > CODEPLUG_NAME_LEN)
@@ -84,9 +84,9 @@ bool satellite_channels_sync(void)
 	if (!codeplug_zone((uint16_t)index, &zone))
 		return false;
 	for (uint8_t i = 0; i < count; i++) {
-		satellite_record_t record;
+		satellite_record_summary_t record;
 		char name[CODEPLUG_NAME_LEN + 1];
-		if (!satellite_store_get(i, &record) || channel_name(&record, name) == 0u)
+		if (!satellite_store_summary_get(i, &record) || channel_name(&record, name) == 0u)
 			return false;
 		if (has_channel(&zone, name))
 			continue;
@@ -109,7 +109,7 @@ bool satellite_channels_sync(void)
 		channel.bw = RADIO_BW_12K5;
 		channel.rx_tone = (subtone_t){ 0 };
 		channel.tx_tone = (subtone_t){ 0 };
-		apply_fm_profile(&record, &channel);
+		apply_fm_profile(record.catalog_id, &channel);
 		channel.rx_only = false;
 		channel.contact = 0u;
 		channel.listen_list = 0u;

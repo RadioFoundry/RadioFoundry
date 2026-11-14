@@ -15,7 +15,7 @@
 static uint8_t selected;
 static char edit_line1[SATELLITE_TLE_LINE_LENGTH + 1u];
 static char edit_line2[SATELLITE_TLE_LINE_LENGTH + 1u];
-static satellite_record_t pass_record;
+static satellite_record_summary_t pass_record;
 
 static void satellite_line2_kept(void)
 {
@@ -251,7 +251,7 @@ static void satellite_pass_item(uint16_t row_index, ui_item_t *item)
 	}
 	radio_satellite_pass_t pass;
 	if (row_index >= passes || !ui_svc_satellite_pass((uint8_t)row_index, &pass) ||
-	    !ui_svc_satellite_get(pass.record_index, &pass_record))
+	    !ui_svc_satellite_summary(pass.record_index, &pass_record))
 		return;
 	str_copy(item->label, sizeof(item->label), pass_record.name);
 	sbuf_t b;
@@ -300,8 +300,8 @@ static void satellite_draw(void)
 	uint8_t count = ui_svc_satellite_count();
 	if (selected >= count && count != 0u)
 		selected = 0u;
-	satellite_record_t record;
-	bool have_record = count != 0u && ui_svc_satellite_get(selected, &record);
+	satellite_record_summary_t record;
+	bool have_record = count != 0u && ui_svc_satellite_summary(selected, &record);
 	const radio_view_t *view = ui_view();
 	satellite_path_view_t path = {0};
 	if (view->satellite_tracking && view->satellite_index == selected)
@@ -386,7 +386,7 @@ static bool satellite_key(const input_event_t *ev)
 	} else if (ev->gesture == GESTURE_LONG && ev->action == ACT_SELECT) {
 		const radio_view_t *view = ui_view();
 		if (view->satellite_tracking && view->satellite_index == selected &&
-		    ui_svc_satellite_get(selected, &pass_record) && pass_record.catalog_id == 27607u) {
+		    ui_svc_satellite_summary(selected, &pass_record) && pass_record.catalog_id == 27607u) {
 			ui_svc_satellite_arm();
 			ui_toast(TR("SO-50 arm requested"));
 			return true;

@@ -41,6 +41,16 @@ bool satellite_store_get(uint8_t index, satellite_record_t *record)
 	return true;
 }
 
+bool satellite_store_summary_get(uint8_t index, satellite_record_summary_t *summary)
+{
+	if (index >= record_count || summary == NULL)
+		return false;
+	summary->catalog_id = records[index].catalog_id;
+	summary->name_length = records[index].name_length;
+	memcpy(summary->name, records[index].name, sizeof(summary->name));
+	return true;
+}
+
 bool satellite_store_profile_selected(uint32_t catalog_id)
 {
 	return catalog_id == 25544u;

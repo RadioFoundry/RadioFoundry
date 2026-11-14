@@ -346,6 +346,11 @@ static void test_inventory_transactions(void)
 	CHECK(satellite.catalog_id == 20580u && satellite.name_length == 3u && strcmp(satellite.name, "HST") == 0);
 	CHECK(memcmp(satellite.line1, data + first_len + 8u, 69u) == 0);
 	CHECK(memcmp(satellite.line2, data + first_len + 8u + 69u, 69u) == 0);
+	satellite_record_summary_t summary;
+	CHECK(satellite_store_summary_get(0u, &summary));
+	CHECK(summary.catalog_id == satellite.catalog_id && summary.name_length == satellite.name_length &&
+	      strcmp(summary.name, satellite.name) == 0);
+	CHECK(!satellite_store_summary_get(2u, &summary));
 	CHECK(!satellite_store_get(2, &satellite));
 	uint32_t selected_profiles[SATELLITE_PROFILE_MAX] = {
 		40908u, 40931u, 43678u, 61781u, 63213u, 63214u, 63215u, 67291u, 63217u, 63218u

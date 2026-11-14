@@ -769,10 +769,10 @@ static bool commit_transaction(const hal_flash_map_t *m, int active, const sat_b
 }
 #endif
 
-bool satellite_store_get(uint8_t index, satellite_record_t *record)
+static bool satellite_store_read(uint8_t index, satellite_record_t *record, satellite_record_summary_t *summary)
 {
 #if CONFIG_SATELLITE_TLE
-	if (record == NULL) {
+	if (record == NULL && summary == NULL) {
 		return false;
 	}
 	const hal_flash_map_t *m = sat_map();
@@ -797,14 +797,23 @@ bool satellite_store_get(uint8_t index, satellite_record_t *record)
 	    !validate_record(record_buf, length, entry)) {
 		goto done;
 	}
-	memset(record, 0, sizeof(*record));
-	record->catalog_id = entry->catalog_id;
-	record->epoch = entry->epoch;
-	record->name_length = record_buf[4];
-	memcpy(record->name, record_buf + 5, record->name_length);
-	const uint8_t *line1 = record_buf + 5u + record->name_length;
-	memcpy(record->line1, line1, SAT_TLE_LINE);
-	memcpy(record->line2, line1 + SAT_TLE_LINE, SAT_TLE_LINE);
+	uint8_t name_length = record_buf[4];
+	if (record != NULL) {
+		memset(record, 0, sizeof(*record));
+		record->catalog_id = entry->catalog_id;
+		record->epoch = entry->epoch;
+		record->name_length = name_length;
+		memcpy(record->name, record_buf + 5u, name_length);
+		const uint8_t *line1 = record_buf + 5u + name_length;
+		memcpy(record->line1, line1, SAT_TLE_LINE);
+		memcpy(record->line2, line1 + SAT_TLE_LINE, SAT_TLE_LINE);
+	}
+	if (summary != NULL) {
+		memset(summary, 0, sizeof(*summary));
+		summary->catalog_id = entry->catalog_id;
+		summary->name_length = name_length;
+		memcpy(summary->name, record_buf + 5u, name_length);
+	}
 	result = true;
 done:
 	storage_unlock();
@@ -812,8 +821,19 @@ done:
 #else
 	(void)index;
 	(void)record;
+	(void)summary;
 	return false;
 #endif
+}
+
+bool satellite_store_get(uint8_t index, satellite_record_t *record)
+{
+	return satellite_store_read(index, record, NULL);
+}
+
+bool satellite_store_summary_get(uint8_t index, satellite_record_summary_t *summary)
+{
+	return satellite_store_read(index, NULL, summary);
 }
 
 uint8_t satellite_store_count(void)
