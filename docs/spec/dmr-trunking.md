@@ -477,7 +477,9 @@ slot whose idles keep TD_Inactive from running out.
 | sent unconfirmed, or acknowledged (6.6.3.3.2.5 a, c) | `T3_DATA_LINGER_MS` (3 s) after the last data heard on the slot (`t3_ms_data_heard`): a reply in the TS's hang still arrives |
 
 The availability check for data to the radio (C_AHOY, Service_Kind 0010b) is answered C_ACKU Message_Accepted
-(6.6.3.2.6).
+(6.6.3.2.6). From IPI the same C_AHOY asks for the IPv4 address while the radio's own call to IPI waits (7.7 above);
+with no such call it is the check, for the network's data to the radio (a reply to its datagram, sent once it is back
+on the TSCC).
 
 **To an IP gateway (multi-part, 6.6.3.2.3).** `t3_ms_pdata_ip` asks for packet data to an IPv4 address outside the
 radio network: the C_RAND targets IPI (0xFFFEC3) with the Proxy Flag 0 (IPv4).

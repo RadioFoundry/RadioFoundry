@@ -2323,6 +2323,25 @@ static void test_pdata_ip(void)
 	rx(&ms, 1, &h);
 	frames(&ms, 1);
 	CHECK(nup == 2, "no address for a single-part call");
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_MS_ACCEPTED, OWN, CALLER);
+	rx(&ms, 1, &a);
+	g = grant(T3_OP_PD_GRANT, 999, 2, CALLER, OWN);
+	rx(&ms, 1, &g);
+	t3_ms_end_call(&ms, T);
+	frames(&ms, 60);
+
+	// IPI's data to the radio (a reply from the network): with nothing of the radio's asked, its C_AHOY is the
+	// availability check (6.6.3.2.6), answered Message_Accepted to IPI; then its PD_GRANT is followed
+	nsent = 0;
+	CHECK(ms.state == T3_CAMPED && ms.ax.state == T3_AX_IDLE, "camped, idle");
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup == 2 && nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MESSAGE_ACCEPTED &&
+	      sent[0].u.ack.dst == T3_ID_IPI && sent[0].u.ack.src == OWN, "IPI's check: accepted, sent %d", nsent);
+	g = grant(T3_OP_PD_GRANT, 999, 1, OWN, T3_ID_IPI);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && ms.call.data && !ms.call.ours && ms.call.src == T3_ID_IPI,
+	      "IPI's data call followed");
 }
 
 static void test_sdata(void)

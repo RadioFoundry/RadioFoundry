@@ -1325,6 +1325,11 @@ static bool on_ip_ask(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *
 	    (h->kind != T3_SK_IND_DATA && h->kind != T3_SK_IND_UDT && h->kind != T3_SK_REGISTRATION)) {
 		return false;
 	}
+	if (h->kind == T3_SK_IND_DATA &&
+	    !(ms->ax.svc == T3_SVC_PDATA && ms->ax.dst == T3_ID_IPI && ms->ax.ip != 0 &&
+	      (ms->ax.state == T3_AX_WAIT_RESP || ms->ax.state == T3_AX_ACKED))) {
+		return false;	// no IPv4 address asked for: IPI's data to the radio, the availability check (6.6.3.2.6)
+	}
 	if (!may_send(ms) || (ms->ax.state != T3_AX_WAIT_RESP && ms->ax.state != T3_AX_ACKED)) {
 		return true;
 	}
