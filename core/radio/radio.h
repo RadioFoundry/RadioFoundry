@@ -307,6 +307,8 @@ typedef struct {
 	uint8_t ps_rq, ps_offset;	// power save granted (0: none)
 	bool asleep;
 	uint32_t sleeps;
+	bool csc_valid;		// the Common_Slot_Counter is known (a C_SYS_Parms short LC heard while camped)
+	uint32_t slc_ok, slc_bad;	// CACH short LCs the modem reported since boot: good CRC, bad CRC
 	uint32_t dgna[RADIO_T3_DGNA];	// DGNA (6.6.8): the list, the One-key, the alias mode's 16th
 	uint8_t ndgna;
 	uint32_t dgna_onekey, dgna_alias_tg, dgnas;

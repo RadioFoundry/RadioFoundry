@@ -59,6 +59,9 @@ typedef struct {
 	// (the HR_C6000)
 	int (*rx_voice_read)(hrc_t *dev, uint8_t out[27]);
 	void (*rx_decode)(hrc_t *dev, bool on);
+	// Page 2 address of the last CACH short LC the chip assembled (36 bits, MSB first: 28 bits then the CRC-8); 0 =
+	// not known for this chip, none reported
+	uint8_t slc_rx_addr;
 } hrc_chip_t;
 
 struct hrc {

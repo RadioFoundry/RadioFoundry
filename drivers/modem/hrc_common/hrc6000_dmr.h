@@ -146,6 +146,7 @@ typedef struct {
 	uint32_t late_entry;	// post-access interrupts
 	uint32_t voice_lost;	// voice-abnormal interrupts
 	uint32_t ev_overflow;	// events dropped, the task was behind
+	uint32_t slc_reads;	// CACH short LCs reported (DMR_EV_SHORT_LC), CRC not checked
 	uint32_t tx_bursts;	// bursts set up
 	uint32_t tx_underrun;	// our slot came with an empty queue mid-transmission
 	uint32_t tx_rejected;	// send request rejected (polite access)
@@ -241,6 +242,7 @@ typedef struct {
 	uint8_t tc_agree, tc_disagree;
 	uint32_t at_tick[2];	// per TS: the tick its last CACH AT bit was read at (0: never)
 	bool at_busy[2];
+	uint8_t slc_last[5];	// the short LC bytes last read (a new one is reported when they change)
 	uint32_t bs_tick;	// tick of the last BS-sync burst heard
 	bool rmo_seen;
 

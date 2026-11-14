@@ -444,6 +444,7 @@ typedef struct {
 	bool t3_polling;		// a poll from the menus is out (RREQ_T3_POLL): its outcome is counted
 	bool t3_talking;		// PTT went to the stack for a trunked call
 	uint32_t t3_ticks;		// the stack's tick count handed to the engine
+	uint32_t t3_slc_n;		// the stack's short LC count handed to the engine
 	uint8_t t3_slot;		// the slot of the last tick handed to it
 	uint8_t t3_at[2];		// the last tick flags (DMR_TICK_AT_*) of the CACH naming slot 1, 2
 	uint8_t t3_cc;			// the color code of the channel being listened to

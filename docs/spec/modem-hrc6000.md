@@ -396,6 +396,15 @@ second match write the new CC to 0x1F and rewrite 0x40=0xC3 (through a repeater 
 0x00, 0x20, 0x50), then wait 3 ms (a busy wait in the interrupt: faster rewrites crashed the radio). After 8 matches
 the CC is held. Release the hold after 5 s of no received audio while idle.
 
+### 5.4a CACH short LC
+
+The chip assembles the CACH short LC from four CACHs and leaves it in page 2 0x2B-0x2F: 36 bits, MSB first, the 28
+short LC bits then the CRC-8; the low 4 bits of 0x2F are unused (`hrc6000-registers.md` 2.2). While receiving both
+slots of a BS signal (`rx_lock_slot(0)`, a trunked control channel) and idle, the driver reads it at each timeslot
+interrupt after a received slot and reports it (`DMR_EV_SHORT_LC`) when the bytes change. It doesn't wait for 0x86
+bit 2 (short LC received): that flag comes with the TX-end interrupt (0x82 bit 5), which the mask leaves off. The
+chip descriptor's `slc_rx_addr` gives the location; a chip without one reports none. Unconfirmed on air.
+
 ### 5.5 End of a reception
 
 | Signal | Rule |

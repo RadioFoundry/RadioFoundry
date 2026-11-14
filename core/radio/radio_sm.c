@@ -2784,6 +2784,7 @@ static void t3_publish(radio_sm_t *sm)
 	v->ps_offset = m->ps_offset;
 	v->asleep = m->asleep;
 	v->sleeps = m->sleeps;
+	v->csc_valid = m->csc_valid;
 	_Static_assert(RADIO_T3_DGNA == T3_DGNA_MAX, "the view holds the DGNA list");
 	memcpy(v->dgna, m->dgna, sizeof(v->dgna));
 	v->ndgna = m->ndgna;
@@ -3341,6 +3342,15 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	}
 	sm->t3_ticks = tc;
 	sm->t3_now = now_ms;
+	// The CACH short LC (C_SYS_Parms): the system's identity check and the Common_Slot_Counter power save counts by
+	uint32_t slc, slc_bad;
+	uint32_t slc_n = dmr_call_short_lc(&slc, &slc_bad);
+	if (slc_n != sm->t3_slc_n) {
+		sm->t3_slc_n = slc_n;
+		t3_ms_slc(&t3m, now_ms, slc);
+	}
+	radio_t3v.slc_ok = slc_n;
+	radio_t3v.slc_bad = slc_bad;
 	radio_t3v.ticks += n;
 	// Talking (or sending data) on the payload channel: the radio doesn't hear its own slot, so its transmission is the
 	// call's activity (TV_Inactive would otherwise pull it back to the control channel mid-sentence)

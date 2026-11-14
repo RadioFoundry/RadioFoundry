@@ -36,6 +36,7 @@
 #if CONFIG_DMR_TRUNK_TX
 #include "radio/radio_trunk.h"
 #include "radio/radio_trunk_rec.h"
+#include "dmr/fec/dmrCach.h"
 #include "dmr/trunk/t3_pdu.h"
 #include "dmr/trunk/t3_sys.h"
 #endif
@@ -6280,6 +6281,29 @@ static void test_t3_stun_kept(void)
 	t3_cp_done();
 }
 
+// The CACH short LC from the modem (DMR_EV_SHORT_LC): a good CRC gives the engine the Common_Slot_Counter, a bad
+// one is only counted
+static void test_t3_short_lc(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	uint32_t ok0 = radio_t3v.slc_ok, bad0 = radio_t3v.slc_bad;
+	CHECK(!radio_t3v.csc_valid);
+	t3_syscode_t c;
+	t3_syscode_split(t3_code(), &c);
+	t3_sysparms_t sp = { true, c.model, (uint16_t)((t3_code() >> 2) & 0xFFFu), false, 77 };
+	uint32_t slc = t3_sysparms_build(&sp);
+	sim_short_lc(slc, (uint8_t)(dmrShortLcCrc8(slc) ^ 0x01u));
+	t3_site_run(120);
+	CHECK(!radio_t3v.csc_valid && radio_t3v.slc_bad == bad0 + 1u && radio_t3v.slc_ok == ok0);
+	sim_short_lc(slc, dmrShortLcCrc8(slc));
+	t3_site_run(120);
+	CHECK(radio_t3v.csc_valid && radio_t3v.slc_ok == ok0 + 1u && radio_t3v.slc_bad == bad0 + 1u);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+}
+
 // Off-net IP on a system with an IP gateway (dmr-trunking.md 7.7): the data service's packet to IPI asks for a
 // multi-part call to IPI, uploads the packet's destination when the TSCC asks, and sends the data to IPI on the grant
 static void test_t3_ip_gateway(void)
@@ -6466,6 +6490,7 @@ int main(void)
 	test_t3_stun_kept();
 	test_t3_poll();
 	test_t3_ip_gateway();
+	test_t3_short_lc();
 	test_t3_channels();
 	test_t3_fallback();
 #endif

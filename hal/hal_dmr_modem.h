@@ -74,6 +74,9 @@ typedef enum {
 	DMR_EV_TX_REJECTED,	// polite access refused
 	DMR_EV_TX_DONE,		// the last queued burst's slot has ended
 	DMR_EV_SYNC_LOST,	// receiver restarted after a stall
+	// A CACH short LC from a BS (ETSI TS 102 361-1 7.1.4), as the chip assembled it, when it changes: arg = its 28
+	// bits (SLCO, then 3 octets), flags = the CRC-8 received (unchecked). Optional: drivers that can't read it don't
+	DMR_EV_SHORT_LC,
 } dmr_event_kind_t;
 
 // DMR_EV_SLOT_TICK flags: the AT bit of the last CACH that named this slot (ETSI TS 102 361-1 9.3.5, the inbound
@@ -83,7 +86,7 @@ enum { DMR_TICK_AT_KNOWN = 1u, DMR_TICK_AT_BUSY = 2u };
 typedef struct {
 	uint8_t kind;		// dmr_event_kind_t
 	int8_t ts;
-	uint8_t flags;		// DMR_EV_SLOT_TICK: DMR_TICK_*; 0 otherwise
+	uint8_t flags;		// DMR_EV_SLOT_TICK: DMR_TICK_*; DMR_EV_SHORT_LC: its CRC-8; 0 otherwise
 	uint32_t arg;
 	const dmr_burst_t *burst;	// DMR_EV_BURST_RX only, valid during the callback
 } dmr_event_t;

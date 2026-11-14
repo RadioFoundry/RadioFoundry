@@ -335,6 +335,30 @@ static void push_tick(hrc6000_dmr_t *e, int8_t ts)
 	ev_commit(e);
 }
 
+// The CACH short LC (ETSI TS 102 361-1 7.1.4) while both slots of a BS's signal are received (a trunked control
+// channel): the chip assembles it from four CACHs; a change is a new one. The stack checks the CRC
+static void slc_read(hrc6000_dmr_t *e)
+{
+	uint8_t b[5];
+	if (e->dev->chip->slc_rx_addr == 0 || !hrc_read_burst(e->dev, HRC_PAGE_DATA, e->dev->chip->slc_rx_addr, b, 5) ||
+	    memcmp(b, e->slc_last, 5) == 0) {
+		return;
+	}
+	memcpy(e->slc_last, b, 5);
+	uint64_t v = ((uint64_t)b[0] << 32) | ((uint64_t)b[1] << 24) | ((uint64_t)b[2] << 16) | ((uint64_t)b[3] << 8) | b[4];
+	v >>= 4;	// the low 4 bits of the last byte are unused
+	hrc6000_dmr_evslot_t *s = ev_begin(e);
+	if (s != NULL) {
+		s->ev.kind = DMR_EV_SHORT_LC;
+		s->ev.ts = 0;
+		s->ev.flags = (uint8_t)v;
+		s->ev.arg = (uint32_t)(v >> 8) & 0x0FFFFFFFu;
+		s->ev.burst = NULL;
+		ev_commit(e);
+		e->st.slc_reads++;
+	}
+}
+
 static uint8_t txq_count(const hrc6000_dmr_t *e)
 {
 	return (uint8_t)((e->txq_head + TXQ_N - e->txq_tail) % TXQ_N);
@@ -1677,6 +1701,9 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 	}
 	uint8_t ph = (uint8_t)(e->tick & 1u);
 	push_tick(e, e->phase_ts[ph]);
+	if (idle && e->lock_ts == 0 && (ctl_ended & CTL_RX) != 0 && rmo(e)) {
+		slc_read(e);
+	}
 	for (int k = 0; k < 2; k++) {	// a lone burst A whose B (one frame later) did not come
 		if (e->held[k].valid && (uint32_t)(e->tick - e->held[k].tick) > 2u) {
 			held_drop(e, &e->held[k]);

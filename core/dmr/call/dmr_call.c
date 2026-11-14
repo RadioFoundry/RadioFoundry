@@ -6,6 +6,7 @@
 #include <string.h>
 #include "dmr/call/dmr_call.h"
 #include "config.h"
+#include "dmr/fec/dmrCach.h"
 #if CONFIG_SFR
 #include "dmr/sfr.h"
 #endif
@@ -57,6 +58,7 @@ static int8_t tick_ts;
 // The last ticks' slot and flags (DMR_TICK_*), by tick number (tick_count after it) mod TICK_RING: dmr_call_tick_at
 #define TICK_RING	8u
 static uint8_t tick_ring[TICK_RING];
+static uint32_t slc_good, slc_bad, slc_last;	// CACH short LCs (DMR_EV_SHORT_LC): good and bad CRCs, the last good
 static void (*wake_fn)(void);	// dmr_call_set_wake; outlives dmr_call_init
 
 // --- Stack state ---
@@ -431,6 +433,15 @@ static void on_event(const dmr_event_t *ev, void *ctx)
 		tick_ts = ts;
 		tick_ring[(tick_count + 1u) % TICK_RING] = (uint8_t)((uint8_t)(ts & 3) | (uint8_t)(ev->flags << 2));
 		__atomic_store_n(&tick_count, tick_count + 1, __ATOMIC_RELEASE);
+		return;
+	}
+	if (ev->kind == DMR_EV_SHORT_LC) {
+		if (dmrShortLcCrc8(ev->arg) == ev->flags) {
+			__atomic_store_n(&slc_last, ev->arg & 0x0FFFFFFFu, __ATOMIC_RELAXED);
+			__atomic_store_n(&slc_good, slc_good + 1, __ATOMIC_RELEASE);
+		} else {
+			__atomic_store_n(&slc_bad, slc_bad + 1, __ATOMIC_RELAXED);
+		}
 		return;
 	}
 
@@ -1992,6 +2003,14 @@ uint32_t dmr_call_ticks(int8_t *ts)
 	if (ts)
 		*ts = tick_ts;
 	return __atomic_load_n(&tick_count, __ATOMIC_ACQUIRE);
+}
+
+uint32_t dmr_call_short_lc(uint32_t *slc, uint32_t *bad)
+{
+	uint32_t n = __atomic_load_n(&slc_good, __ATOMIC_ACQUIRE);
+	*slc = __atomic_load_n(&slc_last, __ATOMIC_RELAXED);
+	*bad = __atomic_load_n(&slc_bad, __ATOMIC_RELAXED);
+	return n;
 }
 
 uint8_t dmr_call_tick_at(uint32_t n, int8_t *ts)

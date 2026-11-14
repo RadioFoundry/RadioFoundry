@@ -330,6 +330,7 @@ interrupt.
 | `tx_rejected` | the modem refused to send (channel busy under a polite policy) | |
 | `tx_done` | the last queued burst's slot has ended (terminator included); the driver is back in receive | after the last burst's slot, not before |
 | `sync_lost` | no slot tick for 200 ms while not idle, or the timing was found out of step; the driver has restarted the receiver | |
+| `short_lc` | a BS's CACH short LC (ETSI TS 102 361-1 7.1.4) as the chip assembled it: 28 bits and the CRC-8 received. The stack checks the CRC (`dmr_call_short_lc`). Optional: only while both slots of a BS signal are received (a trunked control channel), from chips whose short LC location is known | when it changes; a new one every 120 ms |
 
 ### 6.3 Commands (stack to driver)
 

@@ -331,5 +331,8 @@ void dmr_call_set_rx_tap(dmr_rx_tap_fn fn, void *ctx);
 uint32_t dmr_call_ticks(int8_t *ts);
 // Tick n's (a dmr_call_ticks count) slot (0: unknown) and DMR_TICK_* flags; 0 and ts 0 once it is out of the last few
 uint8_t dmr_call_tick_at(uint32_t n, int8_t *ts);
+// CACH short LCs with a good CRC-8 (B.3.7) since boot, which a count newer than the caller's last says has come; *slc
+// the latest (28 bits), *bad those with a bad CRC. Only from modems that report them (DMR_EV_SHORT_LC)
+uint32_t dmr_call_short_lc(uint32_t *slc, uint32_t *bad);
 
 #endif

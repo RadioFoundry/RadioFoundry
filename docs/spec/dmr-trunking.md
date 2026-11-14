@@ -530,7 +530,7 @@ PowerSave_Offset, the wake frame (table 7.41); 0 means no power save.
 | Rule | Detail |
 |---|---|
 | Wake frame | 480 ms. PS_Counter = Common_Slot_Counter / 4. The radio's frame: PS_Counter masked to PowerSave_RQ bits equals PowerSave_Offset |
-| Counter | The CSC of the last C_SYS_Parms heard, carried on one step per 120 ms |
+| Counter | The CSC of the last C_SYS_Parms short LC heard, carried on one step per 120 ms. The short LC comes from the modem (`DMR_EV_SHORT_LC`, dmr-modem.md 6.2): with a modem that doesn't report it there is no CSC and the radio never sleeps |
 | Early | The radio wakes two CSC steps (240 ms) before its frame, so the receiver has synchronized |
 | Asleep | Camped, confirmed, registered, no access, nothing queued, outside the wake frame, past T_Awake |
 | T_Awake | 2 s (`awake_ms`): after registering, any access, traffic for the radio (AHOY, acknowledgement) and a call's end |
@@ -688,7 +688,7 @@ on its voice, and never camps on another system or on a control channel that isn
 
 | Item | Needs |
 |---|---|
-| CACH short LC reception | the modem drivers' CACH report |
+| CACH short LC reception on modems that don't report it yet (`hrc_chip_t.slc_rx_addr` 0, or another driver) | the location of the chip's short LC |
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
 | Supplementary data, a list subscription without registering | later |
 | A kill kept across a restart, and conventional DMR off when killed | later |
