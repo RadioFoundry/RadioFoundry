@@ -66,8 +66,8 @@ def prepare(records, max_len):
     return sorted(out)
 
 
-def synthetic_records(n=600, first_id=9000001):
-    """n made-up records: IDs with gaps of 1 to a few hundred (one- and two-byte LEB128 gaps in format C), texts of
+def synthetic_records(n=600, first_id=9000001, max_gap=300):
+    """n made-up records: IDs with gaps of 1 to max_gap (one- and two-byte LEB128 gaps in format C), texts of
     a made-up callsign, a name from a small set and a town from a larger one, so format C gets one- and two-byte
     dictionary codes, literals and empty tokens"""
     out, dmr_id = [], first_id
@@ -80,7 +80,7 @@ def synthetic_records(n=600, first_id=9000001):
         else:
             text = f"{call} Name{i % 23} Town{i % 170} ST{i % 4}"
         out.append((dmr_id, text))
-        dmr_id += 1 + (i * 37) % 300
+        dmr_id += 1 + (i * 37) % max_gap
     return out
 
 
