@@ -382,6 +382,8 @@ static void t3_svc(const radio_t3_view_t *x, void *ctx)
 	dl_text(t, "t3.csc_valid=%u\nt3.csc=%u\nt3.slc_ok=%u\nt3.slc_bad=%u\nt3.rx_off=%u\nt3.rx_offs=%u\nt3.rx_off_ms=%u\n",
 		x->csc_valid, x->csc, (unsigned)x->slc_ok, (unsigned)x->slc_bad, x->rx_off, (unsigned)x->rx_offs,
 		(unsigned)x->rx_off_ms);
+	dl_text(t, "t3.ahoys=%u\nt3.ahoy_kind=%u\nt3.ahoy_src=%u\nt3.ahoy_age_ms=%d\n", (unsigned)x->ahoys, x->ahoy_kind,
+		(unsigned)x->ahoy_src, x->ahoy_ms != 0 ? (int)(now - x->ahoy_ms) : -1);
 	dl_text(t, "t3.divert_to=%u\nt3.divert_group=%u\nt3.als_calls=%u\nt3.call_als=%u\n", (unsigned)x->divert_to,
 		x->divert_group, (unsigned)x->als_calls, x->call_als);
 	dl_text(t, "t3.killed=%u\nt3.kills=%u\nt3.tscc_auth_fails=%u\n", x->killed, (unsigned)x->kills,

@@ -1356,6 +1356,21 @@ static void test_power_save(void)
 	rx(&ms, 1, &h);
 	frame(&ms);
 	CHECK(!ms.asleep, "woken by traffic");
+	// A poll to the sleeping radio, in its wake frame: answered (no reply set: Not_Supported)
+	frames(&ms, 80);
+	bool was = false;
+	for (int i = 0; i < 80 && !(was && !ms.asleep); i++) {
+		was = ms.asleep;
+		frame(&ms);
+	}
+	CHECK(was && !ms.asleep, "woken for the wake frame");
+	nsent = 0;
+	h = ahoy(T3_SK_UDT_POLL, false, OWN, 1234u);
+	h.u.ahoy.options = T3_UDTF_ISO8;
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_NOT_SUPPORTED,
+	      "a poll in the wake frame answered: %d sent, asleep %d", nsent, ms.asleep);
 
 	// Offset 0: registered, no power save
 	setup(T3_OPT_PRIVATE, true);

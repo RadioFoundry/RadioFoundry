@@ -2808,6 +2808,10 @@ static void t3_publish(radio_sm_t *sm)
 	v->sleeps = m->sleeps;
 	v->csc_valid = m->csc_valid;
 	v->csc = m->csc;
+	v->ahoys = m->st.ahoys;
+	v->ahoy_src = m->st.ahoy_src;
+	v->ahoy_ms = m->st.ahoy_ms;
+	v->ahoy_kind = m->st.ahoy_kind;
 	_Static_assert(RADIO_T3_DGNA == T3_DGNA_MAX, "the view holds the DGNA list");
 	memcpy(v->dgna, m->dgna, sizeof(v->dgna));
 	v->ndgna = m->ndgna;

@@ -1241,6 +1241,12 @@ static bool on_tscc_auth(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ack_t
 
 static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h, bool payload)
 {
+	if (!payload && !h->group && is_me(ms, h->dst)) {
+		ms->st.ahoys++;
+		ms->st.ahoy_src = h->src;
+		ms->st.ahoy_ms = now != 0 ? now : 1u;
+		ms->st.ahoy_kind = h->kind;
+	}
 	if (!payload && (on_upload(ms, now, slot, h) || on_reg_list(ms, now, slot, h) ||
 			  on_divert_ask(ms, now, slot, h) || on_ip_ask(ms, now, slot, h) || on_poll(ms, now, slot, h))) {
 		return;

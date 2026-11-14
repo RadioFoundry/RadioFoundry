@@ -237,6 +237,9 @@ typedef struct {
 	uint32_t foreign;	// Alohas and broadcasts from another system (wrong syscode)
 	uint32_t foreign_slc;	// C_SYS_Parms from another system (an 8-bit CRC: some are corrupt words)
 	uint32_t learned;	// Chan_Freq / CG_AP entries learned or changed
+	uint32_t ahoys;		// C_AHOYs to the radio on the TSCC; the last one's source, time and Service_Kind
+	uint32_t ahoy_src, ahoy_ms;
+	uint8_t ahoy_kind;
 	uint16_t last_unmapped;
 	uint32_t sent;		// CSBKs handed to the radio to send
 	uint32_t ra_tries;	// random access bursts among them

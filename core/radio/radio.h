@@ -308,6 +308,8 @@ typedef struct {
 	bool asleep;
 	uint32_t sleeps;
 	bool csc_valid;		// the Common_Slot_Counter is known (a C_SYS_Parms short LC heard while camped)
+	uint8_t ahoy_kind;	// the last C_AHOY to the radio on the TSCC: Service_Kind, source, when (0: none)
+	uint32_t ahoys, ahoy_src, ahoy_ms;
 	uint16_t csc;		// the CSC of the last C_SYS_Parms taken
 	uint32_t slc_ok, slc_bad;	// CACH short LCs the modem reported since boot: good CRC, bad CRC
 	bool rx_off;		// the receiver is off for power save (boards with rx_sleep_dmr)
