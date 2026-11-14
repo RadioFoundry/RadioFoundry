@@ -32,6 +32,7 @@ tooling and link the specs for behavior; they don't repeat them. Users read [doc
 |---|---|
 | [Debug link](debug-link.md) | The host-port debug protocol and `tools/rfoundry_debug.py` |
 | [CPS, codeplug and settings](cps-and-codeplug.md) | Where the CPS shim, the codeplug layout and the settings store are specified |
+| [Using RadioFoundry in your project](../../FORKING.md) | What the MIT license asks of forks and other projects, and contributing a feature instead |
 | [Developer glossary](glossary.md) | Terms of the specs, generated from `docs/glossary.json` |
 
 ## Common tasks
