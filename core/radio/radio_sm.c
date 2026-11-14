@@ -1966,6 +1966,8 @@ static struct {
 	uint32_t t3_dst;
 	uint32_t t3_ip;		// to IPI: the IPv4 destination, asked for as a multi-part call (dmr-trunking.md 7.7)
 	uint8_t t3_status;	// not 0: the list is the emergency alarm or a radio check, sent as this status instead
+	bool t3_sent;		// sent on the packet data channel: its outcome ends the call (t3_ms_data_done)
+	uint32_t t3_failures;	// dmrDataServiceIpFailures when it was sent
 #endif
 } data_tx;
 
@@ -2008,6 +2010,11 @@ static void data_rx(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 	d.length = b->len <= DMR_BURST_PAYLOAD_MAX ? b->len : DMR_BURST_PAYLOAD_MAX;
 	d.flags = b->crc_ok ? 0 : DMR_BURST_FLAG_RX_CRC_ERROR;
 	memcpy(d.payload, b->payload, d.length);
+#if CONFIG_DMR_TRUNK_TX
+	if (b->kind != DMR_BURST_CSBK) {
+		t3_ms_data_heard(&t3m, now_ms);	// a reply on the radio's data channel holds it a while longer
+	}
+#endif
 	dmrDataServiceRxBurst(&d, now_ms);
 }
 
@@ -2114,7 +2121,12 @@ static bool data_t3_start(radio_sm_t *sm, const dmrBurst_t *bursts, int count)
 	if (t3m.state == T3_FOLLOW && t3m.call.data) {
 		const t3_call_t *c = &t3m.call;
 		bool same = group == c->group && (dst == c->dst || (!group && dst == c->src));
-		return same && t3_ms_data_ready(&t3m, sm->t3_now) && data_send(sm, bursts + i, count - i);
+		if (same && t3_ms_data_ready(&t3m, sm->t3_now) && data_send(sm, bursts + i, count - i)) {
+			data_tx.t3_sent = c->ours;
+			data_tx.t3_failures = dmrDataServiceIpFailures();
+			return true;
+		}
+		return false;
 	}
 	if (t3m.state != T3_CAMPED || t3m.ax.state != T3_AX_IDLE) {
 		return false;
@@ -2147,6 +2159,11 @@ static void data_t3_fail(uint8_t err)
 // From t3_tick: ask for the channel, send once on it, or give the list back failed
 static void data_t3_tick(radio_sm_t *sm, uint32_t now_ms)
 {
+	if (data_tx.t3_sent && !dmrDataServiceIsBusy() && !dmrDataServiceIpBusy()) {
+		// The single item (and any confirmed retries) is over: so is the radio's data call (dmr-trunking.md 7.7)
+		data_tx.t3_sent = false;
+		t3_ms_data_done(&t3m, now_ms, dmrDataServiceIpFailures() == data_tx.t3_failures);
+	}
 	if (!data_tx.t3_wait) {
 		return;
 	}
@@ -2196,6 +2213,9 @@ static void data_t3_tick(radio_sm_t *sm, uint32_t now_ms)
 			data_tx.t3_wait = false;
 			if (!data_send(sm, data_tx.list, data_tx.count)) {
 				dmrDataServiceTxDone(DMR_TX_ERR_REJECTED);
+			} else {
+				data_tx.t3_sent = true;
+				data_tx.t3_failures = dmrDataServiceIpFailures();
 			}
 		}
 		return;

@@ -2073,6 +2073,34 @@ static void test_pdata(void)
 	frames(&ms, 6);
 	CHECK(nsent == T3_N_MAINT && ms.state == T3_CAMPED, "ended with P_MAINT");
 
+	// The radio's single item over (6.6.3.3.2.5), though the slot's idles go on (frame() counts them as activity) and
+	// no P_CLEAR comes: retries spent, ended at once; delivered, ended T3_DATA_LINGER_MS after the last data heard
+	for (int ok = 0; ok < 2; ok++) {
+		frames(&ms, 50);
+		CHECK(t3_ms_pdata(&ms, T, CALLER, false), "item %d", ok);
+		g = grant(T3_OP_PD_GRANT, 999, 2, CALLER, OWN);
+		rx(&ms, 1, &g);
+		frames(&ms, 3);
+		CHECK(ms.state == T3_FOLLOW && t3_ms_data_ready(&ms, T), "item %d: on the channel", ok);
+		frames(&ms, 100);
+		CHECK(ms.state == T3_FOLLOW, "item %d: idles hold the channel", ok);
+		nsent = 0;
+		t3_ms_data_done(&ms, T, ok != 0);
+		if (ok) {
+			frames(&ms, T3_DATA_LINGER_MS / 60 - 5);
+			t3_ms_data_heard(&ms, T);	// a reply
+			frames(&ms, T3_DATA_LINGER_MS / 60 - 5);
+			CHECK(ms.state == T3_FOLLOW && nsent == 0, "delivered: a reply holds the channel");
+		}
+		frames(&ms, 6 + (ok ? 10 : 0));
+		CHECK(nsent == T3_N_MAINT && sent[0].op == T3_OP_P_MAINT && ms.state == T3_CAMPED,
+		      "item %d over: ended with P_MAINT, sent %d", ok, nsent);
+	}
+	// Not the radio's call, or not a data call: nothing
+	frames(&ms, 50);
+	t3_ms_data_done(&ms, T, false);
+	CHECK(ms.state == T3_CAMPED && nsent == T3_N_MAINT, "camped: nothing");
+
 	// Refused
 	frames(&ms, 50);
 	CHECK(t3_ms_pdata(&ms, T, CALLER, false), "again");

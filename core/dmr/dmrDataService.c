@@ -871,6 +871,11 @@ uint8_t dmrDataServiceIpResult(void)
 	return ipx.result;
 }
 
+uint32_t dmrDataServiceIpFailures(void)
+{
+	return stats.ipFailed;
+}
+
 static uint8_t ipTries(void)
 {
 	uint8_t t = settings.ipConfirmedTries;

@@ -467,6 +467,15 @@ source, or to a talkgroup it listens to; the multi-item grants (55, 56) the same
 (`t3_ms_can_talk`); `t3_ms_data_ready` is true once the radio has settled on the slot. P_CLEAR, P_MAINT from the other
 party, inactivity and `t3_ms_end_call` end it as they end a voice call.
 
+The radio's request is a single item (table 6.50), so it ends its own data call once the item is over (6.6.3.3.2.5),
+with N_Maint P_MAINT (DISCON). This doesn't wait for a P_CLEAR, which the radio misses while it transmits, and on a
+slot whose idles keep TD_Inactive from running out.
+
+| The item | The call ends (`t3_ms_data_done`) |
+|---|---|
+| failed: no channel to send on, or every confirmed try unacknowledged (6.6.3.3.2.5 e) | at once |
+| sent unconfirmed, or acknowledged (6.6.3.3.2.5 a, c) | `T3_DATA_LINGER_MS` (3 s) after the last data heard on the slot (`t3_ms_data_heard`): a reply in the TS's hang still arrives |
+
 The availability check for data to the radio (C_AHOY, Service_Kind 0010b) is answered C_ACKU Message_Accepted
 (6.6.3.2.6).
 

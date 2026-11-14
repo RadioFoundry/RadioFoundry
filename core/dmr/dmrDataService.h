@@ -294,6 +294,8 @@ bool dmrDataServiceIpBusy(void);
 uint32_t dmrDataServiceTxIpDst(void);
 // The last one's outcome: DMR_REQ_OK (on air; confirmed: acknowledged) or DMR_REQ_FAILED
 uint8_t dmrDataServiceIpResult(void);
+// How many IP packets have failed (on air or unacknowledged), whoever sent them: a change says an item of one's own failed
+uint32_t dmrDataServiceIpFailures(void);
 // Whether an IP packet to dst between these ports goes confirmed under the settings
 bool dmrDataServiceIpWantConfirmed(const dmrDataSettings_t *s, bool group, uint32_t dst, uint8_t protocol, uint16_t srcPort,
 									uint16_t dstPort);

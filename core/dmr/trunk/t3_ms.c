@@ -422,6 +422,7 @@ static void follow(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_chan_
 #endif
 	ms->call.data = p->op == T3_OP_PD_GRANT || p->op == T3_OP_TD_GRANT || p->op == T3_OP_PD_GRANT_MI ||
 			p->op == T3_OP_TD_GRANT_MI;
+	ms->data_end_ms = 0;
 	// The private grant after an accepted ALS radio check, same caller, in time: an ALS call (6.6.2.6.2)
 	ms->call.als = !group && !ms->call.data && ms->als_until != 0 && before(now, ms->als_until) &&
 		       g->src == ms->als_src && is_me(ms, g->dst);
@@ -537,6 +538,7 @@ static void return_to_tscc(t3_ms_t *ms, uint32_t now)
 {
 	ms->cleared = ms->call;
 	ms->cleared_ms = now != 0 ? now : 1;
+	ms->data_end_ms = 0;
 	ms->protect_dis = false;
 	ms->protect_other_ms = 0;
 	ms->state = T3_CAMPED;
@@ -2460,6 +2462,9 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 		if (since(now, ms->last_act_ms, or_default(ms->cfg->inactive_ms, T3_INACTIVE_MS)) ||
 		    since(now, ms->call.start_ms, T3_CALL_MAX_MS)) {
 			return_to_tscc(ms, now);
+		} else if (ms->data_end_ms != 0 && (int32_t)(now - ms->data_end_ms) >= 0 && ms->tx.count == 0) {
+			ms->data_end_ms = 0;
+			t3_ms_end_call(ms, now);
 		}
 		break;
 	}
@@ -2700,6 +2705,26 @@ void t3_ms_cancel(t3_ms_t *ms, uint32_t now)
 	}
 	// The TSCC has it: ask it to cancel; it answers with C_ACKD (Message_Accepted)
 	start_access(ms, now, T3_SVC_CANCEL, ms->ax.dst, ms->ax.emergency);
+}
+
+void t3_ms_data_done(t3_ms_t *ms, uint32_t now, bool ok)
+{
+	if (ms->state != T3_FOLLOW || !ms->call.data || !ms->call.ours) {
+		return;
+	}
+	if (!ok) {
+		ms->data_end_ms = 0;
+		t3_ms_end_call(ms, now);	// 6.6.3.3.2.5 e: retries spent without an ACK
+		return;
+	}
+	ms->data_end_ms = (now + T3_DATA_LINGER_MS) | 1u;	// 6.6.3.3.2.5 a, c
+}
+
+void t3_ms_data_heard(t3_ms_t *ms, uint32_t now)
+{
+	if (ms->data_end_ms != 0) {
+		ms->data_end_ms = (now + T3_DATA_LINGER_MS) | 1u;
+	}
 }
 
 void t3_ms_end_call(t3_ms_t *ms, uint32_t now)

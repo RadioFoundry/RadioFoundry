@@ -68,6 +68,7 @@
 #define T3_INACTIVE_MS		2500	// TV_Inactive, 0-20 s: nothing on the followed slot this long, return
 #define T3_CALL_MAX_MS		300000	// a followed call ends by this at the latest
 #define T3_REGRANT_MS		2000	// a call just left isn't followed again this soon
+#define T3_DATA_LINGER_MS	3000	// the radio's data item went through: a reply may come this long before it leaves
 #define T3_PROTECT_ONE_MS	1000	// EN_PTT_ONE_MS for another radio holds PTT off this long after the last one
 #define T3_TRAND_TC_MS		10000	// TRand_TC, 2-60 s: the longest a random access may take
 #define T3_TP_MS		20000	// TP_Timer: after a progress acknowledgement to a call request
@@ -307,6 +308,7 @@ typedef struct {
 	// timers
 	uint32_t last_valid_ms;	// last PDU from our system on the TSCC
 	uint32_t last_act_ms;	// last activity on the followed slot
+	uint32_t data_end_ms;	// not 0: the radio's single data item is over, the call ends then (t3_ms_data_done)
 
 	// MBC assembly, per slot
 	struct {
@@ -548,6 +550,11 @@ bool t3_ms_divert(t3_ms_t *ms, uint32_t now, uint8_t services, uint32_t to, bool
 bool t3_ms_divert_clear(t3_ms_t *ms, uint32_t now, uint8_t services, bool incoming);
 // On a packet data payload channel, settled: the data service may send (the caller first, 6.6.3.3)
 bool t3_ms_data_ready(const t3_ms_t *ms, uint32_t now);
+// The radio's single data item on its packet data channel is over (6.6.3.3.2.5): failed (retries spent), the call ends
+// now; sent or acknowledged, it ends T3_DATA_LINGER_MS after the last data heard there (t3_ms_data_heard). Without
+// this, a P_CLEAR missed while the radio sent leaves it on a slot whose idles keep TD_Inactive from running out
+void t3_ms_data_done(t3_ms_t *ms, uint32_t now, bool ok);
+void t3_ms_data_heard(t3_ms_t *ms, uint32_t now);
 // PTT released before the grant: withdraw the request, or cancel it at the TSCC once sent
 void t3_ms_cancel(t3_ms_t *ms, uint32_t now);
 // The user ends the call being followed: P_MAINT when the radio started it or it is individual, then back
