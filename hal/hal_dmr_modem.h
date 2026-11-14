@@ -168,6 +168,9 @@ typedef struct {
 	int8_t (*tx_fill)(const dmr_tx_burst_t *b);
 	// Optional (NULL: not kept): lost modem interrupts found and recovered from since start
 	void (*health)(dmr_modem_health_t *h);
+	// The modem clears octet 0 bit 0 and octet 1 of each block after a data header with A set (it takes them for a
+	// confirmed block's CRC-9): the data stack may then solve them from the CRC-32 (dmrDataSetClearedBitsRepair)
+	bool clears_crc9;
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 	// Split duplex (docs/spec/split-duplex.md), all optional (NULL: the driver can't; the role is not offered).
 	// The modem clock: free-running microseconds (wraps), the clock slot_clock is stamped in. RX half and TIME

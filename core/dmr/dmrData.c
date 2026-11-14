@@ -434,6 +434,13 @@ static uint8_t udpcPortId(uint16_t port)
 	return 0;// in an extended header
 }
 
+static bool clearedBitsOn;
+
+void dmrDataSetClearedBitsRepair(bool on)
+{
+	clearedBitsOn = on;
+}
+
 void dmrDataSetUdpCompression(uint8_t mode)
 {
 	udpCompression = (mode <= DMR_UDPC_ALL) ? mode : DMR_UDPC_AUTO;
@@ -1618,7 +1625,7 @@ dmrDataRxResult_t dmrDataRxBurst(const dmrBurst_t *burst)
 				uint32_t rxCrc = c[0] | (c[1] << 8) | (c[2] << 16) | ((uint32_t)c[3] << 24);
 
 				if ((dmrDataCRC32(p->data, rxBytes - 4) != rxCrc) &&
-						!(p->responseRequested && (p->dataType == DMR_TYPE_RATE_1_2) &&
+						!(clearedBitsOn && p->responseRequested && (p->dataType == DMR_TYPE_RATE_1_2) &&
 						  ((rxBytes % 12) == 0) && clearedBitsRepair(p->data, rxBytes / 12, rxBytes - 4, rxCrc)))
 				{
 					return DMR_DATA_RX_ERROR;

@@ -5252,6 +5252,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->view.dmr.codec = sm->codec;
 	sm->hs_power = default_power();
 	dmr_call_init(board.dmr);	// board.dmr NULL: DMR channels receive nothing and refuse PTT
+	dmrDataSetClearedBitsRepair(board.dmr != NULL && board.dmr->clears_crc9);
 	ambeVoiceInit(pcm_audio(), board.vocoder);
 	if (modem_voice) {
 		dmr_call_set_voice(&modem_voice_sink, &modem_voice_source);

@@ -1123,6 +1123,16 @@ static void testClearedBits(void)
 	dmrBurst_t b[DMR_DATA_MAX_BURSTS];
 	const char *texts[] = { "Hi", "RadioFoundry ET", "RadioFoundry ETSI 1234" };	// 1, 2, 3 blocks
 
+	// Only for a modem that clears them (hal_dmr_modem_t.clears_crc9)
+	int n = dmrDataBuildEtsiText(false, 100, 10005, texts[1], true, 0, b, DMR_DATA_MAX_BURSTS);
+	for (int i = 1; i < n; i++)
+	{
+		b[i].payload[0] &= 0xFE;
+		b[i].payload[1] = 0;
+	}
+	CHECK(feed(b, n) == DMR_DATA_RX_ERROR);
+	dmrDataSetClearedBitsRepair(true);
+
 	for (unsigned t = 0; t < 3; t++)
 	{
 		int n = dmrDataBuildEtsiText(false, 100, 10005, texts[t], true, 0, b, DMR_DATA_MAX_BURSTS);
@@ -1138,7 +1148,7 @@ static void testClearedBits(void)
 
 	// More blocks: 9 unknowns each, more than the 32 equations
 	const char *longer = "RadioFoundry ETSI text that needs four blocks";
-	int n = dmrDataBuildEtsiText(false, 100, 10005, longer, true, 0, b, DMR_DATA_MAX_BURSTS);
+	n = dmrDataBuildEtsiText(false, 100, 10005, longer, true, 0, b, DMR_DATA_MAX_BURSTS);
 	CHECK(n >= 5);
 	for (int i = 1; i < n; i++)
 	{
@@ -1164,6 +1174,7 @@ static void testClearedBits(void)
 		b[i].payload[1] = 0;
 	}
 	CHECK(feed(b, n) == DMR_DATA_RX_ERROR);
+	dmrDataSetClearedBitsRepair(false);
 }
 
 int main(void)
