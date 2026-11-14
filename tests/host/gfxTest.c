@@ -522,7 +522,7 @@ static void test_text_cells(void)
 	CHECK(ui_text_cells("AB") == 2);
 	CHECK(ui_text_cells("中") == 2);
 	CHECK(ui_text_cells("A中B") == 4);
-	CHECK(ui_text_cells("·") == 1);
+	CHECK(ui_text_cells("\xB7") == 1);		// a Latin-1 middot: one byte, one cell (a UTF-8 · is two bytes)
 	// a cut leaves a Chinese character whole: room for 3 cells fits "A中" but not "A中B"
 	sb_init(&b, out, sizeof out);
 	sb_cut_text(&b, "A中B", 3);

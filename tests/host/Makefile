@@ -349,6 +349,16 @@ TESTS   += codeplugTest
 codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
 	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c -lm
 
+# The text editor's Back: one character per press, a Chinese name by its three UTF-8 bytes (core/ui/text_edit.h)
+TESTS += textEditTest
+textEditTest: textEditTest.c $(CORE)/ui/text_edit.h
+	$(CC) $(CFLAGS) -o $@ textEditTest.c
+
+run: run-text
+run-text: textEditTest
+	./textEditTest
+.PHONY: run-text
+
 # The same without format C (CONFIG_IDDB_COMPACT=0): a format C database is no database (iddb-compact.md 3.1)
 TESTS   += codeplugNoCompactTest
 

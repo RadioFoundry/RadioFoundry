@@ -12,6 +12,7 @@
 #include "aprs/aprs_fmt.h"
 #include "font.h"
 #include "fmt.h"
+#include "text_edit.h"
 #include "codeplug/codeplug.h"
 #include "config.h"
 #include "hal_time.h"
@@ -2036,10 +2037,9 @@ static bool text_key_fn(const input_event_t *ev)
 	if (((ev->action == ACT_BACK || ev->action == ACT_NAV_LEFT) && ev->gesture == GESTURE_PRESS) ||
 			(ev->action == ACT_QUICK && press)) {	// a slow * deletes too (it doesn't lock here)
 		if (text_len > 0) {
-			unsigned cut = text_len;
-			while (cut > 0 && ((uint8_t)text_buf[cut - 1] & 0xC0) == 0x80)
-				cut--;		// step back over a UTF-8 continuation byte to the character start
-			text_len = cut;
+			// Drop the last character whole: three bytes for a Chinese name, one otherwise (a Latin-1
+			// or font glyph byte is one character too). text_edit_backspace() decides the length.
+			text_len = text_edit_backspace(text_buf, text_len);
 			text_buf[text_len] = 0;
 		}
 		text_key = -1;
