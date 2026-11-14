@@ -392,6 +392,12 @@ bool hrc5000_dmr_path(hrc5000_t *dev, bool tx, uint8_t mod2, uint8_t mod1, uint8
 	return ok;
 }
 
+// Only the receiver's input to the demodulator, per burst between our bursts (tx_listen): on (receive) or off (transmit)
+bool hrc5000_dmr_rx_in(hrc5000_t *dev, bool on)
+{
+	return hrc_write(&dev->hrc, HRC_PAGE_SYS, REG_RX_PATH_B, on ? RX_PATH_B_DMR_RX : RX_PATH_B_OFF);
+}
+
 // The codec set-up for a received call that plays (on) and back to the idle values (off). DMR only: the FM receiver's
 // audio doesn't pass the codec, and a beep in FM keeps the idle values
 bool hrc5000_speaker_voice(hrc5000_t *dev, bool on)

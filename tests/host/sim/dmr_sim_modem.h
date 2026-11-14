@@ -56,6 +56,9 @@ typedef struct {
 				// not (the HR_C6000 engine keeps the timing it last had)
 	bool align_needs_repeater;	// an aligned start waits for repeater ticks; DMR_EV_TX_REJECTED, then
 					// DMR_EV_TX_DONE, after 50 slots
+	bool listen_bursts;	// the repeater's idle burst (BS sync) in every slot while it is on; while transmitting,
+				// only after tx_listen and in the slots between ours
+	bool free_ticks;	// slot numbers alternate with the repeater down too (the modem's own timing, held)
 
 	// State
 	dmr_event_cb_t cb;
@@ -63,6 +66,11 @@ typedef struct {
 	uint32_t slot;
 	bool tx_active;
 	bool tx_ending;
+	bool lose_own_csbk;	// a CSBK begun on DMR_TIMING_ASAP or ALIGNED never goes on air: TX done, no slot started
+	unsigned lose_next;	// this many next CSBKs never go on air, whatever their timing
+	unsigned lost_tx;	// CSBKs lost so
+	bool no_split_listen;	// tx_listen_split refused (the radio's RF can't retune between bursts)
+	bool listening;		// tx_listen since the last tx_begin
 	int8_t tx_parity;	// which slot parity is ours (0 / 1), set at tx_begin
 	bool align_found;	// align_needs_repeater: the repeater's timing seen since tx_begin
 	unsigned align_wait;	// ... slots waited for it
