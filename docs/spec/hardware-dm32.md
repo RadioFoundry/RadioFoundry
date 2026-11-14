@@ -1005,18 +1005,19 @@ audio fed into the C7000's audio path. Bring-up check 11 decides between them.
 
 #### The radio's own air band set-up
 
-From the radio's firmware (code read, not measured):
+From the radio's firmware (code read, not measured; the gain loop, 0x48 and the band edge re-read 2026-11-14):
 
 | Item | Value |
 |---|---|
-| When | the RX frequency is in 108.000 to 136.000 MHz (exclusive). AM is chosen by the frequency alone; no channel field |
+| When | the RX frequency is in 108.000 MHz (inclusive) to 136.000 MHz (exclusive). AM is chosen by the frequency alone; no channel field |
 | 0x43 | 0x0048: receive filter 14:12 = 0 (about 1.7 kHz), weak-signal bandwidth 0, narrow |
 | 0x47 | 0x6740 (AF type 7), written at the set-up and again when the audio is unmuted |
 | 0x13 | 0x03FF, then a gain loop rewrites it (below) |
 | 0x4A | 0x5450, written only here and never restored |
-| Not written | 0x04 (the AM demodulator enable bit: AM is 0x47 type 7 alone), 0x7E, 0x2B, 0x48, sub-audio |
+| 0x48 | 0x31E0 \| s at each air band tune, s a stored setting 1-15 (13, 0x31ED, when out of range). The FM and DMR set-ups leave 0xBBBF |
+| Not written | 0x04 (the AM demodulator enable bit: AM is 0x47 type 7 alone), 0x7E, 0x2B, 0x49, 0x10-0x12, 0x14, sub-audio |
 | Leaving AM | 0x13 = 0x037E, then the FM or DMR set-up |
-| Gain loop | each tick: the 0x67 reading (bits 8:0) averaged with the one before; dB = (average - 142) / 2. 10 dB or more: down at once to the table entry about (dB - 8) below the current one. Under -6 dB and 30 ticks since the last change: up one entry. Any change, or -6 dB and over, starts the 30 ticks again. The table holds 42 0x13 words from 0x000 (-93 dB) to 0x03FF (0 dB). The RSSI isn't corrected for the gain |
+| Gain loop | a tick every 10 ms in AM (empty channel included) and one at the end of each tune: the 0x67 reading (bits 8:0) averaged with the raw reading before (0 after a tune); dB = (average - 142) / 2, truncated toward 0. 1 to 9 dB over (average 144-161): down one entry every tick. 10 dB or more: down at once to the entry at or under (current dB - (dB - 8)). Any cut, and any tick at -6 dB and over, sets a 30-tick hold; under -6 dB with the hold at 0: up one entry each tick (a raise doesn't restart the hold). So it holds the average at 129-143. 0x13 is written every tick. The index is kept across tunes (0x13 = 0x03FF at the set-up lasts only until the tune's tick). The table holds 42 0x13 words from 0x000 (-93 dB) to 0x03FF (0 dB), plus a power-on start entry 0x03BE (-7 dB). The RSSI isn't corrected for the gain |
 | Squelch | 0x78 = n << 8 \| (n - 1) on the raw 0x67 scale, n from the factory page's air band rows (11.2: 0x80 level 9, 0x85 level 1, at five points over 108-136 MHz), interpolated by level and frequency. One radio's rows: 61 (level 9) and 71 (level 1), about 30-40 below its FM rows |
 
 On the bench (radio on a dummy load, an AM carrier from the SDR bench, a desk with a raised noise floor):
@@ -1054,8 +1055,9 @@ read over the debug link (audio probe receive capture). The 1 kHz level and its 
 | 148 and up | the tone is gone (about 1 % of its clean level); the output stays at the carrier-only noise | 68-95 %, the level falling |
 
 Over a reading of about 126 the demodulator clips 90 % peaks, and from about 148 it strips the modulation (low-level
-audio, such as most of a voice, disappears first). The loop as the radio's own set-up describes it (target 142, a cut
-only at 10 dB over, to 8 dB over the target) settled a steady station at 148-158, inside that range: on the bench a
+audio, such as most of a voice, disappears first). RadioFoundry's loop had the cut at 10 dB over only (to 8 dB over the target), without
+the radio's one-step cuts at 1-9 dB over, and stepped once per status poll, not every 10 ms: it settled a steady
+station at 148-158, inside that range, where the radio's own holds 129-143: on the bench a
 30 % tone came out at 4 against a clean 700, and a synthetic ATIS voice was missing. With target 120 and the cut at
 4 dB over, to the target, it holds a steady station at 111-119: 30 / 60 / 90 % gave 362 / 719 / 1075 (1 : 2 : 3), the
 2nd harmonic 1.2-2.5 %. The audio is about 6 dB quieter than at 148. The internal AGC mode (0x7E bit 15) made no
