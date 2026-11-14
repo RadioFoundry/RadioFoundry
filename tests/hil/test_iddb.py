@@ -187,8 +187,8 @@ def room_edges(fi, room):
 
 @pytest.mark.feature("iddb_compact")
 def test_iddb_room_edges(radio, pytestconfig, backup_dir):
-    """The database room's edges written with pseudorandom bytes and read back (room_edges: a few blocks, about a
-    minute), then put back as they were. What the room's size rests on, quickly: its end (cps_fast INFO) is really
+    """The database room's edges written with pseudorandom bytes and read back (room_edges: 8 blocks, seconds),
+    then put back as they were. What the room's size rests on, quickly: its end (cps_fast INFO) is really
     there, and a NAND range mapped in reads back what was written, a block written alone too. The whole room:
     test_iddb_whole_room (--iddb-whole-room). Needs --allow-codeplug-write"""
     if "IDDB_COMPACT" not in radio.features() or "CPS_FAST" not in radio.features():
