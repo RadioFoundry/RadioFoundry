@@ -1324,7 +1324,7 @@ static void test_power_save(void)
 	int wrong = 0, asleep = 0;
 	for (int i = 0; i < 64; i++) {
 		frame(&ms);
-		uint32_t step = ((T - t0) / 120u) & 511u;
+		uint32_t step = ((T - t0 + 120u) / 120u) & 511u;	// CSC 0's slots ended as it was heard at t0
 		bool awake = ((step >> 2) & 3u) == 2u || ((step & 3u) >= 2u && (((step >> 2) + 1u) & 3u) == 2u);
 		wrong += ms.asleep == awake;
 		asleep += ms.asleep;

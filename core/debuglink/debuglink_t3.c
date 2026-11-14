@@ -379,8 +379,8 @@ static void t3_svc(const radio_t3_view_t *x, void *ctx)
 		(unsigned)x->massregs, (unsigned)x->moves);
 	dl_text(t, "t3.ps_rq=%u\nt3.ps_offset=%u\nt3.asleep=%u\nt3.sleeps=%u\n", x->ps_rq, x->ps_offset, x->asleep,
 		(unsigned)x->sleeps);
-	dl_text(t, "t3.csc_valid=%u\nt3.slc_ok=%u\nt3.slc_bad=%u\nt3.rx_off=%u\nt3.rx_offs=%u\nt3.rx_off_ms=%u\n",
-		x->csc_valid, (unsigned)x->slc_ok, (unsigned)x->slc_bad, x->rx_off, (unsigned)x->rx_offs,
+	dl_text(t, "t3.csc_valid=%u\nt3.csc=%u\nt3.slc_ok=%u\nt3.slc_bad=%u\nt3.rx_off=%u\nt3.rx_offs=%u\nt3.rx_off_ms=%u\n",
+		x->csc_valid, x->csc, (unsigned)x->slc_ok, (unsigned)x->slc_bad, x->rx_off, (unsigned)x->rx_offs,
 		(unsigned)x->rx_off_ms);
 	dl_text(t, "t3.divert_to=%u\nt3.divert_group=%u\nt3.als_calls=%u\nt3.call_als=%u\n", (unsigned)x->divert_to,
 		x->divert_group, (unsigned)x->als_calls, x->call_als);

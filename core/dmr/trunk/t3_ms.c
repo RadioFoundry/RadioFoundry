@@ -2053,8 +2053,10 @@ void t3_ms_slc(t3_ms_t *ms, uint32_t now, uint32_t slc)
 	}
 	ms->slc_foreign = 0;
 	if (ms->state == T3_CAMPED && !ms->vote.on) {
+		// The value is that of the four slots whose CACHs carried it: complete only as they end, so its 120 ms
+		// began one step before now
 		ms->csc = sp.csc;
-		ms->csc_ms = now;
+		ms->csc_ms = now - T3_CSC_STEP_MS;
 		ms->csc_valid = true;
 	}
 }
