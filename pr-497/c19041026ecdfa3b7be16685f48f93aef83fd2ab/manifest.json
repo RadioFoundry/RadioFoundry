@@ -1,0 +1,76 @@
+{
+  "pr": 497,
+  "base_sha": "31802d5f2fcde509da63ef7bd963069cb1f04f44",
+  "head_sha": "c19041026ecdfa3b7be16685f48f93aef83fd2ab",
+  "generated": "2026-11-13T15:16:25Z",
+  "counts": {
+    "changed": 4,
+    "added": 0,
+    "removed": 0,
+    "unchanged": 763
+  },
+  "images": [
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-1.png",
+      "rows": 1,
+      "screens": [
+        "about"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-1.png",
+      "rows": 1,
+      "screens": [
+        "about"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-1.png",
+      "rows": 1,
+      "screens": [
+        "about"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-1.png",
+      "rows": 1,
+      "screens": [
+        "about"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "geometry": "160x128",
+      "screen": "about",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "about",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "about",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "about",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    }
+  ]
+}

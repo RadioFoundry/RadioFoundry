@@ -1,0 +1,31 @@
+{
+  "pr": 462,
+  "base_sha": "8d7cd0f7d51917424d8e8fbe0c2368c50b05753e",
+  "head_sha": "7eed25a19c6d6ce42f41a757a6ded70584aa19f7",
+  "generated": "2026-11-13T01:52:46Z",
+  "counts": {
+    "changed": 1,
+    "added": 0,
+    "removed": 0,
+    "unchanged": 766
+  },
+  "images": [
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-1.png",
+      "rows": 1,
+      "screens": [
+        "channel_tone_entry"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "geometry": "240x320",
+      "screen": "channel_tone_entry",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    }
+  ]
+}
