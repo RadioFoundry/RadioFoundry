@@ -2465,8 +2465,20 @@ static void testTmsOff(void)
 }
 #endif
 
+// A modem whose rate 3/4 blocks receivers can't decode: confirmed IP at rate 1/2 from the start; others at rate 3/4
+static void testNoRate34(void)
+{
+	dmrDataEnv_t e = fakeEnv;
+	e.noRate34 = true;
+	dmrDataServiceInit(&e);
+	CHECK(dmrDataServiceIpConfirmedRate() == DMR_TYPE_RATE_1_2);
+	dmrDataServiceInit(&fakeEnv);
+	CHECK(dmrDataServiceIpConfirmedRate() == DMR_TYPE_RATE_3_4);
+}
+
 int main(void)
 {
+	testNoRate34();
 	dmrDataServiceInit(&fakeEnv);
 
 #if CONFIG_DMR_TMS

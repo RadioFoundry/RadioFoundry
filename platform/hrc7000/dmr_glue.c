@@ -400,6 +400,7 @@ const hal_dmr_modem_t hrc_dmr = {
 	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_listen = tx_listen, .tx_end = tx_end,
 	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
 	.is_transmitting = is_transmitting, .tx_fill = tx_fill, .health = health,
+	.tx_rate34_bad = true,	// modem-hrc7000.md 6.4
 	SPLIT_OPS
 };
 

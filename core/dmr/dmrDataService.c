@@ -2712,6 +2712,7 @@ void dmrDataServiceInit(const dmrDataEnv_t *e)
 	{
 		env = *e;
 	}
+	ipConfirmedRate = env.noRate34 ? DMR_TYPE_RATE_1_2 : IP_CONFIRMED_RATE;
 	txEnded = false;
 	txEndStamp = false;
 	dmrDataRxReset();

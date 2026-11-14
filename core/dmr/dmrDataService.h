@@ -131,6 +131,9 @@ typedef struct
 	// Our position for LRRP (docs/spec/position.md): false for none, and NULL for none ever. Only asked when the
 	// settings say hasGps
 	bool (*ownPosition)(lrrpPosition_t *position, uint32_t nowMs, void *ctx);
+	// The modem can't send rate 3/4 blocks a receiver decodes (hal_dmr_modem_t.tx_rate34_bad): confirmed IP packets
+	// go at rate 1/2
+	bool noRate34;
 	void *ctx;
 } dmrDataEnv_t;
 
