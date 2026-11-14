@@ -92,6 +92,28 @@ bool radio_t3_name(uint8_t n, char *name);
 // The fallback for a trunked channel with this tag on system s (12.5) into out: its channel number, 0 when none (none
 // set, the channel gone, renamed or itself trunked)
 uint16_t radio_t3_fallback(const radio_t3_tag_t *tag, const radio_t3_setup_t *s, channel_t *out);
+
+#if CONFIG_ZONE_SHARE
+// Zone sharing (docs/spec/zone-share.md 4.2): systems in and out of a share record. Codeplug writes: the storage job
+// that imports, never the radio task
+#include "dmr/zoneShare.h"
+// System n as its sharing setting allows (12.6), its channels into chan (ZS_SYS_CHANS_MAX): false when it is absent or
+// not shared. *fb_chan: its fallback channel (0: none), for the caller to point at in the record. Never the radio's
+// own ID
+bool radio_t3_share_out(uint8_t n, zsSystem_t *s, zsSysChan_t *chan, uint16_t *fb_chan);
+// The system here with this system code (model, NET, category), -1: none
+int radio_t3_find(uint8_t model, uint16_t net, uint8_t category);
+// System `index` of a record written to the lowest free n (its channels and key with it, sharing off): n, -1 no room
+// or a flash error (anything written is removed). s: that system, as zsSystemAt read it
+int radio_t3_share_in(const zsRecord_t *rec, int index, const zsSystem_t *s);
+// System n's fallback channel set to channel c (the record's, once imported) and its name check
+bool radio_t3_set_fallback(uint8_t n, uint16_t c, const char *name);
+// System n, its channels and key removed (an import undone)
+void radio_t3_remove(uint8_t n);
+// Channel c tagged with system n (its name for the check); the tag removed
+bool radio_t3_tag_set(uint16_t c, uint8_t n, const char *name);
+void radio_t3_tag_remove(uint16_t c);
+#endif
 #endif
 
 #endif

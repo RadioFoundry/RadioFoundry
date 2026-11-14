@@ -31,6 +31,14 @@ static bool parse(const uint8_t *p, int n, zsRecord_t *r)
 		zsChannel_t ch;
 		ok = zsChannelAt(r, i, &ch);
 	}
+#if CONFIG_DMR_TRUNK
+	for (int i = 0; ok && (i < r->systems); i++)
+	{
+		zsSystem_t sys;
+		zsSysChan_t sc;
+		ok = zsSystemAt(r, i, &sys) && (sys.chans == 0 || zsSysChanAt(r, i, sys.chans - 1, &sc));
+	}
+#endif
 	free(q);
 	r->data = NULL;
 	return ok;
@@ -422,18 +430,168 @@ static void test_messages(void)
 	CHECK(zsAssemble(&a, 1, &m, 0) == ZS_ASM_BAD);
 }
 
+#if CONFIG_DMR_TRUNK
+// Trunked systems (zone-share.md 4.2): a whole one with its key, one by identity, channels of each and a fallback
+static zsSystem_t fullSystem(void)
+{
+	zsSystem_t s = { .level = ZS_SYS_FULL, .name = "County", .model = 1, .net = 5, .category = 1, .cc = 2,
+					 .opts = 0x0060, .holdS = 20, .fallback = 3, .planBaseHz = 450000000, .planFirst = 1, .planSep = 2,
+					 .planFlags = 1, .planSplitHz = 5000000, .leaveDbm = -110, .psRq = 2, .sites = 2,
+					 .site = { 1, 3 }, .chans = 2, .hasKey = true, .hasPsn = true, .psn = 0x123456 };
+	for (int i = 0; i < ZS_SYS_KEY_LEN; i++)
+	{
+		s.key[i] = (uint8_t)(0xA0 + i);
+	}
+	return s;
+}
+
+static const zsSysChan_t chans2[2] = {
+	{ .ctrl = true, .lcn = 1, .rxHz = 451000000, .txHz = 456000000, .cc = 0xFF },
+	{ .lcn = 2, .rxHz = 451100000, .txHz = 456100000, .cc = 3 },
+};
+
+static int trunkZone(uint8_t *out, int size, const zsSystem_t *a, const zsSystem_t *b)
+{
+	zsWriter_t w;
+	zsContact_t tg = { .type = ZS_CONTACT_GROUP, .id = 1, .name = "Fire" };
+	zsChannel_t t1 = dmrChannel("County Fire", 451000000, 5000000, 2, 1, 1);
+	zsChannel_t t2 = dmrChannel("Metro", 452000000, 5000000, 1, 1, 1);
+	zsChannel_t fm = { .rxHz = 462000000, .name = "Talkaround" };
+
+	t1.system = 1;
+	t2.system = 2;
+	zsWriterBegin(&w, out, size, 0x5151, ZS_FLAG_SYSTEMS, "Trunk");
+	zsWriterContact(&w, &tg);
+	zsWriterSystem(&w, a, chans2);
+	zsWriterSystem(&w, b, NULL);
+	zsWriterChannel(&w, &t1);
+	zsWriterChannel(&w, &t2);
+	zsWriterChannel(&w, &fm);
+	int n = zsWriterEnd(&w);
+	CHECK(n == zsHeaderSize("Trunk") + zsContactSize(&tg) + 1 + zsSystemSize(a) + zsSystemSize(b) + zsChannelSize(&t1) +
+		  zsChannelSize(&t2) + zsChannelSize(&fm));
+	return n;
+}
+
+static void test_systems(void)
+{
+	static zsSystem_t a, b, got;
+	uint8_t out[ZS_RECORD_MAX];
+	zsRecord_t r;
+	zsChannel_t ch;
+
+	a = fullSystem();
+	b = (zsSystem_t){ .level = ZS_SYS_IDENTITY, .name = "Metro", .model = 2, .net = 300, .category = 2, .cc = 1,
+					  .opts = 0x0800 };
+	int n = trunkZone(out, sizeof(out), &a, &b);
+	CHECK(n > 0);
+	CHECK(parse(out, n, &r) && r.systems == 2 && r.channels == 3);
+	CHECK(zsParse(out, n, &r) && zsSystemAt(&r, 0, &got));
+	CHECK(memcmp(&got, &a, sizeof(a)) == 0);	// every field back, padding included (both zeroed)
+	zsSysChan_t sc;
+	CHECK(zsSysChanAt(&r, 0, 0, &sc) && sc.ctrl && sc.lcn == 1 && sc.rxHz == 451000000 && sc.txHz == 456000000 &&
+		  sc.cc == 0xFF);
+	CHECK(zsSysChanAt(&r, 0, 1, &sc) && !sc.ctrl && sc.lcn == 2 && sc.cc == 3);
+	CHECK(!zsSysChanAt(&r, 0, 2, &sc) && !zsSysChanAt(&r, 1, 0, &sc));
+	CHECK(zsSystemAt(&r, 1, &got) && got.level == ZS_SYS_IDENTITY && strcmp(got.name, "Metro") == 0 && got.net == 300 &&
+		  got.category == 2 && got.opts == 0x0800 && got.chans == 0 && !got.hasKey);
+	CHECK(zsChannelAt(&r, 0, &ch) && ch.system == 1 && ch.contact == 1);
+	CHECK(zsChannelAt(&r, 1, &ch) && ch.system == 2);
+	CHECK(zsChannelAt(&r, 2, &ch) && ch.system == 0 && !ch.dmr);
+
+	// A key without its PSN; and no key
+	a.hasPsn = false;
+	a.psn = 0;
+	n = trunkZone(out, sizeof(out), &a, &b);
+	CHECK(zsParse(out, n, &r) && zsSystemAt(&r, 0, &got) && got.hasKey && !got.hasPsn && got.key[15] == 0xAF);
+	a.hasKey = false;
+	memset(a.key, 0, sizeof(a.key));
+	n = trunkZone(out, sizeof(out), &a, &b);
+	CHECK(zsParse(out, n, &r) && zsSystemAt(&r, 0, &got) && !got.hasKey && got.chans == 2);
+
+	// The writer refuses what the reader would
+	zsWriter_t w;
+	zsSystem_t bad = fullSystem();
+	bad.chans = 0;
+	zsWriterBegin(&w, out, sizeof(out), 1, ZS_FLAG_SYSTEMS, "x");
+	CHECK(!zsWriterSystem(&w, &bad, chans2));
+	bad = fullSystem();
+	bad.category = 3;
+	zsWriterBegin(&w, out, sizeof(out), 1, ZS_FLAG_SYSTEMS, "x");
+	CHECK(!zsWriterSystem(&w, &bad, chans2));
+	bad = fullSystem();
+	bad.opts = 0x1000;
+	zsWriterBegin(&w, out, sizeof(out), 1, ZS_FLAG_SYSTEMS, "x");
+	CHECK(!zsWriterSystem(&w, &bad, chans2));
+	// A system without the flag, the flag without a system, a channel naming a system the record hasn't
+	zsChannel_t t = dmrChannel("T", 451000000, 0, 1, 1, 0);
+	zsWriterBegin(&w, out, sizeof(out), 1, 0, "x");
+	CHECK(!zsWriterSystem(&w, &b, NULL));
+	zsWriterBegin(&w, out, sizeof(out), 1, ZS_FLAG_SYSTEMS, "x");
+	zsWriterChannel(&w, &t);
+	CHECK(zsWriterEnd(&w) == 0);
+	t.system = 2;
+	zsWriterBegin(&w, out, sizeof(out), 1, ZS_FLAG_SYSTEMS, "x");
+	zsWriterSystem(&w, &b, NULL);
+	CHECK(!zsWriterChannel(&w, &t));
+
+	// Malformed on air: each refused whole
+	a = fullSystem();
+	n = trunkZone(out, sizeof(out), &a, &b);
+	CHECK(zsParse(out, n, &r));
+	int sys0 = r.systemAt[0], sys1 = r.systemAt[1], ch0 = r.channelAt[0];
+	uint8_t m[ZS_RECORD_MAX];
+	struct { int at; uint8_t v; const char *what; } cases[] = {
+		{ 7, 0x00, "systems without the flag" },
+		{ sys0 - 1, 0, "no systems" },
+		{ sys0 - 1, ZS_SYSTEMS_MAX + 1, "too many systems" },
+		{ sys0, 0x00, "level 0" },
+		{ sys0, 0x03, "level 3" },
+		{ sys0, 0x1E, "a reserved bit" },
+		{ sys1, ZS_SYS_IDENTITY | 0x04, "a key by identity" },
+		{ ch0 + 9, 0x80 | 0x40 | 2, "a reserved DMR bit" },
+		{ ch0 + 11, 0, "system 0 on a trunked channel" },
+		{ ch0 + 11, 3, "a system the record hasn't" },
+	};
+	for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+	{
+		memcpy(m, out, (size_t)n);
+		m[cases[i].at] = cases[i].v;
+		bool ok = parse(m, n, &r);
+		if (ok)
+		{
+			printf("# took: %s\n", cases[i].what);
+		}
+		CHECK(!ok);
+	}
+	// The fallback past the record's channels: at sys0 + 1 + name (7) + 7 fields + hold
+	memcpy(m, out, (size_t)n);
+	m[sys0 + 1 + 7 + 7 + 1] = 4;
+	CHECK(!parse(m, n, &r));
+	m[sys0 + 1 + 7 + 7 + 1] = 3;
+	CHECK(parse(m, n, &r));
+}
+#endif
+
 static void test_fuzz(void)
 {
-	uint8_t seed[ZS_RECORD_MAX], buf[ZS_RECORD_MAX + 64];
-	int n = sampleZone(seed, sizeof(seed), 12);
+	uint8_t seed[ZS_RECORD_MAX], seed2[ZS_RECORD_MAX], buf[ZS_RECORD_MAX + 64];
+	int n = sampleZone(seed, sizeof(seed), 12), n2 = 0;
+#if CONFIG_DMR_TRUNK
+	static zsSystem_t sa, sb;
+	sa = fullSystem();
+	sb = (zsSystem_t){ .level = ZS_SYS_IDENTITY, .name = "Metro", .model = 2, .net = 300, .category = 2 };
+	n2 = trunkZone(seed2, sizeof(seed2), &sa, &sb);	// half the runs mutate a record with systems
+#endif
 	fuzz_t f;
 	long iters = fuzz_iters(20000), parsed = 0, bad = 0;
 
 	fuzz_init(&f, 0x2054A);
 	for (long i = 0; i < iters; i++)
 	{
-		memcpy(buf, seed, (size_t)n);
-		int len = fuzz_mutate(&f, buf, n, ZS_RECORD_MAX);
+		bool two = (n2 > 0) && (i & 2);
+		memcpy(buf, two ? seed2 : seed, (size_t)(two ? n2 : n));
+		int len = fuzz_mutate(&f, buf, two ? n2 : n, ZS_RECORD_MAX);
 		// Keep the length field right half the time, so the mutations reach past the header
 		if ((i & 1) && (len >= 3))
 		{
@@ -457,6 +615,21 @@ static void test_fuzz(void)
 				zsContact_t c;
 				bad += !(zsContactAt(&r, k, &c) && (c.id != 0) && (c.id <= 0xFFFFFF) && (strlen(c.name) <= ZS_NAME_MAX));
 			}
+#if CONFIG_DMR_TRUNK
+			for (int k = 0; k < r.systems; k++)
+			{
+				zsSystem_t sys;
+				zsSysChan_t sc;
+				bad += !(zsSystemAt(&r, k, &sys) && (sys.chans <= ZS_SYS_CHANS_MAX) && (sys.sites <= ZS_SYS_SITES_MAX) &&
+						 (sys.fallback <= r.channels) && (strlen(sys.name) <= ZS_NAME_MAX));
+				bad += (sys.chans > 0) && !(zsSysChanAt(&r, k, sys.chans - 1, &sc) && (sc.rxHz != 0));
+			}
+			for (int k = 0; k < r.channels; k++)
+			{
+				zsChannel_t ch;
+				bad += zsChannelAt(&r, k, &ch) && (ch.system > r.systems);
+			}
+#endif
 		}
 		free(p);
 
@@ -483,6 +656,9 @@ int main(void)
 	test_writer_limits();
 	test_malformed();
 	test_messages();
+#if CONFIG_DMR_TRUNK
+	test_systems();
+#endif
 	test_fuzz();
 	printf("zoneShareTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;

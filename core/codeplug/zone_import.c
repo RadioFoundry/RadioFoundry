@@ -7,6 +7,9 @@
 #include "codeplug/zone_import.h"
 #include "codeplug/zone_edit.h"
 #include "board.h"
+#if CONFIG_DMR_TRUNK
+#include "radio/radio_trunk.h"
+#endif
 
 // The import's working state: static, as the housekeeping task's stack is small. One import or export at a time (the
 // storage job queue runs one job at a time)
@@ -17,6 +20,14 @@ static uint16_t contact_index[ZS_CONTACTS_MAX];		// the record's contacts here (
 static uint16_t added_ct[ZS_CONTACTS_MAX];			// contacts this import added
 static uint8_t added_ct_count;
 static zsRecord_t rec;
+#if CONFIG_DMR_TRUNK
+static int8_t sys_here[ZS_SYSTEMS_MAX];			// the record's systems here (n), -1: no channel needs it,
+								// SYS_NO_ROOM: no free system slot, its channels left out
+#define SYS_NO_ROOM	(-2)
+static uint8_t sys_fb[ZS_SYSTEMS_MAX];			// a system this import added: its fallback in the record (1-based)
+static uint8_t sys_added;						// bit k: this import added the record's system k
+static zsSystem_t sys_buf;
+#endif
 
 // prefix, then v in decimal, into a buffer of cap bytes: cut to fit and terminated. Returns the length written.
 // Not snprintf: these names would be the image's only use of the C library's printf, and of the allocator behind it
@@ -64,6 +75,17 @@ bool zone_import_in_band(const zsChannel_t *ch)
 	return board_in_band(ch->rxHz, false);
 }
 
+// The import takes the channel: in band, and not trunked on a system that found no room
+static bool taken(const zsChannel_t *ch)
+{
+#if CONFIG_DMR_TRUNK
+	if (ch->system != 0 && sys_here[ch->system - 1] == SYS_NO_ROOM) {
+		return false;
+	}
+#endif
+	return zone_import_in_band(ch);
+}
+
 static bool name_eq(const char *a, const char *b)
 {
 	return strncmp(a, b, CODEPLUG_NAME_LEN) == 0;
@@ -79,6 +101,14 @@ static void undo(void)
 	while (added_ct_count > 0) {
 		codeplug_delete_contact(added_ct[--added_ct_count]);
 	}
+#if CONFIG_DMR_TRUNK
+	for (int k = 0; k < ZS_SYSTEMS_MAX; k++) {
+		if (sys_added & (1u << k)) {
+			radio_t3_remove((uint8_t)sys_here[k]);
+		}
+	}
+	sys_added = 0;
+#endif
 }
 
 // --- Contacts ---
@@ -93,7 +123,7 @@ static int mark_needed(void)
 
 	memset(needed, 0, sizeof(needed));
 	for (int i = 0; i < rec.channels; i++) {
-		if (zsChannelAt(&rec, i, &z) && z.dmr && z.contact != 0 && zone_import_in_band(&z) && !needed[z.contact - 1]) {
+		if (zsChannelAt(&rec, i, &z) && z.dmr && z.contact != 0 && taken(&z) && !needed[z.contact - 1]) {
 			needed[z.contact - 1] = true;
 			n++;
 		}
@@ -192,6 +222,100 @@ static zone_import_status_t map_contacts(zone_import_result_t *res)
 	return ZI_OK;
 }
 
+// --- Trunked systems (zone-share.md 4.2) ---
+
+#if CONFIG_DMR_TRUNK
+// Each system the record's in-band channels use, mapped to one here: the one with its system code, else added from
+// the record (whole, or by identity: unusable until the user sets it up)
+static zone_import_status_t map_systems(zone_import_result_t *res)
+{
+	uint8_t uses[ZS_SYSTEMS_MAX] = { 0 };
+	zsChannel_t z;
+
+	memset(sys_here, -1, sizeof(sys_here));
+	memset(sys_fb, 0, sizeof(sys_fb));
+	sys_added = 0;
+	for (int i = 0; i < rec.channels; i++) {
+		if (zsChannelAt(&rec, i, &z) && z.system != 0 && zone_import_in_band(&z)) {
+			uses[z.system - 1]++;
+		}
+	}
+	for (int k = 0; k < rec.systems; k++) {
+		if (uses[k] == 0) {
+			continue;
+		}
+		if (!zsSystemAt(&rec, k, &sys_buf)) {
+			return ZI_BAD_RECORD;
+		}
+		int n = radio_t3_find(sys_buf.model, sys_buf.net, sys_buf.category);
+
+		if (n < 0) {
+			n = radio_t3_share_in(&rec, k, &sys_buf);
+			if (n < 0) {
+				sys_here[k] = SYS_NO_ROOM;	// its channels are left out and counted (dmr-trunking.md 12.6)
+				res->t3_left_out += uses[k];
+				continue;
+			}
+			sys_added |= (uint8_t)(1u << k);
+			sys_fb[k] = sys_buf.fallback;
+			res->systems_added++;
+		}
+		sys_here[k] = (int8_t)n;
+		if (!radio_t3_usable((uint8_t)n)) {
+			res->t3_unavailable += uses[k];
+		}
+	}
+	return ZI_OK;
+}
+
+// Channel n, record channel i, written: tag it with its system, and make it the fallback of a system this import added
+// that names it
+static bool trunk_channel(const zsChannel_t *z, int i, uint16_t n, const char *name)
+{
+	if (z->system != 0 && !radio_t3_tag_set(n, (uint8_t)sys_here[z->system - 1], name)) {
+		return false;
+	}
+	for (int k = 0; k < rec.systems; k++) {
+		if ((sys_added & (1u << k)) && sys_fb[k] == i + 1 && z->system == 0 &&
+		    !radio_t3_set_fallback((uint8_t)sys_here[k], n, name)) {
+			return false;
+		}
+	}
+	return true;
+}
+#endif
+
+bool zone_import_t3_locked(const zsRecord_t *r, int i)
+{
+#if CONFIG_DMR_TRUNK
+	static zsSystem_t s;	// the UI task's: the import job has its own
+	zsChannel_t z;
+	zsSysChan_t c;
+
+	if (!zsChannelAt(r, i, &z) || z.system == 0 || !zsSystemAt(r, z.system - 1, &s)) {
+		return false;
+	}
+	int n = radio_t3_find(s.model, s.net, s.category);
+
+	if (n >= 0) {
+		return !radio_t3_usable((uint8_t)n);	// the radio's own set-up is the one used
+	}
+	if (s.level != ZS_SYS_FULL || ((s.opts & 0x0800u) != 0 && !s.hasKey)) {
+		return true;	// by identity only, or it authenticates and its key didn't come
+	}
+	for (int k = 0; k < s.chans; k++) {
+		if (zsSysChanAt(r, z.system - 1, k, &c) && c.ctrl) {
+			return false;
+		}
+	}
+	return true;	// no control channel to find it on
+#else
+	(void)r;
+	(void)i;
+	return false;
+#endif
+}
+
 // --- Channels ---
 
 static uint8_t power_here(uint8_t p)
@@ -259,6 +383,9 @@ static zone_import_status_t write_channels(zone_import_result_t *res)
 			res->out_of_band++;
 			continue;
 		}
+		if (!taken(&z)) {
+			continue;	// counted in t3_left_out
+		}
 		channel_here(&z, i, &ch);
 		if (new_zone.count >= codeplug_zone_capacity()) {
 			return ZI_ZONE_FULL;
@@ -272,10 +399,18 @@ static zone_import_status_t write_channels(zone_import_result_t *res)
 			return ZI_FLASH;
 		}
 		added_ch[added_ch_count++] = n;
+#if CONFIG_DMR_TRUNK
+		if (!trunk_channel(&z, i, n, ch.name)) {
+			return ZI_FLASH;
+		}
+#endif
 		new_zone.channels[new_zone.count++] = n;
 		res->channels++;
 	}
-	return (res->channels > 0) ? ZI_OK : ZI_NONE_IN_BAND;
+	if (res->channels == 0) {
+		return res->t3_left_out != 0 ? ZI_NO_SYSTEMS : ZI_NONE_IN_BAND;
+	}
+	return ZI_OK;
 }
 
 // --- Zones ---
@@ -465,6 +600,9 @@ static void begin(zone_import_result_t *res)
 	added_ch_count = 0;
 	added_ct_count = 0;
 	memset(&new_zone, 0, sizeof(new_zone));
+#if CONFIG_DMR_TRUNK
+	sys_added = 0;
+#endif
 }
 
 zone_import_status_t zone_import_zone(const uint8_t *record, int length, uint32_t sender,
@@ -503,8 +641,15 @@ zone_import_status_t zone_import_zone(const uint8_t *record, int length, uint32_
 	} else if (target >= 0 && !codeplug_zone(target, &old_zone)) {
 		return ZI_FLASH;
 	}
-	zone_import_status_t st = map_contacts(res);
-
+	// Systems first: a trunked channel whose system finds no room is left out, and so is its contact
+#if CONFIG_DMR_TRUNK
+	zone_import_status_t st = map_systems(res);
+#else
+	zone_import_status_t st = ZI_OK;
+#endif
+	if (st == ZI_OK) {
+		st = map_contacts(res);
+	}
 	if (st == ZI_OK) {
 		st = write_channels(res);
 	}
@@ -582,8 +727,15 @@ zone_import_status_t zone_import_channel(const uint8_t *record, int length, uint
 	if (stored && old_zone.count >= codeplug_zone_capacity()) {
 		return ZI_ZONE_FULL;
 	}
-	zone_import_status_t st = map_contacts(res);
-
+	// Systems first: a trunked channel whose system finds no room is left out, and so is its contact
+#if CONFIG_DMR_TRUNK
+	zone_import_status_t st = map_systems(res);
+#else
+	zone_import_status_t st = ZI_OK;
+#endif
+	if (st == ZI_OK) {
+		st = map_contacts(res);
+	}
 	if (st == ZI_OK) {
 		st = write_channels(res);
 	}
@@ -663,14 +815,46 @@ static uint32_t zone_id_of(const char *name, uint8_t flags)
 	return (h != 0) ? h : 1;
 }
 
-// Channels list[0..n) as a record: contacts first, then channels in order while they fit. Returns the length
+#if CONFIG_DMR_TRUNK
+static uint8_t ex_sys_src[ZS_SYSTEMS_MAX];		// the record's systems: their n here
+static uint8_t ch_sys[CODEPLUG_ZONE_MAX];		// each included channel's record system (1-based), 0 none
+static zsSystem_t ex_sys;
+static zsSysChan_t ex_chan[ZS_SYS_CHANS_MAX];
+
+// Channel number's record system (1-based) when it is trunked: 0 a conventional channel, -1 one whose system isn't
+// shared (left out). *grow: the octets a system new to the record adds (0 when it is in already)
+static int export_system(uint16_t number, const channel_t *ch, uint8_t systems, int *grow)
+{
+	radio_t3_tag_t tag;
+	uint16_t fb;
+
+	*grow = 0;
+	if (ch->mode != RADIO_MODE_DMR || !radio_t3_tag(number, ch->name, &tag)) {
+		return 0;
+	}
+	for (uint8_t k = 0; k < systems; k++) {
+		if (ex_sys_src[k] == tag.sys) {
+			return k + 1;
+		}
+	}
+	if (systems >= ZS_SYSTEMS_MAX || !radio_t3_share_out(tag.sys, &ex_sys, ex_chan, &fb)) {
+		return -1;
+	}
+	*grow = zsSystemSize(&ex_sys) + (systems == 0 ? 1 : 0);
+	ex_sys_src[systems] = tag.sys;	// taken only when the caller counts it in
+	return systems + 1;
+}
+#endif
+
+// Channels list[0..n) as a record: contacts first, then trunked systems, then channels in order while they fit. A
+// trunked channel whose system isn't shared (dmr-trunking.md 12.6) is left out. Returns the length
 static int export_list(const char *name, uint8_t flags, const uint16_t *list, uint16_t n, uint8_t *out, int size,
 		       uint8_t *included)
 {
 	static uint16_t ct_src[ZS_CONTACTS_MAX];	// codeplug index of each record contact
 	static uint8_t ch_ct[CODEPLUG_ZONE_MAX];	// each included channel's record contact (1-based), 0 none
 	static uint16_t ch_num[CODEPLUG_ZONE_MAX];
-	uint8_t contacts = 0, channels = 0;
+	uint8_t contacts = 0, channels = 0, systems = 0;
 	int budget = (size < ZS_RECORD_MAX) ? size : ZS_RECORD_MAX;
 	int used = zsHeaderSize(name);
 	channel_t ch;
@@ -686,6 +870,14 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 		int need = 0;
 		uint8_t ref = 0;
 		uint16_t idx = 0;
+#if CONFIG_DMR_TRUNK
+		int sys = export_system(list[i], &ch, systems, &need);
+
+		if (sys < 0) {
+			continue;
+		}
+		z.system = (uint8_t)sys;
+#endif
 
 		if (z.dmr && contact_on_air(&ch, &c, &idx)) {
 			for (uint8_t k = 0; k < contacts; k++) {
@@ -710,6 +902,12 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 		if (ref == contacts + 1) {
 			ct_src[contacts++] = idx;
 		}
+#if CONFIG_DMR_TRUNK
+		if (z.system > systems) {
+			systems++;
+		}
+		ch_sys[channels] = z.system;
+#endif
 		ch_ct[channels] = z.dmr ? ref : 0;
 		ch_num[channels++] = list[i];
 	}
@@ -721,7 +919,9 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 	}
 	zsWriter_t w;
 
-	zsWriterBegin(&w, out, budget, zone_id_of(name, flags), flags, name);
+	// The zone ID from the flags the sender chose, so a zone that gains a trunked channel is still the same zone
+	zsWriterBegin(&w, out, budget, zone_id_of(name, flags), (uint8_t)(flags | (systems != 0 ? ZS_FLAG_SYSTEMS : 0)),
+		      name);
 	for (uint8_t k = 0; k < contacts; k++) {
 		channel_t probe;
 
@@ -734,12 +934,30 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 		}
 		zsWriterContact(&w, &c);
 	}
+#if CONFIG_DMR_TRUNK
+	for (uint8_t k = 0; k < systems; k++) {
+		uint16_t fb;
+
+		if (!radio_t3_share_out(ex_sys_src[k], &ex_sys, ex_chan, &fb)) {
+			return 0;
+		}
+		for (uint8_t i = 0; i < channels && fb != 0; i++) {
+			if (ch_num[i] == fb && ch_sys[i] == 0) {
+				ex_sys.fallback = (uint8_t)(i + 1);	// its fallback channel goes too: point at it
+			}
+		}
+		zsWriterSystem(&w, &ex_sys, ex_chan);
+	}
+#endif
 	for (uint8_t i = 0; i < channels; i++) {
 		if (!codeplug_channel(ch_num[i], &ch)) {
 			return 0;
 		}
 		channel_on_air(&ch, &z);
 		z.contact = ch_ct[i];
+#if CONFIG_DMR_TRUNK
+		z.system = ch_sys[i];
+#endif
 		zsWriterChannel(&w, &z);
 	}
 	return zsWriterEnd(&w);

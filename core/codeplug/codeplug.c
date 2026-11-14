@@ -1066,6 +1066,14 @@ bool codeplug_delete_channel(uint16_t number)
 		serial++;
 	}
 	storage_unlock();
+#if CONFIG_DMR_TRUNK
+	// Its trunked channel tag goes too (dmr-trunking.md 12.4): a channel written at this number later is a new one.
+	// Nothing is written when there is none
+	if (ok) {
+		codeplug_kv_op_t op = { (uint16_t)(CODEPLUG_KEY_T3_TAG + number - 1u), CODEPLUG_KV_REMOVE, NULL };
+		(void)codeplug_kv_write(&op, 1);
+	}
+#endif
 	return ok;
 }
 

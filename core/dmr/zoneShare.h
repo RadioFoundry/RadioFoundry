@@ -14,6 +14,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "config.h"
 #include "dmr/dmrData.h"
 
 #define ZS_PORT					4100	// UDP source and destination port (above 4000-4099: compressed headers on auto)
@@ -22,6 +23,10 @@
 #define ZS_NAME_MAX				16		// zone, channel and contact names, octets (no terminator on air)
 #define ZS_CHANNELS_MAX			80		// channels in one record
 #define ZS_CONTACTS_MAX			32		// contacts in one record
+#define ZS_SYSTEMS_MAX			4		// trunked systems in one record
+#define ZS_SYS_CHANS_MAX		8		// a whole system's channels in a record (what a radio loads of one)
+#define ZS_SYS_SITES_MAX		8		// a whole system's sites
+#define ZS_SYS_KEY_LEN			16		// its authentication key
 // The longest message we take: the air MTU less the full IPv4 and UDP headers, so it grows with the data service's
 // limits. A receiver takes any chunk size from ZS_CHUNK_MIN up to its ZS_CHUNK_MAX
 #define ZS_MSG_MAX				(DMR_DATA_IP_MTU - 28)
@@ -56,6 +61,13 @@
 
 // Record flags
 #define ZS_FLAG_CHANNEL			0x01	// one channel, not a zone: the receiver adds it to a zone it chooses
+// The record carries trunked systems (zone-share.md 4.2) and channels of theirs. A build without them refuses the
+// record whole (its reserved flag bits must be 0)
+#define ZS_FLAG_SYSTEMS			0x02
+
+// How much of a trunked system a record carries (the sender's sharing setting, dmr-trunking.md 12.6)
+#define ZS_SYS_IDENTITY			1		// its name and system code: the receiver needs its own set-up
+#define ZS_SYS_FULL				2		// everything but the sender's own ID: channels, plan and the key if it has one
 
 // Contact types on air
 #define ZS_CONTACT_GROUP		0
@@ -97,8 +109,47 @@ typedef struct
 	uint8_t  contact;					// DMR: 1-based index into the record's contacts, 0: none
 	uint8_t  rxToneType, txToneType;	// FM: ZS_TONE_*
 	uint16_t rxTone, txTone;
+	uint8_t  system;					// DMR: a trunked channel of the record's system (1-based), 0: a conventional one
 	char     name[ZS_NAME_MAX + 1];
 } zsChannel_t;
+
+// A trunked system's channel (dmr-trunking.md 12.2)
+typedef struct
+{
+	bool     ctrl;						// a control channel
+	uint16_t lcn;
+	uint32_t rxHz, txHz;				// the MS's
+	uint8_t  cc;						// 0-15, 0xFF: the system's
+} zsSysChan_t;
+
+// A trunked system (dmr-trunking.md 12.1-12.3): ZS_SYS_IDENTITY fills level to opts, ZS_SYS_FULL the rest too. Its
+// channels are apart, so a system fits a task's stack
+typedef struct
+{
+	uint8_t  level;						// ZS_SYS_*
+	char     name[ZS_NAME_MAX + 1];
+	uint8_t  model;						// 0-3
+	uint16_t net;
+	uint8_t  category;					// 1 A, 2 B
+	uint8_t  cc;
+	uint16_t opts;						// the codeplug's options (ZS_SYS_OPTS)
+	// ZS_SYS_FULL
+	uint8_t  holdS;						// fallback hold time, 0: the radio's
+	uint8_t  fallback;					// the fallback channel: 1-based in the record's channels, 0: none
+	uint32_t planBaseHz;				// fixed plan, 0: none
+	uint16_t planFirst;
+	uint8_t  planSep, planFlags;
+	uint32_t planSplitHz;
+	int8_t   leaveDbm;
+	uint8_t  psRq;						// 0-7
+	uint8_t  sites;
+	uint16_t site[ZS_SYS_SITES_MAX];
+	uint8_t  chans;						// 1 to ZS_SYS_CHANS_MAX, each read with zsSysChanAt
+	bool     hasKey, hasPsn;
+	uint8_t  key[ZS_SYS_KEY_LEN];
+	uint32_t psn;						// 24 bits
+} zsSystem_t;
+#define ZS_SYS_OPTS				0x0FE7	// the options a record may carry: every one the codeplug defines (12.1)
 
 // A decoded record: the header, and where its contacts and channels start (read them with zsContactAt / zsChannelAt)
 typedef struct
@@ -109,8 +160,10 @@ typedef struct
 	uint8_t  flags;
 	uint8_t  channels;
 	uint8_t  contacts;
+	uint8_t  systems;					// ZS_FLAG_SYSTEMS: 1 to ZS_SYSTEMS_MAX
 	char     name[ZS_NAME_MAX + 1];
 	uint16_t contactAt[ZS_CONTACTS_MAX];
+	uint16_t systemAt[ZS_SYSTEMS_MAX];
 	uint16_t channelAt[ZS_CHANNELS_MAX];
 } zsRecord_t;
 
@@ -123,12 +176,16 @@ typedef struct
 	int      at;
 	uint8_t  channels;
 	uint8_t  contacts;
+	uint8_t  systems;
+	int      systemsAt;					// where the systems' count goes
 	bool     failed;					// too long or too many: zsWriterEnd returns 0
 } zsWriter_t;
 
-// The contacts first, then the channels (a channel's contact is the contact's 1-based position)
+// The contacts first, then the systems (with ZS_FLAG_SYSTEMS), then the channels (a channel's contact and system are
+// their 1-based positions)
 void zsWriterBegin(zsWriter_t *w, uint8_t *out, int size, uint32_t zoneId, uint8_t flags, const char *zoneName);
 bool zsWriterContact(zsWriter_t *w, const zsContact_t *c);
+bool zsWriterSystem(zsWriter_t *w, const zsSystem_t *sys, const zsSysChan_t *chan);	// chan: sys->chans of them
 bool zsWriterChannel(zsWriter_t *w, const zsChannel_t *ch);
 // The record's length, 0 when it didn't fit or anything was wrong
 int zsWriterEnd(zsWriter_t *w);
@@ -137,6 +194,7 @@ int zsWriterEnd(zsWriter_t *w);
 int zsHeaderSize(const char *zoneName);
 int zsContactSize(const zsContact_t *c);
 int zsChannelSize(const zsChannel_t *ch);
+int zsSystemSize(const zsSystem_t *sys);	// one system; the systems' count takes one octet before the first
 // A tone the record can carry (ZS_TONE_NONE with value 0 included)
 bool zsToneValid(uint8_t type, uint16_t value);
 
@@ -146,6 +204,8 @@ bool zsToneValid(uint8_t type, uint16_t value);
 bool zsParse(const uint8_t *data, int length, zsRecord_t *rec);
 bool zsContactAt(const zsRecord_t *rec, int index, zsContact_t *c);
 bool zsChannelAt(const zsRecord_t *rec, int index, zsChannel_t *ch);
+bool zsSystemAt(const zsRecord_t *rec, int index, zsSystem_t *sys);
+bool zsSysChanAt(const zsRecord_t *rec, int index, int chan, zsSysChan_t *c);
 
 // --- Messages ---
 

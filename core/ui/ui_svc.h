@@ -258,6 +258,7 @@ typedef struct {
 	uint32_t src;		// the sender's DMR ID
 	uint8_t channels;	// in the record
 	uint8_t in_band;	// of them, the ones this radio can receive (the rest are left out)
+	uint8_t t3_locked;	// of those, trunked ones whose system isn't set up: they come in locked out
 	char name[17];		// the zone's (or channel's) name as sent
 	char from[17];		// the sender's contact name, "" when not a contact
 } ui_zone_offer_t;
@@ -272,6 +273,7 @@ typedef struct {
 	uint32_t rx_hz;
 	bool dmr;
 	bool in_band;
+	bool t3_locked;		// trunked, and its system isn't set up here
 } ui_zone_offer_ch_t;
 bool ui_svc_zone_offer_channel(uint32_t serial, uint16_t i, ui_zone_offer_ch_t *out);
 void ui_svc_zone_offer_reject(uint32_t serial);
@@ -392,7 +394,8 @@ typedef enum {
 	UI_EV_POWER_OFF_FAILED,	// auto power off dropped the power latch but the radio is still on (the knob holds it)
 	UI_EV_ZONE_OFFER,	// another radio (id, name) offers a zone or channel (index 1): text "Zone Club, 24 channels"
 	UI_EV_ZONE_SENT,	// our zone to id (index 1: a talkgroup): ok = it went out whole
-	UI_EV_ZONE_IMPORTED,	// the import ended: ok with name (the zone here), index (channels), id 1 for an update; else
+	UI_EV_ZONE_IMPORTED,	// the import ended: ok with name (the zone here), index (channels), id 1 for an update, ms
+				// the trunked channels that can't be used (their system isn't set up, or found no room); else
 				// text says why
 	UI_EV_CODEPLUG_FOREIGN,	// a codeplug write is held: ask what to do with another firmware's codeplug
 } ui_event_kind_t;

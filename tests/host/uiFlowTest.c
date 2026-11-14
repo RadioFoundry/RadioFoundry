@@ -76,6 +76,10 @@ static const flow_t flows[] = {
 	{ "zone offer banner hidden with Back on a menu", "zoneoffer:9991234 ok", "back", "banner=none screen=hub", 1, false },
 	{ "zone offer banner goes when Tools opens the offer", "zoneoffer:9991234", "ok 6 0", "banner=none shows=Import", 3,
 	  false },
+	// Trunked channels whose system isn't set up here: dimmed in the preview, said after the import (and in the offer's
+	// text, where the screen has room for it)
+	{ "zone offer preview marks a trunked channel", "zoneoffer:9991234 ctx 2", "up", "shows=ystem", 1, false },
+	{ "zone import result names trunked channels", "zoneoffer:9991234 ctx", "1", "shows=trunked", 1, false },
 #endif
 	{ "8 radio check last caller", CALLER, "ctx 4", "checks=1", 2, false },
 	{ "8 radio check by name", "", "5 6 3 ctx 4", "checks=1", 5, false },

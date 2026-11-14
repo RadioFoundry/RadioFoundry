@@ -100,8 +100,10 @@ bool ui_svc_zone_offer(ui_zone_offer_t *out)
 	out->src = o.src;
 	out->channels = rec.channels;
 	for (int i = 0; i < rec.channels; i++)
-		if (zsChannelAt(&rec, i, &ch) && zone_import_in_band(&ch))
+		if (zsChannelAt(&rec, i, &ch) && zone_import_in_band(&ch)) {
 			out->in_band++;
+			out->t3_locked += zone_import_t3_locked(&rec, i);
+		}
 	if (out->channel && zsChannelAt(&rec, 0, &ch))
 		strcpy(out->name, ch.name);
 	else
@@ -126,6 +128,7 @@ bool ui_svc_zone_offer_channel(uint32_t serial, uint16_t i, ui_zone_offer_ch_t *
 	out->rx_hz = ch.rxHz;
 	out->dmr = ch.dmr;
 	out->in_band = zone_import_in_band(&ch);
+	out->t3_locked = zone_import_t3_locked(&rec, i);
 	return true;
 }
 
@@ -143,7 +146,8 @@ static struct {
 // The import list's copy: the settings aren't held while the codeplug is written
 static settings_zs_import_t job_imports[SETTINGS_ZS_IMPORTS];
 
-// ok: name the zone's name here, index the channels written, id 1 when it updated an earlier import; else text why, in
+// ok: name the zone's name here, index the channels written, id 1 when it updated an earlier import, ms the trunked
+// channels locked out or left out; else text why, in
 // English (TRN): the UI translates it when it shows it, so a longer translation isn't cut to the event's 40 bytes
 static void import_done(bool ok, const char *text, const zone_import_result_t *r)
 {
@@ -155,6 +159,7 @@ static void import_done(bool ok, const char *text, const zone_import_result_t *r
 		memcpy(ev.name, r->name, sizeof ev.name - 1);
 		ev.index = r->channels;
 		ev.id = r->updated;
+		ev.ms = (uint32_t)r->t3_unavailable + r->t3_left_out;
 	}
 	if (text != NULL)
 		strncpy(ev.text, text, sizeof ev.text - 1);
@@ -169,6 +174,7 @@ static const char *import_failure(zone_import_status_t st)
 	case ZI_ZONE_FULL: return TRN("That zone is full");
 	case ZI_NO_CHANNELS: return TRN("Not enough free channels");
 	case ZI_NO_CONTACTS: return TRN("Not enough free contacts");
+	case ZI_NO_SYSTEMS: return TRN("No room for another trunked system");
 	case ZI_FLASH: return TRN("Couldn't save: try again");
 	default: return TRN("Not a zone this radio reads");
 	}

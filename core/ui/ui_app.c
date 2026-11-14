@@ -722,14 +722,20 @@ static void handle_event(const ui_event_t *ev)
 		break;
 	case UI_EV_ZONE_IMPORTED:
 		if (ev->ok) {
-			char text[32];
+			char text[48];
 			sbuf_t tb;
 			sb_init(&tb, text, sizeof text);
 			sb_str(&b, ev->id ? TR("Updated ") : TR("Imported "));
 			sb_str(&b, ev->name);
-			sb_u32(&tb, ev->index, 1);
-			sb_str(&tb, ev->index == 1 ? TR(" channel, receive only") : TR(" channels, receive only"));
-			banner(UI_BANNER_RESULT, false, 0, title, text);
+			if (ev->ms != 0) {
+				// Trunked channels whose system isn't set up came in locked out (zone-share.md 5.2)
+				sb_u32(&tb, ev->ms, 1);
+				sb_str(&tb, TR(" trunked: system not set up"));
+			} else {
+				sb_u32(&tb, ev->index, 1);
+				sb_str(&tb, ev->index == 1 ? TR(" channel, receive only") : TR(" channels, receive only"));
+			}
+			banner(UI_BANNER_RESULT, ev->ms != 0, 0, title, text);
 		} else {
 			banner(UI_BANNER_RESULT, true, 0, TR("Zone not imported"), tr(ev->text));	// a TRN text of ui_svc_zone.c
 		}

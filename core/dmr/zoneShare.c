@@ -21,6 +21,18 @@ _Static_assert(ZS_SEND_FRAGMENTS_MAX <= 4, "the first builds take at most 4 frag
 
 #define DMR_SLOT2		0x10
 #define DMR_DMO			0x20
+#define DMR_TRUNKED		0x40	// a system reference follows the contact
+
+#define SYS_LEVEL		0x03	// a system's first octet: the level, then what follows
+#define SYS_KEY			0x04
+#define SYS_PSN			0x08
+#define SYS_CHAN_CTRL	0x01
+
+#if CONFIG_DMR_TRUNK
+#define FLAGS_KNOWN		(ZS_FLAG_CHANNEL | ZS_FLAG_SYSTEMS)
+#else
+#define FLAGS_KNOWN		ZS_FLAG_CHANNEL		// a record with systems is refused whole
+#endif
 
 #define CTCSS_MIN		600		// 60.0 Hz
 #define CTCSS_MAX		2600	// 260.0 Hz
@@ -49,6 +61,8 @@ static void put32(zsWriter_t *w, uint32_t v)
 	put16(w, (uint16_t)(v >> 16));
 	put16(w, (uint16_t)v);
 }
+
+static int nameSize(const char *name);
 
 // Up to ZS_NAME_MAX octets of printable ASCII (anything else becomes '?': the receiver refuses other octets)
 static void putName(zsWriter_t *w, const char *name)
@@ -101,7 +115,7 @@ void zsWriterBegin(zsWriter_t *w, uint8_t *out, int size, uint32_t zoneId, uint8
 
 bool zsWriterContact(zsWriter_t *w, const zsContact_t *c)
 {
-	if ((w->channels != 0) || (w->contacts >= ZS_CONTACTS_MAX) || (c->type > ZS_CONTACT_ALL_CALL) || (c->timeslot > 2) ||
+	if ((w->channels != 0) || (w->systems != 0) || (w->contacts >= ZS_CONTACTS_MAX) || (c->type > ZS_CONTACT_ALL_CALL) || (c->timeslot > 2) ||
 			(c->id == 0) || (c->id > 0xFFFFFF))
 	{
 		w->failed = true;
@@ -115,12 +129,126 @@ bool zsWriterContact(zsWriter_t *w, const zsContact_t *c)
 	return !w->failed;
 }
 
+#if CONFIG_DMR_TRUNK
+static bool systemValid(const zsSystem_t *s, const zsSysChan_t *chan)
+{
+	bool full = s->level == ZS_SYS_FULL;
+
+	if (((s->level != ZS_SYS_IDENTITY) && !full) || (s->model > 3) || (s->category < 1) || (s->category > 2) ||
+			(s->cc > 15) || (s->opts & ~ZS_SYS_OPTS))
+	{
+		return false;
+	}
+	if (!full)
+	{
+		return true;
+	}
+	if ((s->psRq > 7) || (s->sites > ZS_SYS_SITES_MAX) || (s->chans == 0) || (s->chans > ZS_SYS_CHANS_MAX) ||
+			(s->planFlags > 3) || (s->hasPsn && (!s->hasKey || (s->psn > 0xFFFFFF))))
+	{
+		return false;
+	}
+	for (int i = 0; i < s->chans; i++)
+	{
+		const zsSysChan_t *c = &chan[i];
+
+		if ((c->rxHz == 0) || (c->rxHz > 0x7FFFFFFF) || (c->txHz == 0) || (c->txHz > 0x7FFFFFFF) ||
+				((c->cc > 15) && (c->cc != 0xFF)))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool zsWriterSystem(zsWriter_t *w, const zsSystem_t *s, const zsSysChan_t *chan)
+{
+	bool full = s->level == ZS_SYS_FULL;
+
+	if ((w->channels != 0) || (w->systems >= ZS_SYSTEMS_MAX) || !(w->out[7] & ZS_FLAG_SYSTEMS) || !systemValid(s, chan))
+	{
+		w->failed = true;
+		return false;
+	}
+	if (w->systems == 0)
+	{
+		w->systemsAt = w->at;
+		put8(w, 0);// the count, at the end
+	}
+	put8(w, (uint8_t)(s->level | ((full && s->hasKey) ? SYS_KEY : 0) | ((full && s->hasKey && s->hasPsn) ? SYS_PSN : 0)));
+	putName(w, s->name);
+	put8(w, s->model);
+	put16(w, s->net);
+	put8(w, s->category);
+	put8(w, s->cc);
+	put16(w, s->opts);
+	if (full)
+	{
+		put8(w, s->holdS);
+		put8(w, s->fallback);
+		put32(w, s->planBaseHz);
+		put16(w, s->planFirst);
+		put8(w, s->planSep);
+		put8(w, s->planFlags);
+		put32(w, s->planSplitHz);
+		put8(w, (uint8_t)s->leaveDbm);
+		put8(w, s->psRq);
+		put8(w, s->sites);
+		for (int i = 0; i < s->sites; i++)
+		{
+			put16(w, s->site[i]);
+		}
+		put8(w, s->chans);
+		for (int i = 0; i < s->chans; i++)
+		{
+			const zsSysChan_t *c = &chan[i];
+
+			put8(w, c->ctrl ? SYS_CHAN_CTRL : 0);
+			put16(w, c->lcn);
+			put32(w, c->rxHz);
+			put32(w, c->txHz);
+			put8(w, c->cc);
+		}
+		if (s->hasKey)
+		{
+			for (int i = 0; i < ZS_SYS_KEY_LEN; i++)
+			{
+				put8(w, s->key[i]);
+			}
+			if (s->hasPsn)
+			{
+				put8(w, (uint8_t)(s->psn >> 16));
+				put16(w, (uint16_t)s->psn);
+			}
+		}
+	}
+	if (!w->failed)
+	{
+		w->out[w->systemsAt] = ++w->systems;
+	}
+	return !w->failed;
+}
+
+int zsSystemSize(const zsSystem_t *s)
+{
+	int n = 1 + nameSize(s->name) + 7;
+
+	if (s->level == ZS_SYS_FULL)
+	{
+		n += 2 + 12 + 3 + 2 * s->sites + 1 + 12 * s->chans;
+		n += s->hasKey ? ZS_SYS_KEY_LEN + (s->hasPsn ? 3 : 0) : 0;
+	}
+	return n;
+}
+#endif
+
 bool zsWriterChannel(zsWriter_t *w, const zsChannel_t *ch)
 {
 	int64_t tx = (int64_t)ch->rxHz + ch->txOffsetHz;
 
 	if ((w->channels >= ZS_CHANNELS_MAX) || (ch->rxHz == 0) || (tx <= 0) || (tx > 0x7FFFFFFF) || (ch->power > ZS_POWER_HIGH) ||
-			(ch->dmr && ((ch->colorCode > 15) || (ch->timeslot < 1) || (ch->timeslot > 2) || (ch->contact > w->contacts))) ||
+			(ch->dmr && ((ch->colorCode > 15) || (ch->timeslot < 1) || (ch->timeslot > 2) || (ch->contact > w->contacts) ||
+			(ch->system > w->systems))) || (!ch->dmr && (ch->system != 0)) ||
 			(!ch->dmr && (!zsToneValid(ch->rxToneType, ch->rxTone) || !zsToneValid(ch->txToneType, ch->txTone))))
 	{
 		w->failed = true;
@@ -140,8 +268,13 @@ bool zsWriterChannel(zsWriter_t *w, const zsChannel_t *ch)
 	}
 	if (ch->dmr)
 	{
-		put8(w, (uint8_t)(ch->colorCode | ((ch->timeslot == 2) ? DMR_SLOT2 : 0) | (ch->dmo ? DMR_DMO : 0)));
+		put8(w, (uint8_t)(ch->colorCode | ((ch->timeslot == 2) ? DMR_SLOT2 : 0) | (ch->dmo ? DMR_DMO : 0) |
+				((ch->system != 0) ? DMR_TRUNKED : 0)));
 		put8(w, ch->contact);
+		if (ch->system != 0)
+		{
+			put8(w, ch->system);
+		}
 	}
 	if (rxTone)
 	{
@@ -158,7 +291,8 @@ bool zsWriterChannel(zsWriter_t *w, const zsChannel_t *ch)
 
 int zsWriterEnd(zsWriter_t *w)
 {
-	if (w->failed || (w->channels == 0) || (w->at > w->size))
+	// With ZS_FLAG_SYSTEMS at least one system, without it none
+	if (w->failed || (w->channels == 0) || (w->at > w->size) || (((w->out[7] & ZS_FLAG_SYSTEMS) != 0) != (w->systems != 0)))
 	{
 		return 0;
 	}
@@ -192,7 +326,7 @@ int zsContactSize(const zsContact_t *c)
 
 int zsChannelSize(const zsChannel_t *ch)
 {
-	return 1 + 4 + ((ch->txOffsetHz != 0) ? 4 : 0) + (ch->dmr ? 2 : 0) +
+	return 1 + 4 + ((ch->txOffsetHz != 0) ? 4 : 0) + (ch->dmr ? 2 : 0) + ((ch->dmr && (ch->system != 0)) ? 1 : 0) +
 			((!ch->dmr && (ch->rxToneType != ZS_TONE_NONE)) ? 2 : 0) + ((!ch->dmr && (ch->txToneType != ZS_TONE_NONE)) ? 2 : 0) +
 			nameSize(ch->name);
 }
@@ -269,7 +403,7 @@ static void readContact(reader_t *r, zsContact_t *c)
 	r->bad = r->bad || (c->type > ZS_CONTACT_ALL_CALL) || (c->timeslot > 2) || (c->id == 0) || (t & 0xF0);
 }
 
-static void readChannel(reader_t *r, uint8_t contacts, zsChannel_t *ch)
+static void readChannel(reader_t *r, uint8_t contacts, uint8_t systems, zsChannel_t *ch)
 {
 	uint8_t a = get8(r);
 
@@ -292,7 +426,12 @@ static void readChannel(reader_t *r, uint8_t contacts, zsChannel_t *ch)
 		ch->timeslot = (d & DMR_SLOT2) ? 2 : 1;
 		ch->dmo = (d & DMR_DMO) != 0;
 		ch->contact = get8(r);
-		r->bad = r->bad || (ch->contact > contacts) || (a & (CH_RX_TONE | CH_TX_TONE)) || (d & 0xC0);
+		if (d & DMR_TRUNKED)
+		{
+			ch->system = get8(r);
+			r->bad = r->bad || (ch->system == 0) || (ch->system > systems);
+		}
+		r->bad = r->bad || (ch->contact > contacts) || (a & (CH_RX_TONE | CH_TX_TONE)) || (d & 0x80);
 	}
 	if (a & CH_RX_TONE)
 	{
@@ -315,6 +454,85 @@ static void readChannel(reader_t *r, uint8_t contacts, zsChannel_t *ch)
 	r->bad = r->bad || (ch->rxHz == 0) || (ch->rxHz > 0x7FFFFFFF) || (tx <= 0) || (tx > 0x7FFFFFFF);
 }
 
+#if CONFIG_DMR_TRUNK
+// A system, every field checked as the writer checks it; channels the record's channel count (for its fallback).
+// Channel `want` of it into *c when c isn't NULL
+static void readSystem(reader_t *r, uint8_t channels, zsSystem_t *s, int want, zsSysChan_t *c)
+{
+	zsSystem_t h;
+
+	memset(&h, 0, sizeof(h));
+	uint8_t a = get8(r);
+
+	h.level = a & SYS_LEVEL;
+	getName(r, h.name);
+	h.model = get8(r);
+	h.net = get16(r);
+	h.category = get8(r);
+	h.cc = get8(r);
+	h.opts = get16(r);
+	bool full = h.level == ZS_SYS_FULL;
+
+	h.hasKey = full && (a & SYS_KEY);
+	h.hasPsn = full && (a & SYS_PSN);
+	r->bad = r->bad || (a & 0xF0) || (!full && (a & (SYS_KEY | SYS_PSN))) || ((a & SYS_PSN) && !(a & SYS_KEY));
+	if (full)
+	{
+		h.holdS = get8(r);
+		h.fallback = get8(r);
+		h.planBaseHz = get32(r);
+		h.planFirst = get16(r);
+		h.planSep = get8(r);
+		h.planFlags = get8(r);
+		h.planSplitHz = get32(r);
+		h.leaveDbm = (int8_t)get8(r);
+		h.psRq = get8(r);
+		h.sites = get8(r);
+		r->bad = r->bad || (h.sites > ZS_SYS_SITES_MAX);
+		for (int i = 0; i < h.sites && !r->bad; i++)
+		{
+			h.site[i] = get16(r);
+		}
+		h.chans = get8(r);
+		r->bad = r->bad || (h.chans == 0) || (h.chans > ZS_SYS_CHANS_MAX) || (h.fallback > channels) || (h.psRq > 7) ||
+				(h.planFlags > 3);
+		for (int i = 0; i < h.chans && !r->bad; i++)
+		{
+			zsSysChan_t one;
+			uint8_t f = get8(r);
+
+			one.ctrl = (f & SYS_CHAN_CTRL) != 0;
+			one.lcn = get16(r);
+			one.rxHz = get32(r);
+			one.txHz = get32(r);
+			one.cc = get8(r);
+			r->bad = r->bad || (f & ~SYS_CHAN_CTRL) || (one.rxHz == 0) || (one.rxHz > 0x7FFFFFFF) || (one.txHz == 0) ||
+					(one.txHz > 0x7FFFFFFF) || ((one.cc > 15) && (one.cc != 0xFF));
+			if ((c != NULL) && (i == want))
+			{
+				*c = one;
+			}
+		}
+		if (h.hasKey)
+		{
+			for (int i = 0; i < ZS_SYS_KEY_LEN; i++)
+			{
+				h.key[i] = get8(r);
+			}
+			if (h.hasPsn)
+			{
+				h.psn = (uint32_t)get8(r) << 16;
+				h.psn |= get16(r);
+			}
+		}
+	}
+	r->bad = r->bad || ((h.level != ZS_SYS_IDENTITY) && !full) || (h.model > 3) || (h.category < 1) || (h.category > 2) ||
+			(h.cc > 15) || (h.opts & ~ZS_SYS_OPTS);
+	r->bad = r->bad || ((c != NULL) && (want >= h.chans));
+	*s = h;
+}
+#endif
+
 bool zsParse(const uint8_t *data, int length, zsRecord_t *rec)
 {
 	memset(rec, 0, sizeof(*rec));
@@ -331,7 +549,7 @@ bool zsParse(const uint8_t *data, int length, zsRecord_t *rec)
 	rec->contacts = get8(&r);
 	getName(&r, rec->name);
 	if (r.bad || (rec->zoneId == 0) || (rec->channels == 0) || (rec->channels > ZS_CHANNELS_MAX) ||
-			(rec->contacts > ZS_CONTACTS_MAX) || (rec->flags & ~ZS_FLAG_CHANNEL) ||
+			(rec->contacts > ZS_CONTACTS_MAX) || (rec->flags & ~FLAGS_KNOWN) ||
 			((rec->flags & ZS_FLAG_CHANNEL) && (rec->channels != 1)))
 	{
 		return false;
@@ -347,12 +565,33 @@ bool zsParse(const uint8_t *data, int length, zsRecord_t *rec)
 			return false;
 		}
 	}
+#if CONFIG_DMR_TRUNK
+	if (rec->flags & ZS_FLAG_SYSTEMS)
+	{
+		zsSystem_t sys;
+
+		rec->systems = get8(&r);
+		if (r.bad || (rec->systems == 0) || (rec->systems > ZS_SYSTEMS_MAX))
+		{
+			return false;
+		}
+		for (int i = 0; i < rec->systems; i++)
+		{
+			rec->systemAt[i] = (uint16_t)r.at;
+			readSystem(&r, rec->channels, &sys, 0, NULL);
+			if (r.bad)
+			{
+				return false;
+			}
+		}
+	}
+#endif
 	for (int i = 0; i < rec->channels; i++)
 	{
 		zsChannel_t ch;
 
 		rec->channelAt[i] = (uint16_t)r.at;
-		readChannel(&r, rec->contacts, &ch);
+		readChannel(&r, rec->contacts, rec->systems, &ch);
 		if (r.bad)
 		{
 			return false;
@@ -387,9 +626,36 @@ bool zsChannelAt(const zsRecord_t *rec, int index, zsChannel_t *ch)
 	}
 	reader_t r = { .p = rec->data, .length = rec->length, .at = rec->channelAt[index] };
 
-	readChannel(&r, rec->contacts, ch);
+	readChannel(&r, rec->contacts, rec->systems, ch);
 	return !r.bad;
 }
+
+#if CONFIG_DMR_TRUNK
+bool zsSystemAt(const zsRecord_t *rec, int index, zsSystem_t *sys)
+{
+	if ((rec->data == NULL) || (index < 0) || (index >= rec->systems))
+	{
+		return false;
+	}
+	reader_t r = { .p = rec->data, .length = rec->length, .at = rec->systemAt[index] };
+
+	readSystem(&r, rec->channels, sys, 0, NULL);
+	return !r.bad;
+}
+
+bool zsSysChanAt(const zsRecord_t *rec, int index, int chan, zsSysChan_t *c)
+{
+	if ((rec->data == NULL) || (index < 0) || (index >= rec->systems) || (chan < 0))
+	{
+		return false;
+	}
+	reader_t r = { .p = rec->data, .length = rec->length, .at = rec->systemAt[index] };
+	zsSystem_t sys;
+
+	readSystem(&r, rec->channels, &sys, chan, c);
+	return !r.bad;
+}
+#endif
 
 // --- Messages ---
 

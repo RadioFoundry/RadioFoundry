@@ -1742,7 +1742,7 @@ static void offer_select(uint16_t i, bool hold)
 // "Zone Club, 24 channels, from Joe 9991234" and how many can't be received here
 static const char *offer_body(void)
 {
-	static char body[96];
+	static char body[128];
 	sbuf_t b;
 	sb_init(&b, body, sizeof body);
 	if (!offer_get())
@@ -1765,6 +1765,13 @@ static const char *offer_body(void)
 		sb_str(&b, ". ");
 		sb_u32(&b, (uint32_t)(offer.channels - offer.in_band), 1);
 		sb_str(&b, TR(" not in band"));
+	}
+	if (offer.t3_locked != 0) {
+		// Trunked channels whose system neither this radio nor the share has (zone-share.md 5.2)
+		sb_str(&b, ". ");
+		sb_u32(&b, offer.t3_locked, 1);
+		sb_str(&b, offer.t3_locked == 1 ? TR(" trunked channel unavailable: system not set up") :
+			   TR(" trunked channels unavailable: system not set up"));
 	}
 	return body;
 }
@@ -1799,6 +1806,11 @@ static void preview_item(uint16_t i, ui_item_t *it)
 	sb_init(&b, it->value, sizeof it->value);
 	if (!ch.in_band) {
 		sb_str(&b, TR(TEXT_ALT_OPEN "Not in band" TEXT_ALT_NEXT "Out" TEXT_ALT_CLOSE));
+		it->flags |= UI_ITEM_DIM;
+		return;
+	}
+	if (ch.t3_locked) {
+		sb_str(&b, TR(TEXT_ALT_OPEN "System not set up" TEXT_ALT_NEXT "No system" TEXT_ALT_CLOSE));
 		it->flags |= UI_ITEM_DIM;
 		return;
 	}

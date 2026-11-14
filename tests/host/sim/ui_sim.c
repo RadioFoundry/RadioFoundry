@@ -1556,7 +1556,8 @@ void ui_svc_boot_text(char line1[17], char line2[17])
 	strcpy(line1, sim_names[UI_NAME_BOOT1]);
 	strcpy(line2, sim_names[UI_NAME_BOOT2]);
 }
-// Zone sharing (ui_svc.h): one offer of 6 channels, one of them outside the radio's bands
+// Zone sharing (ui_svc.h): one offer of 7 channels, one of them outside the radio's bands, one trunked on a system the
+// radio hasn't set up
 static struct {
 	bool pending, channel;
 	uint32_t src, serial;
@@ -1564,10 +1565,11 @@ static struct {
 	bool sent_one;			// the last send: one channel, from this zone and position
 	uint16_t sent_zone, sent_pos;
 } zs_sim;
-static const struct { const char *name; uint32_t hz; bool dmr; bool in_band; } zs_chans[] = {
-	{ "Club rpt", 146760000, false, true }, { "Club DMR", 442375000, true, true },
-	{ "Simplex", 146520000, false, true }, { "Club TG 2", 442375000, true, true },
-	{ "Field day", 446350000, true, true }, { "Club 900", 927500000, true, false },
+static const struct { const char *name; uint32_t hz; bool dmr; bool in_band; bool t3_locked; } zs_chans[] = {
+	{ "Club rpt", 146760000, false, true, false }, { "Club DMR", 442375000, true, true, false },
+	{ "Simplex", 146520000, false, true, false }, { "Club TG 2", 442375000, true, true, false },
+	{ "Field day", 446350000, true, true, false }, { "Club 900", 927500000, true, false, false },
+	{ "County Fire", 451000000, true, true, true },
 };
 #define ZS_SIM_CHANNELS	(sizeof zs_chans / sizeof zs_chans[0])
 uint8_t ui_svc_zone_send(uint16_t zone, uint16_t pos, bool one, uint32_t dst, bool group, uint8_t *total)
@@ -1591,6 +1593,7 @@ bool ui_svc_zone_offer(ui_zone_offer_t *out)
 	out->src = zs_sim.src;
 	out->channels = zs_sim.channel ? 1 : (uint8_t)ZS_SIM_CHANNELS;
 	out->in_band = zs_sim.channel ? 1 : (uint8_t)(ZS_SIM_CHANNELS - 1);
+	out->t3_locked = zs_sim.channel ? 0 : 1;
 	strcpy(out->name, zs_sim.channel ? "Club rpt" : "Club net");
 	strcpy(out->from, contact_name(zs_sim.src, false));
 	return true;
@@ -1606,6 +1609,7 @@ bool ui_svc_zone_offer_channel(uint32_t which, uint16_t i, ui_zone_offer_ch_t *o
 	out->rx_hz = zs_chans[i].hz;
 	out->dmr = zs_chans[i].dmr;
 	out->in_band = zs_chans[i].in_band;
+	out->t3_locked = zs_chans[i].t3_locked;
 	return true;
 }
 void ui_svc_zone_offer_reject(uint32_t which)
@@ -1626,6 +1630,7 @@ bool ui_svc_zone_offer_import(uint32_t which, uint16_t zone)
 	ev.ok = true;
 	strcpy(ev.name, zs_sim.channel ? "Zone 1" : "Club net");
 	ev.index = zs_sim.channel ? 1 : (uint16_t)(ZS_SIM_CHANNELS - 1);
+	ev.ms = zs_sim.channel ? 0 : 1;
 	ui_notify(&ev);
 	return true;
 }

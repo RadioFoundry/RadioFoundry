@@ -350,19 +350,19 @@ FLASH_HAL := -I$(ROOT)/hal -Wshadow
 TESTS   += codeplugTest
 
 codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
-	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c -lm
+	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c -lm
 
 # The same without format C (CONFIG_IDDB_COMPACT=0): a format C database is no database (iddb-compact.md 3.1)
 TESTS   += codeplugNoCompactTest
 
 codeplugNoCompactTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
-	$(CC) $(CFLAGS) $(FLASH_HAL) -DCONFIG_IDDB_COMPACT=0 -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c -lm
+	$(CC) $(CFLAGS) $(FLASH_HAL) -DCONFIG_IDDB_COMPACT=0 -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c -lm
 
 # The power byte on 2-, 3- and 9-level radios
 TESTS   += codeplugPower2Test codeplugPower3Test codeplugPower9Test
 
 codeplugPower%Test: codeplugPowerTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
-	$(CC) $(CFLAGS) $(FLASH_HAL) -DPOWER_COUNT=$* -o $@ codeplugPowerTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
+	$(CC) $(CFLAGS) $(FLASH_HAL) -DPOWER_COUNT=$* -o $@ codeplugPowerTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
 
 # The calibration curve every board's reader shares
 TESTS   += calCurveTest
@@ -1182,7 +1182,7 @@ nandSectorsTest: nandSectorsTest.c $(NSECT) $(ROOT)/drivers/flash/nand_sectors/n
 
 # Codeplug editing: the open-firmware record encoder, the built-in set made a stored codeplug, zones / contacts / lists,
 # the round trip read -> write -> read, power cuts during an edit
-CPEDIT  := $(CORE)/codeplug/codeplug.c $(CORE)/storage/storage.c sim/sim_flash.c
+CPEDIT  := $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/storage/storage.c sim/sim_flash.c
 TESTS   += codeplugEditTest
 
 codeplugEditTest: codeplugEditTest.c $(CPEDIT) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
@@ -1196,8 +1196,8 @@ run-cpedit: codeplugEditTest
 # The codeplug settings area: keyed values, unknown keys kept, invalid and newer areas, power cuts during a write
 TESTS   += codeplugKvTest
 
-codeplugKvTest: codeplugKvTest.c $(CORE)/codeplug/codeplug_kv.c $(CPEDIT) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ codeplugKvTest.c $(CORE)/codeplug/codeplug_kv.c $(CPEDIT)
+codeplugKvTest: codeplugKvTest.c $(CPEDIT) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ codeplugKvTest.c $(CPEDIT)
 
 run: run-cpkv
 run-cpkv: codeplugKvTest
@@ -1220,7 +1220,8 @@ run-zedit: zoneEditTest
 
 # Zone sharing's codeplug side: import (band limits, receive only, contacts by ID, update, undo; new zones through the
 # zone write layer) and export
-ZIMPORT := $(CORE)/codeplug/zone_import.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/dmr/zoneShare.c $(ZEDIT)
+ZIMPORT := $(CORE)/codeplug/zone_import.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/dmr/zoneShare.c $(ZEDIT) \
+	   $(CORE)/radio/radio_trunk.c $(CORE)/radio/radio_trunk_cp.c $(CORE)/radio/radio_trunk_share.c
 TESTS   += zoneImportTest
 
 zoneImportTest: zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/zone_import.h $(CORE)/dmr/zoneShare.h
@@ -1292,7 +1293,7 @@ run-t3pdu: t3PduTest
 TESTS   += t3MsTest
 # Tier III systems from the codeplug (core/radio/radio_trunk_cp.c) and DL_CMD_CPKV, on a simulated flash
 T3CP    := t3CodeplugTest.c $(CORE)/radio/radio_trunk.c $(CORE)/radio/radio_trunk_cp.c $(CORE)/debuglink/debuglink_cpkv.c \
-	   $(CORE)/codeplug/codeplug_kv.c $(CPEDIT)
+	   $(CPEDIT)
 TESTS   += t3CodeplugTest
 
 t3CodeplugTest: $(T3CP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/radio/radio_trunk.h $(CORE)/debuglink/*.h sim/sim_flash.h)

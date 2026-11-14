@@ -5,23 +5,13 @@
 #include "radio/radio_trunk.h"
 #include "codeplug/codeplug.h"
 #include "codeplug/codeplug_kv.h"
+#include "radio/radio_trunk_rec.h"
 
 #if CONFIG_DMR_TRUNK
-// The codeplug's records (docs/spec/dmr-trunking.md 12): the fields this firmware reads
-#define SYS_LEN		64u
-#define CHAN_LEN	13u
-#define KEY_LEN		16u
-#define TAG_LEN		8u
-#define CHAN_CTRL	0x01u
-#define PLAN_TX_LOW	0x01u
-#define PLAN_NO_LEARN	0x02u
-#define SYS_AUTHENTICATES	0x0800u		// the system challenges: not usable without a key
 // The options a codeplug may set: the rest are the debug link's (monitor, learning the system code)
 #define CP_OPTS		(T3_OPT_LISTEN_ONLY | T3_OPT_ALLCALL | T3_OPT_EMERGENCY_ANY | T3_OPT_PRIVATE | T3_OPT_REG_TG | \
 			 T3_OPT_ALS | T3_OPT_KILL | T3_OPT_NO_ROAM | T3_OPT_STUN)
 
-static uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
-static uint32_t rd32(const uint8_t *p) { return (uint32_t)rd16(p) | ((uint32_t)rd16(p + 2) << 16); }
 
 uint16_t radio_t3_name_check(const char *name)
 {
@@ -62,9 +52,7 @@ bool radio_t3_name(uint8_t n, char *name)
 	return true;
 }
 
-// The lowest channel key above `after` that belongs to system n, its record in rec; 0 when none. A walk is in the
-// area's order, and the radio takes channels in key order (a writer's order in the area isn't the user's)
-static uint16_t next_chan(uint8_t n, uint16_t after, uint8_t *rec)
+uint16_t radio_t3_next_chan(uint8_t n, uint16_t after, uint8_t *rec)
 {
 	codeplug_kv_cursor_t c;
 	uint8_t r[CHAN_LEN];
@@ -128,8 +116,8 @@ bool radio_t3_load(uint8_t n, radio_t3_setup_t *s)
 
 	// Channels in key order: the plan's table, and the control channels among them
 	uint8_t r[CHAN_LEN];
-	for (uint16_t key = next_chan(n, CODEPLUG_KEY_T3_CHAN - 1u, r); key != 0 && s->nchans < RADIO_T3_CHANS;
-	     key = next_chan(n, key, r)) {
+	for (uint16_t key = radio_t3_next_chan(n, CODEPLUG_KEY_T3_CHAN - 1u, r); key != 0 && s->nchans < RADIO_T3_CHANS;
+	     key = radio_t3_next_chan(n, key, r)) {
 		t3_chan_t ch = { .lcn = rd16(&r[2]), .rx_hz = rd32(&r[4]), .tx_hz = rd32(&r[8]), .cc = r[12] };
 		s->chans[s->nchans++] = ch;
 		if ((r[1] & CHAN_CTRL) != 0 && c->nctrl < T3_CTRL_MAX) {
@@ -227,4 +215,5 @@ uint16_t radio_t3_fallback(const radio_t3_tag_t *tag, const radio_t3_setup_t *s,
 	}
 	return n;
 }
+
 #endif

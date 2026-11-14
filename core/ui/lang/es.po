@@ -153,6 +153,10 @@ msgid "Imported "
 msgstr "Importado "
 
 #: core/ui/ui_app.c
+msgid " trunked: system not set up"
+msgstr " troncales: sistema sin configurar"
+
+#: core/ui/ui_app.c
 msgid " channel, receive only"
 msgstr " canal, solo RX"
 
@@ -1485,6 +1489,14 @@ msgid " not in band"
 msgstr " fuera de banda"
 
 #: core/ui/ui_menus.c
+msgid " trunked channel unavailable: system not set up"
+msgstr " canal troncal no disponible: sistema sin configurar"
+
+#: core/ui/ui_menus.c
+msgid " trunked channels unavailable: system not set up"
+msgstr " canales troncales no disponibles: sistema sin configurar"
+
+#: core/ui/ui_menus.c
 msgid "{Channel Share Received ⤓|Ch Share Received ⤓|Ch Received ⤓|Ch Received}"
 msgstr "{Canal compartido recibido ⤓|Canal recibido ⤓|Can recibido ⤓|Can recibido}"
 
@@ -1499,6 +1511,10 @@ msgstr "Nada pendiente"
 #: core/ui/ui_menus.c
 msgid "{Not in band|Out}"
 msgstr "{Fuera de banda|Fuera}"
+
+#: core/ui/ui_menus.c
+msgid "{System not set up|No system}"
+msgstr "{Sistema sin configurar|Sin sistema}"
 
 #: core/ui/ui_menus.c
 msgid "OK or Back returns"
@@ -3907,6 +3923,10 @@ msgstr "Faltan canales libres"
 #: core/ui/ui_svc_zone.c
 msgid "Not enough free contacts"
 msgstr "Faltan contactos libres"
+
+#: core/ui/ui_svc_zone.c
+msgid "No room for another trunked system"
+msgstr "No cabe otro sistema troncal"
 
 #: core/ui/ui_svc_zone.c
 msgid "Not a zone this radio reads"

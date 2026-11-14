@@ -155,6 +155,10 @@ msgid "Imported "
 msgstr "已导入 "
 
 #: core/ui/ui_app.c
+msgid " trunked: system not set up"
+msgstr " 个集群信道：系统未设置"
+
+#: core/ui/ui_app.c
 msgid " channel, receive only"
 msgstr " 个信道，仅接收"
 
@@ -1487,6 +1491,14 @@ msgid " not in band"
 msgstr " 不在频段"
 
 #: core/ui/ui_menus.c
+msgid " trunked channel unavailable: system not set up"
+msgstr " 个集群信道不可用：系统未设置"
+
+#: core/ui/ui_menus.c
+msgid " trunked channels unavailable: system not set up"
+msgstr " 个集群信道不可用：系统未设置"
+
+#: core/ui/ui_menus.c
 msgid "{Channel Share Received ⤓|Ch Share Received ⤓|Ch Received ⤓|Ch Received}"
 msgstr "{收到信道共享 ⤓|收到信道共享 ⤓|收到信道 ⤓|收到信道}"
 
@@ -1501,6 +1513,10 @@ msgstr "无待处理共享"
 #: core/ui/ui_menus.c
 msgid "{Not in band|Out}"
 msgstr "{不在频段|超出}"
+
+#: core/ui/ui_menus.c
+msgid "{System not set up|No system}"
+msgstr "{系统未设置|无系统}"
 
 #: core/ui/ui_menus.c
 msgid "OK or Back returns"
@@ -3909,6 +3925,10 @@ msgstr "空闲信道不足"
 #: core/ui/ui_svc_zone.c
 msgid "Not enough free contacts"
 msgstr "空闲联系人不足"
+
+#: core/ui/ui_svc_zone.c
+msgid "No room for another trunked system"
+msgstr "没有空间再添加集群系统"
 
 #: core/ui/ui_svc_zone.c
 msgid "Not a zone this radio reads"
