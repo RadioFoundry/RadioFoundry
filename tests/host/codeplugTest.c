@@ -315,7 +315,9 @@ static void test_foreign(void)
 	fill_noise();
 	CHECK(codeplug_init() == CODEPLUG_BUILTIN && codeplug_foreign());
 	codeplug_evidence(&good, &bad);
-	CHECK(good == 0 && bad == 620);	// the web editor: 624, with the general settings and the contacts
+	// Two records of the noise happen to hold only printable Latin-1 bytes: valid names now that a 3-byte lead
+	// without continuations is a Latin-1 letter. Still foreign: one good record needs at most one bad in four
+	CHECK(good == 2 && bad == 618);	// the web editor: 624, with the general settings and the contacts
 	check_empty();
 
 	// Stock-style: records with UTF-16 names and valid frequencies, and the one seen on a radio (channel 183, a name
@@ -1021,8 +1023,9 @@ static void test_channel_names(void)
 	CHECK(codeplug_zone_name(0, name) && strcmp(name, "All channels") == 0 && !codeplug_zone_name(1, name));
 }
 
-// name_field_ok: Latin-1 and UTF-8 mix freely (a Chinese name a CPS wrote); a truncated or stray UTF-8 lead, or a byte
-// past the terminator, is invalid
+// name_field_ok: Latin-1 and 3-byte UTF-8 mix freely (a Chinese name a CPS wrote). A 3-byte lead without its two
+// continuations is a Latin-1 byte, so "Café" and "à la" stay valid; a control byte, a stray continuation byte or a
+// byte past the terminator is invalid
 static void test_name_field_ok(void)
 {
 	uint8_t buf[CODEPLUG_NAME_LEN];
@@ -1034,7 +1037,24 @@ static void test_name_field_ok(void)
 	CHECK(name_field_ok(buf, sizeof buf, &empty) && !empty);
 	// a Latin-1 middot (U+00B7 is a Latin-1 byte, kept as such, not the font's 0x81): valid
 	memset(buf, 0xFF, sizeof buf);
-	memcpy(buf, "A\xB7B", 3);
+	memcpy(buf, "A\xB7" "B", 3);
+	CHECK(name_field_ok(buf, sizeof buf, &empty) && !empty);
+
+	// "Café": 0xE9 (é) is both a Latin-1 letter and a 3-byte lead; with no continuations it is one byte
+	memset(buf, 0xFF, sizeof buf);
+	memcpy(buf, "Caf\xE9", 4);
+	CHECK(name_field_ok(buf, sizeof buf, &empty) && !empty);
+	// "à la": 0xE0 (à) followed by a space, not a continuation: one Latin-1 byte
+	memset(buf, 0xFF, sizeof buf);
+	memcpy(buf, "\xE0 la", 4);
+	CHECK(name_field_ok(buf, sizeof buf, &empty) && !empty);
+	// a 3-byte lead near the end (truncated form) is a Latin-1 byte too
+	memset(buf, 0xFF, sizeof buf);
+	memcpy(buf, "AB\xE4", 3);
+	CHECK(name_field_ok(buf, sizeof buf, &empty) && !empty);
+	// a cut-off Chinese name: the text layer reads each remaining byte as Latin-1, so it is valid
+	memset(buf, 0xFF, sizeof buf);
+	memcpy(buf, "\xE4\xB8", 2);			// "中" missing its last byte
 	CHECK(name_field_ok(buf, sizeof buf, &empty) && !empty);
 
 	// UTF-8 only (a Chinese name): valid
@@ -1045,19 +1065,39 @@ static void test_name_field_ok(void)
 	memset(buf, 0xFF, sizeof buf);
 	memcpy(buf, "A\xE4\xB8\xAD", 4);		// "A中"
 	CHECK(name_field_ok(buf, sizeof buf, &empty) && !empty);
-
-	// a font glyph byte (0x80 = ellipsis): valid as a Latin-1 byte
+	// Latin-1 around a Chinese character: valid
 	memset(buf, 0xFF, sizeof buf);
-	buf[0] = 'X'; buf[1] = 0x80; buf[2] = 0x80;
+	memcpy(buf, "Caf\xE9\xE4\xB8\xAD\xB0", 8);
 	CHECK(name_field_ok(buf, sizeof buf, &empty) && !empty);
 
-	// truncated UTF-8 (a 3-byte lead with no continuation): invalid
+	// the six font glyph bytes (0x80 = ellipsis .. 0x85): valid as single bytes
+	for (uint8_t c = 0x80; c <= 0x85; c++) {
+		memset(buf, 0xFF, sizeof buf);
+		buf[0] = 'X'; buf[1] = c;
+		CHECK(name_field_ok(buf, sizeof buf, &empty) && !empty);
+	}
+	// the top of the Latin-1 range: valid
 	memset(buf, 0xFF, sizeof buf);
-	memcpy(buf, "\xE4\xB8", 2);			// "中" missing its last byte
+	memcpy(buf, "A\xA0\xFE", 3);
+	CHECK(name_field_ok(buf, sizeof buf, &empty) && !empty);
+
+	// control bytes (0x01-0x1F, 0x7F) and stray continuation bytes (0x86-0x9F): invalid
+	for (unsigned c = 0x01; c <= 0x1F; c++) {
+		memset(buf, 0xFF, sizeof buf);
+		buf[0] = 'A'; buf[1] = (uint8_t)c;
+		CHECK(!name_field_ok(buf, sizeof buf, &empty));
+	}
+	memset(buf, 0xFF, sizeof buf);
+	memcpy(buf, "A\x7F", 2);
 	CHECK(!name_field_ok(buf, sizeof buf, &empty));
-	// a stray UTF-8 lead mid-string: invalid
+	for (unsigned c = 0x86; c <= 0x9F; c++) {
+		memset(buf, 0xFF, sizeof buf);
+		buf[0] = 'A'; buf[1] = (uint8_t)c;
+		CHECK(!name_field_ok(buf, sizeof buf, &empty));
+	}
+	// an orphan continuation after a whole Chinese character: invalid
 	memset(buf, 0xFF, sizeof buf);
-	memcpy(buf, "AB\xE4", 3);
+	memcpy(buf, "\xE4\xB8\xAD\x8B", 4);
 	CHECK(!name_field_ok(buf, sizeof buf, &empty));
 	// a byte past the terminator: invalid
 	memset(buf, 0xFF, sizeof buf);

@@ -313,12 +313,28 @@ static void set_used(uint16_t number, bool on)
 	}
 }
 
-// A name field's text is Latin-1 (codeplug-stock-tyt.md 2): printable bytes 0x20-0x7E and 0xA0-0xFE
+// A single byte of a name field: printable ASCII, a Latin-1 byte (U+00A0..U+00FE, one byte), or a font.h glyph byte
+// (0x80..0x85). Control bytes (0x01-0x1F) and 0x7F-0x9F are invalid, except the glyph bytes 0x80-0x85 that sit in
+// that range
+static bool name_byte_ok(uint8_t c)
+{
+	if (c >= 0x20u && c <= 0x7Eu) {
+		return true;				// printable ASCII
+	}
+	if (c >= 0x80u && c <= 0x85u) {
+		return true;				// font.h's glyph bytes
+	}
+	if (c >= 0xA0u && c <= 0xFEu) {
+		return true;				// Latin-1 printable
+	}
+	return false;					// 0x00, 0xFF, 0x01-0x1F, 0x7F, 0x86-0x9F
+}
+
 // A name field: printable text up to the first 0x00 or 0xFF, only 0x00 or 0xFF after it. The text the CPS or the radio
-// writes is ASCII and Latin-1 (U+00A0..U+00FF) one byte each, font.h's glyph bytes (0x80..0x85) too, and any multi-byte
-// UTF-8 sequence for the rest (a Chinese name). Latin-1 and UTF-8 mix freely: a valid UTF-8 sequence where there is one
-// and a Latin-1 byte where there isn't. A stray or truncated UTF-8 lead is invalid, so a Chinese name the editor wrote
-// is valid but a cut-off one is not
+// writes is ASCII and Latin-1 (U+00A0..U+00FF) one byte each, font.h's glyph bytes (0x80..0x85) too, and 3-byte UTF-8
+// sequences for the rest (a Chinese name). Latin-1 and UTF-8 mix freely: a valid UTF-8 sequence where there is one and a
+// Latin-1 byte where there isn't. A 3-byte lead (0xE0-0xEF) without its two continuation bytes is a Latin-1 byte (à, ï, …),
+// so "Café" or "à la" stays valid; a control byte (0x01-0x1F, 0x7F) or a stray continuation byte (0x86-0x9F) is invalid
 bool name_field_ok(const uint8_t *p, unsigned len, bool *empty)
 {
 	unsigned n = 0;
@@ -336,22 +352,21 @@ bool name_field_ok(const uint8_t *p, unsigned len, bool *empty)
 	}
 	for (unsigned i = 0; i < n; ) {
 		uint8_t c = p[i];
-		if ((c & 0xF0u) == 0xE0u) {		// a 3-byte sequence (the face covers the BMP only)
-			if (i + 2 >= n) {
-				return false;		// truncated
+		// A 3-byte UTF-8 sequence (the face covers the BMP only): a lead 0xE0-0xEF with two
+		// continuation bytes. Without two continuations it is a Latin-1 byte, accepted below.
+		if ((c & 0xF0u) == 0xE0u && i + 2 < n &&
+				(p[i + 1] & 0xC0u) == 0x80u && (p[i + 2] & 0xC0u) == 0x80u) {
+			uint32_t cp = ((uint32_t)(c & 0x0Fu) << 12) | ((uint32_t)(p[i + 1] & 0x3Fu) << 6) | (p[i + 2] & 0x3Fu);
+			if (cp >= 0x800u) {		// not overlong
+				i += 3;
+				continue;
 			}
-			uint8_t c1 = p[i + 1], c2 = p[i + 2];
-			if ((c1 & 0xC0u) != 0x80u || (c2 & 0xC0u) != 0x80u) {
-				return false;		// not a continuation byte: a stray lead
-			}
-			uint32_t cp = ((uint32_t)(c & 0x0Fu) << 12) | ((uint32_t)(c1 & 0x3Fu) << 6) | (c2 & 0x3Fu);
-			if (cp < 0x800u) {
-				return false;		// overlong
-			}
-			i += 3;
-		} else {
-			i += 1;			// ASCII, Latin-1, or a font glyph byte
 		}
+		// a single byte: ASCII, a Latin-1 byte, or a font glyph byte (0x80-0x85); invalid otherwise
+		if (!name_byte_ok(c)) {
+			return false;
+		}
+		i += 1;
 	}
 	return true;
 }
