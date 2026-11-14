@@ -76,7 +76,7 @@ On an FD6818 (`fd6818_set_am`, `fd6818_am_status`, `fd6818_am_noise`):
 |---|---|---|
 | 0x43 receive filter | `FD6818_BW_AM` = 0x0048, the narrowest (about 1.7 kHz) | 0x3028 / 0x4008 or the board's |
 | 0x47 AF output | 0x6740, type 7 (AM) | 0x0140, type 1 (FM) |
-| 0x13 receiver gain | a gain loop: 0x03FF (full gain) at each tune, then stepped through a 42-entry table to keep a signal's 0x67 reading near 142 (down at once when 10 dB or more over, by the excess less 8 dB; up one step after 30 readings 6 dB or more under) | the board's FM word, written back when AM ends |
+| 0x13 receiver gain | a gain loop: 0x03FF (full gain) at each tune, then stepped through a 42-entry table to keep a signal's 0x67 reading near 120, under where the demodulator clips (down at once to the target when 4 dB or more over; up one step after 30 readings 6 dB or more under) | the board's FM word, written back when AM ends |
 | 0x4A | 0x5450 | its value before AM, written back |
 | Squelch value | 0x65 bits 7:0 (noise_sq, 1 dB/step) + an offset that puts level 1 at the chip's own noise_sq_th_in, 0x4F bits 6:0 as the board's tables set it (`fd6818_am_noise_offset`: 64 - th_in; 17 with 0x4F = 0x302F); each level 3 dB lower | 0x65 bits 7:0 + 25 |
 

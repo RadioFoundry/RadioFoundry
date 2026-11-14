@@ -223,11 +223,13 @@ static inline bool fd6818_am_on(const fd6818_t *dev)
 
 // --- AM gain loop and squelch (pure) ---
 
-// The gain loop keeps a signal's 0x67 reading near FD6818_AGC_TARGET: a reading (averaged with the one before) 10 dB or
-// more above it takes the gain down at once by the excess less 8 dB; one 6 dB or more below it raises the gain one step,
-// once the gain has held for FD6818_AGC_HOLD readings. An empty channel reads up to about 8 dB over the target at full
-// gain, so a noisy desk or a strong noise burst can take a few dB off; the squelch doesn't use 0x67 (fd6818_am_noise)
-#define FD6818_AGC_TARGET	142u
+// The gain loop keeps a signal's 0x67 reading near FD6818_AGC_TARGET: a reading (averaged with the one before) 4 dB or
+// more above it takes the gain down at once to the target; one 6 dB or more below it raises the gain one step, once the
+// gain has held for FD6818_AGC_HOLD readings. The AM demodulator runs out of room above a reading of about 126 for a
+// 90 % modulated carrier (hardware-dm32.md 8.7): over it the modulation is clipped, and from about 148 it is gone. The
+// target leaves 3 dB under that. An empty channel reads up to about 158 at full gain, so noise alone takes the gain
+// down; the squelch doesn't use 0x67 (fd6818_am_noise)
+#define FD6818_AGC_TARGET	120u
 #define FD6818_AGC_HOLD		30u
 void fd6818_agc_reset(fd6818_agc_t *a);
 bool fd6818_agc_step(fd6818_agc_t *a, uint16_t r67);	// true: the 0x13 word changed

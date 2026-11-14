@@ -416,8 +416,8 @@ static const struct {
 };
 #define AGC_TOP		(uint8_t)(sizeof(agc_table) / sizeof(agc_table[0]) - 1u)
 #define AGC_NO_PREV	0xFFFFu
-#define AGC_CUT_FROM	10	// dB over the target that takes the gain down
-#define AGC_CUT_SPARE	8	// dB of that excess left in
+#define AGC_CUT_FROM	4	// dB over the target that takes the gain down (FD6818_AGC_TARGET + 4 dB is still clean)
+#define AGC_CUT_SPARE	0	// dB of that excess left in: none, the gain goes to the target
 #define AGC_RAISE_BELOW	(-6)	// dB under the target that raises the gain
 
 void fd6818_agc_reset(fd6818_agc_t *a)
