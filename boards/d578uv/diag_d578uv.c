@@ -234,7 +234,9 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " nz ");
 		put_u(&o, noise);
 		put(&o, signal ? " sig" : " -");
+#if CONFIG_DMR
 		put(&o, d578uv_modem_synced() ? " sync" : " -");
+#endif
 		break;
 	}
 	case 9: {
