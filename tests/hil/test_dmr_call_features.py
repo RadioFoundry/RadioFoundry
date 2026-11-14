@@ -28,6 +28,9 @@ def _on_dmr_channel(radio, pytestconfig):
     time.sleep(1.0)
 
 
+MODEM_EXTRA = 1     # modem-voice radios: bursts counted past a late entry's 20 (test_late_entry)
+
+
 def _bench_call(radio, sdr_bench, pytestconfig, **kw):
     """One bench call with the given a bench_tx voice job options; returns (counter deltas, dmr + dmr_call view)."""
     freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
@@ -150,21 +153,24 @@ def test_late_entry(radio, sdr_bench, pytestconfig):
     as the one before (the same talker again) can't be told from the modem's sticky LC buffer at first: taken one
     superframe later (burst 24), 13 bursts. HIL 2026-10-10: 7 on aa79493 (the stack waited a superframe more on top of
     the driver's rule), 13 for the new LC on c8c9b23 (the page still held the old LC at F's report).
-    The modem's LC trace (dle log lines, lc / lc2 / lt diagnostics) is printed for each late call."""
+    The modem's LC trace (dle log lines, lc / lc2 / lt diagnostics) is printed for each late call.
+    A radio whose modem plays the voice itself (dmr.modem_voice=1) counts bursts its driver paces by time up to the
+    terminator, which can come a burst late: up to MODEM_EXTRA more (the D578: 20, now and then 21)."""
     _on_dmr_channel(radio, pytestconfig)
+    extra = MODEM_EXTRA if radio.view(["dmr"]).get("dmr.modem_voice") == "1" else 0
     _bench_call(radio, sdr_bench, pytestconfig, src=BENCH_SRC + 1)    # another LC first: the next one is new
     radio.log()                                                        # empty the log ring
     d, v = _bench_call(radio, sdr_bench, pytestconfig, late=8, superframes=6)
     _print_lc_trace(radio)
     assert d["call.rx_calls"] == 1 and d["call.rx_late_entries"] == 1 and d["call.rx_calls_played"] == 1, d
-    assert 18 <= d["call.rx_voice_bursts"] <= 20, d
+    assert 18 <= d["call.rx_voice_bursts"] <= 20 + extra, d
     assert v["call.late_entry"] == "1" and v["last.src"] == str(BENCH_SRC), v
     radio.log()
     d, v = _bench_call(radio, sdr_bench, pytestconfig, late=8, superframes=6)    # the same LC again
     _print_lc_trace(radio)
     assert d["call.rx_calls"] == 1 and d["call.rx_late_entries"] == 1 and d["call.rx_calls_played"] == 1, d
     # 13 with a sticky LC buffer (HR_C6000); a modem that hands over only LCs it assembled has no stale LC to wait out
-    assert 12 <= d["call.rx_voice_bursts"] <= 14 or 18 <= d["call.rx_voice_bursts"] <= 20, d
+    assert 12 <= d["call.rx_voice_bursts"] <= 14 or 18 <= d["call.rx_voice_bursts"] <= 20 + extra, d
     assert v["last.src"] == str(BENCH_SRC), v
 
 
