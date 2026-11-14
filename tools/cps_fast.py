@@ -7,7 +7,8 @@ CODEPLUG command, in 4 KB blocks, blank blocks skipped, only blocks whose CRC-32
   cps_fast.py info                                   layout, limits, staging
   cps_fast.py read image.bin [--cache old.bin]       read into a flat image; with a cache only the changed blocks move
   cps_fast.py write image.bin [--direct]             write the blocks that differ (staged and committed where the
-                                                     radio has a staging area); the radio re-reads its codeplug
+              [--cache old.bin]                      radio has a staging area); the radio re-reads its codeplug;
+                                                     with a cache, changed blocks go as patches of it
   cps_fast.py verify image.bin                       compare by CRC-32, block by block
 
 Image files are the ones tools/cps_client.py keeps (file offset = image offset = the STM32 wire address). Regions
@@ -34,14 +35,15 @@ import stubtool  # noqa: E402  (LZ4 block encoder and decoder)
 
 CMD = 0x1C
 OP_INFO, OP_SUMS, OP_READ, OP_BEGIN, OP_BLOCK, OP_DATA, OP_END, OP_COMMIT, OP_STATUS, OP_ABORT = range(10)
-FMT_LZ4, FMT_BLANK = 1, 2
+FMT_LZ4, FMT_BLANK, FMT_PATCH = 1, 2, 3
 MODE_DIRECT, MODE_STAGED = 0, 1
 ST_IDLE, ST_OPEN, ST_BLOCK, ST_COMMITTING, ST_DONE, ST_FAILED = range(6)
 BLOCK = 4096
 BLANK = b"\xff" * BLOCK
 REASONS = {1: "outside the codeplug, or a protected block", 2: "the flash can't be written", 3: "no staging area",
            4: "the staging area is full", 5: "the staging area is in use", 6: "wrong state", 7: "CRC mismatch",
-           8: "corrupt stream", 9: "flash error"}
+           8: "corrupt stream", 9: "flash error", 10: "the block isn't the one the patch was made against"}
+R_BASE = 10
 VFO_A = cps_client.VFO_A
 
 
@@ -56,8 +58,8 @@ def crc32(b):
     return zlib.crc32(b) & 0xFFFFFFFF
 
 
-def lz4_encode(block):
-    return bytes(stubtool.lz4_encode(bytes(block)))
+def lz4_encode(block, base=b""):
+    return bytes(stubtool.lz4_encode(bytes(block), bytes(base)))
 
 
 def blocks_of(regions):
@@ -82,6 +84,7 @@ class FastLink:
         self.info_ = None
         self.requests = 0
         self.wire = 0           # bytes both ways
+        self.patched = 0        # blocks sent as patches
 
     def close(self):
         self.t.close()
@@ -169,7 +172,7 @@ class FastLink:
             d = self.ok(OP_INFO)
             if len(d) < 26:
                 raise FastError("INFO too short")
-            v = {"version": d[0], "staging": bool(d[1] & 1), "writable": bool(d[1] & 2),
+            v = {"version": d[0], "staging": bool(d[1] & 1), "writable": bool(d[1] & 2), "patch": bool(d[1] & 4),
                  "block": struct.unpack_from("<H", d, 2)[0], "sums_max": d[4], "data_max": d[5],
                  "read_max": struct.unpack_from("<H", d, 6)[0]}
             v["ee_size"], v["flash_start"], v["end"], v["base"] = struct.unpack_from("<IIII", d, 8)
@@ -217,20 +220,38 @@ class FastLink:
     def begin(self, mode):
         return struct.unpack("<H", self.ok(OP_BEGIN, bytes([mode])))[0]
 
-    def write_block(self, addr, data, tries=3):
-        """One block: BLOCK, DATA pieces, END. A block that fails on the way (no answer, a corrupt piece) is sent again
-        from its start"""
+    def write_block(self, addr, data, tries=3, base=None):
+        """One block: BLOCK, DATA pieces, END. base: the block's bytes on the radio now (the image shows them, CRC
+        checked by the caller); a radio that takes patch blocks then gets the block coded against them (3.7), and the
+        plain stream if the radio's block turns out to be another. A block that fails on the way (no answer, a corrupt
+        piece) is sent again from its start. Returns the stream bytes sent"""
         blank = data == BLANK
-        stream = b"" if blank else lz4_encode(data)
+        patch = None
+        if not blank and base is not None and self.info().get("patch"):
+            patch = lz4_encode(data, base)
+            if len(patch) >= len(lz4_encode(data)):
+                patch = None
         n = self.info()["data_max"]
         for attempt in range(tries):
+            if blank:
+                fmt, stream, head = FMT_BLANK, b"", struct.pack("<IBHI", addr, FMT_BLANK, 0, crc32(data))
+            elif patch is not None:
+                fmt, stream = FMT_PATCH, patch
+                head = struct.pack("<IBHII", addr, FMT_PATCH, len(patch), crc32(data), crc32(base))
+            else:
+                stream = lz4_encode(data)
+                fmt, head = FMT_LZ4, struct.pack("<IBHI", addr, FMT_LZ4, len(stream), crc32(data))
             try:
-                self.ok(OP_BLOCK, struct.pack("<IBHI", addr, FMT_BLANK if blank else FMT_LZ4, len(stream), crc32(data)))
+                self.ok(OP_BLOCK, head)
                 for off in range(0, len(stream), n):
                     self.ok(OP_DATA, struct.pack("<H", off) + stream[off:off + n])
                 self.ok(OP_END, timeout=5.0)
+                self.patched += fmt == FMT_PATCH
                 return len(stream)
             except FastError as e:
+                if e.reason == R_BASE and fmt == FMT_PATCH:
+                    patch = None        # the radio's block isn't what the host thought: the whole block
+                    continue
                 if e.reason in (1, 2, 3, 4, 5, 9) or attempt == tries - 1:
                     raise
         return 0
@@ -285,9 +306,10 @@ class FastLink:
         self.moved = moved
         return img
 
-    def plan_write(self, img, regions):
-        """[(addr, block)] of what a write sends: each block the regions touch, img's bytes inside the regions over the
-        radio's outside them, where its CRC-32 differs from the radio's"""
+    def plan_write(self, img, regions, cache=None):
+        """[(addr, block, base)] of what a write sends: each block the regions touch, img's bytes inside the regions
+        over the radio's outside them, where its CRC-32 differs from the radio's. base: the radio's bytes of the block
+        when known (read, blank, or cache's where its CRC-32 is the radio's), else None"""
         addrs = blocks_of(regions)
         sums = self.sums(addrs)
         jobs = []
@@ -296,10 +318,16 @@ class FastLink:
             if a == area and (cps_client.area_state(img[a:a + BLOCK]) != "valid" or
                               (not sums[a][1] and cps_client.area_state(self.read_block(a)) == "newer")):
                 continue        # the radio keeps its settings area (codeplug-settings.md 4)
+            base = None
+            if sums[a][1]:
+                base = BLANK
+            elif cache is not None and len(cache) >= a + BLOCK and crc32(bytes(cache[a:a + BLOCK])) == sums[a][0]:
+                base = bytes(cache[a:a + BLOCK])
             if covers(regions, a):
                 want = bytes(img[a:a + BLOCK])
             else:
-                have = BLANK if sums[a][1] else self.read_block(a)
+                have = base if base is not None else self.read_block(a)
+                base = have
                 merged = bytearray(have)
                 for s, e in regions:
                     lo, hi = max(s, a), min(e, a + BLOCK)
@@ -307,14 +335,15 @@ class FastLink:
                         merged[lo - a:hi - a] = img[lo:hi]
                 want = bytes(merged)
             if crc32(want) != sums[a][0]:
-                jobs.append((a, want))
+                jobs.append((a, want, base))
         return jobs
 
-    def write_image(self, img, regions, staged=None, progress=None):
-        """Write the blocks that differ. staged None: staged when the radio has a staging area big enough. Returns
-        (blocks written, stream bytes)"""
+    def write_image(self, img, regions, staged=None, progress=None, cache=None):
+        """Write the blocks that differ. staged None: staged when the radio has a staging area big enough. cache: an
+        image read from the radio earlier, so changed blocks go as patches of what it holds. Returns (blocks written,
+        stream bytes)"""
         info = self.info()
-        jobs = self.plan_write(img, regions)
+        jobs = self.plan_write(img, regions, cache)
         if not jobs:
             return 0, 0
         if staged is None:
@@ -322,8 +351,8 @@ class FastLink:
         self.begin(MODE_STAGED if staged else MODE_DIRECT)
         sent = 0
         try:
-            for i, (a, data) in enumerate(jobs):
-                sent += self.write_block(a, data)
+            for i, (a, data, base) in enumerate(jobs):
+                sent += self.write_block(a, data, base=base)
                 if progress:
                     progress(i + 1, len(jobs))
         except FastError:
@@ -375,6 +404,7 @@ def main(argv=None):
     w = sub.add_parser("write")
     w.add_argument("image")
     w.add_argument("--direct", action="store_true", help="write in place through the journal, no staging")
+    w.add_argument("--cache", help="an image read from the radio earlier: changed blocks go as patches of it")
     v = sub.add_parser("verify")
     v.add_argument("image")
     a = ap.parse_args(argv)
@@ -398,9 +428,11 @@ def main(argv=None):
             print(f"read {a.image}: {link.moved} block(s) moved, {link.wire} bytes on the wire, "
                   f"{time.monotonic() - t0:.1f} s")
         elif a.cmd == "write":
+            cache = cps_client.load_image(a.cache) if a.cache else None
             n, sent = link.write_image(cps_client.load_image(a.image), regions, staged=False if a.direct else None,
-                                       progress=progress)
-            print(f"wrote {a.image}: {n} block(s), {sent} stream bytes, {time.monotonic() - t0:.1f} s")
+                                       progress=progress, cache=cache)
+            print(f"wrote {a.image}: {n} block(s) ({link.patched} as patches), {sent} stream bytes, "
+                  f"{time.monotonic() - t0:.1f} s")
         elif a.cmd == "verify":
             bad = link.verify(cps_client.load_image(a.image), regions)
             for addr in bad[:20]:

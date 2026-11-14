@@ -93,9 +93,9 @@ is `tools/bringup.py list --radio <id>`.
 | `hostlink` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `hotspot` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | not recorded | pass, needs re-run | not written | not written |
 | `split_duplex` | pass (seed) | pass (seed) | pass (seed) | not written | not written | not recorded | partial, needs re-run | not written | not written |
-| `debuglink` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | pass | pass | not recorded |
+| `debuglink` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `task_stacks` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | pass | not recorded |
-| `cps_openfw` | not recorded | pass (seed) | not recorded | pass (seed) | pass (seed) | not recorded | pass, needs re-run | pass | not recorded |
+| `cps_openfw` | not recorded | pass (seed) | not recorded | pass (seed) | pass (seed) | not recorded | pass, needs re-run | pass, needs re-run | not recorded |
 | `cps_fast` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `stub_entry` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `crash_log` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | pass | not recorded |

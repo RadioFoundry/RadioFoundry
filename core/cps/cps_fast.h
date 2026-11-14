@@ -30,7 +30,7 @@ enum {
 	CPSF_OP_SUMS,		// addr u32, count u8 -> addr, count, blank mask u16, CRC-32 u32 x count
 	CPSF_OP_READ,		// addr u32, offset u16 -> addr, format u8, length u16, CRC-32 u32, offset u16, stream bytes
 	CPSF_OP_BEGIN,		// mode u8 (CPSF_MODE_*) -> stage_max u16: a write session
-	CPSF_OP_BLOCK,		// addr u32, format u8, length u16, CRC-32 u32: a block follows
+	CPSF_OP_BLOCK,		// addr u32, format u8, length u16, CRC-32 u32 [, base CRC-32 u32 for a patch]: a block follows
 	CPSF_OP_DATA,		// offset u16, stream bytes -> received u16
 	CPSF_OP_END,		// -> none: the block is decoded, checked and written (direct) or staged
 	CPSF_OP_COMMIT,		// -> none: staged: the commit starts (poll STATUS); direct: the session ends
@@ -39,8 +39,11 @@ enum {
 };
 
 // Block formats: an LZ4 stream, or none at all for a block of 0xFF (0 is kept for a raw block, not offered: an LZ4
-// stream of incompressible data is only 0.4 % longer, and one format keeps the radio smaller)
-enum { CPSF_FMT_LZ4 = 1, CPSF_FMT_BLANK = 2 };
+// stream of incompressible data is only 0.4 % longer, and one format keeps the radio smaller), or a patch: an LZ4
+// stream whose matches may reach into the block's current contents, as if they came before it (cps-fast.md 3.7)
+enum { CPSF_FMT_LZ4 = 1, CPSF_FMT_BLANK = 2, CPSF_FMT_PATCH = 3 };
+// INFO flags
+enum { CPSF_INFO_STAGING = 1, CPSF_INFO_WRITABLE = 2, CPSF_INFO_PATCH = 4 };
 enum { CPSF_MODE_DIRECT = 0, CPSF_MODE_STAGED = 1 };
 
 // STATUS states
@@ -65,6 +68,7 @@ enum {
 	CPSF_R_CRC,		// the block decoded, but its CRC-32 differs from the one BLOCK gave
 	CPSF_R_STREAM,		// a corrupt stream: bad LZ4, a gap in the offsets, the wrong length
 	CPSF_R_FLASH,		// a flash operation failed
+	CPSF_R_BASE,		// a patch: the block on the radio isn't the one the patch was made against
 };
 
 typedef struct {

@@ -80,22 +80,23 @@ the bytes after it.
 | 1 | SUMS | addr u32, count u8 (1 to 16) | addr u32, count u8, blank mask u16, CRC-32 u32 x count |
 | 2 | READ | addr u32, offset u16 | addr u32, format u8, length u16, CRC-32 u32, offset u16, a reserved byte (0), up to 1000 stream bytes |
 | 3 | BEGIN | mode u8: 0 direct, 1 staged | stage_max u16 (0 for direct) |
-| 4 | BLOCK | addr u32, format u8, length u16, CRC-32 u32 | none |
+| 4 | BLOCK | addr u32, format u8, length u16, CRC-32 u32; for a patch (format 3) also the base's CRC-32 u32 | none |
 | 5 | DATA | offset u16, 1 to 61 stream bytes | received u16 |
 | 6 | END | none | none |
 | 7 | COMMIT | none | none |
 | 8 | STATUS | none | state u8, mode u8, blocks u16, copied u16, reason u8 |
 | 9 | ABORT | none | none |
 
-Formats: 1 an LZ4 stream (section 5), 2 a blank block (no stream: length 0). Format 0 is kept for raw blocks and not
-offered: an LZ4 stream of incompressible data is 0.4 % longer than the data, and one format keeps the radio smaller.
+Formats: 1 an LZ4 stream (section 5), 2 a blank block (no stream: length 0), 3 a patch: an LZ4 stream coded against
+the block's current contents (3.7). Format 0 is kept for raw blocks and not offered: an LZ4 stream of incompressible
+data is 0.4 % longer than the data, and one format keeps the radio smaller.
 
 ### 3.1 INFO
 
 | Offset | Size | Field |
 |---|---|---|
 | 0 | 1 | protocol version: 1 |
-| 1 | 1 | flags: bit 0 staged writes available, bit 1 the flash can be written (`storage_ready`) |
+| 1 | 1 | flags: bit 0 staged writes available, bit 1 the flash can be written (`storage_ready`), bit 2 patch blocks (3.7) |
 | 2 | 2 | block size: 4096 |
 | 4 | 1 | blocks per SUMS: 16 |
 | 5 | 1 | stream bytes per DATA: 61 |
@@ -187,6 +188,32 @@ A window that goes wrong (an answer missing, a refusal: a frame lost to an overr
 after it are refused with reason 8) is not repaired piece by piece: the host sends the block again from BLOCK, one
 DATA at a time. Every operation is safe to repeat (3.4), so this needs no state on the host beyond the block.
 
+### 3.7 Patch blocks
+
+Most of a changed block is often still on the radio: a renamed channel, or an ID database page where a record was
+added, removed or edited and the rest moved along. A patch sends only the difference. Its stream is an LZ4 block
+(section 5) whose matches may reach up to 4096 bytes before the block's start, into the block's current contents, as
+if those came just before it (an LZ4 dictionary). Unchanged runs become matches into the old contents; only new bytes
+travel as literals.
+
+- The base is the block as the image shows it now: what SUMS hashed and READ sends (the live VFO in VFO A, section 2).
+  BLOCK gives the base's CRC-32, and the radio hashes its block and refuses a patch whose base differs (reason 10,
+  BASE: it changed since the host saw it). The host then sends the block plain. A refused patch leaves no block open.
+- In a staged session the base is the stored codeplug, not a slot staged earlier in the same session: a block sent
+  twice is patched against the same base both times. In a direct session a block written once has a new base.
+- The radio writes a block only at END, so the old contents are still in the flash while the stream decodes. A match
+  that reaches into them is read from the flash straight into the storage sector buffer, at the block's place: the
+  decoder needs no buffer for the base. A flash read that fails there drops the block (reason 9).
+- A host makes a patch only for a block whose bytes it knows: one it read, one that's blank, or one in an image read
+  earlier whose CRC-32 is still the radio's (SUMS). It sends the patch when it's shorter than the plain stream.
+- A radio that doesn't list bit 2 in INFO refuses format 3 as a bad argument: hosts send plain blocks to it.
+
+What it saves, on an ID database in format C (`iddb-compact.md`) of 133,148 RadioID records (430 pages of 4 KB),
+refreshed with a month of RadioID's changes (about 1,600 records added, removed or edited; measured from two of its
+`user.csv` files six months apart, a sixth of the changes applied): 320 pages change. Plain, their LZ4 streams are
+1,047 KB, some 95 s on a 115200 baud host port; as patches, 22.9 KB, about 2 s. A renamed channel in the simulator's
+codeplug is 731 stream bytes as a block and 48 as a patch.
+
 ## 4. The hash: CRC-32
 
 The block hash is CRC-32 (IEEE 802.3, reflected, the zlib `crc32`), over the 4096 bytes of the block as the image shows
@@ -213,7 +240,7 @@ Both. The cost decided it:
 
 | Part | Flash (STM32F4 radio) | RAM |
 |---|---|---|
-| Decoder (writes) | about 300 B | none: a streaming decoder writes each DATA's bytes straight into the storage sector buffer, matches copy from what it already decoded there |
+| Decoder (writes) | about 300 B | none: a streaming decoder writes each DATA's bytes straight into the storage sector buffer, matches copy from what it already decoded there (a patch's matches into the base are read from the flash, 3.7) |
 | Encoder (reads) | about 300 B | 128 B of stack (64 hash entries); it writes the requested window of the stream straight into the debug link's reply buffer |
 
 Neither needs a buffer of its own, which is why the protocol fits a small RAM (section 9). The encoder's table
@@ -251,7 +278,8 @@ a count outside its range, an offset past a stream), 3 busy (the storage sector 
 | 6 | STATE | an operation out of order: BLOCK, DATA or END outside a session, END without BLOCK, BEGIN in a session, COMMIT with a block open |
 | 7 | CRC | the block decoded, but its CRC-32 is not the one BLOCK gave |
 | 8 | STREAM | a corrupt LZ4 stream, a gap in the offsets, a stream that doesn't decode to 4096 bytes |
-| 9 | FLASH | a flash erase, program or read-back failed |
+| 9 | FLASH | a flash erase, program or read-back failed, or a patch's base couldn't be read |
+| 10 | BASE | a patch whose base CRC-32 isn't the block's on the radio (3.7) |
 
 These are the CPS's refusals and more: the CPS refuses the settings ring, the journal and the native area at `X 1`
 and filters the calibration window byte by byte (`cps-protocol.md` 2.3); this protocol refuses those blocks whole,
@@ -334,7 +362,7 @@ Both run in the host link task, so the checks don't race.
 | SUMS | 16 blocks: request 6 bytes, reply 72 |
 | READ | at most 1000 stream bytes per reply (15 header bytes) |
 | DATA | at most 61 stream bytes |
-| LZ4 stream | 1 to 4128 bytes per block |
+| LZ4 stream | 1 to 4128 bytes per block, a patch's too |
 | staged blocks | stage_max: (staging size / 4096) - 1, at most 64 (63 for a 256 KB area) |
 | session time-out | 10 s after the last request |
 | RAM | about 200 B of state (STM32F4 radio); the 4 KB storage sector buffer and the debug link's buffers are shared |

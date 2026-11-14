@@ -287,6 +287,7 @@ import { FakeCpsRadio } from "../static/js/codeplug/fakecps.js";
 import { makeBundle } from "../static/js/flasher/backup.js";
 import { CONVERTERS } from "../static/js/flasher/codeplug.js";
 import { FastLink, FastError } from "../static/js/codeplug/fastlink.js";
+import { encodeBlock, decodeBlock } from "../static/js/flasher/lz4.js";
 import { Link, browserErrorKey } from "../static/js/flasher/link.js";
 import { updateFor } from "../static/js/flasher/version.js";
 
@@ -544,7 +545,16 @@ test("a format C database written fast is read by the radio; an older radio gets
 	await tr3.identify(RADIOS);
 	const p = await tr3.plan(more, again, { iddb: true });
 	assert.ok(p.blocks <= 4, `blocks for one new record: ${p.blocks}`);
-	await s3.close();
+	// written as patches of the pages the radio holds (cps-fast.md 3.7): a few dozen bytes each. The header block's
+	// two writes go plain, as their plain streams (a mostly erased block) are shorter
+	const plain = p.plan.reduce((n, [, b]) => n + (b.every((x) => x === 0xFF) ? 0 : encodeBlock(b).length), 0);
+	assert.ok(p.bytes * 10 < plain, `planned ${p.bytes} stream bytes as patches, ${plain} whole`);
+	const r3 = await tr3.write(more, again, { iddb: true });
+	await tr3.verify(more, r3.plan);
+	assert.ok(tr3.fl.patched >= 1 && r3.bytes < 300, `${tr3.fl.patched} patches, ${r3.bytes} stream bytes`);
+	await tr3.finish();
+	const got3 = simDetailFlash(await s3.close(), [9900001]).split("\n").filter((l) => l.startsWith("iddb"));
+	assert.deepEqual(got3, ["iddb count 30001", 'iddb 9900001 "Q5NEW New"']);
 
 	const old = simRadio(["--populate", "--features", "FM,DMR"]);
 	const tr2 = new CpsSerial(old);
@@ -758,4 +768,19 @@ test("a format C database goes to an older radio as format N, and to TFTP as for
 	// TFTP: cut to the radio's room like a write
 	const capped = tftpBytes(img, iddb.AREA2 + 0x100000);
 	assert.ok(capped.length <= iddb.AREA2 + 0x100000 && iddb.readHeader(capped).count === t2.count);
+});
+
+test("LZ4 with a dictionary: a patch decodes against the old block, and a plain stream is as before", () => {
+	const old = new Uint8Array(4096).fill(0xFF);
+	let x = 1;
+	for (let i = 0; i < 3600; i++) old[i] = 0x41 + ((x = (x * 1103515245 + 12345) >>> 0) >>> 24) % 26;
+	const b = new Uint8Array(4096);
+	b.set(old.subarray(0, 1000));
+	b.set(new TextEncoder().encode("Q5NEW New Record"), 1000);
+	b.set(old.subarray(1000, 4096 - 16), 1016);
+	const patch = encodeBlock(b, old), plain = encodeBlock(b);
+	assert.ok(patch.length < 64 && patch.length * 10 < plain.length, `patch ${patch.length}, plain ${plain.length}`);
+	assert.deepEqual(decodeBlock(patch, 4096, old), b);
+	assert.deepEqual(decodeBlock(plain, 4096), b);
+	assert.throws(() => decodeBlock(patch, 4096), /corrupt/);		// it needs the dictionary
 });
