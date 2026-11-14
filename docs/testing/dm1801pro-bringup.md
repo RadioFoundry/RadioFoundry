@@ -186,10 +186,8 @@ first:
 | Short data poll from another MS | the poll ahoy (`t3.ahoy_kind=6`), the answer UDT sent (`t3.last_tx_op=0x1b`) | |
 | Radio check during the radio's own call | the answer sent in the call (`t3.last_tx_op=0x23`), back on the TSCC | |
 | IP datagram to the gateway, unconfirmed | a data grant (`t3.call_data=1`), `ip.sent` +1, `ip.result=ok`, back on the TSCC | confirmed: `ip.cnf_timeouts` with no response from the site (the site sends none yet) |
-| Power save, PowerSave_RQ 2 | `t3.ps_offset=1` granted, `t3.sleeps` rising, a status from another MS received while asleep | |
+| Power save, PowerSave_RQ 2 | `t3.ps_offset` granted, `t3.sleeps` and `t3.rx_offs` rising, the receiver off about half the time (`t3.rx_off_ms`); a status, short data, a poll (answered) and a group call from another MS all reach the sleeping radio | `t3.rx_off_ms` 0: the board's `rx_sleep_dmr` not set |
 | Emergency: alarm, hot-mic call, cancel | `em.state=active`, `data.emergency_alarms_sent` +1, `em.hot_mic_keyed` 1, a call followed and back on the TSCC, the cancel `done` | |
-
-The receiver stays on while asleep: the board's `rx_sleep` works in FM only (no `rx_sleep_dmr`).
 
 ## 10. VOX and the microphone level
 

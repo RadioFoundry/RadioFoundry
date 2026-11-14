@@ -539,10 +539,11 @@ static void status(radio_status_t *st)
 	st->tone_ok = mode != RADIO_MODE_FM || fd6818_rx_tone_ok(&fd, fd_tone(rx_tone.type));
 }
 
-// Receiver battery saving (FM receive only): the FD6818 idle and the RX path off; waking tunes again with rx()
+// Receiver battery saving: the FD6818 idle and the RX path off; waking tunes again as rx() did. On a DMR channel
+// (rx_sleep_dmr) the HR_C7000 keeps running without a signal and the core restarts its receive after the wake
 static void rx_sleep(bool sleep)
 {
-	if (mode != RADIO_MODE_FM || transmitting || !have_rx || sleep == asleep) {
+	if ((mode != RADIO_MODE_FM && mode != RADIO_MODE_DMR) || transmitting || !have_rx || sleep == asleep) {
 		return;
 	}
 	if (sleep) {
@@ -710,6 +711,7 @@ const hal_radio_t dm1801pro_radio = {
 	.audio = audio,
 	.volume = NULL,
 	.rx_sleep = rx_sleep,
+	.rx_sleep_dmr = true,
 #if CONFIG_AM_RX
 	.rx_am = rx_am,
 #endif
