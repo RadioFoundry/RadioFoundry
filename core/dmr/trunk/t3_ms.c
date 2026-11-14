@@ -826,6 +826,13 @@ static void ra_slot(t3_ms_t *ms, uint32_t now, bool at_known, bool at_busy)
 		send(ms, b, ms->ax.slot, false);
 		ms->ax.tries++;
 		ms->st.ra_tries++;
+		uint8_t k = (uint8_t)((ms->st.ra_tries - 1u) % T3_RA_LOG);
+		ms->st.ra_log[k].tx_ms = now;
+		ms->st.ra_log[k].tx_slot = ms->ax.slot;
+		ms->st.ra_log[k].frames = T3_RA_NONE;
+		ms->st.ra_log[k].rx_slot = 0;
+		ms->st.ra_log[k].rx_ms = 0;
+		ms->st.ra_log[k].op = 0;
 		ms->ax.state = T3_AX_WAIT_RESP;
 		ms->ax.frames = (uint16_t)(t3_nwait_frames(ms->aloha.nrand_wait) + 1u);
 		if (ms->ax.svc == T3_SVC_REGISTER) {
@@ -1730,12 +1737,25 @@ static void on_payload(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_csbk_t 
 
 static void deliver(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t3_csbk_t *p, const t3_cdef_t *cdef)
 {
+	bool waiting = ms->ax.state == T3_AX_WAIT_RESP;
+	uint16_t left = ms->ax.frames;
+
 	if (ms->state == T3_FOLLOW) {
 		on_payload(ms, now, slot, p, cdef);
 	} else if (ms->vote.on) {
 		on_vote(ms, cc, p);
 	} else {
 		on_tscc(ms, now, slot, cc, p, cdef);
+	}
+	if (waiting && ms->ax.state != T3_AX_WAIT_RESP && ms->st.ra_tries != 0) {
+		// This PDU answered the last random access burst: how many frames after it (the wait counts down from
+		// NRand_Wait + 1)
+		uint8_t k = (uint8_t)((ms->st.ra_tries - 1u) % T3_RA_LOG);
+		uint16_t wait = (uint16_t)(t3_nwait_frames(ms->aloha.nrand_wait) + 1u);
+		ms->st.ra_log[k].frames = (uint8_t)(left <= wait ? (uint16_t)(wait - left) : 0u);
+		ms->st.ra_log[k].rx_slot = slot;
+		ms->st.ra_log[k].rx_ms = (uint16_t)(now - ms->st.ra_log[k].tx_ms);
+		ms->st.ra_log[k].op = p->op;
 	}
 }
 

@@ -418,6 +418,41 @@ static void test_no_answer(void)
 	CHECK(nsent > n, "registration tried again later");
 }
 
+// The random access log (the debug link's t3.ra*): every burst's time and slot, and what answered it how late
+static void test_ra_log(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp(&ms);
+	frames(&ms, 2);
+	CHECK(nsent == 1 && ms.st.ra_tries == 1, "one request");
+	CHECK(ms.st.ra_log[0].tx_ms == sent_ms[0] && ms.st.ra_log[0].tx_slot == 1 &&
+	      ms.st.ra_log[0].frames == T3_RA_NONE && ms.st.ra_log[0].rx_ms == 0, "logged, no answer yet");
+	frames(&ms, 3);
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_REG_ACCEPTED, OWN, T3_ID_REGI);
+	rx(&ms, 1, &a);
+	CHECK(ms.reg == T3_REG_OK, "registered");
+	CHECK(ms.st.ra_log[0].rx_ms == T - sent_ms[0] && ms.st.ra_log[0].rx_slot == 1 &&
+	      ms.st.ra_log[0].op == T3_OP_C_ACKD && ms.st.ra_log[0].frames * 60u <= ms.st.ra_log[0].rx_ms && ms.st.ra_log[0].rx_ms < ms.st.ra_log[0].frames * 60u + 60u,
+	      "answered %u ms, %u frames after", ms.st.ra_log[0].rx_ms, ms.st.ra_log[0].frames);
+	frames(&ms, 50);
+	CHECK(ms.st.ra_log[0].op == T3_OP_C_ACKD, "later PDUs don't touch it");
+
+	// No answer: every try logged unanswered, the oldest overwritten past T3_RA_LOG
+	setup(T3_OPT_PRIVATE, true);
+	camp(&ms);
+	for (int i = 0; i < 400 && ms.ax.result == T3_RES_PENDING; i++) {
+		frame(&ms);
+	}
+	CHECK(ms.st.ra_tries == (uint32_t)nsent && nsent > 0, "tries counted");
+	bool none = true;
+	for (uint32_t i = 0; i < T3_RA_LOG && i < ms.st.ra_tries; i++) {
+		uint32_t n = ms.st.ra_tries - 1u - i;
+		none = none && ms.st.ra_log[n % T3_RA_LOG].frames == T3_RA_NONE && ms.st.ra_log[n % T3_RA_LOG].tx_ms == sent_ms[n];
+	}
+	CHECK(none, "the last tries, each unanswered at its time");
+}
+
 // DMRLA 0 is reserved (361-4 table 6.5: 1 at least): unset, every site is its own registration area, so a radio
 // that moves to another site of the network registers there
 static void test_area_unset(void)
@@ -2215,6 +2250,7 @@ int main(void)
 	test_register();
 	test_reg_list();
 	test_no_answer();
+	test_ra_log();
 	test_area_unset();
 	test_refused_denied();
 	test_permission();

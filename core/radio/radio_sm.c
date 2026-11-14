@@ -2713,6 +2713,17 @@ static void t3_publish(radio_sm_t *sm)
 	v->ax_info = m->ax.info;
 	v->own_status = m->own_status;
 	v->reg_tgs = m->reg_tgs;
+	_Static_assert(T3_RA_LOG == sizeof(v->ra) / sizeof(v->ra[0]), "the view holds the whole log");
+	v->nra = (uint8_t)(m->st.ra_tries < T3_RA_LOG ? m->st.ra_tries : T3_RA_LOG);
+	for (uint8_t i = 0; i < v->nra; i++) {
+		uint8_t k = (uint8_t)((m->st.ra_tries - v->nra + i) % T3_RA_LOG);
+		v->ra[i].tx_ms = m->st.ra_log[k].tx_ms;
+		v->ra[i].rx_ms = m->st.ra_log[k].rx_ms;
+		v->ra[i].tx_slot = m->st.ra_log[k].tx_slot;
+		v->ra[i].frames = m->st.ra_log[k].frames;
+		v->ra[i].rx_slot = m->st.ra_log[k].rx_slot;
+		v->ra[i].op = m->st.ra_log[k].op;
+	}
 	v->reg_tg_ok = m->reg_tg_ok;
 	v->call_data = m->call.data;
 	v->stunned = m->stunned;

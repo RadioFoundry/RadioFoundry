@@ -81,7 +81,7 @@ import pytest
 
 from rfoundry_debug import VIEW_SECTIONS, as_int, DebugLink, CPKV_T3_SYSTEM, CPKV_T3_CHAN, CPKV_T3_TAG, T3_SYS_AUTH
 from rfoundry_hil import counter_deltas, skip
-from hil_config import rig
+from hil_config import rig, tx_allowed
 
 # The debug link's names (docs/spec/debuglink.md, the t3 section); kept here so a rename touches one place
 SECTION = "t3"
@@ -162,7 +162,7 @@ def num(v, key):
 
 
 def wait_t3(radio, pred, timeout, what):
-    return radio.wait_for(pred, timeout, interval=0.2, sections=(SECTION, "core"), what=what)
+    return radio.wait_for(pred, timeout, interval=0.2, sections=(SECTION, "t3_roam", "core"), what=what)
 
 
 @pytest.fixture
@@ -492,17 +492,25 @@ def cp_system(trunk_tx, pytestconfig):
     radio, L = trunk_tx, trunk_tx.link
     s = site(pytestconfig)
     radio.go_home()
-    core = radio.core()
-    c, pos, size = (as_int(core.get(k)) for k in ("channel_number", "zone_pos", "zone_size"))
-    ch = radio.view(["channel"])
-    if not c or ch.get("ch.mode") != "dmr":
-        skip("setup", "the channel in use is not a DMR codeplug channel: select one whose contact the site serves")
-    if not size or size < 2:
-        skip("setup", "the zone has one channel: a cp test steps off the trunked channel to stop the system")
+    if radio.core().get("vfo") == "1":
+        L.vfo(False)
+    size = as_int(radio.core().get("zone_size")) or 0
+    if size < 2:
+        skip("state", "the zone has one channel: a cp test steps off the trunked channel to stop the system")
+    # The zone's first DMR channel: its talkgroup is its contact's
+    for pos in range(size):
+        L.zone_pos(pos)
+        time.sleep(0.3)
+        c = as_int(radio.core().get("channel_number"))
+        ch = radio.view(["channel"])
+        if c and ch.get("ch.mode") == "dmr":
+            break
+    else:
+        skip("state", "no DMR channel in the zone in use: select a zone that has one")
     keys = (CPKV_T3_SYSTEM + CP_SYS, CPKV_T3_CHAN + CP_CHAN, CPKV_T3_TAG + c - 1)
     for k in keys:
         if L.cpkv_get(k) is not None:
-            skip("setup", f"codeplug key {k:#06x} is in use: the test won't write over the user's set-up")
+            skip("state", f"codeplug key {k:#06x} is in use: the test won't write over the user's set-up")
     other = (pos + 1) % size
 
     def select():
@@ -557,6 +565,10 @@ def test_t3_cp_unavailable(trunk_tx, cp_system):
         assert v.get("t3.unavail") == "1", "authenticates without a key, yet available"
         assert v.get("t3.on") == "0", "an unavailable system started"
         sent0 = num(v, "t3.sent")
+        mhz = (as_int(trunk_tx.core().get("tx_hz")) or 0) / 1e6
+        if not tx_allowed(None, mhz):
+            # Were the refusal broken, PTT would key the channel's own frequency: only on one the rig may use
+            skip("bench", f"PTT refusal not checked: the channel's own TX frequency {mhz:.5f} MHz isn't in tx_mhz")
         L.ptt(True, 3000)
         try:
             end = time.monotonic() + 2.0

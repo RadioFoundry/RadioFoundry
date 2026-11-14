@@ -274,6 +274,14 @@ typedef struct {
 	uint8_t ax_info;	// Response_Info of the last final acknowledgement (a poll's answer)
 	uint8_t own_status;	// sent in answer to a poll
 	uint8_t reg_tgs;	// talkgroups in the last registration's subscription list (0: none sent)
+	// The last four random access bursts, oldest first (t3_ms.h ra_log): sent at tx_ms in tx_slot; answered rx_ms
+	// later (0: not) in rx_slot by opcode op, frames TDMA frames after it
+	struct {
+		uint32_t tx_ms;
+		uint16_t rx_ms;
+		uint8_t tx_slot, frames, rx_slot, op;
+	} ra[4];
+	uint8_t nra;
 	uint8_t reg_tg_ok;	// which the TSCC accepted: bit 6 the first
 	bool call_data;		// the call followed is packet data (PD_GRANT, TD_GRANT)
 	bool pd_wait;		// the data service's packet waits for its data channel

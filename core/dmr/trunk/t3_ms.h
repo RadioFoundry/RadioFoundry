@@ -224,6 +224,8 @@ typedef struct {
 	uint32_t als_end;
 } t3_call_t;
 
+#define T3_RA_LOG	4
+#define T3_RA_NONE	0xFFu
 typedef struct {
 	uint32_t csbk;		// CSBKs with a good CRC
 	uint32_t crc_bad;	// CSBKs / MBC headers with a bad CRC
@@ -242,6 +244,15 @@ typedef struct {
 	uint32_t vote_moves;	// ... and moved to
 	uint32_t weak_leaves;	// TSCCs left for a weak signal
 	uint32_t adj_refused;	// adjacent sites announced with a system code the radio may not use
+	// The last T3_RA_LOG random access bursts (the debug link's t3.ra*): when each went, and what answered it
+	struct {
+		uint32_t tx_ms;		// when it was handed to the radio
+		uint16_t rx_ms;		// the answer, this many ms after (0: none)
+		uint8_t tx_slot;
+		uint8_t frames;		// the answer came this many frames after it (T3_RA_NONE: none)
+		uint8_t rx_slot;
+		uint8_t op;		// the answer's opcode
+	} ra_log[T3_RA_LOG];	// burst n (ra_tries counts from 1) at (n - 1) % T3_RA_LOG
 } t3_stats_t;
 
 typedef struct {

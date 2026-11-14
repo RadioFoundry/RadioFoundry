@@ -876,7 +876,10 @@ The `t3` view section has the engine's state as the radio core last published it
 `csbk`, `crc_bad`, `grants`, `followed`, `unmapped`, `last_unmapped`, `returns`, `hunts`, `foreign`, `learned`, `sent`,
 `ra_tries`, `send_fail`, `at_known`, `at_busy`). The `t3_svc` section, also `t3.`-prefixed, has the services:
 `ax_info` (the final acknowledgement's Response_Info: a poll's answer), `reg_tgs` and `reg_tg_ok` (the
-registration's talkgroup list: how many it sent, and which the site accepted, bit 6 the first), `call_data`
+registration's talkgroup list: how many it sent, and which the site accepted, bit 6 the first), `nra` and `ra0` to
+`ra3` (the last random access bursts, oldest first, each `age_ms,tx_slot,rx_ms,frames,rx_slot,op`: how long ago it
+went and in which slot, then the PDU that answered it: after how many ms and TDMA frames, in which slot, its
+opcode; `0,255,0,0x00` when nothing answered before the next try or the end), `call_data`
 (the call followed is packet data), `pd_wait` (a data service transmission waits for its data channel), `stunned`,
 `stuns`, `revives` (the stun in force, and the stun and revive commands taken), `auth_key` (the system has K: the
 key itself is never shown), `auths` (challenges answered), `massregs`, `moves` (MassReg broadcasts and C_MOVEs taken), `ps_rq`, `ps_offset` (power save granted; 0 none), `asleep`, `sleeps` (the engine's power save sleep, and how often), `dgnas` (DGNA downloads taken) `dgna` (the assigned talkgroups, comma separated) `dgna_onekey dgna_alias_tg` (0: none), `divert_to divert_group` (where the last call answered `diverted` was sent), `call_als als_calls` (an ALS call followed, how many), `killed kills` (killed by the system, until a restart) `tscc_auth_fails` (TSCC answers to the radio's challenge that failed), `own_status` (the radio's, sent in answer to a poll), and the last status heard (`st_count`,
