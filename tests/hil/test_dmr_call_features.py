@@ -261,12 +261,13 @@ def test_call_end_tone_setting(radio, sdr_bench, pytestconfig):
             L.setting("tones_off", want)
             radio.wait_for(lambda x: x.get("beep.tones_off") == str(want), timeout=5, sections=("audio",),
                            what="the call end tone setting")
-            before = int(_features(radio)["beep.played"])
+            # _bench_call zeroes the counters (beep.played with them) before the call: what it counts after is the
+            # call's tones
             d, _ = _bench_call(radio, sdr_bench, pytestconfig, superframes=3)
             assert d["call.rx_calls"] == 1, d
             deadline = time.monotonic() + 4.0           # the tone follows the call's end
             while True:
-                n = int(_features(radio)["beep.played"]) - before
+                n = int(_features(radio)["beep.played"])
                 if n or time.monotonic() > deadline:
                     break
                 time.sleep(0.2)
