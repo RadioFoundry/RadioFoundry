@@ -677,6 +677,7 @@ static void start_access(t3_ms_t *ms, uint32_t now, t3_svc_t svc, uint32_t dst, 
 	ms->ax.als = false;
 	ms->ax.resume = false;
 	ms->ax.ip = 0;
+	ms->ax.ip_inform = false;
 	// The first slot the TSCC uses; a dedicated TSCC on both slots is reached on TS1
 	ms->ax.slot = (ms->tscc_slots & 1u) || ms->tscc_slots == 0 ? 1 : 2;
 	ms->ax.frames = 0;
@@ -762,6 +763,12 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 			ms->ps_rq_sent = ms->cfg->ps_rq & 7u;
 			q->options |= (uint8_t)(ms->ps_rq_sent << 1);
 		}
+		if (ms->ax.svc == T3_SVC_REGISTER && ms->reg_tgs == 0 && !ms->reg_single && ms->cfg->ip_addr != 0) {
+			// IP Connection Advice (6.4.11): IPI asks for the address. Not with a talkgroup or a list, whose
+			// answers are their own
+			q->options |= T3_SO_REG_IP_INFORM;
+			ms->ax.ip_inform = true;
+		}
 		break;
 	}
 	case T3_SVC_GROUP_VOICE:
@@ -846,6 +853,7 @@ static void ra_slot(t3_ms_t *ms, uint32_t now, bool at_known, bool at_busy)
 			ms->reg = T3_REG_NEEDED;
 			ms->reg_area = 0;
 			ms->reg_tg_ok = 0;
+			ms->ip_advised = false;
 		}
 		break;
 	}
@@ -867,6 +875,15 @@ static void ra_slot(t3_ms_t *ms, uint32_t now, bool at_known, bool at_busy)
 	default:
 		break;
 	}
+}
+
+// The registration's record is made: the area it holds for
+static void registered(t3_ms_t *ms, uint32_t now)
+{
+	ms->reg = ms->reg_stale ? T3_REG_NEEDED : T3_REG_OK;	// stale: the list sent is no longer ours
+	ms->reg_stale = false;
+	ms->reg_area = reg_area(ms, ms->syscode);
+	ms->awake_until = now + or_default(ms->cfg->awake_ms, T3_AWAKE_MS);
 }
 
 // C_ACKD (and C_NACKD, C_WACKD, C_QACKD: the reason code says which) to the radio
@@ -893,9 +910,9 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 			break;	// not a registration answer (table 7.41): wait for one, or TNP_Timer
 		}
 		if (svc == T3_SVC_REGISTER) {
-			ms->reg = ms->reg_stale ? T3_REG_NEEDED : T3_REG_OK;	// stale: the list sent is no longer ours
-			ms->reg_stale = false;
-			ms->reg_area = reg_area(ms, ms->syscode);
+			registered(ms, now);
+			// From IPI, after the address went up: the system took it (6.4.11.1.4)
+			ms->ip_advised = ms->ax.ip_inform && a->src == T3_ID_IPI;
 			// Reg_Accepted or Reg_Subscription/Attachment: Response_Info says which of a list were taken. Only
 			// the first reg_tgs bits mean anything: all taken is 1111111b however many went (6.4.4.1.13.2)
 			uint8_t sent_bits = (uint8_t)(0x7Fu & ~((1u << (T3_REG_TG_MAX - ms->reg_tgs)) - 1u));
@@ -907,7 +924,6 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 			// PowerSave_Offset: the wake frame, only in a Reg_Accepted (table 7.41); 0 = no power save (table 6.13)
 			ms->ps_rq = a->reason == T3_RC_REG_ACCEPTED ? ms->ps_rq_sent : 0u;
 			ms->ps_offset = ms->ps_rq != 0 ? (uint8_t)(a->info & ((1u << ms->ps_rq) - 1u)) : 0u;
-			ms->awake_until = now + or_default(ms->cfg->awake_ms, T3_AWAKE_MS);
 		} else if (svc == T3_SVC_DEREGISTER) {
 			ms->reg = T3_REG_NEEDED;
 			ms->deregistered = true;
@@ -931,6 +947,14 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 			ms->reg = T3_REG_DENIED;
 			finish(ms, now, T3_RES_REFUSED);
 			enter_hunt(ms, now, false);
+		} else if (svc == T3_SVC_REGISTER && a->reason == T3_RC_IP_CONN_FAILED && ms->ax.ip_inform) {
+			// Registered, the address not taken (6.4.11.1 f, 6.4.11.1.4): no IP bearer service here, or the
+			// address is another's. The radio stays (the standard leaves it to the radio), reached by its ID;
+			// no power save, which only a Reg_Accepted grants
+			registered(ms, now);
+			ms->ps_rq = 0;
+			ms->ps_offset = 0;
+			finish(ms, now, T3_RES_DONE);
 		} else if (svc == T3_SVC_REGISTER && a->reason == T3_RC_REG_REFUSED) {
 			// Look for another TSCC; this one is tried again when the hunt comes back to it
 			finish(ms, now, T3_RES_REFUSED);
@@ -1114,22 +1138,37 @@ static bool on_divert_ask(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy
 // The TSCC asks for a multi-part packet data call's IP address (6.6.3.2.4 b 2, C_AHOY from IPI; Service_Kind 0010b
 // as 6.6.3.1.2 b, or 0100b as table 6.54): one UDT block in IP format (B.3.7, figure B.25: the IPv4 address, 48 bits
 // reserved) to IPI, supplementary data as table 6.35's gateway rows; the grant or a refusal follows
+//
+// IP Connection Advice (6.4.11.1 e, 6.4.11.1.3) is the same upload: the C_AHOY from IPI to a registration with
+// IP_Inform says the radio is registered and asks for its own address. The text gives no Service_Kind for it: 0100b
+// and 1110b are taken. The final C_ACKD Reg_Accepted or C_NACKD IP_Connection_failed from IPI follows (on_ack)
 static bool on_ip_ask(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h)
 {
 	if (h->src != T3_ID_IPI || h->group || !is_me(ms, h->dst) ||
-	    (h->kind != T3_SK_IND_DATA && h->kind != T3_SK_IND_UDT)) {
+	    (h->kind != T3_SK_IND_DATA && h->kind != T3_SK_IND_UDT && h->kind != T3_SK_REGISTRATION)) {
 		return false;
 	}
-	if (!may_send(ms) || ms->ax.svc != T3_SVC_PDATA || ms->ax.dst != T3_ID_IPI || ms->ax.ip == 0 ||
-	    (ms->ax.state != T3_AX_WAIT_RESP && ms->ax.state != T3_AX_ACKED)) {
+	if (!may_send(ms) || (ms->ax.state != T3_AX_WAIT_RESP && ms->ax.state != T3_AX_ACKED)) {
+		return true;
+	}
+	uint32_t ip;
+	if (ms->ax.svc == T3_SVC_REGISTER && ms->ax.ip_inform && h->kind != T3_SK_IND_DATA) {
+		if (ms->reg != T3_REG_OK) {
+			registered(ms, now);
+		}
+		ip = ms->cfg->ip_addr;
+	} else if (ms->ax.svc == T3_SVC_PDATA && ms->ax.dst == T3_ID_IPI && ms->ax.ip != 0 &&
+		   h->kind != T3_SK_REGISTRATION) {
+		ip = ms->ax.ip;
+	} else {
 		return true;
 	}
 	uint8_t d[10];
 	memset(d, 0, sizeof(d));
-	d[0] = (uint8_t)(ms->ax.ip >> 24);
-	d[1] = (uint8_t)(ms->ax.ip >> 16);
-	d[2] = (uint8_t)(ms->ax.ip >> 8);
-	d[3] = (uint8_t)ms->ax.ip;
+	d[0] = (uint8_t)(ip >> 24);
+	d[1] = (uint8_t)(ip >> 16);
+	d[2] = (uint8_t)(ip >> 8);
+	d[3] = (uint8_t)ip;
 	t3_udt_t u;
 	memset(&u, 0, sizeof(u));
 	u.format = T3_UDTF_IP;

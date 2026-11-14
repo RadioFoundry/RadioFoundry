@@ -651,14 +651,15 @@ class DebugLink:
         self.t3_op(T3_RESET)
 
     def t3_system(self, own_id=0, model=0, net=0, par="a", opts=0x20, cc=1, talk_id=0, talk_private=False, dmrla=0,
-                  leave_dbm=0, vote_ms=0):
+                  leave_dbm=0, vote_ms=0, ip_gw=False):
         """own_id 0: the radio's; model 0 tiny .. 3 huge; par a|b|1|2; opts T3_OPT_* (core/dmr/trunk/t3_ms.h): 0x01
         listen only, 0x20 private calls to the radio, 0x40 register with the talkgroup, 0x200 no roaming; dmrla: the
         SITE bits of a registration area; leave_dbm: a TSCC below it is left (0: the radio's roaming threshold);
-        vote_ms: the Vote Now sample (0: default)"""
+        vote_ms: the Vote Now sample (0: default); ip_gw: IP through the system's gateway (IPI), the radio's address
+        advised at registration"""
         cat = T3_PAR[par] if isinstance(par, str) else par
-        self.t3_op(T3_SYSTEM, struct.pack("<IBHBHBIBBhH", own_id, model, net, cat, opts, cc, talk_id, int(talk_private),
-                                          dmrla, leave_dbm, vote_ms))
+        self.t3_op(T3_SYSTEM, struct.pack("<IBHBHBIBBhHB", own_id, model, net, cat, opts, cc, talk_id, int(talk_private),
+                                          dmrla, leave_dbm, vote_ms, int(ip_gw)))
 
     def t3_ctrl(self, lcn, rx_hz, tx_hz, cc=0xFF):
         """A control channel candidate (also a channel of the plan); rx/tx as the radio sees them; cc 0xFF: the
@@ -2457,6 +2458,7 @@ def main(argv=None):
     p.add_argument("--private", action="store_true")
     p.add_argument("--broadcast", action="append", default=[], type=int,
                    help="a talkgroup whose calls from the radio are broadcasts (one-way)")
+    p.add_argument("--ip-gw", action="store_true", help="IP through the system's gateway; the address advised at registration")
     p.add_argument("--ps-rq", type=int, default=0, help="power save asked for at registration: 0 off, 1-7 = 1:2-1:128")
     p.add_argument("--no-start", action="store_true")
     p = sub.add_parser("iddb", help="the DMR ID database: its format and records, and the text for each ID given "
@@ -2548,7 +2550,7 @@ def main(argv=None):
                 if a.op == "setup":
                     link.t3_reset()
                     link.t3_system(a.own_id, a.model, a.net, a.par, a.opts, a.cc, a.talk, a.private, a.dmrla,
-                                   a.leave_dbm)
+                                   a.leave_dbm, ip_gw=a.ip_gw)
                     for c in a.ctrl:
                         link.t3_ctrl(*chan(c))
                     for c in a.chan:

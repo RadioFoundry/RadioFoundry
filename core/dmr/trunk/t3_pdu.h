@@ -125,6 +125,7 @@
 #define T3_RC_CANCEL_REFUSED	0x29
 #define T3_RC_REG_REFUSED	0x2A
 #define T3_RC_REG_DENIED	0x2B
+#define T3_RC_IP_CONN_FAILED	0x2C	// IP_Connection_failed, from IPI: registered, the address not taken (6.4.11)
 #define T3_RC_MS_NOT_REGISTERED	0x2D
 #define T3_RC_CALLED_BUSY	0x2E
 #define T3_RC_GROUP_NOT_ALLOWED	0x2F

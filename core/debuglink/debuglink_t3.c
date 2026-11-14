@@ -83,10 +83,11 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 		s->talk_id = rd32(a + 11) & 0xFFFFFFu;
 		s->talk_private = a[15] != 0;
 		// Optional, for roaming: DMRLA u8, the leave threshold dBm s16 (0: the radio's roaming threshold), the Vote
-		// Now sample ms u16 (0: default)
+		// Now sample ms u16 (0: default); then flags u8 (bit 0: IP through the system's gateway)
 		s->cfg.dmrla = n >= 17u ? a[16] : 0u;
 		s->cfg.leave_dbm = n >= 19u ? (int16_t)rd16(a + 17) : 0;
 		s->cfg.vote_ms = n >= 21u ? rd16(a + 19) : 0u;
+		s->ip_gw = n >= 22u && (a[21] & 1u) != 0;
 		break;
 	case DL_T3_CTRL:	// a control channel candidate (also a channel of the plan)
 		if (!chan_of(a, n, &c) || s->cfg.nctrl >= T3_CTRL_MAX || !add_chan(s, &c)) {
@@ -403,7 +404,8 @@ static void t3_svc(const radio_t3_view_t *x, void *ctx)
 		sd[2 * i + 1] = digits[x->sd_data[i] & 15u];
 	}
 	sd[2 * len] = '\0';
-	dl_text(t, "t3.polls=%u\nt3.poll_fails=%u\nt3.ip_gw=%u\n", x->polls, x->poll_fails, x->ip_gw);
+	dl_text(t, "t3.polls=%u\nt3.poll_fails=%u\nt3.ip_gw=%u\nt3.ip_advised=%u\n", x->polls, x->poll_fails, x->ip_gw,
+		x->ip_advised);
 	dl_text(t, "t3.sd_count=%u\nt3.sd_src=%u\nt3.sd_dst=%u\nt3.sd_group=%u\nt3.sd_format=%u\nt3.sd_len=%u\n"
 		"t3.sd_data=%s\nt3.sd_age_ms=%d\n", (unsigned)x->sd_count, (unsigned)x->sd_src, (unsigned)x->sd_dst,
 		x->sd_group, x->sd_format, x->sd_len, sd, x->sd_ms != 0 ? (int)(now - x->sd_ms) : -1);

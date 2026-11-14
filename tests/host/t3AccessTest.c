@@ -2126,6 +2126,80 @@ static void test_pdata(void)
 }
 
 // Packet data to an IP destination (6.6.3.2.3-4): a multi-part request to IPI, the address uploaded when the TSCC
+// IP Connection Advice (6.4.11): with an address set, the registration carries IP_Inform. A C_AHOY from IPI means
+// registered and asks for the address (one UDT block in IP format to IPI); the final C_ACKD Reg_Accepted from IPI
+// took it, with the power save offset; C_NACKD IP_Connection_failed from IPI leaves the radio registered without it
+static void test_ip_advice(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	cfg.ip_addr = 0x0C2F525Cu;	// 12.47.82.92
+	cfg.ps_rq = 2;
+	nsent = 0;
+	nup = 0;
+	camp(&ms);
+	CHECK(sent_rand(&ms), "registration sent");
+	const t3_rand_t *q = &sent[nsent - 1].u.rand;
+	CHECK(q->kind == T3_SK_REGISTRATION && (q->options & T3_SO_REG_IP_INFORM) && (q->options & T3_SO_REG_REGISTER) &&
+	      ((q->options >> 1) & 7u) == 2u, "IP_Inform with Reg_Dereg 1 and PowerSave_RQ: options %02x", q->options);
+	t3_csbk_t h = ahoy(T3_SK_IND_UDT, false, OWN, T3_ID_IPI);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(ms.reg == T3_REG_OK && !ms.ip_advised && ms.ax.state == T3_AX_ACKED, "the AHOY from IPI: registered");
+	t3_udt_t u;
+	CHECK(nup == 1 && nup_blocks == 1 && t3_udt_parse(up_hdr, &u) && u.format == T3_UDTF_IP && u.sf &&
+	      u.dst == T3_ID_IPI && u.src == OWN && u.blocks == 1, "the address uploaded: %d", nup);
+	static const uint8_t want[10] = { 12, 47, 82, 92, 0, 0, 0, 0, 0, 0 };
+	CHECK(memcmp(up_blocks[0], want, sizeof want) == 0, "IPv4, 48 bits reserved");
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_REG_ACCEPTED, OWN, T3_ID_IPI);
+	a.u.ack.info = 1;
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_DONE && ms.reg == T3_REG_OK && ms.ip_advised && ms.ps_offset == 1,
+	      "Reg_Accepted from IPI: taken, offset %u", ms.ps_offset);
+
+	// Refused at once (no IP bearer service): registered, without the address or power save
+	setup(T3_OPT_PRIVATE, true);
+	cfg.ip_addr = 0x0C2F525Cu;
+	cfg.ps_rq = 2;
+	nsent = 0;
+	nup = 0;
+	camp(&ms);
+	CHECK(sent_rand(&ms), "registration sent");
+	a = ack(T3_OP_C_ACKD, T3_RC_IP_CONN_FAILED, OWN, T3_ID_IPI);
+	rx(&ms, 1, &a);
+	int hunts = (int)ms.st.hunts;
+	frames(&ms, 100);
+	CHECK(ms.ax.result == T3_RES_DONE && ms.reg == T3_REG_OK && !ms.ip_advised && ms.ps_offset == 0 && nup == 0 &&
+	      ms.state == T3_CAMPED && (int)ms.st.hunts == hunts && nsent == 1, "IP_Connection_failed: registered, %d sent",
+	      nsent);
+	// Refused after the upload: the same
+	setup(T3_OPT_PRIVATE, true);
+	cfg.ip_addr = 0x0C2F525Cu;
+	nsent = 0;
+	nup = 0;
+	camp(&ms);
+	CHECK(sent_rand(&ms), "registration sent");
+	h = ahoy(T3_SK_REGISTRATION, false, OWN, T3_ID_IPI);	// Service_Kind 1110b taken too
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup == 1, "uploaded on a 1110b AHOY");
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_DONE && ms.reg == T3_REG_OK && !ms.ip_advised, "refused after the upload");
+
+	// No address: no IP_Inform; an AHOY from IPI then asks for nothing
+	setup(T3_OPT_PRIVATE, true);
+	nsent = 0;
+	nup = 0;
+	camp(&ms);
+	CHECK(sent_rand(&ms) && !(sent[nsent - 1].u.rand.options & T3_SO_REG_IP_INFORM), "no address: no IP_Inform");
+	h = ahoy(T3_SK_IND_UDT, false, OWN, T3_ID_IPI);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup == 0 && ms.reg != T3_REG_OK, "nothing uploaded, not registered by it");
+	cfg.ip_addr = 0;
+	cfg.ps_rq = 0;
+}
+
 // asks, then the grant; a site that grants at once works too
 static void test_pdata_ip(void)
 {
@@ -2370,6 +2444,7 @@ int main(void)
 	test_sdata();
 	test_pdata();
 	test_pdata_ip();
+	test_ip_advice();
 	test_deregister();
 	test_receive_rules();
 	test_one_carrier_site();

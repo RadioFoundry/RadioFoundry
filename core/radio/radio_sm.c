@@ -2808,6 +2808,7 @@ static void t3_publish(radio_sm_t *sm)
 	v->sleeps = m->sleeps;
 	v->csc_valid = m->csc_valid;
 	v->csc = m->csc;
+	v->ip_advised = m->ip_advised;
 	v->ahoys = m->st.ahoys;
 	v->ahoy_src = m->st.ahoy_src;
 	v->ahoy_ms = m->st.ahoy_ms;
@@ -2974,6 +2975,11 @@ static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 	if (t3s.cfg.leave_dbm == 0) {
 		t3s.cfg.leave_dbm = sm->set.roam_rssi_dbm;	// the roaming threshold: weak below it (6.3.2.3)
 	}
+#if CONFIG_DMR_DATA_CORE
+	// IP through the system: its gateway learns the radio's address at registration (6.4.11), the CAI address of
+	// the ID the radio registers with
+	t3s.cfg.ip_addr = t3s.ip_gw ? dmrDataIdAddress(false, t3s.cfg.reg_id != 0 ? t3s.cfg.reg_id : t3s.cfg.own_id) : 0u;
+#endif
 	// The view's counters start over with the engine; the channel's system and the fallback are the radio core's
 	uint8_t sys = radio_t3v.sys, fallback = radio_t3v.fallback;		// not a whole copy: the view is big
 	uint32_t fallbacks = radio_t3v.fallbacks, backs = radio_t3v.backs;

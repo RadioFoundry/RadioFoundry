@@ -6365,6 +6365,62 @@ static void test_t3_power_save(void)
 	fake_radio.rx_sleep_dmr = false;
 }
 
+// IP Connection Advice (6.4.11): on a system with an IP gateway the registration carries IP_Inform, and the C_AHOY
+// from IPI gets the radio's CAI address; the final C_ACKD from IPI shows on the link as ip_advised
+static void test_t3_ip_advice(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	radio_t3_setup_t *s = radio_t3_staged();
+	radio_t3_reset(s);
+	s->cfg.own_id = T3_OWN;
+	s->cfg.auth.model = T3_MODEL_SMALL;
+	s->cfg.auth.net = 5;
+	s->cfg.auth.category = T3_PAR_A;
+	s->cfg.opts = T3_OPT_PRIVATE;
+	s->ip_gw = true;
+	s->cc = 2;
+	s->cfg.ctrl[0] = (t3_chan_t){ 1, T3_RX_HZ, T3_TX_HZ, 2 };
+	s->cfg.nctrl = 1;
+	s->chans[0] = s->cfg.ctrl[0];
+	s->nchans = 1;
+	radio_t3_fix(s);
+	unsigned from = sim.air_count;
+	req(RREQ_T3, RADIO_T3_START);
+	ps_site_run(1200, false);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_REGISTRATION, &q) && (q.u.rand.options & T3_SO_REG_IP_INFORM));
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_UDT;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = T3_ID_IPI;
+	from = sim.air_count;
+	t3_csbk_rx(&h, 1);
+	ps_site_run(400, false);
+	int hdr = -1;
+	for (unsigned i = from; i < sim.air_count && hdr < 0; i++) {
+		hdr = sim.air[i].kind == DMR_BURST_DATA_HEADER ? (int)i : -1;
+	}
+	CHECK(hdr >= 0 && (unsigned)hdr + 1u < sim.air_count);
+	if (hdr >= 0 && (unsigned)hdr + 1u < sim.air_count) {
+		t3_udt_t u;
+		CHECK(t3_udt_parse(sim.air[hdr].payload, &u) && u.dst == T3_ID_IPI && u.format == T3_UDTF_IP);
+		uint32_t ip = dmrDataIdAddress(false, T3_OWN);
+		const uint8_t *b = sim.air[hdr + 1].payload;
+		CHECK(b[0] == (uint8_t)(ip >> 24) && b[1] == (uint8_t)(ip >> 16) && b[2] == (uint8_t)(ip >> 8) &&
+		      b[3] == (uint8_t)ip);
+	}
+	t3_csbk_t ack = { .lb = true, .op = T3_OP_C_ACKD };
+	ack.u.ack.reason = T3_RC_REG_ACCEPTED;
+	ack.u.ack.dst = T3_OWN;
+	ack.u.ack.src = T3_ID_IPI;
+	t3_csbk_rx(&ack, 1);
+	ps_site_run(300, false);
+	CHECK(radio_t3v.reg == T3_REG_OK && radio_t3v.ip_advised);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+}
+
 // The CACH short LC from the modem (DMR_EV_SHORT_LC): a good CRC gives the engine the Common_Slot_Counter, a bad
 // one is only counted
 static void test_t3_short_lc(void)
@@ -6574,6 +6630,7 @@ int main(void)
 	test_t3_stun_kept();
 	test_t3_poll();
 	test_t3_ip_gateway();
+	test_t3_ip_advice();
 	test_t3_short_lc();
 	test_t3_power_save();
 	test_t3_channels();

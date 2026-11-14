@@ -435,8 +435,22 @@ which carries the real destination. Data from the IP side comes from IPI and is 
 
 The radio uses it on a system with option 0x1000 (12.1): while that system runs, the IP gateway's off-net route goes
 to IPI instead of `ipGatewayId`, and the data service's packet to IPI asks with its own destination
-(`dmrDataServiceTxIpDst`). The debug link's `t3.ip_gw` shows it. IP connection advice at registration (6.4.11) isn't
-sent.
+(`dmrDataServiceTxIpDst`). The debug link's `t3.ip_gw` shows it.
+
+On such a system the radio also gives the gateway its own address at registration (IP Connection Advice, 6.4.11),
+so IP from outside reaches it by address. The address is the CAI address of the ID it registers with
+(`dmrDataIdAddress`).
+
+| Step | Detail |
+|---|---|
+| Request | The registration (to the system code) sets IP_Inform (Service Options 0x10) beside Reg_Dereg 1 and PowerSave_RQ. Not with a talkgroup or a list, whose answers are their own |
+| C_AHOY from IPI, Service_Kind 0100b or 1110b | The radio is registered (6.4.11.1 e). It uploads its address as above, then waits TNP_Timer for the final answer |
+| C_ACKD Reg_Accepted from IPI | The address is taken (6.4.11.1.4). Response_Info is the PowerSave_Offset, as in any Reg_Accepted |
+| C_NACKD IP_Connection_failed (2Ch) from IPI, after the AHOY or at once | Registered without the address (6.4.11.1 f): no IP bearer service, or the address is another's. The radio stays on the site, reached by its ID, without power save |
+| No final answer | Registered; the address is not known to be taken |
+
+The debug link's `t3.ip_advised` says the system took the address. Deleting an address (Reg_Dereg 0 with IP_Inform 1)
+isn't sent: the radio has one address and keeps it.
 
 ### 7.8 Emergency (6.6.6.3, 6.6.1)
 
@@ -697,7 +711,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | Supplementary data, a list subscription without registering | later |
 | A kill kept across a restart, and conventional DMR off when killed | later |
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
-| Data to a gateway other than IP (PSTN, PABX, line, dispatcher: BCD digits), and IP connection advice | later |
+| Data to a gateway other than IP (PSTN, PABX, line, dispatcher: BCD digits) | later |
 | Power save: the receiver off while asleep on boards without `rx_sleep_dmr` | each board's `rx_sleep` on a DMR channel |
 | The interrupted talker's side: the reverse channel's cease command while transmitting (6.4.15.2) | reverse channel reception in the modem drivers |
 

@@ -246,6 +246,7 @@ typedef struct {
 	uint8_t reg;		// t3_reg_t
 	uint16_t polls, poll_fails;	// as radio_t3_brief_t's: kept over a restart of the engine
 	bool ip_gw;		// off-net IP goes to the system's IP gateway (IPI), not the conventional off-net ID
+	bool ip_advised;	// the system took the radio's IP address at registration (6.4.11)
 	bool confirmed;
 	uint16_t syscode;	// C_SYScode of the confirmed TSCC
 	uint16_t tscc_lcn;

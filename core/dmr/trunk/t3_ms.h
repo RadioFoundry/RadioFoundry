@@ -130,6 +130,7 @@ typedef struct {
 	uint8_t auth_key[T3_AUTH_KEY_LEN];
 	uint32_t psn;
 	uint8_t ps_rq;			// power save asked for at registration (6.4.7, table 6.13): 0 off, 1-7 = 1:2-1:128
+	uint32_t ip_addr;		// the radio's IPv4 address, advised at registration (6.4.11); 0: none
 	uint16_t awake_ms;		// T_Awake, 0 = default
 	uint16_t als_s, als_e_s;	// T_ALS, T_ALS_E (A.1), 0 = default
 	// The answer to a short data poll (6.6.5.7): poll_len octets in UDT_Format poll_format; 0 octets: refused
@@ -320,6 +321,7 @@ typedef struct {
 	uint32_t moves;		// C_MOVE taken
 	// Power save (6.4.7): the cycle and wake frame the TSCC gave at registration (ps_offset 0: none)
 	uint8_t ps_rq_sent, ps_rq, ps_offset;
+	bool ip_advised;		// the system took the radio's IP address at the last registration (6.4.11)
 	bool asleep;
 	uint32_t awake_until, csc_ms, ps_tick_ms;
 	uint32_t woke_ms;		// the last wake from a power save sleep: the level is taken again T3_SETTLE_MS after it
@@ -361,6 +363,7 @@ typedef struct {
 		uint8_t div;		// T3_SVC_DIVERT: T3_SO_DIV_SET and the T3_DIV_* services
 		uint32_t div_to;	// T3_SVC_DIVERT set: where to (an MS, or a talkgroup when group)
 		uint32_t ip;		// T3_SVC_PDATA to T3_ID_IPI: the IPv4 destination, uploaded when the TSCC asks
+		bool ip_inform;		// T3_SVC_REGISTER: IP_Inform set, the address goes up when IPI asks (6.4.11)
 		uint32_t divert_to;	// T3_RES_DIVERTED: the address the TSCC gave
 		bool divert_group;
 		bool als;		// T3_SVC_IND_VOICE: Ambient Listening asked for

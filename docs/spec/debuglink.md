@@ -846,7 +846,7 @@ answers unavailable (3). Each op answers OK or bad argument (2), with no reply b
 | Op | Name | Arguments |
 |---|---|---|
 | 1 | RESET | none: the staged system back to empty |
-| 2 | SYSTEM | own ID u32 (0: the radio's), model u8 (0 tiny .. 3 huge), net u16, category u8 (1 A, 2 B), opts u16 (`T3_OPT_*`), color code u8, talk ID u32 (0: the first talkgroup with the talk flag), talk private u8; then optional: DMRLA u8 (0 when absent), leave threshold dBm s16 (0: the radio's roaming threshold), Vote Now sample ms u16 (0: 360) |
+| 2 | SYSTEM | own ID u32 (0: the radio's), model u8 (0 tiny .. 3 huge), net u16, category u8 (1 A, 2 B), opts u16 (`T3_OPT_*`), color code u8, talk ID u32 (0: the first talkgroup with the talk flag), talk private u8; then optional: DMRLA u8 (0 when absent), leave threshold dBm s16 (0: the radio's roaming threshold), Vote Now sample ms u16 (0: 360), flags u8 (bit 0: IP through the system's gateway, IPI) |
 | 3 | CTRL | a control channel: LCN u16, RX Hz u32, TX Hz u32 (as the radio sees them), color code u8 (0xFF: the system's). Also a channel of the plan |
 | 4 | CHAN | a channel of the plan, as CTRL (8 channels at most) |
 | 5 | TG | talkgroup u32, flags u8 (1 listen, 2 talk) |
@@ -882,7 +882,8 @@ went and in which slot, then the PDU that answered it: after how many ms and TDM
 opcode; `0,255,0,0x00` when nothing answered before the next try or the end), `call_data`
 (the call followed is packet data), `pd_wait` (a data service transmission waits for its data channel), `polls` and
 `poll_fails` (short data polls from the menus, and those that got no answer: dmr-trunking.md 12.7), `ip_gw`
-(off-net IP goes through the system's IP gateway: dmr-trunking.md 7.7), `stunned`,
+(off-net IP goes through the system's IP gateway: dmr-trunking.md 7.7), `ip_advised` (the system took the radio's
+IP address at registration), `stunned`,
 `stuns`, `revives` (the stun in force, and the stun and revive commands taken), `auth_key` (the system has K: the
 key itself is never shown), `auths` (challenges answered), `massregs`, `moves` (MassReg broadcasts and C_MOVEs taken), `ps_rq`, `ps_offset` (power save granted; 0 none), `asleep`, `sleeps` (the engine's power save sleep, and how often), `csc_valid` (the Common_Slot_Counter is known) `csc` (that of the last C_SYS_Parms taken),
 `slc_ok slc_bad` (CACH short LCs the modem reported since boot, good and bad CRC), `rx_off rx_offs rx_off_ms` (the
