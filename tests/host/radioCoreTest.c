@@ -119,9 +119,12 @@ static char dtmf_on;		// tx_dtmf: the digit sounding
 static bool r_tx_dtmf(char digit) { dtmf_on = digit; return true; }
 static int16_t ref_trim_ppb = 1;	// ref_trim: the last trim (1: never called)
 static bool r_ref_trim(int16_t ppb) { ref_trim_ppb = ppb; return true; }
+static int direct_key = -1;	// dmr_direct_key: the last value (-1: never called)
+static void r_dmr_direct_key(bool on) { direct_key = on; }
 static hal_radio_t fake_radio = { .init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off,
 					.status = r_status, .audio = r_audio, .tx_tone = r_tx_tone,
-					.tx_tone_key = r_tx_tone_key, .tx_dtmf = r_tx_dtmf, .ref_trim = r_ref_trim };
+					.tx_tone_key = r_tx_tone_key, .tx_dtmf = r_tx_dtmf, .ref_trim = r_ref_trim,
+					.dmr_direct_key = r_dmr_direct_key };
 
 // (fake_radio.volume is set by test_soft_volume only)
 static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
@@ -1978,6 +1981,22 @@ static void test_dmr_wake_leds(void)
 	setup_codeplug();
 }
 
+// A stand-in for the hotspot's SFR engine (hotspot_alt_t): only its active flag matters here
+static bool fake_alt_on;
+static bool fa_active(void) { return fake_alt_on; }
+static void fa_poll(uint32_t now_ms) { (void)now_ms; }
+static void fa_event(uint8_t kind, const dmr_burst_t *b, uint32_t now_ms) { (void)kind; (void)b; (void)now_ms; }
+static uint8_t fa_net(uint8_t c, uint8_t ctl, const uint8_t *f, uint32_t now_ms)
+{
+	(void)c; (void)ctl; (void)f; (void)now_ms;
+	return 0;
+}
+static void fa_none(void) {}
+static bool fa_tx(void) { return false; }
+static void fa_stopped(void) { fake_alt_on = false; }
+static const hotspot_alt_t fake_alt = { .active = fa_active, .poll = fa_poll, .event = fa_event, .net_frame = fa_net,
+					.net_abort = fa_none, .transmitting = fa_tx, .stopped = fa_stopped };
+
 static void test_hotspot(void)
 {
 	CHECK(radio_sm_hotspot_freq_ok(438800000, 438800000));
@@ -2196,6 +2215,18 @@ static void test_hotspot_session(void)
 	}
 	CHECK(mm_naks == 0 && hotspot_running() && sm.hs_tx_hz == 453625000 && sm.dmr_keyed);
 	hs_run(500);
+	CHECK(!sm.direct_key);	// a simplex hotspot keys the board's normal way
+	direct_key = -1;	// only what this session tells the board below
+	// The hotspot's SFR mode (hotspotSfr.c, not linked here: an alternative engine that says it's active) lets the
+	// board key straight from RX while it runs, and normal keying again when it stops
+	hotspot_set_alt(&fake_alt);
+	fake_alt_on = true;
+	hs_run(100);
+	CHECK(hotspot_alt_active() && direct_key == 1);
+	fake_alt_on = false;
+	hs_run(100);
+	CHECK(direct_key == 0);
+	hotspot_set_alt(NULL);
 	mmdvm_end();
 	hs_run(100);
 	CHECK(!sm.hotspot && !sm.dmr_keyed && sm.view.dmr.active);
@@ -5154,6 +5185,7 @@ static void test_sfr_roles(void)
 	chans[4].sfr_a = SFR_ROLE_RPT_STANDARD;
 	reload_channel();
 	CHECK(sm.sfr_rpt && sm.view.dmr.sfr_rpt && !sm.view.dmr.active && !sm.dmr_running);
+	CHECK(direct_key == 1);	// the board may key the SFR's bursts straight from RX (hal_radio_t.dmr_direct_key)
 	CHECK(sm.view.dmr.sfr_role == SFR_ROLE_RPT_STANDARD);
 	CHECK(sim.started && sim.cb != NULL && sim.locked_ts == 0 && sim.cc_filter == 2 && !sim.cfg.repeater);
 	CHECK(hw.tx_calls > tx0 && hw.tx_hz == 438500000 && sm.dmr_keyed);
@@ -5225,6 +5257,7 @@ static void test_sfr_roles(void)
 	tx_fail = true;
 	reload_channel();
 	CHECK(!sm.sfr_rpt && !sm.dmr_keyed && sm.view.dmr.active);
+	CHECK(direct_key == 0);	// the role stopped: normal keying again
 	tx_fail = false;
 	reload_channel();
 	CHECK(sm.sfr_rpt && sm.dmr_keyed);

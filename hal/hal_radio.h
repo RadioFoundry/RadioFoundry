@@ -88,6 +88,11 @@ typedef struct {
 	// level's again. False: over the board's hardware limit. Any task may call it
 	uint16_t (*tx_drive_level)(uint32_t hz, uint8_t level);
 	bool (*tx_drive)(uint16_t drive);
+	// Optional: true while an SFR repeats (a channel's repeater role or the hotspot's SFR mode), false when it stops. A
+	// board may then key DMR bursts straight
+	// from RX, keeping the synthesizer locked for the inbound slot, at the cost of a carrier error it corrects only
+	// roughly; otherwise it keys every burst its normal way. NULL = no such mode. Radio task only
+	void (*dmr_direct_key)(bool on);
 } hal_radio_t;
 
 #endif

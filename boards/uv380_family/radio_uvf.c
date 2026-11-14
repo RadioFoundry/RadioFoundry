@@ -83,6 +83,7 @@ static struct {
 	volatile uint8_t rf_page;	// AT1846S page last written to reg 0x7F, 0xFF unknown
 	volatile int8_t rf_ref;		// calibrated HR_C6000 MOD1 offset (4:0x04) for the RX frequency
 	volatile bool rf_direct;	// this burst was keyed without the idle step: 4:0x04 raised, the receiver not retuned
+	volatile bool direct_ok;	// an SFR role runs: direct keying allowed (hal_radio_t.dmr_direct_key)
 	volatile bool rf_key_pending;	// TIM7 keys this burst at its expiry
 	uint32_t rf_skipped, rf_unarmed, rf_rx_retries;
 } r = { .rf_page = 0xFF };
@@ -376,7 +377,9 @@ static bool rf_key(void)
 	uint32_t hz = r.dmr_tx_hz;
 	r.rf_isr_dirty = true;
 	int8_t ref;
-	if (!r.rf_rx_pending && hz == r.rx_hz && r.rf_tuned_hz == r.rx_tune_hz &&
+	// Direct only for an SFR role: its fixed MOD1 correction left the carrier 178-554 Hz low on other DM-1701s at 433.45
+	// MHz (SDR bench, 2026-11-13), enough for a hotspot to reject the call; through idle the carrier is right
+	if (r.direct_ok && !r.rf_rx_pending && hz == r.rx_hz && r.rf_tuned_hz == r.rx_tune_hz &&
 	    uvf_direct_tx_ref(hz, r.rf_ref, (int32_t)(r.rx_tune_hz - hz), &ref)) {	// the DMR receive offset
 		// Direct (SFR, simplex): the receiver on the TX frequency goes straight to DMR TX, which puts the carrier
 		// about 3.07 kHz low; the raised MOD1 offset puts it back (uvf_direct_tx_ref)
@@ -1102,6 +1105,12 @@ static void rx_sleep(bool sleep)
 	}
 }
 
+// SFR roles only (hal_radio_t.dmr_direct_key): the next bursts may key straight from RX (rf_key)
+static void dmr_direct_key(bool on)
+{
+	r.direct_ok = on;
+}
+
 const hal_radio_t uvf_radio = {
 	.init = init,
 	.set_mode = set_mode,
@@ -1123,6 +1132,7 @@ const hal_radio_t uvf_radio = {
 #if CONFIG_REF_TRIM
 	.ref_trim = ref_trim,
 #endif
+	.dmr_direct_key = dmr_direct_key,
 };
 
 void uvf_radio_diag(uvf_radio_diag_t *d)
