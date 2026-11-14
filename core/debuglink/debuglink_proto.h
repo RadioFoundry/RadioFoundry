@@ -107,6 +107,8 @@ enum {
 					// into the IP gateway's air path as if from the host (CONFIG_DMR_IP_GATEWAY)
 	DL_DATA_OP_TX_SPACING,		// guard ms u16, chain u8 (0 off, 1 on): the data service's spacing of our transmissions,
 					// RAM only, for the SDR bench's comparison (docs/spec/dmr-data.md 12.6)
+	DL_DATA_OP_IP_CONFIRMED_RATE,	// u8: the rate of confirmed IP packets, 0 rate 3/4 (the default), 1 rate 1/2, 2 rate 1;
+					// RAM only, to tell a rate's coding from the rest of the packet on the SDR bench
 };
 
 // DL_CMD_STORAGE operations (first payload byte; docs/spec/debuglink.md 3.13)
