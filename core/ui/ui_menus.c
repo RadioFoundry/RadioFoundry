@@ -132,7 +132,7 @@ static const ui_scr_def_t hub_screen = {
 // ======================= Actions on a station or talkgroup =======================
 
 enum { A_TALK, A_PRIVATE, A_MESSAGE, A_CHECK, A_ALERT, A_POSITION, A_SAVE_CONTACT, A_SPEAK, A_SAVE_CHANNEL,
-       A_MAKE_DEFAULT };
+       A_MAKE_DEFAULT, A_POLL };
 
 static uint8_t act_list(uint8_t *out)
 {
@@ -148,6 +148,10 @@ static uint8_t act_list(uint8_t *out)
 						  A_SAVE_CONTACT, A_SPEAK };
 		memcpy(out, person, sizeof person);
 		n = sizeof person;
+#if CONFIG_DMR_TRUNK_TX
+		if (ui_view()->t3.on)
+			out[n++] = A_POLL;	// short data polling: a trunked system's service (dmr-trunking.md 7.6)
+#endif
 	}
 	if (ui_view()->temporary)
 		out[n++] = A_SAVE_CHANNEL;
@@ -244,6 +248,9 @@ static void act_item(uint16_t i, ui_item_t *it)
 		if (!(feats() & UI_FEAT_TALK_TARGET))
 			it->flags |= UI_ITEM_DIM;
 		break;
+	case A_POLL:
+		sb_str(&b, TR("Poll short data"));
+		break;
 	default:
 		break;
 	}
@@ -320,6 +327,16 @@ static void act_select(uint16_t i, bool hold)
 		if (ui_try_save_channel())
 			ui_go_home();
 		break;
+#if CONFIG_DMR_TRUNK_TX
+	case A_POLL:
+		ui_svc_t3_poll(ui_target.id);	// the answer arrives as a message; ui_app says when none comes
+		sb_str(&b, TR("Polling "));
+		sb_str(&b, name);
+		sb_str(&b, "...");
+		ui_go_home();
+		ui_toast(msg);
+		break;
+#endif
 	default:
 		break;
 	}

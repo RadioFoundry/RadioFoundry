@@ -22,6 +22,7 @@
 #define CODEPLUG_KEY_T3_CHAN	0x0200u		// their channels, 0x0200-0x02FF
 #define CODEPLUG_KEY_T3_KEY	0x0300u		// their authentication keys, 0x0300-0x03FF
 #define CODEPLUG_KEY_T3_TAG	0x0400u		// trunked channel tags, 0x0400 + channel - 1 (0x0400-0x07FF)
+#define CODEPLUG_KEY_T3_POLL	0x0800u		// their short data poll setting and reply, 0x0800-0x08FF
 
 // How a key's value is encoded (docs/spec/codeplug-settings.md 3.1): the encoding, never a width. A type is never
 // redefined, only grown by appending bytes

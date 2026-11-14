@@ -113,6 +113,15 @@ bool radio_t3_load(uint8_t n, radio_t3_setup_t *s)
 		c->sites[c->auth.nsites++] = rd16(&v[46 + 2 * i]);
 	}
 	bool keyed = load_key(n, c);
+	// The short data poll (12.7): UDT_Format, the blocks asked for, then the reply's octets in that format
+	uint8_t p[2u + T3_UDT_MAX];
+	int plen = codeplug_kv_get((uint16_t)(CODEPLUG_KEY_T3_POLL + n), p, sizeof p);
+	if (plen >= 2) {
+		c->poll_format = p[0] & 0x0Fu;
+		s->poll_blocks = p[1] >= 1u && p[1] <= T3_UDT_BLOCKS_MAX ? p[1] : 0u;
+		c->poll_len = (uint8_t)(plen - 2);
+		memcpy(s->poll_reply, p + 2, c->poll_len);
+	}
 
 	// Channels in key order: the plan's table, and the control channels among them
 	uint8_t r[CHAN_LEN];

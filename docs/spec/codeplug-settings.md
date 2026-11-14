@@ -100,6 +100,7 @@ continuation keeps the reserved bytes and the header length as it found them.
 | 0x0200 | System channels | record list | Keys 0x0200-0x02FF, one per programmed frequency of a trunked system ([dmr-trunking.md](dmr-trunking.md) 12.2) ([dmr-trunking.md](dmr-trunking.md) 12) | none (a list) | Tier III trunking in the build (`CONFIG_DMR_TRUNK`) |
 | 0x0300 | System keys | record list | Keys 0x0300-0x0307: system n's authentication key (16 octets) and optional PSN (3 octets), n = key - 0x0300 ([dmr-trunking.md](dmr-trunking.md) 12.3). Left out of CSV and other exports | none (a list) | Tier III trunking in the build (`CONFIG_DMR_TRUNK`) |
 | 0x0400 | Trunked channels | record list | Keys 0x0400-0x07FF: channel c's tag (key 0x0400 + c - 1): its system, flags, the name check and its fallback ([dmr-trunking.md](dmr-trunking.md) 12.4) | none (a list) | Tier III trunking in the build (`CONFIG_DMR_TRUNK`) |
+| 0x0800 | Short data poll | record list | Keys 0x0800-0x0807: system n's short data poll format, size and the radio's reply, n = key - 0x0800 ([dmr-trunking.md](dmr-trunking.md) 12.7) | none (a list): ISO 8 bit, 4 blocks, no reply | Tier III trunking in the build (`CONFIG_DMR_TRUNK`) |
 
 **Radio's own copy** is the setting's field in the settings store ([settings-store.md](settings-store.md) 3). Every
 scalar key has one (3.2).

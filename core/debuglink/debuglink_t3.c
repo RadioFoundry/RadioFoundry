@@ -398,6 +398,7 @@ static void t3_svc(const radio_t3_view_t *x, void *ctx)
 		sd[2 * i + 1] = digits[x->sd_data[i] & 15u];
 	}
 	sd[2 * len] = '\0';
+	dl_text(t, "t3.polls=%u\nt3.poll_fails=%u\n", x->polls, x->poll_fails);
 	dl_text(t, "t3.sd_count=%u\nt3.sd_src=%u\nt3.sd_dst=%u\nt3.sd_group=%u\nt3.sd_format=%u\nt3.sd_len=%u\n"
 		"t3.sd_data=%s\nt3.sd_age_ms=%d\n", (unsigned)x->sd_count, (unsigned)x->sd_src, (unsigned)x->sd_dst,
 		x->sd_group, x->sd_format, x->sd_len, sd, x->sd_ms != 0 ? (int)(now - x->sd_ms) : -1);

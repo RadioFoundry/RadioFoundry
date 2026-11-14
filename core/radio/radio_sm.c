@@ -2845,6 +2845,38 @@ static uint8_t t3_stun_word(uint8_t sys, uint8_t model, uint16_t net)
 	return (uint8_t)(SETTINGS_T3_STUN | ((sys - 1u) << 4) | (h & 0x0Fu));
 }
 
+// A short data poll from the menus (6.6.5): the system's prearranged format and size; the answer comes as short data
+// (into the inbox, t3_sd_inbox). A poll that can't start, is refused or goes unanswered counts in poll_fails
+static void t3_poll(radio_sm_t *sm, uint32_t dst, uint32_t now_ms)
+{
+	radio_t3v.polls++;
+#if CONFIG_DMR_TRUNK_TX
+	uint8_t fmt = t3s.cfg.poll_len != 0 || t3s.cfg.poll_format != 0 ? t3s.cfg.poll_format : T3_UDTF_ISO8;
+	uint8_t blocks = t3s.poll_blocks != 0 ? t3s.poll_blocks : T3_UDT_BLOCKS_MAX;
+	if (sm->t3_on && !sm->t3_polling && t3_ms_sdata_poll(&t3m, now_ms, dst, fmt, blocks)) {
+		sm->t3_polling = true;
+		return;
+	}
+#else
+	(void)dst;
+	(void)now_ms;
+#endif
+	(void)sm;
+	radio_t3v.poll_fails++;
+}
+
+static void t3_poll_tick(radio_sm_t *sm)
+{
+	const t3_ms_t *m = &t3m;
+	if (!sm->t3_polling || (m->ax.svc == T3_SVC_SDPOLL && (m->ax.state != T3_AX_IDLE || m->ax.result == T3_RES_PENDING))) {
+		return;
+	}
+	sm->t3_polling = false;
+	if (m->ax.svc != T3_SVC_SDPOLL || m->ax.result != T3_RES_DONE) {
+		radio_t3v.poll_fails++;
+	}
+}
+
 // Short data text to the radio (6.6.4; a reply to its own poll too) goes into the message inbox as a received message.
 // Other formats (binary, BCD, addresses, NMEA, IP) stay for the debug link only
 static void t3_sd_inbox(radio_sm_t *sm)
@@ -2854,7 +2886,7 @@ static void t3_sd_inbox(radio_sm_t *sm)
 	}
 	sm->t3_sd_seen = t3m.sd_rx.count;
 #if CONFIG_DMR_DATA_CORE
-	char text[sizeof(((dmrDataMessage_t *)0)->text)];
+	char text[(T3_UDT_MAX * 8) / 7 + 1];	// the most a UDT holds: ISO 7 bit, 52 characters (on the radio task's stack)
 	if (!dmrDataDecodeUdtText(t3m.sd_rx.format, t3m.sd_rx.data, t3m.sd_rx.len * 8, text, sizeof text)) {
 		return;
 	}
@@ -2901,7 +2933,10 @@ static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 	// The view's counters start over with the engine; the channel's system and the fallback are the radio core's
 	uint8_t sys = radio_t3v.sys, fallback = radio_t3v.fallback;		// not a whole copy: the view is big
 	uint32_t fallbacks = radio_t3v.fallbacks, backs = radio_t3v.backs;
+	uint16_t polls = radio_t3v.polls, poll_fails = radio_t3v.poll_fails;
 	memset(&radio_t3v, 0, sizeof(radio_t3v));
+	radio_t3v.polls = polls;
+	radio_t3v.poll_fails = poll_fails;
 	radio_t3v.sys = sys;
 	radio_t3v.fallback = fallback;
 	radio_t3v.fallbacks = fallbacks;
@@ -2954,6 +2989,8 @@ void radio_sm_t3_brief(radio_sm_t *sm)
 	b->backs = x->backs;
 	b->state = x->state;
 	b->reg = x->reg;
+	b->polls = x->polls;
+	b->poll_fails = x->poll_fails;
 }
 
 // RADIO_T3_START: the debug link's staged system, on whatever channel the radio is on
@@ -2979,6 +3016,10 @@ static void t3_leave(radio_sm_t *sm)
 #endif
 	sm->t3_both = false;
 	sm->t3_ptt_wait = false;
+	if (sm->t3_polling) {
+		sm->t3_polling = false;
+		radio_t3v.poll_fails++;		// left before the answer
+	}
 	dmr_call_set_rx_tap(NULL, NULL);
 	t3_publish(sm);
 }
@@ -3353,6 +3394,7 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 #endif
 	t3_keep_stun(sm, now_ms);
 	t3_sd_inbox(sm);
+	t3_poll_tick(sm);
 	t3_publish(sm);
 }
 #endif
@@ -6756,6 +6798,9 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 #if CONFIG_DMR_TRUNK
 	case RREQ_T3:
 		t3_request(sm, (uint8_t)req->arg, now_ms);
+		break;
+	case RREQ_T3_POLL:
+		t3_poll(sm, req->arg2, now_ms);
 		break;
 #endif
 	case RREQ_POWER_OFF:

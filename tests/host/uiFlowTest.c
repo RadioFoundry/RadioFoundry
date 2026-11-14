@@ -600,6 +600,12 @@ static const flow_t flows[] = {
 	{ "T Home on the fallback channel", "t3 dlpos:3 t3state:fallback", "", "screen=home shows=Fallback", 0, false },
 	{ "T back on the system", "t3 dlpos:3 t3state:fallback", "t3state:back", "screen=home toast=Back_on_County", 0, false },
 	{ "T Home on a channel without its system", "t3 dlpos:5", "", "screen=home shows=System_not_set_up", 0, false },
+	// Short data polling (dmr-trunking.md 7.6): an action on a person while on a trunked system, not elsewhere
+	{ "T the actions on a person offer a poll, last", "t3 dlpos:3 9 9 9 1 2 3 4 ctx", "up",
+	  "screen=actions shows=Poll_short_data", 1, false },
+	{ "T no poll on a conventional channel", "9 9 9 1 2 3 4 ctx", "up", "screen=actions hides=Poll_short_data", 1, false },
+	{ "T a poll sent", "t3 dlpos:3 9 9 9 1 2 3 4 ctx", "9", "screen=home toast=Polling_Q1ABC_Joe...", 1, false },
+	{ "T a poll with no answer", "t3 dlpos:3", "t3state:pollfail", "toast=Poll:_no_short_data", 0, false },
 #endif
 	{ "A APRS RF keeps Home with a TX APRS pill", "", "aprstx",
 	  "screen=home shows=TX_APRS shows=SENDING hides=144.390 hides=0:00 hides=left_of", 0, false },

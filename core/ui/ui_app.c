@@ -2309,6 +2309,13 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 			ui_toast(msg);
 		}
 	}
+	// A short data poll from the menus that got no answer (dmr-trunking.md 7.6); an answer shows as a message
+	static uint16_t poll_fails_seen;
+	if (v->t3.poll_fails != poll_fails_seen) {
+		if ((uint16_t)(v->t3.poll_fails - poll_fails_seen) < 0x8000u)
+			ui_toast(TR("Poll: no short data"));
+		poll_fails_seen = v->t3.poll_fails;
+	}
 #endif
 
 #if CONFIG_USB_NETWORK && CONFIG_HOSTLINK

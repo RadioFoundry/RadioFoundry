@@ -675,7 +675,6 @@ on its voice, and never camps on another system or on a control channel that isn
 | CACH short LC reception | the modem drivers' CACH report |
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
 | Supplementary data, a list subscription without registering | later |
-| Short data polling from the UI, and the reply in the codeplug | later |
 | A kill kept across a restart, and conventional DMR off when killed | later |
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
 | Data to a gateway | later |
@@ -721,6 +720,7 @@ settings area ([codeplug-settings.md](codeplug-settings.md) 3) hold them:
 | 0x0200 + i | A channel of a system: the hunt list and the plan's table (12.2) |
 | 0x0300 + n | System n's authentication key (12.3) |
 | 0x0400 + c - 1 | The tag of channel c, c = 1 to 1024 (12.4) |
+| 0x0800 + n | System n's short data poll setting and reply (12.7) |
 
 ### 12.1 System
 
@@ -850,7 +850,8 @@ allows:
 | 1 channels with the system's identity | the channels and the system's name and identity (model, NET, category, whether it authenticates). Enough for a radio that already has the system |
 | 2 the whole system and its key | the channels, the system's set-up (color code, options, plan, control channels, fallback) and its key when it has one |
 
-Never carried: the radio's own ID or its ID on the system, kill or stun state, registration.
+Never carried: the radio's own ID or its ID on the system, kill or stun state, registration, the short data poll
+setting (12.7).
 
 A receiver matches a shared system to one of its own by model, NET and category. A match is used as it is: the share
 changes nothing in it, not even its key. With no match, a share with the whole system adds it in a free system slot;
@@ -865,7 +866,26 @@ Trunked channels come in as they were sent: a site grants every transmission, so
 ID on most systems: the system holds one per radio, so a key shared to a radio with another ID works only where the
 system holds that key for it. The Codeplug Editor says both where sharing is set to 2.
 
-### 12.7 Calls
+### 12.7 Short data poll
+
+Key 0x0800 + n, system n's short data polling (6.6.5): the format and size the system's radios have agreed on, and
+this radio's own reply.
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 1 | UDT_Format (table 7.60): of the reply, and asked for when the radio polls |
+| 1 | 1 | Blocks to ask for, 1-4 (0 or past 4: 4) |
+| 2 | 0-46 | The reply's octets, in that format (ISO 8 bit: the text itself) |
+
+With no record the radio asks for ISO 8 bit in 4 blocks and answers a poll "not supported". A reply is cut to the
+blocks a poll asks for.
+
+**From the menus.** On a trunked system the actions on a person have Poll short data (`RREQ_T3_POLL`): the radio polls
+the MS in this format and size. The answer comes as short data and goes into the message inbox (7.6). A poll that
+can't start, is refused, goes unanswered or is cut short by leaving the system counts in `t3.poll_fails`; the screen
+says "Poll: no short data".
+
+### 12.8 Calls
 
 | Call | |
 |---|---|

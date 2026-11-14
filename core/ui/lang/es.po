@@ -525,6 +525,10 @@ msgid "Back on "
 msgstr "De vuelta en "
 
 #: core/ui/ui_app.c
+msgid "Poll: no short data"
+msgstr "Sondeo: sin datos cortos"
+
+#: core/ui/ui_app.c
 msgid "That zone was deleted"
 msgstr "Esa zona fue borrada"
 
@@ -1161,6 +1165,10 @@ msgid "Make channel default"
 msgstr "Hacer canal predet."
 
 #: core/ui/ui_menus.c
+msgid "Poll short data"
+msgstr "Pedir datos cortos"
+
+#: core/ui/ui_menus.c
 msgid "Messages: not in this build"
 msgstr "Mensajes: no disponible"
 
@@ -1191,6 +1199,10 @@ msgstr "Ya está en los contactos"
 #: core/ui/ui_menus.c
 msgid "Add contacts in qdmr"
 msgstr "Añade contactos en qdmr"
+
+#: core/ui/ui_menus.c
+msgid "Polling "
+msgstr "Consultando a "
 
 #: core/ui/ui_menus.c
 msgid "1-9 pick  PTT talk  Back"

@@ -165,6 +165,7 @@ typedef enum {
 	RREQ_VOLUME_HOLD,	// arg: 1 hold the level and ignore the knob (keys locked), 0 follow it again
 	RREQ_VFO_SFR,		// the VFO's SFR role (CONFIG_SFR): arg = byte A, as a channel's (sfr.h); VFO only
 	RREQ_T3,		// a trunked system (CONFIG_DMR_TRUNK): arg = radio_t3_cmd_t
+	RREQ_T3_POLL,		// poll MS arg2 for its short data, as the system's poll setting says (CONFIG_DMR_TRUNK_TX)
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -440,6 +441,7 @@ typedef struct {
 	uint32_t t3_als_quiet_ms;	// unkeyed at T_ALS: the call ends once the terminator is out
 	uint8_t t3_stun_kept;		// settings t3_stun as last written for the system in use (0: not stunned)
 	uint32_t t3_sd_seen;		// the engine's short data count already given to the inbox
+	bool t3_polling;		// a poll from the menus is out (RREQ_T3_POLL): its outcome is counted
 	bool t3_talking;		// PTT went to the stack for a trunked call
 	uint32_t t3_ticks;		// the stack's tick count handed to the engine
 	uint8_t t3_slot;		// the slot of the last tick handed to it

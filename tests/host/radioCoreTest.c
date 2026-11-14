@@ -6279,6 +6279,55 @@ static void test_t3_stun_kept(void)
 	t3_cp_done();
 }
 
+// A short data poll from the menus (RREQ_T3_POLL): the system's poll setting gives the format and size; the answer is
+// a message in the inbox; a refusal counts in poll_fails. The radio's own reply to a poll comes from the same setting
+static void test_t3_poll(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	uint8_t p[2 + 5] = { T3_UDTF_ISO8, 2, 'r', 'e', 'a', 'd', 'y' };
+	kv_t3_set((uint16_t)(CODEPLUG_KEY_T3_POLL + 0), p, sizeof p);
+	static radio_t3_setup_t ld;	// the loader: the radio's own reply to a poll, and the size to ask for
+	CHECK(radio_t3_load(0, &ld) && ld.cfg.poll_format == T3_UDTF_ISO8 && ld.cfg.poll_len == 5 && ld.poll_blocks == 2 &&
+	      memcmp(ld.poll_reply, "ready", 5) == 0 && ld.cfg.poll_data == ld.poll_reply);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	unsigned from = sim.air_count;
+	uint16_t fails = radio_t3v.poll_fails;
+	radio_req_t r = { .type = RREQ_T3_POLL, .arg2 = 1000001u };
+	radio_sm_request(&sm, &r, now);
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_UDT_POLL, &q) && q.u.rand.dst == 1000001u && (q.u.rand.options & 0x0Fu) == T3_UDTF_ISO8 &&
+	      (q.u.rand.extra & 3u) == 1u);
+	// The polled MS's data: a C_UDTHD to the radio
+	uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK], pad, d[T3_CSBK_BYTES];
+	t3_udt_t u = { .op = T3_OP_C_UDTHD, .a = true, .format = T3_UDTF_ISO8, .dst = sm.view.dmr.own_id, .src = 1000001u };
+	u.blocks = t3_udt_pack((const uint8_t *)"at gate 4", 9, 0xFF, blk, &pad);
+	u.pad = pad;
+	t3_udt_build(&u, d);
+	t3_data_rx(DMR_BURST_DATA_HEADER, d, 1);
+	run(60);
+	t3_data_rx(DMR_BURST_RATE_12_DATA, blk[0], 1);
+	t3_site_run(300);
+	CHECK(sms_inbox_count() >= 1 && strcmp(dmrDataServiceMessage(0)->text, "at gate 4") == 0);
+	CHECK(radio_t3v.polls == 1 && radio_t3v.poll_fails == fails);
+	while (sms_inbox_count() > 0 && sms_inbox_delete(0)) {
+	}
+
+	// Refused: counted
+	radio_sm_request(&sm, &r, now);
+	t3_site_run(600);
+	t3_csbk_t n = { .lb = true, .op = T3_OP_C_ACKD };
+	n.u.ack.reason = T3_RC_MS_AWAY;
+	n.u.ack.dst = sm.view.dmr.own_id;
+	n.u.ack.src = 1000001u;
+	t3_csbk_rx(&n, 1);
+	t3_site_run(300);
+	CHECK(radio_t3v.poll_fails == fails + 1u);
+	t3_cp_done();
+}
+
 static void test_t3_stun(void)
 {
 	dmr_start(true);
@@ -6346,6 +6395,7 @@ int main(void)
 	test_t3_als();
 	test_t3_stun();
 	test_t3_stun_kept();
+	test_t3_poll();
 	test_t3_channels();
 	test_t3_fallback();
 #endif

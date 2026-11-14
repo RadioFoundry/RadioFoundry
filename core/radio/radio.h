@@ -231,6 +231,7 @@ typedef struct {
 	uint32_t fallbacks, backs;	// times the radio went to the fallback channel, and came back from it
 	uint8_t state;		// t3_state_t
 	uint8_t reg;		// t3_reg_t
+	uint16_t polls, poll_fails;	// short data polls from the menus, and those refused or unanswered
 } radio_t3_brief_t;
 
 // ... and all of it, for the debug link: radio_get_t3_view, one copy (the view itself is copied by every task)
@@ -243,6 +244,7 @@ typedef struct {
 	uint32_t fallbacks, backs;	// times the radio went to the fallback channel, and came back from it
 	uint8_t state;		// t3_state_t
 	uint8_t reg;		// t3_reg_t
+	uint16_t polls, poll_fails;	// as radio_t3_brief_t's: kept over a restart of the engine
 	bool confirmed;
 	uint16_t syscode;	// C_SYScode of the confirmed TSCC
 	uint16_t tscc_lcn;
@@ -550,6 +552,8 @@ typedef enum {
 void radio_req_roam(uint8_t cmd);
 // A trunked system (CONFIG_DMR_TRUNK, radio/radio_trunk.h): arg = radio_t3_cmd_t
 void radio_req_t3(uint8_t cmd);
+// Poll MS dst for its short data (dmr-trunking.md 7.6): the reply comes as a message; t3.poll_fails counts failures
+void radio_req_t3_poll(uint32_t dst);
 // A beep (radio/beep.h beep_t) at the settings' level: key beeps only when key_beep is set (CONFIG_BEEP)
 void radio_req_beep(uint8_t beep);
 // The same delay_ms later (0 = now): a speaker test can start on a radio whose cable mutes the speaker, after the

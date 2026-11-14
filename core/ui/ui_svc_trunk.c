@@ -5,6 +5,7 @@
 #include <string.h>
 #include "config.h"
 #include "ui/ui_svc.h"
+#include "radio/radio.h"
 #include "radio/radio_trunk.h"
 
 #if CONFIG_DMR_TRUNK
@@ -23,5 +24,10 @@ int ui_svc_t3_channel(uint16_t num, const char *name, bool *usable)
 bool ui_svc_t3_name(uint8_t n, char *name)
 {
 	return radio_t3_name(n, name);
+}
+
+void ui_svc_t3_poll(uint32_t id)
+{
+	radio_req_t3_poll(id);
 }
 #endif

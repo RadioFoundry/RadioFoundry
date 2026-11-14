@@ -130,6 +130,7 @@ bool ui_svc_roam(uint8_t cmd);			// radio_roam_cmd_t: zone on / off, roam now, l
 // Channel num's system (-1: a conventional channel); *usable (may be NULL): the system is set up
 int ui_svc_t3_channel(uint16_t num, const char *name, bool *usable);
 bool ui_svc_t3_name(uint8_t n, char *name);	// system n's name (CODEPLUG_NAME_LEN + 1); false: no such system
+void ui_svc_t3_poll(uint32_t id);	// poll an MS for its short data (radio_req_t3_poll)
 #endif
 
 // --- Beeps (radio-features): the radio sounds key beeps only when its key_beep setting is on ---

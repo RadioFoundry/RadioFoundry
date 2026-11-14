@@ -527,6 +527,10 @@ msgid "Back on "
 msgstr "已回到 "
 
 #: core/ui/ui_app.c
+msgid "Poll: no short data"
+msgstr "请求：无数据"
+
+#: core/ui/ui_app.c
 msgid "That zone was deleted"
 msgstr "该区域已删除"
 
@@ -1163,6 +1167,10 @@ msgid "Make channel default"
 msgstr "设为默认信道"
 
 #: core/ui/ui_menus.c
+msgid "Poll short data"
+msgstr "请求数据"
+
+#: core/ui/ui_menus.c
 msgid "Messages: not in this build"
 msgstr "消息：本版本无"
 
@@ -1193,6 +1201,10 @@ msgstr "已在联系人中"
 #: core/ui/ui_menus.c
 msgid "Add contacts in qdmr"
 msgstr "在 qdmr 中添加联系人"
+
+#: core/ui/ui_menus.c
+msgid "Polling "
+msgstr "正在请求 "
 
 #: core/ui/ui_menus.c
 msgid "1-9 pick  PTT talk  Back"

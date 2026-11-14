@@ -1149,13 +1149,20 @@ bool ui_svc_t3_name(uint8_t n, char *name)
 	strcpy(name, names[n]);
 	return true;
 }
+void ui_svc_t3_poll(uint32_t id)
+{
+	(void)id;
+	view.t3.polls++;
+}
 static void t3_view(void)
 {
 	bool usable = false;
 	int sys = view.vfo ? -1 : ui_svc_t3_channel(view.channel_number, NULL, &usable);
 	uint32_t backs = view.t3.backs;
+	uint16_t poll_fails = view.t3.poll_fails;
 	memset(&view.t3, 0, sizeof view.t3);
 	view.t3.backs = backs;
+	view.t3.poll_fails = poll_fails;
 	if (sys < 0)
 		return;
 	view.t3.sys = (uint8_t)(sys + 1);
@@ -2813,6 +2820,8 @@ static bool run_token(char *t, char *err, size_t len)
 			view.t3.fallbacks++;
 		} else if (strcmp(arg, "back") == 0) {
 			view.t3.backs++;
+		} else if (strcmp(arg, "pollfail") == 0) {
+			view.t3.poll_fails++;
 		}
 		serial++;
 		advance(100);
