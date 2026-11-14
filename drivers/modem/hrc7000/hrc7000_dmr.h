@@ -98,6 +98,8 @@ typedef struct {
 	uint32_t stalls;
 	uint32_t sys_stuck;	// system requests pending with no handler run, dropped (hrc7000_dmr_poll)
 	uint32_t slc_reads;	// CACH short LCs reported (DMR_EV_SHORT_LC), CRC not checked
+	uint32_t rc_tap;	// RCs decoded from the receive tap after a listen slot (rc_tap_read): DMR_EV_RC
+	uint32_t rc_tap_changed;	// tap areas found changed there (a new burst), RC or not
 	uint32_t last_rx_type_info;
 	uint32_t last_sys_list;
 	uint32_t last_l2_status;
@@ -188,6 +190,7 @@ typedef struct {
 	bool tx_any;
 	bool tx_listen;		// the other slot is received while we send (an SFR's inbound slot)
 	bool listen_voice;	// a voice call was heard on that slot: receive it with the voice-access flag
+	uint32_t tap_sum[2];	// a checksum of each receive tap area at its last read: only a changed one is decoded
 	uint8_t send_sync;	// dmr_sync_family_t in SEND_DATA_SYNC now, DMR_SYNC_NONE = not known
 	dmr_tx_burst_t txq[HRC7000_DMR_TXQ_DEPTH];
 	volatile uint8_t txq_head, txq_tail;

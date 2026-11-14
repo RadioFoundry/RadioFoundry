@@ -702,6 +702,19 @@ On the SDR bench (an MS simulator answering a confirmed packet with MS sync, 4-6
 | Reception over (nothing taken for 390 ms) | the 5.2 restart: the chip drops the sender's slot timing and its timeslot interrupts stop |
 | Slot timing with nothing usable for 600 ms | the 5.2 restart, again every 600 ms while it lasts. Without it the chip kept a departed sender's timing, reported only unusable and abnormal slots and took no later call (measured) |
 
+### 5.4 The receive tap
+
+In layer 2 mode the RX RAM also holds each burst received as bits, not documented (measured):
+
+| Where | What |
+|---|---|
+| RX 0x30-0x53, RX 0x60-0x83 | one burst each, 288 hard bits in the HR_C6000 layout ([hrc6000-registers.md](hrc6000-registers.md) 2.2): the CACH (24), then the burst deframed, a voice-layout burst's 48-bit sync / EMB / RC field first. Which area takes which slot follows RX_TYPE_INFO b19, not the CACH TC |
+| RX 0x48, RX 0x1C8 | the soft values of those two bursts without the CACH, one byte per bit, bits 5-0; the hard bit is 32 or more |
+
+The first area's soft values overwrite the start of the second area, its CACH and field among them: that burst's
+field is read from its soft values at 0x1C8. The engine reads the tap after a slot it listened to while sending, for a
+BS's dedicated RC burst, which the chip doesn't report ([dmr-modem.md](dmr-modem.md), reverse channel).
+
 ---
 
 ## 6. Transmit sequences

@@ -3,6 +3,7 @@
 // HR_C7000 DMR slot engine (hrc7000_dmr.h; docs/spec/modem-hrc7000.md 3, 5, 6)
 #include <string.h>
 #include "hrc7000_dmr.h"
+#include "dmr/fec/dmrFec.h"
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 #include "hrc7000_bs.h"	// split duplex TX half: the BS outbound takes the chip over (e->bs)
 #define BS_ACTIVE(e)	((e)->bs != NULL)
@@ -433,6 +434,66 @@ static uint32_t listen_ctl(const hrc7000_dmr_t *e)
 	return (e->listen_voice || e->voice_chip_slot >= 0) ? TXRX_RX_VOICE : TXRX_RX;
 }
 
+// The slot just listened to, for a BS's outbound RC burst: EMB + RC in place of the sync (ETSI TS 102 361-1 6.4.2),
+// which the chip doesn't report. Its receive tap holds each burst received, the CACH and then the burst deframed, a
+// voice-layout burst's 48-bit sync / EMB / RC field first, in two areas (modem-hrc7000.md 5.4). The second area's
+// first bytes are overwritten by the first's soft values, so its field is taken from its own soft values (one byte
+// per bit, bits 5-0, the hard bit = 32 or more). An area unchanged since its last read holds the same burst, or a
+// stale one, and is skipped. One slot is listened to between two reads: one RC at most
+#define TAP_AREA_0	(C7_RX_RAM + 0x30u + 3u)	// the field, after the CACH
+#define TAP_SOFT_1	(C7_RX_RAM + 0x1C8u)		// the second area's soft values, no CACH
+#define TAP_HARD_LEN	12u	// the field (6) and as many voice bytes: they change per burst
+#define TAP_SOFT_LEN	96u	// the field's 48 bits and as many voice bits
+// The engine runs from RAM (platform/hrc7000/common.ld); this runs after our burst is armed, off its deadline, so it
+// goes in flash (.flashfunc) like the task-side code: RAM is short
+#define TAP_FLASHFUNC	__attribute__((section(".flashfunc"), noinline))
+TAP_FLASHFUNC static uint32_t tap_hash(const volatile uint8_t *p, uint8_t n)
+{
+	uint32_t sum = 2166136261u;	// FNV-1a
+	for (uint8_t i = 0; i < n; i++) {
+		sum = (sum ^ p[i]) * 16777619u;
+	}
+	return sum;
+}
+
+TAP_FLASHFUNC static void rc_tap_read(hrc7000_dmr_t *e)
+{
+	if (e->cc_filter < 0) {
+		return;
+	}
+	bool found = false;
+	uint8_t command = 0;
+	for (int a = 0; a < 2; a++) {
+		const volatile uint8_t *p = &e->dev->buf[a == 0 ? TAP_AREA_0 : TAP_SOFT_1];
+		uint32_t sum = tap_hash(p, a == 0 ? TAP_HARD_LEN : TAP_SOFT_LEN);
+		if (sum == e->tap_sum[a]) {
+			continue;
+		}
+		e->tap_sum[a] = sum;
+		e->st.rc_tap_changed++;
+		uint8_t field[6];
+		if (a == 0) {
+			for (uint8_t i = 0; i < 6u; i++) {
+				field[i] = p[i];
+			}
+		} else {
+			memset(field, 0, sizeof field);
+			for (uint8_t i = 0; i < 48u; i++) {
+				if ((p[i] & 0x3Fu) >= 32u) {
+					field[i / 8u] |= (uint8_t)(0x80u >> (i % 8u));
+				}
+			}
+		}
+		if (!found && dmrFecRcFromField(field, (uint8_t)e->cc_filter, &command) >= 0) {
+			found = true;
+		}
+	}
+	if (found) {
+		e->st.rc_tap++;
+		ev_simple(e, DMR_EV_RC, -1, dmrFecRcInfo(command));
+	}
+}
+
 // In a TX state that ticks on the TX vector (not the TC lock wait, which still receives)
 static bool tx_ticking(const hrc7000_dmr_t *e)
 {
@@ -511,6 +572,8 @@ static void tx_tick(hrc7000_dmr_t *e)
 		tx_finish(e, false);
 		return;
 	}
+	// The slot just listened to ends now, ours starts: its tap is read once ours is set up (the decode is flash code)
+	bool tap = e->tx_listen && e->tx_state == TXS_RUN && e->tx_our_next;
 	switch (e->tx_state) {
 	case TXS_ARMING:
 		// Own timing: the first slot is ours. Aligned to an SFR or a direct-mode station (no CACH): the slot whose
@@ -584,6 +647,9 @@ static void tx_tick(hrc7000_dmr_t *e)
 		break;
 	default:
 		break;
+	}
+	if (tap) {
+		rc_tap_read(e);
 	}
 }
 

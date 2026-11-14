@@ -949,11 +949,11 @@ keymatrixTest: keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c $(ROO
 	$(CC) $(CFLAGS) -Wshadow -o $@ keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c
 
 hrc7000DmrTest: hrc7000DmrTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c $(HRC7)/hrc7000_dmr.h $(HRC7)/hrc7000.h $(ROOT)/hal/hal_dmr_modem.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc7000DmrTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc7000DmrTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c $(CORE)/dmr/fec/dmrFec.c
 
 # The HR_C7000 BS outbound (drivers/modem/hrc7000/hrc7000_bs.c, split duplex TX half), and the slot engine's suite again
 # with its hooks built in
-HRC7BS  := $(HRC7)/hrc7000_bs.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c
+HRC7BS  := $(HRC7)/hrc7000_bs.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c $(CORE)/dmr/fec/dmrFec.c
 TESTS   += hrc7000BsTest hrc7000DmrTestSplit
 hrc7000BsTest: hrc7000BsTest.c $(HRC7BS) $(wildcard $(HRC7)/*.h) $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_HOTSPOT_SPLIT=1 -o $@ hrc7000BsTest.c $(HRC7BS)

@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "modem/hrc7000/hrc7000_dmr.h"
+#include "dmr/fec/dmrFec.h"
 
 static int failures;
 
@@ -1080,6 +1081,95 @@ static void test_tx_sync_and_listen(void)
 	count_kind(0xFF, NULL);
 }
 
+// A BS's outbound RC burst heard while we send (ETSI TS 102 361-1 6.4.2): no sync, so the chip reports nothing. The
+// receive tap is read before each of our bursts: the first area's field after the CACH, or the second's from its soft
+// values. One DMR_EV_RC per RC burst; none for unchanged areas, another color code or a burst that isn't an RC; one
+// when both areas changed with an RC
+static void soft_field(uint8_t *soft, const uint8_t field[6], uint8_t mark)
+{
+	for (int i = 0; i < 96; i++) {
+		bool bit = i < 48 ? (field[i / 8] >> (7 - i % 8)) & 1 : (mark >> (i % 8)) & 1;
+		soft[i] = bit ? (uint8_t)(0x20 + (i % 31)) : (uint8_t)(i % 31);	// 6-bit soft values, 32 and up = 1
+	}
+}
+
+static void test_tx_listen_rc(void)
+{
+	setup();
+	hrc7000_dmr_run(&eng);
+	const dmr_config_t cfg = { .own_id = 1234, .cc = 2, .access = DMR_ACCESS_IMPOLITE, .repeater = true };
+	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_set_cc_filter(&eng, 2);
+	tick(false);
+	count_kind(0xFF, NULL);
+	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	hrc7000_dmr_tx_listen(&eng);
+	uint8_t field[6];
+	static const uint8_t sync[6] = { 0x75, 0x5F, 0xD7, 0xDF, 0x75, 0xF7 };
+	int listened = 0, rcs = 0;
+	for (int k = 0; k < 30 && listened < 7; k++) {
+		if (hrc7000_dmr_tx_queue_space(&eng) > 0) {
+			dmr_tx_burst_t v = voice((uint8_t)(k % 6), 0x11);
+			CHECK(hrc7000_dmr_tx_queue(&eng, &v));
+		}
+		tick(true);
+		if ((REG(C7_LAYER2_TXRX_CTRL) & 0xFFu) != 0x40u) {	// receive (TXRX_RX)
+			continue;
+		}
+		listened++;	// a listen slot: what the BS sends lands in the tap
+		uint8_t *hard = &buf[C7_RX_RAM + 0x30 + 3], *soft = &buf[C7_RX_RAM + 0x1C8];
+		switch (listened) {
+		case 1:	// a cease, first area
+			dmrFecRcField(2, DMR_RC_CEASE, field);
+			memcpy(hard, field, 6);
+			hard[6] = 1;
+			break;
+		case 2:	// nothing new
+			break;
+		case 3:	// another color code
+			dmrFecRcField(3, DMR_RC_CEASE, field);
+			memcpy(hard, field, 6);
+			hard[6] = 3;
+			break;
+		case 4:	// a cease, second area (soft values)
+			dmrFecRcField(2, DMR_RC_CEASE, field);
+			soft_field(soft, field, 4);
+			break;
+		case 5:	// a voice sync, first area
+			memcpy(hard, sync, 6);
+			hard[6] = 5;
+			break;
+		case 6:	// both areas changed, each with a cease: one RC
+			dmrFecRcField(2, DMR_RC_CEASE, field);
+			memcpy(hard, field, 6);
+			hard[6] = 6;
+			soft_field(soft, field, 6);
+			break;
+		}
+		dmr_event_t evs[32];
+		static dmr_burst_t bs[32];
+		int n = drain(evs, bs, 32);
+		for (int i = 0; i < n; i++) {
+			if (evs[i].kind == DMR_EV_RC) {
+				CHECK(evs[i].arg == dmrFecRcInfo(DMR_RC_CEASE));
+				rcs++;
+			}
+		}
+	}
+	tick(true);	// the read after the last listen slot
+	dmr_event_t evs[32];
+	static dmr_burst_t bs[32];
+	int n = drain(evs, bs, 32);
+	for (int i = 0; i < n; i++) {
+		rcs += evs[i].kind == DMR_EV_RC;
+	}
+	CHECK(listened >= 6);
+	CHECK(rcs == 3 && eng.st.rc_tap == 3);
+	hrc7000_dmr_tx_abort(&eng);
+	tick(true);
+	count_kind(0xFF, NULL);
+}
+
 // An aligned start (an SFR's repeat): LAYER2_CONTROL left passive so the receiver keeps its slot sync, the TX slot
 // built from the receive slot (SLOTON b5), and our slot picked by its number in LAYER2_STATUS b31: the other chip slot
 // than the received bursts' for another TS, the same one for the same TS
@@ -1489,6 +1579,7 @@ int main(void)
 	test_tx_edges();
 	test_lost_requests();
 	test_tx_sync_and_listen();
+	test_tx_listen_rc();
 	test_tx_aligned();
 	test_tx_repeater_lock();
 	test_rx_control_channel();
