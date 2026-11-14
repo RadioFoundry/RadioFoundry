@@ -199,6 +199,25 @@ def main():
                 iddb_write.restore(link, backup)
                 check(link.iddb() == before, f"write {fmt}: after the restore {link.iddb()}, before {before}")
                 check(iddb_write.put(link, backup) == 0, f"write {fmt}: the restore left a block to write")
+            # The radio ends the session partway (no request for 10 s: the host stalled; here an ABORT does what the
+            # time-out does): the next BLOCK is refused for the state, put begins again and sends that block again (the
+            # header block goes twice anyway: erased first, written last)
+            blocks = iddb_write.encode_c(recs)
+            backup = iddb_write.save(link, blocks, os.path.join(d, "iddb.bak"))
+            send, sent = link.write_block, []
+
+            def cut(addr, data, **kw):
+                sent.append(addr)
+                if len(sent) == 3:
+                    link.abort()
+                return send(addr, data, **kw)
+            link.write_block = cut
+            n = iddb_write.put(link, blocks)
+            link.write_block = send
+            check(n > 3 and len(sent) == n + 2 and sent[2] == sent[3], f"a session cut: {len(sent)} sends for {n} blocks")
+            check(not iddb_write.differ(link, blocks) and link.iddb()["records"] == len(recs), "a session cut: written")
+            iddb_write.restore(link, backup)
+            check(link.iddb() == before, "a session cut: restored")
             print(f"# iddb_write: {len(recs)} synthetic records in formats N and C, put and restored")
         finally:
             link.close()

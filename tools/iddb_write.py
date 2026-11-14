@@ -264,12 +264,25 @@ def put(link, blocks, header=None):
             raise
         link.abort()                    # a session left open (a run stopped mid-write): end it, then begin
         link.begin(cps_fast.MODE_DIRECT)
+
+    def send(addr, data, again=3):
+        """One block. A BLOCK refused for the session's state means the radio ended it (no request for 10 s: the
+        host stalled): a new session, and the block again. The header is still erased, so nothing reads a mix"""
+        while True:
+            try:
+                return link.write_block(addr, data)
+            except cps_fast.FastError as e:
+                if e.reason != 6 or again == 0:
+                    raise
+                again -= 1
+                link.begin(cps_fast.MODE_DIRECT)
+
     try:
-        link.write_block(header, erased)
+        send(header, erased)
         for a in changed:
             if a != header:
-                link.write_block(a, bytes(blocks[a]))
-        link.write_block(header, bytes(blocks[header]))
+                send(a, bytes(blocks[a]))
+        send(header, bytes(blocks[header]))
     except cps_fast.FastError:
         link.abort()
         raise
