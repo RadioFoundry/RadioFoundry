@@ -164,7 +164,6 @@ void d578uv_gps_power(bool on);
 bool d578uv_modem_init(void);
 bool d578uv_modem_booting(void);		// board_t.boot_busy
 uint8_t d578uv_modem_boot_result(void);		// sct_boot_result_t
-bool d578uv_modem_booted(void);			// booted and running its DMR firmware
 const char *d578uv_modem_codec(void);		// board_t.modem_codec
 bool d578uv_modem_field(uint8_t type, uint8_t id, uint32_t *val, bool write);	// board.chip_reg chip 5
 int d578uv_modem_field_bytes(uint8_t type, uint8_t id, const uint8_t *data, uint8_t n, uint8_t *out, uint8_t cap);

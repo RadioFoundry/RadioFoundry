@@ -276,14 +276,15 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 		break;
 	}
 	case 11:
-		// The baseband's product, hardware and software versions as it reports them
-		put(&o, "sct ");
+		// The baseband's software and hardware versions and product as it reports them, the software version first so
+		// a long answer cuts the product off rather than it
+		put(&o, "sct sw ");
 #if CONFIG_DMR
-		put_text(&o, SCT_PRO);
+		put_text(&o, SCT_SW);
 		put(&o, " hw ");
 		put_text(&o, SCT_HW);
-		put(&o, " sw ");
-		put_text(&o, SCT_SW);
+		put(&o, " ");
+		put_text(&o, SCT_PRO);
 #else
 		put(&o, "-");
 #endif

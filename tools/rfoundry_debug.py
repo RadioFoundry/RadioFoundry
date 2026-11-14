@@ -2345,11 +2345,15 @@ def main(argv=None):
                     print(f"{i} {r['text']!r}" if r["found"] else f"{i} -")
             elif a.cmd == "reg":
                 if a.chip == CHIP_SOC:
+                    if a.len is not None:
+                        raise SystemExit("reg: --len is for a chip's fields, not soc")
                     v = link.soc_reg(a.reg, a.value)
                     print(f"soc 0x{a.reg:08X} = 0x{v:08X}")
-                elif a.len:
+                elif a.len is not None:
                     if a.value is not None:
                         raise SystemExit("reg: --len reads a field; it takes no VALUE")
+                    if not 1 <= a.len <= 32:
+                        raise SystemExit("reg: --len is 1 to 32 bytes")
                     d = link.chip_reg_bytes(a.chip, a.reg, a.len, a.page)
                     text = "".join(chr(c) if 0x20 <= c < 0x7F else "." for c in d)
                     print(f"chip {a.chip} page {a.page} 0x{a.reg:02X} = {d.hex() or '-'} {text!r}")
