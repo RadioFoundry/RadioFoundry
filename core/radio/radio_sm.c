@@ -1595,6 +1595,7 @@ static uint8_t dmr_deny_reason(uint8_t err)
 	case DMR_TX_ERR_REJECTED:
 	case DMR_TX_ERR_STALLED: return TXDENY_REJECTED;	// stalled: the modem never sent a burst
 	case DMR_TX_ERR_TIMEOUT: return TXDENY_TIMEOUT;
+	case DMR_TX_ERR_CEASED: return TXDENY_CEASED;
 	default: return TXDENY_NO_DMR;
 	}
 }

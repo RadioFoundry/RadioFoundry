@@ -144,6 +144,14 @@ void sim_short_lc(uint32_t slc, uint8_t crc)
 		sim.cb(&ev, sim.ctx);
 }
 
+void sim_rc(uint16_t info, uint8_t flags)
+{
+	dmr_event_t ev = { .kind = DMR_EV_RC, .ts = -1, .flags = flags, .arg = info };
+
+	if (sim.cb)
+		sim.cb(&ev, sim.ctx);
+}
+
 static void send_one(void)
 {
 	dmr_tx_burst_t b = sim.q[sim.q_head];

@@ -27,6 +27,8 @@
 #define R_TX_TYPE	0x50
 #define R_RX_TYPE	0x51
 #define R_RX_CC		0x52
+#define R_RC_HI		0x53	// RC info bits 10-3
+#define R_RC_LO		0x54	// bits 7-6: the voice EMB's LCSS; 2-0: RC info bits 2-0
 #define R_SYNC_TYPE	0x5F
 #define R_INT_FLAGS	0x82
 #define R_INT_CLEAR	0x83
@@ -1334,6 +1336,34 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 // voice (burst A has no CC on air; B-F under the CC filter get the filter's) nor for unusable reports.
 // at_tick: serviced from the timeslot interrupt, before the tick advanced: the report's interrupt was not taken in its
 // slot (no edge seen), so its delay is unknown; it still belongs to the slot that ended at e->tick
+// The reverse channel heard between our bursts (ETSI TS 102 361-1 5.1.5, 6.4.2; hrc6000-registers.md 2.2): a
+// dedicated RC burst (sync class 3), or an embedded one in burst F (ETSI 6.4.2: LCSS 00, a single fragment, and PI 1;
+// the chip's PI is unreliable on voice, so not checked). The chip gives the 11 RC info bits in 0x53 / 0x54; the core
+// checks their CRC, which also drops burst F's usual null fragment
+static void rc_report(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, uint8_t r51)
+{
+	bool dedicated = s->sync_class == 3u;
+	if (!dedicated && !(s->kind == DMR_BURST_VOICE && s->voice_index == 5u)) {
+		return;
+	}
+	uint8_t hi = r(e->dev, R_RC_HI);
+	uint8_t lo = r(e->dev, R_RC_LO);
+	if (!dedicated && (lo >> 6) != 0u) {
+		return;
+	}
+	e->st.rc_reports++;
+	e->st.rc_last = (uint32_t)r51 << 16 | (uint32_t)hi << 8 | lo;
+	hrc6000_dmr_evslot_t *ev = ev_begin(e);
+	if (ev != NULL) {
+		ev->ev.kind = DMR_EV_RC;
+		ev->ev.ts = -1;
+		ev->ev.flags = dedicated ? 0u : DMR_RC_EMBEDDED;
+		ev->ev.arg = (uint32_t)hi << 3 | (lo & 7u);
+		ev->ev.burst = NULL;
+		ev_commit(e);
+	}
+}
+
 static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 {
 	uint8_t r51 = r(e->dev, R_RX_TYPE);
@@ -1352,6 +1382,9 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 	// 1-12 ms; bench 2026-10-10 on 90ce091: reports 12-22 ms after the tick)
 	bool on_time = !at_tick && e->timing && dt >= IN_STEP_MIN_US && dt < OUT_OF_STEP_US;
 	e->report_dms = (uint8_t)(at_tick || dms > 254u ? 255u : dms);
+	if (tx && e->tx_listen) {
+		rc_report(e, &s, r51);
+	}
 
 	if (s.kind == HRC6000_KIND_NONE) {
 		e->st.rx_rc++;

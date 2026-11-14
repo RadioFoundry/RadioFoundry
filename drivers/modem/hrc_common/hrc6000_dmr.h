@@ -143,6 +143,8 @@ typedef struct {
 				// CC), or without a filter for burst A (no CC on air) by its superframe's
 	uint32_t sys_at_tick;	// system interrupts still pending at the timeslot interrupt, serviced there
 	uint32_t rx_rc;		// reverse channel / unusable status, dropped
+	uint32_t rc_reports;	// reports between our bursts that may carry an RC (class 3, or burst F with LCSS 0): DMR_EV_RC
+	uint32_t rc_last;	// the last one's 0x51 << 16 | 0x53 << 8 | 0x54
 	uint32_t rx_out_of_step;	// reports 22 ms or more after the timeslot interrupt
 	uint32_t rx_restarts;	// receiver restarts by the engine (silence, out of step, CC change, stall)
 	uint32_t late_entry;	// post-access interrupts

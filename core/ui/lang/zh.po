@@ -3447,6 +3447,10 @@ msgid "TX time-out reached"
 msgstr "已达发射超时"
 
 #: core/ui/ui_screens.c
+msgid "System stopped TX"
+msgstr "系统已停止发射"
+
+#: core/ui/ui_screens.c
 msgid "No TX frequency set"
 msgstr "未设发射频率"
 

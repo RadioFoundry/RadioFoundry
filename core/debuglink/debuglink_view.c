@@ -63,7 +63,7 @@ static const char *deny_key(uint8_t d)
 {
 	static const char *const names[] = { "none", "rx_only", "band", "timeout", "no_freq", "mode", "no_codec",
 					     "no_dmr", "busy", "no_repeater", "rejected", "hotspot", "no_id", "inhibit",
-					     "battery", "am", "bcast", "sfr_rpt", "hwopt", "refused" };
+					     "battery", "am", "bcast", "sfr_rpt", "hwopt", "refused", "ceased" };
 	return d < sizeof(names) / sizeof(names[0]) ? names[d] : "?";
 }
 

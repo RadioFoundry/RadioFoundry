@@ -7,6 +7,7 @@
 #include "dmr/call/dmr_call.h"
 #include "config.h"
 #include "dmr/fec/dmrCach.h"
+#include "dmr/fec/dmrFec.h"
 #if CONFIG_SFR
 #include "dmr/sfr.h"
 #endif
@@ -137,6 +138,8 @@ static struct {
 	uint8_t queue_cap;	// the modem's free queue space right after tx_begin
 	bool stop_req;
 	bool tot_hit;
+	bool ceased;		// the reverse channel stopped this over (rc_heard)
+	uint32_t rc_cease_ms;	// the last cease heard, | 1 (0: none)
 	uint8_t stage[DMR_AMBE_FRAMES_PER_BURST][DMR_AMBE_FRAME_BYTES];
 	uint8_t stage_n;
 	uint32_t tx_since;	// PTT handling start (access wait)
@@ -475,7 +478,7 @@ static void on_event(const dmr_event_t *ev, void *ctx)
 
 	it->kind = ev->kind;
 	it->ts = ev->ts;
-	it->arg = ev->arg;
+	it->arg = ev->arg | (ev->kind == DMR_EV_RC ? (uint32_t)ev->flags << 16 : 0u);
 	it->has_burst = ev->kind == DMR_EV_BURST_RX && ev->burst != NULL;
 	if (it->has_burst)
 		it->burst = *ev->burst;
@@ -1351,6 +1354,8 @@ static void tx_start_voice(uint32_t now)
 	s.queued = s.started = 0;
 	s.stop_req = false;
 	s.tot_hit = false;
+	s.ceased = false;
+	s.rc_cease_ms = 0;
 	s.stage_n = 0;
 	s.tx = TX_ON;
 	stats.tx_calls++;
@@ -1562,9 +1567,9 @@ static void tx_finished(uint32_t now)
 	s.last_call_end_ms = now;
 	s.call_end_seen = true;
 	s.dirty = true;
-	if (s.tot_hit) {
+	if (s.tot_hit || s.ceased) {
 		s.tx = s.ptt ? TX_DENIED : TX_NONE;
-		s.view.tx_error = DMR_TX_ERR_TIMEOUT;
+		s.view.tx_error = s.ceased ? DMR_TX_ERR_CEASED : DMR_TX_ERR_TIMEOUT;
 	} else if (s.ptt) {
 		tx_ptt_pressed(now);	// pressed again while the last one was ending
 	}
@@ -1694,6 +1699,32 @@ static void tx_poll(uint32_t now)
 
 // --- Events (consumer) ---
 
+// The reverse channel (ETSI TS 102 361-4 6.4.14, 6.4.15.2): while our voice goes out, a cease command or cease request
+// heard twice within DMR_CALL_RC_CONFIRM_MS ends the over after burst F with a terminator (tx_fill's stop_req), and
+// PTT must be released before the next. Twice, because a voice burst F's null fragment passes the 7-bit CRC once in
+// 128; the site repeats it every 360 ms. A request is always accepted. Power commands are only counted: the radio
+// keeps the power it was set to
+static void rc_heard(uint32_t arg, uint32_t now)
+{
+	int c = dmrFecRcInfoDecode((uint16_t)(arg & 0x7FFu));
+
+	if (c < 0) {
+		stats.rc_bad++;
+		return;
+	}
+	stats.rc_good++;
+	stats.rc_last = (uint8_t)c;
+	if ((c != DMR_RC_CEASE && c != DMR_RC_CEASE_REQUEST) || s.tx != TX_ON || s.stop_req)
+		return;
+	if (s.rc_cease_ms != 0 && (uint32_t)(now - s.rc_cease_ms) <= DMR_CALL_RC_CONFIRM_MS) {
+		s.stop_req = true;
+		s.ceased = true;
+		stats.rc_ceased++;
+		s.dirty = true;
+	}
+	s.rc_cease_ms = now | 1u;
+}
+
 static void handle_event(const evq_item_t *it, uint32_t now)
 {
 	switch (it->kind) {
@@ -1729,6 +1760,9 @@ static void handle_event(const evq_item_t *it, uint32_t now)
 			if (s.tx == TX_ON && s.started == 1)
 				s.tx_heard_ms = now;	// the drop check's reference until the repeater is heard
 		}
+		break;
+	case DMR_EV_RC:
+		rc_heard(it->arg, now);
 		break;
 	case DMR_EV_TX_REJECTED:
 		if (tx_rewake(now))

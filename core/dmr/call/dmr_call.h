@@ -35,6 +35,7 @@
 #ifndef DMR_CALL_TX_LISTEN
 #define DMR_CALL_TX_LISTEN		1
 #endif
+#define DMR_CALL_RC_CONFIRM_MS		1000	// a second reverse channel cease within this stops our over
 #define DMR_CALL_TX_DROP_MS		240	// listening, no repeater burst this long during our over: it dropped
 #define DMR_CALL_TX_START_DROP_MS	540	// the same before our first burst: the modem's search for the slot gets two tries
 #define DMR_CALL_TX_HEADERS		3	// voice LC headers before burst A
@@ -193,6 +194,7 @@ typedef enum {
 	DMR_TX_ERR_REJECTED,		// the modem refused (tx_begin false or tx_rejected)
 	DMR_TX_ERR_TIMEOUT,		// TX time-out ended the transmission
 	DMR_TX_ERR_STALLED,		// the modem took no burst for DMR_CALL_TX_STALL_MS (no slot timing)
+	DMR_TX_ERR_CEASED,		// the system stopped the over with the reverse channel
 } dmr_tx_error_t;
 
 typedef struct {
@@ -288,6 +290,10 @@ typedef struct {
 	uint32_t rx_end_term;		// received calls ended by their terminator
 	uint32_t rx_end_sync;		// ... by the modem losing the channel
 	uint32_t rx_end_fade;		// ... by no burst on the call for the fade time
+	uint32_t rc_good;		// reverse channel commands heard while we transmitted (DMR_EV_RC, CRC good)
+	uint32_t rc_bad;		// ... CRC failed (or a null fragment)
+	uint32_t rc_ceased;		// overs the reverse channel stopped (DMR_TX_ERR_CEASED)
+	uint8_t rc_last;		// the last command heard (DMR_RC_*)
 } dmr_call_stats_t;
 void dmr_call_get_stats(dmr_call_stats_t *out);
 // The talker alias our calls send now ("" = none: off for the channel, no callsign, or built without it)

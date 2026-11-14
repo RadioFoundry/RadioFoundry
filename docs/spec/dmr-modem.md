@@ -275,6 +275,17 @@ transmitting in the slot after the next one, in phase with the bursts being rece
   first. `call.rx_in_tx` and `call.rx_bs_in_tx` count what was heard while sending. A radio whose RF can't (the
   modem's `tx_listen_split` NULL or false) sends as before and doesn't see the drop.
 
+- Reverse channel (ETSI TS 102 361-1 5.1.5, 6.4.2; TS 102 361-4 6.4.14, 6.4.15.2): a radio that listens between its
+  bursts also hears an RC the BS sends on the other slot, either a dedicated RC burst or one in voice burst F (EMB
+  LCSS 00, PI 1). The modem reports its 11 RC info bits (`DMR_EV_RC`, `DMR_RC_EMBEDDED` for burst F); the stack
+  checks the CRC-7 (`dmrFecRcInfoDecode`). A cease command (0100) or cease request (0101) heard twice within
+  `DMR_CALL_RC_CONFIRM_MS` (1 s) while our voice goes out ends the over after burst F with a terminator, like the TX
+  time-out: `tx_error` ceased, PTT released before the next over. Twice, because burst F's null fragment passes the
+  CRC one time in 128, and the BS repeats an RC every 360 ms. A request is always accepted. Power commands (0000-0011)
+  are only counted: the power stays as set. `call.rc_good`, `call.rc_bad`, `call.rc_ceased`, `call.rc_last` in the
+  diagnostics. The HR_C6000 engine reads the RC info from 0x53 / 0x54 at a class 3 report, or a burst F report with
+  LCSS 00 ([hrc6000-registers.md](hrc6000-registers.md) 2.2).
+
 - Repeater call hang time: the repeater keeps the outbound up after a call; an MS that keys in it does not need BS
   activation and should reply on the same slot (and talkgroup, if group hang applies).
 - After hearing a call on our slot, a polite MS waits for the terminator / timeout before keying; an impolite one keys

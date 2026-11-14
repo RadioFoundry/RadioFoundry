@@ -3445,6 +3445,10 @@ msgid "TX time-out reached"
 msgstr "Tiempo límite TX alcanzado"
 
 #: core/ui/ui_screens.c
+msgid "System stopped TX"
+msgstr "El sistema detuvo la TX"
+
+#: core/ui/ui_screens.c
 msgid "No TX frequency set"
 msgstr "Sin frecuencia TX fijada"
 

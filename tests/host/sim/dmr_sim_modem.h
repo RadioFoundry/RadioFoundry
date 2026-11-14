@@ -99,5 +99,7 @@ void sim_rx(const dmr_burst_t *b);
 void sim_event(uint8_t kind, int8_t ts);
 // A CACH short LC as a modem reports it: 28 bits and the CRC-8 received (DMR_EV_SHORT_LC)
 void sim_short_lc(uint32_t slc, uint8_t crc);
+// A reverse channel heard between our bursts: the 11 RC info bits and DMR_RC_* flags (DMR_EV_RC)
+void sim_rc(uint16_t info, uint8_t flags);
 
 #endif

@@ -3445,6 +3445,10 @@ msgid "TX time-out reached"
 msgstr "Timeout TX raggiunto"
 
 #: core/ui/ui_screens.c
+msgid "System stopped TX"
+msgstr "TX interrotta dal sistema"
+
+#: core/ui/ui_screens.c
 msgid "No TX frequency set"
 msgstr "Nessuna freq. TX impostata"
 

@@ -1149,6 +1149,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 		break;
 	}
 	case TXDENY_TIMEOUT: sb_str(&b, TR("TX time-out reached")); break;
+	case TXDENY_CEASED: sb_str(&b, TR("System stopped TX")); break;
 	case TXDENY_NO_FREQ: sb_str(&b, TR("No TX frequency set")); break;
 	case TXDENY_MODE: sb_str(&b, TR("Mode: not in this build")); break;
 	case TXDENY_NO_CODEC: sb_str(&b, TR("No codec: voice off")); break;
@@ -1172,7 +1173,8 @@ static const char *deny_action(const radio_view_t *v)
 {
 	switch (v->tx_deny) {
 	case TXDENY_BAND: return v->vfo ? TR("Tune into a band, then PTT") : TR("Pick another channel");
-	case TXDENY_TIMEOUT: return TR("Release PTT to talk again");
+	case TXDENY_TIMEOUT:
+	case TXDENY_CEASED: return TR("Release PTT to talk again");
 	case TXDENY_NO_CODEC: return TR("Add codec with rfoundry");
 	case TXDENY_BUSY: return TR("Wait for the call to end");
 	case TXDENY_NO_REPEATER: return TR("Check CC and range");

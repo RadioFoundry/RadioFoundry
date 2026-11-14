@@ -683,9 +683,9 @@ channel and sends a status on the TSCC; the TS answers, then stops the talker wi
 - Other calls' grants don't take the radio while it asks. An emergency grant does, and the radio stays in that call.
 - 6.4.14.3.4.1 also says the ALS initiator goes back to the payload channel; the MS procedure (6.4.14.3.4.3) says it
   stays on the TSCC, and the radio follows that. The TS clears the call with P_CLEAR.
-- Not done: the talker's side. The interrupted MS decodes the outbound reverse channel while it transmits, and on RC
-  Command 0100 (cease) or 0101 (cease request) ends after voice burst F with a terminator (6.4.15.2). The modem drivers
-  drop reverse channel bursts.
+- The talker's side: the interrupted MS decodes the outbound reverse channel while it transmits, and on RC Command
+  0100 (cease) or 0101 (cease request) ends after voice burst F with a terminator (6.4.15.2). The radio does this on
+  boards that receive between their bursts on a split channel ([dmr-modem.md](dmr-modem.md), reverse channel).
 
 ### 7.18 Adjacent sites, Vote Now and signal quality (6.3.2.3, 6.3.3.1 a, 6.7.1.3, 6.7.1.7)
 
@@ -780,7 +780,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
 | Power save: the receiver off while asleep on boards without `rx_sleep_dmr` | each board's `rx_sleep` on a DMR channel |
-| The interrupted talker's side: the reverse channel's cease command while transmitting (6.4.15.2) | reverse channel reception in the modem drivers |
+| The interrupted talker's side on radios that can't receive between their bursts on a split channel (6.4.15.2) | the modem's `tx_listen_split` on those boards |
 
 ## 11. On the radio
 

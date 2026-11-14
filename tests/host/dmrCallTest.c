@@ -13,6 +13,7 @@
 #include "sim/dmr_sim_modem.h"
 #include "dmr/dmrPrivacy.h"
 #include "dmr/ambe/ambeFec.h"
+#include "dmr/fec/dmrFec.h"
 
 static int failures;
 static int checks;
@@ -619,6 +620,53 @@ static void test_tx_timeout_and_starve(void)
 	dmr_call_ptt(false);
 	run_ms(20);
 	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
+}
+
+// The reverse channel's cease (ETSI TS 102 361-4 6.4.15.2): heard twice within DMR_CALL_RC_CONFIRM_MS while our
+// voice goes out, the over ends after burst F with a terminator and PTT must be released. One alone, a bad CRC, a
+// power command or two too far apart don't stop it
+static void test_tx_rc_cease(void)
+{
+	dmr_call_config_t c = base_cfg();
+	dmr_call_stats_t st;
+	unsigned v;
+	uint8_t lc[9];
+
+	setup(&c);
+	dmr_call_reset_stats();
+	dmr_call_ptt(true);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE);
+	sim_rc(dmrFecRcInfo(DMR_RC_CEASE), 0);
+	run_ms(DMR_CALL_RC_CONFIRM_MS + 100);
+	sim_rc(dmrFecRcInfo(DMR_RC_CEASE), DMR_RC_EMBEDDED);	// too long after the first: counts as a first again
+	run_ms(300);
+	sim_rc((uint16_t)(dmrFecRcInfo(DMR_RC_CEASE) ^ 1u), DMR_RC_EMBEDDED);	// CRC fails
+	sim_rc(dmrFecRcInfo(DMR_RC_POWER_DOWN), 0);
+	run_ms(300);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE);
+	sim_rc(dmrFecRcInfo(DMR_RC_CEASE_REQUEST), DMR_RC_EMBEDDED);	// the second within the window
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE);	// finishing the superframe
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && V()->tx_error == DMR_TX_ERR_CEASED);
+	mk_lc(lc, 0, TG_TALK, OWN_ID);
+	check_tx_burst_sequence(0, lc, &v);	// whole superframes, then the terminator with LC
+	dmr_call_get_stats(&st);
+	CHECK(st.rc_good == 4 && st.rc_bad == 1 && st.rc_ceased == 1 && st.rc_last == DMR_RC_CEASE_REQUEST);
+	dmr_call_ptt(false);
+	run_ms(20);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
+	// The next over isn't stopped by the last one's
+	dmr_call_ptt(true);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE);
+	sim_rc(dmrFecRcInfo(DMR_RC_CEASE), 0);
+	run_ms(300);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->tx_error == DMR_TX_OK);
 }
 
 static void test_tx_refused(void)
@@ -3072,6 +3120,7 @@ int main(void)
 	test_tx_call();
 	test_tx_permit_hold();
 	test_tx_timeout_and_starve();
+	test_tx_rc_cease();
 	test_tx_refused();
 	test_tx_done_wake();
 	test_tx_modem_stalled();
