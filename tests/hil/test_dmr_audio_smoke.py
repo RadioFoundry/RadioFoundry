@@ -43,7 +43,8 @@ level"). Skips when the bench can't bring its level near RSSI_DBM.
 
 On a radio whose modem plays the voice itself (dmr.modem_voice=1) the deviation and wide offset tests count the call's
 voice bursts instead (no frame, bit count or audio reaches the host side): the call heard, and at least the share of
-the frames sent above (95 % or 90 %) in bursts of three, at most one burst more than were sent.
+the frames sent above (95 % or 90 %) in bursts of three, at most EXTRA_BURSTS more than were sent (the driver paces
+the bursts by time to the terminator, which near sensitivity can come a burst or two late; a missed one adds dozens).
 
 test_dmr_audio_tx (marker radio_tx): the radio keys TX_S seconds at its lowest power with the voice layer's test
 signal in place of the mic (RADIO op 33: a tone whose pitch changes every frame), the bench modem records the call.
@@ -77,6 +78,7 @@ DEV_LOW, DEV_HIGH = 0.85, 1.15  # transmitters 15 % under and over the standard'
 RSSI_DBM = -100             # the level the deviation and wide offset tests run at: some 20 dB over the sensitivity of a DMR radio
 BITS_DEV = 0.8              # FEC corrections a frame near sensitivity: 0.6 or less inside the window, 1-1.5 past its edge
 ALL_CALL = 0xFFFFFF
+EXTRA_BURSTS = 3            # modem-voice radios: bursts counted past those sent (80 of 78 seen at -2500 Hz, -103 dBm)
 STATS_KEYS = ("voice.rx_peak", "voice.rx_repeats", "voice.tx_repeats", "voice.tx_mic_peak", "voice.tx_test")
 
 pytestmark = [pytest.mark.audio_smoke]
@@ -197,7 +199,7 @@ def check_bursts(d, sent, what, min_in):
         bad.append(f"{what}: no call heard (call.rx_calls {d['call.rx_calls']})")
     if bursts < min_in * want:
         bad.append(f"{what}: voice bursts {bursts} of {want} sent (at least {100 * min_in:.0f} %)")
-    if bursts > want + 1:
+    if bursts > want + EXTRA_BURSTS:
         bad.append(f"{what}: voice bursts {bursts}, {want} sent: the call's end missed?")
     return bad
 
