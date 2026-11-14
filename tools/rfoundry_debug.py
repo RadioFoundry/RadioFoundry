@@ -2348,6 +2348,8 @@ def main(argv=None):
                     v = link.soc_reg(a.reg, a.value)
                     print(f"soc 0x{a.reg:08X} = 0x{v:08X}")
                 elif a.len:
+                    if a.value is not None:
+                        raise SystemExit("reg: --len reads a field; it takes no VALUE")
                     d = link.chip_reg_bytes(a.chip, a.reg, a.len, a.page)
                     text = "".join(chr(c) if 0x20 <= c < 0x7F else "." for c in d)
                     print(f"chip {a.chip} page {a.page} 0x{a.reg:02X} = {d.hex() or '-'} {text!r}")

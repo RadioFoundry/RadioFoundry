@@ -61,45 +61,23 @@ static const char *boot_name(uint8_t r)
 	static const char *const names[] = { "ok", "no block", "bus", "no app", "silent", "no voice" };
 	return r < sizeof(names) / sizeof(names[0]) ? names[r] : "?";
 }
-// The baseband's answers to the Packet Interface's identity queries (Q_PRO_STR, Q_HW_VER, Q_SW_VER: text; Q_CID_SN:
-// a 3-byte BCD customer ID and a 5-byte BCD serial; hardware-d578uv.md 4.4), asked once, the first time a line needs
-// them, in a TYPE 3 packet. A query that goes unanswered (not booted yet) is asked again later, three times at most
-enum { SCT_PRO, SCT_HW, SCT_SW, SCT_CID, SCT_QUERIES };
-static const uint8_t sct_query_id[SCT_QUERIES] = { 0x30, 0x31, 0x32, 0x33 };
-static struct {
-	uint8_t d[SCT_QUERIES][SCT_DMR_FIELD_MAX];
-	int8_t n[SCT_QUERIES];	// bytes answered; -1 not yet
-	uint8_t tries;
-} sct_id = { .n = { -1, -1, -1, -1 } };
-
-static void sct_identity(void)
-{
-	bool missing = false;
-	for (int q = 0; q < SCT_QUERIES; q++)
-		missing |= sct_id.n[q] < 0;
-	if (!missing || sct_id.tries >= 3u || !d578uv_modem_booted())
-		return;
-	sct_id.tries++;
-	for (int q = 0; q < SCT_QUERIES; q++) {
-		if (sct_id.n[q] < 0) {
-			int r = d578uv_modem_field_bytes(0x03, sct_query_id[q], NULL, 0, sct_id.d[q], SCT_DMR_FIELD_MAX);
-			sct_id.n[q] = (int8_t)(r < 0 ? -1 : r);
-		}
-	}
-}
+// The baseband's identity answers (d578uv_modem_identity): product, hardware and software versions as text, then a
+// 3-byte BCD customer ID and a 5-byte BCD serial (hardware-d578uv.md 4.4)
+enum { SCT_PRO, SCT_HW, SCT_SW, SCT_CID };
 
 // A text answer: printable characters up to a NUL, trailing spaces dropped; "?" for none
 static void put_text(out_t *o, int q)
 {
-	int n = sct_id.n[q];
-	while (n > 0 && (sct_id.d[q][n - 1] == ' ' || sct_id.d[q][n - 1] == 0))
+	const uint8_t *d = NULL;
+	int n = d578uv_modem_identity((uint8_t)q, &d);
+	while (n > 0 && (d[n - 1] == ' ' || d[n - 1] == 0))
 		n--;
 	if (n <= 0) {
 		put(o, "?");
 		return;
 	}
-	for (int k = 0; k < n && sct_id.d[q][k] != 0 && o->p < o->end; k++) {
-		uint8_t c = sct_id.d[q][k];
+	for (int k = 0; k < n && d[k] != 0 && o->p < o->end; k++) {
+		uint8_t c = d[k];
 		*o->p++ = c >= 0x20 && c < 0x7F ? (char)c : '.';
 	}
 }
@@ -107,12 +85,13 @@ static void put_text(out_t *o, int q)
 // BCD bytes from..to of the Q_CID_SN answer, two digits each
 static void put_bcd(out_t *o, int from, int to)
 {
-	if (sct_id.n[SCT_CID] < to) {
+	const uint8_t *d = NULL;
+	if (d578uv_modem_identity(SCT_CID, &d) < to) {
 		put(o, "?");
 		return;
 	}
 	for (int k = from; k < to; k++)
-		put_x(o, sct_id.d[SCT_CID][k], 2);
+		put_x(o, d[k], 2);
 }
 #endif
 
@@ -300,7 +279,6 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 		// The baseband's product, hardware and software versions as it reports them
 		put(&o, "sct ");
 #if CONFIG_DMR
-		sct_identity();
 		put_text(&o, SCT_PRO);
 		put(&o, " hw ");
 		put_text(&o, SCT_HW);
@@ -314,7 +292,6 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 		// Its customer ID and serial number
 		put(&o, "sct id ");
 #if CONFIG_DMR
-		sct_identity();
 		put_bcd(&o, 0, 3);
 		put(&o, " sn ");
 		put_bcd(&o, 3, 8);
