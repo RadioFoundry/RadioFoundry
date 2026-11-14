@@ -450,6 +450,11 @@ spec = "docs/spec/ui.md"
 switch = "LANG_ZH"
 spec = "docs/spec/ui.md"
 
+[feature.cjk_glyphs]
+switch = "CJK_GLYPHS"
+spec = "docs/spec/ui.md"
+source = ["core/ui/cjk_font.c", "core/ui/cjk_font_data.c"]
+
 [feature.lang_default_es]
 switch = "LANG_DEFAULT_ES"
 spec = "docs/spec/ui.md"

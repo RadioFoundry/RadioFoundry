@@ -47,8 +47,8 @@ BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive (above)
 BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# the split duplex glue is HR_C6000 and HR_C7000 only (docs/spec/split-duplex.md)
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
-# radios (docs/spec/ppp.md), and this one has the adapter. Every switch on doesn't fit the 464 KB of flash with two
-# translations: maximal keeps Spanish, as the default build does (Italian builds on the other boards)
+# radios (docs/spec/ppp.md), and this one has the adapter. Maximal keeps Spanish, as the default build does: with every
+# other switch on it has 156 bytes left, so a third translation would not fit. Italian builds on the other boards.
 # APRS-IS (about 2.7 KB) is left out of maximal too, which had 156 bytes left: with no APRS receive here it only gates
 # RF positions out, so it is the first IP service to go. The default build keeps it. It defaults on, so it is set off,
 # not only skipped
@@ -62,7 +62,8 @@ MAXIMAL_VARS := CONFIG_NET_APRSIS=n
 CONFIG_RX_EXT ?= n
 BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)
 
-# A Chinese character is 16 px tall (core/ui/cjk_font.h) and these layouts draw their words in the 6x12 font:
-# there is no room for a 16 px line, and the CJK face must not be built in (docs/build-config.md)
-BOARD_UNSUPPORTED += LANG_ZH	# a Chinese line needs 16 px; this layout draws its words in a smaller font
+# Chinese needs a 16x16 glyph for every character it draws (core/ui/cjk_font_data.c): the translation face plus a
+# GB2312 level-1 set for channel names is 3765 glyphs, about 128 KB, and this 464 KB region is already 99 % full
+# without it. Chinese must not build here (the 720 KB and 880 KB radios carry it)
+BOARD_UNSUPPORTED += LANG_ZH	# the 128 KB of CJK glyphs won't fit beside the default build in 464 KB
 BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH

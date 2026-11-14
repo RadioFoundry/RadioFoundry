@@ -42,5 +42,11 @@ void sb_coord(sbuf_t *b, int32_t e7, char pos, char neg);
 void sb_compass(sbuf_t *b, uint16_t bearing);
 // A distance and a compass point: "850 m NE", "12.3 km S", "240 km W"
 void sb_range(sbuf_t *b, uint32_t meters, uint16_t bearing);
+// A string's display width in cells, for truncation that never splits a character: a CJK glyph (code point > 0xFF) is
+// two cells, matching the room math ((w - x) / f->w) the talk line uses; ASCII, Latin-1 and font glyph bytes are one
+size_t ui_text_cells(const char *s);
+// Append up to max_cells of s to b, stopping at a character boundary (a CJK character is two cells); the caller adds the
+// ellipsis. Never writes a cut-off character, so a Chinese name stays whole or drops whole
+void sb_cut_text(sbuf_t *b, const char *s, size_t max_cells);
 
 #endif

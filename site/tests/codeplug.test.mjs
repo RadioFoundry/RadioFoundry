@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 
 import { CodeplugImage, CODEPLUG_SPAN } from "../static/js/codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, refNumber, listenBand } from "../static/js/codeplug/model.js";
-import { getTone, putTone, parseTone, parseFreq, mhz, getCoord, coordBytes } from "../static/js/codeplug/fields.js";
+import { getTone, putTone, parseTone, parseFreq, mhz, getCoord, coordBytes, putName, getName, nameBytes } from "../static/js/codeplug/fields.js";
 import * as iddb from "../static/js/codeplug/iddb.js";
 import { blankChannel, decodeChannel, encodeChannel } from "../static/js/codeplug/records.js";
 import { targets } from "../static/js/flasher/restore.js";
@@ -277,6 +277,31 @@ test("longer database text is kept up to 48 characters", () => {
 	iddb.write(img, [{ id: 9991234, text: "Q0TST Charlie Lawson Atlanta Georgia United States" }], { textLen: 48 });
 	const got = simDetail(img, [9991234]).split("\n").filter((l) => l.startsWith("iddb 9"));
 	assert.deepEqual(got, ['iddb 9991234 "Q0TST Charlie Lawson Atlanta Georgia United Stat"']);
+});
+
+test("a name keeps Latin-1 middot and degree bytes, not the font glyph bytes", () => {
+	// "·" (U+00B7) and "°" (U+00B0) are Latin-1 bytes B7 and B0; putName must keep them as such (TEXT_TO_BYTE no longer
+	// maps them), and getName must read them back as the characters
+	const n = new Uint8Array(16).fill(0xFF);
+	putName(n, "A·B°C");
+	assert.equal(n[1], 0xB7);
+	assert.equal(n[3], 0xB0);
+	assert.equal(getName(n), "A·B°C");
+});
+
+test("a Chinese name round-trips as UTF-8 and nameBytes counts it in bytes", () => {
+	// 中 = E4 B8 AD, 道 = E9 81 93
+	assert.equal(nameBytes("中道"), 6);
+	assert.equal(nameBytes("A·B"), 3);	// the middot kept as one Latin-1 byte
+	const n = new Uint8Array(16).fill(0xFF);
+	putName(n, "中道");
+	assert.deepEqual([...n.slice(0, 6)], [0xE4, 0xB8, 0xAD, 0xE9, 0x81, 0x93]);
+	assert.equal(getName(n), "中道");
+	// a mixed Latin-1 and UTF-8 name round-trips too
+	const m = new Uint8Array(16).fill(0xFF);
+	putName(m, "A中");
+	assert.deepEqual([...m.slice(0, 4)], [0x41, 0xE4, 0xB8, 0xAD]);
+	assert.equal(getName(m), "A中");
 });
 
 // --- Reaching the radio (transport.js) against a simulated radio ---

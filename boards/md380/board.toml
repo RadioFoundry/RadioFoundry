@@ -44,6 +44,7 @@ values = [
 	{ id = "vhf", title = "VHF", text = "136-174 MHz", board_name = "MD-380 VHF" },
 ]
 
+
 [flash]
 family = "usb-dfu"
 keep_codec = true

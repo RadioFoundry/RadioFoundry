@@ -71,6 +71,20 @@ def chars_from_po(path):
     return out
 
 
+def gb2312_level1():
+    """The 3755 common ideographs (GB2312 level 1, rows 16-55): what a user's Chinese channel names are drawn from."""
+    chars = set()
+    for hb in range(0xB0, 0xD8):
+        for lb in range(0xA1, 0xFF):
+            if hb == 0xD7 and lb > 0xF9:
+                break
+            try:
+                chars.add(bytes([hb, lb]).decode("gb2312"))
+            except UnicodeDecodeError:
+                pass
+    return chars
+
+
 def codepoint_ok(cp):
     # The BMP only: a catalog's UTF-8 never carries a surrogate, and every CJK block is below U+10000
     return 0 < cp <= 0xFFFF and not 0xD800 <= cp <= 0xDFFF
@@ -148,6 +162,8 @@ def main():
     ap.add_argument("--threshold", type=int, default=100, help="coverage that counts as ink, 0-255 (default 100)")
     ap.add_argument("--po", help="take the characters from a gettext catalog's msgstr lines")
     ap.add_argument("--text", help="take the characters from this text instead")
+    ap.add_argument("--gb2312-level1", action="store_true",
+                    help="also the 3755 common ideographs (GB2312 level 1), so Chinese channel names draw")
     ap.add_argument("--font-name", default="", help="the font and its version, for the generated file's notice")
     ap.add_argument("--copyright", required=True, help="the font's copyright line (SPDX-FileCopyrightText)")
     ap.add_argument("--license", required=True, help="the font's license text, carried in the generated file")
@@ -159,6 +175,8 @@ def main():
     if not args.po and not args.text:
         ap.error("give --po or --text")
     chars = chars_from_po(args.po) if args.po else set(args.text)
+    if args.gb2312_level1:
+        chars |= gb2312_level1()
     chars = sorted(ch for ch in chars if codepoint_ok(ord(ch)) and not ch.isspace())
     if not chars:
         ap.error("no characters to build")

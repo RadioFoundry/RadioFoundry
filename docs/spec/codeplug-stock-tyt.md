@@ -60,8 +60,12 @@ was programmed keeps stock bytes wherever RadioFoundry hasn't written. The open-
    - every zone whose in-use bit is set (7.3.4) and whose record isn't all 0xFF, every contact that decodes (7.3.5), every RX group list whose count is
      set (7.3.6): good when the name is valid and not empty.
 
-   A valid name is Latin-1 text (0x20-0x7E, 0xA0-0xFE) up to the first 0x00 or 0xFF, with only 0x00 or 0xFF after
-   it. A UTF-16 name, as the stock layout stores them, fails: its second byte is 0x00 and printable bytes follow.
+   A valid name is text up to the first 0x00 or 0xFF, with only 0x00 or 0xFF after it: printable ASCII (0x20-0x7E),
+   Latin-1 (0xA0-0xFE) and the font's six glyph bytes (0x80-0x85), one byte each, with a 3-byte UTF-8 sequence
+   (0xE0-0xEF and two continuation bytes) for a Chinese character; Latin-1 and UTF-8 mix freely. A 3-byte lead
+   without its two continuations counts as a Latin-1 byte, so an accented name such as `Café` is valid. A control
+   byte (0x01-0x1F, 0x7F) or a stray continuation byte (0x86-0x9F) is invalid. A UTF-16 name, as the stock layout
+   stores them, fails: its second byte is 0x00 and printable bytes follow.
    The layout is the open-firmware one when there is at least one good record and at most one bad record for every
    four good ones.
 

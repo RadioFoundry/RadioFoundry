@@ -11,6 +11,7 @@
 #include "ui/fmt.h"
 #include "ui/ui_screens.h"
 #include "ui/ui_svc.h"
+#include "ui/i18n.h"
 #include "ui/cjk_font.h"
 
 static int fails;
@@ -484,11 +485,62 @@ static void test_cjk_text(void)
 	str_copy(cut, sizeof cut, "\xE4\xBF\xA1\xE9\x81\x93");
 	CHECK(strcmp(cut, "\xE4\xBF\xA1") == 0);
 }
+
+// The 160 px class in a wide language: a CJK character is 16 px tall, so the class's words move up from the 6x12 font to
+// the 8x16 one and no line clips one; English and Spanish keep the tighter layout in the same build (ui_screens.c,
+// docs/spec/ui.md 2.5)
+static void test_cjk_layout(void)
+{
+	hal_display_t d = disp;
+	d.width = 160; d.height = 120; d.bpp = 16;
+	d.inset_top = d.inset_bottom = d.inset_left = d.inset_right = 0;
+	CHECK(gfx_init(&d));
+	uint8_t zh = lang_find('z' << 8 | 'h');
+	CHECK(lang_built(zh) && lang_wide(zh) && lang_set(zh));
+	ui_layout_init();
+	CHECK(ui_layout.small->h == CJK_FONT_H && ui_layout.tiny->h == CJK_FONT_H);
+	CHECK(ui_layout.small->w == 8 && ui_layout.row_h == CJK_FONT_H + 1);
+	// Home gives up its zone line for the 16 px rows, and its activity region still holds one
+	CHECK(ui_layout.zone_y < 0 && ui_layout.hint_y - ui_layout.activity_y >= CJK_FONT_H);
+	// A list row is one 16 px line and a pixel: 5 rows where the 6x12 font fits 7
+	CHECK((ui_layout.hint_y - ui_layout.strip_h) / ui_layout.row_h == 5);
+	CHECK(lang_set(LANG_ENGLISH));
+	ui_layout_init();
+	CHECK(ui_layout.small->w == 6 && ui_layout.small->h == 12 && ui_layout.tiny->w == 5 && ui_layout.zone_y >= 0);
+	gfx_init(&disp);
+	ui_layout_init();
+}
 #endif
+
+// ui_text_cells and sb_cut_text: a CJK character is two display cells, and a cut never splits one. A Chinese name the
+// talk line must truncate stays whole or drops whole
+static void test_text_cells(void)
+{
+	char out[64];
+	sbuf_t b;
+	// a CJK character is two cells, ASCII and a Latin-1 glyph byte are one
+	CHECK(ui_text_cells("AB") == 2);
+	CHECK(ui_text_cells("中") == 2);
+	CHECK(ui_text_cells("A中B") == 4);
+	CHECK(ui_text_cells("\xB7") == 1);		// a Latin-1 middot: one byte, one cell (a UTF-8 · is two bytes)
+	// a cut leaves a Chinese character whole: room for 3 cells fits "A中" but not "A中B"
+	sb_init(&b, out, sizeof out);
+	sb_cut_text(&b, "A中B", 3);
+	CHECK(strcmp(out, "A中") == 0);
+	// a shorter cut drops a Chinese character whole rather than splitting it
+	sb_init(&b, out, sizeof out);
+	sb_cut_text(&b, "中道", 3);
+	CHECK(strcmp(out, "中") == 0);
+	// no cut when there is room
+	sb_init(&b, out, sizeof out);
+	sb_cut_text(&b, "AB", 4);
+	CHECK(strcmp(out, "AB") == 0);
+}
 
 int main(void)
 {
 	mkdir("out", 0755);
+	test_text_cells();
 
 	char buf[32];
 	sbuf_t b;
@@ -635,6 +687,7 @@ int main(void)
 	render_set("128x64");
 #if CONFIG_LANG_ZH
 	test_cjk_text();
+	test_cjk_layout();
 #endif
 
 	// 240x320 color doesn't fit the frame buffer: gfx refuses it instead of overrunning

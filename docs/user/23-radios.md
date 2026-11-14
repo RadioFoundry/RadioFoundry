@@ -214,13 +214,28 @@ can't, the radio comes back after 2 s and shows "Couldn't switch off / Turn the 
 A 160 x 128 color screen with the top 8 rows hidden: 160 x 120 visible. The screenshots in this
 manual are this size.
 
+### DM-1701 languages
+
+The default image is English and Spanish. Chinese builds beside it: the app region is sectors 3-9, 720 KB, and the
+two languages leave well over 350 KB free with the debug link on
+([the feature matrix](../feature-matrix.md#whole-images)). Pick Chinese as the Radio language when you install with the
+web flasher ([Installing](02-installing.md)), or build it:
+
+```
+make BOARD=dm1701 CONFIG_LANG_ZH=y CONFIG_LANG_DEFAULT_ZH=y
+```
+
+The CI build (`board.toml [ci] extra`) builds the same image. A Chinese line is 16 pixels high, so while the radio is
+in Chinese the screen shows 5 list rows instead of 7 and Home has no zone line; English and Spanish keep the tighter
+layout.
+
 ### What the DM-1701 lacks
 
 - No GPS from the factory. LRRP location requests get "no fix". APRS positions come from a computer or a fixed
   position. If you fit a GPS module yourself, wire its NMEA output to PA10 (STM32 pin 69). The radio finds it at
   start-up ([hardware-dm1701.md 14.2](../spec/hardware-dm1701.md#142-gps-module)).
 - APRS receive needs the squelch open: the radio hears packets strong enough to open the squelch, not weaker ones.
-- No APRS iGate (passing heard packets to APRS-IS): it doesn't fit in the flash yet.
+- No APRS iGate (passing heard packets to APRS-IS) in the default image: `CONFIG_APRS_IGATE` is off by default.
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
 
 ### Verified on the DM-1701

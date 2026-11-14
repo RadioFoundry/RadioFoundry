@@ -14,7 +14,7 @@ import {
 	LIST_SIZE, decodeList, encodeList, DTMF_CONTACTS, decodeDtmf, encodeDtmf, validDtmf, APRS_BASE, APRS_SIZE,
 	decodeAprs, encodeAprs, decodeGeneral, encodeGeneral, VFO, LUCZ,
 } from "./records.js";
-import { parseTone } from "./fields.js";
+import { parseTone, nameBytes } from "./fields.js";
 import { readHeader } from "./iddb.js";
 import { decodeArea, keyValid, KEYS } from "./kv.js";
 
@@ -301,7 +301,7 @@ export function validate(m, { bands = null } = {}) {
 
 	for (const c of m.channels) {
 		if (!c.name) err("channels", c, "name", "no_name");
-		if (c.name.length > LIMITS.name) err("channels", c, "name", "too_long", { max: LIMITS.name });
+		if (nameBytes(c.name) > LIMITS.name) err("channels", c, "name", "too_long", { max: LIMITS.name });
 		for (const f of ["rxHz", "txHz"]) {
 			if (!(c[f] > 0 && c[f] < 1e9)) err("channels", c, f, "bad_freq");
 			else if (bands && !bands.some(([lo, hi]) => c[f] >= lo && c[f] <= hi)) warn("channels", c, f, "out_of_band");
@@ -322,13 +322,13 @@ export function validate(m, { bands = null } = {}) {
 
 	for (const z of m.zones) {
 		if (!z.name) err("zones", z, "name", "no_name");
-		if (z.name.length > LIMITS.name) err("zones", z, "name", "too_long", { max: LIMITS.name });
+		if (nameBytes(z.name) > LIMITS.name) err("zones", z, "name", "too_long", { max: LIMITS.name });
 		if (z.channels.length > LIMITS.zoneChannels) err("zones", z, "channels", "too_many", { max: LIMITS.zoneChannels, count: z.channels.length });
 		if (!z.channels.length) warn("zones", z, "channels", "empty");
 	}
 	for (const c of m.contacts) {
 		if (!c.name) err("contacts", c, "name", "no_name");
-		if (c.name.length > LIMITS.name) err("contacts", c, "name", "too_long", { max: LIMITS.name });
+		if (nameBytes(c.name) > LIMITS.name) err("contacts", c, "name", "too_long", { max: LIMITS.name });
 		if (c.type !== "all" && !(c.id >= 1 && c.id <= 0xFFFFFF)) err("contacts", c, "id", "id_range");
 	}
 	for (const l of m.rxLists) {
@@ -341,8 +341,8 @@ export function validate(m, { bands = null } = {}) {
 	}
 	for (const a of m.aprs) {
 		if (!a.name) err("aprs", a, "name", "no_name");
-		if (a.name.length > LIMITS.aprsName) err("aprs", a, "name", "too_long", { max: LIMITS.aprsName });
-		if (a.comment.length > LIMITS.aprsComment) err("aprs", a, "comment", "too_long", { max: LIMITS.aprsComment });
+		if (nameBytes(a.name) > LIMITS.aprsName) err("aprs", a, "name", "too_long", { max: LIMITS.aprsName });
+		if (nameBytes(a.comment) > LIMITS.aprsComment) err("aprs", a, "comment", "too_long", { max: LIMITS.aprsComment });
 	}
 	return out;
 }

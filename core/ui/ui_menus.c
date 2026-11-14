@@ -12,6 +12,7 @@
 #include "aprs/aprs_fmt.h"
 #include "font.h"
 #include "fmt.h"
+#include "text_edit.h"
 #include "codeplug/codeplug.h"
 #include "config.h"
 #include "hal_time.h"
@@ -2010,12 +2011,15 @@ static bool text_key_fn(const input_event_t *ev)
 	if (dir != 0 && ev->gesture != GESTURE_UP) {
 		// Step the last character through the printable ones (the way in without a keypad); down past the space
 		// deletes it
-		if (text_len == 0)
+		if (text_len == 0) {
 			text_append('A');
-		else if (dir < 0 && text_buf[text_len - 1] == ' ')
+		} else if (dir < 0 && text_buf[text_len - 1] == ' ') {
 			text_buf[--text_len] = 0;
-		else
+		} else if ((uint8_t)text_buf[text_len - 1] < 0x80) {
+			// a single-byte character: step it through the printable range
 			text_buf[text_len - 1] = (char)(' ' + (text_buf[text_len - 1] - ' ' + dir + 95) % 95);
+		}
+		// a multi-byte last character (a Chinese name) is left whole: Up/Down does nothing to it
 		text_key = -1;
 		ui_dirty();
 		return true;
@@ -2032,8 +2036,12 @@ static bool text_key_fn(const input_event_t *ev)
 	}
 	if (((ev->action == ACT_BACK || ev->action == ACT_NAV_LEFT) && ev->gesture == GESTURE_PRESS) ||
 			(ev->action == ACT_QUICK && press)) {	// a slow * deletes too (it doesn't lock here)
-		if (text_len > 0)
-			text_buf[--text_len] = 0;
+		if (text_len > 0) {
+			// Drop the last character whole: three bytes for a Chinese name, one otherwise (a Latin-1
+			// or font glyph byte is one character too). text_edit_backspace() decides the length.
+			text_len = text_edit_backspace(text_buf, text_len);
+			text_buf[text_len] = 0;
+		}
 		text_key = -1;
 		ui_dirty();
 		return true;
@@ -4673,7 +4681,10 @@ static uint16_t about_max;	// the largest first line (from the last draw)
 
 static const char *about_text(void)
 {
-	static char t[400];
+	// sb_str drops what doesn't fit, whole characters and all: the longest version and radio name, a Chinese build's
+	// UTF-8 labels and the authors and licenses from AUTHORS and THIRD_PARTY come to about 440 bytes. 400 cut the last
+	// line short, and the About page shows every line (docs/user/17-settings.md)
+	static char t[512];
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
 	// every line "Label: value" (ui_draw_text_page shows labels dim), each on its own line: "RadioFoundry v26.11" was
