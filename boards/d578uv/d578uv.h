@@ -52,6 +52,7 @@ void d578uv_bus_init(void);
 void d578uv_rf_safe(void);
 // board.chip_reg: the QA4818s (chips 0-3) and the PA5 trims device (chip 4, write-only)
 bool d578uv_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
+int d578uv_chip_reg_bytes(uint8_t chip, uint8_t page, uint8_t reg, uint8_t *out, uint8_t cap);
 void d578uv_outputs_off(void);		// the shift register all off, for the standby (power_d578uv.c)
 bool d578uv_fan_on(void);		// the fan runs (chip 0's GPIO bit 1: transmitting or the PA hot)
 extern const hal_temp_t d578uv_temp;
@@ -163,8 +164,10 @@ void d578uv_gps_power(bool on);
 bool d578uv_modem_init(void);
 bool d578uv_modem_booting(void);		// board_t.boot_busy
 uint8_t d578uv_modem_boot_result(void);		// sct_boot_result_t
+bool d578uv_modem_booted(void);			// booted and running its DMR firmware
 const char *d578uv_modem_codec(void);		// board_t.modem_codec
 bool d578uv_modem_field(uint8_t type, uint8_t id, uint32_t *val, bool write);	// board.chip_reg chip 5
+int d578uv_modem_field_bytes(uint8_t type, uint8_t id, const uint8_t *data, uint8_t n, uint8_t *out, uint8_t cap);
 // Side A's carrier in DMR, each status poll: tells the baseband when one comes up and when it goes (CARRIER_READY)
 void d578uv_modem_carrier(bool carrier);
 // The baseband has DMR sync (sct_dmr_synced): a DMR signal is heard

@@ -127,6 +127,7 @@ const board_t board = {
 	.text_star_space = true,
 	.radio = &d578uv_radio,
 	.chip_reg = d578uv_chip_reg,
+	.chip_reg_bytes = d578uv_chip_reg_bytes,
 #if CONFIG_DUAL_WATCH
 	.rx2 = &d578uv_rx2,
 #endif

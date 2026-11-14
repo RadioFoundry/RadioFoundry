@@ -111,7 +111,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x1D` | WATCHDOG | operation u8 + arguments (3.21); `CONFIG_WATCHDOG` builds, else status 4 | none (3.21) |
 | `0x1E` | RX2 | operation u8 + arguments (3.22) | flags, or none (3.22) |
 | `0x1F` | IDDB | DMR ID u32 (3.23); `CONFIG_DMR` builds, else status 4 | format u8, records u32, found u8, text (3.23) |
-| `0x20` | CHIP_REG | chip u8, page u8, register u8 [+ value u32]; or chip `0xFF`, address u32 [+ value u32] (3.24) | the register's value u32 (3.24) |
+| `0x20` | CHIP_REG | chip u8, page u8, register u8 [+ value u32 or length u8]; or chip `0xFF`, address u32 [+ value u32] (3.24) | the register's value u32, or its bytes (3.24) |
 | `0x21` | HWOPT | operation u8 + arguments (3.25) | the options as key=value text, or none (3.25) |
 
 ### 3.1 VERSION
@@ -812,12 +812,17 @@ that register overwrites it.
 |---|---|
 | chip u8, page u8, register u8 | the value u32 |
 | chip u8, page u8, register u8, value u32 | the value read back u32 (a write-only register: the value written) |
+| chip u8, page u8, register u8, length u8 (1-32) | the register's first bytes as the chip answers them, at most length (a field longer than 32 bits) |
 | `0xFF`, address u32 | the value u32 |
 | `0xFF`, address u32, value u32 | the value read back u32 |
 
 Chips below `0xFF` are the radio's RF chips, through the board's `board.chip_reg`. The chip and page numbers are the
 board's, listed on its hardware page. A chip, page, register or value the board doesn't offer answers bad argument (2);
-a board without the hook answers unavailable (4).
+a board without the hook answers unavailable (4). The read with a length goes through the board's
+`board.chip_reg_bytes`, for fields longer than 32 bits; a board without that hook answers it unavailable (4), and
+firmware from before it answers bad argument (2). It reads only. On the AT-D578UV, chip 5 (the baseband, page = the
+packet TYPE, register = the field ID) answers its identity queries this way: `0x30` the product, `0x31` the hardware
+version, `0x32` the software version (text), `0x33` the customer ID and serial number (BCD).
 
 Chip `0xFF` is the SoC: a 32-bit register at a 32-bit address, through the platform's `hal_system_t.reg`. Only aligned
 words inside the platform's register windows; any other address is refused (7), as READ_MEM refuses one. A write is
@@ -831,7 +836,8 @@ hook answers unavailable (4).
 | GD32F30x, AT32F43x (`platform/cortexm/sys_windows.h`) | READ_MEM's register windows (3.10: NVIC, SCB) |
 | STM32F4 (`platform/stm32f4/mem_window.h`) | the peripheral buses `0x40000000-0x5FFFFFFF`, the FSMC control registers `0xA0000000-0xA0000FFF` and the Cortex-M4 private peripheral bus `0xE0000000-0xE00FFFFF` (SCB, NVIC, SysTick, DWT, DBGMCU). The access runs with bus faults ignored: a reserved address that faults is refused (7) |
 
-Writes are logged. `rfoundry_debug.py reg CHIP REG [VALUE] [--page N]`, or `reg soc ADDR [VALUE]` for the SoC.
+Writes are logged. `rfoundry_debug.py reg CHIP REG [VALUE] [--page N] [--len N]`, or `reg soc ADDR [VALUE]` for the
+SoC: `reg 5 0x32 --page 3 --len 16` reads the AT-D578UV baseband's software version.
 
 ### 3.25 HWOPT
 

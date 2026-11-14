@@ -1750,22 +1750,22 @@ static void test_field_access(void)
 
 	CHECK(sct_dmr_modem.start(&cfg, on_event, NULL));
 	nsent = 0;
-	CHECK(sct_dmr_field_poll(d, &n) == 0);
+	CHECK(sct_dmr_field_poll(d, sizeof(d), &n) == 0);
 	v = 8;
 	CHECK(sct_dmr_field_begin(SCT_TYPE_CONTROL, 0x2F, &v, 1, false));
 	CHECK(nsent == 1 && sent[0].pkt[5] == SCT_TYPE_CONTROL && sent[0].pkt[6] == 0x2F && sent[0].pkt[7] == 8);
-	CHECK(sct_dmr_field_poll(d, &n) == 0);
+	CHECK(sct_dmr_field_poll(d, sizeof(d), &n) == 0);
 	const uint8_t ok[] = { 0x84, 0xA9, 0x61, 0x00, 0x02, 0x00, 0x2F, 0x00 };
 	sct_dmr_packet(ok, sizeof(ok), 10);
-	CHECK(sct_dmr_field_poll(d, &n) == 1);
-	CHECK(sct_dmr_field_poll(d, &n) == 0);
+	CHECK(sct_dmr_field_poll(d, sizeof(d), &n) == 1);
+	CHECK(sct_dmr_field_poll(d, sizeof(d), &n) == 0);
 	// Refused, and not counted against the engine
 	sct_dmr_get_stats(&st);
 	uint32_t naks = st.naks;
 	CHECK(sct_dmr_field_begin(SCT_TYPE_CONTROL, 0x2F, &v, 1, false));
 	const uint8_t no[] = { 0x84, 0xA9, 0x61, 0x00, 0x02, 0x00, 0x2F, SCT_ACK_UNKNOWN };
 	sct_dmr_packet(no, sizeof(no), 20);
-	CHECK(sct_dmr_field_poll(d, &n) == -1);
+	CHECK(sct_dmr_field_poll(d, sizeof(d), &n) == -1);
 	sct_dmr_get_stats(&st);
 	CHECK(st.naks == naks);
 	// A query: the read bit on, the ID alone; the answer's data comes back
@@ -1774,7 +1774,17 @@ static void test_field_access(void)
 	CHECK(nsent == 1 && sent[0].pkt[5] == (SCT_TYPE_DMR | SCT_TYPE_READ) && sent[0].pkt[4] == 1 && sent[0].pkt[6] == SCT_F_DMR_CC);
 	const uint8_t cc[] = { 0x84, 0xA9, 0x61, 0x00, 0x02, 0x25, SCT_F_DMR_CC, 0x07 };
 	sct_dmr_packet(cc, sizeof(cc), 30);
-	CHECK(sct_dmr_field_poll(d, &n) == 1 && n == 1 && d[0] == 7);
+	CHECK(sct_dmr_field_poll(d, sizeof(d), &n) == 1 && n == 1 && d[0] == 7);
+	// A version query (the vendor script's TYPE 3 with the read bit): its text comes back whole, or cut to cap
+	uint8_t txt[SCT_DMR_FIELD_MAX];
+	static const uint8_t ver[] = { 0x84, 0xA9, 0x61, 0x00, 0x0C, 0x23, SCT_F_Q_SW_VER, 0x0A,
+				       'V', '2', '.', '0', '1', '.', '0', '1', 'P', 'F' };
+	CHECK(sct_dmr_field_begin(0x03, SCT_F_Q_SW_VER, NULL, 0, true));
+	sct_dmr_packet(ver, sizeof(ver), 40);
+	CHECK(sct_dmr_field_poll(txt, sizeof(txt), &n) == 1 && n == 10 && memcmp(txt, "V2.01.01PF", 10) == 0);
+	CHECK(sct_dmr_field_begin(0x03, SCT_F_Q_SW_VER, NULL, 0, true));
+	sct_dmr_packet(ver, sizeof(ver), 50);
+	CHECK(sct_dmr_field_poll(d, sizeof(d), &n) == 1 && n == 4 && memcmp(d, "V2.0", 4) == 0);
 	// A bench change of an option byte goes out at once and stays for the next configure
 	nsent = 0;
 	v = 0x82;

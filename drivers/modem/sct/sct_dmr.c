@@ -90,7 +90,7 @@ static struct {
 		uint8_t id;
 		bool read;
 		uint8_t n;
-		uint8_t data[4];
+		uint8_t data[SCT_DMR_FIELD_MAX];
 	} field;
 
 	sct_dmr_stats_t st;
@@ -1265,15 +1265,15 @@ bool sct_dmr_field_begin(uint8_t type, uint8_t id, const uint8_t *data, uint8_t 
 	return ok;
 }
 
-int sct_dmr_field_poll(uint8_t out[4], uint8_t *n)
+int sct_dmr_field_poll(uint8_t *out, uint8_t cap, uint8_t *n)
 {
 	int r = 0;
 
 	lock();
 	if (s.field.state == FIELD_DONE || s.field.state == FIELD_REFUSED) {
 		r = s.field.state == FIELD_DONE ? 1 : -1;
-		memcpy(out, s.field.data, sizeof(s.field.data));
-		*n = s.field.n;
+		*n = s.field.n < cap ? s.field.n : cap;
+		memcpy(out, s.field.data, *n);
 		s.field.state = FIELD_IDLE;
 	}
 	unlock();

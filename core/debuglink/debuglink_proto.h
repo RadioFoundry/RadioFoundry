@@ -46,6 +46,8 @@ enum {
 // DL_CMD_CHIP_REG's chip number for the SoC's own registers (board.system->reg): an address u32 follows, not a page and
 // register. The board's RF chips are numbered below it
 #define DL_CHIP_SOC		0xFFu
+// DL_CMD_CHIP_REG's longest read with a length (chip, page, register, length): a field longer than 32 bits
+#define DL_CHIP_REG_BYTES_MAX	32u
 
 // DL_CMD_RX2 operations (first payload byte; docs/spec/debuglink.md 3.22). The token is u32 little endian
 enum {

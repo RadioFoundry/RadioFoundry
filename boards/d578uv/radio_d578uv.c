@@ -2476,6 +2476,20 @@ bool d578uv_chip_reg(uint8_t chip, uint8_t pg, uint8_t reg, uint32_t *val, bool 
 	return true;
 }
 
+// board.chip_reg_bytes (debuglink.md 3.24): chip 5's baseband fields of any length, such as the identity queries'
+// text (hardware-d578uv.md 4.4)
+int d578uv_chip_reg_bytes(uint8_t chip, uint8_t pg, uint8_t reg, uint8_t *out, uint8_t cap)
+{
+#if CONFIG_DMR
+	if (chip == 5) {
+		return d578uv_modem_field_bytes(pg, reg, NULL, 0, out, cap);
+	}
+#else
+	(void)chip, (void)pg, (void)reg, (void)out, (void)cap;
+#endif
+	return -1;
+}
+
 void d578uv_rf_safe(void)
 {
 #if CONFIG_DMR

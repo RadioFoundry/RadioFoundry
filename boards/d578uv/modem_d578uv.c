@@ -392,39 +392,50 @@ static void modem_task(void *arg)
 	}
 }
 
-// board.chip_reg's baseband fields (hardware-d578uv.md 4.4): a field of up to 4 bytes, MSB first
-bool d578uv_modem_field(uint8_t type, uint8_t id, uint32_t *val, bool write)
+// The baseband fields of board.chip_reg and board.chip_reg_bytes (hardware-d578uv.md 4.4): n > 0 sends data as the
+// field (its length the field's) and returns 0 once taken; n == 0 queries it and returns the bytes of the answer
+// copied to out (at most cap and SCT_DMR_FIELD_MAX). -1: not booted, a length the field doesn't have, refused or no answer in FIELD_WAIT_MS
+int d578uv_modem_field_bytes(uint8_t type, uint8_t id, const uint8_t *data, uint8_t n, uint8_t *out, uint8_t cap)
 {
-	int len = sct_field_len(id);
-	uint8_t d[4], n = 0;
+	uint8_t got = 0, scratch;
 
-	if (!booted || (write && (len < 0 || len > 4)))
-		return false;
-	if (write) {
-		if (len < 4 && (*val >> (8 * len)) != 0)
-			return false;
-		for (int i = 0; i < len; i++)
-			d[i] = (uint8_t)(*val >> (8 * (len - 1 - i)));
-	}
-	if (!sct_dmr_field_begin(type, id, d, write ? (uint8_t)len : 0, !write))
-		return false;
+	if (!booted || (n > 0 && sct_field_len(id) != n))
+		return -1;
+	if (!sct_dmr_field_begin(type, id, data, n, n == 0))
+		return -1;
 	for (int t = 0; t < FIELD_WAIT_MS; t += 2) {
-		int r = sct_dmr_field_poll(d, &n);
+		int r = n ? sct_dmr_field_poll(&scratch, 0, &got) : sct_dmr_field_poll(out, cap, &got);
 
 		if (r < 0)
-			return false;
-		if (r > 0) {
-			if (!write) {
-				*val = 0;
-				for (uint8_t i = 0; i < n; i++)
-					*val = (*val << 8) | d[i];
-			}
-			return true;
-		}
+			return -1;
+		if (r > 0)
+			return n ? 0 : got;
 		vTaskDelay(pdMS_TO_TICKS(2));
 	}
 	sct_dmr_field_cancel();
-	return false;
+	return -1;
+}
+
+// board.chip_reg's baseband fields: a field of up to 4 bytes, MSB first
+bool d578uv_modem_field(uint8_t type, uint8_t id, uint32_t *val, bool write)
+{
+	int len = sct_field_len(id);
+	uint8_t d[4];
+
+	if (write) {
+		if (len < 0 || len > 4 || (len < 4 && (*val >> (8 * len)) != 0))
+			return false;
+		for (int i = 0; i < len; i++)
+			d[i] = (uint8_t)(*val >> (8 * (len - 1 - i)));
+		return d578uv_modem_field_bytes(type, id, d, (uint8_t)len, NULL, 0) == 0;
+	}
+	int r = d578uv_modem_field_bytes(type, id, NULL, 0, d, sizeof(d));
+	if (r < 0)
+		return false;
+	*val = 0;
+	for (int i = 0; i < r; i++)
+		*val = (*val << 8) | d[i];
+	return true;
 }
 
 bool d578uv_modem_init(void)
@@ -463,6 +474,11 @@ const char *d578uv_modem_codec(void)
 bool d578uv_modem_booting(void)
 {
 	return !boot_done;
+}
+
+bool d578uv_modem_booted(void)
+{
+	return booted;
 }
 
 uint8_t d578uv_modem_boot_result(void)

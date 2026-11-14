@@ -635,6 +635,10 @@ class DebugLink:
         req = struct.pack("<BBB", chip, page, reg) + (b"" if value is None else struct.pack("<I", value))
         return struct.unpack_from("<I", self.request(CHIP_REG, req)[1])[0]
 
+    def chip_reg_bytes(self, chip, reg, length, page=0):
+        """An RF chip field longer than 32 bits: its first `length` bytes (1-32) as the chip answers them"""
+        return self.request(CHIP_REG, bytes([chip, page, reg, length]))[1]
+
     def soc_reg(self, addr, value=None):
         """A 32-bit SoC register inside the platform's register windows: writes value when given, returns the read-back
         (a read has the register's side effects)"""
@@ -2260,6 +2264,8 @@ def main(argv=None):
     p.add_argument("reg", type=lambda x: int(x, 0))
     p.add_argument("value", nargs="?", type=lambda x: int(x, 0))
     p.add_argument("--page", type=lambda x: int(x, 0), default=0)
+    p.add_argument("--len", type=int, help="read this many bytes (1-32) of a longer field, e.g. on the AT-D578UV "
+                   "reg 5 0x32 --page 3 --len 16 for the baseband's software version")
     p = sub.add_parser("split", help="split duplex: view, BS framing experiment variant (docs/spec/split-duplex.md 10.1)")
     p.add_argument("op", choices=["view", "variant"])
     p.add_argument("args", nargs="*", help="variant: N [REG=VAL ...] (hex or decimal)")
@@ -2341,6 +2347,10 @@ def main(argv=None):
                 if a.chip == CHIP_SOC:
                     v = link.soc_reg(a.reg, a.value)
                     print(f"soc 0x{a.reg:08X} = 0x{v:08X}")
+                elif a.len:
+                    d = link.chip_reg_bytes(a.chip, a.reg, a.len, a.page)
+                    text = "".join(chr(c) if 0x20 <= c < 0x7F else "." for c in d)
+                    print(f"chip {a.chip} page {a.page} 0x{a.reg:02X} = {d.hex() or '-'} {text!r}")
                 else:
                     v = link.chip_reg(a.chip, a.reg, a.value, a.page)
                     print(f"chip {a.chip} page {a.page} 0x{a.reg:02X} = 0x{v:04X}")

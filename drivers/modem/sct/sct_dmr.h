@@ -139,10 +139,11 @@ bool sct_dmr_synced(void);
 
 // Bench access for the debug link's CHIP_REG (docs/spec/modem-sct.md 8): one field to the chip in a packet of TYPE
 // `type`, or a query for it (read: the data is ignored). sct_dmr_field_poll: 0 no answer yet, 1 answered (a query's
-// data in out, at most 4 bytes), -1 refused. The caller waits between polls and cancels if the answer never comes.
-// A field the engine also sends is overwritten at its next set-up
+// data in out, at most cap bytes of the first SCT_DMR_FIELD_MAX; *n the bytes copied), -1 refused. The caller waits
+// between polls and cancels if the answer never comes. A field the engine also sends is overwritten at its next set-up
+#define SCT_DMR_FIELD_MAX	16	// the longest answer kept: the version queries' text (Q_SW_VER "V2.01.01PF")
 bool sct_dmr_field_begin(uint8_t type, uint8_t id, const uint8_t *data, uint8_t n, bool read);
-int sct_dmr_field_poll(uint8_t out[4], uint8_t *n);
+int sct_dmr_field_poll(uint8_t *out, uint8_t cap, uint8_t *n);
 void sct_dmr_field_cancel(void);
 // A byte of DMR_CALL_OPTION (five bytes, too long for CHIP_REG's value): read it, or change it and send the field at
 // once when in receive. Lasts until the engine's next init

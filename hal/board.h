@@ -162,6 +162,10 @@ typedef struct {
 	// Writes val when write, then sets *val to the register as read back (a write-only register: the value written).
 	// False for a chip, page or register it doesn't offer. NULL: none
 	bool (*chip_reg)(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
+	// Optional: CHIP_REG's read with a length, for the same chips' fields longer than 32 bits, such as a baseband's
+	// version text: reads the register into out, at most cap bytes, and returns the bytes read. -1 for a chip, page
+	// or register it doesn't offer, or no answer. May wait for the chip (up to a few hundred ms). NULL: none
+	int (*chip_reg_bytes)(uint8_t chip, uint8_t page, uint8_t reg, uint8_t *out, uint8_t cap);
 
 	// Optional: hardware options a person states because software can't read them (hal_hwopt.h): Settings >
 	// Advanced > Hardware and the debug link's HWOPT. NULL / 0 = none. Only in a build whose board.mk says
