@@ -2499,6 +2499,27 @@ static void test_supl(void)
 	a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, TG_A);
 	rx(&ms, 1, &a);
 
+	// A status offers it too (table 6.57): SUPED_SV above the status's 5 bits, SUPED_VAL above its 2; the upload
+	// when SUPLI asks (C_AHOY Service_Kind status), then the status goes on
+	nsent = 0;
+	CHECK(t3_ms_status(&ms, T, CALLER, false, 37), "status starts");
+	q = &sent[0].u.rand;
+	CHECK(sent_rand(&ms) && q->kind == T3_SK_STATUS && q->options == (0x20 | (37 >> 2)) &&
+	      q->extra == ((1u << 2) | (37 & 3)), "status with supplementary data: options 0x%02x extra 0x%x", q->options,
+	      q->extra);
+	h = ahoy(T3_SK_STATUS, false, OWN, T3_ID_SUPLI);
+	h.u.ahoy.blocks = 1;
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup == 3 && nup_blocks == 2 && t3_udt_parse(up_hdr, &u) && u.sf && u.dst == T3_ID_SUPLI &&
+	      memcmp(up_blocks, gps, sizeof gps) == 0 && ms.status_rx.count == 0, "status's supplementary upload: %d",
+	      nup);
+	h = status_ahoy(37, false, CALLER, OWN);
+	rx(&ms, 1, &h);
+	a = ack(T3_OP_C_ACKD, T3_RC_MS_ACCEPTED, OWN, CALLER);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_DONE && ms.own_status == 37, "status delivered");
+
 	// None configured: not offered, and a C_AHOY from SUPLI gets nothing
 	cfg.supl_len = 0;
 	nsent = 0;
@@ -2508,7 +2529,7 @@ static void test_supl(void)
 	h = ahoy(T3_SK_IND_UDT, false, OWN, T3_ID_SUPLI);
 	rx(&ms, 1, &h);
 	frames(&ms, 2);
-	CHECK(nup == 2 && nsent == 1, "nothing to upload");
+	CHECK(nup == 3 && nsent == 1, "nothing to upload");
 	a = ack(T3_OP_C_ACKD, T3_RC_MS_ACCEPTED, OWN, CALLER);
 	rx(&ms, 1, &a);
 
@@ -2566,6 +2587,15 @@ static void test_supl(void)
 	T += T3_SUPL_HOLD_MS + 60;
 	udt_down(&ms, 1, &m, (const uint8_t *)"later", 5, false);
 	CHECK(ms.supl_rx.count == 3 && ms.supl_rx.src == 0, "too late: unnamed");
+	// A status to the radio after it names the sender (6.6.6.1.1.2 c, then 6.6.6.1.1.4)
+	frames(&ms, 2);
+	udt_down(&ms, 1, &d, gps + 3, 2, false);
+	frames(&ms, 1);
+	t3_csbk_t s = status_ahoy(9, false, OWN, CALLER);
+	rx(&ms, 1, &s);
+	CHECK(ms.supl_rx.count == 4 && ms.supl_rx.src == CALLER && ms.status_rx.count == 1,
+	      "sender named by the status: %06x count %u status %u", (unsigned)ms.supl_rx.src,
+	      (unsigned)ms.supl_rx.count, (unsigned)ms.status_rx.count);
 }
 
 // Calls through a dialling gateway (6.6.2.2.3, table 6.41; 6.6.4.2, table 6.54): the request goes to the gateway with

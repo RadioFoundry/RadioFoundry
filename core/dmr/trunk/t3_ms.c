@@ -699,7 +699,8 @@ static void start_access(t3_ms_t *ms, uint32_t now, t3_svc_t svc, uint32_t dst, 
 	ms->ax.ip = 0;
 	ms->ax.ip_inform = false;
 	ms->ax.supl = ms->cfg->supl_len > 0 && ms->cfg->supl_data != NULL &&
-		      (svc == T3_SVC_GROUP_VOICE || svc == T3_SVC_IND_VOICE || svc == T3_SVC_PDATA || svc == T3_SVC_SDATA);
+		      (svc == T3_SVC_GROUP_VOICE || svc == T3_SVC_IND_VOICE || svc == T3_SVC_PDATA || svc == T3_SVC_SDATA ||
+		       svc == T3_SVC_STATUS);
 	// The first slot the TSCC uses; a dedicated TSCC on both slots is reached on TS1
 	ms->ax.slot = (ms->tscc_slots & 1u) || ms->tscc_slots == 0 ? 1 : 2;
 	ms->ax.frames = 0;
@@ -837,8 +838,8 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 		q->extra = 0;
 		break;
 	case T3_SVC_STATUS:
-		// Tables 6.57, 6.58: G/I, SUPED_SV 0 and the status's 5 most significant bits; its 2 least significant
-		// where a registration has Appended_UDT_Short_Data, SUPED_VAL 0 above them
+		// Tables 6.57, 6.58: G/I, SUPED_SV and the status's 5 most significant bits; its 2 least significant where a
+		// registration has Appended_UDT_Short_Data, SUPED_VAL above them
 		q->kind = T3_SK_STATUS;
 		q->options = (uint8_t)((ms->ax.group ? 0x40u : 0u) | ((ms->ax.status >> 2) & 0x1Fu));
 		q->extra = (uint8_t)(ms->ax.status & 3u);
@@ -854,8 +855,8 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 #endif
 	if (ms->ax.supl) {
 		// SUPED_SV, and SUPED_VAL the blocks it needs less one, above the service's 2 low bits (tables 6.40, 6.50,
-		// 6.55)
-		q->options |= T3_SO_SUPPL_DATA;
+		// 6.55, 6.57); a status has SUPED_SV above its 5 bits
+		q->options |= ms->ax.svc == T3_SVC_STATUS ? T3_SO_STATUS_SUPPL : T3_SO_SUPPL_DATA;
 		q->extra = (uint8_t)((q->extra & 3u) | ((udt_blocks(ms->cfg->supl_len) - 1u) & 3u) << 2);
 	}
 	t3_csbk_build(&p, T3_CRC_MASK_CSBK, out);
@@ -1061,6 +1062,7 @@ static bool on_status(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *
 	ms->status_rx.group = h->group;
 	ms->status_rx.value = v;
 	ms->status_rx.ms = now != 0 ? now : 1;
+	supl_sender(ms, now, h->src, h->dst, h->group);	// supplementary data from SUPLI came first (6.4.13.2)
 	if (to_me && may_send(ms)) {
 		if (v == T3_STATUS_POLL) {
 			answer_info(ms, slot, false, T3_RC_MS_POLL_ACCEPTED, ms->own_status, h->src, false);

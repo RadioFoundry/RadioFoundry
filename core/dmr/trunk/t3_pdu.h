@@ -165,6 +165,7 @@ t3_ack_class_t t3_ack_class(uint8_t reason);
 #define T3_DIV_ALL		0x0F
 #define T3_SO_PRIVACY		0x20
 #define T3_SO_SUPPL_DATA	0x10
+#define T3_SO_STATUS_SUPPL	0x20	// a status's SUPED_SV, above its 5 most significant bits (tables 6.57, 6.58)
 #define T3_SO_BROADCAST		0x08
 #define T3_SO_PRIORITY_MASK	0x03
 // Registration Service_Options (table 7.55): bit 4 IP_Inform, 3-1 PowerSave_RQ, 0 Reg_Dereg (1 register)

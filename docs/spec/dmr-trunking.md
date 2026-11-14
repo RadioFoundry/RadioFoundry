@@ -405,9 +405,9 @@ as a C_UDTHU to that caller in the slots that follow, cut to the blocks asked fo
 another format than POL_FMT, the radio answers C_NACKU MSNot_Supported.
 
 **Supplementary user data (6.4.13).** Data whose format and size are prearranged with the system (a position, for
-example) can ride along with a call set-up. With `t3_cfg_t.supl_len` > 0 every voice, packet data and short data
-request offers it: Service_Options SUPED_SV 1 and SUPED_VAL the blocks less one, above the service's two low bits
-(tables 6.40, 6.50, 6.55).
+example) can ride along with a call set-up. With `t3_cfg_t.supl_len` > 0 every voice, packet data, short data and
+status request offers it: Service_Options SUPED_SV 1 and SUPED_VAL the blocks less one, above the service's two low
+bits (tables 6.40, 6.50, 6.55, 6.57). A status's SUPED_SV is bit 5, above the status's five most significant bits.
 
 | Step | The radio |
 |---|---|
@@ -415,7 +415,7 @@ request offers it: Service_Options SUPED_SV 1 and SUPED_VAL the blocks less one,
 | no C_AHOY from SUPLI | nothing: the TSCC may go on without it (6.4.13.0 a) |
 | C_UDTHD from SUPLI, SF 1, to the radio | kept in `supl_rx`, answered C_ACKU Message_Accepted to SUPLI when A is set (6.4.13.2) |
 | the same to a talkgroup the radio listens to | kept, not answered |
-| the grant or user data that follows to the same destination, within `T3_SUPL_HOLD_MS` (10 s) | names the sender: `supl_rx.src` (0 until then) |
+| the grant, user data or status that follows to the same destination, within `T3_SUPL_HOLD_MS` (10 s) | names the sender: `supl_rx.src` (0 until then) |
 
 All of it is built with `CONFIG_DMR_TRUNK_SUPL` ([build-config.md](../build-config.md)). Without it the radio offers
 none, and a download from SUPLI is taken off the air unanswered (it is never short data).
