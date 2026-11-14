@@ -1529,6 +1529,9 @@ static void tx_ptt_released(void)
 {
 	switch (s.tx) {
 	case TX_ACCESS:
+		if (s.data_active)
+			break;	// a burst list waiting for its slot, not PTT's: it goes on
+		/* fall through */
 	case TX_PERMIT:
 	case TX_DENIED:
 		s.tx = TX_NONE;
@@ -2069,12 +2072,18 @@ bool dmr_call_data_tx(const dmr_data_source_t *src)
 	s.data_staged = false;
 	s.tx_since = s.now;
 	s.wake_tries = 0;
+	s.view.tx_released = false;	// a new transmission: a wake-up isn't the last call's tail
 	s.dirty = true;
 	TR_TX(src->tag, false, src->count, 0);
-	if (s.cfg.rmo && !repeater_up(s.now))
+	if (s.cfg.rmo && !repeater_up(s.now)) {
 		tx_wakeup(s.now);
-	else
+	} else if (s.cfg.rmo) {
+		s.slot_waiting = false;
+		s.tx = TX_ACCESS;	// through the repeater only once the modem has settled the slot numbering (slot_unverified)
+		tx_access(s.now);
+	} else {
 		tx_start_data(s.now);
+	}
 	return true;
 }
 

@@ -1083,6 +1083,95 @@ static void test_slot_verified(void)
 	modem_under_test = &sim_modem;
 }
 
+// A burst list of two data bursts (dmr_call_data_tx)
+static int dlist_left, dlist_err;	// dlist_err: the list's result
+static unsigned dlist_done;
+static bool dlist_next(dmr_tx_burst_t *out, void *ctx)
+{
+	(void)ctx;
+	if (dlist_left <= 0)
+		return false;
+	dlist_left--;
+	memset(out, 0, sizeof(*out));
+	out->kind = DMR_BURST_RATE_12_DATA;
+	out->sync_override = DMR_SYNC_NONE;
+	out->len = 12;
+	return true;
+}
+static void dlist_end(uint8_t err, void *ctx)
+{
+	(void)ctx;
+	dlist_err = err;
+	dlist_done++;
+}
+static bool dlist_send(void)
+{
+	dmr_data_source_t list = { .next = dlist_next, .done = dlist_end, .count = 2, .tag = "test" };
+	dlist_left = 2;
+	dlist_err = -1;
+	return dmr_call_data_tx(&list);
+}
+
+// A burst list through a repeater that is up waits for the modem's slot numbering as voice does; PTT pressed and let
+// go meanwhile doesn't drop it; never settled, it is dropped (its owner told, nothing keyed). A list that wakes the
+// repeater is a transmission of its own, not the last call's tail (dmr.tx_released)
+static void test_data_slot_verified(void)
+{
+	dmr_call_config_t c = base_cfg();
+	hal_dmr_modem_t m = sim_modem;
+
+	c.rmo = true;
+	m.slot_verified = sim_slot_verified;
+	modem_under_test = &m;
+	setup(&c);
+
+	slot_ok = false;
+	repeater_outbound_keepalive();
+	run_ms(20);
+	unsigned begins = sim.tx_begins, done = dlist_done;
+	CHECK(dlist_send());
+	run_ms(200);
+	CHECK(sim.tx_begins == begins && dlist_done == done && dmr_call_data_busy());
+	dmr_call_ptt(true);	// pressed and let go while the list waits: the list goes on
+	run_ms(20);
+	dmr_call_ptt(false);
+	run_ms(20);
+	CHECK(dmr_call_data_busy() && dlist_done == done);
+	repeater_outbound_keepalive();
+	slot_ok = true;
+	run_ms(300);
+	CHECK(sim.tx_begins == begins + 1 && sim.last_timing == DMR_TIMING_ALIGNED);
+	CHECK(dlist_done == done + 1 && dlist_err == DMR_TX_OK && !dmr_call_data_busy());
+
+	// never settled: dropped after DMR_CALL_SLOT_VERIFY_MS, nothing keyed
+	slot_ok = false;
+	begins = sim.tx_begins;
+	CHECK(dlist_send());
+	for (uint32_t t = 0; t < DMR_CALL_SLOT_VERIFY_MS + 200; t += 100) {
+		repeater_outbound_keepalive();
+		run_ms(100);
+	}
+	CHECK(sim.tx_begins == begins && dlist_done == done + 2 && dlist_err == DMR_TX_ERR_NO_REPEATER);
+	CHECK(!dmr_call_data_busy() && V()->phase == DMR_CALL_PHASE_IDLE);
+
+	// a voice call's release, then a list that wakes the repeater: not shown as the call's tail
+	slot_ok = true;
+	repeater_outbound_keepalive();
+	dmr_call_ptt(true);
+	run_ms(300);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->tx_released);
+	sim.repeater = false;
+	run_ms(DMR_CALL_REPEATER_HOLD_MS + 500);
+	CHECK(!V()->repeater_up && dlist_send());
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DATA && !V()->tx_released);
+	run_ms(4000);
+
+	modem_under_test = &sim_modem;
+}
+
 static void test_wake_listen(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -2789,6 +2878,7 @@ int main(void)
 	test_rmo_wakeup();
 	test_wake_listen();
 	test_slot_verified();
+	test_data_slot_verified();
 	test_rmo_air_slot_alignment();
 	test_rmo_hang_end();
 	test_rx_call();
