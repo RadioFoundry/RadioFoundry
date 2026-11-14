@@ -22,6 +22,10 @@ export const ID_MAX = 16776415;
 export const KEYS = [
 	{ name: "arsServer", key: 0x0001, type: "id", size: 4, min: 0, max: ID_MAX },
 	{ name: "ipGateway", key: 0x0002, type: "id", size: 4, min: 0, max: ID_MAX },
+	{ name: "callEndTone", key: 0x0003, type: "bool", size: 1, min: 0, max: 1 },
+	{ name: "totWarnTone", key: 0x0004, type: "bool", size: 1, min: 0, max: 1 },
+	{ name: "batteryTone", key: 0x0005, type: "bool", size: 1, min: 0, max: 1 },
+	{ name: "txDenyTone", key: 0x0006, type: "bool", size: 1, min: 0, max: 1 },
 ];
 export const KEY = Object.fromEntries(KEYS.map((k) => [k.name, k.key]));
 const SCALAR_MAX = 8;	// a scalar's widest value

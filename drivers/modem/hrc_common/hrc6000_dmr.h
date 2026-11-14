@@ -135,6 +135,7 @@ typedef struct {
 	uint32_t rx_stale;	// class 0 reports repeating the number of the burst just taken on that slot
 	uint32_t rx_seq_fill;	// voice taken by sequence (the report had no usable number)
 	uint32_t rx_seq_jump;	// voice whose number skipped ahead of the sequence (a burst missed)
+	uint32_t rx_seq_fix;	// voice whose number disagreed with the frames counted since the last burst: renumbered
 	uint32_t rx_lone;	// voice sync reports (class 1) with no header or superframe on their slot and no burst B
 				// after them: noise, the other slot's echo of A. Dropped (never delivered)
 	uint32_t rx_a_cc;	// voice reports whose 0x52 CC was replaced: by the CC filter's (the chip deframes only that
@@ -198,6 +199,7 @@ typedef struct {
 	uint8_t last;		// voice number taken last (HRC6000_INDEX_UNKNOWN after a header)
 	uint8_t next;		// the one expected
 	uint8_t cc;		// color code of the superframe (from its header / bursts B-F): burst A has none on air
+	uint16_t sum;		// checksum of the voice taken last (tells a stale report from a new burst)
 	uint32_t tick;		// when
 } hrc6000_dmr_vstate_t;
 

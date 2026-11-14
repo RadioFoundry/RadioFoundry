@@ -14,6 +14,7 @@
 #include "radio/tx_limit.h"
 #include "radio/pa_keyup.h"
 #include "radio/radio_cwid.h"
+#include "radio/radio_keys.h"
 #include "hal_time.h"
 #include "hal_dtmf.h"
 #include "settings/settings.h"
@@ -34,6 +35,7 @@
 #define DL_SETTING_ENC_OPTIONS	31u	// SETTING id of the vocoder's encode options (VOCODER_OPT_*)
 #define DL_SETTING_ZS_OFFERS	32u	// SETTING id of zone share offers (zone_share_api.h)
 #define DL_SETTING_REF_TRIM	35u	// SETTING id of the reference trim, ppb two's complement (radio/ref_trim.h)
+#define DL_SETTING_TONES_OFF	36u	// SETTING id of the Settings > Sound tones (radio_settings_t.tones_off)
 
 static const char *word(uint8_t v, const char *const *names, uint8_t n)
 {
@@ -50,6 +52,9 @@ void debuglink_view_audio(dl_text_t *t)
 	beep_get_stats(&b);
 	dl_text(t, "beep.shared=%u\nbeep.leads=%u\nbeep.warm=%u\nbeep.warms=%u\n", (unsigned)b.shared, (unsigned)b.leads,
 		beep_warm_on(), (unsigned)b.warms);
+	radio_settings_t rs;	// the features section is full: the Sound tones' switches go here
+	radio_get_settings(&rs);
+	dl_text(t, "beep.tones_off=%u\n", rs.tones_off);
 #endif
 	const hal_audio_t *a = board.audio;
 	if (a != NULL && a->stream_stats != NULL) {
@@ -496,6 +501,25 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 #else
 			return DL_ST_UNAVAILABLE;
 #endif
+		}
+		if (a[0] == DL_SETTING_TONES_OFF) {
+			// Keyed settings (codeplug-settings.md 5.2), stored as the menu's are: a key the codeplug holds would put
+			// the radio's own copy back
+			if (v & ~RADIO_TONES_MASK) {
+				return DL_ST_BAD_ARG;
+			}
+			radio_settings_t s;
+			radio_tones_t was, now;
+			radio_get_settings(&s);
+			radio_tones_unpack(s.tones_off, &was);
+			radio_tones_unpack((uint8_t)v, &now);
+			if (!codeplug_keys_store(radio_tone_rows, RADIO_TONE_ROWS_N, &was, &now)) {
+				return DL_ST_BUSY;
+			}
+			radio_get_settings(&s);		// again after the flash write: another change meanwhile stays
+			s.tones_off = (uint8_t)v;
+			radio_set_settings(&s);
+			return DL_ST_OK;
 		}
 		radio_settings_t s;
 		radio_get_settings(&s);
