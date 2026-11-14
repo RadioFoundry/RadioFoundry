@@ -74,6 +74,28 @@ def main():
         check(cps_client.decode_channel(cps.read_image(regions), 3)["name"] == "Fast three", "the CPS sees the write")
         check(link.write_image(edit, regions) == (0, 0), "nothing to write the second time")
 
+        # DATA pipelined (cps-fast.md 3.6): a block that doesn't compress, its 68 pieces sent 8 at a time; a piece
+        # lost in a window sends the block again from BLOCK, one DATA at a time
+        import random
+        noise = bytearray(edit)
+        noise[0x30000:0x31000] = random.Random(7).randbytes(cps_fast.BLOCK)
+        write, sent_data = link.t.write, []
+
+        def lossy(f, drop=[3]):
+            if f[2] == cps_fast.CMD and f[6] == cps_fast.OP_DATA:
+                sent_data.append(f[3])
+                if len(sent_data) in drop:
+                    drop.clear()
+                    return              # lost on the way
+            write(f)
+        link.t.write = lossy
+        n, sent = link.write_image(noise, [(0x30000, 0x31000)])
+        link.t.write = write
+        pieces = -(-sent // link.info()["data_max"])
+        check(n == 1 and pieces >= 60 and len(sent_data) == cps_fast.WINDOW + pieces,
+              f"a lost piece: {len(sent_data)} DATA sent for {pieces} pieces (the window, then one at a time)")
+        check(link.read_block(0x30000) == bytes(noise[0x30000:0x31000]), "the block after a lost piece")
+
         # A block the regions cover only in part: the radio's bytes outside them stay
         edit2 = bytearray(edit)
         edit2[0x7400] = 0x00                                # outside the regions: not written

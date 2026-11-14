@@ -43,7 +43,8 @@ BLANK = b"\xff" * BLOCK
 REASONS = {1: "outside the codeplug, or a protected block", 2: "the flash can't be written", 3: "no staging area",
            4: "the staging area is full", 5: "the staging area is in use", 6: "wrong state", 7: "CRC mismatch",
            8: "corrupt stream", 9: "flash error", 10: "the block isn't the one the patch was made against"}
-R_BASE = 10
+R_STREAM, R_BASE = 8, 10
+WINDOW = 8                  # DATA requests in flight (cps-fast.md 3.6)
 VFO_A = cps_client.VFO_A
 
 
@@ -152,6 +153,38 @@ class FastLink:
                 return data[0], bytes(data[1:])
         raise FastError(f"op {op}: no answer")
 
+    def data(self, stream, window):
+        """The stream's DATA requests, window of them sent before their answers are read (cps-fast.md 3.6). False
+        when an answer is missing or not done (a frame lost leaves a gap: the requests after it are refused)"""
+        n = self.info()["data_max"]
+        off = 0
+        while off < len(stream):
+            seqs = []
+            for _ in range(window):
+                if off >= len(stream):
+                    break
+                self.seq = (self.seq + 1) & 0xFF
+                f = rfoundry_debug.frame(CMD, self.seq, bytes([OP_DATA]) + struct.pack("<H", off) + stream[off:off + n])
+                self.t.write(f)
+                self.requests += 1
+                self.wire += len(f)
+                seqs.append(self.seq)
+                off += n
+            deadline = time.monotonic() + self.timeout
+            want = set(seqs)
+            while want:
+                r = self._frame(deadline)
+                if r is None:
+                    return False
+                got, seq, d = r
+                if seq not in want:
+                    continue
+                want.discard(seq)
+                self.wire += 8 + len(d)
+                if got != (CMD | 0x80) or not d or d[0] != 0:
+                    return False
+        return True
+
     def ok(self, op, payload=b"", timeout=None, busy_wait=5.0):
         """The data of a request that must succeed; waits out busy answers, raises on a refusal"""
         end = time.monotonic() + busy_wait
@@ -231,7 +264,7 @@ class FastLink:
             patch = lz4_encode(data, base)
             if len(patch) >= len(lz4_encode(data)):
                 patch = None
-        n = self.info()["data_max"]
+        window = WINDOW
         for attempt in range(tries):
             if blank:
                 fmt, stream, head = FMT_BLANK, b"", struct.pack("<IBHI", addr, FMT_BLANK, 0, crc32(data))
@@ -243,8 +276,11 @@ class FastLink:
                 fmt, head = FMT_LZ4, struct.pack("<IBHI", addr, FMT_LZ4, len(stream), crc32(data))
             try:
                 self.ok(OP_BLOCK, head)
-                for off in range(0, len(stream), n):
-                    self.ok(OP_DATA, struct.pack("<H", off) + stream[off:off + n])
+                if not self.data(stream, window):
+                    if window == 1:
+                        raise FastError(f"DATA {addr:#x}: refused or no answer", 7, R_STREAM)
+                    window = 1          # the block again from BLOCK, one DATA at a time (3.6)
+                    continue
                 self.ok(OP_END, timeout=5.0)
                 self.patched += fmt == FMT_PATCH
                 return len(stream)
