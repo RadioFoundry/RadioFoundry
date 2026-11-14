@@ -16,7 +16,7 @@ BOARD_DIRS := boards/d578uv drivers/display/st7735 drivers/flash/spi_nand driver
               drivers/rf/rfbus drivers/rf/subaudio drivers/rf/qa4818 drivers/gps/nmea_line drivers/gps/gps_rx \
               platform/gd32f30x/gps_uart drivers/bcast/ktamfm drivers/bcast/rda5807m drivers/bus/i2c_gpio
 # The core's storage on the NAND, with CONFIG_NAND_STORAGE (hardware-d578uv.md 6.3)
-BOARD_NAND_DIRS := drivers/flash/nand_sectors
+BOARD_NAND_DIRS := drivers/flash/nand_sectors drivers/flash/nand_blocks
 # The 160x128 panel in 16 colors (display_d578uv.c): the 4 bpp frame buffer is 10240 B and 128 rows, not the 40 KB / 160 row
 # RGB565 default. A screen has at most 16 colors (core/ui/gfx.h); with CONFIG_FONT_AA the edge grays compete for them
 MCU_DEFS   += -DGFX_INDEXED=1 -DGFX_FB_BYTES=10240u -DGFX_MAX_ROWS=128u

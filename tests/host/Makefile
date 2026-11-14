@@ -1247,11 +1247,12 @@ settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/set
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ settingsTest.c $(STORE)
 
 run: run-settings
-run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
+run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest nandBlocksTest
 	./settingsTest
 	./spiNorTest
 	./spiNandTest
 	./nandSectorsTest
+	./nandBlocksTest
 .PHONY: run-settings
 
 # The SPI NOR driver against a model of the chip at the bus, and the journal and settings store on it (16 MB and
@@ -1283,6 +1284,15 @@ TESTS   += nandSectorsTest
 nandSectorsTest: nandSectorsTest.c $(NSECT) $(ROOT)/drivers/flash/nand_sectors/nand_sectors.h \
                  $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h $(CORE)/cps/*.h $(CORE)/codeplug/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ nandSectorsTest.c $(NSECT)
+
+# The block-mapped NAND device (drivers/flash/nand_blocks) on the same simulated NAND: copies in address order, NOR
+# writes, bad and worn blocks, foreign data, a power cut at every operation of a script (torn pages of several kinds)
+NBLK    := $(ROOT)/drivers/flash/nand_blocks/nand_blocks.c
+TESTS   += nandBlocksTest
+
+nandBlocksTest: nandBlocksTest.c $(NBLK) $(ROOT)/drivers/flash/nand_blocks/nand_blocks.h \
+                $(ROOT)/drivers/flash/nand_sectors/nand_sectors.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ nandBlocksTest.c $(NBLK)
 
 # Codeplug editing: the open-firmware record encoder, the built-in set made a stored codeplug, zones / contacts / lists,
 # the round trip read -> write -> read, power cuts during an edit

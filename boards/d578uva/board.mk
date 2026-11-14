@@ -20,6 +20,6 @@ BOARD_DIRS := boards/d578uva boards/d578uv drivers/display/st7735 drivers/flash/
               drivers/modem/sct drivers/rf/rfbus drivers/rf/subaudio drivers/rf/qa4818 drivers/gps/nmea_line \
               drivers/gps/gps_rx platform/at32f43x/gps_uart drivers/bcast/ktamfm drivers/bcast/rda5807m drivers/bus/i2c_gpio
 # The core's storage on the NAND, with CONFIG_NAND_STORAGE (hardware-d578uv.md 6.3)
-BOARD_NAND_DIRS := drivers/flash/nand_sectors
+BOARD_NAND_DIRS := drivers/flash/nand_sectors drivers/flash/nand_blocks
 # The 160x128 panel in 16 colors, as on the GD32 builds (boards/d578uv/board.mk)
 MCU_DEFS   += -DGFX_INDEXED=1 -DGFX_FB_BYTES=10240u -DGFX_MAX_ROWS=128u
