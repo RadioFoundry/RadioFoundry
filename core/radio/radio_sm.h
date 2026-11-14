@@ -454,6 +454,11 @@ typedef struct {
 	uint8_t t3_send_left;		// the bursts the data source still has to give
 	uint8_t t3_send_n;		// bursts in t3_send_burst: a CSBK, or a UDT header and its blocks
 	bool t3_send_udt;
+	bool t3_sending;		// a burst list is with the stack: a retune would drop it, so it waits
+	bool t3_tune_held;		// a retune waiting for it: t3_tune_chan, t3_tune_slot, since t3_tune_ms
+	uint8_t t3_tune_slot;
+	t3_chan_t t3_tune_chan;
+	uint32_t t3_tune_ms;
 	uint8_t t3_send_burst[1 + T3_UDT_BLOCKS_MAX][T3_CSBK_BYTES];
 	uint32_t t3_now;		// the clock at the last t3_tick (for the data service's start, which has none)
 #endif

@@ -23,6 +23,7 @@ typedef struct {
 	uint8_t lcss;		// voice: the EMB LCSS sent
 	uint8_t emb[4];		// voice B-E: the 32 embedded signaling bits
 	uint32_t slot;		// slot counter when sent
+	int8_t ts;		// the timeslot of the transmission it went out in (tx_begin)
 } sim_air_t;
 
 typedef struct {

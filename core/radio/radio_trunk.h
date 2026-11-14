@@ -34,6 +34,7 @@ typedef enum {
 
 // Fallback (docs/spec/dmr-trunking.md 12.5)
 #define RADIO_T3_FALLBACK_HOLD_S	30	// hunting this long with no TSCC: to the fallback channel
+#define RADIO_T3_TUNE_HOLD_MS		500	// a retune waits at most this long for a burst list to go out
 #define RADIO_T3_PROBE_MS		10000	// on the fallback channel: how often the radio looks for the TSCC
 #define RADIO_T3_PROBE_HUNT_MS		2000	// for how long
 #define RADIO_T3_PROBE_QUIET_MS		2000	// only when the fallback channel has been quiet this long

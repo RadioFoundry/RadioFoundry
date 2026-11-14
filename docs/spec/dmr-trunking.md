@@ -137,7 +137,7 @@ retune not yet taken and what was queued after it.
 | State | The radio |
 |---|---|
 | HUNT | tunes through the candidates looking for the TSCC |
-| CAMPED | listens to the TSCC, both slots |
+| CAMPED | listens to the TSCC, both slots; a C_AHOY counts only on a slot an Aloha has shown to carry the TSCC (the carrier's other slot is a payload channel, whose P_AHOY has C_AHOY's opcode) |
 | FOLLOW | listens to one slot of a payload channel |
 
 **Hunt.** The candidates are the adjacent sites' control channels (7.18), then the programmed control channels in
@@ -766,7 +766,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | Tune | A `T3_ACT_TUNE` sets the channel to DMR, repeater mode, the action's frequencies and color code. Slot 0 (the TSCC, hunting) listens to both slots; a payload channel listens to its slot only. A new carrier is a full tune; the same carrier is a reconfiguration of the stack. |
 | Slots | Each slot tick from the modem goes to `t3_ms_slot` with its slot number and its CACH AT bit (`DMR_TICK_AT_KNOWN`, `DMR_TICK_AT_BUSY`). A modem that doesn't number slots gets them alternating; one that doesn't read AT gets every slot free. |
 | Receive | The stack's receive tap hands CSBKs and MBC blocks to `t3_ms_rx`. Any other burst on a known slot, idle ones excepted, is activity on that slot (`t3_ms_activity`). |
-| Send | A `T3_ACT_SEND` keys one CSBK as a data list, on the action's slot only, and not while the radio is talking. |
+| Send | A `T3_ACT_SEND` keys one CSBK as a data list, on the action's slot only, and not while the radio is talking. A `T3_ACT_TUNE` that comes while the list is still with the stack waits until it has gone out (at most 500 ms): a new slot or channel would drop it, and an answer before leaving a payload channel (a selective clear's P_ACKU) would never be sent. |
 | PTT | Camped, PTT asks for a call to the system's talk target (the first talkgroup with `T3_TG_TALK` when none is set) and waits with PTT held. The grant puts the radio on the payload slot and keys it. A refusal, no answer or timeout denies TX (`TXDENY_NO_DMR`). Released before the grant, the request is cancelled. |
 | Following | The stack takes the system's ID as its own, hears every call on the slot, and talks to the call's group or to the other party. The radio's own transmission counts as the call's activity: it never hears its own slot, so TV_Inactive would otherwise end the call while it talks. |
 | Status | `RADIO_T3_STATUS` sends the staged status (section 7.5). The last status heard is in the view. |

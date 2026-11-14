@@ -2250,6 +2250,12 @@ void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, c
 	if (!cc_ok(ms, cc)) {
 		return;
 	}
+	if (ms->state == T3_CAMPED && !ms->vote.on && dt == T3_DT_CSBK && (d[0] & 0x3Fu) == T3_OP_C_AHOY &&
+	    ms->tscc_slots != 0 && !(ms->tscc_slots & (1u << (slot - 1u)))) {
+		// On a slot no Aloha has shown to carry the TSCC: the carrier's payload channel, which the radio has left.
+		// Its P_AHOY has C_AHOY's opcode and would be taken for the TSCC's (other PDUs have their own)
+		return;
+	}
 	if (dt == T3_DT_DATA_HDR || dt == T3_DT_R12) {
 		udt_rx(ms, now, slot, dt, d);
 		return;

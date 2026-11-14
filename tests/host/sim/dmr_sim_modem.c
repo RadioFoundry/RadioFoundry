@@ -155,6 +155,7 @@ static void send_one(void)
 		a->len = b.len;
 		memcpy(a->payload, b.payload, b.len);
 		a->slot = sim.slot;
+		a->ts = sim.last_ts;
 		if (b.kind == DMR_BURST_VOICE) {
 			a->lcss = dmr_emb_lcss(b.voice_index);
 			if (b.voice_index >= 1 && b.voice_index <= 4) {

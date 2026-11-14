@@ -2578,7 +2578,8 @@ static bool t3_send_next(dmr_tx_burst_t *out, void *ctx)
 
 static void t3_send_done(uint8_t err, void *ctx)
 {
-	(void)ctx;
+	radio_sm_t *sm = ctx;
+	sm->t3_sending = false;
 	if (err != DMR_TX_OK) {
 		radio_t3v.send_fail++;
 	}
@@ -2617,20 +2618,21 @@ static void t3_rx_sleep(radio_sm_t *sm, bool off, uint32_t now_ms)
 	}
 }
 
-static void t3_tune(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
+static void t3_retune(radio_sm_t *sm, const t3_chan_t *c, uint8_t slot, uint32_t now_ms)
 {
+	sm->t3_tune_held = false;
 	t3_rx_sleep(sm, false, now_ms);
 	channel_t *ch = &sm->view.ch;
-	uint8_t ts = a->slot == 2 ? 2 : 1;
-	bool rf = ch->rx_hz != a->chan.rx_hz || sm->board_mode != RADIO_MODE_DMR || !sm->dmr_running;
-	ch->rx_hz = a->chan.rx_hz;
-	ch->tx_hz = a->chan.tx_hz;
+	uint8_t ts = slot == 2 ? 2 : 1;
+	bool rf = ch->rx_hz != c->rx_hz || sm->board_mode != RADIO_MODE_DMR || !sm->dmr_running;
+	ch->rx_hz = c->rx_hz;
+	ch->tx_hz = c->tx_hz;
 	ch->mode = RADIO_MODE_DMR;
 	ch->dmo = false;
-	ch->color_code = t3_chan_cc(sm, &a->chan);
+	ch->color_code = t3_chan_cc(sm, c);
 	ch->timeslot = ts;	// a control channel: its first slot carries the TSCC (dedicated)
 	sm->t3_cc = ch->color_code;
-	sm->t3_both = a->slot == 0;
+	sm->t3_both = slot == 0;
 	sm->temp_ts = 0;
 	if (rf) {
 		tune(sm, now_ms);
@@ -2639,10 +2641,26 @@ static void t3_tune(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 	}
 }
 
+// Where the engine says. A burst list still with the stack (an answer before leaving a payload channel, 6.6.2.3.2.7)
+// goes out first: a new slot or channel would drop it before its slot came
+static void t3_tune(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
+{
+	if (sm->t3_sending) {
+		sm->t3_tune_held = true;
+		sm->t3_tune_chan = a->chan;
+		sm->t3_tune_slot = a->slot;
+		sm->t3_tune_ms = now_ms;
+		return;
+	}
+	t3_retune(sm, &a->chan, a->slot, now_ms);
+}
+
 static void t3_send(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 {
-	// PTT held while waiting for our grant is the request itself, not talking
-	if (sm->view.ch.timeslot != (a->slot == 2 ? 2 : 1) || (sm->ptt && !sm->t3_ptt_wait) || sm->view.state == RS_TX) {
+	// PTT held while waiting for our grant is the request itself, not talking. A held retune: the engine is
+	// elsewhere already
+	if (sm->t3_tune_held || sm->view.ch.timeslot != (a->slot == 2 ? 2 : 1) || (sm->ptt && !sm->t3_ptt_wait) ||
+	    sm->view.state == RS_TX) {
 		radio_t3v.send_fail++;	// not on the slot asked for, or talking: the engine retries what needs it
 		return;
 	}
@@ -2669,6 +2687,7 @@ static void t3_send(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 		radio_t3v.send_fail++;	// the keying is released by dmr_follow
 		return;
 	}
+	sm->t3_sending = true;
 	radio_t3v.last_tx_op = (a->udt ? a->burst[9] : a->burst[0]) & 0x3Fu;
 	memcpy(radio_t3v.last_tx, a->burst, T3_CSBK_BYTES);
 	radio_t3v.last_tx_ms = now_ms != 0 ? now_ms : 1;
@@ -3036,6 +3055,8 @@ static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 	radio_t3v.ip_gw = t3s.ip_gw;
 	radio_t3v.last_tx_op = 0xFF;
 	sm->t3_on = true;
+	sm->t3_sending = false;
+	sm->t3_tune_held = false;
 	sm->t3_ptt_wait = false;
 	sm->t3_als_keyed = false;
 	sm->t3_als_quiet_ms = 0;
@@ -3438,6 +3459,9 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 		t3_ms_level(&t3m, now_ms, sm->view.rssi_dbm);	// once a frame: the TSCC's or the one hunted or sampled
 	}
 
+	if (sm->t3_tune_held && (!sm->t3_sending || now_ms - sm->t3_tune_ms >= RADIO_T3_TUNE_HOLD_MS)) {
+		t3_retune(sm, &sm->t3_tune_chan, sm->t3_tune_slot, now_ms);
+	}
 	t3_act_t a;
 	while (t3_ms_poll(&t3m, now_ms, &a)) {
 		if (a.type == T3_ACT_TUNE) {

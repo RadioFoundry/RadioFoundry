@@ -767,8 +767,12 @@ static void test_private_call(void)
 	frames(&ms, 6);
 	CHECK(nsent == T3_N_MAINT && ms.state == T3_CAMPED, "ended with P_MAINT");
 
-	// Called: the TSCC checks we're there (OACSU), then grants; the called party also ends with P_MAINT
+	// Called: the TSCC checks we're there (OACSU), then grants; the called party also ends with P_MAINT. A TSCC on
+	// both slots (an Aloha on slot 2 too): the answer goes on the slot the C_AHOY came on
 	nsent = 0;
+	t3_csbk_t al2 = { .lb = true, .op = T3_OP_C_ALOHA };
+	al2.u.aloha = al;
+	rx(&ms, 2, &al2);
 	t3_csbk_t h = ahoy(T3_SK_IND_VOICE, false, OWN, CALLER);
 	rx(&ms, 2, &h);
 	frames(&ms, 1);
@@ -2681,6 +2685,29 @@ static void test_dial(void)
 	cfg.dial_n = 0;
 }
 
+// Camped on a TSCC that uses slot 1 only, the carrier's slot 2 is a payload channel: its P_AHOY (C_AHOY's opcode) is
+// not the TSCC's and gets no answer. An Aloha on slot 2 makes it a control slot too
+static void test_other_slot(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+	nsent = 0;
+	t3_csbk_t h = ahoy(T3_SK_IND_VOICE, false, OWN, CALLER);
+	rx(&ms, 2, &h);
+	frames(&ms, 2);
+	CHECK(nsent == 0, "payload slot's P_AHOY ignored: %d sent", nsent);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent_act[0].slot == 1, "the TSCC's answered");
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ALOHA };
+	a.u.aloha = al;
+	rx(&ms, 2, &a);
+	rx(&ms, 2, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 2 && sent_act[1].slot == 2, "a control slot after its Aloha");
+}
+
 int main(void)
 {
 	test_register();
@@ -2695,6 +2722,7 @@ int main(void)
 	test_private_call();
 	test_cancel();
 	test_ahoy();
+	test_other_slot();
 	test_broadcast();
 	test_stun();
 	test_stun_off();

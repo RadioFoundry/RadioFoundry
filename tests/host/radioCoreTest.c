@@ -5886,6 +5886,55 @@ static void test_t3_radio_check(void)
 	sim.repeater = false;
 }
 
+// A selective clear on a payload slot of the TSCC's own carrier (6.6.2.3.2.7): the P_ACKU goes out on that slot before
+// the radio returns, and once back on the TSCC the radio ignores the clear's repeats on the payload slot
+static void test_t3_clear_slot(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	t3_csbk_t g = { .lb = true, .op = T3_OP_TV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = T3_TG;
+	g.u.grant.src = 1000001u;
+	t3_csbk_rx(&g, 1);
+	run(300);
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.ch.timeslot == 2);
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_CANCEL;
+	h.u.ahoy.group = true;
+	h.u.ahoy.dst = T3_TG;
+	h.u.ahoy.src = T3_ID_TSI;
+	unsigned from = sim.air_count;
+	t3_csbk_rx(&h, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	unsigned acks = 0;
+	int8_t ts = 0;
+	for (unsigned i = from; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_CSBK && (sim.air[i].payload[0] & 0x3Fu) == T3_OP_P_ACKU) {
+			acks++;
+			ts = sim.air[i].ts;
+		}
+	}
+	CHECK(acks == 1 && ts == 2);
+	// The clear again, on the payload slot, while camped: not the TSCC's slot, not answered
+	h.u.ahoy.group = false;
+	h.u.ahoy.dst = T3_OWN;
+	from = sim.air_count;
+	t3_csbk_rx(&h, 2);
+	t3_site_run(600);
+	unsigned after = 0;
+	for (unsigned i = from; i < sim.air_count; i++) {
+		after += sim.air[i].kind == DMR_BURST_CSBK;
+	}
+	CHECK(after == 0);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
 // Emergency on a trunked system: the alarm is status 126 to the target, acknowledged once (no repeats); the call
 // asks with the emergency option; the end of the emergency sends status 124; status 126 heard raises the alert
 static void test_t3_emergency(void)
@@ -6774,6 +6823,7 @@ int main(void)
 	test_t3_talk();
 	test_t3_sdata();
 	test_t3_radio_check();
+	test_t3_clear_slot();
 	test_t3_pdata();
 	test_t3_emergency();
 	test_t3_broadcast();
