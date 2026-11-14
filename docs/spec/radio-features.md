@@ -71,7 +71,9 @@ is "active" when FM squelch opens (with the RX tone if the channel needs one) or
 A carrier that isn't active yet earns a probe: 350 ms on FM channels that need a tone (CTCSS detection takes 100 to
 250 ms), 700 ms on DMR; other FM channels move on at once. On DMR a carrier is the noise reading at the squelch level
 or the signal strength at the DMR scale (level 1 above -112 dBm, 3 dB a level: -100 dBm at the default level; some
-receivers' noise reading doesn't follow a DMR signal, [gotchas](gotchas.md) 17.3). A carrier seen in the last 150 ms still counts (direct
+receivers' noise reading doesn't follow a DMR signal, [gotchas](gotchas.md) 17.3). Level 1 is also at least 6 dB above
+the floor: the lowest strength read past the settle on the last 8 stops (the first stop has none), since a strength
+reading that isn't calibrated can sit above the scale on an empty channel ([gotchas](gotchas.md) 17.4). A carrier seen in the last 150 ms still counts (direct
 mode is on air 30 ms in every 60, and the noise reading drops between bursts), and once the modem delivers bursts with
 the channel's color code since the stop's settle ("sync", from `dmr_call_last_activity`, a late entry still waiting for
 its LC included) the probe lasts up to 1.5 s: a call already in progress is taken from its embedded LC, which needs the
@@ -357,15 +359,22 @@ None of them needs a correction in the driver. The HIL test (`test_fm_tx_dtmf`) 
 | error | 400 Hz 150 ms | UI errors |
 | TX permit | 1600 Hz 50 ms twice | DMR: the channel is granted (unless the codeplug channel has "no beep", or `talk_permit` is off: Settings > Sound > Talk permit tone) |
 | TX permit, before keying | 1600 Hz 80 ms | The TX permit on boards with `CAP_BEEP_NOT_ON_AIR`, whose beeps can't sound while DMR transmits: once the call is admitted, the stack holds the key-up (`dmr_call_config_t.permit_hold_ms`, `permit_busy`) while the radio still receives and this tone plays. It keys once the tone and the driver's buffers have played out (`hal_audio_t.spk_pending`): at least 40 ms, at most 400 ms (`DMR_CALL_PERMIT_MAX_MS`). The same conditions as the TX permit |
-| TX deny | 300 Hz 400 ms | any TX refusal |
-| call end | 1200 Hz 50 ms, 900 Hz 70 ms | DMR: a played call ended (unless "no beep") |
-| TOT warning | 1000 Hz 100 ms twice | 3.2 |
-| battery low | 800 Hz, 600 Hz | entering low, then every 2 min |
-| battery critical | 600 Hz three times | entering critical, then every 30 s |
-| scan hold | 1400 Hz 40 ms | the scan stops on a signal, if `scan_beep` |
-| emergency | 1500 / 900 Hz warble, 6 x 160 ms | someone's emergency heard (alarm or emergency call), if the emergency setting's tone is on (`dmr-emergency.md`) |
+| TX deny | 300 Hz 400 ms | any TX refusal, unless Settings > Sound > TX denied tone is off (settings area key 0x0006) |
+| call end | 1200 Hz 50 ms, 900 Hz 70 ms | DMR: a played call ended (unless "no beep", or Settings > Sound > Call end tone is off: settings area key 0x0003) |
+| TOT warning | 1000 Hz 100 ms twice | 3.2, unless Settings > Sound > TOT warning tone is off (settings area key 0x0004) |
+| battery low | 800 Hz, 600 Hz | entering low, then every 2 min, unless Settings > Sound > Battery tone is off (settings area key 0x0005) |
+| battery critical | 600 Hz three times | entering critical, then every 30 s; the same setting as battery low |
+| scan hold | 1400 Hz 40 ms | the scan stops on a signal, if `scan_beep` (Settings > Sound > Scan stop tone, off by default) |
+| emergency | 1500 / 900 Hz warble, 6 x 160 ms | someone's emergency heard (alarm or emergency call), if the emergency setting's tone is on (Settings > Sound > Emergency tone, `dmr-emergency.md`) |
 | message | 1000, 1300, 1700 Hz rising, 60-90 ms each | a text message arrived: the UI asks for it (`radio_req_beep(BEEP_MESSAGE)`) when Settings > Sound > Message tone is on |
 | sweep | 400 ms silence, then 150 Hz to 3.8 kHz over 4 s, phase continuous | the speaker test, from the debug link only (op 22, which can delay it); `test_speaker_sweep` measures the speaker's response and whether the audio path plays it whole |
+
+The four tones with a settings area key (`radio_tone_rows` in `core/radio/radio_keys.h`,
+[codeplug-settings.md](codeplug-settings.md) 3) are silenced in `beep()` by `radio_settings_t.tones_off`, saved with
+the radio core's settings (`sound_flags` bits 4..7). A key that is present holds over it: the radio core applies the keys at
+start, on a codeplug reload, when `codeplug_kv_serial()` moves on and on every settings change (codeplug-settings.md
+5.2). Every request for those beeps is
+silenced, the debug link's (`RREQ_BEEP`) too.
 
 Synthesis: a 64-entry sine table with linear interpolation, 2 ms fades (no clicks); level 100 is about half of full
 scale so a beep mixed over voice doesn't clip. Beeps follow the radio's volume up to `beep_level`. A radio with an analog

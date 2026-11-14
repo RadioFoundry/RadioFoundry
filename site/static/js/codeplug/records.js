@@ -312,8 +312,8 @@ export function encodeAprs(a, r) {
 
 // --- General settings, boot text (7.3.2, 7.2), the settings area's keys (codeplug-settings.md) ---
 
-// The settings area's keys (kv.js KEYS; arsServer, ipGateway: DMR IDs, 0 = off) are fields too: null when the key is
-// absent (the radio keeps its own setting)
+// The settings area's keys (kv.js KEYS; arsServer, ipGateway: DMR IDs, 0 = off; the Settings > Sound tones: true on,
+// false off) are fields too: null when the key is absent (the radio keeps its own setting)
 export function decodeGeneral(b) {
 	const g = b.subarray(GENERAL, GENERAL + GENERAL_SIZE);
 	const kv = decodeArea(b).entries;

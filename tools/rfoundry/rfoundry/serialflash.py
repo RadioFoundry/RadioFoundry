@@ -184,7 +184,7 @@ def decide_codec(board, route, requested, slot_in_image, have_file, probe_result
                           "codec can't be kept that way; %s, or update a radio that runs RadioFoundry with stub entry "
                           "(--route stub)" % hint)
     codec = (probe_result or {}).get("codec")
-    if codec == board.codec.id:
+    if board.codec_present(codec):
         return "keep", "RadioFoundry on the radio checked its codec (%s); the stub writes only the image's sectors, so the " \
                        "codec slot stays" % codec, None, True, None
     return "keep", "the stub writes only the image's sectors, so the codec slot is left as it is", \

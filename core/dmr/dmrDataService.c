@@ -140,9 +140,11 @@ static pendingReply_t replyQueue[REPLY_QUEUE_SIZE];
 static uint8_t replyWriteIdx = 0;
 static uint8_t replyReadIdx = 0;
 static bool tmsAckPending = false;
+#if CONFIG_DMR_TMS
 static bool tmsAckAfterResponse;			// our link ACK goes first: TMS_ACK_GAP_MS between them
 static uint32_t tmsAckDst;
 static uint8_t tmsAckSeq;
+#endif
 
 // Call alert ack or radio check answer, sent on its own
 static bool csbkAnswerPending = false;
@@ -2043,10 +2045,12 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 
 		if (reply.tms)
 		{
+			tmsAckPending = true;
+#if CONFIG_DMR_TMS
 			tmsAckDst = reply.dst;
 			tmsAckSeq = reply.tmsSeq;
-			tmsAckPending = true;
 			tmsAckAfterResponse = (reply.response != 0);
+#endif
 		}
 		if (reply.response != 0)
 		{

@@ -11,6 +11,15 @@ import { KEEP, MERGE } from "./plan.js";
 
 // message: the whole sentence (rfoundry's wording); reason: why, without the advice, for a page that gives its own
 // key, args: the reason in the page's catalog; hint: the page adds that a stock file gives the codec
+// Whether the codec a running RadioFoundry reports (VERSION codec=) is one this board can use: the rule of
+// Board.codec_present in tools/rfoundry/rfoundry/boards.py. A board with a codec slot reports "<board>-<build>", the stock
+// build its slot was made from ("<board>-049"), and every build's slot holds a working codec
+export function codecPresent(board, reported) {
+	if (reported === board.codec.id) return true;
+	if (!board.codec_tagged || typeof reported !== "string" || !reported.startsWith(`${board.id}-`)) return false;
+	return /^\d{3,5}$/.test(reported.slice(board.id.length + 1));
+}
+
 export class DecisionError extends Error {
 	constructor(message, reason = message, { key = null, args = {}, hint = false } = {}) {
 		super(message);
@@ -47,7 +56,7 @@ export function decideCodec(board, manifest, { requested = null, haveStock = fal
 	if (probe) {
 		if (!board.debuglink_names.includes(probe.board)) throw new DecisionError(`The radio reports that it is a ${probe.board}, but this firmware is for the ${board.name}.`, undefined,
 			{ key: E + "wrong_radio", args: { reported: probe.board, board: board.name } });
-		if (probe.codec === profile) return { mode: KEEP, why: "the radio has its codec, which is kept", whyKey: W + "kept", expectCodec: true };
+		if (probe.codec === profile || codecPresent(board, probe.codec)) return { mode: KEEP, why: "the radio has its codec, which is kept", whyKey: W + "kept", expectCodec: true };
 		const what = probe.codec ? `it reports ${probe.codec}` : "its firmware is too old to report it";
 		const args = { what: probe.codec ? { key: W + "what_reports", args: { codec: probe.codec } } : { key: W + "what_old" } };
 		if (haveSaved && requested !== KEEP) return { mode: MERGE, source: "saved", why: `the radio has no codec (${what}), so the copy saved from your radio is used`, whyKey: W + "missing_saved", args, expectCodec: true };

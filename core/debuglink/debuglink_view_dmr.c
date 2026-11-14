@@ -158,6 +158,8 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "call.rx_pi_headers=%u\ncall.rx_alias_complete=%u\ncall.tx_alias_lcs=%u\n",
 			(unsigned)c.rx_pi_headers, (unsigned)c.rx_alias_complete, (unsigned)c.tx_alias_lcs);
 		dl_text(t, "call.rx_gps=%u\ncall.tx_gps_lcs=%u\n", (unsigned)c.rx_gps, (unsigned)c.tx_gps_lcs);
+		dl_text(t, "call.rx_in_tx=%u\ncall.rx_bs_in_tx=%u\ncall.tx_rpt_drops=%u\ncall.tx_wake_lost=%u\n",
+			(unsigned)c.rx_in_tx, (unsigned)c.rx_bs_in_tx, (unsigned)c.tx_rpt_drops, (unsigned)c.tx_wake_lost);
 		dl_text(t, "voice.rx_in=%u\nvoice.rx_frames=%u\nvoice.rx_concealed=%u\nvoice.rx_silence=%u\n",
 			(unsigned)a.rx_in, (unsigned)a.rx_frames, (unsigned)a.rx_concealed, (unsigned)a.rx_silence);
 		dl_text(t, "voice.rx_calls=%u\nvoice.rx_queue_max=%u\nvoice.rx_bad=%u\nvoice.rx_lost=%u\n",

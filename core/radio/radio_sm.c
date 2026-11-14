@@ -37,8 +37,8 @@
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"	// dmr_sms_format_t
 #include "position/nmea.h"	// DMR APRS positions heard (data_position)
-#include "radio/radio_keys.h"
 #endif
+#include "radio/radio_keys.h"	// the codeplug settings area's keys: tones, data service
 #if CONFIG_DMR_EMERGENCY
 #include "dmr/dmr_emergency.h"
 #endif
@@ -161,6 +161,9 @@ static void beep(radio_sm_t *sm, uint8_t b)
 #if CONFIG_DMR
 	shared = ambeVoiceStreaming();
 #endif
+	if (radio_tone_off(sm->set.tones_off, b)) {
+		return;		// Settings > Sound turned it off (the codeplug's settings area)
+	}
 	uint8_t level = sm->set.beep_level;
 	if (board.radio != NULL && board.radio->volume != NULL && !board.radio->volume_pcm) {
 		level = radio_beep_level(level, sm->volume_sent);
@@ -169,6 +172,43 @@ static void beep(radio_sm_t *sm, uint8_t b)
 #else
 	(void)sm;
 	(void)b;
+#endif
+}
+
+#if CONFIG_DMR_DATA_CORE
+static void data_kv_load(void);
+#endif
+
+// The keys of the codeplug's settings area the radio core holds (radio_keys.h), read at start, on a reload (a codeplug
+// written) and whenever codeplug_kv_serial() moves on (a key written by the menu or the debug link). No copy of the
+// area in RAM: a read is a few bytes of flash, and only on those events
+static uint8_t kv_seen;		// codeplug_kv_serial() at the last load
+
+// The Settings > Sound tones' keys over s->tones_off, the radio's own copy (docs/spec/codeplug-settings.md 5.2): true
+// if one changed it
+_Static_assert(RADIO_TONES_MASK <= (SETTINGS_TONES_OFF_MASK >> SETTINGS_TONES_OFF_SHIFT), "the tones fit sound_flags");
+static bool tones_apply(radio_settings_t *s)
+{
+	radio_tones_t t;
+	radio_tones_unpack(s->tones_off, &t);
+	if (!codeplug_keys_apply(radio_tone_rows, RADIO_TONE_ROWS_N, &t)) {
+		return false;
+	}
+	s->tones_off = radio_tones_pack(&t);
+	return true;
+}
+
+static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms);
+
+static void kv_load(radio_sm_t *sm, uint32_t now_ms)
+{
+	kv_seen = codeplug_kv_serial();
+	if (tones_apply(&sm->set)) {
+		changed(sm);	// published with the settings (radio_get_settings): the menu shows it
+		radio_to_settings(&sm->set, now_ms);	// the radio's own copy follows the key
+	}
+#if CONFIG_DMR_DATA_CORE
+	data_kv_load();
 #endif
 }
 
@@ -353,9 +393,11 @@ static bool bcast_listening(const radio_sm_t *sm)
 #if CONFIG_APRS_AFSK
 	own_rx = sm->aprs_phase == APRS_RF_OFF;
 #endif
+#if CONFIG_SCAN
 	if (scan_on(&sm->scan)) {
 		return false;
 	}
+#endif
 	return own_rx && sm->view.bcast && !sm->view.bcast_fault;
 #else
 	(void)sm;
@@ -2157,11 +2199,8 @@ static dmrDataSettings_t data_saved;
 // setting as the radio has it (the settings store's copy), so a codeplug from a tool that doesn't carry the area
 // changes nothing. No copy of the keys in RAM: a read is a few bytes of flash, and only on those events. The keys are the
 // table in radio_keys.h (codeplug_keys_apply)
-static uint8_t data_kv_seen;	// codeplug_kv_serial() at the last load: it moves when the keys may read differently
-
 static void data_kv_load(void)
 {
-	data_kv_seen = codeplug_kv_serial();
 	dmrDataSettings_t set;
 	dmrDataServiceGetSettings(&set);
 	if (codeplug_keys_apply(radio_keys, RADIO_KEYS_N, &set)) {
@@ -2392,9 +2431,6 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_ZONE_SHARE
 	zone_share_tick(now_ms);
 #endif
-	if (codeplug_kv_serial() != data_kv_seen) {
-		data_kv_load();	// a key written (menu, debug link): its value only, without a codeplug reload
-	}
 	data_save_settings(now_ms);
 	if (sm->power_off_req && sm->power_off_busy) {
 		sm->power_off_busy = dmrDataServicePowerOff();	// ARS deregistration, until it has gone out
@@ -3089,7 +3125,11 @@ static bool dmr_strength_heard(const radio_sm_t *sm, int16_t rssi_dbm)
 	if (sq > RADIO_SQUELCH_MAX) {
 		sq = RADIO_SQUELCH_MAX;
 	}
-	return rssi_dbm > RADIO_DMR_SQL_L1_DBM + (sq - 1) * RADIO_SQL_DB_PER_STEP;
+	int16_t above = (int16_t)((sq - 1) * RADIO_SQL_DB_PER_STEP), floor_dbm;
+	if (scan_floor(&sm->scan, &floor_dbm) && rssi_dbm <= floor_dbm + RADIO_DMR_SQL_L1_FLOOR_DB + above) {
+		return false;
+	}
+	return rssi_dbm > RADIO_DMR_SQL_L1_DBM + above;
 }
 #endif
 
@@ -3116,6 +3156,9 @@ static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_
 		active = sm->view.dmr.state == RDMR_RX;
 		// Some receivers' noise reading stays put on a DMR signal while its strength rises: either one is a
 		// carrier, the strength once the settle has passed (a reading just after the retune is the last stop's)
+		// The strength scale also sits above the floor read on the stops before: some receivers' strength
+		// reading isn't calibrated, and reads far up the scale on an empty channel (gotchas 17.4)
+		scan_level(sc, now_ms, st->rssi_dbm);
 		carrier = carrier || (now_ms - sc->tuned_ms >= SCAN_SETTLE_MS && dmr_strength_heard(sm, st->rssi_dbm));
 		// Sync: bursts with the channel's color code since this stop's settle, a call or a late entry still
 		// waiting for its LC. A call known not to be for us (another group, a private call) holds nothing
@@ -4949,6 +4992,7 @@ static void settings_to_radio(const settings_t *st, radio_settings_t *s)
 		s->bcast_step = (uint8_t)(st->rs_bcast_step - 1u);
 		clamp_settings(s);
 	}
+	s->tones_off = settings_tones_off(st) & RADIO_TONES_MASK;	// 0, all on, in a record from before it
 	if (st->rs_stored != 1) {
 		return;
 	}
@@ -5004,6 +5048,7 @@ static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
 	st->rs_reply_s = s->reply_s;
 	st->rs_dual_delay = (uint8_t)(s->dual_delay_ms / 100u + 1u);
 	st->rs_bcast_step = (uint8_t)(s->bcast_step + 1u);
+	settings_set_tones_off(st, s->tones_off);
 	st->rs_stored = 1;
 	st->roam_rssi_dbm = s->roam_rssi_dbm;
 	st->roam_hyst_db = s->roam_hyst_db;
@@ -5053,6 +5098,7 @@ static void use_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now
 void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms)
 {
 	use_settings(sm, s, now_ms);
+	tones_apply(&sm->set);	// a tone's key that is present holds against the change (codeplug-settings.md 5.2)
 	radio_to_settings(&sm->set, now_ms);
 }
 
@@ -5113,9 +5159,6 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	sm->reload_pending = false;
 	sm->codeplug_serial = codeplug_serial();
 	sm->view.source = codeplug_source();
-#if CONFIG_DMR_DATA_CORE
-	data_kv_load();
-#endif
 #if CONFIG_DMR
 	// The cached names may be gone or new now ("" is cached too): a contact added after its ID was heard or called
 	// would otherwise stay a bare ID on the screens until it fell out of the cache
@@ -5150,6 +5193,7 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	radio_settings_t rs;
 	settings_to_radio(st, &rs);
 	use_settings(sm, &rs, now_ms);
+	kv_load(sm, now_ms);	// after the settings: the keys hold over the radio's own copies
 #if CONFIG_RX_EXT
 	// A VFO left in the receive range past the table, now off, goes back to a band the next time it is used
 	if (sm->vfo_seeded && !board_in_band(sm->vfo_ch.rx_hz, false)) {
@@ -5286,6 +5330,8 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	data_init(sm);
 #endif
 #endif
+
+	kv_load(sm, now_ms);
 
 	// The saved zone and channel; else zone 0 and its first channel; if zone 0 has none, the first zone that has one
 	select_position(sm, st.zone_index, st.channel, st.zone_pos);
@@ -6546,6 +6592,9 @@ static void sfr_rpt_tick(radio_sm_t *sm, uint32_t now_ms)
 void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 {
 	sm->led_now = now_ms;
+	if (codeplug_kv_serial() != kv_seen) {
+		kv_load(sm, now_ms);	// a key written (menu, debug link): its value only, without a codeplug reload
+	}
 #if CONFIG_FM_TX_TONES
 	if (sm->burst_timed && !sm->burst_held && now_ms - sm->burst_ms >= RADIO_BURST_MIN_MS) {
 		tone_burst(sm, false, 0, now_ms);
