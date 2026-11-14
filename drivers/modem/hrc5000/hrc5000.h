@@ -41,6 +41,7 @@ bool hrc5000_set_mode_dmr(hrc5000_t *dev, uint8_t mod2, uint8_t mod1, uint8_t mi
 // The small register set for a DMR RX <-> TX switch (never the full set-up, which resets the DMR state machine):
 // RX: the codec and path registers; TX adds the modulation pair, deviation factor and limiter
 bool hrc5000_dmr_path(hrc5000_t *dev, bool tx, uint8_t mod2, uint8_t mod1, uint8_t mic_gain);
+bool hrc5000_dmr_rx_in(hrc5000_t *dev, bool on);
 
 // The chip's I2S clocks (BCLK, LRCK; the board's pins). The 0x11 block of every full set-up writes 0x36 = 0xF0, whose
 // bit 7 turns the clocks off; on clears it. The board switches them on for the length of a PCM audio stream
