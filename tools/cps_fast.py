@@ -265,7 +265,8 @@ class FastLink:
             if len(patch) >= len(lz4_encode(data)):
                 patch = None
         window = WINDOW
-        for attempt in range(tries):
+        failed = 0
+        while True:     # the two fallbacks (one DATA at a time, the plain stream) come once each and cost no try
             if blank:
                 fmt, stream, head = FMT_BLANK, b"", struct.pack("<IBHI", addr, FMT_BLANK, 0, crc32(data))
             elif patch is not None:
@@ -288,9 +289,9 @@ class FastLink:
                 if e.reason == R_BASE and fmt == FMT_PATCH:
                     patch = None        # the radio's block isn't what the host thought: the whole block
                     continue
-                if e.reason in (1, 2, 3, 4, 5, 9) or attempt == tries - 1:
+                failed += 1
+                if e.reason in (1, 2, 3, 4, 5, 9) or failed >= tries:
                     raise
-        return 0
 
     def status(self):
         d = self.ok(OP_STATUS)

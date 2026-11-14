@@ -96,6 +96,29 @@ def main():
               f"a lost piece: {len(sent_data)} DATA sent for {pieces} pieces (the window, then one at a time)")
         check(link.read_block(0x30000) == bytes(noise[0x30000:0x31000]), "the block after a lost piece")
 
+        # Two tries lost, then the third's window fails: the block goes again one DATA at a time (the fallback costs
+        # no try) and is written, never reported written when it isn't
+        ok, data, calls = link.ok, link.data, {"block": 0, "data": 0}
+
+        def flaky_ok(op, *a, **kw):
+            if op == cps_fast.OP_BLOCK:
+                calls["block"] += 1
+                if calls["block"] <= 2:
+                    raise cps_fast.FastError("op 4: no answer")
+            return ok(op, *a, **kw)
+
+        def flaky_data(stream, window):
+            calls["data"] += 1
+            return False if calls["data"] == 1 else data(stream, window)
+        link.ok, link.data = flaky_ok, flaky_data
+        link.begin(cps_fast.MODE_DIRECT)
+        noise[0x30000:0x31000] = random.Random(8).randbytes(cps_fast.BLOCK)
+        got = link.write_block(0x30000, bytes(noise[0x30000:0x31000]))
+        link.ok, link.data = ok, data
+        link.commit()
+        check(got > 0 and calls == {"block": 4, "data": 2}, f"tries lost, then a window: returned {got}, {calls}")
+        check(link.read_block(0x30000) == bytes(noise[0x30000:0x31000]), "the block after tries lost and a window")
+
         # A block the regions cover only in part: the radio's bytes outside them stay
         edit2 = bytearray(edit)
         edit2[0x7400] = 0x00                                # outside the regions: not written
