@@ -252,7 +252,9 @@ the address are deleted within 90 days. It works with `?reporting=0`, since the 
 locally (`practiceFetch`) and sends nothing.
 
 Where it is offered: the button under every failure notice (`errorNotice()`, `problemNotice()`), the failed checks of
-the install, cable radio and loader routes, and the quiet "Something wrong? Report a Problem" link on Verify.
+the install, cable radio and loader routes, the quiet "Something wrong? Report a Problem" link on Verify, and the nav
+bar under every other step (`render()`), so a page stuck waiting on the radio, with no error shown, can still send its
+trail. A report sent with no error has `result` `failed`.
 
 Every failure says what to do next: the message itself, or `errorNotice(text, { next })` beside it. Where the step can
 run again in place, `{ retry }` puts Try Again in the notice. Pressing it removes the notice first, so a second

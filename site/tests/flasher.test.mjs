@@ -402,7 +402,8 @@ test("every step's nav bar offers Report a Problem", () => {
 	const src = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
 	const back = src.slice(src.indexOf('h("div", { class: "nav-back" }'), src.indexOf("info, fwd));"));
 	assert.match(back, /step === "done" \? null : reportButton\(\)/);
-	assert.match(src.slice(src.indexOf("function doneView(")), /t\("report\.something_wrong"\), " ", reportButton\(\)/);
+	const done = src.slice(src.indexOf("function doneView("));
+	assert.match(done.slice(0, done.indexOf("\n}\n") + 3), /t\("report\.something_wrong"\), " ", reportButton\(\)/);
 	const c7 = readFileSync(new URL("../static/js/flasher/c7000ui.js", import.meta.url), "utf8");
 	assert.match(c7, /t\("report\.something_wrong"\), " ", reportButton\(\)/);
 });
