@@ -176,7 +176,7 @@ void sim_slot(void)
 		if (sim.repeater && (sim.last_ts == 1 || sim.last_ts == 2)) {
 			sim.align_found = true;
 			sim.tx_parity = (int8_t)(sim.last_ts - 1);
-		} else if (++sim.align_wait >= 50) {
+		} else if (++sim.align_wait > 50) {	// the 51st slot, as the HR_C6000 engine (ALIGN_TIMEOUT_TICKS)
 			sim.align_rejects++;
 			sim.tx_active = false;
 			sim.q_count = 0;

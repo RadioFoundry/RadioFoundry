@@ -612,8 +612,10 @@ static void tx_tick(hrc6000_dmr_t *e, uint8_t r42)
 		if (!go) {
 			// Nothing heard while waiting for a repeater's slot: after the restart that ends our wake-up, the HR_C5000
 			// at times hears nothing of the outbound that follows (no interrupts, 0x52 frozen) until the next restart,
-			// and the wait ran into the timeout ("Modem refused", issue 524). Search again, as an idle receiver does
-			if (!e->tx_found && e->phase_ts[0] == 0 && e->phase_ts[1] == 0 && e->tx_wait > 0
+			// and the wait ran into the timeout ("Modem refused", issue 524). Search again, as an idle receiver does.
+			// Only through a repeater (modem-hrc6000.md): in direct mode a restart drops the chip's sync and the passive
+			// timing held after our last transmission (gotchas 1.12)
+			if (rmo(e) && !e->tx_found && e->phase_ts[0] == 0 && e->phase_ts[1] == 0 && e->tx_wait > 0
 			    && e->tx_wait % ALIGN_DEAF_TICKS == 0 && (uint32_t)(e->tick - e->rx_tick) > ALIGN_DEAF_TICKS - 2u) {
 				do_restart(e, HRC6000_RS_ALIGN);
 				e->tx_wait++;

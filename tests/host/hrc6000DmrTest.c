@@ -926,6 +926,22 @@ static void test_tx_aligned_deaf(void)
 		tx_tick(t += 30000, &r50, &r41);
 	}
 	CHECK(!hrc6000_dmr_is_transmitting(&eng));
+
+	// Direct mode, deaf for the whole wait: no restart (it would drop the chip's sync), refused at the timeout
+	fresh_engine();
+	pending_burst = false;
+	dmr_config_t dmo = cfg;
+	dmo.repeater = false;
+	hrc6000_dmr_configure(&eng, &dmo);
+	rd[4][0x52] = 0x73;
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 2, DMR_ACCESS_POLITE_CC));
+	hrc6000_dmr_tx_queue(&eng, &h);
+	for (int k = 0; k < 60; k++) {
+		tx_tick(t += 30000, &r50, &r41);
+		drain();
+	}
+	CHECK(eng.st.rs_why[HRC6000_RS_ALIGN] == 0);
+	CHECK(count_ev(DMR_EV_TX_REJECTED) == 1);
 }
 
 // Locked to one slot of a repeater: the other slot is closed, so the TC read after our slot follows a slot not

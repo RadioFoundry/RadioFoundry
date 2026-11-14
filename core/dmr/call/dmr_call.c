@@ -1338,6 +1338,7 @@ static bool tx_rewake(uint32_t now)
 	if (!s.cfg.rmo || s.tx != TX_ON || s.started != 0 || s.rewoken || !s.ptt)
 		return false;
 	s.rewoken = true;
+	s.wake_tries = 0;	// a whole wake-up, not what is left of the one at PTT
 	source_end();
 	s.rpt_seen = false;
 	tick_alt = 0;
@@ -1538,10 +1539,16 @@ static void tx_poll(uint32_t now)
 			tx_start_voice(now);
 		break;
 	}
-	case TX_ON:
+	case TX_ON: {
 		// PTT release and the time-out end the call at a superframe boundary, which only a modem that sends bursts
-		// reaches: one without slot timing would hold us here, keyed, for good
-		if (elapsed(now, s.tx_progress_ms, true, DMR_CALL_TX_STALL_MS)) {
+		// reaches: one without slot timing would hold us here, keyed, for good. Through a repeater, before the first
+		// slot, the modem's own aligned-start timeout (1.5 s and a tick) must come first, so its refusal wakes the
+		// repeater (tx_rewake): with an encoder slow to start, the last burst queued is the headers at the start
+		uint32_t stall_ms = DMR_CALL_TX_STALL_MS;
+
+		if (s.cfg.rmo && s.started == 0)
+			stall_ms += DMR_CALL_TX_ALIGN_GRACE_MS;
+		if (elapsed(now, s.tx_progress_ms, true, stall_ms)) {
 			tx_deny(DMR_TX_ERR_STALLED);
 			break;
 		}
@@ -1551,6 +1558,7 @@ static void tx_poll(uint32_t now)
 		}
 		tx_fill(now);
 		break;
+	}
 	case TX_END:
 		if (!before(now, s.deadline)) {
 			s.modem->tx_abort();	// tx_done overdue
