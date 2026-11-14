@@ -13,8 +13,8 @@
 
 // The device (hardware-d578uv.md 6.3), laid out as the SPI NOR radios' so the open-firmware codeplug images sit at the
 // addresses the core's defaults use: the 64 KB "EEPROM" image at 0, the settings ring and the sector journal in the gap
-// after it, the 1 MB "flash" image at 0x20000 and the ID database's 16 MB right after it (the image's end), then the
-// native codeplug and the staging area. The sector layer holds all but the 16 MB: its addresses from 0x120000 show
+// after it, the 1 MB "flash" image at 0x20000 and the ID database's 24 MB right after it (the image's end), then the
+// native codeplug and the staging area. The sector layer holds all but the 24 MB: its addresses from 0x120000 show
 // above the ID database's (EXT_END). The factory calibration stays in the factory NAND blocks, read only, so there is
 // no calibration window
 #define SECTORS		(0x260000u / NAND_SECTORS_SECTOR)
@@ -29,15 +29,15 @@ static hal_flash_map_t map = {
 	.journal_addr = 0x019000u,	// 2 sectors
 	.openfw_eeprom = 0x000000u,
 	.openfw_flash = 0x020000u,
-	.openfw_end = 0x1120000u,	// EXT_END
+	.openfw_end = 0x1920000u,	// EXT_END
 	.calibration_addr = 0,
 	.calibration_size = 0,
-	.native_addr = 0x1120000u,	// the sector layer's 0x120000
+	.native_addr = 0x1920000u,	// the sector layer's 0x120000
 	.native_size = 0x100000u,
-	.staging_addr = 0x1220000u,	// its 0x220000
+	.staging_addr = 0x1A20000u,	// its 0x220000
 	.staging_size = 0x040000u,
 };
-_Static_assert(EXT_END == 0x1120000u, "the map's literals (tools/boards.py reads them) follow EXT_END");
+_Static_assert(EXT_END == 0x1920000u, "the map's literals (tools/boards.py reads them) follow EXT_END");
 
 // The sector layer's RAM: 2 bytes per sector, 6 per block (1408 bytes)
 static uint16_t sector_map[SECTORS];

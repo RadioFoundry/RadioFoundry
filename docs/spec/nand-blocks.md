@@ -11,7 +11,7 @@ under 300 bytes for 16 MB. It uses the sector layer's NAND interface (`nand_dev_
 
 A board maps it into its `hal_flash_t` after the open-firmware flash image's first 1 MB, so the image, and the ID
 database's room in it ([iddb-compact.md](iddb-compact.md) 2), runs on into it with no change to the code that reads or
-writes the image ([hardware-d578uv.md](hardware-d578uv.md) 6.3).
+writes the image. The board's hardware page says where its range is.
 
 ## 1. Copies
 
@@ -90,7 +90,7 @@ Sequence numbers go on after the highest seen.
 ## 6. Diagnostics
 
 `nand_blocks_get_stats`: blocks used, free and bad, retired this session, torn commits and lost pages found, commits,
-programs, moves, erases, errors. The AT-D578UV shows used, free, bad and lost on its diagnostics page (the `iddb`
+programs, moves, erases, errors. A board may show used, free, bad and lost on its diagnostics page (an `iddb`
 line), or `off` with the mount's status and the first foreign block.
 
 ## 7. Tests

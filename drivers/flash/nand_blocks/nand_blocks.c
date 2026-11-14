@@ -103,6 +103,8 @@ static uint32_t page_of(const nand_blocks_t *nb, uint16_t b, uint16_t p)
 	return (uint32_t)b * ppb(nb) + p;
 }
 
+// The board's hook for long work (nand_dev_t.busy: feed the watchdog, let the other tasks run): before each chip
+// operation, so a host reading or writing megabytes back to back never keeps the CPU from the idle task
 static void busy(const nand_blocks_t *nb)
 {
 	if (nb->dev->busy != NULL) {
@@ -292,6 +294,7 @@ static bool relocate(nand_blocks_t *nb, uint16_t k)
 			if (st != TAG_VALID) {
 				return false;		// a page of the copy is lost: the write fails, the old copy stays
 			}
+			busy(nb);
 			nand_result_t r = nb->dev->program(nb->dev->ctx, page_of(nb, b, q), page_of(nb, old, q), NULL, 0);
 			nb->stats.moves++;
 			if (r == NAND_FAILED) {
@@ -326,6 +329,7 @@ static bool program(nand_blocks_t *nb, uint16_t p, uint32_t src, uint16_t col, c
 	}
 	c[n++] = (nand_chunk_t){ .column = TAG_COL, .len = TAG_LEN, .data = tb };
 	for (unsigned attempt = 0; attempt < ATTEMPTS; attempt++) {
+		busy(nb);
 		nand_result_t r = nb->dev->program(nb->dev->ctx, page_of(nb, nb->open_p, p), src, c, n);
 		if (move) {
 			nb->stats.moves++;
@@ -566,9 +570,12 @@ bool nand_blocks_read(nand_blocks_t *nb, uint32_t addr, void *buf, uint32_t len)
 		uint32_t page = current(nb, l, p);
 		if (page == NAND_SECTORS_NO_PAGE) {
 			memset(out, 0xFF, n);
-		} else if (!nb->dev->read(nb->dev->ctx, page, col, out, n)) {
-			nb->stats.errors++;
-			return false;
+		} else {
+			busy(nb);
+			if (!nb->dev->read(nb->dev->ctx, page, col, out, n)) {
+				nb->stats.errors++;
+				return false;
+			}
 		}
 		out += n;
 		addr += n;

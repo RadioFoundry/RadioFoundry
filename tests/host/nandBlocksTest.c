@@ -333,11 +333,18 @@ static void test_empty_and_sequential(void)
 	CHECK(matches_model());
 	CHECK(nand.violations == 0);
 	CHECK(busy_calls > 0);
+	// The board's busy hook before every chip operation: a page read, a program, a
+	// move. A host reading the whole device back to back would otherwise keep the idle task out (the watchdog)
+	uint8_t pg[NAND_BLOCKS_PAGE];
+	busy_calls = 0;
+	CHECK(nand_blocks_read(&nb, 0, pg, sizeof(pg)) && busy_calls == 1);
+	busy_calls = 0;
 	// One changed sector: the rest of its block moved inside the chip, the copy takes over
 	CHECK(replace(3u * bsize() + NAND_BLOCKS_SECTOR, 777));
 	CHECK(nand_blocks_sync(&nb));
 	nand_blocks_get_stats(&nb, &st);
 	CHECK(st.moves == 6 && st.programs == 2 && st.erases == 1);
+	CHECK(busy_calls >= st.moves + st.programs);
 	CHECK(matches_model());
 	CHECK(remount());
 	CHECK(matches_model());
