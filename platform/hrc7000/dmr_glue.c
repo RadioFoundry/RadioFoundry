@@ -212,6 +212,12 @@ HRC_FLASHFUNC static void dmr_task(void *arg)
 				cb(&ev, stack_ctx);
 			}
 		}
+		if (hrc7000_dmr_short_lc(&eng, &ev)) {
+			dmr_event_cb_t cb = stack_cb;
+			if (cb != NULL) {
+				cb(&ev, stack_ctx);
+			}
+		}
 	}
 }
 

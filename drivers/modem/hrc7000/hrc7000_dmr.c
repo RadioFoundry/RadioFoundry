@@ -19,10 +19,12 @@
 #define RTI_CRC16		(1u << 26)
 #define RTI_RS			(1u << 25)
 #define RTI_BLOCK		(1u << 24)
+#define RTI_CACH_AT		(1u << 23)
 
 // System interrupt causes (2.4)
 #define SYS_LATE_LC		(1u << 2)
 #define SYS_DEFRAME		(1u << 3)
+#define SYS_SHORT_LC		(1u << 4)	// a CACH short LC assembled (RX RAM 0x2B-0x2F)
 #define SYS_ABNORMAL		((1u << 5) | (1u << 6) | (1u << 16))
 
 // LAYER2 values (2.5)
@@ -67,6 +69,7 @@
 #define STALL_US		200000u
 #define SYS_STUCK_US		50000u	// a system request pending this long with no handler run: its interrupt was lost
 #define SYS_LOOPS		4u
+#define AT_FRESH_TICKS		4u	// a slot's CACH AT bit is reported with the ticks for two frames after it was read
 
 // TXS_LOCK: an aligned start through a repeater waits, still receiving, for the TC lock before it arms
 enum { TXS_IDLE, TXS_LOCK, TXS_ARMING, TXS_RUN, TXS_DRAIN };
@@ -89,6 +92,7 @@ void hrc7000_dmr_decode(uint32_t rti, hrc7000_rx_status_t *st)
 	st->chip_slot = (uint8_t)((rti >> 19) & 0x1u);
 	st->pi = ((rti >> 17) & 0x1u) != 0;
 	st->lcss = (uint8_t)((rti >> 15) & 0x3u);
+	st->at = (rti & RTI_CACH_AT) != 0;
 	st->voice_index = 0;
 	if (vb >= 1 && vb <= 6) {
 		st->kind = DMR_BURST_VOICE;
@@ -246,6 +250,7 @@ static void chip_rx_restart(hrc7000_dmr_t *e)
 	e->voice_slots = 0;
 	e->tc_slot[0] = e->tc_slot[1] = 0;
 	e->tc_agree = 0;
+	e->at_flags[0] = e->at_flags[1] = 0;
 	e->emb_pending = false;
 	// What was heard is gone with the slot timing. Kept, the polite check went on seeing a busy channel: an empty
 	// channel gives no timeslot interrupts after the restart, so rx_resync never aged it out, and every PTT after a
@@ -457,6 +462,9 @@ static void track_tc(hrc7000_dmr_t *e, const hrc7000_rx_status_t *s)
 	e->tc_prev = s->tc;
 	e->tc_tick = slot;
 	e->tc_est = early ? (uint8_t)(s->tc ^ 1u) : s->tc;	// the slot started at the last interrupt
+	// The same CACH's AT bit, for the slot its TC names (DMR_TICK_AT_*): a BS signal's inbound busy state
+	e->at_tick[s->tc] = e->tick;
+	e->at_flags[s->tc] = (uint8_t)(DMR_TICK_AT_KNOWN | (s->at ? DMR_TICK_AT_BUSY : 0u));
 }
 
 // The lock holds while the repeater is heard: a burst in the last 390 ms
@@ -664,8 +672,10 @@ static void rx_burst(hrc7000_dmr_t *e)
 	if (e->lock_ts != 0 && ts != e->lock_ts) {
 		return;
 	}
+	// An MBC continuation is a block with no CRC of its own (the last one carries the whole MBC's), so the chip's flag
+	// says nothing about it: it goes up and the caller checks the MBC
 	bool header = s.kind != DMR_BURST_VOICE && s.kind != DMR_BURST_RATE_12_DATA && s.kind != DMR_BURST_RATE_34_DATA &&
-		      s.kind != DMR_BURST_RATE_1_DATA;
+		      s.kind != DMR_BURST_RATE_1_DATA && s.kind != DMR_BURST_MBC_CONT;
 	if (!s.crc_ok) {
 		e->st.rx_crc_err++;
 		// Headers and CSBKs with a bad CRC are dropped (dmr-modem.md 2.2), except while we send: the chip's verdict
@@ -749,6 +759,29 @@ static void rx_burst(hrc7000_dmr_t *e)
 	ev_commit(e);
 }
 
+// The tick's slot (the TC estimate once locked to a BS signal, else 0) and the AT bit of the last CACH that named it
+static void push_tick(hrc7000_dmr_t *e)
+{
+	hrc7000_dmr_evslot_t *slot = ev_alloc(e);
+	if (slot == NULL) {
+		return;
+	}
+	int8_t ts = 0;
+	uint8_t fl = 0;
+	if (!tx_ticking(e) && tc_locked(e)) {
+		uint8_t i = e->tc_est;
+		ts = (int8_t)(i + 1u);
+		if (e->tick - e->at_tick[i] <= AT_FRESH_TICKS) {
+			fl = e->at_flags[i];
+		}
+	}
+	slot->ev.flags = fl;
+	slot->ev.kind = DMR_EV_SLOT_TICK;
+	slot->ev.ts = ts;
+	slot->ev.arg = tick_arg(e);
+	ev_commit(e);
+}
+
 // --- ISRs ---
 
 void hrc7000_dmr_isr_sys(hrc7000_dmr_t *e)
@@ -785,6 +818,11 @@ void hrc7000_dmr_isr_sys(hrc7000_dmr_t *e)
 		}
 		if (list & SYS_DEFRAME) {
 			rx_burst(e);
+		}
+		// A new short LC in RX RAM, read task-side (hrc7000_dmr_short_lc). Only while receiving a BS signal: a
+		// direct or SFR signal has no CACH, and the RAM keeps the last one
+		if ((list & SYS_SHORT_LC) && e->rx_bs && !tx_ticking(e)) {
+			e->slc_seq++;
 		}
 		if (list & SYS_ABNORMAL) {
 			e->st.slot_abnormal++;
@@ -840,7 +878,7 @@ void hrc7000_dmr_isr_timeslot(hrc7000_dmr_t *e, bool tx_vector)
 		}
 	}
 	e->st.tx_state = e->tx_state;
-	ev_simple(e, DMR_EV_SLOT_TICK, 0, tick_arg(e));
+	push_tick(e);
 }
 
 void hrc7000_dmr_isr_rftx(hrc7000_dmr_t *e)

@@ -20,6 +20,10 @@
 // numbers: through a repeater from TC; TDMA direct mode from the sync family; simplex as a label from the chip's slot
 // number (1 or 2, stable while the timing holds).
 //
+// A BS signal's CACH (a repeater, a control channel): once the TC lock holds, each slot tick carries the TS
+// starting there and the AT bit of the last CACH that named it (RX_TYPE_INFO b23, DMR_TICK_AT_*); the short LC the
+// chip assembles (system interrupt bit 4, RX RAM 0x2B-0x2F) is reported when it changes (hrc7000_dmr_short_lc).
+//
 // A received burst's event arg is the tick of the slot after the one it was in, as on the HR_C6000 (hrc6000_dmr.h): the
 // deframe comes near the end of the burst's slot, either side of the next timeslot interrupt, so one that comes in the
 // first half of a slot is counted to the slot before. The split duplex RX half times bursts from it (split-duplex.md 7).
@@ -43,6 +47,7 @@ typedef struct {
 	uint8_t chip_slot;	// current_rx_slot
 	bool pi;
 	bool crc_ok;
+	bool at;		// CACH AT bit (repeater: the inbound slot TC names is busy)
 	uint8_t lcss;
 } hrc7000_rx_status_t;
 
@@ -92,6 +97,7 @@ typedef struct {
 	uint32_t rx_in_tx[2];	// bursts deframed while we send, by ticks since our last arming (even, odd)
 	uint32_t stalls;
 	uint32_t sys_stuck;	// system requests pending with no handler run, dropped (hrc7000_dmr_poll)
+	uint32_t slc_reads;	// CACH short LCs reported (DMR_EV_SHORT_LC), CRC not checked
 	uint32_t last_rx_type_info;
 	uint32_t last_sys_list;
 	uint32_t last_l2_status;
@@ -157,6 +163,13 @@ typedef struct {
 	uint8_t tc_prev;	// TC of the last BS burst, and its tick
 	uint32_t tc_tick;
 	uint8_t tc_est;		// TC estimate of the slot now starting (toggled every tick)
+	// Per TC: the tick the last CACH AT bit naming it was read at and DMR_TICK_AT_* (0 none since the restart)
+	uint32_t at_tick[2];
+	uint8_t at_flags[2];
+	// The short LC: new ones counted by the system interrupt, the count and the bytes last read (hrc7000_dmr_short_lc)
+	volatile uint8_t slc_seq;
+	uint8_t slc_seen;
+	uint8_t slc_last[5];
 	uint8_t cc_cur;		// LOCAL_CC now
 	uint32_t cc_tick;	// last CC change or burst heard (scan)
 	bool emb_pending;	// late entry: an embedded LC waits for the next voice burst
@@ -213,6 +226,10 @@ void hrc7000_dmr_isr_rftx(hrc7000_dmr_t *e);
 // Task side
 bool hrc7000_dmr_pop(hrc7000_dmr_t *e, dmr_event_t *ev, dmr_burst_t *burst);
 void hrc7000_dmr_poll(hrc7000_dmr_t *e);	// every few ms: stall watchdog
+// Task-side, after the events are popped: a new CACH short LC as a DMR_EV_SHORT_LC (arg its 28 bits, flags the
+// CRC-8 received, unchecked), when one came and differs from the last. Kept out of the interrupt and out of SRAM
+// (hrc7000_cach.c): it changes every 120 ms at most
+bool hrc7000_dmr_short_lc(hrc7000_dmr_t *e, dmr_event_t *ev);
 
 // hal_dmr_modem.h commands (task level; each takes the lock)
 void hrc7000_dmr_configure(hrc7000_dmr_t *e, const dmr_config_t *cfg);
