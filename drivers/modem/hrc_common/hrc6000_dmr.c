@@ -844,7 +844,8 @@ static void held_drop(hrc6000_dmr_t *e, hrc6000_dmr_held_t *hd)
 //
 // Page 2 keeps the last LC the chip decoded until it decodes another, so the first embedded LC read in a new reception
 // may be the previous call's. The engine captures page 2 when a reception starts and hands over an embedded LC only when
-// it differs from that capture, or after more than STALE_LC_VOICE voice bursts. Where the LC is looked for:
+// it differs from that capture, or after more than STALE_LC_VOICE voice bursts (at F, or at the A after a whole
+// superframe of this reception closed with a good F: page 2 then holds that superframe's LC). Where the LC is looked for:
 //   - at burst F (B-E carry the embedded LC);
 //   - at the next burst A while this reception has no LC yet: HIL 2026-10-10 (c8c9b23, test_late_entry) took a new LC
 //     only at the second F of a late entry, as if page 2 still held the old LC at the first F's report (it is read at the
@@ -920,6 +921,7 @@ static void capture_if_fresh(hrc6000_dmr_t *e, char how)
 		e->lc_given = false;
 		e->lc_kept = false;
 		e->f_crc_bad = false;
+		e->f_whole = false;
 		for (int i = 0; i < 2; i++) {	// a new reception: its call's F reads count from here (5.2)
 			e->slot_lc[i].other_reads = 0;
 			e->slot_lc[i].cand_ok = false;
@@ -1211,6 +1213,7 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 			b->lc_valid = s->crc_ok && (changed || counted) && mine;
 			e->st.lc_other_slot += s->crc_ok && (changed || counted) && !mine;
 			e->f_crc_bad = !s->crc_ok;
+			e->f_whole = s->crc_ok && e->voice_since_start >= 6u;
 			if (!e->lc_given) {
 				char res = !s->crc_ok ? 'c' : !mine ? 'o' : changed ? 'n' : b->lc_valid ? 'v' : 's';
 				e->st.lc_f_new += res == 'n';
@@ -1220,14 +1223,18 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 				lc_note(e, 'F', res, lc_src(b->lc));
 			}
 		} else if (s->voice_index == 0 && looking && !e->lc_kept) {
-			// No LC yet: the last superframe's may have reached page 2 only after its F was read
+			// No LC yet: the last superframe's may have reached page 2 only after its F was read. Unchanged, it is
+			// this call's own once a whole superframe of this reception closed with a good F: the same talker
+			// again (HIL 2026-11-14: held back to the second F, a late entry played 8 bursts instead of 12)
 			bool changed = lc_read(e, b->lc);
 			bool mine = lc_slot_ok(e, ts, b->lc, false);
-			b->lc_valid = (changed || (two && counted)) && !e->f_crc_bad && mine;
+			bool same = counted && (two || e->f_whole);
+			b->lc_valid = (changed || same) && !e->f_crc_bad && mine;
 			e->st.lc_a_new += b->lc_valid;
-			e->st.lc_other_slot += (changed || (two && counted)) && !e->f_crc_bad && !mine;
-			lc_note(e, 'A', !mine ? 'o' : b->lc_valid ? 'n' : !changed ? 's' : 'c', lc_src(b->lc));
+			e->st.lc_other_slot += (changed || same) && !e->f_crc_bad && !mine;
+			lc_note(e, 'A', !mine ? 'o' : b->lc_valid ? (changed ? 'n' : 'v') : !changed ? 's' : 'c', lc_src(b->lc));
 			e->f_crc_bad = false;
+			e->f_whole = false;
 		}
 		if (!b->lc_valid && e->lc_kept && !e->lc_given) {
 			e->lc_kept = false;
