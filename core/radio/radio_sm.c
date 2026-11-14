@@ -2945,6 +2945,7 @@ static void t3_publish(radio_sm_t *sm)
 	v->grants = m->st.grants;
 	v->followed = m->st.followed;
 	v->unmapped = m->st.unmapped;
+	v->lent = m->st.lent;
 	v->last_unmapped = m->st.last_unmapped;
 	v->returns = m->st.returns;
 	v->hunts = m->st.hunts;

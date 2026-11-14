@@ -153,6 +153,14 @@ LCs). After a loss, the lost TSCC is tried first.
 restarts T_Nosig. When it runs out, the engine hunts again. Short LCs don't restart it: every channel of the site
 carries them. The registration state follows the latest Aloha or broadcast Reg flag:
 
+**Composite TSCC.** A site with few channels may lend the TSCC's slot to a call (5.3.2). Its grant names the TSCC's
+own channel and slot, and the radio follows it like any other; P_CLEAR to channel 0 brings it back to the TSCC. While
+the slot is lent, its carrier's CACH carries P_SYS_Parms with Payload Channel Type 1 (table 7.34) and the TSCC sends
+nothing. An idle radio that hears that short LC with its own system's MODEL, NET and SITE stays: each one restarts
+T_Nosig, and no random access goes until the TSCC is back (an Aloha or C_SYS_Parms) or 360 ms pass without one.
+P_SYS_Parms with type 0, or another system's, changes nothing.
+
+
 | Reg | Listen-only | State |
 |---|---|---|
 | 0 | either | not needed |

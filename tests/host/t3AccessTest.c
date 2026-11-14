@@ -1486,6 +1486,87 @@ static void udt_down(t3_ms_t *ms, uint8_t slot, const t3_udt_t *h, const uint8_t
 // The radio authenticates the TSCC (6.4.9.2, 6.4.10): with K, a stun, revive or kill C_AHOY is acknowledged by a
 // C_ACKVIT carrying the radio's challenge; the TSCC's right answer (C_ACKD Authentication_Response) is acted on and
 // acknowledged MS_Accepted, a wrong one refused (Recipient_Refused) and ignored. Kill only with T3_OPT_KILL
+// The composite TSCC's CACH while its slot is lent to a call (5.3.2, table 7.34)
+static void lent_slc(t3_ms_t *ms, bool composite)
+{
+	t3_sysparms_t sp = { false, T3_MODEL_LARGE, (uint16_t)(t3_syscode_14(ours) & 0xFFF), composite, 0 };
+	t3_ms_slc(ms, T, t3_sysparms_build(&sp));
+}
+
+// A one-carrier site lends its TSCC's slot to a call when no payload channel is free (5.3.2)
+static void test_composite(void)
+{
+	setup(T3_OPT_PRIVATE, false);
+	t3_ms_t ms;
+	camp(&ms);
+	// Lent: P_SYS_Parms "composite" on the CACH, no Aloha. The radio waits for the TSCC, past T_Nosig, and asks
+	// nothing meanwhile
+	aloha_on = false;
+	lent_slc(&ms, true);
+	int t0 = ntune;
+	for (int i = 0; i < 200; i++) {		// 12 s
+		if (i == 180) {
+			CHECK(t3_ms_request(&ms, T, TG_A, true, false), "call request");
+		}
+		frame(&ms);
+		if (i % 2 == 0) {
+			lent_slc(&ms, true);
+		}
+	}
+	CHECK(ms.state == T3_CAMPED && ntune == t0 && ms.st.lent == 101, "waits on the lent TSCC (lent %u)",
+	      ms.st.lent);
+	CHECK(nsent == 0, "no random access while lent, %d sent", nsent);
+	// Back with an Aloha: the request goes
+	aloha_on = true;
+	frames(&ms, 4);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_RAND, "request after the Aloha, %d sent", nsent);
+	// The grant names the TSCC's own channel and slot: the call is there, and P_CLEAR to channel 0 returns to the
+	// TSCC on the same carrier
+	t3_csbk_t g = grant(T3_OP_TV_GRANT, TSCC_LCN, 1, TG_A, OWN);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && tuned.chan.rx_hz == RX(TSCC_LCN) && tuned.slot == 1 && tuned.payload,
+	      "on the TSCC's own slot");
+	frames(&ms, 3);
+	t3_csbk_t c = { .lb = true, .op = T3_OP_P_CLEAR };
+	c.u.clear.group = true;
+	c.u.clear.dst = TG_A;
+	c.u.clear.lpcn = T3_LPCN_NULL;
+	rx(&ms, 1, &c);
+	CHECK(ms.state == T3_CAMPED && tuned.chan.rx_hz == RX(TSCC_LCN) && !tuned.payload, "back on the TSCC");
+
+	// A normal payload channel's P_SYS_Parms (type 0) doesn't hold the radio: T_Nosig, then hunt
+	setup(T3_OPT_PRIVATE, false);
+	camp(&ms);
+	aloha_on = false;
+	for (int i = 0; i < 200 && ms.state == T3_CAMPED; i++) {
+		frame(&ms);
+		if (i % 2 == 0) {
+			lent_slc(&ms, false);
+		}
+	}
+	CHECK(ms.state == T3_HUNT && ms.st.lent == 0, "type 0: hunt");
+	// Nor does another system's composite one
+	setup(T3_OPT_PRIVATE, false);
+	camp(&ms);
+	aloha_on = false;
+	t3_syscode_t o = { T3_MODEL_LARGE, 13, 5, T3_PAR_AB };
+	t3_sysparms_t sp = { false, T3_MODEL_LARGE, (uint16_t)(t3_syscode_14(t3_syscode_join(&o)) & 0xFFF), true, 0 };
+	for (int i = 0; i < 200 && ms.state == T3_CAMPED; i++) {
+		frame(&ms);
+		t3_ms_slc(&ms, T, t3_sysparms_build(&sp));
+	}
+	CHECK(ms.state == T3_HUNT && ms.st.lent == 0, "another system's: hunt");
+	// The lent mark ends: back to T_Nosig once the short LCs stop
+	setup(T3_OPT_PRIVATE, false);
+	camp(&ms);
+	aloha_on = false;
+	lent_slc(&ms, true);
+	for (int i = 0; i < 200 && ms.state == T3_CAMPED; i++) {
+		frame(&ms);
+	}
+	CHECK(ms.state == T3_HUNT, "nothing after the lent mark: hunt");
+}
+
 static void test_acvit(void)
 {
 	t3_ms_t ms;
@@ -2880,6 +2961,7 @@ int main(void)
 	test_no_answer();
 	test_ra_log();
 	test_ra_on_air();
+	test_composite();
 	test_area_unset();
 	test_refused_denied();
 	test_permission();

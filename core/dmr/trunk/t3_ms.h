@@ -76,6 +76,7 @@
 #define T3_ALS_S		30	// T_ALS (A.1: 10-300 s)
 #define T3_ALS_E_S		60	// T_ALS_E (10-14 400 s)
 #define T3_ALS_REQUEST_MS	5000	// T_ALS_REQUEST_LIFE_SPAN (1-10 s)
+#define T3_LENT_MS		360	// a composite TSCC lent to a call: no access for 3 short LCs after the last such one
 #define T3_NRAND_NR		6	// random access tries, a request
 #define T3_NRAND_NE		10	// ... an emergency request
 #define T3_N_MAINT		4	// P_MAINT bursts at the end of a call we end
@@ -252,6 +253,7 @@ typedef struct {
 	uint32_t hunts;
 	uint32_t foreign;	// Alohas and broadcasts from another system (wrong syscode)
 	uint32_t foreign_slc;	// C_SYS_Parms from another system (an 8-bit CRC: some are corrupt words)
+	uint32_t lent;		// P_SYS_Parms "composite" on the TSCC's carrier while camped: its slot lent to a call
 	uint32_t learned;	// Chan_Freq / CG_AP entries learned or changed
 	uint32_t ahoys;		// C_AHOYs to the radio on the TSCC; the last one's source, time and Service_Kind
 	uint32_t ahoy_src, ahoy_ms;
@@ -308,6 +310,7 @@ typedef struct {
 
 	// timers
 	uint32_t last_valid_ms;	// last PDU from our system on the TSCC
+	uint32_t lent_ms;	// last P_SYS_Parms "composite" while camped (0: none since the TSCC was heard)
 	uint32_t last_act_ms;	// last activity on the followed slot
 	uint32_t data_end_ms;	// not 0: the radio's single data item is over, the call ends then (t3_ms_data_done)
 

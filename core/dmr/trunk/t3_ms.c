@@ -100,6 +100,7 @@ static void tune(t3_ms_t *ms, uint32_t now, const t3_chan_t *c, uint8_t slot, bo
 	ms->udt_rx.open = false;
 	ms->slc_foreign = 0;
 	ms->aloha_here = false;
+	ms->lent_ms = 0;
 	ms->tx.count = 0;
 	ms->tx.udt = false;
 }
@@ -1627,6 +1628,7 @@ static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 	}
 	ms->confirmed = true;
 	ms->aloha_here = true;
+	ms->lent_ms = 0;	// a lent composite TSCC is back (it comes back with an Aloha)
 	ms->syscode = a->syscode;
 	ms->aloha = *a;
 	ms->tscc_slots |= (uint8_t)(1u << (slot - 1u));
@@ -2329,7 +2331,20 @@ void t3_ms_slc(t3_ms_t *ms, uint32_t now, uint32_t slc)
 {
 	t3_sysparms_t sp;
 	if (ms->state == T3_OFF || ms->state == T3_FOLLOW || !since(now, ms->tuned_ms, T3_SETTLE_MS) ||
-	    !t3_sysparms_parse(slc, &sp) || !sp.control) {
+	    !t3_sysparms_parse(slc, &sp)) {
+		return;
+	}
+	if (!sp.control) {
+		// A composite TSCC lent to a call (5.3.2): its carrier's CACH carries P_SYS_Parms with Payload Channel Type
+		// 1 instead of C_SYS_Parms. The control channel comes back after the call with an Aloha: wait for it
+		// rather than hunt (T_Nosig), and send no random access meanwhile. Only on our system's TSCC: another
+		// payload channel's CACH is never heard while camped
+		if (sp.flag && ms->state == T3_CAMPED && !ms->vote.on && ms->syscode != 0 &&
+		    sp.model == (uint8_t)(ms->syscode >> 14) && sp.netsite == (uint16_t)((ms->syscode >> 2) & 0xFFFu)) {
+			ms->st.lent++;
+			ms->lent_ms = now != 0 ? now : 1u;
+			ms->last_valid_ms = now;
+		}
 		return;
 	}
 	// MODEL, NET and SITE; the PAR bits aren't in the short LC, so ours are assumed
@@ -2351,6 +2366,7 @@ void t3_ms_slc(t3_ms_t *ms, uint32_t now, uint32_t slc)
 	}
 	ms->slc_foreign = 0;
 	if (ms->state == T3_CAMPED && !ms->vote.on) {
+		ms->lent_ms = 0;	// the control channel is back
 		// The value is that of the four slots whose CACHs carried it: complete only as they end, so its 120 ms
 		// began one step before now
 		ms->csc = sp.csc;
@@ -2364,6 +2380,9 @@ void t3_ms_slot(t3_ms_t *ms, uint32_t now, uint8_t slot, bool at_known, bool at_
 	if (!may_send(ms) || ms->state == T3_OFF || ms->state == T3_HUNT || slot < 1 || slot > 2 ||
 	    !since(now, ms->tuned_ms, T3_SETTLE_MS)) {
 		return;
+	}
+	if (ms->state == T3_CAMPED && ms->lent_ms != 0 && !since(now, ms->lent_ms, T3_LENT_MS)) {
+		return;		// the TSCC is lent to a call: it can't take an access (5.3.2 b)
 	}
 	if (ms->tx.count != 0 && slot == ms->tx.slot) {
 		// An answer, an upload or P_MAINT: no random access, the slot is the radio's
