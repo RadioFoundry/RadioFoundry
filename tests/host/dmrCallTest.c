@@ -984,6 +984,93 @@ static void test_rmo_wakeup(void)
 	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
 }
 
+// Keyed as the repeater's hang ends (issue 524): it still counts as up, so no wake-up, and the modem's aligned start
+// finds no repeater timing. The modem's own slot numbers while it transmits must not keep the repeater "up", and the
+// refused start wakes the repeater instead of being refused, once per key-up
+static unsigned csbks_on_air(void)
+{
+	unsigned n = 0;
+	for (unsigned i = 0; i < sim.air_count; i++)
+		n += sim.air[i].kind == DMR_BURST_CSBK;
+	return n;
+}
+
+static void test_rmo_hang_end(void)
+{
+	dmr_call_config_t c = base_cfg();
+	c.rmo = true;
+	c.ts = 2;
+
+	// The repeater dropped just before the key-up: the start is refused, the repeater woken, the call goes
+	setup(&c);
+	sim.held_slot_numbers = true;
+	sim.align_needs_repeater = true;
+	sim.repeater = true;
+	run_ms(180);
+	CHECK(V()->repeater_up);
+	sim.repeater = false;
+	sim.wake_repeater_on_csbk = true;
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && sim.air_count == 0);	// no wake-up: it was up
+	run_ms(600);
+	CHECK(!V()->repeater_up);	// the modem's slot numbers while it waits don't count
+	run_ms(1200);
+	CHECK(sim.align_rejects == 1 && csbks_on_air() == 1);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && V()->tx_error == DMR_TX_OK && V()->repeater_up);
+	unsigned voice = 0;
+	for (unsigned i = 0; i < sim.air_count; i++)
+		voice += sim.air[i].kind == DMR_BURST_VOICE;
+	CHECK(voice > 0);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && src.ends == 2);	// the refused start's source ended too
+
+	// The repeater woken but its timing never heard: refused at the second start, no third
+	setup(&c);
+	sim.held_slot_numbers = true;
+	sim.align_needs_repeater = true;
+	sim.repeater = true;
+	run_ms(180);
+	sim.repeater = false;
+	dmr_call_ptt(true);
+	run_ms(1900);
+	CHECK(sim.align_rejects == 1 && csbks_on_air() == 1);
+	sim.repeater = true;	// answers the wake-up: up, so the voice starts aligned again ..
+	run_ms(150);
+	sim.repeater = false;	// .. and the timing is gone before the start found it
+	run_ms(2000);
+	CHECK(sim.align_rejects == 2 && csbks_on_air() == 1);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && V()->tx_error == DMR_TX_ERR_REJECTED);
+	dmr_call_ptt(false);
+	run_ms(30);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
+
+	// Refused after the first burst went: refused, no wake-up
+	setup(&c);
+	sim.repeater = true;
+	run_ms(180);
+	dmr_call_ptt(true);
+	run_ms(200);
+	sim.reject_next = true;
+	run_ms(100);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && V()->tx_error == DMR_TX_ERR_REJECTED && csbks_on_air() == 0);
+	dmr_call_ptt(false);
+	run_ms(30);
+
+	// Direct mode: refused as before
+	c.rmo = false;
+	setup(&c);
+	dmr_call_ptt(true);
+	run_ms(30);
+	sim.reject_next = true;
+	run_ms(100);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && csbks_on_air() == 0);
+	dmr_call_ptt(false);
+	run_ms(30);
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // RX
 
@@ -2445,6 +2532,7 @@ int main(void)
 	test_tx_modem_stalled();
 	test_rmo_wakeup();
 	test_rmo_air_slot_alignment();
+	test_rmo_hang_end();
 	test_rx_call();
 	test_rx_filters();
 	test_rx_recheck_on_configure();
