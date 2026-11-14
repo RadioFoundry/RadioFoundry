@@ -59,6 +59,13 @@ Pass criteria:
   (call.rx_late_entries 0), no frame lost (call.rx_lost_frames, voice.rx_lost 0), at least SPEECH_MIN frames in, all
   but PRIME played, no overflow, and the decoded speech peaks at PEAK_MIN or more (voice.rx_peak), as
   test_dmr_voice: silence would pass every counter.
+- test_t3_cease (rf, radio_tx; needs --t3-cease-cmd and a board that listens between its bursts): registered, the
+  radio talks on --t3-tg with the voice test signal, PTT held (a board that heard nothing between its bursts,
+  call.rx_bs_in_tx 0, skips). TALK_S into the over the rig's command has the site
+  send a reverse channel cease on the call's other slot (ETSI TS 102 361-4 6.4.15.2). Within CEASE_S the radio stops
+  sending (call.rc_ceased +1, call.rc_good >= 2: a cease is acted on only when heard twice) though PTT is still held,
+  and it doesn't key again while PTT stays held (CEASE_HOLD_S). After the release it is back on the control channel
+  within CALL_S (the site may give the channel to the radio that interrupted first).
 - test_t3_cp_channel (rf, radio_tx): the system from the codeplug instead (dmr-trunking.md 12): a system record in
   slot CP_SYS with --t3-system's identity, its control channel and a tag on the channel in use. Selecting the channel
   starts the system (t3.sys CP_SYS + 1): within CAMP_S + REG_S it camps on --t3-rx-mhz and registers (t3.reg ok).
@@ -123,6 +130,8 @@ CALL_S = 30.0       # the other radio's call: its request, the speech, the hang 
 SPEECH_MIN = 90     # voice frames: the shortest call the command may make (5 superframes)
 PRIME = 3           # AMBE_VOICE_PRIME in core/dmr/ambe/ambeVoice.h
 PEAK_MIN = 1000     # as test_dmr_voice: decoded speech peaks at thousands
+CEASE_S = 4.0       # the command, the site's RC (every 360 ms), two heard, the over ended after its burst F
+CEASE_HOLD_S = 1.5  # PTT held on after the cease: no new over
 CP_SYS = 7          # the codeplug system slot the cp tests write (the last: the user's come first)
 CP_CHAN = 0xF0      # the system channel record they write (CPKV_T3_CHAN + it)
 
@@ -620,3 +629,51 @@ def test_t3_follow_speech(trunk_tx, pytestconfig):
     assert d["voice.rx_frames"] >= d["voice.rx_in"] - PRIME, f"played {d['voice.rx_frames']} of {d['voice.rx_in']}: {d}"
     assert d["voice.rx_overflows"] == 0 and d["audio.ov"] == 0, f"overflows: {d}"
     assert peak is not None and int(peak) >= PEAK_MIN, f"decoded speech peaks at {peak} (silent output?): {d}"
+
+
+@pytest.mark.feature("dmr_trunk_tx")
+@pytest.mark.rf
+@pytest.mark.radio_tx
+def test_t3_cease(trunk_tx, pytestconfig):
+    s = site(pytestconfig)
+    cmd = rig(pytestconfig, "t3-cease-cmd", "a reverse channel cease from the site while the radio talks")
+    L = trunk_tx.link
+    v0 = register(trunk_tx, s)
+    returns0 = num(v0, "t3.returns")
+    _, before = trunk_tx.counters()
+    L.voice_test(True)
+    L.ptt(True, PTT_MAX_MS)
+    try:
+        wait_t3(trunk_tx, lambda x: x.get("t3.state") == "follow" and x.get("t3.can_talk") == "1", GRANT_S,
+                "the grant")
+        wait_t3(trunk_tx, lambda x: str(x.get("state", "")).lower() == "tx", 3.0, "the radio transmitting voice")
+        time.sleep(TALK_S)
+        subprocess.run(cmd, shell=True, check=True, timeout=30)
+        asked = time.monotonic()
+        try:
+            wait_t3(trunk_tx, lambda x: str(x.get("state", "")).lower() != "tx", CEASE_S,
+                    "the over ended by the cease")
+        except AssertionError:
+            _, now = trunk_tx.counters()
+            if counter_deltas(before, now, ["call.rx_bs_in_tx"])["call.rx_bs_in_tx"] == 0:
+                skip("hw_unsupported", "nothing heard between the radio's bursts (call.rx_bs_in_tx 0): the board "
+                     "doesn't listen while sending, so it can't hear a reverse channel")
+            raise
+        took = time.monotonic() - asked
+        end = time.monotonic() + CEASE_HOLD_S
+        while time.monotonic() < end:
+            assert str(trunk_tx.link.view(["core"]).get("state", "")).lower() != "tx", "keyed again with PTT held"
+            time.sleep(0.1)
+    except AssertionError:
+        print("t3 view:", t3(trunk_tx))
+        raise
+    finally:
+        L.ptt(False)
+        L.voice_test(False)
+    _, after = trunk_tx.counters()
+    d = counter_deltas(before, after, ["call.rc_good", "call.rc_bad", "call.rc_ceased"])
+    print(f"over ended {took:.2f} s after the command; {d}")
+    assert d["call.rc_ceased"] == 1, f"the over didn't end on a cease: {d}"
+    assert d["call.rc_good"] >= 2, f"fewer than two RCs heard: {d}"
+    wait_t3(trunk_tx, lambda x: x.get("t3.state") == "camped" and num(x, "t3.returns") > returns0, CALL_S,
+            "back on the control channel")

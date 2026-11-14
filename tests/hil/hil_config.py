@@ -57,6 +57,9 @@ RIG = {
                         "(test_t3_reg_list)", False),
     "t3-call-cmd": (str, "a shell command that has another radio on the Tier III site make one group call to --t3-tg "
                          "carrying speech (test_t3_follow_speech); it returns once the call is asked for", False),
+    "t3-cease-cmd": (str, "a shell command that has the Tier III site end the radio's over on --t3-tg with a reverse "
+                          "channel cease, e.g. another radio's transmit interrupt (test_t3_cease); it returns once "
+                          "that is asked for", False),
     "tx-mhz": (str, "MHz, comma separated: the frequencies this rig may transmit on (the radio and the bench); "
                     "--allow-rf needs it", False),
 }
