@@ -1541,6 +1541,8 @@ static void volume_bar_checks(void)
 		{ "side A turned while both show: A marked", "knob:50 knobb:40 knobb:62 knob:75", "volbar=12 volbar_b=10 volbar_side=a" },
 		{ "both gone at 3 s", "knob:50 knobb:40 knobb:62 wait:3000", "volbar=-1 volbar_b=-1 hides=Vol" },
 		{ "side B under the debug link's level", "knob:50 knobb:40 override:80 knobb:62", "volbar=13 volbar_b=10" },
+		{ "the debug link takes over while A shows: gone", "knob:50 knobb:40 knob:75 override:80", "volbar=-1 hides=Vol" },
+		{ "and while B shows: kept", "knob:50 knobb:40 knobb:62 override:80", "volbar=13 volbar_b=10" },
 		{ "both in the strip with hints off", "hints:off knob:50 knobb:40 knobb:0", "volbar_b=0 volbar_at=top" },
 	};
 	char err[300];
