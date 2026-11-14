@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// UV380 family backlight PWM (backlight_uvf.h): a low rate the backlight follows while receiving, so every brightness
-// the core asks for (Brightness 10-100 %, the idle dim level of a fifth with a 5 % floor) is its duty on the panel, and
-// a rate far above the FM audio band while transmitting (#330). Each rate maps every brightness to its exact duty.
+// UV380 family backlight PWM (backlight_uvf.h): a low rate the backlight follows while receiving and a rate far above
+// the FM audio band while transmitting (#330). The backlight stage stays lit about 35 us after the pin falls, at any
+// rate, so the compare is shortened by that tail: pulse plus tail is the brightness asked for, where the period allows.
 #include <stdio.h>
 #include <stdlib.h>
 #include "backlight_uvf.h"
@@ -26,51 +26,59 @@ int main(void)
 	CHECK(UVF_BL_IDLE_PERIOD == 36000u);
 	CHECK(UVF_BL_IDLE_PERIOD - 1 <= 0xFFFFu);
 	CHECK(UVF_BL_IDLE_HZ >= 1000u && UVF_BL_IDLE_HZ <= 5000u);
-	// The receive rate's duty at a brightness is the transmit rate's: switching rates keeps the level
-	for (unsigned p = 0; p <= 100; p++)
-		CHECK(uvf_bl_compare((uint8_t)p, UVF_BL_IDLE_PERIOD) * UVF_BL_PERIOD ==
-		      uvf_bl_compare((uint8_t)p, UVF_BL_PERIOD) * UVF_BL_IDLE_PERIOD);
-
-	// Equivalence partitions: off, lit below one percent of a count, a middle level, fully on, values above 100
+	// The tail in timer counts: 35 us at 72 MHz, longer than the transmit period (so transmit can't dim) and a small
+	// share of the receive period
+	CHECK(UVF_BL_TAIL == 2520u);
+	CHECK(UVF_BL_TAIL > UVF_BL_PERIOD);
+	CHECK(UVF_BL_TAIL * 10u < UVF_BL_IDLE_PERIOD);
+	// Equivalence partitions at the receive rate: off, too low for the tail (one count), a middle level, fully on,
+	// values above 100
+	CHECK(uvf_bl_compare(0, UVF_BL_IDLE_PERIOD) == 0);
+	CHECK(uvf_bl_compare(5, UVF_BL_IDLE_PERIOD) == 1);	// the idle dim floor: 1800 counts lit is under the tail
+	CHECK(uvf_bl_compare(10, UVF_BL_IDLE_PERIOD) == 3600u - 2520u);
+	CHECK(uvf_bl_compare(50, UVF_BL_IDLE_PERIOD) == 18000u - 2520u);
+	CHECK(uvf_bl_compare(100, UVF_BL_IDLE_PERIOD) == UVF_BL_IDLE_PERIOD);
+	CHECK(uvf_bl_compare(255, UVF_BL_IDLE_PERIOD) == UVF_BL_IDLE_PERIOD);
+	// Boundary values around the tail: 7 % is exactly the tail (one count), 8 % the first level above it, 99 % still PWM
+	CHECK(uvf_bl_compare(7, UVF_BL_IDLE_PERIOD) == 1);
+	CHECK(uvf_bl_compare(8, UVF_BL_IDLE_PERIOD) == 2880u - 2520u);
+	CHECK(uvf_bl_compare(99, UVF_BL_IDLE_PERIOD) == 35640u - 2520u);
+	CHECK(uvf_bl_compare(99, UVF_BL_IDLE_PERIOD) < UVF_BL_IDLE_PERIOD);
+	// Every Brightness setting and idle dim level from 10 % up: pulse plus tail is its exact share of the period
+	for (unsigned b = 10; b <= 95; b += 5)
+		CHECK((uvf_bl_compare((uint8_t)b, UVF_BL_IDLE_PERIOD) + UVF_BL_TAIL) * 100u == b * UVF_BL_IDLE_PERIOD);
+	// Transmit rate: every PWM level is the one-count minimum (the tail fills the period, as it always did there)
+	for (unsigned p = 1; p < 100; p++)
+		CHECK(uvf_bl_compare((uint8_t)p, UVF_BL_PERIOD) == 1);
 	CHECK(uvf_bl_compare(0, UVF_BL_PERIOD) == 0);
-	CHECK(uvf_bl_compare(1, UVF_BL_PERIOD) == 18);
-	CHECK(uvf_bl_compare(50, UVF_BL_PERIOD) == 900);
 	CHECK(uvf_bl_compare(100, UVF_BL_PERIOD) == UVF_BL_PERIOD);
-	CHECK(uvf_bl_compare(255, UVF_BL_PERIOD) == UVF_BL_PERIOD);
-
-	// Boundary values: the lowest lit level, the last PWM level, the edge into fully on
-	CHECK(uvf_bl_compare(2, UVF_BL_PERIOD) == 36);
-	CHECK(uvf_bl_compare(99, UVF_BL_PERIOD) == 1782);
-	CHECK(uvf_bl_compare(99, UVF_BL_PERIOD) < UVF_BL_PERIOD);	// still PWM, not steady
-
-	// Every Brightness setting and idle dim level is its exact duty
-	for (unsigned b = 5; b <= 100; b += 5)
-		CHECK(uvf_bl_compare((uint8_t)b, UVF_BL_PERIOD) * 100u == b * UVF_BL_PERIOD);
-
-	// Exhaustive over the input type: exact percent, monotonic, lit stays lit, PWM only strictly between off and on
-	unsigned prev = 0;
-	for (unsigned p = 0; p <= 255; p++) {
-		unsigned c = uvf_bl_compare((uint8_t)p, UVF_BL_PERIOD);
-		CHECK(c >= prev);
-		CHECK(c <= UVF_BL_PERIOD);
-		CHECK((p == 0) == (c == 0));
-		CHECK((p >= 100) == (c == UVF_BL_PERIOD));
-		if (p > 0 && p < 100)
-			CHECK(c * 100u == p * UVF_BL_PERIOD);
-		prev = c;
+	// Exhaustive over the input type at both rates: monotonic, within the period, lit stays lit, steady only at 100+,
+	// and wherever the tail fits, pulse plus tail is the exact share
+	const uint16_t periods[] = { UVF_BL_IDLE_PERIOD, UVF_BL_PERIOD };
+	for (unsigned k = 0; k < 2; k++) {
+		unsigned prev = 0, per = periods[k];
+		for (unsigned p = 0; p <= 255; p++) {
+			unsigned c = uvf_bl_compare((uint8_t)p, (uint16_t)per);
+			CHECK(c >= prev);
+			CHECK(c <= per);
+			CHECK((p == 0) == (c == 0));
+			CHECK((p >= 100) == (c == per));
+			if (p > 0 && p < 100 && p * per / 100u > UVF_BL_TAIL)
+				CHECK(c + UVF_BL_TAIL == p * per / 100u);
+			prev = c;
+		}
 	}
-
-	// Seeded property: for any two levels, the brighter never gets a shorter on time
+	// Seeded property: for any two levels at either rate, the brighter never gets a shorter pulse
 	fuzz_t f;
 	fuzz_init(&f, 0xB1);
 	for (long i = 0; i < fuzz_iters(2000); i++) {
 		uint8_t a = (uint8_t)fuzz_below(&f, 256), b = (uint8_t)fuzz_below(&f, 256);
+		uint16_t per = periods[fuzz_below(&f, 2)];
 		if (a <= b)
-			CHECK(uvf_bl_compare(a, UVF_BL_PERIOD) <= uvf_bl_compare(b, UVF_BL_PERIOD));
+			CHECK(uvf_bl_compare(a, per) <= uvf_bl_compare(b, per));
 		else
-			CHECK(uvf_bl_compare(a, UVF_BL_PERIOD) >= uvf_bl_compare(b, UVF_BL_PERIOD));
+			CHECK(uvf_bl_compare(a, per) >= uvf_bl_compare(b, per));
 	}
-
 	printf("backlightTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;
 }

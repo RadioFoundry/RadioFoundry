@@ -18,8 +18,16 @@
 #define UVF_BL_IDLE_HZ		2000u		// otherwise
 #define UVF_BL_IDLE_PERIOD	(UVF_BL_TIMER_HZ / UVF_BL_IDLE_HZ)	// (36000)
 
-// CC1 value for a brightness at a period (UVF_BL_PERIOD or UVF_BL_IDLE_PERIOD): the count at which the pin clears,
-// percent of the period. 0 = off, period = fully on (the caller drives the pin steady for both)
+// The backlight stage keeps the LEDs lit after the pin falls: about 22 us at full current, then about 30 us to go out,
+// about 35 us of full light in all, at any rate (hardware-dm1701.md 9.4). That tail is why 40 kHz can't dim (the
+// period is 25 us) and why 2 kHz lit Brightness 10 % at about 17 %. The compare is shortened by it.
+#define UVF_BL_TAIL_US		35u
+#define UVF_BL_TAIL		(UVF_BL_TIMER_HZ / 1000000u * UVF_BL_TAIL_US)	// timer counts (2520)
+
+// CC1 value for a brightness at a period (UVF_BL_PERIOD or UVF_BL_IDLE_PERIOD): the count at which the pin clears, so
+// that the pulse plus the tail is the brightness's share of the period. A level too low for the tail keeps one count:
+// lit stays lit, at the least the period allows (about 7 % at 2 kHz; at 40 kHz every level is fully lit). 0 = off,
+// period = fully on (the caller drives the pin steady for both)
 static inline uint16_t uvf_bl_compare(uint8_t percent, uint16_t period)
 {
 	if (percent == 0) {
@@ -28,7 +36,8 @@ static inline uint16_t uvf_bl_compare(uint8_t percent, uint16_t period)
 	if (percent >= 100) {
 		return period;
 	}
-	return (uint16_t)((uint32_t)percent * period / 100u);
+	uint32_t lit = (uint32_t)percent * period / 100u;
+	return lit > UVF_BL_TAIL ? (uint16_t)(lit - UVF_BL_TAIL) : 1u;
 }
 
 #endif
