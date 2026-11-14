@@ -55,6 +55,7 @@
 #define SPLIT_CAP_RX_META	0x0008u
 #define SPLIT_CAP_TRIM		0x0010u
 #define SPLIT_CAP_PPS		0x0020u
+#define SPLIT_CAP_SCHED_CACH	0x0040u	// TX_SCHED may carry the slot's CACH (spec 3.9)
 
 // SET_ROLE byte 6
 #define SPLIT_STREAM_BUFFER	0
