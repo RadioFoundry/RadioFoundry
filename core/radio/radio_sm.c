@@ -4682,6 +4682,10 @@ static void persist(radio_sm_t *sm, uint32_t now_ms)
 		st->channel = pos < z->count ? z->channels[pos] : 0;
 	}
 	persist_vfo(sm, st, sm->vfo_idx);
+	if (sm->squelch_save) {
+		st->squelch = sm->base_squelch;
+		sm->squelch_save = false;
+	}
 #if CONFIG_DUAL_WATCH
 	uint8_t in_use = sm->vfo_idx;
 	vfo_use(sm, (uint8_t)!in_use);		// the other VFO into its own fields: swap, write, swap back
@@ -5458,6 +5462,9 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		}
 		int p = ((sm->view.power + req->arg) % n + n) % n;
 		sm->view.power = (uint8_t)p;
+		if (sm->view.vfo) {	// the VFO's own power, kept like its other settings (upstream #486)
+			sm->view.ch.power = sm->vfo_ch.power = (uint8_t)p;
+		}
 		sm->temp_power = sm->view.power != channel_power(&sm->view.ch);
 		set_temporary(sm);
 		changed(sm);
@@ -5481,6 +5488,10 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		}
 		if (s != sm->view.squelch) {
 			sm->view.squelch = (uint8_t)s;
+			if (sm->view.vfo) {	// squelch is radio-wide: in the VFO it becomes the default, as a channel save does
+				sm->base_squelch = sm->view.squelch;
+				sm->squelch_save = true;
+			}
 			sm->temp_squelch = sm->view.squelch != sm->base_squelch;
 			set_temporary(sm);
 			changed(sm);

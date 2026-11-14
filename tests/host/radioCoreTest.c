@@ -1476,6 +1476,39 @@ static void test_dmr_list_talk_target(void)
 	setup_codeplug();
 }
 
+// The VFO keeps quick-settings changes (upstream #486, #525): power is the VFO's own, squelch the radio's default (as a
+// channel save writes it); neither is left temporary, so Home offers no save and leaving the VFO doesn't undo them
+static void test_vfo_quick_settings_kept(void)
+{
+	setup_codeplug();
+	start();
+	req(RREQ_VFO, 1);
+	CHECK(sm.view.vfo && !sm.view.temporary);
+	uint8_t p = sm.view.power, sq = sm.view.squelch;
+	req(RREQ_POWER, 1);
+	CHECK(sm.view.power != p && !sm.view.temporary && !(sm.view.temp & RADIO_TEMP_POWER));
+	CHECK(sm.vfo_ch.power == sm.view.power);
+	p = sm.view.power;
+	req(RREQ_SQUELCH, sq < RADIO_SQUELCH_MAX ? 1 : -1);
+	uint8_t sq2 = sm.view.squelch;
+	CHECK(sq2 != sq && !sm.view.temporary && !(sm.view.temp & RADIO_TEMP_SQUELCH) && sm.base_squelch == sq2);
+	run(50);
+	settings_t *st = settings_begin();
+	CHECK(st->squelch == sq2 && st->vfo_power == p);
+	settings_end(now);
+	req(RREQ_VFO, 0);			// a channel: squelch is radio-wide, so the new default applies there too
+	CHECK(!sm.view.vfo && sm.view.squelch == sq2 && !sm.view.temporary);
+	req(RREQ_VFO, 1);			// back in the VFO: both kept
+	CHECK(sm.view.vfo && sm.view.power == p && sm.view.squelch == sq2 && !sm.view.temporary);
+	boot();					// and across a restart
+	run(50);
+	CHECK(sm.view.vfo && sm.view.power == p && sm.view.squelch == sq2);
+	req(RREQ_VFO, 0);
+	settings_defaults(settings_begin());
+	settings_end(now);
+	setup_codeplug();
+}
+
 #if !CONFIG_VFO_DMR
 // Without the DMR VFO (CONFIG_VFO_DMR=0) the VFO is analog and every DMR request in it is refused
 static void test_vfo_no_dmr(void)
@@ -5550,6 +5583,7 @@ int main(void)
 	test_timeout();
 	test_power();
 	test_vfo();
+	test_vfo_quick_settings_kept();
 	test_no_codeplug();
 	test_codeplug_tones();
 	test_tone_squelch();
