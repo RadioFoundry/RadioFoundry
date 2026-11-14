@@ -32,7 +32,9 @@
 // the dual Home's layout table (dual_choose) live in frames of their own to stay below it, as a 4 bpp panel's palette
 // lookup adds 48 bytes under every fill. 526 words leave the 208 byte port overhead, the 128 byte margin and 8 bytes.
 // Every word here is RAM on all radios: raise it only by what the check shows
+#ifndef UI_TASK_STACK_WORDS		// a board may set more (board.mk) for a deeper chain on its platform
 #define UI_TASK_STACK_WORDS	526
+#endif
 
 #define SPLASH_MS		1000
 #define SPLASH_POLL_MS		20
@@ -140,23 +142,17 @@ static void ui_task(void *arg)
 		if (rests)
 			rested = hal_millis();
 		// The view before the key: the radio core may have changed while this task waited (the VFO turned off from
-		// the host link, a scan stopping), and a key read against the old view sends the wrong request (a VFO step
-		// the core drops on a channel)
+		// the host link, a scan stopping, a channel change from the debug link), and a key read against the old view
+		// sends the wrong request (a VFO step the core drops on a channel)
 		uint32_t s = radio_view_serial();
 		if (s != serial) {
 			serial = s;
 			radio_get_view(&view);
+			radio_view_for_screen(&view);
+			if (got)
+				ui_app_set_view(&view);	// the key acts on the view as it is now
 		}
 		if (got) {
-			// The radio's view may have changed while this task waited (a channel change from the debug link or
-			// the radio core): the key acts on the view as it is now, not as it was up to a wait ago
-			uint32_t s = radio_view_serial();
-			if (s != serial) {
-				serial = s;
-				radio_get_view(&view);
-				radio_view_for_screen(&view);
-				ui_app_set_view(&view);
-			}
 			bool was_off = backlight_now == 0;
 			set_backlight(ui_app_brightness());
 			if (!was_off || ev.action == ACT_PTT || ev.action == ACT_MONITOR)
