@@ -2297,9 +2297,15 @@ __attribute__((noinline)) static void knob_tick(const radio_view_t *v)
 		wake_req = true;
 		dirty = true;
 	}
-	if (lvl < 0 && ui_st.volbar >= 0 && ui_st.volbar_b < 0) {	// the debug link took over (or the knob is gone): its old level is wrong
-		ui_st.volbar = -1;
-		dirty = true;
+	// The debug link took over (or the knob is gone): side A's old level is wrong. A two-knob radio keeps a bar side B
+	// moved, with the debug link's level for A, as a turn of B then shows it
+	if (lvl < 0 && ui_st.volbar >= 0) {
+		int8_t a = ui_st.volbar_b < 0 || ui_st.volbar_side == 0 ? -1 :
+			   (int8_t)(v->volume >= 0 ? radio_volume_step_of((uint8_t)v->volume) : 0);
+		if (a != ui_st.volbar) {
+			ui_st.volbar = a;
+			dirty = true;
+		}
 	}
 	knob_seen = lvl;
 	knob_b_seen = lb;
