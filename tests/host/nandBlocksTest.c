@@ -613,6 +613,34 @@ static void test_worn_partway(void)
 	CHECK(matches_model());
 }
 
+// The commit (the last page, written erased) fails and the copy can't move: the write fails, the open copy is
+// dropped, and a sync after it keeps the old copy instead of committing a half-programmed last page
+static void test_failed_commit(void)
+{
+	start(12, 8, 8);
+	for (uint32_t a = 0; a < bsize(); a += NAND_BLOCKS_SECTOR) {
+		CHECK(replace(a, a + 80));
+	}
+	CHECK(nand_blocks_sync(&nb));
+	uint8_t before[MAX_BYTES];
+	memcpy(before, model, sizeof(before));
+	for (uint32_t a = 0; a + NAND_BLOCKS_SECTOR < bsize(); a += NAND_BLOCKS_SECTOR) {
+		CHECK(replace(a, a + 81));		// pages 0-5 in the open copy
+	}
+	nand.ecc_fail[nb.open_p * 8u + 1u] = true;	// so it can't be moved
+	nand.worn_program[nb.open_p] = true;
+	nand.worn_from[nb.open_p] = 7;
+	uint8_t last[NAND_BLOCKS_SECTOR];
+	fill(last, PAGE, 82);
+	memset(&last[PAGE], 0xFF, PAGE);		// page 7 erased: committed by close_open
+	CHECK(!nand_blocks_replace(&nb, bsize() - NAND_BLOCKS_SECTOR, last));
+	CHECK(nb.open_l == NAND_BLOCKS_NONE);
+	CHECK(nand_blocks_sync(&nb));
+	memcpy(model, before, sizeof(model));
+	CHECK(matches_model());
+	CHECK(remount() && matches_model());
+}
+
 // An old page that can't be read is left erased in the copy: the block can still be written
 static void test_unreadable_old_page(void)
 {
@@ -913,6 +941,7 @@ int main(void)
 	test_wear_across_mounts();
 	test_bad_blocks();
 	test_worn_partway();
+	test_failed_commit();
 	test_unreadable_old_page();
 	test_foreign();
 	test_lost_last_page();

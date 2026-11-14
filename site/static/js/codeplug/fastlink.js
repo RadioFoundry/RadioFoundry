@@ -36,6 +36,7 @@ export class FastLink {
 		this.wire = 0;		// bytes sent and received, for the log and the tests
 		this.requests = 0;
 		this.patched = 0;	// blocks sent as patches
+		this.encoded = new WeakMap();	// block bytes -> { base, out }: the plan's encode, used again by the write
 	}
 
 	next() {
@@ -146,12 +147,16 @@ export class FastLink {
 	// The stream a block goes as: a patch of base (the radio's bytes of the block now) when the radio takes them and
 	// it's shorter, else plain. {format, stream}
 	encode(bytes, base) {
+		const hit = this.encoded.get(bytes);
+		if (hit && hit.base === base) return hit.out;
 		const plain = encodeBlock(bytes);
+		let out = { format: FORMAT_LZ4, stream: plain };
 		if (base && this.limits?.patch) {
 			const patch = encodeBlock(bytes, base);
-			if (patch.length < plain.length) return { format: FORMAT_PATCH, stream: patch };
+			if (patch.length < plain.length) out = { format: FORMAT_PATCH, stream: patch, plain };
 		}
-		return { format: FORMAT_LZ4, stream: plain };
+		this.encoded.set(bytes, { base, out });
+		return out;
 	}
 
 	// One block: BLOCK, its stream in DATA windows of 8, then END. A window that goes wrong sends the block again,
@@ -164,7 +169,8 @@ export class FastLink {
 			await this.op("end", [OP.END], { timeout: 5000 });
 			return 0;
 		}
-		let { format, stream } = this.encode(bytes, base);
+		const enc = this.encode(bytes, base);
+		let { format, stream } = enc;
 		for (let window = WINDOW; ;) {
 			const head = [OP.BLOCK, ...le32(addr), format, ...u16(stream.length), ...le32(crc)];
 			try {
@@ -182,7 +188,7 @@ export class FastLink {
 				if (!(e instanceof FastError && e.reason === REASON.BASE && format === FORMAT_PATCH)) throw e;
 				note("fast write: the radio's block isn't the one the patch was made against, sent whole", { addr });
 				format = FORMAT_LZ4;
-				stream = encodeBlock(bytes);
+				stream = enc.plain || encodeBlock(bytes);
 				continue;
 			}
 			break;
