@@ -678,10 +678,36 @@ static void test_group_heard(void)
 	rx(&ms, 1, &h);
 	frames(&ms, 1);
 	CHECK(nsent == 1, "another talkgroup's check: no answer");
+	// The voice service forms (tables 6.42, 6.43): MS_Accepted from the radio's ID (6.6.2.3.2.1)
+	h = ahoy(T3_SK_TG_VOICE, true, TG_B, T3_ID_TSI);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 2 && sent[1].op == T3_OP_P_ACKU && sent[1].u.ack.reason == T3_RC_MS_ACCEPTED &&
+	      sent[1].u.ack.dst == T3_ID_TSI && sent[1].u.ack.src == OWN, "talkgroup voice radio check: 0x%02x",
+	      sent[1].u.ack.reason);
+	h = ahoy(T3_SK_IND_VOICE, false, OWN, T3_ID_TSI);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 3 && sent[2].op == T3_OP_P_ACKU && sent[2].u.ack.reason == T3_RC_MS_ACCEPTED &&
+	      sent[2].u.ack.dst == T3_ID_TSI, "individual voice radio check: 0x%02x", sent[2].u.ack.reason);
+	h = ahoy(T3_SK_IND_VOICE, false, OWN, CALLER);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 4 && sent[3].u.ack.reason == T3_RC_MS_NOT_SUPPORTED, "not from TSI: not a radio check");
+	// An authentication challenge here is answered with P_ACKU (6.6.2.3.2.2)
+	cfg.auth_key_set = true;
+	h = ahoy(T3_SK_REGISTRATION, false, OWN, 0x123456u);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 5 && sent[4].op == T3_OP_P_ACKU && sent[4].u.ack.reason == T3_RC_MS_AUTH_RESPONSE &&
+	      sent_act[4].payload, "payload channel challenge answered");
+	cfg.auth_key_set = false;
+	CHECK(ms.state == T3_FOLLOW, "still on the call");
+	nsent = 0;
 	// A recipient leaves without sending, and late-entry grants for it don't pull it back
 	t3_ms_end_call(&ms, T);
 	poll_all(&ms);
-	CHECK(ms.state == T3_CAMPED && nsent == 1, "left quietly");
+	CHECK(ms.state == T3_CAMPED && nsent == 0, "left quietly");
 	frames(&ms, 50);
 	g.u.grant.late_entry = true;
 	rx(&ms, 1, &g);
@@ -695,8 +721,8 @@ static void test_group_heard(void)
 	h = ahoy(T3_SK_CANCEL, true, TG_B, T3_ID_TSI);
 	rx(&ms, 1, &h);
 	frames(&ms, 1);
-	CHECK(nsent == 2 && sent[1].op == T3_OP_P_ACKU && sent[1].u.ack.reason == T3_RC_MESSAGE_ACCEPTED,
-	      "selective clear acknowledged");
+	CHECK(nsent == 1 && sent[0].op == T3_OP_P_ACKU && sent[0].u.ack.reason == T3_RC_MS_ACCEPTED,
+	      "selective clear acknowledged with MS_Accepted (6.6.2.3.2.7): 0x%02x", sent[0].u.ack.reason);
 	CHECK(ms.state == T3_CAMPED, "and left");
 
 	// Within T3_REGRANT_MS of leaving, a set-up grant (Late_Entry 0) is a new call: followed (6.6.2.4.1)
@@ -833,6 +859,16 @@ static void test_ahoy(void)
 	rx(&ms, 1, &h);
 	frames(&ms, 3);
 	CHECK(nsent == 3, "another radio's check: nothing");
+	// A talkgroup radio check (6.4.12 b): a member answers from its own ID; another talkgroup's isn't ours
+	h = ahoy(T3_SK_REGISTRATION, true, TG_B, T3_ID_TSI);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 4 && sent[3].op == T3_OP_C_ACKU && sent[3].u.ack.reason == T3_RC_MS_ACCEPTED &&
+	      sent[3].u.ack.dst == T3_ID_TSI && sent[3].u.ack.src == OWN, "talkgroup radio check answered");
+	h = ahoy(T3_SK_REGISTRATION, true, TG_OTHER, T3_ID_TSI);
+	rx(&ms, 1, &h);
+	frames(&ms, 3);
+	CHECK(nsent == 4, "another talkgroup's check: nothing");
 
 	setup(T3_OPT_PRIVATE | T3_OPT_LISTEN_ONLY, true);
 	camp(&ms);

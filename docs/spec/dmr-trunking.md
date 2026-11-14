@@ -302,19 +302,21 @@ without sending, and the call's late-entry grants don't bring it back.
 
 ### 7.4 Answers (6.4.8, 6.6.1.2.2, 6.6.2.3)
 
-A C_AHOY or P_AHOY to the radio's ID (or to the followed talkgroup, on the payload channel) is answered with C_ACKU or
-P_ACKU on the inbound slot after the next CACH of the slot it came on, without random access. The answer's target is
-the AHOY's source, its additional address the radio's ID.
+A C_AHOY or P_AHOY to the radio's ID (or to the followed talkgroup, on the payload channel; or a radio check of a
+talkgroup the radio follows, on the TSCC) is answered with C_ACKU or P_ACKU on the inbound slot after the next CACH of
+the slot it came on, without random access. The answer's target is the AHOY's source, its additional address the
+radio's ID, also when a talkgroup was addressed (table 6.28).
 
 | AHOY | Answer |
 |---|---|
-| radio check (kind registration, from TSI) | MS_Accepted |
+| radio check (kind registration, from TSI; 6.4.12) | MS_Accepted |
+| voice radio check (P_AHOY kind individual or talkgroup voice, from TSI; tables 6.42, 6.43) | P_ACKU MS_Accepted (6.6.2.3.2.1) |
 | availability check (kind individual voice): OACSU | MS_Accepted |
 | availability check (kind individual packet data) | Message_Accepted (section 7.7); EquipBusy_Refused (0x13) while the data service sends; not supported in a build without it |
 | availability check (kind duplex voice or duplex packet data) | MS_Duplex_Not_Supported (0x16): the radio is simplex (6.6.9.2.5, 6.6.10.2.5). It never follows a duplex grant (53, 54), whose bit 15 is Call Direction; their payload channel always uses offset timing (tables 7.10, 7.14) |
 | packet data radio check (P_AHOY kind packet data, from TSI) | P_ACKU Message_Accepted (6.6.3.3.2.1) |
 | call cancel (kind cancel) on the TSCC | MS_Accepted |
-| selective clear (P_AHOY kind cancel) | Message_Accepted, then return |
+| selective clear (P_AHOY kind cancel) | MS_Accepted (6.6.2.3.2.7; tables 6.44 and 6.45 say Message_Accepted), then return |
 | status (kind status) | MS_Accepted (section 7.5) |
 | status poll (kind status, status 127) | Accepted for the Status Polling Service (0x47), Response_Info the radio's status |
 | stun or revive (kind supplementary, from STUNI) | without `T3_OPT_STUN`: not supported; else without K: Message_Accepted; with K: C_ACKVIT, the radio's challenge (section 7.9) |
@@ -511,7 +513,7 @@ Service_Kind 1110b, whose source is below the gateway block (0-0xFFFCDF) is a ch
 3. The response is XORed with the PSN.
 
 The radio answers C_ACKU, Reason Authentication_Response (0x48, table 7.42), the target the response, the additional
-address its own ID. A challenge during an access (a registration or a call request) is progress: the access waits
+address its own ID; on the payload channel, P_ACKU (6.6.2.3.2.2). A challenge during an access (a registration or a call request) is progress: the access waits
 TNP_Timer for its final answer. Without K a challenge is answered not supported. A radio check (from TSI, above the
 range) is unchanged. `t3_auth_response` passes the test vectors of tables 6.15 and 6.16.
 

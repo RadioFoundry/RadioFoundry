@@ -975,7 +975,7 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 }
 
 // C_AHOY on the TSCC or P_AHOY on the payload channel addressed to the radio: radio check, availability check (OACSU),
-// call cancel, selective clear. Authentication isn't supported: it is refused. The answer goes on the inbound slot
+// call cancel, selective clear, authentication (refused without K). The answer goes on the inbound slot
 // after the next CACH of the slot the AHOY came on, without random access
 static void answer_info(t3_ms_t *ms, uint8_t slot, bool payload, uint8_t reason, uint8_t info, uint32_t to,
 			bool then_return)
@@ -1306,14 +1306,17 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 	}
 	bool to_me = !h->group && is_me(ms, h->dst);
 	bool to_call = payload && h->group && ms->call.group && h->dst == ms->call.dst;
-	if (!to_me && !to_call) {
+	// A radio check of a talkgroup on the TSCC (6.4.12 b): any member may answer, from its own ID
+	bool tg_check = !payload && h->group && h->kind == T3_SK_REGISTRATION && h->src == T3_ID_TSI &&
+			t3_ms_wants_group(ms, h->dst, false);
+	if (!to_me && !to_call && !tg_check) {
 		return;
 	}
 	ps_wake(ms, now);
 	if (h->kind == T3_SK_CANCEL && payload) {
-		// Selective clear (6.6.2.3.1.8): answer, then leave the channel
+		// Selective clear (6.6.2.3.2.7): MS_Accepted, then leave the channel
 		if (may_send(ms)) {
-			answer(ms, slot, true, T3_RC_MESSAGE_ACCEPTED, h->src, true);
+			answer(ms, slot, true, T3_RC_MS_ACCEPTED, h->src, true);
 		} else {
 			return_to_tscc(ms, now);
 		}
@@ -1346,19 +1349,22 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 			ms->revives++;
 		}
 		answer(ms, slot, false, T3_RC_MESSAGE_ACCEPTED, h->src, false);
-	} else if (to_me && !payload && h->kind == T3_SK_REGISTRATION && h->src <= T3_AUTH_CHALLENGE_MAX &&
-		   ms->cfg->auth_key_set) {
-		// An authentication challenge (6.4.8.3): the source is the challenge, the answer's target the response. One
-		// during an access (registration, a call) is progress: the final answer follows within TNP_Timer
-		answer(ms, slot, false, T3_RC_MS_AUTH_RESPONSE, t3_auth_response(ms->cfg->auth_key, h->src, ms->cfg->psn),
-		       false);
+	} else if (to_me && h->kind == T3_SK_REGISTRATION && h->src <= T3_AUTH_CHALLENGE_MAX && ms->cfg->auth_key_set) {
+		// An authentication challenge (6.4.8.3; on the payload channel answered with P_ACKU, 6.6.2.3.2.2): the source
+		// is the challenge, the answer's target the response. One during an access (registration, a call) is
+		// progress: the final answer follows within TNP_Timer
+		answer(ms, slot, payload, T3_RC_MS_AUTH_RESPONSE,
+		       t3_auth_response(ms->cfg->auth_key, h->src, ms->cfg->psn), false);
 		ms->auths++;
 		if (ms->ax.state == T3_AX_WAIT_RESP || ms->ax.state == T3_AX_ACKED) {
 			ms->ax.state = T3_AX_ACKED;
 			ms->ax.ack_deadline = now + or_default(ms->cfg->tnp_ms, T3_TNP_MS);
 		}
-	} else if (h->kind == T3_SK_REGISTRATION && h->src == T3_ID_TSI) {
-		answer(ms, slot, payload, T3_RC_MS_ACCEPTED, h->src, false);	// radio check
+	} else if (h->src == T3_ID_TSI && (h->kind == T3_SK_REGISTRATION ||
+					    (payload && h->kind == (h->group ? T3_SK_TG_VOICE : T3_SK_IND_VOICE)))) {
+		// Radio check (6.4.12; on the payload channel also tables 6.42, 6.43 and 6.6.2.3.2.1), of the radio or its
+		// talkgroup: MS_Accepted from the radio's own ID either way
+		answer(ms, slot, payload, T3_RC_MS_ACCEPTED, h->src, false);
 	} else if (ms->stunned) {
 		return;		// stunned: no user services to answer for
 	} else if (to_me && !payload && h->kind == T3_SK_CANCEL) {
