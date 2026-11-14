@@ -80,6 +80,7 @@
 #define T3_REG_RETRY_MS		30000	// a registration nobody answered is tried again after this
 #define T3_REG_TG_DELAY_MS	1000	// talkgroups changed: register with them once they stay this long
 #define T3_REPEAT_MS		4000	// a status or short data the same as the last heard this soon is the TSCC's repeat
+#define T3_SUPL_HOLD_MS		10000	// supplementary data waits this long for the call that names its sender
 #define T3_DENIED_MAX		4	// SYS_AREAs that denied registration (cleared at power on)
 #define T3_ADJ_MAX		4	// adjacent sites' TSCCs (Adjacent_Site, Vote_Now), hunted first
 #define T3_VOTE_MS		360	// sampling an adjacent TSCC after a Vote Now (VOTE_BLK: 2-10 frames)
@@ -137,6 +138,11 @@ typedef struct {
 	const uint8_t *poll_data;
 	uint8_t poll_len;
 	uint8_t poll_format;
+	// Supplementary user data (6.4.13), in a format and size prearranged with the system: offered with every voice,
+	// packet data and short data request while supl_len > 0 (up to T3_UDT_MAX octets)
+	const uint8_t *supl_data;
+	uint8_t supl_len;
+	uint8_t supl_format;
 } t3_cfg_t;
 
 typedef enum {
@@ -367,6 +373,7 @@ typedef struct {
 		uint32_t divert_to;	// T3_RES_DIVERTED: the address the TSCC gave
 		bool divert_group;
 		bool als;		// T3_SVC_IND_VOICE: Ambient Listening asked for
+		bool supl;		// supplementary user data offered (SUPED_SV), uploaded when SUPLI asks
 		bool resume;		// T3_SVC_STATUS: back to the call left for it once answered (a payload interrupt)
 	} ax;
 	// The last status heard for the radio, from a C_AHOY to it or to a talkgroup it listens to (6.6.6)
@@ -405,6 +412,18 @@ typedef struct {
 		uint8_t data[T3_UDT_MAX];
 		uint32_t ms;
 	} sd_rx;
+	// The last supplementary user data heard (6.4.13.2). The download doesn't name the sender: src is 0 until the
+	// call's grant or user data that follows does
+	struct {
+		uint32_t count;
+		uint32_t src;
+		uint32_t dst;
+		bool group;
+		uint8_t format;
+		uint8_t len;
+		uint8_t data[T3_UDT_MAX];
+		uint32_t ms;
+	} supl_rx;
 	// A burst to send on a slot without random access: an answer (once) or P_MAINT (count times)
 	struct {
 		uint8_t count;

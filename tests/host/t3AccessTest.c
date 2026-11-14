@@ -2447,6 +2447,123 @@ static void test_sdata(void)
 	CHECK(!t3_ms_sdata(&ms, T, CALLER, false, T3_UDTF_ISO8, (const uint8_t *)"hi", 2), "listen only: none sent");
 }
 
+// Supplementary user data (6.4.13): offered with a request (SUPED_SV, SUPED_VAL), uploaded to SUPLI when it asks, and
+// heard from SUPLI, held until the grant or user data that follows names its sender
+static void test_supl(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+	static const uint8_t gps[14] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 };	// 2 blocks
+	cfg.supl_data = gps;
+	cfg.supl_len = sizeof gps;
+	cfg.supl_format = T3_UDTF_BINARY;
+
+	// Short data with supplementary data: both uploads, each when its gateway asks (figure 6.39)
+	CHECK(t3_ms_sdata(&ms, T, CALLER, false, T3_UDTF_ISO8, (const uint8_t *)"hi", 2), "short data starts");
+	CHECK(sent_rand(&ms), "request sent");
+	const t3_rand_t *q = &sent[0].u.rand;
+	CHECK((q->options & T3_SO_SUPPL_DATA) && (q->extra >> 2) == 1u && (q->extra & 3u) == 0u,
+	      "SUPED_SV 1, SUPED_VAL 2 blocks, SDATA_VAL 1 block: options 0x%02x extra 0x%x", q->options, q->extra);
+	t3_csbk_t h = ahoy(T3_SK_IND_UDT, false, OWN, T3_ID_SUPLI);
+	h.u.ahoy.blocks = 1;
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	t3_udt_t u;
+	CHECK(nup == 1 && nup_blocks == 2 && t3_udt_parse(up_hdr, &u) && u.op == T3_OP_C_UDTHU && u.sf &&
+	      u.dst == T3_ID_SUPLI && u.src == OWN && u.format == T3_UDTF_BINARY && !u.group &&
+	      memcmp(up_blocks, gps, sizeof gps) == 0, "supplementary upload: %d, sf %u dst %06x", nup, u.sf,
+	      (unsigned)u.dst);
+	CHECK(ms.ax.state == T3_AX_ACKED, "the request goes on");
+	h = ahoy(T3_SK_IND_UDT, false, OWN, T3_ID_SDMI);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup == 2 && t3_udt_parse(up_hdr, &u) && !u.sf && u.dst == CALLER && memcmp(up_blocks, "hi", 2) == 0,
+	      "then the user data");
+	t3_csbk_t a = ack(T3_OP_C_ACKD, T3_RC_MS_ACCEPTED, OWN, CALLER);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.result == T3_RES_DONE, "delivered");
+
+	// A voice call offers it too (table 6.40): SUPED_VAL above ALS_SERV
+	nsent = 0;
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false), "group call");
+	CHECK(sent_rand(&ms) && (sent[0].u.rand.options & T3_SO_SUPPL_DATA) && (sent[0].u.rand.extra >> 2) == 1u,
+	      "voice request with supplementary data");
+	nsent = 0;
+	t3_ms_cancel(&ms, T);
+	CHECK(sent_rand(&ms) && sent[nsent - 1].u.rand.kind == T3_SK_CANCEL, "cancelled");
+	a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, TG_A);
+	rx(&ms, 1, &a);
+
+	// None configured: not offered, and a C_AHOY from SUPLI gets nothing
+	cfg.supl_len = 0;
+	nsent = 0;
+	CHECK(t3_ms_sdata(&ms, T, CALLER, false, T3_UDTF_ISO8, (const uint8_t *)"hi", 2), "short data starts");
+	CHECK(sent_rand(&ms) && !(sent[0].u.rand.options & T3_SO_SUPPL_DATA) && sent[0].u.rand.extra == 0u,
+	      "not offered");
+	h = ahoy(T3_SK_IND_UDT, false, OWN, T3_ID_SUPLI);
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	CHECK(nup == 2 && nsent == 1, "nothing to upload");
+	a = ack(T3_OP_C_ACKD, T3_RC_MS_ACCEPTED, OWN, CALLER);
+	rx(&ms, 1, &a);
+
+	// Heard: to the radio with A, accepted (C_ACKU Message_Accepted to SUPLI); not short data; the sender unknown
+	nsent = 0;
+	t3_udt_t d = { .op = T3_OP_C_UDTHD, .a = true, .sf = true, .format = T3_UDTF_BINARY, .dst = OWN,
+		       .src = T3_ID_SUPLI };
+	uint32_t sd0 = ms.sd_rx.count;
+	udt_down(&ms, 1, &d, gps, 5, false);
+	frames(&ms, 1);
+	CHECK(ms.supl_rx.count == 1 && ms.supl_rx.src == 0 && ms.supl_rx.len == 5 && ms.supl_rx.dst == OWN &&
+	      memcmp(ms.supl_rx.data, gps, 5) == 0 && ms.sd_rx.count == sd0, "supplementary data held: len %u",
+	      ms.supl_rx.len);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MESSAGE_ACCEPTED &&
+	      sent[0].u.ack.dst == T3_ID_SUPLI && sent[0].u.ack.src == OWN, "accepted: 0x%02x to %06x",
+	      sent[0].u.ack.reason, (unsigned)sent[0].u.ack.dst);
+	// Sent again: answered, not another
+	udt_down(&ms, 1, &d, gps, 5, false);
+	frames(&ms, 1);
+	CHECK(ms.supl_rx.count == 1 && nsent == 2, "repeat answered once more");
+	// The user data that follows names the sender (figure 6.39)
+	t3_udt_t m = { .op = T3_OP_C_UDTHD, .a = true, .format = T3_UDTF_ISO8, .dst = OWN, .src = CALLER };
+	udt_down(&ms, 1, &m, (const uint8_t *)"hello", 5, false);
+	frames(&ms, 1);
+	CHECK(ms.sd_rx.count == sd0 + 1 && ms.supl_rx.src == CALLER, "sender named by the user data: %06x",
+	      (unsigned)ms.supl_rx.src);
+
+	// To a talkgroup the radio follows: kept, no answer; the grant names the sender (figure 6.38)
+	nsent = 0;
+	d.group = true;
+	d.a = false;
+	d.dst = TG_B;
+	udt_down(&ms, 1, &d, gps + 1, 3, false);
+	frames(&ms, 2);
+	CHECK(ms.supl_rx.count == 2 && ms.supl_rx.src == 0 && ms.supl_rx.group && nsent == 0, "talkgroup's: held");
+	t3_csbk_t g = grant(T3_OP_TV_GRANT, 895, 1, TG_B, CALLER + 1u);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && ms.supl_rx.src == CALLER + 1u, "sender named by the grant: %06x",
+	      (unsigned)ms.supl_rx.src);
+	t3_ms_end_call(&ms, T);
+	poll_all(&ms);
+	// Another talkgroup's or another MS's: ignored
+	d.dst = TG_OTHER;
+	udt_down(&ms, 1, &d, gps, 3, false);
+	d.group = false;
+	d.a = true;
+	d.dst = OWN + 1u;
+	udt_down(&ms, 1, &d, gps, 3, false);
+	frames(&ms, 2);
+	CHECK(ms.supl_rx.count == 2 && nsent == 0, "not ours: ignored");
+	// Too late to be named: a grant after T3_SUPL_HOLD_MS leaves it unnamed
+	d.dst = OWN;
+	udt_down(&ms, 1, &d, gps + 2, 4, false);
+	frames(&ms, 1);
+	T += T3_SUPL_HOLD_MS + 60;
+	udt_down(&ms, 1, &m, (const uint8_t *)"later", 5, false);
+	CHECK(ms.supl_rx.count == 3 && ms.supl_rx.src == 0, "too late: unnamed");
+}
+
 int main(void)
 {
 	test_register();
@@ -2478,6 +2595,7 @@ int main(void)
 	test_acvit();
 	test_status();
 	test_sdata();
+	test_supl();
 	test_pdata();
 	test_pdata_ip();
 	test_ip_advice();

@@ -6421,6 +6421,79 @@ static void test_t3_ip_advice(void)
 	run(100);
 }
 
+
+// Supplementary user data (6.4.13): staged with the system, offered with a request and uploaded to SUPLI; one heard
+// from SUPLI shows in the view, its sender named by the user data that follows
+static void udt_down_rx(uint32_t src, bool sf, uint8_t format, const uint8_t *data, uint8_t len)
+{
+	uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK], pad, d[T3_CSBK_BYTES];
+	t3_udt_t u = { .op = T3_OP_C_UDTHD, .a = true, .sf = sf, .format = format, .dst = T3_OWN, .src = src };
+	u.blocks = t3_udt_pack(data, len, 0xFF, blk, &pad);
+	u.pad = pad;
+	t3_udt_build(&u, d);
+	t3_data_rx(DMR_BURST_DATA_HEADER, d, 1);
+	for (uint8_t i = 0; i < u.blocks; i++) {
+		run(60);
+		t3_data_rx(DMR_BURST_RATE_12_DATA, blk[i], 1);
+	}
+	t3_site_run(300);
+}
+
+static void test_t3_supl(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	radio_t3_setup_t *s = radio_t3_staged();
+	memcpy(s->supl, "\x01\x02\x03\x04", 4);
+	s->cfg.supl_len = 4;
+	s->cfg.supl_format = T3_UDTF_BINARY;
+	req(RREQ_T3, RADIO_T3_START);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	s->sd_dst = 1000001u;
+	s->sd_group = false;
+	s->sd_format = T3_UDTF_ISO8;
+	memcpy(s->sd_data, "hi", 2);
+	s->sd_len = 2;
+	unsigned from = sim.air_count;
+	req(RREQ_T3, RADIO_T3_SDATA);
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_IND_UDT, &q) && (q.u.rand.options & T3_SO_SUPPL_DATA));
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_UDT;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = T3_ID_SUPLI;
+	from = sim.air_count;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(400);
+	int hdr = -1;
+	for (unsigned i = from; i < sim.air_count && hdr < 0; i++) {
+		hdr = sim.air[i].kind == DMR_BURST_DATA_HEADER ? (int)i : -1;
+	}
+	CHECK(hdr >= 0 && (unsigned)hdr + 1u < sim.air_count);
+	if (hdr >= 0 && (unsigned)hdr + 1u < sim.air_count) {
+		t3_udt_t u;
+		CHECK(t3_udt_parse(sim.air[hdr].payload, &u) && u.sf && u.dst == T3_ID_SUPLI && u.src == T3_OWN &&
+		      u.format == T3_UDTF_BINARY && u.blocks == 1);
+		CHECK(memcmp(sim.air[hdr + 1].payload, "\x01\x02\x03\x04", 4) == 0);
+	}
+	// Heard: in the view, sender unknown; the user data that follows names it
+	udt_down_rx(T3_ID_SUPLI, true, T3_UDTF_BINARY, (const uint8_t *)"\x0a\x0b\x0c", 3);
+	CHECK(radio_t3v.supl_count == 1 && radio_t3v.supl_len == 3 && radio_t3v.supl_src == 0 &&
+	      memcmp(radio_t3v.supl_data, "\x0a\x0b\x0c", 3) == 0 && radio_t3v.supl_dst == T3_OWN);
+	udt_down_rx(1000001u, false, T3_UDTF_ISO8, (const uint8_t *)"hello", 5);
+	CHECK(radio_t3v.sd_count >= 1 && radio_t3v.supl_src == 1000001u);
+	while (sms_inbox_count() > 0 && sms_inbox_delete(0)) {
+	}
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
 // The CACH short LC from the modem (DMR_EV_SHORT_LC): a good CRC gives the engine the Common_Slot_Counter, a bad
 // one is only counted
 static void test_t3_short_lc(void)
@@ -6631,6 +6704,7 @@ int main(void)
 	test_t3_poll();
 	test_t3_ip_gateway();
 	test_t3_ip_advice();
+	test_t3_supl();
 	test_t3_short_lc();
 	test_t3_power_save();
 	test_t3_channels();

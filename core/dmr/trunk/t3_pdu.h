@@ -51,6 +51,7 @@
 // Gateway and special addresses (A.4)
 #define T3_ID_PSTNI		0xFFFEC0u
 #define T3_ID_IPI		0xFFFEC3u	// the IP gateway: packet data to an IP destination (multi-part)
+#define T3_ID_SUPLI		0xFFFEC4u	// supplementary user data (6.4.13)
 #define T3_ID_SDMI		0xFFFEC5u
 #define T3_ID_REGI		0xFFFEC6u
 #define T3_ID_MSI		0xFFFEC7u	// call diversion to an MS

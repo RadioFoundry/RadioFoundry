@@ -99,7 +99,7 @@ IDDB = 0x1F                         # the DMR ID database: format, records, an I
 CHIP_REG = 0x20                     # an RF chip or SoC register read or written (docs/spec/debuglink.md 3.24)
 T3 = 0x22                           # a Tier III trunked system: stage, select, leave (docs/spec/debuglink.md 3.26)
 T3_RESET, T3_SYSTEM, T3_CTRL, T3_CHAN, T3_TG, T3_SITE, T3_PLAN, T3_START, T3_STOP, T3_DEREG, T3_END, \
-    T3_STATUS, T3_SDATA, T3_AUTH, T3_PS, T3_DIVERT, T3_ALS, T3_INTERRUPT, T3_SDPOLL, T3_POLL_REPLY, T3_LOAD = range(1, 22)
+    T3_STATUS, T3_SDATA, T3_AUTH, T3_PS, T3_DIVERT, T3_ALS, T3_INTERRUPT, T3_SDPOLL, T3_POLL_REPLY, T3_LOAD, T3_SUPL = range(1, 23)
 T3_UDTF = {"binary": 0, "address": 1, "bcd": 2, "iso7": 3, "iso8": 4, "nmea": 5, "ip": 6, "utf16": 7}
 T3_TG_LISTEN, T3_TG_TALK, T3_TG_BROADCAST = 1, 2, 4
 T3_DIV = {"voice": 8, "pdata": 4, "sdata": 2, "status": 1}  # call diversion services (T3_DIV_*)
@@ -714,6 +714,11 @@ class DebugLink:
         """The radio's answer to a short data poll (0-46 octets; none: refused), taken at the next start"""
         f = T3_UDTF[fmt] if isinstance(fmt, str) else fmt
         self.t3_op(T3_POLL_REPLY, struct.pack("<B", f) + bytes(data))
+
+    def t3_supl(self, data=b"", fmt="binary"):
+        """Supplementary user data offered with each call (0-46 octets; none: off), taken at the next start"""
+        f = T3_UDTF[fmt] if isinstance(fmt, str) else fmt
+        self.t3_op(T3_SUPL, struct.pack("<B", f) + bytes(data))
 
     def t3_site(self, site):
         self.t3_op(T3_SITE, struct.pack("<H", site))

@@ -381,7 +381,7 @@ ISO 7-bit text is given one character an octet (1-52) and packed 7 bits each, fi
 A C_UDTHD heard on the TSCC, its blocks whole and the CRC good, to the radio or to a talkgroup it listens to, is kept
 in `sd_rx` (the data without its pad octets). To the radio with A set it is answered C_ACKU MS_Accepted; to a
 talkgroup it isn't. A bad CRC or a missing block keeps nothing and answers nothing: the TSCC sends it again.
-Supplementary data (SF set) isn't taken. A repeat (the same caller, destination, format and octets within
+Supplementary data (SF set) is taken apart (below). A repeat (the same caller, destination, format and octets within
 `T3_REPEAT_MS`) is answered again but not counted, as for a status.
 
 Text kept in `sd_rx` (UDT_Format ISO 7 bit, ISO 8 bit or UTF-16BE) also goes into the message inbox as a message
@@ -401,6 +401,23 @@ between the two MSs.
 Polled (6.6.5.7): a C_AHOY UDT poll to the radio, from the calling MS or SDMI, gets the reply in `t3_cfg_t.poll_data`
 as a C_UDTHU to that caller in the slots that follow, cut to the blocks asked for. With no reply set, or one in
 another format than POL_FMT, the radio answers C_NACKU MSNot_Supported.
+
+**Supplementary user data (6.4.13).** Data whose format and size are prearranged with the system (a position, for
+example) can ride along with a call set-up. With `t3_cfg_t.supl_len` > 0 every voice, packet data and short data
+request offers it: Service_Options SUPED_SV 1 and SUPED_VAL the blocks less one, above the service's two low bits
+(tables 6.40, 6.50, 6.55).
+
+| Step | The radio |
+|---|---|
+| C_AHOY from SUPLI to the radio, the request's Service_Kind | a C_UDTHU with SF 1 to SUPLI and the data's blocks in the slots that follow (table 6.30); the request goes on (TNP_Timer) |
+| no C_AHOY from SUPLI | nothing: the TSCC may go on without it (6.4.13.0 a) |
+| C_UDTHD from SUPLI, SF 1, to the radio | kept in `supl_rx`, answered C_ACKU Message_Accepted to SUPLI when A is set (6.4.13.2) |
+| the same to a talkgroup the radio listens to | kept, not answered |
+| the grant or user data that follows to the same destination, within `T3_SUPL_HOLD_MS` (10 s) | names the sender: `supl_rx.src` (0 until then) |
+
+The download doesn't carry the sender (figures 6.38, 6.39), so the radio holds it until the call does. A repeat within
+`T3_REPEAT_MS` is answered again and keeps a sender already named. On the radio the debug link stages the data (`SUPL`,
+[debuglink.md](debuglink.md) 3.26) and the view shows the last heard (`supl_*`).
 
 ### 7.7 Packet data (6.6.3)
 
@@ -710,7 +727,7 @@ on its voice, and never camps on another system or on a control channel that isn
 |---|---|
 | CACH short LC reception on modems that don't report it yet (`hrc_chip_t.slc_rx_addr` 0, or another driver) | the location of the chip's short LC |
 | A late veto of a random access whose slot turned busy | slot-timed transmit in the modem drivers |
-| Supplementary data, a list subscription without registering | later |
+| Supplementary data in the codeplug (only the debug link stages it), a list subscription without registering | later |
 | A kill kept across a restart, and conventional DMR off when killed | later |
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
 | Data to a gateway other than IP (PSTN, PABX, line, dispatcher: BCD digits) | later |

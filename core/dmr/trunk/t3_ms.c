@@ -385,6 +385,15 @@ static bool same_call(const t3_call_t *a, const t3_grant_t *g, const t3_chan_t *
 	return a->dst == g->dst && a->chan.lcn == c->lcn && a->chan.rx_hz == c->rx_hz && a->slot == g->slot;
 }
 
+// The grant or user data that follows supplementary data to the same destination names its sender (6.4.13.2)
+static void supl_sender(t3_ms_t *ms, uint32_t now, uint32_t src, uint32_t dst, bool group)
+{
+	if (ms->supl_rx.count != 0 && ms->supl_rx.src == 0 && !since(now, ms->supl_rx.ms, T3_SUPL_HOLD_MS) &&
+	    ms->supl_rx.dst == dst && ms->supl_rx.group == group) {
+		ms->supl_rx.src = src;
+	}
+}
+
 static void follow(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_chan_t *c, bool group)
 {
 	const t3_grant_t *g = &p->u.grant;
@@ -396,6 +405,7 @@ static void follow(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_chan_
 	ms->call.dst = g->dst;
 	ms->call.src = g->src;
 	ms->call.group = group;
+	supl_sender(ms, now, g->src, g->dst, group);
 	ms->call.emergency = g->emergency;
 	ms->call.chan = ch;
 	ms->call.slot = g->slot;
@@ -679,6 +689,8 @@ static void start_access(t3_ms_t *ms, uint32_t now, t3_svc_t svc, uint32_t dst, 
 	ms->ax.resume = false;
 	ms->ax.ip = 0;
 	ms->ax.ip_inform = false;
+	ms->ax.supl = ms->cfg->supl_len > 0 && ms->cfg->supl_data != NULL &&
+		      (svc == T3_SVC_GROUP_VOICE || svc == T3_SVC_IND_VOICE || svc == T3_SVC_PDATA || svc == T3_SVC_SDATA);
 	// The first slot the TSCC uses; a dedicated TSCC on both slots is reached on TS1
 	ms->ax.slot = (ms->tscc_slots & 1u) || ms->tscc_slots == 0 ? 1 : 2;
 	ms->ax.frames = 0;
@@ -721,6 +733,12 @@ static bool permitted(const t3_ms_t *ms, bool at_known, bool at_busy)
 	default:
 		return a->service_fn == 0 || a->service_fn == 2;
 	}
+}
+
+// The UDT blocks len octets need: the last block's CRC takes 2
+static uint8_t udt_blocks(uint8_t len)
+{
+	return (uint8_t)((len + 2u + T3_UDT_BLOCK - 1u) / T3_UDT_BLOCK);
 }
 
 static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
@@ -794,7 +812,7 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 		// Table 6.55: no options; the 4 service-dependent bits are SUPED_VAL 0 and the blocks to upload less one
 		q->kind = ms->ax.group ? T3_SK_TG_UDT : T3_SK_IND_UDT;
 		q->options = 0;
-		q->extra = (uint8_t)(((ms->sd_tx.len + 2u + T3_UDT_BLOCK - 1u) / T3_UDT_BLOCK - 1u) & 3u);
+		q->extra = (uint8_t)((udt_blocks(ms->sd_tx.len) - 1u) & 3u);
 		break;
 	case T3_SVC_SDPOLL:
 		// Table 6.56: POL_FMT in the options; Appended_Short_Data: the blocks less one
@@ -819,6 +837,12 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 	default:
 		q->kind = T3_SK_CANCEL;
 		break;
+	}
+	if (ms->ax.supl) {
+		// SUPED_SV, and SUPED_VAL the blocks it needs less one, above the service's 2 low bits (tables 6.40, 6.50,
+		// 6.55)
+		q->options |= T3_SO_SUPPL_DATA;
+		q->extra = (uint8_t)((q->extra & 3u) | ((udt_blocks(ms->cfg->supl_len) - 1u) & 3u) << 2);
 	}
 	t3_csbk_build(&p, T3_CRC_MASK_CSBK, out);
 }
@@ -1084,6 +1108,28 @@ static bool on_upload(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *
 	return true;
 }
 
+// The TSCC asks for the supplementary user data offered with our request (6.4.13.1, C_AHOY from SUPLI, the request's
+// Service_Kind): a UDT header with SF 1 to SUPLI and its blocks, in the inbound slots that follow. The TSCC may skip it
+// and go on with the call (6.4.13.0 a)
+static bool on_supl_ask(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h)
+{
+	if (h->src != T3_ID_SUPLI || h->group || !is_me(ms, h->dst)) {
+		return false;
+	}
+	if (!may_send(ms) || !ms->ax.supl || (ms->ax.state != T3_AX_WAIT_RESP && ms->ax.state != T3_AX_ACKED)) {
+		return true;
+	}
+	const t3_cfg_t *c = ms->cfg;
+	t3_udt_t u;
+	memset(&u, 0, sizeof(u));
+	u.format = c->supl_format;
+	u.sf = true;
+	u.dst = T3_ID_SUPLI;
+	bool chars = udt_chars(u.format);
+	queue_udt(ms, now, slot, &u, c->supl_data, c->supl_len, chars ? 0xFFu : 0u, chars, 0, true);
+	return true;
+}
+
 // A short data poll to the radio (6.6.5.7, C_AHOY kind UDT poll from the calling MS or SDMI): its data as a UDT to the
 // caller in the slots the TSCC keeps, cut to the blocks asked for; refused (C_NACKU) when it has none in that format
 static bool on_poll(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h)
@@ -1288,7 +1334,8 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 		ms->st.ahoy_kind = h->kind;
 	}
 	if (!payload && (on_upload(ms, now, slot, h) || on_reg_list(ms, now, slot, h) ||
-			  on_divert_ask(ms, now, slot, h) || on_ip_ask(ms, now, slot, h) || on_poll(ms, now, slot, h))) {
+			  on_divert_ask(ms, now, slot, h) || on_ip_ask(ms, now, slot, h) || on_poll(ms, now, slot, h) ||
+			  on_supl_ask(ms, now, slot, h))) {
 		return;
 	}
 	if (!payload && (h->kind == T3_SK_STATUS || h->kind == T3_SK_UDT_POLL) && is_me(ms, h->src)) {
@@ -1948,6 +1995,40 @@ static bool diverted(t3_ms_t *ms, uint32_t now, const t3_udt_t *h)
 	return true;
 }
 
+// Supplementary user data for the radio or a talkgroup it follows (6.4.13.2): a UDT download from SUPLI with SF 1,
+// held until its sender is named. To the radio with A 1 it is accepted, C_ACKU Message_Accepted to SUPLI
+static bool supl_heard(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_udt_t *h, bool to_me)
+{
+	if (h->op != T3_OP_C_UDTHD || !h->sf || h->src != T3_ID_SUPLI || ms->stunned ||
+	    (!to_me && !(h->group && t3_ms_wants_group(ms, h->dst, false)))) {
+		return false;
+	}
+	if (!t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])ms->udt_rx.blk, h->blocks)) {
+		ms->st.crc_bad++;
+		return true;
+	}
+	uint8_t room = (uint8_t)(h->blocks * T3_UDT_BLOCK - 2u);
+	uint8_t pad = (uint8_t)(h->pad / 2u);
+	uint8_t len = pad < room ? (uint8_t)(room - pad) : 0u;
+	bool repeat = ms->supl_rx.ms != 0 && !since(now, ms->supl_rx.ms, T3_REPEAT_MS) && ms->supl_rx.dst == h->dst &&
+		      ms->supl_rx.group == h->group && ms->supl_rx.format == h->format && ms->supl_rx.len == len &&
+		      memcmp(ms->supl_rx.data, &ms->udt_rx.blk[0][0], len) == 0;
+	if (!repeat) {
+		ms->supl_rx.count++;
+		ms->supl_rx.src = 0;
+	}
+	ms->supl_rx.dst = h->dst;
+	ms->supl_rx.group = h->group;
+	ms->supl_rx.format = h->format;
+	ms->supl_rx.len = len;
+	memcpy(ms->supl_rx.data, &ms->udt_rx.blk[0][0], len);
+	ms->supl_rx.ms = now != 0 ? now : 1;
+	if (to_me && h->a && may_send(ms)) {
+		answer(ms, slot, false, T3_RC_MESSAGE_ACCEPTED, T3_ID_SUPLI, false);
+	}
+	return true;
+}
+
 static void udt_done(t3_ms_t *ms, uint32_t now, uint8_t slot)
 {
 	const t3_udt_t *h = &ms->udt_rx.h;
@@ -1964,7 +2045,7 @@ static void udt_done(t3_ms_t *ms, uint32_t now, uint8_t slot)
 		dgna_done(ms, h, slot);
 		return;
 	}
-	if (diverted(ms, now, h)) {
+	if (diverted(ms, now, h) || supl_heard(ms, now, slot, h, to_me)) {
 		return;
 	}
 	if (ms->stunned || h->op != T3_OP_C_UDTHD || h->sf ||
@@ -1992,6 +2073,7 @@ static void udt_done(t3_ms_t *ms, uint32_t now, uint8_t slot)
 	ms->sd_rx.len = len;
 	memcpy(ms->sd_rx.data, &ms->udt_rx.blk[0][0], ms->sd_rx.len);
 	ms->sd_rx.ms = now != 0 ? now : 1;
+	supl_sender(ms, now, h->src, h->dst, h->group);
 	// The data our poll asked for: the calling MS's final acknowledgement (6.6.5.5)
 	bool polled = ms->ax.svc == T3_SVC_SDPOLL && to_me && h->src == ms->ax.dst &&
 		      (ms->ax.state == T3_AX_WAIT_RESP || ms->ax.state == T3_AX_ACKED);

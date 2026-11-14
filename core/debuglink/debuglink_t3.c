@@ -195,6 +195,15 @@ size_t debuglink_cmd_t3(const uint8_t *req, uint16_t len, uint8_t *out, size_t c
 		s->cfg.poll_len = (uint8_t)(n - 1u);
 		memcpy(s->poll_reply, a + 1, s->cfg.poll_len);
 		break;
+	case DL_T3_SUPL:	// format u8, data
+		if (n < 1u || n > 1u + T3_UDT_MAX || a[0] > 15u) {
+			out[0] = DL_ST_BAD_ARG;
+			break;
+		}
+		s->cfg.supl_format = a[0];
+		s->cfg.supl_len = (uint8_t)(n - 1u);
+		memcpy(s->supl, a + 1, s->cfg.supl_len);
+		break;
 	case DL_T3_LOAD:	// system n u8
 		if (n != 1u || !radio_t3_load(a[0], s)) {
 			out[0] = DL_ST_BAD_ARG;
@@ -356,6 +365,20 @@ void debuglink_view_t3_roam(const radio_view_t *v, dl_text_t *t)
 
 // Its own section: with these keys the t3 section outgrew a reply (truncated=1 before t3.sd_*)
 #if CONFIG_DMR_TRUNK
+// len octets (at most 46) as lowercase hex
+static void hex(char *out, const uint8_t *d, uint8_t len)
+{
+	static const char digits[] = "0123456789abcdef";
+	if (len > 46u) {
+		len = 46u;
+	}
+	for (unsigned i = 0; i < len; i++) {
+		out[2 * i] = digits[d[i] >> 4];
+		out[2 * i + 1] = digits[d[i] & 15u];
+	}
+	out[2 * len] = '\0';
+}
+
 static void t3_svc(const radio_t3_view_t *x, void *ctx)
 {
 	dl_text_t *t = ctx;
@@ -397,18 +420,18 @@ static void t3_svc(const radio_t3_view_t *x, void *ctx)
 	dl_text(t, "\n");
 	// The last short data heard: its octets in hex (sd_data), the format to read them by
 	char sd[2 * sizeof(x->sd_data) + 1];
-	uint8_t len = x->sd_len < sizeof(x->sd_data) ? x->sd_len : (uint8_t)sizeof(x->sd_data);
-	for (unsigned i = 0; i < len; i++) {
-		static const char digits[] = "0123456789abcdef";
-		sd[2 * i] = digits[x->sd_data[i] >> 4];
-		sd[2 * i + 1] = digits[x->sd_data[i] & 15u];
-	}
-	sd[2 * len] = '\0';
+	hex(sd, x->sd_data, x->sd_len);
 	dl_text(t, "t3.polls=%u\nt3.poll_fails=%u\nt3.ip_gw=%u\nt3.ip_advised=%u\n", x->polls, x->poll_fails, x->ip_gw,
 		x->ip_advised);
 	dl_text(t, "t3.sd_count=%u\nt3.sd_src=%u\nt3.sd_dst=%u\nt3.sd_group=%u\nt3.sd_format=%u\nt3.sd_len=%u\n"
 		"t3.sd_data=%s\nt3.sd_age_ms=%d\n", (unsigned)x->sd_count, (unsigned)x->sd_src, (unsigned)x->sd_dst,
 		x->sd_group, x->sd_format, x->sd_len, sd, x->sd_ms != 0 ? (int)(now - x->sd_ms) : -1);
+	// The last supplementary data heard; supl_src 0 until a call names its sender
+	hex(sd, x->supl_data, x->supl_len);
+	dl_text(t, "t3.supl_count=%u\nt3.supl_src=%u\nt3.supl_dst=%u\nt3.supl_group=%u\nt3.supl_format=%u\n"
+		"t3.supl_len=%u\nt3.supl_data=%s\nt3.supl_age_ms=%d\n", (unsigned)x->supl_count, (unsigned)x->supl_src,
+		(unsigned)x->supl_dst, x->supl_group, x->supl_format, x->supl_len, sd,
+		x->supl_ms != 0 ? (int)(now - x->supl_ms) : -1);
 }
 #endif
 
