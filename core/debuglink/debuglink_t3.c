@@ -338,6 +338,8 @@ static void t3_main(const radio_t3_view_t *x, void *ctx)
 		"t3.send_fail=%u\nt3.at_known=%u\nt3.at_busy=%u\n", (unsigned)x->returns, (unsigned)x->hunts,
 		(unsigned)x->foreign, (unsigned)x->learned, (unsigned)x->sent, (unsigned)x->ra_tries,
 		(unsigned)x->send_fail, (unsigned)x->at_known, (unsigned)x->at_busy);
+	dl_text(t, "t3.turns=%u\nt3.turn_ms=%u\nt3.turn_max_ms=%u\nt3.turn_slow=%u\n", (unsigned)x->turns,
+		x->turn_ms, x->turn_max_ms, (unsigned)x->turn_slow);
 }
 #endif
 

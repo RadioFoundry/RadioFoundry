@@ -5626,6 +5626,9 @@ static void test_t3_talk(void)
 	t3_site_run(600);
 	CHECK(radio_t3v.ptt_wait && t3_sent(T3_OP_C_RAND) > before);
 	CHECK(radio_t3v.send_fail == 0);
+	// The site's bursts go on after our C_RAND: the turnaround is measured, short on the simulated modem
+	CHECK(radio_t3v.turns >= 1 && radio_t3v.turn_ms <= 90 && radio_t3v.turn_max_ms >= radio_t3v.turn_ms &&
+	      radio_t3v.turn_slow == 0);
 
 	t3_csbk_t g = { .lb = true, .op = T3_OP_TV_GRANT };
 	g.u.grant.lpcn = 1;

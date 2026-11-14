@@ -282,6 +282,11 @@ typedef struct {
 		uint32_t sampled_ms;
 	} adj[4];		// T3_ADJ_MAX
 	uint32_t send_fail;	// sends the stack refused (busy) and dropped
+	// TX→RX turnaround: from the end of a transmission on the system to the first burst heard after it (the
+	// site's answer to a random access comes 4 slots, 120 ms, after the access began)
+	uint32_t turns;
+	uint16_t turn_ms, turn_max_ms;	// the last, the most
+	uint32_t turn_slow;	// turnarounds over 90 ms: the first frame for an answer at +4 slots was lost
 	uint8_t last_tx[12];	// the last CSBK sent, CRC included (T3_CSBK_BYTES)
 	uint32_t at_known;	// slot ticks with the CACH's AT bit read, and of those, busy
 	uint32_t at_busy;

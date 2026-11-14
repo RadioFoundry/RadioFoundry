@@ -877,7 +877,9 @@ The `t3` view section has the engine's state as the radio core last published it
 `ax_state`, `ax_result`, `ax_reason`, `ptt_wait`, `can_talk`); the last CSBK heard and sent (`last_rx_op`,
 `last_rx_slot`, `last_rx_age_ms`, `last_tx_op`, `last_tx_age_ms`, `last_tx` in hex; age -1: none); counters (`ticks`,
 `csbk`, `crc_bad`, `grants`, `followed`, `unmapped`, `last_unmapped`, `returns`, `hunts`, `foreign`, `learned`, `sent`,
-`ra_tries`, `send_fail`, `at_known`, `at_busy`). The `t3_svc` section, also `t3.`-prefixed, has the services:
+`ra_tries`, `send_fail`, `at_known`, `at_busy`); the TX→RX turnaround, from the end of a transmission to the first
+burst heard on the same channel (`turns`, `turn_ms` the last, `turn_max_ms`, `turn_slow` those over 90 ms: an answer
+at +4 slots, 120 ms after an access began, comes after the radio is back on receive only under that). The `t3_svc` section, also `t3.`-prefixed, has the services:
 `ax_info` (the final acknowledgement's Response_Info: a poll's answer), `reg_tgs` and `reg_tg_ok` (the
 registration's talkgroup list: how many it sent, and which the site accepted, bit 6 the first), `nra` and `ra0` to
 `ra3` (the last random access bursts, oldest first, each `age_ms,tx_slot,rx_ms,frames,rx_slot,op`: how long ago it

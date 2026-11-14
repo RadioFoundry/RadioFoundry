@@ -1704,6 +1704,11 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 
 	if (sm->dmr_keyed && !tx) {
 		sm->dmr_keyed = false;
+#if CONFIG_DMR_TRUNK
+		if (sm->t3_on) {
+			sm->t3_tx_end_ms = now_ms != 0 ? now_ms : 1;	// for the turnaround (t3_tap)
+		}
+#endif
 		// The stack is off the air: the receiver stays as the last burst left it when it can (a reply in our own
 		// timeslot comes 30 ms after our terminator; a receive set-up then misses it)
 		if (board.radio->dmr_tx_end == NULL || !board.radio->dmr_tx_end()) {
@@ -2642,6 +2647,7 @@ static void t3_rx_sleep(radio_sm_t *sm, bool off, uint32_t now_ms)
 static void t3_retune(radio_sm_t *sm, const t3_chan_t *c, uint8_t slot, uint32_t now_ms)
 {
 	sm->t3_tune_held = false;
+	sm->t3_tx_end_ms = 0;	// the turnaround counts on the channel transmitted on only
 	t3_rx_sleep(sm, false, now_ms);
 	channel_t *ch = &sm->view.ch;
 	uint8_t ts = slot == 2 ? 2 : 1;
@@ -2726,6 +2732,18 @@ static bool t3_tap(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 	// TV_Inactive measures signal quality (6.6.2.3.2.9 a): every burst with a sync counts, a hang's idles included
 	if (slot != 0) {
 		t3_ms_activity(&t3m, now_ms, slot);
+		if (sm->t3_tx_end_ms != 0) {
+			uint32_t gap = now_ms - sm->t3_tx_end_ms;
+			sm->t3_tx_end_ms = 0;
+			radio_t3v.turns++;
+			radio_t3v.turn_ms = gap > 0xFFFFu ? 0xFFFFu : (uint16_t)gap;
+			if (radio_t3v.turn_ms > radio_t3v.turn_max_ms) {
+				radio_t3v.turn_max_ms = radio_t3v.turn_ms;
+			}
+			if (gap > 90u) {
+				radio_t3v.turn_slow++;
+			}
+		}
 	}
 	if (b->kind != DMR_BURST_CSBK && b->kind != DMR_BURST_MBC_HEADER && b->kind != DMR_BURST_MBC_CONT &&
 	    b->kind != DMR_BURST_DATA_HEADER && b->kind != DMR_BURST_RATE_12_DATA) {
@@ -3104,6 +3122,7 @@ static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 	radio_t3v.backs = backs;
 	radio_t3v.ip_gw = t3s.ip_gw;
 	radio_t3v.last_tx_op = 0xFF;
+	sm->t3_tx_end_ms = 0;
 	sm->t3_on = true;
 	sm->t3_sending = false;
 	sm->t3_tune_held = false;
