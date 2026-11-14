@@ -55,6 +55,8 @@ RIG = {
                         False),
     "t3-tg-list": (str, "talkgroups, comma separated, the radio subscribes to after --t3-tg as a list "
                         "(test_t3_reg_list)", False),
+    "t3-call-cmd": (str, "a shell command that has another radio on the Tier III site make one group call to --t3-tg "
+                         "carrying speech (test_t3_follow_speech); it returns once the call is asked for", False),
     "tx-mhz": (str, "MHz, comma separated: the frequencies this rig may transmit on (the radio and the bench); "
                     "--allow-rf needs it", False),
 }

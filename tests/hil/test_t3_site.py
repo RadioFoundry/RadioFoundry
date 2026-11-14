@@ -53,6 +53,12 @@ Pass criteria:
   number sent, and t3.reg_tg_ok has no bit set past them. Which the site accepted is printed; the site's own
   configuration decides it.
 
+- test_t3_follow_speech (rf, radio_tx; needs --t3-call-cmd): registered, the rig's command has another radio on the
+  site call --t3-tg with speech. Within GRANT_S + CLEAR_S the radio follows it (t3.state follow, t3.call_ours 0,
+  t3.call_dst the talkgroup) and is back on the control channel within CALL_S after. The voice: no late entry
+  (call.rx_late_entries 0), no frame lost (call.rx_lost_frames, voice.rx_lost 0), at least SPEECH_MIN frames in, all
+  but PRIME played, no overflow, and the decoded speech peaks at PEAK_MIN or more (voice.rx_peak), as
+  test_dmr_voice: silence would pass every counter.
 - test_t3_cp_channel (rf, radio_tx): the system from the codeplug instead (dmr-trunking.md 12): a system record in
   slot CP_SYS with --t3-system's identity, its control channel and a tag on the channel in use. Selecting the channel
   starts the system (t3.sys CP_SYS + 1): within CAMP_S + REG_S it camps on --t3-rx-mhz and registers (t3.reg ok).
@@ -68,12 +74,13 @@ what they wrote after. On a failure every test prints the last t3 view.
     python3 -m pytest tests/hil/test_t3_site.py -v -rs -s --allow-rf --t3-rx-mhz RX --t3-tx-mhz TX --t3-lcn 1 \\
         --t3-system 1,5,1 --t3-cc 2 --t3-tg 1 [--t3-peer ID]
 """
+import subprocess
 import time
 
 import pytest
 
 from rfoundry_debug import VIEW_SECTIONS, as_int, DebugLink, CPKV_T3_SYSTEM, CPKV_T3_CHAN, CPKV_T3_TAG, T3_SYS_AUTH
-from rfoundry_hil import skip
+from rfoundry_hil import counter_deltas, skip
 from hil_config import rig
 
 # The debug link's names (docs/spec/debuglink.md, the t3 section); kept here so a rename touches one place
@@ -112,6 +119,10 @@ SERVICE_S = 20.0    # random access, the site's C_AHOY to the called MS and its 
 BCAST_CLEAR_S = 3.0  # a broadcast has no hang time: the terminator, the site's P_CLEAR, the retune
 ALLMSID = 0xFFFFFF  # all-call (TS 102 361-4 A.4)
 PTT_MAX_MS = 20000  # the firmware's own PTT time-out, past every wait here
+CALL_S = 30.0       # the other radio's call: its request, the speech, the hang time, the clear
+SPEECH_MIN = 90     # voice frames: the shortest call the command may make (5 superframes)
+PRIME = 3           # AMBE_VOICE_PRIME in core/dmr/ambe/ambeVoice.h
+PEAK_MIN = 1000     # as test_dmr_voice: decoded speech peaks at thousands
 CP_SYS = 7          # the codeplug system slot the cp tests write (the last: the user's come first)
 CP_CHAN = 0xF0      # the system channel record they write (CPKV_T3_CHAN + it)
 
@@ -558,3 +569,42 @@ def test_t3_cp_unavailable(trunk_tx, cp_system):
     except AssertionError:
         print("t3 view:", t3(trunk_tx))
         raise
+
+
+@pytest.mark.feature("dmr_trunk_tx")
+@pytest.mark.rf
+@pytest.mark.radio_tx
+def test_t3_follow_speech(trunk_tx, pytestconfig):
+    s = site(pytestconfig)
+    cmd = rig(pytestconfig, "t3-call-cmd", "a call with speech from another radio on the site")
+    if trunk_tx.view(["dmr"]).get("dmr.codec") != "1":
+        skip("not_built", "no vocoder merged in this firmware (dmr.codec=0): voice can't play")
+    v0 = register(trunk_tx, s)
+    followed0, returns0 = num(v0, "t3.followed"), num(v0, "t3.returns")
+    keys = ["voice.rx_in", "voice.rx_frames", "voice.rx_concealed", "voice.rx_silence", "voice.rx_lost",
+            "voice.rx_overflows", "voice.rx_bad", "voice.rx_underruns", "call.rx_lost_frames", "call.rx_voice_bursts",
+            "call.rx_late_entries", "audio.ov", "audio.dr"]
+    trunk_tx.reset_counters()
+    _, before = trunk_tx.counters()
+    try:
+        subprocess.run(cmd, shell=True, check=True, timeout=30)
+        v = wait_t3(trunk_tx, lambda x: x.get("t3.state") == "follow" and num(x, "t3.followed") > followed0,
+                    GRANT_S + CLEAR_S, "following the other radio's call")
+        assert v.get("t3.call_ours") == "0", "following a call of its own"
+        assert num(v, "t3.call_dst") == s["tg"], f"following a call to {v.get('t3.call_dst')}, not {s['tg']}"
+        wait_t3(trunk_tx, lambda x: x.get("t3.state") == "camped" and num(x, "t3.returns") > returns0, CALL_S,
+                "back on the control channel after the call")
+    except AssertionError:
+        print("t3 view:", t3(trunk_tx))
+        raise
+    time.sleep(1.0)                      # playback drains
+    _, after = trunk_tx.counters()
+    d = counter_deltas(before, after, keys)
+    peak = trunk_tx.view(["dmr_stats"]).get("voice.rx_peak")
+    print(f"followed: radio deltas {d}, peak {peak}")
+    assert d["call.rx_late_entries"] == 0, f"the call started late (header missed): {d}"
+    assert d["call.rx_lost_frames"] == 0 and d["voice.rx_lost"] == 0, f"frames lost: {d}"
+    assert d["voice.rx_in"] >= SPEECH_MIN, f"only {d['voice.rx_in']} voice frames in: {d}"
+    assert d["voice.rx_frames"] >= d["voice.rx_in"] - PRIME, f"played {d['voice.rx_frames']} of {d['voice.rx_in']}: {d}"
+    assert d["voice.rx_overflows"] == 0 and d["audio.ov"] == 0, f"overflows: {d}"
+    assert peak is not None and int(peak) >= PEAK_MIN, f"decoded speech peaks at {peak} (silent output?): {d}"
