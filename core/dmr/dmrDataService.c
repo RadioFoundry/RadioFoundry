@@ -109,6 +109,7 @@ static bool txIsReply;
 static uint8_t txKind;
 static uint16_t txGuardMs = DMR_DATA_TX_GUARD_MS;
 static bool txChain = true;
+static uint8_t ipConfirmedRate = IP_CONFIRMED_RATE;	// RAM override for the bench (dmrDataServiceSetIpConfirmedRate)
 static bool txEnded;					// txEndedAt holds when our last list ended (the guard)
 static bool txEndStamp;					// a list just ended: stamped at the next tick, never before the real end
 static bool txGuardCounted;
@@ -627,7 +628,7 @@ static void ipTransmit(void)
 	if (ipx.confirmed)
 	{
 		// One burst kept for the terminator
-		count = dmrDataBuildConfirmed(ipx.sap, ipx.dst, channel.ownId, pdu, n, IP_CONFIRMED_RATE, ipx.ns, ipx.firstTry,
+		count = dmrDataBuildConfirmed(ipx.sap, ipx.dst, channel.ownId, pdu, n, ipConfirmedRate, ipx.ns, ipx.firstTry,
 										(ipx.blocks != 0) ? ipx.blocks : ~0ULL, IP_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS - 1);
 		if ((count == 0) && (ipx.tries == 0))
 		{
@@ -689,7 +690,7 @@ static void ipTransmit(void)
 	}
 	if (ipx.tries == 0)
 	{
-		dmrDataCountIpTx(ipx.sap, pdu, n, ipx.confirmed ? IP_CONFIRMED_RATE : IP_UNCONFIRMED_RATE, ipx.confirmed);
+		dmrDataCountIpTx(ipx.sap, pdu, n, ipx.confirmed ? ipConfirmedRate : IP_UNCONFIRMED_RATE, ipx.confirmed);
 		stats.ipConfirmed += ipx.confirmed ? 1 : 0;
 	}
 	else
@@ -843,6 +844,16 @@ void dmrDataServiceSetTxSpacing(uint16_t guardMs, bool chain)
 uint16_t dmrDataServiceTxGuardMs(void)
 {
 	return txGuardMs;
+}
+
+void dmrDataServiceSetIpConfirmedRate(uint8_t dataType)
+{
+	ipConfirmedRate = dataType;
+}
+
+uint8_t dmrDataServiceIpConfirmedRate(void)
+{
+	return ipConfirmedRate;
 }
 
 bool dmrDataServiceTxChain(void)

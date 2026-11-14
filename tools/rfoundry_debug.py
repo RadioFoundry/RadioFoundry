@@ -136,7 +136,7 @@ PROBE_BLOCK = 160
 REGIONS = {0: "none", 1: "ours", 2: "foreign"}
 DATA_OP_SMS, DATA_OP_CALL_ALERT, DATA_OP_RADIO_CHECK, DATA_OP_SETTINGS, DATA_OP_INBOX, DATA_OP_MARK_READ = range(1, 7)
 DATA_OP_EMERGENCY, DATA_OP_EMERGENCY_SETTINGS = 7, 8
-DATA_OP_IP_SETTINGS, DATA_OP_IP_SEND, DATA_OP_TX_SPACING = 9, 10, 11
+DATA_OP_IP_SETTINGS, DATA_OP_IP_SEND, DATA_OP_TX_SPACING, DATA_OP_IP_CONFIRMED_RATE = 9, 10, 11, 12
 IP_COMPRESS = {"off": 0, "auto": 1, "all": 2}
 IP_CONFIRMED = {"off": 0, "rules": 1, "all": 2}
 IP_RULE_PORT = 0x80000000
@@ -1326,6 +1326,11 @@ class DebugLink:
         our own transmission in ms, and whether unconfirmed IP packets to one destination share a transmission.
         State: data.tx_guard_ms and data.tx_chain in the air view section."""
         self.data_request(DATA_OP_TX_SPACING, struct.pack("<HB", int(guard_ms) & 0xFFFF, 1 if chain else 0))
+
+    def ip_confirmed_rate(self, rate="3/4"):
+        """The block rate of confirmed IP packets, "3/4" (the default), "1/2" or "1"; RAM only.
+        State: data.ip_cnf_rate in the air view section."""
+        self.data_request(DATA_OP_IP_CONFIRMED_RATE, bytes([("3/4", "1/2", "1").index(rate)]))
 
     # APRS (docs/spec/debuglink.md 3.16, docs/spec/aprs.md 13). State: the aprs and aprs_set view sections
     def aprs_request(self, op, args=b""):

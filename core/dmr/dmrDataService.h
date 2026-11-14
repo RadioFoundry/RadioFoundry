@@ -235,6 +235,9 @@ void dmrDataServicePostEvent(uint8_t kind, uint32_t id);
 void dmrDataServiceSetTxSpacing(uint16_t guardMs, bool chain);
 uint16_t dmrDataServiceTxGuardMs(void);
 bool dmrDataServiceTxChain(void);
+// The block rate of confirmed IP packets (DMR_TYPE_RATE_3_4 by default, DMR_TYPE_RATE_1_2 or DMR_TYPE_RATE_1); not stored
+void dmrDataServiceSetIpConfirmedRate(uint8_t dataType);
+uint8_t dmrDataServiceIpConfirmedRate(void);
 // Every 10-25 ms with the time and the channel
 void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *channel);
 // A data / control burst heard on our slot (dmr_call_set_data_rx)
