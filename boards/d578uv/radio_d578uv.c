@@ -87,7 +87,7 @@
 #define R49			0x26ACu
 // Chip GPIO (0x25) at init: chip 0, chip 1
 #define GPIO_A_INIT		0x0001u
-#define GPIO_B_INIT		0x0033u
+#define GPIO_B_INIT		(0x0033u | GPIO_B_RX_TAP)
 // Chip 0 GPIO bits: 3/6 side A's complementary band pair (UHF sets 3, VHF 6), 7/4 side B's (UHF sets 7, VHF 4; both
 // clear with side B off); 5 set while transmitting above 300 MHz, cleared at TX end (inferred); 1 the fan, high = on:
 // while transmitting or while the PA is hot (fan_poll), the radio's "Fan Open" menu setting "Both"; 2 the GPS module's
@@ -107,6 +107,10 @@
 #define GPIO_LO_B_AM		0x0040u
 // Chip 1 GPIO bit 1: set passes side A's RF chip audio toward the speaker, clear holds it off (measured on a radio)
 #define GPIO_B_A_AUDIO		0x0002u
+// Chip 1 GPIO bit 6: set connects side A's demodulated receive audio to PC0 (ADC channel 10, the APRS receiver,
+// afsk_d578uv.c), ahead of the squelch and the speaker gate; clear, PC0 is flat (measured on a radio). Set in receive,
+// cleared while transmitting
+#define GPIO_B_RX_TAP		0x0040u
 
 // Shift register bits (roles inferred)
 #define SR_BOOT			0x02u	// the Bluetooth module's supply, on from boot (bt_d578uv.c)
@@ -1932,6 +1936,7 @@ static bool dmr_tx(uint32_t hz, uint16_t dac)
 	qa4818_tx_on(&chip_if);
 	band_bits(hz);
 	chip0_gpio(GPIO_TX_UHF | GPIO_FAN | GPIO_MIC_MUTE, (hz > UHF_FROM_HZ ? GPIO_TX_UHF : 0) | GPIO_FAN);
+	chip1_gpio(GPIO_B_RX_TAP, 0);
 	hal_delay_ms(10);
 	burst_arm(dac);
 	return true;
@@ -2001,6 +2006,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	qa4818_tx_on(&chip_if);
 	band_bits(hz);
 	chip0_gpio(GPIO_TX_UHF | GPIO_FAN | GPIO_MIC_MUTE, (hz > UHF_FROM_HZ ? GPIO_TX_UHF : 0) | GPIO_FAN);
+	chip1_gpio(GPIO_B_RX_TAP, 0);
 	hal_delay_ms(10);
 	mcu_dac_write(0, dac);
 	// The PA enable toggled three times 2 ms apart, then held
@@ -2166,6 +2172,7 @@ static void tx_off(void)
 	sr_set(0, SR_RX_AUDIO);
 	qa4818_tx_drive_off(&chip_if);
 	chip0_gpio(GPIO_TX_UHF | GPIO_FAN | GPIO_MIC_MUTE, GPIO_MIC_MUTE | (fan_hot ? GPIO_FAN : 0));
+	chip1_gpio(GPIO_B_RX_TAP, GPIO_B_RX_TAP);
 	chips_off();
 	transmitting = false;
 	if (have_rx) {

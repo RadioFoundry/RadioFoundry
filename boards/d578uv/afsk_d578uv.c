@@ -12,8 +12,8 @@
 //
 // The timer runs only between the core's rx_start and rx_stop, which it calls while the radio receives FM on the APRS
 // frequency. Readings reach the core only while side A is receiving FM (d578uv_fm_rx_a): while it transmits or side B
-// has the AM receiver, the ring is emptied instead. That PC0 carries side A's audio while both sides receive is
-// inferred (hardware-d578uv.md 3.4).
+// has the AM receiver, the ring is emptied instead. PC0 carries side A's audio while chip 1's GPIO bit 6 is set, which
+// radio_d578uv.c does in receive; that it still does while side B also receives is not known (hardware-d578uv.md 3.4).
 #include "d578uv.h"
 #include "config.h"
 
