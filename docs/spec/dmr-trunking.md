@@ -934,7 +934,7 @@ allows:
 | 2 the whole system and its key | the channels, the system's set-up (color code, options, plan, control channels, fallback) and its key when it has one |
 
 Never carried: the radio's own ID or its ID on the system, kill or stun state, registration, the short data poll
-setting (12.7).
+setting (12.7), the supplementary data (12.8).
 
 A receiver matches a shared system to one of its own by model, NET and category. A match is used as it is: the share
 changes nothing in it, not even its key. With no match, a share with the whole system adds it in a free system slot;

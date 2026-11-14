@@ -913,6 +913,48 @@ static void test_trunked_import(void)
 	CHECK(codeplug_kv_next(&cur, &key, probe, sizeof(probe)) < 0);	// none of its channels left behind
 }
 
+// The offer's preview (zone_import_t3_locked): which trunked channels of a share would come in unavailable on this
+// radio, before anything is written. Channels in the share: County Fire (County, whole, with its key), Metro Ops
+// (Metro, identity only), Talkaround (conventional)
+static void test_trunked_locked(void)
+{
+	static uint8_t rec_buf[ZS_RECORD_MAX];
+	zsRecord_t r;
+	uint8_t included;
+	int n = sender_record(rec_buf, &included);
+
+	// A radio with neither system: County comes in usable, Metro by identity does not
+	fresh();
+	CHECK(zsParse(rec_buf, n, &r) && r.channels == 3);
+	CHECK(!zone_import_t3_locked(&r, 0) && zone_import_t3_locked(&r, 1) && !zone_import_t3_locked(&r, 2));
+	CHECK(!zone_import_t3_locked(&r, 3));	// past the last channel
+
+	// The radio's own set-up decides: County that authenticates with no key here is locked, whatever the share
+	// carries; Metro set up here with a control channel is not
+	fresh();
+	t3_system(0, "Our county", 1, 5, 1, 0x0840, 0, 0, "");
+	t3_chan(0, 0, true, 1, 451000000, 456000000);
+	t3_system(1, "Our metro", 2, 300, 2, 0x0040, 0, 0, "");
+	t3_chan(1, 1, true, 1, 452000000, 457000000);
+	CHECK(zone_import_t3_locked(&r, 0) && !zone_import_t3_locked(&r, 1));
+	t3_key(0);
+	CHECK(!zone_import_t3_locked(&r, 0));
+
+	// The whole system, but it authenticates and its key didn't come: locked
+	n = sender_record(rec_buf, &included);
+	CHECK(codeplug_kv_remove(CODEPLUG_KEY_T3_KEY));
+	n = zone_export_zone(0, rec_buf, ZS_RECORD_MAX, &included);
+	fresh();
+	CHECK(n > 0 && zsParse(rec_buf, n, &r) && zone_import_t3_locked(&r, 0));
+
+	// The whole system with no control channel among its channels: nothing to find it on
+	n = sender_record(rec_buf, &included);
+	t3_chan(0, 0, false, 1, 451000000, 456000000);	// its one control channel, now a traffic channel
+	n = zone_export_zone(0, rec_buf, ZS_RECORD_MAX, &included);
+	fresh();
+	CHECK(n > 0 && zsParse(rec_buf, n, &r) && zone_import_t3_locked(&r, 0));
+}
+
 // A deleted channel takes its tag with it: a channel written at its number later isn't trunked
 static void test_trunked_delete(void)
 {
@@ -943,6 +985,7 @@ int main(void)
 #if CONFIG_DMR_TRUNK
 	test_trunked_export();
 	test_trunked_import();
+	test_trunked_locked();
 	test_trunked_delete();
 #endif
 	printf("zoneImportTest: %d checks, %d failures\n", checks, failures);
