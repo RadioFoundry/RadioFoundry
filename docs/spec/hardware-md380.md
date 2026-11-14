@@ -601,6 +601,10 @@ Measured on RadioFoundry (UHF, 446.000 MHz, raw ADC, a second radio nearby; 2026
 | no signal | 690-760 | 1340-1620 |
 | FM carrier, shown as -71 dBm | 2720-2732 | 39-81 |
 
+On a UHF MD-380 on 2026-11-14 (440-468 MHz, no signal) RSSI read 1736 (shown as -92 dBm), with BUSY at 1478; a DMR
+signal read -71 dBm. The no-signal level isn't stable from one session to the next, so nothing should take this
+reading as an absolute level: the DMR scan counts it from the floor it measures ([gotchas](gotchas.md) 17.4).
+
 BUSY falls with a signal (larger = more noise). With the USB programming cable in the accessory jack the receiver
 doesn't detect a signal at all (RSSI stays near the no-signal level): read these values with the cable out (a log
 line read back afterwards), or by ear.

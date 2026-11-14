@@ -380,29 +380,59 @@ static void test_rx(void)
 	CHECK(eng.st.rx_restarts == restarts + 1);
 }
 
-static void test_rx_stale_lc(void)
+// One late entry on a chip still holding old_lc in page 2: 12 voice bursts (two superframes) from burst A, page 2
+// becoming new_lc (NULL: never) after `after` bursts. bad_f: the F of the first superframe flags a CRC error. Returns
+// the voice index and number (1-based) of the first burst whose LC is valid, -1 if none
+static int stale_lc_entry(const uint8_t *old_lc, const uint8_t *new_lc, int after, bool bad_f, int *at)
 {
 	fresh_engine();
-	static const uint8_t old_lc[9] = { 0, 0, 0, 0, 0, 9, 0, 0, 1 };
-	memcpy(&rd[2][0], old_lc, 9);	// a late entry: the chip still holds the last call's LC
+	memcpy(&rd[2][0], old_lc, 9);
 	uint32_t t = 3000000;
-	bool f_valid[2] = { true, true };
-	int sf = 0;
+	int first = -1, voices = 0;
+	*at = -1;
 	for (int n = 0; n < 12; n++) {
+		if (new_lc != NULL && n == after) {
+			memcpy(&rd[2][0], new_lc, 9);
+		}
 		ts_at(t);
 		t += 30000;
 		ts_at(t);
-		report_at(t + 4000, (uint8_t)(((0x8 | (n % 6 + 1)) << 4) | (n % 6 == 0 ? 1 : 0)), 0x20, 0x00);
+		uint8_t r51 = (uint8_t)(((0x8 | (n % 6 + 1)) << 4) | (n % 6 == 0 ? 1 : 0));
+		if (bad_f && n == 5) {
+			r51 |= 0x04;
+		}
+		report_at(t + 4000, r51, 0x20, 0x00);
 		t += 30000;
 		drain();
-		const dmr_burst_t *b = last_burst();
-		if (b != NULL && b->voice_index == 5) {
-			f_valid[sf++] = b->lc_valid;
+		for (int i = 0; i < nev; i++) {
+			if (evs[i].kind == DMR_EV_BURST_RX && bursts[i].kind == DMR_BURST_VOICE) {
+				voices++;
+				if (bursts[i].lc_valid && first < 0) {
+					first = bursts[i].voice_index;
+					*at = voices;
+				}
+			}
 		}
+		nev = 0;
 	}
-	CHECK(sf == 2);
-	CHECK(!f_valid[0]);	// unchanged LC at the first F: not trusted
-	CHECK(f_valid[1]);	// after more than a superframe it is
+	return first;
+}
+
+static void test_rx_stale_lc(void)
+{
+	static const uint8_t old_lc[9] = { 0, 0, 0, 0, 0, 9, 0, 0, 1 };
+	static const uint8_t new_lc[9] = { 0, 0, 0, 0, 0, 9, 0, 0, 2 };
+	int at;
+	// The same talker again: page 2 never changes. Not at the first F (page 2 may not hold this call's LC yet), but at
+	// the A after it, a whole superframe of this reception having closed with a good F (HIL 2026-11-14: held back to
+	// the second F, a late entry played 8 bursts instead of 12)
+	CHECK(stale_lc_entry(old_lc, NULL, 0, false, &at) == 0 && at == 7);
+	// The F before it flagged a CRC error: not at that A; the next F, after more than a superframe
+	CHECK(stale_lc_entry(old_lc, NULL, 0, true, &at) == 5 && at == 12);
+	// A new talker whose LC reaches page 2 only after the first F was read: taken at the A, as new
+	CHECK(stale_lc_entry(old_lc, new_lc, 6, false, &at) == 0 && at == 7 && memcmp(&rd[2][0], new_lc, 9) == 0);
+	// ... and before the first F: at that F
+	CHECK(stale_lc_entry(old_lc, new_lc, 4, false, &at) == 5 && at == 6);
 }
 
 static void test_out_of_step_resync(void)

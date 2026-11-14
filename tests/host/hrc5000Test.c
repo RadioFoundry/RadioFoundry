@@ -786,10 +786,10 @@ static void test_tick_rx_resume(void)
 	hrc6000_dmr_stats(&eng, &st);
 	CHECK(st.lc_resumed == 1);
 
-	// One report only: nothing proves it, the voice count decides (the second F)
+	// One report only: nothing proves it, the sticky rule decides (the A after the first whole superframe)
 	resume_opts_t one = { .gap = 26, .reports = 1 };
 	r = resume_run(&one);
-	CHECK(r.lc_at >= 12);
+	CHECK(r.lc_at >= 7 && r.lc_at <= 8);
 
 	// Someone else came on in the gap: their LC at the first report, handed over at once (never the old one)
 	resume_opts_t other = { .gap = 26, .reports = 2, .lc2 = res_other };
@@ -804,12 +804,13 @@ static void test_tick_rx_resume(void)
 	// The call ended by its terminator: the same LC after it is a new call, by the sticky LC rule
 	resume_opts_t term = { .terminator = true, .gap = 26, .reports = 2 };
 	r = resume_run(&term);
-	CHECK(r.lc_at >= 12);
+	CHECK(r.lc_at >= 7 && r.lc_at <= 8);
+	CHECK(memcmp(r.lc, res_lc, 9) == 0);
 
 	// Too long after the call: a new one
 	resume_opts_t late = { .gap = 70, .reports = 2 };
 	r = resume_run(&late);
-	CHECK(r.lc_at >= 12);
+	CHECK(r.lc_at >= 7 && r.lc_at <= 8);
 }
 
 // A post-access read's LC with no reception after it stays out of later receptions: the flag that keeps it for the

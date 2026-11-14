@@ -2962,7 +2962,11 @@ static bool dmr_strength_heard(const radio_sm_t *sm, int16_t rssi_dbm)
 	if (sq > RADIO_SQUELCH_MAX) {
 		sq = RADIO_SQUELCH_MAX;
 	}
-	return rssi_dbm > RADIO_DMR_SQL_L1_DBM + (sq - 1) * RADIO_SQL_DB_PER_STEP;
+	int16_t above = (int16_t)((sq - 1) * RADIO_SQL_DB_PER_STEP), floor_dbm;
+	if (scan_floor(&sm->scan, &floor_dbm) && rssi_dbm <= floor_dbm + RADIO_DMR_SQL_L1_FLOOR_DB + above) {
+		return false;
+	}
+	return rssi_dbm > RADIO_DMR_SQL_L1_DBM + above;
 }
 #endif
 
@@ -2989,6 +2993,9 @@ static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_
 		active = sm->view.dmr.state == RDMR_RX;
 		// Some receivers' noise reading stays put on a DMR signal while its strength rises: either one is a
 		// carrier, the strength once the settle has passed (a reading just after the retune is the last stop's)
+		// The strength scale also sits above the floor read on the stops before: some receivers' strength
+		// reading isn't calibrated, and reads far up the scale on an empty channel (gotchas 17.4)
+		scan_level(sc, now_ms, st->rssi_dbm);
 		carrier = carrier || (now_ms - sc->tuned_ms >= SCAN_SETTLE_MS && dmr_strength_heard(sm, st->rssi_dbm));
 		// Sync: bursts with the channel's color code since this stop's settle, a call or a late entry still
 		// waiting for its LC. A call known not to be for us (another group, a private call) holds nothing
