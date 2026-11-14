@@ -488,6 +488,9 @@ static const stm32_hrc_dmr_board_t dmr_board = {
 	.ts_service = uvf_rf_dmr_service,
 	.rf_counters = uvf_rf_dmr_counters,
 	.tx_end = dmr_tx_end,
+	// rf_to_rx() puts the AT1846S on the RX frequency after every burst and rf_key() back on TX for the next, so the
+	// slots between hear the repeater's outbound on a split channel too
+	.listen_split = true,
 };
 
 // Stop per-burst keying (task level): disarm, drop a transmission still running, PA off

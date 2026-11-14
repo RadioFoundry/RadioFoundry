@@ -762,6 +762,10 @@ Ordering:
   The receiver must work between bursts (an SFR's inbound slot, `sfr.md` 3). Dropping the PA earlier than the next
   timeslot interrupt (28.5-30 ms after the RF TX interrupt) did not reduce the inbound errors. The "transmitting" state of the radio must therefore be taken from the HR_C6000 slot state, not from the PA
   pins: the last burst of a call (the terminator) is still in flight after the PA logic has gone back to RX once.
+
+  Since the receiver is back on the RX frequency after every burst, a voice over through a repeater listens to its
+  outbound between our bursts on a split channel too (the glue's `listen_split`, [dmr-modem.md](dmr-modem.md) 2.8):
+  on a trunked site's split channel the radio hears a reverse channel cease while it talks (`test_t3_cease`).
 - Power-down: PA enables low, both RX supplies low, mic power optionally low, HR_C6000 PWD high, AT1846S reg 0x30 =
   receiver off value.
 
