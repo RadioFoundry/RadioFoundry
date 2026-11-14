@@ -217,7 +217,7 @@ def test_iddb_whole_room(radio, pytestconfig, backup_dir):
     """The database's whole room, area 1 and area 2 up to the image end (cps_fast INFO), written and read back: a
     synthetic format C database the size of RadioID's list (or the room), or RadioID's own list (--iddb-users), and
     the blocks past its end with pseudorandom bytes. Then the lookups above (the database's start, middle and end),
-    and the room put back as it was (read back byte for byte). Long (on the D578, 24.5 MB: about 40 minutes), so only
+    and the room put back as it was (read back byte for byte). Long (a 24.5 MB room: about an hour), so only
     with --iddb-whole-room, and --allow-codeplug-write; the backup is the whole room"""
     if "IDDB_COMPACT" not in radio.features() or "CPS_FAST" not in radio.features():
         skip("not_built", "built without CONFIG_IDDB_COMPACT or CONFIG_CPS_FAST")

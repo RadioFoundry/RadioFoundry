@@ -13,9 +13,11 @@ APP_BASE   := 0x08006000
 BOARD_T_NAME := AT-D578UV-AT32
 D578UV_DEFS ?=
 MCU_DEFS   += $(D578UV_DEFS)
-# The radio task's deepest chain (a TFTP ID database write through the NAND sectors, with VOX on) is 2740 bytes here,
-# past the core's 768 words: 800 words leaves about 120 bytes (make stack-check)
-MCU_DEFS   += -DRADIO_TASK_STACK=800
+# The deepest chains here end in a NAND read's lock, under which a kernel assert would capture the crash
+# (crash_assert: its 88 bytes and the kernel's 136): the radio task's (a TFTP ID database write through the NAND
+# sectors) is 2912 bytes, the host task's (a debug link key store) 2680, the UI's (a message row's contact name) 1816.
+# With make stack-check's overhead and margin that's 816, 760 and 540 words, 8 to 24 bytes to spare
+MCU_DEFS   += -DRADIO_TASK_STACK=816 -DHOSTLINK_TASK_STACK=760 -DUI_TASK_STACK_WORDS=540
 BOARD_DIRS := boards/d578uva boards/d578uv drivers/display/st7735 drivers/flash/spi_nand drivers/input/quadrature \
               drivers/modem/sct drivers/rf/rfbus drivers/rf/subaudio drivers/rf/qa4818 drivers/gps/nmea_line \
               drivers/gps/gps_rx platform/at32f43x/gps_uart drivers/bcast/ktamfm drivers/bcast/rda5807m drivers/bus/i2c_gpio
