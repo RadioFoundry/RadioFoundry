@@ -55,8 +55,8 @@ static uint8_t sp;			// stack[sp] is on screen; stack[0] is Home
 static uint32_t toast_until, entry_last, last_refresh, now;
 #if CONFIG_VOLUME_BAR
 static uint32_t volbar_until;
-#endif
 static int8_t knob_seen;		// the knob's last level (percent) the UI saw, -1 = none yet: no bar for the first
+#endif
 static bool dirty = true;
 static uint32_t draws;
 static bool has_quick_key, has_context_key;
@@ -83,7 +83,9 @@ static bool ptt_held;			// the PTT key is down (its DOWN came, its UP not yet)
 static bool power_off_due;		// auto power off: the housekeeping task switches off (ui_app_power_off_due)
 static bool batt_warned;		// the low battery banner was shown at this level (cleared 3 % above it)
 static uint32_t batt_warned_ms;
+#if CONFIG_DMR
 static uint32_t hear_all_key;		// the channel hear all by default last latched on (vfo, zone, position, mode)
+#endif
 static char emerg_name[CODEPLUG_NAME_LEN + 1];
 
 // --- small helpers ---
@@ -324,8 +326,10 @@ static void filter_type(char key)
 
 static ui_recent_t recent[UI_RECENT_MAX];
 static uint8_t recent_n;
+#if CONFIG_DMR
 static uint32_t recent_seen_ms;
 static bool recent_tx;
+#endif
 
 uint8_t ui_recent_count(void) { return recent_n; }
 const ui_recent_t *ui_recent_get(uint8_t i) { return i < recent_n ? &recent[i] : NULL; }
@@ -846,11 +850,13 @@ static void entry_commit(void)
 
 // --- input helpers ---
 
+#if CONFIG_DMR
 // Digital monitor (the DMR hear all latch: every talkgroup on the slot and color code)
 static inline const char *dmon_text(bool on)
 {
 	return on ? TR("Digital monitor on") : TR("Digital monitor off");
 }
+#endif
 
 // The key lock toasts, with a shorter form for the narrow displays (text alternates, font.h)
 static inline const char *locked_text(bool star)
@@ -1810,14 +1816,18 @@ void ui_app_init(void)
 	view = &view_none;
 	memset(&ui_st, 0, sizeof ui_st);
 	ui_st.volbar = -1;
+#if CONFIG_VOLUME_BAR
 	knob_seen = -1;
+#endif
 	wake_req = false;
 #if CONFIG_DUAL_WATCH
 	ui_dual_reset();
 #endif
 	recent_n = 0;
+#if CONFIG_DMR
 	recent_seen_ms = 0;
 	recent_tx = false;
+#endif
 	ev_head = ev_tail = 0;
 	sp = 0;
 	stack[0].scr = SCR_HOME;
@@ -1838,7 +1848,9 @@ void ui_app_init(void)
 	knob_last = -1;
 	ptt_held = false;
 	off_warned = power_off_due = batt_warned = false;
+#if CONFIG_DMR
 	hear_all_key = 0;
+#endif
 	has_quick_key = ui_has_action(ACT_QUICK);
 	has_unlock_key = has_quick_key || ui_has_action(ACT_BACK);
 	has_context_key = ui_has_action(ACT_CONTEXT);
@@ -1871,7 +1883,12 @@ void ui_apply_setting(uint8_t id, int32_t v)
 	case UI_SET_LARGE_TEXT: ui_st.large_text = v != 0; break;
 	case UI_SET_AUTO_LOCK_S: ui_st.auto_lock_s = clamp_u16(v); break;
 	case UI_SET_ALIAS_SHOW: ui_st.alias_show = v != 0; break;
-	case UI_SET_HEAR_ALL_DEFAULT: ui_st.hear_all_default = v != 0; hear_all_key = 0; break;
+	case UI_SET_HEAR_ALL_DEFAULT:
+		ui_st.hear_all_default = v != 0;
+#if CONFIG_DMR
+		hear_all_key = 0;
+#endif
+		break;
 	case UI_SET_MESSAGE_TONE: ui_st.message_tone = v != 0; break;
 	case UI_SET_VIBRATE: ui_st.vibrate = v != 0; break;
 #if CONFIG_DUAL_WATCH
