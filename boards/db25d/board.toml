@@ -12,6 +12,9 @@ also = ["Kydera CDR-300UV"]
 kind = "mobile"
 # where the radio appears in the site's lists (the lowest: the home page's radio)
 order = 4
+# The database has the 544 KB the sector layer gives it (docs/spec/hardware-db25d.md 6); a NAND range of its own, which a
+# board's flash layer can map (docs/spec/nand-blocks.md), isn't mapped here yet
+iddb_small = "no NAND range for the ID database yet: 544 KB on the sector layer (hardware-db25d.md 6)"
 # Older VERSION board= values that also mean this radio (debug link). The current one is board_t .name (or a
 # build option value's board_name), and the id always counts
 debuglink_aliases = ["DB25-D PRO"]

@@ -56,6 +56,7 @@ neighbor on the same platform.
 | `debuglink_aliases` | list, optional | Names older firmware reported on the debug link |
 | `looks` | list of tables, optional | Other bodies the board ships in that look too different to share its picture: `{ id, name, also }`. Each is its own radio card on the site, drawn in `site/static/img/radios/src/<id>-<look id>.svg` (the site build refuses a missing drawing), and links to the board's page. `name` and every entry of `also` (the radios in that body) must be in the board's `also`; the board's own card lists the rest |
 | `variant_of` | string, optional | The board whose radio this board's image is one hardware variant of (its `runs.board` names this board). Only that board is listed on the site, in the README and in the manual's index |
+| `iddb_small` | string, optional | Why the DMR ID database's room (area 1 and area 2 up to the flash map's `openfw_end`, [iddb-compact.md](../spec/iddb-compact.md) 2) is under half the data memory and under 16 MB. `check` refuses such a board without a reason, and a reason on a board whose room is large enough. Checked before a release: a radio isn't held to a database far smaller than its memory |
 
 ### [docs]
 

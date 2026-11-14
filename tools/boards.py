@@ -86,6 +86,11 @@ RFOUNDRY_JSON = "tools/rfoundry/rfoundry/registry.json"	# the flashing tools' vi
 FLASH_MAP_FIELDS = ("settings_addr", "settings_size", "journal_addr", "openfw_eeprom", "openfw_flash", "openfw_end",
                     "calibration_addr", "calibration_size", "native_addr", "native_size", "staging_addr", "staging_size")
 OPENFW_FLASH_OFFSET = 0x20000
+# The DMR ID database's room (core/codeplug/dmr_iddb.c, docs/spec/iddb-compact.md 2): area 1, 256 KB at this offset in
+# the open-firmware flash image, then area 2 from its offset up to openfw_end. A board's room is at least half its data
+# memory, or 16 MB when that's more (IDDB_ROOM_CAP), unless board.toml iddb_small says why not
+IDDB_AREA1_OFF, IDDB_AREA1_SIZE, IDDB_AREA2_OFF = 0x30000, 0x40000, 0xB8000
+IDDB_ROOM_CAP = 16 << 20
 APP_SLOT = "app+slot"		# [flash] sectors: one sector for the application, one for the codec slot (no geometry)
 NAND_DRIVER = "drivers/flash/spi_nand"	# in BOARD_DIRS: the board's data memory is SPI NAND (the stub's nand flag)
 # The memories a [[flash.protect]] entry names, and what an offset in each means: progmem, the MCU's program flash from
@@ -281,6 +286,9 @@ BOARD_SCHEMA = {
     "features": _opt(("map", {"state": _req(("unsupported", "n/a")), "reason": _req(str)})),
     # the open-firmware CPS radio types the board's hal_cps_t reports (docs/spec/cps-protocol.md 2.2, test_cps.py)
     "cps": _opt({"radio_types": _req(("list", int))}),
+    # why the DMR ID database's room (iddb_room) is under half the data memory and 16 MB: tools/boards.py check
+    # refuses that without a reason (docs/dev/board-registry.md)
+    "iddb_small": _opt(str),
     # the stock firmware's codeplug in a data flash backup (tools/backup_codeplug.py, docs/spec/codeplug-port.md 5):
     # dmrconf's driver for it, the span of data flash it sits in, and how its pages map to the addresses the driver
     # takes (block-id: each 4 KB page names its logical block in its last byte)
@@ -512,6 +520,26 @@ def openfw_bases(mcu_defs):
 
 
 NAND_FIELDS = ("page_size", "pages_per_block", "blocks")
+
+
+def iddb_room(fm):
+    """The ID database's room in bytes, from a flash map's openfw_flash (or openfw_eeprom + OPENFW_FLASH_OFFSET) and
+    openfw_end: area 1 and area 2 (none past openfw_end)"""
+    fl = fm.get("openfw_flash", fm["openfw_eeprom"] + OPENFW_FLASH_OFFSET)
+    end = fm["openfw_end"]
+    return min(IDDB_AREA1_SIZE, max(0, end - fl - IDDB_AREA1_OFF)) + max(0, end - fl - IDDB_AREA2_OFF)
+
+
+def iddb_room_problem(room, data, reason):
+    """Why the board's ID database room isn't right, or None: under half the data memory (data bytes) and 16 MB
+    without a reason, or a reason the room no longer needs"""
+    want = min(data // 2, IDDB_ROOM_CAP)
+    if room < want and not reason:
+        return ("the DMR ID database's room is %.1f MB, under %.1f MB (half the %d MB data memory, at most 16 MB): "
+                "give it more, or say why in iddb_small" % (room / 2**20, want / 2**20, data >> 20))
+    if room >= want and reason:
+        return "iddb_small: the DMR ID database's room is %.1f MB, enough; drop the reason" % (room / 2**20)
+    return None
 
 
 def nand_geometry(board_dir):
@@ -1217,6 +1245,11 @@ def check(root=ROOT):
             if built != (fm["openfw_eeprom"], fm.get("openfw_flash", fm["openfw_eeprom"] + OPENFW_FLASH_OFFSET)):
                 bad("board.mk CODEPLUG_OPENFW_EEPROM_BASE / _FLASH_BASE (0x%X, 0x%X; 0 and 0x20000 when not set) aren't "
                     "the flash map's openfw_eeprom / openfw_flash" % built)
+            mem = b.memories()
+            why = iddb_room_problem(iddb_room(fm), (mem.get("nand") or mem.get("data") or (0,))[0],
+                                    d.get("iddb_small"))
+            if why:
+                bad(why)
         for lit, macro in b.source_names:
             if macro and not d.get("build_options"):
                 bad("board_t .name is the macro %s: name its values in [[build_options]] board_name" % macro)
@@ -1681,6 +1714,18 @@ def self_test():
         if not cond:
             fails.append(what)
         print("%s %s" % ("ok  " if cond else "FAIL", what))
+
+    # the ID database's room: area 1 whole once openfw_end passes it, area 2 from 0xB8000; half the data memory, 16 MB
+    # at most, or a reason, and no reason once it fits
+    ok(iddb_room({"openfw_eeprom": 0, "openfw_end": 0x120000}) == 0x88000 and
+       iddb_room({"openfw_eeprom": 0x700000, "openfw_flash": 0x720000, "openfw_end": 0xF00000}) == 0x768000 and
+       iddb_room({"openfw_eeprom": 0, "openfw_end": 0x60000}) == 0x10000 and
+       iddb_room({"openfw_eeprom": 0, "openfw_end": 0x1120000}) == 0x1088000, "iddb_room: the two areas")
+    ok(iddb_room_problem(0x1088000, 256 << 20, None) is None and iddb_room_problem(8 << 20, 16 << 20, None) is None
+       and "under 16.0 MB" in (iddb_room_problem(0x88000, 256 << 20, None) or "")
+       and "under 8.0 MB" in (iddb_room_problem(0x768000, 16 << 20, None) or "")
+       and iddb_room_problem(0x88000, 256 << 20, "why") is None
+       and "drop the reason" in (iddb_room_problem(16 << 20, 256 << 20, "why") or ""), "iddb_room_problem")
 
     # list's selection (ci.sh --platform, the workflows' per-platform jobs)
     from types import SimpleNamespace as NS
