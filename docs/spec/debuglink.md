@@ -820,9 +820,9 @@ Chips below `0xFF` are the radio's RF chips, through the board's `board.chip_reg
 board's, listed on its hardware page. A chip, page, register or value the board doesn't offer answers bad argument (2);
 a board without the hook answers unavailable (4). The read with a length goes through the board's
 `board.chip_reg_bytes`, for fields longer than 32 bits; a board without that hook answers it unavailable (4), and
-firmware from before it answers bad argument (2). It reads only. On the AT-D578UV, chip 5 (the baseband, page = the
-packet TYPE, register = the field ID) answers its identity queries this way: `0x30` the product, `0x31` the hardware
-version, `0x32` the software version (text), `0x33` the customer ID and serial number (BCD).
+firmware from before it answers bad argument (2). It reads only. An SCT DMR baseband answers its identity queries this
+way (the product, hardware and software versions as text, the customer ID and serial in BCD); the board's hardware
+page gives its chip number and the field IDs.
 
 Chip `0xFF` is the SoC: a 32-bit register at a 32-bit address, through the platform's `hal_system_t.reg`. Only aligned
 words inside the platform's register windows; any other address is refused (7), as READ_MEM refuses one. A write is
@@ -837,7 +837,7 @@ hook answers unavailable (4).
 | STM32F4 (`platform/stm32f4/mem_window.h`) | the peripheral buses `0x40000000-0x5FFFFFFF`, the FSMC control registers `0xA0000000-0xA0000FFF` and the Cortex-M4 private peripheral bus `0xE0000000-0xE00FFFFF` (SCB, NVIC, SysTick, DWT, DBGMCU). The access runs with bus faults ignored: a reserved address that faults is refused (7) |
 
 Writes are logged. `rfoundry_debug.py reg CHIP REG [VALUE] [--page N] [--len N]`, or `reg soc ADDR [VALUE]` for the
-SoC: `reg 5 0x32 --page 3 --len 16` reads the AT-D578UV baseband's software version.
+SoC.
 
 ### 3.25 HWOPT
 

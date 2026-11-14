@@ -98,4 +98,3 @@ size_t debuglink_cmd_chip_reg(const uint8_t *req, uint16_t len, uint8_t *out, si
 	}
 	return answer(out, DL_ST_OK, v);
 }
-

@@ -2264,8 +2264,8 @@ def main(argv=None):
     p.add_argument("reg", type=lambda x: int(x, 0))
     p.add_argument("value", nargs="?", type=lambda x: int(x, 0))
     p.add_argument("--page", type=lambda x: int(x, 0), default=0)
-    p.add_argument("--len", type=int, help="read this many bytes (1-32) of a longer field, e.g. on the AT-D578UV "
-                   "reg 5 0x32 --page 3 --len 16 for the baseband's software version")
+    p.add_argument("--len", type=int, help="read this many bytes (1-32) of a field longer than 32 bits, such as "
+                   "an SCT baseband's version text (the board's hardware page has its numbers)")
     p = sub.add_parser("split", help="split duplex: view, BS framing experiment variant (docs/spec/split-duplex.md 10.1)")
     p.add_argument("op", choices=["view", "variant"])
     p.add_argument("args", nargs="*", help="variant: N [REG=VAL ...] (hex or decimal)")
