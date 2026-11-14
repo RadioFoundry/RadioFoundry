@@ -189,8 +189,14 @@ def encode_c(records, flash_start=FLASH_START):
     out = Blocks()
 
     def put(off, data):
-        """data at a database offset (iddb-compact.md 2); a section never crosses from area 1 to area 2 here"""
-        out.put(area1 + off if off < AREA1_SIZE else area2 + off - AREA1_SIZE, data)
+        """data at a database offset (iddb-compact.md 2): what lies past area 1's end goes on in area 2. A large
+        dictionary's strings run past it"""
+        if off < AREA1_SIZE:
+            k = min(len(data), AREA1_SIZE - off)
+            out.put(area1 + off, data[:k])
+            off, data = AREA1_SIZE, data[k:]
+        if data:
+            out.put(area2 + off - AREA1_SIZE, data)
 
     index = bytearray()
     for k, page in enumerate(pages):
