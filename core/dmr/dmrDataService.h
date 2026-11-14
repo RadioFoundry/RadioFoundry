@@ -289,6 +289,9 @@ typedef struct
 int dmrDataServiceSendIPChain(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl,
 							const dmrDataChainPacket_t *packets, int count);
 bool dmrDataServiceIpBusy(void);
+// The IPv4 destination of the IP packet whose transmission is starting, when it carries one in a full header (off-net:
+// not one addressed by DMR ID); 0 otherwise. A trunked system asks its IP gateway for it (dmr-trunking.md 7.7)
+uint32_t dmrDataServiceTxIpDst(void);
 // The last one's outcome: DMR_REQ_OK (on air; confirmed: acknowledged) or DMR_REQ_FAILED
 uint8_t dmrDataServiceIpResult(void);
 // Whether an IP packet to dst between these ports goes confirmed under the settings

@@ -1879,6 +1879,8 @@
  "editor.t3.opt.noRoaming": "No roaming",
  "editor.t3.opt.acceptStun": "Accept a stun",
  "editor.t3.opt.acceptStun_help": "Off by default. With a key, a stun is authenticated first; without one, it is taken as sent.",
+ "editor.t3.opt.ipGateway": "IP data through the system",
+ "editor.t3.opt.ipGateway_help": "IP packets to addresses outside the radio network go to the system's IP gateway.",
  "editor.t3.identity_group": "Identity on the system",
  "editor.t3.own_id": "DMR ID on the system",
  "editor.t3.own_id_help": "Empty or 0: the radio's DMR ID. Never shared.",

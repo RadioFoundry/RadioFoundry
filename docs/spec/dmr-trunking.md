@@ -403,7 +403,7 @@ another format than POL_FMT, the radio answers C_NACKU MSNot_Supported.
 ### 7.7 Packet data (6.6.3)
 
 Packet data uses the conventional data stack ([dmr-data.md](dmr-data.md)) on a payload channel the TSCC grants for
-each transmission. Single slot, single item only; no gateway addressing.
+each transmission. Single slot, single item only.
 
 `t3_ms_pdata` asks for the channel:
 
@@ -421,6 +421,22 @@ party, inactivity and `t3_ms_end_call` end it as they end a voice call.
 
 The availability check for data to the radio (C_AHOY, Service_Kind 0010b) is answered C_ACKU Message_Accepted
 (6.6.3.2.6).
+
+**To an IP gateway (multi-part, 6.6.3.2.3).** `t3_ms_pdata_ip` asks for packet data to an IPv4 address outside the
+radio network: the C_RAND targets IPI (0xFFFEC3) with the Proxy Flag 0 (IPv4).
+
+| Event | Result |
+|---|---|
+| C_AHOY from IPI to the radio, Service_Kind 0010b (6.6.3.1.2 b) or 0100b (table 6.54) | the address upload: C_UDTHU, UDT_Format 0110b IP, one block, SF 1, A 0, target IPI (table 6.35's gateway rows); the block is B.3.7's IPv4 format, the address then 48 reserved bits. Asked again, sent again |
+| C_WACKD, C_QACKD, C_NACKD, the grant | as for an MS. A grant without the C_AHOY is taken too |
+
+On the payload channel the data goes to IPI (6.6.3.3.0) with the full IP header (the off-net route, dmr-data.md),
+which carries the real destination. Data from the IP side comes from IPI and is delivered by its IP header.
+
+The radio uses it on a system with option 0x1000 (12.1): while that system runs, the IP gateway's off-net route goes
+to IPI instead of `ipGatewayId`, and the data service's packet to IPI asks with its own destination
+(`dmrDataServiceTxIpDst`). The debug link's `t3.ip_gw` shows it. IP connection advice at registration (6.4.11) isn't
+sent.
 
 ### 7.8 Emergency (6.6.6.3, 6.6.1)
 
@@ -677,7 +693,7 @@ on its voice, and never camps on another system or on a control channel that isn
 | Supplementary data, a list subscription without registering | later |
 | A kill kept across a restart, and conventional DMR off when killed | later |
 | Duplex calls (voice, packet data) | not planned: the radios are simplex |
-| Data to a gateway | later |
+| Data to a gateway other than IP (PSTN, PABX, line, dispatcher: BCD digits), and IP connection advice | later |
 | Power save: the receiver off while asleep (boards' `rx_sleep` on DMR channels) | later |
 | The interrupted talker's side: the reverse channel's cease command while transmitting (6.4.15.2) | reverse channel reception in the modem drivers |
 
@@ -733,7 +749,7 @@ Little endian:
 | 17 | 2 | NET |
 | 19 | 1 | Category: 1 A, 2 B |
 | 20 | 1 | Color code, 0-15 |
-| 21 | 2 | Options: 0x0001 listen only, 0x0002 follow all-calls, 0x0004 follow emergency calls on any talkgroup, 0x0020 follow private calls, 0x0040 register with the talkgroups, 0x0080 accept Ambient Listening, 0x0100 accept a kill, 0x0200 no roaming, 0x0400 accept a stun, 0x0800 the system authenticates. Other bits: 0 |
+| 21 | 2 | Options: 0x0001 listen only, 0x0002 follow all-calls, 0x0004 follow emergency calls on any talkgroup, 0x0020 follow private calls, 0x0040 register with the talkgroups, 0x0080 accept Ambient Listening, 0x0100 accept a kill, 0x0200 no roaming, 0x0400 accept a stun, 0x0800 the system authenticates, 0x1000 off-net IP through the system's IP gateway (7.7). Other bits: 0 |
 | 23 | 4 | DMR ID on the system, 0 = the radio's |
 | 27 | 1 | Sharing (12.6): 0 off, 1 channels with the system's identity, 2 the whole system and its key |
 | 28 | 1 | Fallback hold time in seconds (12.5), 0 = 30 |

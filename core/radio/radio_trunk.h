@@ -59,6 +59,7 @@ typedef struct {
 	uint8_t div_svcs;	// T3_DIV_*
 	uint8_t poll_reply[T3_UDT_MAX];	// the answer to a short data poll: cfg.poll_len octets, cfg.poll_format
 	uint8_t poll_blocks;	// polling an MS from the menus: the prearranged size, 1-4 blocks (0: 4)
+	bool ip_gw;		// off-net IP goes through the system's IP gateway (IPI, dmr-trunking.md 7.7)
 } radio_t3_setup_t;
 
 enum { RADIO_T3_DIV_CLEAR, RADIO_T3_DIV_SET, RADIO_T3_DIV_CLEAR_IN };

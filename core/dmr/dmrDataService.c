@@ -856,6 +856,11 @@ bool dmrDataServiceSendIP(bool group, uint32_t dst, uint32_t srcIp, uint32_t dst
 	return ipSend(group, dst, srcIp, dstIp, ttl, protocol, l4, length, DMR_IPS_SETTINGS);
 }
 
+uint32_t dmrDataServiceTxIpDst(void)
+{
+	return ((txKind == TXK_IP) && (ipx.state == IPX_SENDING)) ? ipx.dstIp : 0u;
+}
+
 bool dmrDataServiceIpBusy(void)
 {
 	return ipx.state != IPX_IDLE;

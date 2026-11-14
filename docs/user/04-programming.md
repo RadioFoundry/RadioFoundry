@@ -103,7 +103,7 @@ The **Trunked Systems** tab holds up to 8 DMR Tier III systems. **Add System** o
 | Part | Holds |
 |---|---|
 | Basic | Name, network model, NET and category, color code, the system's channels (LCN, RX and TX frequency, color code; mark the control channels), whether the system authenticates, its key (32 hex digits) and PSN, sharing, fallback channel and hold time |
-| Advanced | Call options (all calls, emergency on any talkgroup, private calls, registration, ambient listening, kill, stun, no roaming, listen only), the radio's DMR ID on the system, allowed sites, a fixed channel plan, roaming level, power saving, the short data poll (format, blocks to ask for, this radio's reply) |
+| Advanced | Call options (all calls, emergency on any talkgroup, private calls, registration, ambient listening, kill, stun, no roaming, listen only), the radio's DMR ID on the system, allowed sites, a fixed channel plan, roaming level, power saving, IP data through the system's IP gateway, the short data poll (format, blocks to ask for, this radio's reply) |
 
 The radio hunts the first 4 control channels and keeps the first 8 channels of a system. A system that authenticates
 and has no key, or that has no control channel, shows **System not set up** in the tab and in **Problems**; its

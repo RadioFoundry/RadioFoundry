@@ -1879,6 +1879,8 @@
  "editor.t3.opt.noRoaming": "不漫游",
  "editor.t3.opt.acceptStun": "接受遥晕",
  "editor.t3.opt.acceptStun_help": "默认关闭。有密钥时遥晕先经鉴权；没有密钥时按收到的执行。",
+ "editor.t3.opt.ipGateway": "通过系统传输 IP 数据",
+ "editor.t3.opt.ipGateway_help": "发往无线网络以外地址的 IP 数据包经系统的 IP 网关发送。",
  "editor.t3.identity_group": "系统上的标识",
  "editor.t3.own_id": "系统上的 DMR ID",
  "editor.t3.own_id_help": "留空或 0：电台的 DMR ID。永不共享。",

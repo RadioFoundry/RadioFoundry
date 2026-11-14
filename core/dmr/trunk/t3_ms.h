@@ -356,6 +356,7 @@ typedef struct {
 		uint8_t info;		// Response_Info of the final acknowledgement (a poll's answer: the polled status)
 		uint8_t div;		// T3_SVC_DIVERT: T3_SO_DIV_SET and the T3_DIV_* services
 		uint32_t div_to;	// T3_SVC_DIVERT set: where to (an MS, or a talkgroup when group)
+		uint32_t ip;		// T3_SVC_PDATA to T3_ID_IPI: the IPv4 destination, uploaded when the TSCC asks
 		uint32_t divert_to;	// T3_RES_DIVERTED: the address the TSCC gave
 		bool divert_group;
 		bool als;		// T3_SVC_IND_VOICE: Ambient Listening asked for
@@ -468,6 +469,9 @@ bool t3_ms_sdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group, uint8_t fo
 // Ask for a packet data channel to an MS or talkgroup (6.6.3.2.1). Once granted the engine follows it (call.data) and
 // t3_ms_data_ready says when the radio may send its packet there
 bool t3_ms_pdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group);
+// Packet data to an IPv4 destination through the system's IP gateway (6.6.3.2.3): a multi-part request to IPI, the
+// address uploaded when the TSCC asks; on the payload channel the data goes to IPI
+bool t3_ms_pdata_ip(t3_ms_t *ms, uint32_t now, uint32_t ipv4);
 // Ask MS dst for its short data (6.6.5.2): UDT_Format format, in 1-4 blocks (a prearranged size). The answer lands in
 // sd_rx; ax.result done once it came. False (ax.result says why) when it can't start
 bool t3_ms_sdata_poll(t3_ms_t *ms, uint32_t now, uint32_t dst, uint8_t format, uint8_t blocks);

@@ -10,7 +10,7 @@ import { T3_LIMITS, SEP_HZ, netMax, siteMax, newSystem, validKey, ID_MAX, POLL_F
 import { fallbackOptions } from "./views.js";
 
 const MODELS = [0, 1, 2, 3];
-const OPTIONS = ["listenOnly", "allCalls", "emergencyAny", "privateCalls", "registerTalkgroups", "acceptAls", "acceptKill", "noRoaming", "acceptStun"];
+const OPTIONS = ["listenOnly", "allCalls", "emergencyAny", "privateCalls", "registerTalkgroups", "acceptAls", "acceptKill", "noRoaming", "acceptStun", "ipGateway"];
 
 // A whole number typed, blank as 0; null when it isn't one in lo..hi. Accepts 0x for hex
 function intIn(v, lo, hi) {
@@ -232,7 +232,7 @@ function systemDialog(api, s, isNew) {
 		tbody));
 
 	// Advanced
-	const opts = Object.fromEntries(OPTIONS.map((k) => [k, check(t(`editor.t3.opt.${k}`), s[k], k === "acceptStun" ? t("editor.t3.opt.acceptStun_help") : null)]));
+	const opts = Object.fromEntries(OPTIONS.map((k) => [k, check(t(`editor.t3.opt.${k}`), s[k], k === "acceptStun" || k === "ipGateway" ? t(`editor.t3.opt.${k}_help`) : null)]));
 	const ownId = text(blankZero(s.ownId));
 	const planBase = text(s.planBaseHz ? mhz(s.planBaseHz) : "");
 	const planFirst = text(blankZero(s.planFirstLcn));

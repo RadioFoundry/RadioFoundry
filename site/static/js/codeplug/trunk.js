@@ -31,6 +31,7 @@ export const SEP_HZ = [5000, 6250, 10000, 12500, 15000, 20000, 25000, 30000];
 export const OPTS = {
 	listenOnly: 0x0001, allCalls: 0x0002, emergencyAny: 0x0004, privateCalls: 0x0020, registerTalkgroups: 0x0040,
 	acceptAls: 0x0080, acceptKill: 0x0100, noRoaming: 0x0200, acceptStun: 0x0400, authenticates: 0x0800,
+	ipGateway: 0x1000,
 };
 const OPT_MASK = Object.values(OPTS).reduce((a, b) => a | b, 0);
 const CAT = { a: 1, b: 2 };
@@ -66,7 +67,7 @@ export function newSystem(fields = {}) {
 	return {
 		number: null, name: "", model: 0, net: 0, category: "a", colorCode: 1,
 		listenOnly: false, allCalls: false, emergencyAny: false, privateCalls: true, registerTalkgroups: false,
-		acceptAls: false, acceptKill: false, noRoaming: false, acceptStun: false, authenticates: false,
+		acceptAls: false, acceptKill: false, noRoaming: false, acceptStun: false, authenticates: false, ipGateway: false,
 		ownId: 0, sharing: 0, fallbackHold: 0, fallback: null,
 		planBaseHz: 0, planFirstLcn: 0, planSep: 0, planTxLow: false, planNoLearn: false, planSplitHz: 0,
 		leaveDbm: 0, powerSave: 0, sites: [], key: "", psn: 0, ...POLL_DEFAULT, ...fields,

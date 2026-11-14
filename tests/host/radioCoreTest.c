@@ -35,6 +35,7 @@
 #include "radio/battery.h"
 #if CONFIG_DMR_TRUNK_TX
 #include "radio/radio_trunk.h"
+#include "radio/radio_trunk_rec.h"
 #include "dmr/trunk/t3_pdu.h"
 #include "dmr/trunk/t3_sys.h"
 #endif
@@ -6279,6 +6280,74 @@ static void test_t3_stun_kept(void)
 	t3_cp_done();
 }
 
+// Off-net IP on a system with an IP gateway (dmr-trunking.md 7.7): the data service's packet to IPI asks for a
+// multi-part call to IPI, uploads the packet's destination when the TSCC asks, and sends the data to IPI on the grant
+static void test_t3_ip_gateway(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED && !radio_t3v.ip_gw);	// not set: conventional off-net routing stays
+	t3_cp_done();
+	t3_cp_zone(T3_OPT_PRIVATE | SYS_IP_GW, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.ip_gw);
+
+	static const uint8_t udp[12] = { 0x10, 0x00, 0x10, 0x01, 0x00, 0x0C, 0x00, 0x00, 'p', 'i', 'n', 'g' };
+	unsigned from = sim.air_count;
+	CHECK(dmrDataServiceSendIP(false, T3_ID_IPI, DMR_DATA_IP_OURS, 0x08080404u, 64, 17, udp, sizeof udp));
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(radio_t3v.pd_wait && t3_rand_since(from, T3_SK_IND_DATA, &q) && q.u.rand.dst == T3_ID_IPI && !q.u.rand.proxy);
+
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_DATA;
+	h.u.ahoy.dst = sm.view.dmr.own_id;
+	h.u.ahoy.src = T3_ID_IPI;
+	from = sim.air_count;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(400);
+	int hdr = -1;
+	for (unsigned i = from; i < sim.air_count && hdr < 0; i++) {
+		hdr = sim.air[i].kind == DMR_BURST_DATA_HEADER ? (int)i : -1;
+	}
+	CHECK(hdr >= 0 && (unsigned)hdr + 1u < sim.air_count);
+	if (hdr >= 0 && (unsigned)hdr + 1u < sim.air_count) {
+		t3_udt_t u;
+		CHECK(t3_udt_parse(sim.air[hdr].payload, &u) && u.op == T3_OP_C_UDTHU && u.dst == T3_ID_IPI && u.sf &&
+		      u.format == T3_UDTF_IP && u.blocks == 1);
+		const uint8_t *b = sim.air[hdr + 1].payload;
+		CHECK(b[0] == 8 && b[1] == 8 && b[2] == 4 && b[3] == 4 && b[4] == 0 && b[9] == 0);
+	}
+
+	// The grant: the data goes to IPI, the packet's full header carrying its destination
+	t3_csbk_t g = { .lb = true, .op = T3_OP_PD_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = T3_ID_IPI;
+	g.u.grant.src = sm.view.dmr.own_id;
+	from = sim.air_count;
+	t3_csbk_rx(&g, 1);
+	run(1500);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.call_data && !radio_t3v.pd_wait);
+	hdr = -1;
+	for (unsigned i = from; i < sim.air_count && hdr < 0; i++) {
+		hdr = sim.air[i].kind == DMR_BURST_DATA_HEADER ? (int)i : -1;
+	}
+	CHECK(hdr >= 0);
+	if (hdr >= 0) {
+		const uint8_t *p = sim.air[hdr].payload;
+		CHECK((((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 8) | p[4]) == T3_ID_IPI && (p[0] & 0x80) == 0);
+	}
+	t3_csbk_t c = { .lb = true, .op = T3_OP_P_CLEAR };
+	c.u.clear.dst = T3_ID_IPI;
+	t3_csbk_rx(&c, 2);
+	run(300);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	t3_cp_done();
+}
+
 // A short data poll from the menus (RREQ_T3_POLL): the system's poll setting gives the format and size; the answer is
 // a message in the inbox; a refusal counts in poll_fails. The radio's own reply to a poll comes from the same setting
 static void test_t3_poll(void)
@@ -6396,6 +6465,7 @@ int main(void)
 	test_t3_stun();
 	test_t3_stun_kept();
 	test_t3_poll();
+	test_t3_ip_gateway();
 	test_t3_channels();
 	test_t3_fallback();
 #endif

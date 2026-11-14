@@ -15,6 +15,7 @@
 #define PLAN_TX_LOW	0x01u
 #define PLAN_NO_LEARN	0x02u
 #define SYS_AUTHENTICATES	0x0800u		// the system challenges: not usable without a key
+#define SYS_IP_GW		0x1000u		// off-net IP through the system's IP gateway (the radio core's, not the engine's)
 #define SYS_SHARING	27u			// offsets in a system record
 #define SYS_FB_CHAN	29u
 #define SYS_FB_CHECK	62u

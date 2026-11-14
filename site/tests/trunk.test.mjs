@@ -280,6 +280,12 @@ test("the short data poll record (12.7): format, blocks, the reply in that forma
 	assert.deepEqual(encodePoll({ ...p }), raw);
 });
 
+test("IP data through the system: option 0x1000 (12.1)", () => {
+	assert.equal(newSystem().ipGateway, false);
+	assert.equal(decodeSystem(systemRecord({ name: "IP", opts: 0x1020 })).ipGateway, true);
+	assert.equal(encodeSystem(newSystem({ name: "IP", ipGateway: true }))[22] & 0x10, 0x10);
+});
+
 test("a codeplug without trunking stays without: no area written for it", () => {
 	const m = empty();
 	m.channels.push(newChannel({ number: 1, name: "One" }));

@@ -97,6 +97,7 @@ bool radio_t3_load(uint8_t n, radio_t3_setup_t *s)
 	s->cc = v[20] & 0x0Fu;
 	uint16_t opts = rd16(&v[21]);
 	c->opts = opts & CP_OPTS;
+	s->ip_gw = (opts & SYS_IP_GW) != 0;
 	c->own_id = rd32(&v[23]) <= CODEPLUG_DMR_ID_MAX ? rd32(&v[23]) : 0;
 	s->fb_hold_s = v[28];
 	s->fb_chan = rd16(&v[29]);

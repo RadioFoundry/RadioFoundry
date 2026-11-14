@@ -2091,6 +2091,64 @@ static void test_pdata(void)
 	CHECK(ms.state == T3_CAMPED, "duplex grants: not followed");
 }
 
+// Packet data to an IP destination (6.6.3.2.3-4): a multi-part request to IPI, the address uploaded when the TSCC
+// asks, then the grant; a site that grants at once works too
+static void test_pdata_ip(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+	nsent = 0;
+	nup = 0;
+	CHECK(!t3_ms_pdata_ip(&ms, T, 0) && ms.ax.result == T3_RES_NOT_ALLOWED, "no address: refused");
+	CHECK(t3_ms_pdata_ip(&ms, T, 0xC0A80A05u), "packet data to 192.168.10.5");
+	CHECK(sent_rand(&ms), "request sent");
+	const t3_rand_t *q = &sent[0].u.rand;
+	CHECK(q->kind == T3_SK_IND_DATA && q->dst == T3_ID_IPI && !q->proxy && q->options == 0 && q->src == OWN,
+	      "C_RAND to IPI, Proxy 0 (IPv4): kind %u dst %06x", q->kind, (unsigned)q->dst);
+	// An AHOY from IPI for another service or MS isn't ours
+	t3_csbk_t other = ahoy(T3_SK_IND_DATA, false, CALLER, T3_ID_IPI);
+	rx(&ms, 1, &other);
+	frames(&ms, 1);
+	CHECK(nup == 0, "not to us: nothing uploaded");
+	t3_csbk_t h = ahoy(T3_SK_IND_DATA, false, OWN, T3_ID_IPI);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	t3_udt_t u;
+	CHECK(nup == 1 && nup_blocks == 1 && t3_udt_parse(up_hdr, &u), "address uploaded: %d", nup);
+	CHECK(u.op == T3_OP_C_UDTHU && !u.group && u.sf && !u.a && !u.opt && u.format == T3_UDTF_IP &&
+	      u.dst == T3_ID_IPI && u.src == OWN && u.blocks == 1, "C_UDTHU: dst %06x format %u sf %d", (unsigned)u.dst,
+	      u.format, u.sf);
+	static const uint8_t want[10] = { 192, 168, 10, 5, 0, 0, 0, 0, 0, 0 };
+	CHECK(memcmp(up_blocks[0], want, sizeof want) == 0 &&
+	      t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])up_blocks, 1), "B.3.7: the IPv4 address, 48 bits reserved");
+	// Asked again (a CRC failure at the TSCC): sent again
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup == 2, "uploaded again");
+	t3_csbk_t g = grant(T3_OP_PD_GRANT, 999, 2, T3_ID_IPI, OWN);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && ms.call.data && ms.call.ours && ms.ax.result == T3_RES_GRANTED,
+	      "granted: following the data call");
+	t3_ms_end_call(&ms, T);
+	frames(&ms, 60);
+
+	// Granted at once, no AHOY: fine too
+	nsent = 0;
+	CHECK(ms.state == T3_CAMPED && t3_ms_pdata_ip(&ms, T, 0x0A000001u), "again");
+	CHECK(sent_rand(&ms), "request sent");
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && ms.ax.result == T3_RES_GRANTED && nup == 2, "granted without an upload");
+	// A later single-part request uploads nothing to an AHOY from IPI
+	t3_ms_end_call(&ms, T);
+	frames(&ms, 60);
+	nsent = 0;
+	CHECK(t3_ms_pdata(&ms, T, CALLER, false) && sent_rand(&ms), "to an MS");
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nup == 2, "no address for a single-part call");
+}
+
 static void test_sdata(void)
 {
 	t3_ms_t ms;
@@ -2277,6 +2335,7 @@ int main(void)
 	test_status();
 	test_sdata();
 	test_pdata();
+	test_pdata_ip();
 	test_deregister();
 	test_receive_rules();
 	test_one_carrier_site();

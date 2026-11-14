@@ -673,6 +673,7 @@ static void start_access(t3_ms_t *ms, uint32_t now, t3_svc_t svc, uint32_t dst, 
 	ms->ax.emergency = emergency;
 	ms->ax.als = false;
 	ms->ax.resume = false;
+	ms->ax.ip = 0;
 	// The first slot the TSCC uses; a dedicated TSCC on both slots is reached on TS1
 	ms->ax.slot = (ms->tscc_slots & 1u) || ms->tscc_slots == 0 ? 1 : 2;
 	ms->ax.frames = 0;
@@ -772,9 +773,11 @@ static void build_rand(t3_ms_t *ms, uint8_t out[T3_CSBK_BYTES])
 		q->extra = ms->ax.als ? 0x2u : 0u;
 		break;
 	case T3_SVC_PDATA:
-		// Table 6.50: single slot, single item, normal priority, no supplementary data
+		// Table 6.50: single slot, single item, normal priority, no supplementary data. To IPI (multi-part,
+		// 6.6.3.2.3) the Proxy Flag 0 says the extended address is IPv4
 		q->kind = ms->ax.group ? T3_SK_TG_DATA : T3_SK_IND_DATA;
 		q->options = ms->ax.emergency ? T3_SO_EMERGENCY : 0;
+		q->proxy = false;
 		break;
 	case T3_SVC_SDATA:
 		// Table 6.55: no options; the 4 service-dependent bits are SUPED_VAL 0 and the blocks to upload less one
@@ -1105,6 +1108,34 @@ static bool on_divert_ask(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy
 	return true;
 }
 
+// The TSCC asks for a multi-part packet data call's IP address (6.6.3.2.4 b 2, C_AHOY from IPI; Service_Kind 0010b
+// as 6.6.3.1.2 b, or 0100b as table 6.54): one UDT block in IP format (B.3.7, figure B.25: the IPv4 address, 48 bits
+// reserved) to IPI, supplementary data as table 6.35's gateway rows; the grant or a refusal follows
+static bool on_ip_ask(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h)
+{
+	if (h->src != T3_ID_IPI || h->group || !is_me(ms, h->dst) ||
+	    (h->kind != T3_SK_IND_DATA && h->kind != T3_SK_IND_UDT)) {
+		return false;
+	}
+	if (!may_send(ms) || ms->ax.svc != T3_SVC_PDATA || ms->ax.dst != T3_ID_IPI || ms->ax.ip == 0 ||
+	    (ms->ax.state != T3_AX_WAIT_RESP && ms->ax.state != T3_AX_ACKED)) {
+		return true;
+	}
+	uint8_t d[10];
+	memset(d, 0, sizeof(d));
+	d[0] = (uint8_t)(ms->ax.ip >> 24);
+	d[1] = (uint8_t)(ms->ax.ip >> 16);
+	d[2] = (uint8_t)(ms->ax.ip >> 8);
+	d[3] = (uint8_t)ms->ax.ip;
+	t3_udt_t u;
+	memset(&u, 0, sizeof(u));
+	u.format = T3_UDTF_IP;
+	u.sf = true;
+	u.dst = T3_ID_IPI;
+	queue_udt(ms, now, slot, &u, d, sizeof(d), 0, false, 0, true);
+	return true;
+}
+
 // The TSCC asks for the registration's talkgroup list (table 6.11: Service_Kind_Flag 1, from TATTSI): the addresses
 // go up as UDT Address Format (B.3.2) to TATTSI, supplementary data that wants no answer of its own; the
 // registration's acknowledgement follows
@@ -1208,7 +1239,7 @@ static bool on_tscc_auth(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ack_t
 static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h, bool payload)
 {
 	if (!payload && (on_upload(ms, now, slot, h) || on_reg_list(ms, now, slot, h) ||
-			  on_divert_ask(ms, now, slot, h) || on_poll(ms, now, slot, h))) {
+			  on_divert_ask(ms, now, slot, h) || on_ip_ask(ms, now, slot, h) || on_poll(ms, now, slot, h))) {
 		return;
 	}
 	if (!payload && (h->kind == T3_SK_STATUS || h->kind == T3_SK_UDT_POLL) && is_me(ms, h->src)) {
@@ -2253,6 +2284,18 @@ bool t3_ms_pdata(t3_ms_t *ms, uint32_t now, uint32_t dst, bool group)
 	}
 	start_access(ms, now, T3_SVC_PDATA, dst, false);
 	ms->ax.group = group;
+	return true;
+}
+
+bool t3_ms_pdata_ip(t3_ms_t *ms, uint32_t now, uint32_t ipv4)
+{
+	if (ipv4 == 0 || !t3_ms_pdata(ms, now, T3_ID_IPI, false)) {
+		if (ipv4 == 0) {
+			ms->ax.result = T3_RES_NOT_ALLOWED;
+		}
+		return false;
+	}
+	ms->ax.ip = ipv4;
 	return true;
 }
 

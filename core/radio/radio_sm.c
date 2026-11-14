@@ -1960,6 +1960,7 @@ static struct {
 	bool t3_asked;
 	bool t3_group;
 	uint32_t t3_dst;
+	uint32_t t3_ip;		// to IPI: the IPv4 destination, asked for as a multi-part call (dmr-trunking.md 7.7)
 	uint8_t t3_status;	// not 0: the list is the emergency alarm or a radio check, sent as this status instead
 #endif
 } data_tx;
@@ -2114,6 +2115,12 @@ static bool data_t3_start(radio_sm_t *sm, const dmrBurst_t *bursts, int count)
 	if (t3m.state != T3_CAMPED || t3m.ax.state != T3_AX_IDLE) {
 		return false;
 	}
+	// Off-net IP on a system with an IP gateway: the IP gateway's ID is the destination (data_tick routes it there),
+	// the packet's own destination the call's extended address
+	uint32_t ip = !group && dst == T3_ID_IPI ? dmrDataServiceTxIpDst() : 0;
+	if (!group && dst == T3_ID_IPI && ip == 0) {
+		return false;
+	}
 	data_tx.list = bursts + i;
 	data_tx.count = count - i;
 	data_tx.next = 0;
@@ -2121,6 +2128,7 @@ static bool data_t3_start(radio_sm_t *sm, const dmrBurst_t *bursts, int count)
 	data_tx.t3_asked = false;
 	data_tx.t3_group = group;
 	data_tx.t3_dst = dst;
+	data_tx.t3_ip = ip;
 	data_tx.t3_status = 0;
 	return true;
 }
@@ -2141,6 +2149,7 @@ static void data_t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	if (!data_tx.t3_asked) {
 		bool ok = data_tx.t3_status != 0 ?
 			t3_ms_status(&t3m, now_ms, data_tx.t3_dst, data_tx.t3_group, data_tx.t3_status) :
+			data_tx.t3_ip != 0 ? t3_ms_pdata_ip(&t3m, now_ms, data_tx.t3_ip) :
 			t3_ms_pdata(&t3m, now_ms, data_tx.t3_dst, data_tx.t3_group);
 		if (!ok) {
 			data_t3_fail(DMR_TX_ERR_REJECTED);
@@ -2528,7 +2537,14 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 		sm->power_off_busy = dmrDataServicePowerOff();	// ARS deregistration, until it has gone out
 	}
 #if CONFIG_DMR_IP_GATEWAY
-	ipGatewaySetOffNetId(data_saved.ipGatewayId);	// the setting in force (data_save_settings above follows it)
+	// the setting in force (data_save_settings above follows it); on a system with an IP gateway, that gateway
+	uint32_t off_net = data_saved.ipGatewayId;
+#if CONFIG_DMR_TRUNK_TX
+	if (sm->t3_on && radio_t3v.ip_gw) {
+		off_net = T3_ID_IPI;
+	}
+#endif
+	ipGatewaySetOffNetId(off_net);
 #endif
 }
 #endif
@@ -2941,6 +2957,7 @@ static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 	radio_t3v.fallback = fallback;
 	radio_t3v.fallbacks = fallbacks;
 	radio_t3v.backs = backs;
+	radio_t3v.ip_gw = t3s.ip_gw;
 	radio_t3v.last_tx_op = 0xFF;
 	sm->t3_on = true;
 	sm->t3_ptt_wait = false;

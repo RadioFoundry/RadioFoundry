@@ -1879,6 +1879,8 @@
  "editor.t3.opt.noRoaming": "Sin roaming",
  "editor.t3.opt.acceptStun": "Aceptar un bloqueo temporal",
  "editor.t3.opt.acceptStun_help": "Desactivado por defecto. Con clave, el bloqueo se autentica primero; sin ella, se acepta tal como llega.",
+ "editor.t3.opt.ipGateway": "Datos IP a través del sistema",
+ "editor.t3.opt.ipGateway_help": "Los paquetes IP a direcciones fuera de la red de radio van a la pasarela IP del sistema.",
  "editor.t3.identity_group": "Identidad en el sistema",
  "editor.t3.own_id": "ID DMR en el sistema",
  "editor.t3.own_id_help": "Vacío o 0: el ID DMR de la radio. Nunca se comparte.",
