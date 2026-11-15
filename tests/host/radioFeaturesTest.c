@@ -1577,6 +1577,60 @@ static void test_scan_dmr_mid_call(void)
 	hw.sig[0].hz = 0;
 }
 
+// #595: digital monitor on when the scan starts stays on at every stop. A call to a talkgroup we don't listen to then
+// holds the scan, the channel the scan ends on keeps digital monitor, and turning it off mid-scan ends it for the scan
+static void test_scan_dmr_digital_monitor(void)
+{
+	for (int off_mid_scan = 0; off_mid_scan <= 1; off_mid_scan++) {
+		start();
+		all_dmr();
+		signal_on(0, 438500000, 30, no_tone);
+		hw.sig[0].tdma = true;
+		air.on = true;
+		air.hz = 438500000;
+		air.t0 = now + 1500;
+		air.dst = 99;
+		air.lc_at = 1;
+		req(RREQ_ZONE_POS, 6);
+		req(RREQ_DMR_HEAR_ALL, 1);
+		CHECK(sm.view.dmr.hear_all_latch);
+		req(RREQ_SCAN, RSCAN_ZONE);
+		run(100);
+		CHECK(sm.view.zone_pos != 6 && sm.view.dmr.hear_all_latch == (sm.view.ch.mode == RADIO_MODE_DMR));
+		if (off_mid_scan) {
+			req(RREQ_DMR_HEAR_ALL, 0);
+			CHECK(!sm.view.dmr.hear_all_latch);
+		}
+		bool held = false;
+		for (int i = 0; i < 300 && !held; i++) {
+			run(25);
+			held = sm.view.zone_pos == 5 && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.dmr.state == RDMR_RX;
+		}
+		CHECK(held == !off_mid_scan);
+		req(RREQ_SCAN, RSCAN_STOP);
+		run(25);
+		CHECK(sm.view.scan == SCAN_OFF);
+		if (!off_mid_scan) {
+			CHECK(sm.view.zone_pos == 5 && sm.hear_all_latch && sm.view.dmr.hear_all_latch && sm.view.dmr.hear_all);
+		} else {
+			CHECK(!sm.view.dmr.hear_all_latch && !sm.view.dmr.hear_all);
+		}
+		air.on = false;
+		hw.sig[0].hz = 0;
+	}
+
+	// Without it, the same call doesn't hold (test_scan_dmr_mid_call) and nothing is latched where the scan stops
+	start();
+	all_dmr();
+	req(RREQ_ZONE_POS, 6);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	run(1000);
+	CHECK(!sm.view.dmr.hear_all_latch);
+	req(RREQ_SCAN, RSCAN_STOP);
+	run(25);
+	CHECK(!sm.hear_all_latch && !sm.view.dmr.hear_all_latch);
+}
+
 // Field report on an HR_C7000 radio (build b0b69d2): "the scan does not stop on DMR channels, even with a
 // transmission". The chip keeps the slot timing of the last DMR signal it heard over a retune (kept_timing), and a
 // retune to another DMR frequency did not restart the receiver: the HR_C6000 boards restart it in their own rx(), the
@@ -3815,6 +3869,7 @@ int main(void)
 	test_vfo_scan();
 	test_mixed_scan();
 	test_scan_dmr_mid_call();
+	test_scan_dmr_digital_monitor();
 	test_scan_dmr_kept_timing();
 	test_scan_dmr_noise_deaf();
 	test_scan_dmr_high_floor();
