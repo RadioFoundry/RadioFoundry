@@ -311,7 +311,10 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
 - **The LC registers are sticky.** Page 2 keeps the previous call's LC until the new one is decoded. On a new
   reception, the first LC read may be the last call's. Either wait for two superframes (burst A seen twice after the
   slot lock) before trusting it, or capture page 2 when the reception starts and accept an LC only when it differs
-  from that capture, or after more than one superframe of voice.
+  from that capture, or after more than one superframe of voice. The driver takes an unchanged LC at the burst A after
+  the reception's first whole superframe (A-F of this reception, F with no CRC error), by then written to page 2 (next
+  item): the same talker again. HIL 2026-11-14 on the HR_C5000: waiting for the second F, a late entry with the last
+  call's LC played 8 bursts instead of 12.
   The driver captures page 2 at the first report of a quiet period (a status report before any burst is taken, for a
   late entry), else at the first burst.
 - The voice header's LC and the terminator's LC are read at their bursts; during voice, the embedded LC appears in
@@ -418,13 +421,13 @@ the embedded LC is complete (subject to the sticky-LC rule above). The driver re
 LC that differs from the capture for the next voice burst (counted as `lc2 p=`, traced as `P`). On the HR_C5000 the
 interrupt comes once per superframe, just after burst E (bench trace), and starts the decoder, so it comes
 before the reception. An LC read then that differs from the last capture is kept for the reception's first burst
-(traced `pk`): the capture that follows holds that same LC, and the sticky rule would make it wait for the second F.
+(traced `pk`): the capture that follows holds that same LC, and the sticky rule would make it wait for the next A.
 On the HR_C6000, on the bench (a call joined at burst C of its second superframe), it came before the next F
 in most runs and the LC was taken there; on a weak signal it came one superframe later in 2 of 9 runs, page 2
 still held the old LC at F, and the call played from the superframe after that.
 
 **Resuming a call.** A call that stopped with no terminator and comes back has the sticky LC problem in its worst
-form: the LC in page 2 is the call's own, so the sticky rule waits for the second F (22 ticks). That page 2 still
+form: the LC in page 2 is the call's own, so the sticky rule waits for the A after the first whole superframe. That page 2 still
 shows the call's LC proves nothing: it would show the same if another caller had started. The post-access interrupt
 does prove it, read twice:
 

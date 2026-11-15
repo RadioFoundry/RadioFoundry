@@ -41,6 +41,21 @@ bool hrc5000_set_mode_dmr(hrc5000_t *dev, uint8_t mod2, uint8_t mod1, uint8_t mi
 // The small register set for a DMR RX <-> TX switch (never the full set-up, which resets the DMR state machine):
 // RX: the codec and path registers; TX adds the modulation pair, deviation factor and limiter
 bool hrc5000_dmr_path(hrc5000_t *dev, bool tx, uint8_t mod2, uint8_t mod1, uint8_t mic_gain);
+bool hrc5000_dmr_rx_in(hrc5000_t *dev, bool on);
+
+// RF_TX_INTER early by some steps (4:0x12 bits 5-0, about 100 us each; bits 7-6 kept), for a transmission that listens
+// between its bursts: the time to retune for the next one
+typedef struct {
+	uint8_t saved;		// 4:0x12 before the lead
+	bool kept;		// saved holds it: hrc5000_tx_lead_off puts it back
+	bool on;		// the lead is set
+} hrc5000_lead_t;
+
+// True once the lead is set. False when 4:0x12 can't be read (nothing is written: a value never read can't be put
+// back) or the write fails (tried again at the next call; the value read is kept)
+bool hrc5000_tx_lead_on(hrc5000_t *dev, hrc5000_lead_t *l, uint8_t steps);
+// 4:0x12 as it was before hrc5000_tx_lead_on, when that read it; true with nothing to put back
+bool hrc5000_tx_lead_off(hrc5000_t *dev, hrc5000_lead_t *l);
 
 // The chip's I2S clocks (BCLK, LRCK; the board's pins). The 0x11 block of every full set-up writes 0x36 = 0xF0, whose
 // bit 7 turns the clocks off; on clears it. The board switches them on for the length of a PCM audio stream

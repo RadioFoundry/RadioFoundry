@@ -69,6 +69,7 @@ static void cw_cancel(radio_sm_t *sm);
 #if CONFIG_BCAST_FM
 #include "radio/radio_bcast.h"	// broadcast FM receive (docs/spec/airband-and-broadcast.md 4)
 #endif
+#include "radio/radio_bands.h"	// the listen bands, never DMR
 #if CONFIG_APRS_AFSK
 #include "aprs/afsk.h"			// AFSK_BAUD, the tones
 #endif
@@ -567,22 +568,6 @@ static void bcast_status(radio_sm_t *sm, radio_status_t *st)
 }
 #endif
 
-// The air band (on a radio with AM receive) and the broadcast receiver's range: receive only, and never DMR
-// (docs/spec/airband-and-broadcast.md 2)
-static bool listen_band(uint32_t hz)
-{
-#if CONFIG_AM_RX
-	if (radio_am_tx_refused(hz))
-		return true;
-#endif
-#if CONFIG_BCAST_FM
-	if (radio_bcast_band(hz))
-		return true;
-#endif
-	(void)hz;
-	return false;
-}
-
 static void tune(radio_sm_t *sm, uint32_t now_ms)
 {
 	sm->retune_pending = sm->retune_due = false;	// this tune is the one they wait for
@@ -590,7 +575,7 @@ static void tune(radio_sm_t *sm, uint32_t now_ms)
 	cw_cancel(sm);		// the repeater's ID: the board is set up for the channel below
 #endif
 	end_reception(sm, now_ms);
-	if (listen_band(sm->view.ch.rx_hz)) {
+	if (radio_listen_band(sm->view.ch.rx_hz)) {
 		// AM or broadcast there, whatever the channel says; the VFO stays FM when it leaves the band. The channel's
 		// own mode follows, so FM there is not a temporary change (dual watch brings a pane back already FM)
 		sm->view.ch.mode = RADIO_MODE_FM;
@@ -2962,7 +2947,11 @@ static bool dmr_strength_heard(const radio_sm_t *sm, int16_t rssi_dbm)
 	if (sq > RADIO_SQUELCH_MAX) {
 		sq = RADIO_SQUELCH_MAX;
 	}
-	return rssi_dbm > RADIO_DMR_SQL_L1_DBM + (sq - 1) * RADIO_SQL_DB_PER_STEP;
+	int16_t above = (int16_t)((sq - 1) * RADIO_SQL_DB_PER_STEP), floor_dbm;
+	if (scan_floor(&sm->scan, &floor_dbm) && rssi_dbm <= floor_dbm + RADIO_DMR_SQL_L1_FLOOR_DB + above) {
+		return false;
+	}
+	return rssi_dbm > RADIO_DMR_SQL_L1_DBM + above;
 }
 #endif
 
@@ -2989,6 +2978,9 @@ static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_
 		active = sm->view.dmr.state == RDMR_RX;
 		// Some receivers' noise reading stays put on a DMR signal while its strength rises: either one is a
 		// carrier, the strength once the settle has passed (a reading just after the retune is the last stop's)
+		// The strength scale also sits above the floor read on the stops before: some receivers' strength
+		// reading isn't calibrated, and reads far up the scale on an empty channel (gotchas 17.4)
+		scan_level(sc, now_ms, st->rssi_dbm);
 		carrier = carrier || (now_ms - sc->tuned_ms >= SCAN_SETTLE_MS && dmr_strength_heard(sm, st->rssi_dbm));
 		// Sync: bursts with the channel's color code since this stop's settle, a call or a late entry still
 		// waiting for its LC. A call known not to be for us (another group, a private call) holds nothing
@@ -4682,6 +4674,10 @@ static void persist(radio_sm_t *sm, uint32_t now_ms)
 		st->channel = pos < z->count ? z->channels[pos] : 0;
 	}
 	persist_vfo(sm, st, sm->vfo_idx);
+	if (sm->squelch_save) {
+		st->squelch = sm->base_squelch;
+		sm->squelch_save = false;
+	}
 #if CONFIG_DUAL_WATCH
 	uint8_t in_use = sm->vfo_idx;
 	vfo_use(sm, (uint8_t)!in_use);		// the other VFO into its own fields: swap, write, swap back
@@ -5458,6 +5454,9 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		}
 		int p = ((sm->view.power + req->arg) % n + n) % n;
 		sm->view.power = (uint8_t)p;
+		if (sm->view.vfo) {	// the VFO's own power, kept like its other settings (#486)
+			sm->view.ch.power = sm->vfo_ch.power = (uint8_t)p;
+		}
 		sm->temp_power = sm->view.power != channel_power(&sm->view.ch);
 		set_temporary(sm);
 		changed(sm);
@@ -5481,6 +5480,10 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		}
 		if (s != sm->view.squelch) {
 			sm->view.squelch = (uint8_t)s;
+			if (sm->view.vfo) {	// squelch is radio-wide: in the VFO it becomes the default, as a channel save does
+				sm->base_squelch = sm->view.squelch;
+				sm->squelch_save = true;
+			}
 			sm->temp_squelch = sm->view.squelch != sm->base_squelch;
 			set_temporary(sm);
 			changed(sm);
@@ -5613,7 +5616,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_MODE:
 		if (busy || (req->arg != RADIO_MODE_FM && req->arg != RADIO_MODE_DMR) || req->arg == sm->view.ch.mode ||
 				(req->arg == RADIO_MODE_FM && !(sm->view.vfo ? CONFIG_VFO_FM : CONFIG_FM)) ||
-				(req->arg == RADIO_MODE_DMR && (listen_band(sm->view.ch.rx_hz) ||
+				(req->arg == RADIO_MODE_DMR && (radio_listen_band(sm->view.ch.rx_hz) ||
 								(sm->view.vfo && !CONFIG_VFO_DMR)))) {
 			break;
 		}

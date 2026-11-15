@@ -28,6 +28,7 @@ enum {
 	REG_HP_OUT = 0x0E,
 	REG_AD_VOL = 0x0F,
 	REG_MODE = 0x10,	// bit 7 modulator (0 DMR, 1 FM), bit 2 repeater
+	REG_TX_LEAD = 0x12,	// bits 5-0: RF_TX_INTER this many ~100 us steps ahead of the slot
 	REG_COLOR_CODE = 0x1F,
 	REG_RX_PATH_A = 0x25,
 	REG_RX_PATH_B = 0x26,
@@ -390,6 +391,38 @@ bool hrc5000_dmr_path(hrc5000_t *dev, bool tx, uint8_t mod2, uint8_t mod1, uint8
 		ok &= hrc_write(h, HRC_PAGE_SYS, REG_TX_LIMIT, 0x04);
 	}
 	return ok;
+}
+
+// Only the receiver's input to the demodulator, per burst between our bursts (tx_listen): on (receive) or off (transmit)
+bool hrc5000_dmr_rx_in(hrc5000_t *dev, bool on)
+{
+	return hrc_write(&dev->hrc, HRC_PAGE_SYS, REG_RX_PATH_B, on ? RX_PATH_B_DMR_RX : RX_PATH_B_OFF);
+}
+
+bool hrc5000_tx_lead_on(hrc5000_t *dev, hrc5000_lead_t *l, uint8_t steps)
+{
+	if (l->on) {
+		return true;
+	}
+	if (!l->kept) {
+		if (!hrc_read(&dev->hrc, HRC_PAGE_SYS, REG_TX_LEAD, &l->saved)) {
+			return false;
+		}
+		l->kept = true;
+	}
+	l->on = hrc_write(&dev->hrc, HRC_PAGE_SYS, REG_TX_LEAD, (uint8_t)((l->saved & 0xC0u) | (steps & 0x3Fu)));
+	return l->on;
+}
+
+bool hrc5000_tx_lead_off(hrc5000_t *dev, hrc5000_lead_t *l)
+{
+	l->on = false;
+	if (!l->kept) {
+		return true;
+	}
+	// A failed write may still have gone in: put back what was read even then, and again next time when this fails
+	l->kept = !hrc_write(&dev->hrc, HRC_PAGE_SYS, REG_TX_LEAD, l->saved);
+	return !l->kept;
 }
 
 // The codec set-up for a received call that plays (on) and back to the idle values (off). DMR only: the FM receiver's
