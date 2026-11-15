@@ -507,6 +507,7 @@ static void tx_finish(hrc6000_dmr_t *e)
 		hrc6000_dmr_set_sync(e->dev, DMR_SYNC_MS);
 		e->sync_cur = DMR_SYNC_MS;
 	}
+	hrc6000_dmr_set_cc(e->dev, e->cc_cur);
 	bool keep_timing = e->tx_timing != DMR_TIMING_OWN && rmo(e) && e->tx_any_setup;
 	e->reg40 = L2_PASSIVE;
 	if (keep_timing) {
@@ -634,6 +635,7 @@ static void tx_tick(hrc6000_dmr_t *e, uint8_t r42)
 		if (e->tx_ts <= 0) {
 			e->tx_ts = e->phase_ts[next_phase];
 		}
+		hrc6000_dmr_set_cc(e->dev, e->cfg.cc >= 0 ? (uint8_t)e->cfg.cc : e->cc_cur);
 		e->tx_state = TXS_RUN;
 		tx_slot(e);
 		return;
@@ -2004,8 +2006,9 @@ void hrc6000_dmr_configure(hrc6000_dmr_t *e, const dmr_config_t *cfg)
 	if (e->dev->chip->mode_per_channel) {
 		w(e->dev, R_MODE, e->dev->chip->dmr_mode(cfg->repeater));	// the HR_C5000's 0x10 differs by channel
 	}
-	e->cc_filter = cfg->cc;
-	if (cfg->cc >= 0) {
+	if (e->cc_filter >= 0)
+		e->cc_filter = cfg->cc;
+	if (e->cc_filter >= 0) {
 		e->cc_cur = (uint8_t)cfg->cc;
 		hrc6000_dmr_set_cc(e->dev, e->cc_cur);
 	}
@@ -2158,11 +2161,11 @@ void hrc6000_dmr_set_cc_filter(hrc6000_dmr_t *e, int8_t cc)
 	e->cc_matches = 0;
 	if (cc >= 0) {
 		e->cc_cur = (uint8_t)cc;
-		if (e->running) {
+		if (e->running && e->tx_state == TXS_IDLE) {
 			hrc6000_dmr_set_cc(e->dev, e->cc_cur);
 		}
 	}
-	if (e->running) {
+	if (e->running && e->tx_state == TXS_IDLE) {
 		e->restart_pending = true;	// 5.1 after a color code change
 		e->restart_why = HRC6000_RS_CMD;
 	}

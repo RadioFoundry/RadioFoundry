@@ -30,8 +30,7 @@ The radio plays a group call when one of these is true:
 The radio plays a private call addressed to your DMR ID. It shows every other call on the slot as "Other TG: not
 played" and treats the channel as busy while it lasts.
 
-Digital monitor changes which calls you hear. It keeps the channel's color code and timeslot for both listening
-and transmitting.
+Transmitting keeps the channel's color code even while listening on any color code.
 
 ## Who you talk to
 

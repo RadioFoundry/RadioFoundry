@@ -152,7 +152,8 @@ typedef struct {
 	void (*tx_abort)(void);
 	void (*set_embedded_lc)(const uint8_t lc[9]);	// spread over B-E from the next superframe
 	// The receive filter: -1 = any, else the configured code (the call layer passes nothing else, so a driver that
-	// writes it to the chip's one CC register leaves the TX code as configured)
+	// writes it to the chip's one CC register leaves the TX code as configured). configure() keeps any-CC listening:
+	// callers set the filter after start() and configure()
 	void (*set_cc_filter)(int8_t cc);
 	bool (*is_transmitting)(void);	// slot state, never the PA
 	// Optional (NULL: the driver can't). For the transmission begun last: receive in the slots between our bursts and

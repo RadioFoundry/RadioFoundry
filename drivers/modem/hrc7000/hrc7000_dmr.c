@@ -228,15 +228,15 @@ static void clear_requests(hrc7000_dmr_t *e)
 
 static void set_cc(hrc7000_dmr_t *e, uint8_t cc)
 {
-	e->cc_cur = cc & 0xFu;
-	w(e, C7_LOCAL_CC, e->cc_cur);	// cc_opt 0: deframe only this color code
+	w(e, C7_LOCAL_CC, cc & 0xFu);	// cc_opt 0: deframe only this color code
 }
 
 static void chip_rx_restart(hrc7000_dmr_t *e)
 {
 	clear_requests(e);	// the restart discards what they would report; a stale one would keep its source dead
 	if (e->tx_state == TXS_IDLE) {
-		set_cc(e, e->cc_filter >= 0 ? (uint8_t)e->cc_filter : e->cc_cur);
+		e->cc_cur = e->cc_filter >= 0 ? (uint8_t)e->cc_filter : e->cc_cur;
+		set_cc(e, e->cc_cur);
 		e->cc_tick = e->tick;
 	}
 	w(e, C7_WORK_MODE, C7_WORK_MODE_FM);
@@ -327,14 +327,14 @@ static void tx_finish(hrc7000_dmr_t *e, bool restart)
 	e->tx_state = TXS_IDLE;
 	e->tx_listen = false;
 	e->st.tx_done++;
-	// Receive on the filter's code (or the scan's) again, on the hold path too: TX used the channel's code
-	set_cc(e, e->cc_filter >= 0 ? (uint8_t)e->cc_filter : e->cc_cur);
-	e->cc_tick = e->tick;
 	// Through a repeater the restart at once, as the original firmware does: both slot syncs released and a new TC
 	// lock, so the next transmission's slots come from the repeater's timing, not ours (issue 72). Direct: the hold
 	if (restart || e->cfg.repeater || BS_ACTIVE(e)) {
 		chip_rx_restart(e);
 	} else {
+		e->cc_cur = e->cc_filter >= 0 ? (uint8_t)e->cc_filter : e->cc_cur;
+		set_cc(e, e->cc_cur);
+		e->cc_tick = e->tick;
 		rx_hold(e);
 	}
 	ev_simple(e, DMR_EV_TX_DONE, e->tx_ts, tick_arg(e));
@@ -478,6 +478,7 @@ static void aligned_arm(hrc7000_dmr_t *e)
 {
 	w(e, C7_LAYER2_SLOTON, SLOTON_RXTX | SLOTON_RX_OPEN_TX);
 	w(e, C7_LAYER2_TXRX_CTRL, TXRX_NONE);
+	set_cc(e, e->cfg.cc >= 0 ? (uint8_t)e->cfg.cc : e->cc_cur);
 	e->tx_state = TXS_ARMING;
 }
 
@@ -494,6 +495,7 @@ static void lock_tick(hrc7000_dmr_t *e)
 		// No LAYER2_CONTROL or SLOTON write: in 0xC4 the TX slots already follow the receiver (stock writes only
 		// TXRX at the key-up)
 		w(e, C7_LAYER2_TXRX_CTRL, TXRX_NONE);
+		set_cc(e, e->cfg.cc >= 0 ? (uint8_t)e->cfg.cc : e->cc_cur);
 		e->tx_state = TXS_ARMING;
 	} else if (++e->tx_wait > TC_LOCK_WAIT_TICKS) {
 		e->st.tx_rejected++;
@@ -630,7 +632,8 @@ static void rx_tick(hrc7000_dmr_t *e)
 	// Color code scan when no filter is set: step through the codes while nothing is heard
 	if (e->tx_state == TXS_IDLE && e->cc_filter < 0 &&
 	    (uint32_t)(e->tick - e->cc_tick) >= (e->rx_any ? CC_HOLD_TICKS : CC_SCAN_TICKS)) {
-		set_cc(e, (uint8_t)(e->cc_cur + 1u));
+		e->cc_cur = (uint8_t)((e->cc_cur + 1u) & 0xFu);
+		set_cc(e, e->cc_cur);
 		w(e, C7_LAYER2_CONTROL, L2_PASSIVE);
 		w(e, C7_LAYER2_SLOTON, SLOTON_OFF);
 		w(e, C7_LAYER2_TXRX_CTRL, TXRX_SYNC_RELEASE);
@@ -975,10 +978,11 @@ void hrc7000_dmr_configure(hrc7000_dmr_t *e, const dmr_config_t *cfg)
 	lock(e);
 	bool framing = cfg->repeater != e->cfg.repeater;	// LAYER2_CONTROL changes with it (l2_rx)
 	e->cfg = *cfg;
-	e->cc_filter = cfg->cc;
+	if (e->cc_filter >= 0)
+		e->cc_filter = cfg->cc;
 	if (BS_ACTIVE(e)) {
 		// The BS outbound's bursts carry their color code; the receiver takes this one when it runs again
-	} else if (e->running && e->tx_state == TXS_IDLE && cfg->cc >= 0 && (uint8_t)cfg->cc != e->cc_cur) {
+	} else if (e->running && e->tx_state == TXS_IDLE && e->cc_filter >= 0 && (uint8_t)e->cc_filter != e->cc_cur) {
 		chip_rx_restart(e);
 	} else if (e->running && framing && e->tx_state == TXS_IDLE) {
 		chip_rx_restart(e);
@@ -1011,8 +1015,6 @@ bool hrc7000_dmr_tx_begin(hrc7000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 		ok = false;
 	}
 	if (ok) {
-		// LOCAL_CC also frames TX; keep cc_cur as the receive code to restore afterwards.
-		w(e, C7_LOCAL_CC, e->cfg.cc >= 0 ? (uint8_t)e->cfg.cc : e->cc_cur);
 		e->tx_timing = (uint8_t)timing;
 		e->tx_ts = ts;
 		e->tx_access = (uint8_t)access;
@@ -1039,6 +1041,7 @@ bool hrc7000_dmr_tx_begin(hrc7000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 			e->tx_timing = (uint8_t)DMR_TIMING_OWN;
 			w(e, C7_LAYER2_CONTROL, L2_ACTIVE);	// active timing: we own the slot clock
 			w(e, C7_LAYER2_TXRX_CTRL, TXRX_NONE);
+			set_cc(e, e->cfg.cc >= 0 ? (uint8_t)e->cfg.cc : e->cc_cur);
 			e->tx_state = TXS_ARMING;
 		}
 		uint32_t age = e->tick - e->rx_tick;

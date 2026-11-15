@@ -202,9 +202,6 @@ transmitting in the slot after the next one, in phase with the bursts being rece
 
 The call stack configures the modem with the channel's transmit color code even when the receive filter accepts
 any CC (any-CC listening, polite-to-all access, or a dual-CC SFR user). `set_cc_filter` changes reception only.
-The HR_C7000 selects that transmit code in `LOCAL_CC` at `tx_begin`, keeps it through the final burst, and restores
-the receive filter or scan code afterwards. Its CC scan runs only while idle, including no scanning during an
-aligned start's wait for slot lock. A receive filter changed during TX takes effect when TX finishes.
 The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3.1 (CC).
 
 1. **Channel access** per the policy (1.7). Busy => wait (with timeout) or refuse.

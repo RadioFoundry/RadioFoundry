@@ -807,6 +807,7 @@ static void test_tx_aligned_rmo(void)
 	pending_burst = false;
 	dmr_config_t cfg = { .own_id = 9990001, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
 	hrc6000_dmr_configure(&eng, &cfg);
+	hrc6000_dmr_set_cc_filter(&eng, cfg.cc);
 	CHECK(last_write(4, 0x14) == (9990001 >> 16) && last_write(4, 0x16) == (9990001 & 0xFF));
 	CHECK(last_write(4, 0x1F) == 0x10);
 	// The repeater's CACH: the slot starting at tick k is TS1 on odd ticks, TS2 on even ones; 0x52 bit 2 at the
@@ -1048,6 +1049,22 @@ static void test_cc_follow(void)
 	uint32_t restarts = eng.st.rx_restarts;
 	ts_at(t += 30000);			// the receiver restarts at the next tick, no busy wait in the ISR
 	CHECK(eng.st.rx_restarts == restarts + 1);
+
+	const dmr_config_t cfg = { .cc = 5 };
+	hrc6000_dmr_configure(&eng, &cfg);
+	CHECK(eng.cc_filter == -1 && eng.cc_cur == 2);
+	CHECK(last_write(4, 0x1F) == 0x20);
+	hrc6000_dmr_set_cc_filter(&eng, 2);
+	hrc6000_dmr_set_cc_filter(&eng, -1);
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x50);
+	hrc6000_dmr_set_cc_filter(&eng, 7);
+	CHECK(last_write(4, 0x1F) == 0x50);
+	hrc6000_dmr_tx_abort(&eng);
+	for (int i = 0; i < 4; i++)
+		ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x70);
 
 	// A fixed filter: written at once, never followed
 	hrc6000_dmr_set_cc_filter(&eng, 5);

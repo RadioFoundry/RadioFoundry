@@ -166,6 +166,7 @@ static void test_rx(void)
 	CHECK(REG(C7_VOICE_EMB_CTRL) == 0x02 && REG(C7_LOCAL_CC) == 1);
 	const dmr_config_t cfg = { .own_id = 1234, .cc = 3, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
 	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_set_cc_filter(&eng, cfg.cc);
 	CHECK(REG(C7_LOCAL_CC) == 3);
 
 	// A voice LC header from the RX RAM, MS sync, chip slot 1: TS label 2
@@ -261,6 +262,7 @@ static void test_rx_sfr_both_copies(void)
 	setup();
 	const dmr_config_t cfg = { .own_id = 1234, .cc = 2, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
 	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_set_cc_filter(&eng, cfg.cc);
 	hrc7000_dmr_run(&eng);
 	count_kind(DMR_EV_SLOT_TICK, NULL);
 
@@ -331,6 +333,7 @@ static void test_rx_resync(void)
 	setup();
 	const dmr_config_t cfg = { .own_id = 1234, .cc = 2, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
 	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_set_cc_filter(&eng, cfg.cc);
 	hrc7000_dmr_run(&eng);
 	uint32_t rs = eng.st.rx_restarts;
 
@@ -415,6 +418,7 @@ static void test_tx_color_code(void)
 	setup();
 	const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE };
 	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_set_cc_filter(&eng, cfg.cc);
 	hrc7000_dmr_run(&eng);
 	hrc7000_dmr_set_cc_filter(&eng, -1);
 	for (int i = 0; i < 16; i++) {
@@ -457,6 +461,7 @@ static void test_cc_restore(void)
 		setup();
 		const dmr_config_t cfg = { .cc = 1 };
 		hrc7000_dmr_configure(&eng, &cfg);
+		hrc7000_dmr_set_cc_filter(&eng, cfg.cc);
 		hrc7000_dmr_run(&eng);
 		hrc7000_dmr_set_cc_filter(&eng, 5);
 		hrc7000_dmr_set_cc_filter(&eng, -1);
@@ -492,6 +497,7 @@ static void test_cc_restore(void)
 	setup();
 	const dmr_config_t cfg = { .cc = 1, .repeater = true };
 	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_set_cc_filter(&eng, cfg.cc);
 	hrc7000_dmr_run(&eng);
 	hrc7000_dmr_set_cc_filter(&eng, -1);
 	deframe(rti(0, DMR_BURST_IDLE, 1, 1, 0, 0));
@@ -515,6 +521,7 @@ static void test_tx(void)
 	hrc7000_dmr_run(&eng);
 	const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = false };
 	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_set_cc_filter(&eng, cfg.cc);
 	tick(false);
 	count_kind(0xFF, NULL);
 
@@ -592,6 +599,7 @@ static void test_tx_end_hold(void)
 		hrc7000_dmr_run(&eng);
 		const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = false };
 		hrc7000_dmr_configure(&eng, &cfg);
+		hrc7000_dmr_set_cc_filter(&eng, cfg.cc);
 		tick(false);
 		count_kind(0xFF, NULL);
 		CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
@@ -1236,12 +1244,17 @@ static void test_tx_repeater_lock(void)
 		for (int ts = 1; ts <= 2; ts++) {
 			setup();
 			hrc7000_dmr_run(&eng);
-			const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = true };
+			const dmr_config_t cfg = { .own_id = 1234, .cc = 5, .access = DMR_ACCESS_IMPOLITE, .repeater = true };
 			hrc7000_dmr_configure(&eng, &cfg);
+			hrc7000_dmr_set_cc_filter(&eng, 1);
+			hrc7000_dmr_set_cc_filter(&eng, -1);
+			hrc7000_dmr_configure(&eng, &cfg);
+			CHECK(eng.cc_filter == -1 && REG(C7_LOCAL_CC) == 1);
 			CHECK(REG(C7_LAYER2_CONTROL) == 0xC4);	// through a repeater: TX slots follow the receiver
 			int n = -1;
 			REG(C7_LAYER2_SLOTON) = 0;
 			for (int k = 0; k < 4; k++) {		// four bursts, TC alternating: locked with the last
+				CHECK(REG(C7_LOCAL_CC) == 1);
 				tick(false);
 				n++;
 				if (early) {
@@ -1259,6 +1272,7 @@ static void test_tx_repeater_lock(void)
 				count_kind(0xFF, NULL);
 			}
 			if (early) {
+				CHECK(REG(C7_LOCAL_CC) == 1);
 				tick(false);
 				n++;
 				deframe_at(rti(0, 9, 1, 1, 0, 1), 2000);
@@ -1267,6 +1281,7 @@ static void test_tx_repeater_lock(void)
 			tick(false);				// arms: no LAYER2 write but TXRX
 			n++;
 			CHECK(REG(C7_LAYER2_SLOTON) == 0 && REG(C7_LAYER2_CONTROL) == 0xC4 && REG(C7_LAYER2_TXRX_CTRL) == 0);
+			CHECK(REG(C7_LOCAL_CC) == 5 && eng.st.tx_rejected == 0);
 			REG(C7_LAYER2_STATUS) = 1u << 31;	// not used through a repeater
 			for (int i = 0; i < 2; i++) {		// the TX slot decided at each tick is the next one, n + 1
 				if (i == 0 && same) {
