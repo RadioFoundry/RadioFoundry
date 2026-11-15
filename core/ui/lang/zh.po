@@ -2820,15 +2820,15 @@ msgstr "双路接收"
 
 #: core/ui/ui_menus.c
 msgid "Speaker"
-msgstr ""
+msgstr "扬声器"
 
 #: core/ui/ui_menus.c
 msgid "On air"
-msgstr ""
+msgstr "空中发射"
 
 #: core/ui/ui_menus.c
 msgid "Speaker + air"
-msgstr ""
+msgstr "扬声器+空中"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "Volume"
@@ -2884,39 +2884,39 @@ msgstr "振动"
 
 #: core/ui/ui_menus.c
 msgid "DMR start tone"
-msgstr ""
+msgstr "DMR 起始音"
 
 #: core/ui/ui_menus.c
 msgid "DMR end tone"
-msgstr ""
+msgstr "DMR 结束音"
 
 #: core/ui/ui_menus.c
 msgid "DMR idle tone"
-msgstr ""
+msgstr "DMR 空闲音"
 
 #: core/ui/ui_menus.c
 msgid "FM start tone"
-msgstr ""
+msgstr "FM 起始音"
 
 #: core/ui/ui_menus.c
 msgid "FM end tone"
-msgstr ""
+msgstr "FM 结束音"
 
 #: core/ui/ui_menus.c
 msgid "FM idle tone"
-msgstr ""
+msgstr "FM 空闲音"
 
 #: core/ui/ui_menus.c
 msgid "Start tone steps"
-msgstr ""
+msgstr "起始音步骤"
 
 #: core/ui/ui_menus.c
 msgid "End tone steps"
-msgstr ""
+msgstr "结束音步骤"
 
 #: core/ui/ui_menus.c
 msgid "Idle tone steps"
-msgstr ""
+msgstr "空闲音步骤"
 
 #: core/ui/ui_menus.c
 msgid "Brightness"
@@ -3184,11 +3184,11 @@ msgstr "我的电台"
 
 #: core/ui/ui_menus.c
 msgid "Signaling tones"
-msgstr ""
+msgstr "信令音"
 
 #: core/ui/ui_menus.c
 msgid "Signaling Tones"
-msgstr ""
+msgstr "信令音"
 
 #: core/ui/ui_menus.c
 msgid "Advanced"
@@ -3204,23 +3204,23 @@ msgstr "步进 "
 
 #: core/ui/ui_menus.c
 msgid "Standard sound"
-msgstr ""
+msgstr "标准音"
 
 #: core/ui/ui_menus.c
 msgid "Length: "
-msgstr ""
+msgstr "长度: "
 
 #: core/ui/ui_menus.c
 msgid "Start Tone"
-msgstr ""
+msgstr "起始音"
 
 #: core/ui/ui_menus.c
 msgid "End Tone"
-msgstr ""
+msgstr "结束音"
 
 #: core/ui/ui_menus.c
 msgid "Idle Tone"
-msgstr ""
+msgstr "空闲音"
 
 #: core/ui/ui_menus.c
 msgid "Not changed: "
@@ -3236,19 +3236,19 @@ msgstr "，步进 "
 
 #: core/ui/ui_menus.c
 msgid "0-9 type  OK next  Back"
-msgstr ""
+msgstr "0-9 输入  OK 下一步  返回"
 
 #: core/ui/ui_menus.c
 msgid "Standard"
-msgstr ""
+msgstr "标准"
 
 #: core/ui/ui_menus.c
 msgid " step"
-msgstr ""
+msgstr " 步"
 
 #: core/ui/ui_menus.c
 msgid " steps"
-msgstr ""
+msgstr " 步"
 
 #: core/ui/ui_menus.c
 msgid "Talk permit tone: not in this build"
