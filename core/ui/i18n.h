@@ -2,9 +2,9 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // The radio's languages (docs/dev/translating.md). Text the radio shows is written in English and marked with a key, a
 // C identifier that names it in the catalogs:
-//   TR(ZONE, "Zone")      the text now, in the language the user picked (the English when there is none)
-//   TRN(ZONE, "Zone")     a tr_id_t for a static table's entry or a struct field; whoever shows it calls tr() on it
-//   TRX(RX, "RX")         a tr_id_t like TRN for text in such a table that is never translated (no catalog has it)
+//   TR(ZONE_TITLE, "Zone")      the text now, in the language the user picked (the English when there is none)
+//   TRN(ZONE_TITLE, "Zone")     a tr_id_t for a static table's entry or a struct field; call tr() in order to show it
+//   TRX(CHAN_LABEL_RX, "RX")    a tr_id_t representation, like TRN, but for non-localizable text (never translated)
 // The English at the mark is the source of truth: tools/i18n.py reads it from there. One key always has the same
 // English; the same English may have more than one key.
 // A tr_id_t is opaque: pass it to tr() or tr_en(), compare it with TR_NONE (the zero value: a memset or an omitted
