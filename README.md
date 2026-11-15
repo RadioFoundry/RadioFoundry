@@ -190,6 +190,14 @@ Any way you can:
 - **Donate or lend a radio.** This helps the most, especially older models that are hard to find now, because every
   port needs the hardware on the bench.
 
+**Can I use RadioFoundry in my own project?**
+
+Yes, including commercial and closed-source products. The license has one condition: keep our copyright and
+license notices in the code you copy and with the firmware you ship. We also ask that you give your project its
+own name. If you're adding a feature, we'd be glad to have it here, credited to you, on every radio whose
+hardware can run it: start a [discussion](https://github.com/radiofoundry/radiofoundry/discussions) or send a pull
+request. Details: [using RadioFoundry in your project](FORKING.md).
+
 **Was this project AI-generated?**
 
 No. This project is the result of thousands of hours of combined human effort from several contributors, spent on
@@ -201,7 +209,8 @@ support for additional radios and to make the project's ambitious scope possible
 RadioFoundry is MIT licensed ([LICENSE](LICENSE)) and a clean-room project: code is written from prose specs, datasheets and
 public standards, independent of earlier radio firmwares. No GPL code, no non-commercial code, no vendor SDKs. The
 rules and checks: [docs/CLEANROOM.md](docs/CLEANROOM.md). Third-party code in `third_party/` (FreeRTOS, TinyUSB, ST's
-HAL and CMSIS) keeps its own permissive license ([LICENSES/](LICENSES/)).
+HAL and CMSIS) keeps its own permissive license ([LICENSES/](LICENSES/)). To build on RadioFoundry in
+another project: [using RadioFoundry in your project](FORKING.md).
 
 ## Acknowledgements
 
@@ -222,7 +231,8 @@ the reverse engineering and documentation behind it made this project possible. 
 
 Issues and pull requests are welcome. Read [docs/CLEANROOM.md](docs/CLEANROOM.md) first, keep radio-specific code out
 of `core/`, put anything that costs flash behind a `CONFIG_` switch, and make sure `tools/ci.sh` passes. Details:
-[contributing](docs/dev/contributing.md).
+[contributing](docs/dev/contributing.md). Building something on RadioFoundry in your own project? Read
+[FORKING.md](FORKING.md): what the license asks, and why we'd rather have your feature here.
 
 ## Layout
 
