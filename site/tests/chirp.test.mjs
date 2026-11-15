@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 
 import { empty } from "../static/js/codeplug/model.js";
 import { importChirp, exportChirp, isChirp, ChirpError } from "../static/js/codeplug/chirp.js";
+import { importChirpImg, isChirpImg } from "../static/js/codeplug/chirp_img.js";
 
 const HEAD = "Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPolarity,RxDtcsCode,CrossMode,Mode,TStep,Skip,Power,Comment,URCALL,RPT1CALL,RPT2CALL,DVCODE";
 const SAMPLE = `${HEAD}
@@ -72,4 +73,45 @@ test("export then import keeps what CHIRP can hold, and leaves DMR channels out"
 	importChirp(back, text);
 	const keys = ["name", "rxHz", "txHz", "bw", "rxTone", "txTone", "allSkip", "power"];
 	assert.deepEqual(back.channels.map((c) => keys.map((k) => c[k])), m.channels.slice(0, 6).map((c) => keys.map((k) => c[k])));
+});
+
+// A made-up image in the layout chirp_img.js documents: memory, then the footer naming the radio
+function image(model = "UV-5R", rclass = "BaofengUV5RGeneric") {
+	const b = new Uint8Array(0x194A + 12 + 200).fill(0xFF);
+	const put = (n, rx, tx, rxTone, txTone, f2, f3, name) => {
+		const o = 8 + 16 * n;
+		const bcd = (hz, at) => {
+			let v = String(hz / 10).padStart(8, "0");
+			for (let i = 0; i < 4; i++) b[o + at + i] = parseInt(v.slice(6 - 2 * i, 8 - 2 * i), 16);
+		};
+		bcd(rx, 0);
+		bcd(tx, 4);
+		b.set([rxTone & 255, rxTone >> 8, txTone & 255, txTone >> 8, 0, 0, f2, f3], o + 8);
+		for (let i = 0; i < 16; i++) b[0x1008 + 16 * n + i] = i < name.length ? name.charCodeAt(i) : 0xFF;
+	};
+	put(0, 146520000, 146520000, 0, 0, 0, 0x44, "SIMPLEX");
+	put(1, 443600000, 448600000, 1035, 1035, 0, 0x44, "RPTR");	// TSQL, +5 MHz
+	put(5, 146940000, 146340000, 0, 885, 1, 0x00, "NARROW");	// tone, -0.6 MHz, low power, narrow, skipped
+	put(9, 147060000, 147060000, 65, 65, 0, 0x40, "DCS");	// code 411, skipped
+	b.set([0x63, 0x68, 0x69, 0x72, 0x70, 0xEE, 0x69, 0x6D, 0x67, 0x00, 0x01], 0x194A);
+	const json = Buffer.from(JSON.stringify({ rclass, vendor: "Baofeng", model })).toString("base64");
+	b.set(new TextEncoder().encode(json), 0x194A + 11);
+	return b.subarray(0, 0x194A + 11 + json.length);
+}
+
+test("an image of the supported radio imports its channels", () => {
+	const m = empty();
+	assert.ok(isChirpImg(image()));
+	const { counts, notes } = importChirpImg(m, image(), "Img");
+	assert.deepEqual([counts.channels, notes], [4, []]);
+	const [a, b, c, d] = m.channels;
+	assert.deepEqual([a.name, a.rxHz, a.txHz, a.rxTone, a.txTone, a.bw, a.allSkip], ["SIMPLEX", 146520000, 146520000, "", "", 25, false]);
+	assert.deepEqual([b.txHz, b.rxTone, b.txTone], [448600000, "103.5", "103.5"]);
+	assert.deepEqual([c.txHz, c.rxTone, c.txTone, c.bw, c.allSkip, c.power], [146340000, "", "88.5", 12.5, true, 3]);
+	assert.deepEqual([d.rxTone, d.txTone, d.allSkip], ["D411N", "D411N", true]);
+});
+
+test("an image of another radio is refused by name", () => {
+	assert.throws(() => importChirpImg(empty(), image("UV-82", "BaofengUV82Radio")), (e) => e.code === "img_model" && e.params.model === "Baofeng UV-82");
+	assert.throws(() => importChirpImg(empty(), new Uint8Array(100)), (e) => e.code === "not_chirp");
 });

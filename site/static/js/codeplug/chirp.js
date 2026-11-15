@@ -81,11 +81,15 @@ export function importChirp(m, textIn, zoneName = "CHIRP") {
 	const rows = parse(textIn);
 	const head = (rows[0] || []).map((h) => h.trim().toLowerCase());
 	if (!REQUIRED.every((k) => head.includes(k))) throw new ChirpError("not_chirp");
-	const notes = new Map();
+	return importRows(m, rows.slice(1).map((cells) => Object.fromEntries(head.map((h, i) => [h, (cells[i] ?? "").trim()]))), zoneName);
+}
+
+// The same for rows already split into CHIRP's columns (lower case keys), as the image reader makes them. A row can
+// carry the radio's tones directly as _tx and _rx
+export function importRows(m, rows, zoneName = "CHIRP", notes = new Map()) {
 	const note = (code, n = 1) => notes.set(code, (notes.get(code) || 0) + n);
 	const made = [];
-	for (const cells of rows.slice(1)) {
-		const r = Object.fromEntries(head.map((h, i) => [h, (cells[i] ?? "").trim()]));
+	for (const r of rows) {
 		if (!r.frequency && !r.name) continue;
 		const mode = r.mode.toUpperCase();
 		if (mode !== "FM" && mode !== "NFM") {
@@ -107,7 +111,7 @@ export function importChirp(m, textIn, zoneName = "CHIRP") {
 			if (off === null) note("bad_frequency");
 			else txHz = off;
 		}
-		const t = tones(r, note);
+		const t = r._tx !== undefined ? { tx: r._tx, rx: r._rx } : tones(r, note);
 		let name = r.name || `${(rxHz / 1e6).toFixed(4)}`;
 		if (name.length > LIMITS.name) {
 			name = name.slice(0, LIMITS.name);

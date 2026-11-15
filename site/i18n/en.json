@@ -1451,6 +1451,8 @@
  "editor.chirp.import_notes": "Parts of the file were changed or left out:",
  "editor.chirp.undo_hint": "Undo reverses the whole import.",
  "editor.chirp.err.not_chirp": "{name} is not a CHIRP channel list. Its header row lacks the Location, Name, Frequency, Duplex, Offset, Tone and Mode columns.",
+ "editor.chirp.err.img_model": "{name} is an image for {model}. Only the Baofeng UV-5R's CHIRP image can be read; for another radio, export its channels from CHIRP as a CSV file.",
+ "editor.chirp.err.img_footer": "{name} looks like a CHIRP image, but the part that names its radio can't be read.",
  "editor.chirp.note.mode": "{n} channels in a mode other than FM or NFM (AM, DV, SSB and so on); they were left out.",
  "editor.chirp.note.bad_frequency": "{n} rows without a usable frequency or offset.",
  "editor.chirp.note.bad_tone": "{n} tones the radio can't hold (or reverse tone squelch); their channels were imported without them.",

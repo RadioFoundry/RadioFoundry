@@ -1451,6 +1451,8 @@
  "editor.chirp.import_notes": "文件的部分内容已更改或略过:",
  "editor.chirp.undo_hint": "撤销会还原整个导入。",
  "editor.chirp.err.not_chirp": "{name} 不是 CHIRP 信道列表。其标题行缺少 Location、Name、Frequency、Duplex、Offset、Tone 和 Mode 列。",
+ "editor.chirp.err.img_model": "{name} 是 {model} 的镜像文件。目前只能读取 Baofeng UV-5R 的 CHIRP 镜像;其他电台请在 CHIRP 中将信道导出为 CSV 文件。",
+ "editor.chirp.err.img_footer": "{name} 看起来是 CHIRP 镜像,但无法读取标明电台型号的部分。",
  "editor.chirp.note.mode": "{n} 个信道的模式不是 FM 或 NFM(AM、DV、SSB 等),已略过。",
  "editor.chirp.note.bad_frequency": "{n} 行没有可用的频率或频差。",
  "editor.chirp.note.bad_tone": "{n} 个电台不支持的亚音(或反向亚音静噪);其信道已不带亚音导入。",

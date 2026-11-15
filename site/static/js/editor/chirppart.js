@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// CHIRP CSV in the Codeplug Editor: Open File takes a channel list CHIRP saved, replaces the codeplug's channels and
+// CHIRP CSV in the Codeplug Editor: Open File takes a channel list CHIRP saved (CSV, or an image of a supported radio), replaces the codeplug's channels and
 // zones with its FM channels, and Save offers the FM channels as a CHIRP CSV. Both list what it left out. One undoable change.
 
 import { register } from "./extensions.js";
 import { importChirp, exportChirp, ChirpError } from "../codeplug/chirp.js";
+import { importChirpImg } from "../codeplug/chirp_img.js";
 import { datedName } from "./files.js";
 
 register({
@@ -13,8 +14,8 @@ register({
 	},
 
 	async openText(f, name, api) {
-		if (f.kind !== "chirp") return false;
-		open(api, name, f.text);
+		if (f.kind !== "chirp" && f.kind !== "chirp-img") return false;
+		open(api, name, f);
 		return true;
 	},
 });
@@ -25,20 +26,20 @@ function save(api) {
 	if (notes.length) report(api, api.t("editor.chirp.saved_title"), api.t("editor.chirp.saved_notes"), notes);
 }
 
-function open(api, name, text) {
+function open(api, name, f) {
 	const { t, h } = api;
 	let result = null, error = null;
 	const zone = name.replace(/\.[^.]*$/, "");
 	api.change(t("editor.chirp.undo", { name }), () => {
 		try {
-			result = importChirp(api.model, text, zone);
+			result = f.kind === "chirp-img" ? importChirpImg(api.model, f.bytes, zone) : importChirp(api.model, f.text, zone);
 		} catch (e) {
 			if (!(e instanceof ChirpError)) throw e;
 			error = e;
 			return false;
 		}
 	});
-	if (error) return api.say(t(`editor.chirp.err.${error.code}`, { name }), "bad");
+	if (error) return api.say(t(`editor.chirp.err.${error.code}`, { name, ...error.params }), "bad");
 	const { channels, zones } = result.counts;
 	api.say(t("editor.chirp.imported", { name, channels, zones }), result.notes.length ? "warn" : "ok");
 	if (!result.notes.length) return;

@@ -102,7 +102,7 @@ over.
 - a codeplug file (`.bin`) saved by the editor, `tools/cps_client.py read` or a TFTP read;
 - a backup from the web installer (`.zip`);
 - a qdmr codeplug (`.yaml`);
-- a channel list saved by CHIRP (`.csv`);
+- a channel list saved by CHIRP (`.csv`), or a CHIRP image (`.img`) of a radio the editor can read;
 - CSV files, one table each, or a `.zip` of them;
 - the original firmware's codeplug, where the editor reads that radio's format: in an installer backup, a dump of the
   radio's data flash, or the manufacturer's CPS file. The [Radio reference](23-radios.md#codeplug-files-from-the-original-firmware)
@@ -236,5 +236,8 @@ DMR ID database stay as they were. The channels are the file's FM and NFM rows, 
 named after the file, 80 channels to a zone. Offsets (`+`, `-`, split), CTCSS and DCS tones (including cross modes),
 bandwidth, skip and power are carried over. The editor lists what it left out: rows in other modes (AM, DV, SSB),
 rows without a usable frequency, tones the radio can't hold, and names it shortened. Saving as CHIRP CSV writes the FM
-channels only, since CHIRP has no DMR. CHIRP's own `.img` files are not read: each is one radio's memory image. Export
-the channels from CHIRP with File > Export to CSV.
+channels only, since CHIRP has no DMR.
+
+A CHIRP image is one radio's memory, so each radio model needs its own reader and the editor reads only the models it
+lists. It imports those channels the same way as a CSV file. For any other radio the editor names the model it found
+and says to export the channels from CHIRP with File > Export to CSV.
