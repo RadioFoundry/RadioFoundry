@@ -3,7 +3,7 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """Tests of tools/i18n.py (docs/dev/translating.md): the marks and their keys, the generated tables (a key's
 translation, else its English), a catalog kept in step by key (an English edit keeps the translation), the
-migration of a catalog without keys, and the rewrite of old-form marks."""
+migration of a catalog without keys, the rewrite of old-form marks, and the rename of keys."""
 import os
 import sys
 import tempfile
@@ -233,6 +233,51 @@ class Rewrite(unittest.TestCase):
         self.assertEqual(i18n.rewrite(), 0)
         with open(self.path, encoding="utf-8") as f:
             self.assertEqual(f.read(), src)
+
+
+class Rename(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.saved = i18n.ROOT, i18n.LANG_DIR, i18n.taken_cache
+        i18n.ROOT = self.dir.name
+        i18n.LANG_DIR = os.path.join(self.dir.name, "core", "ui", "lang")
+        i18n.taken_cache = None
+        os.makedirs(i18n.LANG_DIR)
+        os.makedirs(os.path.join(self.dir.name, "tests"))
+        self.src = os.path.join(self.dir.name, "core", "ui", "x.c")
+        self.test = os.path.join(self.dir.name, "tests", "t.c")
+        self.po = os.path.join(i18n.LANG_DIR, "xx.po")
+        with open(self.src, "w", encoding="utf-8") as f:
+            f.write(SRC + "int TR_TX;\n")
+        with open(self.test, "w", encoding="utf-8") as f:
+            f.write('CHECK(strcmp(TR( DONE, "Done"), "Hecho") == 0);\n')
+        with open(self.po, "w", encoding="utf-8") as f:
+            f.write(PO)
+
+    def tearDown(self):
+        i18n.ROOT, i18n.LANG_DIR, i18n.taken_cache = self.saved
+        self.dir.cleanup()
+
+    def test_rename_keeps_the_translations(self):
+        # DONE and FUZZY swap names, RX (never translated) gets a new one: marks, the tests and the catalog follow
+        self.assertEqual(i18n.rename([("DONE", "FUZZY"), ("FUZZY", "DONE"), ("RX", "LABEL_RX")]), (5, 2))
+        with open(self.src, encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn('TRN(FUZZY, "Done"), TRN(UNTRANSLATED, "Untranslated"), TRX(LABEL_RX, "RX")', src)
+        self.assertIn('show(TR(DONE, "Fuzzy"), TR(VOLUME, "Volume "), TR(BAD, "Bad"), TR(FUZZY, "Done"));', src)
+        with open(self.test, encoding="utf-8") as f:
+            self.assertIn('TR( FUZZY, "Done")', f.read())
+        by_key = {k: (en, tr) for k, en, tr, _ in i18n.read_po(self.po)[1]}
+        self.assertEqual(by_key["FUZZY"], ("Done", "Hecho"))
+        self.assertEqual(by_key["DONE"], ("Fuzzy", "Borroso"))
+
+    def test_rename_refuses_a_name_in_use(self):
+        for pairs in ([("DONE", "BAD")], [("DONE", "TX")], [("DONE", "A"), ("BAD", "A")], [("GONE", "A")],
+                      [("DONE", "2X")]):
+            with self.assertRaises(i18n.I18nError):
+                i18n.rename(pairs)
+        with open(self.po, encoding="utf-8") as f:
+            self.assertEqual(f.read(), PO)
 
 
 class Catalogs(unittest.TestCase):

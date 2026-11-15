@@ -163,13 +163,13 @@ static void import_done(bool ok, tr_id_t why, const zone_import_result_t *r)
 static tr_id_t import_failure(zone_import_status_t st)
 {
 	switch (st) {
-	case ZI_NONE_IN_BAND: return TRN(NO_CHANNEL_IN_THIS_RADIOS, "No channel in this radio's bands");
-	case ZI_NO_ZONE: return TRN(NO_ROOM_FOR_ANOTHER_ZONE_2, "No room for another zone");
-	case ZI_ZONE_FULL: return TRN(THAT_ZONE_IS_FULL, "That zone is full");
-	case ZI_NO_CHANNELS: return TRN(NOT_ENOUGH_FREE_CHANNELS, "Not enough free channels");
-	case ZI_NO_CONTACTS: return TRN(NOT_ENOUGH_FREE_CONTACTS, "Not enough free contacts");
-	case ZI_FLASH: return TRN(COULDNT_SAVE_TRY_AGAIN, "Couldn't save: try again");
-	default: return TRN(NOT_A_ZONE_THIS_RADIO_READS, "Not a zone this radio reads");
+	case ZI_NONE_IN_BAND: return TRN(SHARE_ERR_NO_CHANNEL_IN_BANDS, "No channel in this radio's bands");
+	case ZI_NO_ZONE: return TRN(ZONE_ERR_NO_ROOM, "No room for another zone");
+	case ZI_ZONE_FULL: return TRN(SHARE_ERR_ZONE_FULL, "That zone is full");
+	case ZI_NO_CHANNELS: return TRN(SHARE_ERR_FREE_CHANNELS, "Not enough free channels");
+	case ZI_NO_CONTACTS: return TRN(SHARE_ERR_FREE_CONTACTS, "Not enough free contacts");
+	case ZI_FLASH: return TRN(TOAST_SAVE_FAILED, "Couldn't save: try again");
+	default: return TRN(SHARE_ERR_NOT_A_ZONE, "Not a zone this radio reads");
 	}
 }
 
@@ -180,7 +180,7 @@ static void import_job(void *ctx)
 	zone_share_offer_t o;
 	const uint8_t *data;
 	if (!zone_share_offer(&o, &data) || o.serial != job.serial) {
-		import_done(false, TRN(THE_OFFER_IS_GONE, "The offer is gone"), NULL);
+		import_done(false, TRN(SHARE_ERR_OFFER_GONE, "The offer is gone"), NULL);
 		return;
 	}
 	zone_import_status_t st;
@@ -242,12 +242,12 @@ bool ui_svc_zone_event(uint8_t kind, uint32_t id, ui_event_t *ev)
 	name[sizeof name - 1] = 0;
 	sbuf_t b;
 	sb_init(&b, ev->text, sizeof ev->text);
-	sb_str(&b, o.channel ? TR(CHANNEL_4, "Channel ") : TR(ZONE_4, "Zone "));
+	sb_str(&b, o.channel ? TR(SHARE_BODY_CHANNEL, "Channel ") : TR(SHARE_BODY_ZONE, "Zone "));
 	sb_str(&b, name);
 	if (!o.channel) {
 		sb_str(&b, ", ");
 		sb_u32(&b, o.channels, 1);
-		sb_str(&b, o.channels == 1 ? TR(CHANNEL_5, " channel") : TR(CHANNELS_4, " channels"));
+		sb_str(&b, o.channels == 1 ? TR(UNIT_CHANNEL, " channel") : TR(UNIT_CHANNELS, " channels"));
 	}
 	return true;
 }

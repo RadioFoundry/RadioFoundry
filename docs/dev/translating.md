@@ -32,9 +32,9 @@ English:
 | `tr_en(id)` | Where the English is needed too (Find matches both) | The English |
 
 ```c
-ui_toast(TR(ZONE_FULL, "Zone full"));                   // shown right here: TR gives the text
+ui_toast(TR(ZONE_TOAST_FULL, "Zone full"));           // shown right here: TR gives the text
 
-static const tr_id_t modes[] = { TRN(MODE_OFF, "Off"), TRN(MODE_AUTO, "Auto"), TRX(MODE_VOX, "VOX") };
+static const tr_id_t modes[] = { TRN(VALUE_OFF, "Off"), TRN(VALUE_AUTO, "Auto"), TRX(WORD_VOX, "VOX") };
 sb_str(&b, tr(modes[i]));                             // stored first, shown later: TRN or TRX, then tr()
 ```
 
@@ -45,6 +45,43 @@ so text that is never translated needs one too.
 The key is a C identifier, upper case. One key always has the same English (the tool fails otherwise); the same English
 may have more than one key, where it needs different translations. The English at the mark is the source of truth: a
 catalog entry is the key's (its `msgctxt`), and the tool reads the English from the mark.
+
+#### Key names
+
+A key says where the text is shown and what it is for, not what the English says: `AREA_ROLE_MEANING`
+(`ZONE_TOAST_RENAMED`, `CHAN_LABEL_BANDWIDTH`, `DENY_FIX_ADD_CODEC`). The English can then change without the name
+going stale, and a translator who reads the key in a catalog knows what kind of text it is.
+
+| Part | What it is |
+|---|---|
+| Area | The screen or feature the text belongs to, as in the code: `HOME`, `ZONE`, `CHAN`, `MSG`, `SHARE`, `QUICK`, `SET`, `DUAL`, `APRS`, `ROAM`, ... Reuse one from the catalogs before making a new one. Left out for text several areas share (`VALUE_OFF`, `HINT_OK_PICK_BACK`, `WHY_SCAN_NOT_IN_BUILD`) |
+| Role | How the text is shown, from the list below |
+| Meaning | What it says, in a few words. Left out when the area has one such text (`QUICK_TITLE`, `GPS_HINT`) |
+
+| Role | The text is |
+|---|---|
+| `TITLE` | A screen's title; also on the row that opens that screen |
+| `ROW` | A list row that does something when picked: an action, a choice, a sub-menu |
+| `LABEL` | The name beside a value: a settings row, a field, a caption |
+| `VALUE` | A value shown for a setting or field |
+| `HINT` | The hint row: what the keys do |
+| `TOAST` | A short message after a key press |
+| `BANNER` | A line of a banner (an event from outside) |
+| `BODY` | Running text on a page, or a piece of it |
+| `STATE` | A status word a screen shows while something goes on (`TALKING`) |
+| `CHIP` | A short tag: the status bar, a list row's right edge |
+| `EMPTY` | What a list or page shows when it has nothing |
+| `WHY` | Why something can't be done: a refusal, a missing feature |
+| `FIX` | What to do about it |
+| `ASK` | A question to confirm |
+| `ERR` | A failure reported by a background job |
+| `UNIT` | A unit joined to a number (` channels`) |
+| `PART` | A piece joined to other text, with no role of its own (` of `) |
+| `WORD` | A term used as title, label and value alike (`VFO`, `Scan`) |
+
+A piece of a sentence (`"Message from "`) takes the role of the sentence. A number in a name is the number in the
+text (`VALUE_10_MIN`, `HINT_1_5_PICK_BACK`), never a counter: two texts that would get the same name differ in
+meaning, so say how.
 
 A `tr_id_t` is opaque. Code passes it to `tr()` or `tr_en()`, or compares it with `TR_NONE` (none: zero, so a field
 left out of an initializer is none), and nothing else. With a language built it is the key's number (`TR_<KEY>` in
@@ -165,14 +202,21 @@ request whether each language still fits. When the meaning changes, use a new ke
 #### Renaming a key
 
 The tool matches a catalog entry by its key alone, so a key renamed only at the mark looks like a new key: `--sync`
-drops the old entry with its translations and adds an empty one. Until the tool has a rename mode, rename by hand, in
-one commit:
+drops the old entry with its translations and adds an empty one. Rename with the tool, which changes the marks and
+the catalogs together:
 
-1. Rename the key at every mark (`grep -rn 'TR[NX]\?(OLD_KEY,' core tests`).
-2. Change `msgctxt "OLD_KEY"` to `msgctxt "NEW_KEY"` in every `core/ui/lang/*.po`.
-3. Run `python3 tools/i18n.py --sync`, then `--check`. `git diff core/ui/lang` shows only the `msgctxt` lines (and
-   entries moved, as the catalogs follow the order of the source); no `msgstr` is lost. The same holds for the site's catalogs: a
-key whose English changed while a translation didn't is a warning.
+```
+python3 tools/i18n.py --rename OLD_KEY NEW_KEY     # one key
+python3 tools/i18n.py --rename names.txt           # many: a line "OLD_KEY NEW_KEY" each
+python3 tools/i18n.py --sync
+```
+
+It rewrites the key at every mark in `core/`, `tests/` and `sim/` and the `msgctxt` of its entry in every catalog,
+and refuses a name that is taken. The pairs of a file are renamed together, so two keys may swap names. Afterwards
+`git diff core/ui/lang` shows only `msgctxt` lines; no `msgstr` is lost.
+
+The site's catalogs follow the same rule for edited English: a key whose English changed while a translation didn't
+is a warning.
 
 A pull request that adds or rewrites text and can't translate it lists it as an open task in its description
 (`- [ ] translations: es, it`), and the strings are translated before the merge. To build or test with strings still
@@ -194,10 +238,10 @@ untranslated, `python3 tools/i18n.py --check --allow-pending` skips them; CI doe
 
 A mark's text is one C literal, or literals and the `font.h` glyph macros (`GLYPH_ELLIPSIS`, `TEXT_ALT_OPEN`, ...)
 next to each other. Not a variable, no `\n` (write the line break with `sb_chr`). A macro whose value is a
-`TRN(...)` is found like any other. Name a new key after its meaning (`ZONE_FULL`); a key in use is reused for the
+`TRN(...)` is found like any other. Name a new key by [Key names](#key-names); a key in use is reused for the
 same text where the meaning is the same. `TR_<KEY>` must not be a name the source already uses (the tool says so). `python3 tools/i18n.py --rewrite [FILE]`
 gives a mark written without a key, `TR("...")`, one made from its English (the same English gets the key it already
-has); rename it to its meaning before the commit.
+has); rename it before the commit (`--rename`, below).
 A text that travels between tasks (an event) travels as its `tr_id_t`, not as text. Build text from pieces
 with `sbuf_t`, not `strcpy`/`strcat`: a translation can be longer than the English, and `str_copy` and `sb_str`
 cut it safely. Don't compare shown text with `strcmp`; compare the state it came from. After marking, run
@@ -248,7 +292,7 @@ What the site leaves in English (radio data, error details, logs) is listed in
 | Check | Runs |
 |---|---|
 | `python3 tools/i18n.py --check` | Every mark has a key, one English per key; catalogs in step with the source, none untranslated or fuzzy, drawable characters, text alternates, spaces, the switch in every file |
-| `python3 tools/i18n_test.py` | The tool: keys, tables, sync, migration, rewrite |
+| `python3 tools/i18n_test.py` | The tool: keys, tables, sync, migration, rewrite, rename |
 | `make -C tests/host` | `i18nTest`: a key to its translation or its English, `tr_en`, switching, a language not built; `uiFlowTest`: the Language screen |
 | `python3 site/build.py --strict` | The site catalogs: keys, placeholders, tags, `languages.json` |
 | `python3 -m rfoundrysite.i18n` (from `site/`) | The same, and no key missing from a language |
