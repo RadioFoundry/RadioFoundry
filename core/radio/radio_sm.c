@@ -5462,7 +5462,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		}
 		int p = ((sm->view.power + req->arg) % n + n) % n;
 		sm->view.power = (uint8_t)p;
-		if (sm->view.vfo) {	// the VFO's own power, kept like its other settings (upstream #486)
+		if (sm->view.vfo) {	// the VFO's own power, kept like its other settings (#486)
 			sm->view.ch.power = sm->vfo_ch.power = (uint8_t)p;
 		}
 		sm->temp_power = sm->view.power != channel_power(&sm->view.ch);

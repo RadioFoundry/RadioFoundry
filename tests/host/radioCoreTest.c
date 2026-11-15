@@ -1476,7 +1476,7 @@ static void test_dmr_list_talk_target(void)
 	setup_codeplug();
 }
 
-// The VFO keeps quick-settings changes (upstream #486, #525): power is the VFO's own, squelch the radio's default (as a
+// The VFO keeps quick-settings changes (#486, #525): power is the VFO's own, squelch the radio's default (as a
 // channel save writes it); neither is left temporary, so Home offers no save and leaving the VFO doesn't undo them
 static void test_vfo_quick_settings_kept(void)
 {
