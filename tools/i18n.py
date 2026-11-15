@@ -17,6 +17,9 @@ language in core/ui/lang/<code>.po, an entry per key (its msgctxt).
     tools/i18n.py --new CODE NAME   start a catalog: CODE an ISO 639-1 code, NAME the language's own name ("Español")
     tools/i18n.py --rewrite [FILE]  give each old-form mark TR("English") / TRN("English") a key made from its English
                                     (the same English keeps one key); by default in the whole source
+    tools/i18n.py --rename OLD NEW  rename a key: at every mark (the source, tests/ and sim/) and in every catalog's
+                                    msgctxt, so no translation is lost; --rename FILE for many, a line "OLD NEW"
+                                    each (renamed together, so names may swap). Run --sync afterwards
 
 A string in a catalog is written as UTF-8. The radio draws one byte a character: ASCII, the Latin-1 letters (U+00A0 to
 U+00FF) and the extra glyphs of core/ui/font.h, written here as the characters they stand for. Text alternates
@@ -369,6 +372,75 @@ def rewrite(files=None):
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write(src)
     return done
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# The rename: a key's new name at every mark and in every catalog's msgctxt. The catalogs match by key alone, so a
+# key renamed only in the source would lose its translations at the next --sync
+
+RENAME_DIRS = ["tests", "sim"]    # marks outside the source the catalogs are made from: they use its keys
+
+
+def rename(pairs):
+    """Renames keys, [(old, new)], all at once (a name freed by one pair may be taken by another). Returns
+    (marks rewritten, catalog entries rewritten)"""
+    every = marks()
+    keys = check_keys(every)
+    names = dict(pairs)
+    if len(names) != len(pairs):
+        raise I18nError("rename: a key is listed twice")
+    taken = taken_keys()
+    after = set(keys) - set(names)
+    for old, new in pairs:
+        if old not in keys:
+            raise I18nError("rename: no key %s in the source" % old)
+        if not KEY.match(new) or new in MACROS:
+            raise I18nError("rename: %s is not a key name (a C identifier)" % new)
+        if new in taken:
+            raise I18nError("rename: TR_%s is taken (i18n.h, a glyph macro, or an identifier in the source)" % new)
+        if new in after:
+            raise I18nError("rename: %s is a key already (listed twice as a new name, or one that stays)" % new)
+        after.add(new)
+    extra = []
+    for d in RENAME_DIRS:
+        for ext in ("c", "h"):
+            extra += glob.glob(os.path.join(ROOT, d, "**", "*." + ext), recursive=True)
+    every += marks(old_ok=True, files=sorted(os.path.relpath(f, ROOT).replace(os.sep, "/") for f in extra))
+    todo = {}
+    for mk in every:
+        if mk.key in names:
+            todo.setdefault(mk.rel, []).append(mk)
+    done = 0
+    for rel in sorted(todo):
+        path = os.path.join(ROOT, rel)
+        with open(path, encoding="utf-8") as f:
+            src = f.read()
+        for mk in sorted(todo[rel], key=lambda m: m.at, reverse=True):
+            at = mk.at
+            while not src.startswith(mk.key, at):    # white space or a comment between the parenthesis and the key
+                at += 1
+            src = src[:at] + names[mk.key] + src[at + len(mk.key):]
+            done += 1
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(src)
+    entries = 0
+    ctxt = re.compile(r'^msgctxt "([^"]*)"$', re.M)
+
+    def renamed(m):
+        nonlocal entries
+        if m.group(1) not in names:
+            return m.group(0)
+        entries += 1
+        return 'msgctxt "%s"' % names[m.group(1)]
+
+    for path in catalogs().values():
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        out = ctxt.sub(renamed, text)
+        if out != text:
+            with open(path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(out)
+    return done, entries
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -872,6 +944,17 @@ def main():
         if args[:1] == ["--rewrite"]:
             files = [os.path.relpath(os.path.abspath(a), ROOT).replace(os.sep, "/") for a in args[1:]] or None
             print("i18n: %d mark(s) given a key" % rewrite(files))
+            return 0
+        if args[:1] == ["--rename"] and len(args) in (2, 3):
+            if len(args) == 3:
+                pairs = [(args[1], args[2])]
+            else:
+                with open(args[1], encoding="utf-8") as f:
+                    lines = [line.split() for line in f if line.strip() and not line.startswith("#")]
+                if any(len(line) != 2 for line in lines):
+                    raise I18nError("%s: each line is \"OLD NEW\"" % args[1])
+                pairs = [(a, b) for a, b in lines]
+            print("i18n: %d mark(s) and %d catalog entr(ies) renamed; next: tools/i18n.py --sync" % rename(pairs))
             return 0
         if args[:1] in (["--sync"], ["--check"], ["--stats"]):
             only = [a for a in args[1:] if not a.startswith("--")]

@@ -55,7 +55,7 @@ int main(void)
 	// English: every key shows its English. A tr_id_t is opaque: the marks, tr(), tr_en() and TR_NONE are all a
 	// caller uses, in either build (the keys are tools/i18n.py's, from core/)
 	CHECK(lang_current() == LANG_ENGLISH);
-	const tr_id_t settings = TRN(SETTINGS, "Settings");
+	const tr_id_t settings = TRN(TITLE_SETTINGS, "Settings");
 	CHECK(strcmp(tr(settings), "Settings") == 0 && strcmp(tr_en(settings), "Settings") == 0);
 	CHECK(settings != TR_NONE);
 	CHECK(tr(TR_NONE) == NULL && tr_en(TR_NONE) == NULL);	// none: a list without a hint
@@ -63,35 +63,35 @@ int main(void)
 	CHECK(zeroed.hint == TR_NONE);
 #if CONFIG_LANG_ES
 	CHECK(lang_built(es) && lang_set(es) && lang_current() == es);
-	CHECK(strcmp(TR(SETTINGS, "Settings"), "Ajustes") == 0);
+	CHECK(strcmp(TR(TITLE_SETTINGS, "Settings"), "Ajustes") == 0);
 	CHECK(strcmp(tr(settings), "Ajustes") == 0);
 	CHECK(strcmp(tr_en(settings), "Settings") == 0);	// Find matches both
-	CHECK(strcmp(TR(LANGUAGE_2, "Language"), "Idioma/Language") == 0);
-	CHECK(strcmp(TR(POWER_SAVING, "Power saving"), "Ahorro de energ\xED" "a") == 0);
-	CHECK(strcmp(TR(POWER, "Power"), "Potencia") == 0);
-	CHECK(strcmp(TR(POWER_3, TEXT_ALT_OPEN "Power" TEXT_ALT_NEXT "Pwr" TEXT_ALT_CLOSE),
+	CHECK(strcmp(TR(SET_LABEL_LANGUAGE, "Language"), "Idioma/Language") == 0);
+	CHECK(strcmp(TR(SET_ROW_POWER_SAVING, "Power saving"), "Ahorro de energ\xED" "a") == 0);
+	CHECK(strcmp(TR(LABEL_POWER, "Power"), "Potencia") == 0);
+	CHECK(strcmp(TR(QUICK_LABEL_POWER, TEXT_ALT_OPEN "Power" TEXT_ALT_NEXT "Pwr" TEXT_ALT_CLOSE),
 		     TEXT_ALT_OPEN "Pot" TEXT_ALT_NEXT "Pt" TEXT_ALT_CLOSE) == 0);
-	CHECK(strcmp(TR(ON_MY_WAY, "On my way"), "En camino") == 0);	// a canned message: sent in the language in use
+	CHECK(strcmp(TR(MSG_BODY_CANNED_ON_MY_WAY, "On my way"), "En camino") == 0);	// a canned message: sent in the language in use
 	// Strings at other places in a stride of the table: the lookup steps over the ones before them
-	CHECK(strcmp(TR(STATUS, "Status"), "Estado") == 0);
-	CHECK(strcmp(TR(ZONE_FOR, "Zone for"), "Zona para") == 0);
-	CHECK(strcmp(TR(NO_USB_NETWORK_ON_THIS_RADIO, "No USB network on this radio"),
+	CHECK(strcmp(TR(GPS_TITLE_STATUS, "Status"), "Estado") == 0);
+	CHECK(strcmp(TR(DUAL_TITLE_ZONE_FOR, "Zone for"), "Zona para") == 0);
+	CHECK(strcmp(TR(USBNET_WHY_NOT_ON_RADIO, "No USB network on this radio"),
 		     "Esta radio no tiene red USB") == 0);
 	// Text a table marks but no catalog translates (TRX): the English, in any language
-	CHECK(strcmp(tr(TRX(RX, "RX")), "RX") == 0 && strcmp(tr_en(TRX(RX, "RX")), "RX") == 0);
+	CHECK(strcmp(tr(TRX(CHAN_LABEL_RX, "RX")), "RX") == 0 && strcmp(tr_en(TRX(CHAN_LABEL_RX, "RX")), "RX") == 0);
 	CHECK(tr(TR_NONE) == NULL);
 	// A key's English, every one of them: the English table is whole and in step with tr_en
 	for (tr_id_t id = 1; id < TR_KEYS; id++) {
 		CHECK(tr_en(id) != NULL && tr_en(id)[0] != 0);
 		CHECK(tr(id) != NULL && tr(id)[0] != 0);
 	}
-	CHECK(lang_set(LANG_ENGLISH) && strcmp(TR(SETTINGS, "Settings"), "Settings") == 0);
+	CHECK(lang_set(LANG_ENGLISH) && strcmp(TR(TITLE_SETTINGS, "Settings"), "Settings") == 0);
 	CHECK(tr(settings) == tr_en(settings));
 #else
 	CHECK(!lang_built(es) && !lang_set(es) && lang_current() == LANG_ENGLISH);
 	// Without a translation built a mark is its English itself: no table, no lookup
-	CHECK(strcmp(TR(SETTINGS, "Settings"), "Settings") == 0);
-	const char *lit = TRN(SETTINGS, "Settings");
+	CHECK(strcmp(TR(TITLE_SETTINGS, "Settings"), "Settings") == 0);
+	const char *lit = TRN(TITLE_SETTINGS, "Settings");
 	CHECK(tr(lit) == lit && tr_en(lit) == lit);
 #endif
 

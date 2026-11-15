@@ -31,15 +31,17 @@ static const struct {
 	const char *syn;
 	uint8_t scr;
 } places[] = {
-	{ TRN(CONTACTS, "Contacts"), NULL, SCR_CONTACTS }, { TRN(MESSAGES, "Messages"), NULL, SCR_MESSAGES },
-	{ TRN(RECENT, "Recent"), NULL, SCR_RECENT }, { TRN(CHANNELS, "Channels"), NULL, SCR_ZONES }, { TRN(TOOLS, "Tools"), NULL, SCR_TOOLS },
-	{ TRN(SETTINGS, "Settings"), NULL, SCR_SETTINGS },
-	{ TRX(VFO, "VFO"), NULL, SCR_ZONES },
+	{ TRN(TITLE_CONTACTS, "Contacts"), NULL, SCR_CONTACTS }, { TRN(TITLE_MESSAGES, "Messages"), NULL,
+		SCR_MESSAGES },
+	{ TRN(TITLE_RECENT, "Recent"), NULL, SCR_RECENT }, { TRN(TITLE_CHANNELS, "Channels"), NULL, SCR_ZONES },
+		{ TRN(TITLE_TOOLS, "Tools"), NULL, SCR_TOOLS },
+	{ TRN(TITLE_SETTINGS, "Settings"), NULL, SCR_SETTINGS },
+	{ TRX(WORD_VFO, "VFO"), NULL, SCR_ZONES },
 #if CONFIG_DMR_ROAMING
-	{ TRN(ROAMING, "Roaming"), "roam site survey beacon interval length wake probe lock", SCR_ROAM },
+	{ TRN(TITLE_ROAMING, "Roaming"), "roam site survey beacon interval length wake probe lock", SCR_ROAM },
 #endif
 #if CONFIG_APRS
-	{ TRX(APRS, "APRS"), "beacon smartbeaconing symbol path kiss tnc gps", SCR_APRS },
+	{ TRX(WORD_APRS, "APRS"), "beacon smartbeaconing symbol path kiss tnc gps", SCR_APRS },
 #endif
 };
 #define PLACES_N	((uint8_t)(sizeof places / sizeof places[0]))
@@ -322,20 +324,20 @@ static void find_item(uint16_t i, ui_item_t *it)
 	switch (r->kind) {
 	case FR_CHANNEL: {
 		const radio_view_t *v = ui_view();
-		sb_str(&b, TR(CH, "Ch "));
+		sb_str(&b, TR(FIND_ROW_CH, "Ch "));
 		sb_u32(&b, r->ref + 1u, 1);
 		if (codeplug_zone(v->zone_index, &zone) && r->ref < zone.count &&
 		    codeplug_channel_name(zone.channels[r->ref], rec_name)) {
 			sb_chr(&b, ' ');
 			sb_str(&b, rec_name);
 		}
-		sb_str(&vb, TR(CHANNEL_2, TEXT_ALT_OPEN "Channel" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
+		sb_str(&vb, TR(FIND_CHIP_CHANNEL, TEXT_ALT_OPEN "Channel" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
 		break;
 	}
 	case FR_ZONE:
 		if (codeplug_zone_name((uint16_t)r->ref, rec_name))
 			sb_str(&b, rec_name);
-		sb_str(&vb, TR(ZONE_3, TEXT_ALT_OPEN "Zone" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
+		sb_str(&vb, TR(FIND_CHIP_ZONE, TEXT_ALT_OPEN "Zone" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
 		break;
 	case FR_CONTACT:
 		if (find_target(i, &t)) {
@@ -348,16 +350,16 @@ static void find_item(uint16_t i, ui_item_t *it)
 				sb_chr(&b, ' ');
 				sb_u32(&b, t.id, 1);
 			}
-			sb_str(&vb, TR(CONTACT, TEXT_ALT_OPEN "Contact" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
+			sb_str(&vb, TR(FIND_CHIP_CONTACT, TEXT_ALT_OPEN "Contact" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
 		}
 		break;
 	case FR_TG:
-		sb_str(&b, TR(TALK_TO_TG, "Talk to TG "));
+		sb_str(&b, TR(FIND_ROW_TALK_TO_TG, "Talk to TG "));
 		sb_u32(&b, r->ref, 1);
-		sb_str(&vb, TR(NOT_SAVED_2, TEXT_ALT_OPEN "Not saved" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
+		sb_str(&vb, TR(CHIP_NOT_SAVED, TEXT_ALT_OPEN "Not saved" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
 		break;
 	case FR_PRIVATE:
-		sb_str(&b, TR(PRIVATE_CALL_2, "Private call "));
+		sb_str(&b, TR(FIND_ROW_PRIVATE_CALL, "Private call "));
 		sb_u32(&b, r->ref, 1);
 		if (find_target(i, &t) && t.name[0]) {
 			sb_chr(&b, ' ');
@@ -365,12 +367,12 @@ static void find_item(uint16_t i, ui_item_t *it)
 		}
 		break;
 	case FR_FREQ:
-		sb_str(&b, TR(TUNE_VFO_TO, "Tune VFO to "));
+		sb_str(&b, TR(FIND_ROW_TUNE_VFO_TO, "Tune VFO to "));
 		sb_freq(&b, r->ref);
 		sb_str(&vb, TEXT_ALT_OPEN "VFO" TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 		break;
 	case FR_NEW_CONTACT:
-		sb_str(&b, TR(CREATE_CONTACT, "Create contact "));
+		sb_str(&b, TR(FIND_ROW_CREATE_CONTACT, "Create contact "));
 		sb_u32(&b, r->ref, 1);
 		break;
 	case FR_SETTING: {
@@ -383,7 +385,7 @@ static void find_item(uint16_t i, ui_item_t *it)
 	}
 	case FR_PLACE: {
 		sb_str(&b, tr(places[(r->ref >> 8) % PLACES_N].name));
-		sb_str(&vb, TR(MENU, "Menu"));
+		sb_str(&vb, TR(FIND_CHIP_MENU, "Menu"));
 		break;
 	}
 	default:
@@ -445,7 +447,7 @@ static void find_context(uint16_t i)
 	if (find_target(i, &t))
 		ui_open_actions(&t);
 	else
-		ui_toast(TR(NO_ACTIONS_FOR_THIS_RESULT, "No actions for this result"));
+		ui_toast(TR(FIND_TOAST_NO_ACTIONS, "No actions for this result"));
 }
 
 static bool find_key(const input_event_t *ev)
@@ -476,7 +478,8 @@ static bool find_key(const input_event_t *ev)
 
 const ui_scr_def_t ui_find_screen = {
 	.name = "find", .flags = SF_LIST | SF_FIND | SF_FIELD,
-	.hint = TRN(PTT_TALK_OK_OPEN_MORE, "PTT talk  OK open  # more"), .empty = TRN(NO_MATCH_BACK_DELETES_A_KEY, "No match: Back deletes a key"),
+	.hint = TRN(FIND_HINT, "PTT talk  OK open  # more"),
+	.empty = TRN(LIST_EMPTY_NO_MATCH, "No match: Back deletes a key"),
 	.count = find_count, .item = find_item, .select = find_select, .context = find_context, .target = find_target,
 	.key = find_key,
 };
