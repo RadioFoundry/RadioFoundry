@@ -38,7 +38,7 @@ msgstr "OK Menu Main.OK Rap."
 
 #: core/ui/ui_app.c
 msgid "Not saved"
-msgstr ""
+msgstr "Non enregistré"
 
 #: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "All call"
@@ -58,7 +58,7 @@ msgstr "Par défaut: "
 
 #: core/ui/ui_app.c
 msgid "Talking to "
-msgstr "En appel avec "
+msgstr "Parle avec "
 
 #: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "No calls heard yet"
@@ -358,11 +358,11 @@ msgstr "VOX on: parler p/ TX"
 
 #: core/ui/ui_app.c
 msgid "Timeslot 1"
-msgstr "Timeslot 1"
+msgstr "TS 1"
 
 #: core/ui/ui_app.c
 msgid "Timeslot 2"
-msgstr "Timeslot 2"
+msgstr "TS 2"
 
 #: core/ui/ui_app.c
 msgid "Timeslot 1 for now"
@@ -442,7 +442,7 @@ msgstr "Aucun rés: Retour eff"
 
 #: core/ui/ui_app.c
 msgid "Receive only. Sensitivity not rated"
-msgstr ""
+msgstr "Réception seule. Sensibilité non garantie"
 
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgid "Emergency: not in this build"
@@ -482,11 +482,11 @@ msgstr "Cible : DMR seul"
 
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgid "Talkgroup name first"
-msgstr ""
+msgstr "Nom du TG d'abord"
 
 #: core/ui/ui_app.c
 msgid "Talkgroup number first"
-msgstr ""
+msgstr "Numéro du TG d'abord"
 
 #: core/ui/ui_app.c
 msgid "Volume: use the knob"
@@ -678,7 +678,7 @@ msgstr "Stations reçues"
 
 #: core/ui/ui_aprs.c
 msgid "NMEA on USB"
-msgstr ""
+msgstr "NMEA sur USB"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "On"
@@ -734,23 +734,23 @@ msgstr "Message"
 
 #: core/ui/ui_aprs.c
 msgid "No longer in list"
-msgstr ""
+msgstr "Plus dans la liste"
 
 #: core/ui/ui_aprs.c
 msgid "{Distance|Dist|}"
-msgstr ""
+msgstr "{Distance|Dist|}"
 
 #: core/ui/ui_aprs.c
 msgid "Direct"
-msgstr ""
+msgstr "Direct"
 
 #: core/ui/ui_aprs.c
 msgid "Via digipeater"
-msgstr ""
+msgstr "Via digipeater"
 
 #: core/ui/ui_aprs.c
 msgid "{Position age|Pos age}"
-msgstr ""
+msgstr "{Âge position|Âge pos}"
 
 #: core/ui/ui_aprs.c core/ui/ui_gps.c
 msgid "Speed"
@@ -762,15 +762,15 @@ msgstr "Source"
 
 #: core/ui/ui_aprs.c
 msgid "Symbol"
-msgstr ""
+msgstr "Symbole"
 
 #: core/ui/ui_aprs.c
 msgid "Packets"
-msgstr ""
+msgstr "Paquets"
 
 #: core/ui/ui_aprs.c
 msgid "OK choose  Back"
-msgstr ""
+msgstr "OK choisir  Retour"
 
 #: core/ui/ui_dual.c core/ui/ui_screens.c
 msgid "No tone"
@@ -1238,11 +1238,11 @@ msgstr "Incapable de parler"
 
 #: core/ui/ui_menus.c
 msgid "To callsign"
-msgstr ""
+msgstr "À l'indicatif"
 
 #: core/ui/ui_menus.c
 msgid "Enter"
-msgstr ""
+msgstr "Saisir"
 
 #: core/ui/ui_menus.c
 msgid "Write..."
@@ -1250,7 +1250,7 @@ msgstr "Écrire..."
 
 #: core/ui/ui_menus.c
 msgid "Request acknowledgment"
-msgstr ""
+msgstr "Demander un accusé"
 
 #: core/ui/ui_menus.c
 msgid "Include position"
@@ -1266,7 +1266,7 @@ msgstr "Envoi à "
 
 #: core/ui/ui_menus.c
 msgid "Callsign"
-msgstr ""
+msgstr "Indicatif"
 
 #: core/ui/ui_menus.c
 msgid "To"
@@ -1282,7 +1282,7 @@ msgstr "(sans nom)"
 
 #: core/ui/ui_menus.c
 msgid "New contact"
-msgstr ""
+msgstr "Nouveau contact"
 
 #: core/ui/ui_menus.c
 msgid "{0-9 find  OK talk  # more|0-9  OK talk  # more}"
@@ -1290,7 +1290,7 @@ msgstr "{0-9 cherche OK par. #+|0-9 OK par. #+}"
 
 #: core/ui/ui_menus.c
 msgid "No contact matches"
-msgstr ""
+msgstr "Aucun contact trouvé"
 
 #: core/ui/ui_menus.c
 msgid "No contacts: add them in qdmr"
@@ -1302,7 +1302,7 @@ msgstr "Contacts indispo."
 
 #: core/ui/ui_menus.c
 msgid "New APRS message"
-msgstr ""
+msgstr "Nouveau message APRS"
 
 #: core/ui/ui_menus.c
 msgid "OK open  # reply  Back"
@@ -1574,7 +1574,7 @@ msgstr "{Ret eff  # mode  OK|Ret eff  # mode  OK}"
 
 #: core/ui/ui_menus.c
 msgid "{Back delete  # ABC/123/abc  OK send|Back del  # mode  OK}"
-msgstr ""
+msgstr "{Retour effacer  # ABC/123/abc  OK envoyer|Retour eff  # mode  OK}"
 
 #: core/ui/ui_menus.c
 msgid "New from current"
@@ -1638,7 +1638,7 @@ msgstr "CTCSS/DCS TX"
 
 #: core/ui/ui_menus.c
 msgid "Tone burst"
-msgstr ""
+msgstr "Tonalité d'appel"
 
 #: core/ui/ui_menus.c
 msgid "Color code"
@@ -2050,11 +2050,11 @@ msgstr "Répéteur SFR"
 
 #: core/ui/ui_menus.c
 msgid "User"
-msgstr ""
+msgstr "Utilisateur"
 
 #: core/ui/ui_menus.c
 msgid "User (ERDM)"
-msgstr ""
+msgstr "Utilisateur (ERDM)"
 
 #: core/ui/ui_menus.c
 msgid "Repeater"
@@ -2110,7 +2110,7 @@ msgstr "Écrit par le CPS"
 
 #: core/ui/ui_menus.c
 msgid "Other firmware's codeplug: ignored"
-msgstr ""
+msgstr "Codeplug d'un autre firmware : ignoré"
 
 #: core/ui/ui_menus.c
 msgid "Zones: "
@@ -2134,11 +2134,11 @@ msgstr "Réseau USB indispo"
 
 #: core/ui/ui_menus.c
 msgid "The VFO has no SFR role. Pick one below."
-msgstr ""
+msgstr "Le VFO n'a pas de rôle SFR. Choisissez-en un ci-dessous."
 
 #: core/ui/ui_menus.c
 msgid "Off here: the role needs DMR and one frequency (no split)."
-msgstr ""
+msgstr "Inactif ici : le rôle demande le DMR et une seule fréquence (sans TX séparée)."
 
 #: core/ui/ui_menus.c
 msgid "This channel has no SFR role. Set Repeater or User in the Codeplug Editor, on a channel with one frequency."
@@ -2198,11 +2198,11 @@ msgstr "Répéteur SFR indispo"
 
 #: core/ui/ui_menus.c
 msgid "Role"
-msgstr ""
+msgstr "Rôle"
 
 #: core/ui/ui_menus.c
 msgid "Inbound slot"
-msgstr ""
+msgstr "TS entrée"
 
 #: core/ui/ui_menus.c
 msgid "Switch USB to serial"
@@ -2218,7 +2218,7 @@ msgstr "Arrêter hotspot"
 
 #: core/ui/ui_menus.c
 msgid "Pick a role first"
-msgstr ""
+msgstr "Choisir un rôle d'abord"
 
 #: core/ui/ui_menus.c
 msgid "No USB network on this radio"
@@ -2290,35 +2290,35 @@ msgstr "OK modif  Retour"
 
 #: core/ui/ui_menus.c
 msgid "ARS server"
-msgstr ""
+msgstr "Serveur ARS"
 
 #: core/ui/ui_menus.c
 msgid "IP gateway"
-msgstr ""
+msgstr "Passerelle IP"
 
 #: core/ui/ui_menus.c
 msgid "Registering"
-msgstr ""
+msgstr "Enregistrement"
 
 #: core/ui/ui_menus.c
 msgid "Registered"
-msgstr ""
+msgstr "Enregistré"
 
 #: core/ui/ui_menus.c
 msgid "Refused"
-msgstr ""
+msgstr "Refusé"
 
 #: core/ui/ui_menus.c
 msgid "No answer"
-msgstr ""
+msgstr "Pas de réponse"
 
 #: core/ui/ui_menus.c
 msgid "ARS: "
-msgstr ""
+msgstr "ARS : "
 
 #: core/ui/ui_menus.c
 msgid "Data Services"
-msgstr ""
+msgstr "Services de données"
 
 #: core/ui/ui_menus.c
 msgid "Freq Trim"
@@ -2354,7 +2354,7 @@ msgstr "Firmware : "
 
 #: core/ui/ui_menus.c
 msgid "Release: "
-msgstr ""
+msgstr "Version : "
 
 #: core/ui/ui_menus.c
 msgid "Build: "
@@ -2370,15 +2370,15 @@ msgstr "Licence : "
 
 #: core/ui/ui_menus.c
 msgid "Maintainers:"
-msgstr ""
+msgstr "Mainteneurs :"
 
 #: core/ui/ui_menus.c
 msgid "Maintainer:"
-msgstr ""
+msgstr "Mainteneur :"
 
 #: core/ui/ui_menus.c
 msgid "Contributors:"
-msgstr ""
+msgstr "Contributeurs :"
 
 #: core/ui/ui_menus.c
 msgid "Spleen font: BSD-2-Clause"
@@ -2390,7 +2390,7 @@ msgstr "Font JetBrains: OFL"
 
 #: core/ui/ui_menus.c
 msgid "Noto Sans CJK SC font: OFL-1.1"
-msgstr ""
+msgstr "Police Noto Sans CJK SC : OFL-1.1"
 
 #: core/ui/ui_menus.c
 msgid "AMBE+2 codec: DVSI (stock)"
@@ -2542,7 +2542,7 @@ msgstr "Aucun plantage."
 
 #: core/ui/ui_menus.c
 msgid "Restarted after a crash. Send the report to "
-msgstr "Crash. Env. rapport"
+msgstr "Crash. Env. rapport à "
 
 #: core/ui/ui_menus.c
 msgid "Report sent"
@@ -2662,19 +2662,19 @@ msgstr "Série"
 
 #: core/ui/ui_menus.c
 msgid "10s/dim"
-msgstr ""
+msgstr "10s/faible"
 
 #: core/ui/ui_menus.c
 msgid "30s/dim"
-msgstr ""
+msgstr "30s/faible"
 
 #: core/ui/ui_menus.c
 msgid "1m/dim"
-msgstr ""
+msgstr "1m/faible"
 
 #: core/ui/ui_menus.c
 msgid "2m/dim"
-msgstr ""
+msgstr "2m/faible"
 
 #: core/ui/ui_menus.c
 msgid "Never"
@@ -2778,7 +2778,7 @@ msgstr "Copier vers VFO"
 
 #: core/ui/ui_menus.c
 msgid "VFO/Channel"
-msgstr ""
+msgstr "VFO/Canal"
 
 #: core/ui/ui_menus.c
 msgid "Call back"
@@ -2786,7 +2786,7 @@ msgstr "Rappeler"
 
 #: core/ui/ui_menus.c
 msgid "TG name / number"
-msgstr ""
+msgstr "Nom / numéro TG"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "Emergency"
@@ -2830,27 +2830,27 @@ msgstr "Tonalité d'autoris."
 
 #: core/ui/ui_menus.c
 msgid "Call end tone"
-msgstr ""
+msgstr "Tonalité fin d'appel"
 
 #: core/ui/ui_menus.c
 msgid "TOT warning tone"
-msgstr ""
+msgstr "Tonalité alerte TOT"
 
 #: core/ui/ui_menus.c
 msgid "Battery tone"
-msgstr ""
+msgstr "Tonalité batterie"
 
 #: core/ui/ui_menus.c
 msgid "TX denied tone"
-msgstr ""
+msgstr "Tonalité TX refusée"
 
 #: core/ui/ui_menus.c
 msgid "Scan stop tone"
-msgstr ""
+msgstr "Tonalité fin balayage"
 
 #: core/ui/ui_menus.c
 msgid "Emergency tone"
-msgstr ""
+msgstr "Tonalité urgence"
 
 #: core/ui/ui_menus.c
 msgid "Voice prompts"
@@ -2970,7 +2970,7 @@ msgstr "PTT si verrouillé"
 
 #: core/ui/ui_menus.c
 msgid "Knob when locked"
-msgstr ""
+msgstr "Bouton si verrouillé"
 
 #: core/ui/ui_menus.c
 msgid "Position format"
@@ -2986,11 +2986,11 @@ msgstr "Répondre req. GPS"
 
 #: core/ui/ui_menus.c
 msgid "Position source"
-msgstr ""
+msgstr "Source position"
 
 #: core/ui/ui_menus.c core/ui/ui_position.c
 msgid "Fixed position"
-msgstr ""
+msgstr "Position fixe"
 
 #: core/ui/ui_menus.c
 msgid "Send in DMR calls"
@@ -3034,7 +3034,7 @@ msgstr "Adresse USB"
 
 #: core/ui/ui_menus.c
 msgid "Data services"
-msgstr ""
+msgstr "Services de données"
 
 #: core/ui/ui_menus.c
 msgid "Auto power off"
@@ -3078,7 +3078,7 @@ msgstr "Journal plantages"
 
 #: core/ui/ui_menus.c
 msgid "RX past bands"
-msgstr ""
+msgstr "RX hors bandes"
 
 #: core/ui/ui_menus.c
 msgid "Freq trim"
@@ -3114,11 +3114,11 @@ msgstr "Connexions"
 
 #: core/ui/ui_menus.c
 msgid "Power saving"
-msgstr ""
+msgstr "Économie d'énergie"
 
 #: core/ui/ui_menus.c
 msgid "Power Saving"
-msgstr ""
+msgstr "Économie d'énergie"
 
 #: core/ui/ui_menus.c
 msgid "Keys"
@@ -3262,7 +3262,7 @@ msgstr "Entrer un numéro..."
 
 #: core/ui/ui_menus.c
 msgid "Select contact..."
-msgstr ""
+msgstr "Choisir un contact..."
 
 #: core/ui/ui_menus.c
 msgid "Talk to"
@@ -3306,31 +3306,31 @@ msgstr "En utilisation"
 
 #: core/ui/ui_menus.c
 msgid "Cancel"
-msgstr ""
+msgstr "Annuler"
 
 #: core/ui/ui_menus.c
 msgid "Start new"
-msgstr ""
+msgstr "Nouveau"
 
 #: core/ui/ui_menus.c
 msgid "Use anyway"
-msgstr ""
+msgstr "Utiliser quand même"
 
 #: core/ui/ui_menus.c
 msgid "New codeplug started"
-msgstr ""
+msgstr "Nouveau codeplug créé"
 
 #: core/ui/ui_menus.c
 msgid "Old codeplug kept: edit again"
-msgstr ""
+msgstr "Ancien codeplug : refaire"
 
 #: core/ui/ui_menus.c
 msgid "Another firmware's codeplug? Start new erases contacts, callsign and DMR ID. Back up first."
-msgstr ""
+msgstr "Codeplug d'un autre firmware ? Nouveau efface contacts, indicatif et ID DMR. Sauvegardez d'abord."
 
 #: core/ui/ui_menus.c
 msgid "Old codeplug"
-msgstr ""
+msgstr "Ancien codeplug"
 
 #: core/ui/ui_position.c
 msgid "Latitude"
@@ -3346,7 +3346,7 @@ msgstr "Max 90 N/S, 180 E/O"
 
 #: core/ui/ui_screens.c
 msgid "IDLE"
-msgstr "VEILLE"
+msgstr "IDLE"
 
 #: core/ui/ui_screens.c
 msgid "NO TX"
@@ -3354,15 +3354,15 @@ msgstr "NO TX"
 
 #: core/ui/ui_screens.c
 msgid "DUAL"
-msgstr "DOUBLE"
+msgstr "DUAL"
 
 #: core/ui/ui_screens.c
 msgid "SCAN"
-msgstr "BALAYAGE"
+msgstr "SCAN"
 
 #: core/ui/ui_screens.c
 msgid "ROAM"
-msgstr "ROAMING"
+msgstr "RMNG"
 
 #: core/ui/ui_screens.c
 msgid "Step "
@@ -3382,19 +3382,19 @@ msgstr "FM Commerciale"
 
 #: core/ui/ui_screens.c
 msgid "Restart to apply"
-msgstr ""
+msgstr "Effet au redémarrage"
 
 #: core/ui/ui_screens.c
 msgid "Set: "
-msgstr ""
+msgstr "Régler : "
 
 #: core/ui/ui_screens.c
 msgid "Turn the radio off and on"
-msgstr ""
+msgstr "Éteindre et rallumer"
 
 #: core/ui/ui_screens.c
 msgid "Settings>Advanced>Hardware"
-msgstr ""
+msgstr "Paramètres>Avancé>Matériel"
 
 #: core/ui/ui_screens.c
 msgid "This channel is RX only"
@@ -3450,7 +3450,7 @@ msgstr "Canal répét.: PTT off"
 
 #: core/ui/ui_screens.c
 msgid "Radio refused to send"
-msgstr ""
+msgstr "Émission refusée"
 
 #: core/ui/ui_screens.c
 msgid "Not allowed here"
@@ -3526,7 +3526,7 @@ msgstr "Modem DMR inactif"
 
 #: core/ui/ui_screens.c
 msgid "Lock"
-msgstr "Verrou"
+msgstr "Verr"
 
 #: core/ui/ui_screens.c
 msgid "Roam?"
@@ -3534,7 +3534,7 @@ msgstr "Roam ?"
 
 #: core/ui/ui_screens.c
 msgid "Roam"
-msgstr "Roaming"
+msgstr "Roam"
 
 #: core/ui/ui_screens.c
 msgid "DMon"
@@ -3562,7 +3562,7 @@ msgstr "EN ATTENTE"
 
 #: core/ui/ui_screens.c
 msgid "ADMITTED"
-msgstr ""
+msgstr "ADMIS"
 
 #: core/ui/ui_screens.c
 msgid "ENDING"
@@ -3630,7 +3630,7 @@ msgstr "Émission impossible"
 
 #: core/ui/ui_screens.c
 msgid "Transmit waits for it"
-msgstr ""
+msgstr "Pas de TX avant"
 
 #: core/ui/ui_screens.c
 msgid "Last activity "
@@ -3746,7 +3746,7 @@ msgstr "OK acquit. Ret cahe"
 
 #: core/ui/ui_screens.c
 msgid "Vol"
-msgstr ""
+msgstr "Vol"
 
 #: core/ui/ui_screens.c
 msgid "Muted"
@@ -3786,7 +3786,7 @@ msgstr "Aucun appel"
 
 #: core/ui/ui_screens.c
 msgid "{Power|Pwr}"
-msgstr ""
+msgstr "{Puiss|Pui}"
 
 #: core/ui/ui_screens.c
 msgid "{Squelch|SQL}"
