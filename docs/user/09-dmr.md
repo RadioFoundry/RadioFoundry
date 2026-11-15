@@ -257,7 +257,8 @@ when it differs from the channel's ("TS2 CC7"). To talk to them, set the channel
   the chips show "DMon". Press it again to turn it off. On an FM channel the same key opens the squelch while you hold it.
 - Or **\***, **5**.
 
-Digital monitor stays on until you turn it off, change the channel or the mode, or press **Back** on Home. While it
+Digital monitor stays on until you turn it off, change the channel or the mode, or press **Back** on Home. A
+[scan](12-scan.md) started with it on keeps it on at every channel. While it
 is on, the reply window lets you answer any call you heard with **PTT**. **PTT** always sends on the channel's
 timeslot and color code, so a call heard on another one doesn't hear the reply. While digital monitor plays a call on
 the other timeslot, the channel counts as busy.
