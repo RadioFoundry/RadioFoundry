@@ -285,7 +285,7 @@ static void test_rx(void)
 	CHECK(eng.running);
 	uint32_t t = 2000000;
 	ts_at(t);
-	CHECK(last_write(4, 0x41) == 0x50);	// receive the next slot
+	CHECK(last_write(4, 0x41) == 0x58);	// receive the next slot, any color code (filter off)
 	drain();
 	CHECK(count_ev(DMR_EV_SLOT_TICK) == 1);
 
@@ -610,7 +610,7 @@ static void test_tx_listen(void)
 		prev_rx = false;
 		if (r41 == 0x80) {
 			bursts_set++;
-		} else if (r41 == 0x50 && bursts_set > 0 && bursts_set < 6) {
+		} else if ((r41 & ~0x08) == 0x50 && bursts_set > 0 && bursts_set < 6) {
 			rx_slots++;
 			prev_rx = true;
 		} else if (r41 == 0x00 && bursts_set > 0 && bursts_set < 6) {
@@ -648,7 +648,7 @@ static void test_tx_empty_slot(void)
 	for (int k = 0; k < 30 && hrc6000_dmr_is_transmitting(&eng); k++) {
 		int r50, r41;
 		tx_tick(t, &r50, &r41);
-		if (n < 15 && (r41 == 0x80 || (r41 == 0x50 && n > 0))) {
+		if (n < 15 && (r41 == 0x80 || ((r41 & ~0x08) == 0x50 && n > 0))) {
 			seq[n++] = r41 == 0x80 ? 'T' : 'r';
 		}
 		drain();
@@ -1087,11 +1087,43 @@ static void test_rx_stall(void)
 	CHECK(eng.st.stalls == 1 && eng.st.tx_stalls == 0 && count_ev(DMR_EV_SYNC_LOST) == 1);
 }
 
+// A chip that deframes any color code (the HR_C6000): a new code is only noted, the call goes on unbroken
+static void test_cc_any_rx(void)
+{
+	fresh_engine();
+	uint32_t t = 9400000;
+	uint32_t restarts = eng.st.rx_restarts;
+	for (int k = 0; k < 12; k++) {	// CC 2, then CC 7: past both the follow and the old hold counts
+		ts_at(t += 30000);
+		CHECK((last_write(4, 0x41) & 0x08) != 0);
+		report_at(t + 4000, 0x32, k < 9 ? 0x20 : 0x70, 0x00);
+	}
+	ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == -1 && eng.st.rx_restarts == restarts);
+	CHECK(eng.cc_cur == 7 && !eng.cc_held);
+	// Our next transmission uses the code last heard
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x70);
+	hrc6000_dmr_tx_abort(&eng);
+	// A fixed filter: the chip deframes only that code again
+	hrc6000_dmr_set_cc_filter(&eng, 5);
+	for (int k = 0; k < 4; k++)
+		ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x50 && last_write(4, 0x41) == 0x50);
+}
+
+// A chip that deframes only the code in 0x1F (the HR_C5000): follow it by rewriting 0x1F (modem-hrc6000.md 5.4)
 static void test_cc_follow(void)
 {
 	fresh_engine();
+	hrc_chip_t c5 = *dev.chip;
+	c5.cc_any_rx = false;
+	const hrc_chip_t *c6 = dev.chip;
+	dev.chip = &c5;
 	uint32_t t = 9500000;
 	ts_at(t);
+	CHECK(last_write(4, 0x41) == 0x50);
 	report_at(t + 4000, 0x32, 0x20, 0x00);	// CC 2 heard twice within 200 ms
 	t += 30000;
 	ts_at(t);
@@ -1131,6 +1163,7 @@ static void test_cc_follow(void)
 		report_at(t + 4000, 0x32, 0x20, 0x00);
 	}
 	CHECK(last_write(4, 0x1F) == -1);
+	dev.chip = c6;
 }
 
 // Bench 2026-10-09: each voice burst was reported twice, in step, at two consecutive ticks (V twice the bursts sent)
@@ -1388,6 +1421,7 @@ int main(void)
 	test_tc_locked_one_in_two();
 	test_tx_rejected_and_stall();
 	test_rx_stall();
+	test_cc_any_rx();
 	test_cc_follow();
 	test_rx_repeat_report();
 	test_idle_restart_once();
