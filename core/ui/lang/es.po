@@ -1313,6 +1313,10 @@ msgid "No messages yet"
 msgstr "Sin mensajes aún"
 
 #: core/ui/ui_menus.c
+msgid "Full message"
+msgstr "Mensaje completo"
+
+#: core/ui/ui_menus.c
 msgid "Reply \"OK\""
 msgstr "Responder \"OK\""
 

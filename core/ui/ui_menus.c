@@ -13,6 +13,7 @@
 #include "font.h"
 #include "fmt.h"
 #include "codeplug/codeplug.h"
+#include "dmr/dmrDataService.h"
 #include "config.h"
 #include "hal_time.h"
 #include "radio/tones.h"
@@ -662,9 +663,29 @@ static const ui_scr_def_t contacts_screen = {
 };
 #endif
 
+// A page of text (About, a message): Up / Down and the knob scroll a line (the knob's forward = down, as in lists),
+// up to max (ui_draw_text_page's answer); BACK leaves
+static bool text_page_key(const input_event_t *ev, uint16_t *first, uint16_t max)
+{
+	int dir = ev->action == ACT_NAV_UP ? -1 : ev->action == ACT_NAV_DOWN ? 1 :
+		ev->action == ACT_ENC_STEP ? (ev->value > 0 ? 1 : -1) : 0;
+	if (dir == 0 || (ev->gesture != GESTURE_PRESS && ev->gesture != GESTURE_REPEAT && ev->gesture != GESTURE_LONG &&
+			ev->action != ACT_ENC_STEP))
+		return false;
+	int n = ev->action == ACT_ENC_STEP ? (ev->value < 0 ? -ev->value : ev->value) : 1;
+	int f = *first + dir * n;
+	*first = (uint16_t)(f < 0 ? 0 : f > max ? max : f);
+	ui_dirty();
+	return true;
+}
+
 // ======================= Messages =======================
 
 #define MSG_APRS_ARG	0x8000u
+#define MSG_LONG_ARG	0x4000u	// the message screen shortens the text: Full message is the first row (set on entry)
+#define MSG_INDEX(arg)	((uint16_t)((arg) & ~(MSG_APRS_ARG | MSG_LONG_ARG)))
+_Static_assert(DMR_DATA_INBOX_SIZE <= MSG_LONG_ARG && APRS_MESSAGES <= MSG_LONG_ARG,
+	       "an inbox index must stay under the arg's flag bits");
 
 static bool aprs_new_available(void)
 {
@@ -803,12 +824,24 @@ static const ui_scr_def_t messages_screen = {
 	.count = msgs_count, .item = msgs_item, .select = msgs_select, .context = msgs_context,
 };
 
-// One message: the text, then canned replies first, call, delete
+// One message: the text, then canned replies first, call, delete. A text the screen shortens gets a Full message row
+// first, which shows all of it on a page of its own
 
-enum { MV_REPLY_OK, MV_REPLY_WAY, MV_CALL, MV_DELETE, MV_COUNT };
+enum { MV_READ, MV_REPLY_OK, MV_REPLY_WAY, MV_CALL, MV_DELETE, MV_COUNT };
 
 static bool message_aprs(void) { return (ui_frame()->arg & MSG_APRS_ARG) != 0; }
-static uint8_t message_aprs_index(void) { return (uint8_t)(ui_frame()->arg & ~MSG_APRS_ARG); }
+static uint16_t message_index(void) { return MSG_INDEX(ui_frame()->arg); }
+static uint8_t message_aprs_index(void) { return (uint8_t)message_index(); }
+
+static const char *msg_title(void);
+static const char *msg_body(void);
+
+// The action of row i. Whether the Full message row is there is decided once, on entry, and kept in the frame's arg:
+// decided at each draw, a row would appear or go when "9m ago" became "10m ago", and OK on Call could land on Delete
+static uint8_t msg_action(uint16_t i)
+{
+	return (uint8_t)(i + ((ui_frame()->arg & MSG_LONG_ARG) ? MV_READ : MV_REPLY_OK));
+}
 
 static void msg_enter(void)
 {
@@ -816,28 +849,43 @@ static void msg_enter(void)
 		aprs_msg_t m;
 		(void)ui_svc_aprs_msg(message_aprs_index(), &m, true);
 	} else {
-		ui_svc_msg_read(ui_frame()->arg);
+		ui_svc_msg_read(message_index());
 	}
+	ui_list_t l;
+	memset(&l, 0, sizeof l);
+	l.prefix = TR("Message");
+	l.name = msg_title();
+	l.body = msg_body();
+	l.count = MV_COUNT;
+	if (!ui_list_body_fits(&ui_st, &l))
+		ui_frame()->arg |= MSG_LONG_ARG;
 }
 
-static uint16_t msg_count(void) { return MV_COUNT; }
+static uint16_t msg_count(void) { return (uint16_t)(MV_COUNT - msg_action(0)); }
 
 static void msg_item(uint16_t i, ui_item_t *it)
 {
-	static const char *const names[] = { TRN("Reply \"OK\""), TRN("Reply \"On my way\""), TRN("Call"),
-					     TRN("Delete") };
-	str_copy(it->label, sizeof it->label, tr(names[i]));
-	if (i <= MV_REPLY_WAY && !message_aprs() && !(feats() & UI_FEAT_SMS))
+	static const char *const names[] = { TRN("Full message"), TRN("Reply \"OK\""), TRN("Reply \"On my way\""),
+					     TRN("Call"), TRN("Delete") };
+	uint8_t a = msg_action(i);
+	str_copy(it->label, sizeof it->label, tr(names[a]));
+	if ((a == MV_REPLY_OK || a == MV_REPLY_WAY) && !message_aprs() && !(feats() & UI_FEAT_SMS))
 		it->flags |= UI_ITEM_DIM;
-	if (i == MV_CALL && message_aprs())
+	if (a == MV_CALL && message_aprs())
 		it->flags |= UI_ITEM_DIM;
 }
 
 static void msg_select(uint16_t i, bool hold)
 {
 	(void)hold;
+	uint8_t a = msg_action(i);
+	if (a == MV_READ) {
+		ui_push(SCR_MESSAGE_READ, ui_frame()->arg);
+		return;
+	}
+	i = a;
 	if (!message_aprs())
-		msg_target_of(ui_frame()->arg, &ui_target);
+		msg_target_of(message_index(), &ui_target);
 	switch (i) {
 	case MV_REPLY_OK:
 	case MV_REPLY_WAY:
@@ -858,7 +906,7 @@ static void msg_select(uint16_t i, bool hold)
 		break;
 	case MV_DELETE:
 		if (message_aprs() ? ui_svc_aprs_msg_delete(message_aprs_index()) :
-		    ui_svc_msg_delete(ui_frame()->arg)) {
+		    ui_svc_msg_delete(message_index())) {
 			ui_pop();
 			ui_toast(TR("Message deleted"));
 		} else {
@@ -875,7 +923,7 @@ static bool msg_target(uint16_t i, ui_target_t *t)
 	(void)i;
 	if (message_aprs())
 		return false;
-	msg_target_of(ui_frame()->arg, t);
+	msg_target_of(message_index(), t);
 	return t->id != 0;
 }
 
@@ -888,7 +936,7 @@ static void msg_context(uint16_t i)
 			ui_aprs_compose(m.from);
 	} else {
 		ui_target_t t;
-		msg_target_of(ui_frame()->arg, &t);
+		msg_target_of(message_index(), &t);
 		ui_open_actions(&t);
 	}
 }
@@ -901,7 +949,7 @@ static const char *msg_title(void)
 	uint16_t row = 0, index;
 	bool aprs;
 	while (msg_row(row, &aprs, &index) &&
-	       (aprs != message_aprs() || index != (ui_frame()->arg & ~MSG_APRS_ARG)))
+	       (aprs != message_aprs() || index != message_index()))
 		row++;
 	sb_u32(&b, row + 1u, 1);
 	sb_str(&b, TR(" of "));
@@ -926,7 +974,7 @@ static const char *msg_body(void)
 		return message_buffer;
 	}
 	ui_msg_t m;
-	if (!ui_svc_msg_get(ui_frame()->arg, &m))
+	if (!ui_svc_msg_get(message_index(), &m))
 		return TR("Message deleted");
 	// "From Joe Smith, 2m ago" (the ID where there is no name; # gives the station's actions), then the text
 	sbuf_t b;
@@ -947,6 +995,33 @@ static const ui_scr_def_t message_screen = {
 	.name = "message", .flags = SF_LIST | SF_FIELD, .prefix = TRN("Message"), .hint = TRN("OK choose  # more  Back"),
 	.count = msg_count, .item = msg_item, .select = msg_select, .context = msg_context, .target = msg_target,
 	.title = msg_title, .body = msg_body, .enter = msg_enter,
+};
+
+// The whole text of a message on a page of its own (the message screen's Full message row; arg: the message screen's)
+static uint16_t msg_read_first;	// first line shown
+static uint16_t msg_read_max;	// the largest first line (from the last draw)
+
+static void msg_read_enter(void)
+{
+	msg_read_first = 0;
+}
+
+static void msg_read_draw(void)
+{
+	msg_read_max = (uint16_t)ui_draw_text_page(ui_view(), &ui_st, TR("Message"), msg_body(), &msg_read_first, false);
+}
+
+static bool msg_read_key(const input_event_t *ev)
+{
+	return text_page_key(ev, &msg_read_first, msg_read_max);
+}
+
+// One "row", so PTT calls the sender as on the message screen
+static uint16_t msg_read_count(void) { return 1; }
+
+static const ui_scr_def_t message_read_screen = {
+	.name = "message-read", .flags = SF_FIELD | SF_NO_STRIP, .key = msg_read_key, .draw = msg_read_draw,
+	.enter = msg_read_enter, .count = msg_read_count, .target = msg_target,
 };
 
 // ======================= Recent =======================
@@ -4740,22 +4815,12 @@ static void about_enter(void)
 
 static void about_draw(void)
 {
-	about_max = (uint16_t)ui_draw_text_page(ui_view(), &ui_st, TR("About"), about_text(), &about_first);
+	about_max = (uint16_t)ui_draw_text_page(ui_view(), &ui_st, TR("About"), about_text(), &about_first, true);
 }
 
-// Up / Down and the knob scroll a line (the knob's forward = down, as in lists); BACK leaves
 static bool about_key(const input_event_t *ev)
 {
-	int dir = ev->action == ACT_NAV_UP ? -1 : ev->action == ACT_NAV_DOWN ? 1 :
-		ev->action == ACT_ENC_STEP ? (ev->value > 0 ? 1 : -1) : 0;
-	if (dir == 0 || (ev->gesture != GESTURE_PRESS && ev->gesture != GESTURE_REPEAT && ev->gesture != GESTURE_LONG &&
-			ev->action != ACT_ENC_STEP))
-		return false;
-	int n = ev->action == ACT_ENC_STEP ? (ev->value < 0 ? -ev->value : ev->value) : 1;
-	int f = about_first + dir * n;
-	about_first = (uint16_t)(f < 0 ? 0 : f > about_max ? about_max : f);
-	ui_dirty();
-	return true;
+	return text_page_key(ev, &about_first, about_max);
 }
 
 static const ui_scr_def_t about_screen = {
@@ -6634,6 +6699,7 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_HOME] = &home_screen, [SCR_QUICK] = &quick_screen, [SCR_HUB] = &hub_screen,
 	[SCR_FIND] = &ui_find_screen, [SCR_ACTIONS] = &actions_screen, [SCR_CONTACTS] = &contacts_screen,
 	[SCR_MESSAGES] = &messages_screen, [SCR_MESSAGE] = &message_screen, [SCR_COMPOSE] = &compose_screen,
+	[SCR_MESSAGE_READ] = &message_read_screen,
 	[SCR_RECENT] = &recent_screen, [SCR_ZONES] = &channels_screen, [SCR_ZONE] = &zone_screen,
 	[SCR_TOOLS] = &tools_screen, [SCR_SETTINGS] = &settings_screen, [SCR_GROUP] = &group_screen,
 	[SCR_PICKER] = &picker_screen, [SCR_INFO] = &info_screen, [SCR_CONFIRM] = &confirm_screen,
