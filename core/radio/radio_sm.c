@@ -208,8 +208,19 @@ static uint8_t sig_out(const radio_sm_t *sm, sig_event_t ev)
 #endif
 }
 
+// A beep is playing, or its audio is still in the board's buffers (the speaker's, on its way to the modulator on air)
+static inline bool speaker_busy(void)
+{
+#if CONFIG_BEEP
+	const hal_audio_t *a = board.audio;
+	return beep_busy() || (a != NULL && a->spk_pending != NULL && a->spk_pending());
+#else
+	return false;
+#endif
+}
 // An FM start tone on the speaker plays before keying (fm_key): the key waits for it and this much more, the beep's lead
 #define FM_PRE_TAIL_MS		40u
+#define FM_PRE_MAX_MS		600u	// the longest the key waits for the speaker's audio to drain after that
 // Whether the event's tone sounds on the speaker instead of the radio's own: the setting says so, on a channel that
 // allows beeps
 static bool sig_local_on(const radio_sm_t *sm, sig_event_t ev)
@@ -1221,12 +1232,7 @@ static uint8_t hang_s(uint16_t ms, uint8_t dflt)
 
 static bool permit_busy(void)
 {
-#if CONFIG_BEEP
-	const hal_audio_t *a = board.audio;
-	return beep_busy() || (a != NULL && a->spk_pending != NULL && a->spk_pending());
-#else
-	return false;
-#endif
+	return speaker_busy();
 }
 
 // Whether the DMR talk permit sounds on the speaker: the radio's own tone when the setting is the default (and the
@@ -6424,7 +6430,10 @@ static int16_t rssi_held(radio_sm_t *sm, int16_t rssi_dbm)
 void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 {
 #if CONFIG_BEEP && CONFIG_SIG_TONES
-	if (sm->fm_pre_end != 0 && (int32_t)(now_ms - sm->fm_pre_end) >= 0) {
+	// The key waits for the beep and for its audio in the board's buffers (speaker_busy), as the DMR permit hold does:
+	// left there, it reaches the modulator and masks the first steps of the tone on air. At most FM_PRE_MAX_MS more
+	if (sm->fm_pre_end != 0 && (int32_t)(now_ms - sm->fm_pre_end) >= 0 &&
+	    (!speaker_busy() || (int32_t)(now_ms - sm->fm_pre_end) >= (int32_t)FM_PRE_MAX_MS)) {
 		sm->fm_pre_end = 0;
 		if (sm->ptt) {
 			fm_key(sm, now_ms);
