@@ -168,23 +168,26 @@ flashing tools (rfoundry and the web flasher) do this inside the normal install:
 | Step | What happens | If it stops here |
 |---|---|---|
 | 1. Probe | The radio reports a former codec id over the debug link | Nothing written |
-| 2. Read back | READ_MEM reads every window where the descriptor says the codec is; the copy is checked against the profile (stock SHA-256s after taking it back, every rewritten site) | Nothing written |
-| 3. Save | The copy is stored on the user's machine (rfoundry: `<config>/codecs/<board>-<codec id>.bin`; the web flasher: the browser) and never deleted | Nothing written |
-| 4. Plan | A merge from the saved copy, moved to the current layout; else from the stock file; with neither, the install is refused. A copy the web flasher could not store (no IndexedDB, as in a private window) is not used: only the stock file moves the codec there | Nothing written |
-| 5. Write | Bootloader route: the plan's sectors are erased, sector 3 first, then the others are written, sector 3 last. Stub route: sector 3 erased first, the other sectors, sector 3 without its first word, a CRC check, the first word | The bootloader starts (sector 3 blank or the image incomplete), or the new application starts with no valid descriptor and runs FM only |
+| 2. Read back | READ_MEM reads every window where the descriptor says the codec is; the copy is checked against the profile (stock SHA-256s after taking it back, every rewritten site). Read on every install that moves, even with a copy saved before | Nothing written |
+| 3. Save | The copy is stored on the user's machine, one per radio by its chip UID (INFO_CHIP), and never deleted. rfoundry: `<config>/codecs/<board>-<codec id>-<uid>.bin`, read again after saving; the web flasher: the browser's IndexedDB | Nothing written |
+| 4. Plan | A merge from the copy, moved to the current layout; else from the stock file (or the codec merged into the image); with none, or with keep asked for, the install is refused. Where the radio can't be read, only a copy saved from the same radio (same UID) is used. A copy the web flasher could not store (no IndexedDB, as in a private window), or one rfoundry could not read back from disk, is not used: only the stock file moves the codec then. All of this happens before the radio is handed to the stub or the bootloader | Nothing written |
+| 5. Write | Bootloader route: the plan's sectors are erased, sector 3 first, then the others are written, sector 3 last (only for a move: other installs keep the board's sector order). Stub route: sector 3 erased first, the other sectors, sector 3 without its first word, a CRC check, the first word | The bootloader starts (sector 3 blank or the image incomplete), or the new application starts with no valid descriptor and runs FM only |
 | 6. Check | The radio reports the current codec id | |
 
 Both routes move the codec; where the radio offers the stub, the tools take that route (rfoundry `--route stub`, the
 web flasher's loader route), with the same sources: the saved copy, else the stock file.
 
 Resume rule: after any stop the radio is in its bootloader or runs the new application without voice. The same
-install, run again, finds no codec to keep (no probe, or no codec reported) and merges from the saved copy, so it
-finishes the move. The bootloader (sectors 0-2) and the stub are never written: every plan is checked against the
+install, run again, finds no codec to keep (no probe, or no codec reported) and merges from the saved copy (a radio in
+its bootloader can't give its UID: the copy saved last), or from the same stock file or merged image, so it finishes
+the move. A stub route that fails after the stub took over restarts the radio: it runs its firmware as before, or, once
+sector 3 was erased, starts in its bootloader, and the tools say which and what finishes it. The bootloader (sectors 0-2) and the stub are never written: every plan is checked against the
 board's protected ranges before the first erase.
 
 A plain image (no codec merged in) written through the stub over flash whose descriptor names a codec window is
 refused before anything is erased (`stub/f4stub.py`, the web flasher's `f4stub.js`): such an install would lose the
-codec without a copy.
+codec without a copy. rfoundry's stub route reads the descriptor over the debug link first and, when it names a window
+in the application's flash, moves the codec as above instead of handing the radio to the stub.
 
 ## Open items
 

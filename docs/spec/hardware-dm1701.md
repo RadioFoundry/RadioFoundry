@@ -1846,8 +1846,8 @@ is well above the "mic muted, no tone" row.
   (TIM8 CH3, 72 MHz carrier, DMA2 stream 2), used by AUDIO_PROBE PIN_TONE / PIN_PWM at about 37,000 MOD writes a second.
 - Release and flashing: application sectors 3-9 (720 KB), codec sectors 10 and 11 (1.4), keep supported, profile
   `dm1701-v0206-csv-s11`. Releases before the move linked read-only data into sector 9 as a second range, profile
-  `dm1701-v0206-csv`. An interrupted update writes sector 3 (the vector table) last, so a cut before it leaves the
-  bootloader in DFU; a later half application may crash but never bricks. Enter the bootloader by hand (PTT and side
+  `dm1701-v0206-csv`. An update erases first, then writes in sector order, sector 3 (the vector table) first, so a cut
+  before it leaves the bootloader in DFU; a later half application may crash but never bricks. Enter the bootloader by hand (PTT and side
   key 1 at power-on) and flash again.
 
 ## Receive past the rated bands

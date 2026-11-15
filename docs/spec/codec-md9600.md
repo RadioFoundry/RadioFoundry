@@ -273,3 +273,5 @@ windows is read.
 ## Only a radio can check
 
 Audio level and quality through the MD-9600 path, timing at 72 MHz, and that the loader accepts the merged sectors.
+Voice TX and RX after the move from the earlier layout through the bootloader route, the loader route and the web
+flasher, including a move stopped halfway and run again.

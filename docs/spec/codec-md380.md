@@ -299,7 +299,8 @@ other access faults.
 * That D002.032's bootloader accepts an image that writes sectors 3-11 in one session, and that nothing else in flash
   (for example the bootloader's own checks) cares about sectors 8-10.
 * Voice TX and RX with every window moved, an update in keep mode that leaves the codec working, and the move from the
-  earlier layout, including one stopped halfway and run again.
+  earlier layout through the bootloader route, the loader route and the web flasher, including one stopped halfway and
+  run again.
 * Calls against the HR_C5000 path with real frames, including the FEC decode results on air.
 
 ## Open items
