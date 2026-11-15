@@ -169,6 +169,11 @@ bool beep_busy(void)
 	return cb_active || LOAD(req_seq) != cb_seq;
 }
 
+bool beep_stream_on(void)
+{
+	return own_stream;
+}
+
 void beep_play(beep_t b, uint8_t level, bool shared)
 {
 	if (b <= BEEP_NONE || (b >= BEEP_COUNT && (!CONFIG_SIG_TONES || b != BEEP_CUSTOM)) || level == 0) {

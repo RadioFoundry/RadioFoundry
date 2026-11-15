@@ -213,7 +213,7 @@ static inline bool speaker_busy(void)
 {
 #if CONFIG_BEEP
 	const hal_audio_t *a = board.audio;
-	return beep_busy() || (a != NULL && a->spk_pending != NULL && a->spk_pending());
+	return beep_busy() || beep_stream_on() || (a != NULL && a->spk_pending != NULL && a->spk_pending());
 #else
 	return false;
 #endif
@@ -6430,8 +6430,9 @@ static int16_t rssi_held(radio_sm_t *sm, int16_t rssi_dbm)
 void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 {
 #if CONFIG_BEEP && CONFIG_SIG_TONES
-	// The key waits for the beep and for its audio in the board's buffers (speaker_busy), as the DMR permit hold does:
-	// left there, it reaches the modulator and masks the first steps of the tone on air. At most FM_PRE_MAX_MS more
+	// The key waits for the beep, for its audio in the board's buffers (speaker_busy) and for the beep's own stream to
+	// stop (80 ms of silence after the pattern): the speaker route switching off after the key would land in the tone
+	// on air and mask its first steps. At most FM_PRE_MAX_MS more
 	if (sm->fm_pre_end != 0 && (int32_t)(now_ms - sm->fm_pre_end) >= 0 &&
 	    (!speaker_busy() || (int32_t)(now_ms - sm->fm_pre_end) >= (int32_t)FM_PRE_MAX_MS)) {
 		sm->fm_pre_end = 0;

@@ -84,6 +84,8 @@ bool beep_warm_on(void);
 bool beep_mix(int16_t *spk);
 // Whether a pattern is still playing (as last seen by the audio side)
 bool beep_busy(void);
+// The beep's own audio stream is still running: after a pattern it holds the speaker route 80 ms more (beep_service stops it)
+bool beep_stream_on(void);
 // The pattern's segments (for tests and docs); count returned
 uint8_t beep_pattern(beep_t b, const beep_seg_t **segs);
 void beep_get_stats(beep_stats_t *out);
