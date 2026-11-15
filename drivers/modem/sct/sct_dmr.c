@@ -1231,6 +1231,7 @@ const hal_dmr_modem_t sct_dmr_modem = {
 	.is_transmitting = m_is_transmitting,
 	.health = m_health,
 	.clears_crc9 = true,	// modem-sct.md 6
+	.cach_ticks = true,	// DMR_SLOT_FOUND, sent for each CACH heard (rx_slot_found)
 };
 
 void sct_dmr_init(const sct_dmr_port_t *port)

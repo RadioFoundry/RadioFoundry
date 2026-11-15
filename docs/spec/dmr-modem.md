@@ -254,7 +254,9 @@ The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3
   `DMR_EV_TX_SLOT_STARTED` before taking a `DMR_EV_TX_DONE` as its own.
 - Where the modem reports the repeater's bursts (received, or heard between ours), only those say it is up; its slot
   numbers don't. They run on from the timing it last had, so a repeater that had dropped counted as up for a key-up
-  0.6 s later, and a second wake-up counted as answered by them.
+  0.6 s later, and a second wake-up counted as answered by them. Not on a modem whose slot ticks are CACHs it heard
+  (`cach_ticks`, the SCT): a repeater's idle outbound gives it no bursts, so its ticks are what keeps the repeater up
+  while a key-up waits for `slot_verified`, and what answers a wake-up to a repeater already up.
 - Our own ID as the source while a key-up lasts is our echo: the repeater replays an over it heard while down once a
   wake-up starts it. It never makes the channel busy.
 - A start through a repeater that never gets a slot (no timing at all, so the modem's own wait never runs out) is cut

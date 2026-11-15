@@ -2113,8 +2113,10 @@ void dmr_call_poll(uint32_t now_ms)
 			// "up", so the start was never woken (issue 524)
 			// Nor where the modem gives the repeater's bursts (receiving, or listening between ours): they say it is
 			// up, its slot numbers don't. The modem keeps those running on the timing it last had, and a repeater
-			// that had dropped counted as up for a key-up 0.6 s later, or as answering a wake-up (issue 538)
-			if (s.cfg.rmo && tick_alt > 3 && !tx_waiting() && !(s.rpt_bursts && (!transmitting() || s.tx_listening))) {
+			// that had dropped counted as up for a key-up 0.6 s later, or as answering a wake-up (issue 538). A modem
+			// whose ticks are CACHs heard (cach_ticks) reports no idle bursts: there they are the repeater's only sign
+			if (s.cfg.rmo && tick_alt > 3 && !tx_waiting() &&
+			    !(s.rpt_bursts && !s.modem->cach_ticks && (!transmitting() || s.tx_listening))) {
 				s.rpt_last_ms = now_ms;
 				s.rpt_seen = true;
 			}

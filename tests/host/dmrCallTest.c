@@ -1020,6 +1020,7 @@ static void test_slot_verified(void)
 
 	c.rmo = true;
 	m.slot_verified = sim_slot_verified;
+	m.cach_ticks = true;	// the modem with slot_verified (SCT): its ticks are CACHs, its idle outbound no bursts
 	modem_under_test = &m;
 	dmr_call_set_wake_listen(on_wake_listen);
 
