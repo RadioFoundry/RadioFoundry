@@ -362,11 +362,11 @@ static void test_am(void)
 	rssi = -60;
 	CHECK(fd6818_am_status(&dev, 0x4B00u | 46u, 222, &rssi, &noise));
 	CHECK(noise == 63 && rssi == -60);
-	CHECK(chip.n == 1 && chip.log[0].reg == FD6818_REG_GAIN && chip.log[0].val == 0x01F);	// 51 dB over: -52 dB
-	// The next reading's RSSI gets the 52 dB the loop took off added back
+	CHECK(chip.n == 1 && chip.log[0].reg == FD6818_REG_GAIN && chip.log[0].val == 0x0BF);
+	// The next reading's RSSI gets the 32 dB the loop took off added back
 	rssi = -92;
 	CHECK(fd6818_am_status(&dev, 70, 150, &rssi, &noise));
-	CHECK(rssi == -40 && noise == 87);
+	CHECK(rssi == -60 && noise == 87);
 	fd6818_set_am(&dev, false);
 
 	// A variant whose tables set 0x13 and 0x4A (the DM-1801 Pro's init: 0x03DF, 0x5430) gets those back, no read
@@ -384,49 +384,67 @@ static void test_am(void)
 	CHECK(chip.protocol_errors == 0);
 }
 
-// The AM gain loop: nothing below the cut, down at once to the target on a strong signal, up one step at a time after
-// the hold. The target (120) and the cut (4 dB over it, 128) keep the demodulator in its clean range: over a reading of
-// about 126 a 90 % modulated carrier is clipped, and from about 148 the modulation is gone (hardware-dm32.md 8.7)
+// The AM gain loop: a reading 1-9 dB over the target steps the gain down one entry, 10 dB or more cuts at once by the
+// excess less 8 dB, 6 dB or more under raises one entry per reading after the hold. A steady station settles just under
+// the target (hardware-dm32.md 8.7: over it the AM demodulator is overdriven)
+static int agc_settle(int full_gain_reading)	// the reading a steady station settles at; 2 counts per dB of gain cut
+{
+	fd6818_agc_t a;
+	fd6818_agc_reset(&a);
+	int r = 0;
+	for (int k = 0; k < 400; k++) {
+		r = full_gain_reading - 2 * fd6818_agc_atten_db(&a);
+		(void)fd6818_agc_step(&a, (uint16_t)(r < 0 ? 0 : r));
+	}
+	return r;
+}
+
 static void test_am_agc(void)
 {
 	fd6818_agc_t a;
 	fd6818_agc_reset(&a);
 	CHECK(fd6818_agc_word(&a) == 0x03FF && fd6818_agc_atten_db(&a) == 0);
-	// Under the cut (127 is 3.5 dB over the target, read as 3): nothing changes; full gain can't rise
-	for (int k = 0; k < 100; k++) {
+	// Boundary: 143 is 0.5 dB over, read as 0: nothing changes; full gain can't rise
+	for (int k = 0; k < 20; k++) {
+		CHECK(!fd6818_agc_step(&a, 143));
 		CHECK(!fd6818_agc_step(&a, 60));
-		CHECK(!fd6818_agc_step(&a, 127));
 	}
 	CHECK(fd6818_agc_word(&a) == 0x03FF);
-	// Boundary: 128 is the cut, 4 dB over: down by 4 dB, to -4 dB (0x3BF)
+	// 144 is 1 dB over: one entry down per reading (-2 dB, then -4 dB)
 	fd6818_agc_reset(&a);
-	CHECK(fd6818_agc_step(&a, 128));
+	CHECK(fd6818_agc_step(&a, 144));
+	CHECK(fd6818_agc_word(&a) == 0x3DF && fd6818_agc_atten_db(&a) == 2);
+	CHECK(fd6818_agc_step(&a, 144));
 	CHECK(fd6818_agc_word(&a) == 0x3BF && fd6818_agc_atten_db(&a) == 4);
-	// 0x67 = 200: 40 dB over the target, the gain goes down by all of it: -40 dB is 0x07E
+	// 0x67 = 222: 40 dB over the target, the gain goes down at once by 32 dB: -32 dB is 0x0BF
 	fd6818_agc_reset(&a);
-	CHECK(fd6818_agc_step(&a, 200));
-	CHECK(fd6818_agc_word(&a) == 0x07E && fd6818_agc_atten_db(&a) == 40);
-	// The reading is averaged with the one before: 200 then 120 is 160, 20 dB over, 20 dB down from -40: the first
-	// entry at or under -60 dB, -61 dB (0x01C)
-	CHECK(fd6818_agc_step(&a, 120));
-	CHECK(fd6818_agc_word(&a) == 0x01C && fd6818_agc_atten_db(&a) == 61);
+	CHECK(fd6818_agc_step(&a, 222));
+	CHECK(fd6818_agc_word(&a) == 0x0BF && fd6818_agc_atten_db(&a) == 32);
+	// The reading is averaged with the one before: 222 then 142 is 182, 20 dB over, 12 dB down from -32: -45 dB (0x05E)
+	CHECK(fd6818_agc_step(&a, 142));
+	CHECK(fd6818_agc_word(&a) == 0x05E && fd6818_agc_atten_db(&a) == 45);
 	// At the target: holds
 	for (int k = 0; k < 50; k++) {
-		CHECK(!fd6818_agc_step(&a, 120));
+		CHECK(!fd6818_agc_step(&a, 142));
 	}
-	// The signal goes: 0x67 = 90 is 15 dB under. The gain waits out the hold (30 readings), then rises one step each
-	// hold and a reading
+	// The signal goes: 0x67 = 100 is 21 dB under. The hold runs out after 30 readings (the first one counts it down),
+	// then the gain rises one entry per reading to full gain
 	int steps = 0, first = -1;
-	for (int k = 0; k < 200; k++) {
-		if (fd6818_agc_step(&a, 90)) {
+	for (int k = 0; k < 60; k++) {
+		if (fd6818_agc_step(&a, 100)) {
 			steps++;
 			if (first < 0) {
 				first = k;
 			}
 		}
 	}
-	CHECK(first == 30);
-	CHECK(steps == 6 && fd6818_agc_atten_db(&a) == 45);
+	CHECK(first == 29);
+	CHECK(steps == 20 && fd6818_agc_atten_db(&a) == 0);
+	// Steady stations settle just under the target (129-143), not over it, from just over to 58 dB over at full gain
+	for (int full = 146; full <= 258; full += 7) {
+		int r = agc_settle(full);
+		CHECK(r >= 129 && r <= 143);
+	}
 	// The top of the table: never above full gain, never below the lowest entry
 	fd6818_agc_reset(&a);
 	for (int k = 0; k < 5; k++) {
@@ -435,7 +453,7 @@ static void test_am_agc(void)
 	CHECK(fd6818_agc_atten_db(&a) == 93 && fd6818_agc_word(&a) == 0x000);
 	// The bits above 8:0 aren't part of the reading
 	fd6818_agc_reset(&a);
-	CHECK(!fd6818_agc_step(&a, 0xFE00u | 120u));
+	CHECK(!fd6818_agc_step(&a, 0xFE00u | 142u));
 }
 
 // The AM squelch scale: noise_sq (0x65 bits 7:0) plus an offset that puts level 1 (opens below 64) at the chip's own

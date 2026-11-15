@@ -1034,35 +1034,25 @@ decides; the factory rows can't be compared with 0x67 as it reads here.
 What RadioFoundry does: `rx_am` in `boards/dm32/radio_dm32.c` is the FM receive path (VHF LNA, speaker source to the
 FD6818, A2) with that set-up: 0x43 = 0x0048, 0x47 = 0x6740, 0x13 = 0x03FF and its gain loop at every status poll, 0x4A
 = 0x5450, each AM tune (`fd6818_set_am`, `fd6818_am_status`). Leaving AM writes 0x13 = 0x037E, 0x47 = 0x0140 and 0x4A as
-it read before. The gain loop keeps the table and the raise rule above but a lower target and a tighter cut (below):
-target 120, and 4 dB or more over it takes the gain down at once to the target. The squelch works on noise_sq plus 17 (`fd6818_am_noise`): level 1 opens under 47, as the chip's own
+it read before. The gain loop works as above (`fd6818_agc_step`). The squelch works on noise_sq plus 17 (`fd6818_am_noise`): level 1 opens under 47, as the chip's own
 squelch does, and each level is 3 dB tighter; the factory rows are not read. The RSSI shown adds the gain the loop took
 off back. The RDA5807M runs through the shared HR_C7000 glue (`platform/hrc7000/bcast_hrc.c`)
 on PTA25 / PTA26 with no enable pin; its audio path turns the amplifier on and leaves the speaker source alone (B4).
 The air band is an RX-only band of 108-136 MHz and the broadcast range 65-108 MHz in `boards/dm32/board.c`.
 
-**Where the AM demodulator runs out of room (#545).** Measured on a DM-32UV (rf A) with the AM set-up above, the loop
-held off and 0x13 set by hand to each table word. The signal: a steady carrier with a 1 kHz tone at 30 % and at 90 %
-modulation, from the SDR bench at a strong level (on a 2 m frequency: a bench build made it AM there, same VHF path).
-The audio: the FD6818's AF output through the HR_C7000 (0x2F = 0) into its FM receive RAM (`modem-hrc7000.md` 8.5),
-read over the debug link (audio probe receive capture). The 1 kHz level and its 2nd harmonic:
+**Where the gain loop settles.** Measured on a DM-32UV (rf A): a steady AM carrier from the SDR bench at four levels
+30 dB apart (on a 2 m frequency, which a bench build received as AM: same set-up and VHF path), 0x67 read over the
+debug link once the loop had settled:
 
-| 0x67 reading | 30 % modulation | 90 % modulation |
+| Signal | 0x67 median (10-90 %) | 0x13 |
 |---|---|---|
-| 77-126 | rises with the gain, 2nd harmonic 2-4 % | rises with the gain, 2nd harmonic under 1.5 % |
-| 133-136 | still clean | 2nd harmonic 14-26 % |
-| 143 | 2nd harmonic 65 % | 52 % |
-| 148 and up | the tone is gone (about 1 % of its clean level); the output stays at the carrier-only noise | 68-95 %, the level falling |
+| weakest | 137 (135-139) | 0x05E |
+| +10 dB | 142 (140-143) | 0x01F |
+| +20 dB | 140 (140-141) | 0x00D |
+| +30 dB | 142 (141-142) | 0x003 |
 
-Over a reading of about 126 the demodulator clips 90 % peaks, and from about 148 it strips the modulation (low-level
-audio, such as most of a voice, disappears first). A gain loop with target 142 that cuts only at 10 dB over, to 8 dB
-over the target, settled a steady station at 148-158, inside that range: on the bench a 30 % tone came out at 4
-against a clean 700, and a synthesized voice on AM was missing. With target 120 and the cut at
-4 dB over, to the target, it holds a steady station at 111-119: 30 / 60 / 90 % gave 362 / 719 / 1075 (1 : 2 : 3), the
-2nd harmonic 1.2-2.5 %. The audio is about 6 dB quieter than at 148. The internal AGC mode (0x7E bit 15) made no
-difference once the reading stayed in range, so it stays as the FM set-up leaves it. On an empty channel the loop
-now takes the gain down on noise alone (0x67 reads up to 158 at full gain); the squelch doesn't use 0x67: noise_sq
-read 66-70 there, shut, as at full gain (64).
+Without the one-entry cuts at 1-9 dB over, the loop settled the same carriers at 148-158 (3-8 dB over the target),
+where #545 reports AM audio distorted.
 
 ---
 

@@ -416,8 +416,9 @@ static const struct {
 };
 #define AGC_TOP		(uint8_t)(sizeof(agc_table) / sizeof(agc_table[0]) - 1u)
 #define AGC_NO_PREV	0xFFFFu
-#define AGC_CUT_FROM	4	// dB over the target that takes the gain down (FD6818_AGC_TARGET + 4 dB is still clean)
-#define AGC_CUT_SPARE	0	// dB of that excess left in: none, the gain goes to the target
+#define AGC_STEP_FROM	1	// dB over the target that takes the gain down one entry
+#define AGC_CUT_FROM	10	// dB over the target that takes the gain down at once
+#define AGC_CUT_SPARE	8	// dB of that excess left in (the one-entry steps take the rest)
 #define AGC_RAISE_BELOW	(-6)	// dB under the target that raises the gain
 
 void fd6818_agc_reset(fd6818_agc_t *a)
@@ -434,21 +435,26 @@ bool fd6818_agc_step(fd6818_agc_t *a, uint16_t r67)
 	a->prev = raw;
 	int32_t db = ((int32_t)avg - (int32_t)FD6818_AGC_TARGET) / 2;	// the reading is in 0.5 dB steps
 	uint8_t idx = a->idx;
+	if (a->hold > 0) {
+		a->hold--;
+	}
 	if (db >= AGC_CUT_FROM) {
 		int32_t want = agc_table[idx].db - (db - AGC_CUT_SPARE);
 		while (idx > 0 && agc_table[idx].db > want) {
 			idx--;
 		}
+	} else if (db >= AGC_STEP_FROM) {
+		if (idx > 0) {
+			idx--;
+		}
 	} else if (db < AGC_RAISE_BELOW && a->hold == 0 && idx < AGC_TOP) {
-		idx++;
+		idx++;	// a raise doesn't restart the hold: after it, one entry per reading while the signal stays low
 	}
 	bool changed = idx != a->idx;
-	a->idx = idx;
-	if (changed || db >= AGC_RAISE_BELOW) {
+	if (idx < a->idx || db >= AGC_RAISE_BELOW) {
 		a->hold = FD6818_AGC_HOLD;
-	} else if (a->hold > 0) {
-		a->hold--;
 	}
+	a->idx = idx;
 	return changed;
 }
 
