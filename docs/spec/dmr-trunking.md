@@ -181,7 +181,7 @@ restarts.
 |---|---|
 | TV, BTV | the radio is the source (its own call); or, unless it is a late-entry grant for a talkgroup call the user left, the talkgroup is in the system's list with the listen flag; or it is an all-call (ALLMSID, ALLMSIDL, ALLMSIDZ) and all-calls are on; or the grant is an emergency and emergencies on any talkgroup are on; or monitor is on |
 | PV | the radio is the source; or the destination is the radio's ID and private calls are on |
-| PD, TD | never yet (data comes later) |
+| PD, TD (and the multi-item 55, 56) | as data calls: PD with the radio as source or target; TD with the radio as source, or to a talkgroup it listens to (section 7.7) |
 
 A gateway address (6.2, Annex A.4) is never followed as a talkgroup. While a request is in progress (section 7) only
 the radio's own call or an emergency takes it off the TSCC. The TSCC repeats a grant while its call lasts,
