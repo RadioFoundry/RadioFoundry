@@ -10,7 +10,13 @@ references are ETSI TS 102 361-1 and -2.
 ## 1. Who we hear
 
 A voice call on our timeslot and color code starts from a voice LC header or by late entry (section 4). It is played
-when it passes the filters, and shown either way:
+when it passes the filters, and shown either way. Digital monitor (hear all, below) also takes calls on any color code
+and either timeslot (`dmr_listen_filter_t.any_cc`, `.both_ts`; the modem gets no color code filter and, through a
+repeater, no slot lock). The first call heard keeps the voice until it ends: bursts on the other slot meanwhile are
+dropped. The view gives the call's color code and slot (`rx_cc`, `rx_ts`) beside the channel's (`cc`, `ts`), which
+PTT always uses. On the HR_C7000 path the driver scans the color codes for one with traffic
+([modem-hrc7000.md 5.3](modem-hrc7000.md#53-while-receiving)), so the start of a short over on a new code can be missed; late entry
+covers the rest:
 
 | Call | Played when |
 |---|---|

@@ -14,7 +14,7 @@ The [Radio reference](23-radios.md) says which radios have DMR verified. DMR voi
 | Talk target | Where **PTT** goes now: a talkgroup, a person, or all call |
 | Listen list | The talkgroups a channel listens to (the codeplug's RX group list) |
 | Recent | Stations heard and calls made, newest first |
-| Digital monitor | Play every talkgroup on this timeslot (promiscuous mode) |
+| Digital monitor | Play every call on this frequency: any talkgroup, timeslot or color code (promiscuous mode) |
 | Timeslot (TS) | One of the two time slots of a DMR channel |
 | Color code (CC) | A number from 0 to 15 that a DMR channel uses, like a tone on FM |
 
@@ -246,14 +246,19 @@ The beep at the end of a call you hear is the call end tone. The channel's **Tal
 
 ## Digital monitor
 
-Digital monitor plays every talkgroup on this frequency, timeslot and color code.
+Digital monitor plays every call on this frequency: any talkgroup, either timeslot, any color code. It plays one
+call at a time, the first it hears, until that call ends. The call screen shows the call's timeslot, and its color code
+when it differs from the channel's ("TS2 CC7"). To talk to them, set the channel to that timeslot and color code
+(**\***, **2** and **\***, **3**).
 
 - Press **Monitor** on a DMR channel (a short press; it acts when you let go). The radio shows "Digital monitor on" and
   the chips show "DMon". Press it again to turn it off. On an FM channel the same key opens the squelch while you hold it.
 - Or **\***, **5**.
 
 Digital monitor stays on until you turn it off, change the channel or the mode, or press **Back** on Home. While it
-is on, the reply window lets you answer any call you heard with **PTT**.
+is on, the reply window lets you answer any call you heard with **PTT**. **PTT** always sends on the channel's
+timeslot and color code, so a call heard on another one doesn't hear the reply. While digital monitor plays a call on
+the other timeslot, the channel counts as busy.
 
 ## Privacy
 

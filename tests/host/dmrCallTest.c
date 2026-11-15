@@ -2167,6 +2167,67 @@ static void test_impolite_over_call(void)
 	run_ms(600);
 }
 
+// Through a repeater, bursts of two talkers interleaved: a on slot ts_a, b (may be NULL) on the other, 30 ms apart
+static void rx_two_slots(const uint8_t a[9], uint8_t cc_a, int8_t ts_a, const uint8_t *b, unsigned *frame)
+{
+	int8_t ts_b = ts_a == 1 ? 2 : 1;
+
+	for (int h = 0; h < 3; h++) {
+		rx_header(a, cc_a, ts_a, DMR_SYNC_BS, false);
+		run_ms(30);
+		if (b)
+			rx_header(b, 1, ts_b, DMR_SYNC_BS, false);
+		run_ms(30);
+	}
+	for (int i = 0; i < 6; i++) {
+		rx_voice((uint8_t)i, cc_a, ts_a, DMR_SYNC_BS, frame, i == 5 ? a : NULL, false);
+		run_ms(30);
+		if (b)
+			rx_voice((uint8_t)i, 1, ts_b, DMR_SYNC_BS, frame, i == 5 ? b : NULL, false);
+		run_ms(30);
+	}
+}
+
+// Digital monitor through a repeater: either slot and any color code, one call at a time; PTT keeps the channel's
+static void test_monitor_both_slots(void)
+{
+	dmr_call_config_t c = base_cfg();
+	dmr_call_stats_t st;
+	uint8_t lc[9], other[9];
+	unsigned frame = 1;
+
+	c.rmo = true;
+	c.listen.hear_all = true;
+	mk_lc(lc, 0, 3100, 3101001);
+	mk_lc(other, 0, 91, 3101002);
+
+	// Hear all alone: the other slot is dropped, the modem keeps to ours
+	setup(&c);
+	CHECK(sim.locked_ts == 1 && sim.cc_filter == 1);
+	rx_two_slots(lc, 1, 2, NULL, &frame);
+	dmr_call_get_stats(&st);
+	CHECK(sink_log.begins == 0 && st.rx_ts_dropped > 0);
+
+	// Both slots and any color code: a call on slot 2, CC 5 plays and is shown as such
+	c.listen.both_ts = c.listen.any_cc = true;
+	setup(&c);
+	CHECK(sim.locked_ts == 0 && sim.cc_filter == -1);
+	rx_two_slots(lc, 5, 2, NULL, &frame);
+	CHECK(sink_log.begins == 1 && V()->state == DMR_CALL_STATE_RX && V()->caller.src == 3101001);
+	CHECK(V()->rx_ts == 2 && V()->rx_cc == 5 && V()->ts == 1 && V()->cc == 1);
+
+	// The first call heard keeps the voice: a talker starting on slot 1 meanwhile doesn't take over
+	setup(&c);
+	rx_two_slots(lc, 1, 2, other, &frame);
+	dmr_call_get_stats(&st);
+	CHECK(sink_log.begins == 1 && V()->caller.src == 3101001 && V()->rx_ts == 2 && st.rx_ts_dropped > 0);
+
+	// Monitor off: back to our slot and color code
+	c.listen.both_ts = c.listen.any_cc = false;
+	dmr_call_configure(&c);
+	CHECK(sim.locked_ts == 1 && sim.cc_filter == 1);
+}
+
 static void test_reconfigure(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -2185,7 +2246,7 @@ static void test_reconfigure(void)
 	dmr_call_configure(&c);
 	CHECK(sim.cc_filter == -1);
 	rx_call(lc, 7, true, 0, 1, false, &frame);
-	CHECK(V()->state == DMR_CALL_STATE_RX && V()->cc == 7);
+	CHECK(V()->state == DMR_CALL_STATE_RX && V()->rx_cc == 7 && V()->cc == 3);	// the channel's stays for PTT
 
 	dmr_call_stop();
 	CHECK(!sim.started);
@@ -3071,6 +3132,7 @@ int main(void)
 	test_emergency_tx();
 	test_impolite_over_call();
 	test_reconfigure();
+	test_monitor_both_slots();
 	test_tx_alias();
 	test_alias_formats();
 	test_pi_header_and_emergency();

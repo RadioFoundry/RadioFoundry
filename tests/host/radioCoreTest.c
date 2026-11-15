@@ -1310,6 +1310,7 @@ static void test_dmr_rx(void)
 	CHECK(!d->hear_all_latch && !sm.view.monitor);
 	req(RREQ_MONITOR, 0);
 	CHECK(d->hear_all && d->hear_all_latch && !sm.view.monitor && !hw.audio);
+	CHECK(sim.cc_filter == -1 && sim.locked_ts == 0);	// any color code, either slot
 	hear_call(true, 3100, 9997777, 2, 1, true);
 	CHECK(d->last.dst == 3100);
 	// Released after its hold function ran: no toggle
@@ -1318,7 +1319,7 @@ static void test_dmr_rx(void)
 	CHECK(d->hear_all_latch);
 	req(RREQ_MONITOR, 1);
 	req(RREQ_MONITOR, 0);
-	CHECK(!d->hear_all && !d->hear_all_latch);
+	CHECK(!d->hear_all && !d->hear_all_latch && sim.cc_filter == 2);
 	// Another color code: ignored
 	hear_call(true, 201, 9991234, 5, 1, false);
 	CHECK(sm.view.state == RS_IDLE);

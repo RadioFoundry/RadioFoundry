@@ -634,8 +634,8 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 		stats.rx_encrypted_calls++;
 	}
 	s.pi_pending = false;
-	if (s.cfg.listen.any_cc)
-		s.view.cc = b->cc;
+	s.view.rx_cc = b->cc;
+	s.view.rx_ts = b->ts;
 
 	s.rx = rx_accept(&l, now) ? RXC_PLAY : RXC_OTHER;
 	s.rx_echo = s.rx == RXC_OTHER && own_echo(&l, now);
@@ -1017,7 +1017,7 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		TR_WHAT('s');
 		return;
 	}
-	bool other_slot = sfr_user() ? false : ts_known && b->ts != s.cfg.ts;
+	bool other_slot = sfr_user() || s.cfg.listen.both_ts ? false : ts_known && b->ts != s.cfg.ts;
 
 	if (!sfr_both() &&
 	    (other_slot || (s.rx != RXC_NONE && b->ts != 0 && s.call_ts != 0 && b->ts != s.call_ts))) {
@@ -1778,6 +1778,12 @@ void dmr_call_set_voice(const dmr_voice_sink_t *sink, const dmr_voice_source_t *
 	s.source = source;
 }
 
+// Through a repeater the modem keeps to our slot, unless the monitor hears both
+static int8_t lock_slot(void)
+{
+	return s.cfg.rmo && !s.cfg.listen.both_ts ? (int8_t)s.cfg.ts : 0;
+}
+
 static void modem_config(dmr_config_t *mc)
 {
 	mc->own_id = s.cfg.own_id;
@@ -1795,13 +1801,14 @@ static void modem_apply(void)
 	modem_config(&mc);
 	s.modem->configure(&mc);
 	s.modem->set_cc_filter(mc.cc);
-	s.modem->rx_lock_slot(s.cfg.rmo ? (int8_t)s.cfg.ts : 0);
+	s.modem->rx_lock_slot(lock_slot());
 }
 
 void dmr_call_configure(const dmr_call_config_t *cfg)
 {
 	bool rf_change = !s.configured || cfg->cc != s.cfg.cc || cfg->ts != s.cfg.ts || cfg->rmo != s.cfg.rmo ||
-			 cfg->listen.any_cc != s.cfg.listen.any_cc || cfg->access != s.cfg.access ||
+			 cfg->listen.any_cc != s.cfg.listen.any_cc ||
+			 cfg->listen.both_ts != s.cfg.listen.both_ts || cfg->access != s.cfg.access ||
 			 cfg->own_id != s.cfg.own_id || cfg->sfr_user != s.cfg.sfr_user || cfg->tx_sync != s.cfg.tx_sync ||
 			 cfg->rx_sync != s.cfg.rx_sync || cfg->sfr_rx != s.cfg.sfr_rx || cfg->cc2 != s.cfg.cc2;
 	bool target_change = !same_target(cfg->talk_target, s.cfg.talk_target);
@@ -1854,7 +1861,7 @@ bool dmr_call_start(void)
 		return false;
 	s.running = true;
 	s.modem->set_cc_filter(mc.cc);
-	s.modem->rx_lock_slot(s.cfg.rmo ? (int8_t)s.cfg.ts : 0);
+	s.modem->rx_lock_slot(lock_slot());
 	s.dirty = true;
 	return true;
 }

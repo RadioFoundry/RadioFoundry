@@ -1159,6 +1159,8 @@ static void dmr_configure(radio_sm_t *sm)
 	cfg.talk_target.private_call = sm->one_shot ? sm->one_shot_private : sm->manual ? sm->manual_private :
 		sm->talk_private;
 	cfg.listen.hear_all = sm->view.monitor || sm->hear_all_latch;
+	// Digital monitor hears everything on the frequency: any color code, either timeslot (dmr-voice.md 1)
+	cfg.listen.any_cc = cfg.listen.both_ts = cfg.listen.hear_all;
 	cfg.listen.groups = sm->listen;
 	cfg.listen.group_count = sm->listen_count;
 	// The channel's TX time-out when it has one, else the radio's
@@ -1600,6 +1602,8 @@ static void dmr_publish(radio_sm_t *sm, uint32_t now_ms)
 	d->codec = sm->codec;
 	d->cc = cv->cc;
 	d->ts = cv->ts;
+	d->rx_cc = cv->rx_cc;
+	d->rx_ts = cv->rx_ts;
 	d->rmo = cv->rmo;
 	d->repeater_up = cv->repeater_up;
 	d->target_id = cv->tx_target.id;
