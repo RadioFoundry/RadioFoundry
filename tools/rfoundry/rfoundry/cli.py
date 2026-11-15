@@ -389,7 +389,18 @@ def get_saved_codec(args, board, probe, move=False):
         finally:
             finish()
         if got:
-            p = codecsave.save(board, got[1], uid=uid)
+            try:
+                p = codecsave.save(board, got[1], uid=uid)
+                kept = codecsave.find(board, uid=uid, strict=True) if former else True
+            except OSError as e:
+                p, kept = None, False
+                warn("the codec copy could not be saved on this computer: %s" % e)
+            if former and (not kept or (kept.prof, kept.parts) != tuple(got)):
+                # a move cut short is finished from this copy: one that isn't on disk, intact, can't be used for it
+                raise UsageError("the codec was read back from the radio, but the copy could not be saved on this "
+                                 "computer (%s), and a move that stops halfway is finished from it: nothing was "
+                                 "written. Free the folder, or flash with --stock FILE (%s)"
+                                 % (p or codecsave.path(board, uid=uid), stock_hint(board)))
             say("codec    read back from the radio (debug link) and checked; saved in %s" % p)
             return Saved(got[0], got[1], "radio", p, uid)
         if former:

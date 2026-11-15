@@ -2150,7 +2150,8 @@ class CodecRelayout(unittest.TestCase):
             got = ("prof", [])
             old = codecsave.Copy("old.bin", None, "old prof", [])
             for have in (None, old):
-                with mock.patch.object(codecsave, "find", return_value=have), \
+                back = codecsave.Copy("x", "00aa11bb22cc33dd44ee55ff", *got)	# the copy as saved, read again
+                with mock.patch.object(codecsave, "find", side_effect=[have, back]), \
                         mock.patch.object(codecsave, "from_radio", return_value=got) as rd, \
                         mock.patch.object(codecsave, "save", return_value="x") as sv, \
                         contextlib.redirect_stdout(io.StringIO()):
@@ -2159,6 +2160,20 @@ class CodecRelayout(unittest.TestCase):
                     self.assertEqual((rd.call_count, sv.call_count), (1, 1))
                     self.assertEqual(rd.call_args.kwargs["uid"], "00aa11bb22cc33dd44ee55ff")	# only that radio is read
                     self.assertEqual(sv.call_args.kwargs["uid"], "00aa11bb22cc33dd44ee55ff")
+            # the copy didn't land on disk intact: a move cut short couldn't be finished from it, so nothing is written
+            for fail in ([None, None], [None, codecsave.Copy("x", None, "prof", [(1, b"x")])]):
+                with mock.patch.object(codecsave, "find", side_effect=fail), \
+                        mock.patch.object(codecsave, "from_radio", return_value=got), \
+                        mock.patch.object(codecsave, "save", return_value="x"), contextlib.redirect_stdout(io.StringIO()):
+                    with self.assertRaises(cli.UsageError) as e:
+                        cli.get_saved_codec(args, b, {"codec": b.codec_former[0], "uid": "00aa11bb22cc33dd44ee55ff"})
+                    self.assertIn("nothing was written", str(e.exception))
+            with mock.patch.object(codecsave, "find", return_value=None), \
+                    mock.patch.object(codecsave, "from_radio", return_value=got), \
+                    mock.patch.object(codecsave, "save", side_effect=OSError("disk full")), \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(cli.UsageError):
+                    cli.get_saved_codec(args, b, {"codec": b.codec_former[0], "uid": "00aa11bb22cc33dd44ee55ff"})
             # a probe remembered from before the radio went into its bootloader: the copy saved from it
             with mock.patch.object(codecsave, "find", return_value=old) as fd, \
                     mock.patch.object(codecsave, "from_radio") as rd, contextlib.redirect_stdout(io.StringIO()) as out:
