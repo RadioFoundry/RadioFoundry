@@ -74,6 +74,12 @@ static void testInterleaveCoverage(void)
 
 static void testGolay(void)
 {
+	// ETSI TS 102 361-1 V2.6.1 table B.11: shortening the extended code to eight data bits must retain this parity order.
+	static const uint16_t parity[8] = { 0x3DA, 0xD99, 0x6CD, 0x367, 0xDC6, 0xA97, 0x93E, 0x8EB };
+	for (unsigned i = 0; i < 8; i++) {
+		uint16_t data = (uint16_t)(1u << (7 - i));
+		CHECK(ambeGolay24Encode(data) == ((uint32_t)data << 12 | parity[i]), "ETSI Golay basis row %u", i);
+	}
 	// The generator: x^11 mod g = g without its top term
 	CHECK(ambeGolay23Encode(1) == ((1u << 11) | 0x475u), "Golay(23,12) of 1 is 0x%X", ambeGolay23Encode(1));
 	int minw23 = 99, minw24 = 99;

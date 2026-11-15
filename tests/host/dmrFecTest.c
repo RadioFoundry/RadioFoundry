@@ -29,10 +29,17 @@ static int popcount(uint32_t v)
 static void testHamming(void)
 {
 	int bad = 0;
+	// ETSI TS 102 361-1 V2.6.1 table B.16, parity suffix for each information bit, first transmitted bit first.
+	static const uint8_t parity[11] = { 0x13, 0x1A, 0x1F, 0x1C, 0x0E, 0x15, 0x0B, 0x16, 0x19, 0x0D, 0x07 };
 
 	for (uint16_t d = 0; d < 2048; d++)
 	{
 		uint16_t cw = dmrFecHamming15113Encode(d), t = cw;
+		uint16_t expected = (uint16_t)(d << 5);
+		for (unsigned i = 0; i < 11; i++)
+			if (d & (1u << (10 - i)))
+				expected ^= parity[i];
+		CHECK(((uint32_t)cw << 1 | (popcount(cw) & 1)) == expected, "ETSI extended Hamming word %03X", d);
 
 		bad += !dmrFecHamming15113Correct(&t) || (t != cw) || ((cw >> 4) != d);
 		for (int b = 0; b < 15; b++)
