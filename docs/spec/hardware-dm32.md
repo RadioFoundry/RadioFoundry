@@ -1005,7 +1005,7 @@ audio fed into the C7000's audio path. Bring-up check 11 decides between them.
 
 #### The radio's own air band set-up
 
-From the radio's firmware (code read, not measured; the gain loop, 0x48 and the band edge re-read 2026-11-14):
+From the radio's firmware (code read, not measured):
 
 | Item | Value |
 |---|---|
@@ -1055,10 +1055,9 @@ read over the debug link (audio probe receive capture). The 1 kHz level and its 
 | 148 and up | the tone is gone (about 1 % of its clean level); the output stays at the carrier-only noise | 68-95 %, the level falling |
 
 Over a reading of about 126 the demodulator clips 90 % peaks, and from about 148 it strips the modulation (low-level
-audio, such as most of a voice, disappears first). RadioFoundry's loop had the cut at 10 dB over only (to 8 dB over the target), without
-the radio's one-step cuts at 1-9 dB over, and stepped once per status poll, not every 10 ms: it settled a steady
-station at 148-158, inside that range, where the radio's own holds 129-143: on the bench a
-30 % tone came out at 4 against a clean 700, and a synthetic ATIS voice was missing. With target 120 and the cut at
+audio, such as most of a voice, disappears first). A gain loop with target 142 that cuts only at 10 dB over, to 8 dB
+over the target, settled a steady station at 148-158, inside that range: on the bench a 30 % tone came out at 4
+against a clean 700, and a synthesized voice on AM was missing. With target 120 and the cut at
 4 dB over, to the target, it holds a steady station at 111-119: 30 / 60 / 90 % gave 362 / 719 / 1075 (1 : 2 : 3), the
 2nd harmonic 1.2-2.5 %. The audio is about 6 dB quieter than at 148. The internal AGC mode (0x7E bit 15) made no
 difference once the reading stayed in range, so it stays as the FM set-up leaves it. On an empty channel the loop
