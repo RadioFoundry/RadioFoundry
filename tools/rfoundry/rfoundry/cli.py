@@ -1212,6 +1212,14 @@ def verify_after(args, board, man, d, wait_s=25, learned=None):
         if hint:
             say("note     " + hint)
         return 0
+    pb = boards.from_debuglink_name(p.get("board") or "")
+    if pb is None or pb.id != board.id:
+        # another radio running RadioFoundry answered first (no --port): nothing of it is remembered or changed
+        say("the %s answered on %s, not the %s: not checked. Run 'rfoundry probe --port PORT' with the %s's port to "
+            "check it" % (p.get("board"), p["port"], board.name, board.name))
+        if hint:
+            say("note     " + hint)
+        return 0
     state.remember_probe(p)
     store_learned(p["port"], board, learned)
     hwopt_prompt(p["port"], board)
@@ -1244,6 +1252,9 @@ def cmd_probe(args):
             "%d min)" % (state.PROBE_MAX_AGE_S // 60))
     elif p.get("codec") is None:
         say("note     this RadioFoundry build doesn't report its codec; flash with --stock once to be sure")
+    elif b and p.get("codec") in b.codec_former:
+        say("ok       the codec is where earlier releases kept it: 'rfoundry flash' reads it back from the radio and "
+            "moves it")
     else:
         say("note     no codec to keep; flash with --stock FILE (%s)" % stock_hint(b))
     return 0

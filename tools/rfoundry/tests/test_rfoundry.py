@@ -2455,5 +2455,49 @@ class FlashLog(unittest.TestCase):
         self.assertEqual(self.sent, [])
 
 
+class AfterFlash(unittest.TestCase):
+    """What rfoundry says about the radio after a flash and in probe, with more than one radio on USB"""
+
+    def run_verify(self, answer):
+        out = io.StringIO()
+        args = mock.Mock(port=None)
+        d = cli.Decision(plan.MERGE, "test")
+        with mock.patch.object(debuglink, "find_ports", return_value=["/dev/x"]), \
+                mock.patch.object(debuglink, "probe", return_value=answer), \
+                mock.patch.object(cli, "hwopt_prompt") as hw, mock.patch.object(state, "remember_probe") as rem, \
+                mock.patch.object(cli.time, "sleep"), contextlib.redirect_stdout(out):
+            rc = cli.verify_after(args, boards.get("md380"), {}, d)
+        return rc, out.getvalue(), hw, rem
+
+    def test_another_radio_answering_is_not_checked(self):
+        """An MD-9600 on the same computer answered after an MD-380 was flashed through its bootloader: rfoundry
+        reported the MD-9600's codec as the MD-380's, failed, and remembered and prompted on the wrong radio"""
+        rc, out, hw, rem = self.run_verify({"board": "MD-9600", "port": "/dev/ttyACM1", "git": "abc", "codec": "md9600-s11"})
+        self.assertEqual(rc, 0)
+        self.assertIn("not checked", out)
+        self.assertNotIn("no usable codec", out)
+        hw.assert_not_called()
+        rem.assert_not_called()
+
+    def test_the_flashed_radio_is_checked(self):
+        b = boards.get("md380")
+        rc, out, hw, rem = self.run_verify({"board": "MD-380", "port": "/dev/ttyACM0", "git": "abc", "codec": b.codec.id})
+        self.assertEqual(rc, 0)
+        self.assertIn("DMR voice is ready", out)
+        hw.assert_called_once()
+        rem.assert_called_once()
+
+    def test_probe_of_a_former_layout_says_it_moves(self):
+        b = boards.get("md380")
+        self.assertTrue(b.codec_former)
+        out = io.StringIO()
+        p = {"board": "MD-380", "port": "/dev/ttyACM0", "git": "abc", "codec": b.codec_former[0]}
+        with mock.patch.object(debuglink, "probe", return_value=p), mock.patch.object(state, "remember_probe"), \
+                contextlib.redirect_stdout(out):
+            cli.cmd_probe(mock.Mock(port=None))
+        self.assertIn("moves it", out.getvalue())
+        self.assertNotIn("no codec to keep", out.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
