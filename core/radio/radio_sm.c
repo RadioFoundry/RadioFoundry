@@ -4965,6 +4965,7 @@ static void clamp_settings(radio_settings_t *s)
 	for (int i = 0; i < SIG_EV_COUNT; i++) {
 		s->sig_dmr[i] = CONFIG_SIG_TONES ? sig_out_clean(s->sig_dmr[i], (sig_event_t)i) : SIG_OUT_DEFAULT;
 		s->sig_fm[i] = CONFIG_SIG_TONES ? sig_out_clean(s->sig_fm[i], (sig_event_t)i) : SIG_OUT_DEFAULT;
+#if CONFIG_SIG_TONES
 		for (unsigned k = 0; k < SIG_STEPS; k++) {
 			if (s->sig_hz[i][k] > SIG_HZ_MAX) {
 				s->sig_hz[i][k] = SIG_HZ_MAX;
@@ -4974,6 +4975,7 @@ static void clamp_settings(radio_settings_t *s)
 				s->sig_ms[i][k] = SIG_MAX_MS / SIG_MS_UNIT;
 			}
 		}
+#endif
 	}
 	if (s->beep_level > 100) {
 		s->beep_level = 100;
@@ -5122,10 +5124,12 @@ static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
 	st->rs_dual_delay = (uint8_t)(s->dual_delay_ms / 100u + 1u);
 	st->rs_bcast_step = (uint8_t)(s->bcast_step + 1u);
 	settings_set_tones_off(st, s->tones_off);
+#if CONFIG_SIG_TONES
 	for (int i = 0; i < SIG_EV_COUNT; i++) {
 		st->sig_dmr[i] = s->sig_dmr[i];
 		st->sig_fm[i] = s->sig_fm[i];
 	}
+#endif
 	st->rs_stored = 1;
 	st->roam_rssi_dbm = s->roam_rssi_dbm;
 	st->roam_hyst_db = s->roam_hyst_db;

@@ -52,8 +52,10 @@
 #if CONFIG_DEBUGLINK
 // words: MMDVM frames on the stack; debug link replies format diagnostics lines. The deepest chain (the web view's
 // debug link section > the DMR data view, with the air queue inlined into the task) reads 2568 bytes with the macOS
-// toolchain; the CI's reads up to 16 deeper, and stack-check.md's overhead and margin come on top, 4 to spare
-#define HOSTLINK_TASK_STACK	731
+// toolchain; the CI's reads up to 16 deeper, and stack-check.md's overhead and margin come on top. Four words more
+// than it was (4 to spare then): radio_settings_t holds the signaling tones' two outputs and steps, and the chain
+// copies it
+#define HOSTLINK_TASK_STACK	735
 #else
 #define HOSTLINK_TASK_STACK	512	// words: MMDVM frames are built on the stack
 #endif
