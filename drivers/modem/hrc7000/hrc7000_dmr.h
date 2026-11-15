@@ -85,7 +85,6 @@ typedef struct {
 	uint32_t rx_restarts;
 	uint32_t rx_lost, rx_stale;	// receiver restarts: reception over, stale slot timing
 	uint32_t rx_holds;	// direct transmissions ended without the restart, held for an answer (5.2a)
-	uint32_t cc_scan_steps;
 	uint32_t ev_overflow;
 	uint32_t tx_bursts, tx_underrun, tx_rejected, tx_done;
 	uint32_t tx_empty;	// our slots left empty on request (DMR_BURST_EMPTY): received like the other slot
@@ -129,7 +128,7 @@ typedef struct {
 	void (*fm_rx)(void);
 	bool lcss;		// LCSS on voice bursts B-E (user guide); false = 0 on every burst like the 2026 builds
 	dmr_config_t cfg;
-	int8_t cc_filter;	// -1 any (scan)
+	int8_t cc_filter;	// -1 any (LOCAL_CC cc_opt 1)
 	int8_t lock_ts;
 
 	uint32_t tick;
@@ -160,7 +159,6 @@ typedef struct {
 	uint32_t tc_tick;
 	uint8_t tc_est;		// TC estimate of the slot now starting (toggled every tick)
 	uint8_t cc_cur;		// receive code; LOCAL_CC uses cfg.cc during TX
-	uint32_t cc_tick;	// last CC change or burst heard (scan)
 	bool emb_pending;	// late entry: an embedded LC waits for the next voice burst
 	uint8_t emb_rx[9];
 	// Transmit

@@ -16,9 +16,7 @@ repeater, no slot lock). The first call heard keeps the voice until it ends: bur
 dropped. Turning it on or off changes only the modem's filters: the call being heard and the reply window stay, and
 a call heard as not ours plays at once. The view gives the call's color code and slot (`rx_cc`, `rx_ts`; the slot 0
 when unknown, the code from the first burst that carries one, never burst A) beside the channel's (`cc`, `ts`), which
-PTT always uses. On the HR_C7000 path the driver scans the color codes for one with traffic
-([modem-hrc7000.md 5.3](modem-hrc7000.md#53-while-receiving)), so the start of a short over on a new code can be missed; late entry
-covers the rest:
+PTT always uses.
 
 | Call | Played when |
 |---|---|
