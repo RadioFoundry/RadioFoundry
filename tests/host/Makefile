@@ -110,6 +110,11 @@ TESTS   += hrc6000AirTest
 hrc6000AirTest: hrc6000AirTest.c fuzz.h $(HRCAIR) $(ROOT)/drivers/modem/hrc_common/hrc6000_air.h $(ROOT)/hal/hal_air.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_AIR=1 -o $@ hrc6000AirTest.c $(HRCAIR)
 
+# The P25 engine and the air interface session under it: two radios on made-up providers
+TESTS   += p25EngineTest
+p25EngineTest: p25EngineTest.c $(CORE)/p25/p25_engine.c $(CORE)/p25/p25_engine.h $(CORE)/air/air_session.c $(CORE)/air/air_session.h $(CORE)/air/air_framer.c $(P25) $(FEC)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ p25EngineTest.c $(CORE)/p25/p25_engine.c $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(P25) $(FEC)
+
 # The soft modem's receiver on a modeled tap, alone and under the framer and the P25 receive hooks
 TESTS   += airSoftmodemTest
 airSoftmodemTest: airSoftmodemTest.c $(CORE)/air/air_softmodem.c $(CORE)/air/air_softmodem.h $(CORE)/air/air_framer.c $(P25) $(FEC) $(ROOT)/hal/hal_baseband.h
@@ -173,6 +178,7 @@ run: $(TESTS)
 	./airFramerTest
 	./p25Test
 	./airSoftmodemTest | tail -1
+	./p25EngineTest
 	./hrc6000AirTest
 	./radioKeysTest
 	./zoneShareTest
