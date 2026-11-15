@@ -2765,7 +2765,7 @@ msgid "Next zone"
 msgstr "Zona succ."
 
 #: core/ui/ui_menus.c
-msgid "Previous zone"
+msgid "Prev zone"
 msgstr "Zona prec."
 
 #: core/ui/ui_menus.c

@@ -5567,7 +5567,7 @@ static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITO
 #endif
 };
 static const char *const n_keyfn_press[] = { TRN("Default"), TRN("Nothing"), TRN("Monitor"), TRN("Talk target"),
-					     TRN("Power level"), TRN("Next zone"), TRN("Previous zone"), TRN("Scan"),
+					     TRN("Power level"), TRN("Next zone"), TRN("Prev zone"), TRN("Scan"),
 					     TRN("Key lock"), TRN("Home zone"),
 #if CONFIG_FM_TX_TONES
 					     TRN("Tone burst"),
@@ -5599,7 +5599,7 @@ static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TA
 #endif
 };
 static const char *const n_keyfn_hold[] = { TRN("Default"), TRN("Nothing"), TRN("Talk target"), TRN("Power level"),
-					    TRN("Next zone"), TRN("Previous zone"), TRN("Scan"),
+					    TRN("Next zone"), TRN("Prev zone"), TRN("Scan"),
 #if CONFIG_DMR_EMERGENCY
 					    TRN("Emergency"),
 #endif
@@ -5800,6 +5800,9 @@ static void key_labels(void)
 			sb_init(&b, key_label[2 * r + h], sizeof key_label[0]);
 			if (board.side_key_names != NULL && r < board.side_key_count) {
 				sb_str(&b, board.side_key_names[r]);
+			} else if (board.home_key_names != NULL && r >= board.side_key_count &&
+				   r < board.side_key_count + board.home_key_count) {
+				sb_str(&b, board.home_key_names[r - board.side_key_count]);
 			} else {
 				sb_str(&b, TR("Key "));
 				sb_i32(&b, r + 1);
@@ -5891,7 +5894,8 @@ static bool set_hidden(const set_item_t *s)
 #if CONFIG_KEY_ASSIGN
 	if (s->type != ST_ACTION && s->id >= UI_SET_KEY_FIRST && s->id <= UI_SET_KEY_LAST) {
 		key_labels();
-		return (s->id - UI_SET_KEY_FIRST) / 2 >= board.side_key_count;	// a key this radio doesn't have
+		// a key this radio doesn't have (side keys, then the keys programmable on Home)
+		return (s->id - UI_SET_KEY_FIRST) / 2 >= board.side_key_count + board.home_key_count;
 	}
 #endif
 	if (s->type != ST_ACTION && s->id == UI_SET_VOLUME)
@@ -5979,6 +5983,29 @@ static const set_item_t *set_item_at(uint16_t i)
 	return g < GROUPS ? set_nth((uint8_t)g, i) : NULL;
 }
 
+#if CONFIG_KEY_ASSIGN
+// A home key left at Default (P1, P2: board.home_keys) does on Home what its arrow does there: the zone. Say that
+// instead of "Default". NULL for any other key or value
+static const char *home_key_default(uint8_t id, int32_t v)
+{
+	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
+	if (v != KEYFN_DEFAULT || id < UI_SET_KEY_FIRST || id > UI_SET_KEY_LAST || k / 2u < board.side_key_count ||
+	    k / 2u >= board.side_key_count + board.home_key_count)
+		return NULL;
+	uint8_t bit = board.home_keys[k / 2u - board.side_key_count];
+	for (uint8_t i = 0; i < board.keymap_len; i++) {
+		if (board.keymap[i].bit != bit)
+			continue;
+		uint8_t a = (k & 1u) ? board.keymap[i].long_action : board.keymap[i].short_action;
+		if (a == ACT_NAV_LEFT || a == ACT_USER_1 || a == ACT_ZONE_DOWN)	// ui_home_key
+			return TR("Prev zone");
+		if (a == ACT_NAV_RIGHT || a == ACT_USER_4 || a == ACT_ZONE_UP)
+			return TR("Next zone");
+	}
+	return NULL;
+}
+#endif
+
 static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len)
 {
 	sbuf_t b;
@@ -5988,6 +6015,12 @@ static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len
 		sb_str(&b, v ? TR("On") : TR("Off"));
 		break;
 	case ST_LIST:
+#if CONFIG_KEY_ASSIGN
+		if (home_key_default(s->id, v) != NULL) {
+			sb_str(&b, home_key_default(s->id, v));
+			break;
+		}
+#endif
 		for (uint8_t k = 0; k < s->n; k++) {
 			if (s->values[k] == v) {
 				sb_str(&b, tr(s->names[k]));
@@ -6158,7 +6191,15 @@ static void group_select(uint16_t i, bool hold)
 		uint8_t k = 0;
 		while (k < s->n && s->values[k] != v)
 			k++;
-		set_store(s, s->values[(k + 1u) % s->n]);
+		uint8_t next = (uint8_t)((k + 1u) % s->n);
+#if CONFIG_KEY_ASSIGN
+		// A key's slot skips what it can't hold (a home key: Monitor, Tone burst)
+		if (s->id >= UI_SET_KEY_FIRST && s->id <= UI_SET_KEY_LAST) {
+			for (uint8_t t = 0; t < s->n && !ui_svc_key_offered(s->id, s->values[next]); t++)
+				next = (uint8_t)((next + 1u) % s->n);
+		}
+#endif
+		set_store(s, s->values[next]);
 		break;
 	}
 	case ST_NUMBER:
