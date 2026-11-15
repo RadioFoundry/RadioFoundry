@@ -97,6 +97,12 @@ TESTS   += fecTest airFramerTest
 fecTest: fecTest.c $(FEC) $(wildcard $(CORE)/fec/*.h)
 	$(CC) $(CFLAGS) -Wshadow -o $@ fecTest.c $(FEC)
 
+# P25 data units, their FEC and a call through the framer (core/p25)
+P25     := $(CORE)/p25/p25_unit.c $(CORE)/p25/p25_rx.c
+TESTS   += p25Test
+p25Test: p25Test.c $(P25) $(CORE)/p25/p25.h $(CORE)/air/air_framer.c $(CORE)/air/air_framer.h $(FEC)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ p25Test.c $(P25) $(CORE)/air/air_framer.c $(FEC)
+
 # The HR_C6000 as an air interface provider (its physical layer mode) on a simulated chip
 HRCAIR  := $(ROOT)/drivers/modem/hrc_common/hrc6000_air.c $(ROOT)/drivers/modem/hrc_common/hrc6000_dmr.c \
            $(ROOT)/drivers/modem/hrc6000/hrc6000.c $(ROOT)/drivers/modem/hrc_common/hrc.c
@@ -160,6 +166,7 @@ run: $(TESTS)
 	./airQueueTest
 	./fecTest | tail -1
 	./airFramerTest
+	./p25Test
 	./hrc6000AirTest
 	./radioKeysTest
 	./zoneShareTest

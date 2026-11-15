@@ -48,7 +48,9 @@ typedef struct {
 	uint8_t lost_frames;		// frames in a row without a sync before the signal counts as lost (1 or more)
 	uint16_t (*head)(const air_frame_t *f, void *ctx);
 	void (*rx_frame)(const air_frame_t *f, void *ctx);
-	void (*rx_lost)(void *ctx);	// lock dropped (no syncs, a gap in the symbols, the head hook's 0): searching again
+	// The signal is gone (no syncs, a gap in the symbols, the head hook's 0 on a unit behind one it took): searching
+	// again. Not called for a sync the head hook never agreed to
+	void (*rx_lost)(void *ctx);
 } air_mode_t;
 
 typedef struct {
@@ -72,6 +74,7 @@ typedef struct {
 	uint8_t misses;			// frames in a row without a sync
 	uint8_t sync_id, sync_errs;
 	bool sync_seen;			// in this frame
+	bool confirmed;			// the lock in hand: the head hook has agreed to a frame (always, without a hook)
 	bool soft_in;			// the chunk in hand has soft values
 	bool soft_out;			// ... and frames cut from it carry them (soft_in is off while a replay runs)
 	bool relock;			// a replay after the head hook said no is running: no second one inside it

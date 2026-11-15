@@ -212,7 +212,8 @@ static void search_start(air_framer_t *fr)
 
 static void drop(air_framer_t *fr)
 {
-	bool was = fr->state == ST_LOCKED;
+	// A lock the head hook never agreed to was a chance match: the mode saw nothing of it and hears nothing now
+	bool was = fr->state == ST_LOCKED && fr->confirmed;
 
 	search_start(fr);
 	if (was && fr->mode->rx_lost)
@@ -243,6 +244,8 @@ static void deliver(air_framer_t *fr, uint8_t flags)
 		} else {
 			fr->head_at = 0;
 			fr->unit = r ? (r < fr->upos ? fr->upos : r) : UINT16_MAX;
+			if (r)
+				fr->confirmed = true;
 		}
 		return;
 	}
@@ -340,6 +343,7 @@ static bool lock(air_framer_t *fr, const air_sync_t *s, uint8_t errs)
 	fr->t_frame = fr->t_sym - syms_us(fr, (uint16_t)(n - 1));
 	fr->head_at = m->head ? m->head_syms : 0;
 	fr->unit = fr->head_at ? 0 : m->frame_syms;
+	fr->confirmed = !fr->head_at;
 	fr->stats.locks++;
 	fr->stats.syncs++;
 	progress(fr);
@@ -422,7 +426,7 @@ static void rx_sym(air_framer_t *fr, uint8_t d, int8_t soft, bool search)
 			if (fr->upos == (uint16_t)sync_need(s) || !sync_match(fr, s, false, &errs))
 				continue;
 			if (sync_need(s) <= AIR_SYNC_SYMS_MAX && !fr->ring) {
-				if (fr->mode->rx_lost)
+				if (fr->confirmed && fr->mode->rx_lost)
 					fr->mode->rx_lost(fr->ctx);
 				if (lock(fr, s, errs))
 					return;
