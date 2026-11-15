@@ -42,13 +42,7 @@
 #define CTL_RX		0x50	// receive in the next slot
 #define CTL_NONE	0x00
 #define CTL_SYNC_FAIL	0x20	// drop sync, search again
-#define CTL_CC_ANY	0x08	// CC_Match_Ctrl: deframe whatever the color code (effect unconfirmed, 9)
-
-// With the color code filter off, also set CC_Match_Ctrl in every receive write. Off: follow the color code the way
-// that has worked on air (5.4: the CC seen at system interrupts, written to 0x1F after repeated matches)
-#ifndef HRC6000_DMR_CC_ANY_DEFRAME
-#define HRC6000_DMR_CC_ANY_DEFRAME	0
-#endif
+#define CTL_CC_ANY	0x08	// CC_Match_Ctrl: deframe whatever the color code (5.4)
 
 // 0x82
 #define INT_REJECTED	0x80
@@ -339,7 +333,7 @@ static uint8_t rx_ctl(const hrc6000_dmr_t *e)
 	(void)e;
 	return (uint8_t)(CTL_RX | CTL_CC_ANY);
 #else
-	return (uint8_t)(CTL_RX | (HRC6000_DMR_CC_ANY_DEFRAME && cc_any(e) ? CTL_CC_ANY : 0u));
+	return (uint8_t)(CTL_RX | (cc_any(e) && e->dev->chip->cc_any_rx ? CTL_CC_ANY : 0u));
 #endif
 }
 
@@ -738,11 +732,16 @@ static void cc_follow(hrc6000_dmr_t *e, uint8_t cc, uint32_t t)
 	e->t_cc = t;
 	if (e->cc_matches >= CC_SET_MATCHES && cc != e->cc_cur) {
 		e->cc_cur = cc;
+		if (e->dev->chip->cc_any_rx) {
+			// The chip deframes any color code (rx_ctl): only note it, for our next transmission. A restart here
+			// lost the first call after a color code change, its headers and often all of its voice
+			return;
+		}
 		hrc6000_dmr_set_cc(e->dev, cc);
 		e->restart_pending = true;	// at the next timeslot interrupt: no busy wait here (gotchas 1.7)
 		e->restart_why = HRC6000_RS_CC;
 	}
-	if (e->cc_matches >= CC_HOLD_MATCHES) {
+	if (e->cc_matches >= CC_HOLD_MATCHES && !e->dev->chip->cc_any_rx) {
 		e->cc_held = true;
 		e->cc_hold_tick = e->tick;
 	}
