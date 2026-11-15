@@ -133,6 +133,8 @@ below are for an STM32F4 radio.
 | `CONFIG_SNMP` | = DMR_IP_GATEWAY | the SNMPv2c agent on UDP 161 over the USB network and over the air, the RadioFoundry MIB, notifications to the host and an RF manager (`core/snmp`, `docs/spec/snmp.md`). Management over the air read-only and RF notifications off by default. About 3.2 KB RAM |
 | `CONFIG_AIR` | n | the air interface: symbols with time stamps between a board's modem hardware and the core, the framer, the soft modem and the shared FEC (`docs/spec/air-interface.md`). For digital modes the core frames itself; needs a board with `board_t.air` |
 | `CONFIG_P25` | = AIR | P25 Phase 1 conventional voice on the air interface (`docs/spec/p25.md`) |
+| `CONFIG_IMBE` | = P25 | the full-rate voice decoder for P25 Phase 1 voice, in integers (`core/mbe`): about 7.7 KB of flash, 0.9 KB of RAM kept and 2.5 KB of scratch, both placed by the caller. Decode only |
+| `CONFIG_MBE` | = IMBE | the MBE synthesis core the decoder sits on (harmonic oscillators, band noise, enhancement, concealment), shared by any front end that gives it model parameters |
 | `CONFIG_AIR_RAW` | n | diagnostics: debug link commands that open an air interface session and move raw symbols and tap samples, for bench tests (`docs/spec/debuglink.md`). Needs AIR and DEBUGLINK |
 | `CONFIG_SFR` | = DMR (n where the modem can't) | single frequency repeater: MMDVM SFR (the hotspot, duplex with RX = TX) and Standalone SFR (the repeater and user roles of a channel, `docs/spec/sfr.md`) |
 | `CONFIG_SFR_CWID` | = SFR | the standalone SFR repeater's periodic CW ID: the callsign from the radio name in Morse, in FM on the channel (`sfr.md` 4). Off: the setting isn't offered |

@@ -277,6 +277,10 @@ CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFI
 CONFIG_AIR ?= n
 # P25 Phase 1 conventional (core/p25, docs/spec/p25.md; needs AIR)
 CONFIG_P25 ?= $(CONFIG_AIR)
+# the full-rate voice decoder (P25 Phase 1 voice) on the shared MBE synthesis core (core/mbe): about 7.7 KB of flash,
+# 0.9 KB of RAM kept and 2.5 KB of scratch, both placed by the caller. MBE alone is the core for another front end
+CONFIG_IMBE ?= $(CONFIG_P25)
+CONFIG_MBE ?= $(CONFIG_IMBE)
 # diagnostics: debug link commands that open an air interface session and move raw symbols, for bench tests (needs AIR
 # and DEBUGLINK; docs/spec/debuglink.md)
 CONFIG_AIR_RAW ?= n
@@ -348,6 +352,7 @@ ifneq ($(call feature_on,HOTSPOT_SPLIT),)
 endif
 $(foreach f,P25 AIR_RAW,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,AIR),,x)),$(error CONFIG_$(f)=y needs CONFIG_AIR=y)))
 $(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,DEBUGLINK),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_DEBUGLINK=y))
+$(if $(and $(call feature_on,IMBE),$(if $(call feature_on,MBE),,x)),$(error CONFIG_IMBE=y needs CONFIG_MBE=y))
 ifneq ($(call feature_on,DEBUGLINK),)
   ifeq ($(call feature_on,HOSTLINK),)
     $(error CONFIG_DEBUGLINK=y needs CONFIG_HOSTLINK=y)

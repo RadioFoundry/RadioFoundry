@@ -297,6 +297,13 @@
 #ifndef CONFIG_AIR_RAW
 #define CONFIG_AIR_RAW			0
 #endif
+// The full-rate voice decoder (P25 Phase 1 voice) and the MBE synthesis core it sits on (core/mbe)
+#ifndef CONFIG_IMBE
+#define CONFIG_IMBE			CONFIG_P25
+#endif
+#ifndef CONFIG_MBE
+#define CONFIG_MBE			CONFIG_IMBE
+#endif
 // The GPS status screen: the satellites (NMEA GSV / GSA) on a sky plot and signal bars, the fix's quality, the grid
 // locator (core/position/nmea_sky.c, core/ui/ui_gps.c). Needs GPS
 #ifndef CONFIG_GPS_SKY
@@ -400,6 +407,9 @@
 #endif
 #if (CONFIG_P25 || CONFIG_AIR_RAW) && !CONFIG_AIR
 #error "CONFIG_P25 and CONFIG_AIR_RAW need CONFIG_AIR"
+#endif
+#if CONFIG_IMBE && !CONFIG_MBE
+#error "CONFIG_IMBE needs CONFIG_MBE"
 #endif
 #if CONFIG_AIR_RAW && !CONFIG_DEBUGLINK
 #error "CONFIG_AIR_RAW needs CONFIG_DEBUGLINK"

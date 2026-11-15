@@ -115,6 +115,12 @@ TESTS   += p25EngineTest
 p25EngineTest: p25EngineTest.c $(CORE)/p25/p25_engine.c $(CORE)/p25/p25_engine.h $(CORE)/air/air_session.c $(CORE)/air/air_session.h $(CORE)/air/air_framer.c $(P25) $(FEC)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ p25EngineTest.c $(CORE)/p25/p25_engine.c $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(P25) $(FEC)
 
+# The MBE synthesis core and the full-rate voice decoder on it (core/mbe), against golden vectors
+MBE     := $(wildcard $(CORE)/mbe/*.c)
+TESTS   += mbeTest
+mbeTest: mbeTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ mbeTest.c $(MBE) -lm
+
 # The fixed-point kernels the signal code shares (core/dsp/fxp.h)
 TESTS   += fxpTest
 fxpTest: fxpTest.c $(CORE)/dsp/fxp.h
@@ -183,6 +189,7 @@ run: $(TESTS)
 	./airFramerTest
 	./p25Test
 	./fxpTest
+	./mbeTest | tail -1
 	./airSoftmodemTest | tail -1
 	./p25EngineTest
 	./hrc6000AirTest
