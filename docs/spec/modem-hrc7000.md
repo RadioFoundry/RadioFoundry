@@ -134,7 +134,7 @@ repeated LC).
 | 0x36C | DATAH_CRC_MASK | 0xCCCC | data header CRC-16 mask (the datasheet's reset 0xA5A5 is wrong for ETSI) |
 | 0x370–0x37C | (undocumented) | 0xF0, 0x1FF, 0x10F, 0x00 |
 | 0x380 | CRC8_INIT | 0 | short LC CRC-8 init |
-| 0x384 | LOCAL_CC | color code in b3:0; b9:8 cc_opt = 0 (deframe only on matching CC); b16 encryption type | Set per channel; when cc_opt = 1 RF_MODE b12 must be 0 |
+| 0x384 | LOCAL_CC | color code in b3:0; b9:8 cc_opt = 0 (deframe only on matching CC); b16 encryption type | Receive filter or scan code while listening; channel TX code after slot lock, restored after TX; when cc_opt = 1 RF_MODE b12 must be 0 |
 | 0x388 | VOICE_EMB_CTRL | 0 at init, **2** when entering DMR receive | b1 = burst F EMB from the chip's own RC encoder; b0 = PI bit for bursts B–E |
 | 0x38C | SCRAMBLE_REG | 0 | built-in simple voice scrambler keys (RX in b31:16, TX in b15:0); unused |
 
@@ -687,7 +687,7 @@ On the SDR bench (an MS simulator answering a confirmed packet with MS sync, 4-6
 | RadioFoundry: each RX timeslot interrupt | TXRX = 0x8040 for the coming chip slot when a voice header or voice burst came on it in the last 390 ms (no terminator since), else 0x40. Both slots can have it: an SFR user hears the talker and the repeat. Without the flag the chip leaves the voice RAM as it was, and the burst reads the last one decoded (gotchas 14.15) |
 | Voice deframe | read RX_TYPE_INFO, 27 bytes from the voice RAM; burst number from bits 14:12; LC header / terminator / CSBK / data from the RX RAM |
 | BS sync received (recv_sync_type 1) | the other side is a repeater: track the TC bit (RX_TYPE_INFO b22) to find which slot is ours. Locked after 4 bursts in a row, one per slot, with TC alternating; held while a burst came in the last 390 ms. RX_TYPE_INFO b19 and LAYER2_STATUS b30/b31 are not usable for this |
-| Color-code scan | set LOCAL_CC to the received CC, then LAYER2_CONTROL = 0xC0 and, in repeater mode, the 5.2 restart steps 4–7 (no busy wait) |
+| Color-code scan | while idle with no CC filter, step LOCAL_CC through the codes; hold while receiving. No scan during TX or its slot-lock wait; reconfiguration keeps any-CC listening; a receiver restart doesn't reset the step timer, so retunes faster than a step don't hold the scan |
 | Late entry (bit 2) | embedded LC is in the RX RAM; voice reception should start at the next burst A |
 | End | terminator (data type 2) or loss of bursts; TXRX_CTRL = 0 |
 | Reception over (nothing taken for 390 ms) | the 5.2 restart: the chip drops the sender's slot timing and its timeslot interrupts stop |
@@ -696,6 +696,10 @@ On the SDR bench (an MS simulator answering a confirmed packet with MS sync, 4-6
 ---
 
 ## 6. Transmit sequences
+
+LOCAL_CC keeps the receive code during an aligned start's TC lock wait. Once locked, or at an unaligned start,
+the driver writes the channel's transmit code in bits 3:0 and keeps it through the final burst. After TX it restores
+the receive filter or scan code. A receive filter changed during TX takes effect when TX finishes.
 
 All transmit actions happen in the timeslot interrupts: the CPU arms one slot at a time with TXRX_CTRL = 0x80 and
 leaves the other slot unused (0x00, or 0x40 / 0x8040 to listen: `tx_listen`, an SFR's inbound slot), giving one burst per 60 ms in its timeslot (datasheet figures 99–100). Every arming also starts the PA one-shot of a board without burst sequences (3.1a). The RF TX interrupt that follows keys the RF
