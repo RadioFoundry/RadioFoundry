@@ -121,6 +121,11 @@ TESTS   += mbeTest
 mbeTest: mbeTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ mbeTest.c $(MBE) -lm
 
+# The P25 voice path: engine frames through the full-rate decoder to PCM blocks (core/p25/p25Voice.c)
+TESTS   += p25VoiceTest
+p25VoiceTest: p25VoiceTest.c $(CORE)/p25/p25Voice.c $(CORE)/p25/p25Voice.h $(MBE) $(wildcard $(CORE)/mbe/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_AIR=1 -o $@ p25VoiceTest.c $(CORE)/p25/p25Voice.c $(MBE)
+
 # The fixed-point kernels the signal code shares (core/dsp/fxp.h)
 TESTS   += fxpTest
 fxpTest: fxpTest.c $(CORE)/dsp/fxp.h
@@ -192,6 +197,7 @@ run: $(TESTS)
 	./mbeTest | tail -1
 	./airSoftmodemTest | tail -1
 	./p25EngineTest
+	./p25VoiceTest
 	./hrc6000AirTest
 	./radioKeysTest
 	./zoneShareTest
