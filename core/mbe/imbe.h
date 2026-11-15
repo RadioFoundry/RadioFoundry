@@ -33,6 +33,8 @@ void imbe_dec_init(const imbe_mem_t *m);
 // IMBE_ERRS_MAX, or a pitch code that is not used: the last good frame is repeated up to MBE_REPEAT_MAX times, then the
 // output is silent). Returns the number of bad frames in a row, 0 for a good one.
 int imbe_dec_frame(const imbe_mem_t *m, const uint8_t imbe[IMBE_BYTES], uint8_t errs, int16_t pcm[MBE_FRAME_LEN]);
+// A frame of silence (pitch code 216): what a transmitter sends when it has no speech, and what decodes as silence
+extern const uint8_t imbe_silence[IMBE_BYTES];
 
 // The dequantizer alone. p->L, p->w0, p->v and p->a (log2 of the model amplitude M_l, Q11, before the output gain of
 // imbe_dec_frame) from a frame and the prediction state s, which it advances. Returns an IMBE_FRAME_* code; the state is

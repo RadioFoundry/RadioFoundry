@@ -220,6 +220,8 @@ int imbe_unpack(imbe_state_t *s, const uint8_t imbe[IMBE_BYTES], mbe_params_t *p
 	return IMBE_FRAME_OK;
 }
 
+const uint8_t imbe_silence[IMBE_BYTES] = { 0xD8 };
+
 void imbe_dec_init(const imbe_mem_t *m)
 {
 	imbe_state_reset(m->s);

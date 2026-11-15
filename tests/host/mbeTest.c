@@ -670,6 +670,10 @@ static void test_conceal(void)
 	CHECK(r->st.L == 30, "silence frame did not reset the prediction");
 	imbe_dec_frame(&r->m, bad_pitch, 0, pcm);
 	CHECK(rms_of(pcm, MBE_FRAME_LEN) < 2, "silence frame is not silent");
+	// the named silence frame is one
+	CHECK(imbe_unpack(&r->st, imbe_silence, &r->pr) == IMBE_FRAME_SILENCE, "imbe_silence is not a silence frame");
+	CHECK(imbe_dec_frame(&r->m, imbe_silence, 0, pcm) == 0 && rms_of(pcm, MBE_FRAME_LEN) < 2,
+	      "imbe_silence does not decode as silence");
 	free(r);
 }
 
