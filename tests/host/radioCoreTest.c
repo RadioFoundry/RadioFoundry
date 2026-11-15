@@ -1343,6 +1343,31 @@ static void test_dmr_rx(void)
 	CHECK(sim.started && d->active);
 }
 
+static void reload_channel(void);
+
+// A channel change publishes the new channel's color code, timeslot and repeater mode with it, in one update: a
+// reader between the change and the call stack's next tick (dual watch's snapshot of the pane, at every hop) never
+// sees the new channel with the old one's timeslot
+static void test_dmr_channel_change_view(void)
+{
+	dmr_start(false);
+	const radio_dmr_view_t *d = &sm.view.dmr;
+	chans[1].mode = RADIO_MODE_DMR;
+	chans[1].rx_hz = 438600000;
+	chans[1].tx_hz = 433600000;
+	chans[1].color_code = 5;
+	chans[1].timeslot = 2;
+	reload_channel();
+	run(50);
+	CHECK(sm.view.channel_number == 4 && d->ts == 1 && d->cc == 2 && !d->rmo);
+	req(RREQ_ZONE_POS, 0);			// no poll: what a reader sees right after the change
+	CHECK(sm.view.channel_number == 1 && d->ts == 2 && d->cc == 5 && d->rmo);
+	req(RREQ_ZONE_POS, 3);
+	CHECK(sm.view.channel_number == 4 && d->ts == 1 && d->cc == 2 && !d->rmo);
+	run(50);
+	CHECK(d->ts == 1 && d->cc == 2 && !d->rmo);
+}
+
 static void test_dmr_tx(void)
 {
 	dmr_start(true);
@@ -5613,6 +5638,7 @@ int main(void)
 	test_temp_bw_tone();
 	test_tone_lists();
 	test_dmr_rx();
+	test_dmr_channel_change_view();
 	test_dmr_rssi_hold();
 	test_fm_rssi_raw();
 	test_dmr_tx();
