@@ -88,7 +88,8 @@ Not in the VFO: talker alias (a channel's setting), roaming, the "hear all by de
 
 These are the VFO's own settings, so they are not temporary changes: no dot on Home, BACK on Home doesn't undo them,
 they stay while the radio is on a channel, and they are kept across power cycles with the VFO's frequency
-(`settings-store.md` 3). The requests are the ones a channel uses and the radio core gives them the VFO meaning:
+(`settings-store.md` 3). Squelch has no VFO value: changed in the VFO it becomes the radio's default squelch at once,
+so it is not temporary either. The requests are the ones a channel uses and the radio core gives them the VFO meaning:
 `radio_req_mode` (needs both `CONFIG_VFO_FM` and `CONFIG_VFO_DMR`; on a channel the mode is no longer a quick menu change, Copy to VFO (2.2) is the way in), `radio_req_dmr_color_code`,
 `radio_req_dmr_timeslot`, and `radio_req_dmr_target` / `radio_req_dmr_contact` for the talk target. A typed or
 chosen target is the VFO's from then on (`dmr.target_manual` stays 0); "call back" is for now as on a channel and

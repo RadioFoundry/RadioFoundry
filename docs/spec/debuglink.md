@@ -369,7 +369,7 @@ At most one per 20 ms (busy otherwise; the radio core's queue holds 16).
 | 4 | on u8 | `radio_req_vfo` |
 | 5 | hz u32 | `radio_req_vfo_set` (simplex; in the DMR VFO it retunes the DMR VFO) |
 | 6 | dir i8 | `radio_req_vfo_step` |
-| 7 | dir i8 | `radio_req_power` (a temporary change, wraps) |
+| 7 | dir i8 | `radio_req_power` (wraps; a temporary change on a channel, the VFO's own power in the VFO) |
 | 8 | dir i8 | `radio_req_squelch` |
 | 9 | bw u8 | `radio_req_bandwidth`: 0 12.5 kHz, 1 25 kHz |
 | 10 | which u8, type u8, value u16 | `radio_req_tone`: which 1 TX, 2 RX, 3 both; type 0 none, 1 CTCSS (Hz x 10), 2 DCS, 3 DCS inverted |
