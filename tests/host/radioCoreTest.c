@@ -4596,6 +4596,13 @@ static void test_side_keys(void)
 	ui_svc_keys_poll();
 	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_SCAN && ui_svc_setting_get(UI_SET_KEY_FIRST + 3) == KEYFN_ZONE_UP);
 	CHECK(got_keymap[2].long_action == ACT_ZONE_UP);
+	// A CPS put Monitor on the home key (role 2): it acts as Default, and Settings says so
+	memset(cp_quick, 0, sizeof(cp_quick));
+	cp_quick[0] = KEYASSIGN_MARKER;
+	cp_quick[3] = KEYFN_MONITOR;
+	cp_serial++;
+	ui_svc_keys_poll();
+	CHECK(got_keymap[3].short_action == ACT_NAV_LEFT && ui_svc_setting_get(UI_SET_KEY_FIRST + 4) == KEYFN_DEFAULT);
 	memset(cp_quick, 0, sizeof(cp_quick));	// leave the board's key map for what follows
 	cp_serial++;
 	ui_svc_keys_poll();

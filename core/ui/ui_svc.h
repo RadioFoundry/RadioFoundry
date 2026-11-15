@@ -327,8 +327,8 @@ typedef enum {
 	UI_SET_MIC_AGC,		// the vocoder's mic AGC on DMR TX (accent bits 6-7); while on, mic gain is step 5 and dimmed
 	UI_SET_SFR_RX,		// what an SFR user channel hears, dmr_sfr_rx_t (Settings > Talk, CONFIG_SFR; radio_settings_t.sfr_rx)
 	UI_SET_SFR_CWID,	// the SFR repeater's CW ID interval code 0..4 (Settings > Talk, CONFIG_SFR_CWID; radio_settings_t.sfr_cwid)
-	// The VFO's automatic step in the broadcast band (Settings > Talk, CONFIG_BCAST_FM; radio_settings_t.bcast_step) in
-	// kHz: 200 (the odd tenths) or 100
+	// The VFO's step in the broadcast band, whatever the VFO step (Settings > Talk, CONFIG_BCAST_FM;
+	// radio_settings_t.bcast_step) in kHz: 200 (the odd tenths) or 100
 	UI_SET_BCAST_STEP,
 	UI_SET_ZONE_OFFERS,	// accept zone shares from other radios: 1 on (the default), 0 off (settings_t.zs_offers)
 	UI_SET_DMR_ID,		// the radio's own DMR ID in the codeplug, 1..CODEPLUG_DMR_ID_MAX (a set is a codeplug write job)

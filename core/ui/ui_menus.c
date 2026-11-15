@@ -6016,9 +6016,12 @@ static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len
 		break;
 	case ST_LIST:
 #if CONFIG_KEY_ASSIGN
-		if (home_key_default(s->id, v) != NULL) {
-			sb_str(&b, home_key_default(s->id, v));
-			break;
+		{
+			const char *home = home_key_default(s->id, v);
+			if (home != NULL) {
+				sb_str(&b, home);
+				break;
+			}
 		}
 #endif
 		for (uint8_t k = 0; k < s->n; k++) {

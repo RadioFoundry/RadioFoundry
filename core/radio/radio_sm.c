@@ -971,7 +971,7 @@ static uint8_t board_refusal(void)
 }
 
 // A busy refusal is quiet: the screen says "Channel busy", and no tone covers the call being received. On FM that
-// call plays on while PTT is held (deny_rx, set by ptt_press)
+// call plays on while PTT is held (deny_rx, set by ptt_down)
 static void deny(radio_sm_t *sm, uint8_t reason)
 {
 	if (reason != TXDENY_BUSY) {
@@ -6320,21 +6320,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		}
 		return;
 	}
-	if (sm->view.state == RS_TX_DENIED) {
-		if (sm->deny_rx) {
-			// A busy refusal over a reception: its audio plays on until the squelch would have closed
-			follow_tone(sm, st.tone_ok);
-			uint8_t sq = sm->view.squelch;
-			bool holds = sm->view.tone_ok &&
-				     (sq == 0 || st.noise < radio_sm_squelch_open_below(sq) + RADIO_SQL_HYST_DB);
-			if (holds) {
-				sm->close_count = 0;
-			} else if (++sm->close_count >= close_polls()) {
-				sm->deny_rx = false;
-				sm->close_count = 0;
-				outputs(sm);
-			}
-		}
+	if (sm->view.state == RS_TX_DENIED && !sm->deny_rx) {
 		return;
 	}
 
@@ -6357,7 +6343,14 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		sm->close_count = 0;
 	} else if (++sm->close_count >= close_polls() || (sq != 0 && close_polls() == RADIO_SQL_CLOSE_POLLS &&
 			   st.noise >= open_below + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB)) {
-		end_reception(sm, now_ms);
+		if (sm->view.state == RS_TX_DENIED) {
+			// A busy refusal over a reception (deny_rx): its audio stops where the squelch closes; the refusal
+			// stays until PTT is released
+			sm->deny_rx = false;
+			sm->close_count = 0;
+		} else {
+			end_reception(sm, now_ms);
+		}
 		changed(sm);
 	}
 	outputs(sm);
