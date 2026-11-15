@@ -642,6 +642,7 @@ static void test_resync_voice_lost(void)
 	setup();
 	const dmr_config_t cfg = { .cc = 1 };
 	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_set_cc_filter(&eng, cfg.cc);	// as the call stack does after configure
 	hrc7000_dmr_run(&eng);
 	deframe(rti(1, 0, 1, 3, 0, 0));	// voice A, TS2 sync, chip slot 0
 	count_kind(0xFF, NULL);
@@ -658,6 +659,7 @@ static void test_resync_without_ticks(void)
 	setup();
 	const dmr_config_t cfg = { .cc = 1 };
 	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_set_cc_filter(&eng, cfg.cc);	// as the call stack does after configure
 	hrc7000_dmr_run(&eng);
 	deframe(rti(1, 0, 1, 0, 0, 0));
 	uint32_t rs = eng.st.rx_restarts;
