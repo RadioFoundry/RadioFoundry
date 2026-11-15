@@ -158,7 +158,9 @@ own channel and slot, and the radio follows it like any other; P_CLEAR to channe
 the slot is lent, its carrier's CACH carries P_SYS_Parms with Payload Channel Type 1 (table 7.34) and the TSCC sends
 nothing. An idle radio that hears that short LC with its own system's MODEL, NET and SITE stays: each one restarts
 T_Nosig, and no random access goes until the TSCC is back (an Aloha or C_SYS_Parms) or 360 ms pass without one.
-P_SYS_Parms with type 0, or another system's, changes nothing.
+P_SYS_Parms with type 0, or another system's, changes nothing. A radio waiting there that missed a call's grant (it
+was in another call) follows a Late_Entry grant heard on the lent slot for one of its talkgroups (6.6.2.4.1), as on
+the TSCC. A radio switched on meanwhile camps only at the Aloha: a grant doesn't carry the system's identity.
 
 
 | Reg | Listen-only | State |

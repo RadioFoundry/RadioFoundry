@@ -1567,6 +1567,43 @@ static void test_composite(void)
 	CHECK(ms.state == T3_HUNT, "nothing after the lent mark: hunt");
 }
 
+// A radio that missed a call's grant (switched on during it) and waits on a lent composite TSCC: in the lent call's
+// hang time the site repeats the live group calls' grants there with Late_Entry 1 (6.6.2.4.1). The radio follows one
+// for its talk groups, the call on the payload slot or the lent call itself, and not one for another talk group
+static void test_composite_late_entry(void)
+{
+	static const struct {
+		uint8_t slot;
+		uint32_t dst;
+		bool follows;
+		const char *what;
+	} cases[] = {
+		{ 2, TG_A, true, "the payload slot's call" },
+		{ 1, TG_B, true, "the lent call" },
+		{ 2, TG_OTHER, false, "another talk group's" },
+	};
+	for (unsigned k = 0; k < sizeof cases / sizeof cases[0]; k++) {
+		setup(T3_OPT_PRIVATE, false);
+		t3_ms_t ms;
+		camp(&ms);
+		aloha_on = false;
+		for (int i = 0; i < 10; i++) {
+			frame(&ms);
+			lent_slc(&ms, true);
+		}
+		CHECK(ms.state == T3_CAMPED && ms.st.lent > 0, "%s: lent", cases[k].what);
+		t3_csbk_t g = grant(T3_OP_TV_GRANT, TSCC_LCN, cases[k].slot, cases[k].dst, 1000001u);
+		g.u.grant.late_entry = true;
+		rx(&ms, 1, &g);
+		if (cases[k].follows) {
+			CHECK(ms.state == T3_FOLLOW && tuned.chan.rx_hz == RX(TSCC_LCN) && tuned.slot == cases[k].slot &&
+			      tuned.payload && ms.call.dst == cases[k].dst, "%s: followed", cases[k].what);
+		} else {
+			CHECK(ms.state == T3_CAMPED && !tuned.payload, "%s: stays", cases[k].what);
+		}
+	}
+}
+
 static void test_acvit(void)
 {
 	t3_ms_t ms;
@@ -2962,6 +2999,7 @@ int main(void)
 	test_ra_log();
 	test_ra_on_air();
 	test_composite();
+	test_composite_late_entry();
 	test_area_unset();
 	test_refused_denied();
 	test_permission();
