@@ -98,7 +98,7 @@ fecTest: fecTest.c $(FEC) $(wildcard $(CORE)/fec/*.h)
 	$(CC) $(CFLAGS) -Wshadow -o $@ fecTest.c $(FEC)
 
 # P25 data units, their FEC and a call through the framer (core/p25)
-P25     := $(CORE)/p25/p25_unit.c $(CORE)/p25/p25_rx.c
+P25     := $(CORE)/p25/p25_unit.c $(CORE)/p25/p25_rx.c $(CORE)/p25/p25_call.c
 TESTS   += p25Test
 p25Test: p25Test.c $(P25) $(CORE)/p25/p25.h $(CORE)/air/air_framer.c $(CORE)/air/air_framer.h $(FEC)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ p25Test.c $(P25) $(CORE)/air/air_framer.c $(FEC)

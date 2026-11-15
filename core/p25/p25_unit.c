@@ -194,7 +194,7 @@ static uint16_t lsd_encode(uint8_t d)
 	uint16_t r = (uint16_t)(d << 8);
 
 	for (uint8_t i = 0; i < 8; i++)
-		r = (uint16_t)((r & 0x8000) ? (r << 1) ^ (0x139u << 8) : r << 1);
+		r = (uint16_t)((r & 0x8000) ? ((uint32_t)r << 1) ^ (0x139u << 8) : (uint32_t)r << 1);
 	return (uint16_t)((d << 8) | (r >> 8));
 }
 
@@ -332,6 +332,16 @@ static void voice_masks(uint16_t u0, uint32_t m[8])
 			m[c] = (m[c] << 1) | (p >> 15);
 		}
 	}
+}
+
+uint16_t p25_ldu_voice_sym(uint8_t n)
+{
+	uint16_t k;
+
+	if (n >= P25_VOICE_FRAMES)
+		return P25_LDU_SYMS;
+	k = VOICE_AT[n] >> 1;
+	return (uint16_t)(k + k / SS_EVERY);
 }
 
 int p25_ldu_voice_get(const uint8_t *unit, uint8_t n, uint8_t imbe[P25_IMBE_BYTES])

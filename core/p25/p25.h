@@ -81,6 +81,10 @@ void p25_tdulc_put(uint8_t *unit, const uint8_t lc[P25_LC_BYTES]);
 int p25_ldu_voice_get(const uint8_t *unit, uint8_t n, uint8_t imbe[P25_IMBE_BYTES]);
 void p25_ldu_voice_put(uint8_t *unit, uint8_t n, const uint8_t imbe[P25_IMBE_BYTES]);
 
+// The symbol of an LDU where voice frame n starts; P25_LDU_SYMS for n = 9. Everything before it is in the unit
+// once frames 0..n-1 and the unit's words are: a transmitter can send that far
+uint16_t p25_ldu_voice_sym(uint8_t n);
+
 // Link control words of conventional voice (5.5): a group call (LCF 0x00) and a unit to unit call (LCF 0x03)
 #define P25_LCF_GROUP		0x00
 #define P25_LCF_UNIT		0x03
@@ -125,5 +129,70 @@ typedef struct {
 extern const air_mode_t p25_air_mode;
 void p25_rx_init(p25_rx_t *rx, uint16_t nac, void (*unit)(const p25_rx_unit_t *u, void *ctx), void (*lost)(void *ctx),
 		 void *ctx);
+
+// ── A conventional voice call (5.1, 8.2): what a receiver learns from the units, and the units a transmitter sends ──
+typedef struct {
+	uint16_t nac;
+	bool late;		// entered without the header: fields fill in as the LDUs bring them
+	bool have_lc;		// lc is from the air (the header alone gives only a talk group, in lc.tgid)
+	p25_lc_t lc;
+	bool have_alg;		// algid and kid are from the air
+	uint8_t algid;		// P25_ALGID_CLEAR, or the call is encrypted: its voice is not handed on
+	uint16_t kid;
+	int16_t rssi_dbm;
+} p25_call_t;
+
+typedef struct {
+	void (*start)(const p25_call_t *c, void *ctx);
+	void (*update)(const p25_call_t *c, void *ctx);	// a field came in or changed
+	// A voice frame, in air order: nine per LDU, handed over together when the LDU is in. errs: the bits its codes
+	// corrected (P25_VOICE_ERRS_BAD or more: not to be trusted)
+	void (*voice)(const uint8_t imbe[P25_IMBE_BYTES], uint8_t errs, void *ctx);
+	void (*end)(void *ctx);				// a terminator, or the signal is gone
+} p25_call_sink_t;
+#define P25_VOICE_ERRS_BAD	9
+
+typedef struct {
+	uint32_t units, voice, voice_bad, voice_bits, lc_fail, es_fail, calls;
+} p25_call_stats_t;
+
+typedef struct {
+	p25_rx_t rx;		// first: the framer's context for p25_air_mode
+	const p25_call_sink_t *sink;
+	void *ctx;
+	bool active;
+	p25_call_t call;
+	p25_call_stats_t stats;
+} p25_call_rx_t;
+
+// nac as p25_rx_init. Hand &c->rx to air_framer_init as the mode's context
+void p25_call_rx_init(p25_call_rx_t *c, uint16_t nac, const p25_call_sink_t *sink, void *ctx);
+
+// Transmit: header, LDU1 and LDU2 in turn, a terminator. The units go out symbol by symbol as their voice frames
+// come in, so the voice is on air a frame or two after the encoder made it
+typedef struct {
+	uint16_t nac;
+	uint8_t ss;		// the status symbols: P25_SS_UNKNOWN direct or to a repeater, P25_SS_TALKAROUND
+	uint8_t lc[P25_LC_BYTES];
+	uint16_t tgid;
+	uint8_t state;
+	uint8_t nvoice;		// voice frames in the LDU in hand
+	bool ending;
+	uint16_t nsyms, ready, sent;	// of the unit in hand: its length, how far it is final, how far it went out
+	uint8_t unit[P25_UNIT_BYTES_MAX];
+} p25_call_tx_t;
+
+void p25_call_tx_begin(p25_call_tx_t *t, uint16_t nac, const p25_lc_t *lc, uint8_t ss);
+// The symbols that can go out now: n of t->unit from symbol *first. 0: waiting for a voice frame, or done
+uint16_t p25_call_tx_ready(const p25_call_tx_t *t, uint16_t *first);
+// n of them went out
+void p25_call_tx_sent(p25_call_tx_t *t, uint16_t n);
+// True while the LDU in hand takes another voice frame (one every 20 ms keeps the air fed)
+bool p25_call_tx_wants_voice(const p25_call_tx_t *t);
+void p25_call_tx_voice(p25_call_tx_t *t, const uint8_t imbe[P25_IMBE_BYTES]);
+// No more voice: the LDU in hand is filled up with `silence` frames, then the terminator goes out
+void p25_call_tx_end(p25_call_tx_t *t, const uint8_t silence[P25_IMBE_BYTES]);
+// True once the terminator's last symbol went out
+bool p25_call_tx_done(const p25_call_tx_t *t);
 
 #endif

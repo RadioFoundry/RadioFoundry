@@ -402,6 +402,142 @@ static void testCall(void)
 	(void)at;
 }
 
+// ── The call layer: a transmitter's units through the framer to a receiver's call ──
+static struct {
+	uint8_t starts, updates, ends;
+	p25_call_t call;
+	uint8_t voice[64][P25_IMBE_BYTES];
+	uint8_t nvoice, worst;
+} cs;
+
+static void cs_start(const p25_call_t *c, void *ctx) { cs.starts++; cs.call = *c; }
+static void cs_update(const p25_call_t *c, void *ctx) { cs.updates++; cs.call = *c; }
+static void cs_end(void *ctx) { cs.ends++; }
+static void cs_voice(const uint8_t imbe[P25_IMBE_BYTES], uint8_t errs, void *ctx)
+{
+	if (cs.nvoice < 64)
+		memcpy(cs.voice[cs.nvoice++], imbe, P25_IMBE_BYTES);
+	if (errs > cs.worst)
+		cs.worst = errs;
+}
+static const p25_call_sink_t cs_sink = { cs_start, cs_update, cs_voice, cs_end };
+
+// A transmission of nframes voice frames onto air[]; the symbols go out in pulls of any size, a voice frame comes
+// only when nothing else can go out (so a symbol sent before its frame was in would show as a wrong frame)
+static uint8_t tx_voice[64][P25_IMBE_BYTES];
+static const uint8_t silence[P25_IMBE_BYTES] = { 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A };
+static uint32_t tx_at[8];	// where each unit starts on air
+static uint8_t tx_units;
+
+static void transmit(p25_call_tx_t *t, const p25_lc_t *lc, uint8_t nframes)
+{
+	uint8_t given = 0;
+	uint16_t first, n;
+
+	p25_call_tx_begin(t, 0x293, lc, P25_SS_UNKNOWN);
+	tx_units = 0;
+	if (!nframes)
+		p25_call_tx_end(t, silence);	// PTT let go while the header is still going out
+	for (uint32_t guard = 0; guard < 100000 && !p25_call_tx_done(t); guard++) {
+		n = p25_call_tx_ready(t, &first);
+		if (n) {
+			uint16_t take = (uint16_t)(1 + rng() % 97);
+
+			if (take > n)
+				take = n;
+			if (first == 0 && tx_units < 8)
+				tx_at[tx_units++] = air_n;
+			for (uint16_t i = 0; i < take; i++)
+				air[air_n++] = air_sym_get(t->unit, (uint16_t)(first + i));
+			p25_call_tx_sent(t, take);
+		} else if (given < nframes) {
+			CHECK(p25_call_tx_wants_voice(t), "nothing to send and no voice wanted");
+			fill(tx_voice[given], P25_IMBE_BYTES);
+			p25_call_tx_voice(t, tx_voice[given++]);
+		} else {
+			p25_call_tx_end(t, silence);
+		}
+	}
+	CHECK(p25_call_tx_done(t), "the transmission ended");
+}
+
+static void testCallLayer(void)
+{
+	static uint8_t fbuf[P25_UNIT_BYTES_MAX];
+	static p25_call_tx_t t;
+	p25_lc_t lc = { .lcf = P25_LCF_GROUP, .tgid = 4321, .src = 7654321 };
+	p25_call_rx_t c;
+	air_framer_t fr;
+	uint8_t bad = 0;
+
+	// 23 voice frames: header, LDU1, LDU2, an LDU1 filled up with 4 silence frames, terminator
+	air_n = 0;
+	air_noise(100);
+	transmit(&t, &lc, 23);
+	air_noise(300);
+	CHECK(tx_units == 5 && tx_at[1] - tx_at[0] == P25_HDU_SYMS && tx_at[2] - tx_at[1] == P25_LDU_SYMS && tx_at[4] - tx_at[3] == P25_LDU_SYMS, "units on air: %u", tx_units);
+	CHECK(air_n == 100 + P25_HDU_SYMS + 3 * P25_LDU_SYMS + P25_TDU_SYMS + 300, "symbols on air: %u", air_n);
+	memset(&cs, 0, sizeof(cs));
+	p25_call_rx_init(&c, 0x293, &cs_sink, &c);
+	air_framer_init(&fr, &p25_air_mode, &c.rx, fbuf, NULL, P25_UNIT_SYMS_MAX);
+	run(&fr, 100, 0, 0);
+	CHECK(cs.starts == 1 && cs.ends == 1 && cs.updates == 1, "starts %u ends %u updates %u", cs.starts, cs.ends, cs.updates);
+	CHECK(!cs.call.late && cs.call.nac == 0x293 && cs.call.have_lc && cs.call.lc.tgid == 4321 && cs.call.lc.src == 7654321 && cs.call.have_alg && cs.call.algid == P25_ALGID_CLEAR, "call fields");
+	CHECK(cs.nvoice == 27 && cs.worst == 0, "voice frames %u, worst %u", cs.nvoice, cs.worst);
+	for (uint8_t i = 0; i < 27 && i < cs.nvoice; i++)
+		if (memcmp(cs.voice[i], i < 23 ? tx_voice[i] : silence, P25_IMBE_BYTES))
+			bad++;
+	CHECK(bad == 0, "%u voice frames differ", bad);
+	CHECK(c.stats.units == 5 && c.stats.voice == 27 && c.stats.calls == 1 && !c.active, "stats: units %u voice %u", c.stats.units, c.stats.voice);
+
+	// Late entry: the receiver comes on the channel inside the first LDU. The call starts with the LDU2, the link
+	// control arrives with the next LDU1. (The voice ends on an LDU's last frame here: the next LDU's head is
+	// already going out when the end is known, so it is sent whole, silent)
+	air_n = 0;
+	transmit(&t, &lc, 36);
+	air_noise(200);
+	memset(&cs, 0, sizeof(cs));
+	p25_call_rx_init(&c, 0x293, &cs_sink, &c);
+	air_framer_init(&fr, &p25_air_mode, &c.rx, fbuf, NULL, P25_UNIT_SYMS_MAX);
+	memmove(air, air + tx_at[1] + 200, air_n - tx_at[1] - 200);
+	air_n -= tx_at[1] + 200;
+	run(&fr, 100, 0, 0);
+	CHECK(cs.starts == 1 && cs.ends == 1 && cs.call.late && cs.call.have_lc && cs.call.lc.src == 7654321, "late entry: starts %u ends %u late %d lc %d", cs.starts, cs.ends, cs.call.late, cs.call.have_lc);
+	CHECK(cs.nvoice == 36 && !memcmp(cs.voice[0], tx_voice[9], P25_IMBE_BYTES) && !memcmp(cs.voice[27], silence, P25_IMBE_BYTES), "late entry: %u voice frames", cs.nvoice);
+
+	// PTT let go during the header: no LDU is sent
+	air_n = 0;
+	transmit(&t, &lc, 0);
+	CHECK(tx_units == 2 && air_n == P25_HDU_SYMS + P25_TDU_SYMS, "header and terminator only: %u units, %u symbols", tx_units, air_n);
+
+	// A unit to unit call, and an encrypted call from another radio: its fields are shown, its voice is not played
+	lc.lcf = P25_LCF_UNIT;
+	lc.dst = 1234;
+	air_n = 0;
+	transmit(&t, &lc, 18);
+	{
+		uint8_t unit[P25_UNIT_BYTES_MAX], es[P25_ES_BYTES] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 0xAA, 0x12, 0x34 };
+
+		// Its LDU2 again with an encryption sync, then one more LDU1 as it is
+		for (uint16_t i = 0; i < P25_LDU_SYMS; i++)
+			air_sym_put(unit, i, air[tx_at[2] + i]);
+		p25_ldu_es_put(unit, es);
+		for (uint16_t i = 0; i < P25_LDU_SYMS; i++)
+			air[tx_at[2] + i] = air_sym_get(unit, i);
+		memmove(air + tx_at[3] + P25_LDU_SYMS, air + tx_at[3], air_n - tx_at[3]);
+		memcpy(air + tx_at[3], air + tx_at[1], P25_LDU_SYMS);
+		air_n += P25_LDU_SYMS;
+	}
+	air_noise(200);
+	memset(&cs, 0, sizeof(cs));
+	p25_call_rx_init(&c, P25_NAC_ANY, &cs_sink, &c);
+	air_framer_init(&fr, &p25_air_mode, &c.rx, fbuf, NULL, P25_UNIT_SYMS_MAX);
+	run(&fr, 100, 0, 0);
+	CHECK(cs.starts == 1 && cs.ends == 1 && cs.call.lc.lcf == P25_LCF_UNIT && cs.call.lc.dst == 1234 && cs.call.lc.src == 7654321, "unit call fields");
+	CHECK(cs.call.algid == 0xAA && cs.call.kid == 0x1234 && cs.updates == 2, "encryption seen: algid %02x kid %04x updates %u", cs.call.algid, cs.call.kid, cs.updates);
+	CHECK(cs.nvoice == 9, "only the LDU before the encryption sync was played: %u frames", cs.nvoice);
+}
+
 int main(void)
 {
 	testNid();
@@ -410,6 +546,7 @@ int main(void)
 	testLc();
 	testVoice();
 	testCall();
+	testCallLayer();
 	printf("p25Test: %d checks, %d failed\n", checks, failures);
 	return failures ? 1 : 0;
 }
