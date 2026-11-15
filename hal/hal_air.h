@@ -15,7 +15,7 @@
 #define AIR_SYNC_SYMS_MAX	24	// 48 bits: the longest sync of any mode, and the width of a chip's correlator
 #define AIR_SYNCS_MAX		8
 #define AIR_CHUNK_SYMS_MAX	144	// one 30 ms record at 4800 symbols/s: the most a chunk holds, either direction
-#define AIR_SOFT_OUTER		96	// soft value of a +3 symbol at nominal deviation; +1 is a third of it
+#define AIR_SOFT_OUTER		96	// soft value of a +3 symbol at the profile's deviation; +1 is a third of it
 
 typedef enum { AIR_SHAPE_RRC, AIR_SHAPE_C4FM, AIR_SHAPE_GAUSS, AIR_SHAPE_NRZ } air_shape_t;
 typedef enum { AIR_TIMING_CONTINUOUS, AIR_TIMING_TDMA } air_timing_t;
@@ -23,8 +23,9 @@ typedef enum { AIR_TIMING_CONTINUOUS, AIR_TIMING_TDMA } air_timing_t;
 // air_sync_t.flags
 #define AIR_SYNC_START_ONLY	0x01	// on air only at the start of a transmission (a preamble's tail + the first sync)
 
-// One fixed pattern a mode puts on air. The provider's correlator takes the 24-symbol ones (in the order given, as
-// many as it holds); the framer searches for all of them in the symbol stream itself
+// One fixed pattern a mode puts on air. A provider with a correlator of its own takes the first ones it can use (a
+// modem chip: 24 symbols, all outer, not START_ONLY), as many as it holds, so a mode lists its patterns most useful
+// first; the framer searches for all of them in the symbol stream itself
 typedef struct {
 	uint8_t id;			// the mode's own number for it; comes back in air_chunk_t.sync_id
 	uint8_t nsyms;			// 8..AIR_SYNC_SYMS_MAX
@@ -70,7 +71,7 @@ enum {
 
 // air_chunk_t.flags
 #define AIR_CHUNK_GAP		0x01	// symbols were lost between the chunk before and this one
-#define AIR_CHUNK_FREE_RUN	0x02	// the provider has seen no sync lately: its timing coasts
+#define AIR_CHUNK_FREE_RUN	0x02	// more than sync_every_syms symbols since the provider saw a sync: its timing coasts
 #define AIR_CHUNK_SLOT		0x04	// TDMA: symbol 0 opens a slot
 #define AIR_CHUNK_NO_SIGNAL	0x08	// the provider knows nothing is on air (squelched): symbols are noise
 
@@ -102,6 +103,7 @@ typedef enum {
 	AIR_EV_TX_STARTED,	// t_us = the first queued symbol on air
 	AIR_EV_TX_UNDERRUN,	// the queue ran dry before an AIR_TX_LAST chunk: idle symbols went out
 	AIR_EV_TX_DONE,		// the AIR_TX_LAST chunk has left the air (or tx_abort is through); receiving again
+	AIR_EV_TX_SPACE,	// a chunk left the queue for the air: tx_space grew
 	AIR_EV_SLOT,		// TDMA: a slot boundary, arg = its counter, t_us = its time
 } air_event_kind_t;
 
@@ -115,12 +117,15 @@ typedef struct {
 // Called by the provider at task level (its deferred handler), never from an interrupt. Must not block
 typedef void (*air_event_cb_t)(const air_event_t *ev, void *ctx);
 
-// A provider. One session at a time: open ... close. What every provider keeps while a session is open:
+// A provider. One session at a time: open ... close. The core stops the board's DMR stack before open (the provider
+// may run on its chip, interrupts and task) and starts it again after close. What every provider keeps while a
+// session is open:
 //  1. Raw receive never reaches the speaker: the speaker path carries only what the core plays through hal_audio_t.
 //     open fails when the board can't guarantee that.
 //  2. The microphone, tones and beeps never reach the modulator.
-//  3. It never keys the transmitter. The core keys with hal_radio_t.tx() (its inhibit, band and power checks) before
-//     tx_begin and unkeys with tx_off() at AIR_EV_TX_DONE.
+//  3. It keys the transmitter only inside the core's permission: between hal_radio_t.tx() (the core's inhibit, band
+//     and power checks; on some boards it only arms the PA and the modem keys it) and tx_off(), which the core calls
+//     at AIR_EV_TX_DONE. Never by itself.
 //  4. close puts the board back so FM and DMR work as before, without a restart.
 typedef struct {
 	uint32_t (*fit)(const air_profile_t *p);
@@ -130,7 +135,7 @@ typedef struct {
 	void (*close)(void);
 	// Drop what the receiver holds and search again (after a retune; the framer calls it when it loses a signal)
 	void (*rx_restart)(void);
-	// Transmit: queue at least one chunk, key, then tx_begin. Modulation starts with the oldest queued chunk
+	// Transmit: queue at least one chunk, hal_radio_t.tx(), then tx_begin. Modulation starts with the oldest queued chunk
 	// (AIR_EV_TX_STARTED) and runs until the AIR_TX_LAST one. tx_queue is false when the queue is full; tx_space is the
 	// number of chunks it takes now. tx_end: no more will come: as AIR_TX_LAST on the newest queued chunk. tx_abort:
 	// stop at once, drop the queue; AIR_EV_TX_DONE follows

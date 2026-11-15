@@ -14,7 +14,8 @@
 
 typedef struct {
 	// Receive: discriminator samples, signed 16 bit, positive = above the carrier
-	uint32_t rx_rate_hz;		// 16000-48000 serves 4800 symbols/s; 8000 only 1200 baud and audio-rate modes
+	uint32_t rx_rate_hz;		// 8000 or more: the soft modem interpolates, so what a tap serves is set by its band
+					// (rx_hi_hz), not by its rate
 	uint8_t rx_channels;		// 1; 2 when the band is split over two pins (interleaved samples; the soft modem
 					// equalizes and sums them)
 	uint16_t rx_lo_hz, rx_hi_hz;	// the tap's -3 dB band; rx_lo_hz 0 = DC coupled
