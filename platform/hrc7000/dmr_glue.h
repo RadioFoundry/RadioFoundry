@@ -48,6 +48,18 @@ bool hrc_dmr_fm_rx_hook(void (*fn)(void));
 
 extern const hal_dmr_modem_t hrc_dmr;
 
+#if CONFIG_AIR
+#include "hal_air.h"
+#include "hal_baseband.h"
+#include "modem/hrc7000/hrc7000_air.h"
+// The air interface provider and the receive tap (modem-hrc7000.md 10): board.air and board.baseband. Each needs the
+// radio in DMR (set_mode) and takes the chip from the slot engine until close / rx_stop
+extern const hal_air_t hrc_air;
+extern const hal_baseband_t hrc_baseband;
+// The counters of the session or tap open now (zero when none)
+void hrc_air_stats(hrc7000_air_stats_t *st);
+#endif
+
 // Bring-up counters: lines of at most about 20 characters, and the reset
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 #define HRC_DMR_DIAG_LINES	15	// and the split duplex TX half's BS outbound (two "bs" lines)
