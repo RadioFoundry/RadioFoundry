@@ -95,6 +95,9 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "dmr.sfr_role=%u\ndmr.sfr_rpt=%u\ndmr.sfr_rx=%u\n", d->sfr_role, d->sfr_rpt, rs.sfr_rx);
 		dl_text(t, "dmr.sfr_cwid=%u\ndmr.sfr_cw=%u\ndmr.sfr_cwid_sent=%u\ndmr.sfr_cwid_cut=%u\n", rs.sfr_cwid, d->sfr_cw,
 			d->sfr_cwid_sent, d->sfr_cwid_cut);
+		if (board.radio->dmr_keyed_direct != NULL) {	// how the board keyed the last burst (hal_radio_t)
+			dl_text(t, "dmr.keyed_direct=%u\n", board.radio->dmr_keyed_direct() ? 1u : 0u);
+		}
 		dl_text(t, "dmr.target_id=%u\ndmr.target_private=%u\n", (unsigned)d->target_id, d->target_private);
 		dl_text_kv_str(t, "dmr.target_name", d->target_name);
 		dl_text(t, "dmr.reply_active=%u\ndmr.reply_s=%u\n", d->reply_active, d->reply_s);

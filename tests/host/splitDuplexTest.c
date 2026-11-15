@@ -872,6 +872,19 @@ static int air_find(unsigned from, int8_t ts, uint8_t kind, int index)
 	return -1;
 }
 
+// An SFR mode that says it's active (hotspotSfr.c is not linked here), and the board's direct keying as the hotspot tells it
+static bool fsfr_on;
+static int direct_told = -1;	// the last value the hotspot passed to the hook (-1: never)
+static bool fsfr_active(void) { return fsfr_on; }
+static void fsfr_poll(uint32_t now) { (void)now; }
+static void fsfr_event(uint8_t kind, const dmr_burst_t *b, uint32_t now) { (void)kind; (void)b; (void)now; }
+static uint8_t fsfr_net(uint8_t c, uint8_t ctl, const uint8_t *f, uint32_t now) { (void)c; (void)ctl; (void)f; (void)now; return 0; }
+static bool fsfr_tx(void) { return false; }
+static void fsfr_stopped(void) { fsfr_on = false; }
+static const hotspot_alt_t fake_sfr = { .active = fsfr_active, .poll = fsfr_poll, .event = fsfr_event,
+					 .net_frame = fsfr_net, .transmitting = fsfr_tx, .stopped = fsfr_stopped };
+static void direct_hook(bool on) { direct_told = on; }
+
 static void test_tx_half(void)
 {
 	session(&ssim_modem);
@@ -880,6 +893,15 @@ static void test_tx_half(void)
 	CHECK(ssim.bs && ssim.bs_starts == 1 && ssim.bs_cfg.cc == 1 && !ssim.keyed);
 	CHECK(power_set == 50);			// SET_FREQ's 255 capped
 	run_ms(100);
+	// A split role has the modem: an SFR mode that says it's active is stopped, and the board is never told to key
+	// direct (no inbound slot to protect)
+	hotspot_set_direct_key_hook(direct_hook);
+	hotspot_set_alt(&fake_sfr);
+	fsfr_on = true;
+	run_ms(100);
+	CHECK(!hotspot_sfr_repeating() && direct_told != 1 && !fsfr_on);
+	hotspot_set_alt(NULL);
+	hotspot_set_direct_key_hook(NULL);
 	// The epoch: the slot clock runs before keying
 	CHECK(split_cmd(SPLIT_SUB_GET_EPOCH, NULL, 0) == 0);
 	const uint8_t *r = split_reply(SPLIT_SUB_GET_EPOCH);

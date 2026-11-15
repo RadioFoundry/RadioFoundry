@@ -725,7 +725,8 @@ the talker's direct copy was clean. It plays, but it is the reason a user would 
   HR_C6000 MOD1 offset (4:0x04, about 75 Hz a step at 461 MHz) for the burst and restores it for RX: 42 steps over the
   calibrated value on the board measured near 461 MHz (41: -57..-15 Hz, 42: +16..+60 Hz). On two other units of the
   same radio at 433.45 MHz it missed by 178 and 449-554 Hz, so only the SFR keys this way; everything else goes
-  through idle ([feature-matrix.md](../feature-matrix.md)). Measure the correction per radio and frequency before using it more widely.
+  through idle (each board's hardware page has its keying sequences). Measure the correction per radio and frequency
+  before using it more widely.
 - Key 1 ms after the RF TX interrupt, which comes about 1.28 ms before the slot. 0.6-1.2 ms all did the same; keying
   at the interrupt lost frames. Dropping the PA earlier (28.5-30 ms) changed nothing.
 - VHF and split frequencies keep the idle sequence (not measured).

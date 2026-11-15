@@ -21,7 +21,8 @@ transmission (from its first voice LC header, by source ID):
   warning). When the capture still clips (1 % or more of
   the samples at the ADC rails) the waveform checks (sync family, A-F order, spacing, on-time, ramps, overlaps, power
   steps, stray carrier) are reported as not judged, with a warning; the decoded content stays strict.
-- radio: the call stack counted one TX call (call.tx_calls + 1), no TX underruns.
+- radio: the call stack counted one TX call (call.tx_calls + 1), no TX underruns, and where the board reports it the
+  bursts were keyed through idle (dmr.keyed_direct 0), not straight from RX as an SFR does.
 - talker alias: when the channel sends one (dmr.tx_alias not empty), the alias assembled from the embedded talker
   alias LCs (FLCO 4-7) on air equals it.
 
@@ -144,6 +145,10 @@ def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
         sdr_bench.dmr_watch_wait(watch)
     sdr = sdr_bench.dmr_watch_result(watch)
     _, after = radio.counters()
+    # An ordinary call keys every burst through idle, never straight from RX (hal_radio_t.dmr_keyed_direct; boards
+    # without it don't report the key)
+    keyed = radio.view(["dmr"]).get("dmr.keyed_direct")
+    assert keyed in (None, "0"), "an ordinary DMR call keyed its bursts straight from RX (dmr.keyed_direct=1)"
     _report(_tx_checks(sdr, heard, own, target, private, cc, before, after, d.get("dmr.tx_alias", ""), pytestconfig,
                        _limits(radio)), sdr_bench, rdir)
 

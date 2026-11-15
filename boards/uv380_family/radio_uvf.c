@@ -84,6 +84,7 @@ static struct {
 	volatile int8_t rf_ref;		// calibrated HR_C6000 MOD1 offset (4:0x04) for the RX frequency
 	volatile bool rf_direct;	// this burst was keyed without the idle step: 4:0x04 raised, the receiver not retuned
 	volatile bool direct_ok;	// an SFR role runs: direct keying allowed (hal_radio_t.dmr_direct_key)
+	volatile bool keyed_direct;	// the last burst went straight from RX (hal_radio_t.dmr_keyed_direct)
 	volatile bool rf_key_pending;	// TIM7 keys this burst at its expiry
 	uint32_t rf_skipped, rf_unarmed, rf_rx_retries;
 } r = { .rf_page = 0xFF };
@@ -377,8 +378,8 @@ static bool rf_key(void)
 	uint32_t hz = r.dmr_tx_hz;
 	r.rf_isr_dirty = true;
 	int8_t ref;
-	// Direct only for an SFR role: its fixed MOD1 correction left the carrier 178-554 Hz low on other DM-1701s at 433.45
-	// MHz (SDR bench, 2026-11-13), enough for a hotspot to reject the call; through idle the carrier is right
+	// Direct only for an SFR role: its fixed MOD1 correction left the carrier 178-554 Hz low on two DM-1701s at 433.45
+	// MHz (measured on an SDR), enough for a hotspot to reject the call; through idle the carrier is right
 	if (r.direct_ok && !r.rf_rx_pending && hz == r.rx_hz && r.rf_tuned_hz == r.rx_tune_hz &&
 	    uvf_direct_tx_ref(hz, r.rf_ref, (int32_t)(r.rx_tune_hz - hz), &ref)) {	// the DMR receive offset
 		// Direct (SFR, simplex): the receiver on the TX frequency goes straight to DMR TX, which puts the carrier
@@ -389,12 +390,14 @@ static bool rf_key(void)
 		}
 		(void)hrc_write(&r.modem, 4, 0x04, (uint8_t)ref);
 		r.rf_direct = true;
+		r.keyed_direct = true;
 		goto pa;
 	}
 	// Otherwise tune with the receiver off, then straight to TX (gotchas 3.5): a frequency write applies only coming
 	// out of idle. The extra writes cost about 0.25 ms per burst
 	uint32_t word = at1846s_freq_word(hz);
 	r.rf_tuned_hz = 0;
+	r.keyed_direct = false;
 	bool ok = rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_IDLE))
 		&& rf_isr_write(0x29, (uint16_t)((word >> 16) & 0x3FFFu))
 		&& rf_isr_write(0x2A, (uint16_t)(word & 0xFFFFu));
@@ -1111,6 +1114,11 @@ static void dmr_direct_key(bool on)
 	r.direct_ok = on;
 }
 
+static bool dmr_keyed_direct(void)
+{
+	return r.keyed_direct;
+}
+
 const hal_radio_t uvf_radio = {
 	.init = init,
 	.set_mode = set_mode,
@@ -1133,6 +1141,7 @@ const hal_radio_t uvf_radio = {
 	.ref_trim = ref_trim,
 #endif
 	.dmr_direct_key = dmr_direct_key,
+	.dmr_keyed_direct = dmr_keyed_direct,
 };
 
 void uvf_radio_diag(uvf_radio_diag_t *d)

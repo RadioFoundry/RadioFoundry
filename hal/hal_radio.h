@@ -89,10 +89,13 @@ typedef struct {
 	uint16_t (*tx_drive_level)(uint32_t hz, uint8_t level);
 	bool (*tx_drive)(uint16_t drive);
 	// Optional: true while an SFR repeats (a channel's repeater role or the hotspot's SFR mode), false when it stops. A
-	// board may then key DMR bursts straight
-	// from RX, keeping the synthesizer locked for the inbound slot, at the cost of a carrier error it corrects only
-	// roughly; otherwise it keys every burst its normal way. NULL = no such mode. Radio task only
+	// board may then key DMR bursts straight from RX, keeping the synthesizer locked for the inbound slot, at the cost
+	// of a carrier error it corrects only roughly; otherwise it keys every burst its normal way. NULL = no such mode.
+	// Any task may call it (the hotspot's SFR mode calls it from the host link task): it only sets what the next
+	// keying uses
 	void (*dmr_direct_key)(bool on);
+	// Optional: the last DMR burst was keyed straight from RX (dmr_direct_key), for the debug link's view and HIL tests
+	bool (*dmr_keyed_direct)(void);
 } hal_radio_t;
 
 #endif

@@ -2226,10 +2226,24 @@ static void test_hotspot_session(void)
 	fake_alt_on = false;
 	hs_run(100);
 	CHECK(direct_key == 0);
-	hotspot_set_alt(NULL);
-	mmdvm_end();
+	// The hotspot tells the board itself, from the host link task, the moment its SFR mode starts or stops: no radio
+	// task poll in between (the first and last bursts key the right way)
+	fake_alt_on = true;
+	direct_key = -1;
+	mmdvm_poll(now);
+	CHECK(direct_key == 1 && hotspot_sfr_repeating());
+	fake_alt_on = false;
+	mmdvm_poll(now);
+	CHECK(direct_key == 0 && !hotspot_sfr_repeating());
+	// The session ends while the SFR mode repeats: the board keys its normal way at once, before any radio poll
+	fake_alt_on = true;
 	hs_run(100);
-	CHECK(!sm.hotspot && !sm.dmr_keyed && sm.view.dmr.active);
+	CHECK(direct_key == 1 && sm.direct_key);
+	mmdvm_end();
+	CHECK(direct_key == 0 && !hotspot_sfr_repeating());
+	hotspot_set_alt(NULL);
+	hs_run(100);
+	CHECK(!sm.hotspot && !sm.dmr_keyed && sm.view.dmr.active && !sm.direct_key);
 	mm_cmd(MMDVM_GET_VERSION, NULL, 0);
 	hs_run(100);
 	hotspot_get_stats(&st);
