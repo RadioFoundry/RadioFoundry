@@ -535,7 +535,7 @@ silence and not the tone. The guard counts in the tone's length for the tail hol
 three superframes (1080 ms) the over is held for.
 
 On the speaker the start tone follows the board: a board with `CAP_BEEP_NOT_ON_AIR` plays a DMR start tone before keying,
-in the talk permit's hold (`permit_before_key`), and plays no FM start tone on the speaker (it cannot beep while it transmits). The end
+in the talk permit's hold (`permit_before_key`), and plays the FM start tone on the speaker as it keys (only the DMR engine closes the audio path). The end
 tone plays once the transmitter is off, and on a board whose audio path is closed while the DMR engine sends its last burst
 (`hal_audio_t.speaker_blocked`) a little after that: audio queued while the path is closed is dropped when it opens, so the
 core waits for it, at most `DMR_END_WAIT_MS` (400 ms), and then plays it whole.

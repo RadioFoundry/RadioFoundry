@@ -4316,8 +4316,9 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 #endif
-	// The start of transmission tone on the speaker, where the board can sound a beep while it transmits
-	if ((board.caps & CAP_BEEP_NOT_ON_AIR) == 0 && sig_local_on(sm, SIG_EV_BEGIN)) {
+	// The start of transmission tone on the speaker. CAP_BEEP_NOT_ON_AIR is about the DMR engine closing the audio path
+	// while it transmits; the FM transmitter doesn't, so the speaker copy plays on every board
+	if (sig_local_on(sm, SIG_EV_BEGIN)) {
 		sig_local(sm, SIG_EV_BEGIN);
 	}
 #if CONFIG_FM_TX_TONES && CONFIG_SIG_TONES
@@ -6628,7 +6629,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		}
 		changed(sm);
 		// The channel is free again: the idle tone (a scan landing or a broadcast listen has none)
-		if (was_rx && !listening && sm->view.ch.mode == RADIO_MODE_FM && sig_local_on(sm, SIG_EV_IDLE)) {
+		// (not within a second of our own transmission: the end tone just played and the squelch tail is not a call)
+		if (was_rx && !listening && sm->view.ch.mode == RADIO_MODE_FM && now_ms - sm->tx_end_ms > 1000u &&
+		    sig_local_on(sm, SIG_EV_IDLE)) {
 			sig_local(sm, SIG_EV_IDLE);
 		}
 	}

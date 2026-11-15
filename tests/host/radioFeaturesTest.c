@@ -3721,7 +3721,7 @@ static void test_sig_fm(void)
 	CHECK(sm.view.state == RS_TX && b1.played == b0.played + 1);
 	req(RREQ_PTT, 0);
 	run(100);
-	// ... not on a board whose beeps can't sound on air
+	// ... and on a board whose DMR beeps can't sound on air too: that limit is the DMR engine's, FM keys no such gate
 	uint32_t caps = board.caps;
 	board.caps |= CAP_BEEP_NOT_ON_AIR;
 	start();
@@ -3730,7 +3730,7 @@ static void test_sig_fm(void)
 	req(RREQ_PTT, 1);
 	run(50);
 	beep_get_stats(&b1);
-	CHECK(sm.view.state == RS_TX && b1.played == b0.played);
+	CHECK(sm.view.state == RS_TX && b1.played == b0.played + 1);
 	req(RREQ_PTT, 0);
 	run(100);
 	board.caps = caps;
