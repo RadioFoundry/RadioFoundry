@@ -718,7 +718,10 @@ BS's dedicated RC burst, which the chip doesn't report ([dmr-modem.md](dmr-modem
 While we send through a repeater, the chip hears it in only some of the listen slots (measured, the RF back on the
 receive frequency after each burst). In some overs it gives the BS's bursts, typed or not, and the tap fills; in
 others it gives about one deframe a second and the tap areas don't change for seconds. So the modem says
-`tx_listen_gaps`: an RC is caught when heard, and silence is not a repeater drop. While we send, the second area's
+`tx_listen_gaps`: an RC is caught when heard, and silence is not a repeater drop. LAYER2_SLOTON stays 0 there (5.3).
+With b2 dll_rx_slot_on set while sending, the chip heard the BS in every listen slot (222 of 224), but the repeater
+decoded none of our voice bursts: set once, it took the header only; set for each listen slot and cleared before ours,
+nothing at all. 0x05, set once or per slot, changed nothing. While we send, the second area's
 soft values are 7-bit signed, a dibit's first bit in the sign (b6); a BS sync read that way matched in all 24 first
 bits.
 
