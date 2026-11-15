@@ -97,6 +97,13 @@ TESTS   += fecTest airFramerTest
 fecTest: fecTest.c $(FEC) $(wildcard $(CORE)/fec/*.h)
 	$(CC) $(CFLAGS) -Wshadow -o $@ fecTest.c $(FEC)
 
+# The HR_C6000 as an air interface provider (its physical layer mode) on a simulated chip
+HRCAIR  := $(ROOT)/drivers/modem/hrc_common/hrc6000_air.c $(ROOT)/drivers/modem/hrc_common/hrc6000_dmr.c \
+           $(ROOT)/drivers/modem/hrc6000/hrc6000.c $(ROOT)/drivers/modem/hrc_common/hrc.c
+TESTS   += hrc6000AirTest
+hrc6000AirTest: hrc6000AirTest.c fuzz.h $(HRCAIR) $(ROOT)/drivers/modem/hrc_common/hrc6000_air.h $(ROOT)/hal/hal_air.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_AIR=1 -o $@ hrc6000AirTest.c $(HRCAIR)
+
 airFramerTest: airFramerTest.c $(CORE)/air/air_framer.c $(CORE)/air/air_framer.h $(CORE)/air/air_syms.h $(ROOT)/hal/hal_air.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ airFramerTest.c $(CORE)/air/air_framer.c
 
@@ -153,6 +160,7 @@ run: $(TESTS)
 	./airQueueTest
 	./fecTest | tail -1
 	./airFramerTest
+	./hrc6000AirTest
 	./radioKeysTest
 	./zoneShareTest
 	./zoneShareSvcTest

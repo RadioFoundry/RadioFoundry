@@ -791,7 +791,109 @@ at the slot start. Earlier runs also found every fourth TS2 burst sent as a zero
 
 ---
 
-## 10. Open questions
+## 10. Physical layer pipe
+
+`drivers/modem/hrc_common/hrc6000_air.c` (`CONFIG_AIR`) is the board's air interface provider (`hal_air.h`): symbols
+in air order, with soft values and time stamps, for modes the core frames itself. The chip runs in its physical layer
+mode (0x10 bits 4-3 = 00) and only modulates and slices. A session halts the slot engine and takes its three
+interrupt lines and its task; its state lives in the halted engine's event queue, so a session costs no RAM of its
+own. Close puts the DMR receive set-up back (0x10 = 0x6E, the MS pattern in the correlator, 0x40 = 0xC3) and the slot
+engine restarts the receiver (5.1). Host test: `tests/host/hrc6000AirTest.c`.
+
+### 10.1 What a profile gets
+
+| Profile | Fit |
+|---|---|
+| 4800 symbols/s, continuous, 2 or 4 levels | TX |
+| ... with a 24-symbol sync of outer symbols only, on air all through a transmission (not `AIR_SYNC_START_ONLY`), recurring every 1728 symbols or less, outer deviation 1700-2900 Hz | also RX, SOFT, NEEDS_SYNC |
+| 2400 symbols/s | TX, RATE_DOUBLED (receive at half rate never synced reliably) |
+| any shape but RRC 0.2 | SHAPE_APPROX: the pulse is the chip's own |
+| transmit deviation outside 1050-2400 Hz (C4FM: of the target below) by more than a tenth | DEV_APPROX |
+| TDMA, 1200 symbols/s, 3 levels | none |
+
+The board adds UNTESTED until its `stm32_hrc_dmr_board_t.air_verified` is set.
+
+### 10.2 Receive
+
+Set-up: 0x41 = 0x00, 0x10 = 0x02, the pattern in aux 1:0x47-0x4C, 0x5F = 0xF0, 0x40 = 0x40, 0x41 = 0x40 (soft
+records). 0x36 = 0 for the whole session, so nothing of the receiver reaches the codec's line out.
+
+- The correlator holds one pattern (aux 1:0x47-0x4C, write only, 48 bits as the dibits go on air; the DMR value is
+  D5D7F77FD757). Only one of the comparators frames at a time, so the profile's first suitable 24-symbol sync goes
+  there. Each inner symbol in the pattern weakens the match: 4 of 24 found about two syncs in three, 8 none at the
+  threshold aux 1:0x54 = 0x78. Lowering the threshold to 0x50 finds them but triggers on noise.
+- A record is 144 symbols (30 ms), read as 288 bytes from page 2 0x30 when the system interrupt shows 0x82 bit 0,
+  2.4 ms after the timeslot interrupt. 0x51 bits 1-0 = 2 when the correlator fired in it, else 0; 0x5F bits 1-0 say
+  which comparator.
+- Two bytes per symbol: bits 5-0 of the first are the level, 6-bit two's complement; the second only repeats the
+  slice. The hard bits the chip slices are 5-20 times worse than slicing the levels, so the driver slices its own.
+- The record's order depends on 0x51 (chip symbol ranges, in air order):
+
+| 0x51 bits 1-0 | Air order |
+|---|---|
+| 2 (sync) | 0-11, 46-94, 12-16, 22-45, 17-21, 95-143: the pattern starts at air symbol 66 |
+| 0 | 0-11, 36-89, 12-35, 90-143 |
+
+- Levels are about 11 counts per kHz of deviation (outer about ±22 at 1944 Hz), with an offset of a few counts that
+  follows the carrier's. The driver removes a slow average of it and scales the outer level of the profile's
+  deviation to `AIR_SOFT_OUTER`; hard symbols are sliced at 0 and two thirds of it.
+- Nothing is delivered before the first sync. After one, records keep coming for 0.7-0.9 s, and about 2 s after a
+  signal ends. With the pattern every 288, 864 or 1728 symbols nothing was lost.
+- The chip's timing takes a step of 0.5 ms and not one of 1 ms: after that it delivers records on its own timing and
+  never fires again. The driver re-arms it after K records in a row without a sync (K = the sync spacing in records
+  + 1): 0x41 = 0x60, then 0x40 40 ms later. It is back about 0.24 s later, and a re-arm with no signal is harmless.
+- t_us of symbol 0 = the timeslot interrupt before the record - 30 ms + half a symbol. The delay from the air to that
+  clock is not measured (`time_accuracy_us` 3000).
+- Chunk flags: GAP on the first chunk after open, a re-arm, `rx_restart` or a transmission, and when a record is more
+  than 45 ms after the one before or was dropped; FREE_RUN when more records than the sync spacing passed without a
+  sync. `rssi_dbm` is 0.
+
+### 10.3 Transmit
+
+Set-up at `tx_begin`: 0x41 = 0x00, 0x10 = 0x66, 0x20 = 0x00, 0x21 = 0x02 (impolite), 0x22 = 0x86, the profile's idle
+in both TX RAM halves, then 0x40 = 0xE3 (own timing). The first timeslot interrupt comes 22-30 ms later, then every
+30 ms.
+
+- The chip sends TX RAM page 2 0x00-0x23 and 0x24-0x47 in alternate slots, 288 bits each, first bit 7 of the first
+  byte, and reads a half while it sends it: a half written at the timeslot interrupt that starts its slot loses about
+  its first 32 bits. So each interrupt writes only the half the next slot reads, and 0x41 = 0x80. Counting the
+  timeslot interrupts from the 0xE3 write (the first is 1), slot n + 1 is set up at interrupt n and reads 0x00 when
+  n + 1 is odd. The parity held over two sessions; tying it to the count is not checked.
+- In this mode the RF TX interrupt comes once per key-up, anywhere in the slot. The PA is keyed there (both halves
+  hold idle until the first chunk), or at the first chunk's set-up if it has not come, and held for the whole
+  transmission. The chip sends TX RAM whenever the PA is up.
+- A slot boundary to that slot on air: 2.2 ms. `AIR_EV_TX_STARTED` gives the first chunk's first symbol by that.
+- An empty queue mid-transmission sends idle and gives one `AIR_EV_TX_UNDERRUN`. The last chunk is padded with idle,
+  one idle slot follows it, and the PA drops at the next timeslot interrupt, so about 28 ms of idle follow the last
+  symbol. Then `AIR_EV_TX_DONE`, the deviation pair back and the receive set-up. With no timeslot interrupt for
+  200 ms the transmission is dropped the same way.
+- Deviation: Mod1 (0x46) moves the outer deviation linearly, about 23.8 Hz per step, through zero; Mod2 (0x45) must
+  keep its ratio to Mod1 (about 0.51). `tx_begin` reads the pair the board set for the channel (calibrated for
+  1944 Hz) and scales both by target / 1944: from 0x52 / 0x2A, 1800 Hz is 0x4C / 0x27 and 2400 Hz 0x65 / 0x34.
+  Above Mod1 0x65 is not checked. For C4FM the target is the deviation / 0.903, as a C4FM receiver's integrate and
+  dump reads 0.903 of the chip's outer level. 0x04 moves the carrier (about +24 Hz per step); 0x47 and 0x48 do
+  nothing here.
+
+### 10.4 The provider's rules
+
+| Rule (`hal_air.h`) | How |
+|---|---|
+| 1. Raw receive never to the speaker | open needs the chip in DMR, where the speaker carries the codec's PCM only, and writes 0x36 = 0. The board turns the FM feed-through on again only for its audio(true), which the core keeps off for the session |
+| 2. Microphone, tones, beeps never to the modulator | in the physical layer mode the modulator is fed from TX RAM only |
+| 3. Never keys | the PA goes up only through the board's DMR keying, which refuses unless the core's tx() armed it |
+| 4. close restores FM and DMR | the DMR receive set-up and the slot engine again; leaving DMR under a session ends any transmission, and entering again gives the receive set-up back |
+
+### 10.5 Checked on air and not
+
+Register facts above were measured with bench scripts on the chip, not with this driver. The driver's own behavior
+is checked by the host test only. On air still to check: the TX RAM half parity against the count; the receive
+set-up straight after the DMR one and after a transmission (one entry straight from a layer 2 restart gave no
+interrupts until a set-up with 0x41 = 0x40 had run once); the receive delay for t_us; the TX_STARTED time; the PA key
+and drop against the chunks.
+
+---
+
+## 11. Open questions
 
 - Page 6 (manual: TX RAM) vs page 2 for TX: page 2 works; page 6 untested.
 - The meaning of the unexplained init values (0x10=0xF3 / 0x6B during init, the 0x11-0x3C bulk block, the page 1 tables).

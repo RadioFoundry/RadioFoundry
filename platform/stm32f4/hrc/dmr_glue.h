@@ -13,6 +13,7 @@
 #include "config.h"
 #include "platform.h"
 #include "hal_dmr_modem.h"
+#include "hal_air.h"
 #include "modem/hrc_common/hrc6000_dmr.h"
 
 typedef struct {
@@ -44,6 +45,11 @@ typedef struct {
 	// The RF side retunes to the receive frequency between our bursts when the transmission listens, on a split
 	// channel too (stm32_hrc_dmr_tx_listening; the modem's tx_listen_split)
 	bool listen_split;
+#if CONFIG_AIR
+	// The physical layer pipe (stm32_hrc_air, HR_C6000 only) has been checked on air on this board: its fit loses
+	// AIR_FIT_UNTESTED
+	bool air_verified;
+#endif
 } stm32_hrc_dmr_board_t;
 
 typedef struct {
@@ -80,6 +86,11 @@ void stm32_hrc_dmr_tx_drop(void);	// abort a transmission now (radio retune or t
 void stm32_hrc_dmr_tx_prepare(void);
 
 extern const hal_dmr_modem_t stm32_hrc_dmr;
+#if CONFIG_AIR
+// The HR_C6000's physical layer mode as the board's air interface (hal_air.h, hrc6000_air.h): a session halts the slot
+// engine and takes the three interrupt lines and this task; close starts the engine again. HR_C6000 boards only
+extern const hal_air_t stm32_hrc_air;
+#endif
 
 // Counters (no bus traffic). Usable without the DMR stack: entering DMR mode (radio set_mode + rx) starts the receiver
 void stm32_hrc_dmr_stats(stm32_hrc_dmr_stats_t *out);
