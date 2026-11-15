@@ -580,6 +580,8 @@ static void tx_tick(hrc7000_dmr_t *e)
 
 // --- Receive ---
 
+static void emb_drop(hrc7000_dmr_t *e, uint8_t cs) { e->emb_pending &= (uint8_t)~(1u << cs); }
+
 static int8_t slot_ts(hrc7000_dmr_t *e, const hrc7000_rx_status_t *s)
 {
 	switch (s->sync) {
@@ -608,6 +610,7 @@ static void rx_tick(hrc7000_dmr_t *e)
 	for (uint8_t cs = 0; cs < 2; cs++) {
 		if ((e->voice_slots & (1u << cs)) && (uint32_t)(e->tick - e->voice_slot_tick[cs]) > VOICE_LOST_TICKS) {
 			e->voice_slots &= (uint8_t)~(1u << cs);
+			emb_drop(e, cs);	// a call that faded after its LC: the next headerless caller must not show it
 		}
 	}
 	rx_resync(e);
@@ -661,11 +664,14 @@ static void rx_burst(hrc7000_dmr_t *e)
 	e->st.rx_hist = (e->st.rx_hist << 4) | ((uint32_t)s.tc << 3) | ((uint32_t)s.chip_slot << 2) |
 			((r(e, C7_LAYER2_STATUS) >> 30) & 3u);
 	if (e->lock_ts != 0 && ts != e->lock_ts) {
-		e->emb_pending &= (uint8_t)~(1u << s.chip_slot);
+		emb_drop(e, s.chip_slot);
 		return;
 	}
 	bool header = s.kind != DMR_BURST_VOICE && s.kind != DMR_BURST_RATE_12_DATA && s.kind != DMR_BURST_RATE_34_DATA &&
 		      s.kind != DMR_BURST_RATE_1_DATA;
+	if (header) {
+		emb_drop(e, s.chip_slot);	// no voice call in progress on this slot, even with a bad CRC
+	}
 	if (!s.crc_ok) {
 		e->st.rx_crc_err++;
 		// Headers and CSBKs with a bad CRC are dropped (dmr-modem.md 2.2), except while we send: the chip's verdict
@@ -697,7 +703,7 @@ static void rx_burst(hrc7000_dmr_t *e)
 		if (e->emb_pending & (1u << s.chip_slot)) {
 			memcpy(b->lc, e->emb_rx[s.chip_slot], 9);
 			b->lc_valid = true;
-			e->emb_pending &= (uint8_t)~(1u << s.chip_slot);
+			emb_drop(e, s.chip_slot);
 		}
 		e->voice_chip_slot = (int8_t)s.chip_slot;
 		e->voice_tick = e->tick;
@@ -710,7 +716,6 @@ static void rx_burst(hrc7000_dmr_t *e)
 		}
 		switch (s.kind) {
 		case DMR_BURST_VOICE_LC_HEADER:
-			e->emb_pending &= (uint8_t)~(1u << s.chip_slot);
 			memcpy(b->lc, b->payload, 9);
 			b->lc_valid = true;
 			e->listen_voice = e->tx_state != TXS_IDLE;
@@ -720,7 +725,6 @@ static void rx_burst(hrc7000_dmr_t *e)
 			e->st.rx_lc_header++;
 			break;
 		case DMR_BURST_TERMINATOR_LC:
-			e->emb_pending &= (uint8_t)~(1u << s.chip_slot);
 			memcpy(b->lc, b->payload, 9);
 			b->lc_valid = true;
 			if (e->voice_chip_slot == (int8_t)s.chip_slot) {
@@ -778,13 +782,14 @@ void hrc7000_dmr_isr_sys(hrc7000_dmr_t *e)
 			// RX RAM is shared: keep the LC for the reporting chip slot, not the next slot heard (issue 495)
 			e->st.late_entry++;
 			uint32_t info = r(e, C7_RX_TYPE_INFO);
-			uint8_t cs = (uint8_t)((info >> 19) & 1u);
-			e->emb_pending &= (uint8_t)~(1u << cs);
+			hrc7000_rx_status_t s;
+			hrc7000_dmr_decode(info, &s);
+			emb_drop(e, s.chip_slot);
 			if ((info & RTI_CS) == 0) {
 				for (uint8_t i = 0; i < 9; i++) {
-					e->emb_rx[cs][i] = e->dev->buf[C7_RX_RAM + i];
+					e->emb_rx[s.chip_slot][i] = e->dev->buf[C7_RX_RAM + i];
 				}
-				e->emb_pending |= (uint8_t)(1u << cs);
+				e->emb_pending |= (uint8_t)(1u << s.chip_slot);
 			}
 		}
 		if (list & SYS_DEFRAME) {

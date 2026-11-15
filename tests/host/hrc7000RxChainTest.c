@@ -66,12 +66,17 @@ static uint32_t info(unsigned ts, unsigned vb, unsigned kind)
 	return vb << 12 | kind << 8 | 1u << 4 | (uint32_t)family << 2 | (vb ? (vb == 1 ? 1u : 0u) : 2u) |
 	       ((ts ^ chip_flip) << 19) | ts << 22;
 }
+// The chip clears SYS_INTERP_LIST on the write back; an array can't. fm_rx is the one hook the ISR runs on each pass,
+// so every interrupt raises its bit too and it clears the list: each cause is handled once, as on the chip.
+static void write_back(void) { REG(C7_SYS_INTERP_LIST) = 0; }
 static void interrupt(uint32_t status, uint32_t flags)
 {
+	uint32_t late = eng.st.late_entry;
 	REG(C7_RX_TYPE_INFO) = status;
-	REG(C7_SYS_INTERP_LIST) = flags;
+	REG(C7_SYS_INTERP_LIST) = flags | C7_SYS_FM_RX;
 	hrc7000_dmr_isr_sys(&eng);
 	REG(C7_SYS_INTERP_LIST) = 0;
+	CHECK(eng.st.late_entry == late + ((flags & 1u << 2) ? 1u : 0u));
 	drain();
 }
 static void tick(unsigned ts)
@@ -116,6 +121,7 @@ static void setup(unsigned selected, bool direct, bool monitor, unsigned flip)
 	}
 	hrc7000_attach(&dev, regs, buf);
 	hrc7000_dmr_init(&eng, &dev, &ops);
+	eng.fm_rx = write_back;
 	hrc7000_dmr_run(&eng);
 	dmr_call_init(&modem);
 	dmr_call_set_voice(&sink, NULL);
