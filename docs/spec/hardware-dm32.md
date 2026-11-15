@@ -527,12 +527,13 @@ pressed), drive it high again; restore IO_DIPLEX2. Rows idle high.
 | Row \ Column | col 1 (0x31) | col 2 (0x32) | col 3 (0x33) | col 4 (0x34) |
 |---|---|---|---|---|
 | row 0 (0x47) | green (menu / OK) | 3 | 2 | 1 |
-| row 1 (0x48) | left arrow | 6 | 5 | 4 |
-| row 2 (0x49) | right arrow | 9 | 8 | 7 |
+| row 1 (0x48) | left arrow, printed P1 | 6 | 5 | 4 |
+| row 2 (0x49) | right arrow, printed P2 | 9 | 8 | 7 |
 | row 3 (0x4A) | red (back) | # | 0 | * |
 | row 4 (0x4B) | up | down | — | — |
 
-The physical labels of the row 1 / row 2 column 1 keys and the up/down pair are named by position; check against the keypad.
+The left and right sides of the 4-way key are printed P1 and P2 (checked on a radio: P1 is scan bit 14, P2 bit 15).
+They are `board.home_keys` (programmable on Home, arrows in the menus; [ui.md](ui.md#31-key-assignment)).
 
 ### 6.2 Side keys and PTT
 
@@ -543,7 +544,7 @@ The physical labels of the row 1 / row 2 column 1 keys and the up/down pair are 
 | SK2 | column 4 (0x34) low with no row driven |
 
 Because SK1/SK2 pull a column low on their own, a matrix scan must ignore columns that are already low before any row
-is driven. The radio's third programmable key (P1/P2, orange/top) has not been located.
+is driven. The radio has no other programmable key: the keys are the keypad, SK1, SK2 and PTT.
 
 **PTT shares the cable's serial line (measured).** The PTT pin (0x2B) is also the K1 jack's line that carries the host's
 serial data to UART0, so every 0 bit the host sends pulls the pin low. Measured on a radio, 3 s per case, key scan

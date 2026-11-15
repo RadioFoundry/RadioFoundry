@@ -1276,6 +1276,7 @@ static void key_apply(void)
 	keymap_entry_t map[INPUT_KEYS_MAX];
 	uint8_t n = board.keymap_len > INPUT_KEYS_MAX ? INPUT_KEYS_MAX : board.keymap_len;
 	keyassign_build(board.keymap, n, board.side_keys, board.side_key_count, key_slots, map);
+	keyassign_build_home(map, n, board.home_keys, board.home_key_count, board.side_key_count, key_slots);
 	input_set_keymap(map);
 }
 
@@ -1327,15 +1328,46 @@ static int32_t key_get(uint8_t id)
 		key_load();
 	}
 	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
-	return keyassign_get(key_slots, k / 2u, (k & 1u) != 0);
+	uint8_t fn = keyassign_get(key_slots, k / 2u, (k & 1u) != 0);
+	// A home key's slot holding what it can't do (Monitor, Tone burst from a CPS) reads as Default, as it acts
+	if (k / 2u >= board.side_key_count && !keyassign_home_allowed(fn, (k & 1u) != 0)) {
+		return KEYFN_DEFAULT;
+	}
+	return fn;
+}
+
+uint8_t ui_svc_home_key(uint8_t action, uint8_t gesture, bool home)
+{
+	if (action < ACT_HOME_KEY_1) {
+		return action;
+	}
+	if (!key_loaded) {
+		key_load();
+	}
+	uint8_t n = board.keymap_len > INPUT_KEYS_MAX ? INPUT_KEYS_MAX : board.keymap_len;
+	return keyassign_home_event(action, gesture, home, board.keymap, n, board.home_keys, board.home_key_count,
+				    board.side_key_count, key_slots);
+}
+
+bool ui_svc_key_offered(uint8_t id, int32_t value)
+{
+	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
+	if (id < UI_SET_KEY_FIRST || id > UI_SET_KEY_LAST || value < 0 || value >= KEYFN_COUNT) {
+		return false;
+	}
+	if (k / 2u < board.side_key_count) {
+		return keyassign_allowed((uint8_t)value, (k & 1u) != 0);
+	}
+	return k / 2u < board.side_key_count + board.home_key_count &&
+	       keyassign_home_allowed((uint8_t)value, (k & 1u) != 0);
 }
 
 static bool key_set(uint8_t id, int32_t value)
 {
-	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
-	if (k / 2u >= board.side_key_count || value < 0 || value >= KEYFN_COUNT) {
+	if (!ui_svc_key_offered(id, value)) {
 		return false;
 	}
+	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
 	if (!key_loaded) {
 		key_load();
 	}
