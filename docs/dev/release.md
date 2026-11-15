@@ -55,16 +55,19 @@ edit them into a short list of what changed for users.
    supported radios in the [Introduction](../user/01-introduction.md), the screenshots (`make -C tests/host ui-gallery`).
 7. The README's radio status table is current.
 8. Build the manual locally and read it through ([manual-pdf.md](manual-pdf.md)).
-9. Tag and push the tag:
+9. Update the contributors list and commit it if it changed: `python3 tools/gen_contributors.py` writes
+   `CONTRIBUTORS` from the git history. CI never checks that the file is current, so a new contributor's pull
+   request can't fail over it.
+10. Tag and push the tag:
 
    ```
    git tag -a v26.11 -m "RadioFoundry 26.11"
    git push origin v26.11
    ```
 
-10. The release workflow builds the firmware and rfoundry and attaches them; the manual workflow attaches the PDF
+11. The release workflow builds the firmware and rfoundry and attaches them; the manual workflow attaches the PDF
     ([manual-pdf.md](manual-pdf.md)). Edit the release notes on GitHub (they are the changelog the site links).
-11. The next push to main redeploys the site, which then installs the new release (or offers the new beta).
+12. The next push to main redeploys the site, which then installs the new release (or offers the new beta).
 
 ## Release artifacts
 

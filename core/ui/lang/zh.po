@@ -2371,12 +2371,16 @@ msgid "License: "
 msgstr "许可： "
 
 #: core/ui/ui_menus.c
-msgid "Authors:"
-msgstr "作者:"
+msgid "Maintainers:"
+msgstr "维护者:"
 
 #: core/ui/ui_menus.c
-msgid "Author:"
-msgstr "作者:"
+msgid "Maintainer:"
+msgstr "维护者:"
+
+#: core/ui/ui_menus.c
+msgid "Contributors:"
+msgstr "贡献者:"
 
 #: core/ui/ui_menus.c
 msgid "Spleen font: BSD-2-Clause"

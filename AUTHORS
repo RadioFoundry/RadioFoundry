@@ -1,2 +1,7 @@
+# The RadioFoundry Authors are everyone who has contributed to RadioFoundry. Each holds the copyright in their own
+# contributions and licenses them under the MIT license (LICENSE). CONTRIBUTORS lists them by name (generated at
+# each release), and the git history records who wrote what. Contributors are not added to this file.
+#
+# Maintainers, shown on every radio's About page (tools/gen_about.py reads the lines below; # lines are comments):
 Spencer Fowler N4NQV <19397858+sfowlr@users.noreply.github.com>
 Alan Barrow KM4BA <68825469+pinztrek@users.noreply.github.com>
