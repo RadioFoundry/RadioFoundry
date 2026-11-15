@@ -4662,18 +4662,23 @@ static const ui_scr_def_t trim_screen = {
 #endif
 
 // ======================= About (Settings > Advanced) =======================
-// A text page, every word shown (nothing shortened), no status strip while idle: the release and the commit, RadioFoundry's license, the
-// authors, the third-party code and fonts in this image and the codec. From AUTHORS and platform/<platform>/THIRD_PARTY,
-// through the header make generates (tools/gen_about.py)
+// A text page, every word shown (nothing shortened), no status strip while idle: the release and the commit,
+// RadioFoundry's license, the maintainers, where the contributors are listed, the third-party code and fonts in this
+// image and the codec. From AUTHORS and platform/<platform>/THIRD_PARTY, through the header make generates
+// (tools/gen_about.py)
 
 static const char *const about_authors[] = RFOUNDRY_ABOUT_AUTHORS;
 static const char *const about_third[][2] = RFOUNDRY_ABOUT_THIRD_PARTY;
 static uint16_t about_first;	// first line shown
 static uint16_t about_max;	// the largest first line (from the last draw)
 
+// The text's bytes: the two lists make generated, this build's font lines, and 296 for the rest (the version lines,
+// the labels, and 35 for a translation's longer ones). A fixed size cut the last lines off where the lists are long
+#define ABOUT_TEXT_MAX (296u + RFOUNDRY_ABOUT_LIST_BYTES + (CONFIG_FONT_AA ? 32u : 0u) + (CONFIG_LANG_ZH ? 48u : 0u))
+
 static const char *about_text(void)
 {
-	static char t[400];
+	static char t[ABOUT_TEXT_MAX];
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
 	// every line "Label: value" (ui_draw_text_page shows labels dim), each on its own line: "RadioFoundry v26.11" was
@@ -4701,12 +4706,17 @@ static const char *about_text(void)
 	sb_chr(&b, '\n');
 	sb_str(&b, TR("License: "));
 	sb_str(&b, "MIT, (c) 2026 The RadioFoundry Authors\n");
-	// one author per line, in AUTHORS order: a comma-joined list wraps mid-name on every display
-	sb_str(&b, RFOUNDRY_ABOUT_AUTHOR_COUNT > 1 ? TR("Authors:") : TR("Author:"));
+	// The authors (the copyright line above) are everyone who has contributed: too many to list here, so the page
+	// names the maintainers (AUTHORS) and says where the contributors are listed. One maintainer per line, in AUTHORS
+	// order: a comma-joined list wraps mid-name on every display
+	sb_str(&b, RFOUNDRY_ABOUT_AUTHOR_COUNT > 1 ? TR("Maintainers:") : TR("Maintainer:"));
 	for (unsigned i = 0; i < RFOUNDRY_ABOUT_AUTHOR_COUNT; i++) {
 		sb_chr(&b, RFOUNDRY_ABOUT_AUTHOR_COUNT > 1 ? '\n' : ' ');
 		sb_str(&b, about_authors[i]);
 	}
+	sb_chr(&b, '\n');
+	sb_str(&b, TR("Contributors:"));
+	sb_str(&b, "\ngithub.com/radiofoundry");	// on its own line, as a maintainer is: it never wraps after the label
 	for (unsigned i = 0; i < RFOUNDRY_ABOUT_THIRD_PARTY_COUNT; i++) {
 		sb_chr(&b, '\n');
 		sb_str(&b, about_third[i][0]);

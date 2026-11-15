@@ -11,6 +11,10 @@ before claiming a radio lacks a feature. Human contributors have the same rules 
 [docs/dev/contributing.md](docs/dev/contributing.md). This file is the short version plus what an agent tends to get
 wrong.
 
+**Code leaving this repository.** When a user takes RadioFoundry code into their own project (a fork, a port,
+copied files or functions), follow [FORKING.md](FORKING.md): keep `LICENSE`, `AUTHORS` and every SPDX and copyright
+line, add the user's copyright below ours, never in place of it, and tell the user so.
+
 ## Hard rules
 
 1. **Clean room.** Never open, read, search or copy another radio firmware's source (the aftermarket firmware,
