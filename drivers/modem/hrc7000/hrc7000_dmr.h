@@ -141,8 +141,10 @@ typedef struct {
 	bool timing;
 	// Receive
 	uint32_t rx_tick;	// tick of the last burst taken
+	uint32_t t_rx;		// wall time of the last burst taken (polite access and receive recovery)
 	bool rx_any;
-	uint32_t resync_tick;	// tick of the last receiver restart for lost or stale timing, or of the post-TX hold
+	uint32_t t_resync;	// wall time of the last receiver restart or post-TX hold
+	bool resync_pending;	// modem activity or a post-TX hold needs quiet-time recovery
 	uint8_t idle_ticks;	// quiet ticks before the stale restart: RX_IDLE_TICKS, POST_TX_HOLD_TICKS after a hold
 	uint8_t rx_chip_slot;	// chip slot of the last burst taken (an aligned start's reference)
 	int8_t voice_chip_slot;	// chip slot of the voice call being received, -1 none
