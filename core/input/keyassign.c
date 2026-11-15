@@ -37,6 +37,19 @@ bool keyassign_allowed(uint8_t fn, bool hold)
 	return hold ? fn != KEYFN_MONITOR && fn != KEYFN_TONE_BURST : fn != KEYFN_EMERGENCY;
 }
 
+bool keyassign_home_allowed(uint8_t fn, bool hold)
+{
+	// Monitor and Tone burst need the key held down. Emergency needs the 1.5 s hold-to-activate, which the input
+	// engine gives only a key whose long action is Emergency; a home key's long action is its home key action, so its
+	// hold would fire at the ordinary long press and set off accidental emergencies
+	return keyassign_allowed(fn, hold) && fn != KEYFN_MONITOR && fn != KEYFN_TONE_BURST && fn != KEYFN_EMERGENCY;
+}
+
+uint8_t keyassign_action(uint8_t fn)
+{
+	return fn < KEYFN_COUNT ? fn_action[fn] : (uint8_t)ACT_NONE;
+}
+
 #define V1_ROLES	3
 
 uint8_t keyassign_get(const uint16_t slots[KEYASSIGN_SLOTS], uint8_t role, bool hold)
@@ -117,5 +130,59 @@ void keyassign_build(const keymap_entry_t *base, uint8_t base_len, const uint8_t
 			break;
 		}
 	}
+}
+
+// A home key's role's function in a slot: Default for one not allowed on a home key
+static uint8_t home_get(const uint16_t slots[KEYASSIGN_SLOTS], uint8_t role, bool hold)
+{
+	uint8_t fn = keyassign_get(slots, role, hold);
+	return keyassign_home_allowed(fn, hold) ? fn : (uint8_t)KEYFN_DEFAULT;
+}
+
+void keyassign_build_home(keymap_entry_t *out, uint8_t base_len, const uint8_t *home_keys, uint8_t home_count,
+			  uint8_t first_role, const uint16_t slots[KEYASSIGN_SLOTS])
+{
+	for (uint8_t i = 0; i < home_count && i < KEYASSIGN_HOME_KEYS && first_role + i < KEYASSIGN_ROLES; i++) {
+		uint8_t role = (uint8_t)(first_role + i);
+		if (home_get(slots, role, false) == KEYFN_DEFAULT && home_get(slots, role, true) == KEYFN_DEFAULT) {
+			continue;	// the key map's own actions, everywhere
+		}
+		for (uint8_t k = 0; k < base_len; k++) {
+			if (out[k].bit == home_keys[i] && !out[k].raw_edges) {
+				out[k].short_action = out[k].long_action = (uint8_t)(ACT_HOME_KEY_1 + i);
+				break;
+			}
+		}
+	}
+}
+
+uint8_t keyassign_home_event(uint8_t action, uint8_t gesture, bool home, const keymap_entry_t *base, uint8_t base_len,
+			     const uint8_t *home_keys, uint8_t home_count, uint8_t first_role,
+			     const uint16_t slots[KEYASSIGN_SLOTS])
+{
+	uint8_t i = (uint8_t)(action - ACT_HOME_KEY_1);
+	if (action < ACT_HOME_KEY_1 || i >= home_count || i >= KEYASSIGN_HOME_KEYS) {
+		return action;
+	}
+	bool hold = gesture != GESTURE_PRESS;	// LONG, then REPEAT while held
+	const keymap_entry_t *m = NULL;
+	for (uint8_t k = 0; k < base_len; k++) {
+		if (base[k].bit == home_keys[i]) {
+			m = &base[k];
+			break;
+		}
+	}
+	uint8_t own = m == NULL ? (uint8_t)ACT_NONE : hold ? m->long_action : m->short_action;
+	if (!home) {
+		return own;
+	}
+	uint8_t fn = home_get(slots, (uint8_t)(first_role + i), hold);
+	if (fn == KEYFN_DEFAULT) {
+		return own;
+	}
+	if (gesture == GESTURE_REPEAT) {
+		return ACT_NONE;	// a function runs once per long press
+	}
+	return keyassign_action(fn);
 }
 #endif

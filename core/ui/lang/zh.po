@@ -1315,6 +1315,10 @@ msgid "No messages yet"
 msgstr "暂无消息"
 
 #: core/ui/ui_menus.c
+msgid "Full message"
+msgstr "显示全文"
+
+#: core/ui/ui_menus.c
 msgid "Reply \"OK\""
 msgstr "回复“OK”"
 
@@ -2371,12 +2375,16 @@ msgid "License: "
 msgstr "许可： "
 
 #: core/ui/ui_menus.c
-msgid "Authors:"
-msgstr "作者:"
+msgid "Maintainers:"
+msgstr "维护者:"
 
 #: core/ui/ui_menus.c
-msgid "Author:"
-msgstr "作者:"
+msgid "Maintainer:"
+msgstr "维护者:"
+
+#: core/ui/ui_menus.c
+msgid "Contributors:"
+msgstr "贡献者:"
 
 #: core/ui/ui_menus.c
 msgid "Spleen font: BSD-2-Clause"
@@ -2759,7 +2767,7 @@ msgid "Next zone"
 msgstr "下一区域"
 
 #: core/ui/ui_menus.c
-msgid "Previous zone"
+msgid "Prev zone"
 msgstr "上一区域"
 
 #: core/ui/ui_menus.c

@@ -85,7 +85,6 @@ typedef struct {
 	uint32_t rx_restarts;
 	uint32_t rx_lost, rx_stale;	// receiver restarts: reception over, stale slot timing
 	uint32_t rx_holds;	// direct transmissions ended without the restart, held for an answer (5.2a)
-	uint32_t cc_scan_steps;
 	uint32_t ev_overflow;
 	uint32_t tx_bursts, tx_underrun, tx_rejected, tx_done;
 	uint32_t tx_empty;	// our slots left empty on request (DMR_BURST_EMPTY): received like the other slot
@@ -129,7 +128,7 @@ typedef struct {
 	void (*fm_rx)(void);
 	bool lcss;		// LCSS on voice bursts B-E (user guide); false = 0 on every burst like the 2026 builds
 	dmr_config_t cfg;
-	int8_t cc_filter;	// -1 any (scan)
+	int8_t cc_filter;	// -1 any (LOCAL_CC cc_opt 1)
 	int8_t lock_ts;
 
 	uint32_t tick;
@@ -141,8 +140,10 @@ typedef struct {
 	bool timing;
 	// Receive
 	uint32_t rx_tick;	// tick of the last burst taken
+	uint32_t t_rx;		// wall time of the last burst taken (polite access and receive recovery)
 	bool rx_any;
-	uint32_t resync_tick;	// tick of the last receiver restart for lost or stale timing, or of the post-TX hold
+	uint32_t t_resync;	// wall time of the last receiver restart or post-TX hold
+	bool resync_pending;	// modem activity or a post-TX hold needs quiet-time recovery
 	uint8_t idle_ticks;	// quiet ticks before the stale restart: RX_IDLE_TICKS, POST_TX_HOLD_TICKS after a hold
 	uint8_t rx_chip_slot;	// chip slot of the last burst taken (an aligned start's reference)
 	int8_t voice_chip_slot;	// chip slot of the voice call being received, -1 none
@@ -157,8 +158,7 @@ typedef struct {
 	uint8_t tc_prev;	// TC of the last BS burst, and its tick
 	uint32_t tc_tick;
 	uint8_t tc_est;		// TC estimate of the slot now starting (toggled every tick)
-	uint8_t cc_cur;		// LOCAL_CC now
-	uint32_t cc_tick;	// last CC change or burst heard (scan)
+	uint8_t cc_cur;		// receive code; LOCAL_CC uses cfg.cc during TX
 	uint8_t emb_pending;	// bit n: embedded LC waiting for chip slot n
 	uint8_t emb_rx[2][9];
 	// Transmit

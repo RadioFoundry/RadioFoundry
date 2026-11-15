@@ -13,13 +13,14 @@
 #include "font.h"
 #include "fmt.h"
 #include "codeplug/codeplug.h"
+#include "dmr/dmrDataService.h"
 #include "config.h"
 #include "hal_time.h"
 #include "radio/tones.h"
 #include "radio/mic_gain.h"
 #include "radio/ref_trim.h"
 #include "radio/radio_am.h"
-#include "radio/radio_bcast.h"
+#include "radio/radio_bands.h"
 #include "input/keyassign.h"
 #if CONFIG_HOTSPOT || CONFIG_USB_NETWORK
 #include "hostlink/hostlink.h"
@@ -662,9 +663,29 @@ static const ui_scr_def_t contacts_screen = {
 };
 #endif
 
+// A page of text (About, a message): Up / Down and the knob scroll a line (the knob's forward = down, as in lists),
+// up to max (ui_draw_text_page's answer); BACK leaves
+static bool text_page_key(const input_event_t *ev, uint16_t *first, uint16_t max)
+{
+	int dir = ev->action == ACT_NAV_UP ? -1 : ev->action == ACT_NAV_DOWN ? 1 :
+		ev->action == ACT_ENC_STEP ? (ev->value > 0 ? 1 : -1) : 0;
+	if (dir == 0 || (ev->gesture != GESTURE_PRESS && ev->gesture != GESTURE_REPEAT && ev->gesture != GESTURE_LONG &&
+			ev->action != ACT_ENC_STEP))
+		return false;
+	int n = ev->action == ACT_ENC_STEP ? (ev->value < 0 ? -ev->value : ev->value) : 1;
+	int f = *first + dir * n;
+	*first = (uint16_t)(f < 0 ? 0 : f > max ? max : f);
+	ui_dirty();
+	return true;
+}
+
 // ======================= Messages =======================
 
 #define MSG_APRS_ARG	0x8000u
+#define MSG_LONG_ARG	0x4000u	// the message screen shortens the text: Full message is the first row (set on entry)
+#define MSG_INDEX(arg)	((uint16_t)((arg) & ~(MSG_APRS_ARG | MSG_LONG_ARG)))
+_Static_assert(DMR_DATA_INBOX_SIZE <= MSG_LONG_ARG && APRS_MESSAGES <= MSG_LONG_ARG,
+	       "an inbox index must stay under the arg's flag bits");
 
 static bool aprs_new_available(void)
 {
@@ -803,12 +824,24 @@ static const ui_scr_def_t messages_screen = {
 	.count = msgs_count, .item = msgs_item, .select = msgs_select, .context = msgs_context,
 };
 
-// One message: the text, then canned replies first, call, delete
+// One message: the text, then canned replies first, call, delete. A text the screen shortens gets a Full message row
+// first, which shows all of it on a page of its own
 
-enum { MV_REPLY_OK, MV_REPLY_WAY, MV_CALL, MV_DELETE, MV_COUNT };
+enum { MV_READ, MV_REPLY_OK, MV_REPLY_WAY, MV_CALL, MV_DELETE, MV_COUNT };
 
 static bool message_aprs(void) { return (ui_frame()->arg & MSG_APRS_ARG) != 0; }
-static uint8_t message_aprs_index(void) { return (uint8_t)(ui_frame()->arg & ~MSG_APRS_ARG); }
+static uint16_t message_index(void) { return MSG_INDEX(ui_frame()->arg); }
+static uint8_t message_aprs_index(void) { return (uint8_t)message_index(); }
+
+static const char *msg_title(void);
+static const char *msg_body(void);
+
+// The action of row i. Whether the Full message row is there is decided once, on entry, and kept in the frame's arg:
+// decided at each draw, a row would appear or go when "9m ago" became "10m ago", and OK on Call could land on Delete
+static uint8_t msg_action(uint16_t i)
+{
+	return (uint8_t)(i + ((ui_frame()->arg & MSG_LONG_ARG) ? MV_READ : MV_REPLY_OK));
+}
 
 static void msg_enter(void)
 {
@@ -816,28 +849,43 @@ static void msg_enter(void)
 		aprs_msg_t m;
 		(void)ui_svc_aprs_msg(message_aprs_index(), &m, true);
 	} else {
-		ui_svc_msg_read(ui_frame()->arg);
+		ui_svc_msg_read(message_index());
 	}
+	ui_list_t l;
+	memset(&l, 0, sizeof l);
+	l.prefix = TR("Message");
+	l.name = msg_title();
+	l.body = msg_body();
+	l.count = MV_COUNT;
+	if (!ui_list_body_fits(&ui_st, &l))
+		ui_frame()->arg |= MSG_LONG_ARG;
 }
 
-static uint16_t msg_count(void) { return MV_COUNT; }
+static uint16_t msg_count(void) { return (uint16_t)(MV_COUNT - msg_action(0)); }
 
 static void msg_item(uint16_t i, ui_item_t *it)
 {
-	static const char *const names[] = { TRN("Reply \"OK\""), TRN("Reply \"On my way\""), TRN("Call"),
-					     TRN("Delete") };
-	str_copy(it->label, sizeof it->label, tr(names[i]));
-	if (i <= MV_REPLY_WAY && !message_aprs() && !(feats() & UI_FEAT_SMS))
+	static const char *const names[] = { TRN("Full message"), TRN("Reply \"OK\""), TRN("Reply \"On my way\""),
+					     TRN("Call"), TRN("Delete") };
+	uint8_t a = msg_action(i);
+	str_copy(it->label, sizeof it->label, tr(names[a]));
+	if ((a == MV_REPLY_OK || a == MV_REPLY_WAY) && !message_aprs() && !(feats() & UI_FEAT_SMS))
 		it->flags |= UI_ITEM_DIM;
-	if (i == MV_CALL && message_aprs())
+	if (a == MV_CALL && message_aprs())
 		it->flags |= UI_ITEM_DIM;
 }
 
 static void msg_select(uint16_t i, bool hold)
 {
 	(void)hold;
+	uint8_t a = msg_action(i);
+	if (a == MV_READ) {
+		ui_push(SCR_MESSAGE_READ, ui_frame()->arg);
+		return;
+	}
+	i = a;
 	if (!message_aprs())
-		msg_target_of(ui_frame()->arg, &ui_target);
+		msg_target_of(message_index(), &ui_target);
 	switch (i) {
 	case MV_REPLY_OK:
 	case MV_REPLY_WAY:
@@ -858,7 +906,7 @@ static void msg_select(uint16_t i, bool hold)
 		break;
 	case MV_DELETE:
 		if (message_aprs() ? ui_svc_aprs_msg_delete(message_aprs_index()) :
-		    ui_svc_msg_delete(ui_frame()->arg)) {
+		    ui_svc_msg_delete(message_index())) {
 			ui_pop();
 			ui_toast(TR("Message deleted"));
 		} else {
@@ -875,7 +923,7 @@ static bool msg_target(uint16_t i, ui_target_t *t)
 	(void)i;
 	if (message_aprs())
 		return false;
-	msg_target_of(ui_frame()->arg, t);
+	msg_target_of(message_index(), t);
 	return t->id != 0;
 }
 
@@ -888,7 +936,7 @@ static void msg_context(uint16_t i)
 			ui_aprs_compose(m.from);
 	} else {
 		ui_target_t t;
-		msg_target_of(ui_frame()->arg, &t);
+		msg_target_of(message_index(), &t);
 		ui_open_actions(&t);
 	}
 }
@@ -901,7 +949,7 @@ static const char *msg_title(void)
 	uint16_t row = 0, index;
 	bool aprs;
 	while (msg_row(row, &aprs, &index) &&
-	       (aprs != message_aprs() || index != (ui_frame()->arg & ~MSG_APRS_ARG)))
+	       (aprs != message_aprs() || index != message_index()))
 		row++;
 	sb_u32(&b, row + 1u, 1);
 	sb_str(&b, TR(" of "));
@@ -926,7 +974,7 @@ static const char *msg_body(void)
 		return message_buffer;
 	}
 	ui_msg_t m;
-	if (!ui_svc_msg_get(ui_frame()->arg, &m))
+	if (!ui_svc_msg_get(message_index(), &m))
 		return TR("Message deleted");
 	// "From Joe Smith, 2m ago" (the ID where there is no name; # gives the station's actions), then the text
 	sbuf_t b;
@@ -947,6 +995,33 @@ static const ui_scr_def_t message_screen = {
 	.name = "message", .flags = SF_LIST | SF_FIELD, .prefix = TRN("Message"), .hint = TRN("OK choose  # more  Back"),
 	.count = msg_count, .item = msg_item, .select = msg_select, .context = msg_context, .target = msg_target,
 	.title = msg_title, .body = msg_body, .enter = msg_enter,
+};
+
+// The whole text of a message on a page of its own (the message screen's Full message row; arg: the message screen's)
+static uint16_t msg_read_first;	// first line shown
+static uint16_t msg_read_max;	// the largest first line (from the last draw)
+
+static void msg_read_enter(void)
+{
+	msg_read_first = 0;
+}
+
+static void msg_read_draw(void)
+{
+	msg_read_max = (uint16_t)ui_draw_text_page(ui_view(), &ui_st, TR("Message"), msg_body(), &msg_read_first, false);
+}
+
+static bool msg_read_key(const input_event_t *ev)
+{
+	return text_page_key(ev, &msg_read_first, msg_read_max);
+}
+
+// One "row", so PTT calls the sender as on the message screen
+static uint16_t msg_read_count(void) { return 1; }
+
+static const ui_scr_def_t message_read_screen = {
+	.name = "message-read", .flags = SF_FIELD | SF_NO_STRIP, .key = msg_read_key, .draw = msg_read_draw,
+	.enter = msg_read_enter, .count = msg_read_count, .target = msg_target,
 };
 
 // ======================= Recent =======================
@@ -2281,13 +2356,6 @@ static uint16_t ced_num;		// its number, 0 = no such channel
 static uint8_t ced_rows[CE_COUNT];
 static uint8_t ced_n;
 
-// The radio receives this RX in AM or on the broadcast receiver whatever the channel's mode, never in DMR, and ignores
-// sub-audio there (radio_sm.c listen_band)
-static bool ced_listen_band(const channel_t *c)
-{
-	return radio_am_tx_refused(c->rx_hz) || radio_bcast_band(c->rx_hz);
-}
-
 #if CONFIG_CHANNEL_EDIT
 #define CE_TOT_MAX	495
 #define CE_TOT_STEP	15
@@ -2348,14 +2416,15 @@ static bool ced_changed(uint8_t r)
 }
 
 // RX in a receive-only band (the air band, broadcast FM: docs/spec/airband-and-broadcast.md 2): the copy becomes RX
-// only and FM (AM there), which is all the radio does there
+// only, and FM (AM there) in a listen band, which is all the radio does there
 static void ced_rx_band(channel_t *c)
 {
 	if (!board_in_band(c->rx_hz, false) || board_in_band(c->rx_hz, true))
 		return;
 	c->rx_only = true;
 	c->tx_hz = c->rx_hz;
-	c->mode = RADIO_MODE_FM;
+	if (radio_listen_band(c->rx_hz))
+		c->mode = RADIO_MODE_FM;
 }
 
 // A copy of what the radio uses now (temporary changes included), named after it: "Name 2", or the frequency
@@ -2381,7 +2450,7 @@ static void ced_from_view(void)
 
 static void ced_build(void)
 {
-	bool listen = ced_listen_band(&ced_ch);
+	bool listen = radio_listen_band(ced_ch.rx_hz);
 	bool dmr = CONFIG_DMR && ced_ch.mode == RADIO_MODE_DMR && !listen;
 	bool edit = CONFIG_CHANNEL_EDIT;
 	bool fresh = false, changed = false;
@@ -2586,7 +2655,7 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 		if (radio_am_tx_refused(ch->rx_hz))
 			sb_str(&b, "AM");
 		else
-			sb_str(&b, ch->mode == RADIO_MODE_DMR && !ced_listen_band(ch) ? "DMR" : "FM");
+			sb_str(&b, ch->mode == RADIO_MODE_DMR && !radio_listen_band(ch->rx_hz) ? "DMR" : "FM");
 		break;
 	case CE_RX:
 		sb_freq(&b, ch->rx_hz);
@@ -2716,9 +2785,10 @@ static const char *ced_problem(void)
 		return TR("RX is outside the radio's bands");
 	if (!c->rx_only && !board_in_band(c->tx_hz, true))
 		return TR("TX can't transmit there: set RX only");
-	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && !board_in_band(c->rx_hz, true))
+	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && radio_listen_band(c->rx_hz))
 		return TR("Receive only band: set FM");
-	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && c->contact == 0)
+	// The contact is whom PTT calls, so a channel that never transmits needs none
+	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && !c->rx_only && c->contact == 0)
 		return TR("Pick a TX contact first");
 	return NULL;
 }
@@ -2995,7 +3065,7 @@ static void chinfo_select(uint16_t i, bool hold)
 	case CE_NAME: ui_text_open(c->name, CODEPLUG_NAME_LEN); break;
 	case CE_MODE:
 		// No DMR in a listen band: AM in the air band, FM on the broadcast receiver
-		if (ced_listen_band(c)) {
+		if (radio_listen_band(c->rx_hz)) {
 			c->mode = RADIO_MODE_FM;
 			ui_toast(radio_am_tx_refused(c->rx_hz) ? TR("Air band: receive only") : TR("Broadcast: receive only"));
 		} else
@@ -4662,18 +4732,23 @@ static const ui_scr_def_t trim_screen = {
 #endif
 
 // ======================= About (Settings > Advanced) =======================
-// A text page, every word shown (nothing shortened), no status strip while idle: the release and the commit, RadioFoundry's license, the
-// authors, the third-party code and fonts in this image and the codec. From AUTHORS and platform/<platform>/THIRD_PARTY,
-// through the header make generates (tools/gen_about.py)
+// A text page, every word shown (nothing shortened), no status strip while idle: the release and the commit,
+// RadioFoundry's license, the maintainers, where the contributors are listed, the third-party code and fonts in this
+// image and the codec. From AUTHORS and platform/<platform>/THIRD_PARTY, through the header make generates
+// (tools/gen_about.py)
 
 static const char *const about_authors[] = RFOUNDRY_ABOUT_AUTHORS;
 static const char *const about_third[][2] = RFOUNDRY_ABOUT_THIRD_PARTY;
 static uint16_t about_first;	// first line shown
 static uint16_t about_max;	// the largest first line (from the last draw)
 
+// The text's bytes: the two lists make generated, this build's font lines, and 296 for the rest (the version lines,
+// the labels, and 35 for a translation's longer ones). A fixed size cut the last lines off where the lists are long
+#define ABOUT_TEXT_MAX (296u + RFOUNDRY_ABOUT_LIST_BYTES + (CONFIG_FONT_AA ? 32u : 0u) + (CONFIG_LANG_ZH ? 48u : 0u))
+
 static const char *about_text(void)
 {
-	static char t[400];
+	static char t[ABOUT_TEXT_MAX];
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
 	// every line "Label: value" (ui_draw_text_page shows labels dim), each on its own line: "RadioFoundry v26.11" was
@@ -4701,12 +4776,17 @@ static const char *about_text(void)
 	sb_chr(&b, '\n');
 	sb_str(&b, TR("License: "));
 	sb_str(&b, "MIT, (c) 2026 The RadioFoundry Authors\n");
-	// one author per line, in AUTHORS order: a comma-joined list wraps mid-name on every display
-	sb_str(&b, RFOUNDRY_ABOUT_AUTHOR_COUNT > 1 ? TR("Authors:") : TR("Author:"));
+	// The authors (the copyright line above) are everyone who has contributed: too many to list here, so the page
+	// names the maintainers (AUTHORS) and says where the contributors are listed. One maintainer per line, in AUTHORS
+	// order: a comma-joined list wraps mid-name on every display
+	sb_str(&b, RFOUNDRY_ABOUT_AUTHOR_COUNT > 1 ? TR("Maintainers:") : TR("Maintainer:"));
 	for (unsigned i = 0; i < RFOUNDRY_ABOUT_AUTHOR_COUNT; i++) {
 		sb_chr(&b, RFOUNDRY_ABOUT_AUTHOR_COUNT > 1 ? '\n' : ' ');
 		sb_str(&b, about_authors[i]);
 	}
+	sb_chr(&b, '\n');
+	sb_str(&b, TR("Contributors:"));
+	sb_str(&b, "\ngithub.com/radiofoundry");	// on its own line, as a maintainer is: it never wraps after the label
 	for (unsigned i = 0; i < RFOUNDRY_ABOUT_THIRD_PARTY_COUNT; i++) {
 		sb_chr(&b, '\n');
 		sb_str(&b, about_third[i][0]);
@@ -4735,22 +4815,12 @@ static void about_enter(void)
 
 static void about_draw(void)
 {
-	about_max = (uint16_t)ui_draw_text_page(ui_view(), &ui_st, TR("About"), about_text(), &about_first);
+	about_max = (uint16_t)ui_draw_text_page(ui_view(), &ui_st, TR("About"), about_text(), &about_first, true);
 }
 
-// Up / Down and the knob scroll a line (the knob's forward = down, as in lists); BACK leaves
 static bool about_key(const input_event_t *ev)
 {
-	int dir = ev->action == ACT_NAV_UP ? -1 : ev->action == ACT_NAV_DOWN ? 1 :
-		ev->action == ACT_ENC_STEP ? (ev->value > 0 ? 1 : -1) : 0;
-	if (dir == 0 || (ev->gesture != GESTURE_PRESS && ev->gesture != GESTURE_REPEAT && ev->gesture != GESTURE_LONG &&
-			ev->action != ACT_ENC_STEP))
-		return false;
-	int n = ev->action == ACT_ENC_STEP ? (ev->value < 0 ? -ev->value : ev->value) : 1;
-	int f = about_first + dir * n;
-	about_first = (uint16_t)(f < 0 ? 0 : f > about_max ? about_max : f);
-	ui_dirty();
-	return true;
+	return text_page_key(ev, &about_first, about_max);
 }
 
 static const ui_scr_def_t about_screen = {
@@ -5497,7 +5567,7 @@ static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITO
 #endif
 };
 static const char *const n_keyfn_press[] = { TRN("Default"), TRN("Nothing"), TRN("Monitor"), TRN("Talk target"),
-					     TRN("Power level"), TRN("Next zone"), TRN("Previous zone"), TRN("Scan"),
+					     TRN("Power level"), TRN("Next zone"), TRN("Prev zone"), TRN("Scan"),
 					     TRN("Key lock"), TRN("Home zone"),
 #if CONFIG_FM_TX_TONES
 					     TRN("Tone burst"),
@@ -5529,7 +5599,7 @@ static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TA
 #endif
 };
 static const char *const n_keyfn_hold[] = { TRN("Default"), TRN("Nothing"), TRN("Talk target"), TRN("Power level"),
-					    TRN("Next zone"), TRN("Previous zone"), TRN("Scan"),
+					    TRN("Next zone"), TRN("Prev zone"), TRN("Scan"),
 #if CONFIG_DMR_EMERGENCY
 					    TRN("Emergency"),
 #endif
@@ -5730,6 +5800,9 @@ static void key_labels(void)
 			sb_init(&b, key_label[2 * r + h], sizeof key_label[0]);
 			if (board.side_key_names != NULL && r < board.side_key_count) {
 				sb_str(&b, board.side_key_names[r]);
+			} else if (board.home_key_names != NULL && r >= board.side_key_count &&
+				   r < board.side_key_count + board.home_key_count) {
+				sb_str(&b, board.home_key_names[r - board.side_key_count]);
 			} else {
 				sb_str(&b, TR("Key "));
 				sb_i32(&b, r + 1);
@@ -5821,7 +5894,8 @@ static bool set_hidden(const set_item_t *s)
 #if CONFIG_KEY_ASSIGN
 	if (s->type != ST_ACTION && s->id >= UI_SET_KEY_FIRST && s->id <= UI_SET_KEY_LAST) {
 		key_labels();
-		return (s->id - UI_SET_KEY_FIRST) / 2 >= board.side_key_count;	// a key this radio doesn't have
+		// a key this radio doesn't have (side keys, then the keys programmable on Home)
+		return (s->id - UI_SET_KEY_FIRST) / 2 >= board.side_key_count + board.home_key_count;
 	}
 #endif
 	if (s->type != ST_ACTION && s->id == UI_SET_VOLUME)
@@ -5909,6 +5983,29 @@ static const set_item_t *set_item_at(uint16_t i)
 	return g < GROUPS ? set_nth((uint8_t)g, i) : NULL;
 }
 
+#if CONFIG_KEY_ASSIGN
+// A home key left at Default (P1, P2: board.home_keys) does on Home what its arrow does there: the zone. Say that
+// instead of "Default". NULL for any other key or value
+static const char *home_key_default(uint8_t id, int32_t v)
+{
+	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
+	if (v != KEYFN_DEFAULT || id < UI_SET_KEY_FIRST || id > UI_SET_KEY_LAST || k / 2u < board.side_key_count ||
+	    k / 2u >= board.side_key_count + board.home_key_count)
+		return NULL;
+	uint8_t bit = board.home_keys[k / 2u - board.side_key_count];
+	for (uint8_t i = 0; i < board.keymap_len; i++) {
+		if (board.keymap[i].bit != bit)
+			continue;
+		uint8_t a = (k & 1u) ? board.keymap[i].long_action : board.keymap[i].short_action;
+		if (a == ACT_NAV_LEFT || a == ACT_USER_1 || a == ACT_ZONE_DOWN)	// ui_home_key
+			return TR("Prev zone");
+		if (a == ACT_NAV_RIGHT || a == ACT_USER_4 || a == ACT_ZONE_UP)
+			return TR("Next zone");
+	}
+	return NULL;
+}
+#endif
+
 static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len)
 {
 	sbuf_t b;
@@ -5918,6 +6015,15 @@ static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len
 		sb_str(&b, v ? TR("On") : TR("Off"));
 		break;
 	case ST_LIST:
+#if CONFIG_KEY_ASSIGN
+		{
+			const char *home = home_key_default(s->id, v);
+			if (home != NULL) {
+				sb_str(&b, home);
+				break;
+			}
+		}
+#endif
 		for (uint8_t k = 0; k < s->n; k++) {
 			if (s->values[k] == v) {
 				sb_str(&b, tr(s->names[k]));
@@ -6088,7 +6194,15 @@ static void group_select(uint16_t i, bool hold)
 		uint8_t k = 0;
 		while (k < s->n && s->values[k] != v)
 			k++;
-		set_store(s, s->values[(k + 1u) % s->n]);
+		uint8_t next = (uint8_t)((k + 1u) % s->n);
+#if CONFIG_KEY_ASSIGN
+		// A key's slot skips what it can't hold (a home key: Monitor, Tone burst)
+		if (s->id >= UI_SET_KEY_FIRST && s->id <= UI_SET_KEY_LAST) {
+			for (uint8_t t = 0; t < s->n && !ui_svc_key_offered(s->id, s->values[next]); t++)
+				next = (uint8_t)((next + 1u) % s->n);
+		}
+#endif
+		set_store(s, s->values[next]);
 		break;
 	}
 	case ST_NUMBER:
@@ -6629,6 +6743,7 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_HOME] = &home_screen, [SCR_QUICK] = &quick_screen, [SCR_HUB] = &hub_screen,
 	[SCR_FIND] = &ui_find_screen, [SCR_ACTIONS] = &actions_screen, [SCR_CONTACTS] = &contacts_screen,
 	[SCR_MESSAGES] = &messages_screen, [SCR_MESSAGE] = &message_screen, [SCR_COMPOSE] = &compose_screen,
+	[SCR_MESSAGE_READ] = &message_read_screen,
 	[SCR_RECENT] = &recent_screen, [SCR_ZONES] = &channels_screen, [SCR_ZONE] = &zone_screen,
 	[SCR_TOOLS] = &tools_screen, [SCR_SETTINGS] = &settings_screen, [SCR_GROUP] = &group_screen,
 	[SCR_PICKER] = &picker_screen, [SCR_INFO] = &info_screen, [SCR_CONFIRM] = &confirm_screen,

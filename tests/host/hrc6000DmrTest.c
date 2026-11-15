@@ -380,29 +380,59 @@ static void test_rx(void)
 	CHECK(eng.st.rx_restarts == restarts + 1);
 }
 
-static void test_rx_stale_lc(void)
+// One late entry on a chip still holding old_lc in page 2: 12 voice bursts (two superframes) from burst A, page 2
+// becoming new_lc (NULL: never) after `after` bursts. bad_f: the F of the first superframe flags a CRC error. Returns
+// the voice index and number (1-based) of the first burst whose LC is valid, -1 if none
+static int stale_lc_entry(const uint8_t *old_lc, const uint8_t *new_lc, int after, bool bad_f, int *at)
 {
 	fresh_engine();
-	static const uint8_t old_lc[9] = { 0, 0, 0, 0, 0, 9, 0, 0, 1 };
-	memcpy(&rd[2][0], old_lc, 9);	// a late entry: the chip still holds the last call's LC
+	memcpy(&rd[2][0], old_lc, 9);
 	uint32_t t = 3000000;
-	bool f_valid[2] = { true, true };
-	int sf = 0;
+	int first = -1, voices = 0;
+	*at = -1;
 	for (int n = 0; n < 12; n++) {
+		if (new_lc != NULL && n == after) {
+			memcpy(&rd[2][0], new_lc, 9);
+		}
 		ts_at(t);
 		t += 30000;
 		ts_at(t);
-		report_at(t + 4000, (uint8_t)(((0x8 | (n % 6 + 1)) << 4) | (n % 6 == 0 ? 1 : 0)), 0x20, 0x00);
+		uint8_t r51 = (uint8_t)(((0x8 | (n % 6 + 1)) << 4) | (n % 6 == 0 ? 1 : 0));
+		if (bad_f && n == 5) {
+			r51 |= 0x04;
+		}
+		report_at(t + 4000, r51, 0x20, 0x00);
 		t += 30000;
 		drain();
-		const dmr_burst_t *b = last_burst();
-		if (b != NULL && b->voice_index == 5) {
-			f_valid[sf++] = b->lc_valid;
+		for (int i = 0; i < nev; i++) {
+			if (evs[i].kind == DMR_EV_BURST_RX && bursts[i].kind == DMR_BURST_VOICE) {
+				voices++;
+				if (bursts[i].lc_valid && first < 0) {
+					first = bursts[i].voice_index;
+					*at = voices;
+				}
+			}
 		}
+		nev = 0;
 	}
-	CHECK(sf == 2);
-	CHECK(!f_valid[0]);	// unchanged LC at the first F: not trusted
-	CHECK(f_valid[1]);	// after more than a superframe it is
+	return first;
+}
+
+static void test_rx_stale_lc(void)
+{
+	static const uint8_t old_lc[9] = { 0, 0, 0, 0, 0, 9, 0, 0, 1 };
+	static const uint8_t new_lc[9] = { 0, 0, 0, 0, 0, 9, 0, 0, 2 };
+	int at;
+	// The same talker again: page 2 never changes. Not at the first F (page 2 may not hold this call's LC yet), but at
+	// the A after it, a whole superframe of this reception having closed with a good F (HIL 2026-11-14: held back to
+	// the second F, a late entry played 8 bursts instead of 12)
+	CHECK(stale_lc_entry(old_lc, NULL, 0, false, &at) == 0 && at == 7);
+	// The F before it flagged a CRC error: not at that A; the next F, after more than a superframe
+	CHECK(stale_lc_entry(old_lc, NULL, 0, true, &at) == 5 && at == 12);
+	// A new talker whose LC reaches page 2 only after the first F was read: taken at the A, as new
+	CHECK(stale_lc_entry(old_lc, new_lc, 6, false, &at) == 0 && at == 7 && memcmp(&rd[2][0], new_lc, 9) == 0);
+	// ... and before the first F: at that F
+	CHECK(stale_lc_entry(old_lc, new_lc, 4, false, &at) == 5 && at == 6);
 }
 
 static void test_out_of_step_resync(void)
@@ -775,6 +805,27 @@ static void test_tx_end_hold(void)
 			CHECK(eng.st.rx_restarts == rs + 1);	// once
 		}
 	}
+	// A color code change during the transmission: the receiver restarts on the new code as it ends, not the hold
+	// (the hold would drop the restart, and the receiver would keep the old code's sync)
+	{
+		fresh_engine();
+		pending_burst = false;
+		hrc6000_dmr_set_cc_filter(&eng, 1);
+		CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+		dmr_tx_burst_t hdr = mk(DMR_BURST_DATA_HEADER, 0, true);
+		hrc6000_dmr_tx_queue(&eng, &hdr);
+		hrc6000_dmr_tx_end(&eng);
+		uint32_t t = 7000000;
+		int r50, r41;
+		tx_tick(t += 30000, &r50, &r41);
+		hrc6000_dmr_set_cc_filter(&eng, 3);
+		uint32_t rs = eng.st.rx_restarts;
+		for (int k = 0; k < 8 && hrc6000_dmr_is_transmitting(&eng); k++) {
+			tx_tick(t += 30000, &r50, &r41);
+		}
+		CHECK(!hrc6000_dmr_is_transmitting(&eng));
+		CHECK(eng.st.rx_holds == 0 && eng.st.rx_restarts == rs + 1 && last_write(4, 0x1F) == 0x30);
+	}
 	// No tick after the end (the chip's timing stopped): the restart after HOLD_NO_TICK_US
 	fresh_engine();
 	pending_burst = false;
@@ -807,6 +858,7 @@ static void test_tx_aligned_rmo(void)
 	pending_burst = false;
 	dmr_config_t cfg = { .own_id = 9990001, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
 	hrc6000_dmr_configure(&eng, &cfg);
+	hrc6000_dmr_set_cc_filter(&eng, cfg.cc);
 	CHECK(last_write(4, 0x14) == (9990001 >> 16) && last_write(4, 0x16) == (9990001 & 0xFF));
 	CHECK(last_write(4, 0x1F) == 0x10);
 	// The repeater's CACH: the slot starting at tick k is TS1 on odd ticks, TS2 on even ones; 0x52 bit 2 at the
@@ -1048,6 +1100,27 @@ static void test_cc_follow(void)
 	uint32_t restarts = eng.st.rx_restarts;
 	ts_at(t += 30000);			// the receiver restarts at the next tick, no busy wait in the ISR
 	CHECK(eng.st.rx_restarts == restarts + 1);
+
+	const dmr_config_t cfg = { .cc = 5 };
+	hrc6000_dmr_configure(&eng, &cfg);
+	CHECK(eng.cc_filter == -1 && eng.cc_cur == 2);
+	CHECK(last_write(4, 0x1F) == 0x20);
+	hrc6000_dmr_set_cc_filter(&eng, 2);
+	hrc6000_dmr_set_cc_filter(&eng, -1);
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x50);
+	hrc6000_dmr_set_cc_filter(&eng, 7);
+	CHECK(last_write(4, 0x1F) == 0x50);
+	// A reconfigure during TX leaves 0x1F to the transmission too; the receiver restarts on the new code after it
+	const dmr_config_t cfg9 = { .cc = 9 };
+	hrc6000_dmr_configure(&eng, &cfg9);
+	CHECK(last_write(4, 0x1F) == 0x50 && eng.cc_cur == 9);
+	restarts = eng.st.rx_restarts;
+	hrc6000_dmr_tx_abort(&eng);
+	for (int i = 0; i < 4; i++)
+		ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x90 && eng.st.rx_restarts > restarts);
 
 	// A fixed filter: written at once, never followed
 	hrc6000_dmr_set_cc_filter(&eng, 5);

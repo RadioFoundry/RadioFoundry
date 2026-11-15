@@ -1313,6 +1313,10 @@ msgid "No messages yet"
 msgstr "Sin mensajes aún"
 
 #: core/ui/ui_menus.c
+msgid "Full message"
+msgstr "Mensaje completo"
+
+#: core/ui/ui_menus.c
 msgid "Reply \"OK\""
 msgstr "Responder \"OK\""
 
@@ -2369,12 +2373,16 @@ msgid "License: "
 msgstr "Licencia: "
 
 #: core/ui/ui_menus.c
-msgid "Authors:"
-msgstr "Autores:"
+msgid "Maintainers:"
+msgstr "Mantenedores:"
 
 #: core/ui/ui_menus.c
-msgid "Author:"
-msgstr "Autor:"
+msgid "Maintainer:"
+msgstr "Mantenedor:"
+
+#: core/ui/ui_menus.c
+msgid "Contributors:"
+msgstr "Colaboradores:"
 
 #: core/ui/ui_menus.c
 msgid "Spleen font: BSD-2-Clause"
@@ -2757,7 +2765,7 @@ msgid "Next zone"
 msgstr "Zona siguiente"
 
 #: core/ui/ui_menus.c
-msgid "Previous zone"
+msgid "Prev zone"
 msgstr "Zona anterior"
 
 #: core/ui/ui_menus.c

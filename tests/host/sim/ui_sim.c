@@ -385,6 +385,8 @@ static hal_power_t power = { .battery_pct = p_battery };
 // The air band receive only, as on radios that have it (docs/spec/airband-and-broadcast.md 3.2)
 static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true },
 				{ 108000000, 136000000, false } };
+// "rxonly": a radio whose transmitter isn't written yet, every band receive only
+static const band_t rx_only_bands[] = { { 136000000, 174000000, false }, { 400000000, 480000000, false } };
 static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
 
 static bool afsk_tx_start(const uint8_t *t, uint16_t n, uint16_t baud, uint16_t mark, uint16_t space, uint8_t level)
@@ -1164,7 +1166,7 @@ static void load_channel(void)
 	view.dmr.hear_all = view.monitor;
 	view.dmr.active = view.ch.mode == RADIO_MODE_DMR;
 	view.dmr.codec = true;
-	view.dmr.cc = view.ch.color_code;
+	view.dmr.cc = view.dmr.rx_cc = view.ch.color_code;
 	view.dmr.ts = view.ch.timeslot;
 	view.dmr.reply_active = false;
 	reply_until = 0;
@@ -1217,7 +1219,7 @@ static void sim_vfo(bool on)
 		view.ch.color_code = vfo_cc;
 		view.ch.timeslot = vfo_ts;
 		view.dmr.active = vfo_mode == RADIO_MODE_DMR;
-		view.dmr.cc = vfo_cc;
+		view.dmr.cc = view.dmr.rx_cc = vfo_cc;
 		view.dmr.ts = vfo_ts;
 		view.channel_number = 0;
 		view.temp = 0;		// the VFO has no temporary changes
@@ -1346,7 +1348,7 @@ void radio_req_clear_temporary(void)
 	view.temp = 0;
 	view.temporary = false;
 	view.dmr.active = view.ch.mode == RADIO_MODE_DMR;
-	view.dmr.cc = view.ch.color_code;
+	view.dmr.cc = view.dmr.rx_cc = view.ch.color_code;
 	view.dmr.ts = view.ch.timeslot;
 	temp_target = 0;
 	default_target();
@@ -1657,7 +1659,7 @@ bool ui_svc_dmr_timeslot(uint8_t ts)
 bool ui_svc_dmr_color_code(uint8_t cc)
 {
 	retune();
-	view.dmr.cc = view.ch.color_code = cc;
+	view.dmr.cc = view.dmr.rx_cc = view.ch.color_code = cc;
 	if (view.vfo) {
 		vfo_cc = cc;
 		changed();
@@ -2150,6 +2152,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.side_key_names = maps[map].names;
 	board.side_key_count = maps[map].side_n;
 	board.caps = maps[map].caps;
+	board.bands = bands;
+	board.band_count = sizeof bands / sizeof bands[0];
 	power.supply_mv = NULL;
 	// The MD-9600's panel names its QUICK and CONTEXT keys in the hints
 	board.quick_label = map == SIM_MAP_P ? "P1" : NULL;
@@ -2941,6 +2945,11 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "foreign") == 0) {	// the codeplug is another firmware's: the first edit asks
 		sim_foreign = true;
+		return true;
+	}
+	if (strcmp(t, "rxonly") == 0) {	// no band may transmit
+		board.bands = rx_only_bands;
+		board.band_count = sizeof rx_only_bands / sizeof rx_only_bands[0];
 		return true;
 	}
 	if (strcmp(t, "nobattery") == 0) {

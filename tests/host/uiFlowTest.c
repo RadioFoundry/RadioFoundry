@@ -13,6 +13,7 @@
 #include "sim/ui_sim.h"
 #include "ui/ui_app.h"
 #include "ui/ui_screens.h"
+#include "ui/i18n.h"
 #include "config.h"
 
 static int fails, flows_run;
@@ -27,6 +28,20 @@ typedef struct {
 } flow_t;
 
 #define CALLER	"call:9991234,91,g wait:11000 "
+// 143 characters (UI_MSG_TEXT_MAX), the last word LAST
+#define LONG_TEXT	"Your_Special_Configuration_is:_Active_SMS:_LONG_SMS_Delay:_2.5_s_Retries:_3_Language:_English_" \
+	"Time_zone:_UTC_Units:_metric_Echo:_off_End_LAST"
+// A text the message screen shortens: Full message first, a page that scrolls to its end. For the displays that
+// shorten it (240x320 shows all 143 characters, and so no Full message)
+#define LONG_MESSAGE_FLOWS \
+	{ "7 long message offers Full message", "msg:9991234," LONG_TEXT " wait:9000 ok 2 ok", "", \
+	  "screen=message focus=Full_message", 0, false }, \
+	{ "7 Full message scrolls to the end", "msg:9991234," LONG_TEXT " wait:9000 ok 2 ok", \
+	  "ok down down down down down down down down down down", "screen=message-read shows=LAST", 11, false }, \
+	{ "7 Full message goes back to the replies", "msg:9991234," LONG_TEXT " wait:9000 ok 2 ok ok", "back", \
+	  "screen=message focus=Full_message", 1, false }, \
+	{ "7 PTT in Full message calls the sender", "msg:9991234," LONG_TEXT " wait:9000 ok 2 ok ok", "ptt", \
+	  "txid=9991234 txpriv=1", 1, false },
 #define TALK_BACK	"ok 7 3 down down down down down down down down down ok long:back quick 7 ctx 3 5 ok "	// on, and A 3 / B 5
 
 static const flow_t flows[] = {
@@ -67,6 +82,8 @@ static const flow_t flows[] = {
 #endif
 	{ "7 read message, banner up", "msg:9991234,Meet_at_the_north_lot", "ctx", "screen=message", 1, false },
 	{ "7 read message later", "msg:9991234,Meet_at_the_north_lot wait:9000", "ok 2 ok", "screen=message", 3, false },
+	{ "7 short message has no Full message", "msg:9991234,Meet_at_the_north_lot wait:9000 ok 2 ok", "",
+	  "focus=Reply hides=Full_message", 0, false },
 #if CONFIG_ZONE_SHARE
 	// An offer's banner has no timer: it waits for #, BACK or the offer's end (zone-share.md 5.2)
 	{ "zone offer banner still up a minute later", "zoneoffer:9991234", "wait:60000", "shows=Zone_from", 0, false },
@@ -318,8 +335,12 @@ static const flow_t flows[] = {
 	  "writes=1", 9, true },
 	{ "E RX in a receive-only band: RX only and FM before the save", "ok 5 up up ok down down down", "ok 1 2 1 5 0 0 ok down down down",
 	  "shows=FM shows=RX_only shows=Yes", 11, false },
-	{ "E a DMR channel's RX in a receive-only band: FM", "ok 5 ok down down down", "ok 1 2 1 5 0 0 ok",
-	  "shows=121.500 shows=FM hides=Color_code", 8, false },
+	// DMR goes wherever FM goes but a listen band (ui.md 2.1). Without AM receive the air band is a receive-only band
+	// like any other: a DMR channel there stays DMR, RX only. With AM it is a listen band: AM, never DMR
+	{ "E a DMR channel's RX in a receive-only band: DMR, RX only, saved", "ok 5 ok down down down",
+	  "ok 1 2 1 5 0 0 ok long:ok", "shows=121.500 hides=FM toast=Saved_channel_3 writes=1", 9, true },
+	{ "E on a radio with AM: a DMR channel's air band RX makes it AM", "am ok 5 ok down down down", "ok 1 2 1 5 0 0 ok",
+	  "shows=121.500 shows=AM hides=Color_code", 8, false },
 	{ "E on a radio with AM: an air band RX makes the Mode AM", "am ok 5 up up ok down down down", "ok 1 2 1 5 0 0 ok",
 	  "shows=121.500 shows=AM hides=FM", 8, false },
 	{ "E on a radio with AM: OK on the Mode row keeps it AM", "am ok 5 up up ok down down down ok 1 2 1 5 0 0 ok up",
@@ -359,6 +380,19 @@ static const flow_t flows[] = {
 #endif
 	{ "E DMR needs a TX contact to save", "ok 5 ok down down down down down down down down down", "ok up ok long:ok",
 	  "toast=Pick_a_TX writes=0", 4, false },
+	// The contact is whom PTT calls: an RX only channel saves without one (row 6 is RX only, the contact row stays 9)
+	{ "E DMR RX only saves without a TX contact", "ok 5 ok down down down down down down", "ok down down down ok up ok long:ok",
+	  "toast=Saved_channel_3 writes=1", 8, true },
+	// A radio with no transmit band ("rxonly") keeps a DMR channel that is RX only, as any radio does in a receive-only
+	// band. Channel 3 is DMR on 453.625, its RX only row is 6
+	{ "E no transmit band: DMR needs RX only", "rxonly ok 5 ok", "long:ok down down down down down down",
+	  "toast=TX_can't_transmit writes=0 focus=RX_only", 7, false },
+	{ "E no transmit band: DMR RX only, saved", "rxonly ok 5 ok down down down down down down", "ok long:ok",
+	  "toast=Saved_channel_3 writes=1", 2, true },
+	{ "E no transmit band: new RX keeps DMR, RX only", "rxonly ok 5 ok down down down", "ok 4 4 6 0 0 0 ok long:ok",
+	  "toast=Saved_channel_3 writes=1 hides=FM shows=446.000", 9, true },
+	{ "E no transmit band: DMR after the new RX", "rxonly ok 5 ok down down ok down", "ok 1 4 6 5 2 0 ok up ok long:ok",
+	  "toast=Saved_channel_3 writes=1 hides=FM shows=146.520", 11, true },
 	{ "E a name to save", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ok long:ok",
 	  "toast=Give_it_a_name writes=0", 2, false },
 	{ "E nothing changed to save", "ok 5 ok", "long:ok", "toast=No_changes writes=0", 1, false },
@@ -827,6 +861,7 @@ static const flow_t flows[] = {
 
 // GD-77 key map on its 128x64 monochrome screen only (it has the Left / Right arrow keys)
 static const flow_t flows_mono[] = {
+	LONG_MESSAGE_FLOWS
 	{ "2 Right steps to the next zone on Home", "", "right", "zone=1 screen=home", 1, false },
 	{ "2 Left steps back a zone", "right", "left", "zone=0 screen=home", 1, false },
 	// The talk line on the smallest display (#336): an icon, not "PTT->" or "Reply->", so the label keeps its room
@@ -851,6 +886,7 @@ static const flow_t flows_mono[] = {
 
 // DM-1701 key map only: the top side key, long waits
 static const flow_t flows_k[] = {
+	LONG_MESSAGE_FLOWS
 	// Dual watch on the side keys: SK2 is A/B pressed, Dual watch held; P1 / P2 (zones) and the knob act on the
 	// selected channel
 	{ "11 dual watch: SK2 pressed is A/B", "quick 7 ctx 3 5 ok", "sk2", "dual=1 sel=B", 1, false },
@@ -1293,6 +1329,28 @@ static void about_checks(void)
 			fails++;
 		}
 		sim_run("pttup", err, sizeof err);
+		// In every language built, the whole text fits its buffer: scrolling a line at a time passes where the
+		// contributors are listed and ends on the last line (the codec's)
+		for (uint8_t l = 0; l < lang_count(); l++) {
+			if (!lang_built(l))
+				continue;
+			bool where = false, last = false;
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			lang_set(l);
+			if (sim_run("ok 7 up ok ok wait:200", err, sizeof err)) {
+				for (int i = 0; i < 40 && !last; i++) {
+					where = where || sim_run("expect:shows=github.com/radiofoundry", err, sizeof err);
+					last = sim_run("expect:shows=DVSI", err, sizeof err);
+					sim_run("down", err, sizeof err);
+				}
+			}
+			if (!where || !last) {
+				printf("FAIL about [%s %s]: %s not shown\n", gn, lang_code(l), !where ? "the contributors line" :
+					"the last line");
+				fails++;
+			}
+		}
+		lang_set(LANG_ENGLISH);
 	}
 }
 
