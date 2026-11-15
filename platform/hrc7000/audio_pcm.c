@@ -317,6 +317,12 @@ static void gate_check(void)
 	hrc_irq_restore(s);
 }
 
+bool hrc_audio_pcm_speaker_blocked(void)
+{
+	gate_check();	// the task opens it only every few ms: ask now
+	return tx_gated;
+}
+
 void hrc_audio_pcm_gate_stats(uint32_t *closings, uint32_t *late, uint32_t *ring_on)
 {
 	*closings = gates;

@@ -378,6 +378,7 @@ static struct {
 	uint32_t start_ms;
 	unsigned produced, taken, begins, ends;
 	bool starve;
+	bool busy;		// the source still has a tail to send (dmr_voice_source_t.busy)
 } src;
 
 static void src_begin(void *ctx) { (void)ctx; src.on = true; src.start_ms = now; src.produced = src.taken = 0; src.begins++; }
@@ -397,7 +398,9 @@ static bool src_next(uint8_t f[9], void *ctx)
 	return true;
 }
 
-static const dmr_voice_source_t source = { .begin = src_begin, .next = src_next, .end = src_end };
+static bool src_busy(void *ctx) { (void)ctx; return src.busy; }
+
+static const dmr_voice_source_t source = { .begin = src_begin, .next = src_next, .end = src_end, .busy = src_busy };
 
 // 10 ms steps; a slot boundary every 30 ms; the stack polled every step
 static void run_ms(unsigned ms)
@@ -598,6 +601,43 @@ static void test_tx_call(void)
 	printf("# TX: %u headers, %u voice bursts, %u silence frames, 1 terminator\n", DMR_CALL_TX_HEADERS, v, silent);
 	// The talk target was the channel's: no reply countdown
 	CHECK(!V()->reply_active && V()->tx_target.id == TG_TALK);
+}
+
+// A source with a tail (an end of transmission tone): the over goes on past PTT's release, superframe by superframe,
+// while the source is busy, and ends at the next boundary once it is not; a tail that never ends is cut after
+// DMR_CALL_TX_TAIL_HOLDS superframes
+static void test_tx_tail_hold(void)
+{
+	dmr_call_config_t c = base_cfg();
+	setup(&c);
+	src.busy = false;
+	dmr_call_ptt(true);
+	run_ms(1000);
+	src.busy = true;
+	dmr_call_ptt(false);
+	run_ms(1000);		// more than the superframe the over would have ended in
+	CHECK(V()->state == DMR_CALL_STATE_TX && V()->phase == DMR_CALL_PHASE_TX_VOICE && sim.tx_ends == 0);
+	src.busy = false;
+	run_ms(1000);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && sim.tx_ends == 1 && src.ends == 1);
+
+	// no tail: it ends in the first superframe, as before
+	dmr_call_ptt(true);
+	run_ms(1000);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && sim.tx_ends == 2);
+
+	// a tail that never ends is cut
+	src.busy = true;
+	dmr_call_ptt(true);
+	run_ms(1000);
+	dmr_call_ptt(false);
+	run_ms(400);
+	CHECK(V()->state == DMR_CALL_STATE_TX);
+	run_ms((DMR_CALL_TX_TAIL_HOLDS + 1) * 360 + 400);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && sim.tx_ends == 3);
+	src.busy = false;
 }
 
 static void test_tx_timeout_and_starve(void)
@@ -3182,6 +3222,7 @@ int main(void)
 	test_embedded();
 	test_alias();
 	test_tx_call();
+	test_tx_tail_hold();
 	test_tx_permit_hold();
 	test_tx_timeout_and_starve();
 	test_tx_refused();

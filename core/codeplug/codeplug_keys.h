@@ -48,4 +48,10 @@ bool codeplug_keys_apply(const codeplug_key_row_t *rows, uint8_t n, void *settin
 // old value back. False when a key that is present couldn't be updated: the change must be refused
 bool codeplug_keys_store(const codeplug_key_row_t *rows, uint8_t n, const void *was, const void *now);
 
+
+// A record key (docs/spec/codeplug-settings.md 3.2, 4) as codeplug_keys_store does a scalar: the first len bytes of the
+// key are set to now when they differ from was. True when the caller may go on and set now as the radio's own: the
+// key was written, or couldn't be and the codeplug holds none. False when the key is present and couldn't be updated
+bool codeplug_keys_store_record(uint16_t key, const void *was, const void *now, uint16_t len);
+
 #endif

@@ -40,6 +40,9 @@ typedef struct {
 	// Optional: speaker audio other than silence is still queued or playing (a beep's tail in the driver's buffers).
 	// NULL: none is held past the block callback
 	bool (*spk_pending)(void);
+	// Optional: the speaker audio queued now is thrown away (the DMR engine is on air and the audio path is gated).
+	// A sound that must be heard whole waits until this is false. NULL: never
+	bool (*speaker_blocked)(void);
 	// Optional: the stream's timing (debug link view audio.*). NULL: not counted
 	void (*stream_stats)(audio_stream_stats_t *out);
 } hal_audio_t;

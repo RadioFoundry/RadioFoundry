@@ -35,6 +35,10 @@ typedef enum {
 	BEEP_COUNT
 } beep_t;
 
+// A signaling tone (sigtone.h): steps handed to beep_play_custom, not a fixed pattern. Not in the enum: it has no entry
+// in the pattern table, and the beep reel and the debug link go through that
+#define BEEP_CUSTOM	((beep_t)BEEP_COUNT)
+
 typedef struct {
 	uint16_t hz;		// 0 = silence, BEEP_HZ_SWEEP = the sweep
 	uint16_t ms;
@@ -56,12 +60,17 @@ typedef struct {
 } beep_stats_t;
 
 #define BEEP_SEGS_MAX	6
+#define BEEP_CUSTOM_MAX	10	// steps of a custom pattern (SIG_STEPS)
 
 // audio NULL: beeps are counted as dropped
 void beep_init(const hal_audio_t *audio);
 // Start a pattern at level 1..100 (0 or BEEP_NONE: nothing). shared: the DMR voice stream is running and mixes the
 // beep in; otherwise the beep starts its own stream. Replaces a pattern still playing
 void beep_play(beep_t b, uint8_t level, bool shared);
+// Play a pattern given as steps (n up to BEEP_CUSTOM_MAX; 0 or a step list with no tone: nothing). The steps are copied,
+// so the caller's array may go. Two copies alternate: a pattern still playing is not rewritten under the audio side.
+// Built with CONFIG_SIG_TONES only
+void beep_play_custom(const beep_seg_t *segs, uint8_t n, uint8_t level, bool shared);
 // Every radio poll: stop the beep's own stream once the pattern is over (shared: the voice stream took over), and
 // let the amplifier go once its hang has run out
 void beep_service(bool shared, uint32_t now_ms);

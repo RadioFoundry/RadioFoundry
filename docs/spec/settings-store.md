@@ -75,7 +75,7 @@ so with two pages a sector is erased once every 64 saves.
 ### 2.1 Pages
 
 `settings_t` is longer than one slot's payload, so it is stored as pages: page k holds bytes `236 * k` on.
-`SETTINGS_PAGES` is the number its size needs (2 now, 396 bytes); the page field allows 16 (3776 bytes). Each page is
+`SETTINGS_PAGES` is the number its size needs (2 now, 464 bytes); the page field allows 16 (3776 bytes). Each page is
 a record with its own length, so `settings_t` grows by appending fields, and a short page fills the fields it has.
 
 | Rule | Why |
@@ -162,6 +162,7 @@ callsign. The own DMR ID is always the codeplug's.
 | volume knob | Page 1, appended after `zs_import`: `sound_flags` (was `knob_flags`) bit 0 (`SETTINGS_KNOB_LOCK`) ignores the knob while the keys are locked, bits 1..3 reserved (0), bits 4..7 the Settings > Sound tones (below); then the VFO SFR bytes and `reserved9`. 0 (an older record) = the knob works. Settings > Key lock > Knob when locked, shown inverted (On = bit clear), on a radio whose MCU reads the knob |
 | Settings > Sound tones | Page 1, `sound_flags` bits 4..7 (`settings_tones_off`): `radio_settings_t.tones_off`, the radio's own copy of the tone keys of the codeplug's settings area ([codeplug-settings.md](codeplug-settings.md) 3, 5.2). Bit 4 call end, 5 TOT warning, 6 battery, 7 TX denied: set = the tone is off. 0 (an older record) = every tone on. Firmware from before them changes only bit 0, so it keeps them |
 | VFO SFR role | Page 1, after `sound_flags` in the old `reserved9[0..1]`: `vfo_sfr` (the first VFO) and `vfo2_sfr` (the second), each byte A of a codeplug channel's SFR bytes ([sfr.md](sfr.md) 4: role, framing, inbound slot, hang); role bits 0-2 0 = none, as an older record reads. No byte B: the VFO's outbound color code is its own. Written with the VFO, set by RREQ_VFO_SFR and Copy to VFO; then `reserved9` |
+| signaling tones | Page 1, the nine bytes of `reserved9` and 55 more after them: `sig_dmr[3]` and `sig_fm[3]`, where the start, end and idle tone sound in DMR and in FM (0 default, 1 off, 2 speaker, 3 on air, 4 speaker + air), then `sig_step[3][10]` (little endian, 16 bits a step: the frequency in units of 10 Hz in bits 0-8, the length in units of 10 ms in bits 9-15): each event's chain of ten steps; a step of length 0 ends it, and no step is the event's standard sound. 0 in every field, as an older record reads, is the radio's own tones. `radio_settings_t.sig_dmr`, `sig_fm`, `sig_hz`, `sig_ms` (unpacked) ([radio-features.md](radio-features.md) 4.3) |
 | crash report | packed into spare bits, so an older record reads as off with no target: the mode (0 off, 1 ask, 2 send at once) in `accent` bits 4-5; the target's codeplug contact number (0 none, else 1..1024, 11 bits) bits 0-5 in `theme` bits 2-7 and bits 6-10 in `updown_home` bits 2-6. `theme` and `updown_home` keep their value in bits 0-1; read and write them through `settings_theme` / `settings_updown_home` and `settings_crash_*` (`settings.h`). Firmware from before reads a `theme` or `updown_home` with these bits as out of range: the dark theme and Up/Down = channel ([crash-log.md](crash-log.md) 5.2) |
 
 All of these are still layout 1: they were appended before any firmware with the settings store shipped. Page 0

@@ -2818,6 +2818,18 @@ msgstr "第一份副本"
 msgid "Dual-path RX"
 msgstr "双路接收"
 
+#: core/ui/ui_menus.c
+msgid "Speaker"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "On air"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "Speaker + air"
+msgstr ""
+
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "Volume"
 msgstr "音量"
@@ -2869,6 +2881,42 @@ msgstr "消息提示音"
 #: core/ui/ui_menus.c
 msgid "Vibrate"
 msgstr "振动"
+
+#: core/ui/ui_menus.c
+msgid "DMR start tone"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "DMR end tone"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "DMR idle tone"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "FM start tone"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "FM end tone"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "FM idle tone"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "Start tone steps"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "End tone steps"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "Idle tone steps"
+msgstr ""
 
 #: core/ui/ui_menus.c
 msgid "Brightness"
@@ -3135,12 +3183,72 @@ msgid "My radio"
 msgstr "我的电台"
 
 #: core/ui/ui_menus.c
+msgid "Signaling tones"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "Signaling Tones"
+msgstr ""
+
+#: core/ui/ui_menus.c
 msgid "Advanced"
 msgstr "高级"
 
 #: core/ui/ui_menus.c
 msgid "0-9 open  Back"
 msgstr "0-9 打开  返回"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Step "
+msgstr "步进 "
+
+#: core/ui/ui_menus.c
+msgid "Standard sound"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "Length: "
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "Start Tone"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "End Tone"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "Idle Tone"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "Not changed: "
+msgstr "未改： "
+
+#: core/ui/ui_menus.c
+msgid " to "
+msgstr " 到 "
+
+#: core/ui/ui_menus.c
+msgid ", steps of "
+msgstr "，步进 "
+
+#: core/ui/ui_menus.c
+msgid "0-9 type  OK next  Back"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid "Standard"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid " step"
+msgstr ""
+
+#: core/ui/ui_menus.c
+msgid " steps"
+msgstr ""
 
 #: core/ui/ui_menus.c
 msgid "Talk permit tone: not in this build"
@@ -3205,18 +3313,6 @@ msgstr "诊断：本版本无"
 #: core/ui/ui_menus.c
 msgid "Settings are saved as you change them"
 msgstr "设置更改即保存"
-
-#: core/ui/ui_menus.c
-msgid "Not changed: "
-msgstr "未改： "
-
-#: core/ui/ui_menus.c
-msgid " to "
-msgstr " 到 "
-
-#: core/ui/ui_menus.c
-msgid ", steps of "
-msgstr "，步进 "
 
 #: core/ui/ui_menus.c core/ui/ui_position.c
 msgid "OK change  Back"
@@ -3369,10 +3465,6 @@ msgstr "扫描"
 #: core/ui/ui_screens.c
 msgid "ROAM"
 msgstr "漫游"
-
-#: core/ui/ui_screens.c
-msgid "Step "
-msgstr "步进 "
 
 #: core/ui/ui_screens.c
 msgid "No TX frequency"

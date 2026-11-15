@@ -75,8 +75,18 @@ static const int16_t sine[64] = {
 static const hal_audio_t *aud;
 static beep_stats_t stats;
 
+#if CONFIG_SIG_TONES
+// Custom patterns (BEEP_CUSTOM): two copies, alternating
+static beep_seg_t cust[2][BEEP_CUSTOM_MAX];
+static uint8_t cust_n[2];
+static uint8_t cust_next;
+#endif
+
 // Handed from the radio task to the audio side
 static uint8_t req_pattern;
+#if CONFIG_SIG_TONES
+static uint8_t req_slot;
+#endif
 static uint8_t req_level;
 static uint8_t req_seq;
 
@@ -86,6 +96,8 @@ static bool own_stream;
 // Audio side
 static uint8_t cb_seq;
 static uint8_t cb_pattern;
+static const beep_seg_t *cb_segs;	// the pattern's steps and their count, taken when it started
+static uint8_t cb_count;
 static uint8_t cb_seg;
 static uint32_t cb_left;	// samples left in the segment
 static uint32_t cb_len;		// samples in the segment
@@ -159,7 +171,7 @@ bool beep_busy(void)
 
 void beep_play(beep_t b, uint8_t level, bool shared)
 {
-	if (b <= BEEP_NONE || b >= BEEP_COUNT || level == 0) {
+	if (b <= BEEP_NONE || (b >= BEEP_COUNT && (!CONFIG_SIG_TONES || b != BEEP_CUSTOM)) || level == 0) {
 		return;
 	}
 	if (aud == NULL || aud->start == NULL) {
@@ -197,6 +209,33 @@ void beep_play(beep_t b, uint8_t level, bool shared)
 	}
 	stats.played++;
 }
+
+#if CONFIG_SIG_TONES
+void beep_play_custom(const beep_seg_t *segs, uint8_t n, uint8_t level, bool shared)
+{
+	bool tone = false;
+	if (n > BEEP_CUSTOM_MAX) {
+		n = BEEP_CUSTOM_MAX;
+	}
+	for (uint8_t i = 0; i < n; i++) {
+		tone = tone || (segs[i].hz > BEEP_HZ_SWEEP && segs[i].ms != 0);
+	}
+	if (!tone) {
+		return;
+	}
+	uint8_t slot = cust_next;
+	cust_next ^= 1u;
+	memcpy(cust[slot], segs, n * sizeof(beep_seg_t));
+	for (uint8_t i = 0; i < n; i++) {
+		if (cust[slot][i].hz == BEEP_HZ_SWEEP) {
+			cust[slot][i].hz = 0;	// the sweep is a fixed pattern's
+		}
+	}
+	cust_n[slot] = n;
+	req_slot = slot;
+	beep_play(BEEP_CUSTOM, level, shared);
+}
+#endif
 
 void beep_service(bool shared, uint32_t now_ms)
 {
@@ -245,7 +284,7 @@ void beep_service(bool shared, uint32_t now_ms)
 
 static void load_seg(void)
 {
-	const beep_seg_t *s = &patterns[cb_pattern].segs[cb_seg];
+	const beep_seg_t *s = &cb_segs[cb_seg];
 	cb_len = cb_left = (uint32_t)s->ms * (AUDIO_RATE_HZ / 1000);
 	// Phase step: hz / rate of a 2^32 turn
 	cb_step = (uint32_t)(((uint64_t)s->hz << 32) / AUDIO_RATE_HZ);
@@ -263,6 +302,16 @@ static bool tone_mix(int16_t *spk)
 	if (seq != cb_seq) {
 		cb_seq = seq;
 		cb_pattern = req_pattern;
+#if CONFIG_SIG_TONES
+		if (cb_pattern == BEEP_CUSTOM) {
+			cb_segs = cust[req_slot];
+			cb_count = cust_n[req_slot];
+		} else
+#endif
+		{
+			cb_segs = patterns[cb_pattern].segs;
+			cb_count = patterns[cb_pattern].count;
+		}
 		cb_amp = (int32_t)req_level * AMP_PER_LEVEL;
 		cb_seg = 0;
 		cb_phase = 0;
@@ -279,7 +328,7 @@ static bool tone_mix(int16_t *spk)
 	stats.blocks++;
 	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
 		while (cb_left == 0) {
-			if (++cb_seg >= patterns[cb_pattern].count) {
+			if (++cb_seg >= cb_count) {
 				cb_active = false;
 				return true;	// the rest of this block is left as it was
 			}
@@ -304,7 +353,7 @@ static bool tone_mix(int16_t *spk)
 		}
 		cb_left--;
 	}
-	if (cb_left == 0 && cb_seg + 1u >= patterns[cb_pattern].count) {
+	if (cb_left == 0 && cb_seg + 1u >= cb_count) {
 		cb_active = false;	// ended exactly at the block's end
 	}
 	return true;

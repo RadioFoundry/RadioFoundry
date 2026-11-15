@@ -2816,6 +2816,18 @@ msgstr "Prima copia"
 msgid "Dual-path RX"
 msgstr "RX doppia via"
 
+#: core/ui/ui_menus.c
+msgid "Speaker"
+msgstr "Altoparlante"
+
+#: core/ui/ui_menus.c
+msgid "On air"
+msgstr "In onda"
+
+#: core/ui/ui_menus.c
+msgid "Speaker + air"
+msgstr "Altoparlante + onda"
+
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgid "Volume"
 msgstr "Volume"
@@ -2867,6 +2879,42 @@ msgstr "Tono messaggio"
 #: core/ui/ui_menus.c
 msgid "Vibrate"
 msgstr "Vibrazione"
+
+#: core/ui/ui_menus.c
+msgid "DMR start tone"
+msgstr "Tono inizio DMR"
+
+#: core/ui/ui_menus.c
+msgid "DMR end tone"
+msgstr "Tono fine DMR"
+
+#: core/ui/ui_menus.c
+msgid "DMR idle tone"
+msgstr "Tono libero DMR"
+
+#: core/ui/ui_menus.c
+msgid "FM start tone"
+msgstr "Tono inizio FM"
+
+#: core/ui/ui_menus.c
+msgid "FM end tone"
+msgstr "Tono fine FM"
+
+#: core/ui/ui_menus.c
+msgid "FM idle tone"
+msgstr "Tono libero FM"
+
+#: core/ui/ui_menus.c
+msgid "Start tone steps"
+msgstr "Passi tono inizio"
+
+#: core/ui/ui_menus.c
+msgid "End tone steps"
+msgstr "Passi tono fine"
+
+#: core/ui/ui_menus.c
+msgid "Idle tone steps"
+msgstr "Passi tono libero"
 
 #: core/ui/ui_menus.c
 msgid "Brightness"
@@ -3133,12 +3181,72 @@ msgid "My radio"
 msgstr "Mia radio"
 
 #: core/ui/ui_menus.c
+msgid "Signaling tones"
+msgstr "Toni di segnalazione"
+
+#: core/ui/ui_menus.c
+msgid "Signaling Tones"
+msgstr "Toni di Segnalazione"
+
+#: core/ui/ui_menus.c
 msgid "Advanced"
 msgstr "Avanzate"
 
 #: core/ui/ui_menus.c
 msgid "0-9 open  Back"
 msgstr "0-9 apri  Indietro"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgid "Step "
+msgstr "Passo "
+
+#: core/ui/ui_menus.c
+msgid "Standard sound"
+msgstr "Suono standard"
+
+#: core/ui/ui_menus.c
+msgid "Length: "
+msgstr "Durata: "
+
+#: core/ui/ui_menus.c
+msgid "Start Tone"
+msgstr "Tono di Inizio"
+
+#: core/ui/ui_menus.c
+msgid "End Tone"
+msgstr "Tono di Fine"
+
+#: core/ui/ui_menus.c
+msgid "Idle Tone"
+msgstr "Tono Libero"
+
+#: core/ui/ui_menus.c
+msgid "Not changed: "
+msgstr "Non cambiato: "
+
+#: core/ui/ui_menus.c
+msgid " to "
+msgstr " a "
+
+#: core/ui/ui_menus.c
+msgid ", steps of "
+msgstr ", passi di "
+
+#: core/ui/ui_menus.c
+msgid "0-9 type  OK next  Back"
+msgstr "0-9 digita  OK avanti  Indietro"
+
+#: core/ui/ui_menus.c
+msgid "Standard"
+msgstr "Standard"
+
+#: core/ui/ui_menus.c
+msgid " step"
+msgstr " passo"
+
+#: core/ui/ui_menus.c
+msgid " steps"
+msgstr " passi"
 
 #: core/ui/ui_menus.c
 msgid "Talk permit tone: not in this build"
@@ -3203,18 +3311,6 @@ msgstr "Diagnostica: non in questa build"
 #: core/ui/ui_menus.c
 msgid "Settings are saved as you change them"
 msgstr "Le impostazioni si salvano al cambio"
-
-#: core/ui/ui_menus.c
-msgid "Not changed: "
-msgstr "Non cambiato: "
-
-#: core/ui/ui_menus.c
-msgid " to "
-msgstr " a "
-
-#: core/ui/ui_menus.c
-msgid ", steps of "
-msgstr ", passi di "
 
 #: core/ui/ui_menus.c core/ui/ui_position.c
 msgid "OK change  Back"
@@ -3367,10 +3463,6 @@ msgstr "SCAN"
 #: core/ui/ui_screens.c
 msgid "ROAM"
 msgstr "ROAM"
-
-#: core/ui/ui_screens.c
-msgid "Step "
-msgstr "Passo "
 
 #: core/ui/ui_screens.c
 msgid "No TX frequency"

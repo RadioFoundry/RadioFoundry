@@ -93,6 +93,11 @@ TESTS   += airQueueTest
 airQueueTest: airQueueTest.c fuzz.h $(CORE)/dmr/dmrAirQueue.c $(CORE)/dmr/dmrAirQueue.h $(DATA) $(FRAME)
 	$(CC) $(CFLAGS) -Wshadow -o $@ airQueueTest.c $(CORE)/dmr/dmrAirQueue.c $(DATA) $(FRAME)
 
+# Signaling tones: which outputs sound where, the presets and the sample generator
+TESTS   += sigToneTest
+sigToneTest: sigToneTest.c $(CORE)/radio/sigtone.c $(CORE)/radio/sigtone.h $(CORE)/radio/beep.h
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/hal -o $@ sigToneTest.c $(CORE)/radio/sigtone.c
+
 # Tables of settings-area keys (core/codeplug/codeplug_keys.c) and the radio core's (core/radio/radio_keys.h): lookup,
 # the types and ranges, apply, write-back
 TESTS   += radioKeysTest
@@ -173,7 +178,7 @@ CORE_HAL := -I$(ROOT)/hal -Wshadow
 TESTS   += radioCoreTest inputTest quadratureTest serialmicTest
 
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
-RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
+RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/sigtone.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
            $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/radio/ref_trim.c $(CORE)/radio/pa_keyup.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c \
            $(CORE)/codeplug/zone_settle.c \
            $(CORE)/radio/radio_sfr.c $(CORE)/radio/radio_cwid.c $(CORE)/radio/tx_limit.c
@@ -259,7 +264,7 @@ roamTest: $(ROAMT) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h
 TESTS   += aprsRadioTest
 FMONLY  := -DCONFIG_DMR=0 -DCONFIG_DMR_PRIVACY=0 -DCONFIG_DMR_TALKER_ALIAS=0 -DCONFIG_DMR_SMS=0 -DCONFIG_DMR_ARS=0 \
            -DCONFIG_DMR_LRRP=0 -DCONFIG_DMR_SIGNALING=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=0 -DCONFIG_HOTSPOT=0
-APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/radio/tones.c $(CORE)/radio/tx_limit.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c \
+APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/radio/tones.c $(CORE)/radio/tx_limit.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/sigtone.c \
            $(CORE)/radio/vibe.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c \
            $(CORE)/radio/battery.c $(CORE)/radio/morse.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
            $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_ax25.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
@@ -580,7 +585,7 @@ ambeFecTest: ambeFecTest.c $(CORE)/dmr/ambe/ambeFec.c $(CORE)/dmr/ambe/ambeFec.h
 
 ambeVoiceTest: ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeVoice.h $(CORE)/dmr/ambe/ambeFec.c \
 	       $(ROOT)/drivers/vocoder/ambe2_flags.h $(ROOT)/hal/hal_vocoder.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/radio/sigtone.c $(CORE)/dmr/ambe/ambeFec.c
 
 # The mic gain setting (core/radio/mic_gain.c): to the board's hook or to DMR's sample scaling, never both
 TESTS   += micGainTest
@@ -636,9 +641,10 @@ paKeyupTest: paKeyupTest.c $(CORE)/radio/pa_keyup.c $(CORE)/radio/pa_keyup.h
 	$(CC) $(CFLAGS) -Wshadow -DCONFIG_DMR=1 -o $@ paKeyupTest.c $(CORE)/radio/pa_keyup.c
 
 run: run-ambe
-run-ambe: ambeFecTest ambeVoiceTest micGainTest refTrimTest paKeyupTest
+run-ambe: ambeFecTest ambeVoiceTest sigToneTest micGainTest refTrimTest paKeyupTest
 	./ambeFecTest
 	./ambeVoiceTest
+	./sigToneTest
 	./micGainTest
 	./refTrimTest
 	./paKeyupTest

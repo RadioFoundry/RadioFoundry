@@ -21,6 +21,9 @@
 #define CODEPLUG_KEY_TOT_WARN_TONE	0x0004u	// bool: the tone before the TX time-out
 #define CODEPLUG_KEY_BATTERY_TONE	0x0005u	// bool: the low and critical battery tones
 #define CODEPLUG_KEY_TX_DENY_TONE	0x0006u	// bool: the tone when PTT is refused or a transmission cut
+#define CODEPLUG_KEY_SIG_BEGIN	0x0007u		// record: the signaling tone of a transmission's start (radio/sigtone.h SIG_REC_LEN)
+#define CODEPLUG_KEY_SIG_END	0x0008u		// record: ... of its end
+#define CODEPLUG_KEY_SIG_IDLE	0x0009u		// record: ... of a reception's end
 
 // How a key's value is encoded (docs/spec/codeplug-settings.md 3.1): the encoding, never a width. A type is never
 // redefined, only grown by appending bytes
