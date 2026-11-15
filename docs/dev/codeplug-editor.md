@@ -19,7 +19,7 @@ use it too. Both are plain ES modules that also run in Node. The user's view is 
 | `codeplug/iddb.js` | The DMR ID database, format N (7.5): area 1, then area 2 up to the radio's end |
 | `codeplug/csv.js` | Tables as CSV (RFC 4180): fixed English headers, references by name, import matched by number then name |
 | `codeplug/chirp.js` | CHIRP's CSV channel list to the model and back: FM channels only, replacing the channels and zones |
-| `codeplug/chirp_img.js` | A CHIRP `.img` of one radio model: the memory layout learned from an image and the CSV CHIRP wrote from it, never from CHIRP's source. Gives rows to the CSV reader. A model is added by learning its layout the same way; the footer names the model, and any other is refused |
+| `codeplug/chirp_img.js` | A CHIRP `.img` of one radio model: the memory layout learned from an image and the CSV CHIRP wrote from it, never from CHIRP's source. Gives rows to the CSV reader. A model is added by learning its layout the same way; the footer names the model, and any other is refused ([layout](../spec/hardware-uv5r-chirp-image.md)) |
 | `codeplug/yaml.js` | The YAML subset qdmr writes: block and flow maps and lists, quoted values, `!default` tags, comments. Anchors are refused |
 | `codeplug/qdmr.js` | qdmr YAML to the model and back ([qdmr-yaml.md](../spec/qdmr-yaml.md)), with notes on what each side can't hold |
 | `codeplug/detect.js`, `codeplug/stock_tyt.js` | Telling the open-firmware layout from a vendor codeplug, and converting that to the editing model ([codeplug-stock-tyt.md](../spec/codeplug-stock-tyt.md)) |
