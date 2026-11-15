@@ -456,8 +456,10 @@ sends `ACT_HOME_KEY_1 + i` on a press and a long press (`keyassign_build_home`, 
 first thing (`ui_svc_home_key`, `keyassign_home_event`): on Home (the bottom of the stack, no frequency being typed)
 the slot's function, or the key map's own action for Default, nothing for Nothing, and a long press's repeats send
 nothing once it has a function; on any other screen the key map's own action, so the arrows keep working in the menus.
-Monitor and Tone burst need raw edges and can't go on a home key (`keyassign_home_allowed`): Settings skips them and a
-slot holding one reads as Default. Settings shows Default as what the key does on Home ("Prev zone", "Next zone").
+Monitor and Tone burst need raw edges, and Emergency the 1.5 s hold the input engine gives only a key whose long action
+is Emergency (a home key's long action is its home key action, so its hold would fire at the ordinary long press). None
+of the three can go on a home key (`keyassign_home_allowed`): Settings skips them and a slot holding one reads as
+Default. Settings shows Default as what the key does on Home ("Prev zone", "Next zone").
 With dual watch on, Home's arrows pick A or B (a home key left at Default still does).
 
 Both places edit the same slots, so there is one copy:

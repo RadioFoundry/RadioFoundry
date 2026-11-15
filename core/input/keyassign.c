@@ -39,7 +39,10 @@ bool keyassign_allowed(uint8_t fn, bool hold)
 
 bool keyassign_home_allowed(uint8_t fn, bool hold)
 {
-	return keyassign_allowed(fn, hold) && fn != KEYFN_MONITOR && fn != KEYFN_TONE_BURST;
+	// Monitor and Tone burst need the key held down. Emergency needs the 1.5 s hold-to-activate, which the input
+	// engine gives only a key whose long action is Emergency; a home key's long action is its home key action, so its
+	// hold would fire at the ordinary long press and set off accidental emergencies
+	return keyassign_allowed(fn, hold) && fn != KEYFN_MONITOR && fn != KEYFN_TONE_BURST && fn != KEYFN_EMERGENCY;
 }
 
 uint8_t keyassign_action(uint8_t fn)

@@ -970,10 +970,15 @@ static uint8_t board_refusal(void)
 	return board_hwopt_pending() != NULL ? TXDENY_HWOPT : TXDENY_REFUSED;
 }
 
-// A busy refusal is quiet: the screen says "Channel busy", and no tone covers the call being received. On FM that
-// call plays on while PTT is held (deny_rx, set by ptt_down)
+// A busy refusal over a call the user hears is quiet: the screen says "Channel busy", and no tone covers the call. On
+// FM that call plays on while PTT is held (deny_rx, set by ptt_down). With nothing playing (a wrong-tone carrier
+// behind a closed squelch, a DMR call not ours) the tone is the only sign, so it plays
 static void deny(radio_sm_t *sm, uint8_t reason)
 {
+	bool audible = sm->deny_rx;
+#if CONFIG_DMR
+	audible = audible || (sm->view.ch.mode == RADIO_MODE_DMR && sm->view.dmr.state == RDMR_RX);
+#endif
 	if (reason != TXDENY_BUSY) {
 		sm->deny_rx = false;
 	}
@@ -983,7 +988,7 @@ static void deny(radio_sm_t *sm, uint8_t reason)
 	deny_led_start(sm);
 	outputs(sm);
 	changed(sm);
-	if (reason != TXDENY_BUSY) {
+	if (reason != TXDENY_BUSY || !audible) {
 		beep(sm, BEEP_TX_DENY);
 	}
 }

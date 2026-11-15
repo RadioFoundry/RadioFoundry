@@ -158,10 +158,9 @@ For a repeater that always needs the tone, turn on **Tone burst** in the channel
 
 The list has a row pair for each key the menus don't need; [the radio's list](23-radios.md#key-roles) says which. On a
 radio whose arrows are printed P1 and P2, they have rows too: what you set works on Home, and in the menus they stay
-arrows. They can't take Monitor or Tone burst, which need the key held. Left at Default they show what they do on
-Home (Prev zone, Next zone). The
-key settings are also in the codeplug, so a codeplug written to the radio can set them, and a change here is written to
-the codeplug.
+arrows. They can't take Monitor or Tone burst, which need the key held, or Emergency, which needs a 1.5 s hold. Left at
+Default they show what they do on Home (Prev zone, Next zone). The key settings are also in the codeplug, so a codeplug
+written to the radio can set them, and a change here is written to the codeplug.
 
 ### Key lock (key 9)
 

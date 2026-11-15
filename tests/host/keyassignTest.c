@@ -344,7 +344,7 @@ static void test_board_defaults(void)
 
 // Home keys (board.home_keys: arrows printed P1 and P2): unset, the key map's own actions everywhere; set, the key
 // sends ACT_HOME_KEY_n, which is the function on Home and the arrow anywhere else. Monitor and Tone burst can't go
-// there (no raw edges)
+// there (no raw edges), nor Emergency (no 1.5 s hold on a home key's long press)
 static void test_home_keys(void)
 {
 	enum { K_LEFT = 5, K_RIGHT = 6 };
@@ -363,7 +363,7 @@ static void test_home_keys(void)
 	keyassign_build_home(hm, HN, home, 2, 1, s);
 	CHECK(memcmp(hm, hb, sizeof(hm)) == 0);
 	CHECK(keyassign_home_allowed(KEYFN_SCAN, false) && !keyassign_home_allowed(KEYFN_MONITOR, false));
-	CHECK(!keyassign_home_allowed(KEYFN_TONE_BURST, false) && keyassign_home_allowed(KEYFN_EMERGENCY, true));
+	CHECK(!keyassign_home_allowed(KEYFN_TONE_BURST, false) && !keyassign_home_allowed(KEYFN_EMERGENCY, true));
 
 	// P1 press: scan. P2 left alone
 	keyassign_set(s, 1, false, KEYFN_SCAN);
@@ -380,12 +380,12 @@ static void test_home_keys(void)
 	CHECK(HE(ACT_HOME_KEY_1, GESTURE_REPEAT, false) == ACT_USER_1);
 	CHECK(HE(ACT_SELECT, GESTURE_PRESS, true) == ACT_SELECT);	// any other action as it is
 
-	// P2 long press: emergency, once per hold; Nothing on its press
-	keyassign_set(s, 2, true, KEYFN_EMERGENCY);
+	// P2 long press: power level, once per hold; Nothing on its press
+	keyassign_set(s, 2, true, KEYFN_POWER);
 	keyassign_set(s, 2, false, KEYFN_NONE);
 	keyassign_build_home(hm, HN, home, 2, 1, s);
 	CHECK(hm[3].short_action == ACT_HOME_KEY_2);
-	CHECK(HE(ACT_HOME_KEY_2, GESTURE_LONG, true) == ACT_EMERGENCY);
+	CHECK(HE(ACT_HOME_KEY_2, GESTURE_LONG, true) == ACT_POWER);
 	CHECK(HE(ACT_HOME_KEY_2, GESTURE_REPEAT, true) == ACT_NONE);
 	CHECK(HE(ACT_HOME_KEY_2, GESTURE_PRESS, true) == ACT_NONE);
 	CHECK(HE(ACT_HOME_KEY_2, GESTURE_PRESS, false) == ACT_NAV_RIGHT);

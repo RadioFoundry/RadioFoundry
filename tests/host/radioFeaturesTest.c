@@ -2534,8 +2534,13 @@ static void test_bcl_inhibit(void)
 	req(RREQ_ZONE_POS, 1);
 	signal_on(0, 146940000, 30, (subtone_t){ TONE_CTCSS, 1230 });
 	run(400);
+	beep_get_stats(&b0);
 	req(RREQ_PTT, 1);
-	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BUSY);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BUSY && !hw.audio);
+	// Nothing playing (the squelch stays shut on the wrong tone): the tone is the only sign of the refusal
+	run(50);
+	beep_get_stats(&b1);
+	CHECK(b1.played > b0.played);
 	req(RREQ_PTT, 0);
 	hw.sig[0].tone = (subtone_t){ TONE_CTCSS, 1000 };
 	run(400);
