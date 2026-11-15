@@ -321,8 +321,9 @@ $(shell echo '$(RFOUNDRY_PRESET) $(RFOUNDRY_OFF)' | cmp -s - $(BUILD)/build_info
 ABOUT_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l rfoundry_about.h $(APP_SRC) 2>/dev/null))
 $(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/rfoundry_about.h | grep -q changed \
 	&& rm -f $(ABOUT_OBJ))
-# The language tables (tools/i18n.py, core/ui/lang/*.po); i18n.o is rebuilt when they changed. A failure stops the
-# build: the old tables would link without a word
+# The language tables (tools/i18n.py, core/ui/lang/*.po) and the text keys every file that includes i18n.h needs
+# (tr_keys.h, rewritten only when a key changed: the dependency files rebuild those); i18n.o is rebuilt when the tables
+# changed. A failure stops the build: the old tables would link without a word
 I18N_GEN := $(shell python3 tools/i18n.py --gen $(BUILD)/gen/lang_tables.h || echo i18n-failed)
 ifneq ($(filter i18n-failed,$(I18N_GEN)),)
 $(error tools/i18n.py --gen failed (above))

@@ -12,8 +12,8 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
     default build uses link time optimization: 330,824 B (13,240 free). The per-feature figures stay the plain ones.
   - MD-380: link time optimization on (`LTO=1 LTO_3P=1`, its default), default image 279,444 B of 281,668 B, the
     region it had then. With LTO a switch also changes what gets inlined elsewhere, so small MD-380 figures are
-    approximate. Since the codec moved (2026-10-19) the region is 464 KB and the switches that were off for flash are
-    on; the per-feature figures stay the 2026-10-11 ones.
+    approximate. Since the codec moved the region is 464 KB, and since every codec window moved into sector 11
+    848 KB; the switches that were off for flash are on. The per-feature figures stay the 2026-10-11 ones.
   - `*` = off by default; measured by turning it on in the DM-1701 build (main c0022b4).
 - **Radios:** which switches each radio builds by default is in
   [Built by default on each radio](#built-by-default-on-each-radio), generated from the build. A — in a bytes column
@@ -378,7 +378,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Anti-aliased fonts | `FONT_AA` | 3,004* | — | Smooth text on color panels (measured 2026-10-17); the DM-32's image grew 9.5 KB with it and `FONT_XL` |
 | Larger text | `FONT_BIG` | — | — | 9x18 lists and labels on 240 px color panels (needs `FONT_AA`); 3,588 B on the DM-32 (measured 2026-10-17) |
 | Spanish on the radio | `LANG_ES` | 28,456 | 28,348 | The first language brings the lookup and the accented letters of every font (about 7.5 KB); the rest is its text. Measured 2026-10-31 |
-| Italian on the radio | `LANG_IT` | 17,304 | 17,304 | Off by default; measured with Spanish on (its text, and the hashes of strings Spanish leaves untranslated). Alone it costs about as much as Spanish |
+| Italian on the radio | `LANG_IT` | 17,304 | 17,304 | Off by default; measured with Spanish on (its text and its offsets). Alone it costs about as much as Spanish |
 | Chinese on the radio | `LANG_ZH` | 32,856 | 32,856 | Off by default. Not the text alone: 15,360 B of 16x16 glyphs (480 characters, `core/ui/cjk_font_data.c`) and about 17 KB of UTF-8 text, with the text layer's decoder. Needs a 16 px line height: a 240 px color radio draws its words in 8x16 and shows Chinese on every screen, while a layout whose words use the 5x8 or 6x12 font (128x64, 160x128) has no room for it and must not build it. Measured with Spanish on, 2026-11-04 |
 | Start in Spanish | `LANG_DEFAULT_ES` | 0 | 0 | The language the radio starts in until the user picks one (needs `LANG_ES`); the web flasher sets it from its Radio language choice |
 | Start in Italian | `LANG_DEFAULT_IT` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_IT`) |
@@ -409,17 +409,16 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 Link time optimization is on by default on both radios. The DM-1701 has run with it since 2026-10-13 (the HIL suite
 passed); `LTO_3P=1` would take another 3 KB or so off by optimizing the third-party code too.
 
-The MD-380's app region is sectors 3-7, 0x0800C000..0x0807FFFF, 475,136 bytes (464 KB). The codec runs in place in
-sectors 8, 10 and 11 ([codec-md380.md](spec/codec-md380.md)). Measured 2026-10-19 with link time optimization, its
-default:
+The MD-380's app region is sectors 3-10, 0x0800C000..0x080DFFFF, 868,352 bytes (848 KB). The codec runs in place in
+sector 11 ([codec-md380.md](spec/codec-md380.md)). With link time optimization, its default:
 
-| MD-380 build | Flash | Free | RAM | CCM |
-|---|---:|---:|---:|---:|
-| Default (UHF) | 320,236 | 154,900 | 107,120 of 131,068 | 59,640 of 65,536 |
-| Maximal | 327,064 | 148,072 | | |
+| MD-380 build | Flash | Free |
+|---|---:|---:|
+| Default (UHF) | 472,036 | 396,316 |
+| Maximal (every switch it supports, PPP and Italian included) | 500,956 | 367,396 |
 
-Until the codec moved, the region was 281,668 bytes and the default image fit only with link time optimization and
-the hotspot off.
+Until the codec first moved, the region was 281,668 bytes and the default image fit only with link time optimization
+and the hotspot off. Until every codec window moved into sector 11 it was 475,136 bytes (sectors 3-7).
 
 ### DM-32UV
 
