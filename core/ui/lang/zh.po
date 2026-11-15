@@ -15,3945 +15,4931 @@ msgstr ""
 "X-Glyphs: utf8\n"
 
 #: core/stubentry/stub_entry.h
+msgctxt "PC_LOADER_CONNECTED"
 msgid "PC Loader Connected"
 msgstr "PC 加载器已连接"
 
 #: core/stubentry/stub_entry.h
+msgctxt "POWER_CYCLE_TO_EXIT"
 msgid "Power-cycle to exit"
 msgstr "断电重启退出"
 
 #: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "OFF"
 msgid "Off"
 msgstr "关"
 
 #: core/ui/fmt.c
+msgctxt "AGO_2"
 msgid " ago"
 msgstr " 前"
 
 #: core/ui/ui_app.c core/ui/ui_screens.c
+msgctxt "OK_MENU_QUICK"
 msgid "OK Menu  * Quick"
 msgstr "OK 菜单 * 快捷"
 
 #: core/ui/ui_app.c
+msgctxt "OK_MENU_HOLD_OK_QUICK"
 msgid "OK Menu  Hold OK Quick"
 msgstr "OK 菜单 长按OK 快捷"
 
 #: core/ui/ui_app.c
+msgctxt "NOT_SAVED"
 msgid "Not saved"
 msgstr "未保存"
 
 #: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "ALL_CALL"
 msgid "All call"
 msgstr "全呼"
 
 #: core/ui/ui_app.c
+msgctxt "FOR_NOW_ONLY_SAVE_IT_IN_QDMR"
 msgid "For now only: save it in qdmr"
 msgstr "临时：在 qdmr 保存"
 
 #: core/ui/ui_app.c
+msgctxt "TALK_TARGET_NOT_IN_THIS_2"
 msgid "Talk target: not in this build"
 msgstr "通话目标：本版本无"
 
 #: core/ui/ui_app.c
+msgctxt "DEFAULT_NOW"
 msgid "Default now: "
 msgstr "现默认： "
 
 #: core/ui/ui_app.c
+msgctxt "TALKING_TO_2"
 msgid "Talking to "
 msgstr "正在呼叫 "
 
 #: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "NO_CALLS_HEARD_YET_2"
 msgid "No calls heard yet"
 msgstr "暂无通话记录"
 
 #: core/ui/ui_app.c
+msgctxt "MESSAGE_FROM"
 msgid "Message from "
 msgstr "消息来自 "
 
 #: core/ui/ui_app.c
+msgctxt "SENT_TO_2"
 msgid "Sent to "
 msgstr "已发送至 "
 
 #: core/ui/ui_app.c
+msgctxt "DELIVERED_TO"
 msgid "Delivered to "
 msgstr "已送达 "
 
 #: core/ui/ui_app.c
+msgctxt "NO_ANSWER_FROM_3"
 msgid "No answer from "
 msgstr "无应答： "
 
 #: core/ui/ui_app.c
+msgctxt "NOT_DELIVERED_SEND_AGAIN"
 msgid "Not delivered: send again"
 msgstr "未送达：请重发"
 
 #: core/ui/ui_app.c
+msgctxt "CALL_ALERT_FROM"
 msgid "Call alert from "
 msgstr "呼叫提示来自 "
 
 #: core/ui/ui_app.c core/ui/ui_screens.c
+msgctxt "PTT_REPLIES_2"
 msgid "PTT replies"
 msgstr "PTT 可回复"
 
 #: core/ui/ui_app.c
+msgctxt "PRIVATE_CALL_FROM"
 msgid "Private call from "
 msgstr "个呼来自 "
 
 #: core/ui/ui_app.c
+msgctxt "ANSWERED"
 msgid "answered ("
 msgstr "已接听（"
 
 #: core/ui/ui_app.c
+msgctxt "OFF_OR_OUT_OF_RANGE_TRY_2"
 msgid "Off or out of range: try later"
 msgstr "关机或超出范围：稍后再试"
 
 #: core/ui/ui_app.c
+msgctxt "HOTSPOT_STARTED_BY_HOST"
 msgid "Hotspot started by host"
 msgstr "主机已启动热点"
 
 #: core/ui/ui_app.c
+msgctxt "OK_STOPS_IT"
 msgid "OK stops it"
 msgstr "OK 停止"
 
 #: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_svc_zone.c
+msgctxt "COULDNT_SAVE_TRY_AGAIN"
 msgid "Couldn't save: try again"
 msgstr "保存失败：请重试"
 
 #: core/ui/ui_app.c
+msgctxt "ANSWERED_THE_ALERT"
 msgid " answered the alert"
 msgstr " 已回应提示"
 
 #: core/ui/ui_app.c
+msgctxt "COULDNT_SWITCH_OFF"
 msgid "Couldn't switch off"
 msgstr "无法关闭"
 
 #: core/ui/ui_app.c
+msgctxt "TURN_THE_KNOB_OFF"
 msgid "Turn the knob off"
 msgstr "请用旋钮关机"
 
 #: core/ui/ui_app.c
+msgctxt "CHANNEL_FROM"
 msgid "⤓ Channel from "
 msgstr "⤓ 信道来自 "
 
 #: core/ui/ui_app.c
+msgctxt "ZONE_FROM"
 msgid "⤓ Zone from "
 msgstr "⤓ 区域来自 "
 
 #: core/ui/ui_app.c
+msgctxt "NOT_SENT_TO"
 msgid "Not sent to "
 msgstr "未发送至 "
 
 #: core/ui/ui_app.c
+msgctxt "TRY_AGAIN_ON_A_DMR_CHANNEL"
 msgid "Try again on a DMR channel"
 msgstr "请在 DMR 信道重试"
 
 #: core/ui/ui_app.c
+msgctxt "UPDATED"
 msgid "Updated "
 msgstr "已更新 "
 
 #: core/ui/ui_app.c
+msgctxt "IMPORTED"
 msgid "Imported "
 msgstr "已导入 "
 
 #: core/ui/ui_app.c
+msgctxt "CHANNEL_RECEIVE_ONLY"
 msgid " channel, receive only"
 msgstr " 个信道，仅接收"
 
 #: core/ui/ui_app.c
+msgctxt "CHANNELS_RECEIVE_ONLY"
 msgid " channels, receive only"
 msgstr " 个信道，仅接收"
 
 #: core/ui/ui_app.c
+msgctxt "ZONE_NOT_IMPORTED"
 msgid "Zone not imported"
 msgstr "区域未导入"
 
 #: core/ui/ui_app.c
+msgctxt "BANDS"
 msgid "Bands: "
 msgstr "频段： "
 
 #: core/ui/ui_app.c
+msgctxt "TYPE_AT_LEAST_THE_MHZ_DIGITS"
 msgid "Type at least the MHz digits"
 msgstr "至少输入 MHz 数字"
 
 #: core/ui/ui_app.c
+msgctxt "NOT_IN_A_BAND_TYPE_MORE"
 msgid "Not in a band: type more digits"
 msgstr "不在频段内：请继续输入"
 
 #: core/ui/ui_app.c
+msgctxt "ALL_DIGITS_TYPED_OK_OR_TUNES"
 msgid "All digits typed: OK or # tunes"
 msgstr "已输完：OK 或 # 调谐"
 
 #: core/ui/ui_app.c
+msgctxt "DIGITAL_MONITOR_ON"
 msgid "Digital monitor on"
 msgstr "数字监听开"
 
 #: core/ui/ui_app.c
+msgctxt "DIGITAL_MONITOR_OFF"
 msgid "Digital monitor off"
 msgstr "数字监听关"
 
 #: core/ui/ui_app.c core/ui/ui_screens.c
+msgctxt "KEYS_LOCKED_HOLD_TO_UNLOCK"
 msgid "{Keys locked: hold * to unlock|Locked: hold * to unlock}"
 msgstr "{按键已锁：长按 * 解锁|已锁：长按 * 解锁}"
 
 #: core/ui/ui_app.c
+msgctxt "KEYS_LOCKED_HOLD_BACK_TO"
 msgid "{Keys locked: hold Back to unlock|Locked: hold Back to unlock}"
 msgstr "{按键已锁：长按返回解锁|已锁：长按返回解锁}"
 
 #: core/ui/ui_app.c
+msgctxt "VFO_SETTINGS_SAVE"
 msgid "VFO settings save automatically"
 msgstr "VFO 设置自动保存"
 
 #: core/ui/ui_app.c
+msgctxt "STOP_HOTSPOT_TO_SAVE"
 msgid "Stop hotspot to save"
 msgstr "请停止热点再保存"
 
 #: core/ui/ui_app.c
+msgctxt "NOTHING_TO_SAVE"
 msgid "Nothing to save"
 msgstr "无可保存内容"
 
 #: core/ui/ui_app.c
+msgctxt "PICK_A_SAVED_CHANNEL"
 msgid "Pick a saved channel"
 msgstr "请选择已存信道"
 
 #: core/ui/ui_app.c
+msgctxt "CHANNEL_SAVING_UNAVAILABLE"
 msgid "Channel saving unavailable"
 msgstr "信道保存不可用"
 
 #: core/ui/ui_app.c
+msgctxt "SAVED_TO_CHANNEL"
 msgid "Saved to channel"
 msgstr "已保存到信道"
 
 #: core/ui/ui_app.c
+msgctxt "SAVE_BUSY_TRY_AGAIN"
 msgid "Save busy: try again"
 msgstr "保存忙：请重试"
 
 #: core/ui/ui_app.c
+msgctxt "HOME_ZONE_3"
 msgid "Home zone: "
 msgstr "主区域： "
 
 #: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "ZONE_2"
 msgid "Zone: "
 msgstr "区域： "
 
 #: core/ui/ui_app.c core/ui/ui_dual.c
+msgctxt "ONLY_ONE_ZONE"
 msgid "Only one zone"
 msgstr "只有一个区域"
 
 #: core/ui/ui_app.c
+msgctxt "COPIED_TO_VFO"
 msgid "Copied to VFO"
 msgstr "已复制到 VFO"
 
 #: core/ui/ui_app.c
+msgctxt "ALREADY_IN_VFO"
 msgid "Already in VFO"
 msgstr "已在 VFO 中"
 
 #: core/ui/ui_app.c
+msgctxt "VFO_NO_DMR_IN_THIS_BUILD"
 msgid "VFO: no DMR in this build"
 msgstr "VFO：本版本无 DMR"
 
 #: core/ui/ui_app.c
+msgctxt "VFO_NO_FM_IN_THIS_BUILD"
 msgid "VFO: no FM in this build"
 msgstr "VFO：本版本无 FM"
 
 #: core/ui/ui_app.c
+msgctxt "VFO_FREQUENCY_OUTSIDE_ITS"
 msgid "VFO: frequency outside its bands"
 msgstr "VFO：频率超出频段"
 
 #: core/ui/ui_app.c
+msgctxt "VFO_NOT_IN_THIS_BUILD_3"
 msgid "VFO: not in this build"
 msgstr "VFO：本版本无"
 
 #: core/ui/ui_app.c core/ui/ui_dual.c core/ui/ui_menus.c
+msgctxt "BACK_TO_CHANNELS"
 msgid "Back to channels"
 msgstr "返回信道"
 
 #: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "SCAN_NOT_IN_THIS_BUILD_2"
 msgid "Scan: not in this build"
 msgstr "扫描：本版本无"
 
 #: core/ui/ui_app.c
+msgctxt "SCAN_STOPPED_2"
 msgid "Scan stopped"
 msgstr "扫描已停止"
 
 #: core/ui/ui_app.c
+msgctxt "SCANNING_THE_BAND"
 msgid "Scanning the band"
 msgstr "正在扫描频段"
 
 #: core/ui/ui_app.c
+msgctxt "SCANNING_THIS_ZONE"
 msgid "Scanning this zone"
 msgstr "正在扫描区域"
 
 #: core/ui/ui_app.c
+msgctxt "DEFAULT_5"
 msgid "Default: "
 msgstr "默认： "
 
 #: core/ui/ui_app.c
+msgctxt "SPEED_DIAL"
 msgid "Speed dial "
 msgstr "缩位拨号 "
 
 #: core/ui/ui_app.c
+msgctxt "IS_EMPTY_SET_IT_IN_QDMR"
 msgid " is empty: set it in qdmr"
 msgstr " 为空：请在 qdmr 设置"
 
 #: core/ui/ui_app.c
+msgctxt "REPLY_ENDED"
 msgid "Reply ended"
 msgstr "回复已结束"
 
 #: core/ui/ui_app.c
+msgctxt "CHANGES_UNDONE"
 msgid "Changes undone"
 msgstr "已撤销更改"
 
 #: core/ui/ui_app.c
+msgctxt "CANT_TRANSMIT_THERE"
 msgid "Can't transmit there"
 msgstr "此处不可发射"
 
 #: core/ui/ui_app.c
+msgctxt "COLOR_CODE_NOT_IN_THIS_BUILD"
 msgid "Color code: not in this build"
 msgstr "色码：本版本无"
 
 #: core/ui/ui_app.c
+msgctxt "FM_ONLY_THIS_IS_A_DMR"
 msgid "FM only: this is a DMR channel"
 msgstr "仅 FM：这是 DMR 信道"
 
 #: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "NOT_IN_THIS_BUILD_2"
 msgid "Not in this build"
 msgstr "本版本无"
 
 #: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "PRIVACY_NOT_IN_THIS_BUILD"
 msgid "Privacy: not in this build"
 msgstr "加密：本版本无"
 
 #: core/ui/ui_app.c
+msgctxt "VFO_ONE_MODE_IN_THIS_BUILD"
 msgid "VFO: one mode in this build"
 msgstr "VFO：本版本仅一种模式"
 
 #: core/ui/ui_app.c
+msgctxt "VOX_NOT_ON_THIS_RADIO_YET"
 msgid "VOX: not on this radio yet"
 msgstr "VOX：本机尚未支持"
 
 #: core/ui/ui_app.c
+msgctxt "BANDWIDTH_25_KHZ"
 msgid "Bandwidth 25 kHz"
 msgstr "带宽 25 kHz"
 
 #: core/ui/ui_app.c
+msgctxt "BANDWIDTH_12_5_KHZ"
 msgid "Bandwidth 12.5 kHz"
 msgstr "带宽 12.5 kHz"
 
 #: core/ui/ui_app.c
+msgctxt "UP_DN_TONE_TX_RX"
 msgid "Up/Dn tone  # TX/RX"
 msgstr "上下键选亚音  # 收发"
 
 #: core/ui/ui_app.c
+msgctxt "AM_ONLY_IN_THE_AIR_BAND"
 msgid "AM only in the air band"
 msgstr "航空波段仅 AM"
 
 #: core/ui/ui_app.c
+msgctxt "FM_ONLY_IN_THE_BROADCAST"
 msgid "FM only in the broadcast band"
 msgstr "广播波段仅 FM"
 
 #: core/ui/ui_app.c
+msgctxt "VOX_OFF"
 msgid "VOX off"
 msgstr "VOX 关"
 
 #: core/ui/ui_app.c
+msgctxt "VOX_ON_SPEAK_TO_TRANSMIT"
 msgid "VOX on: speak to transmit"
 msgstr "VOX 开：说话即发射"
 
 #: core/ui/ui_app.c
+msgctxt "TIMESLOT_1"
 msgid "Timeslot 1"
 msgstr "时隙 1"
 
 #: core/ui/ui_app.c
+msgctxt "TIMESLOT_2"
 msgid "Timeslot 2"
 msgstr "时隙 2"
 
 #: core/ui/ui_app.c
+msgctxt "TIMESLOT_1_FOR_NOW"
 msgid "Timeslot 1 for now"
 msgstr "暂时时隙 1"
 
 #: core/ui/ui_app.c
+msgctxt "TIMESLOT_2_FOR_NOW"
 msgid "Timeslot 2 for now"
 msgstr "暂时时隙 2"
 
 #: core/ui/ui_app.c
+msgctxt "PRIVACY_ON_FOR_NOW"
 msgid "Privacy on for now"
 msgstr "暂时开启加密"
 
 #: core/ui/ui_app.c
+msgctxt "PRIVACY_OFF"
 msgid "Privacy off"
 msgstr "加密关"
 
 #: core/ui/ui_app.c
+msgctxt "NO_PRIVACY_KEY_SET_ONE_IN"
 msgid "No privacy key: set one in Settings > Privacy"
 msgstr "无密钥：在设置 > 加密 中设置"
 
 #: core/ui/ui_app.c
+msgctxt "POWER_2"
 msgid "Power "
 msgstr "功率 "
 
 #: core/ui/ui_app.c
+msgctxt "ALL_DIGITS_TYPED_OK_SETS_TX"
 msgid "All digits typed: OK sets TX"
 msgstr "已输完：OK 设发射"
 
 #: core/ui/ui_app.c
+msgctxt "TONE_FOR_RX_AND_TX"
 msgid "Tone for RX and TX"
 msgstr "收发同亚音"
 
 #: core/ui/ui_app.c
+msgctxt "TONE_FOR_TX_ONLY"
 msgid "Tone for TX only"
 msgstr "仅发射亚音"
 
 #: core/ui/ui_app.c
+msgctxt "TONE_FOR_RX_ONLY"
 msgid "Tone for RX only"
 msgstr "仅接收亚音"
 
 #: core/ui/ui_app.c
+msgctxt "NO_ACTIONS_HERE_2"
 msgid "No actions here"
 msgstr "此处无操作"
 
 #: core/ui/ui_app.c
+msgctxt "EMERGENCY_ACKNOWLEDGED"
 msgid "Emergency acknowledged"
 msgstr "紧急呼叫已确认"
 
 #: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "HOTSPOT_STOPPED"
 msgid "Hotspot stopped"
 msgstr "热点已停止"
 
 #: core/ui/ui_app.c
+msgctxt "HOTSPOT_ON_OK_STOPS_IT"
 msgid "Hotspot on: OK stops it"
 msgstr "热点开：OK 停止"
 
 #: core/ui/ui_app.c
+msgctxt "NO_ITEM_WITH_THAT_NUMBER"
 msgid "No item with that number"
 msgstr "无此编号项"
 
 #: core/ui/ui_app.c
+msgctxt "NOTHING_TO_SAVE_HERE"
 msgid "Nothing to save here"
 msgstr "此处无内容可存"
 
 #: core/ui/ui_app.c
+msgctxt "NOTHING_TO_OPEN"
 msgid "Nothing to open"
 msgstr "无内容可打开"
 
 #: core/ui/ui_app.c
+msgctxt "FIND_2"
 msgid "Find: "
 msgstr "查找： "
 
 #: core/ui/ui_app.c core/ui/ui_find.c
+msgctxt "NO_MATCH_BACK_DELETES_A_KEY"
 msgid "No match: Back deletes a key"
 msgstr "无匹配：返回删一位"
 
 #: core/ui/ui_app.c
+msgctxt "RECEIVE_ONLY_SENSITIVITY_NOT"
 msgid "Receive only. Sensitivity not rated"
 msgstr "仅接收。灵敏度未标定"
 
 #: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "EMERGENCY_NOT_IN_THIS_BUILD"
 msgid "Emergency: not in this build"
 msgstr "紧急：本版本无"
 
 #: core/ui/ui_app.c
+msgctxt "EMERGENCY_NEEDS_A_DMR"
 msgid "Emergency needs a DMR channel and ID"
 msgstr "紧急需 DMR 信道和 ID"
 
 #: core/ui/ui_app.c
+msgctxt "EMERGENCY_SENT_HOLD_AGAIN_TO"
 msgid "EMERGENCY sent: hold again to cancel"
 msgstr "紧急已发：再长按取消"
 
 #: core/ui/ui_app.c
+msgctxt "EMERGENCY_CANCELED"
 msgid "Emergency canceled"
 msgstr "紧急呼叫已取消"
 
 #: core/ui/ui_app.c
+msgctxt "CALL_BACK_DMR_ONLY"
 msgid "Call back: DMR only"
 msgstr "回呼：仅 DMR"
 
 #: core/ui/ui_app.c
+msgctxt "PTT_IS_OFF_WHILE_LOCKED_HOLD"
 msgid "PTT is off while locked: hold * to unlock"
 msgstr "锁定时 PTT 关：长按 * 解锁"
 
 #: core/ui/ui_app.c
+msgctxt "PTT_IS_OFF_WHILE_LOCKED_HOLD_2"
 msgid "PTT is off while locked: hold Back to unlock"
 msgstr "锁定时 PTT 关：长按返回解锁"
 
 #: core/ui/ui_app.c
+msgctxt "KEYS_UNLOCKED"
 msgid "Keys unlocked"
 msgstr "按键已解锁"
 
 #: core/ui/ui_app.c
+msgctxt "TALK_TARGET_DMR_CHANNELS_2"
 msgid "Talk target: DMR channels only"
 msgstr "通话目标：仅 DMR 信道"
 
 #: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "TALKGROUP_NAME_FIRST"
 msgid "Talkgroup name first"
 msgstr "通话组名称在前"
 
 #: core/ui/ui_app.c
+msgctxt "TALKGROUP_NUMBER_FIRST"
 msgid "Talkgroup number first"
 msgstr "通话组号码在前"
 
 #: core/ui/ui_app.c
+msgctxt "VOLUME_USE_THE_KNOB"
 msgid "Volume: use the knob"
 msgstr "音量：请用旋钮"
 
 #: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "VOICE_PROMPTS_NOT_IN_THIS"
 msgid "Voice prompts: not in this build"
 msgstr "语音提示：本版本无"
 
 #: core/ui/ui_app.c
+msgctxt "NOT_USED_HERE"
 msgid "Not used here"
 msgstr "此处未使用"
 
 #: core/ui/ui_app.c
+msgctxt "SWITCHING_OFF_IN_1_MIN"
 msgid "Switching off in 1 min"
 msgstr "1 分钟后关机"
 
 #: core/ui/ui_app.c
+msgctxt "ANY_KEY_KEEPS_IT_ON"
 msgid "Any key keeps it on"
 msgstr "按任意键保持开机"
 
 #: core/ui/ui_app.c
+msgctxt "BATTERY_3"
 msgid "Battery "
 msgstr "电池 "
 
 #: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "CHARGE_SOON"
 msgid "%: charge soon"
 msgstr "%：请尽快充电"
 
 #: core/ui/ui_app.c
+msgctxt "THAT_ZONE_WAS_DELETED"
 msgid "That zone was deleted"
 msgstr "该区域已删除"
 
 #: core/ui/ui_app.c
+msgctxt "MOVED_TO"
 msgid "Moved to "
 msgstr "已移至 "
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgctxt "N1_MIN"
 msgid "1 min"
 msgstr "1 分钟"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgctxt "N2_MIN"
 msgid "2 min"
 msgstr "2 分钟"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgctxt "N5_MIN"
 msgid "5 min"
 msgstr "5 分钟"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgctxt "N10_MIN"
 msgid "10 min"
 msgstr "10 分钟"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgctxt "N30_MIN"
 msgid "30 min"
 msgstr "30 分钟"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "NONE_2"
 msgid "None"
 msgstr "无"
 
 #: core/ui/ui_aprs.c
+msgctxt "BOTH"
 msgid "Both"
 msgstr "两者"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgctxt "AUTO"
 msgid "Auto"
 msgstr "自动"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgctxt "COMPUTER"
 msgid "Computer"
 msgstr "电脑"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgctxt "FIXED"
 msgid "Fixed"
 msgstr "固定"
 
 #: core/ui/ui_aprs.c
+msgctxt "N_AMERICA"
 msgid "N America"
 msgstr "北美"
 
 #: core/ui/ui_aprs.c
+msgctxt "EUROPE"
 msgid "Europe"
 msgstr "欧洲"
 
 #: core/ui/ui_aprs.c
+msgctxt "AUSTRALIA"
 msgid "Australia"
 msgstr "澳大利亚"
 
 #: core/ui/ui_aprs.c
+msgctxt "NEW_ZEALAND"
 msgid "New Zealand"
 msgstr "新西兰"
 
 #: core/ui/ui_aprs.c
+msgctxt "JAPAN"
 msgid "Japan"
 msgstr "日本"
 
 #: core/ui/ui_aprs.c
+msgctxt "CHINA"
 msgid "China"
 msgstr "中国"
 
 #: core/ui/ui_aprs.c
+msgctxt "CUSTOM"
 msgid "Custom"
 msgstr "自定义"
 
 #: core/ui/ui_aprs.c
+msgctxt "SET_YOUR_CALLSIGN_THE_RADIO"
 msgid "Set your callsign (the radio name) in qdmr."
 msgstr "请在 qdmr 中设置呼号（电台名）。"
 
 #: core/ui/ui_aprs.c
+msgctxt "NO_APRS_FREQUENCY_PICK_A"
 msgid "No APRS frequency: pick a region."
 msgstr "无 APRS 频率：请选地区。"
 
 #: core/ui/ui_aprs.c
+msgctxt "PICK_A_FREQUENCY_IN_A_HAM"
 msgid "Pick a frequency in a ham band this radio sends on."
 msgstr "请选本机可发射的业余频段频率。"
 
 #: core/ui/ui_aprs.c
+msgctxt "NO_APRS_TONES_ON_THIS_RADIO"
 msgid "No APRS tones on this radio; DMR positions work."
 msgstr "本机无 APRS 亚音；DMR 定位可用。"
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_NOT_IN_THIS_BUILD_2"
 msgid "APRS: not in this build"
 msgstr "APRS：本版本无"
 
 #: core/ui/ui_aprs.c
+msgctxt "NO_CALLSIGN"
 msgid "No callsign"
 msgstr "无呼号"
 
 #: core/ui/ui_aprs.c
+msgctxt "ON_4"
 msgid " on "
 msgstr " 于 "
 
 #: core/ui/ui_aprs.c
+msgctxt "SENDING_5"
 msgid " (sending)"
 msgstr " （发送中）"
 
 #: core/ui/ui_aprs.c
+msgctxt "NO_POSITION"
 msgid "No position"
 msgstr "无位置"
 
 #: core/ui/ui_aprs.c
+msgctxt "NEXT_IN"
 msgid "Next in "
 msgstr "下次于 "
 
 #: core/ui/ui_aprs.c
+msgctxt "SENT"
 msgid "  Sent "
 msgstr "  已发 "
 
 #: core/ui/ui_aprs.c
+msgctxt "SEND_POSITION_NOW"
 msgid "Send position now"
 msgstr "立即发送位置"
 
 #: core/ui/ui_aprs.c
+msgctxt "AUTOMATIC_BEACONS"
 msgid "Automatic beacons"
 msgstr "自动信标"
 
 #: core/ui/ui_aprs.c
+msgctxt "FREQUENCY"
 msgid "Frequency"
 msgstr "频率"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgctxt "POWER"
 msgid "Power"
 msgstr "功率"
 
 #: core/ui/ui_aprs.c
+msgctxt "PATH"
 msgid "Path"
 msgstr "路径"
 
 #: core/ui/ui_aprs.c
+msgctxt "INTERVAL"
 msgid "Interval"
 msgstr "间隔"
 
 #: core/ui/ui_aprs.c
+msgctxt "SMARTBEACONING"
 msgid "SmartBeaconing"
 msgstr "智能信标"
 
 #: core/ui/ui_aprs.c
+msgctxt "SEND_VIA"
 msgid "Send via"
 msgstr "发送方式"
 
 #: core/ui/ui_aprs.c
+msgctxt "KISS_ON_USB"
 msgid "KISS on USB"
 msgstr "USB KISS"
 
 #: core/ui/ui_aprs.c
+msgctxt "STATIONS_HEARD"
 msgid "Stations heard"
 msgstr "收到的台站"
 
 #: core/ui/ui_aprs.c
+msgctxt "NMEA_ON_USB"
 msgid "NMEA on USB"
 msgstr "USB NMEA"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "ON_3"
 msgid "On"
 msgstr "开"
 
 #: core/ui/ui_aprs.c
+msgctxt "AS_CHANNEL"
 msgid "As channel"
 msgstr "按信道"
 
 #: core/ui/ui_aprs.c
+msgctxt "SENDING_POSITION"
 msgid "Sending position"
 msgstr "正在发送位置"
 
 #: core/ui/ui_aprs.c
+msgctxt "SET_YOUR_CALLSIGN_FIRST"
 msgid "Set your callsign first"
 msgstr "请先设置呼号"
 
 #: core/ui/ui_aprs.c
+msgctxt "CANT_SEND_NOW"
 msgid "Can't send now"
 msgstr "现在无法发送"
 
 #: core/ui/ui_aprs.c
+msgctxt "BEACONS_ON"
 msgid "Beacons on"
 msgstr "信标开"
 
 #: core/ui/ui_aprs.c
+msgctxt "BEACONS_OFF"
 msgid "Beacons off"
 msgstr "信标关"
 
 #: core/ui/ui_aprs.c
+msgctxt "THIS_RADIO_CANT_RECEIVE_APRS"
 msgid "This radio can't receive APRS"
 msgstr "本机无法接收 APRS"
 
 #: core/ui/ui_aprs.c
+msgctxt "N0_9_PICK_BACK"
 msgid "0-9 pick  Back"
 msgstr "0-9 选  返回"
 
 #: core/ui/ui_aprs.c
+msgctxt "HEARD_3"
 msgid "Heard"
 msgstr "收到"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "BACK"
 msgid "Back"
 msgstr "返回"
 
 #: core/ui/ui_aprs.c
+msgctxt "NOTHING_HEARD_YET"
 msgid "Nothing heard yet"
 msgstr "尚未收到"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgctxt "MESSAGE_2"
 msgid "Message"
 msgstr "消息"
 
 #: core/ui/ui_aprs.c
+msgctxt "NO_LONGER_IN_LIST"
 msgid "No longer in list"
 msgstr "已不在列表"
 
 #: core/ui/ui_aprs.c
+msgctxt "DISTANCE"
 msgid "{Distance|Dist|}"
 msgstr "{距离|距离|}"
 
 #: core/ui/ui_aprs.c
+msgctxt "DIRECT"
 msgid "Direct"
 msgstr "直接"
 
 #: core/ui/ui_aprs.c
+msgctxt "VIA_DIGIPEATER"
 msgid "Via digipeater"
 msgstr "经中继"
 
 #: core/ui/ui_aprs.c
+msgctxt "POSITION_AGE"
 msgid "{Position age|Pos age}"
 msgstr "{位置时间|位置时间}"
 
 #: core/ui/ui_aprs.c core/ui/ui_gps.c
+msgctxt "SPEED"
 msgid "Speed"
 msgstr "速度"
 
 #: core/ui/ui_aprs.c
+msgctxt "COURSE"
 msgid "Course"
 msgstr "移动方位"
 
 #: core/ui/ui_aprs.c
+msgctxt "SYMBOL"
 msgid "Symbol"
 msgstr "标志"
 
 #: core/ui/ui_aprs.c
+msgctxt "PACKETS"
 msgid "Packets"
 msgstr "数据包"
 
 #: core/ui/ui_aprs.c
+msgctxt "OK_CHOOSE_BACK"
 msgid "OK choose  Back"
 msgstr "OK 选  返回"
 
 #: core/ui/ui_dual.c core/ui/ui_screens.c
+msgctxt "NO_TONE"
 msgid "No tone"
 msgstr "无亚音"
 
 #: core/ui/ui_dual.c
+msgctxt "CANT_WATCH_THAT_CHANNEL_PICK"
 msgid "{Can't watch that channel: pick another|Can't watch that channel}"
 msgstr "{无法守候该信道：请另选|无法守候该信道}"
 
 #: core/ui/ui_dual.c
+msgctxt "B_IS_THE_CHANNEL_YOU_ARE_ON"
 msgid "B is the channel you are on: pick another"
 msgstr "B 是你当前信道：请另选"
 
 #: core/ui/ui_dual.c
+msgctxt "DUAL_WATCH_ON_3"
 msgid "Dual watch on"
 msgstr "双守候开"
 
 #: core/ui/ui_dual.c
+msgctxt "DUAL_WATCH_OFF_ON_B"
 msgid "Dual watch off: on B"
 msgstr "双守候关：在 B"
 
 #: core/ui/ui_dual.c
+msgctxt "DUAL_WATCH_OFF_ON_A"
 msgid "Dual watch off: on A"
 msgstr "双守候关：在 A"
 
 #: core/ui/ui_dual.c
+msgctxt "PRESS_BACK_AGAIN_TO_STOP"
 msgid "{Press Back again to stop dual watch|Back again: stop watch}"
 msgstr "{再按返回停止双守候|返回：停止守候}"
 
 #: core/ui/ui_dual.c
+msgctxt "TALKING_ON_B_4"
 msgid "Talking on B"
 msgstr "在 B 通话"
 
 #: core/ui/ui_dual.c
+msgctxt "TALKING_ON_A_4"
 msgid "Talking on A"
 msgstr "在 A 通话"
 
 #: core/ui/ui_dual.c
+msgctxt "TALK_BACK_ON_B"
 msgid "Talk back on B"
 msgstr "在 B 回话"
 
 #: core/ui/ui_dual.c
+msgctxt "TALK_BACK_ON_A"
 msgid "Talk back on A"
 msgstr "在 A 回话"
 
 #: core/ui/ui_dual.c
+msgctxt "THAT_IS_A_PICK_ANOTHER"
 msgid "That is A: pick another"
 msgstr "这是 A：请另选"
 
 #: core/ui/ui_dual.c
+msgctxt "THAT_IS_B_PICK_ANOTHER"
 msgid "That is B: pick another"
 msgstr "这是 B：请另选"
 
 #: core/ui/ui_dual.c
+msgctxt "ONLY_ONE_CHANNEL_IN_THIS"
 msgid "{Only one channel in this zone|One channel in zone}"
 msgstr "{本区域仅一个信道|区域仅一个信道}"
 
 #: core/ui/ui_dual.c
+msgctxt "NO_OTHER_CHANNEL_HERE_A_HAS"
 msgid "{No other channel here: A has it|A has the other channel}"
 msgstr "{此处无其他信道：在 A|另一信道在 A}"
 
 #: core/ui/ui_dual.c
+msgctxt "NO_OTHER_CHANNEL_HERE_B_HAS"
 msgid "{No other channel here: B has it|B has the other channel}"
 msgstr "{此处无其他信道：在 B|另一信道在 B}"
 
 #: core/ui/ui_dual.c
+msgctxt "TURN_ON_DUAL_WATCH_FIRST"
 msgid "{Turn on dual watch first|Dual watch is off}"
 msgstr "{请先开双守候|双守候已关}"
 
 #: core/ui/ui_dual.c
+msgctxt "B_ZONE"
 msgid "B zone: "
 msgstr "B 区域： "
 
 #: core/ui/ui_dual.c
+msgctxt "A_ZONE"
 msgid "A zone: "
 msgstr "A 区域： "
 
 #: core/ui/ui_dual.c
+msgctxt "NO_OTHER_ZONE"
 msgid "No other zone"
 msgstr "无其他区域"
 
 #: core/ui/ui_dual.c
+msgctxt "NO_OTHER_CHANNEL_TO_WATCH"
 msgid "{No other channel to watch|No other channel}"
 msgstr "{无其他信道可守候|无其他信道}"
 
 #: core/ui/ui_dual.c
+msgctxt "DMR_CALL"
 msgid "DMR call"
 msgstr "DMR 通话"
 
 #: core/ui/ui_dual.c
+msgctxt "FM_SIGNAL"
 msgid "FM signal"
 msgstr "FM 信号"
 
 #: core/ui/ui_dual.c
+msgctxt "TO_YOU_2"
 msgid " to you"
 msgstr " 给你"
 
 #: core/ui/ui_dual.c
+msgctxt "DUAL_WATCH_OFF_ON"
 msgid "Dual watch off: on "
 msgstr "双守候关：在 "
 
 #: core/ui/ui_dual.c
+msgctxt "DUAL_WATCH_OFF_SCANNING"
 msgid "Dual watch off: scanning"
 msgstr "双守候关：扫描中"
 
 #: core/ui/ui_dual.c
+msgctxt "B_VFO"
 msgid "B: VFO"
 msgstr "B：VFO"
 
 #: core/ui/ui_dual.c
+msgctxt "A_VFO"
 msgid "A: VFO"
 msgstr "A：VFO"
 
 #: core/ui/ui_dual.c
+msgctxt "TALK_ON_B"
 msgid "Talk on B"
 msgstr "在 B 通话"
 
 #: core/ui/ui_dual.c
+msgctxt "TALK_ON_A"
 msgid "Talk on A"
 msgstr "在 A 通话"
 
 #: core/ui/ui_dual.c
+msgctxt "CHANGE_A"
 msgid "Change A"
 msgstr "改 A"
 
 #: core/ui/ui_dual.c
+msgctxt "CHANGE_B"
 msgid "Change B"
 msgstr "改 B"
 
 #: core/ui/ui_dual.c
+msgctxt "CALLER"
 msgid "Caller"
 msgstr "来电方"
 
 #: core/ui/ui_dual.c
+msgctxt "STOP_STAY_ON_B"
 msgid "Stop, stay on B"
 msgstr "停止，留在 B"
 
 #: core/ui/ui_dual.c
+msgctxt "STOP_STAY_ON_A"
 msgid "Stop, stay on A"
 msgstr "停止，留在 A"
 
 #: core/ui/ui_dual.c
+msgctxt "DUAL_WATCH"
 msgid "Dual Watch"
 msgstr "双守候"
 
 #: core/ui/ui_dual.c core/ui/ui_menus.c
+msgctxt "N1_5_PICK_BACK"
 msgid "1-5 pick  Back"
 msgstr "1-5 选  返回"
 
 #: core/ui/ui_dual.c core/ui/ui_menus.c
+msgctxt "ZONE"
 msgid "Zone"
 msgstr "区域"
 
 #: core/ui/ui_dual.c
+msgctxt "WATCH_ON"
 msgid "Watch on"
 msgstr "守候开"
 
 #: core/ui/ui_dual.c
+msgctxt "OK_WATCH_0_9_FIND_BACK"
 msgid "{OK watch  0-9 find  Back|OK watch  Back}"
 msgstr "{OK 守候  0-9 查找  返回|OK 守候  返回}"
 
 #: core/ui/ui_dual.c
+msgctxt "ZONE_FOR"
 msgid "Zone for"
 msgstr "区域为"
 
 #: core/ui/ui_dual.c core/ui/ui_menus.c
+msgctxt "OK_PICK_BACK"
 msgid "OK pick  Back"
 msgstr "OK 选  返回"
 
 #: core/ui/ui_find.c core/ui/ui_menus.c
+msgctxt "CONTACTS"
 msgid "Contacts"
 msgstr "联系人"
 
 #: core/ui/ui_find.c core/ui/ui_menus.c
+msgctxt "MESSAGES"
 msgid "Messages"
 msgstr "消息"
 
 #: core/ui/ui_find.c core/ui/ui_menus.c
+msgctxt "RECENT"
 msgid "Recent"
 msgstr "最近"
 
 #: core/ui/ui_find.c core/ui/ui_menus.c
+msgctxt "CHANNELS"
 msgid "Channels"
 msgstr "信道"
 
 #: core/ui/ui_find.c core/ui/ui_menus.c
+msgctxt "TOOLS"
 msgid "Tools"
 msgstr "工具"
 
 #: core/ui/ui_find.c core/ui/ui_menus.c
+msgctxt "SETTINGS"
 msgid "Settings"
 msgstr "设置"
 
 #: core/ui/ui_find.c core/ui/ui_menus.c
+msgctxt "ROAMING"
 msgid "Roaming"
 msgstr "漫游"
 
 #: core/ui/ui_find.c
+msgctxt "CH"
 msgid "Ch "
 msgstr "信道 "
 
 #: core/ui/ui_find.c
+msgctxt "CHANNEL_2"
 msgid "{Channel|}"
 msgstr "{信道|}"
 
 #: core/ui/ui_find.c
+msgctxt "ZONE_3"
 msgid "{Zone|}"
 msgstr "{区域|}"
 
 #: core/ui/ui_find.c
+msgctxt "CONTACT"
 msgid "{Contact|}"
 msgstr "{联系人|}"
 
 #: core/ui/ui_find.c
+msgctxt "TALK_TO_TG"
 msgid "Talk to TG "
 msgstr "通话 TG "
 
 #: core/ui/ui_find.c core/ui/ui_menus.c
+msgctxt "NOT_SAVED_2"
 msgid "{Not saved|}"
 msgstr "{未保存|}"
 
 #: core/ui/ui_find.c
+msgctxt "PRIVATE_CALL_2"
 msgid "Private call "
 msgstr "个呼 "
 
 #: core/ui/ui_find.c
+msgctxt "TUNE_VFO_TO"
 msgid "Tune VFO to "
 msgstr "VFO 调到 "
 
 #: core/ui/ui_find.c
+msgctxt "CREATE_CONTACT"
 msgid "Create contact "
 msgstr "新建联系人 "
 
 #: core/ui/ui_find.c
+msgctxt "MENU"
 msgid "Menu"
 msgstr "菜单"
 
 #: core/ui/ui_find.c
+msgctxt "NO_ACTIONS_FOR_THIS_RESULT"
 msgid "No actions for this result"
 msgstr "此结果无操作"
 
 #: core/ui/ui_find.c
+msgctxt "PTT_TALK_OK_OPEN_MORE"
 msgid "PTT talk  OK open  # more"
 msgstr "PTT 通话  OK 打开  # 更多"
 
 #: core/ui/ui_gps.c
+msgctxt "STATUS"
 msgid "Status"
 msgstr "状态"
 
 #: core/ui/ui_gps.c
+msgctxt "SKY"
 msgid "Sky"
 msgstr "天空"
 
 #: core/ui/ui_gps.c
+msgctxt "SIGNAL"
 msgid "Signal"
 msgstr "信号"
 
 #: core/ui/ui_gps.c core/ui/ui_menus.c
+msgctxt "GRID"
 msgid "Grid"
 msgstr "网格"
 
 #: core/ui/ui_gps.c
+msgctxt "GOOD"
 msgid " good"
 msgstr " 良好"
 
 #: core/ui/ui_gps.c
+msgctxt "FAIR"
 msgid " fair"
 msgstr " 一般"
 
 #: core/ui/ui_gps.c
+msgctxt "POOR"
 msgid " poor"
 msgstr " 较差"
 
 #: core/ui/ui_gps.c
+msgctxt "N3D_FIX"
 msgid "3D Fix"
 msgstr "3D 定位"
 
 #: core/ui/ui_gps.c
+msgctxt "N2D_FIX"
 msgid "2D Fix"
 msgstr "2D 定位"
 
 #: core/ui/ui_gps.c
+msgctxt "FIX"
 msgid "Fix"
 msgstr "定位"
 
 #: core/ui/ui_gps.c
+msgctxt "SEARCHING"
 msgid "Searching"
 msgstr "搜索中"
 
 #: core/ui/ui_gps.c
+msgctxt "NO_SIGNAL"
 msgid "No signal"
 msgstr "无信号"
 
 #: core/ui/ui_gps.c
+msgctxt "USED"
 msgid " used, "
 msgstr " 已用， "
 
 #: core/ui/ui_gps.c
+msgctxt "SEEN"
 msgid " seen"
 msgstr " 可见"
 
 #: core/ui/ui_gps.c
+msgctxt "SATS"
 msgid "Sats"
 msgstr "卫星"
 
 #: core/ui/ui_gps.c
+msgctxt "LAT"
 msgid "Lat"
 msgstr "纬度"
 
 #: core/ui/ui_gps.c
+msgctxt "LON"
 msgid "Lon"
 msgstr "经度"
 
 #: core/ui/ui_gps.c
+msgctxt "ALT"
 msgid "Alt"
 msgstr "海拔"
 
 #: core/ui/ui_gps.c
+msgctxt "NO_POSITIONS_YET"
 msgid "No positions yet"
 msgstr "暂无位置"
 
 #: core/ui/ui_gps.c
+msgctxt "NO_SATELLITES_YET"
 msgid "No satellites yet"
 msgstr "暂无卫星"
 
 #: core/ui/ui_gps.c core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "OF"
 msgid " of "
 msgstr " / "
 
 #: core/ui/ui_gps.c
+msgctxt "IN_THE_FIX"
 msgid " in the fix"
 msgstr " 参与定位"
 
 #: core/ui/ui_gps.c
+msgctxt "NO_FIX_YET"
 msgid "No fix yet"
 msgstr "尚未定位"
 
 #: core/ui/ui_gps.c
+msgctxt "NO_GPS_OR_IT_IS_OFF"
 msgid "No GPS, or it is off"
 msgstr "无 GPS 或已关闭"
 
 #: core/ui/ui_gps.c
+msgctxt "SETTINGS_LOCATION"
 msgid "Settings > Location"
 msgstr "设置 > 位置"
 
 #: core/ui/ui_gps.c
+msgctxt "UP_DOWN_PAGE_BACK"
 msgid "Up Down page  Back"
 msgstr "上下翻页  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "LAST_CALLER"
 msgid "Last caller"
 msgstr "最近来电"
 
 #: core/ui/ui_menus.c
+msgctxt "ZONES_3"
 msgid "Zones"
 msgstr "区域"
 
 #: core/ui/ui_menus.c
+msgctxt "NEW"
 msgid " new"
 msgstr " 新建"
 
 #: core/ui/ui_menus.c
+msgctxt "SCANNING"
 msgid "Scanning"
 msgstr "扫描中"
 
 #: core/ui/ui_menus.c
+msgctxt "CHANNELS_NOT_IN_THIS_BUILD"
 msgid "Channels: not in this build"
 msgstr "信道：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "N1_7_OPEN_BACK"
 msgid "1-7 open  Back"
 msgstr "1-7 打开  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "TALK_TO_2"
 msgid "Talk to "
 msgstr "通话对象 "
 
 #: core/ui/ui_menus.c
+msgctxt "PRIVATE_CALL"
 msgid "Private call"
 msgstr "个呼"
 
 #: core/ui/ui_menus.c
+msgctxt "RADIO_CHECK"
 msgid "Radio check"
 msgstr "电台检查"
 
 #: core/ui/ui_menus.c
+msgctxt "CALL_ALERT"
 msgid "Call alert"
 msgstr "呼叫提示"
 
 #: core/ui/ui_menus.c
+msgctxt "POSITION_3"
 msgid "Position"
 msgstr "位置"
 
 #: core/ui/ui_menus.c
+msgctxt "IN_CONTACTS"
 msgid "In contacts"
 msgstr "已在联系人中"
 
 #: core/ui/ui_menus.c
+msgctxt "SAVE_AS_CONTACT"
 msgid "Save as contact"
 msgstr "存为联系人"
 
 #: core/ui/ui_menus.c
+msgctxt "SPEAK_STATUS"
 msgid "Speak status"
 msgstr "语音状态"
 
 #: core/ui/ui_menus.c
+msgctxt "SAVE_TO_CHANNEL"
 msgid "Save to channel"
 msgstr "保存到信道"
 
 #: core/ui/ui_menus.c
+msgctxt "MAKE_CHANNEL_DEFAULT"
 msgid "Make channel default"
 msgstr "设为默认信道"
 
 #: core/ui/ui_menus.c
+msgctxt "MESSAGES_NOT_IN_THIS_BUILD_2"
 msgid "Messages: not in this build"
 msgstr "消息：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "CHECKING"
 msgid "Checking "
 msgstr "正在检查 "
 
 #: core/ui/ui_menus.c
+msgctxt "RADIO_CHECK_NOT_IN_THIS"
 msgid "Radio check: not in this build"
 msgstr "电台检查：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "CALL_ALERT_TO"
 msgid "Call alert to "
 msgstr "呼叫提示至 "
 
 #: core/ui/ui_menus.c
+msgctxt "CALL_ALERT_NOT_IN_THIS_BUILD"
 msgid "Call alert: not in this build"
 msgstr "呼叫提示：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "POSITION_REQUESTS_NOT_IN"
 msgid "Position requests: not in this build"
 msgstr "位置请求：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "ALREADY_IN_YOUR_CONTACTS"
 msgid "Already in your contacts"
 msgstr "已在联系人中"
 
 #: core/ui/ui_menus.c
+msgctxt "ADD_CONTACTS_IN_QDMR"
 msgid "Add contacts in qdmr"
 msgstr "在 qdmr 中添加联系人"
 
 #: core/ui/ui_menus.c
+msgctxt "N1_9_PICK_PTT_TALK_BACK"
 msgid "1-9 pick  PTT talk  Back"
 msgstr "1-9 选  PTT 通话  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "OK"
 msgid "OK"
 msgstr "OK"
 
 #: core/ui/ui_menus.c
+msgctxt "ON_MY_WAY"
 msgid "On my way"
 msgstr "马上到"
 
 #: core/ui/ui_menus.c
+msgctxt "CALL_ME"
 msgid "Call me"
 msgstr "打给我"
 
 #: core/ui/ui_menus.c
+msgctxt "CANT_TALK_NOW"
 msgid "Can't talk now"
 msgstr "暂时不能通话"
 
 #: core/ui/ui_menus.c
+msgctxt "TO_CALLSIGN"
 msgid "To callsign"
 msgstr "发往呼号"
 
 #: core/ui/ui_menus.c
+msgctxt "ENTER"
 msgid "Enter"
 msgstr "输入"
 
 #: core/ui/ui_menus.c
+msgctxt "WRITE"
 msgid "Write..."
 msgstr "编写……"
 
 #: core/ui/ui_menus.c
+msgctxt "REQUEST_ACKNOWLEDGMENT"
 msgid "Request acknowledgment"
 msgstr "请求确认"
 
 #: core/ui/ui_menus.c
+msgctxt "INCLUDE_POSITION"
 msgid "Include position"
 msgstr "APRS 位置"
 
 #: core/ui/ui_menus.c
+msgctxt "COULDNT_SEND_TRY_AGAIN"
 msgid "Couldn't send: try again"
 msgstr "发送失败：请重试"
 
 #: core/ui/ui_menus.c
+msgctxt "SENDING_TO_2"
 msgid "Sending to "
 msgstr "正在发送至 "
 
 #: core/ui/ui_menus.c
+msgctxt "CALLSIGN_2"
 msgid "Callsign"
 msgstr "呼号"
 
 #: core/ui/ui_menus.c
+msgctxt "TO"
 msgid "To"
 msgstr "至"
 
 #: core/ui/ui_menus.c
+msgctxt "OK_SEND_BACK"
 msgid "OK send  Back"
 msgstr "OK 发送  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_NAME_2"
 msgid "(no name)"
 msgstr "（无名称）"
 
 #: core/ui/ui_menus.c
+msgctxt "NEW_CONTACT_3"
 msgid "New contact"
 msgstr "新建联系人"
 
 #: core/ui/ui_menus.c
+msgctxt "N0_9_FIND_OK_TALK_MORE"
 msgid "{0-9 find  OK talk  # more|0-9  OK talk  # more}"
 msgstr "{0-9 查找  OK 通话  # 更多|0-9  OK 通话  # 更多}"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_CONTACT_MATCHES"
 msgid "No contact matches"
 msgstr "无匹配联系人"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_CONTACTS_ADD_THEM_IN_QDMR_2"
 msgid "No contacts: add them in qdmr"
 msgstr "无联系人：请在 qdmr 添加"
 
 #: core/ui/ui_menus.c
+msgctxt "CONTACTS_NOT_IN_THIS_BUILD"
 msgid "Contacts: not in this build"
 msgstr "联系人：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "NEW_APRS_MESSAGE"
 msgid "New APRS message"
 msgstr "新 APRS 消息"
 
 #: core/ui/ui_menus.c
+msgctxt "OK_OPEN_REPLY_BACK"
 msgid "OK open  # reply  Back"
 msgstr "OK 打开  # 回复  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_MESSAGES_YET"
 msgid "No messages yet"
 msgstr "暂无消息"
 
 #: core/ui/ui_menus.c
+msgctxt "FULL_MESSAGE"
 msgid "Full message"
 msgstr "显示全文"
 
 #: core/ui/ui_menus.c
+msgctxt "REPLY_OK"
 msgid "Reply \"OK\""
 msgstr "回复“OK”"
 
 #: core/ui/ui_menus.c
+msgctxt "REPLY_ON_MY_WAY"
 msgid "Reply \"On my way\""
 msgstr "回复“马上到”"
 
 #: core/ui/ui_menus.c
+msgctxt "CALL"
 msgid "Call"
 msgstr "呼叫"
 
 #: core/ui/ui_menus.c
+msgctxt "DELETE"
 msgid "Delete"
 msgstr "删除"
 
 #: core/ui/ui_menus.c
+msgctxt "MESSAGE_DELETED_3"
 msgid "Message deleted"
 msgstr "消息已删除"
 
 #: core/ui/ui_menus.c
+msgctxt "COULDNT_DELETE_TRY_AGAIN"
 msgid "Couldn't delete: try again"
 msgstr "删除失败：请重试"
 
 #: core/ui/ui_menus.c
+msgctxt "FROM_2"
 msgid "From "
 msgstr "来自 "
 
 #: core/ui/ui_menus.c
+msgctxt "TO_2"
 msgid "To "
 msgstr "至 "
 
 #: core/ui/ui_menus.c
+msgctxt "OK_CHOOSE_MORE_BACK"
 msgid "OK choose  # more  Back"
 msgstr "OK 选  # 更多  返回"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "TO_YOU"
 msgid "To you"
 msgstr "发给你"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "PRIVATE_2"
 msgid "Private"
 msgstr "个呼"
 
 #: core/ui/ui_menus.c
+msgctxt "PTT_TALK_MORE_BACK"
 msgid "PTT talk  # more  Back"
 msgstr "PTT 通话  # 更多  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "CREATE_NEW_ZONE_2"
 msgid "Create New Zone"
 msgstr "新建区域"
 
 #: core/ui/ui_menus.c
+msgctxt "HERE_2"
 msgid "Here, "
 msgstr "此处， "
 
 #: core/ui/ui_menus.c
+msgctxt "HERE"
 msgid "Here"
 msgstr "此处"
 
 #: core/ui/ui_menus.c core/ui/ui_svc_zone.c
+msgctxt "CHANNEL_5"
 msgid " channel"
 msgstr " 个信道"
 
 #: core/ui/ui_menus.c core/ui/ui_svc_zone.c
+msgctxt "CHANNELS_4"
 msgid " channels"
 msgstr " 个信道"
 
 #: core/ui/ui_menus.c
+msgctxt "CH_2"
 msgid " ch"
 msgstr " 信道"
 
 #: core/ui/ui_menus.c
+msgctxt "VFO_TYPE_A_FREQUENCY"
 msgid "VFO: type a frequency"
 msgstr "VFO：请输入频率"
 
 #: core/ui/ui_menus.c
+msgctxt "THE_VFO_HAS_NO_CHANNEL_LIST"
 msgid "The VFO has no channel list"
 msgstr "VFO 无信道列表"
 
 #: core/ui/ui_menus.c
+msgctxt "OK_GO_CHANNELS_0_9_FIND"
 msgid "{OK go  # channels  0-9 find|OK go  # channels}"
 msgstr "{OK 进入  # 信道  0-9 查找|OK 进入  # 信道}"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_ZONES_2"
 msgid "No zones"
 msgstr "无区域"
 
 #: core/ui/ui_menus.c
+msgctxt "COULDNT_SAVE_NOW_TRY_AGAIN_4"
 msgid "Couldn't save now: try again"
 msgstr "现在无法保存：请重试"
 
 #: core/ui/ui_menus.c
+msgctxt "ADD_CHANNEL"
 msgid "Add channel"
 msgstr "添加信道"
 
 #: core/ui/ui_menus.c
+msgctxt "ZONE_OPTIONS"
 msgid "Zone options"
 msgstr "区域选项"
 
 #: core/ui/ui_menus.c
+msgctxt "SHARE_ZONE_TO_2"
 msgid "⤒ Share zone to..."
 msgstr "⤒ 共享区域至……"
 
 #: core/ui/ui_menus.c
+msgctxt "SHARE_CHANNEL_TO_3"
 msgid "⤒ Share channel to..."
 msgstr "⤒ 共享信道至……"
 
 #: core/ui/ui_menus.c
+msgctxt "ZONE_SHARING_NOT_IN_THIS"
 msgid "Zone sharing: not in this build"
 msgstr "区域共享：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "SAVING_THE_ZONE_TRY_AGAIN"
 msgid "Saving the zone: try again"
 msgstr "正在保存区域：请重试"
 
 #: core/ui/ui_menus.c
+msgctxt "PRIVATE_ID"
 msgid "Private ID "
 msgstr "个呼 ID "
 
 #: core/ui/ui_menus.c
+msgctxt "GO_TO_A_DMR_CHANNEL_TO_SEND"
 msgid "Go to a DMR channel to send"
 msgstr "请到 DMR 信道发送"
 
 #: core/ui/ui_menus.c
+msgctxt "CANT_SEND_NOW_TRY_AGAIN_2"
 msgid "Can't send now: try again"
 msgstr "现在无法发送：请重试"
 
 #: core/ui/ui_menus.c
+msgctxt "VIA"
 msgid " via "
 msgstr " 经 "
 
 #: core/ui/ui_menus.c
+msgctxt "SENDING_6"
 msgid "Sending "
 msgstr "正在发送 "
 
 #: core/ui/ui_menus.c
+msgctxt "SENDING"
 msgid "Sending"
 msgstr "发送中"
 
 #: core/ui/ui_menus.c
+msgctxt "SHARE_TO"
 msgid "Share To"
 msgstr "共享至"
 
 #: core/ui/ui_menus.c
+msgctxt "N0_9_FIND_OR_ID_OK_SEND_BACK"
 msgid "{0-9 find or ID  OK send  Back|0-9 find or ID  OK send}"
 msgstr "{0-9 查找或 ID  OK 发送  返回|0-9 查找或 ID  OK 发送}"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_CONTACTS_TYPE_AN_ID"
 msgid "No contacts: type an ID"
 msgstr "无联系人：请输入 ID"
 
 #: core/ui/ui_menus.c
+msgctxt "IMPORT"
 msgid "Import"
 msgstr "导入"
 
 #: core/ui/ui_menus.c
+msgctxt "PREVIEW"
 msgid "Preview"
 msgstr "预览"
 
 #: core/ui/ui_menus.c
+msgctxt "REJECT"
 msgid "Reject"
 msgstr "拒绝"
 
 #: core/ui/ui_menus.c
+msgctxt "BUSY_SAVING_TRY_AGAIN_2"
 msgid "Busy saving: try again"
 msgstr "正在保存：请重试"
 
 #: core/ui/ui_menus.c
+msgctxt "IMPORTING"
 msgid "Importing..."
 msgstr "正在导入……"
 
 #: core/ui/ui_menus.c core/ui/ui_svc_zone.c
+msgctxt "NO_CHANNEL_IN_THIS_RADIOS"
 msgid "No channel in this radio's bands"
 msgstr "本机频段内无信道"
 
 #: core/ui/ui_menus.c
+msgctxt "OFFER_REJECTED"
 msgid "Offer rejected"
 msgstr "已拒绝"
 
 #: core/ui/ui_menus.c core/ui/ui_svc_zone.c
+msgctxt "CHANNEL_4"
 msgid "Channel "
 msgstr "信道 "
 
 #: core/ui/ui_menus.c core/ui/ui_svc_zone.c
+msgctxt "ZONE_4"
 msgid "Zone "
 msgstr "区域 "
 
 #: core/ui/ui_menus.c
+msgctxt "FROM_3"
 msgid ", from "
 msgstr "，来自 "
 
 #: core/ui/ui_menus.c
+msgctxt "NOT_IN_BAND"
 msgid " not in band"
 msgstr " 不在频段"
 
 #: core/ui/ui_menus.c
+msgctxt "CHANNEL_SHARE_RECEIVED"
 msgid "{Channel Share Received ⤓|Ch Share Received ⤓|Ch Received ⤓|Ch Received}"
 msgstr "{收到信道共享 ⤓|收到信道共享 ⤓|收到信道 ⤓|收到信道}"
 
 #: core/ui/ui_menus.c
+msgctxt "ZONE_SHARE_RECEIVED"
 msgid "{Zone Share Received ⤓|Zone Received ⤓|Zone Received}"
 msgstr "{收到区域共享 ⤓|收到区域 ⤓|收到区域}"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_SHARE_WAITING"
 msgid "No share waiting"
 msgstr "无待处理共享"
 
 #: core/ui/ui_menus.c
+msgctxt "NOT_IN_BAND_2"
 msgid "{Not in band|Out}"
 msgstr "{不在频段|超出}"
 
 #: core/ui/ui_menus.c
+msgctxt "OK_OR_BACK_RETURNS"
 msgid "OK or Back returns"
 msgstr "OK 或 返回 退出"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_ZONE_OFFER_WAITING"
 msgid "No zone offer waiting"
 msgstr "无待处理区域"
 
 #: core/ui/ui_menus.c
+msgctxt "CHANNELS_5"
 msgid "{ channels| ch}"
 msgstr "{ 个信道| 信道}"
 
 #: core/ui/ui_menus.c
+msgctxt "ADD_TO_ZONE"
 msgid "Add to Zone"
 msgstr "添加到区域"
 
 #: core/ui/ui_menus.c
+msgctxt "OK_ADD_BACK"
 msgid "OK add  Back"
 msgstr "OK 添加  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "OK_GO_EDIT_0_9_FIND"
 msgid "{OK go  # edit  0-9 find|OK go  # edit}"
 msgstr "{OK 进入  # 编辑  0-9 查找|OK 进入  # 编辑}"
 
 #: core/ui/ui_menus.c
+msgctxt "OK_GO_SHARE_0_9_FIND"
 msgid "{OK go  # share  0-9 find|OK go  # share}"
 msgstr "{OK 进入  # 共享  0-9 查找|OK 进入  # 共享}"
 
 #: core/ui/ui_menus.c
+msgctxt "OK_GO_0_9_FIND_BACK"
 msgid "OK go  0-9 find  Back"
 msgstr "OK 进入  0-9 查找  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "EMPTY_ZONE"
 msgid "Empty zone"
 msgstr "空区域"
 
 #: core/ui/ui_menus.c
+msgctxt "THATS_THE_MOST_IT_CAN_HOLD"
 msgid "That's the most it can hold"
 msgstr "已达上限"
 
 #: core/ui/ui_menus.c
+msgctxt "NAME_3"
 msgid "Name"
 msgstr "名称"
 
 #: core/ui/ui_menus.c
+msgctxt "BACK_DELETE_ABC_123_ABC_OK_2"
 msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
 msgstr "{返回 删除  # ABC/123/abc  OK 保留|返回 删  # 模式  OK}"
 
 #: core/ui/ui_menus.c
+msgctxt "BACK_DELETE_ABC_123_ABC_OK_3"
 msgid "{Back delete  # ABC/123/abc  OK send|Back del  # mode  OK}"
 msgstr "{返回 删除  # ABC/123/abc  OK 发送|返回 删  # 模式  OK}"
 
 #: core/ui/ui_menus.c
+msgctxt "NEW_FROM_CURRENT_3"
 msgid "New from current"
 msgstr "用当前新建"
 
 #: core/ui/ui_menus.c
+msgctxt "NOT_IN_ANY_ZONE_ADD_IT_TO"
 msgid "Not in any zone: add it to one to use it"
 msgstr "不在任何区域：请先加入区域"
 
 #: core/ui/ui_menus.c core/ui/ui_svc_storage.c
+msgctxt "NO_FREE_CHANNEL_3"
 msgid "No free channel"
 msgstr "无空闲信道"
 
 #: core/ui/ui_menus.c
+msgctxt "OK_DETAILS_GO_0_9_FIND"
 msgid "{OK details  # go  0-9 find|OK details  # go}"
 msgstr "{OK 详情  # 进入  0-9 查找|OK 详情  # 进入}"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_CHANNELS"
 msgid "No channels"
 msgstr "无信道"
 
 #: core/ui/ui_menus.c
+msgctxt "NEW_CHANNEL"
 msgid "New Channel"
 msgstr "新建信道"
 
 #: core/ui/ui_menus.c
+msgctxt "ZONE_5"
 msgid " zone"
 msgstr " 个区域"
 
 #: core/ui/ui_menus.c
+msgctxt "ZONES_4"
 msgid " zones"
 msgstr " 个区域"
 
 #: core/ui/ui_menus.c
+msgctxt "RADIOS_3"
 msgid "Radio's"
 msgstr "电台的"
 
 #: core/ui/ui_menus.c
+msgctxt "NUMBER"
 msgid "Number"
 msgstr "编号"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "MODE"
 msgid "Mode"
 msgstr "模式"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "RX_ONLY"
 msgid "RX only"
 msgstr "仅接收"
 
 #: core/ui/ui_menus.c
+msgctxt "BANDWIDTH"
 msgid "Bandwidth"
 msgstr "带宽"
 
 #: core/ui/ui_menus.c
+msgctxt "RX_CTCSS_DCS"
 msgid "RX CTCSS/DCS"
 msgstr "接收亚音"
 
 #: core/ui/ui_menus.c
+msgctxt "TX_CTCSS_DCS"
 msgid "TX CTCSS/DCS"
 msgstr "发射亚音"
 
 #: core/ui/ui_menus.c
+msgctxt "TONE_BURST_2"
 msgid "Tone burst"
 msgstr "突发音"
 
 #: core/ui/ui_menus.c
+msgctxt "COLOR_CODE"
 msgid "Color code"
 msgstr "色码"
 
 #: core/ui/ui_menus.c
+msgctxt "TIMESLOT_3"
 msgid "Timeslot"
 msgstr "时隙"
 
 #: core/ui/ui_menus.c
+msgctxt "TX_CONTACT"
 msgid "TX contact"
 msgstr "发射联系人"
 
 #: core/ui/ui_menus.c
+msgctxt "RX_GROUP_LIST"
 msgid "RX group list"
 msgstr "接收组列表"
 
 #: core/ui/ui_menus.c
+msgctxt "OWN_ID"
 msgid "Own ID"
 msgstr "自身 ID"
 
 #: core/ui/ui_menus.c
+msgctxt "DIRECT_MODE"
 msgid "Direct mode"
 msgstr "直通模式"
 
 #: core/ui/ui_menus.c
+msgctxt "TALK_PERMIT_BEEPS"
 msgid "Talk permit beeps"
 msgstr "通话许可音"
 
 #: core/ui/ui_menus.c
+msgctxt "TALKER_ALIAS_TS1"
 msgid "Talker alias TS1"
 msgstr "主叫别名 TS1"
 
 #: core/ui/ui_menus.c
+msgctxt "TALKER_ALIAS_TS2"
 msgid "Talker alias TS2"
 msgstr "主叫别名 TS2"
 
 #: core/ui/ui_menus.c
+msgctxt "TX_TIME_OUT"
 msgid "TX time-out"
 msgstr "发射超时"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "SCAN_5"
 msgid "Scan"
 msgstr "扫描"
 
 #: core/ui/ui_menus.c
+msgctxt "BATTERY_SAVER_2"
 msgid "Battery saver"
 msgstr "省电"
 
 #: core/ui/ui_menus.c
+msgctxt "TUNE_TO_THIS_CH"
 msgid "Tune to this ch"
 msgstr "调到本信道"
 
 #: core/ui/ui_menus.c
+msgctxt "SAVE_2"
 msgid "Save"
 msgstr "保存"
 
 #: core/ui/ui_menus.c
+msgctxt "SAVE_AS_NEW_CHANNEL"
 msgid "Save as new channel"
 msgstr "存为新信道"
 
 #: core/ui/ui_menus.c
+msgctxt "YES"
 msgid "Yes"
 msgstr "是"
 
 #: core/ui/ui_menus.c
+msgctxt "NO"
 msgid "No"
 msgstr "否"
 
 #: core/ui/ui_menus.c
+msgctxt "SKIPPED"
 msgid "Skipped"
 msgstr "已跳过"
 
 #: core/ui/ui_menus.c
+msgctxt "SCANNED"
 msgid "Scanned"
 msgstr "已扫描"
 
 #: core/ui/ui_menus.c core/ui/ui_svc_storage.c
+msgctxt "GIVE_IT_A_NAME_FIRST_3"
 msgid "Give it a name first"
 msgstr "请先命名"
 
 #: core/ui/ui_menus.c
+msgctxt "RX_IS_OUTSIDE_THE_RADIOS"
 msgid "RX is outside the radio's bands"
 msgstr "接收超出本机频段"
 
 #: core/ui/ui_menus.c
+msgctxt "TX_CANT_TRANSMIT_THERE_SET"
 msgid "TX can't transmit there: set RX only"
 msgstr "该处不能发射：设仅接收"
 
 #: core/ui/ui_menus.c
+msgctxt "RECEIVE_ONLY_BAND_SET_FM"
 msgid "Receive only band: set FM"
 msgstr "仅收频段：请设 FM"
 
 #: core/ui/ui_menus.c
+msgctxt "PICK_A_TX_CONTACT_FIRST"
 msgid "Pick a TX contact first"
 msgstr "请先选发射联系人"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_CHANGES_TO_SAVE"
 msgid "No changes to save"
 msgstr "无更改可保存"
 
 #: core/ui/ui_menus.c
+msgctxt "SAVED_AS_CHANNEL"
 msgid "Saved as channel "
 msgstr "已存为信道 "
 
 #: core/ui/ui_menus.c
+msgctxt "SAVED_CHANNEL"
 msgid "Saved channel "
 msgstr "已保存信道 "
 
 #: core/ui/ui_menus.c
+msgctxt "IDS_GO_UP_TO_16776415_3"
 msgid "IDs go up to 16776415"
 msgstr "ID 最大 16776415"
 
 #: core/ui/ui_menus.c
+msgctxt "DCS_CODES_USE_DIGITS_0_7"
 msgid "DCS codes use digits 0-7"
 msgstr "DCS 码仅用 0-7"
 
 #: core/ui/ui_menus.c
+msgctxt "NOT_CHANGED_0_TO_495_STEPS"
 msgid "Not changed: 0 to 495, steps of 15"
 msgstr "未改：0 到 495，步进 15"
 
 #: core/ui/ui_menus.c
+msgctxt "NOT_A_DCS_CODE"
 msgid "Not a DCS code"
 msgstr "不是 DCS 码"
 
 #: core/ui/ui_menus.c
+msgctxt "CTCSS_GOES_60_0_TO_260_0"
 msgid "CTCSS goes 60.0 to 260.0"
 msgstr "CTCSS 范围 60.0-260.0"
 
 #: core/ui/ui_menus.c
+msgctxt "SAVE_FIRST_HOLD_OK_2"
 msgid "Save first: hold OK"
 msgstr "先保存：长按 OK"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "AIR_BAND_RECEIVE_ONLY"
 msgid "Air band: receive only"
 msgstr "航空波段：仅接收"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "BROADCAST_RECEIVE_ONLY"
 msgid "Broadcast: receive only"
 msgstr "广播：仅接收"
 
 #: core/ui/ui_menus.c
+msgctxt "TONES_NOT_IN_THIS_BUILD_5"
 msgid "Tones: not in this build"
 msgstr "亚音：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "SAVE_AS_NEW_CHANNEL_TO_USE"
 msgid "Save as new channel to use another number"
 msgstr "存为新信道可用其他编号"
 
 #: core/ui/ui_menus.c
+msgctxt "ZONES_CHANGE_THEM_WITH_QDMR"
 msgid "Zones: change them with qdmr for now"
 msgstr "区域：暂请用 qdmr 修改"
 
 #: core/ui/ui_menus.c
+msgctxt "EMPTY_CHANNEL"
 msgid "Empty channel"
 msgstr "空信道"
 
 #: core/ui/ui_menus.c
+msgctxt "OK_CHANGE_HOLD_OK_SAVE_BACK_2"
 msgid "{OK change  hold OK save  Back|OK change  hold OK save}"
 msgstr "{OK 改  长按 OK 保存  返回|OK 改  长按 OK 保存}"
 
 #: core/ui/ui_menus.c
+msgctxt "OK_TUNES_TO_IT_BACK"
 msgid "OK tunes to it  Back"
 msgstr "OK 调到该频率  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_KEEP_EDITING"
 msgid "No, keep editing"
 msgstr "否，继续编辑"
 
 #: core/ui/ui_menus.c
+msgctxt "YES_DISCARD"
 msgid "Yes, discard"
 msgstr "是，放弃"
 
 #: core/ui/ui_menus.c
+msgctxt "DISCARD_THIS_NEW_CONTACT"
 msgid "Discard this new contact?"
 msgstr "放弃这个新联系人？"
 
 #: core/ui/ui_menus.c
+msgctxt "DISCARD_THE_CHANGES_TO_THIS"
 msgid "Discard the changes to this channel?"
 msgstr "放弃本信道的更改？"
 
 #: core/ui/ui_menus.c
+msgctxt "UNSAVED_CHANGES"
 msgid "Unsaved Changes"
 msgstr "未保存的更改"
 
 #: core/ui/ui_menus.c
+msgctxt "OK_CHOOSE_BACK_KEEP_EDITING"
 msgid "{OK choose  Back keep editing|OK choose  Back}"
 msgstr "{OK 选  返回继续编辑|OK 选  返回}"
 
 #: core/ui/ui_menus.c
+msgctxt "TYPE"
 msgid "Type"
 msgstr "类型"
 
 #: core/ui/ui_menus.c
+msgctxt "TALKGROUP"
 msgid "Talkgroup"
 msgstr "通话组"
 
 #: core/ui/ui_menus.c
+msgctxt "CHANNELS_6"
 msgid "Channel's"
 msgstr "信道的"
 
 #: core/ui/ui_menus.c
+msgctxt "TYPE_ITS_ID_FIRST"
 msgid "Type its ID first"
 msgstr "请先输入其 ID"
 
 #: core/ui/ui_menus.c
+msgctxt "PRIVATE_IDS_GO_UP_TO"
 msgid "Private IDs go up to 16776415"
 msgstr "个呼 ID 最大 16776415"
 
 #: core/ui/ui_menus.c
+msgctxt "TALKGROUPS_GO_UP_TO_16777214"
 msgid "Talkgroups go up to 16777214"
 msgstr "通话组最大 16777214"
 
 #: core/ui/ui_menus.c
+msgctxt "ALREADY_A_CONTACT"
 msgid "Already a contact: "
 msgstr "已是联系人： "
 
 #: core/ui/ui_menus.c
+msgctxt "NO_ROOM_FOR_MORE_CONTACTS"
 msgid "No room for more contacts"
 msgstr "联系人已满"
 
 #: core/ui/ui_menus.c
+msgctxt "SAVED_CONTACT"
 msgid "Saved contact "
 msgstr "已保存联系人 "
 
 #: core/ui/ui_menus.c
+msgctxt "IDS_GO_UP_TO_16777214"
 msgid "IDs go up to 16777214"
 msgstr "ID 最大 16777214"
 
 #: core/ui/ui_menus.c
+msgctxt "NEW_CONTACT_4"
 msgid "New Contact"
 msgstr "新建联系人"
 
 #: core/ui/ui_menus.c
+msgctxt "MOVE_UP"
 msgid "Move up"
 msgstr "上移"
 
 #: core/ui/ui_menus.c
+msgctxt "MOVE_DOWN"
 msgid "Move down"
 msgstr "下移"
 
 #: core/ui/ui_menus.c
+msgctxt "COPY_HERE"
 msgid "Copy here"
 msgstr "复制到此处"
 
 #: core/ui/ui_menus.c
+msgctxt "EDIT_CHANNEL"
 msgid "Edit channel"
 msgstr "编辑信道"
 
 #: core/ui/ui_menus.c
+msgctxt "REMOVE_FROM_ZONE"
 msgid "Remove from zone"
 msgstr "从区域移除"
 
 #: core/ui/ui_menus.c
+msgctxt "ALREADY_FIRST"
 msgid "Already first"
 msgstr "已是最前"
 
 #: core/ui/ui_menus.c
+msgctxt "ALREADY_LAST"
 msgid "Already last"
 msgstr "已是最后"
 
 #: core/ui/ui_menus.c
+msgctxt "POSITION_4"
 msgid "Position "
 msgstr "位置 "
 
 #: core/ui/ui_menus.c
+msgctxt "ZONE_FULL_2"
 msgid "Zone full"
 msgstr "区域已满"
 
 #: core/ui/ui_menus.c
+msgctxt "REMOVED_FROM_2"
 msgid "Removed from "
 msgstr "已移出 "
 
 #: core/ui/ui_menus.c
+msgctxt "N1_6_PICK_BACK"
 msgid "1-6 pick  Back"
 msgstr "1-6 选  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "ADDED_TO_2"
 msgid "Added to "
 msgstr "已加入 "
 
 #: core/ui/ui_menus.c
+msgctxt "ADD_CHANNEL_2"
 msgid "Add Channel"
 msgstr "添加信道"
 
 #: core/ui/ui_menus.c
+msgctxt "OK_ADD_0_9_FIND_BACK"
 msgid "{OK add  0-9 find  Back|OK add  Back}"
 msgstr "{OK 添加  0-9 查找  返回|OK 添加  返回}"
 
 #: core/ui/ui_menus.c
+msgctxt "EVERY_CHANNEL_IS_IN_IT"
 msgid "Every channel is in it"
 msgstr "所有信道已在其中"
 
 #: core/ui/ui_menus.c
+msgctxt "IN"
 msgid "In"
 msgstr "在"
 
 #: core/ui/ui_menus.c
+msgctxt "RENAME"
 msgid "Rename"
 msgstr "重命名"
 
 #: core/ui/ui_menus.c
+msgctxt "COPY_AS_NEW_ZONE"
 msgid "Copy as new zone"
 msgstr "复制为新区域"
 
 #: core/ui/ui_menus.c
+msgctxt "DELETE_ZONE"
 msgid "Delete zone"
 msgstr "删除区域"
 
 #: core/ui/ui_menus.c
+msgctxt "RENAMED"
 msgid "Renamed"
 msgstr "已重命名"
 
 #: core/ui/ui_menus.c
+msgctxt "ADDED"
 msgid "Added "
 msgstr "已添加 "
 
 #: core/ui/ui_menus.c core/ui/ui_svc_storage.c core/ui/ui_svc_zone.c
+msgctxt "NO_ROOM_FOR_ANOTHER_ZONE_2"
 msgid "No room for another zone"
 msgstr "区域已满"
 
 #: core/ui/ui_menus.c
+msgctxt "COPIED_AS"
 msgid "Copied as "
 msgstr "已复制为 "
 
 #: core/ui/ui_menus.c
+msgctxt "EMPTY_ZONE_NOTHING_TO_SEND"
 msgid "Empty zone: nothing to send"
 msgstr "空区域：无可发送"
 
 #: core/ui/ui_menus.c
+msgctxt "IT_HOLDS_EVERY_CHANNEL_IT"
 msgid "It holds every channel: it stays"
 msgstr "包含所有信道：保留"
 
 #: core/ui/ui_menus.c
+msgctxt "N1_4_PICK_BACK"
 msgid "1-4 pick  Back"
 msgstr "1-4 选  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "N1_3_PICK_BACK_2"
 msgid "1-3 pick  Back"
 msgstr "1-3 选  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_KEEP_IT"
 msgid "No, keep it"
 msgstr "否，保留"
 
 #: core/ui/ui_menus.c
+msgctxt "YES_DELETE"
 msgid "Yes, delete"
 msgstr "是，删除"
 
 #: core/ui/ui_menus.c
+msgctxt "DELETED"
 msgid "Deleted "
 msgstr "已删除 "
 
 #: core/ui/ui_menus.c
+msgctxt "DELETE_2"
 msgid "Delete "
 msgstr "删除 "
 
 #: core/ui/ui_menus.c
+msgctxt "CHANNELS_STAY"
 msgid "? Channels stay."
 msgstr "？信道保留。"
 
 #: core/ui/ui_menus.c
+msgctxt "DELETE_ZONE_2"
 msgid "Delete Zone"
 msgstr "删除区域"
 
 #: core/ui/ui_menus.c
+msgctxt "OK_CHOOSE_BACK_CANCEL_3"
 msgid "OK choose  Back cancel"
 msgstr "OK 选  返回取消"
 
 #: core/ui/ui_menus.c
+msgctxt "TX_CONTACT_2"
 msgid "TX Contact"
 msgstr "发射联系人"
 
 #: core/ui/ui_menus.c
+msgctxt "RX_GROUP_LIST_2"
 msgid "RX Group List"
 msgstr "接收组列表"
 
 #: core/ui/ui_menus.c
+msgctxt "OK_PICK_0_9_FIND_BACK"
 msgid "OK pick  0-9 find  Back"
 msgstr "OK 选  0-9 查找  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "NONE_STORED"
 msgid "None stored"
 msgstr "未存储"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "HOTSPOT_2"
 msgid "Hotspot"
 msgstr "热点"
 
 #: core/ui/ui_menus.c
+msgctxt "BATTERY_2"
 msgid "Battery"
 msgstr "电池"
 
 #: core/ui/ui_menus.c
+msgctxt "ABOUT_4"
 msgid "About"
 msgstr "关于"
 
 #: core/ui/ui_menus.c
+msgctxt "CODEPLUG_2"
 msgid "Codeplug"
 msgstr "电台频率"
 
 #: core/ui/ui_menus.c
+msgctxt "USB_NETWORK"
 msgid "USB Network"
 msgstr "USB 网络"
 
 #: core/ui/ui_menus.c
+msgctxt "SINGLE_FREQ_REPEATER"
 msgid "Single-Freq Repeater"
 msgstr "单频中继"
 
 #: core/ui/ui_menus.c
+msgctxt "USER"
 msgid "User"
 msgstr "用户"
 
 #: core/ui/ui_menus.c
+msgctxt "USER_ERDM"
 msgid "User (ERDM)"
 msgstr "用户 (ERDM)"
 
 #: core/ui/ui_menus.c
+msgctxt "REPEATER_3"
 msgid "Repeater"
 msgstr "中继台"
 
 #: core/ui/ui_menus.c
+msgctxt "REPEATER_ERDM_STYLE_2"
 msgid "Repeater (ERDM style)"
 msgstr "中继台（ERDM 式）"
 
 #: core/ui/ui_menus.c
+msgctxt "SUPPLY_2"
 msgid "Supply"
 msgstr "供电"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_GPS_OR_IT_IS_OFF_SETTINGS"
 msgid "No GPS, or it is off (Settings > Location)"
 msgstr "无 GPS 或已关闭（设置 > 位置）"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_FIX_YET_GO_OUTSIDE_AWAY"
 msgid "No fix yet. Go outside, away from buildings."
 msgstr "尚未定位。请到室外远离建筑。"
 
 #: core/ui/ui_menus.c
+msgctxt "FIX_2"
 msgid "Fix, "
 msgstr "定位， "
 
 #: core/ui/ui_menus.c
+msgctxt "SATELLITES"
 msgid " satellites"
 msgstr " 颗卫星"
 
 #: core/ui/ui_menus.c
+msgctxt "ALTITUDE"
 msgid "Altitude "
 msgstr "海拔 "
 
 #: core/ui/ui_menus.c
+msgctxt "START_MMDVMHOST_OR_PI_STAR"
 msgid "Start MMDVMHost or Pi-Star on a computer on USB: hotspot mode starts by itself."
 msgstr "在 USB 电脑上启动 MMDVMHost 或 Pi-Star：热点模式会自动开始。"
 
 #: core/ui/ui_menus.c
+msgctxt "HOTSPOT_NOT_IN_THIS_BUILD"
 msgid "Hotspot: not in this build"
 msgstr "热点：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "NONE_BUILT_IN_CHANNELS"
 msgid "None: built-in channels"
 msgstr "无：内置信道"
 
 #: core/ui/ui_menus.c
+msgctxt "BUILT_IN_CHANNELS"
 msgid "Built-in channels"
 msgstr "内置信道"
 
 #: core/ui/ui_menus.c
+msgctxt "WRITTEN_BY_THE_CPS"
 msgid "Written by the CPS"
 msgstr "由 CPS 写入"
 
 #: core/ui/ui_menus.c
+msgctxt "OTHER_FIRMWARES_CODEPLUG"
 msgid "Other firmware's codeplug: ignored"
 msgstr "其他固件电台频率：已忽略"
 
 #: core/ui/ui_menus.c
+msgctxt "ZONES_5"
 msgid "Zones: "
 msgstr "区域： "
 
 #: core/ui/ui_menus.c
+msgctxt "CHANNELS_UP_TO"
 msgid "Channels: up to "
 msgstr "信道：最多 "
 
 #: core/ui/ui_menus.c
+msgctxt "USB_IS_A_NETWORK_ADAPTER_IP"
 msgid "USB is a network adapter: IP over DMR. qdmr and the hotspot are off until you switch back."
 msgstr "USB 为网卡：DMR 承载 IP。切回前 qdmr 和热点均关闭。"
 
 #: core/ui/ui_menus.c
+msgctxt "USB_IS_A_SERIAL_PORT_QDMR"
 msgid "USB is a serial port: qdmr, hotspot. As a network adapter it carries IP over DMR."
 msgstr "USB 为串口：qdmr、热点。作为网卡时 DMR 承载 IP。"
 
 #: core/ui/ui_menus.c
+msgctxt "USB_NETWORK_NOT_IN_THIS"
 msgid "USB network: not in this build"
 msgstr "USB 网络：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "THE_VFO_HAS_NO_SFR_ROLE_PICK"
 msgid "The VFO has no SFR role. Pick one below."
 msgstr "VFO 无单频中继角色。请在下方选择。"
 
 #: core/ui/ui_menus.c
+msgctxt "OFF_HERE_THE_ROLE_NEEDS_DMR"
 msgid "Off here: the role needs DMR and one frequency (no split)."
 msgstr "此处关闭：该角色需 DMR 和单一频率（无异频）。"
 
 #: core/ui/ui_menus.c
+msgctxt "THIS_CHANNEL_HAS_NO_SFR_ROLE"
 msgid "This channel has no SFR role. Set Repeater or User in the Codeplug Editor, on a channel with one frequency."
 msgstr "本信道无单频中继角色。请在电台频率编辑器把单频信道设为中继台或用户。"
 
 #: core/ui/ui_menus.c
+msgctxt "IN_TS"
 msgid "In TS"
 msgstr "入时隙"
 
 #: core/ui/ui_menus.c
+msgctxt "OUT_TS"
 msgid ", out TS"
 msgstr "，出时隙"
 
 #: core/ui/ui_menus.c
+msgctxt "OFF_TRANSMIT_NOT_ALLOWED_NOW"
 msgid "Off: transmit not allowed now"
 msgstr "关：现在不允许发射"
 
 #: core/ui/ui_menus.c
+msgctxt "SENDING_ITS_CW_ID"
 msgid "Sending its CW ID"
 msgstr "正在发送 CW ID"
 
 #: core/ui/ui_menus.c
+msgctxt "REPEATING_A_CALL"
 msgid "Repeating a call"
 msgstr "正在中转通话"
 
 #: core/ui/ui_menus.c
+msgctxt "HANG_TIME"
 msgid "Hang time"
 msgstr "挂起时间"
 
 #: core/ui/ui_menus.c
+msgctxt "LISTENING"
 msgid "Listening"
 msgstr "监听中"
 
 #: core/ui/ui_menus.c
+msgctxt "USER_OF_AN_ERDM_REPEATER"
 msgid "User of an ERDM repeater"
 msgstr "ERDM 中继台用户"
 
 #: core/ui/ui_menus.c
+msgctxt "USER_OF_A_REPEATER"
 msgid "User of a repeater"
 msgstr "中继台用户"
 
 #: core/ui/ui_menus.c
+msgctxt "TALK_ON_TS"
 msgid "Talk on TS"
 msgstr "通话时隙"
 
 #: core/ui/ui_menus.c
+msgctxt "HEAR_TS"
 msgid ", hear TS"
 msgstr "，收听时隙"
 
 #: core/ui/ui_menus.c
+msgctxt "AND_TS"
 msgid " and TS"
 msgstr " 和时隙"
 
 #: core/ui/ui_menus.c
+msgctxt "SINGLE_FREQ_REPEATER_NOT_IN_2"
 msgid "Single-freq repeater: not in this build"
 msgstr "单频中继：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "ROLE"
 msgid "Role"
 msgstr "角色"
 
 #: core/ui/ui_menus.c
+msgctxt "INBOUND_SLOT"
 msgid "Inbound slot"
 msgstr "入站时隙"
 
 #: core/ui/ui_menus.c
+msgctxt "SWITCH_USB_TO_SERIAL"
 msgid "Switch USB to serial"
 msgstr "USB 切到串口"
 
 #: core/ui/ui_menus.c
+msgctxt "SWITCH_USB_TO_NETWORK"
 msgid "Switch USB to network"
 msgstr "USB 切到网络"
 
 #: core/ui/ui_menus.c
+msgctxt "STOP_HOTSPOT"
 msgid "Stop hotspot"
 msgstr "停止热点"
 
 #: core/ui/ui_menus.c
+msgctxt "PICK_A_ROLE_FIRST"
 msgid "Pick a role first"
 msgstr "请先选择角色"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_USB_NETWORK_ON_THIS_RADIO"
 msgid "No USB network on this radio"
 msgstr "本机无 USB 网络"
 
 #: core/ui/ui_menus.c
+msgctxt "USB_IS_A_NETWORK_ADAPTER_NOW"
 msgid "USB is a network adapter now"
 msgstr "USB 现为网卡"
 
 #: core/ui/ui_menus.c
+msgctxt "USB_IS_A_SERIAL_PORT_AGAIN"
 msgid "USB is a serial port again"
 msgstr "USB 已恢复为串口"
 
 #: core/ui/ui_menus.c
+msgctxt "DMR_ID"
 msgid "DMR ID"
 msgstr "DMR ID"
 
 #: core/ui/ui_menus.c core/ui/ui_position.c
+msgctxt "NOT_SET_2"
 msgid "Not set"
 msgstr "未设置"
 
 #: core/ui/ui_menus.c
+msgctxt "RADIO_NAME"
 msgid "Radio name"
 msgstr "电台名称"
 
 #: core/ui/ui_menus.c
+msgctxt "BOOT_1"
 msgid "Boot 1"
 msgstr "启动文字1"
 
 #: core/ui/ui_menus.c
+msgctxt "BOOT_2"
 msgid "Boot 2"
 msgstr "启动文字2"
 
 #: core/ui/ui_menus.c
+msgctxt "SAVED_IN_THE_CODEPLUG_2"
 msgid "Saved in the codeplug"
 msgstr "保存在电台频率中"
 
 #: core/ui/ui_menus.c
+msgctxt "RADIO_2"
 msgid "Radio: "
 msgstr "电台： "
 
 #: core/ui/ui_menus.c
+msgctxt "SAVED_2"
 msgid "Saved"
 msgstr "已保存"
 
 #: core/ui/ui_menus.c
+msgctxt "IDS_START_AT_1"
 msgid "IDs start at 1"
 msgstr "ID 从 1 开始"
 
 #: core/ui/ui_menus.c
+msgctxt "DMR_ID_SAVED"
 msgid "DMR ID saved"
 msgstr "DMR ID 已保存"
 
 #: core/ui/ui_menus.c
+msgctxt "TYPING_NOT_IN_THIS_BUILD"
 msgid "Typing: not in this build"
 msgstr "输入：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "MY_RADIO_3"
 msgid "My Radio"
 msgstr "我的电台"
 
 #: core/ui/ui_menus.c
+msgctxt "N0_9_TYPE_OK_EDIT_SAVE_BACK_2"
 msgid "0-9 type  OK edit/save  Back"
 msgstr "0-9 输入  OK 编辑/保存  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "OK_EDIT_BACK"
 msgid "OK edit  Back"
 msgstr "OK 编辑  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "ARS_SERVER"
 msgid "ARS server"
 msgstr "ARS 服务器"
 
 #: core/ui/ui_menus.c
+msgctxt "IP_GATEWAY"
 msgid "IP gateway"
 msgstr "IP 网关"
 
 #: core/ui/ui_menus.c
+msgctxt "REGISTERING"
 msgid "Registering"
 msgstr "正在注册"
 
 #: core/ui/ui_menus.c
+msgctxt "REGISTERED"
 msgid "Registered"
 msgstr "已注册"
 
 #: core/ui/ui_menus.c
+msgctxt "REFUSED"
 msgid "Refused"
 msgstr "已拒绝"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_ANSWER"
 msgid "No answer"
 msgstr "无应答"
 
 #: core/ui/ui_menus.c
+msgctxt "ARS"
 msgid "ARS: "
 msgstr "ARS： "
 
 #: core/ui/ui_menus.c
+msgctxt "DATA_SERVICES"
 msgid "Data Services"
 msgstr "数据服务"
 
 #: core/ui/ui_menus.c
+msgctxt "FREQ_TRIM"
 msgid "Freq Trim"
 msgstr "频率微调"
 
 #: core/ui/ui_menus.c
+msgctxt "AT"
 msgid "At "
 msgstr "当前 "
 
 #: core/ui/ui_menus.c
+msgctxt "TO_INCREASE_FREQUENCY"
 msgid "+ to increase frequency"
 msgstr "+ 增大频率"
 
 #: core/ui/ui_menus.c
+msgctxt "TO_INCREASE_FREQ"
 msgid "+ to increase freq"
 msgstr "+ 增大频率"
 
 #: core/ui/ui_menus.c
+msgctxt "N0_9_TYPE_OK_SET"
 msgid "0-9 type  # +/-  OK set"
 msgstr "0-9 输入  # +/-  OK 设定"
 
 #: core/ui/ui_menus.c
+msgctxt "UP_DOWN_OK_DONE"
 msgid "Up Down  # +/-  OK done"
 msgstr "上下  # +/-  OK 完成"
 
 #: core/ui/ui_menus.c
+msgctxt "UP_TO_10_0_PPM"
 msgid "Up to 10.0 ppm"
 msgstr "最大 10.0 ppm"
 
 #: core/ui/ui_menus.c
+msgctxt "FIRMWARE"
 msgid "Firmware: "
 msgstr "固件： "
 
 #: core/ui/ui_menus.c
+msgctxt "RELEASE"
 msgid "Release: "
 msgstr "版本： "
 
 #: core/ui/ui_menus.c
+msgctxt "BUILD"
 msgid "Build: "
 msgstr "构建： "
 
 #: core/ui/ui_menus.c
+msgctxt "DATE"
 msgid "Date: "
 msgstr "日期： "
 
 #: core/ui/ui_menus.c
+msgctxt "LICENSE"
 msgid "License: "
 msgstr "许可： "
 
 #: core/ui/ui_menus.c
+msgctxt "MAINTAINERS"
 msgid "Maintainers:"
 msgstr "维护者:"
 
 #: core/ui/ui_menus.c
+msgctxt "MAINTAINER"
 msgid "Maintainer:"
 msgstr "维护者:"
 
 #: core/ui/ui_menus.c
+msgctxt "CONTRIBUTORS"
 msgid "Contributors:"
 msgstr "贡献者:"
 
 #: core/ui/ui_menus.c
+msgctxt "SPLEEN_FONT_BSD_2_CLAUSE"
 msgid "Spleen font: BSD-2-Clause"
 msgstr "Spleen 字体：BSD-2-Clause"
 
 #: core/ui/ui_menus.c
+msgctxt "JETBRAINS_MONO_FONT_OFL_1_1"
 msgid "JetBrains Mono font: OFL-1.1"
 msgstr "JetBrains Mono 字体：OFL-1.1"
 
 #: core/ui/ui_menus.c
+msgctxt "NOTO_SANS_CJK_SC_FONT_OFL_1"
 msgid "Noto Sans CJK SC font: OFL-1.1"
 msgstr "Noto Sans CJK SC 字体：OFL-1.1"
 
 #: core/ui/ui_menus.c
+msgctxt "AMBE_2_CODEC_DVSI_STOCK"
 msgid "AMBE+2 codec: DVSI (stock)"
 msgstr "AMBE+2 编解码器：DVSI（原厂）"
 
 #: core/ui/ui_menus.c
+msgctxt "SYNCED"
 msgid "Synced"
 msgstr "已同步"
 
 #: core/ui/ui_menus.c
+msgctxt "PER_SITE"
 msgid "Per site"
 msgstr "按站点"
 
 #: core/ui/ui_menus.c
+msgctxt "ROAMING_WORKS_ON_CHANNELS_2"
 msgid "Roaming works on channels, not the VFO."
 msgstr "漫游仅用于信道，不用于 VFO。"
 
 #: core/ui/ui_menus.c
+msgctxt "OFF_IN_THIS_ZONE_ON_THE"
 msgid "Off in this zone. On, the radio moves between the zone's repeaters."
 msgstr "本区域关闭。开启后电台在本区域中继台间切换。"
 
 #: core/ui/ui_menus.c
+msgctxt "THIS_CHANNEL_IS_NOT_A"
 msgid "This channel is not a repeater site."
 msgstr "本信道不是中继站点。"
 
 #: core/ui/ui_menus.c
+msgctxt "NEEDS_TWO_SITES_IN_THE_ZONE"
 msgid "Needs two sites in the zone with the same talkgroup."
 msgstr "需区域内两个同通话组站点。"
 
 #: core/ui/ui_menus.c
+msgctxt "SEARCHING_SITES_2"
 msgid "Searching sites..."
 msgstr "正在搜索站点……"
 
 #: core/ui/ui_menus.c
+msgctxt "SITE"
 msgid "Site "
 msgstr "站点 "
 
 #: core/ui/ui_menus.c
+msgctxt "SIGNAL_2"
 msgid "Signal "
 msgstr "信号 "
 
 #: core/ui/ui_menus.c
+msgctxt "DBM_WEAK"
 msgid " dBm, weak"
 msgstr " dBm，弱"
 
 #: core/ui/ui_menus.c
+msgctxt "LOCKED_TO_THIS_SITE"
 msgid "Locked to this site"
 msgstr "已锁定本站点"
 
 #: core/ui/ui_menus.c
+msgctxt "BEACONS_SURVEYING"
 msgid "Beacons: surveying"
 msgstr "信标：测量中"
 
 #: core/ui/ui_menus.c
+msgctxt "BEACONS_LEARNING"
 msgid "Beacons: learning"
 msgstr "信标：学习中"
 
 #: core/ui/ui_menus.c
+msgctxt "ROAMING_NOT_IN_THIS_BUILD_2"
 msgid "Roaming: not in this build"
 msgstr "漫游：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "ROAM_IN_THIS_ZONE"
 msgid "Roam in this zone"
 msgstr "在本区域漫游"
 
 #: core/ui/ui_menus.c
+msgctxt "ROAM_NOW"
 msgid "Roam now"
 msgstr "立即漫游"
 
 #: core/ui/ui_menus.c
+msgctxt "LOCK_TO_THIS_SITE"
 msgid "Lock to this site"
 msgstr "锁定本站点"
 
 #: core/ui/ui_menus.c
+msgctxt "SITE_SURVEY"
 msgid "Site survey"
 msgstr "站点测量"
 
 #: core/ui/ui_menus.c
+msgctxt "BEACON_INTERVAL"
 msgid "Beacon interval"
 msgstr "信标间隔"
 
 #: core/ui/ui_menus.c
+msgctxt "BEACON_LENGTH"
 msgid "Beacon length"
 msgstr "信标长度"
 
 #: core/ui/ui_menus.c
+msgctxt "WAKE_PROBE"
 msgid "Wake probe"
 msgstr "唤醒探测"
 
 #: core/ui/ui_menus.c
+msgctxt "MUST_MATCH_THE_REPEATERS"
 msgid "Must match the repeaters"
 msgstr "须与中继台一致"
 
 #: core/ui/ui_menus.c
+msgctxt "WAKE_PROBE_ON_TRANSMITS_ON"
 msgid "Wake probe on: transmits on silent sites"
 msgstr "唤醒探测开：在静默站点发射"
 
 #: core/ui/ui_menus.c
+msgctxt "WAKE_PROBE_OFF_LISTENING"
 msgid "Wake probe off: listening only"
 msgstr "唤醒探测关：仅监听"
 
 #: core/ui/ui_menus.c
+msgctxt "ROAMING_WORKS_ON_CHANNELS"
 msgid "Roaming works on channels"
 msgstr "漫游仅用于信道"
 
 #: core/ui/ui_menus.c
+msgctxt "ROAMING_ON_FOR"
 msgid "Roaming on for "
 msgstr "漫游已开： "
 
 #: core/ui/ui_menus.c
+msgctxt "ROAMING_OFF"
 msgid "Roaming off"
 msgstr "漫游关"
 
 #: core/ui/ui_menus.c
+msgctxt "TURN_ROAMING_ON_FIRST"
 msgid "Turn roaming on first"
 msgstr "请先开启漫游"
 
 #: core/ui/ui_menus.c
+msgctxt "CANT_ROAM_ON_THIS_CHANNEL"
 msgid "Can't roam on this channel"
 msgstr "本信道不能漫游"
 
 #: core/ui/ui_menus.c
+msgctxt "ALREADY_SEARCHING"
 msgid "Already searching"
 msgstr "已在搜索"
 
 #: core/ui/ui_menus.c
+msgctxt "SEARCHING_SITES"
 msgid "Searching sites"
 msgstr "正在搜索站点"
 
 #: core/ui/ui_menus.c
+msgctxt "LOCKED_TO"
 msgid "Locked to "
 msgstr "已锁定 "
 
 #: core/ui/ui_menus.c
+msgctxt "ROAMING_AGAIN"
 msgid "Roaming again"
 msgstr "恢复漫游"
 
 #: core/ui/ui_menus.c
+msgctxt "N1_7_PICK_BACK"
 msgid "1-7 pick  Back"
 msgstr "1-7 选  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "ASK"
 msgid "Ask"
 msgstr "询问"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_CRASH_RECORDED_2"
 msgid "No crash recorded."
 msgstr "无崩溃记录。"
 
 #: core/ui/ui_menus.c
+msgctxt "RESTARTED_AFTER_A_CRASH_SEND"
 msgid "Restarted after a crash. Send the report to "
 msgstr "崩溃后已重启。请把报告发送至 "
 
 #: core/ui/ui_menus.c
+msgctxt "REPORT_SENT"
 msgid "Report sent"
 msgstr "报告已发送"
 
 #: core/ui/ui_menus.c
+msgctxt "CRASHES_IN_A_ROW"
 msgid " crashes in a row"
 msgstr " 次连续崩溃"
 
 #: core/ui/ui_menus.c
+msgctxt "RAN_FOR"
 msgid "Ran for "
 msgstr "运行了 "
 
 #: core/ui/ui_menus.c
+msgctxt "BUILD_2"
 msgid ", build "
 msgstr "，构建 "
 
 #: core/ui/ui_menus.c
+msgctxt "SEND_REPORT"
 msgid "Send report"
 msgstr "发送报告"
 
 #: core/ui/ui_menus.c
+msgctxt "SEND_TO"
 msgid "Send to"
 msgstr "发送至"
 
 #: core/ui/ui_menus.c
+msgctxt "AFTER_A_CRASH"
 msgid "After a crash"
 msgstr "崩溃后"
 
 #: core/ui/ui_menus.c
+msgctxt "CLEAR"
 msgid "Clear"
 msgstr "清除"
 
 #: core/ui/ui_menus.c
+msgctxt "NOT_NOW"
 msgid "Not now"
 msgstr "暂不"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_CRASH_RECORDED"
 msgid "No crash recorded"
 msgstr "无崩溃记录"
 
 #: core/ui/ui_menus.c
+msgctxt "PICK_SEND_TO_FIRST"
 msgid "Pick Send to first"
 msgstr "请先选发送至"
 
 #: core/ui/ui_menus.c
+msgctxt "SENDING_CRASH_REPORT_2"
 msgid "Sending crash report"
 msgstr "正在发送崩溃报告"
 
 #: core/ui/ui_menus.c
+msgctxt "PICK_SEND_TO_AS_WELL"
 msgid "Pick Send to as well"
 msgstr "还需选择发送至"
 
 #: core/ui/ui_menus.c
+msgctxt "CRASH_RECORD_CLEARED"
 msgid "Crash record cleared"
 msgstr "崩溃记录已清除"
 
 #: core/ui/ui_menus.c
+msgctxt "CRASH_LOG"
 msgid "Crash Log"
 msgstr "崩溃日志"
 
 #: core/ui/ui_menus.c
+msgctxt "CRASH_REPORTS_TO"
 msgid "Crash reports to "
 msgstr "崩溃报告发至 "
 
 #: core/ui/ui_menus.c
+msgctxt "THIS_CONTACT"
 msgid "this contact"
 msgstr "此联系人"
 
 #: core/ui/ui_menus.c
+msgctxt "SEND_TO_2"
 msgid "Send To"
 msgstr "发送至"
 
 #: core/ui/ui_menus.c
+msgctxt "N0_9_FIND_OK_PICK_BACK"
 msgid "0-9 find  OK pick  Back"
 msgstr "0-9 查找  OK 选  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "CRASH_REPORT_SENT"
 msgid "Crash report sent"
 msgstr "崩溃报告已发送"
 
 #: core/ui/ui_menus.c
+msgctxt "CRASH_REPORT_NOT_SENT"
 msgid "Crash report not sent"
 msgstr "崩溃报告未发送"
 
 #: core/ui/ui_menus.c
+msgctxt "OPEN_BACK"
 msgid " open  Back"
 msgstr " 打开  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "USB_NETWORK_2"
 msgid "USB network"
 msgstr "USB 网络"
 
 #: core/ui/ui_menus.c
+msgctxt "SINGLE_FREQ_REPEATER_2"
 msgid "Single-freq repeater"
 msgstr "单频中继"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "DIAGNOSTICS_2"
 msgid "Diagnostics"
 msgstr "诊断"
 
 #: core/ui/ui_menus.c
+msgctxt "ZONES_CHS_RECEIVED"
 msgid "Zones/Chs Received"
 msgstr "收到的区域/信道"
 
 #: core/ui/ui_menus.c
+msgctxt "DUAL_WATCH_4"
 msgid "Dual watch"
 msgstr "双守候"
 
 #: core/ui/ui_menus.c
+msgctxt "NETWORK"
 msgid "Network"
 msgstr "网络"
 
 #: core/ui/ui_menus.c
+msgctxt "SERIAL"
 msgid "Serial"
 msgstr "串口"
 
 #: core/ui/ui_menus.c
+msgctxt "N10S_DIM"
 msgid "10s/dim"
 msgstr "10秒/暗"
 
 #: core/ui/ui_menus.c
+msgctxt "N30S_DIM"
 msgid "30s/dim"
 msgstr "30秒/暗"
 
 #: core/ui/ui_menus.c
+msgctxt "N1M_DIM"
 msgid "1m/dim"
 msgstr "1分/暗"
 
 #: core/ui/ui_menus.c
+msgctxt "N2M_DIM"
 msgid "2m/dim"
 msgstr "2分/暗"
 
 #: core/ui/ui_menus.c
+msgctxt "NEVER"
 msgid "Never"
 msgstr "从不"
 
 #: core/ui/ui_menus.c
+msgctxt "DARK"
 msgid "Dark"
 msgstr "深色"
 
 #: core/ui/ui_menus.c
+msgctxt "LIGHT"
 msgid "Light"
 msgstr "浅色"
 
 #: core/ui/ui_menus.c
+msgctxt "HIGH_CONTRAST"
 msgid "High contrast"
 msgstr "高对比度"
 
 #: core/ui/ui_menus.c
+msgctxt "DEFAULT_4"
 msgid "Default"
 msgstr "默认"
 
 #: core/ui/ui_menus.c
+msgctxt "RED"
 msgid "Red"
 msgstr "红"
 
 #: core/ui/ui_menus.c
+msgctxt "ORANGE"
 msgid "Orange"
 msgstr "橙"
 
 #: core/ui/ui_menus.c
+msgctxt "YELLOW"
 msgid "Yellow"
 msgstr "黄"
 
 #: core/ui/ui_menus.c
+msgctxt "TEAL"
 msgid "Teal"
 msgstr "青"
 
 #: core/ui/ui_menus.c
+msgctxt "LIGHT_BLUE"
 msgid "Light blue"
 msgstr "浅蓝"
 
 #: core/ui/ui_menus.c
+msgctxt "PURPLE"
 msgid "Purple"
 msgstr "紫"
 
 #: core/ui/ui_menus.c
+msgctxt "PINK"
 msgid "Pink"
 msgstr "粉"
 
 #: core/ui/ui_menus.c
+msgctxt "N3_MIN"
 msgid "3 min"
 msgstr "3 分钟"
 
 #: core/ui/ui_menus.c
+msgctxt "DEGREES"
 msgid "Degrees"
 msgstr "度"
 
 #: core/ui/ui_menus.c
+msgctxt "DEG_MIN_SEC"
 msgid "Deg min sec"
 msgstr "度分秒"
 
 #: core/ui/ui_menus.c
+msgctxt "N15_MIN_2"
 msgid "15 min"
 msgstr "15 分钟"
 
 #: core/ui/ui_menus.c
+msgctxt "NOTHING_2"
 msgid "Nothing"
 msgstr "无"
 
 #: core/ui/ui_menus.c
+msgctxt "MONITOR"
 msgid "Monitor"
 msgstr "监听"
 
 #: core/ui/ui_menus.c
+msgctxt "TALK_TARGET_3"
 msgid "Talk target"
 msgstr "通话目标"
 
 #: core/ui/ui_menus.c
+msgctxt "POWER_LEVEL_2"
 msgid "Power level"
 msgstr "功率级别"
 
 #: core/ui/ui_menus.c
+msgctxt "NEXT_ZONE_2"
 msgid "Next zone"
 msgstr "下一区域"
 
 #: core/ui/ui_menus.c
+msgctxt "PREV_ZONE"
 msgid "Prev zone"
 msgstr "上一区域"
 
 #: core/ui/ui_menus.c
+msgctxt "KEY_LOCK_3"
 msgid "Key lock"
 msgstr "按键锁"
 
 #: core/ui/ui_menus.c
+msgctxt "HOME_ZONE_2"
 msgid "Home zone"
 msgstr "主区域"
 
 #: core/ui/ui_menus.c
+msgctxt "COPY_TO_VFO_2"
 msgid "Copy to VFO"
 msgstr "复制到 VFO"
 
 #: core/ui/ui_menus.c
+msgctxt "VFO_CHANNEL_2"
 msgid "VFO/Channel"
 msgstr "VFO/信道"
 
 #: core/ui/ui_menus.c
+msgctxt "CALL_BACK_2"
 msgid "Call back"
 msgstr "回呼"
 
 #: core/ui/ui_menus.c
+msgctxt "TG_NAME_NUMBER_2"
 msgid "TG name / number"
 msgstr "TG 名称/号码"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "EMERGENCY"
 msgid "Emergency"
 msgstr "紧急呼叫"
 
 #: core/ui/ui_menus.c
+msgctxt "CHANNEL"
 msgid "Channel"
 msgstr "信道"
 
 #: core/ui/ui_menus.c
+msgctxt "ETSI_SHORT"
 msgid "ETSI short"
 msgstr "ETSI 简码"
 
 #: core/ui/ui_menus.c
+msgctxt "BY_DMR_ID"
 msgid "By DMR ID"
 msgstr "按 DMR ID"
 
 #: core/ui/ui_menus.c
+msgctxt "FIRST_COPY"
 msgid "First copy"
 msgstr "第一份副本"
 
 #: core/ui/ui_menus.c
+msgctxt "DUAL_PATH_RX"
 msgid "Dual-path RX"
 msgstr "双路接收"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "VOLUME"
 msgid "Volume"
 msgstr "音量"
 
 #: core/ui/ui_menus.c
+msgctxt "KEY_TONES"
 msgid "Key tones"
 msgstr "按键音"
 
 #: core/ui/ui_menus.c
+msgctxt "TONE_VOLUME"
 msgid "Tone volume"
 msgstr "提示音音量"
 
 #: core/ui/ui_menus.c
+msgctxt "TALK_PERMIT_TONE"
 msgid "Talk permit tone"
 msgstr "通话许可音"
 
 #: core/ui/ui_menus.c
+msgctxt "CALL_END_TONE"
 msgid "Call end tone"
 msgstr "通话结束音"
 
 #: core/ui/ui_menus.c
+msgctxt "TOT_WARNING_TONE"
 msgid "TOT warning tone"
 msgstr "超时警告音"
 
 #: core/ui/ui_menus.c
+msgctxt "BATTERY_TONE"
 msgid "Battery tone"
 msgstr "电池提示音"
 
 #: core/ui/ui_menus.c
+msgctxt "TX_DENIED_TONE"
 msgid "TX denied tone"
 msgstr "发射拒绝音"
 
 #: core/ui/ui_menus.c
+msgctxt "SCAN_STOP_TONE"
 msgid "Scan stop tone"
 msgstr "扫描停止音"
 
 #: core/ui/ui_menus.c
+msgctxt "EMERGENCY_TONE"
 msgid "Emergency tone"
 msgstr "紧急提示音"
 
 #: core/ui/ui_menus.c
+msgctxt "VOICE_PROMPTS"
 msgid "Voice prompts"
 msgstr "语音提示"
 
 #: core/ui/ui_menus.c
+msgctxt "MESSAGE_TONE"
 msgid "Message tone"
 msgstr "消息提示音"
 
 #: core/ui/ui_menus.c
+msgctxt "VIBRATE"
 msgid "Vibrate"
 msgstr "振动"
 
 #: core/ui/ui_menus.c
+msgctxt "BRIGHTNESS"
 msgid "Brightness"
 msgstr "亮度"
 
 #: core/ui/ui_menus.c
+msgctxt "BACKLIGHT_DIM_OFF"
 msgid "Backlight Dim/Off"
 msgstr "背光变暗/关闭"
 
 #: core/ui/ui_menus.c
+msgctxt "THEME"
 msgid "Theme"
 msgstr "主题"
 
 #: core/ui/ui_menus.c
+msgctxt "HIGHLIGHT_COLOR"
 msgid "Highlight color"
 msgstr "高亮颜色"
 
 #: core/ui/ui_menus.c
+msgctxt "FILLED_STATUS_BAR"
 msgid "Filled status bar"
 msgstr "状态栏填充"
 
 #: core/ui/ui_menus.c
+msgctxt "LARGE_TEXT"
 msgid "Large text"
 msgstr "大字体"
 
 #: core/ui/ui_menus.c
+msgctxt "HINT_ROW"
 msgid "Hint row"
 msgstr "提示行"
 
 #: core/ui/ui_menus.c
+msgctxt "LANGUAGE_2"
 msgid "Language"
 msgstr "语言"
 
 #: core/ui/ui_menus.c
+msgctxt "REPLY_WINDOW"
 msgid "Reply window"
 msgstr "回复窗口"
 
 #: core/ui/ui_menus.c
+msgctxt "TX_TIMEOUT"
 msgid "TX timeout"
 msgstr "发射超时"
 
 #: core/ui/ui_menus.c
+msgctxt "DEFAULT_SQUELCH"
 msgid "Default squelch"
 msgstr "默认静噪"
 
 #: core/ui/ui_menus.c
+msgctxt "VFO_STEP"
 msgid "VFO step"
 msgstr "VFO 步进"
 
 #: core/ui/ui_menus.c
+msgctxt "FM_BROADCAST_STEP"
 msgid "FM broadcast step"
 msgstr "调频广播步进"
 
 #: core/ui/ui_menus.c
+msgctxt "MIC_GAIN"
 msgid "Mic gain"
 msgstr "麦克风增益"
 
 #: core/ui/ui_menus.c
+msgctxt "MIC_AGC"
 msgid "Mic AGC"
 msgstr "麦克风 AGC"
 
 #: core/ui/ui_menus.c
+msgctxt "MIC_NOISE_REDUCTION"
 msgid "Mic noise reduction"
 msgstr "麦克风降噪"
 
 #: core/ui/ui_menus.c
+msgctxt "MONITOR_BY_DEFAULT"
 msgid "Monitor by default"
 msgstr "默认监听"
 
 #: core/ui/ui_menus.c
+msgctxt "SHOW_TALKER_ALIAS"
 msgid "Show talker alias"
 msgstr "显示主叫别名"
 
 #: core/ui/ui_menus.c
+msgctxt "DUAL_WATCH_TALK_BACK"
 msgid "Dual watch talk back"
 msgstr "双守候回话"
 
 #: core/ui/ui_menus.c
+msgctxt "DUAL_WATCH_DELAY"
 msgid "Dual watch delay"
 msgstr "双守候延时"
 
 #: core/ui/ui_menus.c
+msgctxt "SFR_RECEIVE"
 msgid "SFR receive"
 msgstr "单频中继接收"
 
 #: core/ui/ui_menus.c
+msgctxt "SFR_CW_ID"
 msgid "SFR CW ID"
 msgstr "单频中继 CW ID"
 
 #: core/ui/ui_menus.c
+msgctxt "KEY_TYPE"
 msgid "Key type"
 msgstr "按键类型"
 
 #: core/ui/ui_menus.c
+msgctxt "KEY"
 msgid "Key"
 msgstr "按键"
 
 #: core/ui/ui_menus.c
+msgctxt "AUTO_LOCK"
 msgid "Auto lock"
 msgstr "自动锁键"
 
 #: core/ui/ui_menus.c
+msgctxt "PTT_WHEN_LOCKED"
 msgid "PTT when locked"
 msgstr "锁定时 PTT"
 
 #: core/ui/ui_menus.c
+msgctxt "KNOB_WHEN_LOCKED"
 msgid "Knob when locked"
 msgstr "锁定时旋钮"
 
 #: core/ui/ui_menus.c
+msgctxt "POSITION_FORMAT"
 msgid "Position format"
 msgstr "位置格式"
 
 #: core/ui/ui_menus.c
+msgctxt "SEND_POSITION"
 msgid "Send position"
 msgstr "发送位置"
 
 #: core/ui/ui_menus.c
+msgctxt "ANSWER_GPS_REQUESTS"
 msgid "Answer GPS requests"
 msgstr "应答 GPS 请求"
 
 #: core/ui/ui_menus.c
+msgctxt "POSITION_SOURCE"
 msgid "Position source"
 msgstr "位置来源"
 
 #: core/ui/ui_menus.c core/ui/ui_position.c
+msgctxt "FIXED_POSITION"
 msgid "Fixed position"
 msgstr "固定位置"
 
 #: core/ui/ui_menus.c
+msgctxt "SEND_IN_DMR_CALLS"
 msgid "Send in DMR calls"
 msgstr "DMR 通话带位置"
 
 #: core/ui/ui_menus.c
+msgctxt "HOTSPOT_ALLOWED"
 msgid "Hotspot allowed"
 msgstr "允许热点"
 
 #: core/ui/ui_menus.c
+msgctxt "ANSWER_RADIO_CHECKS"
 msgid "Answer radio checks"
 msgstr "应答电台检查"
 
 #: core/ui/ui_menus.c
+msgctxt "ANSWER_CALL_ALERTS"
 msgid "Answer call alerts"
 msgstr "应答呼叫提示"
 
 #: core/ui/ui_menus.c
+msgctxt "TFTP_CODEPLUG_WRITE"
 msgid "TFTP codeplug write"
 msgstr "TFTP 写入电台频率"
 
 #: core/ui/ui_menus.c
+msgctxt "MESSAGE_FORMAT"
 msgid "Message format"
 msgstr "消息格式"
 
 #: core/ui/ui_menus.c
+msgctxt "ACCEPT_ZONE_SHARES"
 msgid "Accept zone shares"
 msgstr "接受区域共享"
 
 #: core/ui/ui_menus.c
+msgctxt "USB_NETWORK_AT_START"
 msgid "USB network at start"
 msgstr "启动时 USB 网络"
 
 #: core/ui/ui_menus.c
+msgctxt "PC_ANSWERS_DATA"
 msgid "PC answers data"
 msgstr "PC 应答数据"
 
 #: core/ui/ui_menus.c
+msgctxt "USB_ADDRESS"
 msgid "USB address"
 msgstr "USB 地址"
 
 #: core/ui/ui_menus.c
+msgctxt "DATA_SERVICES_2"
 msgid "Data services"
 msgstr "数据服务"
 
 #: core/ui/ui_menus.c
+msgctxt "AUTO_POWER_OFF"
 msgid "Auto power off"
 msgstr "自动关机"
 
 #: core/ui/ui_menus.c
+msgctxt "LOW_BATTERY_WARNING"
 msgid "Low battery warning"
 msgstr "低电量提示"
 
 #: core/ui/ui_menus.c
+msgctxt "KEY_2"
 msgid "Key "
 msgstr "按键 "
 
 #: core/ui/ui_menus.c
+msgctxt "HOLD"
 msgid " hold"
 msgstr " 长按"
 
 #: core/ui/ui_menus.c
+msgctxt "LONG_PRESS_TIME"
 msgid "Long press time"
 msgstr "长按时间"
 
 #: core/ui/ui_menus.c
+msgctxt "KEY_REPEAT"
 msgid "Key repeat"
 msgstr "按键重复"
 
 #: core/ui/ui_menus.c
+msgctxt "UP_DOWN_ON_HOME"
 msgid "Up/Down on Home"
 msgstr "主页上下键"
 
 #: core/ui/ui_menus.c
+msgctxt "DMR_ID_AND_NAME"
 msgid "DMR ID and name"
 msgstr "DMR ID 和名称"
 
 #: core/ui/ui_menus.c
+msgctxt "FACTORY_RESET"
 msgid "Factory reset"
 msgstr "恢复出厂设置"
 
 #: core/ui/ui_menus.c
+msgctxt "CRASH_LOG_2"
 msgid "Crash log"
 msgstr "崩溃日志"
 
 #: core/ui/ui_menus.c
+msgctxt "RX_PAST_BANDS"
 msgid "RX past bands"
 msgstr "超频段接收"
 
 #: core/ui/ui_menus.c
+msgctxt "FREQ_TRIM_2"
 msgid "Freq trim"
 msgstr "频率微调"
 
 #: core/ui/ui_menus.c
+msgctxt "SOUND"
 msgid "Sound"
 msgstr "声音"
 
 #: core/ui/ui_menus.c
+msgctxt "DISPLAY"
 msgid "Display"
 msgstr "显示"
 
 #: core/ui/ui_menus.c
+msgctxt "TALK_LISTEN"
 msgid "Talk & listen"
 msgstr "通话与收听"
 
 #: core/ui/ui_menus.c
+msgctxt "TALK_LISTEN_2"
 msgid "Talk & Listen"
 msgstr "通话与收听"
 
 #: core/ui/ui_menus.c
+msgctxt "PRIVACY"
 msgid "Privacy"
 msgstr "加密"
 
 #: core/ui/ui_menus.c
+msgctxt "LOCATION"
 msgid "Location"
 msgstr "位置"
 
 #: core/ui/ui_menus.c
+msgctxt "CONNECTIONS"
 msgid "Connections"
 msgstr "连接"
 
 #: core/ui/ui_menus.c
+msgctxt "POWER_SAVING"
 msgid "Power saving"
 msgstr "省电"
 
 #: core/ui/ui_menus.c
+msgctxt "POWER_SAVING_2"
 msgid "Power Saving"
 msgstr "省电"
 
 #: core/ui/ui_menus.c
+msgctxt "KEYS_2"
 msgid "Keys"
 msgstr "按键"
 
 #: core/ui/ui_menus.c
+msgctxt "MY_RADIO_2"
 msgid "My radio"
 msgstr "我的电台"
 
 #: core/ui/ui_menus.c
+msgctxt "ADVANCED"
 msgid "Advanced"
 msgstr "高级"
 
 #: core/ui/ui_menus.c
+msgctxt "N0_9_OPEN_BACK"
 msgid "0-9 open  Back"
 msgstr "0-9 打开  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "TALK_PERMIT_TONE_NOT_IN_THIS"
 msgid "Talk permit tone: not in this build"
 msgstr "通话许可音：本版本无"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "DMR_NOT_IN_THIS_BUILD"
 msgid "DMR: not in this build"
 msgstr "DMR：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "THIS_RADIO_HAS_NO_VIBRATION"
 msgid "This radio has no vibration motor"
 msgstr "本机无振动马达"
 
 #: core/ui/ui_menus.c
+msgctxt "COLORS_ARE_FOR_COLOR_SCREENS"
 msgid "Colors are for color screens"
 msgstr "颜色仅用于彩屏"
 
 #: core/ui/ui_menus.c
+msgctxt "MIC_GAIN_NOT_IN_THIS_BUILD"
 msgid "Mic gain: not in this build"
 msgstr "麦克风增益：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "MIC_AGC_SETS_THE_LEVEL"
 msgid "Mic AGC sets the level"
 msgstr "麦克风 AGC 设定电平"
 
 #: core/ui/ui_menus.c
+msgctxt "NOISE_REDUCTION_NOT_IN_THIS"
 msgid "Noise reduction: not in this build"
 msgstr "降噪：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "NOT_ON_THIS_RADIO_2"
 msgid "Not on this radio"
 msgstr "本机不支持"
 
 #: core/ui/ui_menus.c
+msgctxt "MIC_AGC_NOT_IN_THIS_BUILD"
 msgid "Mic AGC: not in this build"
 msgstr "麦克风 AGC：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "DIGITAL_MONITOR_NOT_IN_THIS"
 msgid "Digital monitor: not in this build"
 msgstr "数字监听：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "TALKER_ALIAS_NOT_IN_THIS"
 msgid "Talker alias: not in this build"
 msgstr "主叫别名：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "PICK_A_KEY_TYPE_FIRST"
 msgid "Pick a key type first"
 msgstr "请先选按键类型"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_GPS_ON_THIS_RADIO"
 msgid "No GPS on this radio"
 msgstr "本机无 GPS"
 
 #: core/ui/ui_menus.c
+msgctxt "DMR_POSITION_NOT_IN_THIS"
 msgid "DMR position: not in this build"
 msgstr "DMR 定位：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "DIAGNOSTICS_NOT_IN_THIS"
 msgid "Diagnostics: not in this build"
 msgstr "诊断：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "SETTINGS_ARE_SAVED_AS_YOU"
 msgid "Settings are saved as you change them"
 msgstr "设置更改即保存"
 
 #: core/ui/ui_menus.c
+msgctxt "NOT_CHANGED"
 msgid "Not changed: "
 msgstr "未改： "
 
 #: core/ui/ui_menus.c
+msgctxt "TO_3"
 msgid " to "
 msgstr " 到 "
 
 #: core/ui/ui_menus.c
+msgctxt "STEPS_OF"
 msgid ", steps of "
 msgstr "，步进 "
 
 #: core/ui/ui_menus.c core/ui/ui_position.c
+msgctxt "OK_CHANGE_BACK"
 msgid "OK change  Back"
 msgstr "OK 改  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "NO_KEEP_SETTINGS"
 msgid "No, keep settings"
 msgstr "否，保留设置"
 
 #: core/ui/ui_menus.c
+msgctxt "YES_RESET"
 msgid "Yes, reset"
 msgstr "是，重置"
 
 #: core/ui/ui_menus.c
+msgctxt "FACTORY_SETTINGS_RESTORED"
 msgid "Factory settings restored"
 msgstr "已恢复出厂设置"
 
 #: core/ui/ui_menus.c
+msgctxt "RESET_NOT_IN_THIS_BUILD"
 msgid "Reset: not in this build"
 msgstr "重置：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "RESET_ALL_SETTINGS_TO"
 msgid "Reset all settings to factory defaults? Channels stay. This can't be undone."
 msgstr "恢复所有设置为出厂值？信道保留，且无法撤销。"
 
 #: core/ui/ui_menus.c
+msgctxt "FACTORY_RESET_2"
 msgid "Factory Reset"
 msgstr "恢复出厂设置"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_THEM_WITH_QDMR"
 msgid "Set them with qdmr"
 msgstr "请用 qdmr 设置"
 
 #: core/ui/ui_menus.c
+msgctxt "CURRENT"
 msgid "Current"
 msgstr "当前"
 
 #: core/ui/ui_menus.c
+msgctxt "REPLY"
 msgid "Reply"
 msgstr "回复"
 
 #: core/ui/ui_menus.c
+msgctxt "LISTEN"
 msgid "Listen"
 msgstr "监听"
 
 #: core/ui/ui_menus.c
+msgctxt "TYPE_A_NUMBER"
 msgid "Type a number..."
 msgstr "输入号码……"
 
 #: core/ui/ui_menus.c
+msgctxt "SELECT_CONTACT"
 msgid "Select contact..."
 msgstr "选择联系人……"
 
 #: core/ui/ui_menus.c
+msgctxt "TALK_TO"
 msgid "Talk to"
 msgstr "通话对象"
 
 #: core/ui/ui_menus.c
+msgctxt "PTT_ONCE_OK_USE_HOLD_OK_SET"
 msgid "{PTT once  OK use  Hold OK set|OK use  Hold OK set}"
 msgstr "{PTT 一次  OK 使用  长按 OK 设定|OK 使用  长按 OK 设定}"
 
 #: core/ui/ui_menus.c
+msgctxt "SKIP_CHANNEL_FOR_NOW"
 msgid "Skip channel for now"
 msgstr "暂时跳过信道"
 
 #: core/ui/ui_menus.c
+msgctxt "STAY_HERE"
 msgid "Stay here"
 msgstr "留在此处"
 
 #: core/ui/ui_menus.c
+msgctxt "ALWAYS_SKIP"
 msgid "Always skip"
 msgstr "总是跳过"
 
 #: core/ui/ui_menus.c
+msgctxt "SKIPPED_UNTIL_THE_SCAN_STOPS"
 msgid "Skipped until the scan stops"
 msgstr "扫描停止前跳过"
 
 #: core/ui/ui_menus.c
+msgctxt "NOTHING_TO_SKIP_YET"
 msgid "Nothing to skip yet"
 msgstr "暂无可跳过"
 
 #: core/ui/ui_menus.c
+msgctxt "SCAN_STOPPED_HERE"
 msgid "Scan stopped here"
 msgstr "扫描停在此处"
 
 #: core/ui/ui_menus.c
+msgctxt "EDIT_SCAN_LISTS_IN_QDMR"
 msgid "Edit scan lists in qdmr"
 msgstr "在 qdmr 中编辑扫描列表"
 
 #: core/ui/ui_menus.c
+msgctxt "IN_USE"
 msgid "In use"
 msgstr "使用中"
 
 #: core/ui/ui_menus.c
+msgctxt "CANCEL"
 msgid "Cancel"
 msgstr "取消"
 
 #: core/ui/ui_menus.c
+msgctxt "START_NEW"
 msgid "Start new"
 msgstr "新建"
 
 #: core/ui/ui_menus.c
+msgctxt "USE_ANYWAY"
 msgid "Use anyway"
 msgstr "仍然使用"
 
 #: core/ui/ui_menus.c
+msgctxt "NEW_CODEPLUG_STARTED"
 msgid "New codeplug started"
 msgstr "已新建电台频率"
 
 #: core/ui/ui_menus.c
+msgctxt "OLD_CODEPLUG_KEPT_EDIT_AGAIN"
 msgid "Old codeplug kept: edit again"
 msgstr "保留旧电台频率：请重新编辑"
 
 #: core/ui/ui_menus.c
+msgctxt "ANOTHER_FIRMWARES_CODEPLUG"
 msgid "Another firmware's codeplug? Start new erases contacts, callsign and DMR ID. Back up first."
 msgstr "其他固件的电台频率？新建会清除联系人、呼号和 ID。请先备份。"
 
 #: core/ui/ui_menus.c
+msgctxt "OLD_CODEPLUG"
 msgid "Old codeplug"
 msgstr "旧电台频率"
 
 #: core/ui/ui_position.c
+msgctxt "LATITUDE"
 msgid "Latitude"
 msgstr "纬度"
 
 #: core/ui/ui_position.c
+msgctxt "LONGITUDE"
 msgid "Longitude"
 msgstr "经度"
 
 #: core/ui/ui_position.c
+msgctxt "UP_TO_90_N_S_180_E_W"
 msgid "Up to 90 N/S, 180 E/W"
 msgstr "北南 90，东西 180"
 
 #: core/ui/ui_screens.c
+msgctxt "IDLE"
 msgid "IDLE"
 msgstr "空闲"
 
 #: core/ui/ui_screens.c
+msgctxt "NO_TX"
 msgid "NO TX"
 msgstr "禁发"
 
 #: core/ui/ui_screens.c
+msgctxt "DUAL_2"
 msgid "DUAL"
 msgstr "双守"
 
 #: core/ui/ui_screens.c
+msgctxt "SCAN_7"
 msgid "SCAN"
 msgstr "扫描"
 
 #: core/ui/ui_screens.c
+msgctxt "ROAM_2"
 msgid "ROAM"
 msgstr "漫游"
 
 #: core/ui/ui_screens.c
+msgctxt "STEP"
 msgid "Step "
 msgstr "步进 "
 
 #: core/ui/ui_screens.c
+msgctxt "NO_TX_FREQUENCY"
 msgid "No TX frequency"
 msgstr "无发射频率"
 
 #: core/ui/ui_screens.c
+msgctxt "AIR_BAND_AM"
 msgid "Air Band AM"
 msgstr "航空 AM"
 
 #: core/ui/ui_screens.c
+msgctxt "BROADCAST_FM"
 msgid "Broadcast FM"
 msgstr "调频广播"
 
 #: core/ui/ui_screens.c
+msgctxt "RESTART_TO_APPLY"
 msgid "Restart to apply"
 msgstr "请重启电台"
 
 #: core/ui/ui_screens.c
+msgctxt "SET"
 msgid "Set: "
 msgstr "请设置: "
 
 #: core/ui/ui_screens.c
+msgctxt "TURN_THE_RADIO_OFF_AND_ON"
 msgid "Turn the radio off and on"
 msgstr "请关机再开机"
 
 #: core/ui/ui_screens.c
+msgctxt "SETTINGS_ADVANCED_HARDWARE"
 msgid "Settings>Advanced>Hardware"
 msgstr "设置>高级>Hardware"
 
 #: core/ui/ui_screens.c
+msgctxt "THIS_CHANNEL_IS_RX_ONLY"
 msgid "This channel is RX only"
 msgstr "本信道仅接收"
 
 #: core/ui/ui_screens.c
+msgctxt "BANDS_2"
 msgid "Bands "
 msgstr "频段 "
 
 #: core/ui/ui_screens.c
+msgctxt "TX_TIME_OUT_REACHED"
 msgid "TX time-out reached"
 msgstr "已达发射超时"
 
 #: core/ui/ui_screens.c
+msgctxt "NO_TX_FREQUENCY_SET"
 msgid "No TX frequency set"
 msgstr "未设发射频率"
 
 #: core/ui/ui_screens.c
+msgctxt "MODE_NOT_IN_THIS_BUILD"
 msgid "Mode: not in this build"
 msgstr "模式：本版本无"
 
 #: core/ui/ui_screens.c
+msgctxt "NO_CODEC_VOICE_OFF_3"
 msgid "No codec: voice off"
 msgstr "无编解码器：语音关闭"
 
 #: core/ui/ui_screens.c
+msgctxt "DMR_MODEM_NOT_RUNNING"
 msgid "DMR modem not running"
 msgstr "DMR 调制解调器未运行"
 
 #: core/ui/ui_screens.c
+msgctxt "CHANNEL_BUSY"
 msgid "Channel busy"
 msgstr "信道忙"
 
 #: core/ui/ui_screens.c
+msgctxt "NO_REPEATER_ANSWERED"
 msgid "No repeater answered"
 msgstr "中继台无应答"
 
 #: core/ui/ui_screens.c
+msgctxt "MODEM_REFUSED_TO_SEND"
 msgid "Modem refused to send"
 msgstr "调制解调器拒绝发送"
 
 #: core/ui/ui_screens.c
+msgctxt "HOTSPOT_MODE_PTT_OFF"
 msgid "Hotspot mode: PTT off"
 msgstr "热点模式：PTT 关闭"
 
 #: core/ui/ui_screens.c
+msgctxt "NO_DMR_ID_IN_CODEPLUG"
 msgid "No DMR ID in codeplug"
 msgstr "电台频率中无 DMR ID"
 
 #: core/ui/ui_screens.c
+msgctxt "REPEATER_CHANNEL_PTT_OFF"
 msgid "Repeater channel: PTT off"
 msgstr "中继信道：PTT 关闭"
 
 #: core/ui/ui_screens.c
+msgctxt "RADIO_REFUSED_TO_SEND"
 msgid "Radio refused to send"
 msgstr "电台拒绝发射"
 
 #: core/ui/ui_screens.c
+msgctxt "NOT_ALLOWED_HERE"
 msgid "Not allowed here"
 msgstr "此处不允许"
 
 #: core/ui/ui_screens.c
+msgctxt "TUNE_INTO_A_BAND_THEN_PTT"
 msgid "Tune into a band, then PTT"
 msgstr "请先调到频段再按 PTT"
 
 #: core/ui/ui_screens.c
+msgctxt "PICK_ANOTHER_CHANNEL_3"
 msgid "Pick another channel"
 msgstr "请另选信道"
 
 #: core/ui/ui_screens.c
+msgctxt "RELEASE_PTT_TO_TALK_AGAIN"
 msgid "Release PTT to talk again"
 msgstr "松开 PTT 再说话"
 
 #: core/ui/ui_screens.c
+msgctxt "ADD_CODEC_WITH_RFOUNDRY"
 msgid "Add codec with rfoundry"
 msgstr "用 rfoundry 添加编解码器"
 
 #: core/ui/ui_screens.c
+msgctxt "WAIT_FOR_THE_CALL_TO_END"
 msgid "Wait for the call to end"
 msgstr "请等通话结束"
 
 #: core/ui/ui_screens.c
+msgctxt "CHECK_CC_AND_RANGE"
 msgid "Check CC and range"
 msgstr "检查色码和距离"
 
 #: core/ui/ui_screens.c
+msgctxt "RELEASE_PTT_TRY_AGAIN_2"
 msgid "Release PTT, try again"
 msgstr "松开 PTT 再试"
 
 #: core/ui/ui_screens.c
+msgctxt "OK_STOP_HOTSPOT_2"
 msgid "OK stop hotspot"
 msgstr "OK 停止热点"
 
 #: core/ui/ui_screens.c
+msgctxt "SET_YOUR_DMR_ID_IN_QDMR"
 msgid "Set your DMR ID in qdmr"
 msgstr "在 qdmr 中设置 DMR ID"
 
 #: core/ui/ui_screens.c
+msgctxt "TUNE_OUT_OF_THE_BAND"
 msgid "Tune out of the band"
 msgstr "请调离该频段"
 
 #: core/ui/ui_screens.c
+msgctxt "PICK_A_USER_CHANNEL_TO_TALK"
 msgid "Pick a user channel to talk"
 msgstr "请选用户信道通话"
 
 #: core/ui/ui_screens.c
+msgctxt "PRIVATE_TO_YOU"
 msgid "Private to you"
 msgstr "发给你的个呼"
 
 #: core/ui/ui_screens.c
+msgctxt "PRIVATE_TO"
 msgid "Private to "
 msgstr "个呼至 "
 
 #: core/ui/ui_screens.c
+msgctxt "SENDING_ID"
 msgid "Sending ID"
 msgstr "正在发送 ID"
 
 #: core/ui/ui_screens.c
+msgctxt "REPEATING"
 msgid "Repeating"
 msgstr "中继中"
 
 #: core/ui/ui_screens.c
+msgctxt "SFR_REPEATER"
 msgid "SFR repeater"
 msgstr "单频中继"
 
 #: core/ui/ui_screens.c
+msgctxt "DMR_MODEM_OFF"
 msgid "DMR modem off"
 msgstr "DMR 调制解调器关"
 
 #: core/ui/ui_screens.c
+msgctxt "LOCK"
 msgid "Lock"
 msgstr "锁"
 
 #: core/ui/ui_screens.c
+msgctxt "ROAM_4"
 msgid "Roam?"
 msgstr "漫游？"
 
 #: core/ui/ui_screens.c
+msgctxt "ROAM_3"
 msgid "Roam"
 msgstr "漫游"
 
 #: core/ui/ui_screens.c
+msgctxt "DMON"
 msgid "DMon"
 msgstr "数听"
 
 #: core/ui/ui_screens.c
+msgctxt "PRIV"
 msgid "Priv"
 msgstr "加密"
 
 #: core/ui/ui_screens.c
+msgctxt "PRIVATE_3"
 msgid "Private "
 msgstr "个呼 "
 
 #: core/ui/ui_screens.c
+msgctxt "TALKING_2"
 msgid "TALKING"
 msgstr "通话中"
 
 #: core/ui/ui_screens.c
+msgctxt "WAKING_RPT"
 msgid "WAKING RPT"
 msgstr "唤醒中继"
 
 #: core/ui/ui_screens.c
+msgctxt "WAITING"
 msgid "WAITING"
 msgstr "等待"
 
 #: core/ui/ui_screens.c
+msgctxt "ADMITTED"
 msgid "ADMITTED"
 msgstr "已准许"
 
 #: core/ui/ui_screens.c
+msgctxt "ENDING"
 msgid "ENDING"
 msgstr "结束中"
 
 #: core/ui/ui_screens.c
+msgctxt "PRIVATE_4"
 msgid " Private"
 msgstr " 个呼"
 
 #: core/ui/ui_screens.c
+msgctxt "GROUP"
 msgid " Group"
 msgstr " 组呼"
 
 #: core/ui/ui_screens.c
+msgctxt "FINISHING_THE_CALL"
 msgid "Finishing the call"
 msgstr "正在结束通话"
 
 #: core/ui/ui_screens.c
+msgctxt "RELEASE_PTT_TO_STOP"
 msgid "Release PTT to stop"
 msgstr "松开 PTT 停止"
 
 #: core/ui/ui_screens.c
+msgctxt "LATE"
 msgid " late"
 msgstr " 晚"
 
 #: core/ui/ui_screens.c
+msgctxt "EMERGENCY_3"
 msgid " EMERGENCY"
 msgstr " 紧急"
 
 #: core/ui/ui_screens.c
+msgctxt "ENCRYPTED_NOT_PLAYED"
 msgid "Encrypted: not played"
 msgstr "已加密：不播放"
 
 #: core/ui/ui_screens.c
+msgctxt "OTHER_TG_NOT_PLAYED"
 msgid "Other TG: not played"
 msgstr "其他通话组：不播放"
 
 #: core/ui/ui_screens.c
+msgctxt "MON_DIGITAL_MONITOR"
 msgid "MON: digital monitor"
 msgstr "MON：数字监听"
 
 #: core/ui/ui_screens.c
+msgctxt "SQUELCH_OPEN_2"
 msgid "Squelch open"
 msgstr "静噪打开"
 
 #: core/ui/ui_screens.c
+msgctxt "RECEIVING_2"
 msgid "Receiving"
 msgstr "接收中"
 
 #: core/ui/ui_screens.c
+msgctxt "SENDING_4"
 msgid "SENDING"
 msgstr "发送中"
 
 #: core/ui/ui_screens.c
+msgctxt "LEFT_OF"
 msgid " left of "
 msgstr " / "
 
 #: core/ui/ui_screens.c
+msgctxt "NO_TIME_LIMIT"
 msgid "No time limit"
 msgstr "无时间限制"
 
 #: core/ui/ui_screens.c
+msgctxt "CANT_TRANSMIT"
 msgid "Can't transmit"
 msgstr "不能发射"
 
 #: core/ui/ui_screens.c
+msgctxt "TRANSMIT_WAITS_FOR_IT"
 msgid "Transmit waits for it"
 msgstr "设置前不能发射"
 
 #: core/ui/ui_screens.c
+msgctxt "LAST_ACTIVITY"
 msgid "Last activity "
 msgstr "最近活动 "
 
 #: core/ui/ui_screens.c
+msgctxt "NO_ACTIVITY_YET"
 msgid "No activity yet"
 msgstr "暂无活动"
 
 #: core/ui/ui_screens.c
+msgctxt "OK_TUNE_BACK_DELETE_2"
 msgid "OK tune  Back delete"
 msgstr "OK 调谐  返回 删除"
 
 #: core/ui/ui_screens.c
+msgctxt "SKIP_BACK_STOP_SCAN"
 msgid "# skip  Back stop scan"
 msgstr "# 跳过  返回 停止扫描"
 
 #: core/ui/ui_screens.c
+msgctxt "CALLER_BACK_END_REPLY"
 msgid "# caller  Back end reply"
 msgstr "# 来电方  返回 结束回复"
 
 #: core/ui/ui_screens.c
+msgctxt "DIGITAL_MONITOR_BACK_OFF"
 msgid "Digital monitor  Back off"
 msgstr "数字监听  返回 关闭"
 
 #: core/ui/ui_screens.c
+msgctxt "BACK_UNDO_HOLD_OK_SAVE"
 msgid "Back undo  Hold OK save"
 msgstr "返回 撤销  长按 OK 保存"
 
 #: core/ui/ui_screens.c
+msgctxt "BACK_VFOS_TALK_TARGET"
 msgid "{Back: VFO's talk target|Back default target}"
 msgstr "{返回：VFO 通话目标|返回 默认目标}"
 
 #: core/ui/ui_screens.c
+msgctxt "BACK_CHANNELS_TALKGROUP"
 msgid "{Back: channel's talkgroup|Back default target}"
 msgstr "{返回：信道通话组|返回 默认目标}"
 
 #: core/ui/ui_screens.c
+msgctxt "N0_9_FREQ_QUICK_UP_DN"
 msgid "0-9 freq  * Quick  Up/Dn"
 msgstr "0-9 频率  * 快捷  上下"
 
 #: core/ui/ui_screens.c
+msgctxt "HEARD_5"
 msgid "Heard "
 msgstr "收到 "
 
 #: core/ui/ui_screens.c
+msgctxt "BUSY"
 msgid "Busy"
 msgstr "忙"
 
 #: core/ui/ui_screens.c
+msgctxt "SENDING_ON"
 msgid "SENDING on "
 msgstr "正在发送于 "
 
 #: core/ui/ui_screens.c
+msgctxt "TALKING_ON"
 msgid "TALKING on "
 msgstr "正在通话于 "
 
 #: core/ui/ui_screens.c
+msgctxt "RECEIVING_ON_A_AND_B"
 msgid "Receiving on A and B"
 msgstr "正在接收 A 和 B"
 
 #: core/ui/ui_screens.c
+msgctxt "RECEIVING_ON"
 msgid "Receiving on "
 msgstr "正在接收 "
 
 #: core/ui/ui_screens.c
+msgctxt "MUTED_2"
 msgid ", muted"
 msgstr "，已静音"
 
 #: core/ui/ui_screens.c
+msgctxt "N1_BACK_TO_B_BACK_STOP"
 msgid "{# 1 back to B  Back stop|# 1 back to B}"
 msgstr "{# 1 回 B  返回 停止|# 1 回 B}"
 
 #: core/ui/ui_screens.c
+msgctxt "N1_BACK_TO_A_BACK_STOP"
 msgid "{# 1 back to A  Back stop|# 1 back to A}"
 msgstr "{# 1 回 A  返回 停止|# 1 回 A}"
 
 #: core/ui/ui_screens.c
+msgctxt "N1_TALK_ON_B_BACK_STOP"
 msgid "{# 1 talk on B  Back stop|# 1 talk on B}"
 msgstr "{# 1 在 B 通话  返回 停止|# 1 在 B 通话}"
 
 #: core/ui/ui_screens.c
+msgctxt "N1_TALK_ON_A_BACK_STOP"
 msgid "{# 1 talk on A  Back stop|# 1 talk on A}"
 msgstr "{# 1 在 A 通话  返回 停止|# 1 在 A 通话}"
 
 #: core/ui/ui_screens.c
+msgctxt "OPTIONS_BACK_STOP"
 msgid "# options  Back stop"
 msgstr "# 选项  返回 停止"
 
 #: core/ui/ui_screens.c
+msgctxt "OPEN"
 msgid "# Open"
 msgstr "# 打开"
 
 #: core/ui/ui_screens.c
+msgctxt "ACTIONS"
 msgid "# Actions"
 msgstr "# 操作"
 
 #: core/ui/ui_screens.c
+msgctxt "BACK_HIDE"
 msgid "Back hide"
 msgstr "返回 隐藏"
 
 #: core/ui/ui_screens.c
+msgctxt "UP_DN_MORE_BACK"
 msgid "Up/Dn more  Back"
 msgstr "上下 更多  返回"
 
 #: core/ui/ui_screens.c
+msgctxt "EMERGENCY_2"
 msgid "EMERGENCY"
 msgstr "紧急呼叫"
 
 #: core/ui/ui_screens.c
+msgctxt "OK_ACKNOWLEDGE_BACK_HIDE"
 msgid "OK acknowledge  Back hide"
 msgstr "OK 确认  返回 隐藏"
 
 #: core/ui/ui_screens.c
+msgctxt "VOL"
 msgid "Vol"
 msgstr "音量"
 
 #: core/ui/ui_screens.c
+msgctxt "MUTED"
 msgid "Muted"
 msgstr "已静音"
 
 #: core/ui/ui_screens.c
+msgctxt "UP_DOWN_CHANGE_OK_DONE"
 msgid "Up Down change  OK done"
 msgstr "上下 更改  OK 完成"
 
 #: core/ui/ui_screens.c
+msgctxt "STARTING"
 msgid "STARTING"
 msgstr "启动中"
 
 #: core/ui/ui_screens.c
+msgctxt "TX_NET"
 msgid "TX NET"
 msgstr "发网络"
 
 #: core/ui/ui_screens.c
+msgctxt "RX_RF"
 msgid "RX RF"
 msgstr "收射频"
 
 #: core/ui/ui_screens.c
+msgctxt "READY"
 msgid "READY"
 msgstr "就绪"
 
 #: core/ui/ui_screens.c
+msgctxt "NO_FREQUENCY_YET"
 msgid "No frequency yet"
 msgstr "尚无频率"
 
 #: core/ui/ui_screens.c
+msgctxt "NET"
 msgid "Net "
 msgstr "网络 "
 
 #: core/ui/ui_screens.c
+msgctxt "NO_CALLS_YET"
 msgid "No calls yet"
 msgstr "暂无通话"
 
 #: core/ui/ui_screens.c
+msgctxt "POWER_3"
 msgid "{Power|Pwr}"
 msgstr "{功率|功}"
 
 #: core/ui/ui_screens.c
+msgctxt "SQUELCH"
 msgid "{Squelch|SQL}"
 msgstr "{静噪|SQL}"
 
 #: core/ui/ui_screens.c
+msgctxt "TONE"
 msgid "Tone"
 msgstr "亚音"
 
 #: core/ui/ui_screens.c
+msgctxt "MONITOR_2"
 msgid "{Monitor|MON}"
 msgstr "{监听|MON}"
 
 #: core/ui/ui_screens.c
+msgctxt "DUAL_WATCH_5"
 msgid "{Dual watch|Dual}"
 msgstr "{双守候|双守}"
 
 #: core/ui/ui_screens.c
+msgctxt "WIDTH"
 msgid "Width"
 msgstr "宽度"
 
 #: core/ui/ui_screens.c
+msgctxt "BRIGHT"
 msgid "Bright"
 msgstr "亮度"
 
 #: core/ui/ui_screens.c
+msgctxt "TIMESLOT_4"
 msgid "{Timeslot|Slot}"
 msgstr "{时隙|时隙}"
 
 #: core/ui/ui_screens.c
+msgctxt "COLOR"
 msgid "Color"
 msgstr "颜色"
 
 #: core/ui/ui_screens.c
+msgctxt "DIGITAL_MONITOR"
 msgid "{Digital monitor|DMon}"
 msgstr "{数字监听|数听}"
 
 #: core/ui/ui_screens.c
+msgctxt "PRIVACY_2"
 msgid "{Privacy|Priv}"
 msgstr "{加密|加密}"
 
 #: core/ui/ui_screens.c
+msgctxt "TALK_TO_3"
 msgid "{Talk to|Talk}"
 msgstr "{通话对象|通话}"
 
 #: core/ui/ui_screens.c
+msgctxt "COPY_TO_VFO_3"
 msgid "{Copy to VFO|To VFO}"
 msgstr "{复制到 VFO|到 VFO}"
 
 #: core/ui/ui_screens.c
+msgctxt "TX_FREQ"
 msgid "{TX freq|TXFreq}"
 msgstr "{发射频率|发频}"
 
 #: core/ui/ui_screens.c
+msgctxt "TONE_TX"
 msgid "Tone TX"
 msgstr "发射亚音"
 
 #: core/ui/ui_screens.c
+msgctxt "TONE_RX"
 msgid "Tone RX"
 msgstr "接收亚音"
 
 #: core/ui/ui_screens.c
+msgctxt "COPY"
 msgid "Copy"
 msgstr "复制"
 
 #: core/ui/ui_screens.c
+msgctxt "ALL"
 msgid "All"
 msgstr "全部"
 
 #: core/ui/ui_screens.c
+msgctxt "UP_DN_OFFSET_TYPE_TX_FREQ"
 msgid "{Up/Dn: +/- offset  Type: TX freq|Up/Dn +/- offset  0-9 TX freq|Up/Dn offset  0-9 TX freq|Up/Dn +/-  0-9 TX freq}"
 msgstr "{上下: +/- 偏移  输入: 发射频率|上下 +/- 偏移  0-9 发射频率|上下 偏移  0-9 发射频率|上下 +/-  0-9 发射频率}"
 
 #: core/ui/ui_screens.c
+msgctxt "OK_SETS"
 msgid "  OK sets"
 msgstr "  OK 设定"
 
 #: core/ui/ui_screens.c
+msgctxt "QUICK_2"
 msgid "Quick"
 msgstr "快捷"
 
 #: core/ui/ui_screens.c
+msgctxt "N1_9_CHANGE_HOLD_OK_SAVE"
 msgid "1-9 change  Hold OK save"
 msgstr "1-9 更改  长按 OK 保存"
 
 #: core/ui/ui_screens.c
+msgctxt "N0_ALL_SETTINGS_HOLD_OK_SAVE"
 msgid "0 All settings  Hold OK save"
 msgstr "0 所有设置  长按 OK 保存"
 
 #: core/ui/ui_screens.c
+msgctxt "MORE_BACK"
 msgid "* more  Back"
 msgstr "* 更多  返回"
 
 #: core/ui/ui_svc_storage.c
+msgctxt "COULDNT_WRITE_THE_CODEPLUG_8"
 msgid "Couldn't write the codeplug: not saved"
 msgstr "电台频率写入失败：未保存"
 
 #: core/ui/ui_svc_storage.c
+msgctxt "COULDNT_READ_THE_CHANNEL_NOT"
 msgid "Couldn't read the channel: not saved"
 msgstr "信道读取失败：未保存"
 
 #: core/ui/ui_svc_storage.c
+msgctxt "ZONE_FULL_NOT_SAVED"
 msgid "Zone full: not saved"
 msgstr "区域已满：未保存"
 
 #: core/ui/ui_svc_storage.c
+msgctxt "ALREADY_IN_THIS_ZONE"
 msgid "Already in this zone"
 msgstr "已在本区域"
 
 #: core/ui/ui_svc_storage.c
+msgctxt "ALREADY_AT_THE_END"
 msgid "Already at the end"
 msgstr "已在末尾"
 
 #: core/ui/ui_svc_storage.c
+msgctxt "THAT_ZONE_IS_GONE"
 msgid "That zone is gone"
 msgstr "该区域已不存在"
 
 #: core/ui/ui_svc_storage.c
+msgctxt "THAT_CHANNEL_IS_GONE"
 msgid "That channel is gone"
 msgstr "该信道已不存在"
 
 #: core/ui/ui_svc_storage.c
+msgctxt "COULDNT_READ_THE_CHANNEL_FOR"
 msgid "Couldn't read the channel: for now only"
 msgstr "信道读取失败：仅临时"
 
 #: core/ui/ui_svc_storage.c
+msgctxt "NOT_A_STORED_CONTACT_FOR_NOW"
 msgid "Not a stored contact: for now only"
 msgstr "非已存联系人：仅临时"
 
 #: core/ui/ui_svc_storage.c
+msgctxt "CODEPLUG_NOT_WRITTEN_FOR_NOW"
 msgid "Codeplug not written: for now only"
 msgstr "电台频率未写入：仅临时"
 
 #: core/ui/ui_svc_storage.c
+msgctxt "RESET_THE_SETTINGS_COULDNT"
 msgid "Reset: the settings couldn't be saved"
 msgstr "重置：设置无法保存"
 
 #: core/ui/ui_svc_storage.c
+msgctxt "RESET_NATIVE_AREA_COULDNT_BE"
 msgid "Reset: native area couldn't be erased"
 msgstr "重置：原厂区无法擦除"
 
 #: core/ui/ui_svc_storage.c
+msgctxt "COULDNT_SAVE_THE_KEYS_FOR"
 msgid "Couldn't save the keys: for now only"
 msgstr "按键保存失败：仅临时"
 
 #: core/ui/ui_svc_zone.c
+msgctxt "THAT_ZONE_IS_FULL"
 msgid "That zone is full"
 msgstr "该区域已满"
 
 #: core/ui/ui_svc_zone.c
+msgctxt "NOT_ENOUGH_FREE_CHANNELS"
 msgid "Not enough free channels"
 msgstr "空闲信道不足"
 
 #: core/ui/ui_svc_zone.c
+msgctxt "NOT_ENOUGH_FREE_CONTACTS"
 msgid "Not enough free contacts"
 msgstr "空闲联系人不足"
 
 #: core/ui/ui_svc_zone.c
+msgctxt "NOT_A_ZONE_THIS_RADIO_READS"
 msgid "Not a zone this radio reads"
 msgstr "本机无法识别该区域"
 
 #: core/ui/ui_svc_zone.c
+msgctxt "THE_OFFER_IS_GONE"
 msgid "The offer is gone"
 msgstr "该邀请已失效"

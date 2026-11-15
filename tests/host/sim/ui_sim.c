@@ -2927,7 +2927,7 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "splash") == 0) {		// the boot screen (last in a script: nothing redraws over it)
 		if (arg != NULL && strcmp(arg, "loader") == 0) {	// the stub entry's (stub_entry.c show_banner)
-			ui_draw_splash(board.name, "a1b2c3d4", STUB_ENTRY_LINE1, STUB_ENTRY_LINE2);
+			ui_draw_splash(board.name, "a1b2c3d4", tr(STUB_ENTRY_LINE1), tr(STUB_ENTRY_LINE2));
 			return true;
 		}
 		char l1[17], l2[17];
