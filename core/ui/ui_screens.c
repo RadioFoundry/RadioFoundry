@@ -1600,7 +1600,7 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 	}
 	sb_str(&b, "TS");
 	sb_u32(&b, d->rx_ts ? d->rx_ts : d->ts, 1);
-	if (d->rx_cc != d->cc) {	// found by digital monitor: the code to set to talk to them
+	if (d->hear_all && d->rx_cc != d->cc) {	// found by digital monitor: the code to set to talk to them
 		sb_str(&b, " CC");
 		sb_u32(&b, d->rx_cc, 1);
 	}

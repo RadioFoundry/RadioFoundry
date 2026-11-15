@@ -2226,6 +2226,55 @@ static void test_monitor_both_slots(void)
 	c.listen.both_ts = c.listen.any_cc = false;
 	dmr_call_configure(&c);
 	CHECK(sim.locked_ts == 1 && sim.cc_filter == 1);
+
+	// Monitor on during a call heard as not ours: it plays at once, not cut and found again by late entry
+	uint8_t tg[9];
+
+	mk_lc(tg, 0, 4444, 3101003);
+	c.listen.hear_all = false;
+	setup(&c);
+	rx_two_slots(tg, 1, 1, NULL, &frame);
+	CHECK(V()->phase == DMR_CALL_PHASE_RX_BUSY && sink_log.begins == 0);
+	c.listen.hear_all = c.listen.both_ts = c.listen.any_cc = true;
+	dmr_call_configure(&c);
+	run_ms(30);
+	CHECK(V()->phase == DMR_CALL_PHASE_RX_VOICE && sink_log.begins == 1 && sink_log.ends == 0);
+	CHECK(sim.locked_ts == 0 && sim.cc_filter == -1);
+	// ... and monitor off after it keeps its reply window
+	rx_header(tg, 1, 1, DMR_SYNC_BS, true);
+	run_ms(30);
+	CHECK(V()->reply_active && V()->tx_target.id == 4444);
+	c.listen.hear_all = c.listen.both_ts = c.listen.any_cc = false;
+	dmr_call_configure(&c);
+	CHECK(V()->reply_active && V()->tx_target.id == 4444 && sim.locked_ts == 1);
+
+	// Late entry with both slots busy: a burst held with its LC on one slot never pairs with the other slot's next
+	c.listen.hear_all = c.listen.both_ts = c.listen.any_cc = true;
+	setup(&c);
+	rx_voice(2, 1, 1, DMR_SYNC_BS, &frame, lc, false);
+	run_ms(30);
+	rx_voice(3, 1, 2, DMR_SYNC_BS, &frame, NULL, false);
+	run_ms(30);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && sink_log.begins == 0);
+	rx_voice(3, 1, 1, DMR_SYNC_BS, &frame, NULL, false);
+	run_ms(30);
+	CHECK(V()->state == DMR_CALL_STATE_RX && V()->rx_ts == 1 && sink_log.begins == 1);
+
+	// Late entry at burst A, whose color code the modem reports is junk: the call's code comes from B-F. Simplex
+	// without TDMA direct mode sync: the slot the modem gives is not known
+	c = base_cfg();
+	c.listen.hear_all = c.listen.both_ts = c.listen.any_cc = true;
+	setup(&c);
+	rx_voice(4, 5, 2, DMR_SYNC_MS, &frame, NULL, false);
+	run_ms(60);
+	rx_voice(5, 5, 2, DMR_SYNC_MS, &frame, NULL, false);
+	run_ms(60);
+	rx_voice(0, 9, 2, DMR_SYNC_MS, &frame, lc, false);
+	run_ms(60);
+	CHECK(V()->state == DMR_CALL_STATE_RX && V()->rx_cc == c.cc && V()->rx_ts == 0);
+	rx_voice(1, 5, 2, DMR_SYNC_MS, &frame, NULL, false);
+	run_ms(60);
+	CHECK(V()->rx_cc == 5 && V()->rx_ts == 0);
 }
 
 static void test_reconfigure(void)
