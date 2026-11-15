@@ -44,7 +44,7 @@ static const flow_t flows[] = {
 	  "ok 6 down down down down down down down down down ok",
 	  "screen=satellite-passes shows=Predicting_passes shows=2/5", 13, false },
 	{ "Satellite pass list opens from Tools", "", "ok 6 down down down down down down down down down ok",
-	  "screen=satellite-passes shows=Next_passes shows=NOAA_19", 13, false },
+	  "screen=satellite-passes shows=Next_passes shows=NOAA_19 shows=0:14", 13, false },
 	{ "Satellite TLE editor opens line 1", "", "ok 6 down down down down down down down down down ok ok ctx",
 	  "screen=satellite-tle-text shows=1_ABC", 14, false },
 	{ "Satellite TLE editor cancels an empty line", "", "ok 6 down down down down down down down down down ok ok ctx back",

@@ -65,6 +65,13 @@ static void row(int *y, const char *label, const char *value, color_t value_colo
 	*y += ui_layout.row_h;
 }
 
+static void satellite_eta_minutes(sbuf_t *b, uint32_t minutes)
+{
+	sb_u32(b, minutes / 60u, 1);
+	sb_chr(b, ':');
+	sb_u32(b, minutes % 60u, 2);
+}
+
 static uint32_t satellite_target_hz(uint32_t nominal_hz, int64_t offset_hz)
 {
 	int64_t target_hz = (int64_t)nominal_hz + offset_hz;
@@ -262,8 +269,7 @@ static void satellite_pass_item(uint16_t row_index, ui_item_t *item)
 	if (pass.visible_now) {
 		sb_str(&b, TR("Now"));
 	} else {
-		sb_u32(&b, pass.aos_minutes, 1);
-		sb_chr(&b, 'm');
+		satellite_eta_minutes(&b, pass.aos_minutes);
 	}
 	sb_chr(&b, ' ');
 	sb_u32(&b, pass.maximum_elevation_deg, 1);
@@ -324,9 +330,7 @@ static void satellite_draw(void)
 			if (view->satellite_pass_valid && !view->satellite_pass_visible_now) {
 				uint32_t minutes = view->satellite_aos_in_s / 60u;
 				sb_init(&b, value, sizeof(value));
-				sb_u32(&b, minutes / 60u, 1);
-				sb_chr(&b, ':');
-				sb_u32(&b, minutes % 60u, 2);
+				satellite_eta_minutes(&b, minutes);
 				row(&y, TR("AOS in"), value, ui_col.fg);
 			}
 			draw_path(y, view, &path, compact);
@@ -351,9 +355,7 @@ static void satellite_draw(void)
 				} else {
 					uint32_t minutes = view->satellite_aos_in_s / 60u;
 					sb_init(&b, value, sizeof(value));
-					sb_u32(&b, minutes / 60u, 1);
-					sb_chr(&b, ':');
-					sb_u32(&b, minutes % 60u, 2);
+					satellite_eta_minutes(&b, minutes);
 					row(&y, TR("AOS in"), value, ui_col.fg);
 				}
 				if (!view->satellite_los_known && !view->satellite_pass_visible_now) {
@@ -363,9 +365,7 @@ static void satellite_draw(void)
 				} else {
 					uint32_t minutes = view->satellite_los_in_s / 60u;
 					sb_init(&b, value, sizeof(value));
-					sb_u32(&b, minutes / 60u, 1);
-					sb_chr(&b, ':');
-					sb_u32(&b, minutes % 60u, 2);
+					satellite_eta_minutes(&b, minutes);
 					row(&y, TR("LOS in"), value, ui_col.fg);
 				}
 			}
