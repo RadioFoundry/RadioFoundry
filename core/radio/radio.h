@@ -269,6 +269,7 @@ typedef struct {
 	uint32_t ticks;		// slot ticks handed to the engine
 	uint32_t csbk, crc_bad, grants, followed, unmapped, returns, hunts, foreign, learned, sent, ra_tries;
 	uint32_t lent;		// short LCs saying the TSCC's slot is lent to a call (composite TSCC)
+	uint32_t lent_calls;	// call bursts on the TSCC's slot taken as lent, no short LC heard (t3_ms_call_burst)
 	// Roaming (the t3_roam section)
 	uint32_t votes, vote_moves, weak_leaves;	// adjacent TSCCs sampled, moved to; TSCCs left as weak
 	uint32_t adj_refused;	// adjacent sites announced but not authorized

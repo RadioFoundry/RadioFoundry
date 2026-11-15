@@ -157,7 +157,11 @@ carries them. The registration state follows the latest Aloha or broadcast Reg f
 own channel and slot, and the radio follows it like any other; P_CLEAR to channel 0 brings it back to the TSCC. While
 the slot is lent, its carrier's CACH carries P_SYS_Parms with Payload Channel Type 1 (table 7.34) and the TSCC sends
 nothing. An idle radio that hears that short LC with its own system's MODEL, NET and SITE stays: each one restarts
-T_Nosig, and no random access goes until the TSCC is back (an Aloha or C_SYS_Parms) or 360 ms pass without one.
+T_Nosig, and no random access goes until the TSCC is back (an Aloha or C_SYS_Parms) or 360 ms pass without one. A
+modem that doesn't report the short LC can't hear that: on a TSCC with no short LC from the system since the radio
+came, a voice burst, voice header or terminator in the TSCC's color code on its slot counts the same
+(`t3_ms_call_burst`), since a TSCC's slot carries a call only while lent. Once a short LC is heard, only short LCs
+count.
 P_SYS_Parms with type 0, or another system's, changes nothing. A radio waiting there that missed a call's grant (it
 was in another call) follows a Late_Entry grant heard on the lent slot for one of its talkgroups (6.6.2.4.1), as on
 the TSCC. A radio switched on meanwhile camps only at the Aloha: a grant doesn't carry the system's identity.

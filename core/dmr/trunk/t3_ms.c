@@ -241,6 +241,7 @@ static void enter_hunt(t3_ms_t *ms, uint32_t now, bool retry)
 	}
 	ms->state = T3_HUNT;
 	ms->confirmed = false;
+	ms->slc_here = false;
 	ms->asleep = false;
 	ms->massreg = false;	// another TSCC cancels it (6.4.5.1)
 	ms->tscc_slots = 0;
@@ -2339,6 +2340,10 @@ void t3_ms_slc(t3_ms_t *ms, uint32_t now, uint32_t slc)
 		// 1 instead of C_SYS_Parms. The control channel comes back after the call with an Aloha: wait for it
 		// rather than hunt (T_Nosig), and send no random access meanwhile. Only on our system's TSCC: another
 		// payload channel's CACH is never heard while camped
+		if (ms->state == T3_CAMPED && !ms->vote.on && ms->syscode != 0 &&
+		    sp.model == (uint8_t)(ms->syscode >> 14) && sp.netsite == (uint16_t)((ms->syscode >> 2) & 0xFFFu)) {
+			ms->slc_here = true;
+		}
 		if (sp.flag && ms->state == T3_CAMPED && !ms->vote.on && ms->syscode != 0 &&
 		    sp.model == (uint8_t)(ms->syscode >> 14) && sp.netsite == (uint16_t)((ms->syscode >> 2) & 0xFFFu)) {
 			ms->st.lent++;
@@ -2366,6 +2371,7 @@ void t3_ms_slc(t3_ms_t *ms, uint32_t now, uint32_t slc)
 	}
 	ms->slc_foreign = 0;
 	if (ms->state == T3_CAMPED && !ms->vote.on) {
+		ms->slc_here = true;
 		ms->lent_ms = 0;	// the control channel is back
 		// The value is that of the four slots whose CACHs carried it: complete only as they end, so its 120 ms
 		// began one step before now
@@ -2431,6 +2437,21 @@ void t3_ms_activity(t3_ms_t *ms, uint32_t now, uint8_t slot)
 	if (ms->state == T3_FOLLOW && slot == ms->call.slot && since(now, ms->tuned_ms, T3_SETTLE_MS)) {
 		ms->last_act_ms = now;
 	}
+}
+
+// A modem that doesn't report the CACH's short LC never hears a lent composite TSCC's P_SYS_Parms (5.3.2). A TSCC's
+// slot carries a call's bursts only while lent, so on a TSCC with no short LC heard since the radio came, a voice
+// burst, header or terminator in our color code on its slot marks it lent the same way. Where short LCs are heard,
+// they alone say so
+void t3_ms_call_burst(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc)
+{
+	if (ms->state != T3_CAMPED || ms->vote.on || !ms->confirmed || ms->slc_here || slot < 1 || slot > 2 ||
+	    !(ms->tscc_slots & (1u << (slot - 1u))) || !cc_ok(ms, cc) || !since(now, ms->tuned_ms, T3_SETTLE_MS)) {
+		return;
+	}
+	ms->st.lent_calls++;
+	ms->lent_ms = now != 0 ? now : 1u;
+	ms->last_valid_ms = now;
 }
 
 // ---- Timers, actions out ----

@@ -63,7 +63,7 @@ int main(void)
 	wide.nadj = sizeof wide.adj / sizeof wide.adj[0];
 
 	section(debuglink_view_t3, text, &full);
-	CHECK(!full && has(text, "t3.lent="));
+	CHECK(!full && has(text, "t3.lent=") && has(text, "t3.lent_calls="));
 	section(debuglink_view_t3_roam, text, &full);
 	CHECK(!full);
 	section(debuglink_view_t3_ra, text, &full);

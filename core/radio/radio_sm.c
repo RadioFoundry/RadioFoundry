@@ -2775,6 +2775,9 @@ static bool t3_tap(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 	// TV_Inactive measures signal quality (6.6.2.3.2.9 a): every burst with a sync counts, a hang's idles included
 	if (slot != 0) {
 		t3_ms_activity(&t3m, now_ms, slot);
+		if (b->kind == DMR_BURST_VOICE || b->kind == DMR_BURST_VOICE_LC_HEADER || b->kind == DMR_BURST_TERMINATOR_LC) {
+			t3_ms_call_burst(&t3m, now_ms, slot, b->cc);
+		}
 		if (sm->t3_tx_end_ms != 0) {
 			uint32_t gap = now_ms - sm->t3_tx_end_ms;
 			sm->t3_tx_end_ms = 0;
@@ -2986,6 +2989,7 @@ static void t3_publish(radio_sm_t *sm)
 	v->followed = m->st.followed;
 	v->unmapped = m->st.unmapped;
 	v->lent = m->st.lent;
+	v->lent_calls = m->st.lent_calls;
 	v->last_unmapped = m->st.last_unmapped;
 	v->returns = m->st.returns;
 	v->hunts = m->st.hunts;

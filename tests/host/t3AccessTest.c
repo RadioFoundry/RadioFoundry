@@ -1567,6 +1567,50 @@ static void test_composite(void)
 	CHECK(ms.state == T3_HUNT, "nothing after the lent mark: hunt");
 }
 
+// A modem without the CACH's short LC can't hear P_SYS_Parms "composite": a call's bursts on the TSCC's slot in its
+// color code say the slot is lent instead (5.3.2), until a short LC is heard there. Bursts on the other slot, in another
+// color code, or after a short LC don't hold the radio
+static void test_composite_no_slc(void)
+{
+	static const struct {
+		uint8_t slot, cc;
+		bool slc_first, holds;
+		const char *what;
+	} cases[] = {
+		{ 1, CC, false, true, "TSCC slot: lent" },
+		{ 2, CC, false, false, "the other slot" },
+		{ 1, CC + 1, false, false, "another color code" },
+		{ 1, CC, true, false, "a short LC heard first" },
+	};
+	for (unsigned k = 0; k < sizeof cases / sizeof cases[0]; k++) {
+		setup(T3_OPT_PRIVATE, false);
+		t3_ms_t ms;
+		camp(&ms);
+		if (cases[k].slc_first) {
+			t3_sysparms_t sp = { true, T3_MODEL_LARGE, (uint16_t)(t3_syscode_14(ours) & 0xFFF), false, 0 };
+			t3_ms_slc(&ms, T, t3_sysparms_build(&sp));
+		}
+		aloha_on = false;
+		int t0 = ntune;
+		for (int i = 0; i < 200 && ms.state == T3_CAMPED; i++) {	// 12 s, past T_Nosig
+			if (i == 180) {
+				CHECK(t3_ms_request(&ms, T, TG_A, true, false), "%s: call request", cases[k].what);
+			}
+			frame(&ms);
+			t3_ms_call_burst(&ms, T, cases[k].slot, cases[k].cc);
+		}
+		if (cases[k].holds) {
+			CHECK(ms.state == T3_CAMPED && ntune == t0 && ms.st.lent_calls == 200 && nsent == 0,
+			      "%s: waits, no access (lent_calls %u, %d sent)", cases[k].what, ms.st.lent_calls, nsent);
+			aloha_on = true;
+			frames(&ms, 4);
+			CHECK(nsent == 1 && sent[0].op == T3_OP_C_RAND, "%s: request after the Aloha", cases[k].what);
+		} else {
+			CHECK(ms.state == T3_HUNT && ms.st.lent_calls == 0, "%s: hunt", cases[k].what);
+		}
+	}
+}
+
 // A radio that missed a call's grant (switched on during it) and waits on a lent composite TSCC: in the lent call's
 // hang time the site repeats the live group calls' grants there with Late_Entry 1 (6.6.2.4.1). The radio follows one
 // for its talk groups, the call on the payload slot or the lent call itself, and not one for another talk group
@@ -3000,6 +3044,7 @@ int main(void)
 	test_ra_on_air();
 	test_composite();
 	test_composite_late_entry();
+	test_composite_no_slc();
 	test_area_unset();
 	test_refused_denied();
 	test_permission();

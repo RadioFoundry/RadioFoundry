@@ -11,6 +11,7 @@
 //   t3_ms_rx()        every data burst heard (CSBK, MBC header, MBC continuation) with its slot and color code
 //   t3_ms_slc()       every short LC the CACH carried (CRC-8 good)
 //   t3_ms_activity()  any sync on the slot being followed (voice or data), for the inactivity timer
+//   t3_ms_call_burst() a call's burst (voice, its header or terminator) on a slot, with its color code
 //   t3_ms_level()     the signal level of the channel tuned, for leaving a weak TSCC and sampling an adjacent one
 //   t3_ms_poll()      every 10-30 ms: T3_ACT_TUNE means retune to act->chan and listen to act->slot (0: both)
 //   t3_ms_stop()      another zone or channel selected
@@ -254,6 +255,7 @@ typedef struct {
 	uint32_t foreign;	// Alohas and broadcasts from another system (wrong syscode)
 	uint32_t foreign_slc;	// C_SYS_Parms from another system (an 8-bit CRC: some are corrupt words)
 	uint32_t lent;		// P_SYS_Parms "composite" on the TSCC's carrier while camped: its slot lent to a call
+	uint32_t lent_calls;	// a call's bursts on the TSCC's slot, no short LC heard there: taken as lent
 	uint32_t learned;	// Chan_Freq / CG_AP entries learned or changed
 	uint32_t ahoys;		// C_AHOYs to the radio on the TSCC; the last one's source, time and Service_Kind
 	uint32_t ahoy_src, ahoy_ms;
@@ -301,6 +303,7 @@ typedef struct {
 	t3_act_t q[T3_ACT_QUEUE];	// actions for t3_ms_poll, oldest first
 	uint8_t nq;
 	bool aloha_here;	// an Aloha since the radio came to this TSCC (random access waits for one)
+	bool slc_here;		// a short LC from our system since the radio came to this TSCC
 
 	// hunting
 	uint32_t slc_foreign;	// the last foreign C_SYS_Parms code + 1 (0: none): two alike leave a candidate
@@ -498,6 +501,7 @@ void t3_ms_stop(t3_ms_t *ms);
 void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, const uint8_t d[T3_CSBK_BYTES]);
 void t3_ms_slc(t3_ms_t *ms, uint32_t now, uint32_t slc);
 void t3_ms_activity(t3_ms_t *ms, uint32_t now, uint8_t slot);
+void t3_ms_call_burst(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc);
 // The radio's report on the last burst list the engine handed it (T3_ACT_SEND): sent (ok), or dropped. Optional; a
 // random access burst's answer window (NRand_Wait) then runs from the burst on air, not from the hand-over
 void t3_ms_sent(t3_ms_t *ms, uint32_t now, bool ok);
