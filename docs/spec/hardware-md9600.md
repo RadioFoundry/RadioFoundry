@@ -379,7 +379,8 @@ at 144.100 and 0.20 W at 151.5125. One fixed drive can't hold 250 mW from 144 to
 calibrated at 146 MHz, the middle of 2 m, and hold ±2 dB across it. The HIL wattmeter check keys at 445 and 146 MHz
 for that reason.
 
-A radio whose rows give levels that don't rise, or a top level over 2300 counts, transmits on no level. The debug
+The top level follows each radio's own top row. The factory rows differ between radios, so a drive limit measured on
+one radio doesn't hold for the rest: only the DAC's full scale (4095) bounds the top level and the override. A radio whose rows give levels that don't rise transmits on no level. The debug
 link's `tx_drive` view key shows each level's drive, and RADIO op 36 sets one transmission's drive
 ([debuglink.md](debuglink.md)). RadioFoundry refuses TX without an accepted table.
 

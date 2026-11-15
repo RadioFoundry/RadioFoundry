@@ -1037,12 +1037,27 @@ static void test_cal(void)
 	CHECK(md9600_cal_apc_floor(2) == 0);
 	CHECK(md9600_cal_squelch(400000000u, &l1, &l9) && l1 == 140 * 16 && l9 == 60 * 16);
 
-	// A PA row that doesn't rise with the level: transmit has no calibration
-	// A top row that puts the top level past the drive limit, or rows so low that 25 W falls under 5 W's fixed drive:
-	// no level transmits
-	cal_put(0x10, 125, 9);
+	// A radio whose PA needs more drive at the top than the bench radio: every level still transmits, the top one past
+	// its top row by the same step. Mid-band only (430-470 MHz, the points between the band's ends) as radios in the
+	// field have it, where a fixed drive limit once refused the whole frequency
+	cal_put(0x10 + 3, 125, 5);
 	md9600_cal_load();
-	CHECK(md9600_cal_pa_row(400000000u, 3, &dac) && !md9600_cal_apc(400000000u, 0, &dac));
+	for (uint8_t l = 0; l < 5; l++) {
+		CHECK(md9600_cal_apc(434050000u, l, &dac) && md9600_cal_apc(400000000u, l, &dac));
+	}
+	CHECK(md9600_cal_pa_row(440000000u, 3, &dac) && dac == 126 * 16);
+	CHECK(md9600_cal_apc(440000000u, 4, &dac) && dac == 126 * 16 + 337);
+	// A top row near the DAC's full scale: the top level stops there
+	cal_put(0x10, 250, 3);
+	md9600_cal_load();
+	CHECK(md9600_cal_apc(400000000u, 4, &dac) && dac == MD9600_APC_MAX);
+	CHECK(md9600_cal_apc(400000000u, 3, &dac) && dac < MD9600_APC_MAX);
+
+	// A PA row that doesn't rise with the level, or rows so low that 25 W falls under 5 W's fixed drive: no level
+	// transmits
+	cal_put(0x10, 30, 9);
+	md9600_cal_load();
+	CHECK(!(md9600_cal_rf_rows(MD9600_UHF) & MD9600_CALOK_PA) && !md9600_cal_apc(400000000u, 0, &dac));
 	cal_put(0x10, 110, 9);
 	cal_put(0x1A0, 30, 9);
 	cal_put(0x190, 35, 9);
