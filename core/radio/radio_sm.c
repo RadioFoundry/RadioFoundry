@@ -1238,6 +1238,12 @@ static void dmr_configure(radio_sm_t *sm)
 	}
 	dmr_call_configure(&cfg);
 	sm->view.dmr.own_id = cfg.own_id;
+	// The channel's color code, timeslot and repeater mode in the same update as the channel: dmr_publish copies the
+	// stack's own only at the next tick, and a reader between the two (dual watch's snapshot at each hop) would take
+	// the old channel's timeslot for the new one
+	sm->view.dmr.cc = cfg.cc;
+	sm->view.dmr.ts = cfg.ts;
+	sm->view.dmr.rmo = cfg.rmo;
 	sm->view.dmr.hear_all = cfg.listen.hear_all;
 	sm->view.dmr.hear_all_latch = sm->hear_all_latch;
 	sm->view.dmr.one_shot = sm->one_shot;
