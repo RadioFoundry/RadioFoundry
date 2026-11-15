@@ -37,6 +37,8 @@ bool stm32_i2s_pcm_start(const stm32_i2s_pcm_cfg_t *cfg, audio_block_cb_t cb, vo
 // hal_audio_t.stop. Safe from the block callback itself: streaming stops, the task stays for the next start
 void stm32_i2s_pcm_stop(void);
 bool stm32_i2s_pcm_running(void);
+// hal_audio_t.spk_pending: the last two blocks held speaker audio other than silence (still in the DMA halves)
+bool stm32_i2s_pcm_spk_pending(void);
 void stm32_i2s_pcm_stats(stm32_i2s_pcm_stats_t *out);
 void stm32_i2s_pcm_reset_stats(void);
 // hal_audio_t.stream_stats

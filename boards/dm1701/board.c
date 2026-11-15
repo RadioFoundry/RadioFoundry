@@ -121,7 +121,7 @@ static const hal_cps_t cps = {
 const board_t board = {
 	.name = "DM-1701",
 	// CAP_GPS: no module from the factory, but the pins are there for one; gps_present says whether one was heard
-	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
+	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 #if CONFIG_RX_EXT

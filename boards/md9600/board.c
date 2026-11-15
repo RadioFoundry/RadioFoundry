@@ -110,7 +110,7 @@ const board_t board = {
 	// A mobile on a fixed supply: no battery. No CAP_VOLUME_POT: the knob sets the volume in the analog path only.
 	// No CAP_KEYPAD: the keypad is on the hand mic, which may not have one, so text entry keeps the panel's way. The
 	// GPS module is optional: gps_present says
-	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
+	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),

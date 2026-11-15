@@ -311,6 +311,8 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
 
 - CTCSS works on air both ways. DCS isn't checked on a radio yet. A build with `CONFIG_SUBTONE=n` ([build switches](../build-config.md)) opens a channel with a tone on any carrier and sends no tone.
 - No roger beep, 1750 Hz burst or APRS on FM (the transmit tone path isn't written). APRS positions over DMR work.
+- The DMR talk permit tone is a single short beep played just before the radio transmits, while the screen shows
+  ADMITTED, so it isn't sent with your voice ([DMR](09-dmr.md#the-talk-permit-tone)).
 - No APRS receive.
 - MMDVM SFR and the split duplex repeater need the DMR chip of the DM-1701 (HR_C6000) and aren't built for the
   MD-380 (HR_C5000). Hotspot mode is in.

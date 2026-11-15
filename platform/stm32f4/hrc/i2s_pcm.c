@@ -56,6 +56,7 @@ static volatile bool running;
 static volatile uint8_t pending;	// bit 0: half 0 received, bit 1: half 1
 static volatile uint32_t overruns;	// blocks the task did not get to in time
 static volatile uint32_t blocks;	// blocks processed (one per 20 ms while streaming)
+static volatile uint8_t spk_tail;	// blocks left that may still hold speaker audio (the DMA plays two halves behind the task)
 static volatile uint32_t dropped;	// blocks skipped: both halves pending, the older one overwritten
 static const stm32_i2s_pcm_cfg_t *cfg;
 
@@ -246,6 +247,15 @@ static void process(uint8_t half)
 	} else {
 		memset(spk, 0, sizeof spk);
 	}
+	bool sound = false;
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		sound |= spk[i] != 0;
+	}
+	if (sound) {
+		spk_tail = 2;
+	} else if (spk_tail != 0) {
+		spk_tail--;
+	}
 	// This half has just gone out (TX runs in step with RX), so it is free until the DMA comes back in 20 ms
 	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
 		out[2 * i] = spk[i];
@@ -328,8 +338,14 @@ void stm32_i2s_pcm_stop(void)
 	}
 	hw_stop();
 	pending = 0;
+	spk_tail = 0;
 	block_cb = NULL;
 	clock(false);
+}
+
+bool stm32_i2s_pcm_spk_pending(void)
+{
+	return running && spk_tail != 0;
 }
 
 bool stm32_i2s_pcm_running(void)
