@@ -394,6 +394,11 @@ slot in two from then on.
 
 ### 5.4 Color code acquisition (when the user's CC filter is off)
 
+Reconfiguration keeps any-CC listening. The receive code stays in 0x1F while an aligned start waits for its slot.
+Before the first TX slot, the driver writes the channel's transmit code; after TX it restores the receive code.
+A receive filter or reconfiguration during TX takes effect when TX finishes: the receiver restarts then (5.1),
+in place of a direct transmission's end hold.
+
 The chip only deframes bursts whose CC matches 0x1F unless 0x41 bit 3 is set. To follow an unknown CC: at each system
 interrupt with an SNR margin of at least 5 dB, compare 0x52's CC with the last one seen (within 200 ms). On every
 second match write the new CC to 0x1F and rewrite 0x40=0xC3 (through a repeater also the 0x41 resync sequence: 0x20,
