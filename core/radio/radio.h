@@ -143,7 +143,8 @@ typedef struct {
 	bool codec;		// the vocoder is merged: voice plays and PTT works
 	uint8_t state;		// radio_dmr_state_t
 	uint32_t own_id;
-	uint8_t cc, ts;
+	uint8_t cc, ts;		// the channel's
+	uint8_t rx_cc, rx_ts;	// the call heard (digital monitor: any color code, either slot); rx_ts 0 = unknown
 	bool rmo;		// through a repeater
 	bool repeater_up;
 	// Where PTT goes now (the reply target during the reply window)

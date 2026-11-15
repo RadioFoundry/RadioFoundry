@@ -76,6 +76,7 @@ static struct {
 	uint8_t rx;
 	uint8_t call_lc[DMR_LC_BYTES];
 	int8_t call_ts;
+	bool rx_cc_known;	// view.rx_cc came from a burst that carries a color code (not burst A)
 	bool have_index;
 	uint8_t next_index;
 	uint32_t last_voice_ms;	// last voice burst of the call played (arrival)
@@ -105,6 +106,7 @@ static struct {
 	bool le_active;
 	bool le_pair;		// two consecutive voice bursts seen
 	uint8_t le_last_index;
+	int8_t le_ts;		// the slot of the bursts counted (digital monitor hears both)
 	uint32_t le_last_ms;
 	bool le_held;		// le_burst: the last burst, its LC taken before the pair was complete
 	dmr_burst_t le_burst;
@@ -377,6 +379,19 @@ static bool sfr_dualpath_rx(void)
 }
 #endif
 
+// Burst A has no color code on air (voice sync where B-F have the EMB): whatever CC the modem gives it is not the
+// burst's (0x52 at A's report has held a junk one on the bench)
+static bool cc_known(const dmr_burst_t *b)
+{
+	return !(b->kind == DMR_BURST_VOICE && b->voice_index % 6 == 0);
+}
+
+// The slot number is only known through a repeater (CACH) or from the TDMA direct mode sync
+static bool ts_known(const dmr_burst_t *b)
+{
+	return b->ts != 0 && (s.cfg.rmo || b->sync == DMR_SYNC_BS || b->sync == DMR_SYNC_TS1 || b->sync == DMR_SYNC_TS2);
+}
+
 // A burst of the talker's own copy, not the repeat. TS framing: the slot is in the sync, and the modem numbers the
 // bursts without one (voice B-F) from it. BS framing: the talker's bursts carry MS sync. MS framing: the copies look
 // alike, and the call stays on the slot of the copy heard first
@@ -634,8 +649,10 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 		stats.rx_encrypted_calls++;
 	}
 	s.pi_pending = false;
-	if (s.cfg.listen.any_cc)
-		s.view.cc = b->cc;
+	// The call's color code and slot as far as this burst tells them; rx_burst fills in the rest from the next ones
+	s.rx_cc_known = cc_known(b);
+	s.view.rx_cc = s.rx_cc_known ? b->cc : s.cfg.cc;
+	s.view.rx_ts = ts_known(b) ? (uint8_t)b->ts : 0;
 
 	s.rx = rx_accept(&l, now) ? RXC_PLAY : RXC_OTHER;
 	s.rx_echo = s.rx == RXC_OTHER && own_echo(&l, now);
@@ -839,6 +856,9 @@ static void rx_late_entry(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 	if (!s.le_active || elapsed(now, s.le_last_ms, true, fade_ms())) {
 		le_reset();
 		s.le_active = true;
+		s.le_ts = b->ts;
+	} else if (b->ts != s.le_ts && s.cfg.listen.both_ts && ts_known(b)) {
+		return;	// both slots heard: the slot counted first, so a pair or a held burst never spans the two calls
 	} else if (i == (s.le_last_index + 1) % 6) {
 		s.le_pair = true;
 		held = s.le_held;
@@ -966,15 +986,12 @@ static bool rx_header_lc(const dmr_burst_t *b, uint8_t mask, uint8_t lc[DMR_LC_B
 	return false;
 }
 
-// A burst of another color code than ours (the modem doesn't filter with any_cc, polite to all or two CCs). Burst A has
-// no color code on air (voice sync where B-F have the EMB): whatever CC the modem gives it is not the burst's, so it is
-// never filtered on it (bench 2026-10-10: 0x52 at A's report held a junk CC, and every A was dropped here, three frames
-// concealed per superframe)
+// A burst of another color code than ours (the modem doesn't filter with any_cc, polite to all or two CCs). Burst A is
+// never filtered on its color code (cc_known: every A was dropped here once, three frames concealed per superframe)
 static bool cc_other(const dmr_burst_t *b)
 {
-	bool cc_known = !(b->kind == DMR_BURST_VOICE && b->voice_index % 6 == 0);
-
-	return !s.cfg.listen.any_cc && cc_known && b->cc != s.cfg.cc && !(sfr_user() && s.cfg.cc2 >= 0 && b->cc == s.cfg.cc2);
+	return !s.cfg.listen.any_cc && cc_known(b) && b->cc != s.cfg.cc &&
+	       !(sfr_user() && s.cfg.cc2 >= 0 && b->cc == s.cfg.cc2);
 }
 
 static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
@@ -1004,10 +1021,9 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		s.rpt_seen = true;
 		s.rpt_bursts = true;
 	}
-	// The slot number is only known through a repeater (CACH) or from the TDMA direct mode sync
-	bool ts_known = b->ts != 0 && (s.cfg.rmo || b->sync == DMR_SYNC_BS || b->sync == DMR_SYNC_TS1 ||
-				       b->sync == DMR_SYNC_TS2);
-	if (ts_known && b->sync != DMR_SYNC_MS) {
+	bool slot_known = ts_known(b);
+
+	if (slot_known && b->sync != DMR_SYNC_MS) {
 		s.slots_ms = now;
 		s.slots_seen = true;
 	}
@@ -1017,7 +1033,7 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		TR_WHAT('s');
 		return;
 	}
-	bool other_slot = sfr_user() ? false : ts_known && b->ts != s.cfg.ts;
+	bool other_slot = !sfr_user() && !s.cfg.listen.both_ts && slot_known && b->ts != s.cfg.ts;
 
 	if (!sfr_both() &&
 	    (other_slot || (s.rx != RXC_NONE && b->ts != 0 && s.call_ts != 0 && b->ts != s.call_ts))) {
@@ -1114,6 +1130,18 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 				s.data_rx(b, now, s.data_rx_ctx);
 		}
 		break;
+	}
+	// The call's color code and slot when the burst that started it (a late entry at A, simplex) didn't give them
+	if (s.rx != RXC_NONE && b->kind == DMR_BURST_VOICE) {
+		if (!s.rx_cc_known && cc_known(b)) {
+			s.rx_cc_known = true;
+			s.view.rx_cc = b->cc;
+			s.dirty = true;
+		}
+		if (s.view.rx_ts == 0 && slot_known) {
+			s.view.rx_ts = (uint8_t)b->ts;
+			s.dirty = true;
+		}
 	}
 }
 
@@ -1778,6 +1806,12 @@ void dmr_call_set_voice(const dmr_voice_sink_t *sink, const dmr_voice_source_t *
 	s.source = source;
 }
 
+// Through a repeater the modem keeps to our slot, unless the monitor hears both
+static int8_t lock_slot(void)
+{
+	return s.cfg.rmo && !s.cfg.listen.both_ts ? (int8_t)s.cfg.ts : 0;
+}
+
 static void modem_config(dmr_config_t *mc)
 {
 	mc->own_id = s.cfg.own_id;
@@ -1800,15 +1834,18 @@ static void modem_apply(void)
 	modem_config(&mc);
 	s.modem->configure(&mc);
 	s.modem->set_cc_filter(modem_cc_filter());
-	s.modem->rx_lock_slot(s.cfg.rmo ? (int8_t)s.cfg.ts : 0);
+	s.modem->rx_lock_slot(lock_slot());
 }
 
 void dmr_call_configure(const dmr_call_config_t *cfg)
 {
 	bool rf_change = !s.configured || cfg->cc != s.cfg.cc || cfg->ts != s.cfg.ts || cfg->rmo != s.cfg.rmo ||
-			 cfg->listen.any_cc != s.cfg.listen.any_cc || cfg->access != s.cfg.access ||
+			 cfg->access != s.cfg.access ||
 			 cfg->own_id != s.cfg.own_id || cfg->sfr_user != s.cfg.sfr_user || cfg->tx_sync != s.cfg.tx_sync ||
 			 cfg->rx_sync != s.cfg.rx_sync || cfg->sfr_rx != s.cfg.sfr_rx || cfg->cc2 != s.cfg.cc2;
+	// Digital monitor on or off widens or narrows what the modem passes, on the same channel: the call being heard
+	// and the reply window stay (a call heard as not ours plays at once, rx_recheck)
+	bool filter_change = cfg->listen.any_cc != s.cfg.listen.any_cc || cfg->listen.both_ts != s.cfg.listen.both_ts;
 	bool target_change = !same_target(cfg->talk_target, s.cfg.talk_target);
 
 	if (rf_change && s.configured) {
@@ -1839,7 +1876,7 @@ void dmr_call_configure(const dmr_call_config_t *cfg)
 	s.view.ts = s.cfg.ts;
 	s.view.rmo = s.cfg.rmo;
 	s.dirty = true;
-	if (s.running && rf_change)
+	if (s.running && (rf_change || filter_change))
 		modem_apply();
 	if (!rf_change && s.rx == RXC_OTHER)
 		rx_recheck(s.now);
@@ -1859,7 +1896,7 @@ bool dmr_call_start(void)
 		return false;
 	s.running = true;
 	s.modem->set_cc_filter(modem_cc_filter());
-	s.modem->rx_lock_slot(s.cfg.rmo ? (int8_t)s.cfg.ts : 0);
+	s.modem->rx_lock_slot(lock_slot());
 	s.dirty = true;
 	return true;
 }

@@ -54,8 +54,8 @@
 #endif
 
 #define VOICE_LOST_TICKS	13u	// about 390 ms without a voice burst on the call's slot
-#define CC_SCAN_TICKS		4u	// color code scan: next code after 120 ms of nothing
-#define CC_HOLD_TICKS		167u	// ... held 5 s after the last burst
+#define LOCAL_CC_ANY		(1u << 8)	// cc_opt 1: deframe a burst of any color code
+#define RF_MODE_SYNC_AUTO	(1u << 12)	// adjustsyncmax: dynamic sync threshold; must be 0 with cc_opt 1
 #define BUSY_US			360000u	// polite access: activity in the last 360 ms
 #define RX_LOST_TICKS		13u	// a reception is over (390 ms without a burst taken)
 #define RX_IDLE_TICKS		20u	// slot timing but nothing taken for 600 ms: the timing is stale
@@ -226,16 +226,29 @@ static void clear_requests(hrc7000_dmr_t *e)
 	w(e, C7_SYS_INTERP_CLEAR, r(e, C7_SYS_INTERP_LIST));
 }
 
+// LOCAL_CC: the code we send, and with a filter the only one deframed (cc_opt 0). Without a filter, cc_opt 1 deframes
+// every code. A scan through the codes heard nothing on air: it stepped on timeslot interrupts, which stop while the
+// chip hears a code it doesn't deframe. cc_opt 1 needs the fixed sync threshold, so RF_MODE b12 follows it, cleared
+// before cc_opt goes to 1 and set after it goes back to 0
 static void set_cc(hrc7000_dmr_t *e, uint8_t cc)
 {
-	w(e, C7_LOCAL_CC, cc & 0xFu);	// cc_opt 0: deframe only this color code
+	bool any = e->cc_filter < 0;
+	uint32_t mode = r(e, C7_RF_MODE);
+	uint32_t want = any ? mode & ~RF_MODE_SYNC_AUTO : mode | RF_MODE_SYNC_AUTO;
+
+	if (any && want != mode) {
+		w(e, C7_RF_MODE, want);
+	}
+	w(e, C7_LOCAL_CC, (cc & 0xFu) | (any ? LOCAL_CC_ANY : 0u));
+	if (!any && want != mode) {
+		w(e, C7_RF_MODE, want);
+	}
 }
 
 static void chip_rx_restart(hrc7000_dmr_t *e)
 {
 	clear_requests(e);	// the restart discards what they would report; a stale one would keep its source dead
 	if (e->tx_state == TXS_IDLE) {
-		// Not the scan's timer: a restart at every frequency step (a channel scan) would keep the scan from stepping
 		e->cc_cur = e->cc_filter >= 0 ? (uint8_t)e->cc_filter : e->cc_cur;
 		set_cc(e, e->cc_cur);
 	}
@@ -290,8 +303,7 @@ static void rx_hold(hrc7000_dmr_t *e)
 
 // The receiver's slot timing is dropped (5.2) when it stops giving bursts: at the end of a reception, and while the
 // chip keeps the timing of a sender that left (it then only reports unusable and abnormal slots and takes no new
-// call). After a restart, only new modem activity schedules another one. Only with
-// a color code set: the color code scan restarts the receiver itself
+// call). After a restart, only new modem activity schedules another one.
 // Modem activity: the stale count starts with the first after a restart (counting the slot it reports), not at the
 // restart. After a long silence (an empty channel gives no slot interrupts) a count from the restart had run out, and
 // the first interrupt of the next call restarted the receiver under its header. An armed count (a hold after TX) keeps
@@ -306,7 +318,7 @@ static void resync_arm(hrc7000_dmr_t *e)
 
 static void rx_resync(hrc7000_dmr_t *e)
 {
-	if (e->cc_filter < 0 || !e->resync_pending) {
+	if (!e->resync_pending) {
 		return;
 	}
 	uint32_t quiet = now(e) - (e->rx_any ? e->t_rx : e->t_resync);
@@ -346,7 +358,6 @@ static void tx_finish(hrc7000_dmr_t *e, bool restart)
 	e->st.tx_done++;
 	// Through a repeater the restart at once, as the original firmware does: both slot syncs released and a new TC
 	// lock, so the next transmission's slots come from the repeater's timing, not ours (issue 72). Direct: the hold
-	e->cc_tick = e->tick;	// the scan stays on the code it was on for a while after our transmission
 	if (restart || e->cfg.repeater || BS_ACTIVE(e)) {
 		chip_rx_restart(e);
 	} else {
@@ -645,21 +656,6 @@ static void rx_tick(hrc7000_dmr_t *e)
 	// voice on both slots, so a flag that followed the last burst was always on the wrong slot, and the listener played
 	// the call's first decoded burst over and over (the three-radio SFR test, 2026-10-20)
 	w(e, C7_LAYER2_TXRX_CTRL, (e->voice_slots & (1u << next)) ? TXRX_RX_VOICE : TXRX_RX);
-
-	// Color code scan when no filter is set: step through the codes while nothing is heard
-	if (e->tx_state == TXS_IDLE && e->cc_filter < 0 &&
-	    (uint32_t)(e->tick - e->cc_tick) >= (e->rx_any ? CC_HOLD_TICKS : CC_SCAN_TICKS)) {
-		e->cc_cur = (uint8_t)((e->cc_cur + 1u) & 0xFu);
-		set_cc(e, e->cc_cur);
-		w(e, C7_LAYER2_CONTROL, L2_PASSIVE);
-		w(e, C7_LAYER2_SLOTON, SLOTON_OFF);
-		w(e, C7_LAYER2_TXRX_CTRL, TXRX_SYNC_RELEASE);
-		w(e, C7_LAYER2_TXRX_CTRL, TXRX_RX);
-		w(e, C7_LAYER2_SLOTON, SLOTON_RXTX);
-		e->cc_tick = e->tick;
-		e->rx_any = false;
-		e->st.cc_scan_steps++;
-	}
 }
 
 static void rx_burst(hrc7000_dmr_t *e)
@@ -682,7 +678,6 @@ static void rx_burst(hrc7000_dmr_t *e)
 	e->rx_tick = e->tick;
 	e->t_rx = now(e);
 	e->rx_any = true;
-	e->cc_tick = e->tick;
 	e->st.last_cc = s.cc;
 	e->st.last_ts = ts;
 	e->rx_chip_slot = s.chip_slot;
@@ -1162,8 +1157,12 @@ void hrc7000_dmr_set_cc_filter(hrc7000_dmr_t *e, int8_t cc)
 {
 	lock(e);
 	e->cc_filter = cc;
-	if (e->running && cc >= 0 && (uint8_t)cc != e->cc_cur && e->tx_state == TXS_IDLE && !BS_ACTIVE(e)) {
-		chip_rx_restart(e);
+	if (e->running && e->tx_state == TXS_IDLE && !BS_ACTIVE(e)) {
+		if (cc >= 0 && (uint8_t)cc != e->cc_cur) {
+			chip_rx_restart(e);
+		} else {
+			set_cc(e, e->cc_cur);	// cc_opt on or off; a call on this code goes on
+		}
 	}
 	unlock(e);
 }
