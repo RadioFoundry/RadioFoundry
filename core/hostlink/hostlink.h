@@ -4,7 +4,11 @@
 // programming cable's UART on others) and hands its byte stream to one protocol at a time:
 //
 //   idle      nothing going on; the next request picks the protocol
-//   hotspot   a request starting 0xE0 (an MMDVM frame) when the hotspot is allowed: the radio becomes an MMDVM
+//   hotspot   a request starting 0xE0 (an MMDVM frame) when the hotspot is allowed starts a trial (line noise on a
+//             UART, a loose cable, is full of 0xE0): the radio becomes an MMDVM modem only after two host-like
+//             frames in a row (mmdvm_trial_begin). A frame that isn't host-like, a byte the framer throws away, or
+//             HOSTLINK_HOTSPOT_OPEN_MS without the second frame ends the trial quietly (counted in
+//             hostlink_hotspot_noise). hostlink_mode() reports idle during the trial. After it, the radio is the MMDVM
 //             modem (core/hotspot) and takes the DMR modem from the call stack (through the radio core's
 //             hotspot_radio_ops_t). It leaves after HOSTLINK_HOTSPOT_IDLE_MS without a frame, when the port closes
 //             (the port's connected() going from true to false: a POSIX host closing it drops DTR, or USB unmounted
@@ -38,6 +42,8 @@
 #include "config.h"
 
 #define HOSTLINK_HOTSPOT_IDLE_MS	20000	// a standard host polls GET_STATUS every 250 ms; 20 s of nothing = gone
+#define HOSTLINK_HOTSPOT_OPEN_MS	500	// the trial's two frames come this soon after its 0xE0 (a host sends its
+						// next command about 10 ms after the reply), else it was noise
 #define HOSTLINK_CPS_IDLE_MS		10000
 #define HOSTLINK_TNC_IDLE_MS		30000
 
@@ -52,6 +58,7 @@ void hostlink_start(void);
 void hostlink_settings_changed(void);
 
 hostlink_mode_t hostlink_mode(void);
+uint32_t hostlink_hotspot_noise(void);	// 0xE0 starts that never opened a session (line noise)
 
 // The hotspot may be entered from the host (a setting; default allowed). Turning it off leaves hotspot mode
 void hostlink_set_hotspot_allowed(bool allowed);
@@ -119,5 +126,8 @@ void hostlink_session_start(hostlink_session_t *s, bool connected);
 // the port can't tell); idle_ms: since the last MMDVM frame
 hostlink_leave_t hostlink_session_check(hostlink_session_t *s, bool connected, bool present, bool exit_requested,
 				       uint32_t idle_ms);
+// A trial begun by a 0xE0 (see the top of this file) failed: still in it (open = !mmdvm_in_trial()) and mmdvm dropped a
+// frame as noise, the framer threw bytes away (junk), or HOSTLINK_HOTSPOT_OPEN_MS passed since the 0xE0
+bool hostlink_trial_failed(bool open, bool dropped, bool junk, uint32_t since_entry_ms);
 
 #endif
