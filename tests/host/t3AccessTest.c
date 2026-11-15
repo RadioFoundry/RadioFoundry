@@ -1644,6 +1644,11 @@ static void test_composite_late_entry(void)
 			      tuned.payload && ms.call.dst == cases[k].dst, "%s: followed", cases[k].what);
 		} else {
 			CHECK(ms.state == T3_CAMPED && !tuned.payload, "%s: stays", cases[k].what);
+			// Nor does the grant end the lent mark: a call request still waits for the TSCC
+			nsent = 0;
+			CHECK(t3_ms_request(&ms, T, TG_A, true, false), "%s: call request", cases[k].what);
+			frames(&ms, 4);		// 240 ms, inside T3_LENT_MS of the last short LC: no new one needed
+			CHECK(nsent == 0 && ms.state == T3_CAMPED, "%s: still lent, %d sent", cases[k].what, nsent);
 		}
 	}
 }
