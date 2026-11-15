@@ -1166,7 +1166,7 @@ static void load_channel(void)
 	view.dmr.hear_all = view.monitor;
 	view.dmr.active = view.ch.mode == RADIO_MODE_DMR;
 	view.dmr.codec = true;
-	view.dmr.cc = view.ch.color_code;
+	view.dmr.cc = view.dmr.rx_cc = view.ch.color_code;
 	view.dmr.ts = view.ch.timeslot;
 	view.dmr.reply_active = false;
 	reply_until = 0;
@@ -1219,7 +1219,7 @@ static void sim_vfo(bool on)
 		view.ch.color_code = vfo_cc;
 		view.ch.timeslot = vfo_ts;
 		view.dmr.active = vfo_mode == RADIO_MODE_DMR;
-		view.dmr.cc = vfo_cc;
+		view.dmr.cc = view.dmr.rx_cc = vfo_cc;
 		view.dmr.ts = vfo_ts;
 		view.channel_number = 0;
 		view.temp = 0;		// the VFO has no temporary changes
@@ -1348,7 +1348,7 @@ void radio_req_clear_temporary(void)
 	view.temp = 0;
 	view.temporary = false;
 	view.dmr.active = view.ch.mode == RADIO_MODE_DMR;
-	view.dmr.cc = view.ch.color_code;
+	view.dmr.cc = view.dmr.rx_cc = view.ch.color_code;
 	view.dmr.ts = view.ch.timeslot;
 	temp_target = 0;
 	default_target();
@@ -1659,7 +1659,7 @@ bool ui_svc_dmr_timeslot(uint8_t ts)
 bool ui_svc_dmr_color_code(uint8_t cc)
 {
 	retune();
-	view.dmr.cc = view.ch.color_code = cc;
+	view.dmr.cc = view.dmr.rx_cc = view.ch.color_code = cc;
 	if (view.vfo) {
 		vfo_cc = cc;
 		changed();

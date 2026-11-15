@@ -805,6 +805,27 @@ static void test_tx_end_hold(void)
 			CHECK(eng.st.rx_restarts == rs + 1);	// once
 		}
 	}
+	// A color code change during the transmission: the receiver restarts on the new code as it ends, not the hold
+	// (the hold would drop the restart, and the receiver would keep the old code's sync)
+	{
+		fresh_engine();
+		pending_burst = false;
+		hrc6000_dmr_set_cc_filter(&eng, 1);
+		CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+		dmr_tx_burst_t hdr = mk(DMR_BURST_DATA_HEADER, 0, true);
+		hrc6000_dmr_tx_queue(&eng, &hdr);
+		hrc6000_dmr_tx_end(&eng);
+		uint32_t t = 7000000;
+		int r50, r41;
+		tx_tick(t += 30000, &r50, &r41);
+		hrc6000_dmr_set_cc_filter(&eng, 3);
+		uint32_t rs = eng.st.rx_restarts;
+		for (int k = 0; k < 8 && hrc6000_dmr_is_transmitting(&eng); k++) {
+			tx_tick(t += 30000, &r50, &r41);
+		}
+		CHECK(!hrc6000_dmr_is_transmitting(&eng));
+		CHECK(eng.st.rx_holds == 0 && eng.st.rx_restarts == rs + 1 && last_write(4, 0x1F) == 0x30);
+	}
 	// No tick after the end (the chip's timing stopped): the restart after HOLD_NO_TICK_US
 	fresh_engine();
 	pending_burst = false;
@@ -837,6 +858,7 @@ static void test_tx_aligned_rmo(void)
 	pending_burst = false;
 	dmr_config_t cfg = { .own_id = 9990001, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
 	hrc6000_dmr_configure(&eng, &cfg);
+	hrc6000_dmr_set_cc_filter(&eng, cfg.cc);
 	CHECK(last_write(4, 0x14) == (9990001 >> 16) && last_write(4, 0x16) == (9990001 & 0xFF));
 	CHECK(last_write(4, 0x1F) == 0x10);
 	// The repeater's CACH: the slot starting at tick k is TS1 on odd ticks, TS2 on even ones; 0x52 bit 2 at the
@@ -1078,6 +1100,27 @@ static void test_cc_follow(void)
 	uint32_t restarts = eng.st.rx_restarts;
 	ts_at(t += 30000);			// the receiver restarts at the next tick, no busy wait in the ISR
 	CHECK(eng.st.rx_restarts == restarts + 1);
+
+	const dmr_config_t cfg = { .cc = 5 };
+	hrc6000_dmr_configure(&eng, &cfg);
+	CHECK(eng.cc_filter == -1 && eng.cc_cur == 2);
+	CHECK(last_write(4, 0x1F) == 0x20);
+	hrc6000_dmr_set_cc_filter(&eng, 2);
+	hrc6000_dmr_set_cc_filter(&eng, -1);
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x50);
+	hrc6000_dmr_set_cc_filter(&eng, 7);
+	CHECK(last_write(4, 0x1F) == 0x50);
+	// A reconfigure during TX leaves 0x1F to the transmission too; the receiver restarts on the new code after it
+	const dmr_config_t cfg9 = { .cc = 9 };
+	hrc6000_dmr_configure(&eng, &cfg9);
+	CHECK(last_write(4, 0x1F) == 0x50 && eng.cc_cur == 9);
+	restarts = eng.st.rx_restarts;
+	hrc6000_dmr_tx_abort(&eng);
+	for (int i = 0; i < 4; i++)
+		ts_at(t += 30000);
+	CHECK(last_write(4, 0x1F) == 0x90 && eng.st.rx_restarts > restarts);
 
 	// A fixed filter: written at once, never followed
 	hrc6000_dmr_set_cc_filter(&eng, 5);
